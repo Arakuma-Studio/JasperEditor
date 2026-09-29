@@ -249,7 +249,7 @@ describe('selection, views, runtime, transport', () => {
 			label: 'Import',
 			origin: 'user',
 			commands: [
-				{ type: 'media.register', asset, ref: '$m' },
+				{ type: 'media.register', asset, ref: '$m' } as never,
 				{ type: 'clip.place', source: { mediaId: '$m' }, at: 0 },
 			],
 		});
