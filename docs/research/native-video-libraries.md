@@ -17,7 +17,7 @@ I measured, so treat the timings as rough, conservative numbers.
   (GPL, pinned to 6.1.1, downloads at install time).
 - **In-process libav: `node-av`** (MIT wrapper, v6.1.1, active, prebuilt for 8 platform/arch combos,
   works in Electron). Mediabunny's official Node polyfill `@mediabunny/server` is built on it, so the
-  Mediabunny code the starter already runs in the browser (`extract-frames.ts`, `load-waveform-peaks.ts`)
+  Mediabunny code we write for the browser (filmstrip frame extraction, waveform peak computation)
   can also run natively. **License warning:** the prebuilt `node-av.node` is a static Jellyfin-FFmpeg
   build configured with `--enable-gpl --enable-version3 --enable-libx264 --enable-libx265 --enable-libfdk-aac`
   (I read this from the binary's strings). The binary is effectively **GPLv3**, and the GPL + fdk-aac mix
@@ -30,13 +30,15 @@ I measured, so treat the timings as rough, conservative numbers.
   and `ocio` (added in 8.1). `melt`, `gst-launch-1.0`, `vips`, `sox`, `rubberband` CLI, `whisper-cli` and
   `vspipe` are **not installed**. The GStreamer 1.x, OpenCV 4.6 core, OCIO 2.1, OIIO 2.4, libplacebo,
   SoundTouch and rubberband shared libraries **are** installed (as dependencies of other packages).
-- **Interchange means OpenTimelineIO.** I verified this: a JasperEditor-shaped `UndoableState` converts to
+- **Interchange means OpenTimelineIO.** I verified this: a JasperEditor-shaped timeline document
+  (tracks, clips, assets, fps, frame size) converts to
   `.otio`, then through the OTIO plugins to **FCP7 XML (`xmeml`, Premiere's native XML)**, **CMX3600 EDL**
   and **AAF** (write with `use_empty_mob_ids=True`), and each file reads back. The adapters are Python only.
   Plan: write `.otio` JSON natively in TS and use a Python sidecar (`otioconvert`) for the other formats.
 - **Local transcription: whisper.cpp v1.9.4** (MIT). Built here in about 1.5 min. On this CPU, `base.en`
   transcribed 65 s of speech in about 3 to 6 s (10 to 20x realtime) with word-level timestamps in JSON.
-  `@remotion/install-whisper-cpp` already turns its output into the `Caption[]` type that `CaptionAsset` uses.
+  `@remotion/install-whisper-cpp` already turns its output into `@remotion/captions` `Caption[]`, which we
+  can adopt directly as the stored data of our caption assets.
 - **Silence cutting and scene detection:** ffmpeg `silencedetect` and `scdet` / `select=gt(scene,…)` are
   enough and fast (0.2 to 0.4 s for a minute of media). Offer auto-editor (Unlicense, a single 41 MB
   binary, exports Premiere XML, FCPXML, Shotcut MLT, Kdenlive and a clean `v3` JSON) and PySceneDetect
@@ -80,7 +82,8 @@ OpenTimelineIO-Plugins 0.18.1 (aaf 2.0.0, cmx3600 1.0.0, fcp 1.0.0, xges, ale, s
 
 Upstream versions (checked 2026-09-29): FFmpeg **9.0.2** "Lei" (current), 8.1.3, 8.0.3; MLT 7.40.0;
 OCIO 2.5.2; libvips 8.18.7; VapourSynth R80; whisper.cpp 1.9.4; PySceneDetect 0.7.1; OTIO 0.18.1;
-Remotion 4.0.530 (the repo pins 4.0.499); mediabunny 1.61.0 (the repo pins 1.50.8).
+Remotion 4.0.530; mediabunny 1.61.0. Pin current versions of both in the new monorepo (Remotion pins its
+own mediabunny, so upgrade them together).
 
 ---
 
@@ -96,7 +99,7 @@ obligations with it.
 | LGPL-2.1/3 | FFmpeg core (default build), libvips, MLT core, GStreamer core + GES, libplacebo, SoundTouch, VapourSynth, soundtouchjs, waveform-data/peaks.js (LGPL-3) | OK when **dynamically linked or run as a separate process**. Ship the source (or an offer) of the exact version, allow relinking, and don't forbid reverse engineering in the EULA. |
 | GPL-2/3 | FFmpeg with `--enable-gpl` (**libx264, libx265**, frei0r, rubberband, vidstab), rubberband, frei0r plugins, audiowaveform, beamcoder, ffmpeg-static binaries, Shotcut/Kdenlive | Running a GPL **CLI as a separate process** ("mere aggregation") is common practice (HandBrake-style GUIs, LosslessCut, many Electron apps do it) and keeps our app code out of scope. We still have to ship the GPL text plus the source or an offer. **Linking** GPL code into our process (a `.node` addon statically linking GPL FFmpeg, i.e. node-av's prebuilt) is a much stronger argument that the combined work is GPL. |
 | "nonfree" | FFmpeg built with `--enable-gpl` **and** `libfdk_aac` | FFmpeg's configure refuses this combination without `--enable-nonfree`, and the result is "unredistributable". Both Remotion's compositor FFmpeg and node-av's prebuilt link fdk-aac next to x264/x265. Get legal review, or rebuild. |
-| Remotion License | remotion, @remotion/* (compositor, media, web-renderer, lambda, whisper helpers) | Source-available. Free for individuals and small companies (<= 3 employees), otherwise a paid company license. Already a project dependency, but it matters for the product. |
+| Remotion License | remotion, @remotion/* (compositor, media, web-renderer, lambda, whisper helpers) | Source-available. Free for individuals and small companies (<= 3 employees), otherwise a paid company license. Will be a direct dependency of JasperEditor, so it matters for the product. |
 
 **Patents are separate from copyright.** H.264, HEVC and AAC encoders carry patent-pool issues whatever
 their code license is. OS-provided encoders (VideoToolbox, Media Foundation, VAAPI/NVENC/QSV) and Cisco's
@@ -123,23 +126,24 @@ static builds (GPL).
 
 ## 3. Where native code runs in JasperEditor
 
-Today the starter does all media work **in the browser**:
-- `src/editor/timeline/timeline-item/timeline-item-film-strip/extract-frames.ts` uses mediabunny `Input` +
-  `VideoSampleSink` (WebCodecs) for filmstrips.
-- `src/editor/timeline/timeline-item/timeline-item-waveform/load-waveform-peaks.ts` uses mediabunny
-  `AudioSampleSink` and computes 100 peaks/s max-abs into a `QuickLRU` cache.
-- `src/editor/rendering/render-state.ts` uses `renderMediaOnWeb` (`@remotion/web-renderer`) for
-  client-side export (`h264` → mp4, `vp8` → webm).
-- `src/routes/api/render.ts` uses `renderMediaOnLambda`. `src/routes/api/captions.ts` uses the OpenAI
-  `whisper-1` API.
-- `src/editor/items/video/video-layer.tsx` uses `<Video>` from `@remotion/media` (mediabunny-based) or
-  `OffthreadVideo`.
+A browser-only media path is the baseline (it is what the web/PWA build uses when no engine is reachable).
+JasperEditor's own browser code should cover:
+- **Filmstrips:** mediabunny `Input` + `VideoSampleSink` (WebCodecs), decoding frames for the visible
+  timeline slots, in a Worker.
+- **Waveforms:** mediabunny `AudioSampleSink`, reduced to a fixed peaks-per-second max-abs
+  `Float32Array` (100 peaks/s is a good default), held in a small LRU cache.
+- **Quick client-side export:** `renderMediaOnWeb` from `@remotion/web-renderer` (H.264 → MP4,
+  VP8 → WebM).
+- **Cloud options (optional):** `renderMediaOnLambda` for server-side renders and a hosted ASR API (e.g.
+  OpenAI `whisper-1`) for captions.
+- **Preview playback:** `<Video>` from `@remotion/media` (mediabunny-based) or `OffthreadVideo`.
 
 Proposed layering (it mirrors orquester, where `apps/desktop` embeds `@orquester/daemon`, a Fastify
-server, inside the Electron main process, and `apps/web` talks to the same daemon over HTTP/WS):
+server, inside the Electron main process, and `apps/web` talks to the same daemon over HTTP/WS). In
+JasperEditor this service is `apps/engine`; the rest of this doc calls it "the daemon" or "the engine":
 
 ```
-apps/web (browser/PWA) ──HTTP/WS──►  apps/daemon  (Node, "media engine")  ◄── apps/desktop (Electron main embeds it)
+apps/web (browser/PWA) ──HTTP/WS──►  apps/engine  (Node, "media engine")  ◄── apps/desktop (Electron main embeds it)
       │                                   │
       │ browser-only fallbacks:           ├─ packages/media-native: ffmpeg/ffprobe spawn wrapper, job queue,
       │  mediabunny/WebCodecs,            │    progress, cancellation, proxy/thumb/waveform cache
@@ -153,7 +157,7 @@ Rules:
    worker pool, and spawn ffmpeg from there. Otherwise a GC pause or synchronous parse freezes the UI.
 2. **One media API, two backends.** Put a TS interface (`MediaEngine`) in `packages/media-engine`:
    - `NativeMediaEngine` (daemon, desktop): ffmpeg CLI + whisper.cpp + optional node-av/@mediabunny/server.
-   - `BrowserMediaEngine` (web without a daemon): mediabunny/WebCodecs, the current code paths.
+   - `BrowserMediaEngine` (web without a daemon): mediabunny/WebCodecs, the browser-only paths above.
 3. **Content-addressed cache.** Key proxies, thumbnails, peaks, transcripts and scene lists by
    `sha256(first+last 4 MiB + size + mtime)`, stored under `userData/media-cache/<hash>/…`.
 
@@ -238,10 +242,10 @@ results to **stderr**. Parse stderr for those, or use `-f null -` with `-logleve
 | `beamcoder` | 0.7.1, last push 2023-12 | **GPL-3.0** | Needs system FFmpeg 5 dev libs. Dead. | **Avoid.** |
 | `@mmomtchev/ffmpeg` | 2.0.1, active | ISC wrapper. Prebuilt FFmpeg via GitHub releases. | avcpp-based. Node Streams API (`Demuxer → Decoder → Filter → Encoder → Muxer`). Small community. | Watch. Alternative to node-av. |
 | **`node-av`** | **6.1.1**, pushed 2026-09-29, ~380★ | MIT wrapper. **Prebuilt `@seydx/node-av-linux-x64` is a 175 MB `.node` statically linking Jellyfin-FFmpeg (libavcodec 62), `--enable-gpl --enable-version3`, x264, x265, fdk-aac, svtav1, dav1d, libplacebo, whisper, vaapi/nvenc/qsv/amf/vulkan.** | Full low-level API (`FormatContext`, `CodecContext`, `Packet`, `Frame`) plus high-level `Demuxer/Decoder/Encoder/FilterAPI`. Typed options generated from FFmpeg metadata. `node-av/ffmpeg` also downloads a matching CLI (`ffmpegPath()`). README claims Electron ABI compatibility with no rebuild, and has electron-builder/forge examples. HW accel needs libva 2.20, so Ubuntu 24.04+. | **Adopt selectively** for in-process frame access, e.g. frame-accurate scrubbing server, zero-copy thumbnails, `@mediabunny/server`. **Build from source against our own LGPL FFmpeg**, or accept GPLv3 for the process. |
-| `@mediabunny/server` | 1.61.0. Depends on `node-av ^6` and `@mediabunny/prores` | MPL-2.0 (+ node-av as above) | `registerMediabunnyServer()` polyfills WebCodecs-like decoders/encoders (AVC, HEVC, VP8/9, AV1, ProRes, AAC, MP3, Opus, FLAC, AC-3) in Node/Bun/Deno. Lets the **same** mediabunny code from `extract-frames.ts` / `load-waveform-peaks.ts` run in the daemon. | **Adopt** for code sharing between web and desktop, with the same license caveat. |
+| `@mediabunny/server` | 1.61.0. Depends on `node-av ^6` and `@mediabunny/prores` | MPL-2.0 (+ node-av as above) | `registerMediabunnyServer()` polyfills WebCodecs-like decoders/encoders (AVC, HEVC, VP8/9, AV1, ProRes, AAC, MP3, Opus, FLAC, AC-3) in Node/Bun/Deno. Lets the **same** mediabunny filmstrip/waveform code we write for the browser run in the daemon. | **Adopt** for code sharing between web and desktop, with the same license caveat. |
 | `@ffmpeg/ffmpeg` + `@ffmpeg/core(-mt)` (ffmpeg.wasm) | 0.12.15 / core 0.12.10. Wrapper repo active, **no core release since Jan 2025** | MIT wrapper. Core is **GPL-2.0+** (includes x264). | Core ~30 MB wasm. Single-thread by default. `core-mt` needs SharedArrayBuffer, so COOP/COEP headers (these conflict with some third-party embeds). Roughly 10 to 25x slower than native, and there is a 2 GB wasm memory ceiling. | **Last-resort browser fallback only** (e.g. stream-copy remux of a codec WebCodecs can't handle). Prefer mediabunny for web. |
 
-### 4.3 Remotion's own media stack (already in the repo)
+### 4.3 Remotion's own media stack (public npm packages we will depend on)
 - **`@remotion/compositor-<platform>`** (pulled in by `@remotion/renderer`): a Rust `remotion` binary plus
   **FFmpeg n7.1 shared libs**. I checked `@remotion/compositor-linux-x64-gnu@4.0.499`, whose build is
   `--enable-gpl`, `--enable-libfdk-aac`, `--disable-filters` plus ~30 whitelisted filters (`atrim`,
@@ -250,13 +254,13 @@ results to **stderr**. Parse stderr for those, or use `-f null -` with `-logleve
   opus/pcm. Encoders: libx264, libx265, libaom-av1, libvpx, prores_ks, h264/hevc_nvenc, aac/fdk_aac, opus,
   mp3. **It can't serve as our general engine** (no DNxHD/CineForm/XDCAM/MXF ingest, no lut3d, no scdet,
   no ebur128, no drawtext). Remotion uses it for `<OffthreadVideo>` frame extraction and final muxing.
-- **`@remotion/media`** (`<Video>`/`<Audio>`, used in `video-layer.tsx` behind `FEATURE_NEW_MEDIA_TAGS`):
+- **`@remotion/media`** (`<Video>`/`<Audio>`, the recommended tags for our video/audio layers):
   mediabunny + WebCodecs playback in the Player and in `@remotion/web-renderer`.
-- **`@remotion/web-renderer`** (`renderMediaOnWeb`, used in `render-state.ts`): in-browser export via
+- **`@remotion/web-renderer`** (`renderMediaOnWeb`): in-browser export via
   WebCodecs. Good for "quick export" in the web/PWA without a daemon.
 - **`@remotion/install-whisper-cpp`**: `installWhisperCpp()`, `downloadWhisperModel()`, `transcribe()`,
-  `toCaptions()`. Produces `@remotion/captions` `Caption[]`, the type stored in `CaptionAsset.captions`
-  (`src/editor/assets/assets.ts`).
+  `toCaptions()`. Produces `@remotion/captions` `Caption[]`, which we can use as the stored data of our
+  caption assets.
 - **Verdict:** keep Remotion for React motion graphics, the Player, and rendering *graphics layers*. Use
   our own FFmpeg for all media-engineering work.
 
@@ -271,7 +275,7 @@ results to **stderr**. Parse stderr for those, or use `-f null -` with `-logleve
   `@mediabunny/prores` wasm decoder) or HEVC everywhere. No filter graph (no LUT/loudnorm/scdet). Heavy
   jobs compete with the UI thread unless run in a Worker.
 - **Verdict: ADOPT** as the browser engine and as the shared API (via `@mediabunny/server` on desktop).
-  Bump 1.50.8 → 1.6x together with the Remotion upgrade (Remotion pins mediabunny).
+  Use mediabunny 1.6x, matching the version our chosen Remotion release pins (upgrade them together).
 
 ### 4.5 MLT Framework (`melt`)
 - **Best at:** a complete timeline engine. MLT XML describes multitrack playlists, transitions (luma
@@ -443,8 +447,8 @@ Vulkan) and `--backend cpu` is the slower CPU path. That is relevant on no-GPU m
    "v":[],"a":[[{"name":"audio","src":"speech.wav","start":0,"dur":557,"offset":0,"stream":0},
                 {"name":"audio","src":"speech.wav","start":557,"dur":557,"offset":648,"stream":0}]]}
   ```
-  `start` = timeline frame (→ `item.from`), `dur` = frames (→ `durationInFrames`), `offset` = source frame
-  (→ `videoStartFromInSeconds * fps`).
+  `start` = timeline frame (→ clip's timeline start frame), `dur` = frames (→ clip duration in frames),
+  `offset` = source frame (→ clip's source in-point in seconds × fps).
 - **Verdict: OPTIONAL power tool.** Ship ffmpeg `silencedetect`-based cutting as the built-in feature
   (section 5.8). Offer auto-editor for motion-based edits or as an agent tool. It's easy to bundle (one
   binary per platform), but it adds 40 MB.
@@ -481,14 +485,14 @@ Vulkan) and `--backend cpu` is the slower CPU path. That is relevant on no-GPU m
 - **Integration options:**
   1. `@remotion/install-whisper-cpp`: downloads/builds whisper.cpp and models, `transcribe({inputPath,
      whisperPath, model, tokenLevelTimestamps: true})`, then `toCaptions()`. Fastest path, and it emits
-     exactly the starter's caption type. Input must be **16 kHz mono WAV**
+     `@remotion/captions` `Caption[]`, the caption type we plan to adopt. Input must be **16 kHz mono WAV**
      (`ffmpeg -i in -vn -ac 1 -ar 16000 -c:a pcm_s16le out.wav`).
   2. Our own prebuilt `whisper-cli` per platform in `extraResources` (build in CI; avoids needing a
      compiler on user machines, which option 1 requires on Linux).
   3. FFmpeg 8.0+ `whisper` audio filter (BtbN and node-av builds include it) does transcription inside
      the ffmpeg graph and outputs SRT/JSON. Convenient, but gives less control (no word-level JSON).
-  4. Browser/PWA: `@remotion/whisper-web` (whisper.cpp → wasm). Much slower. Keep the OpenAI API route
-     (`src/routes/api/captions.ts`) as the cloud option.
+  4. Browser/PWA: `@remotion/whisper-web` (whisper.cpp → wasm). Much slower. Offer a hosted ASR API route
+     (e.g. OpenAI `whisper-1`, served by `apps/engine` or the web server) as the cloud option.
 - **Verdict: ADOPT** (option 2, with option 1's `toCaptions` logic). Default model `base.en` or
   `small`/`large-v3-turbo-q5_0` for quality. Always run the VAD for long files.
 
@@ -502,8 +506,8 @@ Vulkan) and `--backend cpu` is the slower CPU path. That is relevant on no-GPU m
   speech/music at moderate rates, no pitch control.
 - **Verdict:** `atempo` for the default "Speed/Duration" (Premiere's Ctrl+R) with pitch preserved. Add
   `rubberband` for the "high-quality" toggle and pitch shift if we ship the GPL FFmpeg. Browser preview
-  keeps using `playbackRate` on the media element (the Remotion Player already does this via
-  `get-item-playback-rate.ts`).
+  keeps using `playbackRate` on the media element (Remotion's media tags accept a `playbackRate` prop, so
+  the preview just passes the clip's speed through).
 
 ### 4.20 Loudness: `loudnorm` / `ebur128`
 - `ebur128=peak=true` gives integrated/short-term/momentary LUFS, LRA and true peak (stderr summary). Took
@@ -519,7 +523,7 @@ Vulkan) and `--backend cpu` is the slower CPU path. That is relevant on no-GPU m
 - `bbc/audiowaveform` (GPL-3, C++, produces `.dat`/`.json` peaks for peaks.js). GPL CLI, one more binary.
 - `waveform-data` / `peaks.js` (LGPL-3): display side.
 - **Verdict:** not needed. `ffmpeg -ac 1 -ar <rate> -f f32le pipe:1` plus a tiny TS reducer produces the
-  same `Float32Array` peaks the starter already renders (section 5.5). Keep the mediabunny path in the
+  same `Float32Array` peaks our browser path produces (section 5.5). Keep the mediabunny path in the
   browser.
 
 ---
@@ -534,8 +538,8 @@ ffprobe -v error -select_streams v:0 -skip_frame nokey -show_entries frame=pts_t
 # (src.mp4: 0.000000, 2.000000, 4.000000, ...)
 ```
 Probe on import. Store the codec, pix_fmt, color_primaries/transfer/space, rotation (side data), VFR
-flag (`r_frame_rate` != `avg_frame_rate`), audio layout, and timecode tag on the asset (extend
-`VideoAsset` in `src/editor/assets/assets.ts`).
+flag (`r_frame_rate` != `avg_frame_rate`), audio layout, and timecode tag on the video asset record in our
+document model.
 
 ### 5.2 Fast lossless cut (stream copy): 0.20 s for a 20 s cut
 ```bash
@@ -563,8 +567,9 @@ ffmpeg -i src.mp4 -vf "scale=-2:540:flags=fast_bilinear" -c:v libx264 -preset ul
 Comparison on the same input: ProRes Proxy 540p took 24 s (79 MB), MJPEG 7 s (47 MB), x264 ultrafast
 13 s (16 MB, first run, heavier load). For the LGPL option, use `h264_videotoolbox`/`h264_mf`/`h264_vaapi`
 or `libopenh264`. Keep the proxy fps equal to the source, preserve rotation metadata, and tonemap
-HDR→SDR for proxies (section 4.14). Store a `proxyUrl` next to `remoteUrl` on the asset and let
-`usePreferredLocalUrl` pick it.
+HDR→SDR for proxies (section 4.14). Store a proxy URL next to the original/remote URL on the asset record
+and have the media-URL resolver prefer, in order: local proxy (when proxies are enabled), local original,
+remote URL.
 
 ### 5.4 Thumbnails / filmstrips
 ```bash
@@ -577,9 +582,8 @@ ffmpeg -ss 12.5 -i src.mp4 -frames:v 1 -vf scale=320:-2 -q:v 3 poster.jpg
 # "representative" frame
 ffmpeg -i src.mp4 -vf "thumbnail=90,scale=320:-2" -frames:v 1 rep.jpg
 ```
-Serve the sprite plus a JSON index `{tileWidth, tileHeight, timestamps[]}` to the timeline. The current
-`timeline-item-film-strip` decodes per visible slot with mediabunny, which should remain the zoomed-in
-path.
+Serve the sprite plus a JSON index `{tileWidth, tileHeight, timestamps[]}` to the timeline. The browser
+filmstrip path (mediabunny decoding per visible slot) should remain the zoomed-in path.
 
 ### 5.5 Waveform peaks
 ```bash
@@ -588,7 +592,7 @@ ffmpeg -i src.mp4 -vn -ac 1 -ar 8000 -f f32le pipe:1
 # or a quick PNG for previews (0.22 s)
 ffmpeg -i src.mp4 -filter_complex "showwavespic=s=1920x120:split_channels=0" -frames:v 1 wave.png
 ```
-TS reducer that matches `loadWaveformPeaks` (100 peaks/s, max-abs):
+TS reducer that matches the browser path's peaks contract (100 peaks/s, max-abs):
 ```ts
 export function reducePeaks(pcm: Float32Array, sampleRate: number, peaksPerSecond = 100): Float32Array {
   const spp = Math.max(1, Math.floor(sampleRate / peaksPerSecond));
@@ -626,8 +630,8 @@ ffmpeg -i speech.wav -af "silencedetect=noise=-35dB:d=0.5" -f null -
 # [silencedetect] silence_end: 21.8166 | silence_duration: 3.39125
 ```
 Invert the silence intervals into keep-ranges, pad each keep-range by a margin (e.g. 0.15 s), merge
-overlaps, then emit one `VideoItem` per range (same `assetId`, consecutive `from`,
-`videoStartFromInSeconds = range.start`). Better thresholds come from `ebur128` short-term loudness,
+overlaps, then emit one video clip per range (same asset, consecutive timeline start frames,
+source in-point = `range.start`). Better thresholds come from `ebur128` short-term loudness,
 relative to the clip's integrated loudness.
 
 ### 5.9 Loudness
@@ -660,13 +664,12 @@ ffmpeg -i in.mp4 -vf "lut3d=file=look.cube:interp=tetrahedral" -c:v libx264 -crf
 
 ## 6. Final export of an edit decision list (native path)
 
-The editor state (`src/editor/state/types.ts` → `UndoableState {tracks, items, assets, fps,
-compositionWidth, compositionHeight}`) contains two kinds of items:
+JasperEditor's timeline document (our own model: tracks, clips, assets, fps, frame width/height) will
+contain two kinds of clips:
 
-- **Media items** (`video`, `audio`, `image`, `gif`): expressible as FFmpeg filtergraph ops (trim,
-  setpts, scale/crop/rotate, overlay at `left/top/width/height`, opacity, fades, volume
-  `decibelAdjustment`, `playbackRate`).
-- **Graphics items** (`text`, `solid`, `captions`, plus anything React/Remotion/fframes renders).
+- **Media clips** (video, audio, image, GIF): expressible as FFmpeg filtergraph ops (trim, setpts,
+  scale/crop/rotate, overlay at x/y/width/height, opacity, fades, gain in dB, speed).
+- **Graphics clips** (text, solids, captions, plus anything React/Remotion/fframes renders).
 
 Recommended **hybrid export**:
 1. Render graphics layers with Remotion (`renderMedia` locally, or `renderMediaOnWeb`) or fframes into an
@@ -677,8 +680,9 @@ Recommended **hybrid export**:
    loudnorm and LUTs.
 3. If an export has no graphics, skip step 1. If it's "all graphics", use Remotion's renderer alone.
 
-Z-order: `tracks[0]` is the **top** layer (`src/editor/canvas/layers.tsx` renders
-`tracks.slice().reverse()`), so iterate tracks in reverse when chaining overlays.
+Z-order: pick one convention for the document and keep it everywhere. If `tracks[0]` is the **top**
+layer (UI order, top to bottom), iterate tracks in reverse when chaining overlays so the bottom track is
+composited first. (Premiere numbers V1 as the bottom video track; the UI can map either way.)
 
 Verified prototype (Python generator in `/tmp/jasper-research/native-video-libs/bench/edl_export.py`,
 3 tracks: base clip, PiP overlay, gap, second clip at -6 dB, music bed at -12 dB). It rendered a correct
@@ -694,16 +698,38 @@ color=c=black:s=1920x1080:r=30:d=10.0[base];
 [a0][a1][a2]amix=inputs=3:normalize=0:duration=longest,atrim=duration=10.0[aout]
 ```
 
-TS sketch for `packages/media-native/src/export-graph.ts`:
+TS sketch for `packages/media-native/src/export-graph.ts`. The input types below are a minimal,
+export-oriented view defined here for illustration; map JasperEditor's real document model onto them.
 
 ```ts
-import type {UndoableState} from '../../editor/state/types'; // adjust path in the monorepo
+// Minimal export view of a JasperEditor timeline (illustrative; adapt to the real document model).
+export type ExportTrack = {hidden: boolean; muted: boolean; clipIds: string[]};
+export type ExportAsset = {kind: 'video' | 'audio' | 'image'; hasAudio: boolean};
+export type ExportClip = {
+  kind: 'video' | 'audio' | 'image' | 'gif' | 'text' | 'solid' | 'captions';
+  assetId: string;
+  startFrame: number;        // timeline start
+  durationFrames: number;    // timeline duration
+  sourceInSec: number;       // source in-point
+  speed: number;             // 1 = normal
+  x: number; y: number; w: number; h: number;
+  opacity: number;           // 0..1
+  gainDb: number;
+  fadeInSec: number; fadeOutSec: number;           // video (alpha) fades
+  audioFadeInSec: number; audioFadeOutSec: number;
+};
+export type ExportTimeline = {
+  fps: number; width: number; height: number;
+  tracks: ExportTrack[];     // index 0 = top layer
+  clips: Record<string, ExportClip>;
+  assets: Record<string, ExportAsset>;
+};
 
 type Built = {args: string[]};
 
-export function buildExportArgs(s: UndoableState, out: string, opts: {crf?: number} = {}): Built {
-  const {fps, compositionWidth: W, compositionHeight: H} = s;
-  const totalFrames = Math.max(0, ...Object.values(s.items).map((i) => i.from + i.durationInFrames));
+export function buildExportArgs(tl: ExportTimeline, out: string, opts: {crf?: number} = {}): Built {
+  const {fps, width: W, height: H} = tl;
+  const totalFrames = Math.max(0, ...Object.values(tl.clips).map((c) => c.startFrame + c.durationFrames));
   const T = totalFrames / fps;
   const args: string[] = [];
   const fc: string[] = [`color=c=black:s=${W}x${H}:r=${fps}:d=${T}[base]`];
@@ -711,40 +737,39 @@ export function buildExportArgs(s: UndoableState, out: string, opts: {crf?: numb
   let last = 'base';
   let n = 0;
 
-  for (const track of s.tracks.slice().reverse()) {          // bottom → top
+  for (const track of tl.tracks.slice().reverse()) {         // bottom → top
     if (track.hidden) continue;
-    for (const id of track.items) {
-      const it = s.items[id];
-      if (it.type !== 'video' && it.type !== 'audio') continue; // graphics handled via alpha intermediates
-      const asset = s.assets[it.assetId];
-      const rate = it.playbackRate || 1;
-      const srcStart = it.type === 'video' ? it.videoStartFromInSeconds : it.audioStartFromInSeconds;
-      const t0 = it.from / fps;
-      const d = it.durationInFrames / fps;                    // timeline duration
-      // one input per item with input seeking: avoids decoding each file from 0
-      args.push('-ss', String(srcStart), '-t', String(d * rate), '-i', localPath(asset));
+    for (const id of track.clipIds) {
+      const c = tl.clips[id];
+      if (c.kind !== 'video' && c.kind !== 'audio') continue; // graphics handled via alpha intermediates
+      const asset = tl.assets[c.assetId];
+      const rate = c.speed || 1;
+      const t0 = c.startFrame / fps;
+      const d = c.durationFrames / fps;                       // timeline duration
+      // one input per clip with input seeking: avoids decoding each file from 0
+      args.push('-ss', String(c.sourceInSec), '-t', String(d * rate), '-i', localPath(asset));
       const i = n;
-      if (it.type === 'video') {
+      if (c.kind === 'video') {
         const fade = [
-          it.fadeInDurationInSeconds > 0 ? `fade=t=in:st=0:d=${it.fadeInDurationInSeconds}:alpha=1` : '',
-          it.fadeOutDurationInSeconds > 0 ? `fade=t=out:st=${d - it.fadeOutDurationInSeconds}:d=${it.fadeOutDurationInSeconds}:alpha=1` : '',
+          c.fadeInSec > 0 ? `fade=t=in:st=0:d=${c.fadeInSec}:alpha=1` : '',
+          c.fadeOutSec > 0 ? `fade=t=out:st=${d - c.fadeOutSec}:d=${c.fadeOutSec}:alpha=1` : '',
         ].filter(Boolean).join(',');
         fc.push(
           `[${i}:v]setpts=(PTS-STARTPTS)/${rate},fps=${fps},` +
-          `scale=${Math.round(it.width)}:${Math.round(it.height)},format=yuva420p` +
-          (it.opacity < 1 ? `,colorchannelmixer=aa=${it.opacity}` : '') +
+          `scale=${Math.round(c.w)}:${Math.round(c.h)},format=yuva420p` +
+          (c.opacity < 1 ? `,colorchannelmixer=aa=${c.opacity}` : '') +
           (fade ? `,${fade}` : '') +
           `,setpts=PTS+${t0}/TB[v${i}]`,
-          `[${last}][v${i}]overlay=x=${Math.round(it.left)}:y=${Math.round(it.top)}:eof_action=pass:enable='between(t,${t0},${t0 + d})'[o${i}]`,
+          `[${last}][v${i}]overlay=x=${Math.round(c.x)}:y=${Math.round(c.y)}:eof_action=pass:enable='between(t,${t0},${t0 + d})'[o${i}]`,
         );
         last = `o${i}`;
       }
-      const hasAudio = it.type === 'audio' || (asset.type === 'video' && asset.hasAudioTrack);
+      const hasAudio = c.kind === 'audio' || (asset.kind === 'video' && asset.hasAudio);
       if (hasAudio && !track.muted) {
         fc.push(
-          `[${i}:a]asetpts=PTS-STARTPTS,${atempoChain(rate)}aresample=48000,volume=${it.decibelAdjustment}dB,` +
-          (it.audioFadeInDurationInSeconds > 0 ? `afade=t=in:d=${it.audioFadeInDurationInSeconds},` : '') +
-          (it.audioFadeOutDurationInSeconds > 0 ? `afade=t=out:st=${d - it.audioFadeOutDurationInSeconds}:d=${it.audioFadeOutDurationInSeconds},` : '') +
+          `[${i}:a]asetpts=PTS-STARTPTS,${atempoChain(rate)}aresample=48000,volume=${c.gainDb}dB,` +
+          (c.audioFadeInSec > 0 ? `afade=t=in:d=${c.audioFadeInSec},` : '') +
+          (c.audioFadeOutSec > 0 ? `afade=t=out:st=${d - c.audioFadeOutSec}:d=${c.audioFadeOutSec},` : '') +
           `adelay=${Math.round(t0 * 1000)}:all=1[a${i}]`,
         );
         amix.push(`[a${i}]`);
@@ -771,12 +796,12 @@ function atempoChain(rate: number): string {
   parts.push(r);
   return parts.map((p) => `atempo=${p}`).join(',') + ',';
 }
-declare function localPath(a: unknown): string; // asset → local file (proxy or original)
+declare function localPath(a: ExportAsset): string; // asset → local file (proxy or original)
 ```
 
-Caveats to implement: crop (`crop=` before scale, from `cropLeft/Top/Right/Bottom`), rotation
-(`rotate=a=…:ow=rotw(a):oh=roth(a):c=none`), `borderRadius` (alpha mask via `geq` or a pre-rendered mask
-PNG), `keepAspectRatio`, images (`-loop 1 -t d -i img`), GIFs (`-ignore_loop 0`), VFR sources
+Caveats to implement: crop (`crop=` before scale, from per-edge crop insets), rotation
+(`rotate=a=…:ow=rotw(a):oh=roth(a):c=none`), rounded corners (alpha mask via `geq` or a pre-rendered mask
+PNG), aspect-ratio locking / fit modes, images (`-loop 1 -t d -i img`), GIFs (`-ignore_loop 0`), VFR sources
 (`fps=` normalizes them), and very long timelines (hundreds of inputs). For those, **render per segment**
 (split the timeline at points where the set of active items changes, or every N seconds), then
 `-f concat -c copy`. That also parallelizes across the 12 cores. The Remotion Player preview uses CSS
@@ -794,13 +819,13 @@ Mapping rules:
 - `Timeline.global_start_time = RationalTime(0, fps)`. Store width/height in `timeline.metadata.jasper`.
 - OTIO track order is bottom→top, so `tracks.slice().reverse()`. Track kind is `Audio` if all items are
   audio, otherwise `Video`. (Premiere expects separate audio tracks for a video clip's audio. When
-  exporting FCP7 XML, emit a linked audio clip on an audio track for each `VideoItem` with
-  `asset.hasAudioTrack`.)
-- Gaps: insert `Gap(duration = item.from - cursor)`.
-- `Clip.source_range = TimeRange(start = round(videoStartFromInSeconds*fps), duration = durationInFrames)`.
+  exporting FCP7 XML, emit a linked audio clip on an audio track for each video clip whose asset has an
+  audio stream.)
+- Gaps: insert `Gap(duration = clip.startFrame - cursor)`.
+- `Clip.source_range = TimeRange(start = round(sourceInSec*fps), duration = durationFrames)`.
   `media_reference = ExternalReference(target_url = file URL of original (not proxy), available_range = asset duration)`.
-- `playbackRate != 1` → `LinearTimeWarp(time_scalar = rate)` (source duration = timeline duration × rate).
-- `decibelAdjustment`, fades, transforms, and Remotion-only items → `clip.metadata.jasper` (round-trip
+- `speed != 1` → `LinearTimeWarp(time_scalar = speed)` (source duration = timeline duration × speed).
+- Gain, fades, transforms, and Remotion/fframes-only clips → `clip.metadata.jasper` (round-trip
   safe). Text/captions can additionally be exported as markers or subtitle side files (SRT/VTT) for NLEs.
 
 `.otio` JSON (what TS must emit; this is from the test output):
@@ -839,12 +864,12 @@ relinking by filename, plus duration/timecode checks.
 | **Engine binary** | Our pinned **FFmpeg 9.0.x (or 8.1.x)** `ffmpeg`+`ffprobe` per platform (BtbN linux64/win64, own macOS build), in `extraResources`, spawned from a worker/utilityProcess | mediabunny (+ WebCodecs) | Decide GPL-sidecar (A) vs LGPL (B), section 2. Don't rely on system ffmpeg, `ffmpeg-static`, or Remotion's compositor FFmpeg. |
 | **Fast lossless cuts** | `ffmpeg -ss … -i … -t … -c copy -avoid_negative_ts make_zero` + keyframe snapping from `ffprobe -skip_frame nokey`. Concat demuxer for joins. Smart-cut later. | mediabunny `Conversion` with trim (stream copy when possible) | 0.2 s for a 20 s cut |
 | **Proxy generation** | H.264 short-GOP 720p/540p MP4 (`keyint=15`, `-tune fastdecode`, `+faststart`), HDR→SDR tonemapped, per-asset job queue (1 to 2 concurrent jobs, `-threads` split) | mediabunny `Conversion` (WebCodecs HW encode) in a Worker | Browser-decodable proxies, not ProRes/DNxHR |
-| **Thumbnails / filmstrips** | ffmpeg `-skip_frame nokey` + `tile` sprites (0.4 s/min), `thumbnail` filter for posters. sharp for image assets. | existing mediabunny `extract-frames.ts` | Cache sprites + JSON index |
-| **Waveforms** | ffmpeg `-ac 1 -ar 8000 -f f32le pipe:1` → `reducePeaks()` → cached `.f32` | existing `load-waveform-peaks.ts` | Same `Float32Array` 100 peaks/s contract |
-| **Final export of EDL** | Hybrid: Remotion/fframes render graphics-only alpha intermediates (ProRes 4444 / VP9-alpha), then one ffmpeg `filter_complex` composite (section 6), segment-parallel, x264/x265/SVT-AV1/ProRes/DNxHR outputs | `renderMediaOnWeb` (current) | Pure-graphics timelines: Remotion only. Golden-frame SSIM tests. |
+| **Thumbnails / filmstrips** | ffmpeg `-skip_frame nokey` + `tile` sprites (0.4 s/min), `thumbnail` filter for posters. sharp for image assets. | mediabunny `VideoSampleSink` frame extraction in a Worker | Cache sprites + JSON index |
+| **Waveforms** | ffmpeg `-ac 1 -ar 8000 -f f32le pipe:1` → `reducePeaks()` → cached `.f32` | mediabunny `AudioSampleSink` peaks in a Worker | Same `Float32Array` 100 peaks/s contract |
+| **Final export of EDL** | Hybrid: Remotion/fframes render graphics-only alpha intermediates (ProRes 4444 / VP9-alpha), then one ffmpeg `filter_complex` composite (section 6), segment-parallel, x264/x265/SVT-AV1/ProRes/DNxHR outputs | `renderMediaOnWeb` (`@remotion/web-renderer`) | Pure-graphics timelines: Remotion only. Golden-frame SSIM tests. |
 | **Color / LUT** | `.cube` via ffmpeg `lut3d` (tetrahedral), `zscale`/`colorspace` for conversions, `ocio` filter (FFmpeg 8.1+) or `ociobakelut` for managed workflows, `libplacebo` when a GPU exists | WebGL LUT shader on the preview canvas | Lumetri-style Input LUT + Look |
 | **Audio processing** | ffmpeg: `volume`, `afade`, `amix`, `atempo` (default) / `rubberband` (HQ, GPL), `afftdn`/`arnndn` denoise, `acompressor`, `equalizer`, `ebur128` meter, **two-pass `loudnorm`** on the master | Web Audio for preview only | Targets -14/-16/-23 LUFS presets |
-| **Local transcription** | **whisper.cpp** `whisper-cli` prebuilt per platform + ggml models downloaded on demand + Silero VAD. Word timestamps `-ojf` → `Caption[]` (reuse `@remotion/install-whisper-cpp` `toCaptions`). | OpenAI API route (existing) or `@remotion/whisper-web` | base.en: ~10 to 20x realtime on this CPU |
+| **Local transcription** | **whisper.cpp** `whisper-cli` prebuilt per platform + ggml models downloaded on demand + Silero VAD. Word timestamps `-ojf` → `Caption[]` (reuse `@remotion/install-whisper-cpp` `toCaptions`). | Hosted ASR API route (e.g. OpenAI `whisper-1`) or `@remotion/whisper-web` | base.en: ~10 to 20x realtime on this CPU |
 | **Scene detection** | ffmpeg `scdet` (downscaled) built in. PySceneDetect `detect-adaptive` in the optional Python sidecar | none (or send to daemon) | Emit markers + "split at scenes" action |
 | **Silence cutting** | ffmpeg `silencedetect` → keep-ranges → items. auto-editor binary as optional/agent tool (`--export v3`/`premiere`) | mediabunny `AudioSampleSink` RMS in a Worker | |
 | **Interchange (OTIO)** | Native TS `.otio` writer/reader + frozen Python `jasper-otio` sidecar (OTIO 0.18 + plugins) for **FCP7 XML (Premiere)**, EDL, AAF, FCPXML | `.otio` JSON only (download) | Put Jasper-specific data in `metadata.jasper` |
@@ -881,5 +906,5 @@ relinking by filename, plus duration/timecode checks.
    ("Pro interchange pack").
 5. **whisper.cpp on low-end CPUs:** default to `base`/`small` q5, run VAD, and show the realtime factor.
    Offer the cloud API.
-6. The Remotion version bump (4.0.499 → 4.0.53x) also moves mediabunny (1.50 → 1.6x). Coordinate with the
-   Remotion upgrade.
+6. Remotion pins its own mediabunny version. Choose the Remotion version (4.0.53x at time of writing) and
+   use the mediabunny version it pins, and upgrade the two together.

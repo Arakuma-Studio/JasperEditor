@@ -31,36 +31,32 @@ Reference: Adobe Premiere Pro 2024–2026 (v24.4 new clip design, v25 "Spectrum"
 
 ---
 
-## 1. Where the current starter code maps to Premiere concepts
+## 1. Premiere concepts mapped to JasperEditor modules
 
-The Remotion Editor Starter has a fixed vertical layout:
+JasperEditor is written from scratch (pnpm monorepo: `apps/web`, `apps/desktop`, `apps/engine`, `packages/*`). We do not reuse any template code. The table below maps each Premiere concept to the module we plan to build. Paths are **proposals**; the authoritative layout lives in `docs/ARCHITECTURE.md` once written.
 
-```
-ActionRow → TopPanel(Canvas | Inspector) → PlaybackControls → TimelineResizer → Timeline
-```
+The editor shell is a **docking workspace** (§5), not a fixed vertical stack of regions. Every functional area (monitors, timeline, inspector, tools) is a dockable panel.
 
-See `src/editor/editor.tsx`. The table below maps each existing module to its Premiere counterpart.
-
-| Premiere concept | Current starter module | Change needed |
+| Premiere concept | Proposed JasperEditor module | Notes |
 |---|---|---|
-| Application frame / workspace | `src/editor/editor.tsx` (fixed flex column) | Replace with a docking `WorkspaceHost` (§5) |
-| Program Monitor | `src/editor/canvas/*`, `src/editor/top-panel.tsx`, `src/editor/preview-size*.tsx` | Wrap in a `ProgramMonitorPanel` with Premiere monitor chrome (§8) |
-| Monitor transport + timecode | `src/editor/playback-controls/*` (`time-display.tsx`, `project-duration-display.tsx`, `play-pause.tsx`, `seeking.tsx`, `loop-button.tsx`) | Move into the monitor's bottom bar; add a Button Editor model |
-| Tools panel | `src/editor/action-row/tool-selection.tsx`, `split-item-tool.tsx`, `EditModeContext` in `src/editor/edit-mode.tsx` | Vertical `ToolsPanel` with the Premiere tool set (§10). Extend `editMode` into a `ToolId` union |
-| Timeline toolbar (snap/linked/marker/wrench) | `src/editor/action-row/snapping-toggle.tsx`, `keyboard-shortcuts/snapping-shortcut.tsx` | Move into the timeline header (§9.2) |
-| Track headers | `src/editor/timeline/timeline-side-panel/*` (`SIDE_PANEL_WIDTH = 110`, `timeline-track-header.tsx`, `timeline-hide-track.tsx`, `timeline-mute-track.tsx`) | Widen to about 176 px. Add lock, target, sync lock, patch, M/S/voice-over (§9.3) |
-| Clip colors | `ITEM_COLORS` in `src/editor/constants.ts` | Replace with the label-color system (§3.4) |
-| Track height | `DEFAULT_TRACK_HEIGHT = 32`, `TRACK_PADDING = 2` in `src/editor/state/items.ts` | Per-track, user-resizable height (§4) |
-| Ruler | `src/editor/timeline/ticks/*` (`TICKS_HEIGHT = 30`) | Premiere ruler + work-area bar + render bar + markers (§9.4) |
-| Playhead | `src/editor/timeline/playhead.tsx` (`PLAYHEAD_WIDTH = 19`) | Blue head and a 1 px line (§9.5) |
-| Timeline zoom | `src/editor/timeline/timeline-zoom-slider.tsx` | Premiere "zoom scroll bar" with round end handles (§9.7) |
-| Rolling edits | `src/editor/timeline/timeline-track/timeline-track-rolling-edit(s).tsx` | Keep; bind to Rolling Edit tool `N` |
-| Inspector | `src/editor/inspector/*` | Split into **Properties** (context panel) and **Effect Controls** (keyframes) (§11, §13) |
-| Panel resizer | `src/editor/timeline-resizer.tsx` | Replaced by dock splitters |
-| Shortcuts | `src/editor/keyboard-shortcuts/*.tsx` (each adds its own `window.keydown` listener) | Replace with one panel-scoped keymap registry (§16) |
-| Theme tokens | `src/editor/editor-starter.css` (`--color-editor-starter-*`) | Alias to the `--pr-*` tokens (§3.6) |
-| Context menus | `src/editor/context-menu.tsx` (Radix) | Keep Radix and restyle (§3.5 menus) |
-| z-order | `src/editor/z-indices.ts` | Add layers for dock overlays, floating panels and the maximize state |
+| Application frame / workspace | `apps/web/src/workspace/` (`WorkspaceHost`, layout presets, persistence) | Docking host built on dockview (§5) |
+| Program / Source Monitor | `apps/web/src/panels/monitor/` (`MonitorPanel`, `mode: 'source' \| 'program'`) | Wraps the Remotion `<Player>`; Premiere monitor chrome (§8) |
+| Monitor transport + timecode | `apps/web/src/panels/monitor/transport/` | Timecode display, duration display, play/stop, step, loop; Button Editor model (§8.1) |
+| Tools panel | `apps/web/src/panels/tools/` + a `ToolId` union in the editor store | Vertical `ToolsPanel` with the Premiere tool set (§10) |
+| Timeline toolbar (snap/linked/marker/wrench) | `apps/web/src/panels/timeline/header/` | Lives in the timeline header (§9.2) |
+| Track headers | `apps/web/src/panels/timeline/track-header/` | About 176 px wide; lock, target, sync lock, patch, eye, M/S/voice-over (§9.3) |
+| Clip colors | `packages/ui` label-color system | Label presets + per-media-kind defaults (§3.4) |
+| Track height | per-track `height` in the timeline model | User-resizable, per-track (§4, §9.3) |
+| Ruler | `apps/web/src/panels/timeline/ruler/` | Premiere ruler + work-area bar + render bar + markers (§9.4) |
+| Playhead | `apps/web/src/panels/timeline/playhead/` | Blue 12 px head and a 1 px line (§9.5) |
+| Timeline zoom | `apps/web/src/panels/timeline/zoom-scrollbar/` | Premiere "zoom scroll bar" with round end handles (§9.7) |
+| Trim modes (ripple/rolling/slip/slide) | `packages/timeline-core` (pure edit operations) + timeline UI | Rolling Edit bound to `N` (§10) |
+| Inspector | `apps/web/src/panels/properties/` and `apps/web/src/panels/effect-controls/` | Split into **Properties** (context panel) and **Effect Controls** (keyframes) (§11, §13) |
+| Panel resizing | dock splitters (dockview) | No bespoke resizer components |
+| Shortcuts | `apps/web/src/keymap/` | One panel-scoped keymap registry (§16.8) |
+| Theme tokens | `packages/ui/src/theme/premiere-tokens.css` | `--pr-*` tokens + Tailwind 4 bridge (§3.6) |
+| Context menus | Radix Context Menu / Dropdown Menu | Restyled per §3.5 menus |
+| z-order | a single z-index scale in `packages/ui` | Layers for dock overlays, floating panels, maximize state, menus, tooltips, drag ghosts |
 
 ---
 
@@ -226,7 +222,7 @@ A timeline screenshot from v25 shows these on-screen colors:
 | Solid / color matte / adjustment layer | Tan | |
 | Text / title (graphic) | Lavender | v25 graphic clips render in the lavender/magenta family |
 
-- Implement this as `LABEL_DEFAULTS: Record<MediaKind, LabelName>`. It replaces `ITEM_COLORS` in `src/editor/constants.ts`.
+- Implement this as `LABEL_DEFAULTS: Record<MediaKind, LabelName>` in `packages/ui`. It is the single source of clip body colors.
 - Let users re-label per clip. The clip context menu has a **Label ▸** submenu and a **Select Label Group** item.
 - Ship the presets `default | classic | vibrant` as JSON.
 - Optional rename to avoid trade-dress confusion: `violet→indigo`, `iris→steel`, `caribbean→jade`, `lavender→orchid`, `cerulean→lagoon`, `forest→moss`, `rose→ruby`, `mango→amber`.
@@ -274,7 +270,7 @@ A timeline screenshot from v25 shows these on-screen colors:
 
 **Scrollbars**
 - 8 px wide; thumb `--pr-border-strong`, radius 4; track transparent.
-- The starter's `scrollbarStyle` in `src/editor/constants.ts` becomes `scrollbar-color: var(--pr-border-strong) transparent`.
+- Apply globally with `scrollbar-color: var(--pr-border-strong) transparent` (plus `::-webkit-scrollbar` rules for 8 px width where needed).
 
 **Focus**
 - The *focused panel* gets a 1 px `--pr-focus-ring` outline on its frame. This is how Premiere shows which panel receives keyboard shortcuts, and it is essential for panel-scoped shortcuts.
@@ -282,10 +278,10 @@ A timeline screenshot from v25 shows these on-screen colors:
 
 ### 3.6 Implementation: tokens file + Tailwind 4 bridge
 
-Create `src/editor/theme/premiere-tokens.css` and import it from `src/editor/editor-starter.css`.
+Create `packages/ui/src/theme/premiere-tokens.css` and import it from the web app's global stylesheet (e.g. `apps/web/src/app.css`).
 
 ```css
-/* src/editor/theme/premiere-tokens.css */
+/* packages/ui/src/theme/premiere-tokens.css */
 :root,
 [data-pr-theme='darkest'] {
 	--pr-bg-app: #000;
@@ -355,7 +351,7 @@ Create `src/editor/theme/premiere-tokens.css` and import it from `src/editor/edi
 }
 ```
 
-Tailwind 4 bridge (in `editor-starter.css`, next to the existing `@theme` block):
+Tailwind 4 bridge (in the web app's global stylesheet, after the `@import 'tailwindcss'` line):
 
 ```css
 @theme inline {
@@ -374,13 +370,6 @@ Tailwind 4 bridge (in `editor-starter.css`, next to the existing `@theme` block)
 	--color-pr-accent-fill: var(--pr-accent-fill);
 	--color-pr-timecode: var(--pr-timecode);
 	--font-pr: var(--pr-font-ui);
-}
-/* Re-point the starter tokens so existing components re-skin immediately */
-@theme {
-	--color-editor-starter-bg: var(--pr-bg-panel);
-	--color-editor-starter-panel: var(--pr-bg-panel-alt);
-	--color-editor-starter-border: var(--pr-bg-app);
-	--color-editor-starter-accent: var(--pr-accent);
 }
 ```
 
@@ -466,7 +455,7 @@ Usage: `bg-pr-panel text-pr-text border-pr-border-subtle font-pr`.
 - **Right**, as icon buttons with tooltips:
   1. **Workspaces menu** (layout icon), with list items: Editing, Essentials, Assembly, Color, Effects, Audio, Captions and Graphics, Vertical, Learning, custom workspaces…, Reset to Saved Layout, Save as New Workspace, Edit Workspaces. Help docs say the icon sits at the upper-left in 2026 builds and upper-right in v22–v25. **Put it on the right.**
   2. Quick Export.
-  3. Background tasks / progress: native ffmpeg jobs, proxies, renders. This maps to `src/editor/action-row/tasks-indicator`.
+  3. Background tasks / progress: native ffmpeg jobs, proxies, renders. Shows a badge count and opens the **Jobs** panel (§17).
   4. **Agent** (JasperEditor-specific).
   5. Share / review.
   6. Search / command palette.
@@ -540,7 +529,7 @@ Behavior as specified by the Adobe docs:
 Layout model to persist (versioned):
 
 ```ts
-// src/editor/workspace/types.ts
+// apps/web/src/workspace/types.ts
 export type PanelId =
 	| 'project' | 'mediaBrowser' | 'libraries' | 'info' | 'markers' | 'history'
 	| 'effects' | 'effectControls' | 'properties' | 'graphicsTemplates'
@@ -567,7 +556,7 @@ export interface SavedWorkspace {
 Persistence:
 - Current layouts go to `localStorage` (web) or `app.getPath('userData')/workspaces/*.json` (Electron).
 - "Saved" layouts are kept separately so that "Reset to Saved Layout" works.
-- Follow the existing `src/editor/state/*-persistance.ts` pattern.
+- Wrap persistence in a small versioned storage adapter (`load/save/migrate`) with the same interface on web and Electron, so layouts survive schema changes.
 
 ### 5.4 Default workspaces
 
@@ -773,7 +762,7 @@ Both monitors share one component, `MonitorPanel`, with a `mode: 'source' | 'pro
 - Shows the active sequence (bound to the active Timeline tab).
 - In/Out here are *sequence* In/Out; they are the same marks as on the Timeline ruler.
 - Lift (`;`) removes In→Out on targeted tracks and leaves a gap. Extract (`'`) removes it and ripples.
-- Direct manipulation: selecting a clip or graphic layer shows transform handles in the Program Monitor. The Remotion Editor Starter already has canvas selection/transform in `src/editor/selection-border/*`; restyle the handles as white squares with a blue outline.
+- Direct manipulation: selecting a clip or graphic layer shows transform handles in the Program Monitor, drawn as an overlay above the Remotion `<Player>` (bounding box, corner/edge scale handles, rotation handle). Style the handles as white squares with a blue outline.
 
 **Safe margins** (reference only, never exported)
 - Draw two centered rectangles: **action safe** inset 5% per side (90%×90%) and **title safe** inset 10% per side (80%×80%). Adobe describes these as "10% and 20%" total.
@@ -824,7 +813,7 @@ Both monitors share one component, `MonitorPanel`, with a `mode: 'source' | 'pro
 
 **Toolbar row**, 16 px icons, toggles blue when on:
 1. **Insert and overwrite sequences as nests or individual clips.** Default: nest.
-2. **Snap in Timeline** (magnet; `S`). Default ON. The starter's snapping toggle lives in `src/editor/action-row/snapping-toggle.tsx`.
+2. **Snap in Timeline** (magnet; `S`). Default ON.
 3. **Linked Selection** (chain/select icon). Default ON: clicking video also selects its linked audio. Alt-click temporarily ignores links.
 4. **Add Marker** (`M`).
 5. **Timeline Display Settings** (wrench). Its menu:
@@ -943,9 +932,9 @@ Track headers are 176 px wide by default and are separated from the clip area by
 - Head: a 12 px wide downward-pointing pentagon/shield sitting in the ruler.
 - Line: 1 px through all tracks, drawn above clips and below drag overlays.
 - Drag the head to scrub. Audio scrubbing is on by default; `Shift+S` toggles scrubbing audio.
-- Auto-scroll during playback (Timeline preference): **Page Scroll** (default) or **Smooth Scroll** (playhead stays centered) or No Scroll. The starter's `timeline-scroll-while-playing.tsx` implements follow; add the modes.
+- Auto-scroll during playback (Timeline preference): **Page Scroll** (default) or **Smooth Scroll** (playhead stays centered) or No Scroll. Implement all three modes.
 - The playhead snaps when Snap is on and the preference "Snap playhead in Timeline when Snap is enabled" is set.
-- Restyle `src/editor/timeline/playhead.tsx` (currently `PLAYHEAD_WIDTH = 19`, `PLAYHEAD_SVG_WIDTH = 54`) to a 12 px head.
+- The head is 12 px wide (see §4.3); keep its hit area wider (about 20 px) for easy grabbing.
 
 ### 9.6 Clips on the timeline (v24.4+ design)
 
@@ -1000,13 +989,13 @@ Track headers are 176 px wide by default and are separated from the clip area by
   - macOS: vertical by default.
   - Alt+wheel = zoom horizontally.
 - Trackpad pinch = zoom.
-- The existing `timeline-zoom-slider.tsx` and `use-timeline-zoom.ts` need a "zoom around playhead" behavior plus this visual.
+- Zoom operations must keep the playhead at the same screen x ("zoom around playhead"); wheel/pinch zoom anchors on the pointer instead.
 
 ### 9.8 Snapping and linked selection
 
-- With Snap on, dragged clip edges, the playhead, markers and In/Out snap within about 8 px (the starter's `DEFAULT_TIMELINE_SNAPPING_THRESHOLD_PIXELS = 5`).
+- With Snap on, dragged clip edges, the playhead, markers and In/Out snap within about 8 px (tune between 5 and 10 px; make it a preference).
 - A **snap indicator** appears: a vertical line through all tracks with small triangles top and bottom.
-- Snap is toggled with `S`; the starter already has `keyboard-shortcuts/snapping-shortcut.tsx`.
+- Snap is toggled with `S` via the keymap registry (§16.8).
 - Linked selection is described in §9.2. `Ctrl+L` links/unlinks; Alt-click selects only one side.
 
 ### 9.9 Editing gestures (Selection tool)
@@ -1033,15 +1022,15 @@ This is a vertical 40 px strip docked between Project and Timeline. It can also 
 | 1 | **Selection** | `V` | arrow; red `[` `]` trim cursors at edges | default; select, move, trim |
 | 2 | **Track Select Forward** / Track Select Backward | `A` / `Shift+A` | double arrow → | selects the clicked clip and everything to its right (backward: left) on that track; Shift = all tracks |
 | 3 | **Ripple Edit** / **Rolling Edit** / **Rate Stretch** / Remix | `B` / `N` / `R` / — | yellow ripple bracket / red rolling `][` / stretch | Ripple trims and closes gaps; Rolling moves an edit point between two clips; Rate Stretch changes speed by dragging an edge |
-| 4 | **Razor** | `C` | razor blade | click splits a clip at that frame (snaps to playhead); Shift-click = all tracks. The starter's `split-item-tool.tsx` is the equivalent |
+| 4 | **Razor** | `C` | razor blade | click splits a clip at that frame (snaps to playhead); Shift-click = all tracks |
 | 5 | **Slip** / **Slide** | `Y` / `U` | `|↔|` / `↔||↔` | Slip changes source In/Out keeping position and duration (4-up monitor view); Slide moves a clip between its neighbors, trimming them |
 | 6 | **Pen** / Rectangle / Ellipse (Shape) | `P` | pen nib | Pen adds keyframes on rubber bands (Ctrl-click), draws masks/shapes in Program |
 | 7 | **Hand** / **Zoom** | `H` / `Z` | open hand / magnifier (+, Alt = −) | Hand pans the timeline; Zoom click-zooms in, Alt-click out, drag-marquee zoom |
-| 8 | **Type** / Vertical Type | `T` | I-beam | click in the Program Monitor to create a text graphic (Remotion text item in the starter: `EditModeContext 'create-text'`) |
+| 8 | **Type** / Vertical Type | `T` | I-beam | click in the Program Monitor to create a text graphic (a Remotion-rendered text item) |
 | 9 | Generative Extend (Premiere) → **Agent tool** (JasperEditor) | — | sparkle | Drag a clip edge to ask the agent to extend/fill. Optional |
 
 - Holding a tool key (for example keeping `C` pressed) should switch **temporarily** (spring-loaded) and revert on key-up. Premiere doesn't do this by default; it is optional and off by default.
-- Model: `type ToolId = 'selection'|'trackSelectForward'|'trackSelectBackward'|'ripple'|'rolling'|'rateStretch'|'razor'|'slip'|'slide'|'pen'|'rectangle'|'ellipse'|'hand'|'zoom'|'type'|'verticalType'|'agent'`. This extends `EditModeContext` in `src/editor/edit-mode.tsx`, whose current values are `select | draw-solid | create-text`.
+- Model: `type ToolId = 'selection'|'trackSelectForward'|'trackSelectBackward'|'ripple'|'rolling'|'rateStretch'|'razor'|'slip'|'slide'|'pen'|'rectangle'|'ellipse'|'hand'|'zoom'|'type'|'verticalType'|'agent'`. Store the active tool in the editor store; the Program Monitor also reads it (e.g. `type` → click creates text; `rectangle`/`ellipse` → draw a shape; `hand`/`zoom` → pan/zoom the viewer).
 
 ---
 
@@ -1120,7 +1109,7 @@ Two-pane panel: the property list on the left (about 55%) and the **mini-timelin
 - `Ctrl+L` loops audio.
 
 **Implementation notes**
-- The starter's `src/editor/inspector/controls/*` provides the value controls (position, rotation, opacity, crop…). Wrap them with the stopwatch/keyframe-nav UI and a keyframe model:
+- Build a shared set of value controls (scrubby number, vec2, angle, percent, color, dropdown) in `packages/ui`, used by both Properties and Effect Controls. Effect Controls wraps them with the stopwatch/keyframe-nav UI and a keyframe model:
   ```ts
   type Keyframe = {t: number; v: number | [number, number]; interp: 'linear'|'bezier'|'autoBezier'|'continuousBezier'|'hold'; easeIn?: [number, number]; easeOut?: [number, number]};
   ```
@@ -1146,8 +1135,8 @@ Two-pane panel: the property list on the left (about 55%) and the **mini-timelin
 
 ## 13. Properties panel (v25+) and Essential Graphics
 
-The **Properties** panel is the modern, context-sensitive inspector. It replaced most of the Essential Graphics "Edit" tab in v25. **It is the natural home for the starter's `src/editor/inspector/*`.**
-- **Nothing selected** → sequence properties: frame size, fps, and the Remotion "composition" inspector (`composition-inspector.tsx`).
+The **Properties** panel is the modern, context-sensitive inspector. It replaced most of the Essential Graphics "Edit" tab in v25. **It is JasperEditor's primary inspector.**
+- **Nothing selected** → sequence properties: frame size, fps, duration, background color (the sequence's Remotion composition settings).
 - **Video clip** → sections Transform (Position, Scale, Rotation, Opacity, Anchor), Crop, Speed & Duration, Blend Mode, Quick actions (Auto Reframe, Scene Edit Detection → for us "Agent: auto-reframe / detect cuts").
 - **Audio clip** → Volume (clip gain slider), Pan, Enhance Speech, Auto Duck. Quick action: **Essential Sound tags** (Dialogue / Music / SFX / Ambience).
 - **Text / graphic** → a header row with the graphic name and a **layer list** (eye toggle + T icon per layer; drag to reorder). Sections:
@@ -1331,7 +1320,7 @@ Premiere numbers workspaces by their order in the workspace list. We should bind
 | Go to next / previous marker | Shift+M / Ctrl+Shift+M | Shift+M / Shift+Cmd+M | |
 | Show next / previous screen | Page Down / Page Up | same | |
 
-JKL state machine (implement in `src/editor/playback/shuttle.ts`):
+JKL state machine (implement in `apps/web/src/playback/shuttle.ts`):
 
 ```ts
 const STEPS = [1, 2, 4, 8]; // Premiere: 1x→2x→3x(4x)→8x; pick 1,2,4,8
@@ -1442,14 +1431,14 @@ Multi-camera (optional): `1`–`9` cut to camera N during multicam playback; `Ct
 
 ### 16.8 Keymap implementation requirements
 
-1. **One registry.** Create `src/editor/keymap/registry.ts` with entries `{id, win: 'Ctrl+K', mac: 'Cmd+K', scope: 'global'|'timeline'|'program'|'source'|'project'|'effectControls'|..., when?: (ctx) => boolean, run: (ctx) => void}`.
+1. **One registry.** Create `apps/web/src/keymap/registry.ts` with entries `{id, win: 'Ctrl+K', mac: 'Cmd+K', scope: 'global'|'timeline'|'program'|'source'|'project'|'effectControls'|..., when?: (ctx) => boolean, run: (ctx) => void}`.
    - Resolve bindings against the **focused panel** (tracked by the dock host; see §5.2) first, then global.
    - Premiere shortcuts are panel-scoped: `=` zooms the Timeline when it has focus but zooms thumbnails in Project. Arrow keys differ per panel too.
-   - Remove the per-component `window.addEventListener('keydown')` hooks in `src/editor/keyboard-shortcuts/*`.
+   - Install exactly one `keydown` listener (on `window`, capture phase) that dispatches through the registry. Components never add their own `keydown` listeners for commands.
 2. **Match on `KeyboardEvent.code`** (physical key: `KeyJ`, `Semicolon`, `Quote`, `Comma`, `Period`, `Backquote`, `Backslash`, `Equal`, `Minus`, `BracketLeft`, `BracketRight`).
    - This keeps editing-key *positions* stable on non-US layouts, which is how NLE keymaps behave.
    - Show labels using `navigator.keyboard.getLayoutMap()` where available.
-3. **Ignore shortcuts while typing** in `input`, `textarea` or `[contenteditable]`, except Escape / Enter handling. The Remotion starter's text editing is in `src/editor/canvas/*` / `items/text/*`.
+3. **Ignore shortcuts while typing** in `input`, `textarea` or `[contenteditable]`, except Escape / Enter handling. This includes in-viewer text editing of graphics in the Program Monitor.
 4. **Browser-reserved combos.** Chrome/Edge will not deliver `Ctrl+N`, `Ctrl+W`, `Ctrl+T`, `Ctrl+Shift+N/T/W`, `Ctrl+Tab`, or `Ctrl+Q` (Linux) to pages, even to installed PWAs outside Keyboard-Lock fullscreen.
    - Web/PWA fallbacks: New Sequence `Alt+N`, Close Panel `Alt+W`, New Text Layer `Alt+T` (show these in menus when not in Electron).
    - Electron receives everything. Register menu accelerators there with `role`-less custom items and forward them to the renderer registry via IPC.
@@ -1459,11 +1448,11 @@ Multi-camera (optional): `1`–`9` cut to camera N during multicam playback; `Ct
    - a searchable command list and conflict warnings.
    - Presets: "Premiere (default)", "Avid-like", "FCP 7-like", "Custom".
    - Store as JSON (`keymaps/<name>.json`) and allow import/export.
-6. Keep the starter's existing behaviors mapped:
-   - `space-to-play-pause.tsx` → Space;
-   - `backspace-to-delete.tsx` → Clear;
-   - `undo-redo.tsx`, `copy-paste-layers.tsx`, `duplicate-layers.tsx` → Duplicate is `Ctrl+Shift+/` in Premiere; Alt-drag also duplicates;
-   - `select-all-shortcut.tsx`, `save-shortcut.tsx`, `snapping-shortcut.tsx` → S.
+6. Baseline commands that must be registered from day one:
+   - Play/Stop → Space;
+   - Clear → Delete/Backspace;
+   - Undo / Redo, Copy / Paste; Duplicate is `Ctrl+Shift+/` in Premiere, and Alt-drag also duplicates;
+   - Select All, Save, and Snap toggle → S.
 
 ---
 
@@ -1472,18 +1461,18 @@ Multi-camera (optional): `1`–`9` cut to camera N during multicam playback; `Ct
 - **Media Browser**: left = locations tree; right = file grid/list with hover scrub; ingest checkbox. Web uses the File System Access API; Electron uses native FS. `Shift+O` opens the selection in Source.
 - **Info**: key–value readout of the selection (Type, Video, Audio, Duration, In, Out, Cursor) and the sequence playhead / each track's clip at the playhead. 11 px text.
 - **Markers**: list rows with color swatch, name, In/Out/Duration, and comment. Color filter chips at the top; search field.
-- **History**: an undo stack list. The current state is highlighted; later states are grayed. Click to jump. Hook it to the starter's undoable state (`src/editor/state/*`, `undoableState`).
+- **History**: an undo stack list. The current state is highlighted; later states are grayed. Click to jump. Back it with the editor store's undo/redo history, where each entry carries a human-readable label (e.g. "Razor", "Move clip", "Agent: remove silences").
 - **Metadata**: clip, file and XMP fields.
 - **Text** (v25+): tabs `Transcript | Captions | Graphics`.
   - Transcript: text-based editing, with a speaker label, timecode and paragraphs. Selecting text selects a range, which can be inserted/extracted.
   - Captions: segments with In/Out timecodes and editable text.
-  - The starter's `src/editor/captioning/*` plus `@remotion/openai-whisper` feed this.
+  - Transcription (e.g. `@remotion/openai-whisper` or whisper.cpp in the native engine) feeds this.
 - **Agent** (JasperEditor):
   - **Top**: a chat/plan area.
   - **Middle**: pending actions list. Each action shows its targets (clip/track/time range) and **ghost previews** on the timeline: dashed `--pr-accent` outlines and a 30% blue fill for proposed clips/edits.
   - **Bottom**: prompt field with an "Apply" / "Apply all" / "Reject" pill row.
   - Agent edits enter the History panel as named steps, e.g. "Agent: remove silences".
-- **Jobs** (native engine): a queue of ffmpeg/fframes/Remotion jobs with per-job progress bars (`--pr-accent`), ETA, and cancel. The header "background tasks" icon shows a badge count. Existing component: `src/editor/action-row/tasks-indicator`.
+- **Jobs** (native engine): a queue of ffmpeg/fframes/Remotion jobs with per-job progress bars (`--pr-accent`), ETA, and cancel. The header "background tasks" icon shows a badge count.
 
 ---
 
@@ -1499,7 +1488,7 @@ Multi-camera (optional): `1`–`9` cut to camera N during multicam playback; `Ct
 - track-select forward / backward;
 - insert-drag (with an arrow) and overwrite-drag.
 
-Existing plumbing: `src/editor/force-specific-cursor.tsx`.
+Plumbing: while a drag/trim is active, force the gesture's cursor on the whole document (e.g. a class on `<html>` or a full-screen transparent overlay) so it doesn't flicker when the pointer leaves the clip.
 
 **Drag feedback when dragging media onto the timeline**:
 - a translucent clip ghost at 60% opacity;
@@ -1630,8 +1619,8 @@ Use the same color tokens. Touch uses the Darkest theme only, plus a pure-black 
   ```
   Provide maskable icons.
 - **Window Controls Overlay** (desktop PWA): the 36 px header bar becomes the draggable title bar. Use `env(titlebar-area-*)` and `app-region: drag` on the empty header area. This gives the Premiere-like single header.
-- Use `100dvh` and `env(safe-area-inset-*)` paddings. Disable pull-to-refresh on the timeline (`overscroll-behavior: none`); the starter already sets `overscroll-behavior-x: none` in `editor-starter.css`. Use `touch-action: none` on the timeline and viewer canvases and handle gestures with Pointer Events. Hammer.js is not needed: use a small pinch/pan recognizer on `pointerdown/move/up` with multiple pointer IDs.
-- Offline: cache the app shell, fonts, icons and WASM. Media stays in OPFS / IndexedDB (the starter's `src/editor/caching/*`).
+- Use `100dvh` and `env(safe-area-inset-*)` paddings. Disable pull-to-refresh and swipe-back on the timeline (`overscroll-behavior: none`; at minimum `overscroll-behavior-x: none` on `html, body`). Use `touch-action: none` on the timeline and viewer canvases and handle gestures with Pointer Events. Hammer.js is not needed: use a small pinch/pan recognizer on `pointerdown/move/up` with multiple pointer IDs.
+- Offline: cache the app shell, fonts, icons and WASM. Media stays in OPFS / IndexedDB (a local media cache layer in `apps/web`).
 
 ---
 
@@ -1650,11 +1639,10 @@ Use the same color tokens. Touch uses the Darkest theme only, plus a pure-black 
 
 1. **Tokens + fonts**
    - Add `premiere-tokens.css`, self-hosted Source Sans 3 and the Tailwind bridge.
-   - Re-point `--color-editor-starter-*`.
-   - Replace `ITEM_COLORS` with the label system.
-   - This gives an instant re-skin with no layout change.
+   - Add the label-color system (`LABEL_DEFAULTS`, presets).
+   - All later components consume only `--pr-*` tokens / `pr-*` utilities.
 2. **Dock host**
-   - Add `dockview`, create `WorkspaceHost`, and wrap the existing Canvas / Inspector / Timeline / PlaybackControls as panels.
+   - Add `dockview`, create `WorkspaceHost`, and register the first panels (Program Monitor with transport, Properties, Timeline, Project) as dock panels.
    - Build the Editing (v25 variant) preset.
    - Add focus tracking, `` ` `` maximize and workspace persistence.
 3. **Keymap registry**: panel-scoped, with the Premiere default map, JKL shuttle, and the browser-reserved fallbacks.
@@ -1669,7 +1657,7 @@ Use the same color tokens. Touch uses the Darkest theme only, plus a pure-black 
 5. **Tools panel** + tool cursors + trim modes (ripple / rolling / slip / slide / rate stretch).
 6. **Monitors**: Source + Program chrome, button bar + Button Editor, safe margins, playback resolution (proxy tiers).
 7. **Project panel** (list/icon views, bins) and **Effects** panel.
-8. **Effect Controls** with keyframes + mini-timeline; **Properties** panel refactor of `src/editor/inspector/*`.
+8. **Effect Controls** with keyframes + mini-timeline; **Properties** panel (context-sensitive inspector).
 9. **Audio Meters**, **Audio Track Mixer**; Lumetri-style panel + scopes.
 10. **Touch shells** (phone/tablet), PWA manifest + WCO; Electron frameless + native menu + popouts.
 

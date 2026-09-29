@@ -1,7 +1,7 @@
 # Orquester multi-platform setup (web + mobile PWA + Electron desktop): analysis and a recipe for JasperEditor
 
 Source analysed: `/var/lib/orquester/workspaces/jaspersito/orquester` (HEAD `0b773dc9`, pnpm 10 monorepo).
-All paths below are relative to that repo root unless prefixed with `JasperEditor/`.
+All paths below are relative to that repo root unless prefixed with `JasperEditor/`. Paths in §8 describe the **planned** from-scratch JasperEditor monorepo (`apps/web`, `apps/desktop`, `apps/engine`, `packages/*`); nothing in this doc derives from, or reuses, the purchased editor template.
 Secrets (`.env*`, `.secrets/`, `DEPLOY_TO_VPS.md`, `deploy/targets.conf`, `.stage/daemon/daemon.json` password hash) were deliberately not read or copied.
 
 ---
@@ -24,7 +24,7 @@ Secrets (`.env*`, `.secrets/`, `DEPLOY_TO_VPS.md`, `deploy/targets.conf`, `.stag
     - in-process esbuild-to-CJS bundling of the daemon;
     - the unix-socket/IPC byte bridge;
     - a separate desktop renderer app.
-  - Instead, run the media daemon as a **separate process** (Electron `utilityProcess.fork` or `ELECTRON_RUN_AS_NODE`) on **loopback TCP with a random port and a per-launch token**, and have Electron load the **same React Router SPA build** served by that daemon. `<video>`, Remotion `<Player>`, waveform and thumbnail requests then use plain HTTP with Range support in every runtime.
+  - Instead, run the media engine daemon (`apps/engine`) as a **separate process** (Electron `utilityProcess.fork` or `ELECTRON_RUN_AS_NODE`) on **loopback TCP with a random port and a per-launch token**, and have Electron load the **same client-rendered SPA build** (`apps/web`) served by that engine. `<video>`, Remotion `<Player>`, waveform and thumbnail requests then use plain HTTP with Range support in every runtime.
 
 ---
 
@@ -158,7 +158,7 @@ Dependencies are wired with `"@orquester/ui": "workspace:*"`. This source-sharin
 
 ### Resolved versions (from `pnpm-lock.yaml`)
 
-| Tool | Orquester | JasperEditor today | Note |
+| Tool | Orquester | JasperEditor target (suggested) | Note |
 |---|---|---|---|
 | electron | 33.4.11 | – | Chromium 130 / Node 20.18. Pick current stable for JasperEditor (needs good WebCodecs). |
 | electron-builder | 26.15.3 (+ @electron/rebuild 4.0.4) | – | |
@@ -226,7 +226,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
 
 The file also handles a deep link (`?workflow=…&run=…`) that the SW opens from a push-notification click.
 
-Routing: there is **no router**. The app is a single screen driven by zustand state (tabs/panels). Deep links are parsed by hand from `location.search` and stripped with `history.replaceState`. JasperEditor uses React Router 7, so its routing differs (see §8.2).
+Routing: there is **no router**. The app is a single screen driven by zustand state (tabs/panels). Deep links are parsed by hand from `location.search` and stripped with `history.replaceState`. JasperEditor plans a client-side router (e.g. React Router 7 in SPA mode), so its routing differs (see §8.2).
 
 ### 3.3 `index.html` (the PWA-relevant head)
 
@@ -472,7 +472,7 @@ Why this is unsuitable for a video editor:
 
 ### 4.5 Desktop renderer build
 
-`apps/desktop/vite.config.ts` is identical to the web one plus `base: "./"`, which gives relative asset URLs so `loadFile` works under `file://`. `index.html` has no manifest and no SW. It is a **second copy of the web entry** with a different transport. That works because Orquester has no router. With React Router 7, `file://` plus `BrowserRouter` paths do not work, so JasperEditor should not keep a second renderer app (see §8.5).
+`apps/desktop/vite.config.ts` is identical to the web one plus `base: "./"`, which gives relative asset URLs so `loadFile` works under `file://`. `index.html` has no manifest and no SW. It is a **second copy of the web entry** with a different transport. That works because Orquester has no router. With a history-based client router (e.g. React Router 7), `file://` plus `BrowserRouter` paths do not work, so JasperEditor should not keep a second renderer app (see §8.5).
 
 ### 4.6 Auto-update, signing, native modules
 
@@ -616,7 +616,7 @@ Tailwind sharing (TW3): each app's `tailwind.config.ts` uses `presets: [orqueste
 
 ## 8. Recipe: the same architecture for JasperEditor
 
-The current JasperEditor is a single npm package using React Router 7 framework mode with `ssr: true` and the Vercel preset. Its `src/routes.ts` includes server resource routes `api/{upload,progress,render,captions,fonts/:name}`, which call S3, Remotion Lambda and OpenAI. The UI lives in `src/editor/**`, and Remotion compositions live in `src/remotion/**`.
+JasperEditor is written from scratch as a pnpm monorepo. The web app is a purely static, client-rendered SPA: it owns **no server routes**. Every side effect (uploads/imports, job progress, renders, transcription/captions, font serving, media streaming) lives in the local/remote engine daemon `apps/engine`. The editor UI and the Remotion compositions are separate workspace packages so the browser (Remotion `<Player>`) and the engine (`@remotion/renderer`) share the same composition code. In the rest of §8, "the daemon" always means this `apps/engine` process.
 
 ### 8.1 Target layout (pnpm)
 
@@ -625,22 +625,22 @@ JasperEditor/
 ├── package.json                 # packageManager pnpm@10.x, root scripts (below), pnpm.onlyBuiltDependencies
 ├── pnpm-workspace.yaml          # apps/*, packages/*
 ├── tsconfig.base.json           # copy Orquester's (+ "verbatimModuleSyntax": false, React 19 JSX)
-├── .stage/                      # committed dev appdir: app/, daemon/daemon.json, media/.gitkeep
+├── .stage/                      # committed dev appdir: app/, engine/engine.json, media/.gitkeep
 ├── apps/
-│   ├── web/                     # React Router 7 SPA (ssr:false) + PWA — moved from repo root src/
+│   ├── web/                     # client-rendered SPA (e.g. React Router 7, ssr:false) + PWA; static output only
 │   │   ├── react-router.config.ts, vite.config.ts, public/{manifest.webmanifest,sw.js,icons…}
 │   │   └── app/{root.tsx,routes.ts,routes/*,entry.client.tsx(optional)}
 │   ├── desktop/                 # Electron shell ONLY (no renderer app)
 │   │   ├── package.json (electron-builder block), electron-builder.yml (optional)
 │   │   ├── scripts/build-main.ts (esbuild → dist-electron/main.mjs + preload.cjs)
 │   │   ├── build/{icon.png,icon.icns,icon.ico,entitlements.mac.plist}
-│   │   └── src/{main.ts,preload.cts,daemon-process.ts}
-│   └── daemon/                  # "jasperd": Fastify media server (ffmpeg, fframes, Remotion renders)
-│       ├── src/{cli.ts,index.ts (startDaemon),routes/*,jobs/*,media/*}
-│       └── scripts/build.ts     # esbuild → dist/daemon.mjs (ESM, externals: @remotion/renderer, @remotion/compositor-*, sharp…)
+│   │   └── src/{main.ts,preload.cts,engine-process.ts}
+│   └── engine/                  # "jasperd": Fastify media server (ffmpeg, fframes, Remotion renders)
+│       ├── src/{cli.ts,index.ts (startEngine),routes/*,jobs/*,media/*}
+│       └── scripts/build.ts     # esbuild → dist/engine.mjs (ESM, externals: @remotion/renderer, @remotion/compositor-*, sharp…)
 ├── packages/
-│   ├── editor-ui/               # was src/editor/** — the Premiere-style UI; host injects runtime + transport
-│   ├── compositions/            # was src/remotion/** — shared by Player (browser) and renderer (daemon)
+│   ├── editor-ui/               # new, original Premiere-style UI; host injects runtime + transport
+│   ├── compositions/            # new Remotion compositions — shared by Player (browser) and renderer (engine)
 │   ├── api/                     # zod contracts: projects, assets, jobs, events (EventMessage), route constants
 │   └── config/                  # appdir layout (~/.jasper or userData), defaults, env (JASPER_*)
 ├── native/fframes-renderer/     # Rust crate (cargo) → binary shipped via extraResources
@@ -654,7 +654,7 @@ Root scripts (mirroring Orquester):
 {
   "scripts": {
     "dev": "cross-env JASPER_APPDIR=./.stage pnpm --filter @jasper/desktop dev",
-    "dev:daemon": "cross-env JASPER_APPDIR=./.stage tsx watch apps/daemon/src/cli.ts",
+    "dev:engine": "cross-env JASPER_APPDIR=./.stage tsx watch apps/engine/src/cli.ts",
     "dev:web": "pnpm --filter @jasper/web dev",
     "build": "pnpm -r build",
     "check": "pnpm -r typecheck",
@@ -668,7 +668,7 @@ Adjust `onlyBuiltDependencies` to whatever needs install scripts. Remotion's `@r
 
 ### 8.2 `apps/web`: React Router 7 in SPA mode
 
-Server resource routes cannot be used with `ssr:false`: non-prerendered server loaders and actions are not allowed. Move every `src/routes/api/*.ts` handler into the daemon (§8.6) and make the web app pure static.
+Server resource routes cannot be used with `ssr:false`: non-prerendered server loaders and actions are not allowed. Do not write server loaders/actions or API resource routes in `apps/web` at all: every endpoint (upload/import, progress, render, captions, fonts) is implemented in the engine (§8.6), and the web app is pure static.
 
 ```ts
 // apps/web/react-router.config.ts
@@ -687,21 +687,21 @@ import { reactRouter } from "@react-router/dev/vite";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 
-const DAEMON = process.env.JASPER_DAEMON_URL ?? "http://127.0.0.1:47900";
+const ENGINE = process.env.JASPER_ENGINE_URL ?? "http://127.0.0.1:47900";
 export default defineConfig({
   plugins: [tailwindcss(), reactRouter()],
   server: {
     host: "127.0.0.1", port: 5173,
     // same-origin in dev: avoids the CORS gap Orquester's dev:web has
     proxy: {
-      "/api":    { target: DAEMON, changeOrigin: false },
-      "/events": { target: DAEMON },                 // NDJSON stream (proxy passes chunked through)
-      "/media":  { target: DAEMON },                 // Range requests for <video>/<Player>
-      "/ws":     { target: DAEMON.replace("http", "ws"), ws: true },
-      "/health": { target: DAEMON }
+      "/api":    { target: ENGINE, changeOrigin: false },
+      "/events": { target: ENGINE },                 // NDJSON stream (proxy passes chunked through)
+      "/media":  { target: ENGINE },                 // Range requests for <video>/<Player>
+      "/ws":     { target: ENGINE.replace("http", "ws"), ws: true },
+      "/health": { target: ENGINE }
     }
   },
-  optimizeDeps: { /* keep the existing Remotion excludes */ }
+  optimizeDeps: { /* exclude Remotion packages from pre-bundling if Vite dep-optimization causes duplicate-module issues */ }
 });
 ```
 
@@ -758,7 +758,7 @@ export function registerServiceWorker() {
   - Cache Storage cannot store `206 Partial Content`.
   - A cached 200 answering a Range request breaks seeking.
   - Media files are GBs.
-- Also bypass `blob:` URLs and cross-origin requests (fonts CDN, S3). The existing code already skips cross-origin.
+- Also bypass `blob:` URLs and cross-origin requests (fonts CDN, S3). Orquester's `sw.js` already skips cross-origin requests; keep that rule.
 - RR7 SPA output is `build/client/`. The navigation fallback key stays `/index.html`, because RR7 SPA mode emits `build/client/index.html`.
 - RR7 lazy route chunks are content-hashed under `/assets/`. Cache-first is fine for them.
 - Manifest: `display: "standalone"` (consider `"display_override": ["window-controls-overlay","standalone"]` for desktop-installed PWAs), `orientation: "any"`, `background_color` matching the Premiere-dark palette, and **separate maskable icons** with a safe zone.
@@ -823,15 +823,15 @@ function resourcesBin(name: string) {            // ffmpeg/ffprobe/fframes shipp
   return app.isPackaged ? path.join(process.resourcesPath, "bin", name) : path.resolve(__dirname, "../../../native/bin", name);
 }
 
-async function startDaemon(): Promise<{ port: number; child: Electron.UtilityProcess }> {
+async function startEngine(): Promise<{ port: number; child: Electron.UtilityProcess }> {
   const entry = app.isPackaged
-    ? path.join(process.resourcesPath, "daemon", "daemon.mjs")          // extraResources, NOT inside asar
-    : path.resolve(__dirname, "../../daemon/dist/daemon.mjs");
+    ? path.join(process.resourcesPath, "engine", "engine.mjs")          // extraResources, NOT inside asar
+    : path.resolve(__dirname, "../../engine/dist/engine.mjs");
   const child = utilityProcess.fork(entry, ["--appdir", appdir, "--port", "0"], {
     env: { ...process.env, JASPER_LOCAL_TOKEN: token, JASPER_WEB_DIR: webDir(),
            JASPER_FFMPEG: resourcesBin("ffmpeg"), JASPER_FFPROBE: resourcesBin("ffprobe"),
            JASPER_FFRAMES: resourcesBin("fframes-renderer") },
-    stdio: "pipe", serviceName: "jasper-daemon"
+    stdio: "pipe", serviceName: "jasper-engine"
   });
   const port = await new Promise<number>((resolve, reject) => {
     child.on("message", (m: any) => m?.type === "ready" && resolve(m.port));   // daemon: process.parentPort.postMessage({type:"ready",port})
@@ -842,7 +842,7 @@ async function startDaemon(): Promise<{ port: number; child: Electron.UtilityPro
 
 app.whenReady().then(async () => {
   // Optionally attach to an already-running daemon first (Orquester's checkExistingDaemon pattern).
-  const { port, child } = await startDaemon();
+  const { port, child } = await startEngine();
   const origin = `http://127.0.0.1:${port}`;
   await session.defaultSession.cookies.set({ url: origin, name: "jasper_session", value: token, httpOnly: true, sameSite: "strict" });
   const win = new BrowserWindow({
@@ -888,7 +888,7 @@ Main-process build: copy `scripts/build-main.ts` but emit **ESM** (`format: "esm
 Dev script: copy Orquester's `concurrently` + `wait-on` approach.
 
 ```json
-"dev": "concurrently -k \"pnpm --filter @jasper/daemon dev\" \"pnpm --filter @jasper/web dev\" \"pnpm build:main --watch\" \"wait-on http://127.0.0.1:5173 dist-electron/main.mjs && cross-env JASPER_DESKTOP_DEV_URL=http://127.0.0.1:5173 electron .\""
+"dev": "concurrently -k \"pnpm --filter @jasper/engine dev\" \"pnpm --filter @jasper/web dev\" \"pnpm build:main --watch\" \"wait-on http://127.0.0.1:5173 dist-electron/main.mjs && cross-env JASPER_DESKTOP_DEV_URL=http://127.0.0.1:5173 electron .\""
 ```
 
 In dev, have main attach to the `tsx watch` daemon on the fixed port `47900` instead of forking (Orquester's attach pattern), so daemon HMR does not restart Electron.
@@ -903,7 +903,7 @@ electron-builder config: copy Orquester's inline block and fix its gaps.
   "files": ["dist-electron/**/*", "package.json"],
   "extraResources": [
     { "from": "../web/build/client", "to": "web" },
-    { "from": "../daemon/dist", "to": "daemon" },
+    { "from": "../engine/dist", "to": "engine" },
     { "from": "../../native/bin/${os}-${arch}", "to": "bin" }
   ],
   "asar": true,
@@ -917,15 +917,15 @@ electron-builder config: copy Orquester's inline block and fix its gaps.
 ```
 
 - Put only runtime externals in `apps/desktop` `dependencies` (ideally none). Put everything else, including workspace packages, in `devDependencies`. That avoids Orquester's double-shipped 400 MB tree.
-- The daemon's externals (`@remotion/renderer`, `@remotion/compositor-<platform>`, `sharp` if used) need their own `node_modules`. Produce them with `pnpm deploy --filter @jasper/daemon --prod apps/daemon/dist-deploy` and ship that folder via `extraResources` (`"from": "../daemon/dist-deploy", "to": "daemon"`). Code in `extraResources` lives outside asar, so binaries are executable.
+- The daemon's externals (`@remotion/renderer`, `@remotion/compositor-<platform>`, `sharp` if used) need their own `node_modules`. Produce them with `pnpm deploy --filter @jasper/engine --prod apps/engine/dist-deploy` and ship that folder via `extraResources` (`"from": "../engine/dist-deploy", "to": "engine"`). Code in `extraResources` lives outside asar, so binaries are executable.
 - **Auto-update** (Orquester has none): add `electron-updater` and call `autoUpdater.checkForUpdatesAndNotify()` in the packaged app, with GitHub releases as the `publish` target. AppImage, NSIS and mac zip support it; `.deb` does not.
 - **Signing:** mac needs a Developer ID and notarization (`notarize: true` plus the `APPLE_ID`/`APPLE_APP_SPECIFIC_PASSWORD`/`APPLE_TEAM_ID` env vars). Windows needs a certificate, or use Azure Trusted Signing. Linux AppImage needs none.
 - The Electron binary is ~100 MB of the package. Target under 400 MB total, including static ffmpeg (~80 MB) and chrome-headless-shell (~100 MB, for Remotion renders).
 
-### 8.6 `apps/daemon`: local media server
+### 8.6 `apps/engine`: local media server (engine daemon)
 
 Copy Orquester's shape:
-- `startDaemon(options)` returning `{port, stop}`;
+- `startEngine(options)` returning `{port, stop}` (Orquester calls it `startDaemon`);
 - a `cli.ts` with graceful SIGTERM handling;
 - a `createServer(…, {authRequired, mode, serveWeb})` factory;
 - `Broadcaster` + `GET /events` NDJSON with a heartbeat;
@@ -936,18 +936,18 @@ Copy Orquester's shape:
 
 Change the following:
 
-| Orquester | JasperEditor daemon |
+| Orquester | JasperEditor engine (`apps/engine`) |
 |---|---|
 | unix socket (local) + optional TCP | **TCP only.** Local mode binds `127.0.0.1:0` with the per-launch token (desktop); remote mode binds `127.0.0.1:47900` behind Caddy with password → bearer (VPS/PWA). Keep Orquester's "remote mode is opt-in / hot-reloadable" idea for LAN access from a phone. |
-| run via `tsx` (no build) | Dev: `tsx watch`. Packaged desktop: **esbuild ESM bundle** `dist/daemon.mjs` with externals for anything with binaries or dynamic requires. VPS: `tsx` like Orquester, or the same bundle. |
+| run via `tsx` (no build) | Dev: `tsx watch`. Packaged desktop: **esbuild ESM bundle** `dist/engine.mjs` with externals for anything with binaries or dynamic requires. VPS: `tsx` like Orquester, or the same bundle. |
 | in-process in Electron main | `utilityProcess.fork` (reports readiness through `process.parentPort`). Heavy work runs in child processes: ffmpeg/ffprobe via `child_process.spawn`, fframes as a Rust CLI (`native/fframes-renderer`, stdin JSON → mp4/png sequence), Remotion via `@remotion/renderer` `renderMedia()` (spawns its own compositor + headless Chrome). |
 | `/ws` for terminals | `/ws` optional (e.g. scrubbing preview frames); job progress rides `/events` (`job.progress`, `job.done`, `asset.proxy.ready`, `waveform.ready`). |
 | file routes for text files | **Media routes with Range**: `GET /media/:assetId` (original), `/media/:assetId/proxy` (low-res H.264 proxy), `/thumbs/:assetId/:t.jpg`, `/waveforms/:assetId.json`. Use `@fastify/static`'s `send` (supports Range) or `reply.sendFile` from per-project dirs. |
 | uploads as raw octet-stream with 500 MB cap | Keep the raw-binary streaming-upload pattern (`binaryBody` → `application/octet-stream`, metadata in the query string, `Content-Length` precheck) for web/PWA; raise or remove the cap. The desktop registers local paths instead. |
-| — | Replace the RR7 `api/render` (Lambda), `api/upload` (S3) and `api/captions` (OpenAI) routes with daemon routes; keep S3/Lambda as optional "cloud" providers behind config. |
+| — | Render, upload/import and caption (transcription) endpoints are engine routes from day one. Cloud backends (S3-compatible storage, Remotion Lambda, a hosted speech-to-text API) are optional pluggable providers behind engine config, never called from the web app directly. |
 
 Remotion in the daemon:
-- `@remotion/bundler`'s `bundle()` (webpack) needs source files at runtime, so it cannot live inside an asar. Pre-bundle compositions at build time (`remotion bundle` → `apps/daemon/dist/remotion-bundle/`) and pass that serve URL to `selectComposition`/`renderMedia`.
+- `@remotion/bundler`'s `bundle()` (webpack) needs source files at runtime, so it cannot live inside an asar. Pre-bundle compositions at build time (`remotion bundle` → `apps/engine/dist/remotion-bundle/`) and pass that serve URL to `selectComposition`/`renderMedia`.
 - Call `ensureBrowser()` into `<appdir>/browser` on first run, or ship chrome-headless-shell in `extraResources`.
 - Remotion ships its own ffmpeg inside `@remotion/compositor-<platform>`. The native engine may reuse it or ship a separate static ffmpeg.
 - Other engine docs cover the details.
@@ -964,16 +964,15 @@ Remotion in the daemon:
 
 ### 8.8 Step-by-step order of work
 
-1. Convert the repo to a pnpm workspace:
-   - add `pnpm-workspace.yaml` and `tsconfig.base.json`;
-   - delete `package-lock.json`;
-   - set `packageManager: pnpm@10.x`;
-   - move `src/editor` → `packages/editor-ui`, `src/remotion` → `packages/compositions`, and the rest → `apps/web`.
-2. `apps/web`: switch RR7 to `ssr:false`, remove `@vercel/react-router`/`@react-router/serve`/`@react-router/node`, move `routes/api/*` into `apps/daemon`, and add the Vite `server.proxy`.
-3. `apps/daemon`: Fastify skeleton with `startDaemon`/`cli.ts`/`/health`/`/events`/static SPA serving and a token or password auth hook, plus the `packages/config` appdir (`.stage` for dev).
+1. Scaffold the pnpm workspace from scratch:
+   - add `pnpm-workspace.yaml` (`apps/*`, `packages/*`) and `tsconfig.base.json`;
+   - use pnpm only (no `package-lock.json`); set `packageManager: pnpm@10.x`;
+   - create empty `apps/web`, `apps/desktop`, `apps/engine`, `packages/editor-ui`, `packages/compositions`, `packages/api` and `packages/config` packages, each exporting `./src/index.ts` (Orquester's source-sharing pattern). The purchased template is not moved or reused.
+2. `apps/web`: a new client-rendered SPA (e.g. React Router 7 with `ssr:false`, no Vercel/Node server adapters), no server routes, and the Vite `server.proxy` to the engine.
+3. `apps/engine`: Fastify skeleton with `startEngine`/`cli.ts`/`/health`/`/events`/static SPA serving and a token or password auth hook, plus the `packages/config` appdir (`.stage` for dev).
 4. `packages/api`: zod contracts for assets, jobs and events. Build a small `ApiClient` + `Transporter` (fetch-based; one implementation suffices because every runtime is same-origin HTTP).
 5. PWA: `public/manifest.webmanifest`, `public/sw.js` (with the `/media` bypass), icons (including padded maskable ones), `theme-boot.js`, and `pwa.ts` registration gated on PROD and not-desktop.
-6. `apps/desktop`: `main.ts` (fork the daemon, set the token cookie, `loadURL`), `preload.cts`, esbuild main/preload builds (ESM main), the electron-builder config with `extraResources` and without double-shipped deps, then `electron-updater`.
+6. `apps/desktop`: `main.ts` (fork the engine, set the token cookie, `loadURL`), `preload.cts`, esbuild main/preload builds (ESM main), the electron-builder config with `extraResources` and without double-shipped deps, then `electron-updater`.
 7. Deployment: `deploy/` + `deploy.sh` + Caddy CSP + systemd.
 8. CI: `pnpm check` and `pnpm test`, plus a `pnpm --filter @jasper/desktop build` matrix (linux/win/mac) that uploads to GitHub releases.
 

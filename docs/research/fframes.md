@@ -402,16 +402,20 @@ Other failures and notes:
 
 ## 7. Integration designs for JasperEditor
 
-Context: JasperEditor's timeline items are the `EditorStarterItem` union in `src/editor/items/item-type.ts`
-(`image|text|video|solid|captions|audio|gif`), rendered through `src/editor/items/inner-layer.tsx`. Video uses
-`@remotion/media`'s `<Video>` or `OffthreadVideo` (`src/editor/items/video/video-layer.tsx`). The sibling
-orquester repo uses a Fastify + tsx daemon at `apps/daemon`, which we will mirror.
+Context: JasperEditor is written from scratch as a pnpm monorepo (`apps/web`, `apps/desktop`, `apps/engine`,
+`packages/*`); we do not reuse any template code. Assume our own timeline data model is a discriminated union of
+item kinds (e.g. image, text, video, solid color, captions, audio, animated image) defined in a shared package such
+as `packages/timeline-model`, and that each kind is rendered inside the Remotion composition by a per-kind layer
+component dispatched on `item.type`. Video layers use Remotion's public `@remotion/media` `<Video>` or
+`OffthreadVideo`. The sibling orquester repo uses a Fastify + tsx daemon at `apps/daemon`; our native/engine
+service at `apps/engine` mirrors that setup (below, "the daemon" means `apps/engine`).
 
-A new item type is common to all three designs:
+A new item kind is common to all three designs:
 
 ```ts
-// src/editor/items/motion-graphic/motion-graphic-item-type.ts
-export type MotionGraphicItem = BaseItem & CanHaveRotation & {
+// packages/timeline-model/src/items/motion-graphic.ts (proposed, our own code)
+export type MotionGraphicItem = TimelineItemBase & {   // TimelineItemBase: our id/from/duration/left/top/width/height/rotation/opacity
+
   type: 'motion-graphic';
   templateId: string;          // e.g. "lower-third@1" (template library) or "custom:<hash>" (agent-authored)
   params: Record<string, unknown>; // validated by the template's JSON Schema (zod mirror)
@@ -419,12 +423,13 @@ export type MotionGraphicItem = BaseItem & CanHaveRotation & {
   renderState:                 // proxy/master artifacts produced by the daemon
     | {status: 'none'} | {status: 'rendering'; progress: number}
     | {status: 'ready'; proxyAssetId: string /* webm vp9a */; masterAssetId?: string /* prores4444 or png-seq */};
-  fadeInDurationInSeconds: number; fadeOutDurationInSeconds: number;
+  fadeInSeconds: number; fadeOutSeconds: number;
 };
 ```
 
-Add it to the union in `item-type.ts`, add a branch in `inner-layer.tsx`, add an inspector at
-`src/editor/inspector/motion-graphic-inspector.tsx` (auto-generated from the JSON Schema), and add a timeline preview.
+Add it to the item union in the shared model package, add a `'motion-graphic'` case to the composition's per-kind
+layer dispatch, add an inspector panel in `apps/web` (auto-generated from the template's JSON Schema), and add a
+timeline clip preview (thumbnail strip from the `frame` command or the WASM SVG).
 
 ### Design C (build first): precompiled, parameterized template library
 
@@ -465,7 +470,7 @@ native/mg/
 ### Design B: WASM live preview inside the Remotion Player
 
 ```tsx
-// src/editor/items/motion-graphic/motion-graphic-layer.tsx (sketch)
+// apps/web/src/compositions/layers/motion-graphic-layer.tsx (sketch, our own code)
 import {useCurrentFrame, delayRender, continueRender} from 'remotion';
 import {getMgBridge} from './mg-wasm'; // lazy-loads /mg/jasper_mg_wasm_bg.wasm once, registers embedded fonts via FontFace
 
@@ -482,12 +487,12 @@ export const MotionGraphicLayer = ({item}: {item: MotionGraphicItem}) => {
 - **One WASM instance per template** (or one shared `AnyTemplate` bridge per item), cached by
   `templateId + hash(params)`. `set_spec` costs microseconds. Render costs ~37 µs/frame, so scrubbing is effectively
   free.
-- The JS glue `require('@fframes/editor')` needs a tiny ESM shim module aliased in `vite.config.ts`
-  (`resolve.alias['@fframes/editor'] = './src/editor/items/motion-graphic/fframes-shim.ts'`), unless audio is
+- The JS glue `require('@fframes/editor')` needs a tiny ESM shim module aliased in the web app's Vite config
+  (`resolve.alias['@fframes/editor'] = '<path to our fframes-shim.ts>'`), unless audio is
   used. Define `globalThis.__fframes_get_video_frame = () => null`, or back it with the asset cache if templates embed
   footage.
-- **This also works in Remotion server/lambda renders.** Chrome renders the SVG, so exports through the existing
-  `src/routes/api/render.ts` path "just work", with no alpha video needed.
+- **This also works in Remotion server/lambda renders.** Chrome renders the SVG, so exports through our
+  server-side Remotion render path (`@remotion/renderer` in `apps/engine`) "just work", with no alpha video needed.
 - **Fidelity:** browser SVG vs tiny-skia raster differ slightly (text, filters), and shaders show a placeholder. For
   frame-exact export, prefer design C's ProRes master. Treat WASM as preview, or accept Chrome raster as final when
   exporting through Remotion.
@@ -578,7 +583,7 @@ and 10 s per edit if someone uses `--release` naively. Mitigations, in order of 
 
 - Can `@remotion/media` `<Video>` (WebCodecs/mediabunny) decode VP9 alpha in the Player? The HTML5 `<Video>` from
   `remotion` and `OffthreadVideo transparent` support it in Chromium. Verify before relying on WebM proxies inside
-  `VideoLayer`. Design B avoids the question.
+  our video layer component. Design B avoids the question.
 - Upstream bugs worth reporting, or fixing in a patch crate:
   1. Premultiplied alpha in the encoder path.
   2. Segment-concat frame loss (`prores_ks` 144/150, `qtrle` 149/150; the upstream bench README also saw 299/300 on
