@@ -1,0 +1,7 @@
+// Still layer — stub from WP-00; WP-2C replaces the body with the real renderer.
+import type { LayerProps } from '../types.ts';
+import { StubLabel } from './LayerBox.tsx';
+
+export function StillLayer(layer: LayerProps) {
+	return <StubLabel layer={layer} title="Still" tint="rgba(116, 17, 134, 0.85)" />;
+}
