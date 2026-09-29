@@ -219,13 +219,18 @@ export function sourceOut(clip: Pick<Clip, 'duration' | 'speed' | 'sourceIn'>, r
 	return clip.sourceIn + contentSpan(clip, rate);
 }
 
-/** Through edit (S02:TL-021): `b` continues `a` exactly. */
+/**
+ * Through edit (S02:TL-021): `b` continues `a`'s content. Content times are whole flicks while a frame
+ * at non-unit speed spans a fractional number of flicks, so repeated splits can leave the two sides a
+ * few flicks apart; anything under half a source frame counts as continuous.
+ */
 export function isThroughEdit(a: Clip, b: Clip, rate: Rational): boolean {
 	if (a.trackId !== b.trackId || clipEnd(a) !== b.start || a.kind !== b.kind) return false;
 	if (a.speed.rate !== b.speed.rate || a.speed.reverse !== b.speed.reverse) return false;
 	if ((a as { mediaId?: string }).mediaId !== (b as { mediaId?: string }).mediaId) return false;
-	if (a.speed.reverse) return a.sourceIn === sourceOut(b, rate);
-	return b.sourceIn === sourceOut(a, rate);
+	const tolerance = (flicksPerFrame(rate) * a.speed.rate) / 2;
+	if (a.speed.reverse) return Math.abs(a.sourceIn - sourceOut(b, rate)) < tolerance;
+	return Math.abs(b.sourceIn - sourceOut(a, rate)) < tolerance;
 }
 
 /**

@@ -9,6 +9,7 @@ import type { ProjectDocument } from '../schema/document.ts';
 import { COMMAND_CATALOG, isCommandType } from './catalog.ts';
 import { HandlerContext, substituteRefs } from './context.ts';
 import { diffDocuments } from './diff.ts';
+import { collectOrphans } from './handlers/project.ts';
 import type { Command } from './schemas/index.ts';
 import { type CommandContext, CommandError, type Issue, type Origin, TX_PROTOCOL, type TransactionResult } from './types.ts';
 
@@ -130,6 +131,8 @@ export function applyTransaction(
 				const entry = COMMAND_CATALOG[cmd.type];
 				results.push(entry.handler(draft, cmd as never, h) ?? null);
 			});
+			// Sources whose last reference disappeared (e.g. a solid's color matte) are collected (INV-014).
+			collectOrphans(draft);
 		});
 	} catch (e) {
 		if (e instanceof CommandError) {
