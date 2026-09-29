@@ -1,5 +1,7 @@
 node_modules/
 dist/
+dist-electron/
+release/
 build/
 out/
 coverage/
@@ -7,9 +9,34 @@ coverage/
 *.tsbuildinfo
 .env
 .env*.local
+.env.*
 .DS_Store
 *.log
 target/
+native/mg/target/
+fixtures/media/
+test-results/
+playwright-report/
+*.sock
+
+# Dev appdir: skeleton committed, runtime files ignored
+.stage/*
+!.stage/README.md
+!.stage/engine/
+.stage/engine/*
+!.stage/engine/.gitkeep
+!.stage/projects/
+.stage/projects/*
+!.stage/projects/.gitkeep
+!.stage/media/
+.stage/media/*
+!.stage/media/.gitkeep
+!.stage/cache/
+.stage/cache/*
+!.stage/cache/.gitkeep
+!.stage/tmp/
+.stage/tmp/*
+!.stage/tmp/.gitkeep
 
 # Paid Remotion Editor Starter: reference-only, never committed (clean-room rewrite)
 .reference/

@@ -1,0 +1,36 @@
+{
+  "name": "@jasper/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173 --strictPort",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4173",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@jasper/api": "workspace:*",
+    "@jasper/compositions": "workspace:*",
+    "@jasper/engine-client": "workspace:*",
+    "@jasper/mg-templates": "workspace:*",
+    "@jasper/project": "workspace:*",
+    "@jasper/session": "workspace:*",
+    "@jasper/ui": "workspace:*",
+    "lucide-react": "^1.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router": "^7.18.0",
+    "zod": "^4.1.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.1.0",
+    "tailwindcss": "^4.3.0",
+    "vite": "^7.3.0"
+  }
+}

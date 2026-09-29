@@ -1,0 +1,17 @@
+{
+  "name": "@jasper/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist-electron/main.mjs",
+  "scripts": {
+    "build": "node scripts/build-main.mjs",
+    "dev": "node scripts/build-main.mjs && cross-env JASPER_DESKTOP_DEV_URL=http://127.0.0.1:5173 electron .",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@jasper/config": "workspace:*",
+    "electron": "^44.0.0",
+    "esbuild": "^0.25.0"
+  }
+}

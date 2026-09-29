@@ -1,0 +1,25 @@
+{
+  "name": "@jasper/engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "dev": "cross-env JASPER_APPDIR=../../.stage JASPER_DEV=1 tsx watch src/cli.ts --port 47900",
+    "build": "node scripts/build.mjs",
+    "start": "node dist/engine.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fastify/static": "^10.0.0",
+    "@jasper/api": "workspace:*",
+    "@jasper/config": "workspace:*",
+    "@jasper/mg-templates": "workspace:*",
+    "@jasper/project": "workspace:*",
+    "fastify": "^5.6.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": { "esbuild": "^0.25.0" }
+}
