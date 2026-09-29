@@ -24,5 +24,4 @@ export type MgTemplateDefinition<P extends Record<string, unknown> = Record<stri
 	renderSvg(params: P, frame: number, fps: number, canvas: MgCanvas): string;
 };
 
-// biome-ignore lint/suspicious/noExplicitAny: heterogeneous catalogs need a widened params type
 export type AnyMgTemplate = MgTemplateDefinition<any>;
