@@ -6,7 +6,9 @@ import { checkRepo, findViolations, isExempt } from './check-tokens.mjs';
 
 describe('check-tokens matcher', () => {
 	it('accepts token-only code', () => {
-		expect(findViolations("<div className='bg-pr-panel text-pr-muted border-pr-border-subtle' />")).toEqual([]);
+		expect(findViolations("<div className='bg-pr-panel text-pr-muted border-pr-border-subtle' />")).toEqual(
+			[],
+		);
 		expect(findViolations('color: var(--pr-text-primary);')).toEqual([]);
 		expect(findViolations("const id = '#root'; const n = 120;")).toEqual([]);
 	});
@@ -18,19 +20,23 @@ describe('check-tokens matcher', () => {
 	});
 
 	it('catches rgb/hsl functions', () => {
-		expect(findViolations('box-shadow: 0 0 1px rgba(0,0,0,.5)').map((x) => x.rule)).toEqual(['color-function']);
+		expect(findViolations('box-shadow: 0 0 1px rgba(0,0,0,.5)').map((x) => x.rule)).toEqual([
+			'color-function',
+		]);
 		expect(findViolations("style={{color: 'hsl(10 20% 30%)'}}")).toHaveLength(1);
 	});
 
 	it('catches raw Tailwind palette classes', () => {
-		const rules = findViolations("<p className='bg-neutral-800 text-gray-400 border-zinc-700 ring-slate-50' />").map(
-			(x) => x.match,
-		);
+		const rules = findViolations(
+			"<p className='bg-neutral-800 text-gray-400 border-zinc-700 ring-slate-50' />",
+		).map((x) => x.match);
 		expect(rules).toContain('bg-neutral-800');
 		expect(rules).toContain('text-gray-400');
 		expect(rules).toContain('border-zinc-700');
 		expect(rules).toContain('ring-slate-50');
-		expect(findViolations("className='text-white bg-black/50 hover:bg-white/10'").length).toBeGreaterThanOrEqual(3);
+		expect(
+			findViolations("className='text-white bg-black/50 hover:bg-white/10'").length,
+		).toBeGreaterThanOrEqual(3);
 	});
 
 	it('honours the per-line opt-out marker', () => {
@@ -48,7 +54,10 @@ describe('check-tokens matcher', () => {
 		mkdirSync(join(root, 'packages/ui/src/theme'), { recursive: true });
 		mkdirSync(join(root, 'apps/web/src/shell'), { recursive: true });
 		writeFileSync(join(root, 'packages/ui/src/theme/tokens.css'), ':root { --pr-bg-app: #000000; }');
-		writeFileSync(join(root, 'apps/web/src/shell/Bad.tsx'), "export const x = <div style={{ color: '#ff0000' }} />;");
+		writeFileSync(
+			join(root, 'apps/web/src/shell/Bad.tsx'),
+			"export const x = <div style={{ color: '#ff0000' }} />;",
+		);
 		const problems = checkRepo(root);
 		expect(problems).toHaveLength(1);
 		expect(problems[0].file).toBe('apps/web/src/shell/Bad.tsx');

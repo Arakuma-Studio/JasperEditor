@@ -41,7 +41,10 @@ const UTILITIES =
 const RULES = [
 	{ id: 'hex-color', re: /(?<![\w&])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![\w-])/g },
 	{ id: 'color-function', re: /\b(?:rgba?|hsla?|hwb|oklch|oklab|lab|lch)\(/g },
-	{ id: 'tailwind-palette', re: new RegExp(`(?<![\\w-])${UTILITIES}-(?:${PALETTES.join('|')})-\\d{2,3}(?![\\w])`, 'g') },
+	{
+		id: 'tailwind-palette',
+		re: new RegExp(`(?<![\\w-])${UTILITIES}-(?:${PALETTES.join('|')})-\\d{2,3}(?![\\w])`, 'g'),
+	},
 	{ id: 'tailwind-white-black', re: new RegExp(`(?<![\\w-])${UTILITIES}-(?:white|black)(?![\\w-])`, 'g') },
 	{ id: 'tailwind-palette-bare', re: /(?<![\w-])(?:neutral|gray|zinc|slate)-\d{2,3}(?![\w])/g },
 	{ id: 'tailwind-white-black-opacity', re: /(?<![\w-])(?:white|black)\/\d{1,3}(?![\w])/g },

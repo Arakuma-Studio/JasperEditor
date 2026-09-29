@@ -26,10 +26,14 @@ describe('@jasper/config', () => {
 	});
 
 	it('resolves appdir with argv > env > default', () => {
-		expect(resolveAppdir({ argv: ['--appdir', '/a'], env: { JASPER_APPDIR: '/b' }, defaultDir: '/c' })).toBe('/a');
+		expect(resolveAppdir({ argv: ['--appdir', '/a'], env: { JASPER_APPDIR: '/b' }, defaultDir: '/c' })).toBe(
+			'/a',
+		);
 		expect(resolveAppdir({ argv: [], env: { JASPER_APPDIR: '/b' }, defaultDir: '/c' })).toBe('/b');
 		expect(resolveAppdir({ argv: [], env: {}, defaultDir: '/c' })).toBe('/c');
-		expect(resolveAppdir({ argv: [], env: { JASPER_APPDIR: './.stage' }, cwd: '/repo' })).toBe(resolve('/repo/.stage'));
+		expect(resolveAppdir({ argv: [], env: { JASPER_APPDIR: './.stage' }, cwd: '/repo' })).toBe(
+			resolve('/repo/.stage'),
+		);
 		expect(resolveAppdir({ argv: [], env: { XDG_DATA_HOME: '/data' } })).toMatch(/jasper$/);
 	});
 
@@ -60,6 +64,8 @@ describe('@jasper/config', () => {
 		expect(p.renderDir('job1')).toBe(join('/app', 'renders', 'job1'));
 		expect(p.remotionBundleDir).toBe(join('/app', 'remotion', 'bundle'));
 		expect(p.tmpDir).toBe(join('/app', 'tmp'));
-		expect(p.logFile(new Date('2026-09-30T10:00:00Z'))).toBe(join('/app', 'engine', 'logs', '2026-09-30.log'));
+		expect(p.logFile(new Date('2026-09-30T10:00:00Z'))).toBe(
+			join('/app', 'engine', 'logs', '2026-09-30.log'),
+		);
 	});
 });

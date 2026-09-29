@@ -35,7 +35,10 @@ export const KeyframeUpdateCmd = cmd('keyframe.update', {
 export const KeyframeRemoveCmd = cmd('keyframe.remove', { keyframeIds: z.array(IdRefSchema).min(1) });
 export const KeyframeMoveCmd = cmd('keyframe.move', {
 	keyframeIds: z.array(IdRefSchema).min(1),
-	delta: z.union([z.strictObject({ flicks: z.number().int() }), z.strictObject({ frames: z.number().int() })]),
+	delta: z.union([
+		z.strictObject({ flicks: z.number().int() }),
+		z.strictObject({ frames: z.number().int() }),
+	]),
 });
 export const KeyframeSetInterpolationCmd = cmd('keyframe.setInterpolation', {
 	keyframeIds: z.array(IdRefSchema).min(1),
@@ -59,8 +62,14 @@ export const EffectAddCmd = cmd('effect.add', {
 	ref: RefDeclSchema.optional(),
 });
 export const EffectRemoveCmd = cmd('effect.remove', { effectInstanceId: IdRefSchema });
-export const EffectReorderCmd = cmd('effect.reorder', { effectInstanceId: IdRefSchema, index: z.number().int().min(0) });
-export const EffectSetEnabledCmd = cmd('effect.setEnabled', { effectInstanceId: IdRefSchema, enabled: z.boolean() });
+export const EffectReorderCmd = cmd('effect.reorder', {
+	effectInstanceId: IdRefSchema,
+	index: z.number().int().min(0),
+});
+export const EffectSetEnabledCmd = cmd('effect.setEnabled', {
+	effectInstanceId: IdRefSchema,
+	enabled: z.boolean(),
+});
 
 export const TransitionAddCmd = cmd('transition.add', {
 	sequenceId: IdRefSchema.optional(),

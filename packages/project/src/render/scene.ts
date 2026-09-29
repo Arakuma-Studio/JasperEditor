@@ -4,9 +4,25 @@ import { evaluate } from '../keyframes.ts';
 import type { ParamValue, Vec2 } from '../schema/common.ts';
 import { flicksPerFrame, type Rational } from '../time.ts';
 import type { RenderSnapshot, RenderVisualClip } from './snapshot.ts';
-import { type Crop, IDENTITY, type LayerTransformValues, layerMatrix, layerQuad, type Mat2D, quadBounds, type Rect, visibleRect } from './transform.ts';
+import {
+	type Crop,
+	IDENTITY,
+	type LayerTransformValues,
+	layerMatrix,
+	layerQuad,
+	type Mat2D,
+	quadBounds,
+	type Rect,
+	visibleRect,
+} from './transform.ts';
 
-export type ResolvedEffect = { id: string; effectId: string; effectVersion: number; enabled: boolean; params: Record<string, ParamValue> };
+export type ResolvedEffect = {
+	id: string;
+	effectId: string;
+	effectVersion: number;
+	enabled: boolean;
+	params: Record<string, ParamValue>;
+};
 
 export type ResolvedLayerProps = {
 	transform: LayerTransformValues | null;
@@ -32,15 +48,29 @@ export type ResolvedLayer = {
 function isStaticClip(c: RenderVisualClip): boolean {
 	const t = c.transform;
 	if (c.opacity.keyframes.length) return false;
-	if (t && (t.position.keyframes.length || t.anchor.keyframes.length || t.scale.keyframes.length || t.scaleWidth.keyframes.length || t.rotation.keyframes.length)) return false;
+	if (
+		t &&
+		(t.position.keyframes.length ||
+			t.anchor.keyframes.length ||
+			t.scale.keyframes.length ||
+			t.scaleWidth.keyframes.length ||
+			t.rotation.keyframes.length)
+	)
+		return false;
 	return c.effects.every((fx) => Object.values(fx.params).every((p) => p.keyframes.length === 0));
 }
 
 /** Content time at a sequence frame for a snapshot clip (S01:CLP-004). */
-export function clipContentTime(c: Pick<RenderVisualClip, 'start' | 'duration' | 'sourceIn' | 'speed'>, frame: number, fps: Rational): number {
+export function clipContentTime(
+	c: Pick<RenderVisualClip, 'start' | 'duration' | 'sourceIn' | 'speed'>,
+	frame: number,
+	fps: Rational,
+): number {
 	const F = flicksPerFrame(fps);
 	const i = frame - c.start;
-	return c.speed.reverse ? c.sourceIn + (c.duration - 1 - i) * F * c.speed.rate : c.sourceIn + i * F * c.speed.rate;
+	return c.speed.reverse
+		? c.sourceIn + (c.duration - 1 - i) * F * c.speed.rate
+		: c.sourceIn + i * F * c.speed.rate;
 }
 
 /** Evaluated props of a clip at content time `t` (no caching). */

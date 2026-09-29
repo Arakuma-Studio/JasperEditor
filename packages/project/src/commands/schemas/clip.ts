@@ -1,6 +1,5 @@
 import { z } from 'zod';
-import { AnimVec2Schema, LabelColorSchema, RGBASchema } from '../../schema/common.ts';
-import { AnimNumberSchema } from '../../schema/common.ts';
+import { AnimNumberSchema, AnimVec2Schema, LabelColorSchema, RGBASchema } from '../../schema/common.ts';
 import { DefaultScalingSchema } from '../../schema/document.ts';
 import {
 	BlendModeSchema,
@@ -10,8 +9,8 @@ import {
 	TextStyleSchema,
 } from '../../schema/sequence.ts';
 import {
-	cmd,
 	ContentTimeInputSchema,
+	cmd,
 	EditModeSchema,
 	IdListSchema,
 	IdRefSchema,
@@ -42,7 +41,13 @@ const TextContentInput = z.strictObject({
 	text: z.string(),
 	style: TextStyleSchema.partial().optional(),
 	runs: z
-		.array(z.strictObject({ from: z.number().int().min(0), to: z.number().int().min(0), style: TextStyleSchema.partial() }))
+		.array(
+			z.strictObject({
+				from: z.number().int().min(0),
+				to: z.number().int().min(0),
+				style: TextStyleSchema.partial(),
+			}),
+		)
 		.optional(),
 });
 
@@ -124,7 +129,14 @@ export const ClipMoveCmd = cmd('clip.move', {
 	deltaFrames: z.number().int(),
 	/** Track offset within the same kind; a number applies to every kind. */
 	deltaTracks: z
-		.union([z.number().int(), z.strictObject({ video: z.number().int().optional(), audio: z.number().int().optional(), caption: z.number().int().optional() })])
+		.union([
+			z.number().int(),
+			z.strictObject({
+				video: z.number().int().optional(),
+				audio: z.number().int().optional(),
+				caption: z.number().int().optional(),
+			}),
+		])
 		.optional(),
 	mode: EditModeSchema.optional(),
 	createTracks: z.boolean().optional(),
@@ -230,12 +242,19 @@ export const ClipReplaceSourceCmd = cmd('clip.replaceSource', {
 	mediaId: IdRefSchema,
 	keepDuration: z.boolean().optional(),
 });
-export const ClipFitToFrameCmd = cmd('clip.fitToFrame', { clipIds: IdListSchema, mode: z.enum(['fit', 'fill', 'none']) });
+export const ClipFitToFrameCmd = cmd('clip.fitToFrame', {
+	clipIds: IdListSchema,
+	mode: z.enum(['fit', 'fill', 'none']),
+});
 export const ClipLinkCmd = cmd('clip.link', { clipIds: IdListSchema });
 export const ClipUnlinkCmd = cmd('clip.unlink', { clipIds: IdListSchema });
 export const ClipGroupCmd = cmd('clip.group', { clipIds: IdListSchema, ref: RefDeclSchema.optional() });
 export const ClipUngroupCmd = cmd('clip.ungroup', { clipIds: IdListSchema });
-export const ClipNestCmd = cmd('clip.nest', { clipIds: IdListSchema, name: z.string().min(1), ref: RefDeclSchema.optional() });
+export const ClipNestCmd = cmd('clip.nest', {
+	clipIds: IdListSchema,
+	name: z.string().min(1),
+	ref: RefDeclSchema.optional(),
+});
 
 export const CLIP_COMMANDS = [
 	ClipPlaceCmd,

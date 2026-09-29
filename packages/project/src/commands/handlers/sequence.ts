@@ -5,24 +5,43 @@ import { kindCapabilities } from '../../registry/kinds.ts';
 import type { Animatable, Vec2 } from '../../schema/common.ts';
 import type { MediaAsset } from '../../schema/media.ts';
 import type { ClipMarker, Marker, SequenceSettings, Track } from '../../schema/sequence.ts';
-import { isAllowedSequenceRate, mapFrameBetweenRates, nearestAllowedRate, type Rational, supportsDropFrame } from '../../time.ts';
+import {
+	isAllowedSequenceRate,
+	mapFrameBetweenRates,
+	nearestAllowedRate,
+	type Rational,
+	supportsDropFrame,
+} from '../../time.ts';
 import type { DDoc, DSeq, HandlerContext } from '../context.ts';
-import { assertUnlocked, cleanupSequence, end, findTrackIn, removeClip, resolveTrackIn, tracksOfKind } from '../placement.ts';
+import {
+	assertUnlocked,
+	cleanupSequence,
+	end,
+	findTrackIn,
+	removeClip,
+	resolveTrackIn,
+	tracksOfKind,
+} from '../placement.ts';
 import { placeSource } from './clip-core.ts';
 import { assertBin, insertItem } from './project.ts';
 import type { HandlerMap } from './util.ts';
 
 function validateSettings(s: SequenceSettings, h: HandlerContext): void {
-	if (!isAllowedSequenceRate(s.frameRate)) h.fail('E_INVALID_PARAM', `Frame rate ${s.frameRate.num}/${s.frameRate.den} is not allowed`);
-	for (const [k, v] of [['width', s.width], ['height', s.height]] as const) {
-		if (!Number.isInteger(v) || v % 2 !== 0 || v < 16 || v > 8192) h.fail('E_INVALID_PARAM', `${k} must be an even integer 16..8192`);
+	if (!isAllowedSequenceRate(s.frameRate))
+		h.fail('E_INVALID_PARAM', `Frame rate ${s.frameRate.num}/${s.frameRate.den} is not allowed`);
+	for (const [k, v] of [
+		['width', s.width],
+		['height', s.height],
+	] as const) {
+		if (!Number.isInteger(v) || v % 2 !== 0 || v < 16 || v > 8192)
+			h.fail('E_INVALID_PARAM', `${k} must be an even integer 16..8192`);
 	}
 	if (s.dropFrame && !supportsDropFrame(s.frameRate)) s.dropFrame = false;
 }
 
 function videoInfo(asset: MediaAsset) {
 	const vs = asset.probe.streams.find((s) => s.type === 'video');
-	if (!vs || vs.type !== 'video') return null;
+	if (vs?.type !== 'video') return null;
 	const swap = asset.probe.rotationDegrees === 90 || asset.probe.rotationDegrees === 270;
 	const w = swap ? vs.height : vs.width;
 	const hgt = swap ? vs.width : vs.height;
@@ -68,10 +87,17 @@ function changeFrameRate(seq: DSeq, to: Rational, h: HandlerContext): void {
 }
 
 function isFrameSizedGenerator(c: { kind: string; canvas?: unknown }): boolean {
-	return c.kind === 'solid' || c.kind === 'adjustment' || (c.kind === 'motion-graphic' && c.canvas === 'sequence');
+	return (
+		c.kind === 'solid' || c.kind === 'adjustment' || (c.kind === 'motion-graphic' && c.canvas === 'sequence')
+	);
 }
 
-function changeFrameSize(seq: DSeq, w2: number, h2: number, mode: 'keep-offset-from-center' | 'scale-proportionally' | 'keep-pixels'): void {
+function changeFrameSize(
+	seq: DSeq,
+	w2: number,
+	h2: number,
+	mode: 'keep-offset-from-center' | 'scale-proportionally' | 'keep-pixels',
+): void {
 	const w1 = seq.settings.width;
 	const h1 = seq.settings.height;
 	seq.settings.width = w2;
@@ -82,7 +108,12 @@ function changeFrameSize(seq: DSeq, w2: number, h2: number, mode: 'keep-offset-f
 	const s = Math.min(w2 / w1, h2 / h1);
 	for (const c of Object.values(seq.clips)) {
 		const tr = (c as { transform?: Draft<Record<string, unknown>> }).transform as
-			| { position: Draft<Animatable<Vec2>>; anchor: Draft<Animatable<Vec2>>; scale: Draft<Animatable<number>>; scaleWidth: Draft<Animatable<number>> }
+			| {
+					position: Draft<Animatable<Vec2>>;
+					anchor: Draft<Animatable<Vec2>>;
+					scale: Draft<Animatable<number>>;
+					scaleWidth: Draft<Animatable<number>>;
+			  }
 			| undefined;
 		if (!tr || !kindCapabilities(c.kind)?.hasTransform) continue;
 		if (isFrameSizedGenerator(c as { kind: string; canvas?: unknown })) {
@@ -115,7 +146,8 @@ export const sequenceHandlers: HandlerMap = {
 		assertBin(doc, cmd.binId, h);
 		const presetId = cmd.preset ?? doc.settings.defaultSequencePreset;
 		const preset = h.registries.presets.get(presetId);
-		if (!preset && !cmd.fromMediaId && !cmd.settings) h.fail('E_INVALID_PARAM', `Unknown preset: ${presetId}`);
+		if (!preset && !cmd.fromMediaId && !cmd.settings)
+			h.fail('E_INVALID_PARAM', `Unknown preset: ${presetId}`);
 		const base = preset ?? h.registries.presets.list()[0]!;
 		const settings: SequenceSettings = JSON.parse(JSON.stringify(base.settings));
 		let asset: MediaAsset | undefined;
@@ -131,7 +163,8 @@ export const sequenceHandlers: HandlerMap = {
 			}
 		}
 		Object.assign(settings, cmd.settings ?? {});
-		if (cmd.settings?.frameRate && cmd.settings.dropFrame === undefined) settings.dropFrame = supportsDropFrame(settings.frameRate);
+		if (cmd.settings?.frameRate && cmd.settings.dropFrame === undefined)
+			settings.dropFrame = supportsDropFrame(settings.frameRate);
 		validateSettings(settings, h);
 		const id = h.newId(doc, 'seq', cmd.id);
 		const seq = createSequence(h.ids, settings, cmd.tracks ?? base.tracks, id);
@@ -155,15 +188,25 @@ export const sequenceHandlers: HandlerMap = {
 	'sequence.updateSettings': (doc, cmd, h: HandlerContext) => {
 		const seq = h.sequence(doc, cmd.sequenceId);
 		const p = cmd.settings;
-		const next: SequenceSettings = { ...(JSON.parse(JSON.stringify(seq.settings)) as SequenceSettings), ...p };
+		const next: SequenceSettings = {
+			...(JSON.parse(JSON.stringify(seq.settings)) as SequenceSettings),
+			...p,
+		};
 		validateSettings(next, h);
-		if (p.frameRate && (p.frameRate.num * seq.settings.frameRate.den !== seq.settings.frameRate.num * p.frameRate.den)) {
+		if (
+			p.frameRate &&
+			p.frameRate.num * seq.settings.frameRate.den !== seq.settings.frameRate.num * p.frameRate.den
+		) {
 			changeFrameRate(seq, next.frameRate, h);
 		}
-		if ((p.width !== undefined && p.width !== seq.settings.width) || (p.height !== undefined && p.height !== seq.settings.height)) {
+		if (
+			(p.width !== undefined && p.width !== seq.settings.width) ||
+			(p.height !== undefined && p.height !== seq.settings.height)
+		) {
 			changeFrameSize(seq, next.width, next.height, cmd.reposition ?? 'keep-offset-from-center');
 		}
-		if (p.dropFrame !== undefined) seq.settings.dropFrame = p.dropFrame && supportsDropFrame(seq.settings.frameRate as Rational);
+		if (p.dropFrame !== undefined)
+			seq.settings.dropFrame = p.dropFrame && supportsDropFrame(seq.settings.frameRate as Rational);
 		else if (p.frameRate) seq.settings.dropFrame = next.dropFrame;
 		if (p.startTimecodeFrames !== undefined) seq.settings.startTimecodeFrames = p.startTimecodeFrames;
 		if (p.backgroundColor) seq.settings.backgroundColor = [...p.backgroundColor];
@@ -204,15 +247,22 @@ export const sequenceHandlers: HandlerMap = {
 			const { seq, clip } = h.clip(doc, cmd.clipId);
 			assertUnlocked(findTrackIn(seq, clip.trackId)!.track, h);
 			let flicks: number;
-			if (cmd.flicks) flicks = h.flicks(cmd.flicks, doc.media[(clip as { mediaId?: string }).mediaId ?? ''] as MediaAsset, seq.settings.frameRate);
-			else if (cmd.frame !== undefined) flicks = h.clipContentTime(seq, clip, { sequenceFrame: h.frame(seq, cmd.frame) });
+			if (cmd.flicks)
+				flicks = h.flicks(
+					cmd.flicks,
+					doc.media[(clip as { mediaId?: string }).mediaId ?? ''] as MediaAsset,
+					seq.settings.frameRate,
+				);
+			else if (cmd.frame !== undefined)
+				flicks = h.clipContentTime(seq, clip, { sequenceFrame: h.frame(seq, cmd.frame) });
 			else flicks = clip.sourceIn;
 			const duration = cmd.duration !== undefined ? h.durationFrames(seq, cmd.duration) : 0;
 			clip.markers.push({ ...base, flicks, duration });
 			clip.markers.sort((a, b) => a.flicks - b.flicks);
 		} else {
 			const seq = h.sequence(doc, cmd.sequenceId);
-			if (cmd.frame === undefined) h.fail('E_INVALID_PARAM', 'marker.add needs frame (sequence marker) or clipId');
+			if (cmd.frame === undefined)
+				h.fail('E_INVALID_PARAM', 'marker.add needs frame (sequence marker) or clipId');
 			const frame = h.frame(seq, cmd.frame);
 			if (frame < 0) h.fail('E_INVALID_PARAM', 'Marker frame must be >= 0');
 			const duration = cmd.duration !== undefined ? h.durationFrames(seq, cmd.duration) : 0;
@@ -269,7 +319,8 @@ export const sequenceHandlers: HandlerMap = {
 		});
 		const clips = Object.values(seq.clips).filter((c) => ids.includes(c.trackId));
 		if (clips.length > 0) {
-			if (!cmd.force) h.fail('E_IN_USE', `The tracks contain ${clips.length} clips`, { blocking: clips.map((c) => c.id) });
+			if (!cmd.force)
+				h.fail('E_IN_USE', `The tracks contain ${clips.length} clips`, { blocking: clips.map((c) => c.id) });
 			for (const id of ids) {
 				const t = findTrackIn(seq, id)!.track;
 				if (t.locked && clips.some((c) => c.trackId === id)) assertUnlocked(t, h);
@@ -313,7 +364,9 @@ export const sequenceHandlers: HandlerMap = {
 			only('audio', key);
 			const range = key === 'volumeDb' ? [-96, 15] : [-100, 100];
 			const val = typeof v === 'number' ? anim(v) : (v as Animatable<number>);
-			const bad = [val.value, ...val.keyframes.map((k) => k.value)].some((x) => x < range[0]! || x > range[1]!);
+			const bad = [val.value, ...val.keyframes.map((k) => k.value)].some(
+				(x) => x < range[0]! || x > range[1]!,
+			);
 			if (bad) h.fail('E_INVALID_PARAM', `${key} must be within ${range[0]}..${range[1]}`);
 			track[key] = val;
 		}

@@ -15,7 +15,9 @@ export type TrackIndex = {
 const indexCache = new WeakMap<object, TrackIndex>();
 
 /** Per-track sorted clip lists, memoized by the `clips` record identity (S01:SES-010). */
-export function sequenceIndex(seq: Pick<Sequence, 'clips' | 'videoTracks' | 'audioTracks' | 'captionTracks'>): TrackIndex {
+export function sequenceIndex(
+	seq: Pick<Sequence, 'clips' | 'videoTracks' | 'audioTracks' | 'captionTracks'>,
+): TrackIndex {
 	const cached = indexCache.get(seq.clips);
 	if (cached) return cached;
 	const byTrack = new Map<string, Clip[]>();
@@ -101,7 +103,11 @@ export function resolveTrackRef(seq: Sequence, ref: string): string | null {
 	const m = /^([VAC])(\d+)$/i.exec(ref);
 	if (m) {
 		const list =
-			m[1]!.toUpperCase() === 'V' ? seq.videoTracks : m[1]!.toUpperCase() === 'A' ? seq.audioTracks : seq.captionTracks;
+			m[1]!.toUpperCase() === 'V'
+				? seq.videoTracks
+				: m[1]!.toUpperCase() === 'A'
+					? seq.audioTracks
+					: seq.captionTracks;
 		return list[Number(m[2]) - 1]?.id ?? null;
 	}
 	return findTrack(seq, ref) ? ref : null;
@@ -183,7 +189,10 @@ export function linkedPartners(seq: Sequence, clipId: string): Clip[] {
 	if (!c?.linkId) return [];
 	const link = seq.links[c.linkId];
 	if (!link) return [];
-	return link.members.filter((m) => m !== clipId).map((m) => seq.clips[m]!).filter(Boolean);
+	return link.members
+		.filter((m) => m !== clipId)
+		.map((m) => seq.clips[m]!)
+		.filter(Boolean);
 }
 
 /** Expands a clip set with link partners (linked selection, S01:SEL-004). */
@@ -202,7 +211,11 @@ export function expandWithLinks(seq: Sequence, clipIds: readonly string[]): stri
  * Content time (flicks) shown at timeline frame `f` (S01:CLP-004). May be fractional at non-unit speeds;
  * keyframe evaluation accepts fractional times.
  */
-export function contentTimeAt(clip: Pick<Clip, 'start' | 'duration' | 'sourceIn' | 'speed'>, frame: number, rate: Rational): number {
+export function contentTimeAt(
+	clip: Pick<Clip, 'start' | 'duration' | 'sourceIn' | 'speed'>,
+	frame: number,
+	rate: Rational,
+): number {
 	const F = flicksPerFrame(rate);
 	const i = frame - clip.start;
 	if (clip.speed.reverse) return clip.sourceIn + (clip.duration - 1 - i) * F * clip.speed.rate;
@@ -248,7 +261,12 @@ export function outOfSyncOffsets(seq: Sequence): Record<string, number> {
 		if (!ref) continue;
 		const refMedia = (ref as { mediaId?: string }).mediaId;
 		for (const c of members) {
-			if (c === ref || (c as { mediaId?: string }).mediaId !== refMedia || c.speed.reverse !== ref.speed.reverse) continue;
+			if (
+				c === ref ||
+				(c as { mediaId?: string }).mediaId !== refMedia ||
+				c.speed.reverse !== ref.speed.reverse
+			)
+				continue;
 			const off = Math.round(origin(c) - origin(ref));
 			if (off !== 0) {
 				out[c.id] = off;
@@ -279,9 +297,17 @@ export function mediaUsage(doc: ProjectDocument): Record<string, MediaUsage> {
 }
 
 /** Ids of everything that references `id` (media, synthetic, transcript, sequence) — for delete warnings. */
-export function referencesTo(doc: ProjectDocument, id: string): { items: string[]; clips: { sequenceId: string; clipId: string }[] } {
+export function referencesTo(
+	doc: ProjectDocument,
+	id: string,
+): { items: string[]; clips: { sequenceId: string; clipId: string }[] } {
 	const items = Object.values(doc.items)
-		.filter((i) => (i as Record<string, unknown>).mediaId === id || (i as Record<string, unknown>).sequenceId === id || (i as Record<string, unknown>).syntheticId === id)
+		.filter(
+			(i) =>
+				(i as Record<string, unknown>).mediaId === id ||
+				(i as Record<string, unknown>).sequenceId === id ||
+				(i as Record<string, unknown>).syntheticId === id,
+		)
 		.map((i) => i.id);
 	const clips: { sequenceId: string; clipId: string }[] = [];
 	for (const seq of Object.values(doc.sequences)) {

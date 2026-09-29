@@ -1,8 +1,9 @@
 // Advanced edit handlers owned by WP-2B (ARCHITECTURE §5.3): roll, slip, slide, speed, duplicate,
 // link/unlink, fit to frame, range lift/extract, gap close. WP-00 ships stubs that refuse with
 // E_NOT_IMPLEMENTED; replace each stub with the real handler (schemas live in ../schemas/clip.ts).
-import type { CommandOf } from '../schemas/index.ts';
+
 import type { DDoc, HandlerContext } from '../context.ts';
+import type { CommandOf } from '../schemas/index.ts';
 import { type HandlerMap, notImplemented } from './util.ts';
 
 const OWNER = 'WP-2B';

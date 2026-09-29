@@ -47,7 +47,10 @@ export type EffectSpec = {
 	appliesTo: 'video' | 'audio';
 	params: ParamSpec[];
 	/** Browser preview. `css` returns a style fragment merged onto the layer (e.g. `{filter}`, `{clipPath}`). */
-	preview: { css?(p: EffectParams): Record<string, string>; svgFilter?(p: EffectParams, uid: string): string };
+	preview: {
+		css?(p: EffectParams): Record<string, string>;
+		svgFilter?(p: EffectParams, uid: string): string;
+	};
 	/** ffmpeg filter text for the native export path, or null when the effect is Remotion-only. */
 	native: { filter(p: EffectParams, ctx: NativeFilterContext): string } | null;
 	/** Engine capability flags driving badges, render bar and planner (S01:FX-021). */
@@ -99,11 +102,51 @@ export const CROP_EFFECT: EffectSpec = {
 	category: 'Transform',
 	appliesTo: 'video',
 	params: [
-		{ name: 'left', label: 'Left', type: 'number', default: 0, range: { min: 0, max: 100, step: 0.1 }, unit: '%', animatable: true },
-		{ name: 'top', label: 'Top', type: 'number', default: 0, range: { min: 0, max: 100, step: 0.1 }, unit: '%', animatable: true },
-		{ name: 'right', label: 'Right', type: 'number', default: 0, range: { min: 0, max: 100, step: 0.1 }, unit: '%', animatable: true },
-		{ name: 'bottom', label: 'Bottom', type: 'number', default: 0, range: { min: 0, max: 100, step: 0.1 }, unit: '%', animatable: true },
-		{ name: 'feather', label: 'Edge Feather', type: 'number', default: 0, range: { min: 0, max: 1000, step: 1 }, unit: 'px', animatable: true },
+		{
+			name: 'left',
+			label: 'Left',
+			type: 'number',
+			default: 0,
+			range: { min: 0, max: 100, step: 0.1 },
+			unit: '%',
+			animatable: true,
+		},
+		{
+			name: 'top',
+			label: 'Top',
+			type: 'number',
+			default: 0,
+			range: { min: 0, max: 100, step: 0.1 },
+			unit: '%',
+			animatable: true,
+		},
+		{
+			name: 'right',
+			label: 'Right',
+			type: 'number',
+			default: 0,
+			range: { min: 0, max: 100, step: 0.1 },
+			unit: '%',
+			animatable: true,
+		},
+		{
+			name: 'bottom',
+			label: 'Bottom',
+			type: 'number',
+			default: 0,
+			range: { min: 0, max: 100, step: 0.1 },
+			unit: '%',
+			animatable: true,
+		},
+		{
+			name: 'feather',
+			label: 'Edge Feather',
+			type: 'number',
+			default: 0,
+			range: { min: 0, max: 1000, step: 1 },
+			unit: 'px',
+			animatable: true,
+		},
 	],
 	preview: {
 		css: (p) => ({

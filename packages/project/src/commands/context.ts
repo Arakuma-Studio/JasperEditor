@@ -1,12 +1,12 @@
 // Per-command handler context and argument resolution (temp refs, track labels, time forms).
 import type { Draft } from 'immer';
-import { findTrackIn, resolveTrackIn } from './placement.ts';
 import { type IdPrefix, isValidId } from '../ids.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { MediaAsset } from '../schema/media.ts';
 import type { Clip, Sequence, Track } from '../schema/sequence.ts';
 import { flicksPerFrame, nominalFps, type Rational, secondsToFlicks, secondsToFrames } from '../time.ts';
 import { parseTimecode } from '../timecode.ts';
+import { findTrackIn, resolveTrackIn } from './placement.ts';
 import type { ContentTimeInput, ParamAt, TimeInput } from './schemas/common.ts';
 import { type CommandContext, CommandError, type ErrorCode, type Issue, type Origin } from './types.ts';
 
@@ -172,7 +172,8 @@ export class HandlerContext {
 }
 
 export function idExists(doc: DDoc | ProjectDocument, id: string): boolean {
-	if (doc.projectId === id || doc.items[id] || doc.media[id] || doc.synthetics[id] || doc.transcripts[id]) return true;
+	if (doc.projectId === id || doc.items[id] || doc.media[id] || doc.synthetics[id] || doc.transcripts[id])
+		return true;
 	if (doc.fonts[id] || doc.sequences[id]) return true;
 	for (const seq of Object.values(doc.sequences)) {
 		if (seq.clips[id] || seq.transitions[id] || seq.links[id] || seq.groups[id]) return true;
@@ -210,7 +211,8 @@ export function substituteRefs<T>(
 			const out: unknown[] = [];
 			for (const x of v) {
 				if (idContext && x === '$selection') {
-					if (!selection) throw new CommandError('E_INVALID_PARAM', '$selection used without a session selection');
+					if (!selection)
+						throw new CommandError('E_INVALID_PARAM', '$selection used without a session selection');
 					out.push(...selection.clips);
 				} else out.push(walk(x, idContext));
 			}
@@ -221,7 +223,8 @@ export function substituteRefs<T>(
 			for (const [k, x] of Object.entries(v)) {
 				if (DECL_KEYS.has(k)) out[k] = x;
 				else if (x === '$selection' && /Ids$/.test(k)) {
-					if (!selection) throw new CommandError('E_INVALID_PARAM', '$selection used without a session selection');
+					if (!selection)
+						throw new CommandError('E_INVALID_PARAM', '$selection used without a session selection');
 					out[k] = [...selection.clips];
 				} else out[k] = walk(x, idContext || ID_KEY_RE.test(k));
 			}

@@ -35,6 +35,10 @@
     "wait-on": "^9.5.1"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["electron", "esbuild", "@biomejs/biome"]
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild",
+      "@biomejs/biome"
+    ]
   }
 }

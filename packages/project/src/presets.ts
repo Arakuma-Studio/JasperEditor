@@ -1,7 +1,7 @@
 // Sequence presets (S01:SEQ-003) and the default track layout (V1–V3, A1–A3).
 import type { RGBA } from './schema/common.ts';
 import type { SequenceSettings } from './schema/sequence.ts';
-import { type Rational, RATES, supportsDropFrame } from './time.ts';
+import { RATES, type Rational, supportsDropFrame } from './time.ts';
 
 export type SequencePreset = {
 	id: string;

@@ -18,11 +18,16 @@ export function detachItem(doc: DDoc, itemId: string): void {
 	}
 }
 
-export function insertItem(doc: DDoc, itemId: string, parentBinId: string | null | undefined, index?: number): void {
+export function insertItem(
+	doc: DDoc,
+	itemId: string,
+	parentBinId: string | null | undefined,
+	index?: number,
+): void {
 	let list: string[];
 	if (parentBinId) {
 		const bin = doc.items[parentBinId];
-		if (!bin || bin.kind !== 'bin') throw new Error(`not a bin: ${parentBinId}`);
+		if (bin?.kind !== 'bin') throw new Error(`not a bin: ${parentBinId}`);
 		list = bin.children;
 	} else list = doc.rootItems;
 	if (index === undefined || index >= list.length) list.push(itemId);
@@ -38,7 +43,7 @@ export function assertBin(doc: DDoc, binId: string | null | undefined, h: Handle
 
 function isDescendant(doc: DDoc, ancestorBinId: string, itemId: string): boolean {
 	const bin = doc.items[ancestorBinId];
-	if (!bin || bin.kind !== 'bin') return false;
+	if (bin?.kind !== 'bin') return false;
 	for (const child of bin.children) {
 		if (child === itemId || isDescendant(doc, child, itemId)) return true;
 	}
@@ -140,7 +145,8 @@ export const projectHandlers: HandlerMap = {
 			for (const seq of Object.values(doc.sequences)) {
 				if (deletedSequences.has(seq.id)) continue;
 				for (const c of Object.values(seq.clips)) {
-					if ((c as Record<string, unknown>)[field] === value) clipRemovals.push({ seqId: seq.id, clipId: c.id });
+					if ((c as Record<string, unknown>)[field] === value)
+						clipRemovals.push({ seqId: seq.id, clipId: c.id });
 				}
 			}
 		}
@@ -148,7 +154,8 @@ export const projectHandlers: HandlerMap = {
 			if (deletedSequences.has(seq.id)) continue;
 			for (const c of Object.values(seq.clips)) {
 				const nested = (c as Record<string, unknown>).sequenceId;
-				if (typeof nested === 'string' && deletedSequences.has(nested)) clipRemovals.push({ seqId: seq.id, clipId: c.id });
+				if (typeof nested === 'string' && deletedSequences.has(nested))
+					clipRemovals.push({ seqId: seq.id, clipId: c.id });
 			}
 		}
 		if (clipRemovals.length > 0 && !cmd.force) {
@@ -162,7 +169,8 @@ export const projectHandlers: HandlerMap = {
 			const track = [...seq.videoTracks, ...seq.audioTracks, ...seq.captionTracks].find(
 				(t) => t.id === seq.clips[r.clipId]?.trackId,
 			);
-			if (track?.locked) h.fail('E_TRACK_LOCKED', `Clip ${r.clipId} is on a locked track`, { blocking: [track.id] });
+			if (track?.locked)
+				h.fail('E_TRACK_LOCKED', `Clip ${r.clipId} is on a locked track`, { blocking: [track.id] });
 			removeClip(seq, r.clipId, h);
 		}
 		for (const seqId of deletedSequences) delete doc.sequences[seqId];
@@ -176,12 +184,15 @@ export const projectHandlers: HandlerMap = {
 	},
 	'item.setMarks': (doc, cmd, h: HandlerContext) => {
 		const it = item(doc, cmd.itemId, h);
-		if (it.kind !== 'media' && it.kind !== 'synthetic') h.fail('E_INVALID_PARAM', 'Only media and synthetic items have marks');
-		const asset: MediaAsset | undefined = it.kind === 'media' ? (doc.media[it.mediaId] as MediaAsset) : undefined;
+		if (it.kind !== 'media' && it.kind !== 'synthetic')
+			h.fail('E_INVALID_PARAM', 'Only media and synthetic items have marks');
+		const asset: MediaAsset | undefined =
+			it.kind === 'media' ? (doc.media[it.mediaId] as MediaAsset) : undefined;
 		const fallback: Rational = { num: 30, den: 1 };
 		const inF = cmd.in ? h.flicks(cmd.in, asset, fallback) : null;
 		const outF = cmd.out ? h.flicks(cmd.out, asset, fallback) : null;
-		if (inF !== null && outF !== null && outF <= inF) h.fail('E_INVALID_PARAM', 'Out mark must be after In mark');
+		if (inF !== null && outF !== null && outF <= inF)
+			h.fail('E_INVALID_PARAM', 'Out mark must be after In mark');
 		const dur = asset?.probe.durationFlicks;
 		if (dur != null && ((inF ?? 0) > dur || (outF ?? 0) > dur + flicksPerFrame(fallback))) {
 			h.fail('E_OUT_OF_MEDIA', 'Marks are outside the media');
@@ -227,7 +238,8 @@ export const projectHandlers: HandlerMap = {
 		const asset = doc.media[cmd.mediaId];
 		if (!asset) h.fail('E_NOT_FOUND', `Media not found: ${cmd.mediaId}`);
 		if (cmd.fingerprint && cmd.fingerprint !== asset.fingerprint) {
-			if (!cmd.force) h.fail('E_INVALID_PARAM', 'Fingerprint does not match the media (pass force to relink anyway)');
+			if (!cmd.force)
+				h.fail('E_INVALID_PARAM', 'Fingerprint does not match the media (pass force to relink anyway)');
 			asset.fingerprint = cmd.fingerprint;
 		}
 		asset.locators = [cmd.locator, ...asset.locators.filter((l) => l.type !== cmd.locator.type)];

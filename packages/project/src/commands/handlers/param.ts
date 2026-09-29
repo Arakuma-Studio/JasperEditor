@@ -19,7 +19,13 @@ type ValueRule = {
 
 /** A resolved parameter target: either an Animatable (keyframable) or a static setter. */
 type Target =
-	| { type: 'anim'; anim: Draft<Animatable<unknown>>; rule: ValueRule; time(at: ParamAt | undefined): number; label: string }
+	| {
+			type: 'anim';
+			anim: Draft<Animatable<unknown>>;
+			rule: ValueRule;
+			time(at: ParamAt | undefined): number;
+			label: string;
+	  }
 	| { type: 'static'; set(v: unknown): void; rule: ValueRule; label: string };
 
 function ruleFromProperty(s: PropertySpec): ValueRule {
@@ -38,7 +44,10 @@ function getAt(obj: unknown, path: readonly string[]): unknown {
 	return cur;
 }
 
-function findEffect(doc: DDoc, fxId: string): { seq: DSeq; fx: Draft<EffectInstance>; clip: DClip | null } | null {
+function findEffect(
+	doc: DDoc,
+	fxId: string,
+): { seq: DSeq; fx: Draft<EffectInstance>; clip: DClip | null } | null {
 	for (const seq of Object.values(doc.sequences)) {
 		for (const clip of Object.values(seq.clips)) {
 			const fx = (clip as { effects?: Draft<EffectInstance>[] }).effects?.find((e) => e.id === fxId);
@@ -56,17 +65,21 @@ function findEffect(doc: DDoc, fxId: string): { seq: DSeq; fx: Draft<EffectInsta
 
 function resolveTarget(doc: DDoc, cmd: { target: string[]; sequenceId?: string }, h: HandlerContext): Target {
 	const [head, a, ...rest] = cmd.target;
-	const bad = (): never => h.fail('E_INVALID_PARAM', `Unsupported parameter path: ${JSON.stringify(cmd.target)}`);
+	const bad = (): never =>
+		h.fail('E_INVALID_PARAM', `Unsupported parameter path: ${JSON.stringify(cmd.target)}`);
 	if (head === 'clip' && a) {
 		const { seq, clip } = h.clip(doc, a);
 		assertUnlocked(findTrackIn(seq, clip.trackId)!.track, h);
 		const key = rest.join('.');
 		const template =
 			clip.kind === 'motion-graphic'
-				? h.registries.mgTemplates.get((clip as { template: { id: string } }).template.id, (clip as { template: { version: number } }).template.version)
+				? h.registries.mgTemplates.get(
+						(clip as { template: { id: string } }).template.id,
+						(clip as { template: { version: number } }).template.version,
+					)
 				: undefined;
 		const spec = resolvePropertySpec(key, template);
-		if (!spec || !spec.appliesTo(clip)) return bad();
+		if (!spec?.appliesTo(clip)) return bad();
 		const time = (at: ParamAt | undefined) => h.clipContentTime(seq, clip, at);
 		if (spec.animatable !== 'no') {
 			const anim = getAt(clip, spec.storagePath) as Draft<Animatable<unknown>> | undefined;
@@ -75,8 +88,13 @@ function resolveTarget(doc: DDoc, cmd: { target: string[]; sequenceId?: string }
 		}
 		if (spec.storagePath[0] === '$synthetic') {
 			const syn = doc.synthetics[(clip as { syntheticId: string }).syntheticId];
-			if (!syn || syn.kind !== 'color-matte') return bad();
-			return { type: 'static', rule: ruleFromProperty(spec), label: key, set: (v) => (syn.color = v as never) };
+			if (syn?.kind !== 'color-matte') return bad();
+			return {
+				type: 'static',
+				rule: ruleFromProperty(spec),
+				label: key,
+				set: (v) => (syn.color = v as never),
+			};
 		}
 		const parentPath = spec.storagePath.slice(0, -1);
 		const field = spec.storagePath[spec.storagePath.length - 1]!;
@@ -100,14 +118,16 @@ function resolveTarget(doc: DDoc, cmd: { target: string[]; sequenceId?: string }
 		const found = findEffect(doc, a);
 		if (!found) return h.fail('E_NOT_FOUND', `Effect instance not found: ${a}`);
 		const effSpec = h.registries.effects.get(found.fx.effectId, found.fx.effectVersion);
-		if (!effSpec) return h.fail('E_UNKNOWN_EFFECT', `Unknown effect ${found.fx.effectId} (bypassed, not editable)`);
+		if (!effSpec)
+			return h.fail('E_UNKNOWN_EFFECT', `Unknown effect ${found.fx.effectId} (bypassed, not editable)`);
 		const p = effSpec.params.find((x) => x.name === rest[0]);
 		if (!p) return bad();
 		if (found.clip) assertUnlocked(findTrackIn(found.seq, found.clip.trackId)!.track, h);
 		found.fx.params[p.name] ??= { value: p.default, keyframes: [] } as never;
 		const anim = found.fx.params[p.name] as Draft<Animatable<unknown>>;
 		const clip = found.clip;
-		const time = (at: ParamAt | undefined) => (clip ? h.clipContentTime(found.seq, clip, at) : h.sequenceContentTime(found.seq, at));
+		const time = (at: ParamAt | undefined) =>
+			clip ? h.clipContentTime(found.seq, clip, at) : h.sequenceContentTime(found.seq, at);
 		return { type: 'anim', anim, rule: ruleFromParam(p), time, label: `${found.fx.effectId}.${p.name}` };
 	}
 	if (head === 'track' && a && rest.length === 1 && (rest[0] === 'volumeDb' || rest[0] === 'pan')) {
@@ -117,21 +137,42 @@ function resolveTarget(doc: DDoc, cmd: { target: string[]; sequenceId?: string }
 		const key = rest[0];
 		track[key] ??= { value: 0, keyframes: [] };
 		const spec = resolvePropertySpec(key)!;
-		return { type: 'anim', anim: track[key] as Draft<Animatable<unknown>>, rule: ruleFromProperty(spec), time: (at) => h.sequenceContentTime(seq, at), label: `track.${key}` };
+		return {
+			type: 'anim',
+			anim: track[key] as Draft<Animatable<unknown>>,
+			rule: ruleFromProperty(spec),
+			time: (at) => h.sequenceContentTime(seq, at),
+			label: `track.${key}`,
+		};
 	}
 	if (head === 'master') {
 		const [seqId, key] = rest.length ? [a, rest[0]] : [cmd.sequenceId, a];
 		if (key !== 'volumeDb') return bad();
 		const seq = h.sequence(doc, seqId);
-		return { type: 'anim', anim: seq.master.volumeDb as Draft<Animatable<unknown>>, rule: ruleFromProperty(resolvePropertySpec('volumeDb')!), time: (at) => h.sequenceContentTime(seq, at), label: 'master.volumeDb' };
+		return {
+			type: 'anim',
+			anim: seq.master.volumeDb as Draft<Animatable<unknown>>,
+			rule: ruleFromProperty(resolvePropertySpec('volumeDb')!),
+			time: (at) => h.sequenceContentTime(seq, at),
+			label: 'master.volumeDb',
+		};
 	}
 	return bad();
 }
 
 /** Validates a value against its rule and clamps numbers to the range (S03:PRP-021). */
-function validateValue(v: unknown, rule: ValueRule, h: HandlerContext, label: string): { value: unknown; clamped: boolean } {
+function validateValue(
+	v: unknown,
+	rule: ValueRule,
+	h: HandlerContext,
+	label: string,
+): { value: unknown; clamped: boolean } {
 	const fail = (): never => h.fail('E_INVALID_PARAM', `Invalid value for ${label}: ${JSON.stringify(v)}`);
-	const clampN = (x: number) => Math.min(rule.range?.max ?? Number.POSITIVE_INFINITY, Math.max(rule.range?.min ?? Number.NEGATIVE_INFINITY, x));
+	const clampN = (x: number) =>
+		Math.min(
+			rule.range?.max ?? Number.POSITIVE_INFINITY,
+			Math.max(rule.range?.min ?? Number.NEGATIVE_INFINITY, x),
+		);
 	const isNum = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
 	switch (rule.kind) {
 		case 'number': {
@@ -157,7 +198,8 @@ function validateValue(v: unknown, rule: ValueRule, h: HandlerContext, label: st
 			if (typeof v !== 'string') return fail();
 			return { value: v, clamped: false };
 		case 'media':
-			if (!v || typeof v !== 'object' || typeof (v as { mediaId?: unknown }).mediaId !== 'string') return fail();
+			if (!v || typeof v !== 'object' || typeof (v as { mediaId?: unknown }).mediaId !== 'string')
+				return fail();
 			return { value: v, clamped: false };
 	}
 }
@@ -210,7 +252,12 @@ export const paramHandlers: HandlerMap = {
 		const anim = target.anim;
 		if (cmd.animated) {
 			if (anim.keyframes.length > 0) return { keyframeId: null };
-			const kf = newKeyframe(h, t, JSON.parse(JSON.stringify(anim.value)), target.rule.holdOnly || isHoldOnlyValue(anim.value));
+			const kf = newKeyframe(
+				h,
+				t,
+				JSON.parse(JSON.stringify(anim.value)),
+				target.rule.holdOnly || isHoldOnlyValue(anim.value),
+			);
 			anim.keyframes.push(kf as never);
 			return { keyframeId: kf.id, time: t };
 		}

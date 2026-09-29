@@ -1,11 +1,18 @@
 import { z } from 'zod';
 import { LabelColorSchema } from '../../schema/common.ts';
 import { ProjectSettingsSchema } from '../../schema/document.ts';
-import { MediaAssetSchema, MediaLocatorSchema, MediaProbeSchema, NativeRecipeSchema } from '../../schema/media.ts';
-import { cmd, ContentTimeInputSchema, IdListSchema, IdRefSchema, RefDeclSchema } from './common.ts';
+import {
+	MediaAssetSchema,
+	MediaLocatorSchema,
+	MediaProbeSchema,
+	NativeRecipeSchema,
+} from '../../schema/media.ts';
+import { ContentTimeInputSchema, cmd, IdListSchema, IdRefSchema, RefDeclSchema } from './common.ts';
 
 export const ProjectRenameCmd = cmd('project.rename', { name: z.string().min(1) });
-export const ProjectUpdateSettingsCmd = cmd('project.updateSettings', { settings: ProjectSettingsSchema.partial() });
+export const ProjectUpdateSettingsCmd = cmd('project.updateSettings', {
+	settings: ProjectSettingsSchema.partial(),
+});
 
 export const BinCreateCmd = cmd('bin.create', {
 	name: z.string().min(1),
@@ -60,7 +67,14 @@ export const MediaRemoveUnusedCmd = cmd('media.removeUnused', {
 });
 
 export const SyntheticCreateCmd = cmd('synthetic.create', {
-	kind: z.enum(['color-matte', 'adjustment', 'transparent', 'black-video', 'bars-and-tone', 'counting-leader']),
+	kind: z.enum([
+		'color-matte',
+		'adjustment',
+		'transparent',
+		'black-video',
+		'bars-and-tone',
+		'counting-leader',
+	]),
 	params: z.record(z.string(), z.unknown()).optional(),
 	binId: IdRefSchema.nullable().optional(),
 	name: z.string().optional(),

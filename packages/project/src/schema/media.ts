@@ -1,7 +1,7 @@
 // Media assets, locators, derivations, synthetic sources, transcripts and fonts (S01 §6).
 import { z } from 'zod';
-import { int, nonNegInt, RationalSchema, RGBASchema } from './common.ts';
 import type { DeepStrip } from './common.ts';
+import { int, nonNegInt, RationalSchema, RGBASchema } from './common.ts';
 
 export const MEDIA_KINDS = ['video', 'audio', 'image', 'animated-image', 'font', 'lut'] as const;
 export const MediaKindSchema = z.enum(MEDIA_KINDS);
@@ -76,7 +76,11 @@ export const NativeRecipeSchema = z.discriminatedUnion('op', [
 	z.looseObject({ op: z.literal('stabilize'), smoothing: z.number(), crop: z.enum(['keep', 'black']) }),
 	z.looseObject({ op: z.literal('denoise-audio'), strength: z.number() }),
 	z.looseObject({ op: z.literal('loudness-normalize'), targetLufs: z.number(), truePeakDb: z.number() }),
-	z.looseObject({ op: z.literal('extract-audio'), streamIndex: nonNegInt(), format: z.enum(['wav', 'flac']) }),
+	z.looseObject({
+		op: z.literal('extract-audio'),
+		streamIndex: nonNegInt(),
+		format: z.enum(['wav', 'flac']),
+	}),
 	z.looseObject({ op: z.literal('transcode'), preset: z.string() }),
 	z.looseObject({ op: z.literal('time-stretch'), rate: z.number().positive(), preservePitch: z.boolean() }),
 	z.looseObject({ op: z.literal('range'), inFlicks: nonNegInt(), outFlicks: nonNegInt() }),
@@ -111,7 +115,11 @@ export const SyntheticSourceSchema = z.discriminatedUnion('kind', [
 	z.looseObject({ id: z.string(), kind: z.literal('transparent') }),
 	z.looseObject({ id: z.string(), kind: z.literal('black-video') }),
 	z.looseObject({ id: z.string(), kind: z.literal('bars-and-tone'), toneHz: z.number(), toneDb: z.number() }),
-	z.looseObject({ id: z.string(), kind: z.literal('counting-leader'), style: z.record(z.string(), z.unknown()) }),
+	z.looseObject({
+		id: z.string(),
+		kind: z.literal('counting-leader'),
+		style: z.record(z.string(), z.unknown()),
+	}),
 ]);
 export type SyntheticSource = DeepStrip<z.infer<typeof SyntheticSourceSchema>>;
 export type SyntheticKind = SyntheticSource['kind'];

@@ -3,6 +3,7 @@ import type { IdSource } from './ids.ts';
 import { DEFAULT_PRESET_ID, defaultPresetRegistry, type PresetRegistry } from './presets.ts';
 import type { Animatable, RGBA, Vec2 } from './schema/common.ts';
 import type { DefaultScaling, ProjectDocument, ProjectSettings, SequenceItem } from './schema/document.ts';
+import { CURRENT_SCHEMA_VERSION } from './schema/document.ts';
 import type { FontRef } from './schema/media.ts';
 import type {
 	Sequence,
@@ -13,7 +14,6 @@ import type {
 	TrackKind,
 	Transform,
 } from './schema/sequence.ts';
-import { CURRENT_SCHEMA_VERSION } from './schema/document.ts';
 
 export function anim<T>(value: T): Animatable<T> {
 	return { value, keyframes: [] };

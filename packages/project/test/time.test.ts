@@ -17,6 +17,7 @@ import {
 	parseTimecode,
 	parseTimecodeEntry,
 	RATES,
+	type Rational,
 	secondsToFlicks,
 	secondsToFrames,
 } from '../src/index.ts';
@@ -100,21 +101,26 @@ describe('timecode (S02 Appendix A.1)', () => {
 		expect(parseTimecode('00;01;00;00', RATES.r29_97, { dropFrame: true })).toBe(1800);
 		expect(parseTimecode('00;01;00;01', RATES.r29_97, { dropFrame: true })).toBe(1800);
 	});
-	const sweep = (rate: typeof RATES.r29_97) => {
+	const sweep = (rate: Rational) => {
 		const total = Math.round((24 * 3600 * rate.num) / rate.den);
 		const step = FUZZ ? 1 : 97;
 		const check = (f: number) => {
 			const tc = formatTimecode(f, rate, { dropFrame: true });
-			if (parseTimecode(tc, rate, { dropFrame: true }) !== f) throw new Error(`round trip failed at ${f}: ${tc}`);
+			if (parseTimecode(tc, rate, { dropFrame: true }) !== f)
+				throw new Error(`round trip failed at ${f}: ${tc}`);
 		};
 		for (let f = 0; f < total; f += step) check(f);
 		// Minute boundaries are where drop-frame bugs live: always check them densely.
 		const perMin = rate.num === 30000 ? 1798 : 3596;
-		for (let m = 1; m < 24 * 60; m++) for (let k = -3; k <= 3; k++) check(Math.max(0, Math.round(m * perMin + Math.floor(m / 10) * (rate.num === 30000 ? 2 : 4)) + k));
+		for (let m = 1; m < 24 * 60; m++)
+			for (let k = -3; k <= 3; k++)
+				check(Math.max(0, Math.round(m * perMin + Math.floor(m / 10) * (rate.num === 30000 ? 2 : 4)) + k));
 		check(total - 1);
 	};
-	it(`drop-frame round-trips over 24 h at 29.97 (${FUZZ ? 'every frame' : 'sampled'})`, () => sweep(RATES.r29_97));
-	it(`drop-frame round-trips over 24 h at 59.94 (${FUZZ ? 'every frame' : 'sampled'})`, () => sweep(RATES.r59_94));
+	it(`drop-frame round-trips over 24 h at 29.97 (${FUZZ ? 'every frame' : 'sampled'})`, () =>
+		sweep(RATES.r29_97));
+	it(`drop-frame round-trips over 24 h at 59.94 (${FUZZ ? 'every frame' : 'sampled'})`, () =>
+		sweep(RATES.r59_94));
 	it('non-drop round-trips', () => {
 		for (const r of [RATES.r24, RATES.r25, RATES.r30, RATES.r60, RATES.r23_976]) {
 			for (let f = 0; f < 200_000; f += 331) expect(parseTimecode(formatTimecode(f, r), r)).toBe(f);

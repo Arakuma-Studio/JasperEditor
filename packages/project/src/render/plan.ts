@@ -4,7 +4,10 @@ import type { RenderSnapshot } from './snapshot.ts';
 
 export type AffinityRange = { start: number; end: number; engines: EngineId[] };
 
-export function engineAffinity(snapshot: RenderSnapshot): { clips: Record<string, EngineId>; ranges: AffinityRange[] } {
+export function engineAffinity(snapshot: RenderSnapshot): {
+	clips: Record<string, EngineId>;
+	ranges: AffinityRange[];
+} {
 	const clips: Record<string, EngineId> = {};
 	const cuts = new Set<number>([snapshot.range.start, snapshot.range.end]);
 	const all = snapshot.videoTracks.flatMap((t) => t.clips);

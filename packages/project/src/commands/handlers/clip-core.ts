@@ -52,7 +52,16 @@ type DTrack = Draft<Track>;
 const rateOf = (seq: DSeq) => seq.settings.frameRate as Rational;
 const frameBox = (seq: DSeq): Box => ({ width: seq.settings.width, height: seq.settings.height });
 
-function commonFields(h: HandlerContext, id: string, trackId: string, start: number, duration: number, sourceIn: number, name: string, label: LabelColor) {
+function commonFields(
+	_h: HandlerContext,
+	id: string,
+	trackId: string,
+	start: number,
+	duration: number,
+	sourceIn: number,
+	name: string,
+	label: LabelColor,
+) {
 	return {
 		id,
 		trackId,
@@ -76,15 +85,17 @@ function visualFields(transform: Transform) {
 /** Intrinsic box of a media asset: probed size with rotation applied (S01:KND-020, AST-002). */
 export function mediaBox(asset: MediaAsset): Box | null {
 	const vs = asset.probe.streams.find((s) => s.type === 'video');
-	if (!vs || vs.type !== 'video') return null;
+	if (vs?.type !== 'video') return null;
 	const swap = asset.probe.rotationDegrees === 90 || asset.probe.rotationDegrees === 270;
 	return swap ? { width: vs.height, height: vs.width } : { width: vs.width, height: vs.height };
 }
 
 function applyTransformPatch(t: Transform, p: TransformPatch | undefined): Transform {
 	if (!p) return t;
-	const vec = (v: Vec2 | Animatable<Vec2>) => (Array.isArray(v) ? anim<Vec2>([v[0], v[1]]) : (v as Animatable<Vec2>));
-	const num = (v: number | Animatable<number>) => (typeof v === 'number' ? anim(v) : (v as Animatable<number>));
+	const vec = (v: Vec2 | Animatable<Vec2>) =>
+		Array.isArray(v) ? anim<Vec2>([v[0], v[1]]) : (v as Animatable<Vec2>);
+	const num = (v: number | Animatable<number>) =>
+		typeof v === 'number' ? anim(v) : (v as Animatable<number>);
 	return {
 		...t,
 		...(p.position !== undefined ? { position: vec(p.position as Vec2 | Animatable<Vec2>) } : {}),
@@ -169,7 +180,12 @@ export type PlaceOptions = {
 };
 
 /** Premiere Insert/Overwrite from a source (S01 `clip.place`, KND-003, FX-004, S02:TL-493). */
-export function placeSource(doc: DDoc, seq: DSeq, h: HandlerContext, o: PlaceOptions): { clipIds: string[]; linkId: string | null } {
+export function placeSource(
+	doc: DDoc,
+	seq: DSeq,
+	h: HandlerContext,
+	o: PlaceOptions,
+): { clipIds: string[]; linkId: string | null } {
 	const rate = rateOf(seq);
 	const F = flicksPerFrame(rate);
 	let item: ProjectItem | undefined;
@@ -180,16 +196,24 @@ export function placeSource(doc: DDoc, seq: DSeq, h: HandlerContext, o: PlaceOpt
 		if (!item) h.fail('E_NOT_FOUND', `Project item not found: ${o.source.projectItemId}`);
 		if (item.kind === 'media') mediaId = item.mediaId;
 		else if (item.kind === 'synthetic') syntheticId = item.syntheticId;
-		else if (item.kind === 'sequence') h.fail('E_NOT_IMPLEMENTED', 'Placing sequences (nesting) arrives in M2');
+		else if (item.kind === 'sequence')
+			h.fail('E_NOT_IMPLEMENTED', 'Placing sequences (nesting) arrives in M2');
 		else h.fail('E_INVALID_PARAM', `Cannot place a ${item.kind} item`);
 	}
 	if (o.source.sequenceId) h.fail('E_NOT_IMPLEMENTED', 'Placing sequences (nesting) arrives in M2');
 	const marks = item && (item.kind === 'media' || item.kind === 'synthetic') ? item.marks : null;
 	if (o.at < 0) h.fail('E_INVALID_PARAM', 'Placement frame must be >= 0');
 	const scaling = o.scaling ?? doc.settings.defaultScaling;
-	const stillFrames = Math.max(1, Math.round((doc.settings.defaultStillDurationFrames * rate.num) / (rate.den * 30)));
+	const stillFrames = Math.max(
+		1,
+		Math.round((doc.settings.defaultStillDurationFrames * rate.num) / (rate.den * 30)),
+	);
 
-	type Plan = { kind: Clip['kind']; trackRef: string; build(id: string, trackId: string, start: number, duration: number, sourceIn: number): Clip };
+	type Plan = {
+		kind: Clip['kind'];
+		trackRef: string;
+		build(id: string, trackId: string, start: number, duration: number, sourceIn: number): Clip;
+	};
 	const plans: Plan[] = [];
 	let frames: number;
 	let sourceIn: number;
@@ -197,7 +221,8 @@ export function placeSource(doc: DDoc, seq: DSeq, h: HandlerContext, o: PlaceOpt
 	if (mediaId) {
 		const asset = doc.media[mediaId] as MediaAsset | undefined;
 		if (!asset) h.fail('E_NOT_FOUND', `Media not found: ${mediaId}`);
-		if (asset.kind === 'font' || asset.kind === 'lut') h.fail('E_INVALID_PARAM', `${asset.kind} assets cannot be placed on a timeline`);
+		if (asset.kind === 'font' || asset.kind === 'lut')
+			h.fail('E_INVALID_PARAM', `${asset.kind} assets cannot be placed on a timeline`);
 		const name = item?.name ?? asset.originalName;
 		const label = item?.label ?? defaultLabelForMedia(asset);
 		const box = mediaBox(asset) ?? frameBox(seq);
@@ -232,7 +257,10 @@ export function placeSource(doc: DDoc, seq: DSeq, h: HandlerContext, o: PlaceOpt
 						{ num: 60000, den: 1001 },
 						{ num: 60, den: 1 },
 					].reduce((best, c) =>
-						Math.abs(c.num / c.den - vs.frameRate.num / vs.frameRate.den) < Math.abs(best.num / best.den - vs.frameRate.num / vs.frameRate.den) ? c : best,
+						Math.abs(c.num / c.den - vs.frameRate.num / vs.frameRate.den) <
+						Math.abs(best.num / best.den - vs.frameRate.num / vs.frameRate.den)
+							? c
+							: best,
 					);
 					seq.settings.frameRate = r;
 					seq.settings.dropFrame = supportsDropFrame(r);
@@ -275,12 +303,14 @@ export function placeSource(doc: DDoc, seq: DSeq, h: HandlerContext, o: PlaceOpt
 			const mapping = o.audioMapping ?? 'stereo';
 			if (mapping === 'per-stream') {
 				for (const s of audioStreams) {
-					if (s.type === 'audio') channelSets.push({ streamIndex: s.index, map: [...Array(s.channels).keys()] });
+					if (s.type === 'audio')
+						channelSets.push({ streamIndex: s.index, map: [...Array(s.channels).keys()] });
 				}
 			} else {
 				const s = audioStreams[0]!;
 				if (s.type === 'audio') {
-					if (mapping === 'mono-per-channel') for (let c = 0; c < s.channels; c++) channelSets.push({ streamIndex: s.index, map: [c] });
+					if (mapping === 'mono-per-channel')
+						for (let c = 0; c < s.channels; c++) channelSets.push({ streamIndex: s.index, map: [c] });
 					else channelSets.push({ streamIndex: s.index, map: s.channels >= 2 ? [0, 1] : [0] });
 				}
 			}
@@ -291,7 +321,9 @@ export function placeSource(doc: DDoc, seq: DSeq, h: HandlerContext, o: PlaceOpt
 				return m ? Number(m[1]) - 1 : 0;
 			})();
 			channelSets.forEach((channels, i) => {
-				const trackRef = o.audioTracks?.[i] ?? (o.audioTracks && o.audioTracks.length > 0 ? `A${i + 1}` : `A${videoIndex + i + 1}`);
+				const trackRef =
+					o.audioTracks?.[i] ??
+					(o.audioTracks && o.audioTracks.length > 0 ? `A${i + 1}` : `A${videoIndex + i + 1}`);
 				plans.push({
 					kind: 'audio',
 					trackRef,
@@ -312,7 +344,9 @@ export function placeSource(doc: DDoc, seq: DSeq, h: HandlerContext, o: PlaceOpt
 	} else if (syntheticId) {
 		const syn = doc.synthetics[syntheticId] as SyntheticSource | undefined;
 		if (!syn) h.fail('E_NOT_FOUND', `Synthetic source not found: ${syntheticId}`);
-		frames = o.sourceRange ? Math.max(1, Math.round((o.sourceRange.out - o.sourceRange.in) / F)) : stillFrames;
+		frames = o.sourceRange
+			? Math.max(1, Math.round((o.sourceRange.out - o.sourceRange.in) / F))
+			: stillFrames;
 		sourceIn = o.sourceRange?.in ?? marks?.in?.flicks ?? 0;
 		const name = item?.name ?? (syn.kind === 'color-matte' ? 'Color Matte' : syn.kind);
 		if (syn.kind === 'adjustment') {
@@ -346,7 +380,8 @@ export function placeSource(doc: DDoc, seq: DSeq, h: HandlerContext, o: PlaceOpt
 
 	const create = o.createTracks !== false;
 	const dest = plans.map((p) => prepareTrack(seq, p.trackRef, p.kind, h, create));
-	if (new Set(dest.map((t) => t.id)).size !== dest.length) h.fail('E_INVALID_PARAM', 'Two placed clips target the same track');
+	if (new Set(dest.map((t) => t.id)).size !== dest.length)
+		h.fail('E_INVALID_PARAM', 'Two placed clips target the same track');
 	makeRoom(seq, h, dest, o.at, frames!, o.mode, { rippleMarkers: o.rippleMarkers });
 	const clipIds: string[] = [];
 	plans.forEach((p, i) => {
@@ -369,7 +404,13 @@ export function placeSource(doc: DDoc, seq: DSeq, h: HandlerContext, o: PlaceOpt
 
 function newGeneratorClip(
 	doc: DDoc,
-	cmd: { sequenceId?: string; at: CommandOf<'clip.addText'>['at']; duration: CommandOf<'clip.addText'>['duration']; track: string; id?: string },
+	cmd: {
+		sequenceId?: string;
+		at: CommandOf<'clip.addText'>['at'];
+		duration: CommandOf<'clip.addText'>['duration'];
+		track: string;
+		id?: string;
+	},
 	h: HandlerContext,
 	kind: 'text' | 'solid' | 'motion-graphic',
 ): { seq: DSeq; track: DTrack; at: number; duration: number; id: string } {
@@ -425,7 +466,11 @@ function layoutText(clip: Draft<Extract<Clip, { kind: 'text' }>>, h: HandlerCont
 	}
 }
 
-function validateMgParams(info: MgTemplateInfo, params: Record<string, unknown>, h: HandlerContext): Record<string, unknown> {
+function validateMgParams(
+	info: MgTemplateInfo,
+	params: Record<string, unknown>,
+	h: HandlerContext,
+): Record<string, unknown> {
 	const parsed = info.paramsSchema.safeParse(params);
 	if (!parsed.success) {
 		const msg = parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ');
@@ -439,13 +484,22 @@ function validateMgParams(info: MgTemplateInfo, params: Record<string, unknown>,
 type TrimLimits = { min: number; max: number };
 
 /** Allowed delta range for trimming one clip edge (S02:TL-534/541, S01:CLP-005). */
-function trimLimits(doc: DDoc, seq: DSeq, c: DClip, edge: 'in' | 'out', ripple: boolean, members: ReadonlySet<string>): TrimLimits {
+function trimLimits(
+	doc: DDoc,
+	seq: DSeq,
+	c: DClip,
+	edge: 'in' | 'out',
+	ripple: boolean,
+	members: ReadonlySet<string>,
+): TrimLimits {
 	const F = flicksPerFrame(rateOf(seq));
 	const step = F * c.speed.rate;
 	const eps = 1e-6;
 	let min = Number.NEGATIVE_INFINITY;
 	let max = Number.POSITIVE_INFINITY;
-	const dur = (c as { mediaId?: string }).mediaId ? (doc.media[(c as { mediaId: string }).mediaId]?.probe.durationFlicks ?? null) : null;
+	const dur = (c as { mediaId?: string }).mediaId
+		? (doc.media[(c as { mediaId: string }).mediaId]?.probe.durationFlicks ?? null)
+		: null;
 	const bounded = isBoundedContent(c as Clip) && dur !== null;
 	const others = trackClips(seq, c.trackId).filter((x) => x.id !== c.id && !members.has(x.id));
 	if (edge === 'in') {
@@ -460,10 +514,14 @@ function trimLimits(doc: DDoc, seq: DSeq, c: DClip, edge: 'in' | 'out', ripple: 
 	} else {
 		min = Math.max(min, 1 - c.duration);
 		if (!ripple) {
-			const nextStart = Math.min(Number.POSITIVE_INFINITY, ...others.filter((x) => x.start >= end(c)).map((x) => x.start));
+			const nextStart = Math.min(
+				Number.POSITIVE_INFINITY,
+				...others.filter((x) => x.start >= end(c)).map((x) => x.start),
+			);
 			max = Math.min(max, nextStart - end(c));
 		}
-		if (!c.speed.reverse && bounded) max = Math.min(max, Math.floor((dur! - c.sourceIn) / step + eps) - c.duration);
+		if (!c.speed.reverse && bounded)
+			max = Math.min(max, Math.floor((dur! - c.sourceIn) / step + eps) - c.duration);
 		else if (c.speed.reverse) max = Math.min(max, Math.floor(c.sourceIn / step + eps));
 	}
 	return { min, max };
@@ -538,7 +596,8 @@ function trimHandler(doc: DDoc, cmd: CommandOf<'clip.trim'>, h: HandlerContext):
 	// Later clips on the edited tracks.
 	for (const m of members) {
 		const mEnd = end(m);
-		for (const c of trackClips(seq, m.trackId)) if (!memberIds.has(c.id) && c.start >= mEnd) c.start += signed;
+		for (const c of trackClips(seq, m.trackId))
+			if (!memberIds.has(c.id) && c.start >= mEnd) c.start += signed;
 	}
 	for (const m of members) {
 		if (cmd.edge === 'in') {
@@ -566,9 +625,13 @@ function trimHandler(doc: DDoc, cmd: CommandOf<'clip.trim'>, h: HandlerContext):
 export const clipCoreHandlers: HandlerMap = {
 	'clip.place': (doc, cmd, h: HandlerContext) => {
 		const seq = h.sequence(doc, cmd.sequenceId);
-		const asset = 'mediaId' in cmd.source ? (doc.media[cmd.source.mediaId] as MediaAsset | undefined) : undefined;
+		const asset =
+			'mediaId' in cmd.source ? (doc.media[cmd.source.mediaId] as MediaAsset | undefined) : undefined;
 		const range = cmd.sourceRange
-			? { in: h.flicks(cmd.sourceRange.in, asset, rateOf(seq)), out: h.flicks(cmd.sourceRange.out, asset, rateOf(seq)) }
+			? {
+					in: h.flicks(cmd.sourceRange.in, asset, rateOf(seq)),
+					out: h.flicks(cmd.sourceRange.out, asset, rateOf(seq)),
+				}
 			: undefined;
 		const audio = cmd.tracks?.audio;
 		return placeSource(doc, seq, h, {
@@ -591,11 +654,23 @@ export const clipCoreHandlers: HandlerMap = {
 	'clip.addText': (doc, cmd, h: HandlerContext) => {
 		const fontId = cmd.content.style?.fontId ?? ensureDefaultFont(doc, h);
 		if (!doc.fonts[fontId]) h.fail('E_NOT_FOUND', `Font not found: ${fontId}`);
-		const style: TextStyle = { ...defaultTextStyle(fontId), ...(cmd.content.style ?? {}), fontId } as TextStyle;
-		const content: TextContent = { text: cmd.content.text, style, ...(cmd.content.runs ? { runs: cmd.content.runs as TextContent['runs'] } : {}) };
+		const style: TextStyle = {
+			...defaultTextStyle(fontId),
+			...(cmd.content.style ?? {}),
+			fontId,
+		} as TextStyle;
+		const content: TextContent = {
+			text: cmd.content.text,
+			style,
+			...(cmd.content.runs ? { runs: cmd.content.runs as TextContent['runs'] } : {}),
+		};
 		const { seq, track, at, duration, id } = newGeneratorClip(doc, cmd, h, 'text');
 		const est = estimateTextBox(content, seq.settings.width);
-		const box: TextBox = { width: cmd.box?.width ?? est.width, height: cmd.box?.height ?? est.height, autoSize: cmd.box?.autoSize ?? 'width' };
+		const box: TextBox = {
+			width: cmd.box?.width ?? est.width,
+			height: cmd.box?.height ?? est.height,
+			autoSize: cmd.box?.autoSize ?? 'width',
+		};
 		const transform = applyTransformPatch(defaultTransform(box, frameBox(seq), 'none'), cmd.transform);
 		const name = cmd.name ?? (cmd.content.text.split('\n')[0]!.slice(0, 40) || 'Text');
 		seq.clips[id] = {
@@ -628,7 +703,8 @@ export const clipCoreHandlers: HandlerMap = {
 	},
 	'clip.addMotionGraphic': (doc, cmd, h: HandlerContext) => {
 		const info = h.registries.mgTemplates.get(cmd.template.id, cmd.template.version);
-		if (!info) h.fail('E_INVALID_PARAM', `Unknown motion-graphic template ${cmd.template.id}@${cmd.template.version}`);
+		if (!info)
+			h.fail('E_INVALID_PARAM', `Unknown motion-graphic template ${cmd.template.id}@${cmd.template.version}`);
 		const params = validateMgParams(info, { ...info.defaults, ...(cmd.params ?? {}) }, h);
 		const { seq, track, at, duration, id } = newGeneratorClip(doc, cmd, h, 'motion-graphic');
 		const canvas = cmd.canvas ?? (info.canvasDefault === 'sequence' ? 'sequence' : { ...info.canvasDefault });
@@ -687,7 +763,9 @@ export const clipCoreHandlers: HandlerMap = {
 	},
 	'clip.trim': trimHandler,
 	'clip.split': (doc, cmd, h: HandlerContext) => {
-		const given = [cmd.clipIds !== undefined, cmd.tracks !== undefined, cmd.scope !== undefined].filter(Boolean).length;
+		const given = [cmd.clipIds !== undefined, cmd.tracks !== undefined, cmd.scope !== undefined].filter(
+			Boolean,
+		).length;
 		if (given !== 1) h.fail('E_INVALID_PARAM', 'clip.split needs exactly one of clipIds, tracks or scope');
 		let seq: DSeq;
 		let targets: DClip[];
@@ -724,7 +802,8 @@ export const clipCoreHandlers: HandlerMap = {
 			}
 		}
 		const splits: SplitRecord[] = [];
-		for (const c of set.values()) splits.push({ originalLinkId: c.linkId, rightId: splitClipAt(seq, c, at, h).id });
+		for (const c of set.values())
+			splits.push({ originalLinkId: c.linkId, rightId: splitClipAt(seq, c, at, h).id });
 		relinkSplits(seq, splits, h);
 		cleanupSequence(seq, h);
 		return { left: [...set.keys()], right: splits.map((s) => s.rightId) };
@@ -739,7 +818,9 @@ export const clipCoreHandlers: HandlerMap = {
 	'clip.extract': (doc, cmd, h: HandlerContext) => {
 		const { seq, clips } = h.clipsOf(doc, idList(cmd.clipIds));
 		for (const c of clips) assertUnlocked(findTrackIn(seq, c.trackId)!.track, h);
-		const spans = clips.map((c) => ({ start: c.start, end: end(c), track: c.trackId })).sort((a, b) => a.start - b.start);
+		const spans = clips
+			.map((c) => ({ start: c.start, end: end(c), track: c.trackId }))
+			.sort((a, b) => a.start - b.start);
 		const ranges: { start: number; end: number; tracks: Set<string> }[] = [];
 		for (const s of spans) {
 			const last = ranges[ranges.length - 1];
@@ -749,7 +830,9 @@ export const clipCoreHandlers: HandlerMap = {
 			} else ranges.push({ start: s.start, end: s.end, tracks: new Set([s.track]) });
 		}
 		for (const c of clips) removeClip(seq, c.id, h);
-		const followers = allTracksIn(seq).filter((t) => t.syncLock && !t.locked).map((t) => t.id);
+		const followers = allTracksIn(seq)
+			.filter((t) => t.syncLock && !t.locked)
+			.map((t) => t.id);
 		for (const r of [...ranges].reverse()) {
 			const tracks = new Set([...r.tracks, ...followers]);
 			removeShift(seq, tracks, r.start, r.end - r.start, h, { syncConflict: cmd.syncConflict });
@@ -785,7 +868,8 @@ function applyClipPatch(doc: DDoc, seq: DSeq, clip: DClip, p: ClipPatch, h: Hand
 		if (p.content?.text !== undefined) t.content.text = p.content.text;
 		if (p.content?.style) Object.assign(t.content.style, p.content.style);
 		if (p.content?.runs !== undefined) t.content.runs = p.content.runs as never;
-		if (!doc.fonts[t.content.style.fontId]) h.fail('E_NOT_FOUND', `Font not found: ${t.content.style.fontId}`);
+		if (!doc.fonts[t.content.style.fontId])
+			h.fail('E_NOT_FOUND', `Font not found: ${t.content.style.fontId}`);
 		if (p.box) Object.assign(t.box, p.box);
 		layoutText(t, h, seq.settings.width);
 	}
@@ -794,8 +878,13 @@ function applyClipPatch(doc: DDoc, seq: DSeq, clip: DClip, p: ClipPatch, h: Hand
 		const mg = clip as Draft<Extract<Clip, { kind: 'motion-graphic' }>>;
 		if (p.params !== undefined) {
 			const info = h.registries.mgTemplates.get(mg.template.id, mg.template.version);
-			if (!info) h.fail('E_INVALID_PARAM', `Unknown motion-graphic template ${mg.template.id}@${mg.template.version}`);
-			mg.params = validateMgParams(info, { ...(mg.params as Record<string, unknown>), ...p.params }, h) as never;
+			if (!info)
+				h.fail('E_INVALID_PARAM', `Unknown motion-graphic template ${mg.template.id}@${mg.template.version}`);
+			mg.params = validateMgParams(
+				info,
+				{ ...(mg.params as Record<string, unknown>), ...p.params },
+				h,
+			) as never;
 		}
 		if (p.canvas !== undefined) mg.canvas = p.canvas as never;
 	}

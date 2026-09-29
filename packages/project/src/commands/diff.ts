@@ -20,7 +20,8 @@ function diffList(a: readonly { id: string }[], b: readonly { id: string }[], ou
 }
 
 function seqOwnChanged(a: Sequence, b: Sequence): boolean {
-	const ids = (s: Sequence) => [...s.videoTracks, ...s.audioTracks, ...s.captionTracks].map((t) => t.id).join(',');
+	const ids = (s: Sequence) =>
+		[...s.videoTracks, ...s.audioTracks, ...s.captionTracks].map((t) => t.id).join(',');
 	return (
 		a.settings !== b.settings ||
 		a.master !== b.master ||
@@ -39,7 +40,12 @@ function seqOwnChanged(a: Sequence, b: Sequence): boolean {
 export function diffDocuments(before: ProjectDocument, after: ProjectDocument): DocDiff {
 	const out: DocDiff = { created: [], changed: [], deleted: [] };
 	if (before === after) return out;
-	if (before.name !== after.name || before.settings !== after.settings || before.rootItems !== after.rootItems || before.extensions !== after.extensions) {
+	if (
+		before.name !== after.name ||
+		before.settings !== after.settings ||
+		before.rootItems !== after.rootItems ||
+		before.extensions !== after.extensions
+	) {
 		out.changed.push(after.projectId);
 	}
 	diffRecord(before.items, after.items, out);
@@ -64,7 +70,11 @@ export function diffDocuments(before: ProjectDocument, after: ProjectDocument): 
 			diffRecord(prev.links, seq.links, out);
 			diffRecord(prev.groups, seq.groups, out);
 			diffList(prev.markers, seq.markers, out);
-			diffList([...prev.videoTracks, ...prev.audioTracks, ...prev.captionTracks], [...seq.videoTracks, ...seq.audioTracks, ...seq.captionTracks], out);
+			diffList(
+				[...prev.videoTracks, ...prev.audioTracks, ...prev.captionTracks],
+				[...seq.videoTracks, ...seq.audioTracks, ...seq.captionTracks],
+				out,
+			);
 		}
 		for (const id of Object.keys(before.sequences)) {
 			if (!after.sequences[id]) {

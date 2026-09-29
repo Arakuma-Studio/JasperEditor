@@ -81,7 +81,8 @@ export function autoSlope<T>(kfs: readonly Keyframe<T>[], i: number, side: 'in' 
 
 function outgoingEase<T>(kfs: readonly Keyframe<T>[], i: number): Ease {
 	const k = kfs[i]!;
-	if (k.interpolation === 'auto-bezier') return { influence: AUTO_INFLUENCE, slope: autoSlope(kfs, i, 'out') };
+	if (k.interpolation === 'auto-bezier')
+		return { influence: AUTO_INFLUENCE, slope: autoSlope(kfs, i, 'out') };
 	if (k.interpolation === 'linear') return LINEAR_EASE;
 	return k.easeOut;
 }
@@ -118,7 +119,8 @@ export type EvaluateOptions = {
 
 function clampValue<T>(v: T, c?: { min?: number; max?: number }): T {
 	if (!c) return v;
-	const f = (x: number) => Math.min(c.max ?? Number.POSITIVE_INFINITY, Math.max(c.min ?? Number.NEGATIVE_INFINITY, x));
+	const f = (x: number) =>
+		Math.min(c.max ?? Number.POSITIVE_INFINITY, Math.max(c.min ?? Number.NEGATIVE_INFINITY, x));
 	if (typeof v === 'number') return f(v) as T;
 	if (Array.isArray(v)) return v.map((x) => (typeof x === 'number' ? f(x) : x)) as T;
 	return v;
@@ -154,7 +156,8 @@ export function evaluate<T>(anim: Animatable<T>, t: number, opts?: EvaluateOptio
 		return clampValue(a.value, opts?.clamp);
 	}
 	const u = (t - a.time) / (b.time - a.time);
-	const p = a.interpolation === 'linear' ? u : bezierProgress(u, outgoingEase(kfs, i), incomingEase(kfs, i + 1));
+	const p =
+		a.interpolation === 'linear' ? u : bezierProgress(u, outgoingEase(kfs, i), incomingEase(kfs, i + 1));
 	return clampValue(lerpValue(a.value, b.value, p), opts?.clamp);
 }
 

@@ -2,12 +2,12 @@
 // removals and link/transition cleanup (S01:CLP-003, CLP-007, TRK-006; S02 Appendix A.4–A.6;
 // ARCHITECTURE §2.3 locked-track rule). Works on Immer drafts, so nothing here is memoized.
 import { current, type Draft, isDraft } from 'immer';
+import { createTrack } from '../factories.ts';
 import { trackKindFor } from '../registry/kinds.ts';
 import type { Animatable } from '../schema/common.ts';
 import type { Clip, Sequence, Track, TrackKind } from '../schema/sequence.ts';
 import { contentSpanFlicks, type Rational } from '../time.ts';
 import type { HandlerContext } from './context.ts';
-import { createTrack } from '../factories.ts';
 
 type DSeq = Draft<Sequence>;
 type DClip = Draft<Clip>;
@@ -26,7 +26,10 @@ export function allTracksIn(seq: DSeq): DTrack[] {
 	return [...seq.videoTracks, ...seq.audioTracks, ...seq.captionTracks];
 }
 
-export function findTrackIn(seq: DSeq | Sequence, trackId: string): { track: DTrack; index: number; kind: TrackKind } | null {
+export function findTrackIn(
+	seq: DSeq | Sequence,
+	trackId: string,
+): { track: DTrack; index: number; kind: TrackKind } | null {
 	for (const kind of ['video', 'audio', 'caption'] as const) {
 		const list = tracksOfKind(seq as DSeq, kind);
 		const index = list.findIndex((t) => t.id === trackId);
@@ -73,7 +76,11 @@ export function assertUnlocked(track: { locked: boolean; id: string }, h: Handle
 	if (track.locked) h.fail('E_TRACK_LOCKED', `Track ${track.id} is locked`, { blocking: [track.id] });
 }
 
-export function assertKindFits(clipKind: string, track: { kind: TrackKind; id: string }, h: HandlerContext): void {
+export function assertKindFits(
+	clipKind: string,
+	track: { kind: TrackKind; id: string },
+	h: HandlerContext,
+): void {
 	const need = trackKindFor(clipKind);
 	if (need && need !== track.kind) {
 		h.fail('E_TRACK_KIND', `A ${clipKind} clip cannot go on a ${track.kind} track`, { blocking: [track.id] });
@@ -122,8 +129,10 @@ export function reidentifyClipChildren(clip: Clip, h: HandlerContext): void {
 			for (const kf of o.keyframes as { id: string }[]) kf.id = h.ids.next('kf');
 		}
 		for (const [k, x] of Object.entries(o)) {
-			if (k === 'effects' && Array.isArray(x)) for (const fx of x as { id: string }[]) fx.id = h.ids.next('fx');
-			if (k === 'markers' && Array.isArray(x)) for (const m of x as { id: string }[]) m.id = h.ids.next('mrk');
+			if (k === 'effects' && Array.isArray(x))
+				for (const fx of x as { id: string }[]) fx.id = h.ids.next('fx');
+			if (k === 'markers' && Array.isArray(x))
+				for (const m of x as { id: string }[]) m.id = h.ids.next('mrk');
 			visit(x);
 		}
 	};
@@ -136,7 +145,8 @@ export function reidentifyClipChildren(clip: Clip, h: HandlerContext): void {
  * right part is not linked (callers relink right parts together). A tail transition moves right.
  */
 export function splitClipAt(seq: DSeq, clip: DClip, at: number, h: HandlerContext): DClip {
-	if (!(clip.start < at && at < end(clip))) h.fail('E_INVALID_PARAM', `Frame ${at} is not inside clip ${clip.id}`);
+	if (!(clip.start < at && at < end(clip)))
+		h.fail('E_INVALID_PARAM', `Frame ${at} is not inside clip ${clip.id}`);
 	const r = rateOf(seq);
 	const right = snapshot(clip) as Clip;
 	right.id = h.ids.next('clp');
@@ -241,7 +251,13 @@ export function contentInRange(seq: DSeq, trackId: string, f: number, n: number)
  * Insert shift (S02 A.5): on each track, split clips straddling `at`, then shift clips at/after `at`
  * by `n`. Returns split records (right parts) for relinking.
  */
-export function insertShift(seq: DSeq, trackIds: Iterable<string>, at: number, n: number, h: HandlerContext): SplitRecord[] {
+export function insertShift(
+	seq: DSeq,
+	trackIds: Iterable<string>,
+	at: number,
+	n: number,
+	h: HandlerContext,
+): SplitRecord[] {
 	const splits: SplitRecord[] = [];
 	if (n <= 0) return splits;
 	for (const trackId of trackIds) {

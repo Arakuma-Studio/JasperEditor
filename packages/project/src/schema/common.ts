@@ -20,7 +20,10 @@ export type DeepStrip<T> = T extends (...args: never[]) => unknown
 export const int = () => z.number().int();
 export const nonNegInt = () => z.number().int().min(0);
 
-export const RationalSchema = z.looseObject({ num: z.number().int().positive(), den: z.number().int().positive() });
+export const RationalSchema = z.looseObject({
+	num: z.number().int().positive(),
+	den: z.number().int().positive(),
+});
 export type RationalT = DeepStrip<z.infer<typeof RationalSchema>>;
 
 /** Straight (non-premultiplied) sRGB floats 0..1 in R, G, B, A order (S01, ARCHITECTURE §2.3). */

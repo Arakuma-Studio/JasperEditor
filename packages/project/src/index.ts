@@ -18,10 +18,10 @@ export * from './schema/index.ts';
 export * from './time.ts';
 export * from './timecode.ts';
 
+import type { Registries } from './commands/types.ts';
+import { defaultPresetRegistry } from './presets.ts';
 import { defaultEffectRegistry } from './registry/effects.ts';
 import { emptyMgRegistry, type MgTemplateRegistry } from './registry/mg.ts';
-import { defaultPresetRegistry } from './presets.ts';
-import type { Registries } from './commands/types.ts';
 
 /** Default registries (crop-only effects, no templates, built-in presets). */
 export function defaultRegistries(mgTemplates: MgTemplateRegistry = emptyMgRegistry): Registries {

@@ -31,7 +31,13 @@ export type RenderVisualSource =
 	| { mediaId: string }
 	| { text: TextContent; box: TextBox }
 	| { color: RGBA }
-	| { mg: { template: { id: string; version: number }; params: Record<string, unknown>; canvas: { width: number; height: number } } }
+	| {
+			mg: {
+				template: { id: string; version: number };
+				params: Record<string, unknown>;
+				canvas: { width: number; height: number };
+			};
+	  }
 	| { unsupported: string };
 
 export type RenderVisualClip = {
@@ -109,7 +115,11 @@ function mediaBox(asset: MediaAsset | undefined): { width: number; height: numbe
 	return swap ? { width: vs.height, height: vs.width } : { width: vs.width, height: vs.height };
 }
 
-export function buildRenderSnapshot(doc: ProjectDocument, sequenceId: string, opts: SnapshotOptions): RenderSnapshot {
+export function buildRenderSnapshot(
+	doc: ProjectDocument,
+	sequenceId: string,
+	opts: SnapshotOptions,
+): RenderSnapshot {
 	const seq = doc.sequences[sequenceId];
 	if (!seq) throw new Error(`Sequence not found: ${sequenceId}`);
 	const frame = { width: seq.settings.width, height: seq.settings.height };
@@ -133,7 +143,11 @@ export function buildRenderSnapshot(doc: ProjectDocument, sequenceId: string, op
 		for (const c of Object.values(seq.clips)) {
 			if (c.trackId !== t.id || !inRange(c)) continue;
 			if (!isKnownClipKind(c.kind)) {
-				warnings.push({ clipId: c.id, code: 'UNSUPPORTED_KIND', message: `Unsupported clip kind "${c.kind}" is not rendered` });
+				warnings.push({
+					clipId: c.id,
+					code: 'UNSUPPORTED_KIND',
+					message: `Unsupported clip kind "${c.kind}" is not rendered`,
+				});
 				continue;
 			}
 			const caps = kindCapabilities(c.kind)!;
@@ -159,7 +173,13 @@ export function buildRenderSnapshot(doc: ProjectDocument, sequenceId: string, op
 						if (!fontKeys.has(key)) {
 							const url = opts.resolveFont(font, c.content.style.weight, c.content.style.italic);
 							if (url) {
-								fontKeys.set(key, { fontId: font.id, family: font.family, weight: c.content.style.weight, style: c.content.style.italic ? 'italic' : 'normal', url });
+								fontKeys.set(key, {
+									fontId: font.id,
+									family: font.family,
+									weight: c.content.style.weight,
+									style: c.content.style.italic ? 'italic' : 'normal',
+									url,
+								});
 							}
 						}
 					}
@@ -167,7 +187,14 @@ export function buildRenderSnapshot(doc: ProjectDocument, sequenceId: string, op
 				}
 				case 'solid': {
 					const syn = doc.synthetics[c.syntheticId];
-					source = { color: syn?.kind === 'color-matte' ? syn.color : syn?.kind === 'transparent' ? [0, 0, 0, 0] : [0, 0, 0, 1] };
+					source = {
+						color:
+							syn?.kind === 'color-matte'
+								? syn.color
+								: syn?.kind === 'transparent'
+									? [0, 0, 0, 0]
+									: [0, 0, 0, 1],
+					};
 					break;
 				}
 				case 'motion-graphic': {
@@ -232,7 +259,12 @@ export function buildRenderSnapshot(doc: ProjectDocument, sequenceId: string, op
 	return {
 		version: 1,
 		sequenceId,
-		settings: { ...frame, fps: seq.settings.frameRate, backgroundColor: seq.settings.backgroundColor, sampleRate: 48000 },
+		settings: {
+			...frame,
+			fps: seq.settings.frameRate,
+			backgroundColor: seq.settings.backgroundColor,
+			sampleRate: 48000,
+		},
 		range,
 		durationFrames: Math.max(0, range.end - range.start),
 		videoTracks,

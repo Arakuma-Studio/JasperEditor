@@ -11,7 +11,14 @@ import { HandlerContext, substituteRefs } from './context.ts';
 import { diffDocuments } from './diff.ts';
 import { collectOrphans } from './handlers/project.ts';
 import type { Command } from './schemas/index.ts';
-import { type CommandContext, CommandError, type Issue, type Origin, TX_PROTOCOL, type TransactionResult } from './types.ts';
+import {
+	type CommandContext,
+	CommandError,
+	type Issue,
+	type Origin,
+	type TransactionResult,
+	TX_PROTOCOL,
+} from './types.ts';
 
 export const DEFAULT_MAX_COMMANDS = 5000;
 
@@ -59,13 +66,23 @@ export function validateCommands(raw: readonly unknown[]): { commands: Command[]
 	raw.forEach((c, i) => {
 		const type = (c as { type?: unknown })?.type;
 		if (!isCommandType(type)) {
-			errors.push({ commandIndex: i, code: 'E_SCHEMA', message: `Unknown command type ${JSON.stringify(type)}`, path: ['type'] });
+			errors.push({
+				commandIndex: i,
+				code: 'E_SCHEMA',
+				message: `Unknown command type ${JSON.stringify(type)}`,
+				path: ['type'],
+			});
 			return;
 		}
 		const parsed = COMMAND_CATALOG[type].schema.safeParse(c);
 		if (!parsed.success) {
 			for (const issue of parsed.error.issues) {
-				errors.push({ commandIndex: i, code: 'E_SCHEMA', message: `${type}: ${issue.message}`, path: zodPath(issue.path) });
+				errors.push({
+					commandIndex: i,
+					code: 'E_SCHEMA',
+					message: `${type}: ${issue.message}`,
+					path: zodPath(issue.path),
+				});
 			}
 			return;
 		}
@@ -101,26 +118,46 @@ export function applyTransaction(
 			document: doc,
 			result: fail(
 				ctx.revision,
-				envelope.error.issues.map((i) => ({ commandIndex: -1, code: 'E_SCHEMA', message: i.message, path: zodPath(i.path) })),
+				envelope.error.issues.map((i) => ({
+					commandIndex: -1,
+					code: 'E_SCHEMA',
+					message: i.message,
+					path: zodPath(i.path),
+				})),
 			),
 		};
 	}
 	const tx = envelope.data;
 	const max = ctx.maxCommands ?? DEFAULT_MAX_COMMANDS;
 	if (tx.commands.length > max) {
-		return { document: doc, result: fail(ctx.revision, [{ commandIndex: -1, code: 'E_LIMIT', message: `A transaction may hold at most ${max} commands` }]) };
+		return {
+			document: doc,
+			result: fail(ctx.revision, [
+				{ commandIndex: -1, code: 'E_LIMIT', message: `A transaction may hold at most ${max} commands` },
+			]),
+		};
 	}
 	if (tx.expectedRevision !== undefined && tx.expectedRevision > ctx.revision) {
 		return {
 			document: doc,
-			result: fail(ctx.revision, [{ commandIndex: -1, code: 'E_REVISION_MISMATCH', message: `Revision ${tx.expectedRevision} is ahead of ${ctx.revision}` }]),
+			result: fail(ctx.revision, [
+				{
+					commandIndex: -1,
+					code: 'E_REVISION_MISMATCH',
+					message: `Revision ${tx.expectedRevision} is ahead of ${ctx.revision}`,
+				},
+			]),
 		};
 	}
 	const { commands, errors } = validateCommands(tx.commands);
 	if (errors.length > 0) return { document: doc, result: fail(ctx.revision, errors) };
 
 	const refs = new Map<string, string>();
-	const h = new HandlerContext(ctx, { label: tx.label, origin: tx.origin as Origin, sequenceId: tx.sequenceId }, refs);
+	const h = new HandlerContext(
+		ctx,
+		{ label: tx.label, origin: tx.origin as Origin, sequenceId: tx.sequenceId },
+		refs,
+	);
 	const results: unknown[] = [];
 	let next: ProjectDocument;
 	try {
@@ -150,7 +187,10 @@ export function applyTransaction(
 			};
 		}
 		const message = e instanceof Error ? e.message : String(e);
-		return { document: doc, result: fail(ctx.revision, [{ commandIndex: h.commandIndex, code: 'E_INTERNAL', message }]) };
+		return {
+			document: doc,
+			result: fail(ctx.revision, [{ commandIndex: h.commandIndex, code: 'E_INTERNAL', message }]),
+		};
 	}
 
 	if (next !== doc && ctx.checkInvariants !== false) {
@@ -171,7 +211,9 @@ export function applyTransaction(
 			...diff.deleted,
 			...(tx.sequenceId ? [tx.sequenceId] : []),
 		]);
-		const conflicts = ctx.entityRevisions ? changedSince.filter((id) => touched.has(id)) : ['(unknown: no revision map)'];
+		const conflicts = ctx.entityRevisions
+			? changedSince.filter((id) => touched.has(id))
+			: ['(unknown: no revision map)'];
 		if (conflicts.length > 0) {
 			return {
 				document: doc,

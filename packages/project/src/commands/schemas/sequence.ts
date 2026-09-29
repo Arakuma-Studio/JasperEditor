@@ -1,10 +1,9 @@
 import { z } from 'zod';
-import { LabelColorSchema, RationalSchema, RGBASchema } from '../../schema/common.ts';
-import { AnimNumberSchema } from '../../schema/common.ts';
+import { AnimNumberSchema, LabelColorSchema, RationalSchema, RGBASchema } from '../../schema/common.ts';
 import { CaptionStyleSchema, MarkerTypeSchema, TrackKindSchema } from '../../schema/sequence.ts';
 import {
-	cmd,
 	ContentTimeInputSchema,
+	cmd,
 	IdRefSchema,
 	RefDeclSchema,
 	TimeInputSchema,
@@ -40,7 +39,10 @@ export const SequenceDuplicateCmd = cmd('sequence.duplicate', {
 	name: z.string().optional(),
 	ref: RefDeclSchema.optional(),
 });
-export const SequenceDeleteCmd = cmd('sequence.delete', { sequenceId: IdRefSchema, force: z.boolean().optional() });
+export const SequenceDeleteCmd = cmd('sequence.delete', {
+	sequenceId: IdRefSchema,
+	force: z.boolean().optional(),
+});
 export const SequenceSetInOutCmd = cmd('sequence.setInOut', {
 	sequenceId: IdRefSchema.optional(),
 	in: TimeInputSchema.nullable(),

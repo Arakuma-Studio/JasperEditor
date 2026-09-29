@@ -9,7 +9,13 @@ import { isBoundedContent, kindCapabilities, trackKindFor } from './registry/kin
 import type { ProjectDocument } from './schema/document.ts';
 import type { Clip, EffectInstance, Sequence, Track } from './schema/sequence.ts';
 import { isKnownClipKind } from './schema/sequence.ts';
-import { flicksPerFrame, isAllowedSequenceRate, type Rational, supportsDropFrame, contentSpanFlicks } from './time.ts';
+import {
+	contentSpanFlicks,
+	flicksPerFrame,
+	isAllowedSequenceRate,
+	type Rational,
+	supportsDropFrame,
+} from './time.ts';
 
 const inv = (invariant: string, message: string, path?: string[]): Issue => ({
 	commandIndex: -1,
@@ -30,8 +36,11 @@ function forEachAnimatable(root: unknown, path: string[], cb: (a: AnimLike, path
 		cb(root, path);
 		return;
 	}
-	if (Array.isArray(root)) root.forEach((v, i) => forEachAnimatable(v, [...path, String(i)], cb));
-	else if (root && typeof root === 'object') {
+	if (Array.isArray(root)) {
+		root.forEach((v, i) => {
+			forEachAnimatable(v, [...path, String(i)], cb);
+		});
+	} else if (root && typeof root === 'object') {
 		for (const [k, v] of Object.entries(root)) forEachAnimatable(v, [...path, k], cb);
 	}
 }
@@ -68,7 +77,8 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 	};
 	table(doc.items, 'items', ['itm', 'bin']);
 	for (const it of Object.values(doc.items)) {
-		if ((it.kind === 'bin') !== (idPrefixOf(it.id) === 'bin')) issues.push(inv('INV-001', `Item ${it.id} prefix does not match its kind`, ['items', it.id]));
+		if ((it.kind === 'bin') !== (idPrefixOf(it.id) === 'bin'))
+			issues.push(inv('INV-001', `Item ${it.id} prefix does not match its kind`, ['items', it.id]));
 	}
 	table(doc.media, 'media', 'med');
 	table(doc.synthetics, 'synthetics', 'syn');
@@ -84,18 +94,28 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 			for (const [name, a] of Object.entries(fx.params)) {
 				const p = spec.params.find((x) => x.name === name);
 				if (!p) {
-					issues.push(inv('INV-012', `Effect ${fx.effectId} has no parameter ${name}`, [...where, fx.id, name]));
+					issues.push(
+						inv('INV-012', `Effect ${fx.effectId} has no parameter ${name}`, [...where, fx.id, name]),
+					);
 					continue;
 				}
 				for (const v of [a.value, ...a.keyframes.map((k) => k.value)]) {
 					if (p.type === 'number' && typeof v === 'number') {
-						if ((p.range?.min !== undefined && v < p.range.min) || (p.range?.max !== undefined && v > p.range.max)) {
-							issues.push(inv('INV-012', `${fx.effectId}.${name} out of range: ${v}`, [...where, fx.id, name]));
+						if (
+							(p.range?.min !== undefined && v < p.range.min) ||
+							(p.range?.max !== undefined && v > p.range.max)
+						) {
+							issues.push(
+								inv('INV-012', `${fx.effectId}.${name} out of range: ${v}`, [...where, fx.id, name]),
+							);
 						}
 					}
 					if (p.type === 'media') {
 						const m = (v as { mediaId?: string }).mediaId;
-						if (!m || !doc.media[m]) issues.push(inv('INV-006', `${fx.effectId}.${name} references missing media ${m}`, [...where, fx.id]));
+						if (!m || !doc.media[m])
+							issues.push(
+								inv('INV-006', `${fx.effectId}.${name} references missing media ${m}`, [...where, fx.id]),
+							);
 					}
 				}
 			}
@@ -114,9 +134,11 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 			const shape = valueShape(a.value);
 			for (const k of a.keyframes) {
 				claim(k.id, 'kf', [...path, k.id]);
-				if (!(k.time > last)) issues.push(inv('INV-011', 'Keyframes must have strictly increasing times', path));
+				if (!(k.time > last))
+					issues.push(inv('INV-011', 'Keyframes must have strictly increasing times', path));
 				last = k.time;
-				if (valueShape(k.value) !== shape) issues.push(inv('INV-011', 'Keyframe value type does not match the parameter', path));
+				if (valueShape(k.value) !== shape)
+					issues.push(inv('INV-011', 'Keyframe value type does not match the parameter', path));
 			}
 		});
 	};
@@ -127,11 +149,13 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 		parents.set(id, (parents.get(id) ?? 0) + 1);
 		if (!doc.items[id]) issues.push(inv('INV-006', `Bin tree references missing item ${id}`, where));
 	};
-	doc.rootItems.forEach((id) => countParent(id, ['rootItems']));
-	for (const it of Object.values(doc.items)) if (it.kind === 'bin') it.children.forEach((c) => countParent(c, ['items', it.id, 'children']));
+	for (const id of doc.rootItems) countParent(id, ['rootItems']);
+	for (const it of Object.values(doc.items))
+		if (it.kind === 'bin') for (const c of it.children) countParent(c, ['items', it.id, 'children']);
 	for (const it of Object.values(doc.items)) {
 		const n = parents.get(it.id) ?? 0;
-		if (n !== 1) issues.push(inv('INV-008', `Item ${it.id} appears ${n} times in the bin tree`, ['items', it.id]));
+		if (n !== 1)
+			issues.push(inv('INV-008', `Item ${it.id} appears ${n} times in the bin tree`, ['items', it.id]));
 	}
 	const reachable = new Set<string>();
 	const walk = (id: string, stack: Set<string>) => {
@@ -148,27 +172,38 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 			stack.delete(id);
 		}
 	};
-	doc.rootItems.forEach((id) => walk(id, new Set()));
+	for (const id of doc.rootItems) walk(id, new Set());
 	const seqItems = new Map<string, number>();
 	for (const it of Object.values(doc.items)) {
-		if (it.kind === 'media' && !doc.media[it.mediaId]) issues.push(inv('INV-006', `Item ${it.id} references missing media ${it.mediaId}`, ['items', it.id]));
-		if (it.kind === 'synthetic' && !doc.synthetics[it.syntheticId]) issues.push(inv('INV-006', `Item ${it.id} references missing synthetic ${it.syntheticId}`, ['items', it.id]));
+		if (it.kind === 'media' && !doc.media[it.mediaId])
+			issues.push(inv('INV-006', `Item ${it.id} references missing media ${it.mediaId}`, ['items', it.id]));
+		if (it.kind === 'synthetic' && !doc.synthetics[it.syntheticId])
+			issues.push(
+				inv('INV-006', `Item ${it.id} references missing synthetic ${it.syntheticId}`, ['items', it.id]),
+			);
 		if (it.kind === 'sequence') {
-			if (!doc.sequences[it.sequenceId]) issues.push(inv('INV-006', `Item ${it.id} references missing sequence ${it.sequenceId}`, ['items', it.id]));
+			if (!doc.sequences[it.sequenceId])
+				issues.push(
+					inv('INV-006', `Item ${it.id} references missing sequence ${it.sequenceId}`, ['items', it.id]),
+				);
 			seqItems.set(it.sequenceId, (seqItems.get(it.sequenceId) ?? 0) + 1);
 		}
 	}
 	for (const s of Object.keys(doc.sequences)) {
-		if (seqItems.get(s) !== 1) issues.push(inv('INV-008', `Sequence ${s} must have exactly one project item`, ['sequences', s]));
+		if (seqItems.get(s) !== 1)
+			issues.push(inv('INV-008', `Sequence ${s} must have exactly one project item`, ['sequences', s]));
 	}
 	for (const f of Object.values(doc.fonts)) {
-		if (f.source.type === 'asset' && !doc.media[f.source.mediaId]) issues.push(inv('INV-006', `Font ${f.id} references missing media`, ['fonts', f.id]));
+		if (f.source.type === 'asset' && !doc.media[f.source.mediaId])
+			issues.push(inv('INV-006', `Font ${f.id} references missing media`, ['fonts', f.id]));
 	}
 	for (const m of Object.values(doc.media)) {
-		if (m.derivation && !doc.media[m.derivation.fromMediaId]) issues.push(inv('INV-006', `Derived media ${m.id} references missing source`, ['media', m.id]));
+		if (m.derivation && !doc.media[m.derivation.fromMediaId])
+			issues.push(inv('INV-006', `Derived media ${m.id} references missing source`, ['media', m.id]));
 	}
 	for (const t of Object.values(doc.transcripts)) {
-		if (t.mediaId && !doc.media[t.mediaId]) issues.push(inv('INV-006', `Transcript ${t.id} references missing media`, ['transcripts', t.id]));
+		if (t.mediaId && !doc.media[t.mediaId])
+			issues.push(inv('INV-006', `Transcript ${t.id} references missing media`, ['transcripts', t.id]));
 	}
 
 	// Sequences
@@ -179,18 +214,38 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 	for (const seq of Object.values(doc.sequences)) {
 		const where = ['sequences', seq.id];
 		const s = seq.settings;
-		if (!isAllowedSequenceRate(s.frameRate)) issues.push(inv('INV-013', `Frame rate ${s.frameRate.num}/${s.frameRate.den} not allowed`, [...where, 'settings']));
+		if (!isAllowedSequenceRate(s.frameRate))
+			issues.push(
+				inv('INV-013', `Frame rate ${s.frameRate.num}/${s.frameRate.den} not allowed`, [
+					...where,
+					'settings',
+				]),
+			);
 		for (const d of [s.width, s.height]) {
-			if (!Number.isInteger(d) || d % 2 !== 0 || d < 16 || d > 8192) issues.push(inv('INV-013', `Frame size ${s.width}x${s.height} invalid`, [...where, 'settings']));
+			if (!Number.isInteger(d) || d % 2 !== 0 || d < 16 || d > 8192)
+				issues.push(inv('INV-013', `Frame size ${s.width}x${s.height} invalid`, [...where, 'settings']));
 		}
-		if (s.dropFrame && !supportsDropFrame(s.frameRate)) issues.push(inv('INV-013', 'Drop-frame only applies to 29.97/59.94', [...where, 'settings']));
-		if (seq.videoTracks.length < 1 || seq.audioTracks.length < 1) issues.push(inv('INV-015', 'Needs at least one video and one audio track', where));
+		if (s.dropFrame && !supportsDropFrame(s.frameRate))
+			issues.push(inv('INV-013', 'Drop-frame only applies to 29.97/59.94', [...where, 'settings']));
+		if (seq.videoTracks.length < 1 || seq.audioTracks.length < 1)
+			issues.push(inv('INV-015', 'Needs at least one video and one audio track', where));
 
 		const tracks = new Map<string, Track>();
-		for (const [list, kind] of [[seq.videoTracks, 'video'], [seq.audioTracks, 'audio'], [seq.captionTracks, 'caption']] as const) {
+		for (const [list, kind] of [
+			[seq.videoTracks, 'video'],
+			[seq.audioTracks, 'audio'],
+			[seq.captionTracks, 'caption'],
+		] as const) {
 			for (const t of list) {
 				claim(t.id, 'trk', [...where, 'tracks', t.id]);
-				if (t.kind !== kind) issues.push(inv('INV-002', `Track ${t.id} in the ${kind} list has kind ${t.kind}`, [...where, 'tracks', t.id]));
+				if (t.kind !== kind)
+					issues.push(
+						inv('INV-002', `Track ${t.id} in the ${kind} list has kind ${t.kind}`, [
+							...where,
+							'tracks',
+							t.id,
+						]),
+					);
 				tracks.set(t.id, t);
 				effects(t.effects, [...where, 'tracks', t.id, 'effects']);
 				anims(t, [...where, 'tracks', t.id]);
@@ -210,7 +265,8 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 			if (!t) issues.push(inv('INV-002', `Clip ${c.id} is on missing track ${c.trackId}`, cw));
 			else {
 				const need = trackKindFor(c.kind);
-				if (need && need !== t.kind) issues.push(inv('INV-002', `A ${c.kind} clip cannot be on ${t.kind} track ${t.id}`, cw));
+				if (need && need !== t.kind)
+					issues.push(inv('INV-002', `A ${c.kind} clip cannot be on ${t.kind} track ${t.id}`, cw));
 				const list = byTrack.get(t.id) ?? [];
 				list.push(c);
 				byTrack.set(t.id, list);
@@ -219,8 +275,10 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 			if (!Number.isInteger(c.start) || c.start < 0 || !Number.isInteger(c.duration) || c.duration < 1) {
 				issues.push(inv('INV-004', `Clip ${c.id} has invalid start/duration`, cw));
 			}
-			if (!Number.isInteger(c.sourceIn) || c.sourceIn < 0) issues.push(inv('INV-004', `Clip ${c.id} has invalid sourceIn`, cw));
-			if (!(c.speed.rate >= 0.01 && c.speed.rate <= 100)) issues.push(inv('INV-004', `Clip ${c.id} speed out of range`, cw));
+			if (!Number.isInteger(c.sourceIn) || c.sourceIn < 0)
+				issues.push(inv('INV-004', `Clip ${c.id} has invalid sourceIn`, cw));
+			if (!(c.speed.rate >= 0.01 && c.speed.rate <= 100))
+				issues.push(inv('INV-004', `Clip ${c.id} speed out of range`, cw));
 			const r = c as Record<string, unknown>;
 			// INV-006 references
 			if (typeof r.mediaId === 'string') {
@@ -232,20 +290,29 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 					const span = contentSpanFlicks(c.duration, rate, c.speed.rate);
 					const tol = flicksPerFrame(rate) * c.speed.rate + 1;
 					if (c.sourceIn + span > asset.probe.durationFlicks + tol) {
-						issues.push(inv('INV-005', `Clip ${c.id} exceeds its media (${c.sourceIn + span} > ${asset.probe.durationFlicks})`, cw));
+						issues.push(
+							inv(
+								'INV-005',
+								`Clip ${c.id} exceeds its media (${c.sourceIn + span} > ${asset.probe.durationFlicks})`,
+								cw,
+							),
+						);
 					}
 				}
 			}
 			if (typeof r.syntheticId === 'string') {
 				usedSyn.add(r.syntheticId);
-				if (!doc.synthetics[r.syntheticId]) issues.push(inv('INV-006', `Clip ${c.id} references missing synthetic`, cw));
+				if (!doc.synthetics[r.syntheticId])
+					issues.push(inv('INV-006', `Clip ${c.id} references missing synthetic`, cw));
 			}
 			if (typeof r.transcriptId === 'string') {
 				usedTrs.add(r.transcriptId);
-				if (!doc.transcripts[r.transcriptId]) issues.push(inv('INV-006', `Clip ${c.id} references missing transcript`, cw));
+				if (!doc.transcripts[r.transcriptId])
+					issues.push(inv('INV-006', `Clip ${c.id} references missing transcript`, cw));
 			}
 			if (typeof r.sequenceId === 'string' && isKnownClipKind(c.kind)) {
-				if (!doc.sequences[r.sequenceId]) issues.push(inv('INV-006', `Clip ${c.id} references missing sequence`, cw));
+				if (!doc.sequences[r.sequenceId])
+					issues.push(inv('INV-006', `Clip ${c.id} references missing sequence`, cw));
 				const set = nestEdges.get(seq.id) ?? new Set<string>();
 				set.add(r.sequenceId);
 				nestEdges.set(seq.id, set);
@@ -254,8 +321,10 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 			if (c.kind === 'text' && content?.style?.fontId && !doc.fonts[content.style.fontId]) {
 				issues.push(inv('INV-006', `Clip ${c.id} references missing font ${content.style.fontId}`, cw));
 			}
-			if (c.linkId && !seq.links[c.linkId]?.members.includes(c.id)) issues.push(inv('INV-006', `Clip ${c.id} has a dangling linkId`, cw));
-			if (c.groupId && !seq.groups[c.groupId]?.members.includes(c.id)) issues.push(inv('INV-006', `Clip ${c.id} has a dangling groupId`, cw));
+			if (c.linkId && !seq.links[c.linkId]?.members.includes(c.id))
+				issues.push(inv('INV-006', `Clip ${c.id} has a dangling linkId`, cw));
+			if (c.groupId && !seq.groups[c.groupId]?.members.includes(c.id))
+				issues.push(inv('INV-006', `Clip ${c.id} has a dangling groupId`, cw));
 			for (const m of c.markers) claim(m.id, 'mrk', [...cw, 'markers', m.id]);
 			if (isKnownClipKind(c.kind)) {
 				effects(r.effects as EffectInstance[] | undefined, [...cw, 'effects']);
@@ -263,7 +332,8 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 				const opacity = r.opacity as AnimLike | undefined;
 				if (opacity) {
 					for (const v of [opacity.value, ...opacity.keyframes.map((k) => k.value)]) {
-						if (typeof v !== 'number' || v < 0 || v > 100) issues.push(inv('INV-012', `Clip ${c.id} opacity out of 0..100`, cw));
+						if (typeof v !== 'number' || v < 0 || v > 100)
+							issues.push(inv('INV-012', `Clip ${c.id} opacity out of 0..100`, cw));
 					}
 				}
 			}
@@ -273,31 +343,54 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 			list.sort((a, b) => a.start - b.start);
 			for (let i = 1; i < list.length; i++) {
 				if (list[i]!.start < clipEnd(list[i - 1]!)) {
-					issues.push(inv('INV-003', `Clips ${list[i - 1]!.id} and ${list[i]!.id} overlap on ${trackId}`, [...where, 'clips', list[i]!.id]));
+					issues.push(
+						inv('INV-003', `Clips ${list[i - 1]!.id} and ${list[i]!.id} overlap on ${trackId}`, [
+							...where,
+							'clips',
+							list[i]!.id,
+						]),
+					);
 				}
 			}
 		}
 		// INV-007 link and clip groups
 		for (const [key, l] of Object.entries(seq.links)) {
 			claim(l.id, 'lnk', [...where, 'links', key]);
-			if (l.members.length < 2) issues.push(inv('INV-007', `Link group ${l.id} has fewer than 2 members`, [...where, 'links', key]));
+			if (l.members.length < 2)
+				issues.push(inv('INV-007', `Link group ${l.id} has fewer than 2 members`, [...where, 'links', key]));
 			let videos = 0;
 			for (const m of l.members) {
 				const c = seq.clips[m];
-				if (!c) issues.push(inv('INV-006', `Link group ${l.id} references missing clip ${m}`, [...where, 'links', key]));
+				if (!c)
+					issues.push(
+						inv('INV-006', `Link group ${l.id} references missing clip ${m}`, [...where, 'links', key]),
+					);
 				else {
-					if (c.linkId !== l.id) issues.push(inv('INV-007', `Clip ${m} is listed in ${l.id} but not linked to it`, [...where, 'links', key]));
+					if (c.linkId !== l.id)
+						issues.push(
+							inv('INV-007', `Clip ${m} is listed in ${l.id} but not linked to it`, [...where, 'links', key]),
+						);
 					if (tracks.get(c.trackId)?.kind === 'video') videos++;
 				}
 			}
-			if (videos > 1) issues.push(inv('INV-007', `Link group ${l.id} has more than one video member`, [...where, 'links', key]));
+			if (videos > 1)
+				issues.push(
+					inv('INV-007', `Link group ${l.id} has more than one video member`, [...where, 'links', key]),
+				);
 		}
 		for (const [key, g] of Object.entries(seq.groups)) {
 			claim(g.id, 'grp', [...where, 'groups', key]);
-			if (g.members.length < 2) issues.push(inv('INV-007', `Clip group ${g.id} has fewer than 2 members`, [...where, 'groups', key]));
+			if (g.members.length < 2)
+				issues.push(inv('INV-007', `Clip group ${g.id} has fewer than 2 members`, [...where, 'groups', key]));
 			for (const m of g.members) {
-				if (!seq.clips[m]) issues.push(inv('INV-006', `Clip group ${g.id} references missing clip ${m}`, [...where, 'groups', key]));
-				else if (seq.clips[m]!.groupId !== g.id) issues.push(inv('INV-007', `Clip ${m} is listed in ${g.id} but not grouped`, [...where, 'groups', key]));
+				if (!seq.clips[m])
+					issues.push(
+						inv('INV-006', `Clip group ${g.id} references missing clip ${m}`, [...where, 'groups', key]),
+					);
+				else if (seq.clips[m]!.groupId !== g.id)
+					issues.push(
+						inv('INV-007', `Clip ${m} is listed in ${g.id} but not grouped`, [...where, 'groups', key]),
+					);
 			}
 		}
 		// INV-010 transitions
@@ -305,17 +398,21 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 		for (const [key, t] of Object.entries(seq.transitions)) {
 			const tw = [...where, 'transitions', key];
 			claim(t.id, 'trn', tw);
-			if (!t.outgoingClipId && !t.incomingClipId) issues.push(inv('INV-010', `Transition ${t.id} has no clips`, tw));
+			if (!t.outgoingClipId && !t.incomingClipId)
+				issues.push(inv('INV-010', `Transition ${t.id} has no clips`, tw));
 			const out = t.outgoingClipId ? seq.clips[t.outgoingClipId] : undefined;
 			const inc = t.incomingClipId ? seq.clips[t.incomingClipId] : undefined;
 			if ((t.outgoingClipId && !out) || (t.incomingClipId && !inc)) {
 				issues.push(inv('INV-006', `Transition ${t.id} references a missing clip`, tw));
 				continue;
 			}
-			if (out && inc && (out.trackId !== inc.trackId || clipEnd(out) !== inc.start)) issues.push(inv('INV-010', `Transition ${t.id} joins non-adjacent clips`, tw));
+			if (out && inc && (out.trackId !== inc.trackId || clipEnd(out) !== inc.start))
+				issues.push(inv('INV-010', `Transition ${t.id} joins non-adjacent clips`, tw));
 			for (const c of [out, inc]) {
-				if (c && c.trackId !== t.trackId) issues.push(inv('INV-010', `Transition ${t.id} is not on its clips' track`, tw));
-				if (c && t.duration > c.duration) issues.push(inv('INV-010', `Transition ${t.id} is longer than clip ${c.id}`, tw));
+				if (c && c.trackId !== t.trackId)
+					issues.push(inv('INV-010', `Transition ${t.id} is not on its clips' track`, tw));
+				if (c && t.duration > c.duration)
+					issues.push(inv('INV-010', `Transition ${t.id} is longer than clip ${c.id}`, tw));
 			}
 			const edgeKey = out ? `${out.id}:out` : `${inc!.id}:in`;
 			const edgeKey2 = inc ? `${inc.id}:in` : null;
@@ -351,10 +448,14 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 	}
 	for (const m of Object.values(doc.media)) if (m.derivation) usedMedia.add(m.derivation.fromMediaId);
 	for (const f of Object.values(doc.fonts)) if (f.source.type === 'asset') usedMedia.add(f.source.mediaId);
-	for (const id of Object.keys(doc.media)) if (!usedMedia.has(id)) issues.push(inv('INV-014', `Media ${id} is not referenced`, ['media', id]));
-	for (const id of Object.keys(doc.synthetics)) if (!usedSyn.has(id)) issues.push(inv('INV-014', `Synthetic ${id} is not referenced`, ['synthetics', id]));
+	for (const id of Object.keys(doc.media))
+		if (!usedMedia.has(id)) issues.push(inv('INV-014', `Media ${id} is not referenced`, ['media', id]));
+	for (const id of Object.keys(doc.synthetics))
+		if (!usedSyn.has(id))
+			issues.push(inv('INV-014', `Synthetic ${id} is not referenced`, ['synthetics', id]));
 	for (const t of Object.values(doc.transcripts)) {
-		if (!usedTrs.has(t.id) && !(t.mediaId && usedMedia.has(t.mediaId))) issues.push(inv('INV-014', `Transcript ${t.id} is not referenced`, ['transcripts', t.id]));
+		if (!usedTrs.has(t.id) && !(t.mediaId && usedMedia.has(t.mediaId)))
+			issues.push(inv('INV-014', `Transcript ${t.id} is not referenced`, ['transcripts', t.id]));
 	}
 	void kindCapabilities;
 	return issues;
@@ -369,7 +470,10 @@ export type RepairEntry = { action: string; entity: string; detail: string };
  * overlapping clips to a new track, dissolves link/clip groups with fewer than two members, puts
  * unparented items back at the root, and re-adds missing tracks. Returns a new document and a report.
  */
-export function repairDocument(input: ProjectDocument, ids: IdSource): { document: ProjectDocument; report: RepairEntry[] } {
+export function repairDocument(
+	input: ProjectDocument,
+	ids: IdSource,
+): { document: ProjectDocument; report: RepairEntry[] } {
 	const doc = JSON.parse(JSON.stringify(input)) as ProjectDocument;
 	const report: RepairEntry[] = [];
 	const note = (action: string, entity: string, detail: string) => report.push({ action, entity, detail });
@@ -386,7 +490,8 @@ export function repairDocument(input: ProjectDocument, ids: IdSource): { documen
 			return true;
 		});
 	doc.rootItems = cleanList(doc.rootItems, 'rootItems');
-	for (const it of Object.values(doc.items)) if (it.kind === 'bin') it.children = cleanList(it.children, it.id);
+	for (const it of Object.values(doc.items))
+		if (it.kind === 'bin') it.children = cleanList(it.children, it.id);
 	for (const it of Object.values(doc.items)) {
 		const dangling =
 			(it.kind === 'media' && !doc.media[it.mediaId]) ||
@@ -395,7 +500,8 @@ export function repairDocument(input: ProjectDocument, ids: IdSource): { documen
 		if (dangling) {
 			delete doc.items[it.id];
 			doc.rootItems = doc.rootItems.filter((x) => x !== it.id);
-			for (const b of Object.values(doc.items)) if (b.kind === 'bin') b.children = b.children.filter((x) => x !== it.id);
+			for (const b of Object.values(doc.items))
+				if (b.kind === 'bin') b.children = b.children.filter((x) => x !== it.id);
 			note('drop-item', it.id, 'item referenced a missing entity');
 			continue;
 		}
@@ -467,7 +573,11 @@ export function repairDocument(input: ProjectDocument, ids: IdSource): { documen
 			}
 		}
 		for (const t of Object.values(seq.transitions)) {
-			if ((t.outgoingClipId && !seq.clips[t.outgoingClipId]) || (t.incomingClipId && !seq.clips[t.incomingClipId]) || !trackIds.has(t.trackId)) {
+			if (
+				(t.outgoingClipId && !seq.clips[t.outgoingClipId]) ||
+				(t.incomingClipId && !seq.clips[t.incomingClipId]) ||
+				!trackIds.has(t.trackId)
+			) {
 				delete seq.transitions[t.id];
 				note('drop-transition', t.id, 'transition referenced a missing clip or track');
 			}
@@ -492,7 +602,14 @@ export function repairDocument(input: ProjectDocument, ids: IdSource): { documen
 	for (const m of Object.values(doc.media)) {
 		if (usedMedia.has(m.id)) continue;
 		const itemId = ids.next('itm');
-		doc.items[itemId] = { id: itemId, kind: 'media', name: m.originalName, mediaId: m.id, label: 'iris', marks: { in: null, out: null } };
+		doc.items[itemId] = {
+			id: itemId,
+			kind: 'media',
+			name: m.originalName,
+			mediaId: m.id,
+			label: 'iris',
+			marks: { in: null, out: null },
+		};
 		doc.rootItems.push(itemId);
 		note('add-item', m.id, 'unreferenced media got a project item');
 	}
@@ -505,7 +622,13 @@ export function repairDocument(input: ProjectDocument, ids: IdSource): { documen
 	for (const s of Object.keys(doc.sequences)) {
 		if (!Object.values(doc.items).some((it) => it.kind === 'sequence' && it.sequenceId === s)) {
 			const itemId = ids.next('itm');
-			doc.items[itemId] = { id: itemId, kind: 'sequence', name: 'Recovered Sequence', sequenceId: s, label: 'forest' };
+			doc.items[itemId] = {
+				id: itemId,
+				kind: 'sequence',
+				name: 'Recovered Sequence',
+				sequenceId: s,
+				label: 'forest',
+			};
 			doc.rootItems.push(itemId);
 			note('add-item', s, 'sequence had no project item');
 		}

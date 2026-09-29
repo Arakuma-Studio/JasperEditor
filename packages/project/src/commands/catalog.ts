@@ -140,7 +140,12 @@ export function isCommandType(t: unknown): t is CommandType {
 }
 
 /** Commands an agent may only run with user approval (S01:AGT-011, ARCHITECTURE §11). */
-export const APPROVAL_COMMANDS: readonly CommandType[] = ['item.delete', 'sequence.delete', 'track.remove', 'media.removeUnused'];
+export const APPROVAL_COMMANDS: readonly CommandType[] = [
+	'item.delete',
+	'sequence.delete',
+	'track.remove',
+	'media.removeUnused',
+];
 
 export function requiresApproval(commands: readonly { type: string; force?: unknown }[]): boolean {
 	return commands.some((c) => (APPROVAL_COMMANDS as readonly string[]).includes(c.type) || c.force === true);

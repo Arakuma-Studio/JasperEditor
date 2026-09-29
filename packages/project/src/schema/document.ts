@@ -1,16 +1,16 @@
 // Project document root, project items and the persistence envelope (S01 §4, §5, PER-002).
 import { z } from 'zod';
-import { int, LabelColorSchema, nonNegInt } from './common.ts';
 import type { DeepStrip } from './common.ts';
+import { int, LabelColorSchema, nonNegInt } from './common.ts';
 import {
-	FontRefSchema,
 	type FontRef,
-	MediaAssetSchema,
+	FontRefSchema,
 	type MediaAsset,
-	SyntheticSourceSchema,
+	MediaAssetSchema,
 	type SyntheticSource,
-	TranscriptSchema,
+	SyntheticSourceSchema,
 	type Transcript,
+	TranscriptSchema,
 } from './media.ts';
 import { type Sequence, SequenceSchema } from './sequence.ts';
 

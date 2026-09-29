@@ -11,7 +11,12 @@ export * from './project.ts';
 export * from './sequence.ts';
 
 /** Every document command schema (M1 + M2), keyed by nothing: see `catalog.ts` for registration. */
-export const ALL_COMMAND_SCHEMAS = [...PROJECT_COMMANDS, ...SEQUENCE_COMMANDS, ...CLIP_COMMANDS, ...PARAM_COMMANDS] as const;
+export const ALL_COMMAND_SCHEMAS = [
+	...PROJECT_COMMANDS,
+	...SEQUENCE_COMMANDS,
+	...CLIP_COMMANDS,
+	...PARAM_COMMANDS,
+] as const;
 
 export type Command = z.infer<(typeof ALL_COMMAND_SCHEMAS)[number]>;
 export type CommandType = Command['type'];

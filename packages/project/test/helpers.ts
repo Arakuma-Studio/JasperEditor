@@ -11,7 +11,10 @@ import {
 	type TransactionResult,
 } from '../src/index.ts';
 
-export function makeCtx(overrides: Partial<CommandContext> = {}, ids: IdSource = createSeededIdSource(7)): CommandContext {
+export function makeCtx(
+	overrides: Partial<CommandContext> = {},
+	ids: IdSource = createSeededIdSource(7),
+): CommandContext {
 	return {
 		ids,
 		now: () => '2026-09-30T10:00:00.000Z',
@@ -40,10 +43,22 @@ export class Harness {
 		return this.seq.id;
 	}
 	ctx(extra: Partial<CommandContext> = {}): CommandContext {
-		return makeCtx({ revision: this.revision, entityRevisions: this.entityRevisions, ...this.extra, ...extra }, this.ids);
+		return makeCtx(
+			{ revision: this.revision, entityRevisions: this.entityRevisions, ...this.extra, ...extra },
+			this.ids,
+		);
 	}
 	/** Applies commands; returns the result. Commits on success. */
-	tx(commands: unknown[], opts: { origin?: unknown; label?: string; expectedRevision?: number; dryRun?: boolean; ctx?: Partial<CommandContext> } = {}): TransactionResult {
+	tx(
+		commands: unknown[],
+		opts: {
+			origin?: unknown;
+			label?: string;
+			expectedRevision?: number;
+			dryRun?: boolean;
+			ctx?: Partial<CommandContext>;
+		} = {},
+	): TransactionResult {
 		const { document, result } = applyTransaction(
 			this.doc,
 			{
@@ -59,7 +74,8 @@ export class Harness {
 		if (result.ok && document !== this.doc) {
 			this.doc = document;
 			this.revision = result.revision;
-			for (const id of [...result.created, ...result.changed, ...result.deleted]) this.entityRevisions.set(id, result.revision);
+			for (const id of [...result.created, ...result.changed, ...result.deleted])
+				this.entityRevisions.set(id, result.revision);
 		}
 		return result;
 	}
@@ -93,7 +109,17 @@ export function resolveLabel(seq: Sequence, label: string): string {
 
 let fp = 0;
 /** A probed video asset: 1920x1080, 30 fps, stereo AAC (defaults), `seconds` long. */
-export function videoAsset(opts: { seconds?: number; width?: number; height?: number; fps?: { num: number; den: number }; audio?: boolean; kind?: MediaAsset['kind']; rotation?: 0 | 90 | 180 | 270 } = {}): Omit<MediaAsset, 'id'> & { id?: string } {
+export function videoAsset(
+	opts: {
+		seconds?: number;
+		width?: number;
+		height?: number;
+		fps?: { num: number; den: number };
+		audio?: boolean;
+		kind?: MediaAsset['kind'];
+		rotation?: 0 | 90 | 180 | 270;
+	} = {},
+): Omit<MediaAsset, 'id'> & { id?: string } {
 	const seconds = opts.seconds ?? 10;
 	const kind = opts.kind ?? 'video';
 	const streams: MediaAsset['probe']['streams'] = [];
@@ -113,7 +139,14 @@ export function videoAsset(opts: { seconds?: number; width?: number; height?: nu
 		});
 	}
 	if (kind === 'audio' || (kind === 'video' && opts.audio !== false)) {
-		streams.push({ index: streams.length, type: 'audio', codec: 'aac', sampleRate: 48000, channels: 2, channelLayout: 'stereo' });
+		streams.push({
+			index: streams.length,
+			type: 'audio',
+			codec: 'aac',
+			sampleRate: 48000,
+			channels: 2,
+			channelLayout: 'stereo',
+		});
 	}
 	return {
 		kind,

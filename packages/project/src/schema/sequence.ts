@@ -1,5 +1,6 @@
 // Sequences, tracks, clips, effects, transitions, markers (S01 §7–§13).
 import { z } from 'zod';
+import type { DeepStrip } from './common.ts';
 import {
 	AnimNumberSchema,
 	AnimParamSchema,
@@ -10,7 +11,6 @@ import {
 	RationalSchema,
 	RGBASchema,
 } from './common.ts';
-import type { DeepStrip } from './common.ts';
 
 // ---------------------------------------------------------------- effects
 
@@ -41,9 +41,16 @@ export const TextStyleSchema = z.looseObject({
 	direction: z.enum(['ltr', 'rtl', 'auto']),
 	fill: RGBASchema,
 	strokes: z.array(TextStrokeSchema),
-	background: z.looseObject({ color: RGBASchema, paddingPx: z.number().min(0), radiusPx: z.number().min(0) }).nullable(),
+	background: z
+		.looseObject({ color: RGBASchema, paddingPx: z.number().min(0), radiusPx: z.number().min(0) })
+		.nullable(),
 	shadow: z
-		.looseObject({ color: RGBASchema, angleDeg: z.number(), distancePx: z.number(), blurPx: z.number().min(0) })
+		.looseObject({
+			color: RGBASchema,
+			angleDeg: z.number(),
+			distancePx: z.number(),
+			blurPx: z.number().min(0),
+		})
 		.nullable(),
 	allCaps: z.boolean(),
 });
@@ -126,7 +133,16 @@ export type ClipMarker = DeepStrip<z.infer<typeof ClipMarkerSchema>>;
 
 // ---------------------------------------------------------------- clips
 
-export const BLEND_MODES = ['normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten', 'add', 'difference'] as const;
+export const BLEND_MODES = [
+	'normal',
+	'multiply',
+	'screen',
+	'overlay',
+	'darken',
+	'lighten',
+	'add',
+	'difference',
+] as const;
 export const BlendModeSchema = z.enum(BLEND_MODES);
 export type BlendMode = DeepStrip<z.infer<typeof BlendModeSchema>>;
 
@@ -209,7 +225,12 @@ export const AudioClipSchema = z.looseObject({
 	pan: AnimNumberSchema,
 	effects: z.array(EffectInstanceSchema),
 });
-export const StillClipSchema = z.looseObject({ ...commonShape, kind: z.literal('still'), mediaId: z.string(), ...visualShape });
+export const StillClipSchema = z.looseObject({
+	...commonShape,
+	kind: z.literal('still'),
+	mediaId: z.string(),
+	...visualShape,
+});
 export const AnimatedImageClipSchema = z.looseObject({
 	...commonShape,
 	kind: z.literal('animated-image'),
@@ -225,7 +246,12 @@ export const TextClipSchema = z.looseObject({
 	layoutPending: z.boolean().optional(),
 	...visualShape,
 });
-export const SolidClipSchema = z.looseObject({ ...commonShape, kind: z.literal('solid'), syntheticId: z.string(), ...visualShape });
+export const SolidClipSchema = z.looseObject({
+	...commonShape,
+	kind: z.literal('solid'),
+	syntheticId: z.string(),
+	...visualShape,
+});
 export const CaptionsClipSchema = z.looseObject({
 	...commonShape,
 	kind: z.literal('captions'),
@@ -392,4 +418,6 @@ export const SequenceSchema = z.looseObject({
 	outPoint: nonNegInt().nullable(),
 	workArea: z.looseObject({ start: nonNegInt(), end: nonNegInt() }).nullable(),
 });
-export type Sequence = Omit<DeepStrip<z.infer<typeof SequenceSchema>>, 'clips'> & { clips: Record<string, Clip> };
+export type Sequence = Omit<DeepStrip<z.infer<typeof SequenceSchema>>, 'clips'> & {
+	clips: Record<string, Clip>;
+};

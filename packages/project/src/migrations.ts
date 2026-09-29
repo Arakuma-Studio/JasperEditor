@@ -1,12 +1,17 @@
 // Schema versions and migrations (S01:MIG-001…005) and the load pipeline (S01:PER-004):
 // envelope → migrate → zod validate → invariants → conservative repair.
+
+import type { Issue } from './commands/types.ts';
 import { createRandomIdSource, type IdSource } from './ids.ts';
 import { checkInvariants, type RepairEntry, repairDocument } from './invariants.ts';
-import type { Issue } from './commands/types.ts';
 import type { EffectRegistry } from './registry/effects.ts';
 import { CURRENT_SCHEMA_VERSION, type ProjectDocument, ProjectDocumentSchema } from './schema/document.ts';
 
-export type MigrationStep = { from: number; to: number; migrate(doc: Record<string, unknown>): Record<string, unknown> };
+export type MigrationStep = {
+	from: number;
+	to: number;
+	migrate(doc: Record<string, unknown>): Record<string, unknown>;
+};
 export type MigrationReport = { fromVersion: number; toVersion: number; steps: string[] };
 
 /**
@@ -30,11 +35,19 @@ function unwrap(raw: unknown): { doc: Record<string, unknown>; fromEnvelope: boo
  * Migrates raw project data (an envelope or a bare document) to the current schema version.
  * Newer versions are returned unchanged with `readOnly: true` (S01:MIG-003); they are never downgraded.
  */
-export function migrate(raw: unknown): { document: ProjectDocument; report: MigrationReport; readOnly: boolean } {
+export function migrate(raw: unknown): {
+	document: ProjectDocument;
+	report: MigrationReport;
+	readOnly: boolean;
+} {
 	const { doc } = unwrap(raw);
 	const version = typeof doc.schemaVersion === 'number' ? doc.schemaVersion : 1;
 	if (version > CURRENT_SCHEMA_VERSION) {
-		return { document: doc as unknown as ProjectDocument, report: { fromVersion: version, toVersion: version, steps: [] }, readOnly: true };
+		return {
+			document: doc as unknown as ProjectDocument,
+			report: { fromVersion: version, toVersion: version, steps: [] },
+			readOnly: true,
+		};
 	}
 	let cur: Record<string, unknown> = JSON.parse(JSON.stringify(doc));
 	const steps: string[] = [];
@@ -46,7 +59,11 @@ export function migrate(raw: unknown): { document: ProjectDocument; report: Migr
 		steps.push(`v${step.from}→v${step.to}`);
 	}
 	if (cur.schemaVersion === undefined) cur.schemaVersion = CURRENT_SCHEMA_VERSION;
-	return { document: cur as unknown as ProjectDocument, report: { fromVersion: version, toVersion: CURRENT_SCHEMA_VERSION, steps }, readOnly: false };
+	return {
+		document: cur as unknown as ProjectDocument,
+		report: { fromVersion: version, toVersion: CURRENT_SCHEMA_VERSION, steps },
+		readOnly: false,
+	};
 }
 
 export type LoadResult = {
@@ -60,7 +77,10 @@ export type LoadResult = {
 };
 
 /** Full load pipeline (S01:PER-004). Throws only when the data is not a project at all. */
-export function loadProject(raw: unknown, opts: { ids?: IdSource; effects?: EffectRegistry } = {}): LoadResult {
+export function loadProject(
+	raw: unknown,
+	opts: { ids?: IdSource; effects?: EffectRegistry } = {},
+): LoadResult {
 	const m = migrate(raw);
 	if (m.readOnly) {
 		const parsed = ProjectDocumentSchema.safeParse(m.document);

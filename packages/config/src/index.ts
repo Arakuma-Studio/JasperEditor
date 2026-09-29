@@ -27,7 +27,10 @@ export type EnvName = (typeof ENV)[keyof typeof ENV];
 export type Env = Record<string, string | undefined>;
 
 /** Platform default appdir when neither --appdir nor JASPER_APPDIR is given. */
-export function platformDefaultAppdir(env: Env = process.env, platform: NodeJS.Platform = process.platform): string {
+export function platformDefaultAppdir(
+	env: Env = process.env,
+	platform: NodeJS.Platform = process.platform,
+): string {
 	if (platform === 'linux' && env.USER === 'jasper') return '/var/lib/jasper';
 	if (platform === 'win32') return join(env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'), 'jasper');
 	if (platform === 'darwin') return join(homedir(), 'Library', 'Application Support', 'jasper');

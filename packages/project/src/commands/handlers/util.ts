@@ -1,6 +1,7 @@
 // Small helpers shared by handler files.
-import type { CommandOf, CommandType } from '../schemas/index.ts';
+
 import type { DDoc, HandlerContext } from '../context.ts';
+import type { CommandOf, CommandType } from '../schemas/index.ts';
 
 export type Handler<T extends CommandType> = (doc: DDoc, cmd: CommandOf<T>, h: HandlerContext) => unknown;
 export type HandlerMap = { [T in CommandType]?: Handler<T> };

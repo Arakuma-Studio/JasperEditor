@@ -18,7 +18,9 @@ export type LayerTransformValues = {
 export const IDENTITY: Mat2D = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
 
 /** Scale factors (fractions); "Scale" is vertical, "Scale Width" horizontal when not uniform; flips negate. */
-export function scaleFactors(v: Pick<LayerTransformValues, 'scale' | 'scaleWidth' | 'uniformScale' | 'flipH' | 'flipV'>): { sx: number; sy: number } {
+export function scaleFactors(
+	v: Pick<LayerTransformValues, 'scale' | 'scaleWidth' | 'uniformScale' | 'flipH' | 'flipV'>,
+): { sx: number; sy: number } {
 	const sx = ((v.uniformScale ? v.scale : v.scaleWidth) / 100) * (v.flipH ? -1 : 1);
 	const sy = (v.scale / 100) * (v.flipV ? -1 : 1);
 	return { sx, sy };
@@ -75,7 +77,12 @@ export function visibleRect(box: { width: number; height: number }, crop?: Crop)
 	const t = (crop?.top ?? 0) / 100;
 	const r = (crop?.right ?? 0) / 100;
 	const b = (crop?.bottom ?? 0) / 100;
-	return { x: l * box.width, y: t * box.height, width: (1 - l - r) * box.width, height: (1 - t - b) * box.height };
+	return {
+		x: l * box.width,
+		y: t * box.height,
+		width: (1 - l - r) * box.width,
+		height: (1 - t - b) * box.height,
+	};
 }
 
 /** Layer quad in sequence space (top-left, top-right, bottom-right, bottom-left) (S03:DM-011). */
