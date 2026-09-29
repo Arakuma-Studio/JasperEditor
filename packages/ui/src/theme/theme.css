@@ -1,0 +1,48 @@
+/* Entry point for apps: `@import "tailwindcss"; @import "@jasper/ui/theme.css"; @source "…/packages/ui/src";` */
+@import "./tokens.css";
+@import "./fonts.css";
+@import "./tailwind.css";
+@import "./dockview.css";
+
+@layer base {
+	html,
+	body {
+		background: var(--pr-bg-app);
+		color: var(--pr-text-primary);
+		font-family: var(--pr-font-ui);
+		font-size: var(--pr-font-size-ui);
+		line-height: var(--pr-line-ui);
+		overscroll-behavior: none;
+		-webkit-font-smoothing: antialiased;
+	}
+	* {
+		scrollbar-color: var(--pr-border-strong) transparent;
+		scrollbar-width: thin;
+	}
+	::-webkit-scrollbar {
+		width: 8px;
+		height: 8px;
+	}
+	::-webkit-scrollbar-thumb {
+		background: var(--pr-border-strong);
+		border-radius: 4px;
+	}
+	:focus-visible {
+		outline: 2px solid var(--pr-focus-ring);
+		outline-offset: 1px;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		* {
+			transition-duration: 0ms !important;
+			animation-duration: 0ms !important;
+		}
+	}
+}
+
+@layer utilities {
+	/* Changing numbers never jitter (S05:TY-004). */
+	.pr-tabular {
+		font-variant-numeric: tabular-nums;
+		font-feature-settings: "tnum" 1;
+	}
+}
