@@ -13,6 +13,7 @@ export function Icon({ id, size = 16, className, title, strokeWidth = 1.5 }: Ico
 	const src = ICONS[id];
 	if (isCustomGlyph(src)) {
 		return (
+			// biome-ignore lint/a11y/noSvgWithoutTitle: decorative glyphs are aria-hidden; titled ones render <title>
 			<svg
 				width={size}
 				height={size}
