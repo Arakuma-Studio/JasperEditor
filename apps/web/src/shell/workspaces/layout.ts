@@ -16,14 +16,17 @@ export const PANEL_TAB = 'panelTab';
 const MIN_W = 120;
 const MIN_H = 80;
 /** Upper bounds for fixed-axis panels: Tools stays 40 px; meters resize 40–120 (MTR-001). */
-const FIXED_MAX: Partial<Record<PanelKind, number>> = { tools: 40, audioMeters: 120 };
+/** (+4 px so the visible frame stays at the declared size inside a 3–4 px gutter.) */
+const FIXED_MAX: Partial<Record<PanelKind, number>> = { tools: 44, audioMeters: 124 };
+const GUTTER_ALLOWANCE = 3;
 
 export function panelState(
 	def: Pick<PanelDefinition, 'kind' | 'minSize' | 'fixedAxis' | 'keepAlive'>,
 	title: string,
 	id = instanceIdFor(def.kind),
 ) {
-	const minW = def.fixedAxis === 'width' ? def.minSize.w : Math.max(MIN_W, def.minSize.w);
+	// Fixed-width frames: the view includes its share of the gutter, so the visible frame keeps the size.
+	const minW = def.fixedAxis === 'width' ? def.minSize.w + GUTTER_ALLOWANCE : Math.max(MIN_W, def.minSize.w);
 	const minH = def.fixedAxis === 'height' ? def.minSize.h : Math.max(MIN_H, def.minSize.h);
 	const maxW = def.fixedAxis === 'width' ? FIXED_MAX[def.kind] : undefined;
 	return {
@@ -75,6 +78,8 @@ export function buildLayout(
 	size: { width: number; height: number },
 	panels: ReadonlyMap<PanelKind, PanelDefinition>,
 	titleOf: (kind: PanelKind) => string = (k) => panels.get(k)?.title({}) ?? k,
+	/** Gap between groups (theme gutter): fixed px sizes are grown so the visible frame keeps its size. */
+	gap = 0,
 ): SerializedDockview {
 	const width = Math.max(320, Math.round(size.width));
 	const height = Math.max(240, Math.round(size.height));
@@ -106,8 +111,10 @@ export function buildLayout(
 		}
 		const expected = n.split === 'row' ? 'HORIZONTAL' : 'VERTICAL';
 		if (expected !== orientation) throw new Error(`Workspace ${def.id}: nested ${n.split} must alternate`);
+		const count = n.children.length;
+		const marginShare = count > 1 ? Math.round((gap * (count - 1)) / count) : 0;
 		const sizes = distribute(
-			n.children.map((c) => c.size),
+			n.children.map((c) => (typeof c.size === 'object' ? { px: c.size.px + marginShare } : c.size)),
 			crossSize,
 		);
 		const children = n.children

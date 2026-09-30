@@ -47,6 +47,8 @@ export class DockController {
 	private applying = 0;
 	private readonly disposers: (() => void)[] = [];
 	private focusedGroupEl: HTMLElement | null = null;
+	/** Theme gutter in px (set by the dock host). */
+	gap = 3;
 
 	constructor(
 		private readonly store: WorkspaceStore,
@@ -101,7 +103,7 @@ export class DockController {
 	/** The factory layout of a workspace at the current dock size. */
 	factoryLayout(id: string): SerializedDockview {
 		const def = this.definitionFor(id);
-		return buildLayout({ ...def, id }, this.size(), this.panels);
+		return buildLayout({ ...def, id }, this.size(), this.panels, undefined, this.gap);
 	}
 
 	/** Applies a workspace: its current layout (or `layout`), falling back to the factory layout. */
@@ -113,6 +115,7 @@ export class DockController {
 		const known = new Set<string>([...this.panels.keys()]);
 		let json = stored ? sanitizeLayout(stored, known) : null;
 		const usedFallback = !!stored && !json;
+		const factory = !json;
 		json ??= this.factoryLayout(id);
 		this.applying++;
 		try {
@@ -130,10 +133,43 @@ export class DockController {
 		} finally {
 			this.applying--;
 		}
+		if (factory) this.pinFixedWidths(id);
 		if (usedFallback) this.events.onLayoutFallback?.(id);
 		this.workspaceId = id;
 		if (!record?.current) this.store.setCurrent(id, api.toJSON());
 		this.syncFocusOutline();
+	}
+
+	/**
+	 * Factory layouts: make fixed-size frames exactly their declared pixel width after dockview applied
+	 * gutters and proportional rounding (Tools 40 px, Audio Meters 52 px; WS-003).
+	 */
+	private pinFixedWidths(id: string): void {
+		const api = this.api;
+		if (!api) return;
+		const wanted = new Map<PanelKind, number>();
+		const walk = (n: LayoutNode) => {
+			if ('group' in n) return;
+			for (const c of n.children) {
+				if (typeof c.size === 'object' && 'group' in c.node && c.node.group.length === 1 && n.split === 'row')
+					wanted.set(c.node.group[0] as PanelKind, c.size.px);
+				walk(c.node);
+			}
+		};
+		walk(this.definitionFor(id).layout);
+		// Resizing one frame can nudge its neighbors, so settle in a few passes.
+		for (let pass = 0; pass < 3; pass++) {
+			let changed = false;
+			for (const [kind, px] of wanted) {
+				const panel = this.panelOf(kind);
+				const el = panel ? groupElement(panel) : null;
+				const actual = el?.getBoundingClientRect().width ?? 0;
+				if (!panel || !actual || Math.abs(actual - px) < 0.5) continue;
+				panel.group.api.setSize({ width: panel.group.api.width + (px - actual) });
+				changed = true;
+			}
+			if (!changed) break;
+		}
 	}
 
 	currentLayout(): SerializedDockview | null {

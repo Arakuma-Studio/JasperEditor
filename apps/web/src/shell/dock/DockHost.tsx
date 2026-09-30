@@ -197,7 +197,7 @@ function PanelTab(props: IDockviewPanelHeaderProps<{ kind: PanelKind }>) {
 				onAuxClick={onAux}
 				onMouseDown={(e) => e.button === 1 && e.preventDefault()}
 				className={cx(
-					'group/tab flex h-full max-w-[220px] items-center gap-1 pr-1 pl-3 font-pr text-pr-ui select-none',
+					'group/tab flex h-full max-w-[220px] min-w-0 items-center gap-1 overflow-hidden pr-1 pl-3 font-pr text-pr-ui select-none',
 					active ? 'text-pr-strong' : 'text-pr-muted hover:text-pr-text',
 				)}
 			>
@@ -353,6 +353,7 @@ export function DockHost({ controller, panels, workspaceId, providers, windowMen
 	const hostRef = useRef<HTMLDivElement>(null);
 	const { contrast } = useUiPrefs();
 	// Gutters are real gaps between groups: 3 px, 4 px in high contrast (DK-002, §8.2).
+	controller.gap = contrast === 'high' ? 4 : 3;
 	const theme = useMemo<DockviewTheme>(
 		() => ({
 			name: 'jasper',

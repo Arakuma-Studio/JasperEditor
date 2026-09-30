@@ -143,7 +143,9 @@ export function resolveMenu(items: readonly ShellMenuItem[], env: MenuEnv, path 
 				out.push({
 					type: 'item',
 					id: item.args === undefined ? item.command : `${item.command}:${JSON.stringify(item.args)}`,
-					label: item.label && item.args !== undefined ? item.label : st.label,
+					// Parameterized/dynamic entries (workspace and panel lists) keep their own label.
+					label:
+						item.label && (item.args !== undefined || item.checked !== undefined) ? item.label : st.label,
 					shortcut: item.shortcut !== undefined ? item.shortcut : st.shortcut,
 					disabled,
 					disabledReason: env.disabledReason ?? st.reason,

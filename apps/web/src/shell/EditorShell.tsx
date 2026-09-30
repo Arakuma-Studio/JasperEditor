@@ -251,6 +251,15 @@ function ShellBody() {
 	);
 
 	useEffect(() => runtime.services.register('shell', 'shell', shell), [runtime.services, shell]);
+	// Dev/E2E hook: inspect the dock and workspaces from the console or Playwright.
+	useEffect(() => {
+		if (!import.meta.env.DEV) return;
+		const w = window as unknown as { __jasperShell?: unknown };
+		w.__jasperShell = { dock, workspaces: store, shell };
+		return () => {
+			w.__jasperShell = undefined;
+		};
+	}, [dock, store, shell]);
 	useEffect(() => installFocusTracking(document), []);
 	useEffect(
 		() =>

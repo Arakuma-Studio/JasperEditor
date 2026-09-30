@@ -38,8 +38,9 @@
 
 /* Focused panel frame: 1px focus ring (S05:FO-002). */
 .dockview-theme-jasper .dv-groupview.pr-focused {
-	outline: 1px solid var(--pr-focus-ring);
-	outline-offset: -1px;
+	/* dockview writes an inline `outline: none` on groups, hence !important. */
+	outline: 1px solid var(--pr-focus-ring) !important;
+	outline-offset: -1px !important;
 }
 
 /* ---- WP-2A shell rules (S05 §5–§6) ------------------------------------------------------------ */
@@ -97,8 +98,8 @@
 
 /* Maximized group: 1 px accent inner outline (DK-041). */
 .pr-maximized .dockview-theme-jasper .dv-groupview {
-	outline: 1px solid var(--pr-accent);
-	outline-offset: -1px;
+	outline: 1px solid var(--pr-accent) !important;
+	outline-offset: -1px !important;
 }
 
 /* Floating groups: overlay shadow only on floating frames (DT §8.6). */
@@ -116,4 +117,12 @@
 .dockview-theme-jasper * {
 	--dv-transition-duration: 0ms;
 	--dv-active-sash-transition-duration: 0ms;
+}
+
+/* Narrow single-panel groups (Tools 40 px, Audio Meters 52 px): the lone tab shrinks and clips instead
+   of spilling into the overflow list. */
+.dockview-theme-jasper .dv-tab:only-child {
+	flex-shrink: 1;
+	min-width: 0;
+	overflow: hidden;
 }

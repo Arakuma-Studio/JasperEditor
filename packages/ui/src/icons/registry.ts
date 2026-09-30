@@ -263,7 +263,7 @@ export const ICONS = {
 	'status.error': CircleX,
 	'status.alert': CircleAlert,
 	/** Three horizontal lines: the panel menu glyph drawn after the active tab title (S05:PC-004). */
-	'panel.menu': g('M5 8h14', 'M5 12h14', 'M5 16h14'),
+	'panel.menu': g('M4 6.5h16', 'M4 12h16', 'M4 17.5h16'),
 	/** Overflow chevrons for tab strips and workspace tabs (S05:PC-005). */
 	'panel.overflow': g('M6 7l5 5-5 5', 'M13 7l5 5-5 5'),
 } satisfies Record<string, IconSource>;
