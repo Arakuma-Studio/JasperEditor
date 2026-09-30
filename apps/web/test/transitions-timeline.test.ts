@@ -1,9 +1,10 @@
 // S10 §8 tests 1–3 and 6: timeline transition geometry and hit-testing, gesture → command mapping through
 // the TimelineController, drop resolution with handle feedback, and the Ctrl+D family.
+
+import { EngineClient } from '@jasper/engine-client';
 import { type Sequence, transitionSpec } from '@jasper/project';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createCommandContext, registerAllCommands, runCommand } from '../src/commands/index.ts';
-import { EngineClient } from '@jasper/engine-client';
 import { resetTransitionDefaults, setDefaultTransition } from '../src/panels/effects/transition-prefs.ts';
 import { hitTest } from '../src/panels/timeline/model/hit.ts';
 import {
@@ -57,8 +58,7 @@ function addAt(t: T, cmd: Record<string, unknown>) {
 
 const seqOf = (t: T) => t.seq() as Sequence;
 const index = (t: T) => transitionIndex(seqOf(t), t.session.getCommitted().media);
-const geomOf = (t: T, id: string) =>
-	[...index(t).values()].flat().find((g) => g.t.id === id)!;
+const geomOf = (t: T, id: string) => [...index(t).values()].flat().find((g) => g.t.id === id)!;
 const v1 = (t: T) => t.geometry().layout.video.rows.find((r) => r.index === 0)!;
 
 describe('geometry (S10 §8 test 1, TUI-001/003)', () => {
@@ -143,9 +143,21 @@ describe('gesture → command mapping (S10 §8 test 2, TUI-012…015)', () => {
 		expect(edgeDrag(s, 'end', 130, false)).toEqual({ duration: 30, alignment: 'start-at-cut' });
 		const e = { cut: 100, start: 88, end: 100, oneSided: null, t: { alignment: 'end-at-cut' as const } };
 		expect(edgeDrag(e, 'start', 70, false)).toEqual({ duration: 30, alignment: 'end-at-cut' });
-		const fin = { cut: 0, start: 0, end: 10, oneSided: 'in' as const, t: { alignment: 'start-at-cut' as const } };
+		const fin = {
+			cut: 0,
+			start: 0,
+			end: 10,
+			oneSided: 'in' as const,
+			t: { alignment: 'start-at-cut' as const },
+		};
 		expect(edgeDrag(fin, 'end', 25, false).duration).toBe(25);
-		const fout = { cut: 50, start: 40, end: 50, oneSided: 'out' as const, t: { alignment: 'end-at-cut' as const } };
+		const fout = {
+			cut: 50,
+			start: 40,
+			end: 50,
+			oneSided: 'out' as const,
+			t: { alignment: 'end-at-cut' as const },
+		};
 		expect(edgeDrag(fout, 'start', 45, false).duration).toBe(5);
 		expect(bodyDragAlignment({ cut: 100, start: 94, end: 106 }, 0)).toBe('center');
 		expect(bodyDragAlignment({ cut: 100, start: 94, end: 106 }, 5)).toBe('start-at-cut');
@@ -262,7 +274,13 @@ describe('gesture → command mapping (S10 §8 test 2, TUI-012…015)', () => {
 });
 
 describe('drop resolution (S10 §8 test 3, TUI-021…024)', () => {
-	const drop = (t: T, x: number, effectId = 'jasper.cross-dissolve', wanted = 30, kind: 'video' | 'audio' = 'video') => {
+	const drop = (
+		t: T,
+		x: number,
+		effectId = 'jasper.cross-dissolve',
+		wanted = 30,
+		kind: 'video' | 'audio' = 'video',
+	) => {
 		const seq = seqOf(t);
 		const trackId = (kind === 'video' ? seq.videoTracks : seq.audioTracks)[0]!.id;
 		return resolveTransitionDrop({
@@ -356,7 +374,8 @@ describe('drop resolution (S10 §8 test 3, TUI-021…024)', () => {
 });
 
 describe('keyboard: Ctrl+D family (S10 §8 test 6, TUI-030)', () => {
-	const ctxOf = (t: T) => createCommandContext({ engine: new EngineClient({ baseUrl: '' }), session: t.session });
+	const ctxOf = (t: T) =>
+		createCommandContext({ engine: new EngineClient({ baseUrl: '' }), session: t.session });
 	const kinds = (t: T) => {
 		const seq = seqOf(t);
 		return Object.values(seq.transitions).map((x) => ({
@@ -395,7 +414,11 @@ describe('keyboard: Ctrl+D family (S10 §8 test 6, TUI-030)', () => {
 		await runCommand('timeline.applyDefaultTransitionsToSelection', ctxOf(t));
 		expect(t.history().slice(before)).toEqual(['Apply Default Transitions']);
 		expect(kinds(t)).toHaveLength(6);
-		expect(kinds(t).filter((x) => x.video).every((x) => x.effectId === 'jasper.dip-to-black')).toBe(true);
+		expect(
+			kinds(t)
+				.filter((x) => x.video)
+				.every((x) => x.effectId === 'jasper.dip-to-black'),
+		).toBe(true);
 		resetTransitionDefaults();
 	});
 
@@ -411,7 +434,10 @@ describe('keyboard: Ctrl+D family (S10 §8 test 6, TUI-030)', () => {
 		const [x] = Object.values(seqOf(t).transitions);
 		expect(Object.keys(seqOf(t).transitions)).toHaveLength(1);
 		expect(x).toMatchObject({ alignment: 'center', duration: 30 });
-		expect(nearestEditPoint(seqOf(t), seqOf(t).videoTracks[0]!.id, 115)).toMatchObject({ cut: 120, edge: 'in' });
+		expect(nearestEditPoint(seqOf(t), seqOf(t).videoTracks[0]!.id, 115)).toMatchObject({
+			cut: 120,
+			edge: 'in',
+		});
 		// Shift+D needs a selection: nothing happens without one.
 		await runCommand('timeline.applyDefaultTransitionsToSelection', ctxOf(t));
 		expect(t.history().length).toBe(before + 1);

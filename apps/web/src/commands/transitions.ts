@@ -190,6 +190,37 @@ export const transitionCommands: UiCommand[] = [
 		agentExposed: true,
 		run: (ctx) => void applyDefaults(ctx, ['video', 'audio'], 'Apply Default Transitions', true),
 	},
+	{
+		// TUI-031 (P1): the project's default transition duration (Sequence ▸ Transition Defaults…).
+		id: 'sequence.transitionDefaults',
+		label: 'Transition Defaults…',
+		description: 'Set the default transition duration of the project (frames)',
+		scope: 'global',
+		when: (ctx) => !!ctx.session,
+		run: (ctx) => {
+			const session = ctx.session;
+			if (!session || typeof window === 'undefined') return;
+			const cur = session.getCommitted().settings.defaultTransitionFrames;
+			const text = window.prompt('Default transition duration (frames)', String(cur));
+			if (text === null) return;
+			const n = Math.round(Number(text.trim()));
+			if (!Number.isFinite(n) || n < 1) {
+				ctx.ui.toast({ kind: 'warning', message: `Not a duration: ${text}` });
+				return;
+			}
+			const r = session.apply({
+				label: 'Transition Defaults',
+				origin: 'user',
+				commands: [{ type: 'project.updateSettings', settings: { defaultTransitionFrames: n } }] as never[],
+			});
+			if (!r.ok)
+				ctx.ui.toast({
+					kind: 'warning',
+					message: 'Transition Defaults: not possible',
+					detail: r.errors[0]?.message,
+				});
+		},
+	},
 	...withTransitionClear('timeline.clear'),
 	...withTransitionClear('timeline.rippleDelete'),
 ];

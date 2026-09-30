@@ -24,22 +24,52 @@ function scene() {
 	const { session, seqId } = makeSession();
 	session.setView(seqId, { pxPerFrame: 2, scrollFrame: 0 });
 	const apply = (commands: unknown[]) => {
-		const r = session.apply({ label: 'setup', origin: 'user', sequenceId: seqId, commands: commands as never[] });
+		const r = session.apply({
+			label: 'setup',
+			origin: 'user',
+			sequenceId: seqId,
+			commands: commands as never[],
+		});
 		if (!r.ok) throw new Error(JSON.stringify(r.errors));
 		return r;
 	};
 	const reg = () =>
-		(apply([{ type: 'media.register', asset: videoAsset(20, false) }]).results[0] as { mediaId: string }).mediaId;
+		(apply([{ type: 'media.register', asset: videoAsset(20, false) }]).results[0] as { mediaId: string })
+			.mediaId;
 	const a = reg();
 	const b = reg();
 	const p = apply([
-		{ type: 'clip.place', source: { mediaId: a }, at: 0, sourceRange: { in: { seconds: 2 }, out: { seconds: 6 } } },
-		{ type: 'clip.place', source: { mediaId: b }, at: 120, sourceRange: { in: { seconds: 2 }, out: { seconds: 6 } } },
+		{
+			type: 'clip.place',
+			source: { mediaId: a },
+			at: 0,
+			sourceRange: { in: { seconds: 2 }, out: { seconds: 6 } },
+		},
+		{
+			type: 'clip.place',
+			source: { mediaId: b },
+			at: 120,
+			sourceRange: { in: { seconds: 2 }, out: { seconds: 6 } },
+		},
 	]);
 	const vb = (p.results[1] as { clipIds: string[] }).clipIds[0]!;
 	const r = apply([
-		{ type: 'transition.add', trackId: 'V1', at: 120, effectId: 'jasper.cross-dissolve', duration: 12, ref: '$x' },
-		{ type: 'transition.add', clipId: vb, edge: 'out', effectId: 'jasper.cross-dissolve', duration: 15, ref: '$f' },
+		{
+			type: 'transition.add',
+			trackId: 'V1',
+			at: 120,
+			effectId: 'jasper.cross-dissolve',
+			duration: 12,
+			ref: '$x',
+		},
+		{
+			type: 'transition.add',
+			clipId: vb,
+			edge: 'out',
+			effectId: 'jasper.cross-dissolve',
+			duration: 15,
+			ref: '$f',
+		},
 	]);
 	const seq = () => session.getCommitted().sequences[seqId] as Sequence;
 	return { session, seqId, dissolve: r.refs.$x!, fade: r.refs.$f!, seq };
@@ -62,7 +92,9 @@ describe('Timeline panel: transitions (S10 §8 test 4)', () => {
 		expect(x.style.width).toBe('24px');
 		expect(f.style.transform).toBe('translateX(450px)'); // 225 × 2
 		expect(f.style.width).toBe('30px');
-		expect(x.getAttribute('title')).toMatch(/Cross Dissolve\nDuration 00:00:00:12 \(12 frames\)\nCenter at Cut/);
+		expect(x.getAttribute('title')).toMatch(
+			/Cross Dissolve\nDuration 00:00:00:12 \(12 frames\)\nCenter at Cut/,
+		);
 		expect(f.getAttribute('title')).toMatch(/Fade out at the clip tail/);
 		expect(x.querySelectorAll('path')).toHaveLength(2); // both ramps
 		expect(f.querySelectorAll('path')).toHaveLength(1);
@@ -92,7 +124,12 @@ describe('Timeline panel: transitions (S10 §8 test 4)', () => {
 		});
 		expect(seq().transitions[dissolve]).toBeUndefined();
 		expect(seq().transitions[fade]).toBeDefined();
-		expect(session.getState().history.entries.slice(n).map((e) => e.label)).toEqual(['Clear Transition']);
+		expect(
+			session
+				.getState()
+				.history.entries.slice(n)
+				.map((e) => e.label),
+		).toEqual(['Clear Transition']);
 		expect(rectOf(dissolve)).toBeNull();
 		act(() => session.undo());
 		expect(rectOf(dissolve)).not.toBeNull();
@@ -141,7 +178,9 @@ describe('Effects panel transition bins (TUI-020, TUI-031)', () => {
 		fireEvent.contextMenu(document.querySelector('[data-transition-effect-id="jasper.dip-to-black"]')!);
 		fireEvent.click(screen.getByText('Set Selected as Default Transition'));
 		expect(transitionDefaults().getState().video).toBe('jasper.dip-to-black');
-		expect(document.querySelector('[data-transition-effect-id="jasper.dip-to-black"] [data-default-badge]')).toBeTruthy();
+		expect(
+			document.querySelector('[data-transition-effect-id="jasper.dip-to-black"] [data-default-badge]'),
+		).toBeTruthy();
 		// Search filters the bins.
 		fireEvent.change(screen.getByTestId('effects-search'), { target: { value: 'power' } });
 		expect([...document.querySelectorAll('[data-transition-effect-id]')].map((e) => e.textContent)).toEqual([
@@ -184,11 +223,12 @@ describe('Transition section (TUI-040/041)', () => {
 			fireEvent.keyDown(input, { key: 'Enter' });
 		});
 		expect(seq().transitions[dissolve]!.duration).toBe(20);
-		expect(session.getState().history.entries.slice(n).map((e) => e.label)).toEqual([
-			'Replace Transition',
-			'Transition Alignment',
-			'Transition Duration',
-		]);
+		expect(
+			session
+				.getState()
+				.history.entries.slice(n)
+				.map((e) => e.label),
+		).toEqual(['Replace Transition', 'Transition Alignment', 'Transition Duration']);
 		// At-cut transitions only resize on the edge away from the cut.
 		expect(screen.queryByTestId('transition-edge-start')).toBeNull();
 		expect(screen.getByTestId('transition-edge-end')).toBeTruthy();
