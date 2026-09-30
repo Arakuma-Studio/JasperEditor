@@ -73,6 +73,9 @@ describe('agent queries (S01 §21.2, S02:TL-951)', () => {
 			id: h.seqId,
 		});
 		expect(() => runAgentQuery(env, 'doc.get', { path: ['nope'] })).toThrow(AgentQueryError);
+		// Only own properties are addressable (no prototype walk such as ["constructor"]).
+		expect(() => runAgentQuery(env, 'doc.get', { path: ['constructor'] })).toThrow(AgentQueryError);
+		expect(runAgentQuery(env, 'doc.get', { path: ['sequences', h.seqId], fields: ['toString'] })).toEqual({});
 		expect(runAgentQuery(env, 'doc.revision')).toEqual({ revision: h.revision });
 		expect(() => runAgentQuery(env, 'selection.get')).toThrowError(/session/);
 		const media = runAgentQuery(env, 'media.list') as { media: { usage: { clips: number } }[] };

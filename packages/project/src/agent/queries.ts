@@ -187,7 +187,7 @@ const round3 = (x: number) => Math.round(x * 1000) / 1000;
 function pick(v: unknown, fields: readonly string[]): unknown {
 	if (!v || typeof v !== 'object' || Array.isArray(v)) return v;
 	const o = v as Record<string, unknown>;
-	return Object.fromEntries(fields.filter((f) => f in o).map((f) => [f, o[f]]));
+	return Object.fromEntries(fields.filter((f) => Object.hasOwn(o, f)).map((f) => [f, o[f]]));
 }
 
 function stubMediaHandle(asset: MediaAsset): MediaHandle {
@@ -209,7 +209,7 @@ function stubMediaHandle(asset: MediaAsset): MediaHandle {
 function docGet(env: AgentQueryEnv, args: z.infer<(typeof AGENT_QUERY_ARGS)['doc.get']>) {
 	let v: unknown = env.doc;
 	for (const seg of args.path ?? []) {
-		if (v && typeof v === 'object' && seg in (v as object)) v = (v as Record<string, unknown>)[seg];
+		if (v && typeof v === 'object' && Object.hasOwn(v, seg)) v = (v as Record<string, unknown>)[seg];
 		else throw new AgentQueryError('E_NOT_FOUND', `No such path: ${(args.path ?? []).join('/')}`);
 	}
 	return args.fields?.length ? pick(v, args.fields) : v;
