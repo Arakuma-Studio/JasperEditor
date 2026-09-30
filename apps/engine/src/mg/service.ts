@@ -318,13 +318,13 @@ export function createMgService(opts: MgServiceOptions) {
 		input: MgRenderSpec | MgSpecInput,
 		quality: MgQuality,
 		meta: { projectId?: string; origin?: EngineJob['origin']; parentId?: string } = {},
-	): { job: EngineJob; done: Promise<EngineJob> } {
+	): { job: EngineJob; done: Promise<EngineJob>; joined: boolean } {
 		if (probe.status !== 'ready') throw new MgRenderError('BINARY_MISSING', probe.reason);
 		const spec = validateSpec(input);
 		const key = renderKey(spec);
 		const dedupeKey = `mg:${key}:${quality}`;
 		const existing = byDedupe.get(dedupeKey);
-		if (existing) return { job: { ...existing.job }, done: existing.done };
+		if (existing) return { job: { ...existing.job }, done: existing.done, joined: true };
 		const id = `job_mg_${randomUUID().replace(/-/g, '').slice(0, 20)}`;
 		let resolveDone!: (j: EngineJob) => void;
 		const done = new Promise<EngineJob>((r) => {
@@ -365,12 +365,12 @@ export function createMgService(opts: MgServiceOptions) {
 				result: resultFor(key, quality),
 			});
 			finish(rec);
-			return { job: { ...rec.job }, done };
+			return { job: { ...rec.job }, done, joined: false };
 		}
 		byDedupe.set(dedupeKey, rec);
 		queue.push(rec);
 		pump();
-		return { job: { ...rec.job }, done };
+		return { job: { ...rec.job }, done, joined: false };
 	}
 
 	function cancel(id: string): EngineJob | null {
@@ -388,13 +388,37 @@ export function createMgService(opts: MgServiceOptions) {
 		return { ...rec.job };
 	}
 
-	/** Renders (or reuses) the master of a spec; null when fframes is unavailable or the render fails. */
-	async function masterFor(spec: MgSpecInput, meta: { projectId?: string; parentId?: string } = {}) {
-		if (probe.status !== 'ready') return null;
+	/**
+	 * Renders (or reuses) the master of a spec; null when fframes is unavailable, the render fails or
+	 * `signal` aborts (a job this call started is then cancelled; a joined job keeps running).
+	 */
+	async function masterFor(
+		spec: MgSpecInput,
+		meta: { projectId?: string; parentId?: string; signal?: AbortSignal } = {},
+	) {
+		if (probe.status !== 'ready' || meta.signal?.aborted) return null;
 		try {
-			const { done } = requestRender(spec, 'master', { ...meta, origin: { type: 'system' } });
-			const job = await done;
-			if (job.state !== 'succeeded') return null;
+			const { signal, ...jobMeta } = meta;
+			const {
+				job: started,
+				done,
+				joined,
+			} = requestRender(spec, 'master', {
+				...jobMeta,
+				origin: { type: 'system' },
+			});
+			let onAbort: (() => void) | undefined;
+			const aborted = new Promise<null>((resolve) => {
+				onAbort = () => {
+					if (!joined) cancel(started.id);
+					resolve(null);
+				};
+				signal?.addEventListener('abort', onAbort, { once: true });
+			});
+			const job = await Promise.race([done, aborted]).finally(() => {
+				if (onAbort) signal?.removeEventListener('abort', onAbort);
+			});
+			if (job?.state !== 'succeeded') return null;
 			return cached(renderKey(validateSpec(spec)))?.master ?? null;
 		} catch {
 			return null;
@@ -407,7 +431,7 @@ export function createMgService(opts: MgServiceOptions) {
 	 */
 	async function mgMasterProvider(
 		clip: Pick<RenderVisualClip, 'source' | 'duration' | 'sourceIn'>,
-		ctx: { fps: MgRational; projectId?: string; parentId?: string },
+		ctx: { fps: MgRational; projectId?: string; parentId?: string; signal?: AbortSignal },
 	): Promise<string | null> {
 		const spec = specFromClip(clip, ctx.fps, registry);
 		if (!spec) return null;

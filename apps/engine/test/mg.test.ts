@@ -6,9 +6,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { EngineJobSchema, MgTemplatesResponseSchema } from '@jasper/api';
 import { lowerThird, mgRegistry } from '@jasper/mg-templates';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createServer, engineConfig } from '../src/index.ts';
-import { createMgService, ffmpegArgs, type MgService, resolveMgBinary } from '../src/mg/index.ts';
+import {
+	createMgService,
+	ffmpegArgs,
+	type MgService,
+	mgMasterHook,
+	resolveMgBinary,
+} from '../src/mg/index.ts';
 
 const H = { host: '127.0.0.1:47900' };
 const apps: { close(): Promise<unknown> }[] = [];
@@ -280,6 +286,27 @@ describe.skipIf(!canRender)('real jasper-mg renders', () => {
 		);
 		expect(existsSync(join(dir, 'master.mov'))).toBe(false);
 		expect(existsSync(dir) ? readdirSync(dir) : []).toEqual([]);
+
+		// the export hook (WP-2F registerMgMasterProvider shape) stops and cancels its render on abort
+		const long = { ...lt150, durationFrames: 3001 };
+		const ac = new AbortController();
+		const pending = mgMasterHook(service)({
+			clip: {
+				source: {
+					mg: { template: long.template, params: long.params, canvas: { width: 1920, height: 1080 } },
+				},
+				duration: long.durationFrames,
+				sourceIn: 0,
+			},
+			fps: long.fps,
+			signal: ac.signal,
+		});
+		await new Promise((r) => setTimeout(r, 400));
+		const hookJob = service.listJobs().find((j) => j.state === 'running' && j.origin.type === 'system');
+		expect(hookJob).toBeDefined();
+		ac.abort();
+		expect(await pending).toBeNull();
+		await vi.waitFor(() => expect(service.getJob(hookJob!.id)?.state).toBe('cancelled'), { timeout: 10_000 });
 	}, 60_000);
 });
 

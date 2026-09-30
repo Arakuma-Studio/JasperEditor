@@ -116,7 +116,7 @@ exit codes: 0 ok, 2 invalid spec/params/frame (and clap usage errors), 1 other (
   - `POST /api/motion-graphics/render` returns `202 EngineJob`. With `?wait=1` it returns `200` with the finished job.
     - Errors: `400 VALIDATION_FAILED`, `INVALID_SPEC` or `TEMPLATE_NOT_FOUND`; `503 MG_UNAVAILABLE`.
   - `GET /mg/:key/:file` serves `master.mov`, `preview.webm` and `poster.png`, supports Range (206/416), and is sent as immutable.
-- **Native export hook.** `service.mgMasterProvider(clip, {fps, projectId?, parentId?}) → Promise<path | null>`.
+- **Native export hook.** `service.mgMasterProvider(clip, {fps, projectId?, parentId?, signal?}) → Promise<path | null>`. `mgMasterHook(service)` adapts it to WP-2F's `MgMasterProvider` request shape `({clip, fps, projectId?, signal}) → Promise<path | null>`; aborting the signal returns null and cancels a render the request started (a joined render keeps running).
   - It builds the spec from the snapshot clip (`specFromClip`), renders or reuses the master, and returns null when fframes is unavailable or the render fails. On null the planner must fall back to Remotion.
   - The `fps` argument is needed because `RenderVisualClip` does not carry the sequence rate.
 
@@ -125,7 +125,7 @@ exit codes: 0 ok, 2 invalid spec/params/frame (and clap usage errors), 1 other (
 WP-2F was not merged when this package was written, so `apps/engine/src/index.ts` only carries a marked TODO. After merging WP-2F:
 
 1. Capabilities: `registerCapabilityProvider(mgCapabilityProvider(app.jasper.services.mg))`. The provider returns `{render: {fframes, fframesReason?}}`. Until this is done, `GET /api/capabilities` is WP-2F's route, and on this branch it is still the WP-00 stub (501). Verify `render.fframes` after the merge. Before the merge the same state is visible as `renderer.status` in `GET /api/motion-graphics/templates`; that was verified with `pnpm dev:engine`, both ready and with `JASPER_MG=/nonexistent`.
-2. Export planner: pass `(clip) => mg.mgMasterProvider(clip, {fps: snapshot.settings.fps, projectId, parentId: exportJobId})`.
+2. Export planner: `registerMgMasterProvider(mgMasterHook(mg))` (WP-2F's `MgMasterRequest` is structurally compatible), or pass `(clip) => mg.mgMasterProvider(clip, {fps: snapshot.settings.fps, projectId, parentId: exportJobId, signal})`.
 3. Jobs: either make `/api/jobs*` include `services.mg.listJobs()/getJob()/cancel()`, or port `service.ts`'s runner onto WP-2F's `JobQueue`. The runner exposes `requestRender(spec, quality, meta) → {job, done}`, which maps directly.
 4. Events: register the broadcaster as `services.events` with `publish(type, payload, projectId?)`, or adapt the `emit` option of `createMgService`.
 
