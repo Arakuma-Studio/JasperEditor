@@ -6,6 +6,7 @@ import { mgRegistry, resolveSpecParams } from '@jasper/mg-templates';
 import { FLICKS_PER_SECOND, type ProjectDocument } from '@jasper/project';
 import { z } from 'zod';
 import { insertMotionTemplate } from '../panels/motionTemplates/insert.ts';
+import { trackMgRenderJob } from '../panels/program/mg-render-state.tsx';
 import type { CommandCtx, UiCommand } from './types.ts';
 
 const InsertArgs = z.object({
@@ -86,7 +87,8 @@ export const mgCommands: UiCommand[] = [
 			for (const clipId of sel.clipIds) {
 				const spec = mgSpecForClip(doc, sel.sequenceId, clipId);
 				if (!spec) continue;
-				await ctx.engine.mgRender({ spec, quality: 'preview' });
+				const job = await ctx.engine.mgRender({ spec, quality: 'preview' });
+				trackMgRenderJob(clipId, job.id); // Program monitor badge (MgRenderStateContext)
 				queued++;
 			}
 			ctx.ui.toast({

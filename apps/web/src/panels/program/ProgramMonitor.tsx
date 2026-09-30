@@ -47,6 +47,7 @@ import {
 	TransportButton,
 	useTransportPlaying,
 } from './MonitorChrome.tsx';
+import { MgRenderStateProvider } from './mg-render-state.tsx';
 import { checkerboard } from './monitor.tokens.ts';
 import {
 	handleMonitorKey,
@@ -360,30 +361,32 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 					}}
 					data-testid="program-player-wrapper"
 				>
-					<Player
-						ref={playerRef}
-						component={SequenceComposition}
-						inputProps={inputProps}
-						durationInFrames={duration}
-						compositionWidth={frameSize.width}
-						compositionHeight={frameSize.height}
-						fps={fps}
-						style={playerStyle}
-						controls={false}
-						clickToPlay={false}
-						doubleClickToFullscreen={false}
-						spaceKeyToPlayOrPause={false}
-						moveToBeginningWhenEnded={false}
-						loop={false}
-						playbackRate={playerRate}
-						numberOfSharedAudioTags={8}
-						acknowledgeRemotionLicense
-						errorFallback={({ error }: { error: Error }) => (
-							<div className="flex h-full items-center justify-center bg-pr-app p-8 text-center text-pr-ui text-pr-danger">
-								Preview error: {error.message}
-							</div>
-						)}
-					/>
+					<MgRenderStateProvider>
+						<Player
+							ref={playerRef}
+							component={SequenceComposition}
+							inputProps={inputProps}
+							durationInFrames={duration}
+							compositionWidth={frameSize.width}
+							compositionHeight={frameSize.height}
+							fps={fps}
+							style={playerStyle}
+							controls={false}
+							clickToPlay={false}
+							doubleClickToFullscreen={false}
+							spaceKeyToPlayOrPause={false}
+							moveToBeginningWhenEnded={false}
+							loop={false}
+							playbackRate={playerRate}
+							numberOfSharedAudioTags={8}
+							acknowledgeRemotionLicense
+							errorFallback={({ error }: { error: Error }) => (
+								<div className="flex h-full items-center justify-center bg-pr-app p-8 text-center text-pr-ui text-pr-danger">
+									Preview error: {error.message}
+								</div>
+							)}
+						/>
+					</MgRenderStateProvider>
 				</div>
 				<TransformOverlay
 					session={session}

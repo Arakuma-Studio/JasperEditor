@@ -22,6 +22,8 @@ import {
 	useRef,
 	useState,
 } from 'react';
+import { applyEffectToClips, isEffectDrag, readEffectDragPayload } from '../effects/drag.ts';
+import { insertMotionTemplate, MG_TEMPLATE_MIME, readMgTemplateDrag } from '../motionTemplates/insert.ts';
 import { activeSequence, addTextAt, transformAt, transformCommands } from './edits.ts';
 import { MONITOR_COLORS } from './monitor.tokens.ts';
 import type { MonitorViewState } from './monitor-store.ts';
@@ -573,6 +575,57 @@ export function TransformOverlay({
 		endGesture(true);
 	};
 
+	// ------------------------------------------------------------------ drops (WP-3I)
+	// Effects dropped on the Program monitor apply to the layer under the pointer (S05:EFX-010, like the
+	// timeline); motion templates dropped anywhere on it are inserted at the playhead (S05:MGT-002).
+	const [dropHint, setDropHint] = useState<string | null>(null);
+	const layerAt = (p: Vec2): string | null =>
+		hitTest(
+			live.current.scene
+				.filter((l) => l.props.transform)
+				.map((l) => ({ clipId: l.clip.clipId, trackId: l.clip.trackId, quad: l.props.quad as Quad })),
+			p,
+			locked,
+		);
+	const onDragOver = (e: React.DragEvent<SVGSVGElement>) => {
+		const dt = e.dataTransfer;
+		if (isEffectDrag(dt)) {
+			const hit = layerAt(toSeq(e).seq);
+			if (!hit) {
+				dt.dropEffect = 'none';
+				setDropHint(null);
+				return;
+			}
+			e.preventDefault();
+			dt.dropEffect = 'copy';
+			setDropHint(hit);
+			return;
+		}
+		if (Array.from(dt?.types ?? []).includes(MG_TEMPLATE_MIME)) {
+			e.preventDefault();
+			dt.dropEffect = 'copy';
+		}
+	};
+	const onDrop = (e: React.DragEvent<SVGSVGElement>) => {
+		setDropHint(null);
+		const effect = readEffectDragPayload(e.dataTransfer);
+		if (effect) {
+			e.preventDefault();
+			const hit = layerAt(toSeq(e).seq);
+			if (hit) applyEffectToClips(session, effect.effectId, [hit]);
+			return;
+		}
+		const mg = readMgTemplateDrag(e.dataTransfer);
+		if (mg) {
+			e.preventDefault();
+			try {
+				insertMotionTemplate(session, mg.template, { at: transport.getState().frame });
+			} catch (err) {
+				console.warn('[program] motion template drop failed', err);
+			}
+		}
+	};
+
 	// ------------------------------------------------------------------ drawing
 	const hoverLayer =
 		hover && !selectedSet.has(hover) ? scene.find((l) => l.clip.clipId === hover) : undefined;
@@ -585,6 +638,7 @@ export function TransformOverlay({
 	const groupRect = selLayers.length > 1 ? groupBox(selLayers) : null;
 
 	return (
+		// biome-ignore lint/a11y/noStaticElementInteractions: pointer/drag surface over the canvas (keyboard: monitor scope)
 		<svg
 			ref={svgRef}
 			data-testid="program-overlay"
@@ -595,6 +649,10 @@ export function TransformOverlay({
 			onPointerUp={onPointerUp}
 			onPointerCancel={() => endGesture(false)}
 			onPointerLeave={() => !gestureRef.current && setHover(null)}
+			onDragOver={onDragOver}
+			onDragLeave={() => setDropHint(null)}
+			onDrop={onDrop}
+			data-drop-target={dropHint ?? undefined}
 			role="presentation"
 		>
 			{monitor.safeMargins ? <SafeMarginsLayer frame={frameRect} /> : null}
