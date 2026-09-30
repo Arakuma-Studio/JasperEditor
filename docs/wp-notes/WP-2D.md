@@ -30,7 +30,7 @@ Branch `wp/wp-2d`. `pnpm lint && pnpm typecheck && pnpm test` pass (26 files, 19
 
 - `packages/project/src/commands/handlers/param.ts`: `export` added to `ValueRule`, `Target`, `ruleFromParam`, `resolveTarget`, `validateValue` (keyframe/effect handlers reuse them). Contract-Change noted in the commit.
 - `packages/project/test/transaction.test.ts`: removed the `E_NOT_IMPLEMENTED` expectations for `effect.add`, `keyframes.prune`, `effect.remove` and the AC-10 blur `it.todo` (now covered by `keyframe-effect.test.ts`). **Likely merge conflict with WP-2B**, which edits the adjacent lines of the same stub list — keep both removals.
-- `packages/project/src/agent/schema-export.ts` still reports `implemented: owner === 'WP-00'`, so WP-2D (and WP-2B) commands show as not implemented to agents. Not changed here (WP-00 file); the integrator should switch it to `owner !== 'M2'`.
+- `packages/project/src/agent/schema-export.ts` still reports `implemented: owner === 'WP-00'`, so WP-2D (and WP-2B) commands show as not implemented to agents. Not changed here (WP-00 file); the integrator should derive it from the handler instead (e.g. tag handlers built by `notImplemented()` and report `implemented: !isStub(handler)`); a plain `owner !== 'M2'` would also advertise the WP-2B stubs that still return `E_NOT_IMPLEMENTED` (`clip.slip`, `clip.setSpeed`, roll trims…).
 
 ## Verification
 
@@ -46,3 +46,9 @@ Branch `wp/wp-2d`. `pnpm lint && pnpm typecheck && pnpm test` pass (26 files, 19
 - Effects panel: no custom bins / presets / transitions (EFX-001 bins beyond video/audio effects); `effects.newCustomBin` / `effects.deleteCustomItem` stay unregistered.
 - History: HIS-003 "Discarded N undone steps" toast not implemented; stopwatch-off via the UI command skips the confirmation (the panel button asks).
 - Speed & Duration is read-only (needs WP-2B `clip.setSpeed`).
+
+## Review fixes (reviewer pass)
+
+- `effect.add` with an animated param override (`{value, keyframes}` from paste or an agent) copied keys with only their values checked; non-integer/negative/duplicate times, unknown interpolations and malformed eases reached the document (the invariant checker does not look at interpolation or eases). Keys are now rebuilt from the S01 fields and validated; auto-bezier slopes are stored. Test: "validates animated param overrides".
+- Effect Controls splitter: the move handler added per-event increments to a width captured at pointer-down, so the pane lagged the pointer. It now reports the total drag distance. Test: "the pane splitter follows the pointer".
+- Effect Controls Loop button read `transport.loop` through a session-state selector (never re-rendered on transport changes). It now subscribes to the TransportStore. Test: "the footer Loop button reflects the transport loop state".
