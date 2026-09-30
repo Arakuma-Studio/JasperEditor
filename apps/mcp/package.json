@@ -1,0 +1,31 @@
+{
+  "name": "@jasper/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "JasperEditor MCP server: lets external coding agents (Claude Code, Codex CLI, Cursor…) drive the editor.",
+  "license": "UNLICENSED",
+  "bin": {
+    "jasper-mcp": "./dist/jasper-mcp.mjs"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "node dist/jasper-mcp.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@jasper/api": "workspace:*",
+    "@jasper/config": "workspace:*",
+    "@jasper/engine-client": "workspace:*",
+    "@jasper/project": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

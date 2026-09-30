@@ -1,0 +1,77 @@
+// jasper-mcp: the JasperEditor MCP server over stdio for Claude Code, Codex CLI, Cursor and other MCP
+// clients. stdout carries the protocol only; logs go to stderr.
+//
+//   jasper-mcp [--engine-url <url>] [--token <token>] [--appdir <dir>] [--start-engine]
+//              [--engine-entry <engine.mjs>] [--agent-name <name>]
+import { ENV, readFlag } from '@jasper/config';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { EngineLink } from './link.ts';
+import { createJasperMcpServer } from './server.ts';
+import { MCP_SERVER_VERSION } from './version.ts';
+
+const HELP = `jasper-mcp ${MCP_SERVER_VERSION} — JasperEditor MCP server (stdio)
+
+Options:
+  --engine-url <url>     Engine origin (default: discovered; env ${ENV.ENGINE_URL})
+  --token <token>        Engine token (env ${ENV.ENGINE_TOKEN}; read from the runtime file otherwise)
+  --appdir <dir>         Look for <dir>/engine/runtime.json first (env ${ENV.APPDIR})
+  --start-engine         Start a headless engine when none is running (env JASPER_MCP_START_ENGINE=1)
+  --engine-entry <file>  Engine bundle to start (env ${ENV.ENGINE_ENTRY}; default: next to this file)
+  --agent-name <name>    Name shown in the editor History (default: the MCP client's name)
+  --help, --version
+
+Discovery order: --engine-url/env, then <appdir>/engine/runtime.json for --appdir, ${ENV.APPDIR}, the
+platform appdir and the desktop app's appdir, then http://127.0.0.1:47900.`;
+
+function log(line: string): void {
+	process.stderr.write(`[jasper-mcp] ${line}\n`);
+}
+
+async function main(): Promise<void> {
+	const argv = process.argv.slice(2);
+	if (argv.includes('--help') || argv.includes('-h')) {
+		process.stderr.write(`${HELP}\n`);
+		return;
+	}
+	if (argv.includes('--version')) {
+		process.stdout.write(`${MCP_SERVER_VERSION}\n`);
+		return;
+	}
+	const env = process.env;
+	const truthy = (v: string | undefined) => !!v && v !== '0' && v.toLowerCase() !== 'false';
+	const link = new EngineLink({
+		url: readFlag(argv, 'engine-url'),
+		token: readFlag(argv, 'token'),
+		appdir: readFlag(argv, 'appdir'),
+		startEngine: argv.includes('--start-engine') || truthy(env.JASPER_MCP_START_ENGINE),
+		engineEntry: readFlag(argv, 'engine-entry'),
+		env,
+		log,
+	});
+	const { server } = createJasperMcpServer({ link, agentName: readFlag(argv, 'agent-name') });
+	const transport = new StdioServerTransport();
+
+	let closing = false;
+	const shutdown = async (why: string) => {
+		if (closing) return;
+		closing = true;
+		log(`shutting down (${why})`);
+		const force = setTimeout(() => process.exit(0), 6000);
+		force.unref();
+		await server.close().catch(() => {});
+		await link.close();
+		process.exit(0);
+	};
+	process.on('SIGINT', () => void shutdown('SIGINT'));
+	process.on('SIGTERM', () => void shutdown('SIGTERM'));
+	process.stdin.on('end', () => void shutdown('stdin closed'));
+	transport.onclose = () => void shutdown('transport closed');
+
+	await server.connect(transport);
+	log(`ready (v${MCP_SERVER_VERSION}); the engine is discovered on the first tool call`);
+}
+
+main().catch((e) => {
+	log(`failed: ${(e as Error)?.stack ?? e}`);
+	process.exit(1);
+});

@@ -1,0 +1,239 @@
+// Compact, LLM-friendly views of a project document: sequences, tracks and clips with ids, frames and
+// timecodes (S02:TL-951: frames always come with timecode), media summaries and a text timeline table.
+import {
+	type Clip,
+	flicksToSeconds,
+	fpsOf,
+	linkedPartners,
+	type MediaAsset,
+	type ProjectDocument,
+	type Rational,
+	type Sequence,
+	sequenceDuration,
+	sequenceTimecode,
+	sourceOut,
+	type Track,
+	trackLabel,
+} from '@jasper/project';
+
+const round3 = (x: number) => Math.round(x * 1000) / 1000;
+
+export function sequenceName(doc: ProjectDocument, seqId: string): string {
+	for (const item of Object.values(doc.items))
+		if (item.kind === 'sequence' && item.sequenceId === seqId) return item.name;
+	return seqId;
+}
+
+function tracksOf(seq: Sequence): Track[] {
+	return [...seq.videoTracks, ...seq.audioTracks, ...seq.captionTracks];
+}
+
+/** The sequence a tool addresses: explicit id, else the only/first one. */
+export function pickSequence(doc: ProjectDocument, sequenceId?: string): Sequence {
+	if (sequenceId) {
+		const s = doc.sequences[sequenceId];
+		if (!s) throw new Error(`Sequence not found: ${sequenceId}`);
+		return s;
+	}
+	const all = Object.values(doc.sequences);
+	if (!all.length) throw new Error('The project has no sequence');
+	return all[0]!;
+}
+
+function mediaName(doc: ProjectDocument, mediaId: string): string {
+	for (const item of Object.values(doc.items))
+		if (item.kind === 'media' && item.mediaId === mediaId) return item.name;
+	return doc.media[mediaId]?.originalName ?? mediaId;
+}
+
+/** One-line description of what a clip shows or plays. */
+export function clipSourceText(doc: ProjectDocument, seq: Sequence, clip: Clip): string {
+	const c = clip as Clip & Record<string, unknown>;
+	const r = seq.settings.frameRate as Rational;
+	if (typeof c.mediaId === 'string') {
+		const a = round3(flicksToSeconds(clip.sourceIn));
+		const b = round3(flicksToSeconds(sourceOut(clip, r)));
+		return `${mediaName(doc, c.mediaId)} [${c.mediaId}] ${a}–${b} s${clip.speed.rate !== 1 ? ` @${clip.speed.rate}x` : ''}`;
+	}
+	if (clip.kind === 'text') {
+		const t = (c.content as { text?: string } | undefined)?.text ?? '';
+		return `text "${t.length > 40 ? `${t.slice(0, 40)}…` : t}"`;
+	}
+	if (clip.kind === 'motion-graphic') {
+		const t = c.template as { id?: string; version?: number } | undefined;
+		return `motion graphic ${t?.id ?? '?'}@${t?.version ?? '?'}`;
+	}
+	if (clip.kind === 'solid') return 'color matte';
+	return clip.kind;
+}
+
+export type ClipSummary = {
+	id: string;
+	kind: string;
+	name: string;
+	track: string;
+	start: number;
+	end: number;
+	startTimecode: string;
+	endTimecode: string;
+	source: string;
+	enabled?: false;
+	linked?: string[];
+};
+
+export function clipSummary(doc: ProjectDocument, seq: Sequence, clip: Clip): ClipSummary {
+	const linked = linkedPartners(seq, clip.id).map((p) => p.id);
+	return {
+		id: clip.id,
+		kind: clip.kind,
+		name: clip.name,
+		track: trackLabel(seq, clip.trackId) ?? clip.trackId,
+		start: clip.start,
+		end: clip.start + clip.duration,
+		startTimecode: sequenceTimecode(seq, clip.start),
+		endTimecode: sequenceTimecode(seq, clip.start + clip.duration),
+		source: clipSourceText(doc, seq, clip),
+		...(clip.enabled ? {} : { enabled: false as const }),
+		...(linked.length ? { linked } : {}),
+	};
+}
+
+function sortedClips(seq: Sequence): Clip[] {
+	const order = new Map(tracksOf(seq).map((t, i) => [t.id, i]));
+	return Object.values(seq.clips).sort(
+		(a, b) => (order.get(a.trackId) ?? 0) - (order.get(b.trackId) ?? 0) || a.start - b.start,
+	);
+}
+
+export function sequenceSummary(doc: ProjectDocument, seq: Sequence) {
+	const r = seq.settings.frameRate as Rational;
+	const duration = sequenceDuration(seq);
+	return {
+		sequenceId: seq.id,
+		name: sequenceName(doc, seq.id),
+		width: seq.settings.width,
+		height: seq.settings.height,
+		fps: round3(fpsOf(r)),
+		frameRate: `${r.num}/${r.den}`,
+		dropFrame: seq.settings.dropFrame,
+		duration: {
+			frames: duration,
+			timecode: sequenceTimecode(seq, duration),
+			seconds: round3((duration * r.den) / r.num),
+		},
+		tracks: tracksOf(seq).map((t) => ({
+			id: t.id,
+			label: trackLabel(seq, t.id),
+			kind: t.kind,
+			...(t.locked ? { locked: true } : {}),
+			...(t.mute ? { mute: true } : {}),
+			clips: Object.values(seq.clips).filter((c) => c.trackId === t.id).length,
+		})),
+		clips: sortedClips(seq).map((c) => clipSummary(doc, seq, c)),
+		markers: seq.markers.map((m) => ({
+			id: m.id,
+			frame: m.frame,
+			timecode: sequenceTimecode(seq, m.frame),
+			name: m.name,
+			...(m.comment ? { comment: m.comment } : {}),
+			...(m.duration ? { duration: m.duration } : {}),
+		})),
+		inPoint: seq.inPoint,
+		outPoint: seq.outPoint,
+	};
+}
+
+export function mediaSummary(doc: ProjectDocument, m: MediaAsset) {
+	const vs = m.probe.streams.find((s) => s.type === 'video');
+	const as = m.probe.streams.filter((s) => s.type === 'audio');
+	return {
+		mediaId: m.id,
+		name: mediaName(doc, m.id),
+		kind: m.kind,
+		durationSeconds: m.probe.durationFlicks === null ? null : round3(flicksToSeconds(m.probe.durationFlicks)),
+		...(vs && vs.type === 'video'
+			? { video: `${vs.width}x${vs.height} @ ${round3(fpsOf(vs.frameRate))} fps ${vs.codec}` }
+			: {}),
+		...(as.length
+			? {
+					audio: as
+						.map((a) => (a.type === 'audio' ? `${a.channels} ch ${a.sampleRate} Hz ${a.codec}` : ''))
+						.join(', '),
+				}
+			: {}),
+	};
+}
+
+/** `get_project` body. */
+export function projectSummary(doc: ProjectDocument, revision: number | undefined, live: boolean) {
+	return {
+		projectId: doc.projectId,
+		name: doc.name,
+		revision: revision ?? null,
+		editorOpen: live,
+		sequences: Object.values(doc.sequences).map((s) => sequenceSummary(doc, s)),
+		media: Object.values(doc.media).map((m) => mediaSummary(doc, m)),
+	};
+}
+
+/** `get_timeline`: a compact text table (one row per clip) plus markers. */
+export function timelineTable(
+	doc: ProjectDocument,
+	seq: Sequence,
+	opts: { from?: number; to?: number; revision?: number; live?: boolean } = {},
+): string {
+	const r = seq.settings.frameRate as Rational;
+	const duration = sequenceDuration(seq);
+	const from = opts.from ?? 0;
+	const to = opts.to ?? Number.POSITIVE_INFINITY;
+	const lines: string[] = [];
+	lines.push(
+		`Sequence "${sequenceName(doc, seq.id)}" (${seq.id}) ${seq.settings.width}x${seq.settings.height} @ ${round3(fpsOf(r))} fps` +
+			`${seq.settings.dropFrame ? ' DF' : ''}, duration ${sequenceTimecode(seq, duration)} (${duration} frames)` +
+			`${opts.revision !== undefined ? `, revision ${opts.revision}` : ''}${opts.live ? ', open in the editor' : ''}`,
+	);
+	if (opts.from !== undefined || opts.to !== undefined)
+		lines.push(
+			`Range ${sequenceTimecode(seq, from)}–${Number.isFinite(to) ? sequenceTimecode(seq, to) : 'end'} (frames ${from}–${Number.isFinite(to) ? to : 'end'})`,
+		);
+	lines.push('track | clip id | kind | name | start–end timecode | start–end frames | source | linked');
+	for (const t of tracksOf(seq)) {
+		const clips = Object.values(seq.clips)
+			.filter((c) => c.trackId === t.id && c.start < to && c.start + c.duration > from)
+			.sort((a, b) => a.start - b.start);
+		const label = trackLabel(seq, t.id) ?? t.id;
+		const flags = [t.locked ? 'locked' : '', t.mute ? 'muted' : ''].filter(Boolean).join(',');
+		if (!clips.length) {
+			lines.push(`${label}${flags ? ` (${flags})` : ''} | (empty)`);
+			continue;
+		}
+		for (const c of clips) {
+			const s = clipSummary(doc, seq, c);
+			lines.push(
+				[
+					`${label}${flags ? ` (${flags})` : ''}`,
+					s.id,
+					s.kind + (s.enabled === false ? ' (disabled)' : ''),
+					s.name,
+					`${s.startTimecode}–${s.endTimecode}`,
+					`${s.start}–${s.end}`,
+					s.source,
+					s.linked?.join(' ') ?? '',
+				].join(' | '),
+			);
+		}
+	}
+	const markers = seq.markers.filter((m) => m.frame >= from && m.frame < to);
+	if (markers.length) {
+		lines.push('Markers:');
+		for (const m of markers)
+			lines.push(
+				`  ${sequenceTimecode(seq, m.frame)} (${m.frame}) "${m.name}" ${m.id}${m.comment ? ` — ${m.comment}` : ''}`,
+			);
+	}
+	if (seq.inPoint !== null || seq.outPoint !== null)
+		lines.push(
+			`In/Out: ${seq.inPoint === null ? '—' : sequenceTimecode(seq, seq.inPoint)} / ${seq.outPoint === null ? '—' : sequenceTimecode(seq, seq.outPoint)}`,
+		);
+	return lines.join('\n');
+}

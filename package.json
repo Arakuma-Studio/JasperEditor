@@ -18,6 +18,7 @@
     "build": "pnpm -r --if-present build",
     "mg:build": "node scripts/mg-build.mjs",
     "fixtures": "node scripts/make-fixtures.mjs",
+    "mcp:build": "pnpm --filter @jasper/mcp build",
     "e2e": "node scripts/e2e-prepare.mjs && playwright test",
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "e2e:desktop": "node e2e/desktop-smoke.mjs packaged-like && node e2e/desktop-smoke.mjs dev",

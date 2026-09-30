@@ -1,0 +1,142 @@
+// The MCP server's connection to the engine: discovered lazily on the first tool call (so the server
+// starts and lists its tools even when the editor is closed), re-discovered after network failures, and
+// optionally backed by an engine this process started (`--start-engine`).
+import { platformDefaultAppdir } from '@jasper/config';
+import { EngineClient, EngineError } from '@jasper/engine-client';
+import {
+	type DiscoveryOptions,
+	discoverEngine,
+	type EngineTarget,
+	findEngineEntry,
+	type StartedEngine,
+	startHeadlessEngine,
+} from './discovery.ts';
+import { ToolError } from './errors.ts';
+
+export type LinkOptions = DiscoveryOptions & {
+	/** Fork a headless engine when none is reachable. */
+	startEngine?: boolean;
+	/** Engine bundle for `startEngine` (default: next to this server, or JASPER_ENGINE_ENTRY). */
+	engineEntry?: string;
+};
+
+export interface EngineConnection {
+	/** A client for the current engine (discovers / starts one if needed). */
+	client(): Promise<EngineClient>;
+	/** Where the engine was found (null before the first successful call). */
+	readonly target: EngineTarget | null;
+	/** Forget the current engine (next call re-discovers). */
+	invalidate(): void;
+	close(): Promise<void>;
+}
+
+/** A fixed engine (the engine's own `/mcp` endpoint talks to itself). */
+export class FixedEngineLink implements EngineConnection {
+	private readonly c: EngineClient;
+	readonly target: EngineTarget;
+	constructor(url: string, token: string | null, fetchImpl?: typeof fetch) {
+		this.target = { url, token, source: 'explicit' };
+		this.c = new EngineClient({ baseUrl: url, token: token ?? undefined, fetch: fetchImpl });
+	}
+	async client(): Promise<EngineClient> {
+		return this.c;
+	}
+	invalidate(): void {}
+	async close(): Promise<void> {}
+}
+
+export class EngineLink implements EngineConnection {
+	private current: { target: EngineTarget; client: EngineClient } | null = null;
+	private pending: Promise<{ target: EngineTarget; client: EngineClient }> | null = null;
+	private started: StartedEngine | null = null;
+	private readonly log: (line: string) => void;
+
+	constructor(private readonly opts: LinkOptions = {}) {
+		this.log = opts.log ?? ((l) => process.stderr.write(`[jasper-mcp] ${l}\n`));
+	}
+
+	get target(): EngineTarget | null {
+		return this.current?.target ?? null;
+	}
+
+	invalidate(): void {
+		this.current = null;
+	}
+
+	async client(): Promise<EngineClient> {
+		if (this.current) return this.current.client;
+		this.pending ??= this.connect().finally(() => {
+			this.pending = null;
+		});
+		this.current = await this.pending;
+		return this.current.client;
+	}
+
+	private async connect(): Promise<{ target: EngineTarget; client: EngineClient }> {
+		const reasons: string[] = [];
+		let target = await discoverEngine({
+			...this.opts,
+			log: (l) => {
+				reasons.push(l);
+				this.log(l);
+			},
+		});
+		if (!target && this.opts.startEngine) {
+			if (this.started) {
+				// Our own engine died: start a fresh one.
+				await this.started.stop().catch(() => {});
+				this.started = null;
+			}
+			const entry = this.opts.engineEntry ?? findEngineEntry(this.opts.env);
+			if (!entry)
+				throw new ToolError(
+					'ENGINE_NOT_FOUND',
+					'No JasperEditor engine is running and the engine bundle to start one was not found.',
+					'Build it with `pnpm build` (apps/engine/dist/engine.mjs) or pass --engine-entry <path>.',
+				);
+			const appdir = this.opts.appdir ?? this.opts.env?.JASPER_APPDIR ?? platformDefaultAppdir(this.opts.env);
+			this.log(`starting a headless engine (${entry}, appdir ${appdir})`);
+			this.started = await startHeadlessEngine({ entry, appdir, env: this.opts.env, log: this.log });
+			target = this.started;
+			this.log(`engine ready on ${target.url}`);
+		}
+		if (!target)
+			throw new ToolError(
+				'ENGINE_NOT_FOUND',
+				'The JasperEditor engine is not running.',
+				'Open the JasperEditor desktop app or run `pnpm dev` / `pnpm dev:engine`, or restart jasper-mcp with --start-engine to run a headless engine. ' +
+					`Searched: ${reasons.join('; ') || 'nothing found'}.`,
+			);
+		return {
+			target,
+			client: new EngineClient({
+				baseUrl: target.url,
+				token: target.token ?? undefined,
+				fetch: this.opts.fetch,
+			}),
+		};
+	}
+
+	async close(): Promise<void> {
+		const s = this.started;
+		this.started = null;
+		await s?.stop().catch(() => {});
+	}
+}
+
+/**
+ * Runs `fn` with the engine client; a network failure (engine restarted on another port, desktop app
+ * reopened) re-discovers once before giving up.
+ */
+export async function withEngine<T>(link: EngineConnection, fn: (c: EngineClient) => Promise<T>): Promise<T> {
+	const c = await link.client();
+	try {
+		return await fn(c);
+	} catch (e) {
+		if (!(e instanceof EngineError) || e.code !== 'NETWORK') throw e;
+		link.invalidate();
+		const c2 = await link.client();
+		if (c2 === c) throw e;
+		return fn(c2);
+	}
+}
