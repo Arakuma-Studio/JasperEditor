@@ -6,6 +6,18 @@
 import type { Lut, Rgb } from '../color/lut.ts';
 import type { ParamValue } from '../schema/common.ts';
 import type { MediaKind } from '../schema/media.ts';
+import {
+	BLACK_WHITE_OP,
+	BRIGHTNESS_CONTRAST_OP,
+	blackWhiteAmount,
+	brightnessContrastLinear,
+	COLOR_EFFECTS,
+	HUE_SATURATION_OP,
+	hueSaturationValues,
+} from './color-effects.ts';
+
+// The M1 colour maths moved next to the colour ops (S06:CG-026); re-exported for existing importers.
+export { blackWhiteAmount, brightnessContrastLinear, hueSaturationValues };
 
 export type EffectCategory =
 	| 'Adjust'
@@ -155,40 +167,12 @@ const num = (p: EffectParams, k: string, d = 0) =>
 	typeof p[k] === 'number' && Number.isFinite(p[k]) ? (p[k] as number) : d;
 const str = (p: EffectParams, k: string, d: string) => (typeof p[k] === 'string' ? (p[k] as string) : d);
 const bool = (p: EffectParams, k: string, d: boolean) => (typeof p[k] === 'boolean' ? (p[k] as boolean) : d);
-const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
 const IDENTITY_STYLE: Record<string, string> = {};
 
 /** Deterministic number text for filter strings and CSS (≤ 4 decimals, no trailing zeros, no `-0`). */
 export function fmtNum(x: number): string {
 	const r = Math.round(x * 10000) / 10000;
 	return Object.is(r, -0) || r === 0 ? '0' : String(r);
-}
-
-/**
- * Brightness & Contrast (S03:FX-040). With `b, c ∈ [−100, 100]` every sRGB-encoded channel maps as
- * `out = k·(in − ½) + ½ + b/200` with `k = 1 + c/100`: brightness adds `b/100 · 0.5`, contrast scales
- * around mid-gray. The preview uses an SVG `feComponentTransfer` linear function (not CSS
- * `brightness()`, which multiplies); ffmpeg gets `eq` with the same offset and gain (saturation = k so
- * chroma scales with the RGB gain, which is what a per-channel gain around gray does in YCbCr).
- */
-export function brightnessContrastLinear(p: EffectParams): { slope: number; intercept: number } {
-	const b = clamp(num(p, 'brightness'), -100, 100);
-	const c = clamp(num(p, 'contrast'), -100, 100);
-	const k = 1 + c / 100;
-	return { slope: k, intercept: 0.5 - 0.5 * k + b / 200 };
-}
-
-/** Hue/Saturation: hue rotation in degrees and a saturation multiplier `1 + s/100` (0..2). */
-export function hueSaturationValues(p: EffectParams): { hueDeg: number; saturation: number } {
-	return {
-		hueDeg: clamp(num(p, 'hue'), -180, 180),
-		saturation: 1 + clamp(num(p, 'saturation'), -100, 100) / 100,
-	};
-}
-
-/** Black & White: fraction of desaturation (0..1); native uses `hue=s=1−amount`. */
-export function blackWhiteAmount(p: EffectParams): number {
-	return clamp(num(p, 'amount', 100), 0, 100) / 100;
 }
 
 /** Gaussian blur: standard deviations (px) per axis. CSS `blur(r)` and ffmpeg `gblur sigma` agree. */
@@ -342,14 +326,9 @@ export const BRIGHTNESS_CONTRAST_EFFECT: EffectSpec = {
 			return `<filter id="${uid}" color-interpolation-filters="sRGB"><feComponentTransfer>${fn('R')}${fn('G')}${fn('B')}</feComponentTransfer></filter>`;
 		},
 	},
-	native: {
-		filter(p) {
-			const b = clamp(num(p, 'brightness'), -100, 100);
-			const { slope } = brightnessContrastLinear(p);
-			if (b === 0 && slope === 1) return 'null';
-			return `eq=brightness=${fmtNum(b / 200)}:contrast=${fmtNum(slope)}:saturation=${fmtNum(slope)}`;
-		},
-	},
+	// M2 (S06:CG-003): realized by the fused colour LUT (`lut3d`); the M1 `eq` mapping is gone (GPL, D-13).
+	native: null,
+	color: BRIGHTNESS_CONTRAST_OP,
 	capabilities: { preview: 'css', export: ['remotion', 'native'] },
 };
 
@@ -391,13 +370,9 @@ export const HUE_SATURATION_EFFECT: EffectSpec = {
 			return parts.length ? { filter: parts.join(' ') } : IDENTITY_STYLE;
 		},
 	},
-	native: {
-		filter(p) {
-			const { hueDeg, saturation } = hueSaturationValues(p);
-			if (hueDeg === 0 && saturation === 1) return 'null';
-			return `hue=h=${fmtNum(hueDeg)}:s=${fmtNum(saturation)}`;
-		},
-	},
+	// M2 (S06:CG-003): the fused colour LUT reproduces the preview matrices (`hue` did not).
+	native: null,
+	color: HUE_SATURATION_OP,
 	capabilities: { preview: 'css', export: ['remotion', 'native'] },
 };
 
@@ -427,12 +402,8 @@ export const BLACK_WHITE_EFFECT: EffectSpec = {
 			return a === 0 ? IDENTITY_STYLE : { filter: `grayscale(${fmtNum(a * 100)}%)` };
 		},
 	},
-	native: {
-		filter(p) {
-			const a = blackWhiteAmount(p);
-			return a === 0 ? 'null' : `hue=s=${fmtNum(1 - a)}`;
-		},
-	},
+	native: null,
+	color: BLACK_WHITE_OP,
 	capabilities: { preview: 'css', export: ['remotion', 'native'] },
 };
 
@@ -510,8 +481,8 @@ export const M1_EFFECTS: readonly EffectSpec[] = [
 	FLIP_VERTICAL_EFFECT,
 ];
 
-/** M2 additions registered by default (colour effects are added by wp-m2-color in `registry/color-effects.ts`). */
-export const M2_EFFECTS: readonly EffectSpec[] = [CORNER_PIN_EFFECT];
+/** M2 additions registered by default (the colour effects come from `registry/color-effects.ts`). */
+export const M2_EFFECTS: readonly EffectSpec[] = [...COLOR_EFFECTS, CORNER_PIN_EFFECT];
 
 export const defaultEffectRegistry: EffectRegistry = createEffectRegistry([...M1_EFFECTS, ...M2_EFFECTS]);
 
@@ -606,7 +577,8 @@ export function buildNativeFilterChain(
 		}
 		if (spec.appliesTo !== 'video') continue;
 		if (!spec.native) {
-			blockers.push(fx.id);
+			// Colour ops are fused into a baked LUT by the engine's colour extension (ARCHITECTURE §19.6).
+			if (!spec.color) blockers.push(fx.id);
 			continue;
 		}
 		const f = spec.native.filter(effectiveParams(spec, fx.params), ctx);

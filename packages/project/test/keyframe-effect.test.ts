@@ -767,24 +767,17 @@ describe('effect registry (S03 §15.4, FX-040)', () => {
 				'<feFuncB type="linear" slope="1.5" intercept="-0.15"/>' +
 				'</feComponentTransfer></filter>',
 		);
-		expect(nat('jasper.brightness-contrast', { brightness: 20, contrast: 50 })).toBe(
-			'eq=brightness=0.1:contrast=1.5:saturation=1.5',
-		);
-		expect(nat('jasper.brightness-contrast', { brightness: -100, contrast: -100 })).toBe(
-			'eq=brightness=-0.5:contrast=0:saturation=0',
-		);
-		expect(nat('jasper.brightness-contrast', { brightness: 0, contrast: 0 })).toBe('null');
+		// M2 (S06:CG-003): colour effects have no filter string (eq is GPL); they fuse into a baked lut3d.
+		expect(defaultEffectRegistry.get('jasper.brightness-contrast')!.native).toBeNull();
 		// hue / saturation
 		expect(css('jasper.hue-saturation', { hue: -45, saturation: 30 })).toEqual({
 			filter: 'hue-rotate(-45deg) saturate(1.3)',
 		});
-		expect(nat('jasper.hue-saturation', { hue: -45, saturation: 30 })).toBe('hue=h=-45:s=1.3');
-		expect(nat('jasper.hue-saturation', { hue: 0, saturation: -100 })).toBe('hue=h=0:s=0');
+		expect(defaultEffectRegistry.get('jasper.hue-saturation')!.native).toBeNull();
 		// black & white
 		expect(css('jasper.black-white', { amount: 100 })).toEqual({ filter: 'grayscale(100%)' });
 		expect(css('jasper.black-white', { amount: 25 })).toEqual({ filter: 'grayscale(25%)' });
-		expect(nat('jasper.black-white', { amount: 100 })).toBe('hue=s=0');
-		expect(nat('jasper.black-white', { amount: 25 })).toBe('hue=s=0.75');
+		expect(defaultEffectRegistry.get('jasper.black-white')!.native).toBeNull();
 		// flips
 		expect(css('jasper.flip-horizontal', {})).toEqual({ transform: 'scale(-1, 1)' });
 		expect(css('jasper.flip-vertical', {})).toEqual({ transform: 'scale(1, -1)' });
@@ -834,9 +827,9 @@ describe('effect registry (S03 §15.4, FX-040)', () => {
 		});
 		expect(segments[2]!.kind === 'svg' && segments[2]!.filterId).toBe('L1-d');
 		const native = buildNativeFilterChain(stack, defaultEffectRegistry, ctx);
+		// Colour effects are fused into a LUT by the engine's colour extension: not in this chain, not blockers.
 		expect(native.filter).toBe(
-			'crop=1728:1080:192:0,pad=1920:1080:192:0:color=black@0,hue=h=90:s=1,hue=s=0.5,' +
-				'eq=brightness=0.05:contrast=1:saturation=1,gblur=sigma=2:sigmaV=2,vflip',
+			'crop=1728:1080:192:0,pad=1920:1080:192:0:color=black@0,gblur=sigma=2:sigmaV=2,vflip',
 		);
 		expect(native.blockers).toEqual([]);
 	});

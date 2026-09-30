@@ -168,32 +168,39 @@ const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
  * WebGL preview implements), 1D linear per channel. Inputs are clamped to the domain.
  */
 export function applyLut(lut: Lut, c: Rgb): void {
+	// Allocation-free (it runs ~36k times per bake): same arithmetic as the reference formulation.
 	const s = lut.size - 1;
-	const x = new Array<number>(3);
-	for (let k = 0; k < 3; k++) {
-		const lo = lut.domainMin[k]!;
-		const hi = lut.domainMax[k]!;
-		x[k] = clamp01((c[k]! - lo) / (hi - lo)) * s;
-	}
+	const dmin = lut.domainMin;
+	const dmax = lut.domainMax;
+	const x0 = clamp01((c[0] - dmin[0]) / (dmax[0] - dmin[0])) * s;
+	const x1 = clamp01((c[1] - dmin[1]) / (dmax[1] - dmin[1])) * s;
+	const x2 = clamp01((c[2] - dmin[2]) / (dmax[2] - dmin[2])) * s;
 	const d = lut.data;
 	if (lut.dimensions === 1) {
-		for (let k = 0; k < 3; k++) {
-			const i0 = Math.min(s - 1, Math.floor(x[k]!));
-			const f = x[k]! - i0;
-			c[k] = d[3 * i0 + k]! * (1 - f) + d[3 * (i0 + 1) + k]! * f;
-		}
+		const i0 = Math.min(s - 1, Math.floor(x0));
+		const i1 = Math.min(s - 1, Math.floor(x1));
+		const i2 = Math.min(s - 1, Math.floor(x2));
+		const f0 = x0 - i0;
+		const f1 = x1 - i1;
+		const f2 = x2 - i2;
+		c[0] = d[3 * i0]! * (1 - f0) + d[3 * (i0 + 1)]! * f0;
+		c[1] = d[3 * i1 + 1]! * (1 - f1) + d[3 * (i1 + 1) + 1]! * f1;
+		c[2] = d[3 * i2 + 2]! * (1 - f2) + d[3 * (i2 + 1) + 2]! * f2;
 		return;
 	}
 	const n = lut.size;
-	const r0 = Math.min(s - 1, Math.floor(x[0]!));
-	const g0 = Math.min(s - 1, Math.floor(x[1]!));
-	const b0 = Math.min(s - 1, Math.floor(x[2]!));
-	const fr = x[0]! - r0;
-	const fg = x[1]! - g0;
-	const fb = x[2]! - b0;
-	const at = (dr: number, dg: number, db: number) => 3 * (r0 + dr + n * (g0 + dg + n * (b0 + db)));
-	const c000 = at(0, 0, 0);
-	const c111 = at(1, 1, 1);
+	const r0 = Math.min(s - 1, Math.floor(x0));
+	const g0 = Math.min(s - 1, Math.floor(x1));
+	const b0 = Math.min(s - 1, Math.floor(x2));
+	const fr = x0 - r0;
+	const fg = x1 - g0;
+	const fb = x2 - b0;
+	// Lattice offsets: +3 per red step, +3n per green step, +3n² per blue step.
+	const sr = 3;
+	const sg = 3 * n;
+	const sb = 3 * n * n;
+	const c000 = 3 * (r0 + n * (g0 + n * b0));
+	const c111 = c000 + sr + sg + sb;
 	// Tetrahedral: pick the tetrahedron by the order of the fractional parts.
 	let a: number;
 	let b: number;
@@ -203,50 +210,52 @@ export function applyLut(lut: Lut, c: Rgb): void {
 	let w3: number;
 	if (fr > fg) {
 		if (fg > fb) {
-			a = at(1, 0, 0);
-			b = at(1, 1, 0);
+			a = c000 + sr;
+			b = c000 + sr + sg;
 			w0 = 1 - fr;
 			w1 = fr - fg;
 			w2 = fg - fb;
 			w3 = fb;
 		} else if (fr > fb) {
-			a = at(1, 0, 0);
-			b = at(1, 0, 1);
+			a = c000 + sr;
+			b = c000 + sr + sb;
 			w0 = 1 - fr;
 			w1 = fr - fb;
 			w2 = fb - fg;
 			w3 = fg;
 		} else {
-			a = at(0, 0, 1);
-			b = at(1, 0, 1);
+			a = c000 + sb;
+			b = c000 + sr + sb;
 			w0 = 1 - fb;
 			w1 = fb - fr;
 			w2 = fr - fg;
 			w3 = fg;
 		}
 	} else if (fb > fg) {
-		a = at(0, 0, 1);
-		b = at(0, 1, 1);
+		a = c000 + sb;
+		b = c000 + sg + sb;
 		w0 = 1 - fb;
 		w1 = fb - fg;
 		w2 = fg - fr;
 		w3 = fr;
 	} else if (fb > fr) {
-		a = at(0, 1, 0);
-		b = at(0, 1, 1);
+		a = c000 + sg;
+		b = c000 + sg + sb;
 		w0 = 1 - fg;
 		w1 = fg - fb;
 		w2 = fb - fr;
 		w3 = fr;
 	} else {
-		a = at(0, 1, 0);
-		b = at(1, 1, 0);
+		a = c000 + sg;
+		b = c000 + sr + sg;
 		w0 = 1 - fg;
 		w1 = fg - fr;
 		w2 = fr - fb;
 		w3 = fb;
 	}
-	for (let k = 0; k < 3; k++) c[k] = w0 * d[c000 + k]! + w1 * d[a + k]! + w2 * d[b + k]! + w3 * d[c111 + k]!;
+	c[0] = w0 * d[c000]! + w1 * d[a]! + w2 * d[b]! + w3 * d[c111]!;
+	c[1] = w0 * d[c000 + 1]! + w1 * d[a + 1]! + w2 * d[b + 1]! + w3 * d[c111 + 1]!;
+	c[2] = w0 * d[c000 + 2]! + w1 * d[a + 2]! + w2 * d[b + 2]! + w3 * d[c111 + 2]!;
 }
 
 /** `out = lerp(c, lut(c), amount)` in place: the "intensity" of a creative LUT (S06:CG-054). */
