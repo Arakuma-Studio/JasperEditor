@@ -1,0 +1,18 @@
+--- a/configure
++++ b/configure
+@@ -1868,7 +1868,6 @@
+     libdvdnav
+     libdvdread
+     librubberband
+-    libvidstab
+     libx264
+     libx265
+     libxavs
+@@ -1968,6 +1967,7 @@
+     libtwolame
+     libuavs3d
+     libv4l2
++    libvidstab
+     libvmaf
+     libvorbis
+     libvpx
