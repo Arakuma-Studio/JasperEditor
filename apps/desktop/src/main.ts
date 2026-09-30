@@ -7,6 +7,16 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 const here = dirname(fileURLToPath(import.meta.url));
 const DEV_URL = process.env.JASPER_DESKTOP_DEV_URL ?? 'http://127.0.0.1:5173';
 
+/** Only web links leave the app; file:, custom-scheme and other URLs from page content are dropped. */
+function openExternalSafe(url: string): void {
+	try {
+		const { protocol } = new URL(url);
+		if (protocol === 'https:' || protocol === 'http:' || protocol === 'mailto:') void shell.openExternal(url);
+	} catch {
+		// malformed URL: ignore
+	}
+}
+
 function createWindow(): BrowserWindow {
 	const win = new BrowserWindow({
 		width: 1600,
@@ -26,13 +36,13 @@ function createWindow(): BrowserWindow {
 	win.once('ready-to-show', () => win.show());
 	const origin = new URL(DEV_URL).origin;
 	win.webContents.setWindowOpenHandler(({ url }) => {
-		void shell.openExternal(url);
+		openExternalSafe(url);
 		return { action: 'deny' };
 	});
 	win.webContents.on('will-navigate', (event, url) => {
 		if (new URL(url).origin !== origin) {
 			event.preventDefault();
-			void shell.openExternal(url);
+			openExternalSafe(url);
 		}
 	});
 	void win.loadURL(DEV_URL);
