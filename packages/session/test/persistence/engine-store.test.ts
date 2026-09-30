@@ -130,6 +130,26 @@ describe('leases (S01:PER-040)', () => {
 		await a.close();
 	});
 
+	it('listens for pagehide only while it holds leases (stores do not leak listeners)', async () => {
+		const { engine, projectId } = setup();
+		const listeners = new Set<() => void>();
+		const page = {
+			addEventListener: (_t: 'pagehide', cb: () => void) => listeners.add(cb),
+			removeEventListener: (_t: 'pagehide', cb: () => void) => listeners.delete(cb),
+		};
+		const s = new EngineProjectStore(engine.client(), {
+			ids: createCounterIdSource(500),
+			sleep: async () => undefined,
+			unloadTarget: page,
+			keepaliveFetch: engine.fetch as unknown as typeof fetch,
+		});
+		expect(listeners.size).toBe(0);
+		const a = await EditorSession.open({ store: s, projectId, ctx: ctx(), sessionId: 'a' });
+		expect(listeners.size).toBe(1);
+		await a.close();
+		expect(listeners.size).toBe(0);
+	});
+
 	it('heartbeats every lease.heartbeatMs and re-acquires transparently after an engine restart', async () => {
 		const { engine, open, projectId } = setup();
 		const a = await open('a');

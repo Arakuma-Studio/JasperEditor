@@ -36,7 +36,10 @@ export type EngineProjectStoreOptions = {
 	 * Page whose `pagehide` releases held leases with keepalive requests, so a reload does not find the
 	 * project locked by its own previous page (default: `window` in browsers; null disables).
 	 */
-	unloadTarget?: { addEventListener(t: 'pagehide', cb: () => void): void } | null;
+	unloadTarget?: {
+		addEventListener(t: 'pagehide', cb: () => void): void;
+		removeEventListener(t: 'pagehide', cb: () => void): void;
+	} | null;
 	/** fetch used for the keepalive release (default: global fetch). */
 	keepaliveFetch?: typeof fetch;
 };
@@ -69,6 +72,13 @@ export class EngineProjectStore implements ProjectStore {
 	private readonly newSessionId: () => string;
 	private readonly sleep: (ms: number) => Promise<void>;
 	private readonly leases = new Map<string, LeaseRecord>();
+	private readonly unloadTarget: EngineProjectStoreOptions['unloadTarget'];
+	private readonly keepaliveFetch: typeof fetch | undefined;
+	/** The `pagehide` listener is attached only while this store holds leases (no leak per store instance). */
+	private unloadAttached = false;
+	private readonly onPageHide = () => {
+		if (this.keepaliveFetch) this.releaseAllKeepalive(this.keepaliveFetch);
+	};
 
 	constructor(
 		readonly engine: EngineClient,
@@ -80,14 +90,20 @@ export class EngineProjectStore implements ProjectStore {
 		this.now = opts.now ?? (() => new Date());
 		this.newSessionId = opts.newSessionId ?? randomSessionId;
 		this.sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
-		const target =
+		this.unloadTarget =
 			opts.unloadTarget === undefined
 				? ((globalThis as { window?: EngineProjectStoreOptions['unloadTarget'] }).window ?? null)
 				: opts.unloadTarget;
-		const kf = opts.keepaliveFetch ?? (globalThis.fetch as typeof fetch | undefined);
-		target?.addEventListener('pagehide', () => {
-			if (kf) this.releaseAllKeepalive(kf);
-		});
+		this.keepaliveFetch = opts.keepaliveFetch ?? (globalThis.fetch as typeof fetch | undefined);
+	}
+
+	/** Attaches the pagehide release while leases are held and detaches it when the last one goes. */
+	private syncUnloadListener(): void {
+		const want = this.leases.size > 0;
+		if (want === this.unloadAttached || !this.unloadTarget) return;
+		if (want) this.unloadTarget.addEventListener('pagehide', this.onPageHide);
+		else this.unloadTarget.removeEventListener('pagehide', this.onPageHide);
+		this.unloadAttached = want;
 	}
 
 	private envelope(doc: ProjectDocument, revision: number) {
@@ -261,6 +277,7 @@ export class EngineProjectStore implements ProjectStore {
 			held && held.sessionId === sessionId ? [...held.aliases, held.lease.leaseId] : [],
 		);
 		this.leases.set(projectId, { sessionId, lease, aliases });
+		this.syncUnloadListener();
 		return lease;
 	}
 
@@ -283,12 +300,16 @@ export class EngineProjectStore implements ProjectStore {
 				try {
 					return await this.acquireLease(projectId, rec.sessionId, { refresh: true });
 				} catch (e2) {
-					if (e2 instanceof LeaseHeldError) this.leases.delete(projectId);
+					if (e2 instanceof LeaseHeldError) {
+						this.leases.delete(projectId);
+						this.syncUnloadListener();
+					}
 					throw e2;
 				}
 			}
 			if (isCode(e, 'LEASE_HELD')) {
 				this.leases.delete(projectId);
+				this.syncUnloadListener();
 				const d = (e.detail ?? {}) as { holderSessionId?: string; expiresAt?: string };
 				throw new LeaseHeldError(projectId, d.holderSessionId ?? 'unknown', d.expiresAt ?? null);
 			}
@@ -312,13 +333,17 @@ export class EngineProjectStore implements ProjectStore {
 			TAB_SESSIONS.delete(rec.sessionId);
 		}
 		this.leases.clear();
+		this.syncUnloadListener();
 	}
 
 	async releaseLease(projectId: string, leaseId: string): Promise<void> {
 		const rec = this.leases.get(projectId);
 		const current =
 			rec && (rec.lease.leaseId === leaseId || rec.aliases.has(leaseId)) ? rec.lease.leaseId : leaseId;
-		if (rec && current === rec.lease.leaseId) this.leases.delete(projectId);
+		if (rec && current === rec.lease.leaseId) {
+			this.leases.delete(projectId);
+			this.syncUnloadListener();
+		}
 		try {
 			await this.engine.releaseLease(projectId, current);
 		} catch (e) {
