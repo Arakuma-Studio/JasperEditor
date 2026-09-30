@@ -1,6 +1,7 @@
 // Layer dispatch: clip kind → layer component. The only registration point for layer renderers.
 import type { ComponentType } from 'react';
 import type { LayerProps } from '../types.ts';
+import { CompositionLayer } from './CompositionLayer.tsx';
 import { MotionGraphicLayer } from './MotionGraphicLayer.tsx';
 import { OfflineCard } from './OfflineCard.tsx';
 import { SolidLayer } from './SolidLayer.tsx';
@@ -15,6 +16,7 @@ export { type MgRenderState, MgRenderStateContext } from './MotionGraphicLayer.t
 export { OFFLINE_CARD_COLORS } from './OfflineCard.tsx';
 export { textBlockStyle, textFontFamily } from './TextLayer.tsx';
 export {
+	CompositionLayer,
 	MotionGraphicLayer,
 	OfflineCard,
 	ProxyPendingCard,
@@ -32,6 +34,8 @@ export const LAYER_COMPONENTS: Partial<Record<string, ComponentType<LayerProps>>
 	text: TextLayer,
 	solid: SolidLayer,
 	'motion-graphic': MotionGraphicLayer,
+	// M2 (wp-m2-mg)
+	composition: CompositionLayer,
 };
 
 const MEDIA_KINDS = new Set(['video', 'still', 'animated-image']);

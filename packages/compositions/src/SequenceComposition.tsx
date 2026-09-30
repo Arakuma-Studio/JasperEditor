@@ -27,7 +27,11 @@ import { premountFrames } from './pipeline.ts';
 import type { LayerProps, RenderDoc, RenderOptions, SequenceCompositionProps } from './types.ts';
 
 /** Kinds whose layer output depends on the frame beyond what `ResolvedLayerProps` captures. */
-export const FRAME_DEPENDENT_KINDS: ReadonlySet<string> = new Set(['motion-graphic', 'animated-image']);
+export const FRAME_DEPENDENT_KINDS: ReadonlySet<string> = new Set([
+	'motion-graphic',
+	'animated-image',
+	'composition',
+]);
 
 /** Media kinds get a 2 s premount so decoders warm up before the cut (S03:RND-020). */
 const PREMOUNT_KINDS: ReadonlySet<string> = new Set(['video', 'still', 'animated-image']);
