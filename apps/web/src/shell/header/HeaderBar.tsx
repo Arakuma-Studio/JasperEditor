@@ -2,6 +2,8 @@
 // mode; drag to reorder; right-click menu; » overflow), Workspaces menu, and the right cluster: engine
 // chip, background jobs with a badge, Quick Export (`export.quick`), Agent (`panel.focus.agent`),
 // command palette and full screen. Every icon button has a `Name (Shortcut)` tooltip.
+
+import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import { ContextMenu, cx, DropdownMenu, Icon, IconButton, type ResolvedMenuItem } from '@jasper/ui';
 import { Popover } from 'radix-ui';
 import {
@@ -14,6 +16,8 @@ import {
 	useSyncExternalStore,
 } from 'react';
 import { subscribeCommands } from '../../commands/registry.ts';
+import { usePersistenceStatus } from '../../home/ProjectLifecycle.tsx';
+import { useJobsSummary } from '../../panels/jobs/JobsPanel.tsx';
 import { useEngine, useJobs } from '../../state/engine.tsx';
 import { type ShellMode, useCommandCtx, useShellRuntime } from '../context.tsx';
 import type { ShellMenuItem } from '../menus/resolve.ts';
@@ -283,7 +287,9 @@ function EngineChip() {
 
 function JobsButton({ projectId }: { projectId?: string }) {
 	const { jobs } = useJobs({ projectId, activeOnly: true });
-	const count = jobs.filter((j) => j.state === 'running' || j.state === 'queued').length;
+	// Badge = engine + client (upload) jobs that are running or queued (WP-2E summary, S05 header badge).
+	const summary = useJobsSummary();
+	const count = summary.running + summary.queued;
 	const recent: ResolvedMenuItem[] = jobs.slice(-5).map((j) => ({
 		type: 'item',
 		id: `job-${j.id}`,
@@ -295,7 +301,17 @@ function JobsButton({ projectId }: { projectId?: string }) {
 		<ContextMenu
 			items={recent.length ? recent : [{ type: 'label', id: 'none', label: 'No background jobs' }]}
 		>
-			<span className="inline-flex">
+			<span
+				className="inline-flex"
+				data-testid="jobs-badge"
+				data-active={count}
+				data-failed={summary.failed}
+				title={
+					count
+						? `${summary.running} running · ${summary.queued} queued${summary.progress !== null ? ` · ${Math.round(summary.progress * 100)}%` : ''}`
+						: undefined
+				}
+			>
 				<CommandIconButton
 					id="panel.focus.jobs"
 					label="Background Jobs"
@@ -305,6 +321,60 @@ function JobsButton({ projectId }: { projectId?: string }) {
 				/>
 			</span>
 		</ContextMenu>
+	);
+}
+
+type AnyStore = { getState(): unknown; subscribe(l: (s: unknown, p: unknown) => void): () => void };
+const NO_STORE: AnyStore = { getState: () => null, subscribe: () => () => {} };
+
+/** Header save state (S05 header dirty/saving indicator): autosave status of the open session. */
+function SaveStatus() {
+	const session = useSessionOrNull();
+	const status = usePersistenceStatus(session);
+	const dirty = useStoreSelector(
+		(session?.store ?? NO_STORE) as AnyStore,
+		(s) => !!(s as { dirty?: boolean } | null)?.dirty,
+	);
+	if (!session) return null;
+	const [label, tone] = status.conflict
+		? ['Save conflict', 'text-pr-warning']
+		: status.error
+			? ['Save failed', 'text-pr-danger']
+			: status.paused === 'read-only'
+				? ['Read-only', 'text-pr-muted']
+				: status.paused === 'lease-lost'
+					? ['Not saving', 'text-pr-warning']
+					: status.saving
+						? ['Saving…', 'text-pr-muted']
+						: dirty
+							? ['Edited', 'text-pr-muted']
+							: ['Saved', 'text-pr-dim'];
+	const state = status.conflict
+		? 'conflict'
+		: status.error
+			? 'error'
+			: status.paused
+				? status.paused
+				: status.saving
+					? 'saving'
+					: dirty
+						? 'dirty'
+						: 'saved';
+	return (
+		<span
+			className={cx('mr-1 inline-flex items-center gap-1 text-pr-small', tone)}
+			data-testid="save-status"
+			data-state={state}
+			title={
+				status.error ??
+				(status.lastSavedAt ? `Last saved ${new Date(status.lastSavedAt).toLocaleTimeString()}` : undefined)
+			}
+		>
+			{state === 'dirty' || state === 'saving' ? (
+				<span className="size-1.5 rounded-full bg-pr-accent" aria-hidden />
+			) : null}
+			{label}
+		</span>
 	);
 }
 
@@ -369,6 +439,7 @@ export function HeaderBar(props: HeaderBarProps) {
 			/>
 			<div className="flex-1">{props.center}</div>
 			<div className="flex shrink-0 items-center gap-0.5">
+				<SaveStatus />
 				<EngineChip />
 				<JobsButton projectId={props.projectId} />
 				<CommandIconButton

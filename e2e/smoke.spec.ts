@@ -93,6 +93,9 @@ test('drag the item to the timeline → linked V1/A1 clips', async () => {
 	// 10 s at 29.97 fps = 300 frames (rounded from 299.7).
 	expect(Math.abs(v1!.duration - 300)).toBeLessThanOrEqual(1);
 	expect((await appliedLabels(page)).at(-1)).toMatch(/Place|Overwrite|Insert/);
+	// Header: autosave reaches "Saved"; the Jobs badge settles once the derivative jobs are done.
+	await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', { timeout: 20_000 });
+	await expect(page.getByTestId('jobs-badge')).toHaveAttribute('data-active', '0', { timeout: 60_000 });
 });
 
 test('Space plays the Program monitor, Space stops it; the monitor shows the frame', async () => {
