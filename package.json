@@ -18,11 +18,15 @@
     "build": "pnpm -r --if-present build",
     "mg:build": "node scripts/mg-build.mjs",
     "fixtures": "node scripts/make-fixtures.mjs",
-    "e2e": "playwright test",
-    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+    "e2e": "node scripts/e2e-prepare.mjs && playwright test",
+    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "e2e:desktop": "node e2e/desktop-smoke.mjs packaged-like && node e2e/desktop-smoke.mjs dev",
+    "e2e:mg-fallback": "node e2e/mg-fallback-check.mjs",
+    "e2e:typecheck": "tsc -p e2e/tsconfig.json"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",
+    "@playwright/test": "^1.63.0",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^20.19.43",
     "concurrently": "^9.2.1",

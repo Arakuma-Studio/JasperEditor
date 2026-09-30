@@ -11,6 +11,7 @@ import {
 	useAgentBridgeFor,
 	useAgentBridgeState,
 } from '../../agent-bridge/index.ts';
+import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import { PanelServices } from '../../state/panel-services.ts';
 import type { PanelProps } from '../types.ts';
 import { type ConsoleOutcome, runConsoleInput } from './console-run.ts';
@@ -23,7 +24,7 @@ declare module '../../state/panel-services.ts' {
 	}
 }
 
-/** Services used when the shell (WP-2A) does not provide a PanelServices instance through context. */
+/** Services used when the Agent panel is mounted outside the editor shell (tests, standalone). */
 export const agentPanelServices = new PanelServices();
 
 type Tab = 'activity' | 'approvals' | 'console' | 'schema';
@@ -375,7 +376,10 @@ export function AgentPanel(props: PanelProps & { services?: PanelServices }) {
 	const [tab, setTab] = useState<Tab>('activity');
 	const approvals = useAgentBridgeState(bridge, (s) => s.approvals.length);
 	const relay = useAgentBridgeState(bridge, (s) => s.relay);
-	const services = props.services ?? agentPanelServices;
+	// The shell's registry (S05:SH-005) so `agent.console.run` / `panel.focus.agent` find the console through
+	// `ctx.services`; the module-level registry stays as the standalone/test fallback.
+	const shellServices = useShellRuntimeOrNull()?.services;
+	const services = props.services ?? shellServices ?? agentPanelServices;
 	// A new approval pulls the panel to the approvals tab (S01:AGT-011 confirmation).
 	const prevApprovals = useRef(0);
 	useEffect(() => {

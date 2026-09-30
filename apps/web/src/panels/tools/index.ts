@@ -1,6 +1,7 @@
 // Tools panel definition (ARCHITECTURE §7.2, S05 §16.6). Keeps the WP-00 contract fields.
+
+import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
-import { ToolsPanel } from './ToolsPanel.tsx';
 
 const tools: PanelDefinition = {
 	kind: 'tools',
@@ -12,7 +13,7 @@ const tools: PanelDefinition = {
 	keymapScope: 'tools',
 	touch: 'hidden',
 	agentDescription: 'Editing tool palette (selection, ripple, razor, slip…).',
-	component: ToolsPanel,
+	component: lazyPanel(() => import('./ToolsPanel.tsx'), 'ToolsPanel'),
 };
 
 export default tools;

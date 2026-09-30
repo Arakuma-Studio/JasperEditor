@@ -21,6 +21,8 @@ export const ENV = {
 	REMOTION_LICENSE_KEY: 'JASPER_REMOTION_LICENSE_KEY',
 	BROWSER_EXECUTABLE: 'JASPER_BROWSER_EXECUTABLE',
 	DESKTOP_DEV_URL: 'JASPER_DESKTOP_DEV_URL',
+	/** Dev only: the Vite port whose Host/Origin the dev engine accepts (default DEV_WEB_PORT). */
+	DEV_WEB_PORT: 'JASPER_DEV_WEB_PORT',
 } as const;
 export type EnvName = (typeof ENV)[keyof typeof ENV];
 

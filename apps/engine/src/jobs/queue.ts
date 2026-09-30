@@ -64,11 +64,26 @@ type JournalRecord = { job: EngineJob; input: unknown; requeued?: boolean };
 
 export type JobListFilter = { active?: boolean; projectId?: string; since?: string; kind?: JobKind };
 
+/**
+ * Jobs scheduled outside this queue that must still appear in `/api/jobs` and be cancellable/retryable over
+ * HTTP (S04 §17): WP-2G's mg-render jobs run on the motion-graphics service's own scheduler.
+ */
+export type ExternalJobSource = {
+	/** Whether `id` belongs to this source. */
+	owns(id: string): boolean;
+	list(): EngineJob[];
+	get(id: string): EngineJob | null;
+	cancel(id: string): EngineJob | null;
+	/** New job for a failed/cancelled one; throws JobError('JOB_NOT_RETRYABLE') otherwise. */
+	retry?(id: string): EngineJob;
+};
+
 export class JobQueue {
 	readonly totalSlots: number;
 	private readonly entries = new Map<string, Entry>();
 	private readonly runners = new Map<JobKind, JobRunner>();
 	private readonly dedupe = new Map<string, string>();
+	private readonly external = new Set<ExternalJobSource>();
 	private seq = 0;
 	private started = false;
 	private stopping = false;
@@ -88,6 +103,17 @@ export class JobQueue {
 
 	hasRunner(kind: JobKind): boolean {
 		return this.runners.has(kind);
+	}
+
+	/** Adds jobs from another scheduler to get/list/cancel/retry; returns the unregister function. */
+	registerExternalSource(source: ExternalJobSource): () => void {
+		this.external.add(source);
+		return () => this.external.delete(source);
+	}
+
+	private externalFor(id: string): ExternalJobSource | null {
+		for (const s of this.external) if (s.owns(id)) return s;
+		return null;
 	}
 
 	/**
@@ -211,14 +237,19 @@ export class JobQueue {
 
 	get(id: string): EngineJob | null {
 		const e = this.entries.get(id);
-		return e ? this.snapshot(e.job) : null;
+		if (e) return this.snapshot(e.job);
+		return this.externalFor(id)?.get(id) ?? null;
 	}
 
 	/** Jobs newest first. `since` keeps jobs created or finished at/after that ISO time. */
 	list(filter: JobListFilter = {}): EngineJob[] {
 		const out: EngineJob[] = [];
-		for (const e of this.entries.values()) {
-			const j = e.job;
+		const all: { job: EngineJob; own: boolean }[] = [...this.entries.values()].map((e) => ({
+			job: e.job,
+			own: true,
+		}));
+		for (const src of this.external) for (const job of src.list()) all.push({ job, own: false });
+		for (const { job: j, own } of all) {
 			if (filter.active && TERMINAL_JOB_STATES.has(j.state)) continue;
 			if (filter.projectId && j.projectId !== filter.projectId) continue;
 			if (filter.kind && j.kind !== filter.kind) continue;
@@ -227,7 +258,7 @@ export class JobQueue {
 				const touched = Date.parse(j.finishedAt ?? j.startedAt ?? j.createdAt);
 				if (!Number.isNaN(t) && touched < t && TERMINAL_JOB_STATES.has(j.state)) continue;
 			}
-			out.push(this.snapshot(j));
+			out.push(own ? this.snapshot(j) : { ...j });
 		}
 		return out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
 	}
@@ -246,8 +277,11 @@ export class JobQueue {
 	 */
 	cancel(id: string): EngineJob | null {
 		const e = this.entries.get(id);
-		if (!e) return null;
+		if (!e) return this.externalFor(id)?.cancel(id) ?? null;
 		for (const child of this.entries.values()) if (child.job.parentId === id) this.cancel(child.job.id);
+		for (const src of this.external)
+			for (const child of src.list())
+				if (child.parentId === id && !TERMINAL_JOB_STATES.has(child.state)) src.cancel(child.id);
 		if (e.job.state === 'queued') {
 			this.finish(e, 'cancelled', {});
 		} else if (e.job.state === 'running') {
@@ -268,7 +302,14 @@ export class JobQueue {
 	/** Retries a failed (retryable), cancelled or interrupted job as a new job (S04:JB-010). */
 	retry(id: string): EngineJob {
 		const e = this.entries.get(id);
-		if (!e) throw new JobError('JOB_NOT_FOUND', `Unknown job ${id}`);
+		if (!e) {
+			const src = this.externalFor(id);
+			if (src?.get(id)) {
+				if (!src.retry) throw new JobError('JOB_NOT_RETRYABLE', `Job ${id} cannot be retried`);
+				return src.retry(id);
+			}
+			throw new JobError('JOB_NOT_FOUND', `Unknown job ${id}`);
+		}
 		const j = e.job;
 		const ok =
 			j.state === 'cancelled' ||

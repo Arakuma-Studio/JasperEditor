@@ -18,6 +18,13 @@ export const NATIVE_MAX_RATE = 1;
 /** Measured validation range of `<Player playbackRate>` in 4.0.499 (validate-playbackrate.js). */
 export const PLAYER_RATE_BOUNDS = { min: -10, max: 10 } as const;
 export const SEEK_HZ = 30;
+/**
+ * Native play watchdog: when no `frameupdate` arrives this long after `play()` (and the Player is not
+ * buffering), the Player did not start. Observed in 4.0.499 with @remotion/media after seeks: the store
+ * says playing while the Player sits on one frame until play() is issued again (WP-3I E2E).
+ */
+export const PLAY_WATCHDOG_MS = 600;
+export const PLAY_WATCHDOG_RETRIES = 3;
 
 export function isNativeRate(rate: number): boolean {
 	return rate >= NATIVE_MIN_RATE && rate <= NATIVE_MAX_RATE;
@@ -82,6 +89,9 @@ export class PlaybackDriver implements PlayerController {
 	private stepHandle: unknown = null;
 	private stepOrigin = { t: 0, frame: 0 };
 	private lastSeekAt = Number.NEGATIVE_INFINITY;
+	private frameEvents = 0;
+	private buffering = false;
+	private watchdog: ReturnType<typeof setTimeout> | null = null;
 	private readonly clock: Clock;
 	private readonly off: (() => void)[] = [];
 
@@ -109,6 +119,7 @@ export class PlaybackDriver implements PlayerController {
 	}
 
 	dispose(): void {
+		this.clearWatchdog();
 		this.stopStepping();
 		this.setPlayer(null);
 		for (const o of this.off.splice(0)) o();
@@ -129,6 +140,7 @@ export class PlaybackDriver implements PlayerController {
 	pause(): void {
 		this.stopAt = null;
 		this.returnTo = null;
+		this.clearWatchdog();
 		this.stopStepping();
 		this.mode = 'idle';
 		this.player?.pause();
@@ -167,13 +179,39 @@ export class PlaybackDriver implements PlayerController {
 			const s = this.opts.transport.getState();
 			if (p.getCurrentFrame() !== s.frame) p.seekTo(s.frame);
 			if (!p.isPlaying()) p.play();
+			this.armWatchdog(PLAY_WATCHDOG_RETRIES);
 			return;
 		}
+		this.clearWatchdog();
 		if (p.isPlaying()) p.pause();
 		this.mode = 'stepping';
 		this.stepOrigin = { t: this.clock.now(), frame: this.opts.transport.getState().frame };
 		this.lastSeekAt = Number.NEGATIVE_INFINITY;
 		if (this.stepHandle === null) this.stepHandle = this.clock.requestFrame(this.tick);
+	}
+
+	private clearWatchdog(): void {
+		if (this.watchdog !== null) {
+			clearTimeout(this.watchdog);
+			this.watchdog = null;
+		}
+	}
+
+	/** Re-issues play() when the Player did not start (see PLAY_WATCHDOG_MS). */
+	private armWatchdog(retries: number): void {
+		this.clearWatchdog();
+		if (retries <= 0 || typeof setTimeout === 'undefined') return;
+		const seen = this.frameEvents;
+		this.watchdog = setTimeout(() => {
+			this.watchdog = null;
+			const p = this.player;
+			if (!p || this.mode !== 'native' || !this.opts.transport.getState().playing) return;
+			if (this.frameEvents !== seen || this.buffering) return; // progressing, or legitimately buffering
+			p.pause();
+			p.seekTo(this.opts.transport.getState().frame);
+			p.play();
+			this.armWatchdog(retries - 1);
+		}, PLAY_WATCHDOG_MS);
 	}
 
 	private stopStepping(): void {
@@ -234,6 +272,7 @@ export class PlaybackDriver implements PlayerController {
 	}
 
 	private readonly onFrame: Listener = (e) => {
+		this.frameEvents++;
 		if (this.mode !== 'native') return;
 		const frame = (e.detail as { frame: number }).frame;
 		const t = this.opts.transport;
@@ -276,8 +315,14 @@ export class PlaybackDriver implements PlayerController {
 		}
 	};
 
-	private readonly onWaiting: Listener = () => this.opts.onBuffering?.(true);
-	private readonly onResume: Listener = () => this.opts.onBuffering?.(false);
+	private readonly onWaiting: Listener = () => {
+		this.buffering = true;
+		this.opts.onBuffering?.(true);
+	};
+	private readonly onResume: Listener = () => {
+		this.buffering = false;
+		this.opts.onBuffering?.(false);
+	};
 
 	private readonly events: [PlayerEvent, Listener][] = [
 		['frameupdate', this.onFrame],

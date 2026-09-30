@@ -27,6 +27,7 @@ import {
 import {
 	createContext,
 	type MouseEvent,
+	Suspense,
 	useContext,
 	useEffect,
 	useMemo,
@@ -263,11 +264,23 @@ function PanelContent(props: IDockviewPanelProps<{ kind: PanelKind } & Record<st
 		>
 			{Component ? (
 				<PanelErrorBoundary name={title}>
-					<Component instanceId={props.api.id} visible={visible} params={props.params} />
+					{/* Panel bodies are code-split (panels/lazy.ts): a skeleton until the chunk loads. */}
+					<Suspense fallback={<PanelLoading />}>
+						<Component instanceId={props.api.id} visible={visible} params={props.params} />
+					</Suspense>
 				</PanelErrorBoundary>
 			) : (
 				<EmptyState icon="status.warning" message={`Unknown panel “${kind}”`} />
 			)}
+		</div>
+	);
+}
+
+function PanelLoading() {
+	return (
+		<div className="flex h-full w-full flex-col gap-2 p-3" data-testid="panel-loading" aria-busy="true">
+			<div className="h-3 w-1/3 rounded-pr-control bg-pr-panel-alt" />
+			<div className="h-3 w-2/3 rounded-pr-control bg-pr-panel-alt" />
 		</div>
 	);
 }

@@ -1,3 +1,4 @@
+import { EngineClient } from '@jasper/engine-client';
 import { createCounterIdSource, defaultRegistries, type ProjectDocument } from '@jasper/project';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -127,6 +128,25 @@ describe('leases (S01:PER-040)', () => {
 		expect(engine.leases.has(projectId)).toBe(false);
 		const del = engine.requests.find((r) => r.method === 'DELETE' && r.path.includes('/lease/'))!;
 		expect(del.path).toContain(projectId);
+		await a.close();
+	});
+
+	it('keepalive lease release carries the bearer token in token-only auth mode (WP-3I)', async () => {
+		const { engine, projectId } = setup();
+		const page = new EventTarget();
+		const client = new EngineClient({ fetch: engine.fetch as unknown as typeof fetch, token: 'tok123' });
+		const s = new EngineProjectStore(client, {
+			ids: createCounterIdSource(500),
+			sleep: async () => undefined,
+			unloadTarget: page,
+			keepaliveFetch: engine.fetch as unknown as typeof fetch,
+		});
+		const a = await EditorSession.open({ store: s, projectId, ctx: ctx(), sessionId: 'a' });
+		page.dispatchEvent(new Event('pagehide'));
+		await vi.advanceTimersByTimeAsync(0);
+		const del = engine.requests.find((r) => r.method === 'DELETE' && r.path.includes('/lease/'))!;
+		expect(del.headers.authorization).toBe('Bearer tok123');
+		expect(engine.leases.has(projectId)).toBe(false);
 		await a.close();
 	});
 

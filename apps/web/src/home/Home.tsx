@@ -8,6 +8,7 @@ import { EngineProjectStore } from '@jasper/session';
 import { Button, cx, Icon, IconButton } from '@jasper/ui';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
+import { HOME_NEW_PROJECT_FLAG } from '../commands/integration.ts';
 import { Dialog } from '../import/ImportPromptHost.tsx';
 import { useEngine } from '../state/engine.tsx';
 import { DEMO_PROJECT_ID } from '../state/session-host.tsx';
@@ -69,6 +70,16 @@ export function Home() {
 	useEffect(() => {
 		if (engine.status !== 'connecting') load();
 	}, [engine.status, load]);
+	// File ▸ New ▸ Project… in the editor comes back here with the New Project dialog open.
+	useEffect(() => {
+		try {
+			if (window.sessionStorage.getItem(HOME_NEW_PROJECT_FLAG) !== '1') return;
+			window.sessionStorage.removeItem(HOME_NEW_PROJECT_FLAG);
+			setDialog({ kind: 'new' });
+		} catch {
+			// storage unavailable
+		}
+	}, []);
 
 	const run = async (what: string, fn: () => Promise<void>) => {
 		setBusy(true);

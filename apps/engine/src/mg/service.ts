@@ -394,6 +394,20 @@ export function createMgService(opts: MgServiceOptions) {
 		return { ...rec.job };
 	}
 
+	/** Re-queues a failed/cancelled render with the same spec and quality (`POST /api/jobs/:id/retry`). */
+	function retry(id: string): EngineJob | null {
+		const rec = jobs.get(id);
+		if (!rec) return null;
+		const j = rec.job;
+		const ok = j.state === 'cancelled' || (j.state === 'failed' && j.error?.retryable !== false);
+		if (!ok) return null;
+		return requestRender(rec.spec, rec.quality, {
+			...(j.projectId ? { projectId: j.projectId } : {}),
+			...(j.parentId ? { parentId: j.parentId } : {}),
+			origin: j.origin,
+		}).job;
+	}
+
 	/** Cancels every queued/running render and waits for them to settle (engine shutdown). */
 	async function shutdown(): Promise<void> {
 		const active = [...jobs.values()].filter((r) =>
@@ -465,6 +479,7 @@ export function createMgService(opts: MgServiceOptions) {
 		fileFor,
 		requestRender,
 		cancel,
+		retry,
 		shutdown,
 		getJob: (id: string) => {
 			const rec = jobs.get(id);

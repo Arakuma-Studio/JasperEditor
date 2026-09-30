@@ -1,6 +1,7 @@
 // Agent panel (WP-2H, ARCHITECTURE §11 Stage 1, S05 §17): activity feed, approvals, JSON console, schema.
+
+import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
-import { AgentPanel } from './AgentPanel.tsx';
 
 const agentPanel: PanelDefinition = {
 	kind: 'agent',
@@ -15,7 +16,7 @@ const agentPanel: PanelDefinition = {
 		{ type: 'command', command: 'agent.approval.approveAll', label: 'Approve All Pending' },
 	],
 	agentDescription: 'Agent activity, approvals and the JSON transaction console.',
-	component: AgentPanel,
+	component: lazyPanel(() => import('./AgentPanel.tsx'), 'AgentPanel'),
 };
 
 export default agentPanel;

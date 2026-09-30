@@ -1,6 +1,7 @@
 // Motion Templates panel (S05 §16.14, MGT-001/002). Owner: WP-2G.
+
+import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
-import { MotionTemplatesPanel } from './MotionTemplatesPanel.tsx';
 
 export { insertMotionTemplate, MG_TEMPLATE_MIME, readMgTemplateDrag } from './insert.ts';
 
@@ -15,7 +16,7 @@ const motionTemplatesPanel: PanelDefinition = {
 	agentDescription:
 		'Motion-graphic (fframes) templates to add to the timeline: double-click or drag a card to insert at the playhead.',
 	menu: [{ type: 'command', command: 'mg.rerender', label: 'Re-render Selected Motion Graphics' }],
-	component: MotionTemplatesPanel,
+	component: lazyPanel(() => import('./MotionTemplatesPanel.tsx'), 'MotionTemplatesPanel'),
 };
 
 export default motionTemplatesPanel;

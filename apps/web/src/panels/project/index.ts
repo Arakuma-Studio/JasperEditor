@@ -1,6 +1,7 @@
 // Project panel (S05:PRJ-001…010) — WP-2E.
+
+import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
-import { ProjectPanel } from './ProjectPanel.tsx';
 
 const project: PanelDefinition = {
 	kind: 'project',
@@ -20,7 +21,7 @@ const project: PanelDefinition = {
 		{ type: 'command', command: 'project.hoverScrub' },
 	],
 	agentDescription: 'Bins and imported media of the project; import, organize, open in Source.',
-	component: ProjectPanel,
+	component: lazyPanel(() => import('./ProjectPanel.tsx'), 'ProjectPanel'),
 };
 
 export default project;

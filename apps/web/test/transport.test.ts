@@ -18,12 +18,14 @@ import { transportCommands } from '../src/commands/transport.ts';
 import { handleMonitorKey } from '../src/panels/program/monitor-commands.ts';
 import {
 	type Clock,
+	PLAY_WATCHDOG_MS,
 	PlaybackDriver,
 	type PlayerLike,
 	SEEK_HZ,
 } from '../src/panels/program/playback-driver.ts';
 import { Shuttle, type ShuttleTarget, type TimerApi } from '../src/panels/program/shuttle.ts';
 import { registerDriver, shuttleFor } from '../src/panels/program/transport-registry.ts';
+import { PanelServices } from '../src/state/panel-services.ts';
 
 // ------------------------------------------------------------------ fakes
 
@@ -258,6 +260,40 @@ describe('PlaybackDriver (S03:ARC-010, S02:TL-873)', () => {
 		expect(player.frame).toBe(42);
 	});
 
+	it('re-issues play() when the Player does not start (no frameupdate, not buffering) — WP-3I', () => {
+		vi.useFakeTimers();
+		try {
+			const { transport, player } = setup();
+			transport.seek(61);
+			let plays = 0;
+			const orig = player.play.bind(player);
+			player.play = () => {
+				plays++;
+				orig();
+			};
+			transport.play(1);
+			expect(plays).toBe(1);
+			vi.advanceTimersByTime(PLAY_WATCHDOG_MS + 10); // no frames arrived: kicked again
+			expect(plays).toBe(2);
+			expect(player.seeks.at(-1)).toBe(61);
+			player.advance(5); // now progressing: the watchdog stands down
+			vi.advanceTimersByTime(PLAY_WATCHDOG_MS * 3);
+			expect(plays).toBe(2);
+			expect(transport.getState().frame).toBe(66);
+			// Buffering (waiting) is legitimate: no kick while waiting.
+			transport.pause();
+			transport.play(1);
+			player.emit('waiting');
+			vi.advanceTimersByTime(PLAY_WATCHDOG_MS * 2);
+			expect(plays).toBe(3);
+			transport.pause();
+			vi.advanceTimersByTime(PLAY_WATCHDOG_MS * 2);
+			expect(plays).toBe(3);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it('mutes below 1× (TL-874) and steps above 1× (measured Player limit)', () => {
 		const { transport, player, driver, rates } = setup();
 		transport.play(0.25);
@@ -377,6 +413,21 @@ describe('transport commands', () => {
 		await runCommand('transport.goToStart', ctx);
 		await runCommand('transport.stepBack', ctx);
 		expect(t.getState().frame).toBe(0);
+	});
+
+	it('edit-point and step seeks reveal the playhead in the timeline (TL-120, WP-3I)', async () => {
+		const session = makeSession();
+		const services = new PanelServices();
+		const revealed: number[] = [];
+		services.register('timelineViewport', 'tl1', {
+			scrollToFrame: (f) => revealed.push(f),
+			frameAtClientX: () => 0,
+			getScrollContainer: () => null,
+		});
+		const ctx = createCommandContext({ engine: new EngineClient({ baseUrl: '' }), session, services });
+		await runCommand('transport.nextEdit', ctx);
+		await runCommand('transport.goToEnd', ctx);
+		expect(revealed).toEqual([60, 120]);
 	});
 
 	it('Space and JKL go through the shuttle; K keyup releases', async () => {

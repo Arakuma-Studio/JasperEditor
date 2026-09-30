@@ -1,6 +1,7 @@
 // Source monitor panel (S03 §7, S05:PGM-010) — WP-2C.
+
+import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
-import { SourceMonitor } from './SourceMonitor.tsx';
 
 const source: PanelDefinition = {
 	kind: 'source',
@@ -15,7 +16,7 @@ const source: PanelDefinition = {
 	],
 	touch: 'sheet',
 	agentDescription: 'Source monitor: previews a project item and sets its In/Out marks.',
-	component: SourceMonitor,
+	component: lazyPanel(() => import('./SourceMonitor.tsx'), 'SourceMonitor'),
 };
 
 export default source;

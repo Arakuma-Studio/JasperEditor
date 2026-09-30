@@ -260,6 +260,39 @@ describe.skipIf(!canRender)('real jasper-mg renders', () => {
 		expect(master).toBe(join(dir, 'master.mov'));
 	}, 120_000);
 
+	it('mg-render jobs are listed, cancelled and retried through /api/jobs (WP-3I)', async () => {
+		const spec = { ...lt150, durationFrames: 2990 };
+		const started = await app.inject({
+			method: 'POST',
+			url: '/api/motion-graphics/render',
+			headers: { ...H, 'content-type': 'application/json' },
+			payload: { spec, quality: 'master' },
+		});
+		expect(started.statusCode).toBe(202);
+		const id = started.json().id as string;
+		const listed = (await app.inject({ method: 'GET', url: '/api/jobs?active=1', headers: H })).json().jobs;
+		expect(listed.some((j: { id: string; kind: string }) => j.id === id && j.kind === 'mg-render')).toBe(
+			true,
+		);
+		const one = await app.inject({ method: 'GET', url: `/api/jobs/${id}`, headers: H });
+		expect(one.statusCode).toBe(200);
+		expect(one.json()).toMatchObject({ id, kind: 'mg-render' });
+		await new Promise((r) => setTimeout(r, 300));
+		const cancelled = await app.inject({ method: 'POST', url: `/api/jobs/${id}/cancel`, headers: H });
+		expect(cancelled.statusCode).toBe(200);
+		const service = app.jasper.services.mg as MgService;
+		await vi.waitFor(() => expect(service.getJob(id)?.state).toBe('cancelled'), { timeout: 10_000 });
+		const retried = await app.inject({ method: 'POST', url: `/api/jobs/${id}/retry`, headers: H });
+		expect(retried.statusCode).toBe(200);
+		const retryId = retried.json().id as string;
+		expect(retryId).not.toBe(id);
+		expect(retried.json()).toMatchObject({ kind: 'mg-render' });
+		await app.inject({ method: 'POST', url: `/api/jobs/${retryId}/cancel`, headers: H });
+		await vi.waitFor(() => expect(service.getJob(retryId)?.state).toBe('cancelled'), { timeout: 10_000 });
+		const unknown = await app.inject({ method: 'GET', url: '/api/jobs/job_mg_doesnotexist', headers: H });
+		expect(unknown.statusCode).toBe(404);
+	}, 60_000);
+
 	it('rejects invalid params with 400 and cancels running renders without leftovers', async () => {
 		const bad = await app.inject({
 			method: 'POST',

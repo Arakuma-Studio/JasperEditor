@@ -10,6 +10,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import { createCoreAgentStore } from './agent/core-store.ts';
 import type { EngineConfig, EngineContext } from './context.ts';
 import { registerRoutes } from './routes/index.ts';
+import { systemErrorReply } from './tools/reply.ts';
 import { createCoreServices } from './tools/services.ts';
 
 export const JSON_BODY_LIMIT = 20 * 1024 * 1024;
@@ -141,6 +142,11 @@ export async function createServer(
 
 	app.setErrorHandler(
 		(error: Error & { statusCode?: number; code?: string; validation?: unknown }, _req, reply) => {
+			const sys = systemErrorReply(error);
+			if (sys) {
+				if (sys.status >= 500) app.log.error(error);
+				return sendError(reply, sys.status, sys.code, sys.message, sys.detail);
+			}
 			const status = error.statusCode && error.statusCode >= 400 ? error.statusCode : 500;
 			const code =
 				status === 413
@@ -174,7 +180,10 @@ export async function createServer(
 		await app.register(fastifyStatic, {
 			root: config.webDir,
 			prefix: '/',
-			wildcard: false,
+			// One wildcard route instead of a route per file found at startup: files of a web build made
+			// while the engine runs (new hashed bundles) are served too. Misses fall through to the
+			// not-found handler below (SPA fallback for HTML navigations, ENG-022 404 otherwise).
+			wildcard: true,
 			index: ['index.html'],
 		});
 	}

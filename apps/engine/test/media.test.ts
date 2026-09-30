@@ -24,7 +24,7 @@ let app: TestApp;
 beforeAll(async () => {
 	ensureFixtures();
 	app = await makeApp();
-});
+}, 180_000); // a clean checkout generates the fixture media first (ffmpeg, ~10–30 s)
 afterAll(closeApps);
 
 describe('probe (S04:PB-001…004, S01:AST-001)', () => {
@@ -143,6 +143,9 @@ describe('derivatives (ARCHITECTURE §9.4, S04:TH-002, WF-001)', () => {
 		expect(header).toMatchObject({ peaksPerSecond: 100, channels: 2 });
 		expect(Math.abs(header.sampleCount - 1000)).toBeLessThanOrEqual(2);
 		expect(header.durationSec).toBeCloseTo(10, 1);
+		// Keyed by the container stream index (video is stream 0, audio stream 1), like `channels.streamIndex`.
+		expect(header.streams![0]!.index).toBe(1);
+		expect(header.streams![0]!.url).toContain('/peaks/1.bin');
 		const bin = await app.inject({ method: 'GET', url: header.streams![0]!.url, headers: H });
 		expect(bin.statusCode).toBe(200);
 		expect(bin.rawPayload.length).toBe(header.sampleCount * header.channels * 4);

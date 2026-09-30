@@ -68,17 +68,20 @@ describe('UI command registry (ARCHITECTURE §7.3)', () => {
 	});
 
 	it('has one (empty) module per domain owner', () => {
-		expect(Object.keys(COMMAND_MODULES).sort()).toEqual([
-			'agent',
-			'app',
-			'edit',
-			'export',
-			'inspector',
-			'mg',
-			'project',
-			'timeline',
-			'transport',
-		]);
+		expect(Object.keys(COMMAND_MODULES).sort()).toEqual(
+			[
+				'agent',
+				'app',
+				'edit',
+				'export',
+				'inspector',
+				'mg',
+				'project',
+				'timeline',
+				'transport',
+				'integration',
+			].sort(),
+		);
 	});
 });
 
@@ -87,7 +90,9 @@ describe('panel registry (ARCHITECTURE §7.2)', () => {
 		expect(PANEL_DEFINITIONS.map((d) => d.kind).sort()).toEqual([...PANEL_KINDS].sort());
 		for (const kind of PANEL_KINDS) {
 			const d = getPanelDefinition(kind);
-			expect(typeof d.component).toBe('function');
+			// Plain components or code-split React.lazy components (panels/lazy.ts, WP-3I).
+			expect(['function', 'object']).toContain(typeof d.component);
+			expect(d.component).toBeTruthy();
 			expect(d.agentDescription.length).toBeGreaterThan(10);
 			expect(d.title({})).toBeTruthy();
 		}

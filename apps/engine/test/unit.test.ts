@@ -218,3 +218,110 @@ describe('probe mapping (S04:PB-001…004)', () => {
 		expect(() => mapProbe({ format: {}, streams: [] })).toThrow(/No video or audio/);
 	});
 });
+
+describe('system errors → ENG-022 codes (WP-3I)', () => {
+	it('maps ENOSPC to DISK_FULL, ENOENT to NOT_FOUND and other fs errors to INTERNAL without paths', async () => {
+		const { default: Fastify } = await import('fastify');
+		const { readFile } = await import('node:fs/promises');
+		const { guarded } = await import('../src/tools/reply.ts');
+		const app = Fastify();
+		const enospc = Object.assign(new Error("ENOSPC: no space left on device, write '/secret/x'"), {
+			code: 'ENOSPC',
+			errno: -28,
+			syscall: 'write',
+		});
+		const eacces = Object.assign(new Error("EACCES: permission denied, open '/secret/y'"), {
+			code: 'EACCES',
+			errno: -13,
+			syscall: 'open',
+		});
+		app.get(
+			'/full',
+			guarded(async () => {
+				throw enospc;
+			}),
+		);
+		app.get(
+			'/missing',
+			guarded(async () => readFile('/definitely/not/here/jasper.json', 'utf8')),
+		);
+		app.get(
+			'/denied',
+			guarded(async () => {
+				throw eacces;
+			}),
+		);
+		const full = await app.inject({ method: 'GET', url: '/full' });
+		expect(full.statusCode).toBe(507);
+		expect(full.json()).toMatchObject({ code: 'DISK_FULL', retryable: true, detail: { errno: 'ENOSPC' } });
+		const missing = await app.inject({ method: 'GET', url: '/missing' });
+		expect(missing.statusCode).toBe(404);
+		expect(missing.json().code).toBe('NOT_FOUND');
+		expect(missing.body).not.toContain('/definitely');
+		const denied = await app.inject({ method: 'GET', url: '/denied' });
+		expect(denied.statusCode).toBe(500);
+		expect(denied.json()).toMatchObject({ code: 'INTERNAL', detail: { errno: 'EACCES', syscall: 'open' } });
+		expect(denied.body).not.toContain('/secret');
+		await app.close();
+	});
+});
+
+describe('dev web port (WP-3I)', () => {
+	it('the dev engine accepts the Vite host given by JASPER_DEV_WEB_PORT (default 5173)', async () => {
+		const { engineConfig } = await import('../src/index.ts');
+		const base = { appdir: '/tmp/jasper-x', port: 48121, dev: true } as const;
+		expect(engineConfig({ ...base, env: {} }).extraHosts).toContain('127.0.0.1:5173');
+		const custom = engineConfig({ ...base, env: { JASPER_DEV_WEB_PORT: '48130' } }).extraHosts;
+		expect(custom).toEqual(['127.0.0.1:48130', 'localhost:48130']);
+		expect(engineConfig({ ...base, dev: false, env: { JASPER_DEV_WEB_PORT: '48130' } }).extraHosts).toEqual(
+			[],
+		);
+	});
+});
+
+describe('H.264 encoder choice (ARCHITECTURE D-13, WP-3I)', () => {
+	// Encoder selection and per-encoder arguments are covered in encoders.test.ts (WP-3L).
+	it('the native export graph uses the chosen encoder', async () => {
+		const { buildNativeGraph } = await import('../src/export/native.ts');
+		const snapshot = {
+			settings: { width: 320, height: 180, fps: { num: 30, den: 1 }, backgroundColor: [0, 0, 0, 1] },
+			range: { start: 0, end: 30 },
+			videoTracks: [],
+			audioClips: [],
+			master: { gainDb: 0 },
+		};
+		const output = {
+			width: 320,
+			height: 180,
+			fps: { num: 30, den: 1 },
+			frames: 30,
+			durationSec: 1,
+			scaling: 'fit',
+			crf: 18,
+			x264Preset: 'veryfast',
+			audioChannels: 2,
+			audioBitrateKbps: 192,
+		};
+		const base = {
+			snapshot,
+			output,
+			outputFile: '/tmp/x.mp4',
+			sources: { media: () => null, mgMaster: () => null },
+			threads: 2,
+		};
+		const openh264 = {
+			codec: 'h264',
+			encoder: 'libopenh264',
+			label: 'H.264 · OpenH264',
+			hardware: false,
+			container: 'mp4',
+			audioEncoder: 'aac',
+			rateControl: 'bitrate',
+			gpl: false,
+		};
+		const g = buildNativeGraph({ ...base, output: { ...output, encoder: openh264 } } as never);
+		expect(g.args).toContain('libopenh264');
+		expect(g.args).not.toContain('libx264');
+		expect(buildNativeGraph(base as never).args).toContain('libx264');
+	});
+});

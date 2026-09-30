@@ -82,6 +82,14 @@ export class EngineClient {
 		return this.token ? { authorization: `Bearer ${this.token}` } : {};
 	}
 
+	/**
+	 * Headers that authenticate a request made outside `call()` (e.g. keepalive requests during `pagehide`):
+	 * `Authorization: Bearer <token>` in token mode, nothing when the session cookie is used.
+	 */
+	authorizationHeaders(): Record<string, string> {
+		return this.authHeaders();
+	}
+
 	/** Low-level typed call by route name. */
 	async call<N extends RouteName>(name: N, opts: CallOptions = {}): Promise<RouteResponse<N>> {
 		const route = ROUTES[name];

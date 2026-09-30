@@ -1,6 +1,7 @@
 // History panel (WP-2D): labelled undo steps, agent sparkle, click to jump, Clear History (S05:HIS).
+
+import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
-import { HistoryPanel } from './HistoryPanel.tsx';
 
 const definition: PanelDefinition = {
 	kind: 'history',
@@ -17,7 +18,7 @@ const definition: PanelDefinition = {
 	],
 	touch: 'sheet',
 	agentDescription: 'Undo history with labels and origins; click an entry to go back to it.',
-	component: HistoryPanel,
+	component: lazyPanel(() => import('./HistoryPanel.tsx'), 'HistoryPanel'),
 };
 
 export default definition;

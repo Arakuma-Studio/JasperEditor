@@ -100,12 +100,13 @@ function NoticeView({ n, store }: { n: Notice; store: NoticeStore }) {
 	);
 }
 
+/** Sits above the bottom action bars (Export mode footer: Cancel / Export) so sticky notices never hide them. */
 export function NoticeHost({ store = notices }: { store?: NoticeStore }) {
 	const list = useSyncExternalStore(store.subscribe, store.getAll, store.getAll);
 	if (!list.length) return null;
 	return (
 		<div
-			className="pointer-events-auto fixed right-3 bottom-3 flex flex-col gap-2"
+			className="pointer-events-auto fixed right-3 bottom-12 flex flex-col gap-2"
 			style={{ zIndex: Z.toast }}
 		>
 			{list.map((n) => (

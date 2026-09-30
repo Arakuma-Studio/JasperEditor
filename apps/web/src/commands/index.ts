@@ -4,6 +4,7 @@ import { appCommands } from './app.ts';
 import { editCommands } from './edit.ts';
 import { exportCommands } from './export.ts';
 import { inspectorCommands } from './inspector.ts';
+import { integrationCommands } from './integration.ts';
 import { mgCommands } from './mg.ts';
 import { projectCommands } from './project.ts';
 import { registerCommands } from './registry.ts';
@@ -26,6 +27,7 @@ export const COMMAND_MODULES: Record<string, UiCommand[]> = {
 	export: exportCommands,
 	mg: mgCommands,
 	agent: agentCommands,
+	integration: integrationCommands,
 };
 
 let registered = false;
