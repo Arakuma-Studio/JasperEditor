@@ -120,6 +120,10 @@ separate audio intermediate), nested JasperEditor sequences inside compositions.
   ready frame (frames may drop; preview only). Props edits are applied within 300 ms (debounced 100 ms).
 - **MGC-023 (P0)** After props stop changing for 2 s, the client requests a preview pre-render (MGC-030,
   `quality: 'preview'`); when it lands the layer switches to it without a visual jump (same frame shown).
+- **MGC-025 (P0)** Effects on composition clips: CSS/SVG effects and Motion apply to the live host element; colour
+  effects (S06) and other pixel-reading stages cannot read a cross-document iframe, so they apply only once the
+  preview WebM is available (the layer shows a "Grade pending" chip meanwhile). A clip with colour effects gets its
+  preview pre-render requested immediately (no 2 s debounce).
 - **MGC-024 (P1)** At most 4 live hosts are mounted at once (clips nearest the playhead); others show their
   preview or poster.
 

@@ -140,6 +140,9 @@ exports the Lumetri spec; `defaultEffectRegistry` includes them.
   (from `@remotion/media` `<Video>` / `OffthreadVideo` in renders, whatever 4.0.499 exposes — the package records
   the mechanism in `docs/research/remotion-4.0.499-notes.md`), a still's `<img>`, a composition/motion-graphic
   layer's rendered frame. The source element stays mounted (hidden) so Remotion's media scheduling is unchanged.
+  Exception: a composition clip's *live* frame host is a cross-document iframe whose pixels cannot be read, so a
+  graded composition clip previews graded only from its pre-rendered preview WebM (S08:MGC-023); while only the
+  live host is available it draws ungraded with the "Grade pending" chip. Renders always use the master (graded).
 - **CG-042 (P0)** The Remotion render path renders the same stage in headless Chrome. The engine selects a
   `chromiumOptions.gl` that provides WebGL2 on the host (`angle` / `swangle` / `egl`, checked at start-up) and
   reports `features.color.remotionWebgl`. A render whose document contains colour effects on an engine without
