@@ -270,7 +270,7 @@ test('B (ripple edit tool) trims the tail and ripples later clips; Ctrl-move ins
 	await expect(snap).toHaveAttribute('aria-pressed', state0 ?? '');
 });
 
-test('Graphics ▸ Text adds a text clip; Properties scrub is one undo step; Program overlay move/scale', async () => {
+test('Graphics ▸ Text adds a text clip; Properties scrub is one undo step; Program overlay move/scale/rotate', async () => {
 	await page.getByTestId('title-bar').getByRole('menuitem', { name: 'Graphics', exact: true }).click();
 	await page.getByRole('menuitem', { name: /New Layer/ }).click();
 	await page.getByRole('menuitem', { name: /^Text/ }).click();
@@ -296,29 +296,41 @@ test('Graphics ▸ Text adds a text clip; Properties scrub is one undo step; Pro
 	);
 	await expect.poll(async () => (await appliedLabels(page)).length).toBe(before + 1);
 
-	// Move the text on the Program overlay: drag inside its selection quad (one entry).
-	const quad = page.locator(
-		`[data-testid="overlay-selection"][data-clip-id="${text.id}"] [data-testid="overlay-quad"]`,
-	);
+	// Move the text on the Program overlay: drag inside its selection quad, away from the anchor point at
+	// its centre (dragging that moves the anchor instead). Twice: the second drag must work too.
+	const sel = `[data-testid="overlay-selection"][data-clip-id="${text.id}"]`;
+	const quad = page.locator(`${sel} [data-testid="overlay-quad"]`);
 	await expect(quad).toBeVisible();
-	const qb = (await quad.boundingBox())!;
 	const n1 = (await appliedLabels(page)).length;
-	await pointerDrag(
-		page,
-		{ x: qb.x + qb.width / 2, y: qb.y + qb.height / 2 },
-		{ x: qb.x + qb.width / 2 + 40, y: qb.y + qb.height / 2 + 20 },
-	);
-	await expect.poll(async () => (await appliedLabels(page)).length).toBe(n1 + 1);
-	// Scale from a corner handle (one entry).
-	const handle = page.locator(
-		`[data-testid="overlay-selection"][data-clip-id="${text.id}"] [data-handle="se"]`,
-	);
-	const hb = (await handle.boundingBox())!;
+	for (let k = 0; k < 2; k++) {
+		const q = (await quad.boundingBox())!;
+		await pointerDrag(
+			page,
+			{ x: q.x + q.width * 0.15, y: q.y + q.height / 2 },
+			{ x: q.x + q.width * 0.15 + 50, y: q.y + q.height / 2 + 25 },
+		);
+		await expect.poll(async () => (await appliedLabels(page)).length).toBe(n1 + k + 1);
+	}
+	// Scale from the SE corner handle (one entry).
+	const hb = (await page.locator(`${sel} [data-handle="se"]`).boundingBox())!;
 	await pointerDrag(
 		page,
 		{ x: hb.x + hb.width / 2, y: hb.y + hb.height / 2 },
-		{ x: hb.x + 40, y: hb.y + 30 },
+		{ x: hb.x + hb.width / 2 + 40, y: hb.y + hb.height / 2 + 30 },
 	);
-	await expect.poll(async () => (await appliedLabels(page)).length).toBe(n1 + 2);
+	await expect.poll(async () => (await appliedLabels(page)).length).toBe(n1 + 3);
+	// Rotate: drag in the rotation zone just outside the NE corner, around the layer centre (one entry).
+	const q2 = (await quad.boundingBox())!;
+	const ne = (await page.locator(`${sel} [data-handle="ne"]`).boundingBox())!;
+	const start = { x: ne.x + ne.width / 2 + 12, y: ne.y + ne.height / 2 - 12 };
+	const centre = { x: q2.x + q2.width / 2, y: q2.y + q2.height / 2 };
+	await pointerDrag(
+		page,
+		start,
+		{ x: centre.x + (start.x - centre.x) * 0.3, y: start.y + 120 },
+		{ steps: 16 },
+	);
+	await expect.poll(async () => (await appliedLabels(page)).length).toBe(n1 + 4);
+	expect((await appliedLabels(page)).slice(-4)).toEqual(['Move', 'Move', 'Scale', 'Rotate']);
 	expect(watcher.errors.filter((e) => e.startsWith('pageerror'))).toEqual([]);
 });
