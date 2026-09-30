@@ -165,9 +165,13 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 	const viewportRef = useRef<Viewport>(viewport);
 	viewportRef.current = viewport;
 
+	// The controller must outlive env identity changes (a shell re-render mid-drag would otherwise
+	// replace it and orphan the active session gesture), so toasts go through a ref.
+	const envRef = useRef(env);
+	envRef.current = env;
 	const toast = useCallback(
-		(kind: 'info' | 'warning' | 'error', message: string) => env.toast({ kind, message }),
-		[env],
+		(kind: 'info' | 'warning' | 'error', message: string) => envRef.current.toast({ kind, message }),
+		[],
 	);
 	const controller = useMemo(
 		() =>
@@ -180,6 +184,15 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 				platform: { mac, wheelHorizontal: timelinePrefs().getState().wheelHorizontal },
 			}),
 		[session, seqId, ui, toast, mac],
+	);
+
+	// A replaced or unmounted controller must not leave its session gesture open (every later
+	// beginGesture would throw and agent submits would queue forever).
+	useEffect(
+		() => () => {
+			controller.cancel();
+		},
+		[controller],
 	);
 
 	// ------------------------------------------------------------ registration (services, commands)

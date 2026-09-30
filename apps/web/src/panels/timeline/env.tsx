@@ -2,7 +2,7 @@
 // service and dialogs. The shell (WP-2A) can provide them with <TimelineEnvProvider>; without a provider
 // the panel falls back to a shared PanelServices instance and console toasts, so it works standalone.
 import type { EngineClient } from '@jasper/engine-client';
-import { createContext, type ReactNode, useContext } from 'react';
+import { createContext, type ReactNode, useContext, useMemo } from 'react';
 import type { ToastRequest } from '../../commands/types.ts';
 import { useEngine } from '../../state/engine.tsx';
 import { PanelServices } from '../../state/panel-services.ts';
@@ -58,9 +58,17 @@ const defaultEnv: TimelineEnv = {
 const EnvContext = createContext<TimelineEnv | null>(null);
 
 export function TimelineEnvProvider(props: { value: Partial<TimelineEnv>; children?: ReactNode }) {
-	return (
-		<EnvContext.Provider value={{ ...defaultEnv, ...props.value }}>{props.children}</EnvContext.Provider>
+	const { services, toast, openDialog } = props.value;
+	// Stable identity across shell re-renders (callers usually pass an inline object).
+	const value = useMemo<TimelineEnv>(
+		() => ({
+			services: services ?? defaultEnv.services,
+			toast: toast ?? defaultEnv.toast,
+			...(openDialog ? { openDialog } : {}),
+		}),
+		[services, toast, openDialog],
 	);
+	return <EnvContext.Provider value={value}>{props.children}</EnvContext.Provider>;
 }
 
 export function useTimelineEnv(): TimelineEnv {

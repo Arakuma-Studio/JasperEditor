@@ -25,6 +25,9 @@ Branch `wp/wp-2b`. `pnpm lint`, `pnpm typecheck`, `pnpm test` (27 files, 292 tes
   `<TimelineEnvProvider value={{ services, toast, openDialog }}>` so commands, toasts and the marker dialog
   reach the real shell. Commands also find the panel through a module registry (`activeTimeline()`), so
   keyboard commands work either way.
+  `TimelineEnvProvider` memoizes its value on `services`/`toast`/`openDialog`, and the panel keeps one
+  controller across env changes; pass stable `toast`/`openDialog` callbacks. Unmounting the panel mid-drag
+  cancels its session gesture.
 - **Program monitor (WP-2C).** Trim two-up / slip-slide four-up payloads (TL-538/626/631) are published in
   `timelineGesturePreview` (zustand store in `state/gesture-preview.ts`, also exposed as the service above).
 - **Import (WP-2E).** OS file drops call `services.get('importService').importFiles(...)`; register the

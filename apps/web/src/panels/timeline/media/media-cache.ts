@@ -128,7 +128,7 @@ export function peaksFor(
 
 // ---------------------------------------------------------------- worker reduction
 
-type Pending = { resolve(v: Float32Array): void };
+type Pending = { resolve(v: Float32Array): void; peaks: Float32Array; req: ColumnRequest };
 let worker: Worker | null | undefined;
 const loaded = new Set<string>();
 const pending = new Map<number, Pending>();
@@ -148,7 +148,11 @@ function getWorker(): Worker | null {
 			p?.resolve(e.data.columns);
 		};
 		worker.onerror = () => {
+			// Fall back to synchronous reduction for good; settle whatever was in flight.
 			worker = null;
+			loaded.clear();
+			for (const p of pending.values()) p.resolve(reduceColumns(p.peaks, p.req));
+			pending.clear();
 		};
 	} catch {
 		worker = null;
@@ -169,7 +173,7 @@ export function reducePeaks(data: PeaksData, channel: number, req: ColumnRequest
 	}
 	const id = nextId++;
 	return new Promise((resolve) => {
-		pending.set(id, { resolve });
+		pending.set(id, { resolve, peaks: ch, req });
 		w.postMessage({ type: 'reduce', id, key, req });
 	});
 }
