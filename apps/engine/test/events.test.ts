@@ -1,6 +1,6 @@
 // GET /events over a real socket (S04:ENG-023), capabilities, fonts.
 import { EngineCapabilitiesSchema, FontCatalogSchema, parseEvent } from '@jasper/api';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { type RunningEngine, startEngine } from '../src/index.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, H, makeApp, tempAppdir } from './helpers.ts';
@@ -89,7 +89,10 @@ describe('GET /events (NDJSON)', () => {
 
 describe('capabilities and fonts', () => {
 	it('reports ffmpeg, native render, Remotion state and provider patches (WP-2G hook)', async () => {
-		const app = await makeApp();
+		// The WP-2G route plugin registers its own fframes provider; pin it to "unavailable" so the
+		// baseline does not depend on whether `pnpm mg:build` was run on this machine.
+		vi.stubEnv('JASPER_MG', '/nonexistent/jasper-mg');
+		const app = await makeApp().finally(() => vi.unstubAllEnvs());
 		const caps = EngineCapabilitiesSchema.parse(
 			(await app.inject({ method: 'GET', url: '/api/capabilities', headers: H })).json(),
 		);
