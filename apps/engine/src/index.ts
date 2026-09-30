@@ -1,5 +1,6 @@
 // startEngine (ARCHITECTURE §9.1): builds the config, prepares the appdir, listens on 127.0.0.1.
-import { mkdirSync, rmSync } from 'node:fs';
+import { mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 import { appdirPaths, DEFAULT_ENGINE_HOST, DEV_WEB_PORT, ENV, isTruthyEnv } from '@jasper/config';
 import type { FastifyInstance } from 'fastify';
 import type { EngineConfig } from './context.ts';
@@ -38,9 +39,10 @@ export function prepareAppdir(appdir: string): void {
 		p.tmpDir,
 	])
 		mkdirSync(dir, { recursive: true });
-	// tmp/ is wiped on start (ARCHITECTURE §4.3).
-	rmSync(p.tmpDir, { recursive: true, force: true });
-	mkdirSync(p.tmpDir, { recursive: true });
+	// tmp/ is wiped on start (ARCHITECTURE §4.3); a committed .gitkeep (dev .stage) survives.
+	for (const name of readdirSync(p.tmpDir)) {
+		if (name !== '.gitkeep') rmSync(join(p.tmpDir, name), { recursive: true, force: true });
+	}
 }
 
 export function engineConfig(opts: StartEngineOptions): EngineConfig {

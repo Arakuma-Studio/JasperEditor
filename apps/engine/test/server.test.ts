@@ -175,3 +175,25 @@ describe('engine server (ARCHITECTURE §9.1, §4.2)', () => {
 		expect((await res.json()).ok).toBe(true);
 	});
 });
+
+describe('appdir preparation', () => {
+	it('wipes tmp/ but keeps .gitkeep', async () => {
+		const { prepareAppdir } = await import('../src/index.ts');
+		const appdir = mkdtempSync(join(tmpdir(), 'jasper-appdir-'));
+		mkdirSync(join(appdir, 'tmp', 'job'), { recursive: true });
+		writeFileSync(join(appdir, 'tmp', '.gitkeep'), '');
+		writeFileSync(join(appdir, 'tmp', 'job', 'x'), 'x');
+		prepareAppdir(appdir);
+		const { readdirSync } = await import('node:fs');
+		expect(readdirSync(join(appdir, 'tmp'))).toEqual(['.gitkeep']);
+		expect(readdirSync(appdir).sort()).toEqual([
+			'cache',
+			'engine',
+			'media',
+			'mg',
+			'projects',
+			'renders',
+			'tmp',
+		]);
+	});
+});
