@@ -95,6 +95,16 @@ export const TransitionRemoveCmd = cmd('transition.remove', { transitionIds: z.a
 export const TransitionApplyDefaultCmd = cmd('transition.applyDefault', {
 	clipIds: z.union([z.array(IdRefSchema).min(1), z.literal('$selection')]),
 	edges: z.enum(['both', 'in', 'out']),
+	/** M2 (S10:TUI-030): which tracks' clips get one (default ['video']). */
+	media: z
+		.array(z.enum(['video', 'audio']))
+		.min(1)
+		.optional(),
+	/** M2: the user's default transitions (defaults: cross dissolve / constant power). */
+	videoEffectId: z.string().min(1).optional(),
+	audioEffectId: z.string().min(1).optional(),
+	/** M2: duration override (default: project `defaultTransitionFrames`). */
+	duration: z.number().int().min(1).optional(),
 });
 
 export const PARAM_COMMANDS = [
