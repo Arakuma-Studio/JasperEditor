@@ -17,7 +17,7 @@ import type { JobQueue } from '../jobs/queue.ts';
 import { type JobContext, JobError, type JobPriority } from '../jobs/types.ts';
 import { fingerprintHex } from '../media/fingerprint.ts';
 import type { MediaRecord, MediaRegistry } from '../media/registry.ts';
-import { type Ffmpeg, sec } from '../tools/ffmpeg.ts';
+import { type Ffmpeg, h264VideoArgs, sec } from '../tools/ffmpeg.ts';
 import { atomicWriteJson, exists } from '../tools/fs.ts';
 import { PEAKS_PER_SECOND, PEAKS_SAMPLE_RATE, planarBytes, reducePeaksFromChild } from './peaks.ts';
 
@@ -512,14 +512,14 @@ export class DerivativeService {
 				'0:a:0?',
 				'-vf',
 				vf,
-				'-c:v',
-				'libx264',
-				'-preset',
-				height === 720 ? 'veryfast' : 'ultrafast',
-				'-crf',
-				height === 720 ? '23' : '26',
-				'-x264-params',
-				'keyint=15:min-keyint=15:scenecut=0',
+				...h264VideoArgs(await this.deps.ff.h264Encoder(), {
+					crf: height === 720 ? 23 : 26,
+					preset: height === 720 ? 'veryfast' : 'ultrafast',
+					width: Math.round((height * 16) / 9),
+					height,
+					fps: 30,
+					gop: 15,
+				}),
 				'-threads',
 				String(ctx.slots),
 				'-c:a',

@@ -266,6 +266,7 @@ export class ExportService {
 			},
 			threads: ctx.slots,
 			still,
+			...(still ? {} : { videoEncoder: await this.deps.ff.h264Encoder() }),
 		});
 		let args = graph.args;
 		if (graph.filter.length > 60_000) {

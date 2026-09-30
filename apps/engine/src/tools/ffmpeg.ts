@@ -173,6 +173,13 @@ export class Ffmpeg {
 	}
 
 	/** Number of decoded-packet video frames (fast packet count, no decode) of the first video stream. */
+	/** The H.264 encoder of the resolved ffmpeg (D-13); throws BINARY_MISSING when there is none. */
+	async h264Encoder(): Promise<H264Encoder> {
+		const enc = pickH264Encoder((await selfCheck(this.bins)).encoders);
+		if (!enc) throw new ToolError('BINARY_MISSING', 'ffmpeg has no H.264 encoder (libx264 or libopenh264)');
+		return enc;
+	}
+
 	async countVideoFrames(file: string, opts: SpawnOptions = {}): Promise<number> {
 		const j = await this.probeJson(
 			['-count_packets', '-select_streams', 'v:0', '-show_entries', 'stream=nb_read_packets', file],
@@ -181,6 +188,58 @@ export class Ffmpeg {
 		const s = (j.streams as { nb_read_packets?: string }[] | undefined)?.[0];
 		return Number(s?.nb_read_packets ?? Number.NaN);
 	}
+}
+
+// ---------------------------------------------------------------- H.264 encoder choice (D-13)
+
+/** Software H.264 encoders the engine drives. */
+export type H264Encoder = 'libx264' | 'libopenh264';
+
+/**
+ * ARCHITECTURE D-13: the shipped FFmpeg is an LGPL build, so x264 is used when present (GPL dev builds) but
+ * never required; Cisco's OpenH264 is the software fallback. Null when neither encoder exists.
+ */
+export function pickH264Encoder(encoders: readonly string[]): H264Encoder | null {
+	if (encoders.includes('libx264')) return 'libx264';
+	if (encoders.includes('libopenh264')) return 'libopenh264';
+	return null;
+}
+
+/** Bits per pixel for a CRF-like quality (same curve as the planner's size estimate). */
+export function bitsPerPixel(crf: number): number {
+	return 0.1 * 2 ** ((18 - crf) / 6);
+}
+
+/**
+ * `-c:v …` arguments for an H.264 encode. x264 uses CRF + preset; OpenH264 has no CRF, so it gets a
+ * bitrate derived from the same quality curve, and frame skipping is disabled so the frame count stays exact
+ * (S04:RN-022).
+ */
+export function h264VideoArgs(
+	encoder: H264Encoder,
+	o: { crf: number; preset: string; width: number; height: number; fps: number; gop?: number },
+): string[] {
+	if (encoder === 'libx264') {
+		return [
+			'-c:v',
+			'libx264',
+			'-preset',
+			o.preset,
+			'-crf',
+			String(o.crf),
+			...(o.gop ? ['-x264-params', `keyint=${o.gop}:min-keyint=${o.gop}:scenecut=0`] : []),
+		];
+	}
+	const kbps = Math.max(300, Math.round((o.width * o.height * o.fps * bitsPerPixel(o.crf)) / 1000));
+	return [
+		'-c:v',
+		'libopenh264',
+		'-b:v',
+		`${kbps}k`,
+		'-allow_skip_frames',
+		'0',
+		...(o.gop ? ['-g', String(o.gop)] : []),
+	];
 }
 
 // ---------------------------------------------------------------- self-check (S04:ENG-011)

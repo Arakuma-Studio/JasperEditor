@@ -13,7 +13,7 @@ import {
 	type RenderVisualClip,
 	resolveLayerProps,
 } from '@jasper/project';
-import { sec } from '../tools/ffmpeg.ts';
+import { type H264Encoder, h264VideoArgs, sec } from '../tools/ffmpeg.ts';
 import type { LocalMedia, OutputSpec } from './planner.ts';
 
 export const SAMPLE_RATE = 48000;
@@ -34,6 +34,8 @@ export type NativeBuildOptions = {
 	threads: number;
 	/** Single-frame PNG (stills): no audio, RGB output. */
 	still?: boolean;
+	/** H.264 encoder (D-13: libx264 when the ffmpeg has it, else libopenh264). Default libx264. */
+	videoEncoder?: H264Encoder;
 };
 
 export type NativeGraph = {
@@ -345,12 +347,13 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		args.push(
 			'-map',
 			'[aout]',
-			'-c:v',
-			'libx264',
-			'-preset',
-			output.x264Preset,
-			'-crf',
-			String(output.crf),
+			...h264VideoArgs(o.videoEncoder ?? 'libx264', {
+				crf: output.crf,
+				preset: output.x264Preset,
+				width: output.width,
+				height: output.height,
+				fps: output.fps.num / output.fps.den,
+			}),
 			'-pix_fmt',
 			'yuv420p',
 			'-colorspace',

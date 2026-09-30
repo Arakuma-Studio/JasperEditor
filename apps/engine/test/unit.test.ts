@@ -278,3 +278,69 @@ describe('dev web port (WP-3I)', () => {
 		);
 	});
 });
+
+describe('H.264 encoder choice (ARCHITECTURE D-13, WP-3I)', () => {
+	it('uses x264 when present, OpenH264 otherwise, never requires x264', async () => {
+		const { pickH264Encoder, h264VideoArgs } = await import('../src/tools/ffmpeg.ts');
+		expect(pickH264Encoder(['aac', 'libx264', 'libopenh264'])).toBe('libx264');
+		expect(pickH264Encoder(['aac', 'libopenh264', 'prores_ks'])).toBe('libopenh264');
+		expect(pickH264Encoder(['aac', 'h264_vaapi'])).toBeNull();
+		const x = h264VideoArgs('libx264', {
+			crf: 18,
+			preset: 'medium',
+			width: 1920,
+			height: 1080,
+			fps: 30,
+			gop: 15,
+		});
+		expect(x).toEqual([
+			'-c:v',
+			'libx264',
+			'-preset',
+			'medium',
+			'-crf',
+			'18',
+			'-x264-params',
+			'keyint=15:min-keyint=15:scenecut=0',
+		]);
+		const o = h264VideoArgs('libopenh264', { crf: 18, preset: 'medium', width: 1920, height: 1080, fps: 30 });
+		expect(o.slice(0, 2)).toEqual(['-c:v', 'libopenh264']);
+		expect(o).toContain('-allow_skip_frames'); // exact frame counts (RN-022)
+		expect(o).not.toContain('-crf');
+		expect(o[o.indexOf('-b:v') + 1]).toBe('6221k'); // 1920·1080·30·0.1 bpp
+	});
+
+	it('the native export graph uses the chosen encoder', async () => {
+		const { buildNativeGraph } = await import('../src/export/native.ts');
+		const snapshot = {
+			settings: { width: 320, height: 180, fps: { num: 30, den: 1 }, backgroundColor: [0, 0, 0, 1] },
+			range: { start: 0, end: 30 },
+			videoTracks: [],
+			audioClips: [],
+			master: { gainDb: 0 },
+		};
+		const output = {
+			width: 320,
+			height: 180,
+			fps: { num: 30, den: 1 },
+			frames: 30,
+			durationSec: 1,
+			scaling: 'fit',
+			crf: 18,
+			x264Preset: 'veryfast',
+			audioChannels: 2,
+			audioBitrateKbps: 192,
+		};
+		const base = {
+			snapshot,
+			output,
+			outputFile: '/tmp/x.mp4',
+			sources: { media: () => null, mgMaster: () => null },
+			threads: 2,
+		};
+		const g = buildNativeGraph({ ...base, videoEncoder: 'libopenh264' } as never);
+		expect(g.args).toContain('libopenh264');
+		expect(g.args).not.toContain('libx264');
+		expect(buildNativeGraph(base as never).args).toContain('libx264');
+	});
+});
