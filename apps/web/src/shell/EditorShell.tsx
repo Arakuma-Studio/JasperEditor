@@ -37,7 +37,7 @@ import { MENUBAR, WORKSPACES_MENU } from './menus/model.ts';
 import type { MenuEnv, ShellMenuItem } from './menus/resolve.ts';
 import { CommandPalette, type PaletteSources } from './palette/CommandPalette.tsx';
 import { useUiPrefs } from './prefs.ts';
-import { COMPACT_WORKSPACE } from './workspaces/definitions.ts';
+import { COMPACT_WORKSPACE, PHONE_WORKSPACE } from './workspaces/definitions.ts';
 import { getWorkspaceStore } from './workspaces/instance.ts';
 import { sanitizeLayout } from './workspaces/layout.ts';
 import type { WorkspaceRecord } from './workspaces/store.ts';
@@ -127,7 +127,11 @@ function ShellBody() {
 	const [palette, setPalette] = useState<string | null>(null);
 	const panels = useMemo(() => new Map<PanelKind, PanelDefinition>(listPanels().map((d) => [d.kind, d])), []);
 	const desktopLike = layoutMode === 'desktop';
-	const effectiveWs = desktopLike ? ws.activeId : COMPACT_WORKSPACE.id;
+	const effectiveWs = desktopLike
+		? ws.activeId
+		: layoutMode === 'phone'
+			? PHONE_WORKSPACE.id
+			: COMPACT_WORKSPACE.id;
 	const modeRef = useRef(mode);
 	modeRef.current = mode;
 	const effectiveRef = useRef(effectiveWs);
@@ -431,7 +435,7 @@ function ShellBody() {
 					className="flex h-7 shrink-0 items-center justify-center bg-pr-raised text-pr-small text-pr-muted"
 					data-testid="touch-notice"
 				>
-					Touch layout coming soon — showing the compact desktop layout.
+					Touch layout coming soon — showing a simplified docked layout.
 				</div>
 			) : null}
 			<main className="relative min-h-0 flex-1 p-[var(--pr-gutter)] pt-0">

@@ -11,7 +11,15 @@ import type { ContextMenuItem, Tooltip } from '../state/ui-store.ts';
 
 // ---------------------------------------------------------------- sequence tabs
 
-export function SequenceTabs(props: { session: EditorSession; activeId: string | null }) {
+export function SequenceTabs(props: {
+	session: EditorSession;
+	activeId: string | null;
+	/**
+	 * Hide the strip while only one sequence is open: the dock tab already names it (Premiere shows a
+	 * single "Sequence 01" tab), so a second row would duplicate it and cost 28 px of track space.
+	 */
+	hideSingle?: boolean;
+}) {
 	const tabs = useSessionState((s) => s.tabs.open);
 	const names = useSessionState(
 		(s) =>
@@ -23,7 +31,7 @@ export function SequenceTabs(props: { session: EditorSession; activeId: string |
 			}),
 		(a, b) => JSON.stringify(a) === JSON.stringify(b),
 	);
-	if (names.length === 0) return null;
+	if (names.length === 0 || (props.hideSingle && names.length === 1)) return null;
 	return (
 		<div
 			className="flex h-[var(--pr-tab-h)] shrink-0 items-end gap-px bg-pr-panel-alt px-1"

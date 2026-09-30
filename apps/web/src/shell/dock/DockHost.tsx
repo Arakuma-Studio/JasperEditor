@@ -35,6 +35,7 @@ import {
 	useState,
 	useSyncExternalStore,
 } from 'react';
+import { sourceMonitorState } from '../../panels/source/source-state.ts';
 import type { PanelDefinition, PanelKind, PanelTitleContext } from '../../panels/types.ts';
 import { useCommandCtx, useShellRuntime } from '../context.tsx';
 import { PANEL_INSTANCE_ATTR, PANEL_KIND_ATTR } from '../focus.ts';
@@ -88,7 +89,12 @@ function useTitleContext(params: Record<string, unknown> | undefined): PanelTitl
 	const sequenceName = useStoreSelector(session?.store ?? NULL_STORE, (s: SessionState | null) =>
 		activeSequenceName(s),
 	);
-	return { params, sequenceName, sourceName: null };
+	// "Source: <clip>" tab label (S05:PC-002): the item open in the Source monitor.
+	const sourceItemId = useStoreSelector(sourceMonitorState, (s) => s.itemId);
+	const sourceName = useStoreSelector(session?.store ?? NULL_STORE, (s: SessionState | null) =>
+		sourceItemId && s ? (s.document.items[sourceItemId]?.name ?? null) : null,
+	);
+	return { params, sequenceName, sourceName };
 }
 const NULL_STORE = { getState: (): SessionState | null => null, subscribe: () => () => {} };
 
@@ -168,6 +174,9 @@ function PanelTab(props: IDockviewPanelHeaderProps<{ kind: PanelKind }>) {
 	const [active, setActive] = useState(props.api.isVisible);
 	const attn = useAttention(kind);
 	const menu = usePanelMenu(props.api.id, def);
+	// Fixed-width strips (Tools 40 px, Audio Meters 52 px): the title cannot fit, so the tab shows only the
+	// centered panel-menu glyph, as in Premiere; the title stays available as tooltip and aria-label.
+	const narrow = def?.fixedAxis === 'width';
 
 	useEffect(() => {
 		const d = props.api.onDidVisibilityChange((e) => setActive(e.isVisible));
@@ -198,11 +207,12 @@ function PanelTab(props: IDockviewPanelHeaderProps<{ kind: PanelKind }>) {
 				onAuxClick={onAux}
 				onMouseDown={(e) => e.button === 1 && e.preventDefault()}
 				className={cx(
-					'group/tab flex h-full max-w-[220px] min-w-0 items-center gap-1 overflow-hidden pr-1 pl-3 font-pr text-pr-ui select-none',
+					'group/tab flex h-full max-w-[220px] min-w-0 items-center gap-1 overflow-hidden font-pr text-pr-ui select-none',
+					narrow ? 'justify-center px-1' : 'pr-1 pl-3',
 					active ? 'text-pr-strong' : 'text-pr-muted hover:text-pr-text',
 				)}
 			>
-				<span className="truncate">{title}</span>
+				<span className={narrow ? 'sr-only' : 'truncate'}>{title}</span>
 				{attn && !active ? (
 					<span className="size-1.5 shrink-0 rounded-full bg-pr-accent" data-testid="tab-attention" />
 				) : null}
@@ -230,7 +240,10 @@ function PanelTab(props: IDockviewPanelHeaderProps<{ kind: PanelKind }>) {
 						e.stopPropagation();
 						controller.close(props.api.id);
 					}}
-					className="inline-flex size-4 shrink-0 items-center justify-center rounded-[2px] text-pr-icon opacity-0 group-hover/tab:opacity-100 hover:bg-pr-hover focus-visible:opacity-100 [@media(pointer:coarse)]:opacity-100"
+					className={cx(
+						'inline-flex size-4 shrink-0 items-center justify-center rounded-[2px] text-pr-icon opacity-0 group-hover/tab:opacity-100 hover:bg-pr-hover focus-visible:opacity-100 [@media(pointer:coarse)]:opacity-100',
+						narrow ? 'hidden' : '',
+					)}
 				>
 					<Icon id="app.close" size={12} />
 				</button>

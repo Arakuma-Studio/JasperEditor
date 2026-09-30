@@ -12,41 +12,44 @@ export function AudioMetersPanel({ visible }: PanelProps) {
 			data-visible={visible}
 			title="Live levels arrive with the Program monitor audio path"
 		>
+			{/* Premiere order: the stereo pair on the left, the dB scale to its right (R-PUI §15.1). */}
 			<div className="flex min-h-0 w-full flex-1 gap-1">
+				<div className="flex gap-0.5" aria-hidden>
+					<span className="w-2 rounded-[1px] bg-pr-field-deep" />
+					<span className="w-2 rounded-[1px] bg-pr-field-deep" />
+				</div>
 				<div className="relative min-h-0 flex-1" aria-hidden>
 					{SCALE.map((db) => (
 						<span
 							key={db}
-							className="absolute right-0 -translate-y-1/2 font-pr text-[9px] leading-none text-pr-muted pr-tabular"
+							className="absolute left-0 -translate-y-1/2 font-pr text-[9px] leading-none text-pr-muted pr-tabular"
 							style={{ top: `${(-db / 54) * 100}%` }}
 						>
 							{db}
 						</span>
 					))}
 				</div>
-				<div className="flex gap-0.5" aria-hidden>
-					<span className="w-2 rounded-[1px] bg-pr-field-deep" />
-					<span className="w-2 rounded-[1px] bg-pr-field-deep" />
-				</div>
 			</div>
-			<div className="mt-1 flex w-full items-center justify-end gap-0.5">
-				<span className="font-pr text-[9px] text-pr-muted">dB</span>
-				<button
-					type="button"
-					disabled
-					className="size-2.5 text-[8px] leading-none text-pr-dim"
-					aria-label="Solo left"
-				>
-					S
-				</button>
-				<button
-					type="button"
-					disabled
-					className="size-2.5 text-[8px] leading-none text-pr-dim"
-					aria-label="Solo right"
-				>
-					S
-				</button>
+			<div className="mt-1 flex w-full items-center gap-1">
+				<div className="flex gap-0.5">
+					<button
+						type="button"
+						disabled
+						className="w-2 text-center text-[8px] leading-[10px] text-pr-dim"
+						aria-label="Solo left"
+					>
+						S
+					</button>
+					<button
+						type="button"
+						disabled
+						className="w-2 text-center text-[8px] leading-[10px] text-pr-dim"
+						aria-label="Solo right"
+					>
+						S
+					</button>
+				</div>
+				<span className="font-pr text-[9px] leading-[10px] text-pr-muted">dB</span>
 			</div>
 		</div>
 	);

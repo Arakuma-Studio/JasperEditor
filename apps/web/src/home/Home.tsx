@@ -132,7 +132,7 @@ export function Home() {
 	return (
 		<div className="flex h-full bg-pr-app text-pr-text" data-testid="home">
 			{/* Left rail */}
-			<aside className="flex w-56 shrink-0 flex-col gap-2 bg-pr-header p-4">
+			<aside className="flex w-56 shrink-0 flex-col gap-2 border-r border-pr-border-subtle bg-pr-panel-alt p-4">
 				<div className="mb-4 flex items-center gap-2">
 					<span className="text-pr-accent">
 						<Icon id="panel.program" size={20} />
@@ -165,8 +165,10 @@ export function Home() {
 			</aside>
 
 			{/* Recent projects */}
-			<main className="min-w-0 flex-1 overflow-auto p-6">
-				<h1 className="mb-4 text-pr-ui text-pr-strong">Recent projects</h1>
+			<main className="min-w-0 flex-1 overflow-auto bg-pr-panel p-6">
+				<h1 className="mb-4 text-[length:var(--pr-font-size-dialog-title)] font-semibold text-pr-strong">
+					Recent projects
+				</h1>
 				{list.status === 'loading' ? <p className="text-pr-muted">Loading projects…</p> : null}
 				{list.status === 'error' ? (
 					<p className="text-pr-small text-pr-warning" data-testid="projects-error">
@@ -189,7 +191,7 @@ export function Home() {
 							<li key={p.projectId} className="group flex flex-col gap-1" data-testid="project-card">
 								<button
 									type="button"
-									className="relative aspect-video overflow-hidden rounded-pr-frame bg-pr-panel text-left hover:outline hover:outline-1 hover:outline-pr-accent"
+									className="relative aspect-video overflow-hidden rounded-pr-frame bg-pr-raised text-left hover:outline hover:outline-1 hover:outline-pr-accent"
 									onClick={() => navigate(`/project/${p.projectId}`)}
 									aria-label={`Open ${p.name}`}
 								>
@@ -288,7 +290,7 @@ function EmptyState(props: { onCreate(): void; disabled: boolean }) {
 		<div className="flex flex-col items-start gap-4" data-testid="home-empty">
 			<ol className="grid w-full max-w-3xl grid-cols-3 gap-4">
 				{steps.map((s) => (
-					<li key={s.n} className="rounded-pr-frame bg-pr-panel p-4">
+					<li key={s.n} className="rounded-pr-frame bg-pr-raised p-4">
 						<p className="text-pr-accent">{s.n}</p>
 						<p className="text-pr-strong">{s.title}</p>
 						<p className="text-pr-small text-pr-muted">{s.text}</p>

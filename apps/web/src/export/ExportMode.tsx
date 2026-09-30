@@ -272,7 +272,13 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 				>
 					<div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-pr-field-deep">
 						{poster ? (
-							<img src={poster} alt="Export preview" className="max-h-full max-w-full object-contain" />
+							// The poster derivative is 320 px wide: show it at up to 2× so it reads as a preview frame
+							// without turning into a blur (a true export-frame render is a later item).
+							<img
+								src={poster}
+								alt="Export preview"
+								className="max-h-full w-[640px] max-w-full object-contain"
+							/>
 						) : (
 							<span className="text-pr-small text-pr-dim">No preview frame</span>
 						)}

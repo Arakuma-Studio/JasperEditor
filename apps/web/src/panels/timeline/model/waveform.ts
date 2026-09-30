@@ -54,6 +54,21 @@ export function drawGain(gainDb: number, volumeDb: number): number {
 
 export type WaveBar = { x: number; top: number; height: number; clipped: boolean };
 
+/** Floor of the logarithmic display scale: amplitudes at or below this level draw as zero height. */
+export const WAVE_LOG_FLOOR_DB = -48;
+
+/**
+ * Display height (0…1) of a linear amplitude. `log` maps dBFS linearly between WAVE_LOG_FLOOR_DB and
+ * 0 dBFS, like an NLE's logarithmic waveform scaling, so dialogue at −18 dBFS still reads at a
+ * 40 px track height; `linear` is the raw amplitude.
+ */
+export function waveHeight(amplitude: number, scale: 'linear' | 'log'): number {
+	const a = Math.min(1, Math.max(0, amplitude));
+	if (scale === 'linear' || a === 0) return a;
+	const db = 20 * Math.log10(a);
+	return Math.max(0, Math.min(1, 1 - db / WAVE_LOG_FLOOR_DB));
+}
+
 /**
  * Bars for one lane (TL-331): rectified draws bottom-up, centered draws symmetric around the lane center.
  * Values above full scale are clamped and flagged (clipping hint, TL-333).
@@ -63,12 +78,13 @@ export function waveBars(
 	lane: { x: number; top: number; height: number },
 	gain: number,
 	style: 'rectified' | 'centered',
+	scale: 'linear' | 'log' = 'linear',
 ): WaveBar[] {
 	const out: WaveBar[] = [];
 	for (let c = 0; c < columns.length; c++) {
 		const v = columns[c]! * gain;
 		const clipped = v > 1;
-		const a = Math.min(1, v);
+		const a = waveHeight(v, scale);
 		if (style === 'rectified') {
 			const h = a * lane.height;
 			out.push({ x: lane.x + c, top: lane.top + lane.height - h, height: h, clipped });

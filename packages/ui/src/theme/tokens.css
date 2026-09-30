@@ -92,6 +92,10 @@
 	--pr-fx-intrinsic: #e6c619;
 	--pr-fx-effect: #9d7df0;
 	--pr-fx-both: #3fb54a;
+	/* track header Mute / Solo "on" fills (S05:TLC-005, R-PUI §9.3) */
+	--pr-track-mute: #1c8a3a;
+	--pr-track-solo: #d8b400;
+	--pr-track-solo-text: #1d1d1d;
 	/* drop zone highlight while docking (S05:DK-021) */
 	--pr-dock-drop-fill: color-mix(in srgb, var(--pr-accent) 35%, transparent);
 	/* invalid-entry flash for timecode/number fields (S05:TY-006) */

@@ -11,3 +11,10 @@
 	-webkit-app-region: no-drag;
 	app-region: no-drag;
 }
+
+/* Primary selected row in the focused panel: accent fill with white text (S05:CT-041). Other selected
+   rows, and every row of an unfocused panel, keep --pr-bg-selected-row. */
+.pr-focused [data-testid="project-row"][data-primary] {
+	background: var(--pr-accent-fill);
+	color: var(--pr-on-accent);
+}

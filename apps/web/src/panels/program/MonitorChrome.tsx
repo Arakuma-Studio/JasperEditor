@@ -5,6 +5,7 @@
 import { formatTimecode, parseTimecodeEntry, type Rational } from '@jasper/project';
 import type { TransportStore } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
+import { Tooltip, tooltipText } from '@jasper/ui';
 import { Check, Settings } from 'lucide-react';
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
@@ -305,9 +306,13 @@ export function MiniRuler({
 						{'}'}
 					</text>
 				) : null}
-				{markers.map((m) => (
-					<rect key={m.id} x={(m.frame / d) * width - 3} y={1} width={6} height={5} fill={m.color} />
-				))}
+				{markers.map((m) => {
+					// Marker glyph: a small downward pentagon in the marker color (R-PUI §4.3, §9.4).
+					const x = (m.frame / d) * width;
+					return (
+						<path key={m.id} d={`M${x - 4} 0h8v4.5l-4 3.5l-4-3.5z`} fill={m.color} data-marker-glyph="" />
+					);
+				})}
 			</svg>
 			<div
 				ref={headRef}
@@ -319,13 +324,13 @@ export function MiniRuler({
 					style={{ left: 0 }}
 					data-testid={testId ? `${testId}-playhead` : undefined}
 				/>
+				{/* 12 px blue head, the same pentagon as the Timeline playhead (R-PUI §4.3, §8.1 row 2). */}
 				<div
-					className="absolute top-0 size-0"
+					className="absolute top-0 h-[10px] w-[12px]"
 					style={{
-						left: -4,
-						borderLeft: '4px solid transparent',
-						borderRight: '4px solid transparent',
-						borderTop: '6px solid var(--pr-playhead)',
+						left: -6,
+						background: 'var(--pr-playhead)',
+						clipPath: 'polygon(0 0, 100% 0, 100% 50%, 50% 100%, 0 50%)',
 					}}
 				/>
 			</div>
@@ -372,20 +377,21 @@ export function TransportButton({
 	disabled?: boolean;
 }) {
 	return (
-		<button
-			type="button"
-			aria-label={label}
-			title={shortcut ? `${label} (${shortcut})` : label}
-			data-testid={testId}
-			disabled={disabled}
-			aria-pressed={active === undefined ? undefined : active}
-			className={`inline-flex size-[var(--pr-transport-btn)] items-center justify-center rounded-pr-control transition-colors duration-100 hover:bg-pr-hover disabled:pointer-events-none disabled:text-pr-dim ${
-				active ? 'text-pr-accent' : 'text-pr-icon hover:text-pr-icon-hover'
-			}`}
-			onClick={onClick}
-		>
-			{children}
-		</button>
+		<Tooltip content={tooltipText(label, shortcut)} side="top">
+			<button
+				type="button"
+				aria-label={label}
+				data-testid={testId}
+				disabled={disabled}
+				aria-pressed={active === undefined ? undefined : active}
+				className={`inline-flex size-[var(--pr-transport-btn)] items-center justify-center rounded-pr-control transition-colors duration-100 hover:bg-pr-hover disabled:pointer-events-none disabled:text-pr-dim ${
+					active ? 'text-pr-accent' : 'text-pr-icon hover:text-pr-icon-hover'
+				}`}
+				onClick={onClick}
+			>
+				{children}
+			</button>
+		</Tooltip>
 	);
 }
 
