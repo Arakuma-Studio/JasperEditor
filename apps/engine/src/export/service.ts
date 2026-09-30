@@ -23,7 +23,7 @@ import type { RemotionService } from '../remotion/service.ts';
 import { audioEncodeArgs, type EncoderService, videoEncodeArgs } from '../tools/encoders.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { exists, randomId } from '../tools/fs.ts';
-import { buildNativeGraph } from './native.ts';
+import { BT709_FRAME_TAGS, buildNativeGraph, SWS_FLAGS } from './native.ts';
 import { mediaKeyOf, type PlanCapabilities, PlanError, type PlannedExport, planExport } from './planner.ts';
 
 export type MgMasterRequest = {
@@ -344,12 +344,14 @@ export class ExportService {
 			width: o.width,
 			height: o.height,
 			fps: o.fps,
+			...(o.bitrateKbps ? { bitrateKbps: o.bitrateKbps } : {}),
+			...(o.proresProfile ? { proresProfile: o.proresProfile } : {}),
 		});
 		const vf = [
-			'scale=out_color_matrix=bt709:out_range=tv',
-			'format=yuv420p',
+			`scale=out_color_matrix=bt709:out_range=tv:${SWS_FLAGS}`,
 			'setsar=1',
-			...enc.filters.filter((f) => f !== 'format=yuv420p'),
+			BT709_FRAME_TAGS,
+			...enc.filters,
 		];
 		const args = [
 			...enc.pre,
@@ -379,7 +381,7 @@ export class ExportService {
 			String(o.audioChannels),
 			'-threads',
 			String(Math.max(1, ctx.slots)),
-			...(choice.container === 'mp4' ? ['-movflags', '+faststart'] : []),
+			...(choice.container !== 'webm' ? ['-movflags', '+faststart'] : []),
 			'-f',
 			choice.container,
 			output,

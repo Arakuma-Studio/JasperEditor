@@ -140,19 +140,26 @@ export function outputDescription(seq: Sequence, frames: number, encoder?: Encod
 	const fps = fpsOf(seq.settings.frameRate);
 	const fpsText = Number.isInteger(fps) ? String(fps) : fps.toFixed(2);
 	const video = encoder ? CODEC_LABELS[encoder.codec] : 'H.264';
-	const audio = encoder?.audioEncoder === 'libopus' ? 'Opus' : 'AAC';
+	const audio =
+		encoder?.audioEncoder === 'libopus' ? 'Opus' : encoder?.audioEncoder === 'pcm_s16le' ? 'PCM' : 'AAC';
 	return `${seq.settings.width}×${seq.settings.height} · ${fpsText} fps · ${video} · ${audio} 48 kHz stereo · ${formatDuration(frames / fps)}`;
 }
 
 // ------------------------------------------------------------ encoders (ARCHITECTURE D-13)
 
-export const CODEC_LABELS: Record<VideoCodec, string> = { h264: 'H.264', vp9: 'VP9', av1: 'AV1' };
+export const CODEC_LABELS: Record<VideoCodec, string> = {
+	h264: 'H.264',
+	vp9: 'VP9',
+	av1: 'AV1',
+	prores: 'ProRes 422 HQ',
+};
 
 /** Encoders the engine may pick per codec, in its preference order (mirrors the engine selector). */
 const CODEC_ENCODERS: Record<VideoCodec, string[]> = {
 	h264: ['h264_videotoolbox', 'h264_nvenc', 'h264_qsv', 'h264_amf', 'h264_vaapi', 'libopenh264', 'libx264'],
 	vp9: ['libvpx-vp9'],
 	av1: ['libsvtav1', 'libaom-av1'],
+	prores: ['prores_ks'],
 };
 const ENCODER_NAMES: Record<string, string> = {
 	h264_videotoolbox: 'Apple VideoToolbox (hardware)',
@@ -165,6 +172,7 @@ const ENCODER_NAMES: Record<string, string> = {
 	'libvpx-vp9': 'libvpx',
 	libsvtav1: 'SVT-AV1',
 	'libaom-av1': 'libaom',
+	prores_ks: 'prores_ks',
 };
 const GPL = new Set(['libx264', 'libx264rgb', 'libx265']);
 
@@ -172,11 +180,12 @@ export type ChoiceOption<T extends string> = { value: T; label: string; availabl
 
 /** Codec choices; unavailable ones stay listed but disabled (S05:EX-012). */
 export function codecOptions(enc: EncodingCapabilities | undefined): ChoiceOption<VideoCodec>[] {
-	return (['h264', 'av1', 'vp9'] as const).map((c) => {
-		const available = !enc || enc.codecs[c].length > 0;
+	return (['h264', 'av1', 'vp9', 'prores'] as const).map((c) => {
+		const available = !enc || (enc.codecs[c]?.length ?? 0) > 0;
+		const container = c === 'prores' ? 'MOV' : c === 'vp9' && enc?.audio.opus ? 'WebM' : 'MP4';
 		return {
 			value: c,
-			label: `${CODEC_LABELS[c]} (${c === 'vp9' && enc?.audio.opus ? 'WebM' : 'MP4'})`,
+			label: `${CODEC_LABELS[c]} (${container})`,
 			available,
 			...(available ? {} : { reason: `No usable ${CODEC_LABELS[c]} encoder in this engine's ffmpeg` }),
 		};
@@ -194,7 +203,7 @@ export function encoderOptions(
 ): ChoiceOption<string>[] {
 	const out: ChoiceOption<string>[] = [{ value: '', label: 'Auto (best available)', available: true }];
 	if (!enc) return out;
-	const usable = new Set(enc.codecs[codec]);
+	const usable = new Set(enc.codecs[codec] ?? []);
 	for (const e of CODEC_ENCODERS[codec]) {
 		if (!buildEncoders.includes(e)) continue;
 		const hw = enc.hardware.find((h) => h.encoder === e);
@@ -223,7 +232,7 @@ export function encoderSummary(encoder: EncoderChoice | null | undefined): strin
 
 /** File extension of the export (the engine may write WebM for VP9). */
 export function exportExtension(encoder: EncoderChoice | null | undefined): string {
-	return encoder?.container === 'webm' ? 'webm' : 'mp4';
+	return encoder?.container === 'webm' ? 'webm' : encoder?.container === 'mov' ? 'mov' : 'mp4';
 }
 
 // ------------------------------------------------------------ remembered choices (EX-014)
@@ -244,7 +253,10 @@ export function loadExportChoice(projectId: string, sequenceId: string): Remembe
 		const v = JSON.parse(raw) as Partial<Remembered>;
 		const range = v.range === 'in-out' ? 'in-out' : 'entire';
 		const engine = v.engine === 'native' || v.engine === 'remotion' ? v.engine : 'auto';
-		const codec = v.codec === 'av1' || v.codec === 'vp9' || v.codec === 'h264' ? v.codec : undefined;
+		const codec =
+			v.codec === 'av1' || v.codec === 'vp9' || v.codec === 'h264' || v.codec === 'prores'
+				? v.codec
+				: undefined;
 		return {
 			range,
 			engine,

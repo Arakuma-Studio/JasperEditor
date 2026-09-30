@@ -251,6 +251,54 @@ describe('videoEncodeArgs (quality/speed per encoder)', () => {
 	});
 });
 
+describe('masters and bitrate overrides', () => {
+	it('selects prores_ks for ProRes masters: MOV with PCM, never a substitute codec', () => {
+		const pr = selectVideoEncoder(inv(OPENH264_ONLY), { purpose: 'export', codec: 'prores' })!;
+		expect(pr).toMatchObject({
+			codec: 'prores',
+			encoder: 'prores_ks',
+			container: 'mov',
+			audioEncoder: 'pcm_s16le',
+			rateControl: 'profile',
+			gpl: false,
+		});
+		expect(usableByCodec(inv(OPENH264_ONLY)).prores).toEqual(['prores_ks']);
+		expect(
+			selectVideoEncoder(inv(['aac', 'libopenh264']), { purpose: 'export', codec: 'prores' }),
+		).toBeNull();
+		expect(EncodingCapabilitiesSchema.parse(encodingCapabilities(inv(LGPL_LIST))).codecs.prores).toEqual([
+			'prores_ks',
+		]);
+	});
+
+	it('writes ProRes 422 HQ (10-bit 4:2:2) or 4444 (4:4:4)', () => {
+		const hq = videoEncodeArgs({ encoder: 'prores_ks' }, P);
+		expect(hq.filters).toEqual(['format=yuv422p10le']);
+		expect(hq.video).toEqual([
+			'-c:v',
+			'prores_ks',
+			'-profile:v',
+			'3',
+			'-vendor',
+			'apl0',
+			'-pix_fmt',
+			'yuv422p10le',
+		]);
+		const x = videoEncodeArgs({ encoder: 'prores_ks' }, { ...P, proresProfile: '4444' });
+		expect(x.filters).toEqual(['format=yuv444p10le']);
+		expect(x.video.join(' ')).toContain('-profile:v 4');
+	});
+
+	it('uses an explicit bitrate as the OpenH264 target and as the x264 VBV ceiling', () => {
+		expect(
+			videoEncodeArgs({ encoder: 'libopenh264' }, { ...P, bitrateKbps: 16000 }).video.join(' '),
+		).toContain('-b:v 16000k -maxrate 24000k -bufsize 32000k');
+		expect(
+			videoEncodeArgs({ encoder: 'libx264' }, { ...P, crf: 14, bitrateKbps: 20000 }).video.join(' '),
+		).toBe('-c:v libx264 -preset medium -crf 14 -maxrate 20000k -bufsize 40000k -pix_fmt yuv420p');
+	});
+});
+
 describe('parsing and hardware probing', () => {
 	it('parses the build license and hwaccels', () => {
 		expect(parseBuildLicense('ffmpeg version 6.1\nconfiguration: --enable-gpl --enable-libx264')).toBe('gpl');

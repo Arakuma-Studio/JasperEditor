@@ -48,6 +48,7 @@ export const HW_H264: readonly HwEncoderSpec[] = [
 export const VAAPI_DEVICE = '/dev/dri/renderD128';
 
 const SOFTWARE_LABELS: Record<string, string> = {
+	prores_ks: 'prores_ks',
 	libopenh264: 'OpenH264',
 	libx264: 'x264',
 	'libvpx-vp9': 'libvpx',
@@ -154,11 +155,12 @@ export function usableByCodec(inv: EncoderInventory): Record<VideoCodec, string[
 		h264,
 		vp9: ['libvpx-vp9'].filter((e) => have.has(e)),
 		av1: ['libsvtav1', 'libaom-av1'].filter((e) => have.has(e)),
+		prores: ['prores_ks'].filter((e) => have.has(e)),
 	};
 }
 
 function codecName(c: VideoCodec): string {
-	return c === 'h264' ? 'H.264' : c === 'vp9' ? 'VP9' : 'AV1';
+	return c === 'h264' ? 'H.264' : c === 'vp9' ? 'VP9' : c === 'prores' ? 'ProRes' : 'AV1';
 }
 
 export function encoderLabel(codec: VideoCodec, encoder: string): string {
@@ -180,6 +182,8 @@ function rateControlOf(encoder: string): EncoderChoice['rateControl'] {
 		case 'h264_amf':
 		case 'h264_vaapi':
 			return 'qp';
+		case 'prores_ks':
+			return 'profile';
 		default:
 			// libopenh264 has no CRF; VideoToolbox is driven by bitrate for portability.
 			return 'bitrate';
@@ -196,15 +200,16 @@ function makeChoice(
 	const have = new Set(effectiveEncoders(inv));
 	const opus = have.has('libopus');
 	// Proxies stay MP4 whatever the codec (Chrome plays VP9/AV1 in MP4; one proxy URL/content type).
+	// ProRes masters are MOV with 16-bit PCM audio.
 	const container: EncoderChoice['container'] =
-		purpose === 'export' && codec === 'vp9' && opus ? 'webm' : 'mp4';
+		codec === 'prores' ? 'mov' : purpose === 'export' && codec === 'vp9' && opus ? 'webm' : 'mp4';
 	return {
 		codec,
 		encoder,
 		label: encoderLabel(codec, encoder),
 		hardware: HW_H264.some((h) => h.encoder === encoder),
 		container,
-		audioEncoder: container === 'webm' ? 'libopus' : 'aac',
+		audioEncoder: container === 'webm' ? 'libopus' : container === 'mov' ? 'pcm_s16le' : 'aac',
 		rateControl: rateControlOf(encoder),
 		gpl: GPL_ENCODERS.has(encoder),
 		...(message ? { message } : {}),
@@ -228,6 +233,7 @@ export function selectVideoEncoder(inv: EncoderInventory, req: EncoderRequest): 
 	}
 	const first = byCodec[want][0];
 	if (first) return makeChoice(inv, want, first, req.purpose, note);
+	if (want === 'prores') return null; // a master must be ProRes: no silent substitution
 	const order = req.purpose === 'proxy' ? PROXY_FALLBACK : EXPORT_FALLBACK;
 	for (const [codec, enc] of order) {
 		if (byCodec[codec].includes(enc)) {
@@ -281,6 +287,13 @@ export type EncodeParams = {
 	/** Proxy/realtime tuning (fast presets, no B-frame lookahead). */
 	realtime?: boolean;
 	threads?: number;
+	/**
+	 * Average bitrate (kbit/s): the target of bitrate-driven encoders instead of the CRF mapping, and a VBV
+	 * ceiling for x264. ProRes and the CQ/QP encoders ignore it.
+	 */
+	bitrateKbps?: number;
+	/** ProRes profile (`prores_ks`): 422 HQ (default) or 4444. */
+	proresProfile?: 'hq' | '4444';
 };
 
 export type EncodeArgs = {
@@ -309,7 +322,8 @@ export const vp9Crf = (crf: number) => clamp(crf * 1.25 + 9.5, 4, 63);
 export const av1Crf = (crf: number) => clamp(crf * 1.35 + 3.7, 1, 63);
 
 /** Pixel format the encoder receives from the filter graph. */
-export function pixFmtFor(encoder: string): string {
+export function pixFmtFor(encoder: string, proresProfile: 'hq' | '4444' = 'hq'): string {
+	if (encoder === 'prores_ks') return proresProfile === '4444' ? 'yuv444p10le' : 'yuv422p10le';
 	return HW_H264.find((h) => h.encoder === encoder)?.pixFmt ?? 'yuv420p';
 }
 
@@ -318,13 +332,13 @@ export function videoEncodeArgs(choice: Pick<EncoderChoice, 'encoder'>, p: Encod
 	const fps = p.fps.num / p.fps.den;
 	const gop = p.gop ?? Math.max(1, Math.round(fps * 2));
 	const crf = clamp(p.crf, 0, 51);
-	const kbps = (factor: number) => bitrateForCrf(crf, p.width, p.height, fps, factor);
+	const kbps = (factor: number) => p.bitrateKbps ?? bitrateForCrf(crf, p.width, p.height, fps, factor);
 	const rate = (factor: number) => {
 		const b = kbps(factor);
 		return ['-b:v', `${b}k`, '-maxrate', `${Math.round(b * 1.5)}k`, '-bufsize', `${b * 2}k`];
 	};
 	const enc = choice.encoder;
-	const pix = pixFmtFor(enc);
+	const pix = pixFmtFor(enc, p.proresProfile);
 	const pre: string[] = [];
 	let filters = [`format=${pix}`];
 	const video: string[] = ['-c:v', enc];
@@ -345,6 +359,11 @@ export function videoEncodeArgs(choice: Pick<EncoderChoice, 'encoder'>, p: Encod
 				String(crf),
 			);
 			if (p.gop) video.push('-x264-params', `keyint=${gop}:min-keyint=${gop}:scenecut=0`);
+			if (p.bitrateKbps) video.push('-maxrate', `${p.bitrateKbps}k`, '-bufsize', `${p.bitrateKbps * 2}k`);
+			break;
+		case 'prores_ks':
+			// 422 HQ ≈ 220 Mbit/s and 4444 ≈ 330 Mbit/s at 1080p30 (prores_ks picks the quantizer per frame).
+			video.push('-profile:v', p.proresProfile === '4444' ? '4' : '3', '-vendor', 'apl0');
 			break;
 		case 'libopenh264':
 			// No CRF: average bitrate with a VBV cap; frame skipping off so the frame count is exact.
@@ -460,6 +479,7 @@ export function videoEncodeArgs(choice: Pick<EncoderChoice, 'encoder'>, p: Encod
 /** Audio encoder arguments for a container (`aac` in MP4, `libopus` in WebM). */
 export function audioEncodeArgs(audioEncoder: string, kbps: number): string[] {
 	if (audioEncoder === 'libopus') return ['-c:a', 'libopus', '-b:a', `${Math.min(510, kbps)}k`];
+	if (audioEncoder === 'pcm_s16le') return ['-c:a', 'pcm_s16le'];
 	return ['-c:a', 'aac', '-b:a', `${kbps}k`];
 }
 

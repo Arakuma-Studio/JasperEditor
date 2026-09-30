@@ -63,6 +63,10 @@ export type OutputSpec = {
 	encoder: EncoderChoice | null;
 	audioChannels: 1 | 2;
 	audioBitrateKbps: number;
+	/** Average video bitrate override (see ExportSettings `video.bitrateKbps`). */
+	bitrateKbps?: number;
+	/** ProRes profile of a `prores` export. */
+	proresProfile?: 'hq' | '4444';
 };
 
 export type LocalMedia = { path: string; record: MediaRecord };
@@ -285,6 +289,8 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		encoder,
 		audioChannels: settings.audio?.channels ?? 2,
 		audioBitrateKbps: settings.audio?.bitrateKbps ?? 192,
+		...(video?.bitrateKbps ? { bitrateKbps: video.bitrateKbps } : {}),
+		...(video?.proresProfile ? { proresProfile: video.proresProfile } : {}),
 	};
 	if (!rationalEquals(outFps, seqFps)) {
 		warnings.push({

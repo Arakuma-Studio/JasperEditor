@@ -599,6 +599,61 @@ describe('transitions on the native path (S01 §13)', () => {
 	});
 });
 
+describe('masters and bitrate', () => {
+	it('exports a ProRes 422 HQ master (MOV, PCM audio) and honours an explicit H.264 bitrate', async () => {
+		const coded = await register(app, fixture('frame-code.mp4'));
+		const d = new DocBuilder();
+		d.tx([
+			{
+				type: 'clip.place',
+				source: { mediaId: d.addMedia(coded) },
+				at: 0,
+				sourceRange: { in: { sourceFrames: 0 }, out: { sourceFrames: 60 } },
+				matchSequence: 'keep',
+			},
+		]);
+		const video = (settings(d.seqId).video as Record<string, unknown>) ?? {};
+		const planned = await coreServices(app).exports.plan({
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			settings: settings(d.seqId, { video: { ...video, bitrateKbps: 16000 } }) as never,
+		});
+		const g = buildNativeGraph({
+			snapshot: planned.snapshot,
+			output: planned.output,
+			outputFile: '/tmp/x.mp4',
+			sources: { media: (id) => planned.media[id] ?? null, mgMaster: () => null },
+			threads: 2,
+		});
+		expect(g.args.join(' ')).toMatch(/16000k/);
+
+		const start = await app.inject({
+			method: 'POST',
+			url: '/api/exports',
+			headers: JSON_H,
+			payload: {
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				settings: settings(d.seqId, {
+					container: 'mov',
+					video: { ...video, codec: 'prores' },
+					engine: 'native',
+				}),
+			},
+		});
+		expect(start.statusCode).toBe(202);
+		const done = await coreServices(app).queue.wait(start.json().id);
+		expect(done.error).toBeUndefined();
+		expect(done.result).toMatchObject({ frames: 60, container: 'mov', encoder: 'prores_ks' });
+		const file = (await coreServices(app).exports.outputFile(start.json().id))!;
+		expect(file.endsWith('output.mov')).toBe(true);
+		const [v, a] = probe(file);
+		expect(v).toMatchObject({ codec_name: 'prores', pix_fmt: 'yuv422p10le', color_space: 'bt709' });
+		expect(a).toMatchObject({ codec_name: 'pcm_s16le', sample_rate: '48000' });
+		expect(frameCode(file, 40)).toBe(40);
+	}, 120_000);
+});
+
 describe('overlays with an alpha channel on the native path', () => {
 	/** A red full-frame solid on V1; the ProRes 4444 overlay on V2 for frames 0–30, the VP9 WebM one after it. */
 	async function overlayDoc() {

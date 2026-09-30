@@ -22,7 +22,7 @@ export const ExportSettingsSchema = z.object({
 		}),
 	]),
 	presetId: z.string().optional(),
-	container: z.enum(['mp4', 'webm']),
+	container: z.enum(['mp4', 'webm', 'mov']),
 	video: z
 		.object({
 			codec: VideoCodecSchema,
@@ -33,6 +33,13 @@ export const ExportSettingsSchema = z.object({
 			frameRate: RationalSchema,
 			scaling: z.enum(['fit', 'fill', 'stretch']).default('fit'),
 			quality: z.object({ mode: z.literal('crf'), value: z.number().int().min(0).max(51) }),
+			/**
+			 * Average video bitrate (kbit/s). Bitrate-driven encoders (OpenH264, VideoToolbox) aim at it instead
+			 * of the CRF mapping; CRF encoders (x264) keep the CRF and use it as a VBV ceiling; ProRes ignores it.
+			 */
+			bitrateKbps: z.number().int().min(100).max(500_000).optional(),
+			/** ProRes profile of a `prores` export: 422 HQ (default) or 4444 (4:4:4, 12-bit class). */
+			proresProfile: z.enum(['hq', '4444']).optional(),
 			encoderSpeed: z.enum(['fast', 'balanced', 'best']),
 			colorTags: z.literal('rec709').default('rec709'),
 		})
@@ -108,7 +115,7 @@ export const ExportResultSchema = z.object({
 	path: z.string().optional(),
 	/** ffmpeg video encoder and container actually used (D-13). */
 	encoder: z.string().optional(),
-	container: z.enum(['mp4', 'webm']).optional(),
+	container: z.enum(['mp4', 'webm', 'mov']).optional(),
 	/**
 	 * Remotion path only (D-13, wp-lgpl): `intermediate` = Remotion rendered ProRes and the engine encoded the
 	 * deliverable; `direct` = Remotion encoded it (VP9/Opus, or H.264 in a GPL dev setup).

@@ -8,8 +8,11 @@ export const HealthSchema = z.object({
 });
 export type Health = z.infer<typeof HealthSchema>;
 
-/** Video codecs the engine can encode (ARCHITECTURE D-13). */
-export const VideoCodecSchema = z.enum(['h264', 'vp9', 'av1']);
+/**
+ * Video codecs the engine can encode (ARCHITECTURE D-13). `prores` is the mastering codec: ProRes 422 HQ
+ * (or 4444) in MOV with PCM audio, written by `prores_ks` (LGPL).
+ */
+export const VideoCodecSchema = z.enum(['h264', 'vp9', 'av1', 'prores']);
 export type VideoCodec = z.infer<typeof VideoCodecSchema>;
 
 /**
@@ -23,10 +26,11 @@ export const EncoderChoiceSchema = z.object({
 	/** Human label, e.g. "H.264 · NVIDIA NVENC (hardware)". */
 	label: z.string(),
 	hardware: z.boolean(),
-	container: z.enum(['mp4', 'webm']),
-	/** Audio encoder paired with the container (`aac` for MP4, `libopus` for WebM). */
+	container: z.enum(['mp4', 'webm', 'mov']),
+	/** Audio encoder paired with the container (`aac` for MP4, `libopus` for WebM, `pcm_s16le` for MOV). */
 	audioEncoder: z.string(),
-	rateControl: z.enum(['crf', 'cq', 'qp', 'bitrate']),
+	/** How the quality setting maps (`profile`: ProRes, whose quality is set by its profile). */
+	rateControl: z.enum(['crf', 'cq', 'qp', 'bitrate', 'profile']),
 	/** The encoder is GPL-licensed (libx264): acceptable in dev, never shipped (D-13). */
 	gpl: z.boolean(),
 	/** Why this is not the preferred choice (e.g. H.264 unavailable in an LGPL build). */
@@ -45,7 +49,13 @@ export const EncodingCapabilitiesSchema = z.object({
 	/** Hardware H.264 encoders listed by the build and whether a test encode succeeded. */
 	hardware: z.array(z.object({ encoder: z.string(), usable: z.boolean(), reason: z.string().optional() })),
 	/** Usable encoders per codec, in preference order (GPL ones removed in LGPL-only mode). */
-	codecs: z.object({ h264: z.array(z.string()), vp9: z.array(z.string()), av1: z.array(z.string()) }),
+	codecs: z.object({
+		h264: z.array(z.string()),
+		vp9: z.array(z.string()),
+		av1: z.array(z.string()),
+		/** ProRes master encoders (`prores_ks`); absent on engines that predate it. */
+		prores: z.array(z.string()).optional(),
+	}),
 	audio: z.object({ aac: z.boolean(), opus: z.boolean() }),
 	/** `prores_ks` for alpha intermediates (motion-graphic masters). */
 	prores: z.boolean(),

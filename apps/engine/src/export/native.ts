@@ -31,6 +31,11 @@ export const SAMPLE_RATE = 48000;
  * without the full-chroma flags 4:2:0 chroma is up/down-sampled with the cheap horizontal path.
  */
 export const SWS_FLAGS = 'flags=bicubic+accurate_rnd+full_chroma_int+full_chroma_inp';
+/**
+ * BT.709 tags on the frames themselves. FFmpeg 7.1 takes an encoder's colour description from its input
+ * frames, so `-color_primaries` / `-color_trc` alone left ProRes masters untagged (and H.264 half tagged).
+ */
+export const BT709_FRAME_TAGS = 'setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv';
 const OFFLINE_RGBA: [number, number, number, number] = [0.55, 0.05, 0.08, 1];
 
 export type NativeSourceResolver = {
@@ -180,6 +185,8 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 				width: output.width,
 				height: output.height,
 				fps: output.fps,
+				...(output.bitrateKbps ? { bitrateKbps: output.bitrateKbps } : {}),
+				...(output.proresProfile ? { proresProfile: output.proresProfile } : {}),
 			});
 	const inputs: string[][] = [];
 	const chains: string[] = [];
@@ -376,10 +383,9 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 	vout.push(`trim=end_frame=${output.frames}`, 'setpts=PTS-STARTPTS');
 	if (o.still) vout.push('format=rgb24');
 	else {
-		vout.push(`scale=out_color_matrix=bt709:out_range=tv:${SWS_FLAGS}`, 'format=yuv420p', 'setsar=1');
-		// Encoder-specific tail (nv12 for QSV, hwupload for VAAPI); yuv420p needs nothing more.
-		const tail = enc!.filters.filter((f) => f !== 'format=yuv420p');
-		vout.push(...tail);
+		// The encoder's pixel format (yuv420p; nv12 + hwupload for QSV/VAAPI; 4:2:2/4:4:4 10-bit for ProRes).
+		vout.push(`scale=out_color_matrix=bt709:out_range=tv:${SWS_FLAGS}`, 'setsar=1', BT709_FRAME_TAGS);
+		vout.push(...enc!.filters);
 	}
 	chains.push(`[${last}]${vout.join(',')}[vout]`);
 
@@ -463,7 +469,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			String(output.audioChannels),
 			'-threads',
 			String(Math.max(1, o.threads)),
-			...(encoder.container === 'mp4' ? ['-movflags', '+faststart'] : []),
+			...(encoder.container !== 'webm' ? ['-movflags', '+faststart'] : []),
 			'-f',
 			encoder.container,
 			o.outputFile,
