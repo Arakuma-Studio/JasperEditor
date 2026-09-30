@@ -1,7 +1,17 @@
-// Stills routes (ARCHITECTURE §9.2). Owner: WP-2F. WP-00 stub answering 501 until WP-2F implements it.
+// POST /api/stills: one frame as PNG for agents and Export Frame (ARCHITECTURE §9.2, S04:EX-030).
+// The job result is `{url}` under /renders/<jobId>/output.
+import { StillRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
-import { registerStubRoutes } from './stub.ts';
+import { guarded, parseOr400 } from '../tools/reply.ts';
+import { coreServices } from '../tools/services.ts';
 
 export default async function stillsRoutes(app: FastifyInstance): Promise<void> {
-	registerStubRoutes(app, ['stills']);
+	const { exports } = coreServices(app);
+	app.post(
+		'/api/stills',
+		guarded(async (req, reply) => {
+			const body = parseOr400(StillRequestSchema, req.body);
+			return reply.code(202).send(await exports.still(body));
+		}),
+	);
 }

@@ -1,7 +1,18 @@
-// Fonts routes (ARCHITECTURE §9.2). Owner: WP-2F. WP-00 stub answering 501 until WP-2F implements it.
+// Bundled font catalog and files (ARCHITECTURE §9.2, S04:FT-001…003).
 import type { FastifyInstance } from 'fastify';
-import { registerStubRoutes } from './stub.ts';
+import { serveFile } from '../tools/http.ts';
+import { fail, guarded } from '../tools/reply.ts';
+import { coreServices } from '../tools/services.ts';
 
 export default async function fontsRoutes(app: FastifyInstance): Promise<void> {
-	registerStubRoutes(app, ['fontsList', 'fontFile']);
+	const { fonts } = coreServices(app);
+	app.get('/api/fonts', async () => fonts.catalog());
+	app.get<{ Params: { '*': string } }>(
+		'/fonts/*',
+		guarded<{ Params: { '*': string } }>(async (req, reply) => {
+			const file = fonts.filePath(req.params['*']);
+			if (!file) return fail(reply, 404, 'FONT_NOT_FOUND', 'Unknown font file');
+			return serveFile(req, reply, file, { cache: 'immutable' });
+		}),
+	);
 }

@@ -78,7 +78,7 @@ export async function startEngine(opts: StartEngineOptions): Promise<RunningEngi
 		);
 	}
 	prepareAppdir(opts.appdir);
-	const app = await createServer(config, { logger: opts.logger });
+	const app = await createServer(config, { logger: opts.logger, env: opts.env });
 	await app.listen({ host: config.host, port: opts.port });
 	const addr = app.server.address();
 	const port = typeof addr === 'object' && addr ? addr.port : opts.port;
@@ -92,5 +92,20 @@ export async function startEngine(opts: StartEngineOptions): Promise<RunningEngi
 	};
 }
 
+// ---------------------------------------------------------------- service interface for WP-2G / WP-2H
+// (documented in docs/wp-notes/WP-2F.md)
+export { UrlSigner } from './auth/signed-url.ts';
 export type { EngineConfig, EngineContext } from './context.ts';
+export { Broadcaster } from './events/broadcaster.ts';
+export type { MgMasterProvider, MgMasterRequest } from './export/service.ts';
+export { JobQueue } from './jobs/queue.ts';
+export { type JobContext, JobError, type JobRunner, type JobSubmit } from './jobs/types.ts';
+export { fingerprintFile, mediaKeyFor } from './media/fingerprint.ts';
+export { type MediaRecord, MediaRegistry } from './media/registry.ts';
+export { LeaseManager } from './projects/leases.ts';
+export { ProjectError, ProjectStoreFs } from './projects/store.ts';
 export { createServer } from './server.ts';
+export type { CapabilityPatch, CapabilityProvider } from './tools/capabilities.ts';
+export { Ffmpeg, type FfmpegProgress, resolveBinaries } from './tools/ffmpeg.ts';
+export { runTool, spawnTool, ToolError, terminateTree } from './tools/process.ts';
+export { type CoreServices, coreServices } from './tools/services.ts';

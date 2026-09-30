@@ -10,20 +10,39 @@
   "scripts": {
     "dev": "cross-env JASPER_APPDIR=../../.stage JASPER_DEV=1 tsx watch src/cli.ts --port 47900",
     "build": "node scripts/build.mjs",
+    "build:remotion": "node scripts/build-remotion.mjs",
     "start": "node dist/engine.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
     "@fastify/static": "^10.0.0",
+    "@fontsource/inter": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@fontsource/lato": "^5.3.0",
+    "@fontsource/montserrat": "^5.3.0",
+    "@fontsource/open-sans": "^5.3.0",
+    "@fontsource/oswald": "^5.3.0",
+    "@fontsource/playfair-display": "^5.3.0",
+    "@fontsource/poppins": "^5.3.0",
+    "@fontsource/roboto": "^5.3.0",
+    "@fontsource/source-sans-3": "^5.3.0",
     "@jasper/api": "workspace:*",
+    "@jasper/compositions": "workspace:*",
     "@jasper/config": "workspace:*",
     "@jasper/mg-templates": "workspace:*",
     "@jasper/project": "workspace:*",
+    "@remotion/bundler": "4.0.499",
+    "@remotion/renderer": "4.0.499",
     "fastify": "^5.6.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "remotion": "4.0.499",
     "zod": "^4.1.0"
   },
   "devDependencies": {
+    "@jasper/engine-client": "workspace:*",
+    "@jasper/session": "workspace:*",
     "esbuild": "^0.25.0"
   }
 }

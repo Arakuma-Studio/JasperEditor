@@ -1,18 +1,210 @@
-// Media registration, status, derivatives and serving routes (ARCHITECTURE §9.2). Owner: WP-2F. WP-00 stub answering 501 until WP-2F implements it.
-import type { FastifyInstance } from 'fastify';
-import { registerStubRoutes } from './stub.ts';
+// Media registration, status, derivative requests and byte serving (ARCHITECTURE §9.2, S04 §5, §8).
+import { join } from 'node:path';
+import {
+	DerivativesRequestSchema,
+	MediaRegisterRequestSchema,
+	type MediaRegisterResponse,
+} from '@jasper/api';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { MEDIA_KEY_RE } from '../media/fingerprint.ts';
+import type { MediaRecord } from '../media/registry.ts';
+import { contentTypeFor, serveFile } from '../tools/http.ts';
+import { fail, guarded, HttpError, parseOr400 } from '../tools/reply.ts';
+import { coreServices } from '../tools/services.ts';
+
+type K = { Params: { mediaKey: string } };
 
 export default async function mediaRoutes(app: FastifyInstance): Promise<void> {
-	registerStubRoutes(app, [
-		'mediaRegister',
-		'mediaStatus',
-		'mediaDerivatives',
-		'mediaFile',
-		'mediaProxy',
-		'mediaPoster',
-		'mediaSpriteIndex',
-		'mediaSpriteSheet',
-		'mediaPeaksHeader',
-		'mediaPeaksStream',
-	]);
+	const core = coreServices(app);
+	const { registry, media, derivatives } = core;
+
+	const record = (key: string): MediaRecord => {
+		const r = MEDIA_KEY_RE.test(key) ? registry.get(key) : null;
+		if (!r) throw new HttpError(404, 'ASSET_NOT_FOUND', 'Unknown media key');
+		return r;
+	};
+
+	// ---------------------------------------------------------------- JSON API
+
+	app.post(
+		'/api/media/register',
+		guarded(async (req) => {
+			// Path registration is a local/desktop feature (S04:SC-002). M1 engines are loopback-only, so it is
+			// always local; a future remote mode must restrict it to configured media roots.
+			if (!core.config.dev && !isLoopback(core.config.host)) {
+				throw new HttpError(403, 'LOCAL_MODE_ONLY', 'Path registration is only available in local mode');
+			}
+			const body = parseOr400(MediaRegisterRequestSchema, req.body);
+			const items: (MediaRegisterResponse['items'][number] | undefined)[] = [];
+			const errors: MediaRegisterResponse['errors'] = [];
+			// Bounded parallelism: probes run through the queue (interactive lane), up to 4 at once (S04:IN-009).
+			let next = 0;
+			const worker = async () => {
+				for (let i = next++; i < body.paths.length; i = next++) {
+					const p = body.paths[i]!;
+					try {
+						items[i] = await media.registerPath(p, {
+							projectId: body.projectId,
+							...(body.copyIntoProject ? { copyIntoProject: true } : {}),
+						});
+					} catch (e) {
+						const err = e as { code?: string; message?: string };
+						errors.push({
+							path: p,
+							code: err.code ?? 'INTERNAL',
+							message: err.message ?? 'Registration failed',
+						});
+					}
+				}
+			};
+			await Promise.all(Array.from({ length: Math.min(4, body.paths.length) }, worker));
+			const out: MediaRegisterResponse = { items: items.filter((x) => x !== undefined), errors };
+			return out;
+		}),
+	);
+
+	app.get<K>(
+		'/api/media/:mediaKey',
+		guarded<K>(async (req) => {
+			record(req.params.mediaKey);
+			return (await media.status(req.params.mediaKey))!;
+		}),
+	);
+
+	app.post<K>(
+		'/api/media/:mediaKey/derivatives',
+		guarded<K>(async (req) => {
+			const r = record(req.params.mediaKey);
+			const { kinds } = parseOr400(DerivativesRequestSchema, req.body);
+			return { jobs: derivatives.request(r, kinds, { priority: 'user', origin: { type: 'user' } }) };
+		}),
+	);
+
+	// ---------------------------------------------------------------- byte serving (S04:MS-001/002)
+
+	const serveArtifact = async (
+		req: FastifyRequest,
+		reply: FastifyReply,
+		file: string | null,
+		type?: string,
+	) => {
+		if (!file) return fail(reply, 404, 'NOT_FOUND', 'Not ready');
+		return serveFile(req, reply, file, { cache: 'immutable', ...(type ? { contentType: type } : {}) });
+	};
+
+	app.get<K>(
+		'/media/:mediaKey',
+		guarded<K>(async (req, reply) => {
+			const r = record(req.params.mediaKey);
+			const path = await registry.resolvePath(r.mediaKey);
+			if (!path) return fail(reply, 404, 'ASSET_NOT_FOUND', 'Media is offline');
+			const type = contentTypeFor(
+				r.originalName,
+				r.kind === 'audio' ? 'audio/mpeg' : 'application/octet-stream',
+			);
+			return serveFile(req, reply, path, { cache: 'revalidate', contentType: type });
+		}),
+	);
+
+	app.get<{ Params: { mediaKey: string; tier: string } }>(
+		'/media/:mediaKey/proxy/:tier',
+		guarded<{ Params: { mediaKey: string; tier: string } }>(async (req, reply) => {
+			const r = record(req.params.mediaKey);
+			const tier = req.params.tier.replace(/\.mp4$/, '');
+			if (tier !== '720' && tier !== '540') return fail(reply, 404, 'NOT_FOUND', 'Unknown proxy tier');
+			const kind = tier === '720' ? 'proxy-720' : 'proxy-540';
+			const p = derivatives.paths(r.fingerprint, kind);
+			return serveArtifact(req, reply, (await derivatives.isReady(r, kind)) ? p.main : null, 'video/mp4');
+		}),
+	);
+
+	app.get<K>(
+		'/media/:mediaKey/poster.jpg',
+		guarded<K>(async (req, reply) => {
+			const r = record(req.params.mediaKey);
+			return serveArtifact(
+				req,
+				reply,
+				(await derivatives.isReady(r, 'poster')) ? derivatives.paths(r.fingerprint, 'poster').main : null,
+				'image/jpeg',
+			);
+		}),
+	);
+
+	app.get<K>(
+		'/media/:mediaKey/keyframes.json',
+		guarded<K>(async (req, reply) => {
+			const r = record(req.params.mediaKey);
+			return serveArtifact(
+				req,
+				reply,
+				(await derivatives.isReady(r, 'keyframes'))
+					? derivatives.paths(r.fingerprint, 'keyframes').main
+					: null,
+				'application/json',
+			);
+		}),
+	);
+
+	app.get<K>(
+		'/media/:mediaKey/sprite.json',
+		guarded<K>(async (req, reply) => {
+			const r = record(req.params.mediaKey);
+			return serveArtifact(
+				req,
+				reply,
+				(await derivatives.isReady(r, 'sprite')) ? derivatives.paths(r.fingerprint, 'sprite').main : null,
+				'application/json',
+			);
+		}),
+	);
+
+	app.get<{ Params: { mediaKey: string; sheet: string } }>(
+		'/media/:mediaKey/sprite/:sheet',
+		guarded<{ Params: { mediaKey: string; sheet: string } }>(async (req, reply) => {
+			const r = record(req.params.mediaKey);
+			const m = /^(\d{1,5})(\.jpg)?$/.exec(req.params.sheet);
+			if (!m) return fail(reply, 404, 'NOT_FOUND', 'Unknown sprite sheet');
+			const p = derivatives.paths(r.fingerprint, 'sprite');
+			return serveArtifact(
+				req,
+				reply,
+				(await derivatives.isReady(r, 'sprite')) ? join(p.dir!, `${Number(m[1])}.jpg`) : null,
+				'image/jpeg',
+			);
+		}),
+	);
+
+	app.get<K>(
+		'/media/:mediaKey/peaks.json',
+		guarded<K>(async (req, reply) => {
+			const r = record(req.params.mediaKey);
+			return serveArtifact(
+				req,
+				reply,
+				(await derivatives.isReady(r, 'peaks')) ? derivatives.paths(r.fingerprint, 'peaks').main : null,
+				'application/json',
+			);
+		}),
+	);
+
+	app.get<{ Params: { mediaKey: string; stream: string } }>(
+		'/media/:mediaKey/peaks/:stream',
+		guarded<{ Params: { mediaKey: string; stream: string } }>(async (req, reply) => {
+			const r = record(req.params.mediaKey);
+			const m = /^(\d{1,3})(\.bin)?$/.exec(req.params.stream);
+			if (!m) return fail(reply, 404, 'NOT_FOUND', 'Unknown peaks stream');
+			const p = derivatives.paths(r.fingerprint, 'peaks');
+			return serveArtifact(
+				req,
+				reply,
+				(await derivatives.isReady(r, 'peaks')) ? join(p.dir!, `${Number(m[1])}.bin`) : null,
+				'application/octet-stream',
+			);
+		}),
+	);
+}
+
+function isLoopback(host: string): boolean {
+	return ['127.0.0.1', 'localhost', '::1'].includes(host.toLowerCase());
 }
