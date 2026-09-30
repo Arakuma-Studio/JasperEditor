@@ -3,13 +3,15 @@
 // Unknown effects already in a document are preserved verbatim and may still be removed, reordered or
 // bypassed; only adding an unknown effect id is refused (S01:FX-022).
 import type { Draft } from 'immer';
+import { EASE_PRESETS } from '../../keyframes.ts';
 import type { EffectSpec } from '../../registry/effects.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
-import type { Animatable, ParamValue } from '../../schema/common.ts';
+import { type Animatable, EaseSchema, InterpolationSchema, type ParamValue } from '../../schema/common.ts';
 import { type EffectInstance, isKnownClipKind, type Track } from '../../schema/sequence.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
+import { refreshAutoBezier } from './keyframe.ts';
 import { ruleFromParam, validateValue } from './param.ts';
 import type { HandlerMap } from './util.ts';
 
@@ -82,13 +84,41 @@ function buildParams(
 			const a = raw as Animatable<unknown>;
 			const rule = ruleFromParam(p);
 			const value = validateValue(a.value, rule, h, label).value as ParamValue;
-			const keyframes = (Array.isArray(a.keyframes) ? a.keyframes : []).map((k) => ({
-				...k,
-				id: h.ids.next('kf'),
-				value: validateValue(k.value, rule, h, label).value as ParamValue,
-			}));
+			if (!Array.isArray(a.keyframes)) h.fail('E_INVALID_PARAM', `${label}: keyframes must be an array`);
+			const keyframes = a.keyframes.map((k, i) => {
+				// Only the S01 keyframe fields are taken over; each one is checked so a pasted or agent-supplied
+				// animation can never leave the document with keys the evaluator cannot read.
+				const where = `${label} keyframe ${i}`;
+				const time = (k as { time?: unknown }).time;
+				if (typeof time !== 'number' || !Number.isSafeInteger(time) || time < 0)
+					h.fail('E_INVALID_PARAM', `${where}: time must be a non-negative integer (flicks)`);
+				const interp = InterpolationSchema.safeParse(
+					(k as { interpolation?: unknown }).interpolation ?? 'linear',
+				);
+				if (!interp.success) h.fail('E_INVALID_PARAM', `${where}: unknown interpolation`);
+				const ease = (e: unknown) => {
+					if (e === undefined) return { ...EASE_PRESETS.linear };
+					const r = EaseSchema.safeParse(e);
+					if (!r.success) return h.fail('E_INVALID_PARAM', `${where}: invalid ease`);
+					return { influence: r.data.influence, slope: r.data.slope };
+				};
+				const v = validateValue(k.value, rule, h, label).value as ParamValue;
+				return {
+					id: h.ids.next('kf'),
+					time: time as number,
+					value: v,
+					interpolation: rule.holdOnly ? ('hold' as const) : interp.data!,
+					easeIn: ease((k as { easeIn?: unknown }).easeIn),
+					easeOut: ease((k as { easeOut?: unknown }).easeOut),
+				};
+			});
 			keyframes.sort((x, y) => x.time - y.time);
-			out[p.name] = { value, keyframes };
+			for (let i = 1; i < keyframes.length; i++)
+				if (keyframes[i]!.time === keyframes[i - 1]!.time)
+					h.fail('E_INVALID_PARAM', `${label}: two keyframes at the same time`);
+			const anim = { value, keyframes } as Animatable<ParamValue>;
+			refreshAutoBezier(anim as never);
+			out[p.name] = anim;
 			continue;
 		}
 		const v = validateValue(raw, ruleFromParam(p), h, label);

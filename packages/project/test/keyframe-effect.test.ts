@@ -18,6 +18,7 @@ import {
 	createStaticMgRegistry,
 	defaultEffectRegistry,
 	defaultRegistries,
+	EASE_PRESETS,
 	type EffectInstance,
 	type EffectSpec,
 	effectBadges,
@@ -175,6 +176,41 @@ describe('effect.add / remove / reorder / setEnabled (S01:FX-020…023)', () => 
 			if (!res.ok) expect(res.errors[0]!.code).toBe(code);
 			expect(h.doc).toBe(before);
 		}
+	});
+
+	it('validates animated param overrides (pasted/agent keyframes) field by field', () => {
+		const { h, id } = withSolid();
+		const F = 705_600_000 / 30;
+		const blur = (keyframes: unknown) => ({
+			type: 'effect.add',
+			target: { clipId: id },
+			effectId: 'jasper.gaussian-blur',
+			params: { radius: { value: 5, keyframes } },
+		});
+		const k = (time: unknown, extra: Record<string, unknown> = {}) => ({ time, value: 4, ...extra });
+		for (const bad of [
+			[k(3.5)],
+			[k(-F)],
+			[k('0')],
+			[k(0, { interpolation: 'weird' })],
+			[k(0, { easeIn: 5 })],
+			[k(0, { easeOut: { influence: 0, slope: 1 } })],
+			[k(0), k(0)],
+			'nope',
+		]) {
+			const before = h.doc;
+			const res = h.tx([blur(bad)]);
+			expect(res.ok, JSON.stringify(bad)).toBe(false);
+			if (!res.ok) expect(res.errors[0]!.code).toBe('E_INVALID_PARAM');
+			expect(h.doc).toBe(before);
+		}
+		h.ok([blur([k(10 * F, { junk: true }), k(0, { interpolation: 'auto-bezier' })])]);
+		const radius = clipOf(h, id).effects[0]!.params.radius!;
+		expect(radius.keyframes.map((x) => x.time)).toEqual([0, 10 * F]);
+		expect(radius.keyframes[1]).not.toHaveProperty('junk');
+		expect(radius.keyframes[1]!.easeIn).toEqual(EASE_PRESETS.linear);
+		expect(radius.keyframes[0]!.interpolation).toBe('auto-bezier');
+		expect(checkInvariants(h.doc, { effects: defaultEffectRegistry })).toEqual([]);
 	});
 
 	it('refuses video effects on audio clips and edits on locked tracks', () => {
