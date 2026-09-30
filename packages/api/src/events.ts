@@ -1,0 +1,72 @@
+// NDJSON event stream `GET /events` (ARCHITECTURE §9.2, S04 §19.3, ENG-023).
+import { z } from 'zod';
+import { ApprovalSchema } from './agent.ts';
+import { EngineJobSchema } from './jobs.ts';
+import { DerivativeKindSchema, DerivativeStatusSchema } from './media.ts';
+
+export const HEARTBEAT_INTERVAL_MS = 15_000;
+
+export const EventEnvelopeSchema = z.object({
+	/** Monotonic per engine process; resume with `?since=<id>`. */
+	id: z.number().int().min(0),
+	type: z.string(),
+	createdAt: z.string(),
+	projectId: z.string().optional(),
+	payload: z.unknown(),
+});
+export type EventEnvelope = z.infer<typeof EventEnvelopeSchema>;
+
+export const EVENT_PAYLOADS = {
+	'engine.heartbeat': z.object({}),
+	'capabilities.changed': z.object({}),
+	'job.created': EngineJobSchema,
+	'job.updated': EngineJobSchema,
+	'job.finished': EngineJobSchema,
+	'media.updated': z.object({
+		mediaKey: z.string(),
+		status: z.enum(['online', 'missing', 'processing', 'error']),
+		derivatives: z.record(DerivativeKindSchema, DerivativeStatusSchema).optional(),
+	}),
+	'derivative.ready': z.object({ mediaKey: z.string(), kind: DerivativeKindSchema, url: z.string() }),
+	'export.finished': z.object({
+		jobId: z.string(),
+		downloadUrl: z.string().optional(),
+		outputPath: z.string().optional(),
+		byteSize: z.number(),
+		durationSec: z.number(),
+	}),
+	'doc.changed': z.object({
+		projectId: z.string(),
+		revision: z.number().int(),
+		label: z.string(),
+		origin: z.unknown(),
+		created: z.array(z.string()),
+		changed: z.array(z.string()),
+		deleted: z.array(z.string()),
+		isUndo: z.boolean(),
+		isRedo: z.boolean().optional(),
+	}),
+	'agent.approval.requested': ApprovalSchema,
+	'agent.approval.resolved': z.object({
+		approvalId: z.string(),
+		decision: z.enum(['approved', 'denied', 'timeout']),
+	}),
+} as const;
+export type EngineEventType = keyof typeof EVENT_PAYLOADS;
+export const ENGINE_EVENT_TYPES = Object.keys(EVENT_PAYLOADS) as EngineEventType[];
+export type EventPayload<T extends EngineEventType> = z.infer<(typeof EVENT_PAYLOADS)[T]>;
+
+export type TypedEvent = {
+	[T in EngineEventType]: Omit<EventEnvelope, 'type' | 'payload'> & { type: T; payload: EventPayload<T> };
+}[EngineEventType];
+
+/** Validates an envelope's payload for known types; unknown types (newer engines) pass through as null. */
+export function parseEvent(raw: unknown): TypedEvent | null {
+	const env = EventEnvelopeSchema.safeParse(raw);
+	if (!env.success) return null;
+	const schema = (EVENT_PAYLOADS as Record<string, z.ZodType>)[env.data.type];
+	if (!schema) return null;
+	const payload = schema.safeParse(env.data.payload);
+	if (!payload.success) return null;
+	return { ...env.data, payload: payload.data } as TypedEvent;
+}

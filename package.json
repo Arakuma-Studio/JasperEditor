@@ -1,0 +1,44 @@
+{
+  "name": "jasper-editor",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.34.5",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n engine,web \"pnpm dev:engine\" \"pnpm dev:web\"",
+    "dev:engine": "cross-env JASPER_APPDIR=./.stage JASPER_DEV=1 tsx watch apps/engine/src/cli.ts --port 47900",
+    "dev:web": "pnpm --filter @jasper/web dev",
+    "dev:desktop": "pnpm --filter @jasper/desktop dev",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "vitest run",
+    "lint": "biome check . && node scripts/check-tokens.mjs",
+    "format": "biome format --write .",
+    "build": "pnpm -r --if-present build",
+    "mg:build": "node scripts/mg-build.mjs",
+    "fixtures": "node scripts/make-fixtures.mjs",
+    "e2e": "playwright test",
+    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.14",
+    "@testing-library/react": "^16.3.3",
+    "@types/node": "^20.19.43",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "fast-check": "^4.10.2",
+    "happy-dom": "^20.14.5",
+    "tsx": "^4.23.15",
+    "typescript": "5.9.3",
+    "vitest": "^4.1.11",
+    "wait-on": "^9.5.1"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild",
+      "@biomejs/biome"
+    ]
+  }
+}

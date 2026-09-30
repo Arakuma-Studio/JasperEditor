@@ -1,0 +1,11 @@
+{
+  "name": "JasperEditor",
+  "short_name": "Jasper",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#1d1d1d",
+  "icons": []
+}

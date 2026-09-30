@@ -1,0 +1,248 @@
+// project.*, bin.create, item.* (S01 §5, §16.2).
+import { defaultLabelForMedia } from '../../registry/kinds.ts';
+import type { ProjectItem } from '../../schema/document.ts';
+import type { MediaAsset } from '../../schema/media.ts';
+import { flicksPerFrame, type Rational } from '../../time.ts';
+import type { DDoc, HandlerContext } from '../context.ts';
+import { cleanupSequence, removeClip } from '../placement.ts';
+import { type HandlerMap, idList } from './util.ts';
+
+export function detachItem(doc: DDoc, itemId: string): void {
+	const ri = doc.rootItems.indexOf(itemId);
+	if (ri >= 0) doc.rootItems.splice(ri, 1);
+	for (const it of Object.values(doc.items)) {
+		if (it.kind === 'bin') {
+			const i = it.children.indexOf(itemId);
+			if (i >= 0) it.children.splice(i, 1);
+		}
+	}
+}
+
+export function insertItem(
+	doc: DDoc,
+	itemId: string,
+	parentBinId: string | null | undefined,
+	index?: number,
+): void {
+	let list: string[];
+	if (parentBinId) {
+		const bin = doc.items[parentBinId];
+		if (bin?.kind !== 'bin') throw new Error(`not a bin: ${parentBinId}`);
+		list = bin.children;
+	} else list = doc.rootItems;
+	if (index === undefined || index >= list.length) list.push(itemId);
+	else list.splice(index, 0, itemId);
+}
+
+export function assertBin(doc: DDoc, binId: string | null | undefined, h: HandlerContext): void {
+	if (!binId) return;
+	const bin = doc.items[binId];
+	if (!bin) h.fail('E_NOT_FOUND', `Bin not found: ${binId}`);
+	if (bin.kind !== 'bin') h.fail('E_INVALID_PARAM', `Item ${binId} is not a bin`);
+}
+
+function isDescendant(doc: DDoc, ancestorBinId: string, itemId: string): boolean {
+	const bin = doc.items[ancestorBinId];
+	if (bin?.kind !== 'bin') return false;
+	for (const child of bin.children) {
+		if (child === itemId || isDescendant(doc, child, itemId)) return true;
+	}
+	return false;
+}
+
+function item(doc: DDoc, id: string, h: HandlerContext): ProjectItem {
+	const it = doc.items[id];
+	if (!it) h.fail('E_NOT_FOUND', `Project item not found: ${id}`);
+	return it as ProjectItem;
+}
+
+/** Removes assets/synthetics/transcripts no longer referenced by any item or clip (INV-014). */
+export function collectOrphans(doc: DDoc): void {
+	const usedMedia = new Set<string>();
+	const usedSyn = new Set<string>();
+	const usedTrs = new Set<string>();
+	for (const it of Object.values(doc.items)) {
+		if (it.kind === 'media') usedMedia.add(it.mediaId);
+		if (it.kind === 'synthetic') usedSyn.add(it.syntheticId);
+	}
+	for (const seq of Object.values(doc.sequences)) {
+		for (const c of Object.values(seq.clips)) {
+			const r = c as Record<string, unknown>;
+			if (typeof r.mediaId === 'string') usedMedia.add(r.mediaId);
+			if (typeof r.syntheticId === 'string') usedSyn.add(r.syntheticId);
+			if (typeof r.transcriptId === 'string') usedTrs.add(r.transcriptId);
+		}
+	}
+	for (const m of Object.values(doc.media)) {
+		if (m.derivation) usedMedia.add(m.derivation.fromMediaId);
+	}
+	for (const t of Object.values(doc.transcripts)) {
+		if (!usedTrs.has(t.id) && (t.mediaId === null || !usedMedia.has(t.mediaId))) delete doc.transcripts[t.id];
+		else if (t.mediaId && !usedMedia.has(t.mediaId)) t.mediaId = null;
+	}
+	for (const id of Object.keys(doc.media)) if (!usedMedia.has(id)) delete doc.media[id];
+	for (const id of Object.keys(doc.synthetics)) if (!usedSyn.has(id)) delete doc.synthetics[id];
+}
+
+export const projectHandlers: HandlerMap = {
+	'project.rename': (doc, cmd) => {
+		doc.name = cmd.name;
+	},
+	'project.updateSettings': (doc, cmd) => {
+		Object.assign(doc.settings, cmd.settings);
+	},
+	'bin.create': (doc, cmd, h: HandlerContext) => {
+		assertBin(doc, cmd.parentBinId, h);
+		const id = h.newId(doc, 'bin', cmd.id);
+		doc.items[id] = { id, kind: 'bin', name: cmd.name, children: [], label: 'mango' };
+		insertItem(doc, id, cmd.parentBinId, cmd.index);
+		h.defineRef(cmd.ref, id);
+		return { itemId: id };
+	},
+	'item.rename': (doc, cmd, h: HandlerContext) => {
+		for (const id of idList(cmd.itemIds)) item(doc, id, h).name = cmd.name;
+	},
+	'item.setLabel': (doc, cmd, h: HandlerContext) => {
+		for (const id of idList(cmd.itemIds)) item(doc, id, h).label = cmd.label;
+	},
+	'item.move': (doc, cmd, h: HandlerContext) => {
+		assertBin(doc, cmd.toBinId, h);
+		let index = cmd.index;
+		for (const id of idList(cmd.itemIds)) {
+			item(doc, id, h);
+			if (cmd.toBinId && (cmd.toBinId === id || isDescendant(doc, id, cmd.toBinId))) {
+				h.fail('E_CYCLE', `Cannot move ${id} into itself or one of its bins`);
+			}
+			detachItem(doc, id);
+			insertItem(doc, id, cmd.toBinId, index);
+			if (index !== undefined) index++;
+		}
+	},
+	'item.delete': (doc, cmd, h: HandlerContext) => {
+		const toDelete = new Set<string>();
+		const addRec = (id: string) => {
+			const it = item(doc, id, h);
+			toDelete.add(id);
+			if (it.kind === 'bin') for (const c of it.children) addRec(c);
+		};
+		for (const id of idList(cmd.itemIds)) addRec(id);
+		const remainingRefs = (field: 'mediaId' | 'syntheticId', value: string) =>
+			Object.values(doc.items).some(
+				(it) => !toDelete.has(it.id) && (it as Record<string, unknown>)[field] === value,
+			);
+		const clipRemovals: { seqId: string; clipId: string }[] = [];
+		const deletedSequences = new Set<string>();
+		for (const id of toDelete) {
+			const it = doc.items[id]!;
+			if (it.kind === 'sequence') deletedSequences.add(it.sequenceId);
+		}
+		for (const id of toDelete) {
+			const it = doc.items[id]!;
+			const field = it.kind === 'media' ? 'mediaId' : it.kind === 'synthetic' ? 'syntheticId' : null;
+			if (!field) continue;
+			const value = (it as Record<string, unknown>)[field] as string;
+			if (remainingRefs(field, value)) continue;
+			for (const seq of Object.values(doc.sequences)) {
+				if (deletedSequences.has(seq.id)) continue;
+				for (const c of Object.values(seq.clips)) {
+					if ((c as Record<string, unknown>)[field] === value)
+						clipRemovals.push({ seqId: seq.id, clipId: c.id });
+				}
+			}
+		}
+		for (const seq of Object.values(doc.sequences)) {
+			if (deletedSequences.has(seq.id)) continue;
+			for (const c of Object.values(seq.clips)) {
+				const nested = (c as Record<string, unknown>).sequenceId;
+				if (typeof nested === 'string' && deletedSequences.has(nested))
+					clipRemovals.push({ seqId: seq.id, clipId: c.id });
+			}
+		}
+		if (clipRemovals.length > 0 && !cmd.force) {
+			const seqs = new Set(clipRemovals.map((r) => r.seqId));
+			h.fail('E_IN_USE', `${clipRemovals.length} clips in ${seqs.size} sequences use this media`, {
+				blocking: clipRemovals.map((r) => r.clipId),
+			});
+		}
+		for (const r of clipRemovals) {
+			const seq = doc.sequences[r.seqId]!;
+			const track = [...seq.videoTracks, ...seq.audioTracks, ...seq.captionTracks].find(
+				(t) => t.id === seq.clips[r.clipId]?.trackId,
+			);
+			if (track?.locked)
+				h.fail('E_TRACK_LOCKED', `Clip ${r.clipId} is on a locked track`, { blocking: [track.id] });
+			removeClip(seq, r.clipId, h);
+		}
+		for (const seqId of deletedSequences) delete doc.sequences[seqId];
+		for (const id of toDelete) {
+			detachItem(doc, id);
+			delete doc.items[id];
+		}
+		for (const seq of Object.values(doc.sequences)) cleanupSequence(seq, h);
+		collectOrphans(doc);
+		return { deletedItems: [...toDelete], removedClips: clipRemovals.map((r) => r.clipId) };
+	},
+	'item.setMarks': (doc, cmd, h: HandlerContext) => {
+		const it = item(doc, cmd.itemId, h);
+		if (it.kind !== 'media' && it.kind !== 'synthetic')
+			h.fail('E_INVALID_PARAM', 'Only media and synthetic items have marks');
+		const asset: MediaAsset | undefined =
+			it.kind === 'media' ? (doc.media[it.mediaId] as MediaAsset) : undefined;
+		const fallback: Rational = { num: 30, den: 1 };
+		const inF = cmd.in ? h.flicks(cmd.in, asset, fallback) : null;
+		const outF = cmd.out ? h.flicks(cmd.out, asset, fallback) : null;
+		if (inF !== null && outF !== null && outF <= inF)
+			h.fail('E_INVALID_PARAM', 'Out mark must be after In mark');
+		const dur = asset?.probe.durationFlicks;
+		if (dur != null && ((inF ?? 0) > dur || (outF ?? 0) > dur + flicksPerFrame(fallback))) {
+			h.fail('E_OUT_OF_MEDIA', 'Marks are outside the media');
+		}
+		it.marks = { in: inF === null ? null : { flicks: inF }, out: outF === null ? null : { flicks: outF } };
+	},
+	'media.register': (doc, cmd, h: HandlerContext) => {
+		assertBin(doc, cmd.binId, h);
+		const existing = Object.values(doc.media).find(
+			(m) => m.fingerprint === cmd.asset.fingerprint && !m.fingerprint.startsWith('pending:'),
+		);
+		let mediaId: string;
+		let deduped = false;
+		if (existing) {
+			mediaId = existing.id;
+			deduped = true;
+			h.warn('W_DEDUPED', `Already in project; added another reference to ${existing.id}`);
+		} else {
+			mediaId = h.newId(doc, 'med', cmd.asset.id);
+			doc.media[mediaId] = {
+				...cmd.asset,
+				id: mediaId,
+				derivation: cmd.asset.derivation ?? null,
+				importedAt: cmd.asset.importedAt ?? h.ctx.now(),
+			} as MediaAsset;
+		}
+		const asset = doc.media[mediaId]!;
+		const itemId = h.ids.next('itm');
+		doc.items[itemId] = {
+			id: itemId,
+			kind: 'media',
+			name: cmd.name ?? cmd.asset.originalName,
+			mediaId,
+			label: cmd.label ?? defaultLabelForMedia(asset as MediaAsset),
+			marks: { in: null, out: null },
+		};
+		insertItem(doc, itemId, cmd.binId);
+		h.defineRef(cmd.ref, mediaId);
+		h.defineRef(cmd.itemRef, itemId);
+		return { mediaId, itemId, deduped };
+	},
+	'media.relink': (doc, cmd, h: HandlerContext) => {
+		const asset = doc.media[cmd.mediaId];
+		if (!asset) h.fail('E_NOT_FOUND', `Media not found: ${cmd.mediaId}`);
+		if (cmd.fingerprint && cmd.fingerprint !== asset.fingerprint) {
+			if (!cmd.force)
+				h.fail('E_INVALID_PARAM', 'Fingerprint does not match the media (pass force to relink anyway)');
+			asset.fingerprint = cmd.fingerprint;
+		}
+		asset.locators = [cmd.locator, ...asset.locators.filter((l) => l.type !== cmd.locator.type)];
+		if (cmd.probe) asset.probe = cmd.probe;
+	},
+};

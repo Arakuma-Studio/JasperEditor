@@ -1,0 +1,43 @@
+/* dockview-react theme mapped to --pr-* tokens (ARCHITECTURE §7.1, R-PUI §5). Apply the class
+   `dockview-theme-jasper` to the DockviewReact root (WP-2A). */
+.dockview-theme-jasper {
+	--dv-background-color: var(--pr-bg-app);
+	--dv-paneview-active-outline-color: var(--pr-focus-ring);
+	--dv-tabs-and-actions-container-background-color: var(--pr-bg-panel);
+	--dv-tabs-and-actions-container-height: var(--pr-tab-h);
+	--dv-tabs-and-actions-container-font-size: var(--pr-font-size-ui);
+	--dv-activegroup-visiblepanel-tab-background-color: var(--pr-bg-panel);
+	--dv-activegroup-hiddenpanel-tab-background-color: var(--pr-bg-panel);
+	--dv-inactivegroup-visiblepanel-tab-background-color: var(--pr-bg-panel);
+	--dv-inactivegroup-hiddenpanel-tab-background-color: var(--pr-bg-panel);
+	--dv-activegroup-visiblepanel-tab-color: var(--pr-text-strong);
+	--dv-activegroup-hiddenpanel-tab-color: var(--pr-text-secondary);
+	--dv-inactivegroup-visiblepanel-tab-color: var(--pr-text-primary);
+	--dv-inactivegroup-hiddenpanel-tab-color: var(--pr-text-secondary);
+	--dv-tab-divider-color: transparent;
+	--dv-tab-font-size: var(--pr-font-size-ui);
+	--dv-tabs-container-scrollbar-color: var(--pr-border-strong);
+	--dv-group-view-background-color: var(--pr-bg-panel);
+	--dv-separator-border: var(--pr-bg-app);
+	--dv-paneview-header-border-color: var(--pr-border-subtle);
+	--dv-sash-color: var(--pr-bg-app);
+	--dv-active-sash-color: var(--pr-accent);
+	--dv-drag-over-background-color: color-mix(in srgb, var(--pr-accent) 20%, transparent);
+	--dv-drag-over-border-color: var(--pr-accent);
+	--dv-icon-hover-background-color: var(--pr-bg-hover);
+	--dv-floating-box-shadow: var(--pr-shadow-floating);
+	--dv-overlay-z-index: var(--pr-z-floating);
+	--dv-border-radius: var(--pr-radius-frame);
+	font-family: var(--pr-font-ui);
+}
+
+/* Active tab: 2px light underline (R-PUI §5.2). */
+.dockview-theme-jasper .dv-tab.dv-active-tab {
+	box-shadow: inset 0 -2px 0 var(--pr-tab-underline);
+}
+
+/* Focused panel frame: 1px focus ring (S05:FO-002). */
+.dockview-theme-jasper .dv-groupview.pr-focused {
+	outline: 1px solid var(--pr-focus-ring);
+	outline-offset: -1px;
+}

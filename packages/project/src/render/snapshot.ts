@@ -1,0 +1,277 @@
+// Render snapshot (S01:RND-001…005, ARCHITECTURE §5.5): the self-contained JSON value handed to the
+// Remotion composition, the native planner and the Program overlay. Keyframes stay unevaluated.
+import { type EngineId, isBoundedContent, kindCapabilities } from '../registry/kinds.ts';
+import type { Animatable, RGBA } from '../schema/common.ts';
+import type { ProjectDocument } from '../schema/document.ts';
+import type { FontRef, MediaAsset } from '../schema/media.ts';
+import {
+	type BlendMode,
+	type Clip,
+	type EffectInstance,
+	isKnownClipKind,
+	type Speed,
+	type TextBox,
+	type TextContent,
+	type Transform,
+} from '../schema/sequence.ts';
+import type { Rational } from '../time.ts';
+
+export type MediaHandle = {
+	url: string;
+	proxyUrl: string | null;
+	kind: MediaAsset['kind'];
+	width: number | null;
+	height: number | null;
+	durationFlicks: number | null;
+	hasAudio: boolean;
+	rotation: 0 | 90 | 180 | 270;
+};
+
+export type RenderVisualSource =
+	| { mediaId: string }
+	| { text: TextContent; box: TextBox }
+	| { color: RGBA }
+	| {
+			mg: {
+				template: { id: string; version: number };
+				params: Record<string, unknown>;
+				canvas: { width: number; height: number };
+			};
+	  }
+	| { unsupported: string };
+
+export type RenderVisualClip = {
+	clipId: string;
+	kind: Clip['kind'];
+	trackId: string;
+	name: string;
+	/** Absolute sequence frame (the composition renders frame `range.start + f`). */
+	start: number;
+	duration: number;
+	/** Flicks. */
+	sourceIn: number;
+	speed: Speed;
+	source: RenderVisualSource;
+	/** Null for kinds without Motion (adjustment). */
+	transform: Transform | null;
+	opacity: Animatable<number>;
+	blendMode: BlendMode;
+	effects: EffectInstance[];
+	intrinsicBox: { width: number; height: number };
+	engine: EngineId;
+	loop?: boolean;
+	/** Bounded media content (needs trimBefore/playbackRate handling). */
+	bounded: boolean;
+};
+
+export type RenderAudioClip = {
+	clipId: string;
+	trackId: string;
+	start: number;
+	duration: number;
+	sourceIn: number;
+	speed: Speed;
+	mediaId: string;
+	channels: { streamIndex: number; map: number[] };
+	gainDb: number;
+	volumeDb: Animatable<number>;
+	pan: Animatable<number>;
+	effects: EffectInstance[];
+	/** Track fader and pan (sequence time in flicks). */
+	track: { volumeDb: Animatable<number>; pan: Animatable<number> };
+};
+
+export type RenderSnapshot = {
+	version: 1;
+	sequenceId: string;
+	settings: { width: number; height: number; fps: Rational; backgroundColor: RGBA; sampleRate: 48000 };
+	/** Frames; export range or whole sequence. */
+	range: { start: number; end: number };
+	durationFrames: number;
+	/** V1 (bottom) → top; output-disabled tracks omitted; clips sorted by start. */
+	videoTracks: { trackId: string; clips: RenderVisualClip[] }[];
+	/** After mute/solo resolution. */
+	audioClips: RenderAudioClip[];
+	/** null = offline. */
+	media: Record<string, MediaHandle | null>;
+	fonts: { fontId: string; family: string; weight: number; style: 'normal' | 'italic'; url: string }[];
+	master: { volumeDb: Animatable<number> };
+	/** Clips excluded from rendering (unknown kinds, S01:KND-030). */
+	warnings: { clipId: string; code: string; message: string }[];
+};
+
+export type SnapshotOptions = {
+	range?: { start: number; end: number };
+	resolveMedia(asset: MediaAsset): MediaHandle | null;
+	resolveFont(font: FontRef, weight: number, italic: boolean): string | null;
+};
+
+const ZERO = { value: 0, keyframes: [] } as Animatable<number>;
+
+function mediaBox(asset: MediaAsset | undefined): { width: number; height: number } | null {
+	const vs = asset?.probe.streams.find((s) => s.type === 'video');
+	if (!asset || !vs || vs.type !== 'video') return null;
+	const swap = asset.probe.rotationDegrees === 90 || asset.probe.rotationDegrees === 270;
+	return swap ? { width: vs.height, height: vs.width } : { width: vs.width, height: vs.height };
+}
+
+export function buildRenderSnapshot(
+	doc: ProjectDocument,
+	sequenceId: string,
+	opts: SnapshotOptions,
+): RenderSnapshot {
+	const seq = doc.sequences[sequenceId];
+	if (!seq) throw new Error(`Sequence not found: ${sequenceId}`);
+	const frame = { width: seq.settings.width, height: seq.settings.height };
+	let end = 0;
+	for (const c of Object.values(seq.clips)) end = Math.max(end, c.start + c.duration);
+	const range = opts.range ?? { start: 0, end };
+	const inRange = (c: Clip) => c.enabled && c.start < range.end && c.start + c.duration > range.start;
+	const media: Record<string, MediaHandle | null> = {};
+	const useMedia = (id: string) => {
+		if (id in media) return;
+		const asset = doc.media[id];
+		media[id] = asset ? opts.resolveMedia(asset) : null;
+	};
+	const warnings: RenderSnapshot['warnings'] = [];
+	const fontKeys = new Map<string, RenderSnapshot['fonts'][number]>();
+
+	const videoTracks: RenderSnapshot['videoTracks'] = [];
+	for (const t of seq.videoTracks) {
+		if (t.output === false) continue;
+		const clips: RenderVisualClip[] = [];
+		for (const c of Object.values(seq.clips)) {
+			if (c.trackId !== t.id || !inRange(c)) continue;
+			if (!isKnownClipKind(c.kind)) {
+				warnings.push({
+					clipId: c.id,
+					code: 'UNSUPPORTED_KIND',
+					message: `Unsupported clip kind "${c.kind}" is not rendered`,
+				});
+				continue;
+			}
+			const caps = kindCapabilities(c.kind)!;
+			if (!caps.visual) continue;
+			const r = c as Record<string, unknown>;
+			let source: RenderVisualSource;
+			let box = frame;
+			switch (c.kind) {
+				case 'video':
+				case 'still':
+				case 'animated-image': {
+					useMedia(c.mediaId);
+					source = { mediaId: c.mediaId };
+					box = mediaBox(doc.media[c.mediaId]) ?? frame;
+					break;
+				}
+				case 'text': {
+					source = { text: c.content, box: c.box };
+					box = { width: c.box.width, height: c.box.height };
+					const font = doc.fonts[c.content.style.fontId];
+					if (font) {
+						const key = `${font.id}:${c.content.style.weight}:${c.content.style.italic}`;
+						if (!fontKeys.has(key)) {
+							const url = opts.resolveFont(font, c.content.style.weight, c.content.style.italic);
+							if (url) {
+								fontKeys.set(key, {
+									fontId: font.id,
+									family: font.family,
+									weight: c.content.style.weight,
+									style: c.content.style.italic ? 'italic' : 'normal',
+									url,
+								});
+							}
+						}
+					}
+					break;
+				}
+				case 'solid': {
+					const syn = doc.synthetics[c.syntheticId];
+					source = {
+						color:
+							syn?.kind === 'color-matte'
+								? syn.color
+								: syn?.kind === 'transparent'
+									? [0, 0, 0, 0]
+									: [0, 0, 0, 1],
+					};
+					break;
+				}
+				case 'motion-graphic': {
+					const canvas = c.canvas === 'sequence' ? frame : { width: c.canvas.width, height: c.canvas.height };
+					source = { mg: { template: c.template, params: c.params, canvas } };
+					box = canvas;
+					break;
+				}
+				default:
+					source = { unsupported: c.kind };
+			}
+			clips.push({
+				clipId: c.id,
+				kind: c.kind,
+				trackId: c.trackId,
+				name: c.name,
+				start: c.start,
+				duration: c.duration,
+				sourceIn: c.sourceIn,
+				speed: c.speed,
+				source,
+				transform: (r.transform as Transform | undefined) ?? null,
+				opacity: (r.opacity as Animatable<number> | undefined) ?? { value: 100, keyframes: [] },
+				blendMode: (r.blendMode as BlendMode | undefined) ?? 'normal',
+				effects: (r.effects as EffectInstance[] | undefined) ?? [],
+				intrinsicBox: box,
+				engine: caps.engines.export,
+				...(c.kind === 'animated-image' ? { loop: c.loop } : {}),
+				bounded: isBoundedContent(c),
+			});
+		}
+		clips.sort((a, b) => a.start - b.start);
+		videoTracks.push({ trackId: t.id, clips });
+	}
+
+	const anySolo = seq.audioTracks.some((t) => t.solo);
+	const audible = seq.audioTracks.filter((t) => !t.mute && (!anySolo || t.solo));
+	const audioClips: RenderAudioClip[] = [];
+	for (const t of audible) {
+		for (const c of Object.values(seq.clips)) {
+			if (c.trackId !== t.id || !inRange(c) || c.kind !== 'audio') continue;
+			useMedia(c.mediaId);
+			audioClips.push({
+				clipId: c.id,
+				trackId: t.id,
+				start: c.start,
+				duration: c.duration,
+				sourceIn: c.sourceIn,
+				speed: c.speed,
+				mediaId: c.mediaId,
+				channels: c.channels,
+				gainDb: c.gainDb,
+				volumeDb: c.volumeDb,
+				pan: c.pan,
+				effects: c.effects,
+				track: { volumeDb: t.volumeDb ?? ZERO, pan: t.pan ?? ZERO },
+			});
+		}
+	}
+	audioClips.sort((a, b) => a.start - b.start || a.trackId.localeCompare(b.trackId));
+
+	return {
+		version: 1,
+		sequenceId,
+		settings: {
+			...frame,
+			fps: seq.settings.frameRate,
+			backgroundColor: seq.settings.backgroundColor,
+			sampleRate: 48000,
+		},
+		range,
+		durationFrames: Math.max(0, range.end - range.start),
+		videoTracks,
+		audioClips,
+		media,
+		fonts: [...fontKeys.values()],
+		master: { volumeDb: seq.master.volumeDb },
+		warnings,
+	};
+}

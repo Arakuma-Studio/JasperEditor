@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en" data-pr-theme="darkest">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<meta name="color-scheme" content="dark" />
+		<meta name="theme-color" content="#1d1d1d" />
+		<meta name="mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+		<meta name="apple-mobile-web-app-title" content="JasperEditor" />
+		<link rel="manifest" href="/manifest.webmanifest" />
+		<title>JasperEditor</title>
+		<!-- External (not inline) so a strict CSP `script-src 'self'` works; applies theme before first paint (S05:DT-003). -->
+		<script src="/theme-boot.js"></script>
+	</head>
+	<body>
+		<div id="root"></div>
+		<script type="module" src="/src/main.tsx"></script>
+	</body>
+</html>

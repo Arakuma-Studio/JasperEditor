@@ -1,0 +1,303 @@
+/*
+ * JasperEditor design tokens (S05 §8, R-PUI §3–§4). The only place where literal colors live
+ * (plus *.tokens.ts files); components use var(--pr-*) or the Tailwind bridge (S05:DT-001/002).
+ * Themes: data-pr-theme="darkest|dark", data-pr-contrast="normal|high", data-pr-density="normal|touch",
+ * label presets: data-pr-labels="default|classic|vibrant".
+ */
+
+:root,
+[data-pr-theme="darkest"] {
+	/* 8.2 surfaces, text, accent (Darkest = default) */
+	--pr-bg-app: #000000;
+	--pr-bg-header: #1d1d1d;
+	--pr-bg-panel: #1d1d1d;
+	--pr-bg-panel-alt: #1a1a1a;
+	--pr-bg-panel-raised: #232323;
+	--pr-bg-field: #0e0e0e;
+	--pr-bg-field-deep: #080808;
+	--pr-bg-hover: #2a2a2a;
+	--pr-bg-pressed: #303030;
+	--pr-bg-selected-row: #2c2c2c;
+	--pr-border-subtle: #2a2a2a;
+	--pr-border: #303030;
+	--pr-border-strong: #4b4b4b;
+	--pr-text-primary: #e3e3e3;
+	--pr-text-strong: #ffffff;
+	--pr-text-secondary: #8d8d8d;
+	--pr-text-tertiary: #6a6a6a;
+	--pr-icon: #b0b0b0;
+	--pr-icon-hover: #ebebeb;
+	--pr-accent: #4096f3;
+	--pr-accent-fill: #1473e6;
+	--pr-accent-fill-hover: #0d66d0;
+	--pr-target-fill: #005cc8;
+	--pr-timecode: #46b8ff;
+	--pr-value: #46b8ff;
+	--pr-focus-ring: #4096f3;
+	--pr-tab-underline: #cecece;
+	--pr-menu-bg: #1d1d1d;
+	--pr-menu-border: #444444;
+	--pr-tooltip-bg: #3a3a3a;
+	--pr-overlay-scrim: rgba(0, 0, 0, 0.6);
+	--pr-danger: #df3422;
+	--pr-warning: #e06400;
+	--pr-success: #068850;
+	--pr-on-accent: #ffffff;
+
+	/* 8.3 editing semantics (R-PUI §3.3) */
+	--pr-playhead: var(--pr-accent);
+	--pr-inout-range: rgba(255, 255, 255, 0.1);
+	--pr-inout-range-track: rgba(255, 255, 255, 0.06);
+	--pr-inout-bracket: #e3e3e3;
+	--pr-workarea: #7a7a7a;
+	--pr-render-red: #d8322a;
+	--pr-render-yellow: #e6df0a;
+	--pr-render-green: #27b14a;
+	--pr-snap-line: rgba(255, 255, 255, 0.9);
+	--pr-snap-line-casing: #000000;
+	--pr-trim-ripple: #f5c518;
+	--pr-trim-roll: #e4453a;
+	--pr-trim-regular: #e4453a;
+	--pr-locked-hatch: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.06) 0 2px, transparent 2px 6px);
+	--pr-disabled-clip-opacity: 0.35;
+	--pr-offline-clip: #b3261e;
+	--pr-offline-clip-text: #ffdad6;
+	--pr-keyframe: #b0b0b0;
+	--pr-keyframe-stroke: #ebebeb;
+	--pr-keyframe-selected: #4096f3;
+	--pr-keyframe-selected-stroke: #ffffff;
+	--pr-meter-green: #2fbf4f;
+	--pr-meter-yellow: #e6d21a;
+	--pr-meter-red: #e5322b;
+	--pr-meter-peak-hold: #e3e3e3;
+	--pr-marker-green: #3fb54a;
+	--pr-marker-red: #e0453a;
+	--pr-marker-purple: #9b59d0;
+	--pr-marker-orange: #f08a24;
+	--pr-marker-yellow: #e8d31e;
+	--pr-marker-white: #e6e6e6;
+	--pr-marker-blue: #3d8ef0;
+	--pr-marker-cyan: #2cc6d8;
+
+	/* 8.3 JasperEditor additions */
+	--pr-agent: #a78bfa;
+	--pr-ghost-stroke: var(--pr-accent);
+	--pr-ghost-fill: color-mix(in srgb, var(--pr-accent) 30%, transparent);
+	--pr-ghost-remove: color-mix(in srgb, var(--pr-danger) 35%, transparent);
+	--pr-engine-remotion: #e056b8;
+	--pr-engine-fframes: #b07cff;
+	--pr-engine-native: #58b6a6;
+
+	/* 8.5 spacing, sizing, radius */
+	--pr-gutter: 3px;
+	--pr-radius-frame: 4px;
+	--pr-radius-control: 4px;
+	--pr-radius-menu: 6px;
+	--pr-radius-pill: 12px;
+	--pr-radius-clip: 3px;
+	--pr-title-h: 28px;
+	--pr-header-h: 36px;
+	--pr-tab-h: 28px;
+	--pr-row-h: 22px;
+	--pr-control-h: 24px;
+	--pr-icon-btn: 24px;
+	--pr-icon-glyph: 16px;
+	--pr-transport-btn: 28px;
+	--pr-track-header-w: 176px;
+	--pr-track-h-video: 32px;
+	--pr-track-h-audio: 40px;
+	--pr-track-h-text: 24px;
+	--pr-handle-w: 8px;
+	--pr-bottom-bar-h: 0px;
+	--pr-hit-min: 24px;
+	--pr-space-1: 2px;
+	--pr-space-2: 4px;
+	--pr-space-3: 6px;
+	--pr-space-4: 8px;
+	--pr-space-5: 12px;
+	--pr-space-6: 16px;
+	--pr-space-7: 24px;
+
+	/* 8.6 elevation (overlays only) */
+	--pr-shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.5);
+	--pr-shadow-floating: 0 4px 12px rgba(0, 0, 0, 0.45);
+
+	/* 8.6 z-index scale (S05:DT-030; mirrored in src/z.ts) */
+	--pr-z-panel: 0;
+	--pr-z-dock-drop: 90;
+	--pr-z-floating: 100;
+	--pr-z-maximized: 200;
+	--pr-z-forced-cursor: 300;
+	--pr-z-popover: 1000;
+	--pr-z-dialog: 1100;
+	--pr-z-tooltip: 1200;
+	--pr-z-drag-ghost: 1300;
+	--pr-z-snap-indicator: 1310;
+	--pr-z-toast: 1400;
+
+	/* 8.7 motion */
+	--pr-dur-hover: 100ms;
+	--pr-dur-menu: 120ms;
+	--pr-dur-toast: 160ms;
+	--pr-dur-sheet: 220ms;
+
+	/* 9 typography */
+	--pr-font-ui: "Source Sans 3", Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+	--pr-font-mono: "Source Code Pro", ui-monospace, monospace;
+	--pr-font-size-ui: 12px;
+	--pr-line-ui: 16px;
+	--pr-font-size-small: 11px;
+	--pr-line-small: 14px;
+	--pr-font-size-mode-tab: 13px;
+	--pr-font-size-timeline-tc: 18px;
+	--pr-font-size-monitor-tc: 14px;
+	--pr-font-size-dialog-title: 16px;
+	--pr-font-size-agent: 13px;
+
+	color-scheme: dark;
+}
+
+[data-pr-theme="dark"] {
+	--pr-bg-app: #111111;
+	--pr-bg-header: #262626;
+	--pr-bg-panel: #262626;
+	--pr-bg-panel-alt: #232323;
+	--pr-bg-panel-raised: #2e2e2e;
+	--pr-bg-field: #1d1d1d;
+	--pr-bg-field-deep: #171717;
+	--pr-bg-hover: #363636;
+	--pr-bg-pressed: #3f3f3f;
+	--pr-bg-selected-row: #3a3a3a;
+	--pr-border-subtle: #3a3a3a;
+	--pr-border: #3f3f3f;
+	--pr-border-strong: #545454;
+	--pr-text-primary: #e8e8e8;
+	--pr-text-secondary: #909090;
+	--pr-text-tertiary: #707070;
+	--pr-icon: #b2b2b2;
+	--pr-accent: #54a3f6;
+	--pr-accent-fill: #2680eb;
+	--pr-accent-fill-hover: #1473e6;
+	--pr-target-fill: #1473e6;
+	--pr-timecode: #5ec2ff;
+	--pr-value: #5ec2ff;
+	--pr-focus-ring: #54a3f6;
+	--pr-menu-bg: #323232;
+	--pr-menu-border: #545454;
+}
+
+[data-pr-contrast="high"] {
+	--pr-border-subtle: #3d3d3d;
+	--pr-border: #5a5a5a;
+	--pr-text-secondary: #b0b0b0;
+	--pr-text-tertiary: #8d8d8d;
+	--pr-gutter: 4px;
+}
+
+/* 19.5 touch density */
+[data-pr-density="touch"] {
+	--pr-font-size-ui: 14px;
+	--pr-row-h: 44px;
+	--pr-tab-h: 44px;
+	--pr-hit-min: 44px;
+	--pr-track-h-video: 56px;
+	--pr-track-h-audio: 40px;
+	--pr-track-h-text: 32px;
+	--pr-radius-clip: 6px;
+	--pr-handle-w: 16px;
+	--pr-header-h: 48px;
+	--pr-bottom-bar-h: 56px;
+}
+
+/* 8.4 label colors (R-PUI §3.4): body + light tint. Default preset (v24.4-style dark saturated). */
+:root,
+[data-pr-labels="default"] {
+	--pr-label-violet: #3e0aad;
+	--pr-label-violet-tint: #b9a2ff;
+	--pr-label-iris: #004b68;
+	--pr-label-iris-tint: #5fc2fe;
+	--pr-label-caribbean: #2a5506;
+	--pr-label-caribbean-tint: #9fe07a;
+	--pr-label-lavender: #741186;
+	--pr-label-lavender-tint: #e9a6ff;
+	--pr-label-cerulean: #06555a;
+	--pr-label-cerulean-tint: #6fe3e6;
+	--pr-label-forest: #3e4a00;
+	--pr-label-forest-tint: #c9d86a;
+	--pr-label-rose: #8c0235;
+	--pr-label-rose-tint: #ff9dbd;
+	--pr-label-mango: #893904;
+	--pr-label-mango-tint: #ffb27a;
+	--pr-label-purple: #6200b7;
+	--pr-label-purple-tint: #c89bff;
+	--pr-label-blue: #122c9a;
+	--pr-label-blue-tint: #9cb0ff;
+	--pr-label-teal: #014e44;
+	--pr-label-teal-tint: #6fe0cc;
+	--pr-label-magenta: #830d57;
+	--pr-label-magenta-tint: #ff9ad6;
+	--pr-label-tan: #6f5a45;
+	--pr-label-tan-tint: #e2c9ad;
+	--pr-label-green: #0d5e26;
+	--pr-label-green-tint: #7fe39a;
+	--pr-label-brown: #5c3b06;
+	--pr-label-brown-tint: #e0b877;
+	--pr-label-yellow: #6f6619;
+	--pr-label-yellow-tint: #f0e57a;
+}
+
+/* Classic preset (pre-24.4 pastel bodies; tints reuse the default light tints). */
+[data-pr-labels="classic"] {
+	--pr-label-violet: #a690e0;
+	--pr-label-iris: #729acc;
+	--pr-label-caribbean: #29d698;
+	--pr-label-lavender: #e384e3;
+	--pr-label-cerulean: #2fbfde;
+	--pr-label-forest: #51b858;
+	--pr-label-rose: #f76fa4;
+	--pr-label-mango: #eda63b;
+	--pr-label-purple: #970097;
+	--pr-label-blue: #3c3cff;
+	--pr-label-teal: #008080;
+	--pr-label-magenta: #e732e7;
+	--pr-label-tan: #cec195;
+	--pr-label-green: #1d7021;
+	--pr-label-brown: #8b4513;
+	--pr-label-yellow: #e2e264;
+}
+
+/* Vibrant preset (ours): brighter, more saturated bodies with the same hues. */
+[data-pr-labels="vibrant"] {
+	--pr-label-violet: #5a1fe0;
+	--pr-label-violet-tint: #cbb8ff;
+	--pr-label-iris: #0077a8;
+	--pr-label-iris-tint: #8ed4ff;
+	--pr-label-caribbean: #3f8a0a;
+	--pr-label-caribbean-tint: #b8ef99;
+	--pr-label-lavender: #a41bbd;
+	--pr-label-lavender-tint: #f1c0ff;
+	--pr-label-cerulean: #0a8a91;
+	--pr-label-cerulean-tint: #94f0f2;
+	--pr-label-forest: #627400;
+	--pr-label-forest-tint: #dbe88f;
+	--pr-label-rose: #c4054c;
+	--pr-label-rose-tint: #ffb9d0;
+	--pr-label-mango: #c25306;
+	--pr-label-mango-tint: #ffc79f;
+	--pr-label-purple: #8a10ff;
+	--pr-label-purple-tint: #dab9ff;
+	--pr-label-blue: #2046d6;
+	--pr-label-blue-tint: #b9c8ff;
+	--pr-label-teal: #02806f;
+	--pr-label-teal-tint: #96ecdc;
+	--pr-label-magenta: #b8127b;
+	--pr-label-magenta-tint: #ffb8e2;
+	--pr-label-tan: #9a7c5f;
+	--pr-label-tan-tint: #ecd9c4;
+	--pr-label-green: #13883a;
+	--pr-label-green-tint: #a2edb6;
+	--pr-label-brown: #86570b;
+	--pr-label-brown-tint: #ebcb98;
+	--pr-label-yellow: #9c8f22;
+	--pr-label-yellow-tint: #f5ed9f;
+}

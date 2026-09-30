@@ -1,0 +1,71 @@
+import { join, resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import {
+	appdirPaths,
+	DEFAULT_ENGINE_PORT,
+	DEV_WEB_PORT,
+	ENV,
+	isTruthyEnv,
+	readFlag,
+	resolveAppdir,
+	resolvePort,
+} from '../src/index.ts';
+
+describe('@jasper/config', () => {
+	it('exposes the ports', () => {
+		expect(DEFAULT_ENGINE_PORT).toBe(47900);
+		expect(DEV_WEB_PORT).toBe(5173);
+		expect(ENV.APPDIR).toBe('JASPER_APPDIR');
+		expect(ENV.LOCAL_TOKEN).toBe('JASPER_LOCAL_TOKEN');
+	});
+
+	it('reads flags in both forms', () => {
+		expect(readFlag(['--appdir', '/x'], 'appdir')).toBe('/x');
+		expect(readFlag(['--appdir=/y'], 'appdir')).toBe('/y');
+		expect(readFlag(['--port', '1'], 'appdir')).toBeUndefined();
+	});
+
+	it('resolves appdir with argv > env > default', () => {
+		expect(resolveAppdir({ argv: ['--appdir', '/a'], env: { JASPER_APPDIR: '/b' }, defaultDir: '/c' })).toBe(
+			'/a',
+		);
+		expect(resolveAppdir({ argv: [], env: { JASPER_APPDIR: '/b' }, defaultDir: '/c' })).toBe('/b');
+		expect(resolveAppdir({ argv: [], env: {}, defaultDir: '/c' })).toBe('/c');
+		expect(resolveAppdir({ argv: [], env: { JASPER_APPDIR: './.stage' }, cwd: '/repo' })).toBe(
+			resolve('/repo/.stage'),
+		);
+		expect(resolveAppdir({ argv: [], env: { XDG_DATA_HOME: '/data' } })).toMatch(/jasper$/);
+	});
+
+	it('resolves port', () => {
+		expect(resolvePort({ argv: [], env: {} })).toBe(47900);
+		expect(resolvePort({ argv: ['--port', '0'], env: {} })).toBe(0);
+		expect(resolvePort({ argv: [], env: { JASPER_PORT: '1234' } })).toBe(1234);
+		expect(() => resolvePort({ argv: ['--port', 'abc'], env: {} })).toThrow();
+	});
+
+	it('parses truthy env values', () => {
+		expect(isTruthyEnv('1')).toBe(true);
+		expect(isTruthyEnv('0')).toBe(false);
+		expect(isTruthyEnv(undefined)).toBe(false);
+		expect(isTruthyEnv('false')).toBe(false);
+	});
+
+	it('lays out the appdir per ARCHITECTURE §4.3', () => {
+		const p = appdirPaths('/app');
+		expect(p.engineConfig).toBe(join('/app', 'engine', 'engine.json'));
+		expect(p.mediaIndex).toBe(join('/app', 'engine', 'media-index.json'));
+		expect(p.jobsJournal).toBe(join('/app', 'engine', 'jobs.jsonl'));
+		expect(p.projectFile('prj_1')).toBe(join('/app', 'projects', 'prj_1', 'project.jasper'));
+		expect(p.projectViewFile('prj_1')).toBe(join('/app', 'projects', 'prj_1', 'project.jasper-view'));
+		expect(p.mediaFile('mk_1', 'a.mp4')).toBe(join('/app', 'media', 'mk_1', 'a.mp4'));
+		expect(p.derivativeFile('abc', 'poster', 'h', 'jpg')).toBe(join('/app', 'cache', 'abc', 'poster-h.jpg'));
+		expect(p.mgRenderDir('rk')).toBe(join('/app', 'mg', 'rk'));
+		expect(p.renderDir('job1')).toBe(join('/app', 'renders', 'job1'));
+		expect(p.remotionBundleDir).toBe(join('/app', 'remotion', 'bundle'));
+		expect(p.tmpDir).toBe(join('/app', 'tmp'));
+		expect(p.logFile(new Date('2026-09-30T10:00:00Z'))).toBe(
+			join('/app', 'engine', 'logs', '2026-09-30.log'),
+		);
+	});
+});

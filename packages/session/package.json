@@ -1,0 +1,34 @@
+{
+  "name": "@jasper/session",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./react": "./src/react/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@jasper/api": "workspace:*",
+    "@jasper/engine-client": "workspace:*",
+    "@jasper/project": "workspace:*",
+    "immer": "^11.1.0",
+    "zustand": "^5.0.0"
+  },
+  "peerDependencies": {
+    "react": "^19.2.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  }
+}
