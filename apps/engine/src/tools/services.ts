@@ -122,6 +122,7 @@ export async function createCoreServices(
 		broadcaster,
 		signer,
 		origin,
+		localMode: config.dev || ['127.0.0.1', 'localhost', '::1'].includes(config.host.toLowerCase()),
 		capabilities: async (): Promise<PlanCapabilities> => {
 			const caps = await capabilities.get();
 			return {

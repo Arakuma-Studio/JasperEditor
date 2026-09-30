@@ -328,5 +328,7 @@ describe('media serving (S04:MS-002)', () => {
 			.signer.signUrl('', '/media/mk_000000000000000000000000')
 			.replace('mk_000000000000000000000000', m.mediaKey);
 		expect((await secured.inject({ method: 'GET', url: other, headers: H })).statusCode).toBe(401);
+		// A signature only authorizes reads.
+		expect((await secured.inject({ method: 'POST', url: signed, headers: H })).statusCode).toBe(401);
 	});
 });

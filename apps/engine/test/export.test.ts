@@ -1,6 +1,6 @@
 // Export planner and native export (ARCHITECTURE §9.5, S04 §11–§12, QA-005).
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RenderPlanSchema } from '@jasper/api';
@@ -400,6 +400,66 @@ describe('native export (S03:ENG-030, S04:RN-021/022, QA-005)', () => {
 		).toBe(404);
 		expect(
 			(await app.inject({ method: 'GET', url: '/renders/..%2F..%2Fetc/output', headers: H })).statusCode,
+		).toBe(404);
+	});
+});
+
+describe('export destinations and render outputs', () => {
+	it('copies to an absolute destination path without overwriting and rejects relative paths', async () => {
+		const clipA = await register(app, fixture('clip-a.mp4'));
+		const d = new DocBuilder();
+		d.tx([{ type: 'clip.place', source: { mediaId: d.addMedia(clipA) }, at: 0 }]);
+		const outDir = mkdtempSync(join(tmpdir(), 'jasper-dest-'));
+		const dest = join(outDir, 'out.mp4');
+		const body = (path: string) => ({
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			settings: settings(d.seqId, {
+				range: { type: 'custom', startFrame: 0, endFrame: 15 },
+				destination: { type: 'path', path },
+			}),
+		});
+		const bad = await app.inject({
+			method: 'POST',
+			url: '/api/exports',
+			headers: JSON_H,
+			payload: body('relative/out.mp4'),
+		});
+		expect(bad.statusCode).toBe(400);
+		expect(bad.json().code).toBe('VALIDATION_FAILED');
+		writeFileSync(dest, 'existing');
+		const start = await app.inject({
+			method: 'POST',
+			url: '/api/exports',
+			headers: JSON_H,
+			payload: body(dest),
+		});
+		expect(start.statusCode).toBe(202);
+		const done = await coreServices(app).queue.wait(start.json().id);
+		expect(done.state).toBe('succeeded');
+		expect((done.result as { path: string }).path).toBe(join(outDir, 'out (2).mp4'));
+		expect(readFileSync(dest, 'utf8')).toBe('existing');
+		expect(probe(join(outDir, 'out (2).mp4')).find((x) => x.codec_type === 'video')?.nb_read_frames).toBe(
+			'15',
+		);
+	}, 60_000);
+
+	it('never serves the output of a render that has not succeeded', async () => {
+		const core = coreServices(app);
+		const job = core.queue.submit({
+			kind: 'export',
+			title: 'broken',
+			priority: 'user',
+			cpuSlots: 1,
+			input: {},
+		});
+		const done = await core.queue.wait(job.id);
+		expect(done.state).toBe('failed');
+		const dir = join(core.config.paths.rendersDir, job.id);
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, 'output.mp4'), 'partial');
+		expect(
+			(await app.inject({ method: 'GET', url: `/renders/${job.id}/output`, headers: H })).statusCode,
 		).toBe(404);
 	});
 });

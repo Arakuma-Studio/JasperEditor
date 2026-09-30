@@ -4,7 +4,7 @@
 // WP-2G registers (`registerMgMasterProvider`).
 import { copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
-import { basename, dirname, extname, join } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path';
 import type { EngineJob, ExportSettings, ExportStartRequest, StillRequest } from '@jasper/api';
 import { buildRenderSnapshot, type MediaHandle, type RenderVisualClip } from '@jasper/project';
 import type { UrlSigner } from '../auth/signed-url.ts';
@@ -49,6 +49,8 @@ export type ExportServiceDeps = {
 	signer: UrlSigner;
 	/** Engine origin for signed absolute URLs, e.g. `http://127.0.0.1:47900`. */
 	origin(): string;
+	/** Local/dev mode: exports may be copied to a client-chosen path (S04:SC-002). */
+	localMode: boolean;
 	capabilities(): Promise<PlanCapabilities>;
 };
 
@@ -97,6 +99,16 @@ export class ExportService {
 
 	/** `POST /api/exports`: validates by planning first (PATH_NOT_ELIGIBLE surfaces synchronously). */
 	async start(req: ExportStartRequest, origin: EngineJob['origin'] = { type: 'user' }): Promise<EngineJob> {
+		const dest = req.settings.destination;
+		if (dest?.type === 'path') {
+			// Writing to an arbitrary path is a local/desktop feature, like path registration (S04:SC-002).
+			if (!this.deps.localMode) {
+				throw new PlanError('LOCAL_MODE_ONLY', 403, 'Export to a path is only available in local mode');
+			}
+			if (!isAbsolute(dest.path) || basename(dest.path) === '' || dest.path.endsWith(sep)) {
+				throw new PlanError('VALIDATION_FAILED', 400, 'The export destination must be an absolute file path');
+			}
+		}
 		const planned = await this.plan(req);
 		const file = await this.storeRequest({ kind: 'export', request: req });
 		const cores = this.deps.queue.totalSlots;
@@ -133,6 +145,9 @@ export class ExportService {
 	/** Output file of a finished render job (`/renders/:jobId/output`). */
 	async outputFile(jobId: string): Promise<string | null> {
 		if (!JOB_ID_RE.test(jobId)) return null;
+		// A running render writes output.* in place: never serve a partial file.
+		const job = this.deps.queue.get(jobId);
+		if (job && job.state !== 'succeeded') return null;
 		const dir = join(this.deps.rendersDir, jobId);
 		try {
 			const f = (await readdir(dir)).find((n) => n.startsWith('output.'));

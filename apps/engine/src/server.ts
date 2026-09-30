@@ -101,8 +101,10 @@ export async function createServer(
 			return sendError(reply, 403, 'FORBIDDEN_HOST', `Host "${host}" is not allowed`);
 		}
 		// Signed media/font/render URLs (S04:MS-003) serve the headless Remotion browser, which cannot
-		// send the session cookie and fetches cross-origin from its own bundle server.
-		if (core.signer.verify(req.url)) {
+		// send the session cookie and fetches cross-origin from its own bundle server. Read-only methods only:
+		// a signature never authorizes a state-changing request.
+		const readOnly = req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS';
+		if (readOnly && core.signer.verify(req.url)) {
 			reply.header('access-control-allow-origin', '*');
 			reply.header('access-control-expose-headers', 'content-length, content-range, accept-ranges, etag');
 			reply.header('cross-origin-resource-policy', 'cross-origin');
