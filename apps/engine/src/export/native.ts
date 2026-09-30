@@ -248,16 +248,19 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			const startSec = clipContentTime(c, f0, fps) / FLICKS_PER_SECOND;
 			const srcDur = n * frameSec * c.speed.rate + margin;
 			const dec = alphaDecoder(local.record.probe);
+			// WebM alpha is a second VP8/VP9 stream whose keyframes need not line up with the colour stream's:
+			// after an input seek to a colour keyframe libvpx may get a non-key alpha frame first and reject
+			// every packet ("Bitstream not supported", seen with VP8). Such inputs are decoded from their start
+			// and trimmed in the graph (overlays are short).
+			const decodeFromStart = dec !== null && startSec > 0;
 			const k = addInput([
 				...(dec ? ['-c:v', dec] : []),
-				'-ss',
-				sec(startSec),
-				'-t',
-				sec(srcDur),
+				...(decodeFromStart ? ['-t', sec(startSec + srcDur)] : ['-ss', sec(startSec), '-t', sec(srcDur)]),
 				'-i',
 				local.path,
 			]);
 			src = `[${k}:v:0]`;
+			if (decodeFromStart) f.push(`trim=start=${fmt(startSec)}`);
 			f.push(`setpts=(PTS-STARTPTS)/${fmt(c.speed.rate)}`, `fps=${rate(fps)}`, `trim=end_frame=${n}`);
 			f.push(`scale=${bw}:${bh}${inColor(local)}:${SWS_FLAGS}`, 'setsar=1', 'format=rgba');
 		} else if (c.kind === 'still' && local) {

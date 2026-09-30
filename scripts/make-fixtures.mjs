@@ -149,6 +149,18 @@ const fixtures = [
 		],
 	},
 	{
+		// VP8 with alpha: libvpx cannot decode it after an input seek (the native path trims instead).
+		name: 'overlay-alpha-vp8.webm',
+		steps: (out) => [
+			[
+				...alphaOverlay,
+				...['-vf', 'scale=out_color_matrix=bt709:out_range=tv,format=yuva420p'],
+				...['-c:v', 'libvpx', '-pix_fmt', 'yuva420p', '-b:v', '2M', '-auto-alt-ref', '0'],
+				...[...bt709, '-f', 'webm', out],
+			],
+		],
+	},
+	{
 		name: 'phone-rot90.mp4',
 		steps: (out) => {
 			const tmp = `${out}.tmp.mp4`;

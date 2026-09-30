@@ -700,6 +700,54 @@ describe('overlays with an alpha channel on the native path', () => {
 		expect(g.filter).toMatch(/scale=out_color_matrix=bt709:out_range=tv:flags=[a-z_+]*accurate_rnd/);
 	});
 
+	it('decodes an alpha WebM that starts mid-file from its start (libvpx cannot always seek it)', async () => {
+		const vp8 = await register(app, fixture('overlay-alpha-vp8.webm'));
+		expect(vp8.probe.hasAlpha).toBe(true);
+		const d = new DocBuilder();
+		d.tx([
+			{ type: 'clip.addSolid', at: 0, duration: 20, track: 'V1', color: [1, 0, 0, 1] },
+			{
+				type: 'clip.place',
+				source: { mediaId: d.addMedia(vp8) },
+				at: 0,
+				tracks: { video: 'V2' },
+				sourceRange: { in: { sourceFrames: 10 }, out: { sourceFrames: 30 } },
+				matchSequence: 'keep',
+			},
+		]);
+		const planned = await coreServices(app).exports.plan({
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			settings: settings(d.seqId) as never,
+		});
+		const g = buildNativeGraph({
+			snapshot: planned.snapshot,
+			output: planned.output,
+			outputFile: '/tmp/x.mp4',
+			sources: { media: (id) => planned.media[id] ?? null, mgMaster: () => null },
+			threads: 2,
+		});
+		const input = g.inputs.find((x) => x.at(-1)!.endsWith('overlay-alpha-vp8.webm'))!;
+		expect(input.slice(0, 3)).toEqual(['-c:v', 'libvpx', '-t']);
+		expect(input).not.toContain('-ss');
+		expect(g.filter).toContain('trim=start=0.333333,setpts=(PTS-STARTPTS)/1');
+		const start = await app.inject({
+			method: 'POST',
+			url: '/api/exports',
+			headers: JSON_H,
+			payload: {
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				settings: settings(d.seqId, { engine: 'native' }),
+			},
+		});
+		const done = await coreServices(app).queue.wait(start.json().id);
+		expect(done.error).toBeUndefined();
+		const file = (await coreServices(app).exports.outputFile(start.json().id))!;
+		const p = pixel(file, 5, 960, 540);
+		expect(Math.abs(p[0] - 127) < 16 && Math.abs(p[1] - 128) < 16).toBe(true); // 50 % green over red
+	}, 120_000);
+
 	it('refuses the native path when the build has no libvpx decoder for an alpha WebM', async () => {
 		const { d } = await overlayDoc();
 		const core = coreServices(app);

@@ -34,6 +34,7 @@ export function ensureFixtures(): void {
 		'overlay-alpha.mov',
 		'overlay-alpha.webm',
 		'frame-code.mp4',
+		'overlay-alpha-vp8.webm',
 	];
 	if (needed.every((n) => existsSync(join(FIXTURES, n)))) return;
 	const r = spawnSync(process.execPath, [join(ROOT, 'scripts', 'make-fixtures.mjs')], { stdio: 'inherit' });
