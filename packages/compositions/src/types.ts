@@ -2,6 +2,8 @@
 import type { MediaHandle, RenderSnapshot, RenderVisualClip, ResolvedLayerProps } from '@jasper/project';
 
 export const SEQUENCE_COMPOSITION_ID = 'JasperSequence';
+/** Source monitor / asset preview composition (S03:SRC-002). */
+export const ASSET_COMPOSITION_ID = 'JasperAsset';
 
 /** A RenderSnapshot whose media and font URLs are already resolved for the consumer (Player or engine). */
 export type RenderDoc = RenderSnapshot;
@@ -29,6 +31,21 @@ export type LayerProps = {
 	fps: number;
 	media: MediaHandle | null;
 	options: RenderOptions;
+	/** Font faces of the document (text layers resolve their family from `style.fontId`). */
+	fonts?: RenderDoc['fonts'];
+};
+
+/** Props of the Source monitor composition (ARCHITECTURE §8). */
+export type AssetCompositionProps = {
+	asset: MediaHandle;
+	/** Frame rate of the asset (sequence fps for stills). */
+	fps: number;
+	/** Display name (audio card, offline card). */
+	name?: string;
+	/** Use the proxy URL when present. */
+	useProxies?: boolean;
+	/** Duration used for stills and unknown durations, in frames (default 5 s). */
+	stillDurationFrames?: number;
 };
 
 export const DEFAULT_RENDER_OPTIONS: RenderOptions = {

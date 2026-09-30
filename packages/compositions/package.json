@@ -9,7 +9,8 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "still:smoke": "tsx scripts/still-smoke.ts"
   },
   "dependencies": {
     "@jasper/mg-templates": "workspace:*",
@@ -24,6 +25,8 @@
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@remotion/bundler": "4.0.499",
+    "@remotion/renderer": "4.0.499",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "react": "^19.2.0",

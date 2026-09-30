@@ -1,10 +1,19 @@
 import { matrixToCss } from '@jasper/project';
-import type { CSSProperties, ReactNode } from 'react';
+import { type CSSProperties, type ReactNode, useMemo } from 'react';
+import { blendModeCss, effectStages } from '../pipeline.ts';
 import type { LayerProps } from '../types.ts';
 
+const FILL: CSSProperties = { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%' };
+
 /**
- * Positions content with the layer matrix (S03:DM-012): an intrinsic-size box at the sequence origin
- * with `transform-origin: 0 0`. Inline styles only (ARCHITECTURE D-14).
+ * The per-layer pipeline (S03 §4.2, S03:DM-012), from the inside out:
+ * 1. source content (`children`, styled with `style`) in an intrinsic-size box;
+ * 2. effects, crop first, each one wrapper element (preview CSS or an SVG filter). Crop uses
+ *    `clip-path` on an inner element so blur/shadow of later effects are not clipped;
+ * 3. the layer matrix on the outer element (`transform-origin: 0 0`);
+ * 4. opacity on the outer element;
+ * 5. blend with `mix-blend-mode` against the layers below (the stack root is `isolation: isolate`).
+ * Inline styles only (ARCHITECTURE D-14).
  */
 export function LayerBox({
 	layer,
@@ -13,13 +22,40 @@ export function LayerBox({
 }: {
 	layer: LayerProps;
 	children?: ReactNode;
+	/** Style of the source content box (e.g. a solid background). */
 	style?: CSSProperties;
 }) {
-	const { props } = layer;
+	const { props, clip } = layer;
+	const stages = useMemo(
+		() => effectStages(props.effects, `fx-${clip.clipId}`),
+		[props.effects, clip.clipId],
+	);
+	let content: ReactNode = (
+		<div data-layer-source="" style={{ ...FILL, ...style }}>
+			{children}
+		</div>
+	);
+	for (const stage of stages) {
+		content = (
+			<div data-effect={stage.effectId} style={{ ...FILL, ...stage.style }}>
+				{stage.svg ? (
+					<svg
+						width={0}
+						height={0}
+						style={{ position: 'absolute', width: 0, height: 0 }}
+						aria-hidden="true"
+						// biome-ignore lint/security/noDangerouslySetInnerHtml: effect registry SVG filter markup (app code, not user input)
+						dangerouslySetInnerHTML={{ __html: stage.svg.markup }}
+					/>
+				) : null}
+				{content}
+			</div>
+		);
+	}
 	return (
 		<div
-			data-clip-id={layer.clip.clipId}
-			data-kind={layer.clip.kind}
+			data-clip-id={clip.clipId}
+			data-kind={clip.kind}
 			style={{
 				position: 'absolute',
 				left: 0,
@@ -29,20 +65,15 @@ export function LayerBox({
 				transformOrigin: '0 0',
 				transform: matrixToCss(props.matrix),
 				opacity: props.opacity / 100,
-				mixBlendMode:
-					layer.clip.blendMode === 'normal'
-						? undefined
-						: (layer.clip.blendMode as CSSProperties['mixBlendMode']),
-				overflow: 'hidden',
-				...style,
+				mixBlendMode: blendModeCss(clip.blendMode),
 			}}
 		>
-			{children}
+			{content}
 		</div>
 	);
 }
 
-/** Placeholder content: a labeled, outlined box (used by the WP-00 stub layers). */
+/** Placeholder content: a labeled, outlined box (kept for layers that are not implemented yet). */
 export function StubLabel({ layer, title, tint }: { layer: LayerProps; title: string; tint: string }) {
 	return (
 		<LayerBox
@@ -66,7 +97,6 @@ export function StubLabel({ layer, title, tint }: { layer: LayerProps; title: st
 			>
 				<div style={{ fontWeight: 600 }}>{title}</div>
 				<div style={{ opacity: 0.8 }}>{layer.clip.name}</div>
-				<div style={{ opacity: 0.6, fontSize: '0.6em' }}>frame {layer.localFrame}</div>
 			</div>
 		</LayerBox>
 	);

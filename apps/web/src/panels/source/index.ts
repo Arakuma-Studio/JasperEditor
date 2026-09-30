@@ -1,13 +1,21 @@
-// Source panel — placeholder from WP-00; WP-2C replaces the component (keep the definition's contract).
-import { placeholderPanel } from '../placeholder.tsx';
+// Source monitor panel (S03 §7, S05:PGM-010) — WP-2C.
+import type { PanelDefinition } from '../types.ts';
+import { SourceMonitor } from './SourceMonitor.tsx';
 
-export default placeholderPanel('source', {
-	title: 'Source',
-	owner: 'WP-2C',
+const source: PanelDefinition = {
+	kind: 'source',
+	title: (ctx) => (ctx.sourceName ? `Source: ${ctx.sourceName}` : 'Source'),
 	icon: 'panel.source',
 	instance: 'single',
 	minSize: { w: 240, h: 180 },
 	keymapScope: 'source',
+	menu: [
+		{ type: 'command', command: 'monitor.fit' },
+		{ type: 'command', command: 'monitor.toggleLoop' },
+	],
 	touch: 'sheet',
 	agentDescription: 'Source monitor: previews a project item and sets its In/Out marks.',
-});
+	component: SourceMonitor,
+};
+
+export default source;

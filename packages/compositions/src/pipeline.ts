@@ -1,0 +1,152 @@
+// Pure helpers for the per-layer pipeline (S03 §4.2): source → effects (crop first) → transform →
+// opacity → blend. No React here so the math is unit-testable and shared by the layers.
+import {
+	type BlendMode,
+	defaultEffectRegistry,
+	type EffectRegistry,
+	evaluate,
+	FLICKS_PER_SECOND,
+	flicksPerFrame,
+	type MediaHandle,
+	type Rational,
+	type RenderAudioClip,
+	type ResolvedEffect,
+} from '@jasper/project';
+import type { CSSProperties } from 'react';
+import type { RenderOptions } from './types.ts';
+
+export const CROP_EFFECT_ID = 'jasper.crop';
+
+/**
+ * CSS `mix-blend-mode` for an S01 blend mode (S03 §16 tier A). `add` has no CSS keyword of the same
+ * name; `plus-lighter` is the additive compositing operator in Chromium.
+ */
+export function blendModeCss(mode: BlendMode | string): CSSProperties['mixBlendMode'] | undefined {
+	switch (mode) {
+		case 'normal':
+			return undefined;
+		case 'add':
+			return 'plus-lighter';
+		case 'multiply':
+		case 'screen':
+		case 'overlay':
+		case 'darken':
+		case 'lighten':
+		case 'difference':
+			return mode;
+		default:
+			return undefined;
+	}
+}
+
+/** One wrapper element of the effect chain, innermost (applied first) → outermost. */
+export type EffectStage = {
+	id: string;
+	effectId: string;
+	style: CSSProperties;
+	/** SVG `<filter>` markup referenced by `style.filter = url(#svgId)`. */
+	svg?: { id: string; markup: string };
+};
+
+/**
+ * Effect chain for a layer, in application order. Crop is always first (S03 §4.2 step 2,
+ * ARCHITECTURE §8), then the remaining enabled effects in stack order. Disabled effects and ids the
+ * registry does not know are bypassed (S01:FX-022).
+ */
+export function effectStages(
+	effects: readonly ResolvedEffect[],
+	uidPrefix: string,
+	registry: EffectRegistry = defaultEffectRegistry,
+): EffectStage[] {
+	const ordered = [
+		...effects.filter((e) => e.effectId === CROP_EFFECT_ID),
+		...effects.filter((e) => e.effectId !== CROP_EFFECT_ID),
+	];
+	const out: EffectStage[] = [];
+	for (const fx of ordered) {
+		if (!fx.enabled) continue;
+		const spec = registry.get(fx.effectId, fx.effectVersion);
+		if (spec?.appliesTo !== 'video') continue;
+		const style: CSSProperties = {};
+		const css = spec.preview.css?.(fx.params);
+		if (css) Object.assign(style, css);
+		let svg: EffectStage['svg'];
+		if (spec.preview.svgFilter) {
+			const id = `${uidPrefix}-${fx.id}`.replace(/[^\w-]/g, '_');
+			const markup = spec.preview.svgFilter(fx.params, id);
+			if (markup) {
+				svg = { id, markup };
+				style.filter = style.filter ? `${style.filter} url(#${id})` : `url(#${id})`;
+			}
+		}
+		if (Object.keys(style).length === 0 && !svg) continue;
+		if (style.transform && !style.transformOrigin) style.transformOrigin = 'center';
+		out.push({ id: fx.id, effectId: fx.effectId, style, ...(svg ? { svg } : {}) });
+	}
+	return out;
+}
+
+/** dB → linear amplitude. `-Infinity` (and anything ≤ -96 dB) is silence. */
+export function dbToGain(db: number): number {
+	if (!Number.isFinite(db) || db <= -96) return 0;
+	return 10 ** (db / 20);
+}
+
+/** Remotion throws for volumes ≥ 100 (it assumes a percent mistake); stay well below. */
+export const MAX_PREVIEW_GAIN = 16;
+
+/**
+ * Linear gain of an audio clip at clip-local frame `f` (S01:FX-010 subset, S03:KND-011/020):
+ * `gainDb + volumeDb(t) + track volumeDb(T) + master volumeDb(T)`. Mute/solo are already resolved in
+ * the snapshot (muted tracks are absent). Pan is not previewed in M1.
+ */
+export function audioGainAt(
+	clip: Pick<RenderAudioClip, 'start' | 'duration' | 'sourceIn' | 'speed' | 'gainDb' | 'volumeDb' | 'track'>,
+	f: number,
+	fps: Rational,
+	master?: { volumeDb: RenderAudioClip['volumeDb'] },
+): number {
+	const F = flicksPerFrame(fps);
+	const i = Math.max(0, Math.min(clip.duration - 1, f));
+	const content = clip.speed.reverse
+		? clip.sourceIn + (clip.duration - 1 - i) * F * clip.speed.rate
+		: clip.sourceIn + i * F * clip.speed.rate;
+	// Track and master properties live in sequence time (S01:KF-002).
+	const seqT = (clip.start + i) * F;
+	const db =
+		clip.gainDb +
+		evaluate(clip.volumeDb, content) +
+		evaluate(clip.track.volumeDb, seqT) +
+		(master ? evaluate(master.volumeDb, seqT) : 0);
+	return Math.min(MAX_PREVIEW_GAIN, dbToGain(db));
+}
+
+/**
+ * Remotion's `trimBefore` is in composition frames of *media* time and is not scaled by
+ * `playbackRate` (media time = elapsed × playbackRate + trimBefore / fps; verified in
+ * @remotion/media 4.0.499 `getTimeInSeconds`). So it is the clip's `sourceIn` expressed in
+ * sequence frames. Fractional values are allowed.
+ */
+export function trimBeforeFrames(sourceInFlicks: number, fps: Rational | number): number {
+	const f = typeof fps === 'number' ? fps : fps.num / fps.den;
+	return (sourceInFlicks / FLICKS_PER_SECOND) * f;
+}
+
+/**
+ * The volume callback of Remotion media receives `useCurrentFrame() + cumulatedNegativeFrom`, i.e.
+ * frames since the media first became visible in the composition. When the export range starts
+ * inside a clip (`<Sequence from>` negative) that is not the clip-local frame; this converts it.
+ */
+export function volumeFrameToClipFrame(volumeFrame: number, sequenceFrom: number): number {
+	return volumeFrame + Math.max(0, -sequenceFrom);
+}
+
+/** Media URL for a layer: the proxy when proxies are on and ready, else the original. */
+export function mediaSrc(media: MediaHandle, options: Pick<RenderOptions, 'useProxies'>): string {
+	return options.useProxies && media.proxyUrl ? media.proxyUrl : media.url;
+}
+
+/** Premount window for media layers: 2 s of frames (S03:RND-020). */
+export function premountFrames(fps: number): number {
+	return Math.max(1, Math.round(fps * 2));
+}
