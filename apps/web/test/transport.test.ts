@@ -24,6 +24,7 @@ import {
 } from '../src/panels/program/playback-driver.ts';
 import { Shuttle, type ShuttleTarget, type TimerApi } from '../src/panels/program/shuttle.ts';
 import { registerDriver, shuttleFor } from '../src/panels/program/transport-registry.ts';
+import { PanelServices } from '../src/state/panel-services.ts';
 
 // ------------------------------------------------------------------ fakes
 
@@ -377,6 +378,21 @@ describe('transport commands', () => {
 		await runCommand('transport.goToStart', ctx);
 		await runCommand('transport.stepBack', ctx);
 		expect(t.getState().frame).toBe(0);
+	});
+
+	it('edit-point and step seeks reveal the playhead in the timeline (TL-120, WP-3I)', async () => {
+		const session = makeSession();
+		const services = new PanelServices();
+		const revealed: number[] = [];
+		services.register('timelineViewport', 'tl1', {
+			scrollToFrame: (f) => revealed.push(f),
+			frameAtClientX: () => 0,
+			getScrollContainer: () => null,
+		});
+		const ctx = createCommandContext({ engine: new EngineClient({ baseUrl: '' }), session, services });
+		await runCommand('transport.nextEdit', ctx);
+		await runCommand('transport.goToEnd', ctx);
+		expect(revealed).toEqual([60, 120]);
 	});
 
 	it('Space and JKL go through the shuttle; K keyup releases', async () => {

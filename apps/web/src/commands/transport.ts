@@ -59,7 +59,11 @@ function fps(ctx: CommandCtx): number {
 function seek(ctx: CommandCtx, frame: number) {
 	const t = activeTransport(ctx);
 	if (t.getState().playing) t.pause();
-	t.seek(Math.max(0, Math.min(endFrame(ctx), frame)));
+	const target = Math.max(0, Math.min(endFrame(ctx), frame));
+	t.seek(target);
+	// S02:TL-120: keyboard seeks on the sequence (steps, Home/End, edit points) bring the playhead into view
+	// in the timeline with minimum scrolling.
+	if (!isSource(ctx)) ctx.services.get('timelineViewport')?.scrollToFrame(target);
 }
 
 function editTargets(ctx: CommandCtx, any: boolean): string[] | undefined {
