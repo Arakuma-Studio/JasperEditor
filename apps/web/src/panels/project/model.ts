@@ -1,6 +1,7 @@
 // Project panel model (S05:PRJ-001…010, S01:PRJ-001…008): bins, breadcrumb, search/filter and the derived
 // columns (Frame Rate, Media Start/End/Duration, Video/Audio Info, Usage, Proxy, Status), computed from
 // the document plus runtime status and never stored (S01:PRJ-008).
+
 import {
 	FLICKS_PER_SECOND,
 	flicksToFrames,
@@ -13,6 +14,7 @@ import {
 	sequenceDuration,
 } from '@jasper/project';
 import type { MediaRuntime } from '@jasper/session';
+import { lutSizeText } from '../../color/model.ts';
 import { audioStreams, displayBox, formatRate, videoStream } from '../../import/assets.ts';
 
 export type ProjectFilter =
@@ -162,6 +164,12 @@ function derivativeText(rt: MediaRuntime | undefined): string {
 	return '';
 }
 
+/** `33³ · Title` of a LUT asset (S06:LUT-002). */
+export function lutInfoText(asset: MediaAsset): string {
+	const title = asset.lut?.title;
+	return [lutSizeText(asset), title].filter(Boolean).join(' · ');
+}
+
 export function statusOf(rt: MediaRuntime | undefined): ItemStatus {
 	if (!rt) return '';
 	if (rt.availability === 'offline') return 'offline';
@@ -236,6 +244,8 @@ export function rowFor(
 				type: asset.kind,
 				mediaId: asset.id,
 				...describeMedia(asset),
+				// LUT items (S06:LUT-002): size and title in the info column / tile badge.
+				...(asset.kind === 'lut' ? { videoInfo: lutInfoText(asset) } : {}),
 				usage: usage[asset.id]?.clips ?? 0,
 				proxy: derivativeText(rt),
 				status: statusOf(rt),

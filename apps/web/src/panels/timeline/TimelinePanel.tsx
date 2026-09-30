@@ -15,6 +15,7 @@ import type { EditorSession } from '@jasper/session';
 import { useSessionOrNull, useSessionState, useStoreSelector } from '@jasper/session/react';
 import { LABEL_DISPLAY_NAMES } from '@jasper/ui';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { dropLutItems } from '../../color/actions.ts';
 import { createCommandContext } from '../../commands/context.ts';
 import { runCommand } from '../../commands/registry.ts';
 import { clipMenuExtensions, collectMenuItems } from '../../extensions/index.ts';
@@ -578,6 +579,15 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			} catch {
 				itemIds = [];
 			}
+			// LUT items dropped on a clip apply as its Look (S06:LUT-002, wp-m2-color).
+			const lutHit = hitTest(
+				committedSeq,
+				geomRef.current.layout,
+				geomRef.current.viewport,
+				local(e).x,
+				local(e).y,
+			);
+			if (dropLutItems(session, itemIds, lutHit.kind === 'clip' ? lutHit.clip.id : null)) return;
 			placeItems(itemIds, t);
 			return;
 		}

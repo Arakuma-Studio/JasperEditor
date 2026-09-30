@@ -78,7 +78,7 @@ const TYPE_ICON: Record<ProjectRow['type'], IconId> = {
 	sequence: 'panel.timeline',
 	synthetic: 'media.image',
 	font: 'tool.type',
-	lut: 'panel.effects',
+	lut: 'media.lut',
 	'mg-bundle': 'panel.motionTemplates',
 };
 
@@ -877,9 +877,9 @@ function Tile(props: {
 						</span>
 					) : null}
 				</span>
-				{row.duration ? (
+				{row.duration || row.type === 'lut' ? (
 					<span className="absolute right-1 bottom-1 rounded-pr-control bg-pr-menu px-1 text-pr-small text-pr-text">
-						{row.duration}
+						{row.duration || row.videoInfo}
 					</span>
 				) : null}
 				<span

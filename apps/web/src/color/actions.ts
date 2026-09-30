@@ -81,6 +81,24 @@ export function applyLookToClips(
 	});
 }
 
+/**
+ * Project items dropped on the timeline: when they are all LUTs, the first one applies as the Look of the clip
+ * under the pointer (nothing happens off a clip) and the drop is handled (true).
+ */
+export function dropLutItems(
+	session: EditorSession,
+	itemIds: readonly string[],
+	clipId: string | null,
+): boolean {
+	const doc = session.getCommitted();
+	const media = itemIds
+		.map((id) => doc.items[id])
+		.map((it) => (it?.kind === 'media' ? doc.media[it.mediaId] : undefined));
+	if (media.length === 0 || media.some((m) => m?.kind !== 'lut')) return false;
+	if (clipId) applyLookToClips(session, media[0]!.id, [clipId]);
+	return true;
+}
+
 // ---------------------------------------------------------------- Browse… (LUT-005)
 
 /**
