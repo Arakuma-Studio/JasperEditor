@@ -172,6 +172,19 @@ export function resolveLayerProps(c: RenderVisualClip, t: number): ResolvedLayer
 	};
 }
 
+/**
+ * The full layer map (layer px → sequence px) of resolved props: the projective map when the layer is corner
+ * pinned, else its affine Motion (M2, S09: tracking apply, warp stage, overlays).
+ */
+export function layerMapOf(props: Pick<ResolvedLayerProps, 'projective' | 'matrix'>): Mat3 {
+	return props.projective ?? mat3FromMat2D(props.matrix);
+}
+
+/** Per-frame layer map of a clip at sequence frame `frame` (content time from the clip's timing). */
+export function layerMapAtFrame(c: RenderVisualClip, frame: number, fps: Rational): Mat3 {
+	return layerMapOf(resolveLayerProps(c, clipContentTime(c, frame, fps)));
+}
+
 const staticCache = new WeakMap<RenderVisualClip, ResolvedLayerProps>();
 
 /** Binary search for the clip covering `frame` in a start-sorted, non-overlapping list. */

@@ -118,6 +118,17 @@ function snapshot<T>(v: T): T {
 
 /** Gives every nested entity (keyframes, effects, clip markers) a fresh id (S01:ID-005). */
 export function reidentifyClipChildren(clip: Clip, h: HandlerContext): void {
+	// M2 (S09:TRK-003): trackers travel with the copy under new ids; a target's `trackedBy` follows its own
+	// corner-pin instance to the copy's new effect id.
+	const c = clip as {
+		trackers?: { id: string }[];
+		effects?: { id: string }[];
+		trackedBy?: { effectInstanceId?: string };
+	};
+	for (const t of c.trackers ?? []) t.id = h.ids.next('tkr');
+	const fxIndex = c.trackedBy?.effectInstanceId
+		? (c.effects ?? []).findIndex((fx) => fx.id === c.trackedBy!.effectInstanceId)
+		: -1;
 	const visit = (v: unknown): void => {
 		if (Array.isArray(v)) {
 			v.forEach(visit);
@@ -137,6 +148,8 @@ export function reidentifyClipChildren(clip: Clip, h: HandlerContext): void {
 		}
 	};
 	visit(clip);
+	if (fxIndex >= 0 && c.trackedBy && c.effects?.[fxIndex])
+		c.trackedBy.effectInstanceId = c.effects[fxIndex].id;
 }
 
 /**
