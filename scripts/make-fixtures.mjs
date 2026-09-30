@@ -80,7 +80,8 @@ for (const fx of fixtures) {
 		console.log(`skip   ${fx.name} (exists)`);
 		continue;
 	}
-	const partial = join(outDir, `.partial-${fx.name}`);
+	// Per-process partial name: parallel test workers may run this script at once.
+	const partial = join(outDir, `.partial-${process.pid}-${fx.name}`);
 	const steps = fx.steps(partial);
 	let ok = true;
 	for (const args of steps) {
