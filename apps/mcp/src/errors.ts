@@ -46,6 +46,14 @@ export const TX_ERROR_HINTS: Record<string, string> = {
 	E_LIMIT: 'Too many commands or too large a payload (5 000 commands / 20 MB per transaction). Split it up.',
 };
 
+/** Hints for requests that were cut off (link.ts `EngineRequestAborted`). */
+export const ABORT_HINTS = {
+	timeout:
+		'The engine is busy or stuck. Check engine_status; for long renders use start_export + wait_for_job instead of waiting on one call.',
+	'connection-lost':
+		'The change may or may not have been applied. Re-read the project (get_timeline / get_project) before retrying, so nothing is applied twice.',
+} as const;
+
 export const ENGINE_ERROR_HINTS: Record<string, string> = {
 	NETWORK:
 		'The JasperEditor engine is not reachable. Start the desktop app or `pnpm dev`, or restart jasper-mcp with --start-engine.',
@@ -83,6 +91,16 @@ export function toErrorResult(e: unknown): CallToolResult {
 			e.status ? { httpStatus: e.status } : undefined,
 		);
 	}
+	const aborted = e as { name?: string; kind?: keyof typeof ABORT_HINTS; message?: string };
+	if (aborted?.name === 'AbortError' && aborted.kind && ABORT_HINTS[aborted.kind])
+		return errorResult(
+			aborted.kind === 'timeout' ? 'ENGINE_TIMEOUT' : 'ENGINE_CONNECTION_LOST',
+			aborted.message ?? 'The engine request was aborted',
+			ABORT_HINTS[aborted.kind],
+		);
+	// The deadline can also fire while a response body is still being read.
+	if (aborted?.name === 'TimeoutError')
+		return errorResult('ENGINE_TIMEOUT', 'The engine did not finish answering in time', ABORT_HINTS.timeout);
 	const message = e instanceof Error ? e.message : String(e);
 	return errorResult('INTERNAL', message, 'Unexpected failure inside jasper-mcp; see its stderr log.');
 }

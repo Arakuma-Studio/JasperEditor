@@ -13,6 +13,71 @@ import {
 } from './discovery.ts';
 import { ToolError } from './errors.ts';
 
+/** No engine request may hang a tool call: the longest legitimate wait is a 60 s approval. */
+export const DEFAULT_REQUEST_TIMEOUT_MS = 180_000;
+
+/**
+ * Thrown (as an `AbortError`, so the engine client does not turn it into a retryable NETWORK error) when a
+ * request ran out of time or lost its connection after it was sent. Neither is retried automatically: a
+ * transaction may already have been applied.
+ */
+export class EngineRequestAborted extends Error {
+	override readonly name = 'AbortError';
+	constructor(
+		readonly kind: 'timeout' | 'connection-lost',
+		message: string,
+	) {
+		super(message);
+	}
+}
+
+/** Error codes of a connection that never reached the engine (safe to retry after re-discovery). */
+const NEVER_SENT = new Set([
+	'ECONNREFUSED',
+	'ENOTFOUND',
+	'EHOSTUNREACH',
+	'ENETUNREACH',
+	'EAI_AGAIN',
+	'EADDRNOTAVAIL',
+]);
+
+function causeCode(e: unknown): string | undefined {
+	const cause = (e as { cause?: { code?: unknown; errors?: { code?: unknown }[] } })?.cause;
+	const code = cause?.code ?? cause?.errors?.[0]?.code;
+	return typeof code === 'string' ? code : undefined;
+}
+
+/**
+ * Wraps `fetch` for engine calls: every request (headers and body) gets a deadline, and a request that
+ * was cut off mid-flight is reported as such instead of being retried. Reads (GET) stay retryable.
+ */
+export function guardedFetch(
+	fetchImpl: typeof fetch = globalThis.fetch,
+	timeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS,
+): typeof fetch {
+	return (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+		const deadline = AbortSignal.timeout(timeoutMs);
+		const signal = init?.signal ? AbortSignal.any([init.signal, deadline]) : deadline;
+		try {
+			return await fetchImpl(input, { ...init, signal });
+		} catch (e) {
+			if (deadline.aborted)
+				throw new EngineRequestAborted(
+					'timeout',
+					`The engine did not answer within ${Math.round(timeoutMs / 1000)} s`,
+				);
+			const method = (init?.method ?? 'GET').toUpperCase();
+			const code = causeCode(e);
+			if (method !== 'GET' && !(code && NEVER_SENT.has(code)) && !init?.signal?.aborted)
+				throw new EngineRequestAborted(
+					'connection-lost',
+					`The connection to the engine was lost during the request${code ? ` (${code})` : ''}`,
+				);
+			throw e;
+		}
+	}) as typeof fetch;
+}
+
 export type LinkOptions = DiscoveryOptions & {
 	/** Fork a headless engine when none is reachable. */
 	startEngine?: boolean;
@@ -20,6 +85,8 @@ export type LinkOptions = DiscoveryOptions & {
 	engineEntry?: string;
 	/** Port for `startEngine` (default 0 = random). */
 	enginePort?: number;
+	/** Deadline per engine request (default DEFAULT_REQUEST_TIMEOUT_MS). */
+	requestTimeoutMs?: number;
 };
 
 export interface EngineConnection {
@@ -36,9 +103,13 @@ export interface EngineConnection {
 export class FixedEngineLink implements EngineConnection {
 	private readonly c: EngineClient;
 	readonly target: EngineTarget;
-	constructor(url: string, token: string | null, fetchImpl?: typeof fetch) {
+	constructor(url: string, token: string | null, fetchImpl?: typeof fetch, requestTimeoutMs?: number) {
 		this.target = { url, token, source: 'explicit' };
-		this.c = new EngineClient({ baseUrl: url, token: token ?? undefined, fetch: fetchImpl });
+		this.c = new EngineClient({
+			baseUrl: url,
+			token: token ?? undefined,
+			fetch: guardedFetch(fetchImpl, requestTimeoutMs),
+		});
 	}
 	async client(): Promise<EngineClient> {
 		return this.c;
@@ -120,7 +191,7 @@ export class EngineLink implements EngineConnection {
 			client: new EngineClient({
 				baseUrl: target.url,
 				token: target.token ?? undefined,
-				fetch: this.opts.fetch,
+				fetch: guardedFetch(this.opts.fetch, this.opts.requestTimeoutMs),
 			}),
 		};
 	}

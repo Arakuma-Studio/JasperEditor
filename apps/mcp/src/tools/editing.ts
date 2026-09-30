@@ -29,9 +29,11 @@ import { ProjectIdArg } from './projects.ts';
 
 const COMMAND_TYPES = Object.keys(COMMAND_CATALOG) as [string, ...string[]];
 
-const TimeArg = TimeInputSchema.describe(
-	'Sequence time: frames (integer), {"frames": n}, {"seconds": x} or timecode "HH:MM:SS:FF" (";" before FF for drop-frame)',
-);
+/** How every time argument may be written (appended to each time argument's own description). */
+export const TIME_FORMATS =
+	'Sequence time as frames (integer), {"frames": n}, {"seconds": x} or timecode "HH:MM:SS:FF" (";" before FF for drop-frame)';
+/** A time argument whose description says what it is for and which formats it accepts. */
+export const timeArg = (what: string) => TimeInputSchema.describe(`${what}. ${TIME_FORMATS}`);
 const SequenceIdArg = z
 	.string()
 	.optional()
@@ -226,7 +228,7 @@ export function registerEditingTools(ctx: ToolContext): void {
 			input: {
 				projectId: ProjectIdArg,
 				media: z.string().min(1).describe('mediaId ("med_…") or the Project item / file name ("clip-a.mp4")'),
-				at: TimeArg.describe('Where the clip starts on the timeline'),
+				at: timeArg('Where the clip starts on the timeline'),
 				track: TrackRefSchema.optional().describe('Video track label or id (default V1)'),
 				audioTrack: TrackRefSchema.optional().describe('Audio track label or id (default A1)'),
 				sourceIn: z.number().min(0).optional().describe('Start inside the media, in seconds (default 0)'),
@@ -282,13 +284,13 @@ export function registerEditingTools(ctx: ToolContext): void {
 				projectId: ProjectIdArg,
 				clipIds: ClipIdsArg,
 				deltaFrames: z.number().int().optional().describe('Frames to move by (negative = earlier)'),
-				to: TimeArg.optional().describe('New start time of the first clip (instead of deltaFrames)'),
+				to: timeArg('New start time of the first clip (instead of deltaFrames)').optional(),
 				deltaTracks: z
 					.number()
 					.int()
 					.optional()
 					.describe('Tracks to move up (+) or down (−) within the same kind'),
-				mode: EditModeSchema.optional(),
+				mode: EditModeSchema.optional().describe('overwrite (default) or insert (ripples later clips)'),
 			},
 			annotations: EDIT,
 		},
@@ -358,7 +360,7 @@ export function registerEditingTools(ctx: ToolContext): void {
 				'Cuts clips in two at a time (clip.split, like the razor tool). By default every clip under that time on all unlocked tracks is split; restrict with clipIds or tracks. Returns the new right-hand halves.',
 			input: {
 				projectId: ProjectIdArg,
-				at: TimeArg.describe('Where to cut'),
+				at: timeArg('Where to cut'),
 				clipIds: ClipIdsArg.optional(),
 				tracks: z.array(TrackRefSchema).min(1).optional().describe('Track labels, e.g. ["V1", "A1"]'),
 				sequenceId: SequenceIdArg,
@@ -391,7 +393,9 @@ export function registerEditingTools(ctx: ToolContext): void {
 				'Removes clips from the timeline. ripple: false (default) lifts them and leaves a gap (clip.lift); ripple: true closes the gap by shifting later clips (clip.extract). Linked partners are removed too. Media stays in the project. Undoable in the editor.',
 			input: {
 				projectId: ProjectIdArg,
-				clipIds: IdListSchema.describe('Clip ids ("clp_…")'),
+				clipIds: IdListSchema.describe(
+					'Clip ids ("clp_…") from get_timeline, or "$selection" for the clips selected in the open editor',
+				),
 				ripple: z.boolean().optional().describe('Close the gap (ripple delete)'),
 			},
 			annotations: DESTRUCTIVE,
@@ -415,9 +419,9 @@ export function registerEditingTools(ctx: ToolContext): void {
 				'Adds a text (title) clip (clip.addText) on a video track above the footage. Position is in sequence pixels (0,0 = top left; default: centred).',
 			input: {
 				projectId: ProjectIdArg,
-				text: z.string().min(1).max(2000),
-				at: TimeArg.describe('Start time'),
-				duration: TimeArg.describe('Length, e.g. {"seconds": 3}'),
+				text: z.string().min(1).max(2000).describe('The text to show (line breaks allowed)'),
+				at: timeArg('Start time'),
+				duration: timeArg('Length, e.g. {"seconds": 3}'),
 				track: TrackRefSchema.optional().describe('Video track (default V2)'),
 				sizePx: z.number().positive().max(2000).optional().describe('Font size in pixels'),
 				color: z.string().optional().describe('Text color "#RRGGBB" or "#RRGGBBAA" (default white)'),
@@ -459,10 +463,10 @@ export function registerEditingTools(ctx: ToolContext): void {
 				'Adds a sequence marker (marker.add) shown on the timeline ruler, with an optional comment and duration.',
 			input: {
 				projectId: ProjectIdArg,
-				at: TimeArg.describe('Marker time'),
+				at: timeArg('Marker time'),
 				name: z.string().max(200).describe('Marker name'),
-				comment: z.string().max(2000).optional(),
-				duration: TimeArg.optional().describe('Span marker length (default 0)'),
+				comment: z.string().max(2000).optional().describe('Longer note shown in the Markers panel'),
+				duration: timeArg('Span marker length (default 0)').optional(),
 				sequenceId: SequenceIdArg,
 			},
 			annotations: EDIT,
@@ -504,8 +508,8 @@ export function registerEditingTools(ctx: ToolContext): void {
 					.min(1)
 					.describe('Template id, optionally with version: "lower-third" or "lower-third@1"'),
 				params: z.record(z.string(), z.unknown()).optional().describe('Template parameters'),
-				at: TimeArg.describe('Start time'),
-				duration: TimeArg.optional().describe('Length (default: the template default, else 5 s)'),
+				at: timeArg('Start time'),
+				duration: timeArg('Length (default: the template default, else 5 s)').optional(),
 				track: TrackRefSchema.optional().describe('Video track (default V2)'),
 				sequenceId: SequenceIdArg,
 			},

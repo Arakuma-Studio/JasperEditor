@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { EngineError } from '@jasper/engine-client';
+import { EngineClient, EngineError } from '@jasper/engine-client';
 import {
 	applyTransaction,
 	createEmptyProject,
@@ -17,7 +17,7 @@ import { candidateAppdirs, discoverEngine, findEngineEntry, probeHealth } from '
 import { ToolError, toErrorResult } from '../src/errors.ts';
 import { buildExportSettings, EXPORT_PRESETS, findExportPreset } from '../src/export-presets.ts';
 import { projectSummary, timelineTable } from '../src/format.ts';
-import { EngineLink, withEngine } from '../src/link.ts';
+import { EngineLink, EngineRequestAborted, FixedEngineLink, guardedFetch, withEngine } from '../src/link.ts';
 import { MCP_SERVER_VERSION } from '../src/version.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -143,6 +143,69 @@ describe('engine discovery', () => {
 		});
 		expect(out).toBe('ok');
 		expect(seen).toEqual([1, 2]);
+	});
+});
+
+describe('engine request guard (no unbounded waits, no blind re-apply)', () => {
+	const errorOf = (r: ReturnType<typeof toErrorResult>) =>
+		JSON.parse((r.content[0] as { text: string }).text).error as { code: string; hint?: string };
+	const failWith = (code: string) =>
+		(async () => {
+			throw Object.assign(new TypeError('fetch failed'), { cause: { code } });
+		}) as unknown as typeof fetch;
+
+	it('a request that never answers ends with ENGINE_TIMEOUT instead of hanging', async () => {
+		const never = ((_input: unknown, init?: RequestInit) =>
+			new Promise((_resolve, reject) => {
+				init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+			})) as unknown as typeof fetch;
+		const link = new FixedEngineLink('http://127.0.0.1:1', 'secret-token', never, 40);
+		let calls = 0;
+		const t0 = Date.now();
+		const err = await withEngine(link, (c) => {
+			calls++;
+			return c.listProjects();
+		}).catch((e) => e);
+		expect(Date.now() - t0).toBeLessThan(5000);
+		expect(err).toBeInstanceOf(EngineRequestAborted);
+		expect(calls).toBe(1);
+		const body = errorOf(toErrorResult(err));
+		expect(body.code).toBe('ENGINE_TIMEOUT');
+		expect(JSON.stringify(body)).not.toContain('secret-token');
+	});
+
+	it('a write cut off mid-flight is reported, not retried (it may have been applied)', async () => {
+		let sent = 0;
+		const client = new EngineClient({
+			baseUrl: 'http://127.0.0.1:1',
+			fetch: guardedFetch((async () => {
+				sent++;
+				throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } });
+			}) as unknown as typeof fetch),
+		});
+		const link = { target: null, invalidate: () => {}, close: async () => {}, client: async () => client };
+		const err = await withEngine(link, (c) =>
+			c.agentTx({ projectId: 'prj_x', transaction: {} as never }),
+		).catch((e) => e);
+		expect(sent).toBe(1);
+		const body = errorOf(toErrorResult(err));
+		expect(body.code).toBe('ENGINE_CONNECTION_LOST');
+		expect(body.hint).toMatch(/Re-read the project/);
+	});
+
+	it('a write that never reached the engine, and any read, stay retryable NETWORK errors', async () => {
+		const refused = new EngineClient({
+			baseUrl: 'http://127.0.0.1:1',
+			fetch: guardedFetch(failWith('ECONNREFUSED')),
+		});
+		await expect(refused.agentTx({ projectId: 'p', transaction: {} as never })).rejects.toMatchObject({
+			code: 'NETWORK',
+		});
+		const reset = new EngineClient({
+			baseUrl: 'http://127.0.0.1:1',
+			fetch: guardedFetch(failWith('ECONNRESET')),
+		});
+		await expect(reset.listProjects()).rejects.toMatchObject({ code: 'NETWORK' });
 	});
 });
 

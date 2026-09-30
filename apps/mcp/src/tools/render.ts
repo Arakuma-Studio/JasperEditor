@@ -3,7 +3,7 @@
 // cancel_job, wait_for_job.
 import { isAbsolute } from 'node:path';
 import type { ExportSettings } from '@jasper/api';
-import { makeEnvelope, resolveFrameInput, sequenceTimecode, TimeInputSchema } from '@jasper/project';
+import { makeEnvelope, resolveFrameInput, sequenceTimecode } from '@jasper/project';
 import { z } from 'zod';
 import {
 	defineTool,
@@ -22,11 +22,9 @@ import {
 	findExportPreset,
 } from '../export-presets.ts';
 import { pickSequence, timelineTable } from '../format.ts';
+import { timeArg } from './editing.ts';
 import { ProjectIdArg } from './projects.ts';
 
-const TimeArg = TimeInputSchema.describe(
-	'Sequence time: frames (integer), {"frames": n}, {"seconds": x} or timecode "HH:MM:SS:FF"',
-);
 const SequenceIdArg = z
 	.string()
 	.optional()
@@ -64,8 +62,8 @@ export function registerRenderTools(ctx: ToolContext): void {
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
-				from: TimeArg.optional().describe('Only clips ending after this time'),
-				to: TimeArg.optional().describe('Only clips starting before this time'),
+				from: timeArg('Only clips ending after this time').optional(),
+				to: timeArg('Only clips starting before this time').optional(),
 			},
 			annotations: READ_ONLY,
 		},
@@ -97,7 +95,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 				'Renders the Program output (what the viewer sees: all tracks composited, titles and graphics included) at one time and returns it as a PNG image, downscaled to `width` (default 640 px). Use it to check framing, titles and cuts visually. Uses the live editor state when the project is open.',
 			input: {
 				projectId: ProjectIdArg,
-				at: TimeArg.describe('Time of the frame'),
+				at: timeArg('Time of the frame'),
 				width: z.number().int().min(64).max(1280).optional().describe('Image width in pixels (default 640)'),
 				sequenceId: SequenceIdArg,
 			},
@@ -161,7 +159,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 			title: 'Set playhead',
 			description:
 				'Moves the playhead of the open editor (pauses playback) so the user sees that frame in the Program monitor. A view change, not an edit (no History entry). Needs an open editor.',
-			input: { projectId: ProjectIdArg, at: TimeArg.describe('Where to put the playhead') },
+			input: { projectId: ProjectIdArg, at: timeArg('Where to put the playhead') },
 			annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
 		},
 		async ({ projectId, at }) => {
@@ -211,7 +209,12 @@ export function registerRenderTools(ctx: ToolContext): void {
 				'Renders a motion-graphic template with the given params (native fframes renderer) and returns its middle frame as a PNG image, plus the URL of the animated preview (WebM with alpha). Use it to check params before adding the graphic.',
 			input: {
 				template: z.string().min(1).describe('Template id, optionally "@version" ("lower-third@1")'),
-				params: z.record(z.string(), z.unknown()).optional(),
+				params: z
+					.record(z.string(), z.unknown())
+					.optional()
+					.describe(
+						'Template parameters (paramsSchema in list_motion_templates); omitted ones use the defaults',
+					),
 				width: z.number().int().min(64).max(1920).optional().describe('Canvas width (default 960)'),
 				height: z.number().int().min(64).max(1920).optional().describe('Canvas height (default 540)'),
 				durationSeconds: z
@@ -338,9 +341,15 @@ export function registerRenderTools(ctx: ToolContext): void {
 					.optional()
 					.describe(`Preset id from list_export_presets (default ${DEFAULT_EXPORT_PRESET})`),
 				range: z
-					.union([z.enum(['entire', 'in-out']), z.strictObject({ from: TimeArg, to: TimeArg })])
+					.union([
+						z.enum(['entire', 'in-out']),
+						z.strictObject({
+							from: timeArg('Start of the range'),
+							to: timeArg('End of the range (exclusive)'),
+						}),
+					])
 					.optional()
-					.describe('"entire" (default), "in-out" (sequence In/Out marks) or {"from", "to"}'),
+					.describe('"entire" (default), "in-out" (sequence In/Out marks) or {"from": time, "to": time}'),
 				engine: z.enum(['auto', 'native', 'remotion']).optional().describe('Render path (default auto)'),
 				outputPath: z
 					.string()
@@ -452,7 +461,13 @@ export function registerRenderTools(ctx: ToolContext): void {
 				'Waits until a job finishes (or timeoutSeconds passes, default 120, max 900) and returns its final state and result: for exports the output file path (when outputPath was given), download URL, frame count and duration. Sends progress notifications while waiting. On timeout returns the current state with timedOut: true; call it again to keep waiting.',
 			input: {
 				jobId: JobIdArg,
-				timeoutSeconds: z.number().int().min(1).max(900).optional(),
+				timeoutSeconds: z
+					.number()
+					.int()
+					.min(1)
+					.max(900)
+					.optional()
+					.describe('How long to wait before returning timedOut: true (default 120, max 900)'),
 			},
 			annotations: READ_ONLY,
 		},

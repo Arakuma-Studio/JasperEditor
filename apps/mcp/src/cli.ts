@@ -19,6 +19,7 @@ Options:
   --engine-entry <file>  Engine bundle to start (env ${ENV.ENGINE_ENTRY}; default: next to this file)
   --engine-port <port>   Port for --start-engine (default: random)
   --agent-name <name>    Name shown in the editor History (default: the MCP client's name)
+  --request-timeout <s>  Deadline for one engine request in seconds (default 180)
   --help, --version
 
 Discovery order: --engine-url/env, then <appdir>/engine/runtime.json for --appdir, ${ENV.APPDIR}, the
@@ -26,6 +27,15 @@ platform appdir and the desktop app's appdir, then http://127.0.0.1:47900.`;
 
 function log(line: string): void {
 	process.stderr.write(`[jasper-mcp] ${line}\n`);
+}
+
+/**
+ * stdout carries JSON-RPC only. Anything a dependency prints with console.log/info/debug would corrupt
+ * the stream, so those go to stderr for the life of the process.
+ */
+function keepStdoutClean(): void {
+	for (const level of ['log', 'info', 'debug'] as const)
+		console[level] = (...args: unknown[]) => console.error(...args);
 }
 
 async function main(): Promise<void> {
@@ -38,7 +48,9 @@ async function main(): Promise<void> {
 		process.stdout.write(`${MCP_SERVER_VERSION}\n`);
 		return;
 	}
+	keepStdoutClean();
 	const env = process.env;
+	const timeoutSec = Number(readFlag(argv, 'request-timeout'));
 	const truthy = (v: string | undefined) => !!v && v !== '0' && v.toLowerCase() !== 'false';
 	const link = new EngineLink({
 		url: readFlag(argv, 'engine-url'),
@@ -47,6 +59,7 @@ async function main(): Promise<void> {
 		startEngine: argv.includes('--start-engine') || truthy(env.JASPER_MCP_START_ENGINE),
 		engineEntry: readFlag(argv, 'engine-entry'),
 		enginePort: readFlag(argv, 'engine-port') ? Number(readFlag(argv, 'engine-port')) : undefined,
+		requestTimeoutMs: Number.isFinite(timeoutSec) && timeoutSec > 0 ? timeoutSec * 1000 : undefined,
 		env,
 		log,
 	});

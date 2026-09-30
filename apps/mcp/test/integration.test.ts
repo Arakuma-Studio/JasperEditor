@@ -75,6 +75,7 @@ let engine: ChildProcess | null = null;
 let appdir = '';
 let client: Client;
 let serverLogs: string[] = [];
+let engineToken = '';
 
 async function call(name: string, args: Record<string, unknown> = {}): Promise<CallToolResult> {
 	return (await client.callTool({ name, arguments: args }, undefined, {
@@ -96,6 +97,7 @@ beforeAll(async () => {
 	ensureFixtures();
 	appdir = mkdtempSync(join(tmpdir(), 'jasper-mcp-it-'));
 	const token = randomBytes(16).toString('hex');
+	engineToken = token;
 	engine = spawn(
 		process.execPath,
 		['--import', 'tsx', join(ROOT, 'apps/engine/src/cli.ts'), '--port', String(PORT), '--appdir', appdir],
@@ -120,6 +122,8 @@ beforeAll(async () => {
 }, 180_000);
 
 afterAll(async () => {
+	// Everything the server logged during the whole run (stderr) stays free of the engine token.
+	expect(serverLogs.join('')).not.toContain(engineToken || 'no-token');
 	await client?.close().catch(() => {});
 	if (engine && engine.exitCode === null) {
 		const exited = new Promise((r) => engine!.once('exit', r));
@@ -193,6 +197,18 @@ describe('jasper-mcp over stdio against a real engine', () => {
 		const s = await ok<{ engine: { url: string; foundBy: string }; agentName: string }>('engine_status');
 		expect(s.engine).toMatchObject({ url: `http://127.0.0.1:${PORT}`, foundBy: 'runtime-file' });
 		expect(s.agentName).toBe('vitest-mcp');
+	});
+
+	it('never shows the engine token to the agent or in its log', async () => {
+		expect(engineToken).toHaveLength(32);
+		const outputs = [
+			textOf(await call('engine_status')),
+			textOf(await call('list_projects')),
+			textOf(await call('get_project', { projectId: 'prj_NOPE' })),
+			textOf(await call('open_project_in_editor', { projectId: 'prj_NOPE' })),
+			serverLogs.join(''),
+		];
+		for (const o of outputs) expect(o).not.toContain(engineToken);
 	});
 
 	it('creates a project and imports fixture media', async () => {
