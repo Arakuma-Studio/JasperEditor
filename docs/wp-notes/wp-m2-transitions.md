@@ -48,7 +48,7 @@ No new dependencies. Native audio crossfades use `afade` (LGPL build).
 - Engine: `apps/engine/test/audio-crossfade.test.ts` (filter text + real ffmpeg export of two tones, `astats` level check ≤ 0.5 dB).
 - MCP: `MCP_TEST_PORT=48561 pnpm vitest run --project @jasper/mcp`.
 - E2E: `pnpm fixtures && E2E_PORT=48410 pnpm e2e -- e2e/transitions.spec.ts`.
-- Fixtures: `scripts/fixtures/transitions.mjs` (`xfade-tone-440.wav`, `xfade-tone-660.wav`, steady tones for crossfade checks).
+- Fixtures: `scripts/fixtures/transitions.mjs` (`xfade-tone-440.wav`, `xfade-tone-660.wav`: steady tones for crossfade checks; `xfade-red.mp4`, `xfade-blue.mp4`: solid clips so the E2E can measure the dissolve mix in the Program monitor).
 
 ## Open issues / gaps
 
