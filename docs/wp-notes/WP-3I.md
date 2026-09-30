@@ -69,6 +69,7 @@ Branch `wp/wp-3i` (from `dev` at `3f5498d`). The acceptance results for every AR
 | web | **Notices.** They sit above the Export mode footer. A sticky "Export finished" toast used to cover the Export button. |
 | web | **Export file names.** `name.mp4` no longer becomes `name.mp4.mp4`. |
 | web | **Playback watchdog.** If no `frameupdate` arrives within 600 ms of `play()` and the Player is not buffering, the driver pauses, seeks and plays again (up to 3 times). Before, about 2 in 3 E2E runs had the Player stuck on one frame after seeks while the store said "playing". |
+| engine tests | **Clean-clone verify.** The media/export/uploads `beforeAll` hooks now allow 180 s. On a fresh checkout they generate the fixtures, which used to hit Vitest's 10 s hook timeout, so `pnpm verify` failed on a clean clone. |
 | web | **Program overlay drags.** A second drag was cancelled. A stray text selection made Chromium start a native drag, which fires `pointercancel`. The viewport is now `user-select: none` and a press clears the selection. |
 
 Contract changes (all additive):
