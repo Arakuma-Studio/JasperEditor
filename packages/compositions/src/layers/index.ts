@@ -11,6 +11,8 @@ import { VideoLayer } from './VideoLayer.tsx';
 
 export { AudioLayer, type AudioLayerProps } from './AudioLayer.tsx';
 export { LayerBox, StubLabel } from './LayerBox.tsx';
+export { OFFLINE_CARD_COLORS } from './OfflineCard.tsx';
+export { textBlockStyle, textFontFamily } from './TextLayer.tsx';
 export { MotionGraphicLayer, OfflineCard, SolidLayer, StillLayer, TextLayer, UnsupportedLayer, VideoLayer };
 
 export const LAYER_COMPONENTS: Partial<Record<string, ComponentType<LayerProps>>> = {

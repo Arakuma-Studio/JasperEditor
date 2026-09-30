@@ -1,4 +1,4 @@
-// Solid (color matte) layer — stub from WP-00; WP-2C owns it. Already draws the matte color.
+// Solid (color matte) layer: the matte color fills the intrinsic box (S01:KND-007).
 import { rgbaCss } from '../metadata.ts';
 import type { LayerProps } from '../types.ts';
 import { LayerBox } from './LayerBox.tsx';
