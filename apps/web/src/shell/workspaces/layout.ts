@@ -18,7 +18,9 @@ const MIN_H = 80;
 /** Upper bounds for fixed-axis panels: Tools stays 40 px; meters resize 40–120 (MTR-001). */
 /** (+4 px so the visible frame stays at the declared size inside a 3–4 px gutter.) */
 const FIXED_MAX: Partial<Record<PanelKind, number>> = { tools: 44, audioMeters: 124 };
-const GUTTER_ALLOWANCE = 3;
+// dockview takes gap·(n−1)/n from each of n views in a row: 2.25 px for the 3 px gutter in the Editing
+// bottom row (Project | Tools | Timeline | Meters). Rounding this up to 3 left Tools at 40.75 px (WS-003).
+const GUTTER_ALLOWANCE = 2.25;
 
 export function panelState(
 	def: Pick<PanelDefinition, 'kind' | 'minSize' | 'fixedAxis' | 'keepAlive'>,
@@ -112,7 +114,7 @@ export function buildLayout(
 		const expected = n.split === 'row' ? 'HORIZONTAL' : 'VERTICAL';
 		if (expected !== orientation) throw new Error(`Workspace ${def.id}: nested ${n.split} must alternate`);
 		const count = n.children.length;
-		const marginShare = count > 1 ? Math.round((gap * (count - 1)) / count) : 0;
+		const marginShare = count > 1 ? (gap * (count - 1)) / count : 0;
 		const sizes = distribute(
 			n.children.map((c) => (typeof c.size === 'object' ? { px: c.size.px + marginShare } : c.size)),
 			crossSize,
