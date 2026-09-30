@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@fastify/static": "^10.0.0",
+    "@fastify/websocket": "^11.3.1",
     "@fontsource/inter": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@fontsource/lato": "^5.3.0",
@@ -38,11 +39,13 @@
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "remotion": "4.0.499",
+    "ws": "^8.22.0",
     "zod": "^4.1.0"
   },
   "devDependencies": {
     "@jasper/engine-client": "workspace:*",
     "@jasper/session": "workspace:*",
+    "@types/ws": "^8.18.2",
     "esbuild": "^0.25.0"
   }
 }

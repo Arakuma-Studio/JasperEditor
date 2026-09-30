@@ -13,6 +13,7 @@ export const AGENT_QUERIES = [
 	'playhead.get',
 	'history.list',
 	'validate',
+	'frame.capture',
 ] as const;
 export const AgentQueryNameSchema = z.enum(AGENT_QUERIES);
 export type AgentQueryName = z.infer<typeof AgentQueryNameSchema>;
@@ -107,11 +108,22 @@ export const AgentWsClientMessageSchema = z.discriminatedUnion('type', [
 	AgentWsEventSchema,
 	AgentWsPingSchema,
 ]);
+/** Editor → engine event names with engine-side meaning (other names are forwarded to /events). */
+export const AGENT_WS_CLIENT_EVENTS = {
+	/** Payload `{approvalId, decision: 'approved' | 'denied'}` — resolves an engine approval (S01:AGT-011). */
+	approvalResolve: 'agent.approval.resolve',
+} as const;
+export const AgentApprovalResolveSchema = z.object({
+	approvalId: z.string(),
+	decision: z.enum(['approved', 'denied']),
+});
 /** Engine → editor. */
 export const AgentWsServerMessageSchema = z.discriminatedUnion('type', [
 	AgentWsRequestSchema,
 	AgentWsPingSchema,
 	z.object({ type: z.literal('welcome'), engineVersion: z.string() }),
+	/** Engine-side events for the session (e.g. `agent.approval.requested` / `.resolved`). */
+	AgentWsEventSchema,
 ]);
 export type AgentWsClientMessage = z.infer<typeof AgentWsClientMessageSchema>;
 export type AgentWsServerMessage = z.infer<typeof AgentWsServerMessageSchema>;
@@ -125,5 +137,9 @@ export const ApprovalSchema = z.object({
 	reasons: z.array(z.string()),
 	commandCount: z.number().int(),
 	expiresAt: z.string(),
+	/** One-line summary of the commands (e.g. "track.remove, 2× marker.add"). */
+	summary: z.string().optional(),
+	/** The commands awaiting approval (for the approval card's detail view). */
+	commands: z.array(z.unknown()).optional(),
 });
 export type Approval = z.infer<typeof ApprovalSchema>;
