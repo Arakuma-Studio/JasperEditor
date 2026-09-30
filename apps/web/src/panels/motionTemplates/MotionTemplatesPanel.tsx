@@ -1,0 +1,297 @@
+// Motion Templates panel (S05 §16.14 MGT-001/002): a gallery of motion-graphic templates with search,
+// category and engine filters, a static SVG preview at 50 % of each template, and insert by
+// double-click / Enter / drag onto the timeline. fframes templates come from @jasper/mg-templates;
+// the engine catalog tells whether the native renderer (jasper-mg) is ready for them.
+import type { MgTemplateCatalogEntry } from '@jasper/api';
+import { type AnyMgTemplate, mgRegistry } from '@jasper/mg-templates';
+import type { SessionState } from '@jasper/session';
+import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
+import { cx, Icon } from '@jasper/ui';
+import { useEffect, useMemo, useState } from 'react';
+import { useEngine } from '../../state/engine.tsx';
+import type { PanelProps } from '../types.ts';
+import { insertMotionTemplate, type MgTemplateRef, writeMgTemplateDrag } from './insert.ts';
+
+export type EngineFilter = 'all' | 'fframes' | 'remotion';
+
+export type GalleryEntry = {
+	ref: MgTemplateRef;
+	name: string;
+	category: string;
+	description: string;
+	engine: 'fframes' | 'remotion';
+	/** Rendered natively by jasper-mg (false: preview/export through the TS twin + Remotion). */
+	native: boolean;
+	durationSeconds: number;
+	aspects: string[];
+	def: AnyMgTemplate;
+};
+
+type NullableStore = {
+	getState(): SessionState | null;
+	subscribe(l: (s: SessionState | null, p: SessionState | null) => void): () => void;
+};
+const NO_SESSION_STORE: NullableStore = { getState: () => null, subscribe: () => () => {} };
+
+const ASPECTS: Record<string, string> = { '1920x1080': '16:9', '1080x1920': '9:16', '1080x1080': '1:1' };
+
+/** Merges the TS catalog with the engine's (native flags); pure for tests. */
+export function galleryEntries(engineTemplates: MgTemplateCatalogEntry[] | null): GalleryEntry[] {
+	return mgRegistry.definitions().map((def) => {
+		const remote = engineTemplates?.find((t) => t.id === def.id && t.version === def.version);
+		return {
+			ref: { id: def.id, version: def.version },
+			name: def.name,
+			category: def.category,
+			description: def.description ?? '',
+			engine: 'fframes',
+			native: remote?.native === true,
+			durationSeconds: def.defaultDurationSeconds,
+			aspects: def.canvases.map((c) => ASPECTS[`${c.width}x${c.height}`] ?? `${c.width}x${c.height}`),
+			def,
+		};
+	});
+}
+
+export function filterEntries(
+	entries: GalleryEntry[],
+	f: { query: string; category: string | null; engine: EngineFilter },
+): GalleryEntry[] {
+	const q = f.query.trim().toLowerCase();
+	return entries.filter(
+		(e) =>
+			(f.engine === 'all' || e.engine === f.engine) &&
+			(!f.category || e.category === f.category) &&
+			(!q || `${e.name} ${e.category} ${e.description} ${e.ref.id}`.toLowerCase().includes(q)),
+	);
+}
+
+/** Static preview: the twin at 50 % of the default duration, 16:9 canvas. */
+export function previewSvg(def: AnyMgTemplate): string {
+	const fps = 30;
+	const duration = Math.max(1, Math.round(def.defaultDurationSeconds * fps));
+	return def.renderSvg(
+		def.defaults,
+		Math.floor(duration / 2),
+		fps,
+		{ width: 1920, height: 1080 },
+		{
+			durationFrames: duration,
+			idPrefix: `mgt-${def.id}-${def.version}`,
+		},
+	);
+}
+
+function useEngineCatalog(): { templates: MgTemplateCatalogEntry[] | null; renderer: string } {
+	const { client, status } = useEngine();
+	const [state, setState] = useState<{ templates: MgTemplateCatalogEntry[] | null; renderer: string }>({
+		templates: null,
+		renderer: 'unknown',
+	});
+	useEffect(() => {
+		if (status !== 'connected') return;
+		let cancelled = false;
+		client
+			.mgTemplates()
+			.then((r) => {
+				if (!cancelled)
+					setState({
+						templates: r.templates,
+						renderer:
+							r.renderer.status === 'ready'
+								? 'ready'
+								: `unavailable${r.renderer.reason ? `: ${r.renderer.reason}` : ''}`,
+					});
+			})
+			.catch(() => {
+				if (!cancelled) setState({ templates: null, renderer: 'unavailable: engine catalog not reachable' });
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [client, status]);
+	return state;
+}
+
+function TemplateCard({
+	entry,
+	svg,
+	onInsert,
+	disabled,
+}: {
+	entry: GalleryEntry;
+	svg: string;
+	onInsert(): void;
+	disabled: boolean;
+}) {
+	return (
+		<li
+			// biome-ignore lint/a11y/noNoninteractiveTabindex: grid cells are focusable (Enter inserts)
+			tabIndex={0}
+			draggable
+			data-template={`${entry.ref.id}@${entry.ref.version}`}
+			aria-label={`${entry.name} (${entry.category})`}
+			title={`${entry.name} — ${entry.description}\nDouble-click or drag to the timeline to insert`}
+			className={cx(
+				'group flex cursor-pointer flex-col gap-1 rounded-pr-control border border-pr-border-subtle bg-pr-panel-alt p-1 outline-none',
+				'hover:border-pr-border-strong focus-visible:border-pr-focus',
+			)}
+			onDoubleClick={() => !disabled && onInsert()}
+			onKeyDown={(e) => {
+				if (e.key === 'Enter' && !disabled) {
+					e.preventDefault();
+					onInsert();
+				}
+			}}
+			onDragStart={(e) => writeMgTemplateDrag(e.dataTransfer, entry.ref)}
+		>
+			<div
+				className="relative aspect-video w-full overflow-hidden rounded-pr-control bg-pr-field-deep"
+				data-mg-preview
+			>
+				<div
+					className="absolute inset-0 [&>svg]:h-full [&>svg]:w-full"
+					// Twin output: params are XML-escaped by @jasper/mg-templates.
+					// biome-ignore lint/security/noDangerouslySetInnerHtml: trusted, escaped template output
+					dangerouslySetInnerHTML={{ __html: svg }}
+				/>
+				<span
+					className="absolute top-1 right-1 rounded-pr-pill bg-pr-engine-fframes px-1 text-pr-small text-pr-on-accent"
+					title={
+						entry.native
+							? 'fframes · native renderer ready'
+							: 'fframes · SVG preview (native renderer unavailable)'
+					}
+				>
+					F{entry.native ? '' : '*'}
+				</span>
+			</div>
+			<div className="flex items-baseline justify-between gap-1 px-0.5">
+				<span className="truncate text-pr-ui text-pr-text">{entry.name}</span>
+				<span className="shrink-0 text-pr-small text-pr-dim">{entry.durationSeconds.toFixed(1)} s</span>
+			</div>
+			<div className="flex gap-1 px-0.5 text-pr-small text-pr-muted">
+				<span className="truncate">{entry.category}</span>
+				<span className="ml-auto shrink-0">{entry.aspects.join(' · ')}</span>
+			</div>
+		</li>
+	);
+}
+
+export function MotionTemplatesPanel(props: PanelProps) {
+	const session = useSessionOrNull();
+	const hasSequence = useStoreSelector(
+		(session?.store as NullableStore | undefined) ?? NO_SESSION_STORE,
+		(s) => !!s?.activeSequenceId,
+	);
+	const catalog = useEngineCatalog();
+	const [query, setQuery] = useState('');
+	const [category, setCategory] = useState<string | null>(null);
+	const [engine, setEngine] = useState<EngineFilter>('all');
+	const [message, setMessage] = useState<{ kind: 'info' | 'error'; text: string } | null>(null);
+	const entries = useMemo(() => galleryEntries(catalog.templates), [catalog.templates]);
+	const previews = useMemo(() => new Map(entries.map((e) => [e.def, previewSvg(e.def)])), [entries]);
+	const categories = useMemo(() => [...new Set(entries.map((e) => e.category))].sort(), [entries]);
+	const visible = filterEntries(entries, { query, category, engine });
+	const canInsert = !!session && hasSequence;
+
+	const insert = (entry: GalleryEntry) => {
+		if (!session) return;
+		try {
+			insertMotionTemplate(session, entry.ref);
+			setMessage({ kind: 'info', text: `Added ${entry.name} at the playhead` });
+		} catch (e) {
+			setMessage({ kind: 'error', text: e instanceof Error ? e.message : String(e) });
+		}
+	};
+
+	return (
+		<div
+			className="flex h-full min-h-0 flex-col gap-1 p-1 text-pr-ui text-pr-text"
+			data-panel-kind="motionTemplates"
+			data-instance-id={props.instanceId}
+		>
+			<div className="flex items-center gap-1">
+				<label className="flex min-w-0 flex-1 items-center gap-1 rounded-pr-control bg-pr-field px-1">
+					<Icon id="app.search" size={14} />
+					<input
+						type="search"
+						aria-label="Search templates"
+						placeholder="Search templates"
+						className="min-w-0 flex-1 bg-transparent py-0.5 text-pr-ui text-pr-text outline-none placeholder:text-pr-dim"
+						value={query}
+						onChange={(e) => setQuery(e.target.value)}
+					/>
+				</label>
+				<select
+					aria-label="Engine"
+					className="rounded-pr-control bg-pr-field px-1 py-0.5 text-pr-ui text-pr-text"
+					value={engine}
+					onChange={(e) => setEngine(e.target.value as EngineFilter)}
+				>
+					<option value="all">All engines</option>
+					<option value="fframes">fframes</option>
+					<option value="remotion">Remotion</option>
+				</select>
+			</div>
+			<div className="flex flex-wrap gap-1" role="toolbar" aria-label="Categories">
+				{[null, ...categories].map((c) => (
+					<button
+						key={c ?? 'all'}
+						aria-pressed={category === c}
+						className={cx(
+							'rounded-pr-pill border px-1.5 text-pr-small',
+							category === c
+								? 'border-pr-accent bg-pr-accent-fill text-pr-on-accent'
+								: 'border-pr-border-subtle text-pr-muted hover:text-pr-text',
+						)}
+						onClick={() => setCategory(c)}
+					>
+						{c ?? 'All'}
+					</button>
+				))}
+			</div>
+			<div className="min-h-0 flex-1 overflow-auto">
+				{visible.length === 0 ? (
+					<p className="p-2 text-center text-pr-small text-pr-muted">
+						{engine === 'remotion' ? 'No Remotion templates yet.' : 'No templates match.'}
+					</p>
+				) : (
+					<ul
+						className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-1"
+						aria-label="Motion templates"
+					>
+						{visible.map((e) => (
+							<TemplateCard
+								key={`${e.ref.id}@${e.ref.version}`}
+								entry={e}
+								svg={previews.get(e.def) ?? ''}
+								disabled={!canInsert}
+								onInsert={() => insert(e)}
+							/>
+						))}
+					</ul>
+				)}
+			</div>
+			<footer
+				className="flex items-center gap-1 text-pr-small text-pr-dim"
+				data-mg-renderer={catalog.renderer}
+			>
+				<Icon id="engine.fframes" size={12} />
+				<span className="truncate">
+					{message ? (
+						<span className={message.kind === 'error' ? 'text-pr-danger' : 'text-pr-muted'}>
+							{message.text}
+						</span>
+					) : !canInsert ? (
+						'Open a sequence to insert templates'
+					) : catalog.renderer === 'ready' ? (
+						'Native renderer ready · double-click or drag to insert'
+					) : (
+						`SVG preview only (${catalog.renderer}) · double-click or drag to insert`
+					)}
+				</span>
+			</footer>
+		</div>
+	);
+}

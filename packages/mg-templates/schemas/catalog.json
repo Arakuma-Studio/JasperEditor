@@ -1,0 +1,179 @@
+{
+  "templates": [
+    {
+      "id": "lower-third",
+      "version": 1,
+      "name": "Lower Third",
+      "category": "Lower Thirds",
+      "paramsSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "name": {
+            "default": "Alex Morgan",
+            "type": "string",
+            "maxLength": 120
+          },
+          "title": {
+            "default": "Producer, JasperEditor",
+            "type": "string",
+            "maxLength": 160
+          },
+          "accentColor": {
+            "default": [0.22, 0.53, 1, 1],
+            "minItems": 4,
+            "maxItems": 4,
+            "type": "array",
+            "items": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          "textColor": {
+            "default": [1, 1, 1, 1],
+            "minItems": 4,
+            "maxItems": 4,
+            "type": "array",
+            "items": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          "backgroundColor": {
+            "default": [0.04, 0.06, 0.12, 0.78],
+            "minItems": 4,
+            "maxItems": 4,
+            "type": "array",
+            "items": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          "position": {
+            "default": [120, 800],
+            "minItems": 2,
+            "maxItems": 2,
+            "type": "array",
+            "items": {
+              "type": "number",
+              "minimum": -4000,
+              "maximum": 4000
+            }
+          },
+          "holdUntilFrames": {
+            "default": 0,
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 432000
+          }
+        },
+        "additionalProperties": false
+      },
+      "defaults": {
+        "name": "Alex Morgan",
+        "title": "Producer, JasperEditor",
+        "accentColor": [0.22, 0.53, 1, 1],
+        "textColor": [1, 1, 1, 1],
+        "backgroundColor": [0.04, 0.06, 0.12, 0.78],
+        "position": [120, 800],
+        "holdUntilFrames": 0
+      },
+      "introFrames": 30,
+      "outroFrames": 15,
+      "defaultDurationSeconds": 5,
+      "description": "Name and title on a translucent panel with an accent bar; spring slide-in.",
+      "canvases": ["1920x1080", "1080x1920", "1080x1080"]
+    },
+    {
+      "id": "title-card",
+      "version": 1,
+      "name": "Title Card",
+      "category": "Titles",
+      "paramsSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "title": {
+            "default": "Your Title Here",
+            "type": "string",
+            "maxLength": 160
+          },
+          "subtitle": {
+            "default": "A JasperEditor production",
+            "type": "string",
+            "maxLength": 240
+          },
+          "background": {
+            "default": [0.02, 0.03, 0.06, 0.85],
+            "minItems": 4,
+            "maxItems": 4,
+            "type": "array",
+            "items": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          "textColor": {
+            "default": [1, 1, 1, 1],
+            "minItems": 4,
+            "maxItems": 4,
+            "type": "array",
+            "items": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          "accentColor": {
+            "default": [0.22, 0.53, 1, 1],
+            "minItems": 4,
+            "maxItems": 4,
+            "type": "array",
+            "items": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          "alignment": {
+            "default": "center",
+            "type": "string",
+            "enum": ["left", "center", "right"]
+          },
+          "fadeInFrames": {
+            "default": 15,
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 600
+          },
+          "fadeOutFrames": {
+            "default": 15,
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 600
+          }
+        },
+        "additionalProperties": false
+      },
+      "defaults": {
+        "title": "Your Title Here",
+        "subtitle": "A JasperEditor production",
+        "background": [0.02, 0.03, 0.06, 0.85],
+        "textColor": [1, 1, 1, 1],
+        "accentColor": [0.22, 0.53, 1, 1],
+        "alignment": "center",
+        "fadeInFrames": 15,
+        "fadeOutFrames": 15
+      },
+      "introFrames": 15,
+      "outroFrames": 15,
+      "defaultDurationSeconds": 4,
+      "description": "Full-frame title and subtitle over a (translucent) background with fades.",
+      "canvases": ["1920x1080", "1080x1920", "1080x1080"]
+    }
+  ]
+}

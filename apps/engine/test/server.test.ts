@@ -38,7 +38,8 @@ describe('engine server (ARCHITECTURE §9.1, §4.2)', () => {
 	it('every §9.2 route is registered: WP-2F routes are implemented, others answer 501', async () => {
 		const app = await make();
 		for (const [name, route] of Object.entries(ROUTES)) {
-			if (name === 'health' || name === 'events') continue; // /events streams (tested in events.test.ts)
+			// /events streams (tested in events.test.ts); mg* are implemented by WP-2G (test/mg.test.ts).
+			if (name === 'health' || name === 'events' || name.startsWith('mg')) continue;
 			const url = route.path
 				.replace(/:([A-Za-z]+)/g, (_, p: string) => (p === 'projectId' ? 'prj_0000000000000001' : `x${p}`))
 				.replace('*', 'inter/400.woff2');

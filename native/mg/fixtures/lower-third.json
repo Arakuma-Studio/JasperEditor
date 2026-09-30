@@ -1,0 +1,17 @@
+{
+  "template": { "id": "lower-third", "version": 1 },
+  "params": {
+    "name": "Alex Morgan",
+    "title": "Producer, JasperEditor",
+    "accentColor": [0.22, 0.53, 1, 1],
+    "textColor": [1, 1, 1, 1],
+    "backgroundColor": [0.04, 0.06, 0.12, 0.78],
+    "position": [120, 800],
+    "holdUntilFrames": 0
+  },
+  "width": 1920,
+  "height": 1080,
+  "fps": { "num": 30, "den": 1 },
+  "durationFrames": 150,
+  "sourceInFrames": 0
+}

@@ -1,0 +1,19 @@
+[package]
+name = "jasper-mg-cli"
+description = "The jasper-mg command line renderer (ARCHITECTURE §10.2 CLI contract)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "jasper-mg"
+path = "src/main.rs"
+
+[dependencies]
+jasper-mg-core.workspace = true
+jasper-mg-templates.workspace = true
+fframes.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+clap.workspace = true

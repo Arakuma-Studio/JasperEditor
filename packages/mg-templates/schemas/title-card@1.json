@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "title": {
+      "default": "Your Title Here",
+      "type": "string",
+      "maxLength": 160
+    },
+    "subtitle": {
+      "default": "A JasperEditor production",
+      "type": "string",
+      "maxLength": 240
+    },
+    "background": {
+      "default": [0.02, 0.03, 0.06, 0.85],
+      "minItems": 4,
+      "maxItems": 4,
+      "type": "array",
+      "items": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    "textColor": {
+      "default": [1, 1, 1, 1],
+      "minItems": 4,
+      "maxItems": 4,
+      "type": "array",
+      "items": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    "accentColor": {
+      "default": [0.22, 0.53, 1, 1],
+      "minItems": 4,
+      "maxItems": 4,
+      "type": "array",
+      "items": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    "alignment": {
+      "default": "center",
+      "type": "string",
+      "enum": ["left", "center", "right"]
+    },
+    "fadeInFrames": {
+      "default": 15,
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 600
+    },
+    "fadeOutFrames": {
+      "default": 15,
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 600
+    }
+  },
+  "additionalProperties": false
+}
