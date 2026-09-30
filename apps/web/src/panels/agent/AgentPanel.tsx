@@ -402,7 +402,7 @@ export function AgentPanel(props: PanelProps & { services?: PanelServices }) {
 			data-instance-id={props.instanceId}
 		>
 			<div
-				className="flex h-7 shrink-0 items-center gap-1 border-b border-pr-border-subtle px-1"
+				className="flex h-7 shrink-0 items-center gap-1 overflow-hidden border-b border-pr-border-subtle px-1"
 				role="tablist"
 			>
 				{tabs.map(([id, label]) => (
@@ -411,7 +411,7 @@ export function AgentPanel(props: PanelProps & { services?: PanelServices }) {
 						role="tab"
 						aria-selected={tab === id}
 						className={cx(
-							'h-6 rounded-pr-control px-2 text-pr-ui',
+							'h-6 shrink-0 whitespace-nowrap rounded-pr-control px-2 text-pr-ui',
 							tab === id ? 'bg-pr-selected text-pr-strong' : 'text-pr-muted hover:bg-pr-hover',
 							id === 'approvals' && approvals > 0 && 'text-pr-warning',
 						)}
@@ -422,7 +422,7 @@ export function AgentPanel(props: PanelProps & { services?: PanelServices }) {
 				))}
 				<span
 					className={cx(
-						'ml-auto flex items-center gap-1 px-1 text-pr-small',
+						'ml-auto flex min-w-0 items-center gap-1 truncate whitespace-nowrap px-1 text-pr-small',
 						relay === 'connected' ? 'text-pr-success' : 'text-pr-dim',
 					)}
 					title="WS /agent relay: external agents reach this editor through the engine"
