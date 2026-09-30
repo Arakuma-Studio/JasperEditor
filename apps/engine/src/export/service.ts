@@ -24,6 +24,8 @@ export type MgMasterRequest = {
 	fps: { num: number; den: number };
 	sequence: { width: number; height: number };
 	projectId?: string;
+	/** The export/still job that needs the master (its mg-render job is shown as a child). */
+	parentId?: string;
 	signal: AbortSignal;
 };
 /**
@@ -192,6 +194,7 @@ export class ExportService {
 				fps: planned.snapshot.settings.fps,
 				sequence: { width: planned.snapshot.settings.width, height: planned.snapshot.settings.height },
 				projectId: planned.document.projectId,
+				parentId: ctx.job.id,
 				signal: ctx.signal,
 			});
 			if (!p || !(await exists(p))) return null;

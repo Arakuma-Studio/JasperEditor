@@ -5,6 +5,7 @@
 import { createReadStream, statSync } from 'node:fs';
 import { MgRenderRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
+import { JobError } from '../jobs/types.ts';
 import {
 	createMgService,
 	MG_SERVICE_KEY,
@@ -45,6 +46,18 @@ export async function ensureMgService(app: FastifyInstance): Promise<MgService> 
 	if (core) {
 		core.registerCapabilityProvider(mgCapabilityProvider(service));
 		core.registerMgMasterProvider(mgMasterHook(service));
+		// mg-render jobs run on the MG service's scheduler; list/get/cancel/retry them through /api/jobs.
+		core.queue.registerExternalSource({
+			owns: (id) => id.startsWith('job_mg_'),
+			list: () => service.listJobs(),
+			get: (id) => service.getJob(id),
+			cancel: (id) => service.cancel(id),
+			retry: (id) => {
+				const job = service.retry(id);
+				if (!job) throw new JobError('JOB_NOT_RETRYABLE', `Job ${id} cannot be retried`);
+				return job;
+			},
+		});
 	}
 	const cap = service.capability();
 	app.log.info(`[mg] fframes ${cap.fframes}${cap.fframesReason ? `: ${cap.fframesReason}` : ''}`);
