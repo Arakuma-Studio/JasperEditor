@@ -3,7 +3,7 @@
 // (`toggles.activeTool`) so the Timeline and the Program monitor read the same value.
 import type { ActiveTool } from '@jasper/session';
 import { useSessionOrNull, useSessionState } from '@jasper/session/react';
-import { ICONS, Icon, type IconId } from '@jasper/ui';
+import { ICONS, Icon, type IconId, Tooltip } from '@jasper/ui';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { TOOL_GROUPS, TOOLS, type ToolId } from '../timeline/model/tools.ts';
 import type { PanelProps } from '../types.ts';
@@ -102,46 +102,48 @@ function ToolStrip() {
 				const selected = group.includes(active);
 				return (
 					<div key={group.join(',')} className="relative">
-						<button
-							type="button"
-							className={`relative inline-flex size-[28px] items-center justify-center rounded-pr-control ${
-								selected
-									? 'bg-pr-accent-fill text-pr-on-accent'
-									: 'text-pr-icon hover:bg-pr-hover hover:text-pr-icon-hover'
-							}`}
-							title={tooltipFor(face)}
-							aria-label={TOOLS[face].label}
-							aria-pressed={selected}
-							data-tool={face}
-							onPointerDown={() => {
-								if (group.length < 2) return;
-								pressTimer.current = setTimeout(() => setFlyout(gi), LONG_PRESS_MS);
-							}}
-							onPointerUp={() => {
-								if (pressTimer.current) clearTimeout(pressTimer.current);
-								pressTimer.current = null;
-							}}
-							onClick={() => {
-								if (flyout === gi) return;
-								choose(gi, face);
-							}}
-							onContextMenu={(e) => {
-								if (group.length < 2) return;
-								e.preventDefault();
-								setFlyout(gi);
-							}}
-						>
-							<ToolGlyph tool={face} />
-							{group.length > 1 ? (
-								<span
-									className="absolute right-[2px] bottom-[2px] size-0"
-									style={{
-										borderLeft: '3px solid transparent',
-										borderBottom: '3px solid currentColor',
-									}}
-								/>
-							) : null}
-						</button>
+						{/* Styled tooltip "Razor Tool (C)" like every other icon control (S05:TT-001/002). */}
+						<Tooltip content={tooltipFor(face)} side={horizontal ? 'bottom' : 'right'}>
+							<button
+								type="button"
+								className={`relative inline-flex size-[28px] items-center justify-center rounded-pr-control ${
+									selected
+										? 'bg-pr-accent-fill text-pr-on-accent'
+										: 'text-pr-icon hover:bg-pr-hover hover:text-pr-icon-hover'
+								}`}
+								aria-label={TOOLS[face].label}
+								aria-pressed={selected}
+								data-tool={face}
+								onPointerDown={() => {
+									if (group.length < 2) return;
+									pressTimer.current = setTimeout(() => setFlyout(gi), LONG_PRESS_MS);
+								}}
+								onPointerUp={() => {
+									if (pressTimer.current) clearTimeout(pressTimer.current);
+									pressTimer.current = null;
+								}}
+								onClick={() => {
+									if (flyout === gi) return;
+									choose(gi, face);
+								}}
+								onContextMenu={(e) => {
+									if (group.length < 2) return;
+									e.preventDefault();
+									setFlyout(gi);
+								}}
+							>
+								<ToolGlyph tool={face} />
+								{group.length > 1 ? (
+									<span
+										className="absolute right-[2px] bottom-[2px] size-0"
+										style={{
+											borderLeft: '3px solid transparent',
+											borderBottom: '3px solid currentColor',
+										}}
+									/>
+								) : null}
+							</button>
+						</Tooltip>
 						{flyout === gi ? (
 							<div
 								className={`absolute top-0 flex flex-col rounded-pr-menu border border-pr-menu-border bg-pr-menu py-1 shadow-pr-overlay ${horizontal ? 'top-full left-0' : 'left-full ml-1'}`}

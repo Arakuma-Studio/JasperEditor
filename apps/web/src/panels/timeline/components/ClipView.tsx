@@ -190,7 +190,13 @@ function ClipViewImpl(p: ClipViewProps) {
 							},
 						];
 				for (const lane of lanes) {
-					for (const b of waveBars(lane.cols, { x: x0, top: lane.top, height: lane.height }, gain, style)) {
+					for (const b of waveBars(
+						lane.cols,
+						{ x: x0, top: lane.top, height: lane.height },
+						gain,
+						style,
+						'log',
+					)) {
 						ctx.fillStyle = fill;
 						ctx.fillRect(b.x, b.top, 1, b.height);
 						if (b.clipped && danger) {

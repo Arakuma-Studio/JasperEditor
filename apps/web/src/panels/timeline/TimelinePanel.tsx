@@ -98,6 +98,9 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 	const committedDoc = useSessionState((s) => s.document);
 	const view = useSessionState((s) => s.views[seqId]!);
 	const selectedClips = useSessionState((s) => s.selection.timeline.clips);
+	// The sequence tab strip only shows with 2+ open sequences (SequenceTabs hideSingle); the playhead
+	// overlay starts below it.
+	const openTabs = useSessionState((s) => s.tabs.open.length);
 	const gaps = useSessionState((s) => s.selection.timeline.gaps);
 	const selectedMarkers = useSessionState((s) => s.selection.markers ?? EMPTY);
 	const media = useSessionState((s) => (s.transient ?? s.document).media as Record<string, MediaAsset>);
@@ -689,7 +692,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			data-sequence-id={seqId}
 			onPointerDownCapture={() => touchTimelineInstance(props.instanceId)}
 		>
-			<SequenceTabs session={session} activeId={seqId} />
+			<SequenceTabs session={session} activeId={seqId} hideSingle />
 			<div className="flex shrink-0" style={{ height: RULER_H }}>
 				<div
 					className="flex shrink-0 flex-col justify-between border-r border-pr-border px-2 pt-[2px]"
@@ -814,7 +817,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 				transport={session.transport}
 				viewportRef={viewportRef}
 				onFrame={onFrame}
-				tabsOffset={session.getState().tabs.open.length > 0}
+				tabsOffset={openTabs > 1}
 				controller={controller}
 			/>
 			{menu ? (

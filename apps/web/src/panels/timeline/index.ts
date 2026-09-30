@@ -4,7 +4,8 @@ import { TimelinePanel } from './TimelinePanel.tsx';
 
 const timeline: PanelDefinition = {
 	kind: 'timeline',
-	title: (ctx) => (ctx.sequenceName ? `Timeline: ${ctx.sequenceName}` : 'Timeline'),
+	// Premiere labels the Timeline tab with the sequence name alone (R-PUI §9.1).
+	title: (ctx) => ctx.sequenceName || 'Timeline',
 	icon: 'panel.timeline',
 	instance: 'multi',
 	keepAlive: true,

@@ -34,6 +34,7 @@ import {
 	useState,
 	useSyncExternalStore,
 } from 'react';
+import { sourceMonitorState } from '../../panels/source/source-state.ts';
 import type { PanelDefinition, PanelKind, PanelTitleContext } from '../../panels/types.ts';
 import { useCommandCtx, useShellRuntime } from '../context.tsx';
 import { PANEL_INSTANCE_ATTR, PANEL_KIND_ATTR } from '../focus.ts';
@@ -87,7 +88,12 @@ function useTitleContext(params: Record<string, unknown> | undefined): PanelTitl
 	const sequenceName = useStoreSelector(session?.store ?? NULL_STORE, (s: SessionState | null) =>
 		activeSequenceName(s),
 	);
-	return { params, sequenceName, sourceName: null };
+	// "Source: <clip>" tab label (S05:PC-002): the item open in the Source monitor.
+	const sourceItemId = useStoreSelector(sourceMonitorState, (s) => s.itemId);
+	const sourceName = useStoreSelector(session?.store ?? NULL_STORE, (s: SessionState | null) =>
+		sourceItemId && s ? (s.document.items[sourceItemId]?.name ?? null) : null,
+	);
+	return { params, sequenceName, sourceName };
 }
 const NULL_STORE = { getState: (): SessionState | null => null, subscribe: () => () => {} };
 

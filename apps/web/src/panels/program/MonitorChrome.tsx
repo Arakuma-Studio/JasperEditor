@@ -5,6 +5,7 @@
 import { formatTimecode, parseTimecodeEntry, type Rational } from '@jasper/project';
 import type { TransportStore } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
+import { Tooltip, tooltipText } from '@jasper/ui';
 import { Check, Settings } from 'lucide-react';
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
@@ -376,20 +377,21 @@ export function TransportButton({
 	disabled?: boolean;
 }) {
 	return (
-		<button
-			type="button"
-			aria-label={label}
-			title={shortcut ? `${label} (${shortcut})` : label}
-			data-testid={testId}
-			disabled={disabled}
-			aria-pressed={active === undefined ? undefined : active}
-			className={`inline-flex size-[var(--pr-transport-btn)] items-center justify-center rounded-pr-control transition-colors duration-100 hover:bg-pr-hover disabled:pointer-events-none disabled:text-pr-dim ${
-				active ? 'text-pr-accent' : 'text-pr-icon hover:text-pr-icon-hover'
-			}`}
-			onClick={onClick}
-		>
-			{children}
-		</button>
+		<Tooltip content={tooltipText(label, shortcut)} side="top">
+			<button
+				type="button"
+				aria-label={label}
+				data-testid={testId}
+				disabled={disabled}
+				aria-pressed={active === undefined ? undefined : active}
+				className={`inline-flex size-[var(--pr-transport-btn)] items-center justify-center rounded-pr-control transition-colors duration-100 hover:bg-pr-hover disabled:pointer-events-none disabled:text-pr-dim ${
+					active ? 'text-pr-accent' : 'text-pr-icon hover:text-pr-icon-hover'
+				}`}
+				onClick={onClick}
+			>
+				{children}
+			</button>
+		</Tooltip>
 	);
 }
 
