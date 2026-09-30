@@ -125,6 +125,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	const contentRef = useRef<HTMLDivElement>(null);
 	const lineRef = useRef<HTMLDivElement>(null);
 	const keyDrag = useRef<KeyDrag | null>(null);
+	const splitStart = useRef(0);
 
 	const sel = data.selection;
 	const primary = sel?.primary ?? null;
@@ -600,7 +601,10 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 								data-testid="ec-playhead"
 							/>
 							<Splitter
-								onDrag={(dxPct) => setLeftPct(Math.min(80, Math.max(25, leftPct + dxPct)))}
+								onStart={() => {
+									splitStart.current = leftPct;
+								}}
+								onDrag={(dxPct) => setLeftPct(Math.min(80, Math.max(25, splitStart.current + dxPct)))}
 								container={contentRef}
 							/>
 						</div>
@@ -680,16 +684,18 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	);
 }
 
-function Splitter(props: { onDrag(dxPct: number): void; container: RefObject<HTMLDivElement | null> }) {
+/** Pane splitter: reports the total drag distance since pointer-down (percent of the container). */
+function Splitter(props: {
+	onStart(): void;
+	onDrag(totalDxPct: number): void;
+	container: RefObject<HTMLDivElement | null>;
+}) {
 	const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
 		e.preventDefault();
-		let last = e.clientX;
+		const x0 = e.clientX;
 		const width = props.container.current?.getBoundingClientRect().width || 1;
-		const move = (ev: PointerEvent) => {
-			const d = ((ev.clientX - last) / width) * 100;
-			last = ev.clientX;
-			props.onDrag(d);
-		};
+		props.onStart();
+		const move = (ev: PointerEvent) => props.onDrag(((ev.clientX - x0) / width) * 100);
 		const up = () => {
 			window.removeEventListener('pointermove', move);
 			window.removeEventListener('pointerup', up);
@@ -702,6 +708,7 @@ function Splitter(props: { onDrag(dxPct: number): void; container: RefObject<HTM
 			className="pointer-events-auto absolute inset-y-0 left-[-3px] w-[5px] cursor-col-resize"
 			onPointerDown={onPointerDown}
 			title="Drag to resize"
+			data-testid="ec-splitter"
 		/>
 	);
 }

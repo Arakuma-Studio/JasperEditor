@@ -1,6 +1,6 @@
 import { EditorSession } from '@jasper/session';
 import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EffectControlsPanel } from '../src/panels/effectControls/EffectControlsPanel.tsx';
 import {
 	glyphHalves,
@@ -227,5 +227,21 @@ describe('Effect Controls helpers', () => {
 			easeIn: { influence: 1 / 3, slope: 0 },
 			easeOut: { influence: 1 / 3, slope: 0 },
 		});
+	});
+
+	it('the pane splitter follows the pointer across several moves', () => {
+		setup();
+		const content = screen.getByTestId('ec-content');
+		vi.spyOn(content, 'getBoundingClientRect').mockReturnValue({ width: 1000 } as DOMRect);
+		const pct = () => screen.getByTestId('ec-splitter').parentElement!.style.left;
+		expect(pct()).toBe('55%');
+		act(() => {
+			fireEvent.pointerDown(screen.getByTestId('ec-splitter'), { clientX: 550, button: 0 });
+			fireEvent.pointerMove(window, { clientX: 600 });
+			fireEvent.pointerMove(window, { clientX: 650 });
+			fireEvent.pointerMove(window, { clientX: 700 });
+			fireEvent.pointerUp(window, { clientX: 700 });
+		});
+		expect(pct()).toBe('70%');
 	});
 });
