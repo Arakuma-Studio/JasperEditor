@@ -83,6 +83,10 @@ describe('jasper-mg resolution and capability', () => {
 			fframes: 'unavailable',
 			fframesReason: expect.stringContaining('/nonexistent'),
 		});
+		// Integration: the MG capability provider is registered with WP-2F's /api/capabilities.
+		const caps = await app.inject({ method: 'GET', url: '/api/capabilities', headers: H });
+		expect(caps.statusCode).toBe(200);
+		expect(caps.json().render).toMatchObject({ fframes: 'unavailable' });
 		const render = await app.inject({
 			method: 'POST',
 			url: '/api/motion-graphics/render',

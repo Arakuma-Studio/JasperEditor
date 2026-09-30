@@ -5,8 +5,16 @@
 import { createReadStream, statSync } from 'node:fs';
 import { MgRenderRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
-import { createMgService, MG_SERVICE_KEY, MgRenderError, type MgService } from '../mg/index.ts';
+import {
+	createMgService,
+	MG_SERVICE_KEY,
+	MgRenderError,
+	type MgService,
+	mgCapabilityProvider,
+	mgMasterHook,
+} from '../mg/index.ts';
 import { sendError } from '../server.ts';
+import type { CoreServices } from '../tools/services.ts';
 
 const CONTENT_TYPES: Record<string, string> = {
 	'master.mov': 'video/quicktime',
@@ -32,6 +40,12 @@ export async function ensureMgService(app: FastifyInstance): Promise<MgService> 
 		await service.shutdown();
 	});
 	await service.refresh();
+	// WP-2F hooks: `render.fframes` in GET /api/capabilities and MG masters for native exports.
+	const core = services.core as CoreServices | undefined;
+	if (core) {
+		core.registerCapabilityProvider(mgCapabilityProvider(service));
+		core.registerMgMasterProvider(mgMasterHook(service));
+	}
 	const cap = service.capability();
 	app.log.info(`[mg] fframes ${cap.fframes}${cap.fframesReason ? `: ${cap.fframesReason}` : ''}`);
 	return service;

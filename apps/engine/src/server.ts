@@ -79,6 +79,8 @@ export async function createServer(
 		core,
 		jobs: core.queue,
 		broadcaster: core.broadcaster,
+		// `events.publish(type, payload, projectId?)` is the name WP-2G/WP-2H publish through.
+		events: core.broadcaster,
 		mediaRegistry: core.registry,
 		projects: core.projects,
 		ffmpeg: core.ffmpeg,
