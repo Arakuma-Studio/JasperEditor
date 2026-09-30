@@ -445,6 +445,12 @@ describe('dock controller', () => {
 		});
 		expect(dock.panelOf('history')?.group.panels.map((p) => p.id)).toContain('project-1');
 		expect(focusStore.getState().kind).toBe('history');
+		// Closing the focused panel through dockview itself (tab ×) drops the stale focus (FO-001).
+		act(() => dock.panelOf('history')?.api.close());
+		expect(focusStore.getState().instanceId).toBeNull();
+		// Focus cycling with nothing focused: backward starts at the last panel in reading order (FO-003).
+		act(() => dock.cycleFocus(-1));
+		expect(focusStore.getState().instanceId).toBe(dock.readingOrder().at(-1)?.id);
 		// AC-SH-7: closing everything leaves an empty dock; the factory layout comes back on reset.
 		act(() => {
 			for (const k of dock.openKinds()) dock.close(`${k}-1`);

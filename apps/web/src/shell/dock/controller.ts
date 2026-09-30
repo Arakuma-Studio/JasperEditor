@@ -72,6 +72,13 @@ export class DockController {
 				this.events.onMaximizedChange?.(e.isMaximized);
 			}).dispose,
 		);
+		// A panel closed by dockview itself (tab ×, group close, layout switch) must not stay focused:
+		// its scope would keep winning key resolution and panel.close/float would target nothing.
+		this.disposers.push(
+			api.onDidRemovePanel((p) => {
+				if (focusStore.getState().instanceId === p.id) focusStore.clear();
+			}).dispose,
+		);
 		const unsub = focusStore.subscribe(() => this.syncFocusOutline());
 		this.disposers.push(unsub);
 	}
@@ -361,7 +368,10 @@ export class DockController {
 		if (!order.length) return;
 		const cur = focusStore.getState().instanceId;
 		const i = order.findIndex((p) => p.id === cur);
-		const next = order[(i + direction + order.length) % order.length] ?? order[0];
+		// Nothing focused: forward starts at the first panel, backward at the last.
+		const at =
+			i < 0 ? (direction === 1 ? 0 : order.length - 1) : (i + direction + order.length) % order.length;
+		const next = order[at] ?? order[0];
 		if (next) this.focusInstance(next.id);
 	}
 
