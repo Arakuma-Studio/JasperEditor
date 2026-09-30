@@ -103,7 +103,13 @@ export const ClipAddMotionGraphicCmd = cmd('clip.addMotionGraphic', {
 });
 export const ClipAddCompositionCmd = cmd('clip.addComposition', {
 	...placementTarget,
-	composition: z.strictObject({ id: z.string().min(1), version: z.number().int() }),
+	/** M2 (S08): `mediaId` = the mg-bundle asset, `id` = composition id in it; version 1. */
+	composition: z.strictObject({
+		mediaId: IdRefSchema,
+		id: z.string().min(1),
+		version: z.number().int().optional(),
+	}),
+	/** Props over the composition's defaultProps (validated against its propsSchema when known). */
 	props: z.record(z.string(), z.unknown()).optional(),
 	canvas: canvas.optional(),
 });

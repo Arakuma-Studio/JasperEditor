@@ -4,17 +4,28 @@ import type { z } from 'zod';
 import type { HandlerContext } from './context.ts';
 import { clipCoreHandlers } from './handlers/clip-core.ts';
 import { clipEditHandlers } from './handlers/clip-edit.ts';
+import { compositionHandlers } from './handlers/composition.ts';
 import { effectHandlers } from './handlers/effect.ts';
 import { keyframeHandlers } from './handlers/keyframe.ts';
 import { m2Handlers } from './handlers/m2.ts';
 import { paramHandlers } from './handlers/param.ts';
+import { processHandlers } from './handlers/process.ts';
 import { projectHandlers } from './handlers/project.ts';
 import { sequenceHandlers } from './handlers/sequence.ts';
+import { trackerHandlers } from './handlers/tracker.ts';
 import { transitionHandlers } from './handlers/transition.ts';
 import type { Handler, HandlerMap } from './handlers/util.ts';
 import { ALL_COMMAND_SCHEMAS, type Command, type CommandType } from './schemas/index.ts';
 
-export type CommandOwner = 'WP-00' | 'WP-2B' | 'WP-2D' | 'WP-TR' | 'M2';
+export type CommandOwner =
+	| 'WP-00'
+	| 'WP-2B'
+	| 'WP-2D'
+	| 'WP-TR'
+	| 'M2'
+	| 'wp-m2-process'
+	| 'wp-m2-mg'
+	| 'wp-m2-track';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -99,6 +110,11 @@ const LABELS: Record<CommandType, string> = {
 	'transition.update': 'Edit Transition',
 	'transition.remove': 'Remove Transition',
 	'transition.applyDefault': 'Apply Default Transitions',
+	'tracker.add': 'Add Tracker',
+	'tracker.update': 'Edit Tracker',
+	'tracker.remove': 'Remove Tracker',
+	'tracker.setSamples': 'Track',
+	'tracker.apply': 'Apply Tracking',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -110,6 +126,9 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[keyframeHandlers, 'WP-2D'],
 	[effectHandlers, 'WP-2D'],
 	[transitionHandlers, 'WP-TR'],
+	[processHandlers, 'wp-m2-process'],
+	[compositionHandlers, 'wp-m2-mg'],
+	[trackerHandlers, 'wp-m2-track'],
 	[m2Handlers, 'M2'],
 ];
 
@@ -126,7 +145,7 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 			handler: map[type] as Handler<CommandType>,
 			label: LABELS[type],
 			owner,
-			milestone: owner === 'M2' ? 'M2' : 'M1',
+			milestone: owner === 'M2' || owner.startsWith('wp-m2-') ? 'M2' : 'M1',
 		};
 	}
 	return out;

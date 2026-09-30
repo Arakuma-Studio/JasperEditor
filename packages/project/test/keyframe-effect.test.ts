@@ -710,7 +710,12 @@ describe('keyframes (S01 §12, S03 §12–13)', () => {
 describe('effect registry (S03 §15.4, FX-040)', () => {
 	const ctx = { width: 1920, height: 1080, fps: 30 };
 	it('holds the 7 M1 effects with badges, categories and param specs', () => {
-		expect(defaultEffectRegistry.list().map((e) => e.id)).toEqual([
+		expect(
+			defaultEffectRegistry
+				.list()
+				.filter((e) => M1_EFFECTS.includes(e))
+				.map((e) => e.id),
+		).toEqual([
 			'jasper.crop',
 			'jasper.gaussian-blur',
 			'jasper.brightness-contrast',

@@ -3,7 +3,9 @@
 // horizontal and vertical flip. Each entry carries its canonical parameter math (S03:FX-040) and both
 // realizations: a browser preview (CSS style fragment or inline SVG filter) and an ffmpeg filter string
 // for the native export path. Unknown ids are preserved and bypassed by the renderers (S01:FX-022).
+import type { Lut, Rgb } from '../color/lut.ts';
 import type { ParamValue } from '../schema/common.ts';
+import type { MediaKind } from '../schema/media.ts';
 
 export type EffectCategory =
 	| 'Adjust'
@@ -24,7 +26,8 @@ export type EffectCategory =
 export type ParamSpec = {
 	name: string;
 	label: string;
-	type: 'number' | 'boolean' | 'enum' | 'string' | 'vec2' | 'color' | 'media';
+	/** `curve` = `{curve: [x, y][]}` tone curve (M2); `media` = `{mediaId}` (LUT assets: `mediaKinds: ['lut']`). */
+	type: 'number' | 'boolean' | 'enum' | 'string' | 'vec2' | 'color' | 'media' | 'curve';
 	default: ParamValue;
 	range?: { min?: number; max?: number; softMin?: number; softMax?: number; step?: number };
 	unit?: 'px' | '%' | 'deg' | 'dB' | 'frames' | 's' | 'Hz';
@@ -33,8 +36,33 @@ export type ParamSpec = {
 	options?: readonly string[];
 	/** Human labels for `options` (same order). */
 	optionLabels?: readonly string[];
-	/** UI hint for the inspector rows (defaults derive from `type`). */
-	ui?: { control?: 'scrub' | 'slider' | 'angle' | 'select' | 'toggle' | 'color'; bipolar?: boolean };
+	/** UI hint for the inspector rows (defaults derive from `type`). `wheel` = a colour wheel over a vec2 (M2). */
+	ui?: {
+		control?: 'scrub' | 'slider' | 'angle' | 'select' | 'toggle' | 'color' | 'wheel' | 'curve' | 'media';
+		bipolar?: boolean;
+	};
+	/** `media` params: asset kinds the picker offers (e.g. `['lut']`). */
+	mediaKinds?: readonly MediaKind[];
+	/** Section inside a multi-section effect editor (e.g. Lumetri `basic`, `creative`, `curves`, `wheels`). */
+	group?: string;
+};
+
+/**
+ * A per-pixel colour operation (M2, ARCHITECTURE §19.2, S06:CG-010). Every effect that has one is a pure
+ * function RGB → RGB on display-referred (Rec.709/sRGB-encoded) values in 0..1 without spatial or temporal
+ * context, so consecutive colour effects of a layer fuse into ONE baked 3D LUT: the WebGL preview samples it
+ * as a 3D texture and the native export applies it with `lut3d` (tetrahedral), which keeps both paths equal to
+ * the LUT's precision. Alpha is never touched.
+ */
+export type ColorOpContext = {
+	/** A parsed LUT asset (`{mediaId}` params), or null when missing/offline (the op then skips it). */
+	lut(mediaId: string): Lut | null;
+};
+/** Transforms `c` in place. Must be deterministic and must not allocate per call in hot paths. */
+export type ColorFn = (c: Rgb) => void;
+export type ColorOp = {
+	/** The pixel function for evaluated params, or null when the params are the identity. */
+	build(p: EffectParams, ctx: ColorOpContext): ColorFn | null;
 };
 
 export type EffectParams = Record<string, ParamValue>;
@@ -62,8 +90,14 @@ export type EffectSpec = {
 		css?(p: EffectParams): Record<string, string> | null;
 		svgFilter?(p: EffectParams, uid: string): string;
 	};
-	/** ffmpeg filter text for the native export path, or null when the effect is Remotion-only. */
+	/**
+	 * ffmpeg filter text for the native export path, or null when the effect is Remotion-only or realized
+	 * through `color` (colour ops are baked to a LUT by the engine's colour extension, ARCHITECTURE §19.6).
+	 * Filters must exist in the shipped LGPL FFmpeg (D-13): `eq`, `hqdn3d`, `perspective`, `boxblur` do NOT.
+	 */
 	native: { filter(p: EffectParams, ctx: NativeFilterContext): string } | null;
+	/** Pointwise colour operation (M2); when present the preview and native paths use the fused LUT. */
+	color?: ColorOp;
 	/** Engine capability flags driving badges, render bar and planner (S01:FX-021). */
 	capabilities: { preview: 'css' | 'webgl' | 'webaudio' | 'none'; export: ('remotion' | 'native')[] };
 	expensive?: boolean;
@@ -111,7 +145,7 @@ export function defaultParams(spec: EffectSpec): EffectParams {
 export function effectBadges(spec: EffectSpec): { realtime: boolean; native: boolean } {
 	return {
 		realtime: spec.capabilities.preview !== 'none',
-		native: spec.native !== null && spec.capabilities.export.includes('native'),
+		native: (spec.native !== null || spec.color !== undefined) && spec.capabilities.export.includes('native'),
 	};
 }
 
@@ -430,6 +464,41 @@ export const FLIP_VERTICAL_EFFECT: EffectSpec = {
 	capabilities: { preview: 'css', export: ['remotion', 'native'] },
 };
 
+const pinCorner = (name: string, label: string, def: [number, number]): ParamSpec => ({
+	name,
+	label,
+	type: 'vec2',
+	default: def,
+	range: { softMin: -1, softMax: 2, step: 0.001 },
+	animatable: true,
+});
+
+/**
+ * Corner Pin (M2, ARCHITECTURE §19.5, S09:TRK-050): pins the layer's four corners (normalized to its box,
+ * TL/TR/BR/BL) before Motion. Rendered by the scene resolver as a projective layer map (`projective`):
+ * CSS `matrix3d` in the preview, the engine warp stage on the native path (wp-m2-track; until then the
+ * planner routes it to Remotion). A non-convex quad is ignored (the layer draws unpinned).
+ */
+export const CORNER_PIN_EFFECT: EffectSpec = {
+	id: 'jasper.corner-pin',
+	version: 1,
+	label: 'Corner Pin',
+	category: 'Distort',
+	appliesTo: 'video',
+	description: 'Moves the four corners of the layer independently (perspective); driven by planar tracking.',
+	keywords: ['perspective', 'screen replacement', 'track', 'four corner'],
+	params: [
+		pinCorner('topLeft', 'Upper Left', [0, 0]),
+		pinCorner('topRight', 'Upper Right', [1, 0]),
+		pinCorner('bottomRight', 'Lower Right', [1, 1]),
+		pinCorner('bottomLeft', 'Lower Left', [0, 1]),
+	],
+	// Realized by the layer matrix (LayerBox matrix3d), not by a CSS/SVG filter stage.
+	preview: {},
+	native: null,
+	capabilities: { preview: 'css', export: ['remotion', 'native'] },
+};
+
 /** The M1 catalogue in Effects-panel order. */
 export const M1_EFFECTS: readonly EffectSpec[] = [
 	CROP_EFFECT,
@@ -441,7 +510,10 @@ export const M1_EFFECTS: readonly EffectSpec[] = [
 	FLIP_VERTICAL_EFFECT,
 ];
 
-export const defaultEffectRegistry: EffectRegistry = createEffectRegistry(M1_EFFECTS);
+/** M2 additions registered by default (colour effects are added by wp-m2-color in `registry/color-effects.ts`). */
+export const M2_EFFECTS: readonly EffectSpec[] = [CORNER_PIN_EFFECT];
+
+export const defaultEffectRegistry: EffectRegistry = createEffectRegistry([...M1_EFFECTS, ...M2_EFFECTS]);
 
 // ---------------------------------------------------------------- realization helpers (shared by engines)
 

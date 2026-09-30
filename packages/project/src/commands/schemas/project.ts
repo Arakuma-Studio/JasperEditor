@@ -3,6 +3,7 @@ import { LabelColorSchema } from '../../schema/common.ts';
 import { ProjectSettingsSchema } from '../../schema/document.ts';
 import {
 	MediaAssetSchema,
+	MediaKindSchema,
 	MediaLocatorSchema,
 	MediaProbeSchema,
 	NativeRecipeSchema,
@@ -58,12 +59,28 @@ export const MediaRelinkCmd = cmd('media.relink', {
 export const MediaDeriveCmd = cmd('media.derive', {
 	fromMediaId: IdRefSchema,
 	recipe: NativeRecipeSchema,
+	/**
+	 * The engine-produced file (M2, S07:PRC-060): the `RegisteredMedia` fields of the processed version. The new
+	 * asset gets `derivation = {fromMediaId, recipe, recipeVersion, recipeHash}`.
+	 */
+	asset: z
+		.looseObject({
+			fingerprint: z.string(),
+			originalName: z.string(),
+			sizeBytes: z.number().int().min(0),
+			container: z.string(),
+			probe: MediaProbeSchema,
+			locators: z.array(MediaLocatorSchema).min(1),
+			recipeVersion: z.number().int(),
+			recipeHash: z.string(),
+		})
+		.optional(),
 	binId: IdRefSchema.nullable().optional(),
 	replaceInClips: z.array(IdRefSchema).optional(),
 	ref: RefDeclSchema.optional(),
 });
 export const MediaRemoveUnusedCmd = cmd('media.removeUnused', {
-	kinds: z.array(z.enum(['video', 'audio', 'image', 'animated-image', 'font', 'lut'])).optional(),
+	kinds: z.array(MediaKindSchema).optional(),
 });
 
 export const SyntheticCreateCmd = cmd('synthetic.create', {

@@ -10,6 +10,7 @@ import {
 	nonNegInt,
 	RationalSchema,
 	RGBASchema,
+	Vec2Schema,
 } from './common.ts';
 
 // ---------------------------------------------------------------- effects
@@ -195,11 +196,64 @@ const commonShape = {
 	groupId: z.string().nullable(),
 	markers: z.array(ClipMarkerSchema),
 };
+// ---------------------------------------------------------------- tracking (M2, ARCHITECTURE §19.5, S09)
+
+/**
+ * Dense per-frame tracker output in the tracked clip's content time. Sample `i` is at content time
+ * `start + i·step`; its values are `data[i·stride … i·stride+stride−1]` in **media pixels** of the tracked clip's
+ * source (before its Motion): planar = 8 numbers (TL, TR, BR, BL corners, x then y), point = 2 numbers.
+ * A lost sample has confidence 0 and repeats the previous values.
+ */
+export const TrackerSamplesSchema = z.looseObject({
+	start: nonNegInt(),
+	step: z.number().int().positive(),
+	stride: z.union([z.literal(2), z.literal(8)]),
+	data: z.array(z.number()),
+	confidence: z.array(z.number().min(0).max(1)),
+});
+export type TrackerSamples = DeepStrip<z.infer<typeof TrackerSamplesSchema>>;
+
+export const ClipTrackerSchema = z.looseObject({
+	id: z.string(),
+	name: z.string(),
+	kind: z.enum(['point', 'planar']),
+	/** Where the user placed the region: content time and media-pixel geometry. */
+	reference: z.looseObject({
+		time: nonNegInt(),
+		/** planar: TL, TR, BR, BL. */
+		corners: z.array(Vec2Schema).length(4).optional(),
+		/** point: centre of the template. */
+		point: Vec2Schema.optional(),
+		/** point: template edge in media pixels. */
+		patch: z.number().int().positive().optional(),
+		/** Search radius in media pixels. */
+		search: z.number().int().positive().optional(),
+	}),
+	samples: TrackerSamplesSchema.nullable(),
+	/** Tracker algorithm and version that produced `samples`, e.g. `klt-homography@1`. */
+	method: z.string(),
+	/** Temporal smoothing radius (frames) applied when the samples are applied to a target. */
+	smoothing: z.number().min(0).optional(),
+});
+export type ClipTracker = DeepStrip<z.infer<typeof ClipTrackerSchema>>;
+
+/** On a target clip: which tracker drives it and how (re-applied by `tracker.apply`, shown in the UI). */
+export const TrackedBySchema = z.looseObject({
+	clipId: z.string(),
+	trackerId: z.string(),
+	mode: z.enum(['corner-pin', 'transform']),
+	/** Corner-pin effect instance written by the apply (mode `corner-pin`). */
+	effectInstanceId: z.string().optional(),
+});
+export type TrackedBy = DeepStrip<z.infer<typeof TrackedBySchema>>;
+
 const visualShape = {
 	transform: TransformSchema,
 	opacity: AnimNumberSchema,
 	blendMode: BlendModeSchema,
 	effects: z.array(EffectInstanceSchema),
+	/** M2 (S09): this clip follows a tracker of another clip. */
+	trackedBy: TrackedBySchema.optional(),
 };
 const canvasSchema = z.union([
 	z.literal('sequence'),
@@ -214,6 +268,8 @@ export const VideoClipSchema = z.looseObject({
 	mediaId: z.string(),
 	videoStreamIndex: nonNegInt(),
 	...visualShape,
+	/** M2 (S09): trackers placed on this clip's picture. */
+	trackers: z.array(ClipTrackerSchema).optional(),
 });
 export const AudioClipSchema = z.looseObject({
 	...commonShape,
@@ -271,7 +327,11 @@ export const MotionGraphicClipSchema = z.looseObject({
 export const CompositionClipSchema = z.looseObject({
 	...commonShape,
 	kind: z.literal('composition'),
-	composition: z.looseObject({ id: z.string(), version: int() }),
+	/**
+	 * M2 (S08): `mediaId` = the `mg-bundle` asset, `id` = the composition id inside the bundle, `version` = 1.
+	 * (`mediaId` is optional in the schema only because v1 documents had no composition clips with it.)
+	 */
+	composition: z.looseObject({ id: z.string(), version: int(), mediaId: z.string().optional() }),
 	props: z.record(z.string(), z.unknown()),
 	canvas: canvasSchema,
 	...visualShape,

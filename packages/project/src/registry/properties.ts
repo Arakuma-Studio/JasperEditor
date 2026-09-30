@@ -14,7 +14,8 @@ import type { EffectRegistry, EffectSpec, ParamSpec } from './effects.ts';
 import { kindCapabilities } from './kinds.ts';
 import type { MgTemplateInfo } from './mg.ts';
 
-export type ValueKind = 'number' | 'vec2' | 'color' | 'enum' | 'boolean' | 'string';
+/** `curve` and `media` are M2 (effect params only: tone curves, LUT asset refs). */
+export type ValueKind = 'number' | 'vec2' | 'color' | 'enum' | 'boolean' | 'string' | 'curve' | 'media';
 export type PropertyGroup =
 	| 'motion'
 	| 'opacity'
@@ -51,7 +52,18 @@ export type PropertySpec = {
 	storagePath: readonly string[];
 	appliesTo(clip: Pick<Clip, 'kind'>): boolean;
 	ui: {
-		control: 'scrub' | 'slider' | 'vec2' | 'angle' | 'color' | 'select' | 'toggle' | 'text';
+		control:
+			| 'scrub'
+			| 'slider'
+			| 'vec2'
+			| 'angle'
+			| 'color'
+			| 'select'
+			| 'toggle'
+			| 'text'
+			| 'wheel'
+			| 'curve'
+			| 'media';
 		bipolar?: boolean;
 		/** Digits after the decimal point in the UI (derived from `range.step` when absent). */
 		precision?: number;
@@ -666,20 +678,24 @@ export function effectPropertySpecs(fx: Pick<EffectInstance, 'id'>, effect: Effe
 }
 
 export function effectParamPropertySpec(fxId: string, effect: EffectSpec, p: ParamSpec): PropertySpec {
-	const kind: ValueKind = p.type === 'media' ? 'string' : p.type;
+	const kind: ValueKind = p.type;
 	const control: PropertySpec['ui']['control'] =
 		p.ui?.control ??
-		(kind === 'number'
-			? 'scrub'
-			: kind === 'boolean'
-				? 'toggle'
-				: kind === 'enum'
-					? 'select'
-					: kind === 'color'
-						? 'color'
-						: kind === 'vec2'
-							? 'vec2'
-							: 'text');
+		(kind === 'curve'
+			? 'curve'
+			: kind === 'media'
+				? 'media'
+				: kind === 'number'
+					? 'scrub'
+					: kind === 'boolean'
+						? 'toggle'
+						: kind === 'enum'
+							? 'select'
+							: kind === 'color'
+								? 'color'
+								: kind === 'vec2'
+									? 'vec2'
+									: 'text');
 	const step = p.range?.step;
 	return {
 		key: `effects.${fxId}.${p.name}`,
@@ -878,6 +894,32 @@ export function propertyJsonSchema(s: PropertySpec): JsonSchemaObject {
 			return { ...base, type: 'boolean' };
 		case 'string':
 			return { ...base, type: 'string' };
+		case 'curve':
+			return {
+				...base,
+				type: 'object',
+				description: `${s.description ? `${s.description} ` : ''}Tone curve: {curve: [[x, y], …]} with x, y in 0..1 sorted by x.`,
+				properties: {
+					curve: {
+						type: 'array',
+						minItems: 2,
+						items: {
+							type: 'array',
+							items: { type: 'number', minimum: 0, maximum: 1 },
+							minItems: 2,
+							maxItems: 2,
+						},
+					},
+				},
+				required: ['curve'],
+			};
+		case 'media':
+			return {
+				...base,
+				type: 'object',
+				properties: { mediaId: { type: 'string' } },
+				required: ['mediaId'],
+			};
 	}
 }
 

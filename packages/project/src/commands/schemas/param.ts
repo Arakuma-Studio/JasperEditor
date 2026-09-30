@@ -85,6 +85,8 @@ export const TransitionAddCmd = cmd('transition.add', {
 });
 export const TransitionUpdateCmd = cmd('transition.update', {
 	transitionId: IdRefSchema,
+	/** M2 (S10:TUI-040): change the type; a video transition stays video, an audio one audio. */
+	effectId: z.string().min(1).optional(),
 	duration: z.number().int().min(1).optional(),
 	alignment: z.enum(['center', 'start-at-cut', 'end-at-cut']).optional(),
 	params: z.record(z.string(), z.unknown()).optional(),

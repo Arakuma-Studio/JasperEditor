@@ -66,6 +66,18 @@ export type RenderVisualSource =
 				canvas: { width: number; height: number };
 			};
 	  }
+	/**
+	 * M2 (S08): a composition of an `mg-bundle` asset. `media[mediaId]` resolves the bundle (`url` = its serve
+	 * URL). The pre-rendered alpha master is found by the consumers (engine: cache; preview: MG runtime).
+	 */
+	| {
+			composition: {
+				mediaId: string;
+				compositionId: string;
+				props: Record<string, unknown>;
+				canvas: { width: number; height: number };
+			};
+	  }
 	| { unsupported: string };
 
 export type RenderVisualClip = {
@@ -260,6 +272,16 @@ export function buildRenderSnapshot(
 				case 'motion-graphic': {
 					const canvas = c.canvas === 'sequence' ? frame : { width: c.canvas.width, height: c.canvas.height };
 					source = { mg: { template: c.template, params: c.params, canvas } };
+					box = canvas;
+					break;
+				}
+				case 'composition': {
+					const canvas = c.canvas === 'sequence' ? frame : { width: c.canvas.width, height: c.canvas.height };
+					const mediaId = c.composition.mediaId;
+					if (mediaId) {
+						useMedia(mediaId);
+						source = { composition: { mediaId, compositionId: c.composition.id, props: c.props, canvas } };
+					} else source = { unsupported: c.kind };
 					box = canvas;
 					break;
 				}

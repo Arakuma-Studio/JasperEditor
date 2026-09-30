@@ -1,6 +1,12 @@
 // Media registration, uploads, derivatives and their JSON headers (ARCHITECTURE §9.2/§9.4, D-09, D-10,
 // S04:IN-005, TH-002, WF-001).
-import { MediaLocatorSchema, MediaProbeSchema } from '@jasper/project';
+import {
+	LutInfoSchema,
+	MediaKindSchema,
+	MediaLocatorSchema,
+	MediaProbeSchema,
+	MgBundleInfoSchema,
+} from '@jasper/project';
 import { z } from 'zod';
 
 /** Engine-issued media key (`mk_…`), referenced from documents through `engine-store` locators. */
@@ -12,10 +18,14 @@ export const RegisteredMediaSchema = z.object({
 	originalName: z.string(),
 	sizeBytes: z.number().int().min(0),
 	container: z.string(),
-	kind: z.enum(['video', 'audio', 'image', 'animated-image', 'font', 'lut']),
+	kind: MediaKindSchema,
 	probe: MediaProbeSchema,
 	locators: z.array(MediaLocatorSchema),
 	browserPlayable: z.enum(['yes', 'no', 'unknown']),
+	/** kind `lut` (M2, S06): parsed header, copied into `MediaAsset.lut`. */
+	lut: LutInfoSchema.optional(),
+	/** kind `mg-bundle` (M2, S08): compositions, copied into `MediaAsset.mgBundle`. */
+	mgBundle: MgBundleInfoSchema.optional(),
 });
 export type RegisteredMedia = z.infer<typeof RegisteredMediaSchema>;
 

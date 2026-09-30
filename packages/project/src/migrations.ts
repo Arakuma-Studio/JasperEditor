@@ -40,7 +40,18 @@ function migrateV1ToV2(doc: Rec): Rec {
  * vN → vN+1 migrations, applied in order. Each step keeps a fixture under test/fixtures/v<N>/ that must
  * keep loading (S01:MIG-002).
  */
-export const MIGRATIONS: readonly MigrationStep[] = [{ from: 1, to: 2, migrate: migrateV1ToV2 }];
+/**
+ * v2 → v3 (M2, ARCHITECTURE §19.1): no data changes. The version bump only marks documents that may contain
+ * the M2 additions (mg-bundle assets, trackers, curve params…) so M1 builds open them read-only.
+ */
+function migrateV2ToV3(doc: Rec): Rec {
+	return doc;
+}
+
+export const MIGRATIONS: readonly MigrationStep[] = [
+	{ from: 1, to: 2, migrate: migrateV1ToV2 },
+	{ from: 2, to: 3, migrate: migrateV2ToV3 },
+];
 
 function unwrap(raw: unknown): { doc: Record<string, unknown>; fromEnvelope: boolean } {
 	if (!raw || typeof raw !== 'object') throw new Error('Project data is not an object');

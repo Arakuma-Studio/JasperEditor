@@ -90,7 +90,14 @@ export function animatable<T extends z.ZodType>(value: T) {
 export const AnimNumberSchema = animatable(z.number());
 export const AnimVec2Schema = animatable(Vec2Schema);
 
-/** Effect/transition parameter values (S01:FX-020). */
+/**
+ * A tone curve (ARCHITECTURE §19.2, S06:CG-030): control points `[x, y]` in 0..1, sorted by x, at least two.
+ * Hold-only when keyframed (objects step, S01:KF-007).
+ */
+export const CurveValueSchema = z.looseObject({ curve: z.array(Vec2Schema).min(2) });
+export type CurveValue = { curve: Vec2[] };
+
+/** Effect/transition parameter values (S01:FX-020; `curve` added in M2, ARCHITECTURE §19.2). */
 export const ParamValueSchema = z.union([
 	z.number(),
 	z.boolean(),
@@ -98,6 +105,7 @@ export const ParamValueSchema = z.union([
 	Vec2Schema,
 	RGBASchema,
 	z.looseObject({ mediaId: z.string() }),
+	CurveValueSchema,
 ]);
-export type ParamValue = number | boolean | string | Vec2 | RGBA | { mediaId: string };
+export type ParamValue = number | boolean | string | Vec2 | RGBA | { mediaId: string } | CurveValue;
 export const AnimParamSchema = animatable(ParamValueSchema);

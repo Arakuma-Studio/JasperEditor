@@ -4,6 +4,8 @@ export * from './agent/addressing.ts';
 export * from './agent/guard.ts';
 export * from './agent/queries.ts';
 export * from './agent/schema-export.ts';
+export * from './color/lut.ts';
+export * from './color/runs.ts';
 export * from './commands/index.ts';
 export * from './derive/index.ts';
 export * from './factories.ts';

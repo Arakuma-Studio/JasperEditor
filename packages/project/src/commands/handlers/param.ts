@@ -11,7 +11,7 @@ import type { CommandOf, ParamAt } from '../schemas/index.ts';
 import type { HandlerMap } from './util.ts';
 
 export type ValueRule = {
-	kind: 'number' | 'vec2' | 'color' | 'enum' | 'boolean' | 'string' | 'media';
+	kind: 'number' | 'vec2' | 'color' | 'enum' | 'boolean' | 'string' | 'media' | 'curve';
 	range?: { min?: number; max?: number };
 	options?: readonly string[];
 	holdOnly: boolean;
@@ -205,6 +205,18 @@ export function validateValue(
 			if (!v || typeof v !== 'object' || typeof (v as { mediaId?: unknown }).mediaId !== 'string')
 				return fail();
 			return { value: v, clamped: false };
+		case 'curve': {
+			// {curve: [[x, y], …]}: ≥ 2 points in 0..1 (clamped), sorted by x, x strictly increasing.
+			const pts = (v as { curve?: unknown } | null)?.curve;
+			if (!Array.isArray(pts) || pts.length < 2 || pts.length > 64) return fail();
+			if (!pts.every((p) => Array.isArray(p) && p.length === 2 && p.every(isNum))) return fail();
+			const c = (pts as [number, number][])
+				.map(([x, y]) => [Math.min(1, Math.max(0, x)), Math.min(1, Math.max(0, y))] as [number, number])
+				.sort((a, b) => a[0] - b[0]);
+			for (let i = 1; i < c.length; i++) if (!(c[i]![0] > c[i - 1]![0])) return fail();
+			const clamped = c.some((p, i) => p[0] !== (pts[i] as number[])[0] || p[1] !== (pts[i] as number[])[1]);
+			return { value: { curve: c }, clamped };
+		}
 	}
 }
 
