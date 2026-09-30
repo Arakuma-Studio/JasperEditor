@@ -42,3 +42,23 @@ also pass: `MG_PARITY=1` after `pnpm mg:build`, and `REMOTION_E2E=1`.
 - WP-2C's edit-point navigation does not scroll the timeline to reveal the new playhead position
   (WP-2B's `seekReveal` did).
 - The web build prints a warning that a chunk is larger than 500 kB.
+
+## Status after WP-3I
+
+Each item from the TODO list above, with its status:
+
+- **MG jobs in `/api/jobs`: done.** `JobQueue.registerExternalSource` handles list/get/cancel/retry, and
+  export masters are child jobs.
+- **`MgRenderStateContext`: done.** The Program monitor provides it from live mg-render job events.
+- **Program monitor drops: done.** It accepts effect drops (on the layer under the pointer) and motion-template
+  drops.
+- **Header: done.** It has a save status and a Jobs badge (from `useJobsSummary`).
+- **Agent panel: done.** It uses the shell's PanelServices; the module registry stays as a fallback for
+  tests.
+- **`panel.focus.agent`: unchanged.** It is still registered twice, and the WP-2H version wins and delegates.
+- **Edit-point navigation: done.** Every keyboard seek on the sequence now reveals the playhead in the timeline.
+- **Chunk size: done.** Panels are code-split and `@jasper/project` has its own chunk. The entry chunk is
+  377 kB, so the warning is gone.
+
+See `docs/wp-notes/WP-3I.md` and `docs/M1-STATUS.md`.
+
