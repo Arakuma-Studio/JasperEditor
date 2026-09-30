@@ -148,14 +148,14 @@ describe('clip.trim (S02 §11, AC-11a, AC-11c)', () => {
 		]);
 	});
 
-	it('roll is owned by WP-2B and refuses with E_NOT_IMPLEMENTED', () => {
+	it('roll (WP-2B, full coverage in clip-edit.test.ts) moves the edit point', () => {
 		const h = new Harness();
-		h.ok([solid(0, 100, 'V1')]);
-		const r = h.tx([
-			{ type: 'clip.trim', clipId: h.clips('V1')[0]!.id, edge: 'out', deltaFrames: 5, mode: 'roll' },
+		h.ok([solid(0, 100, 'V1'), solid(100, 50, 'V1')]);
+		h.ok([{ type: 'clip.trim', clipId: h.clips('V1')[0]!.id, edge: 'out', deltaFrames: 5, mode: 'roll' }]);
+		expect(h.spans('V1')).toEqual([
+			[0, 105],
+			[105, 150],
 		]);
-		expect(r.ok).toBe(false);
-		if (!r.ok) expect(r.errors[0]!.code).toBe('E_NOT_IMPLEMENTED');
 	});
 });
 

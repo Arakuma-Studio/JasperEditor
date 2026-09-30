@@ -250,12 +250,9 @@ describe('catalog (ARCHITECTURE §5.3)', () => {
 		h.ok([solid(0, 30, 'V1')]);
 		const id = h.clips('V1')[0]!.id;
 		for (const cmd of [
-			{ type: 'clip.slip', clipIds: [id], deltaFrames: 1 },
-			{ type: 'clip.setSpeed', clipIds: [id], rate: 2, ripple: false },
 			{ type: 'keyframes.prune', clipId: id },
 			{ type: 'effect.remove', effectInstanceId: 'fx_0000000000000001' },
 			{ type: 'sequence.delete', sequenceId: h.seqId },
-			{ type: 'gap.close', trackId: 'V1', at: 5 },
 		]) {
 			const r = h.tx([cmd]);
 			expect(r.ok, cmd.type).toBe(false);
