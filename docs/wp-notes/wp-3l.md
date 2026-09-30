@@ -67,6 +67,12 @@ Consequences for packaging (not legal advice; needs a license review before ship
 - `apps/web/test/wp2e/ui.test.tsx`: export view shows the plan's encoder + message, disables unavailable
   codecs, sends the effective codec/encoder to the planner, lists disabled hardware/GPL encoders with reasons.
 
+- Manual: engine on port 48220 with `JASPER_FFMPEG_LGPL_ONLY=1` serving the built web app; the Export view of
+  the demo project showed Format "AV1 (MP4)", Output "AV1 · SVT-AV1 (software) → MP4" and the fallback
+  message (the PWA service worker kept serving the previous bundle after rebuilding, so the later preset-label
+  tweak was only verified by the unit test).
+- `pnpm verify` passes (661 tests, 7 skipped).
+
 ## Not done / follow-ups
 
 - **No real OpenH264 or hardware encode was run**: the system ffmpeg has no `libopenh264` and the host has
