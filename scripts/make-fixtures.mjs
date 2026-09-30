@@ -57,6 +57,26 @@ const bt709 = [
 	'tv',
 ];
 
+/**
+ * 64 frames whose number is burned in as a 6-bit code: white/black 60×60 blocks at y=40, x=40+70·bit (bit 0
+ * left). Tests read it back from exports to check that cuts and overlays land on the exact frame.
+ */
+const frameCode = (colour) => [
+	'-f',
+	'lavfi',
+	'-i',
+	`color=c=${colour}:size=1920x1080:rate=30:duration=3,format=rgb24,drawbox=x=30:y=30:w=440:h=80:color=black:t=fill${[
+		0, 1, 2, 3, 4, 5,
+	]
+		.map(
+			(b) =>
+				`,drawbox=x=${40 + 70 * b}:y=40:w=60:h=60:color=white:t=fill:enable='eq(mod(floor(n/${1 << b}),2),1)'`,
+		)
+		.join('')},scale=out_color_matrix=bt709:out_range=tv,format=yuv420p`,
+	'-frames:v',
+	'64',
+];
+
 /** @type {{name: string, steps: (out: string) => string[][]}[]} */
 const fixtures = [
 	{
@@ -97,6 +117,12 @@ const fixtures = [
 	{
 		name: 'still.png',
 		steps: (out) => [['-f', 'lavfi', '-i', 'testsrc2=size=1920x1080:rate=1', '-frames:v', '1', out]],
+	},
+	{
+		name: 'frame-code.mp4',
+		steps: (out) => [
+			[...frameCode('0x204080'), ...h264, ...bt709, '-movflags', '+faststart', '-f', 'mp4', out],
+		],
 	},
 	{
 		// ProRes 4444 with alpha: what Remotion/After Effects write for overlays; browsers cannot decode it.

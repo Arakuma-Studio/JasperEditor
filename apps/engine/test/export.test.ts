@@ -404,6 +404,78 @@ describe('native export (S03:ENG-030, S04:RN-021/022, QA-005)', () => {
 	});
 });
 
+/** The burned-in 6-bit frame number of `fixtures/media/frame-code.mp4` at one frame of a file. */
+function frameCode(file: string, frame: number): number {
+	const r = spawnSync('ffmpeg', [
+		...['-v', 'error', '-i', file],
+		...['-vf', `select=eq(n\\,${frame}),format=rgb24,crop=420:1:40:70`],
+		...['-frames:v', '1', '-f', 'rawvideo', '-'],
+	]);
+	let code = 0;
+	for (let b = 0; b < 6; b++) if (r.stdout[(30 + 70 * b) * 3]! > 127) code |= 1 << b;
+	return code;
+}
+
+describe('frame accuracy of the native path', () => {
+	it('starts every clip on its exact frame, also when the start is not a round number of seconds', async () => {
+		const coded = await register(app, fixture('frame-code.mp4'));
+		const d = new DocBuilder();
+		const m = d.addMedia(coded);
+		const place = (at: number, inFrame: number, outFrame: number) => ({
+			type: 'clip.place',
+			source: { mediaId: m },
+			at,
+			sourceRange: { in: { sourceFrames: inFrame }, out: { sourceFrames: outFrame } },
+			matchSequence: 'keep',
+		});
+		// Frame 10 is 0.333333… s and frame 40 is 1.333333… s: written as decimal seconds they are a hair
+		// before the frame boundary, which used to show the clip one frame early.
+		d.tx([place(0, 0, 10), place(10, 20, 50), place(40, 5, 25)]);
+		const planned = await coreServices(app).exports.plan({
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			settings: settings(d.seqId) as never,
+		});
+		const g = buildNativeGraph({
+			snapshot: planned.snapshot,
+			output: planned.output,
+			outputFile: '/tmp/x.mp4',
+			sources: { media: (id) => planned.media[id] ?? null, mgMaster: () => null },
+			threads: 2,
+		});
+		expect(g.filter).toContain('setpts=PTS-STARTPTS+round(10*1/(30*TB))');
+		expect(g.filter).toContain('setpts=PTS-STARTPTS+round(40*1/(30*TB))');
+		expect(g.filter).not.toMatch(/setpts=PTS-STARTPTS\+[\d.]+\/TB/);
+
+		const start = await app.inject({
+			method: 'POST',
+			url: '/api/exports',
+			headers: JSON_H,
+			payload: {
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				settings: settings(d.seqId, { engine: 'native' }),
+			},
+		});
+		expect(start.statusCode).toBe(202);
+		const done = await coreServices(app).queue.wait(start.json().id);
+		expect(done.error).toBeUndefined();
+		expect(done.result).toMatchObject({ frames: 60, renderPath: 'native' });
+		const file = (await coreServices(app).exports.outputFile(start.json().id))!;
+		const want: [number, number][] = [
+			[0, 0],
+			[9, 9],
+			[10, 20],
+			[11, 21],
+			[39, 49],
+			[40, 5],
+			[41, 6],
+			[59, 24],
+		];
+		expect(want.map(([frame]) => [frame, frameCode(file, frame)])).toEqual(want);
+	}, 120_000);
+});
+
 describe('overlays with an alpha channel on the native path', () => {
 	/** A red full-frame solid on V1; the ProRes 4444 overlay on V2 for frames 0–30, the VP9 WebM one after it. */
 	async function overlayDoc() {

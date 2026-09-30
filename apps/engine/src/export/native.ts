@@ -279,7 +279,9 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			cy = m.b * (bw / 2) + m.d * (bh / 2) + m.f;
 		}
 		if (props.opacity < 100) f.push(`colorchannelmixer=aa=${fmt(props.opacity / 100)}`);
-		f.push(`setpts=PTS-STARTPTS+${fmt(t0)}/TB`);
+		// Shift the layer to its place on the timeline in whole frames. `setpts` truncates its result, so an
+		// offset written in decimal seconds (3.333333 s for frame 100 at 30 fps) landed one frame early.
+		f.push(`setpts=PTS-STARTPTS+round(${f0 - R0}*${fps.den}/(${fps.num}*TB))`);
 		chains.push(`${src}${f.join(',')}[${label}]`);
 
 		const x = Math.round(cx - outW / 2);

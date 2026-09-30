@@ -33,6 +33,7 @@ export function ensureFixtures(): void {
 		'phone-rot90.mp4',
 		'overlay-alpha.mov',
 		'overlay-alpha.webm',
+		'frame-code.mp4',
 	];
 	if (needed.every((n) => existsSync(join(FIXTURES, n)))) return;
 	const r = spawnSync(process.execPath, [join(ROOT, 'scripts', 'make-fixtures.mjs')], { stdio: 'inherit' });
