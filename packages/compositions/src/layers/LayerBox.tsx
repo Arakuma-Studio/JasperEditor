@@ -1,4 +1,4 @@
-import { mat3ToCss, matrixToCss } from '@jasper/project';
+import { mat3ToCss, matrixToCss, type ResolvedEffect } from '@jasper/project';
 import { type CSSProperties, type ReactNode, useMemo } from 'react';
 import { blendModeCss, effectStages } from '../pipeline.ts';
 import type { LayerProps } from '../types.ts';
@@ -9,7 +9,9 @@ const FILL: CSSProperties = { position: 'absolute', left: 0, top: 0, width: '100
  * The per-layer pipeline (S03 §4.2, S03:DM-012), from the inside out:
  * 1. source content (`children`, styled with `style`) in an intrinsic-size box;
  * 2. effects, crop first, each one wrapper element (preview CSS or an SVG filter). Crop uses
- *    `clip-path` on an inner element so blur/shadow of later effects are not clipped;
+ *    `clip-path` on an inner element so blur/shadow of later effects are not clipped. M2 (S06:CG-040): colour
+ *    runs (and the non-colour effects before them) run as canvas passes on the source picture inside the source
+ *    component (`useColorStage`); the layer then passes only the remaining effects here (`effects`);
  * 3. the layer matrix on the outer element (`transform-origin: 0 0`); a corner pin (M2) makes it the
  *    projective map `props.projective` written as `matrix3d`;
  * 4. opacity on the outer element;
@@ -20,17 +22,21 @@ export function LayerBox({
 	layer,
 	children,
 	style,
+	effects,
+	overlay,
 }: {
 	layer: LayerProps;
 	children?: ReactNode;
 	/** Style of the source content box (e.g. a solid background). */
 	style?: CSSProperties;
+	/** Effects drawn as CSS/SVG stages (default: all of the layer's effects). */
+	effects?: readonly ResolvedEffect[];
+	/** Drawn over the layer content inside its box (e.g. the "Grade unavailable" chip, preview only). */
+	overlay?: ReactNode;
 }) {
 	const { props, clip } = layer;
-	const stages = useMemo(
-		() => effectStages(props.effects, `fx-${clip.clipId}`),
-		[props.effects, clip.clipId],
-	);
+	const cssEffects = effects ?? props.effects;
+	const stages = useMemo(() => effectStages(cssEffects, `fx-${clip.clipId}`), [cssEffects, clip.clipId]);
 	let content: ReactNode = (
 		<div data-layer-source="" style={{ ...FILL, ...style }}>
 			{children}
@@ -70,6 +76,31 @@ export function LayerBox({
 			}}
 		>
 			{content}
+			{overlay}
+		</div>
+	);
+}
+
+/** "Grade unavailable" chip (S06:CG-045): the layer draws ungraded because WebGL2 is missing or lost (preview). */
+export function GradeChip({ layer, text = 'Grade unavailable' }: { layer: LayerProps; text?: string }) {
+	const h = layer.props.box.height;
+	return (
+		<div
+			data-grade-chip=""
+			style={{
+				position: 'absolute',
+				right: '2%',
+				top: '3%',
+				padding: `${Math.max(2, h / 180)}px ${Math.max(6, h / 90)}px`,
+				borderRadius: Math.max(3, h / 180),
+				background: 'rgba(120, 60, 0, 0.8)',
+				color: 'rgba(255, 255, 255, 0.95)',
+				fontFamily: '"Source Sans 3", "Source Sans Pro", Arial, sans-serif',
+				fontSize: Math.max(11, h / 36),
+				pointerEvents: 'none',
+			}}
+		>
+			{text}
 		</div>
 	);
 }

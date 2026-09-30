@@ -15,6 +15,11 @@ export type RenderOptions = {
 	/** clipIds to render (M2 hybrid alpha intermediates); undefined = all. */
 	layerFilter?: string[];
 	showOffline: boolean;
+	/**
+	 * M2 (S06:CGU-005, preview only): clips whose colour effects are bypassed ("before" of the before/after
+	 * toggle). Ignored in renders.
+	 */
+	colorBypassClipIds?: readonly string[];
 };
 
 export type SequenceCompositionProps = { doc: RenderDoc; options: RenderOptions };

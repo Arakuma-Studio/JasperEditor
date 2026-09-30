@@ -5,33 +5,48 @@
 // <OffthreadVideo> (the render's FFmpeg extracts the frames, PNG when the source has alpha) and previews
 // play the proxy, see `videoSource`. The element is muted: in the S01 model a clip's sound is its linked
 // audio clip, played by AudioLayer with the volume callback.
+// M2 colour (S06:CG-040/041): the layer's colour runs are canvas effect passes on the decoded frame —
+// `<Video effects>` (the frame canvas of @remotion/media, preview and renders) or, for <OffthreadVideo>, the
+// `ColorCanvas` fed from `onVideoFrame` while the element stays mounted (invisible) for Remotion's scheduling.
 import { Video } from '@remotion/media';
+import { useCallback, useRef } from 'react';
 import { OffthreadVideo } from 'remotion';
+import { ColorCanvas, type ColorCanvasHandle } from '../color/ColorCanvas.tsx';
+import { useColorStage } from '../color/chain.ts';
 import { videoSource, videoTrimBefore } from '../pipeline.ts';
 import type { LayerProps } from '../types.ts';
-import { LayerBox } from './LayerBox.tsx';
+import { GradeChip, LayerBox } from './LayerBox.tsx';
 
 const MEDIA_STYLE = { width: '100%', height: '100%', display: 'block' } as const;
 const OFFTHREAD_STYLE = { ...MEDIA_STYLE, objectFit: 'fill' } as const;
 
 export function VideoLayer(layer: LayerProps) {
 	const { clip, media, options, fps } = layer;
+	const color = useColorStage(clip.clipId, layer.props.effects);
 	if (!media) return null;
 	const source = videoSource(media, options);
 	if (source.via === 'pending-proxy') return <ProxyPendingCard {...layer} />;
 	const trimBefore = videoTrimBefore(clip, fps);
 	return (
-		<LayerBox layer={layer}>
+		<LayerBox
+			layer={layer}
+			effects={color.cssEffects}
+			overlay={color.unavailable ? <GradeChip layer={layer} /> : null}
+		>
 			{source.via === 'offthread' ? (
-				<OffthreadVideo
-					src={source.src}
-					trimBefore={trimBefore}
-					playbackRate={clip.speed.rate}
-					muted
-					transparent={source.transparent}
-					style={OFFTHREAD_STYLE}
-					showInTimeline={false}
-				/>
+				color.effects.length > 0 ? (
+					<GradedOffthread layer={layer} src={source.src} transparent={source.transparent} color={color} />
+				) : (
+					<OffthreadVideo
+						src={source.src}
+						trimBefore={trimBefore}
+						playbackRate={clip.speed.rate}
+						muted
+						transparent={source.transparent}
+						style={OFFTHREAD_STYLE}
+						showInTimeline={false}
+					/>
+				)
 			) : (
 				<Video
 					src={source.src}
@@ -42,9 +57,51 @@ export function VideoLayer(layer: LayerProps) {
 					objectFit="fill"
 					style={MEDIA_STYLE}
 					showInTimeline={false}
+					effects={color.effects}
 				/>
 			)}
 		</LayerBox>
+	);
+}
+
+/** <OffthreadVideo> (renders of originals a browser cannot decode) through the colour stage. */
+function GradedOffthread({
+	layer,
+	src,
+	transparent,
+	color,
+}: {
+	layer: LayerProps;
+	src: string;
+	transparent: boolean;
+	color: ReturnType<typeof useColorStage>;
+}) {
+	const { clip, fps } = layer;
+	const stage = useRef<ColorCanvasHandle | null>(null);
+	const onFrame = useCallback((frame: CanvasImageSource) => {
+		void stage.current?.draw(frame);
+	}, []);
+	return (
+		<>
+			<OffthreadVideo
+				src={src}
+				trimBefore={videoTrimBefore(clip, fps)}
+				playbackRate={clip.speed.rate}
+				muted
+				transparent={transparent}
+				style={{ ...OFFTHREAD_STYLE, position: 'absolute', opacity: 0 }}
+				showInTimeline={false}
+				onVideoFrame={onFrame}
+			/>
+			<ColorCanvas
+				ref={stage}
+				effects={color.effects}
+				width={Math.max(1, Math.round(layer.props.box.width))}
+				height={Math.max(1, Math.round(layer.props.box.height))}
+				style={{ ...MEDIA_STYLE, position: 'absolute', left: 0, top: 0 }}
+				data-color-output=""
+			/>
+		</>
 	);
 }
 
