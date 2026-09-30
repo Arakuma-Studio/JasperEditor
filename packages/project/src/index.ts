@@ -1,5 +1,8 @@
 // @jasper/project — the pure model (ARCHITECTURE §5): schema, time, ids, commands, invariants,
 // keyframes, registries, render snapshot and scene resolver. No DOM, no Node built-ins, no React.
+export * from './agent/addressing.ts';
+export * from './agent/guard.ts';
+export * from './agent/queries.ts';
 export * from './agent/schema-export.ts';
 export * from './commands/index.ts';
 export * from './derive/index.ts';
