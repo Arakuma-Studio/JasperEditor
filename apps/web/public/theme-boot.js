@@ -10,5 +10,8 @@
 	el.setAttribute('data-pr-theme', prefs.theme === 'dark' ? 'dark' : 'darkest');
 	el.setAttribute('data-pr-contrast', prefs.contrast === 'high' ? 'high' : 'normal');
 	el.setAttribute('data-pr-density', prefs.density === 'touch' ? 'touch' : 'normal');
-	el.setAttribute('data-pr-labels', prefs.labels === 'classic' || prefs.labels === 'vibrant' ? prefs.labels : 'default');
+	el.setAttribute(
+		'data-pr-labels',
+		prefs.labels === 'classic' || prefs.labels === 'vibrant' ? prefs.labels : 'default',
+	);
 })();
