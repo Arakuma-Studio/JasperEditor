@@ -1,4 +1,714 @@
-// timeline UI commands — owned by WP-2B. Register commands here; ids must match keymap-defaults.ts.
-import type { UiCommand } from './types.ts';
+// Timeline UI commands (owned by WP-2B). Ids follow S02:TL-903 and match keymap-defaults.ts. Each
+// command reads session context (playhead, targeting, selection) and emits one document transaction
+// (ARCHITECTURE §2.3 "two layers"). Transport keys (Space, JKL, ←/→, Home/End) belong to WP-2C.
+import {
+	type Clip,
+	clipAt,
+	editPoints,
+	type Sequence,
+	sequenceDuration,
+	type TransactionResult,
+	trackLabel,
+} from '@jasper/project';
+import type { ActiveTool, EditorSession, SequenceViewState } from '@jasper/session';
+import { activeTimeline, type TimelineHandle } from '../panels/timeline/env.tsx';
+import { clipsAtPlayhead, unlockedTrackIds } from '../panels/timeline/model/gestures.ts';
+import { stepHeight, trackHeight } from '../panels/timeline/model/layout.ts';
+import { TOOLS } from '../panels/timeline/model/tools.ts';
+import type { EditPointSel } from '../panels/timeline/state/ui-store.ts';
+import type { CommandCtx, CommandScope, UiCommand } from './types.ts';
 
-export const timelineCommands: UiCommand[] = [];
+type Env = {
+	session: EditorSession;
+	seq: Sequence;
+	view: SequenceViewState;
+	playhead: number;
+	handle: TimelineHandle | null;
+};
+
+function envOf(ctx: CommandCtx): Env | null {
+	const session = ctx.session;
+	if (!session) return null;
+	const s = session.getState();
+	const handle = activeTimeline(ctx.services);
+	const seqId = handle?.sequenceId() ?? s.activeSequenceId;
+	const seq = seqId ? (session.getCommitted().sequences[seqId] as Sequence | undefined) : undefined;
+	if (!seq) return null;
+	return { session, seq, view: s.views[seq.id]!, playhead: session.transport.getState().frame, handle };
+}
+
+const hasSeq = (ctx: CommandCtx) => envOf(ctx) !== null;
+
+function apply(
+	ctx: CommandCtx,
+	e: Env,
+	label: string,
+	commands: unknown[],
+	opts: { coalesceKey?: string; quiet?: boolean } = {},
+): TransactionResult | null {
+	if (commands.length === 0) return null;
+	const r = e.session.apply({
+		label,
+		origin: 'user',
+		sequenceId: e.seq.id,
+		commands: commands as never[],
+		...(opts.coalesceKey ? { coalesceKey: opts.coalesceKey } : {}),
+	});
+	if (!r.ok && !opts.quiet) {
+		const err = r.errors[0];
+		let detail = err?.message;
+		if (err?.code === 'E_SYNC_CONFLICT' && err.blocking?.length) {
+			const blockers = err.blocking
+				.map((id) => e.seq.clips[id]?.trackId)
+				.filter((t): t is string => !!t)
+				.map((t) => trackLabel(e.seq, t) ?? t);
+			detail = `Sync-locked track ${[...new Set(blockers)].join(', ')} has content in the range.`;
+		}
+		ctx.ui.toast({ kind: 'warning', message: `${label}: not possible`, detail });
+	}
+	return r;
+}
+
+const selectedClips = (e: Env): Clip[] =>
+	e.session
+		.getState()
+		.selection.timeline.clips.map((id) => e.seq.clips[id])
+		.filter((c): c is Clip => !!c);
+
+/** Targeted track ids (both kinds), or every unlocked track when nothing is targeted (TL-251). */
+function targetedTracks(e: Env): string[] {
+	const locked = new Set(
+		[...e.seq.videoTracks, ...e.seq.audioTracks].filter((t) => t.locked).map((t) => t.id),
+	);
+	const t = [...e.view.targeting.video, ...e.view.targeting.audio].filter((id) => !locked.has(id));
+	return t.length ? t : unlockedTrackIds(e.seq);
+}
+
+function isLocked(seq: Sequence, trackId: string): boolean {
+	return [...seq.videoTracks, ...seq.audioTracks, ...seq.captionTracks].some(
+		(t) => t.id === trackId && t.locked,
+	);
+}
+
+/** One clip per link group (commands that already follow links must not run twice). */
+function onePerLink(clips: readonly Clip[]): Clip[] {
+	const seen = new Set<string>();
+	return clips.filter((c) => {
+		if (!c.linkId) return true;
+		if (seen.has(c.linkId)) return false;
+		seen.add(c.linkId);
+		return true;
+	});
+}
+
+function seekReveal(e: Env, frame: number): void {
+	e.session.transport.seek(frame);
+	e.handle?.controller.reveal(frame);
+}
+
+const cmd = (
+	id: string,
+	label: string,
+	scope: CommandScope,
+	run: (ctx: CommandCtx, e: Env) => void,
+	extra: Partial<UiCommand> = {},
+): UiCommand => ({
+	id,
+	label,
+	scope,
+	when: hasSeq,
+	agentExposed: true,
+	run: (ctx) => {
+		const e = envOf(ctx);
+		if (e) run(ctx, e);
+	},
+	...extra,
+});
+
+// ---------------------------------------------------------------- tools (TL-590, S05:TOOL-003)
+
+const TOOL_IDS: ActiveTool[] = [
+	'selection',
+	'trackSelectForward',
+	'trackSelectBackward',
+	'ripple',
+	'rolling',
+	'rateStretch',
+	'razor',
+	'slip',
+	'slide',
+	'pen',
+	'hand',
+	'zoom',
+	'type',
+];
+
+const toolCommands: UiCommand[] = TOOL_IDS.map((tool) => ({
+	id: `tool.${tool}`,
+	label: TOOLS[tool].label,
+	scope: 'editing' as const,
+	agentExposed: true,
+	when: (ctx) => !!ctx.session,
+	checked: (ctx) => ctx.session?.getState().toggles.activeTool === tool,
+	run: (ctx) => ctx.session?.setToggles({ activeTool: tool }),
+}));
+
+// ---------------------------------------------------------------- edits (TL-680…704)
+
+function addEdit(ctx: CommandCtx, e: Env, all: boolean): void {
+	const at = e.playhead;
+	const crossing = (c: Clip) => c.start < at && at < c.start + c.duration;
+	if (all) {
+		apply(ctx, e, 'Add Edit to All Tracks', [{ type: 'clip.split', at, scope: 'all-unlocked' }]);
+		return;
+	}
+	// TL-680: with a selection, only selected clips crossing the playhead are split.
+	const sel = selectedClips(e).filter((c) => crossing(c) && !isLocked(e.seq, c.trackId));
+	if (sel.length) {
+		apply(ctx, e, 'Add Edit', [{ type: 'clip.split', at, clipIds: sel.map((c) => c.id) }]);
+		return;
+	}
+	const tracks = targetedTracks(e).filter((id) =>
+		Object.values(e.seq.clips).some((c) => c.trackId === id && crossing(c)),
+	);
+	if (!tracks.length) return;
+	apply(ctx, e, 'Add Edit', [{ type: 'clip.split', at, tracks }]);
+}
+
+function clear(ctx: CommandCtx, e: Env, ripple: boolean): void {
+	const sel = e.session.getState().selection;
+	if (sel.timeline.gaps.length) {
+		// TL-741: Delete and Ripple Delete both close selected gaps.
+		const gaps = [...sel.timeline.gaps].sort((a, b) => b.start - a.start);
+		apply(
+			ctx,
+			e,
+			gaps.length > 1 ? 'Close Gaps' : 'Close Gap',
+			gaps.map((g) => ({ type: 'gap.close', trackId: g.trackId, at: g.start })),
+		);
+		e.session.selectGaps([]);
+		return;
+	}
+	const clips = selectedClips(e);
+	if (clips.length) {
+		apply(ctx, e, ripple ? 'Ripple Delete' : 'Clear', [
+			{
+				type: ripple ? 'clip.extract' : 'clip.lift',
+				clipIds: clips.map((c) => c.id),
+				...(ripple ? { rippleMarkers: e.session.getState().toggles.rippleMarkers } : {}),
+			},
+		]);
+		return;
+	}
+	if (sel.markers.length) apply(ctx, e, 'Clear Marker', [{ type: 'marker.remove', markerIds: sel.markers }]);
+}
+
+function nudge(ctx: CommandCtx, e: Env, delta: number): void {
+	const clips = selectedClips(e).filter((c) => !isLocked(e.seq, c.trackId));
+	if (!clips.length) return;
+	const min = Math.min(...clips.map((c) => c.start));
+	const d = Math.max(-min, delta); // TL-497: clamped at frame 0
+	if (d === 0) return;
+	apply(ctx, e, 'Nudge', [{ type: 'clip.move', clipIds: clips.map((c) => c.id), deltaFrames: d }], {
+		coalesceKey: 'nudge',
+	});
+}
+
+function nudgeTrack(ctx: CommandCtx, e: Env, up: boolean): void {
+	const clips = selectedClips(e).filter((c) => !isLocked(e.seq, c.trackId));
+	if (!clips.length) return;
+	// Visually up: video index +1, audio index −1. Refuses at the edges instead of creating tracks.
+	apply(
+		ctx,
+		e,
+		'Nudge',
+		[
+			{
+				type: 'clip.move',
+				clipIds: clips.map((c) => c.id),
+				deltaFrames: 0,
+				deltaTracks: { video: up ? 1 : -1, audio: up ? -1 : 1 },
+				createTracks: false,
+			},
+		],
+		{ coalesceKey: 'nudge-track', quiet: true },
+	);
+}
+
+function slip(ctx: CommandCtx, e: Env, delta: number): void {
+	const clips = selectedClips(e).filter((c) => !isLocked(e.seq, c.trackId));
+	if (!clips.length) return;
+	apply(ctx, e, 'Slip', [{ type: 'clip.slip', clipIds: clips.map((c) => c.id), deltaFrames: delta }], {
+		coalesceKey: 'slip',
+	});
+}
+
+function slide(ctx: CommandCtx, e: Env, delta: number): void {
+	const clips = onePerLink(selectedClips(e).filter((c) => !isLocked(e.seq, c.trackId)));
+	if (!clips.length) return;
+	apply(
+		ctx,
+		e,
+		'Slide',
+		clips.map((c) => ({ type: 'clip.slide', clipId: c.id, deltaFrames: delta })),
+		{ coalesceKey: 'slide' },
+	);
+}
+
+// ---------------------------------------------------------------- playhead trims (TL-549)
+
+function playheadTrim(ctx: CommandCtx, e: Env, side: 'prev' | 'next', ripple: boolean): void {
+	const p = e.playhead;
+	const clips = onePerLink(
+		targetedTracks(e)
+			.map((id) => clipAt(e.seq, id, p))
+			.filter((c): c is Clip => !!c && c.start < p && !isLocked(e.seq, c.trackId)),
+	);
+	if (!clips.length) {
+		ctx.ui.toast({ kind: 'info', message: 'No clip under the playhead on the targeted tracks' });
+		return;
+	}
+	const commands = clips.map((c) =>
+		side === 'prev'
+			? {
+					type: 'clip.trim',
+					clipId: c.id,
+					edge: 'in',
+					deltaFrames: p - c.start,
+					mode: ripple ? 'ripple' : 'regular',
+				}
+			: {
+					type: 'clip.trim',
+					clipId: c.id,
+					edge: 'out',
+					deltaFrames: p - (c.start + c.duration),
+					mode: ripple ? 'ripple' : 'regular',
+				},
+	);
+	const label = ripple
+		? side === 'prev'
+			? 'Ripple Trim Previous Edit to Playhead'
+			: 'Ripple Trim Next Edit to Playhead'
+		: side === 'prev'
+			? 'Trim Previous Edit to Playhead'
+			: 'Trim Next Edit to Playhead';
+	const r = apply(ctx, e, label, commands);
+	// Q moves the playhead to the old clip start so it stays on the same content.
+	if (r?.ok && ripple && side === 'prev') seekReveal(e, Math.min(...clips.map((c) => c.start)));
+}
+
+function editPointCommands(
+	points: readonly EditPointSel[],
+	deltaFor: (p: EditPointSel) => number,
+): unknown[] {
+	return points
+		.map((p) => ({ p, d: deltaFor(p) }))
+		.filter(({ d }) => d !== 0)
+		.map(({ p, d }) => ({
+			type: 'clip.trim',
+			clipId: p.clipId,
+			edge: p.side,
+			deltaFrames: d,
+			mode: p.type,
+		}));
+}
+
+function trimEditPoints(ctx: CommandCtx, e: Env, delta: number): void {
+	const ui = e.handle?.ui;
+	const points = ui?.getState().editPoints ?? [];
+	if (!points.length) return;
+	const r = apply(
+		ctx,
+		e,
+		'Trim',
+		editPointCommands(points, () => delta),
+		{ coalesceKey: 'trim-keys' },
+	);
+	if (r?.ok && ui) ui.setState({ editPoints: points.map((p) => ({ ...p, frame: p.frame + delta })) });
+}
+
+// ---------------------------------------------------------------- in/out (TL-760…766)
+
+function setInOut(ctx: CommandCtx, e: Env, label: string, i: number | null, o: number | null): void {
+	apply(ctx, e, label, [{ type: 'sequence.setInOut', in: i, out: o }]);
+}
+
+function markClipRange(e: Env): { start: number; end: number } | null {
+	const p = e.playhead;
+	const targeted = [...e.view.targeting.video, ...e.view.targeting.audio];
+	const tracks = targeted.length
+		? targeted
+		: [...[...e.seq.videoTracks].reverse(), ...e.seq.audioTracks].map((t) => t.id); // topmost first
+	const hits = clipsAtPlayhead(e.seq, p, tracks).map((id) => e.seq.clips[id]!);
+	if (!hits.length) return null;
+	const pick = targeted.length ? hits : [hits[0]!];
+	return {
+		start: Math.min(...pick.map((c) => c.start)),
+		end: Math.max(...pick.map((c) => c.start + c.duration)),
+	};
+}
+
+function liftExtract(ctx: CommandCtx, e: Env, extract: boolean): void {
+	const { inPoint, outPoint } = e.seq;
+	if (inPoint === null || outPoint === null) {
+		ctx.ui.toast({ kind: 'info', message: 'Set In and Out first' }); // TL-691
+		return;
+	}
+	const targeted = [...e.view.targeting.video, ...e.view.targeting.audio].filter(
+		(id) => !isLocked(e.seq, id),
+	);
+	const range = {
+		type: extract ? 'range.extract' : 'range.lift',
+		from: inPoint,
+		to: outPoint,
+		...(targeted.length ? { tracks: targeted } : {}),
+		...(extract ? { rippleMarkers: e.session.getState().toggles.rippleMarkers } : {}),
+	};
+	const r = apply(ctx, e, extract ? 'Extract' : 'Lift', [
+		range,
+		{ type: 'sequence.setInOut', in: null, out: null },
+	]);
+	if (r?.ok) seekReveal(e, inPoint); // TL-690: playhead goes to the old In
+}
+
+// ---------------------------------------------------------------- markers (TL-790…794)
+
+function markerNav(e: Env, dir: 1 | -1): void {
+	const frames = [...new Set(e.seq.markers.map((m) => m.frame))].sort((a, b) => a - b);
+	const f = dir > 0 ? frames.find((x) => x > e.playhead) : [...frames].reverse().find((x) => x < e.playhead);
+	if (f !== undefined) seekReveal(e, f);
+}
+
+// ---------------------------------------------------------------- track heights (TL-263)
+
+function setHeights(
+	e: Env,
+	kind: 'video' | 'audio' | 'both',
+	fn: (h: number, k: 'video' | 'audio') => number,
+): void {
+	const heights = { ...e.view.trackHeights };
+	const kinds: ('video' | 'audio')[] = kind === 'both' ? ['video', 'audio'] : [kind];
+	for (const k of kinds)
+		for (const t of k === 'video' ? e.seq.videoTracks : e.seq.audioTracks)
+			heights[t.id] = fn(trackHeight(e.view.trackHeights, t.id, k), k);
+	e.session.setView(e.seq.id, { trackHeights: heights });
+}
+
+// ---------------------------------------------------------------- the list
+
+const T: CommandScope = 'timeline';
+const E: CommandScope = 'editing';
+
+export const timelineCommands: UiCommand[] = [
+	...toolCommands,
+
+	cmd('timeline.addEdit', 'Add Edit', E, (ctx, e) => addEdit(ctx, e, false)),
+	cmd('timeline.addEditAllTracks', 'Add Edit to All Tracks', E, (ctx, e) => addEdit(ctx, e, true)),
+	cmd('timeline.clear', 'Clear', T, (ctx, e) => clear(ctx, e, false)),
+	cmd('timeline.rippleDelete', 'Ripple Delete', T, (ctx, e) => clear(ctx, e, true)),
+	cmd('timeline.selectAll', 'Select All', T, (_ctx, e) => {
+		const unlocked = new Set(unlockedTrackIds(e.seq));
+		e.session.selectGaps([]);
+		e.session.select(
+			'timeline',
+			Object.values(e.seq.clips)
+				.filter((c) => unlocked.has(c.trackId))
+				.map((c) => c.id),
+			'replace',
+			{ linked: false },
+		);
+	}),
+	cmd('timeline.deselectAll', 'Deselect All', T, (_ctx, e) => {
+		e.session.select('timeline', [], 'replace');
+		e.session.selectGaps([]);
+		e.handle?.ui.setState({ editPoints: [] });
+	}),
+	cmd('timeline.selectClipAtPlayhead', 'Select Clip at Playhead', T, (_ctx, e) => {
+		const ids = clipsAtPlayhead(e.seq, e.playhead, targetedTracks(e));
+		e.session.select('timeline', ids, 'replace');
+	}),
+	cmd('timeline.selectNextClip', 'Select Next Clip', T, (_ctx, e) => selectNeighbour(e, 1)),
+	cmd('timeline.selectPrevClip', 'Select Previous Clip', T, (_ctx, e) => selectNeighbour(e, -1)),
+
+	cmd('timeline.nudgeLeft', 'Nudge Clip Selection Left One Frame', T, (ctx, e) => nudge(ctx, e, -1), {
+		repeat: true,
+	}),
+	cmd('timeline.nudgeRight', 'Nudge Clip Selection Right One Frame', T, (ctx, e) => nudge(ctx, e, 1), {
+		repeat: true,
+	}),
+	cmd('timeline.nudgeLeftMany', 'Nudge Clip Selection Left Five Frames', T, (ctx, e) => nudge(ctx, e, -5), {
+		repeat: true,
+	}),
+	cmd('timeline.nudgeRightMany', 'Nudge Clip Selection Right Five Frames', T, (ctx, e) => nudge(ctx, e, 5), {
+		repeat: true,
+	}),
+	cmd('timeline.nudgeUp', 'Nudge Clip Selection Up', T, (ctx, e) => nudgeTrack(ctx, e, true), {
+		repeat: true,
+	}),
+	cmd('timeline.nudgeDown', 'Nudge Clip Selection Down', T, (ctx, e) => nudgeTrack(ctx, e, false), {
+		repeat: true,
+	}),
+	cmd('timeline.slipLeft', 'Slip Clip Selection Left One Frame', T, (ctx, e) => slip(ctx, e, -1), {
+		repeat: true,
+	}),
+	cmd('timeline.slipRight', 'Slip Clip Selection Right One Frame', T, (ctx, e) => slip(ctx, e, 1), {
+		repeat: true,
+	}),
+	cmd('timeline.slipLeftMany', 'Slip Clip Selection Left Five Frames', T, (ctx, e) => slip(ctx, e, -5), {
+		repeat: true,
+	}),
+	cmd('timeline.slipRightMany', 'Slip Clip Selection Right Five Frames', T, (ctx, e) => slip(ctx, e, 5), {
+		repeat: true,
+	}),
+	cmd('timeline.slideLeft', 'Slide Clip Selection Left One Frame', T, (ctx, e) => slide(ctx, e, -1), {
+		repeat: true,
+	}),
+	cmd('timeline.slideRight', 'Slide Clip Selection Right One Frame', T, (ctx, e) => slide(ctx, e, 1), {
+		repeat: true,
+	}),
+	cmd('timeline.slideLeftMany', 'Slide Clip Selection Left Five Frames', T, (ctx, e) => slide(ctx, e, -5), {
+		repeat: true,
+	}),
+	cmd('timeline.slideRightMany', 'Slide Clip Selection Right Five Frames', T, (ctx, e) => slide(ctx, e, 5), {
+		repeat: true,
+	}),
+
+	cmd('timeline.markIn', 'Mark In', E, (ctx, e) => {
+		const i = e.playhead;
+		setInOut(ctx, e, 'Mark In', i, e.seq.outPoint !== null && e.seq.outPoint <= i ? null : e.seq.outPoint);
+	}),
+	cmd('timeline.markOut', 'Mark Out', E, (ctx, e) => {
+		const o = e.playhead + 1; // TL-760: the Out frame is included
+		setInOut(ctx, e, 'Mark Out', e.seq.inPoint !== null && e.seq.inPoint >= o ? null : e.seq.inPoint, o);
+	}),
+	cmd('timeline.markClip', 'Mark Clip', T, (ctx, e) => {
+		const r = markClipRange(e);
+		if (r) setInOut(ctx, e, 'Mark Clip', r.start, r.end);
+	}),
+	cmd('timeline.markSelection', 'Mark Selection', T, (ctx, e) => {
+		const clips = selectedClips(e);
+		if (!clips.length) return;
+		setInOut(
+			ctx,
+			e,
+			'Mark Selection',
+			Math.min(...clips.map((c) => c.start)),
+			Math.max(...clips.map((c) => c.start + c.duration)),
+		);
+	}),
+	cmd('timeline.clearIn', 'Clear In', E, (ctx, e) => setInOut(ctx, e, 'Clear In', null, e.seq.outPoint)),
+	cmd('timeline.clearOut', 'Clear Out', E, (ctx, e) => setInOut(ctx, e, 'Clear Out', e.seq.inPoint, null)),
+	cmd('timeline.clearInOut', 'Clear In and Out', E, (ctx, e) =>
+		setInOut(ctx, e, 'Clear In and Out', null, null),
+	),
+	cmd('timeline.goToIn', 'Go to In', E, (_ctx, e) => {
+		if (e.seq.inPoint !== null) seekReveal(e, e.seq.inPoint);
+	}),
+	cmd('timeline.goToOut', 'Go to Out', E, (_ctx, e) => {
+		if (e.seq.outPoint !== null) seekReveal(e, e.seq.outPoint - 1);
+	}),
+	cmd('timeline.lift', 'Lift', E, (ctx, e) => liftExtract(ctx, e, false)),
+	cmd('timeline.extract', 'Extract', E, (ctx, e) => liftExtract(ctx, e, true)),
+
+	cmd('timeline.addMarker', 'Add Marker', E, (ctx, e) => {
+		const existing = e.seq.markers.find((m) => m.frame === e.playhead);
+		if (existing) {
+			// TL-791: a second M on the same frame opens the marker dialog.
+			if (e.handle?.openMarkerEditor) e.handle.openMarkerEditor(existing.id);
+			else ctx.ui.openDialog('marker', { sequenceId: e.seq.id, markerId: existing.id });
+			return;
+		}
+		apply(ctx, e, 'Add Marker', [{ type: 'marker.add', frame: e.playhead }]);
+	}),
+	cmd('timeline.nextMarker', 'Go to Next Marker', E, (_ctx, e) => markerNav(e, 1)),
+	cmd('timeline.prevMarker', 'Go to Previous Marker', E, (_ctx, e) => markerNav(e, -1)),
+	cmd('timeline.clearMarker', 'Clear Selected Marker', E, (ctx, e) => {
+		const sel = e.session.getState().selection.markers.filter((id) => e.seq.markers.some((m) => m.id === id));
+		const ids = sel.length ? sel : e.seq.markers.filter((m) => m.frame === e.playhead).map((m) => m.id);
+		if (ids.length) apply(ctx, e, 'Clear Marker', [{ type: 'marker.remove', markerIds: ids }]);
+	}),
+	cmd('timeline.clearAllMarkers', 'Clear All Markers', E, (ctx, e) => {
+		if (!e.seq.markers.length) return;
+		if (
+			e.seq.markers.length > 10 &&
+			typeof window !== 'undefined' &&
+			typeof window.confirm === 'function' &&
+			!window.confirm(`Clear all ${e.seq.markers.length} markers?`)
+		)
+			return;
+		apply(ctx, e, 'Clear All Markers', [
+			{ type: 'marker.remove', markerIds: e.seq.markers.map((m) => m.id) },
+		]);
+	}),
+
+	// Edit-point navigation (TL-880, A.7). Registered here because it depends on track targeting.
+	cmd('transport.prevEdit', 'Go to Previous Edit Point', E, (_ctx, e) => editNav(e, -1, false), {
+		repeat: true,
+	}),
+	cmd('transport.nextEdit', 'Go to Next Edit Point', E, (_ctx, e) => editNav(e, 1, false), { repeat: true }),
+	cmd(
+		'transport.prevEditAny',
+		'Go to Previous Edit Point on Any Track',
+		E,
+		(_ctx, e) => editNav(e, -1, true),
+		{
+			repeat: true,
+		},
+	),
+	cmd('transport.nextEditAny', 'Go to Next Edit Point on Any Track', E, (_ctx, e) => editNav(e, 1, true), {
+		repeat: true,
+	}),
+
+	cmd(
+		'timeline.toggleSnap',
+		'Snap in Timeline',
+		T,
+		(_ctx, e) => e.session.setToggles({ snapping: !e.session.getState().toggles.snapping }),
+		{ checked: (ctx) => !!ctx.session?.getState().toggles.snapping },
+	),
+	cmd('timeline.linkUnlink', 'Link / Unlink', T, (ctx, e) => {
+		const clips = selectedClips(e);
+		if (!clips.length) return;
+		if (clips.some((c) => c.linkId))
+			apply(ctx, e, 'Unlink', [{ type: 'clip.unlink', clipIds: clips.map((c) => c.id) }]);
+		else if (clips.length > 1)
+			apply(ctx, e, 'Link', [{ type: 'clip.link', clipIds: clips.map((c) => c.id) }]);
+	}),
+	cmd('timeline.toggleEnable', 'Enable', T, (ctx, e) => {
+		const clips = selectedClips(e).filter((c) => !isLocked(e.seq, c.trackId));
+		if (!clips.length) return;
+		const enable = !clips.every((c) => c.enabled);
+		apply(ctx, e, enable ? 'Enable' : 'Disable', [
+			{ type: 'clip.update', clipIds: clips.map((c) => c.id), patch: { enabled: enable } },
+		]);
+	}),
+	cmd('timeline.duplicate', 'Duplicate', T, (ctx, e) => {
+		const clips = selectedClips(e);
+		if (!clips.length) return;
+		const r = apply(ctx, e, 'Duplicate', [{ type: 'clip.duplicate', clipIds: clips.map((c) => c.id) }]);
+		if (r?.ok) {
+			const res = r.results[0] as { clipIds: string[] };
+			e.session.select('timeline', res.clipIds, 'replace', { linked: false }); // SEL-006
+		}
+	}),
+
+	cmd('timeline.zoomIn', 'Zoom In', T, (_ctx, e) => e.handle?.controller.zoomStep(1), { repeat: true }),
+	cmd('timeline.zoomOut', 'Zoom Out', T, (_ctx, e) => e.handle?.controller.zoomStep(-1), { repeat: true }),
+	cmd('timeline.zoomToSequence', 'Zoom to Sequence', T, (_ctx, e) =>
+		e.handle?.controller.toggleZoomToSequence(),
+	),
+	cmd('timeline.pageLeft', 'Scroll Left One Page', T, (_ctx, e) => e.handle?.controller.page(-1), {
+		repeat: true,
+	}),
+	cmd('timeline.pageRight', 'Scroll Right One Page', T, (_ctx, e) => e.handle?.controller.page(1), {
+		repeat: true,
+	}),
+	cmd('timeline.videoTracksTaller', 'Increase Video Track Height', T, (_ctx, e) =>
+		setHeights(e, 'video', (h) => stepHeight(h, 1)),
+	),
+	cmd('timeline.videoTracksShorter', 'Decrease Video Track Height', T, (_ctx, e) =>
+		setHeights(e, 'video', (h) => stepHeight(h, -1)),
+	),
+	cmd('timeline.audioTracksTaller', 'Increase Audio Track Height', T, (_ctx, e) =>
+		setHeights(e, 'audio', (h) => stepHeight(h, 1)),
+	),
+	cmd('timeline.audioTracksShorter', 'Decrease Audio Track Height', T, (_ctx, e) =>
+		setHeights(e, 'audio', (h) => stepHeight(h, -1)),
+	),
+	cmd('timeline.expandAllTracks', 'Expand All Tracks', T, (_ctx, e) =>
+		setHeights(e, 'both', (h) => Math.max(h, 72)),
+	),
+	cmd('timeline.minimizeAllTracks', 'Minimize All Tracks', T, (_ctx, e) => setHeights(e, 'both', () => 20)),
+
+	cmd('timeline.rippleTrimPrevToPlayhead', 'Ripple Trim Previous Edit to Playhead', T, (ctx, e) =>
+		playheadTrim(ctx, e, 'prev', true),
+	),
+	cmd('timeline.rippleTrimNextToPlayhead', 'Ripple Trim Next Edit to Playhead', T, (ctx, e) =>
+		playheadTrim(ctx, e, 'next', true),
+	),
+	cmd('timeline.trimPrevToPlayhead', 'Trim Previous Edit to Playhead', T, (ctx, e) =>
+		playheadTrim(ctx, e, 'prev', false),
+	),
+	cmd('timeline.trimNextToPlayhead', 'Trim Next Edit to Playhead', T, (ctx, e) =>
+		playheadTrim(ctx, e, 'next', false),
+	),
+	cmd('timeline.extendEditToPlayhead', 'Extend Selected Edit to Playhead', T, (ctx, e) => {
+		const points = e.handle?.ui.getState().editPoints ?? [];
+		if (!points.length) {
+			ctx.ui.toast({ kind: 'info', message: 'Select an edit point first' });
+			return;
+		}
+		const r = apply(
+			ctx,
+			e,
+			'Extend Edit',
+			editPointCommands(points, (p) => e.playhead - p.frame),
+		);
+		if (r?.ok) e.handle?.ui.setState({ editPoints: points.map((p) => ({ ...p, frame: e.playhead })) });
+	}),
+	cmd('timeline.cycleTrimType', 'Toggle Trim Type', T, (_ctx, e) => {
+		const ui = e.handle?.ui;
+		if (!ui) return;
+		const next = { regular: 'roll', roll: 'ripple', ripple: 'regular' } as const;
+		ui.setState({ editPoints: ui.getState().editPoints.map((p) => ({ ...p, type: next[p.type] })) });
+	}),
+	cmd('timeline.trimBack', 'Trim Backward', T, (ctx, e) => trimEditPoints(ctx, e, -1), { repeat: true }),
+	cmd('timeline.trimForward', 'Trim Forward', T, (ctx, e) => trimEditPoints(ctx, e, 1), { repeat: true }),
+	cmd('timeline.trimBackMany', 'Trim Backward Many', T, (ctx, e) => trimEditPoints(ctx, e, -5), {
+		repeat: true,
+	}),
+	cmd('timeline.trimForwardMany', 'Trim Forward Many', T, (ctx, e) => trimEditPoints(ctx, e, 5), {
+		repeat: true,
+	}),
+
+	cmd('timeline.setWorkAreaIn', 'Set Work Area In', T, (ctx, e) => {
+		const end = e.seq.workArea?.end ?? Math.max(e.playhead + 1, sequenceDuration(e.seq));
+		if (end > e.playhead)
+			apply(ctx, e, 'Work Area', [{ type: 'sequence.setWorkArea', start: e.playhead, end }]);
+	}),
+	cmd('timeline.setWorkAreaOut', 'Set Work Area Out', T, (ctx, e) => {
+		const start = e.seq.workArea?.start ?? 0;
+		if (e.playhead + 1 > start)
+			apply(ctx, e, 'Work Area', [{ type: 'sequence.setWorkArea', start, end: e.playhead + 1 }]);
+	}),
+	cmd('timeline.renderInToOut', 'Render In to Out', T, (ctx) =>
+		ctx.ui.toast({
+			kind: 'info',
+			message: 'Preview rendering arrives with the render cache (M2)',
+			detail: 'Red and yellow render-bar ranges play live in M1.',
+		}),
+	),
+	{
+		id: 'gesture.cancel',
+		label: 'Cancel Gesture',
+		scope: E,
+		when: (ctx) => !!ctx.session,
+		run: (ctx) => {
+			const handle = activeTimeline(ctx.services);
+			if (handle?.cancelGesture()) return;
+			// TL-903: otherwise Escape deselects.
+			ctx.session?.select('timeline', [], 'replace');
+			ctx.session?.selectGaps([]);
+			handle?.ui.setState({ editPoints: [], contextMenu: null });
+		},
+	},
+];
+
+function selectNeighbour(e: Env, dir: 1 | -1): void {
+	const sel = selectedClips(e);
+	const anchor = sel.sort((a, b) => (dir > 0 ? b.start - a.start : a.start - b.start))[0];
+	if (!anchor) return;
+	const same = Object.values(e.seq.clips)
+		.filter((c) => c.trackId === anchor.trackId)
+		.sort((a, b) => a.start - b.start);
+	const i = same.findIndex((c) => c.id === anchor.id);
+	const next = same[i + dir];
+	if (next) e.session.select('timeline', [next.id], 'replace');
+}
+
+function editNav(e: Env, dir: 1 | -1, any: boolean): void {
+	const tracks = any ? undefined : targetedTracks(e);
+	const pts = editPoints(e.seq, tracks);
+	const f = dir > 0 ? pts.find((x) => x > e.playhead) : [...pts].reverse().find((x) => x < e.playhead);
+	if (f !== undefined) seekReveal(e, f);
+}
