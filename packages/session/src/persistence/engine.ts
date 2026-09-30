@@ -324,9 +324,13 @@ export class EngineProjectStore implements ProjectStore {
 				`/api/projects/${encodeURIComponent(projectId)}/lease/${encodeURIComponent(rec.lease.leaseId)}`,
 			);
 			try {
-				void fetchImpl(url, { method: 'DELETE', keepalive: true, credentials: 'include' }).catch(
-					() => undefined,
-				);
+				void fetchImpl(url, {
+					method: 'DELETE',
+					keepalive: true,
+					credentials: 'include',
+					// Token-only auth (no cookie) needs the bearer header too, or the lease just expires.
+					headers: this.engine.authorizationHeaders?.() ?? {},
+				}).catch(() => undefined);
 			} catch {
 				// unload: nothing else to do
 			}
