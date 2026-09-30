@@ -267,6 +267,43 @@ test('with the text clip, Auto plans the Remotion path; the Remotion export succ
 	assertOutput(out.file, frames, { audio: true });
 });
 
+test('Program monitor accepts effect drops (layer under the pointer) and motion-template drops', async () => {
+	// Park the playhead inside the footage so the Program shows the V1 layer.
+	const v1 = (await clips(page, ['V1'])).at(-1)!;
+	await focusTimeline(page);
+	const ruler = (await page.getByTestId('timeline-ruler').boundingBox())!;
+	const clipB = await clipBox(page, v1.id);
+	await page.mouse.click(clipB.x + clipB.width / 2, ruler.y + ruler.height / 2);
+	await page.getByTestId('tab-effects').click();
+	await page.getByTestId('effects-search').fill('Gaussian');
+	const blur = page.locator('[data-effect-id="jasper.gaussian-blur"]');
+	await expect(blur).toBeVisible();
+	const overlay = page.getByTestId('program-overlay');
+	const ob = (await overlay.boundingBox())!;
+	const before = await appliedLabels(page);
+	await blur.dragTo(overlay, { targetPosition: { x: ob.width * 0.75, y: ob.height * 0.8 } });
+	await expect.poll(async () => (await appliedLabels(page)).length).toBe(before.length + 1);
+	expect((await appliedLabels(page)).at(-1)).toMatch(/Apply Gaussian Blur/);
+
+	await page.getByTestId('tab-motionTemplates').click();
+	const mgBefore = (await clips(page)).filter((c) => c.kind === 'motion-graphic').length;
+	await page.locator('[data-template="lower-third@1"]').dragTo(overlay, {
+		targetPosition: { x: ob.width / 2, y: ob.height / 2 },
+	});
+	await expect
+		.poll(async () => (await clips(page)).filter((c) => c.kind === 'motion-graphic').length)
+		.toBe(mgBefore + 1);
+});
+
+test('Re-render Motion Graphics (command palette) → the Program badge reports the fframes render', async () => {
+	// The dropped template clip is selected; its preview badge starts as the SVG preview.
+	await expect(page.locator('[data-mg-badge]').first()).toBeVisible();
+	await page.getByTestId('palette-button').click();
+	await page.getByTestId('palette-input').fill('Re-render Motion');
+	await page.keyboard.press('Enter');
+	await expect(page.locator('[data-mg-badge="ready"]')).toBeVisible({ timeout: 60_000 });
+});
+
 test('no uncaught page errors so far', async () => {
 	expect(watcher.errors.filter((e) => e.startsWith('pageerror'))).toEqual([]);
 });
