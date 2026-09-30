@@ -1,6 +1,7 @@
 // Info panel (S05:INF-001, WP-2A): key–value readout of the selection and the active sequence.
+
+import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
-import { InfoPanel } from './InfoPanel.tsx';
 
 const info: PanelDefinition = {
 	kind: 'info',
@@ -11,6 +12,6 @@ const info: PanelDefinition = {
 	keymapScope: 'info',
 	touch: 'hidden',
 	agentDescription: 'Details of the selected clip or item.',
-	component: InfoPanel,
+	component: lazyPanel(() => import('./InfoPanel.tsx'), 'InfoPanel'),
 };
 export default info;

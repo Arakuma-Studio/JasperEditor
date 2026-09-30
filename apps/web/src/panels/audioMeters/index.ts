@@ -1,7 +1,8 @@
 // Audio Meters panel (S05:MTR-001, WP-2A placeholder): a 52 px stereo meter strip with the dB scale.
 // Live levels (Web Audio analyser / envelopes, MTR-002) arrive with the Program audio path.
+
+import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
-import { AudioMetersPanel } from './AudioMetersPanel.tsx';
 
 const audioMeters: PanelDefinition = {
 	kind: 'audioMeters',
@@ -13,6 +14,6 @@ const audioMeters: PanelDefinition = {
 	keymapScope: 'audioMeters',
 	touch: 'hidden',
 	agentDescription: 'Master output level meters.',
-	component: AudioMetersPanel,
+	component: lazyPanel(() => import('./AudioMetersPanel.tsx'), 'AudioMetersPanel'),
 };
 export default audioMeters;

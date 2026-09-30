@@ -1,6 +1,7 @@
 // Properties panel (WP-2D): the context-sensitive primary inspector (S03 §14, S05:PRP).
+
+import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
-import { PropertiesPanel } from './PropertiesPanel.tsx';
 
 const definition: PanelDefinition = {
 	kind: 'properties',
@@ -16,7 +17,7 @@ const definition: PanelDefinition = {
 	],
 	touch: 'sheet',
 	agentDescription: 'Context-sensitive inspector for the selection (text, motion graphics, clips).',
-	component: PropertiesPanel,
+	component: lazyPanel(() => import('./PropertiesPanel.tsx'), 'PropertiesPanel'),
 };
 
 export default definition;

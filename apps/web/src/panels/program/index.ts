@@ -1,6 +1,7 @@
 // Program monitor panel (S03 §6, S05 §16.3) — WP-2C.
+
+import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
-import { ProgramMonitor } from './ProgramMonitor.tsx';
 
 const program: PanelDefinition = {
 	kind: 'program',
@@ -17,7 +18,7 @@ const program: PanelDefinition = {
 	],
 	touch: 'tab',
 	agentDescription: 'Program monitor: plays the active sequence and edits layers on canvas.',
-	component: ProgramMonitor,
+	component: lazyPanel(() => import('./ProgramMonitor.tsx'), 'ProgramMonitor'),
 };
 
 export default program;

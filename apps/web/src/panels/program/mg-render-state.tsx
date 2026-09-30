@@ -4,7 +4,7 @@
 import type { EngineJob } from '@jasper/api';
 import { type MgRenderState, MgRenderStateContext } from '@jasper/compositions';
 import { type ReactNode, useMemo, useSyncExternalStore } from 'react';
-import { useJobs } from '../../state/engine.tsx';
+import { useEngineOrNull, useJobs } from '../../state/engine.tsx';
 
 const jobByClip = new Map<string, string>();
 const listeners = new Set<() => void>();
@@ -46,6 +46,11 @@ export function mgRenderStateOf(job: EngineJob | undefined): MgRenderState | und
 
 /** Provides MgRenderStateContext to the Program monitor's Player from live `mg-render` job events. */
 export function MgRenderStateProvider({ children }: { children?: ReactNode }) {
+	// Without an engine (standalone mounting, tests) there are no render jobs: the badge shows the preview.
+	return useEngineOrNull() ? <EngineMgRenderState>{children}</EngineMgRenderState> : (children ?? null);
+}
+
+function EngineMgRenderState({ children }: { children?: ReactNode }) {
 	const tracked = useSyncExternalStore(
 		subscribe,
 		() => version,

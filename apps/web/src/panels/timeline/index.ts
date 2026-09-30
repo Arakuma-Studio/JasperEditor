@@ -1,6 +1,7 @@
 // Timeline panel definition (ARCHITECTURE §7.2, S05 §16.7). Keeps the WP-00 contract fields.
+
+import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
-import { TimelinePanel } from './TimelinePanel.tsx';
 
 const timeline: PanelDefinition = {
 	kind: 'timeline',
@@ -21,7 +22,7 @@ const timeline: PanelDefinition = {
 		{ type: 'command', command: 'timeline.renderInToOut', label: 'Render In to Out' },
 	],
 	agentDescription: 'Timeline of the active sequence: tracks, clips, edits, markers and In/Out.',
-	component: TimelinePanel,
+	component: lazyPanel(() => import('./TimelinePanel.tsx'), 'TimelinePanel'),
 };
 
 export default timeline;

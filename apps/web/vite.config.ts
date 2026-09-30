@@ -35,6 +35,9 @@ export default defineConfig({
 			output: {
 				// Stable vendor chunks so app changes do not invalidate them (ARCHITECTURE §13 startup).
 				manualChunks(id) {
+					// The pure model (schema, commands, render snapshot) is the biggest first-party module and
+					// changes less often than the app: its own chunk keeps the entry chunk under 500 kB.
+					if (/[\\/]packages[\\/]project[\\/]src[\\/]/.test(id)) return 'app-project';
 					if (!id.includes('node_modules')) return undefined;
 					if (/[\\/](remotion|@remotion)[\\/]/.test(id)) return 'vendor-remotion';
 					if (/[\\/](dockview|dockview-core|dockview-react)[\\/]/.test(id)) return 'vendor-dockview';

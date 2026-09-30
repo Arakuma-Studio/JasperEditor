@@ -1,6 +1,7 @@
 // Effect Controls panel (WP-2D): stopwatch/keyframes, mini-timeline and the effect stack (S03 §13, S05:ECP).
+
+import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
-import { EffectControlsPanel } from './EffectControlsPanel.tsx';
 
 const definition: PanelDefinition = {
 	kind: 'effectControls',
@@ -18,7 +19,7 @@ const definition: PanelDefinition = {
 	],
 	touch: 'sheet',
 	agentDescription: 'Keyframes and effect stack of the selected clip, with a mini-timeline of its keyframes.',
-	component: EffectControlsPanel,
+	component: lazyPanel(() => import('./EffectControlsPanel.tsx'), 'EffectControlsPanel'),
 };
 
 export default definition;

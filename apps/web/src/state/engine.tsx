@@ -111,6 +111,11 @@ export function useEngine(): EngineState {
 	return e;
 }
 
+/** The engine state, or null outside <EngineProvider> (components that also mount standalone/in tests). */
+export function useEngineOrNull(): EngineState | null {
+	return useContext(EngineContext);
+}
+
 export function useEngineClient(): EngineClient {
 	return useEngine().client;
 }
