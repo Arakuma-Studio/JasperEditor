@@ -230,6 +230,55 @@ describe('derivatives (ARCHITECTURE §9.4, S04:TH-002, WF-001)', () => {
 	}, 90_000);
 });
 
+describe('proxies of sources with alpha', () => {
+	it('makes a VP9 WebM proxy that keeps the alpha channel of a ProRes 4444 overlay', async () => {
+		const m = await register(app, fixture('overlay-alpha.mov'));
+		expect(m.browserPlayable).toBe('no'); // ProRes: the preview needs the proxy
+		expect(m.probe.hasAlpha).toBe(true);
+		const status = await until(async () => {
+			const s = (await app.inject({ method: 'GET', url: `/api/media/${m.mediaKey}`, headers: H })).json();
+			return ['ready', 'failed'].includes(s.derivatives['proxy-720'].state) ? s : null;
+		}, 90_000);
+		expect(status.derivatives['proxy-720'].state).toBe('ready');
+		const core = coreServices(app);
+		const rec = core.registry.get(m.mediaKey)!;
+		expect(core.derivatives.alphaProxy(rec)).toBe(true);
+		const file = core.derivatives.paths(rec.fingerprint, 'proxy-720', rec).main;
+		expect(file.endsWith('.webm')).toBe(true);
+		// An opaque source keeps the MP4 proxy and its cache key.
+		expect(core.derivatives.paths(rec.fingerprint, 'proxy-720').main.endsWith('.mp4')).toBe(true);
+		const probe = spawnSync('ffprobe', [
+			'-v',
+			'error',
+			'-select_streams',
+			'v:0',
+			'-show_entries',
+			'stream=codec_name,width,height:stream_tags=alpha_mode',
+			'-of',
+			'json',
+			file,
+		]);
+		const stream = JSON.parse(probe.stdout.toString()).streams[0];
+		expect(stream).toMatchObject({ codec_name: 'vp9', width: 1280, height: 720, tags: { alpha_mode: '1' } });
+		const res = await app.inject({
+			method: 'GET',
+			url: status.derivatives['proxy-720'].url,
+			headers: { ...H, range: 'bytes=0-3' },
+		});
+		expect(res.statusCode).toBe(206);
+		expect(res.headers['content-type']).toBe('video/webm');
+		// Decoded with libvpx the proxy is transparent outside the boxes and half-transparent inside the green one.
+		const px = (x: number, y: number) =>
+			spawnSync('ffmpeg', [
+				...['-v', 'error', '-c:v', 'libvpx-vp9', '-i', file],
+				...['-vf', `format=rgba,crop=1:1:${x}:${y}`, '-frames:v', '1', '-f', 'rawvideo', '-'],
+			]).stdout;
+		expect(px(1200, 650)[3]).toBeLessThan(8);
+		expect(Math.abs(px(640, 360)[3]! - 128)).toBeLessThan(12);
+		expect(px(133, 133)[3]).toBeGreaterThan(247);
+	}, 120_000);
+});
+
 describe('media serving (S04:MS-002)', () => {
 	it('supports HEAD, single Range → 206, suffix ranges, 416, ETag/304 and If-Range', async () => {
 		const m = await register(app, fixture('clip-b.mp4'));

@@ -15,6 +15,7 @@ import type {
 import type { Broadcaster } from '../events/broadcaster.ts';
 import type { JobQueue } from '../jobs/queue.ts';
 import { type JobContext, JobError, type JobPriority } from '../jobs/types.ts';
+import { alphaDecoder } from '../media/alpha.ts';
 import { fingerprintHex } from '../media/fingerprint.ts';
 import type { MediaRecord, MediaRegistry } from '../media/registry.ts';
 import { audioEncodeArgs, type EncoderService, videoEncodeArgs } from '../tools/encoders.ts';
@@ -63,6 +64,9 @@ const TITLES: Record<DerivativeKind, string> = {
 	'proxy-540': 'Proxy 540p',
 };
 
+/** What `alphaProxy` needs from a media record. */
+export type AlphaSource = Pick<MediaRecord, 'kind' | 'probe'>;
+
 export type DerivativeJobInput = { mediaKey: string; kind: DerivativeKind };
 
 export type ArtifactPaths = {
@@ -73,10 +77,24 @@ export type ArtifactPaths = {
 	hash: string;
 };
 
-function paramsFor(kind: DerivativeKind, proxyEncoder?: string | null): Record<string, unknown> {
+/**
+ * Proxies of sources with an alpha channel keep it: VP9 `yuva420p` in WebM, which Chromium plays with
+ * transparency (H.264 has no alpha: an MP4 proxy of a ProRes 4444 overlay would hide the footage under it).
+ */
+export const ALPHA_PROXY_ENCODER = 'libvpx-vp9';
+
+function paramsFor(
+	kind: DerivativeKind,
+	proxyEncoder?: string | null,
+	alpha = false,
+): Record<string, unknown> {
 	// Proxies made by another encoder than libx264 get their own cache key (D-13); libx264 proxies keep the
 	// historical key so existing caches stay valid.
-	const enc = proxyEncoder && proxyEncoder !== 'libx264' ? { enc: proxyEncoder } : {};
+	const enc = alpha
+		? { enc: ALPHA_PROXY_ENCODER, alpha: 'yuva420p' }
+		: proxyEncoder && proxyEncoder !== 'libx264'
+			? { enc: proxyEncoder }
+			: {};
 	switch (kind) {
 		case 'poster':
 			return { width: POSTER_WIDTH, at: 0.1 };
@@ -93,9 +111,9 @@ function paramsFor(kind: DerivativeKind, proxyEncoder?: string | null): Record<s
 	}
 }
 
-export function paramsHash(kind: DerivativeKind, proxyEncoder?: string | null): string {
+export function paramsHash(kind: DerivativeKind, proxyEncoder?: string | null, alpha = false): string {
 	return createHash('sha256')
-		.update(JSON.stringify({ kind, v: GENERATOR_VERSIONS[kind], p: paramsFor(kind, proxyEncoder) }))
+		.update(JSON.stringify({ kind, v: GENERATOR_VERSIONS[kind], p: paramsFor(kind, proxyEncoder, alpha) }))
 		.digest('hex')
 		.slice(0, 12);
 }
@@ -174,12 +192,25 @@ export class DerivativeService {
 		return this.deps.encoders.select({ purpose: 'proxy' });
 	}
 
-	private hashOf(kind: DerivativeKind): string {
-		return paramsHash(kind, kind.startsWith('proxy-') ? (this.proxyChoice()?.encoder ?? null) : null);
+	/**
+	 * True when the proxies of this media are VP9 WebM with alpha instead of the regular MP4: a video with
+	 * an alpha channel, on a build that has libvpx-vp9.
+	 */
+	alphaProxy(r: AlphaSource | null | undefined): boolean {
+		return (
+			!!r && r.kind === 'video' && r.probe.hasAlpha && (this.deps.encoders?.has(ALPHA_PROXY_ENCODER) ?? false)
+		);
 	}
 
-	paths(fingerprint: string, kind: DerivativeKind): ArtifactPaths {
-		const hash = this.hashOf(kind);
+	private hashOf(kind: DerivativeKind, alpha = false): string {
+		const proxy = kind.startsWith('proxy-');
+		return paramsHash(kind, proxy ? (this.proxyChoice()?.encoder ?? null) : null, proxy && alpha);
+	}
+
+	/** Artifact paths; pass the media record (`r`) for proxies so alpha sources resolve to their WebM. */
+	paths(fingerprint: string, kind: DerivativeKind, r?: AlphaSource | null): ArtifactPaths {
+		const alpha = kind.startsWith('proxy-') && this.alphaProxy(r);
+		const hash = this.hashOf(kind, alpha);
 		const base = join(this.deps.cacheDir, fingerprintHex(fingerprint));
 		switch (kind) {
 			case 'keyframes':
@@ -191,13 +222,13 @@ export class DerivativeService {
 			case 'peaks':
 				return { main: join(base, `peaks-${hash}.json`), dir: join(base, `peaks-${hash}`), hash };
 			default:
-				return { main: join(base, `${kind}-${hash}.mp4`), dir: null, hash };
+				return { main: join(base, `${kind}-${hash}.${alpha ? 'webm' : 'mp4'}`), dir: null, hash };
 		}
 	}
 
 	/** Public URL of an artifact (the params hash is the cache-busting query, S04:MS-002). */
 	url(mediaKey: string, kind: DerivativeKind): string {
-		const h = this.hashOf(kind);
+		const h = this.hashOf(kind, this.alphaProxy(this.deps.registry.get(mediaKey)));
 		const k = encodeURIComponent(mediaKey);
 		switch (kind) {
 			case 'keyframes':
@@ -221,7 +252,7 @@ export class DerivativeService {
 	}
 
 	async isReady(r: MediaRecord, kind: DerivativeKind): Promise<boolean> {
-		return exists(this.paths(r.fingerprint, kind).main);
+		return exists(this.paths(r.fingerprint, kind, r).main);
 	}
 
 	/** Per-kind status for `GET /api/media/:key` (S01:LIFE-050 shape). */
@@ -296,7 +327,7 @@ export class DerivativeService {
 		const input = ctx.input as DerivativeJobInput;
 		const r = this.deps.registry.get(input.mediaKey);
 		if (!r) throw new JobError('ASSET_NOT_FOUND', `Unknown media ${input.mediaKey}`, false);
-		const p = this.paths(r.fingerprint, input.kind);
+		const p = this.paths(r.fingerprint, input.kind, r);
 		const dk = this.dedupeKey(r, input.kind);
 		if (!(await exists(p.main))) {
 			const src = await this.deps.registry.resolvePath(r.mediaKey);
@@ -527,23 +558,60 @@ export class DerivativeService {
 		const outH = Math.min(height, srcH || height);
 		const outW = Math.max(2, Math.round(((srcW || outH) * outH) / (srcH || outH) / 2) * 2);
 		const rate = vs?.type === 'video' && vs.frameRate ? vs.frameRate : { num: 30, den: 1 };
-		const enc = videoEncodeArgs(choice, {
-			crf: height === 720 ? 23 : 26,
-			speed: height === 720 ? 'balanced' : 'fast',
-			width: outW,
-			height: outH,
-			fps: rate,
-			gop: 15,
-			realtime: true,
-			threads: ctx.slots,
-		});
-		const vf = [
-			...(r.interlaced ? ['yadif'] : []),
-			`scale=w=-2:h='min(${height},ih)':flags=bicubic`,
-			...enc.filters,
-		].join(',');
-		await this.deps.ff.run(
-			[
+		const scale = `scale=w=-2:h='min(${height},ih)':flags=bicubic`;
+		const deinterlace = r.interlaced ? ['yadif'] : [];
+		let args: string[];
+		if (this.alphaProxy(r)) {
+			// Alpha sources: VP9 yuva420p in WebM (see ALPHA_PROXY_ENCODER). WebM alpha inputs need libvpx to
+			// decode their alpha; WebM audio is Opus.
+			const dec = alphaDecoder(r.probe);
+			const opus = this.deps.encoders?.has('libopus') ?? false;
+			args = [
+				...(dec ? ['-c:v', dec] : []),
+				'-i',
+				src,
+				'-map',
+				'0:v:0',
+				...(opus ? ['-map', '0:a:0?'] : ['-an']),
+				'-vf',
+				[...deinterlace, scale, 'format=yuva420p'].join(','),
+				'-c:v',
+				ALPHA_PROXY_ENCODER,
+				'-pix_fmt',
+				'yuva420p',
+				'-b:v',
+				'0',
+				'-crf',
+				String(height === 720 ? 30 : 34),
+				'-deadline',
+				'realtime',
+				'-cpu-used',
+				'8',
+				'-row-mt',
+				'1',
+				'-auto-alt-ref',
+				'0',
+				'-g',
+				'15',
+				'-threads',
+				String(Math.max(1, ctx.slots)),
+				...(opus ? [...audioEncodeArgs('libopus', 128), '-ac', '2', '-ar', '48000'] : []),
+				'-f',
+				'webm',
+				tmp,
+			];
+		} else {
+			const enc = videoEncodeArgs(choice, {
+				crf: height === 720 ? 23 : 26,
+				speed: height === 720 ? 'balanced' : 'fast',
+				width: outW,
+				height: outH,
+				fps: rate,
+				gop: 15,
+				realtime: true,
+				threads: ctx.slots,
+			});
+			args = [
 				...enc.pre,
 				'-i',
 				src,
@@ -552,7 +620,7 @@ export class DerivativeService {
 				'-map',
 				'0:a:0?',
 				'-vf',
-				vf,
+				[...deinterlace, scale, ...enc.filters].join(','),
 				...enc.video,
 				// Proxies are always MP4 (VP9/AV1 in MP4 play in Chromium) with AAC audio.
 				...audioEncodeArgs('aac', 128),
@@ -565,20 +633,20 @@ export class DerivativeService {
 				'-f',
 				'mp4',
 				tmp,
-			],
-			{
-				signal: ctx.signal,
-				onSpawn: ctx.trackChild,
-				nice: 10,
-				onProgress: (pr) => {
-					if (dur <= 0) return;
-					const done = pr.outTimeUs / 1e6;
-					ctx.progress(done / dur, {
-						...(pr.speed ? { speed: pr.speed, etaSec: (dur - done) / pr.speed } : {}),
-					});
-				},
+			];
+		}
+		await this.deps.ff.run(args, {
+			signal: ctx.signal,
+			onSpawn: ctx.trackChild,
+			nice: 10,
+			onProgress: (pr) => {
+				if (dur <= 0) return;
+				const done = pr.outTimeUs / 1e6;
+				ctx.progress(done / dur, {
+					...(pr.speed ? { speed: pr.speed, etaSec: (dur - done) / pr.speed } : {}),
+				});
 			},
-		);
+		});
 		await rename(tmp, p.main);
 	}
 }
