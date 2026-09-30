@@ -160,6 +160,9 @@ export function sanitizeFileName(name: string): string {
 		.split('')
 		.filter((ch) => ch.charCodeAt(0) >= 32)
 		.join('')
+		.trim()
+		// The container extension is added by the export (users often type "name.mp4").
+		.replace(/\.mp4$/i, '')
 		.trim();
 	return cleaned || 'Export';
 }
