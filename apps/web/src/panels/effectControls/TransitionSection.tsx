@@ -60,7 +60,7 @@ export function TransitionSection(props: { session: EditorSession; host: 'effect
 		<section
 			className="border-b border-pr-border-subtle pb-2"
 			data-testid="transition-section"
-			data-transition-id={t.id}
+			data-inspected-transition={t.id}
 			data-host={props.host}
 		>
 			<header className="flex h-[28px] items-center gap-1 px-2 font-semibold text-pr-strong">
@@ -202,6 +202,14 @@ function AbDiagram(props: { session: EditorSession; geom: TransitionGeom; seq: S
 				className="relative h-[58px] overflow-hidden rounded-pr-control bg-pr-field-deep"
 				data-testid="transition-diagram"
 			>
+				<div
+					className="pointer-events-none absolute top-0 bottom-0"
+					style={{
+						left: pct(g.start),
+						width: width(g.start, g.end),
+						background: 'var(--pr-transition-selected-fill)',
+					}}
+				/>
 				{out ? (
 					<>
 						<Bar top={6} left={pct(out.start)} width={width(out.start, g.cut)} solid label="A" />
@@ -221,7 +229,14 @@ function AbDiagram(props: { session: EditorSession; geom: TransitionGeom; seq: S
 							width={width(g.cut - fin(g.handles.head, g.cut - lo), g.cut)}
 							data-testid="transition-handle-b"
 						/>
-						<Bar top={32} left={pct(g.cut)} width={width(g.cut, inc.start + inc.duration)} solid label="B" />
+						<Bar
+							top={32}
+							left={pct(g.cut)}
+							width={width(g.cut, inc.start + inc.duration)}
+							solid
+							label="B"
+							labelEnd
+						/>
 					</>
 				) : null}
 				<div
@@ -229,7 +244,6 @@ function AbDiagram(props: { session: EditorSession; geom: TransitionGeom; seq: S
 					style={{
 						left: pct(g.start),
 						width: width(g.start, g.end),
-						background: 'var(--pr-transition-selected-fill)',
 						boxShadow: 'inset 0 0 0 1px var(--pr-transition-selected)',
 					}}
 					data-testid="transition-span"
@@ -275,17 +289,20 @@ function Bar(props: {
 	width: string;
 	solid?: boolean;
 	label?: string;
+	labelEnd?: boolean;
 	'data-testid'?: string;
 }) {
 	return (
 		<div
-			className="absolute flex h-[20px] items-center overflow-hidden rounded-[2px] px-1 text-[10px] text-pr-strong"
+			className={`absolute flex h-[20px] items-center overflow-hidden rounded-[2px] px-1 text-[10px] font-semibold text-pr-strong ${props.labelEnd ? 'justify-end' : ''}`}
 			style={{
 				top: props.top,
 				left: props.left,
 				width: props.width,
 				background: props.solid ? 'var(--pr-bg-panel-raised)' : 'var(--pr-transition-handle-band)',
-				boxShadow: props.solid ? 'inset 0 0 0 1px var(--pr-border-strong)' : undefined,
+				boxShadow: props.solid
+					? 'inset 0 0 0 1px var(--pr-border-strong)'
+					: 'inset 0 0 0 1px var(--pr-border-subtle)',
 			}}
 			data-testid={props['data-testid']}
 		>
