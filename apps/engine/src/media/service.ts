@@ -178,6 +178,53 @@ export class MediaService {
 		});
 	}
 
+	/**
+	 * Registers a file the engine produced itself (M2, S07:PRC-003: a processed version). The file stays where
+	 * the producer wrote it (a content-addressed managed location); the record carries `derivedFrom`. The
+	 * usual derivatives follow, plus `proxy-720` (mandatory: browsers cannot decode ProRes).
+	 */
+	async registerDerived(
+		file: string,
+		opts: { fromMediaKey: string; recipeHash: string; name: string; projectId?: string },
+	): Promise<RegisteredMedia> {
+		const st = await stat(file).catch(() => null);
+		if (!st?.isFile()) throw new MediaError('ASSET_NOT_FOUND', 'Processed file not found');
+		const { fingerprint, sizeBytes } = await fingerprintFile(file);
+		const mediaKey = mediaKeyFor(fingerprint);
+		return this.mutex.run(mediaKey, async () => {
+			const existing = this.deps.registry.get(mediaKey);
+			let record: MediaRecord;
+			if (existing && (await this.deps.registry.availability(mediaKey)) === 'online') {
+				record = existing.derivedFrom
+					? existing
+					: { ...existing, derivedFrom: { mediaKey: opts.fromMediaKey, recipeHash: opts.recipeHash } };
+				if (record !== existing) await this.deps.registry.put(record);
+			} else {
+				const probe = await this.probe(file, fingerprint, opts.name, opts.projectId);
+				record = {
+					...this.makeRecord(
+						mediaKey,
+						fingerprint,
+						opts.name,
+						sizeBytes,
+						st.mtimeMs,
+						{ type: 'managed', path: file },
+						probe,
+					),
+					derivedFrom: { mediaKey: opts.fromMediaKey, recipeHash: opts.recipeHash },
+				};
+				await this.deps.registry.put(record);
+				this.deps.broadcaster.publish('media.updated', { mediaKey, status: 'processing' }, opts.projectId);
+			}
+			this.deps.derivatives.autoQueue(record, opts.projectId);
+			if (record.kind === 'video')
+				this.deps.derivatives.request(record, ['proxy-720'], {
+					...(opts.projectId ? { projectId: opts.projectId } : {}),
+				});
+			return this.deps.registry.toRegistered(record, { exposePath: this.deps.exposePaths });
+		});
+	}
+
 	private makeRecord(
 		mediaKey: string,
 		fingerprint: string,
