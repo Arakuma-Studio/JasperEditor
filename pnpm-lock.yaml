@@ -254,6 +254,9 @@ importers:
       '@fontsource/source-sans-3':
         specifier: ^5.2.0
         version: 5.3.0
+      '@jasper/project':
+        specifier: workspace:*
+        version: link:../project
       lucide-react:
         specifier: ^1.0.0
         version: 1.49.0(@types/react@19.3.0)(react@19.3.0)
@@ -261,9 +264,6 @@ importers:
         specifier: ^1.6.7
         version: 1.6.7(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
     devDependencies:
-      '@jasper/project':
-        specifier: workspace:*
-        version: link:../project
       '@types/react':
         specifier: ^19.2.0
         version: 19.3.0

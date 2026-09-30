@@ -1,12 +1,18 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { cx } from '../cx.ts';
+import { Icon } from '../icons/Icon.tsx';
+import { Tooltip } from './Tooltip.tsx';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'quiet' | 'danger';
 
 export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 	variant?: ButtonVariant;
-	/** Pill radius for dialog confirmation buttons (R-PUI §3.5). */
+	/** Pill radius for dialog confirmation buttons (R-PUI §3.5, S05:DG-001). */
 	pill?: boolean;
+	/** Async command in flight: inline spinner, disabled until done (S05:CT-003). */
+	busy?: boolean;
+	/** Shown as a tooltip when disabled (S05:SH-031). */
+	disabledReason?: string;
 	children?: ReactNode;
 };
 
@@ -17,28 +23,42 @@ const VARIANTS: Record<ButtonVariant, string> = {
 	danger: 'bg-pr-danger text-pr-on-accent border border-transparent hover:opacity-90',
 };
 
-/** Text button: 24 px high, 4 px radius, token colors only (S05 §11.1). */
+/** Text button: 24 px high, 4 px radius, 12 px text, token colors only (S05:CT-002). */
 export function Button({
 	variant = 'secondary',
 	pill,
+	busy,
+	disabledReason,
 	className,
 	type = 'button',
+	disabled,
 	children,
 	...rest
 }: ButtonProps) {
-	return (
+	const inert = disabled || busy;
+	const button = (
 		<button
 			type={type}
+			disabled={inert && !disabledReason}
+			aria-disabled={inert || undefined}
+			aria-busy={busy || undefined}
 			className={cx(
-				'inline-flex items-center justify-center gap-1 px-3 font-pr text-pr-ui select-none',
-				'h-[var(--pr-control-h)] transition-colors duration-100 disabled:opacity-40 disabled:pointer-events-none',
-				pill ? 'rounded-pr-pill' : 'rounded-pr-control',
+				'inline-flex items-center justify-center gap-1 px-[10px] font-pr text-pr-ui select-none whitespace-nowrap',
+				'h-[var(--pr-control-h)] transition-colors duration-100',
+				'disabled:opacity-40 disabled:pointer-events-none aria-disabled:opacity-40',
+				pill ? 'rounded-pr-pill px-4' : 'rounded-pr-control',
 				VARIANTS[variant],
 				className,
 			)}
 			{...rest}
+			onClick={inert ? (e) => e.preventDefault() : rest.onClick}
 		>
+			{busy ? <Icon id="app.spinner" size={14} className="animate-spin" /> : null}
 			{children}
 		</button>
 	);
+	return disabled && disabledReason ? <Tooltip content={disabledReason}>{button}</Tooltip> : button;
 }
+
+/** Alias matching the S05 §11.1 name. */
+export const TextButton = Button;

@@ -1,101 +1,211 @@
-// Icon registry keyed by semantic id (S05:IC-001…003). Components never import icon files directly;
-// swapping an icon is a registry change. WP-2A adds the custom NLE glyphs (S05:IC-004).
+// Icon registry keyed by semantic id (S05:IC-001…005). Components never import icon files directly;
+// swapping an icon is a registry change. Generic glyphs come from lucide-react (ISC); NLE glyphs that
+// lucide lacks are drawn by us on the same 24-unit grid (stroke = currentColor, 1.5 px, round caps).
+// No Adobe/Premiere artwork is copied or traced.
 import {
 	AudioLines,
 	Bookmark,
 	Bot,
+	Camera,
 	Captions,
+	Check,
 	ChevronDown,
+	ChevronLeft,
+	ChevronRight,
+	Circle,
+	CircleAlert,
+	CircleCheck,
+	CircleStop,
+	CircleX,
 	Clapperboard,
+	Command,
+	Copy,
 	Download,
+	Ellipsis,
+	Expand,
 	Eye,
 	EyeOff,
+	FilePlus,
 	Film,
 	Folder,
-	Gauge,
+	FolderPlus,
 	Hand,
 	History,
 	Home,
 	Image,
 	Info,
+	Keyboard,
+	LayoutGrid,
 	Link,
+	List,
+	ListChecks,
 	ListTodo,
+	LoaderCircle,
 	Lock,
 	LockOpen,
 	type LucideIcon,
 	Magnet,
 	Maximize2,
 	Menu,
+	Mic,
+	Minimize2,
 	Minus,
+	Monitor,
 	MousePointer2,
 	Pause,
+	Pipette,
 	Play,
 	Plus,
+	RefreshCw,
+	Repeat,
+	RotateCcw,
 	Scissors,
 	Search,
+	Server,
 	Settings,
+	Share,
+	Shrink,
 	SkipBack,
 	SkipForward,
 	SlidersHorizontal,
 	Sparkles,
+	Square,
 	SquareStack,
 	StepBack,
 	StepForward,
+	TriangleAlert,
 	Type,
 	Unlink,
 	Upload,
 	Volume2,
 	VolumeX,
 	Wand2,
+	WifiOff,
+	Wrench,
 	X,
 	ZoomIn,
+	ZoomOut,
 } from 'lucide-react';
 
 /** Custom glyph drawn on the 24-unit grid: `paths` are SVG path `d` strings (stroke = currentColor). */
 export type CustomGlyph = { kind: 'custom'; paths: string[] };
 export type IconSource = LucideIcon | CustomGlyph;
 
+const g = (...paths: string[]): CustomGlyph => ({ kind: 'custom', paths });
+/** Rounded square frame used by the engine marks (S05:IC-004: a letter in a rounded square, not a logo). */
+const FRAME = 'M6 3h12a3 3 0 013 3v12a3 3 0 01-3 3H6a3 3 0 01-3-3V6a3 3 0 013-3z';
+
 export const ICONS = {
-	// tools (S02:TL-590)
+	// ------------------------------------------------------------ tools (S02:TL-590, S05:IC-004)
 	'tool.selection': MousePointer2,
+	'tool.trackSelectForward': g('M6 5v14', 'M10 12h10', 'M16 8l4 4-4 4'),
+	'tool.trackSelectBackward': g('M18 5v14', 'M14 12H4', 'M8 8l-4 4 4 4'),
+	'tool.ripple': g('M8 4v16', 'M8 4h6', 'M8 20h6', 'M16 9l3 3-3 3'),
+	'tool.rolling': g('M10 4v16', 'M14 4v16', 'M6 12h3', 'M15 12h3'),
+	'tool.rateStretch': g('M4 12h16', 'M7 9l-3 3 3 3', 'M17 9l3 3-3 3'),
 	'tool.razor': Scissors,
+	'tool.slip': g('M4 6h16v12H4z', 'M9 12h6', 'M9 12l2-2', 'M15 12l-2 2'),
+	'tool.slide': g('M8 6h8v12H8z', 'M3 12h3', 'M18 12h3'),
+	'tool.pen': g('M12 20l-7-7 3-3 7 7', 'M15 17l4-10-10 4', 'M11 11l-1.5-1.5'),
+	'tool.rectangle': Square,
+	'tool.ellipse': Circle,
 	'tool.hand': Hand,
 	'tool.zoom': ZoomIn,
+	'tool.zoomOut': ZoomOut,
 	'tool.type': Type,
-	'tool.agent': Bot,
-	'tool.ripple': { kind: 'custom', paths: ['M8 4v16', 'M8 4h6', 'M8 20h6', 'M16 9l3 3-3 3'] },
-	'tool.rolling': { kind: 'custom', paths: ['M10 4v16', 'M14 4v16', 'M6 12h3', 'M15 12h3'] },
-	'tool.slip': { kind: 'custom', paths: ['M4 6h16v12H4z', 'M9 12h6', 'M9 12l2-2', 'M15 12l-2 2'] },
-	'tool.slide': { kind: 'custom', paths: ['M8 6h8v12H8z', 'M3 12h3', 'M18 12h3'] },
-	'tool.rateStretch': { kind: 'custom', paths: ['M4 12h16', 'M7 9l-3 3 3 3', 'M17 9l3 3-3 3'] },
-	'tool.pen': { kind: 'custom', paths: ['M12 20l-7-7 3-3 7 7', 'M15 17l4-10-10 4'] },
-	'tool.trackSelectForward': { kind: 'custom', paths: ['M6 6v12', 'M10 12h10', 'M16 8l4 4-4 4'] },
-	// transport
+	'tool.verticalType': g('M5 5h8', 'M9 5v10', 'M18 4v16', 'M15.5 17.5L18 20l2.5-2.5'),
+	'tool.agent': g(
+		'M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z',
+		'M18 15v5',
+		'M15.5 17.5h5',
+	),
+
+	// ------------------------------------------------------------ transport and monitor buttons
 	'transport.play': Play,
 	'transport.pause': Pause,
 	'transport.stepBack': StepBack,
 	'transport.stepForward': StepForward,
 	'transport.goToStart': SkipBack,
 	'transport.goToEnd': SkipForward,
-	'transport.markIn': { kind: 'custom', paths: ['M9 5H6v14h3'] },
-	'transport.markOut': { kind: 'custom', paths: ['M15 5h3v14h-3'] },
-	// tracks
+	'transport.markIn': g('M9 5H6v14h3'),
+	'transport.markOut': g('M15 5h3v14h-3'),
+	'transport.clearInOut': g('M8 5H5v14h3', 'M16 5h3v14h-3', 'M10 10l4 4', 'M14 10l-4 4'),
+	'transport.goToIn': g('M8 5H5v14h3', 'M20 12h-9', 'M14 8l-4 4 4 4'),
+	'transport.goToOut': g('M16 5h3v14h-3', 'M4 12h9', 'M10 8l4 4-4 4'),
+	'transport.insert': g('M3 17h7', 'M14 17h7', 'M12 4v12', 'M9 13l3 3 3-3'),
+	'transport.overwrite': g('M3 17h18', 'M12 4v9', 'M9 10l3 3 3-3', 'M8 17v3h8v-3'),
+	'transport.lift': g('M3 18h6', 'M15 18h6', 'M9 18v-3h6v3', 'M12 12V4', 'M9 7l3-3 3 3'),
+	'transport.extract': g('M3 18h7', 'M14 18h7', 'M10 18l2-3 2 3', 'M12 12V4', 'M9 7l3-3 3 3'),
+	'transport.exportFrame': Camera,
+	'transport.playInToOut': g('M5 5v14', 'M19 5v14', 'M9.5 8.5l6 3.5-6 3.5z'),
+	'transport.playAround': g('M4 12h3', 'M17 12h3', 'M9.5 8.5l6 3.5-6 3.5z'),
+	'transport.loop': Repeat,
+	'transport.safeMargins': g('M3 5h18v14H3z', 'M6.5 8h11v8h-11z'),
+	'transport.buttonEditor': Plus,
+	'transport.comparison': g('M3 6h8v12H3z', 'M13 6h8v12h-8z'),
+	'transport.matchFrame': g('M3 6h7v12H3z', 'M14 6h7v12h-7z', 'M10 12h4'),
+	'transport.dragVideo': Film,
+	'transport.dragAudio': AudioLines,
+
+	// ------------------------------------------------------------ timeline header
+	'timeline.snap': Magnet,
+	'timeline.link': Link,
+	'timeline.unlink': Unlink,
+	'timeline.nest': g('M4 5h16v14H4z', 'M8 9h8v6H8z'),
+	'timeline.addMarker': g('M7 4h10v9l-5 5-5-5z'),
+	'timeline.settings': Wrench,
+	'timeline.captionsTrack': Captions,
+
+	// ------------------------------------------------------------ track header (S05:IC-004)
 	'track.lock': Lock,
 	'track.unlock': LockOpen,
 	'track.output': Eye,
 	'track.outputOff': EyeOff,
 	'track.mute': VolumeX,
 	'track.audio': Volume2,
+	'track.solo': g(
+		'M15.5 8a3.5 2.8 0 00-3.5-2c-2.2 0-3.5 1.1-3.5 2.6S9.8 11 12 11.5s3.5 1.4 3.5 3S14.2 18 12 18a3.5 2.8 0 01-3.5-2',
+	),
+	'track.voiceOver': Mic,
 	'track.syncLock': Link,
 	'track.syncLockOff': Unlink,
-	'timeline.snap': Magnet,
-	'timeline.link': Link,
-	'timeline.unlink': Unlink,
-	// engines (badges)
-	'engine.remotion': Sparkles,
-	'engine.fframes': Wand2,
-	'engine.native': Gauge,
-	// panels (S05 §16)
+	'track.sourcePatch': g('M8 8h9a4 4 0 010 8H8a4 4 0 010-8z'),
+	'track.target': g('M4 8h16v8H4z'),
+	'track.keyframePrev': g('M8 8l-4 4 4 4', 'M16 8l4 4-4 4-4-4z'),
+	'track.keyframeAdd': g('M12 6l6 6-6 6-6-6z'),
+	'track.keyframeNext': g('M16 8l4 4-4 4', 'M8 8l4 4-4 4-4-4z'),
+
+	// ------------------------------------------------------------ project panel
+	'project.listView': List,
+	'project.iconView': LayoutGrid,
+	'project.freeformView': g('M4 4h7v6H4z', 'M14 8h6v5h-6z', 'M6 14h7v6H6z'),
+	'project.newBin': FolderPlus,
+	'project.newItem': FilePlus,
+	'project.automate': g('M4 6h6v5H4z', 'M4 14h6v5H4z', 'M14 12h7', 'M18 9l3 3-3 3'),
+	'project.find': Search,
+	'project.posterFrame': Image,
+	'project.hoverScrub': g('M4 6h16v12H4z', 'M4 15h16', 'M10 15v3'),
+
+	// ------------------------------------------------------------ engines (badges, S05:IC-004)
+	'engine.remotion': g(FRAME, 'M9.5 17V7h3.5a3 3 0 010 6H9.5', 'M12.5 13l3 4'),
+	'engine.fframes': g(FRAME, 'M9.5 17V7h5.5', 'M9.5 12h4.5'),
+	'engine.native': g(FRAME, 'M8.5 17V7l7 10V7'),
+	'engine.local': Monitor,
+	'engine.remote': Server,
+	'engine.offline': WifiOff,
+
+	// ------------------------------------------------------------ agent
+	'agent.sparkle': Sparkles,
+	'agent.plan': ListChecks,
+	'agent.toolCall': g('M14.5 5.5a4 4 0 00-5 5L4 16l4 4 5.5-5.5a4 4 0 005-5l-2.5 2.5-2.5-.5-.5-2.5z'),
+	'agent.apply': Check,
+	'agent.reject': X,
+	'agent.stop': CircleStop,
+
+	// ------------------------------------------------------------ effects (S05:IC-005)
+	'fx.badge': g('M9 18V8.5A2.5 2.5 0 0111.5 6H12', 'M7 11h4', 'M13 11l5 7', 'M18 11l-5 7'),
+
+	// ------------------------------------------------------------ panels (S05 §16)
 	'panel.project': Folder,
 	'panel.source': Film,
 	'panel.program': Clapperboard,
@@ -111,10 +221,13 @@ export const ICONS = {
 	'panel.markers': Bookmark,
 	'panel.agent': Bot,
 	'panel.jobs': ListTodo,
-	// generic
+
+	// ------------------------------------------------------------ media
 	'media.video': Film,
 	'media.image': Image,
 	'media.captions': Captions,
+
+	// ------------------------------------------------------------ app chrome
 	'app.search': Search,
 	'app.close': X,
 	'app.menu': Menu,
@@ -122,13 +235,46 @@ export const ICONS = {
 	'app.add': Plus,
 	'app.remove': Minus,
 	'app.maximize': Maximize2,
+	'app.restore': Minimize2,
 	'app.chevronDown': ChevronDown,
+	'app.chevronRight': ChevronRight,
+	'app.chevronLeft': ChevronLeft,
 	'app.import': Upload,
 	'app.export': Download,
+	'app.quickExport': Share,
+	'app.fullscreen': Expand,
+	'app.exitFullscreen': Shrink,
+	'app.workspaces': LayoutGrid,
+	'app.palette': Command,
+	'app.keyboard': Keyboard,
+	'app.jobs': LoaderCircle,
+	'app.spinner': LoaderCircle,
+	'app.check': Check,
+	'app.copy': Copy,
+	'app.reset': RotateCcw,
+	'app.refresh': RefreshCw,
+	'app.more': Ellipsis,
+	'app.eyedropper': Pipette,
+	'app.windowMinimize': Minus,
+	'app.windowMaximize': Square,
+	'status.info': Info,
+	'status.success': CircleCheck,
+	'status.warning': TriangleAlert,
+	'status.error': CircleX,
+	'status.alert': CircleAlert,
+	/** Three horizontal lines: the panel menu glyph drawn after the active tab title (S05:PC-004). */
+	'panel.menu': g('M5 8h14', 'M5 12h14', 'M5 16h14'),
+	/** Overflow chevrons for tab strips and workspace tabs (S05:PC-005). */
+	'panel.overflow': g('M6 7l5 5-5 5', 'M13 7l5 5-5 5'),
 } satisfies Record<string, IconSource>;
 
 export type IconId = keyof typeof ICONS;
 
 export function isCustomGlyph(src: IconSource): src is CustomGlyph {
 	return typeof src === 'object' && src !== null && (src as CustomGlyph).kind === 'custom';
+}
+
+/** Ids of every icon drawn by us (not lucide), for the glyph inventory test (S05:IC-004). */
+export function customGlyphIds(): IconId[] {
+	return (Object.keys(ICONS) as IconId[]).filter((id) => isCustomGlyph(ICONS[id]));
 }
