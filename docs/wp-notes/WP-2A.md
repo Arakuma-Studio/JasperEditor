@@ -144,8 +144,9 @@ Aliases are marked `hidden` so the palette lists only the canonical ids.
 - Manual run (`pnpm dev`, Chrome at 1920×1080 and 1280×577, `/project/demo`):
   - The Editing workspace renders every panel. Program is 47 % and Properties + Agent is the full-height right column at
     22 %.
-  - Tools measures 40.75 px and Audio Meters 52.75 px. dockview shares the 3 px gutter in 0.25 px steps, so fixed frames
-    are within 1 px of the target.
+  - Tools measures 40.00 px and Audio Meters 52.00 px at 1920×1080 and 1280×577 (review fix: the min-width gutter
+    allowance now matches dockview's gap·(n−1)/n share, 2.25 px in the 4-view bottom row). Layouts saved before that fix
+    keep their old 43 px minimum until "Reset All Panels".
   - With the pointer over the Timeline, the real `` ` `` key maximizes it; `` ` `` again restores every group rectangle
     exactly (AC-SH-5 verified pixel-equal).
   - Clicking Program outlines only its group.
@@ -182,3 +183,16 @@ Aliases are marked `hidden` so the palette lists only the canonical ids.
 - **Code splitting:** vendor chunks are split in `vite.config.ts`. Per-panel lazy loading needs the panel owners to wrap
   their components in `React.lazy`.
 - **Dev hook:** in dev builds `window.__jasperShell = { dock, workspaces, shell }` exposes the dock for E2E checks (WP-3I).
+
+## Review (WP-2A reviewer)
+
+Re-ran `pnpm install`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm --filter @jasper/web build`, plus `pnpm dev` with
+Chrome at 1920×1080 (layout, corrupt-storage toast, `` ` `` maximize, Ctrl+Shift+P) and the production build under
+`vite preview` (engine gate, then "Continue without engine" renders the dock). Fixes committed:
+
+- Fixed-width frames are exactly 40 / 52 px (they were 40.75 / 52.75).
+- Closing the focused panel through dockview (tab ×, group close) clears the focus store, so its keymap scope stops
+  winning and `panel.close` / `panel.float` stop targeting a removed instance. Backward focus cycling with nothing
+  focused now starts at the last panel.
+- Workspace ids resolve own keys only (`Object.hasOwn`): stored state or the agent-exposed `workspace.switch` could make
+  `"constructor"` / `"__proto__"` pass as workspace records.
