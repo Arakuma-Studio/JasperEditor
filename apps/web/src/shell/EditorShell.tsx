@@ -6,6 +6,7 @@ import { useSessionOrNull } from '@jasper/session/react';
 import { EmptyState, openDialog, type ResolvedMenuItem, toast } from '@jasper/ui';
 import {
 	type ComponentType,
+	type ReactNode,
 	useCallback,
 	useEffect,
 	useMemo,
@@ -14,7 +15,9 @@ import {
 	useSyncExternalStore,
 } from 'react';
 import { useNavigate } from 'react-router';
+import { setMonitorPanelServices } from '../panels/program/monitor-commands.ts';
 import { listPanels } from '../panels/registry.ts';
+import { type TimelineEnv, TimelineEnvProvider } from '../panels/timeline/env.tsx';
 import type { PanelDefinition, PanelKind } from '../panels/types.ts';
 import { getDesktopBridge } from '../runtime/platform.ts';
 import { ensureAutosaver, flushAutosaver } from '../runtime/save.ts';
@@ -423,7 +426,28 @@ function ShellBody() {
 export function EditorShell() {
 	return (
 		<ShellRuntimeProvider>
-			<ShellBody />
+			<PanelEnvBridge>
+				<ShellBody />
+			</PanelEnvBridge>
 		</ShellRuntimeProvider>
 	);
+}
+
+/**
+ * Integration: panels that shipped before the shell existed keep module-level fallbacks; point them at
+ * the shell's PanelServices and toast/dialog hosts so every panel shares one registry (S05:SH-005).
+ */
+function PanelEnvBridge({ children }: { children?: ReactNode }) {
+	const { services, getCtx } = useShellRuntime();
+	// Program/Source monitors publish `programPlayer` into this registry (WP-2C).
+	useMemo(() => setMonitorPanelServices(services), [services]);
+	const env = useMemo<Partial<TimelineEnv>>(
+		() => ({
+			services,
+			toast: (r) => getCtx().ui.toast(r),
+			openDialog: (kind, props) => getCtx().ui.openDialog(kind as never, props),
+		}),
+		[services, getCtx],
+	);
+	return <TimelineEnvProvider value={env}>{children}</TimelineEnvProvider>;
 }
