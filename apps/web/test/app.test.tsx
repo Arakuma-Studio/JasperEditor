@@ -32,7 +32,9 @@ describe('web app', () => {
 
 	it('opens the in-memory demo project in the editor shell', async () => {
 		// Desktop layout (≥ 1280 px) → the Editing workspace (S05:AC-SH-1).
-		(window as unknown as { happyDOM: { setViewport(v: { width: number; height: number }): void } }).happyDOM.setViewport({
+		(
+			window as unknown as { happyDOM: { setViewport(v: { width: number; height: number }): void } }
+		).happyDOM.setViewport({
 			width: 1920,
 			height: 1080,
 		});
