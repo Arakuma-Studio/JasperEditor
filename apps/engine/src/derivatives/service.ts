@@ -26,7 +26,8 @@ export const GENERATOR_VERSIONS: Record<DerivativeKind, number> = {
 	keyframes: 1,
 	poster: 1,
 	sprite: 1,
-	peaks: 1,
+	// v2: streams are keyed by the container stream index (S01 `channels.streamIndex`), not the audio ordinal.
+	peaks: 2,
 	'proxy-720': 1,
 	'proxy-540': 1,
 };
@@ -459,13 +460,16 @@ export class DerivativeService {
 				PEAKS_SAMPLE_RATE / PEAKS_PER_SECOND,
 				ctx.signal,
 			);
-			await writeFile(join(tmpDir, `${k}.bin`), planarBytes(res.channels));
+			// Files and `streams[].index` use the container stream index, which is what audio clips store in
+			// `channels.streamIndex` (S01:CLP-014), so the timeline finds `peaks/<streamIndex>.bin` directly.
+			const streamIndex = st.index;
+			await writeFile(join(tmpDir, `${streamIndex}.bin`), planarBytes(res.channels));
 			const sampleCount = res.channels[0]?.length ?? 0;
 			first ??= { channels, sampleCount, durationSec: res.frames / PEAKS_SAMPLE_RATE };
 			streams.push({
-				index: k,
+				index: streamIndex,
 				channels,
-				url: `/media/${encodeURIComponent(r.mediaKey)}/peaks/${k}.bin?v=${hash}`,
+				url: `/media/${encodeURIComponent(r.mediaKey)}/peaks/${streamIndex}.bin?v=${hash}`,
 			});
 			ctx.progress((k + 1) / audio.length);
 		}
