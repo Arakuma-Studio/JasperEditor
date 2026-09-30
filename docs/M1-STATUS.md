@@ -52,8 +52,9 @@ Item 1 clean-clone command: `git clone --branch wp/wp-3i <repo> /tmp/wp3i-clean 
 - **WP-2A / WP-2E (S05 §12.2): remaining commands.** Register the menubar/keymap ids listed in
   `apps/web/test/wiring-audit.test.ts`: clipboard (S01 §20), transitions, captions, shapes, Save As /
   Revert, preferences, keyboard shortcuts dialog, `sequence.settings`, and `timeline.toggleLinkedSelection`.
-- **WP-2F (D-13): OpenH264.** Run a native export with an LGPL ffmpeg + libopenh264 build; only the
-  argument selection is unit-tested. Hardware H.264 encoders (VAAPI/NVENC/QSV) are not selected yet.
+- **WP-2F (D-13): OpenH264 / hardware H.264.** Run a native export with an LGPL ffmpeg + libopenh264
+  build and on a GPU host. The WP-3L encoder selector (`apps/engine/src/tools/encoders.ts`) picks them, but
+  only its argument sets are unit-tested here (no libopenh264, no GPU on the dev host).
 - **WP-2F (S04:RP-006): audio mix.** Remotion-path exports are about 50 ms longer in container duration
   (AAC padding from Remotion's audio). The frame count is exact.
 - **WP-2H: `panel.focus.agent`.** Drop the duplicate registration in `commands/agent.ts` once the shell's

@@ -14,8 +14,10 @@ notes and known gaps are in `docs/wp-notes/`.
 ## Requirements
 
 - Node 20.19+ (tested on 20.20), pnpm 10 (`corepack enable` or `npm i -g pnpm@10`)
-- ffmpeg/ffprobe on `PATH` (system 6.x is fine) for fixtures and the engine. H.264 export uses libx264 when
-  the build has it, otherwise libopenh264 (ARCHITECTURE D-13: x264 is never required).
+- ffmpeg/ffprobe on `PATH` (system 6.x is fine) for fixtures and the engine. The encoder selector
+  (`apps/engine/src/tools/encoders.ts`, ARCHITECTURE D-13) picks usable hardware H.264, then libopenh264,
+  then libx264 (only in GPL dev builds), and otherwise falls back to AV1/VP9. x264 is never required;
+  `JASPER_FFMPEG_LGPL_ONLY=1` simulates the shipped LGPL build.
 - Optional: cargo for the `jasper-mg` motion-graphics renderer (`pnpm mg:build`; without it motion graphics
   export through Remotion).
 - E2E: Google Chrome at `/usr/bin/google-chrome` (Playwright `channel: 'chrome'`); desktop smoke: `xvfb-run`.
