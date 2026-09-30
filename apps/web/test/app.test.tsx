@@ -38,7 +38,7 @@ describe('web app', () => {
 			width: 1920,
 			height: 1080,
 		});
-		render(
+		const { unmount } = render(
 			<EngineProvider client={fakeEngine()} connectEvents={false}>
 				<MemoryRouter initialEntries={['/project/demo']}>
 					<AppRoutes />
@@ -53,5 +53,11 @@ describe('web app', () => {
 		await waitFor(() =>
 			expect(screen.getByTestId('project-breadcrumb').textContent).toContain('Demo project'),
 		);
+		// Panel bodies are code-split (React.lazy): let every chunk resolve before the environment is torn
+		// down, or React renders them after `window` is gone.
+		await waitFor(() => expect(document.querySelectorAll('[data-testid="panel-loading"]').length).toBe(0), {
+			timeout: 20_000,
+		});
+		unmount();
 	});
 });

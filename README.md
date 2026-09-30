@@ -5,23 +5,71 @@ ffmpeg (probe, proxies, fast export) and fframes motion graphics. Web app, insta
 desktop all load the same SPA and talk to the same local engine.
 
 Read `docs/ARCHITECTURE.md` first; functional specs live in `docs/specs/`, research in `docs/research/`.
+The M1 acceptance run (every ARCHITECTURE §15 item, with evidence) is in `docs/M1-STATUS.md`; per-package
+notes and known gaps are in `docs/wp-notes/`.
+
+**Clean-room rule:** never open, read, grep or copy anything from `.reference/` or `editor-starter.zip`
+(ARCHITECTURE §0). All code here is original.
 
 ## Requirements
 
 - Node 20.19+ (tested on 20.20), pnpm 10 (`corepack enable` or `npm i -g pnpm@10`)
-- ffmpeg/ffprobe on `PATH` (system 6.x is fine) for fixtures and the engine
-- Optional: cargo for the `jasper-mg` motion-graphics renderer (WP-2G)
+- ffmpeg/ffprobe on `PATH` (system 6.x is fine) for fixtures and the engine. H.264 export uses libx264 when
+  the build has it, otherwise libopenh264 (ARCHITECTURE D-13: x264 is never required).
+- Optional: cargo for the `jasper-mg` motion-graphics renderer (`pnpm mg:build`; without it motion graphics
+  export through Remotion).
+- E2E: Google Chrome at `/usr/bin/google-chrome` (Playwright `channel: 'chrome'`); desktop smoke: `xvfb-run`.
 
-## Getting started
+## Quick start
 
 ```bash
 pnpm install
-pnpm fixtures        # generates fixtures/media/{clip-a.mp4, clip-b.mp4, tone.wav, still.png, phone-rot90.mp4}
+pnpm fixtures        # fixtures/media/{clip-a.mp4, clip-b.mp4, tone.wav, still.png, phone-rot90.mp4}
+pnpm mg:build        # optional: native/mg → jasper-mg (fframes); the engine then reports fframes: ready
 pnpm dev             # engine on http://127.0.0.1:47900 + web on http://127.0.0.1:5173 (proxied, same origin)
 ```
 
-Open http://127.0.0.1:5173. The Home screen lists projects from the engine; "Open demo project" opens an
-in-memory project in the placeholder shell while the engine project store is being built.
+Open http://127.0.0.1:5173: Home lists the engine's projects; **New Project** opens the Editing workspace.
+
+Desktop (Electron):
+
+```bash
+pnpm dev                                   # in one terminal (the window loads http://127.0.0.1:5173)
+pnpm dev:desktop                           # in another; headless: xvfb-run -a env ELECTRON_DISABLE_SANDBOX=1 pnpm dev:desktop
+pnpm build && pnpm --filter @jasper/desktop start:packaged-like   # engine forked on a random port, token cookie
+```
+
+`ELECTRON_DISABLE_SANDBOX=1` is needed on hosts without the chrome-sandbox SUID helper. A fresh checkout may
+need `node node_modules/.pnpm/electron@*/node_modules/electron/install.js` if the Electron binary is missing.
+
+Running a second dev stack on other ports (another worktree): start the engine with
+`JASPER_DEV=1 JASPER_DEV_WEB_PORT=<vite port> tsx apps/engine/src/cli.ts --port <engine port>` and Vite with
+`JASPER_ENGINE_URL=http://127.0.0.1:<engine port> vite --port <vite port>`; Electron takes
+`JASPER_DESKTOP_DEV_URL=http://127.0.0.1:<vite port>`.
+
+## Tests
+
+```bash
+pnpm verify              # lint + typecheck + unit/integration tests + build
+pnpm e2e                 # builds engine + web, then Playwright (headless Chrome) against the built engine
+pnpm e2e:desktop         # Electron under xvfb: packaged-like and dev mode, screenshots in test-results/
+pnpm e2e:mg-fallback     # fframes ready → native plan; jasper-mg missing → Remotion plan with the reason
+```
+
+`pnpm e2e` starts `e2e/serve.mjs`: the built engine (`apps/engine/dist/engine.mjs`) serving the built web app
+on `127.0.0.1:${E2E_PORT:-48110}` with a throwaway appdir. `E2E_SKIP_BUILD=1` reuses existing builds,
+`E2E_KEEP_APPDIR=1` keeps the appdir for inspection. Specs:
+
+- `e2e/smoke.spec.ts` — Home → New Project → import `clip-a.mp4` (file chooser) → poster → drag to the
+  timeline → play → move/trim/razor → undo/redo → native export (ffprobe frame count) → Motion Templates
+  `lower-third@1` → native export with the fframes master → text clip → Remotion export → Program drops →
+  fframes render badge.
+- `e2e/editing.spec.ts` — workspace chrome, analysis jobs, filmstrip/waveform, Ctrl-drop insert, JKL and
+  timecode entry, Ctrl+K, Delete / Shift+Delete, ripple trim, Ctrl-move, snapping, Graphics ▸ Text,
+  Properties scrub, Program overlay move/scale.
+- `e2e/agent.spec.ts` — `POST /api/agent/tx` while the editor is open (live, `Agent:` History entry), an
+  approval-gated `track.remove` denied in the Agent panel, and a headless apply that shows up on reopen.
+- `e2e/pwa.spec.ts` — manifest, icons and service worker of the production build.
 
 ## Scripts
 
@@ -30,15 +78,16 @@ in-memory project in the placeholder shell while the engine project store is bei
 | `pnpm dev` | engine + web together (`concurrently`) |
 | `pnpm dev:engine` | `tsx watch apps/engine/src/cli.ts --port 47900` with `JASPER_APPDIR=./.stage JASPER_DEV=1` |
 | `pnpm dev:web` | Vite dev server on 5173 with the engine proxy |
-| `pnpm dev:desktop` | builds the Electron main/preload and launches it against 5173 (headless: `xvfb-run -a`) |
+| `pnpm dev:desktop` | builds the Electron main/preload and launches it against `JASPER_DESKTOP_DEV_URL` (default 5173) |
 | `pnpm typecheck` | `tsc --noEmit` in every package |
 | `pnpm test` | Vitest (all packages and apps as projects); `FUZZ=1 pnpm test` runs the long property sweeps |
 | `pnpm lint` | Biome + `scripts/check-tokens.mjs` (no color literals outside theme files, S05:DT-002) |
 | `pnpm format` | Biome formatter |
 | `pnpm build` | web (`vite build`), engine (`dist/engine.mjs`), desktop (`dist-electron/`) |
-| `pnpm mg:build` | builds `native/mg` (stub until WP-2G) |
+| `pnpm mg:build` | cargo release build of `native/mg` (`jasper-mg`); exits 0 without cargo |
 | `pnpm fixtures` | generates test media with ffmpeg |
-| `pnpm e2e` | Playwright smoke (wave 3) |
+| `pnpm e2e` | builds, then the Playwright suite (`e2e/`) |
+| `pnpm e2e:desktop` / `e2e:mg-fallback` / `e2e:typecheck` | Electron smoke / fframes fallback check / `tsc` over `e2e/` |
 | `pnpm verify` | lint + typecheck + test + build |
 
 ## Layout
@@ -51,7 +100,7 @@ packages/project  @jasper/project — document schema, commands, invariants, key
 packages/session  @jasper/session — EditorSession, history, gestures, transport, persistence
 packages/api      @jasper/api — zod contracts for engine routes and events
 packages/engine-client, packages/ui, packages/compositions, packages/mg-templates, packages/config
+native/mg         jasper-mg (Rust, fframes) motion-graphics renderer
+e2e/              Playwright specs + desktop / fframes smoke scripts
 .stage/           dev appdir (runtime files are gitignored)
 ```
-
-Clean-room rule: never open or copy anything from `.reference/` or `editor-starter.zip` (see ARCHITECTURE §0).
