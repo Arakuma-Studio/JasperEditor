@@ -21,7 +21,7 @@ import {
 } from '@jasper/session';
 import { SessionProvider, useSession, useStoreSelector } from '@jasper/session/react';
 import { Button, Z } from '@jasper/ui';
-import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { type ReactNode, useEffect, useState, useSyncExternalStore } from 'react';
 import { ExportMode } from '../export/ExportMode.tsx';
 import { isTrackedExport, takeTrackedExport, useExportMode } from '../export/mode.ts';
 import { ImportPromptHost } from '../import/ImportPromptHost.tsx';
@@ -59,12 +59,10 @@ export function usePersistenceStatus(session: EditorSession | null): AutosaveSta
 export function ProjectLifecycle(props: { children?: ReactNode }) {
 	const outer = useSession();
 	const [session, setSession] = useState<EditorSession>(outer);
-	const replaced = useRef<EditorSession | null>(null);
 	useEffect(() => setSession(outer), [outer]);
 	// A session opened here (take over / reopen) is ours to close.
 	useEffect(() => {
 		if (session === outer) return;
-		replaced.current = session;
 		return () => {
 			void session.close();
 		};

@@ -7,7 +7,6 @@ import {
 	formatTimecode,
 	type MediaAsset,
 	mediaUsage,
-	nearestAllowedRate,
 	type ProjectDocument,
 	type ProjectItem,
 	type Rational,
@@ -120,9 +119,9 @@ function mediaRate(asset: MediaAsset): Rational | null {
 	return vs.frameRate;
 }
 
+/** Media timecodes are non-drop-frame (source files carry no drop-frame flag in the M1 probe). */
 function timecodeAt(flicks: number, rate: Rational): string {
-	const r = nearestAllowedRate(rate);
-	return formatTimecode(flicksToFrames(flicks, rate, 'round'), rate, { dropFrame: r.den === 1001 });
+	return formatTimecode(flicksToFrames(flicks, rate, 'round'), rate);
 }
 
 const CHANNEL_NAMES: Record<number, string> = { 1: 'Mono', 2: 'Stereo', 6: '5.1' };
