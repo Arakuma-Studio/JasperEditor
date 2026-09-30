@@ -1,23 +1,47 @@
-// Waveform stream lookup: clips carry the container stream index of their audio, the engine writes one
-// peaks file per audio ordinal (`0:a:k`). A movie's audio is usually container stream 1 → peaks 0.
+// Waveform stream lookup: clips carry the container stream index of their audio (S01:CLP-014) and the engine
+// keys peaks by that same index (peaks generator v2, WP-3I). A movie's audio is usually container stream 1.
 import type { MediaAsset } from '@jasper/project';
-import { describe, expect, it } from 'vitest';
-import { audioOrdinal } from '../src/panels/timeline/media/media-cache.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { peaksFor } from '../src/panels/timeline/media/media-cache.ts';
 import { waveHeight } from '../src/panels/timeline/model/waveform.ts';
 
-const asset = (types: ('video' | 'audio')[]) =>
-	({ probe: { streams: types.map((type, index) => ({ index, type })) } }) as unknown as MediaAsset;
+const movie = {
+	locators: [],
+	probe: {
+		streams: [
+			{ index: 0, type: 'video' },
+			{ index: 1, type: 'audio' },
+		],
+	},
+} as unknown as MediaAsset;
 
-describe('audioOrdinal', () => {
-	it('maps a movie audio stream (container index 1) to peaks stream 0', () => {
-		expect(audioOrdinal(asset(['video', 'audio']), 1)).toBe(0);
-	});
-	it('counts only audio streams', () => {
-		expect(audioOrdinal(asset(['video', 'audio', 'video', 'audio']), 3)).toBe(1);
-	});
-	it('keeps audio-only files at 0 and falls back to the index when the stream is unknown', () => {
-		expect(audioOrdinal(asset(['audio']), 0)).toBe(0);
-		expect(audioOrdinal(undefined, 2)).toBe(2);
+afterEach(() => {
+	vi.unstubAllGlobals();
+});
+
+describe('peaksFor stream lookup', () => {
+	it("requests the peaks stream with the clip's container stream index (movie audio = stream 1)", async () => {
+		const header = {
+			peaksPerSecond: 100,
+			channels: 1,
+			sampleCount: 2,
+			durationSec: 0.02,
+			streams: [{ index: 1, channels: 1, url: '/media/k/peaks/1.bin?v=h' }],
+		};
+		const urls: string[] = [];
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (url: string) => {
+				urls.push(url);
+				if (url.includes('peaks.json')) return new Response(JSON.stringify(header));
+				return new Response(new Float32Array([0.5, 0.25]).buffer);
+			}),
+		);
+		const runtime = { peaksUrl: '/media/k/peaks.json?v=h' } as never;
+		expect(peaksFor(null, movie, runtime, 1)).toBeNull();
+		await vi.waitFor(() => expect(peaksFor(null, movie, runtime, 1)).not.toBeNull());
+		expect(urls).toEqual(['/media/k/peaks.json?v=h', '/media/k/peaks/1.bin?v=h']);
+		expect(Array.from(peaksFor(null, movie, runtime, 1)!.channels[0]!)).toEqual([0.5, 0.25]);
 	});
 });
 

@@ -98,13 +98,6 @@ export type PeaksData = { header: PeaksHeader; channels: Float32Array[]; key: st
 const peaks = new Map<string, Entry<PeaksData>>();
 
 /** Peaks of one audio stream (planar float32 per channel, WF-001), or null until loaded. */
-/** Audio-stream ordinal of a container stream index (falls back to the index itself when unknown). */
-export function audioOrdinal(asset: MediaAsset | undefined, streamIndex: number): number {
-	const audio = asset?.probe?.streams?.filter((st) => st.type === 'audio') ?? [];
-	const k = audio.findIndex((st) => st.index === streamIndex);
-	return k >= 0 ? k : streamIndex;
-}
-
 export function peaksFor(
 	engine: EngineClient | null,
 	asset: MediaAsset | undefined,
@@ -114,18 +107,17 @@ export function peaksFor(
 	const key = mediaKeyOf(asset);
 	const headerUrl = runtime?.peaksUrl ?? (engine && key ? engine.mediaUrl(key, 'peaks.json') : null);
 	if (!headerUrl || typeof fetch === 'undefined') return null;
-	// Clips address audio by container stream index (a movie's audio is usually stream 1), while the
-	// engine numbers peak streams by audio ordinal (`0:a:k`). Map one to the other before the lookup.
-	const ordinal = audioOrdinal(asset, streamIndex);
-	const cacheKey = `${headerUrl}#${ordinal}`;
+	// Clips address audio by container stream index (S01:CLP-014; a movie's audio is usually stream 1) and
+	// the engine keys peak streams and `peaks/<n>.bin` by the same container index (peaks generator v2).
+	const cacheKey = `${headerUrl}#${streamIndex}`;
 	return cached(peaks, cacheKey, async () => {
 		const header = PeaksHeaderSchema.parse(await fetchJson(headerUrl));
-		const s = header.streams?.find((x) => x.index === ordinal);
+		const s = header.streams?.find((x) => x.index === streamIndex);
 		const binUrl =
 			s?.url ??
 			(engine && key
-				? engine.mediaUrl(key, { peaks: ordinal })
-				: headerUrl.replace(/peaks\.json.*$/, `peaks/${ordinal}.bin`));
+				? engine.mediaUrl(key, { peaks: streamIndex })
+				: headerUrl.replace(/peaks\.json.*$/, `peaks/${streamIndex}.bin`));
 		const res = await fetch(binUrl);
 		if (!res.ok) throw new Error(`${res.status}`);
 		const all = new Float32Array(await res.arrayBuffer());
