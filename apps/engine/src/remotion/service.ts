@@ -130,9 +130,10 @@ export class RemotionService {
 		if (fromEnv && existsSync(join(fromEnv, 'index.html'))) return fromEnv;
 		try {
 			const here = dirname(fileURLToPath(import.meta.url));
-			for (const cand of [join(here, 'remotion-bundle'), join(here, '..', '..', 'dist', 'remotion-bundle')]) {
-				if (existsSync(join(cand, 'index.html'))) return cand;
-			}
+			// Packaged engine (dist/engine.mjs): the prebuilt bundle sits next to it. Dev engines (tsx, src/)
+			// never use a prebuilt bundle, so composition edits are always picked up.
+			const cand = join(here, 'remotion-bundle');
+			if (existsSync(join(cand, 'index.html'))) return cand;
 		} catch {
 			// ignore
 		}
