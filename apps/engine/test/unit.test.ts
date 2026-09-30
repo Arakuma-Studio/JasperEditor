@@ -277,6 +277,17 @@ describe('dev web port (WP-3I)', () => {
 			[],
 		);
 	});
+
+	it('resolves a relative JASPER_WEB_DIR against the working directory (@fastify/static needs an absolute root)', async () => {
+		const { engineConfig } = await import('../src/index.ts');
+		const { isAbsolute, resolve } = await import('node:path');
+		const base = { appdir: '/tmp/jasper-x', port: 48121, dev: false } as const;
+		const rel = engineConfig({ ...base, env: { JASPER_WEB_DIR: 'apps/web/dist' } }).webDir;
+		expect(rel).toBe(resolve('apps/web/dist'));
+		expect(isAbsolute(rel ?? '')).toBe(true);
+		expect(engineConfig({ ...base, webDir: '/srv/web', env: {} }).webDir).toBe('/srv/web');
+		expect(engineConfig({ ...base, env: {} }).webDir).toBeNull();
+	});
 });
 
 describe('H.264 encoder choice (ARCHITECTURE D-13, WP-3I)', () => {

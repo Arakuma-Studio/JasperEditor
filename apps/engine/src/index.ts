@@ -1,6 +1,6 @@
 // startEngine (ARCHITECTURE §9.1): builds the config, prepares the appdir, listens on 127.0.0.1.
 import { mkdirSync, readdirSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { appdirPaths, DEFAULT_ENGINE_HOST, DEV_WEB_PORT, ENV, isTruthyEnv } from '@jasper/config';
 import type { FastifyInstance } from 'fastify';
 import type { EngineConfig } from './context.ts';
@@ -57,10 +57,15 @@ export function engineConfig(opts: StartEngineOptions): EngineConfig {
 		token: opts.token ?? env[ENV.LOCAL_TOKEN] ?? null,
 		host: opts.host ?? DEFAULT_ENGINE_HOST,
 		port: opts.port,
-		webDir: opts.webDir ?? env[ENV.WEB_DIR] ?? null,
+		// @fastify/static only accepts an absolute root; `JASPER_WEB_DIR=apps/web/dist` is relative to the cwd.
+		webDir: resolveWebDir(opts.webDir ?? env[ENV.WEB_DIR] ?? null),
 		version: ENGINE_VERSION,
 		extraHosts: dev ? [`127.0.0.1:${devWebPort}`, `localhost:${devWebPort}`] : [],
 	};
+}
+
+function resolveWebDir(dir: string | null): string | null {
+	return dir ? resolve(dir) : null;
 }
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
