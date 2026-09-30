@@ -141,9 +141,39 @@ export function volumeFrameToClipFrame(volumeFrame: number, sequenceFrom: number
 	return volumeFrame + Math.max(0, -sequenceFrom);
 }
 
-/** Media URL for a layer: the proxy when proxies are on and ready, else the original. */
-export function mediaSrc(media: MediaHandle, options: Pick<RenderOptions, 'useProxies'>): string {
-	return options.useProxies && media.proxyUrl ? media.proxyUrl : media.url;
+/**
+ * Media URL for a layer: the proxy when it is ready and either proxies are on or the browser cannot decode
+ * the original (mandatory proxy, S04:PX-004: ProRes, DNxHD…), else the original.
+ */
+export function mediaSrc(
+	media: Pick<MediaHandle, 'url' | 'proxyUrl' | 'browserDecodable'>,
+	options: Pick<RenderOptions, 'useProxies'>,
+): string {
+	return (options.useProxies || media.browserDecodable === false) && media.proxyUrl
+		? media.proxyUrl
+		: media.url;
+}
+
+/** Where a video layer gets its picture from (S03:KND-010). */
+export type VideoSource =
+	/** `@remotion/media` `<Video>` (WebCodecs): everything a browser decodes, VP8/VP9 alpha included. */
+	| { via: 'media'; src: string }
+	/**
+	 * `<OffthreadVideo>`: frames extracted by the render's FFmpeg. For originals a browser cannot decode
+	 * (ProRes…), in engine renders only; `transparent` keeps the alpha channel (ProRes 4444).
+	 */
+	| { via: 'offthread'; src: string; transparent: boolean }
+	/** Preview of an original the browser cannot decode while its proxy is not ready yet. */
+	| { via: 'pending-proxy' };
+
+export function videoSource(
+	media: Pick<MediaHandle, 'url' | 'proxyUrl' | 'browserDecodable' | 'alpha'>,
+	options: Pick<RenderOptions, 'useProxies' | 'isPreview'>,
+): VideoSource {
+	if (media.browserDecodable !== false) return { via: 'media', src: mediaSrc(media, options) };
+	// Renders never use proxies: full quality, and an alpha original keeps its alpha.
+	if (!options.isPreview) return { via: 'offthread', src: media.url, transparent: media.alpha === true };
+	return media.proxyUrl ? { via: 'media', src: media.proxyUrl } : { via: 'pending-proxy' };
 }
 
 /** Premount window for media layers: 2 s of frames (S03:RND-020). */

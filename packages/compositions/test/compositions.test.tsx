@@ -49,6 +49,7 @@ import {
 	trimBeforeFrames,
 	UnsupportedLayer,
 	VideoLayer,
+	videoSource,
 	volumeFrameToClipFrame,
 } from '../src/index.ts';
 
@@ -437,6 +438,39 @@ describe('media timing and audio gain', () => {
 		expect(mediaSrc(HANDLE, { useProxies: false })).toBe('/media/mk_1');
 		expect(mediaSrc(HANDLE, { useProxies: true })).toBe('/media/mk_1/proxy/720');
 		expect(mediaSrc({ ...HANDLE, proxyUrl: null }, { useProxies: true })).toBe('/media/mk_1');
+	});
+
+	it('plays the proxy of an original the browser cannot decode, and renders it off-thread', () => {
+		const prores = { ...HANDLE, browserDecodable: false };
+		// Mandatory proxy (S04:PX-004): used even when proxies are off.
+		expect(mediaSrc(prores, { useProxies: false })).toBe('/media/mk_1/proxy/720');
+		expect(videoSource(prores, { useProxies: false, isPreview: true })).toEqual({
+			via: 'media',
+			src: '/media/mk_1/proxy/720',
+		});
+		expect(videoSource({ ...prores, proxyUrl: null }, { useProxies: false, isPreview: true })).toEqual({
+			via: 'pending-proxy',
+		});
+		// Renders read the original through the render's FFmpeg; alpha (ProRes 4444) stays transparent.
+		expect(videoSource(prores, { useProxies: false, isPreview: false })).toEqual({
+			via: 'offthread',
+			src: '/media/mk_1',
+			transparent: false,
+		});
+		expect(videoSource({ ...prores, alpha: true }, { useProxies: true, isPreview: false })).toEqual({
+			via: 'offthread',
+			src: '/media/mk_1',
+			transparent: true,
+		});
+		// Browser-decodable media (H.264, VP9 with alpha) stays on <Video> in previews and renders.
+		expect(videoSource({ ...HANDLE, alpha: true }, { useProxies: false, isPreview: false })).toEqual({
+			via: 'media',
+			src: '/media/mk_1',
+		});
+		expect(videoSource(HANDLE, { useProxies: true, isPreview: true })).toEqual({
+			via: 'media',
+			src: '/media/mk_1/proxy/720',
+		});
 	});
 
 	it('maps the volume-callback frame to the clip-local frame', () => {
