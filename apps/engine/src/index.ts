@@ -61,9 +61,23 @@ export function engineConfig(opts: StartEngineOptions): EngineConfig {
 	};
 }
 
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
+
+export function isLoopbackHost(host: string): boolean {
+	return LOOPBACK_HOSTS.has(host.toLowerCase());
+}
+
 export async function startEngine(opts: StartEngineOptions): Promise<RunningEngine> {
-	prepareAppdir(opts.appdir);
 	const config = engineConfig(opts);
+	// M1 binds loopback only (ARCHITECTURE §4.2, S04:ENG-020). The Host check alone does not protect a
+	// network-reachable engine (remote clients can send any Host header), so a non-loopback bind
+	// without a token is refused until remote password mode lands (M2).
+	if (!isLoopbackHost(config.host) && !config.token) {
+		throw new Error(
+			`Refusing to bind ${config.host} without ${ENV.LOCAL_TOKEN}: remote mode is M2 and the engine would be unauthenticated`,
+		);
+	}
+	prepareAppdir(opts.appdir);
 	const app = await createServer(config, { logger: opts.logger });
 	await app.listen({ host: config.host, port: opts.port });
 	const addr = app.server.address();

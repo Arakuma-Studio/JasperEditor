@@ -34,6 +34,17 @@ export function allowedHosts(config: EngineConfig): Set<string> {
 	return hosts;
 }
 
+export function isAllowedOrigin(origin: string, config: EngineConfig): boolean {
+	try {
+		const u = new URL(origin);
+		return (
+			(u.protocol === 'http:' || u.protocol === 'https:') && allowedHosts(config).has(u.host.toLowerCase())
+		);
+	} catch {
+		return false; // includes the opaque "null" origin
+	}
+}
+
 export function sendError(
 	reply: FastifyReply,
 	status: number,
@@ -68,6 +79,12 @@ export async function createServer(
 		const host = (req.headers.host ?? '').toLowerCase();
 		if (!allowedHosts(config).has(host)) {
 			return sendError(reply, 403, 'FORBIDDEN_HOST', `Host "${host}" is not allowed`);
+		}
+		// Same-origin only (S04:SC-001): browsers send Origin on cross-origin requests, including
+		// "simple" no-cors POSTs that would otherwise reach the engine from any web page (CSRF).
+		const origin = req.headers.origin;
+		if (origin !== undefined && !isAllowedOrigin(origin, config)) {
+			return sendError(reply, 403, 'FORBIDDEN_ORIGIN', `Origin "${origin}" is not allowed`);
 		}
 		if (!config.token) return;
 		const path = req.url.split('?')[0]!;

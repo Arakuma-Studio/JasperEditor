@@ -165,6 +165,30 @@ describe('engine server (ARCHITECTURE §9.1, §4.2)', () => {
 		expect(bad.json().code).toBe('VALIDATION_FAILED');
 	});
 
+	it('rejects cross-origin requests (same-origin only, S04:SC-001)', async () => {
+		const app = await make();
+		const post = (origin?: string) =>
+			app.inject({
+				method: 'POST',
+				url: '/api/jobs/x/cancel',
+				headers: { ...H, ...(origin !== undefined ? { origin } : {}) },
+			});
+		const evil = await post('https://evil.example');
+		expect(evil.statusCode).toBe(403);
+		expect(evil.json()).toMatchObject({ code: 'FORBIDDEN_ORIGIN' });
+		expect((await post('null')).statusCode).toBe(403);
+		expect((await post('http://127.0.0.1:47900')).statusCode).toBe(501);
+		expect((await post('http://localhost:5173')).statusCode).toBe(501);
+		expect((await post()).statusCode).toBe(501);
+	});
+
+	it('refuses a non-loopback bind without a token (M1 is loopback only)', async () => {
+		const appdir = mkdtempSync(join(tmpdir(), 'jasper-engine-'));
+		await expect(startEngine({ appdir, port: 0, host: '0.0.0.0', dev: true, env: {} })).rejects.toThrow(
+			/Refusing to bind/,
+		);
+	});
+
 	it('startEngine listens on a random port and prepares the appdir', async () => {
 		const appdir = mkdtempSync(join(tmpdir(), 'jasper-engine-'));
 		const engine = await startEngine({ appdir, port: 0, dev: true, env: {} });
