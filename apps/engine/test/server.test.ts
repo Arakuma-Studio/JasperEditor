@@ -20,7 +20,7 @@ async function make(opts: { token?: string | null; dev?: boolean; webDir?: strin
 		webDir: opts.webDir ?? null,
 		env: {},
 	});
-	const app = await createServer(config);
+	const app = await createServer(config, { env: { PATH: process.env.PATH } });
 	apps.push(app);
 	return app;
 }
@@ -35,10 +35,10 @@ describe('engine server (ARCHITECTURE §9.1, §4.2)', () => {
 		expect(r.headers['x-jasper-api']).toBe('1');
 	});
 
-	it('every §9.2 route is registered and answers 501 NOT_IMPLEMENTED', async () => {
+	it('every §9.2 route is registered: WP-2F routes are implemented, others answer 501', async () => {
 		const app = await make();
 		for (const [name, route] of Object.entries(ROUTES)) {
-			if (name === 'health') continue;
+			if (name === 'health' || name === 'events') continue; // /events streams (tested in events.test.ts)
 			const url = route.path
 				.replace(/:([A-Za-z]+)/g, (_, p: string) => (p === 'projectId' ? 'prj_0000000000000001' : `x${p}`))
 				.replace('*', 'inter/400.woff2');
@@ -54,9 +54,14 @@ describe('engine server (ARCHITECTURE §9.1, §4.2)', () => {
 				},
 				payload: route.method === 'POST' || route.method === 'PUT' ? '{}' : undefined,
 			});
-			expect(r.statusCode, `${route.method} ${route.path}`).toBe(501);
-			expect(r.json()).toMatchObject({ code: 'NOT_IMPLEMENTED', retryable: false });
-			expect(r.headers['x-jasper-api']).toBe('1');
+			expect(r.headers['x-jasper-api'], `${route.method} ${route.path}`).toBe('1');
+			if (route.owner === 'WP-2F') {
+				expect(r.statusCode, `${route.method} ${route.path}`).not.toBe(501);
+				if (r.statusCode >= 400) expect(r.json()).toHaveProperty('code');
+			} else {
+				expect(r.statusCode, `${route.method} ${route.path}`).toBe(501);
+				expect(r.json()).toMatchObject({ code: 'NOT_IMPLEMENTED', retryable: false });
+			}
 		}
 	});
 
@@ -91,7 +96,7 @@ describe('engine server (ARCHITECTURE §9.1, §4.2)', () => {
 					headers: { ...H, authorization: 'Bearer s3cret' },
 				})
 			).statusCode,
-		).toBe(501);
+		).toBe(200);
 		expect(
 			(
 				await app.inject({
@@ -100,7 +105,7 @@ describe('engine server (ARCHITECTURE §9.1, §4.2)', () => {
 					headers: { ...H, cookie: 'a=b; jasper_session=s3cret' },
 				})
 			).statusCode,
-		).toBe(501);
+		).toBe(200);
 		expect(
 			(
 				await app.inject({
@@ -177,9 +182,10 @@ describe('engine server (ARCHITECTURE §9.1, §4.2)', () => {
 		expect(evil.statusCode).toBe(403);
 		expect(evil.json()).toMatchObject({ code: 'FORBIDDEN_ORIGIN' });
 		expect((await post('null')).statusCode).toBe(403);
-		expect((await post('http://127.0.0.1:47900')).statusCode).toBe(501);
-		expect((await post('http://localhost:5173')).statusCode).toBe(501);
-		expect((await post()).statusCode).toBe(501);
+		// Allowed origins reach the route (404: the job does not exist).
+		expect((await post('http://127.0.0.1:47900')).statusCode).toBe(404);
+		expect((await post('http://localhost:5173')).statusCode).toBe(404);
+		expect((await post()).statusCode).toBe(404);
 	});
 
 	it('refuses a non-loopback bind without a token (M1 is loopback only)', async () => {

@@ -9,6 +9,7 @@ import { API_HEADER, API_VERSION, AUTH_COOKIE, errorBody, isEnginePath } from '@
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import type { EngineConfig, EngineContext } from './context.ts';
 import { registerRoutes } from './routes/index.ts';
+import { createCoreServices } from './tools/services.ts';
 
 export const JSON_BODY_LIMIT = 20 * 1024 * 1024;
 
@@ -60,11 +61,30 @@ export function sendError(
 
 export async function createServer(
 	config: EngineConfig,
-	opts: { logger?: boolean } = {},
+	opts: { logger?: boolean; env?: Record<string, string | undefined>; totalSlots?: number } = {},
 ): Promise<FastifyInstance> {
 	const app = Fastify({ logger: opts.logger ?? false, bodyLimit: JSON_BODY_LIMIT, trustProxy: false });
 	const ctx: EngineContext = { config, services: {} };
 	app.decorate('jasper', ctx);
+
+	// Core services (WP-2F): jobs, events, media, projects, exports… Other packages reach them through
+	// `coreServices(app)` (see docs/wp-notes/WP-2F.md).
+	const core = await createCoreServices(config, {
+		jsonBodyLimit: JSON_BODY_LIMIT,
+		env: opts.env,
+		totalSlots: opts.totalSlots,
+		log: (m) => app.log.info(m),
+	});
+	Object.assign(ctx.services, {
+		core,
+		jobs: core.queue,
+		broadcaster: core.broadcaster,
+		mediaRegistry: core.registry,
+		projects: core.projects,
+		ffmpeg: core.ffmpeg,
+	});
+	app.addHook('onReady', async () => core.start());
+	app.addHook('onClose', async () => core.stop());
 
 	// Raw bodies for chunked uploads (streamed to disk by WP-2F).
 	app.addContentTypeParser('application/octet-stream', (_req, payload, done) => done(null, payload));
@@ -79,6 +99,22 @@ export async function createServer(
 		const host = (req.headers.host ?? '').toLowerCase();
 		if (!allowedHosts(config).has(host)) {
 			return sendError(reply, 403, 'FORBIDDEN_HOST', `Host "${host}" is not allowed`);
+		}
+		// Signed media/font/render URLs (S04:MS-003) serve the headless Remotion browser, which cannot
+		// send the session cookie and fetches cross-origin from its own bundle server.
+		if (core.signer.verify(req.url)) {
+			reply.header('access-control-allow-origin', '*');
+			reply.header('access-control-expose-headers', 'content-length, content-range, accept-ranges, etag');
+			reply.header('cross-origin-resource-policy', 'cross-origin');
+			if (req.method === 'OPTIONS') {
+				return reply
+					.code(204)
+					.header('access-control-allow-methods', 'GET, HEAD, OPTIONS')
+					.header('access-control-allow-headers', 'range, if-range, if-none-match')
+					.header('access-control-max-age', '600')
+					.send();
+			}
+			return;
 		}
 		// Same-origin only (S04:SC-001): browsers send Origin on cross-origin requests, including
 		// "simple" no-cors POSTs that would otherwise reach the engine from any web page (CSRF).
