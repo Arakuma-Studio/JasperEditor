@@ -19,6 +19,12 @@
 //   --ffmpeg-prefix <d>  use an existing LGPL FFmpeg install prefix (bin/ + lib/) instead
 //   --force              re-assemble even if BUILDINFO.json matches the manifest
 //   --out <dir>          output directory (default vendor/ffmpeg-lgpl/<platform>)
+//   --work <dir>         download cache + source-build directory (default vendor/ffmpeg-lgpl/.cache; also
+//                        JASPER_FFMPEG_WORK)
+//
+// vid.stab (S07:PST-003): a source build includes libvidstab from the pinned post-relicense commit
+// (manifest.json `vidstab`); the prefix records it in share/jasper/libvidstab.json, which becomes
+// BUILDINFO.json `libvidstab` — the only way `pnpm ffmpeg:check` accepts --enable-libvidstab.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -64,7 +70,7 @@ const manifest = loadManifest();
 const host = platformKey();
 const key = opt('platform') ?? host;
 const out = opt('out') ?? join(VENDOR_DIR, key);
-const cache = join(VENDOR_DIR, '.cache');
+const cache = opt('work') ?? process.env.JASPER_FFMPEG_WORK ?? join(VENDOR_DIR, '.cache');
 const names = binaryNames(key);
 const log = (m) => console.log(`[ffmpeg:lgpl] ${m}`);
 const fail = (m) => {
@@ -307,7 +313,13 @@ function licenseFiles(prefix, dest, origin, spdx) {
 	);
 }
 
-function hostVerify(dest) {
+/** The vid.stab record a source build leaves in its prefix (null: built without vid.stab). */
+function vidstabRecord(prefix) {
+	const f = join(prefix, 'share', 'jasper', 'libvidstab.json');
+	return existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : null;
+}
+
+function hostVerify(dest, vidstab) {
 	const ff = join(dest, names.ffmpeg);
 	const text = (args) => {
 		const r = run(ff, ['-hide_banner', ...args]);
@@ -317,7 +329,7 @@ function hostVerify(dest) {
 	const buildconf = text(['-buildconf']);
 	const encoders = text(['-encoders']);
 	const license = text(['-L']);
-	const problems = evaluateBuild({ buildconf, encoders, license });
+	const problems = evaluateBuild({ buildconf, encoders, license, vidstab: vidstab ?? undefined });
 	if (problems.length) fail(`the FFmpeg build is not LGPL-clean: ${problems.join('; ')}`);
 	const list = new Set([...encoders.matchAll(/^\s*[A-Z.]{6}\s+(\S+)/gm)].map((m) => m[1]));
 	const missing = REQUIRED_ENCODERS.filter((e) => !list.has(e));
@@ -346,14 +358,14 @@ function hostVerify(dest) {
 }
 
 /** Cross-platform verification: the configure line and license string embedded in the binaries. */
-function staticVerify(dest) {
+function staticVerify(dest, vidstab) {
 	const problems = [];
 	let buildconf = '';
 	for (const n of readdirSync(dest)) {
 		if (!/^(ffmpeg|ffprobe)(\.exe)?$|^(lib)?avcodec[-.]/i.test(n)) continue;
 		const s = scanBinaryStrings(readFileSync(join(dest, n)));
 		buildconf ||= s.buildconf;
-		for (const p of evaluateBuild(s)) problems.push(`${n}: ${p}`);
+		for (const p of evaluateBuild({ ...s, vidstab: vidstab ?? undefined })) problems.push(`${n}: ${p}`);
 	}
 	if (!buildconf) fail('could not find an embedded FFmpeg configuration string');
 	if (problems.length) fail(`the FFmpeg build is not LGPL-clean: ${problems.join('; ')}`);
@@ -371,6 +383,7 @@ function fingerprint() {
 		abi: manifest.abi,
 		prebuilt: manifest.prebuilt.platforms[key] ?? null,
 		source: flag('from-source') || !manifest.prebuilt.platforms[key] ? manifest.source : null,
+		vidstab: flag('from-source') || !manifest.prebuilt.platforms[key] ? manifest.vidstab : null,
 		prefix: opt('ffmpeg-prefix') ?? null,
 		remotion: { version: manifest.remotion.version, sha256: manifest.remotion.compositorSha256[key] ?? null },
 	});
@@ -407,9 +420,24 @@ async function main() {
 	else assembleUnix(prefix, tmp);
 	copyFileSync(compositor, join(tmp, names.compositor));
 	if (!key.startsWith('win32')) chmodSync(join(tmp, names.compositor), 0o755);
-	const verified = key === host ? hostVerify(tmp) : staticVerify(tmp);
+	const vidstab = vidstabRecord(prefix);
+	const verified = key === host ? hostVerify(tmp, vidstab) : staticVerify(tmp, vidstab);
 	const spdx = spdxOf(verified.buildconf);
 	licenseFiles(prefix, tmp, origin, spdx);
+	if (vidstab) {
+		const lic = join(prefix, 'LICENSE-libvidstab.txt');
+		if (!existsSync(lic)) fail(`${lic} is missing (the source build copies vid.stab's COPYING.LESSER)`);
+		copyFileSync(lic, join(tmp, 'LICENSE-libvidstab.txt'));
+		writeFileSync(
+			join(tmp, 'NOTICE-FFmpeg.txt'),
+			`${readFileSync(join(tmp, 'NOTICE-FFmpeg.txt'), 'utf8')}
+The FFmpeg libraries include vid.stab ${vidstab.version} (${vidstab.repository}, commit ${vidstab.commit}), licensed
+under the GNU Lesser General Public License version 2.1 or later since its 2026 relicensing
+(${vidstab.relicenseRecord}); see LICENSE-libvidstab.txt. It is statically linked into libavfilter; the
+corresponding source is the pinned archive ${vidstab.archive}.
+`,
+		);
+	}
 	const files = {};
 	for (const n of readdirSync(tmp).sort()) {
 		const p = join(tmp, n);
@@ -436,6 +464,7 @@ async function main() {
 					version: manifest.remotion.version,
 					compositorSha256: compSha,
 				},
+				...(vidstab ? { libvidstab: vidstab } : {}),
 				verifiedOnHost: key === host,
 				files,
 			},
