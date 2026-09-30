@@ -1,10 +1,12 @@
 // Project panel (S05:PRJ-001…010, R-PUI §7): breadcrumb, search + filter, List and Icon views, bins,
 // drag in/out, rename, labels, delete with in-use warning, New Item ▸, status visualization.
-import type { LabelColor } from '@jasper/project';
+
+import type { LabelColor, ProjectItem } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useSession, useSessionState } from '@jasper/session/react';
 import { Button, cx, Icon, IconButton, type IconId, LABEL_DISPLAY_NAMES, LABEL_NAMES } from '@jasper/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { collectMenuItems, type MenuItemSpec, projectItemMenuExtensions } from '../../extensions/index.ts';
 import { useLocalCommandCtx } from '../../home/ui-bridge.ts';
 import { mediaKeyOf } from '../../import/assets.ts';
 import { type ClientJob, useClientJobs } from '../../import/client-jobs.ts';
@@ -77,6 +79,7 @@ const TYPE_ICON: Record<ProjectRow['type'], IconId> = {
 	synthetic: 'media.image',
 	font: 'tool.type',
 	lut: 'panel.effects',
+	'mg-bundle': 'panel.motionTemplates',
 };
 
 const labelVar = (l: LabelColor) => `var(--pr-label-${l})`;
@@ -1001,6 +1004,56 @@ function ContextMenu(props: {
 			>
 				Clear
 			</MenuEntry>
+			{/* M2 entries registered by feature packages (Process…, Rebuild bundle…; ARCHITECTURE §19.10). */}
+			<ExtensionEntries
+				items={extensionItems(props.session, props.itemIds, props.readOnly)}
+				onClose={props.onClose}
+			/>
 		</Menu>
+	);
+}
+
+function extensionItems(
+	session: EditorSession,
+	itemIds: readonly string[],
+	readOnly: boolean,
+): MenuItemSpec[] {
+	const doc = session.getCommitted();
+	const items = itemIds.map((id) => doc.items[id]).filter((i): i is ProjectItem => !!i);
+	if (!items.length) return [];
+	return collectMenuItems(projectItemMenuExtensions.list(), { session, items, readOnly });
+}
+
+function ExtensionEntries(props: { items: MenuItemSpec[]; onClose(): void; depth?: number }) {
+	const pad = props.depth ? { paddingLeft: 12 + props.depth * 12 } : undefined;
+	return (
+		<>
+			{props.items.map((it, i) =>
+				it.kind === 'separator' ? (
+					// biome-ignore lint/suspicious/noArrayIndexKey: static menu entries
+					<hr key={`sep-${i}`} className="my-1 h-px border-0 bg-pr-border-subtle" />
+				) : it.kind === 'submenu' ? (
+					// biome-ignore lint/suspicious/noArrayIndexKey: static menu entries
+					<div key={`sub-${i}`}>
+						<div className="px-3 py-1 text-pr-small text-pr-muted" style={pad}>
+							{it.label}
+						</div>
+						<ExtensionEntries items={it.items} onClose={props.onClose} depth={(props.depth ?? 0) + 1} />
+					</div>
+				) : (
+					<MenuEntry
+						// biome-ignore lint/suspicious/noArrayIndexKey: static menu entries
+						key={`item-${i}`}
+						disabled={it.disabled}
+						onClick={() => {
+							it.run();
+							props.onClose();
+						}}
+					>
+						<span style={pad}>{it.label}</span>
+					</MenuEntry>
+				),
+			)}
+		</>
 	);
 }

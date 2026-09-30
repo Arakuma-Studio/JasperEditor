@@ -21,6 +21,7 @@ import {
 	useRef,
 	useState,
 } from 'react';
+import { effectEditorFor } from '../../extensions/index.ts';
 import {
 	applyEffectToClips,
 	isEffectDrag,
@@ -464,7 +465,13 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 							</div>
 							{g.sections.map((s) => {
 								const open = !collapsed[s.id];
-								const rows = s.rows.filter((r) => rowVisible(data.doc, seq, r, filter));
+								const editor = s.fx ? effectEditorFor(s.fx.effectId) : undefined;
+								const hidden = new Set(editor?.hideParams ?? []);
+								const rows = s.rows.filter(
+									(r) =>
+										rowVisible(data.doc, seq, r, filter) &&
+										!(s.fx && hidden.has(r.spec.key.slice(`effects.${s.fx.id}.`.length))),
+								);
 								if (filter !== 'all' && rows.length === 0) return null;
 								const fxIndex = !s.intrinsic && s.stackIndex !== undefined ? s.stackIndex : undefined;
 								return (
@@ -565,6 +572,19 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 											</div>
 											{lane(<SummaryLane rows={s.rows} seq={seq} range={range} />)}
 										</div>
+										{open && editor && s.fx && s.effect ? (
+											<div data-testid={`fx-editor-${s.fx.id}`} style={left}>
+												<editor.component
+													session={session}
+													clip={s.clip}
+													fx={s.fx}
+													effect={s.effect}
+													frame={frame}
+													sequenceId={seq.id}
+													host="effectControls"
+												/>
+											</div>
+										) : null}
 										{open
 											? rows.map((r) => (
 													<div key={r.id} className="flex items-stretch">

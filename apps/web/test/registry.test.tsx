@@ -80,6 +80,12 @@ describe('UI command registry (ARCHITECTURE §7.3)', () => {
 				'timeline',
 				'transport',
 				'integration',
+				// M2 (ARCHITECTURE §19.10)
+				'color',
+				'process',
+				'composition',
+				'tracking',
+				'transitions',
 			].sort(),
 		);
 	});

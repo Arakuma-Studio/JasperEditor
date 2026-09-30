@@ -3,6 +3,7 @@
 // lucide lacks are drawn by us on the same 24-unit grid (stroke = currentColor, 1.5 px, round caps).
 // No Adobe/Premiere artwork is copied or traced.
 import {
+	Activity,
 	AudioLines,
 	Bookmark,
 	Camera,
@@ -49,6 +50,7 @@ import {
 	Minus,
 	Monitor,
 	MousePointer2,
+	Palette,
 	Pause,
 	Pipette,
 	Play,
@@ -209,6 +211,9 @@ export const ICONS = {
 	'panel.info': Info,
 	'panel.markers': Bookmark,
 	'panel.jobs': ListTodo,
+	// M2 (wp-m2-color may replace with dedicated glyphs)
+	'panel.lumetri': Palette,
+	'panel.scopes': Activity,
 
 	// ------------------------------------------------------------ media
 	'media.video': Film,

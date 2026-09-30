@@ -6,11 +6,13 @@ import effects from './effects/index.ts';
 import history from './history/index.ts';
 import info from './info/index.ts';
 import jobs from './jobs/index.ts';
+import lumetri from './lumetri/index.ts';
 import markers from './markers/index.ts';
 import motionTemplates from './motionTemplates/index.ts';
 import program from './program/index.ts';
 import project from './project/index.ts';
 import properties from './properties/index.ts';
+import scopes from './scopes/index.ts';
 import source from './source/index.ts';
 import timeline from './timeline/index.ts';
 import tools from './tools/index.ts';
@@ -31,6 +33,8 @@ export const PANEL_DEFINITIONS: readonly PanelDefinition[] = [
 	info,
 	markers,
 	jobs,
+	lumetri,
+	scopes,
 ];
 
 const BY_KIND = new Map(PANEL_DEFINITIONS.map((d) => [d.kind, d]));

@@ -44,7 +44,7 @@ const editing: WorkspaceDefinition = {
 				[
 					0.55,
 					row(
-						[31 / 78, g(['source', 'effectControls', 'motionTemplates'], 'source')],
+						[31 / 78, g(['source', 'effectControls', 'lumetri', 'scopes', 'motionTemplates'], 'source')],
 						['fill', g(['program'])],
 					),
 				],

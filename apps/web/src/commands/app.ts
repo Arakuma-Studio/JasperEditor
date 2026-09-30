@@ -58,6 +58,8 @@ const PANEL_LABELS: Record<PanelKind, string> = {
 	info: 'Info',
 	markers: 'Markers',
 	jobs: 'Jobs',
+	lumetri: 'Lumetri Color',
+	scopes: 'Lumetri Scopes',
 };
 
 // ------------------------------------------------------------------ save

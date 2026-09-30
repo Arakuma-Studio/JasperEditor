@@ -33,6 +33,8 @@ export const IMPORT_ACCEPT = [
 	'.aac',
 	'.m4a',
 	'.flac',
+	// M2: LUTs register as kind 'lut' (wp-m2-color adds the engine prober).
+	'.cube',
 	'.ogg',
 	'.opus',
 	'.png',

@@ -78,7 +78,10 @@ describe('Effects panel (S05:EFX-001…003)', () => {
 		const ids = addSolids(session, [0, 0], 30);
 		act(() => session.select('timeline', ids));
 		renderWithSession(session, <EffectsPanel instanceId="e1" visible />);
-		expect(document.querySelectorAll('[data-effect-id]')).toHaveLength(7);
+		// Every video effect of the default registry (M1 seven + M2 corner pin).
+		expect(document.querySelectorAll('[data-effect-id]')).toHaveLength(
+			session.ctx.registries.effects.list().filter((e) => e.appliesTo === 'video').length,
+		);
 		act(() => {
 			fireEvent.change(screen.getByTestId('effects-search'), { target: { value: 'gray' } });
 		});

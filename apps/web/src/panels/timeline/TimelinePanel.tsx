@@ -1,6 +1,7 @@
 // Timeline panel (S02, S05 §16.7): tabs, header (timecode readout + toolbar), ruler, split V/A regions
 // with track headers, virtualized clips, overlays, playhead and zoom bar. All timeline state is scoped
 // to this instance (TL-006); document edits go through the TimelineController (gestures) or UI commands.
+
 import { EngineClient } from '@jasper/engine-client';
 import {
 	type Clip,
@@ -16,6 +17,7 @@ import { LABEL_DISPLAY_NAMES } from '@jasper/ui';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createCommandContext } from '../../commands/context.ts';
 import { runCommand } from '../../commands/registry.ts';
+import { clipMenuExtensions, collectMenuItems } from '../../extensions/index.ts';
 import { getImportService, PROJECT_ITEMS_MIME } from '../../state/services.ts';
 import { applyEffectToClips, isEffectDrag, readEffectDragPayload } from '../effects/drag.ts';
 import { insertMotionTemplate, MG_TEMPLATE_MIME, readMgTemplateDrag } from '../motionTemplates/insert.ts';
@@ -448,6 +450,12 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 				label: 'Set to Frame Size (Fill)',
 				run: () => apply('Set to Frame Size', [{ type: 'clip.fitToFrame', clipIds: [c.id], mode: 'fill' }]),
 			},
+			// M2 entries registered by feature packages (Process…, Track…; ARCHITECTURE §19.10).
+			...collectMenuItems(clipMenuExtensions.list(), {
+				session,
+				clip: c,
+				selection: session.getState().selection.timeline.clips,
+			}),
 		];
 	};
 

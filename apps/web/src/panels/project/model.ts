@@ -53,6 +53,7 @@ export type ProjectRow = {
 		| 'synthetic'
 		| 'font'
 		| 'lut'
+		| 'mg-bundle'
 		| 'search-bin';
 	mediaId: string | null;
 	frameRate: string;

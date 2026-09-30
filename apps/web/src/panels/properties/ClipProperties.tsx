@@ -16,6 +16,8 @@ import {
 import type { EditorSession } from '@jasper/session';
 import { cx, TimecodeText } from '@jasper/ui';
 import { type ReactNode, useEffect, useState } from 'react';
+import { clipSections } from '../../extensions/index.ts';
+import { useRegistry } from '../../extensions/react.ts';
 import { MiniButton, SelectField } from './controls/fields.tsx';
 import { FxGlyph, TrashGlyph } from './controls/glyphs.tsx';
 import { PropertyRow, type RowContext } from './controls/PropertyRow.tsx';
@@ -38,6 +40,7 @@ const WEIGHTS = [100, 200, 300, 400, 500, 600, 700, 800, 900] as const;
 export function ClipProperties(props: { session: EditorSession; clips: Clip[]; ctx: RowContext }) {
 	const { session, clips, ctx } = props;
 	const { doc, seq, frame } = ctx;
+	const sections = useRegistry(clipSections);
 	const mg = session.ctx.registries.mgTemplates;
 	const effects = session.ctx.registries.effects;
 	const visual = clips.filter(isVisualClip);
@@ -113,6 +116,19 @@ export function ClipProperties(props: { session: EditorSession; clips: Clip[]; c
 					{visual.length === 1 ? <EffectsSummary clip={visual[0]!} ctx={ctx} effects={effects} /> : null}
 				</>
 			) : null}
+			{/* M2 sections registered by feature packages (ARCHITECTURE §19.10). */}
+			{sections
+				.filter((d) => d.appliesTo(clips))
+				.map((d) => (
+					<Section
+						key={d.id}
+						id={`properties.ext.${d.id}`}
+						title={d.title}
+						defaultOpen={d.defaultOpen ?? true}
+					>
+						<d.component session={session} clips={clips} frame={frame} sequenceId={seq.id} />
+					</Section>
+				))}
 			{audio.length ? (
 				<Section id="properties.audio" title="Audio">
 					{rows(['gainDb', 'volumeDb', 'pan'], audio).map((r) => render(r))}

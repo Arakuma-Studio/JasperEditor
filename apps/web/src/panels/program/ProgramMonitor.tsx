@@ -34,6 +34,8 @@ import {
 	useState,
 } from 'react';
 import { runCommand } from '../../commands/index.ts';
+import { programOverlays } from '../../extensions/index.ts';
+import { useRegistry } from '../../extensions/react.ts';
 import { useEngine } from '../../state/engine.tsx';
 import { markerVar } from '../timeline/components/ClipView.tsx';
 import type { PanelProps } from '../types.ts';
@@ -149,6 +151,7 @@ function useFontCatalog(engine: EngineClient | null): FontCatalog | null {
 function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; instanceId: string }) {
 	const engine = useOptionalEngineClient();
 	const transport = session.transport;
+	const overlays = useRegistry(programOverlays);
 	const seqId = useSessionState((s) => s.activeSequenceId);
 	const drawn = useSessionState((s) => s.transient ?? s.document);
 	const media = useSessionState((s) => s.media);
@@ -399,6 +402,20 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 					monitor={monitor}
 					onPan={setPan}
 				/>
+				{/* M2 overlays registered by feature packages (tracker, corner pin handles; ARCHITECTURE §19.10). */}
+				{overlays
+					.filter((o) => o.active(session))
+					.map((o) => (
+						<o.component
+							key={o.id}
+							session={session}
+							doc={doc}
+							view={view}
+							viewport={viewport}
+							transport={transport}
+							monitor={monitor}
+						/>
+					))}
 				{proxyChip ? (
 					<span
 						className="pointer-events-none absolute top-2 right-2 rounded-pr-control bg-pr-raised px-1.5 text-pr-small text-pr-strong"

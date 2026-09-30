@@ -1,14 +1,19 @@
 // UI commands (ARCHITECTURE §7.3): imports every domain module and registers them once.
 import { appCommands } from './app.ts';
+import { colorCommands } from './color.ts';
+import { compositionCommands } from './composition.ts';
 import { editCommands } from './edit.ts';
 import { exportCommands } from './export.ts';
 import { helpCommands } from './help.ts';
 import { inspectorCommands } from './inspector.ts';
 import { integrationCommands } from './integration.ts';
 import { mgCommands } from './mg.ts';
+import { processCommands } from './process.ts';
 import { projectCommands } from './project.ts';
 import { registerCommands } from './registry.ts';
 import { timelineCommands } from './timeline.ts';
+import { trackingCommands } from './tracking.ts';
+import { transitionCommands } from './transitions.ts';
 import { transportCommands } from './transport.ts';
 import type { UiCommand } from './types.ts';
 
@@ -28,6 +33,12 @@ export const COMMAND_MODULES: Record<string, UiCommand[]> = {
 	mg: mgCommands,
 	integration: integrationCommands,
 	help: helpCommands,
+	// M2 (one module per work package, ARCHITECTURE §19.10)
+	color: colorCommands,
+	process: processCommands,
+	composition: compositionCommands,
+	tracking: trackingCommands,
+	transitions: transitionCommands,
 };
 
 let registered = false;
