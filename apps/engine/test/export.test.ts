@@ -26,7 +26,7 @@ let app: TestApp;
 beforeAll(async () => {
 	ensureFixtures();
 	app = await makeApp();
-});
+}, 180_000); // a clean checkout generates the fixture media first (ffmpeg, ~10–30 s)
 afterAll(closeApps);
 
 const settings = (seqId: string, extra: Record<string, unknown> = {}) => ({

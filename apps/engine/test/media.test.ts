@@ -24,7 +24,7 @@ let app: TestApp;
 beforeAll(async () => {
 	ensureFixtures();
 	app = await makeApp();
-});
+}, 180_000); // a clean checkout generates the fixture media first (ffmpeg, ~10–30 s)
 afterAll(closeApps);
 
 describe('probe (S04:PB-001…004, S01:AST-001)', () => {
