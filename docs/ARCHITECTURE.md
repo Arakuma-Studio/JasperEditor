@@ -1,6 +1,7 @@
-# JasperEditor Architecture (v1, milestone M1)
+# JasperEditor Architecture (v1, milestones M1 and M2)
 
-Status: authoritative architecture for the from-scratch JasperEditor codebase. Written 2026-09-30 by the lead architect.
+Status: authoritative architecture for the from-scratch JasperEditor codebase. Written 2026-09-30 by the lead architect;
+§19 (M2: colour grading, clip processing, motion-graphics clips, tracking, transitions UI) added 2026-10-01.
 Audience: the engineers and autonomous agents who implement JasperEditor. Read this first, then the specs it cites.
 
 **Precedence.** When this document and a spec disagree, this document wins. When two specs disagree, §2.3 decides.
@@ -13,6 +14,11 @@ Specs and research this document is built on (all ours, all clean-room):
 | S03 | `docs/specs/03-monitors-effect-controls-rendering-items.md` (monitors, render model, inspector, effects) |
 | S04 | `docs/specs/04-media-render-and-backend.md` (engine, ingest, jobs, render planner) |
 | S05 | `docs/specs/05-ui-shell-premiere-design.md` (shell, docking, design system, PWA, Electron; its Agent panel chapter §17 is superseded by D-18 / §11) |
+| S06 | `docs/specs/06-color-grading.md` (M2: Lumetri-style grade, LUT assets, scopes) |
+| S07 | `docs/specs/07-clip-processing.md` (M2: processed media versions, upscale/stabilise/de-judder/denoise, remote GPU) |
+| S08 | `docs/specs/08-motion-graphics-clips.md` (M2: Remotion bundles as clips, props forms, pre-rendered masters) |
+| S09 | `docs/specs/09-tracking.md` (M2: point/planar tracking, corner pin, warp stage) |
+| S10 | `docs/specs/10-transitions-ui.md` (M2: transitions drawn and edited in the timeline) |
 | R-OMS | `docs/research/orquester-multiplatform-setup.md` |
 | R-NVL | `docs/research/native-video-libraries.md` |
 | R-FF | `docs/research/fframes.md` |
@@ -65,7 +71,7 @@ Platforms: web app (browser), installable PWA (desktop + mobile), Electron deskt
 | D-10 | **Waveform wire contract v1 = S04:WF-001** (float32 max-abs, 100 peaks/s, per channel). The S02:TL-332 min/max pyramid is computed client-side in a worker from that data (M2 may add a pyramid contract v2). Filmstrips = S04:TH-002 sprite sheets + JSON index. | One contract shared by engine and future browser fallback. |
 | D-11 | **Export planner M1 = two paths:** `native` (ffmpeg filtergraph composite; fframes masters overlaid natively) and `remotion` (full `renderMedia`). `copy` (smart render), `hybrid` (Remotion alpha intermediates composited natively), `browser` and `cloud` are M2+. | S04 §11 staged; the M1 planner already emits the S04:RP-010 `RenderPlan` shape with `blockers`. |
 | D-12 | **fframes integration = Design C first** (R-FF §7): one precompiled `jasper-mg` binary containing all templates, reading a JSON spec at runtime, piping straight RGBA to ffmpeg. **Preview in M1 uses a TypeScript SVG "twin"** of each template inside the Remotion composition; the WASM SVG bridge (Design B) replaces the twin in M2; agent-authored graphics (Design A) are M3. | Zero compile latency for edits; works on this CPU-only box; avoids WASM toolchain (`wasm-bindgen` not installed) in M1; the twin is also the no-cargo fallback. |
-| D-13 | **FFmpeg: ship an LGPL build (decided).** Dev/CI may use `ffmpeg`/`ffprobe` from `PATH` (system 6.1.1). Resolution order `JASPER_FFMPEG`/`JASPER_FFPROBE` env → packaged resources (`<resources>/bin`, `<resources>/ffmpeg-lgpl`) → dev vendor directory (`vendor/ffmpeg-lgpl/<platform>`, `pnpm ffmpeg:lgpl`) → `PATH`. Distribution: an LGPL FFmpeg (no `--enable-gpl`, never `--enable-nonfree`) shipped as a sidecar executable run as a separate process, never linked into our code. Encoders: H.264/HEVC via hardware (VideoToolbox, NVENC, QSV, AMF, VAAPI) with OpenH264 (Cisco binary) as software fallback; AV1 via SVT-AV1/libaom; VP9 via libvpx; AAC native; Opus via libopus; ProRes 4444 (`prores_ks`) for alpha intermediates. The engine probes `ffmpeg -encoders` at startup, reports them in `/api/capabilities`, and export presets pick the best available encoder; when running against a GPL system build in dev, x264 may be used but must never be required. Ship FFmpeg's license + source link in an About/Licenses screen. x264/x265 only as an optional user-installed add-on or under x264's commercial license. **Implemented (wp-3l):** `apps/engine/src/tools/encoders.ts` — startup probe of `-encoders`/`-hwaccels`/`-version` (license), hardware H.264 encoders confirmed by a cached test encode, preference hardware → `libopenh264` → `libx264` (only if present) → AV1 (`libsvtav1`/`libaom-av1`, MP4) / VP9 (`libvpx-vp9`, WebM+Opus) with a capability message; `media.encoding` in `/api/capabilities` and `encoder` in the render plan; `JASPER_FFMPEG_LGPL_ONLY=1` ignores GPL/nonfree encoders; the Remotion path renders a ProRes 422 HQ intermediate that our ffmpeg encodes unless the selected encoder is libx264. **Remotion's compositor FFmpeg (checked for 4.0.499): every `@remotion/compositor-*` package ships a GPL build (`--enable-gpl --enable-libx264 --enable-libx265 --enable-libfdk-aac`, "GPL version 2 or later"; Windows also ships an FFmpeg 6.1 `avcodec-60.dll` reporting "nonfree and unredistributable"), and the `remotion` compositor binary links those libraries.** It is never shipped. **Final mechanism (wp-lgpl, decided: the Remotion path uses our LGPL FFmpeg):** `pnpm ffmpeg:lgpl` (`scripts/ffmpeg/`, inputs pinned by sha256 in `manifest.json`) assembles one *binaries directory* per platform under `vendor/ffmpeg-lgpl/<platform>-<arch>/`: an LGPL FFmpeg **7.1** shared build (the release series the 4.0.499 compositor links: libavcodec 61, libavformat 61, libavutil 59, libavfilter 10, libavdevice 61, libswscale 8, libswresample 5; BtbN `lgpl-shared` for Linux/Windows, `build-lgpl-from-source.sh` for macOS) with `libopenh264`, `libvpx`, `libsvtav1`, `libopus`, native `aac`, `prores_ks`, plus Remotion's own compositor executable copied unmodified, the license text, a notice and `BUILDINFO.json`. The engine passes it as Remotion `binariesDirectory` to every call and uses its ffmpeg for the native path; resolution `JASPER_REMOTION_BIN_DIR` → `<resources>/ffmpeg-lgpl` → `vendor/ffmpeg-lgpl/<platform>`. Without it a **dev** engine falls back to Remotion's bundled build with the capability warning "Remotion is using its bundled GPL FFmpeg (dev only)" (`render.remotionBinaries`); every other engine (packaged, built, server) reports `remotionLocal: 'unavailable'` and refuses Remotion renders, and a directory whose ffmpeg is not an LGPL build is refused too. Because Remotion's `h264`/`aac` ask for `libx264`/`libfdk_aac`, a Remotion export is planned in `apps/engine/src/remotion/export-plan.ts`: ProRes 422 HQ + PCM intermediate encoded by the selector's encoder (progress "Step 1/2 · Remotion → ProRes", "Step 2/2 · <encoder>"), or VP9/Opus WebM directly. Packaging (`apps/desktop/scripts/package.mjs`, `pnpm --filter @jasper/desktop dist`) stages the engine without optional dependencies (no `@remotion/compositor-*`), ships the directory as `<resources>/ffmpeg-lgpl`, and the license guard (`pnpm ffmpeg:check`, also electron-builder `afterPack`) fails on `--enable-gpl`, `--enable-nonfree`, x264/x265/fdk-aac, a compositor package or a missing LGPL directory. `GET /api/licenses` feeds the FFmpeg license text and source link in Help ▸ About. Details and open points (macOS/Windows not run, OpenH264 patent coverage, LGPL 3 terms of the BtbN build): `docs/wp-notes/wp-lgpl.md`, `docs/wp-notes/wp-3l.md`. | |
+| D-13 | **FFmpeg: ship an LGPL build (decided).** Dev/CI may use `ffmpeg`/`ffprobe` from `PATH` (system 6.1.1). Resolution order `JASPER_FFMPEG`/`JASPER_FFPROBE` env → packaged resources (`<resources>/bin`, `<resources>/ffmpeg-lgpl`) → dev vendor directory (`vendor/ffmpeg-lgpl/<platform>`, `pnpm ffmpeg:lgpl`) → `PATH`. Distribution: an LGPL FFmpeg (no `--enable-gpl`, never `--enable-nonfree`) shipped as a sidecar executable run as a separate process, never linked into our code. Encoders: H.264/HEVC via hardware (VideoToolbox, NVENC, QSV, AMF, VAAPI) with OpenH264 (Cisco binary) as software fallback; AV1 via SVT-AV1/libaom; VP9 via libvpx; AAC native; Opus via libopus; ProRes 4444 (`prores_ks`) for alpha intermediates. The engine probes `ffmpeg -encoders` at startup, reports them in `/api/capabilities`, and export presets pick the best available encoder; when running against a GPL system build in dev, x264 may be used but must never be required. Ship FFmpeg's license + source link in an About/Licenses screen. x264/x265 only as an optional user-installed add-on or under x264's commercial license. **Implemented (wp-3l):** `apps/engine/src/tools/encoders.ts` — startup probe of `-encoders`/`-hwaccels`/`-version` (license), hardware H.264 encoders confirmed by a cached test encode, preference hardware → `libopenh264` → `libx264` (only if present) → AV1 (`libsvtav1`/`libaom-av1`, MP4) / VP9 (`libvpx-vp9`, WebM+Opus) with a capability message; `media.encoding` in `/api/capabilities` and `encoder` in the render plan; `JASPER_FFMPEG_LGPL_ONLY=1` ignores GPL/nonfree encoders; the Remotion path renders a ProRes 422 HQ intermediate that our ffmpeg encodes unless the selected encoder is libx264. **Remotion's compositor FFmpeg (checked for 4.0.499): every `@remotion/compositor-*` package ships a GPL build (`--enable-gpl --enable-libx264 --enable-libx265 --enable-libfdk-aac`, "GPL version 2 or later"; Windows also ships an FFmpeg 6.1 `avcodec-60.dll` reporting "nonfree and unredistributable"), and the `remotion` compositor binary links those libraries.** It is never shipped. **Final mechanism (wp-lgpl, decided: the Remotion path uses our LGPL FFmpeg):** `pnpm ffmpeg:lgpl` (`scripts/ffmpeg/`, inputs pinned by sha256 in `manifest.json`) assembles one *binaries directory* per platform under `vendor/ffmpeg-lgpl/<platform>-<arch>/`: an LGPL FFmpeg **7.1** shared build (the release series the 4.0.499 compositor links: libavcodec 61, libavformat 61, libavutil 59, libavfilter 10, libavdevice 61, libswscale 8, libswresample 5; BtbN `lgpl-shared` for Linux/Windows, `build-lgpl-from-source.sh` for macOS) with `libopenh264`, `libvpx`, `libsvtav1`, `libopus`, native `aac`, `prores_ks`, plus Remotion's own compositor executable copied unmodified, the license text, a notice and `BUILDINFO.json`. The engine passes it as Remotion `binariesDirectory` to every call and uses its ffmpeg for the native path; resolution `JASPER_REMOTION_BIN_DIR` → `<resources>/ffmpeg-lgpl` → `vendor/ffmpeg-lgpl/<platform>`. Without it a **dev** engine falls back to Remotion's bundled build with the capability warning "Remotion is using its bundled GPL FFmpeg (dev only)" (`render.remotionBinaries`); every other engine (packaged, built, server) reports `remotionLocal: 'unavailable'` and refuses Remotion renders, and a directory whose ffmpeg is not an LGPL build is refused too. Because Remotion's `h264`/`aac` ask for `libx264`/`libfdk_aac`, a Remotion export is planned in `apps/engine/src/remotion/export-plan.ts`: ProRes 422 HQ + PCM intermediate encoded by the selector's encoder (progress "Step 1/2 · Remotion → ProRes", "Step 2/2 · <encoder>"), or VP9/Opus WebM directly. Packaging (`apps/desktop/scripts/package.mjs`, `pnpm --filter @jasper/desktop dist`) stages the engine without optional dependencies (no `@remotion/compositor-*`), ships the directory as `<resources>/ffmpeg-lgpl`, and the license guard (`pnpm ffmpeg:check`, also electron-builder `afterPack`) fails on `--enable-gpl`, `--enable-nonfree`, x264/x265/fdk-aac, a compositor package or a missing LGPL directory. `GET /api/licenses` feeds the FFmpeg license text and source link in Help ▸ About. Details and open points (macOS/Windows not run, OpenH264 patent coverage, LGPL 3 terms of the BtbN build): `docs/wp-notes/wp-lgpl.md`, `docs/wp-notes/wp-3l.md`. **M2 additions (2026-10-01):** (a) GPL-only *filters* are absent from the shipped build and must never appear in generated filter text: `eq`, `hqdn3d`, `perspective`, `boxblur`, `smartblur`, `delogo`, `vidstab*` of a GPL vid.stab, `frei0r`, `spp/pp7/uspp/fspp`, `mpdecimate`, `pullup` (checked on the vendor build). The M1 `jasper.brightness-contrast` native mapping used `eq` (never reached: the planner blocked it) and is replaced by the colour-LUT path (§19.2). LGPL filters used in M2: `lut3d`, `format`, `deshake`, `deblock`, `atadenoise`, `fftdnoiz`, `nlmeans`, `minterpolate` (not used by default), `setparams`. (b) **vid.stab** was relicensed to LGPL-2.1-or-later in August 2026 (upstream `RELICENSE.md`, issue #165) but has no release tag since (v1.1.2 and older are GPL) and FFmpeg 7.1's `configure` still lists `libvidstab` as GPL: the LGPL source build pins a post-relicense vid.stab commit and patches `configure` to move `libvidstab` to the non-GPL external libraries; the licence guard accepts it only with that recorded commit; prebuilt builds without it fall back to `deshake` (S07:PST-003). | |
 | D-14 | **Styling:** Tailwind 4 (`@tailwindcss/vite`) + `--pr-*` CSS tokens (S05 §8) bridged with `@theme inline`. **`packages/compositions` uses inline styles only** (no Tailwind), so the Remotion webpack bundle needs no Tailwind config and preview == render. | |
 | D-15 | **Lint/format = Biome 2** (`biome check`), plus `scripts/check-tokens.mjs` enforcing S05:DT-002 (no color literals / raw palette classes in `packages/ui/src/**` and `apps/web/src/**` outside theme files). | One fast tool; the token rule is a 50-line script. |
 | D-16 | **Tests = Vitest 4.1** (Node 20 compatible; Vitest 5 needs Node 22) with root `projects`; property tests with `fast-check`; DOM tests with `happy-dom` + Testing Library. **E2E = Playwright** using the system Chrome (`channel: 'chrome'`, `/usr/bin/google-chrome`) to avoid browser downloads. | |
@@ -73,6 +79,16 @@ Platforms: web app (browser), installable PWA (desktop + mobile), Electron deskt
 | D-18 | **The agent API is an MCP server; there is no in-app agent.** External coding agents (Claude Code, Codex CLI, Cursor…) drive the editor through `jasper-mcp` (`apps/mcp`, official `@modelcontextprotocol/sdk`): stdio for local clients, and the same tools over Streamable HTTP at the engine's `/mcp`. Underneath sit the typed transactions/queries of S01 §21: engine HTTP, the `/agent` WebSocket relay into the open editor (live edits, `Agent:` undo entries), headless fallback and the approval gate. The Agent panel, its workspace, menu, tool and shortcuts were removed (wp-mcp); approvals are a shell-level card. Later: proposals/ghosts, vision checks, agent-authored fframes graphics, all as MCP tools. | User decision (wp-mcp). S01 §21; S05 §17 is superseded. |
 | D-19 | **Remotion pinned to exactly `4.0.499`** for every `remotion`/`@remotion/*` package in the workspace (Remotion requires identical versions). Upgrading is a single dedicated change. | S02/S03/S04 verification notes target 4.0.499. |
 | D-20 | **Runtime baseline Node ≥ 20.19** (machine: Node 20.20.2, pnpm 10.34). TypeScript **5.9.3** (not 7.x). Avoid dependencies that require Node 22 (React Router 8, Vitest 5). Electron's npm package may print an engines warning on Node 20; do not enable `engine-strict`. | |
+| D-21 | **Colour = pointwise colour ops fused into one baked 3D LUT per run (M2).** Every colour effect implements `EffectSpec.color`; consecutive colour effects of a layer are baked (33³, tetrahedral) into one LUT that the WebGL preview samples and the native path applies with `lut3d`. No GLSL port of the grade maths. | One implementation of the maths (TS) → preview and export agree to LUT precision; the grade never forces the Remotion path; `lut3d` is LGPL and fast. |
+| D-22 | **Native-first through export extensions (M2).** Features plug into the native planner/builder only through `NativeExtension` (§19.6): effect filters, extra native-capable kinds, claimed layers, pre-rendered layer overrides (`layer`/`sequence` space), prepare steps (also for the Remotion path). | Five packages extend the export in parallel without editing `planner.ts`/`native.ts`; everything that can be pre-rendered stays native. |
+| D-23 | **Clip processing = derived media (M2).** Processing jobs write new managed media files registered as `MediaAsset`s with `derivation.recipe = {op:'process', steps}`; clips swap sources (`media.derive`, `clip.replaceSource`) with Motion compensation. Processors run in one CLI (`jasper-proc`) locally or on a remote host over SSH. | No render-time cost; the native path reads the processed file; one code path for local and remote. |
+| D-24 | **Super-resolution runtime = ONNX Runtime (`onnxruntime-node`, MIT), models on demand (M2).** Catalogue with pinned sha256 and recorded weight licences; default SPAN 2× (CC BY 4.0, attribution) pending the user's decision (§19.12). | Permissive runtime with CPU and CUDA providers; weights not bundled. |
+| D-25 | **Stabilisation = vid.stab (LGPL since the 2026 relicense, pinned commit) with `deshake` fallback (M2).** | Best quality within D-13; see the D-13 M2 note. |
+| D-26 | **Motion-graphics clips = imported Remotion bundles (M2).** Pinned 4.0.499 (D-19); preview through the bundle's own page driven frame by frame in an iframe (adapter over the renderer-page protocol) or its cached VP9-alpha preview; export through cached ProRes 4444 masters (native `layer` override). | The user's own project code (Tailwind, staticFile, fonts) runs unchanged; exports stay native. |
+| D-27 | **Tracking = OpenCV.js (Apache-2.0, WASM) in engine worker threads (M2)**; trackers stored on the plate clip in media pixels / content time; applied to targets as ordinary keyframes (corner pin or Motion). | No native build; manual correction = keyframe editing; undoable, agent-friendly. |
+| D-28 | **Corner pin and keyframed Motion on the native path = warp stage (M2)**: layers are warped per frame in worker threads and cached as sequence-space ProRes 4444 intermediates. | `perspective` is GPL; ffmpeg cannot animate scale/rotation per frame reliably; the warp stage also lifts the M1 "keyframes force Remotion" limit. |
+| D-29 | **Schema v3 (M2)**: additive fields only (mg-bundle kind, LUT/bundle headers, process recipes, trackers, trackedBy, curve params); v2→v3 is a version bump so M1 builds open M2 files read-only. | Honest forward-compatibility signal (S01:MIG-003). |
+| D-30 | **Transitions UI keeps the model's three alignments (M2)**; default transitions are a user preference; audio crossfades between clips land in the same package. | No model change for the UI; Premiere-familiar behaviour. |
 
 ### 2.2 Pinned toolchain (M1)
 
@@ -800,8 +816,10 @@ Commit early and often with Conventional Commits (`feat(project): …`, `fix(eng
 
 ## 17. Roadmap after M1 (non-binding)
 
+Colour grading, clip processing, motion-graphics clips, tracking and the transitions UI were pulled into M2 (§19).
+
 - **M2:** browser-only profile (IndexedDB/OPFS store, mediabunny probe/peaks/thumbnails, web renderer), desktop `.jasper` files + crash journal, clipboard (S01 §20), transitions & fades, hybrid export (graphics alpha intermediates), smart-render copy path, source monitor + three-point editing, markers panel, audio meters live, touch shells, fframes WASM preview + parity harness, whisper.cpp transcription + captions, agent proposals/ghosts as MCP tools (the MCP server itself shipped with wp-mcp; there is no in-app LLM chat), remote engine password auth + deploy scripts.
-- **M3:** color (LUT pipeline, Lumetri panel, scopes), masks, nesting, adjustment layers, OTIO interchange, agent-authored fframes graphics, installers/auto-update/signing, ffmpeg distribution decision.
+- **M3:** masks, nesting, adjustment layers, OTIO interchange, agent-authored fframes graphics, installers/auto-update/signing, ffmpeg distribution decision.
 
 ## 18. Open questions
 
@@ -810,3 +828,214 @@ Commit early and often with Conventional Commits (`feat(project): …`, `fix(eng
 3. Remotion Player playback-rate bounds (S02 open question 1) — WP-2C measures and records.
 4. Whether to keep the TS SVG twins after the WASM bridge lands (likely drop them, keep for tests).
 5. ~~Anthropic model/provider choice and key storage for Stage 2 agents.~~ Closed by D-18: JasperEditor embeds no LLM and stores no model keys; the user's own coding agent connects over MCP.
+
+---
+
+## 19. M2: colour, clip processing, motion-graphics clips, tracking, transitions UI
+
+M2 adds five capabilities that the trailer project (`MatsSmileTrailer`) had to do with external scripts. They are
+built by five work packages in parallel (`JasperEditor-worktrees/work-packages-m2.json`). The functional specs are
+S06–S10; this section fixes the **shared contracts**, most of which already exist on `dev` (commits after
+`443b7bc`) so the packages build on code, not on prose. Decisions D-21…D-30 (§2.1) and the D-13 M2 note apply.
+
+| Package | Feature | Spec |
+|---|---|---|
+| `wp-m2-color` | Lumetri-style grade, LUT assets, Lumetri/Scopes panels, colour native extension | S06 |
+| `wp-m2-process` | processed media versions, `jasper-proc`, remote SSH executor, vid.stab LGPL build | S07 |
+| `wp-m2-mg` | Remotion bundles as composition clips, props forms, live host, pre-rendered masters | S08 |
+| `wp-m2-track` | trackers, tracking jobs, apply, corner-pin UI, native warp stage | S09 |
+| `wp-m2-transitions` | transitions drawn/edited on the timeline, Effects bin, Ctrl+D, audio crossfades | S10 |
+
+### 19.1 Document model (schema v3, D-29) — on `dev`
+
+All additions are additive (`packages/project/src/schema/*`); `CURRENT_SCHEMA_VERSION = 3`, v2→v3 is a no-op
+migration; fixture `packages/project/test/fixtures/v3/basic.jasper` exercises them.
+
+| Addition | Where | Used by |
+|---|---|---|
+| `MEDIA_KINDS += 'mg-bundle'`; `MediaAsset.lut?: LutInfo`, `MediaAsset.mgBundle?: MgBundleInfo`; `EMPTY_PROBE` | `schema/media.ts` | color, mg |
+| `ProcessStepSchema` (stabilize, dejudder, denoise, deblock, upscale); `NativeRecipe` op `process` | `schema/media.ts` | process |
+| `media.derive` gains `asset` (the engine-produced file) | `commands/schemas/project.ts` | process |
+| `VideoClip.trackers?: ClipTracker[]` (`tkr_` ids), `TrackerSamples`; visual clips `trackedBy?` | `schema/sequence.ts`, `ids.ts` | track |
+| `tracker.add/update/remove/setSamples/apply` | `commands/schemas/tracker.ts` | track |
+| `CompositionClip.composition.mediaId` (the mg-bundle); `clip.addComposition.composition = {mediaId, id, version?}` | `schema/sequence.ts`, `commands/schemas/clip.ts` | mg |
+| `ParamValue` curve `{curve: [x, y][]}`; `ParamSpec.type 'curve'`, `mediaKinds`, `group`, `ui.control 'wheel'|'curve'|'media'`; property `ValueKind` `curve`/`media`; `validateValue` for curves | `schema/common.ts`, `registry/effects.ts`, `registry/properties.ts`, `commands/handlers/param.ts` | color |
+| `transition.update.effectId`; `transition.applyDefault.{media, videoEffectId, audioEffectId, duration}` | `commands/schemas/param.ts` | transitions |
+
+Command handler ownership (stubs answer `E_NOT_IMPLEMENTED` until the package lands; the catalogue records the
+owner and milestone): `handlers/process.ts` (`media.derive`, `clip.replaceSource`) → process;
+`handlers/composition.ts` (`clip.addComposition`) → mg; `handlers/tracker.ts` (`tracker.*`) → track;
+`handlers/transition.ts` → transitions. Any package that needs a new command adds its schema in its own schema
+file (`commands/schemas/<area>.ts`) and registers it in `schemas/index.ts` + `catalog.ts` (one line each,
+`Contract-Change:`).
+
+### 19.2 Colour contract (D-21) — on `dev`
+
+- `packages/project/src/color/lut.ts`: `Lut` (3D/1D, float32, `.cube` order), `parseCube`, `serializeCube`, `bakeLut`,
+  `applyLut` (tetrahedral = FFmpeg `lut3d` default = what the WebGL shader must implement), `applyLutMix`,
+  `identityLut`, `lutMaxDelta`.
+- `EffectSpec.color?: ColorOp` with `build(params, {lut(mediaId)}) → ColorFn | null` (`registry/effects.ts`):
+  pure RGB→RGB on display-referred values; alpha untouched.
+- `packages/project/src/color/runs.ts`: `effectRuns` (colour runs vs other effects, stack order),
+  `colorRunFn`, `bakeColorRun(effects, registry, ctx, size)`, `colorRunKey` (cache identity incl. LUT asset
+  identities), `canonicalJson`, `PREVIEW_LUT_SIZE = EXPORT_LUT_SIZE = 33`.
+- Consumers: the compositions' WebGL colour stage (color package, inside `LayerBox`), the engine colour extension
+  (`lut3d=file=…` + per-frame `enable` windows via `sampleRuns`), the Scopes panel.
+- `effectBadges().native` is true for colour-op effects. The `jasper.lumetri` spec and the colour ops of the M1
+  colour effects are added by the color package in `registry/color-effects.ts` and included in
+  `defaultEffectRegistry` (`M2_EFFECTS`).
+
+### 19.3 Motion-graphics bundles contract (D-26)
+
+- Asset: `mg-bundle` media with `mgBundle` header; engine storage `<appdir>/mg-bundles/<bundleHash>/`, served at
+  `GET /mg/bundles/:key/*` (under the existing `/mg` prefix: no proxy, SW or path-prefix changes).
+- Snapshot: `RenderVisualSource` variant `{composition: {mediaId, compositionId, props, canvas}}` (on `dev`); the
+  mg package may add `prerender?: {masterUrl, previewUrl}` and a `resolveComposition` snapshot option (additive).
+- Layer: `packages/compositions/src/layers/CompositionLayer.tsx` (registered for kind `composition`, placeholder on
+  `dev`); `FRAME_DEPENDENT_KINDS` includes `composition`.
+- Pre-render: `mg-prerender` jobs → `<appdir>/mg/<renderKey>/{master.mov, preview.webm, poster.png}` (the M1
+  `/mg/:key/:file` route); render key = sha256 over bundle hash, composition id, canonical effective props, size,
+  fps, frame range, renderer version (S08:MGC-031).
+- Export: the `mg` native extension (`kinds: {'composition'}`, `prepare`, `override` space `layer`,
+  `prepareForRemotion` + `adaptRemotionDoc` for the Remotion path).
+
+### 19.4 Processing contract (D-23…D-25)
+
+- API (`packages/api/src/processing.ts`): `ProcessRequest`, `ProcessResult`, `ProcessingModel(s)`,
+  `RemoteExecutorSettings`, `ProcessingSettings`, `RemoteProbeResult`; routes `mediaProcess`,
+  `processingModels`, `processingModelInstall`, `processingSettingsGet/Put`, `processingRemoteProbe`,
+  `processingRemoteSetup` (stubs on `dev`).
+- Jobs: `process`, `model-download` (existing kind), `remote-setup`.
+- `jasper-proc` CLI (S07:PRC-011) is the only place processors live; the engine spawns it locally or over SSH.
+- Media registry: `MediaRecord.derivedFrom = {mediaKey, recipeHash}` (on `dev`); the process package adds
+  `MediaService.registerDerived(...)`.
+- Settings persist in `<appdir>/engine/engine.json` → `processing` (zod, unknown keys tolerated).
+
+### 19.5 Tracking and projective layers (D-27, D-28) — geometry on `dev`
+
+- `packages/project/src/render/homography.ts`: `Mat3` (row-major), `unitSquareToQuad`, `quadToQuad`, `boxToQuad`,
+  `invertMat3`, `multiplyMat3`, `applyMat3`, `mat3FromMat2D`, `isAffineMat3`, `isConvexQuad`, `mat3ToCss`
+  (`matrix3d`, `transform-origin: 0 0`).
+- `jasper.corner-pin` effect (registered, `native: null`): params `topLeft/topRight/bottomRight/bottomLeft`, vec2
+  **normalised to the layer box**. `resolveLayerProps` returns `projective = Motion · H(box → pinned quad)` and the
+  pinned `quad`; `LayerBox` draws `projective` with `matrix3d`. Until the warp stage lands, corner pins route to
+  the Remotion path (planner blocker "uses effect jasper.corner-pin").
+- Tracking API (`packages/api/src/tracking.ts`): `TrackRequest` / `TrackResult` (source frames, media px); route
+  `trackingTrack`; job kind `track`. Results are committed by the client with `tracker.setSamples`.
+- Warp stage: the `warp` native extension (`claimsLayer` for corner pins and keyframed Motion; `override` space
+  `sequence`); the track package factors `layerSourceChain(...)` out of `export/native.ts` for it.
+
+### 19.6 Export extensions (D-22) — on `dev`
+
+`apps/engine/src/export/native-ext.ts`; registered with `core.registerNativeExtension(ext)` from the package's route
+plugin; consulted in registration order.
+
+```ts
+type NativeExtension = {
+  id: string;
+  effectSupport?(effectId, spec): false | 'static' | 'animated';   // planner stops blocking these effects
+  kinds?: ReadonlySet<string>;                                     // extra native-capable clip kinds
+  claimsLayer?(clip): boolean;                                     // skip generic Motion/opacity/effect checks
+  blockers?(clip): string[];                                       // own blockers for kinds/claimed layers
+  prepare?(planned, ctx): Promise<unknown>;                        // before the composite (child jobs, caches)
+  override?(clip, prepared): LayerOverride | null;                 // {path, space: 'layer'|'sequence', startFrame, includesFades?, decoder?}
+  effectFilter?(fx, ctx): string | undefined;                      // filter text; '' = fused elsewhere; undefined = not mine
+  prepareForRemotion?: boolean;                                    // also prepare for Remotion exports/stills
+  adaptRemotionDoc?(doc, prepared, {signUrl}): RenderSnapshot;     // e.g. inject master URLs
+};
+```
+
+- `layer` override: replaces the decoded source (box-sized); the builder applies effects, Motion, opacity, fades.
+- `sequence` override: the fully placed layer (W×H, straight alpha, Motion/effects/opacity baked); the builder only
+  seeks, applies transition fades (unless `includesFades`) and overlays at (0, 0).
+- `sampleRuns(f0, f1, valueAt, key)` turns per-frame animated values into runs (per-frame LUT windows etc.).
+- Generated filter text must only use filters present in the LGPL build (D-13 M2 note); each package's tests scan
+  their builder output for the GPL list.
+- Registration order at start-up (route plugin order in `routes/index.ts`): color, processing, mg-bundles, tracking.
+  An effect may be supported by only one extension; the warp extension must not claim layers with composition
+  sources (mg handles those as `layer` overrides, which then get warped only if they also carry a corner pin — in
+  that case warp wins and sources the layer from the mg master: `prepare` receives `ctx.extensions` and
+  `ctx.preparedSoFar`, so it can call `layerOverride(...)` for the `layer` override of an earlier extension).
+
+### 19.7 Engine: routes, jobs, capabilities, assets — on `dev`
+
+- Route plugins (one per package, registered in `ROUTE_PLUGINS`): `routes/color.ts` (no routes; registers the
+  `.cube` prober, colour extension, capability), `routes/processing.ts`, `routes/mg-bundles.ts`,
+  `routes/tracking.ts` (501 stubs from `routes/stub.ts`). The route table `ROUTES` in `@jasper/api` lists every M2
+  route with its owner; the engine route-coverage test accepts implemented or stubbed `wp-m2-*` routes.
+- Clients call M2 routes with the typed generic `engine.call('<routeName>', {params, body})` — **no new
+  `EngineClient` methods** (avoids five packages editing `client.ts`).
+- Job kinds (`@jasper/api` `JOB_KINDS`): `process`, `track`, `mg-bundle`, `mg-prerender`, `layer-bake`,
+  `remote-setup`.
+- Capabilities: `EngineCapabilities.features = {color?, processing?, mgBundles?, tracking?}`
+  (`packages/api/src/m2-capabilities.ts`), each filled by its package through `registerCapabilityProvider`.
+- Non-AV assets: `registerAssetProber({id, matches(file), probe(file)})` in `media/probe.ts` (the `.cube` prober
+  returns kind `lut` + `lut` header); `MediaRecord.lut/mgBundle/derivedFrom` are copied into `RegisteredMedia`.
+- Caches: `<appdir>/cache/luts/`, `<appdir>/cache/warp/`, `<appdir>/mg/<renderKey>/`, `<appdir>/mg-bundles/`,
+  `<appdir>/models/`; all content-addressed; GC is each package's responsibility (a `gc` job pass).
+
+### 19.8 Ownership of shared code (who may edit what)
+
+- **Frozen contracts** (additive changes only, with `Contract-Change:` in the commit body, §16.3): everything listed
+  in §19.1–§19.7 and §19.10.
+- Hot files with a single M2 owner: `packages/project/src/registry/effects.ts` (color), `registry/kinds.ts` and
+  `registry/properties.ts` (mg), `commands/handlers/param.ts` (mg: `props.*` targets), `commands/handlers/clip-core.ts`
+  + `clip-edit.ts` (track: tracker id remap on split/duplicate), `transitions.ts` + `commands/handlers/transition.ts`
+  (transitions), `render/snapshot.ts` (mg for composition prerender fields; transitions for audio handles — separate
+  hunks), `export/native.ts` (track: `layerSourceChain` in the video section; transitions: audio section only),
+  `compositions/src/layers/LayerBox.tsx`, `VideoLayer.tsx`, `StillLayer.tsx`, `pipeline.ts` (color),
+  `remotion/service.ts` (color: `chromiumOptions.gl`; mg imports its helpers read-only), `panels/timeline/**`,
+  `panels/effects/**`, `panels/effectControls/**` (transitions), `media/service.ts` (process),
+  `scripts/ffmpeg/**` (process), `pnpm-workspace.yaml` (mg: the fixture Remotion project).
+- Shared-by-protocol: `apps/engine/package.json` / `pnpm-lock.yaml` (dependencies; the integrator re-runs
+  `pnpm install` on conflicts), `packages/ui/src/theme/tokens.css` (new tokens appended in a per-package block),
+  `README.md` (one subsection per package), `docs/ARCHITECTURE.md` (packages write `docs/wp-notes/<wp>.md`; the
+  integrator folds notes into this file).
+
+### 19.9 MCP (D-18) — modules on `dev`
+
+One tool module per package, wired in `apps/mcp/src/server.ts`: `tools/color.ts`, `tools/processing.ts`,
+`tools/compositions.ts`, `tools/tracking.ts`, `tools/transitions.ts`, each exporting `register<X>Tools(ctx)` and a
+`<X>_GUIDE` string appended to the server instructions/guide resource. Tools use `defineTool` and the existing
+`apply_commands` machinery (transactions with `$refs`, one `Agent:` history entry per call). Tool names are fixed in
+the specs (S06:CGA-002, S07:PRA-001, S08:MGA-001, S09:TRA-001, S10:TUI-060).
+
+### 19.10 Web extension points — on `dev`
+
+`apps/web/src/extensions/` (registries + `useRegistry`), hosted by the existing panels:
+
+| Registry | Host | Used by |
+|---|---|---|
+| `effectEditors` (`{effectId, component, hideParams?}`) | Effect Controls section of that effect | color (Lumetri), track (corner pin) |
+| `clipSections` (`{id, title, appliesTo(clips), component}`) | Properties panel, after the built-in sections | mg (Composition), track (Tracking), process (Media Version) |
+| `programOverlays` (`{id, active(session), component}`) | Program monitor, above the transform overlay | track |
+| `clipMenuExtensions` | timeline clip context menu | process, track, color (copy/paste grade) |
+| `projectItemMenuExtensions` | Project panel item context menu | process, mg, color |
+
+Registration happens at module load of the package's command module `apps/web/src/commands/<area>.ts`
+(`color`, `process`, `composition`, `tracking`, `transitions`; all in `COMMAND_MODULES`). Panels: `lumetri` and
+`scopes` exist as placeholders (color). Dialogs register with `registerDialog` from the same modules. Preferences
+(`app.preferences`, currently unregistered) are created by the process package with a page registry.
+
+### 19.11 Tests, fixtures, verification
+
+- Every package keeps `pnpm lint && pnpm typecheck && pnpm test` green in its worktree and adds its tests next to
+  its code (unit), engine route tests with real ffmpeg, component tests (happy-dom) and one Playwright spec
+  (`e2e/<area>.spec.ts`).
+- Fixtures: one plug-in per package in `scripts/fixtures/<area>.mjs` (loaded by `pnpm fixtures`).
+- Downloads are never required by tests (test ONNX model generated; LUTs generated; Remotion fixture bundled from
+  the workspace).
+
+### 19.12 Decisions the user must make (open)
+
+1. **Super-resolution model and hosting.** Default proposal: SPAN 2× `2xNomosUni_span_multijpg` (weights CC BY 4.0,
+   attribution in About/Licenses; code Apache-2.0), converted by us to ONNX and hosted where? (GitHub release of our
+   own repo, or first-run conversion from the upstream `.pth` on the user's machine — the latter needs PyTorch and
+   is not recommended.) Alternatives: Real-ESRGAN compact (BSD-3; hallucinates text on UI footage).
+2. **Remote GPU host.** The rented box used by the trailer is gone. Settings are generic (host/port/user/key/
+   remote dir); tests run against shims and optionally `localhost` sshd or a Docker sshd. A real-GPU validation
+   needs a host (Linux x64, NVIDIA driver + CUDA 12, Node ≥ 20) when the user wants it.
+3. **vid.stab source build on Linux.** Adopting it switches the linux-x64 LGPL FFmpeg from the pinned BtbN prebuilt
+   to our source build (longer build, same ABI); Windows keeps BtbN + `deshake` until a cross build exists.
+4. **Host key policy** default `accept-new` (convenient) vs `yes` (strict).
+5. **Composition fps mismatch** policy (S08:MGC-005: override fps and warn) — acceptable?

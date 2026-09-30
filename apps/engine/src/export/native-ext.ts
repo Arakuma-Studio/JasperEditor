@@ -61,6 +61,12 @@ export type NativePrepareContext = {
 	/** The export/still job id (child jobs use it as `parentId`). */
 	jobId: string;
 	projectId?: string;
+	/**
+	 * Filled by `prepareExtensions`: the extensions of this export and what the ones before this one prepared
+	 * (the warp stage uses them to source a layer from another extension's `layer` override, e.g. an MG master).
+	 */
+	extensions?: readonly NativeExtension[];
+	preparedSoFar?: ReadonlyMap<string, unknown>;
 };
 
 export type NativeExtension = {
@@ -139,7 +145,10 @@ export async function prepareExtensions(
 	const out = new Map<string, unknown>();
 	for (const ext of exts) {
 		if (ctx.signal.aborted) break;
-		out.set(ext.id, ext.prepare ? await ext.prepare(planned, ctx) : undefined);
+		out.set(
+			ext.id,
+			ext.prepare ? await ext.prepare(planned, { ...ctx, extensions: exts, preparedSoFar: out }) : undefined,
+		);
 	}
 	return out;
 }
