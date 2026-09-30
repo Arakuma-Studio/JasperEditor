@@ -40,6 +40,14 @@ import { clampHeight, type RegionKind, regionIndexAt, type TrackAreaLayout } fro
 import { collectSnapTargets, type SnapTarget, thresholdFrames } from '../model/snapping.ts';
 import { cursorFor, type GestureKind, resolveGesture } from '../model/tools.ts';
 import {
+	bodyDragAlignment,
+	edgeDrag,
+	handleFeedback,
+	type TransitionGeom,
+	type TransitionIndex,
+	transitionIndex,
+} from '../model/transitions.ts';
+import {
 	autoScrollStep,
 	boundaryFrameAt,
 	clampScroll,
@@ -125,10 +133,20 @@ type BodyDrag = DragBase & {
 };
 
 type MarqueeDrag = DragBase & { kind: 'marquee'; base: string[]; shift: boolean; hit: Hit };
+/** S10:TUI-012/013: transition edge (duration) and body (alignment) drags. */
+type TransitionDrag = DragBase & {
+	kind: 'transitionEdge' | 'transitionBody';
+	gesture: Gesture | null;
+	geom: TransitionGeom;
+	edge: 'start' | 'end';
+	targets: SnapTarget[];
+	/** The last requested update equals the original transition (commit nothing). */
+	unchanged: boolean;
+};
 type HandDrag = DragBase & { kind: 'hand'; scroll0: number; scrollY0: number; region: RegionKind };
 type ZoomDrag = DragBase & { kind: 'zoom'; alt: boolean };
 
-type Drag = MoveDrag | EdgeDrag | BodyDrag | MarqueeDrag | HandDrag | ZoomDrag;
+type Drag = MoveDrag | EdgeDrag | BodyDrag | MarqueeDrag | HandDrag | ZoomDrag | TransitionDrag;
 
 const endOf = (c: { start: number; duration: number }) => c.start + c.duration;
 
@@ -178,6 +196,15 @@ export class TimelineController {
 	private rate(seq: Sequence): Rational {
 		return seq.settings.frameRate;
 	}
+	/** Transitions of a (drawn or committed) sequence, indexed per track (S10:TUI-004). */
+	transitions(seq: Sequence): TransitionIndex {
+		return transitionIndex(seq, this.session.getDrawn().media);
+	}
+	/** Hit test with transitions (S10:TUI-010). */
+	hitAt(seq: Sequence, x: number, y: number): Hit {
+		const { viewport, layout } = this.env.geometry();
+		return hitTest(seq, layout, viewport, x, y, this.transitions(seq));
+	}
 
 	setView(patch: Partial<SequenceViewState>): void {
 		const id = this.env.sequenceId();
@@ -197,10 +224,11 @@ export class TimelineController {
 		if (this.drag) return;
 		const seq = this.seq();
 		if (!seq) return;
-		const { viewport, layout } = this.env.geometry();
-		const hit = hitTest(seq, layout, viewport, p.x, p.y);
+		const { viewport } = this.env.geometry();
 		const tool = this.tool();
+		let hit = this.hitAt(seq, p.x, p.y);
 		const cursor = cursorFor(tool, hit, p);
+		if (hit.kind === 'transition' && tool !== 'selection' && tool !== 'type') hit = hit.under;
 		const razor =
 			tool === 'razor' && hit.kind === 'clip'
 				? { frame: this.razorFrame(seq, viewport, p.x), trackId: p.shift ? null : hit.row.trackId }
@@ -235,8 +263,9 @@ export class TimelineController {
 			this.beginHand(p, layout);
 			return true;
 		}
-		const hit = hitTest(seq, layout, viewport, p.x, p.y);
+		let hit = hitTest(seq, layout, viewport, p.x, p.y, this.transitions(seq));
 		const kind: GestureKind = resolveGesture(this.tool(), hit, p);
+		if (hit.kind === 'transition' && kind !== 'transitionEdge' && kind !== 'transitionBody') hit = hit.under;
 		if (kind !== 'marquee' && kind !== 'hand' && kind !== 'zoom' && kind !== 'none') {
 			// TL-882: any gesture start stops playback first.
 			if (this.session.transport.getState().playing) this.session.transport.pause();
@@ -261,6 +290,7 @@ export class TimelineController {
 				return false;
 			case 'gap':
 			case 'marquee':
+				if (!p.shift) this.session.select('transitions', [], 'replace');
 				this.drag = {
 					...base,
 					kind: 'marquee',
@@ -271,6 +301,9 @@ export class TimelineController {
 				return true;
 			case 'trackSelect':
 				return this.beginTrackSelect(seq, hit, p, base);
+			case 'transitionEdge':
+			case 'transitionBody':
+				return this.beginTransition(seq, hit, p, kind, base);
 			case 'hand':
 				this.beginHand(p, layout);
 				return true;
@@ -287,6 +320,8 @@ export class TimelineController {
 		if (this.isLocked(seq, clip.trackId)) return false;
 		const linked = this.session.getState().toggles.linkedSelection && !p.alt;
 		this.session.selectGaps([]);
+		// S10:TUI-002: selecting a clip clears the transition selection unless Shift.
+		if (!p.shift) this.session.select('transitions', [], 'replace');
 		if (p.shift) this.session.select('timeline', [clip.id], 'toggle', { linked, primary: clip.id });
 		else this.session.select('timeline', [clip.id], 'replace', { linked, primary: clip.id });
 		this.env.ui.setState({ editPoints: [] });
@@ -434,6 +469,50 @@ export class TimelineController {
 		return true;
 	}
 
+	/**
+	 * S10:TUI-011/012/013: pointer-down on a transition selects it (Shift/Ctrl toggles, no drag) and arms an
+	 * edge (duration) or body (alignment, two-sided only) drag.
+	 */
+	private beginTransition(
+		seq: Sequence,
+		hit: Hit,
+		p: PointerInfo,
+		kind: TransitionDrag['kind'],
+		base: DragBase,
+	): boolean {
+		if (hit.kind !== 'transition') return false;
+		const geom = hit.transition.geom;
+		const id = geom.t.id;
+		if (p.shift || p.ctrl) {
+			this.session.select('transitions', [id], 'toggle');
+			return false;
+		}
+		const sel = this.session.getState().selection.timeline;
+		if (!sel.transitions.includes(id) || sel.transitions.length > 1 || sel.clips.length > 0) {
+			this.session.select('timeline', [], 'replace');
+			this.session.selectGaps([]);
+			this.session.select('transitions', [id], 'replace');
+			this.env.ui.setState({ editPoints: [] });
+		}
+		if (this.isLocked(seq, geom.trackId)) return false;
+		if (kind === 'transitionBody' && geom.oneSided) return false;
+		const committed = this.committedSeq();
+		const g0 = committed
+			? (this.transitions(committed).get(geom.trackId) ?? []).find((g) => g.t.id === id)
+			: null;
+		if (!g0) return false;
+		this.drag = {
+			...base,
+			kind,
+			gesture: null,
+			geom: g0,
+			edge: hit.transition.zone === 'start' ? 'start' : 'end',
+			targets: collectSnapTargets(seq, { playhead: this.playhead() }),
+			unchanged: true,
+		};
+		return true;
+	}
+
 	private beginHand(p: PointerInfo, layout: TrackAreaLayout): void {
 		const v = this.view();
 		const region: RegionKind = p.y < layout.dividerTop ? 'video' : 'audio';
@@ -520,6 +599,12 @@ export class TimelineController {
 				break;
 			case 'hand':
 				this.updateHand(d, p);
+				break;
+			case 'transitionEdge':
+				this.updateTransitionEdge(d, p, dxPx);
+				break;
+			case 'transitionBody':
+				this.updateTransitionBody(d, p, dxPx);
 				break;
 			case 'zoom':
 				this.env.ui.setState({
@@ -717,6 +802,106 @@ export class TimelineController {
 		}
 	}
 
+	private transitionTooltip(
+		base: Sequence,
+		duration: number,
+		clamped: boolean,
+		extra: string[] = [],
+	): string[] {
+		const rate = this.rate(base);
+		const lines = [
+			`Duration ${formatTimecode(duration, rate, { dropFrame: base.settings.dropFrame })} (${duration})`,
+			...extra,
+		];
+		if (clamped) lines.push('Limited by media handles');
+		return lines;
+	}
+
+	/** TUI-012: edge drag → `transition.update {duration, alignment}` (clamped by the handler). */
+	private updateTransitionEdge(d: TransitionDrag, p: PointerInfo, dxPx: number): void {
+		const base = this.committedSeq();
+		if (!base) return;
+		const { viewport } = this.env.geometry();
+		const g = d.geom;
+		const edge0 = d.edge === 'start' ? g.start : g.end;
+		const { frame, snap } = snapEdge(
+			edge0 + deltaFramesFromPx(dxPx, viewport.pxPerFrame),
+			d.targets,
+			viewport.pxPerFrame,
+			this.snapping(),
+		);
+		const want = edgeDrag(g, d.edge, frame, p.alt);
+		if (!d.gesture) d.gesture = this.session.beginGesture('Transition Duration');
+		const r = d.gesture.update([
+			{ type: 'transition.update', transitionId: g.t.id, duration: want.duration, alignment: want.alignment },
+		] as never[]);
+		const res = r.ok
+			? (r.results[0] as { duration: number; alignment: TransitionGeom['t']['alignment'] })
+			: null;
+		d.unchanged = !!res && res.duration === g.t.duration && res.alignment === g.t.alignment;
+		const clamped = r.ok && r.warnings.some((w) => w.code === 'W_TRANSITION_SHORTENED');
+		const fb = handleFeedback({
+			effectId: g.t.effectId,
+			cut: g.cut,
+			alignment: want.alignment,
+			oneSided: g.oneSided,
+			outgoing: g.outgoing,
+			incoming: g.incoming,
+			wanted: want.duration,
+			handles: g.handles,
+		});
+		this.env.ui.setState({
+			snapFrame: snap && !clamped ? snap.target.frame : null,
+			tooltip: {
+				x: p.x,
+				y: p.y,
+				lines: res
+					? this.transitionTooltip(base, res.duration, clamped)
+					: [r.ok ? '' : (r.errors[0]?.message ?? 'Not allowed')],
+			},
+			cursor: r.ok ? this.env.ui.getState().cursor : 'not-allowed',
+			transitionGhost:
+				fb.missing.length || clamped
+					? {
+							trackId: g.trackId,
+							wanted: fb.wanted,
+							fitted: fb.fitted,
+							bands: fb.bands,
+							missing: fb.missing,
+							refused: fb.fittedDuration === 0,
+						}
+					: null,
+		});
+	}
+
+	/** TUI-013: body drag snaps the alignment (two-sided only); the duration is kept or reduced. */
+	private updateTransitionBody(d: TransitionDrag, p: PointerInfo, dxPx: number): void {
+		const base = this.committedSeq();
+		if (!base) return;
+		const { viewport } = this.env.geometry();
+		const g = d.geom;
+		const alignment = bodyDragAlignment(g, deltaFramesFromPx(dxPx, viewport.pxPerFrame));
+		if (!d.gesture) d.gesture = this.session.beginGesture('Transition Alignment');
+		const r = d.gesture.update([
+			{ type: 'transition.update', transitionId: g.t.id, alignment, duration: g.t.duration },
+		] as never[]);
+		const res = r.ok ? (r.results[0] as { duration: number }) : null;
+		d.unchanged = alignment === g.t.alignment && (!res || res.duration === g.t.duration);
+		const label =
+			alignment === 'center' ? 'Center at Cut' : alignment === 'start-at-cut' ? 'Start at Cut' : 'End at Cut';
+		const clamped = r.ok && r.warnings.some((w) => w.code === 'W_TRANSITION_SHORTENED');
+		this.env.ui.setState({
+			tooltip: {
+				x: p.x,
+				y: p.y,
+				lines: res
+					? [label, ...this.transitionTooltip(base, res.duration, clamped)]
+					: [label, r.ok ? '' : (r.errors[0]?.message ?? 'Not allowed')],
+			},
+			cursor: r.ok ? 'grabbing' : 'not-allowed',
+		});
+	}
+
 	private updateMarquee(d: MarqueeDrag, p: PointerInfo): void {
 		const seq = this.seq();
 		if (!seq) return;
@@ -763,6 +948,13 @@ export class TimelineController {
 				case 'slide': {
 					const r = d.gesture?.commit() ?? null;
 					this.report(r);
+					break;
+				}
+				case 'transitionEdge':
+				case 'transitionBody': {
+					// One entry per gesture; a drag that ends where it started records nothing (TUI-012/013).
+					if (d.unchanged) d.gesture?.cancel();
+					else this.report(d.gesture?.commit() ?? null);
 					break;
 				}
 				case 'zoom': {
@@ -815,6 +1007,7 @@ export class TimelineController {
 				} else if (!p.shift) {
 					// TL-402: a click on empty space deselects everything.
 					this.session.select('timeline', [], 'replace');
+					this.session.select('transitions', [], 'replace');
 					this.session.selectGaps([]);
 					this.env.ui.setState({ editPoints: [] });
 				}

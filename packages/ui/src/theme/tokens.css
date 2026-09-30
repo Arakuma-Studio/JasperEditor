@@ -314,3 +314,23 @@
 	--pr-label-yellow: #9c8f22;
 	--pr-label-yellow-tint: #f5ed9f;
 }
+
+/* wp-m2-transitions: transitions drawn on the timeline (S10:TUI-001…006, TUI-020…022). */
+:root {
+	--pr-transition-fill: rgba(196, 196, 206, 0.42);
+	--pr-transition-border: rgba(236, 236, 242, 0.8);
+	--pr-transition-glyph: rgba(255, 255, 255, 0.85);
+	--pr-transition-label: #ffffff;
+	--pr-transition-selected: var(--pr-accent);
+	--pr-transition-selected-fill: color-mix(in srgb, var(--pr-accent) 42%, transparent);
+	--pr-transition-broken: var(--pr-warning);
+	/* "No more media on this side" end cap (TUI-003). */
+	--pr-transition-cap: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0 1px, rgba(0, 0, 0, 0.35) 1px 3px);
+	/* Ghost of a drop / edge drag with handle availability (TUI-022). */
+	--pr-transition-ghost-fill: color-mix(in srgb, var(--pr-accent) 30%, transparent);
+	--pr-transition-ghost-border: var(--pr-accent);
+	--pr-transition-handle-band: rgba(255, 255, 255, 0.16);
+	--pr-transition-missing: repeating-linear-gradient(135deg, rgba(228, 69, 58, 0.85) 0 2px, rgba(228, 69, 58, 0.25) 2px 5px);
+	--pr-transition-refused: var(--pr-danger);
+	--pr-transition-default-badge: var(--pr-accent);
+}
