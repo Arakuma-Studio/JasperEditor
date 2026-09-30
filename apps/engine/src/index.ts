@@ -48,6 +48,8 @@ export function prepareAppdir(appdir: string): void {
 export function engineConfig(opts: StartEngineOptions): EngineConfig {
 	const env = opts.env ?? process.env;
 	const dev = opts.dev ?? isTruthyEnv(env[ENV.DEV]);
+	// A second dev stack (other worktree, E2E) runs Vite on another port: JASPER_DEV_WEB_PORT.
+	const devWebPort = Number.parseInt(env[ENV.DEV_WEB_PORT] ?? '', 10) || DEV_WEB_PORT;
 	return {
 		appdir: opts.appdir,
 		paths: appdirPaths(opts.appdir),
@@ -57,7 +59,7 @@ export function engineConfig(opts: StartEngineOptions): EngineConfig {
 		port: opts.port,
 		webDir: opts.webDir ?? env[ENV.WEB_DIR] ?? null,
 		version: ENGINE_VERSION,
-		extraHosts: dev ? [`127.0.0.1:${DEV_WEB_PORT}`, `localhost:${DEV_WEB_PORT}`] : [],
+		extraHosts: dev ? [`127.0.0.1:${devWebPort}`, `localhost:${devWebPort}`] : [],
 	};
 }
 

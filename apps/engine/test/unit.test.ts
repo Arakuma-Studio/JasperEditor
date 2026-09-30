@@ -265,3 +265,16 @@ describe('system errors → ENG-022 codes (WP-3I)', () => {
 		await app.close();
 	});
 });
+
+describe('dev web port (WP-3I)', () => {
+	it('the dev engine accepts the Vite host given by JASPER_DEV_WEB_PORT (default 5173)', async () => {
+		const { engineConfig } = await import('../src/index.ts');
+		const base = { appdir: '/tmp/jasper-x', port: 48121, dev: true } as const;
+		expect(engineConfig({ ...base, env: {} }).extraHosts).toContain('127.0.0.1:5173');
+		const custom = engineConfig({ ...base, env: { JASPER_DEV_WEB_PORT: '48130' } }).extraHosts;
+		expect(custom).toEqual(['127.0.0.1:48130', 'localhost:48130']);
+		expect(engineConfig({ ...base, dev: false, env: { JASPER_DEV_WEB_PORT: '48130' } }).extraHosts).toEqual(
+			[],
+		);
+	});
+});
