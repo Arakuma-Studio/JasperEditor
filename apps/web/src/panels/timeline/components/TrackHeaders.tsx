@@ -1,0 +1,390 @@
+// Track headers (S02 §6: TL-250…268; S05:TLC-005/006). Document toggles (lock, sync lock, eye, mute,
+// solo, name) go through `track.update` transactions (undoable); targeting and heights are view state.
+import type { Sequence, Track } from '@jasper/project';
+import type { EditorSession, SequenceViewState } from '@jasper/session';
+import { IconButton } from '@jasper/ui';
+import { useRef, useState } from 'react';
+import {
+	DEFAULT_AUDIO_PX,
+	DEFAULT_VIDEO_PX,
+	type TrackAreaLayout,
+	type TrackRow,
+	visibleRows,
+} from '../model/layout.ts';
+import type { TimelineController } from '../state/controller.ts';
+import type { ContextMenuItem, TimelineUiStore } from '../state/ui-store.ts';
+
+export type TrackHeadersProps = {
+	seq: Sequence;
+	layout: TrackAreaLayout;
+	view: SequenceViewState;
+	session: EditorSession;
+	controller: TimelineController;
+	ui: TimelineUiStore;
+	openMenu(x: number, y: number, items: ContextMenuItem[]): void;
+	toast(kind: 'info' | 'warning' | 'error', msg: string): void;
+};
+
+type Kind = 'video' | 'audio';
+const listOf = (seq: Sequence, kind: Kind) => (kind === 'video' ? seq.videoTracks : seq.audioTracks);
+const labelOf = (kind: Kind, index: number) => `${kind === 'video' ? 'V' : 'A'}${index + 1}`;
+const defaultName = (kind: Kind, index: number) => `${kind === 'video' ? 'Video' : 'Audio'} ${index + 1}`;
+
+function apply(p: TrackHeadersProps, label: string, commands: unknown[]) {
+	if (commands.length === 0) return;
+	const r = p.session.apply({ label, origin: 'user', sequenceId: p.seq.id, commands: commands as never[] });
+	if (!r.ok) p.toast('warning', r.errors[0]?.message ?? `${label} failed`);
+	return r;
+}
+
+type Flag = 'locked' | 'syncLock' | 'output' | 'mute' | 'solo';
+const LABELS: Record<Flag, [string, string]> = {
+	locked: ['Lock Track', 'Unlock Track'],
+	syncLock: ['Sync Lock On', 'Sync Lock Off'],
+	output: ['Toggle Track Output', 'Toggle Track Output'],
+	mute: ['Mute Track', 'Unmute Track'],
+	solo: ['Solo Track', 'Unsolo Track'],
+};
+
+function flagValue(t: Track, f: Flag): boolean {
+	if (f === 'output') return t.output !== false;
+	if (f === 'mute') return !!t.mute;
+	if (f === 'solo') return !!t.solo;
+	return t[f];
+}
+
+/** Toggle with TL-257 modifier conventions. */
+function toggleFlag(
+	p: TrackHeadersProps,
+	kind: Kind,
+	track: Track,
+	f: Flag,
+	e: { shiftKey: boolean; altKey: boolean },
+) {
+	const list = listOf(p.seq, kind);
+	const next = !flagValue(track, f);
+	const cmd = (t: Track, v: boolean) => ({ type: 'track.update', trackId: t.id, patch: { [f]: v } });
+	let commands: unknown[];
+	if (e.shiftKey) commands = list.map((t) => cmd(t, next));
+	else if (e.altKey && f === 'solo') commands = list.map((t) => cmd(t, t.id === track.id));
+	else if (e.altKey && f === 'output') {
+		const mem = p.ui.getState().soloEyeMemory;
+		if (mem && mem.trackId === track.id) {
+			commands = list.map((t) => cmd(t, mem.previous[t.id] ?? true));
+			p.ui.setState({ soloEyeMemory: null });
+		} else {
+			p.ui.setState({
+				soloEyeMemory: {
+					trackId: track.id,
+					previous: Object.fromEntries(list.map((t) => [t.id, t.output !== false])),
+				},
+			});
+			commands = list.map((t) => cmd(t, t.id === track.id));
+		}
+	} else commands = [cmd(track, next)];
+	const r = apply(p, LABELS[f][next ? 0 : 1], commands);
+	if (r?.ok && f === 'locked' && next) {
+		// TL-250: locking clears selections on the track and removes its targeting.
+		const ids = new Set(e.shiftKey ? list.map((t) => t.id) : [track.id]);
+		const sel = p.session.getState().selection.timeline.clips.filter((id) => {
+			const c = p.session.getCommitted().sequences[p.seq.id]?.clips[id];
+			return c && ids.has(c.trackId);
+		});
+		if (sel.length) p.session.select('timeline', sel, 'remove', { linked: false });
+		const tg = p.view.targeting;
+		p.session.setView(p.seq.id, {
+			targeting: {
+				video: tg.video.filter((id) => !ids.has(id)),
+				audio: tg.audio.filter((id) => !ids.has(id)),
+			},
+		});
+	}
+}
+
+function toggleTarget(p: TrackHeadersProps, kind: Kind, track: Track, shift: boolean) {
+	if (track.locked) return;
+	const tg = p.view.targeting;
+	const cur = kind === 'video' ? tg.video : tg.audio;
+	const on = !cur.includes(track.id);
+	const unlocked = listOf(p.seq, kind)
+		.filter((t) => !t.locked)
+		.map((t) => t.id);
+	const next = shift ? (on ? unlocked : []) : on ? [...cur, track.id] : cur.filter((id) => id !== track.id);
+	p.session.setView(p.seq.id, { targeting: { ...tg, [kind]: next } });
+}
+
+function headerMenu(
+	p: TrackHeadersProps,
+	kind: Kind,
+	track: Track,
+	index: number,
+	startRename: () => void,
+): ContextMenuItem[] {
+	const clipCount = Object.values(p.seq.clips).filter((c) => c.trackId === track.id).length;
+	const list = listOf(p.seq, kind);
+	const empty = list.filter((t) => !Object.values(p.seq.clips).some((c) => c.trackId === t.id));
+	return [
+		{
+			kind: 'item',
+			label: 'Add Track',
+			run: () => apply(p, 'Add Track', [{ type: 'track.add', kind, index: index + 1 }]),
+		},
+		{
+			kind: 'item',
+			label: clipCount ? `Delete Track (${clipCount} clips)…` : 'Delete Track',
+			disabled: list.length <= 1 || track.locked,
+			run: () => {
+				if (
+					clipCount &&
+					typeof window !== 'undefined' &&
+					!window.confirm(`Delete track and its ${clipCount} clips?`)
+				)
+					return;
+				apply(p, 'Delete Track', [{ type: 'track.remove', trackIds: [track.id], force: clipCount > 0 }]);
+			},
+		},
+		{
+			kind: 'item',
+			label: 'Delete Empty Tracks',
+			disabled: empty.length === 0 || empty.length === list.length,
+			run: () =>
+				apply(p, 'Delete Empty Tracks', [
+					{ type: 'track.remove', trackIds: empty.slice(0, list.length - 1).map((t) => t.id) },
+				]),
+		},
+		{ kind: 'separator' },
+		{ kind: 'item', label: 'Rename', run: startRename },
+	];
+}
+
+function Header(props: TrackHeadersProps & { row: TrackRow; track: Track }) {
+	const { row, track } = props;
+	const kind: Kind = row.kind;
+	const [editing, setEditing] = useState<string | null>(null);
+	const lastExpanded = useRef(72);
+	const targeted = (kind === 'video' ? props.view.targeting.video : props.view.targeting.audio).includes(
+		track.id,
+	);
+	const anySolo = props.seq.audioTracks.some((t) => t.solo);
+	const silencedBySolo = kind === 'audio' && anySolo && !track.solo;
+	const label = labelOf(kind, row.index);
+	const name = track.name ?? defaultName(kind, row.index);
+	const expanded = row.height >= 48;
+	const startRename = () => setEditing(track.name ?? '');
+	const commitRename = () => {
+		if (editing === null) return;
+		const v = editing.trim();
+		apply(props, 'Rename Track', [
+			{ type: 'track.update', trackId: track.id, patch: { name: v === '' ? null : v } },
+		]);
+		setEditing(null);
+	};
+	const resize = (e: React.PointerEvent, dir: 1 | -1) => {
+		e.stopPropagation();
+		const y0 = e.clientY;
+		const h0 = row.height;
+		const el = e.currentTarget as HTMLElement;
+		el.setPointerCapture?.(e.pointerId);
+		const move = (ev: PointerEvent) =>
+			props.controller.setTrackHeight(track.id, h0 + dir * (ev.clientY - y0));
+		const up = () => {
+			el.removeEventListener('pointermove', move);
+			el.removeEventListener('pointerup', up);
+		};
+		el.addEventListener('pointermove', move);
+		el.addEventListener('pointerup', up);
+	};
+	const pill = (on: boolean) =>
+		on
+			? 'bg-pr-target text-pr-on-accent'
+			: 'text-pr-muted outline outline-1 -outline-offset-1 outline-[var(--pr-border-strong)]';
+	return (
+		// biome-ignore lint/a11y/noStaticElementInteractions: pointer editing surface; keyboard access goes through keymap commands
+		<div
+			className="absolute right-0 left-0 flex items-start gap-[2px] px-1 pt-[3px] text-pr-small"
+			style={{
+				top: row.y,
+				height: row.height,
+				background: targeted ? 'var(--pr-bg-panel-raised)' : 'var(--pr-bg-panel)',
+				borderBottom: '1px solid var(--pr-border-subtle)',
+			}}
+			data-track-header={track.id}
+			onContextMenu={(e) => {
+				e.preventDefault();
+				props.openMenu(e.clientX, e.clientY, headerMenu(props, kind, track, row.index, startRename));
+			}}
+			onDoubleClick={(e) => {
+				if ((e.target as HTMLElement).closest('button,input')) return;
+				const def = kind === 'video' ? DEFAULT_VIDEO_PX : DEFAULT_AUDIO_PX;
+				if (row.height >= 48) {
+					lastExpanded.current = row.height;
+					props.controller.setTrackHeight(track.id, def);
+				} else props.controller.setTrackHeight(track.id, lastExpanded.current);
+			}}
+			onWheel={(e) => {
+				if (!e.altKey) return;
+				props.controller.setTrackHeight(track.id, row.height * Math.exp(-e.deltaY * 0.0025));
+			}}
+		>
+			<IconButton
+				icon={track.locked ? 'track.lock' : 'track.unlock'}
+				label={track.locked ? 'Unlock track' : 'Lock track'}
+				toggled={track.locked ? 'on' : 'off'}
+				onClick={(e) => toggleFlag(props, kind, track, 'locked', e)}
+				data-control="lock"
+			/>
+			<button
+				type="button"
+				className={`h-[20px] min-w-[26px] rounded-pr-pill px-1 text-[11px] leading-[20px] ${pill(targeted)}`}
+				title={`Target ${label}`}
+				aria-pressed={targeted}
+				disabled={track.locked}
+				onClick={(e) => toggleTarget(props, kind, track, e.shiftKey)}
+				data-control="target"
+			>
+				{label}
+			</button>
+			<IconButton
+				icon={track.syncLock ? 'track.syncLock' : 'track.syncLockOff'}
+				label={track.syncLock ? 'Sync lock on' : 'Sync lock off'}
+				toggled={track.syncLock ? 'on' : 'off'}
+				onClick={(e) => toggleFlag(props, kind, track, 'syncLock', e)}
+				data-control="sync"
+			/>
+			{kind === 'video' ? (
+				<IconButton
+					icon={track.output === false ? 'track.outputOff' : 'track.output'}
+					label="Toggle track output"
+					onClick={(e) => toggleFlag(props, kind, track, 'output', e)}
+					data-control="eye"
+				/>
+			) : (
+				<>
+					<button
+						type="button"
+						className={`h-[20px] w-[20px] rounded-pr-control text-[11px] font-semibold ${track.mute ? 'bg-pr-success text-pr-on-accent' : silencedBySolo ? 'text-pr-dim' : 'text-pr-muted hover:bg-pr-hover'}`}
+						title="Mute track"
+						aria-pressed={!!track.mute}
+						onClick={(e) => toggleFlag(props, kind, track, 'mute', e)}
+						data-control="mute"
+					>
+						M
+					</button>
+					<button
+						type="button"
+						className={`h-[20px] w-[20px] rounded-pr-control text-[11px] font-semibold ${track.solo ? 'text-pr-app' : 'text-pr-muted hover:bg-pr-hover'}`}
+						style={track.solo ? { background: 'var(--pr-meter-yellow)' } : undefined}
+						title="Solo track (Alt: exclusive)"
+						aria-pressed={!!track.solo}
+						onClick={(e) => toggleFlag(props, kind, track, 'solo', e)}
+						data-control="solo"
+					>
+						S
+					</button>
+				</>
+			)}
+			{editing !== null ? (
+				<input
+					// biome-ignore lint/a11y/noAutofocus: inline rename (TL-258)
+					autoFocus
+					className="h-[20px] min-w-0 flex-1 rounded-pr-control bg-pr-field px-1 text-pr-text outline-none"
+					value={editing}
+					aria-label="Track name"
+					onChange={(e) => setEditing(e.target.value)}
+					onBlur={commitRename}
+					onKeyDown={(e) => {
+						e.stopPropagation();
+						if (e.key === 'Enter') commitRename();
+						if (e.key === 'Escape') setEditing(null);
+					}}
+				/>
+			) : (
+				// biome-ignore lint/a11y/noStaticElementInteractions: pointer editing surface; keyboard access goes through keymap commands
+				<span
+					className={`min-w-0 flex-1 truncate leading-[20px] ${expanded ? 'text-pr-text' : 'text-pr-muted'}`}
+					onDoubleClick={(e) => {
+						e.stopPropagation();
+						startRename();
+					}}
+					title={name}
+				>
+					{name}
+				</span>
+			)}
+			<div
+				className="absolute right-0 left-0 h-[4px] cursor-row-resize"
+				style={kind === 'video' ? { top: -2 } : { bottom: -2 }}
+				onPointerDown={(e) => resize(e, kind === 'video' ? -1 : 1)}
+				data-resize-handle
+			/>
+		</div>
+	);
+}
+
+export function TrackHeaders(props: TrackHeadersProps) {
+	const { layout, seq } = props;
+	const regions = [layout.video, layout.audio];
+	return (
+		<div
+			className="absolute inset-0"
+			onWheel={(e) => {
+				if (!e.shiftKey || e.altKey) return;
+				// Shift+wheel over the header column scales all tracks of the region (TL-263).
+				const region =
+					e.clientY - e.currentTarget.getBoundingClientRect().top < layout.dividerTop
+						? layout.video
+						: layout.audio;
+				const f = Math.exp(-e.deltaY * 0.0025);
+				for (const r of region.rows) props.controller.setTrackHeight(r.trackId, r.height * f);
+			}}
+			data-testid="timeline-track-headers"
+		>
+			{regions.map((region) => (
+				<div
+					key={region.kind}
+					className="absolute right-0 left-0 overflow-hidden"
+					style={{ top: region.top, height: region.height }}
+				>
+					<div className="absolute right-0 left-0" style={{ top: -region.top, height: layout.height }}>
+						{visibleRows(region).map((row) => {
+							const track = listOf(seq, row.kind)[row.index];
+							return track ? <Header key={track.id} {...props} row={row} track={track} /> : null;
+						})}
+						{region.kind === 'audio' && layout.masterY !== null ? (
+							<div
+								className="absolute right-0 left-0 flex items-center gap-2 px-2 text-pr-small text-pr-muted"
+								style={{ top: layout.masterY, height: 28, background: 'var(--pr-bg-panel)' }}
+								data-master-row
+							>
+								<span className="text-pr-text">Master</span>
+								<span className="ml-auto text-pr-value tabular-nums">
+									{seq.master.volumeDb.value.toFixed(1)}
+								</span>
+							</div>
+						) : null}
+					</div>
+				</div>
+			))}
+			<div
+				className="absolute right-0 left-0"
+				style={{ top: layout.dividerTop, height: 4, background: 'var(--pr-bg-app)', cursor: 'row-resize' }}
+				onPointerDown={(e) => {
+					const el = e.currentTarget;
+					el.setPointerCapture?.(e.pointerId);
+					const top = el.parentElement!.getBoundingClientRect().top;
+					const move = (ev: PointerEvent) =>
+						props.session.setView(seq.id, {
+							dividerRatio: Math.min(0.9, Math.max(0.1, (ev.clientY - top) / Math.max(1, layout.height))),
+						});
+					const up = () => {
+						el.removeEventListener('pointermove', move);
+						el.removeEventListener('pointerup', up);
+					};
+					el.addEventListener('pointermove', move);
+					el.addEventListener('pointerup', up);
+				}}
+				data-divider-handle
+			/>
+		</div>
+	);
+}
