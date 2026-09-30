@@ -61,7 +61,8 @@ export function parseWorkspacesState(data: unknown): WorkspacesState | null {
 	for (const [id, r] of Object.entries(d.workspaces)) {
 		if (!r || typeof r !== 'object' || typeof r.name !== 'string') return null;
 		if (!isLayout(r.current ?? null) || !isLayout(r.saved ?? null)) return null;
-		const builtIn = id in base.workspaces;
+		if (id === '__proto__') continue;
+		const builtIn = Object.hasOwn(base.workspaces, id);
 		workspaces[id] = {
 			id,
 			name: builtIn ? (base.workspaces[id]?.name ?? r.name) : r.name,
@@ -72,13 +73,16 @@ export function parseWorkspacesState(data: unknown): WorkspacesState | null {
 		};
 	}
 	const order = d.order.filter(
-		(id): id is string => typeof id === 'string' && id in workspaces && id !== COMPACT_WORKSPACE.id,
+		(id): id is string =>
+			typeof id === 'string' && Object.hasOwn(workspaces, id) && id !== COMPACT_WORKSPACE.id,
 	);
 	for (const w of BUILTIN_WORKSPACES) if (!order.includes(w.id)) order.push(w.id);
 	for (const id of Object.keys(workspaces))
 		if (!order.includes(id) && id !== COMPACT_WORKSPACE.id) order.push(id);
 	const activeId =
-		d.activeId in workspaces && d.activeId !== COMPACT_WORKSPACE.id ? d.activeId : DEFAULT_WORKSPACE_ID;
+		Object.hasOwn(workspaces, d.activeId) && d.activeId !== COMPACT_WORKSPACE.id
+			? d.activeId
+			: DEFAULT_WORKSPACE_ID;
 	return { activeId, order, workspaces };
 }
 
@@ -127,7 +131,7 @@ export class WorkspaceStore {
 		else this.schedule();
 	}
 	private patch(id: string, patch: Partial<WorkspaceRecord>, persist: 'now' | 'debounced' = 'now') {
-		const r = this.state.workspaces[id];
+		const r = this.get(id);
 		if (!r) return;
 		this.set({ ...this.state, workspaces: { ...this.state.workspaces, [id]: { ...r, ...patch } } }, persist);
 	}
@@ -147,7 +151,8 @@ export class WorkspaceStore {
 	}
 
 	get(id: string): WorkspaceRecord | undefined {
-		return this.state.workspaces[id];
+		// Own keys only: ids arrive from storage and agent-exposed commands ("constructor", "toString"…).
+		return Object.hasOwn(this.state.workspaces, id) ? this.state.workspaces[id] : undefined;
 	}
 	get active(): WorkspaceRecord {
 		return (
@@ -177,7 +182,7 @@ export class WorkspaceStore {
 	}
 
 	setActive(id: string): void {
-		if (!this.state.workspaces[id] || id === COMPACT_WORKSPACE.id || id === this.state.activeId) return;
+		if (!this.get(id) || id === COMPACT_WORKSPACE.id || id === this.state.activeId) return;
 		this.set({ ...this.state, activeId: id });
 	}
 
@@ -188,7 +193,7 @@ export class WorkspaceStore {
 
 	/** Save Changes to This Workspace: current → saved. */
 	saveChanges(id: string, layout?: SerializedDockview): void {
-		const r = this.state.workspaces[id];
+		const r = this.get(id);
 		if (!r) return;
 		const cur = layout ?? r.current;
 		this.patch(id, { current: cur, saved: cur });
@@ -196,7 +201,7 @@ export class WorkspaceStore {
 
 	/** Reset to Saved Layout: saved → current (built-ins: factory until first save). Returns the layout. */
 	resetToSaved(id: string): SerializedDockview | null {
-		const r = this.state.workspaces[id];
+		const r = this.get(id);
 		if (!r) return null;
 		this.patch(id, { current: r.saved });
 		return r.saved;
@@ -204,7 +209,7 @@ export class WorkspaceStore {
 
 	/** Edit Workspaces ▸ Restore factory layout (built-ins). */
 	restoreFactory(id: string): void {
-		const r = this.state.workspaces[id];
+		const r = this.get(id);
 		if (!r?.builtIn) return;
 		this.patch(id, { current: null, saved: null });
 	}
@@ -227,7 +232,7 @@ export class WorkspaceStore {
 		const check = this.checkName(name);
 		if (!check.ok) return check;
 		let id = `custom:${check.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
-		for (let i = 2; this.state.workspaces[id]; i++) id = `${id.replace(/-\d+$/, '')}-${i}`;
+		for (let i = 2; this.get(id); i++) id = `${id.replace(/-\d+$/, '')}-${i}`;
 		const record: WorkspaceRecord = {
 			id,
 			name: check.name,
@@ -245,7 +250,7 @@ export class WorkspaceStore {
 	}
 
 	rename(id: string, name: string): NameCheck {
-		const r = this.state.workspaces[id];
+		const r = this.get(id);
 		if (!r || r.builtIn) return { ok: false, error: 'Built-in workspaces cannot be renamed' };
 		const check = this.checkName(name, id);
 		if (check.ok) this.patch(id, { name: check.name });
@@ -253,7 +258,7 @@ export class WorkspaceStore {
 	}
 
 	remove(id: string): boolean {
-		const r = this.state.workspaces[id];
+		const r = this.get(id);
 		if (!r || r.builtIn) return false;
 		const workspaces = { ...this.state.workspaces };
 		delete workspaces[id];
@@ -266,7 +271,9 @@ export class WorkspaceStore {
 	}
 
 	reorder(order: string[]): void {
-		const known = order.filter((id) => id in this.state.workspaces && id !== COMPACT_WORKSPACE.id);
+		const known = order.filter(
+			(id) => Object.hasOwn(this.state.workspaces, id) && id !== COMPACT_WORKSPACE.id,
+		);
 		for (const id of this.state.order) if (!known.includes(id)) known.push(id);
 		this.set({ ...this.state, order: known });
 	}
@@ -285,7 +292,7 @@ export class WorkspaceStore {
 
 	/** Export Workspace… (WS-010): a portable JSON document. */
 	exportJson(id: string): string | null {
-		const r = this.state.workspaces[id];
+		const r = this.get(id);
 		if (!r) return null;
 		return JSON.stringify(
 			{ kind: 'jasper.workspace', version: 1, name: r.name, layout: r.current ?? r.saved },

@@ -116,6 +116,19 @@ describe('workspace store', () => {
 		expect(ok.resetReason).toBeNull();
 	});
 
+	it('ignores inherited object keys as workspace ids (storage and workspace.switch args)', () => {
+		const stored = JSON.stringify({
+			version: 1,
+			data: { activeId: 'constructor', order: ['toString', 'editing'], workspaces: {} },
+		});
+		const store = new WorkspaceStore(memoryStorage({ [WORKSPACES_KEY]: stored }));
+		expect(store.getState().activeId).toBe('editing');
+		expect(store.getState().order).not.toContain('toString');
+		expect(store.get('constructor')).toBeUndefined();
+		store.setActive('constructor');
+		expect(store.getState().activeId).toBe('editing');
+	});
+
 	it('current/saved snapshots, save as, reset, reorder and Alt+Shift numbering (WS-010…012)', () => {
 		vi.useFakeTimers();
 		const storage = memoryStorage();
