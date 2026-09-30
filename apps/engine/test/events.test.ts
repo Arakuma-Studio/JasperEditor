@@ -118,6 +118,7 @@ describe('capabilities and fonts', () => {
 		expect(events).toContain('capabilities.changed');
 		const patched = (await app.inject({ method: 'GET', url: '/api/capabilities', headers: H })).json();
 		expect(patched.render).toMatchObject({ fframes: 'ready', native: true });
+		expect(patched.render.fframesReason).toBeUndefined();
 		off();
 		expect(
 			(await app.inject({ method: 'GET', url: '/api/capabilities', headers: H })).json().render.fframes,

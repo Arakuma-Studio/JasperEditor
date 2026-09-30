@@ -110,6 +110,9 @@ export class CapabilityService {
 				// a failing provider never breaks the route
 			}
 		}
+		// A provider that reports fframes ready cannot unset the base "not registered" reason through
+		// a merge patch (undefined values are skipped), so drop the stale reason here.
+		if (caps.render.fframes === 'ready') delete caps.render.fframesReason;
 		return caps;
 	}
 }
