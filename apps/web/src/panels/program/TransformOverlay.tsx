@@ -265,6 +265,9 @@ export function TransformOverlay({
 		unionBounds(layers.map((l) => l.props.bounds));
 
 	const onPointerDown = (e: ReactPointerEvent<SVGSVGElement>) => {
+		// A text selection left by an earlier drag makes Chromium start a native drag of it on the next
+		// press, which cancels the pointer stream (pointercancel → the gesture is dropped). Clear it.
+		if (e.button === 0) window.getSelection?.()?.removeAllRanges();
 		if (playing) transport.pause();
 		const { seq: p, screen } = toSeq(e);
 		const svg = svgRef.current!;
@@ -642,7 +645,7 @@ export function TransformOverlay({
 		<svg
 			ref={svgRef}
 			data-testid="program-overlay"
-			className="absolute inset-0 h-full w-full touch-none"
+			className="absolute inset-0 h-full w-full touch-none select-none"
 			style={{ cursor }}
 			onPointerDown={onPointerDown}
 			onPointerMove={onPointerMove}

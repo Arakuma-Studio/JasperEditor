@@ -341,7 +341,7 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 		>
 			<div
 				ref={viewportRef}
-				className="relative min-h-0 flex-1 overflow-hidden"
+				className="relative min-h-0 flex-1 overflow-hidden select-none"
 				data-testid="program-viewport"
 			>
 				{monitor.transparencyGrid || transparent ? (
