@@ -45,16 +45,20 @@ function log(msg: string): void {
 	console.log(`[desktop] ${msg}`);
 }
 
-function resources(): { engineEntry: string; webDir: string } {
+function resources(): { engineEntry: string; webDir: string; resourcesDir: string | null } {
 	if (mode === 'packaged')
 		return {
 			engineEntry: join(process.resourcesPath, 'engine', 'engine.mjs'),
 			webDir: join(process.resourcesPath, 'web'),
+			// <resources>/ffmpeg-lgpl: the LGPL FFmpeg + Remotion binaries directory (D-13).
+			resourcesDir: process.resourcesPath,
 		};
 	const repo = resolve(here, '../../..');
 	return {
 		engineEntry: process.env.JASPER_ENGINE_ENTRY ?? join(repo, 'apps/engine/dist/engine.mjs'),
 		webDir: process.env.JASPER_WEB_DIR ?? join(repo, 'apps/web/dist'),
+		// packaged-like: the engine finds vendor/ffmpeg-lgpl/<platform> in the checkout (`pnpm ffmpeg:lgpl`).
+		resourcesDir: process.env.JASPER_RESOURCES_DIR ?? null,
 	};
 }
 
@@ -164,14 +168,14 @@ function registerIpc(): void {
 }
 
 async function startPackagedLike(): Promise<string> {
-	const { engineEntry, webDir } = resources();
+	const { engineEntry, webDir, resourcesDir } = resources();
 	if (!existsSync(engineEntry)) throw new Error(`engine bundle missing: ${engineEntry} (run pnpm build)`);
 	if (!existsSync(join(webDir, 'index.html')))
 		throw new Error(`web build missing: ${webDir} (run pnpm build)`);
 	const token = makeToken((n) => randomBytes(n));
 	const dir = appdir();
 	mkdirSync(dir, { recursive: true });
-	engine = await startEngineProcess({ entry: engineEntry, appdir: dir, webDir, token });
+	engine = await startEngineProcess({ entry: engineEntry, appdir: dir, webDir, token, resourcesDir });
 	log(`engine ready on ${engine.origin} (appdir ${dir})`);
 	// HttpOnly SameSite=Strict session cookie so media elements and fetches carry the token (ARCH §4.2).
 	await session.defaultSession.cookies.set({

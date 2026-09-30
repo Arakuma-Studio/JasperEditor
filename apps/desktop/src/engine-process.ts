@@ -10,6 +10,11 @@ export type StartEngineOptions = {
 	appdir: string;
 	webDir: string;
 	token: string;
+	/**
+	 * Packaged builds: `process.resourcesPath`. The engine finds its LGPL FFmpeg + Remotion binaries
+	 * directory in `<resourcesDir>/ffmpeg-lgpl` (ARCHITECTURE D-13).
+	 */
+	resourcesDir?: string | null;
 	readyTimeoutMs?: number;
 	onLog?(line: string): void;
 };
@@ -22,6 +27,7 @@ export function startEngineProcess(opts: StartEngineOptions): Promise<EngineProc
 			JASPER_WEB_DIR: opts.webDir,
 			JASPER_APPDIR: opts.appdir,
 			JASPER_DEV: '',
+			...(opts.resourcesDir ? { JASPER_RESOURCES_DIR: opts.resourcesDir } : {}),
 		},
 		stdio: 'pipe',
 		serviceName: 'jasper-engine',

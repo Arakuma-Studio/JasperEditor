@@ -68,7 +68,12 @@ export async function createCoreServices(
 	const env = opts.env ?? process.env;
 	const paths = config.paths;
 	const broadcaster = new Broadcaster();
-	const resourcesDir = opts.resourcesDir ?? env.JASPER_RESOURCES_DIR ?? null;
+	// Packaged desktop builds: the Electron main passes JASPER_RESOURCES_DIR; a utilityProcess also has
+	// `process.resourcesPath`.
+	const resourcesDir =
+		opts.resourcesDir ??
+		env.JASPER_RESOURCES_DIR ??
+		(opts.env ? null : ((process as unknown as { resourcesPath?: string }).resourcesPath ?? null));
 	// D-13: one LGPL directory (vendor in dev, <resources>/ffmpeg-lgpl packaged) serves both paths.
 	const vendorDir = findVendorDir({ env });
 	const bins = resolveBinaries({ env, resourcesDir, vendorDir });

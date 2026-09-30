@@ -8,7 +8,8 @@
     "build": "node scripts/build-main.mjs",
     "dev": "node scripts/build-main.mjs && electron .",
     "start:packaged-like": "node scripts/build-main.mjs && cross-env JASPER_DESKTOP_MODE=packaged-like electron .",
-    "dist:dir": "pnpm dlx electron-builder@^26.15 --dir",
+    "dist:dir": "node scripts/package.mjs --dir",
+    "dist": "node scripts/package.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
@@ -27,7 +28,8 @@
     },
     "files": [
       "dist-electron/**/*",
-      "package.json"
+      "package.json",
+      "!**/node_modules/@remotion/compositor-*/**"
     ],
     "extraResources": [
       {
@@ -39,8 +41,21 @@
         "to": "engine"
       },
       {
+        "from": "../engine/dist-deploy/node_modules",
+        "to": "engine/node_modules",
+        "filter": [
+          "**/*",
+          "!@remotion/compositor-*/**",
+          "!**/@remotion/compositor-*/**"
+        ]
+      },
+      {
         "from": "../../native/bin/${os}-${arch}",
         "to": "bin"
+      },
+      {
+        "from": "../../vendor/ffmpeg-lgpl/.package/${os}-${arch}",
+        "to": "ffmpeg-lgpl"
       }
     ],
     "asar": true,
@@ -77,6 +92,7 @@
         "name": "JasperEditor Project",
         "role": "Editor"
       }
-    ]
+    ],
+    "afterPack": "./scripts/after-pack.cjs"
   }
 }

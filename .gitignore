@@ -42,3 +42,7 @@ playwright-report/
 .reference/
 editor-starter.zip
 vendor/
+
+# Desktop packaging stages (apps/desktop/scripts/package.mjs)
+dist-deploy/
+native/bin/
