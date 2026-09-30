@@ -32,7 +32,6 @@ export const TOOLS: Record<ToolId, ToolInfo> = {
 	hand: { id: 'hand', label: 'Hand Tool', key: 'H', icon: 'tool.hand' },
 	zoom: { id: 'zoom', label: 'Zoom Tool', key: 'Z', icon: 'tool.zoom' },
 	type: { id: 'type', label: 'Type Tool', key: 'T', icon: 'tool.type' },
-	agent: { id: 'agent', label: 'Agent Tool', key: '', icon: 'tool.agent' },
 };
 
 /** S05:TOOL-002 groups (flyouts); the first member is the default face. */
@@ -45,7 +44,6 @@ export const TOOL_GROUPS: readonly (readonly ToolId[])[] = [
 	['pen'],
 	['hand', 'zoom'],
 	['type'],
-	['agent'],
 ];
 
 export type Mods = { shift: boolean; ctrl: boolean; alt: boolean };
@@ -106,7 +104,6 @@ export function resolveGesture(tool: ToolId, hit: Hit, mods: Mods): GestureKind 
 		case 'zoom':
 			return 'zoom';
 		case 'pen':
-		case 'agent':
 			return 'none';
 	}
 }
@@ -133,7 +130,7 @@ export function cursorFor(tool: ToolId, hit: Hit, mods: Mods): string {
 		case 'trackSelect':
 			return tool === 'trackSelectForward' ? 'e-resize' : 'w-resize';
 		case 'none':
-			return tool === 'pen' || tool === 'agent' ? 'not-allowed' : 'default';
+			return tool === 'pen' ? 'not-allowed' : 'default';
 		default:
 			return 'default';
 	}

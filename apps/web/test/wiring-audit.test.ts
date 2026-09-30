@@ -69,7 +69,6 @@ const INTENTIONALLY_ABSENT: Record<string, readonly string[]> = {
 		'effects.newCustomBin',
 		'effects.deleteCustomItem',
 	],
-	'agent chat (Stage 2 / M2)': ['agent.stop', 'agent.newConversation', 'agent.askSelection'],
 	'app / project management beyond M1': [
 		'app.saveAs',
 		'app.saveCopy',
@@ -137,6 +136,7 @@ describe('wiring audit (WP-3I)', () => {
 			'app.newProject',
 			'app.openProject',
 			'app.newSequence',
+			'help.connectAgent',
 			...PANEL_KINDS.map((k) => `panel.open.${k}`),
 		]) {
 			expect(getCommand(id), id).toBeTruthy();

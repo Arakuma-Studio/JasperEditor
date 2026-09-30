@@ -17,7 +17,6 @@ export const PANEL_KINDS = [
 	'history',
 	'info',
 	'markers',
-	'agent',
 	'jobs',
 ] as const;
 export type PanelKind = (typeof PANEL_KINDS)[number];

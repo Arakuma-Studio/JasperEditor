@@ -45,9 +45,12 @@ afterEach(() => {
 // ------------------------------------------------------------------ workspaces as data (WS-001, AC-SH-1)
 
 describe('built-in workspaces', () => {
-	it('ship editing, assembly, effects, agent and essentials; every referenced panel exists once', () => {
+	it('ship editing, assembly, effects, motion and essentials; every referenced panel exists once', () => {
 		const ids = BUILTIN_WORKSPACES.map((w) => w.id);
-		for (const id of ['editing', 'assembly', 'effects', 'agent', 'essentials']) expect(ids).toContain(id);
+		for (const id of ['editing', 'assembly', 'effects', 'motion', 'essentials']) expect(ids).toContain(id);
+		// The Agent workspace and panel are gone (agents connect over MCP).
+		expect(ids).not.toContain('agent');
+		expect(PANEL_KINDS as readonly string[]).not.toContain('agent');
 		expect(ids[0]).toBe('editing');
 		for (const ws of [...BUILTIN_WORKSPACES, ...LAYOUT_PRESETS]) {
 			const kinds = panelsIn(ws.layout);
@@ -57,7 +60,7 @@ describe('built-in workspaces', () => {
 		}
 	});
 
-	it('Editing places every panel with Properties + Agent full height on the right (S05 §4.2)', () => {
+	it('Editing places every panel with Properties full height on the right (S05 §4.2)', () => {
 		const editing = BUILTIN_WORKSPACES[0]!;
 		expect(new Set(panelsIn(editing.layout))).toEqual(new Set(PANEL_KINDS));
 		const layout = buildLayout(editing, { width: 1914, height: 1013 }, panelMap);
@@ -65,7 +68,7 @@ describe('built-in workspaces', () => {
 		type N = { type: string; size: number; data: unknown };
 		const [left, right] = layout.grid.root.data as N[] as [N, N];
 		expect(right.type).toBe('leaf');
-		expect((right.data as { views: string[] }).views).toEqual(['properties-1', 'agent-1']);
+		expect((right.data as { views: string[] }).views).toEqual(['properties-1']);
 		expect(Math.round((right.size / 1914) * 100)).toBe(22);
 		const bottomRow = (left.data as N[])[1] as N;
 		const bottom = bottomRow.data as { size: number; data: { views: string[] } }[];
@@ -90,10 +93,10 @@ describe('built-in workspaces', () => {
 		const layout = buildLayout(BUILTIN_WORKSPACES[0]!, { width: 1600, height: 900 }, panelMap) as unknown as {
 			panels: Record<string, { params: { kind: string } }>;
 		};
-		layout.panels['agent-1']!.params.kind = 'hologram';
+		layout.panels['history-1']!.params.kind = 'hologram';
 		const clean = sanitizeLayout(layout);
 		expect(clean).not.toBeNull();
-		expect(Object.keys(clean!.panels)).not.toContain('agent-1');
+		expect(Object.keys(clean!.panels)).not.toContain('history-1');
 		expect(sanitizeLayout({ nope: true })).toBeNull();
 		expect(sanitizeLayout(null)).toBeNull();
 	});
@@ -127,6 +130,60 @@ describe('workspace store', () => {
 		expect(store.get('constructor')).toBeUndefined();
 		store.setActive('constructor');
 		expect(store.getState().activeId).toBe('editing');
+	});
+
+	it('state saved by a build that had the Agent panel still loads (wp-mcp)', () => {
+		// What the previous build stored: the Agent workspace (active), and layouts with an `agent` tab.
+		type Stored = {
+			grid: { root: { data: unknown[] } };
+			panels: Record<string, { id: string; params: { kind: string } }>;
+		};
+		const withAgentTab = (): Stored => {
+			const l = buildLayout(
+				BUILTIN_WORKSPACES[0]!,
+				{ width: 1600, height: 900 },
+				panelMap,
+			) as unknown as Stored;
+			l.panels['agent-1'] = { ...l.panels['properties-1']!, id: 'agent-1', params: { kind: 'agent' } };
+			const right = l.grid.root.data[1] as { data: { views: string[]; activeView: string } };
+			right.data.views = ['properties-1', 'agent-1'];
+			right.data.activeView = 'agent-1';
+			return l;
+		};
+		const agentOnly = withAgentTab();
+		const onlyGroup = agentOnly.grid.root.data[1] as { data: { views: string[]; activeView: string } };
+		onlyGroup.data.views = ['agent-1'];
+		const stored = JSON.stringify({
+			version: 1,
+			data: {
+				activeId: 'agent',
+				order: ['editing', 'agent', 'assembly', 'custom:mine'],
+				workspaces: {
+					editing: { name: 'Editing', current: withAgentTab(), saved: withAgentTab() },
+					agent: { name: 'Agent', current: withAgentTab(), saved: null },
+					'custom:mine': { name: 'Mine', current: agentOnly, saved: agentOnly },
+				},
+			},
+		});
+		const store = new WorkspaceStore(memoryStorage({ [WORKSPACES_KEY]: stored }));
+		// Nothing is reset: the user's other layouts survive.
+		expect(store.resetReason).toBeNull();
+		expect(store.get('agent')).toBeUndefined();
+		expect(store.getState().order).not.toContain('agent');
+		expect(store.getState().activeId).toBe('editing');
+		expect(store.get('custom:mine')?.name).toBe('Mine');
+		// Applying a stored layout drops just the retired panel (the dock sanitizes on apply).
+		const clean = sanitizeLayout(store.get('editing')!.current) as unknown as Stored;
+		expect(Object.keys(clean.panels)).not.toContain('agent-1');
+		expect(Object.keys(clean.panels)).toContain('properties-1');
+		const right = clean.grid.root.data[1] as { data: { views: string[]; activeView: string } };
+		expect(right.data).toMatchObject({ views: ['properties-1'], activeView: 'properties-1' });
+		// A group that only held the Agent tab disappears; the rest of the layout stays usable.
+		const mine = sanitizeLayout(store.get('custom:mine')!.current) as unknown as Stored;
+		expect(mine).not.toBeNull();
+		expect(Object.values(mine.panels).map((p) => p.params.kind)).not.toContain('agent');
+		expect(Object.keys(mine.panels)).toContain('timeline-1');
+		expect(mine.grid.root.data).toHaveLength(1);
 	});
 
 	it('current/saved snapshots, save as, reset, reorder and Alt+Shift numbering (WS-010…012)', () => {
@@ -331,7 +388,7 @@ describe('keyboard dispatcher', () => {
 		expect(shortcutFor('app.newSequence', { platform: 'linux', runtime: 'web' })).toBe('Alt+N');
 		expect(shortcutFor('app.newSequence', { platform: 'win', runtime: 'desktop' })).toBe('Ctrl+N');
 		expect(shortcutFor('palette.open', { platform: 'linux', runtime: 'web' })).toBe('Ctrl+Shift+P');
-		expect(shortcutFor('panel.focus.agent', { platform: 'linux', runtime: 'web' })).toBe('Shift+0');
+		expect(shortcutFor('panel.focus.project', { platform: 'linux', runtime: 'web' })).toBe('Shift+1');
 	});
 });
 

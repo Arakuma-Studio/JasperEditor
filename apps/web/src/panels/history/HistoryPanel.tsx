@@ -181,8 +181,7 @@ function HistoryBody({ session }: { session: EditorSession }) {
 							{expanded === e.id ? (
 								<p className="px-8 py-1 text-pr-small text-pr-muted">
 									{typeof e.origin === 'object' ? `By ${e.origin.agent}. ` : ''}
-									{e.created.length} created · {e.changed.length} changed · {e.deleted.length} deleted. See
-									the Agent panel for details.
+									{e.created.length} created · {e.changed.length} changed · {e.deleted.length} deleted.
 								</p>
 							) : null}
 						</div>

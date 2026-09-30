@@ -31,7 +31,7 @@ const TIMELINE_STRIP = (lead?: [LayoutSize, LayoutNode]): LayoutNode =>
 
 /**
  * Editing (default, S05 §4.2 v25 variant): top row ≈ 55 % with the left group 31 % and Program 47 %;
- * Properties (+ Agent) full-height right column 22 %; bottom row Project group 21 %, Tools 40 px,
+ * Properties full-height right column 22 %; bottom row Project group 21 %, Tools 40 px,
  * Timeline, Audio Meters 52 px. Proportions inside the left column are relative to its 78 %.
  */
 const editing: WorkspaceDefinition = {
@@ -57,7 +57,7 @@ const editing: WorkspaceDefinition = {
 				],
 			),
 		],
-		['fill', g(['properties', 'agent'], 'properties')],
+		['fill', g(['properties'])],
 	),
 };
 
@@ -109,27 +109,11 @@ const motion: WorkspaceDefinition = {
 	),
 };
 
-const agent: WorkspaceDefinition = {
-	id: 'agent',
-	name: 'Agent',
-	layout: row(
-		[0.28, g(['agent', 'history'], 'agent')],
-		['fill', col([0.55, g(['program', 'source'], 'program')], ['fill', TIMELINE_STRIP()])],
-		[
-			0.22,
-			col(
-				[0.55, g(['properties', 'effectControls'], 'properties')],
-				['fill', g(['jobs', 'project'], 'jobs')],
-			),
-		],
-	),
-};
-
 const essentials: WorkspaceDefinition = {
 	id: 'essentials',
 	name: 'Essentials',
 	layout: col(
-		[0.58, row(['fill', g(['program'])], [0.3, g(['project', 'properties', 'agent'], 'project')])],
+		[0.58, row(['fill', g(['program'])], [0.3, g(['project', 'properties'], 'project')])],
 		['fill', TIMELINE_STRIP()],
 	),
 };
@@ -140,12 +124,18 @@ export const BUILTIN_WORKSPACES: readonly WorkspaceDefinition[] = [
 	assembly,
 	effects,
 	motion,
-	agent,
 	essentials,
 ];
 
 /**
- * Compact desktop preset (900–1279 px, S05 §19.1): Program with Properties/Agent/Project/Effects as tabs
+ * Built-in workspaces that were removed (the Agent workspace went with the Agent panel, wp-mcp). Stored
+ * workspace state drops them on load; a stored layout that still contains the retired panel kind loses
+ * that panel through `sanitizeLayout`.
+ */
+export const RETIRED_BUILTIN_WORKSPACES: readonly string[] = ['agent'];
+
+/**
+ * Compact desktop preset (900–1279 px, S05 §19.1): Program with Properties/Project/Effects as tabs
  * on top, Timeline below; Tools collapse into the timeline header, so no Tools panel.
  */
 export const COMPACT_WORKSPACE: WorkspaceDefinition = {
@@ -156,10 +146,7 @@ export const COMPACT_WORKSPACE: WorkspaceDefinition = {
 			0.55,
 			row(
 				['fill', g(['program', 'source'], 'program')],
-				[
-					0.36,
-					g(['properties', 'agent', 'project', 'effects', 'effectControls', 'history', 'jobs'], 'properties'),
-				],
+				[0.36, g(['properties', 'project', 'effects', 'effectControls', 'history', 'jobs'], 'properties')],
 			),
 		],
 		['fill', row(['fill', g(['timeline'])], [{ px: 52 }, g(['audioMeters'])])],
@@ -176,10 +163,7 @@ export const PHONE_WORKSPACE: WorkspaceDefinition = {
 	name: 'Phone',
 	layout: col(
 		[0.42, g(['program', 'source'], 'program')],
-		[
-			'fill',
-			g(['timeline', 'project', 'properties', 'effectControls', 'agent', 'motionTemplates'], 'timeline'),
-		],
+		['fill', g(['timeline', 'project', 'properties', 'effectControls', 'motionTemplates'], 'timeline')],
 	),
 };
 

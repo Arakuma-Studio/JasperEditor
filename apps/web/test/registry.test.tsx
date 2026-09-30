@@ -70,10 +70,10 @@ describe('UI command registry (ARCHITECTURE §7.3)', () => {
 	it('has one (empty) module per domain owner', () => {
 		expect(Object.keys(COMMAND_MODULES).sort()).toEqual(
 			[
-				'agent',
 				'app',
 				'edit',
 				'export',
+				'help',
 				'inspector',
 				'mg',
 				'project',

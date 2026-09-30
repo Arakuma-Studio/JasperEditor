@@ -1,6 +1,5 @@
 // Panel registry (ARCHITECTURE §7.2, S05:PN-001): the Window menu, palette, dock deserializer, touch
 // shells and the agent's UI catalog are generated from this list. One import per panel folder.
-import agent from './agent/index.ts';
 import audioMeters from './audioMeters/index.ts';
 import effectControls from './effectControls/index.ts';
 import effects from './effects/index.ts';
@@ -31,7 +30,6 @@ export const PANEL_DEFINITIONS: readonly PanelDefinition[] = [
 	history,
 	info,
 	markers,
-	agent,
 	jobs,
 ];
 

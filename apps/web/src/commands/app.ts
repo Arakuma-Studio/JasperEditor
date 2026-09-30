@@ -57,7 +57,6 @@ const PANEL_LABELS: Record<PanelKind, string> = {
 	history: 'History',
 	info: 'Info',
 	markers: 'Markers',
-	agent: 'Agent',
 	jobs: 'Jobs',
 };
 

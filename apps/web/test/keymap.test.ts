@@ -134,14 +134,17 @@ describe('default keymap (S02:TL-903, R-PUI §16, S05:KB-010/011/013)', () => {
 	});
 	it('contains the S05:KB-010 shell bindings', () => {
 		const find = (command: string) => DEFAULT_KEYMAP.find((b) => b.command === command)?.key;
-		expect(find('panel.open.agent')).toBe('Shift+Digit0');
 		expect(find('app.commandPalette')).toBe('Ctrl+Shift+KeyP');
-		expect(find('agent.stop')).toBe('Ctrl+Period');
 		expect(find('monitor.fit')).toBe('Ctrl+Digit0');
 		expect(find('workspace.maximizeUnderCursor')).toBe('Backquote');
 		expect(find('workspace.nextPanel')).toBe('Ctrl+Shift+Period');
 		expect(find('workspace.switch.1')).toBe('Alt+Shift+Digit1');
 		expect(find('app.cycleRegions')).toBe('F6');
+	});
+	it('has no Agent panel bindings: agents connect over MCP (wp-mcp)', () => {
+		expect(DEFAULT_KEYMAP.filter((b) => /(^|\.)agent(\.|$)/.test(b.command))).toEqual([]);
+		// The keys the panel used are free again.
+		expect(DEFAULT_KEYMAP.filter((b) => b.key === 'Shift+Digit0' || b.key === 'Ctrl+Period')).toEqual([]);
 	});
 	it('binds physical KeyboardEvent.code values only', () => {
 		const code =

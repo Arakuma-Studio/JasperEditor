@@ -1,7 +1,8 @@
 // Top-level menubar model (S05 §12.2). Only the structure lives here; every entry is a command id owned
 // by the relevant package (timeline.* WP-2B, transport/program WP-2C, inspector WP-2D, project/export
-// WP-2E, mg WP-2G, agent WP-2H). Unregistered ids render disabled with a reason (SH-031); the label here
-// is only the fallback shown until the owner registers the command (MN-001).
+// WP-2E, mg WP-2G). There is no Agent menu: external agents connect over MCP (Help ▸ Connect an AI
+// Agent…). Unregistered ids render disabled with a reason (SH-031); the label here is only the fallback
+// shown until the owner registers the command (MN-001).
 import type { ShellMenuItem } from './resolve.ts';
 
 const c = (command: string, label: string, args?: unknown): ShellMenuItem => ({
@@ -224,22 +225,13 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 		],
 	},
 	{
-		id: 'agent',
-		label: 'Agent',
-		items: [
-			c('panel.focus.agent', 'Open Agent Panel'),
-			c('agent.newConversation', 'New Conversation'),
-			c('agent.askSelection', 'Ask About Selection…'),
-			sep,
-			c('agent.stop', 'Stop Agent'),
-		],
-	},
-	{
 		id: 'help',
 		label: 'Help',
 		items: [
 			c('app.shortcutReference', 'Keyboard Shortcut Reference'),
 			c('palette.open', 'Command Palette'),
+			sep,
+			c('help.connectAgent', 'Connect an AI Agent…'),
 			sep,
 			c('app.notices', 'Third-Party Notices'),
 			c('app.about', 'About JasperEditor'),

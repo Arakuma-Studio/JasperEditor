@@ -99,7 +99,7 @@ describe('window.jasper transact (S01:AGT-003, UND-007)', () => {
 });
 
 describe('approvals (S01:AGT-011)', () => {
-	it('destructive transactions wait for Approve / Deny in the Agent panel', async () => {
+	it('destructive transactions wait for Approve / Deny (the shell shows a card per pending approval)', async () => {
 		const { bridge, api, session } = makeBridge();
 		const p = api.transact(agentTx([{ type: 'track.remove', trackIds: ['V3'] }], { label: 'Remove V3' }));
 		await tick();

@@ -3,6 +3,7 @@ import { BrowserRouter, Route, Routes, useParams } from 'react-router';
 import { Home } from './home/Home.tsx';
 import { ProjectLifecycle } from './home/ProjectLifecycle.tsx';
 import { EngineGate } from './runtime/bootstrap.tsx';
+import { AgentOpenProject } from './shell/AgentOpenProject.tsx';
 import { EditorShell } from './shell/EditorShell.tsx';
 import { GlobalHosts } from './shell/GlobalHosts.tsx';
 import { EngineProvider } from './state/engine.tsx';
@@ -45,6 +46,7 @@ export function App() {
 			<GlobalHosts>
 				<EngineGate>
 					<BrowserRouter>
+						<AgentOpenProject />
 						<AppRoutes />
 					</BrowserRouter>
 				</EngineGate>
