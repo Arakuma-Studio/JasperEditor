@@ -138,11 +138,15 @@ export class MemoryProjectStore implements ProjectStore {
 		const loaded = loadProject(JSON.parse(await file.text()), { ids: this.ids });
 		return this.copyAs(loaded.document, loaded.document.name);
 	}
-	async acquireLease(projectId: string, sessionId = 'session'): Promise<Lease> {
+	async acquireLease(
+		projectId: string,
+		sessionId = 'session',
+		opts: { takeOver?: boolean } = {},
+	): Promise<Lease> {
 		const e = this.entry(projectId);
 		const now = Date.now();
-		if (e.lease && e.lease.sessionId !== sessionId && Date.parse(e.lease.expiresAt) > now) {
-			throw new LeaseHeldError(projectId, e.lease.sessionId);
+		if (!opts.takeOver && e.lease && e.lease.sessionId !== sessionId && Date.parse(e.lease.expiresAt) > now) {
+			throw new LeaseHeldError(projectId, e.lease.sessionId, e.lease.expiresAt);
 		}
 		e.lease = {
 			leaseId: `lease_${sessionId}`,
