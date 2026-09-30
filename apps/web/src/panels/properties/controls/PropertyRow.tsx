@@ -59,6 +59,8 @@ export function PropertyRow(props: {
 	const animatable = spec.animatable !== 'no';
 	const outside = row.bindings.every((b) => b.resolved.outside);
 
+	/** Live playhead for writes (the rendered `ctx.frame` is throttled for display). */
+	const live = () => ctx.transport.getState().frame;
 	const report = (skipped: string[]) => {
 		if (skipped.length) ctx.hint(OUTSIDE_HINT);
 	};
@@ -67,7 +69,7 @@ export function PropertyRow(props: {
 		ctx.ops.apply(label, commands, opts);
 	};
 	const commitFn = (compute: (base: unknown) => unknown) => {
-		const plan = planSet(row, ctx.frame, compute);
+		const plan = planSet(row, live(), compute);
 		apply(plan.commands, plan.skipped);
 	};
 
@@ -78,14 +80,14 @@ export function PropertyRow(props: {
 	};
 	const scrubTo = (compute: (base: unknown) => unknown) => {
 		const base = scrubRow.current ?? row;
-		const plan = planSet(base, ctx.frame, compute);
+		const plan = planSet(base, live(), compute);
 		ctx.ops.scrub.update(plan.commands);
 	};
 	const scrubEnd = (cancelled: boolean) => {
 		const base = scrubRow.current;
 		scrubRow.current = null;
 		ctx.ops.scrub.end(cancelled);
-		if (base && !cancelled) report(planSet(base, ctx.frame, (b) => b).skipped);
+		if (base && !cancelled) report(planSet(base, live(), (b) => b).skipped);
 	};
 
 	const numberEditor = (component?: 0 | 1) => {
@@ -137,7 +139,7 @@ export function PropertyRow(props: {
 						value={mixed ? null : (value as [number, number, number, number])}
 						label={row.label}
 						onChange={(c) => {
-							const plan = planSet(row, ctx.frame, () => c);
+							const plan = planSet(row, live(), () => c);
 							apply(plan.commands, plan.skipped, {
 								coalesceKey: `color:${row.id}:${row.bindings.map((b) => b.clip.id).join(',')}`,
 							});
@@ -181,23 +183,23 @@ export function PropertyRow(props: {
 	const prev = anim !== 'none' ? navigateKey(row, ctx.seq, ctx.frame, -1) : null;
 	const next = anim !== 'none' ? navigateKey(row, ctx.seq, ctx.frame, 1) : null;
 	const toggleKey = () => {
-		const plan = planToggleKey(row, ctx.seq, ctx.frame);
+		const plan = planToggleKey(row, ctx.seq, live());
 		if (plan.commands.length === 0 && plan.skipped.length) ctx.hint(OUTSIDE_HINT);
 		else apply(plan.commands, plan.skipped);
 	};
 	const stopwatch = () => {
 		if (anim === 'none') {
-			const plan = planStopwatch(row, ctx.frame, true);
+			const plan = planStopwatch(row, live(), true);
 			ctx.ops.apply(`Toggle Animation: ${row.label}`, plan.commands);
 		} else {
 			ctx.confirmStopwatchOff(row.label, () => {
-				const plan = planStopwatch(row, ctx.frame, false);
+				const plan = planStopwatch(row, live(), false);
 				ctx.ops.apply(`Toggle Animation: ${row.label}`, plan.commands);
 			});
 		}
 	};
 	const reset = () => {
-		const plan = planReset(row, ctx.doc, ctx.seq, ctx.frame);
+		const plan = planReset(row, ctx.doc, ctx.seq, live());
 		apply(plan.commands, plan.skipped);
 	};
 	const canReset = spec.defaultValue !== undefined && row.bindings.some((b) => b.path !== null);
@@ -254,7 +256,10 @@ export function PropertyRow(props: {
 						<MiniButton
 							label={`Previous keyframe for ${row.label}`}
 							disabled={prev === null}
-							onClick={() => prev !== null && ctx.transport.seek(prev)}
+							onClick={() => {
+								const f = navigateKey(row, ctx.seq, live(), -1);
+								if (f !== null) ctx.transport.seek(f);
+							}}
 							data-testid={`kf-prev-${row.id}`}
 						>
 							<PrevGlyph size={11} />
@@ -276,7 +281,10 @@ export function PropertyRow(props: {
 						<MiniButton
 							label={`Next keyframe for ${row.label}`}
 							disabled={next === null}
-							onClick={() => next !== null && ctx.transport.seek(next)}
+							onClick={() => {
+								const f = navigateKey(row, ctx.seq, live(), 1);
+								if (f !== null) ctx.transport.seek(f);
+							}}
 							data-testid={`kf-next-${row.id}`}
 						>
 							<NextGlyph size={11} />
