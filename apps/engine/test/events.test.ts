@@ -1,5 +1,5 @@
 // GET /events over a real socket (S04:ENG-023), capabilities, fonts.
-import { EngineCapabilitiesSchema, FontCatalogSchema, parseEvent } from '@jasper/api';
+import { EngineCapabilitiesSchema, FontCatalogSchema, LicensesResponseSchema, parseEvent } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { type RunningEngine, startEngine } from '../src/index.ts';
 import { coreServices } from '../src/tools/services.ts';
@@ -103,8 +103,21 @@ describe('capabilities and fonts', () => {
 			pathRegistration: true,
 		});
 		expect(caps.media.ffmpegVersion).toBeTruthy();
-		expect(caps.media.encoders).toEqual(expect.arrayContaining(['libx264', 'aac']));
+		expect(caps.media.encoders).toEqual(expect.arrayContaining(['aac']));
+		// D-13: the vendored LGPL build has OpenH264, a system dev build libx264.
+		expect(caps.media.encoders.some((e) => e === 'libx264' || e === 'libopenh264')).toBe(true);
+		expect(['vendor', 'path', 'env']).toContain(caps.media.ffmpegSource);
+		expect(caps.render.remotionBinaries).toMatchObject({
+			source: expect.stringMatching(/^(vendor|bundled)$/),
+		});
 		expect(caps.media.filters).toEqual(expect.arrayContaining(['overlay', 'amix', 'scale']));
+		// About dialog (D-13): the FFmpeg entry; bundled with its license text only for the LGPL directory.
+		const lic = LicensesResponseSchema.parse(
+			(await app.inject({ method: 'GET', url: '/api/licenses', headers: H })).json(),
+		);
+		expect(lic.components).toHaveLength(1);
+		expect(lic.components[0]).toMatchObject({ id: 'ffmpeg', bundled: caps.media.ffmpegSource === 'vendor' });
+		expect(lic.components[0]!.texts.length > 0).toBe(caps.media.ffmpegSource === 'vendor');
 		expect(caps.render.native).toBe(true);
 		expect(['ready', 'needs-browser-download']).toContain(caps.render.remotionLocal);
 		expect(caps.render.fframes).toBe('unavailable');

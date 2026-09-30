@@ -1,0 +1,85 @@
+{
+  "$comment": "Pinned LGPL FFmpeg inputs (ARCHITECTURE D-13, docs/wp-notes/wp-lgpl.md). FFmpeg must stay on the 7.1 branch while @remotion/renderer is 4.0.499: its compositor binary links libavcodec 61 / libavformat 61 / libavutil 59 / libavfilter 10 / libavdevice 61 / libswscale 8 with versioned symbols (LIBAVCODEC_61 \u2026). BtbN keeps month-end autobuild releases; the daily ones expire.",
+  "ffmpeg": {
+    "version": "7.1.5",
+    "describe": "n7.1.5-12-g1fdbca85aa",
+    "sourceUrl": "https://github.com/FFmpeg/FFmpeg/tree/1fdbca85aa",
+    "sourceTarball": "https://ffmpeg.org/releases/ffmpeg-7.1.5.tar.xz",
+    "license": "LGPL-3.0-or-later (BtbN builds use --enable-version3); source builds from build-lgpl-from-source.sh are LGPL-2.1-or-later"
+  },
+  "abi": {
+    "libavcodec": 61,
+    "libavformat": 61,
+    "libavutil": 59,
+    "libavfilter": 10,
+    "libavdevice": 61,
+    "libswscale": 8,
+    "libswresample": 5
+  },
+  "remotion": {
+    "version": "4.0.499",
+    "compositorSha256": {
+      "linux-x64": "b450deace1d4ca7ca2ea0d90abe3408501c14391897808589b0ed36f0301122e",
+      "linux-x64-musl": "cbf660a6a48852aa9cc63f2e838c63328ed72a7803a4903631a8eb7db40aab63",
+      "linux-arm64": "d7f6ba56f4c8fc312275bb2aed68791602d1e5af2ba0b5375792b68e70ddcb8f",
+      "darwin-arm64": "a82a2af91bf884813f14ff9eb03ef660d60da7fe4ab1d229cc9801ede0ab2905",
+      "darwin-x64": "aaf9c02f85e424fd6dda42812ee5a3f926fd0d67ac6195242a6b32824a6f9e4d",
+      "win32-x64": "407ff96aad09c71975643caea5cd68eef3aa5b0feda54156bbaa5f9655632001"
+    },
+    "$comment": "sha256 of the compositor executable (`remotion` / `remotion.exe`) inside @remotion/compositor-*@4.0.499; it is copied as is (never modified) into the binaries directory."
+  },
+  "prebuilt": {
+    "provider": "BtbN/FFmpeg-Builds",
+    "release": "autobuild-2026-07-31-14-10",
+    "buildScripts": "https://github.com/BtbN/FFmpeg-Builds",
+    "platforms": {
+      "linux-x64": {
+        "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-31-14-10/ffmpeg-n7.1.5-12-g1fdbca85aa-linux64-lgpl-shared-7.1.tar.xz",
+        "sha256": "f5f0ad52c6ee28a222eb10838c231469a10ad325f84063d3bc0aadf08164b3ec",
+        "size": 50494772,
+        "root": "ffmpeg-n7.1.5-12-g1fdbca85aa-linux64-lgpl-shared-7.1"
+      },
+      "linux-arm64": {
+        "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-31-14-10/ffmpeg-n7.1.5-12-g1fdbca85aa-linuxarm64-lgpl-shared-7.1.tar.xz",
+        "sha256": "28d2c354ad6cc360db0e932598f1cf5845887a1adc46415ded91baf1ca82a53b",
+        "size": 44058212,
+        "root": "ffmpeg-n7.1.5-12-g1fdbca85aa-linuxarm64-lgpl-shared-7.1"
+      },
+      "win32-x64": {
+        "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-31-14-10/ffmpeg-n7.1.5-12-g1fdbca85aa-win64-lgpl-shared-7.1.zip",
+        "sha256": "0f376f96fb38554ccefb1b2ae9c7c6a7b351f0e60a372b38262c320e8392c5d0",
+        "size": 62425578,
+        "root": "ffmpeg-n7.1.5-12-g1fdbca85aa-win64-lgpl-shared-7.1"
+      }
+    }
+  },
+  "source": {
+    "$comment": "build-lgpl-from-source.sh (macOS; also works on Linux). GitHub/GitLab archive tarballs are pinned by sha256 as downloaded on 2026-09-30.",
+    "packages": {
+      "ffmpeg": {
+        "url": "https://ffmpeg.org/releases/ffmpeg-7.1.5.tar.xz",
+        "sha256": "de668509caf9e35e3cd162473441fdb29538c6d96ed080292b3cf9e6fc5d558f"
+      },
+      "nasm": {
+        "url": "https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/nasm-2.16.03.tar.xz",
+        "sha256": "1412a1c760bbd05db026b6c0d1657affd6631cd0a63cddb6f73cc6d4aa616148"
+      },
+      "openh264": {
+        "url": "https://github.com/cisco/openh264/archive/refs/tags/v2.6.0.tar.gz",
+        "sha256": "558544ad358283a7ab2930d69a9ceddf913f4a51ee9bf1bfb9e377322af81a69"
+      },
+      "libvpx": {
+        "url": "https://github.com/webmproject/libvpx/archive/refs/tags/v1.15.2.tar.gz",
+        "sha256": "26fcd3db88045dee380e581862a6ef106f49b74b6396ee95c2993a260b4636aa"
+      },
+      "opus": {
+        "url": "https://downloads.xiph.org/releases/opus/opus-1.5.2.tar.gz",
+        "sha256": "65c1d2f78b9f2fb20082c38cbe47c951ad5839345876e46941612ee87f9a7ce1"
+      },
+      "svtav1": {
+        "url": "https://gitlab.com/AOMediaCodec/SVT-AV1/-/archive/v3.1.2/SVT-AV1-v3.1.2.tar.gz",
+        "sha256": "d0d73bfea42fdcc1222272bf2b0e2319e9df5574721298090c3d28315586ecb1"
+      }
+    }
+  }
+}

@@ -349,6 +349,12 @@ export function videoEncodeArgs(choice: Pick<EncoderChoice, 'encoder'>, p: Encod
 		case 'libopenh264':
 			// No CRF: average bitrate with a VBV cap; frame skipping off so the frame count is exact.
 			video.push(...rate(1.3), '-rc_mode', 'bitrate', '-allow_skip_frames', '0', '-g', String(gop));
+			// FFmpeg 7.1's OpenH264 wrapper writes only the matrix into the VUI: set BT.709 primaries/transfer
+			// too (every Jasper export and proxy is BT.709 SDR), like x264 does from -color_primaries/-color_trc.
+			video.push(
+				'-bsf:v',
+				'h264_metadata=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1',
+			);
 			break;
 		case 'h264_videotoolbox':
 			video.push(...rate(1.2), '-profile:v', 'high', '-g', String(gop));

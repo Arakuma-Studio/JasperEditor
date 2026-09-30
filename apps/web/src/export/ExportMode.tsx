@@ -128,6 +128,12 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 	);
 	const chosenEncoder = plan.status === 'ok' ? (plan.plan.encoder ?? null) : (encoding?.export ?? null);
 	const encoderMessage = plan.status === 'ok' ? plan.plan.encoder?.message : encoding?.message;
+	// D-13: a dev engine without the LGPL directory renders through Remotion's bundled GPL FFmpeg; a
+	// packaged engine without it cannot use the Remotion path at all.
+	const remotionFfmpegWarning =
+		plan.status === 'ok' && plan.plan.path === 'remotion'
+			? engine.capabilities?.render.remotionBinaries?.message
+			: undefined;
 
 	// Plan on every relevant change (debounced); the plan embeds the revision it was computed for (RP-011).
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `revision` re-plans when the committed document changes
@@ -383,6 +389,11 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 					{encoderMessage ? (
 						<p className="text-pr-small text-pr-warning" data-testid="export-encoder-message">
 							{encoderMessage}
+						</p>
+					) : null}
+					{remotionFfmpegWarning ? (
+						<p className="text-pr-small text-pr-warning" data-testid="export-remotion-ffmpeg-warning">
+							{remotionFfmpegWarning}
 						</p>
 					) : null}
 					<Field label="Engine">

@@ -11,6 +11,9 @@ import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ENV } from '@jasper/config';
 import { JobError } from '../jobs/types.ts';
+import { selfCheck } from '../tools/ffmpeg.ts';
+import { binaryNames, type RemotionBinaries } from '../tools/lgpl.ts';
+import type { RemotionFfmpegInfo } from './export-plan.ts';
 
 export const COMPOSITION_ID = 'JasperSequence';
 export const REMOTION_VERSION = '4.0.499';
@@ -29,16 +32,25 @@ export type RemotionRenderInput = {
 	scale?: number;
 	/**
 	 * Render a ProRes 422 HQ + PCM `.mov` intermediate instead of H.264 (D-13): the engine then encodes it
-	 * with its own selected encoder, so Remotion's bundled (GPL) x264 is never used for delivery.
+	 * with its own selected encoder, so no GPL encoder (Remotion's x264/fdk-aac) is ever needed.
 	 */
 	intermediate?: boolean;
+	/** Direct VP9/Opus WebM (LGPL components); see export-plan.ts. */
+	vp9?: { crf: number; colorSpace: 'bt709' | null; ffmpegOverride?: RemotionFfmpegOverride };
+	audioBitrateKbps?: number;
 };
 
-/**
- * Env: a directory with an LGPL rebuild of `@remotion/compositor-*` (compositor + ffmpeg + libs), passed
- * to Remotion as `binariesDirectory`. The npm package ships a GPL FFmpeg build (see docs/wp-notes/wp-3l.md).
- */
-export const REMOTION_BINARIES_ENV = 'JASPER_REMOTION_BINARIES_DIR';
+export type RemotionFfmpegOverride = (info: {
+	type: 'pre-stitcher' | 'stitcher';
+	args: string[];
+}) => string[];
+
+/** Remotion binaries directory + what its FFmpeg is (capabilities `render.remotionBinaries`). */
+export type RemotionBinariesStatus = RemotionBinaries & {
+	/** License of the directory's ffmpeg from its `-version` configuration (null: bundled / not probed). */
+	license: 'lgpl' | 'gpl' | 'nonfree' | 'unknown' | null;
+	ffmpegVersion: string | null;
+};
 
 const SYSTEM_BROWSERS = [
 	'/usr/bin/google-chrome',
@@ -111,18 +123,81 @@ export class RemotionService {
 			env?: Record<string, string | undefined>;
 			/** A prebuilt bundle (packaged builds); default: `<engine dist>/remotion-bundle` when present. */
 			prebuiltBundleDir?: string | null;
+			/**
+			 * The binaries directory (tools/lgpl.ts `resolveRemotionBinaries`). Absent: Remotion's bundled
+			 * compositor package (dev/tests only).
+			 */
+			binaries?: RemotionBinaries;
 			log?(msg: string): void;
 		},
-	) {}
+	) {
+		const b = opts.binaries ?? { dir: null, source: 'bundled', lgpl: false, allowed: true };
+		this.status = { ...b, license: null, ffmpegVersion: null };
+	}
+
+	private status: RemotionBinariesStatus;
+	private ffmpegInfoValue: RemotionFfmpegInfo = { lgpl: false, encoders: null, filters: null };
+
+	/**
+	 * Probes the binaries directory's ffmpeg (license, encoders, filters). A directory whose ffmpeg is not
+	 * an LGPL build is refused in strict (packaged/server) mode and flagged in dev. Call once at startup.
+	 */
+	async init(strict: boolean): Promise<void> {
+		const dir = this.status.dir;
+		if (dir) {
+			const n = binaryNames();
+			const sc = await selfCheck({ ffmpeg: join(dir, n.ffmpeg), ffprobe: join(dir, n.ffprobe) });
+			this.status.license = sc.license;
+			this.status.ffmpegVersion = sc.ffmpegVersion;
+			const lgpl = sc.license === 'lgpl';
+			this.ffmpegInfoValue = {
+				lgpl,
+				encoders: sc.ffmpegVersion ? sc.encoders : null,
+				filters: sc.ffmpegVersion ? sc.filters : null,
+			};
+			if (!sc.ffmpegVersion) {
+				this.status = {
+					...this.status,
+					lgpl: false,
+					allowed: !strict,
+					message: `The Remotion binaries directory ${dir} has an ffmpeg that does not run: ${sc.errors.join('; ').slice(0, 300)}`,
+				};
+			} else if (!lgpl) {
+				this.status = {
+					...this.status,
+					lgpl: false,
+					allowed: !strict,
+					message: `The Remotion binaries directory ${dir} has a ${sc.license} FFmpeg build, not LGPL${strict ? ': Remotion rendering is disabled' : ' (dev only)'}`,
+				};
+			}
+		}
+		if (this.status.message) this.opts.log?.(`[remotion] ${this.status.message}`);
+		else this.opts.log?.(`[remotion] binaries directory (${this.status.source}): ${this.status.dir}`);
+	}
+
+	/** Binaries directory status for capabilities and logs. */
+	get binaries(): RemotionBinariesStatus {
+		return this.status;
+	}
+
+	/** What the Remotion-side FFmpeg can do (drives the export plan). */
+	get ffmpegInfo(): RemotionFfmpegInfo {
+		return this.ffmpegInfoValue;
+	}
 
 	private get env(): Record<string, string | undefined> {
 		return this.opts.env ?? process.env;
 	}
 
-	/** `binariesDirectory` for Remotion (null = the bundled compositor package). */
+	/** `binariesDirectory` for Remotion (null = the bundled compositor package, dev only). */
 	get binariesDirectory(): string | null {
-		const d = this.env[REMOTION_BINARIES_ENV];
-		return d && existsSync(d) ? d : null;
+		return this.status.dir;
+	}
+
+	private binariesOption(): { binariesDirectory?: string } {
+		if (!this.status.allowed)
+			throw new JobError('BINARY_MISSING', this.status.message ?? 'Remotion rendering is disabled', false);
+		return this.status.dir ? { binariesDirectory: this.status.dir } : {};
 	}
 
 	get licenseKey(): string | null {
@@ -177,6 +252,7 @@ export class RemotionService {
 
 	/** Capability `render.remotionLocal` (S04:RT-002, RR-010). */
 	state(): RemotionState {
+		if (!this.status.allowed) return 'unavailable';
 		if (!this.rendererAvailable()) return 'unavailable';
 		if (!this.prebuiltBundle() && !this.entryPoint()) return 'unavailable';
 		if (this.env[ENV.BROWSER_EXECUTABLE])
@@ -270,6 +346,8 @@ export class RemotionService {
 	}
 
 	private async composition(inputProps: Record<string, unknown>, signal: AbortSignal) {
+		// Refuse before bundling or loading the renderer when the LGPL directory is missing (strict mode).
+		const binaries = this.binariesOption();
 		const r = await this.renderer();
 		const serveUrl = await this.serveUrl();
 		if (signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
@@ -280,13 +358,16 @@ export class RemotionService {
 			inputProps,
 			timeoutInMilliseconds: DELAY_RENDER_TIMEOUT_MS,
 			logLevel: 'error',
-			...(this.binariesDirectory ? { binariesDirectory: this.binariesDirectory } : {}),
+			...binaries,
 			...browser,
 		});
 		return { r, serveUrl, composition, browser };
 	}
 
-	/** `renderMedia` to an H.264/AAC MP4 (S04:RR-001/004/005/006/011). */
+	/**
+	 * `renderMedia` (S04:RR-001/004/005/006/011): a ProRes/PCM intermediate, a direct VP9/Opus WebM, or
+	 * (dev with Remotion's GPL build only) H.264/AAC — see export-plan.ts.
+	 */
 	async renderMedia(input: RemotionRenderInput): Promise<{ frames: number }> {
 		const { r, serveUrl, composition, browser } = await this.composition(input.inputProps, input.signal);
 		const { cancelSignal, cancel } = r.makeCancelSignal();
@@ -301,14 +382,24 @@ export class RemotionService {
 				inputProps: input.inputProps,
 				...(input.intermediate
 					? { codec: 'prores' as const, proResProfile: 'hq' as const, audioCodec: 'pcm-16' as const }
-					: {
-							codec: 'h264' as const,
-							audioCodec: 'aac' as const,
-							pixelFormat: 'yuv420p' as const,
-							crf: input.crf ?? 18,
-							x264Preset: input.x264Preset ?? 'medium',
-						}),
-				...(this.binariesDirectory ? { binariesDirectory: this.binariesDirectory } : {}),
+					: input.vp9
+						? {
+								codec: 'vp9' as const,
+								audioCodec: 'opus' as const,
+								pixelFormat: 'yuv420p' as const,
+								crf: input.vp9.crf,
+								...(input.vp9.colorSpace ? { colorSpace: input.vp9.colorSpace } : {}),
+								...(input.vp9.ffmpegOverride ? { ffmpegOverride: input.vp9.ffmpegOverride } : {}),
+								...(input.audioBitrateKbps ? { audioBitrate: `${input.audioBitrateKbps}k` } : {}),
+							}
+						: {
+								codec: 'h264' as const,
+								audioCodec: 'aac' as const,
+								pixelFormat: 'yuv420p' as const,
+								crf: input.crf ?? 18,
+								x264Preset: input.x264Preset ?? 'medium',
+							}),
+				...this.binariesOption(),
 				outputLocation: input.output,
 				concurrency: input.concurrency ?? Math.max(1, Math.floor(cores / 2)),
 				cancelSignal,
@@ -365,7 +456,7 @@ export class RemotionService {
 				licenseKey: this.licenseKey,
 				logLevel: 'error',
 				overwrite: true,
-				...(this.binariesDirectory ? { binariesDirectory: this.binariesDirectory } : {}),
+				...this.binariesOption(),
 				...(input.scale ? { scale: input.scale } : {}),
 				...browser,
 			});

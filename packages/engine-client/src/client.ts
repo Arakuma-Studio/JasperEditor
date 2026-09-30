@@ -171,6 +171,9 @@ export class EngineClient {
 	capabilities() {
 		return this.call('capabilities');
 	}
+	licenses() {
+		return this.call('licenses');
+	}
 	listProjects() {
 		return this.call('projectsList');
 	}

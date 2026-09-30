@@ -20,6 +20,7 @@ import { UploadService } from '../uploads/service.ts';
 import { type CapabilityProvider, CapabilityService } from './capabilities.ts';
 import { EncoderService } from './encoders.ts';
 import { Ffmpeg, resolveBinaries, selfCheck } from './ffmpeg.ts';
+import { findVendorDir, resolveRemotionBinaries } from './lgpl.ts';
 
 export type CoreServices = {
 	config: EngineConfig;
@@ -54,7 +55,7 @@ export type CoreServices = {
 export type CoreServiceOptions = {
 	jsonBodyLimit: number;
 	env?: Record<string, string | undefined>;
-	/** Packaged resources folder (ffmpeg under `<dir>/bin`). */
+	/** Packaged resources folder (ffmpeg under `<dir>/bin` or `<dir>/ffmpeg-lgpl`, D-13). */
 	resourcesDir?: string | null;
 	totalSlots?: number;
 	log?(msg: string): void;
@@ -67,7 +68,16 @@ export async function createCoreServices(
 	const env = opts.env ?? process.env;
 	const paths = config.paths;
 	const broadcaster = new Broadcaster();
-	const bins = resolveBinaries({ env, resourcesDir: opts.resourcesDir ?? env.JASPER_RESOURCES_DIR ?? null });
+	// Packaged desktop builds: the Electron main passes JASPER_RESOURCES_DIR; a utilityProcess also has
+	// `process.resourcesPath`.
+	const resourcesDir =
+		opts.resourcesDir ??
+		env.JASPER_RESOURCES_DIR ??
+		(opts.env ? null : ((process as unknown as { resourcesPath?: string }).resourcesPath ?? null));
+	// D-13: one LGPL directory (vendor in dev, <resources>/ffmpeg-lgpl packaged) serves both paths.
+	const vendorDir = findVendorDir({ env });
+	const bins = resolveBinaries({ env, resourcesDir, vendorDir });
+	opts.log?.(`[ffmpeg] ${bins.ffmpeg ?? 'not found'} (${bins.source})`);
 	const ffmpeg = new Ffmpeg(bins);
 	const check = await selfCheck(bins);
 	const encoders = await EncoderService.create({
@@ -112,11 +122,14 @@ export async function createCoreServices(
 		bundleCacheDir: paths.remotionBundleDir,
 		usageLog: join(paths.logsDir, 'remotion-usage.jsonl'),
 		env,
+		binaries: resolveRemotionBinaries({ env, resourcesDir, vendorDir, strict: !config.dev }),
 		log: opts.log,
 	});
+	await remotion.init(!config.dev);
 	const capabilities = new CapabilityService({
 		config,
 		selfCheck: check,
+		ffmpegSource: bins.source,
 		encoders,
 		remotion,
 		fonts,
