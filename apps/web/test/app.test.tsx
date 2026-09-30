@@ -49,15 +49,16 @@ describe('web app', () => {
 		for (const kind of ['program', 'timeline', 'project', 'properties']) {
 			expect(document.querySelector(`[data-slot="${kind}"]`)).toBeTruthy();
 		}
-		// The real Project panel (WP-2E) replaced the placeholder that printed "Demo project · rev 0".
-		await waitFor(() =>
-			expect(screen.getByTestId('project-breadcrumb').textContent).toContain('Demo project'),
-		);
-		// Panel bodies are code-split (React.lazy): let every chunk resolve before the environment is torn
-		// down, or React renders them after `window` is gone.
+		// Panel bodies are code-split (React.lazy): let every chunk resolve first (slow under a loaded
+		// `pnpm verify`), and before the environment is torn down, or React renders them after `window` is gone.
 		await waitFor(() => expect(document.querySelectorAll('[data-testid="panel-loading"]').length).toBe(0), {
 			timeout: 20_000,
 		});
+		// The real Project panel (WP-2E) replaced the placeholder that printed "Demo project · rev 0".
+		await waitFor(
+			() => expect(screen.getByTestId('project-breadcrumb').textContent).toContain('Demo project'),
+			{ timeout: 20_000 },
+		);
 		unmount();
 	});
 });
