@@ -78,6 +78,13 @@ export function flicksToFrames(flicks: number, r: Rational, mode: 'floor' | 'rou
 	return mode === 'floor' ? Math.floor(q + 1e-9) : Math.round(q);
 }
 
+/**
+ * Tolerance (in frames) for frame counts derived from probed durations. ffprobe prints durations in
+ * microseconds, so an exact 58-frame 30 fps file reads 1.933333 s = 57.99999 frames; without a tolerance
+ * `floor` drops its last frame.
+ */
+export const FRAME_EPS = 1e-3;
+
 export function secondsToFlicks(seconds: number): number {
 	return Math.round(seconds * FLICKS_PER_SECOND);
 }

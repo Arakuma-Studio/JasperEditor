@@ -17,7 +17,7 @@ import type { Animatable, LabelColor, Vec2 } from '../../schema/common.ts';
 import type { DefaultScaling, ProjectItem } from '../../schema/document.ts';
 import type { MediaAsset, SyntheticSource } from '../../schema/media.ts';
 import type { Clip, TextBox, TextContent, TextStyle, Track, Transform } from '../../schema/sequence.ts';
-import { flicksPerFrame, type Rational, supportsDropFrame } from '../../time.ts';
+import { FRAME_EPS, flicksPerFrame, type Rational, supportsDropFrame } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import {
 	allTracksIn,
@@ -234,7 +234,7 @@ export function placeSource(
 			const outF = o.sourceRange?.out ?? marks?.out?.flicks ?? dur;
 			if (outF <= inF) h.fail('E_INVALID_PARAM', 'Source out must be after source in');
 			if (inF < 0 || outF > dur + F) h.fail('E_OUT_OF_MEDIA', 'Source range is outside the media');
-			frames = Math.max(1, Math.floor(Math.min(outF, dur) / F - inF / F + 1e-9));
+			frames = Math.max(1, Math.floor(Math.min(outF, dur) / F - inF / F + FRAME_EPS));
 		} else if (o.sourceRange) {
 			frames = Math.max(1, Math.round((o.sourceRange.out - o.sourceRange.in) / F));
 		} else frames = stillFrames;
@@ -503,7 +503,7 @@ function trimLimits(
 ): TrimLimits {
 	const F = flicksPerFrame(rateOf(seq));
 	const step = F * c.speed.rate;
-	const eps = 1e-6;
+	const eps = FRAME_EPS;
 	let min = Number.NEGATIVE_INFINITY;
 	let max = Number.POSITIVE_INFINITY;
 	const dur = (c as { mediaId?: string }).mediaId

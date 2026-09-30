@@ -8,7 +8,7 @@ import { isBoundedContent } from './registry/kinds.ts';
 import type { RGBA } from './schema/common.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import type { Clip, Sequence, Transition } from './schema/sequence.ts';
-import { flicksPerFrame, type Rational } from './time.ts';
+import { FRAME_EPS, flicksPerFrame, type Rational } from './time.ts';
 
 export const CROSS_DISSOLVE = 'jasper.cross-dissolve';
 export const DIP_TO_BLACK = 'jasper.dip-to-black';
@@ -61,7 +61,7 @@ export function transitionSpec(effectId: string): TransitionSpec | null {
 	return TRANSITION_SPECS.find((s) => s.id === effectId) ?? null;
 }
 
-const EPS = 1e-6;
+const EPS = FRAME_EPS;
 /** Kinds whose picture does not depend on content time: they have handles on both sides (TRN-003). */
 const STATIC_KINDS = new Set(['still', 'solid', 'text']);
 

@@ -34,6 +34,29 @@ describe('clip.place (S01 AC-02…04, S02 TL-493)', () => {
 		expect(checkInvariants(h.doc)).toEqual([]);
 	});
 
+	it('keeps the last frame of media whose probed duration is rounded to microseconds', () => {
+		const h = new Harness();
+		// 58 frames at 30 fps: ffprobe reports 1.933333 s (57.99999 frames).
+		const asset = videoAsset({ seconds: 1.933333, audio: false });
+		const m = (h.ok([{ type: 'media.register', asset }]).results[0] as { mediaId: string }).mediaId;
+		const whole = h.ok([{ type: 'clip.place', source: { mediaId: m }, at: 0 }]);
+		expect(h.seq.clips[whole.created[0]!]!.duration).toBe(58);
+		const range = h.ok([
+			{
+				type: 'clip.place',
+				source: { mediaId: m },
+				at: 100,
+				sourceRange: { in: { sourceFrames: 0 }, out: { sourceFrames: 58 } },
+			},
+		]);
+		expect(h.seq.clips[range.created[0]!]!.duration).toBe(58);
+		// …and the trim limit lets the out edge reach that frame again.
+		const c = range.created[0]!;
+		h.ok([{ type: 'clip.trim', clipId: c, edge: 'out', deltaFrames: -10 }]);
+		h.ok([{ type: 'clip.trim', clipId: c, edge: 'out', deltaFrames: 10 }]);
+		expect(h.seq.clips[c]!.duration).toBe(58);
+	});
+
 	it('DT-021: linked A/V halves get the Movie label on video and the Audio label on audio', () => {
 		const h = new Harness();
 		const av = h.ok([{ type: 'media.register', asset: videoAsset({ seconds: 4 }) }]).results[0] as {
