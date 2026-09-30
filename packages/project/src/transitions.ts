@@ -160,12 +160,16 @@ export function fadeFactor(fades: readonly RenderFade[] | undefined, frame: numb
 const BLACK: RGBA = [0, 0, 0, 1];
 
 /** True when nothing below the clip can show through it (a cross dissolve may then keep it fully opaque). */
-function isOpaque(doc: Pick<ProjectDocument, 'media'>, c: Clip): boolean {
-	if (c.kind !== 'video' && c.kind !== 'still') return false;
+function isOpaque(doc: Pick<ProjectDocument, 'media' | 'synthetics'>, c: Clip): boolean {
 	const r = c as { opacity?: { value: number; keyframes: unknown[] }; blendMode?: string };
 	if (r.opacity && (r.opacity.value !== 100 || r.opacity.keyframes.length > 0)) return false;
 	if (r.blendMode && r.blendMode !== 'normal') return false;
-	return doc.media[c.mediaId]?.probe.hasAlpha === false;
+	if (c.kind === 'video' || c.kind === 'still') return doc.media[c.mediaId]?.probe.hasAlpha === false;
+	if (c.kind === 'solid') {
+		const syn = doc.synthetics[c.syntheticId];
+		return syn?.kind === 'color-matte' && syn.color[3] === 1;
+	}
+	return false;
 }
 
 export type ResolvedTransitions = {
@@ -183,7 +187,7 @@ export type ResolvedTransitions = {
  * instead of showing missing frames.
  */
 export function resolveVideoTransitions(
-	doc: Pick<ProjectDocument, 'media'>,
+	doc: Pick<ProjectDocument, 'media' | 'synthetics'>,
 	seq: Sequence,
 ): ResolvedTransitions {
 	const clips = new Map<string, ClipTransitionRender>();

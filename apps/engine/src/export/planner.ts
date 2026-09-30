@@ -212,13 +212,6 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	}
 	if (!staticOk(snapshot.master.volumeDb))
 		blockers.push({ path: 'native', reason: 'animated master volume' });
-	for (const tr of Object.values(seq.transitions)) {
-		const touches = [tr.outgoingClipId, tr.incomingClipId].some(
-			(id) => id && visual.some((c) => c.clipId === id),
-		);
-		if (touches)
-			blockers.push({ itemId: tr.id, path: 'native', reason: 'transitions require the Remotion path in M1' });
-	}
 	const video0 = settings.video;
 	const encoder = deps.selectEncoder
 		? deps.selectEncoder({
@@ -433,6 +426,9 @@ export function nativeBlockers(c: RenderVisualClip, caps: PlanCapabilities): str
 	if (c.kind === 'motion-graphic' && !(caps.fframes === 'ready' && caps.mgMasters)) {
 		out.push(`motion graphic "${c.name}" needs the fframes renderer, which is unavailable`);
 	}
+	// The fframes master holds exactly the clip's frames: no content for transition handles.
+	if (c.kind === 'motion-graphic' && ((c.headHandle ?? 0) > 0 || (c.tailHandle ?? 0) > 0))
+		out.push(`motion graphic "${c.name}" is part of a transition that needs handles`);
 	const t = c.transform;
 	if (
 		t &&

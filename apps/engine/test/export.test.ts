@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { RenderPlanSchema } from '@jasper/api';
 import { buildRenderSnapshot, FLICKS_PER_SECOND } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { buildNativeGraph } from '../src/export/native.ts';
+import { audioFadeFilters, buildNativeGraph, fadeFilters } from '../src/export/native.ts';
 import { nativeBlockers } from '../src/export/planner.ts';
 import { coreServices } from '../src/tools/services.ts';
 import {
@@ -474,6 +474,129 @@ describe('frame accuracy of the native path', () => {
 		];
 		expect(want.map(([frame]) => [frame, frameCode(file, frame)])).toEqual(want);
 	}, 120_000);
+});
+
+describe('transitions on the native path (S01 §13)', () => {
+	/**
+	 * frame-code.mp4 twice on V1, cut at frame 20: A shows source frames 32…51 (bit 5 of the code is white),
+	 * B shows 8…27 (bit 5 black). Both have media handles around the cut.
+	 */
+	async function cutDoc(effectId: string) {
+		const coded = await register(app, fixture('frame-code.mp4'));
+		const d = new DocBuilder();
+		const m = d.addMedia(coded);
+		const place = (at: number, inFrame: number, ref: string) => ({
+			type: 'clip.place',
+			source: { mediaId: m },
+			at,
+			sourceRange: { in: { sourceFrames: inFrame }, out: { sourceFrames: inFrame + 20 } },
+			matchSequence: 'keep',
+			ref,
+		});
+		d.tx([
+			place(0, 32, '$a'),
+			place(20, 8, '$b'),
+			{ type: 'transition.add', clipId: '$b', edge: 'in', effectId, duration: 10 },
+		]);
+		return d;
+	}
+	async function exportNative(d: DocBuilder) {
+		const planned = await coreServices(app).exports.plan({
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			settings: settings(d.seqId) as never,
+		});
+		// Transitions no longer force the Remotion path.
+		expect(planned.plan.path).toBe('native');
+		expect(planned.plan.blockers).toEqual([]);
+		const g = buildNativeGraph({
+			snapshot: planned.snapshot,
+			output: planned.output,
+			outputFile: '/tmp/x.mp4',
+			sources: { media: (id) => planned.media[id] ?? null, mgMaster: () => null },
+			threads: 2,
+		});
+		const start = await app.inject({
+			method: 'POST',
+			url: '/api/exports',
+			headers: JSON_H,
+			payload: {
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				settings: settings(d.seqId, { engine: 'native' }),
+			},
+		});
+		expect(start.statusCode).toBe(202);
+		const done = await coreServices(app).queue.wait(start.json().id);
+		expect(done.error).toBeUndefined();
+		expect(done.result).toMatchObject({ frames: 40, renderPath: 'native' });
+		return { g, file: (await coreServices(app).exports.outputFile(start.json().id))! };
+	}
+	const near = (got: number, want: number, tol = 7) =>
+		Math.abs(got - want) <= tol || `${got} is not within ${tol} of ${want}`;
+
+	it('cross-dissolves through the handles: frame i of d shows (i + 1) / (d + 1) of the incoming clip', async () => {
+		const { g, file } = await exportNative(await cutDoc('jasper.cross-dissolve'));
+		// Outgoing layer: 25 frames (20 + 5 of tail handle); incoming: starts 5 frames early with the ramp.
+		expect(g.filter).toContain('trim=end_frame=25');
+		expect(g.filter).toContain('tpad=start=1,fade=t=in:s=0:n=11:alpha=1,trim=start_frame=1');
+		expect(g.filter).toContain('setpts=PTS-STARTPTS+round(15*1/(30*TB))');
+		expect(g.inputs[1]!.slice(0, 2)).toEqual(['-ss', '0.100000']); // source frame 8 − 5 = 3
+		// Bit 5 of the frame code (x 390…450, y 40…100) is white in A and black in B.
+		const bit5 = (frame: number) => pixel(file, frame, 420, 70)[0];
+		expect(near(bit5(14), 255)).toBe(true);
+		expect(near(bit5(15), 255 * (10 / 11))).toBe(true);
+		expect(near(bit5(19), 255 * (6 / 11))).toBe(true);
+		expect(near(bit5(20), 255 * (5 / 11))).toBe(true);
+		expect(near(bit5(24), 255 * (1 / 11))).toBe(true);
+		expect(near(bit5(25), 0)).toBe(true);
+		// The cut itself stays frame accurate outside the span.
+		expect(frameCode(file, 14)).toBe(46);
+		expect(frameCode(file, 25)).toBe(13);
+	}, 120_000);
+
+	it('dips to black: the outgoing clip ends on a black frame, the incoming one fades in', async () => {
+		const { g, file } = await exportNative(await cutDoc('jasper.dip-to-black'));
+		expect(g.filter).toMatch(/color=c=0x000000ff:s=1920x1080:r=30\/1:d=[\d.]+,format=rgba,trim=end_frame=10/);
+		expect(g.filter).toContain('fade=t=out:s=14:n=5:alpha=1'); // A: no handle, ramp over its last 5 frames
+		expect(g.filter).toContain('tpad=start=1,fade=t=in:s=0:n=6:alpha=1,trim=start_frame=1'); // B from the cut
+		// Flat background of frame-code.mp4: RGB (32, 64, 128); sample the blue channel.
+		const blue = (frame: number) => pixel(file, frame, 1000, 600)[2];
+		expect(near(blue(14), 128)).toBe(true);
+		expect(near(blue(15), 128 * (4 / 5))).toBe(true);
+		expect(near(blue(17), 128 * (2 / 5))).toBe(true);
+		expect(near(blue(19), 0)).toBe(true);
+		expect(near(blue(20), 128 * (1 / 6))).toBe(true);
+		expect(near(blue(24), 128 * (5 / 6))).toBe(true);
+		expect(near(blue(25), 128)).toBe(true);
+		expect(frameCode(file, 25)).toBe(13);
+	}, 120_000);
+
+	it('writes fades and audio fades as ffmpeg fade / afade with frame-exact starts', () => {
+		expect(fadeFilters(undefined, 0)).toEqual([]);
+		expect(fadeFilters([{ type: 'in', start: 100, frames: 12 }], 100)).toEqual([
+			'fade=t=in:s=0:n=12:alpha=1',
+		]);
+		expect(fadeFilters([{ type: 'out', start: 187, frames: 12 }], 100)).toEqual([
+			'fade=t=out:s=87:n=12:alpha=1',
+		]);
+		// A range export that starts inside the ramp pads the frames that came before it.
+		expect(fadeFilters([{ type: 'in', start: 100, frames: 12 }], 104)).toEqual([
+			'tpad=start=4',
+			'fade=t=in:s=0:n=12:alpha=1',
+			'trim=start_frame=4',
+		]);
+		expect(fadeFilters([{ type: 'in', start: 100, frames: 12 }], 112)).toEqual([]); // ramp already over
+		expect(
+			audioFadeFilters([{ type: 'out', start: 60, frames: 30, curve: 'equal-power' }], 0, 1 / 30),
+		).toEqual(['afade=t=out:ss=96000:ns=48000:curve=qsin']);
+		expect(audioFadeFilters([{ type: 'in', start: 0, frames: 15, curve: 'linear' }], 5, 1 / 30)).toEqual([
+			'adelay=delays=8000S:all=1',
+			'afade=t=in:ss=0:ns=24000:curve=tri',
+			'atrim=start_sample=8000',
+			'asetpts=PTS-STARTPTS',
+		]);
+	});
 });
 
 describe('overlays with an alpha channel on the native path', () => {

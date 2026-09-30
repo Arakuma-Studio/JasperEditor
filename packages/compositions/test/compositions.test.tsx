@@ -473,12 +473,13 @@ describe('transitions (S01 §13)', () => {
 		const [a, b] = doc.videoTracks[0]!.clips;
 		expect([a!.tailHandle, b!.headHandle]).toEqual([5, 5]);
 		expect(layersAt(doc, 14)).toEqual({ opacities: [1], mattes: 0 });
+		// Opaque clips: the outgoing one stays at 100 % under the incoming ramp (an exact mix).
 		const mid = layersAt(doc, 17); // third frame of the span: 3/11 of the incoming clip
 		expect(mid.opacities).toHaveLength(2);
-		expect(mid.opacities[0]).toBeCloseTo(8 / 11, 9);
+		expect(mid.opacities[0]).toBe(1);
 		expect(mid.opacities[1]).toBeCloseTo(3 / 11, 9);
 		const afterCut = layersAt(doc, 22); // the outgoing clip is still drawn from its tail handle
-		expect(afterCut.opacities[0]).toBeCloseTo(3 / 11, 9);
+		expect(afterCut.opacities[0]).toBe(1);
 		expect(afterCut.opacities[1]).toBeCloseTo(8 / 11, 9);
 		expect(layersAt(doc, 25)).toEqual({ opacities: [1], mattes: 0 });
 	});
