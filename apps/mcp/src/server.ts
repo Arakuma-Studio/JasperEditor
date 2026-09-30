@@ -6,9 +6,14 @@ import { z } from 'zod';
 import { loadDoc, makeContext, type ToolContext } from './context.ts';
 import { pickSequence, timelineTable } from './format.ts';
 import type { EngineConnection } from './link.ts';
+import { COLOR_GUIDE, registerColorTools } from './tools/color.ts';
+import { COMPOSITION_GUIDE, registerCompositionTools } from './tools/compositions.ts';
 import { registerEditingTools } from './tools/editing.ts';
+import { PROCESSING_GUIDE, registerProcessingTools } from './tools/processing.ts';
 import { registerProjectTools } from './tools/projects.ts';
 import { registerRenderTools } from './tools/render.ts';
+import { registerTrackingTools, TRACKING_GUIDE } from './tools/tracking.ts';
+import { registerTransitionTools, TRANSITION_GUIDE } from './tools/transitions.ts';
 import { MCP_SERVER_VERSION } from './version.ts';
 
 export const MCP_SERVER_NAME = 'jasper-editor';
@@ -30,6 +35,12 @@ Rules:
 - Undo/redo only touch this agent's own History entries.
 - Errors come back as tool errors with a code and a hint on what to do next.`;
 
+/** M2 guide sections contributed by the feature tool modules (ARCHITECTURE §19.9). */
+const M2_GUIDES = [COLOR_GUIDE, PROCESSING_GUIDE, COMPOSITION_GUIDE, TRACKING_GUIDE, TRANSITION_GUIDE].filter(
+	(g) => g.trim().length > 0,
+);
+const FULL_GUIDE = M2_GUIDES.length ? `${EDITING_GUIDE}\n\n${M2_GUIDES.join('\n\n')}` : EDITING_GUIDE;
+
 export type JasperMcpOptions = {
 	link: EngineConnection;
 	/** Name recorded in History origins; default = the MCP client's name (e.g. "claude-code"). */
@@ -40,7 +51,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	const server = new McpServer(
 		{ name: MCP_SERVER_NAME, title: 'JasperEditor', version: MCP_SERVER_VERSION },
 		{
-			instructions: EDITING_GUIDE,
+			instructions: FULL_GUIDE,
 			capabilities: { tools: {}, resources: {}, prompts: {}, logging: {} },
 		},
 	);
@@ -48,6 +59,12 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerProjectTools(ctx);
 	registerEditingTools(ctx);
 	registerRenderTools(ctx);
+	// M2 feature tools (one module per work package).
+	registerColorTools(ctx);
+	registerProcessingTools(ctx);
+	registerCompositionTools(ctx);
+	registerTrackingTools(ctx);
+	registerTransitionTools(ctx);
 	registerResources(ctx);
 	registerPrompts(ctx);
 	return { server, ctx };
@@ -114,7 +131,7 @@ function registerResources(ctx: ToolContext): void {
 			description: 'How to drive JasperEditor with these tools.',
 			mimeType: 'text/markdown',
 		},
-		async (uri) => ({ contents: [{ uri: uri.href, mimeType: 'text/markdown', text: EDITING_GUIDE }] }),
+		async (uri) => ({ contents: [{ uri: uri.href, mimeType: 'text/markdown', text: FULL_GUIDE }] }),
 	);
 }
 
@@ -135,7 +152,7 @@ function registerPrompts(ctx: ToolContext): void {
 					role: 'user',
 					content: {
 						type: 'text',
-						text: `${EDITING_GUIDE}
+						text: `${FULL_GUIDE}
 
 Task: ${goal}
 ${projectId ? `Work in project ${projectId} (start with get_project).` : 'Create a project for it (create_project), or ask which existing project to use (list_projects).'}

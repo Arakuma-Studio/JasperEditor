@@ -67,6 +67,10 @@ describe('engine server (ARCHITECTURE §9.1, §4.2)', () => {
 			if (route.owner === 'WP-2F') {
 				expect(r.statusCode, `${route.method} ${route.path}`).not.toBe(501);
 				if (r.statusCode >= 400) expect(r.json()).toHaveProperty('code');
+			} else if (route.owner.startsWith('wp-m2-')) {
+				// M2 work packages replace their stubs; each tests its own routes. Stubs answer 501.
+				if (r.statusCode === 501) expect(r.json()).toMatchObject({ code: 'NOT_IMPLEMENTED' });
+				else if (r.statusCode >= 400) expect(r.json()).toHaveProperty('code');
 			} else {
 				expect(r.statusCode, `${route.method} ${route.path}`).toBe(501);
 				expect(r.json()).toMatchObject({ code: 'NOT_IMPLEMENTED', retryable: false });
