@@ -12,7 +12,7 @@ Specs and research this document is built on (all ours, all clean-room):
 | S02 | `docs/specs/02-timeline.md` (timeline panel, editing gestures, keymap) |
 | S03 | `docs/specs/03-monitors-effect-controls-rendering-items.md` (monitors, render model, inspector, effects) |
 | S04 | `docs/specs/04-media-render-and-backend.md` (engine, ingest, jobs, render planner) |
-| S05 | `docs/specs/05-ui-shell-premiere-design.md` (shell, docking, design system, agent panel, PWA, Electron) |
+| S05 | `docs/specs/05-ui-shell-premiere-design.md` (shell, docking, design system, PWA, Electron; its Agent panel chapter §17 is superseded by D-18 / §11) |
 | R-OMS | `docs/research/orquester-multiplatform-setup.md` |
 | R-NVL | `docs/research/native-video-libraries.md` |
 | R-FF | `docs/research/fframes.md` |
@@ -70,7 +70,7 @@ Platforms: web app (browser), installable PWA (desktop + mobile), Electron deskt
 | D-15 | **Lint/format = Biome 2** (`biome check`), plus `scripts/check-tokens.mjs` enforcing S05:DT-002 (no color literals / raw palette classes in `packages/ui/src/**` and `apps/web/src/**` outside theme files). | One fast tool; the token rule is a 50-line script. |
 | D-16 | **Tests = Vitest 4.1** (Node 20 compatible; Vitest 5 needs Node 22) with root `projects`; property tests with `fast-check`; DOM tests with `happy-dom` + Testing Library. **E2E = Playwright** using the system Chrome (`channel: 'chrome'`, `/usr/bin/google-chrome`) to avoid browser downloads. | |
 | D-17 | **Electron:** no second renderer app, no IPC byte bridge. Dev: window loads the Vite dev server (`http://127.0.0.1:5173`), engine runs separately. Packaged: main forks the bundled engine with `utilityProcess.fork` (ESM bundle, `--port 0`), sets a per-launch token cookie, and loads `http://127.0.0.1:<port>/`. | R-OMS §4.2, §8.5 (Orquester's in-process CJS daemon bundle is broken). |
-| D-18 | **Agent API is staged:** Stage 1 (M1) typed transactions/queries over the in-page bridge, engine HTTP and the `/agent` WebSocket relay, headless fallback, approval gate, Agent panel (activity + approvals + JSON console). Stage 2 (M2): MCP server + LLM chat in the Agent panel (Claude via the Anthropic API) with proposals/ghosts. Stage 3: autonomy modes, custom fframes graphics, vision checks. | S01 §21, S05 §17. |
+| D-18 | **The agent API is an MCP server; there is no in-app agent.** External coding agents (Claude Code, Codex CLI, Cursor…) drive the editor through `jasper-mcp` (`apps/mcp`, official `@modelcontextprotocol/sdk`): stdio for local clients, and the same tools over Streamable HTTP at the engine's `/mcp`. Underneath sit the typed transactions/queries of S01 §21: engine HTTP, the `/agent` WebSocket relay into the open editor (live edits, `Agent:` undo entries), headless fallback and the approval gate. The Agent panel, its workspace, menu, tool and shortcuts were removed (wp-mcp); approvals are a shell-level card. Later: proposals/ghosts, vision checks, agent-authored fframes graphics, all as MCP tools. | User decision (wp-mcp). S01 §21; S05 §17 is superseded. |
 | D-19 | **Remotion pinned to exactly `4.0.499`** for every `remotion`/`@remotion/*` package in the workspace (Remotion requires identical versions). Upgrading is a single dedicated change. | S02/S03/S04 verification notes target 4.0.499. |
 | D-20 | **Runtime baseline Node ≥ 20.19** (machine: Node 20.20.2, pnpm 10.34). TypeScript **5.9.3** (not 7.x). Avoid dependencies that require Node 22 (React Router 8, Vitest 5). Electron's npm package may print an engines warning on Node 20; do not enable `engine-strict`. | |
 
@@ -165,11 +165,14 @@ JasperEditor/
 │   │       ├── panels/<kind>/                  # one folder per panel (owned by different work packages)
 │   │       ├── home/                           # Home screen (project list/new/open)
 │   │       ├── import/                         # import service (upload / register path), drop handling
-│   │       ├── agent-bridge/                   # window.jasper bridge + /agent WS client
+│   │       ├── agent-bridge/                   # window.jasper bridge + /agent WS client (live relay for MCP agents)
 │   │       └── pwa/                            # service worker registration
 │   ├── engine/                   # @jasper/engine — Fastify media server ("jasperd")
 │   │   └── src/{cli.ts, index.ts (startEngine), server.ts, auth/, events/, jobs/, media/, derivatives/,
 │   │            projects/, uploads/, export/, remotion/, fonts/, mg/, agent/, routes/}
+│   ├── mcp/                      # @jasper/mcp — jasper-mcp: the MCP server for external agents (§11)
+│   │   ├── src/{cli.ts (stdio), server.ts, discovery.ts, link.ts, context.ts, errors.ts, format.ts, tools/}
+│   │   └── dist/jasper-mcp.mjs   # `pnpm mcp:build`: one bundled executable file (gitignored)
 │   └── desktop/                  # @jasper/desktop — Electron shell only
 │       └── src/{main.ts, preload.cts, engine-process.ts}, scripts/build-main.ts, electron-builder config
 └── packages/
@@ -230,6 +233,8 @@ The SPA always uses **relative URLs** (`/api/...`). On startup `apps/web/src/run
 ```
 <appdir>/
   engine/engine.json            # optional config (zod, unknown keys tolerated)
+  engine/runtime.json           # written while an engine runs (0600): url, port, pid, token, version; how
+                                #   local tools (jasper-mcp, §11.2) find the engine; removed on stop
   engine/media-index.json       # mediaKey → {fingerprint, storage, probe, sizeBytes, mtimeMs}   (atomic writes)
   engine/jobs.jsonl             # job journal (S04:JB-030)
   engine/logs/YYYY-MM-DD.log
@@ -244,7 +249,7 @@ The SPA always uses **relative URLs** (`/api/...`). On startup `apps/web/src/run
   tmp/                                       # wiped on start
 ```
 
-`@jasper/config` exposes `resolveAppdir({argv, env})`, `appdirPaths(appdir)`, `DEFAULT_ENGINE_PORT = 47900`, env names (`JASPER_APPDIR`, `JASPER_PORT`, `JASPER_DEV`, `JASPER_LOCAL_TOKEN`, `JASPER_WEB_DIR`, `JASPER_FFMPEG`, `JASPER_FFPROBE`, `JASPER_MG`, `JASPER_REMOTION_LICENSE_KEY`, `JASPER_BROWSER_EXECUTABLE`).
+`@jasper/config` exposes `resolveAppdir({argv, env})`, `appdirPaths(appdir)`, `DEFAULT_ENGINE_PORT = 47900`, env names (`JASPER_APPDIR`, `JASPER_PORT`, `JASPER_DEV`, `JASPER_LOCAL_TOKEN`, `JASPER_WEB_DIR`, `JASPER_FFMPEG`, `JASPER_FFPROBE`, `JASPER_MG`, `JASPER_REMOTION_LICENSE_KEY`, `JASPER_BROWSER_EXECUTABLE`; for `jasper-mcp`: `JASPER_ENGINE_URL`, `JASPER_ENGINE_TOKEN`, `JASPER_ENGINE_ENTRY`, `JASPER_MCP_ENTRY`), `desktopAppdir()` and `parseEngineRuntime()`.
 
 ---
 
@@ -422,10 +427,10 @@ export type SessionState = { document; revision; transient: ProjectDocument | nu
 
 ### 7.1 Shell (S05 §2–§7, §12–§14)
 
-- `EditorShell` = Row A title/menu bar (28 px; in-app menubar from the menu model) + Row B header (36 px; Home, Import/Edit/Export mode tabs, workspace tabs, engine chip, jobs button, Quick Export, Agent button, command palette, full screen) + the dock area.
+- `EditorShell` = Row A title/menu bar (28 px; in-app menubar from the menu model) + Row B header (36 px; Home, Import/Edit/Export mode tabs, workspace tabs, engine chip, jobs button, Quick Export, command palette, full screen) + the dock area + the agent approval cards (`shell/AgentApprovals.tsx`, §11).
 - Dock host wraps **dockview-react**; dockview CSS variables are mapped to `--pr-*` in `packages/ui/src/theme/dockview.css`. Panels are rendered through `PanelDefinition.component`; Program and Timeline are keep-alive (S05:SH-006: dockview `renderer: 'always'`).
 - Focus model: capture-phase `pointerdown`/`focusin` → `focusStore.focusedPanel`; 1 px `--pr-focus-ring` outline on the focused group (S05:FO-001/002).
-- Workspaces: M1 ships `editing` (default, S05 §4.2 layout with Properties full-height right column and Agent as a tab next to it), `assembly`, `effects`, `agent`; layout JSON persisted in `localStorage` via a versioned adapter (S05:SH-020/021). Maximize with `` ` `` (S05:DK-040).
+- Workspaces: M1 ships `editing` (default, S05 §4.2 layout with Properties as the full-height right column), `assembly`, `effects`, `motion`, `essentials`; layout JSON persisted in `localStorage` via a versioned adapter (S05:SH-020/021). State stored by builds that still had the Agent panel loads: the retired `agent` workspace is dropped and layouts lose only their agent tab (`RETIRED_BUILTIN_WORKSPACES`, `sanitizeLayout`). Maximize with `` ` `` (S05:DK-040).
 - Toast host, dialog host, command palette (`Ctrl+Shift+P`, prefixes `>`, `@`, `:` in M1), tooltips.
 - Layout-mode switch (`desktop | compact | tablet | phone`): M1 implements `desktop` and `compact` (compact = fixed Essentials-like dock preset); `tablet`/`phone` render a "Touch layout coming soon" notice with the compact shell (M2 implements S05 §19).
 
@@ -434,7 +439,7 @@ export type SessionState = { document; revision; transient: ProjectDocument | nu
 ```ts
 // apps/web/src/panels/types.ts
 export type PanelKind = 'project' | 'source' | 'program' | 'timeline' | 'tools' | 'effectControls' | 'effects'
-  | 'properties' | 'motionTemplates' | 'audioMeters' | 'history' | 'info' | 'markers' | 'agent' | 'jobs';
+  | 'properties' | 'motionTemplates' | 'audioMeters' | 'history' | 'info' | 'markers' | 'jobs';
 export interface PanelProps { instanceId: string; visible: boolean; params?: Record<string, unknown> }
 export interface PanelDefinition { kind: PanelKind; title(ctx: PanelTitleContext): string; icon: IconId;
   instance: 'single' | 'multi'; keepAlive?: boolean; minSize: { w: number; h: number }; fixedAxis?: 'width' | 'height';
@@ -459,7 +464,7 @@ export interface CommandCtx { session: EditorSession | null; transport: Transpor
 
 - `commands/registry.ts` (WP-00): `registerCommands`, `getCommand`, `runCommand`, `listCommands`, enabled/checked evaluation.
 - `commands/keymap-defaults.ts` (WP-00): the **complete** default map from S02:TL-903 + R-PUI §16 + S05:KB-010, keyed by command id, bound on `KeyboardEvent.code`, with web fallbacks (S05:KB-013). Unregistered ids are simply inert.
-- Domain modules, each a separate file with a single owner, imported by `commands/index.ts` (WP-00): `app.ts` + `edit.ts` (WP-2A: undo/redo, workspace, panels, palette, save), `timeline.ts` (WP-2B), `transport.ts` (WP-2C), `inspector.ts` (WP-2D), `project.ts` + `export.ts` (WP-2E), `mg.ts` (WP-2G), `agent.ts` (WP-2H).
+- Domain modules, each a separate file with a single owner, imported by `commands/index.ts` (WP-00): `app.ts` + `edit.ts` (WP-2A: undo/redo, workspace, panels, palette, save), `timeline.ts` (WP-2B), `transport.ts` (WP-2C), `inspector.ts` (WP-2D), `project.ts` + `export.ts` (WP-2E), `mg.ts` (WP-2G), `help.ts` (wp-mcp: Help ▸ Connect an AI Agent…).
 - One capture-phase `keydown`/`keyup` listener per window (WP-2A), scope resolution focused panel → `editing` → `global`, suspended in editable elements.
 
 ### 7.4 Design system (`@jasper/ui`, S05 §8–§11)
@@ -560,10 +565,13 @@ All JSON bodies validated with zod; errors `{code, message, detail?, retryable}`
 | `POST /api/agent/query` | `{projectId, query, args}` → result | 2H |
 | `POST /api/agent/tx` | `{projectId, transaction}` → `TransactionResult` (relayed to lease holder, else headless) | 2H |
 | `WS /agent` | session registration + request/response relay (§11) | 2H |
+| `POST /api/agent/open-project` | `{projectId}` → `{projectId, path, editors, live}`; publishes `editor.openProject` so editor windows navigate to the project | wp-mcp |
+| `GET /api/agent/mcp-info` | → `{stdioEntry, httpUrl, tokenRequired}` for Help ▸ Connect an AI Agent… (never the token) | wp-mcp |
+| `POST`/`GET`/`DELETE /mcp` | MCP Streamable HTTP: the `jasper-mcp` tools, one server per MCP session (max 32, 30 min idle); same auth as every other route | wp-mcp |
 
 `RegisteredMedia = {mediaKey, fingerprint, originalName, sizeBytes, container, kind, probe: MediaProbe, locators: MediaLocator[], browserPlayable: 'yes'|'no'|'unknown'}` — the client builds a `MediaAsset` (new `med_` id, `engine-store` locator with `key = mediaKey`) and commits `media.register` (+ `clip.place` for timeline drops) in one "Import N files" transaction (S01:LIFE-010).
 
-Events (`{id, type, createdAt, projectId?, payload}`): `engine.heartbeat`, `capabilities.changed`, `job.created`, `job.updated` (≤ 4/s/job), `job.finished`, `media.updated`, `derivative.ready {mediaKey, kind, url}`, `export.finished`, `doc.changed` (relayed from the session for agent subscribers), `agent.approval.requested/resolved`.
+Events (`{id, type, createdAt, projectId?, payload}`): `engine.heartbeat`, `capabilities.changed`, `job.created`, `job.updated` (≤ 4/s/job), `job.finished`, `media.updated`, `derivative.ready {mediaKey, kind, url}`, `export.finished`, `doc.changed` (relayed from the session for agent subscribers), `agent.approval.requested/resolved`, `editor.openProject {projectId}` (an agent asks editor windows to show a project).
 
 ### 9.3 Jobs (S04 §17)
 
@@ -640,37 +648,50 @@ One composition for Player preview, engine renders and stills (§8). Pinned `4.0
 
 ---
 
-## 11. Agent API (staged)
+## 11. Agent API = MCP server (`jasper-mcp`)
 
-### Stage 1 — M1
+**Decision (D-18, wp-mcp):** JasperEditor has no in-app agent. External coding agents (Claude Code, Codex CLI, Cursor, anything that speaks MCP) drive it through the MCP server in `apps/mcp` (`@jasper/mcp`, bin `jasper-mcp`, built on the MIT-licensed `@modelcontextprotocol/sdk`). The Agent panel, the Agent workspace and menu, the header button, the Agent Tool, the palette's "Ask the agent" row and the `Shift+0` / `Ctrl+.` shortcuts were removed. S05 §17 and the other Agent-panel requirements in the specs are superseded by this section.
 
-- **Document surface:** transactions (`jasper.tx/1`, S01:CMD-005) + queries (`doc.get`, `doc.revision`, `sequence.summary`, `sequence.clipsInRange`, `sequence.at`, `media.list`, `selection.get`, `playhead.get`, `history.list`, `validate`; `frame.capture` via `POST /api/stills`) + events (`doc.changed`, `selection.changed`, `playhead.changed` ≤ 10 Hz, `job.*`). Schemas from `@jasper/project/agent/schema-export` (`GET /api/agent/schema`).
-- **In-page bridge** (`apps/web/src/agent-bridge`): `window.jasper = {schema(), query(name, args), transact(tx), on(event, cb)}` in dev and Electron builds; the session applies with `origin: {agent}`; `expectedRevision` optimistic concurrency with fast-forward (S01:AGT-010).
+```
+MCP client ──stdio──▶ jasper-mcp ──HTTP (token)──▶ engine ──WS /agent──▶ open editor (live, "Agent: …" undo entry)
+MCP client ──Streamable HTTP /mcp──▶ engine (same tools)      └─ no editor: headless apply + save
+```
+
+### 11.1 Layers underneath (unchanged from Stage 1)
+
+- **Document surface:** transactions (`jasper.tx/1`, S01:CMD-005) + queries (`doc.get`, `doc.revision`, `sequence.summary`, `sequence.clipsInRange`, `sequence.at`, `media.list`, `selection.get`, `playhead.get`, `playhead.set`, `history.list`, `validate`; `frame.capture` via `POST /api/stills`) + events (`doc.changed`, `selection.changed`, `playhead.changed` ≤ 10 Hz, `job.*`). Schemas from `@jasper/project/agent/schema-export` (`GET /api/agent/schema`).
+- **In-page bridge** (`apps/web/src/agent-bridge`, kept): `window.jasper = {schema(), query(name, args), transact(tx), on(event, cb)}` in dev and Electron builds; the session applies with `origin: {agent}`; `expectedRevision` optimistic concurrency with fast-forward (S01:AGT-010).
 - **Engine relay:** when an editor opens a project it connects `WS /agent` and sends `{type:'hello', projectId, sessionId, leaseId}`. `POST /api/agent/tx|query` for that project is forwarded as `{type:'request', id, kind, payload}`; the session replies `{type:'response', id, result}` (timeout 30 s → `E_NO_SESSION` fallback to headless only if the lease expired). The session also forwards `doc.changed` to the engine for `/events` subscribers.
 - **Headless:** no lease holder → the engine loads the project, applies the transaction with `@jasper/project` (text layout marked `layoutPending`), saves with a new revision (S01:AGT-020).
-- **Guard rails (S01:AGT-011):** transactions containing `item.delete`, `sequence.delete`, `track.remove`, `media.removeUnused` or any `force: true` require user approval in the Agent panel (pending approval card: Approve / Deny, 60 s timeout → `E_APPROVAL_TIMEOUT`); headless mode rejects them with `E_APPROVAL_DENIED`. Limits: 5 000 commands, 20 MB.
-- **Agent panel (M1):** activity feed of agent transactions (label, origin, result, "Undo" link), pending approvals, a JSON transaction console (paste/run, dry-run toggle), schema browser. Agent commits flash the changed clips (S01:AGT-012) through a session event the timeline listens to.
-- Undo: each agent transaction = one `Agent: <label>` history entry; `history.undo` for agents only if the top entry is theirs (S01:UND-008).
+- **Guard rails (S01:AGT-011):** transactions containing `item.delete`, `sequence.delete`, `track.remove`, `media.removeUnused` or any `force: true` need the user's approval. The editor shell shows a sticky **approval card** at the top of the window (`apps/web/src/shell/AgentApprovals.tsx`: label, "<agent> wants to run N commands: <summary>", the reasons, a countdown, Show commands, **Approve** / **Deny**); 60 s without an answer → `E_APPROVAL_TIMEOUT`; headless mode rejects with `E_APPROVAL_DENIED`. Limits: 5 000 commands, 20 MB.
+- **What the user sees:** each agent transaction is one `Agent: <label>` History entry (`history.undo` for agents only if the top entry is theirs, S01:UND-008), the changed clips flash (S01:AGT-012), and the shell shows a toast `Agent: <label>` with an Undo action for every change an external agent applied.
 
-### Stage 2 — M2
+### 11.2 `jasper-mcp` (stdio) and `/mcp` (Streamable HTTP)
 
-MCP server (`@modelcontextprotocol/sdk`) exposing the same tools (stdio entry `apps/engine/src/agent/mcp.ts` + streamable HTTP at `/mcp`); in-app LLM chat (Anthropic API key configured on the engine, never in the client) with tool cards, plan cards, proposals rendered as timeline ghosts (dry-run results) and staleness (S05 §17.3/17.4); UI command tools generated from the command registry (`ui.describe`, `panel.open`, …, S05:AG-050/051).
+- **One definition, two transports.** `createJasperMcpServer({link})` (`apps/mcp/src/server.ts`) registers tools, resources and prompts. `apps/mcp/src/cli.ts` serves it over stdio; `apps/engine/src/routes/mcp.ts` serves the same definitions at `POST/GET/DELETE /mcp` (one server instance per MCP session, max 32 sessions, 30 min idle timeout), authenticated like every other engine route (loopback Host check, Bearer token in token mode).
+- **Bundle:** `pnpm mcp:build` (esbuild) → `apps/mcp/dist/jasper-mcp.mjs`, one executable ESM file with everything inlined; runs with plain `node`, and with the packaged app binary under `ELECTRON_RUN_AS_NODE=1`. The desktop package ships it as `resources/mcp/jasper-mcp.mjs`.
+- **Finding the engine** (`apps/mcp/src/discovery.ts`), in order: `--engine-url` / `--token`, then `JASPER_ENGINE_URL` / `JASPER_ENGINE_TOKEN`; then `<appdir>/engine/runtime.json` for `--appdir`, `JASPER_APPDIR`, the platform appdir and the desktop app's appdir (`<Electron userData>/jasper`); then `http://127.0.0.1:47900`. A running engine writes `runtime.json` (mode 0600: url, port, pid, token, version) on listen and removes it on stop; stale files (dead pid, no `/health`) are skipped. Discovery is lazy (first tool call) and repeats after a network failure, so the server survives editor restarts. `--start-engine` forks a headless engine (random port, per-launch token) when none is running and stops it on exit.
+- **Rules of the process:** stdout carries JSON-RPC only (logs go to stderr; `console.log/info/debug` are redirected). Every engine request has a deadline (180 s, `--request-timeout`) → `ENGINE_TIMEOUT`. A write whose connection dropped after it was sent is never re-sent automatically → `ENGINE_CONNECTION_LOST` ("re-read the project first"); reads and never-sent writes are retried once after re-discovery. `wait_for_job` is bounded (default 120 s, max 900 s) and returns `timedOut: true`. The engine token never appears in tool results, resources or logs.
+- **Tools (31):** `engine_status`; projects `list_projects`, `create_project`, `get_project`, `open_project_in_editor`; media `import_media`, `list_media`, `get_media_info`; editing `describe_commands`, `apply_commands` (transaction with `$refs`, `dryRun`, `expectedRevision`), `undo`, `redo`; timeline helpers over `apply_commands`: `add_clip`, `move_clip`, `trim_clip`, `split_at`, `delete_clips`, `add_text`, `add_marker`, `add_motion_graphic`; inspection `get_timeline` (text table), `render_frame` (PNG image content), `get_playhead`, `set_playhead`; motion graphics `list_motion_templates`, `render_motion_graphic_preview`; export `list_export_presets`, `start_export`, `get_job`, `cancel_job`, `wait_for_job`. Inputs are zod schemas aligned with the `@jasper/project` command schemas (time arguments accept frames, `{seconds}` or timecode); results are concise JSON text; failures are MCP tool errors `{error: {code, message, hint}}` with the S01 `E_*` codes and a next step.
+- **Resources and prompts:** `jasper://projects/{projectId}/document`, `jasper://projects/{projectId}/timeline`, `jasper://guide`; prompt `edit-video`. The server `instructions` carry the editing guide.
+- **Opening the editor:** `open_project_in_editor` → `POST /api/agent/open-project` → the engine publishes `editor.openProject`; every editor window navigates to the project (`apps/web/src/shell/AgentOpenProject.tsx`) and the desktop window comes to the front.
+- **Connecting a client:** Help ▸ **Connect an AI Agent…** (`apps/web/src/shell/connect-agent.tsx`) shows copyable configuration for Claude Code, Codex CLI and Cursor with real paths: from the desktop preload (`jasperDesktop.mcpInfo()`), else from the engine (`GET /api/agent/mcp-info`). The README has the same snippets.
 
-### Stage 3 — M3
+### 11.3 Later
 
-Autonomy modes (Ask/Propose/Auto-apply), vision self-checks (`frame.capture`, `monitor.layout`), agent-authored fframes graphics in a sandboxed compile service (R-FF Design A), macro tools (remove silences, scene cuts) using engine analyses.
+Agent proposals rendered as timeline ghosts (dry-run results), UI command tools generated from the command registry (`agentExposed`), vision self-checks beyond `render_frame`, agent-authored fframes graphics in a sandboxed compile service (R-FF Design A), macro tools (remove silences, scene cuts) using engine analyses. All of them are MCP tools; none needs an in-app chat.
 
 ---
 
 ## 12. Desktop (Electron) and PWA
 
 **Electron (`apps/desktop`, S05 §21, R-OMS §8.5):**
-- `src/main.ts` (bundled with esbuild as **ESM** `dist-electron/main.mjs`), `src/preload.cts` (CJS `dist-electron/preload.cjs`, `sandbox: true`, exposes only `window.jasperDesktop = {runtime:'desktop', pickMedia(), revealInFolder(path), windowControls, onMenuCommand(cb)}`).
+- `src/main.ts` (bundled with esbuild as **ESM** `dist-electron/main.mjs`), `src/preload.cts` (CJS `dist-electron/preload.cjs`, `sandbox: true`, exposes only `window.jasperDesktop = {runtime:'desktop', pickMedia(), revealInFolder(path), windowControls, focusWindow(), mcpInfo(), onMenuCommand(cb)}`; `mcpInfo()` returns where the bundled `jasper-mcp` lives and how to launch it, for Help ▸ Connect an AI Agent…).
 - Dev (`pnpm dev:desktop`): expects the dev engine on 47900 and Vite on 5173; `loadURL(JASPER_DESKTOP_DEV_URL ?? 'http://127.0.0.1:5173')`. Headless machines: `xvfb-run -a pnpm dev:desktop`.
 - Packaged mode (M1: `pnpm --filter @jasper/desktop start:packaged-like` smoke, no installer signing): fork `apps/engine/dist/engine.mjs` via `utilityProcess.fork` with `--port 0`, env `JASPER_LOCAL_TOKEN`, `JASPER_WEB_DIR=apps/web/dist`, wait for `{type:'ready', port}`, set `jasper_session` cookie, `loadURL('http://127.0.0.1:<port>/')`. Frameless window (`titleBarStyle:'hidden'`, overlay `#1d1d1d`), `setWindowOpenHandler` deny + `shell.openExternal`, `will-navigate` guard, background `#1d1d1d`, `show` on ready-to-show.
-- electron-builder config per R-OMS §8.5 (extraResources for web build, engine bundle, native bin) — config only in M1; building installers is M3.
+- electron-builder config per R-OMS §8.5 (extraResources for web build, engine bundle, the `jasper-mcp` bundle as `resources/mcp/jasper-mcp.mjs`, native bin) — config only in M1; building installers is M3.
 
-**PWA (S05 §20, R-OMS §3/§8.3):** `public/manifest.webmanifest` (standalone, `display_override` WCO, `#000000`/`#1d1d1d`, 192/512 icons + separate padded maskable icons, `file_handlers` for `.jasper`), hand-written `public/sw.js` (versioned caches `jasper-shell-vN`, `jasper-assets-vN`; network-first navigations with `/index.html` fallback; cache-first `/assets/*`; **bypass** `/api`, `/events`, `/agent`, `/ws`, `/health`, `/media`, `/mg`, `/renders`, `blob:`, cross-origin, and any request with a `Range` header (engine-served `/fonts/*` may be cache-first); `Response.error()` on misses), registration only when `import.meta.env.PROD && !window.jasperDesktop`. The route-classification function lives in `apps/web/src/pwa/sw-routes.ts` (unit-tested) and is inlined into `sw.js` at build by a tiny Vite plugin or duplicated with a test asserting equality.
+**PWA (S05 §20, R-OMS §3/§8.3):** `public/manifest.webmanifest` (standalone, `display_override` WCO, `#000000`/`#1d1d1d`, 192/512 icons + separate padded maskable icons, `file_handlers` for `.jasper`), hand-written `public/sw.js` (versioned caches `jasper-shell-vN`, `jasper-assets-vN`; network-first navigations with `/index.html` fallback; cache-first `/assets/*`; **bypass** `/api`, `/events`, `/agent`, `/mcp`, `/ws`, `/health`, `/media`, `/mg`, `/renders`, `blob:`, cross-origin, and any request with a `Range` header (engine-served `/fonts/*` may be cache-first); `Response.error()` on misses), registration only when `import.meta.env.PROD && !window.jasperDesktop`. The route-classification function lives in `apps/web/src/pwa/sw-routes.ts` (unit-tested) and is inlined into `sw.js` at build by a tiny Vite plugin or duplicated with a test asserting equality.
 
 ---
 
@@ -727,7 +748,7 @@ Commit early and often with Conventional Commits (`feat(project): …`, `fix(eng
 ## 15. M1 definition of done
 
 1. `pnpm install && pnpm verify` passes on a clean clone (Node 20.20, pnpm 10.34, Linux x64, no GPU).
-2. `pnpm fixtures && pnpm dev` → `http://127.0.0.1:5173`: Home lists projects; "New Project" (1080p 29.97 preset) opens the **Editing** workspace: title/menu bar, header with mode/workspace tabs and engine chip, docked Project, Program, Tools, Timeline, Audio Meters (placeholder), Properties + Agent tabs, Effect Controls, History, Jobs; Darkest tokens, Source Sans 3, focus outline, `` ` `` maximize.
+2. `pnpm fixtures && pnpm dev` → `http://127.0.0.1:5173`: Home lists projects; "New Project" (1080p 29.97 preset) opens the **Editing** workspace: title/menu bar, header with mode/workspace tabs and engine chip, docked Project, Program, Tools, Timeline, Audio Meters (placeholder), Properties, Effect Controls, History, Jobs; Darkest tokens, Source Sans 3, focus outline, `` ` `` maximize.
 3. Import `fixtures/media/clip-a.mp4` (upload in web; native file dialog in Electron) → Project panel row/tile with poster; Jobs panel shows probe/poster/peaks/sprite jobs completing.
 4. Drag the item to the timeline → linked V1/A1 clips with filmstrip and waveform; second clip placed with Ctrl (insert) ripples sync-locked tracks.
 5. Space / J / K / L / ← / → drive the Program monitor (Remotion Player); timecode entry works; playhead moves without React re-renders per frame.
@@ -735,7 +756,7 @@ Commit early and often with Conventional Commits (`feat(project): …`, `fix(eng
 7. Add a text clip (Graphics menu / `T` tool click in Program) and a `lower-third@1` motion graphic (Motion Templates panel); edit their fields in Properties (scrub = one undo step); Program shows them; select + move/scale/rotate the text on the Program overlay.
 8. Export (Export mode or `Ctrl+M`): media-only sequence with Auto → plan `native`, output mp4 with exact frame count; with the text clip → plan `remotion` (blocker explains why); progress in Jobs; download works.
 9. `pnpm mg:build` builds `jasper-mg`; `jasper-mg render --spec native/mg/fixtures/lower-third.json --raw-rgba | ffmpeg …` yields 150 straight-alpha frames; engine reports `fframes: ready`; a sequence with footage + motion graphic exports via `native` using the ProRes 4444 master. With the binary removed, capability becomes `unavailable` and the same export plans `remotion`.
-10. With the project open, `curl -X POST http://127.0.0.1:47900/api/agent/tx -d '{"projectId":…,"transaction":{…"marker.add"…}}'` adds a marker live and History shows `Agent: …`; with the editor closed the same call applies headlessly and the change appears on reopen; a transaction with `track.remove` requires approval.
+10. With the project open, an MCP client connected to `jasper-mcp` calls `apply_commands` with `marker.add` (equivalently `curl -X POST http://127.0.0.1:47900/api/agent/tx -d '{"projectId":…,"transaction":{…"marker.add"…}}'`): the marker appears live and History shows `Agent: …`; with the editor closed the same call applies headlessly and the change appears on reopen; a transaction with `track.remove` requires approval on the shell's approval card.
 11. `xvfb-run -a pnpm dev:desktop` launches Electron showing the editor; the packaged-like start (engine forked on a random port with token cookie, web build served by the engine) loads Home.
 12. `pnpm --filter @jasper/web build` emits `manifest.webmanifest`, `sw.js`, icons; the SW route classifier unit tests pass (media/API/Range bypass).
 13. `pnpm e2e` smoke passes headless (create project, upload fixture, place, razor, undo, native export verified with ffprobe).
@@ -764,7 +785,8 @@ Commit early and often with Conventional Commits (`feat(project): …`, `fix(eng
 | `apps/web/src/panels/{project,jobs}/**`, `apps/web/src/home/**`, `apps/web/src/import/**`, `apps/web/src/export/**`, `apps/web/src/commands/{project,export}.ts`, `packages/session/src/persistence/**` | WP-2E |
 | `apps/engine/src/**` except `mg/**`, `agent/**`, `routes/{mg,agent}.ts` and the WP-00 entry files | WP-2F |
 | `native/mg/**`, `packages/mg-templates/**`, `apps/engine/src/mg/**`, `apps/engine/src/routes/mg.ts`, `packages/compositions/src/layers/MotionGraphicLayer.tsx`, `apps/web/src/panels/motionTemplates/**`, `apps/web/src/commands/mg.ts`, `scripts/mg-build.mjs` | WP-2G |
-| `apps/engine/src/agent/**`, `apps/engine/src/routes/agent.ts`, `apps/web/src/agent-bridge/**`, `apps/web/src/panels/agent/**`, `apps/web/src/commands/agent.ts`, `apps/desktop/**`, `apps/web/public/{manifest.webmanifest,sw.js,icons/**}`, `apps/web/src/pwa/**` | WP-2H |
+| `apps/engine/src/agent/**`, `apps/engine/src/routes/agent.ts`, `apps/web/src/agent-bridge/**`, `apps/desktop/**`, `apps/web/public/{manifest.webmanifest,sw.js,icons/**}`, `apps/web/src/pwa/**` (the Agent panel and `commands/agent.ts` it also owned were removed by wp-mcp) | WP-2H |
+| `apps/mcp/**`, `apps/engine/src/routes/mcp.ts`, `apps/web/src/shell/{AgentApprovals,AgentOpenProject,connect-agent}.tsx`, `apps/web/src/commands/help.ts` | wp-mcp |
 | `e2e/**`, `playwright.config.ts`, cross-package fixes | WP-3I |
 
 ### 16.3 Shared-file protocol
@@ -777,7 +799,7 @@ Commit early and often with Conventional Commits (`feat(project): …`, `fix(eng
 
 ## 17. Roadmap after M1 (non-binding)
 
-- **M2:** browser-only profile (IndexedDB/OPFS store, mediabunny probe/peaks/thumbnails, web renderer), desktop `.jasper` files + crash journal, clipboard (S01 §20), transitions & fades, hybrid export (graphics alpha intermediates), smart-render copy path, source monitor + three-point editing, markers panel, audio meters live, touch shells, fframes WASM preview + parity harness, whisper.cpp transcription + captions, MCP server + LLM chat + proposals/ghosts, remote engine password auth + deploy scripts.
+- **M2:** browser-only profile (IndexedDB/OPFS store, mediabunny probe/peaks/thumbnails, web renderer), desktop `.jasper` files + crash journal, clipboard (S01 §20), transitions & fades, hybrid export (graphics alpha intermediates), smart-render copy path, source monitor + three-point editing, markers panel, audio meters live, touch shells, fframes WASM preview + parity harness, whisper.cpp transcription + captions, agent proposals/ghosts as MCP tools (the MCP server itself shipped with wp-mcp; there is no in-app LLM chat), remote engine password auth + deploy scripts.
 - **M3:** color (LUT pipeline, Lumetri panel, scopes), masks, nesting, adjustment layers, OTIO interchange, agent-authored fframes graphics, installers/auto-update/signing, ffmpeg distribution decision.
 
 ## 18. Open questions
@@ -786,4 +808,4 @@ Commit early and often with Conventional Commits (`feat(project): …`, `fix(eng
 2. `@remotion/media` `<Video>` behavior in `renderMedia` and VP9-alpha decode in the Player for 4.0.499 (affects D-12 proxy use); WP-2C records findings in `docs/research/remotion-4.0.499-notes.md`.
 3. Remotion Player playback-rate bounds (S02 open question 1) — WP-2C measures and records.
 4. Whether to keep the TS SVG twins after the WASM bridge lands (likely drop them, keep for tests).
-5. Anthropic model/provider choice and key storage for Stage 2 agents (engine-side only).
+5. ~~Anthropic model/provider choice and key storage for Stage 2 agents.~~ Closed by D-18: JasperEditor embeds no LLM and stores no model keys; the user's own coding agent connects over MCP.

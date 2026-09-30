@@ -1,5 +1,11 @@
 # WP-2H — Agent API stage 1, Electron desktop shell, PWA
 
+> **Partly superseded by wp-mcp** (`docs/wp-notes/wp-mcp.md`, ARCHITECTURE D-18 / §11): the Agent panel
+> (`apps/web/src/panels/agent/**`), `commands/agent.ts`, the Agent workspace/menu and the `Shift+0` / `Ctrl+.`
+> bindings described below were removed. The engine agent service, the WS relay, the in-page bridge, the
+> approval gate, Electron and the PWA are unchanged; approvals are answered on a shell-level card and
+> external agents connect through the `jasper-mcp` MCP server.
+
 Branch `wp/wp-2h`. `pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build` pass on Node 20.20
 (28 test files, 231 tests).
 

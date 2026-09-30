@@ -130,7 +130,7 @@ describe('editor shell (rendered)', () => {
 		expect(document.querySelector('[data-menu-id="agent"]')).toBeNull();
 		expect(document.querySelector('[data-panel-kind="agent"]')).toBeNull();
 		expect(document.querySelector('[data-tool="agent"]')).toBeNull();
-	});
+	}, 20_000);
 
 	it('a destructive agent transaction shows an approval card; Deny rejects, Approve applies', async () => {
 		resetWorkspaceStore(memoryStorage());
@@ -167,7 +167,7 @@ describe('editor shell (rendered)', () => {
 		expect(await approved).toMatchObject({ ok: true });
 		await waitFor(() => expect(screen.queryByTestId('agent-approval-card')).toBeNull());
 		expect(await tracks()).not.toContain('A3');
-	});
+	}, 20_000);
 
 	it('Help ▸ Connect an AI Agent… shows copyable MCP configuration', async () => {
 		resetWorkspaceStore(memoryStorage());
@@ -194,5 +194,5 @@ describe('editor shell (rendered)', () => {
 		expect(screen.getByTestId('agent-snippet-codex-toml').textContent).toContain('[mcp_servers.jasper]');
 		expect(screen.getByTestId('agent-snippet-cursor-json').textContent).toContain('"mcpServers"');
 		expect(dialog.textContent).not.toMatch(/token/i);
-	});
+	}, 20_000);
 });

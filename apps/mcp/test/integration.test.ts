@@ -6,7 +6,7 @@
 // `--start-engine`.
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -338,6 +338,34 @@ describe('jasper-mcp over stdio against a real engine', () => {
 			frames: exportFrames,
 		});
 		expect((await ok<{ state: string }>('get_job', { jobId: job.jobId })).state).toBe('succeeded');
+	});
+
+	it('cancel_job stops an export; wait_for_job then reports it as a tool error; existing files are kept', async () => {
+		// Same destination as the finished export above: the engine must never overwrite it.
+		const out = join(appdir, 'exports', 'mcp-draft.mp4');
+		const sizeBefore = statSync(out).size;
+		const job = await ok<{ jobId: string }>('start_export', {
+			projectId,
+			preset: 'high-quality-h264',
+			outputPath: out,
+		});
+		const cancelled = await call('cancel_job', { jobId: job.jobId });
+		expect(cancelled.isError, textOf(cancelled)).toBeFalsy();
+		const end = await call('wait_for_job', { jobId: job.jobId, timeoutSeconds: 120 });
+		const state = (await ok<{ state: string }>('get_job', { jobId: job.jobId })).state;
+		if (state === 'succeeded') {
+			// The render won the race against the cancel: it went to a new file next to the old one.
+			expect(json<{ result: { path: string } }>(end).result.path).toBe(
+				join(appdir, 'exports', 'mcp-draft (2).mp4'),
+			);
+		} else {
+			expect(state).toBe('cancelled');
+			expect(end.isError).toBe(true);
+			expect(json<{ error: { code: string } }>(end).error.code).toMatch(/CANCEL/i);
+		}
+		expect(statSync(out).size).toBe(sizeBefore);
+		// An unknown job is an actionable error, not a hang.
+		expect((await fails('wait_for_job', { jobId: 'job_nope', timeoutSeconds: 5 })).code).toMatch(/NOT_FOUND/);
 	});
 
 	it('adds text, markers and motion graphics, and deletes clips', async () => {

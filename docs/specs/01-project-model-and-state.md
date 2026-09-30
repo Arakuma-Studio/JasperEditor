@@ -1283,8 +1283,8 @@ Beyond the template: the template copied only raw item objects without their ass
 ### 21.1 Surfaces
 
 - **AGT-001 (P0)** Agents drive the editor only through **commands, transactions and queries**. There is no other write path. Three surfaces share one implementation:
-  1. **In-page bridge**: an object on the session, exposed as `window.jasper` in dev and Electron builds, and over `postMessage` for embedded agent panels.
-  2. **Engine relay**: the engine's WebSocket `/agent` endpoint forwards transactions and queries to the open session that holds the project lease, and relays results and events back. This is how external agents (MCP servers, CLI tools, the orquester daemon) reach a running editor.
+  1. **In-page bridge**: an object on the session, exposed as `window.jasper` in dev and Electron builds, and over `postMessage` for embedded agent panels. (wp-mcp: there is no embedded Agent panel; see ARCHITECTURE D-18 / §11.)
+  2. **Engine relay**: the engine's WebSocket `/agent` endpoint forwards transactions and queries to the open session that holds the project lease, and relays results and events back. This is how external agents (MCP servers, CLI tools, the orquester daemon) reach a running editor. The shipped MCP server is `jasper-mcp` (`apps/mcp`, ARCHITECTURE §11.2); it is the supported agent entry point.
   3. **Headless**: when no session holds the lease, the engine loads the project and applies transactions itself with `project-model` (AGT-020).
 - **AGT-002 (P0)** **Self-description:** `schema.get` returns the JSON Schemas of all commands and queries, the effect registry (ids, params, ranges, engine capabilities), the motion-graphic template library (ids, versions, param schemas, preview thumbnails), the registered compositions, the sequence presets, and the error codes. Agents never need to guess shapes.
 

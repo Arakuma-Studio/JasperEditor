@@ -2,7 +2,9 @@
 
 A Premiere-style, agent-drivable video editor combining Remotion (preview and graphics renders), native
 ffmpeg (probe, proxies, fast export) and fframes motion graphics. Web app, installable PWA and Electron
-desktop all load the same SPA and talk to the same local engine.
+desktop all load the same SPA and talk to the same local engine. External coding agents (Claude Code, Codex
+CLI, Cursor) drive it through its MCP server, `jasper-mcp` (see "Use JasperEditor from Claude Code / Codex /
+Cursor" below).
 
 Read `docs/ARCHITECTURE.md` first; functional specs live in `docs/specs/`, research in `docs/research/`.
 The M1 acceptance run (every ARCHITECTURE §15 item, with evidence) is in `docs/M1-STATUS.md`; per-package
@@ -69,14 +71,117 @@ browser menu). `127.0.0.1` counts as a secure context, so no TLS is needed local
 build emits `manifest.webmanifest` (standalone, window-controls-overlay, `.jasper` file handler), `sw.js` and
 the icons under `apps/web/dist/icons/`; the service worker caches the app shell and bypasses engine routes (`/api/*` is never cached).
 
-## Agent API
+## Use JasperEditor from Claude Code / Codex / Cursor
 
-Agents drive the editor with JSON transactions over HTTP (ARCHITECTURE §11, protocol `jasper.tx/1`). The
-JSON Schema of every command is at `GET /api/agent/schema`; read-only queries go to `POST /api/agent/query`.
-If the project is open in an editor, the transaction applies live through that session (one `Agent: …`
-History entry, `appliedBy: "session"`). Otherwise the engine applies it headlessly (`appliedBy: "headless"`)
-and the change is there on the next open. Destructive commands such as `track.remove` wait for approval in the
-Agent panel.
+JasperEditor has no built-in chat agent. Your own coding agent drives it through the **`jasper-mcp`** MCP
+server (`apps/mcp`, ARCHITECTURE §11): it creates projects, imports media, edits the timeline, renders
+frames to look at, and exports. When the project is open in an editor window the edits appear there live,
+each as one undoable `Agent: …` History entry; deleting tracks or items asks for your approval on a card at
+the top of the window. With the editor closed the same tools work headlessly on the saved project.
+
+Build the server once (one bundled file, needs Node 20.19+), and start the editor:
+
+```bash
+pnpm install
+pnpm mcp:build     # → apps/mcp/dist/jasper-mcp.mjs
+pnpm dev           # or the desktop app; the server finds the running engine by itself
+```
+
+Then register it with your agent. Replace `/abs/path/to/JasperEditor` with the absolute path of this
+checkout; in the app, **Help ▸ Connect an AI Agent…** shows the same snippets with the real path filled in.
+
+**Claude Code**
+
+```bash
+claude mcp add jasper -- node /abs/path/to/JasperEditor/apps/mcp/dist/jasper-mcp.mjs
+# every project instead of only the current one:  claude mcp add --scope user jasper -- node …
+claude mcp list    # jasper: … - ✔ Connected
+```
+
+or a project-scoped `.mcp.json` next to your work (Claude Code asks once before using it):
+
+```json
+{
+  "mcpServers": {
+    "jasper": {
+      "command": "node",
+      "args": ["/abs/path/to/JasperEditor/apps/mcp/dist/jasper-mcp.mjs"]
+    }
+  }
+}
+```
+
+**Codex CLI**
+
+```bash
+codex mcp add jasper -- node /abs/path/to/JasperEditor/apps/mcp/dist/jasper-mcp.mjs
+```
+
+or in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.jasper]
+command = "node"
+args = ["/abs/path/to/JasperEditor/apps/mcp/dist/jasper-mcp.mjs"]
+```
+
+**Cursor** — `.cursor/mcp.json` in a project (or `~/.cursor/mcp.json` for all projects):
+
+```json
+{
+  "mcpServers": {
+    "jasper": {
+      "command": "node",
+      "args": ["/abs/path/to/JasperEditor/apps/mcp/dist/jasper-mcp.mjs"]
+    }
+  }
+}
+```
+
+Then ask the agent, for example: *"Call engine_status, create a project called Teaser, import
+/home/me/footage/a.mp4 and b.mp4, cut a 20 s teaser with a title, show me a frame, and export it to
+/tmp/teaser.mp4."*
+
+How the server finds the engine, in order: `--engine-url` / `--token` (or `JASPER_ENGINE_URL` /
+`JASPER_ENGINE_TOKEN`); the `engine/runtime.json` a running engine writes into its appdir, looked up for
+`--appdir`, `JASPER_APPDIR`, the platform appdir and the desktop app's appdir; then
+`http://127.0.0.1:47900`. `pnpm dev` keeps its appdir in `./.stage`, which the last step covers; for an
+engine on another port pass `--appdir /abs/path/to/JasperEditor/.stage` (or `--engine-url`) after the script
+path. The desktop app's per-launch token is read from its `runtime.json` (mode 0600), so nothing has to be
+copied and the token is never shown to the agent.
+
+| Option (append after `jasper-mcp.mjs`) | Effect |
+|---|---|
+| `--start-engine` | start a headless engine when none is running, so agents can work with JasperEditor closed (needs `pnpm build`; stops with the server) |
+| `--appdir <dir>` | look for `<dir>/engine/runtime.json` first (and use it for `--start-engine`) |
+| `--engine-url <url>` `--token <t>` | skip discovery |
+| `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
+| `--request-timeout <s>` | deadline for one engine request (default 180) |
+
+Tools (31): `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
+`import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
+`add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic` ·
+`get_timeline` `render_frame` `get_playhead` `set_playhead` · `list_motion_templates`
+`render_motion_graphic_preview` · `list_export_presets` `start_export` `get_job` `cancel_job` `wait_for_job`.
+Resources: `jasper://projects/{projectId}/document`, `jasper://projects/{projectId}/timeline`,
+`jasper://guide`. Prompt: `edit-video`.
+
+The engine also serves the same tools over MCP Streamable HTTP at `/mcp`, for clients that connect by URL.
+With a dev or standalone engine (no token): `claude mcp add --transport http jasper http://127.0.0.1:47900/mcp`.
+The desktop engine needs `Authorization: Bearer <token>` and issues a new token on every launch, so use the
+stdio server there.
+
+The packaged desktop app ships the server as `resources/mcp/jasper-mcp.mjs`. It has no `node`: Help ▸ Connect
+an AI Agent… gives the command that runs the bundle with the app's own binary (`ELECTRON_RUN_AS_NODE=1`).
+
+No repo-root `.mcp.json` is committed on purpose: it would switch the server on for everyone who opens this
+checkout in an MCP client, and it would point at a bundle that may not be built yet.
+
+### HTTP API underneath
+
+The MCP tools are thin wrappers over the engine's agent API (protocol `jasper.tx/1`): the JSON Schema of every
+command is at `GET /api/agent/schema`, read-only queries go to `POST /api/agent/query`, and transactions to
+`POST /api/agent/tx`. It can be used directly for scripting:
 
 ```bash
 # create a project (or take a projectId from GET /api/projects)
@@ -104,14 +209,22 @@ The engine binds loopback only. The packaged-like desktop engine requires its pe
 ```bash
 pnpm fixtures && pnpm mg:build   # optional first: some engine tests skip without jasper-mg
 pnpm verify              # lint + typecheck + unit/integration tests + build
-pnpm e2e                 # builds engine + web, then Playwright (headless Chrome) against the built engine
+pnpm e2e                 # builds engine + web + jasper-mcp, then Playwright (headless Chrome) against the built engine
 pnpm e2e:desktop         # Electron under xvfb: packaged-like and dev mode, screenshots in test-results/
 pnpm e2e:mg-fallback     # fframes ready → native plan; jasper-mg missing → Remotion plan with the reason
 ```
 
 `pnpm e2e` starts `e2e/serve.mjs`: the built engine (`apps/engine/dist/engine.mjs`) serving the built web app
 on `127.0.0.1:${E2E_PORT:-48110}` with a throwaway appdir. `E2E_SKIP_BUILD=1` reuses existing builds,
-`E2E_KEEP_APPDIR=1` keeps the appdir for inspection. Specs:
+`E2E_KEEP_APPDIR=1` keeps the appdir for inspection.
+
+`pnpm test` includes the MCP integration suite (`apps/mcp/test/integration.test.ts`): it boots a real engine
+in token mode on `127.0.0.1:${MCP_TEST_PORT:-48551}` (and `--start-engine` on the next port) with a temp
+appdir, connects an MCP SDK client to `jasper-mcp` over stdio, and goes from create project → import fixture
+media → edit → `render_frame` (PNG) → `start_export` + `wait_for_job` → ffprobe of the output. Run it alone
+with `pnpm exec vitest run --project @jasper/mcp`.
+
+Playwright specs:
 
 - `e2e/smoke.spec.ts` — Home → New Project → import `clip-a.mp4` (file chooser) → poster → drag to the
   timeline → play → move/trim/razor → undo/redo → native export (ffprobe frame count) → Motion Templates
@@ -120,8 +233,10 @@ on `127.0.0.1:${E2E_PORT:-48110}` with a throwaway appdir. `E2E_SKIP_BUILD=1` re
 - `e2e/editing.spec.ts` — workspace chrome, analysis jobs, filmstrip/waveform, Ctrl-drop insert, JKL and
   timecode entry, Ctrl+K, Delete / Shift+Delete, ripple trim, Ctrl-move, snapping, Graphics ▸ Text,
   Properties scrub, Program overlay move/scale.
-- `e2e/agent.spec.ts` — `POST /api/agent/tx` while the editor is open (live, `Agent:` History entry), an
-  approval-gated `track.remove` denied in the Agent panel, and a headless apply that shows up on reopen.
+- `e2e/agent.spec.ts` — an MCP SDK client connected to the built `jasper-mcp` over stdio: `apply_commands`
+  while the editor is open (live, `Agent:` History entry and toast), helper tools / `set_playhead` / `undo`,
+  an approval-gated `track.remove` denied and then approved on the shell's approval card, Help ▸ Connect an AI
+  Agent…, a headless apply with the editor closed, and `open_project_in_editor` bringing the project back.
 - `e2e/pwa.spec.ts` — manifest, icons and service worker of the production build.
 
 ## Scripts
@@ -136,7 +251,8 @@ on `127.0.0.1:${E2E_PORT:-48110}` with a throwaway appdir. `E2E_SKIP_BUILD=1` re
 | `pnpm test` | Vitest (all packages and apps as projects); `FUZZ=1 pnpm test` runs the long property sweeps |
 | `pnpm lint` | Biome + `scripts/check-tokens.mjs` (no color literals outside theme files, S05:DT-002) |
 | `pnpm format` | Biome formatter |
-| `pnpm build` | web (`vite build`), engine (`dist/engine.mjs`), desktop (`dist-electron/`) |
+| `pnpm build` | web (`vite build`), engine (`dist/engine.mjs`), desktop (`dist-electron/`), MCP server (`apps/mcp/dist/jasper-mcp.mjs`) |
+| `pnpm mcp:build` | only the MCP server: esbuild bundle `apps/mcp/dist/jasper-mcp.mjs` (one executable file) |
 | `pnpm mg:build` | cargo release build of `native/mg` (`jasper-mg`); exits 0 without cargo |
 | `pnpm fixtures` | generates test media with ffmpeg |
 | `pnpm e2e` | builds, then the Playwright suite (`e2e/`) |
@@ -149,6 +265,7 @@ on `127.0.0.1:${E2E_PORT:-48110}` with a throwaway appdir. `E2E_SKIP_BUILD=1` re
 apps/web          Vite + React 19 SPA (react-router 7 library mode), PWA
 apps/engine       Fastify 5 media engine ("jasperd"), port 47900 in dev
 apps/desktop      Electron shell (loads the SPA over HTTP)
+apps/mcp          @jasper/mcp — jasper-mcp, the MCP server for external agents (stdio; also served at /mcp)
 packages/project  @jasper/project — document schema, commands, invariants, keyframes, render snapshot
 packages/session  @jasper/session — EditorSession, history, gestures, transport, persistence
 packages/api      @jasper/api — zod contracts for engine routes and events
