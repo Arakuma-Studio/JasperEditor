@@ -18,6 +18,7 @@ import {
 	pointerDrag,
 	programPixels,
 	ROOT,
+	regionLuma,
 	sequenceSummary,
 	timelineArea,
 	trackRow,
@@ -177,7 +178,8 @@ function assertOutput(file: string, frames: number, opts: { audio: boolean }): v
 	expect([v!.width, v!.height]).toEqual([1920, 1080]);
 	expect(v!.r_frame_rate).toBe('30000/1001');
 	expect(Number(v!.nb_read_frames)).toBe(frames);
-	expect(Number(probe.format.duration)).toBeCloseTo((frames * 1001) / 30000, 1);
+	// Container duration within 0.1 s (AAC priming/padding makes the audio a few ms longer).
+	expect(Math.abs(Number(probe.format.duration) - (frames * 1001) / 30000)).toBeLessThan(0.1);
 	if (opts.audio)
 		expect(probe.streams.some((s) => s.codec_type === 'audio' && s.codec_name === 'aac')).toBe(true);
 }
@@ -226,6 +228,14 @@ test('motion graphic + footage exports with Auto → native (fframes master)', a
 	});
 	expect(out.job.result?.renderPath).toBe('native');
 	assertOutput(out.file, frames, { audio: true });
+	// The lower third (bottom-left) is composited over black before the footage starts.
+	const mg = (await clips(page)).find((c) => c.kind === 'motion-graphic')!;
+	const firstFootage = Math.min(...(await clips(page, ['V1'])).map((c) => c.start));
+	const t = (Math.min(mg.end, firstFootage) * 1001) / 30000 / 2 + 0.5;
+	const lowerThird = { x: 0.05, y: 0.72, w: 0.3, h: 0.18 };
+	const topRight = { x: 0.6, y: 0.05, w: 0.35, h: 0.3 };
+	expect(regionLuma(out.file, t, lowerThird)).toBeGreaterThan(20);
+	expect(regionLuma(out.file, t, topRight)).toBeLessThan(5);
 });
 
 test('Type tool click in the Program monitor adds a text clip', async () => {

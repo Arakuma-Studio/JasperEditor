@@ -273,8 +273,9 @@ export async function exportViaUi(
 	const before = new Set(
 		((await (await request.get('/api/jobs')).json()).jobs as { id: string }[]).map((j) => j.id),
 	);
+	// A sticky notice from the previous export ("Export finished · Download") must not cover the footer.
 	await expect(page.getByTestId('export-start')).toBeEnabled();
-	await page.getByTestId('export-start').click();
+	await page.getByTestId('export-start').click({ timeout: 10_000 });
 	await expect(page.getByTestId('export-mode')).toBeHidden();
 	let jobId = '';
 	await expect
@@ -297,4 +298,35 @@ export async function exportViaUi(
 	const file = join(opts.outDir, opts.fileName);
 	await d.saveAs(file);
 	return { jobId, file, job: job as ExportOutcome['job'], planText };
+}
+
+/** Mean luma (0–255) of a region (fractions of the frame) of the frame at `timeSec`, decoded with ffmpeg. */
+export function regionLuma(
+	file: string,
+	timeSec: number,
+	region: { x: number; y: number; w: number; h: number },
+): number {
+	const crop = `crop=iw*${region.w}:ih*${region.h}:iw*${region.x}:ih*${region.y}`;
+	const raw = execFileSync(
+		process.env.JASPER_FFMPEG ?? 'ffmpeg',
+		[
+			'-v',
+			'error',
+			'-ss',
+			String(timeSec),
+			'-i',
+			file,
+			'-frames:v',
+			'1',
+			'-vf',
+			`${crop},scale=64:32,format=gray`,
+			'-f',
+			'rawvideo',
+			'pipe:1',
+		],
+		{ maxBuffer: 1 << 20 },
+	);
+	let sum = 0;
+	for (const b of raw) sum += b;
+	return raw.length ? sum / raw.length : 0;
 }
