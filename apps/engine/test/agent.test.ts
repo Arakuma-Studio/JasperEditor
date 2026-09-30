@@ -122,6 +122,30 @@ describe('GET /api/agent/schema (S01:AGT-002)', () => {
 	});
 });
 
+describe('POST /api/agent/open-project (jasper-mcp open_project_in_editor)', () => {
+	it('publishes editor.openProject globally and reports listening editors; 404 for unknown projects', async () => {
+		const { app, events, projectId } = await makeEngine();
+		const r = await app.inject({
+			method: 'POST',
+			url: '/api/agent/open-project',
+			headers: H,
+			payload: { projectId },
+		});
+		expect(r.statusCode).toBe(200);
+		expect(r.json()).toMatchObject({ projectId, path: `/project/${projectId}`, live: false });
+		expect(typeof r.json().editors).toBe('number');
+		expect(events).toContainEqual({ type: 'editor.openProject', payload: { projectId }, projectId: undefined });
+		const missing = await app.inject({
+			method: 'POST',
+			url: '/api/agent/open-project',
+			headers: H,
+			payload: { projectId: 'prj_nope' },
+		});
+		expect(missing.statusCode).toBe(404);
+		expect(missing.json()).toMatchObject({ code: 'PROJECT_NOT_FOUND' });
+	});
+});
+
 describe('headless mode (S01:AGT-020)', () => {
 	it('applies, saves a new revision and publishes doc.changed', async () => {
 		const { app, events, projectId, file } = await makeEngine();

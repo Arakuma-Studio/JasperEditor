@@ -11,6 +11,7 @@ export const AGENT_QUERIES = [
 	'media.list',
 	'selection.get',
 	'playhead.get',
+	'playhead.set',
 	'history.list',
 	'validate',
 	'frame.capture',
@@ -35,6 +36,8 @@ export type AgentQueryRequest = z.infer<typeof AgentQueryRequestSchema>;
 export const AgentQueryResponseSchema = z.object({
 	result: z.unknown(),
 	revision: z.number().int().optional(),
+	/** `session` = answered by the open editor (live state), `headless` = from the stored project. */
+	via: z.enum(['session', 'headless']).optional(),
 });
 export type AgentQueryResponse = z.infer<typeof AgentQueryResponseSchema>;
 
@@ -143,3 +146,21 @@ export const ApprovalSchema = z.object({
 	commands: z.array(z.unknown()).optional(),
 });
 export type Approval = z.infer<typeof ApprovalSchema>;
+
+/**
+ * `POST /api/agent/open-project` (jasper-mcp `open_project_in_editor`): asks every connected editor window
+ * (all `/events` subscribers) to open the project; `editors` = how many windows were listening.
+ */
+export const AgentOpenProjectRequestSchema = z.object({ projectId: z.string().min(1) });
+export type AgentOpenProjectRequest = z.infer<typeof AgentOpenProjectRequestSchema>;
+export const AgentOpenProjectResponseSchema = z.object({
+	projectId: z.string(),
+	/** Path of the editor route, relative to the engine origin (`/project/<projectId>`). */
+	path: z.string(),
+	editors: z.number().int().min(0),
+	/** An editor session already has the project open (agent transactions apply live). */
+	live: z.boolean(),
+});
+export type AgentOpenProjectResponse = z.infer<typeof AgentOpenProjectResponseSchema>;
+/** Global engine event: an agent asked editor windows to open (and focus) a project. */
+export const EDITOR_OPEN_PROJECT_EVENT = 'editor.openProject';

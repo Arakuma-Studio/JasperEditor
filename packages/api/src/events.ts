@@ -51,6 +51,8 @@ export const EVENT_PAYLOADS = {
 		approvalId: z.string(),
 		decision: z.enum(['approved', 'denied', 'timeout']),
 	}),
+	/** An agent (jasper-mcp `open_project_in_editor`) asks editor windows to open this project. */
+	'editor.openProject': z.object({ projectId: z.string(), agent: z.string().optional() }),
 } as const;
 export type EngineEventType = keyof typeof EVENT_PAYLOADS;
 export const ENGINE_EVENT_TYPES = Object.keys(EVENT_PAYLOADS) as EngineEventType[];

@@ -40,7 +40,13 @@ describe('engine server (ARCHITECTURE §9.1, §4.2)', () => {
 		for (const [name, route] of Object.entries(ROUTES)) {
 			// /events streams (tested in events.test.ts); mg* are implemented by WP-2G (test/mg.test.ts) and
 			// agent* by WP-2H (test/agent.test.ts).
-			if (name === 'health' || name === 'events' || name.startsWith('mg') || name.startsWith('agent'))
+			if (
+				name === 'health' ||
+				name === 'events' ||
+				name.startsWith('mg') ||
+				name.startsWith('agent') ||
+				name === 'mcp'
+			)
 				continue;
 			const url = route.path
 				.replace(/:([A-Za-z]+)/g, (_, p: string) => (p === 'projectId' ? 'prj_0000000000000001' : `x${p}`))

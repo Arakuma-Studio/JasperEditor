@@ -1,5 +1,6 @@
 // Typed engine client: one method per route of @jasper/api's ROUTES (ARCHITECTURE §9.2).
 import {
+	type AgentOpenProjectRequest,
 	type AgentQueryRequest,
 	type AgentTxRequest,
 	API_HEADER,
@@ -270,6 +271,34 @@ export class EngineClient {
 	}
 	agentTx(req: AgentTxRequest) {
 		return this.call('agentTx', { body: req });
+	}
+	agentOpenProject(req: AgentOpenProjectRequest) {
+		return this.call('agentOpenProject', { body: req });
+	}
+
+	/**
+	 * GETs an engine-relative URL (e.g. a still's `/renders/<jobId>/output`) as bytes with the client's
+	 * auth. Throws EngineError on HTTP errors.
+	 */
+	async fetchBytes(path: string, signal?: AbortSignal): Promise<{ bytes: Uint8Array; contentType: string }> {
+		const url = /^https?:/.test(path) ? path : this.url(path);
+		let res: Response;
+		try {
+			res = await this.fetchImpl(url, { headers: this.authHeaders(), signal, credentials: 'include' });
+		} catch (e) {
+			if ((e as { name?: string })?.name === 'AbortError') throw e;
+			throw new EngineError('NETWORK', `Engine not reachable: ${(e as Error)?.message ?? e}`, {
+				retryable: true,
+			});
+		}
+		if (!res.ok)
+			throw new EngineError(res.status === 404 ? 'NOT_FOUND' : 'HTTP_ERROR', `HTTP ${res.status} for ${path}`, {
+				status: res.status,
+			});
+		return {
+			bytes: new Uint8Array(await res.arrayBuffer()),
+			contentType: res.headers.get('content-type') ?? 'application/octet-stream',
+		};
 	}
 
 	// ------------------------------------------------------------ URLs for elements (<video>, <img>, fonts)

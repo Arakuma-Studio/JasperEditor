@@ -522,6 +522,16 @@ export class AgentService {
 		this.publish(event, { ...(payload as object), projectId: conn.projectId }, conn.projectId);
 	}
 
+	/** True when the project exists in the store. */
+	async projectExists(projectId: string): Promise<boolean> {
+		return (await this.opts.store().load(projectId)) !== null;
+	}
+
+	/** True when an editor session holding the lease is connected (transactions apply live). */
+	isLive(projectId: string): boolean {
+		return this.sessions.holder(projectId) !== null;
+	}
+
 	/** Pending approvals (for diagnostics and tests). */
 	pendingApprovals(projectId?: string): Approval[] {
 		return this.approvals.pending(projectId);

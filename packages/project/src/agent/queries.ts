@@ -51,6 +51,9 @@ export const AGENT_QUERY_ARGS = {
 	'media.list': z.object({}),
 	'selection.get': z.object({}),
 	'playhead.get': z.object({}),
+	'playhead.set': z.object({
+		frame: TimeArg.describe('Frame to move the playhead to: frames, {frames}, {seconds} or timecode'),
+	}),
 	'history.list': z.object({}),
 	validate: z.object({
 		transaction: z.record(z.string(), z.unknown()).optional().describe('Dry-run this transaction'),
@@ -73,6 +76,7 @@ export const AGENT_QUERY_DESCRIPTIONS: Record<AgentQuery, string> = {
 	'media.list': 'Media assets with probe summaries, project item names, usage and runtime status.',
 	'selection.get': 'The editor selection (needs an open session).',
 	'playhead.get': 'The playhead of the active sequence (needs an open session).',
+	'playhead.set': 'Moves the playhead of the active sequence (a view change, not an edit; needs an open session).',
 	'history.list': 'Undo history entries with labels, origins and revisions (needs an open session).',
 	validate: 'The invariant report of the document, or the dry-run result of a transaction.',
 	'frame.capture': 'A PNG still of the Program output at a frame (engine /api/stills; max 1280 px).',
@@ -82,6 +86,7 @@ export const AGENT_QUERY_DESCRIPTIONS: Record<AgentQuery, string> = {
 export const SESSION_ONLY_QUERIES: ReadonlySet<AgentQuery> = new Set([
 	'selection.get',
 	'playhead.get',
+	'playhead.set',
 	'history.list',
 ]);
 
@@ -107,6 +112,8 @@ export type AgentQueryEnv = {
 		activeSequenceId: string | null;
 		selection(): unknown;
 		playhead(): { frame: number; playing: boolean };
+		/** Moves the playhead (pauses playback first); returns the frame actually set (clamped). */
+		seek?(frame: number): number;
 		history(): { entries: AgentHistoryEntry[]; position: number };
 		mediaRuntime?(mediaId: string): unknown;
 	};
@@ -418,6 +425,17 @@ function playheadGet(env: AgentQueryEnv) {
 	};
 }
 
+function playheadSet(env: AgentQueryEnv, args: z.infer<(typeof AGENT_QUERY_ARGS)['playhead.set']>) {
+	const s = needSession(env, 'playhead.set');
+	if (!s.seek) throw new AgentQueryError('E_NOT_IMPLEMENTED', 'This session cannot move the playhead');
+	const seq = s.activeSequenceId ? env.doc.sequences[s.activeSequenceId] : undefined;
+	if (!seq) throw new AgentQueryError('E_NOT_FOUND', 'No active sequence');
+	const frame = wrap(() => resolveFrameInput(seq, args.frame));
+	if (frame < 0) throw new AgentQueryError('E_INVALID_PARAM', 'frame must be ≥ 0');
+	s.seek(frame);
+	return playheadGet(env);
+}
+
 function historyList(env: AgentQueryEnv) {
 	const h = needSession(env, 'history.list').history();
 	return {
@@ -477,6 +495,8 @@ export function runAgentQuery(env: AgentQueryEnv, name: string, rawArgs: unknown
 			return { selection: needSession(env, 'selection.get').selection() };
 		case 'playhead.get':
 			return playheadGet(env);
+		case 'playhead.set':
+			return playheadSet(env, args);
 		case 'history.list':
 			return historyList(env);
 		case 'validate':

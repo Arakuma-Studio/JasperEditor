@@ -258,6 +258,11 @@ export class AgentBridge {
 					const t = s.transport.getState();
 					return { frame: t.frame, playing: t.playing };
 				},
+				seek: (frame: number) => {
+					if (s.transport.getState().playing) s.transport.pause();
+					s.transport.seek(frame);
+					return s.transport.getState().frame;
+				},
 				history: () => ({ entries: s.getState().history.entries, position: s.getState().history.index }),
 				mediaRuntime: (id: string) => s.getState().media[id] ?? null,
 			},
