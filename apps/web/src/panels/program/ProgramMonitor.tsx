@@ -225,6 +225,16 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 		return off;
 	}, [instanceId, transport, viewportRef]);
 
+	// Dev-only handle for manual checks and agents without the bridge (window.__jasperMonitor).
+	useEffect(() => {
+		if (!import.meta.env.DEV || typeof window === 'undefined') return;
+		const w = window as unknown as { __jasperMonitor?: { session: EditorSession; driver: PlaybackDriver } };
+		w.__jasperMonitor = { session, driver };
+		return () => {
+			if (w.__jasperMonitor?.session === session) delete w.__jasperMonitor;
+		};
+	}, [session, driver]);
+
 	// ------------------------------------------------------------------ zoom / pan (PGM-010…015)
 	const setPan = useCallback(
 		(pan: Vec2) =>
