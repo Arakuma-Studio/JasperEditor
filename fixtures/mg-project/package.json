@@ -1,0 +1,23 @@
+{
+  "name": "@jasper/fixture-mg-project",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Minimal Remotion 4.0.499 project used by the motion-graphics clip tests (S08 §8): Title (zod schema via jasper-schemas.ts) and Badge (no schema).",
+  "type": "module",
+  "scripts": {
+    "bundle": "remotion bundle"
+  },
+  "jasper": {
+    "schemas": "./src/jasper-schemas.ts"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.499",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "remotion": "4.0.499",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0"
+  }
+}

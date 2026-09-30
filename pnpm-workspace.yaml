@@ -1,3 +1,5 @@
 packages:
   - "apps/*"
   - "packages/*"
+  # wp-m2-mg: the fixture Remotion project (S08 §8), a private package so pnpm links its dependencies.
+  - "fixtures/mg-project"

@@ -1,0 +1,15 @@
+{
+  "compositions": {
+    "Title": {
+      "category": "Titles",
+      "thumbnailFrame": 45,
+      "ui": {
+        "accent": { "control": "color" },
+        "title": { "control": "text" }
+      }
+    },
+    "Badge": {
+      "category": "Badges"
+    }
+  }
+}
