@@ -1,7 +1,15 @@
 // startEngine (ARCHITECTURE §9.1): builds the config, prepares the appdir, listens on 127.0.0.1.
-import { mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { chmodSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { appdirPaths, DEFAULT_ENGINE_HOST, DEV_WEB_PORT, ENV, isTruthyEnv } from '@jasper/config';
+import {
+	appdirPaths,
+	DEFAULT_ENGINE_HOST,
+	DEV_WEB_PORT,
+	ENV,
+	type EngineRuntimeInfo,
+	isTruthyEnv,
+	parseEngineRuntime,
+} from '@jasper/config';
 import type { FastifyInstance } from 'fastify';
 import type { EngineConfig } from './context.ts';
 import { createServer } from './server.ts';
@@ -90,13 +98,59 @@ export async function startEngine(opts: StartEngineOptions): Promise<RunningEngi
 	const addr = app.server.address();
 	const port = typeof addr === 'object' && addr ? addr.port : opts.port;
 	config.port = port;
+	const url = `http://${config.host}:${port}`;
+	const runtimeFile = writeRuntimeFile(config, url);
 	return {
 		app,
 		port,
 		host: config.host,
-		url: `http://${config.host}:${port}`,
-		stop: () => app.close(),
+		url,
+		stop: async () => {
+			removeRuntimeFile(runtimeFile);
+			await app.close();
+		},
 	};
+}
+
+/**
+ * `<appdir>/engine/runtime.json` (0600): lets local tools on the same machine (jasper-mcp, scripts) find
+ * this engine's port and token (docs/wp-notes/wp-mcp.md). The appdir is the user's own data directory, so
+ * the file is as private as the projects next to it. Failures are logged, never fatal.
+ */
+function writeRuntimeFile(config: EngineConfig, url: string): string | null {
+	const file = config.paths.runtimeFile;
+	const info: EngineRuntimeInfo = {
+		url,
+		host: config.host,
+		port: config.port,
+		pid: process.pid,
+		token: config.token,
+		version: config.version,
+		appdir: config.appdir,
+		startedAt: new Date().toISOString(),
+	};
+	try {
+		const tmp = `${file}.${process.pid}.tmp`;
+		writeFileSync(tmp, `${JSON.stringify(info, null, 2)}\n`, { mode: 0o600 });
+		chmodSync(tmp, 0o600);
+		renameSync(tmp, file);
+		return file;
+	} catch (e) {
+		console.warn(`[engine] could not write ${file}: ${(e as Error).message}`);
+		return null;
+	}
+}
+
+/** Removes the runtime file if it still describes this process (another engine may have replaced it). */
+function removeRuntimeFile(file: string | null): void {
+	if (!file) return;
+	try {
+		const cur = parseEngineRuntime(JSON.parse(readFileSync(file, 'utf8')));
+		if (cur && cur.pid !== process.pid) return;
+		rmSync(file, { force: true });
+	} catch {
+		// already gone
+	}
 }
 
 // ---------------------------------------------------------------- service interface for WP-2G / WP-2H
