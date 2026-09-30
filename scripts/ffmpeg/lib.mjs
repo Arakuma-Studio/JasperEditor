@@ -164,6 +164,23 @@ export function isFfmpegArtifact(name) {
 	);
 }
 
+/**
+ * The FFmpeg that Electron/Chromium ships for media playback (`libffmpeg.so`, `ffmpeg.dll`,
+ * `libffmpeg.dylib`): an LGPL build by the Chromium project. It is checked through its embedded license
+ * strings like any other library, but it lives next to the Electron executable.
+ */
+export function isChromiumFfmpeg(name) {
+	return /^(libffmpeg\.(so|dylib)|ffmpeg\.dll)$/i.test(name);
+}
+
+/**
+ * Stand-alone GPL/nonfree codec libraries that must never ship next to (or instead of) an LGPL FFmpeg:
+ * libx264.so.164, libx265.dll, libfdk-aac.2.dylib, xvidcore.dll …
+ */
+export function isForbiddenLibrary(name) {
+	return /^(lib)?(x264|x265|fdk-aac|xvidcore)([-.]\d+)*\.(so(\.\d+)*|dll|dylib)$/i.test(name);
+}
+
 // ------------------------------------------------------------------------------------------ ELF rpath
 
 /**

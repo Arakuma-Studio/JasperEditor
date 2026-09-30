@@ -4,11 +4,12 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFi
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { checkTree } from './check-lgpl.mjs';
+import { checkPackagedApp, checkTree } from './check-lgpl.mjs';
 import {
 	configureFlags,
 	evaluateBuild,
 	isFfmpegArtifact,
+	isForbiddenLibrary,
 	loadManifest,
 	platformKey,
 	rewriteElfRpath,
@@ -109,6 +110,86 @@ describe('checkTree', () => {
 		expect(badResults.map((r) => r.problems.length > 0)).toEqual([true, true]);
 		expect(badResults.some((r) => r.method === 'path')).toBe(true);
 	});
+});
+
+describe('checkPackagedApp', () => {
+	const app = (opts = {}) => {
+		const root = mkdtempSync(join(tmpdir(), 'packaged-'));
+		const res = join(root, 'resources');
+		const lgpl = join(res, 'ffmpeg-lgpl');
+		mkdirSync(lgpl, { recursive: true });
+		if (!opts.noLgplDir) {
+			for (const n of ['ffmpeg', 'ffprobe'])
+				writeFileSync(join(lgpl, n), `\0${LGPL_CONF}\0LGPL version 3 or later\0`);
+			writeFileSync(join(lgpl, 'libavcodec.so.61'), `\0${LGPL_CONF}\0LGPL version 3 or later\0`);
+			for (const n of ['remotion', 'LICENSE-FFmpeg.txt', 'BUILDINFO.json']) writeFileSync(join(lgpl, n), 'x');
+			if (!opts.noNotice) writeFileSync(join(lgpl, 'NOTICE-FFmpeg.txt'), 'x');
+		}
+		writeFileSync(join(res, 'app.asar'), opts.asar ?? 'plain js');
+		return { root, res };
+	};
+	const bad = (r) => [...r.problems, ...r.results.flatMap((x) => x.problems)];
+
+	it('passes an app that ships only the complete LGPL directory', () => {
+		const r = checkPackagedApp(app().root);
+		expect(bad(r)).toEqual([]);
+		expect(r.results).toHaveLength(3);
+	});
+
+	it('fails without the LGPL directory, or when it lacks the notice', () => {
+		expect(checkPackagedApp(app({ noLgplDir: true }).root).problems.join(' ')).toMatch(/incomplete/);
+		const empty = mkdtempSync(join(tmpdir(), 'packaged-'));
+		expect(checkPackagedApp(empty).problems.join(' ')).toMatch(/no ffmpeg-lgpl directory/);
+		expect(checkPackagedApp(app({ noNotice: true }).root).problems.join(' ')).toMatch(/NOTICE-FFmpeg/);
+	});
+
+	it("fails when Remotion's compositor package, an x264 library or a GPL FFmpeg in the asar ships", () => {
+		const a = app();
+		const pkg = join(a.res, 'engine', 'node_modules', '@remotion', 'compositor-linux-x64-gnu');
+		mkdirSync(pkg, { recursive: true });
+		writeFileSync(join(pkg, 'ffmpeg'), `\0${REMOTION_CONF}\0GPL version 2 or later\0`);
+		const r = checkPackagedApp(a.root);
+		expect(bad(r).join(' | ')).toMatch(/--enable-gpl/);
+		expect(bad(r).join(' | ')).toMatch(/Remotion compositor package/);
+		expect(r.problems.join(' | ')).toMatch(/an FFmpeg binary outside ffmpeg-lgpl/);
+
+		const b = app();
+		writeFileSync(join(b.res, 'ffmpeg-lgpl', 'libx264.so.164'), 'x');
+		expect(bad(checkPackagedApp(b.root)).join(' ')).toMatch(/GPL\/nonfree codec library/);
+
+		const c = app({ asar: `js\0${REMOTION_CONF}\0GPL version 2 or later\0` });
+		expect(bad(checkPackagedApp(c.root)).join(' ')).toMatch(/--enable-gpl/);
+	});
+
+	it("checks Electron's own FFmpeg library by its license string, wherever Electron puts it", () => {
+		const a = app();
+		writeFileSync(join(a.root, 'libffmpeg.so'), '\0libavcodec license: LGPL version 2.1 or later\0');
+		expect(bad(checkPackagedApp(a.root))).toEqual([]);
+		const b = app();
+		writeFileSync(join(b.root, 'ffmpeg.dll'), '\0libavcodec license: GPL version 2 or later\0');
+		expect(bad(checkPackagedApp(b.root)).join(' ')).toMatch(/license: GPL/);
+	});
+
+	it('even an LGPL FFmpeg must not sit in a stray location', () => {
+		const a = app();
+		mkdirSync(join(a.res, 'engine'), { recursive: true });
+		writeFileSync(join(a.res, 'engine', 'ffmpeg'), `\0${LGPL_CONF}\0LGPL version 3 or later\0`);
+		expect(checkPackagedApp(a.root).problems.join(' ')).toMatch(/outside ffmpeg-lgpl/);
+	});
+});
+
+describe('isForbiddenLibrary', () => {
+	it.each([
+		['libx264.so.164', true],
+		['libx264-164.dll', true],
+		['libx265.so', true],
+		['x265.dll', true],
+		['libfdk-aac.2.dylib', true],
+		['xvidcore.dll', true],
+		['libvpx-1.dll', false],
+		['libopenh264.so.7', false],
+		['x264-notes.txt', false],
+	])('%s → %s', (name, expected) => expect(isForbiddenLibrary(name)).toBe(expected));
 });
 
 describe('manifest', () => {
