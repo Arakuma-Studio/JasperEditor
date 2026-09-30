@@ -684,6 +684,7 @@ function ListView(props: {
 							data-testid="project-row"
 							data-item-id={row.id}
 							aria-selected={sel}
+							data-primary={sel && props.primary === row.id ? '' : undefined}
 							className={cx(
 								'h-[var(--pr-row-h)] cursor-default select-none',
 								sel ? 'bg-pr-selected' : i % 2 ? 'bg-pr-panel-alt' : 'bg-pr-panel',

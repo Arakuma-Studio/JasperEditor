@@ -72,7 +72,8 @@ function Region(props: TrackAreaProps & { region: RegionLayout; offsets: Record<
 						style={{
 							top: row.y - region.top,
 							height: row.height,
-							background: targeted ? 'var(--pr-bg-panel-alt)' : 'var(--pr-bg-field)',
+							// Track area = --pr-bg-panel-alt (R-PUI §3.2); targeted lanes lift like their headers.
+							background: targeted ? 'var(--pr-bg-panel-raised)' : 'var(--pr-bg-panel-alt)',
 							borderBottom: '1px solid var(--pr-border-subtle)',
 						}}
 						data-track-id={track.id}

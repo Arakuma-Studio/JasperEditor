@@ -36,11 +36,20 @@
 	box-shadow: inset 0 -2px 0 var(--pr-tab-underline);
 }
 
-/* Focused panel frame: 1px focus ring (S05:FO-002). */
-.dockview-theme-jasper .dv-groupview.pr-focused {
-	/* dockview writes an inline `outline: none` on groups, hence !important. */
-	outline: 1px solid var(--pr-focus-ring) !important;
-	outline-offset: -1px !important;
+/* Focused panel frame: 1px focus ring (S05:FO-002). An outline on the group itself is painted under
+   positioned panel content (timeline canvases, monitor video), so the ring is an overlay pseudo-element
+   drawn above panel internals (z 0–50) and below dock overlays (z 90+). */
+.dockview-theme-jasper .dv-groupview {
+	position: relative;
+}
+.dockview-theme-jasper .dv-groupview.pr-focused::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	border: 1px solid var(--pr-focus-ring);
+	border-radius: var(--pr-radius-frame);
+	pointer-events: none;
+	z-index: 60;
 }
 
 /* ---- WP-2A shell rules (S05 §5–§6) ------------------------------------------------------------ */
@@ -97,9 +106,14 @@
 }
 
 /* Maximized group: 1 px accent inner outline (DK-041). */
-.pr-maximized .dockview-theme-jasper .dv-groupview {
-	outline: 1px solid var(--pr-accent) !important;
-	outline-offset: -1px !important;
+.pr-maximized .dockview-theme-jasper .dv-groupview::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	border: 1px solid var(--pr-accent);
+	border-radius: var(--pr-radius-frame);
+	pointer-events: none;
+	z-index: 60;
 }
 
 /* Floating groups: overlay shadow only on floating frames (DT §8.6). */

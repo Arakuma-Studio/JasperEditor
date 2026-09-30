@@ -3,7 +3,7 @@
 // layout starts as the factory layout (null = build from the definition at the real window size).
 // Persisted per user/machine through the versioned shell storage (never in project files, SH-024).
 import type { SerializedDockview } from 'dockview-react';
-import { BUILTIN_WORKSPACES, COMPACT_WORKSPACE, DEFAULT_WORKSPACE_ID } from './definitions.ts';
+import { BUILTIN_WORKSPACES, DEFAULT_WORKSPACE_ID, isLayoutPreset, LAYOUT_PRESETS } from './definitions.ts';
 import { loadVersioned, type ShellStorage, saveVersioned, type VersionedKey } from './storage.ts';
 
 export type WorkspaceRecord = {
@@ -34,10 +34,7 @@ function builtinRecord(id: string, name: string): WorkspaceRecord {
 export function defaultWorkspacesState(): WorkspacesState {
 	const workspaces: Record<string, WorkspaceRecord> = {};
 	for (const w of BUILTIN_WORKSPACES) workspaces[w.id] = builtinRecord(w.id, w.name);
-	workspaces[COMPACT_WORKSPACE.id] = {
-		...builtinRecord(COMPACT_WORKSPACE.id, COMPACT_WORKSPACE.name),
-		showInBar: false,
-	};
+	for (const w of LAYOUT_PRESETS) workspaces[w.id] = { ...builtinRecord(w.id, w.name), showInBar: false };
 	return { activeId: DEFAULT_WORKSPACE_ID, order: BUILTIN_WORKSPACES.map((w) => w.id), workspaces };
 }
 
@@ -73,16 +70,12 @@ export function parseWorkspacesState(data: unknown): WorkspacesState | null {
 		};
 	}
 	const order = d.order.filter(
-		(id): id is string =>
-			typeof id === 'string' && Object.hasOwn(workspaces, id) && id !== COMPACT_WORKSPACE.id,
+		(id): id is string => typeof id === 'string' && Object.hasOwn(workspaces, id) && !isLayoutPreset(id),
 	);
 	for (const w of BUILTIN_WORKSPACES) if (!order.includes(w.id)) order.push(w.id);
-	for (const id of Object.keys(workspaces))
-		if (!order.includes(id) && id !== COMPACT_WORKSPACE.id) order.push(id);
+	for (const id of Object.keys(workspaces)) if (!order.includes(id) && !isLayoutPreset(id)) order.push(id);
 	const activeId =
-		Object.hasOwn(workspaces, d.activeId) && d.activeId !== COMPACT_WORKSPACE.id
-			? d.activeId
-			: DEFAULT_WORKSPACE_ID;
+		Object.hasOwn(workspaces, d.activeId) && !isLayoutPreset(d.activeId) ? d.activeId : DEFAULT_WORKSPACE_ID;
 	return { activeId, order, workspaces };
 }
 
@@ -182,7 +175,7 @@ export class WorkspaceStore {
 	}
 
 	setActive(id: string): void {
-		if (!this.get(id) || id === COMPACT_WORKSPACE.id || id === this.state.activeId) return;
+		if (!this.get(id) || isLayoutPreset(id) || id === this.state.activeId) return;
 		this.set({ ...this.state, activeId: id });
 	}
 
@@ -218,7 +211,7 @@ export class WorkspaceStore {
 		const n = name.trim();
 		if (n.length < 1 || n.length > 40) return { ok: false, error: 'Names are 1–40 characters' };
 		const clash = Object.values(this.state.workspaces).some(
-			(r) => r.id !== exceptId && r.id !== COMPACT_WORKSPACE.id && r.name.toLowerCase() === n.toLowerCase(),
+			(r) => r.id !== exceptId && !isLayoutPreset(r.id) && r.name.toLowerCase() === n.toLowerCase(),
 		);
 		return clash ? { ok: false, error: 'A workspace with this name already exists' } : { ok: true, name: n };
 	}
@@ -271,9 +264,7 @@ export class WorkspaceStore {
 	}
 
 	reorder(order: string[]): void {
-		const known = order.filter(
-			(id) => Object.hasOwn(this.state.workspaces, id) && id !== COMPACT_WORKSPACE.id,
-		);
+		const known = order.filter((id) => Object.hasOwn(this.state.workspaces, id) && !isLayoutPreset(id));
 		for (const id of this.state.order) if (!known.includes(id)) known.push(id);
 		this.set({ ...this.state, order: known });
 	}

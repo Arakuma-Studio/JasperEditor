@@ -9,7 +9,9 @@ import {
 	type PointerEvent as ReactPointerEvent,
 	type RefObject,
 	useEffect,
+	useLayoutEffect,
 	useRef,
+	useState,
 } from 'react';
 import { exactFrameOf, type Row } from '../properties/lib/model.ts';
 import { glyphHalves, halfPath, pctOf, type Range, rulerTicks } from './lib.ts';
@@ -117,6 +119,11 @@ export function SummaryLane(props: { rows: Row[]; seq: Sequence; range: Range })
 	);
 }
 
+/** Premiere-style short ruler label: drop a leading zero hour field (`00:00:02:00` → `00:02:00`). */
+export function rulerLabel(tc: string): string {
+	return /^00[:;]/.test(tc) ? tc.slice(3) : tc;
+}
+
 /** Ruler + clip range bar; dragging scrubs the playhead (S03:EC-020/021). */
 export function Ruler(props: {
 	seq: Sequence;
@@ -146,20 +153,33 @@ export function Ruler(props: {
 	};
 	const clipL = pctOf(range, props.clip.start);
 	const clipR = pctOf(range, props.clip.start + props.clip.duration);
+	// Label density follows the ruler width (≈ 1 label per 90 px) so timecodes never overlap.
+	const [width, setWidth] = useState(0);
+	useLayoutEffect(() => {
+		const el = ref.current;
+		if (!el) return;
+		const measure = () => setWidth(el.clientWidth);
+		measure();
+		if (typeof ResizeObserver === 'undefined') return;
+		const ro = new ResizeObserver(measure);
+		ro.observe(el);
+		return () => ro.disconnect();
+	}, []);
+	const target = width > 0 ? Math.max(2, Math.floor(width / 64)) : undefined;
 	return (
 		<div
 			ref={ref}
-			className="relative h-[34px] flex-1 cursor-pointer select-none"
+			className="relative h-[34px] flex-1 cursor-pointer overflow-hidden select-none"
 			onPointerDown={onPointerDown}
 			data-testid="ec-ruler"
 		>
-			{rulerTicks(range).map((f) => (
+			{rulerTicks(range, target).map((f) => (
 				<span
 					key={f}
-					className="absolute top-0 h-[14px] border-l border-pr-border-strong pl-[2px] text-[10px] leading-[12px] text-pr-muted"
+					className="pr-tabular absolute top-0 h-[14px] border-l border-pr-border-strong pl-[2px] text-[10px] leading-[12px] whitespace-nowrap text-pr-muted"
 					style={{ left: `${pctOf(range, f)}%` }}
 				>
-					{formatTimecode(f, seq.settings.frameRate, { dropFrame: seq.settings.dropFrame })}
+					{rulerLabel(formatTimecode(f, seq.settings.frameRate, { dropFrame: seq.settings.dropFrame }))}
 				</span>
 			))}
 			<span

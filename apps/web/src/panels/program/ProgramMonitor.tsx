@@ -35,6 +35,7 @@ import {
 } from 'react';
 import { runCommand } from '../../commands/index.ts';
 import { useEngine } from '../../state/engine.tsx';
+import { markerVar } from '../timeline/components/ClipView.tsx';
 import type { PanelProps } from '../types.ts';
 import { addMarkerAt, liftOrExtract, setSequenceMark } from './edits.ts';
 import {
@@ -293,7 +294,8 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 			(seq?.markers ?? []).map((m) => ({
 				id: m.id,
 				frame: m.frame,
-				color: `var(--pr-label-${m.color})`,
+				// Same marker palette as the Timeline ruler (R-PUI §3.3), not the darker clip label bodies.
+				color: `var(--pr-marker-${markerVar(m.color)})`,
 			})),
 		[seq?.markers],
 	);

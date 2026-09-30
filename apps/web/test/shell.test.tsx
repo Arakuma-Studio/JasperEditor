@@ -22,7 +22,7 @@ import { MENUBAR } from '../src/shell/menus/model.ts';
 import { NOT_AVAILABLE_REASON, resolveMenu } from '../src/shell/menus/resolve.ts';
 import { fuzzyScore, parsePaletteQuery } from '../src/shell/palette/fuzzy.ts';
 import { parsePrefs } from '../src/shell/prefs.ts';
-import { BUILTIN_WORKSPACES, COMPACT_WORKSPACE, panelsIn } from '../src/shell/workspaces/definitions.ts';
+import { BUILTIN_WORKSPACES, LAYOUT_PRESETS, panelsIn } from '../src/shell/workspaces/definitions.ts';
 import { buildLayout, distribute, sanitizeLayout } from '../src/shell/workspaces/layout.ts';
 import { memoryStorage } from '../src/shell/workspaces/storage.ts';
 import { WORKSPACES_KEY, WorkspaceStore } from '../src/shell/workspaces/store.ts';
@@ -49,7 +49,7 @@ describe('built-in workspaces', () => {
 		const ids = BUILTIN_WORKSPACES.map((w) => w.id);
 		for (const id of ['editing', 'assembly', 'effects', 'agent', 'essentials']) expect(ids).toContain(id);
 		expect(ids[0]).toBe('editing');
-		for (const ws of [...BUILTIN_WORKSPACES, COMPACT_WORKSPACE]) {
+		for (const ws of [...BUILTIN_WORKSPACES, ...LAYOUT_PRESETS]) {
 			const kinds = panelsIn(ws.layout);
 			for (const k of kinds) expect(PANEL_KINDS, `${ws.id} references ${k}`).toContain(k);
 			const singles = kinds.filter((k) => panelMap.get(k)?.instance === 'single');

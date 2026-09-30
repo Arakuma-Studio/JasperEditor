@@ -343,7 +343,8 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 					data-testid="source-duration"
 					style={{ fontVariantNumeric: 'tabular-nums' }}
 				>
-					{durationLabel(format, duration, markIn, markOut)}
+					{/* No clip loaded: show a zero duration, not the 1-frame placeholder length. */}
+					{durationLabel(format, props ? duration : 0, markIn, markOut)}
 				</span>
 			</div>
 			<MiniRuler

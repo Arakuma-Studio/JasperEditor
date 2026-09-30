@@ -247,7 +247,8 @@ function Header(props: TrackHeadersProps & { row: TrackRow; track: Track }) {
 			<IconButton
 				icon={track.syncLock ? 'track.syncLock' : 'track.syncLockOff'}
 				label={track.syncLock ? 'Sync lock on' : 'Sync lock off'}
-				toggled={track.syncLock ? 'on' : 'off'}
+				// Premiere draws sync lock as a plain glyph (on) or an empty box (off), not an accent toggle.
+				aria-pressed={!!track.syncLock}
 				onClick={(e) => toggleFlag(props, kind, track, 'syncLock', e)}
 				data-control="sync"
 			/>
@@ -262,7 +263,8 @@ function Header(props: TrackHeadersProps & { row: TrackRow; track: Track }) {
 				<>
 					<button
 						type="button"
-						className={`h-[20px] w-[20px] rounded-pr-control text-[11px] font-semibold ${track.mute ? 'bg-pr-success text-pr-on-accent' : silencedBySolo ? 'text-pr-dim' : 'text-pr-muted hover:bg-pr-hover'}`}
+						className={`h-[20px] w-[20px] rounded-pr-control text-[11px] font-semibold ${track.mute ? 'text-pr-on-accent' : silencedBySolo ? 'text-pr-dim' : 'text-pr-muted hover:bg-pr-hover'}`}
+						style={track.mute ? { background: 'var(--pr-track-mute)' } : undefined}
 						title="Mute track"
 						aria-pressed={!!track.mute}
 						onClick={(e) => toggleFlag(props, kind, track, 'mute', e)}
@@ -272,8 +274,12 @@ function Header(props: TrackHeadersProps & { row: TrackRow; track: Track }) {
 					</button>
 					<button
 						type="button"
-						className={`h-[20px] w-[20px] rounded-pr-control text-[11px] font-semibold ${track.solo ? 'text-pr-app' : 'text-pr-muted hover:bg-pr-hover'}`}
-						style={track.solo ? { background: 'var(--pr-meter-yellow)' } : undefined}
+						className={`h-[20px] w-[20px] rounded-pr-control text-[11px] font-semibold ${track.solo ? '' : 'text-pr-muted hover:bg-pr-hover'}`}
+						style={
+							track.solo
+								? { background: 'var(--pr-track-solo)', color: 'var(--pr-track-solo-text)' }
+								: undefined
+						}
 						title="Solo track (Alt: exclusive)"
 						aria-pressed={!!track.solo}
 						onClick={(e) => toggleFlag(props, kind, track, 'solo', e)}

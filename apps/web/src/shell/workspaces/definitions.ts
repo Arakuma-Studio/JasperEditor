@@ -166,10 +166,34 @@ export const COMPACT_WORKSPACE: WorkspaceDefinition = {
 	),
 };
 
+/**
+ * Phone preset (< 600 px, S05 §19.2 until the dedicated touch shell lands): one column with the viewer
+ * on top and the timeline below; the inspectors and bins are tabs of the lower group instead of a
+ * squeezed side column, and there are no fixed-width Tools/Meters strips.
+ */
+export const PHONE_WORKSPACE: WorkspaceDefinition = {
+	id: 'phone',
+	name: 'Phone',
+	layout: col(
+		[0.42, g(['program', 'source'], 'program')],
+		[
+			'fill',
+			g(['timeline', 'project', 'properties', 'effectControls', 'agent', 'motionTemplates'], 'timeline'),
+		],
+	),
+};
+
+/** Layout-mode presets: chosen by the layout switch, never listed in the workspace bar. */
+export const LAYOUT_PRESETS: readonly WorkspaceDefinition[] = [COMPACT_WORKSPACE, PHONE_WORKSPACE];
+
+export function isLayoutPreset(id: string): boolean {
+	return LAYOUT_PRESETS.some((w) => w.id === id);
+}
+
 export const DEFAULT_WORKSPACE_ID = 'editing';
 
 export function builtinWorkspace(id: string): WorkspaceDefinition | undefined {
-	return id === COMPACT_WORKSPACE.id ? COMPACT_WORKSPACE : BUILTIN_WORKSPACES.find((w) => w.id === id);
+	return LAYOUT_PRESETS.find((w) => w.id === id) ?? BUILTIN_WORKSPACES.find((w) => w.id === id);
 }
 
 /** Every panel kind a layout references, in order (duplicates preserved for validation). */

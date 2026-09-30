@@ -167,8 +167,10 @@ export const ICONS = {
 		'M15.5 8a3.5 2.8 0 00-3.5-2c-2.2 0-3.5 1.1-3.5 2.6S9.8 11 12 11.5s3.5 1.4 3.5 3S14.2 18 12 18a3.5 2.8 0 01-3.5-2',
 	),
 	'track.voiceOver': Mic,
-	'track.syncLock': Link,
-	'track.syncLockOff': Unlink,
+	// Sync lock: a clip frame with sync arrows when on, an empty box when off (R-PUI §9.3); distinct from
+	// the timeline's Linked Selection chain so the two toggles are not confused.
+	'track.syncLock': g('M4 6h16v12H4z', 'M8 12h8', 'M10 10l-2 2 2 2', 'M14 10l2 2-2 2'),
+	'track.syncLockOff': g('M5 6h14v12H5z'),
 	'track.sourcePatch': g('M8 8h9a4 4 0 010 8H8a4 4 0 010-8z'),
 	'track.target': g('M4 8h16v8H4z'),
 	'track.keyframePrev': g('M8 8l-4 4 4 4', 'M16 8l4 4-4 4-4-4z'),

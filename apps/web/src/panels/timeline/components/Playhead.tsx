@@ -114,7 +114,7 @@ export function TimecodeReadout(props: {
 			<input
 				// biome-ignore lint/a11y/noAutofocus: the field replaces the readout on click (TL-205)
 				autoFocus
-				className="h-[24px] w-[120px] rounded-pr-control bg-pr-field px-1 font-pr-mono text-[var(--pr-font-size-timeline-tc)] text-pr-timecode outline-none"
+				className="h-[24px] w-[120px] rounded-pr-control bg-pr-field px-1 font-pr text-[length:var(--pr-font-size-timeline-tc)] pr-tabular text-pr-timecode outline-none"
 				value={editing}
 				aria-label="Playhead timecode"
 				data-testid="timeline-timecode-input"
@@ -140,7 +140,7 @@ export function TimecodeReadout(props: {
 		<button
 			type="button"
 			ref={textRef}
-			className="cursor-ew-resize bg-transparent p-0 text-left font-pr-mono text-[var(--pr-font-size-timeline-tc)] leading-[24px] text-pr-timecode tabular-nums select-none"
+			className="cursor-ew-resize bg-transparent p-0 text-left font-pr text-[length:var(--pr-font-size-timeline-tc)] pr-tabular leading-[24px] text-pr-timecode tabular-nums select-none"
 			title="Playhead position (click to type, drag to scrub, Ctrl+click toggles frames)"
 			data-testid="timeline-timecode"
 			onPointerDown={(e) => {
