@@ -6,13 +6,15 @@
 //   reported to the store;
 // - seek-stepping: for reverse rates and rates above NATIVE_MAX_RATE a virtual clock advances the
 //   playhead at the requested rate on every animation frame and seeks the (paused) Player at most
-//   SEEK_HZ times per second (TL-873). The Player validates rates in [-10, 10] but decoding cannot keep
-//   up with 8× and reverse media playback is not frame-accurate, so we only hand it forward rates ≤ 4×.
+//   SEEK_HZ times per second (TL-873). The Player validates rates in [-10, 10], but measured on this
+//   CPU-only box (1080p H.264 through @remotion/media) the Player buffers above 1×: 2× advanced at
+//   ~16 fps and 4× at ~24 fps instead of 60/120, so the timecode would crawl. Only forward rates ≤ 1×
+//   are native; see docs/research/remotion-4.0.499-notes.md.
 // While paused the store is the source of truth and the Player is seeked on every store change.
 import type { PlayerController, TransportState, TransportStore } from '@jasper/session';
 
 export const NATIVE_MIN_RATE = 0.1;
-export const NATIVE_MAX_RATE = 4;
+export const NATIVE_MAX_RATE = 1;
 /** Measured validation range of `<Player playbackRate>` in 4.0.499 (validate-playbackrate.js). */
 export const PLAYER_RATE_BOUNDS = { min: -10, max: 10 } as const;
 export const SEEK_HZ = 30;

@@ -10,6 +10,7 @@ import {
 import { defaultMediaRuntime, EditorSession } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
+import { Profiler } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { monitorStores } from '../src/panels/program/monitor-store.ts';
 import { ProgramMonitor } from '../src/panels/program/ProgramMonitor.tsx';
@@ -72,6 +73,35 @@ describe('Program monitor', () => {
 		act(() => session.transport.seek(45));
 		expect(getByTestId('program-timecode').textContent).toBe('00:00:01:15');
 		expect(getByTestId('program-duration').textContent).toBe('00:00:02:00');
+	});
+
+	it('does not re-render React outside the Player per played frame (S03:ARC-010)', async () => {
+		const { session } = makeSession();
+		let commits = 0;
+		const { getByTestId } = render(
+			<Profiler id="pm" onRender={() => commits++}>
+				<SessionProvider session={session}>
+					<ProgramMonitor instanceId="program-1" visible />
+				</SessionProvider>
+			</Profiler>,
+		);
+		const t = session.transport;
+		await act(async () => {
+			t.play(1);
+			await new Promise((r) => setTimeout(r, 50));
+		});
+		const start = commits;
+		await act(async () => {
+			for (let f = 1; f <= 60; f++) {
+				t.reportFrame(f);
+				await new Promise((r) => setTimeout(r, 1));
+			}
+			await new Promise((r) => setTimeout(r, 50));
+		});
+		// The Profiler also sees the Player's own internal updates; 60 frames must not mean 60 commits.
+		expect(commits - start).toBeLessThanOrEqual(3);
+		expect(getByTestId('program-timecode').textContent).toBe('00:00:02:00');
+		await act(async () => t.pause());
 	});
 
 	it('makes one undo step per move / rotate drag and undo restores the exact values (AC-XF-3)', async () => {

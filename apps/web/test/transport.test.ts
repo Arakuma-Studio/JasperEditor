@@ -257,12 +257,15 @@ describe('PlaybackDriver (S03:ARC-010, S02:TL-873)', () => {
 		expect(player.frame).toBe(42);
 	});
 
-	it('mutes at 2× and 4× (TL-874) and keeps them native', () => {
+	it('mutes below 1× (TL-874) and steps above 1× (measured Player limit)', () => {
 		const { transport, player, driver, rates } = setup();
-		transport.play(4);
+		transport.play(0.25);
 		expect(driver.currentMode).toBe('native');
-		expect(rates.at(-1)).toBe(4);
+		expect(rates.at(-1)).toBe(0.25);
 		expect(player.muted).toBe(true);
+		transport.play(2);
+		expect(driver.currentMode).toBe('stepping');
+		expect(player.playing).toBe(false);
 	});
 
 	it('uses seek-stepping at 8×: timecode advances 8× real time, seeks ≤ 30/s (AC-18b)', () => {
