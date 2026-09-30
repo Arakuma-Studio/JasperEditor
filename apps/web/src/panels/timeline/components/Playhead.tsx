@@ -70,7 +70,8 @@ export function PlayheadLine(props: {
 			</div>
 			<div
 				className="absolute bottom-0 left-0 w-px"
-				style={{ top: props.rulerHeight - 2, background: 'var(--pr-playhead)' }}
+				// The line hangs from the head's tip through the marker lane and render bar (R-PUI §9.5).
+				style={{ top: 22, background: 'var(--pr-playhead)' }}
 			/>
 		</div>
 	);
