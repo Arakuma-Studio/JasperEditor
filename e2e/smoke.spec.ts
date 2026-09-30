@@ -261,6 +261,7 @@ test('with the text clip, Auto plans the Remotion path; the Remotion export succ
 		engine: 'auto',
 		fileName: 'smoke-remotion.mp4',
 		expectPath: /remotion/i,
+		expectBlocker: /text/i,
 		outDir: EXPORT_DIR,
 	});
 	expect(out.job.result?.renderPath).toBe('remotion');

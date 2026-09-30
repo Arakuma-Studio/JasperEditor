@@ -259,7 +259,14 @@ export type ExportOutcome = {
 export async function exportViaUi(
 	page: Page,
 	request: APIRequestContext,
-	opts: { engine: 'auto' | 'native' | 'remotion'; fileName: string; expectPath: RegExp; outDir: string },
+	opts: {
+		engine: 'auto' | 'native' | 'remotion';
+		fileName: string;
+		expectPath: RegExp;
+		outDir: string;
+		/** The plan's blocker list must explain the path choice (S04:RP-010). */
+		expectBlocker?: RegExp;
+	},
 ): Promise<ExportOutcome> {
 	await page.getByTestId('timeline-timecode').click();
 	await page.keyboard.press('Escape');
@@ -270,6 +277,7 @@ export async function exportViaUi(
 	const planPath = page.getByTestId('plan-path');
 	await expect(planPath).toContainText(opts.expectPath, { timeout: 30_000 });
 	const planText = (await planPath.innerText()).trim();
+	if (opts.expectBlocker) await expect(page.getByTestId('plan-blockers')).toContainText(opts.expectBlocker);
 	const before = new Set(
 		((await (await request.get('/api/jobs')).json()).jobs as { id: string }[]).map((j) => j.id),
 	);
