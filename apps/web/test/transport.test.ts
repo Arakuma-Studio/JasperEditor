@@ -260,7 +260,7 @@ describe('PlaybackDriver (S03:ARC-010, S02:TL-873)', () => {
 		expect(player.frame).toBe(42);
 	});
 
-	it('re-issues play() when the Player does not start (no frameupdate, not buffering) — WP-3I', () => {
+	it('re-issues play() when the Player does not start or stalls while playing (no frameupdate, not buffering) — WP-3I', () => {
 		vi.useFakeTimers();
 		try {
 			const { transport, player } = setup();
@@ -276,19 +276,30 @@ describe('PlaybackDriver (S03:ARC-010, S02:TL-873)', () => {
 			vi.advanceTimersByTime(PLAY_WATCHDOG_MS + 10); // no frames arrived: kicked again
 			expect(plays).toBe(2);
 			expect(player.seeks.at(-1)).toBe(61);
-			player.advance(5); // now progressing: the watchdog stands down
-			vi.advanceTimersByTime(PLAY_WATCHDOG_MS * 3);
+			// Progressing: no kicks while frames keep arriving.
+			for (let i = 0; i < 6; i++) {
+				player.advance(5);
+				vi.advanceTimersByTime(PLAY_WATCHDOG_MS / 2);
+			}
 			expect(plays).toBe(2);
-			expect(transport.getState().frame).toBe(66);
+			expect(transport.getState().frame).toBe(91);
+			// Stalls mid-play (seen in the E2E suite: 61 → 62, then nothing): kicked again.
+			vi.advanceTimersByTime(PLAY_WATCHDOG_MS + 10);
+			expect(plays).toBe(3);
+			expect(player.seeks.at(-1)).toBe(91);
+			// A permanently stuck Player is kicked at most PLAY_WATCHDOG_RETRIES times in a row.
+			vi.advanceTimersByTime(PLAY_WATCHDOG_MS * 10);
+			expect(plays).toBe(5);
 			// Buffering (waiting) is legitimate: no kick while waiting.
 			transport.pause();
 			transport.play(1);
+			expect(plays).toBe(6);
 			player.emit('waiting');
-			vi.advanceTimersByTime(PLAY_WATCHDOG_MS * 2);
-			expect(plays).toBe(3);
+			vi.advanceTimersByTime(PLAY_WATCHDOG_MS * 4);
+			expect(plays).toBe(6);
 			transport.pause();
-			vi.advanceTimersByTime(PLAY_WATCHDOG_MS * 2);
-			expect(plays).toBe(3);
+			vi.advanceTimersByTime(PLAY_WATCHDOG_MS * 4);
+			expect(plays).toBe(6);
 		} finally {
 			vi.useRealTimers();
 		}

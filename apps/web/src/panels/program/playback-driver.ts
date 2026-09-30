@@ -19,11 +19,14 @@ export const NATIVE_MAX_RATE = 1;
 export const PLAYER_RATE_BOUNDS = { min: -10, max: 10 } as const;
 export const SEEK_HZ = 30;
 /**
- * Native play watchdog: when no `frameupdate` arrives this long after `play()` (and the Player is not
- * buffering), the Player did not start. Observed in 4.0.499 with @remotion/media after seeks: the store
- * says playing while the Player sits on one frame until play() is issued again (WP-3I E2E).
+ * Native play watchdog: when no `frameupdate` arrives for this long while playing (and the Player is not
+ * buffering), the Player has stalled. Observed in 4.0.499 with @remotion/media after seeks: the store
+ * says playing while the Player sits on one frame until play() is issued again (WP-3I E2E). The stall
+ * can also happen after the first frame (61 → 62, then nothing), so the watchdog stays armed for the
+ * whole native playback; at slow rates the window grows to three frame periods.
  */
 export const PLAY_WATCHDOG_MS = 600;
+/** Consecutive kicks without any progress in between; progress restores the budget. */
 export const PLAY_WATCHDOG_RETRIES = 3;
 
 export function isNativeRate(rate: number): boolean {
@@ -197,21 +200,27 @@ export class PlaybackDriver implements PlayerController {
 		}
 	}
 
-	/** Re-issues play() when the Player did not start (see PLAY_WATCHDOG_MS). */
+	/**
+	 * Re-issues play() when the Player did not start or stalled while playing (see PLAY_WATCHDOG_MS).
+	 * Stays armed while native playback lasts; `retries` counts kicks since the last progress.
+	 */
 	private armWatchdog(retries: number): void {
 		this.clearWatchdog();
 		if (retries <= 0 || typeof setTimeout === 'undefined') return;
 		const seen = this.frameEvents;
+		const framesPerSec = Math.max(1e-3, this.opts.getFps() * Math.abs(this.rate));
+		const window = Math.max(PLAY_WATCHDOG_MS, 3000 / framesPerSec);
 		this.watchdog = setTimeout(() => {
 			this.watchdog = null;
 			const p = this.player;
 			if (!p || this.mode !== 'native' || !this.opts.transport.getState().playing) return;
-			if (this.frameEvents !== seen || this.buffering) return; // progressing, or legitimately buffering
+			if (this.frameEvents !== seen) return this.armWatchdog(PLAY_WATCHDOG_RETRIES); // progressing
+			if (this.buffering) return this.armWatchdog(retries); // legitimately buffering: keep watching
 			p.pause();
 			p.seekTo(this.opts.transport.getState().frame);
 			p.play();
 			this.armWatchdog(retries - 1);
-		}, PLAY_WATCHDOG_MS);
+		}, window);
 	}
 
 	private stopStepping(): void {
