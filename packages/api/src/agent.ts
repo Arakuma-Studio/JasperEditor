@@ -137,5 +137,9 @@ export const ApprovalSchema = z.object({
 	reasons: z.array(z.string()),
 	commandCount: z.number().int(),
 	expiresAt: z.string(),
+	/** One-line summary of the commands (e.g. "track.remove, 2× marker.add"). */
+	summary: z.string().optional(),
+	/** The commands awaiting approval (for the approval card's detail view). */
+	commands: z.array(z.unknown()).optional(),
 });
 export type Approval = z.infer<typeof ApprovalSchema>;

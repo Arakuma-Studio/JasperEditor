@@ -1,0 +1,536 @@
+// Agent API stage 1 (WP-2H, ARCHITECTURE §11): relay round trip with a fake WS session, headless apply
+// and save, approvals (deny / timeout / headless), stale revision rejection vs fast-forward (S01 AC-11).
+import { EventEmitter } from 'node:events';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { appdirPaths } from '@jasper/config';
+import {
+	createEmptyProject,
+	createSeededIdSource,
+	defaultRegistries,
+	makeEnvelope,
+	type TransactionResult,
+} from '@jasper/project';
+import type { FastifyInstance } from 'fastify';
+import { afterEach, describe, expect, it } from 'vitest';
+import type WebSocket from 'ws';
+import {
+	type AgentProjectStore,
+	AgentService,
+	type AgentSocket,
+	FsAgentProjectStore,
+	type SaveOutcome,
+} from '../src/agent/index.ts';
+import { createServer, engineConfig } from '../src/index.ts';
+
+const H = { host: '127.0.0.1:47900' };
+const apps: FastifyInstance[] = [];
+const services: AgentService[] = [];
+afterEach(async () => {
+	for (const a of apps.splice(0)) await a.close();
+	for (const s of services.splice(0)) s.close();
+});
+
+function seedProject(projectFile: (id: string) => string) {
+	const ids = createSeededIdSource(3);
+	const doc = createEmptyProject({ ids, name: 'Agent test', preset: 'hd-1080p-30' });
+	const file = projectFile(doc.projectId);
+	mkdirSync(join(file, '..'), { recursive: true });
+	const envelope = makeEnvelope(doc, { revision: 0, savedAt: '2026-09-30T00:00:00.000Z', platform: 'test' });
+	writeFileSync(file, JSON.stringify(envelope));
+	return { projectId: doc.projectId, seqId: Object.keys(doc.sequences)[0]!, file };
+}
+
+async function makeEngine() {
+	const appdir = mkdtempSync(join(tmpdir(), 'jasper-agent-'));
+	const config = engineConfig({ appdir, port: 47900, dev: true, token: null, webDir: null, env: {} });
+	const app = await createServer(config);
+	apps.push(app);
+	await app.ready();
+	const events: { type: string; payload: unknown; projectId?: string }[] = [];
+	app.jasper.services.events = {
+		publish: (type: string, payload: unknown, projectId?: string) =>
+			events.push({ type, payload, projectId }),
+	};
+	const project = seedProject(appdirPaths(appdir).projectFile);
+	return { app, events, ...project };
+}
+
+const tx = (commands: unknown[], extra: Record<string, unknown> = {}) => ({
+	label: 'Test',
+	origin: { agent: 'test-agent' },
+	commands,
+	...extra,
+});
+
+async function postTx(app: FastifyInstance, projectId: string, transaction: unknown) {
+	const r = await app.inject({
+		method: 'POST',
+		url: '/api/agent/tx',
+		headers: H,
+		payload: { projectId, transaction },
+	});
+	expect(r.statusCode).toBe(200);
+	return r.json() as { result: TransactionResult; appliedBy: 'session' | 'headless' };
+}
+
+/** Collects messages a ws client receives. */
+function inbox(ws: WebSocket) {
+	const queue: Record<string, unknown>[] = [];
+	const waiters: ((m: Record<string, unknown>) => void)[] = [];
+	ws.on('message', (d) => {
+		const m = JSON.parse(String(d)) as Record<string, unknown>;
+		const w = waiters.shift();
+		if (w) w(m);
+		else queue.push(m);
+	});
+	return {
+		next(): Promise<Record<string, unknown>> {
+			const m = queue.shift();
+			return m ? Promise.resolve(m) : new Promise((r) => waiters.push(r));
+		},
+		async until(pred: (m: Record<string, unknown>) => boolean) {
+			for (;;) {
+				const m = await this.next();
+				if (pred(m)) return m;
+			}
+		},
+	};
+}
+
+async function connectSession(app: FastifyInstance, projectId: string) {
+	const ws = await app.injectWS('/agent', { headers: H });
+	const box = inbox(ws);
+	ws.send(JSON.stringify({ type: 'hello', projectId, sessionId: 'ses_test', leaseId: 'lease_1' }));
+	expect(await box.next()).toMatchObject({ type: 'welcome' });
+	return { ws, box };
+}
+
+describe('GET /api/agent/schema (S01:AGT-002)', () => {
+	it('describes commands, queries, addressing, approvals and error codes', async () => {
+		const { app } = await makeEngine();
+		const r = await app.inject({ method: 'GET', url: '/api/agent/schema', headers: H });
+		expect(r.statusCode).toBe(200);
+		const s = r.json();
+		expect(s.protocol).toBe('jasper.tx/1');
+		expect(s.commands['marker.add'].schema).toBeTruthy();
+		expect(Object.keys(s.queries)).toContain('sequence.summary');
+		expect(s.errorCodes).toContain('E_APPROVAL_TIMEOUT');
+		expect(s.approvals.commands).toContain('track.remove');
+		expect(s.presets.length).toBeGreaterThan(0);
+	});
+});
+
+describe('headless mode (S01:AGT-020)', () => {
+	it('applies, saves a new revision and publishes doc.changed', async () => {
+		const { app, events, projectId, file } = await makeEngine();
+		const r = await postTx(
+			app,
+			projectId,
+			tx([{ type: 'marker.add', frame: 30, name: 'Agent marker', markerType: 'agent-note' }]),
+		);
+		expect(r.appliedBy).toBe('headless');
+		expect(r.result).toMatchObject({ ok: true, revision: 1 });
+		const saved = JSON.parse(readFileSync(file, 'utf8'));
+		expect(saved.revision).toBe(1);
+		const seq = Object.values(saved.document.sequences)[0] as { markers: { name: string }[] };
+		expect(seq.markers.map((m) => m.name)).toEqual(['Agent marker']);
+		expect(events.find((e) => e.type === 'doc.changed')).toMatchObject({
+			projectId,
+			payload: { revision: 1, label: 'Agent: Test', origin: { agent: 'test-agent' } },
+		});
+		const q = await app.inject({
+			method: 'POST',
+			url: '/api/agent/query',
+			headers: H,
+			payload: { projectId, query: 'sequence.summary' },
+		});
+		expect(q.statusCode).toBe(200);
+		expect(q.json()).toMatchObject({
+			revision: 1,
+			via: 'headless',
+			result: { markers: [{ name: 'Agent marker' }] },
+		});
+	});
+
+	it('applies the S01 Appendix B transaction (text clip, temp ref, opacity fade, marker)', async () => {
+		const { app, projectId } = await makeEngine();
+		const r = await postTx(app, projectId, {
+			label: 'Add title and fade in',
+			origin: { agent: 'editor-assistant', runId: 'run_42' },
+			expectedRevision: 0,
+			commands: [
+				{
+					type: 'clip.addText',
+					ref: '$title',
+					at: '00:00:01:00',
+					duration: { seconds: 4 },
+					track: 'V2',
+					content: { text: 'Launch Day' },
+				},
+				{
+					type: 'param.setAnimated',
+					target: ['clip', '$title', 'opacity'],
+					animated: true,
+					at: { frames: 0 },
+				},
+				{ type: 'param.set', target: ['clip', '$title', 'opacity'], value: 0, at: { frames: 0 } },
+				{ type: 'param.set', target: ['clip', '$title', 'opacity'], value: 100, at: { frames: 15 } },
+				{
+					type: 'marker.add',
+					frame: 30,
+					name: 'Title added',
+					markerType: 'agent-note',
+					comment: 'Fades in over 0.5 s.',
+				},
+			],
+		});
+		expect(r.result.ok).toBe(true);
+		if (r.result.ok) expect(r.result.refs.$title).toMatch(/^clp_/);
+	});
+
+	it('rejects destructive transactions with E_APPROVAL_DENIED and unknown projects with 404', async () => {
+		const { app, projectId } = await makeEngine();
+		const r = await postTx(app, projectId, tx([{ type: 'track.remove', trackIds: ['V3'] }]));
+		expect(r.result).toMatchObject({ ok: false, errors: [{ code: 'E_APPROVAL_DENIED' }] });
+		const nf = await app.inject({
+			method: 'POST',
+			url: '/api/agent/tx',
+			headers: H,
+			payload: { projectId: 'prj_missing', transaction: tx([]) },
+		});
+		expect(nf.statusCode).toBe(404);
+		expect(nf.json()).toMatchObject({ code: 'PROJECT_NOT_FOUND' });
+		const sel = await app.inject({
+			method: 'POST',
+			url: '/api/agent/query',
+			headers: H,
+			payload: { projectId, query: 'selection.get' },
+		});
+		expect(sel.statusCode).toBe(409);
+		expect(sel.json()).toMatchObject({ code: 'NO_SESSION' });
+	});
+
+	it('rejects a stale expectedRevision touching a changed entity and fast-forwards otherwise (S01 AC-11)', async () => {
+		const { app, projectId } = await makeEngine();
+		const a = await postTx(
+			app,
+			projectId,
+			tx([{ type: 'marker.add', frame: 10, name: 'M', markerType: 'comment', ref: '$m' }]),
+		);
+		expect(a.result.ok).toBe(true);
+		const markerId = a.result.ok ? a.result.refs.$m! : '';
+		const b = await postTx(
+			app,
+			projectId,
+			tx([{ type: 'marker.update', markerId, name: 'M2' }], { expectedRevision: 1 }),
+		);
+		expect(b.result).toMatchObject({ ok: true, revision: 2 });
+		const stale = await postTx(
+			app,
+			projectId,
+			tx([{ type: 'marker.update', markerId, name: 'M3' }], { expectedRevision: 1 }),
+		);
+		expect(stale.result).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_REVISION_MISMATCH', blocking: [markerId] }],
+		});
+		const ff = await postTx(
+			app,
+			projectId,
+			tx([{ type: 'clip.addText', at: 0, duration: 30, track: 'V2', content: { text: 'FF' } }], {
+				expectedRevision: 1,
+			}),
+		);
+		expect(ff.result).toMatchObject({ ok: true, revision: 3 });
+	});
+});
+
+describe('WS /agent relay (ARCHITECTURE §11)', () => {
+	it('relays transactions and queries to the session that holds the lease and forwards its events', async () => {
+		const { app, events, projectId } = await makeEngine();
+		const { ws, box } = await connectSession(app, projectId);
+
+		const pending = postTx(app, projectId, tx([{ type: 'marker.add', frame: 5, name: 'Live' }]));
+		const req = await box.until((m) => m.type === 'request');
+		expect(req).toMatchObject({
+			kind: 'tx',
+			payload: { transaction: { label: 'Test', origin: { agent: 'test-agent' } }, approved: false },
+		});
+		const result = {
+			ok: true,
+			revision: 8,
+			refs: {},
+			created: ['mrk_X'],
+			changed: [],
+			deleted: [],
+			warnings: [],
+			results: [null],
+		};
+		ws.send(JSON.stringify({ type: 'response', id: req.id, result }));
+		expect(await pending).toEqual({ result, appliedBy: 'session' });
+
+		const q = app.inject({
+			method: 'POST',
+			url: '/api/agent/query',
+			headers: H,
+			payload: { projectId, query: 'playhead.get' },
+		});
+		const qreq = await box.until((m) => m.type === 'request');
+		expect(qreq).toMatchObject({ kind: 'query', payload: { query: 'playhead.get' } });
+		ws.send(
+			JSON.stringify({ type: 'response', id: qreq.id, result: { result: { frame: 12 }, revision: 8 } }),
+		);
+		expect((await q).json()).toEqual({ result: { frame: 12 }, revision: 8, via: 'session' });
+
+		const qe = app.inject({
+			method: 'POST',
+			url: '/api/agent/query',
+			headers: H,
+			payload: { projectId, query: 'doc.get', args: { path: ['x'] } },
+		});
+		const qereq = await box.until((m) => m.type === 'request');
+		ws.send(
+			JSON.stringify({
+				type: 'response',
+				id: qereq.id,
+				result: null,
+				error: { code: 'E_NOT_FOUND', message: 'No such path' },
+			}),
+		);
+		expect((await qe).statusCode).toBe(404);
+
+		ws.send(
+			JSON.stringify({
+				type: 'event',
+				event: 'doc.changed',
+				payload: {
+					revision: 9,
+					label: 'Move',
+					origin: 'user',
+					created: [],
+					changed: ['clp_A'],
+					deleted: [],
+					isUndo: false,
+				},
+			}),
+		);
+		await new Promise((r) => setTimeout(r, 30));
+		expect(events.find((e) => e.type === 'doc.changed')).toMatchObject({
+			projectId,
+			payload: { revision: 9, projectId },
+		});
+		ws.terminate();
+	});
+
+	it('asks the session for approval; approve relays with approved:true, deny returns E_APPROVAL_DENIED', async () => {
+		const { app, events, projectId } = await makeEngine();
+		const { ws, box } = await connectSession(app, projectId);
+
+		const denied = postTx(app, projectId, tx([{ type: 'track.remove', trackIds: ['V3'] }]));
+		const ask = await box.until((m) => m.type === 'event' && m.event === 'agent.approval.requested');
+		const approval = ask.payload as { approvalId: string; reasons: string[]; summary: string };
+		expect(approval.reasons[0]).toMatch(/track.remove/);
+		expect(events.some((e) => e.type === 'agent.approval.requested')).toBe(true);
+		ws.send(
+			JSON.stringify({
+				type: 'event',
+				event: 'agent.approval.resolve',
+				payload: { approvalId: approval.approvalId, decision: 'denied' },
+			}),
+		);
+		expect((await denied).result).toMatchObject({ ok: false, errors: [{ code: 'E_APPROVAL_DENIED' }] });
+
+		const approved = postTx(app, projectId, tx([{ type: 'track.remove', trackIds: ['V3'] }]));
+		const ask2 = await box.until((m) => m.type === 'event' && m.event === 'agent.approval.requested');
+		const id2 = (ask2.payload as { approvalId: string }).approvalId;
+		ws.send(
+			JSON.stringify({
+				type: 'event',
+				event: 'agent.approval.resolve',
+				payload: { approvalId: id2, decision: 'approved' },
+			}),
+		);
+		const req = await box.until((m) => m.type === 'request');
+		expect(req).toMatchObject({ kind: 'tx', payload: { approved: true } });
+		const result = {
+			ok: true,
+			revision: 1,
+			refs: {},
+			created: [],
+			changed: [],
+			deleted: ['trk_X'],
+			warnings: [],
+			results: [null],
+		};
+		ws.send(JSON.stringify({ type: 'response', id: req.id, result }));
+		expect((await approved).result).toEqual(result);
+		expect(
+			events
+				.filter((e) => e.type === 'agent.approval.resolved')
+				.map((e) => (e.payload as { decision: string }).decision),
+		).toEqual(['denied', 'approved']);
+		ws.terminate();
+	});
+
+	it('falls back to headless when the session disconnects before a request', async () => {
+		const { app, projectId } = await makeEngine();
+		const { ws } = await connectSession(app, projectId);
+		ws.terminate();
+		await new Promise((r) => setTimeout(r, 50));
+		const r = await postTx(app, projectId, tx([{ type: 'marker.add', frame: 1, name: 'after close' }]));
+		expect(r).toMatchObject({ appliedBy: 'headless', result: { ok: true } });
+	});
+});
+
+// ---------------------------------------------------------------- service-level (timeouts)
+
+class FakeSocket extends EventEmitter implements AgentSocket {
+	readyState = 1;
+	sent: Record<string, unknown>[] = [];
+	send(data: string) {
+		const m = JSON.parse(data) as Record<string, unknown>;
+		this.sent.push(m);
+		this.emit('sent', m);
+	}
+	close() {
+		this.readyState = 3;
+		this.emit('close');
+	}
+	client(msg: unknown) {
+		this.emit('message', Buffer.from(JSON.stringify(msg)));
+	}
+	nextSent(pred: (m: Record<string, unknown>) => boolean): Promise<Record<string, unknown>> {
+		const hit = this.sent.find(pred);
+		if (hit) return Promise.resolve(hit);
+		return new Promise((resolve) => {
+			const on = (m: Record<string, unknown>) => {
+				if (pred(m)) {
+					this.off('sent', on);
+					resolve(m);
+				}
+			};
+			this.on('sent', on);
+		});
+	}
+}
+
+class MemoryStore implements AgentProjectStore {
+	envelopes = new Map<string, Record<string, unknown>>();
+	lease: { sessionId: string; leaseId: string; expiresAt: string } | null = null;
+	async load(id: string) {
+		const e = this.envelopes.get(id);
+		return e ? { envelope: e, revision: e.revision as number } : null;
+	}
+	async save(id: string, envelope: Record<string, unknown>, base: number): Promise<SaveOutcome> {
+		const cur = this.envelopes.get(id);
+		if (cur && cur.revision !== base) return { ok: false, conflict: true, revision: cur.revision as number };
+		this.envelopes.set(id, envelope);
+		return { ok: true, revision: envelope.revision as number };
+	}
+	leaseHolder() {
+		return this.lease;
+	}
+}
+
+function makeService(opts: { approvalTimeoutMs?: number; relayTimeoutMs?: number } = {}) {
+	const store = new MemoryStore();
+	const doc = createEmptyProject({ ids: createSeededIdSource(9), name: 'Svc', preset: 'hd-1080p-30' });
+	store.envelopes.set(
+		doc.projectId,
+		makeEnvelope(doc, { revision: 0, savedAt: 'x', platform: 'test' }) as never,
+	);
+	const service = new AgentService({
+		engineVersion: 'test',
+		store: () => store,
+		registries: defaultRegistries(),
+		heartbeatMs: 0,
+		...opts,
+	});
+	services.push(service);
+	const socket = new FakeSocket();
+	service.handleSocket(socket);
+	socket.client({ type: 'hello', projectId: doc.projectId, sessionId: 'ses_1', leaseId: 'lease_1' });
+	return { service, store, socket, projectId: doc.projectId };
+}
+
+describe('AgentService timeouts', () => {
+	it('returns E_APPROVAL_TIMEOUT when nobody answers the approval', async () => {
+		const { service, socket, projectId } = makeService({ approvalTimeoutMs: 40 });
+		const r = await service.transact(projectId, tx([{ type: 'item.delete', itemIds: ['itm_X'] }]));
+		expect(r.result).toMatchObject({ ok: false, errors: [{ code: 'E_APPROVAL_TIMEOUT' }] });
+		expect(
+			socket.sent.some(
+				(m) =>
+					m.event === 'agent.approval.resolved' && (m.payload as { decision: string }).decision === 'timeout',
+			),
+		).toBe(true);
+		expect(service.pendingApprovals()).toEqual([]);
+	});
+
+	it('returns E_NO_SESSION on a relay timeout while the lease is live, headless once it expired', async () => {
+		const { service, store, projectId } = makeService({ relayTimeoutMs: 30 });
+		store.lease = {
+			sessionId: 'ses_1',
+			leaseId: 'lease_1',
+			expiresAt: new Date(Date.now() + 60_000).toISOString(),
+		};
+		const live = await service.transact(projectId, tx([{ type: 'marker.add', frame: 1, name: 'x' }]));
+		expect(live).toMatchObject({
+			appliedBy: 'session',
+			result: { ok: false, errors: [{ code: 'E_NO_SESSION' }] },
+		});
+		store.lease = {
+			sessionId: 'ses_1',
+			leaseId: 'lease_1',
+			expiresAt: new Date(Date.now() - 1).toISOString(),
+		};
+		const expired = await service.transact(projectId, tx([{ type: 'marker.add', frame: 1, name: 'y' }]));
+		expect(expired).toMatchObject({ appliedBy: 'headless', result: { ok: true, revision: 1 } });
+	});
+
+	it('relays a session response and rejects oversized transactions (limits)', async () => {
+		const { service, socket, projectId } = makeService();
+		const p = service.transact(projectId, tx([{ type: 'marker.add', frame: 2, name: 'z' }]));
+		const req = await socket.nextSent((m) => m.type === 'request');
+		const result = {
+			ok: true,
+			revision: 3,
+			refs: {},
+			created: [],
+			changed: [],
+			deleted: [],
+			warnings: [],
+			results: [],
+		};
+		socket.client({ type: 'response', id: req.id, result });
+		expect(await p).toEqual({ result, appliedBy: 'session' });
+		const big = await service.transact(
+			projectId,
+			tx(Array.from({ length: 5001 }, () => ({ type: 'marker.add', frame: 0 }))),
+		);
+		expect(big.result).toMatchObject({ ok: false, errors: [{ code: 'E_LIMIT' }] });
+	});
+});
+
+describe('FsAgentProjectStore', () => {
+	it('writes atomically and refuses a stale base revision', async () => {
+		const appdir = mkdtempSync(join(tmpdir(), 'jasper-agent-store-'));
+		const paths = appdirPaths(appdir);
+		const { projectId } = seedProject(paths.projectFile);
+		const store = new FsAgentProjectStore(paths);
+		const cur = await store.load(projectId);
+		expect(cur?.revision).toBe(0);
+		expect(await store.save(projectId, { ...cur!.envelope, revision: 1 }, 0)).toEqual({
+			ok: true,
+			revision: 1,
+		});
+		expect(await store.save(projectId, { ...cur!.envelope, revision: 1 }, 0)).toEqual({
+			ok: false,
+			conflict: true,
+			revision: 1,
+		});
+		expect(await store.load('../etc')).toBeNull();
+	});
+});
