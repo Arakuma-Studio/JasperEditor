@@ -67,6 +67,12 @@ behavior is in `docs/research/remotion-4.0.499-notes.md`.
   `ctx.focus.panel === 'source'`; helpers in `panels/source/source-state.ts`), since the dispatcher may
   run them before the Source fallback sees the key. `timeline.insertFromSource/overwriteFromSource` are
   registered here (`performSourceEdit`); if WP-2B registers the same ids, keep this implementation.
+- **Duplicate command ids with WP-2B (review):** `wp/wp-2b` also registers `transport.prevEdit`,
+  `transport.nextEdit`, `transport.prevEditAny` and `transport.nextEditAny` in `commands/timeline.ts`.
+  The registry replaces on re-register and `transport` registers after `timeline`, so the WP-2C versions
+  win (they also respect the Source focus). Keep one implementation at merge time.
+- **Keyup:** the WP-2A dispatcher prevents default on keydown only. The monitor fallback therefore runs
+  `onKeyUp` only for codes whose keydown it handled itself (review fix), so J/K/L keyups are not doubled.
 - **Transport scope:** transport commands act on the Source monitor's local transport when
   `ctx.focus.panel === 'source'`, else on `ctx.transport`.
 - **Project panel:** double-click should run `source.open {itemId}` (registered here).

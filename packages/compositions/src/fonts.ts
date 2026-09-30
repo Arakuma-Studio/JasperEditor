@@ -84,6 +84,9 @@ export function useDocumentFonts(fonts: readonly FontFaceSpec[]): void {
 		return () => {
 			cancelled = true;
 			continueRender(inner);
+			// Release the mount-time handle too: on unmount before the fonts resolve it would otherwise
+			// never be continued. A re-run with new fonts is held by its own `inner` handle.
+			done();
 		};
 	}, [fonts, handle]);
 }

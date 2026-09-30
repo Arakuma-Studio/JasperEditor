@@ -94,6 +94,13 @@ type KeyLike = Pick<
 >;
 
 /**
+ * Codes whose keydown this fallback handled with a keyup-aware binding. Keyup only runs for those, so
+ * a key the global dispatcher handled (it prevents default on keydown but not on keyup) never gets a
+ * second `onKeyUp` from here.
+ */
+const fallbackHeld = new Set<string>();
+
+/**
  * Keyboard fallback for a focused monitor: resolves the chord along panel → editing → global and
  * runs the first enabled registered command. Returns true when handled.
  */
@@ -104,6 +111,7 @@ export function handleMonitorKey(
 	panel: PanelKind,
 	platform: Platform = detectPlatform(),
 ): boolean {
+	if (phase === 'up' && !fallbackHeld.delete(e.code)) return false;
 	if (e.defaultPrevented || isEditable(e.target)) return false;
 	const chord = chordFromEvent(e, platform);
 	const bindings = resolveBindings(chord, scopeChain(panel), { platform, runtime: 'web' });
@@ -119,6 +127,7 @@ export function handleMonitorKey(
 		if (!isCommandEnabled(cmd, ctx)) continue;
 		e.preventDefault();
 		if (e.repeat && !b.repeat) return true;
+		if (!e.repeat && (b.keyup || cmd.onKeyUp)) fallbackHeld.add(e.code);
 		void runCommand(b.command, ctx, b.args);
 		return true;
 	}

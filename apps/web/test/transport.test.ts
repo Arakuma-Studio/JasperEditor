@@ -15,6 +15,7 @@ import {
 	runCommand,
 } from '../src/commands/index.ts';
 import { transportCommands } from '../src/commands/transport.ts';
+import { handleMonitorKey } from '../src/panels/program/monitor-commands.ts';
 import {
 	type Clock,
 	PlaybackDriver,
@@ -390,6 +391,34 @@ describe('transport commands', () => {
 		await runCommand('transport.shuttleStop', ctx);
 		expect(t.getState().playing).toBe(false);
 		transportCommands.find((c) => c.id === 'transport.shuttleStop')!.onKeyUp!(ctx);
+	});
+
+	it('monitor key fallback only fires keyup for keys it handled itself', () => {
+		const session = makeSession();
+		const ctx = createCommandContext({ engine: new EngineClient({ baseUrl: '' }), session });
+		const cmd = transportCommands.find((c) => c.id === 'transport.shuttleForward')!;
+		const onKeyUp = vi.spyOn(cmd, 'onKeyUp');
+		const ev = (defaultPrevented: boolean) => ({
+			code: 'KeyL',
+			ctrlKey: false,
+			altKey: false,
+			shiftKey: false,
+			metaKey: false,
+			repeat: false,
+			target: null,
+			defaultPrevented,
+			preventDefault: () => undefined,
+		});
+		// The global dispatcher handled keydown (preventDefault) but not keyup: no second onKeyUp here.
+		expect(handleMonitorKey(ev(true), 'down', ctx, 'program', 'linux')).toBe(false);
+		expect(handleMonitorKey(ev(false), 'up', ctx, 'program', 'linux')).toBe(false);
+		expect(onKeyUp).not.toHaveBeenCalled();
+		// Handled by the fallback: keyup runs once.
+		expect(handleMonitorKey(ev(false), 'down', ctx, 'program', 'linux')).toBe(true);
+		expect(handleMonitorKey(ev(false), 'up', ctx, 'program', 'linux')).toBe(true);
+		expect(onKeyUp).toHaveBeenCalledTimes(1);
+		onKeyUp.mockRestore();
+		session.transport.pause();
 	});
 
 	it('Play In to Out uses the mounted driver', async () => {
