@@ -528,19 +528,24 @@ async function testOne(
 		await runTool(ffmpeg, hwTestArgs(spec), { signal: ac.signal });
 		return { encoder: spec.encoder, usable: true };
 	} catch (e) {
-		const msg = ac.signal.aborted ? 'test encode timed out' : firstLine((e as Error).message);
+		const msg = ac.signal.aborted ? 'test encode timed out' : hwFailureReason((e as Error).message);
 		return { encoder: spec.encoder, usable: false, reason: msg };
 	} finally {
 		clearTimeout(t);
 	}
 }
 
-function firstLine(msg: string): string {
+/** A short, stable reason from a failed test encode ("Cannot load libcuda.so.1"). */
+export function hwFailureReason(msg: string): string {
 	const lines = msg
 		.split('\n')
-		.map((l) => l.trim())
+		.map((l) =>
+			l
+				.replace(/^.*? exited \S+: /, '')
+				.replace(/\[[^\]]* @ 0x[0-9a-f]+\]\s*/gi, '')
+				.trim(),
+		)
 		.filter(Boolean);
-	// "ffmpeg exited 1: <first stderr line>" is enough for the capabilities view.
 	return (
 		lines.find((l) => /error|cannot|failed|not|no /i.test(l)) ??
 		lines[0] ??
