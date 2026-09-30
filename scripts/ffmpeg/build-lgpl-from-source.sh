@@ -12,7 +12,8 @@
 # FFmpeg is configured WITHOUT --enable-gpl, --enable-nonfree and --enable-version3 (→ LGPL-2.1-or-later):
 #   encoders: libopenh264 (H.264), libvpx (VP8/VP9), libsvtav1 (AV1), libopus, native aac, prores_ks, png
 #   shared libraries with the Remotion 4.0.499 ABI (libavcodec 61, libavformat 61, libavutil 59, …)
-#   Linux: ffmpeg/ffprobe get RPATH $ORIGIN; macOS: install names @rpath/…, rpath @loader_path.
+#   Linux: ffmpeg/ffprobe get a placeholder RPATH that the assembly step rewrites to $ORIGIN;
+#   macOS: install names @rpath/…, rpath @loader_path.
 #
 # Environment: JOBS (parallel jobs), SKIP_SVTAV1=1 (no AV1 encoder).
 set -euo pipefail
@@ -114,8 +115,9 @@ if [ "$OS" = "Darwin" ]; then
 	extra+=(--install-name-dir=@rpath "--extra-ldexeflags=-Wl,-rpath,@loader_path"
 		"--extra-ldsoflags=-Wl,-rpath,@loader_path" --enable-videotoolbox --enable-audiotoolbox)
 else
-	# `\$$ORIGIN`: make turns $$ into $, the shell keeps \$ORIGIN literal → DT_RPATH/RUNPATH "$ORIGIN".
-	extra+=("--extra-ldexeflags=-Wl,-rpath,\\\$\$ORIGIN")
+	# A literal $ORIGIN does not survive configure + make + sh quoting reliably: link a long placeholder
+	# rpath that fetch-or-build-lgpl.mjs rewrites to $ORIGIN in place (rewriteElfRpath).
+	extra+=("--extra-ldexeflags=-Wl,-rpath,/__jasper_rpath_placeholder__/lib")
 fi
 echo "[source] configuring FFmpeg $(pin ffmpeg url)" >&2
 (cd "$d" && ./configure \

@@ -264,8 +264,10 @@ function licenseFiles(prefix, dest, origin) {
 		[
 			`This directory contains FFmpeg ${manifest.ffmpeg.version} (${manifest.ffmpeg.describe}) built as an LGPL`,
 			'shared library build (no --enable-gpl, no --enable-nonfree). FFmpeg is free software licensed under the',
-			'GNU Lesser General Public License; see LICENSE-FFmpeg.txt. JasperEditor runs it as a separate process',
-			'and does not link it into its own code.',
+			'GNU Lesser General Public License; see LICENSE-FFmpeg.txt. JasperEditor runs ffmpeg/ffprobe as separate',
+			"processes and does not link FFmpeg into its own code. Remotion's compositor (below) loads the libav*/libsw*",
+			'shared libraries in this directory dynamically; you can replace them with your own build of the same',
+			'FFmpeg release series (same library major versions).',
 			'',
 			`FFmpeg source: ${manifest.ffmpeg.sourceUrl}`,
 			`Release tarball: ${manifest.ffmpeg.sourceTarball}`,
@@ -299,8 +301,12 @@ function hostVerify(dest) {
 	const probe = run(join(dest, names.ffprobe), ['-hide_banner', '-version']);
 	if (probe.status !== 0) fail(`ffprobe does not run: ${probe.stderr}`);
 	if (process.platform === 'linux') {
-		const ldd = run('ldd', [join(dest, names.compositor)]);
-		if (/not found/.test(ldd.stdout)) fail(`the compositor cannot load its libraries:\n${ldd.stdout}`);
+		// `-r` also resolves every symbol the compositor imports (LIBAVCODEC_61 …): an ABI mismatch or a
+		// build without a function it needs shows up as "undefined symbol" / "version … not found".
+		const ldd = run('ldd', ['-r', join(dest, names.compositor)]);
+		const lddOut = `${ldd.stdout}${ldd.stderr}`;
+		if (/not found|undefined symbol|symbol lookup error/.test(lddOut))
+			fail(`the compositor is not ABI-compatible with this FFmpeg build:\n${lddOut}`);
 		const resolved = [...ldd.stdout.matchAll(/(lib(?:av|sw)\S+) => (\S+)/g)];
 		for (const [, lib, path] of resolved) {
 			if (dirname(path) !== dest && dirname(realpathSync(path)) !== realpathSync(dest))
@@ -329,9 +335,13 @@ function staticVerify(dest) {
 	return { buildconf: buildconf.trim(), version: manifest.ffmpeg.describe, encoders: null };
 }
 
+/** Bump when the assembly itself changes (layout, notices, checks): existing directories are rebuilt. */
+const ASSEMBLY_VERSION = 2;
+
 /** Hash of every input that determines the assembled directory (re-assemble when it changes). */
 function fingerprint() {
 	const inputs = JSON.stringify({
+		assembly: ASSEMBLY_VERSION,
 		ffmpeg: manifest.ffmpeg,
 		abi: manifest.abi,
 		prebuilt: manifest.prebuilt.platforms[key] ?? null,

@@ -88,8 +88,10 @@ export const FORBIDDEN_FLAGS = [
 	'--enable-libcdio',
 	'--enable-libdvdnav',
 	'--enable-libdvdread',
+	'--enable-libsmbclient',
 	'--enable-postproc',
 	'--enable-decklink',
+	'--enable-libtls',
 	'--enable-libnpp',
 	'--enable-cuda-nvcc',
 	'--enable-cuda-sdk',
@@ -126,10 +128,11 @@ export function evaluateBuild({ buildconf = '', encoders = '', license = '' }) {
 		const m = /^\s*[A-Z.]{6}\s+(\S+)/.exec(line);
 		if (m && FORBIDDEN_ENCODERS.includes(m[1])) problems.push(`has the ${m[1]} encoder`);
 	}
-	if (/nonfree and unredistributable/i.test(license)) problems.push('license: nonfree and unredistributable');
+	const lic = license.replace(/\s+/g, ' ');
+	if (/nonfree and unredistributable/i.test(lic)) problems.push('license: nonfree and unredistributable');
 	// `ffmpeg -L`: "GNU Lesser General Public License" (LGPL) vs "GNU General Public License" (GPL);
 	// embedded avcodec_license(): "LGPL version 3 or later" vs "GPL version 2 or later".
-	if (/GNU General Public License/.test(license) || /(^|[^L])GPL version \d/m.test(license))
+	if (/GNU General Public License/.test(lic) || /(^|[^L])GPL version \d/.test(lic))
 		problems.push('license: GPL');
 	return [...new Set(problems)];
 }
