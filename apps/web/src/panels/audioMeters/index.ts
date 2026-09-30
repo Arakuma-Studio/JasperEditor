@@ -1,9 +1,11 @@
-// Audio Meters panel — placeholder from WP-00; WP-2A replaces the component (keep the definition's contract).
-import { placeholderPanel } from '../placeholder.tsx';
+// Audio Meters panel (S05:MTR-001, WP-2A placeholder): a 52 px stereo meter strip with the dB scale.
+// Live levels (Web Audio analyser / envelopes, MTR-002) arrive with the Program audio path.
+import type { PanelDefinition } from '../types.ts';
+import { AudioMetersPanel } from './AudioMetersPanel.tsx';
 
-export default placeholderPanel('audioMeters', {
-	title: 'Audio Meters',
-	owner: 'WP-2A',
+const audioMeters: PanelDefinition = {
+	kind: 'audioMeters',
+	title: () => 'Audio Meters',
 	icon: 'panel.audioMeters',
 	instance: 'single',
 	minSize: { w: 52, h: 120 },
@@ -11,4 +13,6 @@ export default placeholderPanel('audioMeters', {
 	keymapScope: 'audioMeters',
 	touch: 'hidden',
 	agentDescription: 'Master output level meters.',
-});
+	component: AudioMetersPanel,
+};
+export default audioMeters;

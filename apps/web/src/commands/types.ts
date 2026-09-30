@@ -57,4 +57,10 @@ export interface UiCommand {
 	repeat?: boolean;
 	/** Hold-to-act commands receive keyup (JKL, spring-loaded tools; S05:KB-007). */
 	onKeyUp?(ctx: CommandCtx): void;
+	/** Context-dependent label, e.g. "Undo Ripple Delete" (S05:MN-011). Falls back to `label`. */
+	labelFor?(ctx: CommandCtx): string;
+	/** Why the command is disabled right now, shown in menus/tooltips (S05:SH-031, MN-032). */
+	disabledReason?(ctx: CommandCtx): string | undefined;
+	/** Alias or internal command: not listed in the command palette. */
+	hidden?: boolean;
 }

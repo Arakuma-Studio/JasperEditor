@@ -41,3 +41,79 @@
 	outline: 1px solid var(--pr-focus-ring);
 	outline-offset: -1px;
 }
+
+/* ---- WP-2A shell rules (S05 §5–§6) ------------------------------------------------------------ */
+
+.dockview-theme-jasper {
+	--dv-drag-over-background-color: var(--pr-dock-drop-fill);
+	--dv-drag-over-border: 2px solid var(--pr-accent);
+	--dv-tab-margin: 0;
+	--dv-floating-titlebar-height: var(--pr-tab-h);
+	--dv-floating-titlebar-background-color: var(--pr-bg-panel);
+	--dv-floating-group-border: 1px solid var(--pr-menu-border);
+	--dv-context-menu-background-color: var(--pr-menu-bg);
+	--dv-context-menu-color: var(--pr-text-primary);
+	--dv-scrollbar-background-color: var(--pr-border-strong);
+	background: var(--pr-bg-app);
+	color: var(--pr-text-primary);
+}
+
+/* Group frames: 4 px radius, panel background, no borders or shadows inside the dock (DK-002). */
+.dockview-theme-jasper .dv-groupview {
+	border-radius: var(--pr-radius-frame);
+	overflow: hidden;
+	background: var(--pr-bg-panel);
+}
+.dockview-theme-jasper .dv-content-container {
+	background: var(--pr-bg-panel);
+}
+
+/* Tab strip (PC-001/003): same background as the body; tabs distinguished by text, not boxes. */
+.dockview-theme-jasper .dv-tabs-and-actions-container {
+	background: var(--pr-bg-panel);
+	border-bottom: 1px solid var(--pr-border-subtle);
+	box-sizing: border-box;
+}
+.dockview-theme-jasper .dv-tab {
+	padding: 0;
+	background: transparent;
+	color: var(--pr-text-secondary);
+}
+.dockview-theme-jasper .dv-tab.dv-active-tab {
+	color: var(--pr-text-strong);
+}
+.dockview-theme-jasper .dv-tab:focus-visible {
+	outline: 1px solid var(--pr-focus-ring);
+	outline-offset: -1px;
+}
+
+/* Sashes: invisible on top of the 3 px black gutter, 7 px hit area (DK-010). */
+.dockview-theme-jasper .dv-sash {
+	background: transparent;
+}
+.dockview-theme-jasper .dv-sash-container .dv-sash.dv-enabled:hover {
+	background: transparent;
+}
+
+/* Maximized group: 1 px accent inner outline (DK-041). */
+.pr-maximized .dockview-theme-jasper .dv-groupview {
+	outline: 1px solid var(--pr-accent);
+	outline-offset: -1px;
+}
+
+/* Floating groups: overlay shadow only on floating frames (DT §8.6). */
+.dockview-theme-jasper .dv-resize-container {
+	border-radius: var(--pr-radius-frame);
+	box-shadow: var(--pr-shadow-floating);
+}
+
+/* The keep-alive render overlay must not paint its own background. */
+.dockview-theme-jasper .dv-render-overlay {
+	background: var(--pr-bg-panel);
+}
+
+/* No animation on dock changes (DT-040). */
+.dockview-theme-jasper * {
+	--dv-transition-duration: 0ms;
+	--dv-active-sash-transition-duration: 0ms;
+}
