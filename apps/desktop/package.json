@@ -7,11 +7,76 @@
   "scripts": {
     "build": "node scripts/build-main.mjs",
     "dev": "node scripts/build-main.mjs && cross-env JASPER_DESKTOP_DEV_URL=http://127.0.0.1:5173 electron .",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "start:packaged-like": "node scripts/build-main.mjs && cross-env JASPER_DESKTOP_MODE=packaged-like electron .",
+    "dist:dir": "pnpm dlx electron-builder@^26.15 --dir",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@jasper/config": "workspace:*",
     "electron": "^44.0.0",
     "esbuild": "^0.25.0"
+  },
+  "description": "JasperEditor desktop shell (Electron): loads the SPA from the dev server or a forked engine.",
+  "build": {
+    "appId": "com.jasper.editor",
+    "productName": "JasperEditor",
+    "directories": {
+      "output": "release",
+      "buildResources": "build-resources"
+    },
+    "files": [
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../web/dist",
+        "to": "web"
+      },
+      {
+        "from": "../engine/dist-deploy",
+        "to": "engine"
+      },
+      {
+        "from": "../../native/bin/${os}-${arch}",
+        "to": "bin"
+      }
+    ],
+    "asar": true,
+    "npmRebuild": false,
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "AudioVideo",
+      "executableName": "jasper-editor"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.video",
+      "hardenedRuntime": true
+    },
+    "fileAssociations": [
+      {
+        "ext": "jasper",
+        "name": "JasperEditor Project",
+        "role": "Editor"
+      }
+    ]
   }
 }

@@ -1,7 +1,7 @@
 // Agent bridge entry points (ARCHITECTURE §11): one AgentBridge per open session, `window.jasper` in dev
 // and Electron builds, and React hooks for the session host and the Agent panel.
 import type { EngineClient } from '@jasper/engine-client';
-import { type EditorSession, EngineProjectStore } from '@jasper/session';
+import type { EditorSession } from '@jasper/session';
 import { useEffect, useState } from 'react';
 import { useStore } from 'zustand';
 import { useEngineClient } from '../state/engine.tsx';
@@ -50,7 +50,9 @@ export function startAgentBridge(
 ): () => void {
 	const existing = bridges.get(session);
 	if (existing) existing.dispose();
-	const relay = opts.relay ?? session.projectStore instanceof EngineProjectStore;
+	// Every session registers with the engine relay (the in-memory `demo` project too, so agents can
+	// drive it live; with no editor open its id is unknown to the engine store → 404).
+	const relay = opts.relay ?? !!engine;
 	const bridge = new AgentBridge(session, engine, { ...opts, relay }).start();
 	bridges.set(session, bridge);
 	const expose = opts.exposeWindow ?? shouldExposeWindowApi();
@@ -67,7 +69,6 @@ export function startAgentBridge(
 
 /**
  * Session-host hook (apps/web/src/state/session-host.tsx): runs the bridge while `session` is open.
- * In-memory sessions (the `demo` project) get the bridge without the engine relay.
  */
 export function useAgentBridge(session: EditorSession | null): void {
 	const engine = useEngineClient();
