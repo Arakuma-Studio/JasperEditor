@@ -11,7 +11,12 @@ import {
 	defaultTransform,
 	scaleForMode,
 } from '../../factories.ts';
-import { defaultLabelForPlacedClip, isBoundedContent, kindCapabilities } from '../../registry/kinds.ts';
+import {
+	contentDurationFlicks,
+	defaultLabelForPlacedClip,
+	isBoundedContent,
+	kindCapabilities,
+} from '../../registry/kinds.ts';
 import type { MgTemplateInfo } from '../../registry/mg.ts';
 import type { Animatable, LabelColor, Vec2 } from '../../schema/common.ts';
 import type { DefaultScaling, ProjectItem } from '../../schema/document.ts';
@@ -46,6 +51,7 @@ import {
 import type { ClipPatch, TransformPatch } from '../schemas/clip.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { rollTrim } from './clip-edit.ts';
+import { applyCompositionPatch } from './composition.ts';
 import { type HandlerMap, idList } from './util.ts';
 
 type DTrack = Draft<Track>;
@@ -223,6 +229,11 @@ export function placeSource(
 		if (!asset) h.fail('E_NOT_FOUND', `Media not found: ${mediaId}`);
 		if (asset.kind === 'font' || asset.kind === 'lut')
 			h.fail('E_INVALID_PARAM', `${asset.kind} assets cannot be placed on a timeline`);
+		if (asset.kind === 'mg-bundle')
+			h.fail(
+				'E_INVALID_PARAM',
+				'A Remotion bundle is placed one composition at a time: use clip.addComposition {composition: {mediaId, id}}',
+			);
 		const name = item?.name ?? asset.originalName;
 		const label = (kind: Clip['kind']) => defaultLabelForPlacedClip(kind, asset, item?.label);
 		const box = mediaBox(asset) ?? frameBox(seq);
@@ -506,9 +517,8 @@ function trimLimits(
 	const eps = FRAME_EPS;
 	let min = Number.NEGATIVE_INFINITY;
 	let max = Number.POSITIVE_INFINITY;
-	const dur = (c as { mediaId?: string }).mediaId
-		? (doc.media[(c as { mediaId: string }).mediaId]?.probe.durationFlicks ?? null)
-		: null;
+	// Media duration, or the composition length for composition clips (S08:MGC-004).
+	const dur = contentDurationFlicks(doc as unknown as { media: Record<string, MediaAsset> }, c as Clip);
 	const bounded = isBoundedContent(c as Clip) && dur !== null;
 	const others = trackClips(seq, c.trackId).filter((x) => x.id !== c.id && !members.has(x.id));
 	if (edge === 'in') {
@@ -882,7 +892,11 @@ function applyClipPatch(doc: DDoc, seq: DSeq, clip: DClip, p: ClipPatch, h: Hand
 		if (p.box) Object.assign(t.box, p.box);
 		layoutText(t, h, seq.settings.width);
 	}
-	if (p.params !== undefined || p.canvas !== undefined) {
+	// M2 (S08:MGC-007): composition clips take `props` (whole override object) and `canvas`.
+	if (p.props !== undefined) need(clip.kind === 'composition', 'props');
+	if (applyCompositionPatch(doc, seq, clip, p, h)) {
+		// handled
+	} else if (p.params !== undefined || p.canvas !== undefined) {
 		need(clip.kind === 'motion-graphic', p.params ? 'params' : 'canvas');
 		const mg = clip as Draft<Extract<Clip, { kind: 'motion-graphic' }>>;
 		if (p.params !== undefined) {

@@ -2,6 +2,7 @@
 import type { LabelColor } from '../schema/common.ts';
 import type { MediaAsset } from '../schema/media.ts';
 import { type Clip, isKnownClipKind, type KnownClipKind, type TrackKind } from '../schema/sequence.ts';
+import { FLICKS_PER_SECOND } from '../time.ts';
 
 export type EngineId = 'native' | 'remotion' | 'fframes';
 
@@ -167,11 +168,13 @@ export const KIND_CAPABILITIES: Record<KnownClipKind, KindCapabilities> = {
 		defaultLabel: 'purple',
 		priority: 'P0',
 	}),
+	// M2 (S08:MGC-004): bounded by the composition's duration; exported natively through cached ProRes 4444
+	// masters rendered by Remotion (the badge stays R).
 	composition: cap({
 		kind: 'composition',
 		trackKind: 'video',
 		source: 'composition',
-		bounded: 'no',
+		bounded: 'yes',
 		visual: true,
 		audio: false,
 		hasTransform: true,
@@ -180,9 +183,9 @@ export const KIND_CAPABILITIES: Record<KnownClipKind, KindCapabilities> = {
 		supportsSpeed: false,
 		engines: { preview: 'remotion', export: 'remotion' },
 		badge: 'R',
-		m1: false,
+		m1: true,
 		defaultLabel: 'magenta',
-		priority: 'P1',
+		priority: 'P0',
 	}),
 	'nest-video': cap({
 		kind: 'nest-video',
@@ -252,6 +255,25 @@ export function isVisualKind(kind: string): boolean {
 
 export function hasTransform(clip: Clip): clip is Extract<Clip, { transform: unknown }> & Clip {
 	return kindCapabilities(clip.kind)?.hasTransform ?? false;
+}
+
+/**
+ * Content length (flicks) that bounds a clip's content time (S01:CLP-005), or null when unknown/unbounded:
+ * the probed media duration for media clips, the composition duration for composition clips (S08:MGC-004).
+ */
+export function contentDurationFlicks(
+	doc: { media: Record<string, MediaAsset | undefined> } | { media: Readonly<Record<string, MediaAsset>> },
+	clip: Clip | { kind: string; mediaId?: string; composition?: { id: string; mediaId?: string } },
+): number | null {
+	const media = doc.media as Record<string, MediaAsset | undefined>;
+	const c = clip as { kind: string; mediaId?: string; composition?: { id: string; mediaId?: string } };
+	if (c.kind === 'composition') {
+		const asset = c.composition?.mediaId ? media[c.composition.mediaId] : undefined;
+		const info = asset?.mgBundle?.compositions.find((x) => x.id === c.composition!.id);
+		return info ? Math.round((info.durationInFrames * FLICKS_PER_SECOND) / info.fps) : null;
+	}
+	if (!c.mediaId) return null;
+	return media[c.mediaId]?.probe.durationFlicks ?? null;
 }
 
 /** Content-time bounded clips (S01:CLP-005). */

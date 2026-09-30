@@ -237,12 +237,24 @@ export const projectHandlers: HandlerMap = {
 	'media.relink': (doc, cmd, h: HandlerContext) => {
 		const asset = doc.media[cmd.mediaId];
 		if (!asset) h.fail('E_NOT_FOUND', `Media not found: ${cmd.mediaId}`);
+		if (cmd.mgBundle && asset.kind !== 'mg-bundle')
+			h.fail(
+				'E_INVALID_PARAM',
+				`mgBundle only applies to mg-bundle assets (${cmd.mediaId} is ${asset.kind})`,
+			);
+		if (cmd.lut && asset.kind !== 'lut')
+			h.fail('E_INVALID_PARAM', `lut only applies to lut assets (${cmd.mediaId} is ${asset.kind})`);
 		if (cmd.fingerprint && cmd.fingerprint !== asset.fingerprint) {
-			if (!cmd.force)
+			// A rebuilt Remotion bundle is new content by definition (S08:MGC-013): no force needed.
+			if (!cmd.force && !(asset.kind === 'mg-bundle' && cmd.mgBundle))
 				h.fail('E_INVALID_PARAM', 'Fingerprint does not match the media (pass force to relink anyway)');
 			asset.fingerprint = cmd.fingerprint;
 		}
 		asset.locators = [cmd.locator, ...asset.locators.filter((l) => l.type !== cmd.locator.type)];
 		if (cmd.probe) asset.probe = cmd.probe;
+		if (cmd.mgBundle) asset.mgBundle = cmd.mgBundle as never;
+		if (cmd.lut) asset.lut = cmd.lut as never;
+		if (cmd.sizeBytes !== undefined) asset.sizeBytes = cmd.sizeBytes;
+		if (cmd.originalName !== undefined) asset.originalName = cmd.originalName;
 	},
 };

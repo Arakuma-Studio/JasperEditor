@@ -4,7 +4,7 @@
 // Pure and shared by the command handlers, the render snapshot, the Remotion composition and the native
 // export, so the three agree frame for frame.
 import { clipEnd, clipsOnTrack } from './derive/index.ts';
-import { isBoundedContent } from './registry/kinds.ts';
+import { contentDurationFlicks, isBoundedContent } from './registry/kinds.ts';
 import type { RGBA } from './schema/common.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import type { Clip, Sequence, Transition } from './schema/sequence.ts';
@@ -77,8 +77,8 @@ export function clipHandles(
 ): { head: number; tail: number } {
 	if (STATIC_KINDS.has(c.kind)) return { head: Number.POSITIVE_INFINITY, tail: Number.POSITIVE_INFINITY };
 	const step = flicksPerFrame(seq.settings.frameRate as Rational) * c.speed.rate;
-	const mediaId = (c as { mediaId?: string }).mediaId;
-	const dur = mediaId ? (doc.media[mediaId]?.probe.durationFlicks ?? null) : null;
+	// Media duration, or the composition length for composition clips (S08:MGC-004).
+	const dur = contentDurationFlicks(doc, c);
 	const before = Math.max(0, Math.floor(c.sourceIn / step + EPS));
 	const after =
 		isBoundedContent(c) && dur !== null

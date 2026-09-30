@@ -5,7 +5,7 @@ import type { Issue } from './commands/types.ts';
 import { createTrack } from './factories.ts';
 import { type IdPrefix, type IdSource, idPrefixOf, isValidId } from './ids.ts';
 import type { EffectRegistry } from './registry/effects.ts';
-import { isBoundedContent, kindCapabilities, trackKindFor } from './registry/kinds.ts';
+import { contentDurationFlicks, isBoundedContent, kindCapabilities, trackKindFor } from './registry/kinds.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import type { Clip, EffectInstance, Sequence, Track } from './schema/sequence.ts';
 import { isKnownClipKind } from './schema/sequence.ts';
@@ -298,6 +298,26 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 							),
 						);
 					}
+				}
+			}
+			// S08: a composition clip references its mg-bundle asset and stays inside the composition's length
+			// (a composition that disappeared from its bundle is not a violation: it renders a card, MGC-014).
+			const comp = r.composition as { mediaId?: unknown } | undefined;
+			if (c.kind === 'composition' && typeof comp?.mediaId === 'string') {
+				usedMedia.add(comp.mediaId);
+				const asset = doc.media[comp.mediaId];
+				if (!asset) issues.push(inv('INV-006', `Clip ${c.id} references missing bundle ${comp.mediaId}`, cw));
+				else if (asset.kind !== 'mg-bundle')
+					issues.push(
+						inv('INV-006', `Clip ${c.id} references ${comp.mediaId}, which is not an mg-bundle`, cw),
+					);
+				else {
+					const dur = contentDurationFlicks(doc, c);
+					const span = contentSpanFlicks(c.duration, rate, c.speed.rate);
+					if (dur !== null && c.sourceIn + span > dur + flicksPerFrame(rate) + 1)
+						issues.push(
+							inv('INV-005', `Clip ${c.id} exceeds its composition (${c.sourceIn + span} > ${dur})`, cw),
+						);
 				}
 			}
 			if (typeof r.syntheticId === 'string') {
@@ -593,6 +613,8 @@ export function repairDocument(
 		for (const c of Object.values(seq.clips)) {
 			const r = c as Record<string, unknown>;
 			if (typeof r.mediaId === 'string') usedMedia.add(r.mediaId);
+			const comp = r.composition as { mediaId?: unknown } | undefined;
+			if (typeof comp?.mediaId === 'string') usedMedia.add(comp.mediaId);
 			if (typeof r.syntheticId === 'string') usedSyn.add(r.syntheticId);
 		}
 	}

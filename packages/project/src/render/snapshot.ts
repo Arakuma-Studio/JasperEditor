@@ -1,5 +1,6 @@
 // Render snapshot (S01:RND-001…005, ARCHITECTURE §5.5): the self-contained JSON value handed to the
 // Remotion composition, the native planner and the Program overlay. Keyframes stay unevaluated.
+import { compositionOfClip, mergeProps } from '../composition/props.ts';
 import { type EngineId, isBoundedContent, kindCapabilities } from '../registry/kinds.ts';
 import type { Animatable, RGBA } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
@@ -71,14 +72,32 @@ export type RenderVisualSource =
 	 * URL). The pre-rendered alpha master is found by the consumers (engine: cache; preview: MG runtime).
 	 */
 	| {
-			composition: {
-				mediaId: string;
-				compositionId: string;
-				props: Record<string, unknown>;
-				canvas: { width: number; height: number };
-			};
+			composition: RenderCompositionSource;
 	  }
 	| { unsupported: string };
+
+/** Source of a composition clip in the snapshot (S08:MGC-008; wp-m2-mg fields are additive). */
+export type RenderCompositionSource = {
+	mediaId: string;
+	compositionId: string;
+	/** Effective props: the composition's defaultProps merged with the clip's overrides (MGC-003). */
+	props: Record<string, unknown>;
+	/** Render size of the composition (the clip's canvas). */
+	canvas: { width: number; height: number };
+	/**
+	 * The bundle: engine media key (`/mg/bundles/<key>/` serves it; null without an engine-store locator), its
+	 * content hash and Remotion version. Null when the asset is missing or not an mg-bundle.
+	 */
+	bundle?: { key: string | null; hash: string; remotionVersion: string } | null;
+	/** The composition's own metadata; null when the bundle no longer has this composition (MGC-014). */
+	info?: { width: number; height: number; fps: number; durationInFrames: number } | null;
+	/**
+	 * Cached pre-renders of this clip (MGC-008), filled by consumers that know them (the engine for Remotion
+	 * renders: signed master URL; `resolveComposition`). `startFrame` = sequence frame shown by the master's
+	 * frame 0 (default: the clip's first drawn frame, `start − headHandle`).
+	 */
+	prerender?: { masterUrl: string | null; previewUrl: string | null; startFrame?: number };
+};
 
 export type RenderVisualClip = {
 	clipId: string;
@@ -156,6 +175,12 @@ export type SnapshotOptions = {
 	range?: { start: number; end: number };
 	resolveMedia(asset: MediaAsset): MediaHandle | null;
 	resolveFont(font: FontRef, weight: number, italic: boolean): string | null;
+	/** M2 (S08, additive): pre-render URLs of a composition clip known to the consumer. */
+	resolveComposition?(clip: {
+		clipId: string;
+		asset: MediaAsset;
+		source: RenderCompositionSource;
+	}): RenderCompositionSource['prerender'] | null;
 };
 
 const ZERO = { value: 0, keyframes: [] } as Animatable<number>;
@@ -280,7 +305,33 @@ export function buildRenderSnapshot(
 					const mediaId = c.composition.mediaId;
 					if (mediaId) {
 						useMedia(mediaId);
-						source = { composition: { mediaId, compositionId: c.composition.id, props: c.props, canvas } };
+						const asset = doc.media[mediaId];
+						const found = compositionOfClip(doc, c);
+						const loc = asset?.locators.find((l) => l.type === 'engine-store');
+						const comp: RenderCompositionSource = {
+							mediaId,
+							compositionId: c.composition.id,
+							props: mergeProps(found?.info.defaultProps, c.props),
+							canvas,
+							bundle: asset?.mgBundle
+								? {
+										key: loc?.type === 'engine-store' ? loc.key : null,
+										hash: asset.mgBundle.bundleHash,
+										remotionVersion: asset.mgBundle.remotionVersion,
+									}
+								: null,
+							info: found
+								? {
+										width: found.info.width,
+										height: found.info.height,
+										fps: found.info.fps,
+										durationInFrames: found.info.durationInFrames,
+									}
+								: null,
+						};
+						const pre = asset && opts.resolveComposition?.({ clipId: c.id, asset, source: comp });
+						if (pre) comp.prerender = pre;
+						source = { composition: comp };
 					} else source = { unsupported: c.kind };
 					box = canvas;
 					break;
