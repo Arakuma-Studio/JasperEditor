@@ -126,6 +126,12 @@ importers:
         specifier: ^4.1.0
         version: 4.6.5
     devDependencies:
+      '@jasper/engine-client':
+        specifier: workspace:*
+        version: link:../../packages/engine-client
+      '@jasper/session':
+        specifier: workspace:*
+        version: link:../../packages/session
       esbuild:
         specifier: ^0.25.0
         version: 0.25.12

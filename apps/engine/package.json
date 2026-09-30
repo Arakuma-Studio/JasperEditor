@@ -40,6 +40,8 @@
     "zod": "^4.1.0"
   },
   "devDependencies": {
+    "@jasper/engine-client": "workspace:*",
+    "@jasper/session": "workspace:*",
     "esbuild": "^0.25.0"
   }
 }

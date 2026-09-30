@@ -77,11 +77,15 @@ export async function closeApps(): Promise<void> {
 	for (const a of opened.splice(0)) await a.close();
 }
 
-export async function register(app: FastifyInstance, path: string): Promise<RegisteredMedia> {
+export async function register(
+	app: FastifyInstance,
+	path: string,
+	extraHeaders: Record<string, string> = {},
+): Promise<RegisteredMedia> {
 	const r = await app.inject({
 		method: 'POST',
 		url: '/api/media/register',
-		headers: JSON_H,
+		headers: { ...JSON_H, ...extraHeaders },
 		payload: { projectId: 'prj_0000000000000001', paths: [path] },
 	});
 	if (r.statusCode !== 200) throw new Error(`register failed: ${r.body}`);

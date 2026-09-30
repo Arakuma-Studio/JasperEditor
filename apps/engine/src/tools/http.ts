@@ -3,6 +3,7 @@
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { extname } from 'node:path';
+import { Readable } from 'node:stream';
 import { errorBody } from '@jasper/api';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
@@ -47,6 +48,14 @@ const TYPES: Record<string, string> = {
 
 export function contentTypeFor(file: string, fallback = 'application/octet-stream'): string {
 	return TYPES[extname(file).toLowerCase()] ?? fallback;
+}
+
+/**
+ * HEAD bodies: Fastify's automatic HEAD route keeps our Content-Length only for stream payloads, and
+ * drains them; an empty stream avoids reading the file.
+ */
+function emptyBody(): Readable {
+	return Readable.from([]);
 }
 
 export type ByteRange = { start: number; end: number };
@@ -158,10 +167,10 @@ export async function serveFile(
 		const len = range.end - range.start + 1;
 		reply.code(206).header('content-range', `bytes ${range.start}-${range.end}/${size}`);
 		reply.header('content-length', String(len)).type(type);
-		if (head) return reply.send();
+		if (head) return reply.send(emptyBody());
 		return reply.send(createReadStream(file, { start: range.start, end: range.end }));
 	}
 	reply.code(200).header('content-length', String(size)).type(type);
-	if (head) return reply.send();
+	if (head) return reply.send(emptyBody());
 	return reply.send(createReadStream(file));
 }

@@ -194,7 +194,7 @@ export class ProjectStoreFs {
 		const versions = await this.listVersionFiles(projectId);
 		const newest = versions[versions.length - 1];
 		const interval = this.opts.versionIntervalMs ?? VERSION_INTERVAL_MS;
-		if (newest && this.now().getTime() - newest.mtimeMs < interval) return;
+		if (newest && this.now().getTime() - versionTime(newest) < interval) return;
 		await mkdir(dir, { recursive: true });
 		const stamp = this.now().toISOString().replace(/[:.]/g, '-');
 		await copyFile(this.file(projectId), join(dir, `${stamp}.jasper`));
@@ -275,3 +275,10 @@ export class ProjectStoreFs {
 }
 
 export { CURRENT_SCHEMA_VERSION };
+
+/** Save time encoded in a version id (`2026-09-30T10-00-00-000Z`), falling back to the file mtime. */
+function versionTime(v: { id: string; mtimeMs: number }): number {
+	const m = /^(\d{4}-\d{2}-\d{2}T\d{2})-(\d{2})-(\d{2})-(\d{3})Z/.exec(v.id);
+	const t = m ? Date.parse(`${m[1]}:${m[2]}:${m[3]}.${m[4]}Z`) : Number.NaN;
+	return Number.isNaN(t) ? v.mtimeMs : t;
+}
