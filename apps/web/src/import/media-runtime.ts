@@ -32,6 +32,20 @@ const SLOT_OF_JOB: Partial<Record<EngineJob['kind'], Slot>> = {
 	proxy: 'proxy',
 };
 
+type ProxyKind = 'proxy-720' | 'proxy-540';
+type ProxyTiers = Partial<Record<ProxyKind, { status: DerivativeStatus; url?: string }>>;
+const PROXY_STATE_RANK: Record<string, number> = { ready: 4, running: 3, queued: 2, failed: 1, none: 0 };
+
+/** The proxy tier the runtime reports: a ready one (720 first), else the one that is furthest along. */
+export function bestProxyTier(tiers: ProxyTiers): { status: DerivativeStatus; url?: string } {
+	let best: { status: DerivativeStatus; url?: string } = { status: { state: 'none', progress: 0 } };
+	for (const kind of ['proxy-720', 'proxy-540'] as const) {
+		const t = tiers[kind];
+		if (t && (PROXY_STATE_RANK[t.status.state] ?? 0) > (PROXY_STATE_RANK[best.status.state] ?? 0)) best = t;
+	}
+	return best;
+}
+
 function toStatus(d: ApiDerivativeStatus | undefined): DerivativeStatus | null {
 	if (!d) return null;
 	return { state: d.state, progress: d.progress, ...(d.error ? { error: d.error } : {}) };
@@ -53,6 +67,8 @@ export function createMediaRuntimeSync(
 	let byKey = new Map<string, string[]>();
 	let byFingerprint = new Map<string, string[]>();
 	const known = new Set<string>();
+	/** mediaKey → last reported status of each proxy tier. */
+	const proxyTiers = new Map<string, ProxyTiers>();
 	let disposed = false;
 
 	const reindex = () => {
@@ -87,13 +103,20 @@ export function createMediaRuntimeSync(
 					};
 				case 'peaks':
 					return { peaks: status, ...(ready ? { peaksUrl: url ?? engine.mediaUrl(key, 'peaks.json') } : {}) };
-				case 'proxy':
-					return {
-						proxy: status,
+				case 'proxy': {
+					// Both tiers share the runtime's one proxy slot: a tier that was never made ("none") must not
+					// hide the other tier's ready proxy (the mandatory proxy of ProRes media is the 720 one).
+					const tiers = proxyTiers.get(key) ?? {};
+					tiers[kind as ProxyKind] = {
+						status,
 						...(ready
-							? { proxyUrl: url ?? engine.mediaUrl(key, { proxy: kind === 'proxy-540' ? '540' : '720' }) }
+							? { url: url ?? engine.mediaUrl(key, { proxy: kind === 'proxy-540' ? '540' : '720' }) }
 							: {}),
 					};
+					proxyTiers.set(key, tiers);
+					const best = bestProxyTier(tiers);
+					return { proxy: best.status, ...(best.url ? { proxyUrl: best.url } : {}) };
+				}
 			}
 		});
 	};
