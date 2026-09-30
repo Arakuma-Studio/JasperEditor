@@ -8,6 +8,7 @@
 import type { Draft } from 'immer';
 import type { Clip, Sequence, Transition } from '../../schema/sequence.ts';
 import {
+	CONSTANT_POWER,
 	CROSS_DISSOLVE,
 	clipHandles,
 	clipsAtEditPoint,
@@ -22,6 +23,9 @@ import { assertUnlocked, end, findTrackIn } from '../placement.ts';
 import type { HandlerMap } from './util.ts';
 
 type DTransition = Draft<Transition>;
+
+/** Two-sided audio transitions (crossfades between two clips, S10:TUI-052). */
+const AUDIO_CROSSFADES = false;
 
 function specOf(effectId: string, h: HandlerContext): TransitionSpec {
 	const spec = transitionSpec(effectId);
@@ -212,9 +216,21 @@ export const transitionHandlers: HandlerMap = {
 
 	'transition.update': (doc, cmd, h) => {
 		const { seq, t } = locate(doc, cmd.transitionId, h);
-		assertUnlocked(trackOf(seq, t.trackId, h), h);
+		const track = trackOf(seq, t.trackId, h);
+		assertUnlocked(track, h);
+		// M2 (S10:TUI-050): change the type within the same medium; the duration is re-fitted below.
+		let effectId = t.effectId;
+		if (cmd.effectId !== undefined && cmd.effectId !== t.effectId) {
+			const spec = specOf(cmd.effectId, h);
+			if (spec.appliesTo !== track.kind)
+				h.fail(
+					'E_TRACK_KIND',
+					`${spec.label} is ${spec.appliesTo === 'video' ? 'a video' : 'an audio'} transition; this transition is on ${track.kind === 'video' ? 'a video' : 'an audio'} track`,
+				);
+			effectId = spec.id;
+		}
 		if (cmd.params && Object.keys(cmd.params).length > 0)
-			h.fail('E_INVALID_PARAM', `Transition ${t.effectId} has no parameters`);
+			h.fail('E_INVALID_PARAM', `Transition ${effectId} has no parameters`);
 		const outgoing = t.outgoingClipId ? ((seq.clips[t.outgoingClipId] as Clip | undefined) ?? null) : null;
 		const incoming = t.incomingClipId ? ((seq.clips[t.incomingClipId] as Clip | undefined) ?? null) : null;
 		const two = !!outgoing && !!incoming;
@@ -222,16 +238,21 @@ export const transitionHandlers: HandlerMap = {
 			h.fail('E_INVALID_PARAM', 'A fade at a single clip edge has a fixed alignment');
 		const alignment = cmd.alignment ?? t.alignment;
 		const wanted = cmd.duration ?? t.duration;
-		const duration = fit(doc, seq, t.effectId, wanted, alignment, outgoing, incoming);
+		const duration = fit(doc, seq, effectId, wanted, alignment, outgoing, incoming);
 		if (duration === 0) h.fail('E_OUT_OF_MEDIA', noRoomMessage(alignment, wanted, two));
 		if (duration < wanted)
 			h.warn(
 				'W_TRANSITION_SHORTENED',
 				`Transition shortened from ${wanted} to ${duration} frames (clip length or media handles)`,
 			);
+		if (effectId !== t.effectId) {
+			t.effectId = effectId;
+			t.effectVersion = transitionSpec(effectId)!.version;
+			t.params = {};
+		}
 		t.alignment = alignment;
 		t.duration = duration;
-		return { transitionId: t.id, duration, alignment };
+		return { transitionId: t.id, effectId, duration, alignment };
 	},
 
 	'transition.remove': (doc, cmd, h) => {
@@ -249,25 +270,47 @@ export const transitionHandlers: HandlerMap = {
 		const ids = cmd.clipIds === '$selection' ? [] : cmd.clipIds;
 		if (ids.length === 0) h.fail('E_INVALID_PARAM', 'No clips given');
 		const { seq, clips } = h.clipsOf(doc, ids);
+		// M2 (S10:TUI-030/051): media, the user's default transitions and a duration override.
+		const media = new Set(cmd.media ?? ['video']);
+		const effectFor = {
+			video: cmd.videoEffectId ?? CROSS_DISSOLVE,
+			audio: cmd.audioEffectId ?? CONSTANT_POWER,
+		};
+		for (const kind of ['video', 'audio'] as const) {
+			if (!media.has(kind)) continue;
+			const spec = specOf(effectFor[kind], h);
+			if (spec.appliesTo !== kind)
+				h.fail(
+					'E_TRACK_KIND',
+					`${spec.label} is not ${kind === 'video' ? 'a video' : 'an audio'} transition`,
+				);
+		}
+		const wanted = cmd.duration ?? doc.settings.defaultTransitionFrames;
 		const created: string[] = [];
 		const done = new Set<string>();
 		for (const clip of clips) {
 			const track = trackOf(seq, clip.trackId, h);
-			if (track.kind !== 'video') continue; // the default audio transition is a user preference (TRN-006)
+			if (track.kind !== 'video' && track.kind !== 'audio') continue;
+			if (!media.has(track.kind) || track.locked) continue;
+			const effectId = effectFor[track.kind];
 			for (const edge of cmd.edges === 'both' ? (['in', 'out'] as const) : [cmd.edges]) {
 				const cut = edge === 'in' ? clip.start : end(clip);
-				const key = `${clip.trackId}:${cut}`;
+				let { outgoing, incoming } = clipsAtEditPoint(seq as Sequence, clip.trackId, cut);
+				// Audio: two-sided crossfades need audio crossfade support; until then a fade of the clip's own edge.
+				if (track.kind === 'audio' && outgoing && incoming && !AUDIO_CROSSFADES) {
+					outgoing = edge === 'out' ? (clip as Clip) : null;
+					incoming = edge === 'in' ? (clip as Clip) : null;
+				}
+				const key = outgoing && incoming ? `${clip.trackId}:${cut}` : `${clip.id}:${edge}`;
 				if (done.has(key)) continue;
 				done.add(key);
-				const { outgoing, incoming } = clipsAtEditPoint(seq as Sequence, clip.trackId, cut);
 				const two = !!outgoing && !!incoming;
 				const alignment: Transition['alignment'] = two ? 'center' : incoming ? 'start-at-cut' : 'end-at-cut';
 				// Edit points without room are skipped instead of failing the whole command.
-				const wanted = doc.settings.defaultTransitionFrames;
-				if (fit(doc, seq, CROSS_DISSOLVE, wanted, alignment, outgoing, incoming) === 0) continue;
+				if (fit(doc, seq, effectId, wanted, alignment, outgoing, incoming) === 0) continue;
 				const r = addTransition(
 					doc,
-					{ seq, trackId: clip.trackId, outgoing, incoming, effectId: CROSS_DISSOLVE },
+					{ seq, trackId: clip.trackId, outgoing, incoming, effectId, duration: wanted },
 					h,
 				);
 				created.push(r.transitionId);
