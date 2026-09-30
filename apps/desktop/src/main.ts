@@ -128,8 +128,15 @@ async function maybeScreenshot(win: BrowserWindow): Promise<void> {
 	if (process.env.JASPER_DESKTOP_EXIT === '1') app.quit();
 }
 
+/** IPC is answered only for frames on the app origin (not for any other frame that might get loaded). */
+function fromApp(e: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean {
+	const url = e.senderFrame?.url;
+	return !!url && !!appOrigin && isSameOrigin(url, appOrigin);
+}
+
 function registerIpc(): void {
 	ipcMain.handle('jasper:pick-media', async (e) => {
+		if (!fromApp(e)) return [];
 		const win = BrowserWindow.fromWebContents(e.sender);
 		const opts: Electron.OpenDialogOptions = {
 			title: 'Import Media',
@@ -142,12 +149,12 @@ function registerIpc(): void {
 		const r = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
 		return r.canceled ? [] : r.filePaths;
 	});
-	ipcMain.on('jasper:reveal', (_e, p: unknown) => {
-		if (isRevealablePath(p) && existsSync(p)) shell.showItemInFolder(p);
+	ipcMain.on('jasper:reveal', (e, p: unknown) => {
+		if (fromApp(e) && isRevealablePath(p) && existsSync(p)) shell.showItemInFolder(p);
 	});
 	ipcMain.on('jasper:window', (e, action: unknown) => {
 		const win = BrowserWindow.fromWebContents(e.sender);
-		if (!win || !isWindowAction(action)) return;
+		if (!win || !fromApp(e) || !isWindowAction(action)) return;
 		if (action === 'minimize') win.minimize();
 		else if (action === 'toggleMaximize') {
 			if (win.isMaximized()) win.unmaximize();
