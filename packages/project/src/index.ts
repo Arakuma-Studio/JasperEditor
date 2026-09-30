@@ -20,6 +20,7 @@ export * from './render/index.ts';
 export * from './schema/index.ts';
 export * from './time.ts';
 export * from './timecode.ts';
+export * from './transitions.ts';
 
 import type { Registries } from './commands/types.ts';
 import { defaultPresetRegistry } from './presets.ts';

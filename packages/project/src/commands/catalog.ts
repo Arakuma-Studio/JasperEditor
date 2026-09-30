@@ -14,7 +14,7 @@ import { transitionHandlers } from './handlers/transition.ts';
 import type { Handler, HandlerMap } from './handlers/util.ts';
 import { ALL_COMMAND_SCHEMAS, type Command, type CommandType } from './schemas/index.ts';
 
-export type CommandOwner = 'WP-00' | 'WP-2B' | 'WP-2D' | 'M2';
+export type CommandOwner = 'WP-00' | 'WP-2B' | 'WP-2D' | 'WP-TR' | 'M2';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -109,7 +109,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[clipEditHandlers, 'WP-2B'],
 	[keyframeHandlers, 'WP-2D'],
 	[effectHandlers, 'WP-2D'],
-	[transitionHandlers, 'M2'],
+	[transitionHandlers, 'WP-TR'],
 	[m2Handlers, 'M2'],
 ];
 

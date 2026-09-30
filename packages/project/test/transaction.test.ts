@@ -235,7 +235,7 @@ describe('catalog (ARCHITECTURE §5.3)', () => {
 		expect(COMMAND_CATALOG['clip.slip'].owner).toBe('WP-2B');
 		expect(COMMAND_CATALOG['effect.add'].owner).toBe('WP-2D');
 		expect(COMMAND_CATALOG['keyframe.add'].owner).toBe('WP-2D');
-		expect(COMMAND_CATALOG['transition.add'].owner).toBe('M2');
+		expect(COMMAND_CATALOG['transition.add'].owner).toBe('WP-TR');
 		expect(COMMAND_CATALOG['clip.place'].owner).toBe('WP-00');
 	});
 
