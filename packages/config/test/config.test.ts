@@ -4,8 +4,10 @@ import {
 	appdirPaths,
 	DEFAULT_ENGINE_PORT,
 	DEV_WEB_PORT,
+	desktopAppdir,
 	ENV,
 	isTruthyEnv,
+	parseEngineRuntime,
 	readFlag,
 	resolveAppdir,
 	resolvePort,
@@ -67,5 +69,19 @@ describe('@jasper/config', () => {
 		expect(p.logFile(new Date('2026-09-30T10:00:00Z'))).toBe(
 			join('/app', 'engine', 'logs', '2026-09-30.log'),
 		);
+	});
+
+	it('locates the desktop appdir and parses runtime files', () => {
+		expect(desktopAppdir({ XDG_CONFIG_HOME: '/cfg' }, 'linux')).toBe(join('/cfg', 'JasperEditor', 'jasper'));
+		expect(desktopAppdir({ APPDATA: 'C:/Users/u/AppData/Roaming' }, 'win32')).toMatch(
+			/JasperEditor[\\/]jasper$/,
+		);
+		expect(appdirPaths('/a').runtimeFile).toBe(join('/a', 'engine', 'runtime.json'));
+		expect(parseEngineRuntime({ url: 'http://127.0.0.1:1', port: 1, pid: 2, token: 't' })).toMatchObject({
+			token: 't',
+			host: '127.0.0.1',
+		});
+		expect(parseEngineRuntime({ url: 'x', port: 1 })).toBeNull();
+		expect(parseEngineRuntime({ url: 'x', port: 1, pid: 1, token: 5 })).toBeNull();
 	});
 });

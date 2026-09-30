@@ -5,6 +5,10 @@
 acceptance run on `wp/wp-3i` (based on `dev` at `3f5498d`). The wave-3 merge
 changes are listed in `docs/wp-notes/INTEGRATION-W3.md`, and the re-run on `dev` gives the same results.
 
+**After M1 — wp-mcp (branch `wp/wp-mcp`, not merged yet):** the in-app Agent panel is gone and the agent API
+ships as an MCP server (`jasper-mcp`, ARCHITECTURE D-18 / §11). Item 10 below is now exercised through MCP;
+see "wp-mcp: Agent panel → MCP server" at the end of this file and `docs/wp-notes/wp-mcp.md`.
+
 Environment: Linux x64, Node 20.20, pnpm 10.34, cargo 1.96, system ffmpeg 6.1.1 (GPL build with libx264; the
 product does not require it, D-13), system Chrome, 12 cores, no GPU. This host is shared with other agents,
 so every server ran on a private port range instead of 5173/47900. The commands and code paths are the same.
@@ -112,8 +116,45 @@ Item 1 clean-clone command: `git clone --branch wp/wp-3i <repo> /tmp/wp3i-clean 
   unit-tested here (no GPU on the dev host). OpenH264 on the LGPL build is covered since wp-lgpl.
 - **WP-2F (S04:RP-006): audio mix.** Remotion-path exports are about 50 ms longer in container duration
   (AAC padding from Remotion's audio). The frame count is exact.
-- **WP-2H: `panel.focus.agent`.** Drop the duplicate registration in `commands/agent.ts` once the shell's
-  alias is the single source.
-- **Web bundle (§13).** `JobsPanel` and `AgentPanel` are also statically imported, by the header badge and
-  the agent commands. Move `useJobsSummary` and `agentPanelServices` into small modules so these panels load
-  lazily too.
+- ~~**WP-2H: `panel.focus.agent`.** Drop the duplicate registration in `commands/agent.ts`.~~ Obsolete:
+  wp-mcp removed the Agent panel and its commands.
+- **Web bundle (§13).** `JobsPanel` is also statically imported by the header badge. Move `useJobsSummary`
+  into a small module so the panel loads lazily too. (`AgentPanel` no longer exists, wp-mcp.)
+
+## wp-mcp: Agent panel → MCP server (after M1)
+
+User decision: remove the in-app Agent panel and expose the agent capabilities as an MCP server for external
+coding agents. Branch `wp/wp-mcp`, ports 48550–48599. Details, tool list and open points:
+`docs/wp-notes/wp-mcp.md`.
+
+| Command | Result |
+|---|---|
+| `pnpm install && pnpm fixtures && pnpm mg:build && pnpm mcp:build` | @@SETUP@@ |
+| `pnpm verify` | @@VERIFY@@ |
+| `E2E_PORT=48560 pnpm e2e` | @@E2E@@ |
+| `pnpm e2e:typecheck` | @@E2ETC@@ |
+| `MCP_TEST_PORT=48551 pnpm exec vitest run --project @jasper/mcp` | @@MCPIT@@ |
+| `DESKTOP_SMOKE_PORT=48570 ELECTRON_DISABLE_SANDBOX=1 pnpm e2e:desktop` | PASS for packaged-like and dev (xvfb); the preload now also exposes `focusWindow()` and `mcpInfo()` |
+| Real clients, throwaway config dirs (`HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME` under `/tmp`) | Claude Code 2.1.285: `claude mcp add jasper -- node …/apps/mcp/dist/jasper-mcp.mjs` → `claude mcp list` "✔ Connected"; also with `--env`, with `--appdir`, and `--transport http …/mcp` against a real engine. Codex CLI 0.159.0: `codex mcp add jasper -- node …` wrote the `[mcp_servers.jasper]` table shown in the README; `codex mcp list` shows it enabled. No model session was run through either client. |
+
+Checklist item 10 is now: "an MCP client adds a clip and a marker live and History shows `Agent: …`; headless
+when closed; `track.remove` requires approval". **PASS**, `e2e/agent.spec.ts` (6 tests), with an MCP SDK
+client connected over stdio to the built `apps/mcp/dist/jasper-mcp.mjs`, which finds the E2E engine through
+its `runtime.json`:
+
+- `engine_status` reports `foundBy: runtime-file`; `get_project` reports `editorOpen: true` and the media
+  imported through the UI.
+- `apply_commands` (`clip.place {mediaByName}` + `marker.add`) → `appliedBy: session`; the clip body and the
+  ruler marker appear, History gets exactly one entry `Agent: Place clip-b and mark it`, and an agent toast
+  names it. There is no Agent tab.
+- `add_text`, `get_timeline`, `render_frame` (320 px PNG of the live document), `set_playhead` (the playhead
+  moves, History does not grow), `get_playhead`, `undo` and `redo` against the open editor.
+- `track.remove` → the approval card appears at the top of the window ("e2e-agent wants to run 1 command:
+  track.remove"); **Deny** → tool error `E_APPROVAL_DENIED` and the track is kept; **Approve** → applied live.
+- Help ▸ Connect an AI Agent… shows the Claude Code, Codex CLI and Cursor snippets with the real bundle path
+  and the engine's `/mcp` URL; the Agent menu is gone.
+- With the editor closed `add_marker` applies headlessly and a destructive transaction is refused;
+  `open_project_in_editor` navigates the window (which was on Home) to the project and both markers are in
+  the ruler.
+
+Item 2 changed accordingly: the Editing workspace has no Agent tab (`e2e/editing.spec.ts`).

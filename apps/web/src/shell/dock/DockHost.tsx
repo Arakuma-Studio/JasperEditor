@@ -63,7 +63,7 @@ function useDock(): DockCtx {
 const attention = new Set<PanelKind>();
 const attentionListeners = new Set<() => void>();
 let attentionVersion = 0;
-/** Marks an inactive tab (new agent message, finished job); cleared when the tab becomes active. */
+/** Marks an inactive tab (e.g. a finished job); cleared when the tab becomes active. */
 export function setPanelAttention(kind: PanelKind, on = true): void {
 	if (on === attention.has(kind)) return;
 	if (on) attention.add(kind);

@@ -23,7 +23,6 @@ export const KEYMAP_ALIASES: Readonly<Record<string, string>> = {
 	'panel.focus.program': 'panel.open.program',
 	'panel.focus.effectControls': 'panel.open.effectControls',
 	'panel.focus.effects': 'panel.open.effects',
-	'panel.focus.agent': 'panel.open.agent',
 	'workspace.reset': 'workspace.resetToSaved',
 };
 

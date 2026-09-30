@@ -10,7 +10,21 @@ export interface JasperDesktopBridge {
 	revealInFolder(path: string): void;
 	windowControls: { minimize(): void; toggleMaximize(): void; close(): void };
 	onMenuCommand(cb: (commandId: string) => void): () => void;
+	/** Brings the window to the front (an agent asked to show a project). */
+	focusWindow?(): void;
+	/** Where the bundled `jasper-mcp` server lives and how to launch it (Help ▸ Connect an AI Agent…). */
+	mcpInfo?(): Promise<DesktopMcpInfo>;
 }
+
+/** How an MCP client starts the `jasper-mcp` stdio server that ships with the desktop app. */
+export type DesktopMcpInfo = {
+	/** Absolute path of jasper-mcp.mjs, or null when it was not built/bundled. */
+	entry: string | null;
+	/** Executable that runs it: `node`, or the app binary itself in packaged builds. */
+	command: string;
+	/** Extra environment for `command` (packaged builds: ELECTRON_RUN_AS_NODE=1). */
+	env: Record<string, string>;
+};
 
 declare global {
 	interface Window {

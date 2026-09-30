@@ -1,7 +1,7 @@
 // Row B — header bar (S05:HD-003/004/010/012): Home, Import/Edit/Export mode tabs, workspace tabs (Edit
 // mode; drag to reorder; right-click menu; » overflow), Workspaces menu, and the right cluster: engine
-// chip, background jobs with a badge, Quick Export (`export.quick`), Agent (`panel.focus.agent`),
-// command palette and full screen. Every icon button has a `Name (Shortcut)` tooltip.
+// chip, background jobs with a badge, Quick Export (`export.quick`), command palette and full screen.
+// Every icon button has a `Name (Shortcut)` tooltip.
 
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import { ContextMenu, cx, DropdownMenu, Icon, IconButton, type ResolvedMenuItem } from '@jasper/ui';
@@ -448,7 +448,6 @@ export function HeaderBar(props: HeaderBarProps) {
 					icon="app.quickExport"
 					testId="quick-export"
 				/>
-				<CommandIconButton id="panel.focus.agent" label="Agent" icon="agent.sparkle" testId="agent-button" />
 				<CommandIconButton
 					id="palette.open"
 					label="Command Palette"

@@ -1,9 +1,10 @@
 // Agent API stage 1 (WP-2H, ARCHITECTURE §11): relay round trip with a fake WS session, headless apply
 // and save, approvals (deny / timeout / headless), stale revision rejection vs fast-forward (S01 AC-11).
 import { EventEmitter } from 'node:events';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { AgentMcpInfoSchema } from '@jasper/api';
 import { appdirPaths } from '@jasper/config';
 import {
 	createEmptyProject,
@@ -22,6 +23,7 @@ import {
 	FsAgentProjectStore,
 	type SaveOutcome,
 } from '../src/agent/index.ts';
+import { findMcpEntry } from '../src/agent/mcp-entry.ts';
 import { createServer, engineConfig } from '../src/index.ts';
 
 const H = { host: '127.0.0.1:47900' };
@@ -119,6 +121,73 @@ describe('GET /api/agent/schema (S01:AGT-002)', () => {
 		expect(s.errorCodes).toContain('E_APPROVAL_TIMEOUT');
 		expect(s.approvals.commands).toContain('track.remove');
 		expect(s.presets.length).toBeGreaterThan(0);
+	});
+});
+
+describe('POST /api/agent/open-project (jasper-mcp open_project_in_editor)', () => {
+	it('publishes editor.openProject globally and reports listening editors; 404 for unknown projects', async () => {
+		const { app, events, projectId } = await makeEngine();
+		const r = await app.inject({
+			method: 'POST',
+			url: '/api/agent/open-project',
+			headers: H,
+			payload: { projectId },
+		});
+		expect(r.statusCode).toBe(200);
+		expect(r.json()).toMatchObject({ projectId, path: `/project/${projectId}`, live: false });
+		expect(typeof r.json().editors).toBe('number');
+		expect(events).toContainEqual({
+			type: 'editor.openProject',
+			payload: { projectId },
+			projectId: undefined,
+		});
+		const missing = await app.inject({
+			method: 'POST',
+			url: '/api/agent/open-project',
+			headers: H,
+			payload: { projectId: 'prj_nope' },
+		});
+		expect(missing.statusCode).toBe(404);
+		expect(missing.json()).toMatchObject({ code: 'PROJECT_NOT_FOUND' });
+	});
+});
+
+describe('GET /api/agent/mcp-info (Help ▸ Connect an AI Agent…)', () => {
+	it('reports the HTTP endpoint and the stdio bundle path, never the token', async () => {
+		const { app } = await makeEngine();
+		const r = await app.inject({ method: 'GET', url: '/api/agent/mcp-info', headers: H });
+		expect(r.statusCode).toBe(200);
+		const body = r.json();
+		expect(AgentMcpInfoSchema.safeParse(body).success).toBe(true);
+		expect(body.httpUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/);
+		expect(Object.keys(body).sort()).toEqual(['httpUrl', 'stdioEntry', 'tokenRequired']);
+	});
+
+	it('finds the bundle in a checkout and in packaged resources; JASPER_MCP_ENTRY overrides', () => {
+		const root = mkdtempSync(join(tmpdir(), 'jasper-mcp-entry-'));
+		try {
+			// checkout: apps/engine/dist + apps/mcp/dist/jasper-mcp.mjs
+			mkdirSync(join(root, 'apps/engine/dist'), { recursive: true });
+			mkdirSync(join(root, 'apps/engine/src/agent'), { recursive: true });
+			expect(findMcpEntry({}, join(root, 'apps/engine/dist'))).toBeNull();
+			mkdirSync(join(root, 'apps/mcp/dist'), { recursive: true });
+			const bundle = join(root, 'apps/mcp/dist/jasper-mcp.mjs');
+			writeFileSync(bundle, '');
+			expect(findMcpEntry({}, join(root, 'apps/engine/dist'))).toBe(bundle);
+			expect(findMcpEntry({}, join(root, 'apps/engine/src/agent'))).toBe(bundle);
+			// packaged: resources/engine + resources/mcp/jasper-mcp.mjs
+			mkdirSync(join(root, 'resources/engine'), { recursive: true });
+			mkdirSync(join(root, 'resources/mcp'), { recursive: true });
+			const packaged = join(root, 'resources/mcp/jasper-mcp.mjs');
+			writeFileSync(packaged, '');
+			expect(findMcpEntry({}, join(root, 'resources/engine'))).toBe(packaged);
+			expect(findMcpEntry({ JASPER_MCP_ENTRY: packaged }, join(root, 'apps/engine/dist'))).toBe(packaged);
+			expect(
+				findMcpEntry({ JASPER_MCP_ENTRY: join(root, 'nope.mjs') }, join(root, 'apps/engine/dist')),
+			).toBeNull();
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 });
 

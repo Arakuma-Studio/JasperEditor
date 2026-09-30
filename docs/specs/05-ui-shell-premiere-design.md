@@ -13,6 +13,8 @@ Companion specs own the internals this doc only frames. This doc owns the chrome
 - Export pipelines (native ffmpeg, Remotion, fframes, browser) belong to the rendering/engine spec. This doc owns the Export dialog/mode UX and the Jobs panel.
 - Agent planning, tools and safety belong to the agent spec. This doc owns the Agent panel and how the agent drives the UI.
 
+> **Superseded (wp-mcp, ARCHITECTURE D-18 / §11).** JasperEditor has no in-app agent: external coding agents (Claude Code, Codex CLI, Cursor) drive it through the `jasper-mcp` MCP server. The Agent panel (§17), the Agent workspace, the Agent menu, the header Agent button, the Agent tool, the palette's "Ask the agent" row and the `Shift+0` / `Ctrl+.` bindings were removed. Requirements below that depend on them are marked **[SUPERSEDED]** and are not implemented. What remains of the agent UI: `Agent:` History entries with the sparkle (HIS-002, without the "Show in Agent panel" link), the clip flash, agent toasts, a shell-level approval card (Approve / Deny) for destructive agent transactions, and Help ▸ **Connect an AI Agent…**.
+
 ---
 
 ## 0. How to read this spec
@@ -170,7 +172,7 @@ Row B — header bar (36 px)
      - **Engine status** chip (§2.4): a colored dot + short label (`Local`, `Remote`, `Browser`, `Offline`). Click opens an engine popover with capability list, engine version, CPU/queue load, and "Connect to engine…".
      - **Background jobs**: circular progress icon with a numeric badge of running+queued jobs. Click opens the Jobs panel (focus it if open; otherwise open it floating near the button). Right-click lists the last 5 jobs.
      - **Quick Export** (share/upload icon): popover (§15.6).
-     - **Agent** (sparkle icon): toggles/focuses the Agent panel (§17). It shows a pulsing dot while the agent is working and a count badge when proposals are waiting for review.
+     - **Agent** (sparkle icon) **[SUPERSEDED: removed]**: toggles/focuses the Agent panel (§17). It shows a pulsing dot while the agent is working and a count badge when proposals are waiting for review.
      - **Search / command palette** (magnifier): §12.5.
      - **Full screen** (expand icon): toggles app full screen (Fullscreen API on web, window full screen on Electron).
 - **HD-004 (MUST)** Workspace tabs can be reordered by dragging (this reorders the workspace list and therefore the `Alt+Shift+N` numbering). Right-click on a workspace tab shows: Reset to Saved Layout, Save Changes to This Workspace, Duplicate…, Rename…, Delete (custom only), Hide from Bar, Edit Workspaces….
@@ -208,7 +210,7 @@ Row B — header bar (36 px)
 | 4 | `audio` | Audio | Audio Track Mixer top-left; Program; Timeline with taller audio tracks; wide meters |
 | 5 | `captions` | Captions and Graphics | Text panel (Transcript / Captions) left; Program; Properties right; Timeline bottom |
 | 6 | `motion` ⊕ | Motion | Motion Templates browser (Remotion + fframes) left; Program center; Properties + Effect Controls right (Effect Controls with a large keyframe area); Timeline bottom |
-| 7 | `agent` ⊕ | Agent | Agent panel left 28% full-height; Program top-center; Timeline bottom-center; Jobs + Properties right |
+| 7 | `agent` ⊕ | Agent | **[SUPERSEDED: removed; stored state drops this workspace on load]** Agent panel left 28% full-height; Program top-center; Timeline bottom-center; Jobs + Properties right |
 | 8 | `vertical` | Vertical | Program at 9:16 centered with Source as a tab in the same group; Properties right; Timeline bottom |
 | 9 | `essentials` | Essentials | Single monitor: Program center-top; Project + Properties right; Timeline full width bottom |
 | — | `color` | Color | Program large; scopes left; color controls right; Timeline bottom. Only listed when the color feature ships. |
@@ -279,7 +281,7 @@ Recommended engine: **dockview** (MIT) themed through its CSS variables mapped t
 ### 5.6 Opening panels
 
 - **DK-050 (MUST)** Window menu lists every panel kind with a check if open. Choosing a **closed** panel opens it in its *home group* for the current workspace (the group where the workspace default would put it). If that group doesn't exist, it opens as a floating group near the center. Choosing an **open** panel brings its tab to front and focuses it.
-- **DK-051 (MUST)** `Shift+1…9` focus panels (Project, Source, Timeline, Program, Effect Controls, Audio Track Mixer, Effects, Media Browser, Audio Clip Mixer) opening them if closed [PUI §16.2]. `Shift+0` ⊕ focuses the Agent panel and places the caret in its prompt field (verify that `Shift+0` is unused in the active keymap; if it conflicts, it is user-remappable).
+- **DK-051 (MUST)** `Shift+1…9` focus panels (Project, Source, Timeline, Program, Effect Controls, Audio Track Mixer, Effects, Media Browser, Audio Clip Mixer) opening them if closed [PUI §16.2]. `Shift+0` ⊕ focuses the Agent panel and places the caret in its prompt field (verify that `Shift+0` is unused in the active keymap; if it conflicts, it is user-remappable). **[SUPERSEDED: `Shift+0` is unbound.]**
 - **DK-052 (MUST)** Multi-instance panels (Project, for extra bins; Timeline, for extra sequences) are listed in Window with their instance context, e.g. `Project: Graphics bin`. Source, Program, Tools, Audio Meters, Agent and Jobs are single-instance per window. Opening a bin "in new panel" creates a new Project panel instance as a tab next to the current one.
 
 ---
@@ -593,7 +595,7 @@ Only the structure is fixed here; each command's behavior is owned by the releva
 | **Graphics and Titles** | New Layer ▸ Text `Ctrl+T` (web fallback §18), Vertical Text, Rectangle, Ellipse, From File…, Insert Motion Template ▸ (Remotion ⊕ / fframes ⊕), Align ▸, Arrange ▸, Select Next/Previous Layer, Upgrade to Template (MAY) |
 | **View** | Playback Resolution ▸, Paused Resolution ▸, Show Rulers, Show Guides, Snap in Program Monitor, Safe Margins, Transparency Grid, Timecode Display ▸, Show Status Bar, Theme ▸, Density ▸ ⊕, Full Screen |
 | **Window** | Workspaces ▸ (§4.3), Find Panel… (palette filtered to panels), a list of all panels with checks (§5.6), Maximize Frame `` ` ``, Reset All Panels |
-| **Agent** ⊕ | Open Agent Panel `Shift+0`, New Conversation, Ask About Selection…, Autonomy ▸ (Ask / Propose / Auto-apply), Apply All Proposals, Reject All Proposals, Stop Agent `Ctrl+.` (verify no conflict), Agent History…, Agent Settings… |
+| **Agent** ⊕ **[SUPERSEDED: menu removed; Help gained "Connect an AI Agent…"]** | Open Agent Panel `Shift+0`, New Conversation, Ask About Selection…, Autonomy ▸ (Ask / Propose / Auto-apply), Apply All Proposals, Reject All Proposals, Stop Agent `Ctrl+.` (verify no conflict), Agent History…, Agent Settings… |
 | **Help** | Help, Keyboard Shortcut Reference, What's New, Report a Problem…, Third-Party Notices (FFmpeg, fframes, Remotion, fonts), About JasperEditor |
 
 - **MN-010 (MUST)** Menus that don't apply to the current mode are disabled, not removed (e.g. Sequence menu in Export mode).
@@ -636,7 +638,7 @@ Premiere's search box is limited. JasperEditor has a full command palette, which
 
 - **MN-040 (MUST)** `Ctrl+Shift+P` (global; the Project panel's "clear poster frame" binding moves to its panel menu to avoid the conflict) and the header search button open a centered 560 px palette at 20% from the top.
 - **MN-041 (MUST)** Fuzzy search over: commands (with shortcut and enabled state), panels ("Open Effects panel"), workspaces, project items (clips, bins, sequences), markers, effects/transitions, motion templates, and preferences. Results are grouped with headers; `↑/↓`, `Enter` runs; `Tab` shows secondary actions for the highlighted result (e.g. for a clip: Open in Source, Reveal in Project, Insert at Playhead).
-- **MN-042 (MUST)** Prefixes: `>` commands only, `@` project items, `#` markers, `:` go to timecode (`:00:01:10:00` moves the playhead), `?` help. Text that matches no command offers a last row **"Ask the agent: <text>"** (`Ctrl+Enter` sends directly), which opens/focuses the Agent panel with the prompt submitted ⊕.
+- **MN-042 (MUST)** Prefixes: `>` commands only, `@` project items, `#` markers, `:` go to timecode (`:00:01:10:00` moves the playhead), `?` help. Text that matches no command offers a last row **"Ask the agent: <text>"** (`Ctrl+Enter` sends directly), which opens/focuses the Agent panel with the prompt submitted ⊕. **[SUPERSEDED: the row was removed.]**
 - **MN-043 (SHOULD)** Recent commands appear first when the query is empty. Ranking learns from usage (local only).
 
 ### 12.6 Tooltips
@@ -675,7 +677,7 @@ interface ToastRequest {
   - Destructive, undoable operations triggered from menus offer an **Undo** action (e.g. "Deleted 12 unused items · Undo").
   - Long work (> 1 s) is a job in the Jobs panel, with at most one progress toast per user-initiated job, and none for background/automatic jobs (thumbnails, waveforms).
   - Errors say what failed and what to do ("Export failed: disk is full. Free space or choose another location. [Change Location] [Details]").
-  - Agent toasts are used only when the Agent panel isn't visible: "Agent proposed 4 edits · Review" ⊕.
+  - Agent toasts are used only when the Agent panel isn't visible: "Agent proposed 4 edits · Review" ⊕. **[SUPERSEDED: there is no Agent panel, so the shell shows one `agent` toast per applied external-agent transaction ("Agent: <label>" with Undo).]**
 - **TS-007 (MUST)** Accessibility: info/success/progress toasts announce via a polite live region; warning/error via assertive. Toasts are reachable with `F6` cycling (window regions) and dismissible with `Esc` when focused. Focus is never stolen.
 - **TS-008 (SHOULD)** **Notification log** (the "Events" panel, Window ▸ Events, or "+N more"): the last 200 notifications with time, source, kind and actions still runnable where it makes sense. Errors from the engine and agent include copyable details.
 
@@ -902,7 +904,7 @@ Panel set by release:
 ### 16.6 Tools panel (`TOOL`)
 
 - **TOOL-001 (MUST)** Vertical 40 px strip; 28×28 buttons with 4 px gaps; current tool = filled `--pr-accent-fill` rounded square with white glyph. Auto-horizontal when the group is wider than it is tall.
-- **TOOL-002 (MUST)** Tool groups with flyouts (small triangle bottom-right; long-press 350 ms or right-click opens the flyout; the last chosen member becomes the group's face): Selection (`V`) · Track Select Forward/Backward (`A`/`Shift+A`) · Ripple (`B`) / Rolling (`N`) / Rate Stretch (`R`) · Razor (`C`) · Slip (`Y`) / Slide (`U`) · Pen (`P`) / Rectangle / Ellipse · Hand (`H`) / Zoom (`Z`) · Type (`T`) / Vertical Type · **Agent tool** ⊕ (no default key; click-drag on a range or clip edge to ask the agent: extend, fill, replace, describe).
+- **TOOL-002 (MUST)** Tool groups with flyouts (small triangle bottom-right; long-press 350 ms or right-click opens the flyout; the last chosen member becomes the group's face): Selection (`V`) · Track Select Forward/Backward (`A`/`Shift+A`) · Ripple (`B`) / Rolling (`N`) / Rate Stretch (`R`) · Razor (`C`) · Slip (`Y`) / Slide (`U`) · Pen (`P`) / Rectangle / Ellipse · Hand (`H`) / Zoom (`Z`) · Type (`T`) / Vertical Type · **Agent tool** ⊕ (no default key; click-drag on a range or clip edge to ask the agent: extend, fill, replace, describe) **[SUPERSEDED: removed]**.
 - **TOOL-003 (MUST)** Tool shortcuts are active when the Timeline, Program or Tools panel is focused (scope `editing`), not while typing.
 - **TOOL-004 (SHOULD)** Spring-loaded tools (hold key to switch temporarily, revert on release): preference, default off.
 - **TOOL-005 (MUST)** The active tool is editor state; the Program monitor reads it (Type → click creates text; Rectangle/Ellipse → draw shape; Hand/Zoom → pan/zoom the viewer; Pen → masks/shapes).
@@ -943,7 +945,7 @@ Editing behavior is owned by the timeline spec; this section fixes visuals and c
 ### 16.10 History (`HIS`)
 
 - **HIS-001 (MUST)** A list of undo steps, newest at the bottom, each with an icon by kind (edit, effect, import, agent ⊕), a human-readable label ("Razor", "Move 3 clips", "Agent: Remove silences (12 cuts)"), and relative time. The current state row is highlighted (`--pr-accent-fill` when focused); states after it are dimmed (`--pr-text-tertiary`). Clicking a row jumps to that state; `←/→` step back/forward; panel menu: Clear History (confirmation), History Settings (max steps).
-- **HIS-002 (MUST)** Agent steps ⊕ show the `--pr-agent` sparkle and can expand to list their sub-operations (read-only) and a link "Show in Agent panel".
+- **HIS-002 (MUST)** Agent steps ⊕ show the `--pr-agent` sparkle and can expand to list their sub-operations (read-only) and a link "Show in Agent panel" **[SUPERSEDED: no link]**.
 - **HIS-003 (MUST)** Jumping back and then making a new edit discards the dimmed states (standard linear history); the UI warns in a toast only if more than 20 states are discarded ("Discarded 24 undone steps · Undo").
 
 ### 16.11 Info (`INF`)
@@ -993,6 +995,8 @@ The context-sensitive inspector, JasperEditor's **primary** property editor (Pre
 ---
 
 ## 17. Agent panel and agent control of the UI ⊕
+
+> **Superseded (wp-mcp, ARCHITECTURE D-18 / §11).** This whole chapter describes an in-app agent that JasperEditor does not have. Nothing here is implemented or planned as written: the panel (§17.1), presence (§17.2), autonomy modes (§17.3), proposals (§17.4) and agent errors (§17.5) went away with the Agent panel. The intent of §17.6 (a UI command surface agents can drive) and of proposals/ghosts may return as MCP tools. The one UI requirement that survives is the approval of destructive agent transactions, now a shell-level card (ARCHITECTURE §11.1).
 
 The template has no agent. In JasperEditor the agent is a peer of the human editor: it reads the same state, calls the same commands, and its edits pass through the same undo history. This section defines the UI; planning, tools, model and safety policy are in the agent spec.
 
@@ -1084,7 +1088,7 @@ The complete default keymap is [PUI §16]. This section sets the rules.
 - **KB-005 (MUST)** While focus is in an editable element, single-key and Shift+key shortcuts are suspended; `Esc`, `Enter` and modifier combos that the widget doesn't handle (e.g. `Ctrl+S`) still dispatch.
 - **KB-006 (MUST)** Key repeat is honored for step/nudge commands and ignored for toggles.
 - **KB-007 (MUST)** `keyup` events are dispatched for hold-to-act commands (K-held JKL combinations, spring-loaded tools, the Hand tool on Space-hold in Program if enabled).
-- **KB-010 (MUST)** Shell-level bindings added by this spec: `Shift+0` Agent panel (DK-051), `Ctrl+Shift+P` command palette (MN-040), `Ctrl+.` stop agent (AG-002), `Ctrl+0` fit monitor (PGM-008), `` ` `` / `` Shift+` `` / `` Ctrl+` `` (DK-040/042), `Ctrl+Shift+.`/`,` panel focus cycle (FO-003), `Alt+Shift+0…9` workspaces (WS-010), `F6` cycle window regions (header → dock → toasts) for accessibility.
+- **KB-010 (MUST)** Shell-level bindings added by this spec: `Shift+0` Agent panel (DK-051) **[SUPERSEDED: unbound]**, `Ctrl+Shift+P` command palette (MN-040), `Ctrl+.` stop agent (AG-002) **[SUPERSEDED: unbound]**, `Ctrl+0` fit monitor (PGM-008), `` ` `` / `` Shift+` `` / `` Ctrl+` `` (DK-040/042), `Ctrl+Shift+.`/`,` panel focus cycle (FO-003), `Alt+Shift+0…9` workspaces (WS-010), `F6` cycle window regions (header → dock → toasts) for accessibility.
 - **KB-011 (MUST)** Conflicts in the default map are resolved in code review: a test enumerates all bindings per scope and fails on duplicates within the same scope.
 - **KB-012 (MUST)** Keymap presets and overrides are stored as JSON, importable/exportable (Keyboard Shortcuts dialog §14.2).
 - **KB-013 (MUST)** Browser-reserved combos (`Ctrl+N`, `Ctrl+W`, `Ctrl+T`, `Ctrl+Shift+N/T/W`, `Ctrl+Tab`, `Ctrl+Q` on Linux) are not delivered to web pages. On web/PWA the registry automatically adds fallbacks — New Sequence `Alt+N`, Close Panel `Alt+W`, New Text Layer `Alt+T` — and menus show the fallback instead of the unreachable binding. Electron receives everything and uses the Premiere bindings.
@@ -1131,7 +1135,7 @@ Premiere's docked UI doesn't scale to phones; Adobe ships a separate touch app. 
 └──────────────────────────────┘ safe-area bottom
 ```
 
-- **MB-010 (MUST)** Bottom tab bar: **Media** (Project in grid view + import from files/camera roll + Motion Templates), **Text** (add text, captions), **Audio** (music, voice-over, levels), **Agent** ⊕ (the Agent panel as a sheet; it's a primary entry point on phones), **More** (Effects, Color, History, Jobs, Settings). Each opens a **bottom sheet** (detents 40% / 90%, drag handle, swipe down to dismiss, content scrolls inside) hosting the panel component in its touch presentation.
+- **MB-010 (MUST)** Bottom tab bar: **Media** (Project in grid view + import from files/camera roll + Motion Templates), **Text** (add text, captions), **Audio** (music, voice-over, levels), **Agent** ⊕ (the Agent panel as a sheet; it's a primary entry point on phones) **[SUPERSEDED: no Agent tab]**, **More** (Effects, Color, History, Jobs, Settings). Each opens a **bottom sheet** (detents 40% / 90%, drag handle, swipe down to dismiss, content scrolls inside) hosting the panel component in its touch presentation.
 - **MB-011 (MUST)** There is no Source monitor on phones: Media items show a preview card with "Add to timeline" (inserts at the playhead on the main track or as overlay). There is no Tools panel: tools become contextual actions.
 - **MB-012 (MUST)** Touch timeline model:
   - The **playhead is fixed at horizontal center**; one-finger horizontal drag scrolls the content (and scrubs), momentum while paused, none while playing.
@@ -1261,7 +1265,7 @@ Each item is a test (unit/component/E2E via Playwright on web and Electron; touc
 
 ### Menus, toasts, dialogs
 17. **AC-MN-1** The Edit menu shows "Undo Ripple Delete" after a ripple delete; after an agent apply it shows "Undo Agent: …". (MN-011)
-18. **AC-MN-2** Command palette: typing "razor" lists the Razor tool with `C`; typing "make the intro punchier" shows "Ask the agent: …" and Ctrl+Enter sends it to the Agent panel. (MN-041/042)
+18. **AC-MN-2** Command palette: typing "razor" lists the Razor tool with `C`; typing "make the intro punchier" shows "Ask the agent: …" and Ctrl+Enter sends it to the Agent panel **[SUPERSEDED: no agent row]**. (MN-041/042)
 19. **AC-TS-1** Five rapid identical errors produce one toast with "×5"; max three toasts visible; error with an action stays until dismissed. (TS-003/004)
 20. **AC-DG-1** In the Marker dialog, Enter commits and Esc cancels; focus returns to the timeline. (DG-002)
 
@@ -1272,6 +1276,9 @@ Each item is a test (unit/component/E2E via Playwright on web and Electron; touc
 24. **AC-JOB-1** Kill the engine during an export → the job shows Stalled, a Reconnect toast appears, and the editor still plays in browser-only mode. (SH-032, JOB-005)
 
 ### Agent
+
+> **Superseded (wp-mcp):** AC-AG-1…4 test the removed in-app agent. The agent acceptance checks are now ARCHITECTURE §15 item 10 and `e2e/agent.spec.ts` (an MCP client drives the live editor).
+
 25. **AC-AG-1** In Propose mode, "remove the long pauses" yields numbered proposals and matching ghosts on the timeline; clicking proposal ③ seeks to it and highlights ghost ③; Apply all creates exactly one undo step labeled "Agent: …". (AG-030/031/012)
 26. **AC-AG-2** Editing a clip referenced by a pending proposal marks it Outdated and disables its Apply. (AG-032)
 27. **AC-AG-3** While the user types in a text field, an agent `panel.focus` call does not steal keyboard focus. While playing, an agent `playhead.seek` is deferred. (AG-013)

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// `pnpm e2e` pre-step (WP-3I): the E2E server runs the *built* engine and web app, so build both (unless
-// E2E_SKIP_BUILD=1), make sure the fixture media exist and are current, and that the LGPL FFmpeg + Remotion
-// binaries directory is there (ARCHITECTURE D-13).
+// `pnpm e2e` pre-step (WP-3I): the E2E server runs the *built* engine and web app, and the agent spec the
+// built jasper-mcp server, so build all three (unless E2E_SKIP_BUILD=1), make sure the fixture media exist
+// and are current, and that the LGPL FFmpeg + Remotion binaries directory is there (ARCHITECTURE D-13).
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -31,4 +31,6 @@ if (process.env.E2E_SKIP_LGPL !== '1') {
 if (process.env.E2E_SKIP_BUILD !== '1') {
 	run('pnpm', ['--filter', '@jasper/engine', 'build']);
 	run('pnpm', ['--filter', '@jasper/web', 'build']);
+	// e2e/agent.spec.ts drives the editor through the built MCP server, like an external coding agent.
+	run('pnpm', ['--filter', '@jasper/mcp', 'build']);
 }

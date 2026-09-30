@@ -85,6 +85,11 @@ describe('window.jasper transact (S01:AGT-003, UND-007)', () => {
 		session.transport.seek(45);
 		const ph = (await api.query('playhead.get')) as { frame: number; timecode: string };
 		expect(ph).toMatchObject({ frame: 45, timecode: '00:00:01:15' });
+		// playhead.set is a view change (no history entry) used by the MCP set_playhead tool.
+		const moved = await api.query('playhead.set', { frame: '00:00:02:00' });
+		expect(moved).toMatchObject({ frame: 60, timecode: '00:00:02:00', playing: false });
+		expect(session.transport.getState().frame).toBe(60);
+		expect(session.getState().history.entries).toHaveLength(0);
 		const summary = (await api.query('sequence.summary')) as { tracks: unknown[] };
 		expect(summary.tracks).toHaveLength(6);
 		expect(await api.query('selection.get')).toHaveProperty('selection.timeline.clips', []);
@@ -94,7 +99,7 @@ describe('window.jasper transact (S01:AGT-003, UND-007)', () => {
 });
 
 describe('approvals (S01:AGT-011)', () => {
-	it('destructive transactions wait for Approve / Deny in the Agent panel', async () => {
+	it('destructive transactions wait for Approve / Deny (the shell shows a card per pending approval)', async () => {
 		const { bridge, api, session } = makeBridge();
 		const p = api.transact(agentTx([{ type: 'track.remove', trackIds: ['V3'] }], { label: 'Remove V3' }));
 		await tick();

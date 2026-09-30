@@ -1,8 +1,8 @@
 // UI commands (ARCHITECTURE §7.3): imports every domain module and registers them once.
-import { agentCommands } from './agent.ts';
 import { appCommands } from './app.ts';
 import { editCommands } from './edit.ts';
 import { exportCommands } from './export.ts';
+import { helpCommands } from './help.ts';
 import { inspectorCommands } from './inspector.ts';
 import { integrationCommands } from './integration.ts';
 import { mgCommands } from './mg.ts';
@@ -26,8 +26,8 @@ export const COMMAND_MODULES: Record<string, UiCommand[]> = {
 	project: projectCommands,
 	export: exportCommands,
 	mg: mgCommands,
-	agent: agentCommands,
 	integration: integrationCommands,
+	help: helpCommands,
 };
 
 let registered = false;

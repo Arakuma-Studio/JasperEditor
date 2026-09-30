@@ -50,6 +50,13 @@
         ]
       },
       {
+        "from": "../mcp/dist",
+        "to": "mcp",
+        "filter": [
+          "jasper-mcp.mjs"
+        ]
+      },
+      {
         "from": "../../native/bin/${os}-${arch}",
         "to": "bin"
       },

@@ -1,0 +1,548 @@
+// Editing tools: describe_commands (the jasper.tx/1 command catalog), apply_commands (a transaction),
+// undo / redo (the agent's own History entries), and thin timeline helpers over apply_commands:
+// add_clip, move_clip, trim_clip, split_at, delete_clips, add_text, add_marker, add_motion_graphic.
+import {
+	APPROVAL_COMMANDS,
+	COMMAND_CATALOG,
+	EditModeSchema,
+	IdListSchema,
+	resolveFrameInput,
+	TimeInputSchema,
+	TrackRefSchema,
+} from '@jasper/project';
+import { z } from 'zod';
+import {
+	DESTRUCTIVE,
+	defineTool,
+	EDIT,
+	loadDoc,
+	READ_ONLY,
+	requireOk,
+	type ToolContext,
+	transact,
+	txBody,
+} from '../context.ts';
+import { jsonResult, ToolError } from '../errors.ts';
+import { COMMAND_EXAMPLES, TRANSACTION_EXAMPLE } from '../examples.ts';
+import { clipSummary } from '../format.ts';
+import { ProjectIdArg } from './projects.ts';
+
+const COMMAND_TYPES = Object.keys(COMMAND_CATALOG) as [string, ...string[]];
+
+/** How every time argument may be written (appended to each time argument's own description). */
+export const TIME_FORMATS =
+	'Sequence time as frames (integer), {"frames": n}, {"seconds": x} or timecode "HH:MM:SS:FF" (";" before FF for drop-frame)';
+/** A time argument whose description says what it is for and which formats it accepts. */
+export const timeArg = (what: string) => TimeInputSchema.describe(`${what}. ${TIME_FORMATS}`);
+const SequenceIdArg = z
+	.string()
+	.optional()
+	.describe('Sequence id ("seq_…"); default: the project\'s first sequence');
+const ClipIdsArg = z.array(z.string().min(1)).min(1).describe('Clip ids ("clp_…") from get_timeline');
+
+const TIME_NOTES = [
+	'Times on the timeline are sequence frames; every time argument also accepts {"seconds": x} or a timecode string "HH:MM:SS:FF".',
+	'Tracks are addressed by label: "V1" is the lowest video track, "A1" the first audio track (or by track id).',
+	'Creating commands may declare "ref": "$name"; later commands in the same transaction can use "$name" as an id.',
+	'Instead of ids you can write {"mediaByName": "file.mp4"}, {"clipAt": {"track": "V1", "at": "00:00:01:00"}} or {"markerByName": "Intro"}.',
+	'A transaction is atomic: all commands apply or none. Use dryRun: true to validate first.',
+	`Transactions containing ${APPROVAL_COMMANDS.join(', ')} or any "force": true need the user's approval in an open editor (60 s timeout); without an editor they are rejected.`,
+];
+
+let schemaCache: { url: string; schema: Record<string, unknown> } | null = null;
+
+async function engineSchema(ctx: ToolContext): Promise<Record<string, unknown>> {
+	const url = ctx.link.target?.url ?? '';
+	if (schemaCache && schemaCache.url === url) return schemaCache.schema;
+	const schema = (await ctx.engine((c) => c.agentSchema())) as Record<string, unknown>;
+	schemaCache = { url: ctx.link.target?.url ?? url, schema };
+	return schema;
+}
+
+/** Runs a transaction built by a helper tool and returns the applied result plus the touched clips. */
+async function applyHelper(
+	ctx: ToolContext,
+	projectId: string,
+	label: string,
+	commands: unknown[],
+	extra: Parameters<typeof transact>[3],
+	opts: { sequenceId?: string } = {},
+) {
+	const res = await transact(ctx, projectId, { label, commands, sequenceId: opts.sequenceId }, extra);
+	const r = requireOk(res);
+	const touched = [...r.created, ...r.changed];
+	const { doc } = await loadDoc(ctx, projectId);
+	const clips: ReturnType<typeof clipSummary>[] = [];
+	for (const seq of Object.values(doc.sequences))
+		for (const id of touched) {
+			const clip = seq.clips[id];
+			if (clip) clips.push(clipSummary(doc, seq, clip));
+		}
+	return jsonResult({ ...txBody(res, r), ...(clips.length ? { clips } : {}) });
+}
+
+function hexToRgba(hex: string): [number, number, number, number] {
+	const m = /^#?([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(hex.trim());
+	if (!m) throw new ToolError('E_INVALID_PARAM', `Invalid color "${hex}"`, 'Use #RRGGBB or #RRGGBBAA.');
+	const n = Number.parseInt(m[1]!, 16);
+	const a = m[2] ? Number.parseInt(m[2], 16) / 255 : 1;
+	return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255, Math.round(a * 1000) / 1000];
+}
+
+export function registerEditingTools(ctx: ToolContext): void {
+	defineTool(
+		ctx,
+		'describe_commands',
+		{
+			title: 'Describe edit commands',
+			description:
+				'The catalog of document commands accepted by apply_commands (protocol jasper.tx/1): without arguments a list of every command type with its label, whether it is implemented and whether it needs user approval, plus addressing and time rules and a sample transaction. With `types`, the full JSON Schema and a worked example for each of those commands. Also lists motion-graphic templates and sequence presets.',
+			input: {
+				types: z
+					.array(z.string())
+					.max(30)
+					.optional()
+					.describe('Command types to describe in full, e.g. ["clip.place", "clip.addText"]'),
+			},
+			annotations: READ_ONLY,
+		},
+		async ({ types }) => {
+			const schema = await engineSchema(ctx);
+			const commands = schema.commands as Record<
+				string,
+				{ label: string; implemented: boolean; milestone: string; schema: unknown }
+			>;
+			if (types?.length) {
+				const unknown = types.filter((t) => !commands[t]);
+				if (unknown.length)
+					throw new ToolError(
+						'E_NOT_FOUND',
+						`Unknown command type(s): ${unknown.join(', ')}`,
+						'Call describe_commands without arguments for the list of types.',
+					);
+				return jsonResult({
+					commands: types.map((t) => ({
+						type: t,
+						label: commands[t]!.label,
+						implemented: commands[t]!.implemented,
+						needsApproval: (APPROVAL_COMMANDS as readonly string[]).includes(t),
+						schema: commands[t]!.schema,
+						...(COMMAND_EXAMPLES[t] ? { example: COMMAND_EXAMPLES[t] } : {}),
+					})),
+					rules: TIME_NOTES,
+				});
+			}
+			return jsonResult({
+				protocol: 'jasper.tx/1',
+				rules: TIME_NOTES,
+				commands: Object.entries(commands).map(([type, c]) => ({
+					type,
+					label: c.label,
+					...(c.implemented ? {} : { implemented: false }),
+					...((APPROVAL_COMMANDS as readonly string[]).includes(type) ? { needsApproval: true } : {}),
+				})),
+				exampleTransaction: TRANSACTION_EXAMPLE,
+				mgTemplates: (schema.mgTemplates as { id: string; version: number; name: string }[] | undefined)?.map(
+					(t) => `${t.id}@${t.version} (${t.name})`,
+				),
+				presets: (schema.presets as { id: string }[] | undefined)?.map((p) => p.id),
+				properties: (schema.properties as { key: string; animatable: string }[] | undefined)?.map(
+					(p) => p.key,
+				),
+			});
+		},
+	);
+
+	defineTool(
+		ctx,
+		'apply_commands',
+		{
+			title: 'Apply edit commands',
+			description:
+				'Applies a transaction of document commands (see describe_commands) atomically. If an editor window has the project open the change appears live there as one undoable History entry "Agent: <label>" (appliedBy: session); otherwise the engine applies and saves it headlessly. dryRun: true validates without changing anything. Returns the new revision, created/changed/deleted ids and the ids bound to "$refs". Destructive commands (track.remove, item.delete, sequence.delete, force: true) wait for the user to approve in the editor.',
+			input: {
+				projectId: ProjectIdArg,
+				label: z
+					.string()
+					.min(1)
+					.max(80)
+					.describe('Short description shown in the editor History as "Agent: <label>"'),
+				commands: z
+					.array(z.looseObject({ type: z.enum(COMMAND_TYPES).describe('Command type (describe_commands)') }))
+					.min(1)
+					.max(5000)
+					.describe('Commands in order; each is {"type": "...", ...arguments}'),
+				dryRun: z.boolean().optional().describe('Validate only: report what would change'),
+				expectedRevision: z
+					.number()
+					.int()
+					.optional()
+					.describe('Reject if the project changed since this revision (optimistic concurrency)'),
+				sequenceId: SequenceIdArg,
+			},
+			annotations: DESTRUCTIVE,
+		},
+		async ({ projectId, label, commands, dryRun, expectedRevision, sequenceId }, extra) => {
+			const res = await transact(
+				ctx,
+				projectId,
+				{ label, commands, dryRun, expectedRevision, sequenceId },
+				extra,
+			);
+			return jsonResult(txBody(res, requireOk(res), !!dryRun));
+		},
+	);
+
+	for (const [name, kind] of [
+		['undo', 'history.undo'],
+		['redo', 'history.redo'],
+	] as const)
+		defineTool(
+			ctx,
+			name,
+			{
+				title: name === 'undo' ? 'Undo' : 'Redo',
+				description:
+					name === 'undo'
+						? "Undoes the editor's most recent History entry if this agent made it (the user's own edits are never undone by agents). Needs an editor window with the project open."
+						: 'Redoes the next History entry if this agent made it. Needs an editor window with the project open.',
+				input: { projectId: ProjectIdArg },
+				annotations: EDIT,
+			},
+			async ({ projectId }, extra) => {
+				const res = await transact(ctx, projectId, { label: name, commands: [{ type: kind }] }, extra);
+				const r = requireOk(res);
+				return jsonResult({ ...txBody(res, r), [name === 'undo' ? 'undone' : 'redone']: r.results[0] });
+			},
+		);
+
+	// ------------------------------------------------------------ timeline helpers
+
+	defineTool(
+		ctx,
+		'add_clip',
+		{
+			title: 'Add clip to timeline',
+			description:
+				'Places imported media on the timeline (clip.place). Video files create a linked video + audio pair (V track + A track). Overwrite mode replaces what is under the new clip; insert mode pushes later clips right. Returns the new clip ids with their times.',
+			input: {
+				projectId: ProjectIdArg,
+				media: z.string().min(1).describe('mediaId ("med_…") or the Project item / file name ("clip-a.mp4")'),
+				at: timeArg('Where the clip starts on the timeline'),
+				track: TrackRefSchema.optional().describe('Video track label or id (default V1)'),
+				audioTrack: TrackRefSchema.optional().describe('Audio track label or id (default A1)'),
+				sourceIn: z.number().min(0).optional().describe('Start inside the media, in seconds (default 0)'),
+				sourceOut: z
+					.number()
+					.min(0)
+					.optional()
+					.describe('End inside the media, in seconds (default: the end; required with sourceIn)'),
+				mode: EditModeSchema.optional().describe('overwrite (default) or insert (ripples later clips)'),
+				videoOnly: z.boolean().optional().describe('Place only the video'),
+				audioOnly: z.boolean().optional().describe('Place only the audio'),
+				sequenceId: SequenceIdArg,
+			},
+			annotations: EDIT,
+		},
+		async (a, extra) => {
+			const source = /^med_/.test(a.media) ? { mediaId: a.media } : { mediaByName: a.media };
+			const cmd: Record<string, unknown> = {
+				type: 'clip.place',
+				source,
+				at: a.at,
+				matchSequence: 'keep',
+				...(a.sequenceId ? { sequenceId: a.sequenceId } : {}),
+				...(a.track || a.audioTrack
+					? {
+							tracks: {
+								...(a.track ? { video: a.track } : {}),
+								...(a.audioTrack ? { audio: a.audioTrack } : {}),
+							},
+						}
+					: {}),
+				...(a.mode ? { mode: a.mode } : {}),
+				...(a.videoOnly ? { audio: false } : {}),
+				...(a.audioOnly ? { video: false } : {}),
+			};
+			if (a.sourceIn !== undefined || a.sourceOut !== undefined) {
+				if (a.sourceOut === undefined)
+					throw new ToolError('E_INVALID_PARAM', 'sourceIn needs sourceOut too', 'Pass both, in seconds.');
+				cmd.sourceRange = { in: { seconds: a.sourceIn ?? 0 }, out: { seconds: a.sourceOut } };
+			}
+			return applyHelper(ctx, a.projectId, `Add ${a.media}`, [cmd], extra);
+		},
+	);
+
+	defineTool(
+		ctx,
+		'move_clip',
+		{
+			title: 'Move clips',
+			description:
+				'Moves clips in time and/or to other tracks (clip.move). Give either deltaFrames or `to` (the new start of the first clip). Linked audio/video partners move along. overwrite (default) replaces what is under the destination; insert ripples later clips.',
+			input: {
+				projectId: ProjectIdArg,
+				clipIds: ClipIdsArg,
+				deltaFrames: z.number().int().optional().describe('Frames to move by (negative = earlier)'),
+				to: timeArg('New start time of the first clip (instead of deltaFrames)').optional(),
+				deltaTracks: z
+					.number()
+					.int()
+					.optional()
+					.describe('Tracks to move up (+) or down (−) within the same kind'),
+				mode: EditModeSchema.optional().describe('overwrite (default) or insert (ripples later clips)'),
+			},
+			annotations: EDIT,
+		},
+		async ({ projectId, clipIds, deltaFrames, to, deltaTracks, mode }, extra) => {
+			let delta = deltaFrames ?? 0;
+			if (to !== undefined) {
+				const { doc } = await loadDoc(ctx, projectId);
+				const seq = Object.values(doc.sequences).find((s) => s.clips[clipIds[0]!]);
+				if (!seq)
+					throw new ToolError('E_NOT_FOUND', `Clip not found: ${clipIds[0]}`, 'Call get_timeline for ids.');
+				delta = resolveFrameInput(seq, to) - seq.clips[clipIds[0]!]!.start;
+			} else if (deltaFrames === undefined && !deltaTracks)
+				throw new ToolError('E_INVALID_PARAM', 'Nothing to do', 'Pass deltaFrames, to or deltaTracks.');
+			return applyHelper(
+				ctx,
+				projectId,
+				'Move clips',
+				[
+					{
+						type: 'clip.move',
+						clipIds,
+						deltaFrames: delta,
+						...(deltaTracks ? { deltaTracks } : {}),
+						...(mode ? { mode } : {}),
+					},
+				],
+				extra,
+			);
+		},
+	);
+
+	defineTool(
+		ctx,
+		'trim_clip',
+		{
+			title: 'Trim clip',
+			description:
+				'Moves the in (head) or out (tail) edge of a clip by deltaFrames (clip.trim). Positive moves the edge later. regular leaves a gap / needs room; ripple shifts later clips to close or open the gap; roll moves the edit point shared with the neighbour. Linked partners trim along.',
+			input: {
+				projectId: ProjectIdArg,
+				clipId: z.string().min(1).describe('Clip id ("clp_…")'),
+				edge: z.enum(['in', 'out']).describe('in = head (start), out = tail (end)'),
+				deltaFrames: z
+					.number()
+					.int()
+					.describe('Frames to move the edge by (e.g. -30 shortens a tail by 1 s at 30 fps)'),
+				mode: z.enum(['regular', 'ripple', 'roll']).optional().describe('Default regular'),
+			},
+			annotations: EDIT,
+		},
+		async ({ projectId, clipId, edge, deltaFrames, mode }, extra) =>
+			applyHelper(
+				ctx,
+				projectId,
+				`Trim ${edge === 'in' ? 'head' : 'tail'}`,
+				[{ type: 'clip.trim', clipId, edge, deltaFrames, ...(mode ? { mode } : {}) }],
+				extra,
+			),
+	);
+
+	defineTool(
+		ctx,
+		'split_at',
+		{
+			title: 'Split clips',
+			description:
+				'Cuts clips in two at a time (clip.split, like the razor tool). By default every clip under that time on all unlocked tracks is split; restrict with clipIds or tracks. Returns the new right-hand halves.',
+			input: {
+				projectId: ProjectIdArg,
+				at: timeArg('Where to cut'),
+				clipIds: ClipIdsArg.optional(),
+				tracks: z.array(TrackRefSchema).min(1).optional().describe('Track labels, e.g. ["V1", "A1"]'),
+				sequenceId: SequenceIdArg,
+			},
+			annotations: EDIT,
+		},
+		async ({ projectId, at, clipIds, tracks, sequenceId }, extra) =>
+			applyHelper(
+				ctx,
+				projectId,
+				'Split',
+				[
+					{
+						type: 'clip.split',
+						at,
+						...(sequenceId ? { sequenceId } : {}),
+						...(clipIds ? { clipIds } : tracks ? { tracks } : { scope: 'all-unlocked' }),
+					},
+				],
+				extra,
+			),
+	);
+
+	defineTool(
+		ctx,
+		'delete_clips',
+		{
+			title: 'Delete clips',
+			description:
+				'Removes clips from the timeline. ripple: false (default) lifts them and leaves a gap (clip.lift); ripple: true closes the gap by shifting later clips (clip.extract). Linked partners are removed too. Media stays in the project. Undoable in the editor.',
+			input: {
+				projectId: ProjectIdArg,
+				clipIds: IdListSchema.describe(
+					'Clip ids ("clp_…") from get_timeline, or "$selection" for the clips selected in the open editor',
+				),
+				ripple: z.boolean().optional().describe('Close the gap (ripple delete)'),
+			},
+			annotations: DESTRUCTIVE,
+		},
+		async ({ projectId, clipIds, ripple }, extra) =>
+			applyHelper(
+				ctx,
+				projectId,
+				ripple ? 'Ripple delete' : 'Delete clips',
+				[{ type: ripple ? 'clip.extract' : 'clip.lift', clipIds }],
+				extra,
+			),
+	);
+
+	defineTool(
+		ctx,
+		'add_text',
+		{
+			title: 'Add text',
+			description:
+				'Adds a text (title) clip (clip.addText) on a video track above the footage. Position is in sequence pixels (0,0 = top left; default: centred).',
+			input: {
+				projectId: ProjectIdArg,
+				text: z.string().min(1).max(2000).describe('The text to show (line breaks allowed)'),
+				at: timeArg('Start time'),
+				duration: timeArg('Length, e.g. {"seconds": 3}'),
+				track: TrackRefSchema.optional().describe('Video track (default V2)'),
+				sizePx: z.number().positive().max(2000).optional().describe('Font size in pixels'),
+				color: z.string().optional().describe('Text color "#RRGGBB" or "#RRGGBBAA" (default white)'),
+				position: z.tuple([z.number(), z.number()]).optional().describe('[x, y] in sequence pixels'),
+				sequenceId: SequenceIdArg,
+			},
+			annotations: EDIT,
+		},
+		async (a, extra) => {
+			const style: Record<string, unknown> = {};
+			if (a.sizePx) style.sizePx = a.sizePx;
+			if (a.color) style.fill = hexToRgba(a.color);
+			return applyHelper(
+				ctx,
+				a.projectId,
+				`Text "${a.text.slice(0, 30)}"`,
+				[
+					{
+						type: 'clip.addText',
+						at: a.at,
+						duration: a.duration,
+						track: a.track ?? 'V2',
+						content: { text: a.text, ...(Object.keys(style).length ? { style } : {}) },
+						...(a.position ? { transform: { position: a.position } } : {}),
+						...(a.sequenceId ? { sequenceId: a.sequenceId } : {}),
+					},
+				],
+				extra,
+			);
+		},
+	);
+
+	defineTool(
+		ctx,
+		'add_marker',
+		{
+			title: 'Add marker',
+			description:
+				'Adds a sequence marker (marker.add) shown on the timeline ruler, with an optional comment and duration.',
+			input: {
+				projectId: ProjectIdArg,
+				at: timeArg('Marker time'),
+				name: z.string().max(200).describe('Marker name'),
+				comment: z.string().max(2000).optional().describe('Longer note shown in the Markers panel'),
+				duration: timeArg('Span marker length (default 0)').optional(),
+				sequenceId: SequenceIdArg,
+			},
+			annotations: EDIT,
+		},
+		async ({ projectId, at, name, comment, duration, sequenceId }, extra) => {
+			const res = await transact(
+				ctx,
+				projectId,
+				{
+					label: `Marker "${name.slice(0, 30)}"`,
+					commands: [
+						{
+							type: 'marker.add',
+							frame: at,
+							name,
+							...(comment ? { comment } : {}),
+							...(duration !== undefined ? { duration } : {}),
+							...(sequenceId ? { sequenceId } : {}),
+						},
+					],
+				},
+				extra,
+			);
+			return jsonResult(txBody(res, requireOk(res)));
+		},
+	);
+
+	defineTool(
+		ctx,
+		'add_motion_graphic',
+		{
+			title: 'Add motion graphic',
+			description:
+				'Adds an animated motion-graphic template clip (clip.addMotionGraphic), e.g. a lower third or title card. See list_motion_templates for template ids and their params (omitted params use the template defaults).',
+			input: {
+				projectId: ProjectIdArg,
+				template: z
+					.string()
+					.min(1)
+					.describe('Template id, optionally with version: "lower-third" or "lower-third@1"'),
+				params: z.record(z.string(), z.unknown()).optional().describe('Template parameters'),
+				at: timeArg('Start time'),
+				duration: timeArg('Length (default: the template default, else 5 s)').optional(),
+				track: TrackRefSchema.optional().describe('Video track (default V2)'),
+				sequenceId: SequenceIdArg,
+			},
+			annotations: EDIT,
+		},
+		async (a, extra) => {
+			const [id, v] = a.template.split('@');
+			const { templates } = await ctx.engine((c) => c.mgTemplates());
+			const matches = templates.filter((t) => t.id === id && (v === undefined || t.version === Number(v)));
+			const t = matches.sort((x, y) => y.version - x.version)[0];
+			if (!t)
+				throw new ToolError(
+					'E_NOT_FOUND',
+					`Unknown motion template "${a.template}"`,
+					`Available: ${templates.map((x) => `${x.id}@${x.version}`).join(', ')} (list_motion_templates).`,
+				);
+			return applyHelper(
+				ctx,
+				a.projectId,
+				t.name,
+				[
+					{
+						type: 'clip.addMotionGraphic',
+						at: a.at,
+						duration: a.duration ?? { seconds: t.defaultDurationSeconds ?? 5 },
+						track: a.track ?? 'V2',
+						template: { id: t.id, version: t.version },
+						...(a.params ? { params: a.params } : {}),
+						...(a.sequenceId ? { sequenceId: a.sequenceId } : {}),
+					},
+				],
+				extra,
+			);
+		},
+	);
+}

@@ -7,6 +7,7 @@ import eventsRoutes from './events.ts';
 import exportsRoutes from './exports.ts';
 import fontsRoutes from './fonts.ts';
 import jobsRoutes from './jobs.ts';
+import mcpRoutes from './mcp.ts';
 import mediaRoutes from './media.ts';
 import mgRoutes from './mg.ts';
 import projectsRoutes from './projects.ts';
@@ -25,6 +26,7 @@ export const ROUTE_PLUGINS = [
 	fontsRoutes,
 	mgRoutes,
 	agentRoutes,
+	mcpRoutes,
 ] as const;
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {

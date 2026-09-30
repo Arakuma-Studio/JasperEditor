@@ -3,7 +3,13 @@
 // layout starts as the factory layout (null = build from the definition at the real window size).
 // Persisted per user/machine through the versioned shell storage (never in project files, SH-024).
 import type { SerializedDockview } from 'dockview-react';
-import { BUILTIN_WORKSPACES, DEFAULT_WORKSPACE_ID, isLayoutPreset, LAYOUT_PRESETS } from './definitions.ts';
+import {
+	BUILTIN_WORKSPACES,
+	DEFAULT_WORKSPACE_ID,
+	isLayoutPreset,
+	LAYOUT_PRESETS,
+	RETIRED_BUILTIN_WORKSPACES,
+} from './definitions.ts';
 import { loadVersioned, type ShellStorage, saveVersioned, type VersionedKey } from './storage.ts';
 
 export type WorkspaceRecord = {
@@ -59,6 +65,8 @@ export function parseWorkspacesState(data: unknown): WorkspacesState | null {
 		if (!r || typeof r !== 'object' || typeof r.name !== 'string') return null;
 		if (!isLayout(r.current ?? null) || !isLayout(r.saved ?? null)) return null;
 		if (id === '__proto__') continue;
+		// Retired built-ins (e.g. the Agent workspace) disappear; custom workspaces always have `custom:` ids.
+		if (RETIRED_BUILTIN_WORKSPACES.includes(id)) continue;
 		const builtIn = Object.hasOwn(base.workspaces, id);
 		workspaces[id] = {
 			id,

@@ -1,5 +1,5 @@
 // Approval gate for destructive agent transactions (S01:AGT-011, ARCHITECTURE §11): the request is shown
-// as a pending card in the Agent panel of the session that holds the project; the user approves or
+// as a pending card in the editor window of the session that holds the project; the user approves or
 // denies; after the timeout (60 s) the transaction fails with E_APPROVAL_TIMEOUT.
 import { randomUUID } from 'node:crypto';
 import type { Approval } from '@jasper/api';
@@ -45,7 +45,7 @@ export class ApprovalGate {
 		return { approval, decision };
 	}
 
-	/** Resolves a pending approval (from the Agent panel). Returns false if unknown or already settled. */
+	/** Resolves a pending approval (from the editor's approval card). Returns false if unknown or already settled. */
 	resolve(approvalId: string, decision: 'approved' | 'denied', projectId?: string): boolean {
 		const e = this.entries.get(approvalId);
 		if (!e || (projectId !== undefined && e.approval.projectId !== projectId)) return false;

@@ -18,6 +18,7 @@ export const BYPASS_PREFIXES = [
 	'/api',
 	'/events',
 	'/agent',
+	'/mcp',
 	'/ws',
 	'/health',
 	'/media',

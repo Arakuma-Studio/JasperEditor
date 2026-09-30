@@ -23,6 +23,7 @@ import { type TimelineEnv, TimelineEnvProvider } from '../panels/timeline/env.ts
 import type { PanelDefinition, PanelKind } from '../panels/types.ts';
 import { getDesktopBridge } from '../runtime/platform.ts';
 import { ensureAutosaver, flushAutosaver } from '../runtime/save.ts';
+import { AgentApprovals } from './AgentApprovals.tsx';
 import { type ShellController, type ShellMode, ShellRuntimeProvider, useShellRuntime } from './context.tsx';
 import { DIALOGS, registerShellDialogs } from './dialogs.tsx';
 import { DockController } from './dock/controller.ts';
@@ -451,6 +452,7 @@ function ShellBody() {
 				{mode !== 'edit' ? ModeView ? <ModeView /> : <ModePlaceholder mode={mode} /> : null}
 			</main>
 			<CommandPalette query={palette} onClose={closePalette} sources={sources} />
+			<AgentApprovals />
 		</div>
 	);
 }

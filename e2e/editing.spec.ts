@@ -69,7 +69,6 @@ test('Editing workspace chrome: panels, tabs, engine chip, font, ` maximize', as
 		'timeline',
 		'audioMeters',
 		'properties',
-		'agent',
 		'effectControls',
 		'history',
 		'jobs',

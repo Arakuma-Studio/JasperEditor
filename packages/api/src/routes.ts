@@ -3,6 +3,9 @@
 // builds one typed method per entry.
 import { z } from 'zod';
 import {
+	AgentMcpInfoSchema,
+	AgentOpenProjectRequestSchema,
+	AgentOpenProjectResponseSchema,
 	AgentQueryRequestSchema,
 	AgentQueryResponseSchema,
 	AgentSchemaResponseSchema,
@@ -44,7 +47,7 @@ import {
 } from './projects.ts';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
-export type RouteOwner = 'WP-2F' | 'WP-2G' | 'WP-2H';
+export type RouteOwner = 'WP-2F' | 'WP-2G' | 'WP-2H' | 'wp-mcp';
 
 export type RouteDef = {
 	method: HttpMethod;
@@ -302,6 +305,21 @@ export const ROUTES = {
 		owner: 'WP-2H',
 	}),
 	agentWs: r({ method: 'GET', path: '/agent', response: 'websocket', owner: 'WP-2H' }),
+	agentOpenProject: r({
+		method: 'POST',
+		path: '/api/agent/open-project',
+		body: AgentOpenProjectRequestSchema,
+		response: AgentOpenProjectResponseSchema,
+		owner: 'wp-mcp',
+	}),
+	agentMcpInfo: r({
+		method: 'GET',
+		path: '/api/agent/mcp-info',
+		response: AgentMcpInfoSchema,
+		owner: 'wp-mcp',
+	}),
+	/** MCP Streamable HTTP endpoint (same tools as the `jasper-mcp` stdio server). */
+	mcp: r({ method: 'POST', path: '/mcp', response: 'binary', owner: 'wp-mcp' }),
 } as const satisfies Record<string, RouteDef>;
 
 export type RouteName = keyof typeof ROUTES;
@@ -316,6 +334,7 @@ export const ENGINE_PATH_PREFIXES = [
 	'/agent',
 	'/fonts',
 	'/health',
+	'/mcp',
 ] as const;
 
 export function isEnginePath(pathname: string): boolean {

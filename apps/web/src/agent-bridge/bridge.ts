@@ -1,6 +1,6 @@
 // The in-page agent bridge (ARCHITECTURE §11 Stage 1, S01 §21): one per open EditorSession. It answers
 // queries, applies agent transactions through the session (one `Agent: <label>` undo entry each), asks
-// the user for approval of destructive transactions, keeps the Agent panel's activity feed, and relays
+// the user for approval of destructive transactions, keeps an activity feed (the shell toasts it), and relays
 // requests/events over WS /agent so external agents reach the open editor.
 import type { Approval } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
@@ -258,6 +258,11 @@ export class AgentBridge {
 					const t = s.transport.getState();
 					return { frame: t.frame, playing: t.playing };
 				},
+				seek: (frame: number) => {
+					if (s.transport.getState().playing) s.transport.pause();
+					s.transport.seek(frame);
+					return s.transport.getState().frame;
+				},
 				history: () => ({ entries: s.getState().history.entries, position: s.getState().history.index }),
 				mediaRuntime: (id: string) => s.getState().media[id] ?? null,
 			},
@@ -481,7 +486,7 @@ export class AgentBridge {
 		this.emit('approval.resolved', { approvalId, decision });
 	}
 
-	/** Approve / deny a pending card (Agent panel). Engine approvals are answered over WS /agent. */
+	/** Approve / deny a pending card (shell/AgentApprovals.tsx). Engine approvals are answered over WS /agent. */
 	resolveApproval(approvalId: string, decision: 'approved' | 'denied'): boolean {
 		if (this.settleLocal(approvalId, decision)) return true;
 		const a = this.store.getState().approvals.find((x) => x.approvalId === approvalId);
@@ -491,7 +496,7 @@ export class AgentBridge {
 		return sent;
 	}
 
-	/** Approve every pending card (`agent.approval.approveAll`). */
+	/** Approve every pending card. */
 	approveAll(): number {
 		let n = 0;
 		for (const a of [...this.store.getState().approvals])

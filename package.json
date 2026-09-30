@@ -20,6 +20,7 @@
     "fixtures": "node scripts/make-fixtures.mjs",
     "ffmpeg:lgpl": "node scripts/ffmpeg/fetch-or-build-lgpl.mjs",
     "ffmpeg:check": "node scripts/ffmpeg/check-lgpl.mjs",
+    "mcp:build": "pnpm --filter @jasper/mcp build",
     "e2e": "node scripts/e2e-prepare.mjs && playwright test",
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "e2e:desktop": "node e2e/desktop-smoke.mjs packaged-like && node e2e/desktop-smoke.mjs dev",
@@ -29,6 +30,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",
+    "@modelcontextprotocol/sdk": "^1.31.0",
     "@playwright/test": "^1.63.0",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^20.19.43",

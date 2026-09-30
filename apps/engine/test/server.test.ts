@@ -40,7 +40,13 @@ describe('engine server (ARCHITECTURE §9.1, §4.2)', () => {
 		for (const [name, route] of Object.entries(ROUTES)) {
 			// /events streams (tested in events.test.ts); mg* are implemented by WP-2G (test/mg.test.ts) and
 			// agent* by WP-2H (test/agent.test.ts).
-			if (name === 'health' || name === 'events' || name.startsWith('mg') || name.startsWith('agent'))
+			if (
+				name === 'health' ||
+				name === 'events' ||
+				name.startsWith('mg') ||
+				name.startsWith('agent') ||
+				name === 'mcp'
+			)
 				continue;
 			const url = route.path
 				.replace(/:([A-Za-z]+)/g, (_, p: string) => (p === 'projectId' ? 'prj_0000000000000001' : `x${p}`))
@@ -217,6 +223,23 @@ describe('engine server (ARCHITECTURE §9.1, §4.2)', () => {
 		const res = await fetch(`${engine.url}/health`);
 		expect(res.status).toBe(200);
 		expect((await res.json()).ok).toBe(true);
+	});
+
+	it('writes <appdir>/engine/runtime.json (0600) for local tools and removes it on stop', async () => {
+		const { existsSync, readFileSync, statSync } = await import('node:fs');
+		const appdir = mkdtempSync(join(tmpdir(), 'jasper-engine-'));
+		const engine = await startEngine({ appdir, port: 0, dev: false, token: 'tok_runtime', env: {} });
+		const file = join(appdir, 'engine', 'runtime.json');
+		const info = JSON.parse(readFileSync(file, 'utf8'));
+		expect(info).toMatchObject({
+			url: engine.url,
+			port: engine.port,
+			pid: process.pid,
+			token: 'tok_runtime',
+		});
+		if (process.platform !== 'win32') expect(statSync(file).mode & 0o777).toBe(0o600);
+		await engine.stop();
+		expect(existsSync(file)).toBe(false);
 	});
 });
 

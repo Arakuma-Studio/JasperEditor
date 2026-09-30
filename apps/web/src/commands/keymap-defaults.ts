@@ -214,13 +214,11 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('panel.open.effects', 'Shift+Digit7', G),
 	b('panel.open.mediaBrowser', 'Shift+Digit8', G),
 	b('panel.open.audioClipMixer', 'Shift+Digit9', G),
-	b('panel.open.agent', 'Shift+Digit0', G),
 	...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) =>
 		b(`workspace.switch.${n}`, `Alt+Shift+Digit${n}`, G, { mac: `Opt+Shift+Digit${n}` }),
 	),
 	b('workspace.resetToSaved', 'Alt+Shift+Digit0', G, { mac: 'Opt+Shift+Digit0' }),
 	b('app.commandPalette', 'Ctrl+Shift+KeyP', G),
-	b('agent.stop', 'Ctrl+Period', G),
 	b('app.cycleRegions', 'F6', G),
 	b('app.shortcutReference', 'Ctrl+Alt+Slash', G),
 

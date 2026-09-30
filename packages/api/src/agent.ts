@@ -11,6 +11,7 @@ export const AGENT_QUERIES = [
 	'media.list',
 	'selection.get',
 	'playhead.get',
+	'playhead.set',
 	'history.list',
 	'validate',
 	'frame.capture',
@@ -35,6 +36,8 @@ export type AgentQueryRequest = z.infer<typeof AgentQueryRequestSchema>;
 export const AgentQueryResponseSchema = z.object({
 	result: z.unknown(),
 	revision: z.number().int().optional(),
+	/** `session` = answered by the open editor (live state), `headless` = from the stored project. */
+	via: z.enum(['session', 'headless']).optional(),
 });
 export type AgentQueryResponse = z.infer<typeof AgentQueryResponseSchema>;
 
@@ -128,7 +131,7 @@ export const AgentWsServerMessageSchema = z.discriminatedUnion('type', [
 export type AgentWsClientMessage = z.infer<typeof AgentWsClientMessageSchema>;
 export type AgentWsServerMessage = z.infer<typeof AgentWsServerMessageSchema>;
 
-/** Pending approval shown in the Agent panel (S01:AGT-011). */
+/** Pending approval shown as a card at the top of the editor window (S01:AGT-011). */
 export const ApprovalSchema = z.object({
 	approvalId: z.string(),
 	projectId: z.string(),
@@ -143,3 +146,35 @@ export const ApprovalSchema = z.object({
 	commands: z.array(z.unknown()).optional(),
 });
 export type Approval = z.infer<typeof ApprovalSchema>;
+
+/**
+ * `POST /api/agent/open-project` (jasper-mcp `open_project_in_editor`): asks every connected editor window
+ * (all `/events` subscribers) to open the project; `editors` = how many windows were listening.
+ */
+export const AgentOpenProjectRequestSchema = z.object({ projectId: z.string().min(1) });
+export type AgentOpenProjectRequest = z.infer<typeof AgentOpenProjectRequestSchema>;
+export const AgentOpenProjectResponseSchema = z.object({
+	projectId: z.string(),
+	/** Path of the editor route, relative to the engine origin (`/project/<projectId>`). */
+	path: z.string(),
+	editors: z.number().int().min(0),
+	/** An editor session already has the project open (agent transactions apply live). */
+	live: z.boolean(),
+});
+export type AgentOpenProjectResponse = z.infer<typeof AgentOpenProjectResponseSchema>;
+/** Global engine event: an agent asked editor windows to open (and focus) a project. */
+export const EDITOR_OPEN_PROJECT_EVENT = 'editor.openProject';
+
+/**
+ * `GET /api/agent/mcp-info` (Help ▸ Connect an AI Agent…): where the MCP server that fronts this engine
+ * can be reached. Never contains the engine token.
+ */
+export const AgentMcpInfoSchema = z.object({
+	/** Absolute path of the `jasper-mcp` stdio server next to this engine; null when it is not built. */
+	stdioEntry: z.string().nullable(),
+	/** Streamable HTTP endpoint of this engine (`<origin>/mcp`). */
+	httpUrl: z.string(),
+	/** The engine runs in token mode (desktop): the HTTP endpoint needs a Bearer token that changes per launch. */
+	tokenRequired: z.boolean(),
+});
+export type AgentMcpInfo = z.infer<typeof AgentMcpInfoSchema>;

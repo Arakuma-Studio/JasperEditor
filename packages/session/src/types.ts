@@ -53,8 +53,7 @@ export type ActiveTool =
 	| 'pen'
 	| 'hand'
 	| 'zoom'
-	| 'type'
-	| 'agent';
+	| 'type';
 
 /** Session toggles (S01:SES-001 `toggles`). */
 export type SessionToggles = {

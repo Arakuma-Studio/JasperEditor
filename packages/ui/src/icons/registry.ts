@@ -5,7 +5,6 @@
 import {
 	AudioLines,
 	Bookmark,
-	Bot,
 	Camera,
 	Captions,
 	Check,
@@ -15,7 +14,6 @@ import {
 	Circle,
 	CircleAlert,
 	CircleCheck,
-	CircleStop,
 	CircleX,
 	Clapperboard,
 	Command,
@@ -38,7 +36,6 @@ import {
 	LayoutGrid,
 	Link,
 	List,
-	ListChecks,
 	ListTodo,
 	LoaderCircle,
 	Lock,
@@ -114,11 +111,6 @@ export const ICONS = {
 	'tool.zoomOut': ZoomOut,
 	'tool.type': Type,
 	'tool.verticalType': g('M5 5h8', 'M9 5v10', 'M18 4v16', 'M15.5 17.5L18 20l2.5-2.5'),
-	'tool.agent': g(
-		'M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z',
-		'M18 15v5',
-		'M15.5 17.5h5',
-	),
 
 	// ------------------------------------------------------------ transport and monitor buttons
 	'transport.play': Play,
@@ -196,13 +188,8 @@ export const ICONS = {
 	'engine.remote': Server,
 	'engine.offline': WifiOff,
 
-	// ------------------------------------------------------------ agent
+	// ------------------------------------------------------------ agent (History entries, toasts, approval cards)
 	'agent.sparkle': Sparkles,
-	'agent.plan': ListChecks,
-	'agent.toolCall': g('M14.5 5.5a4 4 0 00-5 5L4 16l4 4 5.5-5.5a4 4 0 005-5l-2.5 2.5-2.5-.5-.5-2.5z'),
-	'agent.apply': Check,
-	'agent.reject': X,
-	'agent.stop': CircleStop,
 
 	// ------------------------------------------------------------ effects (S05:IC-005)
 	'fx.badge': g('M9 18V8.5A2.5 2.5 0 0111.5 6H12', 'M7 11h4', 'M13 11l5 7', 'M18 11l-5 7'),
@@ -221,7 +208,6 @@ export const ICONS = {
 	'panel.history': History,
 	'panel.info': Info,
 	'panel.markers': Bookmark,
-	'panel.agent': Bot,
 	'panel.jobs': ListTodo,
 
 	// ------------------------------------------------------------ media

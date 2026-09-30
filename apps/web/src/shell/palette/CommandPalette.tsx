@@ -1,13 +1,13 @@
 // Command palette (S05:MN-040…043): Ctrl+Shift+P or the header search button opens a centered 560 px
 // palette at 20 % from the top. Fuzzy search over commands (with shortcut and enabled state), panels,
 // workspaces and project items; prefixes `>` commands, `@` project items, `#` markers, `:` go to
-// timecode, `?` help. The last row is "Ask the agent: <text>" (runs `agent.ask`; Ctrl+Enter sends
-// directly). Recent commands come first when the query is empty.
+// timecode, `?` help. Recent commands come first when the query is empty. (There is no in-app agent row:
+// agents drive the editor over MCP.)
 import { formatTimecode, parseTimecodeEntry, type Sequence } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { cx, Dialog, Icon, type IconId, Kbd } from '@jasper/ui';
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { getCommand, listCommands } from '../../commands/registry.ts';
+import { listCommands } from '../../commands/registry.ts';
 import type { PanelDefinition } from '../../panels/types.ts';
 import { recentCommands, useCommandCtx, useShellRuntime } from '../context.tsx';
 import { commandState } from '../menus/resolve.ts';
@@ -26,8 +26,6 @@ export type PaletteRow = {
 	score: number;
 	run(): void;
 };
-
-const AGENT_COMMAND = 'agent.ask';
 
 export type PaletteSources = {
 	session: EditorSession | null;
@@ -248,24 +246,6 @@ export function buildPaletteRows(
 			rows.push(...panelRows(6), ...workspaceRows(6), ...itemRows(8));
 		} else rows.push(...panelRows(20));
 	}
-
-	if (prefix === null && text) {
-		const agent = getCommand(AGENT_COMMAND);
-		rows.push({
-			key: 'agent:ask',
-			group: 'Agent',
-			label: `Ask the agent: ${text}`,
-			icon: 'agent.sparkle',
-			shortcut: 'Ctrl+Enter',
-			disabled: !agent,
-			reason: agent ? undefined : 'The agent is not available yet',
-			score: Number.NEGATIVE_INFINITY,
-			run: exec(() => {
-				void env.run('panel.focus.agent');
-				void env.run(AGENT_COMMAND, { prompt: text });
-			}),
-		});
-	}
 	return rows;
 }
 
@@ -311,11 +291,6 @@ export function CommandPalette(props: { query: string | null; onClose(): void; s
 			move(-1);
 		} else if (e.key === 'Enter') {
 			e.preventDefault();
-			if (e.ctrlKey || e.metaKey) {
-				const agentRow = rows.find((r) => r.key === 'agent:ask');
-				if (agentRow && !agentRow.disabled) agentRow.run();
-				return;
-			}
 			const row = current && !current.disabled ? current : rows[selectable[0] ?? -1];
 			row?.run();
 		}
