@@ -10,6 +10,7 @@ import { availableParallelism } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ENV } from '@jasper/config';
+import { defaultEffectRegistry } from '@jasper/project';
 import { JobError } from '../jobs/types.ts';
 import { selfCheck } from '../tools/ffmpeg.ts';
 import { binaryNames, type RemotionBinaries } from '../tools/lgpl.ts';
@@ -20,6 +21,27 @@ export const REMOTION_VERSION = '4.0.499';
 export const DELAY_RENDER_TIMEOUT_MS = 60_000;
 
 export type RemotionState = 'ready' | 'needs-browser-download' | 'unavailable';
+
+/** `chromiumOptions.gl` values Remotion 4.0.499 accepts (null = Chrome's default). */
+export type RemotionGl = 'angle' | 'swangle' | 'egl' | 'swiftshader' | 'vulkan' | 'angle-egl';
+/** Order in which the start-up probe tries OpenGL back ends for WebGL2 (S06:CG-042). */
+export const WEBGL_GL_CANDIDATES: readonly (RemotionGl | null)[] = [
+	null,
+	'angle',
+	'swangle',
+	'egl',
+	'swiftshader',
+];
+
+/** WebGL2 in the Remotion render browser (colour stage, S06:CG-042). */
+export type RemotionWebglStatus = {
+	state: 'ok' | 'unavailable' | 'unknown';
+	/** The `chromiumOptions.gl` that gave WebGL2 (null = Chrome's default). */
+	gl: RemotionGl | null;
+	/** `gl.RENDERER` of the probe context, e.g. "ANGLE (Google, Vulkan 1.3.0 (SwiftShader …))". */
+	renderer?: string;
+	message?: string;
+};
 
 export type RemotionRenderInput = {
 	inputProps: Record<string, unknown>;
@@ -136,6 +158,8 @@ export class RemotionService {
 	}
 
 	private status: RemotionBinariesStatus;
+	private webgl: RemotionWebglStatus = { state: 'unknown', gl: null };
+	private webglPromise: Promise<RemotionWebglStatus> | null = null;
 	private ffmpegInfoValue: RemotionFfmpegInfo = { lgpl: false, encoders: null, filters: null };
 
 	/**
@@ -337,6 +361,100 @@ export class RemotionService {
 		};
 	}
 
+	/** Current WebGL2 status of the render browser (`unknown` until `probeWebgl` finished). */
+	get webglStatus(): RemotionWebglStatus {
+		return this.webgl;
+	}
+
+	/**
+	 * Finds a `chromiumOptions.gl` that gives WebGL2 in the headless render browser (S06:CG-042): opens the
+	 * browser with each candidate (`JASPER_REMOTION_GL` forces one) and asks a blank page for a WebGL2
+	 * context. Cached; the colour stage of the compositions needs it on the Remotion path.
+	 */
+	probeWebgl(): Promise<RemotionWebglStatus> {
+		this.webglPromise ??= this.runWebglProbe().then((s) => {
+			this.webgl = s;
+			this.opts.log?.(
+				`[remotion] WebGL2 ${s.state}${s.state === 'ok' ? ` (gl=${s.gl ?? 'default'}, ${s.renderer ?? '?'})` : s.message ? `: ${s.message}` : ''}`,
+			);
+			return s;
+		});
+		return this.webglPromise;
+	}
+
+	private async runWebglProbe(): Promise<RemotionWebglStatus> {
+		const forced = this.env.JASPER_REMOTION_GL;
+		if (forced === 'off')
+			return { state: 'unavailable', gl: null, message: 'disabled by JASPER_REMOTION_GL=off' };
+		if (this.state() !== 'ready')
+			return { state: 'unknown', gl: null, message: `Remotion rendering is ${this.state()}` };
+		const candidates: (RemotionGl | null)[] = forced
+			? [forced === 'default' ? null : (forced as RemotionGl)]
+			: [...WEBGL_GL_CANDIDATES];
+		let r: RendererModule;
+		try {
+			r = await this.renderer();
+		} catch (e) {
+			return { state: 'unknown', gl: null, message: (e as Error).message };
+		}
+		const errors: string[] = [];
+		for (const gl of candidates) {
+			let browser: Awaited<ReturnType<RendererModule['openBrowser']>> | null = null;
+			try {
+				const b = this.browserOptions();
+				browser = await r.openBrowser('chrome', {
+					...(b.browserExecutable ? { browserExecutable: b.browserExecutable } : {}),
+					chromeMode: b.chromeMode,
+					chromiumOptions: { gl },
+					logLevel: 'error',
+				});
+				const page = await browser.newPage({
+					context: () => null,
+					logLevel: 'error',
+					indent: false,
+					pageIndex: 0,
+					onBrowserLog: null,
+					onLog: () => undefined,
+				});
+				const renderer = (await page.evaluate(() => {
+					const c = document.createElement('canvas');
+					const ctx = c.getContext('webgl2');
+					if (!ctx) return null;
+					const dbg = ctx.getExtension('WEBGL_debug_renderer_info');
+					return String(ctx.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : ctx.RENDERER));
+				})) as string | null;
+				if (renderer) return { state: 'ok', gl, renderer };
+				errors.push(`${gl ?? 'default'}: no WebGL2 context`);
+			} catch (e) {
+				errors.push(`${gl ?? 'default'}: ${(e as Error).message.slice(0, 200)}`);
+			} finally {
+				await browser?.close({ silent: true }).catch(() => undefined);
+			}
+		}
+		return { state: 'unavailable', gl: null, message: errors.join('; ') };
+	}
+
+	/** `chromiumOptions` for renders: the probed `gl` (awaits the probe once). */
+	private async chromiumOptions(): Promise<{ chromiumOptions?: { gl: RemotionGl | null } }> {
+		const s = await this.probeWebgl().catch(() => this.webgl);
+		return s.state === 'ok' && s.gl ? { chromiumOptions: { gl: s.gl } } : {};
+	}
+
+	/**
+	 * S06:CG-042: a document with colour effects needs WebGL2 in the render browser; without it the render
+	 * fails with `WEBGL_UNAVAILABLE` (never silently ungraded).
+	 */
+	private async assertWebglFor(inputProps: Record<string, unknown>): Promise<void> {
+		if (!docHasColorEffects(inputProps.doc)) return;
+		const s = await this.probeWebgl();
+		if (s.state === 'unavailable')
+			throw new JobError(
+				'WEBGL_UNAVAILABLE',
+				`Colour grading on the Remotion path needs WebGL2 in the render browser, which is unavailable here${s.message ? ` (${s.message})` : ''}`,
+				false,
+			);
+	}
+
 	private async recordUsage(kind: 'media' | 'still'): Promise<void> {
 		if (!this.opts.usageLog) return;
 		await mkdir(dirname(this.opts.usageLog), { recursive: true });
@@ -348,10 +466,12 @@ export class RemotionService {
 	private async composition(inputProps: Record<string, unknown>, signal: AbortSignal) {
 		// Refuse before bundling or loading the renderer when the LGPL directory is missing (strict mode).
 		const binaries = this.binariesOption();
+		await this.assertWebglFor(inputProps);
 		const r = await this.renderer();
 		const serveUrl = await this.serveUrl();
 		if (signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
-		const browser = this.browserOptions();
+		// The WebGL-capable `gl` of the start-up probe (S06:CG-042) applies to every page of the render.
+		const browser = { ...this.browserOptions(), ...(await this.chromiumOptions()) };
 		const composition = await r.selectComposition({
 			serveUrl,
 			id: COMPOSITION_ID,
@@ -468,9 +588,25 @@ export class RemotionService {
 	}
 }
 
+/** True when a render doc (RenderSnapshot) has an enabled colour effect (registry `color` op). */
+export function docHasColorEffects(doc: unknown): boolean {
+	const tracks = (
+		doc as { videoTracks?: { clips?: { effects?: { effectId: string; enabled: boolean }[] }[] }[] }
+	)?.videoTracks;
+	if (!Array.isArray(tracks)) return false;
+	for (const t of tracks)
+		for (const c of t.clips ?? [])
+			for (const fx of c.effects ?? [])
+				if (fx.enabled && defaultEffectRegistry.get(fx.effectId)?.color) return true;
+	return false;
+}
+
 function mapRenderError(e: unknown, signal: AbortSignal): Error {
 	if (signal.aborted) return new JobError('JOB_CANCELLED', 'Cancelled');
+	if (e instanceof JobError) return e;
 	const msg = (e as Error)?.message ?? String(e);
+	// The compositions' colour stage cancels the render with this code when WebGL2 is missing (S06:CG-042).
+	if (/WEBGL_UNAVAILABLE/.test(msg)) return new JobError('WEBGL_UNAVAILABLE', msg.slice(0, 1500), false);
 	const frame = /frame[^\d]{0,12}(\d+)/i.exec(msg)?.[1];
 	if (/delayRender|timeout|timed out/i.test(msg)) {
 		return new JobError(
