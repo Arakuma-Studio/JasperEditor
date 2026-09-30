@@ -22,7 +22,7 @@ export type ProbeResult = {
 	display: { width: number; height: number } | null;
 };
 
-type FfStream = {
+export type FfStream = {
 	index: number;
 	codec_type?: string;
 	codec_name?: string;
@@ -103,6 +103,16 @@ function bitDepthOf(s: FfStream): number {
 
 function hasAlphaFmt(pix: string | undefined): boolean {
 	return /^(yuva|rgba|bgra|argb|abgr|gbrap|ya\d|rgba64|bgra64)/.test(pix ?? '');
+}
+
+/**
+ * True when the stream carries an alpha channel. VP8/VP9 in WebM store alpha as Matroska BlockAdditions:
+ * ffprobe's native decoders report plain `yuv420p` there and only the `alpha_mode` stream tag tells.
+ */
+export function streamHasAlpha(s: Pick<FfStream, 'pix_fmt' | 'tags'>): boolean {
+	if (hasAlphaFmt(s.pix_fmt)) return true;
+	for (const [k, v] of Object.entries(s.tags ?? {})) if (k.toLowerCase() === 'alpha_mode') return v === '1';
+	return false;
 }
 
 /** First guess of WebCodecs/`<video>` decodability (S04:PB-004); null = depends on the client (HEVC). */
@@ -208,7 +218,7 @@ export function mapProbe(json: { streams?: FfStream[]; format?: FfFormat }): Pro
 		startTimecode: timecode,
 		streams,
 		rotationDegrees,
-		hasAlpha: v0 ? hasAlphaFmt(v0.pix_fmt) : false,
+		hasAlpha: v0 ? streamHasAlpha(v0) : false,
 		variableFrameRate,
 	};
 

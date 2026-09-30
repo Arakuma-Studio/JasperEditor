@@ -404,6 +404,104 @@ describe('native export (S03:ENG-030, S04:RN-021/022, QA-005)', () => {
 	});
 });
 
+describe('overlays with an alpha channel on the native path', () => {
+	/** A red full-frame solid on V1; the ProRes 4444 overlay on V2 for frames 0–30, the VP9 WebM one after it. */
+	async function overlayDoc() {
+		const mov = await register(app, fixture('overlay-alpha.mov'));
+		const webm = await register(app, fixture('overlay-alpha.webm'));
+		const d = new DocBuilder();
+		const m = d.addMedia(mov);
+		const w = d.addMedia(webm);
+		d.tx([
+			{ type: 'clip.addSolid', at: 0, duration: 60, track: 'V1', color: [1, 0, 0, 1] },
+			{ type: 'clip.place', source: { mediaId: m }, at: 0, tracks: { video: 'V2' }, matchSequence: 'keep' },
+			{ type: 'clip.place', source: { mediaId: w }, at: 30, tracks: { video: 'V2' }, matchSequence: 'keep' },
+		]);
+		return { d, mov, webm };
+	}
+
+	it('detects the alpha of ProRes 4444 and of VP9 WebM, and decodes the WebM with libvpx', async () => {
+		const { d, mov, webm } = await overlayDoc();
+		expect(mov.probe.hasAlpha).toBe(true);
+		expect(webm.probe.hasAlpha).toBe(true); // stream tag alpha_mode=1; the pixel format says yuv420p
+		const planned = await coreServices(app).exports.plan({
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			settings: settings(d.seqId) as never,
+		});
+		expect(planned.plan.path).toBe('native');
+		expect(planned.plan.blockers).toEqual([]);
+		const g = buildNativeGraph({
+			snapshot: planned.snapshot,
+			output: planned.output,
+			outputFile: '/tmp/x.mp4',
+			sources: { media: (id) => planned.media[id] ?? null, mgMaster: () => null },
+			threads: 2,
+		});
+		const movInput = g.inputs.find((i) => i.at(-1)!.endsWith('overlay-alpha.mov'))!;
+		const webmInput = g.inputs.find((i) => i.at(-1)!.endsWith('overlay-alpha.webm'))!;
+		expect(movInput).not.toContain('-c:v');
+		// FFmpeg's native vp9 decoder drops the alpha plane: the input decoder must be libvpx-vp9.
+		expect(webmInput.slice(0, 2)).toEqual(['-c:v', 'libvpx-vp9']);
+		// Colour conversions round accurately (no darkening per generation).
+		expect(g.filter).toContain(
+			'flags=bicubic+accurate_rnd+full_chroma_int+full_chroma_inp,setsar=1,format=rgba',
+		);
+		expect(g.filter).toMatch(/scale=out_color_matrix=bt709:out_range=tv:flags=[a-z_+]*accurate_rnd/);
+	});
+
+	it('refuses the native path when the build has no libvpx decoder for an alpha WebM', async () => {
+		const { d } = await overlayDoc();
+		const core = coreServices(app);
+		const { planExport } = await import('../src/export/planner.ts');
+		const caps = {
+			native: true,
+			remotionLocal: 'ready' as const,
+			fframes: 'unavailable' as const,
+			mgMasters: false,
+		};
+		const plan = (decoders: string[]) =>
+			planExport(
+				{ envelope: d.envelope(), sequenceId: d.seqId, settings: settings(d.seqId) as never },
+				{ registry: core.registry, fonts: core.fonts, capabilities: { ...caps, decoders } },
+			);
+		const without = await plan(['vp9', 'prores']);
+		expect(without.plan.path).toBe('remotion');
+		expect(without.plan.blockers.map((b) => b.reason).join(' ')).toMatch(/needs the libvpx-vp9 decoder/);
+		expect((await plan(['vp9', 'prores', 'libvpx-vp9'])).plan.path).toBe('native');
+	});
+
+	it('composites both overlays with their alpha (no black box, straight alpha, no colour shift)', async () => {
+		const { d } = await overlayDoc();
+		const start = await app.inject({
+			method: 'POST',
+			url: '/api/exports',
+			headers: JSON_H,
+			payload: {
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				settings: settings(d.seqId, { engine: 'native' }),
+			},
+		});
+		expect(start.statusCode).toBe(202);
+		const done = await coreServices(app).queue.wait(start.json().id);
+		expect(done.error).toBeUndefined();
+		expect(done.result).toMatchObject({ frames: 60, renderPath: 'native' });
+		const file = (await coreServices(app).exports.outputFile(start.json().id))!;
+		const near = (p: number[], want: number[], tol: number) =>
+			p.every((v, i) => Math.abs(v - want[i]!) <= tol) || `${p} is not within ${tol} of ${want}`;
+		for (const frame of [10, 45]) {
+			// Fully transparent area: the red solid below shows through unchanged.
+			expect(near(pixel(file, frame, 1700, 900), [255, 0, 0], 12)).toBe(true);
+			// 50 % green over red: (R, G) ≈ (127, 128). A premultiplied/straight mix-up would give ≈ (191, 64)
+			// or clip, a dropped alpha channel would give black.
+			expect(near(pixel(file, frame, 960, 540), [127, 128, 0], 14)).toBe(true);
+			// Opaque white box.
+			expect(near(pixel(file, frame, 200, 200), [255, 255, 255], 8)).toBe(true);
+		}
+	}, 120_000);
+});
+
 describe('export destinations and render outputs', () => {
 	it('copies to an absolute destination path without overwriting and rejects relative paths', async () => {
 		const clipA = await register(app, fixture('clip-a.mp4'));

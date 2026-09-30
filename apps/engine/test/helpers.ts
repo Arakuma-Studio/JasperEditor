@@ -25,7 +25,15 @@ export const JSON_H = { ...H, 'content-type': 'application/json' } as const;
 
 /** Makes sure `pnpm fixtures` outputs exist (generates them with the repo script when missing). */
 export function ensureFixtures(): void {
-	const needed = ['clip-a.mp4', 'clip-b.mp4', 'tone.wav', 'still.png', 'phone-rot90.mp4'];
+	const needed = [
+		'clip-a.mp4',
+		'clip-b.mp4',
+		'tone.wav',
+		'still.png',
+		'phone-rot90.mp4',
+		'overlay-alpha.mov',
+		'overlay-alpha.webm',
+	];
 	if (needed.every((n) => existsSync(join(FIXTURES, n)))) return;
 	const r = spawnSync(process.execPath, [join(ROOT, 'scripts', 'make-fixtures.mjs')], { stdio: 'inherit' });
 	if (r.status !== 0) throw new Error('fixture generation failed');

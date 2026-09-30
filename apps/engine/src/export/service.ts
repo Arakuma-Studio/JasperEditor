@@ -6,7 +6,12 @@ import { copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs
 import { availableParallelism } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path';
 import type { EngineJob, ExportSettings, ExportStartRequest, StillRequest } from '@jasper/api';
-import { buildRenderSnapshot, type MediaHandle, type RenderVisualClip } from '@jasper/project';
+import {
+	buildRenderSnapshot,
+	type MediaHandle,
+	mediaDecodeHints,
+	type RenderVisualClip,
+} from '@jasper/project';
 import type { UrlSigner } from '../auth/signed-url.ts';
 import type { Broadcaster } from '../events/broadcaster.ts';
 import type { FontCatalogService } from '../fonts/catalog.ts';
@@ -412,6 +417,7 @@ export class ExportService {
 					durationFlicks: r.probe.durationFlicks,
 					hasAudio: r.hasAudio,
 					rotation: r.probe.rotationDegrees,
+					...mediaDecodeHints(r.probe),
 				};
 			},
 			resolveFont: (font, weight, italic) => {

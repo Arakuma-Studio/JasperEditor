@@ -14,11 +14,18 @@ import {
 	type RenderVisualClip,
 	resolveLayerProps,
 } from '@jasper/project';
+import { alphaDecoder } from '../media/alpha.ts';
 import { audioEncodeArgs, LEGACY_X264_CHOICE, videoEncodeArgs } from '../tools/encoders.ts';
 import { sec } from '../tools/ffmpeg.ts';
 import type { LocalMedia, OutputSpec } from './planner.ts';
 
 export const SAMPLE_RATE = 48000;
+/**
+ * swscale flags for every YUV ↔ RGB conversion of the composite. Without `accurate_rnd` the default
+ * converters round down (a full-frame clip came out about one code value darker per generation), and
+ * without the full-chroma flags 4:2:0 chroma is up/down-sampled with the cheap horizontal path.
+ */
+export const SWS_FLAGS = 'flags=bicubic+accurate_rnd+full_chroma_int+full_chroma_inp';
 const OFFLINE_RGBA: [number, number, number, number] = [0.55, 0.05, 0.08, 1];
 
 export type NativeSourceResolver = {
@@ -169,10 +176,19 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		if ((c.kind === 'video' || c.kind === 'animated-image') && local) {
 			const startSec = clipContentTime(c, f0, fps) / FLICKS_PER_SECOND;
 			const srcDur = n * frameSec * c.speed.rate + margin;
-			const k = addInput(['-ss', sec(startSec), '-t', sec(srcDur), '-i', local.path]);
+			const dec = alphaDecoder(local.record.probe);
+			const k = addInput([
+				...(dec ? ['-c:v', dec] : []),
+				'-ss',
+				sec(startSec),
+				'-t',
+				sec(srcDur),
+				'-i',
+				local.path,
+			]);
 			src = `[${k}:v:0]`;
 			f.push(`setpts=(PTS-STARTPTS)/${fmt(c.speed.rate)}`, `fps=${rate(fps)}`, `trim=end_frame=${n}`);
-			f.push(`scale=${bw}:${bh}${inColor(local)}`, 'setsar=1', 'format=rgba');
+			f.push(`scale=${bw}:${bh}${inColor(local)}:${SWS_FLAGS}`, 'setsar=1', 'format=rgba');
 		} else if (c.kind === 'still' && local) {
 			const k = addInput([
 				'-loop',
@@ -186,7 +202,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			]);
 			src = `[${k}:v:0]`;
 			f.push('setpts=PTS-STARTPTS', `fps=${rate(fps)}`, `trim=end_frame=${n}`);
-			f.push(`scale=${bw}:${bh}${inColor(local)}`, 'setsar=1', 'format=rgba');
+			f.push(`scale=${bw}:${bh}${inColor(local)}:${SWS_FLAGS}`, 'setsar=1', 'format=rgba');
 		} else if (c.kind === 'motion-graphic' && mg) {
 			const startSec = (f0 - c.start) * frameSec;
 			const k = addInput(['-ss', sec(startSec), '-t', sec(n * frameSec + margin), '-i', mg]);
@@ -296,7 +312,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 	vout.push(`trim=end_frame=${output.frames}`, 'setpts=PTS-STARTPTS');
 	if (o.still) vout.push('format=rgb24');
 	else {
-		vout.push('scale=out_color_matrix=bt709:out_range=tv', 'format=yuv420p', 'setsar=1');
+		vout.push(`scale=out_color_matrix=bt709:out_range=tv:${SWS_FLAGS}`, 'format=yuv420p', 'setsar=1');
 		// Encoder-specific tail (nv12 for QSV, hwupload for VAAPI); yuv420p needs nothing more.
 		const tail = enc!.filters.filter((f) => f !== 'format=yuv420p');
 		vout.push(...tail);

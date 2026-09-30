@@ -156,6 +156,7 @@ export async function createCoreServices(
 				remotionLocal: caps.render.remotionLocal,
 				fframes: caps.render.fframes,
 				mgMasters: exportsSvc.hasMgMasterProvider,
+				...(check.decoders.length ? { decoders: check.decoders } : {}),
 			};
 		},
 	});

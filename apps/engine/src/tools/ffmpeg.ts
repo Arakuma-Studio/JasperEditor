@@ -242,6 +242,8 @@ export type SelfCheck = {
 	ffmpegVersion: string | null;
 	ffprobeVersion: string | null;
 	encoders: string[];
+	/** `ffmpeg -decoders` (the native path picks `libvpx`/`libvpx-vp9` for WebM with alpha). */
+	decoders: string[];
 	filters: string[];
 	/** `ffmpeg -hwaccels`. */
 	hwaccels: string[];
@@ -311,12 +313,13 @@ async function runSelfCheck(bins: BinaryPaths): Promise<SelfCheck> {
 			return '';
 		}
 	};
-	const [ffv, fpv, enc, fil, hwa] = await Promise.all([
+	const [ffv, fpv, enc, fil, hwa, dec] = await Promise.all([
 		text(bins.ffmpeg, ['-hide_banner', '-version']),
 		text(bins.ffprobe, ['-hide_banner', '-version']),
 		text(bins.ffmpeg, ['-hide_banner', '-encoders']),
 		text(bins.ffmpeg, ['-hide_banner', '-filters']),
 		text(bins.ffmpeg, ['-hide_banner', '-hwaccels']),
+		text(bins.ffmpeg, ['-hide_banner', '-decoders']),
 	]);
 	if (!bins.ffmpeg) errors.push('ffmpeg not found');
 	if (!bins.ffprobe) errors.push('ffprobe not found');
@@ -333,6 +336,7 @@ async function runSelfCheck(bins: BinaryPaths): Promise<SelfCheck> {
 		ffmpegVersion: parseVersion(ffv),
 		ffprobeVersion: parseVersion(fpv),
 		encoders,
+		decoders: parseCodecList(dec),
 		filters,
 		hwaccels: parseHwaccels(hwa),
 		license: ffv ? parseBuildLicense(ffv) : 'unknown',

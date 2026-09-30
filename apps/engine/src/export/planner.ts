@@ -9,6 +9,7 @@ import {
 	loadProject,
 	type MediaAsset,
 	type MediaHandle,
+	mediaDecodeHints,
 	type ProjectDocument,
 	type Rational,
 	type RenderSnapshot,
@@ -16,6 +17,7 @@ import {
 	rationalEquals,
 } from '@jasper/project';
 import type { FontCatalogService } from '../fonts/catalog.ts';
+import { alphaDecoder } from '../media/alpha.ts';
 import type { MediaRecord, MediaRegistry } from '../media/registry.ts';
 import { type EncoderRequest, LEGACY_X264_CHOICE } from '../tools/encoders.ts';
 
@@ -26,6 +28,8 @@ export type PlanCapabilities = {
 	fframes: 'ready' | 'unavailable';
 	/** WP-2G registered an mgMasterProvider. */
 	mgMasters: boolean;
+	/** `ffmpeg -decoders` of the engine's build; absent = unknown (assume the usual decoders exist). */
+	decoders?: readonly string[];
 };
 
 export class PlanError extends Error {
@@ -187,6 +191,14 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		for (const reason of nativeBlockers(c, deps.capabilities))
 			blockers.push({ itemId: c.clipId, path: 'native', reason });
 		if (c.kind === 'motion-graphic') mgClips.push(c.clipId);
+		// Alpha WebM needs the libvpx decoder on the native path (Remotion decodes it in the browser).
+		const dec = 'mediaId' in c.source ? alphaDecoder(media[c.source.mediaId]?.record.probe) : null;
+		if (dec && deps.capabilities.decoders && !deps.capabilities.decoders.includes(dec))
+			blockers.push({
+				itemId: c.clipId,
+				path: 'native',
+				reason: `${c.kind} clip "${c.name}" has an alpha channel that needs the ${dec} decoder, which this ffmpeg build lacks`,
+			});
 	}
 	for (const a of snapshot.audioClips) {
 		const why: string[] = [];
@@ -402,6 +414,7 @@ function localHandle(asset: MediaAsset, m: LocalMedia): MediaHandle {
 		durationFlicks: r.probe.durationFlicks,
 		hasAudio: r.hasAudio,
 		rotation: r.probe.rotationDegrees,
+		...mediaDecodeHints(r.probe),
 	};
 }
 

@@ -25,7 +25,28 @@ export type MediaHandle = {
 	durationFlicks: number | null;
 	hasAudio: boolean;
 	rotation: 0 | 90 | 180 | 270;
+	/**
+	 * The picture has an alpha channel that compositing must keep (ProRes 4444, VP8/VP9 WebM with alpha,
+	 * QuickTime Animation). Absent = opaque.
+	 */
+	alpha?: boolean;
+	/**
+	 * `false` when a browser (WebCodecs / `<video>`) cannot decode the original, e.g. ProRes: previews need
+	 * `proxyUrl`, engine renders decode the original natively. Absent = decodable or unknown.
+	 */
+	browserDecodable?: boolean;
 };
+
+/** The `alpha` / `browserDecodable` hints of a MediaHandle, from the asset's probe (S04:PB-004). */
+export function mediaDecodeHints(
+	probe: Pick<MediaAsset['probe'], 'hasAlpha' | 'streams'>,
+): Pick<MediaHandle, 'alpha' | 'browserDecodable'> {
+	const vs = probe.streams.find((s) => s.type === 'video');
+	return {
+		...(probe.hasAlpha ? { alpha: true } : {}),
+		...(vs?.type === 'video' && vs.browserDecodable === false ? { browserDecodable: false } : {}),
+	};
+}
 
 export type RenderVisualSource =
 	| { mediaId: string }
