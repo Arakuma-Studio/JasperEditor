@@ -25,7 +25,8 @@ export const RESOURCES_LGPL_DIR = 'ffmpeg-lgpl';
 export const BUNDLED_GPL_WARNING = 'Remotion is using its bundled GPL FFmpeg (dev only)';
 export const STRICT_MISSING_MESSAGE =
 	'Remotion rendering is disabled: the LGPL FFmpeg binaries directory is missing ' +
-	`(${RESOURCES_LGPL_DIR}). Packaged builds never use Remotion's bundled GPL FFmpeg.`;
+	`(<resources>/${RESOURCES_LGPL_DIR}, or vendor/ffmpeg-lgpl/<platform> from \`pnpm ffmpeg:lgpl\`, or ` +
+	`${REMOTION_BIN_DIR_ENV}). Packaged and built engines never use Remotion's bundled GPL FFmpeg.`;
 
 type Env = Record<string, string | undefined>;
 type Exists = (p: string) => boolean;

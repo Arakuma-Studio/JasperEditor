@@ -144,6 +144,7 @@ describe.runIf(enabled && !!LGPL_DIR)('Remotion with the LGPL binaries directory
 		expect(result).toMatchObject({
 			frames: 24,
 			renderPath: 'remotion',
+			remotionOutput: 'intermediate',
 			encoder: 'libopenh264',
 			container: 'mp4',
 		});

@@ -2,6 +2,7 @@
 // reports readiness to a forking parent (Electron utilityProcess or child_process.fork).
 import { ENV, readFlag, resolveAppdir, resolvePort } from '@jasper/config';
 import { startEngine } from './index.ts';
+import { coreServices } from './tools/services.ts';
 
 type ParentPort = { postMessage(msg: unknown): void };
 
@@ -17,6 +18,14 @@ async function main(): Promise<void> {
 	}
 	const engine = await startEngine({ appdir, port, host, logger: false });
 	console.log(`[engine] JasperEditor engine listening on ${engine.url} (appdir ${appdir})`);
+	// D-13: say which FFmpeg is in use, and warn loudly when Remotion is not on the LGPL build.
+	const caps = await coreServices(engine.app).capabilities.get();
+	console.log(
+		`[engine] ffmpeg ${caps.media.ffmpegVersion ?? 'not found'} (${caps.media.ffmpegSource ?? 'unknown'}, ${caps.media.encoding?.license ?? 'unknown'} build)`,
+	);
+	const remotion = caps.render.remotionBinaries;
+	if (remotion?.message) console.warn(`[engine] WARNING: ${remotion.message}`);
+	else if (remotion) console.log(`[engine] Remotion uses the LGPL FFmpeg directory (${remotion.source})`);
 	const ready = { type: 'ready', port: engine.port };
 	(process as unknown as { parentPort?: ParentPort }).parentPort?.postMessage(ready);
 	process.send?.(ready);
