@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Generates deterministic test media under fixtures/media/ with the system ffmpeg (ARCHITECTURE §14).
+// Generates deterministic test media under fixtures/media/ with the system ffmpeg (ARCHITECTURE §14;
+// `JASPER_FFMPEG` selects another one, e.g. the LGPL build in vendor/ffmpeg-lgpl/<platform>/).
 // Existing files are kept while their recipe is unchanged: a `.<name>.recipe` stamp holds a hash of the
 // ffmpeg arguments, and a missing or different stamp regenerates the file. Outputs are gitignored.
 import { spawnSync } from 'node:child_process';
@@ -14,7 +15,13 @@ const ffmpeg = process.env.JASPER_FFMPEG || 'ffmpeg';
 mkdirSync(outDir, { recursive: true });
 
 const base = ['-hide_banner', '-loglevel', 'error', '-y'];
-const h264 = ['-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-g', '30'];
+// H.264 sources that mimic camera files. x264 is used when the ffmpeg has it (the recipe the fixtures were
+// tuned with); an LGPL build (ARCHITECTURE D-13) encodes them with OpenH264 instead, so x264 is never needed.
+const encoders = spawnSync(ffmpeg, ['-hide_banner', '-encoders'], { encoding: 'utf8' }).stdout ?? '';
+const h264 =
+	/\blibx264\b/.test(encoders) || !/\blibopenh264\b/.test(encoders)
+		? ['-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-g', '30']
+		: ['-c:v', 'libopenh264', '-b:v', '4M', '-allow_skip_frames', '0', '-pix_fmt', 'yuv420p', '-g', '30'];
 const aac = ['-c:a', 'aac', '-b:a', '128k', '-ac', '2', '-ar', '48000'];
 /**
  * A tone whose level changes over time, so timeline waveforms show a shape (a steady sine draws as a flat
