@@ -88,6 +88,7 @@ export async function sequenceSummary(page: Page): Promise<{
 	duration: number;
 	durationFrames?: number;
 	markers: { name?: string; frame?: number; start?: number }[];
+	tracks?: { id: string; label: string; kind: string; clipCount: number }[];
 }> {
 	return query(page, 'sequence.summary');
 }
@@ -242,4 +243,58 @@ export async function waitForJob(
 		if (Date.now() - t0 > timeoutMs) throw new Error(`job ${jobId} still ${job.state} after ${timeoutMs} ms`);
 		await new Promise((r) => setTimeout(r, 500));
 	}
+}
+
+export type ExportOutcome = {
+	jobId: string;
+	file: string;
+	job: { state: string; result?: Record<string, unknown>; stage?: string };
+	planText: string;
+};
+
+/**
+ * Export mode (Ctrl+M) → engine choice → plan summary must mention `expectPath` → Export → wait for the job
+ * → Download from the Jobs panel → saved file path.
+ */
+export async function exportViaUi(
+	page: Page,
+	request: APIRequestContext,
+	opts: { engine: 'auto' | 'native' | 'remotion'; fileName: string; expectPath: RegExp; outDir: string },
+): Promise<ExportOutcome> {
+	await page.getByTestId('timeline-timecode').click();
+	await page.keyboard.press('Escape');
+	await page.keyboard.press('Control+KeyM');
+	await expect(page.getByTestId('export-mode')).toBeVisible();
+	await page.getByTestId('export-engine').selectOption(opts.engine);
+	await page.getByTestId('export-filename').fill(opts.fileName);
+	const planPath = page.getByTestId('plan-path');
+	await expect(planPath).toContainText(opts.expectPath, { timeout: 30_000 });
+	const planText = (await planPath.innerText()).trim();
+	const before = new Set(
+		((await (await request.get('/api/jobs')).json()).jobs as { id: string }[]).map((j) => j.id),
+	);
+	await expect(page.getByTestId('export-start')).toBeEnabled();
+	await page.getByTestId('export-start').click();
+	await expect(page.getByTestId('export-mode')).toBeHidden();
+	let jobId = '';
+	await expect
+		.poll(async () => {
+			const jobs = (await (await request.get('/api/jobs')).json()).jobs as { id: string; kind: string }[];
+			jobId = jobs.find((j) => j.kind === 'export' && !before.has(j.id))?.id ?? '';
+			return jobId;
+		})
+		.not.toBe('');
+	const job = await waitForJob(request, jobId);
+	expect(job.state, JSON.stringify(job.error ?? null)).toBe('succeeded');
+	// Download through the Jobs panel (the export opened it).
+	const jobsPanel = page.getByTestId('jobs-panel');
+	await expect(jobsPanel).toBeVisible();
+	const row = jobsPanel.locator(`[data-testid="job-row"][data-job-id="${jobId}"]`);
+	await expect(row).toHaveAttribute('data-status', /succeeded|done|finished/i, { timeout: 30_000 });
+	const download = page.waitForEvent('download');
+	await row.getByTestId('job-download').click();
+	const d = await download;
+	const file = join(opts.outDir, opts.fileName);
+	await d.saveAs(file);
+	return { jobId, file, job: job as ExportOutcome['job'], planText };
 }

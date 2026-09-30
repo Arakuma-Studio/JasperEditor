@@ -1,5 +1,8 @@
 // M1 golden path (ARCHITECTURE §15 items 2–8 and 13), driven through the UI of the built app served by the
 // built engine. Steps share one page and run in order; a failing step skips the rest.
+
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import {
 	appliedLabels,
@@ -7,12 +10,17 @@ import {
 	clips,
 	createProject,
 	enableAgentBridge,
+	exportViaUi,
+	ffprobe,
 	focusTimeline,
 	importFiles,
 	playheadFrame,
 	pointerDrag,
 	programPixels,
+	ROOT,
+	sequenceSummary,
 	timelineArea,
+	trackRow,
 	watchPage,
 } from './support.ts';
 
@@ -152,6 +160,98 @@ test('move, trim, razor: one History entry each; Ctrl+Z / Ctrl+Shift+Z', async (
 	await page.keyboard.press('Control+Shift+KeyZ');
 	await expect.poll(async () => (await clips(page, ['V1'])).length).toBe(2);
 	expect((await appliedLabels(page)).length).toBe(labelsBefore + 3);
+});
+
+const EXPORT_DIR = join(ROOT, 'test-results', 'e2e-exports');
+
+/** Frames of the sequence = end of the last clip (the sequence starts at 0). */
+async function sequenceFrames(): Promise<number> {
+	return Math.max(...(await clips(page)).map((c) => c.end));
+}
+
+function assertOutput(file: string, frames: number, opts: { audio: boolean }): void {
+	const probe = ffprobe(file);
+	const v = probe.streams.find((s) => s.codec_type === 'video');
+	expect(v, 'video stream').toBeTruthy();
+	expect(v!.codec_name).toBe('h264');
+	expect([v!.width, v!.height]).toEqual([1920, 1080]);
+	expect(v!.r_frame_rate).toBe('30000/1001');
+	expect(Number(v!.nb_read_frames)).toBe(frames);
+	expect(Number(probe.format.duration)).toBeCloseTo((frames * 1001) / 30000, 1);
+	if (opts.audio)
+		expect(probe.streams.some((s) => s.codec_type === 'audio' && s.codec_name === 'aac')).toBe(true);
+}
+
+test('export a media-only sequence with Auto → native ffmpeg path; ffprobe frame count matches', async ({
+	request,
+}) => {
+	mkdirSync(EXPORT_DIR, { recursive: true });
+	const frames = await sequenceFrames();
+	const out = await exportViaUi(page, request, {
+		engine: 'auto',
+		fileName: 'smoke-native.mp4',
+		expectPath: /native/i,
+		outDir: EXPORT_DIR,
+	});
+	expect(out.job.result?.renderPath).toBe('native');
+	assertOutput(out.file, frames, { audio: true });
+});
+
+test('insert the lower-third@1 motion graphic from the Motion Templates panel (drag to V2)', async () => {
+	await page.getByTestId('tab-motionTemplates').click();
+	const card = page.locator('[data-template="lower-third@1"]');
+	await expect(card).toBeVisible();
+	const v2 = (await clips(page)).length;
+	const area = timelineArea(page);
+	const summary = await sequenceSummary(page);
+	const v2Track = summary.tracks!.find((t) => t.label === 'V2')!;
+	const row = (await trackRow(page, v2Track.id).boundingBox())!;
+	const areaBox = (await area.boundingBox())!;
+	await card.dragTo(area, { targetPosition: { x: 0, y: row.y - areaBox.y + row.height / 2 } });
+	await expect
+		.poll(async () => (await clips(page)).filter((c) => c.kind === 'motion-graphic').length)
+		.toBe(1);
+	expect((await clips(page)).length).toBe(v2 + 1);
+	const mg = (await clips(page)).find((c) => c.kind === 'motion-graphic')!;
+	expect(mg.track).toBe('V2');
+});
+
+test('motion graphic + footage exports with Auto → native (fframes master)', async ({ request }) => {
+	const frames = await sequenceFrames();
+	const out = await exportViaUi(page, request, {
+		engine: 'auto',
+		fileName: 'smoke-mg-native.mp4',
+		expectPath: /native/i,
+		outDir: EXPORT_DIR,
+	});
+	expect(out.job.result?.renderPath).toBe('native');
+	assertOutput(out.file, frames, { audio: true });
+});
+
+test('Type tool click in the Program monitor adds a text clip', async () => {
+	await focusTimeline(page);
+	await page.keyboard.press('KeyT');
+	const vp = (await page.getByTestId('program-viewport').boundingBox())!;
+	await page.mouse.click(vp.x + vp.width / 2, vp.y + vp.height * 0.3);
+	await page.keyboard.press('Escape');
+	await expect.poll(async () => (await clips(page)).filter((c) => c.kind === 'text').length).toBe(1);
+	await focusTimeline(page);
+	await page.keyboard.press('KeyV');
+	expect((await appliedLabels(page)).at(-1)).toMatch(/Text/);
+});
+
+test('with the text clip, Auto plans the Remotion path; the Remotion export succeeds', async ({
+	request,
+}) => {
+	const frames = await sequenceFrames();
+	const out = await exportViaUi(page, request, {
+		engine: 'auto',
+		fileName: 'smoke-remotion.mp4',
+		expectPath: /remotion/i,
+		outDir: EXPORT_DIR,
+	});
+	expect(out.job.result?.renderPath).toBe('remotion');
+	assertOutput(out.file, frames, { audio: true });
 });
 
 test('no uncaught page errors so far', async () => {
