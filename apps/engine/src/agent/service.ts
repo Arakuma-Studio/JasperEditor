@@ -500,8 +500,13 @@ export class AgentService {
 	private onSessionEvent(conn: AgentConnection, event: string, payload: unknown): void {
 		if (event === 'agent.approval.resolve') {
 			const p = payload as { approvalId?: unknown; decision?: unknown };
-			if (typeof p?.approvalId === 'string' && (p.decision === 'approved' || p.decision === 'denied'))
-				this.approvals.resolve(p.approvalId, p.decision, conn.projectId ?? undefined);
+			// Only a session that announced a project may answer, and only for that project's approvals.
+			if (
+				conn.projectId &&
+				typeof p?.approvalId === 'string' &&
+				(p.decision === 'approved' || p.decision === 'denied')
+			)
+				this.approvals.resolve(p.approvalId, p.decision, conn.projectId);
 			return;
 		}
 		if (!conn.projectId || !RELAYED_SESSION_EVENTS.has(event)) return;

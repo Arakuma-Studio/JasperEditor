@@ -469,6 +469,21 @@ describe('AgentService timeouts', () => {
 		expect(service.pendingApprovals()).toEqual([]);
 	});
 
+	it('ignores approval answers from connections that never said hello', async () => {
+		const { service, socket, projectId } = makeService({ approvalTimeoutMs: 80 });
+		const stranger = new FakeSocket();
+		service.handleSocket(stranger);
+		const p = service.transact(projectId, tx([{ type: 'item.delete', itemIds: ['itm_X'] }]));
+		const ask = await socket.nextSent((m) => m.type === 'event' && m.event === 'agent.approval.requested');
+		const approvalId = (ask.payload as { approvalId: string }).approvalId;
+		stranger.client({
+			type: 'event',
+			event: 'agent.approval.resolve',
+			payload: { approvalId, decision: 'approved' },
+		});
+		expect((await p).result).toMatchObject({ ok: false, errors: [{ code: 'E_APPROVAL_TIMEOUT' }] });
+	});
+
 	it('returns E_NO_SESSION on a relay timeout while the lease is live, headless once it expired', async () => {
 		const { service, store, projectId } = makeService({ relayTimeoutMs: 30 });
 		store.lease = {
