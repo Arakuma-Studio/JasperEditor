@@ -14,7 +14,7 @@ import {
 } from './media.ts';
 import { type Sequence, SequenceSchema } from './sequence.ts';
 
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 export const SourceMarksSchema = z.looseObject({
 	in: z.looseObject({ flicks: nonNegInt() }).nullable(),

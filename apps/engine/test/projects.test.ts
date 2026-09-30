@@ -6,7 +6,7 @@ import { EngineClient } from '@jasper/engine-client';
 import { EngineProjectStore } from '@jasper/session';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { LeaseManager } from '../src/projects/leases.ts';
-import { ProjectStoreFs } from '../src/projects/store.ts';
+import { CURRENT_SCHEMA_VERSION, ProjectStoreFs } from '../src/projects/store.ts';
 import { closeApps, H, JSON_H, makeApp, type TestApp, tempAppdir } from './helpers.ts';
 
 let app: TestApp;
@@ -36,14 +36,18 @@ describe('projects (ARCHITECTURE §9.2)', () => {
 				projectId: id,
 				name: 'My Project',
 				revision: 0,
-				schemaVersion: 1,
+				schemaVersion: CURRENT_SCHEMA_VERSION,
 				thumbnail: null,
 			}),
 		]);
 		const got = (await app.inject({ method: 'GET', url: `/api/projects/${id}`, headers: H })).json();
 		expect(got.revision).toBe(0);
 		expect(got.view).toBeNull();
-		expect(got.envelope).toMatchObject({ format: 'jasper-project', schemaVersion: 1, revision: 0 });
+		expect(got.envelope).toMatchObject({
+			format: 'jasper-project',
+			schemaVersion: CURRENT_SCHEMA_VERSION,
+			revision: 0,
+		});
 		const seq = Object.values(
 			got.envelope.document.sequences as Record<
 				string,

@@ -275,7 +275,7 @@ packages/project/src/
     apply.ts        # applyTransaction: resolve temp refs/labels/"$selection", run handlers with Immer, invariants, result
     placement.ts    # overwrite/insert/sync-lock algorithms (S02 Appendix A.4/A.5, S01:CLP-003, TRK-006)
   invariants.ts     # INV-001…INV-015 (with the §2.3 change to locked tracks)
-  migrations.ts     # vN→vN+1 chain, fixtures in test/fixtures/v1/*.jasper
+  migrations.ts     # vN→vN+1 chain, fixtures in test/fixtures/v<N>/*.jasper
   registry/
     kinds.ts        # kind capabilities (S03:KND-001 idea, S01 kind table): track kind, bounded content, engines
     effects.ts      # effect registry: params, preview css/svg, native filter mapping, capabilities (S01:FX-021, S03 §15)

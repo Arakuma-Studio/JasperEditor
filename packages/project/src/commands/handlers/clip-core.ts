@@ -11,7 +11,7 @@ import {
 	defaultTransform,
 	scaleForMode,
 } from '../../factories.ts';
-import { defaultLabelForMedia, isBoundedContent, kindCapabilities } from '../../registry/kinds.ts';
+import { defaultLabelForPlacedClip, isBoundedContent, kindCapabilities } from '../../registry/kinds.ts';
 import type { MgTemplateInfo } from '../../registry/mg.ts';
 import type { Animatable, LabelColor, Vec2 } from '../../schema/common.ts';
 import type { DefaultScaling, ProjectItem } from '../../schema/document.ts';
@@ -224,7 +224,7 @@ export function placeSource(
 		if (asset.kind === 'font' || asset.kind === 'lut')
 			h.fail('E_INVALID_PARAM', `${asset.kind} assets cannot be placed on a timeline`);
 		const name = item?.name ?? asset.originalName;
-		const label = item?.label ?? defaultLabelForMedia(asset);
+		const label = (kind: Clip['kind']) => defaultLabelForPlacedClip(kind, asset, item?.label);
 		const box = mediaBox(asset) ?? frameBox(seq);
 		const bounded = asset.kind === 'video' || asset.kind === 'audio';
 		const inF = o.sourceRange?.in ?? marks?.in?.flicks ?? 0;
@@ -276,7 +276,7 @@ export function placeSource(
 				kind: 'video',
 				trackRef: videoTrackRef,
 				build: (id, trackId, start, duration, si) => ({
-					...commonFields(h, id, trackId, start, duration, si, name, label),
+					...commonFields(h, id, trackId, start, duration, si, name, label('video')),
 					kind: 'video',
 					mediaId: asset.id,
 					videoStreamIndex: asset.probe.streams.find((s) => s.type === 'video')!.index,
@@ -290,7 +290,16 @@ export function placeSource(
 				trackRef: videoTrackRef,
 				build: (id, trackId, start, duration, si) =>
 					({
-						...commonFields(h, id, trackId, start, duration, si, name, label),
+						...commonFields(
+							h,
+							id,
+							trackId,
+							start,
+							duration,
+							si,
+							name,
+							label(asset.kind === 'image' ? 'still' : 'animated-image'),
+						),
 						kind: asset.kind === 'image' ? 'still' : 'animated-image',
 						mediaId: asset.id,
 						...(asset.kind === 'animated-image' ? { loop: true } : {}),
@@ -328,7 +337,7 @@ export function placeSource(
 					kind: 'audio',
 					trackRef,
 					build: (id, trackId, start, duration, si) => ({
-						...commonFields(h, id, trackId, start, duration, si, name, label),
+						...commonFields(h, id, trackId, start, duration, si, name, label('audio')),
 						kind: 'audio',
 						mediaId: asset.id,
 						channels,

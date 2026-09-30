@@ -13,6 +13,7 @@ import {
 import { Harness } from './helpers.ts';
 
 const fixture = () => JSON.parse(readFileSync(join(__dirname, 'fixtures/v1/basic.jasper'), 'utf8'));
+const fixtureV2 = () => JSON.parse(readFileSync(join(__dirname, 'fixtures/v2/basic.jasper'), 'utf8'));
 
 describe('persistence envelope and migrations (S01:PER-002, MIG-001…005)', () => {
 	it('the v1 fixture always loads without repairs', () => {
@@ -23,15 +24,50 @@ describe('persistence envelope and migrations (S01:PER-002, MIG-001…005)', () 
 		expect(r.document.name).toBe('Basic fixture');
 		expect(Object.keys(Object.values(r.document.sequences)[0]!.clips)).toHaveLength(4);
 	});
-	it('v1 migration is the identity and newer versions open read-only', () => {
+	it('v1 → v2 relabels default-labelled audio halves of A/V clips and nothing else', () => {
 		const env = fixture();
 		const m = migrate(env);
 		expect(m.readOnly).toBe(false);
+		expect(m.report).toEqual({ fromVersion: 1, toVersion: 2, steps: ['v1→v2'] });
+		expect(m.document.schemaVersion).toBe(2);
+		const before = Object.values(env.document.sequences)[0] as Record<string, any>;
+		const after = Object.values(m.document.sequences)[0]!;
+		for (const c of Object.values(before.clips as Record<string, any>)) {
+			expect(after.clips[c.id]!.label).toBe(c.kind === 'audio' ? 'caribbean' : c.label);
+		}
+		// Everything except that label is untouched.
+		const strip = (d: any) => {
+			const copy = JSON.parse(JSON.stringify(d));
+			for (const s of Object.values(copy.sequences) as any[])
+				for (const c of Object.values(s.clips) as any[]) if (c.kind === 'audio') c.label = 'x';
+			copy.schemaVersion = 0;
+			return copy;
+		};
+		expect(strip(m.document)).toEqual(strip(env.document));
+		// The v1 input is never mutated.
+		expect((Object.values(before.clips) as any[]).find((c) => c.kind === 'audio').label).toBe('violet');
+	});
+	it('v1 → v2 keeps labels the user chose on audio clips', () => {
+		const env = fixture();
+		const seq = Object.values(env.document.sequences)[0] as Record<string, any>;
+		const audio = Object.values(seq.clips as Record<string, any>).find((c) => c.kind === 'audio')!;
+		audio.label = 'rose';
+		const m = migrate(env);
+		expect(Object.values(m.document.sequences)[0]!.clips[audio.id]!.label).toBe('rose');
+	});
+	it('the v2 fixture loads unchanged and newer versions open read-only', () => {
+		const env = fixtureV2();
+		const m = migrate(env);
+		expect(m.readOnly).toBe(false);
+		expect(m.report.steps).toEqual([]);
 		expect(m.document).toEqual(env.document);
+		const r2 = loadProject(env, { effects: defaultEffectRegistry });
+		expect(r2.repairs).toEqual([]);
+		expect(r2.issues).toEqual([]);
 		const newer = {
 			...env,
-			schemaVersion: 2,
-			document: { ...env.document, schemaVersion: 2, futureField: { a: 1 } },
+			schemaVersion: 3,
+			document: { ...env.document, schemaVersion: 3, futureField: { a: 1 } },
 		};
 		const r = loadProject(newer);
 		expect(r.readOnly).toBe(true);

@@ -1,0 +1,632 @@
+{
+  "format": "jasper-project",
+  "schemaVersion": 2,
+  "savedAt": "2026-09-30T10:12:00.000Z",
+  "savedBy": {
+    "app": "JasperEditor",
+    "version": "0.1.0",
+    "platform": "web"
+  },
+  "revision": 4,
+  "document": {
+    "schemaVersion": 2,
+    "projectId": "prj_0WKWJAW8474FZSWS",
+    "name": "Basic fixture",
+    "settings": {
+      "defaultSequencePreset": "hd-1080p-29.97",
+      "mediaPolicy": {
+        "copyOnImport": false
+      },
+      "proxyPolicy": {
+        "mode": "auto",
+        "preset": "h264-720p",
+        "autoWhen": {
+          "minHeight": 2160,
+          "codecs": [
+            "prores",
+            "dnxhd",
+            "hevc"
+          ],
+          "bitDepthAbove": 8
+        }
+      },
+      "defaultStillDurationFrames": 150,
+      "defaultTransitionFrames": 30,
+      "defaultScaling": "fit-if-larger"
+    },
+    "rootItems": [
+      "itm_J7FHP71Q6XPCMXA9",
+      "bin_0000000000000034",
+      "itm_0000000000000038"
+    ],
+    "items": {
+      "itm_J7FHP71Q6XPCMXA9": {
+        "id": "itm_J7FHP71Q6XPCMXA9",
+        "kind": "sequence",
+        "name": "Sequence 01",
+        "sequenceId": "seq_YF4YQZ9B63R5RW3H",
+        "label": "forest"
+      },
+      "bin_0000000000000034": {
+        "id": "bin_0000000000000034",
+        "kind": "bin",
+        "name": "Footage",
+        "children": [
+          "itm_0000000000000036"
+        ],
+        "label": "mango"
+      },
+      "itm_0000000000000036": {
+        "id": "itm_0000000000000036",
+        "kind": "media",
+        "name": "interview_A.mov",
+        "mediaId": "med_0000000000000035",
+        "label": "violet",
+        "marks": {
+          "in": null,
+          "out": null
+        }
+      },
+      "itm_0000000000000038": {
+        "id": "itm_0000000000000038",
+        "kind": "media",
+        "name": "logo.png",
+        "mediaId": "med_0000000000000037",
+        "label": "lavender",
+        "marks": {
+          "in": null,
+          "out": null
+        }
+      }
+    },
+    "media": {
+      "med_0000000000000035": {
+        "kind": "video",
+        "fingerprint": "q1:0000000000000000000000000000000000000000000000000000000000000001",
+        "originalName": "interview_A.mov",
+        "sizeBytes": 1000,
+        "container": "mov,mp4",
+        "probe": {
+          "durationFlicks": 7056000000,
+          "startTimecode": null,
+          "streams": [
+            {
+              "index": 0,
+              "type": "video",
+              "codec": "h264",
+              "width": 1920,
+              "height": 1080,
+              "pixelAspect": {
+                "num": 1,
+                "den": 1
+              },
+              "frameRate": {
+                "num": 30,
+                "den": 1
+              },
+              "pixelFormat": "yuv420p",
+              "bitDepth": 8,
+              "color": {
+                "primaries": "bt709",
+                "transfer": "bt709",
+                "matrix": "bt709",
+                "range": "tv"
+              },
+              "browserDecodable": true
+            },
+            {
+              "index": 1,
+              "type": "audio",
+              "codec": "aac",
+              "sampleRate": 48000,
+              "channels": 2,
+              "channelLayout": "stereo"
+            }
+          ],
+          "rotationDegrees": 0,
+          "hasAlpha": false,
+          "variableFrameRate": false
+        },
+        "locators": [
+          {
+            "type": "engine-store",
+            "engineId": "local",
+            "key": "mk_1"
+          }
+        ],
+        "derivation": null,
+        "importedAt": "2026-09-30T10:00:00.000Z",
+        "id": "med_0000000000000035"
+      },
+      "med_0000000000000037": {
+        "kind": "image",
+        "fingerprint": "q1:0000000000000000000000000000000000000000000000000000000000000002",
+        "originalName": "logo.png",
+        "sizeBytes": 1000,
+        "container": "png",
+        "probe": {
+          "durationFlicks": null,
+          "startTimecode": null,
+          "streams": [
+            {
+              "index": 0,
+              "type": "video",
+              "codec": "png",
+              "width": 1920,
+              "height": 1080,
+              "pixelAspect": {
+                "num": 1,
+                "den": 1
+              },
+              "frameRate": {
+                "num": 30,
+                "den": 1
+              },
+              "pixelFormat": "yuv420p",
+              "bitDepth": 8,
+              "color": {
+                "primaries": "bt709",
+                "transfer": "bt709",
+                "matrix": "bt709",
+                "range": "tv"
+              },
+              "browserDecodable": true
+            }
+          ],
+          "rotationDegrees": 0,
+          "hasAlpha": false,
+          "variableFrameRate": false
+        },
+        "locators": [
+          {
+            "type": "engine-store",
+            "engineId": "local",
+            "key": "mk_2"
+          }
+        ],
+        "derivation": null,
+        "importedAt": "2026-09-30T10:00:00.000Z",
+        "id": "med_0000000000000037"
+      }
+    },
+    "synthetics": {
+      "syn_000000000000003J": {
+        "id": "syn_000000000000003J",
+        "kind": "color-matte",
+        "color": [
+          0.2,
+          0.4,
+          0.8,
+          1
+        ]
+      }
+    },
+    "transcripts": {},
+    "fonts": {
+      "fnt_000000000000003C": {
+        "id": "fnt_000000000000003C",
+        "family": "Source Sans 3",
+        "source": {
+          "type": "bundled"
+        }
+      }
+    },
+    "sequences": {
+      "seq_YF4YQZ9B63R5RW3H": {
+        "id": "seq_YF4YQZ9B63R5RW3H",
+        "settings": {
+          "frameRate": {
+            "num": 30000,
+            "den": 1001
+          },
+          "width": 1920,
+          "height": 1080,
+          "pixelAspect": {
+            "num": 1,
+            "den": 1
+          },
+          "dropFrame": true,
+          "startTimecodeFrames": 0,
+          "audioSampleRate": 48000,
+          "masterLayout": "stereo",
+          "backgroundColor": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "workingColorSpace": "rec709"
+        },
+        "videoTracks": [
+          {
+            "id": "trk_18QBT8Q0PB51D08C",
+            "kind": "video",
+            "name": null,
+            "locked": false,
+            "syncLock": true,
+            "output": true
+          },
+          {
+            "id": "trk_1D0S6RWXKA2FWD5W",
+            "kind": "video",
+            "name": null,
+            "locked": false,
+            "syncLock": true,
+            "output": true
+          },
+          {
+            "id": "trk_BJKD42H5RFE3KCVC",
+            "kind": "video",
+            "name": null,
+            "locked": false,
+            "syncLock": true,
+            "output": true
+          }
+        ],
+        "audioTracks": [
+          {
+            "id": "trk_WYECN3QT8WEHE1ZN",
+            "kind": "audio",
+            "name": null,
+            "locked": false,
+            "syncLock": true,
+            "mute": false,
+            "solo": false,
+            "volumeDb": {
+              "value": 0,
+              "keyframes": []
+            },
+            "pan": {
+              "value": 0,
+              "keyframes": []
+            },
+            "channelFormat": "stereo",
+            "effects": []
+          },
+          {
+            "id": "trk_SV93BB4SCXPT5W4H",
+            "kind": "audio",
+            "name": null,
+            "locked": false,
+            "syncLock": true,
+            "mute": false,
+            "solo": false,
+            "volumeDb": {
+              "value": 0,
+              "keyframes": []
+            },
+            "pan": {
+              "value": 0,
+              "keyframes": []
+            },
+            "channelFormat": "stereo",
+            "effects": []
+          },
+          {
+            "id": "trk_VEMNFE0S5QDX601T",
+            "kind": "audio",
+            "name": null,
+            "locked": false,
+            "syncLock": true,
+            "mute": false,
+            "solo": false,
+            "volumeDb": {
+              "value": 0,
+              "keyframes": []
+            },
+            "pan": {
+              "value": 0,
+              "keyframes": []
+            },
+            "channelFormat": "stereo",
+            "effects": []
+          }
+        ],
+        "captionTracks": [],
+        "master": {
+          "volumeDb": {
+            "value": 0,
+            "keyframes": []
+          },
+          "effects": []
+        },
+        "clips": {
+          "clp_0000000000000039": {
+            "id": "clp_0000000000000039",
+            "trackId": "trk_18QBT8Q0PB51D08C",
+            "start": 0,
+            "duration": 299,
+            "sourceIn": 0,
+            "speed": {
+              "rate": 1,
+              "reverse": false,
+              "maintainPitch": true
+            },
+            "name": "interview_A.mov",
+            "label": "violet",
+            "enabled": true,
+            "linkId": "lnk_000000000000003B",
+            "groupId": null,
+            "markers": [],
+            "kind": "video",
+            "mediaId": "med_0000000000000035",
+            "videoStreamIndex": 0,
+            "transform": {
+              "position": {
+                "value": [
+                  960,
+                  540
+                ],
+                "keyframes": []
+              },
+              "anchor": {
+                "value": [
+                  960,
+                  540
+                ],
+                "keyframes": []
+              },
+              "scale": {
+                "value": 100,
+                "keyframes": []
+              },
+              "scaleWidth": {
+                "value": 100,
+                "keyframes": []
+              },
+              "uniformScale": true,
+              "rotation": {
+                "value": 0,
+                "keyframes": []
+              },
+              "flipH": false,
+              "flipV": false
+            },
+            "opacity": {
+              "value": 100,
+              "keyframes": []
+            },
+            "blendMode": "normal",
+            "effects": []
+          },
+          "clp_000000000000003A": {
+            "id": "clp_000000000000003A",
+            "trackId": "trk_WYECN3QT8WEHE1ZN",
+            "start": 0,
+            "duration": 299,
+            "sourceIn": 0,
+            "speed": {
+              "rate": 1,
+              "reverse": false,
+              "maintainPitch": true
+            },
+            "name": "interview_A.mov",
+            "label": "caribbean",
+            "enabled": true,
+            "linkId": "lnk_000000000000003B",
+            "groupId": null,
+            "markers": [],
+            "kind": "audio",
+            "mediaId": "med_0000000000000035",
+            "channels": {
+              "streamIndex": 1,
+              "map": [
+                0,
+                1
+              ]
+            },
+            "gainDb": 0,
+            "volumeDb": {
+              "value": 0,
+              "keyframes": []
+            },
+            "pan": {
+              "value": 0,
+              "keyframes": []
+            },
+            "effects": []
+          },
+          "clp_000000000000003D": {
+            "id": "clp_000000000000003D",
+            "trackId": "trk_1D0S6RWXKA2FWD5W",
+            "start": 30,
+            "duration": 90,
+            "sourceIn": 0,
+            "speed": {
+              "rate": 1,
+              "reverse": false,
+              "maintainPitch": true
+            },
+            "name": "Launch Day",
+            "label": "lavender",
+            "enabled": true,
+            "linkId": null,
+            "groupId": null,
+            "markers": [],
+            "kind": "text",
+            "content": {
+              "text": "Launch Day",
+              "style": {
+                "fontId": "fnt_000000000000003C",
+                "weight": 400,
+                "italic": false,
+                "sizePx": 100,
+                "lineHeight": 1.2,
+                "trackingEm": 0,
+                "align": "center",
+                "direction": "auto",
+                "fill": [
+                  1,
+                  1,
+                  1,
+                  1
+                ],
+                "strokes": [],
+                "background": null,
+                "shadow": null,
+                "allCaps": false
+              }
+            },
+            "box": {
+              "width": 1400,
+              "height": 160,
+              "autoSize": "none"
+            },
+            "transform": {
+              "position": {
+                "value": [
+                  960,
+                  540
+                ],
+                "keyframes": []
+              },
+              "anchor": {
+                "value": [
+                  700,
+                  80
+                ],
+                "keyframes": []
+              },
+              "scale": {
+                "value": 100,
+                "keyframes": []
+              },
+              "scaleWidth": {
+                "value": 100,
+                "keyframes": []
+              },
+              "uniformScale": true,
+              "rotation": {
+                "value": 0,
+                "keyframes": []
+              },
+              "flipH": false,
+              "flipV": false
+            },
+            "opacity": {
+              "value": 100,
+              "keyframes": [
+                {
+                  "id": "kf_000000000000003E",
+                  "time": 0,
+                  "value": 0,
+                  "interpolation": "linear",
+                  "easeIn": {
+                    "influence": 0.3333333333333333,
+                    "slope": 1
+                  },
+                  "easeOut": {
+                    "influence": 0.3333333333333333,
+                    "slope": 1
+                  }
+                },
+                {
+                  "id": "kf_000000000000003G",
+                  "time": 353152800,
+                  "value": 100,
+                  "interpolation": "linear",
+                  "easeIn": {
+                    "influence": 0.3333333333333333,
+                    "slope": 1
+                  },
+                  "easeOut": {
+                    "influence": 0.3333333333333333,
+                    "slope": 1
+                  }
+                }
+              ]
+            },
+            "blendMode": "normal",
+            "effects": []
+          },
+          "clp_000000000000003H": {
+            "id": "clp_000000000000003H",
+            "trackId": "trk_BJKD42H5RFE3KCVC",
+            "start": 200,
+            "duration": 60,
+            "sourceIn": 0,
+            "speed": {
+              "rate": 1,
+              "reverse": false,
+              "maintainPitch": true
+            },
+            "name": "Color Matte",
+            "label": "tan",
+            "enabled": true,
+            "linkId": null,
+            "groupId": null,
+            "markers": [],
+            "kind": "solid",
+            "syntheticId": "syn_000000000000003J",
+            "transform": {
+              "position": {
+                "value": [
+                  960,
+                  540
+                ],
+                "keyframes": []
+              },
+              "anchor": {
+                "value": [
+                  960,
+                  540
+                ],
+                "keyframes": []
+              },
+              "scale": {
+                "value": 100,
+                "keyframes": []
+              },
+              "scaleWidth": {
+                "value": 100,
+                "keyframes": []
+              },
+              "uniformScale": true,
+              "rotation": {
+                "value": 0,
+                "keyframes": []
+              },
+              "flipH": false,
+              "flipV": false
+            },
+            "opacity": {
+              "value": 100,
+              "keyframes": []
+            },
+            "blendMode": "normal",
+            "effects": []
+          }
+        },
+        "transitions": {},
+        "links": {
+          "lnk_000000000000003B": {
+            "id": "lnk_000000000000003B",
+            "members": [
+              "clp_0000000000000039",
+              "clp_000000000000003A"
+            ]
+          }
+        },
+        "groups": {},
+        "markers": [
+          {
+            "id": "mrk_000000000000003K",
+            "name": "Jump cut?",
+            "comment": "Consider B-roll.",
+            "color": "green",
+            "type": "agent-note",
+            "author": {
+              "agent": "fixture"
+            },
+            "frame": 120,
+            "duration": 0
+          }
+        ],
+        "inPoint": 0,
+        "outPoint": 240,
+        "workArea": null
+      }
+    },
+    "extensions": {}
+  }
+}
