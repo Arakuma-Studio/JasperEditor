@@ -65,6 +65,7 @@ describe('desktop package config (R-OMS §8.5)', () => {
 		const res = pkg.build.extraResources as Res[];
 		// electron-builder's ${platform} is the host platform: the target directory is keyed by ${os}-${arch}.
 		expect(res.find((r) => r.to === 'ffmpeg-lgpl')!.from).toBe(
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: electron-builder file macros
 			'../../vendor/ffmpeg-lgpl/.package/${os}-${arch}',
 		);
 		expect(res.find((r) => r.to === 'engine/node_modules')!.filter).toEqual(
