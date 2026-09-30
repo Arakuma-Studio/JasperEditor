@@ -276,6 +276,12 @@ describe('catalog (ARCHITECTURE §5.3)', () => {
 		expect(s.effects.map((e) => e.id)).toContain('jasper.crop');
 		expect(s.errorCodes).toContain('E_SYNC_CONFLICT');
 		expect(JSON.parse(JSON.stringify(s)).protocol).toBe('jasper.tx/1');
+		// `implemented` reflects the handler, not the owner: wave-2 handlers are live, stubs are not.
+		expect(s.commands['clip.place'].implemented).toBe(true);
+		expect(s.commands['clip.slip'].implemented).toBe(true); // WP-2B
+		expect(s.commands['effect.add'].implemented).toBe(true); // WP-2D
+		expect(s.commands['sequence.delete'].implemented).toBe(false);
+		expect(s.commands['clip.nest'].implemented).toBe(false); // M2
 	});
 });
 
