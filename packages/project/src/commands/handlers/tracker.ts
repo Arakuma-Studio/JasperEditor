@@ -9,14 +9,21 @@ import { CORNER_PIN_EFFECT_ID, CORNER_PIN_PARAMS } from '../../render/scene.ts';
 import type { Animatable, Keyframe, Vec2 } from '../../schema/common.ts';
 import type { ProjectDocument } from '../../schema/document.ts';
 import type {
+	Clip,
 	ClipTracker,
 	EffectInstance,
+	Sequence,
 	TrackerSamples,
 	Transform,
 	VideoClip,
 } from '../../schema/sequence.ts';
 import type { Rational } from '../../time.ts';
-import { computeTrackingApply, type TrackLayer, type TransformKey } from '../../tracking/apply.ts';
+import {
+	computeTrackingApply,
+	type TrackLayer,
+	type TransformKey,
+	trackLayerOf,
+} from '../../tracking/apply.ts';
 import {
 	mergeSamples,
 	reanchorSamples,
@@ -67,21 +74,7 @@ function defaultPatch(box: { width: number; height: number }): number {
 }
 
 function trackLayer(doc: DDoc, seq: DSeq, clip: DClip): TrackLayer {
-	const c = clip as unknown as {
-		transform?: Transform;
-		opacity?: Animatable<number>;
-		effects?: EffectInstance[];
-	};
-	return {
-		start: clip.start,
-		duration: clip.duration,
-		sourceIn: clip.sourceIn,
-		speed: clip.speed,
-		transform: c.transform ?? null,
-		opacity: c.opacity ?? { value: 100, keyframes: [] },
-		effects: c.effects ?? [],
-		box: mediaBoxOf(doc, seq, clip),
-	};
+	return trackLayerOf(doc as ProjectDocument, seq as Sequence, clip as Clip);
 }
 
 /** Replaces the keyframes of `anim` whose time lies in `[t0, t1]` by `keys` (linear); keeps the others. */

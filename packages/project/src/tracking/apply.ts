@@ -4,11 +4,13 @@
 //   → target layer px through the inverse of the target's Motion (corner pin) / Motion values (transform).
 // Pure: the handler (commands/handlers/tracker.ts) turns the result into keyframes.
 import { evaluate } from '../keyframes.ts';
+import { intrinsicBoxOf } from '../registry/properties.ts';
 import { applyMat3, invertMat3, type Mat3, mat3FromMat2D, type Quad } from '../render/homography.ts';
 import { clipContentTime, layerMapOf, resolveLayerProps } from '../render/scene.ts';
 import type { RenderVisualClip } from '../render/snapshot.ts';
 import type { Animatable, Vec2 } from '../schema/common.ts';
-import type { ClipTracker, EffectInstance, Speed, Transform } from '../schema/sequence.ts';
+import type { ProjectDocument } from '../schema/document.ts';
+import type { Clip, ClipTracker, EffectInstance, Sequence, Speed, Transform } from '../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../time.ts';
 import { smoothSamples, trackerGeometryAt } from './samples.ts';
 
@@ -24,6 +26,25 @@ export type TrackLayer = {
 	/** Intrinsic layer box (media px for video/stills). */
 	box: { width: number; height: number };
 };
+
+/** The apply-pipeline view of a document clip (its timing, Motion, opacity, effects and intrinsic box). */
+export function trackLayerOf(doc: ProjectDocument, seq: Sequence, clip: Clip): TrackLayer {
+	const c = clip as unknown as {
+		transform?: Transform;
+		opacity?: Animatable<number>;
+		effects?: EffectInstance[];
+	};
+	return {
+		start: clip.start,
+		duration: clip.duration,
+		sourceIn: clip.sourceIn,
+		speed: clip.speed,
+		transform: c.transform ?? null,
+		opacity: c.opacity ?? { value: 100, keyframes: [] },
+		effects: c.effects ?? [],
+		box: intrinsicBoxOf({ clip: clip as never, doc, seq: seq as never }),
+	};
+}
 
 export type ApplyComponent = 'position' | 'scale' | 'rotation';
 
