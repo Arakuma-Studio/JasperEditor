@@ -128,3 +128,15 @@ Branch `wp/wp-2h`. `pnpm install && pnpm lint && pnpm typecheck && pnpm test && 
   `AGENT_WS_CLIENT_EVENTS`, `AgentApprovalResolveSchema`, `ApprovalSchema.summary/commands` (optional);
   `@jasper/project` exports `agent/{addressing,guard,queries}`; `PanelServiceMap.agentConsole`.
 - Dependencies: `apps/engine` adds `@fastify/websocket`, `ws` (+ `@types/ws`); the lockfile changed.
+
+## Review fixes
+
+- Engine approvals: an `agent.approval.resolve` event is honoured only from a WS connection that said hello for
+  the approval's project (previously a connection without hello could resolve any approval id).
+- `doc.get`: `path` segments and `fields` match own properties only (no prototype walk such as `["constructor"]`).
+- Desktop: IPC handlers (`pick-media`, `reveal`, `window`) answer only frames on the app origin.
+- Trust model (unchanged, for the record): any holder of the engine token can open WS `/agent`, announce a
+  lease and answer its own approvals. The gate protects against unattended destructive edits by agents that
+  use HTTP, not against a hostile local process that already has the token.
+- Live re-check: the in-memory demo session's relay id is its document `projectId` (`prj_…`, shown by
+  `window.jasper.projectId`), not the route segment `demo`.
