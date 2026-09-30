@@ -161,6 +161,15 @@ test('helper tools, get_timeline, set_playhead and undo work against the live ed
 	expect(table).toContain('Hello from MCP');
 	expect(table).toContain('Agent marker');
 
+	// The agent can look at the result: the Program output of the live (unsaved) document as a PNG.
+	const frame = await call('render_frame', { projectId, at: { seconds: 2 }, width: 320 });
+	expect(frame.isError, text(frame)).toBeFalsy();
+	const image = frame.content.find((c) => c.type === 'image') as { data: string; mimeType: string };
+	expect(image.mimeType).toBe('image/png');
+	const png = Buffer.from(image.data, 'base64');
+	expect(png.subarray(1, 4).toString('latin1')).toBe('PNG');
+	expect(png.readUInt32BE(16)).toBe(320);
+
 	// A view change, not an edit: the playhead moves in the window, History does not grow.
 	const history = (await appliedLabels(page)).length;
 	const moved = await tool<{ frame: number; timecode: string }>('set_playhead', {
@@ -224,7 +233,7 @@ test('Help ▸ Connect an AI Agent… shows configuration with the real path of 
 	await expect(dialog).toBeVisible();
 	// The engine reports where its sibling bundle lives; the snippets are ready to paste.
 	await expect(page.getByTestId('agent-snippet-claude-cli')).toContainText(
-		`claude mcp add --transport stdio jasper -- node ${MCP_BUNDLE}`,
+		`claude mcp add jasper -- node ${MCP_BUNDLE}`,
 	);
 	await expect(page.getByTestId('agent-snippet-codex-toml')).toContainText('[mcp_servers.jasper]');
 	await expect(page.getByTestId('agent-snippet-codex-toml')).toContainText(MCP_BUNDLE);

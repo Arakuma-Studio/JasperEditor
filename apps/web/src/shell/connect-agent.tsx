@@ -85,7 +85,8 @@ export function buildAgentSnippets(l: McpLaunch): AgentSnippet[] {
 			id: 'claude-cli',
 			client: 'Claude Code',
 			where: 'Run in a terminal (add --scope user to use it in every project)',
-			text: `claude mcp add --transport stdio ${envFlags}jasper -- ${run}`,
+			// The name comes first: Claude Code's `--env` takes several values and would swallow it.
+			text: `claude mcp add jasper ${envFlags}-- ${run}`,
 		},
 		{
 			id: 'claude-json',

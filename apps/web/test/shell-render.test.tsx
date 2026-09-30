@@ -189,7 +189,7 @@ describe('editor shell (rendered)', () => {
 		// The fake engine has no MCP info route: the dialog falls back to the placeholder path.
 		await waitFor(() => screen.getByTestId('connect-agent-missing'));
 		expect(screen.getByTestId('agent-snippet-claude-cli').textContent).toContain(
-			`claude mcp add --transport stdio jasper -- node ${MCP_ENTRY_PLACEHOLDER}`,
+			`claude mcp add jasper -- node ${MCP_ENTRY_PLACEHOLDER}`,
 		);
 		expect(screen.getByTestId('agent-snippet-codex-toml').textContent).toContain('[mcp_servers.jasper]');
 		expect(screen.getByTestId('agent-snippet-cursor-json').textContent).toContain('"mcpServers"');

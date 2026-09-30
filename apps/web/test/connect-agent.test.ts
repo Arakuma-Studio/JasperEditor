@@ -68,7 +68,7 @@ describe('buildAgentSnippets', () => {
 			env: {},
 			httpUrl: 'http://127.0.0.1:47900/mcp',
 		});
-		expect(s['claude-cli']).toBe(`claude mcp add --transport stdio jasper -- node ${entry}`);
+		expect(s['claude-cli']).toBe(`claude mcp add jasper -- node ${entry}`);
 		expect(s['codex-cli']).toBe(`codex mcp add jasper -- node ${entry}`);
 		expect(s['codex-toml']).toBe(`[mcp_servers.jasper]\ncommand = "node"\nargs = ["${entry}"]`);
 		expect(JSON.parse(s['claude-json']!)).toEqual({
@@ -87,7 +87,7 @@ describe('buildAgentSnippets', () => {
 			httpUrl: null,
 		});
 		expect(s['claude-cli']).toBe(
-			'claude mcp add --transport stdio --env ELECTRON_RUN_AS_NODE=1 jasper -- ' +
+			'claude mcp add jasper --env ELECTRON_RUN_AS_NODE=1 -- ' +
 				'"C:\\Program Files\\JasperEditor\\JasperEditor.exe" "C:\\Program Files\\JasperEditor\\resources\\mcp\\jasper-mcp.mjs"',
 		);
 		expect(JSON.parse(s['cursor-json']!).mcpServers.jasper).toEqual({

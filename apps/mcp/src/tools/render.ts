@@ -332,7 +332,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 		{
 			title: 'Start export',
 			description:
-				'Starts rendering a sequence to a video file and returns a job id at once; follow it with wait_for_job (or get_job). The engine picks the fastest path that can render everything (native ffmpeg for footage-only cuts, Remotion when there are text/effects). Uses the live editor state when the project is open. With outputPath the file is written there; otherwise it is downloadable from the job result URL.',
+				'Starts rendering a sequence to a video file and returns a job id at once; follow it with wait_for_job (or get_job). The engine picks the fastest path that can render everything (native ffmpeg for footage-only cuts, Remotion when there are text/effects). Uses the live editor state when the project is open. With outputPath the file is written there (existing files are never overwritten: the engine then writes "name (2).mp4" and the job result gives the real path); otherwise it is downloadable from the job result URL.',
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -354,7 +354,9 @@ export function registerRenderTools(ctx: ToolContext): void {
 				outputPath: z
 					.string()
 					.optional()
-					.describe('Absolute path of the output file (extension follows the container, e.g. .mp4)'),
+					.describe(
+						"Absolute path of the output file; the extension is replaced by the container's (.mp4 / .webm). Never overwrites: see result.path",
+					),
 			},
 			annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
 		},
