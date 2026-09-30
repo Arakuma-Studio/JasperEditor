@@ -1,7 +1,10 @@
 // edit UI commands — owned by WP-2A: undo/redo with history step names in their labels (S05:MN-011,
 // S01 §17). Clipboard/selection commands (edit.cut, edit.copy…) belong to the panels that own the
-// selection (timeline.*, project.*) and stay inert here until registered.
+// selection (timeline.*, project.*) and stay inert here until registered; edit.clear dispatches to the
+// focused panel's delete command.
 import type { EditorSession } from '@jasper/session';
+import type { PanelKind } from '../panels/types.ts';
+import { getCommand, isCommandEnabled, runCommand } from './registry.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
 function historyOf(session: EditorSession | null) {
@@ -28,7 +31,32 @@ function blocked(ctx: CommandCtx): string | undefined {
 	return undefined;
 }
 
+/** Edit ▸ Clear / Delete routes to the focused panel's delete command (integration of WP-2B/2D/2E). */
+const CLEAR_BY_PANEL: Partial<Record<PanelKind, string>> = {
+	project: 'project.deleteItems',
+	timeline: 'timeline.clear',
+	effectControls: 'effectControls.removeEffect',
+};
+
+function clearTarget(ctx: CommandCtx): UiCommand | undefined {
+	const id = ctx.focus.panel ? CLEAR_BY_PANEL[ctx.focus.panel] : undefined;
+	const cmd = id ? getCommand(id) : undefined;
+	return cmd && isCommandEnabled(cmd, ctx) ? cmd : undefined;
+}
+
 export const editCommands: UiCommand[] = [
+	{
+		id: 'edit.clear',
+		label: 'Clear',
+		description: 'Delete the selection in the focused panel',
+		scope: 'global',
+		when: (ctx) => !!clearTarget(ctx),
+		disabledReason: (ctx) => blocked(ctx) ?? 'Nothing to clear in this panel',
+		run: async (ctx) => {
+			const target = clearTarget(ctx);
+			if (target) await runCommand(target.id, ctx);
+		},
+	},
 	{
 		id: 'history.undo',
 		label: 'Undo',

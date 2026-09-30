@@ -127,6 +127,21 @@ describe('Delete, ripple delete, gaps (TL-681/682/741, AC-13b, AC-16b)', () => {
 		expect(h.spans('V1')).toEqual([[50, 100]]);
 		expect(h.history().at(-1)).toBe('Clear');
 	});
+
+	it('edit.clear (global Delete / Edit ▸ Clear) routes to the focused panel', async () => {
+		const h = harness();
+		h.apply([solid(0, 50, 'V1')]);
+		h.session.select('timeline', [h.clipsOn('V1')[0]!.id], 'replace');
+		await h.run('edit.clear');
+		expect(h.spans('V1')).toEqual([]);
+		const other = createCommandContext({
+			engine,
+			session: h.session,
+			focus: { panel: 'info', instanceId: 'i' },
+			toast: () => undefined,
+		});
+		expect((await runCommand('edit.clear', other)).ran).toBe(false);
+	});
 });
 
 describe('playhead trims (TL-549, AC-11d)', () => {
