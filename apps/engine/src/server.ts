@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import fastifyStatic from '@fastify/static';
 import { API_HEADER, API_VERSION, AUTH_COOKIE, errorBody, isEnginePath } from '@jasper/api';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
+import { createCoreAgentStore } from './agent/core-store.ts';
 import type { EngineConfig, EngineContext } from './context.ts';
 import { registerRoutes } from './routes/index.ts';
 import { createCoreServices } from './tools/services.ts';
@@ -81,6 +82,8 @@ export async function createServer(
 		broadcaster: core.broadcaster,
 		// `events.publish(type, payload, projectId?)` is the name WP-2G/WP-2H publish through.
 		events: core.broadcaster,
+		// Headless agent writes (WP-2H) go through the same store, mutex and leases as editor saves.
+		agentStore: createCoreAgentStore(core.projects, core.leases),
 		mediaRegistry: core.registry,
 		projects: core.projects,
 		ffmpeg: core.ffmpeg,
