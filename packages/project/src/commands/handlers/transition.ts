@@ -2,7 +2,9 @@
 //
 // A transition sits on one track at one edit point (TRN-001). Two-sided video transitions (cross dissolve,
 // dip to black) join two adjacent clips and need handles (TRN-003); one-sided ones are fades at a clip's
-// head or tail (TRN-004). Audio tracks take one-sided fades (constant gain / constant power). Durations are
+// head or tail (TRN-004). Audio tracks take one-sided fades and two-sided crossfades (constant gain /
+// constant power, S10:TUI-052; handles as for a cross dissolve); `transition.add` with `clipId` + `edge` on an
+// audio clip is always a fade of that clip, an edit point given by `trackId` + `at` a crossfade. Durations are
 // shortened to what the clips and their media handles allow (`handles: 'shorten'`, the agent default);
 // freeze-frame handles are not implemented. Rendering is defined in ../../transitions.ts.
 import type { Draft } from 'immer';
@@ -23,9 +25,6 @@ import { assertUnlocked, end, findTrackIn } from '../placement.ts';
 import type { HandlerMap } from './util.ts';
 
 type DTransition = Draft<Transition>;
-
-/** Two-sided audio transitions (crossfades between two clips, S10:TUI-052). */
-const AUDIO_CROSSFADES = false;
 
 function specOf(effectId: string, h: HandlerContext): TransitionSpec {
 	const spec = transitionSpec(effectId);
@@ -108,11 +107,6 @@ function addTransition(doc: DDoc, a: AddArgs, h: HandlerContext) {
 			`${spec.label} is ${spec.appliesTo === 'video' ? 'a video' : 'an audio'} transition`,
 		);
 	const two = !!outgoing && !!incoming;
-	if (two && spec.appliesTo === 'audio')
-		h.fail(
-			'E_NOT_IMPLEMENTED',
-			'Audio crossfades between two clips are not implemented; add a fade at each clip edge instead',
-		);
 	const alignment: Transition['alignment'] = two
 		? (a.alignment ?? 'center')
 		: incoming
@@ -295,12 +289,8 @@ export const transitionHandlers: HandlerMap = {
 			const effectId = effectFor[track.kind];
 			for (const edge of cmd.edges === 'both' ? (['in', 'out'] as const) : [cmd.edges]) {
 				const cut = edge === 'in' ? clip.start : end(clip);
-				let { outgoing, incoming } = clipsAtEditPoint(seq as Sequence, clip.trackId, cut);
-				// Audio: two-sided crossfades need audio crossfade support; until then a fade of the clip's own edge.
-				if (track.kind === 'audio' && outgoing && incoming && !AUDIO_CROSSFADES) {
-					outgoing = edge === 'out' ? (clip as Clip) : null;
-					incoming = edge === 'in' ? (clip as Clip) : null;
-				}
+				// Where two clips meet: a cross dissolve / an audio crossfade (S10:TUI-052); free edges: fades.
+				const { outgoing, incoming } = clipsAtEditPoint(seq as Sequence, clip.trackId, cut);
 				const key = outgoing && incoming ? `${clip.trackId}:${cut}` : `${clip.id}:${edge}`;
 				if (done.has(key)) continue;
 				done.add(key);

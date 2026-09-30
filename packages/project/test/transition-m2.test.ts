@@ -162,10 +162,11 @@ describe('transition.applyDefault M2 fields (TUI-051)', () => {
 		code?: string;
 	}[] = [
 		{
-			name: 'media [audio]: audio fades on both audio clips, one per edge; video clips ignored',
+			// S10:TUI-052: the shared cut of the audio clips gets one crossfade, the free edges fades.
+			name: 'media [audio]: an audio crossfade at the cut and fades at the free edges; video clips ignored',
 			args: { media: ['audio'], edges: 'both' },
 			clips: ['va', 'vb', 'aa', 'ab'],
-			expect: [{ effectId: 'jasper.constant-power', count: 4, duration: 30, kinds: ['audio'] }],
+			expect: [{ effectId: 'jasper.constant-power', count: 3, duration: 30, kinds: ['audio'] }],
 		},
 		{
 			name: 'media [video, audio], custom effects and duration',
