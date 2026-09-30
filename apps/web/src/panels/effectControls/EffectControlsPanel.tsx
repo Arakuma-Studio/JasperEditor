@@ -7,7 +7,7 @@
 import type { Command } from '@jasper/project';
 import { formatTimecode } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
-import { useSessionOrNull, useSessionState } from '@jasper/session/react';
+import { useSessionOrNull, useSessionState, useStoreSelector } from '@jasper/session/react';
 import { cx, TimecodeText } from '@jasper/ui';
 import {
 	type DragEvent,
@@ -121,7 +121,14 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	const [dragTip, setDragTip] = useState<string | null>(null);
 	const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
 	const keySel = useSessionState((s) => s.selection.keyframes);
-	const loop = useSessionState(() => session.transport.getState().loop);
+	const transportStore = useMemo(
+		() => ({
+			getState: () => session.transport.getState(),
+			subscribe: (l: Parameters<typeof session.transport.subscribe>[0]) => session.transport.subscribe(l),
+		}),
+		[session],
+	);
+	const loop = useStoreSelector(transportStore, (s) => s.loop);
 	const contentRef = useRef<HTMLDivElement>(null);
 	const lineRef = useRef<HTMLDivElement>(null);
 	const keyDrag = useRef<KeyDrag | null>(null);

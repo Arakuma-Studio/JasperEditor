@@ -244,4 +244,16 @@ describe('Effect Controls helpers', () => {
 		});
 		expect(pct()).toBe('70%');
 	});
+
+	it('the footer Loop button reflects the transport loop state', () => {
+		const { session } = setup();
+		const btn = screen.getByRole('button', { name: 'Loop' });
+		const pressed = () => btn.getAttribute('aria-pressed');
+		const before = pressed();
+		act(() => fireEvent.click(btn));
+		expect(session.transport.getState().loop).toBe(true);
+		expect(pressed()).not.toBe(before);
+		act(() => session.transport.setLoop(false));
+		expect(pressed()).toBe(before);
+	});
 });
