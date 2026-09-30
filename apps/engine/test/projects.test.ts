@@ -248,4 +248,30 @@ describe('leases (S01:PER-040)', () => {
 		t = 31_000;
 		expect(lm.acquire('p', 's2').sessionId).toBe('s2');
 	});
+
+	it('takeOver revokes the other holder (WP-2E "Take over editing")', async () => {
+		const id = await create('Take over');
+		const acquire = (sessionId: string, takeOver?: boolean) =>
+			app.inject({
+				method: 'POST',
+				url: `/api/projects/${id}/lease`,
+				headers: JSON_H,
+				payload: { sessionId, ...(takeOver === undefined ? {} : { takeOver }) },
+			});
+		const a = (await acquire('sess-a')).json();
+		expect((await acquire('sess-b')).statusCode).toBe(409);
+		const b = await acquire('sess-b', true);
+		expect(b.statusCode).toBe(200);
+		expect(b.json()).toMatchObject({ sessionId: 'sess-b' });
+		expect(b.json().leaseId).not.toBe(a.leaseId);
+		const oldHb = await app.inject({
+			method: 'POST',
+			url: `/api/projects/${id}/lease/${a.leaseId}/heartbeat`,
+			headers: H,
+		});
+		expect(oldHb.statusCode).toBe(404);
+		expect(oldHb.json()).toMatchObject({ code: 'LEASE_NOT_FOUND' });
+		// takeOver by the holder itself is a plain renewal.
+		expect((await acquire('sess-b', true)).json().leaseId).toBe(b.json().leaseId);
+	});
 });

@@ -42,8 +42,17 @@ export class LeaseManager {
 	}
 
 	/** Acquires (or refreshes, for the same session) the lease. */
-	acquire(projectId: string, sessionId: string): Lease {
-		const cur = this.live(projectId);
+	/**
+	 * Grants (or, for the same session, renews) the project's lease. `takeOver` (S01:PER-040, WP-2E) revokes
+	 * another session's lease: the new lease has a fresh id, so the old holder's next heartbeat answers
+	 * 404 LEASE_NOT_FOUND and its editor turns read-only.
+	 */
+	acquire(projectId: string, sessionId: string, opts: { takeOver?: boolean } = {}): Lease {
+		let cur = this.live(projectId);
+		if (cur && cur.sessionId !== sessionId && opts.takeOver) {
+			this.leases.delete(projectId);
+			cur = null;
+		}
 		if (cur && cur.sessionId !== sessionId) {
 			throw new LeaseError('LEASE_HELD', 'Another session is editing this project', {
 				holderSessionId: cur.sessionId,

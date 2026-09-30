@@ -79,11 +79,11 @@ export default async function projectsRoutes(app: FastifyInstance): Promise<void
 	app.post<P>(
 		'/api/projects/:projectId/lease',
 		guarded<P>(async (req) => {
-			const { sessionId } = parseOr400(LeaseRequestSchema, req.body);
+			const { sessionId, takeOver } = parseOr400(LeaseRequestSchema, req.body);
 			if ((await projects.revision(req.params.projectId)) === null) {
 				throw new HttpError(404, 'PROJECT_NOT_FOUND', 'Unknown project');
 			}
-			return leases.acquire(req.params.projectId, sessionId);
+			return leases.acquire(req.params.projectId, sessionId, { takeOver });
 		}),
 	);
 
