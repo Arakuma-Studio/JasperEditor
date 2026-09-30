@@ -112,9 +112,11 @@ const focusPanels: UiCommand[] = PANEL_KINDS.map((kind) =>
 	}),
 );
 const byId = new Map(focusPanels.map((c) => [c.id, c]));
-const openAliases: UiCommand[] = (
-	['project', 'source', 'timeline', 'program', 'effectControls', 'effects', 'agent'] as const
-).map((kind) => alias(`panel.open.${kind}`, byId.get(`panel.focus.${kind}`)!));
+// `panel.open.<kind>` for every kind: the keymap binds some, and other packages call e.g. `panel.open.jobs`
+// (Export mode) and `panel.open.motionTemplates` (Project panel ▸ New Item ▸ Motion Graphic).
+const openAliases: UiCommand[] = PANEL_KINDS.map((kind) =>
+	alias(`panel.open.${kind}`, byId.get(`panel.focus.${kind}`)!),
+);
 
 const maximizeFocused = sc(
 	'panel.maximize',
