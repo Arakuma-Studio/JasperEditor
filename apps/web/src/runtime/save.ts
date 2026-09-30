@@ -39,5 +39,8 @@ export async function saveNow(session: EditorSession): Promise<SaveOutcome> {
 
 /** Flushes every live saver (pagehide/beforeunload). */
 export function flushAutosaver(session: EditorSession | null | undefined): void {
-	if (session) void persistenceFor(session)?.flush().catch(() => undefined);
+	if (session)
+		void persistenceFor(session)
+			?.flush()
+			.catch(() => undefined);
 }
