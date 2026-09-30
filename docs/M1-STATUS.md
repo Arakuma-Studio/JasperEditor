@@ -1,14 +1,58 @@
 # M1 acceptance status (ARCHITECTURE §15)
 
-Run by WP-3I on 2026-09-30, branch `wp/wp-3i`, based on `dev` at `3f5498d`.
+**Current state: `dev` after wave 3 (WP-3L, WP-3I, WP-3V merged). All 13 items PASS.** The final check on
+`dev` (2026-09-30, below) re-ran every command. The per-item evidence further down is from the WP-3I
+acceptance run on `wp/wp-3i` (based on `dev` at `3f5498d`). The wave-3 merge
+changes are listed in `docs/wp-notes/INTEGRATION-W3.md`, and the re-run on `dev` gives the same results.
 
-Environment: Linux x64, Node 20.20, pnpm 10.34, cargo 1.96, system ffmpeg 6.1.1, Chrome 150 (system), 12 cores,
-no GPU. This host is shared with other agents, so every server ran on this package's port range (48100–48199)
-instead of 5173/47900. The commands and code paths are the same.
+Environment: Linux x64, Node 20.20, pnpm 10.34, cargo 1.96, system ffmpeg 6.1.1 (GPL build with libx264; the
+product does not require it, D-13), system Chrome, 12 cores, no GPU. This host is shared with other agents,
+so every server ran on a private port range instead of 5173/47900. The commands and code paths are the same.
 
-**Result: all 13 items PASS.** A few items have notes, and the notes list follow-ups.
+## Final check on `dev` (2026-09-30)
 
-## Commands used (all green on this tree)
+Main checkout, `dev` at `254cd16` plus the commits of this check. Ports 48350–48399.
+
+| Command | Result |
+|---|---|
+| `pnpm install` | lockfile up to date |
+| `pnpm verify` | lint, typecheck, test (65 files + 1 skipped, **682 passed**, 5 skipped: opt-in Remotion e2e and fuzz sweeps; 681 before the fix below) and build all pass |
+| `pnpm fixtures && pnpm mg:build` | fixtures present; `jasper-mg` built |
+| `E2E_PORT=48350 pnpm e2e` | **27/27 passed** (agent 3, editing 9, PWA 2, smoke 13) in 2.6 min |
+| `MG_CHECK_PORT=48360 pnpm e2e:mg-fallback` | PASS (ready → `native`; binary missing → `unavailable` → `remotion` with the blocker) |
+| `DESKTOP_SMOKE_PORT=48362 ELECTRON_DISABLE_SANDBOX=1 pnpm e2e:desktop` | PASS for packaged-like and dev (xvfb) |
+| `pnpm e2e:typecheck` | pass |
+| README walk-through | dev engine + Vite on alternate ports: `/api/capabilities` answered through the Vite proxy. `curl` `POST /api/projects` then `POST /api/agent/tx` with `marker.add` returned `ok: true, appliedBy: headless`. The built engine served the PWA build: `/`, `/manifest.webmanifest`, `/sw.js` and the icons all returned 200. |
+| Clean room | `.gitignore` still ignores `.reference/` and `editor-starter.zip`. `git ls-files \| grep -iE 'reference\|editor-starter'` is empty, and no commit in history touches them. |
+
+Fixed during the check: with the README's PWA command (`JASPER_WEB_DIR=apps/web/dist node
+apps/engine/dist/engine.mjs …`) the built engine refused to start, because @fastify/static requires an
+absolute root. `engineConfig` now resolves `webDir` against the cwd, and a unit test covers it. Before the fix,
+only callers that passed an absolute path (E2E, desktop) worked.
+
+Housekeeping: two untracked QA screenshots (`proj-icon.png`, `proj-list.png`) were left in the repo root by
+the WP-3V visual QA. They are superseded by the committed `docs/screenshots/m1/after/0{4,5}-*.png` and were
+moved out of the checkout.
+
+### Still open at the end of M1
+
+These are not M1 blockers. Details are in the follow-ups below and in `docs/wp-notes/INTEGRATION-W3.md`.
+
+- **Packaging blocker (D-13):** the Remotion compositor ships a GPL/nonfree FFmpeg. The engine's own ffmpeg
+  path is LGPL-safe (the encoder selector never requires x264), but a shippable build needs a decision on the
+  Remotion render path (see `wp-notes/wp-3l.md`).
+- **Not run on real hardware:** OpenH264 or hardware H.264 export has not run on an LGPL ffmpeg or a GPU host.
+  Only the argument sets are unit-tested.
+- **Remotion Player stall (4.0.499):** the root cause is unknown. The playback watchdog works around it
+  (E2E is stable).
+- **Editing lock:** the lock is not released on `pagehide`, so a reload leaves the project read-only until
+  "Take over editing".
+- **Unregistered commands:** menu commands listed in `apps/web/test/wiring-audit.test.ts` (clipboard,
+  transitions, captions, preferences, …) are still unregistered. They are M2 scope.
+
+## WP-3I acceptance run (evidence)
+
+### Commands used (all green on that tree)
 
 | Command | Result |
 |---|---|
@@ -19,7 +63,7 @@ instead of 5173/47900. The commands and code paths are the same.
 | `pnpm e2e:mg-fallback` | with jasper-mg: fframes `ready` → plan `native`; with the binary missing: `unavailable` → plan `remotion`, blocker "motion graphic "Lower Third" needs the fframes renderer, which is unavailable" |
 | `pnpm e2e:typecheck` | pass |
 
-## Checklist
+### Checklist
 
 | # | Item | Status | Evidence |
 |---|---|---|---|

@@ -44,14 +44,65 @@ pnpm build && pnpm --filter @jasper/desktop start:packaged-like   # engine forke
 `ELECTRON_DISABLE_SANDBOX=1` is needed on hosts without the chrome-sandbox SUID helper. A fresh checkout may
 need `node node_modules/.pnpm/electron@*/node_modules/electron/install.js` if the Electron binary is missing.
 
-Running a second dev stack on other ports (another worktree): start the engine with
-`JASPER_DEV=1 JASPER_DEV_WEB_PORT=<vite port> tsx apps/engine/src/cli.ts --port <engine port>` and Vite with
-`JASPER_ENGINE_URL=http://127.0.0.1:<engine port> vite --port <vite port>`; Electron takes
-`JASPER_DESKTOP_DEV_URL=http://127.0.0.1:<vite port>`.
+Running a second dev stack on other ports (another worktree, or 5173/47900 are taken):
+
+```bash
+JASPER_APPDIR=./.stage JASPER_DEV=1 JASPER_DEV_WEB_PORT=<vite port> pnpm exec tsx apps/engine/src/cli.ts --port <engine port>
+cd apps/web && JASPER_ENGINE_URL=http://127.0.0.1:<engine port> pnpm exec vite --port <vite port> --strictPort
+```
+
+Electron then takes `JASPER_DESKTOP_DEV_URL=http://127.0.0.1:<vite port>`. Without `JASPER_APPDIR` the engine
+uses the platform appdir (`~/.local/share/jasper` on Linux).
+
+## PWA (installable web app)
+
+The Vite dev server does not register the service worker; install from a production build served by the
+engine:
+
+```bash
+pnpm build
+JASPER_WEB_DIR=apps/web/dist node apps/engine/dist/engine.mjs --port 47900 --appdir ./.stage
+```
+
+Open http://127.0.0.1:47900 in Chrome or Edge and use the address-bar **Install** icon (or the Install entry in the
+browser menu). `127.0.0.1` counts as a secure context, so no TLS is needed locally. The
+build emits `manifest.webmanifest` (standalone, window-controls-overlay, `.jasper` file handler), `sw.js` and
+the icons under `apps/web/dist/icons/`; the service worker caches the app shell and bypasses engine routes (`/api/*` is never cached).
+
+## Agent API
+
+Agents drive the editor with JSON transactions over HTTP (ARCHITECTURE §11, protocol `jasper.tx/1`). The
+JSON Schema of every command is at `GET /api/agent/schema`; read-only queries go to `POST /api/agent/query`.
+If the project is open in an editor, the transaction applies live through that session (one `Agent: …`
+History entry, `appliedBy: "session"`). Otherwise the engine applies it headlessly (`appliedBy: "headless"`)
+and the change is there on the next open. Destructive commands such as `track.remove` wait for approval in the
+Agent panel.
+
+```bash
+# create a project (or take a projectId from GET /api/projects)
+curl -s -X POST http://127.0.0.1:47900/api/projects -H 'content-type: application/json' \
+  -d '{"name":"Curl demo","preset":"hd-1080p-30"}'
+# → {"projectId":"prj_…"}
+
+curl -s -X POST http://127.0.0.1:47900/api/agent/tx -H 'content-type: application/json' -d '{
+  "projectId": "prj_…",
+  "transaction": {
+    "protocol": "jasper.tx/1",
+    "label": "Mark the intro",
+    "origin": { "agent": "curl", "runId": "demo" },
+    "commands": [{ "type": "marker.add", "frame": 30, "name": "Intro" }]
+  }
+}'
+# → {"result":{"ok":true,"revision":1,"created":["mrk_…"],…},"appliedBy":"headless"}
+```
+
+The engine binds loopback only. The packaged-like desktop engine requires its per-launch token
+(`JASPER_LOCAL_TOKEN`), so plain curl calls are meant for the dev or standalone engine.
 
 ## Tests
 
 ```bash
+pnpm fixtures && pnpm mg:build   # optional first: some engine tests skip without jasper-mg
 pnpm verify              # lint + typecheck + unit/integration tests + build
 pnpm e2e                 # builds engine + web, then Playwright (headless Chrome) against the built engine
 pnpm e2e:desktop         # Electron under xvfb: packaged-like and dev mode, screenshots in test-results/
