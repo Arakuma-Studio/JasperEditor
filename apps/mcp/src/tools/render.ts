@@ -351,16 +351,32 @@ export function registerRenderTools(ctx: ToolContext): void {
 					.optional()
 					.describe('"entire" (default), "in-out" (sequence In/Out marks) or {"from": time, "to": time}'),
 				engine: z.enum(['auto', 'native', 'remotion']).optional().describe('Render path (default auto)'),
+				crf: z
+					.number()
+					.int()
+					.min(0)
+					.max(51)
+					.optional()
+					.describe('Quality override, x264-style CRF (lower = better; 14–16 is visually lossless)'),
+				videoBitrateKbps: z
+					.number()
+					.int()
+					.min(500)
+					.max(200_000)
+					.optional()
+					.describe(
+						'Average video bitrate in kbit/s (e.g. 16000): the target of bitrate-driven encoders such as OpenH264, a ceiling for x264; ignored by ProRes',
+					),
 				outputPath: z
 					.string()
 					.optional()
 					.describe(
-						"Absolute path of the output file; the extension is replaced by the container's (.mp4 / .webm). Never overwrites: see result.path",
+						"Absolute path of the output file; the extension is replaced by the container's (.mp4 / .webm / .mov). Never overwrites: see result.path",
 					),
 			},
 			annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
 		},
-		async ({ projectId, sequenceId, preset, range, engine, outputPath }) => {
+		async ({ projectId, sequenceId, preset, range, engine, outputPath, crf, videoBitrateKbps }) => {
 			const p = findExportPreset(preset);
 			if (!p)
 				throw new ToolError(
@@ -391,7 +407,13 @@ export function registerRenderTools(ctx: ToolContext): void {
 				if (endFrame <= startFrame) throw new ToolError('E_INVALID_PARAM', '`to` must be after `from`');
 				r = { type: 'custom', startFrame, endFrame };
 			}
-			const settings = buildExportSettings(seq, p, { range: r, engine: engine ?? 'auto', outputPath });
+			const settings = buildExportSettings(seq, p, {
+				range: r,
+				engine: engine ?? 'auto',
+				outputPath,
+				...(crf !== undefined ? { crf } : {}),
+				...(videoBitrateKbps !== undefined ? { videoBitrateKbps } : {}),
+			});
 			const envelope = makeEnvelope(doc, {
 				revision: revision ?? 0,
 				savedAt: new Date().toISOString(),

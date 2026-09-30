@@ -7,13 +7,15 @@ export type ExportPreset = {
 	id: string;
 	label: string;
 	description: string;
-	container: 'mp4' | 'webm';
+	container: 'mp4' | 'webm' | 'mov';
 	codec: VideoCodec;
 	crf: number;
 	speed: 'fast' | 'balanced' | 'best';
 	/** Output width (height follows the sequence aspect); null = sequence size. */
 	maxWidth: number | null;
 	audioKbps: number;
+	/** Average video bitrate (kbit/s) for bitrate-driven encoders (OpenH264); a ceiling for x264. */
+	videoKbps?: number;
 };
 
 export const EXPORT_PRESETS: readonly ExportPreset[] = [
@@ -51,6 +53,31 @@ export const EXPORT_PRESETS: readonly ExportPreset[] = [
 		audioKbps: 320,
 	},
 	{
+		id: 'master-h264-high',
+		label: 'Master – H.264 high bitrate',
+		description:
+			'Delivery master: sequence size, CRF 14 with x264, 20 Mbit/s average with OpenH264 / VideoToolbox (bitrate-driven encoders), AAC 320 kb/s.',
+		container: 'mp4',
+		codec: 'h264',
+		crf: 14,
+		speed: 'best',
+		maxWidth: null,
+		audioKbps: 320,
+		videoKbps: 20000,
+	},
+	{
+		id: 'master-prores-422hq',
+		label: 'Master – ProRes 422 HQ',
+		description:
+			'Mastering copy: ProRes 422 HQ (10-bit 4:2:2, ~220 Mbit/s at 1080p30) in MOV with 16-bit PCM audio.',
+		container: 'mov',
+		codec: 'prores',
+		crf: 0,
+		speed: 'best',
+		maxWidth: null,
+		audioKbps: 1536,
+	},
+	{
 		id: 'web-vp9',
 		label: 'Web – VP9 WebM',
 		description: 'Royalty-free VP9 + Opus in WebM at the sequence size (CRF 32).',
@@ -78,8 +105,12 @@ export function buildExportSettings(
 		range: ExportSettings['range'];
 		engine: ExportSettings['engine'];
 		outputPath?: string;
+		/** Overrides of the preset's quality. */
+		crf?: number;
+		videoBitrateKbps?: number;
 	},
 ): ExportSettings {
+	const videoKbps = opts.videoBitrateKbps ?? preset.videoKbps;
 	const s = seq.settings;
 	const scale = preset.maxWidth && s.width > preset.maxWidth ? preset.maxWidth / s.width : 1;
 	return {
@@ -93,11 +124,13 @@ export function buildExportSettings(
 			height: even(s.height * scale),
 			frameRate: { num: s.frameRate.num, den: s.frameRate.den },
 			scaling: 'fit',
-			quality: { mode: 'crf', value: preset.crf },
+			quality: { mode: 'crf', value: opts.crf ?? preset.crf },
 			encoderSpeed: preset.speed,
 			colorTags: 'rec709',
+			...(videoKbps ? { bitrateKbps: videoKbps } : {}),
 		},
 		audio: {
+			// The engine pairs the audio encoder with the container (PCM in MOV); this is the request.
 			codec: preset.container === 'webm' ? 'opus' : 'aac',
 			sampleRate: 48000,
 			channels: 2,

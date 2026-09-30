@@ -160,6 +160,7 @@ describe('jasper-mcp over stdio against a real engine', () => {
 			'add_text',
 			'add_marker',
 			'add_motion_graphic',
+			'add_transition',
 			'get_timeline',
 			'render_frame',
 			'get_playhead',
@@ -283,6 +284,38 @@ describe('jasper-mcp over stdio against a real engine', () => {
 			/V1 \| clp_\w+ \| video \| clip-b\.mp4 \| 00:00:09:10–00:00:12:10 \| 280–370 \| clip-b\.mp4 \[med_\w+\] 1–4 s/,
 		);
 		exportFrames = 370;
+	});
+
+	it('places clips frame-exactly on any track and adds transitions', async () => {
+		// Media frames 12…57 of clip-b (25 fps) on a new track V4 at frame 400: 45 media frames = 54 at 30 fps.
+		const r = await ok<{ clips: { id: string; track: string; start: number; end: number }[] }>('add_clip', {
+			projectId,
+			media: 'clip-b.mp4',
+			at: 400,
+			track: 'V4',
+			sourceInFrame: 12,
+			sourceOutFrame: 57,
+			videoOnly: true,
+		});
+		expect(r.clips).toEqual([expect.objectContaining({ track: 'V4', start: 400, end: 454 })]);
+		const bad = await call('add_clip', {
+			projectId,
+			media: 'clip-b.mp4',
+			at: 0,
+			sourceIn: 1,
+			sourceInFrame: 3,
+			sourceOutFrame: 9,
+		});
+		expect(bad.isError).toBe(true);
+		const fade = await ok<{ results: { transitionId: string; duration: number; alignment: string }[] }>(
+			'add_transition',
+			{ projectId, clipId: r.clips[0]!.id, edge: 'out', type: 'dip-to-black', durationFrames: 12 },
+		);
+		expect(fade.results[0]).toMatchObject({ duration: 12, alignment: 'end-at-cut' });
+		const table = textOf((await call('get_timeline', { projectId })) as CallToolResult);
+		expect(table).toMatch(/V4 \| clp_\w+ \| video \| clip-b\.mp4 \| [\d:]+–[\d:]+ \| 400–454/);
+		// Remove it again so the export below keeps its length.
+		await ok('delete_clips', { projectId, clipIds: [r.clips[0]!.id] });
 	});
 
 	it('render_frame returns a downscaled PNG of the Program output', async () => {

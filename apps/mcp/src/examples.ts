@@ -53,6 +53,13 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		target: ['clip', '$clip', 'opacity'],
 		value: 0.5,
 	},
+	'transition.add': {
+		type: 'transition.add',
+		clipId: { clipAt: { track: 'V1', at: 0 } },
+		edge: 'in',
+		effectId: 'jasper.dip-to-black',
+		duration: 15,
+	},
 	'marker.add': { type: 'marker.add', frame: '00:00:01:00', name: 'Beat', comment: 'music hit' },
 	'track.add': { type: 'track.add', kind: 'video', count: 1 },
 	'sequence.setInOut': { type: 'sequence.setInOut', in: 0, out: { seconds: 2 } },
