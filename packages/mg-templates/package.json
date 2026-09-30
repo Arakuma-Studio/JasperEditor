@@ -8,7 +8,8 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "schemas": "tsx scripts/generate-schemas.ts && biome format --write schemas"
   },
   "dependencies": {
     "@jasper/project": "workspace:*",

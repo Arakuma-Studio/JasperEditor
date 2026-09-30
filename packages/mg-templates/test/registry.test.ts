@@ -24,15 +24,17 @@ const sample: MgTemplateDefinition<z.infer<typeof params>> = {
 	defaults: { title: 'Hello', accent: [1, 0, 0, 1] },
 	introFrames: 10,
 	outroFrames: 10,
+	defaultDurationSeconds: 3,
 	canvases: [{ width: 1920, height: 1080 }],
 	renderSvg: (p, frame, _fps, c) =>
 		`<svg xmlns="http://www.w3.org/2000/svg" width="${c.width}" height="${c.height}"><text x="10" y="50" opacity="${Math.min(1, frame / 10)}">${p.title}</text></svg>`,
 };
 
 describe('@jasper/mg-templates', () => {
-	it('ships an empty catalog until WP-2G fills it', () => {
-		expect(MG_CATALOG).toEqual([]);
-		expect(mgRegistry.list()).toEqual([]);
+	it('ships lower-third@1 and title-card@1', () => {
+		expect(MG_CATALOG.map((d) => `${d.id}@${d.version}`)).toEqual(['lower-third@1', 'title-card@1']);
+		expect(mgRegistry.list().map((t) => t.name)).toEqual(['Lower Third', 'Title Card']);
+		expect(mgRegistry.get('lower-third', 1)?.introFrames).toBe(30);
 	});
 	it('implements the project MgTemplateRegistry and validates params through it', () => {
 		const reg = createMgRegistry([sample]);

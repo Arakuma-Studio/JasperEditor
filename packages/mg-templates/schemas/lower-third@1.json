@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": {
+      "default": "Alex Morgan",
+      "type": "string",
+      "maxLength": 120
+    },
+    "title": {
+      "default": "Producer, JasperEditor",
+      "type": "string",
+      "maxLength": 160
+    },
+    "accentColor": {
+      "default": [0.22, 0.53, 1, 1],
+      "minItems": 4,
+      "maxItems": 4,
+      "type": "array",
+      "items": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    "textColor": {
+      "default": [1, 1, 1, 1],
+      "minItems": 4,
+      "maxItems": 4,
+      "type": "array",
+      "items": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    "backgroundColor": {
+      "default": [0.04, 0.06, 0.12, 0.78],
+      "minItems": 4,
+      "maxItems": 4,
+      "type": "array",
+      "items": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    "position": {
+      "default": [120, 800],
+      "minItems": 2,
+      "maxItems": 2,
+      "type": "array",
+      "items": {
+        "type": "number",
+        "minimum": -4000,
+        "maximum": 4000
+      }
+    },
+    "holdUntilFrames": {
+      "default": 0,
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 432000
+    }
+  },
+  "additionalProperties": false
+}

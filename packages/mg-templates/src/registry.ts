@@ -18,6 +18,8 @@ export type MgCatalogEntryJson = {
 	defaults: Record<string, unknown>;
 	introFrames: number;
 	outroFrames: number;
+	defaultDurationSeconds: number;
+	description?: string;
 	canvases: string[];
 };
 
@@ -70,6 +72,8 @@ export function createMgRegistry(defs: readonly AnyMgTemplate[]): MgRegistry {
 				defaults: d.defaults,
 				introFrames: d.introFrames,
 				outroFrames: d.outroFrames,
+				defaultDurationSeconds: d.defaultDurationSeconds,
+				...(d.description ? { description: d.description } : {}),
 				canvases: d.canvases.map(canvasLabel),
 			})),
 	};
