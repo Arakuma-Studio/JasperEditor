@@ -1,0 +1,18 @@
+{
+  "template": { "id": "title-card", "version": 1 },
+  "params": {
+    "title": "Your Title Here",
+    "subtitle": "A JasperEditor production",
+    "background": [0.02, 0.03, 0.06, 0.85],
+    "textColor": [1, 1, 1, 1],
+    "accentColor": [0.22, 0.53, 1, 1],
+    "alignment": "center",
+    "fadeInFrames": 15,
+    "fadeOutFrames": 15
+  },
+  "width": 1920,
+  "height": 1080,
+  "fps": { "num": 30, "den": 1 },
+  "durationFrames": 120,
+  "sourceInFrames": 0
+}

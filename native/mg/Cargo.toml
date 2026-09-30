@@ -1,0 +1,35 @@
+# jasper-mg: JasperEditor's CPU motion-graphics renderer (ARCHITECTURE D-12, §10.2; R-FF Design C).
+# One precompiled binary containing every template; specs are read at runtime (no compile per edit).
+[workspace]
+resolver = "2"
+members = ["crates/jasper-mg-core", "crates/jasper-mg-templates", "crates/jasper-mg-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+jasper-mg-core = { path = "crates/jasper-mg-core" }
+jasper-mg-templates = { path = "crates/jasper-mg-templates" }
+# No `h264`/`h265`/`libav-agree-gpl`: x264 ABI mismatch on Ubuntu 24.04 and GPL (R-FF §5, §9).
+# No `compile-time-svgtree`: templates build their SVG markup at runtime so the TypeScript twins in
+# @jasper/mg-templates can mirror it element for element.
+fframes = { version = "=1.0.3", default-features = false, features = ["cpu_renderer"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4.5", features = ["derive"] }
+
+# R-FF §8: crate at opt-level 1, deps at 3, no debug info → ~2 s incremental dev builds that render
+# as fast as release. Release uses thin LTO for the shipped binary.
+[profile.dev]
+opt-level = 1
+debug = 0
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = "thin"
+codegen-units = 16
