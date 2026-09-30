@@ -218,3 +218,50 @@ describe('probe mapping (S04:PB-001…004)', () => {
 		expect(() => mapProbe({ format: {}, streams: [] })).toThrow(/No video or audio/);
 	});
 });
+
+describe('system errors → ENG-022 codes (WP-3I)', () => {
+	it('maps ENOSPC to DISK_FULL, ENOENT to NOT_FOUND and other fs errors to INTERNAL without paths', async () => {
+		const { default: Fastify } = await import('fastify');
+		const { readFile } = await import('node:fs/promises');
+		const { guarded } = await import('../src/tools/reply.ts');
+		const app = Fastify();
+		const enospc = Object.assign(new Error("ENOSPC: no space left on device, write '/secret/x'"), {
+			code: 'ENOSPC',
+			errno: -28,
+			syscall: 'write',
+		});
+		const eacces = Object.assign(new Error("EACCES: permission denied, open '/secret/y'"), {
+			code: 'EACCES',
+			errno: -13,
+			syscall: 'open',
+		});
+		app.get(
+			'/full',
+			guarded(async () => {
+				throw enospc;
+			}),
+		);
+		app.get(
+			'/missing',
+			guarded(async () => readFile('/definitely/not/here/jasper.json', 'utf8')),
+		);
+		app.get(
+			'/denied',
+			guarded(async () => {
+				throw eacces;
+			}),
+		);
+		const full = await app.inject({ method: 'GET', url: '/full' });
+		expect(full.statusCode).toBe(507);
+		expect(full.json()).toMatchObject({ code: 'DISK_FULL', retryable: true, detail: { errno: 'ENOSPC' } });
+		const missing = await app.inject({ method: 'GET', url: '/missing' });
+		expect(missing.statusCode).toBe(404);
+		expect(missing.json().code).toBe('NOT_FOUND');
+		expect(missing.body).not.toContain('/definitely');
+		const denied = await app.inject({ method: 'GET', url: '/denied' });
+		expect(denied.statusCode).toBe(500);
+		expect(denied.json()).toMatchObject({ code: 'INTERNAL', detail: { errno: 'EACCES', syscall: 'open' } });
+		expect(denied.body).not.toContain('/secret');
+		await app.close();
+	});
+});

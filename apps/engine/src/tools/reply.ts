@@ -59,8 +59,41 @@ const STATUS_BY_CODE: Record<string, number> = {
 	NOT_IMPLEMENTED: 501,
 };
 
+/**
+ * Node system errors (`ENOSPC`, `EACCES`, `ENOENT`… with `syscall`/`errno`) are not service errors: their
+ * `code` is not an ENG-022 code and their message carries absolute paths. Maps them to stable codes.
+ */
+export function systemErrorReply(
+	e: unknown,
+): { status: number; code: string; message: string; detail: unknown } | null {
+	const err = e as { code?: unknown; syscall?: unknown; errno?: unknown } | null;
+	if (!err || typeof err.code !== 'string' || !/^E[A-Z0-9]+$/.test(err.code)) return null;
+	if (typeof err.syscall !== 'string' && typeof err.errno !== 'number') return null;
+	const detail = { errno: err.code, ...(typeof err.syscall === 'string' ? { syscall: err.syscall } : {}) };
+	switch (err.code) {
+		case 'ENOSPC':
+		case 'EDQUOT':
+			return { status: 507, code: 'DISK_FULL', message: 'The engine storage is full', detail };
+		case 'ENOENT':
+		case 'ENOTDIR':
+			return { status: 404, code: 'NOT_FOUND', message: 'A file the request needs does not exist', detail };
+		default:
+			return {
+				status: 500,
+				code: 'INTERNAL',
+				message: `Engine storage error (${err.code})`,
+				detail,
+			};
+	}
+}
+
 /** Maps service errors (they all carry `code`, and some `status`/`detail`) to an HTTP error reply. */
 export function sendServiceError(reply: FastifyReply, e: unknown) {
+	const sys = systemErrorReply(e);
+	if (sys) {
+		if (sys.status >= 500) reply.log.error(e);
+		return fail(reply, sys.status, sys.code, sys.message, sys.detail);
+	}
 	const err = e as {
 		code?: string;
 		status?: number;
