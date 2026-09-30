@@ -148,7 +148,7 @@ export class ProcessingService {
 		let runtime: 'onnxruntime' | 'none' = 'none';
 		try {
 			const m = await import('./proc/upscale.ts');
-			providers = m.ortProviders().filter((p) => p !== 'webgpu');
+			providers = await m.ortProviders();
 			runtime = providers.length ? 'onnxruntime' : 'none';
 		} catch {
 			runtime = 'none';

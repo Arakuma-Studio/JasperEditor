@@ -57,7 +57,9 @@ function run(bin: string, args: string[], opts: ExecOptions = {}): Promise<ExecR
 			stderr = (stderr + s).slice(-20_000);
 			opts.onStderr?.(s);
 		});
+		let killed = false;
 		const kill = () => {
+			killed = true;
 			try {
 				if (child.pid !== undefined && process.platform !== 'win32') process.kill(-child.pid, 'SIGTERM');
 				else child.kill('SIGTERM');
@@ -70,6 +72,13 @@ function run(bin: string, args: string[], opts: ExecOptions = {}): Promise<ExecR
 		child.on('error', (e) => {
 			if (timer) clearTimeout(timer);
 			reject(new RemoteError('SSH_UNAVAILABLE', `${bin}: ${e.message}`, false));
+		});
+		// After a kill, don't wait for grandchildren that keep our pipes open (a detached remote process
+		// behind a local shim, or a hung transport): end the streams once the direct child is gone.
+		child.on('exit', () => {
+			if (!killed) return;
+			child.stdout?.destroy();
+			child.stderr?.destroy();
 		});
 		child.on('close', (code, sig) => {
 			if (timer) clearTimeout(timer);

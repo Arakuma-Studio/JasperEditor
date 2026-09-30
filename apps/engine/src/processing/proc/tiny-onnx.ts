@@ -1,4 +1,4 @@
-// A tiny ONNX super-resolution model for tests (S07:PST-034): a 1×1 convolution (3 → 12 channels) followed by
+// A tiny ONNX super-resolution model (S07:PST-034, tests; also the runtime self-test of ortProviders): a 1×1 convolution (3 → 12 channels) followed by
 // DepthToSpace(2, CRD) = a 2× nearest-neighbour upscale (with an optional gain). Written as raw protobuf so
 // tests need no Python and no downloads. A few hundred bytes.
 import { createHash } from 'node:crypto';

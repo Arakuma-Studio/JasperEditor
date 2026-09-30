@@ -50,7 +50,7 @@ export async function versionInfo(): Promise<Record<string, unknown>> {
 		version: PROC_VERSION,
 		recipeVersion: RECIPE_VERSION,
 		node: process.version,
-		onnx: { providers: ortProviders() },
+		onnx: { providers: await ortProviders() },
 		vidstab,
 	};
 }

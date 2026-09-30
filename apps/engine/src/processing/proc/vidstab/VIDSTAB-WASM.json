@@ -1,0 +1,137 @@
+{
+  "file": "vidstab.wasm",
+  "sha256": "af97cf3357c030a1ccbbdba5b4d7a2dfa26544c1d14b39817ba756cab30f933d",
+  "bytes": 169094,
+  "vidstab": {
+    "repository": "https://github.com/georgmartius/vid.stab",
+    "commit": "e2445c4081658318223762a696eb1c645c2d7168",
+    "commitDate": "2026-08-14T20:12:27Z",
+    "version": "1.4.0",
+    "license": "LGPL-2.1-or-later",
+    "archive": "https://github.com/georgmartius/vid.stab/archive/e2445c4081658318223762a696eb1c645c2d7168.tar.gz",
+    "archiveSha256": "39506541c073b2be1e376b59fc90e6a79ba4d16cbf4a4a2a58a6badc3a4ce1c3",
+    "modified": false,
+    "lpSolver": "builtin (interior point)",
+    "openmp": false,
+    "sources": [
+      "frameinfo.c",
+      "transformtype.c",
+      "libvidstab.c",
+      "transform.c",
+      "transformfixedpoint.c",
+      "motiondetect.c",
+      "serialize.c",
+      "localmotion2transform.c",
+      "boxblur.c",
+      "vsvector.c",
+      "lensdistortion.c",
+      "lensmap.c",
+      "cpudetect.c",
+      "motiondetect_dispatch.c",
+      "motiondetect_opt.c",
+      "l1campathoptimization.c",
+      "lpsolver_ipm.c"
+    ],
+    "defines": ["NDEBUG", "USE_IPM", "VS_HAVE_LPSOLVER", "VIDSTAB_STATIC_DEFINE"]
+  },
+  "glue": {
+    "file": "scripts/vidstab-wasm/glue.c",
+    "license": "LGPL-2.1-or-later"
+  },
+  "toolchain": {
+    "name": "wasi-sdk",
+    "version": "34.0",
+    "tag": "wasi-sdk-34",
+    "clang": "clang version 23.1.0-wasi-sdk (https://github.com/llvm/llvm-project 895aa2c896ada719451be2e3673c83da8ddf1141)",
+    "archives": {
+      "linux-x64": {
+        "url": "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-linux.tar.gz",
+        "sha256": "b761e3a0721dbae9c09a0059e5fdb2bf917d1b4a8a7b430fb3b5aafb0984b2c4"
+      },
+      "linux-arm64": {
+        "url": "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-arm64-linux.tar.gz",
+        "sha256": "f7e243dff54d60bcc576e94d6166b69f410f2500ae4a9ceef34315be10e77971"
+      },
+      "darwin-x64": {
+        "url": "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-macos.tar.gz",
+        "sha256": "87d27fa8adc68dee59bfbf2e22a6d34ef717c34d6bf1d8af2a56fc929d9ce0eb"
+      },
+      "darwin-arm64": {
+        "url": "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-arm64-macos.tar.gz",
+        "sha256": "9c59398106b417f8f14913380fdf0097a8cc0ff4af9eb3ce0065a859e88d49e9"
+      },
+      "win32-x64": {
+        "url": "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-windows.tar.gz",
+        "sha256": "cccb5c323a9b34f0349a9b09e8804a0a7632c68c3310f4b5f437ed57d7e71d8f"
+      }
+    }
+  },
+  "cflags": [
+    "--target=wasm32-wasip1",
+    "-O3",
+    "-msimd128",
+    "-ffast-math",
+    "-std=gnu99",
+    "-ffunction-sections",
+    "-fdata-sections",
+    "-Wall",
+    "-Wno-pointer-sign",
+    "-Wno-unused-function",
+    "-Wno-unused-variable"
+  ],
+  "ldflags": [
+    "-mexec-model=reactor",
+    "-Wl,--gc-sections",
+    "-Wl,--strip-all",
+    "-Wl,-z,stack-size=1048576",
+    "-Wl,--max-memory=4294967296"
+  ],
+  "simd": true,
+  "imports": [
+    "wasi_snapshot_preview1.environ_get",
+    "wasi_snapshot_preview1.environ_sizes_get",
+    "wasi_snapshot_preview1.clock_time_get",
+    "wasi_snapshot_preview1.fd_close",
+    "wasi_snapshot_preview1.fd_fdstat_get",
+    "wasi_snapshot_preview1.fd_fdstat_set_flags",
+    "wasi_snapshot_preview1.fd_prestat_get",
+    "wasi_snapshot_preview1.fd_prestat_dir_name",
+    "wasi_snapshot_preview1.fd_read",
+    "wasi_snapshot_preview1.fd_seek",
+    "wasi_snapshot_preview1.fd_write",
+    "wasi_snapshot_preview1.path_open",
+    "wasi_snapshot_preview1.proc_exit"
+  ],
+  "exports": [
+    "_initialize",
+    "vsx_log_ptr",
+    "vsx_log_len",
+    "vsx_log_clear",
+    "vsx_set_log_level",
+    "vsx_malloc",
+    "vsx_free",
+    "vsx_version",
+    "vsx_set_simd",
+    "vsx_simd",
+    "vsx_detect_free",
+    "vsx_detect_init",
+    "vsx_detect_luma",
+    "vsx_detect_restart",
+    "vsx_detect_frame",
+    "vsx_detect_motions",
+    "vsx_path_free",
+    "vsx_path_init",
+    "vsx_path_scratch",
+    "vsx_path_add",
+    "vsx_path_compute",
+    "vsx_path_result",
+    "vsx_path_zoom",
+    "vsx_warp_rgb48",
+    "vsx_ref_free",
+    "vsx_ref_init",
+    "vsx_ref_src",
+    "vsx_ref_dst",
+    "vsx_ref_apply"
+  ],
+  "rebuild": "scripts/vidstab-wasm/build.sh"
+}

@@ -18,6 +18,20 @@ import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
 
 type KeyParams = { Params: { key: string } };
+/** The parts of the agent service (services.agent) used for approvals. */
+type AgentLike = {
+	isLive(projectId: string): boolean;
+	approvals: {
+		request(req: {
+			projectId: string;
+			label: string;
+			agent: string;
+			reasons: string[];
+			commandCount: number;
+			summary?: string;
+		}): { decision: Promise<'approved' | 'denied' | 'timeout'> };
+	};
+};
 type ModelParams = { Params: { modelId: string } };
 
 export function processingService(app: FastifyInstance): ProcessingService {
@@ -65,10 +79,41 @@ export default async function processingRoutes(app: FastifyInstance): Promise<vo
 		guarded(async () => svc.settings.get()),
 	);
 
-	app.put(
+	type PutQuery = { Querystring: { approvalProjectId?: string; agent?: string } };
+	app.put<PutQuery>(
 		'/api/settings/processing',
-		guarded(async (req) => {
+		guarded<PutQuery>(async (req) => {
 			const body = parseOr400(ProcessingSettingsSchema, req.body ?? {});
+			// Agents (MCP set_processing_settings) change where media is sent: the user approves in the editor
+			// window that has `approvalProjectId` open (S07:PRA-001), like destructive transactions.
+			const approvalProjectId = req.query.approvalProjectId;
+			if (approvalProjectId) {
+				const agent = app.jasper.services.agent as AgentLike | undefined;
+				if (!agent?.isLive(approvalProjectId))
+					throw new HttpError(
+						409,
+						'E_NO_SESSION',
+						"Changing the processing settings needs the user's approval: open the project in the editor first",
+					);
+				const r = body.remote;
+				const { decision } = agent.approvals.request({
+					projectId: approvalProjectId,
+					label: 'Change processing settings',
+					agent: (req.query.agent ?? 'agent').slice(0, 64),
+					reasons: ['changes where media is sent for processing (remote executor)'],
+					commandCount: 0,
+					summary: r
+						? `remote executor: ${r.user}@${r.host}:${r.port} ${r.remoteDir} (${r.enabled ? 'enabled' : 'disabled'})`
+						: 'remove the remote executor',
+				});
+				const d = await decision;
+				if (d !== 'approved')
+					throw new HttpError(
+						403,
+						d === 'timeout' ? 'E_APPROVAL_TIMEOUT' : 'E_APPROVAL_DENIED',
+						d === 'timeout' ? 'The user did not answer the approval request' : 'The user denied the change',
+					);
+			}
 			try {
 				const saved = await svc.settings.put(body);
 				core.capabilities.changed();

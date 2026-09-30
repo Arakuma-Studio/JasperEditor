@@ -9,9 +9,19 @@ import { join } from 'node:path';
 import type { EngineJob, ProcessResult } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { recipeHash } from '../src/processing/proc/recipe.ts';
+import { writeTinySrModel } from '../src/processing/proc/tiny-onnx.ts';
 import { VIDSTAB_PIN } from '../src/processing/vidstab-pin.ts';
-import { closeApps, ensureFixtures, fixture, JSON_H, makeApp, register, ROOT, type TestApp, until } from './helpers.ts';
-import { writeTinySrModel } from './tiny-onnx.ts';
+import {
+	closeApps,
+	ensureFixtures,
+	fixture,
+	JSON_H,
+	makeApp,
+	ROOT,
+	register,
+	type TestApp,
+	until,
+} from './helpers.ts';
 
 const H = { host: '127.0.0.1:47900' };
 let app: TestApp;
@@ -25,18 +35,26 @@ function ffprobeJson(file: string): { streams: Array<Record<string, string | num
 }
 
 function audioHash(file: string): string {
-	const r = spawnSync('ffmpeg', ['-v', 'error', '-i', file, '-map', '0:a:0', '-c', 'copy', '-f', 'data', '-'], {
-		maxBuffer: 256 * 1024 * 1024,
-	});
+	const r = spawnSync(
+		'ffmpeg',
+		['-v', 'error', '-i', file, '-map', '0:a:0', '-c', 'copy', '-f', 'data', '-'],
+		{
+			maxBuffer: 256 * 1024 * 1024,
+		},
+	);
 	return createHash('sha256').update(r.stdout).digest('hex');
 }
 
 async function waitJob(id: string, timeoutMs = 240_000): Promise<EngineJob> {
-	return until(async () => {
-		const r = await app.inject({ method: 'GET', url: `/api/jobs/${id}`, headers: H });
-		const j = r.json() as EngineJob;
-		return ['succeeded', 'failed', 'cancelled', 'interrupted'].includes(j.state) ? j : null;
-	}, timeoutMs, 200);
+	return until(
+		async () => {
+			const r = await app.inject({ method: 'GET', url: `/api/jobs/${id}`, headers: H });
+			const j = r.json() as EngineJob;
+			return ['succeeded', 'failed', 'cancelled', 'interrupted'].includes(j.state) ? j : null;
+		},
+		timeoutMs,
+		200,
+	);
 }
 
 beforeAll(async () => {
@@ -146,10 +164,18 @@ describe('processing routes', () => {
 		expect(p.upscale.modelsInstalled).toBe(1);
 		expect(p.remote).toEqual({ configured: false, lastProbe: null });
 		const lic = (await app.inject({ method: 'GET', url: '/api/licenses', headers: H })).json() as {
-			components: Array<{ id: string; license: string; texts: unknown[]; notice?: string; version: string | null }>;
+			components: Array<{
+				id: string;
+				license: string;
+				texts: unknown[];
+				notice?: string;
+				version: string | null;
+			}>;
 		};
 		const ids = lic.components.map((c) => c.id);
-		expect(ids).toEqual(expect.arrayContaining(['libvidstab', 'onnxruntime-node', 'opencv-js', 'model:tiny-2x']));
+		expect(ids).toEqual(
+			expect.arrayContaining(['libvidstab', 'onnxruntime-node', 'opencv-js', 'model:tiny-2x']),
+		);
 		const vs = lic.components.find((c) => c.id === 'libvidstab')!;
 		expect(vs.license).toBe('LGPL-2.1-or-later');
 		expect(vs.version).toContain(VIDSTAB_PIN.commit.slice(0, 12));
@@ -226,7 +252,8 @@ describe('process jobs (local)', () => {
 		expect(side.recipeHash).toBe(res.recipeHash);
 		expect(side.output.frames).toBe(Number(src.nb_read_packets));
 		// proxy-720 follows (browsers cannot decode ProRes).
-		const jobs = (await app.inject({ method: 'GET', url: '/api/jobs', headers: H })).json().jobs as EngineJob[];
+		const jobs = (await app.inject({ method: 'GET', url: '/api/jobs', headers: H })).json()
+			.jobs as EngineJob[];
 		expect(jobs.some((j) => j.kind === 'proxy' && j.assetId === res.registered.mediaKey)).toBe(true);
 		// Same recipe again: content-addressed reuse.
 		const again = await app.inject({
@@ -273,14 +300,22 @@ describe('process jobs (local)', () => {
 			payload: { steps: [{ op: 'denoise', method: 'nlmeans', strength: 1 }], executor: 'local' },
 		});
 		const id = (r.json() as EngineJob).id;
-		await until(async () => {
-			const j = (await app.inject({ method: 'GET', url: `/api/jobs/${id}`, headers: H })).json() as EngineJob;
-			return j.state === 'running' && (j.progress ?? 0) > 0 ? j : null;
-		}, 60_000, 100);
+		await until(
+			async () => {
+				const j = (
+					await app.inject({ method: 'GET', url: `/api/jobs/${id}`, headers: H })
+				).json() as EngineJob;
+				return j.state === 'running' && (j.progress ?? 0) > 0 ? j : null;
+			},
+			60_000,
+			100,
+		);
 		await app.inject({ method: 'POST', url: `/api/jobs/${id}/cancel`, headers: H });
 		const done = await waitJob(id, 30_000);
 		expect(done.state).toBe('cancelled');
-		const ls = spawnSync('find', [join(app.appdir, 'media', 'processed'), '-name', '.partial-*'], { encoding: 'utf8' });
+		const ls = spawnSync('find', [join(app.appdir, 'media', 'processed'), '-name', '.partial-*'], {
+			encoding: 'utf8',
+		});
 		expect(ls.stdout.trim()).toBe('');
 	}, 120_000);
 });
