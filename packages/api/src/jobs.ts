@@ -18,6 +18,13 @@ export const JOB_KINDS = [
 	'browser-download',
 	'gc',
 	'relink-scan',
+	// M2 (ARCHITECTURE §19.7)
+	'process',
+	'track',
+	'mg-bundle',
+	'mg-prerender',
+	'layer-bake',
+	'remote-setup',
 ] as const;
 export const JobKindSchema = z.enum(JOB_KINDS);
 export type JobKind = z.infer<typeof JobKindSchema>;

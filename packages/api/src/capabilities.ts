@@ -1,5 +1,6 @@
 // GET /health and GET /api/capabilities (ARCHITECTURE §9.2, S04:RT-002 subset).
 import { z } from 'zod';
+import { M2FeaturesSchema } from './m2-capabilities.ts';
 
 export const HealthSchema = z.object({
 	ok: z.literal(true),
@@ -112,6 +113,8 @@ export const EngineCapabilitiesSchema = z.object({
 		fframesReason: z.string().optional(),
 	}),
 	fonts: z.object({ bundledCatalog: z.boolean(), systemFonts: z.boolean(), customUpload: z.boolean() }),
+	/** M2 feature blocks (ARCHITECTURE §19.7); additive. */
+	features: M2FeaturesSchema.optional(),
 	limits: z.object({
 		maxUploadBytes: z.number().nullable(),
 		freeDiskBytes: z.number().nullable(),

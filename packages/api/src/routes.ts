@@ -33,6 +33,17 @@ import {
 } from './media.ts';
 import { MgRenderRequestSchema, MgTemplatesResponseSchema } from './mg.ts';
 import {
+	MgBundleImportRequestSchema,
+	MgPrerenderRequestSchema,
+	MgPrerenderResultSchema,
+} from './mg-bundles.ts';
+import {
+	ProcessingModelsResponseSchema,
+	ProcessingSettingsSchema,
+	ProcessRequestSchema,
+	RemoteProbeResultSchema,
+} from './processing.ts';
+import {
 	EnvelopeSchema,
 	LeaseRequestSchema,
 	LeaseSchema,
@@ -45,9 +56,18 @@ import {
 	ProjectViewSchema,
 	VersionListResponseSchema,
 } from './projects.ts';
+import { TrackRequestSchema } from './tracking.ts';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
-export type RouteOwner = 'WP-2F' | 'WP-2G' | 'WP-2H' | 'wp-mcp';
+export type RouteOwner =
+	| 'WP-2F'
+	| 'WP-2G'
+	| 'WP-2H'
+	| 'wp-mcp'
+	| 'wp-m2-color'
+	| 'wp-m2-process'
+	| 'wp-m2-mg'
+	| 'wp-m2-track';
 
 export type RouteDef = {
 	method: HttpMethod;
@@ -320,6 +340,87 @@ export const ROUTES = {
 	}),
 	/** MCP Streamable HTTP endpoint (same tools as the `jasper-mcp` stdio server). */
 	mcp: r({ method: 'POST', path: '/mcp', response: 'binary', owner: 'wp-mcp' }),
+
+	// ---- M2 (ARCHITECTURE §19.7). Colour needs no routes of its own: LUTs are media (`.cube` → kind `lut`).
+	mediaProcess: r({
+		method: 'POST',
+		path: '/api/media/:key/process',
+		body: ProcessRequestSchema,
+		response: JobQueued,
+		owner: 'wp-m2-process',
+	}),
+	processingModels: r({
+		method: 'GET',
+		path: '/api/processing/models',
+		response: ProcessingModelsResponseSchema,
+		owner: 'wp-m2-process',
+	}),
+	processingModelInstall: r({
+		method: 'POST',
+		path: '/api/processing/models/:modelId/install',
+		response: JobQueued,
+		owner: 'wp-m2-process',
+	}),
+	processingSettingsGet: r({
+		method: 'GET',
+		path: '/api/settings/processing',
+		response: ProcessingSettingsSchema,
+		owner: 'wp-m2-process',
+	}),
+	processingSettingsPut: r({
+		method: 'PUT',
+		path: '/api/settings/processing',
+		body: ProcessingSettingsSchema,
+		response: ProcessingSettingsSchema,
+		owner: 'wp-m2-process',
+	}),
+	processingRemoteProbe: r({
+		method: 'POST',
+		path: '/api/processing/remote/probe',
+		response: RemoteProbeResultSchema,
+		owner: 'wp-m2-process',
+	}),
+	processingRemoteSetup: r({
+		method: 'POST',
+		path: '/api/processing/remote/setup',
+		response: JobQueued,
+		owner: 'wp-m2-process',
+	}),
+	mgBundleImport: r({
+		method: 'POST',
+		path: '/api/mg-bundles/import',
+		body: MgBundleImportRequestSchema,
+		response: RegisteredMediaSchema,
+		owner: 'wp-m2-mg',
+	}),
+	mgBundleRebuild: r({
+		method: 'POST',
+		path: '/api/mg-bundles/:key/rebuild',
+		response: JobQueued,
+		owner: 'wp-m2-mg',
+	}),
+	mgBundlePrerender: r({
+		method: 'POST',
+		path: '/api/mg-bundles/prerender',
+		body: MgPrerenderRequestSchema,
+		response: JobQueued,
+		owner: 'wp-m2-mg',
+	}),
+	mgBundlePrerenderGet: r({
+		method: 'GET',
+		path: '/api/mg-bundles/prerender/:renderKey',
+		response: MgPrerenderResultSchema,
+		owner: 'wp-m2-mg',
+	}),
+	/** Static files of an imported bundle (the Remotion serve URL; the preview frame host loads it). */
+	mgBundleFiles: r({ method: 'GET', path: '/mg/bundles/:key/*', response: 'binary', owner: 'wp-m2-mg' }),
+	trackingTrack: r({
+		method: 'POST',
+		path: '/api/tracking/track',
+		body: TrackRequestSchema,
+		response: JobQueued,
+		owner: 'wp-m2-track',
+	}),
 } as const satisfies Record<string, RouteDef>;
 
 export type RouteName = keyof typeof ROUTES;
