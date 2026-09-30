@@ -1,0 +1,31 @@
+{
+  "model": "2xNomosUni_span_multijpg",
+  "onnx": "2xNomosUni_span_multijpg.onnx",
+  "onnxSha256": "3900e94d2addb11faed3ccddef677a27c5408ead7dfd071b263e857fb5f6c996",
+  "onnxBytes": 1656884,
+  "opset": 17,
+  "precision": "fp32",
+  "io": {
+    "input": "NCHW float32 RGB [0,1], dynamic batch/height/width",
+    "output": "NCHW float32 RGB, 2x"
+  },
+  "weights": {
+    "url": "https://github.com/Phhofm/models/releases/download/2xNomosUni_span_multijpg/2xNomosUni_span_multijpg.pth",
+    "sha256": "1a981d0a11e2fcbb6cda7ac635f31b97d9903492ba7e4dda09b8be0b274f1ac5",
+    "license": "CC-BY-4.0",
+    "author": "Philip Hofmann"
+  },
+  "architecture": {
+    "name": "SPAN",
+    "code": "https://github.com/hongyuanyu/SPAN",
+    "license": "Apache-2.0"
+  },
+  "tools": {
+    "torch": "2.14.0+cu130",
+    "spandrel": "0.4.2",
+    "onnx": "1.23.1",
+    "onnxruntime": "1.30.0",
+    "python": "3.12.3"
+  },
+  "verifiedMaxAbsDiff": 6.9141387939453125e-06
+}
