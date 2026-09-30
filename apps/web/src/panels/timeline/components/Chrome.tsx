@@ -3,7 +3,7 @@
 import type { EditorSession } from '@jasper/session';
 import { useSessionState } from '@jasper/session/react';
 import { IconButton, labelColor, Z } from '@jasper/ui';
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { frameToX, type Viewport } from '../model/viewport.ts';
 import type { TimelineController } from '../state/controller.ts';
 import { setPrefs, type TimelinePrefs } from '../state/prefs.ts';
@@ -63,6 +63,8 @@ export function Toolbar(props: {
 	prefs: TimelinePrefs;
 	openMenu(x: number, y: number, items: ContextMenuItem[]): void;
 	onAddMarker(): void;
+	/** Extra entries appended to the display settings menu (dev helpers). */
+	extraMenu?: ContextMenuItem[];
 }) {
 	const snapping = useSessionState((s) => s.toggles.snapping);
 	const linked = useSessionState((s) => s.toggles.linkedSelection);
@@ -104,6 +106,7 @@ export function Toolbar(props: {
 			})),
 		},
 		check('Snap Playhead When Snap Is On', 'snapPlayhead', p.snapPlayhead),
+		...(props.extraMenu?.length ? [{ kind: 'separator' as const }, ...props.extraMenu] : []),
 	];
 	return (
 		<div className="flex items-center gap-[2px]" data-testid="timeline-toolbar">
@@ -201,6 +204,19 @@ export function ZoomBar(props: { viewport: Viewport; extent: number; controller:
 
 export function ContextMenu(props: { x: number; y: number; items: ContextMenuItem[]; onClose(): void }) {
 	const ref = useRef<HTMLDivElement>(null);
+	const [pos, setPos] = useState({ x: props.x, y: props.y });
+	// Keep the menu inside the window (flip up/left when it would overflow).
+	useLayoutEffect(() => {
+		const el = ref.current;
+		if (!el || typeof window === 'undefined') return;
+		const r = el.getBoundingClientRect();
+		const x =
+			r.width && props.x + r.width > window.innerWidth
+				? Math.max(0, window.innerWidth - r.width - 4)
+				: props.x;
+		const y = r.height && props.y + r.height > window.innerHeight ? Math.max(0, props.y - r.height) : props.y;
+		setPos({ x, y });
+	}, [props.x, props.y]);
 	useEffect(() => {
 		const down = (e: PointerEvent) => {
 			if (ref.current && !ref.current.contains(e.target as Node)) props.onClose();
@@ -223,7 +239,7 @@ export function ContextMenu(props: { x: number; y: number; items: ContextMenuIte
 			ref={ref}
 			role="menu"
 			className="fixed min-w-[200px] rounded-pr-menu border border-pr-menu-border bg-pr-menu py-1 text-pr-ui text-pr-text shadow-pr-overlay"
-			style={{ left: props.x, top: props.y, zIndex: Z.popover }}
+			style={{ left: pos.x, top: pos.y, zIndex: Z.popover }}
 			data-testid="timeline-context-menu"
 		>
 			<MenuItems items={props.items} onClose={props.onClose} />

@@ -23,6 +23,7 @@ import { PlayheadLine, TimecodeReadout } from './components/Playhead.tsx';
 import { RULER_H, Ruler } from './components/Ruler.tsx';
 import { TrackArea } from './components/TrackArea.tsx';
 import { TrackHeaders } from './components/TrackHeaders.tsx';
+import { exposeForDev, insertSampleClips } from './dev.ts';
 import {
 	registerTimelineInstance,
 	type TimelineHandle,
@@ -211,6 +212,10 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			for (const off of offs) off();
 		};
 	}, [controller, ui, seqId, env.services, props.instanceId]);
+
+	useEffect(() => {
+		if (import.meta.env.DEV) exposeForDev(session);
+	}, [session]);
 
 	// Agent flash (TL-954): 200 ms outline pulse on clips an agent changed.
 	useEffect(
@@ -662,6 +667,17 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 						prefs={prefs}
 						openMenu={openMenu}
 						onAddMarker={() => run('timeline.addMarker')}
+						extraMenu={
+							import.meta.env.DEV
+								? [
+										{
+											kind: 'item',
+											label: 'Dev: Insert Sample Clips',
+											run: () => insertSampleClips(session, seqId),
+										},
+									]
+								: undefined
+						}
 					/>
 				</div>
 				<div className="relative min-w-0 flex-1">
