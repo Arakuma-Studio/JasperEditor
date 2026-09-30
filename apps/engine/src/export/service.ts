@@ -419,10 +419,27 @@ export class ExportService {
 	}
 
 	/** Snapshot with signed absolute media and font URLs for the headless browser (S04:RR-003, MS-003). */
-	private remotionProps(planned: PlannedExport): Record<string, unknown> {
+	/** M2 (§19.6): runs `prepare` of the extensions that serve the Remotion path too. */
+	private async prepareForRemotion(planned: PlannedExport, ctx: JobContext): Promise<Map<string, unknown>> {
+		const exts = this.nativeExtensions.all().filter((e) => e.prepareForRemotion);
+		if (exts.length === 0) return new Map();
+		return prepareExtensions(exts, planned, {
+			signal: ctx.signal,
+			stage: (text) => ctx.progress(0, { stage: text }),
+			scratchDir: () => ctx.scratchDir(),
+			log: (text) => ctx.log(text),
+			jobId: ctx.job.id,
+			...(planned.document.projectId ? { projectId: planned.document.projectId } : {}),
+		});
+	}
+
+	private remotionProps(
+		planned: PlannedExport,
+		prepared: ReadonlyMap<string, unknown> = new Map(),
+	): Record<string, unknown> {
 		const origin = this.deps.origin();
 		const sign = (path: string) => this.deps.signer.signUrl(origin, path);
-		const doc = buildRenderSnapshot(planned.document, planned.sequenceId, {
+		let doc = buildRenderSnapshot(planned.document, planned.sequenceId, {
 			range: planned.range,
 			resolveMedia: (asset): MediaHandle | null => {
 				const local = planned.media[asset.id];
@@ -446,6 +463,10 @@ export class ExportService {
 				return f ? sign(f.url) : null;
 			},
 		});
+		for (const ext of this.nativeExtensions.all()) {
+			if (ext.prepareForRemotion && ext.adaptRemotionDoc)
+				doc = ext.adaptRemotionDoc(doc, prepared.get(ext.id), { signUrl: sign });
+		}
 		return {
 			doc,
 			options: { isPreview: false, useProxies: false, transparentBackground: false, showOffline: true },
@@ -503,9 +524,10 @@ export class ExportService {
 			const render = rp.phases[0]!;
 			const target =
 				rp.mode === 'direct' ? output : join(await ctx.scratchDir(), 'remotion-intermediate.mov');
+			const prepared = await this.prepareForRemotion(planned, ctx);
 			ctx.progress(0, { stage: `${render.label} · Preparing bundle` });
 			const res = await this.deps.remotion.renderMedia({
-				inputProps: this.remotionProps(planned),
+				inputProps: this.remotionProps(planned, prepared),
 				output: target,
 				signal: ctx.signal,
 				concurrency: Math.max(1, Math.min(ctx.slots, Math.floor(cores / 2))),
@@ -634,8 +656,9 @@ export class ExportService {
 		if (path === 'native') {
 			await this.runNative(planned, masters, output, ctx, true);
 		} else {
+			const prepared = await this.prepareForRemotion(planned, ctx);
 			await this.deps.remotion.renderStill({
-				inputProps: this.remotionProps(planned),
+				inputProps: this.remotionProps(planned, prepared),
 				output,
 				frame: 0,
 				...(req.width && req.width !== seqW ? { scale: req.width / seqW } : {}),

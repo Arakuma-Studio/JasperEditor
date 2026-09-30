@@ -7,7 +7,7 @@
 //
 // Extensions are registered at engine start by their route plugin (`core.registerNativeExtension(ext)`),
 // like the M1 motion-graphic master provider. Order of registration = order of consultation.
-import type { EffectSpec, Rational, RenderVisualClip, ResolvedEffect } from '@jasper/project';
+import type { EffectSpec, Rational, RenderSnapshot, RenderVisualClip, ResolvedEffect } from '@jasper/project';
 import type { PlannedExport } from './planner.ts';
 
 /** What `prepare` receives: the planned export (document, snapshot with engine-local media, output spec). */
@@ -89,6 +89,17 @@ export type NativeExtension = {
 	 * (comma-joined chain allowed; RGBA in, RGBA out, frame size unchanged).
 	 */
 	effectFilter?(fx: ResolvedEffect, ctx: EffectFilterContext): string | undefined;
+	/**
+	 * Remotion path (exports and stills that plan `remotion`): when true, `prepare` also runs before the Remotion
+	 * render, and `adaptRemotionDoc` may rewrite the snapshot handed to the composition (e.g. put the signed URL of
+	 * a composition clip's pre-rendered master into its source). Must return a new object, never mutate.
+	 */
+	prepareForRemotion?: boolean;
+	adaptRemotionDoc?(
+		doc: RenderSnapshot,
+		prepared: unknown,
+		ctx: { signUrl(path: string): string },
+	): RenderSnapshot;
 };
 
 /** Built-in effects of the M1 builder (static params only). */

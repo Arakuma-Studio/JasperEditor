@@ -5,9 +5,9 @@
 // ffmpeg arguments, and a missing or different stamp regenerates the file. Outputs are gitignored.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const outDir = join(root, 'fixtures', 'media');
@@ -77,7 +77,7 @@ const frameCode = (colour) => [
 	'64',
 ];
 
-/** @type {{name: string, steps: (out: string) => string[][]}[]} */
+/** @type {({name: string, steps: (out: string) => string[][]} | {name: string, recipe: string, make: (out: string) => unknown})[]} */
 const fixtures = [
 	{
 		name: 'clip-a.mp4',
@@ -179,12 +179,25 @@ const fixtures = [
 	},
 ];
 
+// M2 (ARCHITECTURE §19.11): feature packages add fixtures in their own module `scripts/fixtures/<name>.mjs`
+// exporting `fixtures(ctx)` → entries `{name, steps(out)}` (ffmpeg argument lists, as above) or
+// `{name, recipe, make(out)}` (custom generator; `recipe` is any string that changes when the output would).
+const pluginDir = join(root, 'scripts', 'fixtures');
+if (existsSync(pluginDir)) {
+	for (const file of readdirSync(pluginDir)
+		.filter((f) => f.endsWith('.mjs'))
+		.sort()) {
+		const mod = await import(pathToFileURL(join(pluginDir, file)).href);
+		fixtures.push(...(await mod.fixtures({ ffmpeg, base, h264, aac, bt709, outDir, root })));
+	}
+}
+
 let failed = false;
 for (const fx of fixtures) {
 	const target = join(outDir, fx.name);
 	const stampFile = join(outDir, `.${fx.name}.recipe`);
 	const recipe = createHash('sha256')
-		.update(JSON.stringify(fx.steps('<out>')))
+		.update(fx.make ? `make:${fx.recipe}` : JSON.stringify(fx.steps('<out>')))
 		.digest('hex')
 		.slice(0, 16);
 	const stamp = existsSync(stampFile) ? readFileSync(stampFile, 'utf8').trim() : null;
@@ -194,8 +207,16 @@ for (const fx of fixtures) {
 	}
 	// Per-process partial name: parallel test workers may run this script at once.
 	const partial = join(outDir, `.partial-${process.pid}-${fx.name}`);
-	const steps = fx.steps(partial);
 	let ok = true;
+	if (fx.make) {
+		try {
+			await fx.make(partial);
+		} catch (e) {
+			console.error(`failed ${fx.name}: ${e?.message ?? e}`);
+			ok = false;
+		}
+	}
+	const steps = fx.make ? [] : fx.steps(partial);
 	for (const args of steps) {
 		const r = spawnSync(ffmpeg, [...base, ...args], { stdio: ['ignore', 'inherit', 'inherit'] });
 		if (r.error || r.status !== 0) {
