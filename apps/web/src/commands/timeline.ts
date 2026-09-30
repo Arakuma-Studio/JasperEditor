@@ -4,7 +4,6 @@
 import {
 	type Clip,
 	clipAt,
-	editPoints,
 	type Sequence,
 	sequenceDuration,
 	type TransactionResult,
@@ -541,23 +540,8 @@ export const timelineCommands: UiCommand[] = [
 		]);
 	}),
 
-	// Edit-point navigation (TL-880, A.7). Registered here because it depends on track targeting.
-	cmd('transport.prevEdit', 'Go to Previous Edit Point', E, (_ctx, e) => editNav(e, -1, false), {
-		repeat: true,
-	}),
-	cmd('transport.nextEdit', 'Go to Next Edit Point', E, (_ctx, e) => editNav(e, 1, false), { repeat: true }),
-	cmd(
-		'transport.prevEditAny',
-		'Go to Previous Edit Point on Any Track',
-		E,
-		(_ctx, e) => editNav(e, -1, true),
-		{
-			repeat: true,
-		},
-	),
-	cmd('transport.nextEditAny', 'Go to Next Edit Point on Any Track', E, (_ctx, e) => editNav(e, 1, true), {
-		repeat: true,
-	}),
+	// Edit-point navigation (transport.prevEdit/nextEdit/…Any, TL-880, A.7) is registered once, in
+	// commands/transport.ts (WP-2C): it honors track targeting and the focused Source monitor.
 
 	cmd(
 		'timeline.toggleSnap',
@@ -704,11 +688,4 @@ function selectNeighbour(e: Env, dir: 1 | -1): void {
 	const i = same.findIndex((c) => c.id === anchor.id);
 	const next = same[i + dir];
 	if (next) e.session.select('timeline', [next.id], 'replace');
-}
-
-function editNav(e: Env, dir: 1 | -1, any: boolean): void {
-	const tracks = any ? undefined : targetedTracks(e);
-	const pts = editPoints(e.seq, tracks);
-	const f = dir > 0 ? pts.find((x) => x > e.playhead) : [...pts].reverse().find((x) => x < e.playhead);
-	if (f !== undefined) seekReveal(e, f);
 }
