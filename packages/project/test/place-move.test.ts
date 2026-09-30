@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { checkInvariants, flicksPerFrame, RATES } from '../src/index.ts';
-import { Harness } from './helpers.ts';
+import { Harness, videoAsset } from './helpers.ts';
 
 const solid = (at: number, duration: number, track: string) => ({
 	type: 'clip.addSolid',
@@ -32,6 +32,36 @@ describe('clip.place (S01 AC-02…04, S02 TL-493)', () => {
 		expect([v!.sourceIn, v!.duration, a!.duration]).toEqual([0, 300, 300]);
 		expect((r.results[0] as { clipIds: string[] }).clipIds).toHaveLength(2);
 		expect(checkInvariants(h.doc)).toEqual([]);
+	});
+
+	it('DT-021: linked A/V halves get the Movie label on video and the Audio label on audio', () => {
+		const h = new Harness();
+		const av = h.ok([{ type: 'media.register', asset: videoAsset({ seconds: 4 }) }]).results[0] as {
+			itemId: string;
+		};
+		const wav = h.registerVideo({ seconds: 4, kind: 'audio' });
+		const vOnly = h.registerVideo({ seconds: 4, audio: false });
+		h.ok([
+			{ type: 'clip.place', source: { projectItemId: av.itemId }, at: 0 },
+			{ type: 'clip.place', source: { mediaId: wav }, at: 0, tracks: { audio: 'A2' } },
+			{ type: 'clip.place', source: { mediaId: vOnly }, at: 0, tracks: { video: 'V2' } },
+		]);
+		expect(h.doc.items[av.itemId]!.label).toBe('violet');
+		expect(h.clips('V1').map((c) => c.label)).toEqual(['violet']);
+		expect(h.clips('A1').map((c) => c.label)).toEqual(['caribbean']);
+		expect(h.clips('A2').map((c) => c.label)).toEqual(['caribbean']);
+		expect(h.clips('V2').map((c) => c.label)).toEqual(['iris']);
+	});
+
+	it('DT-021: a label the user chose for the item applies to both halves', () => {
+		const h = new Harness();
+		const av = h.ok([{ type: 'media.register', asset: videoAsset({ seconds: 4 }) }]).results[0] as {
+			itemId: string;
+		};
+		h.ok([{ type: 'item.setLabel', itemIds: [av.itemId], label: 'rose' }]);
+		h.ok([{ type: 'clip.place', source: { projectItemId: av.itemId }, at: 0 }]);
+		expect(h.clips('V1').map((c) => c.label)).toEqual(['rose']);
+		expect(h.clips('A1').map((c) => c.label)).toEqual(['rose']);
 	});
 
 	it('AC-03: overwrite into the middle splits the linked clips around it', () => {

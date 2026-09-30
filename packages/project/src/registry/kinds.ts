@@ -276,3 +276,20 @@ export function defaultLabelForMedia(asset: Pick<MediaAsset, 'kind' | 'probe'>):
 			return 'tan';
 	}
 }
+
+/**
+ * Label for a clip placed from a media item (S05:DT-021, R-PUI §3.4). Video halves use the item label
+ * (Violet for video + audio media). Audio clips always get the Audio label (Caribbean) by default, also
+ * when they are the audio half of a linked A/V clip, as in Premiere. A label the user chose for the item
+ * (anything other than its media default) wins for every half.
+ */
+export function defaultLabelForPlacedClip(
+	kind: Clip['kind'],
+	asset: Pick<MediaAsset, 'kind' | 'probe'>,
+	itemLabel?: LabelColor,
+): LabelColor {
+	const mediaDefault = defaultLabelForMedia(asset);
+	if (itemLabel !== undefined && itemLabel !== mediaDefault) return itemLabel;
+	if (kind === 'audio') return KIND_CAPABILITIES.audio.defaultLabel;
+	return mediaDefault;
+}

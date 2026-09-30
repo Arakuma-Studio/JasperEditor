@@ -14,11 +14,33 @@ export type MigrationStep = {
 };
 export type MigrationReport = { fromVersion: number; toVersion: number; steps: string[] };
 
+type Rec = Record<string, unknown>;
+const isRec = (v: unknown): v is Rec => typeof v === 'object' && v !== null && !Array.isArray(v);
+
 /**
- * vN → vN+1 migrations, applied in order. v1 is the first version, so the chain is empty; each future
- * step gets a fixture under test/fixtures/v<N>/ that must keep loading (S01:MIG-002).
+ * v1 → v2: audio clips take the Audio label by default (S05:DT-021). v1 painted the audio half of a
+ * linked A/V clip with the item's Movie label (Violet). Audio clips of video media that still carry
+ * Violet get Caribbean; any other label was chosen by the user and is kept.
  */
-export const MIGRATIONS: readonly MigrationStep[] = [];
+function migrateV1ToV2(doc: Rec): Rec {
+	const media = isRec(doc.media) ? doc.media : {};
+	const sequences = isRec(doc.sequences) ? doc.sequences : {};
+	for (const seq of Object.values(sequences)) {
+		if (!isRec(seq) || !isRec(seq.clips)) continue;
+		for (const clip of Object.values(seq.clips)) {
+			if (!isRec(clip) || clip.kind !== 'audio' || clip.label !== 'violet') continue;
+			const asset = typeof clip.mediaId === 'string' ? media[clip.mediaId] : undefined;
+			if (isRec(asset) && asset.kind === 'video') clip.label = 'caribbean';
+		}
+	}
+	return doc;
+}
+
+/**
+ * vN → vN+1 migrations, applied in order. Each step keeps a fixture under test/fixtures/v<N>/ that must
+ * keep loading (S01:MIG-002).
+ */
+export const MIGRATIONS: readonly MigrationStep[] = [{ from: 1, to: 2, migrate: migrateV1ToV2 }];
 
 function unwrap(raw: unknown): { doc: Record<string, unknown>; fromEnvelope: boolean } {
 	if (!raw || typeof raw !== 'object') throw new Error('Project data is not an object');
