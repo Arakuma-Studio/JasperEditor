@@ -41,7 +41,8 @@ export interface ProjectStore {
 	delete(projectId: string): Promise<void>;
 	exportFile(projectId: string): Promise<Blob | { path: string }>;
 	importFile(file: Blob | { path: string }): Promise<string>;
-	acquireLease(projectId: string, sessionId?: string): Promise<Lease>;
+	/** `takeOver` revokes another session's lease ("Take over editing", S01:PER-040). */
+	acquireLease(projectId: string, sessionId?: string, opts?: { takeOver?: boolean }): Promise<Lease>;
 	/** Heartbeat / release (engine leases, S01:PER-040). Optional for stores without leases. */
 	heartbeatLease?(projectId: string, leaseId: string): Promise<Lease>;
 	releaseLease?(projectId: string, leaseId: string): Promise<void>;
@@ -51,6 +52,8 @@ export class LeaseHeldError extends Error {
 	constructor(
 		readonly projectId: string,
 		readonly holderSessionId: string,
+		/** When the holder's lease expires unless it heartbeats again (engine leases). */
+		readonly expiresAt: string | null = null,
 	) {
 		super(`Project ${projectId} is being edited in another session`);
 		this.name = 'LeaseHeldError';

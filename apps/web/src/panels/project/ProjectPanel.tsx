@@ -1,0 +1,1005 @@
+// Project panel (S05:PRJ-001…010, R-PUI §7): breadcrumb, search + filter, List and Icon views, bins,
+// drag in/out, rename, labels, delete with in-use warning, New Item ▸, status visualization.
+import type { LabelColor } from '@jasper/project';
+import type { EditorSession } from '@jasper/session';
+import { useSession, useSessionState } from '@jasper/session/react';
+import { Button, cx, Icon, IconButton, type IconId, LABEL_DISPLAY_NAMES, LABEL_NAMES } from '@jasper/ui';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocalCommandCtx } from '../../home/ui-bridge.ts';
+import { mediaKeyOf } from '../../import/assets.ts';
+import { type ClientJob, useClientJobs } from '../../import/client-jobs.ts';
+import { pickFilesInBrowser } from '../../import/desktop.ts';
+import { EngineImportService, readDataTransfer, writeProjectItemsDrag } from '../../import/service.ts';
+import { useEngine } from '../../state/engine.tsx';
+import { getImportService, PROJECT_ITEMS_MIME } from '../../state/services.ts';
+import type { PanelProps } from '../types.ts';
+import {
+	colorMatteSupported,
+	createBin,
+	createColorMatte,
+	createText,
+	deleteItems,
+	moveItems,
+	openItem,
+	openMotionTemplates,
+	renameItem,
+	setLabel,
+} from './actions.ts';
+import { projectDialogs } from './dialogs.tsx';
+import { type ProjectViewMode, registerProjectPanel, touchProjectPanel } from './instances.ts';
+import {
+	breadcrumb,
+	durationSeconds,
+	FILTERS,
+	type ProjectFilter,
+	type ProjectRow,
+	projectRows,
+	type SortKey,
+} from './model.ts';
+import { loadSpriteIndex, spriteTileAt, spriteTileStyle } from './sprites.ts';
+
+// ------------------------------------------------------------ persisted per-instance view state (PN-002)
+
+type ViewState = {
+	view: ProjectViewMode;
+	tile: number;
+	hoverScrub: boolean;
+	sort: { key: SortKey; dir: 1 | -1 };
+};
+const DEFAULT_VIEW: ViewState = { view: 'list', tile: 128, hoverScrub: true, sort: { key: 'user', dir: 1 } };
+const TILE_MIN = 80;
+const TILE_MAX = 256;
+
+function loadView(instanceId: string): ViewState {
+	try {
+		const raw = globalThis.localStorage?.getItem(`jasper.projectPanel.${instanceId}`);
+		return raw ? { ...DEFAULT_VIEW, ...(JSON.parse(raw) as Partial<ViewState>) } : DEFAULT_VIEW;
+	} catch {
+		return DEFAULT_VIEW;
+	}
+}
+function saveView(instanceId: string, v: ViewState) {
+	try {
+		globalThis.localStorage?.setItem(`jasper.projectPanel.${instanceId}`, JSON.stringify(v));
+	} catch {
+		// not persisted
+	}
+}
+
+const TYPE_ICON: Record<ProjectRow['type'], IconId> = {
+	bin: 'panel.project',
+	'search-bin': 'app.search',
+	video: 'media.video',
+	audio: 'track.audio',
+	image: 'media.image',
+	'animated-image': 'media.image',
+	sequence: 'panel.timeline',
+	synthetic: 'media.image',
+	font: 'tool.type',
+	lut: 'panel.effects',
+};
+
+const labelVar = (l: LabelColor) => `var(--pr-label-${l})`;
+
+const STATUS_TEXT: Record<string, string> = {
+	online: 'Online',
+	offline: 'Media Offline',
+	error: 'Error',
+	resolving: 'Resolving…',
+	analyzing: 'Analyzing…',
+	'needs-engine': 'Needs engine',
+};
+
+// ------------------------------------------------------------ panel
+
+export function ProjectPanel(props: PanelProps) {
+	const session = useSession();
+	const engine = useEngine();
+	const ctx = useLocalCommandCtx(
+		useMemo(() => ({ panel: 'project' as const, instanceId: props.instanceId }), [props.instanceId]),
+	);
+	const doc = useSessionState((s) => s.document);
+	const runtime = useSessionState((s) => s.media);
+	const readOnly = useSessionState((s) => s.readOnly);
+	const selection = useSessionState((s) => s.selection.project);
+	const uploads = useClientJobs().filter(
+		(j) => j.kind === 'upload' && (j.state === 'running' || j.state === 'queued'),
+	);
+
+	const [binId, setBinId] = useState<string | null>(null);
+	const [search, setSearch] = useState('');
+	const [filter, setFilter] = useState<ProjectFilter>('all');
+	const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+	const [view, setViewState] = useState<ViewState>(() => loadView(props.instanceId));
+	const [renaming, setRenaming] = useState<string | null>(null);
+	const [menu, setMenu] = useState<{ x: number; y: number; itemId: string | null } | null>(null);
+	const [dropTarget, setDropTarget] = useState<string | 'panel' | null>(null);
+	const [showNewItem, setShowNewItem] = useState(false);
+	const rootRef = useRef<HTMLDivElement>(null);
+
+	// A bin that was deleted (or undone away) falls back to the root.
+	useEffect(() => {
+		if (binId && doc.items[binId]?.kind !== 'bin') setBinId(null);
+	}, [binId, doc.items]);
+
+	const updateView = useCallback(
+		(patch: Partial<ViewState>) =>
+			setViewState((v) => {
+				const next = { ...v, ...patch };
+				saveView(props.instanceId, next);
+				return next;
+			}),
+		[props.instanceId],
+	);
+
+	const rows = useMemo(
+		() => projectRows(doc, runtime, { binId, search, filter, expanded, sort: view.sort }),
+		[doc, runtime, binId, search, filter, expanded, view.sort],
+	);
+	const selected = selection.items;
+	const selectedSet = useMemo(() => new Set(selected), [selected]);
+
+	const select = useCallback(
+		(id: string, e?: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean }) => {
+			if (e?.shiftKey && selection.primary) {
+				const ids = rows.map((r) => r.id);
+				const a = ids.indexOf(selection.primary);
+				const b = ids.indexOf(id);
+				if (a >= 0 && b >= 0) {
+					session.select('project', ids.slice(Math.min(a, b), Math.max(a, b) + 1), 'replace');
+					return;
+				}
+			}
+			session.select('project', [id], e?.ctrlKey || e?.metaKey ? 'toggle' : 'replace');
+		},
+		[rows, selection.primary, session],
+	);
+
+	const importInto = useCallback(
+		async (files: File[] | null, paths: string[] | null) => {
+			const service =
+				(getImportService() as EngineImportService | null) ??
+				new EngineImportService({ engine: engine.client, session });
+			await service.importFiles(
+				{ files: files ?? undefined, paths: paths ?? undefined },
+				{ kind: 'bin', binId },
+			);
+		},
+		[binId, engine.client, session],
+	);
+	const importDialog = useCallback(async () => {
+		const service = getImportService() as EngineImportService | null;
+		const paths = service?.isDesktop ? await service.pickDesktopPaths() : null;
+		if (paths?.length) return importInto(null, paths);
+		if (paths) return;
+		const files = await pickFilesInBrowser();
+		if (files.length) await importInto(files, null);
+	}, [importInto]);
+
+	// Handle for project-scope UI commands (Ctrl+B, Ctrl+PgUp/PgDn, Shift+\, Shift+H, …)
+	useEffect(
+		() =>
+			registerProjectPanel({
+				instanceId: props.instanceId,
+				getBinId: () => binId,
+				setView: (mode) => updateView({ view: mode }),
+				toggleView: () => updateView({ view: view.view === 'list' ? 'icon' : 'list' }),
+				zoom: (delta) => updateView({ tile: Math.max(TILE_MIN, Math.min(TILE_MAX, view.tile + delta)) }),
+				toggleHoverScrub: () => updateView({ hoverScrub: !view.hoverScrub }),
+				newBin: () => {
+					const id = createBin(session, binId);
+					if (id) setRenaming(id);
+				},
+				newSequence: () => projectDialogs.open({ kind: 'newSequence', binId }),
+				renameSelection: () => selection.primary && setRenaming(selection.primary),
+				deleteSelection: () => deleteItems(session, selected),
+				openSelection: () => {
+					if (selection.primary) void openItem(session, selection.primary, ctx, setBinId);
+				},
+				importIntoBin: () => void importDialog(),
+			}),
+		[props.instanceId, binId, view, updateView, session, selection.primary, selected, ctx, importDialog],
+	);
+
+	// ---------------------------------------------------------------- drag and drop (S05:PRJ-007)
+
+	const onDragOver = (e: React.DragEvent, key: string) => {
+		const types = Array.from(e.dataTransfer.types);
+		if (readOnly || (!types.includes(PROJECT_ITEMS_MIME) && !types.includes('Files'))) return;
+		e.preventDefault();
+		e.stopPropagation();
+		e.dataTransfer.dropEffect = types.includes('Files') ? 'copy' : 'move';
+		if (dropTarget !== key) setDropTarget(key);
+	};
+	const onDrop = (e: React.DragEvent, targetBin: string | null) => {
+		setDropTarget(null);
+		const payload = readDataTransfer(e.dataTransfer);
+		if (!payload || readOnly) return;
+		e.preventDefault();
+		e.stopPropagation();
+		if (payload.type === 'jasper/project-items') moveItems(session, payload.itemIds, targetBin);
+		else void importInto(payload.files, payload.paths ?? null);
+	};
+
+	// ---------------------------------------------------------------- keyboard (panel-local)
+
+	const onKeyDown = (e: React.KeyboardEvent) => {
+		if (renaming || (e.target as HTMLElement).closest('input,select,textarea')) return;
+		const ids = rows.map((r) => r.id);
+		const i = selection.primary ? ids.indexOf(selection.primary) : -1;
+		if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+			const next = ids[Math.max(0, Math.min(ids.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))];
+			if (next) {
+				e.preventDefault();
+				select(next, { shiftKey: e.shiftKey });
+			}
+		} else if (e.key === 'Enter' && selection.primary && !readOnly) {
+			e.preventDefault();
+			setRenaming(selection.primary);
+		} else if ((e.key === 'Delete' || e.key === 'Backspace') && selected.length && !readOnly) {
+			e.preventDefault();
+			e.stopPropagation();
+			deleteItems(session, selected);
+		} else if (e.key === 'Backspace' && binId) {
+			setBinId(null);
+		}
+	};
+
+	const crumbs = breadcrumb(doc, binId);
+	const total = rows.length;
+	const showMatte = useMemo(() => colorMatteSupported(session), [session]);
+
+	const rowHandlers = (row: ProjectRow) => ({
+		onClick: (e: React.MouseEvent) => select(row.id, e),
+		onDoubleClick: () => void openItem(session, row.id, ctx, (id) => setBinId(id)),
+		onContextMenu: (e: React.MouseEvent) => {
+			e.preventDefault();
+			if (!selectedSet.has(row.id)) select(row.id);
+			setMenu({ x: e.clientX, y: e.clientY, itemId: row.id });
+		},
+		draggable: !readOnly,
+		onDragStart: (e: React.DragEvent) => {
+			const ids = selectedSet.has(row.id) ? selected : [row.id];
+			if (!selectedSet.has(row.id)) select(row.id);
+			writeProjectItemsDrag(e.dataTransfer, ids);
+		},
+		onDragOver: row.type === 'bin' ? (e: React.DragEvent) => onDragOver(e, row.id) : undefined,
+		onDragLeave: row.type === 'bin' ? () => setDropTarget(null) : undefined,
+		onDrop: row.type === 'bin' ? (e: React.DragEvent) => onDrop(e, row.id) : undefined,
+	});
+
+	return (
+		// biome-ignore lint/a11y/noStaticElementInteractions: panel body = drop zone and keyboard scope (S05 §7, PRJ-007)
+		<div
+			ref={rootRef}
+			className={cx(
+				'relative flex h-full min-h-0 flex-col bg-pr-panel text-pr-text outline-none',
+				dropTarget === 'panel' ? 'outline outline-2 -outline-offset-2 outline-pr-accent' : '',
+			)}
+			data-testid="project-panel"
+			data-panel-kind="project"
+			// biome-ignore lint/a11y/noNoninteractiveTabindex: the panel body takes keyboard focus (S05 §7)
+			tabIndex={0}
+			onKeyDown={onKeyDown}
+			onPointerDown={() => touchProjectPanel(props.instanceId)}
+			onDragOver={(e) => onDragOver(e, 'panel')}
+			onDragLeave={(e) => {
+				if (!rootRef.current?.contains(e.relatedTarget as Node)) setDropTarget(null);
+			}}
+			onDrop={(e) => onDrop(e, binId)}
+		>
+			{/* Toolbar: breadcrumb, count, search + filter (PRJ-001) */}
+			<div className="flex h-[var(--pr-row-h)] shrink-0 items-center gap-1 px-2 text-pr-small">
+				<nav
+					className="flex min-w-0 items-center gap-1 truncate"
+					aria-label="Bin path"
+					data-testid="project-breadcrumb"
+				>
+					{crumbs.map((c, i) => (
+						<span key={c.id ?? 'root'} className="flex items-center gap-1">
+							{i > 0 ? <span className="text-pr-dim">▸</span> : null}
+							<button
+								type="button"
+								className={cx(
+									'truncate hover:text-pr-strong',
+									i === crumbs.length - 1 ? 'text-pr-strong' : 'text-pr-muted',
+								)}
+								onClick={() => setBinId(c.id)}
+								onDragOver={(e) => onDragOver(e, `crumb:${c.id ?? 'root'}`)}
+								onDrop={(e) => onDrop(e, c.id)}
+							>
+								{c.name}
+							</button>
+						</span>
+					))}
+				</nav>
+				<span className="ml-auto shrink-0 text-pr-muted" data-testid="project-count">
+					{selected.length
+						? `${selected.length} of ${total} selected`
+						: `${total} ${total === 1 ? 'item' : 'items'}`}
+				</span>
+			</div>
+			<div className="flex h-[var(--pr-row-h)] shrink-0 items-center gap-1 px-2">
+				<input
+					type="search"
+					placeholder="Search"
+					aria-label="Search project"
+					data-testid="project-search"
+					className="h-[calc(var(--pr-control-h)-2px)] min-w-0 flex-1 rounded-pr-control bg-pr-field-deep px-2 text-pr-small text-pr-text"
+					value={search}
+					onChange={(e) => setSearch(e.target.value)}
+				/>
+				<select
+					aria-label="Filter"
+					data-testid="project-filter"
+					className="h-[calc(var(--pr-control-h)-2px)] rounded-pr-control bg-pr-field px-1 text-pr-small text-pr-text"
+					value={filter}
+					onChange={(e) => setFilter(e.target.value as ProjectFilter)}
+				>
+					{FILTERS.map((f) => (
+						<option key={f.id} value={f.id}>
+							{f.label}
+						</option>
+					))}
+				</select>
+			</div>
+
+			{/* Body */}
+			<div className="min-h-0 flex-1 overflow-auto" data-testid="project-body">
+				{uploads.length ? <PendingImports jobs={uploads} /> : null}
+				{rows.length === 0 && !uploads.length ? (
+					<EmptyState
+						filtered={!!search || filter !== 'all'}
+						readOnly={readOnly}
+						onImport={() => void importDialog()}
+					/>
+				) : view.view === 'list' ? (
+					<ListView
+						rows={rows}
+						selected={selectedSet}
+						primary={selection.primary}
+						renaming={renaming}
+						dropTarget={dropTarget}
+						expanded={expanded}
+						sort={view.sort}
+						onSort={(key) =>
+							updateView({
+								sort: view.sort.key === key ? { key, dir: view.sort.dir === 1 ? -1 : 1 } : { key, dir: 1 },
+							})
+						}
+						onToggle={(id) =>
+							setExpanded((s) => {
+								const n = new Set(s);
+								if (n.has(id)) n.delete(id);
+								else n.add(id);
+								return n;
+							})
+						}
+						onRename={(id, name) => {
+							if (name !== null) renameItem(session, id, name);
+							setRenaming(null);
+						}}
+						handlers={rowHandlers}
+					/>
+				) : (
+					<IconView
+						session={session}
+						rows={rows}
+						selected={selectedSet}
+						renaming={renaming}
+						dropTarget={dropTarget}
+						tile={view.tile}
+						hoverScrub={view.hoverScrub}
+						onRename={(id, name) => {
+							if (name !== null) renameItem(session, id, name);
+							setRenaming(null);
+						}}
+						handlers={rowHandlers}
+					/>
+				)}
+			</div>
+
+			{/* Footer (PRJ-003) */}
+			<div className="relative flex h-[var(--pr-row-h)] shrink-0 items-center gap-1 border-t border-pr-border-subtle px-1">
+				<IconButton
+					icon={readOnly ? 'track.lock' : 'track.unlock'}
+					label={readOnly ? 'Project is read-only' : 'Project is editable'}
+					disabled
+				/>
+				<IconButton
+					icon="app.menu"
+					label="List View"
+					shortcut="Ctrl+PgUp"
+					toggled={view.view === 'list' ? 'on' : 'off'}
+					onClick={() => updateView({ view: 'list' })}
+					data-testid="project-list-view"
+				/>
+				<IconButton
+					icon="media.image"
+					label="Icon View"
+					shortcut="Ctrl+PgDn"
+					toggled={view.view === 'icon' ? 'on' : 'off'}
+					onClick={() => updateView({ view: 'icon' })}
+					data-testid="project-icon-view"
+				/>
+				{view.view === 'icon' ? (
+					<input
+						type="range"
+						aria-label="Thumbnail size"
+						min={TILE_MIN}
+						max={TILE_MAX}
+						step={16}
+						value={view.tile}
+						onChange={(e) => updateView({ tile: Number(e.target.value) })}
+						className="w-20 accent-[var(--pr-accent)]"
+					/>
+				) : null}
+				<span className="flex-1" />
+				<IconButton
+					icon="app.import"
+					label="Import"
+					shortcut="Ctrl+I"
+					disabled={readOnly}
+					onClick={() => void importDialog()}
+				/>
+				<IconButton
+					icon="panel.project"
+					label="New Bin"
+					shortcut="Ctrl+B"
+					disabled={readOnly}
+					data-testid="project-new-bin"
+					onClick={() => {
+						const id = createBin(session, binId);
+						if (id) setRenaming(id);
+					}}
+				/>
+				<IconButton
+					icon="app.add"
+					label="New Item"
+					disabled={readOnly}
+					data-testid="project-new-item"
+					onClick={() => setShowNewItem((v) => !v)}
+				/>
+				<IconButton
+					icon="app.remove"
+					label="Clear"
+					shortcut="Delete"
+					disabled={readOnly || !selected.length}
+					data-testid="project-clear"
+					onClick={() => deleteItems(session, selected)}
+				/>
+				{showNewItem ? (
+					<Menu onClose={() => setShowNewItem(false)} anchor="footer">
+						<MenuEntry
+							testId="new-item-sequence"
+							onClick={() => projectDialogs.open({ kind: 'newSequence', binId })}
+						>
+							Sequence…
+						</MenuEntry>
+						<MenuEntry onClick={() => createBin(session, binId)}>Bin</MenuEntry>
+						{showMatte ? (
+							<MenuEntry onClick={() => createColorMatte(session, binId)}>Color Matte…</MenuEntry>
+						) : null}
+						<MenuEntry onClick={() => void createText(session, ctx)}>Text</MenuEntry>
+						<MenuEntry onClick={() => void openMotionTemplates(ctx)}>Motion Graphic…</MenuEntry>
+					</Menu>
+				) : null}
+			</div>
+
+			{menu ? (
+				<ContextMenu
+					x={menu.x}
+					y={menu.y}
+					onClose={() => setMenu(null)}
+					session={session}
+					itemIds={selected}
+					readOnly={readOnly}
+					onRename={() => menu.itemId && setRenaming(menu.itemId)}
+					onOpen={() => menu.itemId && void openItem(session, menu.itemId, ctx, setBinId)}
+					onNewBin={() => createBin(session, binId)}
+				/>
+			) : null}
+		</div>
+	);
+}
+
+// ------------------------------------------------------------ pieces
+
+function EmptyState(props: { filtered: boolean; readOnly: boolean; onImport(): void }) {
+	return (
+		<div
+			className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center"
+			data-testid="project-empty"
+		>
+			<span className="text-pr-icon">
+				<Icon id="app.import" size={24} />
+			</span>
+			{props.filtered ? (
+				<p className="text-pr-small text-pr-muted">No items match the search.</p>
+			) : (
+				<>
+					<p className="text-pr-ui text-pr-text">Import media to start</p>
+					<p className="text-pr-small text-pr-muted">Drop files here or press Ctrl+I.</p>
+					{props.readOnly ? null : <Button onClick={props.onImport}>Import…</Button>}
+				</>
+			)}
+		</div>
+	);
+}
+
+function PendingImports({ jobs }: { jobs: ClientJob[] }) {
+	return (
+		<ul className="border-b border-pr-border-subtle" data-testid="project-pending">
+			{jobs.map((j) => (
+				<li
+					key={j.id}
+					className="flex h-[var(--pr-row-h)] items-center gap-2 px-2 text-pr-small text-pr-muted"
+				>
+					<ProgressRing value={j.progress ?? 0} />
+					<span className="truncate">{j.title.replace(/^Upload – /, '')}</span>
+					<span className="ml-auto">{Math.round((j.progress ?? 0) * 100)}%</span>
+				</li>
+			))}
+		</ul>
+	);
+}
+
+export function ProgressRing({ value, size = 12 }: { value: number; size?: number }) {
+	const r = size / 2 - 1.5;
+	const c = 2 * Math.PI * r;
+	return (
+		<svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true" className="shrink-0">
+			<circle
+				cx={size / 2}
+				cy={size / 2}
+				r={r}
+				fill="none"
+				stroke="var(--pr-border-strong)"
+				strokeWidth={1.5}
+			/>
+			<circle
+				cx={size / 2}
+				cy={size / 2}
+				r={r}
+				fill="none"
+				stroke="var(--pr-accent)"
+				strokeWidth={1.5}
+				strokeDasharray={`${c * Math.max(0, Math.min(1, value))} ${c}`}
+				transform={`rotate(-90 ${size / 2} ${size / 2})`}
+			/>
+		</svg>
+	);
+}
+
+type Handlers = (row: ProjectRow) => Record<string, unknown>;
+
+function RenameField(props: { initial: string; onDone(name: string | null): void }) {
+	const [v, setV] = useState(props.initial);
+	const done = useRef(false);
+	const finish = (name: string | null) => {
+		if (done.current) return;
+		done.current = true;
+		props.onDone(name);
+	};
+	return (
+		<input
+			// biome-ignore lint/a11y/noAutofocus: inline rename takes focus like Premiere
+			autoFocus
+			aria-label="Name"
+			data-testid="project-rename"
+			className="h-[calc(var(--pr-row-h)-4px)] w-full min-w-0 rounded-pr-control bg-pr-field px-1 text-pr-text"
+			value={v}
+			onChange={(e) => setV(e.target.value)}
+			onFocus={(e) => e.currentTarget.select()}
+			onKeyDown={(e) => {
+				e.stopPropagation();
+				if (e.key === 'Enter') finish(v);
+				if (e.key === 'Escape') finish(null);
+			}}
+			onBlur={() => finish(v)}
+			onClick={(e) => e.stopPropagation()}
+		/>
+	);
+}
+
+function StatusCell({ row }: { row: ProjectRow }) {
+	if (!row.status) return null;
+	return (
+		<span
+			className={cx(
+				row.status === 'offline' || row.status === 'error'
+					? 'text-pr-danger'
+					: row.status === 'online'
+						? 'text-pr-muted'
+						: 'text-pr-warning',
+			)}
+		>
+			{STATUS_TEXT[row.status] ?? row.status}
+		</span>
+	);
+}
+
+const COLUMNS: {
+	key: string;
+	label: string;
+	width: number;
+	sort?: SortKey;
+	cell(r: ProjectRow): React.ReactNode;
+}[] = [
+	{ key: 'frameRate', label: 'Frame Rate', width: 80, sort: 'frameRate', cell: (r) => r.frameRate },
+	{ key: 'start', label: 'Media Start', width: 96, cell: (r) => r.mediaStart },
+	{ key: 'end', label: 'Media End', width: 96, cell: (r) => r.mediaEnd },
+	{ key: 'duration', label: 'Media Duration', width: 104, sort: 'duration', cell: (r) => r.duration },
+	{ key: 'video', label: 'Video Info', width: 128, cell: (r) => r.videoInfo },
+	{ key: 'audio', label: 'Audio Info', width: 128, cell: (r) => r.audioInfo },
+	{ key: 'usage', label: 'Usage', width: 56, sort: 'usage', cell: (r) => (r.mediaId ? r.usage : '') },
+	{ key: 'proxy', label: 'Proxy', width: 64, cell: (r) => r.proxy },
+	{ key: 'status', label: 'Status', width: 104, sort: 'status', cell: (r) => <StatusCell row={r} /> },
+];
+
+function ListView(props: {
+	rows: ProjectRow[];
+	selected: Set<string>;
+	primary: string | null;
+	renaming: string | null;
+	dropTarget: string | null;
+	expanded: Set<string>;
+	sort: { key: SortKey; dir: 1 | -1 };
+	onSort(key: SortKey): void;
+	onToggle(id: string): void;
+	onRename(id: string, name: string | null): void;
+	handlers: Handlers;
+}) {
+	const arrow = (k: SortKey) => (props.sort.key === k ? (props.sort.dir === 1 ? ' ↑' : ' ↓') : '');
+	return (
+		<table className="w-max min-w-full border-collapse text-pr-small" data-testid="project-list">
+			<thead className="sticky top-0 bg-pr-panel text-pr-muted">
+				<tr className="h-[var(--pr-row-h)]">
+					<th className="w-5" aria-label="Label" />
+					<th
+						className="min-w-48 cursor-pointer px-2 text-left font-normal"
+						onClick={() => props.onSort('name')}
+					>
+						Name{arrow('name')}
+					</th>
+					{COLUMNS.map((c) => (
+						<th
+							key={c.key}
+							className={cx('px-2 text-left font-normal whitespace-nowrap', c.sort ? 'cursor-pointer' : '')}
+							style={{ minWidth: c.width }}
+							onClick={c.sort ? () => props.onSort(c.sort!) : undefined}
+						>
+							{c.label}
+							{c.sort ? arrow(c.sort) : ''}
+						</th>
+					))}
+				</tr>
+			</thead>
+			<tbody>
+				{props.rows.map((row, i) => {
+					const sel = props.selected.has(row.id);
+					return (
+						<tr
+							key={row.id}
+							data-testid="project-row"
+							data-item-id={row.id}
+							aria-selected={sel}
+							className={cx(
+								'h-[var(--pr-row-h)] cursor-default select-none',
+								sel ? 'bg-pr-selected' : i % 2 ? 'bg-pr-panel-alt' : 'bg-pr-panel',
+								sel && props.primary === row.id ? 'text-pr-strong' : '',
+								props.dropTarget === row.id ? 'outline outline-2 -outline-offset-2 outline-pr-accent' : '',
+								row.status === 'offline' ? 'text-pr-danger' : '',
+							)}
+							{...props.handlers(row)}
+						>
+							<td className="px-1">
+								<span
+									className="block size-3 rounded-[2px]"
+									style={{ background: labelVar(row.item.label as LabelColor) }}
+								/>
+							</td>
+							<td className="px-2">
+								<div className="flex items-center gap-1" style={{ paddingLeft: row.depth * 14 }}>
+									{row.type === 'bin' ? (
+										<button
+											type="button"
+											aria-label={props.expanded.has(row.id) ? 'Collapse' : 'Expand'}
+											className="w-3 text-pr-muted"
+											onClick={(e) => {
+												e.stopPropagation();
+												props.onToggle(row.id);
+											}}
+										>
+											{props.expanded.has(row.id) ? '▾' : '▸'}
+										</button>
+									) : (
+										<span className="w-3" />
+									)}
+									<span className="text-pr-icon">
+										<Icon id={TYPE_ICON[row.type]} size={14} />
+									</span>
+									{props.renaming === row.id ? (
+										<RenameField initial={row.name} onDone={(n) => props.onRename(row.id, n)} />
+									) : (
+										<span className="truncate">{row.name}</span>
+									)}
+									{row.status === 'analyzing' ? <span className="animate-pulse text-pr-dim">•</span> : null}
+								</div>
+							</td>
+							{COLUMNS.map((c) => (
+								<td key={c.key} className="px-2 whitespace-nowrap text-pr-muted">
+									{c.cell(row)}
+								</td>
+							))}
+						</tr>
+					);
+				})}
+			</tbody>
+		</table>
+	);
+}
+
+function IconView(props: {
+	session: EditorSession;
+	rows: ProjectRow[];
+	selected: Set<string>;
+	renaming: string | null;
+	dropTarget: string | null;
+	tile: number;
+	hoverScrub: boolean;
+	onRename(id: string, name: string | null): void;
+	handlers: Handlers;
+}) {
+	return (
+		<div
+			role="listbox"
+			aria-multiselectable="true"
+			aria-label="Project items"
+			className="grid gap-2 p-2"
+			style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${props.tile}px, 1fr))` }}
+			data-testid="project-icons"
+		>
+			{props.rows.map((row) => (
+				<Tile
+					key={row.id}
+					session={props.session}
+					row={row}
+					selected={props.selected.has(row.id)}
+					renaming={props.renaming === row.id}
+					drop={props.dropTarget === row.id}
+					width={props.tile}
+					hoverScrub={props.hoverScrub}
+					onRename={(n) => props.onRename(row.id, n)}
+					handlers={props.handlers(row)}
+				/>
+			))}
+		</div>
+	);
+}
+
+function Tile(props: {
+	session: EditorSession;
+	row: ProjectRow;
+	selected: boolean;
+	renaming: boolean;
+	drop: boolean;
+	width: number;
+	hoverScrub: boolean;
+	onRename(name: string | null): void;
+	handlers: Record<string, unknown>;
+}) {
+	const { row } = props;
+	const engine = useEngine();
+	const rt = useSessionState((s) => (row.mediaId ? s.media[row.mediaId] : undefined));
+	const asset = row.mediaId ? props.session.getCommitted().media[row.mediaId] : undefined;
+	const key = mediaKeyOf(asset);
+	const [posterFailed, setPosterFailed] = useState(false);
+	const [scrub, setScrub] = useState<React.CSSProperties | null>(null);
+	const poster =
+		rt?.posterUrl ??
+		(key && !posterFailed && row.type !== 'audio' ? engine.client.mediaUrl(key, 'poster') : null);
+	const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
+		if (!props.hoverScrub || !key || row.type !== 'video' || rt?.thumbs.state === 'failed') return;
+		const rect = e.currentTarget.getBoundingClientRect();
+		const frac = rect.width ? (e.clientX - rect.left) / rect.width : 0;
+		const w = rect.width || props.width;
+		void loadSpriteIndex(engine.client, key).then((index) => {
+			if (!index) return;
+			const tile = spriteTileAt(index, frac, durationSeconds(asset));
+			if (tile) setScrub(spriteTileStyle(engine.client, key, index, tile, w));
+		});
+	};
+	return (
+		<div
+			role="option"
+			tabIndex={-1}
+			data-testid="project-tile"
+			data-item-id={row.id}
+			aria-selected={props.selected}
+			className={cx(
+				'flex cursor-default flex-col gap-1 rounded-pr-control p-1 select-none',
+				props.selected ? 'bg-pr-selected' : 'hover:bg-pr-hover',
+				props.drop ? 'outline outline-2 -outline-offset-2 outline-pr-accent' : '',
+			)}
+			{...props.handlers}
+		>
+			<div
+				className={cx(
+					'relative aspect-video overflow-hidden rounded-pr-control bg-pr-field-deep',
+					row.status === 'analyzing' ? 'animate-pulse' : '',
+					row.status === 'offline' ? 'bg-pr-danger' : '',
+				)}
+				onPointerMove={onMove}
+				onPointerLeave={() => setScrub(null)}
+			>
+				{scrub ? (
+					<div className="absolute inset-0" style={scrub} />
+				) : poster ? (
+					<img
+						src={poster}
+						alt=""
+						draggable={false}
+						className="absolute inset-0 size-full object-cover"
+						onError={() => setPosterFailed(true)}
+					/>
+				) : (
+					<span className="absolute inset-0 flex items-center justify-center text-pr-icon">
+						<Icon id={TYPE_ICON[row.type]} size={Math.round(props.width / 5)} />
+					</span>
+				)}
+				{row.status === 'offline' ? (
+					<span className="absolute inset-0 flex items-center justify-center text-pr-small text-pr-on-accent">
+						Media Offline
+					</span>
+				) : null}
+				<span className="absolute top-1 right-1 flex gap-1">
+					{row.mediaId && row.usage ? (
+						<span className="rounded-pr-control bg-pr-menu px-1 text-pr-small text-pr-text" title="Usage">
+							{row.usage}
+						</span>
+					) : null}
+					{rt && (rt.proxy.state === 'running' || rt.proxy.state === 'queued') ? (
+						<span title={`Proxy ${row.proxy}`}>
+							<ProgressRing value={rt.proxy.progress} />
+						</span>
+					) : null}
+					{rt?.proxy.state === 'ready' ? (
+						<span
+							className="rounded-pr-control bg-pr-menu px-1 text-pr-small text-pr-accent"
+							title="Proxy ready"
+						>
+							P
+						</span>
+					) : null}
+				</span>
+				{row.duration ? (
+					<span className="absolute right-1 bottom-1 rounded-pr-control bg-pr-menu px-1 text-pr-small text-pr-text">
+						{row.duration}
+					</span>
+				) : null}
+				<span
+					className="absolute inset-x-0 bottom-0 h-[3px]"
+					style={{ background: labelVar(row.item.label as LabelColor) }}
+				/>
+			</div>
+			{props.renaming ? (
+				<RenameField initial={row.name} onDone={props.onRename} />
+			) : (
+				<span className="line-clamp-2 text-pr-small break-words">{row.name}</span>
+			)}
+		</div>
+	);
+}
+
+function Menu(props: {
+	children: React.ReactNode;
+	onClose(): void;
+	anchor: 'footer' | { x: number; y: number };
+}) {
+	const ref = useRef<HTMLDivElement>(null);
+	useEffect(() => {
+		const onDown = (e: PointerEvent) => {
+			if (!ref.current?.contains(e.target as Node)) props.onClose();
+		};
+		const onKey = (e: KeyboardEvent) => e.key === 'Escape' && props.onClose();
+		window.addEventListener('pointerdown', onDown, true);
+		window.addEventListener('keydown', onKey, true);
+		return () => {
+			window.removeEventListener('pointerdown', onDown, true);
+			window.removeEventListener('keydown', onKey, true);
+		};
+	}, [props.onClose]);
+	const style: React.CSSProperties =
+		props.anchor === 'footer'
+			? { right: 4, bottom: 'calc(var(--pr-row-h) + 2px)' }
+			: { left: props.anchor.x, top: props.anchor.y };
+	return (
+		<div
+			ref={ref}
+			role="menu"
+			className={cx(
+				'z-10 flex min-w-40 flex-col rounded-pr-menu border border-pr-menu-border bg-pr-menu py-1 text-pr-ui shadow-pr-overlay',
+				props.anchor === 'footer' ? 'absolute' : 'fixed',
+			)}
+			style={style}
+			onClick={() => props.onClose()}
+			onKeyDown={() => undefined}
+		>
+			{props.children}
+		</div>
+	);
+}
+
+function MenuEntry(props: {
+	children: React.ReactNode;
+	onClick(): void;
+	disabled?: boolean;
+	testId?: string;
+}) {
+	return (
+		<button
+			type="button"
+			role="menuitem"
+			data-testid={props.testId}
+			disabled={props.disabled}
+			className="px-3 py-1 text-left text-pr-text hover:bg-pr-accent-fill hover:text-pr-on-accent disabled:text-pr-dim"
+			onClick={props.onClick}
+		>
+			{props.children}
+		</button>
+	);
+}
+
+function ContextMenu(props: {
+	x: number;
+	y: number;
+	onClose(): void;
+	session: EditorSession;
+	itemIds: string[];
+	readOnly: boolean;
+	onRename(): void;
+	onOpen(): void;
+	onNewBin(): void;
+}) {
+	const [labels, setLabels] = useState(false);
+	return (
+		<Menu anchor={{ x: props.x, y: props.y }} onClose={props.onClose}>
+			<MenuEntry onClick={props.onOpen}>Open</MenuEntry>
+			<MenuEntry disabled={props.readOnly || props.itemIds.length !== 1} onClick={props.onRename}>
+				Rename
+			</MenuEntry>
+			<button
+				type="button"
+				role="menuitem"
+				disabled={props.readOnly}
+				className="px-3 py-1 text-left text-pr-text hover:bg-pr-hover disabled:text-pr-dim"
+				onClick={(e) => {
+					e.stopPropagation();
+					setLabels((v) => !v);
+				}}
+			>
+				Label ▸
+			</button>
+			{labels
+				? LABEL_NAMES.map((l) => (
+						<MenuEntry key={l} onClick={() => setLabel(props.session, props.itemIds, l)}>
+							<span className="flex items-center gap-2">
+								<span className="block size-3 rounded-[2px]" style={{ background: labelVar(l) }} />
+								{LABEL_DISPLAY_NAMES[l]}
+							</span>
+						</MenuEntry>
+					))
+				: null}
+			<MenuEntry disabled={props.readOnly} onClick={props.onNewBin}>
+				New Bin
+			</MenuEntry>
+			<MenuEntry
+				disabled={props.readOnly || !props.itemIds.length}
+				onClick={() => deleteItems(props.session, props.itemIds)}
+			>
+				Clear
+			</MenuEntry>
+		</Menu>
+	);
+}

@@ -1,0 +1,52 @@
+// Export mode state (S05:EX-001, HD-003): the header "Export" tab and Ctrl+M open a full-area view.
+// The shell (WP-2A) may render <ExportMode/> itself; until then ProjectLifecycle overlays it.
+import type { EngineJob } from '@jasper/api';
+import { useSyncExternalStore } from 'react';
+
+export type ExportModeState = { open: boolean; sequenceId: string | null };
+
+let state: ExportModeState = { open: false, sequenceId: null };
+const listeners = new Set<() => void>();
+const emit = () => {
+	for (const l of [...listeners]) l();
+};
+
+export const exportMode = {
+	get: () => state,
+	subscribe(l: () => void) {
+		listeners.add(l);
+		return () => listeners.delete(l);
+	},
+	open(sequenceId: string | null) {
+		state = { open: true, sequenceId };
+		emit();
+	},
+	close() {
+		if (!state.open) return;
+		state = { ...state, open: false };
+		emit();
+	},
+};
+
+export function useExportMode(): ExportModeState {
+	return useSyncExternalStore(exportMode.subscribe, exportMode.get, exportMode.get);
+}
+
+// ------------------------------------------------------------ export jobs started from this client
+
+const tracked = new Map<string, { title: string; fileName: string }>();
+
+/** Remembers an export job so its completion shows a toast with Download (S05:EX-013, EX-030). */
+export function trackExportJob(job: EngineJob, fileName: string): void {
+	tracked.set(job.id, { title: job.title, fileName });
+}
+
+export function takeTrackedExport(jobId: string): { title: string; fileName: string } | null {
+	const t = tracked.get(jobId) ?? null;
+	if (t) tracked.delete(jobId);
+	return t;
+}
+
+export function isTrackedExport(jobId: string): boolean {
+	return tracked.has(jobId);
+}

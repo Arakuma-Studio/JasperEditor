@@ -52,7 +52,14 @@ export const VersionInfoSchema = z.object({
 export type VersionInfo = z.infer<typeof VersionInfoSchema>;
 export const VersionListResponseSchema = z.object({ versions: z.array(VersionInfoSchema) });
 
-export const LeaseRequestSchema = z.object({ sessionId: z.string().min(1) });
+export const LeaseRequestSchema = z.object({
+	sessionId: z.string().min(1),
+	/**
+	 * "Take over editing" (S01:PER-040): the engine revokes the current holder's lease and grants a new one
+	 * to `sessionId`; the previous holder's next heartbeat fails and its editor turns read-only. Additive (WP-2E).
+	 */
+	takeOver: z.boolean().optional(),
+});
 export const LeaseSchema = z.object({
 	leaseId: z.string(),
 	projectId: z.string(),
