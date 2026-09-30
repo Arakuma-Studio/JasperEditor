@@ -18,6 +18,8 @@ export type LinkOptions = DiscoveryOptions & {
 	startEngine?: boolean;
 	/** Engine bundle for `startEngine` (default: next to this server, or JASPER_ENGINE_ENTRY). */
 	engineEntry?: string;
+	/** Port for `startEngine` (default 0 = random). */
+	enginePort?: number;
 };
 
 export interface EngineConnection {
@@ -96,7 +98,13 @@ export class EngineLink implements EngineConnection {
 				);
 			const appdir = this.opts.appdir ?? this.opts.env?.JASPER_APPDIR ?? platformDefaultAppdir(this.opts.env);
 			this.log(`starting a headless engine (${entry}, appdir ${appdir})`);
-			this.started = await startHeadlessEngine({ entry, appdir, env: this.opts.env, log: this.log });
+			this.started = await startHeadlessEngine({
+				entry,
+				appdir,
+				port: this.opts.enginePort,
+				env: this.opts.env,
+				log: this.log,
+			});
 			target = this.started;
 			this.log(`engine ready on ${target.url}`);
 		}

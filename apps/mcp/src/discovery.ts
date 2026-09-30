@@ -175,6 +175,8 @@ export type StartedEngine = EngineTarget & { child: ChildProcess; stop(): Promis
 export function startHeadlessEngine(opts: {
 	entry: string;
 	appdir: string;
+	/** Listen port (default 0 = random). */
+	port?: number;
 	env?: Env;
 	readyTimeoutMs?: number;
 	log?(line: string): void;
@@ -182,7 +184,7 @@ export function startHeadlessEngine(opts: {
 	const log = opts.log ?? ((l: string) => process.stderr.write(`[jasper-mcp] ${l}\n`));
 	const token = randomBytes(24).toString('base64url');
 	mkdirSync(opts.appdir, { recursive: true });
-	const child = fork(opts.entry, ['--port', '0', '--appdir', opts.appdir], {
+	const child = fork(opts.entry, ['--port', String(opts.port ?? 0), '--appdir', opts.appdir], {
 		env: {
 			...(opts.env ?? process.env),
 			[ENV.LOCAL_TOKEN]: token,

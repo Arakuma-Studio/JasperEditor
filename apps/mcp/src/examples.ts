@@ -34,11 +34,15 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		clipId: { clipAt: { track: 'V1', at: 0 } },
 		edge: 'out',
 		deltaFrames: -30,
-		mode: 'ripple',
+		mode: 'regular',
 	},
 	'clip.split': { type: 'clip.split', at: '00:00:02:00', scope: 'all-unlocked' },
 	'clip.lift': { type: 'clip.lift', clipIds: [{ clipAt: { track: 'V1', at: 0 } }] },
-	'clip.extract': { type: 'clip.extract', clipIds: [{ clipAt: { track: 'V1', at: 0 } }] },
+	'clip.extract': {
+		type: 'clip.extract',
+		clipIds: [{ clipAt: { track: 'V1', at: 0 } }],
+		syncConflict: 'cut',
+	},
 	'clip.update': {
 		type: 'clip.update',
 		clipId: { clipAt: { track: 'V1', at: 0 } },

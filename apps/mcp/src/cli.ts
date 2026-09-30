@@ -2,7 +2,7 @@
 // clients. stdout carries the protocol only; logs go to stderr.
 //
 //   jasper-mcp [--engine-url <url>] [--token <token>] [--appdir <dir>] [--start-engine]
-//              [--engine-entry <engine.mjs>] [--agent-name <name>]
+//              [--engine-entry <engine.mjs>] [--engine-port <port>] [--agent-name <name>]
 import { ENV, readFlag } from '@jasper/config';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { EngineLink } from './link.ts';
@@ -17,6 +17,7 @@ Options:
   --appdir <dir>         Look for <dir>/engine/runtime.json first (env ${ENV.APPDIR})
   --start-engine         Start a headless engine when none is running (env JASPER_MCP_START_ENGINE=1)
   --engine-entry <file>  Engine bundle to start (env ${ENV.ENGINE_ENTRY}; default: next to this file)
+  --engine-port <port>   Port for --start-engine (default: random)
   --agent-name <name>    Name shown in the editor History (default: the MCP client's name)
   --help, --version
 
@@ -45,6 +46,7 @@ async function main(): Promise<void> {
 		appdir: readFlag(argv, 'appdir'),
 		startEngine: argv.includes('--start-engine') || truthy(env.JASPER_MCP_START_ENGINE),
 		engineEntry: readFlag(argv, 'engine-entry'),
+		enginePort: readFlag(argv, 'engine-port') ? Number(readFlag(argv, 'engine-port')) : undefined,
 		env,
 		log,
 	});
