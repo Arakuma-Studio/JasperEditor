@@ -104,12 +104,18 @@ importers:
       '@jasper/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@jasper/mcp':
+        specifier: workspace:*
+        version: link:../mcp
       '@jasper/mg-templates':
         specifier: workspace:*
         version: link:../../packages/mg-templates
       '@jasper/project':
         specifier: workspace:*
         version: link:../../packages/project
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.31.0
+        version: 1.31.0(zod@4.6.5)
       '@remotion/bundler':
         specifier: 4.0.499
         version: 4.0.499(lightningcss@1.32.0)(postcss@8.5.28)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
