@@ -13,7 +13,7 @@ import {
 	resolveSceneAt,
 } from '@jasper/project';
 import type { EditorSession, Gesture, TransportStore } from '@jasper/session';
-import { useSessionState } from '@jasper/session/react';
+import { useStoreSelector } from '@jasper/session/react';
 import {
 	type PointerEvent as ReactPointerEvent,
 	useEffect,
@@ -163,9 +163,9 @@ export function TransformOverlay({
 	onPan,
 }: TransformOverlayProps) {
 	const { frame, playing } = useOverlayFrame(transport);
-	const selected = useSessionState((s) => s.selection.timeline.clips);
-	const tool = useSessionState((s) => s.toggles.activeTool);
-	const lockedKey = useSessionState((s) => {
+	const selected = useStoreSelector(session.store, (s) => s.selection.timeline.clips);
+	const tool = useStoreSelector(session.store, (s) => s.toggles.activeTool);
+	const lockedKey = useStoreSelector(session.store, (s) => {
 		const seq = s.activeSequenceId ? (s.transient ?? s.document).sequences[s.activeSequenceId] : undefined;
 		return seq
 			? seq.videoTracks
@@ -215,12 +215,13 @@ export function TransformOverlay({
 
 	const endGesture = (commit: boolean) => {
 		const g = gestureRef.current;
+		// Apply the last pointer position before the gesture is released.
+		if (commit && g && g.kind !== 'pan' && g.moved) flushUpdate();
 		gestureRef.current = null;
 		setSnapHits(null);
 		setReadout(null);
 		if (!g || g.kind === 'pan') return;
 		if (commit && g.moved) {
-			flushUpdate();
 			g.g.commit();
 		} else {
 			pendingRef.current = null;
