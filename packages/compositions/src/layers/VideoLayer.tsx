@@ -7,7 +7,7 @@
 // audio clip, played by AudioLayer with the volume callback.
 import { Video } from '@remotion/media';
 import { OffthreadVideo } from 'remotion';
-import { trimBeforeFrames, videoSource } from '../pipeline.ts';
+import { videoSource, videoTrimBefore } from '../pipeline.ts';
 import type { LayerProps } from '../types.ts';
 import { LayerBox } from './LayerBox.tsx';
 
@@ -19,7 +19,7 @@ export function VideoLayer(layer: LayerProps) {
 	if (!media) return null;
 	const source = videoSource(media, options);
 	if (source.via === 'pending-proxy') return <ProxyPendingCard {...layer} />;
-	const trimBefore = trimBeforeFrames(clip.sourceIn, fps);
+	const trimBefore = videoTrimBefore(clip, fps);
 	return (
 		<LayerBox layer={layer}>
 			{source.via === 'offthread' ? (

@@ -1,6 +1,7 @@
 // Pure helpers for the per-layer pipeline (S03 §4.2): source → effects (crop first) → transform →
 // opacity → blend. No React here so the math is unit-testable and shared by the layers.
 import {
+	audioFadeGain,
 	type BlendMode,
 	defaultEffectRegistry,
 	type EffectRegistry,
@@ -101,7 +102,10 @@ export const MAX_PREVIEW_GAIN = 16;
  * the snapshot (muted tracks are absent). Pan is not previewed in M1.
  */
 export function audioGainAt(
-	clip: Pick<RenderAudioClip, 'start' | 'duration' | 'sourceIn' | 'speed' | 'gainDb' | 'volumeDb' | 'track'>,
+	clip: Pick<
+		RenderAudioClip,
+		'start' | 'duration' | 'sourceIn' | 'speed' | 'gainDb' | 'volumeDb' | 'track' | 'fades'
+	>,
 	f: number,
 	fps: Rational,
 	master?: { volumeDb: RenderAudioClip['volumeDb'] },
@@ -118,7 +122,8 @@ export function audioGainAt(
 		evaluate(clip.volumeDb, content) +
 		evaluate(clip.track.volumeDb, seqT) +
 		(master ? evaluate(master.volumeDb, seqT) : 0);
-	return Math.min(MAX_PREVIEW_GAIN, dbToGain(db));
+	// Audio fades at the clip's edges (one-sided audio transitions, S01:TRN-004).
+	return Math.min(MAX_PREVIEW_GAIN, dbToGain(db)) * audioFadeGain(clip.fades, clip.start + i);
 }
 
 /**
@@ -130,6 +135,17 @@ export function audioGainAt(
 export function trimBeforeFrames(sourceInFlicks: number, fps: Rational | number): number {
 	const f = typeof fps === 'number' ? fps : fps.num / fps.den;
 	return (sourceInFlicks / FLICKS_PER_SECOND) * f;
+}
+
+/**
+ * `trimBefore` of a video layer whose `<Sequence>` starts `headHandle` frames before the clip (the incoming
+ * side of a transition shows content from before the clip's in-point, S01:TRN-003).
+ */
+export function videoTrimBefore(
+	clip: { sourceIn: number; speed: { rate: number }; headHandle?: number },
+	fps: Rational | number,
+): number {
+	return Math.max(0, trimBeforeFrames(clip.sourceIn, fps) - (clip.headHandle ?? 0) * clip.speed.rate);
 }
 
 /**
