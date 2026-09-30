@@ -18,7 +18,6 @@ import {
 	importFiles,
 	query,
 	ROOT,
-	sequenceSummary,
 	timelineArea,
 	watchPage,
 } from './support.ts';
@@ -71,42 +70,38 @@ async function videoTransitionAtCut(): Promise<Tr | undefined> {
 	return (await transitions()).find((t) => t.incomingClipId === b?.id);
 }
 
-/** A 48×27 luma signature of the Program output. */
-async function programSignature(): Promise<number[]> {
-	return page.getByTestId('program-player-wrapper').evaluate((root) => {
-		const w = 48;
-		const h = 27;
+/**
+ * Mean RGB of the centre of the Program monitor as composited on screen (an element screenshot decoded in
+ * the page: the preview's layer opacities are CSS, so reading the layer canvases would miss the mix).
+ */
+async function programRgb(): Promise<[number, number, number]> {
+	const shot = await page.getByTestId('program-player-wrapper').screenshot();
+	return page.evaluate(async (b64) => {
+		const img = new Image();
+		img.src = `data:image/png;base64,${b64}`;
+		await img.decode();
 		const c = document.createElement('canvas');
-		c.width = w;
-		c.height = h;
+		c.width = img.width;
+		c.height = img.height;
 		const g = c.getContext('2d', { willReadFrequently: true })!;
-		g.fillStyle = '#000';
-		g.fillRect(0, 0, w, h);
-		for (const s of root.querySelectorAll('canvas, video, img'))
-			try {
-				g.drawImage(s as HTMLCanvasElement, 0, 0, w, h);
-			} catch {
-				// not drawable yet
-			}
-		const d = g.getImageData(0, 0, w, h).data;
-		const out: number[] = [];
-		for (let i = 0; i < d.length; i += 4) out.push(0.2126 * d[i]! + 0.7152 * d[i + 1]! + 0.0722 * d[i + 2]!);
-		return out;
-	});
-}
-
-const diff = (a: number[], b: number[]) => a.reduce((s, v, i) => s + Math.abs(v - (b[i] ?? 0)), 0) / a.length;
-
-/** Waits until the Program output stops changing (seek + decode). */
-async function settledSignature(): Promise<number[]> {
-	let prev = await programSignature();
-	for (let i = 0; i < 40; i++) {
-		await page.waitForTimeout(250);
-		const next = await programSignature();
-		if (diff(prev, next) < 0.5 && next.some((v) => v > 5)) return next;
-		prev = next;
-	}
-	return prev;
+		g.drawImage(img, 0, 0);
+		const w = Math.max(1, Math.floor(img.width / 4));
+		const h = Math.max(1, Math.floor(img.height / 4));
+		const d = g.getImageData(
+			Math.floor(img.width / 2 - w / 2),
+			Math.floor(img.height / 2 - h / 2),
+			w,
+			h,
+		).data;
+		const sum = [0, 0, 0];
+		for (let i = 0; i < d.length; i += 4) {
+			sum[0] += d[i]!;
+			sum[1] += d[i + 1]!;
+			sum[2] += d[i + 2]!;
+		}
+		const n = d.length / 4;
+		return [sum[0]! / n, sum[1]! / n, sum[2]! / n] as [number, number, number];
+	}, shot.toString('base64'));
 }
 
 async function seek(frame: number) {
@@ -115,12 +110,12 @@ async function seek(frame: number) {
 
 test('setup: project, two clips with media handles meeting at a cut', async () => {
 	await createProject(page, 'E2E Transitions');
-	await importFiles(page, ['clip-a.mp4', 'clip-b.mp4']);
-	seqId = (await sequenceSummary(page)).id;
+	await importFiles(page, ['xfade-red.mp4', 'xfade-blue.mp4']);
+	seqId = (await query<{ sequenceId: string }>(page, 'sequence.summary')).sequenceId;
 	const a = await transact([
 		{
 			type: 'clip.place',
-			source: { mediaId: { mediaByName: 'clip-a.mp4' } },
+			source: { mediaId: { mediaByName: 'xfade-red.mp4' } },
 			at: 0,
 			sourceRange: { in: { seconds: 1 }, out: { seconds: 5 } },
 		},
@@ -130,7 +125,7 @@ test('setup: project, two clips with media handles meeting at a cut', async () =
 	const b = await transact([
 		{
 			type: 'clip.place',
-			source: { mediaId: { mediaByName: 'clip-b.mp4' } },
+			source: { mediaId: { mediaByName: 'xfade-blue.mp4' } },
 			at: cut,
 			sourceRange: { in: { seconds: 2 }, out: { seconds: 5 } },
 		},
@@ -141,8 +136,10 @@ test('setup: project, two clips with media handles meeting at a cut', async () =
 });
 
 test('drag Cross Dissolve from the Effects panel onto the cut → drawn, Program shows the mix; Ctrl+Z removes it', async () => {
-	await seek(cut);
-	const without = await settledSignature();
+	// Hard cut: the last frame before it is red.
+	await seek(cut - 1);
+	await expect.poll(async () => (await programRgb())[0], { timeout: 30_000 }).toBeGreaterThan(180);
+	expect((await programRgb())[2]).toBeLessThan(60);
 	await page
 		.locator('.dv-tab')
 		.filter({ hasText: /^Effects$/ })
@@ -163,11 +160,18 @@ test('drag Cross Dissolve from the Effects panel onto the cut → drawn, Program
 	await expect(
 		page.locator(`[data-testid="timeline-track-area"] [data-transition-id="${t.id}"]`),
 	).toBeVisible();
-	// The Program shows a mix of both clips at the cut (it differs from the hard cut).
+	// The Program shows the mix at the cut: red and blue together (purple), not the hard cut.
 	await seek(cut + 1);
-	await seek(cut);
-	const mixed = await settledSignature();
-	expect(diff(mixed, without)).toBeGreaterThan(3);
+	await seek(cut - 1);
+	await expect
+		.poll(
+			async () => {
+				const [r, , b] = await programRgb();
+				return r > 60 && b > 60;
+			},
+			{ timeout: 30_000, intervals: [250] },
+		)
+		.toBe(true);
 	await page.screenshot({ path: join(ROOT, 'test-results', 'e2e-transitions-dissolve.png') });
 	await focusTimeline(page);
 	await page.keyboard.press('Control+KeyZ');
@@ -197,7 +201,7 @@ test('dragging its right edge lengthens it; the tooltip shows the new duration',
 		await page.mouse.move(r.x + r.width - 1 + (i * 5 * pxPerFrame) / 10, y);
 		await page.waitForTimeout(16);
 	}
-	await expect(page.getByTestId('timeline-tooltip')).toContainText(/Duration 00:00:01:1\d \(4\d\)/);
+	await expect(page.getByTestId('timeline-tooltip')).toContainText(/Duration 00[:;]00[:;]01[:;]1\d \(4\d\)/);
 	await page.mouse.up();
 	await expect.poll(async () => (await videoTransitionAtCut())?.duration).toBeGreaterThan(t.duration);
 	expect((await appliedLabels(page)).at(-1)).toBe('Transition Duration');
@@ -213,10 +217,10 @@ test('Effect Controls Transition section changes the type to Dip to Black', asyn
 		.filter({ hasText: /^Effect Controls$/ })
 		.first()
 		.click();
-	const section = page.getByTestId('transition-section');
-	await expect(section).toBeVisible();
-	await expect(page.getByTestId('transition-diagram')).toBeVisible();
-	await page.getByTestId('transition-type').selectOption('jasper.dip-to-black');
+	const ec = page.getByTestId('effect-controls-panel');
+	await expect(ec.getByTestId('transition-section')).toBeVisible();
+	await expect(ec.getByTestId('transition-diagram')).toBeVisible();
+	await ec.getByTestId('transition-type').selectOption('jasper.dip-to-black');
 	await expect.poll(async () => (await videoTransitionAtCut())?.effectId).toBe('jasper.dip-to-black');
 	expect((await appliedLabels(page)).at(-1)).toBe('Replace Transition');
 	await page.screenshot({ path: join(ROOT, 'test-results', 'e2e-transitions-effect-controls.png') });
