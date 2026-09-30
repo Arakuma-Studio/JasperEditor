@@ -105,6 +105,9 @@ provider is registered. Masters are requested at export time (job stage "Renderi
 - **Colour:** layers are composited in RGB; untagged HD sources are read as BT.709 (browser behaviour), output
   is BT.709 TV range, tagged.
 - **Media URLs for renders:** `http://127.0.0.1:<port>/media/<key>?sig=…&exp=…` (6 h TTL).
+- Review hardening: signed URLs (`?sig=&exp=`) only authorize GET/HEAD/OPTIONS; `settings.destination
+  {type:'path'}` requires an absolute file path and local mode (403 LOCAL_MODE_ONLY otherwise, like path
+  registration); `GET /renders/:jobId/output` answers 404 until the job has succeeded (no partial files).
 
 ## TODO (not done in this package)
 
