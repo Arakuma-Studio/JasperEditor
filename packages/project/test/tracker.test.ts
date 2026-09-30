@@ -440,6 +440,17 @@ describe('tracker.apply (S09:TRK-020…023, §8.1)', () => {
 		expect(cp.ok).toBe(false);
 	});
 
+	it('tracker.unlink drops the link and keeps the keyframes', () => {
+		const { h, plate, target } = setup();
+		const id = addPlanar(h, plate);
+		h.ok([{ type: 'tracker.apply', trackerId: id, targetClipId: target, mode: 'corner-pin' }]);
+		const r = h.ok([{ type: 'tracker.unlink', clipIds: [target] }]);
+		expect(r.results[0]).toEqual({ clipIds: [target] });
+		const t = clip(h, target) as Clip & { effects: { params: Record<string, { keyframes: unknown[] }> }[] };
+		expect(t.trackedBy).toBeUndefined();
+		expect(t.effects[0]!.params.topLeft!.keyframes.length).toBe(30);
+	});
+
 	it('removing a tracker keeps the keyframes and drops the link', () => {
 		const { h, plate, target } = setup();
 		const id = addPlanar(h, plate);

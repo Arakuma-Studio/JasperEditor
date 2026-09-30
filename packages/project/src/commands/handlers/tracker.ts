@@ -219,6 +219,19 @@ export const trackerHandlers: HandlerMap = {
 		return { trackerIds: removed };
 	},
 
+	'tracker.unlink': (doc, cmd: CommandOf<'tracker.unlink'>, h) => {
+		const unlinked: string[] = [];
+		for (const id of new Set(cmd.clipIds)) {
+			const { seq, clip } = h.clip(doc, id);
+			assertClipUnlocked(seq, clip, h);
+			const c = clip as { trackedBy?: unknown };
+			if (c.trackedBy === undefined) continue;
+			delete c.trackedBy;
+			unlinked.push(id);
+		}
+		return { clipIds: unlinked };
+	},
+
 	'tracker.setSamples': (doc, cmd: CommandOf<'tracker.setSamples'>, h) => {
 		const { seq, clip, tracker } = locate(doc, cmd.trackerId, h);
 		assertClipUnlocked(seq, clip, h);

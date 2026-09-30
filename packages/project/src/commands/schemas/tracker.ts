@@ -51,10 +51,14 @@ export const TrackerApplyCmd = cmd('tracker.apply', {
 	range: z.strictObject({ start: z.number().int().min(0), end: z.number().int().min(1) }).optional(),
 });
 
+/** wp-m2-track (additive): drops the `trackedBy` link of target clips; their keyframes stay (S09:TRU-004 Unlink). */
+export const TrackerUnlinkCmd = cmd('tracker.unlink', { clipIds: z.array(IdRefSchema).min(1) });
+
 export const TRACKER_COMMANDS = [
 	TrackerAddCmd,
 	TrackerUpdateCmd,
 	TrackerRemoveCmd,
 	TrackerSetSamplesCmd,
 	TrackerApplyCmd,
+	TrackerUnlinkCmd,
 ] as const;

@@ -115,6 +115,7 @@ const LABELS: Record<CommandType, string> = {
 	'tracker.remove': 'Remove Tracker',
 	'tracker.setSamples': 'Track',
 	'tracker.apply': 'Apply Tracking',
+	'tracker.unlink': 'Unlink Tracking',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
