@@ -9,8 +9,8 @@ import { getAgentBridge, startAgentBridge } from '../src/agent-bridge/index.ts';
 import { agentCommands } from '../src/commands/agent.ts';
 import { createCommandContext } from '../src/commands/context.ts';
 import { AgentPanel } from '../src/panels/agent/AgentPanel.tsx';
-import agentPanel from '../src/panels/agent/index.ts';
 import { runConsoleInput } from '../src/panels/agent/console-run.ts';
+import agentPanel from '../src/panels/agent/index.ts';
 
 const stops: (() => void)[] = [];
 afterEach(() => {
@@ -46,7 +46,11 @@ describe('Agent panel (ARCHITECTURE §11)', () => {
 	it('lists agent transactions with an Undo link on the top entry', async () => {
 		const { session } = setup();
 		await act(async () => {
-			await window.jasper!.transact({ label: 'Add marker', origin: { agent: 'bot' }, commands: [{ type: 'marker.add', frame: 3 }] });
+			await window.jasper!.transact({
+				label: 'Add marker',
+				origin: { agent: 'bot' },
+				commands: [{ type: 'marker.add', frame: 3 }],
+			});
 		});
 		expect(screen.getByText('Add marker')).toBeTruthy();
 		const undo = screen.getByTestId('agent-activity-undo');
@@ -60,7 +64,11 @@ describe('Agent panel (ARCHITECTURE §11)', () => {
 		let result: unknown;
 		await act(async () => {
 			void window
-				.jasper!.transact({ label: 'Drop V3', origin: { agent: 'bot' }, commands: [{ type: 'track.remove', trackIds: ['V3'] }] })
+				.jasper!.transact({
+					label: 'Drop V3',
+					origin: { agent: 'bot' },
+					commands: [{ type: 'track.remove', trackIds: ['V3'] }],
+				})
 				.then((r) => {
 					result = r;
 				});
@@ -83,7 +91,11 @@ describe('Agent panel (ARCHITECTURE §11)', () => {
 		await waitFor(() => expect(screen.getByTestId('agent-console-result').textContent).toMatch(/Applied/));
 		expect(Object.values(session.getCommitted().sequences)[0]!.markers).toHaveLength(1);
 
-		const dry = await runConsoleInput(bridge, JSON.stringify({ commands: [{ type: 'marker.add', frame: 9 }] }), { dryRun: true });
+		const dry = await runConsoleInput(
+			bridge,
+			JSON.stringify({ commands: [{ type: 'marker.add', frame: 9 }] }),
+			{ dryRun: true },
+		);
 		expect(dry).toMatchObject({ kind: 'transaction', ok: true });
 		expect(Object.values(session.getCommitted().sequences)[0]!.markers).toHaveLength(1);
 		const q = await runConsoleInput(bridge, '{"query":"doc.revision"}', { dryRun: false });
@@ -98,7 +110,11 @@ describe('Agent panel (ARCHITECTURE §11)', () => {
 		expect(runCmd.when!(ctx)).toBe(true);
 		const approveAll = agentCommands.find((c) => c.id === 'agent.approval.approveAll')!;
 		expect(approveAll.when!(ctx)).toBe(false);
-		expect(agentCommands.map((c) => c.id)).toEqual(['panel.focus.agent', 'agent.console.run', 'agent.approval.approveAll']);
+		expect(agentCommands.map((c) => c.id)).toEqual([
+			'panel.focus.agent',
+			'agent.console.run',
+			'agent.approval.approveAll',
+		]);
 	});
 
 	it('browses command and query schemas', () => {
