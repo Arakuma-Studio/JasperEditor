@@ -2,7 +2,8 @@
 // seeking; per layer setpts (speed) → fps → crop → format=rgba → scale → flips → rotate (transparent, grown
 // bounds) → alpha multiply → overlay at the offset derived from the @jasper/project layer matrix; bottom → top
 // over a `color` background; audio atrim/atempo/aresample/volume/adelay + amix normalize=0 + pad/trim;
-// libx264 yuv420p + AAC + faststart with bt709 tags. Inputs are referenced by index only (S04:SC-004).
+// the selected video encoder (D-13: hardware H.264 / OpenH264 / libx264 in dev / AV1 / VP9) with bt709 tags +
+// AAC (MP4, faststart) or Opus (WebM). Inputs are referenced by index only (S04:SC-004).
 import {
 	clipContentTime,
 	FLICKS_PER_SECOND,
@@ -13,6 +14,7 @@ import {
 	type RenderVisualClip,
 	resolveLayerProps,
 } from '@jasper/project';
+import { audioEncodeArgs, LEGACY_X264_CHOICE, videoEncodeArgs } from '../tools/encoders.ts';
 import { sec } from '../tools/ffmpeg.ts';
 import type { LocalMedia, OutputSpec } from './planner.ts';
 
@@ -118,6 +120,16 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 	const T = frames * frameSec;
 	const F = flicksPerFrame(fps);
 
+	const encoder = output.encoder ?? LEGACY_X264_CHOICE;
+	const enc = o.still
+		? null
+		: videoEncodeArgs(encoder, {
+				crf: output.crf,
+				speed: output.speed ?? 'balanced',
+				width: output.width,
+				height: output.height,
+				fps: output.fps,
+			});
 	const inputs: string[][] = [];
 	const chains: string[] = [];
 	const addInput = (args: string[]) => {
@@ -283,7 +295,12 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 	}
 	vout.push(`trim=end_frame=${output.frames}`, 'setpts=PTS-STARTPTS');
 	if (o.still) vout.push('format=rgb24');
-	else vout.push('scale=out_color_matrix=bt709:out_range=tv', 'format=yuv420p', 'setsar=1');
+	else {
+		vout.push('scale=out_color_matrix=bt709:out_range=tv', 'format=yuv420p', 'setsar=1');
+		// Encoder-specific tail (nv12 for QSV, hwupload for VAAPI); yuv420p needs nothing more.
+		const tail = enc!.filters.filter((f) => f !== 'format=yuv420p');
+		vout.push(...tail);
+	}
 	chains.push(`[${last}]${vout.join(',')}[vout]`);
 
 	// Audio (skipped for stills).
@@ -336,7 +353,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 	}
 
 	const filter = chains.join(';\n');
-	const args: string[] = [];
+	const args: string[] = [...(enc?.pre ?? [])];
 	for (const inp of inputs) args.push(...inp);
 	args.push('-filter_complex', filter, '-map', '[vout]');
 	if (o.still) {
@@ -345,14 +362,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		args.push(
 			'-map',
 			'[aout]',
-			'-c:v',
-			'libx264',
-			'-preset',
-			output.x264Preset,
-			'-crf',
-			String(output.crf),
-			'-pix_fmt',
-			'yuv420p',
+			...enc!.video,
 			'-colorspace',
 			'bt709',
 			'-color_primaries',
@@ -365,20 +375,16 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			rate(output.fps),
 			'-frames:v',
 			String(output.frames),
-			'-c:a',
-			'aac',
-			'-b:a',
-			`${output.audioBitrateKbps}k`,
+			...audioEncodeArgs(encoder.audioEncoder, output.audioBitrateKbps),
 			'-ar',
 			String(SAMPLE_RATE),
 			'-ac',
 			String(output.audioChannels),
 			'-threads',
 			String(Math.max(1, o.threads)),
-			'-movflags',
-			'+faststart',
+			...(encoder.container === 'mp4' ? ['-movflags', '+faststart'] : []),
 			'-f',
-			'mp4',
+			encoder.container,
 			o.outputFile,
 		);
 	}

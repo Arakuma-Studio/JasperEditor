@@ -18,6 +18,7 @@ import { ProjectStoreFs } from '../projects/store.ts';
 import { RemotionService } from '../remotion/service.ts';
 import { UploadService } from '../uploads/service.ts';
 import { type CapabilityProvider, CapabilityService } from './capabilities.ts';
+import { EncoderService } from './encoders.ts';
 import { Ffmpeg, resolveBinaries, selfCheck } from './ffmpeg.ts';
 
 export type CoreServices = {
@@ -25,6 +26,8 @@ export type CoreServices = {
 	broadcaster: Broadcaster;
 	queue: JobQueue;
 	ffmpeg: Ffmpeg;
+	/** Encoder inventory + selection (ARCHITECTURE D-13). */
+	encoders: EncoderService;
 	signer: UrlSigner;
 	registry: MediaRegistry;
 	media: MediaService;
@@ -67,6 +70,13 @@ export async function createCoreServices(
 	const bins = resolveBinaries({ env, resourcesDir: opts.resourcesDir ?? env.JASPER_RESOURCES_DIR ?? null });
 	const ffmpeg = new Ffmpeg(bins);
 	const check = await selfCheck(bins);
+	const encoders = await EncoderService.create({
+		ffmpeg: bins.ffmpeg,
+		encoders: check.encoders,
+		hwaccels: check.hwaccels,
+		license: check.license,
+		env,
+	});
 	const signer = new UrlSigner(config.token ?? undefined);
 	const queue = new JobQueue({
 		journalPath: paths.jobsJournal,
@@ -80,6 +90,7 @@ export async function createCoreServices(
 	const derivatives = new DerivativeService({
 		cacheDir: paths.cacheDir,
 		ff: ffmpeg,
+		encoders,
 		queue,
 		registry,
 		broadcaster,
@@ -106,6 +117,7 @@ export async function createCoreServices(
 	const capabilities = new CapabilityService({
 		config,
 		selfCheck: check,
+		encoders,
 		remotion,
 		fonts,
 		broadcaster,
@@ -115,6 +127,7 @@ export async function createCoreServices(
 	const exportsSvc: ExportService = new ExportService({
 		rendersDir: paths.rendersDir,
 		ff: ffmpeg,
+		encoders,
 		queue,
 		registry,
 		fonts,
@@ -143,6 +156,7 @@ export async function createCoreServices(
 		broadcaster,
 		queue,
 		ffmpeg,
+		encoders,
 		signer,
 		registry,
 		media,

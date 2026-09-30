@@ -14,6 +14,7 @@ import type { JobQueue } from '../jobs/queue.ts';
 import { type JobContext, JobError } from '../jobs/types.ts';
 import type { MediaRegistry } from '../media/registry.ts';
 import type { RemotionService } from '../remotion/service.ts';
+import { audioEncodeArgs, type EncoderService, videoEncodeArgs } from '../tools/encoders.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { exists, randomId } from '../tools/fs.ts';
 import { buildNativeGraph } from './native.ts';
@@ -41,6 +42,8 @@ export const JOB_ID_RE = /^job_[0-9a-f]{16}$/;
 export type ExportServiceDeps = {
 	rendersDir: string;
 	ff: Ffmpeg;
+	/** Encoder selection (D-13); absent = libx264 (legacy/tests). */
+	encoders?: EncoderService;
 	queue: JobQueue;
 	registry: MediaRegistry;
 	fonts: FontCatalogService;
@@ -85,7 +88,17 @@ export class ExportService {
 				sequenceId: req.sequenceId,
 				settings: { ...req.settings, sequenceId: req.sequenceId },
 			},
-			{ registry: this.deps.registry, fonts: this.deps.fonts, capabilities: caps },
+			{
+				registry: this.deps.registry,
+				fonts: this.deps.fonts,
+				capabilities: caps,
+				...(this.deps.encoders
+					? {
+							selectEncoder: (r) => this.deps.encoders!.select(r),
+							lgplOnly: this.deps.encoders.inventory.lgplOnly,
+						}
+					: {}),
+			},
 		);
 	}
 
@@ -258,6 +271,76 @@ export class ExportService {
 		return count;
 	}
 
+	/** Encodes Remotion's ProRes/PCM intermediate with the selected encoder (D-13). */
+	private async encodeIntermediate(
+		planned: PlannedExport,
+		input: string,
+		output: string,
+		frames: number,
+		ctx: JobContext,
+		from: number,
+	): Promise<void> {
+		const o = planned.output;
+		const choice = o.encoder!;
+		const enc = videoEncodeArgs(choice, {
+			crf: o.crf,
+			speed: o.speed,
+			width: o.width,
+			height: o.height,
+			fps: o.fps,
+		});
+		const vf = [
+			'scale=out_color_matrix=bt709:out_range=tv',
+			'format=yuv420p',
+			'setsar=1',
+			...enc.filters.filter((f) => f !== 'format=yuv420p'),
+		];
+		const args = [
+			...enc.pre,
+			'-i',
+			input,
+			'-map',
+			'0:v:0',
+			'-map',
+			'0:a:0?',
+			'-vf',
+			vf.join(','),
+			...enc.video,
+			'-colorspace',
+			'bt709',
+			'-color_primaries',
+			'bt709',
+			'-color_trc',
+			'bt709',
+			'-color_range',
+			'tv',
+			'-frames:v',
+			String(frames),
+			...audioEncodeArgs(choice.audioEncoder, o.audioBitrateKbps),
+			'-ar',
+			'48000',
+			'-ac',
+			String(o.audioChannels),
+			'-threads',
+			String(Math.max(1, ctx.slots)),
+			...(choice.container === 'mp4' ? ['-movflags', '+faststart'] : []),
+			'-f',
+			choice.container,
+			output,
+		];
+		ctx.log(`ffmpeg ${args.join(' ')}`);
+		const total = o.durationSec;
+		await this.deps.ff.run(args, {
+			signal: ctx.signal,
+			onSpawn: ctx.trackChild,
+			onProgress: (p) => {
+				if (total <= 0) return;
+				const done = Math.min(total, p.outTimeUs / 1e6);
+				ctx.progress(from + (done / total) * (0.98 - from), { stage: `Encoding (${choice.label})` });
+			},
+		});
+	}
+
 	/** Snapshot with signed absolute media and font URLs for the headless browser (S04:RR-003, MS-003). */
 	private remotionProps(planned: PlannedExport): Record<string, unknown> {
 		const origin = this.deps.origin();
@@ -304,7 +387,8 @@ export class ExportService {
 			throw e;
 		}
 		const dir = await this.outDir(ctx);
-		const output = join(dir, 'output.mp4');
+		const encoder = planned.output.encoder;
+		const output = join(dir, `output.${encoder?.container ?? 'mp4'}`);
 		ctx.addPartial(dir);
 		let frames: number;
 		let path = planned.plan.path;
@@ -323,17 +407,25 @@ export class ExportService {
 		} else {
 			const cores = availableParallelism();
 			const seqW = planned.snapshot.settings.width;
+			// D-13: only a dev build whose selected encoder is libx264 (or that has no encoder at all) lets
+			// Remotion encode H.264 itself; otherwise Remotion writes a ProRes intermediate that our own
+			// ffmpeg encodes with the selected (LGPL-compatible) encoder.
+			const direct = !encoder || encoder.encoder === 'libx264';
+			const target = direct ? output : join(await ctx.scratchDir(), 'remotion-intermediate.mov');
+			const share = direct ? 0.98 : 0.8;
 			ctx.progress(0, { stage: 'Preparing Remotion bundle' });
 			const res = await this.deps.remotion.renderMedia({
 				inputProps: this.remotionProps(planned),
-				output,
+				output: target,
 				signal: ctx.signal,
 				concurrency: Math.max(1, Math.min(ctx.slots, Math.floor(cores / 2))),
 				crf: planned.output.crf,
 				x264Preset: planned.output.x264Preset,
+				...(direct ? {} : { intermediate: true }),
 				...(planned.output.width !== seqW ? { scale: planned.output.width / seqW } : {}),
-				onProgress: (p) => ctx.progress(p.progress * 0.98, { stage: `${p.stage} (Remotion)` }),
+				onProgress: (p) => ctx.progress(p.progress * share, { stage: `${p.stage} (Remotion)` }),
 			});
+			if (!direct) await this.encodeIntermediate(planned, target, output, res.frames, ctx, share);
 			const count = await this.deps.ff.countVideoFrames(output, { signal: ctx.signal });
 			if (count !== res.frames) {
 				throw new JobError(
@@ -348,11 +440,15 @@ export class ExportService {
 		const downloadUrl = `/renders/${ctx.job.id}/output`;
 		let finalPath: string | undefined;
 		if (req.settings.destination?.type === 'path') {
-			finalPath = await copyNoOverwrite(output, req.settings.destination.path);
+			finalPath = await copyNoOverwrite(
+				output,
+				withExtension(req.settings.destination.path, extname(output)),
+			);
 		}
 		const result = {
 			downloadUrl,
 			byteSize,
+			...(encoder ? { encoder: encoder.encoder, container: encoder.container } : {}),
 			durationSec: planned.output.durationSec,
 			frames,
 			path: finalPath,
@@ -393,6 +489,7 @@ export class ExportService {
 					sequenceId: req.sequenceId,
 					settings,
 					rangeOverride: { start: req.frame, end: req.frame + 1 },
+					still: true,
 				},
 				{
 					registry: this.deps.registry,
@@ -442,6 +539,13 @@ function sequenceName(p: PlannedExport): string {
 		if (item.kind === 'sequence' && item.sequenceId === p.sequenceId) return item.name;
 	}
 	return p.document.name;
+}
+
+/** `dest` with the extension of the file actually written (a WebM fallback never lands in `x.mp4`). */
+export function withExtension(dest: string, ext: string): string {
+	const cur = extname(dest);
+	if (cur.toLowerCase() === ext.toLowerCase()) return dest;
+	return /^\.(mp4|webm|mov|m4v|mkv)$/i.test(cur) ? dest.slice(0, -cur.length) + ext : dest + ext;
 }
 
 /** Copies to `dest`, appending " (2)", " (3)"… instead of overwriting (S04:EX-007). */

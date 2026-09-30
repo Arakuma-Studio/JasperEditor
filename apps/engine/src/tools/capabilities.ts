@@ -7,6 +7,7 @@ import type { EngineConfig } from '../context.ts';
 import type { Broadcaster } from '../events/broadcaster.ts';
 import type { FontCatalogService } from '../fonts/catalog.ts';
 import type { RemotionService } from '../remotion/service.ts';
+import type { EncoderService } from './encoders.ts';
 import type { SelfCheck } from './ffmpeg.ts';
 import { freeDiskBytes } from './fs.ts';
 
@@ -40,6 +41,8 @@ export class CapabilityService {
 		private readonly deps: {
 			config: EngineConfig;
 			selfCheck: SelfCheck;
+			/** Encoder inventory and selection (D-13); absent = derived from the self-check only. */
+			encoders?: EncoderService;
 			remotion: RemotionService;
 			fonts: FontCatalogService;
 			broadcaster: Broadcaster;
@@ -69,6 +72,7 @@ export class CapabilityService {
 	base(): EngineCapabilities {
 		const sc = this.deps.selfCheck;
 		const { config } = this.deps;
+		const encoding = this.deps.encoders?.capabilities();
 		return {
 			engine: {
 				version: config.version,
@@ -82,9 +86,11 @@ export class CapabilityService {
 				ffprobeVersion: sc.ffprobeVersion,
 				encoders: sc.encoders,
 				filters: sc.filters,
+				...(encoding ? { encoding } : {}),
 			},
 			render: {
-				native: sc.nativeRender,
+				// The self-check found the filters + AAC; the selector must also find a usable video encoder.
+				native: sc.nativeRender && (encoding ? encoding.export !== null : true),
 				remotionLocal: this.deps.remotion.state(),
 				fframes: 'unavailable',
 				fframesReason: 'The jasper-mg renderer is not registered',

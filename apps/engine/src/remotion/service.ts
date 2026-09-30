@@ -27,7 +27,18 @@ export type RemotionRenderInput = {
 	crf?: number;
 	x264Preset?: 'veryfast' | 'medium' | 'slow';
 	scale?: number;
+	/**
+	 * Render a ProRes 422 HQ + PCM `.mov` intermediate instead of H.264 (D-13): the engine then encodes it
+	 * with its own selected encoder, so Remotion's bundled (GPL) x264 is never used for delivery.
+	 */
+	intermediate?: boolean;
 };
+
+/**
+ * Env: a directory with an LGPL rebuild of `@remotion/compositor-*` (compositor + ffmpeg + libs), passed
+ * to Remotion as `binariesDirectory`. The npm package ships a GPL FFmpeg build (see docs/wp-notes/wp-3l.md).
+ */
+export const REMOTION_BINARIES_ENV = 'JASPER_REMOTION_BINARIES_DIR';
 
 const SYSTEM_BROWSERS = [
 	'/usr/bin/google-chrome',
@@ -106,6 +117,12 @@ export class RemotionService {
 
 	private get env(): Record<string, string | undefined> {
 		return this.opts.env ?? process.env;
+	}
+
+	/** `binariesDirectory` for Remotion (null = the bundled compositor package). */
+	get binariesDirectory(): string | null {
+		const d = this.env[REMOTION_BINARIES_ENV];
+		return d && existsSync(d) ? d : null;
 	}
 
 	get licenseKey(): string | null {
@@ -263,6 +280,7 @@ export class RemotionService {
 			inputProps,
 			timeoutInMilliseconds: DELAY_RENDER_TIMEOUT_MS,
 			logLevel: 'error',
+			...(this.binariesDirectory ? { binariesDirectory: this.binariesDirectory } : {}),
 			...browser,
 		});
 		return { r, serveUrl, composition, browser };
@@ -281,11 +299,16 @@ export class RemotionService {
 				serveUrl,
 				composition,
 				inputProps: input.inputProps,
-				codec: 'h264',
-				audioCodec: 'aac',
-				pixelFormat: 'yuv420p',
-				crf: input.crf ?? 18,
-				x264Preset: input.x264Preset ?? 'medium',
+				...(input.intermediate
+					? { codec: 'prores' as const, proResProfile: 'hq' as const, audioCodec: 'pcm-16' as const }
+					: {
+							codec: 'h264' as const,
+							audioCodec: 'aac' as const,
+							pixelFormat: 'yuv420p' as const,
+							crf: input.crf ?? 18,
+							x264Preset: input.x264Preset ?? 'medium',
+						}),
+				...(this.binariesDirectory ? { binariesDirectory: this.binariesDirectory } : {}),
 				outputLocation: input.output,
 				concurrency: input.concurrency ?? Math.max(1, Math.floor(cores / 2)),
 				cancelSignal,
@@ -342,6 +365,7 @@ export class RemotionService {
 				licenseKey: this.licenseKey,
 				logLevel: 'error',
 				overwrite: true,
+				...(this.binariesDirectory ? { binariesDirectory: this.binariesDirectory } : {}),
 				...(input.scale ? { scale: input.scale } : {}),
 				...browser,
 			});
