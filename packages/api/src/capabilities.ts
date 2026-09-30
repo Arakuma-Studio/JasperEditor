@@ -110,3 +110,28 @@ export const EngineCapabilitiesSchema = z.object({
 	}),
 });
 export type EngineCapabilities = z.infer<typeof EngineCapabilitiesSchema>;
+
+/**
+ * A third-party component the engine runs or ships, for the About / Licenses screen (D-13: FFmpeg's license
+ * text and the link to its exact source must be offered with the app).
+ */
+export const LicenseComponentSchema = z.object({
+	id: z.string(),
+	name: z.string(),
+	version: z.string().nullable(),
+	/** SPDX id for a bundled build (`LGPL-3.0-or-later`), otherwise a description of what was found. */
+	license: z.string(),
+	/** Shipped with JasperEditor (the LGPL binaries directory) rather than found on the system. */
+	bundled: z.boolean(),
+	/** Corresponding source (the exact commit for a bundled build). */
+	sourceUrl: z.string(),
+	/** How it was built: build scripts or the pinned prebuilt release. */
+	buildUrl: z.string().optional(),
+	notice: z.string().optional(),
+	/** Full license text(s). */
+	texts: z.array(z.object({ title: z.string(), text: z.string() })),
+});
+export type LicenseComponent = z.infer<typeof LicenseComponentSchema>;
+
+export const LicensesResponseSchema = z.object({ components: z.array(LicenseComponentSchema) });
+export type LicensesResponse = z.infer<typeof LicensesResponseSchema>;

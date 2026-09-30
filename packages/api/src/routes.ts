@@ -9,7 +9,7 @@ import {
 	AgentTxRequestSchema,
 	AgentTxResponseSchema,
 } from './agent.ts';
-import { EngineCapabilitiesSchema, HealthSchema } from './capabilities.ts';
+import { EngineCapabilitiesSchema, HealthSchema, LicensesResponseSchema } from './capabilities.ts';
 import {
 	ExportPlanRequestSchema,
 	ExportStartRequestSchema,
@@ -71,6 +71,13 @@ export const ROUTES = {
 		method: 'GET',
 		path: '/api/capabilities',
 		response: EngineCapabilitiesSchema,
+		owner: 'WP-2F',
+	}),
+	/** Third-party licenses for the About dialog (D-13: FFmpeg license text + source link). */
+	licenses: r({
+		method: 'GET',
+		path: '/api/licenses',
+		response: LicensesResponseSchema,
 		owner: 'WP-2F',
 	}),
 	events: r({

@@ -24,6 +24,7 @@ import {
 	resolveRemotionBinaries,
 	STRICT_MISSING_MESSAGE,
 } from '../src/tools/lgpl.ts';
+import { FFMPEG_SOURCE_FALLBACK, ffmpegLicense, thirdPartyLicenses } from '../src/tools/licenses.ts';
 
 const files = (...dirs: string[]) => {
 	const set = new Set<string>();
@@ -221,6 +222,92 @@ describe('RemotionService binaries policy', () => {
 			expect(dev.ffmpegInfo.encoders).toContain('libx264');
 		},
 	);
+});
+
+describe('third-party licenses (About dialog, D-13)', () => {
+	const bundle = (license: string, gpl3: boolean) => {
+		const dir = mkdtempSync(join(tmpdir(), 'lic-'));
+		writeFileSync(join(dir, 'ffmpeg'), '');
+		writeFileSync(
+			join(dir, 'BUILDINFO.json'),
+			JSON.stringify({
+				ffmpeg: {
+					version: 'n7.1.5',
+					license,
+					sourceUrl: 'https://github.com/FFmpeg/FFmpeg/tree/abc',
+					origin: { kind: gpl3 ? 'btbn' : 'source', release: 'autobuild-x' },
+				},
+			}),
+		);
+		writeFileSync(join(dir, 'LICENSE-FFmpeg.txt'), 'GNU LESSER GENERAL PUBLIC LICENSE …');
+		writeFileSync(join(dir, 'NOTICE-FFmpeg.txt'), 'FFmpeg source: …');
+		if (gpl3) writeFileSync(join(dir, 'COPYING.GPLv3.txt'), 'GNU GENERAL PUBLIC LICENSE …');
+		return join(dir, 'ffmpeg');
+	};
+
+	it('a bundled LGPL 3 build: SPDX id, exact source, build link, LGPL text and the GPL 3 text it refers to', async () => {
+		const c = await ffmpegLicense({
+			ffmpegPath: bundle('LGPL-3.0-or-later', true),
+			ffmpegVersion: 'n7.1.5-12',
+			license: 'lgpl',
+		});
+		expect(c).toMatchObject({
+			id: 'ffmpeg',
+			version: 'n7.1.5-12',
+			license: 'LGPL-3.0-or-later',
+			bundled: true,
+			sourceUrl: 'https://github.com/FFmpeg/FFmpeg/tree/abc',
+			buildUrl: 'https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-x',
+			notice: 'FFmpeg source: …',
+		});
+		expect(c!.texts.map((t) => t.title)).toEqual([
+			'GNU Lesser General Public License, version 3',
+			expect.stringContaining('GNU General Public License, version 3'),
+		]);
+	});
+
+	it('a bundled LGPL 2.1 source build has one license text and no prebuilt link', async () => {
+		const c = await ffmpegLicense({
+			ffmpegPath: bundle('LGPL-2.1-or-later', false),
+			ffmpegVersion: '7.1.5',
+			license: 'lgpl',
+		});
+		expect(c).toMatchObject({ license: 'LGPL-2.1-or-later', bundled: true });
+		expect(c!.buildUrl).toBeUndefined();
+		expect(c!.texts.map((t) => t.title)).toEqual(['GNU Lesser General Public License, version 2.1']);
+	});
+
+	it('a system ffmpeg, or a directory whose ffmpeg is not LGPL, is never presented as our bundled build', async () => {
+		const system = await ffmpegLicense({
+			ffmpegPath: '/usr/bin/ffmpeg',
+			ffmpegVersion: '6.1.1',
+			license: 'gpl',
+		});
+		expect(system).toMatchObject({ bundled: false, sourceUrl: FFMPEG_SOURCE_FALLBACK, texts: [] });
+		expect(system!.license).toMatch(/GPL build found on this system/);
+		const swapped = await ffmpegLicense({
+			ffmpegPath: bundle('LGPL-3.0-or-later', true),
+			ffmpegVersion: 'x',
+			license: 'gpl',
+		});
+		expect(swapped).toMatchObject({ bundled: false, texts: [] });
+		expect(await thirdPartyLicenses({ ffmpegPath: null, ffmpegVersion: null, license: 'unknown' })).toEqual({
+			components: [],
+		});
+	});
+
+	const vendor = findVendorDir();
+	it.runIf(vendor !== null)('the vendored directory (pnpm ffmpeg:lgpl) yields a complete entry', async () => {
+		const c = await ffmpegLicense({
+			ffmpegPath: join(vendor!, process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'),
+			ffmpegVersion: null,
+			license: 'lgpl',
+		});
+		expect(c).toMatchObject({ bundled: true, license: expect.stringMatching(/^LGPL-(2\.1|3\.0)-or-later$/) });
+		expect(c!.sourceUrl).toMatch(/^https:\/\/(github\.com\/FFmpeg|ffmpeg\.org)/);
+		expect(c!.texts[0]!.text).toContain('GNU LESSER GENERAL PUBLIC LICENSE');
+		expect(c!.notice).toContain('FFmpeg source:');
+	});
 });
 
 // ---------------------------------------------------------------- two-phase export plan

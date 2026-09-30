@@ -22,6 +22,7 @@ import {
 import { getCommand } from '../commands/registry.ts';
 import type { CommandScope } from '../commands/types.ts';
 import { formatChord } from './keymap/format.ts';
+import { ThirdPartyLicenses } from './licenses.tsx';
 import { prefsStore, useUiPrefs } from './prefs.ts';
 import type { WorkspaceStore } from './workspaces/store.ts';
 
@@ -261,7 +262,7 @@ function AboutDialog(props: HostedDialogProps<{ engineVersion?: string | null }>
 			open
 			onOpenChange={(o) => !o && props.close()}
 			title="About JasperEditor"
-			size="small"
+			size="medium"
 			data-testid="about-dialog"
 		>
 			<div className="flex flex-col gap-2">
@@ -270,9 +271,10 @@ function AboutDialog(props: HostedDialogProps<{ engineVersion?: string | null }>
 					An agentic video editor. Engine {props.engineVersion ?? 'not connected'}.
 				</p>
 				<p className="text-pr-small text-pr-muted">
-					Uses Remotion (company license terms apply), FFmpeg (run as a separate process), fframes, dockview,
-					Radix UI, lucide and Source Sans 3 (SIL OFL).
+					Uses Remotion (company license terms apply), FFmpeg (LGPL build, run as a separate process),
+					fframes, dockview, Radix UI, lucide and Source Sans 3 (SIL OFL).
 				</p>
+				<ThirdPartyLicenses />
 			</div>
 		</Dialog>
 	);
