@@ -27,6 +27,10 @@ export async function ensureMgService(app: FastifyInstance): Promise<MgService> 
 		emit: (type, job) => (services.events as EventSink | undefined)?.publish?.(type, job, job.projectId),
 	});
 	services[MG_SERVICE_KEY] = service;
+	// Graceful shutdown (S04:ENG-004): kill jasper-mg/ffmpeg children and remove their temp dirs.
+	app.addHook('onClose', async () => {
+		await service.shutdown();
+	});
 	await service.refresh();
 	const cap = service.capability();
 	app.log.info(`[mg] fframes ${cap.fframes}${cap.fframesReason ? `: ${cap.fframesReason}` : ''}`);

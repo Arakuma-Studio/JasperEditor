@@ -388,6 +388,15 @@ export function createMgService(opts: MgServiceOptions) {
 		return { ...rec.job };
 	}
 
+	/** Cancels every queued/running render and waits for them to settle (engine shutdown). */
+	async function shutdown(): Promise<void> {
+		const active = [...jobs.values()].filter((r) =>
+			['queued', 'running', 'cancelling'].includes(r.job.state),
+		);
+		for (const r of active) cancel(r.job.id);
+		await Promise.all(active.map((r) => r.done));
+	}
+
 	/**
 	 * Renders (or reuses) the master of a spec; null when fframes is unavailable, the render fails or
 	 * `signal` aborts (a job this call started is then cancelled; a joined job keeps running).
@@ -450,6 +459,7 @@ export function createMgService(opts: MgServiceOptions) {
 		fileFor,
 		requestRender,
 		cancel,
+		shutdown,
 		getJob: (id: string) => {
 			const rec = jobs.get(id);
 			return rec ? { ...rec.job } : null;

@@ -307,6 +307,16 @@ describe.skipIf(!canRender)('real jasper-mg renders', () => {
 		ac.abort();
 		expect(await pending).toBeNull();
 		await vi.waitFor(() => expect(service.getJob(hookJob!.id)?.state).toBe('cancelled'), { timeout: 10_000 });
+
+		// shutdown cancels running renders and leaves no temp output behind
+		const last = { ...lt150, durationFrames: 3002 };
+		const { job: running, done: runningDone } = service.requestRender(last, 'master');
+		await new Promise((r) => setTimeout(r, 400));
+		await service.shutdown();
+		expect((await runningDone).state).toBe('cancelled');
+		expect(service.getJob(running.id)?.state).toBe('cancelled');
+		const lastDir = join(appdir, 'mg', service.renderKey(service.validateSpec(last)));
+		expect(existsSync(lastDir) ? readdirSync(lastDir) : []).toEqual([]);
 	}, 60_000);
 });
 
