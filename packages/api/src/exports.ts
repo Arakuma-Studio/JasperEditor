@@ -109,6 +109,11 @@ export const ExportResultSchema = z.object({
 	/** ffmpeg video encoder and container actually used (D-13). */
 	encoder: z.string().optional(),
 	container: z.enum(['mp4', 'webm']).optional(),
+	/**
+	 * Remotion path only (D-13, wp-lgpl): `intermediate` = Remotion rendered ProRes and the engine encoded the
+	 * deliverable; `direct` = Remotion encoded it (VP9/Opus, or H.264 in a GPL dev setup).
+	 */
+	remotionOutput: z.enum(['direct', 'intermediate']).optional(),
 });
 export type ExportResult = z.infer<typeof ExportResultSchema>;
 

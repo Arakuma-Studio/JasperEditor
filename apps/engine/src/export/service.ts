@@ -13,6 +13,7 @@ import type { FontCatalogService } from '../fonts/catalog.ts';
 import type { JobQueue } from '../jobs/queue.ts';
 import { type JobContext, JobError } from '../jobs/types.ts';
 import type { MediaRegistry } from '../media/registry.ts';
+import { appendEncoderArgs, planRemotionExport } from '../remotion/export-plan.ts';
 import type { RemotionService } from '../remotion/service.ts';
 import { audioEncodeArgs, type EncoderService, videoEncodeArgs } from '../tools/encoders.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
@@ -328,6 +329,7 @@ export class ExportService {
 		frames: number,
 		ctx: JobContext,
 		from: number,
+		stage: string,
 	): Promise<void> {
 		const o = planned.output;
 		const choice = o.encoder!;
@@ -385,7 +387,7 @@ export class ExportService {
 			onProgress: (p) => {
 				if (total <= 0) return;
 				const done = Math.min(total, p.outTimeUs / 1e6);
-				ctx.progress(from + (done / total) * (0.98 - from), { stage: `Encoding (${choice.label})` });
+				ctx.progress(from + (done / total) * (0.98 - from), { stage: `${stage} · Encoding` });
 			},
 		});
 	}
@@ -440,6 +442,7 @@ export class ExportService {
 		const output = join(dir, `output.${encoder?.container ?? 'mp4'}`);
 		ctx.addPartial(dir);
 		let frames: number;
+		let remotionOutput: 'direct' | 'intermediate' | undefined;
 		let path = planned.plan.path;
 		let masters = new Map<string, string>();
 		if (path === 'native') {
@@ -456,25 +459,57 @@ export class ExportService {
 		} else {
 			const cores = availableParallelism();
 			const seqW = planned.snapshot.settings.width;
-			// D-13: only a dev build whose selected encoder is libx264 (or that has no encoder at all) lets
-			// Remotion encode H.264 itself; otherwise Remotion writes a ProRes intermediate that our own
-			// ffmpeg encodes with the selected (LGPL-compatible) encoder.
-			const direct = !encoder || encoder.encoder === 'libx264';
-			const target = direct ? output : join(await ctx.scratchDir(), 'remotion-intermediate.mov');
-			const share = direct ? 0.98 : 0.8;
-			ctx.progress(0, { stage: 'Preparing Remotion bundle' });
+			// D-13 (wp-lgpl): Remotion renders a ProRes intermediate that our ffmpeg encodes with the selected
+			// encoder, or encodes VP9/Opus itself; only a dev setup with GPL builds on both sides lets Remotion
+			// encode H.264 (see remotion/export-plan.ts).
+			const rp = planRemotionExport({
+				encoder,
+				remotion: this.deps.remotion.ffmpegInfo,
+				lgplOnly: this.deps.encoders?.inventory.lgplOnly ?? false,
+				crf: planned.output.crf,
+				speed: planned.output.speed,
+				fps: planned.output.fps,
+			});
+			if (rp.mode === 'unavailable') throw new JobError(rp.code, rp.reason, false);
+			ctx.log(`remotion export: ${rp.mode} (${rp.reason})`);
+			remotionOutput = rp.mode;
+			const render = rp.phases[0]!;
+			const target =
+				rp.mode === 'direct' ? output : join(await ctx.scratchDir(), 'remotion-intermediate.mov');
+			ctx.progress(0, { stage: `${render.label} · Preparing bundle` });
 			const res = await this.deps.remotion.renderMedia({
 				inputProps: this.remotionProps(planned),
 				output: target,
 				signal: ctx.signal,
 				concurrency: Math.max(1, Math.min(ctx.slots, Math.floor(cores / 2))),
-				crf: planned.output.crf,
+				crf: rp.mode === 'direct' ? rp.crf : planned.output.crf,
 				x264Preset: planned.output.x264Preset,
-				...(direct ? {} : { intermediate: true }),
+				audioBitrateKbps: planned.output.audioBitrateKbps,
+				...(rp.mode === 'intermediate' ? { intermediate: true } : {}),
+				...(rp.mode === 'direct' && rp.codec === 'vp9'
+					? {
+							vp9: {
+								crf: rp.crf,
+								colorSpace: rp.colorSpace,
+								ffmpegOverride: appendEncoderArgs('libvpx-vp9', rp.extraVideoArgs),
+							},
+						}
+					: {}),
 				...(planned.output.width !== seqW ? { scale: planned.output.width / seqW } : {}),
-				onProgress: (p) => ctx.progress(p.progress * share, { stage: `${p.stage} (Remotion)` }),
+				onProgress: (p) =>
+					ctx.progress(p.progress * render.weight, { stage: `${render.label} · ${p.stage}` }),
 			});
-			if (!direct) await this.encodeIntermediate(planned, target, output, res.frames, ctx, share);
+			if (rp.mode === 'intermediate') {
+				await this.encodeIntermediate(
+					planned,
+					target,
+					output,
+					res.frames,
+					ctx,
+					render.weight,
+					rp.phases[1]!.label,
+				);
+			}
 			const count = await this.deps.ff.countVideoFrames(output, { signal: ctx.signal });
 			if (count !== res.frames) {
 				throw new JobError(
@@ -502,6 +537,7 @@ export class ExportService {
 			frames,
 			path: finalPath,
 			renderPath: path,
+			...(remotionOutput ? { remotionOutput } : {}),
 			planId: planned.plan.planId,
 		};
 		this.deps.broadcaster.publish(

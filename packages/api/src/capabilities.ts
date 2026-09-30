@@ -58,6 +58,23 @@ export const EncodingCapabilitiesSchema = z.object({
 });
 export type EncodingCapabilities = z.infer<typeof EncodingCapabilitiesSchema>;
 
+/**
+ * FFmpeg used by the Remotion render path (`render.remotionBinaries`, D-13): our LGPL binaries directory
+ * (env `JASPER_REMOTION_BIN_DIR` → packaged `<resources>/ffmpeg-lgpl` → dev `vendor/ffmpeg-lgpl/<platform>`)
+ * or, in dev only, Remotion's bundled GPL build. Packaged engines without the directory report `missing`
+ * and `remotionLocal: 'unavailable'`.
+ */
+export const RemotionBinariesSchema = z.object({
+	source: z.enum(['env', 'resources', 'vendor', 'bundled', 'missing']),
+	lgpl: z.boolean(),
+	/** License of the directory's ffmpeg (`-version` configuration); null for the bundled/missing build. */
+	license: z.enum(['lgpl', 'gpl', 'nonfree', 'unknown']).nullable(),
+	ffmpegVersion: z.string().nullable(),
+	/** Warning or refusal, e.g. "Remotion is using its bundled GPL FFmpeg (dev only)". */
+	message: z.string().optional(),
+});
+export type RemotionBinariesInfo = z.infer<typeof RemotionBinariesSchema>;
+
 export const EngineCapabilitiesSchema = z.object({
 	engine: z.object({
 		version: z.string(),
@@ -73,10 +90,14 @@ export const EngineCapabilitiesSchema = z.object({
 		filters: z.array(z.string()),
 		/** Encoder selection (D-13); additive, absent on older engines. */
 		encoding: EncodingCapabilitiesSchema.optional(),
+		/** Where the engine's ffmpeg came from (D-13 order: env → resources → vendor → PATH); additive. */
+		ffmpegSource: z.enum(['env', 'resources', 'vendor', 'path', 'missing']).optional(),
 	}),
 	render: z.object({
 		native: z.boolean(),
 		remotionLocal: z.enum(['ready', 'needs-browser-download', 'unavailable']),
+		/** FFmpeg of the Remotion path (D-13, wp-lgpl); additive. */
+		remotionBinaries: RemotionBinariesSchema.optional(),
 		fframes: z.enum(['ready', 'unavailable']),
 		fframesReason: z.string().optional(),
 	}),

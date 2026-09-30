@@ -103,7 +103,13 @@ describe('capabilities and fonts', () => {
 			pathRegistration: true,
 		});
 		expect(caps.media.ffmpegVersion).toBeTruthy();
-		expect(caps.media.encoders).toEqual(expect.arrayContaining(['libx264', 'aac']));
+		expect(caps.media.encoders).toEqual(expect.arrayContaining(['aac']));
+		// D-13: the vendored LGPL build has OpenH264, a system dev build libx264.
+		expect(caps.media.encoders.some((e) => e === 'libx264' || e === 'libopenh264')).toBe(true);
+		expect(['vendor', 'path', 'env']).toContain(caps.media.ffmpegSource);
+		expect(caps.render.remotionBinaries).toMatchObject({
+			source: expect.stringMatching(/^(vendor|bundled)$/),
+		});
 		expect(caps.media.filters).toEqual(expect.arrayContaining(['overlay', 'amix', 'scale']));
 		expect(caps.render.native).toBe(true);
 		expect(['ready', 'needs-browser-download']).toContain(caps.render.remotionLocal);

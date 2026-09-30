@@ -8,7 +8,7 @@ import type { Broadcaster } from '../events/broadcaster.ts';
 import type { FontCatalogService } from '../fonts/catalog.ts';
 import type { RemotionService } from '../remotion/service.ts';
 import type { EncoderService } from './encoders.ts';
-import type { SelfCheck } from './ffmpeg.ts';
+import type { FfmpegSource, SelfCheck } from './ffmpeg.ts';
 import { freeDiskBytes } from './fs.ts';
 
 type DeepPartial<T> = {
@@ -34,6 +34,17 @@ function merge<T>(base: T, patch: unknown): T {
 	return out as T;
 }
 
+function remotionBinaries(r: RemotionService): EngineCapabilities['render']['remotionBinaries'] {
+	const b = r.binaries;
+	return {
+		source: b.source,
+		lgpl: b.lgpl,
+		license: b.license,
+		ffmpegVersion: b.ffmpegVersion,
+		...(b.message ? { message: b.message } : {}),
+	};
+}
+
 export class CapabilityService {
 	private readonly providers = new Set<CapabilityProvider>();
 
@@ -41,6 +52,8 @@ export class CapabilityService {
 		private readonly deps: {
 			config: EngineConfig;
 			selfCheck: SelfCheck;
+			/** D-13 resolution result of the engine's ffmpeg. */
+			ffmpegSource?: FfmpegSource;
 			/** Encoder inventory and selection (D-13); absent = derived from the self-check only. */
 			encoders?: EncoderService;
 			remotion: RemotionService;
@@ -87,11 +100,13 @@ export class CapabilityService {
 				encoders: sc.encoders,
 				filters: sc.filters,
 				...(encoding ? { encoding } : {}),
+				...(this.deps.ffmpegSource ? { ffmpegSource: this.deps.ffmpegSource } : {}),
 			},
 			render: {
 				// The self-check found the filters + AAC; the selector must also find a usable video encoder.
 				native: sc.nativeRender && (encoding ? encoding.export !== null : true),
 				remotionLocal: this.deps.remotion.state(),
+				remotionBinaries: remotionBinaries(this.deps.remotion),
 				fframes: 'unavailable',
 				fframesReason: 'The jasper-mg renderer is not registered',
 			},

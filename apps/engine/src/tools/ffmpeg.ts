@@ -5,9 +5,13 @@ import { existsSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { ENV } from '@jasper/config';
 import { parseBuildLicense, parseHwaccels } from './encoders.ts';
+import { RESOURCES_LGPL_DIR } from './lgpl.ts';
 import { runTool, type SpawnOptions, spawnTool, ToolError } from './process.ts';
 
 export type BinaryPaths = { ffmpeg: string | null; ffprobe: string | null };
+
+/** Where the ffmpeg binary came from (D-13 resolution order). */
+export type FfmpegSource = 'env' | 'resources' | 'vendor' | 'path' | 'missing';
 
 function onPath(name: string, env: Record<string, string | undefined>): string | null {
 	const exe = process.platform === 'win32' ? `${name}.exe` : name;
@@ -20,24 +24,40 @@ function onPath(name: string, env: Record<string, string | undefined>): string |
 }
 
 /**
- * Resolution order: `JASPER_FFMPEG`/`JASPER_FFPROBE` → packaged resources (`<resourcesDir>/bin`) → PATH.
- * Returns null for a binary that cannot be found (capabilities degrade, the engine keeps running).
+ * Resolution order (ARCHITECTURE D-13): `JASPER_FFMPEG`/`JASPER_FFPROBE` → packaged resources
+ * (`<resourcesDir>/bin`, then the LGPL binaries directory `<resourcesDir>/ffmpeg-lgpl`) → the dev vendor
+ * directory (`pnpm ffmpeg:lgpl`, see tools/lgpl.ts) → PATH. Returns null for a binary that cannot be found
+ * (capabilities degrade, the engine keeps running).
  */
 export function resolveBinaries(
-	opts: { env?: Record<string, string | undefined>; resourcesDir?: string | null } = {},
-): BinaryPaths {
+	opts: {
+		env?: Record<string, string | undefined>;
+		resourcesDir?: string | null;
+		/** `vendor/ffmpeg-lgpl/<platform>` of a dev checkout (null: none). */
+		vendorDir?: string | null;
+	} = {},
+): BinaryPaths & { source: FfmpegSource } {
 	const env = opts.env ?? process.env;
-	const pick = (name: 'ffmpeg' | 'ffprobe', envName: string): string | null => {
+	const exe = (name: string) => (process.platform === 'win32' ? `${name}.exe` : name);
+	const dirs: [Exclude<FfmpegSource, 'env' | 'path' | 'missing'>, string][] = [];
+	if (opts.resourcesDir) {
+		dirs.push(['resources', join(opts.resourcesDir, 'bin')]);
+		dirs.push(['resources', join(opts.resourcesDir, RESOURCES_LGPL_DIR)]);
+	}
+	if (opts.vendorDir) dirs.push(['vendor', opts.vendorDir]);
+	const pick = (name: 'ffmpeg' | 'ffprobe', envName: string): [string | null, FfmpegSource] => {
 		const explicit = env[envName];
-		if (explicit) return existsSync(explicit) ? explicit : null;
-		if (opts.resourcesDir) {
-			const exe = process.platform === 'win32' ? `${name}.exe` : name;
-			const p = join(opts.resourcesDir, 'bin', exe);
-			if (existsSync(p)) return p;
+		if (explicit) return existsSync(explicit) ? [explicit, 'env'] : [null, 'missing'];
+		for (const [source, dir] of dirs) {
+			const p = join(dir, exe(name));
+			if (existsSync(p)) return [p, source];
 		}
-		return onPath(name, env);
+		const p = onPath(name, env);
+		return [p, p ? 'path' : 'missing'];
 	};
-	return { ffmpeg: pick('ffmpeg', ENV.FFMPEG), ffprobe: pick('ffprobe', ENV.FFPROBE) };
+	const [ffmpeg, source] = pick('ffmpeg', ENV.FFMPEG);
+	const [ffprobe] = pick('ffprobe', ENV.FFPROBE);
+	return { ffmpeg, ffprobe, source };
 }
 
 export type FfmpegProgress = {
