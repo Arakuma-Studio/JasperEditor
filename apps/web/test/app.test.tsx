@@ -49,6 +49,9 @@ describe('web app', () => {
 		for (const kind of ['program', 'timeline', 'project', 'properties']) {
 			expect(document.querySelector(`[data-slot="${kind}"]`)).toBeTruthy();
 		}
-		expect(screen.getAllByText(/Demo project · rev 0/).length).toBeGreaterThan(0);
+		// The real Project panel (WP-2E) replaced the placeholder that printed "Demo project · rev 0".
+		await waitFor(() =>
+			expect(screen.getByTestId('project-breadcrumb').textContent).toContain('Demo project'),
+		);
 	});
 });
