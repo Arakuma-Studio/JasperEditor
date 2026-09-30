@@ -79,14 +79,8 @@ describe('transactions (S01 §16)', () => {
 		expect(clip.opacity.keyframes.map((k) => k.value)).toEqual([0, 100]);
 		expect(clip.layoutPending).toBe(true);
 		expect(h.seq.markers[0]!.author).toEqual({ agent: 'editor-assistant' });
-		// The blur half of AC-10 needs effect.add, which WP-2D implements.
-		const blur = h.tx([
-			{ type: 'effect.add', target: { clipId: r.refs.$title }, effectId: 'jasper.gaussian-blur' },
-		]);
-		expect(blur.ok).toBe(false);
-		if (!blur.ok) expect(blur.errors[0]!.code).toBe('E_NOT_IMPLEMENTED');
+		// The blur half of AC-10 (effect.add, WP-2D) is covered in keyframe-effect.test.ts.
 	});
-	it.todo('AC-10 (blur part): text + gaussian blur via temp ref — lands with WP-2D effect.add');
 
 	it('AC-11: stale expectedRevision is refused when it touches a changed clip, fast-forwards otherwise', () => {
 		const h = new Harness();
@@ -252,8 +246,6 @@ describe('catalog (ARCHITECTURE §5.3)', () => {
 		for (const cmd of [
 			{ type: 'clip.slip', clipIds: [id], deltaFrames: 1 },
 			{ type: 'clip.setSpeed', clipIds: [id], rate: 2, ripple: false },
-			{ type: 'keyframes.prune', clipId: id },
-			{ type: 'effect.remove', effectInstanceId: 'fx_0000000000000001' },
 			{ type: 'sequence.delete', sequenceId: h.seqId },
 			{ type: 'gap.close', trackId: 'V1', at: 5 },
 		]) {
