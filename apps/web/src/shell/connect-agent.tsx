@@ -167,7 +167,7 @@ function Snippet({ s }: { s: AgentSnippet }) {
 					{copied ? 'Copied' : 'Copy'}
 				</button>
 			</div>
-			<pre className="max-h-44 overflow-auto rounded-pr-control bg-pr-field-deep p-2 font-pr-mono text-pr-small whitespace-pre-wrap break-all text-pr-text select-text">
+			<pre className="max-h-64 overflow-auto rounded-pr-control bg-pr-field-deep p-2 font-pr-mono text-pr-small whitespace-pre-wrap break-all text-pr-text select-text">
 				{s.text}
 			</pre>
 		</div>

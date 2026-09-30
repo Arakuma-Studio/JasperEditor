@@ -10,6 +10,7 @@ import {
 	isWindowAction,
 	MEDIA_EXTENSIONS,
 	makeToken,
+	mcpLaunchInfo,
 } from '../src/security.ts';
 
 describe('desktop security helpers', () => {
@@ -36,8 +37,36 @@ describe('desktop security helpers', () => {
 		expect(isRevealablePath('relative/x')).toBe(false);
 		expect(isRevealablePath('/x\0y')).toBe(false);
 		expect(isWindowAction('close')).toBe(true);
+		expect(isWindowAction('focus')).toBe(true);
 		expect(isWindowAction('rm -rf')).toBe(false);
 		expect(MEDIA_EXTENSIONS).toContain('mov');
+	});
+});
+
+describe('jasper-mcp launch info (Help ▸ Connect an AI Agent…)', () => {
+	it('packaged apps run the bundle with their own binary as Node; checkouts use node', () => {
+		expect(
+			mcpLaunchInfo({
+				packaged: true,
+				entry: '/opt/JasperEditor/resources/mcp/jasper-mcp.mjs',
+				exists: true,
+				execPath: '/opt/JasperEditor/jasper-editor',
+			}),
+		).toEqual({
+			entry: '/opt/JasperEditor/resources/mcp/jasper-mcp.mjs',
+			command: '/opt/JasperEditor/jasper-editor',
+			env: { ELECTRON_RUN_AS_NODE: '1' },
+		});
+		expect(
+			mcpLaunchInfo({
+				packaged: false,
+				entry: '/repo/apps/mcp/dist/jasper-mcp.mjs',
+				exists: true,
+				execPath: '/e',
+			}),
+		).toEqual({ entry: '/repo/apps/mcp/dist/jasper-mcp.mjs', command: 'node', env: {} });
+		// Not built: the dialog falls back to the engine's answer or a placeholder.
+		expect(mcpLaunchInfo({ packaged: false, entry: '/x', exists: false, execPath: '/e' }).entry).toBeNull();
 	});
 });
 
@@ -47,7 +76,14 @@ describe('desktop package config (R-OMS §8.5)', () => {
 		expect(pkg.main).toBe('dist-electron/main.mjs');
 		expect(pkg.scripts['start:packaged-like']).toContain('packaged-like');
 		expect(pkg.build.appId).toBe('com.jasper.editor');
-		expect(pkg.build.extraResources.map((r: { to: string }) => r.to)).toEqual(['web', 'engine', 'bin']);
+		const to = pkg.build.extraResources.map((r: { to: string }) => r.to);
+		for (const dir of ['web', 'engine', 'mcp', 'bin']) expect(to).toContain(dir);
+		// jasper-mcp ships as one bundled file: resources/mcp/jasper-mcp.mjs (next to resources/engine).
+		expect(pkg.build.extraResources.find((r: { to: string }) => r.to === 'mcp')).toEqual({
+			from: '../mcp/dist',
+			to: 'mcp',
+			filter: ['jasper-mcp.mjs'],
+		});
 		expect(pkg.build.fileAssociations[0].ext).toBe('jasper');
 		expect(pkg.dependencies ?? {}).toEqual({});
 	});
@@ -55,7 +91,15 @@ describe('desktop package config (R-OMS §8.5)', () => {
 	it('the preload exposes only the documented bridge', () => {
 		const src = readFileSync(join(__dirname, '../src/preload.cts'), 'utf8');
 		expect(src).toContain("exposeInMainWorld('jasperDesktop'");
-		for (const k of ['runtime:', 'pickMedia:', 'revealInFolder:', 'windowControls:', 'onMenuCommand:'])
+		for (const k of [
+			'runtime:',
+			'pickMedia:',
+			'revealInFolder:',
+			'windowControls:',
+			'focusWindow:',
+			'mcpInfo:',
+			'onMenuCommand:',
+		])
 			expect(src).toContain(k);
 		expect(src).not.toMatch(/require\(['"](?!electron)/);
 	});

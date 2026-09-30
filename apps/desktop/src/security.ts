@@ -64,7 +64,27 @@ export function isRevealablePath(p: unknown): p is string {
 	);
 }
 
-export type WindowAction = 'minimize' | 'toggleMaximize' | 'close';
+export type WindowAction = 'minimize' | 'toggleMaximize' | 'close' | 'focus';
 export function isWindowAction(a: unknown): a is WindowAction {
-	return a === 'minimize' || a === 'toggleMaximize' || a === 'close';
+	return a === 'minimize' || a === 'toggleMaximize' || a === 'close' || a === 'focus';
+}
+
+/** How an MCP client launches the jasper-mcp stdio server that ships with the app. */
+export type McpLaunchInfo = { entry: string | null; command: string; env: Record<string, string> };
+
+/**
+ * Packaged builds have no `node`: the app binary runs the bundle as Node (ELECTRON_RUN_AS_NODE=1).
+ * From a checkout (dev / packaged-like) plain `node` is used. `entry` is null when the bundle is missing.
+ */
+export function mcpLaunchInfo(opts: {
+	packaged: boolean;
+	entry: string;
+	exists: boolean;
+	execPath: string;
+}): McpLaunchInfo {
+	return {
+		entry: opts.exists ? opts.entry : null,
+		command: opts.packaged ? opts.execPath : 'node',
+		env: opts.packaged ? { ELECTRON_RUN_AS_NODE: '1' } : {},
+	};
 }

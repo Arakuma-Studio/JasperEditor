@@ -5,6 +5,8 @@
 //                     sets the HttpOnly SameSite=Strict jasper_session cookie, loads the engine origin,
 //                     which serves apps/web/dist (`pnpm build` first)
 //   packaged        → same as packaged-like with resources from process.resourcesPath (M3 installers)
+// The engine writes <appdir>/engine/runtime.json, which is how the bundled jasper-mcp server
+// (resources/mcp/jasper-mcp.mjs; Help ▸ Connect an AI Agent…) finds this app's engine and token.
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -18,6 +20,7 @@ import {
 	isWindowAction,
 	MEDIA_EXTENSIONS,
 	makeToken,
+	mcpLaunchInfo,
 } from './security.ts';
 
 const here = dirname(fileURLToPath(import.meta.url)); // apps/desktop/dist-electron
@@ -45,16 +48,18 @@ function log(msg: string): void {
 	console.log(`[desktop] ${msg}`);
 }
 
-function resources(): { engineEntry: string; webDir: string } {
+function resources(): { engineEntry: string; webDir: string; mcpEntry: string } {
 	if (mode === 'packaged')
 		return {
 			engineEntry: join(process.resourcesPath, 'engine', 'engine.mjs'),
 			webDir: join(process.resourcesPath, 'web'),
+			mcpEntry: join(process.resourcesPath, 'mcp', 'jasper-mcp.mjs'),
 		};
 	const repo = resolve(here, '../../..');
 	return {
 		engineEntry: process.env.JASPER_ENGINE_ENTRY ?? join(repo, 'apps/engine/dist/engine.mjs'),
 		webDir: process.env.JASPER_WEB_DIR ?? join(repo, 'apps/web/dist'),
+		mcpEntry: process.env.JASPER_MCP_ENTRY ?? join(repo, 'apps/mcp/dist/jasper-mcp.mjs'),
 	};
 }
 
@@ -149,6 +154,17 @@ function registerIpc(): void {
 		const r = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
 		return r.canceled ? [] : r.filePaths;
 	});
+	// Help ▸ Connect an AI Agent…: where the bundled jasper-mcp lives and how an MCP client launches it.
+	ipcMain.handle('jasper:mcp-info', (e) => {
+		if (!fromApp(e)) return null;
+		const { mcpEntry } = resources();
+		return mcpLaunchInfo({
+			packaged: mode === 'packaged',
+			entry: mcpEntry,
+			exists: existsSync(mcpEntry),
+			execPath: process.execPath,
+		});
+	});
 	ipcMain.on('jasper:reveal', (e, p: unknown) => {
 		if (fromApp(e) && isRevealablePath(p) && existsSync(p)) shell.showItemInFolder(p);
 	});
@@ -156,7 +172,12 @@ function registerIpc(): void {
 		const win = BrowserWindow.fromWebContents(e.sender);
 		if (!win || !fromApp(e) || !isWindowAction(action)) return;
 		if (action === 'minimize') win.minimize();
-		else if (action === 'toggleMaximize') {
+		else if (action === 'focus') {
+			// An agent asked the editor to show a project (jasper-mcp open_project_in_editor).
+			if (win.isMinimized()) win.restore();
+			win.show();
+			win.focus();
+		} else if (action === 'toggleMaximize') {
 			if (win.isMaximized()) win.unmaximize();
 			else win.maximize();
 		} else win.close();
