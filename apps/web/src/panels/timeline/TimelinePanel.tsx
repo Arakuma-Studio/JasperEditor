@@ -16,7 +16,9 @@ import { LABEL_DISPLAY_NAMES } from '@jasper/ui';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createCommandContext } from '../../commands/context.ts';
 import { runCommand } from '../../commands/registry.ts';
-import { PROJECT_ITEMS_MIME } from '../../state/services.ts';
+import { getImportService, PROJECT_ITEMS_MIME } from '../../state/services.ts';
+import { applyEffectToClips, isEffectDrag, readEffectDragPayload } from '../effects/drag.ts';
+import { insertMotionTemplate, MG_TEMPLATE_MIME, readMgTemplateDrag } from '../motionTemplates/insert.ts';
 import type { PanelProps } from '../types.ts';
 import { ContextMenu, GestureTooltip, SequenceTabs, Toolbar, ZoomBar } from './components/Chrome.tsx';
 import { PlayheadLine, TimecodeReadout } from './components/Playhead.tsx';
@@ -33,6 +35,7 @@ import {
 } from './env.tsx';
 import { mediaCacheVersion } from './media/media-cache.ts';
 import { itemDurationFrames } from './model/drop.ts';
+import { hitTest } from './model/hit.ts';
 import { computeLayout, hitY, regionIndexAt } from './model/layout.ts';
 import { renderSegments } from './model/renderbar.ts';
 import { boundaryFrameAt, extentEnd, followPage, followSmooth, type Viewport } from './model/viewport.ts';
@@ -516,7 +519,14 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 	};
 	const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
 		const types = Array.from(e.dataTransfer?.types ?? []);
-		if (!types.includes(PROJECT_ITEMS_MIME) && !types.includes('Files')) return;
+		// Effects (WP-2D) drop onto the clip under the pointer; no insert/overwrite indicator.
+		if (isEffectDrag(e.dataTransfer)) {
+			e.preventDefault();
+			e.dataTransfer.dropEffect = 'copy';
+			return;
+		}
+		if (!types.includes(PROJECT_ITEMS_MIME) && !types.includes(MG_TEMPLATE_MIME) && !types.includes('Files'))
+			return;
 		e.preventDefault();
 		const t = dropTarget(e);
 		const d = ui.getState().drop;
@@ -527,6 +537,27 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		e.preventDefault();
 		const t = dropTarget(e);
 		ui.setState({ drop: null });
+		const effect = readEffectDragPayload(e.dataTransfer);
+		if (effect) {
+			const p = local(e);
+			const g = geomRef.current;
+			const hit = hitTest(committedSeq, g.layout, g.viewport, p.x, p.y);
+			if (hit.kind !== 'clip') return;
+			const r = applyEffectToClips(session, effect.effectId, [hit.clip.id]);
+			if (!r) toast('warning', 'This effect cannot be applied to that clip.');
+			else if (!r.ok) toast('error', r.errors[0]?.message ?? 'Could not apply the effect.');
+			return;
+		}
+		const mg = readMgTemplateDrag(e.dataTransfer);
+		if (mg) {
+			const trackId = (t.region === 'video' ? committedSeq.videoTracks : [])[t.index]?.id;
+			try {
+				insertMotionTemplate(session, mg.template, { at: t.frame, ...(trackId ? { trackId } : {}) });
+			} catch (err) {
+				toast('error', err instanceof Error ? err.message : String(err));
+			}
+			return;
+		}
 		const raw = e.dataTransfer.getData(PROJECT_ITEMS_MIME);
 		if (raw) {
 			let itemIds: string[] = [];
@@ -541,7 +572,8 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		}
 		const files = Array.from(e.dataTransfer.files ?? []);
 		if (files.length === 0) return;
-		const svc = env.services.get('importService');
+		// WP-2E registers the import service module-wide (state/services.ts); a panel-scoped one wins.
+		const svc = env.services.get('importService') ?? getImportService();
 		if (!svc) {
 			toast('warning', 'Importing files is not available yet (import service not mounted).');
 			return;
