@@ -5,6 +5,7 @@ import { createEmptyProject, createRandomIdSource, defaultRegistries } from '@ja
 import { EditorSession, EngineProjectStore, MemoryProjectStore, type ProjectStore } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
 import { type ReactNode, useEffect, useState } from 'react';
+import { useAgentBridge } from '../agent-bridge/index.ts';
 import { useEngineClient } from './engine.tsx';
 
 export const DEMO_PROJECT_ID = 'demo';
@@ -63,6 +64,7 @@ export function ProjectSessionHost(props: {
 	fallback: (state: SessionHostState) => ReactNode;
 }) {
 	const state = useProjectSession(props.projectId);
+	useAgentBridge(state.status === 'open' ? state.session : null); // WP-2H: window.jasper + WS /agent relay
 	if (state.status !== 'open') return <>{props.fallback(state)}</>;
 	return <SessionProvider session={state.session}>{props.children}</SessionProvider>;
 }
