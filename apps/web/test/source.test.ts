@@ -1,3 +1,4 @@
+import { EngineClient } from '@jasper/engine-client';
 import {
 	applyTransaction,
 	createCounterIdSource,
@@ -5,8 +6,10 @@ import {
 	defaultRegistries,
 	FLICKS_PER_SECOND,
 } from '@jasper/project';
-import { EditorSession } from '@jasper/session';
+import { EditorSession, TransportStore } from '@jasper/session';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { createCommandContext, registerAllCommands, runCommand } from '../src/commands/index.ts';
+import { setSourceTransport } from '../src/panels/program/transport-registry.ts';
 import {
 	closeSource,
 	openInSource,
@@ -137,6 +140,38 @@ describe('Source monitor state (S03:SRC-001…004)', () => {
 		const ins = performSourceEdit(session, 'insert');
 		expect(ins.ok).toBe(true);
 		expect(session.getState().history.entries.at(-1)!.label).toBe('Insert');
+	});
+
+	it('with the Source monitor focused, I/O and Shift+I act on the source item, not the sequence', async () => {
+		registerAllCommands();
+		const { session, itemId } = makeSession();
+		openInSource(session, itemId);
+		const t = new TransportStore();
+		setSourceTransport(t);
+		try {
+			const ctx = createCommandContext({
+				engine: new EngineClient({ baseUrl: '' }),
+				session,
+				focus: { panel: 'source', instanceId: 's' },
+			});
+			t.seek(30);
+			expect((await runCommand('timeline.markIn', ctx)).ran).toBe(true);
+			sourceMonitorState.setState({ markIn: 30 }); // mirrored by <SourceMonitor> from the document
+			t.seek(89);
+			expect((await runCommand('timeline.markOut', ctx)).ran).toBe(true);
+			const item = session.getCommitted().items[itemId] as {
+				marks: { in: { flicks: number }; out: { flicks: number } };
+			};
+			expect(item.marks.in.flicks).toBe(FLICKS_PER_SECOND);
+			expect(item.marks.out.flicks).toBe(3 * FLICKS_PER_SECOND);
+			const seq = Object.values(session.getCommitted().sequences)[0]!;
+			expect([seq.inPoint, seq.outPoint]).toEqual([null, null]);
+			t.seek(200);
+			await runCommand('timeline.goToIn', ctx);
+			expect(t.getState().frame).toBe(30);
+		} finally {
+			setSourceTransport(null);
+		}
 	});
 
 	it('refuses when nothing is open', () => {

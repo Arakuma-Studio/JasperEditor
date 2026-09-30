@@ -10,6 +10,8 @@ import {
 	trackLabel,
 } from '@jasper/project';
 import type { ActiveTool, EditorSession, SequenceViewState } from '@jasper/session';
+import { getSourceTransport } from '../panels/program/transport-registry.ts';
+import { setSourceMarks, sourceMonitorState } from '../panels/source/source-state.ts';
 import { activeTimeline, type TimelineHandle } from '../panels/timeline/env.tsx';
 import { clipsAtPlayhead, unlockedTrackIds } from '../panels/timeline/model/gestures.ts';
 import { stepHeight, trackHeight } from '../panels/timeline/model/layout.ts';
@@ -104,6 +106,75 @@ function seekReveal(e: Env, frame: number): void {
 	e.session.transport.seek(frame);
 	e.handle?.controller.reveal(frame);
 }
+
+// ---------------------------------------------------------------- Source monitor marks (S03:SRC-003)
+
+type SourceMarkAction = 'in' | 'out' | 'clearIn' | 'clearOut' | 'clearInOut' | 'goToIn' | 'goToOut';
+
+/** The Source monitor is focused with an item open: In/Out commands act on that item (WP-2C). */
+function sourceFocused(ctx: CommandCtx): boolean {
+	return (
+		ctx.focus.panel === 'source' &&
+		!!ctx.session &&
+		getSourceTransport() !== null &&
+		sourceMonitorState.getState().itemId !== null
+	);
+}
+
+function sourceMarks(ctx: CommandCtx, action: SourceMarkAction): boolean {
+	const t = getSourceTransport();
+	if (!sourceFocused(ctx) || !t || !ctx.session) return false;
+	const s = ctx.session;
+	const st = sourceMonitorState.getState();
+	const f = t.getState().frame;
+	const seek = (frame: number) => {
+		if (t.getState().playing) t.pause();
+		t.seek(Math.max(0, Math.min(st.durationFrames - 1, frame)));
+	};
+	switch (action) {
+		case 'in':
+			setSourceMarks(s, { in: f }, 'Mark In');
+			break;
+		case 'out':
+			setSourceMarks(s, { out: f + 1 }, 'Mark Out');
+			break;
+		case 'clearIn':
+			setSourceMarks(s, { in: null }, 'Clear In');
+			break;
+		case 'clearOut':
+			setSourceMarks(s, { out: null }, 'Clear Out');
+			break;
+		case 'clearInOut':
+			setSourceMarks(s, { in: null, out: null }, 'Clear In and Out');
+			break;
+		case 'goToIn':
+			seek(st.markIn ?? 0);
+			break;
+		case 'goToOut':
+			seek(st.markOut !== null ? st.markOut - 1 : st.durationFrames - 1);
+			break;
+	}
+	return true;
+}
+
+/** A mark command that defers to the focused Source monitor, else acts on the sequence. */
+const markCmd = (
+	id: string,
+	label: string,
+	action: SourceMarkAction,
+	run: (ctx: CommandCtx, e: Env) => void,
+): UiCommand => ({
+	id,
+	label,
+	scope: 'editing',
+	when: (ctx) => sourceFocused(ctx) || hasSeq(ctx),
+	agentExposed: true,
+	run: (ctx) => {
+		if (sourceMarks(ctx, action)) return;
+		const e = envOf(ctx);
+		if (e) run(ctx, e);
+	},
+});
 
 const cmd = (
 	id: string,
@@ -472,11 +543,11 @@ export const timelineCommands: UiCommand[] = [
 		repeat: true,
 	}),
 
-	cmd('timeline.markIn', 'Mark In', E, (ctx, e) => {
+	markCmd('timeline.markIn', 'Mark In', 'in', (ctx, e) => {
 		const i = e.playhead;
 		setInOut(ctx, e, 'Mark In', i, e.seq.outPoint !== null && e.seq.outPoint <= i ? null : e.seq.outPoint);
 	}),
-	cmd('timeline.markOut', 'Mark Out', E, (ctx, e) => {
+	markCmd('timeline.markOut', 'Mark Out', 'out', (ctx, e) => {
 		const o = e.playhead + 1; // TL-760: the Out frame is included
 		setInOut(ctx, e, 'Mark Out', e.seq.inPoint !== null && e.seq.inPoint >= o ? null : e.seq.inPoint, o);
 	}),
@@ -495,15 +566,19 @@ export const timelineCommands: UiCommand[] = [
 			Math.max(...clips.map((c) => c.start + c.duration)),
 		);
 	}),
-	cmd('timeline.clearIn', 'Clear In', E, (ctx, e) => setInOut(ctx, e, 'Clear In', null, e.seq.outPoint)),
-	cmd('timeline.clearOut', 'Clear Out', E, (ctx, e) => setInOut(ctx, e, 'Clear Out', e.seq.inPoint, null)),
-	cmd('timeline.clearInOut', 'Clear In and Out', E, (ctx, e) =>
+	markCmd('timeline.clearIn', 'Clear In', 'clearIn', (ctx, e) =>
+		setInOut(ctx, e, 'Clear In', null, e.seq.outPoint),
+	),
+	markCmd('timeline.clearOut', 'Clear Out', 'clearOut', (ctx, e) =>
+		setInOut(ctx, e, 'Clear Out', e.seq.inPoint, null),
+	),
+	markCmd('timeline.clearInOut', 'Clear In and Out', 'clearInOut', (ctx, e) =>
 		setInOut(ctx, e, 'Clear In and Out', null, null),
 	),
-	cmd('timeline.goToIn', 'Go to In', E, (_ctx, e) => {
+	markCmd('timeline.goToIn', 'Go to In', 'goToIn', (_ctx, e) => {
 		if (e.seq.inPoint !== null) seekReveal(e, e.seq.inPoint);
 	}),
-	cmd('timeline.goToOut', 'Go to Out', E, (_ctx, e) => {
+	markCmd('timeline.goToOut', 'Go to Out', 'goToOut', (_ctx, e) => {
 		if (e.seq.outPoint !== null) seekReveal(e, e.seq.outPoint - 1);
 	}),
 	cmd('timeline.lift', 'Lift', E, (ctx, e) => liftExtract(ctx, e, false)),
