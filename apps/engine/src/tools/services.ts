@@ -165,6 +165,7 @@ export async function createCoreServices(
 			started = true;
 			queue.start();
 			uploads.start();
+			void exportsSvc.sweepRequests().catch(() => {});
 		},
 		async stop() {
 			uploads.stop();

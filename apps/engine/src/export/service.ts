@@ -40,6 +40,9 @@ type StoredRequest =
 
 export const JOB_ID_RE = /^job_[0-9a-f]{16}$/;
 
+/** Same retention as the job journal (S04:JB-030: 7 days): older jobs cannot be retried anyway. */
+export const REQUEST_RETENTION_MS = 7 * 24 * 3600 * 1000;
+
 export type ExportServiceDeps = {
 	rendersDir: string;
 	ff: Ffmpeg;
@@ -71,8 +74,51 @@ export class ExportService {
 	}
 
 	registerRunners(): void {
-		this.deps.queue.registerRunner('export', (ctx) => this.runExport(ctx));
-		this.deps.queue.registerRunner('still', (ctx) => this.runStill(ctx));
+		this.deps.queue.registerRunner('export', (ctx) =>
+			this.withRequestCleanup(ctx, () => this.runExport(ctx)),
+		);
+		this.deps.queue.registerRunner('still', (ctx) => this.withRequestCleanup(ctx, () => this.runStill(ctx)));
+	}
+
+	/**
+	 * Stored requests are removed when the job succeeds (runners) or fails for good (here). Retryable failures
+	 * and cancellations keep theirs: `POST /api/jobs/:id/retry` re-runs the same input. `sweepRequests()`
+	 * removes those once they are older than the job journal's retention.
+	 */
+	private async withRequestCleanup(ctx: JobContext, run: () => Promise<unknown>): Promise<unknown> {
+		try {
+			return await run();
+		} catch (e) {
+			const file = (ctx.input as { request?: unknown } | undefined)?.request;
+			const final = e instanceof JobError && e.retryable === false && !ctx.signal.aborted;
+			if (final && typeof file === 'string') await rm(file, { force: true }).catch(() => {});
+			throw e;
+		}
+	}
+
+	/** Removes stored render requests older than `maxAgeMs` (default: the 7-day job journal retention). */
+	async sweepRequests(maxAgeMs = REQUEST_RETENTION_MS, now = Date.now()): Promise<number> {
+		const dir = join(this.deps.rendersDir, '.requests');
+		let names: string[];
+		try {
+			names = await readdir(dir);
+		} catch {
+			return 0;
+		}
+		let removed = 0;
+		for (const name of names) {
+			if (!name.endsWith('.json')) continue;
+			const file = join(dir, name);
+			try {
+				if (now - (await stat(file)).mtimeMs > maxAgeMs) {
+					await rm(file, { force: true });
+					removed++;
+				}
+			} catch {
+				// raced with a runner removing it
+			}
+		}
+		return removed;
 	}
 
 	async plan(req: {

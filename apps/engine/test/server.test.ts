@@ -143,7 +143,11 @@ describe('engine server (ARCHITECTURE §9.1, §4.2)', () => {
 		const fresh = await app.inject({ method: 'GET', url: '/assets/app-new.js', headers: H });
 		expect(fresh.statusCode).toBe(200);
 		expect(fresh.body).toContain('console.log(2)');
-		const missing = await app.inject({ method: 'GET', url: '/assets/gone.js', headers: { ...H, accept: '*/*' } });
+		const missing = await app.inject({
+			method: 'GET',
+			url: '/assets/gone.js',
+			headers: { ...H, accept: '*/*' },
+		});
 		expect(missing.statusCode).toBe(404);
 		for (const url of [
 			'/api/nope',

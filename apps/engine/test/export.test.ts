@@ -1,6 +1,6 @@
 // Export planner and native export (ARCHITECTURE §9.5, S04 §11–§12, QA-005).
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RenderPlanSchema } from '@jasper/api';
@@ -443,6 +443,50 @@ describe('export destinations and render outputs', () => {
 			'15',
 		);
 	}, 60_000);
+
+	it('removes the stored request of an export that failed for good; sweeps stale requests (WP-3I)', async () => {
+		const core = coreServices(app);
+		const reqDir = join(core.config.paths.rendersDir, '.requests');
+		mkdirSync(reqDir, { recursive: true });
+		const file = join(reqDir, 'req_e2ebroken.json');
+		writeFileSync(
+			file,
+			JSON.stringify({
+				kind: 'export',
+				request: {
+					envelope: { revision: 1, document: { nope: true } },
+					sequenceId: 'seq_missing',
+					settings: {
+						sequenceId: 'seq_missing',
+						range: { type: 'entire' },
+						container: 'mp4',
+						engine: 'auto',
+					},
+				},
+			}),
+		);
+		const job = core.queue.submit({
+			kind: 'export',
+			title: 'bad doc',
+			priority: 'user',
+			cpuSlots: 1,
+			input: { request: file },
+		});
+		const done = await core.queue.wait(job.id);
+		expect(done.state).toBe('failed');
+		expect(done.error?.retryable).toBe(false);
+		expect(existsSync(file)).toBe(false);
+
+		const stale = join(reqDir, 'req_stale.json');
+		const recent = join(reqDir, 'req_recent.json');
+		writeFileSync(stale, '{}');
+		writeFileSync(recent, '{}');
+		const old = new Date(Date.now() - 8 * 24 * 3600 * 1000);
+		utimesSync(stale, old, old);
+		expect(await core.exports.sweepRequests()).toBe(1);
+		expect(existsSync(stale)).toBe(false);
+		expect(existsSync(recent)).toBe(true);
+	});
 
 	it('never serves the output of a render that has not succeeded', async () => {
 		const core = coreServices(app);
