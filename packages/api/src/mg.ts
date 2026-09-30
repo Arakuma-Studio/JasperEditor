@@ -24,7 +24,12 @@ export const MgTemplateCatalogEntrySchema = z.object({
 	defaults: z.record(z.string(), z.unknown()),
 	introFrames: z.number().int().min(0).optional(),
 	outroFrames: z.number().int().min(0).optional(),
+	/** Default clip length when inserted from the Motion Templates panel (S05:MGT-002). */
+	defaultDurationSeconds: z.number().positive().optional(),
+	description: z.string().optional(),
 	canvases: z.array(z.string()),
+	/** true = rendered by the `jasper-mg` binary; false = TS twin only (binary unavailable). */
+	native: z.boolean().optional(),
 });
 export type MgTemplateCatalogEntry = z.infer<typeof MgTemplateCatalogEntrySchema>;
 

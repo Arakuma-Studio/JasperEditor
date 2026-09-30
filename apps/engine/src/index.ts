@@ -93,4 +93,9 @@ export async function startEngine(opts: StartEngineOptions): Promise<RunningEngi
 }
 
 export type { EngineConfig, EngineContext } from './context.ts';
+// Motion graphics (WP-2G). routes/mg.ts creates the service at startup as app.jasper.services.mg.
+// TODO(WP-2F merge): register the MG hooks with WP-2F's engine services in one line each, e.g.
+//   registerCapabilityProvider(mgCapabilityProvider(mg)); setMgMasterProvider(mg.mgMasterProvider);
+// where `mg = app.jasper.services.mg` (see docs/wp-notes/WP-2G.md, "Integration with WP-2F").
+export { createMgService, type MgService, mgCapabilityProvider } from './mg/index.ts';
 export { createServer } from './server.ts';
