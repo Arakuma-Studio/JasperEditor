@@ -6,7 +6,7 @@
 //   libav*/libsw* (or *.dll)   the shared libraries, under the names both our ffmpeg and Remotion's
 //                              compositor load (Linux: libavcodec.so.61 + libavcodec.so symlink)
 //   remotion[.exe]             Remotion's own compositor, copied unmodified from @remotion/compositor-*
-//   LICENSE-FFmpeg.txt, NOTICE-FFmpeg.txt, BUILDINFO.json
+//   LICENSE-FFmpeg.txt (+ COPYING.GPLv3.txt for LGPL 3 builds), NOTICE-FFmpeg.txt, BUILDINFO.json
 //
 // The engine passes this directory to every Remotion call as `binariesDirectory` and uses its ffmpeg for
 // the native path. Sources: a pinned BtbN "lgpl-shared" build (linux-x64, linux-arm64, win32-x64), or a
@@ -253,21 +253,46 @@ function assembleWindows(prefix, dest) {
 	}
 }
 
-function licenseFiles(prefix, dest, origin) {
+/** SPDX id of an LGPL FFmpeg build: `--enable-version3` upgrades LGPL 2.1+ to LGPL 3+. */
+function spdxOf(buildconf) {
+	return /--enable-version3\b/.test(buildconf) ? 'LGPL-3.0-or-later' : 'LGPL-2.1-or-later';
+}
+
+function licenseFiles(prefix, dest, origin, spdx) {
 	const candidates = ['LICENSE.txt', 'LICENSE', 'COPYING.LGPLv2.1', 'COPYING.LGPLv3'];
 	const found = candidates.map((n) => join(prefix, n)).find((p) => existsSync(p));
 	const lic = found ?? join(prefix, 'share', 'doc', 'ffmpeg', 'COPYING.LGPLv2.1');
-	if (existsSync(lic)) copyFileSync(lic, join(dest, 'LICENSE-FFmpeg.txt'));
-	else log('warning: no FFmpeg license file found in the prefix');
+	if (!existsSync(lic)) fail(`no FFmpeg license file found in ${prefix} (expected LICENSE.txt)`);
+	const text = readFileSync(lic, 'utf8');
+	const v3 = spdx === 'LGPL-3.0-or-later';
+	if (
+		!/GNU LESSER GENERAL PUBLIC LICENSE/.test(text) ||
+		!new RegExp(`Version ${v3 ? '3' : '2\\.1'},`).test(text)
+	)
+		fail(`${lic} is not the ${spdx} text this build needs`);
+	copyFileSync(lic, join(dest, 'LICENSE-FFmpeg.txt'));
+	// LGPL 3 is written as additional permissions on top of GPL 3 and must be accompanied by its text.
+	if (v3)
+		copyFileSync(
+			join(ROOT, 'scripts', 'ffmpeg', 'licenses', 'COPYING.GPLv3'),
+			join(dest, 'COPYING.GPLv3.txt'),
+		);
 	writeFileSync(
 		join(dest, 'NOTICE-FFmpeg.txt'),
 		[
 			`This directory contains FFmpeg ${manifest.ffmpeg.version} (${manifest.ffmpeg.describe}) built as an LGPL`,
-			'shared library build (no --enable-gpl, no --enable-nonfree). FFmpeg is free software licensed under the',
-			'GNU Lesser General Public License; see LICENSE-FFmpeg.txt. JasperEditor runs ffmpeg/ffprobe as separate',
-			"processes and does not link FFmpeg into its own code. Remotion's compositor (below) loads the libav*/libsw*",
-			'shared libraries in this directory dynamically; you can replace them with your own build of the same',
-			'FFmpeg release series (same library major versions).',
+			`shared library build (${spdx}; no --enable-gpl, no --enable-nonfree). FFmpeg is free software licensed`,
+			'under the GNU Lesser General Public License; see LICENSE-FFmpeg.txt. JasperEditor runs ffmpeg/ffprobe as',
+			"separate processes and does not link FFmpeg into its own code. Remotion's compositor (below) loads the",
+			'libav*/libsw* shared libraries in this directory dynamically; you can replace them with your own build of',
+			'the same FFmpeg release series (same library major versions).',
+			...(v3
+				? [
+						'',
+						'The LGPL version 3 consists of additional permissions on top of the GNU General Public License',
+						'version 3, so that text is included as COPYING.GPLv3.txt. This FFmpeg build is NOT GPL-licensed.',
+					]
+				: []),
 			'',
 			`FFmpeg source: ${manifest.ffmpeg.sourceUrl}`,
 			`Release tarball: ${manifest.ffmpeg.sourceTarball}`,
@@ -336,7 +361,7 @@ function staticVerify(dest) {
 }
 
 /** Bump when the assembly itself changes (layout, notices, checks): existing directories are rebuilt. */
-const ASSEMBLY_VERSION = 2;
+const ASSEMBLY_VERSION = 3;
 
 /** Hash of every input that determines the assembled directory (re-assemble when it changes). */
 function fingerprint() {
@@ -382,9 +407,9 @@ async function main() {
 	else assembleUnix(prefix, tmp);
 	copyFileSync(compositor, join(tmp, names.compositor));
 	if (!key.startsWith('win32')) chmodSync(join(tmp, names.compositor), 0o755);
-	licenseFiles(prefix, tmp, origin);
-
 	const verified = key === host ? hostVerify(tmp) : staticVerify(tmp);
+	const spdx = spdxOf(verified.buildconf);
+	licenseFiles(prefix, tmp, origin, spdx);
 	const files = {};
 	for (const n of readdirSync(tmp).sort()) {
 		const p = join(tmp, n);
@@ -400,7 +425,7 @@ async function main() {
 				ffmpeg: {
 					version: verified.version,
 					describe: manifest.ffmpeg.describe,
-					license: manifest.ffmpeg.license,
+					license: spdx,
 					sourceUrl: manifest.ffmpeg.sourceUrl,
 					origin,
 					buildconf: verified.buildconf,
