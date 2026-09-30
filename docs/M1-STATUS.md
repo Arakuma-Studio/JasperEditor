@@ -38,11 +38,22 @@ moved out of the checkout.
 
 These are not M1 blockers. Details are in the follow-ups below and in `docs/wp-notes/INTEGRATION-W3.md`.
 
-- **Packaging blocker (D-13):** the Remotion compositor ships a GPL/nonfree FFmpeg. The engine's own ffmpeg
-  path is LGPL-safe (the encoder selector never requires x264), but a shippable build needs a decision on the
-  Remotion render path (see `wp-notes/wp-3l.md`).
-- **Not run on real hardware:** OpenH264 or hardware H.264 export has not run on an LGPL ffmpeg or a GPU host.
-  Only the argument sets are unit-tested.
+- ~~**Packaging blocker (D-13):** the Remotion compositor ships a GPL/nonfree FFmpeg.~~ **Resolved after M1
+  (wp-lgpl, `wp-notes/wp-lgpl.md`):** the Remotion path uses our LGPL FFmpeg 7.1 through Remotion's
+  `binariesDirectory` (`pnpm ffmpeg:lgpl`, sha256-pinned); packaged builds ship it as
+  `<resources>/ffmpeg-lgpl`, never stage `@remotion/compositor-*`, and the license guard (`pnpm ffmpeg:check`,
+  electron-builder `afterPack`) fails the build on any GPL/nonfree FFmpeg. Verified on Linux x64 (Remotion
+  export on the LGPL build, unpacked desktop build, `pnpm e2e:packaged`). What remains before distribution:
+  - macOS: the from-source LGPL build and the dylib loading under the hardened runtime are not run on a Mac
+    (the same build script was built and run on Linux);
+  - Windows: the LGPL directory and an unpacked app were assembled and checked statically (license strings,
+    every import of `remotion.exe` resolves), but never run on Windows;
+  - license review items: H.264/AAC patent coverage of a self-built OpenH264 (Cisco's grant covers only its
+    own binary), LGPL 3 terms of the BtbN build on sealed installers, and Remotion's company license (D-19);
+  - installers, signing and auto-update stay M3.
+- **Not run on real hardware:** hardware H.264 export has not run on a GPU host (only the argument sets are
+  unit-tested). OpenH264 now runs for real: with `vendor/ffmpeg-lgpl` present every H.264 export and proxy in
+  the unit tests and in `pnpm e2e` is encoded by libopenh264.
 - **Remotion Player stall (4.0.499):** the root cause is unknown. The playback watchdog works around it
   (E2E is stable).
 - **Editing lock:** the lock is not released on `pagehide`, so a reload leaves the project read-only until
@@ -96,9 +107,9 @@ Item 1 clean-clone command: `git clone --branch wp/wp-3i <repo> /tmp/wp3i-clean 
 - **WP-2A / WP-2E (S05 §12.2): remaining commands.** Register the menubar/keymap ids listed in
   `apps/web/test/wiring-audit.test.ts`: clipboard (S01 §20), transitions, captions, shapes, Save As /
   Revert, preferences, keyboard shortcuts dialog, `sequence.settings`, and `timeline.toggleLinkedSelection`.
-- **WP-2F (D-13): OpenH264 / hardware H.264.** Run a native export with an LGPL ffmpeg + libopenh264
-  build and on a GPU host. The WP-3L encoder selector (`apps/engine/src/tools/encoders.ts`) picks them, but
-  only its argument sets are unit-tested here (no libopenh264, no GPU on the dev host).
+- **WP-2F (D-13): hardware H.264.** Run an export on a GPU host. The WP-3L encoder selector
+  (`apps/engine/src/tools/encoders.ts`) picks hardware encoders first, but only their argument sets are
+  unit-tested here (no GPU on the dev host). OpenH264 on the LGPL build is covered since wp-lgpl.
 - **WP-2F (S04:RP-006): audio mix.** Remotion-path exports are about 50 ms longer in container duration
   (AAC padding from Remotion's audio). The frame count is exact.
 - **WP-2H: `panel.focus.agent`.** Drop the duplicate registration in `commands/agent.ts` once the shell's

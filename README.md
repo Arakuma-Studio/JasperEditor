@@ -14,10 +14,13 @@ notes and known gaps are in `docs/wp-notes/`.
 ## Requirements
 
 - Node 20.19+ (tested on 20.20), pnpm 10 (`corepack enable` or `npm i -g pnpm@10`)
-- ffmpeg/ffprobe on `PATH` (system 6.x is fine) for fixtures and the engine. The encoder selector
-  (`apps/engine/src/tools/encoders.ts`, ARCHITECTURE D-13) picks usable hardware H.264, then libopenh264,
-  then libx264 (only in GPL dev builds), and otherwise falls back to AV1/VP9. x264 is never required;
-  `JASPER_FFMPEG_LGPL_ONLY=1` simulates the shipped LGPL build.
+- ffmpeg/ffprobe on `PATH` (system 6.x is fine) for fixtures, and for the engine until the LGPL build is
+  fetched. The encoder selector (`apps/engine/src/tools/encoders.ts`, ARCHITECTURE D-13) picks usable
+  hardware H.264, then libopenh264, then libx264 (only in GPL dev builds), and otherwise falls back to
+  AV1/VP9. x264 is never required; `JASPER_FFMPEG_LGPL_ONLY=1` makes a GPL system build behave like the
+  shipped one.
+- The LGPL FFmpeg that ships with the app: `pnpm ffmpeg:lgpl` (see "FFmpeg (LGPL)" below). Dev works without
+  it; `pnpm e2e`, packaged builds and any non-dev engine need it for the Remotion render path.
 - Optional: cargo for the `jasper-mg` motion-graphics renderer (`pnpm mg:build`; without it motion graphics
   export through Remotion).
 - E2E: Google Chrome at `/usr/bin/google-chrome` (Playwright `channel: 'chrome'`); desktop smoke: `xvfb-run`.
@@ -28,6 +31,7 @@ notes and known gaps are in `docs/wp-notes/`.
 pnpm install
 pnpm fixtures        # fixtures/media/{clip-a.mp4, clip-b.mp4, tone.wav, still.png, phone-rot90.mp4}
 pnpm mg:build        # optional: native/mg → jasper-mg (fframes); the engine then reports fframes: ready
+pnpm ffmpeg:lgpl     # optional in dev: the LGPL FFmpeg + Remotion binaries directory (vendor/ffmpeg-lgpl/)
 pnpm dev             # engine on http://127.0.0.1:47900 + web on http://127.0.0.1:5173 (proxied, same origin)
 ```
 
@@ -43,6 +47,47 @@ pnpm build && pnpm --filter @jasper/desktop start:packaged-like   # engine forke
 
 `ELECTRON_DISABLE_SANDBOX=1` is needed on hosts without the chrome-sandbox SUID helper. A fresh checkout may
 need `node node_modules/.pnpm/electron@*/node_modules/electron/install.js` if the Electron binary is missing.
+
+## FFmpeg (LGPL)
+
+JasperEditor ships an **LGPL FFmpeg** and nothing GPL/nonfree (ARCHITECTURE D-13, `docs/wp-notes/wp-lgpl.md`).
+Remotion's npm compositor packages bundle a GPL FFmpeg, so the Remotion render path uses our build instead:
+
+```bash
+pnpm ffmpeg:lgpl      # → vendor/ffmpeg-lgpl/<platform>-<arch>/  (gitignored; every download is sha256-pinned)
+pnpm ffmpeg:check     # license guard: fails on --enable-gpl, --enable-nonfree, x264/x265/fdk-aac, …
+```
+
+- **Linux x64/arm64, Windows x64:** a pinned BtbN `lgpl-shared` FFmpeg 7.1 build is downloaded (~50 MB).
+  `node scripts/ffmpeg/fetch-or-build-lgpl.mjs --platform win32-x64` assembles the Windows directory from
+  any host.
+- **macOS:** no LGPL prebuilt exists; `pnpm ffmpeg:lgpl` builds FFmpeg 7.1 and its codecs from pinned
+  sources (`scripts/ffmpeg/build-lgpl-from-source.sh`; needs Xcode command line tools, cmake, pkg-config).
+  `--from-source` does the same on Linux; `--ffmpeg-prefix <dir>` uses an existing LGPL 7.1 install.
+- The directory holds `ffmpeg`, `ffprobe`, the `libav*` shared libraries, Remotion's own `remotion`
+  compositor executable (FFmpeg 7.1 ABI, copied unmodified), the license text and a notice with the source
+  link. The engine passes it to Remotion as `binariesDirectory` and uses its ffmpeg for everything else.
+- Resolution: `JASPER_REMOTION_BIN_DIR` → packaged `<resources>/ffmpeg-lgpl` → `vendor/ffmpeg-lgpl/<platform>`;
+  the engine's own ffmpeg: `JASPER_FFMPEG`/`JASPER_FFPROBE` → packaged resources → that vendor directory →
+  `PATH` (`JASPER_FFMPEG_VENDOR=0` ignores the vendor directory).
+- Without the directory a **dev** engine (`pnpm dev`) still renders through Remotion's bundled build and
+  warns "Remotion is using its bundled GPL FFmpeg (dev only)" (startup log, `/api/capabilities`
+  `render.remotionBinaries`, Export view, Help ▸ About). Every other engine refuses the Remotion path.
+- H.264 exports on the Remotion path render a ProRes intermediate that the engine encodes (hardware H.264 or
+  OpenH264); VP9/Opus WebM is written by Remotion directly.
+- Help ▸ About JasperEditor shows FFmpeg's license text and the source of the build in use
+  (`GET /api/licenses`).
+
+Packaging the desktop app:
+
+```bash
+pnpm --filter @jasper/desktop dist:dir   # apps/desktop/release/<os>-unpacked (add `--platform win32` to cross-pack)
+pnpm e2e:packaged                        # runs the packed engine outside the checkout; Remotion export on the LGPL build
+```
+
+`scripts/package.mjs` stages the engine without Remotion's compositor packages, ships the LGPL directory as
+`<resources>/ffmpeg-lgpl`, and the build fails if any GPL/nonfree FFmpeg would be packed
+(`pnpm ffmpeg:check --packaged <dir>` is the same check).
 
 Running a second dev stack on other ports (another worktree, or 5173/47900 are taken):
 
@@ -107,11 +152,18 @@ pnpm verify              # lint + typecheck + unit/integration tests + build
 pnpm e2e                 # builds engine + web, then Playwright (headless Chrome) against the built engine
 pnpm e2e:desktop         # Electron under xvfb: packaged-like and dev mode, screenshots in test-results/
 pnpm e2e:mg-fallback     # fframes ready → native plan; jasper-mg missing → Remotion plan with the reason
+pnpm e2e:packaged        # after `pnpm --filter @jasper/desktop dist:dir`: packed engine + LGPL FFmpeg only
+
+# Remotion render through the LGPL FFmpeg directory (needs `pnpm ffmpeg:lgpl` and a Chrome):
+REMOTION_E2E=1 JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome \
+  pnpm --filter @jasper/engine exec vitest run test/remotion-lgpl.e2e.test.ts
 ```
 
 `pnpm e2e` starts `e2e/serve.mjs`: the built engine (`apps/engine/dist/engine.mjs`) serving the built web app
 on `127.0.0.1:${E2E_PORT:-48110}` with a throwaway appdir. `E2E_SKIP_BUILD=1` reuses existing builds,
-`E2E_KEEP_APPDIR=1` keeps the appdir for inspection. Specs:
+`E2E_KEEP_APPDIR=1` keeps the appdir for inspection. The pre-step also fetches the LGPL FFmpeg directory
+where a pinned prebuilt exists (`E2E_SKIP_LGPL=1` skips it), so the exports in the specs are made by the
+shipped build (H.264 by OpenH264). Specs:
 
 - `e2e/smoke.spec.ts` — Home → New Project → import `clip-a.mp4` (file chooser) → poster → drag to the
   timeline → play → move/trim/razor → undo/redo → native export (ffprobe frame count) → Motion Templates
@@ -139,8 +191,12 @@ on `127.0.0.1:${E2E_PORT:-48110}` with a throwaway appdir. `E2E_SKIP_BUILD=1` re
 | `pnpm build` | web (`vite build`), engine (`dist/engine.mjs`), desktop (`dist-electron/`) |
 | `pnpm mg:build` | cargo release build of `native/mg` (`jasper-mg`); exits 0 without cargo |
 | `pnpm fixtures` | generates test media with ffmpeg |
+| `pnpm ffmpeg:lgpl` | fetches (Linux, Windows) or builds (macOS) the pinned LGPL FFmpeg 7.1 and assembles the Remotion binaries directory in `vendor/ffmpeg-lgpl/` |
+| `pnpm ffmpeg:check [dirs]` | license guard over FFmpeg binaries (default: the vendor directory); `--packaged <dir>` checks a packed app |
+| `pnpm --filter @jasper/desktop dist:dir` / `dist` | stages and packs the desktop app (unpacked directory / installers) with the LGPL FFmpeg |
 | `pnpm e2e` | builds, then the Playwright suite (`e2e/`) |
 | `pnpm e2e:desktop` / `e2e:mg-fallback` / `e2e:typecheck` | Electron smoke / fframes fallback check / `tsc` over `e2e/` |
+| `pnpm e2e:packaged` | packed-app check: license guard, packed engine with only the shipped LGPL FFmpeg, Remotion export |
 | `pnpm verify` | lint + typecheck + test + build |
 
 ## Layout
@@ -154,6 +210,8 @@ packages/session  @jasper/session — EditorSession, history, gestures, transpor
 packages/api      @jasper/api — zod contracts for engine routes and events
 packages/engine-client, packages/ui, packages/compositions, packages/mg-templates, packages/config
 native/mg         jasper-mg (Rust, fframes) motion-graphics renderer
-e2e/              Playwright specs + desktop / fframes smoke scripts
+e2e/              Playwright specs + desktop / fframes / packaged-app smoke scripts
+scripts/ffmpeg/   LGPL FFmpeg: pinned manifest, fetch/build + assembly, license guard
+vendor/           fetched LGPL FFmpeg binaries (gitignored)
 .stage/           dev appdir (runtime files are gitignored)
 ```
