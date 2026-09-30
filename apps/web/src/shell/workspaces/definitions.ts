@@ -118,6 +118,25 @@ const essentials: WorkspaceDefinition = {
 	),
 };
 
+/**
+ * Color (S06:CGU-003, wp-m2-color): Lumetri Scopes top-left next to a large Program, the Lumetri Color panel as
+ * the right column (Effect Controls and Properties as tabs behind it), Timeline strip at the bottom.
+ */
+const color: WorkspaceDefinition = {
+	id: 'color',
+	name: 'Color',
+	layout: row(
+		[
+			0.76,
+			col(
+				[0.6, row([0.34, g(['scopes', 'project', 'history'], 'scopes')], ['fill', g(['program'])])],
+				['fill', TIMELINE_STRIP()],
+			),
+		],
+		['fill', g(['lumetri', 'effectControls', 'properties'], 'lumetri')],
+	),
+};
+
 /** Built-ins in default order (Alt+Shift+1…9 follow the visible order, WS-010). */
 export const BUILTIN_WORKSPACES: readonly WorkspaceDefinition[] = [
 	editing,
@@ -125,6 +144,7 @@ export const BUILTIN_WORKSPACES: readonly WorkspaceDefinition[] = [
 	effects,
 	motion,
 	essentials,
+	color,
 ];
 
 /**
