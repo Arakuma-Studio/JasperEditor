@@ -110,11 +110,13 @@ export default async function mediaRoutes(app: FastifyInstance): Promise<void> {
 		'/media/:mediaKey/proxy/:tier',
 		guarded<{ Params: { mediaKey: string; tier: string } }>(async (req, reply) => {
 			const r = record(req.params.mediaKey);
-			const tier = req.params.tier.replace(/\.mp4$/, '');
+			const tier = req.params.tier.replace(/\.(mp4|webm)$/, '');
 			if (tier !== '720' && tier !== '540') return fail(reply, 404, 'NOT_FOUND', 'Unknown proxy tier');
 			const kind = tier === '720' ? 'proxy-720' : 'proxy-540';
-			const p = derivatives.paths(r.fingerprint, kind);
-			return serveArtifact(req, reply, (await derivatives.isReady(r, kind)) ? p.main : null, 'video/mp4');
+			const p = derivatives.paths(r.fingerprint, kind, r);
+			// Alpha sources get a VP9 WebM proxy that keeps the alpha channel; everything else is MP4.
+			const type = p.main.endsWith('.webm') ? 'video/webm' : 'video/mp4';
+			return serveArtifact(req, reply, (await derivatives.isReady(r, kind)) ? p.main : null, type);
 		}),
 	);
 

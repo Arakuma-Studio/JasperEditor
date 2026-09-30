@@ -183,6 +183,32 @@ describe('probe mapping (S04:PB-001…004)', () => {
 		expect(prores.browserPlayable).toBe('no');
 		expect(prores.probe.hasAlpha).toBe(true);
 		expect(prores.probe.streams[0]).toMatchObject({ bitDepth: 10, browserDecodable: false });
+		// VP8/VP9 alpha lives in Matroska BlockAdditions: the pixel format says yuv420p, the stream tag tells.
+		const vp9Alpha = mapProbe({
+			format: { format_name: 'matroska,webm', duration: '3' },
+			streams: [
+				{
+					index: 0,
+					codec_type: 'video',
+					codec_name: 'vp9',
+					width: 1920,
+					height: 1080,
+					pix_fmt: 'yuv420p',
+					r_frame_rate: '30/1',
+					avg_frame_rate: '30/1',
+					tags: { alpha_mode: '1' },
+				},
+			],
+		});
+		expect(vp9Alpha.probe.hasAlpha).toBe(true);
+		expect(vp9Alpha.browserPlayable).toBe('yes');
+		const vp9Opaque = mapProbe({
+			format: { format_name: 'matroska,webm', duration: '3' },
+			streams: [
+				{ index: 0, codec_type: 'video', codec_name: 'vp9', width: 8, height: 8, pix_fmt: 'yuv420p' },
+			],
+		});
+		expect(vp9Opaque.probe.hasAlpha).toBe(false);
 		const png = mapProbe({
 			format: { format_name: 'png_pipe' },
 			streams: [

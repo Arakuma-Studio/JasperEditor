@@ -237,6 +237,22 @@ export function registerEditingTools(ctx: ToolContext): void {
 					.min(0)
 					.optional()
 					.describe('End inside the media, in seconds (default: the end; required with sourceIn)'),
+				sourceInFrame: z
+					.number()
+					.int()
+					.min(0)
+					.optional()
+					.describe(
+						'Frame-exact alternative to sourceIn: first media frame (0-based, at the media frame rate)',
+					),
+				sourceOutFrame: z
+					.number()
+					.int()
+					.min(1)
+					.optional()
+					.describe(
+						'Frame-exact alternative to sourceOut: media frame after the last one used (exclusive); the clip is sourceOutFrame − sourceInFrame frames long',
+					),
 				mode: EditModeSchema.optional().describe('overwrite (default) or insert (ripples later clips)'),
 				videoOnly: z.boolean().optional().describe('Place only the video'),
 				audioOnly: z.boolean().optional().describe('Place only the audio'),
@@ -263,8 +279,26 @@ export function registerEditingTools(ctx: ToolContext): void {
 				...(a.mode ? { mode: a.mode } : {}),
 				...(a.videoOnly ? { audio: false } : {}),
 				...(a.audioOnly ? { video: false } : {}),
+				// A track label above the existing ones ("V4") creates the missing tracks.
+				...(a.track || a.audioTrack ? { createTracks: true } : {}),
 			};
-			if (a.sourceIn !== undefined || a.sourceOut !== undefined) {
+			const frameRange = a.sourceInFrame !== undefined || a.sourceOutFrame !== undefined;
+			if (frameRange && (a.sourceIn !== undefined || a.sourceOut !== undefined))
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'Give the source range in seconds or in frames, not both',
+					'Use sourceInFrame/sourceOutFrame for frame-exact edits.',
+				);
+			if (frameRange) {
+				if (a.sourceOutFrame === undefined)
+					throw new ToolError('E_INVALID_PARAM', 'sourceInFrame needs sourceOutFrame too');
+				if (a.sourceOutFrame <= (a.sourceInFrame ?? 0))
+					throw new ToolError('E_INVALID_PARAM', 'sourceOutFrame must be after sourceInFrame');
+				cmd.sourceRange = {
+					in: { sourceFrames: a.sourceInFrame ?? 0 },
+					out: { sourceFrames: a.sourceOutFrame },
+				};
+			} else if (a.sourceIn !== undefined || a.sourceOut !== undefined) {
 				if (a.sourceOut === undefined)
 					throw new ToolError('E_INVALID_PARAM', 'sourceIn needs sourceOut too', 'Pass both, in seconds.');
 				cmd.sourceRange = { in: { seconds: a.sourceIn ?? 0 }, out: { seconds: a.sourceOut } };
@@ -446,6 +480,63 @@ export function registerEditingTools(ctx: ToolContext): void {
 						track: a.track ?? 'V2',
 						content: { text: a.text, ...(Object.keys(style).length ? { style } : {}) },
 						...(a.position ? { transform: { position: a.position } } : {}),
+						...(a.sequenceId ? { sequenceId: a.sequenceId } : {}),
+					},
+				],
+				extra,
+			);
+		},
+	);
+
+	defineTool(
+		ctx,
+		'add_transition',
+		{
+			title: 'Add transition',
+			description:
+				'Adds a transition at an edit point or a fade at a clip edge (transition.add). Address it by clipId + edge ("in" = head, "out" = tail) or by track + at (the frame where one clip ends and the next begins). Video: cross-dissolve (the incoming clip fades in over the outgoing one; needs media beyond the cut, "handles") or dip-to-black; at a free clip edge they are fades from/to transparent or black. Audio tracks: constant-gain or constant-power fades. The duration is shortened (with a warning) to what the clips and their handles allow.',
+			input: {
+				projectId: ProjectIdArg,
+				type: z
+					.enum(['cross-dissolve', 'dip-to-black', 'constant-gain', 'constant-power'])
+					.describe('Transition type'),
+				durationFrames: z.number().int().min(1).max(600).describe('Length in frames'),
+				clipId: z.string().min(1).optional().describe('Clip id ("clp_…"), with edge'),
+				edge: z.enum(['in', 'out']).optional().describe('in = the clip head, out = the clip tail'),
+				track: TrackRefSchema.optional().describe('Track label or id, with at (instead of clipId)'),
+				at: z.number().int().min(0).optional().describe('Frame of the edit point on that track'),
+				alignment: z
+					.enum(['center', 'start-at-cut', 'end-at-cut'])
+					.optional()
+					.describe(
+						'Where a transition between two clips sits (default center); start-at-cut needs handles only on the outgoing clip, end-at-cut only on the incoming one',
+					),
+				sequenceId: SequenceIdArg,
+			},
+			annotations: EDIT,
+		},
+		async (a, extra) => {
+			if (!(a.clipId && a.edge) && !(a.track && a.at !== undefined))
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'Give clipId + edge, or track + at',
+					'get_timeline lists clip ids and their start/end frames.',
+				);
+			return applyHelper(
+				ctx,
+				a.projectId,
+				a.type === 'dip-to-black'
+					? 'Dip to Black'
+					: a.type === 'cross-dissolve'
+						? 'Cross Dissolve'
+						: 'Audio Fade',
+				[
+					{
+						type: 'transition.add',
+						effectId: `jasper.${a.type}`,
+						duration: a.durationFrames,
+						...(a.clipId ? { clipId: a.clipId, edge: a.edge } : { trackId: a.track, at: a.at }),
+						...(a.alignment ? { alignment: a.alignment } : {}),
 						...(a.sequenceId ? { sequenceId: a.sequenceId } : {}),
 					},
 				],

@@ -203,9 +203,9 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (31): `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
+Tools (32): `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
 `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
-`add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic` ·
+`add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic` `add_transition` ·
 `get_timeline` `render_frame` `get_playhead` `set_playhead` · `list_motion_templates`
 `render_motion_graphic_preview` · `list_export_presets` `start_export` `get_job` `cancel_job` `wait_for_job`.
 Resources: `jasper://projects/{projectId}/document`, `jasper://projects/{projectId}/timeline`,

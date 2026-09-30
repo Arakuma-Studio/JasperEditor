@@ -7,6 +7,7 @@ import {
 	type FontRef,
 	type MediaAsset,
 	type MediaHandle,
+	mediaDecodeHints,
 	type ProjectDocument,
 	sequenceDuration,
 } from '@jasper/project';
@@ -60,6 +61,7 @@ export function resolveMediaHandle(
 		durationFlicks: asset.probe.durationFlicks,
 		hasAudio: asset.probe.streams.some((s) => s.type === 'audio'),
 		rotation,
+		...mediaDecodeHints(asset.probe),
 	};
 }
 

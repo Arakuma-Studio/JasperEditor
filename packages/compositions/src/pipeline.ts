@@ -1,6 +1,7 @@
 // Pure helpers for the per-layer pipeline (S03 §4.2): source → effects (crop first) → transform →
 // opacity → blend. No React here so the math is unit-testable and shared by the layers.
 import {
+	audioFadeGain,
 	type BlendMode,
 	defaultEffectRegistry,
 	type EffectRegistry,
@@ -101,7 +102,10 @@ export const MAX_PREVIEW_GAIN = 16;
  * the snapshot (muted tracks are absent). Pan is not previewed in M1.
  */
 export function audioGainAt(
-	clip: Pick<RenderAudioClip, 'start' | 'duration' | 'sourceIn' | 'speed' | 'gainDb' | 'volumeDb' | 'track'>,
+	clip: Pick<
+		RenderAudioClip,
+		'start' | 'duration' | 'sourceIn' | 'speed' | 'gainDb' | 'volumeDb' | 'track' | 'fades'
+	>,
 	f: number,
 	fps: Rational,
 	master?: { volumeDb: RenderAudioClip['volumeDb'] },
@@ -118,7 +122,8 @@ export function audioGainAt(
 		evaluate(clip.volumeDb, content) +
 		evaluate(clip.track.volumeDb, seqT) +
 		(master ? evaluate(master.volumeDb, seqT) : 0);
-	return Math.min(MAX_PREVIEW_GAIN, dbToGain(db));
+	// Audio fades at the clip's edges (one-sided audio transitions, S01:TRN-004).
+	return Math.min(MAX_PREVIEW_GAIN, dbToGain(db)) * audioFadeGain(clip.fades, clip.start + i);
 }
 
 /**
@@ -133,6 +138,17 @@ export function trimBeforeFrames(sourceInFlicks: number, fps: Rational | number)
 }
 
 /**
+ * `trimBefore` of a video layer whose `<Sequence>` starts `headHandle` frames before the clip (the incoming
+ * side of a transition shows content from before the clip's in-point, S01:TRN-003).
+ */
+export function videoTrimBefore(
+	clip: { sourceIn: number; speed: { rate: number }; headHandle?: number },
+	fps: Rational | number,
+): number {
+	return Math.max(0, trimBeforeFrames(clip.sourceIn, fps) - (clip.headHandle ?? 0) * clip.speed.rate);
+}
+
+/**
  * The volume callback of Remotion media receives `useCurrentFrame() + cumulatedNegativeFrom`, i.e.
  * frames since the media first became visible in the composition. When the export range starts
  * inside a clip (`<Sequence from>` negative) that is not the clip-local frame; this converts it.
@@ -141,9 +157,39 @@ export function volumeFrameToClipFrame(volumeFrame: number, sequenceFrom: number
 	return volumeFrame + Math.max(0, -sequenceFrom);
 }
 
-/** Media URL for a layer: the proxy when proxies are on and ready, else the original. */
-export function mediaSrc(media: MediaHandle, options: Pick<RenderOptions, 'useProxies'>): string {
-	return options.useProxies && media.proxyUrl ? media.proxyUrl : media.url;
+/**
+ * Media URL for a layer: the proxy when it is ready and either proxies are on or the browser cannot decode
+ * the original (mandatory proxy, S04:PX-004: ProRes, DNxHD…), else the original.
+ */
+export function mediaSrc(
+	media: Pick<MediaHandle, 'url' | 'proxyUrl' | 'browserDecodable'>,
+	options: Pick<RenderOptions, 'useProxies'>,
+): string {
+	return (options.useProxies || media.browserDecodable === false) && media.proxyUrl
+		? media.proxyUrl
+		: media.url;
+}
+
+/** Where a video layer gets its picture from (S03:KND-010). */
+export type VideoSource =
+	/** `@remotion/media` `<Video>` (WebCodecs): everything a browser decodes, VP8/VP9 alpha included. */
+	| { via: 'media'; src: string }
+	/**
+	 * `<OffthreadVideo>`: frames extracted by the render's FFmpeg. For originals a browser cannot decode
+	 * (ProRes…), in engine renders only; `transparent` keeps the alpha channel (ProRes 4444).
+	 */
+	| { via: 'offthread'; src: string; transparent: boolean }
+	/** Preview of an original the browser cannot decode while its proxy is not ready yet. */
+	| { via: 'pending-proxy' };
+
+export function videoSource(
+	media: Pick<MediaHandle, 'url' | 'proxyUrl' | 'browserDecodable' | 'alpha'>,
+	options: Pick<RenderOptions, 'useProxies' | 'isPreview'>,
+): VideoSource {
+	if (media.browserDecodable !== false) return { via: 'media', src: mediaSrc(media, options) };
+	// Renders never use proxies: full quality, and an alpha original keeps its alpha.
+	if (!options.isPreview) return { via: 'offthread', src: media.url, transparent: media.alpha === true };
+	return media.proxyUrl ? { via: 'media', src: media.proxyUrl } : { via: 'pending-proxy' };
 }
 
 /** Premount window for media layers: 2 s of frames (S03:RND-020). */

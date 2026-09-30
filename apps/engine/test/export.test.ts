@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { RenderPlanSchema } from '@jasper/api';
 import { buildRenderSnapshot, FLICKS_PER_SECOND } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { buildNativeGraph } from '../src/export/native.ts';
+import { audioFadeFilters, buildNativeGraph, fadeFilters } from '../src/export/native.ts';
 import { nativeBlockers } from '../src/export/planner.ts';
 import { coreServices } from '../src/tools/services.ts';
 import {
@@ -402,6 +402,402 @@ describe('native export (S03:ENG-030, S04:RN-021/022, QA-005)', () => {
 			(await app.inject({ method: 'GET', url: '/renders/..%2F..%2Fetc/output', headers: H })).statusCode,
 		).toBe(404);
 	});
+});
+
+/** The burned-in 6-bit frame number of `fixtures/media/frame-code.mp4` at one frame of a file. */
+function frameCode(file: string, frame: number): number {
+	const r = spawnSync('ffmpeg', [
+		...['-v', 'error', '-i', file],
+		...['-vf', `select=eq(n\\,${frame}),format=rgb24,crop=420:1:40:70`],
+		...['-frames:v', '1', '-f', 'rawvideo', '-'],
+	]);
+	let code = 0;
+	for (let b = 0; b < 6; b++) if (r.stdout[(30 + 70 * b) * 3]! > 127) code |= 1 << b;
+	return code;
+}
+
+describe('frame accuracy of the native path', () => {
+	it('starts every clip on its exact frame, also when the start is not a round number of seconds', async () => {
+		const coded = await register(app, fixture('frame-code.mp4'));
+		const d = new DocBuilder();
+		const m = d.addMedia(coded);
+		const place = (at: number, inFrame: number, outFrame: number) => ({
+			type: 'clip.place',
+			source: { mediaId: m },
+			at,
+			sourceRange: { in: { sourceFrames: inFrame }, out: { sourceFrames: outFrame } },
+			matchSequence: 'keep',
+		});
+		// Frame 10 is 0.333333… s and frame 40 is 1.333333… s: written as decimal seconds they are a hair
+		// before the frame boundary, which used to show the clip one frame early.
+		d.tx([place(0, 0, 10), place(10, 20, 50), place(40, 5, 25)]);
+		const planned = await coreServices(app).exports.plan({
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			settings: settings(d.seqId) as never,
+		});
+		const g = buildNativeGraph({
+			snapshot: planned.snapshot,
+			output: planned.output,
+			outputFile: '/tmp/x.mp4',
+			sources: { media: (id) => planned.media[id] ?? null, mgMaster: () => null },
+			threads: 2,
+		});
+		expect(g.filter).toContain('setpts=PTS-STARTPTS+round(10*1/(30*TB))');
+		expect(g.filter).toContain('setpts=PTS-STARTPTS+round(40*1/(30*TB))');
+		expect(g.filter).not.toMatch(/setpts=PTS-STARTPTS\+[\d.]+\/TB/);
+
+		const start = await app.inject({
+			method: 'POST',
+			url: '/api/exports',
+			headers: JSON_H,
+			payload: {
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				settings: settings(d.seqId, { engine: 'native' }),
+			},
+		});
+		expect(start.statusCode).toBe(202);
+		const done = await coreServices(app).queue.wait(start.json().id);
+		expect(done.error).toBeUndefined();
+		expect(done.result).toMatchObject({ frames: 60, renderPath: 'native' });
+		const file = (await coreServices(app).exports.outputFile(start.json().id))!;
+		const want: [number, number][] = [
+			[0, 0],
+			[9, 9],
+			[10, 20],
+			[11, 21],
+			[39, 49],
+			[40, 5],
+			[41, 6],
+			[59, 24],
+		];
+		expect(want.map(([frame]) => [frame, frameCode(file, frame)])).toEqual(want);
+	}, 120_000);
+});
+
+describe('transitions on the native path (S01 §13)', () => {
+	/**
+	 * frame-code.mp4 twice on V1, cut at frame 20: A shows source frames 32…51 (bit 5 of the code is white),
+	 * B shows 8…27 (bit 5 black). Both have media handles around the cut.
+	 */
+	async function cutDoc(effectId: string) {
+		const coded = await register(app, fixture('frame-code.mp4'));
+		const d = new DocBuilder();
+		const m = d.addMedia(coded);
+		const place = (at: number, inFrame: number, ref: string) => ({
+			type: 'clip.place',
+			source: { mediaId: m },
+			at,
+			sourceRange: { in: { sourceFrames: inFrame }, out: { sourceFrames: inFrame + 20 } },
+			matchSequence: 'keep',
+			ref,
+		});
+		d.tx([
+			place(0, 32, '$a'),
+			place(20, 8, '$b'),
+			{ type: 'transition.add', clipId: '$b', edge: 'in', effectId, duration: 10 },
+		]);
+		return d;
+	}
+	async function exportNative(d: DocBuilder) {
+		const planned = await coreServices(app).exports.plan({
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			settings: settings(d.seqId) as never,
+		});
+		// Transitions no longer force the Remotion path.
+		expect(planned.plan.path).toBe('native');
+		expect(planned.plan.blockers).toEqual([]);
+		const g = buildNativeGraph({
+			snapshot: planned.snapshot,
+			output: planned.output,
+			outputFile: '/tmp/x.mp4',
+			sources: { media: (id) => planned.media[id] ?? null, mgMaster: () => null },
+			threads: 2,
+		});
+		const start = await app.inject({
+			method: 'POST',
+			url: '/api/exports',
+			headers: JSON_H,
+			payload: {
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				settings: settings(d.seqId, { engine: 'native' }),
+			},
+		});
+		expect(start.statusCode).toBe(202);
+		const done = await coreServices(app).queue.wait(start.json().id);
+		expect(done.error).toBeUndefined();
+		expect(done.result).toMatchObject({ frames: 40, renderPath: 'native' });
+		return { g, file: (await coreServices(app).exports.outputFile(start.json().id))! };
+	}
+	const near = (got: number, want: number, tol = 7) =>
+		Math.abs(got - want) <= tol || `${got} is not within ${tol} of ${want}`;
+
+	it('cross-dissolves through the handles: frame i of d shows (i + 1) / (d + 1) of the incoming clip', async () => {
+		const { g, file } = await exportNative(await cutDoc('jasper.cross-dissolve'));
+		// Outgoing layer: 25 frames (20 + 5 of tail handle); incoming: starts 5 frames early with the ramp.
+		expect(g.filter).toContain('trim=end_frame=25');
+		expect(g.filter).toContain('tpad=start=1,fade=t=in:s=0:n=11:alpha=1,trim=start_frame=1');
+		expect(g.filter).toContain('setpts=PTS-STARTPTS+round(15*1/(30*TB))');
+		expect(g.inputs[1]!.slice(0, 2)).toEqual(['-ss', '0.100000']); // source frame 8 − 5 = 3
+		// Bit 5 of the frame code (x 390…450, y 40…100) is white in A and black in B.
+		const bit5 = (frame: number) => pixel(file, frame, 420, 70)[0];
+		expect(near(bit5(14), 255)).toBe(true);
+		expect(near(bit5(15), 255 * (10 / 11))).toBe(true);
+		expect(near(bit5(19), 255 * (6 / 11))).toBe(true);
+		expect(near(bit5(20), 255 * (5 / 11))).toBe(true);
+		expect(near(bit5(24), 255 * (1 / 11))).toBe(true);
+		expect(near(bit5(25), 0)).toBe(true);
+		// The cut itself stays frame accurate outside the span.
+		expect(frameCode(file, 14)).toBe(46);
+		expect(frameCode(file, 25)).toBe(13);
+	}, 120_000);
+
+	it('dips to black: the outgoing clip ends on a black frame, the incoming one fades in', async () => {
+		const { g, file } = await exportNative(await cutDoc('jasper.dip-to-black'));
+		expect(g.filter).toMatch(/color=c=0x000000ff:s=1920x1080:r=30\/1:d=[\d.]+,format=rgba,trim=end_frame=10/);
+		expect(g.filter).toContain('fade=t=out:s=14:n=5:alpha=1'); // A: no handle, ramp over its last 5 frames
+		expect(g.filter).toContain('tpad=start=1,fade=t=in:s=0:n=6:alpha=1,trim=start_frame=1'); // B from the cut
+		// Flat background of frame-code.mp4: RGB (32, 64, 128); sample the blue channel.
+		const blue = (frame: number) => pixel(file, frame, 1000, 600)[2];
+		expect(near(blue(14), 128)).toBe(true);
+		expect(near(blue(15), 128 * (4 / 5))).toBe(true);
+		expect(near(blue(17), 128 * (2 / 5))).toBe(true);
+		expect(near(blue(19), 0)).toBe(true);
+		expect(near(blue(20), 128 * (1 / 6))).toBe(true);
+		expect(near(blue(24), 128 * (5 / 6))).toBe(true);
+		expect(near(blue(25), 128)).toBe(true);
+		expect(frameCode(file, 25)).toBe(13);
+	}, 120_000);
+
+	it('writes fades and audio fades as ffmpeg fade / afade with frame-exact starts', () => {
+		expect(fadeFilters(undefined, 0)).toEqual([]);
+		expect(fadeFilters([{ type: 'in', start: 100, frames: 12 }], 100)).toEqual([
+			'fade=t=in:s=0:n=12:alpha=1',
+		]);
+		expect(fadeFilters([{ type: 'out', start: 187, frames: 12 }], 100)).toEqual([
+			'fade=t=out:s=87:n=12:alpha=1',
+		]);
+		// A range export that starts inside the ramp pads the frames that came before it.
+		expect(fadeFilters([{ type: 'in', start: 100, frames: 12 }], 104)).toEqual([
+			'tpad=start=4',
+			'fade=t=in:s=0:n=12:alpha=1',
+			'trim=start_frame=4',
+		]);
+		expect(fadeFilters([{ type: 'in', start: 100, frames: 12 }], 112)).toEqual([]); // ramp already over
+		expect(
+			audioFadeFilters([{ type: 'out', start: 60, frames: 30, curve: 'equal-power' }], 0, 1 / 30),
+		).toEqual(['afade=t=out:ss=96000:ns=48000:curve=qsin']);
+		expect(audioFadeFilters([{ type: 'in', start: 0, frames: 15, curve: 'linear' }], 5, 1 / 30)).toEqual([
+			'adelay=delays=8000S:all=1',
+			'afade=t=in:ss=0:ns=24000:curve=tri',
+			'atrim=start_sample=8000',
+			'asetpts=PTS-STARTPTS',
+		]);
+	});
+});
+
+describe('masters and bitrate', () => {
+	it('exports a ProRes 422 HQ master (MOV, PCM audio) and honours an explicit H.264 bitrate', async () => {
+		const coded = await register(app, fixture('frame-code.mp4'));
+		const d = new DocBuilder();
+		d.tx([
+			{
+				type: 'clip.place',
+				source: { mediaId: d.addMedia(coded) },
+				at: 0,
+				sourceRange: { in: { sourceFrames: 0 }, out: { sourceFrames: 60 } },
+				matchSequence: 'keep',
+			},
+		]);
+		const video = (settings(d.seqId).video as Record<string, unknown>) ?? {};
+		const planned = await coreServices(app).exports.plan({
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			settings: settings(d.seqId, { video: { ...video, bitrateKbps: 16000 } }) as never,
+		});
+		const g = buildNativeGraph({
+			snapshot: planned.snapshot,
+			output: planned.output,
+			outputFile: '/tmp/x.mp4',
+			sources: { media: (id) => planned.media[id] ?? null, mgMaster: () => null },
+			threads: 2,
+		});
+		expect(g.args.join(' ')).toMatch(/16000k/);
+
+		const start = await app.inject({
+			method: 'POST',
+			url: '/api/exports',
+			headers: JSON_H,
+			payload: {
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				settings: settings(d.seqId, {
+					container: 'mov',
+					video: { ...video, codec: 'prores' },
+					engine: 'native',
+				}),
+			},
+		});
+		expect(start.statusCode).toBe(202);
+		const done = await coreServices(app).queue.wait(start.json().id);
+		expect(done.error).toBeUndefined();
+		expect(done.result).toMatchObject({ frames: 60, container: 'mov', encoder: 'prores_ks' });
+		const file = (await coreServices(app).exports.outputFile(start.json().id))!;
+		expect(file.endsWith('output.mov')).toBe(true);
+		const [v, a] = probe(file);
+		expect(v).toMatchObject({ codec_name: 'prores', pix_fmt: 'yuv422p10le', color_space: 'bt709' });
+		expect(a).toMatchObject({ codec_name: 'pcm_s16le', sample_rate: '48000' });
+		expect(frameCode(file, 40)).toBe(40);
+	}, 120_000);
+});
+
+describe('overlays with an alpha channel on the native path', () => {
+	/** A red full-frame solid on V1; the ProRes 4444 overlay on V2 for frames 0–30, the VP9 WebM one after it. */
+	async function overlayDoc() {
+		const mov = await register(app, fixture('overlay-alpha.mov'));
+		const webm = await register(app, fixture('overlay-alpha.webm'));
+		const d = new DocBuilder();
+		const m = d.addMedia(mov);
+		const w = d.addMedia(webm);
+		d.tx([
+			{ type: 'clip.addSolid', at: 0, duration: 60, track: 'V1', color: [1, 0, 0, 1] },
+			{ type: 'clip.place', source: { mediaId: m }, at: 0, tracks: { video: 'V2' }, matchSequence: 'keep' },
+			{ type: 'clip.place', source: { mediaId: w }, at: 30, tracks: { video: 'V2' }, matchSequence: 'keep' },
+		]);
+		return { d, mov, webm };
+	}
+
+	it('detects the alpha of ProRes 4444 and of VP9 WebM, and decodes the WebM with libvpx', async () => {
+		const { d, mov, webm } = await overlayDoc();
+		expect(mov.probe.hasAlpha).toBe(true);
+		expect(webm.probe.hasAlpha).toBe(true); // stream tag alpha_mode=1; the pixel format says yuv420p
+		const planned = await coreServices(app).exports.plan({
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			settings: settings(d.seqId) as never,
+		});
+		expect(planned.plan.path).toBe('native');
+		expect(planned.plan.blockers).toEqual([]);
+		const g = buildNativeGraph({
+			snapshot: planned.snapshot,
+			output: planned.output,
+			outputFile: '/tmp/x.mp4',
+			sources: { media: (id) => planned.media[id] ?? null, mgMaster: () => null },
+			threads: 2,
+		});
+		const movInput = g.inputs.find((i) => i.at(-1)!.endsWith('overlay-alpha.mov'))!;
+		const webmInput = g.inputs.find((i) => i.at(-1)!.endsWith('overlay-alpha.webm'))!;
+		expect(movInput).not.toContain('-c:v');
+		// FFmpeg's native vp9 decoder drops the alpha plane: the input decoder must be libvpx-vp9.
+		expect(webmInput.slice(0, 2)).toEqual(['-c:v', 'libvpx-vp9']);
+		// Colour conversions round accurately (no darkening per generation).
+		expect(g.filter).toContain(
+			'flags=bicubic+accurate_rnd+full_chroma_int+full_chroma_inp,setsar=1,format=rgba',
+		);
+		expect(g.filter).toMatch(/scale=out_color_matrix=bt709:out_range=tv:flags=[a-z_+]*accurate_rnd/);
+	});
+
+	it('decodes an alpha WebM that starts mid-file from its start (libvpx cannot always seek it)', async () => {
+		const vp8 = await register(app, fixture('overlay-alpha-vp8.webm'));
+		expect(vp8.probe.hasAlpha).toBe(true);
+		const d = new DocBuilder();
+		d.tx([
+			{ type: 'clip.addSolid', at: 0, duration: 20, track: 'V1', color: [1, 0, 0, 1] },
+			{
+				type: 'clip.place',
+				source: { mediaId: d.addMedia(vp8) },
+				at: 0,
+				tracks: { video: 'V2' },
+				sourceRange: { in: { sourceFrames: 10 }, out: { sourceFrames: 30 } },
+				matchSequence: 'keep',
+			},
+		]);
+		const planned = await coreServices(app).exports.plan({
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			settings: settings(d.seqId) as never,
+		});
+		const g = buildNativeGraph({
+			snapshot: planned.snapshot,
+			output: planned.output,
+			outputFile: '/tmp/x.mp4',
+			sources: { media: (id) => planned.media[id] ?? null, mgMaster: () => null },
+			threads: 2,
+		});
+		const input = g.inputs.find((x) => x.at(-1)!.endsWith('overlay-alpha-vp8.webm'))!;
+		expect(input.slice(0, 3)).toEqual(['-c:v', 'libvpx', '-t']);
+		expect(input).not.toContain('-ss');
+		expect(g.filter).toContain('trim=start=0.333333,setpts=(PTS-STARTPTS)/1');
+		const start = await app.inject({
+			method: 'POST',
+			url: '/api/exports',
+			headers: JSON_H,
+			payload: {
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				settings: settings(d.seqId, { engine: 'native' }),
+			},
+		});
+		const done = await coreServices(app).queue.wait(start.json().id);
+		expect(done.error).toBeUndefined();
+		const file = (await coreServices(app).exports.outputFile(start.json().id))!;
+		const p = pixel(file, 5, 960, 540);
+		expect(Math.abs(p[0] - 127) < 16 && Math.abs(p[1] - 128) < 16).toBe(true); // 50 % green over red
+	}, 120_000);
+
+	it('refuses the native path when the build has no libvpx decoder for an alpha WebM', async () => {
+		const { d } = await overlayDoc();
+		const core = coreServices(app);
+		const { planExport } = await import('../src/export/planner.ts');
+		const caps = {
+			native: true,
+			remotionLocal: 'ready' as const,
+			fframes: 'unavailable' as const,
+			mgMasters: false,
+		};
+		const plan = (decoders: string[]) =>
+			planExport(
+				{ envelope: d.envelope(), sequenceId: d.seqId, settings: settings(d.seqId) as never },
+				{ registry: core.registry, fonts: core.fonts, capabilities: { ...caps, decoders } },
+			);
+		const without = await plan(['vp9', 'prores']);
+		expect(without.plan.path).toBe('remotion');
+		expect(without.plan.blockers.map((b) => b.reason).join(' ')).toMatch(/needs the libvpx-vp9 decoder/);
+		expect((await plan(['vp9', 'prores', 'libvpx-vp9'])).plan.path).toBe('native');
+	});
+
+	it('composites both overlays with their alpha (no black box, straight alpha, no colour shift)', async () => {
+		const { d } = await overlayDoc();
+		const start = await app.inject({
+			method: 'POST',
+			url: '/api/exports',
+			headers: JSON_H,
+			payload: {
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				settings: settings(d.seqId, { engine: 'native' }),
+			},
+		});
+		expect(start.statusCode).toBe(202);
+		const done = await coreServices(app).queue.wait(start.json().id);
+		expect(done.error).toBeUndefined();
+		expect(done.result).toMatchObject({ frames: 60, renderPath: 'native' });
+		const file = (await coreServices(app).exports.outputFile(start.json().id))!;
+		const near = (p: number[], want: number[], tol: number) =>
+			p.every((v, i) => Math.abs(v - want[i]!) <= tol) || `${p} is not within ${tol} of ${want}`;
+		for (const frame of [10, 45]) {
+			// Fully transparent area: the red solid below shows through unchanged.
+			expect(near(pixel(file, frame, 1700, 900), [255, 0, 0], 12)).toBe(true);
+			// 50 % green over red: (R, G) ≈ (127, 128). A premultiplied/straight mix-up would give ≈ (191, 64)
+			// or clip, a dropped alpha channel would give black.
+			expect(near(pixel(file, frame, 960, 540), [127, 128, 0], 14)).toBe(true);
+			// Opaque white box.
+			expect(near(pixel(file, frame, 200, 200), [255, 255, 255], 8)).toBe(true);
+		}
+	}, 120_000);
 });
 
 describe('export destinations and render outputs', () => {

@@ -34,6 +34,49 @@ const shapedTone = (hz, seconds, envelope) => [
 	`aevalsrc='0.5*sin(2*PI*${hz}*t)*(${envelope})':s=48000:d=${seconds}`,
 ];
 
+/**
+ * A 1 s overlay with an alpha channel (straight alpha): a transparent 1080p frame with a half-transparent
+ * green box in the middle and an opaque white box top left.
+ */
+const alphaOverlay = [
+	'-f',
+	'lavfi',
+	'-i',
+	'color=c=black@0.0:size=1920x1080:rate=30:duration=1,format=rgba,' +
+		'drawbox=x=480:y=270:w=960:h=540:color=0x00FF00@0.5:t=fill:replace=1,' +
+		'drawbox=x=100:y=100:w=200:h=200:color=white@1.0:t=fill:replace=1',
+];
+const bt709 = [
+	'-colorspace',
+	'bt709',
+	'-color_primaries',
+	'bt709',
+	'-color_trc',
+	'bt709',
+	'-color_range',
+	'tv',
+];
+
+/**
+ * 64 frames whose number is burned in as a 6-bit code: white/black 60×60 blocks at y=40, x=40+70·bit (bit 0
+ * left). Tests read it back from exports to check that cuts and overlays land on the exact frame.
+ */
+const frameCode = (colour) => [
+	'-f',
+	'lavfi',
+	'-i',
+	`color=c=${colour}:size=1920x1080:rate=30:duration=3,format=rgb24,drawbox=x=30:y=30:w=440:h=80:color=black:t=fill${[
+		0, 1, 2, 3, 4, 5,
+	]
+		.map(
+			(b) =>
+				`,drawbox=x=${40 + 70 * b}:y=40:w=60:h=60:color=white:t=fill:enable='eq(mod(floor(n/${1 << b}),2),1)'`,
+		)
+		.join('')},scale=out_color_matrix=bt709:out_range=tv,format=yuv420p`,
+	'-frames:v',
+	'64',
+];
+
 /** @type {{name: string, steps: (out: string) => string[][]}[]} */
 const fixtures = [
 	{
@@ -74,6 +117,48 @@ const fixtures = [
 	{
 		name: 'still.png',
 		steps: (out) => [['-f', 'lavfi', '-i', 'testsrc2=size=1920x1080:rate=1', '-frames:v', '1', out]],
+	},
+	{
+		name: 'frame-code.mp4',
+		steps: (out) => [
+			[...frameCode('0x204080'), ...h264, ...bt709, '-movflags', '+faststart', '-f', 'mp4', out],
+		],
+	},
+	{
+		// ProRes 4444 with alpha: what Remotion/After Effects write for overlays; browsers cannot decode it.
+		name: 'overlay-alpha.mov',
+		steps: (out) => [
+			[
+				...alphaOverlay,
+				...['-vf', 'scale=out_color_matrix=bt709:out_range=tv,format=yuva444p10le'],
+				...['-c:v', 'prores_ks', '-profile:v', '4444', '-pix_fmt', 'yuva444p10le', ...bt709],
+				...['-f', 'mov', out],
+			],
+		],
+	},
+	{
+		// VP9 with alpha in WebM (alpha lives in Matroska BlockAdditions; plays in Chromium).
+		name: 'overlay-alpha.webm',
+		steps: (out) => [
+			[
+				...alphaOverlay,
+				...['-vf', 'scale=out_color_matrix=bt709:out_range=tv,format=yuva420p'],
+				...['-c:v', 'libvpx-vp9', '-pix_fmt', 'yuva420p', '-b:v', '0', '-crf', '20'],
+				...['-auto-alt-ref', '0', '-row-mt', '1', ...bt709, '-f', 'webm', out],
+			],
+		],
+	},
+	{
+		// VP8 with alpha: libvpx cannot decode it after an input seek (the native path trims instead).
+		name: 'overlay-alpha-vp8.webm',
+		steps: (out) => [
+			[
+				...alphaOverlay,
+				...['-vf', 'scale=out_color_matrix=bt709:out_range=tv,format=yuva420p'],
+				...['-c:v', 'libvpx', '-pix_fmt', 'yuva420p', '-b:v', '2M', '-auto-alt-ref', '0'],
+				...[...bt709, '-f', 'webm', out],
+			],
+		],
 	},
 	{
 		name: 'phone-rot90.mp4',

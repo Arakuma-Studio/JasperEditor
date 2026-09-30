@@ -414,9 +414,8 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 				if (c && t.duration > c.duration)
 					issues.push(inv('INV-010', `Transition ${t.id} is longer than clip ${c.id}`, tw));
 			}
-			const edgeKey = out ? `${out.id}:out` : `${inc!.id}:in`;
-			const edgeKey2 = inc ? `${inc.id}:in` : null;
-			for (const k of [edgeKey, edgeKey2]) {
+			// A fade at a clip's head uses only its `in` edge, a fade at the tail only its `out` edge.
+			for (const k of [out ? `${out.id}:out` : null, inc ? `${inc.id}:in` : null]) {
 				if (!k) continue;
 				if (edgeUse.has(k)) issues.push(inv('INV-010', `Two transitions on the same clip edge (${k})`, tw));
 				edgeUse.add(k);

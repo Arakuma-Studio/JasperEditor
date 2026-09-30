@@ -49,6 +49,8 @@ import {
 	trimBeforeFrames,
 	UnsupportedLayer,
 	VideoLayer,
+	videoSource,
+	videoTrimBefore,
 	volumeFrameToClipFrame,
 } from '../src/index.ts';
 
@@ -430,6 +432,81 @@ describe('text', () => {
 	});
 });
 
+describe('transitions (S01 §13)', () => {
+	/** Two 20-frame solids cut at frame 20 on V1, with a transition at the cut. */
+	function transitionDoc(effectId: string, duration: number): RenderSnapshot {
+		const ids = createCounterIdSource(1);
+		const doc = createEmptyProject({ ids, name: 'T', preset: 'hd-1080p-25' });
+		const { document, result } = applyTransaction(
+			doc,
+			{
+				label: 'setup',
+				origin: 'user',
+				commands: [
+					{ type: 'clip.addSolid', at: 0, duration: 20, track: 'V1', color: [1, 0, 0, 1], ref: '$a' },
+					{ type: 'clip.addSolid', at: 20, duration: 20, track: 'V1', color: [0, 0, 1, 1], ref: '$b' },
+					{ type: 'transition.add', clipId: '$b', edge: 'in', effectId, duration },
+				],
+			},
+			ctx(ids),
+		);
+		expect(result.ok).toBe(true);
+		return buildRenderSnapshot(document, Object.keys(document.sequences)[0]!, {
+			resolveMedia: () => null,
+			resolveFont: () => null,
+		});
+	}
+	const layersAt = (doc: RenderSnapshot, frame: number) => {
+		const { container, unmount } = renderFrame(doc, frame);
+		const out = {
+			opacities: [...container.querySelectorAll<HTMLElement>('[data-clip-id]')].map((e) =>
+				Number(e.style.opacity),
+			),
+			mattes: container.querySelectorAll('[data-transition-matte]').length,
+		};
+		unmount();
+		return out;
+	};
+
+	it('draws both clips of a cross dissolve through the span, with complementary ramps', () => {
+		const doc = transitionDoc('jasper.cross-dissolve', 10); // span 15…25
+		const [a, b] = doc.videoTracks[0]!.clips;
+		expect([a!.tailHandle, b!.headHandle]).toEqual([5, 5]);
+		expect(layersAt(doc, 14)).toEqual({ opacities: [1], mattes: 0 });
+		// Opaque clips: the outgoing one stays at 100 % under the incoming ramp (an exact mix).
+		const mid = layersAt(doc, 17); // third frame of the span: 3/11 of the incoming clip
+		expect(mid.opacities).toHaveLength(2);
+		expect(mid.opacities[0]).toBe(1);
+		expect(mid.opacities[1]).toBeCloseTo(3 / 11, 9);
+		const afterCut = layersAt(doc, 22); // the outgoing clip is still drawn from its tail handle
+		expect(afterCut.opacities[0]).toBe(1);
+		expect(afterCut.opacities[1]).toBeCloseTo(8 / 11, 9);
+		expect(layersAt(doc, 25)).toEqual({ opacities: [1], mattes: 0 });
+	});
+
+	it('draws a black matte under a dip to black and fades each clip on its own frames', () => {
+		const doc = transitionDoc('jasper.dip-to-black', 10); // span 15…25, black on frame 19
+		expect(doc.videoTracks[0]!.mattes).toHaveLength(1);
+		expect(layersAt(doc, 14)).toEqual({ opacities: [1], mattes: 0 });
+		const first = layersAt(doc, 16);
+		expect(first.mattes).toBe(1);
+		expect(first.opacities).toHaveLength(1);
+		expect(first.opacities[0]).toBeCloseTo(3 / 5, 9);
+		expect(layersAt(doc, 19)).toEqual({ opacities: [0], mattes: 1 });
+		const second = layersAt(doc, 21);
+		expect(second.mattes).toBe(1);
+		expect(second.opacities[0]).toBeCloseTo(2 / 6, 9);
+		expect(layersAt(doc, 25)).toEqual({ opacities: [1], mattes: 0 });
+	});
+
+	it('starts the video of an incoming clip inside its head handle', () => {
+		const clip = { sourceIn: 2 * FLICKS_PER_SECOND, speed: { rate: 1 } };
+		expect(videoTrimBefore(clip, 30)).toBe(60);
+		expect(videoTrimBefore({ ...clip, headHandle: 6 }, 30)).toBe(54);
+		expect(videoTrimBefore({ ...clip, headHandle: 6, speed: { rate: 2 } }, 30)).toBe(48);
+	});
+});
+
 describe('media timing and audio gain', () => {
 	it('converts sourceIn to trimBefore frames without speed scaling', () => {
 		expect(trimBeforeFrames(2 * FLICKS_PER_SECOND, { num: 30, den: 1 })).toBe(60);
@@ -437,6 +514,39 @@ describe('media timing and audio gain', () => {
 		expect(mediaSrc(HANDLE, { useProxies: false })).toBe('/media/mk_1');
 		expect(mediaSrc(HANDLE, { useProxies: true })).toBe('/media/mk_1/proxy/720');
 		expect(mediaSrc({ ...HANDLE, proxyUrl: null }, { useProxies: true })).toBe('/media/mk_1');
+	});
+
+	it('plays the proxy of an original the browser cannot decode, and renders it off-thread', () => {
+		const prores = { ...HANDLE, browserDecodable: false };
+		// Mandatory proxy (S04:PX-004): used even when proxies are off.
+		expect(mediaSrc(prores, { useProxies: false })).toBe('/media/mk_1/proxy/720');
+		expect(videoSource(prores, { useProxies: false, isPreview: true })).toEqual({
+			via: 'media',
+			src: '/media/mk_1/proxy/720',
+		});
+		expect(videoSource({ ...prores, proxyUrl: null }, { useProxies: false, isPreview: true })).toEqual({
+			via: 'pending-proxy',
+		});
+		// Renders read the original through the render's FFmpeg; alpha (ProRes 4444) stays transparent.
+		expect(videoSource(prores, { useProxies: false, isPreview: false })).toEqual({
+			via: 'offthread',
+			src: '/media/mk_1',
+			transparent: false,
+		});
+		expect(videoSource({ ...prores, alpha: true }, { useProxies: true, isPreview: false })).toEqual({
+			via: 'offthread',
+			src: '/media/mk_1',
+			transparent: true,
+		});
+		// Browser-decodable media (H.264, VP9 with alpha) stays on <Video> in previews and renders.
+		expect(videoSource({ ...HANDLE, alpha: true }, { useProxies: false, isPreview: false })).toEqual({
+			via: 'media',
+			src: '/media/mk_1',
+		});
+		expect(videoSource(HANDLE, { useProxies: true, isPreview: true })).toEqual({
+			via: 'media',
+			src: '/media/mk_1/proxy/720',
+		});
 	});
 
 	it('maps the volume-callback frame to the clip-local frame', () => {
@@ -458,6 +568,13 @@ describe('media timing and audio gain', () => {
 		};
 		const fps = { num: 25, den: 1 };
 		expect(audioGainAt(clip, 0, fps)).toBeCloseTo(1, 9);
+		// An audio fade out over the clip's last 10 frames (sequence frames 140…150).
+		const faded = {
+			...clip,
+			fades: [{ type: 'out' as const, start: 140, frames: 10, curve: 'linear' as const }],
+		};
+		expect(audioGainAt(faded, 39, fps)).toBeCloseTo(1, 9);
+		expect(audioGainAt(faded, 45, fps)).toBeCloseTo(0.5, 9);
 		expect(
 			audioGainAt({ ...clip, gainDb: 0 }, 0, fps, { volumeDb: { value: -20, keyframes: [] } }),
 		).toBeCloseTo(0.05012, 4);

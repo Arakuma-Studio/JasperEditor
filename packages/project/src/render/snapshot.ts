@@ -15,6 +15,13 @@ import {
 	type Transform,
 } from '../schema/sequence.ts';
 import type { Rational } from '../time.ts';
+import {
+	type RenderAudioFade,
+	type RenderFade,
+	type RenderMatte,
+	resolveAudioFades,
+	resolveVideoTransitions,
+} from '../transitions.ts';
 
 export type MediaHandle = {
 	url: string;
@@ -25,7 +32,28 @@ export type MediaHandle = {
 	durationFlicks: number | null;
 	hasAudio: boolean;
 	rotation: 0 | 90 | 180 | 270;
+	/**
+	 * The picture has an alpha channel that compositing must keep (ProRes 4444, VP8/VP9 WebM with alpha,
+	 * QuickTime Animation). Absent = opaque.
+	 */
+	alpha?: boolean;
+	/**
+	 * `false` when a browser (WebCodecs / `<video>`) cannot decode the original, e.g. ProRes: previews need
+	 * `proxyUrl`, engine renders decode the original natively. Absent = decodable or unknown.
+	 */
+	browserDecodable?: boolean;
 };
+
+/** The `alpha` / `browserDecodable` hints of a MediaHandle, from the asset's probe (S04:PB-004). */
+export function mediaDecodeHints(
+	probe: Pick<MediaAsset['probe'], 'hasAlpha' | 'streams'>,
+): Pick<MediaHandle, 'alpha' | 'browserDecodable'> {
+	const vs = probe.streams.find((s) => s.type === 'video');
+	return {
+		...(probe.hasAlpha ? { alpha: true } : {}),
+		...(vs?.type === 'video' && vs.browserDecodable === false ? { browserDecodable: false } : {}),
+	};
+}
 
 export type RenderVisualSource =
 	| { mediaId: string }
@@ -62,6 +90,13 @@ export type RenderVisualClip = {
 	loop?: boolean;
 	/** Bounded media content (needs trimBefore/playbackRate handling). */
 	bounded: boolean;
+	/**
+	 * Transitions (S01 §13): frames of content drawn before `start` and after `start + duration` (handles),
+	 * and the opacity ramps that multiply `opacity` (see `fadeFactor`). Absent without transitions.
+	 */
+	headHandle?: number;
+	tailHandle?: number;
+	fades?: RenderFade[];
 };
 
 export type RenderAudioClip = {
@@ -79,6 +114,8 @@ export type RenderAudioClip = {
 	effects: EffectInstance[];
 	/** Track fader and pan (sequence time in flicks). */
 	track: { volumeDb: Animatable<number>; pan: Animatable<number> };
+	/** Audio fades at the clip's edges (one-sided audio transitions, S01:TRN-004); see `audioFadeGain`. */
+	fades?: RenderAudioFade[];
 };
 
 export type RenderSnapshot = {
@@ -88,8 +125,11 @@ export type RenderSnapshot = {
 	/** Frames; export range or whole sequence. */
 	range: { start: number; end: number };
 	durationFrames: number;
-	/** V1 (bottom) → top; output-disabled tracks omitted; clips sorted by start. */
-	videoTracks: { trackId: string; clips: RenderVisualClip[] }[];
+	/**
+	 * V1 (bottom) → top; output-disabled tracks omitted; clips sorted by start. `mattes` are full-frame
+	 * colours drawn under the track's clips (the black of a dip to black).
+	 */
+	videoTracks: { trackId: string; clips: RenderVisualClip[]; mattes?: RenderMatte[] }[];
 	/** After mute/solo resolution. */
 	audioClips: RenderAudioClip[];
 	/** null = offline. */
@@ -115,6 +155,17 @@ function mediaBox(asset: MediaAsset | undefined): { width: number; height: numbe
 	return swap ? { width: vs.height, height: vs.width } : { width: vs.width, height: vs.height };
 }
 
+function transitionFields(
+	x: { headHandle: number; tailHandle: number; fades: RenderFade[] } | undefined,
+): Pick<RenderVisualClip, 'headHandle' | 'tailHandle' | 'fades'> {
+	if (!x) return {};
+	return {
+		...(x.headHandle > 0 ? { headHandle: x.headHandle } : {}),
+		...(x.tailHandle > 0 ? { tailHandle: x.tailHandle } : {}),
+		...(x.fades.length ? { fades: x.fades } : {}),
+	};
+}
+
 export function buildRenderSnapshot(
 	doc: ProjectDocument,
 	sequenceId: string,
@@ -126,7 +177,16 @@ export function buildRenderSnapshot(
 	let end = 0;
 	for (const c of Object.values(seq.clips)) end = Math.max(end, c.start + c.duration);
 	const range = opts.range ?? { start: 0, end };
-	const inRange = (c: Clip) => c.enabled && c.start < range.end && c.start + c.duration > range.start;
+	const transitions = resolveVideoTransitions(doc, seq);
+	const audioFades = resolveAudioFades(seq);
+	const inRange = (c: Clip) => {
+		const x = transitions.clips.get(c.id);
+		return (
+			c.enabled &&
+			c.start - (x?.headHandle ?? 0) < range.end &&
+			c.start + c.duration + (x?.tailHandle ?? 0) > range.start
+		);
+	};
 	const media: Record<string, MediaHandle | null> = {};
 	const useMedia = (id: string) => {
 		if (id in media) return;
@@ -224,11 +284,17 @@ export function buildRenderSnapshot(
 				engine: caps.engines.export,
 				...(c.kind === 'animated-image' ? { loop: c.loop } : {}),
 				bounded: isBoundedContent(c),
+				...transitionFields(transitions.clips.get(c.id)),
 			});
 		}
 		clips.sort((a, b) => a.start - b.start);
-		videoTracks.push({ trackId: t.id, clips });
+		const mattes = (transitions.mattes.get(t.id) ?? []).filter(
+			(m) => m.start < range.end && m.start + m.duration > range.start,
+		);
+		videoTracks.push({ trackId: t.id, clips, ...(mattes.length ? { mattes } : {}) });
 	}
+	for (const s of transitions.skipped)
+		warnings.push({ clipId: s.transitionId, code: 'TRANSITION_SKIPPED', message: s.reason });
 
 	const anySolo = seq.audioTracks.some((t) => t.solo);
 	const audible = seq.audioTracks.filter((t) => !t.mute && (!anySolo || t.solo));
@@ -251,6 +317,7 @@ export function buildRenderSnapshot(
 				pan: c.pan,
 				effects: c.effects,
 				track: { volumeDb: t.volumeDb ?? ZERO, pan: t.pan ?? ZERO },
+				...(audioFades.has(c.id) ? { fades: audioFades.get(c.id)! } : {}),
 			});
 		}
 	}

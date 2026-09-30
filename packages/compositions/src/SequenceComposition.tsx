@@ -3,12 +3,16 @@
 //
 // Structure: background → video tracks V1 (bottom) → top (S01:RND-005), each clip in a
 // `<Sequence from durationInFrames premountFor>` (S03:RND-020) → audio clips.
+// Transitions (S01 §13): a clip's Sequence also covers its handles (content before the in-point and after the
+// out-point), its opacity is multiplied by the transition ramps, and a track's mattes (the black of a dip to
+// black) are drawn under its clips.
 // Re-render budget (S03:ARC-011, NFR-003): `ClipLayer` reads the frame and resolves the clip's values
 // (static clips resolve to the same cached object), then hands them to a memoized `LayerView` that
 // skips rendering when nothing it draws changed. Layers that draw per-frame content (motion graphics)
 // are listed in FRAME_DEPENDENT_KINDS and re-render every frame.
 import {
 	clipContentTime,
+	fadeFactor,
 	type RenderAudioClip,
 	type RenderVisualClip,
 	type ResolvedLayerProps,
@@ -86,12 +90,20 @@ const ClipLayer = memo(function ClipLayer({
 	doc: RenderDoc;
 	options: RenderOptions;
 }) {
-	// Inside the Sequence the current frame counts from the clip start, also when `from` is negative
-	// (a render range starting mid-clip): Remotion subtracts the absolute `from`.
-	const localFrame = useCurrentFrame();
+	// Inside the Sequence the current frame counts from its start, also when `from` is negative (a render
+	// range starting mid-clip): Remotion subtracts the absolute `from`. The Sequence starts `headHandle`
+	// frames before the clip, so the clip-local frame is negative inside the handle.
+	const localFrame = useCurrentFrame() - (clip.headHandle ?? 0);
 	const frame = clip.start + localFrame;
 	const fps = doc.settings.fps.num / doc.settings.fps.den;
-	const { props, contentTime } = layerPropsAt(clip, frame, doc);
+	const resolved = layerPropsAt(clip, frame, doc);
+	const { contentTime } = resolved;
+	// Transition ramps multiply the opacity; outside a ramp the (cached) props object is passed through.
+	const fade = fadeFactor(clip.fades, frame);
+	const props = useMemo(
+		() => (fade === 1 ? resolved.props : { ...resolved.props, opacity: resolved.props.opacity * fade }),
+		[resolved.props, fade],
+	);
 	const media = 'mediaId' in clip.source ? (doc.media[clip.source.mediaId] ?? null) : null;
 	const Component = layerComponentFor({ clip, media });
 	return (
@@ -145,6 +157,7 @@ export function SequenceComposition({ doc, options }: SequenceCompositionProps) 
 			doc.videoTracks.map((t) => ({
 				trackId: t.trackId,
 				clips: options.layerFilter ? t.clips.filter((c) => options.layerFilter!.includes(c.clipId)) : t.clips,
+				mattes: options.layerFilter ? [] : (t.mattes ?? []),
 			})),
 		[doc.videoTracks, options.layerFilter],
 	);
@@ -152,13 +165,24 @@ export function SequenceComposition({ doc, options }: SequenceCompositionProps) 
 		<AbsoluteFill style={{ backgroundColor: background, overflow: 'hidden', isolation: 'isolate' }}>
 			{tracks.map((track) => (
 				<AbsoluteFill key={track.trackId} data-track-id={track.trackId}>
+					{track.mattes.map((m) => (
+						<Sequence
+							key={`matte-${m.id}`}
+							from={m.start - offset}
+							durationInFrames={m.duration}
+							name="Transition matte"
+						>
+							<AbsoluteFill data-transition-matte={m.id} style={{ backgroundColor: rgbaCss(m.color) }} />
+						</Sequence>
+					))}
 					{track.clips.map((clip) => {
-						const from = clip.start - offset;
+						const head = clip.headHandle ?? 0;
+						const from = clip.start - head - offset;
 						return (
 							<Sequence
 								key={clip.clipId}
 								from={from}
-								durationInFrames={clip.duration}
+								durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
 								name={clip.name}
 								premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
 							>

@@ -12,7 +12,7 @@ import { type Box, scaleForMode } from '../../factories.ts';
 import { isBoundedContent, kindCapabilities } from '../../registry/kinds.ts';
 import type { MediaAsset } from '../../schema/media.ts';
 import type { Clip, Track } from '../../schema/sequence.ts';
-import { contentSpanFlicks, flicksPerFrame, type Rational } from '../../time.ts';
+import { contentSpanFlicks, FRAME_EPS, flicksPerFrame, type Rational } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import {
 	allTracksIn,
@@ -39,7 +39,7 @@ import type { CommandOf } from '../schemas/index.ts';
 import { type HandlerMap, idList } from './util.ts';
 
 type DTrack = Draft<Track>;
-const EPS = 1e-6;
+const EPS = FRAME_EPS;
 const rateOf = (seq: DSeq) => seq.settings.frameRate as Rational;
 
 // ---------------------------------------------------------------- shared helpers

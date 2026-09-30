@@ -4,21 +4,38 @@
 // over a `color` background; audio atrim/atempo/aresample/volume/adelay + amix normalize=0 + pad/trim;
 // the selected video encoder (D-13: hardware H.264 / OpenH264 / libx264 in dev / AV1 / VP9) with bt709 tags +
 // AAC (MP4, faststart) or Opus (WebM). Inputs are referenced by index only (S04:SC-004).
+// Transitions (S01 §13) are built in: a clip's layer also covers its handles, the transition ramps become
+// `fade=…:alpha=1` on the layer (the same linear ramps `fadeFactor` evaluates for the composition), the black
+// of a dip to black is a colour layer under the track's clips, and audio fades are `afade`.
 import {
 	clipContentTime,
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
 	type Rational,
 	type RenderAudioClip,
+	type RenderAudioFade,
+	type RenderFade,
 	type RenderSnapshot,
 	type RenderVisualClip,
 	resolveLayerProps,
 } from '@jasper/project';
+import { alphaDecoder } from '../media/alpha.ts';
 import { audioEncodeArgs, LEGACY_X264_CHOICE, videoEncodeArgs } from '../tools/encoders.ts';
 import { sec } from '../tools/ffmpeg.ts';
 import type { LocalMedia, OutputSpec } from './planner.ts';
 
 export const SAMPLE_RATE = 48000;
+/**
+ * swscale flags for every YUV ↔ RGB conversion of the composite. Without `accurate_rnd` the default
+ * converters round down (a full-frame clip came out about one code value darker per generation), and
+ * without the full-chroma flags 4:2:0 chroma is up/down-sampled with the cheap horizontal path.
+ */
+export const SWS_FLAGS = 'flags=bicubic+accurate_rnd+full_chroma_int+full_chroma_inp';
+/**
+ * BT.709 tags on the frames themselves. FFmpeg 7.1 takes an encoder's colour description from its input
+ * frames, so `-color_primaries` / `-color_trc` alone left ProRes masters untagged (and H.264 half tagged).
+ */
+export const BT709_FRAME_TAGS = 'setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv';
 const OFFLINE_RGBA: [number, number, number, number] = [0.55, 0.05, 0.08, 1];
 
 export type NativeSourceResolver = {
@@ -102,11 +119,50 @@ function inColor(m: LocalMedia | null): string {
 	return `:in_color_matrix=${cm}:in_range=${vs.color.range === 'pc' ? 'pc' : 'tv'}`;
 }
 
-type LayerPlan = {
-	clip: RenderVisualClip;
-	f0: number;
-	f1: number;
-};
+type LayerPlan =
+	| { clip: RenderVisualClip; f0: number; f1: number }
+	/** Full-frame colour under a track's clips (the black of a dip to black). */
+	| { matte: { color: readonly number[] }; f0: number; f1: number };
+
+/**
+ * Transition ramps of a layer whose first frame is sequence frame `f0`, as ffmpeg `fade` filters on the
+ * alpha channel. `fade` counts frames from the layer's first one and cannot start before it, so a ramp that
+ * begins earlier (a cross dissolve's ramp starts one frame before the span; a range export may start inside
+ * a ramp) gets `pad` throwaway frames in front, removed again after the fades.
+ */
+export function fadeFilters(fades: readonly RenderFade[] | undefined, f0: number): string[] {
+	const live = (fades ?? []).filter((f) => !(f.type === 'in' && f.start + f.frames <= f0));
+	if (live.length === 0) return [];
+	const pad = Math.max(0, ...live.map((f) => f0 - f.start));
+	return [
+		...(pad > 0 ? [`tpad=start=${pad}`] : []),
+		...live.map((f) => `fade=t=${f.type}:s=${f.start - f0 + pad}:n=${f.frames}:alpha=1`),
+		...(pad > 0 ? [`trim=start_frame=${pad}`] : []),
+	];
+}
+
+/**
+ * Audio fades of a clip chain whose first sample is sequence frame `f0`, as `afade` (sample accurate;
+ * `tri` = linear, `qsin` = equal power). A fade that began before `f0` is padded like `fadeFilters`.
+ */
+export function audioFadeFilters(
+	fades: readonly RenderAudioFade[] | undefined,
+	f0: number,
+	frameSec: number,
+): string[] {
+	const samplesOf = (frames: number) => Math.round(frames * frameSec * SAMPLE_RATE);
+	const live = (fades ?? []).filter((f) => !(f.type === 'in' && f.start + f.frames <= f0));
+	if (live.length === 0) return [];
+	const pad = samplesOf(Math.max(0, ...live.map((f) => f0 - f.start)));
+	return [
+		...(pad > 0 ? [`adelay=delays=${pad}S:all=1`] : []),
+		...live.map(
+			(f) =>
+				`afade=t=${f.type}:ss=${samplesOf(f.start - f0) + pad}:ns=${samplesOf(f.frames)}:curve=${f.curve === 'equal-power' ? 'qsin' : 'tri'}`,
+		),
+		...(pad > 0 ? [`atrim=start_sample=${pad}`, 'asetpts=PTS-STARTPTS'] : []),
+	];
+}
 
 export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 	const { snapshot: snap, output } = o;
@@ -129,6 +185,8 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 				width: output.width,
 				height: output.height,
 				fps: output.fps,
+				...(output.bitrateKbps ? { bitrateKbps: output.bitrateKbps } : {}),
+				...(output.proresProfile ? { proresProfile: output.proresProfile } : {}),
 			});
 	const inputs: string[][] = [];
 	const chains: string[] = [];
@@ -146,16 +204,36 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 
 	const layers: LayerPlan[] = [];
 	for (const track of snap.videoTracks) {
+		for (const m of track.mattes ?? []) {
+			const f0 = Math.max(m.start, R0);
+			const f1 = Math.min(m.start + m.duration, R1);
+			if (f1 > f0) layers.push({ matte: m, f0, f1 });
+		}
 		for (const c of track.clips) {
-			const f0 = Math.max(c.start, R0);
-			const f1 = Math.min(c.start + c.duration, R1);
+			// With transitions a clip is drawn from its head handle to the end of its tail handle (S01:TRN-003).
+			const f0 = Math.max(c.start - (c.headHandle ?? 0), R0);
+			const f1 = Math.min(c.start + c.duration + (c.tailHandle ?? 0), R1);
 			if (f1 > f0) layers.push({ clip: c, f0, f1 });
 		}
 	}
 
-	for (const { clip: c, f0, f1 } of layers) {
+	const half = frameSec / 2;
+	for (const layer of layers) {
+		const { f0, f1 } = layer;
 		const n = f1 - f0;
 		const t0 = (f0 - R0) * frameSec;
+		const shift = `setpts=PTS-STARTPTS+round(${f0 - R0}*${fps.den}/(${fps.num}*TB))`;
+		const enable = `enable='between(t,${fmt(t0 - half)},${fmt(t0 + n * frameSec - half)})'`;
+		if ('matte' in layer) {
+			const label = `l${li++}`;
+			chains.push(
+				`color=c=${colorHex(layer.matte.color)}:s=${W}x${H}:r=${rate(fps)}:d=${fmt(n * frameSec + frameSec)},format=rgba,trim=end_frame=${n},${shift}[${label}]`,
+				`[${last}][${label}]overlay=x=0:y=0:format=rgb:eof_action=pass:${enable}[o${label}]`,
+			);
+			last = `o${label}`;
+			continue;
+		}
+		const c = layer.clip;
 		const props = resolveLayerProps(c, clipContentTime(c, f0, fps));
 		const bw = Math.max(1, Math.round(c.intrinsicBox.width));
 		const bh = Math.max(1, Math.round(c.intrinsicBox.height));
@@ -169,10 +247,22 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		if ((c.kind === 'video' || c.kind === 'animated-image') && local) {
 			const startSec = clipContentTime(c, f0, fps) / FLICKS_PER_SECOND;
 			const srcDur = n * frameSec * c.speed.rate + margin;
-			const k = addInput(['-ss', sec(startSec), '-t', sec(srcDur), '-i', local.path]);
+			const dec = alphaDecoder(local.record.probe);
+			// WebM alpha is a second VP8/VP9 stream whose keyframes need not line up with the colour stream's:
+			// after an input seek to a colour keyframe libvpx may get a non-key alpha frame first and reject
+			// every packet ("Bitstream not supported", seen with VP8). Such inputs are decoded from their start
+			// and trimmed in the graph (overlays are short).
+			const decodeFromStart = dec !== null && startSec > 0;
+			const k = addInput([
+				...(dec ? ['-c:v', dec] : []),
+				...(decodeFromStart ? ['-t', sec(startSec + srcDur)] : ['-ss', sec(startSec), '-t', sec(srcDur)]),
+				'-i',
+				local.path,
+			]);
 			src = `[${k}:v:0]`;
+			if (decodeFromStart) f.push(`trim=start=${fmt(startSec)}`);
 			f.push(`setpts=(PTS-STARTPTS)/${fmt(c.speed.rate)}`, `fps=${rate(fps)}`, `trim=end_frame=${n}`);
-			f.push(`scale=${bw}:${bh}${inColor(local)}`, 'setsar=1', 'format=rgba');
+			f.push(`scale=${bw}:${bh}${inColor(local)}:${SWS_FLAGS}`, 'setsar=1', 'format=rgba');
 		} else if (c.kind === 'still' && local) {
 			const k = addInput([
 				'-loop',
@@ -186,7 +276,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			]);
 			src = `[${k}:v:0]`;
 			f.push('setpts=PTS-STARTPTS', `fps=${rate(fps)}`, `trim=end_frame=${n}`);
-			f.push(`scale=${bw}:${bh}${inColor(local)}`, 'setsar=1', 'format=rgba');
+			f.push(`scale=${bw}:${bh}${inColor(local)}:${SWS_FLAGS}`, 'setsar=1', 'format=rgba');
 		} else if (c.kind === 'motion-graphic' && mg) {
 			const startSec = (f0 - c.start) * frameSec;
 			const k = addInput(['-ss', sec(startSec), '-t', sec(n * frameSec + margin), '-i', mg]);
@@ -263,16 +353,16 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			cy = m.b * (bw / 2) + m.d * (bh / 2) + m.f;
 		}
 		if (props.opacity < 100) f.push(`colorchannelmixer=aa=${fmt(props.opacity / 100)}`);
-		f.push(`setpts=PTS-STARTPTS+${fmt(t0)}/TB`);
+		f.push(...fadeFilters(c.fades, f0));
+		// Shift the layer to its place on the timeline in whole frames. `setpts` truncates its result, so an
+		// offset written in decimal seconds (3.333333 s for frame 100 at 30 fps) landed one frame early.
+		f.push(shift);
 		chains.push(`${src}${f.join(',')}[${label}]`);
 
 		const x = Math.round(cx - outW / 2);
 		const y = Math.round(cy - outH / 2);
 		const next = `o${label}`;
-		const half = frameSec / 2;
-		chains.push(
-			`[${last}][${label}]overlay=x=${x}:y=${y}:format=rgb:eof_action=pass:enable='between(t,${fmt(t0 - half)},${fmt(t0 + n * frameSec - half)})'[${next}]`,
-		);
+		chains.push(`[${last}][${label}]overlay=x=${x}:y=${y}:format=rgb:eof_action=pass:${enable}[${next}]`);
 		last = next;
 	}
 
@@ -296,10 +386,9 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 	vout.push(`trim=end_frame=${output.frames}`, 'setpts=PTS-STARTPTS');
 	if (o.still) vout.push('format=rgb24');
 	else {
-		vout.push('scale=out_color_matrix=bt709:out_range=tv', 'format=yuv420p', 'setsar=1');
-		// Encoder-specific tail (nv12 for QSV, hwupload for VAAPI); yuv420p needs nothing more.
-		const tail = enc!.filters.filter((f) => f !== 'format=yuv420p');
-		vout.push(...tail);
+		// The encoder's pixel format (yuv420p; nv12 + hwupload for QSV/VAAPI; 4:2:2/4:4:4 10-bit for ProRes).
+		vout.push(`scale=out_color_matrix=bt709:out_range=tv:${SWS_FLAGS}`, 'setsar=1', BT709_FRAME_TAGS);
+		vout.push(...enc!.filters);
 	}
 	chains.push(`[${last}]${vout.join(',')}[vout]`);
 
@@ -334,6 +423,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 				`volume=${fmt(db)}dB`,
 				`atrim=end_sample=${samples}`,
 				'asetpts=PTS-STARTPTS',
+				...audioFadeFilters(a.fades, f0, frameSec),
 				...(delay > 0 ? [`adelay=delays=${delay}S:all=1`] : []),
 			];
 			chains.push(`[${k}:${stream}]${chain.join(',')}[a${ai}]`);
@@ -382,7 +472,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			String(output.audioChannels),
 			'-threads',
 			String(Math.max(1, o.threads)),
-			...(encoder.container === 'mp4' ? ['-movflags', '+faststart'] : []),
+			...(encoder.container !== 'webm' ? ['-movflags', '+faststart'] : []),
 			'-f',
 			encoder.container,
 			o.outputFile,

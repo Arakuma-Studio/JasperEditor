@@ -7,14 +7,23 @@ import { SolidLayer } from './SolidLayer.tsx';
 import { StillLayer } from './StillLayer.tsx';
 import { TextLayer } from './TextLayer.tsx';
 import { UnsupportedLayer } from './UnsupportedLayer.tsx';
-import { VideoLayer } from './VideoLayer.tsx';
+import { ProxyPendingCard, VideoLayer } from './VideoLayer.tsx';
 
 export { AudioLayer, type AudioLayerProps } from './AudioLayer.tsx';
 export { LayerBox, StubLabel } from './LayerBox.tsx';
 export { type MgRenderState, MgRenderStateContext } from './MotionGraphicLayer.tsx';
 export { OFFLINE_CARD_COLORS } from './OfflineCard.tsx';
 export { textBlockStyle, textFontFamily } from './TextLayer.tsx';
-export { MotionGraphicLayer, OfflineCard, SolidLayer, StillLayer, TextLayer, UnsupportedLayer, VideoLayer };
+export {
+	MotionGraphicLayer,
+	OfflineCard,
+	ProxyPendingCard,
+	SolidLayer,
+	StillLayer,
+	TextLayer,
+	UnsupportedLayer,
+	VideoLayer,
+};
 
 export const LAYER_COMPONENTS: Partial<Record<string, ComponentType<LayerProps>>> = {
 	video: VideoLayer,

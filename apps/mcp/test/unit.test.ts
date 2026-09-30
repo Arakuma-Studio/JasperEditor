@@ -286,6 +286,25 @@ describe('export presets', () => {
 		expect(def.video).toMatchObject({ width: 1920, height: 1080, codec: 'h264' });
 		expect(def.destination).toEqual({ type: 'download' });
 		expect(new Set(EXPORT_PRESETS.map((p) => p.id)).size).toBe(EXPORT_PRESETS.length);
+		// Masters: a high-bitrate H.264 and a ProRes 422 HQ MOV; quality overrides win over the preset.
+		const hi = buildExportSettings(seq, findExportPreset('master-h264-high')!, {
+			range: { type: 'entire' },
+			engine: 'auto',
+		});
+		expect(hi.video).toMatchObject({ codec: 'h264', quality: { value: 14 }, bitrateKbps: 20000 });
+		const tuned = buildExportSettings(seq, findExportPreset(undefined)!, {
+			range: { type: 'entire' },
+			engine: 'auto',
+			crf: 12,
+			videoBitrateKbps: 16000,
+		});
+		expect(tuned.video).toMatchObject({ quality: { value: 12 }, bitrateKbps: 16000 });
+		const pr = buildExportSettings(seq, findExportPreset('master-prores-422hq')!, {
+			range: { type: 'entire' },
+			engine: 'native',
+		});
+		expect(pr).toMatchObject({ container: 'mov', video: { codec: 'prores' } });
+		expect(pr.video!.bitrateKbps).toBeUndefined();
 	});
 });
 

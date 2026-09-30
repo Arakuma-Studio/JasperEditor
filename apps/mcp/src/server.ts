@@ -19,7 +19,7 @@ export const EDITING_GUIDE = `JasperEditor is a Premiere-style video editor. The
 Workflow:
 1. list_projects (or create_project) → projectId. open_project_in_editor if the user wants to watch; edits then appear live in their editor window, each as one undoable "Agent: <label>" History entry.
 2. import_media with absolute file paths → mediaIds. get_media_info for durations and streams.
-3. Build the cut: add_clip / move_clip / trim_clip / split_at / delete_clips / add_text / add_marker / add_motion_graphic, or apply_commands for anything else (describe_commands lists every command with schemas and examples). Several related changes belong in one apply_commands transaction (atomic, one undo step).
+3. Build the cut: add_clip / move_clip / trim_clip / split_at / delete_clips / add_text / add_marker / add_motion_graphic / add_transition, or apply_commands for anything else (describe_commands lists every command with schemas and examples). Several related changes belong in one apply_commands transaction (atomic, one undo step).
 4. Check it: get_timeline (text table) and render_frame (PNG of the Program output at a time).
 5. start_export → wait_for_job → the output file.
 
