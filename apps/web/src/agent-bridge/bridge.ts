@@ -485,7 +485,7 @@ export class AgentBridge {
 	resolveApproval(approvalId: string, decision: 'approved' | 'denied'): boolean {
 		if (this.settleLocal(approvalId, decision)) return true;
 		const a = this.store.getState().approvals.find((x) => x.approvalId === approvalId);
-		if (!a || a.source !== 'engine') return false;
+		if (a?.source !== 'engine') return false;
 		const sent = this.relay?.sendEvent('agent.approval.resolve', { approvalId, decision }) ?? false;
 		if (sent) this.removeApproval(approvalId, decision);
 		return sent;
