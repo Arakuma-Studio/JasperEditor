@@ -10,7 +10,7 @@ import { assertUnlocked, findTrackIn } from '../placement.ts';
 import type { CommandOf, ParamAt } from '../schemas/index.ts';
 import type { HandlerMap } from './util.ts';
 
-type ValueRule = {
+export type ValueRule = {
 	kind: 'number' | 'vec2' | 'color' | 'enum' | 'boolean' | 'string' | 'media';
 	range?: { min?: number; max?: number };
 	options?: readonly string[];
@@ -18,7 +18,7 @@ type ValueRule = {
 };
 
 /** A resolved parameter target: either an Animatable (keyframable) or a static setter. */
-type Target =
+export type Target =
 	| {
 			type: 'anim';
 			anim: Draft<Animatable<unknown>>;
@@ -31,7 +31,7 @@ type Target =
 function ruleFromProperty(s: PropertySpec): ValueRule {
 	return { kind: s.kind, range: s.range, options: s.options, holdOnly: s.animatable === 'hold-only' };
 }
-function ruleFromParam(p: ParamSpec): ValueRule {
+export function ruleFromParam(p: ParamSpec): ValueRule {
 	return { kind: p.type, range: p.range, options: p.options, holdOnly: !p.animatable };
 }
 
@@ -63,7 +63,11 @@ function findEffect(
 	return null;
 }
 
-function resolveTarget(doc: DDoc, cmd: { target: string[]; sequenceId?: string }, h: HandlerContext): Target {
+export function resolveTarget(
+	doc: DDoc,
+	cmd: { target: string[]; sequenceId?: string },
+	h: HandlerContext,
+): Target {
 	const [head, a, ...rest] = cmd.target;
 	const bad = (): never =>
 		h.fail('E_INVALID_PARAM', `Unsupported parameter path: ${JSON.stringify(cmd.target)}`);
@@ -161,7 +165,7 @@ function resolveTarget(doc: DDoc, cmd: { target: string[]; sequenceId?: string }
 }
 
 /** Validates a value against its rule and clamps numbers to the range (S03:PRP-021). */
-function validateValue(
+export function validateValue(
 	v: unknown,
 	rule: ValueRule,
 	h: HandlerContext,

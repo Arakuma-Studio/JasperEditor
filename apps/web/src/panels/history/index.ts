@@ -1,13 +1,23 @@
-// History panel — placeholder from WP-00; WP-2D replaces the component (keep the definition's contract).
-import { placeholderPanel } from '../placeholder.tsx';
+// History panel (WP-2D): labelled undo steps, agent sparkle, click to jump, Clear History (S05:HIS).
+import type { PanelDefinition } from '../types.ts';
+import { HistoryPanel } from './HistoryPanel.tsx';
 
-export default placeholderPanel('history', {
-	title: 'History',
-	owner: 'WP-2D',
+const definition: PanelDefinition = {
+	kind: 'history',
+	title: () => 'History',
 	icon: 'panel.history',
 	instance: 'single',
 	minSize: { w: 200, h: 120 },
 	keymapScope: 'history',
+	menu: [
+		{ type: 'command', command: 'history.stepBackward' },
+		{ type: 'command', command: 'history.stepForward' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'history.clear' },
+	],
 	touch: 'sheet',
 	agentDescription: 'Undo history with labels and origins; click an entry to go back to it.',
-});
+	component: HistoryPanel,
+};
+
+export default definition;

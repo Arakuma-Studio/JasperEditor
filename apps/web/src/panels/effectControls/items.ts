@@ -1,0 +1,180 @@
+// Effect Controls content model (S03:EC-003, S05:ECP-003/008): Video and Audio groups with the
+// intrinsic effects (Motion, Opacity, pinned Crop, Template parameters; Volume, Panner) followed by the
+// applied effects in stack order. Unknown effects show as "Missing effect: <id>" (S01:FX-022).
+import {
+	type Clip,
+	CROP_EFFECT,
+	type EffectInstance,
+	type EffectRegistry,
+	type EffectSpec,
+	type MgTemplateRegistry,
+	type ProjectDocument,
+	paramsPropertySpecs,
+	propertyDefault,
+	type Sequence,
+} from '@jasper/project';
+import {
+	bindCrop,
+	bindEffectParam,
+	bindProperty,
+	contextOf,
+	cropEffectOf,
+	isAudioClip,
+	isVisualClip,
+	makeRow,
+	type Row,
+	templateOf,
+} from '../properties/lib/model.ts';
+
+export type FxSection = {
+	/** Stable section id (collapse state, focus). */
+	id: string;
+	title: string;
+	clip: Clip;
+	rows: Row[];
+	/** Intrinsic sections cannot be reordered or removed (Motion cannot be bypassed either). */
+	intrinsic: boolean;
+	/** The applied (or pinned crop) effect instance, when the section is backed by one. */
+	fx?: EffectInstance;
+	effect?: EffectSpec;
+	/** Index of `fx` in the clip's effect stack. */
+	stackIndex?: number;
+	missing?: boolean;
+};
+
+export type EcGroup = { id: 'video' | 'audio'; title: string; sections: FxSection[] };
+
+/** The primary clip plus its linked partner of the other medium (video clip + its audio, S01:KND-003). */
+export function shownClips(seq: Sequence, primary: Clip): Clip[] {
+	const out = [primary];
+	if (primary.linkId) {
+		const members = seq.links[primary.linkId]?.members ?? [];
+		const want = isVisualClip(primary) ? isAudioClip : isVisualClip;
+		const partner = members
+			.map((id) => seq.clips[id])
+			.find((c): c is Clip => !!c && c.id !== primary.id && want(c));
+		if (partner) out.push(partner);
+	}
+	return out.sort((a, b) => Number(isAudioClip(a)) - Number(isAudioClip(b)));
+}
+
+export function buildGroups(
+	doc: ProjectDocument,
+	seq: Sequence,
+	clips: readonly Clip[],
+	frame: number,
+	registries: { effects: EffectRegistry; mg: MgTemplateRegistry },
+): EcGroup[] {
+	const groups: EcGroup[] = [];
+	for (const clip of clips) {
+		const prop = (key: string) => bindProperty(doc, seq, clip, key, frame, registries.mg);
+		const rows = (keys: string[]) =>
+			keys.map((k) => makeRow(k, [prop(k)])).filter((r): r is Row => r !== null);
+		const sections: FxSection[] = [];
+		const effects = (clip as { effects?: EffectInstance[] }).effects ?? [];
+		const pinned = isVisualClip(clip) ? cropEffectOf(clip) : null;
+		if (isVisualClip(clip)) {
+			const nonUniform =
+				(clip as { transform?: { uniformScale: boolean } }).transform?.uniformScale === false;
+			sections.push({
+				id: `${clip.id}:motion`,
+				title: 'Motion',
+				clip,
+				intrinsic: true,
+				rows: rows([
+					'transform.position',
+					'transform.scale',
+					...(nonUniform ? ['transform.scaleWidth'] : []),
+					'transform.uniformScale',
+					'transform.rotation',
+					'transform.anchor',
+				]),
+			});
+			sections.push({
+				id: `${clip.id}:opacity`,
+				title: 'Opacity',
+				clip,
+				intrinsic: true,
+				rows: rows(['opacity', 'blendMode']),
+			});
+			sections.push({
+				id: `${clip.id}:crop`,
+				title: 'Crop',
+				clip,
+				intrinsic: true,
+				fx: pinned ?? undefined,
+				effect: CROP_EFFECT,
+				stackIndex: pinned ? effects.indexOf(pinned) : undefined,
+				rows: CROP_EFFECT.params
+					.map((p) => makeRow(`crop.${p.name}`, [bindCrop(doc, seq, clip, p.name, frame)]))
+					.filter((r): r is Row => r !== null),
+			});
+			const tpl = templateOf(clip, registries.mg);
+			if (tpl) {
+				sections.push({
+					id: `${clip.id}:template`,
+					title: `Template · ${tpl.name}`,
+					clip,
+					intrinsic: true,
+					rows: rows(paramsPropertySpecs(tpl).map((s) => s.key)),
+				});
+			}
+		} else if (isAudioClip(clip)) {
+			sections.push({
+				id: `${clip.id}:volume`,
+				title: 'Volume',
+				clip,
+				intrinsic: true,
+				rows: rows(['volumeDb', 'gainDb']),
+			});
+			sections.push({ id: `${clip.id}:panner`, title: 'Panner', clip, intrinsic: true, rows: rows(['pan']) });
+		}
+		effects.forEach((fx, stackIndex) => {
+			if (fx === pinned) return;
+			const effect = registries.effects.get(fx.effectId, fx.effectVersion);
+			if (!effect) {
+				sections.push({
+					id: `${clip.id}:fx:${fx.id}`,
+					title: `Missing effect: ${fx.effectId}`,
+					clip,
+					intrinsic: false,
+					fx,
+					stackIndex,
+					missing: true,
+					rows: [],
+				});
+				return;
+			}
+			sections.push({
+				id: `${clip.id}:fx:${fx.id}`,
+				title: effect.label,
+				clip,
+				intrinsic: false,
+				fx,
+				effect,
+				stackIndex,
+				rows: effect.params
+					.map((p) =>
+						makeRow(`effects.${fx.id}.${p.name}`, [bindEffectParam(doc, seq, clip, fx, effect, p, frame)]),
+					)
+					.filter((r): r is Row => r !== null),
+			});
+		});
+		const medium = isAudioClip(clip) ? 'audio' : 'video';
+		if (sections.length) groups.push({ id: medium, title: medium === 'video' ? 'Video' : 'Audio', sections });
+	}
+	return groups;
+}
+
+/** Footer filter (S05:ECP-007): all rows, only animated ones, or only ones that differ from the default. */
+export type RowFilter = 'all' | 'animated' | 'modified';
+
+export function rowVisible(doc: ProjectDocument, seq: Sequence, row: Row, filter: RowFilter): boolean {
+	if (filter === 'all') return true;
+	const b = row.bindings[0]!;
+	if (b.resolved.animated) return true;
+	if (filter === 'animated') return false;
+	if (b.spec.defaultValue === undefined) return false;
+	const d = propertyDefault(contextOf(doc, seq, b.clip), b.spec);
+	return JSON.stringify(d) !== JSON.stringify(b.resolved.value);
+}

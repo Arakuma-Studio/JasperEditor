@@ -1,13 +1,22 @@
-// Properties panel — placeholder from WP-00; WP-2D replaces the component (keep the definition's contract).
-import { placeholderPanel } from '../placeholder.tsx';
+// Properties panel (WP-2D): the context-sensitive primary inspector (S03 §14, S05:PRP).
+import type { PanelDefinition } from '../types.ts';
+import { PropertiesPanel } from './PropertiesPanel.tsx';
 
-export default placeholderPanel('properties', {
-	title: 'Properties',
-	owner: 'WP-2D',
+const definition: PanelDefinition = {
+	kind: 'properties',
+	title: () => 'Properties',
 	icon: 'panel.properties',
 	instance: 'single',
 	minSize: { w: 240, h: 200 },
 	keymapScope: 'properties',
+	menu: [
+		{ type: 'command', command: 'inspector.toggleStopwatch' },
+		{ type: 'command', command: 'inspector.addRemoveKeyframe' },
+		{ type: 'command', command: 'inspector.resetProperty' },
+	],
 	touch: 'sheet',
 	agentDescription: 'Context-sensitive inspector for the selection (text, motion graphics, clips).',
-});
+	component: PropertiesPanel,
+};
+
+export default definition;
