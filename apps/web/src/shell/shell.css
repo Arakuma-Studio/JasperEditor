@@ -1,0 +1,13 @@
+/* Shell-only rules (S05:HD-001): drag regions for the frameless Electron window and PWA Window
+   Controls Overlay; interactive children opt out. */
+.pr-drag {
+	-webkit-app-region: drag;
+	app-region: drag;
+}
+.pr-drag button,
+.pr-drag [role="menubar"],
+.pr-drag input,
+.pr-no-drag {
+	-webkit-app-region: no-drag;
+	app-region: no-drag;
+}

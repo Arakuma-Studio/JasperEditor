@@ -87,6 +87,15 @@
 	--pr-engine-remotion: #e056b8;
 	--pr-engine-fframes: #b07cff;
 	--pr-engine-native: #58b6a6;
+	/* fx badge states (S05:IC-005, R-PUI §9.6) */
+	--pr-fx-none: #b0b0b0;
+	--pr-fx-intrinsic: #e6c619;
+	--pr-fx-effect: #9d7df0;
+	--pr-fx-both: #3fb54a;
+	/* drop zone highlight while docking (S05:DK-021) */
+	--pr-dock-drop-fill: color-mix(in srgb, var(--pr-accent) 35%, transparent);
+	/* invalid-entry flash for timecode/number fields (S05:TY-006) */
+	--pr-field-invalid: color-mix(in srgb, var(--pr-danger) 45%, var(--pr-bg-field));
 
 	/* 8.5 spacing, sizing, radius */
 	--pr-gutter: 3px;

@@ -1,7 +1,9 @@
 // Routes (ARCHITECTURE §7.5): "/" Home, "/project/:projectId" editor. React Router 7 in library mode.
 import { BrowserRouter, Route, Routes, useParams } from 'react-router';
 import { Home } from './home/Home.tsx';
-import { PlaceholderShell } from './shell/PlaceholderShell.tsx';
+import { EngineGate } from './runtime/bootstrap.tsx';
+import { EditorShell } from './shell/EditorShell.tsx';
+import { GlobalHosts } from './shell/GlobalHosts.tsx';
 import { EngineProvider } from './state/engine.tsx';
 import { ProjectSessionHost } from './state/session-host.tsx';
 
@@ -19,7 +21,7 @@ function EditorRoute() {
 				</div>
 			)}
 		>
-			<PlaceholderShell />
+			<EditorShell />
 		</ProjectSessionHost>
 	);
 }
@@ -37,9 +39,13 @@ export function AppRoutes() {
 export function App() {
 	return (
 		<EngineProvider>
-			<BrowserRouter>
-				<AppRoutes />
-			</BrowserRouter>
+			<GlobalHosts>
+				<EngineGate>
+					<BrowserRouter>
+						<AppRoutes />
+					</BrowserRouter>
+				</EngineGate>
+			</GlobalHosts>
 		</EngineProvider>
 	);
 }

@@ -27,5 +27,24 @@ export default defineConfig({
 		},
 	},
 	preview: { host: '127.0.0.1', port: 4173 },
-	build: { outDir: 'dist', sourcemap: true, target: 'es2022' },
+	build: {
+		outDir: 'dist',
+		sourcemap: true,
+		target: 'es2022',
+		rollupOptions: {
+			output: {
+				// Stable vendor chunks so app changes do not invalidate them (ARCHITECTURE §13 startup).
+				manualChunks(id) {
+					if (!id.includes('node_modules')) return undefined;
+					if (/[\\/](remotion|@remotion)[\\/]/.test(id)) return 'vendor-remotion';
+					if (/[\\/](dockview|dockview-core|dockview-react)[\\/]/.test(id)) return 'vendor-dockview';
+					if (/[\\/](@radix-ui|radix-ui|@floating-ui)[\\/]/.test(id)) return 'vendor-radix';
+					if (/[\\/](react|react-dom|scheduler|react-router)[\\/]/.test(id)) return 'vendor-react';
+					if (/[\\/](zod|immer|zustand)[\\/]/.test(id)) return 'vendor-state';
+					if (/[\\/]lucide-react[\\/]/.test(id)) return 'vendor-icons';
+					return 'vendor';
+				},
+			},
+		},
+	},
 });
