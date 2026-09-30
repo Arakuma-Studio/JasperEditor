@@ -18,6 +18,7 @@ import { transportCommands } from '../src/commands/transport.ts';
 import { handleMonitorKey } from '../src/panels/program/monitor-commands.ts';
 import {
 	type Clock,
+	PLAY_WATCHDOG_MS,
 	PlaybackDriver,
 	type PlayerLike,
 	SEEK_HZ,
@@ -257,6 +258,40 @@ describe('PlaybackDriver (S03:ARC-010, S02:TL-873)', () => {
 		expect(player.playing).toBe(false);
 		transport.seek(42);
 		expect(player.frame).toBe(42);
+	});
+
+	it('re-issues play() when the Player does not start (no frameupdate, not buffering) — WP-3I', () => {
+		vi.useFakeTimers();
+		try {
+			const { transport, player } = setup();
+			transport.seek(61);
+			let plays = 0;
+			const orig = player.play.bind(player);
+			player.play = () => {
+				plays++;
+				orig();
+			};
+			transport.play(1);
+			expect(plays).toBe(1);
+			vi.advanceTimersByTime(PLAY_WATCHDOG_MS + 10); // no frames arrived: kicked again
+			expect(plays).toBe(2);
+			expect(player.seeks.at(-1)).toBe(61);
+			player.advance(5); // now progressing: the watchdog stands down
+			vi.advanceTimersByTime(PLAY_WATCHDOG_MS * 3);
+			expect(plays).toBe(2);
+			expect(transport.getState().frame).toBe(66);
+			// Buffering (waiting) is legitimate: no kick while waiting.
+			transport.pause();
+			transport.play(1);
+			player.emit('waiting');
+			vi.advanceTimersByTime(PLAY_WATCHDOG_MS * 2);
+			expect(plays).toBe(3);
+			transport.pause();
+			vi.advanceTimersByTime(PLAY_WATCHDOG_MS * 2);
+			expect(plays).toBe(3);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it('mutes below 1× (TL-874) and steps above 1× (measured Player limit)', () => {
