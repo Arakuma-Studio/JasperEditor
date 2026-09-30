@@ -41,3 +41,4 @@ playwright-report/
 # Paid Remotion Editor Starter: reference-only, never committed (clean-room rewrite)
 .reference/
 editor-starter.zip
+vendor/
