@@ -1,4 +1,4 @@
-import { matrixToCss } from '@jasper/project';
+import { mat3ToCss, matrixToCss } from '@jasper/project';
 import { type CSSProperties, type ReactNode, useMemo } from 'react';
 import { blendModeCss, effectStages } from '../pipeline.ts';
 import type { LayerProps } from '../types.ts';
@@ -10,7 +10,8 @@ const FILL: CSSProperties = { position: 'absolute', left: 0, top: 0, width: '100
  * 1. source content (`children`, styled with `style`) in an intrinsic-size box;
  * 2. effects, crop first, each one wrapper element (preview CSS or an SVG filter). Crop uses
  *    `clip-path` on an inner element so blur/shadow of later effects are not clipped;
- * 3. the layer matrix on the outer element (`transform-origin: 0 0`);
+ * 3. the layer matrix on the outer element (`transform-origin: 0 0`); a corner pin (M2) makes it the
+ *    projective map `props.projective` written as `matrix3d`;
  * 4. opacity on the outer element;
  * 5. blend with `mix-blend-mode` against the layers below (the stack root is `isolation: isolate`).
  * Inline styles only (ARCHITECTURE D-14).
@@ -63,7 +64,7 @@ export function LayerBox({
 				width: props.box.width,
 				height: props.box.height,
 				transformOrigin: '0 0',
-				transform: matrixToCss(props.matrix),
+				transform: props.projective ? mat3ToCss(props.projective) : matrixToCss(props.matrix),
 				opacity: props.opacity / 100,
 				mixBlendMode: blendModeCss(clip.blendMode),
 			}}

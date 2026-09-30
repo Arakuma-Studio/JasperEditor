@@ -1,3 +1,4 @@
+export * from './homography.ts';
 export * from './plan.ts';
 export * from './scene.ts';
 export * from './snapshot.ts';

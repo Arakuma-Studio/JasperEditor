@@ -3,6 +3,15 @@
 import { evaluate } from '../keyframes.ts';
 import type { ParamValue, Vec2 } from '../schema/common.ts';
 import { flicksPerFrame, type Rational } from '../time.ts';
+import {
+	applyMat3,
+	boxToQuad,
+	isConvexQuad,
+	type Mat3,
+	mat3FromMat2D,
+	multiplyMat3,
+	type Quad,
+} from './homography.ts';
 import type { RenderSnapshot, RenderVisualClip } from './snapshot.ts';
 import {
 	type Crop,
@@ -24,11 +33,44 @@ export type ResolvedEffect = {
 	params: Record<string, ParamValue>;
 };
 
+/** Effect id of the corner pin (M2, S09:TRK-050). Params: TL/TR/BR/BL as vec2 normalized to the layer box. */
+export const CORNER_PIN_EFFECT_ID = 'jasper.corner-pin';
+export const CORNER_PIN_PARAMS = ['topLeft', 'topRight', 'bottomRight', 'bottomLeft'] as const;
+
+/**
+ * The corner-pin quad of a layer in layer pixels (TL, TR, BR, BL), or null when the layer has no enabled,
+ * valid (convex) corner pin. The first enabled corner pin of the stack wins (S09:TRK-051).
+ */
+export function cornerPinQuad(
+	effects: readonly ResolvedEffect[],
+	box: { width: number; height: number },
+): Quad | null {
+	const fx = effects.find((e) => e.enabled && e.effectId === CORNER_PIN_EFFECT_ID);
+	if (!fx) return null;
+	const defaults: Vec2[] = [
+		[0, 0],
+		[1, 0],
+		[1, 1],
+		[0, 1],
+	];
+	const q = CORNER_PIN_PARAMS.map((name, i) => {
+		const v = fx.params[name];
+		const n = Array.isArray(v) && v.length === 2 ? (v as Vec2) : defaults[i]!;
+		return [n[0] * box.width, n[1] * box.height] as Vec2;
+	}) as Quad;
+	return isConvexQuad(q) ? q : null;
+}
+
 export type ResolvedLayerProps = {
 	transform: LayerTransformValues | null;
 	opacity: number;
 	effects: ResolvedEffect[];
 	matrix: Mat2D;
+	/**
+	 * M2: the full projective layer map (Motion · corner pin) when the layer has a corner pin, else null (the
+	 * layer map is `matrix`). Renderers use `matrix3d` / the native warp stage when this is set.
+	 */
+	projective: Mat3 | null;
 	box: { width: number; height: number };
 	crop: Crop | null;
 	quad: [Vec2, Vec2, Vec2, Vec2];
@@ -105,12 +147,24 @@ export function resolveLayerProps(c: RenderVisualClip, t: number): ResolvedLayer
 			}
 		: null;
 	const matrix = transform ? layerMatrix(transform) : IDENTITY;
-	const quad = layerQuad(matrix, visibleRect(c.intrinsicBox, crop ?? undefined));
+	const rect = visibleRect(c.intrinsicBox, crop ?? undefined);
+	const pin = cornerPinQuad(effects, c.intrinsicBox);
+	const pinMap = pin ? boxToQuad(c.intrinsicBox.width, c.intrinsicBox.height, pin) : null;
+	const projective = pinMap ? multiplyMat3(mat3FromMat2D(matrix), pinMap) : null;
+	const quad: [Vec2, Vec2, Vec2, Vec2] = projective
+		? [
+				applyMat3(projective, [rect.x, rect.y]),
+				applyMat3(projective, [rect.x + rect.width, rect.y]),
+				applyMat3(projective, [rect.x + rect.width, rect.y + rect.height]),
+				applyMat3(projective, [rect.x, rect.y + rect.height]),
+			]
+		: layerQuad(matrix, rect);
 	return {
 		transform,
 		opacity: Math.min(100, Math.max(0, evaluate(c.opacity, t))),
 		effects,
 		matrix,
+		projective,
 		box: c.intrinsicBox,
 		crop,
 		quad,
