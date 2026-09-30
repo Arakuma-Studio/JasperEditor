@@ -145,6 +145,10 @@ function LifecycleBody(props: {
 	const onDrop = (e: React.DragEvent) => {
 		if (e.defaultPrevented || !e.dataTransfer.files?.length) return;
 		e.preventDefault();
+		if (session.getState().readOnly) {
+			notices.push({ kind: 'warning', message: 'The project is read-only: nothing was imported.' });
+			return;
+		}
 		const files = Array.from(e.dataTransfer.files);
 		const service = new EngineImportService({ engine: engine.client, session });
 		void service.importFiles({ files }, { kind: 'bin', binId: activeProjectBin() }).then((r) => {

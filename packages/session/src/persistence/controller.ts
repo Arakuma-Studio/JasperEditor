@@ -89,13 +89,14 @@ export function attachPersistence(
 			win?.removeEventListener('pagehide', flushQuietly);
 			win?.removeEventListener('beforeunload', onBeforeUnload);
 			doc?.removeEventListener('visibilitychange', onVisibility);
+			// Detach synchronously so a re-attach (React StrictMode remount) gets a fresh controller.
+			if (controllers.get(session) === controller) controllers.delete(session);
 			try {
 				await autosaver.flush();
 			} catch {
 				// Saving on close is best effort; the error was reported through onError.
 			} finally {
 				autosaver.dispose();
-				controllers.delete(session);
 			}
 		},
 	};

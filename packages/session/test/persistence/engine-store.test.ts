@@ -28,7 +28,11 @@ const noLifecycle = { window: null, document: null } as const;
 function setup() {
 	const engine = new FakeEngine();
 	const projectId = engine.seed('Film');
-	const store = () => new EngineProjectStore(engine.client(), { ids: createCounterIdSource(500) });
+	const store = () =>
+		new EngineProjectStore(engine.client(), {
+			ids: createCounterIdSource(500),
+			sleep: async () => undefined,
+		});
 	const open = (sessionId: string, s = store()) =>
 		EditorSession.open({ store: s, projectId, ctx: ctx(), sessionId });
 	return { engine, projectId, store, open };
@@ -105,6 +109,25 @@ describe('leases (S01:PER-040)', () => {
 		const c = await open('c');
 		expect(c.getState().lease.status).toBe('held');
 		await c.close();
+	});
+
+	it('releases held leases with keepalive requests on pagehide (reload does not lock the project)', async () => {
+		const { engine, projectId } = setup();
+		const page = new EventTarget();
+		const s = new EngineProjectStore(engine.client(), {
+			ids: createCounterIdSource(500),
+			sleep: async () => undefined,
+			unloadTarget: page,
+			keepaliveFetch: engine.fetch as unknown as typeof fetch,
+		});
+		const a = await EditorSession.open({ store: s, projectId, ctx: ctx(), sessionId: 'a' });
+		expect(engine.leases.get(projectId)?.sessionId).toBe('a');
+		page.dispatchEvent(new Event('pagehide'));
+		await vi.advanceTimersByTimeAsync(0);
+		expect(engine.leases.has(projectId)).toBe(false);
+		const del = engine.requests.find((r) => r.method === 'DELETE' && r.path.includes('/lease/'))!;
+		expect(del.path).toContain(projectId);
+		await a.close();
 	});
 
 	it('heartbeats every lease.heartbeatMs and re-acquires transparently after an engine restart', async () => {

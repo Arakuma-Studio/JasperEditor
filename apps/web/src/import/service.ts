@@ -117,6 +117,14 @@ export class EngineImportService implements ImportService {
 		const failed: ImportFailure[] = [];
 		const acquired: Acquired[] = [];
 		const projectId = this.session.projectId;
+		if (this.session.getState().readOnly) {
+			// Nothing can be committed: do not upload bytes for nothing.
+			const names = [...(input.files ?? []).map((f) => f.name), ...(input.paths ?? []).map(baseName)];
+			for (const name of names)
+				failed.push({ name, code: 'E_NOT_OWNER', message: 'The project is read-only' });
+			if (failed.length) this.prompts.failures({ failed, committed: 0 });
+			return { mediaIds: [], clipIds: [], failed, registered: [] };
+		}
 
 		// 1a. desktop paths → register in place
 		const paths = input.paths ?? [];

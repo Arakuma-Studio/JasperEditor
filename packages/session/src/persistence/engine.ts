@@ -30,6 +30,15 @@ export type EngineProjectStoreOptions = {
 	now?: () => Date;
 	/** Session id generator for leases taken without an explicit id. */
 	newSessionId?: () => string;
+	/** Delay used while waiting for a same-page session to release its lease (tests inject a no-op). */
+	sleep?: (ms: number) => Promise<void>;
+	/**
+	 * Page whose `pagehide` releases held leases with keepalive requests, so a reload does not find the
+	 * project locked by its own previous page (default: `window` in browsers; null disables).
+	 */
+	unloadTarget?: { addEventListener(t: 'pagehide', cb: () => void): void } | null;
+	/** fetch used for the keepalive release (default: global fetch). */
+	keepaliveFetch?: typeof fetch;
 };
 
 type LeaseRecord = {
@@ -38,6 +47,11 @@ type LeaseRecord = {
 	/** Earlier lease ids of the same session (the session keeps heartbeating with its first id). */
 	aliases: Set<string>;
 };
+
+/** Session ids holding (or releasing) leases from this page; see acquireLease. */
+const TAB_SESSIONS = new Set<string>();
+const LOCAL_RELEASE_RETRIES = 20;
+const LOCAL_RELEASE_WAIT_MS = 150;
 
 const isCode = (e: unknown, ...codes: string[]): e is EngineError =>
 	e instanceof EngineError && codes.includes(e.code);
@@ -53,6 +67,7 @@ export class EngineProjectStore implements ProjectStore {
 	private readonly appVersion: string | undefined;
 	private readonly now: () => Date;
 	private readonly newSessionId: () => string;
+	private readonly sleep: (ms: number) => Promise<void>;
 	private readonly leases = new Map<string, LeaseRecord>();
 
 	constructor(
@@ -64,6 +79,15 @@ export class EngineProjectStore implements ProjectStore {
 		this.appVersion = opts.appVersion;
 		this.now = opts.now ?? (() => new Date());
 		this.newSessionId = opts.newSessionId ?? randomSessionId;
+		this.sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+		const target =
+			opts.unloadTarget === undefined
+				? ((globalThis as { window?: EngineProjectStoreOptions['unloadTarget'] }).window ?? null)
+				: opts.unloadTarget;
+		const kf = opts.keepaliveFetch ?? (globalThis.fetch as typeof fetch | undefined);
+		target?.addEventListener('pagehide', () => {
+			if (kf) this.releaseAllKeepalive(kf);
+		});
 	}
 
 	private envelope(doc: ProjectDocument, revision: number) {
@@ -210,21 +234,29 @@ export class EngineProjectStore implements ProjectStore {
 			Date.parse(held.lease.expiresAt) > this.now().getTime()
 		)
 			return held.lease;
-		let lease: Lease;
-		try {
-			lease = opts.takeOver
-				? await this.engine.call('leaseAcquire', {
-						params: { projectId },
-						body: { sessionId, takeOver: true },
-					})
-				: await this.engine.acquireLease(projectId, sessionId);
-		} catch (e) {
-			if (isCode(e, 'LEASE_HELD')) {
+		let lease: Lease | null = null;
+		for (let attempt = 0; lease === null; attempt++) {
+			try {
+				lease = opts.takeOver
+					? await this.engine.call('leaseAcquire', {
+							params: { projectId },
+							body: { sessionId, takeOver: true },
+						})
+					: await this.engine.acquireLease(projectId, sessionId);
+			} catch (e) {
+				if (!isCode(e, 'LEASE_HELD')) throw e;
 				const d = (e.detail ?? {}) as { holderSessionId?: string; expiresAt?: string };
-				throw new LeaseHeldError(projectId, d.holderSessionId ?? 'unknown', d.expiresAt ?? null);
+				const holder = d.holderSessionId ?? 'unknown';
+				// A session of this same page is closing (route change, React StrictMode double mount):
+				// its release is in flight, so wait for it instead of opening read-only.
+				if (!opts.takeOver && TAB_SESSIONS.has(holder) && attempt < LOCAL_RELEASE_RETRIES) {
+					await this.sleep(LOCAL_RELEASE_WAIT_MS);
+					continue;
+				}
+				throw new LeaseHeldError(projectId, holder, d.expiresAt ?? null);
 			}
-			throw e;
 		}
+		TAB_SESSIONS.add(sessionId);
 		const aliases = new Set(
 			held && held.sessionId === sessionId ? [...held.aliases, held.lease.leaseId] : [],
 		);
@@ -264,6 +296,24 @@ export class EngineProjectStore implements ProjectStore {
 		}
 	}
 
+	/** Fire-and-forget release of every held lease that survives page unload (`keepalive`). */
+	releaseAllKeepalive(fetchImpl: typeof fetch): void {
+		for (const [projectId, rec] of this.leases) {
+			const url = this.engine.url(
+				`/api/projects/${encodeURIComponent(projectId)}/lease/${encodeURIComponent(rec.lease.leaseId)}`,
+			);
+			try {
+				void fetchImpl(url, { method: 'DELETE', keepalive: true, credentials: 'include' }).catch(
+					() => undefined,
+				);
+			} catch {
+				// unload: nothing else to do
+			}
+			TAB_SESSIONS.delete(rec.sessionId);
+		}
+		this.leases.clear();
+	}
+
 	async releaseLease(projectId: string, leaseId: string): Promise<void> {
 		const rec = this.leases.get(projectId);
 		const current =
@@ -273,6 +323,8 @@ export class EngineProjectStore implements ProjectStore {
 			await this.engine.releaseLease(projectId, current);
 		} catch (e) {
 			if (!isCode(e, 'LEASE_NOT_FOUND', 'NOT_FOUND', 'NETWORK')) throw e;
+		} finally {
+			if (rec) TAB_SESSIONS.delete(rec.sessionId);
 		}
 	}
 }
