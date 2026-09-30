@@ -1,9 +1,13 @@
-// Jobs panel — placeholder from WP-00; WP-2E replaces the component (keep the definition's contract).
-import { placeholderPanel } from '../placeholder.tsx';
+// Jobs panel (S05:JOB-001…005) — WP-2E.
+import type { PanelDefinition } from '../types.ts';
+import { JobsPanel } from './JobsPanel.tsx';
 
-export default placeholderPanel('jobs', {
-	title: 'Jobs',
-	owner: 'WP-2E',
+export { useAllJobs, useJobsSummary } from './JobsPanel.tsx';
+export { summarizeJobs } from './model.ts';
+
+const jobs: PanelDefinition = {
+	kind: 'jobs',
+	title: () => 'Jobs',
 	icon: 'panel.jobs',
 	instance: 'single',
 	minSize: { w: 240, h: 120 },
@@ -11,4 +15,7 @@ export default placeholderPanel('jobs', {
 	touch: 'sheet',
 	requires: ['engine'],
 	agentDescription: 'Engine jobs: imports, derivatives, exports and renders with progress.',
-});
+	component: JobsPanel,
+};
+
+export default jobs;

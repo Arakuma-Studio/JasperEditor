@@ -1,6 +1,7 @@
 // Routes (ARCHITECTURE §7.5): "/" Home, "/project/:projectId" editor. React Router 7 in library mode.
 import { BrowserRouter, Route, Routes, useParams } from 'react-router';
 import { Home } from './home/Home.tsx';
+import { ProjectLifecycle } from './home/ProjectLifecycle.tsx';
 import { PlaceholderShell } from './shell/PlaceholderShell.tsx';
 import { EngineProvider } from './state/engine.tsx';
 import { ProjectSessionHost } from './state/session-host.tsx';
@@ -19,7 +20,9 @@ function EditorRoute() {
 				</div>
 			)}
 		>
-			<PlaceholderShell />
+			<ProjectLifecycle>
+				<PlaceholderShell />
+			</ProjectLifecycle>
 		</ProjectSessionHost>
 	);
 }
