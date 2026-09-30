@@ -5,6 +5,8 @@ import { createHash } from 'node:crypto';
 import type { EncoderChoice, ExportSettings, RenderPlan } from '@jasper/api';
 import {
 	buildRenderSnapshot,
+	defaultEffectRegistry,
+	type EffectRegistry,
 	isAnimated,
 	loadProject,
 	type MediaAsset,
@@ -20,6 +22,7 @@ import type { FontCatalogService } from '../fonts/catalog.ts';
 import { alphaDecoder } from '../media/alpha.ts';
 import type { MediaRecord, MediaRegistry } from '../media/registry.ts';
 import { type EncoderRequest, LEGACY_X264_CHOICE } from '../tools/encoders.ts';
+import { BUILTIN_NATIVE_EFFECTS, type NativeExtension } from './native-ext.ts';
 
 export type PlanCapabilities = {
 	/** ffmpeg + encoders present (self-check). */
@@ -44,8 +47,8 @@ export class PlanError extends Error {
 	}
 }
 
-/** Effects the native builder reproduces exactly (static params only). */
-export const NATIVE_EFFECTS = new Set(['jasper.crop', 'jasper.flip-horizontal', 'jasper.flip-vertical']);
+/** Effects the native builder reproduces exactly (static params only); M2 extensions add more (§19.6). */
+export const NATIVE_EFFECTS = BUILTIN_NATIVE_EFFECTS;
 const NATIVE_VISUAL_KINDS = new Set(['video', 'still', 'solid', 'motion-graphic']);
 
 export type OutputSpec = {
@@ -146,6 +149,10 @@ export type PlanDeps = {
 	selectEncoder?: (req: EncoderRequest) => EncoderChoice | null;
 	/** LGPL-only mode: never fall back to an encoder inside Remotion's bundled (GPL) ffmpeg. */
 	lgplOnly?: boolean;
+	/** M2 native extensions (ARCHITECTURE §19.6), consulted by `nativeBlockers`. */
+	extensions?: readonly NativeExtension[];
+	/** Effect registry for extension effect lookups (default: the built-in registry). */
+	effects?: EffectRegistry;
 };
 
 export async function planExport(input: PlanInput, deps: PlanDeps): Promise<PlannedExport> {
@@ -192,7 +199,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	const visual = snapshot.videoTracks.flatMap((t) => t.clips);
 	const mgClips: string[] = [];
 	for (const c of visual) {
-		for (const reason of nativeBlockers(c, deps.capabilities))
+		for (const reason of nativeBlockers(c, deps.capabilities, deps.extensions ?? [], deps.effects))
 			blockers.push({ itemId: c.clipId, path: 'native', reason });
 		if (c.kind === 'motion-graphic') mgClips.push(c.clipId);
 		// Alpha WebM needs the libvpx decoder on the native path (Remotion decodes it in the browser).
@@ -417,11 +424,29 @@ function localHandle(asset: MediaAsset, m: LocalMedia): MediaHandle {
 	};
 }
 
-/** Reasons a visual layer cannot go through the native builder (S04:RN-020, ARCHITECTURE §9.5). */
-export function nativeBlockers(c: RenderVisualClip, caps: PlanCapabilities): string[] {
+/**
+ * Reasons a visual layer cannot go through the native builder (S04:RN-020, ARCHITECTURE §9.5), with the M2
+ * extensions (§19.6): extension kinds are native-capable, a claimed layer skips the generic Motion / opacity /
+ * effect checks, and effects an extension supports are not blockers.
+ */
+export function nativeBlockers(
+	c: RenderVisualClip,
+	caps: PlanCapabilities,
+	exts: readonly NativeExtension[] = [],
+	effects: EffectRegistry = defaultEffectRegistry,
+): string[] {
 	const out: string[] = [];
 	const label = `${c.kind} clip "${c.name}"`;
-	if (!NATIVE_VISUAL_KINDS.has(c.kind)) {
+	for (const ext of exts) {
+		if (ext.kinds?.has(c.kind) || ext.claimsLayer?.(c)) out.push(...(ext.blockers?.(c) ?? []));
+	}
+	const extKind = exts.some((e) => e.kinds?.has(c.kind));
+	if (exts.some((e) => e.claimsLayer?.(c))) {
+		if (c.blendMode !== 'normal') out.push(`${label} uses blend mode "${c.blendMode}"`);
+		if (c.speed.reverse) out.push(`${label} plays in reverse`);
+		return out;
+	}
+	if (!NATIVE_VISUAL_KINDS.has(c.kind) && !extKind) {
 		out.push(
 			c.kind === 'text'
 				? `text layer "${c.name}" requires graphics rendering`
@@ -450,9 +475,20 @@ export function nativeBlockers(c: RenderVisualClip, caps: PlanCapabilities): str
 	if (c.speed.reverse) out.push(`${label} plays in reverse`);
 	for (const fx of c.effects) {
 		if (!fx.enabled) continue;
-		if (!NATIVE_EFFECTS.has(fx.effectId)) out.push(`${label} uses effect ${fx.effectId}, not native in M1`);
-		else if (Object.values(fx.params).some((p) => isAnimated(p)))
-			out.push(`${label} has an animated ${fx.effectId}`);
+		const animated = Object.values(fx.params).some((p) => isAnimated(p));
+		if (NATIVE_EFFECTS.has(fx.effectId)) {
+			if (animated) out.push(`${label} has an animated ${fx.effectId}`);
+			continue;
+		}
+		const spec = effects.get(fx.effectId, fx.effectVersion);
+		let support: false | 'static' | 'animated' = false;
+		for (const ext of exts) {
+			const s = ext.effectSupport?.(fx.effectId, spec) ?? false;
+			if (s === 'animated' || (s === 'static' && support === false)) support = s;
+		}
+		if (support === false)
+			out.push(`${label} uses effect ${fx.effectId}, which the native path cannot render`);
+		else if (support === 'static' && animated) out.push(`${label} has an animated ${fx.effectId}`);
 	}
 	return out;
 }

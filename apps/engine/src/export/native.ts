@@ -22,6 +22,12 @@ import {
 import { alphaDecoder } from '../media/alpha.ts';
 import { audioEncodeArgs, LEGACY_X264_CHOICE, videoEncodeArgs } from '../tools/encoders.ts';
 import { sec } from '../tools/ffmpeg.ts';
+import {
+	BUILTIN_NATIVE_EFFECTS,
+	layerOverride,
+	type NativeExtension,
+	type PreparedExtensions,
+} from './native-ext.ts';
 import type { LocalMedia, OutputSpec } from './planner.ts';
 
 export const SAMPLE_RATE = 48000;
@@ -53,6 +59,8 @@ export type NativeBuildOptions = {
 	threads: number;
 	/** Single-frame PNG (stills): no audio, RGB output. */
 	still?: boolean;
+	/** M2 native extensions (ARCHITECTURE §19.6) and what their `prepare` returned for this export. */
+	extensions?: { list: readonly NativeExtension[]; prepared: PreparedExtensions };
 };
 
 export type NativeGraph = {
@@ -166,6 +174,7 @@ export function audioFadeFilters(
 
 export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 	const { snapshot: snap, output } = o;
+	const exts = o.extensions;
 	const fps = snap.settings.fps;
 	const W = snap.settings.width;
 	const H = snap.settings.height;
@@ -240,11 +249,60 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		const label = `l${li++}`;
 		const f: string[] = [];
 		let src: string;
+		const margin = 2 * frameSec;
+
+		// M2 (§19.6): a pre-rendered picture from an extension replaces the source ('layer') or the whole placed
+		// layer ('sequence', overlaid at 0,0 with only the transition fades applied here).
+		const override = exts ? layerOverride(exts.list, exts.prepared, c) : null;
+		if (override?.space === 'sequence') {
+			const k = addInput([
+				...(override.decoder ? ['-c:v', override.decoder] : []),
+				'-ss',
+				sec((f0 - override.startFrame) * frameSec),
+				'-t',
+				sec(n * frameSec + margin),
+				'-i',
+				override.path,
+			]);
+			const g = [
+				'setpts=PTS-STARTPTS',
+				`fps=${rate(fps)}`,
+				`trim=end_frame=${n}`,
+				`scale=${W}:${H}:${SWS_FLAGS}`,
+				'setsar=1',
+				'format=rgba',
+				...(override.includesFades ? [] : fadeFilters(c.fades, f0)),
+				shift,
+			];
+			chains.push(`[${k}:v:0]${g.join(',')}[${label}]`);
+			const next = `o${label}`;
+			chains.push(`[${last}][${label}]overlay=x=0:y=0:format=rgb:eof_action=pass:${enable}[${next}]`);
+			last = next;
+			continue;
+		}
 
 		const local = 'mediaId' in c.source ? o.sources.media(c.source.mediaId) : null;
 		const mg = c.kind === 'motion-graphic' ? o.sources.mgMaster(c.clipId) : null;
-		const margin = 2 * frameSec;
-		if ((c.kind === 'video' || c.kind === 'animated-image') && local) {
+		if (override?.space === 'layer') {
+			const k = addInput([
+				...(override.decoder ? ['-c:v', override.decoder] : []),
+				'-ss',
+				sec((f0 - override.startFrame) * frameSec),
+				'-t',
+				sec(n * frameSec + margin),
+				'-i',
+				override.path,
+			]);
+			src = `[${k}:v:0]`;
+			f.push(
+				'setpts=PTS-STARTPTS',
+				`fps=${rate(fps)}`,
+				`trim=end_frame=${n}`,
+				`scale=${bw}:${bh}:${SWS_FLAGS}`,
+				'setsar=1',
+				'format=rgba',
+			);
+		} else if ((c.kind === 'video' || c.kind === 'animated-image') && local) {
 			const startSec = clipContentTime(c, f0, fps) / FLICKS_PER_SECOND;
 			const srcDur = n * frameSec * c.speed.rate + margin;
 			const dec = alphaDecoder(local.record.probe);
@@ -301,8 +359,27 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		}
 
 		// Effects in stack order (crop first by convention, S01:FX-003); only native-capable ones reach here.
-		for (const fx of props.effects) {
+		// Effects the builder does not know are asked to the M2 extensions (§19.6), e.g. fused colour LUTs.
+		for (const [index, fx] of props.effects.entries()) {
 			if (!fx.enabled) continue;
+			if (!BUILTIN_NATIVE_EFFECTS.has(fx.effectId)) {
+				for (const ext of exts?.list ?? []) {
+					const text = ext.effectFilter?.(fx, {
+						clip: c,
+						effects: props.effects,
+						index,
+						box: { width: bw, height: bh },
+						fps,
+						f0,
+						f1,
+						prepared: exts?.prepared.get(ext.id),
+					});
+					if (text === undefined) continue;
+					if (text) f.push(text);
+					break;
+				}
+				continue;
+			}
 			if (fx.effectId === 'jasper.crop') {
 				const l = Math.round((Number(fx.params.left ?? 0) / 100) * bw);
 				const r = Math.round((Number(fx.params.right ?? 0) / 100) * bw);

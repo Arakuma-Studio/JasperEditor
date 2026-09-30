@@ -24,6 +24,7 @@ import { audioEncodeArgs, type EncoderService, videoEncodeArgs } from '../tools/
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { exists, randomId } from '../tools/fs.ts';
 import { BT709_FRAME_TAGS, buildNativeGraph, SWS_FLAGS } from './native.ts';
+import { type NativeExtension, NativeExtensionRegistry, prepareExtensions } from './native-ext.ts';
 import { mediaKeyOf, type PlanCapabilities, PlanError, type PlannedExport, planExport } from './planner.ts';
 
 export type MgMasterRequest = {
@@ -70,8 +71,15 @@ export type ExportServiceDeps = {
 
 export class ExportService {
 	private mgProvider: MgMasterProvider | null = null;
+	/** M2 native extensions (ARCHITECTURE §19.6). */
+	readonly nativeExtensions = new NativeExtensionRegistry();
 
 	constructor(private readonly deps: ExportServiceDeps) {}
+
+	/** M2 hook: colour (LUT), motion-graphics pre-renders, warp stage… keep features on the native path. */
+	registerNativeExtension(ext: NativeExtension): () => void {
+		return this.nativeExtensions.register(ext);
+	}
 
 	/** WP-2G hook: motion-graphic masters for the native path. */
 	registerMgMasterProvider(fn: MgMasterProvider | null): void {
@@ -146,6 +154,7 @@ export class ExportService {
 				registry: this.deps.registry,
 				fonts: this.deps.fonts,
 				capabilities: caps,
+				extensions: this.nativeExtensions.all(),
 				...(this.deps.encoders
 					? {
 							selectEncoder: (r) => this.deps.encoders!.select(r),
@@ -275,6 +284,15 @@ export class ExportService {
 		ctx: JobContext,
 		still = false,
 	): Promise<number> {
+		const exts = this.nativeExtensions.all();
+		const prepared = await prepareExtensions(exts, planned, {
+			signal: ctx.signal,
+			stage: (text) => ctx.progress(0, { stage: text }),
+			scratchDir: () => ctx.scratchDir(),
+			log: (text) => ctx.log(text),
+			jobId: ctx.job.id,
+			...(planned.document.projectId ? { projectId: planned.document.projectId } : {}),
+		});
 		const graph = buildNativeGraph({
 			snapshot: planned.snapshot,
 			output: planned.output,
@@ -285,6 +303,7 @@ export class ExportService {
 			},
 			threads: ctx.slots,
 			still,
+			extensions: { list: exts, prepared },
 		});
 		let args = graph.args;
 		if (graph.filter.length > 60_000) {
@@ -588,6 +607,7 @@ export class ExportService {
 					registry: this.deps.registry,
 					fonts: this.deps.fonts,
 					capabilities: await this.deps.capabilities(),
+					extensions: this.nativeExtensions.all(),
 				},
 			);
 		} catch (e) {

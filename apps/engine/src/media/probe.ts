@@ -1,6 +1,12 @@
 // ffprobe → the S01 MediaProbe shape (S01:AST-001) plus kind, container and browserPlayable (S04:PB-001…006).
 // Rotation comes from the display matrix; VFR when average and nominal rates differ by more than 0.1 %.
-import { type MediaKind, type MediaProbe, type MediaStream, secondsToFlicks } from '@jasper/project';
+import {
+	type LutInfo,
+	type MediaKind,
+	type MediaProbe,
+	type MediaStream,
+	secondsToFlicks,
+} from '@jasper/project';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import type { SpawnOptions } from '../tools/process.ts';
 import { ToolError } from '../tools/process.ts';
@@ -20,7 +26,27 @@ export type ProbeResult = {
 	hasAudio: boolean;
 	/** Display size after rotation (null without video). */
 	display: { width: number; height: number } | null;
+	/** kind `lut` (M2): the parsed header (stored on the media record, copied into RegisteredMedia). */
+	lut?: LutInfo;
 };
+
+/**
+ * Probers for files ffprobe does not understand (M2, ARCHITECTURE §19.7): the first prober whose `matches`
+ * accepts the file path handles it (e.g. `.cube` LUTs, wp-m2-color). Register at service start-up.
+ */
+export type AssetProber = {
+	id: string;
+	matches(file: string): boolean;
+	probe(file: string, opts: SpawnOptions): Promise<ProbeResult>;
+};
+const ASSET_PROBERS: AssetProber[] = [];
+export function registerAssetProber(p: AssetProber): () => void {
+	ASSET_PROBERS.push(p);
+	return () => {
+		const i = ASSET_PROBERS.indexOf(p);
+		if (i >= 0) ASSET_PROBERS.splice(i, 1);
+	};
+}
 
 export type FfStream = {
 	index: number;
@@ -255,6 +281,8 @@ export function mapProbe(json: { streams?: FfStream[]; format?: FfFormat }): Pro
 
 /** Runs ffprobe on a file and maps the result (no full decode, S04:PB-006). */
 export async function probeFile(ff: Ffmpeg, file: string, opts: SpawnOptions = {}): Promise<ProbeResult> {
+	const prober = ASSET_PROBERS.find((p) => p.matches(file));
+	if (prober) return prober.probe(file, opts);
 	let json: Record<string, unknown>;
 	try {
 		json = await ff.probeJson(['-show_format', '-show_streams', file], opts);

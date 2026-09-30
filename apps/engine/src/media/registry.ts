@@ -4,7 +4,7 @@
 import { randomBytes } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import type { RegisteredMedia } from '@jasper/api';
-import type { MediaKind, MediaLocator, MediaProbe } from '@jasper/project';
+import type { LutInfo, MediaKind, MediaLocator, MediaProbe, MgBundleInfo } from '@jasper/project';
 import { atomicWriteJson, readJsonOrNull } from '../tools/fs.ts';
 import { KeyedMutex } from '../tools/mutex.ts';
 import type { BrowserPlayable } from './probe.ts';
@@ -31,6 +31,12 @@ export type MediaRecord = {
 	hasAudio: boolean;
 	interlaced?: boolean;
 	registeredAt: string;
+	/** M2: kind `lut` header (wp-m2-color prober). */
+	lut?: LutInfo;
+	/** M2: kind `mg-bundle` header (wp-m2-mg; storage is the bundle directory). */
+	mgBundle?: MgBundleInfo;
+	/** M2: an engine-produced processed version (wp-m2-process): source key and recipe hash. */
+	derivedFrom?: { mediaKey: string; recipeHash: string };
 };
 
 type IndexFile = { version: 1; engineId: string; items: Record<string, MediaRecord> };
@@ -122,6 +128,8 @@ export class MediaRegistry {
 			probe: r.probe,
 			locators,
 			browserPlayable: r.browserPlayable,
+			...(r.lut ? { lut: r.lut } : {}),
+			...(r.mgBundle ? { mgBundle: r.mgBundle } : {}),
 		};
 	}
 }

@@ -7,6 +7,7 @@ import { UrlSigner } from '../auth/signed-url.ts';
 import type { EngineConfig } from '../context.ts';
 import { DerivativeService } from '../derivatives/service.ts';
 import { Broadcaster } from '../events/broadcaster.ts';
+import type { NativeExtension } from '../export/native-ext.ts';
 import type { PlanCapabilities } from '../export/planner.ts';
 import { ExportService, type MgMasterProvider } from '../export/service.ts';
 import { FontCatalogService } from '../fonts/catalog.ts';
@@ -46,6 +47,8 @@ export type CoreServices = {
 	registerCapabilityProvider(fn: CapabilityProvider): () => void;
 	/** WP-2G: motion-graphic masters for native exports. */
 	registerMgMasterProvider(fn: MgMasterProvider | null): void;
+	/** M2 (ARCHITECTURE §19.6): native export extensions (colour LUTs, MG pre-renders, warp stage). */
+	registerNativeExtension(ext: NativeExtension): () => void;
 	/** Starts the queue (journal recovery) and timers; called from the server's onReady hook. */
 	start(): void;
 	/** Graceful stop (S04:ENG-004): running jobs become `interrupted`, the journal is flushed. */
@@ -184,6 +187,7 @@ export async function createCoreServices(
 		capabilities,
 		origin,
 		registerCapabilityProvider: (fn) => capabilities.register(fn),
+		registerNativeExtension: (ext) => exportsSvc.registerNativeExtension(ext),
 		registerMgMasterProvider: (fn) => {
 			exportsSvc.registerMgMasterProvider(fn);
 			capabilities.changed();

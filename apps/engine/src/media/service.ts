@@ -205,6 +205,7 @@ export class MediaService {
 			hasAudio: probeResult ? probeResult.hasAudio : rec.hasAudio,
 			interlaced: probeResult ? probeResult.interlaced : !!rec.interlaced,
 			registeredAt: new Date().toISOString(),
+			...((probeResult ? probeResult.lut : rec.lut) ? { lut: probeResult ? probeResult.lut : rec.lut } : {}),
 		};
 	}
 
