@@ -29,6 +29,8 @@ export const ENV = {
 	ENGINE_TOKEN: 'JASPER_ENGINE_TOKEN',
 	/** jasper-mcp: path of the engine bundle to auto-start (`--start-engine`). */
 	ENGINE_ENTRY: 'JASPER_ENGINE_ENTRY',
+	/** Engine / desktop: path of the jasper-mcp bundle shown in Help ▸ Connect an AI Agent… (default: found next to the engine). */
+	MCP_ENTRY: 'JASPER_MCP_ENTRY',
 } as const;
 export type EnvName = (typeof ENV)[keyof typeof ENV];
 

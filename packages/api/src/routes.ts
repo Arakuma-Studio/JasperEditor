@@ -3,6 +3,7 @@
 // builds one typed method per entry.
 import { z } from 'zod';
 import {
+	AgentMcpInfoSchema,
 	AgentOpenProjectRequestSchema,
 	AgentOpenProjectResponseSchema,
 	AgentQueryRequestSchema,
@@ -302,6 +303,12 @@ export const ROUTES = {
 		path: '/api/agent/open-project',
 		body: AgentOpenProjectRequestSchema,
 		response: AgentOpenProjectResponseSchema,
+		owner: 'wp-mcp',
+	}),
+	agentMcpInfo: r({
+		method: 'GET',
+		path: '/api/agent/mcp-info',
+		response: AgentMcpInfoSchema,
 		owner: 'wp-mcp',
 	}),
 	/** MCP Streamable HTTP endpoint (same tools as the `jasper-mcp` stdio server). */

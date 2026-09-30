@@ -231,7 +231,12 @@ describe('engine server (ARCHITECTURE §9.1, §4.2)', () => {
 		const engine = await startEngine({ appdir, port: 0, dev: false, token: 'tok_runtime', env: {} });
 		const file = join(appdir, 'engine', 'runtime.json');
 		const info = JSON.parse(readFileSync(file, 'utf8'));
-		expect(info).toMatchObject({ url: engine.url, port: engine.port, pid: process.pid, token: 'tok_runtime' });
+		expect(info).toMatchObject({
+			url: engine.url,
+			port: engine.port,
+			pid: process.pid,
+			token: 'tok_runtime',
+		});
 		if (process.platform !== 'win32') expect(statSync(file).mode & 0o777).toBe(0o600);
 		await engine.stop();
 		expect(existsSync(file)).toBe(false);

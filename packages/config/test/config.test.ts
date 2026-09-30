@@ -73,7 +73,9 @@ describe('@jasper/config', () => {
 
 	it('locates the desktop appdir and parses runtime files', () => {
 		expect(desktopAppdir({ XDG_CONFIG_HOME: '/cfg' }, 'linux')).toBe(join('/cfg', 'JasperEditor', 'jasper'));
-		expect(desktopAppdir({ APPDATA: 'C:/Users/u/AppData/Roaming' }, 'win32')).toMatch(/JasperEditor[\\/]jasper$/);
+		expect(desktopAppdir({ APPDATA: 'C:/Users/u/AppData/Roaming' }, 'win32')).toMatch(
+			/JasperEditor[\\/]jasper$/,
+		);
 		expect(appdirPaths('/a').runtimeFile).toBe(join('/a', 'engine', 'runtime.json'));
 		expect(parseEngineRuntime({ url: 'http://127.0.0.1:1', port: 1, pid: 2, token: 't' })).toMatchObject({
 			token: 't',

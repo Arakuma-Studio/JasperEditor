@@ -2,9 +2,12 @@
 //   GET  /api/agent/schema  → commands + queries JSON Schemas, registries, presets, error codes
 //   POST /api/agent/query   {projectId, query, args}   → {result, revision?, via}
 //   POST /api/agent/tx      {projectId, transaction}   → {result: TransactionResult, appliedBy}
+//   POST /api/agent/open-project {projectId}           → editor windows open the project (wp-mcp)
+//   GET  /api/agent/mcp-info                            → where the MCP server is (never the token; wp-mcp)
 //   WS   /agent             editor sessions (hello / request / response / event)
 import fastifyWebsocket from '@fastify/websocket';
 import {
+	type AgentMcpInfo,
 	AgentOpenProjectRequestSchema,
 	type AgentOpenProjectResponse,
 	AgentQueryRequestSchema,
@@ -15,6 +18,7 @@ import { AGENT_TX_LIMITS } from '@jasper/project';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { AgentApiError, createAgentService } from '../agent/index.ts';
+import { findMcpEntry } from '../agent/mcp-entry.ts';
 
 const TxBodySchema = z.object({
 	projectId: z.string().min(1),
@@ -80,6 +84,17 @@ export default async function agentRoutes(app: FastifyInstance): Promise<void> {
 			path: `/project/${encodeURIComponent(projectId)}`,
 			editors,
 			live: service.isLive(projectId),
+		};
+		return out;
+	});
+
+	// Help ▸ Connect an AI Agent…: config snippets need the path of the stdio server and the HTTP endpoint.
+	app.get('/api/agent/mcp-info', async () => {
+		const { config } = app.jasper;
+		const out: AgentMcpInfo = {
+			stdioEntry: findMcpEntry(),
+			httpUrl: `http://${config.host}:${config.port}/mcp`,
+			tokenRequired: config.token !== null,
 		};
 		return out;
 	});

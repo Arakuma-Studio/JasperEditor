@@ -275,6 +275,9 @@ export class EngineClient {
 	agentOpenProject(req: AgentOpenProjectRequest) {
 		return this.call('agentOpenProject', { body: req });
 	}
+	agentMcpInfo() {
+		return this.call('agentMcpInfo');
+	}
 
 	/**
 	 * GETs an engine-relative URL (e.g. a still's `/renders/<jobId>/output`) as bytes with the client's
@@ -292,9 +295,13 @@ export class EngineClient {
 			});
 		}
 		if (!res.ok)
-			throw new EngineError(res.status === 404 ? 'NOT_FOUND' : 'HTTP_ERROR', `HTTP ${res.status} for ${path}`, {
-				status: res.status,
-			});
+			throw new EngineError(
+				res.status === 404 ? 'NOT_FOUND' : 'HTTP_ERROR',
+				`HTTP ${res.status} for ${path}`,
+				{
+					status: res.status,
+				},
+			);
 		return {
 			bytes: new Uint8Array(await res.arrayBuffer()),
 			contentType: res.headers.get('content-type') ?? 'application/octet-stream',
