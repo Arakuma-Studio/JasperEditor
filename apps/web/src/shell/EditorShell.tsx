@@ -15,6 +15,8 @@ import {
 	useSyncExternalStore,
 } from 'react';
 import { useNavigate } from 'react-router';
+import { ExportMode } from '../export/ExportMode.tsx';
+import { claimExportModeHost, exportMode, useExportMode } from '../export/mode.ts';
 import { setMonitorPanelServices } from '../panels/program/monitor-commands.ts';
 import { listPanels } from '../panels/registry.ts';
 import { type TimelineEnv, TimelineEnvProvider } from '../panels/timeline/env.tsx';
@@ -50,6 +52,17 @@ export function registerModeView(mode: Exclude<ShellMode, 'edit'>, component: Co
 		if (modeViews.get(mode) === component) modeViews.delete(mode);
 	};
 }
+
+/** Export mode (WP-2E) rendered in the shell's mode area (S05:EX-001, HD-003). */
+function ShellExportView() {
+	const state = useExportMode();
+	return (
+		<div className="h-full" data-testid="mode-view-export">
+			<ExportMode key={state.sequenceId ?? 'active'} sequenceId={state.sequenceId} />
+		</div>
+	);
+}
+registerModeView('export', ShellExportView);
 
 function ModePlaceholder({ mode }: { mode: Exclude<ShellMode, 'edit'> }) {
 	const runtime = useShellRuntime();
@@ -178,6 +191,22 @@ function ShellBody() {
 		},
 		[session],
 	);
+
+	// Export mode (WP-2E) keeps its own store (export.media / Ctrl+M, the Export view's close button);
+	// keep it and the header's mode tabs in sync, and render it here instead of ProjectLifecycle's overlay.
+	useEffect(() => claimExportModeHost(), []);
+	const exportState = useExportMode();
+	useEffect(() => {
+		if (exportState.open && modeRef.current !== 'export') {
+			session?.transport.pause(); // HD-011
+			setModeState('export');
+		} else if (!exportState.open && modeRef.current === 'export') setModeState('edit');
+	}, [exportState.open, session]);
+	useEffect(() => {
+		const open = exportMode.get().open;
+		if (mode === 'export' && !open) exportMode.open(session?.getState().activeSequenceId ?? null);
+		else if (mode !== 'export' && open) exportMode.close();
+	}, [mode, session]);
 
 	const switchWorkspace = useCallback(
 		(id: string) => {

@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AppRoutes } from '../src/App.tsx';
 import { registerAllCommands } from '../src/commands/index.ts';
+import { exportMode } from '../src/export/mode.ts';
 import { focusStore } from '../src/shell/focus.ts';
 import { GlobalHosts } from '../src/shell/GlobalHosts.tsx';
 import { prefsStore } from '../src/shell/prefs.ts';
@@ -100,7 +101,14 @@ describe('editor shell (rendered)', () => {
 		await waitFor(() => expect(screen.getByTestId('editor-shell').dataset.workspace).toBe('assembly'));
 		fireEvent.click(screen.getByTestId('mode-export'));
 		expect(screen.getByTestId('mode-view-export')).toBeTruthy();
+		// The header tab and WP-2E's Export mode store stay in sync (one Export view, in the mode area).
+		await waitFor(() => expect(exportMode.get().open).toBe(true));
 		fireEvent.click(screen.getByTestId('mode-edit'));
+		await waitFor(() => expect(exportMode.get().open).toBe(false));
+		act(() => exportMode.open(null));
+		await waitFor(() => screen.getByTestId('mode-view-export'));
+		act(() => exportMode.close());
+		await waitFor(() => expect(screen.queryByTestId('mode-view-export')).toBeNull());
 		fireEvent.click(screen.getByTestId('palette-button'));
 		await waitFor(() => screen.getByTestId('palette-input'));
 		fireEvent.change(screen.getByTestId('palette-input'), { target: { value: 'make the intro punchier' } });

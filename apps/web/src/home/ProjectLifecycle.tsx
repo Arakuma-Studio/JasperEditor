@@ -23,7 +23,12 @@ import { SessionProvider, useSession, useStoreSelector } from '@jasper/session/r
 import { Button, Z } from '@jasper/ui';
 import { type ReactNode, useEffect, useState, useSyncExternalStore } from 'react';
 import { ExportMode } from '../export/ExportMode.tsx';
-import { isTrackedExport, takeTrackedExport, useExportMode } from '../export/mode.ts';
+import {
+	isTrackedExport,
+	takeTrackedExport,
+	useExportMode,
+	useExportModeHostedByShell,
+} from '../export/mode.ts';
 import { ImportPromptHost } from '../import/ImportPromptHost.tsx';
 import { createMediaRuntimeSync } from '../import/media-runtime.ts';
 import { EngineImportService } from '../import/service.ts';
@@ -85,6 +90,7 @@ function LifecycleBody(props: {
 	const { session } = props;
 	const engine = useEngine();
 	const exportState = useExportMode();
+	const exportHostedByShell = useExportModeHostedByShell();
 
 	// Autosave + page lifecycle
 	useEffect(() => {
@@ -171,7 +177,7 @@ function LifecycleBody(props: {
 			<PersistenceBanners session={session} onReplace={props.onReplace} />
 			<div className="relative min-h-0 flex-1">
 				{props.children}
-				{exportState.open ? (
+				{exportState.open && !exportHostedByShell ? (
 					<div className="absolute inset-0" style={{ zIndex: Z.maximized }}>
 						<ExportMode key={exportState.sequenceId ?? 'active'} sequenceId={exportState.sequenceId} />
 					</div>
