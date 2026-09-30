@@ -2,7 +2,7 @@
 // Calls POST /api/exports/plan with the committed envelope whenever the choices or the document change,
 // shows the plan (path, blockers, warnings, estimate), and POST /api/exports creates the job; then the
 // view returns to Edit and the Jobs panel shows progress (completion toast with Download: ProjectLifecycle).
-import type { RenderPlan } from '@jasper/api';
+import type { RenderPlan, VideoCodec } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import { formatTimecode, type Sequence } from '@jasper/project';
 import { useSession, useSessionState } from '@jasper/session/react';
@@ -16,10 +16,15 @@ import { exportMode, trackExportJob } from './mode.ts';
 import { blockingForEngine, type PlanState, PlanSummary } from './PlanSummary.tsx';
 import {
 	buildExportSettings,
+	CODEC_LABELS,
+	codecOptions,
 	ENGINE_OPTIONS,
 	type ExportEngineChoice,
 	type ExportRangeChoice,
+	encoderOptions,
+	encoderSummary,
 	exportEnvelope,
+	exportExtension,
 	exportRange,
 	hasInOut,
 	loadExportChoice,
@@ -81,6 +86,8 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 	const [fileName, setFileName] = useState(
 		() => remembered?.fileName ?? (sequenceId ? sequenceName(doc, sequenceId) : 'Export'),
 	);
+	const [codec, setCodec] = useState<VideoCodec>(remembered?.codec ?? 'h264');
+	const [encoderChoice, setEncoderChoice] = useState<string>(remembered?.encoder ?? '');
 	const [plan, setPlan] = useState<PlanState>({ status: 'idle' });
 	const [starting, setStarting] = useState(false);
 	const close = props.onClose ?? (() => exportMode.close());
@@ -90,16 +97,37 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 		const r = loadExportChoice(session.projectId, sequenceId);
 		setRange(r?.range ?? 'entire');
 		setEngineChoice(r?.engine ?? 'auto');
+		setCodec(r?.codec ?? 'h264');
+		setEncoderChoice(r?.encoder ?? '');
 		setFileName(r?.fileName ?? sequenceName(session.getCommitted(), sequenceId));
 	}, [sequenceId, session]);
 
 	const effectiveRange: ExportRangeChoice = range === 'in-out' && seq && hasInOut(seq) ? 'in-out' : 'entire';
 	const frames = seq ? exportRange(seq, effectiveRange) : { start: 0, end: 0 };
 	const validation = seq ? validateExport(seq, frames) : ['No sequence to export.'];
+	// Encoder availability from the engine (ARCHITECTURE D-13): unavailable codecs/encoders are disabled.
+	const encoding = engine.capabilities?.media.encoding;
+	const buildEncoders = engine.capabilities?.media.encoders ?? [];
+	const codecs = codecOptions(encoding);
+	const effectiveCodec: VideoCodec = codecs.find((c) => c.value === codec)?.available
+		? codec
+		: (encoding?.export?.codec ?? 'h264');
+	const encoders = encoderOptions(encoding, buildEncoders, effectiveCodec);
+	const effectiveEncoder = encoders.find((e) => e.value === encoderChoice)?.available ? encoderChoice : '';
 	const settings = useMemo(
-		() => (seq ? buildExportSettings(seq, { range: effectiveRange, engine: engineChoice }) : null),
-		[seq, effectiveRange, engineChoice],
+		() =>
+			seq
+				? buildExportSettings(seq, {
+						range: effectiveRange,
+						engine: engineChoice,
+						codec: effectiveCodec,
+						encoder: effectiveEncoder || null,
+					})
+				: null,
+		[seq, effectiveRange, engineChoice, effectiveCodec, effectiveEncoder],
 	);
+	const chosenEncoder = plan.status === 'ok' ? (plan.plan.encoder ?? null) : (encoding?.export ?? null);
+	const encoderMessage = plan.status === 'ok' ? plan.plan.encoder?.message : encoding?.message;
 
 	// Plan on every relevant change (debounced); the plan embeds the revision it was computed for (RP-011).
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `revision` re-plans when the committed document changes
@@ -158,6 +186,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 		if (!seq || !settings || plan.status !== 'ok') return;
 		setStarting(true);
 		const name = sanitizeFileName(fileName);
+		const ext = exportExtension(plan.plan.encoder);
 		try {
 			const job = await engine.client.startExport({
 				envelope: exportEnvelope(session.getCommitted(), session.revision),
@@ -167,17 +196,19 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 					? { planId: plan.plan.planId }
 					: {}),
 			});
-			trackExportJob(job, `${name}.mp4`);
+			trackExportJob(job, `${name}.${ext}`);
 			saveExportChoice(session.projectId, seq.id, {
 				range: effectiveRange,
 				engine: engineChoice,
 				fileName: name,
+				codec: effectiveCodec,
+				...(effectiveEncoder ? { encoder: effectiveEncoder } : {}),
 			});
 			close();
 			const focused = await runIfRegistered('panel.open.jobs', ctx);
 			notices.push({
 				kind: 'info',
-				message: `Export started: ${name}.mp4`,
+				message: `Export started: ${name}.${ext}`,
 				detail: focused ? undefined : 'Progress is shown in the Jobs panel.',
 			});
 		} catch (e) {
@@ -299,11 +330,55 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 						<span className="text-pr-muted">Download from the engine</span>
 					</Field>
 					<Field label="Preset">
-						<span>{MATCH_SEQUENCE_PRESET.label}</span>
+						<span>
+							{effectiveCodec === 'h264'
+								? MATCH_SEQUENCE_PRESET.label
+								: `Match Sequence – ${CODEC_LABELS[effectiveCodec]}`}
+						</span>
 					</Field>
 					<Field label="Format">
-						<span>H.264 (MP4)</span>
+						<select
+							data-testid="export-codec"
+							className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
+							value={effectiveCodec}
+							onChange={(e) => {
+								setCodec(e.target.value as VideoCodec);
+								setEncoderChoice('');
+							}}
+						>
+							{codecs.map((o) => (
+								<option key={o.value} value={o.value} disabled={!o.available} title={o.reason}>
+									{o.label}
+									{o.available ? '' : ' — unavailable'}
+								</option>
+							))}
+						</select>
 					</Field>
+					<Field label="Encoder">
+						<select
+							data-testid="export-encoder-select"
+							className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
+							value={effectiveEncoder}
+							onChange={(e) => setEncoderChoice(e.target.value)}
+						>
+							{encoders.map((o) => (
+								<option key={o.value || 'auto'} value={o.value} disabled={!o.available} title={o.reason}>
+									{o.label}
+									{o.available ? '' : ` — ${o.reason ?? 'unavailable'}`}
+								</option>
+							))}
+						</select>
+					</Field>
+					<Field label="Output">
+						<span data-testid="export-encoder" className="text-pr-muted">
+							{encoding || plan.status === 'ok' ? encoderSummary(chosenEncoder) : 'H.264 (MP4)'}
+						</span>
+					</Field>
+					{encoderMessage ? (
+						<p className="text-pr-small text-pr-warning" data-testid="export-encoder-message">
+							{encoderMessage}
+						</p>
+					) : null}
 					<Field label="Engine">
 						<select
 							data-testid="export-engine"
@@ -321,7 +396,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 					<div className="border-t border-pr-border-subtle pt-2">
 						<h3 className="mb-1 text-pr-small text-pr-muted">SUMMARY</h3>
 						<p className="mb-2 text-pr-small">
-							{seq ? outputDescription(seq, frames.end - frames.start) : ''}
+							{seq ? outputDescription(seq, frames.end - frames.start, chosenEncoder) : ''}
 						</p>
 						<PlanSummary state={plan} engine={engineChoice} sequence={seq} />
 					</div>

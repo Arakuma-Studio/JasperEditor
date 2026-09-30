@@ -49,6 +49,11 @@ export type MgServiceOptions = {
 	/** `<appdir>/mg` (ARCHITECTURE §4.3). */
 	mgDir: string;
 	env?: Record<string, string | undefined>;
+	/**
+	 * ffmpeg/ffprobe resolved by the engine (D-13 order: env → packaged resources → PATH); default:
+	 * `JASPER_FFMPEG`/`JASPER_FFPROBE` or the names on PATH.
+	 */
+	tools?: { ffmpeg: string | null; ffprobe: string | null };
 	resolve?: ResolveMgOptions;
 	registry?: MgRegistry;
 	/** Job event sink (`job.created|updated|finished`); wired to the engine broadcaster when present. */
@@ -65,9 +70,10 @@ export function createMgService(opts: MgServiceOptions) {
 	const registry = opts.registry ?? mgRegistry;
 	const now = opts.now ?? (() => new Date());
 	const concurrency = opts.concurrency ?? Math.max(1, Math.floor(availableParallelism() / MG_RENDER_SLOTS));
+	// Master = prores_ks (native FFmpeg, LGPL); preview = libvpx-vp9 with alpha (BSD). No GPL encoder.
 	const tools = {
-		ffmpeg: env[ENV.FFMPEG] || 'ffmpeg',
-		ffprobe: env[ENV.FFPROBE] || 'ffprobe',
+		ffmpeg: opts.tools?.ffmpeg || env[ENV.FFMPEG] || 'ffmpeg',
+		ffprobe: opts.tools?.ffprobe || env[ENV.FFPROBE] || 'ffprobe',
 	};
 	let resolution: MgBinaryResolution = { path: null, reason: 'not probed yet', tried: [] };
 	let probe: MgProbe = { status: 'unavailable', reason: 'not probed yet', binary: null };

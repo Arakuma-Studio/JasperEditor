@@ -2,7 +2,7 @@
 // classifies every layer for the native path and returns an S04:RP-010 RenderPlan with per-clip blockers
 // (RP-008) and warnings (offline media, VFR sources, missing fonts). M1 paths: `native` | `remotion`.
 import { createHash } from 'node:crypto';
-import type { ExportSettings, RenderPlan } from '@jasper/api';
+import type { EncoderChoice, ExportSettings, RenderPlan } from '@jasper/api';
 import {
 	buildRenderSnapshot,
 	isAnimated,
@@ -17,6 +17,7 @@ import {
 } from '@jasper/project';
 import type { FontCatalogService } from '../fonts/catalog.ts';
 import type { MediaRecord, MediaRegistry } from '../media/registry.ts';
+import { type EncoderRequest, LEGACY_X264_CHOICE } from '../tools/encoders.ts';
 
 export type PlanCapabilities = {
 	/** ffmpeg + encoders present (self-check). */
@@ -53,6 +54,9 @@ export type OutputSpec = {
 	scaling: 'fit' | 'fill' | 'stretch';
 	crf: number;
 	x264Preset: 'veryfast' | 'medium' | 'slow';
+	speed: 'fast' | 'balanced' | 'best';
+	/** Video encoder (D-13); null = no usable encoder (the native path is blocked). */
+	encoder: EncoderChoice | null;
 	audioChannels: 1 | 2;
 	audioBitrateKbps: number;
 };
@@ -122,12 +126,18 @@ export type PlanInput = {
 	settings: ExportSettings;
 	/** Force a range (stills: one frame). */
 	rangeOverride?: { start: number; end: number };
+	/** Single PNG frame: no video encoder needed. */
+	still?: boolean;
 };
 
 export type PlanDeps = {
 	registry: MediaRegistry;
 	fonts: FontCatalogService;
 	capabilities: PlanCapabilities;
+	/** Encoder selection (D-13); absent = libx264 (unit tests of the planner alone). */
+	selectEncoder?: (req: EncoderRequest) => EncoderChoice | null;
+	/** LGPL-only mode: never fall back to an encoder inside Remotion's bundled (GPL) ffmpeg. */
+	lgplOnly?: boolean;
 };
 
 export async function planExport(input: PlanInput, deps: PlanDeps): Promise<PlannedExport> {
@@ -197,8 +207,21 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		if (touches)
 			blockers.push({ itemId: tr.id, path: 'native', reason: 'transitions require the Remotion path in M1' });
 	}
+	const video0 = settings.video;
+	const encoder = deps.selectEncoder
+		? deps.selectEncoder({
+				purpose: 'export',
+				codec: video0?.codec ?? 'h264',
+				...(video0?.encoder ? { encoder: video0.encoder } : {}),
+			})
+		: LEGACY_X264_CHOICE;
 	if (!deps.capabilities.native)
-		blockers.push({ path: 'native', reason: 'ffmpeg (with libx264 and aac) is not available' });
+		blockers.push({ path: 'native', reason: 'ffmpeg (with a video encoder and aac) is not available' });
+	else if (!encoder && !input.still)
+		blockers.push({
+			path: 'native',
+			reason: 'no usable video encoder (H.264, AV1 or VP9) in this ffmpeg build',
+		});
 
 	// ---- warnings
 	const offlineUsed = new Set<string>();
@@ -234,6 +257,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		});
 	}
 	for (const w of snapshot.warnings) warnings.push({ code: w.code, message: w.message, itemIds: [w.clipId] });
+	if (encoder?.message) warnings.push({ code: 'ENCODER_FALLBACK', message: encoder.message });
 
 	// ---- output spec
 	const seqFps = seq.settings.frameRate;
@@ -252,6 +276,8 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		crf: video?.quality.value ?? 18,
 		x264Preset:
 			video?.encoderSpeed === 'fast' ? 'veryfast' : video?.encoderSpeed === 'best' ? 'slow' : 'medium',
+		speed: video?.encoderSpeed ?? 'balanced',
+		encoder,
 		audioChannels: settings.audio?.channels ?? 2,
 		audioBitrateKbps: settings.audio?.bitrateKbps ?? 192,
 	};
@@ -282,6 +308,13 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	} else path = nativeEligible ? 'native' : 'remotion';
 
 	if (path === 'remotion') {
+		if (!encoder && deps.lgplOnly && !input.still) {
+			throw new PlanError(
+				'ENCODER_UNAVAILABLE',
+				409,
+				'No LGPL-compatible video encoder is available for the Remotion path',
+			);
+		}
 		if (deps.capabilities.remotionLocal === 'unavailable')
 			warnings.push({
 				code: 'REMOTION_UNAVAILABLE',
@@ -334,6 +367,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		sequenceId: input.sequenceId,
 		settings,
 		caps: deps.capabilities,
+		encoder: encoder?.encoder ?? null,
 		range,
 	});
 	const plan: PlannedExport['plan'] = {
@@ -352,6 +386,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		blockers,
 		warnings,
 		estimate: { seconds: Math.round(estimateSeconds * 10) / 10, bytes: Math.max(0, estimateBytes) },
+		...(encoder ? { encoder } : {}),
 	};
 	return { plan, document, sequenceId: input.sequenceId, range, snapshot, media, output };
 }

@@ -17,6 +17,7 @@ import type { JobQueue } from '../jobs/queue.ts';
 import { type JobContext, JobError, type JobPriority } from '../jobs/types.ts';
 import { fingerprintHex } from '../media/fingerprint.ts';
 import type { MediaRecord, MediaRegistry } from '../media/registry.ts';
+import { audioEncodeArgs, type EncoderService, videoEncodeArgs } from '../tools/encoders.ts';
 import { type Ffmpeg, sec } from '../tools/ffmpeg.ts';
 import { atomicWriteJson, exists } from '../tools/fs.ts';
 import { PEAKS_PER_SECOND, PEAKS_SAMPLE_RATE, planarBytes, reducePeaksFromChild } from './peaks.ts';
@@ -71,7 +72,10 @@ export type ArtifactPaths = {
 	hash: string;
 };
 
-function paramsFor(kind: DerivativeKind): Record<string, unknown> {
+function paramsFor(kind: DerivativeKind, proxyEncoder?: string | null): Record<string, unknown> {
+	// Proxies made by another encoder than libx264 get their own cache key (D-13); libx264 proxies keep the
+	// historical key so existing caches stay valid.
+	const enc = proxyEncoder && proxyEncoder !== 'libx264' ? { enc: proxyEncoder } : {};
 	switch (kind) {
 		case 'poster':
 			return { width: POSTER_WIDTH, at: 0.1 };
@@ -80,17 +84,17 @@ function paramsFor(kind: DerivativeKind): Record<string, unknown> {
 		case 'peaks':
 			return { pps: PEAKS_PER_SECOND, rate: PEAKS_SAMPLE_RATE };
 		case 'proxy-720':
-			return { height: 720, gop: 15, crf: 23 };
+			return { height: 720, gop: 15, crf: 23, ...enc };
 		case 'proxy-540':
-			return { height: 540, gop: 15, crf: 26 };
+			return { height: 540, gop: 15, crf: 26, ...enc };
 		default:
 			return {};
 	}
 }
 
-export function paramsHash(kind: DerivativeKind): string {
+export function paramsHash(kind: DerivativeKind, proxyEncoder?: string | null): string {
 	return createHash('sha256')
-		.update(JSON.stringify({ kind, v: GENERATOR_VERSIONS[kind], p: paramsFor(kind) }))
+		.update(JSON.stringify({ kind, v: GENERATOR_VERSIONS[kind], p: paramsFor(kind, proxyEncoder) }))
 		.digest('hex')
 		.slice(0, 12);
 }
@@ -147,6 +151,8 @@ export class DerivativeService {
 		private readonly deps: {
 			cacheDir: string;
 			ff: Ffmpeg;
+			/** Proxy encoder selection (D-13); absent = libx264 (tests). */
+			encoders?: EncoderService;
 			queue: JobQueue;
 			registry: MediaRegistry;
 			broadcaster: Broadcaster;
@@ -160,8 +166,19 @@ export class DerivativeService {
 			this.deps.queue.registerRunner(k, runner);
 	}
 
+	/** The proxy encoder choice (null: no usable video encoder). */
+	private proxyChoice() {
+		if (!this.deps.encoders)
+			return { codec: 'h264', encoder: 'libx264', audioEncoder: 'aac', container: 'mp4' } as const;
+		return this.deps.encoders.select({ purpose: 'proxy' });
+	}
+
+	private hashOf(kind: DerivativeKind): string {
+		return paramsHash(kind, kind.startsWith('proxy-') ? (this.proxyChoice()?.encoder ?? null) : null);
+	}
+
 	paths(fingerprint: string, kind: DerivativeKind): ArtifactPaths {
-		const hash = paramsHash(kind);
+		const hash = this.hashOf(kind);
 		const base = join(this.deps.cacheDir, fingerprintHex(fingerprint));
 		switch (kind) {
 			case 'keyframes':
@@ -179,7 +196,7 @@ export class DerivativeService {
 
 	/** Public URL of an artifact (the params hash is the cache-busting query, S04:MS-002). */
 	url(mediaKey: string, kind: DerivativeKind): string {
-		const h = paramsHash(kind);
+		const h = this.hashOf(kind);
 		const k = encodeURIComponent(mediaKey);
 		switch (kind) {
 			case 'keyframes':
@@ -493,13 +510,37 @@ export class DerivativeService {
 		const tmp = this.tmpName(p.main);
 		ctx.addPartial(tmp);
 		const dur = r.durationSec ?? 0;
+		const choice = this.proxyChoice();
+		if (!choice)
+			throw new JobError(
+				'ENCODER_UNAVAILABLE',
+				'No usable video encoder for proxies (see capabilities)',
+				false,
+			);
+		const vs = r.probe.streams.find((s) => s.type === 'video');
+		const srcW = vs?.type === 'video' ? vs.width : (16 * height) / 9;
+		const srcH = vs?.type === 'video' ? vs.height : height;
+		const outH = Math.min(height, srcH || height);
+		const outW = Math.max(2, Math.round(((srcW || outH) * outH) / (srcH || outH) / 2) * 2);
+		const rate = vs?.type === 'video' && vs.frameRate ? vs.frameRate : { num: 30, den: 1 };
+		const enc = videoEncodeArgs(choice, {
+			crf: height === 720 ? 23 : 26,
+			speed: height === 720 ? 'balanced' : 'fast',
+			width: outW,
+			height: outH,
+			fps: rate,
+			gop: 15,
+			realtime: true,
+			threads: ctx.slots,
+		});
 		const vf = [
 			...(r.interlaced ? ['yadif'] : []),
 			`scale=w=-2:h='min(${height},ih)':flags=bicubic`,
-			'format=yuv420p',
+			...enc.filters,
 		].join(',');
 		await this.deps.ff.run(
 			[
+				...enc.pre,
 				'-i',
 				src,
 				'-map',
@@ -508,20 +549,9 @@ export class DerivativeService {
 				'0:a:0?',
 				'-vf',
 				vf,
-				'-c:v',
-				'libx264',
-				'-preset',
-				height === 720 ? 'veryfast' : 'ultrafast',
-				'-crf',
-				height === 720 ? '23' : '26',
-				'-x264-params',
-				'keyint=15:min-keyint=15:scenecut=0',
-				'-threads',
-				String(ctx.slots),
-				'-c:a',
-				'aac',
-				'-b:a',
-				'128k',
+				...enc.video,
+				// Proxies are always MP4 (VP9/AV1 in MP4 play in Chromium) with AAC audio.
+				...audioEncodeArgs('aac', 128),
 				'-ac',
 				'2',
 				'-ar',

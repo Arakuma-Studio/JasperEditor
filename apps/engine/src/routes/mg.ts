@@ -29,8 +29,10 @@ export async function ensureMgService(app: FastifyInstance): Promise<MgService> 
 	const services = app.jasper.services;
 	const existing = services[MG_SERVICE_KEY] as MgService | undefined;
 	if (existing) return existing;
+	const core0 = services.core as CoreServices | undefined;
 	const service = createMgService({
 		mgDir: app.jasper.config.paths.mgDir,
+		...(core0 ? { tools: core0.ffmpeg.bins } : {}),
 		// Forwards job events to the engine broadcaster when WP-2F registers one as services.events.
 		emit: (type, job) => (services.events as EventSink | undefined)?.publish?.(type, job, job.projectId),
 	});

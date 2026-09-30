@@ -8,6 +8,56 @@ export const HealthSchema = z.object({
 });
 export type Health = z.infer<typeof HealthSchema>;
 
+/** Video codecs the engine can encode (ARCHITECTURE D-13). */
+export const VideoCodecSchema = z.enum(['h264', 'vp9', 'av1']);
+export type VideoCodec = z.infer<typeof VideoCodecSchema>;
+
+/**
+ * The encoder an export or proxy uses (ARCHITECTURE D-13): hardware H.264 → OpenH264 → libx264 (dev
+ * only, never required) → AV1/VP9 fallback. `rateControl` says how the CRF-style quality is mapped.
+ */
+export const EncoderChoiceSchema = z.object({
+	codec: VideoCodecSchema,
+	/** ffmpeg encoder name, e.g. `h264_nvenc`, `libopenh264`, `libx264`, `libsvtav1`. */
+	encoder: z.string(),
+	/** Human label, e.g. "H.264 · NVIDIA NVENC (hardware)". */
+	label: z.string(),
+	hardware: z.boolean(),
+	container: z.enum(['mp4', 'webm']),
+	/** Audio encoder paired with the container (`aac` for MP4, `libopus` for WebM). */
+	audioEncoder: z.string(),
+	rateControl: z.enum(['crf', 'cq', 'qp', 'bitrate']),
+	/** The encoder is GPL-licensed (libx264): acceptable in dev, never shipped (D-13). */
+	gpl: z.boolean(),
+	/** Why this is not the preferred choice (e.g. H.264 unavailable in an LGPL build). */
+	message: z.string().optional(),
+});
+export type EncoderChoice = z.infer<typeof EncoderChoiceSchema>;
+
+/** Encoder inventory of the resolved ffmpeg (`GET /api/capabilities` → `media.encoding`, D-13). */
+export const EncodingCapabilitiesSchema = z.object({
+	/** Build license from `ffmpeg -version` configuration (`--enable-gpl` / `--enable-nonfree`). */
+	license: z.enum(['lgpl', 'gpl', 'nonfree', 'unknown']),
+	/** `JASPER_FFMPEG_LGPL_ONLY=1`: GPL/nonfree encoders are ignored even when the build has them. */
+	lgplOnly: z.boolean(),
+	/** `ffmpeg -hwaccels`. */
+	hwaccels: z.array(z.string()),
+	/** Hardware H.264 encoders listed by the build and whether a test encode succeeded. */
+	hardware: z.array(z.object({ encoder: z.string(), usable: z.boolean(), reason: z.string().optional() })),
+	/** Usable encoders per codec, in preference order (GPL ones removed in LGPL-only mode). */
+	codecs: z.object({ h264: z.array(z.string()), vp9: z.array(z.string()), av1: z.array(z.string()) }),
+	audio: z.object({ aac: z.boolean(), opus: z.boolean() }),
+	/** `prores_ks` for alpha intermediates (motion-graphic masters). */
+	prores: z.boolean(),
+	/** Default export encoder (null: nothing usable). */
+	export: EncoderChoiceSchema.nullable(),
+	/** Proxy encoder (null: proxies unavailable). */
+	proxy: EncoderChoiceSchema.nullable(),
+	/** Capability message for the UI (e.g. "H.264 is unavailable: exporting AV1 (MP4)"). */
+	message: z.string().optional(),
+});
+export type EncodingCapabilities = z.infer<typeof EncodingCapabilitiesSchema>;
+
 export const EngineCapabilitiesSchema = z.object({
 	engine: z.object({
 		version: z.string(),
@@ -21,6 +71,8 @@ export const EngineCapabilitiesSchema = z.object({
 		ffprobeVersion: z.string().nullable(),
 		encoders: z.array(z.string()),
 		filters: z.array(z.string()),
+		/** Encoder selection (D-13); additive, absent on older engines. */
+		encoding: EncodingCapabilitiesSchema.optional(),
 	}),
 	render: z.object({
 		native: z.boolean(),

@@ -1,7 +1,13 @@
 // Export settings for Export mode (S05 §15, S04 §10.2 M1 subset): the "Match Sequence – H.264" preset,
 // ranges, per-sequence remembered choices (S05:EX-014), plan-path names (S04:EX-005) and size estimates
 // (S05:EX-023).
-import type { ExportSettings, RenderPlan } from '@jasper/api';
+import type {
+	EncoderChoice,
+	EncodingCapabilities,
+	ExportSettings,
+	RenderPlan,
+	VideoCodec,
+} from '@jasper/api';
 import { fpsOf, makeEnvelope, type ProjectDocument, type Sequence, sequenceDuration } from '@jasper/project';
 
 export const MATCH_SEQUENCE_PRESET = { id: 'match-sequence-h264', label: 'Match Sequence – H.264' } as const;
@@ -32,7 +38,15 @@ export function exportRange(
 
 export function buildExportSettings(
 	seq: Sequence,
-	choice: { range: ExportRangeChoice; engine: ExportEngineChoice; crf?: number },
+	choice: {
+		range: ExportRangeChoice;
+		engine: ExportEngineChoice;
+		crf?: number;
+		/** Preferred codec (default H.264); the engine substitutes when unavailable (ARCHITECTURE D-13). */
+		codec?: VideoCodec;
+		/** Explicit ffmpeg encoder; absent = the engine's best choice. */
+		encoder?: string | null;
+	},
 ): ExportSettings {
 	const s = seq.settings;
 	return {
@@ -41,7 +55,8 @@ export function buildExportSettings(
 		presetId: MATCH_SEQUENCE_PRESET.id,
 		container: 'mp4',
 		video: {
-			codec: 'h264',
+			codec: choice.codec ?? 'h264',
+			...(choice.encoder ? { encoder: choice.encoder } : {}),
 			// H.264 needs even dimensions; sequences are created even (S05:EX-022 never changes them silently).
 			width: s.width,
 			height: s.height,
@@ -121,15 +136,105 @@ export function sizeEstimateText(plan: RenderPlan | null): string {
 	return `Size depends on content (~${formatBytes(plan.estimate.bytes)})`;
 }
 
-export function outputDescription(seq: Sequence, frames: number): string {
+export function outputDescription(seq: Sequence, frames: number, encoder?: EncoderChoice | null): string {
 	const fps = fpsOf(seq.settings.frameRate);
 	const fpsText = Number.isInteger(fps) ? String(fps) : fps.toFixed(2);
-	return `${seq.settings.width}×${seq.settings.height} · ${fpsText} fps · H.264 · AAC 48 kHz stereo · ${formatDuration(frames / fps)}`;
+	const video = encoder ? CODEC_LABELS[encoder.codec] : 'H.264';
+	const audio = encoder?.audioEncoder === 'libopus' ? 'Opus' : 'AAC';
+	return `${seq.settings.width}×${seq.settings.height} · ${fpsText} fps · ${video} · ${audio} 48 kHz stereo · ${formatDuration(frames / fps)}`;
+}
+
+// ------------------------------------------------------------ encoders (ARCHITECTURE D-13)
+
+export const CODEC_LABELS: Record<VideoCodec, string> = { h264: 'H.264', vp9: 'VP9', av1: 'AV1' };
+
+/** Encoders the engine may pick per codec, in its preference order (mirrors the engine selector). */
+const CODEC_ENCODERS: Record<VideoCodec, string[]> = {
+	h264: ['h264_videotoolbox', 'h264_nvenc', 'h264_qsv', 'h264_amf', 'h264_vaapi', 'libopenh264', 'libx264'],
+	vp9: ['libvpx-vp9'],
+	av1: ['libsvtav1', 'libaom-av1'],
+};
+const ENCODER_NAMES: Record<string, string> = {
+	h264_videotoolbox: 'Apple VideoToolbox (hardware)',
+	h264_nvenc: 'NVIDIA NVENC (hardware)',
+	h264_qsv: 'Intel Quick Sync (hardware)',
+	h264_amf: 'AMD AMF (hardware)',
+	h264_vaapi: 'VA-API (hardware)',
+	libopenh264: 'OpenH264',
+	libx264: 'x264 (GPL, dev builds only)',
+	'libvpx-vp9': 'libvpx',
+	libsvtav1: 'SVT-AV1',
+	'libaom-av1': 'libaom',
+};
+const GPL = new Set(['libx264', 'libx264rgb', 'libx265']);
+
+export type ChoiceOption<T extends string> = { value: T; label: string; available: boolean; reason?: string };
+
+/** Codec choices; unavailable ones stay listed but disabled (S05:EX-012). */
+export function codecOptions(enc: EncodingCapabilities | undefined): ChoiceOption<VideoCodec>[] {
+	return (['h264', 'av1', 'vp9'] as const).map((c) => {
+		const available = !enc || enc.codecs[c].length > 0;
+		return {
+			value: c,
+			label: `${CODEC_LABELS[c]} (${c === 'vp9' && enc?.audio.opus ? 'WebM' : 'MP4'})`,
+			available,
+			...(available ? {} : { reason: `No usable ${CODEC_LABELS[c]} encoder in this engine's ffmpeg` }),
+		};
+	});
+}
+
+/**
+ * Encoder choices for a codec: "Auto" plus every encoder the build lists; hardware encoders whose test
+ * encode failed and GPL encoders in LGPL-only mode are disabled with the reason.
+ */
+export function encoderOptions(
+	enc: EncodingCapabilities | undefined,
+	buildEncoders: readonly string[],
+	codec: VideoCodec,
+): ChoiceOption<string>[] {
+	const out: ChoiceOption<string>[] = [{ value: '', label: 'Auto (best available)', available: true }];
+	if (!enc) return out;
+	const usable = new Set(enc.codecs[codec]);
+	for (const e of CODEC_ENCODERS[codec]) {
+		if (!buildEncoders.includes(e)) continue;
+		const hw = enc.hardware.find((h) => h.encoder === e);
+		const reason = usable.has(e)
+			? undefined
+			: hw && !hw.usable
+				? `Test encode failed${hw.reason ? `: ${hw.reason}` : ''}`
+				: enc.lgplOnly && GPL.has(e)
+					? 'GPL encoder, ignored in LGPL-only mode'
+					: 'Not usable';
+		out.push({
+			value: e,
+			label: ENCODER_NAMES[e] ?? e,
+			available: usable.has(e),
+			...(reason ? { reason } : {}),
+		});
+	}
+	return out;
+}
+
+/** "H.264 · NVIDIA NVENC (hardware) → MP4" for the plan's (or the default) encoder. */
+export function encoderSummary(encoder: EncoderChoice | null | undefined): string {
+	if (!encoder) return 'No usable video encoder';
+	return `${encoder.label} → ${encoder.container.toUpperCase()}`;
+}
+
+/** File extension of the export (the engine may write WebM for VP9). */
+export function exportExtension(encoder: EncoderChoice | null | undefined): string {
+	return encoder?.container === 'webm' ? 'webm' : 'mp4';
 }
 
 // ------------------------------------------------------------ remembered choices (EX-014)
 
-type Remembered = { range: ExportRangeChoice; engine: ExportEngineChoice; fileName?: string };
+type Remembered = {
+	range: ExportRangeChoice;
+	engine: ExportEngineChoice;
+	fileName?: string;
+	codec?: VideoCodec;
+	encoder?: string;
+};
 const keyOf = (projectId: string, sequenceId: string) => `jasper.export.${projectId}.${sequenceId}`;
 
 export function loadExportChoice(projectId: string, sequenceId: string): Remembered | null {
@@ -139,7 +244,14 @@ export function loadExportChoice(projectId: string, sequenceId: string): Remembe
 		const v = JSON.parse(raw) as Partial<Remembered>;
 		const range = v.range === 'in-out' ? 'in-out' : 'entire';
 		const engine = v.engine === 'native' || v.engine === 'remotion' ? v.engine : 'auto';
-		return { range, engine, ...(typeof v.fileName === 'string' ? { fileName: v.fileName } : {}) };
+		const codec = v.codec === 'av1' || v.codec === 'vp9' || v.codec === 'h264' ? v.codec : undefined;
+		return {
+			range,
+			engine,
+			...(typeof v.fileName === 'string' ? { fileName: v.fileName } : {}),
+			...(codec ? { codec } : {}),
+			...(typeof v.encoder === 'string' && v.encoder ? { encoder: v.encoder } : {}),
+		};
 	} catch {
 		return null;
 	}

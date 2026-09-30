@@ -1,4 +1,4 @@
-import type { EngineJob, RenderPlan } from '@jasper/api';
+import type { EncoderChoice, EngineCapabilities, EngineJob, RenderPlan } from '@jasper/api';
 import type { EditorSession } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -443,7 +443,7 @@ const PLAN_REMOTION: RenderPlan = {
 };
 
 describe('Export mode (S05:EX-001…031, S04:EX-005)', () => {
-	async function setupExport(plan: RenderPlan = PLAN_REMOTION) {
+	async function setupExport(plan: RenderPlan = PLAN_REMOTION, caps?: EngineCapabilities) {
 		const { session } = await memorySession();
 		const { mediaId } = importMedia(session, 'clip-a.mp4', { key: 'mk_CLIPA0001' });
 		const seqId = Object.keys(session.getCommitted().sequences)[0]!;
@@ -456,6 +456,7 @@ describe('Export mode (S05:EX-001…031, S04:EX-005)', () => {
 		const planned: unknown[] = [];
 		const started: unknown[] = [];
 		engine.on((r) => {
+			if (caps && r.path === '/api/capabilities') return { body: caps };
 			if (r.path === '/api/exports/plan') {
 				planned.push(r.body);
 				return { body: plan };
@@ -525,5 +526,121 @@ describe('Export mode (S05:EX-001…031, S04:EX-005)', () => {
 			expect(notices.getAll().some((n) => n.message.startsWith('Export started'))).toBe(true),
 		);
 		expect(localStorage.getItem(`jasper.export.${session.projectId}.${seqId}`)).toContain('"engine":"auto"');
+	});
+
+	it('shows the chosen encoder and disables unavailable codecs/encoders (ARCHITECTURE D-13)', async () => {
+		const av1: EncoderChoice = {
+			codec: 'av1',
+			encoder: 'libsvtav1',
+			label: 'AV1 · SVT-AV1 (software)',
+			hardware: false,
+			container: 'mp4',
+			audioEncoder: 'aac',
+			rateControl: 'crf',
+			gpl: false,
+			message: 'H.264 is unavailable (no usable hardware encoder, no OpenH264): exporting AV1 (MP4)',
+		};
+		const caps: EngineCapabilities = {
+			engine: { version: '0.1.0', apiVersion: 1, mode: 'dev', pathRegistration: true },
+			media: {
+				ffmpegVersion: '6.1.1',
+				ffprobeVersion: '6.1.1',
+				encoders: ['libx264', 'h264_nvenc', 'libsvtav1', 'libvpx-vp9', 'aac', 'libopus', 'prores_ks'],
+				filters: ['overlay'],
+				encoding: {
+					license: 'gpl',
+					lgplOnly: true,
+					hwaccels: ['cuda'],
+					hardware: [{ encoder: 'h264_nvenc', usable: false, reason: 'Cannot load libcuda.so.1' }],
+					codecs: { h264: [], vp9: ['libvpx-vp9'], av1: ['libsvtav1'] },
+					audio: { aac: true, opus: true },
+					prores: true,
+					export: av1,
+					proxy: { ...av1, codec: 'vp9', encoder: 'libvpx-vp9', label: 'VP9 · libvpx (software)' },
+					message: av1.message,
+				},
+			},
+			render: { native: true, remotionLocal: 'ready', fframes: 'unavailable' },
+			fonts: { bundledCatalog: true, systemFonts: false, customUpload: false },
+			limits: { maxUploadBytes: null, freeDiskBytes: 1, cpuCount: 12, maxJsonBodyBytes: 20_971_520 },
+		};
+		const { planned, started } = await setupExport({ ...PLAN_REMOTION, encoder: av1 }, caps);
+		await waitFor(() =>
+			expect(screen.getByTestId('export-encoder').textContent).toBe('AV1 · SVT-AV1 (software) → MP4'),
+		);
+		expect(screen.getByTestId('export-encoder-message').textContent).toContain('H.264 is unavailable');
+		const codec = screen.getByTestId('export-codec') as HTMLSelectElement;
+		expect(codec.value).toBe('av1');
+		const h264 = [...codec.options].find((o) => o.value === 'h264')!;
+		expect(h264.disabled).toBe(true);
+		expect(h264.textContent).toContain('unavailable');
+		expect([...codec.options].find((o) => o.value === 'vp9')!.textContent).toContain('WebM');
+		// The planner request carries the effective codec (AV1), never the unavailable H.264.
+		await waitFor(() => expect(planned.length).toBeGreaterThan(0));
+		expect((planned.at(-1) as { settings: { video: { codec: string } } }).settings.video.codec).toBe('av1');
+
+		fireEvent.change(codec, { target: { value: 'h264' } });
+		expect(codec.value).toBe('av1'); // disabled option cannot be chosen
+		fireEvent.change(codec, { target: { value: 'vp9' } });
+		await waitFor(() =>
+			expect((planned.at(-1) as { settings: { video: { codec: string } } }).settings.video.codec).toBe('vp9'),
+		);
+		// Explicit encoder list: libvpx usable; for H.264 the unusable NVENC / GPL x264 are listed disabled.
+		const enc = screen.getByTestId('export-encoder-select') as HTMLSelectElement;
+		expect([...enc.options].map((o) => [o.value, o.disabled])).toEqual([
+			['', false],
+			['libvpx-vp9', false],
+		]);
+		fireEvent.change(enc, { target: { value: 'libvpx-vp9' } });
+		await waitFor(() =>
+			expect((planned.at(-1) as { settings: { video: { encoder?: string } } }).settings.video.encoder).toBe(
+				'libvpx-vp9',
+			),
+		);
+		await waitFor(() =>
+			expect((screen.getByTestId('export-start') as HTMLButtonElement).disabled).toBe(false),
+		);
+		await act(async () => {
+			fireEvent.click(screen.getByTestId('export-start'));
+		});
+		await waitFor(() => expect(started).toHaveLength(1));
+		await waitFor(() =>
+			expect(notices.getAll().some((n) => n.message === 'Export started: Sequence 01.mp4')).toBe(true),
+		);
+	});
+
+	it('lists unusable hardware and GPL encoders as disabled options with the reason', async () => {
+		const { encoderOptions } = await import('../../src/export/settings.ts');
+		const opts = encoderOptions(
+			{
+				license: 'gpl',
+				lgplOnly: true,
+				hwaccels: [],
+				hardware: [{ encoder: 'h264_nvenc', usable: false, reason: 'Cannot load libcuda.so.1' }],
+				codecs: { h264: ['libopenh264'], vp9: [], av1: [] },
+				audio: { aac: true, opus: false },
+				prores: true,
+				export: null,
+				proxy: null,
+			},
+			['h264_nvenc', 'libopenh264', 'libx264'],
+			'h264',
+		);
+		expect(opts).toEqual([
+			{ value: '', label: 'Auto (best available)', available: true },
+			{
+				value: 'h264_nvenc',
+				label: 'NVIDIA NVENC (hardware)',
+				available: false,
+				reason: 'Test encode failed: Cannot load libcuda.so.1',
+			},
+			{ value: 'libopenh264', label: 'OpenH264', available: true },
+			{
+				value: 'libx264',
+				label: 'x264 (GPL, dev builds only)',
+				available: false,
+				reason: 'GPL encoder, ignored in LGPL-only mode',
+			},
+		]);
 	});
 });

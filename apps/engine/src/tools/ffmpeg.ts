@@ -4,6 +4,7 @@ import type { ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { ENV } from '@jasper/config';
+import { parseBuildLicense, parseHwaccels } from './encoders.ts';
 import { runTool, type SpawnOptions, spawnTool, ToolError } from './process.ts';
 
 export type BinaryPaths = { ffmpeg: string | null; ffprobe: string | null };
@@ -185,7 +186,24 @@ export class Ffmpeg {
 
 // ---------------------------------------------------------------- self-check (S04:ENG-011)
 
-export const REQUIRED_ENCODERS = ['libx264', 'aac', 'prores_ks', 'libvpx-vp9'] as const;
+/**
+ * Encoders the engine expects in every supported build (D-13: an LGPL build; H.264 comes from hardware or
+ * OpenH264 and is checked by the encoder selector, libx264 is never required).
+ */
+export const REQUIRED_ENCODERS = ['aac', 'prores_ks', 'libvpx-vp9'] as const;
+/** Any of these can write a native export video stream (see `selectVideoEncoder`). */
+const VIDEO_EXPORT_ENCODERS = [
+	'h264_videotoolbox',
+	'h264_nvenc',
+	'h264_qsv',
+	'h264_amf',
+	'h264_vaapi',
+	'libopenh264',
+	'libx264',
+	'libsvtav1',
+	'libvpx-vp9',
+	'libaom-av1',
+];
 export const REQUIRED_FILTERS = [
 	'trim',
 	'atrim',
@@ -205,9 +223,16 @@ export type SelfCheck = {
 	ffprobeVersion: string | null;
 	encoders: string[];
 	filters: string[];
+	/** `ffmpeg -hwaccels`. */
+	hwaccels: string[];
+	/** From the `configuration:` line of `ffmpeg -version` (D-13). */
+	license: 'lgpl' | 'gpl' | 'nonfree' | 'unknown';
 	missingEncoders: string[];
 	missingFilters: string[];
-	/** H.264 + AAC encoders and the compositing filters exist (native export possible). */
+	/**
+	 * A video export encoder (H.264, AV1 or VP9 — hardware ones still need a test encode, see
+	 * EncoderService) + AAC and the compositing filters exist.
+	 */
 	nativeRender: boolean;
 	errors: string[];
 };
@@ -266,21 +291,22 @@ async function runSelfCheck(bins: BinaryPaths): Promise<SelfCheck> {
 			return '';
 		}
 	};
-	const [ffv, fpv, enc, fil] = await Promise.all([
+	const [ffv, fpv, enc, fil, hwa] = await Promise.all([
 		text(bins.ffmpeg, ['-hide_banner', '-version']),
 		text(bins.ffprobe, ['-hide_banner', '-version']),
 		text(bins.ffmpeg, ['-hide_banner', '-encoders']),
 		text(bins.ffmpeg, ['-hide_banner', '-filters']),
+		text(bins.ffmpeg, ['-hide_banner', '-hwaccels']),
 	]);
 	if (!bins.ffmpeg) errors.push('ffmpeg not found');
 	if (!bins.ffprobe) errors.push('ffprobe not found');
 	const encoders = parseCodecList(enc);
 	const filters = parseFilterList(fil);
-	const hasH264 = encoders.some((e) => e === 'libx264' || e === 'libopenh264' || /^h264_/.test(e));
+	const hasVideo = encoders.some((e) => VIDEO_EXPORT_ENCODERS.includes(e));
 	const nativeRender =
 		!!bins.ffmpeg &&
 		!!bins.ffprobe &&
-		hasH264 &&
+		hasVideo &&
 		encoders.includes('aac') &&
 		['overlay', 'amix', 'scale', 'fps', 'trim', 'atrim'].every((f) => filters.includes(f));
 	return {
@@ -288,6 +314,8 @@ async function runSelfCheck(bins: BinaryPaths): Promise<SelfCheck> {
 		ffprobeVersion: parseVersion(fpv),
 		encoders,
 		filters,
+		hwaccels: parseHwaccels(hwa),
+		license: ffv ? parseBuildLicense(ffv) : 'unknown',
 		missingEncoders: REQUIRED_ENCODERS.filter((e) => !encoders.includes(e)),
 		missingFilters: REQUIRED_FILTERS.filter((f) => !filters.includes(f)),
 		nativeRender,
