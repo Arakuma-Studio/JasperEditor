@@ -8,6 +8,7 @@ import { blockingForEngine } from './PlanSummary.tsx';
 import {
 	buildExportSettings,
 	exportEnvelope,
+	exportExtension,
 	exportRange,
 	loadExportChoice,
 	sanitizeFileName,
@@ -38,7 +39,12 @@ export async function startQuickExport(
 	const engineChoice = remembered?.engine ?? 'auto';
 	const errors = validateExport(seq, exportRange(seq, range));
 	if (errors.length) throw new QuickExportError(errors[0]!, errors);
-	const settings = buildExportSettings(seq, { range, engine: engineChoice });
+	const settings = buildExportSettings(seq, {
+		range,
+		engine: engineChoice,
+		...(remembered?.codec ? { codec: remembered.codec } : {}),
+		...(remembered?.encoder ? { encoder: remembered.encoder } : {}),
+	});
 	const envelope = exportEnvelope(doc, session.revision);
 	const plan = await engine.planExport({ envelope, sequenceId: seq.id, settings });
 	const blocking = blockingForEngine(plan, engineChoice);
@@ -55,6 +61,9 @@ export async function startQuickExport(
 	});
 	const itemName =
 		Object.values(doc.items).find((i) => i.kind === 'sequence' && i.sequenceId === seq.id)?.name ?? 'Export';
-	trackExportJob(job, `${sanitizeFileName(remembered?.fileName ?? itemName)}.mp4`);
+	trackExportJob(
+		job,
+		`${sanitizeFileName(remembered?.fileName ?? itemName)}.${exportExtension(plan.encoder)}`,
+	);
 	return job;
 }
