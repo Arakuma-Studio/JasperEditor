@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // Generates deterministic test media under fixtures/media/ with the system ffmpeg (ARCHITECTURE §14).
-// Existing files are kept (delete them to regenerate). Outputs are gitignored.
+// Existing files are kept while their recipe is unchanged: a `.<name>.recipe` stamp holds a hash of the
+// ffmpeg arguments, and a missing or different stamp regenerates the file. Outputs are gitignored.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -14,6 +16,16 @@ mkdirSync(outDir, { recursive: true });
 const base = ['-hide_banner', '-loglevel', 'error', '-y'];
 const h264 = ['-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-g', '30'];
 const aac = ['-c:a', 'aac', '-b:a', '128k', '-ac', '2', '-ar', '48000'];
+/**
+ * A tone whose level changes over time, so timeline waveforms show a shape (a steady sine draws as a flat
+ * band). `envelope` is an ffmpeg expression in `t` with values in 0…1.
+ */
+const shapedTone = (hz, seconds, envelope) => [
+	'-f',
+	'lavfi',
+	'-i',
+	`aevalsrc='0.5*sin(2*PI*${hz}*t)*(${envelope})':s=48000:d=${seconds}`,
+];
 
 /** @type {{name: string, steps: (out: string) => string[][]}[]} */
 const fixtures = [
@@ -22,7 +34,8 @@ const fixtures = [
 		steps: (out) => [
 			[
 				...['-f', 'lavfi', '-i', 'testsrc2=size=1920x1080:rate=30:duration=10'],
-				...['-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000:duration=10'],
+				// Speech-like: syllables (1.3 Hz) under a slow phrase swell.
+				...shapedTone(440, 10, 'abs(sin(2*PI*1.3*t))*(0.4+0.6*abs(sin(2*PI*0.21*t)))'),
 				...h264,
 				...aac,
 				...['-t', '10', '-movflags', '+faststart', out],
@@ -34,7 +47,7 @@ const fixtures = [
 		steps: (out) => [
 			[
 				...['-f', 'lavfi', '-i', 'testsrc2=size=1280x720:rate=25:duration=6'],
-				...['-f', 'lavfi', '-i', 'sine=frequency=660:sample_rate=48000:duration=6'],
+				...shapedTone(660, 6, '0.55+0.45*sin(2*PI*1.7*t)'),
 				...h264,
 				...aac,
 				...['-t', '6', '-movflags', '+faststart', out],
@@ -45,7 +58,8 @@ const fixtures = [
 		name: 'tone.wav',
 		steps: (out) => [
 			[
-				...['-f', 'lavfi', '-i', 'sine=frequency=1000:sample_rate=48000:duration=5'],
+				// Decaying 1 kHz beeps, two per second.
+				...shapedTone(1000, 5, 'exp(-5*mod(t,0.5))'),
 				...['-ac', '2', '-ar', '48000', '-c:a', 'pcm_s16le', out],
 			],
 		],
@@ -76,7 +90,13 @@ const fixtures = [
 let failed = false;
 for (const fx of fixtures) {
 	const target = join(outDir, fx.name);
-	if (existsSync(target)) {
+	const stampFile = join(outDir, `.${fx.name}.recipe`);
+	const recipe = createHash('sha256')
+		.update(JSON.stringify(fx.steps('<out>')))
+		.digest('hex')
+		.slice(0, 16);
+	const stamp = existsSync(stampFile) ? readFileSync(stampFile, 'utf8').trim() : null;
+	if (existsSync(target) && stamp === recipe) {
 		console.log(`skip   ${fx.name} (exists)`);
 		continue;
 	}
@@ -95,6 +115,7 @@ for (const fx of fixtures) {
 	rmSync(`${partial}.tmp.mp4`, { force: true });
 	if (ok) {
 		renameSync(partial, target);
+		writeFileSync(stampFile, recipe);
 		console.log(`made   ${fx.name}`);
 	} else {
 		rmSync(partial, { force: true });

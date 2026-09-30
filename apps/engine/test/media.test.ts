@@ -155,9 +155,12 @@ describe('derivatives (ARCHITECTURE §9.4, S04:TH-002, WF-001)', () => {
 				bin.rawPayload.byteOffset + bin.rawPayload.length,
 			),
 		);
-		const mid = floats[500]!;
-		expect(mid).toBeGreaterThan(0.05); // 440 Hz sine at full-ish scale
-		expect(mid).toBeLessThanOrEqual(1);
+		// The fixture is a 440 Hz tone under a syllable-like envelope: loud peaks, near-silent dips.
+		const first = floats.subarray(0, header.sampleCount);
+		const loudest = Math.max(...first);
+		expect(loudest).toBeGreaterThan(0.2);
+		expect(loudest).toBeLessThanOrEqual(1);
+		expect(Math.min(...first.subarray(10, 990))).toBeLessThan(loudest / 4);
 
 		// Content-addressed: the files live under cache/<fingerprint>/.
 		const hex = m.fingerprint.slice(3);
