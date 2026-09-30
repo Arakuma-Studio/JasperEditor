@@ -16,6 +16,7 @@ import { exportMode, trackExportJob } from './mode.ts';
 import { blockingForEngine, type PlanState, PlanSummary } from './PlanSummary.tsx';
 import {
 	buildExportSettings,
+	CODEC_LABELS,
 	codecOptions,
 	ENGINE_OPTIONS,
 	type ExportEngineChoice,
@@ -329,7 +330,11 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 						<span className="text-pr-muted">Download from the engine</span>
 					</Field>
 					<Field label="Preset">
-						<span>{MATCH_SEQUENCE_PRESET.label}</span>
+						<span>
+							{effectiveCodec === 'h264'
+								? MATCH_SEQUENCE_PRESET.label
+								: `Match Sequence – ${CODEC_LABELS[effectiveCodec]}`}
+						</span>
 					</Field>
 					<Field label="Format">
 						<select
