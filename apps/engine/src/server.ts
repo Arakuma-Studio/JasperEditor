@@ -174,7 +174,10 @@ export async function createServer(
 		await app.register(fastifyStatic, {
 			root: config.webDir,
 			prefix: '/',
-			wildcard: false,
+			// One wildcard route instead of a route per file found at startup: files of a web build made
+			// while the engine runs (new hashed bundles) are served too. Misses fall through to the
+			// not-found handler below (SPA fallback for HTML navigations, ENG-022 404 otherwise).
+			wildcard: true,
 			index: ['index.html'],
 		});
 	}
