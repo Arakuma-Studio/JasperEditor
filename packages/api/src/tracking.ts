@@ -21,6 +21,27 @@ export const TrackRequestSchema = z.object({
 	direction: z.enum(['forward', 'backward', 'both']).default('both'),
 	/** Tracker quality/speed trade-off. */
 	quality: z.enum(['fast', 'balanced', 'best']).default('balanced'),
+	/**
+	 * wp-m2-track (additive): the document tracker this job is for. Echoed in `tracking.progress` events so the
+	 * Program overlay can draw the live track of the right tracker.
+	 */
+	trackerId: z.string().optional(),
+	/** wp-m2-track (additive): planar tracker options. */
+	options: z
+		.object({
+			/**
+			 * Where planar features come from: `inside` the quad (default; the plane's own texture), `surroundings`
+			 * (a ring 5–25 % of the quad size outside it: screens whose content changes) or `both`.
+			 */
+			features: z.enum(['inside', 'surroundings', 'both']).optional(),
+			/**
+			 * Snap the quad's sides to the strongest straight luminance edges near them on every frame (screen
+			 * bezels, sign borders): sub-pixel line fits intersected into corners. Sides that leave the frame keep the
+			 * tracked line.
+			 */
+			refineEdges: z.boolean().optional(),
+		})
+		.optional(),
 });
 export type TrackRequest = z.infer<typeof TrackRequestSchema>;
 
@@ -38,5 +59,29 @@ export const TrackResultSchema = z.object({
 	method: z.string(),
 	/** Frames where tracking was lost (confidence 0). */
 	lost: z.array(z.number().int()),
+	/** wp-m2-track (additive): echo of the request's tracker id. */
+	trackerId: z.string().optional(),
+	/** wp-m2-track (additive): frames tracked per second (TRK-014 budget). */
+	framesPerSec: z.number().optional(),
 });
 export type TrackResult = z.infer<typeof TrackResultSchema>;
+
+/**
+ * wp-m2-track (additive): payload of the `tracking.progress` engine event (published on `GET /events` about 10 times
+ * per second while a track job runs; clients receive it as a raw envelope). `data` holds the current frame's
+ * geometry in media pixels (planar: 8 numbers TL, TR, BR, BL; point: 2).
+ */
+export const TRACKING_PROGRESS_EVENT = 'tracking.progress';
+export const TrackProgressSchema = z.object({
+	jobId: z.string(),
+	trackerId: z.string().optional(),
+	mediaKey: z.string(),
+	/** Source frame the geometry belongs to. */
+	frame: z.number().int().min(0),
+	data: z.array(z.number()),
+	confidence: z.number().min(0).max(1),
+	/** Frames tracked so far / to track. */
+	done: z.number().int().min(0),
+	total: z.number().int().min(0),
+});
+export type TrackProgress = z.infer<typeof TrackProgressSchema>;
