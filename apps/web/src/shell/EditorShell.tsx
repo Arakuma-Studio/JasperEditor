@@ -160,8 +160,12 @@ function ShellBody() {
 		};
 	}, [store, session]);
 
+	// Autosave normally comes from <ProjectLifecycle> (a parent, whose effects run after ours); defer so
+	// the shell only attaches the shared saver when no lifecycle host did.
 	useEffect(() => {
-		if (session) ensureAutosaver(session);
+		if (!session) return;
+		const t = setTimeout(() => ensureAutosaver(session), 0);
+		return () => clearTimeout(t);
 	}, [session]);
 
 	const setMode = useCallback(

@@ -1,28 +1,22 @@
-// Session saving for the shell (file.save, S01:PER-020): one autosaver per EditorSession, created on
-// demand and shared by everyone who calls ensureAutosaver (WP-2E persistence UI should use it too so a
-// session never has two savers). Flushed on pagehide and when the session closes.
-import { type Autosaver, createAutosaver, type EditorSession } from '@jasper/session';
+// Session saving for the shell (file.save, S01:PER-020). A session has exactly one autosaver: the one
+// owned by @jasper/session's persistence controller (attached by WP-2E's <ProjectLifecycle>). The shell
+// reuses it; only when nothing attached one yet (e.g. the shell mounted without ProjectLifecycle) does
+// ensureAutosaver attach it through the same registry, so two savers never race on If-Match.
+import { type Autosaver, attachPersistence, type EditorSession, persistenceFor } from '@jasper/session';
 
-const savers = new WeakMap<EditorSession, Autosaver>();
-const conflicts = new WeakMap<EditorSession, number>();
-
-/** The session's autosaver (created once); null when the session has no store or is read-only. */
+/** The session's autosaver (shared); null when the session has no store or is read-only. */
 export function ensureAutosaver(session: EditorSession): Autosaver | null {
-	const existing = savers.get(session);
-	if (existing) return existing;
-	const store = session.projectStore;
-	if (!store || session.getState().readOnly) return null;
-	const saver = createAutosaver(session, store, {
-		onConflict: (rev) => conflicts.set(session, rev),
+	const existing = persistenceFor(session);
+	if (existing) return existing.autosaver;
+	if (!session.projectStore || session.getState().readOnly) return null;
+	const controller = attachPersistence(session, {
 		onError: (e) => console.warn('[autosave] save failed', e),
 	});
-	savers.set(session, saver);
 	const off = session.on('closed', () => {
 		off();
-		saver.dispose();
-		savers.delete(session);
+		void controller.dispose();
 	});
-	return saver;
+	return controller.autosaver;
 }
 
 export type SaveOutcome = 'saved' | 'unchanged' | 'no-store' | 'read-only' | 'conflict' | 'error';
@@ -33,18 +27,17 @@ export async function saveNow(session: EditorSession): Promise<SaveOutcome> {
 	const saver = ensureAutosaver(session);
 	if (!saver) return 'no-store';
 	const before = saver.lastSavedRevision;
-	conflicts.delete(session);
 	try {
 		await saver.flush();
 	} catch {
 		return 'error';
 	}
-	if (conflicts.has(session)) return 'conflict';
+	if (saver.getStatus().conflict) return 'conflict';
 	if (session.getState().dirty) return 'error';
 	return saver.lastSavedRevision === before ? 'unchanged' : 'saved';
 }
 
 /** Flushes every live saver (pagehide/beforeunload). */
 export function flushAutosaver(session: EditorSession | null | undefined): void {
-	if (session) void savers.get(session)?.flush();
+	if (session) void persistenceFor(session)?.flush().catch(() => undefined);
 }
