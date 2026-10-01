@@ -128,3 +128,73 @@ Research: `docs/research/animejs-v4-notes.md` (R-ANM). anime.js pinned at **4.5.
 - Packaged-like `/api/licenses`: `apps/engine/dist/{engine.mjs,third-party/}` copied to a temp dir outside the
   repo, started on a free port: `animejs` 4.5.0, MIT, committed text.
 - `pnpm --filter @jasper/web build`: `dist/THIRD_PARTY_NOTICES.md` identical to the checked-in file.
+
+## Determinism fix (branch `fix/render-parity`, after S11 merged)
+
+**Symptom.** On `main` (bb7107a) the parity e2e (`REMOTION_E2E=1 … determinism-render.e2e.test.ts`) failed
+intermittently for the `Sequence` composition (and once for `AnimeScene`): `renderStill` vs `renderFrames` c1 / c4
+/ reversed / shuffled were not byte-identical, different frames each run; re-rendering gave identical bytes. The
+Playwright revisit check of `e2e/text-animation.spec.ts` ("revisiting a frame gives identical pixels") failed on
+`main` too. Two independent causes, neither in the anime.js value engine.
+
+**Cause 1 — Chrome's incremental (partial) raster; identical DOM, different pixels.**
+- Evidence: a scratch harness dumping `innerHTML` of the composition after every seek in a paused `@remotion/player`
+  (parity document, 160 visits: in order, shuffled, reversed): 34/120 revisits differed in pixels while the HTML was
+  byte-identical every time. In renderer pages, a hash of the settled DOM (logged from the page) was identical for
+  `reversed` frame 0 (pixels differ from the still in 14/14 runs) and `shuffled` frame 0 (pixels equal). So text
+  measurement, font gating, `useAnimeDom` builds/seeks, the `useAnimeValues` cache and `<Freeze>` all produce the same
+  DOM whatever the visit order (measurement was also logged: never skipped, `offsetParent` never null).
+- Locus: the callout's dot (its `r` shrinks inside the ring at frames 0–2): a 9–28 px region along the ring edge,
+  up to 60/255; the label box edge at frames 24–28; the leader line in the outro; 3 px of a title glyph.
+- Mechanism: after a DOM change Chrome re-records only what changed and re-rasters only the invalidated rectangles of
+  the tiles it keeps ("partial raster"); anti-aliasing at the edge of such a rectangle differs from a full raster.
+  `--disable-partial-raster` removed the callout case (6 → 0 of 19 revisits) and reduced the full document (34 → 19);
+  forcing a full repaint of the composition root after each seek (`display: none`, forced layout, display back)
+  removed all of them (0/120), with no change of the DOM.
+- Fix (product): `FrameRepaint` / `repaintFromScratch` (`packages/compositions/src/repaint.tsx`), the last child of
+  `SequenceComposition`'s root: on every rendered frame, and in the Player on every paused frame (seeks, scrubbing,
+  the frame playback stops on, document edits while paused), the root is repainted from scratch in a layout effect —
+  after the layers' own layout effects (text measurement, DOM-leaf builds and seeks are synchronous there), before the
+  paint. Playback is untouched (incremental, no extra layout), the Player is never held, DOM/state/canvas/media/iframe
+  content is untouched (an iframe under the toggle gets no resize, reload or ResizeObserver event — checked). The
+  e2e fixture scene uses the same component (`determinism-render/scene.tsx`).
+
+**Cause 2 — first frame of a hidden tab captured before Chrome painted it (renderFrames / renderMedia at c4).**
+- Symptom: at concurrency 4, frame 1 or 2 (sometimes 0) — the initial frame of a page — came out black or with only
+  the text layers (no templates, no shape), in 7–8 of 24 c4 runs on this box, also with cause 1 fixed.
+- Evidence: page logs show `document.visibilityState === 'hidden'` for every page but the one in front: with a full
+  Chrome (`chromeMode: 'chrome-for-testing'`, `--headless=new`; `/usr/bin/google-chrome` here, also what the engine
+  picks when Remotion's headless shell was not downloaded) Remotion opens the concurrent pages as tabs of one window.
+  A page's initial frame is released at once (Remotion's `setFrame` to the initial frame is a no-op) and captured
+  right after `Target.activateTarget` shows the tab, racing Chrome's first raster of it. Frame 3 (the last tab
+  created, in front) never failed. Holding frames for 2 or 8 animation frames or while hidden did not help (the
+  capture is already in flight); `captureBeyondViewport: false` did not help; Playwright's chrome-headless-shell
+  (`--headless=old`, no tabs): 0/16; the same Chrome with every page in its own window
+  (`Target.createTarget {newWindow: true}`): 0/24, and faster.
+- Fix: `renderPagesInOwnWindows(browser)` (`@jasper/compositions/render-host`); the engine's `RemotionService`
+  (`renderMedia`: exports; `renderAlphaMaster`: layer bakes) opens the browser itself and applies it when it renders
+  with a full Chrome at concurrency > 1 (Remotion's own headless shell: unchanged); the parity e2e does the same with
+  its browser. Not covered: `mg-bundles` pre-renders (third-party bundles) still let Remotion open the browser.
+
+**Contract changes (additive).** `@jasper/compositions`: `FrameRepaint`, `repaintFromScratch`, `wantsFullRepaint`,
+`renderPagesInOwnWindows`; package export `./render-host`. ARCHITECTURE §20.4.
+
+**Tests.** `packages/compositions/test/repaint.test.tsx` (11): forced layout with `display: none` and the inline
+display restored exactly; repaint once per frame change in a render and in a paused Player, never during playback,
+then on the frame playback stops on; after the layers' layout effects; `SequenceComposition` root repainted per frame
+keeping `display: flex`; the render-host patch (`newWindow: true` on `Target.createTarget` only, idempotent). Parity
+e2e: new "a paused Player revisiting frames in any order shows byte-identical pixels" for both compositions (120
+revisits each). Control run without `FrameRepaint`: 4/9 e2e tests fail (Sequence parity c1 + reversed, ProRes c1 ≠ c4,
+Player revisits: AnimeScene 3, Sequence 22 differing).
+
+**Verification (2026-10-01, Chrome 150 at `/usr/bin/google-chrome`).**
+- `REMOTION_E2E=1 pnpm exec vitest run packages/motion/test/determinism-render.e2e.test.ts`: **11 consecutive runs,
+  9/9 each** (~164 s per run, same as before the fix: no measurable render cost).
+- Scratch loops (renderer, parity document): renderFrames c1 / c4 / reversed / shuffled vs stills, 6 + 8 loops clean
+  for `Sequence` and 8 for `AnimeScene` with both fixes; c4 alone 24/24 clean (vs 7–8/24 failing without the
+  window fix). Player harness: 0/120 differing revisits (vs 34/120).
+- Playwright `E2E_PORT=48771 pnpm e2e e2e/text-animation.spec.ts`: 8/8, four runs.
+- `REMOTION_E2E=1 JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome` engine suites (`remotion.e2e`, `color-remotion`,
+  `layer-bake.e2e`, `layer-bake`, `shapes-remotion.e2e`, `remotion-lgpl.e2e`): 40/40.
+- `pnpm lint`, `pnpm typecheck`, `pnpm e2e:typecheck` ok. `pnpm test`: 1585 passed, 40 skipped, 1 failed —
+  `packages/project/test/color.test.ts` "a 33³ bake … < 15 ms" (load timing; 22/22 re-run alone).

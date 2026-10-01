@@ -1125,6 +1125,12 @@ fframes parity/twin tests iterate fframes templates only. `@jasper/mg-templates`
   `MotionGraphicLayer` renders an "anime template" placeholder card for `renderer: 'anime'` until
   wp-m2-anime-templates.
 - `package.json`: `@jasper/motion` (workspace), `@remotion/shapes` `4.0.499`.
+- Paint parity (S11:ANM-014, determinism fix): `SequenceComposition` ends its root with `<FrameRepaint>`
+  (`repaint.tsx`), which repaints the root from scratch (`repaintFromScratch`: `display: none`, forced layout, display
+  restored) on every rendered frame and every paused Player frame, so Chrome's incremental (partial) raster never
+  makes a frame's pixels depend on the frames painted before. `@jasper/compositions/render-host`:
+  `renderPagesInOwnWindows(browser)` — with a full Chrome (`chrome-for-testing`) the engine's multi-page renders open
+  every page in its own window (never a hidden tab captured before its first paint).
 
 ### 20.5 Engine
 
