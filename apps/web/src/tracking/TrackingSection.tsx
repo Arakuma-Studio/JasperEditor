@@ -211,19 +211,17 @@ function TrackerList({
 					})}
 				</ul>
 			)}
-			{active ? <TrackerControls session={session} clip={clip} tracker={active} engine={engine} /> : null}
+			{active ? <TrackerControls session={session} tracker={active} engine={engine} /> : null}
 		</div>
 	);
 }
 
 function TrackerControls({
 	session,
-	clip,
 	tracker,
 	engine,
 }: {
 	session: EditorSession;
-	clip: VideoClip;
 	tracker: ClipTracker;
 	engine: TrackingEngine | null;
 }) {
