@@ -19,7 +19,7 @@ import {
 	type RenderAudioFade,
 	type RenderFade,
 	type RenderMatte,
-	resolveAudioFades,
+	resolveAudioTransitions,
 	resolveVideoTransitions,
 } from '../transitions.ts';
 
@@ -126,7 +126,13 @@ export type RenderAudioClip = {
 	effects: EffectInstance[];
 	/** Track fader and pan (sequence time in flicks). */
 	track: { volumeDb: Animatable<number>; pan: Animatable<number> };
-	/** Audio fades at the clip's edges (one-sided audio transitions, S01:TRN-004); see `audioFadeGain`. */
+	/**
+	 * Audio transitions (S01:TRN-004, S10:TUI-052): frames of content played before `start` and after
+	 * `start + duration` (the handles of a crossfade), and the gain ramps over the clip's edges and handles
+	 * (see `audioFadeGain`, evaluated at sequence frames). Absent without audio transitions.
+	 */
+	headHandle?: number;
+	tailHandle?: number;
 	fades?: RenderAudioFade[];
 };
 
@@ -190,7 +196,7 @@ export function buildRenderSnapshot(
 	for (const c of Object.values(seq.clips)) end = Math.max(end, c.start + c.duration);
 	const range = opts.range ?? { start: 0, end };
 	const transitions = resolveVideoTransitions(doc, seq);
-	const audioFades = resolveAudioFades(seq);
+	const audioTransitions = resolveAudioTransitions(doc, seq);
 	const inRange = (c: Clip) => {
 		const x = transitions.clips.get(c.id);
 		return (
@@ -332,10 +338,20 @@ export function buildRenderSnapshot(
 	const anySolo = seq.audioTracks.some((t) => t.solo);
 	const audible = seq.audioTracks.filter((t) => !t.mute && (!anySolo || t.solo));
 	const audioClips: RenderAudioClip[] = [];
+	// A crossfade plays the clips' handles: a clip whose handle reaches into the range is included.
+	const audioInRange = (c: Clip) => {
+		const x = audioTransitions.clips.get(c.id);
+		return (
+			c.enabled &&
+			c.start - (x?.headHandle ?? 0) < range.end &&
+			c.start + c.duration + (x?.tailHandle ?? 0) > range.start
+		);
+	};
 	for (const t of audible) {
 		for (const c of Object.values(seq.clips)) {
-			if (c.trackId !== t.id || !inRange(c) || c.kind !== 'audio') continue;
+			if (c.trackId !== t.id || !audioInRange(c) || c.kind !== 'audio') continue;
 			useMedia(c.mediaId);
+			const x = audioTransitions.clips.get(c.id);
 			audioClips.push({
 				clipId: c.id,
 				trackId: t.id,
@@ -350,10 +366,14 @@ export function buildRenderSnapshot(
 				pan: c.pan,
 				effects: c.effects,
 				track: { volumeDb: t.volumeDb ?? ZERO, pan: t.pan ?? ZERO },
-				...(audioFades.has(c.id) ? { fades: audioFades.get(c.id)! } : {}),
+				...(x && x.headHandle > 0 ? { headHandle: x.headHandle } : {}),
+				...(x && x.tailHandle > 0 ? { tailHandle: x.tailHandle } : {}),
+				...(x?.fades.length ? { fades: x.fades } : {}),
 			});
 		}
 	}
+	for (const s of audioTransitions.skipped)
+		warnings.push({ clipId: s.transitionId, code: 'TRANSITION_SKIPPED', message: s.reason });
 	audioClips.sort((a, b) => a.start - b.start || a.trackId.localeCompare(b.trackId));
 
 	return {

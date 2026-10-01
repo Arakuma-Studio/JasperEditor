@@ -208,12 +208,14 @@ export function SequenceComposition({ doc, options }: SequenceCompositionProps) 
 					</AbsoluteFill>
 				))}
 				{doc.audioClips.map((clip) => {
-					const from = clip.start - offset;
+					// An audio crossfade plays the clip's handles (S10:TUI-052).
+					const head = clip.headHandle ?? 0;
+					const from = clip.start - head - offset;
 					return (
 						<Sequence
 							key={clip.clipId}
 							from={from}
-							durationInFrames={clip.duration}
+							durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
 							name={clip.clipId}
 							layout="none"
 						>

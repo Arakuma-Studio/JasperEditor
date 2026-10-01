@@ -161,6 +161,10 @@ describe('jasper-mcp over stdio against a real engine', () => {
 			'add_marker',
 			'add_motion_graphic',
 			'add_transition',
+			'list_transitions',
+			'update_transition',
+			'remove_transitions',
+			'apply_default_transitions',
 			'get_timeline',
 			'render_frame',
 			'get_playhead',
@@ -316,6 +320,110 @@ describe('jasper-mcp over stdio against a real engine', () => {
 		expect(table).toMatch(/V4 \| clp_\w+ \| video \| clip-b\.mp4 \| [\d:]+–[\d:]+ \| 400–454/);
 		// Remove it again so the export below keeps its length.
 		await ok('delete_clips', { projectId, clipIds: [r.clips[0]!.id] });
+	});
+
+	it('lists, updates, applies and removes transitions (S10:TUI-060)', async () => {
+		type T = {
+			id: string;
+			type: string;
+			label: string;
+			track: string;
+			cut: number;
+			span: { start: number; end: number };
+			duration: number;
+			alignment: string;
+			oneSided: boolean;
+			outgoingClipId: string | null;
+			incomingClipId: string | null;
+			handles: { outgoingTail?: number; incomingHead?: number };
+		};
+		const list = async (range?: { from: number; to: number }) =>
+			(await ok<{ transitions: T[] }>('list_transitions', { projectId, ...(range ? { range } : {}) }))
+				.transitions;
+		const p = await ok<{ sequences: { clips: { id: string; track: string; start: number }[] }[] }>(
+			'get_project',
+			{ projectId },
+		);
+		// V1: clip-a 0–150 | clip-a 150–270 | gap | clip-b 280–370 (see the helper-tool test above).
+		const left = p.sequences[0]!.clips.find((c) => c.track === 'V1' && c.start === 0)!;
+		const right = p.sequences[0]!.clips.find((c) => c.track === 'V1' && c.start === 150)!;
+		const add = await ok<{ results: { transitionId: string }[] }>('add_transition', {
+			projectId,
+			track: 'V1',
+			at: 150,
+			type: 'cross-dissolve',
+			durationFrames: 10,
+		});
+		const id = add.results[0]!.transitionId;
+		const [t] = await list();
+		expect(t).toMatchObject({
+			id,
+			type: 'cross-dissolve',
+			label: 'Cross Dissolve',
+			track: 'V1',
+			cut: 150,
+			span: { start: 145, end: 155 },
+			duration: 10,
+			alignment: 'center',
+			oneSided: false,
+			outgoingClipId: left.id,
+			incomingClipId: right.id,
+		});
+		expect(t!.handles.outgoingTail).toBeGreaterThan(100);
+		expect(t!.handles.incomingHead).toBeGreaterThan(100);
+		const table = textOf(await call('get_timeline', { projectId }));
+		expect(table).toContain(`V1 ${id} Cross Dissolve 00:00:04:25–00:00:05:05 (145–155) center, 10 frames`);
+
+		// Length + type in one History entry; then the alignment.
+		const up = await ok<{ changed: string[]; transition: T }>('update_transition', {
+			projectId,
+			transitionId: id,
+			duration: 20,
+			effectId: 'dip-to-black',
+		});
+		expect(up.changed).toContain(id);
+		expect(up.transition).toMatchObject({ id, type: 'dip-to-black', duration: 20, span: { start: 140 } });
+		const aligned = await ok<{ transition: T }>('update_transition', {
+			projectId,
+			transitionId: id,
+			alignment: 'start-at-cut',
+		});
+		expect(aligned.transition).toMatchObject({ alignment: 'start-at-cut', span: { start: 150, end: 170 } });
+		expect(
+			(await fails('update_transition', { projectId, transitionId: id, effectId: 'constant-power' })).code,
+		).toBe('E_TRACK_KIND');
+		const unknown = await fails('update_transition', { projectId, transitionId: id, effectId: 'swirl' });
+		expect(unknown.code).toBe('E_UNKNOWN_EFFECT');
+		expect(unknown.hint).toMatch(/cross-dissolve/);
+		expect((await fails('update_transition', { projectId, transitionId: id })).code).toBe('E_INVALID_PARAM');
+
+		// Defaults on both edges of the right half, with its linked audio: the dip at 150 is replaced.
+		const applied = await ok<{ clipIds: string[]; transitions: T[] }>('apply_default_transitions', {
+			projectId,
+			clipIds: [right.id],
+			media: ['video', 'audio'],
+			durationFrames: 8,
+		});
+		expect(applied.clipIds).toHaveLength(2);
+		const v = applied.transitions.filter((x) => x.track === 'V1');
+		expect(v.map((x) => [x.type, x.cut, x.oneSided, x.duration])).toEqual([
+			['cross-dissolve', 150, false, 8],
+			['cross-dissolve', 270, true, 8],
+		]);
+		expect(applied.transitions.some((x) => x.track === 'A1')).toBe(true);
+		const all = await list();
+		expect(all.map((x) => x.id)).not.toContain(id);
+		expect((await list({ from: 260, to: 275 })).every((x) => x.cut === 270)).toBe(true);
+
+		// Remove them all again: the export below renders plain cuts.
+		const removed = await ok<{ removed: string[]; deleted: string[] }>('remove_transitions', {
+			projectId,
+			transitionIds: all.map((x) => x.id),
+		});
+		expect(removed.removed.sort()).toEqual(all.map((x) => x.id).sort());
+		expect(await list()).toEqual([]);
+		expect((await fails('remove_transitions', { projectId, transitionIds: [id] })).code).toBe('E_NOT_FOUND');
+		expect(textOf(await call('get_timeline', { projectId }))).not.toMatch(/Transitions:/);
 	});
 
 	it('render_frame returns a downscaled PNG of the Program output', async () => {

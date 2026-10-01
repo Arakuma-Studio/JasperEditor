@@ -315,6 +315,7 @@ describe('transition.add / update / remove', () => {
 				.results[0],
 		).toEqual({
 			transitionId: id,
+			effectId: 'jasper.cross-dissolve',
 			duration: 24,
 			alignment: 'end-at-cut',
 		});

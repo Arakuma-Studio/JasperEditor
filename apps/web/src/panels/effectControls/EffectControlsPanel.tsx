@@ -47,6 +47,7 @@ import {
 	snapDelta,
 } from './lib.ts';
 import { KeyLane, Ruler, SummaryLane, usePlayheadLine } from './MiniTimeline.tsx';
+import { TransitionSection } from './TransitionSection.tsx';
 
 function usePersisted<T>(key: string, initial: T): [T, (v: T) => void] {
 	const [v, setV] = useState<T>(() => {
@@ -122,6 +123,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	const [dragTip, setDragTip] = useState<string | null>(null);
 	const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
 	const keySel = useSessionState((s) => s.selection.keyframes);
+	const selectedTransitions = useSessionState((s) => s.selection.timeline.transitions.length);
 	const transportStore = useMemo(
 		() => ({
 			getState: () => session.transport.getState(),
@@ -164,6 +166,13 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	}, [menu]);
 
 	if (!sel || !seq) return <Empty text="Open a sequence to edit effects." />;
+	// S10:TUI-040: a selected transition (no clip) shows its Transition section.
+	if (!primary && selectedTransitions > 0)
+		return (
+			<div className="min-h-0 flex-1 overflow-y-auto" data-testid="ec-transition">
+				<TransitionSection session={session} host="effectControls" />
+			</div>
+		);
 	if (!primary) return <Empty text="Select a clip in the Timeline to see its effects." />;
 
 	const ctx: RowContext = {
