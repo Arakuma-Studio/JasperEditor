@@ -9,8 +9,11 @@
 //     preview.webm  graded entries: VP9 alpha at half size — the Program preview of a graded DOM layer
 //     meta.json     {key, recipe, rect, frames, …, lastUsedAt}; GC removes entries unused for 14 days (LBK-021)
 //
-// Renders run in `layer-bake` jobs (child jobs of the export/still, 0 CPU slots, LBK-022) through
-// `RemotionService.renderAlphaMaster` / `renderStill`; every render is logged for licence reporting (LBK-026).
+// Renders run in `layer-bake` jobs (child jobs of the export/still, 0 CPU slots of their own: their Remotion pages are
+// a share of the export's page budget, LBK-022) through `RemotionService.renderAlphaMaster` / `renderStill`; the bakes
+// of one export run side by side (`extension.ts`, `remotion/page-pool.ts`), optionally in one shared render browser
+// per export, and a bake already being rendered for another export (or another clip) is joined, not rendered twice.
+// Every render is logged for licence reporting (LBK-026).
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -29,7 +32,7 @@ import type { NativeExtension } from '../export/native-ext.ts';
 import { mediaKeyOf, type PlannedExport } from '../export/planner.ts';
 import type { JobContext } from '../jobs/types.ts';
 import { JobError } from '../jobs/types.ts';
-import { REMOTION_VERSION } from '../remotion/service.ts';
+import { REMOTION_VERSION, type SharedRenderBrowser } from '../remotion/service.ts';
 import { Ffmpeg, sec } from '../tools/ffmpeg.ts';
 import { atomicWriteJson, readJsonOrNull } from '../tools/fs.ts';
 import { binaryNames } from '../tools/lgpl.ts';
@@ -148,15 +151,55 @@ export type BakeResult = {
 	height: number;
 };
 
+/**
+ * `concurrency` = the Remotion pages granted to this bake (a share of the parent's page budget); `browserGroup` = the
+ * parent job whose shared render browser the bake uses (absent / closed: a browser of its own).
+ */
 export type LayerBakeJobInput =
-	| { op: 'bake'; bake: BakePlan; concurrency?: number }
+	| { op: 'bake'; bake: BakePlan; concurrency?: number; browserGroup?: string }
 	| {
 			op: 'grade';
 			bake: BakePlan;
 			grade: GradePlan;
 			outputs: ('graded' | 'preview')[];
 			concurrency?: number;
+			browserGroup?: string;
 	  };
+
+/** What `ensureBake` / `ensureGraded` need from the export/still that asks (S11:LBK-022). */
+export type EnsureMeta = {
+	parentId: string;
+	projectId?: string;
+	signal: AbortSignal;
+	/** Remotion pages of this bake. */
+	concurrency?: number;
+	/** Render in the shared browser of this group (`browserSession`). */
+	browserGroup?: string;
+	/** Progress of the bake (0…1), also when it is shared with another export. */
+	onProgress?(p: number): void;
+};
+
+/**
+ * How the bakes of one export are run (S11:LBK-022). `maxInFlight`: bakes at the same time (null = automatic:
+ * `min(page budget, MAX_RENDERS_IN_FLIGHT)`; 1 = one after the other, each with the whole budget, as before).
+ * `sharedBrowser`: the bakes of an export render in one browser instead of one each.
+ */
+export type BakeParallelism = { maxInFlight: number | null; sharedBrowser: boolean };
+
+/** Defaults; `JASPER_LAYER_BAKE_PARALLEL` (bakes in flight) and `JASPER_LAYER_BAKE_SHARED_BROWSER` (0/1) override. */
+export function bakeParallelismFromEnv(env: Record<string, string | undefined>): BakeParallelism {
+	const n = Number(env.JASPER_LAYER_BAKE_PARALLEL);
+	const shared = env.JASPER_LAYER_BAKE_SHARED_BROWSER;
+	return {
+		maxInFlight: Number.isInteger(n) && n >= 1 ? n : null,
+		sharedBrowser: shared === undefined || shared === '' ? DEFAULT_SHARED_BROWSER : shared !== '0',
+	};
+}
+
+/** Whether the bakes of an export share one render browser by default (measured: see the wp-notes). */
+export const DEFAULT_SHARED_BROWSER = true;
+/** Progress poll of a running child job (the parent aggregates it). */
+const PROGRESS_POLL_MS = 250;
 
 export type LayerBakePreviewResult = {
 	key: string;
@@ -174,7 +217,11 @@ export type LayerBakeOptions = {
 	core: CoreServices;
 	log?(msg: string): void;
 	now?: () => Date;
+	parallelism?: Partial<BakeParallelism>;
 };
+
+/** A bake or graded entry being rendered by a child job (joined by every other caller that needs it). */
+type InFlight = { jobId: string; done: Promise<void> };
 
 const GL_PROBE_TIMEOUT_MS = 60_000;
 
@@ -189,12 +236,25 @@ export class LayerBakeService {
 	private readonly leases = new Map<string, number>();
 	/** Entries the GC is removing right now: lookups wait for the removal and miss. */
 	private readonly removing = new Map<string, Promise<void>>();
-	/** Bakes rendered / reused since start (tests, logs). */
-	readonly stats = { rendered: 0, reused: 0, graded: 0, clippedFallbacks: 0 };
+	/** Entries rendered right now, by key: a second caller joins the running child job (S11:LBK-022 dedupe). */
+	private readonly inflight = new Map<string, InFlight>();
+	/** Shared render browsers by group (the export/still job id), opened on first use. */
+	private readonly sessions = new Map<
+		string,
+		{ refs: number; browser: Promise<SharedRenderBrowser | null> | null }
+	>();
+	/**
+	 * Bakes rendered / reused / joined (rendered for another caller at the same time) since start, shared browsers
+	 * opened (tests, logs).
+	 */
+	readonly stats = { rendered: 0, reused: 0, joined: 0, graded: 0, clippedFallbacks: 0, browsers: 0 };
+	/** How the bakes of an export run (mutable: tests and benchmarks switch it). */
+	parallelism: BakeParallelism;
 
 	constructor(private readonly o: LayerBakeOptions) {
 		this.dir = join(o.core.config.paths.cacheDir, 'layers');
 		this.now = o.now ?? (() => new Date());
+		this.parallelism = { ...bakeParallelismFromEnv({}), ...o.parallelism };
 	}
 
 	private get core(): CoreServices {
@@ -638,26 +698,25 @@ export class LayerBakeService {
 	// ------------------------------------------------------------------ jobs (LBK-022)
 
 	/**
-	 * Returns the bake of `plan`, rendering it in a child job of `parentId` when not cached. `stage` gets the
-	 * parent's stage text. Throws a JobError when the bake fails.
+	 * Returns the bake of `plan`, rendering it in a child job of `parentId` when not cached. When another caller (another
+	 * export, or another clip of this one) is rendering the same key right now, joins that render instead (and renders
+	 * it itself when that render is cancelled). Throws a JobError when the bake fails.
 	 */
-	async ensureBake(
-		plan: BakePlan,
-		meta: { parentId: string; projectId?: string; signal: AbortSignal; concurrency?: number },
-	): Promise<BakeResult> {
+	async ensureBake(plan: BakePlan, meta: EnsureMeta): Promise<BakeResult> {
 		// The export reads the bake until it finishes: held against the GC from before the lookup.
 		this.leaseUntilDone([plan.key], meta.parentId);
-		const hit = await this.lookup(plan.key);
-		if (hit) {
-			this.stats.reused++;
-			return hit;
-		}
-		await this.runChild(
-			{ op: 'bake', bake: plan, ...(meta.concurrency ? { concurrency: meta.concurrency } : {}) },
+		const done = await this.ensureEntry(
+			plan.key,
+			async () => {
+				const hit = await this.lookup(plan.key);
+				if (hit) this.stats.reused++;
+				return hit;
+			},
+			() => this.lookup(plan.key),
+			{ op: 'bake', bake: plan, ...this.childOptions(meta) },
 			plan,
 			meta,
 		);
-		const done = await this.lookup(plan.key);
 		if (!done) throw new JobError('LAYER_BAKE_FAILED', `The bake of "${plan.clipName}" is missing`, true);
 		return done;
 	}
@@ -666,44 +725,90 @@ export class LayerBakeService {
 	async ensureGraded(
 		bake: BakePlan,
 		grade: GradePlan,
-		meta: { parentId: string; projectId?: string; signal: AbortSignal; concurrency?: number },
+		meta: EnsureMeta,
 	): Promise<{ key: string; path: string; rect: Rect | null }> {
 		this.leaseUntilDone([grade.key, bake.key], meta.parentId);
-		await this.removing.get(grade.key);
-		const cached = this.gradedDir(grade.key);
-		const m = cached ? await this.meta(grade.key) : null;
-		if (cached && m) {
+		const cachedGrade = async () => {
+			await this.removing.get(grade.key);
+			const cached = this.gradedDir(grade.key);
+			const m = cached ? await this.meta(grade.key) : null;
+			if (!cached || !m) return null;
 			await this.markUsed(grade.key, m);
-			if (this.gradedDir(grade.key)) return { key: grade.key, path: cached, rect: m.rect };
-		}
-		await this.runChild(
-			{
-				op: 'grade',
-				bake,
-				grade,
-				outputs: ['graded'],
-				...(meta.concurrency ? { concurrency: meta.concurrency } : {}),
-			},
+			return this.gradedDir(grade.key) ? { key: grade.key, path: cached, rect: m.rect } : null;
+		};
+		const done = await this.ensureEntry(
+			grade.key,
+			cachedGrade,
+			cachedGrade,
+			{ op: 'grade', bake, grade, outputs: ['graded'], ...this.childOptions(meta) },
 			bake,
 			meta,
 		);
-		const path = this.gradedDir(grade.key);
-		const done = await this.meta(grade.key);
-		if (!path || !done)
+		if (!done)
 			throw new JobError('LAYER_BAKE_FAILED', `The graded master of "${bake.clipName}" is missing`, true);
-		return { key: grade.key, path, rect: done.rect };
+		return done;
 	}
 
-	private async runChild(
+	private childOptions(meta: EnsureMeta): { concurrency?: number; browserGroup?: string } {
+		return {
+			...(meta.concurrency ? { concurrency: meta.concurrency } : {}),
+			...(meta.browserGroup ? { browserGroup: meta.browserGroup } : {}),
+		};
+	}
+
+	/**
+	 * Cache hit → it; else joins the render of `key` in flight, or renders it in a child job (registered in flight
+	 * with no await between the check and the registration, so concurrent callers render a key once). `cached` is
+	 * the first lookup (counts reuse), `after` the lookup once a render finished.
+	 */
+	private async ensureEntry<R>(
+		key: string,
+		cached: () => Promise<R | null>,
+		after: () => Promise<R | null>,
 		input: LayerBakeJobInput,
 		plan: BakePlan,
-		meta: { parentId: string; projectId?: string; signal: AbortSignal },
-	): Promise<void> {
+		meta: EnsureMeta,
+	): Promise<R | null> {
+		let first = true;
+		for (;;) {
+			const hit = await (first ? cached() : after());
+			first = false;
+			if (hit) return hit;
+			if (meta.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+			const running = this.inflight.get(key);
+			if (running) {
+				try {
+					await this.follow(running, meta);
+					this.stats.joined++;
+				} catch (e) {
+					if (meta.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+					// Its owner was cancelled (another export): render it here.
+					if ((e as JobError)?.code !== 'JOB_CANCELLED') throw e;
+					if (this.inflight.get(key) === running) this.inflight.delete(key);
+				}
+				continue;
+			}
+			const job = this.submitChild(input, plan, meta);
+			const entry: InFlight = { jobId: job.id, done: this.childDone(job.id, plan) };
+			entry.done.catch(() => undefined);
+			this.inflight.set(key, entry);
+			try {
+				await this.follow(entry, meta, () => this.core.queue.cancel(job.id));
+			} finally {
+				if (this.inflight.get(key) === entry) this.inflight.delete(key);
+			}
+			return after();
+		}
+	}
+
+	private submitChild(input: LayerBakeJobInput, plan: BakePlan, meta: EnsureMeta): EngineJob {
 		const key = input.op === 'grade' ? input.grade.key : plan.key;
-		const job = this.core.queue.submit({
+		return this.core.queue.submit({
 			kind: 'layer-bake',
 			title: `${input.op === 'grade' ? 'Grade graphics' : 'Bake graphics'} – ${plan.clipName}`,
 			priority: 'user',
+			// No slots of its own: its Remotion pages are a share of the page budget of the parent, which holds the
+			// CPU slots (S11:LBK-022).
 			cpuSlots: 0,
 			minSlots: 0,
 			origin: { type: 'system' },
@@ -713,20 +818,90 @@ export class LayerBakeService {
 			input,
 			stage: 'Queued',
 		});
-		const onAbort = () => this.core.queue.cancel(job.id);
-		meta.signal.addEventListener('abort', onAbort, { once: true });
+	}
+
+	/** Settles when child `jobId` has finished: resolves on success, throws its error otherwise. */
+	private async childDone(jobId: string, plan: BakePlan): Promise<void> {
+		const done = await this.core.queue.wait(jobId);
+		if (done.state === 'succeeded') return;
+		if (done.state === 'cancelled') throw new JobError('JOB_CANCELLED', 'Cancelled');
+		throw new JobError(
+			done.error?.code ?? 'LAYER_BAKE_FAILED',
+			`Baking "${plan.clipName}" failed: ${done.error?.message ?? done.state}`,
+			done.error?.retryable ?? true,
+		);
+	}
+
+	/**
+	 * Waits for a render in flight, reporting its progress. `meta.signal` ends the wait: a caller that joined stops
+	 * waiting at once; the owner (`cancel`) cancels the child job and waits for it to settle.
+	 */
+	private async follow(entry: InFlight, meta: EnsureMeta, cancel?: () => void): Promise<void> {
+		const poll = meta.onProgress
+			? setInterval(() => {
+					const p = this.core.queue.get(entry.jobId)?.progress;
+					if (typeof p === 'number') meta.onProgress?.(p);
+				}, PROGRESS_POLL_MS)
+			: null;
+		poll?.unref();
+		let onAbort: () => void = () => {};
+		const aborted = new Promise<never>((_, reject) => {
+			onAbort = () => {
+				cancel?.();
+				reject(new JobError('JOB_CANCELLED', 'Cancelled'));
+			};
+		});
+		aborted.catch(() => undefined);
+		if (meta.signal.aborted) onAbort();
+		else meta.signal.addEventListener('abort', onAbort, { once: true });
 		try {
-			const done = await this.core.queue.wait(job.id);
+			await (cancel ? entry.done : Promise.race([entry.done, aborted]));
 			if (meta.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
-			if (done.state !== 'succeeded')
-				throw new JobError(
-					done.error?.code ?? 'LAYER_BAKE_FAILED',
-					`Baking "${plan.clipName}" failed: ${done.error?.message ?? done.state}`,
-					done.error?.retryable ?? true,
-				);
+			meta.onProgress?.(1);
 		} finally {
+			if (poll) clearInterval(poll);
 			meta.signal.removeEventListener('abort', onAbort);
 		}
+	}
+
+	// ------------------------------------------------------------------ shared render browsers (LBK-022)
+
+	/**
+	 * Opens a shared render browser session for the bakes of `group` (the export/still job id): the browser is
+	 * launched when the first bake of the group needs it and closed by the returned release (once every holder
+	 * released it). Bakes of a group without a session open a browser of their own.
+	 */
+	browserSession(group: string): () => Promise<void> {
+		const s = this.sessions.get(group) ?? { refs: 0, browser: null };
+		s.refs++;
+		this.sessions.set(group, s);
+		let released = false;
+		return async () => {
+			if (released) return;
+			released = true;
+			s.refs--;
+			if (s.refs > 0) return;
+			if (this.sessions.get(group) === s) this.sessions.delete(group);
+			const b = await s.browser?.catch(() => null);
+			await b?.close();
+		};
+	}
+
+	/** The shared browser of `group` (launched on first use), or null (no session, or it could not launch). */
+	private sharedBrowser(group: string | undefined): Promise<SharedRenderBrowser | null> {
+		const s = group ? this.sessions.get(group) : undefined;
+		if (!s) return Promise.resolve(null);
+		s.browser ??= this.core.remotion.openSharedBrowser().then(
+			(b) => {
+				this.stats.browsers++;
+				return b;
+			},
+			(e) => {
+				this.o.log?.(`layer-bake: no shared render browser (${(e as Error).message}); one per bake`);
+				return null;
+			},
+		);
+		return s.browser;
 	}
 
 	/** `POST /api/layer-bake/preview`: queues (or joins) the graded preview job of a clip. */
@@ -768,7 +943,14 @@ export class LayerBakeService {
 		// The bake (and the graded entry) are written and read for the whole job.
 		const release = this.lease(input.op === 'grade' ? [input.bake.key, input.grade.key] : [input.bake.key]);
 		try {
-			const bake = await this.renderBake(ctx, input.bake, input.concurrency, input.op === 'bake' ? 1 : 0.7);
+			// A grade's source bake being rendered by another job right now: use that render.
+			if (input.op === 'grade') await this.inflight.get(input.bake.key)?.done.catch(() => undefined);
+			const browser = await this.sharedBrowser(input.browserGroup);
+			const bake = await this.renderBake(ctx, input.bake, {
+				concurrency: input.concurrency,
+				weight: input.op === 'bake' ? 1 : 0.7,
+				browser,
+			});
 			if (input.op === 'bake') return bake;
 			const out = await this.renderGrade(ctx, input.bake, bake, input.grade, input.outputs);
 			return out;
@@ -798,9 +980,9 @@ export class LayerBakeService {
 	private async renderBake(
 		ctx: JobContext,
 		plan: BakePlan,
-		concurrency: number | undefined,
-		weight: number,
+		o: { concurrency: number | undefined; weight: number; browser: SharedRenderBrowser | null },
 	): Promise<BakeResult> {
+		const { concurrency, weight } = o;
 		const hit = await this.lookup(plan.key);
 		if (hit) return hit;
 		const reason = this.unavailableReason();
@@ -826,6 +1008,7 @@ export class LayerBakeService {
 					frame: 0,
 					signal: ctx.signal,
 					purpose: 'layer-bake',
+					...(o.browser ? { browser: o.browser } : {}),
 				});
 				ctx.progress(weight * 0.9, { stage: 'Rendering 1/1 frames' });
 			} else {
@@ -836,10 +1019,11 @@ export class LayerBakeService {
 					signal: ctx.signal,
 					ffmpeg: ff,
 					...(concurrency ? { concurrency } : {}),
+					...(o.browser ? { browser: o.browser } : {}),
 					onSpawn: ctx.trackChild,
 					onProgress: (p) =>
 						ctx.progress(p.progress * weight * 0.9, {
-							stage: `Rendering ${p.renderedFrames}/${p.totalFrames} frames`,
+							stage: `Rendering ${p.renderedFrames}/${p.totalFrames} frames${concurrency ? ` (${concurrency} ${concurrency === 1 ? 'page' : 'pages'})` : ''}`,
 						}),
 				});
 			}

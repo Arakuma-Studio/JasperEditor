@@ -513,6 +513,95 @@ describe('mg native extension (S08:MGC-032…034)', () => {
 	});
 });
 
+describe('ensureMasters: pre-renders of one export side by side (S11:LBK-022 page pool)', () => {
+	it('renders distinct keys within the page budget, reuses cached ones, cancels the rest on abort', async () => {
+		const app = await makeApp({ totalSlots: 12 });
+		const svc = mgBundleService(app)!;
+		const queue = coreServices(app).queue;
+		let active = { renders: 0, pages: 0 };
+		let peak = { renders: 0, pages: 0 };
+		const rendered: { key: string; pages: number }[] = [];
+		let delayMs = 200;
+		// Stand-in pre-render: a child job whose runner "renders" for a while and writes the master.
+		queue.registerRunner('mg-prerender', async (ctx) => {
+			const { renderKey, concurrency } = ctx.input as { renderKey: string; concurrency: number };
+			rendered.push({ key: renderKey, pages: concurrency });
+			active = { renders: active.renders + 1, pages: active.pages + concurrency };
+			peak = { renders: Math.max(peak.renders, active.renders), pages: Math.max(peak.pages, active.pages) };
+			try {
+				await new Promise<void>((res, rej) => {
+					const t = setTimeout(res, delayMs);
+					ctx.signal.addEventListener('abort', () => {
+						clearTimeout(t);
+						rej(new Error('cancelled'));
+					});
+				});
+				mkdirSync(join(svc.mgDir, renderKey), { recursive: true });
+				writeFileSync(join(svc.mgDir, renderKey, 'master.mov'), 'x');
+				return null;
+			} finally {
+				active = { renders: active.renders - 1, pages: active.pages - concurrency };
+			}
+		});
+		const keyOf = (r: MgPrerenderRequest) => r.compositionId.padStart(40, '0');
+		svc.renderKeyOf = keyOf;
+		svc.prerender = (req, meta = {}) =>
+			queue.submit({
+				kind: 'mg-prerender',
+				title: req.compositionId,
+				priority: 'user',
+				cpuSlots: 0,
+				...(meta.parentId ? { parentId: meta.parentId } : {}),
+				input: { req, renderKey: keyOf(req), concurrency: meta.concurrency },
+			});
+		const req = (id: string, durationFrames: number) =>
+			({ compositionId: id, durationFrames }) as unknown as MgPrerenderRequest;
+		// Cached already: not rendered again.
+		mkdirSync(join(svc.mgDir, keyOf(req('c0', 30))), { recursive: true });
+		writeFileSync(join(svc.mgDir, keyOf(req('c0', 30)), 'master.mov'), 'x');
+		const stages: string[] = [];
+		const out = await svc.ensureMasters(
+			[req('a1', 90), req('a2', 30), req('a3', 30), req('a2', 30), req('c0', 30)],
+			{
+				parentId: 'job_MGPARENT0000001',
+				signal: new AbortController().signal,
+				concurrency: 4,
+				stage: (t) => stages.push(t),
+			},
+		);
+		expect([...out.keys()].sort()).toEqual(['a1', 'a2', 'a3', 'c0'].map((c) => c.padStart(40, '0')).sort());
+		expect(rendered.map((r) => r.key).sort()).toEqual(
+			['a1', 'a2', 'a3'].map((c) => c.padStart(40, '0')).sort(),
+		);
+		expect(peak.renders).toBeGreaterThanOrEqual(2);
+		expect(peak.pages).toBeLessThanOrEqual(4);
+		// The budget split by length: 90 frames → 2 pages, 30 → 1 each.
+		expect(rendered.find((r) => r.key.endsWith('a1'))!.pages).toBe(2);
+		expect(stages[0]).toBe('Rendering compositions 0/3');
+		expect(stages.at(-1)).toBe('Rendering compositions 3/3');
+		// Abort: every pre-render in flight is cancelled, none is left running.
+		delayMs = 5_000;
+		const ac = new AbortController();
+		const p = svc.ensureMasters([req('b1', 30), req('b2', 30), req('b3', 30)], {
+			parentId: 'job_MGPARENT0000002',
+			signal: ac.signal,
+			concurrency: 2,
+			stage: () => undefined,
+		});
+		await until(() => active.renders === 2, 10_000, 10);
+		ac.abort();
+		await expect(p).rejects.toMatchObject({ code: 'JOB_CANCELLED' });
+		await until(() => active.renders === 0, 10_000, 10);
+		expect(
+			queue
+				.list({})
+				.filter((j) => j.parentId === 'job_MGPARENT0000002')
+				.map((j) => j.state),
+		).toEqual(['cancelled', 'cancelled']);
+		await app.close();
+	}, 60_000);
+});
+
 describe('mg-bundles routes (no browser)', () => {
 	it('serves bundle files (Range, traversal-safe) and the live host page; caches and GC', async () => {
 		const app = await makeApp();

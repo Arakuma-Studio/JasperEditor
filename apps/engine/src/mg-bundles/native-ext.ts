@@ -1,6 +1,7 @@
 // The `mg` native extension (M2, S08:MGC-032…034, ARCHITECTURE §19.6): composition clips stay on the native
 // (ffmpeg) path through cached ProRes 4444 masters rendered by Remotion — `prepare` renders the missing masters
-// as child jobs of the export ("Rendering compositions 2/5"), `override` hands the master to the builder as the
+// as child jobs of the export ("Rendering compositions 2/5"), side by side within the export's Remotion page budget
+// (`remotion/page-pool.ts`), `override` hands the master to the builder as the
 // layer's source (`space: 'layer'`: effects, Motion, opacity and fades are applied by the builder as for any
 // layer). The Remotion path gets the same masters (signed URLs in the snapshot, OffthreadVideo transparent).
 import type { MgPrerenderRequest } from '@jasper/api';
@@ -110,7 +111,8 @@ export function mgNativeExtension(svc: MgBundleService): NativeExtension {
 					parentId: ctx.jobId,
 					...(ctx.projectId ? { projectId: ctx.projectId } : {}),
 					signal: ctx.signal,
-					concurrency: 4,
+					// The export's Remotion page budget, shared by the pre-renders in flight (S11:LBK-022 page pool).
+					concurrency: ctx.concurrency ?? 4,
 					stage: (t) => ctx.stage(t),
 				},
 			);

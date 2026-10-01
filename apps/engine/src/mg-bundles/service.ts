@@ -25,6 +25,7 @@ import {
 import type { JobContext } from '../jobs/types.ts';
 import { JobError } from '../jobs/types.ts';
 import type { MediaRecord } from '../media/registry.ts';
+import { type PageGrant, pageShares, runPagePool } from '../remotion/page-pool.ts';
 import { Ffmpeg } from '../tools/ffmpeg.ts';
 import { atomicWriteJson, readJsonOrNull } from '../tools/fs.ts';
 import { binaryNames } from '../tools/lgpl.ts';
@@ -1040,7 +1041,9 @@ export class MgBundleService {
 
 	/**
 	 * Renders (or reuses) the masters an export needs, as child jobs of `parentId`. Resolves renderKey → path.
-	 * Throws a JobError when one of them fails.
+	 * The renders run side by side within the export's Remotion page budget (`concurrency`, S11:LBK-022 page pool):
+	 * one render per distinct render key, each with its share of the pages. Throws a JobError when one of them fails
+	 * (the others are cancelled first).
 	 */
 	async ensureMasters(
 		reqs: readonly MgPrerenderRequest[],
@@ -1048,45 +1051,77 @@ export class MgBundleService {
 			parentId: string;
 			projectId?: string;
 			signal: AbortSignal;
+			/** The export's Remotion page budget. */
 			concurrency: number;
+			/** Renders in flight at most (default: the page pool's). */
+			maxInFlight?: number;
 			stage(text: string): void;
 		},
 	): Promise<Map<string, string>> {
 		const out = new Map<string, string>();
-		let i = 0;
+		const todo = new Map<string, MgPrerenderRequest>();
 		for (const req of reqs) {
-			i++;
 			const key = this.renderKeyOf(req);
 			if (!key) throw new JobError('ASSET_NOT_FOUND', `Bundle ${req.mediaKey} is not available`, false);
 			const cached = this.masterPath(key);
-			if (cached) {
-				out.set(key, cached);
-				continue;
-			}
-			meta.stage(`Rendering compositions ${i}/${reqs.length}`);
-			const job = this.prerender(req, {
-				parentId: meta.parentId,
-				...(meta.projectId ? { projectId: meta.projectId } : {}),
-				origin: { type: 'system' },
-				concurrency: meta.concurrency,
-			});
-			const onAbort = () => this.core.queue.cancel(job.id);
-			meta.signal.addEventListener('abort', onAbort, { once: true });
-			try {
-				const done = await this.core.queue.wait(job.id);
-				if (done.state !== 'succeeded')
-					throw new JobError(
-						done.error?.code ?? 'MG_RENDER_FAILED',
-						`Composition ${req.compositionId}: ${done.error?.message ?? done.state}`,
-						done.error?.retryable ?? true,
-					);
-			} finally {
-				meta.signal.removeEventListener('abort', onAbort);
-			}
-			const p = this.masterPath(key);
-			if (!p) throw new JobError('MG_RENDER_FAILED', `The master of ${req.compositionId} is missing`, true);
-			out.set(key, p);
+			if (cached) out.set(key, cached);
+			else if (!todo.has(key)) todo.set(key, req);
 		}
+		if (todo.size === 0) return out;
+		const budget = Math.max(1, Math.floor(meta.concurrency));
+		meta.stage(`Rendering compositions 0/${todo.size}`);
+		const shares = pageShares(
+			[...todo.values()].map((r) => r.durationFrames),
+			budget,
+		);
+		await runPagePool(
+			[...todo].map(([key, req], i) => ({
+				want: shares[i]!,
+				weight: req.durationFrames + 30,
+				run: async (g: PageGrant) => {
+					const job = this.prerender(req, {
+						parentId: meta.parentId,
+						...(meta.projectId ? { projectId: meta.projectId } : {}),
+						origin: { type: 'system' },
+						concurrency: g.pages,
+					});
+					const onAbort = () => this.core.queue.cancel(job.id);
+					g.signal.addEventListener('abort', onAbort, { once: true });
+					const poll = setInterval(() => {
+						const p = this.core.queue.get(job.id)?.progress;
+						if (typeof p === 'number') g.progress(p);
+					}, 250);
+					poll.unref();
+					try {
+						const done = await this.core.queue.wait(job.id);
+						if (g.signal.aborted || done.state === 'cancelled')
+							throw new JobError('JOB_CANCELLED', 'Cancelled');
+						if (done.state !== 'succeeded')
+							throw new JobError(
+								done.error?.code ?? 'MG_RENDER_FAILED',
+								`Composition ${req.compositionId}: ${done.error?.message ?? done.state}`,
+								done.error?.retryable ?? true,
+							);
+					} finally {
+						clearInterval(poll);
+						g.signal.removeEventListener('abort', onAbort);
+					}
+					const p = this.masterPath(key);
+					if (!p)
+						throw new JobError('MG_RENDER_FAILED', `The master of ${req.compositionId} is missing`, true);
+					out.set(key, p);
+				},
+			})),
+			{
+				budget,
+				...(meta.maxInFlight ? { maxInFlight: meta.maxInFlight } : {}),
+				signal: meta.signal,
+				onProgress: (p) =>
+					meta.stage(
+						`Rendering compositions ${p.done}/${p.total}${p.done < p.total ? ` · ${Math.floor(p.fraction * 100)} %` : ''}`,
+					),
+			},
+		);
 		return out;
 	}
 

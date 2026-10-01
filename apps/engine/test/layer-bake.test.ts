@@ -1,7 +1,8 @@
 // Layer bake (M2, S11 §6): DOM layers, static detection, crop rects, render keys, the planner (`hybrid`, blockers,
 // anime templates), the builder (`still`, `rect`, `colorRuns`, GPL scan), the cache (GC, capability), the preview
-// route's validation, the usage log and the `auto` fallback to Remotion (LBK-023). No headless browser: renders are
-// covered by layer-bake.e2e.test.ts (REMOTION_E2E=1).
+// route's validation, the usage log, the `auto` fallback to Remotion (LBK-023) and parallel bakes (LBK-022: page
+// budget, shared browser, dedupe, abort; renders stubbed). No headless browser: renders are covered by
+// layer-bake.e2e.test.ts and layer-bake-parallel.e2e.test.ts (REMOTION_E2E=1).
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -14,7 +15,7 @@ import {
 	type RenderSnapshot,
 	type RenderVisualClip,
 } from '@jasper/project';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createColorExtension, gplFiltersIn } from '../src/color/extension.ts';
 import { buildNativeGraph } from '../src/export/native.ts';
 import type { NativeExtension } from '../src/export/native-ext.ts';
@@ -1053,6 +1054,285 @@ describe('cache, capability, preview route, usage log (LBK-021, LBK-030, LBK-026
 			{ kind: 'media', purpose: 'mg-prerender' },
 		]);
 	});
+});
+
+describe('parallel bakes: page budget, shared browser, dedupe, abort (LBK-022)', () => {
+	let app: TestApp;
+	let svc: LayerBakeService;
+	const calls: { kind: 'still' | 'master'; pages: number; browser: unknown }[] = [];
+	let active = { renders: 0, pages: 0 };
+	let peak = { renders: 0, pages: 0 };
+	let delayMs = 150;
+	let failOn: string | null = null;
+	const browsers = { opened: 0, closed: 0 };
+	const sharedInstance = { shared: true };
+	let parents = 0;
+
+	/** A transparent ProRes 4444 / PNG of the document's size (the crop safety net decodes it). */
+	const writeTransparent = (out: string, doc: RenderSnapshot, frames: number) => {
+		const ff = coreServices(app).ffmpeg.bins.ffmpeg!;
+		const still = out.endsWith('.png');
+		const r = spawnSync(ff, [
+			'-v',
+			'error',
+			'-y',
+			'-f',
+			'lavfi',
+			'-i',
+			`color=c=black@0.0:s=${doc.settings.width}x${doc.settings.height}:r=30,format=rgba`,
+			'-frames:v',
+			String(still ? 1 : frames),
+			...(still ? ['-c:v', 'png'] : ['-c:v', 'prores_ks', '-profile:v', '4444', '-pix_fmt', 'yuva444p10le']),
+			out,
+		]);
+		if (r.status !== 0) throw new Error(String(r.stderr));
+	};
+	/** Simulated render: counts what is in flight, honours the signal, fails on request. */
+	const render = async (
+		kind: 'still' | 'master',
+		pages: number,
+		signal: AbortSignal,
+		o: { name: string; browser?: unknown },
+	) => {
+		calls.push({ kind, pages, browser: o.browser });
+		active = { renders: active.renders + 1, pages: active.pages + pages };
+		peak = { renders: Math.max(peak.renders, active.renders), pages: Math.max(peak.pages, active.pages) };
+		try {
+			await new Promise<void>((res, rej) => {
+				const t = setTimeout(res, delayMs);
+				signal.addEventListener('abort', () => {
+					clearTimeout(t);
+					rej(new Error('cancelled'));
+				});
+			});
+			if (failOn && o.name.includes(failOn)) throw new Error(`synthetic failure of ${o.name}`);
+		} finally {
+			active = { renders: active.renders - 1, pages: active.pages - pages };
+		}
+	};
+	const docName = (props: Record<string, unknown>) => {
+		const doc = props.doc as RenderSnapshot;
+		return doc.videoTracks.flatMap((t) => t.clips)[0]?.name ?? '';
+	};
+
+	beforeAll(async () => {
+		app = await makeApp({ totalSlots: 12 });
+		svc = layerBakeService(app)!;
+		svc.environment = async () => ENV;
+		svc.unavailableReason = () => null;
+		const r = coreServices(app).remotion;
+		r.openSharedBrowser = async () => {
+			browsers.opened++;
+			return {
+				instance: sharedInstance as never,
+				close: async () => {
+					browsers.closed++;
+				},
+			};
+		};
+		r.renderStill = async (input) => {
+			await render('still', 1, input.signal, {
+				name: docName(input.inputProps),
+				browser: input.browser?.instance,
+			});
+			writeTransparent(input.output, (input.inputProps as { doc: RenderSnapshot }).doc, 1);
+		};
+		r.renderAlphaMaster = async (input) => {
+			const doc = (input.inputProps as { doc: RenderSnapshot }).doc;
+			await render('master', input.concurrency ?? 1, input.signal, {
+				name: docName(input.inputProps),
+				browser: input.browser?.instance,
+			});
+			writeTransparent(input.output, doc, doc.durationFrames);
+			return { frames: doc.durationFrames };
+		};
+	});
+	afterAll(closeApps);
+	beforeEach(() => {
+		calls.length = 0;
+		active = { renders: 0, pages: 0 };
+		peak = { renders: 0, pages: 0 };
+		delayMs = 150;
+		failOn = null;
+		browsers.opened = 0;
+		browsers.closed = 0;
+		svc.parallelism = { maxInFlight: null, sharedBrowser: true };
+	});
+
+	/** Six DOM layers: three static titles (stills), two keyframed titles (masters of 40 and 70 frames), a text animator. */
+	function sixLayers(tag: string): DocBuilder {
+		const d = new DocBuilder('hd-720p-30');
+		for (const [i, track] of ['V1', 'V2', 'V3'].entries())
+			smallTitle(d, `${tag} static ${i}`, { at: 0, track, duration: 90 });
+		for (const [i, [track, duration]] of (
+			[
+				['V4', 40],
+				['V5', 70],
+			] as const
+		).entries()) {
+			const id = smallTitle(d, `${tag} moving ${i}`, { at: 0, track, duration });
+			d.tx([
+				{
+					type: 'param.setAnimated',
+					target: ['clip', id, 'opacity'],
+					animated: true,
+					at: { sequenceFrame: 0 },
+				},
+			]);
+			d.tx([
+				{
+					type: 'param.set',
+					target: ['clip', id, 'opacity'],
+					value: 10,
+					at: { sequenceFrame: duration - 1 },
+				},
+			]);
+		}
+		d.tx([
+			{
+				type: 'clip.addText',
+				at: 0,
+				duration: 60,
+				track: 'V6',
+				content: { text: `${tag} animated` },
+				box: { width: 300, height: 80, autoSize: 'none' },
+				textAnimation: { in: { preset: 'fade', durationFrames: 10 } },
+			},
+		]);
+		return d;
+	}
+
+	async function plannedOf(d: DocBuilder): Promise<PlannedExport> {
+		return coreServices(app).exports.plan({
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			settings: settings(d.seqId) as never,
+		});
+	}
+
+	/** `prepare` of the extension as the export runs it, under a real parent job id. */
+	async function prepare(d: DocBuilder, o: { budget: number; signal?: AbortSignal }) {
+		const planned = await plannedOf(d);
+		const stages: string[] = [];
+		// The export's job id (a stand-in: the children only need it as their parent).
+		const parent = { id: `job_PREP${String(++parents).padStart(12, '0')}` };
+		const ext = layerBakeExtension(svc);
+		const result = ext.prepare!(planned, {
+			signal: o.signal ?? new AbortController().signal,
+			stage: (t) => stages.push(t),
+			scratchDir: async () => tempAppdir('jasper-lbp-scratch-'),
+			log: () => undefined,
+			jobId: parent.id,
+			purpose: 'native',
+			concurrency: o.budget,
+		}) as Promise<LayerBakePrepared>;
+		return { result, stages, parentId: parent.id, planned };
+	}
+	const childrenOf = (id: string) =>
+		coreServices(app)
+			.queue.list({})
+			.filter((j) => j.parentId === id);
+
+	it('runs the bakes side by side within the budget, in one shared browser, and reports "Baking graphics i/n"', async () => {
+		const { result, stages, parentId } = await prepare(sixLayers('par'), { budget: 4 });
+		const prepared = await result;
+		expect(prepared.size).toBe(6);
+		expect([...prepared.values()].every((p) => p.override && existsSync(p.override.path))).toBe(true);
+		expect(calls.filter((c) => c.kind === 'still')).toHaveLength(3);
+		expect(calls.filter((c) => c.kind === 'master')).toHaveLength(3);
+		// Several at once, never more pages than the budget; masters get pages by length (≤ 30 frames per page).
+		expect(peak.renders).toBeGreaterThanOrEqual(2);
+		expect(peak.pages).toBeLessThanOrEqual(4);
+		for (const c of calls.filter((x) => x.kind === 'master')) expect(c.pages).toBeLessThanOrEqual(3);
+		// One browser for the whole export, closed when the bakes are done.
+		expect(calls.every((c) => c.browser === sharedInstance)).toBe(true);
+		expect(browsers).toEqual({ opened: 1, closed: 1 });
+		expect(stages[0]).toBe('Baking graphics 0/6 · 0 %');
+		expect(stages.at(-1)).toBe('Baking graphics 6/6');
+		expect(stages.some((s) => /^Baking graphics [1-5]\/6 · \d+ %$/.test(s))).toBe(true);
+		const kids = childrenOf(parentId);
+		expect(kids).toHaveLength(6);
+		expect(kids.every((k) => k.cpuSlots === 0 && k.state === 'succeeded')).toBe(true);
+		// A second run hits the cache: nothing rendered, no browser launched.
+		calls.length = 0;
+		const again = await prepare(sixLayers('par'), { budget: 4 });
+		expect((await again.result).size).toBe(6);
+		expect(calls).toHaveLength(0);
+		expect(browsers.opened).toBe(1);
+	}, 120_000);
+
+	it('maxInFlight 1 is the sequential path: one bake at a time, masters with the whole budget, own browsers', async () => {
+		svc.parallelism = { maxInFlight: 1, sharedBrowser: true };
+		const { result } = await prepare(sixLayers('seq'), { budget: 4 });
+		expect((await result).size).toBe(6);
+		expect(peak.renders).toBe(1);
+		expect(calls.filter((c) => c.kind === 'master').every((c) => c.pages === 4)).toBe(true);
+		expect(calls.every((c) => c.browser === undefined)).toBe(true);
+		expect(browsers.opened).toBe(0);
+	}, 120_000);
+
+	it('a failing bake cancels the others and fails the preparation with its error', async () => {
+		delayMs = 400;
+		failOn = 'fail moving 1';
+		const { result, parentId } = await prepare(sixLayers('fail'), { budget: 6 });
+		await expect(result).rejects.toMatchObject({ code: 'LAYER_BAKE_FAILED' });
+		const kids = childrenOf(parentId);
+		expect(kids.some((k) => k.state === 'failed')).toBe(true);
+		expect(kids.every((k) => ['failed', 'cancelled', 'succeeded'].includes(k.state))).toBe(true);
+		expect(active.renders).toBe(0);
+		expect(browsers.closed).toBe(browsers.opened);
+	}, 120_000);
+
+	it('aborting the export cancels every bake in flight and starts no more', async () => {
+		delayMs = 5_000;
+		const ac = new AbortController();
+		const { result, parentId } = await prepare(sixLayers('abort'), { budget: 4, signal: ac.signal });
+		await until(() => active.renders >= 2, 20_000, 20);
+		ac.abort();
+		await expect(result).rejects.toMatchObject({ code: 'JOB_CANCELLED' });
+		await until(() => childrenOf(parentId).every((k) => k.state === 'cancelled'), 10_000, 50);
+		expect(childrenOf(parentId).length).toBeLessThan(6);
+		expect(calls.length).toBeLessThan(6);
+		expect(active.renders).toBe(0);
+		expect(browsers).toEqual({ opened: 1, closed: 1 });
+	}, 120_000);
+
+	it('two parents needing the same bake render it once; when its owner is cancelled the other renders it', async () => {
+		delayMs = 600;
+		const d = sixLayers('dedupe');
+		const planned = await plannedOf(d);
+		const clip = planned.snapshot.videoTracks
+			.flatMap((t) => t.clips)
+			.find((c) => c.name.includes('moving 0'))!;
+		const plan = await svc.planBake(planned, clip, { env: ENV });
+		const joined0 = svc.stats.joined;
+		const [a, b] = await Promise.all([
+			svc.ensureBake(plan, { parentId: 'job_PARENTA000000000', signal: new AbortController().signal }),
+			svc.ensureBake(plan, { parentId: 'job_PARENTB000000000', signal: new AbortController().signal }),
+		]);
+		expect(a.path).toBe(b.path);
+		expect(calls).toHaveLength(1);
+		expect(svc.stats.joined - joined0).toBe(1);
+		// The owner's export is cancelled while the other one waits: the other renders it itself.
+		const other = await svc.planBake(
+			planned,
+			planned.snapshot.videoTracks.flatMap((t) => t.clips).find((c) => c.name.includes('moving 1'))!,
+			{ env: ENV },
+		);
+		calls.length = 0;
+		const owner = new AbortController();
+		const first = svc.ensureBake(other, { parentId: 'job_PARENTC000000000', signal: owner.signal });
+		await until(() => active.renders === 1, 10_000, 10);
+		const second = svc.ensureBake(other, {
+			parentId: 'job_PARENTD000000000',
+			signal: new AbortController().signal,
+		});
+		await new Promise((r) => setTimeout(r, 50));
+		owner.abort();
+		await expect(first).rejects.toMatchObject({ code: 'JOB_CANCELLED' });
+		expect(existsSync((await second).path)).toBe(true);
+		expect(calls).toHaveLength(2);
+	}, 120_000);
 });
 
 describe('bundle identity (LBK-020, build-remotion stamp)', () => {
