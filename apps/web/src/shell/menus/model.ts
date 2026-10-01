@@ -91,6 +91,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('app.keyboardShortcuts', 'Keyboard Shortcuts…'),
 			sub('Preferences', [
 				c('app.preferences', 'General…'),
+				// wp-m3-transdefaults (S10:TUI-031): default transitions and durations.
+				c('app.preferences', 'Timeline…', { page: 'timeline' }),
 				sub('Appearance', [
 					c('view.theme.darkest', 'Darkest'),
 					c('view.theme.dark', 'Dark'),
@@ -148,6 +150,11 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('timeline.addEdit', 'Add Edit'),
 			c('timeline.addEditAllTracks', 'Add Edit to All Tracks'),
 			c('timeline.extendEditToPlayhead', 'Extend Edit'),
+			// wp-m3-transdefaults (S05 §12.2 Sequence menu, S10:TUI-030/031)
+			c('timeline.applyDefaultVideoTransition', 'Apply Video Transition'),
+			c('timeline.applyDefaultAudioTransition', 'Apply Audio Transition'),
+			c('timeline.applyDefaultTransitionsToSelection', 'Apply Default Transitions to Selection'),
+			c('sequence.transitionDefaults', 'Transition Defaults…'),
 			sep,
 			c('timeline.lift', 'Lift'),
 			c('timeline.extract', 'Extract'),
