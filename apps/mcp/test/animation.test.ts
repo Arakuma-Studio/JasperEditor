@@ -54,13 +54,19 @@ function project(preset = 'hd-1080p-25') {
 	};
 }
 
-/** A ToolContext whose engine only answers doc.get (and counts the calls). */
-function fakeCtx(doc: ProjectDocument) {
+/** A ToolContext whose engine answers doc.get (and selection.get when given; counts the calls). */
+function fakeCtx(doc: ProjectDocument, selection?: string[]) {
 	let calls = 0;
 	const ctx = {
 		engine: async (fn: (c: unknown) => Promise<unknown>) => {
 			calls++;
-			return fn({ agentQuery: async () => ({ result: doc, revision: 1, via: 'headless' }) });
+			return fn({
+				agentQuery: async ({ query }: { query: string }) => {
+					if (query !== 'selection.get') return { result: doc, revision: 1, via: 'headless' };
+					if (!selection) throw new Error('E_NO_SESSION');
+					return { result: { selection: { timeline: { clips: selection } } }, via: 'session' };
+				},
+			});
 		},
 	} as unknown as ToolContext;
 	return { ctx, calls: () => calls };
@@ -196,6 +202,39 @@ describe('animator side arguments', () => {
 		expect(loud.calls()).toBe(1);
 		expect(sequenceFor(p.doc, { clipId }).id).toBe(Object.keys(p.doc.sequences)[0]);
 		expect(() => sequenceFor(p.doc, { sequenceId: 'seq_nope' })).toThrow(/Sequence not found/);
+	});
+
+	it('converts seconds at the rate of the sequence the transaction targets (selection, sequenceId, only one)', async () => {
+		const p = project('hd-1080p-25');
+		const first = Object.keys(p.doc.sequences)[0]!;
+		const r = p.tx([
+			{ type: 'sequence.create', name: 'Fast', settings: { frameRate: { num: 50, den: 1 } }, ref: '$s' },
+		]);
+		const fast = r.refs.$s!;
+		const t = p.tx([
+			{
+				type: 'clip.addText',
+				sequenceId: fast,
+				at: 0,
+				duration: 100,
+				track: 'V2',
+				content: { text: 'Hi' },
+				ref: '$t',
+			},
+		]);
+		const clipId = t.refs.$t!;
+		const side = { in: { preset: 'fade', durationSeconds: 1 } };
+		const frames = async (sel: string[] | undefined, where: Parameters<typeof textAnimationOf>[3]) =>
+			(await textAnimationOf(fakeCtx(p.doc, sel).ctx, 'prj', side, where))?.in?.durationFrames;
+		// "$selection" in the second (50 fps) sequence: not the first sequence's 25 fps
+		expect(await frames([clipId], { selection: true })).toBe(50);
+		expect(await frames([clipId], { selection: true, sequenceId: first })).toBe(50);
+		expect(await frames(undefined, { clipId })).toBe(50);
+		// add_text: the given sequence; several sequences without one fail like the transaction
+		expect(await frames(undefined, { sequenceId: fast })).toBe(50);
+		expect(await frames(undefined, { sequenceId: first })).toBe(25);
+		await expect(frames(undefined, {})).rejects.toThrow(/sequenceId is required/);
+		await expect(frames(undefined, { clipId: 'clp_nope' })).rejects.toThrow(/Clip not found/);
 	});
 
 	it('labels the History entry by side', () => {
