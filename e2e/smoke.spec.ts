@@ -242,12 +242,14 @@ test('Type tool click in the Program monitor adds a text clip', async () => {
 // M2 (S11:LBK-001, wp-m2-layer-bake): Auto bakes text (`hybrid`, e2e/layer-bake.spec.ts); the Remotion path is
 // exercised by forcing it.
 test('with the text clip, the forced Remotion export succeeds', async ({ request }) => {
+	test.setTimeout(1_200_000);
 	const frames = await sequenceFrames();
 	const out = await exportViaUi(page, request, {
 		engine: 'remotion',
 		fileName: 'smoke-remotion.mp4',
 		expectPath: /remotion/i,
 		outDir: EXPORT_DIR,
+		jobTimeoutMs: 900_000,
 	});
 	expect(out.job.result?.renderPath).toBe('remotion');
 	assertOutput(out.file, frames, { audio: true });

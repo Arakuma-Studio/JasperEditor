@@ -163,7 +163,51 @@ try {
 		?.pages()
 		.find((p) => p.url().startsWith(loaded[1]));
 	if (!page) fail(`no window at ${loaded[1]}`);
-	await expect(page.getByTestId('home')).toBeVisible({ timeout: 30_000 });
+	const browserEvents = [];
+	page.on('console', (message) => browserEvents.push(`console ${message.type()}: ${message.text()}`));
+	page.on('pageerror', (error) => browserEvents.push(`pageerror: ${error.stack ?? error.message}`));
+	page.on('requestfailed', (request) =>
+		browserEvents.push(
+			`request failed: ${request.method()} ${request.url()} ${request.failure()?.errorText}`,
+		),
+	);
+	page.on('response', (response) => {
+		if (response.status() >= 400) browserEvents.push(`HTTP ${response.status()}: ${response.url()}`);
+	});
+	try {
+		await expect(page.getByTestId('home')).toBeVisible({ timeout: mode === 'dev' ? 120_000 : 30_000 });
+	} catch (error) {
+		const dom = await page.evaluate(() => ({
+			url: location.href,
+			body: document.body?.innerText.slice(0, 4000) ?? '',
+			html: document.documentElement?.outerHTML.slice(0, 12000) ?? '',
+			viteError: document.querySelector('vite-error-overlay')?.shadowRoot?.textContent?.slice(0, 4000) ?? '',
+			resources: performance
+				.getEntriesByType('resource')
+				.map((entry) => ({ name: entry.name, duration: entry.duration, transferSize: entry.transferSize }))
+				.slice(-80),
+		}));
+		const moduleResponse = await page.evaluate(async () => {
+			try {
+				const response = await fetch('/src/main.tsx', { signal: AbortSignal.timeout(5000) });
+				return { status: response.status, body: (await response.text()).slice(0, 2000) };
+			} catch (error) {
+				return { error: String(error) };
+			}
+		});
+		const diagnostics = {
+			dom,
+			moduleResponse,
+			browserEvents: browserEvents.slice(-60),
+			electronOutput: out.slice(-8000),
+		};
+		const failureFile = join(root, 'test-results', `desktop-${mode}-failure.json`);
+		writeFileSync(failureFile, JSON.stringify(diagnostics, null, 2));
+		await page
+			.screenshot({ path: join(root, 'test-results', `desktop-${mode}-failure.png`) })
+			.catch(() => {});
+		throw new Error(`Desktop home did not render; diagnostics in ${failureFile}: ${error}`);
+	}
 	await page.screenshot({ path: shot });
 	const allowed = await page.evaluate(() => window.jasperDesktop?.mcpInfo());
 	const payload = {

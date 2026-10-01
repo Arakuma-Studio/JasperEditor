@@ -253,6 +253,7 @@ export async function exportViaUi(
 		outDir: string;
 		/** The plan's blocker list must explain the path choice (S04:RP-010). */
 		expectBlocker?: RegExp;
+		jobTimeoutMs?: number;
 	},
 ): Promise<ExportOutcome> {
 	await focusTimeline(page);
@@ -278,7 +279,7 @@ export async function exportViaUi(
 			return jobId;
 		})
 		.not.toBe('');
-	const job = await waitForJob(request, jobId);
+	const job = await waitForJob(request, jobId, opts.jobTimeoutMs);
 	expect(job.state, JSON.stringify(job.error ?? null)).toBe('succeeded');
 	// Download through the Jobs panel (the export opened it).
 	const jobsPanel = page.getByTestId('jobs-panel');

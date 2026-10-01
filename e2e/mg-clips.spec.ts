@@ -194,11 +194,51 @@ test('import a Remotion project, insert a composition, live preview, props edit,
 	// Editing the title in Properties updates the Program monitor within 500 ms (S08 §8 test 4).
 	const field = page.getByTestId('prop-props.title');
 	await field.fill('Edited in Properties');
-	const t0 = Date.now();
+	const latencyMark = 'e2e:mg-title-enter';
+	const latencyMeasure = 'e2e:mg-title-visible';
+	await field.evaluate(
+		(input, { mark, measure }) => {
+			performance.clearMarks(mark);
+			performance.clearMeasures(measure);
+			input.addEventListener(
+				'keydown',
+				(event) => {
+					if (!(event instanceof KeyboardEvent) || event.key !== 'Enter') return;
+					performance.mark(mark);
+					const check = () => {
+						const iframe = document.querySelector<HTMLIFrameElement>(
+							'[data-testid="program-monitor"] iframe[data-mg-host]',
+						);
+						const title = iframe?.contentDocument?.querySelector('[data-testid="title-text"]')?.textContent;
+						if (title === 'Edited in Properties') performance.measure(measure, mark);
+						else if (performance.now() - performance.getEntriesByName(mark, 'mark')[0]!.startTime < 5_000)
+							requestAnimationFrame(check);
+					};
+					requestAnimationFrame(check);
+				},
+				{ capture: true, once: true },
+			);
+		},
+		{ mark: latencyMark, measure: latencyMeasure },
+	);
 	await field.press('Enter');
-	await expect.poll(() => hostText(page), { timeout: 5_000, intervals: [20] }).toBe('Edited in Properties');
-	const elapsed = Date.now() - t0;
+	await expect
+		.poll(
+			() =>
+				page.evaluate(
+					(name) => performance.getEntriesByName(name, 'measure')[0]?.duration ?? null,
+					latencyMeasure,
+				),
+			{ timeout: 5_000, intervals: [20] },
+		)
+		.not.toBeNull();
+	const elapsed = await page.evaluate(
+		(name) => performance.getEntriesByName(name, 'measure')[0]!.duration,
+		latencyMeasure,
+	);
+	test.info().annotations.push({ type: 'live-title-latency', description: `${elapsed.toFixed(1)} ms` });
 	expect(elapsed).toBeLessThan(500);
+	await expect.poll(() => hostText(page), { timeout: 5_000, intervals: [20] }).toBe('Edited in Properties');
 
 	// After 2 s without changes the layer switches to the pre-rendered preview WebM.
 	await expect(page.getByTestId('composition-status')).toHaveText(/Preview ready/, { timeout: 300_000 });

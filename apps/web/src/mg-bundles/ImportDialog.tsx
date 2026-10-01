@@ -45,8 +45,8 @@ function ImportRemotionDialog(
 		props.close(r);
 	};
 
-	const importFolder = async () => {
-		if (!session || !engine || !path.trim()) return;
+	const importFolder = async (): Promise<false> => {
+		if (!session || !engine || !path.trim()) return false;
 		setBusy('folder');
 		setError(null);
 		setProgress('Bundling the project with its own Remotion CLI… (progress in the Jobs panel)');
@@ -58,6 +58,7 @@ function ImportRemotionDialog(
 			setBusy(null);
 			setProgress(null);
 		}
+		return false;
 	};
 
 	const importZip = async (file: File) => {
@@ -86,7 +87,7 @@ function ImportRemotionDialog(
 			title="Import Remotion Project"
 			size="medium"
 			primaryLabel={projectImport ? 'Import Folder' : undefined}
-			onPrimary={projectImport ? () => void importFolder() : undefined}
+			onPrimary={projectImport ? importFolder : undefined}
 			primaryDisabled={!ready || !session || !path.trim() || busy !== null}
 			data-testid="mg-import-dialog"
 		>
@@ -114,7 +115,6 @@ function ImportRemotionDialog(
 								value={path}
 								spellCheck={false}
 								onChange={(e) => setPath(e.target.value)}
-								onKeyDown={(e) => e.key === 'Enter' && void importFolder()}
 								data-testid="mg-import-path"
 							/>
 							{picker ? (
