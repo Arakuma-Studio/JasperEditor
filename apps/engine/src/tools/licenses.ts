@@ -6,6 +6,7 @@
 import { readFile, realpath } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { LicenseComponent, LicensesResponse } from '@jasper/api';
+import { openCvLicense } from '../tracking/license.ts';
 
 export const FFMPEG_SOURCE_FALLBACK = 'https://ffmpeg.org/download.html';
 
@@ -96,6 +97,6 @@ export async function ffmpegLicense(input: {
 export async function thirdPartyLicenses(
 	input: Parameters<typeof ffmpegLicense>[0],
 ): Promise<LicensesResponse> {
-	const ffmpeg = await ffmpegLicense(input);
-	return { components: ffmpeg ? [ffmpeg] : [] };
+	const [ffmpeg, opencv] = await Promise.all([ffmpegLicense(input), openCvLicense()]);
+	return { components: [ffmpeg, opencv].filter((c): c is LicenseComponent => c !== null) };
 }

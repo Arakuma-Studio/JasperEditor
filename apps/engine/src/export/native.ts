@@ -17,6 +17,7 @@ import {
 	type RenderFade,
 	type RenderSnapshot,
 	type RenderVisualClip,
+	type ResolvedLayerProps,
 	resolveLayerProps,
 } from '@jasper/project';
 import { alphaDecoder } from '../media/alpha.ts';
@@ -24,7 +25,7 @@ import { audioEncodeArgs, LEGACY_X264_CHOICE, videoEncodeArgs } from '../tools/e
 import { sec } from '../tools/ffmpeg.ts';
 import {
 	BUILTIN_NATIVE_EFFECTS,
-	layerOverride,
+	type LayerOverride,
 	type NativeExtension,
 	type PreparedExtensions,
 } from './native-ext.ts';
@@ -172,6 +173,186 @@ export function audioFadeFilters(
 	];
 }
 
+/**
+ * The override a layer is drawn from: the first `sequence` override (a fully placed layer, e.g. the warp stage,
+ * which sources the picture itself from an earlier extension's `layer` override, ARCHITECTURE §19.6), else the
+ * first `layer` override, else null.
+ */
+export function pickOverride(
+	list: readonly NativeExtension[],
+	prepared: PreparedExtensions,
+	clip: RenderVisualClip,
+): LayerOverride | null {
+	let first: LayerOverride | null = null;
+	for (const ext of list) {
+		const o = ext.override?.(clip, prepared.get(ext.id));
+		if (!o) continue;
+		if (o.space === 'sequence') return o;
+		first ??= o;
+	}
+	return first;
+}
+
+export type LayerSourceOptions = {
+	clip: RenderVisualClip;
+	/** First drawn and one-past-last sequence frame of the layer. */
+	f0: number;
+	f1: number;
+	fps: Rational;
+	/** The clip's props at `f0` (effects are evaluated there); default: resolved here. */
+	props?: ResolvedLayerProps;
+	sources: NativeSourceResolver;
+	/** A `layer` override replaces the decoded source (other spaces are ignored here). */
+	override?: LayerOverride | null;
+	/** Extensions asked for the filters of effects the builder does not know. */
+	extensions?: { list: readonly NativeExtension[]; prepared: PreparedExtensions };
+	/** Adds an ffmpeg input (argument list before and including `-i <path>`); returns its index. */
+	addInput(args: string[]): number;
+};
+
+export type LayerSourceChain = {
+	/** Input pad of the chain (`[k:v:0]`), or '' when the chain starts with a source filter (solids). */
+	input: string;
+	/** Filters from the decoded source to the layer after its effects (RGBA, box-sized, frames from pts 0). */
+	filters: string[];
+	/** Frame size of the chain's output (the rounded intrinsic box). */
+	width: number;
+	height: number;
+};
+
+/**
+ * A layer's picture up to, not including, Motion (ARCHITECTURE §19.5, S09:TRK-032): input seeking, speed,
+ * frame rate conform, scale to the intrinsic box, `rgba`, then its effects in stack order (built-in crop/flips,
+ * extension effect filters). Yields the `f1 − f0` frames of the layer starting at pts 0. Used by the native
+ * builder and by the warp stage (which pipes these frames out and warps them itself).
+ */
+export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
+	const { clip: c, f0, f1, fps } = o;
+	const exts = o.extensions;
+	const props = o.props ?? resolveLayerProps(c, clipContentTime(c, f0, fps));
+	const override = o.override?.space === 'layer' ? o.override : null;
+	const addInput = o.addInput;
+	const frameSec = fps.den / fps.num;
+	const n = f1 - f0;
+	const bw = Math.max(1, Math.round(c.intrinsicBox.width));
+	const bh = Math.max(1, Math.round(c.intrinsicBox.height));
+	const f: string[] = [];
+	let src: string;
+	const margin = 2 * frameSec;
+
+	const local = 'mediaId' in c.source ? o.sources.media(c.source.mediaId) : null;
+	const mg = c.kind === 'motion-graphic' ? o.sources.mgMaster(c.clipId) : null;
+	if (override) {
+		const k = addInput([
+			...(override.decoder ? ['-c:v', override.decoder] : []),
+			'-ss',
+			sec((f0 - override.startFrame) * frameSec),
+			'-t',
+			sec(n * frameSec + margin),
+			'-i',
+			override.path,
+		]);
+		src = `[${k}:v:0]`;
+		f.push(
+			'setpts=PTS-STARTPTS',
+			`fps=${rate(fps)}`,
+			`trim=end_frame=${n}`,
+			`scale=${bw}:${bh}:${SWS_FLAGS}`,
+			'setsar=1',
+			'format=rgba',
+		);
+	} else if ((c.kind === 'video' || c.kind === 'animated-image') && local) {
+		const startSec = clipContentTime(c, f0, fps) / FLICKS_PER_SECOND;
+		const srcDur = n * frameSec * c.speed.rate + margin;
+		const dec = alphaDecoder(local.record.probe);
+		// WebM alpha is a second VP8/VP9 stream whose keyframes need not line up with the colour stream's:
+		// after an input seek to a colour keyframe libvpx may get a non-key alpha frame first and reject
+		// every packet ("Bitstream not supported", seen with VP8). Such inputs are decoded from their start
+		// and trimmed in the graph (overlays are short).
+		const decodeFromStart = dec !== null && startSec > 0;
+		const k = addInput([
+			...(dec ? ['-c:v', dec] : []),
+			...(decodeFromStart ? ['-t', sec(startSec + srcDur)] : ['-ss', sec(startSec), '-t', sec(srcDur)]),
+			'-i',
+			local.path,
+		]);
+		src = `[${k}:v:0]`;
+		if (decodeFromStart) f.push(`trim=start=${fmt(startSec)}`);
+		f.push(`setpts=(PTS-STARTPTS)/${fmt(c.speed.rate)}`, `fps=${rate(fps)}`, `trim=end_frame=${n}`);
+		f.push(`scale=${bw}:${bh}${inColor(local)}:${SWS_FLAGS}`, 'setsar=1', 'format=rgba');
+	} else if (c.kind === 'still' && local) {
+		const k = addInput([
+			'-loop',
+			'1',
+			'-framerate',
+			rate(fps),
+			'-t',
+			sec(n * frameSec + margin),
+			'-i',
+			local.path,
+		]);
+		src = `[${k}:v:0]`;
+		f.push('setpts=PTS-STARTPTS', `fps=${rate(fps)}`, `trim=end_frame=${n}`);
+		f.push(`scale=${bw}:${bh}${inColor(local)}:${SWS_FLAGS}`, 'setsar=1', 'format=rgba');
+	} else if (c.kind === 'motion-graphic' && mg) {
+		const startSec = (f0 - c.start) * frameSec;
+		const k = addInput(['-ss', sec(startSec), '-t', sec(n * frameSec + margin), '-i', mg]);
+		src = `[${k}:v:0]`;
+		f.push(
+			'setpts=PTS-STARTPTS',
+			`fps=${rate(fps)}`,
+			`trim=end_frame=${n}`,
+			`scale=${bw}:${bh}`,
+			'setsar=1',
+			'format=rgba',
+		);
+	} else {
+		// Solids, and offline media as the "Media Offline" colour card (S04:AS-010).
+		const rgba = 'color' in c.source ? c.source.color : OFFLINE_RGBA;
+		src = '';
+		f.push(
+			`color=c=${colorHex(rgba)}:s=${bw}x${bh}:r=${rate(fps)}:d=${fmt(n * frameSec + frameSec)}`,
+			'format=rgba',
+			`trim=end_frame=${n}`,
+		);
+	}
+
+	// Effects in stack order (crop first by convention, S01:FX-003); only native-capable ones reach here.
+	// Effects the builder does not know are asked to the M2 extensions (§19.6), e.g. fused colour LUTs.
+	for (const [index, fx] of props.effects.entries()) {
+		if (!fx.enabled) continue;
+		if (!BUILTIN_NATIVE_EFFECTS.has(fx.effectId)) {
+			for (const ext of exts?.list ?? []) {
+				const text = ext.effectFilter?.(fx, {
+					clip: c,
+					effects: props.effects,
+					index,
+					box: { width: bw, height: bh },
+					fps,
+					f0,
+					f1,
+					prepared: exts?.prepared.get(ext.id),
+				});
+				if (text === undefined) continue;
+				if (text) f.push(text);
+				break;
+			}
+			continue;
+		}
+		if (fx.effectId === 'jasper.crop') {
+			const l = Math.round((Number(fx.params.left ?? 0) / 100) * bw);
+			const r = Math.round((Number(fx.params.right ?? 0) / 100) * bw);
+			const t = Math.round((Number(fx.params.top ?? 0) / 100) * bh);
+			const b = Math.round((Number(fx.params.bottom ?? 0) / 100) * bh);
+			const cw = Math.max(1, bw - l - r);
+			const ch = Math.max(1, bh - t - b);
+			if (l || r || t || b) f.push(`crop=${cw}:${ch}:${l}:${t}`, `pad=${bw}:${bh}:${l}:${t}:color=black@0`);
+		} else if (fx.effectId === 'jasper.flip-horizontal') f.push('hflip');
+		else if (fx.effectId === 'jasper.flip-vertical') f.push('vflip');
+	}
+	return { input: src, filters: f, width: bw, height: bh };
+}
+
 export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 	const { snapshot: snap, output } = o;
 	const exts = o.extensions;
@@ -247,13 +428,11 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		const bw = Math.max(1, Math.round(c.intrinsicBox.width));
 		const bh = Math.max(1, Math.round(c.intrinsicBox.height));
 		const label = `l${li++}`;
-		const f: string[] = [];
-		let src: string;
 		const margin = 2 * frameSec;
 
 		// M2 (§19.6): a pre-rendered picture from an extension replaces the source ('layer') or the whole placed
 		// layer ('sequence', overlaid at 0,0 with only the transition fades applied here).
-		const override = exts ? layerOverride(exts.list, exts.prepared, c) : null;
+		const override = exts ? pickOverride(exts.list, exts.prepared, c) : null;
 		if (override?.space === 'sequence') {
 			const k = addInput([
 				...(override.decoder ? ['-c:v', override.decoder] : []),
@@ -281,116 +460,20 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			continue;
 		}
 
-		const local = 'mediaId' in c.source ? o.sources.media(c.source.mediaId) : null;
-		const mg = c.kind === 'motion-graphic' ? o.sources.mgMaster(c.clipId) : null;
-		if (override?.space === 'layer') {
-			const k = addInput([
-				...(override.decoder ? ['-c:v', override.decoder] : []),
-				'-ss',
-				sec((f0 - override.startFrame) * frameSec),
-				'-t',
-				sec(n * frameSec + margin),
-				'-i',
-				override.path,
-			]);
-			src = `[${k}:v:0]`;
-			f.push(
-				'setpts=PTS-STARTPTS',
-				`fps=${rate(fps)}`,
-				`trim=end_frame=${n}`,
-				`scale=${bw}:${bh}:${SWS_FLAGS}`,
-				'setsar=1',
-				'format=rgba',
-			);
-		} else if ((c.kind === 'video' || c.kind === 'animated-image') && local) {
-			const startSec = clipContentTime(c, f0, fps) / FLICKS_PER_SECOND;
-			const srcDur = n * frameSec * c.speed.rate + margin;
-			const dec = alphaDecoder(local.record.probe);
-			// WebM alpha is a second VP8/VP9 stream whose keyframes need not line up with the colour stream's:
-			// after an input seek to a colour keyframe libvpx may get a non-key alpha frame first and reject
-			// every packet ("Bitstream not supported", seen with VP8). Such inputs are decoded from their start
-			// and trimmed in the graph (overlays are short).
-			const decodeFromStart = dec !== null && startSec > 0;
-			const k = addInput([
-				...(dec ? ['-c:v', dec] : []),
-				...(decodeFromStart ? ['-t', sec(startSec + srcDur)] : ['-ss', sec(startSec), '-t', sec(srcDur)]),
-				'-i',
-				local.path,
-			]);
-			src = `[${k}:v:0]`;
-			if (decodeFromStart) f.push(`trim=start=${fmt(startSec)}`);
-			f.push(`setpts=(PTS-STARTPTS)/${fmt(c.speed.rate)}`, `fps=${rate(fps)}`, `trim=end_frame=${n}`);
-			f.push(`scale=${bw}:${bh}${inColor(local)}:${SWS_FLAGS}`, 'setsar=1', 'format=rgba');
-		} else if (c.kind === 'still' && local) {
-			const k = addInput([
-				'-loop',
-				'1',
-				'-framerate',
-				rate(fps),
-				'-t',
-				sec(n * frameSec + margin),
-				'-i',
-				local.path,
-			]);
-			src = `[${k}:v:0]`;
-			f.push('setpts=PTS-STARTPTS', `fps=${rate(fps)}`, `trim=end_frame=${n}`);
-			f.push(`scale=${bw}:${bh}${inColor(local)}:${SWS_FLAGS}`, 'setsar=1', 'format=rgba');
-		} else if (c.kind === 'motion-graphic' && mg) {
-			const startSec = (f0 - c.start) * frameSec;
-			const k = addInput(['-ss', sec(startSec), '-t', sec(n * frameSec + margin), '-i', mg]);
-			src = `[${k}:v:0]`;
-			f.push(
-				'setpts=PTS-STARTPTS',
-				`fps=${rate(fps)}`,
-				`trim=end_frame=${n}`,
-				`scale=${bw}:${bh}`,
-				'setsar=1',
-				'format=rgba',
-			);
-		} else {
-			// Solids, and offline media as the "Media Offline" colour card (S04:AS-010).
-			const rgba = 'color' in c.source ? c.source.color : OFFLINE_RGBA;
-			src = '';
-			f.push(
-				`color=c=${colorHex(rgba)}:s=${bw}x${bh}:r=${rate(fps)}:d=${fmt(n * frameSec + frameSec)}`,
-				'format=rgba',
-				`trim=end_frame=${n}`,
-			);
-		}
-
-		// Effects in stack order (crop first by convention, S01:FX-003); only native-capable ones reach here.
-		// Effects the builder does not know are asked to the M2 extensions (§19.6), e.g. fused colour LUTs.
-		for (const [index, fx] of props.effects.entries()) {
-			if (!fx.enabled) continue;
-			if (!BUILTIN_NATIVE_EFFECTS.has(fx.effectId)) {
-				for (const ext of exts?.list ?? []) {
-					const text = ext.effectFilter?.(fx, {
-						clip: c,
-						effects: props.effects,
-						index,
-						box: { width: bw, height: bh },
-						fps,
-						f0,
-						f1,
-						prepared: exts?.prepared.get(ext.id),
-					});
-					if (text === undefined) continue;
-					if (text) f.push(text);
-					break;
-				}
-				continue;
-			}
-			if (fx.effectId === 'jasper.crop') {
-				const l = Math.round((Number(fx.params.left ?? 0) / 100) * bw);
-				const r = Math.round((Number(fx.params.right ?? 0) / 100) * bw);
-				const t = Math.round((Number(fx.params.top ?? 0) / 100) * bh);
-				const b = Math.round((Number(fx.params.bottom ?? 0) / 100) * bh);
-				const cw = Math.max(1, bw - l - r);
-				const ch = Math.max(1, bh - t - b);
-				if (l || r || t || b) f.push(`crop=${cw}:${ch}:${l}:${t}`, `pad=${bw}:${bh}:${l}:${t}:color=black@0`);
-			} else if (fx.effectId === 'jasper.flip-horizontal') f.push('hflip');
-			else if (fx.effectId === 'jasper.flip-vertical') f.push('vflip');
-		}
+		// Source decode, source chain and effects (shared with the warp stage), then Motion.
+		const source = layerSourceChain({
+			clip: c,
+			f0,
+			f1,
+			fps,
+			props,
+			sources: o.sources,
+			override,
+			...(exts ? { extensions: exts } : {}),
+			addInput,
+		});
+		const src = source.input;
+		const f = source.filters;
 
 		// Motion: M = P + R·S·(q − A) (S03:DM-010). Scale → flips → rotation about the center.
 		const tv = props.transform;

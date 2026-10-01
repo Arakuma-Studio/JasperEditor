@@ -307,9 +307,10 @@ describe('M2 command stubs (ARCHITECTURE §19.8)', () => {
 		expect(COMMAND_CATALOG['tracker.apply'].milestone).toBe('M2');
 		expect(COMMAND_CATALOG['media.derive'].owner).toBe('wp-m2-process');
 		expect(COMMAND_CATALOG['clip.addComposition'].owner).toBe('wp-m2-mg');
+		// tracker.* is implemented (wp-m2-track): an unknown tracker is a plain E_NOT_FOUND.
 		const h = new Harness();
 		const r = h.tx([{ type: 'tracker.remove', trackerIds: ['tkr_0000000000000001'] }]);
 		expect(r.ok).toBe(false);
-		if (!r.ok) expect(r.errors[0]!.code).toBe('E_NOT_IMPLEMENTED');
+		if (!r.ok) expect(r.errors[0]!.code).toBe('E_NOT_FOUND');
 	});
 });

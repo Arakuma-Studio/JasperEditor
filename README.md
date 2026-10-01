@@ -249,6 +249,24 @@ curl -s -X POST http://127.0.0.1:47900/api/agent/tx -H 'content-type: applicatio
 The engine binds loopback only. The packaged-like desktop engine requires its per-launch token
 (`JASPER_LOCAL_TOKEN`), so plain curl calls are meant for the dev or standalone engine.
 
+## Tracking and screen replacement
+
+To replace a monitor's screen or a sign in the footage:
+
+1. Put the footage (the plate) on V1 and the replacement (image, video or composition) on a track above it.
+2. Select the plate. In **Properties ▸ Tracking**, click **Add Planar Tracker**.
+3. Drag the quad's corners onto the screen's edges on the Program monitor. Corners may lie outside the frame.
+4. Click **Track Both** (or Track Forward / Backward). Keep **Snap to edges** on for screens with a bezel.
+5. Click **Apply to… ▸ Corner Pin** and pick the replacement.
+
+The result is ordinary Corner Pin keyframes. To correct a frame, drag the pin's handles, or move the tracker corners and use **Track from Here**.
+
+Point trackers drive Position (and planar ones optionally Scale and Rotation) for elements that follow something.
+
+Corner pins and keyframed Motion export on the native ffmpeg path through the warp stage: an LGPL-safe per-frame warp, cached as ProRes 4444 under `<appdir>/cache/warp/`.
+
+Agents use the `add_tracker`, `track`, `apply_tracking`, `get_tracker` and `set_corner_pin` MCP tools. Tracking runs OpenCV.js (Apache-2.0) in engine worker threads. Details: `docs/specs/09-tracking.md` and `docs/wp-notes/wp-m2-track.md`.
+
 ## Tests
 
 ```bash
