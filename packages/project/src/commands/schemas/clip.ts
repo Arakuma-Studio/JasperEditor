@@ -345,10 +345,18 @@ export const ClipSetSpeedCmd = cmd('clip.setSpeed', {
 	maintainPitch: z.boolean().optional(),
 	ripple: z.boolean(),
 });
+/**
+ * What a source swap does when the new media does not hold every source frame the clip shows (M3,
+ * S07:PRC-017): `refuse` (default) fails with E_OUT_OF_MEDIA, `trim` trims the clip (and linked clips sharing
+ * the trimmed edge) to the covered frames, `skip` leaves that clip unchanged with a warning.
+ */
+export const SourceFitSchema = z.enum(['refuse', 'trim', 'skip']);
 export const ClipReplaceSourceCmd = cmd('clip.replaceSource', {
 	clipId: IdRefSchema,
 	mediaId: IdRefSchema,
 	keepDuration: z.boolean().optional(),
+	/** M3 (additive): behaviour when the new media does not cover the clip (default `refuse`). */
+	fit: SourceFitSchema.optional(),
 });
 export const ClipFitToFrameCmd = cmd('clip.fitToFrame', {
 	clipIds: IdListSchema,

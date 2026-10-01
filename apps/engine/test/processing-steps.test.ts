@@ -369,6 +369,53 @@ describe('de-judder (S07 §8 test 4)', () => {
 	}, 600_000);
 });
 
+// M3 (wp-m3-inpoint, PST-013): a processed RANGE reads one context frame before/after it from the source, so
+// its first/last frames are retimed exactly as in a whole-file run instead of being copied.
+describe('de-judder of a range reads context frames (PST-013)', () => {
+	it('ranges starting mid-motion retime their edge frames like the whole file does', async () => {
+		const whole = await proc(fixture('judder.mp4'), [{ op: 'dejudder', mode: 'force' }], 'judder-whole');
+		const W = 320;
+		const H = 180;
+		const ref = grey(whole.output, W, H);
+		const src = grey(fixture('judder.mp4'), W, H);
+		const mad = (a: Uint8Array, b: Uint8Array) => {
+			let d = 0;
+			for (let i = 0; i < a.length; i++) d += Math.abs(a[i]! - b[i]!);
+			return d / a.length;
+		};
+		let contextUsed = 0;
+		// Three offsets: the 3-frame cycle puts a frame that needs its outside neighbour at the edge of at least one.
+		for (const start of [20, 21, 22]) {
+			const end = start + 24;
+			const r = await proc(fixture('judder.mp4'), [{ op: 'dejudder', mode: 'force' }], `judder-${start}`, {
+				startFrame: start,
+				endFrame: end,
+			});
+			const info = r.res.sidecarData.steps[0].info as {
+				applied: boolean;
+				edge: number;
+				contextFrames: number;
+			};
+			expect(info.applied).toBe(true);
+			expect(info.edge).toBe(0);
+			contextUsed += info.contextFrames;
+			const out = grey(r.output, W, H);
+			expect(out).toHaveLength(24);
+			for (const [i, abs] of [
+				[0, start],
+				[23, end - 1],
+			] as const) {
+				const vsWhole = mad(out[i]!, ref[abs]!);
+				const vsSource = mad(src[abs]!, ref[abs]!);
+				// Same as the whole-file output (ProRes noise only); the source frame differs where it was retimed.
+				expect(vsWhole).toBeLessThan(1);
+				if (vsSource > 2) expect(vsWhole).toBeLessThan(vsSource / 3);
+			}
+		}
+		expect(contextUsed).toBeGreaterThanOrEqual(1);
+	}, 600_000);
+});
+
 describe('denoise and deblock (S07 §8 test 5)', () => {
 	const W = 1280;
 	const H = 720;

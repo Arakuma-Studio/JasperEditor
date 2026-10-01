@@ -1,7 +1,10 @@
 // Process Clip… (S07:PRU-001): step checkboxes in the fixed order deblock → denoise → de-judder → stabilise →
 // upscale with their options, the executor (Auto / This computer / Remote: <host>) with the last probe status,
-// a rough time estimate and "Replace in timeline when done". Start queues `POST /api/media/:key/process`; the
-// job is followed at module level (`processWatcher`), which commits `media.derive` when it succeeds.
+// a rough time estimate and "Replace in timeline when done". Opened for clips it can process only the frames
+// the clips show plus N frames of handles (S07:PRC-015, default for clip entry points): the version then holds
+// that source range and the swap keeps the clips on the same source frames. Start queues
+// `POST /api/media/:key/process`; the job is followed at module level (`processWatcher`), which commits
+// `media.derive` when it succeeds.
 import type {
 	EngineCapabilities,
 	EngineJob,
@@ -10,7 +13,7 @@ import type {
 	ProcessingSettings,
 	ProcessRequest,
 } from '@jasper/api';
-import type { MediaAsset } from '@jasper/project';
+import { type MediaAsset, type ProjectDocument, processRangeForClips } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { Button, Checkbox, cx, Dialog, type HostedDialogProps, Select, Slider, TextField } from '@jasper/ui';
 import { type ReactNode, useEffect, useId, useMemo, useState } from 'react';
@@ -47,6 +50,34 @@ export type ProcessDialogProps = {
 };
 
 type Processing = NonNullable<M2Features['processing']>;
+
+/** Default handles of "Clip range + handles" (frames on each side). */
+export const DEFAULT_PROCESS_HANDLES = 12;
+
+/** The frames of `mediaId` the clips show (mapped across versions) plus `handles` (S07:PRC-015). */
+export function clipProcessRange(
+	doc: ProjectDocument,
+	mediaId: string,
+	clipIds: readonly string[],
+	handles: number,
+): { startFrame: number; endFrame: number } | null {
+	const uses = [];
+	for (const seq of Object.values(doc.sequences))
+		for (const id of clipIds) {
+			const c = seq.clips[id] as
+				| {
+						kind: string;
+						mediaId?: string;
+						sourceIn: number;
+						duration: number;
+						speed: { rate: number; reverse: boolean };
+				  }
+				| undefined;
+			if (c?.kind === 'video' && c.mediaId)
+				uses.push({ clip: { ...c, mediaId: c.mediaId }, seqRate: seq.settings.frameRate });
+		}
+	return processRangeForClips(doc, uses, mediaId, handles);
+}
 
 const DENOISE_LABELS: Record<DenoiseMethod, string> = {
 	atadenoise: 'Temporal (atadenoise) — fast',
@@ -157,6 +188,10 @@ export function ProcessDialog(props: HostedDialogProps<ProcessDialogProps>) {
 	const [form, setForm] = useState<ProcessForm>(() => defaultForm({ denoiseMethod: proc?.denoise[0] }));
 	const [executor, setExecutor] = useState<ProcessRequest['executor']>('auto');
 	const [replace, setReplace] = useState(props.replaceDefault && props.clipIds.length > 0);
+	const [scope, setScope] = useState<'whole' | 'clips'>(
+		props.origin === 'clip' && props.clipIds.length > 0 ? 'clips' : 'whole',
+	);
+	const [handles, setHandles] = useState(DEFAULT_PROCESS_HANDLES);
 	const [error, setError] = useState<string | null>(null);
 	const [installing, setInstalling] = useState<string | null>(null);
 
@@ -200,6 +235,14 @@ export function ProcessDialog(props: HostedDialogProps<ProcessDialogProps>) {
 		setError(null);
 	};
 
+	const clipRange = useMemo(
+		() => (scope === 'clips' ? clipProcessRange(doc, props.mediaId, props.clipIds, handles) : null),
+		[scope, doc, props.mediaId, props.clipIds, handles],
+	);
+	// A range that is the whole file is processed as the whole file (same result, reusable by every clip).
+	const range =
+		clipRange && !(clipRange.startFrame === 0 && src && clipRange.endFrame >= src.frames) ? clipRange : null;
+	const frames = range ? range.endFrame - range.startFrame : (src?.frames ?? 0);
 	const model = models?.find((m) => m.id === form.upscale.model) ?? null;
 	const steps = useMemo(() => stepsFromForm(form), [form]);
 	const ops = steps.map((s) => s.op);
@@ -209,10 +252,14 @@ export function ProcessDialog(props: HostedDialogProps<ProcessDialogProps>) {
 	const gpu = target === 'remote' && !!lastProbe?.gpu;
 	const estimate =
 		src && steps.length
-			? estimateSeconds(steps, src, {
-					gpu,
-					stabilizeEngine: proc?.stabilize === 'deshake' ? 'deshake' : 'vidstab',
-				})
+			? estimateSeconds(
+					steps,
+					{ ...src, frames },
+					{
+						gpu,
+						stabilizeEngine: proc?.stabilize === 'deshake' ? 'deshake' : 'vidstab',
+					},
+				)
 			: null;
 
 	const unavailable = {
@@ -235,6 +282,7 @@ export function ProcessDialog(props: HostedDialogProps<ProcessDialogProps>) {
 	if (!steps.length) blockers.push('Choose at least one step');
 	if (form.upscale.on && model && !model.installed) blockers.push(`Install ${model.name} first`);
 	if (executor === 'remote' && !remote) blockers.push('No remote host is configured');
+	if (scope === 'clips' && !clipRange) blockers.push('The clips’ frames cannot be located in this media');
 
 	const install = async () => {
 		if (!model) return;
@@ -268,6 +316,7 @@ export function ProcessDialog(props: HostedDialogProps<ProcessDialogProps>) {
 				steps,
 				executor,
 				replaceInClips: replace ? props.clipIds : [],
+				...(range ? { range } : {}),
 			});
 			props.close(true);
 			return false;
@@ -313,6 +362,52 @@ export function ProcessDialog(props: HostedDialogProps<ProcessDialogProps>) {
 					{already ? ` · already ${recipeLabel(already)}` : ''}. The result is a new ProRes file; the original
 					is never changed.
 				</p>
+
+				{props.clipIds.length ? (
+					<div
+						className="grid grid-cols-[96px_minmax(0,1fr)] items-center gap-x-2 gap-y-1"
+						data-testid="process-range"
+					>
+						<span className="text-pr-muted">Frames</span>
+						<div className="flex min-w-0 items-center gap-2">
+							<Segmented
+								label="Frames to process"
+								value={scope}
+								onChange={(v) => {
+									setScope(v);
+									setError(null);
+								}}
+								options={[
+									{ value: 'clips', label: 'Clip range + handles' },
+									{ value: 'whole', label: 'Whole media' },
+								]}
+							/>
+							{scope === 'clips' ? (
+								<>
+									<TextField
+										aria-label="Handle frames"
+										className="w-14"
+										inputMode="numeric"
+										value={String(handles)}
+										onChange={(e) =>
+											setHandles(Math.min(10_000, Number(e.target.value.replace(/\D/g, '')) || 0))
+										}
+										data-testid="process-handles"
+									/>
+									<span className="text-pr-muted">frames each side</span>
+								</>
+							) : null}
+						</div>
+						<span />
+						<span className="text-pr-small text-pr-dim" data-testid="process-range-info">
+							{range
+								? `Source frames ${range.startFrame}–${range.endFrame - 1} (${frames} frames): the clip${props.clipIds.length > 1 ? 's' : ''} plus up to ${handles} frames of handles for trims and transitions`
+								: scope === 'whole' || clipRange
+									? `All ${src?.frames ?? ''} frames; any clip of this media can use the result`
+									: ''}
+						</span>
+					</div>
+				) : null}
 
 				<div className="rounded-pr-control border border-pr-border-subtle px-2">
 					<StepBlock

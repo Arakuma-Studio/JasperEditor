@@ -6,6 +6,8 @@ import {
 	flicksPerFrame,
 	type MediaAsset,
 	type ProjectDocument,
+	type SourceSidecarInfo,
+	sourceRangeFromSidecar,
 	type TxInput,
 } from '@jasper/project';
 import type { ImportTarget } from '../state/services.ts';
@@ -17,6 +19,12 @@ export type PreparedMedia = {
 	name: string;
 	/** Id of an asset already in the project with the same fingerprint (S04:IN-007). */
 	existingMediaId: string | null;
+	/**
+	 * M3 (S07:PRC-019): a source-range sidecar of the file (engine `sourceHint` for files registered by path, or
+	 * a `.json` picked/dropped with an uploaded video). Recorded as the asset's `sourceRange`; the file becomes a
+	 * version of its source when that is in the project or in this batch (matched by file name).
+	 */
+	sourceHint?: SourceSidecarInfo | null;
 };
 
 /** "Use existing" places/keeps the existing asset; "Import again" adds another project item (LIFE-010 step 3). */
@@ -112,6 +120,27 @@ export function buildImportTransaction(input: {
 			ref: `$c${i}`,
 		} as Command);
 		cursor += placementFrames(doc, p.asset, rate);
+	});
+
+	// Source ranges last, so a render can name a source imported in the same batch (any order).
+	const table: Record<string, { id: string; originalName: string; fingerprint?: string }> = { ...doc.media };
+	prepared.forEach((p, i) => {
+		if (registerIndex[i] !== null)
+			table[`$m${i}`] = {
+				id: `$m${i}`,
+				originalName: p.asset.originalName,
+				fingerprint: p.asset.fingerprint,
+			};
+	});
+	prepared.forEach((p, i) => {
+		if (!p.sourceHint || registerIndex[i] === null) return;
+		const sourceRange = sourceRangeFromSidecar({ media: table }, p.sourceHint, {
+			probe: p.asset.probe,
+			id: `$m${i}`,
+			fingerprint: p.asset.fingerprint,
+		});
+		if (sourceRange)
+			commands.push({ type: 'media.setSourceRange', mediaId: `$m${i}`, sourceRange } as Command);
 	});
 
 	return {

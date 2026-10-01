@@ -215,7 +215,7 @@ export class ProcessingService {
 		const hash = recipeHash(req.steps, RECIPE_VERSION, req.range ?? null);
 		return this.core.queue.submit({
 			kind: 'process',
-			title: `Process – ${r.originalName} [${recipeLabel(req.steps)}]`,
+			title: `Process – ${r.originalName} [${recipeLabel(req.steps)}${req.range ? ` · frames ${req.range.startFrame}–${req.range.endFrame - 1}` : ''}]`,
 			priority: 'user',
 			cpuSlots: executor === 'remote' ? 1 : this.localSlots(s),
 			minSlots: 1,
@@ -237,9 +237,15 @@ export class ProcessingService {
 	// ------------------------------------------------------------------ process job
 
 	/** Content-addressed output location: `<appdir>/media/processed/<fingerprint>/<recipeHash>/<name>.mov`. */
-	outputPath(r: MediaRecord, hash: string, steps: readonly ProcessStep[]): { file: string; name: string } {
+	outputPath(
+		r: MediaRecord,
+		hash: string,
+		steps: readonly ProcessStep[],
+		range?: { startFrame: number; endFrame: number },
+	): { file: string; name: string } {
 		const stem = basename(r.originalName, extname(r.originalName));
-		const name = `${stem} [${recipeLabel(steps)}].mov`;
+		const frames = range ? ` · frames ${range.startFrame}–${range.endFrame - 1}` : '';
+		const name = `${stem} [${recipeLabel(steps)}${frames}].mov`;
 		const dir = join(
 			this.core.config.paths.mediaDir,
 			'processed',
@@ -267,7 +273,7 @@ export class ProcessingService {
 		const src = await this.core.registry.resolvePath(r.mediaKey);
 		if (!src) throw new JobError('ASSET_NOT_FOUND', `Media ${r.originalName} is offline`, true);
 		const hash = recipeHash(input.steps, RECIPE_VERSION, input.range ?? null);
-		const out = this.outputPath(r, hash, input.steps);
+		const out = this.outputPath(r, hash, input.steps, input.range);
 		await mkdir(dirname(out.file), { recursive: true });
 		let notes: string[];
 		const reuse = await this.reusable(out.file, hash);
@@ -291,6 +297,7 @@ export class ProcessingService {
 			recipeHash: hash,
 			name: out.name,
 			...(input.projectId ? { projectId: input.projectId } : {}),
+			...(input.range ? { range: input.range } : {}),
 		});
 		return {
 			registered,
@@ -299,6 +306,9 @@ export class ProcessingService {
 			recipeHash: hash,
 			executor: input.executor,
 			notes,
+			...(input.range
+				? { range: { startFrame: input.range.startFrame, endFrame: input.range.endFrame } }
+				: {}),
 		};
 	}
 

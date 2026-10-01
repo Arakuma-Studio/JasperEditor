@@ -9,7 +9,10 @@ export const ProcessRequestSchema = z.object({
 	steps: z.array(ProcessStepSchema).min(1),
 	/** `auto` = remote when configured and the steps benefit (upscale, dejudder), else local. */
 	executor: z.enum(['auto', 'local', 'remote']).default('auto'),
-	/** Process only this source range (frames at the media's rate) — for previews / tests. */
+	/**
+	 * Process only the source frames `[startFrame, endFrame)` (at the media's rate), e.g. the part a clip uses plus
+	 * handles (M3, S07:PRC-015); the result is a shorter version whose `sourceRange` records the range.
+	 */
 	range: z.object({ startFrame: z.number().int().min(0), endFrame: z.number().int().min(1) }).optional(),
 });
 export type ProcessRequest = z.infer<typeof ProcessRequestSchema>;
@@ -24,6 +27,11 @@ export const ProcessResultSchema = z.object({
 	executor: z.enum(['local', 'remote']),
 	/** Per-step notes, e.g. `dejudder: no cadence found, frames copied`. */
 	notes: z.array(z.string()),
+	/**
+	 * M3 (S07:PRC-015): the source frames `[startFrame, endFrame)` that were processed (absent = the whole
+	 * source); the client passes it to `media.derive {range}` so the version records its source range.
+	 */
+	range: z.object({ startFrame: z.number().int().min(0), endFrame: z.number().int().min(1) }).optional(),
 });
 export type ProcessResult = z.infer<typeof ProcessResultSchema>;
 

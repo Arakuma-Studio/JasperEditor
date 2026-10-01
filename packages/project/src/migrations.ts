@@ -37,6 +37,49 @@ function migrateV1ToV2(doc: Rec): Rec {
 	return doc;
 }
 
+/**
+ * v4 → v5 (M3, S07:PRC-015): processed versions (`derivation.recipe.op` `process`, and plain `transcode`s)
+ * were made from the whole source in M2 and swapped 1:1 in content time. They get the explicit `sourceRange`
+ * that says so — `{mediaId: <source>, firstFrame: 0, frames, frameRate: <source rate>, origin: 'process'}` —
+ * so every version carries the range it holds. Assets whose source or rate is unknown are left alone (they keep
+ * the identity mapping).
+ */
+function migrateV4ToV5(doc: Rec): Rec {
+	const media = isRec(doc.media) ? doc.media : {};
+	const videoRate = (a: Rec): { num: number; den: number } | null => {
+		const probe = isRec(a.probe) ? a.probe : null;
+		const streams = Array.isArray(probe?.streams) ? (probe.streams as unknown[]) : [];
+		const vs = streams.find((s) => isRec(s) && s.type === 'video') as Rec | undefined;
+		const r = vs && isRec(vs.frameRate) ? vs.frameRate : null;
+		return r && typeof r.num === 'number' && typeof r.den === 'number' && r.num > 0 && r.den > 0
+			? { num: r.num, den: r.den }
+			: null;
+	};
+	for (const a of Object.values(media)) {
+		if (!isRec(a) || a.sourceRange !== undefined || !isRec(a.derivation)) continue;
+		const d = a.derivation;
+		const op = isRec(d.recipe) ? d.recipe.op : undefined;
+		if ((op !== 'process' && op !== 'transcode') || typeof d.fromMediaId !== 'string') continue;
+		const src = media[d.fromMediaId];
+		if (!isRec(src)) continue;
+		const rate = videoRate(src) ?? videoRate(a);
+		const probe = isRec(a.probe) ? a.probe : null;
+		const dur = typeof probe?.durationFlicks === 'number' ? probe.durationFlicks : null;
+		if (!rate || dur === null) continue;
+		const frames = Math.round((dur * rate.num) / (705_600_000 * rate.den));
+		if (frames < 1) continue;
+		a.sourceRange = {
+			mediaId: d.fromMediaId,
+			sourceName: typeof src.originalName === 'string' ? src.originalName : null,
+			firstFrame: 0,
+			frames,
+			frameRate: rate,
+			origin: 'process',
+		};
+	}
+	return doc;
+}
+
 /** Migrations run in order; every supported version keeps a loadable fixture (S01:MIG-002). */
 export const MIGRATIONS: readonly MigrationStep[] = [
 	{ from: 1, to: 2, migrate: migrateV1ToV2 },
@@ -44,6 +87,8 @@ export const MIGRATIONS: readonly MigrationStep[] = [
 	{ from: 2, to: 3, migrate: (doc) => doc },
 	// v4 (S11, D-32): text animators, anime templates and shapes; same read-only policy, no data changes.
 	{ from: 3, to: 4, migrate: (doc) => doc },
+	// v5 (M3): source ranges of processed versions (S07:PRC-015).
+	{ from: 4, to: 5, migrate: migrateV4ToV5 },
 ];
 
 function unwrap(raw: unknown): Record<string, unknown> {

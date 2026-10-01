@@ -23,6 +23,7 @@ import { EngineJobSchema, JobListQuerySchema, JobListResponseSchema } from './jo
 import { LayerBakePreviewRequestSchema } from './layer-bake.ts';
 import {
 	DerivativesRequestSchema,
+	MediaDiscardResponseSchema,
 	MediaRegisterRequestSchema,
 	MediaRegisterResponseSchema,
 	MediaStatusSchema,
@@ -211,6 +212,13 @@ export const ROUTES = {
 		path: '/api/media/:mediaKey',
 		response: MediaStatusSchema,
 		owner: 'WP-2F',
+	},
+	/** M3 (wp-m3-inpoint, S07:PRC-018): discard an uncommitted upload (Replace Footage cancelled). */
+	mediaDiscard: {
+		method: 'DELETE',
+		path: '/api/media/:mediaKey',
+		response: MediaDiscardResponseSchema,
+		owner: 'wp-m2-process',
 	},
 	mediaDerivatives: {
 		method: 'POST',

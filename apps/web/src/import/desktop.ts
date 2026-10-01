@@ -48,6 +48,8 @@ const IMPORT_ACCEPT = [
 	'.tif',
 	'.tiff',
 	'.svg',
+	// M3 (S07:PRC-019): a source-range sidecar picked together with a rendered video.
+	'.json',
 ].join(',');
 
 /** Opens the browser file picker (web) and resolves with the chosen files (empty when cancelled). */

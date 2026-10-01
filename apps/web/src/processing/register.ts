@@ -3,7 +3,7 @@
 // Processing page), the Properties ▸ Media Version section, the timeline clip and Project item context-menu
 // entries and the "processed" badge host.
 import type { MediaAsset, ProjectDocument } from '@jasper/project';
-import { registerDialog } from '@jasper/ui';
+import { registerDialog, toast } from '@jasper/ui';
 import {
 	clipMenuExtensions,
 	clipSections,
@@ -12,14 +12,22 @@ import {
 	projectItemMenuExtensions,
 } from '../extensions/index.ts';
 import { registerPreferencesDialog, registerPreferencesPage } from '../shell/preferences/index.ts';
-import { openProcessForClips, openProcessForMedia, switchMediaVersion } from './actions.ts';
+import {
+	openProcessForClips,
+	openProcessForMedia,
+	openReplaceFootage,
+	replaceFootageBlocker,
+	switchMediaVersionInteractive,
+} from './actions.ts';
 import { ProcessedDecorations } from './decorations.tsx';
 import { MediaVersionSection } from './MediaVersionSection.tsx';
 import { originalOf, versionLabel, versionsOf } from './model.ts';
 import { ProcessingPreferencesPage } from './PreferencesPage.tsx';
 import { PROCESS_DIALOG, ProcessDialog } from './ProcessDialog.tsx';
+import { REPLACE_FOOTAGE_DIALOG, ReplaceFootageDialog } from './ReplaceFootageDialog.tsx';
 
 const PROCESS_MENU_LABEL = 'Process Clip…';
+const REPLACE_FOOTAGE_MENU_LABEL = 'Replace Footage…';
 
 /** "Media Version" submenu for a clip (Original + processed versions of the same original). */
 function versionMenu(doc: ProjectDocument, mediaId: string, run: (id: string) => void): MenuItemSpec | null {
@@ -44,6 +52,7 @@ export function registerProcessingUi(): void {
 	if (registered) return;
 	registered = true;
 	registerDialog(PROCESS_DIALOG, ProcessDialog);
+	registerDialog(REPLACE_FOOTAGE_DIALOG, ReplaceFootageDialog);
 	registerPreferencesDialog();
 	registerPreferencesPage({
 		id: 'processing',
@@ -77,7 +86,12 @@ export function registerProcessingUi(): void {
 			];
 			const mediaId = (clip as { mediaId?: string }).mediaId;
 			const sub = mediaId
-				? versionMenu(session.getCommitted(), mediaId, (id) => void switchMediaVersion(session, ids, id))
+				? versionMenu(session.getCommitted(), mediaId, (id) => {
+						void switchMediaVersionInteractive(session, ids, id).then((r) => {
+							if (r && !r.ok)
+								toast({ kind: 'warning', title: 'Could not switch the version', detail: r.message });
+						});
+					})
 				: null;
 			if (sub && !readOnly) items.push(sub);
 			return items;
@@ -91,17 +105,26 @@ export function registerProcessingUi(): void {
 			if (items.length !== 1) return [];
 			const it = items[0] as { kind: string; mediaId?: string };
 			if (it.kind !== 'media' || !it.mediaId) return [];
-			const m = session.getCommitted().media[it.mediaId] as MediaAsset | undefined;
-			if (m?.kind !== 'video') return [];
+			const doc = session.getCommitted();
+			const m = doc.media[it.mediaId] as MediaAsset | undefined;
 			const mediaId = it.mediaId;
-			return [
-				{
+			const out: MenuItemSpec[] = [];
+			if (m?.kind === 'video')
+				out.push({
 					kind: 'item',
 					label: PROCESS_MENU_LABEL,
 					disabled: readOnly,
 					run: () => void openProcessForMedia(session, mediaId),
-				},
-			];
+				});
+			// S07:PRC-018 (Premiere: Project panel ▸ Replace Footage…).
+			if (m && (m.kind === 'video' || m.kind === 'audio' || m.kind === 'image'))
+				out.push({
+					kind: 'item',
+					label: REPLACE_FOOTAGE_MENU_LABEL,
+					disabled: readOnly || !!replaceFootageBlocker(doc, mediaId),
+					run: () => void openReplaceFootage(session, mediaId),
+				});
+			return out;
 		},
 	});
 

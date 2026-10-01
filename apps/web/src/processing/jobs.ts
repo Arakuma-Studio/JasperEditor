@@ -34,8 +34,12 @@ type ProcessWatch = {
 	executor: ProcessRequest['executor'];
 	/** Clips to swap to the processed version when done (empty = only add it to the Project panel). */
 	replaceInClips: string[];
+	/** Source frames processed (S07:PRC-015); absent = the whole media. */
+	range?: ProcessRange;
 	dedupeKey?: string;
 };
+
+export type ProcessRange = { startFrame: number; endFrame: number };
 
 // ------------------------------------------------------------------ media.derive
 
@@ -87,7 +91,8 @@ function deriveCommand(
 			recipeVersion: result.recipeVersion,
 			recipeHash: result.recipeHash,
 		},
-		...(replaced.length ? { replaceInClips: replaced } : {}),
+		...(replaced.length ? { replaceInClips: replaced, fit: 'skip' } : {}),
+		...(result.range ? { range: result.range } : {}),
 	} as unknown as Command;
 	return { command, replaced };
 }
@@ -101,7 +106,7 @@ export function commitProcessed(
 		result: ProcessResult;
 		replaceInClips: readonly string[];
 	},
-): { ok: true; replaced: string[]; mediaId?: string } | { ok: false; message: string } {
+): { ok: true; replaced: string[]; skipped: string[]; mediaId?: string } | { ok: false; message: string } {
 	const built = deriveCommand(session.getCommitted(), input);
 	if ('error' in built) return { ok: false, message: built.error };
 	let r = session.apply({ label: PROCESS_TX_LABEL, origin: 'user', commands: [built.command] });
@@ -114,8 +119,17 @@ export function commitProcessed(
 	}
 	if (!r.ok)
 		return { ok: false, message: r.errors[0]?.message ?? 'The processed version could not be added' };
-	const value = r.results[0] as { mediaId?: string } | undefined;
-	return { ok: true, replaced, ...(value?.mediaId ? { mediaId: value.mediaId } : {}) };
+	const value = r.results[0] as
+		| { mediaId?: string; clipIds?: string[]; skippedClipIds?: string[] }
+		| undefined;
+	// Clips the version does not cover (trimmed or moved while it ran) stay on their media (S07:PRC-017).
+	const skipped = value?.skippedClipIds ?? [];
+	return {
+		ok: true,
+		replaced: replaced.filter((id) => !skipped.includes(id)),
+		skipped,
+		...(value?.mediaId ? { mediaId: value.mediaId } : {}),
+	};
 }
 
 // ------------------------------------------------------------------ submit
@@ -127,6 +141,8 @@ type StartInput = {
 	steps: ProcessStep[];
 	executor: ProcessRequest['executor'];
 	replaceInClips: readonly string[];
+	/** Only these source frames of the media (clip range + handles, S07:PRC-015). */
+	range?: ProcessRange | null;
 };
 
 /** Queues the process job and follows it; throws EngineError (e.g. MODEL_NOT_INSTALLED) when refused. */
@@ -140,6 +156,7 @@ export async function startProcessing(input: StartInput): Promise<EngineJob> {
 			projectId: input.session.projectId,
 			steps: input.steps,
 			executor: input.executor,
+			...(input.range ? { range: input.range } : {}),
 		} satisfies ProcessRequest,
 	})) as EngineJob;
 	processWatcher.watch({
@@ -151,6 +168,7 @@ export async function startProcessing(input: StartInput): Promise<EngineJob> {
 		steps: input.steps,
 		executor: input.executor,
 		replaceInClips: [...input.replaceInClips],
+		...(input.range ? { range: input.range } : {}),
 		...(job.dedupeKey ? { dedupeKey: job.dedupeKey } : {}),
 	});
 	if (TERMINAL_JOB_STATES.has(job.state)) void processWatcher.tick();
@@ -319,7 +337,10 @@ class ProcessWatcher {
 			});
 			return;
 		}
-		const notes = parsed.data.notes.length ? `\n${parsed.data.notes.join('\n')}` : '';
+		const skipped = res.skipped.length
+			? `\n${res.skipped.length} clip${res.skipped.length > 1 ? 's were' : ' was'} left on ${res.skipped.length > 1 ? 'their' : 'its'} media: the processed frames do not cover ${res.skipped.length > 1 ? 'them' : 'it'} any more`
+			: '';
+		const notes = `${parsed.data.notes.length ? `\n${parsed.data.notes.join('\n')}` : ''}${skipped}`;
 		this.opts.notify({
 			kind: 'success',
 			message: res.replaced.length
@@ -348,6 +369,7 @@ class ProcessWatcher {
 						steps: w.steps,
 						executor: 'local',
 						replaceInClips: w.replaceInClips,
+						...(w.range ? { range: w.range } : {}),
 					}).catch((e) =>
 						this.opts.notify({
 							kind: 'error',

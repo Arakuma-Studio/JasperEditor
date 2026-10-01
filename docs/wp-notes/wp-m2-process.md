@@ -141,9 +141,10 @@ skin natural, no invented texture; compression blocking cleaned up by SPAN.
 
 ## Open issues / known gaps
 
-- PRC-015: ranged versions are produced but `clip.replaceSource` does not remap `sourceIn` for them.
+- PRC-015: ranged versions are produced but `clip.replaceSource` does not remap `sourceIn` for them. *(Closed by
+  wp-m3-inpoint: source ranges, `docs/wp-notes/wp-m3-inpoint.md`.)*
 - PST-013: one frame of context before/after a processed *range* is not read: the first/last frame of a range is
-  copied instead of retimed.
+  copied instead of retimed. *(Closed by wp-m3-inpoint.)*
 - Alpha sources: only denoise/deblock (ProRes 4444 with the source alpha); geometric steps answer
   `ALPHA_UNSUPPORTED`.
 - Model removal (installed downloads) has no route; bundled models cannot be removed anyway.

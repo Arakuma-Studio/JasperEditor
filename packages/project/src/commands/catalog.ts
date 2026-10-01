@@ -53,6 +53,7 @@ const LABELS: Record<CommandType, string> = {
 	'media.register': 'Import',
 	'media.relink': 'Link Media',
 	'media.derive': 'Process Media',
+	'media.setSourceRange': 'Set Source Range',
 	'media.removeUnused': 'Remove Unused',
 	'synthetic.create': 'New Item',
 	'synthetic.update': 'Edit Item',

@@ -3,7 +3,7 @@
 // returns the processed media id and the clip references it; use_media_version switches back;
 // get_media_info lists the versions; test_remote_executor without settings is a clear "not configured" error.
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -63,7 +63,7 @@ async function fails(name: string, args: Record<string, unknown> = {}) {
 }
 
 beforeAll(async () => {
-	if (!['clip-a.mp4', 'clip-b.mp4'].every((n) => existsSync(join(FIXTURES, n))))
+	if (!['clip-a.mp4', 'clip-b.mp4', 'frame-code.mp4'].every((n) => existsSync(join(FIXTURES, n))))
 		spawnSync(process.execPath, [join(ROOT, 'scripts', 'make-fixtures.mjs')], { stdio: 'inherit' });
 	appdir = mkdtempSync(join(tmpdir(), 'jasper-mcp-proc-'));
 	engine = spawn(
@@ -119,6 +119,8 @@ describe('clip-processing MCP tools', () => {
 			'get_processing_settings',
 			'set_processing_settings',
 			'test_remote_executor',
+			'replace_footage',
+			'set_media_source_range',
 		])
 			expect(names).toContain(n);
 		expect(tools.find((t) => t.name === 'set_processing_settings')!.annotations?.destructiveHint).toBe(true);
@@ -195,4 +197,172 @@ describe('clip-processing MCP tools', () => {
 		await ok('use_media_version', { projectId, clipIds: [clipId], mediaId });
 		expect(textOf(await call('get_timeline', { projectId }))).not.toMatch(/Denoised/);
 	}, 600_000);
+});
+
+// M3 (wp-m3-inpoint, S07:PRA-003): source ranges over MCP.
+describe('source ranges (process_clip handles, use_media_version fit, sidecars, replace_footage)', () => {
+	let projectId = '';
+	let codeId = '';
+	let clipId = '';
+	let versionId = '';
+	type Clip = { id: string; mediaId?: string; sourceIn: number; start: number; duration: number };
+	const F = 23_520_000; // flicks per frame at 30 fps
+
+	/** A clip from get_timeline's table: "start–end frames" and "name [med_…] a–b s" → media id and sourceIn. */
+	async function clip(id: string): Promise<Clip> {
+		const table = textOf(await call('get_timeline', { projectId }));
+		const row = table.split('\n').find((l) => l.split(' | ')[1] === id);
+		if (!row) throw new Error(`clip ${id} not in the timeline:\n${table}`);
+		const cells = row.split(' | ');
+		const [a, b] = cells[5]!.split('–').map(Number) as [number, number];
+		const m = /\[(med_\w+)\] ([\d.]+)–/.exec(cells[6]!);
+		return {
+			id,
+			mediaId: m?.[1],
+			sourceIn: Math.round(Number(m?.[2]) * 30) * F,
+			start: a,
+			duration: b - a,
+		};
+	}
+
+	it('process_clip with handles processes only the clip range (+ handles) and keeps the source frames', async () => {
+		projectId = (await ok<{ projectId: string }>('create_project', { name: 'MCP ranges' })).projectId;
+		const imp = await ok<{ imported: { mediaId: string }[] }>('import_media', {
+			projectId,
+			paths: [join(FIXTURES, 'frame-code.mp4')],
+		});
+		codeId = imp.imported[0]!.mediaId;
+		const add = await ok<{ clips: { id: string; track: string }[] }>('add_clip', {
+			projectId,
+			media: codeId,
+			at: 0,
+			sourceInFrame: 20,
+			sourceOutFrame: 40,
+			videoOnly: true,
+		});
+		clipId = add.clips[0]!.id;
+		const r = await ok<{
+			processedMediaId: string;
+			range: { startFrame: number; endFrame: number };
+			sourceFrames: { of: string; start: number; end: number };
+			replacedClips: string[];
+		}>('process_clip', {
+			projectId,
+			clipId,
+			steps: [{ op: 'deblock', filter: 'weak' }],
+			executor: 'local',
+			handles: 6,
+			replace: true,
+			wait: true,
+		});
+		versionId = r.processedMediaId;
+		expect(r.range).toEqual({ startFrame: 14, endFrame: 46 });
+		expect(r.sourceFrames).toEqual({ of: codeId, start: 14, end: 46 });
+		expect(r.replacedClips).toEqual([clipId]);
+		const c = await clip(clipId);
+		expect(c.mediaId).toBe(versionId);
+		expect([c.start, c.duration, c.sourceIn]).toEqual([0, 20, 6 * F]);
+		const info = await ok<{
+			sourceRange: { firstFrame: number; frames: number } | null;
+			versions: { mediaId: string; sourceFrames?: { start: number; end: number } }[];
+		}>('get_media_info', { projectId, mediaId: versionId });
+		expect(info.sourceRange).toMatchObject({ firstFrame: 14, frames: 32 });
+		expect(info.versions).toEqual([
+			expect.objectContaining({ mediaId: codeId, sourceFrames: { start: 0, end: 64 } }),
+			expect.objectContaining({ mediaId: versionId, sourceFrames: { start: 14, end: 46 } }),
+		]);
+		// Back to the original: the in-point is the original's again.
+		await ok('use_media_version', { projectId, clipIds: [clipId], mediaId: codeId });
+		expect((await clip(clipId)).sourceIn).toBe(20 * F);
+	}, 600_000);
+
+	it('use_media_version refuses a version that does not cover a clip, or trims with fit: "trim"', async () => {
+		const add = await ok<{ clips: { id: string }[] }>('add_clip', {
+			projectId,
+			media: codeId,
+			at: 100,
+			sourceInFrame: 0,
+			sourceOutFrame: 30,
+			videoOnly: true,
+		});
+		const wide = add.clips[0]!.id;
+		const e = await fails('use_media_version', { projectId, clipIds: [wide], mediaId: versionId });
+		expect(e.code).toBe('E_OUT_OF_MEDIA');
+		expect(e.message).toMatch(
+			/holds frames 14–45 of frame-code\.mp4; clip clp_\w+ shows frames 0–29 \(14 before its first frame\)/,
+		);
+		const r = await ok<{ clips: { clipId: string; trimmed?: { head: number; tail: number } }[] }>(
+			'use_media_version',
+			{
+				projectId,
+				clipIds: [wide],
+				mediaId: versionId,
+				fit: 'trim',
+			},
+		);
+		expect(r.clips[0]!.trimmed).toEqual({ head: 14, tail: 0 });
+		const c = await clip(wide);
+		expect([c.start, c.duration, c.sourceIn]).toEqual([114, 16, 0]);
+	}, 120_000);
+
+	it('import_media links a render with a sidecar to its source; set_media_source_range; replace_footage keeps timing', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'jasper-mcp-sidecar-'));
+		try {
+			const render = join(dir, 'grade.mp4');
+			copyFileSync(join(FIXTURES, 'clip-a.mp4'), render);
+			writeFileSync(
+				join(dir, 'grade.json'),
+				JSON.stringify({ first_src_frame: 5, source: 'frame-code.mp4' }),
+			);
+			const imp = await ok<{
+				imported: { mediaId: string; sourceRange?: { mediaId: string; firstFrame: number } }[];
+			}>('import_media', { projectId, paths: [render] });
+			const gradeId = imp.imported[0]!.mediaId;
+			expect(imp.imported[0]!.sourceRange).toMatchObject({ mediaId: codeId, firstFrame: 5 });
+			const info = await ok<{ versions: { mediaId: string }[] }>('get_media_info', {
+				projectId,
+				mediaId: codeId,
+			});
+			expect(info.versions.map((v) => v.mediaId)).toEqual([codeId, versionId, gradeId]);
+			await ok('use_media_version', { projectId, clipIds: [clipId], mediaId: gradeId });
+			expect((await clip(clipId)).sourceIn).toBe(15 * F);
+			// Declared by hand: grade.mp4 starts at frame 10 instead. Re-declaring moves no clip, so the clip (at
+			// grade frame 15) now stands for source frame 25 and goes back to the original there.
+			await ok('set_media_source_range', {
+				projectId,
+				mediaId: gradeId,
+				sourceMediaId: codeId,
+				firstFrame: 10,
+			});
+			await ok('use_media_version', { projectId, clipIds: [clipId], mediaId: codeId });
+			expect((await clip(clipId)).sourceIn).toBe(25 * F);
+
+			// replace_footage: the frame-code clips' media becomes a render starting at source frame 12.
+			const replacement = join(dir, 'frame-code-graded.mp4');
+			copyFileSync(join(FIXTURES, 'clip-a.mp4'), replacement);
+			writeFileSync(
+				join(dir, 'frame-code-graded.json'),
+				JSON.stringify({ first_src_frame: 12, frames: 300, source: 'frame-code.mp4' }),
+			);
+			const rep = await ok<{ shiftFrames: number; basis: string; clipIds: string[]; sidecar: string }>(
+				'replace_footage',
+				{
+					projectId,
+					mediaId: codeId,
+					path: replacement,
+					fit: 'trim',
+				},
+			);
+			expect(rep).toMatchObject({
+				shiftFrames: -12,
+				basis: 'range-of-current',
+				sidecar: 'frame-code-graded.json',
+			});
+			expect((await clip(clipId)).sourceIn).toBe(13 * F);
+			const e = await fails('replace_footage', { projectId, mediaId: versionId, path: replacement });
+			expect(e.message).toMatch(/processed version/);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	}, 300_000);
 });

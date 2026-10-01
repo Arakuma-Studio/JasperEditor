@@ -72,6 +72,18 @@ export default async function mediaRoutes(app: FastifyInstance): Promise<void> {
 		}),
 	);
 
+	// M3 (S07:PRC-018): discard an uncommitted upload (Replace Footage cancelled / failed).
+	app.delete<K>(
+		'/api/media/:mediaKey',
+		guarded<K>(async (req) => {
+			record(req.params.mediaKey);
+			return media.discard(req.params.mediaKey, {
+				projectsDir: core.config.paths.projectsDir,
+				cacheDir: core.config.paths.cacheDir,
+			});
+		}),
+	);
+
 	app.post<K>(
 		'/api/media/:mediaKey/derivatives',
 		guarded<K>(async (req) => {

@@ -7,8 +7,11 @@
 //   q = 1 (anchor)                         → passed through untouched,
 //   q = 2                                  → warped `shift` of the way back towards the PREVIOUS frame.
 // Each warp moves only the frame itself along the flow to its neighbour (never a blend: no ghosting).
-// One frame in, one frame out; frames whose needed neighbour is missing (input edges) or lies across a scene
-// cut are copied.
+// One frame in, one frame out; frames whose needed neighbour lies across a scene cut are copied. At the input
+// edges a processed RANGE gets its neighbours from the source (M3, PST-013): the runner hands the step a
+// context fetcher (`setRangeContext`) that decodes the source frame just before / after the range through the
+// same head filters; those frames are used for the flow only and never emitted. Without context (whole files,
+// the very start/end of the source, a frame step ahead of de-judder) edge frames are copied.
 import type { ProcessStep } from '@jasper/project';
 import type { DecodeSpec, FrameStep, RgbFrame, StepContext } from '../types.ts';
 import { ANALYSIS_MAX_WIDTH, analyseCadence, type CadenceResult } from './cadence.ts';
@@ -136,12 +139,27 @@ export type DejudderStepOptions = {
 	inFlightPerWorker?: number;
 };
 
-export type DejudderStats = { copied: number; interpolated: number; cutGuard: number; edge: number };
+export type DejudderStats = {
+	copied: number;
+	interpolated: number;
+	cutGuard: number;
+	edge: number;
+	/** Edge frames retimed with a context frame read from outside the processed range (PST-013). */
+	context: number;
+};
+
+/**
+ * Context frames outside the processed input (PST-013): `-1` = the source frame just before the first input
+ * frame, `frames` = the one just after the last; null when the source has none.
+ */
+export type RangeContextFetcher = (relativeIndex: number) => Promise<RgbFrame | null>;
 
 export type DejudderFrameStep = FrameStep & {
 	readonly cadence: CadenceResult | null;
 	readonly decision: DejudderDecision | null;
 	readonly stats: DejudderStats;
+	/** Called by the runner before `open` when a range of a source is processed (PST-013). */
+	setRangeContext(fetch: RangeContextFetcher): void;
 };
 
 const mod3 = (n: number) => ((n % 3) + 3) % 3;
@@ -156,7 +174,8 @@ export function createDejudderStep(
 	if (!(shift > 0 && shift < 0.5)) throw new Error(`dejudder: shift must be in (0, 0.5), got ${shift}`);
 	const flow: FlowParams = { ...DEFAULT_FLOW, ...opts.flow };
 	const first = opts.firstFrameIndex ?? 0;
-	const stats: DejudderStats = { copied: 0, interpolated: 0, cutGuard: 0, edge: 0 };
+	const stats: DejudderStats = { copied: 0, interpolated: 0, cutGuard: 0, edge: 0, context: 0 };
+	let fetchContext: RangeContextFetcher | null = null;
 	let ctx: StepContext | null = null;
 	let pool: CvPool | null = null;
 	let cadence: CadenceResult | null = opts.cadence ?? null;
@@ -210,23 +229,32 @@ export function createDejudderStep(
 		return { index: near.index, width: near.width, height: near.height, data };
 	};
 
-	/** Output for `c` given its neighbours (null at the input edges). */
-	const emit = (p: RgbFrame | null, c: RgbFrame, n: RgbFrame | null): Promise<RgbFrame> => {
+	/**
+	 * Output for `c` given its neighbours (null only at the input edges, where the source context — the frame
+	 * before the first / after the last input frame — is read when a range is processed).
+	 */
+	const emit = async (p: RgbFrame | null, c: RgbFrame, n: RgbFrame | null): Promise<RgbFrame> => {
 		const q = mod3(first + c.index - phase);
 		if (q === 1) {
 			stats.copied++;
-			return Promise.resolve(c);
+			return c;
 		}
-		const other = q === 0 ? n : p;
+		let other = q === 0 ? n : p;
+		let fromContext = false;
+		if (!other && fetchContext) {
+			other = await fetchContext(q === 0 ? c.index + 1 : c.index - 1);
+			fromContext = !!other;
+		}
 		if (!other) {
 			stats.edge++;
-			return Promise.resolve(c);
+			return c;
 		}
 		if (isCut(c, other)) {
 			stats.cutGuard++;
-			return Promise.resolve(c);
+			return c;
 		}
 		stats.interpolated++;
+		if (fromContext) stats.context++;
 		return warpFrame(c, other);
 	};
 
@@ -259,6 +287,7 @@ export function createDejudderStep(
 		c.info('interpolated', stats.interpolated);
 		c.info('cutGuard', stats.cutGuard);
 		c.info('edge', stats.edge);
+		c.info('contextFrames', stats.context);
 		c.info('secondsPerFrame', frames ? processMs / 1000 / frames : 0);
 	};
 
@@ -271,6 +300,10 @@ export function createDejudderStep(
 			return decision;
 		},
 		stats,
+
+		setRangeContext(fetch: RangeContextFetcher) {
+			fetchContext = fetch;
+		},
 
 		async analyse(input: DecodeSpec, c: StepContext): Promise<void> {
 			ctx = c;
