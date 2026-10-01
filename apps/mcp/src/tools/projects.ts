@@ -4,7 +4,14 @@ import { spawn } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { EngineError } from '@jasper/engine-client';
-import { BUILTIN_PRESETS, DEFAULT_PRESET_ID, mediaUsage, mediaVersionsOf } from '@jasper/project';
+import {
+	BUILTIN_PRESETS,
+	DEFAULT_PRESET_ID,
+	mediaUsage,
+	mediaVersionsOf,
+	rootFrameSpan,
+	sourceRangeFromSidecar,
+} from '@jasper/project';
 import { z } from 'zod';
 import { defineTool, EDIT, loadDoc, READ_ONLY, requireOk, type ToolContext, transact } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
@@ -211,7 +218,7 @@ export function registerProjectTools(ctx: ToolContext): void {
 		{
 			title: 'Import media files',
 			description:
-				'Imports video, audio or image files into a project by absolute path on this machine (the engine probes each file; nothing is uploaded). Returns one mediaId per file with duration, video size/fps and audio channels. Then place them with add_clip. Re-importing a file already in the project adds a new Project item for the same media (deduped: true).',
+				'Imports video, audio or image files into a project by absolute path on this machine (the engine probes each file; nothing is uploaded). Returns one mediaId per file with duration, video size/fps and audio channels. Then place them with add_clip. Re-importing a file already in the project adds a new Project item for the same media (deduped: true). A rendered file with a source-range sidecar next to it (<name>.json or <stem>.json with "first_src_frame", e.g. a graded render with handles) records the source frames it holds and becomes a version of its source when that is in the project (matched by file name): use_media_version then switches clips to it on the same source frames.',
 			input: {
 				projectId: ProjectIdArg,
 				paths: z
@@ -251,7 +258,28 @@ export function registerProjectTools(ctx: ToolContext): void {
 			const registeredPaths = ok.filter((p) => !reg.errors.some((e) => e.path === p));
 			const imported: Record<string, unknown>[] = [];
 			if (reg.items.length) {
-				const commands = reg.items.map((item, i) => mediaRegisterCommand(item, `$m${i}`, `$i${i}`));
+				const commands: Record<string, unknown>[] = reg.items.map((item, i) =>
+					mediaRegisterCommand(item, `$m${i}`, `$i${i}`),
+				);
+				// S07:PRC-019: renders with a source-range sidecar become versions of their source (in the project or
+				// in this batch, matched by file name).
+				if (reg.items.some((it) => it.sourceHint)) {
+					const { doc: before } = await loadDoc(ctx, projectId);
+					const table: Record<string, { id: string; originalName: string; fingerprint?: string }> = {
+						...before.media,
+					};
+					reg.items.forEach((it, i) => {
+						table[`$m${i}`] = { id: `$m${i}`, originalName: it.originalName, fingerprint: it.fingerprint };
+					});
+					reg.items.forEach((it, i) => {
+						if (!it.sourceHint) return;
+						const sourceRange = sourceRangeFromSidecar({ media: table }, it.sourceHint, {
+							probe: it.probe,
+							id: `$m${i}`,
+						});
+						if (sourceRange) commands.push({ type: 'media.setSourceRange', mediaId: `$m${i}`, sourceRange });
+					});
+				}
 				const res = await transact(
 					ctx,
 					projectId,
@@ -261,6 +289,8 @@ export function registerProjectTools(ctx: ToolContext): void {
 				const r = requireOk(res);
 				const { doc } = await loadDoc(ctx, projectId);
 				reg.items.forEach((item, i) => {
+					const range = (doc.media[r.refs[`$m${i}`] ?? ''] as { sourceRange?: unknown } | undefined)
+						?.sourceRange;
 					const out = r.results[i] as { mediaId?: string; itemId?: string; deduped?: boolean } | undefined;
 					const mediaId = out?.mediaId ?? r.refs[`$m${i}`];
 					const asset = mediaId ? doc.media[mediaId] : undefined;
@@ -270,6 +300,7 @@ export function registerProjectTools(ctx: ToolContext): void {
 						mediaId,
 						itemId: out?.itemId ?? r.refs[`$i${i}`],
 						...(out?.deduped ? { deduped: true } : {}),
+						...(range ? { sourceRange: range, sidecar: item.sourceHint?.sidecar } : {}),
 						...(item.browserPlayable === 'no' ? { note: 'needs a proxy for preview (queued)' } : {}),
 					});
 				});
@@ -309,7 +340,7 @@ export function registerProjectTools(ctx: ToolContext): void {
 		{
 			title: 'Get media info',
 			description:
-				'Full details of one media asset: every stream from the probe (codec, size, fps, rotation, channels, sample rate), file locations, the engine status of its derived files (poster, waveform peaks, filmstrip, proxy), its derivation (for processed versions: the original and the recipe) and the processed versions of the same original (for use_media_version).',
+				'Full details of one media asset: every stream from the probe (codec, size, fps, rotation, channels, sample rate), file locations, the engine status of its derived files (poster, waveform peaks, filmstrip, proxy), its derivation (for processed versions: the original and the recipe), its sourceRange (which source frames the file holds) and every version of the same original with the source frames [start, end) each holds (for use_media_version).',
 			input: {
 				projectId: ProjectIdArg,
 				mediaId: z.string().min(1).describe('Media id ("med_…") from list_media or import_media'),
@@ -341,10 +372,13 @@ export function registerProjectTools(ctx: ToolContext): void {
 				engine,
 				// S07:PRA-002: processed versions (wp-m2-process).
 				derivation: asset.derivation ?? null,
+				// M3 (S07:PRC-015…019): the source frames the file holds, and per version.
+				sourceRange: asset.sourceRange ?? null,
 				versions: mediaVersionsOf(doc, mediaId).map((id, i) => ({
 					mediaId: id,
 					name: doc.media[id]?.originalName ?? id,
 					original: i === 0,
+					...((s) => (s ? { sourceFrames: { start: s.start, end: s.end } } : {}))(rootFrameSpan(doc, id)),
 					...(doc.media[id]?.derivation?.recipe.op === 'process'
 						? { steps: (doc.media[id]!.derivation!.recipe as { steps: unknown[] }).steps }
 						: {}),
