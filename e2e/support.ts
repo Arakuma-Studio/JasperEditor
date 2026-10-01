@@ -83,7 +83,7 @@ export async function playheadFrame(page: Page): Promise<number> {
 }
 
 export async function sequenceSummary(page: Page): Promise<{
-	id: string;
+	sequenceId: string;
 	settings: { width: number; height: number; frameRate: { num: number; den: number } };
 	duration: number;
 	durationFrames?: number;
