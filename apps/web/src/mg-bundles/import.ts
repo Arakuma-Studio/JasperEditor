@@ -173,6 +173,6 @@ export async function importBundleZip(
 /** Rebuilds a project-folder bundle (MGC-013); the open editor relinks when `mgBundle.rebuilt` arrives. */
 export async function rebuildBundle(engine: EngineClient, asset: MediaAsset, projectId: string) {
 	const l = asset.locators.find((x) => x.type === 'engine-store');
-	if (!l || l.type !== 'engine-store') throw new Error('The bundle is not stored by the engine');
+	if (l?.type !== 'engine-store') throw new Error('The bundle is not stored by the engine');
 	return engine.call('mgBundleRebuild', { params: { key: l.key }, body: { projectId } });
 }
