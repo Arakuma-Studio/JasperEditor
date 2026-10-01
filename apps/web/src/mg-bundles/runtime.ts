@@ -148,6 +148,8 @@ export class MgRuntime implements CompositionPreviewRuntime {
 	/** clipId → current request keys. */
 	private readonly clipKeys = new Map<string, { preview: string | null; master: string | null }>();
 	private readonly masterLookups = new Set<string>();
+	/** wp-m3-mgtext (S08:MGU-005): the clip whose texts are edited on canvas shows its live host. */
+	private textEditing: string | null = null;
 	private readonly offs: (() => void)[] = [];
 	private disposed = false;
 	private scanTimer: ReturnType<typeof setTimeout> | null = null;
@@ -185,8 +187,19 @@ export class MgRuntime implements CompositionPreviewRuntime {
 		for (const l of [...this.listeners]) l();
 	}
 
-	previewFor(_clip: RenderVisualClip, src: RenderCompositionSource, fps: number): CompositionPreview | null {
+	previewFor(clip: RenderVisualClip, src: RenderCompositionSource, fps: number): CompositionPreview | null {
+		if (clip.clipId === this.textEditing) return null;
 		return this.previews.get(layerPreviewKey(src, fps)) ?? null;
+	}
+
+	/**
+	 * On-canvas text editing (wp-m3-mgtext, S08:MGU-005): the clip shows its live frame host (the page whose DOM
+	 * the editor reads) instead of the cached preview until `null`.
+	 */
+	setTextEditing(clipId: string | null): void {
+		if (this.textEditing === clipId) return;
+		this.textEditing = clipId;
+		this.notify();
 	}
 
 	acquireHost(clipId: string): (() => void) | null {
