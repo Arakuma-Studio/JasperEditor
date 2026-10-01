@@ -12,7 +12,7 @@ const motionTemplatesPanel: PanelDefinition = {
 	keymapScope: 'motionTemplates',
 	touch: 'sheet',
 	agentDescription:
-		'Motion-graphic (fframes) templates to add to the timeline: double-click or drag a card to insert at the playhead.',
+		'Motion-graphic templates (fframes and anime · Remotion) to add to the timeline: double-click or drag a card to insert at the playhead.',
 	menu: [{ type: 'command', command: 'mg.rerender', label: 'Re-render Selected Motion Graphics' }],
 	component: lazyPanel(() => import('./MotionTemplatesPanel.tsx'), 'MotionTemplatesPanel'),
 };

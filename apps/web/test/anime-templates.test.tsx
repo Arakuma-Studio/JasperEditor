@@ -21,8 +21,10 @@ import {
 } from '../src/commands/index.ts';
 import { mgCommands, mgSpecForClip, templateUpgradeFor, updateTemplates } from '../src/commands/mg.ts';
 import { clipSections } from '../src/extensions/index.ts';
+import { buildGroups } from '../src/panels/effectControls/items.ts';
 import { HOVER_PREVIEW_DELAY_MS, PreviewThumb } from '../src/panels/motionTemplates/PreviewThumb.tsx';
 import { MgTemplateSection, templateEngineLabel } from '../src/panels/motionTemplates/TemplateSection.tsx';
+import { planStopwatch } from '../src/panels/properties/lib/model.ts';
 
 /** title-reveal@2 with an upgrade step from v1 (uppercases the title). */
 const revealV2: MgAnimeTemplateDefinition = {
@@ -194,5 +196,41 @@ describe('fframes cards keep their SVG poster and gain the hover preview (S11:AT
 		expect(thumb.getAttribute('data-preview-thumb')).toBe('playing');
 		expect(thumb.querySelector('[data-twin-poster]')).toBeNull();
 		vi.unstubAllGlobals();
+	});
+});
+
+describe('Effect Controls stopwatches on anime template params (S11:ATP-006, S05:ECP-008)', () => {
+	it('numeric and colour params have stopwatches; toggling one keys the param; fframes params stay static', async () => {
+		const { session, seqId, anime, fframes } = await openSession();
+		const state = () => session.store.getState();
+		const templateRows = (clipId: string) =>
+			buildGroups(
+				state().document,
+				state().document.sequences[seqId]!,
+				[clipOf(session, seqId, clipId)],
+				20,
+				session.ctx.registries,
+			)
+				.flatMap((g) => g.sections)
+				.find((s) => s.id === `${clipId}:template`)!.rows;
+		const color = templateRows(anime).find((r) => r.id === 'params.titleColor')!;
+		expect(color.spec.animatable).toBe('continuous');
+		expect(templateRows(anime).find((r) => r.id === 'params.title')!.spec.animatable).toBe('no');
+		expect(templateRows(fframes).every((r) => r.spec.animatable === 'no')).toBe(true);
+		const plan = planStopwatch(color, 20, true);
+		expect(plan.commands).toEqual([
+			{
+				type: 'param.setAnimated',
+				target: ['clip', anime, 'params', 'titleColor'],
+				animated: true,
+				at: { sequenceFrame: 20 },
+			},
+		]);
+		const r = session.apply({ label: 'kf', origin: 'user', sequenceId: seqId, commands: plan.commands });
+		expect(r.ok).toBe(true);
+		const after = templateRows(anime).find((x) => x.id === 'params.titleColor')!;
+		expect(after.bindings[0]!.resolved.animated).toBe(true);
+		expect(clipOf(session, seqId, anime).paramKeyframes?.titleColor).toHaveLength(1);
+		await session.close();
 	});
 });
