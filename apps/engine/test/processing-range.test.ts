@@ -3,7 +3,15 @@
 // swapped onto the ranged version exports on the native path showing the same source frames as on the
 // original (and back), and a source-range sidecar next to a file registered by path is reported.
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	copyFileSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { EngineJob, ProcessResult, RegisteredMedia } from '@jasper/api';
@@ -112,6 +120,9 @@ afterAll(async () => {
 	if (dir) rmSync(dir, { recursive: true, force: true });
 });
 
+let codedMedia: RegisteredMedia;
+const coded = () => codedMedia;
+
 describe('ranged processing (S07:PRC-015)', () => {
 	let coded: RegisteredMedia;
 	let res: ProcessResult;
@@ -119,6 +130,7 @@ describe('ranged processing (S07:PRC-015)', () => {
 
 	it('processes exactly the source frames [12, 48): result range, registry record, frame-exact content', async () => {
 		coded = await register(app, fixture('frame-code.mp4'));
+		codedMedia = coded;
 		const r = await app.inject({
 			method: 'POST',
 			url: `/api/media/${coded.mediaKey}/process`,
@@ -231,4 +243,69 @@ describe('source-range sidecars (S07:PRC-019)', () => {
 		const plain = await register(app, fixture('clip-b.mp4'));
 		expect(plain.sourceHint).toBeUndefined();
 	}, 60_000);
+});
+
+describe('discarding an uncommitted media (S07:PRC-018, Replace Footage cancelled)', () => {
+	const del = (key: string) => app.inject({ method: 'DELETE', url: `/api/media/${key}`, headers: H });
+
+	it('deletes an engine-managed copy no project uses: file, record and derivatives', async () => {
+		const src = join(dir, 'discard-me.mp4');
+		copyFileSync(fixture('clip-b.mp4'), src);
+		writeFileSync(src, Buffer.concat([readFileSync(src), Buffer.from('discard')])); // unique bytes
+		const r = await app.inject({
+			method: 'POST',
+			url: '/api/media/register',
+			headers: JSON_H,
+			payload: { projectId: 'prj_0000000000000001', paths: [src], copyIntoProject: true },
+		});
+		const reg = (r.json() as { items: RegisteredMedia[] }).items[0]!;
+		const managed = join(app.appdir, 'media', reg.mediaKey);
+		expect(existsSync(managed)).toBe(true);
+		const res = await del(reg.mediaKey);
+		expect(res.statusCode).toBe(200);
+		expect(res.json()).toEqual({ deleted: true, reason: 'deleted' });
+		expect(existsSync(managed)).toBe(false);
+		expect(existsSync(src)).toBe(true); // the user's file is untouched
+		expect(
+			(await app.inject({ method: 'GET', url: `/api/media/${reg.mediaKey}`, headers: H })).statusCode,
+		).toBe(404);
+	}, 120_000);
+
+	it("never deletes the user's own files, processed versions or media a stored project uses", async () => {
+		const byPath = await register(app, fixture('clip-a.mp4'));
+		expect((await del(byPath.mediaKey)).json()).toEqual({ deleted: false, reason: 'not-managed' });
+		expect(existsSync(fixture('clip-a.mp4'))).toBe(true);
+		const usedSrc = join(dir, 'used.mp4');
+		writeFileSync(usedSrc, Buffer.concat([readFileSync(fixture('clip-b.mp4')), Buffer.from('used')]));
+		const r = await app.inject({
+			method: 'POST',
+			url: '/api/media/register',
+			headers: JSON_H,
+			payload: { projectId: 'prj_0000000000000001', paths: [usedSrc], copyIntoProject: true },
+		});
+		const used = (r.json() as { items: RegisteredMedia[] }).items[0]!;
+		const pdir = join(app.appdir, 'projects', 'prj_00000000000000UU');
+		mkdirSync(pdir, { recursive: true });
+		writeFileSync(
+			join(pdir, 'project.jasper'),
+			JSON.stringify({ format: 'jasper-project', key: used.mediaKey }),
+		);
+		expect((await del(used.mediaKey)).json()).toEqual({ deleted: false, reason: 'in-use' });
+		expect(existsSync(join(app.appdir, 'media', used.mediaKey))).toBe(true);
+		const res = await app.inject({
+			method: 'POST',
+			url: `/api/media/${coded().mediaKey}/process`,
+			headers: JSON_H,
+			payload: {
+				steps: [{ op: 'deblock', filter: 'weak' }],
+				executor: 'local',
+				range: { startFrame: 12, endFrame: 48 },
+			},
+		});
+		const job = await waitJob((res.json() as EngineJob).id);
+		expect((await del((job.result as ProcessResult).registered.mediaKey)).json()).toEqual({
+			deleted: false,
+			reason: 'derived',
+		});
+	}, 300_000);
 });

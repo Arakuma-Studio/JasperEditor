@@ -110,7 +110,7 @@ Requirement ids: `PRC-NNN` (processing model and jobs), `PST-NNN` (steps), `PRM-
   current file is taken to be that source (a warning when the names differ); (3) only the current file does →
   the new file is taken to be the source (back to the raw); (4) otherwise both start timecodes. Without a basis
   the command fails; without `keepSourceTiming` content time is kept. In both cases every clip is checked
-  against the new file (PRC-017: `refuse` | `trim`). Processed versions are not replaced (process again).
+  against the new file (PRC-017: `refuse` | `trim`). Processed versions are not replaced (process again). A file chosen in the Replace Footage dialog but not committed (another pick, cancel/close, a failed replace, closing during the upload) is discarded at once with `DELETE /api/media/:mediaKey`, which deletes only engine-managed copies no stored project or project version references.
 - **PRC-019 (P0, M3)** Declared source ranges. `media.setSourceRange {mediaId, sourceRange | null}` records which
   source frames a file holds (origin `manual`), refusing self links, cycles and rate mismatches; a file whose
   range names a project media becomes one of its versions (`originalMediaId`, `mediaVersionsOf`). Source-range

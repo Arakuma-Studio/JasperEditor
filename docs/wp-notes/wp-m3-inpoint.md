@@ -76,7 +76,8 @@ S01 command table; ARCHITECTURE D-33 and §19.4.
   new `media.setSourceRange`.
 - `originalMediaId` / `mediaVersionsOf` follow source ranges; `processedItemName(name, recipe, range?)`;
   `tracking/request.ts` `mediaFrameRate` accepts `Pick<MediaAsset, 'probe'>`.
-- `@jasper/api`: `ProcessResult.range`, `RegisteredMedia.sourceHint`. Engine: `registerDerived` `opts.range`,
+- `@jasper/api`: `ProcessResult.range`, `RegisteredMedia.sourceHint`; route `mediaDiscard`
+  (`DELETE /api/media/:mediaKey`, `MediaDiscardResponseSchema`); engine `MediaRegistry.remove`, `MediaService.discard`. Engine: `registerDerived` `opts.range`,
   `MediaRecord.derivedFrom.range`.
 - Web: Clip menu entry `media.replaceFootage`; `IMPORT_ACCEPT` includes `.json` (sidecars); `PreparedMedia.sourceHint`;
   `switchMediaVersion(session, ids, mediaId, fit?)` result shape.
@@ -118,4 +119,8 @@ version of `crudo.mp4`; a clip on crudo frames 180…279 switches to it with in-
   range-declaring one is refused (no common basis).
 - `media.setSourceRange` moves no clip by design (it declares metadata); re-declaring the range of a version clips
   already use changes which source frames those clips stand for (documented in the MCP tool).
-- The uploaded file of a cancelled Replace Footage dialog stays in the engine store until media GC.
+- Replace Footage discards an uncommitted file at once (another pick, Cancel / Escape / ×, closing during the
+  upload — which is aborted —, or a failed replace): `DELETE /api/media/:mediaKey` (`MediaService.discard`) deletes
+  only engine-managed copies that no stored project file or version mentions; the user's own files and processed
+  versions are never deleted (`reason: not-managed | derived | in-use`). Tests: `processing-range.test.ts`
+  "discarding an uncommitted media", web `processing.test.tsx` "Replace Footage discards…".

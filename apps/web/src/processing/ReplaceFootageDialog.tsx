@@ -4,6 +4,9 @@
 // When the files say where they sit in the source (sidecar ranges or start timecodes), "Keep source timing" is
 // offered and on by default: the clips keep showing the same source frames. The dialog lists the clips the new
 // file does not hold; Replace refuses them unless "Trim them" is checked. One undo entry "Replace Footage".
+// An uploaded/registered file that is not committed — the dialog is cancelled or closed, another file is chosen,
+// the replace fails, or the dialog closes during the upload — is discarded at once (`DELETE /api/media/:key`;
+// the engine deletes only its own uncommitted copies, never the user's files or media any project uses).
 import type { RegisteredMedia } from '@jasper/api';
 import {
 	type MediaAsset,
@@ -13,7 +16,7 @@ import {
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { Button, Checkbox, Dialog, type HostedDialogProps, toast } from '@jasper/ui';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { baseName, getDesktopBridge, pickFilesInBrowser } from '../import/desktop.ts';
 import { useEngine } from '../state/engine.tsx';
 import { errorText } from './engine-jobs.ts';
@@ -69,6 +72,36 @@ export function ReplaceFootageDialog(props: HostedDialogProps<ReplaceFootageDial
 	const [keepChoice, setKeepChoice] = useState<boolean | null>(null);
 	const [trim, setTrim] = useState(false);
 	const timingKinds = asset?.kind === 'video' || asset?.kind === 'audio';
+	/** The picked file, for discarding on unmount (state is stale in cleanup). */
+	const pickedRef = useRef<Picked | null>(null);
+	const committed = useRef(false);
+	const closed = useRef(false);
+	const upload = useRef<AbortController | null>(null);
+
+	/** Discards a registered/uploaded file that no media of this project uses (S07:PRC-018). */
+	const discard = (reg: RegisteredMedia | undefined | null) => {
+		if (!reg) return;
+		const inDoc = Object.values(session.getCommitted().media).some((m) =>
+			(m as MediaAsset).locators.some((l) => l.type === 'engine-store' && l.key === reg.mediaKey),
+		);
+		if (inDoc) return;
+		void client.call('mediaDiscard', { params: { mediaKey: reg.mediaKey } }).catch(() => undefined);
+	};
+	const pick = (p: Picked | null) => {
+		if (pickedRef.current && pickedRef.current.reg.mediaKey !== p?.reg.mediaKey)
+			discard(pickedRef.current.reg);
+		pickedRef.current = p;
+		setPicked(p);
+	};
+	// biome-ignore lint/correctness/useExhaustiveDependencies: unmount only (cancel / close / Escape)
+	useEffect(
+		() => () => {
+			closed.current = true;
+			upload.current?.abort();
+			if (!committed.current) discard(pickedRef.current?.reg);
+		},
+		[],
+	);
 
 	const probe = useMemo(() => {
 		if (!picked || !asset) return null;
@@ -93,7 +126,8 @@ export function ReplaceFootageDialog(props: HostedDialogProps<ReplaceFootageDial
 				const r = await client.registerMedia({ projectId: session.projectId, paths: [path] });
 				const reg = r.items[0];
 				if (!reg) throw new Error(r.errors[0]?.message ?? 'The file could not be registered');
-				setPicked({ reg, hint: reg.sourceHint ?? null, path });
+				if (closed.current) return discard(reg);
+				pick({ reg, hint: reg.sourceHint ?? null, path });
 			} else {
 				const files = await pickFilesInBrowser(document);
 				const video = files.find((f) => !f.name.toLowerCase().endsWith('.json'));
@@ -103,20 +137,25 @@ export function ReplaceFootageDialog(props: HostedDialogProps<ReplaceFootageDial
 				}
 				const hint = await sidecarFromFiles(video, files);
 				setBusy(`Uploading ${video.name}…`);
+				upload.current = new AbortController();
 				const reg = await client.uploadFile(video, {
 					projectId: session.projectId,
 					fileName: video.name,
+					signal: upload.current.signal,
 					onProgress: ({ loaded, total }) =>
 						setBusy(`Uploading ${video.name}… ${total ? Math.round((loaded / total) * 100) : 0} %`),
 				});
-				setPicked({ reg, hint, path: null });
+				upload.current = null;
+				if (closed.current) return discard(reg);
+				pick({ reg, hint, path: null });
 			}
 			setKeepChoice(null);
 			setTrim(false);
 		} catch (e) {
-			setError(errorText(e));
+			if (!closed.current) setError(errorText(e));
 		} finally {
-			setBusy(null);
+			upload.current = null;
+			if (!closed.current) setBusy(null);
 		}
 	};
 
@@ -146,9 +185,12 @@ export function ReplaceFootageDialog(props: HostedDialogProps<ReplaceFootageDial
 			],
 		});
 		if (!r.ok) {
-			setError(r.errors[0]?.message ?? 'Replace Footage failed');
+			// The new file was not committed: discard it; the user may choose it (or another) again.
+			setError(`${r.errors[0]?.message ?? 'Replace Footage failed'}. The chosen file was discarded.`);
+			pick(null);
 			return false;
 		}
+		committed.current = true;
 		const res = r.results[0] as { clipIds?: string[]; trimmedClipIds?: string[] } | undefined;
 		toast({
 			kind: 'success',

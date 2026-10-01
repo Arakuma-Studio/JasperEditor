@@ -78,6 +78,13 @@ export class MediaRegistry {
 		await this.flush();
 	}
 
+	/** Forgets a record (M3: a discarded, never-committed upload). */
+	async remove(mediaKey: string): Promise<void> {
+		if (!this.index.items[mediaKey]) return;
+		delete this.index.items[mediaKey];
+		await this.flush();
+	}
+
 	private flush(): Promise<void> {
 		return this.mutex.run('index', () => atomicWriteJson(this.file, this.index));
 	}

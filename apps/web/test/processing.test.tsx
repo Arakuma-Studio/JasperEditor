@@ -912,4 +912,77 @@ describe('source ranges in the UI (S07:PRU-005, PRC-015…018)', () => {
 			delete (window as unknown as { jasperDesktop?: unknown }).jasperDesktop;
 		}
 	});
+
+	it('Replace Footage discards an uncommitted file (another pick, closing the dialog), never a committed one', async () => {
+		const { session, mediaId } = withShortClip();
+		const mk = (key: string, name: string) => ({
+			...result().registered,
+			mediaKey: key,
+			fingerprint: `q1:${key.padEnd(64, '0').slice(0, 64)}`,
+			originalName: name,
+			probe: { ...probe(1920, 1080, 'prores'), durationFlicks: 200 * F25 },
+		});
+		const regs = [mk('mk_first0001', 'a.mov'), mk('mk_second001', 'b.mov'), mk('mk_third0001', 'c.mov')];
+		let n = 0;
+		const { client, calls } = fakeEngine({
+			onCall: (c) => {
+				if (c.url === '/api/media/register')
+					return new Response(JSON.stringify({ items: [regs[n++]], errors: [] }), {
+						headers: { 'x-jasper-api': '1' },
+					});
+				if (c.method === 'DELETE' && c.url.startsWith('/api/media/'))
+					return new Response(JSON.stringify({ deleted: true, reason: 'deleted' }), {
+						headers: { 'x-jasper-api': '1' },
+					});
+				return undefined;
+			},
+		});
+		const deletes = () => calls.filter((c) => c.method === 'DELETE').map((c) => c.url);
+		(window as unknown as { jasperDesktop?: unknown }).jasperDesktop = {
+			runtime: 'desktop',
+			pickMedia: async () => [`/grades/${regs[n]?.originalName ?? 'x.mov'}`],
+		};
+		try {
+			const view = render(
+				<EngineProvider client={client} connectEvents={false}>
+					<ReplaceFootageDialog session={session} mediaId={mediaId} close={() => {}} />
+				</EngineProvider>,
+			);
+			await act(async () => {
+				fireEvent.click(screen.getByTestId('replace-choose'));
+			});
+			await waitFor(() => expect(screen.getByTestId('replace-new').textContent).toContain('a.mov'));
+			// Choosing another file discards the first.
+			await act(async () => {
+				fireEvent.click(screen.getByTestId('replace-choose'));
+			});
+			await waitFor(() => expect(screen.getByTestId('replace-new').textContent).toContain('b.mov'));
+			await waitFor(() => expect(deletes()).toEqual(['/api/media/mk_first0001']));
+			// Closing (Cancel / Escape / ×) discards the current pick.
+			view.unmount();
+			await waitFor(() => expect(deletes()).toEqual(['/api/media/mk_first0001', '/api/media/mk_second001']));
+			// A committed file is never discarded.
+			calls.length = 0;
+			let closed: unknown = 'open';
+			const v2 = render(
+				<EngineProvider client={client} connectEvents={false}>
+					<ReplaceFootageDialog session={session} mediaId={mediaId} close={(r) => (closed = r)} />
+				</EngineProvider>,
+			);
+			await act(async () => {
+				fireEvent.click(screen.getByTestId('replace-choose'));
+			});
+			await waitFor(() => expect(screen.getByTestId('replace-new').textContent).toContain('c.mov'));
+			await act(async () => {
+				fireEvent.click(screen.getByRole('button', { name: 'Replace' }));
+			});
+			expect(closed).toBe(true);
+			v2.unmount();
+			await new Promise((r) => setTimeout(r, 20));
+			expect(deletes()).toEqual([]);
+			expect(session.getCommitted().media[mediaId]?.originalName).toBe('c.mov');
+		} finally {
+			delete (window as unknown as { jasperDesktop?: unknown }).jasperDesktop;
+		}
+	});
 });
