@@ -39,6 +39,7 @@ import {
 	MgBundleError,
 	readProjectPackage,
 } from '../src/mg-bundles/project.ts';
+import { scaffoldProject } from '../src/mg-bundles/scaffold.ts';
 import { buildCompositionInfos, loadSchemaModule } from '../src/mg-bundles/schemas.ts';
 import { bundleMediaKey, type MgBundleService, prerenderKey } from '../src/mg-bundles/service.ts';
 import { extractZip, safeEntryPath, ZipError } from '../src/mg-bundles/zip.ts';
@@ -245,6 +246,40 @@ describe('bundle identity and versions (S08:MGC-001/010)', () => {
 		await expect(
 			checkRemotionVersion(FIXTURE_PROJECT, await readProjectPackage(FIXTURE_PROJECT)),
 		).resolves.toBeUndefined();
+	});
+});
+
+describe('new composition project (S08:MGC-015)', () => {
+	it('writes the template pinned to 4.0.499 with a schema module and manifest; refuses non-empty dirs', async () => {
+		const parent = tempAppdir('jasper-scaffold-');
+		const dir = await scaffoldProject(parent, 'my-graphics', { install: false });
+		expect(dir).toBe(join(parent, 'my-graphics'));
+		const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
+		expect(pkg.name).toBe('my-graphics');
+		expect(pkg.dependencies).toMatchObject({
+			remotion: MG_REMOTION_VERSION,
+			'@remotion/cli': MG_REMOTION_VERSION,
+		});
+		expect(pkg.jasper.schemas).toBe('./src/jasper-schemas.ts');
+		for (const f of [
+			'src/index.ts',
+			'src/Root.tsx',
+			'src/jasper-schemas.ts',
+			'jasper.mg.json',
+			'remotion.config.ts',
+		])
+			expect(existsSync(join(dir, f)), f).toBe(true);
+		expect(() => JSON.parse(readFileSync(join(dir, 'jasper.mg.json'), 'utf8'))).not.toThrow();
+		// Pinned correctly: the only complaint left is the missing install.
+		expect((await checkRemotionVersion(dir, await readProjectPackage(dir)).catch((e) => e)).code).toBe(
+			'MG_NOT_INSTALLED',
+		);
+		const again = await scaffoldProject(parent, 'my-graphics', { install: false }).catch((e) => e);
+		expect(again).toBeInstanceOf(MgBundleError);
+		expect(again.status).toBe(409);
+		expect((await scaffoldProject('relative/dir', 'x', { install: false }).catch((e) => e)).code).toBe(
+			'BAD_REQUEST',
+		);
 	});
 });
 
