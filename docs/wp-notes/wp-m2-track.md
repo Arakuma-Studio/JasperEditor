@@ -124,8 +124,8 @@ pnpm --filter @jasper/engine exec tsx scripts/track-file.ts --file <video> --ref
 
 ## Open issues
 
-- **TRU-005:** the timeline tracker/link glyphs (P1) are not done; the timeline belongs to transitions.
-- **TRK-023 P1:** "Simplify keyframes" (RDP) is not done.
+- **TRU-005:** the timeline tracker/link glyphs (P1) — done in M3, see `wp-m3-trackui.md`.
+- **TRK-023 P1:** "Simplify keyframes" — done in M3, see `wp-m3-trackui.md`.
 - **Transform overlay:** the Program monitor's transform overlay draws a corner-pinned clip's selection box unpinned (`TransformOverlay.tsx`, not ours).
 - **§8.4 parity:** no Playwright screenshot comparison; parity is measured against the resolved quad.
 - **Speed budgets:** the 25 fps budgets (TRK-014/033) are not confirmed on an idle machine. Tests assert the 2× floor (12.5 fps) only when the load allows.

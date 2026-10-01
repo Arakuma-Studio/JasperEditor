@@ -46,8 +46,9 @@ spline surfaces, tracking on nested sequences.
   `tracker.remove {trackerIds}`, `tracker.setSamples {trackerId, samples, method, merge?: 'replace'|'span'}`,
   `tracker.apply {trackerId, targetClipId, mode: 'corner-pin'|'transform', components?, range?}`. `setSamples` with
   `span` replaces only the samples covered by the new span (track-from-here corrections).
-- **TRK-005 (P0)** Targets record their source: `trackedBy = {clipId, trackerId, mode, effectInstanceId?}` on the
-  target clip (visual clips). It is informational (UI, re-apply); the keyframes are the truth.
+- **TRK-005 (P0)** Targets record their source: `trackedBy = {clipId, trackerId, mode, effectInstanceId?,
+  simplify?: {tolerance}}` on the target clip (visual clips). It is informational (UI, re-apply); the keyframes are
+  the truth.
 
 ## 3. The tracking job
 
@@ -95,9 +96,30 @@ spline surfaces, tracking on nested sequences.
 - **TRK-022 (P0)** `mode: 'transform'`: Motion `position` (and optionally `scale`, `rotation`) keyframes per frame so
   the target's anchor follows the tracked point / the quad centroid; scale = ratio of the tracked quad's diagonal
   lengths to the reference frame's; rotation = angle of the TL→TR edge relative to the reference frame.
-- **TRK-023 (P0)** Apply is one transaction ("Apply Tracking"), sets `trackedBy`, and runs `keyframes.prune`-like
-  simplification only when the user asks ("Simplify keyframes", P1: Ramer–Douglas–Peucker in value space with
-  tolerance 0.1 px).
+- **TRK-023 (P0; simplification P1, done in M3 `wp-m3-trackui`)** Apply is one transaction ("Apply Tracking"), sets
+  `trackedBy`, and simplifies the baked per-frame keys only when the user asks: `tracker.apply {simplify:
+  {tolerance}}` in the same transaction, or afterwards `keyframes.simplify` (S01:KF-010) on the tracked keys or on any
+  keyframed parameter. Default tolerance 0.1 px.
+  - **Guarantee:** at every sample — every frame the clip shows at its current timing (extended over its handles to
+    the keys around the simplified span) and every original key time — the simplified animation deviates from the
+    original by at most the tolerance. Geometry (Motion position/anchor/scale/scale width/rotation and the clip's
+    corner pin, one group per clip) is measured as the largest displacement of the drawn picture in **sequence
+    pixels**: for unpinned (affine) layers on the four box corners, which bounds every point of the picture; for
+    corner-pinned layers on a 9×9 grid over the picture through the pin's homography (the solver uses 3×3 and the
+    result is verified on 9×9). Other parameters are measured in their own units (|Δ|, Euclidean for vectors).
+    Measured with the real evaluator; when the check fails the solve is repeated with a smaller budget and finally
+    the offending sub-group keeps its original keys, so the guarantee is unconditional. Export renders the same
+    evaluated keys (warp stage), so the export moves by at most the tolerance too.
+  - **Method:** kept keys are a subset of the originals (same id, time, value). Each segment between kept keys is
+    `linear` or a fitted Bézier ease: with influence 1/3 on both sides the timing curve is a cubic Hermite in time
+    whose two slopes are fitted (Lawson-reweighted least squares towards the minimax fit; slopes ≥ 0, ≤ 40).
+    Consecutive original keys keep their original segment shape. The minimal key count is found by dynamic
+    programming over the candidate keys (pruned). Channels with identical key times (the four corners of a pin,
+    Motion from one apply) share their kept times and are solved jointly; other channels of a group are solved
+    in turn with a cumulative share of the tolerance. Keys outside the span and the segments leaving it are
+    unchanged. Vectors move along straight lines between keys (S01:KF-008), so curved paths keep more keys.
+  - The tolerance used on tracked keys is remembered in `trackedBy.simplify` and re-used by Re-apply and by a
+    re-track of linked targets.
 - **TRK-024 (P0)** Manual correction = keyframe editing: dragging corner handles on the Program monitor at a frame
   adds/updates keyframes of the corner-pin params at that frame (stopwatch semantics, S01:KF-005). "Track from here"
   uses the current (corrected) corners at the playhead as a new reference and re-tracks forward (or backward),
@@ -146,7 +168,26 @@ spline surfaces, tracking on nested sequences.
   the pinned quad; each drag is one gesture writing the corner params (keyframe at the playhead when animated).
 - **TRU-004 (P0)** Effect Controls editor for `jasper.corner-pin` (`effectEditors`): shows "Driven by tracker
   <name> on <clip>" with Re-apply and Unlink when `trackedBy` points at it.
-- **TRU-005 (P1)** Timeline: the plate clip shows a small tracker glyph; the target clip a link glyph.
+- **TRU-005 (P1, done in M3)** Timeline glyphs (`clipDecorations` extension point, drawn inside the virtualised
+  clip view; no transport subscription, so nothing re-renders on playhead moves):
+  - plate clip: a tracker badge in the name strip (planar/point icon, count when > 1) whose tooltip lists each
+    tracker (span, frames, mean confidence, low and lost frame counts, or "Not tracked"); and one confidence strip
+    per tracker (≤ 3 stacked, the active one taller) along the bottom of the body over exactly the tracked span,
+    coloured per frame (≥ 0.8 good, ≥ 0.5 fair, > 0 low, 0 lost — lost frames have their own look), drawn in canvas
+    tiles over the visible part only with the worst confidence of each pixel column at low zoom; hovering the strip
+    names the frame's timecode and confidence;
+  - target clip: a link glyph, tooltip "Follows <tracker> on <plate> · Corner Pin|Motion" ("Tracker removed" when
+    dangling);
+  - clicking a glyph (Selection tool) selects the plate, makes the tracker active, focuses Properties and reveals
+    the Tracking section; it never starts a drag, and the strips leave the trim edge zones to the timeline.
+- **TRU-006 (P1, M3)** "Simplify Keyframes…" (TRK-023): a dialog with the tolerance (px, presets, remembered), a
+  live preview through a gesture (Program monitor and Effect Controls show the result; no History entry until
+  Apply), the key counts, max/mean deviation, a deviation-over-time graph against the tolerance and a per-parameter
+  table; Apply = one History entry "Simplify Keyframes". Entry points: Properties ▸ Tracking "Simplify…" (the keys
+  the tracker drives), the corner-pin editor (with "simplified ≤ x px" in its Driven-by line), the Apply Tracking
+  dialog option "Simplify keyframes" (same entry as the apply), the Effect Controls keyframe context menu (the
+  selected keys; with fewer than three, their parameters — any keyframed parameter), the timeline clip menu and
+  Clip ▸ Simplify Keyframes… (every keyframed parameter of the selected clips).
 
 ## 7. Agents (TRA)
 
@@ -158,6 +199,9 @@ spline surfaces, tracking on nested sequences.
   - `get_tracker {projectId, trackerId, frames?}` → corners at given frames + confidence summary;
   - `set_corner_pin {projectId, clipId, corners (sequence px or normalised), at?}` for manual placement.
 - **TRA-002 (P0)** Agents verify with `render_frame`; the tool descriptions say so.
+- **TRA-003 (P1, M3)** `simplify_keyframes {projectId, clipId (+trackedOnly) | trackerId | targets | keyframeIds,
+  tolerance? (0.1), dryRun?}` → key counts and the measured max/mean deviation per group; `apply_tracking` gains
+  `simplifyTolerance`.
 
 ## 8. Acceptance tests
 
@@ -177,3 +221,10 @@ spline surfaces, tracking on nested sequences.
    corner pin (one entry) → drag a corner at a frame (keyframe updated, one entry) → undo chain.
 7. **MCP**: `add_tracker` + `track` (wait) + `apply_tracking` + `render_frame` on the fixture project produces a
    pinned overlay whose corners in the PNG are within 3 px of the fixture's ground truth.
+8. **Simplification** (M3): property tests (solver and documents: random dense tracks, mixed interpolations,
+   spans, locked keys) and the trailer's real tracks (`MatsSmileTrailer/mg/public/tracks/*.json` baked as corner
+   pins / Motion): the drawn quad (`resolveSceneAt`) and the warp stage's per-frame maps move ≤ tolerance at every
+   frame; one undoable entry; the MCP end-to-end test simplifies the tracked fixture pin and the rendered corners
+   stay within 3 px of the ground truth.
+9. **Timeline glyphs** (M3): badge/strip/link render with the right tooltips, clicks reveal the tracker, strips
+   aggregate the worst confidence per column, no re-render on transport changes; e2e `tracking.spec.ts`.
