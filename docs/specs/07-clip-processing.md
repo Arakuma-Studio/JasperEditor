@@ -152,8 +152,10 @@ Requirement ids: `PRC-NNN` (processing model and jobs), `PST-NNN` (steps), `PRM-
   `atadenoise` (temporal, fast: thresholds `0a/1a/2a = 0.02 + 0.08·s`, `0b/1b/2b = 0.04 + 0.16·s`, `s=9`),
   `fftdnoiz` (medium: `sigma = 2 + 10·s`, `prev=1:next=1`), `nlmeans` (slow, strongest: `s = 1 + 7·s`, `p=7`, `r=15`).
 - **PST-021 (P0)** `{op:'deblock', filter: 'weak'|'strong', block?}` → `deblock=filter=<f>:block=<b|8>`; placed
-  before denoise when both are requested (the UI orders steps: deblock → denoise → stabilise → de-judder →
-  upscale; agents may order freely).
+  before denoise when both are requested (the UI orders steps: deblock → denoise → de-judder → stabilise →
+  upscale; agents may order freely). *(Revised 2026-10-01: de-judder before stabilise — vid.stab smooths the
+  camera path per frame and hides most of a 2-2-1 cadence from the analysis: on crudo.mp4 37–40 s the short/long
+  ratio went 0.52 → 0.86 and `auto` skipped the retiming; the trailer pipeline also de-juddered first.)*
 
 ### 4.4 Super-resolution upscale
 
