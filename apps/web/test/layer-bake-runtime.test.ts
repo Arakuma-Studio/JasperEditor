@@ -11,6 +11,7 @@ import {
 	createSeededIdSource,
 	defaultRegistries,
 	LUMETRI_EFFECT_ID,
+	type ProjectDocument,
 	type RenderVisualClip,
 } from '@jasper/project';
 import { EditorSession } from '@jasper/session';
@@ -139,6 +140,40 @@ describe('LayerBakeRuntime (S11:LBK-010)', () => {
 			await vi.waitFor(() => expect(engine.calls).toHaveLength(2), { timeout: 3000 });
 		} finally {
 			rt.dispose();
+		}
+	});
+
+	it('a layer edited just before its request fires is not stored under its old identity', async () => {
+		vi.useFakeTimers();
+		const { session, graded } = makeSession();
+		const engine = fakeEngine();
+		const rt = new LayerBakeRuntime(session, engine.link);
+		try {
+			await vi.advanceTimersByTimeAsync(10);
+			// The request is due 2 s after the scan; the text changes 50 ms before that (the rescan follows 150 ms
+			// after the change, i.e. after the request fired).
+			await vi.advanceTimersByTimeAsync(1940);
+			session.apply({
+				label: 'edit',
+				origin: 'user',
+				commands: [
+					{ type: 'clip.update', clipIds: [graded], patch: { content: { text: 'Late edit' } } } as Command,
+				],
+			});
+			await vi.advanceTimersByTimeAsync(100);
+			// The stale request is dropped; the edited layer is requested once, 2 s after the rescan.
+			expect(engine.calls).toHaveLength(0);
+			await vi.advanceTimersByTimeAsync(2500);
+			expect(engine.calls).toHaveLength(1);
+			const sent = engine.calls[0]!.body.envelope as { document: ProjectDocument; revision: number };
+			expect(JSON.stringify(sent.document)).toContain('Late edit');
+			expect(sent.revision).toBe(session.revision);
+			engine.finish('job_0000000000000001', 'e'.repeat(40));
+			await vi.advanceTimersByTimeAsync(10);
+			expect(rt.previewFor(clipOf(session, graded))?.url).toBe(`/mg/layers/${'e'.repeat(40)}/preview.webm`);
+		} finally {
+			rt.dispose();
+			vi.useRealTimers();
 		}
 	});
 

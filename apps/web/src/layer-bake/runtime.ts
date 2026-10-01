@@ -220,8 +220,30 @@ export class LayerBakeRuntime implements BakedLayerRuntime {
 
 	// ------------------------------------------------------------------ jobs
 
+	/** Identity of a clip in a document (null: the clip is no longer a graded DOM layer of that sequence). */
+	private identityIn(doc: ProjectDocument, sequenceId: string, clipId: string): string | null {
+		const seq = doc.sequences[sequenceId];
+		if (!seq?.clips[clipId]) return null;
+		const snap = buildRenderSnapshot(doc, sequenceId, { resolveMedia: () => null, resolveFont: () => null });
+		const clip = snap.videoTracks.flatMap((t) => t.clips).find((c) => c.clipId === clipId);
+		if (!clip || !hasDomColorEffects(clip)) return null;
+		return layerIdentity(
+			clip,
+			{ width: seq.settings.width, height: seq.settings.height, fps: seq.settings.frameRate },
+			doc.media,
+		);
+	}
+
 	private async submit(sequenceId: string, clipId: string, identity: string): Promise<void> {
 		if (this.disposed) return;
+		// The engine renders the document sent now: the preview is stored under the identity of the clip in that very
+		// document. When the layer changed since it was scheduled (the rescan may still be pending), schedule anew.
+		const doc = this.session.getCommitted();
+		const revision = this.session.revision;
+		if (this.identityIn(doc, sequenceId, clipId) !== identity) {
+			this.scanSoon(0);
+			return;
+		}
 		this.status.set(identity, { state: 'queued' });
 		try {
 			const job = await this.engine.client.call('layerBakePreview', {
@@ -229,7 +251,7 @@ export class LayerBakeRuntime implements BakedLayerRuntime {
 					...(this.session.projectId ? { projectId: this.session.projectId } : {}),
 					sequenceId,
 					clipId,
-					envelope: exportEnvelope(this.session.getCommitted(), this.session.revision),
+					envelope: exportEnvelope(doc, revision),
 				},
 			});
 			this.jobs.set(job.id, identity);
