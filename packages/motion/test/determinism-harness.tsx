@@ -255,8 +255,10 @@ export function checkTextAnimation(impl: TextAnimationImpl, spec?: TextAnimation
 			}
 			if (failures.length) break;
 		}
-		// What React renders (useAnimeValues, rounded) equals the un-animated layer exactly.
-		const restAt = ctx.side === 'in' ? ctx.durationMs : 0;
+		// What React renders (useAnimeValues, rounded) equals the un-animated layer exactly. Both sides rest at the end
+		// of their timeline: the layer seeks an Out window mirrored (its last frame is the timeline's start,
+		// `activeTextAnimation` in @jasper/motion/text), so an Out timeline also ends at rest.
+		const restAt = ctx.durationMs;
 		for (const [i, t] of valuesAt(build(), restAt).entries())
 			for (const k of UNIT_KEYS) {
 				const want = REST_UNIT_VALUES[k as keyof UnitValues];

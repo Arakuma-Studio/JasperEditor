@@ -99,11 +99,11 @@ describe('rest state (S11:ANM-009, TXA-010)', () => {
 		expect(v.block().dataset.textAnimating).toBeUndefined();
 		expect(v.block().outerHTML).toBe(view(docWith({}), 3).block().outerHTML);
 	});
-	it('FIX-003: before the faces are ready the text is hidden and never split', () => {
-		// The face is still loading on the first render (FontFace settles asynchronously).
+	it('FIX-003: before the faces are ready the text layer is not mounted, so it is never split or measured', () => {
+		// The face is still loading on the first render (FontFace settles asynchronously); the per-layer font gate
+		// of SequenceComposition (wp-m2-anime-core) keeps font-dependent layers unmounted until their faces load.
 		const v = view(docWith({ textAnimation: SLIDE_FADE }, 60, 'https://fonts.test/slow.woff2'), 3);
-		expect(v.block().style.visibility).toBe('hidden');
-		expect(v.block().dataset.textAnimating).toBeUndefined();
+		expect(v.container.querySelector('[data-text-block]')).toBeNull();
 		expect(v.units()).toHaveLength(0);
 	});
 });

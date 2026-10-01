@@ -17,7 +17,7 @@ export type SessionHostState =
 
 function demoStore(): { store: ProjectStore; projectId: string } {
 	const ids = createRandomIdSource();
-	const store = new MemoryProjectStore({ ids });
+	const store = new MemoryProjectStore({ ids, mgTemplates: mgRegistry });
 	const doc = createEmptyProject({ ids, name: 'Demo project', preset: 'hd-1080p-29.97' });
 	store.put(doc);
 	return { store, projectId: doc.projectId };
@@ -31,7 +31,7 @@ function useProjectSession(projectId: string): SessionHostState {
 		let cancelled = false;
 		setState({ status: 'opening' });
 		const target =
-			projectId === DEMO_PROJECT_ID ? demoStore() : { store: new EngineProjectStore(engine), projectId };
+			projectId === DEMO_PROJECT_ID ? demoStore() : { store: new EngineProjectStore(engine, { mgTemplates: mgRegistry }), projectId };
 		EditorSession.open({
 			store: target.store,
 			projectId: target.projectId,

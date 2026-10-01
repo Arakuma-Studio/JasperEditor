@@ -11,6 +11,7 @@ import {
 	createRandomIdSource,
 	type IdSource,
 	loadProject,
+	type MgTemplateRegistry,
 	makeEnvelope,
 	type ProjectDocument,
 } from '@jasper/project';
@@ -24,6 +25,8 @@ import {
 
 export type EngineProjectStoreOptions = {
 	ids?: IdSource;
+	/** Re-stamps template renderers that contradict the registry on load (S11:ATP-002). */
+	mgTemplates?: MgTemplateRegistry;
 	/** `savedBy.platform` written into envelopes (`web` | `desktop` | `pwa`). */
 	platform?: string;
 	appVersion?: string;
@@ -66,6 +69,7 @@ function randomSessionId(): string {
 
 export class EngineProjectStore implements ProjectStore {
 	private readonly ids: IdSource;
+	private readonly mgTemplates: MgTemplateRegistry | undefined;
 	private readonly platform: string;
 	private readonly appVersion: string | undefined;
 	private readonly now: () => Date;
@@ -85,6 +89,7 @@ export class EngineProjectStore implements ProjectStore {
 		opts: EngineProjectStoreOptions = {},
 	) {
 		this.ids = opts.ids ?? createRandomIdSource();
+		this.mgTemplates = opts.mgTemplates;
 		this.platform = opts.platform ?? 'web';
 		this.appVersion = opts.appVersion;
 		this.now = opts.now ?? (() => new Date());
@@ -128,7 +133,7 @@ export class EngineProjectStore implements ProjectStore {
 
 	async open(projectId: string, opts: { readOnly?: boolean } = {}): Promise<OpenedProject> {
 		const r = await this.engine.getProject(projectId);
-		const loaded = loadProject(r.envelope, { ids: this.ids });
+		const loaded = loadProject(r.envelope, { ids: this.ids, mgTemplates: this.mgTemplates });
 		const held = this.leases.get(projectId);
 		return {
 			document: loaded.document,
@@ -178,7 +183,7 @@ export class EngineProjectStore implements ProjectStore {
 
 	async duplicate(projectId: string, name: string): Promise<string> {
 		const r = await this.engine.getProject(projectId);
-		const loaded = loadProject(r.envelope, { ids: this.ids });
+		const loaded = loadProject(r.envelope, { ids: this.ids, mgTemplates: this.mgTemplates });
 		return this.createFrom(loaded.document, name);
 	}
 
@@ -208,7 +213,7 @@ export class EngineProjectStore implements ProjectStore {
 		} catch {
 			throw new EngineError('BAD_REQUEST', 'The file is not a JasperEditor project (invalid JSON)');
 		}
-		const loaded = loadProject(raw, { ids: this.ids });
+		const loaded = loadProject(raw, { ids: this.ids, mgTemplates: this.mgTemplates });
 		return this.createFrom(loaded.document, loaded.document.name);
 	}
 

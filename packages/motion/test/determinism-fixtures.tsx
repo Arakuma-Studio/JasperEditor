@@ -55,7 +55,8 @@ export function riseImpl(
 			order.forEach((u, k) => {
 				const props: Record<string, [number, number]> = {};
 				for (const p of KEYS)
-					props[p] = side === 'in' ? [HIDDEN[p], REST_UNIT_VALUES[p]] : [REST_UNIT_VALUES[p], HIDDEN[p]];
+					// Both sides end at rest: the layer plays an Out window mirrored (activeTextAnimation).
+					props[p] = [side === 'in' ? HIDDEN[p] : HIDDEN[p] * 0.5, REST_UNIT_VALUES[p]];
 				timeline.add(
 					targets[u]!,
 					{ ...props, duration: per, ease: resolveEase(String(params.ease ?? 'outBack')) },

@@ -873,6 +873,9 @@ export function applyClipPatch(doc: DDoc, seq: DSeq, clip: DClip, p: ClipPatch, 
 		if (p.box) Object.assign(t.box, p.box);
 		layoutText(t, h, seq.settings.width);
 	}
+	// M2 (S11:ATP-009): a template upgrade runs before `params`, so params in the same patch target the new version.
+	if (p.template !== undefined) need(clip.kind === 'motion-graphic', 'template');
+	applyTemplatePatch(doc, seq, clip, p, h);
 	// M2 (S08:MGC-007): composition clips take `props` (whole override object) and `canvas`.
 	if (p.props !== undefined) need(clip.kind === 'composition', 'props');
 	if (!applyCompositionPatch(doc, clip, p, h) && (p.params !== undefined || p.canvas !== undefined)) {
@@ -895,8 +898,6 @@ export function applyClipPatch(doc: DDoc, seq: DSeq, clip: DClip, p: ClipPatch, 
 	applyTextAnimationPatch(doc, seq, clip, p, h);
 	if (p.shape !== undefined) need(clip.kind === 'shape', 'shape');
 	applyShapePatch(doc, seq, clip, p, h);
-	if (p.template !== undefined) need(clip.kind === 'motion-graphic', 'template');
-	applyTemplatePatch(doc, seq, clip, p, h);
 	if (p.blendMode !== undefined) {
 		need(!!caps?.hasOpacity && clip.kind !== 'captions', 'blendMode');
 		c.blendMode = p.blendMode;

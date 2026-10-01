@@ -6,6 +6,7 @@ import {
 	createRandomIdSource,
 	type IdSource,
 	loadProject,
+	type MgTemplateRegistry,
 	makeEnvelope,
 	type ProjectDocument,
 	type ProjectEnvelope,
@@ -28,13 +29,16 @@ type Entry = {
 export class MemoryProjectStore implements ProjectStore {
 	private readonly projects = new Map<string, Entry>();
 	readonly ids: IdSource;
+	private readonly mgTemplates: MgTemplateRegistry | undefined;
 	private readonly now: () => string;
 	/** Number of successful `save` calls (useful in tests of autosave). */
 	saveCount = 0;
 	viewSaveCount = 0;
 
-	constructor(opts: { ids?: IdSource; now?: () => string } = {}) {
+	/** `mgTemplates` re-stamps template renderers that contradict the registry on load (S11:ATP-002). */
+	constructor(opts: { ids?: IdSource; now?: () => string; mgTemplates?: MgTemplateRegistry } = {}) {
 		this.ids = opts.ids ?? createRandomIdSource();
+		this.mgTemplates = opts.mgTemplates;
 		this.now = opts.now ?? (() => new Date().toISOString());
 	}
 
@@ -72,7 +76,7 @@ export class MemoryProjectStore implements ProjectStore {
 	}
 	async open(projectId: string, opts: { readOnly?: boolean } = {}): Promise<OpenedProject> {
 		const e = this.entry(projectId);
-		const loaded = loadProject(JSON.parse(JSON.stringify(e.envelope)), { ids: this.ids });
+		const loaded = loadProject(JSON.parse(JSON.stringify(e.envelope)), { ids: this.ids, mgTemplates: this.mgTemplates });
 		return {
 			document: loaded.document,
 			revision: e.envelope.revision,
@@ -135,7 +139,7 @@ export class MemoryProjectStore implements ProjectStore {
 	}
 	async importFile(file: Blob | { path: string }): Promise<string> {
 		if (!(file instanceof Blob)) throw new Error('MemoryProjectStore imports Blobs only');
-		const loaded = loadProject(JSON.parse(await file.text()), { ids: this.ids });
+		const loaded = loadProject(JSON.parse(await file.text()), { ids: this.ids, mgTemplates: this.mgTemplates });
 		return this.copyAs(loaded.document, loaded.document.name);
 	}
 	async acquireLease(

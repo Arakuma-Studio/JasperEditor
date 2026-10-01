@@ -289,6 +289,18 @@ describe('template version upgrade (S11:ATP-009, FIX-005)', () => {
 		// one transaction = one undo step: the previous document is untouched
 		expect((before.sequences[h.seqId]!.clips[a] as Mg).template.version).toBe(1);
 	});
+	it('params in the same patch as an upgrade target the new version', () => {
+		const { h, a } = setup();
+		h.ok([
+			{
+				type: 'clip.update',
+				clipId: a,
+				patch: { template: { version: 2 }, params: { heading: 'Hola', scale: 2 } },
+			},
+		]);
+		expect(mg(h, a).template.version).toBe(2);
+		expect(mg(h, a).params).toEqual({ heading: 'Hola', color: [1, 1, 1, 1], scale: 2 });
+	});
 	it('re-stamps the renderer when a new version changes it (fframes → anime)', () => {
 		const { h, f } = setup();
 		h.ok([{ type: 'clip.update', clipId: f, patch: { template: { version: 2 } } }]);
