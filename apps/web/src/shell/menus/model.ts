@@ -91,6 +91,7 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('app.keyboardShortcuts', 'Keyboard Shortcuts…'),
 			sub('Preferences', [
 				c('app.preferences', 'General…'),
+				c('cache.preferences', 'Media Cache…'),
 				sub('Appearance', [
 					c('view.theme.darkest', 'Darkest'),
 					c('view.theme.dark', 'Dark'),

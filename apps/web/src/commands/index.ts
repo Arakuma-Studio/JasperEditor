@@ -3,6 +3,7 @@
 // Register the Program overlay that attaches the layer-bake runtime.
 import '../layer-bake/commands.ts';
 import { appCommands } from './app.ts';
+import { cacheCommands } from './cache.ts';
 import { clipboardCommands } from './clipboard.ts';
 import { colorCommands } from './color.ts';
 import { compositionCommands } from './composition.ts';
@@ -49,6 +50,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	shapeCommands,
 	clipboardCommands,
 	layerCommands,
+	cacheCommands,
 ];
 
 let registered = false;

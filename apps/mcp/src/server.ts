@@ -6,6 +6,7 @@ import { loadDoc, makeContext, type ToolContext } from './context.ts';
 import { pickSequence, timelineTable } from './format.ts';
 import type { EngineConnection } from './link.ts';
 import { ANIMATION_GUIDE, registerAnimationTools } from './tools/animation.ts';
+import { CACHE_GUIDE, registerCacheTools } from './tools/cache.ts'; // wp-m3-cachegc
 import { CLIPBOARD_GUIDE, registerClipboardTools } from './tools/clipboard.ts';
 import { COLOR_GUIDE, registerColorTools } from './tools/color.ts';
 import { COMPOSITION_GUIDE, registerCompositionTools } from './tools/compositions.ts';
@@ -49,6 +50,7 @@ const FULL_GUIDE = [
 	SHAPES_GUIDE,
 	TEMPLATES_GUIDE,
 	CLIPBOARD_GUIDE,
+	CACHE_GUIDE,
 ].join('\n\n');
 
 export type JasperMcpOptions = {
@@ -78,6 +80,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerShapeTools(ctx);
 	registerTemplateTools(ctx);
 	registerClipboardTools(ctx);
+	registerCacheTools(ctx);
 	registerResources(ctx);
 	registerPrompts(ctx);
 	return { server };
