@@ -3,7 +3,7 @@
 import { compositionOfClip, mergeProps } from '../composition/props.ts';
 import { shapeIntrinsicBox } from '../factories.ts';
 import { clipEngines, type EngineId, isBoundedContent, kindCapabilities } from '../registry/kinds.ts';
-import type { Animatable, RGBA } from '../schema/common.ts';
+import type { Animatable, Keyframe, RGBA } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { FontRef, MediaAsset } from '../schema/media.ts';
 import {
@@ -77,6 +77,11 @@ export type RenderVisualSource =
 				canvas: { width: number; height: number };
 				/** M2 (S11:ATP-002): absent = `fframes`. */
 				renderer?: MgRenderer;
+				/**
+				 * wp-m2-anime-templates (S11:ATP-006): keyframes of anime template params by name (content time,
+				 * unevaluated like shapes, RND-001); the layer evaluates them with the shared evaluator. Anime only.
+				 */
+				paramKeyframes?: Record<string, Keyframe<unknown>[]>;
 			};
 	  }
 	/** M2 (S11:SHP-001): a shape; Animatables unevaluated (RND-001), evaluated per frame by the layer. */
@@ -336,6 +341,10 @@ export function buildRenderSnapshot(
 							params: c.params,
 							canvas,
 							...(renderer === 'anime' ? { renderer } : {}),
+							// wp-m2-anime-templates (S11:ATP-006)
+							...(renderer === 'anime' && c.paramKeyframes && Object.keys(c.paramKeyframes).length > 0
+								? { paramKeyframes: c.paramKeyframes as Record<string, Keyframe<unknown>[]> }
+								: {}),
 						},
 					};
 					box = canvas;

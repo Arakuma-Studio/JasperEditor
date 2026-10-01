@@ -298,7 +298,7 @@ describe('command contracts (handlers owned by the wave-1 packages)', () => {
 		// Existing fields are unaffected.
 		expect(h.tx([{ type: 'clip.update', clipId: id, patch: { name: 'Renamed' } }]).ok).toBe(true);
 	});
-	it('clip.addMotionGraphic stamps the anime renderer from the registry; template upgrades name their owner', () => {
+	it('clip.addMotionGraphic stamps the anime renderer from the registry; upgrades need an installed target', () => {
 		const info = (renderer?: 'anime'): MgTemplateInfo => ({
 			id: renderer ? 'title-reveal' : 'card',
 			version: 1,
@@ -338,7 +338,11 @@ describe('command contracts (handlers owned by the wave-1 packages)', () => {
 		expect(a.template).toEqual({ id: 'title-reveal', version: 1, renderer: 'anime' });
 		expect(f.template).toEqual({ id: 'card', version: 1 });
 		const up = h.tx([{ type: 'clip.update', clipId: refs.$a!, patch: { template: { version: 2 } } }]);
-		expect(fail(up)?.message).toMatch(/wp-m2-anime-templates/);
+		// wp-m2-anime-templates implemented the upgrade (S11:ATP-009): version 2 is not installed here.
+		expect(fail(up)).toMatchObject({
+			code: 'E_INVALID_PARAM',
+			message: expect.stringMatching(/not installed/),
+		});
 	});
 });
 

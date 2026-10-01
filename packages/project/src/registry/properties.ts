@@ -13,7 +13,7 @@ import {
 import { contentTimeAt } from '../derive/index.ts';
 import { shapeIntrinsicBox } from '../factories.ts';
 import { evaluate } from '../keyframes.ts';
-import type { Animatable, RGBA } from '../schema/common.ts';
+import type { Animatable, Keyframe, RGBA } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { MgCompositionInfo } from '../schema/media.ts';
 import { BLEND_MODES, type Clip, type EffectInstance, type Sequence } from '../schema/sequence.ts';
@@ -805,8 +805,82 @@ export function paramsPropertySpecs(template: MgTemplateInfo): PropertySpec[] {
 		defaults: template.defaults,
 		nested: false,
 		tuples: true,
-	}).map(({ valueSchema: _v, ...s }) => s);
+	}).map(({ valueSchema: _v, ...s }) =>
+		// wp-m2-anime-templates (S11:ATP-006): numeric/colour params of anime templates are keyframable.
+		isKeyframableTemplateParam(template, s) ? { ...s, animatable: 'continuous' as const } : s,
+	);
 }
+
+// ---- wp-m2-anime-templates (S11:ATP-006): keyframable params of anime templates ---------------------------
+// Storage: the static value stays in `clip.params[name]` (validated by the template schema, read by every M1
+// consumer); keyframes live in `clip.paramKeyframes[name]` (content time, flicks). fframes template params stay
+// static: their masters are rendered by `jasper-mg` from the params alone.
+
+/** Numeric (non-integer) and colour params of anime templates may carry keyframes. */
+export function isKeyframableTemplateParam(
+	template: Pick<MgTemplateInfo, 'renderer'>,
+	s: Pick<PropertySpec, 'kind' | 'ui'>,
+): boolean {
+	return (
+		template.renderer === 'anime' && (s.kind === 'color' || (s.kind === 'number' && s.ui.precision !== 0))
+	);
+}
+
+type MgParamFields = {
+	params?: Record<string, unknown>;
+	paramKeyframes?: Record<string, Keyframe<unknown>[]>;
+};
+
+/** The Animatable view of one template param: `params[name]` + `paramKeyframes[name]` (read-only). */
+export function templateParamAnimatable(clip: Pick<Clip, 'kind'>, name: string): Animatable<unknown> {
+	const c = clip as MgParamFields;
+	return { value: c.params?.[name], keyframes: c.paramKeyframes?.[name] ?? [] };
+}
+
+/** Names of the params of a motion-graphic clip that carry at least one keyframe. */
+export function animatedTemplateParams(clip: Pick<Clip, 'kind'>): string[] {
+	const kf = (clip as MgParamFields).paramKeyframes ?? {};
+	return Object.keys(kf).filter((k) => (kf[k]?.length ?? 0) > 0);
+}
+
+const templateRanges = new WeakMap<object, Map<string, PropertySpec>>();
+function keyframableSpecs(template: MgTemplateInfo): Map<string, PropertySpec> {
+	let m = templateRanges.get(template.paramsSchema);
+	if (!m) {
+		m = new Map(
+			paramsPropertySpecs(template)
+				.filter((s) => s.animatable !== 'no')
+				.map((s) => [s.key.slice('params.'.length), s]),
+		);
+		templateRanges.set(template.paramsSchema, m);
+	}
+	return m;
+}
+
+/**
+ * Params of an anime template at content time `t` (flicks): every keyframed param evaluated with the shared
+ * evaluator (S01:KF-009) and clamped to its range (colours to 0..1), the others as stored. Keyframes on params
+ * that are not keyframable for this template (unknown names, fframes templates) are ignored.
+ */
+export function evaluateTemplateParams(
+	template: MgTemplateInfo | undefined,
+	params: Record<string, unknown>,
+	paramKeyframes: Record<string, readonly Keyframe<unknown>[]> | undefined,
+	t: number,
+): Record<string, unknown> {
+	if (!template || !paramKeyframes) return params;
+	const specs = keyframableSpecs(template);
+	let out: Record<string, unknown> | null = null;
+	for (const [name, kfs] of Object.entries(paramKeyframes)) {
+		const s = specs.get(name);
+		if (!s || !kfs || kfs.length === 0) continue;
+		const clamp = s.kind === 'color' ? { min: 0, max: 1 } : { min: s.range?.min, max: s.range?.max };
+		out ??= { ...params };
+		out[name] = evaluate({ value: params[name], keyframes: kfs as Keyframe<unknown>[] }, t, { clamp });
+	}
+	return out ?? params;
+}
+// ---- end wp-m2-anime-templates ---------------------------------------------------------------------------
 
 /**
  * Specs for a composition clip's `props.<dotted.path>` (S08:MGU-003) from the composition's `propsSchema`
@@ -961,6 +1035,8 @@ export function readStoredProperty(ctx: PropertyContext, s: PropertySpec): unkno
 		const fx = ((ctx.clip as { effects?: EffectInstance[] }).effects ?? []).find((e) => e.id === a);
 		return fx?.params[b!];
 	}
+	// wp-m2-anime-templates (S11:ATP-006): keyframable template params read as an Animatable view.
+	if (s.group === 'params' && s.animatable !== 'no') return templateParamAnimatable(ctx.clip, a!);
 	return getAt(ctx.clip, s.storagePath);
 }
 

@@ -5,6 +5,7 @@ import type { Issue } from './commands/types.ts';
 import { createRandomIdSource, type IdSource } from './ids.ts';
 import { checkInvariants, type RepairEntry, repairDocument } from './invariants.ts';
 import type { EffectRegistry } from './registry/effects.ts';
+import type { MgTemplateRegistry } from './registry/mg.ts';
 import { CURRENT_SCHEMA_VERSION, type ProjectDocument, ProjectDocumentSchema } from './schema/document.ts';
 
 export type MigrationStep = {
@@ -104,7 +105,12 @@ export type LoadResult = {
 /** Full load pipeline (S01:PER-004). Throws only when the data is not a project at all. */
 export function loadProject(
 	raw: unknown,
-	opts: { ids?: IdSource; effects?: EffectRegistry } = {},
+	opts: {
+		ids?: IdSource;
+		effects?: EffectRegistry;
+		/** wp-m2-anime-templates (S11:ATP-002): re-stamps template renderers that contradict the registry. */
+		mgTemplates?: MgTemplateRegistry;
+	} = {},
 ): LoadResult {
 	const m = migrate(raw);
 	if (m.readOnly) {
@@ -127,12 +133,13 @@ export function loadProject(
 	}
 	let document = parsed.data as ProjectDocument;
 	let repairs: RepairEntry[] = [];
-	let issues = checkInvariants(document, { effects: opts.effects });
+	const invOpts = { effects: opts.effects, mgTemplates: opts.mgTemplates };
+	let issues = checkInvariants(document, invOpts);
 	if (issues.length > 0) {
-		const r = repairDocument(document, opts.ids ?? createRandomIdSource());
+		const r = repairDocument(document, opts.ids ?? createRandomIdSource(), { mgTemplates: opts.mgTemplates });
 		document = r.document;
 		repairs = r.report;
-		issues = checkInvariants(document, { effects: opts.effects });
+		issues = checkInvariants(document, invOpts);
 	}
 	return { document, readOnly: false, migration: m.report, repairs, issues };
 }
