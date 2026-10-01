@@ -165,7 +165,8 @@ type ProjectSettings = {
   mediaPolicy: { copyOnImport: boolean }; // desktop: copy imported files into the project media folder
   proxyPolicy: ProxyPolicy;               // LIFE-020
   defaultStillDurationFrames: number;     // default 150 (5 s at 30 fps), rescaled per sequence rate
-  defaultTransitionFrames: number;        // default 30
+  defaultTransitionFrames: number;        // default 30 (video transitions)
+  defaultAudioTransitionFrames?: number;  // M3 (S10:TUI-032): audio transitions; absent = defaultTransitionFrames
   defaultScaling: 'none' | 'fit-if-larger' | 'fit' | 'fill'; // on placement, FX-004
 };
 ```
@@ -775,7 +776,7 @@ type Transition = {
 - **TRN-003 (P0)** **Handles.** A centered transition of duration `d` needs `ceil(d/2)` frames of extra content after the outgoing clip's out-point and `floor(d/2)` frames before the incoming clip's in-point. For media clips these come from the media (CLP-005 bounds). If there is not enough media, the command either shortens the transition to what is available (`handles: 'shorten'`, the default for agents) or repeats the edge frames (`handles: 'freeze'`, which Premiere does with a warning stripe). The UI uses `freeze` and shows the stripe. Generators always have handles.
 - **TRN-004 (P0)** **Fades are one-sided transitions.** A video fade-in is a cross-dissolve (or dip-to-black) with only `incomingClipId`, at the clip's head. A video fade-out is one with only `outgoingClipId`, at the tail. Audio fades are one-sided "constant power" or "constant gain" transitions on audio tracks. The model has no separate fade fields. The UI offers fade handles on clip corners that create or resize these transitions.
 - **TRN-005 (P0)** Transitions follow their clips. When a move separates the two clips of a two-sided transition, the transition is deleted in the same transaction and the result carries a warning (`W_TRANSITION_REMOVED`), which the UI shows as a toast. The user can undo the move to get it back. Deleting a clip deletes transitions that reference it. Splitting a clip moves a tail transition to the right part.
-- **TRN-006 (P1)** Default transition (Premiere Ctrl+D / Ctrl+Shift+D) is a user preference: effect id and default duration (`settings.defaultTransitionFrames`).
+- **TRN-006 (P1)** Default transition (Premiere Ctrl+D / Ctrl+Shift+D) is a user preference: effect id per medium and the alignment of two-sided ones (S10:TUI-031/033); the default durations are project settings, one per medium (`settings.defaultTransitionFrames` for video, `settings.defaultAudioTransitionFrames` for audio, falling back to the video one; S10:TUI-032). `transition.add` without `duration` and `transition.applyDefault` use the length of the track's medium; `transition.applyDefault` takes an optional `alignment` for two-sided transitions (default `center`).
 
 Beyond the template: the template had fixed per-item fade lengths and no transitions.
 
