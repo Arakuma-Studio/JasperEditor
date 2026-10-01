@@ -105,20 +105,47 @@
                       "shuffle",
                       "irregular",
                       "waapi",
+                      "set",
+                      "sync",
+                      "keepTime",
+                      "Timer",
+                      "JSAnimation",
+                      "Animatable",
+                      "Draggable",
+                      "WAAPIAnimation",
+                      "ScrollObserver",
+                      "TextSplitter",
+                      "AutoLayout",
+                      "createLayout",
+                      "split",
+                      "scrollContainers",
+                      "text",
+                      "utils",
                       "createTimeline",
+                      "Timeline",
                       "createScope",
+                      "Scope",
                       "engine",
+                      "globals",
                       "createSeededRandom"
                     ],
                     "message": "S11:ANM-006: autoplaying, wall-clock or unseeded anime.js API, or a runtime-only name (createPausedTimeline, useAnimeDom, seededRandom) (scripts/check-anime.mjs)."
                   },
                   "animejs/timeline": {
-                    "importNames": ["createTimeline"],
-                    "message": "S11:ANM-006: use createPausedTimeline (scripts/check-anime.mjs)."
+                    "importNames": ["createTimeline", "Timeline"],
+                    "message": "S11:ANM-006: timelines autoplay by default; use createPausedTimeline (scripts/check-anime.mjs)."
                   },
                   "animejs/utils": {
-                    "importNames": ["random", "randomPick", "shuffle", "createSeededRandom"],
-                    "message": "S11:ANM-007: use seededRandom(hash32(...))."
+                    "importNames": [
+                      "random",
+                      "randomPick",
+                      "shuffle",
+                      "set",
+                      "sync",
+                      "keepTime",
+                      "createSeededRandom"
+                    ],
+                    "message": "S11:ANM-006/007: set/sync/keepTime play on the wall clock; use seededRandom(hash32(...)) for randomness (scripts/check-anime.mjs)."
                   },
                   "animejs/easings": {
                     "importNames": ["irregular"],
@@ -164,13 +191,29 @@
                       "randomPick",
                       "shuffle",
                       "irregular",
-                      "waapi"
+                      "waapi",
+                      "set",
+                      "sync",
+                      "keepTime",
+                      "Timer",
+                      "JSAnimation",
+                      "Animatable",
+                      "Draggable",
+                      "WAAPIAnimation",
+                      "ScrollObserver",
+                      "TextSplitter",
+                      "AutoLayout",
+                      "createLayout",
+                      "split",
+                      "scrollContainers",
+                      "text",
+                      "utils"
                     ],
                     "message": "S11:ANM-006: autoplaying, wall-clock or unseeded anime.js API (scripts/check-anime.mjs)."
                   },
                   "animejs/utils": {
-                    "importNames": ["random", "randomPick", "shuffle"],
-                    "message": "S11:ANM-007: use seededRandom(hash32(...))."
+                    "importNames": ["random", "randomPick", "shuffle", "set", "sync", "keepTime"],
+                    "message": "S11:ANM-006/007: set/sync/keepTime play on the wall clock; use seededRandom(hash32(...)) for randomness (scripts/check-anime.mjs)."
                   },
                   "animejs/easings": {
                     "importNames": ["irregular"],

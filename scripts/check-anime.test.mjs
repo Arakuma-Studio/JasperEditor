@@ -11,16 +11,19 @@ import {
 	chainNames,
 	checkRepo,
 	findViolations,
+	hasSeed,
 	importsOf,
 	parseImports,
 	RUNTIME_ONLY_NAMES,
 	stripComments,
+	timelineIdentifiers,
 } from './check-anime.mjs';
 
 const rules = (rel, text) => findViolations(rel, text).map((v) => v.rule);
 const MOTION = 'packages/motion/src/text/fade.ts';
 const RUNTIME = 'packages/motion/src/runtime/x.ts';
 const COMP = 'packages/compositions/src/layers/TextLayer.tsx';
+const TEMPLATE = 'packages/motion/src/templates/x.tsx';
 const USES = "import { createPausedTimeline } from '@jasper/motion';\n";
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -98,10 +101,43 @@ describe('check-anime dependency rules (S11:ANM-001/022/023)', () => {
 		);
 		expect(Object.keys(RUNTIME_ONLY_NAMES)).toEqual([
 			'createTimeline',
+			'Timeline',
 			'createScope',
+			'Scope',
 			'engine',
+			'globals',
 			'createSeededRandom',
 		]);
+	});
+	it('bans the Timeline class and the autoplaying utils (review fixes)', () => {
+		// `new Timeline()` autoplays by default; `set()` / `sync()` resume a JSAnimation / Timer on the wall clock
+		expect(
+			findViolations(TEMPLATE, "import { Timeline } from 'animejs/timeline';\nnew Timeline({});"),
+		).toEqual([
+			{ line: 1, column: 1, rule: 'runtime-only-name', match: 'Timeline' },
+			{ line: 2, column: 1, rule: 'new-tickable', match: 'new Timeline' },
+		]);
+		expect(rules(TEMPLATE, "import { set, sync as s, keepTime } from 'animejs/utils';")).toEqual([
+			'banned-name',
+			'banned-name',
+			'banned-name',
+		]);
+		expect(rules(RUNTIME, "import { set } from 'animejs/utils';")).toEqual(['banned-name']);
+		expect(
+			rules('packages/motion/src/runtime/index.ts', "export { Timer, utils, text } from 'animejs';"),
+		).toEqual(['banned-name', 'banned-name', 'banned-name']);
+		expect(rules(TEMPLATE, "import { Timeline, globals } from 'animejs';")).toEqual([
+			'animejs-root-import',
+			'runtime-only-name',
+			'runtime-only-name',
+		]);
+		expect(rules(RUNTIME, "import { Timeline } from 'animejs/timeline';")).toEqual([]);
+		// types are not values
+		expect(rules(TEMPLATE, "import type { Timeline } from 'animejs/timeline';")).toEqual([]);
+		expect(rules(TEMPLATE, "import { type Timeline } from 'animejs/timeline';")).toEqual([]);
+		expect(rules(MOTION, 'new Timer({}); new JSAnimation(o, {}); utils.sync(f); utils.keepTime(g);')).toEqual(
+			['new-tickable', 'new-tickable', 'utils-sync', 'utils-sync'],
+		);
 	});
 });
 
@@ -168,6 +204,69 @@ describe('check-anime determinism rules (S11:ANM-006)', () => {
 			[10, 'timeline-set-call'],
 			[11, 'timeline-set-call'],
 		]);
+	});
+	it('treats values from timeline factories, annotated and renamed timelines as timelines (review fixes)', () => {
+		const src = [
+			"import { templateTimeline } from './common.tsx';",
+			'const t = templateTimeline();',
+			't.set(o, { x: 1 });',
+			't.call(() => {});',
+			'function make(): Timeline { return createPausedTimeline(); }',
+			'const a = make(); a.reverse(); make().call(f);',
+			'function build(x: Timeline, y?: ReturnType<typeof templateTimeline>) { x.set(o, {}); y.call(f); }',
+			'const { timeline: r } = built; r.set(o, {});',
+			'let u; u = createPausedTimeline(); this.intro = new Timeline(); u.call(f); this.intro.set(o, {});',
+			'const m = new Map(); m.set(k, v); const c: Map<string, Timeline> = new Map(); c.set(k, v); f.call(this);',
+			'const n = { duration: 1 }; const w = templateTimeline(); w.call(f);',
+		].join('\n');
+		expect(findViolations(TEMPLATE, src).map((v) => [v.line, v.rule])).toEqual([
+			[3, 'timeline-set-call'],
+			[4, 'timeline-set-call'],
+			[6, 'play'],
+			[6, 'timeline-set-call'],
+			[7, 'timeline-set-call'],
+			[7, 'timeline-set-call'],
+			[8, 'timeline-set-call'],
+			[9, 'new-tickable'],
+			[9, 'timeline-set-call'],
+			[9, 'timeline-set-call'],
+			[11, 'timeline-set-call'],
+		]);
+		expect([...timelineIdentifiers('const $t = make$(); function make$(): Timeline {}')]).toEqual([
+			'make$',
+			'$t',
+		]);
+	});
+	it('wall clock through optional chaining and computed access; shorthand loop / autoplay (review fixes)', () => {
+		expect(
+			rules(
+				TEMPLATE,
+				"performance?.now(); Date?.now(); performance['now'](); Math?.random(); Date ?. now();",
+			),
+		).toEqual(['performance-now', 'date-now', 'performance-now', 'math-random', 'date-now']);
+		expect(rules(COMP, 'globalThis.performance?.["now"]();')).toEqual(['performance-now']);
+		expect(rules(COMP, 'const nowish = performance.timeOrigin; const dateNow = 1;')).toEqual([]);
+		expect(
+			rules(TEMPLATE, 'const loop = 2;\ntl.add(o, { duration, loop });\ntl.add(o, { loop, x: 1 });'),
+		).toEqual(['loop', 'loop']);
+		expect(rules(TEMPLATE, 'for (const loop of loops) f(loop); const loopDelayMs = 1;')).toEqual([]);
+		expect(rules(TEMPLATE, 'createPausedTimeline({ autoplay });')).toEqual(['autoplay']);
+		expect(rules(TEMPLATE, 'createPausedTimeline({ autoplay: play, x: 1 });')).toEqual(['autoplay']);
+		expect(rules(TEMPLATE, 'createPausedTimeline({ autoplay: false });')).toEqual([]);
+	});
+	it('a stagger seed must be an expression, not a literal false / 0 / undefined (review fixes)', () => {
+		for (const seed of ['false', '0', 'undefined', 'void 0', 'null', 'true', '0.0'])
+			expect(rules(TEMPLATE, `stagger(10, { from: 'random', seed: ${seed} });`), seed).toEqual([
+				'unseeded-stagger',
+			]);
+		expect(rules(TEMPLATE, 'stagger(10, { jitter: 2, seed: false, from: 1 });')).toEqual([
+			'unseeded-stagger',
+		]);
+		expect(rules(TEMPLATE, "stagger(10, { from: 'random', seed });")).toEqual([]);
+		expect(rules(TEMPLATE, "stagger(10, { seed: s, from: 'random' });")).toEqual([]);
+		expect(rules(TEMPLATE, "stagger(10, { from: 'random', seed: hash32(id, 'order') >>> 0 });")).toEqual([]);
+		expect(hasSeed('{ seed: 0x0 }')).toBe(false);
+		expect(hasSeed('{ seed: 7 }')).toBe(true);
 	});
 	it('bans animate() (also WAAPI el.animate), engine.update, timers, plain seeks outside the runtime', () => {
 		expect(rules(MOTION, 'animate(o, { x: 1 }); el.animate([], 100);')).toEqual(['animate', 'animate']);
@@ -245,14 +344,30 @@ describe('Biome noRestrictedImports mirrors the import bans (ANM-012)', () => {
 		expect(p.animejs.importNames).toEqual(
 			expect.arrayContaining([...BANNED_NAMES, ...Object.keys(RUNTIME_ONLY_NAMES)]),
 		);
-		expect(p['animejs/timeline'].importNames).toEqual(['createTimeline']);
-		expect(p['animejs/utils'].importNames).toEqual(['random', 'randomPick', 'shuffle', 'createSeededRandom']);
+		expect(p['animejs/timeline'].importNames).toEqual(['createTimeline', 'Timeline']);
+		expect(p['animejs/utils'].importNames).toEqual([
+			'random',
+			'randomPick',
+			'shuffle',
+			'set',
+			'sync',
+			'keepTime',
+			'createSeededRandom',
+		]);
 	});
 	it('the runtime may use scope, engine-free timelines and the seeded generator', () => {
 		const p = restricted('packages/motion/src/runtime/**');
 		expect(p['animejs/scope']).toBeUndefined();
 		expect(p['animejs/timeline']).toBeUndefined();
-		expect(p['animejs/utils'].importNames).toEqual(['random', 'randomPick', 'shuffle']);
+		expect(p['animejs/utils'].importNames).toEqual([
+			'random',
+			'randomPick',
+			'shuffle',
+			'set',
+			'sync',
+			'keepTime',
+		]);
+		expect(p.animejs.importNames).toEqual([...BANNED_NAMES]);
 		expect(p['animejs/waapi']).toBeTypeOf('string');
 	});
 	it('other sources never import anime.js', () => {
