@@ -86,6 +86,7 @@ export function createVidstabStep(step: VidstabStepParams, opts: VidstabStepOpti
 				if (motions.length % 8 === 0) ctx.analysisProgress(Math.min(1, motions.length / input.frames));
 			}
 			vs.detectFree();
+			ctx.analysisProgress(1);
 			const tDetect = performance.now();
 			// Frames the decoder did not deliver get no correction (the runner verifies the count anyway).
 			while (motions.length < input.frames) motions.push(new Float64Array(0));
@@ -125,7 +126,9 @@ export function createVidstabStep(step: VidstabStepParams, opts: VidstabStepOpti
 					borders: crop ? 'crop (optimal static zoom, edges replicated)' : 'keep (no zoom, black borders)',
 				},
 			});
-			ctx.info('zoomPercent', Number(path.zoom.toFixed(3)));
+			// the static zoom (optzoom 1) is included in every frame's zoom; the L1 path zooms per frame
+			const zoomUsed = Math.max(path.zoom, stats.zoom.max);
+			ctx.info('zoomPercent', Number(zoomUsed.toFixed(3)));
 			ctx.info('correction', {
 				meanShiftPx: Number(stats.meanShift.toFixed(3)),
 				maxShiftPx: Number(stats.maxShift.toFixed(3)),
@@ -136,8 +139,8 @@ export function createVidstabStep(step: VidstabStepParams, opts: VidstabStepOpti
 				pathSeconds: Number(((tPath - tDetect) / 1000).toFixed(3)),
 			});
 			ctx.info('framesWithoutMotion', empty);
-			if (crop && path.zoom > 10) {
-				ctx.note(`stabilize: vid.stab needed a ${path.zoom.toFixed(1)} % zoom to hide the borders`);
+			if (crop && zoomUsed > 10) {
+				ctx.note(`stabilize: vid.stab needed a ${zoomUsed.toFixed(1)} % zoom to hide the borders`);
 			}
 			if (motions.length > 1 && empty > motions.length / 4) {
 				ctx.note(`stabilize: no usable motion found in ${empty} of ${motions.length} frames (low contrast)`);

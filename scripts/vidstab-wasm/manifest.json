@@ -1,0 +1,80 @@
+{
+  "$comment": "Inputs of scripts/vidstab-wasm/build.sh (vid.stab -> vidstab.wasm). The vid.stab pin must equal scripts/ffmpeg/manifest.json `vidstab.commit` / `source.packages.vidstab` (build.sh checks). vid.stab is LGPL-2.1-or-later since the August 2026 relicense (RELICENSE.md, issue #165); the builtin LP solver is used (GLPK is GPL and never linked), no OpenMP.",
+  "vidstab": {
+    "repository": "https://github.com/georgmartius/vid.stab",
+    "commit": "e2445c4081658318223762a696eb1c645c2d7168",
+    "commitDate": "2026-08-14T20:12:27Z",
+    "version": "1.4.0",
+    "license": "LGPL-2.1-or-later",
+    "url": "https://github.com/georgmartius/vid.stab/archive/e2445c4081658318223762a696eb1c645c2d7168.tar.gz",
+    "sha256": "39506541c073b2be1e376b59fc90e6a79ba4d16cbf4a4a2a58a6badc3a4ce1c3",
+    "sources": [
+      "frameinfo.c",
+      "transformtype.c",
+      "libvidstab.c",
+      "transform.c",
+      "transformfixedpoint.c",
+      "motiondetect.c",
+      "serialize.c",
+      "localmotion2transform.c",
+      "boxblur.c",
+      "vsvector.c",
+      "lensdistortion.c",
+      "lensmap.c",
+      "cpudetect.c",
+      "motiondetect_dispatch.c",
+      "motiondetect_opt.c",
+      "l1campathoptimization.c",
+      "lpsolver_ipm.c"
+    ],
+    "defines": ["NDEBUG", "USE_IPM", "VS_HAVE_LPSOLVER", "VIDSTAB_STATIC_DEFINE"]
+  },
+  "toolchain": {
+    "name": "wasi-sdk",
+    "version": "34.0",
+    "tag": "wasi-sdk-34",
+    "clang": "23.1.0-wasi-sdk",
+    "hosts": {
+      "linux-x64": {
+        "url": "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-linux.tar.gz",
+        "sha256": "b761e3a0721dbae9c09a0059e5fdb2bf917d1b4a8a7b430fb3b5aafb0984b2c4"
+      },
+      "linux-arm64": {
+        "url": "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-arm64-linux.tar.gz",
+        "sha256": "f7e243dff54d60bcc576e94d6166b69f410f2500ae4a9ceef34315be10e77971"
+      },
+      "darwin-x64": {
+        "url": "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-macos.tar.gz",
+        "sha256": "87d27fa8adc68dee59bfbf2e22a6d34ef717c34d6bf1d8af2a56fc929d9ce0eb"
+      },
+      "darwin-arm64": {
+        "url": "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-arm64-macos.tar.gz",
+        "sha256": "9c59398106b417f8f14913380fdf0097a8cc0ff4af9eb3ce0065a859e88d49e9"
+      },
+      "win32-x64": {
+        "url": "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-windows.tar.gz",
+        "sha256": "cccb5c323a9b34f0349a9b09e8804a0a7632c68c3310f4b5f437ed57d7e71d8f"
+      }
+    }
+  },
+  "cflags": [
+    "--target=wasm32-wasip1",
+    "-O3",
+    "-msimd128",
+    "-ffast-math",
+    "-std=gnu99",
+    "-ffunction-sections",
+    "-fdata-sections",
+    "-Wall",
+    "-Wno-pointer-sign",
+    "-Wno-unused-function",
+    "-Wno-unused-variable"
+  ],
+  "ldflags": [
+    "-mexec-model=reactor",
+    "-Wl,--gc-sections",
+    "-Wl,--strip-all",
+    "-Wl,-z,stack-size=1048576",
+    "-Wl,--max-memory=4294967296"
+  ]
+}
