@@ -15,6 +15,7 @@ import { act, render } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
 	type BakedLayerPreview,
+	bakedFrameUrl,
 	DEFAULT_RENDER_OPTIONS,
 	hasDomColorEffects,
 	layerComponentFor,
@@ -26,7 +27,7 @@ import {
 	TextLayer,
 } from '../src/index.ts';
 
-function makeDoc(graded: boolean): RenderSnapshot {
+function makeDoc(graded: boolean, o: { opacity?: number; fadeIn?: number } = {}): RenderSnapshot {
 	const ids = createCounterIdSource(1);
 	const base = createEmptyProject({ ids, name: 'B', preset: 'hd-1080p-30' });
 	const { document, result } = applyTransaction(
@@ -54,6 +55,20 @@ function makeDoc(graded: boolean): RenderSnapshot {
 							},
 						]
 					: []),
+				...(o.opacity !== undefined
+					? [{ type: 'param.set', target: ['clip', '$t', 'opacity'], value: o.opacity }]
+					: []),
+				...(o.fadeIn
+					? [
+							{
+								type: 'transition.add',
+								clipId: '$t',
+								edge: 'in',
+								effectId: 'jasper.cross-dissolve',
+								duration: o.fadeIn,
+							},
+						]
+					: []),
 			] as never,
 		},
 		{ ids, now: () => 't', revision: 0, registries: defaultRegistries() },
@@ -65,6 +80,16 @@ function makeDoc(graded: boolean): RenderSnapshot {
 
 const textOf = (doc: RenderSnapshot) =>
 	doc.videoTracks.flatMap((t) => t.clips).find((c) => c.kind === 'text')!;
+
+/** Product of the CSS opacities from `el` up to the composition root. */
+function cssOpacity(el: Element | null): number {
+	let k = 1;
+	for (let e = el as HTMLElement | null; e; e = e.parentElement) {
+		const v = e.style?.opacity;
+		if (v !== undefined && v !== '') k *= Number(v);
+	}
+	return k;
+}
 
 function renderFrame(doc: RenderDoc, options: RenderOptions = DEFAULT_RENDER_OPTIONS) {
 	return render(
@@ -167,8 +192,9 @@ describe('baked DOM layers (S11:LBK-010)', () => {
 								...c,
 								effects: [],
 								baked: {
-									url: 'http://e/mg/layers/k/graded.mov',
+									url: 'http://e/mg/layers/k/graded.png?sig=s&exp=1',
 									startFrame: 0,
+									frames: 60,
 									rect: { x: 10, y: 20, w: 300, h: 100 },
 								},
 							}
@@ -182,6 +208,63 @@ describe('baked DOM layers (S11:LBK-010)', () => {
 		expect(baked).not.toBeNull();
 		expect(baked.style.left).toBe('10px');
 		expect(baked.style.width).toBe('300px');
+		// The straight-alpha PNG of the current frame (frame 10 of the sequence = frame 10 of the master).
+		expect(baked.querySelector('img')?.getAttribute('src')).toBe(
+			'http://e/mg/layers/k/graded.png?sig=s&exp=1&n=10',
+		);
 		expect(r.container.querySelector('[data-text-block]')).toBeNull();
+		expect(bakedFrameUrl('http://e/x.png', 3)).toBe('http://e/x.png?n=3');
+	});
+
+	describe('opacity and transition fades reach the frame exactly once', () => {
+		// Frame 10 of a 20-frame fade-in at opacity 50: the DOM layer draws at 0.5 × 10/20 (ClipLayer's fade factor).
+		const faded = () => makeDoc(true, { opacity: 50, fadeIn: 20 });
+
+		it('the ungraded layer (grade pending) applies its opacity and the fade itself', () => {
+			const doc = faded();
+			const clip = textOf(doc);
+			expect(clip.fades?.length).toBeGreaterThan(0);
+			const r = renderFrame(doc);
+			const k = cssOpacity(r.container.querySelector('[data-text-block]'));
+			expect(k).toBeGreaterThan(0.1);
+			expect(k).toBeLessThan(0.45);
+		});
+
+		it('the graded preview carries opacity and fades in its pixels: no CSS opacity on top', async () => {
+			const doc = faded();
+			const clip = textOf(doc);
+			const rt = testRuntime();
+			setBakedLayerRuntime(rt);
+			rt.set(clip.clipId, { url: 'http://localhost/mg/layers/k/preview.webm', rect: null });
+			const r = renderFrame(doc);
+			const baked = r.container.querySelector('[data-baked="preview"]');
+			expect(baked).not.toBeNull();
+			expect(cssOpacity(baked)).toBe(1);
+			expect(cssOpacity(baked?.querySelector('video') ?? null)).toBe(1);
+		});
+
+		it('the injected graded master carries them too: no CSS opacity on top', () => {
+			const doc = faded();
+			const clip = textOf(doc);
+			const withMaster: RenderSnapshot = {
+				...doc,
+				videoTracks: doc.videoTracks.map((t) => ({
+					...t,
+					clips: t.clips.map((c) =>
+						c.clipId === clip.clipId
+							? {
+									...c,
+									effects: [],
+									baked: { url: 'http://e/mg/layers/k/graded.png', startFrame: 0, frames: 60 },
+								}
+							: c,
+					),
+				})),
+			};
+			const r = renderFrame(withMaster, { ...DEFAULT_RENDER_OPTIONS, isPreview: false });
+			const baked = r.container.querySelector('[data-baked="master"]');
+			expect(baked).not.toBeNull();
+			expect(cssOpacity(baked)).toBe(1);
+		});
 	});
 });

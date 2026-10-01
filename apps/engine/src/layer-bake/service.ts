@@ -4,7 +4,8 @@
 //   <appdir>/cache/layers/<key>/
 //     master.mov    ProRes 4444 yuva444p10le, straight alpha, BT.709 — the drawn span (non-static layers)
 //     still.png     one straight-alpha PNG (static layers, LBK-004; single frames of stills, LBK-025)
-//     graded.mov    graded entries: the bake + the clip's colour runs (lut3d) — Remotion path (LBK-010)
+//     graded/       graded entries: the bake + the clip's colour runs (lut3d) (+ the fades of a still) as straight-
+//                   alpha PNG frames `000000.png …` — Remotion path (LBK-010), served as `graded.png?n=<frame>`
 //     preview.webm  graded entries: VP9 alpha at half size — the Program preview of a graded DOM layer
 //     meta.json     {key, recipe, rect, frames, …, lastUsedAt}; GC removes entries unused for 14 days (LBK-021)
 //
@@ -23,7 +24,7 @@ import {
 	resolveLayerProps,
 } from '@jasper/project';
 import { quoteFilterPath } from '../color/extension.ts';
-import { colorRunFilters, SWS_FLAGS } from '../export/native.ts';
+import { colorRunFilters, fadeFilters, SWS_FLAGS } from '../export/native.ts';
 import type { NativeExtension } from '../export/native-ext.ts';
 import { mediaKeyOf, type PlannedExport } from '../export/planner.ts';
 import type { JobContext } from '../jobs/types.ts';
@@ -62,15 +63,27 @@ import {
 
 /** Entries unused for this long are removed by the GC pass (S11:LBK-021). */
 export const LAYER_CACHE_TTL_MS = 14 * 24 * 3600 * 1000;
+/**
+ * Version of the graded entries' recipe (bumped when graded pixels change for the same inputs). 2: graded stills
+ * carry the transition fades; the Remotion-path master is a PNG frame sequence (alpha honoured).
+ */
+export const GRADE_VERSION = 2;
+/** Directory of a graded entry's PNG frames (Remotion path). */
+export const GRADED_FRAMES_DIR = 'graded';
+/** File name of graded frame `n`. */
+export const gradedFrameName = (n: number) => `${String(n).padStart(6, '0')}.png`;
 /** Border alpha (0…255) above which a cropped bake counts as clipped and is rendered full frame instead. */
 export const RECT_CLIP_ALPHA = 2;
 
-/** Engine-relative URL of a cache file (served by `GET /mg/layers/:key/:file`, signable for renders). */
+/**
+ * Engine-relative URL of a cache file (served by `GET /mg/layers/:key/:file`, signable for renders). `graded.png`
+ * is the graded frame sequence: one signed URL for the entry, the frame chosen by `n` (`&n=<frame>`).
+ */
 export const layerFileUrl = (key: string, file: string) => `/mg/layers/${key}/${file}`;
 export const LAYER_FILES: ReadonlySet<string> = new Set([
 	'master.mov',
 	'still.png',
-	'graded.mov',
+	'graded.png',
 	'preview.webm',
 ]);
 
@@ -115,7 +128,10 @@ export type BakePlan = {
 export type GradePlan = {
 	key: string;
 	source: { key: string; recipe: BakeVariant['recipe'] };
-	/** ffmpeg filters of the colour runs over the bake's frames (`n` counts from its frame 0). */
+	/**
+	 * ffmpeg filters over the bake's frames (`n` counts from its frame 0): the colour runs, then — for a static
+	 * still — the transition fades (masters and single frames have them baked in).
+	 */
 	filters: string[];
 	frames: number;
 	fps: { num: number; den: number };
@@ -169,6 +185,10 @@ export class LayerBakeService {
 	private gcTimer: NodeJS.Timeout | null = null;
 	private bytes = 0;
 	private bytesPending: Promise<void> | null = null;
+	/** Keys read by running jobs (lease count): the GC never removes them (S11:LBK-021). */
+	private readonly leases = new Map<string, number>();
+	/** Entries the GC is removing right now: lookups wait for the removal and miss. */
+	private readonly removing = new Map<string, Promise<void>>();
 	/** Bakes rendered / reused since start (tests, logs). */
 	readonly stats = { rendered: 0, reused: 0, graded: 0, clippedFallbacks: 0 };
 
@@ -211,10 +231,17 @@ export class LayerBakeService {
 			let total = 0;
 			for (const name of await readdir(this.dir).catch(() => [] as string[])) {
 				if (!KEY_RE.test(name)) continue;
-				for (const f of await readdir(join(this.dir, name)).catch(() => [] as string[]))
-					total += await stat(join(this.dir, name, f))
-						.then((s) => s.size)
-						.catch(() => 0);
+				for (const f of await readdir(join(this.dir, name)).catch(() => [] as string[])) {
+					const p = join(this.dir, name, f);
+					const files =
+						f === GRADED_FRAMES_DIR
+							? (await readdir(p).catch(() => [] as string[])).map((g) => join(p, g))
+							: [p];
+					for (const file of files)
+						total += await stat(file)
+							.then((s) => s.size)
+							.catch(() => 0);
+				}
 			}
 			this.bytes = total;
 		})().finally(() => {
@@ -241,28 +268,66 @@ export class LayerBakeService {
 		this.gcTimer = null;
 	}
 
-	/** Removes entries unused for `ttlMs` (default 14 days) and stale partial files. Returns the count removed. */
+	/**
+	 * Removes entries unused for `ttlMs` (default 14 days) and stale partial files. Returns the count removed.
+	 * Entries held by running jobs (`lease`) are kept; an entry's `meta.json` is read right before it is removed.
+	 */
 	async gc(ttlMs = LAYER_CACHE_TTL_MS): Promise<number> {
 		let removed = 0;
 		const now = this.now().getTime();
 		for (const name of await readdir(this.dir).catch(() => [] as string[])) {
 			const dir = join(this.dir, name);
-			if (!KEY_RE.test(name)) continue;
-			const meta = await readJsonOrNull<LayerMeta>(join(dir, 'meta.json'));
-			const used = meta ? Date.parse(meta.lastUsedAt ?? meta.createdAt) : Number.NaN;
-			const age = Number.isFinite(used)
-				? now - used
-				: now -
-					(await stat(dir)
-						.then((s) => s.mtimeMs)
-						.catch(() => now));
-			if (age > ttlMs) {
-				await rm(dir, { recursive: true, force: true });
-				removed++;
-			}
+			if (!KEY_RE.test(name) || this.leases.has(name)) continue;
+			// Read right before the removal, and no await between the checks and its start (lookups that mark the
+			// entry used or leases taken meanwhile keep it; lookups wait for a removal in progress).
+			if ((await this.entryAge(dir, now)) <= ttlMs || this.leases.has(name)) continue;
+			const removal = rm(dir, { recursive: true, force: true }).finally(() => this.removing.delete(name));
+			this.removing.set(name, removal);
+			await removal;
+			removed++;
 		}
 		if (removed) await this.refreshBytes();
 		return removed;
+	}
+
+	/** Time since an entry was last used (its `meta.json`, else the directory's mtime: orphans, partial files). */
+	private async entryAge(dir: string, now: number): Promise<number> {
+		const meta = await readJsonOrNull<LayerMeta>(join(dir, 'meta.json'));
+		const used = meta ? Date.parse(meta.lastUsedAt ?? meta.createdAt) : Number.NaN;
+		if (Number.isFinite(used)) return now - used;
+		return (
+			now -
+			(await stat(dir)
+				.then((s) => s.mtimeMs)
+				.catch(() => now))
+		);
+	}
+
+	/**
+	 * Holds cache entries against the GC while a job reads them (lease count per key); returns the release
+	 * (idempotent). Take it before the lookup so that no removal can start in between.
+	 */
+	lease(keys: readonly string[]): () => void {
+		for (const k of keys) this.leases.set(k, (this.leases.get(k) ?? 0) + 1);
+		let released = false;
+		return () => {
+			if (released) return;
+			released = true;
+			for (const k of keys) {
+				const n = (this.leases.get(k) ?? 1) - 1;
+				if (n > 0) this.leases.set(k, n);
+				else this.leases.delete(k);
+			}
+		};
+	}
+
+	/** Holds `keys` until job `jobId` (the export/still that reads them) has finished. */
+	private leaseUntilDone(keys: readonly string[], jobId: string): void {
+		const release = this.lease(keys);
+		this.core.queue
+			.wait(jobId)
+			.catch(() => undefined)
+			.finally(release);
 	}
 
 	// ------------------------------------------------------------------ cache
@@ -271,11 +336,25 @@ export class LayerBakeService {
 		return join(this.dir, key);
 	}
 
-	/** Absolute path of a cache file (validated key and file name), or null when missing. */
-	filePath(key: string, file: string): string | null {
+	/**
+	 * Absolute path of a cache file (validated key and file name), or null when missing. `graded.png` = frame `n` of
+	 * the graded frame sequence.
+	 */
+	filePath(key: string, file: string, n = 0): string | null {
 		if (!KEY_RE.test(key) || !LAYER_FILES.has(file)) return null;
+		if (file === 'graded.png') {
+			if (!Number.isInteger(n) || n < 0) return null;
+			const f = join(this.entryDir(key), GRADED_FRAMES_DIR, gradedFrameName(n));
+			return existsSync(f) ? f : null;
+		}
 		const p = join(this.entryDir(key), file);
 		return existsSync(p) ? p : null;
+	}
+
+	/** The complete graded frame sequence of an entry (renamed into place as a whole), or null. */
+	private gradedDir(key: string): string | null {
+		const p = join(this.entryDir(key), GRADED_FRAMES_DIR);
+		return KEY_RE.test(key) && existsSync(p) ? p : null;
 	}
 
 	async meta(key: string): Promise<LayerMeta | null> {
@@ -284,14 +363,20 @@ export class LayerBakeService {
 		return m?.kind === 'layer' ? m : null;
 	}
 
-	/** The cached bake of a key (files present), marked as used; null on a miss. */
+	/**
+	 * The cached bake of a key (files present), marked as used (awaited: the GC sees the new `lastUsedAt`); null on
+	 * a miss. Waits for a GC removal of the entry in progress (then misses).
+	 */
 	async lookup(key: string): Promise<BakeResult | null> {
+		await this.removing.get(key);
 		const meta = await this.meta(key);
 		if (!meta || meta.recipe === 'graded') return null;
 		const still = meta.recipe !== 'master';
-		const path = this.filePath(key, still ? 'still.png' : 'master.mov');
+		const file = still ? 'still.png' : 'master.mov';
+		if (!this.filePath(key, file)) return null;
+		await this.markUsed(key, meta);
+		const path = this.removing.has(key) ? null : this.filePath(key, file);
 		if (!path) return null;
-		void this.markUsed(key, meta);
 		return { key, path, still, rect: meta.rect, frames: meta.frames, width: meta.width, height: meta.height };
 	}
 
@@ -514,6 +599,10 @@ export class LayerBakeService {
 			f1: f0 + frames,
 			extensions: { list: exts, prepared },
 		});
+		// The graded picture is the whole placed layer, like the masters (S11:LBK-010): masters and single frames
+		// carry the transition fades, a static still does not (the native builder fades it), so its graded span gets
+		// them here — the Remotion path and the Program preview play graded files as they are.
+		const fades = bake.variant.recipe === 'still' ? fadeFilters(clip.fades, f0) : [];
 		const colorFx = clip.effects
 			.filter((fx) => fx.enabled && isColorEffect(fx))
 			.map(({ id: _id, ...fx }) => fx);
@@ -521,19 +610,25 @@ export class LayerBakeService {
 		const material: KeyMaterial = {
 			...bake.material,
 			span: frames,
-			// The grade's keyframes run in content time: the clip's timing relative to the graded frames matters.
+			// The grade's keyframes run in content time, and graded stills get the fades: the clip's real timing
+			// relative to the graded frames matters (a still bake's clip is a one-frame clip without handles or fades;
+			// reversed clips map frames to content time through their duration).
 			clip: {
 				...bake.material.clip,
 				gradeStart: clip.start - f0,
+				duration: clip.duration,
+				headHandle: clip.headHandle ?? 0,
+				tailHandle: clip.tailHandle ?? 0,
+				fades: (clip.fades ?? []).map((f) => ({ ...f, start: f.start - f0 })),
 				sourceIn: clip.sourceIn,
 				speed: clip.speed,
 			},
-			graded: { source: bake.key, effects: colorFx, luts },
+			graded: { v: GRADE_VERSION, source: bake.key, effects: colorFx, luts },
 		};
 		return {
 			key: keyOf(material),
 			source: { key: bake.key, recipe: bake.variant.recipe },
-			filters,
+			filters: fades.length ? [...filters, ...fades, 'setpts=PTS-STARTPTS'] : filters,
 			frames,
 			fps: { num: planned.snapshot.settings.fps.num, den: planned.snapshot.settings.fps.den },
 			material,
@@ -550,6 +645,8 @@ export class LayerBakeService {
 		plan: BakePlan,
 		meta: { parentId: string; projectId?: string; signal: AbortSignal; concurrency?: number },
 	): Promise<BakeResult> {
+		// The export reads the bake until it finishes: held against the GC from before the lookup.
+		this.leaseUntilDone([plan.key], meta.parentId);
 		const hit = await this.lookup(plan.key);
 		if (hit) {
 			this.stats.reused++;
@@ -565,17 +662,19 @@ export class LayerBakeService {
 		return done;
 	}
 
-	/** The graded master (`graded.mov`) of a planned grade, rendered in a child job when missing. */
+	/** The graded master (frame sequence, `graded/`) of a planned grade, rendered in a child job when missing. */
 	async ensureGraded(
 		bake: BakePlan,
 		grade: GradePlan,
 		meta: { parentId: string; projectId?: string; signal: AbortSignal; concurrency?: number },
 	): Promise<{ key: string; path: string; rect: Rect | null }> {
-		const cached = this.filePath(grade.key, 'graded.mov');
+		this.leaseUntilDone([grade.key, bake.key], meta.parentId);
+		await this.removing.get(grade.key);
+		const cached = this.gradedDir(grade.key);
 		const m = cached ? await this.meta(grade.key) : null;
 		if (cached && m) {
-			void this.markUsed(grade.key, m);
-			return { key: grade.key, path: cached, rect: m.rect };
+			await this.markUsed(grade.key, m);
+			if (this.gradedDir(grade.key)) return { key: grade.key, path: cached, rect: m.rect };
 		}
 		await this.runChild(
 			{
@@ -588,7 +687,7 @@ export class LayerBakeService {
 			bake,
 			meta,
 		);
-		const path = this.filePath(grade.key, 'graded.mov');
+		const path = this.gradedDir(grade.key);
 		const done = await this.meta(grade.key);
 		if (!path || !done)
 			throw new JobError('LAYER_BAKE_FAILED', `The graded master of "${bake.clipName}" is missing`, true);
@@ -666,6 +765,8 @@ export class LayerBakeService {
 
 	private async run(ctx: JobContext): Promise<unknown> {
 		const input = ctx.input as LayerBakeJobInput;
+		// The bake (and the graded entry) are written and read for the whole job.
+		const release = this.lease(input.op === 'grade' ? [input.bake.key, input.grade.key] : [input.bake.key]);
 		try {
 			const bake = await this.renderBake(ctx, input.bake, input.concurrency, input.op === 'bake' ? 1 : 0.7);
 			if (input.op === 'bake') return bake;
@@ -681,6 +782,7 @@ export class LayerBakeService {
 				true,
 			);
 		} finally {
+			release();
 			void this.refreshBytes();
 		}
 	}
@@ -849,9 +951,11 @@ export class LayerBakeService {
 			...grade.filters,
 		];
 		const scratch = await ctx.scratchDir();
-		if (outputs.includes('graded') && !this.filePath(grade.key, 'graded.mov')) {
+		if (outputs.includes('graded') && !this.gradedDir(grade.key)) {
 			ctx.progress(0.75, { stage: 'Grading' });
-			const tmp = join(scratch, 'graded.mov');
+			const tmp = join(scratch, GRADED_FRAMES_DIR);
+			await rm(tmp, { recursive: true, force: true });
+			await mkdir(tmp, { recursive: true });
 			await ff.run(
 				[
 					...input,
@@ -859,8 +963,9 @@ export class LayerBakeService {
 					'0:v:0',
 					'-vf',
 					[...base, 'format=rgba'].join(','),
-					// Lossless RGBA (PNG frames in MOV): no YUV matrix/range for the Remotion compositor to interpret
-					// (ProRes 4444 graded masters came out ±7 code values off on the Remotion path, tagged TV or full).
+					// Lossless straight-alpha RGBA PNG frames, played with <Img> by the compositions: the Remotion
+					// compositor (OffthreadVideo) drops the alpha of RGBA video (PNG-in-MOV, qtrle) and converts YUVA
+					// (ProRes 4444, VP9) up to 6/255 off; Chrome decodes PNGs exactly.
 					'-c:v',
 					'png',
 					'-pix_fmt',
@@ -868,20 +973,29 @@ export class LayerBakeService {
 					'-frames:v',
 					String(grade.frames),
 					'-an',
+					// One file per frame at the sequence rate (the image muxer is variable-rate by default and would
+					// drop frames sharing a timestamp).
+					'-fps_mode',
+					'cfr',
+					'-r',
+					fps,
 					'-f',
-					'mov',
-					tmp,
+					'image2',
+					'-start_number',
+					'0',
+					join(tmp, '%06d.png'),
 				],
 				{ signal: ctx.signal, onSpawn: ctx.trackChild },
 			);
-			const n = await ff.countVideoFrames(tmp, { signal: ctx.signal });
+			const n = (await readdir(tmp)).filter((f) => f.endsWith('.png')).length;
 			if (n !== grade.frames)
 				throw new JobError(
 					'FRAME_COUNT_MISMATCH',
 					`The graded master has ${n} frames, expected ${grade.frames}`,
 					true,
 				);
-			await rename(tmp, join(dir, 'graded.mov'));
+			// The sequence appears as a whole (no partial `graded/` in the cache).
+			await rename(tmp, join(dir, GRADED_FRAMES_DIR));
 		}
 		if (outputs.includes('preview') && !this.filePath(grade.key, 'preview.webm')) {
 			ctx.progress(0.75, { stage: 'Encoding preview' });
@@ -962,7 +1076,7 @@ export class LayerBakeService {
 				width: bake.width,
 				height: bake.height,
 			};
-		return { key: grade.key, path: join(dir, 'graded.mov') };
+		return { key: grade.key, path: join(dir, GRADED_FRAMES_DIR) };
 	}
 }
 

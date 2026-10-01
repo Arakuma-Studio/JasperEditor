@@ -72,7 +72,7 @@ export type KeyMaterial = {
 	 */
 	renderVersion?: number | null;
 	/** Graded entries (Remotion path, preview): the colour effects and LUT identities; false = ungraded bake. */
-	graded: false | { source: string; effects: unknown; luts: KeyMedia[] };
+	graded: false | { v: number; source: string; effects: unknown; luts: KeyMedia[] };
 };
 
 /** `renderVersion` of the anime template a clip draws (null: not an anime template or not installed). */

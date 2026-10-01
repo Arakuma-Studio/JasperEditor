@@ -1,8 +1,9 @@
 // Layer bake (M2, S11 §6, ARCHITECTURE §20.5). Owner: wp-m2-layer-bake.
 //   POST /api/layer-bake/preview   graded VP9-alpha preview of one DOM layer (S11:LBK-010) → 202 EngineJob
 //                                  (`?wait=1` → the finished job, result LayerBakePreviewResult)
-//   GET  /mg/layers/:key/:file     cached bake files (master.mov, still.png, graded.mov, preview.webm), Range,
-//                                  signable (the Remotion path loads graded masters through signed URLs)
+//   GET  /mg/layers/:key/:file     cached bake files (master.mov, still.png, preview.webm; graded.png?n=<frame>: frame
+//                                  n of the graded PNG sequence), Range, signable (the Remotion path loads graded
+//                                  masters through one signed URL per entry)
 // Also registers the `layer-bake` native extension (text, shapes and anime templates exported through cached alpha
 // masters), the `layer-bake` job runner, the `features.layerBake` capability block and the cache GC.
 // Registered after `mg-bundles` and before `tracking` (extension order, ARCHITECTURE §19.6).
@@ -26,7 +27,7 @@ export function layerBakeService(app: FastifyInstance): LayerBakeService | null 
 
 const CONTENT_TYPES: Record<string, string> = {
 	'master.mov': 'video/quicktime',
-	'graded.mov': 'video/quicktime',
+	'graded.png': 'image/png',
 	'still.png': 'image/png',
 	'preview.webm': 'video/webm',
 };
@@ -119,10 +120,11 @@ export default async function layerBakeRoutes(app: FastifyInstance): Promise<voi
 		}),
 	);
 
-	app.get<{ Params: { key: string; file: string } }>(
+	app.get<{ Params: { key: string; file: string }; Querystring: { n?: string } }>(
 		'/mg/layers/:key/:file',
-		guarded<{ Params: { key: string; file: string } }>(async (req, reply) => {
-			const path = svc.filePath(req.params.key, req.params.file);
+		guarded<{ Params: { key: string; file: string }; Querystring: { n?: string } }>(async (req, reply) => {
+			const n = req.query.n === undefined ? 0 : Number(req.query.n);
+			const path = svc.filePath(req.params.key, req.params.file, n);
 			if (!path) throw new HttpError(404, 'NOT_FOUND', 'No such layer bake file');
 			return serveFile(req, reply, path, {
 				cache: 'immutable',

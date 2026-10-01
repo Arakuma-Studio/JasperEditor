@@ -491,6 +491,97 @@ describe('render keys (LBK-020)', () => {
 		expect(clipFonts(clip, fonts).map((f) => f.fontId)).toEqual(['fnt_A', 'fnt_B']);
 	});
 
+	it('only the faces a text draws with: other weights of its font do not enter the bake (review fix 5)', async () => {
+		const face = (fontId: string, weight: number, style: 'normal' | 'italic' = 'normal') => ({
+			fontId,
+			family: fontId,
+			weight,
+			style,
+			url: `/fonts/${fontId}-${weight}-${style}`,
+		});
+		const fonts = [face('fnt_A', 400), face('fnt_A', 700), face('fnt_A', 400, 'italic'), face('fnt_B', 700)];
+		const text = (style: Record<string, unknown>, runs: Record<string, unknown>[] = []) =>
+			({
+				source: { text: { text: 'ab', style, runs: runs.map((r) => ({ from: 0, to: 1, style: r })) } },
+			}) as never;
+		const pick = (c: RenderVisualClip) =>
+			clipFonts(c, fonts).map((f) => `${f.fontId}:${f.weight}:${f.style}`);
+		expect(pick(text({ fontId: 'fnt_A', weight: 700, italic: false }))).toEqual(['fnt_A:700:normal']);
+		// Styled runs: their own weight/style over the base style; a face the snapshot lacks falls back to the font's
+		// first face (what TextLayer draws with).
+		expect(
+			pick(text({ fontId: 'fnt_A', weight: 400, italic: false }, [{ italic: true }, { fontId: 'fnt_B' }])),
+		).toEqual(['fnt_A:400:normal', 'fnt_A:400:italic', 'fnt_B:700:normal']);
+		// End to end: another weight of the same font on another title keeps the key.
+		const d = new DocBuilder('hd-720p-30');
+		const t = smallTitle(d, 'Regular', { at: 0, track: 'V1' });
+		const k0 = await keyOfClip(d, t);
+		const b = smallTitle(d, 'Bold', { at: 0, track: 'V2' });
+		d.tx([{ type: 'clip.update', clipIds: [b], patch: { content: { style: { weight: 700 } } } }]);
+		const p = await planned(d);
+		expect(p.snapshot.fonts.length).toBeGreaterThan(1);
+		expect(await keyOfClip(d, t)).toBe(k0);
+		const plan = await svc.planBake(p, clipOf(p.snapshot, t), { env: ENV });
+		expect(plan.doc.fonts.map((f) => f.weight)).toEqual([400]);
+	});
+
+	it('graded stills get the transition fades; grade keys hold the real timing (review fixes 1 and 3)', async () => {
+		const d = new DocBuilder('hd-720p-30');
+		const t = smallTitle(d, 'Graded', { at: 20, track: 'V1', duration: 40 });
+		d.tx([
+			{ type: 'effect.add', target: { clipId: t }, effectId: LUMETRI_EFFECT_ID, params: { saturation: 0 } },
+		]);
+		const ctx = {
+			extensions: svc.extensions(),
+			signal: new AbortController().signal,
+			scratchDir: async () => tempAppdir('jasper-lb-grade-'),
+			log: () => {},
+			jobId: 'job_test',
+		};
+		const gradeOf = async (patch: Partial<RenderVisualClip> = {}) => {
+			const p = await planned(d);
+			const clip = { ...clipOf(p.snapshot, t), ...patch };
+			const bake = await svc.planBake(p, clip, { env: ENV });
+			return { bake, grade: await svc.planGrade(p, clip, bake, ctx) };
+		};
+		const g0 = await gradeOf();
+		expect(g0.bake.variant).toEqual({ recipe: 'still' });
+		expect(g0.grade.filters.join(',')).toMatch(/lut3d/);
+		expect(g0.grade.filters.join(',')).not.toMatch(/fade=/);
+		d.tx([
+			{ type: 'transition.add', clipId: t, edge: 'in', effectId: 'jasper.cross-dissolve', duration: 10 },
+		]);
+		const g1 = await gradeOf();
+		// The still itself has no fades (same bake); its graded span gets them, after the grade.
+		expect(g1.bake.key).toBe(g0.bake.key);
+		expect(g1.grade.key).not.toBe(g0.grade.key);
+		expect(g1.grade.filters.join(',')).toMatch(/lut3d=[^,]+(,[^,]+)*,fade=t=in:s=\d+:n=10:alpha=1/);
+		expect(g1.grade.filters.at(-1)).toBe('setpts=PTS-STARTPTS');
+		expect(g1.grade.filters.every((f) => gplFiltersIn(f).length === 0)).toBe(true);
+		// Same span, other split between duration and tail handle (a reversed clip maps content time through its
+		// duration): another graded entry.
+		const reversed = { speed: { rate: 1, reverse: true } } as Partial<RenderVisualClip>;
+		const a = await gradeOf(reversed);
+		const c = clipOf((await planned(d)).snapshot, t);
+		const b = await gradeOf({ ...reversed, duration: c.duration - 5, tailHandle: (c.tailHandle ?? 0) + 5 });
+		expect(b.grade.frames).toBe(a.grade.frames);
+		expect(b.grade.key).not.toBe(a.grade.key);
+		expect(a.grade.material.clip).toMatchObject({ duration: c.duration, tailHandle: c.tailHandle ?? 0 });
+		// Masters carry their fades already: no fade filters in their grade.
+		d.tx([
+			{
+				type: 'param.setAnimated',
+				target: ['clip', t, 'opacity'],
+				animated: true,
+				at: { sequenceFrame: 20 },
+			},
+		]);
+		d.tx([{ type: 'param.set', target: ['clip', t, 'opacity'], value: 10, at: { sequenceFrame: 50 } }]);
+		const m = await gradeOf();
+		expect(m.bake.variant).toEqual({ recipe: 'master' });
+		expect(m.grade.filters.join(',')).not.toMatch(/fade=/);
+	});
+
 	it('masters key the span; the clip id only enters the key of seed-bearing layers', async () => {
 		const d = new DocBuilder('hd-720p-30');
 		const t = smallTitle(d, 'Seed', { at: 0, track: 'V1' });
@@ -797,6 +888,101 @@ describe('cache, capability, preview route, usage log (LBK-021, LBK-030, LBK-026
 			headers: { host: '127.0.0.1:47900' },
 		});
 		expect(bad.statusCode).toBe(404);
+	});
+
+	it('GC keeps entries held by running jobs and entries a lookup marks used meanwhile (review fix 4)', async () => {
+		const mk = (key: string, lastUsed: Date) => {
+			mkdirSync(join(svc.dir, key), { recursive: true });
+			writeFileSync(join(svc.dir, key, 'still.png'), 'x');
+			writeFileSync(
+				join(svc.dir, key, 'meta.json'),
+				JSON.stringify({
+					kind: 'layer',
+					key,
+					recipe: 'still',
+					rect: null,
+					frames: 1,
+					width: 10,
+					height: 10,
+					createdAt: lastUsed.toISOString(),
+					lastUsedAt: lastUsed.toISOString(),
+				}),
+			);
+		};
+		const longAgo = () => new Date(Date.now() - LAYER_CACHE_TTL_MS - 60_000);
+		// A lease (a running job reading the entry) keeps it; released, the next pass removes it.
+		const held = 'd'.repeat(40);
+		mk(held, longAgo());
+		const release = svc.lease([held]);
+		expect(await svc.gc()).toBe(0);
+		expect(existsSync(join(svc.dir, held, 'still.png'))).toBe(true);
+		release();
+		release();
+		expect(await svc.gc()).toBe(1);
+		expect(existsSync(join(svc.dir, held))).toBe(false);
+		// `lookup` has written `lastUsedAt` when it returns.
+		const used = 'e'.repeat(40);
+		mk(used, longAgo());
+		expect(await svc.lookup(used)).not.toBeNull();
+		expect(await svc.gc()).toBe(0);
+		expect(existsSync(join(svc.dir, used, 'still.png'))).toBe(true);
+		// A lookup racing a GC pass either keeps the entry or misses (never returns a path the GC removes).
+		const racing = 'f'.repeat(40);
+		mk(racing, longAgo());
+		const [n, hit] = await Promise.all([svc.gc(), svc.lookup(racing)]);
+		if (hit) {
+			expect(n).toBe(0);
+			expect(existsSync(hit.path)).toBe(true);
+		} else expect(existsSync(join(svc.dir, racing, 'still.png'))).toBe(false);
+		// ensureBake (export reads the bake later): held from before the lookup until the export job finishes.
+		const exported = '1'.repeat(40);
+		mk(exported, longAgo());
+		const queue = coreServices(app).queue;
+		const wait = queue.wait.bind(queue);
+		let finish: () => void = () => {};
+		const parentDone = new Promise<EngineJob>((r) => {
+			finish = () => r({ id: 'job_PARENT0000000000', state: 'succeeded' } as EngineJob);
+		});
+		queue.wait = (id: string) => (id === 'job_PARENT0000000000' ? parentDone : wait(id));
+		try {
+			const gcPass = svc.gc();
+			const bake = await svc.ensureBake({ key: exported, clipName: 'x' } as never, {
+				parentId: 'job_PARENT0000000000',
+				signal: new AbortController().signal,
+			});
+			await gcPass;
+			expect(existsSync(bake.path)).toBe(true);
+			// Even once it is old again, the running export keeps it.
+			mk(exported, longAgo());
+			expect(await svc.gc()).toBe(0);
+			finish();
+			await parentDone;
+			await new Promise((r) => setTimeout(r, 10));
+			expect(await svc.gc()).toBe(1);
+		} finally {
+			queue.wait = wait;
+		}
+	});
+
+	it('graded masters are PNG frame sequences served per frame under one signed URL (review fix 1)', async () => {
+		const key = '2'.repeat(40);
+		mkdirSync(join(svc.dir, key, 'graded'), { recursive: true });
+		for (const n of [0, 1]) writeFileSync(join(svc.dir, key, 'graded', `00000${n}.png`), `frame ${n}`);
+		const get = (q: string) =>
+			app.inject({
+				method: 'GET',
+				url: `/mg/layers/${key}/graded.png${q}`,
+				headers: { host: '127.0.0.1:47900' },
+			});
+		const r1 = await get('?n=1');
+		expect(r1.statusCode).toBe(200);
+		expect(r1.headers['content-type']).toBe('image/png');
+		expect(r1.body).toBe('frame 1');
+		expect((await get('')).body).toBe('frame 0');
+		for (const bad of ['?n=2', '?n=-1', '?n=1.5', '?n=x']) expect((await get(bad)).statusCode).toBe(404);
+		// One signature covers the entry's sequence; the frame number rides along.
+		const signed = coreServices(app).signer.signUrl('', `/mg/layers/${key}/graded.png`);
+		expect(coreServices(app).signer.verify(`${signed}&n=1`)).toBe(true);
 	});
 
 	it('features.layerBake reports readiness and the cache size', async () => {

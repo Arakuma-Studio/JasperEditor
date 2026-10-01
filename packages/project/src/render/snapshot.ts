@@ -152,8 +152,15 @@ export type RenderVisualClip = {
 	 * effects, grade, opacity and fades baked, straight alpha) that the composition plays instead of drawing the
 	 * layer — the colour-graded master of a DOM layer on the Remotion path. `startFrame` = sequence frame shown by
 	 * its frame 0; `rect` = the region of the frame it covers (absent = the whole frame). Set by the engine only.
+	 * `url` is a straight-alpha PNG frame sequence of `frames` frames: frame `n` is `url` + `&n=<n>` (`?n=` when the
+	 * URL has no query).
 	 */
-	baked?: { url: string; startFrame: number; rect?: { x: number; y: number; w: number; h: number } };
+	baked?: {
+		url: string;
+		startFrame: number;
+		frames: number;
+		rect?: { x: number; y: number; w: number; h: number };
+	};
 };
 
 export type RenderAudioClip = {

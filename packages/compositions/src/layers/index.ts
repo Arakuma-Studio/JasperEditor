@@ -17,6 +17,7 @@ export { AudioLayer, type AudioLayerProps } from './AudioLayer.tsx';
 export {
 	type BakedLayerPreview,
 	type BakedLayerRuntime,
+	bakedFrameUrl,
 	hasDomColorEffects,
 	isDomLayerClip,
 	needsBakedPicture,

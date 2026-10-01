@@ -446,7 +446,10 @@ export const ROUTES = {
 		response: EngineJobSchema,
 		owner: 'wp-m2-layer-bake',
 	},
-	/** Cached bake files (`master.mov`, `still.png`, `graded.mov`, `preview.webm`); signable for renders. */
+	/**
+	 * Cached bake files (`master.mov`, `still.png`, `preview.webm`; `graded.png?n=<frame>` = frame n of the graded PNG
+	 * sequence); signable for renders.
+	 */
 	layerBakeFiles: {
 		method: 'GET',
 		path: '/mg/layers/:key/:file',
