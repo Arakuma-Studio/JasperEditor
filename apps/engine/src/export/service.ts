@@ -18,6 +18,7 @@ import type { FontCatalogService } from '../fonts/catalog.ts';
 import type { JobQueue } from '../jobs/queue.ts';
 import { type JobContext, JobError } from '../jobs/types.ts';
 import type { MediaRegistry } from '../media/registry.ts';
+import { isAnimeTemplateClip } from '../mg/templates.ts'; // wp-m2-anime-templates
 import { appendEncoderArgs, planRemotionExport } from '../remotion/export-plan.ts';
 import type { RemotionService } from '../remotion/service.ts';
 import { audioEncodeArgs, type EncoderService, videoEncodeArgs } from '../tools/encoders.ts';
@@ -258,7 +259,8 @@ export class ExportService {
 		const masters = new Map<string, string>();
 		const clips = planned.snapshot.videoTracks
 			.flatMap((t) => t.clips)
-			.filter((c) => c.kind === 'motion-graphic');
+			// wp-m2-anime-templates (S11:ATP-008): anime templates have no jasper-mg master (layer-bake bakes them).
+			.filter((c) => c.kind === 'motion-graphic' && !isAnimeTemplateClip(c));
 		if (clips.length === 0) return masters;
 		if (!this.mgProvider) return null;
 		for (const clip of clips) {

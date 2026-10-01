@@ -64,6 +64,13 @@ export default async function mgRoutes(app: FastifyInstance): Promise<void> {
 				'Invalid motion-graphics render request',
 				parsed.error.issues,
 			);
+		// wp-m2-anime-templates (S11:ATP-008): anime templates are refused whatever the fframes state.
+		try {
+			service.refuseAnime(parsed.data.spec);
+		} catch (e) {
+			if (e instanceof MgRenderError) return sendError(reply, 400, 'ANIME_TEMPLATE', e.message);
+			throw e;
+		}
 		if (service.capability().fframes !== 'ready')
 			return sendError(
 				reply,
@@ -77,9 +84,10 @@ export default async function mgRoutes(app: FastifyInstance): Promise<void> {
 			return reply.code(wait ? 200 : 202).send(wait ? await done : job);
 		} catch (e) {
 			if (e instanceof MgRenderError) {
+				const detailCode = (e.detail as { code?: string } | undefined)?.code;
 				const code =
-					(e.detail as { code?: string } | undefined)?.code === 'TEMPLATE_NOT_FOUND'
-						? 'TEMPLATE_NOT_FOUND'
+					detailCode === 'TEMPLATE_NOT_FOUND' || detailCode === 'ANIME_TEMPLATE'
+						? detailCode
 						: e.code === 'INVALID_SPEC'
 							? 'INVALID_SPEC'
 							: 'MG_UNAVAILABLE';
