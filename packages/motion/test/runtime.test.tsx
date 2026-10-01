@@ -6,8 +6,9 @@ import { fileURLToPath } from 'node:url';
 import { act, render } from '@testing-library/react';
 import { engine } from 'animejs/engine';
 import fc from 'fast-check';
-import { useRef } from 'react';
-import { describe, expect, it } from 'vitest';
+import { StrictMode, useRef } from 'react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { valuesAt } from '../src/runtime/hooks.ts';
 import {
 	ANIMEJS_VERSION,
 	createPausedTimeline,
@@ -255,9 +256,13 @@ describe('text units (S11:TXA-010/011)', () => {
 });
 
 describe('implementation tables (filled by wave 1)', () => {
-	it('start empty and expose the rest values', () => {
-		expect(TEXT_ANIMATION_IMPLS).toEqual({});
-		expect(ANIME_TEMPLATE_IMPLS).toEqual({});
+	// The tables are filled by wp-m2-text-anim / wp-m2-anime-templates; the determinism suite iterates them.
+	it('are keyed id@version and expose the rest values', () => {
+		for (const [key, impl] of Object.entries(TEXT_ANIMATION_IMPLS)) {
+			expect(key).toMatch(/^[a-z0-9-]+@\d+$/);
+			expect(impl.key).toBe(key);
+		}
+		for (const key of Object.keys(ANIME_TEMPLATE_IMPLS)) expect(key).toMatch(/^[a-z0-9-]+@\d+$/);
 		expect(REST_UNIT_VALUES).toEqual({
 			opacity: 1,
 			x: 0,
@@ -268,5 +273,208 @@ describe('implementation tables (filled by wave 1)', () => {
 			letterSpacing: 0,
 			reveal: 1,
 		});
+	});
+});
+
+describe('runtime hardening (wp-m2-anime-core)', () => {
+	afterEach(() => vi.unstubAllGlobals());
+
+	it('createPausedTimeline drops loop / frameRate / alternate (seek-only driving)', () => {
+		const tl = createPausedTimeline({ loop: true, frameRate: 5, alternate: true, loopDelay: 100 } as never);
+		const o = { v: 0 };
+		tl.add(o, { v: [0, 100], duration: 1000, ease: 'linear' });
+		expect(tl.duration).toBe(1000);
+		seekCanonical(tl, 250);
+		expect(o.v).toBe(25);
+		seekCanonical(tl, Number.NaN);
+		expect(o.v).toBe(0);
+		seekCanonical(tl, 5000);
+		expect(o.v).toBe(100);
+	});
+
+	it('resolveEase steps: non-finite counts fall back to 8', () => {
+		const f = resolveEase('steps', { steps: Number.NaN }) as (t: number) => number;
+		expect(f(0.3)).toBe(0.25);
+		expect((resolveEase('steps', { steps: 0 }) as (t: number) => number)(0.6)).toBe(0);
+	});
+
+	it('valuesAt: frozen per-time results are cached and never affected by later seeks', () => {
+		const built = gapTimeline();
+		const a = valuesAt(built, 500);
+		const b = valuesAt(built, 1000);
+		expect(a[0]).toEqual({ x: 100, o: 1 });
+		expect(b[0]).toEqual({ x: 300, o: 0 });
+		expect(valuesAt(built, 500)).toBe(a);
+		// the cache does not change what a fresh build gives
+		const fresh = gapTimeline();
+		seekCanonical(fresh.timeline, 1000);
+		expect(b[0]).toEqual({ x: fresh.targets[0]!.x, o: fresh.targets[0]!.o });
+	});
+
+	it('useAnimeValues: StrictMode double renders and a buildKey change give the values of a fresh build', () => {
+		let seen: readonly Readonly<{ v: number }>[] = [];
+		let builds = 0;
+		function Probe({ k, ms }: { k: string; ms: number }) {
+			seen = useAnimeValues(
+				k,
+				() => {
+					builds++;
+					const o = { v: 0 };
+					const timeline = createPausedTimeline();
+					timeline.add(o, { v: [0, k === 'a' ? 100 : 10], duration: 1000, ease: 'linear' });
+					return { timeline, targets: [o] };
+				},
+				ms,
+			);
+			return null;
+		}
+		const r = render(
+			<StrictMode>
+				<Probe k="a" ms={500} />
+			</StrictMode>,
+		);
+		expect(seen[0]!.v).toBe(50);
+		expect(builds).toBeGreaterThanOrEqual(1);
+		r.rerender(
+			<StrictMode>
+				<Probe k="b" ms={500} />
+			</StrictMode>,
+		);
+		expect(seen[0]!.v).toBe(5);
+		r.rerender(
+			<StrictMode>
+				<Probe k="b" ms={1000} />
+			</StrictMode>,
+		);
+		expect(seen[0]!.v).toBe(10);
+		r.unmount();
+	});
+
+	it('useAnimeDom: StrictMode re-mount rebuilds on pristine targets; build-added attributes are removed', () => {
+		const builds: number[] = [];
+		function Leaf2({ ms, k }: { ms: number; k: string }) {
+			const ref = useRef<HTMLDivElement>(null);
+			useAnimeDom(
+				ref,
+				k,
+				(root) => {
+					// what createDrawable does outside its tweens: attributes the revert does not remove
+					builds.push(root.attributes.length);
+					root.setAttribute('pathLength', '1000');
+					const tl = createPausedTimeline();
+					tl.add(root, { opacity: [0, 1], duration: 1000, ease: 'linear' });
+					return tl;
+				},
+				ms,
+				true,
+			);
+			return <div ref={ref} data-leaf2="" />;
+		}
+		const r = render(
+			<StrictMode>
+				<Leaf2 ms={400} k="a" />
+			</StrictMode>,
+		);
+		const el = r.container.querySelector<HTMLElement>('[data-leaf2]')!;
+		// StrictMode mounts, unmounts and re-mounts the effects: two builds, both on the pristine element
+		expect(builds.length).toBe(2);
+		expect(builds[0]).toBe(builds[1]);
+		expect(Number(el.style.opacity)).toBeCloseTo(0.4, 3);
+		r.rerender(
+			<StrictMode>
+				<Leaf2 ms={400} k="b" />
+			</StrictMode>,
+		);
+		expect(builds.length).toBe(3);
+		expect(builds[2]).toBe(builds[0]);
+		expect(Number(el.style.opacity)).toBeCloseTo(0.4, 3);
+		act(() => r.unmount());
+		expect(el.getAttribute('pathLength')).toBeNull();
+		expect(el.getAttribute('style')).toBeNull();
+	});
+
+	it('segmentText keeps grapheme clusters: combining marks, ZWJ emoji, flags, CRLF, NBSP', () => {
+		const text = 'é 👨‍👩‍👧 🇪🇸\r\nä b';
+		const s = segmentText(text, 'char');
+		expect(s.map((x) => x.text)).toEqual(['é', ' ', '👨‍👩‍👧', ' ', '🇪🇸', '\r\n', 'ä', ' ', 'b']);
+		expect(s.map((x) => x.text).join('')).toBe(text);
+		expect(s.filter((x) => !x.space).map((x) => x.unitIndex)).toEqual([0, 1, 2, 3, 4]);
+	});
+
+	it('segmentText words: CJK/Thai dictionary words, emoji-only words, tabs; text always round-trips', () => {
+		const ja = segmentText('今日は良い天気', 'word');
+		expect(ja.length).toBeGreaterThan(1);
+		expect(ja.map((x) => x.text).join('')).toBe('今日は良い天気');
+		const th = segmentText('สวัสดีครับ', 'word');
+		expect(th.map((x) => x.text).join('')).toBe('สวัสดีครับ');
+		expect(segmentText('a 👋 b\tc', 'word').map((x) => [x.text, x.unitIndex])).toEqual([
+			['a', 0],
+			[' ', -1],
+			['👋', 1],
+			[' ', -1],
+			['b', 2],
+			['\t', -1],
+			['c', 3],
+		]);
+		fc.assert(
+			fc.property(fc.string({ unit: 'grapheme', maxLength: 40 }), fc.constantFrom('char', 'word'), (t, u) => {
+				const segs = segmentText(t, u as 'char' | 'word');
+				expect(segs.map((x) => x.text).join('')).toBe(t);
+				const units = segs.filter((x) => !x.space);
+				expect(units.map((x) => x.unitIndex)).toEqual(units.map((_, i) => i));
+				expect(segs.every((x) => x.text.length > 0)).toBe(true);
+			}),
+			{ seed: 77, numRuns: 300 },
+		);
+	});
+
+	it('segmentText without Intl.Segmenter approximates clusters', () => {
+		vi.stubGlobal('Intl', { ...Intl, Segmenter: undefined });
+		expect(segmentText('é👍🏽🇪🇸 x', 'char').map((x) => x.text)).toEqual(['é', '👍🏽', '🇪🇸', ' ', 'x']);
+		expect(segmentText('Hello, world', 'word').map((x) => x.text)).toEqual(['Hello,', ' ', 'world']);
+	});
+
+	it('needsShaping: RTL (incl. newer RTL scripts and bidi controls), complex scripts and joiners', () => {
+		for (const t of [
+			'𞤀𞤣𞤤𞤢𞤥', // Adlam
+			'ߒߞߏ', // N'Ko
+			'ܫܠܡܐ', // Syriac
+			'کتاب‌ها', // Persian with ZWNJ
+			'abc‏def', // RLM
+			'ក្ញុំ', // Khmer
+			'မြန်မာ', // Myanmar
+			'བོད', // Tibetan
+			'සිංහල', // Sinhala
+			'ᮞᮥᮔ᮪ᮓ', // Sundanese
+		])
+			expect(needsShaping(t), t).toBe(true);
+		for (const t of ['한국어', '日本語のテキスト', 'Привет', 'Γειά', '👨‍👩‍👧 family', 'naïve café', ''])
+			expect(needsShaping(t), t).toBe(false);
+	});
+
+	it('groupLines measures through offset parents (positioned wrappers) in the container space', () => {
+		const box = document.createElement('div');
+		const place = (el: HTMLElement, top: number, height: number, parent: HTMLElement | null) => {
+			Object.defineProperty(el, 'offsetTop', { value: top });
+			Object.defineProperty(el, 'offsetHeight', { value: height });
+			Object.defineProperty(el, 'offsetParent', { value: parent });
+		};
+		// the container sits at 500 in page space (its offset parent is the body)
+		place(box, 500, 200, null);
+		// two per-line mask wrappers (positioned): units are offset relative to them
+		const lines = [0, 50].map((top) => {
+			const w = document.createElement('div');
+			place(w, top, 50, box);
+			box.appendChild(w);
+			return w;
+		});
+		for (const w of lines)
+			for (let i = 0; i < 2; i++) {
+				const s = document.createElement('span');
+				s.className = 'u';
+				place(s, 5, 40, w);
+				w.appendChild(s);
+			}
+		expect(groupLines(box, '.u')).toEqual([0, 0, 1, 1]);
 	});
 });

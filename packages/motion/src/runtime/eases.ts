@@ -46,9 +46,12 @@ export function isEaseName(v: unknown): v is EaseName {
 	return typeof v === 'string' && Object.hasOwn(EASES, v);
 }
 
-/** The anime.js ease for a name (`steps` → `steps(count)`, default 8 steps). Unknown names fall back to `out`. */
+/** The anime.js ease of a name (`steps` → `steps(count)`, count 8 by default or when not finite; unknown → `out`). */
 export function resolveEase(name: EaseName | string, opts: { steps?: number } = {}): EasingParam {
 	if (!isEaseName(name)) return EASES.out;
-	if (name === 'steps') return steps(Math.max(1, Math.round(opts.steps ?? 8)));
+	if (name === 'steps') {
+		const n = opts.steps;
+		return steps(typeof n === 'number' && Number.isFinite(n) ? Math.max(1, Math.round(n)) : 8);
+	}
 	return EASES[name];
 }
