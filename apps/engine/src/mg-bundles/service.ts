@@ -14,6 +14,7 @@ import type {
 	MgPrerenderResult,
 	RegisteredMedia,
 } from '@jasper/api';
+import { renderPagesInOwnWindows } from '@jasper/compositions/render-host';
 import {
 	compositionRenderKeyMaterial,
 	EMPTY_PROBE,
@@ -800,6 +801,7 @@ export class MgBundleService {
 		const onAbort = () => cancel();
 		ctx.signal.addEventListener('abort', onAbort, { once: true });
 		const fps = req.fps.num / req.fps.den;
+		let instance: Awaited<ReturnType<typeof r.openBrowser>> | null = null;
 		try {
 			ctx.progress(0, { stage: 'Loading composition' });
 			const selected = await r.selectComposition({
@@ -824,6 +826,13 @@ export class MgBundleService {
 					false,
 				);
 			const composition = { ...selected, width: req.width, height: req.height, fps, durationInFrames: total };
+			// S11:ANM-014: with a full Chrome, parallel pages must each get their own window, or Remotion captures a
+			// hidden tab's first frame before Chrome has painted it (see RemotionService.renderBrowser).
+			if (tabs > 1 && opts.chromeMode === 'chrome-for-testing') {
+				const opened = await r.openBrowser('chrome', { ...opts, logLevel: 'error' });
+				if (renderPagesInOwnWindows(opened)) instance = opened;
+				else await opened.close({ silent: true }).catch(() => undefined);
+			}
 			const common = {
 				serveUrl: bundleDir,
 				composition,
@@ -833,6 +842,7 @@ export class MgBundleService {
 				imageFormat: 'png' as const,
 				concurrency: tabs,
 				cancelSignal,
+				...(instance ? { puppeteerInstance: instance } : {}),
 				timeoutInMilliseconds: MG_DELAY_RENDER_TIMEOUT_MS,
 				licenseKey: this.core.remotion.licenseKey,
 				logLevel: 'error' as const,
@@ -955,6 +965,7 @@ export class MgBundleService {
 			);
 		} finally {
 			ctx.signal.removeEventListener('abort', onAbort);
+			await instance?.close({ silent: true }).catch(() => undefined);
 		}
 	}
 
