@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type EngineJob, RenderPlanSchema } from '@jasper/api';
+import { isAnimeTemplate, mgRegistry } from '@jasper/mg-templates';
 import {
 	buildRenderSnapshot,
 	LUMETRI_EFFECT_ID,
@@ -505,10 +506,16 @@ describe('render keys (LBK-020)', () => {
 		inject(d, ANIME_CLIP, { id: 'clp_ANIME00000000001', track: 'V2', start: 0 });
 		const anime = clipOf(snapOf(d), 'clp_ANIME00000000001');
 		expect(normalisedClip(anime).clipId).toBe('clp_ANIME00000000001');
-		// Anime templates key their registry renderVersion (null while the template is not installed).
+		// Anime templates key their registry renderVersion (title-reveal@1 is installed by wp-m2-anime-templates;
+		// a template that is not installed keys null).
 		const pa = await planned(d);
 		const ap = await svc.planBake(pa, clipOf(pa.snapshot, 'clp_ANIME00000000001'), { env: ENV });
-		expect(ap.material).toHaveProperty('renderVersion', null);
+		const installed = mgRegistry.getDefinition('title-reveal', 1);
+		expect(installed && isAnimeTemplate(installed)).toBe(true);
+		expect(ap.material).toHaveProperty(
+			'renderVersion',
+			installed && isAnimeTemplate(installed) ? installed.renderVersion : null,
+		);
 		expect(keyOf({ ...ap.material, renderVersion: 2 })).not.toBe(ap.key);
 		// Stills of a non-static layer without a cached master: a one-frame bake keyed by the frame.
 		const f12 = await keyOfClip(d, t, ENV, 12);
