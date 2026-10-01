@@ -1,5 +1,5 @@
 import { EngineClient } from '@jasper/engine-client';
-import { mgRegistry } from '@jasper/mg-templates';
+import { type AnySvgMgTemplate, mgRegistry } from '@jasper/mg-templates';
 import { createEmptyProject, createSeededIdSource, defaultRegistries } from '@jasper/project';
 import { EditorSession, MemoryProjectStore } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
@@ -24,6 +24,7 @@ import {
 	filterEntries,
 	galleryEntries,
 	MotionTemplatesPanel,
+	posterFrameOf,
 	previewSvg,
 } from '../src/panels/motionTemplates/MotionTemplatesPanel.tsx';
 import { getPanelDefinition } from '../src/panels/registry.ts';
@@ -76,21 +77,37 @@ async function openSession() {
 afterEach(() => resetCommandRegistry());
 
 describe('Motion Templates gallery model', () => {
-	it('lists the fframes templates with native flags, durations and aspects', () => {
+	it('lists the fframes and anime templates with engines, native flags, durations and aspects', () => {
 		const offline = galleryEntries(null);
-		expect(offline.map((e) => [e.ref.id, e.native, e.durationSeconds])).toEqual([
-			['lower-third', false, 5],
-			['title-card', false, 4],
+		expect(offline.map((e) => [e.ref.id, e.engine, e.native, e.durationSeconds])).toEqual([
+			['lower-third', 'fframes', false, 5],
+			['title-card', 'fframes', false, 4],
+			['title-reveal', 'anime', false, 5],
+			['lower-third-anim', 'anime', false, 5],
+			['callout', 'anime', false, 5],
+			['counter', 'anime', false, 5],
 		]);
+		expect(offline.find((e) => e.engine === 'anime')?.engineLabel).toBe('anime · Remotion');
 		expect(offline[0]!.aspects).toEqual(['16:9', '9:16', '1:1']);
 		const online = galleryEntries(mgRegistry.catalogJson().map((t) => ({ ...t, native: true })));
-		expect(online.every((e) => e.native)).toBe(true);
+		// anime templates are never native (S11:ATP-008), whatever the engine says
+		expect(online.filter((e) => e.engine === 'fframes').every((e) => e.native)).toBe(true);
+		expect(online.filter((e) => e.engine === 'anime').some((e) => e.native)).toBe(false);
 		expect(
 			filterEntries(online, { query: 'lower', category: null, engine: 'all' }).map((e) => e.ref.id),
-		).toEqual(['lower-third']);
-		expect(filterEntries(online, { query: '', category: 'Titles', engine: 'all' })).toHaveLength(1);
-		expect(filterEntries(online, { query: '', category: null, engine: 'remotion' })).toEqual([]);
-		expect(previewSvg(online[0]!.def)).toContain('<svg');
+		).toEqual(['lower-third', 'lower-third-anim']);
+		expect(
+			filterEntries(online, { query: '', category: 'Titles', engine: 'all' }).map((e) => e.ref.id),
+		).toEqual(['title-card', 'title-reveal']);
+		expect(
+			filterEntries(online, { query: '', category: null, engine: 'anime' }).map((e) => e.ref.id),
+		).toEqual(['title-reveal', 'lower-third-anim', 'callout', 'counter']);
+		expect(filterEntries(online, { query: '', category: null, engine: 'fframes' })).toHaveLength(2);
+		expect(filterEntries(online, { query: 'remotion', category: null, engine: 'all' })).toHaveLength(4);
+		expect(previewSvg(online[0]!.def as AnySvgMgTemplate)).toContain('<svg');
+		// posters: anime at posterAt, fframes at the middle of the default duration
+		expect(posterFrameOf(online.find((e) => e.ref.id === 'title-reveal')!.def)).toBe(60);
+		expect(posterFrameOf(online[0]!.def)).toBe(75);
 	});
 
 	it('plans inserts at the playhead on the topmost targeted unlocked video track', () => {
@@ -152,8 +169,16 @@ describe('Motion Templates panel', () => {
 			</EngineProvider>,
 		);
 		const cards = await screen.findAllByRole('listitem');
-		expect(cards).toHaveLength(2);
-		expect(cards[0]!.querySelector('[data-mg-preview] svg')).not.toBeNull();
+		expect(cards).toHaveLength(6);
+		// fframes cards keep the SVG twin poster; every card has the hover preview (S11:ATP-007)
+		expect(
+			cards[0]!.querySelector('[data-mg-preview="fframes"] [data-preview-thumb="poster"] svg'),
+		).not.toBeNull();
+		expect(cards[0]!.querySelector('[data-engine-badge="F"]')).not.toBeNull();
+		const reveal = cards.find((c) => c.dataset.template === 'title-reveal@1')!;
+		expect(reveal.querySelector('[data-mg-preview="anime"] [data-preview-thumb="poster"]')).not.toBeNull();
+		expect(reveal.querySelector('[data-engine-badge="R"]')?.textContent).toBe('R');
+		expect(reveal.querySelector('[data-engine-label]')?.textContent).toBe('anime · Remotion');
 		await waitFor(() =>
 			expect(document.querySelector('[data-mg-renderer]')?.getAttribute('data-mg-renderer')).toBe('ready'),
 		);
@@ -167,6 +192,24 @@ describe('Motion Templates panel', () => {
 		// search filters the grid
 		fireEvent.change(screen.getByLabelText('Search templates'), { target: { value: 'card' } });
 		expect(screen.getAllByRole('listitem')).toHaveLength(1);
+		fireEvent.change(screen.getByLabelText('Search templates'), { target: { value: '' } });
+		// the engine filter has an `anime` value; inserting an anime template stamps its renderer
+		fireEvent.change(screen.getByLabelText('Engine'), { target: { value: 'anime' } });
+		const anime = screen.getAllByRole('listitem');
+		expect(anime.map((c) => c.dataset.template)).toEqual([
+			'title-reveal@1',
+			'lower-third-anim@1',
+			'callout@1',
+			'counter@1',
+		]);
+		fireEvent.keyDown(anime[3]!, { key: 'Enter' });
+		const after = Object.values(Object.values(session.getCommitted().sequences)[0]!.clips).filter(
+			(c) => c.kind === 'motion-graphic',
+		);
+		expect(after.find((c) => c.kind === 'motion-graphic' && c.template.id === 'counter')).toMatchObject({
+			template: { id: 'counter', version: 1, renderer: 'anime' },
+			duration: 125,
+		});
 		await session.close();
 	});
 

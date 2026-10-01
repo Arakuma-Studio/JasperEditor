@@ -1,11 +1,19 @@
-// mg UI commands — owned by WP-2G (ARCHITECTURE §7.3). No default key bindings.
-//   mg.insert   insert a motion template at the playhead on the targeted video track
-//   mg.rerender ask the engine to (re)render the selected motion-graphic clips (preview + master)
+// mg UI commands — owned by WP-2G (ARCHITECTURE §7.3); M2 anime templates by wp-m2-anime-templates. No default
+// key bindings.
+//   mg.insert          insert a motion template at the playhead on the targeted video track
+//   mg.rerender        ask the engine to (re)render the selected fframes clips (preview + master); fframes-only:
+//                      hidden for anime templates (S11:ATP-008)
+//   mg.updateTemplate  "Update template to vN" for the selected clips whose template has an upgrade (S11:ATP-009)
+// Also registers the Properties ▸ Template section (clipSections) for motion-graphic clips.
 import type { MgRenderSpec } from '@jasper/api';
-import { mgRegistry, resolveSpecParams } from '@jasper/mg-templates';
-import { FLICKS_PER_SECOND, type ProjectDocument } from '@jasper/project';
+import { isSvgTemplate, mgRegistry, resolveSpecParams } from '@jasper/mg-templates';
+import type { Clip, Command, MgTemplateRegistry, ProjectDocument } from '@jasper/project';
+import { FLICKS_PER_SECOND } from '@jasper/project';
+import type { EditorSession } from '@jasper/session';
 import { z } from 'zod';
+import { clipSections } from '../extensions/index.ts';
 import { insertMotionTemplate } from '../panels/motionTemplates/insert.ts';
+import { MgTemplateSection } from '../panels/motionTemplates/TemplateSection.tsx';
 import { trackMgRenderJob } from '../panels/program/mg-render-state.tsx';
 import type { CommandCtx, UiCommand } from './types.ts';
 
@@ -21,7 +29,8 @@ const InsertArgs = z.object({
 export function mgSpecForClip(doc: ProjectDocument, sequenceId: string, clipId: string): MgRenderSpec | null {
 	const seq = doc.sequences[sequenceId];
 	const clip = seq?.clips[clipId];
-	if (!seq || !clip || clip.kind !== 'motion-graphic') return null;
+	// Anime templates (and templates this build lacks) have no jasper-mg spec (S11:ATP-008).
+	if (!seq || !clip || !isFframesClip(clip)) return null;
 	const fps = seq.settings.frameRate;
 	const canvas =
 		clip.canvas === 'sequence' ? { width: seq.settings.width, height: seq.settings.height } : clip.canvas;
@@ -39,14 +48,75 @@ export function mgSpecForClip(doc: ProjectDocument, sequenceId: string, clipId: 
 	);
 }
 
-function selectedMgClips(ctx: CommandCtx): { sequenceId: string; clipIds: string[] } | null {
+type MgClip = Extract<Clip, { kind: 'motion-graphic' }>;
+
+/** True for clips of an installed fframes template (the only ones jasper-mg renders, S11:ATP-008). */
+export function isFframesClip(clip: Clip | undefined): clip is MgClip {
+	if (clip?.kind !== 'motion-graphic') return false;
+	const def = mgRegistry.getDefinition(clip.template.id, clip.template.version);
+	return !!def && isSvgTemplate(def);
+}
+
+function selectedMgClips(
+	ctx: CommandCtx,
+	filter: (c: Clip | undefined) => boolean = isFframesClip,
+): { sequenceId: string; clipIds: string[] } | null {
 	const state = ctx.session?.store.getState();
 	const sequenceId = state?.activeSequenceId;
 	if (!state || !sequenceId) return null;
 	const seq = state.document.sequences[sequenceId];
-	const clipIds = state.selection.timeline.clips.filter((id) => seq?.clips[id]?.kind === 'motion-graphic');
+	const clipIds = state.selection.timeline.clips.filter((id) => filter(seq?.clips[id]));
 	return { sequenceId, clipIds };
 }
+
+// ---------------------------------------------------------------- template upgrades (S11:ATP-009)
+
+/** The version a clip's template can be upgraded to (null when there is no upgrade path). */
+export function templateUpgradeFor(reg: MgTemplateRegistry, clip: Clip | undefined): number | null {
+	if (clip?.kind !== 'motion-graphic') return null;
+	const up = reg.upgrade?.(clip.template.id, clip.template.version, { ...clip.params }) ?? null;
+	return up && reg.get(clip.template.id, up.version) ? up.version : null;
+}
+
+/**
+ * Upgrades the templates of `clipIds` (those with an upgrade path) in one transaction — one undo step — through
+ * `clip.update {template: {version}}`. Returns the number of clips upgraded, or an error message.
+ */
+export function updateTemplates(
+	session: EditorSession,
+	clipIds: readonly string[],
+): { ok: true; updated: number } | { ok: false; message: string } {
+	const state = session.store.getState();
+	const reg = session.ctx.registries.mgTemplates;
+	const commands: Command[] = [];
+	const names = new Set<string>();
+	for (const seq of Object.values(state.document.sequences)) {
+		for (const id of clipIds) {
+			const clip = seq.clips[id];
+			const to = templateUpgradeFor(reg, clip);
+			if (to === null || clip?.kind !== 'motion-graphic') continue;
+			commands.push({ type: 'clip.update', clipId: id, patch: { template: { version: to } } } as Command);
+			names.add(reg.get(clip.template.id, to)?.name ?? clip.template.id);
+		}
+	}
+	if (commands.length === 0) return { ok: false, message: 'No template update is available' };
+	const label = `Update Template${names.size === 1 ? ` (${[...names][0]})` : 's'}`;
+	const r = session.apply({
+		label,
+		origin: 'user',
+		...(state.activeSequenceId ? { sequenceId: state.activeSequenceId } : {}),
+		commands,
+	});
+	if (!r.ok) return { ok: false, message: r.errors.map((e) => e.message).join('; ') || 'Update failed' };
+	return { ok: true, updated: commands.length };
+}
+
+const UpdateArgs = z
+	.object({
+		/** Clips to update; default: the selected motion-graphic clips. */
+		clipIds: z.array(z.string()).optional(),
+	})
+	.optional();
 
 export const mgCommands: UiCommand[] = [
 	{
@@ -73,11 +143,12 @@ export const mgCommands: UiCommand[] = [
 		id: 'mg.rerender',
 		label: 'Re-render Motion Graphics',
 		description:
-			'Renders the selected motion-graphic clips with the native fframes renderer (preview + ProRes master).',
+			'Renders the selected fframes motion-graphic clips with the native fframes renderer (preview + ProRes master). Anime templates are drawn by Remotion and are not re-rendered.',
 		icon: 'engine.fframes',
 		scope: 'editing',
 		capability: 'fframes',
 		agentExposed: true,
+		// fframes-only (S11:ATP-008): unavailable when only anime-template clips are selected.
 		when: (ctx) => (selectedMgClips(ctx)?.clipIds.length ?? 0) > 0,
 		run: async (ctx) => {
 			const sel = selectedMgClips(ctx);
@@ -98,4 +169,39 @@ export const mgCommands: UiCommand[] = [
 			});
 		},
 	},
+	{
+		id: 'mg.updateTemplate',
+		label: 'Update Template to Latest Version',
+		description:
+			'Upgrades the template of the selected motion-graphic clips to its newest installed version (params migrated; one undo step).',
+		icon: 'panel.motionTemplates',
+		scope: 'editing',
+		argsSchema: UpdateArgs,
+		agentExposed: true,
+		when: (ctx) => {
+			const reg = ctx.session?.ctx.registries.mgTemplates;
+			const sel = selectedMgClips(ctx, (c) => c?.kind === 'motion-graphic');
+			const seq = sel && ctx.session?.store.getState().document.sequences[sel.sequenceId];
+			return !!reg && !!seq && sel.clipIds.some((id) => templateUpgradeFor(reg, seq.clips[id]) !== null);
+		},
+		run: (ctx, args) => {
+			if (!ctx.session) throw new Error('No project is open');
+			const a = args as z.infer<typeof UpdateArgs> | undefined;
+			const ids = a?.clipIds ?? selectedMgClips(ctx, (c) => c?.kind === 'motion-graphic')?.clipIds ?? [];
+			const r = updateTemplates(ctx.session, ids);
+			if (!r.ok) throw new Error(r.message);
+			ctx.ui.toast({ kind: 'info', message: `Updated ${r.updated} template${r.updated === 1 ? '' : 's'}` });
+		},
+	},
 ];
+
+// ---------------------------------------------------------------- UI extensions (ARCHITECTURE §19.10)
+
+clipSections.register({
+	id: 'mg-template',
+	title: 'Template',
+	appliesTo: (clips) => clips.length > 0 && clips.every((c) => c.kind === 'motion-graphic'),
+	component: MgTemplateSection,
+	defaultOpen: true,
+	order: 5,
+});
