@@ -9,7 +9,7 @@
 
 import { current, type Draft, isDraft } from 'immer';
 import { type Box, scaleForMode } from '../../factories.ts';
-import { isBoundedContent, kindCapabilities } from '../../registry/kinds.ts';
+import { contentDurationFlicks, isBoundedContent, kindCapabilities } from '../../registry/kinds.ts';
 import type { MediaAsset } from '../../schema/media.ts';
 import type { Clip, Track } from '../../schema/sequence.ts';
 import { contentSpanFlicks, FRAME_EPS, flicksPerFrame, type Rational } from '../../time.ts';
@@ -55,9 +55,8 @@ function isLocked(seq: DSeq, trackId: string): boolean {
 }
 
 function mediaDuration(doc: DDoc, clip: DClip): number | null {
-	const mediaId = (clip as { mediaId?: string }).mediaId;
-	if (!mediaId) return null;
-	return (doc.media[mediaId] as MediaAsset | undefined)?.probe.durationFlicks ?? null;
+	// Media duration, or the composition length for composition clips (S08:MGC-004).
+	return contentDurationFlicks(doc as unknown as { media: Record<string, MediaAsset> }, clip as Clip);
 }
 
 /**

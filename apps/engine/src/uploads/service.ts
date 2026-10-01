@@ -23,6 +23,8 @@ type Session = {
 	byteSize: number;
 	mimeType: string;
 	clientFingerprint?: string;
+	/** M2 (wp-m2-mg): `mg-bundle` uploads are completed by the bundle import, not the media registry. */
+	purpose?: 'media' | 'mg-bundle';
 	createdAt: string;
 	touchedAt: string;
 };
@@ -96,6 +98,7 @@ export class UploadService {
 			byteSize: req.byteSize,
 			mimeType: req.mimeType,
 			...(req.clientFingerprint ? { clientFingerprint: req.clientFingerprint } : {}),
+			...(req.purpose && req.purpose !== 'media' ? { purpose: req.purpose } : {}),
 			createdAt: t,
 			touchedAt: t,
 		};
@@ -187,11 +190,48 @@ export class UploadService {
 					byteSize: s.byteSize,
 				});
 			}
+			if (s.purpose === 'mg-bundle')
+				throw new UploadError(
+					'BAD_REQUEST',
+					409,
+					'This upload is a Remotion bundle: complete it with POST /api/mg-bundles/import {uploadId}',
+				);
 			const media = await this.deps.media.registerUploaded(this.dataFile(uploadId), s.fileName, {
 				projectId: s.projectId,
 			});
 			await rm(this.sessionDir(uploadId), { recursive: true, force: true });
 			return media;
+		});
+	}
+
+	/**
+	 * M2 (wp-m2-mg, additive): hands a fully received upload of `purpose` to its consumer (a bundle zip for
+	 * `POST /api/mg-bundles/import`). `release()` deletes the session once the consumer is done with the file.
+	 */
+	take(
+		uploadId: string,
+		purpose: 'mg-bundle',
+	): Promise<{ file: string; fileName: string; projectId: string; release(): Promise<void> }> {
+		return this.mutex.run(uploadId, async () => {
+			const s = await this.load(uploadId);
+			if (s.purpose !== purpose)
+				throw new UploadError(
+					'BAD_REQUEST',
+					409,
+					`Upload ${uploadId} was not created with purpose ${purpose}`,
+				);
+			const size = await this.currentOffset(uploadId);
+			if (size !== s.byteSize)
+				throw new UploadError('UPLOAD_SIZE_MISMATCH', 409, `Received ${size} of ${s.byteSize} bytes`, {
+					expectedOffset: size,
+					byteSize: s.byteSize,
+				});
+			return {
+				file: this.dataFile(uploadId),
+				fileName: s.fileName,
+				projectId: s.projectId,
+				release: () => rm(this.sessionDir(uploadId), { recursive: true, force: true }),
+			};
 		});
 	}
 

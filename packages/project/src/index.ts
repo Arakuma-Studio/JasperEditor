@@ -10,6 +10,7 @@ export * from './color/lut.ts';
 export * from './color/retime.ts';
 export * from './color/runs.ts';
 export * from './commands/index.ts';
+export * from './composition/index.ts';
 export * from './derive/index.ts';
 export * from './factories.ts';
 export * from './ids.ts';

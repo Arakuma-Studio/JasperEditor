@@ -183,6 +183,15 @@ export const MgCompositionInfoSchema = z.looseObject({
 	/** JSON Schema (draft 2020-12) of the props, or null when none is known. */
 	propsSchema: z.record(z.string(), z.unknown()).nullable(),
 	schemaSource: z.enum(['bundle', 'manifest', 'inferred']),
+	/**
+	 * M2 (wp-m2-mg, additive): form hints by dotted prop path (`jasper.mg.json` `ui`, merged over the inferred
+	 * ones), e.g. `{"accent": {"control": "color"}}`.
+	 */
+	ui: z.record(z.string(), z.looseObject({ control: z.string().optional() })).optional(),
+	/** Manifest `category` (Motion Templates panel grouping). */
+	category: z.string().optional(),
+	/** Manifest `thumbnailFrame` (poster frame; default 0). */
+	thumbnailFrame: z.number().int().min(0).optional(),
 });
 export type MgCompositionInfo = DeepStrip<z.infer<typeof MgCompositionInfoSchema>>;
 

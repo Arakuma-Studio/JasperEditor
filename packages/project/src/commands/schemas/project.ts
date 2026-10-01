@@ -2,10 +2,12 @@ import { z } from 'zod';
 import { LabelColorSchema } from '../../schema/common.ts';
 import { ProjectSettingsSchema } from '../../schema/document.ts';
 import {
+	LutInfoSchema,
 	MediaAssetSchema,
 	MediaKindSchema,
 	MediaLocatorSchema,
 	MediaProbeSchema,
+	MgBundleInfoSchema,
 	NativeRecipeSchema,
 } from '../../schema/media.ts';
 import { ContentTimeInputSchema, cmd, IdListSchema, IdRefSchema, RefDeclSchema } from './common.ts';
@@ -55,6 +57,17 @@ export const MediaRelinkCmd = cmd('media.relink', {
 	probe: MediaProbeSchema.optional(),
 	fingerprint: z.string().optional(),
 	force: z.boolean().optional(),
+	/**
+	 * M2 (S08:MGC-013, additive): a rebuilt Remotion bundle — the new header (bundle hash, compositions). On an
+	 * `mg-bundle` asset a changed fingerprint is accepted without `force` (the content address changes with
+	 * every rebuild).
+	 */
+	mgBundle: MgBundleInfoSchema.optional(),
+	/** M2 (S06, additive): an updated LUT header. */
+	lut: LutInfoSchema.optional(),
+	/** M2 (additive): new size and container of the relinked file. */
+	sizeBytes: z.number().int().min(0).optional(),
+	originalName: z.string().optional(),
 });
 export const MediaDeriveCmd = cmd('media.derive', {
 	fromMediaId: IdRefSchema,

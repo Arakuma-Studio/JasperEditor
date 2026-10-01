@@ -5,17 +5,35 @@
 // applicability by kind capabilities and how the UI writes it (`param.set` or `clip.update`).
 import { z } from 'zod';
 import type { ParamPath } from '../commands/schemas/common.ts';
+import {
+	derefSchema,
+	type JsonSchemaNode as JsonSchema,
+	type PropsUiHint,
+} from '../composition/json-schema.ts';
 import { evaluate } from '../keyframes.ts';
 import type { Animatable, RGBA } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
+import type { MgCompositionInfo } from '../schema/media.ts';
 import { BLEND_MODES, type Clip, type EffectInstance, type Sequence } from '../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../time.ts';
 import type { EffectRegistry, EffectSpec, ParamSpec } from './effects.ts';
 import { kindCapabilities } from './kinds.ts';
 import type { MgTemplateInfo } from './mg.ts';
 
-/** `curve` and `media` are M2 (effect params only: tone curves, LUT asset refs). */
-export type ValueKind = 'number' | 'vec2' | 'color' | 'enum' | 'boolean' | 'string' | 'curve' | 'media';
+/**
+ * `curve` and `media` are M2 (effect params only: tone curves, LUT asset refs). `json` (M2, S08) = any JSON
+ * value described by the spec's `valueSchema` (composition props that are arrays or free-form objects).
+ */
+export type ValueKind =
+	| 'number'
+	| 'vec2'
+	| 'color'
+	| 'enum'
+	| 'boolean'
+	| 'string'
+	| 'curve'
+	| 'media'
+	| 'json';
 export type PropertyGroup =
 	| 'motion'
 	| 'opacity'
@@ -23,6 +41,8 @@ export type PropertyGroup =
 	| 'text'
 	| 'solid'
 	| 'params'
+	/** M2 (S08): composition clip props (`props.<dotted.path>`). */
+	| 'props'
 	| 'effect'
 	| 'crop'
 	| 'box';
@@ -63,7 +83,9 @@ export type PropertySpec = {
 			| 'text'
 			| 'wheel'
 			| 'curve'
-			| 'media';
+			| 'media'
+			/** M2 (S08): a JSON editor (arrays, free-form objects). */
+			| 'json';
 		bipolar?: boolean;
 		/** Digits after the decimal point in the UI (derived from `range.step` when absent). */
 		precision?: number;
@@ -76,6 +98,8 @@ export type PropertySpec = {
 		| { via: 'param' }
 		| { via: 'clip.update'; patch(value: unknown, clip: Clip): Record<string, unknown> };
 	description?: string;
+	/** M2 (S08): JSON Schema of the value (`json` kind and every spec built from a JSON Schema). */
+	valueSchema?: JsonSchemaObject;
 };
 
 const hasTransform = (c: Pick<Clip, 'kind'>) => !!kindCapabilities(c.kind)?.hasTransform;
@@ -611,65 +635,212 @@ const humanize = (name: string) =>
 		.replace(/([a-z])([A-Z])/g, '$1 $2')
 		.replace(/^./, (c) => c.toUpperCase());
 
-/** Specs for a motion-graphic clip's `params.<name>` from the template's params schema. */
-export function paramsPropertySpecs(template: MgTemplateInfo): PropertySpec[] {
-	let json: { properties?: Record<string, Record<string, unknown>> };
-	try {
-		json = z.toJSONSchema(template.paramsSchema, { unrepresentable: 'any', io: 'input' }) as typeof json;
-	} catch {
-		return [];
+export type JsonSchemaSpecOptions = {
+	/** Key prefix and storage root, e.g. `params` / `['params']`, `props` / `['props']`. */
+	keyPrefix: string;
+	storageRoot: readonly string[];
+	group: PropertyGroup;
+	appliesTo(clip: Pick<Clip, 'kind'>): boolean;
+	/** Default values by the same structure as the value (template defaults, composition defaultProps). */
+	defaults?: Record<string, unknown>;
+	/** Recurse into nested objects with `properties` (one spec per leaf, dotted keys). Default true. */
+	nested?: boolean;
+	/** Arrays of exactly 4 / 2 numbers become `color` (RGBA 0..1) / `vec2` kinds (M1 template params). */
+	tuples?: boolean;
+	/** UI hints by dotted path relative to the root (manifest `ui`, inferred colour/textarea hints). */
+	ui?: Record<string, PropsUiHint | undefined>;
+};
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+	!!v && typeof v === 'object' && !Array.isArray(v);
+
+/** `anyOf`/`oneOf` of one schema plus `null` (zod `.nullable()`) → that schema; otherwise the input. */
+function unwrapNullable(root: JsonSchema, s: JsonSchema): JsonSchema {
+	for (const key of ['anyOf', 'oneOf'] as const) {
+		const list = s[key];
+		if (!Array.isArray(list)) continue;
+		const rest = list
+			.map((x) => derefSchema(root, x as JsonSchema))
+			.filter((x) => !(isRecord(x) && x.type === 'null'));
+		if (rest.length === 1 && isRecord(rest[0])) {
+			const { [key]: _drop, ...others } = s;
+			return { ...others, ...rest[0] };
+		}
 	}
+	return s;
+}
+
+/** Literal-only unions (`anyOf: [{const: 'a'}, …]`) and `enum` → option strings. */
+function literalOptions(root: JsonSchema, s: JsonSchema): string[] | null {
+	if (Array.isArray(s.enum)) return (s.enum as unknown[]).map(String);
+	for (const key of ['anyOf', 'oneOf'] as const) {
+		const list = s[key];
+		if (!Array.isArray(list) || list.length === 0) continue;
+		const out: string[] = [];
+		for (const x of list) {
+			const d = derefSchema(root, x as JsonSchema);
+			if (isRecord(d) && 'const' in d && typeof d.const === 'string') out.push(d.const);
+			else if (isRecord(d) && Array.isArray(d.enum) && d.enum.every((e) => typeof e === 'string'))
+				out.push(...(d.enum as string[]));
+			else return null;
+		}
+		return out;
+	}
+	return null;
+}
+
+/**
+ * Generic JSON Schema → property specs (S08:MGU-003, generalising the M1 `params.*` specs): one spec per leaf
+ * property (nested objects recurse into dotted keys), with kinds number / boolean / enum / string / json (arrays,
+ * free-form objects), ranges from `minimum`/`maximum`, labels from `title` (else the humanized name),
+ * descriptions, defaults and UI hints. Every spec is static (`animatable: 'no'`, S08:MGC-006) and written with
+ * `param.set` on `[…storageRoot, …path]`.
+ */
+export function jsonSchemaPropertySpecs(
+	schema: JsonSchemaObject | null | undefined,
+	o: JsonSchemaSpecOptions,
+): PropertySpec[] {
+	if (!schema) return [];
+	const root = schema as JsonSchema;
 	const out: PropertySpec[] = [];
-	for (const [name, s] of Object.entries(json.properties ?? {})) {
+	const nested = o.nested ?? true;
+	const numBound = (v: unknown) => (typeof v === 'number' && Math.abs(v) < SAFE_INT ? v : undefined);
+	const leaf = (name: string, path: string[], s0: JsonSchema, dflt: unknown) => {
+		const s = unwrapNullable(root, s0);
+		const hint = o.ui?.[path.join('.')];
 		let kind: ValueKind = 'string';
 		let options: readonly string[] | undefined;
-		const numBound = (v: unknown) => (typeof v === 'number' && Math.abs(v) < SAFE_INT ? v : undefined);
-		if (Array.isArray(s.enum)) {
+		const enumOpts = literalOptions(root, s);
+		const t = Array.isArray(s.type) ? (s.type as string[]).find((x) => x !== 'null') : s.type;
+		if (enumOpts) {
 			kind = 'enum';
-			options = (s.enum as unknown[]).map(String);
-		} else if (s.type === 'number' || s.type === 'integer') kind = 'number';
-		else if (s.type === 'boolean') kind = 'boolean';
-		else if (s.type === 'array' && s.minItems === 4 && s.maxItems === 4) kind = 'color';
-		else if (s.type === 'array' && s.minItems === 2 && s.maxItems === 2) kind = 'vec2';
-		const templateDefault = template.defaults[name];
+			options = enumOpts;
+		} else if (t === 'number' || t === 'integer') kind = 'number';
+		else if (t === 'boolean') kind = 'boolean';
+		else if (t === 'string') kind = 'string';
+		else if (o.tuples && t === 'array' && s.minItems === 4 && s.maxItems === 4) kind = 'color';
+		else if (o.tuples && t === 'array' && s.minItems === 2 && s.maxItems === 2) kind = 'vec2';
+		else kind = o.tuples ? 'string' : 'json';
+		if (hint?.control === 'json') kind = 'json';
+		const integer = t === 'integer';
+		const min = numBound(s.minimum) ?? (typeof hint?.min === 'number' ? hint.min : undefined);
+		const max = numBound(s.maximum) ?? (typeof hint?.max === 'number' ? hint.max : undefined);
+		const control: PropertySpec['ui']['control'] =
+			kind === 'json'
+				? 'json'
+				: kind === 'number'
+					? hint?.control === 'slider' && min !== undefined && max !== undefined
+						? 'slider'
+						: 'scrub'
+					: kind === 'boolean'
+						? 'toggle'
+						: kind === 'enum'
+							? 'select'
+							: kind === 'color'
+								? 'color'
+								: kind === 'vec2'
+									? 'vec2'
+									: hint?.control === 'color'
+										? 'color'
+										: 'text';
 		out.push({
-			key: `params.${name}`,
-			label: typeof s.title === 'string' ? s.title : humanize(name),
-			group: 'params',
+			key: [o.keyPrefix, ...path].join('.'),
+			label:
+				typeof hint?.label === 'string' ? hint.label : typeof s.title === 'string' ? s.title : humanize(name),
+			group: o.group,
 			kind,
 			options,
 			range:
 				kind === 'number'
-					? {
-							min: numBound(s.minimum),
-							max: numBound(s.maximum),
-							step: s.type === 'integer' ? 1 : undefined,
-						}
+					? { min, max, step: integer ? 1 : typeof hint?.step === 'number' ? hint.step : undefined }
 					: undefined,
 			animatable: 'no',
-			storagePath: ['params', name],
-			appliesTo: (c) => c.kind === 'motion-graphic',
+			storagePath: [...o.storageRoot, ...path],
+			appliesTo: o.appliesTo,
 			ui: {
-				control:
-					kind === 'number'
-						? 'scrub'
-						: kind === 'boolean'
-							? 'toggle'
-							: kind === 'enum'
-								? 'select'
-								: kind === 'color'
-									? 'color'
-									: kind === 'vec2'
-										? 'vec2'
-										: 'text',
-				precision: s.type === 'integer' ? 0 : undefined,
-				multiline: kind === 'string' && typeof s.maxLength === 'number' && s.maxLength > 120,
+				control,
+				precision: integer ? 0 : undefined,
+				multiline:
+					kind === 'string' &&
+					(hint?.control === 'textarea' || (typeof s.maxLength === 'number' && s.maxLength > 120)),
 			},
-			defaultValue: templateDefault !== undefined ? templateDefault : s.default,
+			defaultValue: dflt !== undefined ? dflt : s.default,
 			description: typeof s.description === 'string' ? s.description : undefined,
+			valueSchema: s,
 		});
-	}
+	};
+	const walk = (s0: JsonSchema | boolean | undefined, path: string[], dflt: unknown, depth: number) => {
+		const s = derefSchema(root, s0);
+		if (!isRecord(s) || depth > 12) return;
+		for (const [name, sub0] of Object.entries(isRecord(s.properties) ? s.properties : {})) {
+			const sub = derefSchema(root, sub0 as JsonSchema);
+			if (!isRecord(sub)) continue;
+			const d = isRecord(dflt) ? dflt[name] : undefined;
+			const u = unwrapNullable(root, sub);
+			if (nested && isRecord(u.properties) && Object.keys(u.properties).length > 0 && u.type !== 'array')
+				walk(u, [...path, name], d, depth + 1);
+			else leaf(name, [...path, name], sub, d);
+		}
+	};
+	walk(root, [], o.defaults, 0);
 	return out;
+}
+
+/** Specs for a motion-graphic clip's `params.<name>` from the template's params schema. */
+export function paramsPropertySpecs(template: MgTemplateInfo): PropertySpec[] {
+	let json: JsonSchemaObject;
+	try {
+		json = z.toJSONSchema(template.paramsSchema, { unrepresentable: 'any', io: 'input' }) as JsonSchemaObject;
+	} catch {
+		return [];
+	}
+	return jsonSchemaPropertySpecs(json, {
+		keyPrefix: 'params',
+		storageRoot: ['params'],
+		group: 'params',
+		appliesTo: (c) => c.kind === 'motion-graphic',
+		defaults: template.defaults,
+		nested: false,
+		tuples: true,
+	}).map(({ valueSchema: _v, ...s }) => s);
+}
+
+/**
+ * Specs for a composition clip's `props.<dotted.path>` (S08:MGU-003) from the composition's `propsSchema`
+ * (schema module, manifest or inferred), its `defaultProps` and UI hints.
+ */
+export function compositionPropsPropertySpecs(
+	info: Pick<MgCompositionInfo, 'propsSchema' | 'defaultProps' | 'ui'>,
+): PropertySpec[] {
+	return jsonSchemaPropertySpecs(info.propsSchema as JsonSchemaObject | null, {
+		keyPrefix: 'props',
+		storageRoot: ['props'],
+		group: 'props',
+		appliesTo: (c) => c.kind === 'composition',
+		defaults: info.defaultProps,
+		nested: true,
+		ui: info.ui as Record<string, PropsUiHint> | undefined,
+	});
+}
+
+/**
+ * A `props.<path>` spec for a path the schema does not describe as a leaf: inside a `json` leaf (array
+ * element, nested free-form value) or a prop the schema allows implicitly. Kind `json`; the whole effective
+ * props object is validated against the schema when written.
+ */
+export function genericPropsPropertySpec(key: string, valueSchema?: JsonSchemaObject): PropertySpec {
+	const path = key.split('.').slice(1);
+	return {
+		key,
+		label: humanize(path[path.length - 1] ?? 'props'),
+		group: 'props',
+		kind: 'json',
+		animatable: 'no',
+		storagePath: ['props', ...path],
+		appliesTo: (c) => c.kind === 'composition',
+		ui: { control: 'json' },
+		...(valueSchema ? { valueSchema } : {}),
+	};
 }
 
 /** Specs for the params of one applied effect instance (`effects.<fxId>.<param>`). */
@@ -719,15 +890,40 @@ export function effectParamPropertySpec(fxId: string, effect: EffectSpec, p: Par
 }
 
 /** Registry specs that apply to a clip, plus `params.*` for motion graphics when a template is given. */
-export function propertiesForClip(clip: Pick<Clip, 'kind'>, template?: MgTemplateInfo): PropertySpec[] {
+export function propertiesForClip(
+	clip: Pick<Clip, 'kind'>,
+	template?: MgTemplateInfo,
+	composition?: Pick<MgCompositionInfo, 'propsSchema' | 'defaultProps' | 'ui'>,
+): PropertySpec[] {
 	const base = PROPERTY_SPECS.filter((s) => s.appliesTo(clip));
-	return template && clip.kind === 'motion-graphic' ? [...base, ...paramsPropertySpecs(template)] : base;
+	if (template && clip.kind === 'motion-graphic') return [...base, ...paramsPropertySpecs(template)];
+	if (composition && clip.kind === 'composition')
+		return [...base, ...compositionPropsPropertySpecs(composition)];
+	return base;
 }
 
-/** Resolves a spec for a key, including dynamic `params.<name>` keys. */
-export function resolvePropertySpec(key: string, template?: MgTemplateInfo): PropertySpec | undefined {
+/**
+ * Resolves a spec for a key, including dynamic `params.<name>` keys (motion graphics, given the template) and
+ * `props.<dotted.path>` keys (composition clips, given the composition; paths below a schema leaf or not
+ * described by the schema resolve to a generic `json` spec, validated as a whole when written).
+ */
+export function resolvePropertySpec(
+	key: string,
+	template?: MgTemplateInfo,
+	composition?: Pick<MgCompositionInfo, 'propsSchema' | 'defaultProps' | 'ui'> | null,
+): PropertySpec | undefined {
 	if (key.startsWith('params.'))
 		return template ? paramsPropertySpecs(template).find((s) => s.key === key) : undefined;
+	if (key.startsWith('props.') && key.length > 'props.'.length) {
+		if (composition === undefined) return undefined;
+		if (composition === null) return genericPropsPropertySpec(key);
+		const specs = compositionPropsPropertySpecs(composition);
+		const exact = specs.find((s) => s.key === key);
+		if (exact) return exact;
+		const parent = specs.find((s) => key.startsWith(`${s.key}.`));
+		if (parent && parent.kind !== 'json') return undefined;
+		return genericPropsPropertySpec(key);
+	}
 	return getPropertySpec(key);
 }
 
@@ -869,6 +1065,8 @@ export function propertyJsonSchema(s: PropertySpec): JsonSchemaObject {
 	if (s.description) base.description = s.description;
 	base['x-animatable'] = s.animatable;
 	if (s.unit) base['x-unit'] = s.unit;
+	// Composition props keep their own schema (patterns, formats, nested shapes).
+	if (s.group === 'props' && s.valueSchema) return { ...s.valueSchema, ...base };
 	switch (s.kind) {
 		case 'number':
 			return {
@@ -920,16 +1118,23 @@ export function propertyJsonSchema(s: PropertySpec): JsonSchemaObject {
 				properties: { mediaId: { type: 'string' } },
 				required: ['mediaId'],
 			};
+		case 'json':
+			return { ...(s.valueSchema ?? {}), ...base };
 	}
 }
 
 /** Properties of one clip (intrinsics, template params, applied effect params) as a JSON Schema object. */
 export function clipPropertiesJsonSchema(
 	clip: Clip,
-	opts: { template?: MgTemplateInfo; effects?: EffectRegistry } = {},
+	opts: {
+		template?: MgTemplateInfo;
+		effects?: EffectRegistry;
+		composition?: Pick<MgCompositionInfo, 'propsSchema' | 'defaultProps' | 'ui'>;
+	} = {},
 ): JsonSchemaObject {
 	const properties: Record<string, JsonSchemaObject> = {};
-	for (const s of propertiesForClip(clip, opts.template)) properties[s.key] = propertyJsonSchema(s);
+	for (const s of propertiesForClip(clip, opts.template, opts.composition))
+		properties[s.key] = propertyJsonSchema(s);
 	for (const fx of (clip as { effects?: EffectInstance[] }).effects ?? []) {
 		const effect = opts.effects?.get(fx.effectId, fx.effectVersion);
 		if (!effect) continue; // unknown effects are not editable (S01:FX-022)

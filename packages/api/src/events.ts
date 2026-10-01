@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ApprovalSchema } from './agent.ts';
 import { EngineJobSchema } from './jobs.ts';
 import { DerivativeKindSchema, DerivativeStatusSchema } from './media.ts';
+import { MgBundleRebuiltEventSchema } from './mg-bundles.ts';
 
 export const HEARTBEAT_INTERVAL_MS = 15_000;
 
@@ -53,6 +54,8 @@ export const EVENT_PAYLOADS = {
 	}),
 	/** An agent (jasper-mcp `open_project_in_editor`) asks editor windows to open this project. */
 	'editor.openProject': z.object({ projectId: z.string(), agent: z.string().optional() }),
+	/** M2 (wp-m2-mg, S08:MGC-013): a Remotion bundle was rebuilt; editors relink the asset keyed `oldKey`. */
+	'mgBundle.rebuilt': MgBundleRebuiltEventSchema,
 } as const;
 export type EngineEventType = keyof typeof EVENT_PAYLOADS;
 export const ENGINE_EVENT_TYPES = Object.keys(EVENT_PAYLOADS) as EngineEventType[];

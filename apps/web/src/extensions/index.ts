@@ -95,6 +95,36 @@ export type ProjectItemMenuExtension = {
 /** Project panel item context menu additions. */
 export const projectItemMenuExtensions = createRegistry<ProjectItemMenuExtension>();
 
+// ---------------------------------------------------------------- Timeline: engine badge state (wp-m2-mg)
+
+/** What a clip's engine badge shows instead of the plain kind badge (e.g. `✓` = Remotion master cached). */
+export type ClipBadgeState = { text: string; title: string; tone?: 'ok' | 'busy' | 'warn' };
+/**
+ * Timeline engine badge providers (M2, additive): the first provider returning a state for a clip wins.
+ * `subscribe` lets the timeline re-render a clip when the provider's state changes (async caches).
+ */
+export type ClipBadgeProvider = {
+	id: string;
+	badge(clip: Clip): ClipBadgeState | null;
+	subscribe?(cb: () => void): () => void;
+	version?(): number;
+	order?: number;
+};
+export const clipBadgeProviders = createRegistry<ClipBadgeProvider>();
+
+/** The badge state of a clip from the registered providers (null = default badge). */
+export function clipBadgeFor(clip: Clip): ClipBadgeState | null {
+	for (const p of clipBadgeProviders.list()) {
+		try {
+			const b = p.badge(clip);
+			if (b) return b;
+		} catch {
+			// a failing provider never breaks the timeline
+		}
+	}
+	return null;
+}
+
 /** Collects the menu items of every registered extension, separated from each other. */
 export function collectMenuItems<C>(
 	exts: readonly { items(ctx: C): MenuItemSpec[] }[],

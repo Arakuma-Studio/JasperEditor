@@ -1,17 +1,19 @@
 // param.set / param.setAnimated with Effect Controls stopwatch semantics (S01:KF-005, CMD-010, CMD-013).
 import type { Draft } from 'immer';
+import { compositionOfClip } from '../../composition/props.ts';
 import { evaluate, isHoldOnlyValue } from '../../keyframes.ts';
 import type { ParamSpec } from '../../registry/effects.ts';
 import { type PropertySpec, resolvePropertySpec } from '../../registry/properties.ts';
 import type { Animatable, Keyframe } from '../../schema/common.ts';
-import type { EffectInstance } from '../../schema/sequence.ts';
+import type { Clip, EffectInstance } from '../../schema/sequence.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
 import type { CommandOf, ParamAt } from '../schemas/index.ts';
+import { setCompositionProp } from './composition.ts';
 import type { HandlerMap } from './util.ts';
 
 export type ValueRule = {
-	kind: 'number' | 'vec2' | 'color' | 'enum' | 'boolean' | 'string' | 'media' | 'curve';
+	kind: 'number' | 'vec2' | 'color' | 'enum' | 'boolean' | 'string' | 'media' | 'curve' | 'json';
 	range?: { min?: number; max?: number };
 	options?: readonly string[];
 	holdOnly: boolean;
@@ -82,8 +84,19 @@ export function resolveTarget(
 						(clip as { template: { version: number } }).template.version,
 					)
 				: undefined;
-		const spec = resolvePropertySpec(key, template);
+		// Composition clips (S08:MGC-007): `props.<path>` from the composition's schema (null = bundle unknown).
+		const composition =
+			clip.kind === 'composition' ? (compositionOfClip(doc as never, clip as Clip)?.info ?? null) : undefined;
+		const spec = resolvePropertySpec(key, template, composition);
 		if (!spec?.appliesTo(clip)) return bad();
+		if (spec.group === 'props') {
+			return {
+				type: 'static',
+				rule: ruleFromProperty(spec),
+				label: key,
+				set: (v) => setCompositionProp(doc, clip, spec.storagePath.slice(1), v, h),
+			};
+		}
 		const time = (at: ParamAt | undefined) => h.clipContentTime(seq, clip, at);
 		if (spec.animatable !== 'no') {
 			const anim = getAt(clip, spec.storagePath) as Draft<Animatable<unknown>> | undefined;
@@ -205,6 +218,17 @@ export function validateValue(
 			if (!v || typeof v !== 'object' || typeof (v as { mediaId?: unknown }).mediaId !== 'string')
 				return fail();
 			return { value: v, clamped: false };
+		case 'json': {
+			// Any JSON value (composition props: arrays, free-form objects); the schema check comes after.
+			let copy: unknown;
+			try {
+				copy = v === undefined ? undefined : JSON.parse(JSON.stringify(v));
+			} catch {
+				return fail();
+			}
+			if (copy === undefined) return fail();
+			return { value: copy, clamped: false };
+		}
 		case 'curve': {
 			// {curve: [[x, y], …]}: ≥ 2 points in 0..1 (clamped), sorted by x, x strictly increasing.
 			const pts = (v as { curve?: unknown } | null)?.curve;

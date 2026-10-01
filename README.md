@@ -123,6 +123,26 @@ Every step keeps the frame count and rate, so timing never changes; the export r
   `scripts/models/export-span-onnx.py`). Help ▸ About ▸ Licenses lists all of them.
 - MCP: `process_clip`, `use_media_version`, `list_processing_models`, `test_remote_executor`, …
 
+## Motion graphics from Remotion projects
+
+Remotion projects become media (S08, `docs/wp-notes/wp-m2-mg.md`): **File ▸ Import Remotion Project…** takes a
+project folder (pinned to `remotion` / `@remotion/cli` **4.0.499**, dependencies installed — the engine bundles
+it with the project's own CLI and can watch it for changes) or, on the web, a zip of a built bundle. Each
+composition then appears in **Motion Templates ▸ Remotion**; double-click or drag one onto the timeline.
+
+- Properties ▸ Composition shows a form built from the props schema: `jasper.mg.json` (per composition, or a
+  `"*"` entry for every composition — useful for registry-style projects whose compositions have empty
+  `defaultProps`), else a zod schema module named in `package.json` `"jasper": {"schemas": "./src/jasper-schemas.ts"}`,
+  else inferred from `defaultProps`. Edits are validated and undoable.
+- Preview: a live frame host (the bundle page in an iframe, driven frame by frame) while you edit; after 2 s
+  without changes a VP9-alpha preview takes over for smooth playback.
+- Export: the native path composites cached ProRes 4444 masters with straight alpha, rendered by Remotion on
+  demand (child jobs) and keyed by bundle hash + props + size + fps + range, so a prop or code change renders a
+  new one. The clip badge turns from "R" to "✓" when the master is cached.
+- `fixtures/mg-project/` is a minimal example (Title with a zod schema, Badge inferred).
+- MCP: `import_mg_bundle`, `list_compositions`, `add_composition`, `set_composition_props`,
+  `prerender_composition`, `scaffold_mg_project`.
+
 ## PWA (installable web app)
 
 The Vite dev server does not register the service worker; install from a production build served by the
@@ -330,6 +350,8 @@ Playwright specs:
   an approval-gated `track.remove` denied and then approved on the shell's approval card, Help ▸ Connect an AI
   Agent…, a headless apply with the editor closed, and `open_project_in_editor` bringing the project back.
 - `e2e/pwa.spec.ts` — manifest, icons and service worker of the production build.
+- `e2e/mg-clips.spec.ts` — Remotion page-protocol contract (4.0.499), File ▸ Import Remotion Project… →
+  Remotion tab → live host → props edit within 500 ms → preview WebM, and the MCP composition tools.
 
 ## Scripts
 

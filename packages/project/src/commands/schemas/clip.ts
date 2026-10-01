@@ -103,6 +103,8 @@ export const ClipAddMotionGraphicCmd = cmd('clip.addMotionGraphic', {
 });
 export const ClipAddCompositionCmd = cmd('clip.addComposition', {
 	...placementTarget,
+	/** Default: the composition's length at the sequence rate (S08:MGC-004); longer values are clamped. */
+	duration: TimeInputSchema.optional(),
 	/** M2 (S08): `mediaId` = the mg-bundle asset, `id` = composition id in it; version 1. */
 	composition: z.strictObject({
 		mediaId: IdRefSchema,
@@ -217,6 +219,11 @@ export const ClipPatchSchema = z.strictObject({
 	box: TextBoxSchema.partial().optional(),
 	/** Motion-graphic params merged over the current params and validated by the template. */
 	params: z.record(z.string(), z.unknown()).optional(),
+	/**
+	 * M2 (S08:MGC-007): composition clips — the whole props override object (replaces the current overrides,
+	 * validated against the composition's propsSchema; `{}` = reset to defaults).
+	 */
+	props: z.record(z.string(), z.unknown()).optional(),
 	canvas: canvas.optional(),
 	blendMode: BlendModeSchema.optional(),
 	uniformScale: z.boolean().optional(),

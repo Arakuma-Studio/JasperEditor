@@ -6,11 +6,13 @@ import type { MgTemplateCatalogEntry } from '@jasper/api';
 import { type AnyMgTemplate, mgRegistry } from '@jasper/mg-templates';
 import type { SessionState } from '@jasper/session';
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
-import { cx, Icon } from '@jasper/ui';
+import { cx, Icon, openDialog, Tabs } from '@jasper/ui';
 import { useEffect, useMemo, useState } from 'react';
+import { MG_IMPORT_DIALOG } from '../../mg-bundles/ImportDialog.tsx';
 import { useEngine } from '../../state/engine.tsx';
 import type { PanelProps } from '../types.ts';
 import { insertMotionTemplate, type MgTemplateRef, writeMgTemplateDrag } from './insert.ts';
+import { RemotionTab } from './RemotionTab.tsx';
 
 export type EngineFilter = 'all' | 'fframes' | 'remotion';
 
@@ -178,6 +180,17 @@ function TemplateCard({
 	);
 }
 
+/** Last tab used (per browser), so the Remotion tab stays open across reloads. */
+function initialTab(): 'templates' | 'remotion' {
+	try {
+		return globalThis.localStorage?.getItem('jasper.motionTemplates.tab') === 'remotion'
+			? 'remotion'
+			: 'templates';
+	} catch {
+		return 'templates';
+	}
+}
+
 export function MotionTemplatesPanel(props: PanelProps) {
 	const session = useSessionOrNull();
 	const hasSequence = useStoreSelector(
@@ -189,6 +202,8 @@ export function MotionTemplatesPanel(props: PanelProps) {
 	const [category, setCategory] = useState<string | null>(null);
 	const [engine, setEngine] = useState<EngineFilter>('all');
 	const [message, setMessage] = useState<{ kind: 'info' | 'error'; text: string } | null>(null);
+	const [tab, setTab] = useState<'templates' | 'remotion'>(() => initialTab());
+	const { client } = useEngine();
 	const entries = useMemo(() => galleryEntries(catalog.templates), [catalog.templates]);
 	const previews = useMemo(() => new Map(entries.map((e) => [e.def, previewSvg(e.def)])), [entries]);
 	const categories = useMemo(() => [...new Set(entries.map((e) => e.category))].sort(), [entries]);
@@ -205,12 +220,8 @@ export function MotionTemplatesPanel(props: PanelProps) {
 		}
 	};
 
-	return (
-		<div
-			className="flex h-full min-h-0 flex-col gap-1 p-1 text-pr-ui text-pr-text"
-			data-panel-kind="motionTemplates"
-			data-instance-id={props.instanceId}
-		>
+	const templates = (
+		<div className="flex h-full min-h-0 flex-col gap-1 p-1 text-pr-ui text-pr-text">
 			<div className="flex items-center gap-1">
 				<label className="flex min-w-0 flex-1 items-center gap-1 rounded-pr-control bg-pr-field px-1">
 					<Icon id="app.search" size={14} />
@@ -292,6 +303,39 @@ export function MotionTemplatesPanel(props: PanelProps) {
 					)}
 				</span>
 			</footer>
+		</div>
+	);
+	return (
+		<div
+			className="flex h-full min-h-0 flex-col text-pr-ui text-pr-text"
+			data-panel-kind="motionTemplates"
+			data-instance-id={props.instanceId}
+		>
+			<Tabs
+				className="h-full"
+				value={tab}
+				onValueChange={(v) => {
+					setTab(v as 'templates' | 'remotion');
+					try {
+						globalThis.localStorage?.setItem('jasper.motionTemplates.tab', v);
+					} catch {
+						// storage unavailable
+					}
+				}}
+				items={[
+					{ value: 'templates', label: 'Templates', content: templates },
+					{
+						value: 'remotion',
+						label: 'Remotion',
+						content: (
+							<RemotionTab
+								session={session}
+								onImport={() => void openDialog(MG_IMPORT_DIALOG, { session, engine: client })}
+							/>
+						),
+					},
+				]}
+			/>
 		</div>
 	);
 }
