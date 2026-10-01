@@ -1,6 +1,7 @@
 // Compact, LLM-friendly views of a project document: sequences, tracks and clips with ids, frames and
 // timecodes (S02:TL-951: frames always come with timecode), media summaries and a text timeline table.
 import {
+	type Animatable,
 	type Clip,
 	flicksToSeconds,
 	fpsOf,
@@ -89,15 +90,31 @@ const hexOf = (c: readonly number[]) => {
 	return `#${h.slice(0, 3).join('')}${h[3] === 'ff' ? '' : h[3]}`;
 };
 
-/** "rect 400×400 fill #ffffff stroke 4px #000000 inside radius 12 (animated: size)". */
+/**
+ * A shape property as text: the static value, or — once keyframed (the static value is then ignored) — the key
+ * values in time order, e.g. `100×100→200×200` (consecutive repeats collapsed; more than four → first→…→last).
+ */
+function keyedText<T>(a: Animatable<T>, text: (v: T) => string): string {
+	if (a.keyframes.length === 0) return text(a.value);
+	const vals = [...a.keyframes]
+		.sort((x, y) => x.time - y.time)
+		.map((k) => text(k.value))
+		.filter((v, i, all) => i === 0 || v !== all[i - 1]);
+	return (vals.length > 4 ? [vals[0], '…', vals[vals.length - 1]] : vals).join('→');
+}
+
+/** "rect 100×100→200×200 fill #ffffff stroke 4px #000000 inside radius 12 (animated: size)". */
 export function shapeText(s: ShapeData): string {
-	const parts = [`${s.type} ${round3(s.size.value[0])}×${round3(s.size.value[1])}`];
-	parts.push(s.fill ? `fill ${hexOf(s.fill.value)}` : 'no fill');
+	const parts = [`${s.type} ${keyedText(s.size, (v) => `${round3(v[0])}×${round3(v[1])}`)}`];
+	parts.push(s.fill ? `fill ${keyedText(s.fill, hexOf)}` : 'no fill');
 	if (s.stroke)
 		parts.push(
-			`stroke ${round3(s.stroke.width.value)}px ${hexOf(s.stroke.color.value)} ${s.stroke.position}`,
+			`stroke ${keyedText(s.stroke.width, (v) => `${round3(v)}`)}px ${keyedText(s.stroke.color, hexOf)} ${s.stroke.position}`,
 		);
-	if (s.type === 'rect' && s.cornerRadius.value > 0) parts.push(`radius ${round3(s.cornerRadius.value)}`);
+	const radius = s.cornerRadius;
+	const radii = radius.keyframes.length > 0 ? radius.keyframes.map((k) => k.value) : [radius.value];
+	if (s.type === 'rect' && radii.some((r) => r > 0))
+		parts.push(`radius ${keyedText(radius, (v) => `${round3(v)}`)}`);
 	const keyed: [string, { keyframes: unknown[] } | null | undefined][] = [
 		['size', s.size],
 		['fill', s.fill],

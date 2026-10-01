@@ -1,10 +1,12 @@
 // Shapes (S11:SHP-001…003, wp-m2-shapes): clip.addShape defaults and validation, clip.update {shape} merge,
 // param.set / keyframe targets on `shape.*`, the anchor re-centring rule, invariants, snapshot and agent schema.
 import { describe, expect, it } from 'vitest';
+import { SHAPE_BOX_COMMANDS } from '../src/commands/handlers/shape.ts';
 import {
 	applyMatrix,
 	buildRenderSnapshot,
 	type Clip,
+	COMMAND_TYPES,
 	checkInvariants,
 	defaultRegistries,
 	defaultShape,
@@ -414,5 +416,137 @@ describe('evaluateShape / shapeContainsPoint (render/shape.ts)', () => {
 		expect(shapeContainsPoint(g, [5, 5])).toBe(false); // corner cut by the radius
 		expect(shapeContainsPoint(g, [2, 60])).toBe(true); // on the outside stroke band
 		expect(shapeContainsPoint(g, [60, 60])).toBe(true);
+	});
+});
+
+describe('review fixes (wp-m2-shapes)', () => {
+	const at = (frame: number) => ({ sequenceFrame: frame });
+	/** A 100×100 rectangle with size keys 100 (frame 0) → 500 (frame 30), like the review repro. */
+	function growing(h: Harness): { id: string; k0: string } {
+		const { id } = addShape(h, { type: 'rect', size: [100, 100] });
+		h.ok([{ type: 'param.setAnimated', target: ['clip', id, 'shape', 'size'], animated: true, at: at(0) }]);
+		h.ok([{ type: 'param.set', target: ['clip', id, 'shape', 'size'], value: [500, 500], at: at(30) }]);
+		return { id, k0: shapeOf(h, id).shape.size.keyframes[0]!.id };
+	}
+
+	it('every keyframe / stopwatch command is wrapped by keepShapesCentred', () => {
+		const family = COMMAND_TYPES.filter((t) => /^(param|keyframes?)\./.test(t));
+		expect(family.length).toBeGreaterThan(6);
+		for (const t of [...family, 'clip.update' as const]) expect(SHAPE_BOX_COMMANDS.has(t), t).toBe(true);
+	});
+
+	it('keyframe.move onto the largest key keeps the shape in place (finding 1)', () => {
+		const h = new Harness();
+		const { id, k0 } = growing(h);
+		expect(centreOnScreen(h, id, 0)).toEqual([960, 540]);
+		expect(centreOnScreen(h, id, 30)).toEqual([960, 540]);
+		// The key at 0 replaces the 500×500 key at 30: the box shrinks from 500 to 100.
+		h.ok([{ type: 'keyframe.move', keyframeIds: [k0], delta: { frames: 30 } }]);
+		expect(shapeOf(h, id).shape.size.keyframes.map((k) => k.value)).toEqual([[100, 100]]);
+		expect(shapeIntrinsicBox(shapeOf(h, id).shape)).toEqual({ width: 100, height: 100 });
+		expect(shapeOf(h, id).transform.anchor.value).toEqual([50, 50]);
+		expect(centreOnScreen(h, id, 0)).toEqual([960, 540]);
+		expect(centreOnScreen(h, id, 30)).toEqual([960, 540]);
+	});
+
+	it('keyframe.move deleting the widest outside-stroke key keeps the shape in place', () => {
+		const h = new Harness();
+		const { id } = addShape(h, {
+			type: 'ellipse',
+			size: [200, 200],
+			stroke: { color: [1, 0, 0, 1], width: 4, position: 'outside' },
+		});
+		const w = ['clip', id, 'shape', 'stroke', 'width'];
+		h.ok([{ type: 'param.setAnimated', target: w, animated: true, at: at(0) }]);
+		h.ok([{ type: 'param.set', target: w, value: 40, at: at(10) }]);
+		expect(shapeIntrinsicBox(shapeOf(h, id).shape)).toEqual({ width: 280, height: 280 });
+		const k0 = shapeOf(h, id).shape.stroke!.width.keyframes[0]!.id;
+		h.ok([{ type: 'keyframe.move', keyframeIds: [k0], delta: { frames: 10 } }]);
+		expect(shapeIntrinsicBox(shapeOf(h, id).shape)).toEqual({ width: 208, height: 208 });
+		expect(centreOnScreen(h, id, 0)).toEqual([960, 540]);
+		expect(centreOnScreen(h, id, 10)).toEqual([960, 540]);
+	});
+
+	it('once keyed, the box ignores a stale static value (size and stroke width, finding 2)', () => {
+		const stale = defaultShape('rect', {
+			size: [400, 400],
+			stroke: { color: [1, 1, 1, 1], width: 40, position: 'outside' },
+		});
+		const key = <T>(time: number, value: T) => ({
+			id: `kf_${time}`,
+			time,
+			value,
+			interpolation: 'linear' as const,
+			easeIn: { influence: 1 / 3, slope: 0 },
+			easeOut: { influence: 1 / 3, slope: 0 },
+		});
+		stale.size.keyframes = [key<Vec2>(0, [100, 100]), key<Vec2>(F, [200, 150])];
+		expect(shapeIntrinsicBox(stale)).toEqual({ width: 280, height: 230 });
+		stale.stroke!.width.keyframes = [key(0, 2), key(F, 4)];
+		expect(shapeIntrinsicBox(stale)).toEqual({ width: 208, height: 158 });
+	});
+
+	it('re-centring stays correct across static → animated → static with a stale value', () => {
+		const h = new Harness();
+		const { id } = addShape(h, { type: 'rect' }, { transform: { position: [700, 400], rotation: 20 } });
+		const at0 = centreOnScreen(h, id);
+		const close = (frame: number) => {
+			const c = centreOnScreen(h, id, frame);
+			expect(c[0]).toBeCloseTo(at0[0], 9);
+			expect(c[1]).toBeCloseTo(at0[1], 9);
+		};
+		const size = ['clip', id, 'shape', 'size'];
+		h.ok([{ type: 'param.setAnimated', target: size, animated: true, at: at(0) }]);
+		const k0 = shapeOf(h, id).shape.size.keyframes[0]!.id;
+		// The static value stays 400×400 while the keys go 100 → 200.
+		h.ok([{ type: 'keyframe.update', keyframeId: k0, value: [100, 100] }]);
+		h.ok([{ type: 'param.set', target: size, value: [200, 200], at: at(30) }]);
+		const s = shapeOf(h, id).shape;
+		expect(s.size.value).toEqual([400, 400]);
+		expect(shapeIntrinsicBox(s)).toEqual({ width: 200, height: 200 });
+		expect(shapeOf(h, id).transform.anchor.value).toEqual([100, 100]);
+		close(0);
+		close(30);
+		// Stopwatch off at frame 15: the value becomes 150×150 (evaluated), the box follows.
+		h.ok([{ type: 'param.setAnimated', target: size, animated: false, at: at(15) }]);
+		expect(shapeOf(h, id).shape.size).toEqual({ value: [150, 150], keyframes: [] });
+		expect(shapeOf(h, id).transform.anchor.value).toEqual([75, 75]);
+		close(0);
+		// Back on: one key with the current value, the box does not move.
+		h.ok([{ type: 'param.setAnimated', target: size, animated: true, at: at(0) }]);
+		expect(shapeOf(h, id).transform.anchor.value).toEqual([75, 75]);
+		close(0);
+	});
+
+	it('only an explicit value creates a "None" fill or stroke; the stopwatch on None is refused (finding 3)', () => {
+		const h = new Harness();
+		const { id } = addShape(h, { type: 'rect', fill: null });
+		const code = (cmd: Record<string, unknown>) => {
+			const r = h.tx([cmd]);
+			return r.ok ? 'ok' : r.errors[0]!.code;
+		};
+		for (const animated of [true, false])
+			for (const key of [['fill'], ['stroke', 'color'], ['stroke', 'width']])
+				expect(
+					code({ type: 'param.setAnimated', target: ['clip', id, 'shape', ...key], animated, at: at(0) }),
+				).toBe('E_INVALID_PARAM');
+		expect(code({ type: 'keyframe.add', target: ['clip', id, 'shape', 'stroke', 'width'], at: at(0) })).toBe(
+			'E_INVALID_PARAM',
+		);
+		expect(shapeOf(h, id).shape.fill).toBeNull();
+		expect(shapeOf(h, id).shape.stroke).toBeNull();
+		// keyframe.add with a value creates the stroke (default colour / position) and keys the width.
+		expect(
+			code({ type: 'keyframe.add', target: ['clip', id, 'shape', 'stroke', 'width'], at: at(0), value: 6 }),
+		).toBe('ok');
+		expect(shapeOf(h, id).shape.stroke).toMatchObject({
+			color: { value: [0, 0, 0, 1], keyframes: [] },
+			width: { keyframes: [{ value: 6 }] },
+			position: 'center',
+		});
+		expect(code({ type: 'param.set', target: ['clip', id, 'shape', 'fill'], value: [0, 1, 0, 1] })).toBe(
+			'ok',
+		);
+		expect(shapeOf(h, id).shape.fill).toEqual({ value: [0, 1, 0, 1], keyframes: [] });
 	});
 });

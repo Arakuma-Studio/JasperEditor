@@ -214,16 +214,23 @@ export function defaultShape(
 	};
 }
 
-const maxOf = (a: Animatable<number>): number => Math.max(a.value, ...a.keyframes.map((k) => k.value));
+/**
+ * Values an Animatable takes: its keyframes once it has any (`evaluate` then ignores the static `value`, which
+ * may be stale), otherwise the static value.
+ */
+const valuesOf = <T>(a: Animatable<T>): T[] =>
+	a.keyframes.length > 0 ? a.keyframes.map((k) => k.value) : [a.value];
+const maxOf = (a: Animatable<number>): number => Math.max(...valuesOf(a));
 
 /**
- * Intrinsic (layer) box of a shape (S11:SHP-001): the largest size it takes (static value and every keyframe)
- * plus the part of the stroke drawn outside the geometry — the whole width for `outside`, half for `center`.
- * The geometry is centred in the box.
+ * Intrinsic (layer) box of a shape (S11:SHP-001): the largest size it takes (every keyframe, or the static value
+ * when there are none) plus the part of the stroke drawn outside the geometry — the whole width for `outside`,
+ * half for `center`. The geometry is centred in the box.
  */
 export function shapeIntrinsicBox(shape: ShapeData): Box {
-	const w = Math.max(shape.size.value[0], ...shape.size.keyframes.map((k) => k.value[0]));
-	const h = Math.max(shape.size.value[1], ...shape.size.keyframes.map((k) => k.value[1]));
+	const sizes = valuesOf(shape.size);
+	const w = Math.max(...sizes.map((v) => v[0]));
+	const h = Math.max(...sizes.map((v) => v[1]));
 	const s = shape.stroke;
 	const outside = !s
 		? 0
