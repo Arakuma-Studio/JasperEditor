@@ -22,6 +22,7 @@
     "react": "^19.2.0"
   },
   "devDependencies": {
+    "@remotion/player": "4.0.499",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "react": "^19.2.0",

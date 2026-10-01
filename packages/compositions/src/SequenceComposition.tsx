@@ -20,7 +20,7 @@ import {
 import { type ComponentType, memo, useMemo } from 'react';
 import { AbsoluteFill, Sequence, useCurrentFrame } from 'remotion';
 import { ColorDocContext, type ColorDocValue } from './color/chain.ts';
-import { FontsReadyContext, type FontsReadyState, useDocumentFonts } from './fonts.ts';
+import { FontsReadyContext, useFontsReadyState, useLayerFontsReady } from './fonts.ts';
 import { AudioLayer, layerComponentFor } from './layers/index.ts';
 import { rgbaCss } from './metadata.ts';
 import { premountFrames } from './pipeline.ts';
@@ -135,6 +135,9 @@ const ClipLayer = memo(function ClipLayer({
 	);
 	const media = 'mediaId' in clip.source ? (doc.media[clip.source.mediaId] ?? null) : null;
 	const Component = layerComponentFor({ clip, media });
+	// S11:FIX-003: font-dependent layers mount once their faces are loaded (no fallback-font paint/measure).
+	const fontsReady = useLayerFontsReady(clip, doc.fonts);
+	if (!fontsReady) return null;
 	return (
 		<LayerView
 			Component={Component}
@@ -151,8 +154,7 @@ const ClipLayer = memo(function ClipLayer({
 });
 
 export function SequenceComposition({ doc, options }: SequenceCompositionProps) {
-	const fontsLoaded = useDocumentFonts(doc.fonts);
-	const fontsReady = useMemo<FontsReadyState>(() => ({ allLoaded: fontsLoaded }), [fontsLoaded]);
+	const fontsReady = useFontsReadyState(doc.fonts);
 	const fps = doc.settings.fps.num / doc.settings.fps.den;
 	const offset = doc.range.start;
 	const background = options.transparentBackground ? 'transparent' : rgbaCss(doc.settings.backgroundColor);

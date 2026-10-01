@@ -70,7 +70,7 @@
   },
   "overrides": [
     {
-      "includes": ["packages/motion/src/**"],
+      "includes": ["packages/motion/src/**", "!packages/motion/src/runtime/**"],
       "linter": {
         "rules": {
           "style": {
@@ -82,10 +82,15 @@
                   "animejs/events": "S11:ANM-006: no event-driven animation (scripts/check-anime.mjs).",
                   "animejs/draggable": "S11:ANM-006: no draggables in rendered layers (scripts/check-anime.mjs).",
                   "animejs/layout": "S11:ANM-006: layout animations read the live DOM (scripts/check-anime.mjs).",
-                  "animejs/text": "S11:ANM-006: splitText rewrites React-owned DOM; use segmentText.",
-                  "animejs/timer": "S11:ANM-006: timers run on the wall clock.",
-                  "animejs/animatable": "S11:ANM-006: animatables run on the wall clock.",
-                  "animejs/animation": "S11:ANM-006: animate() autoplays; add children to a paused timeline.",
+                  "animejs/text": "S11:ANM-006: splitText rewrites React-owned DOM; use segmentText (scripts/check-anime.mjs).",
+                  "animejs/timer": "S11:ANM-006: timers run on the wall clock (scripts/check-anime.mjs).",
+                  "animejs/animatable": "S11:ANM-006: animatables run on the wall clock (scripts/check-anime.mjs).",
+                  "animejs/animation": "S11:ANM-006: animate() autoplays; add children to a paused timeline (scripts/check-anime.mjs).",
+                  "animejs/easings/irregular": "S11:ANM-006: irregular() uses Math.random (scripts/check-anime.mjs).",
+                  "animejs/adapters": "S11:ANM-006: adapters import the optional peer three (scripts/check-anime.mjs).",
+                  "animejs/adapters/three": "S11:ANM-006: adapters import the optional peer three (scripts/check-anime.mjs).",
+                  "animejs/scope": "S11:ANM-006: scopes are the runtime's (useAnimeDom) (scripts/check-anime.mjs).",
+                  "animejs/engine": "S11:ANM-006: engine settings are page-global; never touch them (scripts/check-anime.mjs).",
                   "animejs": {
                     "importNames": [
                       "animate",
@@ -98,9 +103,70 @@
                       "random",
                       "randomPick",
                       "shuffle",
-                      "irregular"
+                      "irregular",
+                      "waapi",
+                      "createTimeline",
+                      "createScope",
+                      "engine",
+                      "createSeededRandom"
                     ],
-                    "message": "S11:ANM-006: autoplaying, wall-clock or unseeded anime.js API."
+                    "message": "S11:ANM-006: autoplaying, wall-clock or unseeded anime.js API, or a runtime-only name (createPausedTimeline, useAnimeDom, seededRandom) (scripts/check-anime.mjs)."
+                  },
+                  "animejs/timeline": {
+                    "importNames": ["createTimeline"],
+                    "message": "S11:ANM-006: use createPausedTimeline (scripts/check-anime.mjs)."
+                  },
+                  "animejs/utils": {
+                    "importNames": ["random", "randomPick", "shuffle", "createSeededRandom"],
+                    "message": "S11:ANM-007: use seededRandom(hash32(...))."
+                  },
+                  "animejs/easings": {
+                    "importNames": ["irregular"],
+                    "message": "S11:ANM-006: irregular() uses Math.random (scripts/check-anime.mjs)."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/motion/src/runtime/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "animejs/waapi": "S11:ANM-006: WAAPI runs on the document timeline (scripts/check-anime.mjs).",
+                  "animejs/events": "S11:ANM-006: no event-driven animation (scripts/check-anime.mjs).",
+                  "animejs/draggable": "S11:ANM-006: no draggables in rendered layers (scripts/check-anime.mjs).",
+                  "animejs/layout": "S11:ANM-006: layout animations read the live DOM (scripts/check-anime.mjs).",
+                  "animejs/text": "S11:ANM-006: splitText rewrites React-owned DOM; use segmentText (scripts/check-anime.mjs).",
+                  "animejs/timer": "S11:ANM-006: timers run on the wall clock (scripts/check-anime.mjs).",
+                  "animejs/animatable": "S11:ANM-006: animatables run on the wall clock (scripts/check-anime.mjs).",
+                  "animejs/animation": "S11:ANM-006: animate() autoplays; add children to a paused timeline (scripts/check-anime.mjs).",
+                  "animejs/easings/irregular": "S11:ANM-006: irregular() uses Math.random (scripts/check-anime.mjs).",
+                  "animejs/adapters": "S11:ANM-006: adapters import the optional peer three (scripts/check-anime.mjs).",
+                  "animejs/adapters/three": "S11:ANM-006: adapters import the optional peer three (scripts/check-anime.mjs).",
+                  "animejs": {
+                    "importNames": [
+                      "animate",
+                      "createTimer",
+                      "createAnimatable",
+                      "createDraggable",
+                      "onScroll",
+                      "splitText",
+                      "scrambleText",
+                      "random",
+                      "randomPick",
+                      "shuffle",
+                      "irregular",
+                      "waapi"
+                    ],
+                    "message": "S11:ANM-006: autoplaying, wall-clock or unseeded anime.js API (scripts/check-anime.mjs)."
                   },
                   "animejs/utils": {
                     "importNames": ["random", "randomPick", "shuffle"],
@@ -108,7 +174,7 @@
                   },
                   "animejs/easings": {
                     "importNames": ["irregular"],
-                    "message": "S11:ANM-006: irregular() uses Math.random."
+                    "message": "S11:ANM-006: irregular() uses Math.random (scripts/check-anime.mjs)."
                   }
                 }
               }
@@ -125,9 +191,14 @@
             "noRestrictedImports": {
               "level": "error",
               "options": {
-                "paths": { "animejs": "S11:ANM-001: only @jasper/motion imports anime.js." },
+                "paths": {
+                  "animejs": "S11:ANM-001: only @jasper/motion imports anime.js."
+                },
                 "patterns": [
-                  { "group": ["animejs/*"], "message": "S11:ANM-001: only @jasper/motion imports anime.js." }
+                  {
+                    "group": ["animejs/*"],
+                    "message": "S11:ANM-001: only @jasper/motion imports anime.js."
+                  }
                 ]
               }
             }
