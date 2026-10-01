@@ -20,6 +20,7 @@ import {
 	flicksPerFrame,
 	LUMETRI_PARAMS,
 	type ProjectDocument,
+	retimeKeyframes,
 } from '@jasper/project';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -37,7 +38,6 @@ import {
 	planCopyGrade,
 	rangeText,
 	resolveLutRefs,
-	retimeKeyframes,
 } from '../src/tools/color.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));

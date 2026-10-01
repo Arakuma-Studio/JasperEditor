@@ -485,7 +485,7 @@ describe('colour runs with Lumetri (S06:CG-011/012)', () => {
 		// otherwise measure the scheduler instead of the bake.
 		const times: number[] = [];
 		const wall: number[] = [];
-		for (let i = 0; i < 5; i++) {
+		for (let i = 0; i < 12; i++) {
 			const u0 = process.cpuUsage();
 			const t0 = performance.now();
 			bakeColorRun(effects, defaultEffectRegistry, ctx, 33);

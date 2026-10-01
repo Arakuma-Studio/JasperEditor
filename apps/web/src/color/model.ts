@@ -3,7 +3,9 @@
 // the rows of the first `jasper.lumetri` instance (created on first edit, like the pinned Crop), tone-curve point
 // edits, wheel geometry, and the command plans of Copy/Paste Grade and "apply LUT as Look".
 import {
+	type Animatable,
 	type Clip,
+	type ClipTiming,
 	type Command,
 	type EffectInstance,
 	type EffectRegistry,
@@ -18,6 +20,8 @@ import {
 	type MediaAsset,
 	type ParamSpec,
 	type ProjectDocument,
+	type Rational,
+	retimeKeyframes,
 	type Sequence,
 } from '@jasper/project';
 import { type Binding, bindEffectParam, makeRow, type Row } from '../panels/properties/lib/model.ts';
@@ -274,6 +278,8 @@ export type CopiedColorEffect = {
 	effectVersion: number;
 	enabled: boolean;
 	params: Record<string, unknown>;
+	/** Timing of the source clip: keyframes are re-timed to keep their offset from the clip start. */
+	from?: ClipTiming;
 };
 
 export function isColorInstance(fx: EffectInstance, registry: EffectRegistry): boolean {
@@ -291,7 +297,13 @@ export function copyGrade(clip: Clip, registry: EffectRegistry): CopiedColorEffe
 		effectVersion: fx.effectVersion,
 		enabled: fx.enabled,
 		params: clone(fx.params) as Record<string, unknown>,
+		from: { start: clip.start, duration: clip.duration, sourceIn: clip.sourceIn, speed: { ...clip.speed } },
 	}));
+}
+
+function sequenceRateOf(doc: ProjectDocument, clipId: string): Rational | null {
+	for (const seq of Object.values(doc.sequences)) if (seq.clips[clipId]) return seq.settings.frameRate;
+	return null;
 }
 
 function findClip(doc: ProjectDocument, clipId: string): Clip | null {
@@ -327,8 +339,16 @@ export function planPasteGrade(
 		grade.forEach((g, i) => {
 			const spec = registry.get(g.effectId, g.effectVersion) ?? registry.get(g.effectId);
 			if (!spec) return;
+			const rate = sequenceRateOf(doc, clipId);
 			const params = Object.fromEntries(
-				Object.entries(g.params).filter(([k]) => spec.params.some((p) => p.name === k)),
+				Object.entries(g.params)
+					.filter(([k]) => spec.params.some((p) => p.name === k))
+					.map(([k, v]) => {
+						const a = v as Animatable<unknown> | undefined;
+						if (!g.from || !rate || !a || !Array.isArray(a.keyframes) || a.keyframes.length === 0)
+							return [k, v];
+						return [k, { ...a, keyframes: retimeKeyframes(a.keyframes, g.from, clip!, rate) }];
+					}),
 			);
 			const r = `$grade${ref++}`;
 			cmds.push({
