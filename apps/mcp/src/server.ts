@@ -5,12 +5,14 @@ import { z } from 'zod';
 import { loadDoc, makeContext, type ToolContext } from './context.ts';
 import { pickSequence, timelineTable } from './format.ts';
 import type { EngineConnection } from './link.ts';
+import { ANIMATION_GUIDE, registerAnimationTools } from './tools/animation.ts';
 import { COLOR_GUIDE, registerColorTools } from './tools/color.ts';
 import { COMPOSITION_GUIDE, registerCompositionTools } from './tools/compositions.ts';
 import { registerEditingTools } from './tools/editing.ts';
 import { PROCESSING_GUIDE, registerProcessingTools } from './tools/processing.ts';
 import { registerProjectTools } from './tools/projects.ts';
 import { registerRenderTools } from './tools/render.ts';
+import { registerShapeTools, SHAPES_GUIDE } from './tools/shapes.ts';
 import { registerTrackingTools, TRACKING_GUIDE } from './tools/tracking.ts';
 import { registerTransitionTools, TRANSITION_GUIDE } from './tools/transitions.ts';
 import { MCP_SERVER_VERSION } from './version.ts';
@@ -41,7 +43,12 @@ const FULL_GUIDE = [
 	COMPOSITION_GUIDE,
 	TRACKING_GUIDE,
 	TRANSITION_GUIDE,
-].join('\n\n');
+	// M2 animation (ARCHITECTURE §20.7): empty strings until wp-m2-text-anim / wp-m2-shapes fill them.
+	ANIMATION_GUIDE,
+	SHAPES_GUIDE,
+]
+	.filter((g) => g.length > 0)
+	.join('\n\n');
 
 export type JasperMcpOptions = {
 	link: EngineConnection;
@@ -66,6 +73,8 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerCompositionTools(ctx);
 	registerTrackingTools(ctx);
 	registerTransitionTools(ctx);
+	registerAnimationTools(ctx);
+	registerShapeTools(ctx);
 	registerResources(ctx);
 	registerPrompts(ctx);
 	return { server, ctx };
