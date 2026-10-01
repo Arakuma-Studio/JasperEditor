@@ -29,6 +29,10 @@ S01 §13 TRN-006 and `ProjectSettings`. Closes the "Transition Defaults… is a 
   `process.preferences` pass `ctx.session` (`commands/process.ts`, outside owned paths: one-line changes).
 - Menu model: Sequence and Edit ▸ Preferences entries (above).
 - Drag payload gains the id-carrying type name (TUI-036).
+- `@jasper/ui`: `InDialogContext` / `useInDialog()` / `popoverZClass()`; `Select` lists opened inside a `Dialog`
+  stack just above the dialog layer (they were under the dialog scrim and could not be clicked — this affected
+  every Select in a dialog, e.g. Preferences ▸ General ▸ Theme). Menus and the colour picker popover still use
+  the popover layer (none of them is opened from a dialog today); they can adopt `popoverZClass` the same way.
 - MCP: `apply_default_transitions {alignment}` + `defaults` in the result, new tool `set_transition_defaults`
   (README tool count 68).
 
