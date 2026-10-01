@@ -51,6 +51,9 @@ export type ActiveTool =
 	| 'slip'
 	| 'slide'
 	| 'pen'
+	// M2 (S11:SHP-006, wp-m2-shapes): Program monitor shape tools (XF-061).
+	| 'rectangle'
+	| 'ellipse'
 	| 'hand'
 	| 'zoom'
 	| 'type';

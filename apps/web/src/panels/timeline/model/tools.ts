@@ -30,6 +30,9 @@ export const TOOLS: Record<ToolId, ToolInfo> = {
 	slip: { id: 'slip', label: 'Slip Tool', key: 'Y', icon: 'tool.slip' },
 	slide: { id: 'slide', label: 'Slide Tool', key: 'U', icon: 'tool.slide' },
 	pen: { id: 'pen', label: 'Pen Tool', key: 'P', icon: 'tool.pen' },
+	// M2 (S11:SHP-006, wp-m2-shapes): no default keys (S05:TOOL-002 lists none), commands in commands/shapes.ts.
+	rectangle: { id: 'rectangle', label: 'Rectangle Tool', key: '', icon: 'tool.rectangle' },
+	ellipse: { id: 'ellipse', label: 'Ellipse Tool', key: '', icon: 'tool.ellipse' },
 	hand: { id: 'hand', label: 'Hand Tool', key: 'H', icon: 'tool.hand' },
 	zoom: { id: 'zoom', label: 'Zoom Tool', key: 'Z', icon: 'tool.zoom' },
 	type: { id: 'type', label: 'Type Tool', key: 'T', icon: 'tool.type' },
@@ -42,7 +45,7 @@ export const TOOL_GROUPS: readonly (readonly ToolId[])[] = [
 	['ripple', 'rolling', 'rateStretch'],
 	['razor'],
 	['slip', 'slide'],
-	['pen'],
+	['pen', 'rectangle', 'ellipse'],
 	['hand', 'zoom'],
 	['type'],
 ];
@@ -82,6 +85,9 @@ export function resolveGesture(tool: ToolId, hit: Hit, mods: Mods): GestureKind 
 	switch (tool) {
 		case 'selection':
 		case 'type':
+		// The shape tools draw in the Program monitor; in the timeline they act like the Selection tool (wp-m2-shapes).
+		case 'rectangle':
+		case 'ellipse':
 			if (edge) return mods.ctrl ? 'ripple' : 'trim';
 			if (onClip) return 'move';
 			if (hit.kind === 'gap') return 'gap';

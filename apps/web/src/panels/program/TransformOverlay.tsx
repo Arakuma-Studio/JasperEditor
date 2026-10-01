@@ -23,6 +23,14 @@ import {
 	useRef,
 	useState,
 } from 'react';
+// wp-m2-shapes: geometry hit-test (XF-001) and "Resize shapes by size" handles (S11:SHP-007).
+import {
+	hitsLayerGeometry,
+	resizeShapeBySize,
+	shapeLayerSize,
+	shapeSizeCommand,
+} from '../../shapes/geometry.ts';
+import { shapePrefs } from '../../shapes/prefs.ts';
 import { applyEffectToClips, isEffectDrag, readEffectDragPayload } from '../effects/drag.ts';
 import { insertMotionTemplate, MG_TEMPLATE_MIME, readMgTemplateDrag } from '../motionTemplates/insert.ts';
 import { activeSequence, addTextAt, transformAt, transformCommands } from './edits.ts';
@@ -79,6 +87,8 @@ type GestureState =
 			grab: Vec2;
 			startScreen: Vec2;
 			moved: boolean;
+			/** wp-m2-shapes (S11:SHP-007): resize `shape.size` from `size0`, pointer at `start`. */
+			bySize?: { size0: Vec2; start: Vec2 };
 	  }
 	| {
 			kind: 'group-scale';
@@ -267,7 +277,7 @@ export function TransformOverlay({
 	const layerAt = (p: Vec2): string | null =>
 		hitTest(
 			live.current.scene
-				.filter((l) => l.props.transform)
+				.filter((l) => l.props.transform && hitsLayerGeometry(l, p))
 				.map((l) => ({ clipId: l.clip.clipId, trackId: l.clip.trackId, quad: l.props.quad as Quad })),
 			p,
 			locked,
@@ -316,16 +326,19 @@ export function TransformOverlay({
 			const h = handleUnder(l, rect, screen);
 			if (h) {
 				const hp = applyMatrix(l.props.matrix, handlePoint(rect, h));
+				// wp-m2-shapes (S11:SHP-007): with "Resize shapes by size", handles edit the shape's size.
+				const size0 = shapePrefs.get().resizeBySize ? shapeLayerSize(l) : null;
 				svg.setPointerCapture?.(e.pointerId);
 				gestureRef.current = {
 					kind: 'scale',
-					g: session.beginGesture('Scale'),
+					g: session.beginGesture(size0 ? 'Resize Shape' : 'Scale'),
 					clip: cs,
 					rect,
 					handle: h,
 					grab: [p[0] - hp[0], p[1] - hp[1]],
 					startScreen: screen,
 					moved: false,
+					...(size0 ? { bySize: { size0, start: p } } : {}),
 				};
 				return;
 			}
@@ -478,6 +491,24 @@ export function TransformOverlay({
 					transformCommands(c.id, { position: [c.v0.position[0] + dx, c.v0.position[1] + dy] }, f, seqId),
 				),
 			);
+			return;
+		}
+		if (g.kind === 'scale' && g.bySize) {
+			// wp-m2-shapes (S11:SHP-007): size instead of Motion scale; Shift keeps the ratio, Alt the opposite side.
+			const r = resizeShapeBySize({
+				values: g.clip.v0,
+				size0: g.bySize.size0,
+				handle: g.handle,
+				start: g.bySize.start,
+				pointer: p,
+				shift: e.shiftKey,
+				alt: e.altKey,
+			});
+			setReadout({ at: screen, text: `Size ${fmt(r.size[0])} × ${fmt(r.size[1])}` });
+			scheduleUpdate([
+				shapeSizeCommand(g.clip.id, r.size, f, seqId),
+				...(r.position ? transformCommands(g.clip.id, { position: r.position }, f, seqId) : []),
+			]);
 			return;
 		}
 		if (g.kind === 'scale') {
