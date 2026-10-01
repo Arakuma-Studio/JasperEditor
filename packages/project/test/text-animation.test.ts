@@ -9,6 +9,7 @@ import {
 	clipPropertiesJsonSchema,
 	defaultEffectRegistry,
 	getPropertySpec,
+	LATEST_TEXT_ANIMATION_SPECS,
 	latestTextAnimationSpec,
 	loadProject,
 	PROPERTY_SPECS,
@@ -19,6 +20,7 @@ import {
 	TEXT_ANIMATION_EASES,
 	TEXT_ANIMATION_SPECS,
 	type TextAnimationInput,
+	textAnimationKey,
 	textAnimationParamSpecs,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
@@ -60,9 +62,13 @@ const err = (r: ReturnType<Harness['tx']>) => (r.ok ? null : r.errors[0]!);
 
 describe('catalogue (S11:TXA-002/003)', () => {
 	it('ships the twelve presets, each usable as in and out, with defaults = the schema of {}', () => {
-		expect(TEXT_ANIMATION_SPECS.map((s) => s.id)).toEqual(PRESETS);
+		expect(LATEST_TEXT_ANIMATION_SPECS.map((s) => s.id)).toEqual(PRESETS);
+		// every version is kept: typewriter@1 (saved projects) next to its successor @2 (blinking caret)
+		expect(TEXT_ANIMATION_SPECS.map((s) => textAnimationKey(s.id, s.version))).toEqual(
+			PRESETS.flatMap((id) => (id === 'typewriter' ? ['typewriter@1', 'typewriter@2'] : [`${id}@1`])),
+		);
+		expect(LATEST_TEXT_ANIMATION_SPECS.every((s) => latestTextAnimationSpec(s.id) === s)).toBe(true);
 		for (const s of TEXT_ANIMATION_SPECS) {
-			expect(s.version).toBe(1);
 			expect(s.phases).toEqual(['in', 'out']);
 			expect(s.paramsSchema.parse({})).toEqual(s.defaults);
 			expect(s.defaultDurationFrames).toBeGreaterThanOrEqual(1);
@@ -255,6 +261,69 @@ describe('clip.update textAnimation (S11:TXA-006)', () => {
 	});
 });
 
+describe('typewriter versions (blinking caret = typewriter@2)', () => {
+	it('new animations get @2 with its defaults; saved @1 animators keep their version, params and snapshot', () => {
+		const h = new Harness();
+		const id = withText(h, { textAnimation: { in: { preset: 'typewriter' } } });
+		expect(textClip(h, id).textAnimation?.in).toEqual({
+			preset: 'typewriter',
+			version: 2,
+			durationFrames: 45,
+			params: { unit: 'char', caret: true, caretBlink: true, blinkRate: 2, delay: 0, typing: 0.6 },
+		});
+		const v1 = withText(h, { at: 200, textAnimation: { out: { preset: 'typewriter', version: 1 } } });
+		expect(textClip(h, v1).textAnimation?.out).toEqual({
+			preset: 'typewriter',
+			version: 1,
+			durationFrames: 30,
+			params: { unit: 'char', caret: true },
+		});
+		// @1 has no blink params (strict schema) and its snapshot carries exactly its own params
+		expect(
+			err(
+				h.tx([
+					{
+						type: 'clip.update',
+						clipId: v1,
+						patch: { textAnimation: { out: { params: { blinkRate: 1 } } } },
+					},
+				]),
+			)?.code,
+		).toBe('E_INVALID_PARAM');
+		const snap = buildRenderSnapshot(h.doc, h.seqId, { resolveMedia: () => null, resolveFont: () => null });
+		const sources = snap.videoTracks
+			.flatMap((t) => t.clips)
+			.map((c) => ('text' in c.source ? c.source : null));
+		expect(sources.map((s) => s?.animation?.out ?? s?.animation?.in)).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ version: 1, params: { unit: 'char', caret: true } }),
+				expect.objectContaining({ version: 2, params: expect.objectContaining({ caretBlink: true }) }),
+			]),
+		);
+		expect(snap.warnings).toEqual([]);
+		// upgrading in place keeps the @1 params and adds the @2 defaults
+		expect(
+			h.tx([{ type: 'clip.update', clipId: v1, patch: { textAnimation: { out: { version: 2 } } } }]).ok,
+		).toBe(true);
+		expect(textClip(h, v1).textAnimation?.out?.params).toEqual(
+			latestTextAnimationSpec('typewriter')!.defaults,
+		);
+	});
+	it('pickers list only the latest version (one Typewriter entry)', () => {
+		const options = getPropertySpec('textAnimation.in.preset')!.options as string[];
+		expect(options.filter((o) => o === 'typewriter')).toHaveLength(1);
+		expect(latestTextAnimationSpec('typewriter')!.version).toBe(2);
+		expect(LATEST_TEXT_ANIMATION_SPECS.map((s) => textAnimationKey(s.id, s.version))).toContain(
+			'typewriter@2',
+		);
+		const tw = latestTextAnimationSpec('typewriter')!.paramsSchema;
+		expect(tw.safeParse({ blinkRate: 0.2 }).success).toBe(false);
+		expect(tw.safeParse({ blinkRate: 5 }).success).toBe(false);
+		expect(tw.safeParse({ delay: 0.95 }).success).toBe(false);
+		expect(tw.safeParse({ typing: 0 }).success).toBe(false);
+	});
+});
+
 describe('edits (S11:TXA-005)', () => {
 	it('razor: left keeps In only, right keeps Out only; undo-free copies stay independent', () => {
 		const h = new Harness();
@@ -346,6 +415,10 @@ describe('textAnimation properties and param.set (S11:TXA-007, FIX-004)', () => 
 			'textAnimation.in.params.distance',
 			'textAnimation.out.params.unit',
 			'textAnimation.out.params.caret',
+			'textAnimation.out.params.caretBlink',
+			'textAnimation.out.params.blinkRate',
+			'textAnimation.out.params.delay',
+			'textAnimation.out.params.typing',
 		]);
 		expect(resolvePropertySpec('textAnimation.in.params.stagger', undefined, undefined, clip)).toMatchObject({
 			kind: 'number',

@@ -122,9 +122,16 @@ describe('list_text_animations catalogue', () => {
 			ease: expect.objectContaining({ type: 'string', default: 'outExpo' }),
 			distance: expect.objectContaining({ type: 'number', minimum: 0, maximum: 4000, default: 60 }),
 		});
-		expect(cat.presets.find((p) => p.id === 'typewriter')!.params).toMatchObject({
+		// only the newest version of a preset is listed (typewriter@1 stays valid in saved projects)
+		const typewriter = cat.presets.find((p) => p.id === 'typewriter')!;
+		expect(typewriter).toMatchObject({ version: 2, defaultDurationFrames: 45 });
+		expect(typewriter.params).toMatchObject({
 			unit: { enum: ['char', 'word'], default: 'char' },
 			caret: { type: 'boolean', default: true },
+			caretBlink: { type: 'boolean', default: true },
+			blinkRate: { type: 'number', minimum: 0.5, maximum: 4, default: 2 },
+			delay: { type: 'number', minimum: 0, maximum: 0.9, default: 0 },
+			typing: { type: 'number', minimum: 0.05, maximum: 1, default: 0.6 },
 		});
 	});
 

@@ -386,6 +386,11 @@ describe('agent schema (S11:ANA-001)', () => {
 		};
 		const s = exportAgentSchema(defaultRegistries(createStaticMgRegistry([info])));
 		expect(s.textAnimations.map((t) => t.id)).toContain('slide-up');
+		// every version is described (documents may hold superseded ones); `latest` marks what new animations use
+		expect(s.textAnimations.filter((t) => t.id === 'typewriter').map((t) => [t.version, t.latest])).toEqual([
+			[1, false],
+			[2, true],
+		]);
 		expect(s.mgTemplates[0]).toMatchObject({
 			renderer: 'anime',
 			description: 'Char-staggered title',

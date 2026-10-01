@@ -235,10 +235,11 @@ describe('inside a window (S11:TXA-010/011/012)', () => {
 			['Hello', 'ltr'],
 			['(world)', 'ltr'],
 		]);
-		// the typewriter caret follows the paragraph direction too (before the last shown unit's left edge)
+		// the typewriter caret follows the paragraph direction too (before the last shown unit's left edge; frame 5
+		// is inside the lit half of the blink after the first word)
 		const tw = view(
 			docWith({ content: { text: 'שלום עולם' }, textAnimation: { in: { preset: 'typewriter' } } }),
-			10,
+			5,
 		);
 		const caret = tw.container.querySelector<HTMLElement>('[data-text-caret]')!;
 		const last = tw
@@ -284,6 +285,65 @@ describe('inside a window (S11:TXA-010/011/012)', () => {
 			10,
 		);
 		expect(noCaret.container.querySelector('[data-text-caret]')).toBeNull();
+	});
+	it('typewriter@2 caret blinks as a function of the frame: solid while typing, blinking when idle, never at rest', () => {
+		const caret = (v: ReturnType<typeof view>) => v.container.querySelector<HTMLElement>('[data-text-caret]');
+		const plain = view(docWith({}), 50).block().outerHTML;
+		// In (45 frames): 15 characters typed every 60 ms until 840 ms (frame 26), then lit 250 ms / dark 250 ms
+		const v = view(docWith({ textAnimation: { in: { preset: 'typewriter' } } }), 0);
+		const lit = (f: number) => {
+			v.at(f);
+			return caret(v) !== null;
+		};
+		expect([0, 5, 10, 20, 26, 32].map(lit)).toEqual([true, true, true, true, true, true]);
+		expect([33, 36, 40].map(lit)).toEqual([false, false, false]);
+		expect([41, 44].map(lit)).toEqual([true, true]);
+		// the text is fully typed while the caret is dark: only the caret blinks
+		v.at(36);
+		expect(v.units().every((u) => u.style.visibility !== 'hidden')).toBe(true);
+		// rest after the window: no caret, the same DOM as un-animated text (S11:ANM-009)
+		v.at(50);
+		expect(caret(v)).toBeNull();
+		expect(v.block().outerHTML).toBe(plain);
+		// the same frames visited in another order give the same caret
+		expect([40, 0, 33, 44, 26].map(lit)).toEqual([false, true, false, true, true]);
+		// Out (frames 15…59, mirrored): blinks first (dark at Out frames 8…14), then deletes with a solid caret
+		const o = view(docWith({ textAnimation: { out: { preset: 'typewriter' } } }), 10);
+		expect(caret(o)).toBeNull();
+		expect(o.block().outerHTML).toBe(plain);
+		const outLit = (f: number) => {
+			o.at(f);
+			return caret(o) !== null;
+		};
+		expect([15, 22, 23, 29, 30, 40, 59].map(outLit)).toEqual([true, true, false, false, true, true, true]);
+		// caretBlink: false keeps it solid; typewriter@1 (saved projects) never blinks
+		const solid = view(
+			docWith({ textAnimation: { in: { preset: 'typewriter', params: { caretBlink: false } } } }),
+			36,
+		);
+		expect(caret(solid)).not.toBeNull();
+		const v1 = view(docWith({ textAnimation: { in: { preset: 'typewriter', version: 1 } } }), 29);
+		expect(caret(v1)).not.toBeNull();
+		expect(v1.units().every((u) => u.style.visibility !== 'hidden')).toBe(true);
+	});
+	it('typewriter@2 caret in RTL: before the shown word while lit, dark during the idle gap between words', () => {
+		const doc = docWith({ content: { text: 'שלום עולם' }, textAnimation: { in: { preset: 'typewriter' } } });
+		// two words typed at 0 and 450 ms: lit until 250 ms, dark until 450 ms, lit again with the second word
+		const v = view(doc, 5);
+		const caret = () => v.container.querySelector<HTMLElement>('[data-text-caret]');
+		const shownUnits = () => v.units().filter((u) => u.style.visibility !== 'hidden');
+		expect(shownUnits()).toHaveLength(1);
+		expect(Number.parseFloat(caret()!.style.left)).toBeLessThan(
+			Number.parseFloat(shownUnits()[0]!.style.left),
+		);
+		v.at(10);
+		expect(shownUnits()).toHaveLength(1);
+		expect(caret()).toBeNull();
+		v.at(14);
+		expect(shownUnits()).toHaveLength(2);
+		expect(Number.parseFloat(caret()!.style.left)).toBeLessThan(
+			Number.parseFloat(shownUnits()[1]!.style.left),
+		);
 	});
 	it('styled runs keep their style per unit (units cut at run boundaries)', () => {
 		const v = view(

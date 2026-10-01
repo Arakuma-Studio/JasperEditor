@@ -135,6 +135,11 @@ authored animation timelines (JSON "AnimSpec", M3); on-canvas text editing (TXT-
   `unit: 'char'|'word'|'line'` (preset default), `stagger: 0…1` (fraction of the window spread across units; 0 =
   all together), `order: 'forward'|'backward'|'center'|'edges'|'random'` (random uses the clip seed), `ease`
   (enum of `EASES`), `distance` (px in the text box space, slides/drop), `blur` (px), `scale` (start scale).
+  `typewriter@2` (supersedes `@1`, which stays for saved projects with an unchanged output) types within `typing`
+  of the window after `delay` and blinks its caret as a pure function of the frame (`caretBlink`, `blinkRate`
+  0.5–4 Hz, default 2): lit for the first half of each period counted from the last keystroke — or deletion, for
+  Out — so it is solid while typing, lit whenever a unit appears or goes, blinking while typing pauses, and absent
+  at rest.
 - **TXA-004 (P0) Anchoring.** Windows anchor to the clip's visible edges (clip time = `localFrame`), not to content
   time. `in` covers frames `[0, in.durationFrames)`, `out` covers `[duration − out.durationFrames, duration)`.
   If `in + out > duration` both are scaled proportionally at render time (no invariant failure) and the command

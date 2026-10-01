@@ -337,12 +337,14 @@ function AnimatedText({
 	active,
 	impl,
 	seed,
+	fps,
 }: {
 	source: TextSource;
 	fonts: Fonts;
 	active: ActiveTextAnimation;
 	impl: TextAnimationImpl;
 	seed: number;
+	fps: number;
 }) {
 	const pRef = useRef<HTMLParagraphElement>(null);
 	const params = active.animator.params;
@@ -447,6 +449,17 @@ function AnimatedText({
 				values={values}
 				impl={impl}
 				params={params}
+				caretLit={(shown) =>
+					impl.caretVisible?.({
+						params,
+						side: active.side,
+						ms: active.ms,
+						durationMs: active.durationMs,
+						fps,
+						units,
+						shown,
+					}) ?? true
+				}
 			/>
 		</p>
 	);
@@ -463,6 +476,7 @@ function TextOverlay({
 	values,
 	impl,
 	params,
+	caretLit,
 }: {
 	source: TextSource;
 	fonts: Fonts;
@@ -471,6 +485,8 @@ function TextOverlay({
 	values: readonly Readonly<UnitValues>[];
 	impl: TextAnimationImpl;
 	params: Record<string, unknown>;
+	/** Whether the caret is lit with `shown` units fully shown (blink; a pure function of the frame). */
+	caretLit: (shown: number) => boolean;
 }) {
 	const base = source.text.style;
 	const lineMode = flow.unit === 'line';
@@ -595,7 +611,8 @@ function TextOverlay({
 			),
 		);
 	});
-	if (impl.caret?.(params) && placedUnits.length > 0 && !lineMode) {
+	const caretShown = impl.caret?.(params) && placedUnits.length > 0 && !lineMode;
+	if (caretShown && caretLit(values.filter((v) => v.reveal >= 1).length)) {
 		const shown = placedUnits.filter((u) => unitValues(u).reveal >= 1);
 		const anchorPieces = unitPieces[shown.at(-1) ?? placedUnits[0]!]!;
 		const rtl = anchorPieces[0]!.piece.rtl;
@@ -677,6 +694,7 @@ function TextBody({ layer, source }: { layer: LayerProps; source: TextSource }) 
 			active={active}
 			impl={impl}
 			seed={hash32(layer.clip.clipId, 'text-anim', active.side)}
+			fps={layer.fps}
 		/>
 	);
 }

@@ -169,6 +169,138 @@ describe('start and rest states (S11:ANM-009, TXA-003)', () => {
 	});
 });
 
+describe('typewriter@2: blinking caret (a pure function of the frame)', () => {
+	const v2 = TEXT_ANIMATION_IMPLS['typewriter@2']!;
+	const FPS = 30;
+	const FRAMES = 45;
+	/**
+	 * The caret over a whole clip whose only window is `side` (In: frames [0, 45), Out: the last 45 frames, played
+	 * mirrored), as the text layer sees it: `activeTextAnimation` → build seeked → shown units → `caretVisible`.
+	 * `1` = lit, `0` = dark, `.` = rest (no window: no caret at all).
+	 */
+	function caretTrack(units: number, side: 'in' | 'out', params: Record<string, unknown> = {}, extra = 10) {
+		const duration = FRAMES + extra;
+		const spec = TEXT_ANIMATION_SPECS.find((s) => textAnimationKey(s.id, s.version) === v2.key)!;
+		const animator: ResolvedTextAnimator = {
+			preset: 'typewriter',
+			version: 2,
+			params: { ...spec.defaults, ...params },
+			frames: FRAMES,
+		};
+		const b = build(v2, units, FRAMES, FPS, params, side);
+		let track = '';
+		for (let f = 0; f < duration; f++) {
+			const a = activeTextAnimation({ [side]: animator }, f, duration, FPS);
+			if (!a) {
+				track += '.';
+				continue;
+			}
+			const shown = at(b, a.ms).filter((u) => u.reveal >= 1).length;
+			const lit = v2.caretVisible!({
+				params: animator.params,
+				side: a.side,
+				ms: a.ms,
+				durationMs: a.durationMs,
+				fps: FPS,
+				units,
+				shown,
+			});
+			track += lit ? '1' : '0';
+		}
+		return track;
+	}
+	it('@1 output is unchanged: same reveal timing, caret always lit (no caretVisible)', () => {
+		const v1 = impl('typewriter');
+		expect(v1.caretVisible).toBeUndefined();
+		const a = build(v1, 10, 30, 30);
+		const b = build(v2, 10, 30, 30, { delay: 0, typing: 1 });
+		for (let f = -1; f <= 31; f++) expect(at(b, frameToMs(f, 30))).toEqual(at(a, frameToMs(f, 30)));
+		expect(a.timeline.duration).toBe(b.timeline.duration);
+	});
+	it('types within `typing` of the window after `delay`, then idles', () => {
+		const b = build(v2, 10, FRAMES, FPS);
+		const shown = (f: number) => at(b, frameToMs(f, FPS)).filter((u) => u.reveal === 1).length;
+		// slot = 1500 ms · 0.6 / 10 = 90 ms: unit i is typed at 90·i ms, all shown from frame 25 (833 ms)
+		expect([0, 1, 3, 24, 25, 44].map(shown)).toEqual([0, 1, 2, 9, 10, 10]);
+		const late = build(v2, 10, FRAMES, FPS, { delay: 0.4 });
+		const lateShown = (f: number) => at(late, frameToMs(f, FPS)).filter((u) => u.reveal === 1).length;
+		expect([0, 18, 19, 43, 44].map(lateShown)).toEqual([0, 0, 1, 10, 10]);
+		// typing is capped to the rest of the window
+		const capped = build(v2, 4, FRAMES, FPS, { delay: 0.5, typing: 1 });
+		expect(at(capped, frameToMs(44, FPS)).every((u) => u.reveal === 1)).toBe(true);
+	});
+	it('In: solid while typing, blinks after typing finishes, never at rest', () => {
+		// typing ends at 810 ms (frame 25); lit for 250 ms after it, dark for 250 ms, lit again
+		expect(caretTrack(10, 'in')).toBe('1'.repeat(32) + '0'.repeat(8) + '1'.repeat(5) + '.'.repeat(10));
+	});
+	it('In with a delay: blinks before the first unit, lit when typing starts', () => {
+		const track = caretTrack(10, 'in', { delay: 0.4 });
+		expect(track).toBe('1'.repeat(8) + '0'.repeat(7) + '1'.repeat(30) + '.'.repeat(10));
+		expect(track[19]).toBe('1'); // first unit typed (600 ms)
+	});
+	it('blinks between keystrokes further apart than half a period (idle between units)', () => {
+		// two words over the whole window: typed at 0 and 750 ms
+		const track = caretTrack(2, 'in', { unit: 'word', typing: 1 });
+		expect(track.slice(0, FRAMES)).toBe(
+			'1'.repeat(8) + '0'.repeat(7) + '1'.repeat(8) + '1'.repeat(7) + '0'.repeat(8) + '1'.repeat(7),
+		);
+		expect(track[23]).toBe('1'); // the second word appears with the caret lit
+	});
+	it('Out (mirrored): blinks first, then deletes backwards with a solid caret, rest before the window', () => {
+		const track = caretTrack(10, 'out');
+		expect(track).toBe('.'.repeat(10) + '1'.repeat(8) + '0'.repeat(7) + '1'.repeat(30));
+		// the first deletion (Out frame 20) happens with the caret lit
+		const b = build(v2, 10, FRAMES, FPS, {}, 'out');
+		const shownAtOut = (j: number) =>
+			at(b, frameToMs(FRAMES - 1 - j, FPS)).filter((u) => u.reveal === 1).length;
+		expect([19, 20].map(shownAtOut)).toEqual([10, 9]);
+		expect(track[10 + 20]).toBe('1');
+	});
+	it('caretBlink false keeps it solid; blinkRate sets the period; caret false hides it', () => {
+		expect(caretTrack(10, 'in', { caretBlink: false }, 0)).toBe('1'.repeat(FRAMES));
+		expect(caretTrack(10, 'out', { caretBlink: false }, 0)).toBe('1'.repeat(FRAMES));
+		// 1 Hz: lit 500 ms after the last keystroke (810 ms) → dark from frame 40 (1333 ms)
+		expect(caretTrack(10, 'in', { blinkRate: 1 }, 0)).toBe('1'.repeat(40) + '0'.repeat(5));
+		expect(v2.caret?.({ caret: false })).toBe(false);
+		expect(
+			v2.caretVisible!({
+				params: { caret: false },
+				side: 'in',
+				ms: 0,
+				durationMs: 1500,
+				fps: FPS,
+				units: 3,
+				shown: 0,
+			}),
+		).toBe(false);
+	});
+	it('is order-independent (shuffled frame visits give the same caret as in order)', () => {
+		const track = caretTrack(10, 'in');
+		const b = build(v2, 10, FRAMES, FPS);
+		const params = {
+			...TEXT_ANIMATION_SPECS.find((s) => s.id === 'typewriter' && s.version === 2)!.defaults,
+		};
+		const frames = fc.sample(fc.shuffledSubarray([...Array(FRAMES).keys()], { minLength: FRAMES }), {
+			seed: 7,
+			numRuns: 1,
+		})[0]!;
+		for (const f of frames) {
+			const ms = frameToMs(f, FPS);
+			const shown = at(b, ms).filter((u) => u.reveal >= 1).length;
+			const lit = v2.caretVisible!({
+				params,
+				side: 'in',
+				ms,
+				durationMs: frameToMs(FRAMES, FPS),
+				fps: FPS,
+				units: 10,
+				shown,
+			});
+			expect(lit ? '1' : '0').toBe(track[f]);
+		}
+	});
+});
+
 describe('order ranks', () => {
 	it('forward, backward, center, edges and a seeded random permutation', () => {
 		expect(orderRanks(5, 'forward', 1)).toEqual([0, 0.25, 0.5, 0.75, 1]);

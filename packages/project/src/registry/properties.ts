@@ -25,10 +25,9 @@ import {
 } from '../schema/sequence.ts';
 import {
 	getTextAnimationSpec,
-	latestTextAnimationSpec,
+	LATEST_TEXT_ANIMATION_SPECS,
 	scaleAnimationFrames,
 	TEXT_ANIMATION_SIDES,
-	TEXT_ANIMATION_SPECS,
 	type TextAnimationSide,
 } from '../text-animations.ts';
 import { flicksPerFrame, type Rational } from '../time.ts';
@@ -169,9 +168,7 @@ const SIDE_LABEL: Record<TextAnimationSide, string> = { in: 'In', out: 'Out' };
 const sidePatch = (side: TextAnimationSide, value: unknown) => ({ textAnimation: { [side]: value } });
 
 function textAnimationSideSpecs(side: TextAnimationSide): PropertySpec[] {
-	const presets = TEXT_ANIMATION_SPECS.filter(
-		(s) => s.phases.includes(side) && latestTextAnimationSpec(s.id) === s,
-	);
+	const presets = LATEST_TEXT_ANIMATION_SPECS.filter((s) => s.phases.includes(side));
 	return [
 		{
 			key: `textAnimation.${side}.preset`,

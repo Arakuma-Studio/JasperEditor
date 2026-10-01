@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { LicenseComponent, M2Features } from '@jasper/api';
 import { mgRegistry } from '@jasper/mg-templates';
-import { TEXT_ANIMATION_SPECS } from '@jasper/project';
+import { LATEST_TEXT_ANIMATION_SPECS } from '@jasper/project';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -78,7 +78,7 @@ export function animeLicense(installed: string | null = animejsPackageDir()): Li
 export function animeCapability(): NonNullable<M2Features['anime']> {
 	return {
 		animejs: animejsVersion(),
-		textPresets: TEXT_ANIMATION_SPECS.length,
+		textPresets: LATEST_TEXT_ANIMATION_SPECS.length,
 		templates: mgRegistry.list().filter((t) => t.renderer === 'anime').length,
 	};
 }

@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EngineCapabilitiesSchema, LicensesResponseSchema } from '@jasper/api';
 import { mgRegistry } from '@jasper/mg-templates';
-import { TEXT_ANIMATION_SPECS } from '@jasper/project';
+import { LATEST_TEXT_ANIMATION_SPECS } from '@jasper/project';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ANIMEJS_PINNED_VERSION, animejsPackageDir, animeLicense } from '../src/anime/index.ts';
 import type { LayerOverride } from '../src/export/native-ext.ts';
@@ -62,7 +62,7 @@ describe('anime.js on the engine (routes/anime.ts)', () => {
 		);
 		expect(caps.features?.anime).toEqual({
 			animejs: '4.5.0',
-			textPresets: TEXT_ANIMATION_SPECS.length,
+			textPresets: LATEST_TEXT_ANIMATION_SPECS.length,
 			templates: mgRegistry.list().filter((t) => t.renderer === 'anime').length,
 		});
 	});

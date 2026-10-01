@@ -176,6 +176,8 @@ as inline styles, so the Player, `renderStill` and parallel `renderMedia` agree 
 Text clips can animate in and out (S11 §4, `docs/wp-notes/wp-m2-text-anim.md`): twelve presets — Fade, Slide
 Up/Down/Left/Right, Pop, Blur, Typewriter, Tracking, Mask Reveal, Rotate In, Drop — per character, word or line,
 with stagger, order (forward, backward, centre, edges, seeded random), ease and preset-specific params.
+Typewriter types behind a caret that blinks while typing pauses, like an editor's (`caretBlink`, `blinkRate`,
+`delay`, `typing`; Out blinks, then deletes backwards); the blink is a function of the frame, so renders agree.
 
 - **Motion Templates ▸ Text Animations**: cards with a hover preview; double-click (or Enter) applies to the
   selected text clips (the In / Out chip picks the side), the card menu offers Apply as In / Apply as Out, and

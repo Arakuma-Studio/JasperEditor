@@ -6,11 +6,12 @@ import { frameToMs, needsShaping, type TextUnit } from '../runtime/index.ts';
 import { PRESET_IMPLS } from './presets.ts';
 import type { TextAnimationImpl } from './types.ts';
 
-export { orderRanks } from './presets.ts';
+export { orderRanks, typewriterCaretVisible, typewriterSchedule } from './presets.ts';
 export {
 	REST_UNIT_VALUES,
 	type TextAnimationBuildContext,
 	type TextAnimationImpl,
+	type TextCaretContext,
 	type UnitValues,
 } from './types.ts';
 
