@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import {
 	appliedLabels,
+	clipElement,
 	createProject,
 	enableAgentBridge,
 	focusTimeline,
@@ -46,20 +47,13 @@ async function hostText(testId: string): Promise<string | null> {
 }
 
 async function props(): Promise<Record<string, unknown>> {
-	return page.evaluate((id) => {
-		const m = (
-			window as unknown as {
-				__jasperMonitor: {
-					session: {
-						getState(): { document: { sequences: Record<string, { clips: Record<string, unknown> }> } };
-					};
-				};
-			}
-		).__jasperMonitor;
-		const seqs = Object.values(m.session.getState().document.sequences);
-		const c = seqs.map((s) => s.clips[id]).find(Boolean) as { props: Record<string, unknown> } | undefined;
-		return c?.props ?? {};
-	}, clipId);
+	const seqs = await query<Record<string, { clips: Record<string, { props?: Record<string, unknown> }> }>>(
+		page,
+		'doc.get',
+		{ path: ['sequences'] },
+	);
+	for (const seq of Object.values(seqs)) if (seq.clips[clipId]) return seq.clips[clipId]!.props ?? {};
+	return {};
 }
 
 /** Screen point of a composition pixel (the LowerThird is 1920×1080 at 100 % in a 1080p sequence). */
@@ -110,13 +104,7 @@ test('Properties text editors: live preview while typing, one History step, layo
 	}, reg);
 	expect(res.ok, JSON.stringify(res)).toBe(true);
 	clipId = (res.refs as Record<string, string>).$lt!;
-	await page.evaluate((id) => {
-		(
-			window as unknown as {
-				__jasperMonitor: { session: { select(a: string, ids: string[], m: string): void } };
-			}
-		).__jasperMonitor.session.select('timeline', [id], 'replace');
-	}, clipId);
+	await clipElement(page, clipId).click();
 	await query(page, 'playhead.set', { frame: 60 });
 
 	// The three texts of the composition, in manifest order, with their style props.

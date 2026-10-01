@@ -202,7 +202,8 @@ test('import a Remotion project, insert a composition, live preview, props edit,
 	await expect(page.getByTestId('composition-section')).toBeVisible();
 
 	// Editing the title in Properties updates the Program monitor within 500 ms (S08 §8 test 4).
-	const field = page.getByTestId('prop-props.title');
+	// wp-m3-mgtext: `title` is a text layer (ui control "text"): its editor is in Properties ▸ Composition ▸ Text.
+	const field = page.getByTestId('text-title');
 	await field.fill('Edited in Properties');
 	const t0 = Date.now();
 	await field.press('Enter');
@@ -220,7 +221,7 @@ test('import a Remotion project, insert a composition, live preview, props edit,
 	// The history includes the import, insert and title edit.
 	const hist = await query<{ entries: { label: string; applied: boolean }[] }>(page, 'history.list');
 	expect(hist.entries.filter((e) => e.applied).map((e) => e.label)).toEqual(
-		expect.arrayContaining(['Import Remotion Project', 'Add Title', 'Title']),
+		expect.arrayContaining(['Import Remotion Project', 'Add Title', 'Edit Text «Title»']),
 	);
 	expect(watcher.errors.filter((e) => !/favicon|ERR_ABORTED|Failed to load resource/.test(e))).toEqual([]);
 });
