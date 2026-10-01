@@ -4,6 +4,7 @@
 // extension (corner pin / animated Motion).
 import { TrackRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
+import { registerWarpStage } from '../export/warp/index.ts';
 import { guarded, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
 import { TrackingService } from '../tracking/service.ts';
@@ -29,5 +30,6 @@ export default async function trackingRoutes(app: FastifyInstance): Promise<void
 		}),
 	);
 
-	// warp stage registration (wp-m2-track warp)
+	// The warp stage: corner pins and keyframed Motion / opacity on the native export path (S09:TRK-032, D-28).
+	registerWarpStage(app);
 }
