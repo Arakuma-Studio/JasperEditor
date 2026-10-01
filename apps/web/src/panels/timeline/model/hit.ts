@@ -5,8 +5,8 @@ import { hitY, type RegionKind, type TrackAreaLayout, type TrackRow } from './la
 import { hitTransition, type TransitionHit, type TransitionIndex } from './transitions.ts';
 import { frameToX, type Viewport, xToFrameExact } from './viewport.ts';
 
-/** TL-531: edge zone width measured inside the clip. */
-function edgeZonePx(clipWidthPx: number): number {
+/** TL-531: edge zone width measured inside the clip (also used by clip decorations, e.g. tracker strips). */
+export function edgeZonePx(clipWidthPx: number): number {
 	return Math.min(8, Math.max(3, clipWidthPx / 4));
 }
 

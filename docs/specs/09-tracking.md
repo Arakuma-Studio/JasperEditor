@@ -175,7 +175,9 @@ spline surfaces, tracking on nested sequences.
     per tracker (≤ 3 stacked, the active one taller) along the bottom of the body over exactly the tracked span,
     coloured per frame (≥ 0.8 good, ≥ 0.5 fair, > 0 low, 0 lost — lost frames have their own look), drawn in canvas
     tiles over the visible part only with the worst confidence of each pixel column at low zoom; hovering the strip
-    names the frame's timecode and confidence;
+    names the frame's timecode and confidence; while a track job runs the strip grows live from the job's
+    `tracking.progress` events (merged over the committed samples, redraws throttled to ≤ 10 Hz, nothing in the
+    document or History) and the committed result replaces it when the job ends;
   - target clip: a link glyph, tooltip "Follows <tracker> on <plate> · Corner Pin|Motion" ("Tracker removed" when
     dangling);
   - clicking a glyph (Selection tool) selects the plate, makes the tracker active, focuses Properties and reveals

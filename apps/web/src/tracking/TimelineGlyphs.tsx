@@ -36,10 +36,11 @@ import { createPortal } from 'react-dom';
 import type { ClipDecorationProps } from '../extensions/index.ts';
 import { revealSection } from '../panels/properties/controls/Section.tsx';
 import { CanvasTiles, cssVar, type TileDraw } from '../panels/timeline/components/canvas.tsx';
+import { edgeZonePx } from '../panels/timeline/model/hit.ts';
 import { useShellRuntimeOrNull } from '../shell/context.tsx';
+import { liveSamples } from './live.ts';
 import { setActiveTracker, trackingStore, useTracking } from './store.ts';
 import {
-	edgeZonePx,
 	frameUnderPointer,
 	linkText,
 	plateBadgeLines,
@@ -266,7 +267,9 @@ function StripRow(props: {
 }) {
 	const { deco: p, tracker, bottom, height, active } = props;
 	const clip = p.clip;
-	const samples = tracker.samples;
+	// Live: the frames a running job has tracked so far, merged over the committed samples (live.ts).
+	const samples = liveSamples(tracker.id, tracker.samples);
+	const live = samples !== tracker.samples;
 	const [tip, setTip] = useState<StripTip | null>(null);
 	const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const shown = useRef(false);
@@ -344,10 +347,11 @@ function StripRow(props: {
 	return (
 		<>
 			<div
-				className="pointer-events-none absolute right-0 left-0"
+				className={cx('pointer-events-none absolute right-0 left-0', live && 'animate-pulse')}
 				style={{ bottom, height, opacity: active ? 1 : 0.7 }}
 				data-tracker-strip={tracker.id}
 				data-active={active || undefined}
+				data-live={live || undefined}
 			>
 				<CanvasTiles x0={a} x1={b} height={height} originX={p.x} draw={draw} />
 			</div>
@@ -391,7 +395,7 @@ function shownTrackers(
 	active: string | null,
 	max: number,
 ): { shown: ClipTracker[]; hidden: number } {
-	const tracked = trackers.filter((t) => t.samples && t.samples.confidence.length > 0);
+	const tracked = trackers.filter((t) => (liveSamples(t.id, t.samples)?.confidence.length ?? 0) > 0);
 	if (tracked.length <= max) return { shown: tracked, hidden: 0 };
 	const shown = tracked.slice(0, max);
 	const act = tracked.find((t) => t.id === active);
@@ -405,6 +409,8 @@ export function TrackerStrips(p: ClipDecorationProps) {
 	const active = useTracking((s) =>
 		s.activeTrackerId && trackers.some((t) => t.id === s.activeTrackerId) ? s.activeTrackerId : null,
 	);
+	// Live progress of running jobs on this clip's trackers: a throttled (≤ 10 Hz) version per tracker (live.ts).
+	useTracking((s) => trackers.map((t) => s.liveVersion[t.id] ?? 0).join(','));
 	const reveal = useRevealTracker();
 	const session = useSessionOrNull();
 	const tc = useMemo(() => tcOptions(session, p.clip.id), [session, p.clip.id]);

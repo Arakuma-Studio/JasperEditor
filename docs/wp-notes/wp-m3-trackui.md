@@ -39,6 +39,19 @@ TRU-005 (timeline glyphs) and TRK-023 "Simplify keyframes"; adds TRU-006 (simpli
 - **Remembered tolerance:** `trackedBy.simplify = {tolerance}` is set by `tracker.apply {simplify}` and by
   `keyframes.simplify {trackedOnly}`. Re-apply and the re-track of linked targets pass it again.
 
+### Live progress on the strips
+
+- **Source:** `tracking/live.ts` collects the running job's `tracking.progress` events (source frame and confidence)
+  in a plain per-tracker buffer outside React state.
+- **Redraw:** a throttled per-tracker counter, `liveVersion` in the tracking store (≤ 10 Hz), re-renders only the plate
+  clips whose trackers run.
+- **Drawing:** `liveSamples()` merges the received frames over the committed samples (`span` semantics). Frames the
+  engine skipped between two events take the lower neighbour's confidence. The strip pulses (`data-live`) while live.
+- **Job end:** when the tracker leaves `running` (finished, failed or stopped) the buffer is dropped and the committed
+  samples show. Nothing reaches the document or History.
+- **Edge zones:** the strips' trim edge zones use the timeline's own `edgeZonePx`, now exported from
+  `panels/timeline/model/hit.ts`.
+
 ### Results on the trailer's real tracks
 
 Each `MatsSmileTrailer/mg/public/tracks/*.json` was baked with `tracker.apply` (corner pins) or per-frame Motion keys
@@ -81,6 +94,8 @@ on `resolveSceneAt` (the Player and the warp stage). Test: `packages/project/tes
   - `extensions/index.ts`: `clipDecorations` registry (`ClipDecorationProps`, `ClipDecorationDef`, `decorationsFor`).
     `ClipView` renders decoration badges in the name strip (also with names hidden) and overlays in the body.
   - `panels/properties/controls/Section.tsx`: `revealSection(id)`.
+  - `panels/timeline/model/hit.ts`: `edgeZonePx` is exported (used by the tracker strips).
+  - `tracking/store.ts`: `liveVersion` (tracking UI state, not the document).
   - Effect Controls keyframe menu: "Simplify Keyframes…" item.
   - Clip menu (`shell/menus/model.ts`): `keyframes.simplify`.
 - **MCP:** new tool `simplify_keyframes`; `apply_tracking.simplifyTolerance`. The README tool list is now 68 tools.
@@ -91,7 +106,7 @@ on `resolveSceneAt` (the Player and the warp stage). Test: `packages/project/tes
 pnpm vitest run --project @jasper/project packages/project/test/simplify.test.ts packages/project/test/simplify-doc.test.ts
 pnpm vitest run --project @jasper/engine apps/engine/test/simplify-export.test.ts
 MCP_TRACK_TEST_PORT=48640 pnpm vitest run --project @jasper/mcp apps/mcp/test/tracking.test.ts apps/mcp/test/readme-tools.test.ts
-pnpm vitest run --project @jasper/web apps/web/test/tracking-timeline.test.tsx apps/web/test/tracking-simplify.test.tsx
+pnpm vitest run --project @jasper/web apps/web/test/tracking-timeline.test.tsx apps/web/test/tracking-simplify.test.tsx apps/web/test/tracking-live.test.tsx
 E2E_PORT=48640 pnpm e2e -- e2e/tracking.spec.ts
 ```
 
@@ -110,6 +125,3 @@ tooltip (09).
   tracks found no excess.
 - **Speed changes:** the guarantee holds for the clip's timing at the moment of simplification. A later speed change
   samples other content times, between the checked ones.
-- **Live track progress:** a running track job does not show live progress on the timeline strip; the strips update
-  when the samples are committed.
-- **Shared helper:** `edgeZonePx` in `timeline-strip.ts` mirrors the private helper in `panels/timeline/model/hit.ts`.

@@ -326,8 +326,3 @@ export function linkText(
 	if (!found) return 'Tracker removed';
 	return `Follows ${found.trackerName} on ${found.plateName || 'plate'} · ${mode === 'corner-pin' ? 'Corner Pin' : 'Motion'}`;
 }
-
-/** TL-531 edge zone of a clip `w` px wide (mirrors the timeline hit test): min(8, max(3, w/4)). */
-export function edgeZonePx(w: number): number {
-	return Math.min(8, Math.max(3, w / 4));
-}

@@ -52,6 +52,8 @@ type TrackingState = {
 	errors: Record<string, string>;
 	/** Show the corner-pin handles on the Program monitor for the selected clip (TRU-003 tool mode). */
 	cornerPinTool: boolean;
+	/** Throttled redraw counter of the live progress of running jobs per tracker (timeline strips, live.ts). */
+	liveVersion: Record<string, number>;
 };
 
 const initial = (): TrackingState => ({
@@ -60,6 +62,7 @@ const initial = (): TrackingState => ({
 	running: {},
 	errors: {},
 	cornerPinTool: false,
+	liveVersion: {},
 });
 
 export const trackingStore = createStore<TrackingState>(() => initial());

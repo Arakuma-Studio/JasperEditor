@@ -40,6 +40,7 @@ import {
 	TRAIL_LENGTH,
 	visibleMediaRect,
 } from './geometry.ts';
+import { recordLiveProgress } from './live.ts';
 import { optionsOf, patchRunning, setActiveTracker, setError, trackingStore } from './store.ts';
 
 /** The subset of the engine client the tracking actions use (tests pass a fake). */
@@ -270,6 +271,14 @@ export function handleEngineEvent(session: EditorSession, engine: TrackingEngine
 				total: p.data.total,
 			},
 			trail,
+		});
+		// Timeline strips: the frames tracked so far (throttled redraws, no document change).
+		recordLiveProgress(trackerId, {
+			jobId: r.jobId ?? p.data.jobId,
+			frame: p.data.frame,
+			confidence: p.data.confidence,
+			step: r.plan.step,
+			stride: p.data.data.length === 2 ? 2 : 8,
 		});
 		followPlayhead(session, trackerId, p.data.frame);
 		return;
