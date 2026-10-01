@@ -4,6 +4,8 @@
 //   colour   (wp-m2-color)  effectFilter: fused colour runs → `lut3d=file=<baked>.cube` (+ per-frame windows)
 //   mg       (wp-m2-mg)     kinds 'composition' (+ 'text' hybrid): prepare = Remotion pre-render → override 'layer'/'sequence'
 //   track    (wp-m2-track)  claimsLayer: corner pin / animated Motion → prepare = warp stage → override 'sequence'
+//   layer-bake (wp-m2-layer-bake) claimsLayer: DOM layers (text, shapes, anime templates) → prepare = Remotion
+//            alpha masters / stills → override 'sequence' (+ still, rect, colorRuns)
 //
 // Extensions are registered at engine start by their route plugin (`core.registerNativeExtension(ext)`),
 // like the M1 motion-graphic master provider. Order of registration = order of consultation.
@@ -28,17 +30,17 @@ export type LayerOverride = {
 	decoder?: string;
 	/**
 	 * M2 (S11:LBK-004, wp-m2-layer-bake): `path` is one still image (PNG, straight alpha) looped for the layer's
-	 * span like a still clip. Types only until the layer-bake package adds builder support.
+	 * frames like a still clip (`sequence` space; `startFrame` is then informational).
 	 */
 	still?: boolean;
 	/**
-	 * M2 (S11:LBK-005): the intermediate covers only this region of the frame (sequence pixels) and is overlaid at
-	 * `x, y` (`sequence` space). Types only on contracts.
+	 * M2 (S11:LBK-005): the intermediate covers only this region of the frame (sequence pixels, `w × h` frames) and
+	 * is overlaid at `x, y` (`sequence` space).
 	 */
 	rect?: { x: number; y: number; w: number; h: number };
 	/**
 	 * M2 (S11:LBK-010): the intermediate was rendered without the clip's colour runs; the builder applies them to
-	 * the override stream with the colour extension's filter. Types only on contracts.
+	 * the override stream (`sequence` space) with the filters of the extensions that realise colour effects.
 	 */
 	colorRuns?: boolean;
 };
@@ -79,6 +81,13 @@ export type NativePrepareContext = {
 	 */
 	extensions?: readonly NativeExtension[];
 	preparedSoFar?: ReadonlyMap<string, unknown>;
+	/**
+	 * M2 (wp-m2-layer-bake, additive): what the preparation is for — the native composite (default) or a Remotion
+	 * render (`prepareForRemotion` extensions) — and the Remotion concurrency of the export (S11:LBK-022: bakes
+	 * follow it).
+	 */
+	purpose?: 'native' | 'remotion';
+	concurrency?: number;
 };
 
 export type NativeExtension = {
@@ -95,6 +104,11 @@ export type NativeExtension = {
 	 * Motion / opacity / effect blockers for it (the extension reports its own through `blockers`).
 	 */
 	claimsLayer?(clip: RenderVisualClip): boolean;
+	/**
+	 * M2 (wp-m2-layer-bake, additive): this extension pre-renders the claimed layer with a graphics engine (S04:RP-003
+	 * graphics group): the plan lists it in `graphicsGroups` with that engine and the path becomes `hybrid`.
+	 */
+	bakes?(clip: RenderVisualClip): 'remotion' | null;
 	/** Reasons this extension cannot render a clip it claims / provides (capability missing…). */
 	blockers?(clip: RenderVisualClip): string[];
 	/**

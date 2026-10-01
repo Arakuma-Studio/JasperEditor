@@ -446,6 +446,13 @@ export const ROUTES = {
 		response: EngineJobSchema,
 		owner: 'wp-m2-layer-bake',
 	},
+	/** Cached bake files (`master.mov`, `still.png`, `graded.mov`, `preview.webm`); signable for renders. */
+	layerBakeFiles: {
+		method: 'GET',
+		path: '/mg/layers/:key/:file',
+		response: 'binary',
+		owner: 'wp-m2-layer-bake',
+	},
 } as const satisfies Record<string, RouteDef>;
 
 export type RouteName = keyof typeof ROUTES;
