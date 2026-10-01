@@ -25,6 +25,7 @@ import {
 import { jsonResult, ToolError } from '../errors.ts';
 import { COMMAND_EXAMPLES, TRANSACTION_EXAMPLE } from '../examples.ts';
 import { clipSummary } from '../format.ts';
+import { AnimateArg, textAnimationOf } from './animation.ts';
 import { ProjectIdArg } from './projects.ts';
 
 const COMMAND_TYPES = Object.keys(COMMAND_CATALOG) as [string, ...string[]];
@@ -450,7 +451,7 @@ export function registerEditingTools(ctx: ToolContext): void {
 		{
 			title: 'Add text',
 			description:
-				'Adds a text (title) clip (clip.addText) on a video track above the footage. Position is in sequence pixels (0,0 = top left; default: centred).',
+				'Adds a text (title) clip (clip.addText) on a video track above the footage. Position is in sequence pixels (0,0 = top left; default: centred). animateIn/animateOut add text animations (list_text_animations).',
 			input: {
 				projectId: ProjectIdArg,
 				text: z.string().min(1).max(2000).describe('The text to show (line breaks allowed)'),
@@ -460,6 +461,13 @@ export function registerEditingTools(ctx: ToolContext): void {
 				sizePx: z.number().positive().max(2000).optional().describe('Font size in pixels'),
 				color: z.string().optional().describe('Text color "#RRGGBB" or "#RRGGBBAA" (default white)'),
 				position: z.tuple([z.number(), z.number()]).optional().describe('[x, y] in sequence pixels'),
+				// M2 (wp-m2-text-anim, S11:ANA-002): text animators of the new clip (see list_text_animations).
+				animateIn: AnimateArg.optional().describe(
+					'In animation over the first frames: a preset id ("slide-up") or {preset, durationFrames | durationSeconds, params}',
+				),
+				animateOut: AnimateArg.optional().describe(
+					'Out animation over the last frames (the mirrored motion): same forms as animateIn',
+				),
 				sequenceId: SequenceIdArg,
 			},
 			annotations: EDIT,
@@ -468,6 +476,13 @@ export function registerEditingTools(ctx: ToolContext): void {
 			const style: Record<string, unknown> = {};
 			if (a.sizePx) style.sizePx = a.sizePx;
 			if (a.color) style.fill = hexToRgba(a.color);
+			// M2 (wp-m2-text-anim, S11:ANA-002)
+			const textAnimation = await textAnimationOf(
+				ctx,
+				a.projectId,
+				{ in: a.animateIn, out: a.animateOut },
+				{ sequenceId: a.sequenceId },
+			);
 			return applyHelper(
 				ctx,
 				a.projectId,
@@ -480,6 +495,7 @@ export function registerEditingTools(ctx: ToolContext): void {
 						track: a.track ?? 'V2',
 						content: { text: a.text, ...(Object.keys(style).length ? { style } : {}) },
 						...(a.position ? { transform: { position: a.position } } : {}),
+						...(textAnimation ? { textAnimation } : {}),
 						...(a.sequenceId ? { sequenceId: a.sequenceId } : {}),
 					},
 				],

@@ -15,6 +15,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { COMMAND_EXAMPLES, TRANSACTION_EXAMPLE } from '../src/examples.ts';
+import { decodePng } from '../src/png.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, '..', '..', '..');
@@ -540,6 +541,178 @@ describe('jasper-mcp over stdio against a real engine', () => {
 		expect(del.deleted).toContain(textClip.id);
 	});
 
+	// ---------------------------------------------------------------- M2 text animation (wp-m2-text-anim, S11 §11 item 6)
+
+	let animatedText = '';
+
+	it('lists text animations and animates text with add_text / set_text_animation (S11:ANA-002/008)', async () => {
+		const names = (await client.listTools()).tools.map((t) => t.name);
+		for (const n of ['list_text_animations', 'set_text_animation', 'render_frames'])
+			expect(names).toContain(n);
+		expect(client.getInstructions()).toMatch(/Text animation:/);
+		const cat = await ok<{
+			presets: {
+				id: string;
+				phases: string[];
+				defaultDurationFrames: number;
+				params: Record<string, { enum?: string[]; default?: unknown }>;
+			}[];
+		}>('list_text_animations');
+		expect(cat.presets).toHaveLength(12);
+		const slide = cat.presets.find((p) => p.id === 'slide-up')!;
+		expect(slide).toMatchObject({ phases: ['in', 'out'], defaultDurationFrames: 20 });
+		expect(slide.params.unit).toMatchObject({ enum: ['char', 'word', 'line'], default: 'word' });
+
+		type Anim = { preset: string; durationFrames: number; params: Record<string, unknown> };
+		type C = { id: string; source: string; textAnimation: { in?: Anim; out?: Anim } | null };
+		const added = await ok<{ clips: { id: string; source: string }[] }>('add_text', {
+			projectId,
+			text: 'MCP animated',
+			at: 30,
+			duration: { seconds: 2 },
+			animateIn: 'slide-up',
+			animateOut: { preset: 'fade', durationSeconds: 0.5 },
+		});
+		animatedText = added.clips[0]!.id;
+		expect(added.clips[0]!.source).toBe('text "MCP animated" in:slide-up out:fade');
+		const doc = await client.readResource({ uri: `jasper://projects/${projectId}/document` });
+		const stored = Object.values(
+			JSON.parse((doc.contents[0] as { text: string }).text).sequences as Record<
+				string,
+				{ clips: Record<string, { textAnimation?: { in: Anim; out: Anim } }> }
+			>,
+		)[0]!.clips[animatedText]!.textAnimation!;
+		expect(stored.in).toMatchObject({ preset: 'slide-up', version: 1, durationFrames: 20 });
+		expect(stored.out).toMatchObject({ preset: 'fade', durationFrames: 15 });
+
+		// No preset: merge into the current In (length in seconds at 30 fps, one param).
+		const merged = await ok<{ clips: C[]; warnings?: unknown[] }>('set_text_animation', {
+			projectId,
+			clipId: animatedText,
+			in: { durationSeconds: 1, params: { unit: 'char' } },
+		});
+		expect(merged.warnings).toBeUndefined();
+		expect(merged.clips[0]!.textAnimation!.in).toMatchObject({
+			preset: 'slide-up',
+			durationFrames: 30,
+			params: { unit: 'char', stagger: 0.3 },
+		});
+		expect(merged.clips[0]!.textAnimation!.out).toMatchObject({ preset: 'fade', durationFrames: 15 });
+		// A new Out preset whose window overlaps the In: compressed with a warning.
+		const compressed = await ok<{ clips: C[]; warnings: { code: string }[] }>('set_text_animation', {
+			projectId,
+			clipIds: [animatedText],
+			out: { preset: 'drop', durationFrames: 45 },
+		});
+		expect(compressed.warnings.map((w) => w.code)).toContain('W_ANIMATION_COMPRESSED');
+		expect(compressed.clips[0]!.source).toBe('text "MCP animated" in:slide-up out:drop');
+		const removed = await ok<{ clips: C[] }>('set_text_animation', {
+			projectId,
+			clipId: animatedText,
+			out: null,
+		});
+		expect(removed.clips[0]!.textAnimation).toEqual({ in: expect.objectContaining({ preset: 'slide-up' }) });
+		expect(textOf(await call('get_timeline', { projectId }))).toMatch(
+			/V2 \| clp_\w+ \| text \| .* \| 30–90 \| text "MCP animated" in:slide-up \| $/m,
+		);
+
+		const unknown = await fails('set_text_animation', { projectId, clipId: animatedText, in: 'swirl' });
+		expect(unknown.code).toBe('E_UNKNOWN_EFFECT');
+		expect(unknown.hint).toMatch(/list_text_animations/);
+		const badParam = await fails('set_text_animation', {
+			projectId,
+			clipId: animatedText,
+			in: { params: { unit: 'sentence' } },
+		});
+		expect(badParam.code).toBe('E_INVALID_PARAM');
+		const p = await ok<{ sequences: { clips: { id: string; kind: string }[] }[] }>('get_project', {
+			projectId,
+		});
+		const video = p.sequences[0]!.clips.find((c) => c.kind === 'video')!;
+		expect((await fails('set_text_animation', { projectId, clipId: video.id, in: 'fade' })).code).toBe(
+			'E_INVALID_PARAM',
+		);
+		expect((await fails('set_text_animation', { projectId, in: 'fade' })).code).toBe('E_INVALID_PARAM');
+		expect((await fails('set_text_animation', { projectId, clipId: animatedText })).code).toBe(
+			'E_INVALID_PARAM',
+		);
+	});
+
+	it('render_frames returns one PNG contact sheet of evenly spread frames (S11:ANA-004)', async () => {
+		const p = await ok<{ sequences: { clips: { id: string; track: string; start: number }[] }[] }>(
+			'get_project',
+			{ projectId },
+		);
+		// The right half of the razored clip-a (V1 150–270): footage only, rendered natively.
+		const right = p.sequences[0]!.clips.find((c) => c.track === 'V1' && c.start === 150)!;
+		const r = await call('render_frames', { projectId, clipId: right.id, count: 5 });
+		expect(r.isError, textOf(r)).toBeFalsy();
+		const meta = json<{
+			columns: number;
+			rows: number;
+			cellWidth: number;
+			cellHeight: number;
+			sheet: { width: number; height: number };
+			cells: { cell: number; row: number; column: number; frame: number; timecode: string }[];
+		}>(r);
+		expect(meta).toMatchObject({ columns: 4, rows: 2, cellWidth: 320, cellHeight: 180 });
+		expect(meta.cells.map((c) => c.frame)).toEqual([150, 180, 210, 239, 269]);
+		expect(meta.cells[4]).toMatchObject({ cell: 5, row: 2, column: 1, timecode: '00:00:08:29' });
+		const img = r.content.find((c) => c.type === 'image') as { data: string; mimeType: string };
+		expect(img.mimeType).toBe('image/png');
+		const sheet = decodePng(Buffer.from(img.data, 'base64'));
+		expect([sheet.width, sheet.height]).toEqual([meta.sheet.width, meta.sheet.height]);
+		expect(meta.sheet).toEqual({ width: 4 * 320 + 5 * 4, height: 2 * 180 + 3 * 4 });
+		const px = (x: number, y: number) => [
+			...sheet.data.subarray((y * sheet.width + x) * 4, (y * sheet.width + x) * 4 + 3),
+		];
+		// An empty cell (row 2, column 4) is background; the frames themselves are not.
+		expect(px(3 * 324 + 4 + 160, 184 + 90)).toEqual([32, 32, 32]);
+		const cellPixels = (n: number) => {
+			const x0 = 4 + (n % 4) * 324;
+			const y0 = 4 + Math.floor(n / 4) * 184;
+			const out: number[] = [];
+			for (let y = 0; y < 180; y += 9) for (let x = 0; x < 320; x += 16) out.push(...px(x0 + x, y0 + y));
+			return out;
+		};
+		expect(new Set(cellPixels(0)).size).toBeGreaterThan(4);
+		const timed = await ok<{ cells: { frame: number }[] }>('render_frames', {
+			projectId,
+			times: [160, { seconds: 7 }],
+			width: 160,
+		});
+		expect(timed.cells.map((c) => c.frame)).toEqual([160, 210]);
+		expect((await fails('render_frames', { projectId, times: [0], count: 2 })).code).toBe('E_INVALID_PARAM');
+		expect((await fails('render_frames', { projectId, clipId: 'clp_nope' })).code).toBe('E_NOT_FOUND');
+	});
+
+	// Animated text frames need the Remotion/Chrome still path.
+	it.runIf(process.env.REMOTION_E2E === '1')(
+		'render_frames shows a text animation move (REMOTION_E2E=1)',
+		async () => {
+			const r = await call('render_frames', { projectId, clipId: animatedText, count: 3, width: 160 });
+			expect(r.isError, textOf(r)).toBeFalsy();
+			expect(json<{ cells: { frame: number }[] }>(r).cells.map((c) => c.frame)).toEqual([30, 60, 89]);
+			const img = r.content.find((c) => c.type === 'image') as { data: string };
+			const sheet = decodePng(Buffer.from(img.data, 'base64'));
+			const cell = (n: number) => {
+				const x0 = 4 + n * 164;
+				const rows: number[] = [];
+				for (let y = 4; y < 4 + 90; y++)
+					rows.push(...sheet.data.subarray((y * sheet.width + x0) * 4, (y * sheet.width + x0 + 160) * 4));
+				return rows;
+			};
+			// The first frame of the In (units still sliding) differs from the settled middle frame.
+			expect(cell(0)).not.toEqual(cell(1));
+		},
+	);
+
+	it('removes the animated text again', async () => {
+		await ok('delete_clips', { projectId, clipIds: [animatedText] });
+	});
+
+	// ---------------------------------------------------------------- end M2 text animation
+
 	it('apply_commands: transactions, dry runs and every describe_commands example', async () => {
 		const cat = await ok<{ commands: { type: string }[]; exampleTransaction: unknown }>('describe_commands');
 		expect(cat.commands.length).toBeGreaterThan(40);
@@ -551,11 +724,13 @@ describe('jasper-mcp over stdio against a real engine', () => {
 		expect(full.commands[1]!.example).toEqual(COMMAND_EXAMPLES['clip.addText']);
 		// Every example validates against the live project (dry run changes nothing).
 		const before = (await ok<{ revision: number }>('get_project', { projectId })).revision;
+		// Examples using a temp ref run after the example that binds it.
+		const binders: Record<string, string> = { $clip: 'clip.place', $title: 'clip.addText' };
 		for (const [type, example] of Object.entries(COMMAND_EXAMPLES)) {
-			const commands =
-				type !== 'clip.place' && JSON.stringify(example).includes('$clip')
-					? [COMMAND_EXAMPLES['clip.place'], example]
-					: [example];
+			const binder = Object.entries(binders).find(
+				([ref, t]) => t !== type && JSON.stringify(example).includes(`"${ref}"`),
+			)?.[1];
+			const commands = binder ? [COMMAND_EXAMPLES[binder], example] : [example];
 			const r = await call('apply_commands', { projectId, label: `example ${type}`, commands, dryRun: true });
 			expect(r.isError, `${type}: ${textOf(r)}`).toBeFalsy();
 			expect(json(r)).toMatchObject({ ok: true, dryRun: true });

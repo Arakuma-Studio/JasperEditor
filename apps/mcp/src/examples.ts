@@ -1,6 +1,7 @@
 // Worked examples for describe_commands. Every example is dry-run against a real project in
 // test/integration.test.ts, so they stay valid when schemas change. Semantic addresses
-// ({mediaByName}, {clipAt}, {markerByName}) keep them independent of generated ids.
+// ({mediaByName}, {clipAt}, {markerByName}) keep them independent of generated ids; examples using the "$clip" /
+// "$title" refs are dry-run after the clip.place / clip.addText example that binds them.
 
 export const COMMAND_EXAMPLES: Record<string, unknown> = {
 	'clip.place': {
@@ -18,6 +19,7 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		track: 'V2',
 		content: { text: 'Hello world', style: { sizePx: 96, fill: [1, 1, 1, 1] } },
 		transform: { position: [960, 900] },
+		textAnimation: { in: { preset: 'slide-up' }, out: { preset: 'fade' } },
 		ref: '$title',
 	},
 	'clip.addMotionGraphic': {
@@ -43,10 +45,17 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		clipIds: [{ clipAt: { track: 'V1', at: 0 } }],
 		syncConflict: 'cut',
 	},
+	// M2 (S11:ANA-006): a side with preset replaces it, one without merges into it, null removes it.
 	'clip.update': {
 		type: 'clip.update',
-		clipId: { clipAt: { track: 'V1', at: 0 } },
-		patch: { name: 'Opening shot' },
+		clipId: '$title',
+		patch: {
+			name: 'Title',
+			textAnimation: {
+				in: { preset: 'pop', durationFrames: 12, params: { unit: 'char', stagger: 0.5 } },
+				out: { durationFrames: 20 },
+			},
+		},
 	},
 	'param.set': {
 		type: 'param.set',
