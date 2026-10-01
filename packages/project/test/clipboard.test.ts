@@ -25,6 +25,7 @@ import {
 	type ProjectDocument,
 	parseClipboardPayload,
 	RATES,
+	resolveAgentAddresses,
 } from '../src/index.ts';
 import { Harness, videoAsset } from './helpers.ts';
 
@@ -808,5 +809,18 @@ describe('builders', () => {
 		const h = new Harness();
 		expect(() => buildClipsPayload(h.doc as ProjectDocument, h.seqId, ['clp_0000000000000000'])).toThrow();
 		expect(() => buildItemsPayload(h.doc, [])).toThrow();
+	});
+
+	it('payload data is never treated as addresses, temp refs or selections', () => {
+		const { h, text } = richProject();
+		const p = roundTrip(buildClipsPayload(h.doc, h.seqId, [text]));
+		(p.clips!.clips[0] as { name: string }).name = '$selection';
+		(p.clips!.clips[0] as Record<string, unknown>).note = { clipAt: { track: 'V9', at: 0 } };
+		const cmd = { type: 'clip.paste', payload: p, at: 500 };
+		const resolved = resolveAgentAddresses(h.doc, [cmd]);
+		expect(resolved.ok && resolved.commands[0]).toBe(cmd);
+		const r = h.ok([cmd], { ctx: { selection: { clips: [], primaryClip: null } } });
+		const id = (r.results[0] as { clipIds: string[] }).clipIds[0]!;
+		expect(h.seq.clips[id]!.name).toBe('$selection');
 	});
 });

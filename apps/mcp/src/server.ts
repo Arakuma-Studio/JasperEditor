@@ -6,6 +6,7 @@ import { loadDoc, makeContext, type ToolContext } from './context.ts';
 import { pickSequence, timelineTable } from './format.ts';
 import type { EngineConnection } from './link.ts';
 import { ANIMATION_GUIDE, registerAnimationTools } from './tools/animation.ts';
+import { CLIPBOARD_GUIDE, registerClipboardTools } from './tools/clipboard.ts';
 import { COLOR_GUIDE, registerColorTools } from './tools/color.ts';
 import { COMPOSITION_GUIDE, registerCompositionTools } from './tools/compositions.ts';
 import { registerEditingTools } from './tools/editing.ts';
@@ -48,6 +49,7 @@ const FULL_GUIDE = [
 	ANIMATION_GUIDE,
 	SHAPES_GUIDE,
 	TEMPLATES_GUIDE, // wp-m2-anime-templates (S11:ANA-003)
+	CLIPBOARD_GUIDE, // wp-clipboard (S01 §20)
 ]
 	.filter((g) => g.length > 0)
 	.join('\n\n');
@@ -78,6 +80,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerAnimationTools(ctx);
 	registerShapeTools(ctx);
 	registerTemplateTools(ctx); // wp-m2-anime-templates (S11:ANA-003): set_motion_graphic_params
+	registerClipboardTools(ctx); // wp-clipboard (S01 §20): copy_clips, paste_clips, copy_items, paste_items
 	registerResources(ctx);
 	registerPrompts(ctx);
 	return { server, ctx };

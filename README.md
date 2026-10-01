@@ -321,7 +321,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (63; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (67; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -336,6 +336,7 @@ Tools (63; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the
 - Transitions: `list_transitions` `update_transition` `remove_transitions` `apply_default_transitions`.
 - Animation and graphics: `list_text_animations` `set_text_animation` `render_frames` `set_motion_graphic_params`
   `add_shape`.
+- Clipboard: `copy_clips` `paste_clips` `copy_items` `paste_items`.
 
 Resources: `jasper://projects/{projectId}/document`, `jasper://projects/{projectId}/timeline`,
 `jasper://guide`. Prompt: `edit-video`.
@@ -413,6 +414,30 @@ Rectangles and ellipses are `shape` clips (S11 §7, `docs/wp-notes/wp-m2-shapes.
   layer bake they export natively. Agents use `add_shape`, or `clip.update {shape}` / `param.set` on `shape.*`.
 - Tests: `e2e/shapes.spec.ts`; pixel check against an analytic reference with
   `REMOTION_E2E=1 pnpm vitest run apps/engine/test/shapes-remotion.e2e.test.ts`.
+
+## Clipboard
+
+Copy and paste work like Premiere's (S01 §20, `docs/wp-notes/wp-clipboard.md`):
+
+- **Edit ▸ Cut / Copy / Paste / Paste Insert / Paste Attributes… / Remove Attributes…** (Ctrl/Cmd+X / C / V,
+  Ctrl/Cmd+Shift+V, Ctrl/Cmd+Alt+V) act on the focused panel. **Timeline** and **Program monitor** (right-click a
+  layer): clips with their linked partners and the transitions between them; Paste lands at the playhead with the
+  lowest copied track on the lowest targeted track (overwrite; Paste Insert ripples), selects the copies and moves
+  the playhead to their end. Cut leaves a gap. **Effect Controls**: selected keyframes (pasted at the playhead,
+  same property or the selected one of the same kind) or the selected effect (else every applied effect), pasted
+  onto all selected clips. **Project panel**: items and bins, sequences deep-copied into the selected bin.
+- **Paste Attributes…** lists Motion, Opacity, Volume, Panner, each copied effect, text In/Out animation and style,
+  and shape style, with *Scale Attribute Times*; **Remove Attributes…** resets or removes them. Every paste is one
+  undo step.
+- The clipboard holds a versioned JSON payload (`jasper-clipboard` v1, validated, ≤ 20 MB) with every media,
+  font, synthetic and transcript it uses, so pastes into another project or browser tab resolve: media by
+  fingerprint, else added (offline until reachable). It travels as `text/html` (embedded) + `text/plain`, on
+  desktop also as `application/x-jasper-clipboard`, and stays in memory for same-tab pastes. Text fields keep
+  their own copy/paste.
+- Agents: `copy_clips` / `paste_clips` / `copy_items` / `paste_items`, or the commands `clip.paste`,
+  `clip.pasteAttributes`, `clip.removeAttributes`, `effect.paste`, `keyframe.paste`, `project.pasteItems` in
+  `apply_commands`.
+- Tests: `packages/project/test/clipboard.test.ts`, `apps/web/test/clipboard.test.tsx`, `e2e/clipboard.spec.ts`.
 
 ## Export: titles, shapes and animated templates (layer bake)
 
