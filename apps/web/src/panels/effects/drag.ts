@@ -6,7 +6,7 @@
 // Effect Controls — WP-2D) read it with `readEffectDragPayload(dt)` and apply it with
 // `applyEffectToClips(session, effectId, clipIds, index?)`, which commits ONE transaction for N clips.
 import type { Command, EffectRegistry, TransactionResult } from '@jasper/project';
-import { isKnownClipKind, kindCapabilities } from '@jasper/project';
+import { effectBadges, isKnownClipKind, kindCapabilities } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 
 export type EffectDragPayload = { type: 'jasper/effect'; effectId: string };
@@ -103,7 +103,8 @@ export function effectTree(
 		const hay = [e.label, e.id, e.category, ...(e.keywords ?? [])].join(' ').toLowerCase();
 		if (q && !hay.includes(q)) continue;
 		if (filter.realtime && e.capabilities.preview === 'none') continue;
-		if (filter.native && !(e.native && e.capabilities.export.includes('native'))) continue;
+		// Colour effects are native through the fused LUT (S06), not a filter string: use the shared badge rule.
+		if (filter.native && !effectBadges(e).native) continue;
 		const medium = e.appliesTo === 'video' ? 'Video Effects' : 'Audio Effects';
 		const byCat = groups.get(medium) ?? new Map();
 		byCat.set(e.category, [...(byCat.get(e.category) ?? []), e]);

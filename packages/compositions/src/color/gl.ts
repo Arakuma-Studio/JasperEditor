@@ -244,6 +244,7 @@ export function sourceSize(src: CanvasImageSource): { width: number; height: num
 }
 
 let webgl2Support: boolean | null = null;
+let webgl2Renderer: string | null = null;
 /** True when this browser can create a WebGL2 context (cached; false outside the DOM). */
 export function canUseWebGl2(): boolean {
 	if (webgl2Support !== null) return webgl2Support;
@@ -252,9 +253,42 @@ export function canUseWebGl2(): boolean {
 		const c = document.createElement('canvas');
 		const gl = c.getContext('webgl2');
 		webgl2Support = !!gl;
+		if (gl) {
+			const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+			webgl2Renderer = String(gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+		}
 		(gl?.getExtension('WEBGL_lose_context') as { loseContext(): void } | null)?.loseContext();
 	} catch {
 		webgl2Support = false;
 	}
 	return webgl2Support;
+}
+
+/** The WebGL2 renderer string (e.g. "ANGLE (…SwiftShader…)"), or null. */
+export function webGl2Renderer(): string | null {
+	canUseWebGl2();
+	return webgl2Renderer;
+}
+
+export type ColorStageBackend = 'webgl' | 'cpu';
+let forcedBackend: ColorStageBackend | null = null;
+/** Forces the pass backend (tests / diagnostics; `localStorage['jasper:color-stage']` does the same). */
+export function setColorStageBackend(b: ColorStageBackend | null): void {
+	forcedBackend = b;
+}
+
+/**
+ * Backend of the colour passes (S06:CG-043): WebGL2 on a hardware GPU; the CPU pass (identical maths) when the
+ * WebGL2 implementation is a software rasterizer, where it is 2–3× faster (see cpu.ts).
+ */
+export function colorStageBackend(): ColorStageBackend {
+	if (forcedBackend) return forcedBackend;
+	try {
+		const ls = typeof localStorage !== 'undefined' ? localStorage.getItem('jasper:color-stage') : null;
+		if (ls === 'webgl' || ls === 'cpu') return ls;
+	} catch {
+		// no storage (render pages, workers)
+	}
+	const r = webGl2Renderer() ?? '';
+	return /swiftshader|llvmpipe|softpipe|software|microsoft basic render/i.test(r) ? 'cpu' : 'webgl';
 }

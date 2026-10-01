@@ -12,17 +12,22 @@ export {
 	referencedMedia,
 	useColorStage,
 } from './chain.ts';
-export { type ColorLutParams, type CssFilterParams, colorLut, cssFilter } from './effects.ts';
+export { applyLutRgba8, type PreparedLut, prepareLut } from './cpu.ts';
+export { type ColorLutParams, type CssFilterParams, colorLut, colorLutCpu, cssFilter } from './effects.ts';
 export {
 	type ColorGl,
+	type ColorStageBackend,
 	canUseWebGl2,
+	colorStageBackend,
 	createColorGl,
 	destroyColorGl,
 	drawThroughLut,
 	FRAGMENT_SHADER,
 	lutTexture,
+	setColorStageBackend,
 	sourceSize,
 	VERTEX_SHADER,
+	webGl2Renderer,
 } from './gl.ts';
 export {
 	BAKES_PER_LAYER,

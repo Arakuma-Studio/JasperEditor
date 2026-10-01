@@ -187,3 +187,48 @@ describe('shader (S06:CG-040)', () => {
 		expect(colorStageStatus.get()).not.toBe('lost');
 	});
 });
+
+describe('CPU pass (software WebGL hosts, S06:CG-043)', () => {
+	it('equals applyLut of the same table (rounded) on every 8-bit input sampled', async () => {
+		const { applyLut, bakeColorRun } = await import('@jasper/project');
+		const { applyLutRgba8 } = await import('../src/index.ts');
+		const lut = bakeColorRun(
+			[
+				fx('g', LUMETRI_EFFECT_ID, {
+					exposure: 0.4,
+					contrast: 20,
+					saturation: 130,
+					midtonesWheel: [0.2, -0.1],
+				}),
+			],
+			defaultEffectRegistry,
+			{ lut: () => null },
+			33,
+		)!;
+		const n = 40_000;
+		const px = new Uint8ClampedArray(n * 4);
+		for (let i = 0; i < px.length; i++) px[i] = (i * 2654435761) >>> 24;
+		const src = Uint8ClampedArray.from(px);
+		applyLutRgba8(lut, px);
+		let diff = 0;
+		const c: [number, number, number] = [0, 0, 0];
+		for (let p = 0; p < px.length; p += 4) {
+			c[0] = src[p]! / 255;
+			c[1] = src[p + 1]! / 255;
+			c[2] = src[p + 2]! / 255;
+			applyLut(lut, c);
+			for (let k = 0; k < 3; k++) diff = Math.max(diff, Math.abs(px[p + k]! - Math.round(c[k]! * 255)));
+			expect(px[p + 3]).toBe(src[p + 3]); // alpha untouched
+		}
+		expect(diff).toBeLessThanOrEqual(1); // ties round half-to-even vs Math.round
+	});
+
+	it('the backend can be forced (tests / diagnostics)', async () => {
+		const { colorStageBackend, setColorStageBackend } = await import('../src/index.ts');
+		setColorStageBackend('cpu');
+		expect(colorStageBackend()).toBe('cpu');
+		setColorStageBackend('webgl');
+		expect(colorStageBackend()).toBe('webgl');
+		setColorStageBackend(null);
+	});
+});

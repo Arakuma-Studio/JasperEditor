@@ -20,8 +20,8 @@ import {
 } from '@jasper/project';
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { cancelRender, continueRender, delayRender, type EffectDescriptor } from 'remotion';
-import { colorLut, cssFilter } from './effects.ts';
-import { canUseWebGl2 } from './gl.ts';
+import { colorLut, colorLutCpu, cssFilter } from './effects.ts';
+import { canUseWebGl2, colorStageBackend } from './gl.ts';
 import { bakedRunLut, loadedLutAsset, loadLutAsset, lutUrlKey } from './luts.ts';
 import { useColorStageStatus } from './status.ts';
 
@@ -215,6 +215,7 @@ export function useColorStage(clipId: string, effects: readonly ResolvedEffect[]
 			return u ? (loadedLutAsset(u) ?? null) : null;
 		};
 		const out: EffectDescriptor[] = [];
+		const cpu = colorStageBackend() === 'cpu';
 		plan.steps.forEach((s, i) => {
 			const key = stepKeys[i]!;
 			if (s.kind === 'css') {
@@ -222,7 +223,7 @@ export function useColorStage(clipId: string, effects: readonly ResolvedEffect[]
 				return;
 			}
 			const lut = bakedRunLut(clipId, key, s.effects, defaultEffectRegistry, lutOf, PREVIEW_LUT_SIZE);
-			if (lut) out.push(colorLut({ key, lut }));
+			if (lut) out.push(cpu ? colorLutCpu({ key, lut }) : colorLut({ key, lut }));
 		});
 		return out;
 		// `version` re-bakes once LUT assets arrive.

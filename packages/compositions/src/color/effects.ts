@@ -5,6 +5,7 @@
 // `filter`) for non-colour effects that sit between/before colour runs so the stack order is preserved.
 import type { Lut } from '@jasper/project';
 import { createEffect } from 'remotion';
+import { applyLutRgba8 } from './cpu.ts';
 import { type ColorGl, createColorGl, destroyColorGl, drawThroughLut, sourceSize } from './gl.ts';
 import { colorStageStatus } from './status.ts';
 
@@ -88,6 +89,33 @@ export const colorLut = createEffect<ColorLutParams, LutState>({
 		if (state.res) destroyColorGl(state.res);
 		state.res = null;
 	},
+});
+
+/**
+ * The same colour-run pass on the CPU (2D canvas, see cpu.ts): chosen when WebGL2 is a software rasterizer.
+ * Identical tetrahedral maths; the result equals the TypeScript reference.
+ */
+export const colorLutCpu = createEffect<ColorLutParams, null>({
+	type: 'jasper.color-lut-cpu',
+	label: 'Colour grade (baked LUT, CPU)',
+	documentationLink: null,
+	backend: '2d',
+	calculateKey: (p) => `cpu:${p.key}`,
+	schema: {},
+	validateParams: (p) => {
+		if (!p || typeof p.key !== 'string' || !p.lut) throw new Error('colorLutCpu needs {key, lut}');
+	},
+	setup: () => null,
+	apply({ source, target, params, width, height }) {
+		const ctx = target.getContext('2d');
+		if (!ctx) return;
+		ctx.clearRect(0, 0, width, height);
+		ctx.drawImage(source, 0, 0, width, height);
+		const img = ctx.getImageData(0, 0, width, height);
+		applyLutRgba8(params.lut, img.data);
+		ctx.putImageData(img, 0, 0);
+	},
+	cleanup: () => {},
 });
 
 export type CssFilterParams = { key: string; filter: string };
