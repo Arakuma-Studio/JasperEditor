@@ -94,6 +94,10 @@ async function gradedWithText(app: FastifyInstance, headers: Record<string, stri
 			ref: '$t',
 		},
 	]);
+	// M2 (wp-m2-layer-bake): text alone is baked natively now (S11:LBK-001); a blend mode keeps it a Remotion-only
+	// layer (S04:RP-005), so this sequence still renders through the compositions' colour stage.
+	const text = d.clipIds().find((id) => d.doc.sequences[d.seqId]!.clips[id]!.kind === 'text')!;
+	d.tx([{ type: 'clip.update', clipIds: [text], patch: { blendMode: 'screen' } }]);
 	return d;
 }
 

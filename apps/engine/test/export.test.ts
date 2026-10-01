@@ -8,6 +8,7 @@ import { buildRenderSnapshot, FLICKS_PER_SECOND } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { audioFadeFilters, buildNativeGraph, fadeFilters } from '../src/export/native.ts';
 import { nativeBlockers } from '../src/export/planner.ts';
+import { layerBakeService } from '../src/routes/layer-bake.ts';
 import { coreServices } from '../src/tools/services.ts';
 import {
 	closeApps,
@@ -132,7 +133,9 @@ describe('planner (S04:RP-001/008/010)', () => {
 		expect(again.json().planId).toBe(plan.planId);
 	});
 
-	it('chooses remotion for a sequence with a text clip, with a blocker message; forcing native is refused', async () => {
+	// M2 (S11:LBK-002, wp-m2-layer-bake): text is baked (`hybrid`); without the Remotion renderer to bake it, the
+	// sequence plans `remotion` with a blocker and forcing native is refused.
+	it('bakes a text clip (hybrid); without Remotion it chooses remotion with a blocker; forcing native is refused', async () => {
 		const clipA = await register(app, fixture('clip-a.mp4'));
 		const d = new DocBuilder();
 		const a = d.addMedia(clipA);
@@ -141,39 +144,45 @@ describe('planner (S04:RP-001/008/010)', () => {
 			{ type: 'clip.addText', at: 0, duration: 60, track: 'V2', content: { text: 'Title' }, ref: '$t' },
 		]);
 		const textId = t.refs.$t!;
-		const r = await app.inject({
-			method: 'POST',
-			url: '/api/exports/plan',
-			headers: JSON_H,
-			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings: settings(d.seqId) },
-		});
-		const plan = RenderPlanSchema.parse(r.json());
-		expect(plan.path).toBe('remotion');
-		expect(plan.audio.mode).toBe('remotion');
-		expect(plan.blockers).toEqual([
-			{
-				itemId: textId,
-				path: 'native',
-				reason: expect.stringMatching(/text layer .*requires graphics rendering/),
-			},
+		const planOf = async (engine = 'auto') =>
+			app.inject({
+				method: 'POST',
+				url: '/api/exports/plan',
+				headers: JSON_H,
+				payload: { envelope: d.envelope(), sequenceId: d.seqId, settings: settings(d.seqId, { engine }) },
+			});
+		const hybrid = RenderPlanSchema.parse((await planOf()).json());
+		expect(hybrid.path).toBe('hybrid');
+		expect(hybrid.audio.mode).toBe('native-mix');
+		expect(hybrid.blockers).toEqual([]);
+		expect(hybrid.segments[0]!.graphicsGroups).toEqual([
+			{ id: 'lb1', engine: 'remotion', itemIds: [textId] },
 		]);
-		expect(plan.segments[0]!.graphicsGroups[0]).toMatchObject({ engine: 'remotion' });
 
-		const forced = await app.inject({
-			method: 'POST',
-			url: '/api/exports/plan',
-			headers: JSON_H,
-			payload: {
-				envelope: d.envelope(),
-				sequenceId: d.seqId,
-				settings: settings(d.seqId, { engine: 'native' }),
-			},
-		});
-		expect(forced.statusCode).toBe(409);
-		expect(forced.json()).toMatchObject({
-			code: 'PATH_NOT_ELIGIBLE',
-			detail: { blockers: [expect.objectContaining({ itemId: textId })] },
-		});
+		const lb = layerBakeService(app)!;
+		const orig = lb.unavailableReason.bind(lb);
+		lb.unavailableReason = () => 'no renderer';
+		try {
+			const plan = RenderPlanSchema.parse((await planOf()).json());
+			expect(plan.path).toBe('remotion');
+			expect(plan.audio.mode).toBe('remotion');
+			expect(plan.blockers).toEqual([
+				{
+					itemId: textId,
+					path: 'native',
+					reason: expect.stringMatching(/graphics layers need the Remotion renderer to bake/),
+				},
+			]);
+			expect(plan.segments[0]!.graphicsGroups[0]).toMatchObject({ engine: 'remotion' });
+			const forced = await planOf('native');
+			expect(forced.statusCode).toBe(409);
+			expect(forced.json()).toMatchObject({
+				code: 'PATH_NOT_ELIGIBLE',
+				detail: { blockers: [expect.objectContaining({ itemId: textId })] },
+			});
+		} finally {
+			lb.unavailableReason = orig;
+		}
 	});
 
 	it('reports offline media, keyframed motion and motion graphics without fframes', async () => {

@@ -1,0 +1,943 @@
+// Layer bake (M2, S11 §6): DOM layers, static detection, crop rects, render keys, the planner (`hybrid`, blockers,
+// anime templates), the builder (`still`, `rect`, `colorRuns`, GPL scan), the cache (GC, capability), the preview
+// route's validation, the usage log and the `auto` fallback to Remotion (LBK-023). No headless browser: renders are
+// covered by layer-bake.e2e.test.ts (REMOTION_E2E=1).
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { type EngineJob, RenderPlanSchema } from '@jasper/api';
+import {
+	buildRenderSnapshot,
+	LUMETRI_EFFECT_ID,
+	type ProjectDocument,
+	type RenderSnapshot,
+	type RenderVisualClip,
+} from '@jasper/project';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createColorExtension, gplFiltersIn } from '../src/color/extension.ts';
+import { buildNativeGraph } from '../src/export/native.ts';
+import type { NativeExtension } from '../src/export/native-ext.ts';
+import { nativeBlockers, type PlanCapabilities, type PlannedExport } from '../src/export/planner.ts';
+import { type LayerBakePrepared, layerBakeExtension } from '../src/layer-bake/extension.ts';
+import { type BakeEnvironment, keyOf, normalisedClip } from '../src/layer-bake/key.ts';
+import {
+	bakeClip,
+	bakeDoc,
+	clipFonts,
+	contentBleed,
+	cropRect,
+	effectRunsOrderWarning,
+	isDomLayer,
+	isStaticLayer,
+} from '../src/layer-bake/layer.ts';
+import { LAYER_CACHE_TTL_MS, type LayerBakeService } from '../src/layer-bake/service.ts';
+import { BUNDLE_STAMP_FILE, RemotionService } from '../src/remotion/service.ts';
+import { layerBakeService } from '../src/routes/layer-bake.ts';
+import { coreServices } from '../src/tools/services.ts';
+import {
+	closeApps,
+	DocBuilder,
+	ensureFixtures,
+	fixture,
+	JSON_H,
+	makeApp,
+	register,
+	type TestApp,
+	tempAppdir,
+	until,
+} from './helpers.ts';
+
+const FIXTURE_V4 = join(
+	__dirname,
+	'..',
+	'..',
+	'..',
+	'packages',
+	'project',
+	'test',
+	'fixtures',
+	'v4',
+	'basic.jasper',
+);
+const v4 = JSON.parse(readFileSync(FIXTURE_V4, 'utf8')).document as ProjectDocument;
+const v4seq = Object.values(v4.sequences)[0]!;
+const ANIME_CLIP = v4seq.clips.clp_VEYXW57CH91ZEK52 as unknown as Record<string, unknown>;
+const SHAPE_CLIP = v4seq.clips.clp_3ZN7BJXAHGY9J4G2 as unknown as Record<string, unknown>;
+
+/** Adds a clip copied from the v4 fixture (shape / anime template: their commands land with other packages). */
+function inject(
+	d: DocBuilder,
+	clip: Record<string, unknown>,
+	o: { id: string; track: string; start: number },
+) {
+	const seq = d.doc.sequences[d.seqId]!;
+	const c = { ...structuredClone(clip), id: o.id, trackId: d.track(o.track), start: o.start };
+	d.doc = {
+		...d.doc,
+		sequences: { ...d.doc.sequences, [d.seqId]: { ...seq, clips: { ...seq.clips, [o.id]: c as never } } },
+	};
+	d.revision++;
+	return o.id;
+}
+
+function snapOf(d: DocBuilder): RenderSnapshot {
+	return buildRenderSnapshot(d.doc, d.seqId, { resolveMedia: () => null, resolveFont: () => null });
+}
+
+function clipOf(snap: RenderSnapshot, id: string): RenderVisualClip {
+	return snap.videoTracks.flatMap((t) => t.clips).find((c) => c.clipId === id)!;
+}
+
+const ENV: BakeEnvironment = {
+	bundleId: 'b1',
+	animejs: '4.5.0',
+	remotion: '4.0.499',
+	browser: '/usr/bin/chrome|1|1',
+	gl: 'swangle',
+};
+
+const CAPS: PlanCapabilities = {
+	native: true,
+	remotionLocal: 'ready',
+	fframes: 'unavailable',
+	mgMasters: false,
+};
+
+const settings = (seqId: string, extra: Record<string, unknown> = {}) => ({
+	sequenceId: seqId,
+	range: { type: 'entire' },
+	container: 'mp4',
+	engine: 'auto',
+	video: {
+		codec: 'h264',
+		width: 1280,
+		height: 720,
+		frameRate: { num: 30, den: 1 },
+		scaling: 'fit',
+		quality: { mode: 'crf', value: 20 },
+		encoderSpeed: 'fast',
+		colorTags: 'rec709',
+	},
+	...extra,
+});
+
+/** A small, centred title (its box fits a crop rect). */
+function smallTitle(d: DocBuilder, text: string, o: { at: number; track: string; duration?: number }) {
+	return d.tx([
+		{
+			type: 'clip.addText',
+			at: o.at,
+			duration: o.duration ?? 30,
+			track: o.track,
+			content: { text },
+			box: { width: 300, height: 80, autoSize: 'none' },
+			ref: '$t',
+		},
+	]).refs.$t!;
+}
+
+describe('DOM layers and static detection (LBK-001, LBK-004)', () => {
+	it('claims every text clip, shapes and anime templates; not fframes templates or media', () => {
+		const d = new DocBuilder('hd-720p-30');
+		const t = smallTitle(d, 'Hi', { at: 0, track: 'V1' });
+		inject(d, ANIME_CLIP, { id: 'clp_ANIME00000000001', track: 'V2', start: 0 });
+		inject(d, SHAPE_CLIP, { id: 'clp_SHAPE00000000001', track: 'V3', start: 0 });
+		const ff = { ...ANIME_CLIP, template: { id: 'lower-third', version: 1 } };
+		d.tx([{ type: 'track.add', kind: 'video' }]);
+		inject(d, ff, { id: 'clp_FFRAMES00000001', track: 'V4', start: 0 });
+		const s = snapOf(d);
+		expect(isDomLayer(clipOf(s, t))).toBe(true);
+		expect(isDomLayer(clipOf(s, 'clp_ANIME00000000001'))).toBe(true);
+		expect(isDomLayer(clipOf(s, 'clp_SHAPE00000000001'))).toBe(true);
+		expect(isDomLayer(clipOf(s, 'clp_FFRAMES00000001'))).toBe(false);
+	});
+
+	it('static = no animator, no keyframes anywhere, no anime template, no unknown effect', () => {
+		const d = new DocBuilder('hd-720p-30');
+		const t = smallTitle(d, 'Still', { at: 0, track: 'V1' });
+		inject(d, ANIME_CLIP, { id: 'clp_ANIME00000000001', track: 'V2', start: 0 });
+		inject(d, SHAPE_CLIP, { id: 'clp_SHAPE00000000001', track: 'V3', start: 0 });
+		let s = snapOf(d);
+		expect(isStaticLayer(clipOf(s, t))).toBe(true);
+		expect(isStaticLayer(clipOf(s, 'clp_SHAPE00000000001'))).toBe(true);
+		expect(isStaticLayer(clipOf(s, 'clp_ANIME00000000001'))).toBe(false);
+		// Keyframes on Motion, opacity or an effect param make it a master.
+		d.tx([
+			{ type: 'param.setAnimated', target: ['clip', t, 'opacity'], animated: true, at: { sequenceFrame: 0 } },
+		]);
+		s = snapOf(d);
+		expect(isStaticLayer(clipOf(s, t))).toBe(false);
+		// Text animators (even with presets the catalogue does not know yet).
+		const textClip = clipOf(s, t);
+		const withAnim = {
+			...textClip,
+			opacity: { value: 100, keyframes: [] },
+			source: {
+				...(textClip.source as object),
+				animation: { in: { preset: 'fade', version: 1, params: {}, frames: 10 } },
+			},
+		} as unknown as RenderVisualClip;
+		expect(isStaticLayer(withAnim)).toBe(false);
+		// Keyframed shape props (deep scan of the source).
+		const shape = clipOf(s, 'clp_SHAPE00000000001');
+		const kf = { id: 'k', time: 0, value: [10, 10], interpolation: 'linear', easeIn: {}, easeOut: {} };
+		const keyed = {
+			...shape,
+			source: {
+				shape: { ...(shape.source as { shape: object }).shape, size: { value: [10, 10], keyframes: [kf] } },
+			},
+		} as unknown as RenderVisualClip;
+		expect(isStaticLayer(keyed)).toBe(false);
+		// An effect the registry does not know may vary with time.
+		const unknown = {
+			...shape,
+			effects: [{ id: 'fx', effectId: 'x.unknown', effectVersion: 1, enabled: true, params: {} }],
+		} as RenderVisualClip;
+		expect(isStaticLayer(unknown)).toBe(false);
+	});
+
+	it('a keyframed grade does not make a DOM layer a master: colour runs are applied by ffmpeg (LBK-010)', () => {
+		const d = new DocBuilder('hd-720p-30');
+		const t = smallTitle(d, 'Graded', { at: 0, track: 'V1' });
+		d.tx([
+			{
+				type: 'effect.add',
+				target: { clipId: t },
+				effectId: LUMETRI_EFFECT_ID,
+				params: { saturation: 0 },
+				ref: '$g',
+			},
+		]);
+		const clip = clipOf(snapOf(d), t);
+		const fx = clip.effects[0]!;
+		const keyed = {
+			...clip,
+			effects: [
+				{
+					...fx,
+					params: {
+						...fx.params,
+						exposure: {
+							value: 0,
+							keyframes: [
+								{ id: 'a', time: 0, value: 0, interpolation: 'linear', easeIn: {}, easeOut: {} },
+								{ id: 'b', time: 1e9, value: 1, interpolation: 'linear', easeIn: {}, easeOut: {} },
+							],
+						},
+					},
+				},
+			],
+		} as unknown as RenderVisualClip;
+		expect(isStaticLayer(keyed)).toBe(false);
+		const baked = bakeClip(keyed, { variant: { recipe: 'master' }, stripColor: true });
+		expect(baked.effects).toEqual([]);
+		expect(isStaticLayer(baked)).toBe(true);
+	});
+
+	it('normalises the baked clip: span-relative times and fades, one-frame stills, whole-pixel shifts', () => {
+		const d = new DocBuilder('hd-720p-30');
+		const t = smallTitle(d, 'Shift', { at: 40, track: 'V1' });
+		const clip = {
+			...clipOf(snapOf(d), t),
+			headHandle: 5,
+			tailHandle: 3,
+			fades: [{ type: 'in' as const, start: 34, frames: 12 }],
+		};
+		const m = bakeClip(clip, { variant: { recipe: 'master' }, stripColor: true });
+		expect(m).toMatchObject({
+			start: 5,
+			headHandle: 5,
+			tailHandle: 3,
+			fades: [{ type: 'in', start: -1, frames: 12 }],
+		});
+		const s = bakeClip(clip, { variant: { recipe: 'still' }, stripColor: true });
+		expect(s).toMatchObject({ start: 0, duration: 1 });
+		expect(s.fades).toBeUndefined();
+		expect(s.headHandle).toBeUndefined();
+		const sh = bakeClip(clip, { variant: { recipe: 'master' }, stripColor: true, shift: { x: 100, y: 50 } });
+		expect(sh.transform!.position.value).toEqual([
+			clip.transform!.position.value[0] - 100,
+			clip.transform!.position.value[1] - 50,
+		]);
+		const doc = bakeDoc(snapOf(d), sh, {
+			variant: { recipe: 'master' },
+			rect: { x: 100, y: 50, w: 400, h: 200 },
+			media: {},
+			fonts: [],
+		});
+		expect(doc).toMatchObject({
+			settings: { width: 400, height: 200, backgroundColor: [0, 0, 0, 0] },
+			range: { start: 0, end: 38 },
+			durationFrames: 38,
+			audioClips: [],
+		});
+		const frame = bakeDoc(snapOf(d), m, {
+			variant: { recipe: 'frame', frame: 7 },
+			rect: null,
+			media: {},
+			fonts: [],
+		});
+		expect(frame.range).toEqual({ start: 7, end: 8 });
+		expect(frame.settings.width).toBe(1280);
+	});
+});
+
+describe('crop rect (LBK-005)', () => {
+	it('is the union of the per-frame layer bounds plus a 10 % bleed, even-aligned and clamped', () => {
+		const d = new DocBuilder('hd-720p-30');
+		const t = smallTitle(d, 'Box', { at: 0, track: 'V1' });
+		const clip = clipOf(snapOf(d), t);
+		const seq = { width: 1280, height: 720, fps: { num: 30, den: 1 } };
+		const r = cropRect(clip, { f0: 0, f1: 30 }, seq)!;
+		// Box 300 × 80 centred at 640, 360; bleed 72 px.
+		const p = clip.transform!.position.value;
+		const a = clip.transform!.anchor.value;
+		const x0 = p[0] - a[0];
+		const y0 = p[1] - a[1];
+		expect(r.x).toBeLessThanOrEqual(x0 - 72);
+		expect(r.y).toBeLessThanOrEqual(y0 - 72);
+		expect(r.x + r.w).toBeGreaterThanOrEqual(x0 + 300 + 72);
+		expect(r.y + r.h).toBeGreaterThanOrEqual(y0 + 80 + 72);
+		expect((r.x % 2) + (r.y % 2) + (r.w % 2) + (r.h % 2)).toBe(0);
+		expect(r.w).toBeLessThan(300 + 2 * 72 + 4);
+		// Moving across the frame (position keyframes) grows the union.
+		d.tx([
+			{
+				type: 'param.setAnimated',
+				target: ['clip', t, 'transform', 'position'],
+				animated: true,
+				at: { sequenceFrame: 0 },
+			},
+		]);
+		d.tx([
+			{
+				type: 'param.set',
+				target: ['clip', t, 'transform', 'position'],
+				value: [300, 200],
+				at: { sequenceFrame: 29 },
+			},
+		]);
+		const moving = clipOf(snapOf(d), t);
+		const r2 = cropRect(moving, { f0: 0, f1: 30 }, seq)!;
+		expect(r2.x).toBeLessThan(r.x);
+		expect(r2.y).toBeLessThan(r.y);
+		expect(r2.x + r2.w).toBeGreaterThanOrEqual(r.x + r.w - 2);
+		// A blur effect widens the bleed; an unknown effect disables the crop.
+		const blurred = {
+			...clip,
+			effects: [
+				{
+					id: 'fx',
+					effectId: 'jasper.gaussian-blur',
+					effectVersion: 1,
+					enabled: true,
+					params: { radius: { value: 20, keyframes: [] } },
+				},
+			],
+		} as RenderVisualClip;
+		expect(contentBleed(blurred)).toBe(60);
+		expect(cropRect(blurred, { f0: 0, f1: 1 }, seq)!.w).toBeGreaterThan(r.w);
+		const unknown = {
+			...clip,
+			effects: [{ ...blurred.effects[0]!, effectId: 'x.glow' }],
+		} as RenderVisualClip;
+		expect(cropRect(unknown, { f0: 0, f1: 1 }, seq)).toBeNull();
+	});
+
+	it('covers the whole frame when the layer is large; a minimal rect when it is off-screen', () => {
+		const d = new DocBuilder('hd-720p-30');
+		const big = d.tx([
+			{
+				type: 'clip.addText',
+				at: 0,
+				duration: 10,
+				track: 'V1',
+				content: { text: 'Big' },
+				box: { width: 1200, height: 600, autoSize: 'none' },
+				ref: '$b',
+			},
+		]).refs.$b!;
+		const seq = { width: 1280, height: 720, fps: { num: 30, den: 1 } };
+		expect(cropRect(clipOf(snapOf(d), big), { f0: 0, f1: 1 }, seq)).toBeNull();
+		const t = smallTitle(d, 'Away', { at: 0, track: 'V2' });
+		d.tx([{ type: 'param.set', target: ['clip', t, 'transform', 'position'], value: [5000, 5000] }]);
+		expect(cropRect(clipOf(snapOf(d), t), { f0: 0, f1: 1 }, seq)).toEqual({ x: 1278, y: 718, w: 2, h: 2 });
+	});
+});
+
+describe('render keys (LBK-020)', () => {
+	let app: TestApp;
+	let svc: LayerBakeService;
+	beforeAll(async () => {
+		app = await makeApp();
+		svc = layerBakeService(app)!;
+	});
+	afterAll(closeApps);
+
+	async function planned(d: DocBuilder): Promise<PlannedExport> {
+		return coreServices(app).exports.plan({
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			settings: settings(d.seqId) as never,
+		});
+	}
+
+	async function keyOfClip(d: DocBuilder, id: string, env = ENV, frame?: number): Promise<string> {
+		const p = await planned(d);
+		return (await svc.planBake(p, clipOf(p.snapshot, id), { env, ...(frame !== undefined ? { frame } : {}) }))
+			.key;
+	}
+
+	it('changes with text, font, bundle, anime.js, Remotion, browser and GL; not with time or duration', async () => {
+		const d = new DocBuilder('hd-720p-30');
+		const t = smallTitle(d, 'Title', { at: 10, track: 'V1' });
+		const k0 = await keyOfClip(d, t);
+		expect(k0).toMatch(/^[0-9a-f]{40}$/);
+		// Moving the static title in time and trimming it hit the cache.
+		d.tx([{ type: 'clip.move', clipIds: [t], deltaFrames: 25 }]);
+		expect(await keyOfClip(d, t)).toBe(k0);
+		d.tx([{ type: 'clip.trim', clipId: t, edge: 'out', deltaFrames: -10 }]);
+		expect(await keyOfClip(d, t)).toBe(k0);
+		// Content and font.
+		d.tx([{ type: 'clip.update', clipIds: [t], patch: { content: { text: 'Other' } } }]);
+		const k1 = await keyOfClip(d, t);
+		expect(k1).not.toBe(k0);
+		d.tx([{ type: 'clip.update', clipIds: [t], patch: { content: { style: { weight: 700 } } } }]);
+		const k2 = await keyOfClip(d, t);
+		expect(k2).not.toBe(k1);
+		// Environment.
+		for (const change of [
+			{ bundleId: 'b2' },
+			{ animejs: '4.5.1' },
+			{ remotion: '4.0.500' },
+			{ browser: 'other' },
+			{ gl: 'angle' },
+		])
+			expect(await keyOfClip(d, t, { ...ENV, ...change })).not.toBe(k2);
+	});
+
+	it('font files enter the key by content hash', async () => {
+		const d = new DocBuilder('hd-720p-30');
+		const t = smallTitle(d, 'Font', { at: 0, track: 'V1' });
+		const p = await planned(d);
+		const plan = await svc.planBake(p, clipOf(p.snapshot, t), { env: ENV });
+		expect(plan.material.fonts.length).toBeGreaterThan(0);
+		expect(plan.material.fonts[0]!.fileSha256).toMatch(/^[0-9a-f]{64}$/);
+		const changed = {
+			...plan.material,
+			fonts: plan.material.fonts.map((f) => ({ ...f, fileSha256: '0'.repeat(64) })),
+		};
+		expect(keyOf(changed)).not.toBe(plan.key);
+		// Signed URLs in the render document, never in the key.
+		expect(plan.doc.fonts[0]!.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/fonts\/.*sig=/);
+		expect(JSON.stringify(plan.material)).not.toMatch(/sig=|http:/);
+	});
+
+	it('identical titles share a bake unless they are seeded by their clip id (text animators, anime templates)', async () => {
+		const d = new DocBuilder('hd-720p-30');
+		const a = smallTitle(d, 'Twin', { at: 0, track: 'V1' });
+		const b = smallTitle(d, 'Twin', { at: 0, track: 'V2' });
+		// Same content, style, box and Motion: one bake for both.
+		expect(await keyOfClip(d, a)).toBe(await keyOfClip(d, b));
+		// With a text animator (random unit order uses hash32(clipId), S11:ANM-007) the keys differ; the animator's
+		// params and compressed window lengths are part of the key too.
+		const seq = d.doc.sequences[d.seqId]!;
+		const anim = (order: string, frames = 10) => ({
+			in: { preset: 'fade', version: 1, durationFrames: frames, params: { order } },
+		});
+		const withAnim = (o: string, frames?: number) => {
+			d.doc = {
+				...d.doc,
+				sequences: {
+					...d.doc.sequences,
+					[d.seqId]: {
+						...seq,
+						clips: {
+							...seq.clips,
+							[a]: { ...seq.clips[a]!, textAnimation: anim(o, frames) } as never,
+							[b]: { ...seq.clips[b]!, textAnimation: anim(o, frames) } as never,
+						},
+					},
+				},
+			};
+			d.revision++;
+		};
+		withAnim('random');
+		const ka = await keyOfClip(d, a);
+		expect(ka).not.toBe(await keyOfClip(d, b));
+		withAnim('forward');
+		expect(await keyOfClip(d, a)).not.toBe(ka);
+		const kf = await keyOfClip(d, a);
+		withAnim('forward', 12);
+		expect(await keyOfClip(d, a)).not.toBe(kf);
+	});
+
+	it('fonts of styled runs belong to the bake (any font id the clip source mentions)', () => {
+		const clip = {
+			source: {
+				text: {
+					text: 'ab',
+					style: { fontId: 'fnt_A' },
+					runs: [{ from: 0, to: 1, style: { fontId: 'fnt_B' } }],
+				},
+			},
+		} as unknown as RenderVisualClip;
+		const fonts = [
+			{ fontId: 'fnt_A', family: 'A', weight: 400, style: 'normal' as const, url: '/fonts/a' },
+			{ fontId: 'fnt_B', family: 'B', weight: 700, style: 'normal' as const, url: '/fonts/b' },
+			{ fontId: 'fnt_C', family: 'C', weight: 400, style: 'normal' as const, url: '/fonts/c' },
+		];
+		expect(clipFonts(clip, fonts).map((f) => f.fontId)).toEqual(['fnt_A', 'fnt_B']);
+	});
+
+	it('masters key the span; the clip id only enters the key of seed-bearing layers', async () => {
+		const d = new DocBuilder('hd-720p-30');
+		const t = smallTitle(d, 'Seed', { at: 0, track: 'V1' });
+		d.tx([
+			{ type: 'param.setAnimated', target: ['clip', t, 'opacity'], animated: true, at: { sequenceFrame: 0 } },
+		]);
+		d.tx([{ type: 'param.set', target: ['clip', t, 'opacity'], value: 0, at: { sequenceFrame: 20 } }]);
+		const p = await planned(d);
+		const plan = await svc.planBake(p, clipOf(p.snapshot, t), { env: ENV });
+		expect(plan.variant).toEqual({ recipe: 'master' });
+		expect(plan.material.span).toBe(30);
+		expect(normalisedClip(clipOf(p.snapshot, t)).clipId).toBe('clip');
+		inject(d, ANIME_CLIP, { id: 'clp_ANIME00000000001', track: 'V2', start: 0 });
+		const anime = clipOf(snapOf(d), 'clp_ANIME00000000001');
+		expect(normalisedClip(anime).clipId).toBe('clp_ANIME00000000001');
+		// Stills of a non-static layer without a cached master: a one-frame bake keyed by the frame.
+		const f12 = await keyOfClip(d, t, ENV, 12);
+		const f13 = await keyOfClip(d, t, ENV, 13);
+		expect(f12).not.toBe(f13);
+		expect(f12).not.toBe(plan.key);
+	});
+});
+
+describe('planner (LBK-002, LBK-024)', () => {
+	let app: TestApp;
+	beforeAll(async () => {
+		ensureFixtures();
+		app = await makeApp();
+	}, 600_000);
+	afterAll(closeApps);
+
+	it('footage + titles + shape + anime template plan `hybrid` with one graphics group per baked layer', async () => {
+		const clipA = await register(app, fixture('clip-a.mp4'));
+		const d = new DocBuilder('hd-720p-30');
+		const a = d.addMedia(clipA);
+		d.tx([{ type: 'clip.place', source: { mediaId: a }, at: 0 }]);
+		const t = smallTitle(d, 'Title', { at: 0, track: 'V2' });
+		d.tx([
+			{ type: 'track.add', kind: 'video' },
+			{ type: 'track.add', kind: 'video' },
+		]);
+		inject(d, SHAPE_CLIP, { id: 'clp_SHAPE00000000001', track: 'V3', start: 0 });
+		inject(d, ANIME_CLIP, { id: 'clp_ANIME00000000001', track: 'V4', start: 0 });
+		const r = await app.inject({
+			method: 'POST',
+			url: '/api/exports/plan',
+			headers: JSON_H,
+			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings: settings(d.seqId) },
+		});
+		const plan = RenderPlanSchema.parse(r.json());
+		expect(plan.blockers).toEqual([]);
+		expect(plan.path).toBe('hybrid');
+		expect(plan.audio.mode).toBe('native-mix');
+		expect(plan.segments[0]!.mode).toBe('mixed');
+		const groups = plan.segments[0]!.graphicsGroups;
+		expect(groups.every((g) => g.engine === 'remotion')).toBe(true);
+		expect(groups.flatMap((g) => g.itemIds).sort()).toEqual(
+			['clp_ANIME00000000001', 'clp_SHAPE00000000001', t].sort(),
+		);
+		// Forcing native keeps the hybrid composite.
+		const forced = await app.inject({
+			method: 'POST',
+			url: '/api/exports/plan',
+			headers: JSON_H,
+			payload: {
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				settings: settings(d.seqId, { engine: 'native' }),
+			},
+		});
+		expect(forced.json().path).toBe('hybrid');
+	});
+
+	it('without Remotion every DOM layer is blocked; blend modes still block; no extension = "requires graphics rendering"', async () => {
+		const d = new DocBuilder('hd-720p-30');
+		const t = smallTitle(d, 'Title', { at: 0, track: 'V1' });
+		inject(d, ANIME_CLIP, { id: 'clp_ANIME00000000001', track: 'V2', start: 0 });
+		const svc = layerBakeService(app)!;
+		const ext = coreServices(app)
+			.exports.nativeExtensions.all()
+			.find((e) => e.id === 'layer-bake')!;
+		const s = snapOf(d);
+		const orig = svc.unavailableReason.bind(svc);
+		svc.unavailableReason = () => 'no browser';
+		try {
+			expect(nativeBlockers(clipOf(s, t), CAPS, [ext])).toEqual([
+				'graphics layers need the Remotion renderer to bake (no browser)',
+			]);
+			const r = await app.inject({
+				method: 'POST',
+				url: '/api/exports/plan',
+				headers: JSON_H,
+				payload: {
+					envelope: d.envelope(),
+					sequenceId: d.seqId,
+					settings: settings(d.seqId, { engine: 'native' }),
+				},
+			});
+			expect(r.statusCode).toBe(409);
+		} finally {
+			svc.unavailableReason = orig;
+		}
+		expect(nativeBlockers(clipOf(s, t), CAPS, [ext])).toEqual([]);
+		expect(nativeBlockers({ ...clipOf(s, t), blendMode: 'screen' }, CAPS, [ext])).toEqual([
+			'text clip "Title" uses blend mode "screen"',
+		]);
+		// Without the extension: the M1 blocker texts; anime templates never ask for fframes.
+		expect(nativeBlockers(clipOf(s, t), CAPS)).toEqual(['text layer "Title" requires graphics rendering']);
+		const anime = nativeBlockers(clipOf(s, 'clp_ANIME00000000001'), CAPS);
+		expect(anime.join()).toMatch(/requires graphics rendering \(anime template\)/);
+		expect(anime.join()).not.toMatch(/fframes/);
+	});
+
+	it('`needs-browser-download` is not a blocker (warning BROWSER_DOWNLOAD)', async () => {
+		const d = new DocBuilder('hd-720p-30');
+		smallTitle(d, 'Title', { at: 0, track: 'V1' });
+		const { planExport } = await import('../src/export/planner.ts');
+		const core = coreServices(app);
+		const p = await planExport(
+			{ envelope: d.envelope(), sequenceId: d.seqId, settings: settings(d.seqId) as never },
+			{
+				registry: core.registry,
+				fonts: core.fonts,
+				capabilities: { ...CAPS, remotionLocal: 'needs-browser-download' },
+				extensions: core.exports.nativeExtensions.all(),
+			},
+		);
+		expect(p.plan.path).toBe('hybrid');
+		expect(p.plan.warnings.map((w) => w.code)).toContain('BROWSER_DOWNLOAD');
+	});
+
+	it('warns when a colour effect precedes a pixel-mixing effect on a DOM layer', () => {
+		const clip = {
+			name: 'T',
+			effects: [
+				{ id: 'a', effectId: LUMETRI_EFFECT_ID, effectVersion: 1, enabled: true, params: {} },
+				{ id: 'b', effectId: 'jasper.gaussian-blur', effectVersion: 1, enabled: true, params: {} },
+			],
+		} as unknown as RenderVisualClip;
+		expect(effectRunsOrderWarning(clip)).toMatch(/after jasper.gaussian-blur/);
+		expect(effectRunsOrderWarning({ ...clip, effects: [...clip.effects].reverse() })).toBeNull();
+	});
+});
+
+describe('builder: still, rect and colour runs on overrides (LBK-004/005/010, LBK-031)', () => {
+	const output = {
+		width: 1280,
+		height: 720,
+		fps: { num: 30, den: 1 },
+		frames: 60,
+		durationSec: 2,
+		scaling: 'fit',
+		crf: 18,
+		x264Preset: 'veryfast',
+		audioChannels: 2,
+		audioBitrateKbps: 192,
+	} as never;
+
+	it('loops a still with the fades applied, overlays a rect, grades with lut3d, uses no GPL filter', async () => {
+		const d = new DocBuilder('hd-720p-30');
+		const s1 = smallTitle(d, 'Static', { at: 10, track: 'V1', duration: 40 });
+		const s2 = smallTitle(d, 'Graded', { at: 0, track: 'V2', duration: 60 });
+		d.tx([
+			{ type: 'effect.add', target: { clipId: s2 }, effectId: LUMETRI_EFFECT_ID, params: { saturation: 0 } },
+			{ type: 'transition.add', clipId: s1, edge: 'in', effectId: 'jasper.cross-dissolve', duration: 10 },
+		]);
+		const snap = snapOf(d);
+		const c2 = clipOf(snap, s2);
+		const lutDir = tempAppdir('jasper-luts-');
+		const color = createColorExtension({ lutCacheDir: lutDir });
+		const plannedLike = {
+			snapshot: snap,
+			document: d.doc,
+			media: {},
+			range: snap.range,
+		} as unknown as PlannedExport;
+		const colorPrepared = await color.prepare!(plannedLike, {
+			signal: new AbortController().signal,
+			stage: () => {},
+			scratchDir: async () => lutDir,
+			log: () => {},
+			jobId: 'job_test',
+		});
+		const prepared: LayerBakePrepared = new Map([
+			[
+				s1,
+				{
+					override: {
+						path: '/cache/layers/k1/still.png',
+						space: 'sequence',
+						startFrame: 0,
+						still: true,
+						includesFades: false,
+						rect: { x: 400, y: 300, w: 480, h: 220 },
+					},
+				},
+			],
+			[
+				s2,
+				{
+					override: {
+						path: '/cache/layers/k2/master.mov',
+						space: 'sequence',
+						startFrame: 0,
+						includesFades: true,
+						colorRuns: true,
+					},
+				},
+			],
+		]);
+		const lb = layerBakeExtension({} as LayerBakeService);
+		const g = buildNativeGraph({
+			snapshot: snap,
+			output,
+			outputFile: '/tmp/x.mp4',
+			sources: { media: () => null, mgMaster: () => null },
+			threads: 1,
+			extensions: {
+				list: [color, lb],
+				prepared: new Map<string, unknown>([
+					['color', colorPrepared],
+					['layer-bake', prepared],
+				]),
+			},
+		});
+		const stillInput = g.inputs.find((a) => a.includes('/cache/layers/k1/still.png'))!;
+		expect(stillInput.slice(0, 4)).toEqual(['-loop', '1', '-framerate', '30/1']);
+		expect(stillInput).not.toContain('-ss');
+		const masterInput = g.inputs.find((a) => a.includes('/cache/layers/k2/master.mov'))!;
+		expect(masterInput).toContain('-ss');
+		// The still: scaled to its rect, faded by the builder, overlaid at the rect.
+		expect(g.filter).toMatch(/scale=480:220:[^,]*,setsar=1,format=rgba,fade=t=in/);
+		expect(g.filter).toMatch(/overlay=x=400:y=300:format=rgb/);
+		// The graded master: the colour extension's lut3d on the override stream, no fades (baked in).
+		expect(g.filter).toMatch(
+			/scale=1280:720:[^,]*,setsar=1,format=rgba,lut3d=file='[^']+\.cube':interp=tetrahedral,setpts/,
+		);
+		expect(gplFiltersIn(g.filter)).toEqual([]);
+		void c2;
+	});
+});
+
+describe('cache, capability, preview route, usage log (LBK-021, LBK-030, LBK-026)', () => {
+	let app: TestApp;
+	let svc: LayerBakeService;
+	beforeAll(async () => {
+		app = await makeApp();
+		svc = layerBakeService(app)!;
+	});
+	afterAll(closeApps);
+
+	it('GC removes entries unused for 14 days and keeps the others', async () => {
+		const mk = (key: string, lastUsed: Date) => {
+			mkdirSync(join(svc.dir, key), { recursive: true });
+			writeFileSync(join(svc.dir, key, 'still.png'), 'x');
+			writeFileSync(
+				join(svc.dir, key, 'meta.json'),
+				JSON.stringify({
+					kind: 'layer',
+					key,
+					recipe: 'still',
+					createdAt: lastUsed.toISOString(),
+					lastUsedAt: lastUsed.toISOString(),
+				}),
+			);
+		};
+		const old = 'a'.repeat(40);
+		const fresh = 'b'.repeat(40);
+		const orphan = 'c'.repeat(40);
+		mk(old, new Date(Date.now() - LAYER_CACHE_TTL_MS - 60_000));
+		mk(fresh, new Date());
+		mkdirSync(join(svc.dir, orphan), { recursive: true });
+		const t = (Date.now() - LAYER_CACHE_TTL_MS - 3600_000) / 1000;
+		utimesSync(join(svc.dir, orphan), t, t);
+		expect(await svc.gc()).toBe(2);
+		expect(existsSync(join(svc.dir, old))).toBe(false);
+		expect(existsSync(join(svc.dir, orphan))).toBe(false);
+		expect(existsSync(join(svc.dir, fresh, 'still.png'))).toBe(true);
+		// Lookups mark entries as used; the files route serves them.
+		expect(await svc.lookup(fresh)).toMatchObject({ still: true, path: join(svc.dir, fresh, 'still.png') });
+		const r = await app.inject({
+			method: 'GET',
+			url: `/mg/layers/${fresh}/still.png`,
+			headers: { host: '127.0.0.1:47900' },
+		});
+		expect(r.statusCode).toBe(200);
+		expect(r.headers['content-type']).toBe('image/png');
+		const bad = await app.inject({
+			method: 'GET',
+			url: `/mg/layers/${fresh}/meta.json`,
+			headers: { host: '127.0.0.1:47900' },
+		});
+		expect(bad.statusCode).toBe(404);
+	});
+
+	it('features.layerBake reports readiness and the cache size', async () => {
+		await svc.refreshBytes();
+		const caps = (
+			await app.inject({ method: 'GET', url: '/api/capabilities', headers: { host: '127.0.0.1:47900' } })
+		).json();
+		expect(caps.features.layerBake).toMatchObject({ cacheBytes: expect.any(Number) });
+		expect(['ready', 'unavailable']).toContain(caps.features.layerBake.state);
+		const orig = svc.unavailableReason.bind(svc);
+		svc.unavailableReason = () => 'no renderer';
+		try {
+			expect(svc.capability()).toMatchObject({ state: 'unavailable', reason: 'no renderer' });
+		} finally {
+			svc.unavailableReason = orig;
+		}
+	});
+
+	it('POST /api/layer-bake/preview validates the request and the clip', async () => {
+		const d = new DocBuilder('hd-720p-30');
+		const t = smallTitle(d, 'Plain', { at: 0, track: 'V1' });
+		const post = (body: unknown) =>
+			app.inject({ method: 'POST', url: '/api/layer-bake/preview', headers: JSON_H, payload: body as never });
+		expect((await post({ clipId: t })).statusCode).toBe(400);
+		const base = { envelope: d.envelope(), sequenceId: d.seqId };
+		const r404 = await post({ ...base, clipId: 'clp_NOPE00000000000' });
+		expect(r404.statusCode).toBe(404);
+		const plain = await post({ ...base, clipId: t });
+		expect(plain.statusCode).toBe(422);
+		expect(plain.json().code).toBe('LAYER_NOT_GRADED');
+		d.tx([{ type: 'clip.addSolid', at: 0, duration: 10, track: 'V2', color: [1, 0, 0, 1], ref: '$s' }]);
+		const solid = d.clipIds().find((id) => d.doc.sequences[d.seqId]!.clips[id]!.kind === 'solid')!;
+		const notDom = await post({ envelope: d.envelope(), sequenceId: d.seqId, clipId: solid });
+		expect(notDom.json().code).toBe('NOT_A_GRAPHICS_LAYER');
+	});
+
+	it('the usage log records every Remotion call with its purpose (LC-004, LBK-026)', async () => {
+		const log = join(coreServices(app).config.paths.logsDir, 'remotion-usage.jsonl');
+		await coreServices(app).remotion.recordUsage('media', 'layer-bake');
+		await coreServices(app).remotion.recordUsage('media', 'mg-prerender');
+		const lines = readFileSync(log, 'utf8')
+			.trim()
+			.split('\n')
+			.map((l) => JSON.parse(l));
+		expect(lines.slice(-2)).toMatchObject([
+			{ kind: 'media', purpose: 'layer-bake' },
+			{ kind: 'media', purpose: 'mg-prerender' },
+		]);
+	});
+});
+
+describe('bundle identity (LBK-020, build-remotion stamp)', () => {
+	it('a prebuilt bundle is identified by its stamp, else by its content; dev bundles by the source hash', () => {
+		const dir = tempAppdir('jasper-bundle-');
+		writeFileSync(join(dir, 'index.html'), '<html></html>');
+		writeFileSync(join(dir, 'bundle.js'), 'x');
+		const make = () =>
+			new RemotionService({ bundleCacheDir: tempAppdir(), usageLog: null, env: {}, prebuiltBundleDir: dir });
+		const unstamped = make().bundleId();
+		expect(unstamped).toMatch(/^content-[0-9a-f]{16}$/);
+		writeFileSync(join(dir, 'bundle.js'), 'y');
+		expect(make().bundleId()).not.toBe(unstamped);
+		writeFileSync(
+			join(dir, BUNDLE_STAMP_FILE),
+			JSON.stringify({ bundleId: 'abc123', animejs: '9.9.9', remotion: '4.0.499' }),
+		);
+		const stamped = make();
+		expect(stamped.bundleId()).toBe('abc123');
+		expect(stamped.animejsVersion()).toBe('9.9.9');
+		const dev = new RemotionService({
+			bundleCacheDir: tempAppdir(),
+			usageLog: null,
+			env: {},
+			prebuiltBundleDir: null,
+		});
+		expect(dev.bundleId()).toMatch(/^[0-9a-f]{16}$/);
+		expect(dev.animejsVersion()).toBe('4.5.0');
+	});
+});
+
+describe('auto fallback to Remotion when a native preparation fails (LBK-023)', () => {
+	let app: TestApp;
+	beforeAll(async () => {
+		app = await makeApp({ totalSlots: 4 });
+	});
+	afterAll(closeApps);
+
+	it('auto → Remotion with NATIVE_FALLBACK; forced native fails with the cause', async () => {
+		const core = coreServices(app);
+		// A failing extension (any extension: e.g. a bake or a warp that cannot run).
+		const failing: NativeExtension = {
+			id: 'failing',
+			prepare: async () => {
+				throw Object.assign(new Error('prepare exploded'), { code: 'BAKE_BROKEN' });
+			},
+		};
+		const off = core.registerNativeExtension(failing);
+		// Stub the Remotion render: an ffmpeg test card with the frame count Remotion would have rendered.
+		const ff = core.ffmpeg.bins.ffmpeg!;
+		const renderMedia = core.remotion.renderMedia.bind(core.remotion);
+		core.remotion.renderMedia = async (input) => {
+			const doc = (input.inputProps as { doc: RenderSnapshot }).doc;
+			const n = doc.durationFrames;
+			const codec = input.output.endsWith('.mov')
+				? ['-c:v', 'prores_ks']
+				: input.output.endsWith('.webm')
+					? ['-c:v', 'libvpx-vp9']
+					: ['-c:v', 'libx264', '-pix_fmt', 'yuv420p'];
+			const r = spawnSync(ff, [
+				'-v',
+				'error',
+				'-y',
+				'-f',
+				'lavfi',
+				'-i',
+				`color=c=red:s=${doc.settings.width}x${doc.settings.height}:r=30`,
+				'-frames:v',
+				String(n),
+				...codec,
+				input.output,
+			]);
+			if (r.status !== 0) throw new Error(String(r.stderr));
+			return { frames: n };
+		};
+		try {
+			const d = new DocBuilder('hd-720p-30');
+			d.tx([{ type: 'clip.addSolid', at: 0, duration: 15, track: 'V1', color: [0, 0, 1, 1] }]);
+			const start = async (engine: string) => {
+				const r = await app.inject({
+					method: 'POST',
+					url: '/api/exports',
+					headers: JSON_H,
+					payload: { envelope: d.envelope(), sequenceId: d.seqId, settings: settings(d.seqId, { engine }) },
+				});
+				expect(r.statusCode, r.body).toBeLessThan(300);
+				const id = r.json().id as string;
+				await until(() => ['succeeded', 'failed'].includes(core.queue.get(id)!.state), 120_000, 100);
+				return core.queue.get(id)! as EngineJob;
+			};
+			const auto = await start('auto');
+			expect(auto.state, JSON.stringify(auto.error)).toBe('succeeded');
+			expect(auto.result).toMatchObject({
+				renderPath: 'remotion',
+				frames: 15,
+				warnings: [{ code: 'NATIVE_FALLBACK', message: expect.stringMatching(/prepare exploded/) }],
+			});
+			const forced = await start('native');
+			expect(forced.state).toBe('failed');
+			expect(forced.error).toMatchObject({
+				code: 'BAKE_BROKEN',
+				message: expect.stringMatching(/prepare exploded/),
+			});
+		} finally {
+			off();
+			core.remotion.renderMedia = renderMedia;
+		}
+	}, 180_000);
+});

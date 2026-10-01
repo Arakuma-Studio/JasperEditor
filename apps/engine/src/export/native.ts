@@ -9,6 +9,8 @@
 // of a dip to black is a colour layer under the track's clips, and audio fades are `afade`.
 import {
 	clipContentTime,
+	defaultEffectRegistry,
+	type EffectRegistry,
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
 	type Rational,
@@ -191,6 +193,46 @@ export function pickOverride(
 		first ??= o;
 	}
 	return first;
+}
+
+/**
+ * M2 (S11:LBK-010): the filters of a clip's colour runs (D-21), asked from the extensions that realise colour
+ * effects (the colour extension: `lut3d` of the fused run, per-frame windows counted from `f0`). Used for the
+ * `colorRuns` of an override (a DOM layer baked without its grade) and for the graded masters of the layer bake.
+ * Pointwise LUTs on straight-alpha RGB equal grading before placement (colour ops have no spatial context).
+ */
+export function colorRunFilters(o: {
+	clip: RenderVisualClip;
+	/** The clip's props at `f0` (effects evaluated there). */
+	props: ResolvedLayerProps;
+	box: { width: number; height: number };
+	fps: Rational;
+	f0: number;
+	f1: number;
+	extensions: { list: readonly NativeExtension[]; prepared: PreparedExtensions };
+	effects?: EffectRegistry;
+}): string[] {
+	const registry = o.effects ?? defaultEffectRegistry;
+	const out: string[] = [];
+	for (const [index, fx] of o.props.effects.entries()) {
+		if (!fx.enabled || !registry.get(fx.effectId, fx.effectVersion)?.color) continue;
+		for (const ext of o.extensions.list) {
+			const text = ext.effectFilter?.(fx, {
+				clip: o.clip,
+				effects: o.props.effects,
+				index,
+				box: o.box,
+				fps: o.fps,
+				f0: o.f0,
+				f1: o.f1,
+				prepared: o.extensions.prepared.get(ext.id),
+			});
+			if (text === undefined) continue;
+			if (text) out.push(text);
+			break;
+		}
+	}
+	return out;
 }
 
 export type LayerSourceOptions = {
@@ -434,10 +476,15 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		// layer ('sequence', overlaid at 0,0 with only the transition fades applied here).
 		const override = exts ? pickOverride(exts.list, exts.prepared, c) : null;
 		if (override?.space === 'sequence') {
+			// M2 (S11:LBK-004/005/010): `still` = one image looped for the layer's frames (like still clips);
+			// `rect` = the intermediate covers only that region, overlaid at its position; `colorRuns` = the clip's
+			// colour runs are applied here, to the straight-alpha override stream.
+			const rect = override.rect ?? null;
 			const k = addInput([
 				...(override.decoder ? ['-c:v', override.decoder] : []),
-				'-ss',
-				sec((f0 - override.startFrame) * frameSec),
+				...(override.still
+					? ['-loop', '1', '-framerate', rate(fps)]
+					: ['-ss', sec((f0 - override.startFrame) * frameSec)]),
 				'-t',
 				sec(n * frameSec + margin),
 				'-i',
@@ -447,15 +494,28 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 				'setpts=PTS-STARTPTS',
 				`fps=${rate(fps)}`,
 				`trim=end_frame=${n}`,
-				`scale=${W}:${H}:${SWS_FLAGS}`,
+				`scale=${rect ? `${rect.w}:${rect.h}` : `${W}:${H}`}:${SWS_FLAGS}`,
 				'setsar=1',
 				'format=rgba',
+				...(override.colorRuns && exts
+					? colorRunFilters({
+							clip: c,
+							props,
+							box: { width: rect?.w ?? W, height: rect?.h ?? H },
+							fps,
+							f0,
+							f1: layer.f1,
+							extensions: exts,
+						})
+					: []),
 				...(override.includesFades ? [] : fadeFilters(c.fades, f0)),
 				shift,
 			];
 			chains.push(`[${k}:v:0]${g.join(',')}[${label}]`);
 			const next = `o${label}`;
-			chains.push(`[${last}][${label}]overlay=x=0:y=0:format=rgb:eof_action=pass:${enable}[${next}]`);
+			chains.push(
+				`[${last}][${label}]overlay=x=${rect?.x ?? 0}:y=${rect?.y ?? 0}:format=rgb:eof_action=pass:${enable}[${next}]`,
+			);
 			last = next;
 			continue;
 		}
