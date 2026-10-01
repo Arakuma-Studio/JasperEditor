@@ -109,9 +109,11 @@ version of `crudo.mp4`; a clip on crudo frames 180…279 switches to it with in-
 ## Open issues / notes
 
 - Range ↔ rate: only equal frame rates link (see above). VFR files are treated with their average rate.
-- PST-013 (M2): de-judder of a range copies its first/last frame (no context frame is read outside the range).
-  With handles ≥ 1 those frames are handles, so the frames a clip shows are retimed; with handles 0 the clip's
-  first/last frame are not.
+- PST-013 closed here: de-judder of a range reads the source frame before/after the range (through the same
+  fused head filters) for the flow at its edges — `proc/runner.ts` (`rangeContextFrame`, only while the chain reads
+  the source and de-judder is its first frame step) and `proc/dejudder/step.ts` (`setRangeContext`, stats
+  `context`). Test: `processing-steps.test.ts` "de-judder of a range reads context frames" (ranges of `judder.mp4`
+  starting at 20/21/22 have no copied edge frames and match the whole-file output; it fails without context).
 - Replace Footage via timecode does not store a range (it is in the probe); mixing a timecode-only file with a
   range-declaring one is refused (no common basis).
 - `media.setSourceRange` moves no clip by design (it declares metadata); re-declaring the range of a version clips

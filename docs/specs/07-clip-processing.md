@@ -184,7 +184,7 @@ Requirement ids: `PRC-NNN` (processing model and jobs), `PST-NNN` (steps), `PRM-
   (default 1/6) of the inter-frame step towards their neighbours by **backward-warping the nearest real frame**
   along dense flow (flow at ≤ 960 px, upsampled; one fixed-point refinement of the flow lookup; cubic sampling,
   replicate borders). Frames are never blended (no ghosting). A scene-cut guard (mean absolute difference of the
-  8×8-cell means > 0.10; cell means, not point samples, so fine texture in a fast pan is not taken for a cut) copies frames across cuts unchanged. One frame of context is read before and after.
+  8×8-cell means > 0.10; cell means, not point samples, so fine texture in a fast pan is not taken for a cut) copies frames across cuts unchanged. One frame of context is read before and after: when a **range** is processed the runner decodes the source frame just before / after it through the same head filters (M3, wp-m3-inpoint), used for the flow only and never emitted, so the range's first/last frames are retimed exactly as in a whole-file run; only the very start/end of the source (or a frame step placed before de-judder) has no context and is copied (sidecar `info.contextFrames`, `info.edge`).
 - **PST-014 (P0)** Implementation: OpenCV.js (WASM, Apache-2.0, pinned) in worker threads inside `jasper-proc`.
   (A RIFE ONNX variant, MIT weights, is P2.)
 
