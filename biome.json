@@ -19,6 +19,7 @@
       "!**/native/mg/target",
       "!**/pnpm-lock.yaml",
       "!**/.stage",
+      "!**/.claude",
       "!**/*.css"
     ]
   },

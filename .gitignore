@@ -19,6 +19,9 @@ test-results/
 playwright-report/
 *.sock
 
+# Agent worktrees (Claude Code isolation)
+.claude/worktrees/
+
 # Dev appdir: skeleton committed, runtime files ignored
 .stage/*
 !.stage/README.md
