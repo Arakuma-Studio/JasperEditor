@@ -43,7 +43,7 @@ const LABEL = 'w-[34%] shrink-0 truncate text-pr-ui text-pr-muted';
 
 type RGBA = [number, number, number, number];
 
-/** Parses `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb()` / `rgba()` (0..1 floats). */
+/** Parses `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb()` / `rgba()` (0..1 floats). */ // tokens-allow: prop value (CSS colour string), not a UI colour
 export function parseCssColor(s: string): RGBA | null {
 	const v = s.trim();
 	let m = /^#([0-9a-f]{3,4})$/i.exec(v);
@@ -67,7 +67,7 @@ export function parseCssColor(s: string): RGBA | null {
 	return null;
 }
 
-/** Formats `c` in the notation of `like` (`#rrggbb`, `#rrggbbaa`, `rgba()`), so schema patterns keep matching. */
+/** Formats `c` in the notation of `like` (`#rrggbb`, `#rrggbbaa`, `rgba()`), so schema patterns keep matching. */ // tokens-allow: prop value (CSS colour string), not a UI colour
 export function formatCssColor(c: RGBA, like: string): string {
 	const h = (x: number) =>
 		Math.round(Math.min(1, Math.max(0, x)) * 255)
@@ -77,8 +77,8 @@ export function formatCssColor(c: RGBA, like: string): string {
 	if (/^rgba?\(/i.test(t)) {
 		const b = (x: number) => Math.round(Math.min(1, Math.max(0, x)) * 255);
 		return c[3] < 1 || /^rgba/i.test(t)
-			? `rgba(${b(c[0])}, ${b(c[1])}, ${b(c[2])}, ${Math.round(c[3] * 1000) / 1000})`
-			: `rgb(${b(c[0])}, ${b(c[1])}, ${b(c[2])})`;
+			? `rgba(${b(c[0])}, ${b(c[1])}, ${b(c[2])}, ${Math.round(c[3] * 1000) / 1000})` // tokens-allow: prop value (CSS colour string), not a UI colour
+			: `rgb(${b(c[0])}, ${b(c[1])}, ${b(c[2])})`; // tokens-allow: prop value (CSS colour string), not a UI colour
 	}
 	const upper = /[A-F]/.test(t) && !/[a-f]/.test(t);
 	const hex = `#${h(c[0])}${h(c[1])}${h(c[2])}${/^#([0-9a-f]{8}|[0-9a-f]{4})$/i.test(t) ? h(c[3]) : ''}`;
@@ -425,7 +425,7 @@ function PropEditor(props: {
 							label={spec.label}
 							alpha={alpha}
 							disabled={disabled}
-							onChange={(c) => props.onSet(formatCssColor(c, text || '#000000'))}
+							onChange={(c) => props.onSet(formatCssColor(c, text || '#000000'))} // tokens-allow: prop value (CSS colour string), not a UI colour
 							data-testid={`${testId}-swatch`}
 						/>
 						<TextField

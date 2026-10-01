@@ -149,7 +149,7 @@ function LiveHost({
 	const info = src.info!;
 	const iframeRef = useRef<HTMLIFrameElement | null>(null);
 	const driverRef = useRef<MgFrameHostDriver | null>(null);
-	const want = useRef<{ frame: number; key: string } | null>(null);
+	const want = useRef<{ frame: number; key: string; hidden: boolean } | null>(null);
 	const busy = useRef(false);
 	const [host, setHost] = useState<HostState>({ state: 'loading' });
 	const [allowed, setAllowed] = useState(true);
@@ -227,7 +227,7 @@ function LiveHost({
 	};
 
 	useEffect(() => {
-		want.current = { frame, key: configKey };
+		want.current = { frame, key: configKey, hidden };
 		pump.current();
 	}, [frame, configKey, hidden]);
 
