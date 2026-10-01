@@ -1,5 +1,5 @@
 // M2 animation contracts in the MCP server (ARCHITECTURE §20.7): tools/animation.ts and tools/shapes.ts are
-// wired in server.ts; shapes contributes nothing until wp-m2-shapes lands (wp-m2-text-anim has filled animation).
+// wired in server.ts; both are filled (wp-m2-text-anim: text animation tools; wp-m2-shapes: add_shape).
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { describe, expect, it } from 'vitest';
@@ -10,7 +10,8 @@ import { SHAPES_GUIDE } from '../src/tools/shapes.ts';
 
 describe('animation and shapes tool modules', () => {
 	it('are registered and keep the tool list and instructions well-formed', async () => {
-		expect(SHAPES_GUIDE).toBe('');
+		expect(ANIMATION_GUIDE).not.toBe('');
+		expect(SHAPES_GUIDE).toMatch(/^Shapes/);
 		const { server } = createJasperMcpServer({
 			link: new FixedEngineLink('http://127.0.0.1:9', 'token'),
 			agentName: 'anime-contracts',
@@ -21,13 +22,13 @@ describe('animation and shapes tool modules', () => {
 		await client.connect(b);
 		const names = (await client.listTools()).tools.map((t) => t.name);
 		expect(names).toEqual(
-			expect.arrayContaining(['list_text_animations', 'set_text_animation', 'render_frames']),
+			expect.arrayContaining(['list_text_animations', 'set_text_animation', 'render_frames', 'add_shape']),
 		);
-		expect(names).not.toContain('add_shape');
 		expect(new Set(names).size).toBe(names.length);
 		const instructions = client.getInstructions() ?? '';
 		expect(instructions.startsWith(EDITING_GUIDE)).toBe(true);
 		expect(instructions).toContain(ANIMATION_GUIDE);
+		expect(instructions).toContain(SHAPES_GUIDE);
 		expect(instructions).not.toMatch(/\n\n\n/);
 		await client.close();
 	});

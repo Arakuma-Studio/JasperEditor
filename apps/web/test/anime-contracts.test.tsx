@@ -1,5 +1,5 @@
 // M2 animation contracts in the web app (ARCHITECTURE §20.6): the text-animation and shapes command modules,
-// the Motion Templates "Text Animations" tab and the shape commands that stay unregistered until wp-m2-shapes.
+// the Motion Templates "Text Animations" tab.
 import { EngineClient } from '@jasper/engine-client';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -21,13 +21,11 @@ function offlineEngine() {
 afterEach(() => globalThis.localStorage?.removeItem('jasper.motionTemplates.tab'));
 
 describe('command modules (ARCHITECTURE §20.6)', () => {
-	it('registers the (empty) text-animation and shapes modules; the shape commands stay unregistered', () => {
-		// wp-m2-text-anim fills its module (apps/web/test/text-animation.test.tsx)
+	it('registers the text-animation and shapes modules (wp-m2-text-anim, wp-m2-shapes / FIX-007)', () => {
 		expect(textAnimationCommands.map((c) => c.id)).toEqual(['text.applyAnimation', 'text.removeAnimation']);
-		expect(shapeCommands).toEqual([]);
 		registerAllCommands();
-		expect(getCommand('graphics.newRectangle')).toBeUndefined();
-		expect(getCommand('graphics.newEllipse')).toBeUndefined();
+		for (const c of shapeCommands) expect(getCommand(c.id)).toBe(c);
+		expect(getCommand('graphics.newRectangle')).toBeDefined();
 	});
 });
 

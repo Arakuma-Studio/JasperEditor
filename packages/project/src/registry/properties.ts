@@ -11,7 +11,7 @@ import {
 	type PropsUiHint,
 } from '../composition/json-schema.ts';
 import { contentTimeAt } from '../derive/index.ts';
-import { shapeIntrinsicBox } from '../factories.ts';
+import { DEFAULT_SHAPE_SIZE, shapeIntrinsicBox } from '../factories.ts';
 import { evaluate } from '../keyframes.ts';
 import type { Animatable, Keyframe, RGBA } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
@@ -63,7 +63,9 @@ export type PropertyGroup =
 	| 'textAnimation'
 	| 'effect'
 	| 'crop'
-	| 'box';
+	| 'box'
+	/** M2 (S11:SHP-005, wp-m2-shapes): shape geometry and paint (`shape.*`). */
+	| 'shape';
 
 /** Everything a default or a patch may need to know about the clip. */
 export type PropertyContext = {
@@ -244,6 +246,107 @@ export function textAnimationParamSpecs(clip: TextAnimated): PropertySpec[] {
 		return specs;
 	});
 }
+
+// ---------------------------------------------------------------- wp-m2-shapes (S11:SHP-001…007)
+
+/** Largest shape side and stroke width the registry accepts (layer pixels); larger values are clamped. */
+export const SHAPE_LIMITS = { size: 32768, strokeWidth: 4096, cornerRadius: 16384 } as const;
+/** Stroke added when a "None" stroke is first edited (Properties ▸ Shape, `param.set shape.stroke.*`). */
+export const DEFAULT_SHAPE_STROKE = {
+	color: BLACK,
+	width: 8,
+	position: 'center' as const,
+};
+const isShape = (c: Pick<Clip, 'kind'>) => c.kind === 'shape';
+/** Corner radius applies to rectangles; a bare `{kind}` (agent schema) counts as a possible rectangle. */
+const isRectShape = (c: Pick<Clip, 'kind'>) =>
+	isShape(c) && (c as { shape?: { type?: string } }).shape?.type !== 'ellipse';
+
+/** Shape specs: keyframable size, fill, stroke colour/width and corner radius (shared KF evaluator). */
+const SHAPE_PROPERTY_SPECS: readonly PropertySpec[] = [
+	{
+		key: 'shape.size',
+		label: 'Size',
+		group: 'shape',
+		kind: 'vec2',
+		unit: 'px',
+		range: { min: 0, max: SHAPE_LIMITS.size, step: 1 },
+		animatable: 'continuous',
+		storagePath: ['shape', 'size'],
+		appliesTo: isShape,
+		ui: { control: 'vec2', precision: 1 },
+		defaultValue: DEFAULT_SHAPE_SIZE,
+		description: 'Width and height of the rectangle or ellipse in layer pixels (the stroke is not scaled).',
+	},
+	{
+		key: 'shape.fill',
+		label: 'Fill',
+		group: 'shape',
+		kind: 'color',
+		animatable: 'continuous',
+		storagePath: ['shape', 'fill'],
+		appliesTo: isShape,
+		ui: { control: 'color' },
+		defaultValue: WHITE,
+		description: 'Fill colour; clip.update {shape: {fill: null}} removes the fill ("None").',
+	},
+	{
+		key: 'shape.stroke.color',
+		label: 'Stroke Color',
+		group: 'shape',
+		kind: 'color',
+		animatable: 'continuous',
+		storagePath: ['shape', 'stroke', 'color'],
+		appliesTo: isShape,
+		ui: { control: 'color' },
+		defaultValue: DEFAULT_SHAPE_STROKE.color,
+		description: 'Stroke colour; setting any stroke property adds a stroke when there is none.',
+	},
+	{
+		key: 'shape.stroke.width',
+		label: 'Stroke Width',
+		group: 'shape',
+		kind: 'number',
+		unit: 'px',
+		range: { min: 0, max: SHAPE_LIMITS.strokeWidth, softMax: 100, step: 0.1 },
+		animatable: 'continuous',
+		storagePath: ['shape', 'stroke', 'width'],
+		appliesTo: isShape,
+		ui: { control: 'scrub', precision: 1 },
+		defaultValue: DEFAULT_SHAPE_STROKE.width,
+		description: 'Visible stroke width in layer pixels, whatever the position.',
+	},
+	{
+		key: 'shape.stroke.position',
+		label: 'Stroke Position',
+		group: 'shape',
+		kind: 'enum',
+		options: ['inside', 'center', 'outside'],
+		optionLabels: ['Inside', 'Center', 'Outside'],
+		animatable: 'no',
+		storagePath: ['shape', 'stroke', 'position'],
+		appliesTo: isShape,
+		ui: { control: 'select' },
+		defaultValue: DEFAULT_SHAPE_STROKE.position,
+		description: 'Where the stroke sits relative to the outline: inside, centred on it, or outside.',
+	},
+	{
+		key: 'shape.cornerRadius',
+		label: 'Corner Radius',
+		group: 'shape',
+		kind: 'number',
+		unit: 'px',
+		range: { min: 0, max: SHAPE_LIMITS.cornerRadius, softMax: 200, step: 0.1 },
+		animatable: 'continuous',
+		storagePath: ['shape', 'cornerRadius'],
+		appliesTo: isRectShape,
+		ui: { control: 'scrub', precision: 1 },
+		defaultValue: 0,
+		description: 'Rounded corners of a rectangle (limited to half the shorter side when drawn).',
+	},
+];
+
+// ---------------------------------------------------------------- end wp-m2-shapes
 
 export const PROPERTY_SPECS: readonly PropertySpec[] = [
 	{
@@ -715,6 +818,9 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 	},
 	// M2 (S11:TXA-007, wp-m2-text-anim): preset + window of each side; params are dynamic (below).
 	...TEXT_ANIMATION_SIDES.flatMap(textAnimationSideSpecs),
+	// ------------------------------------------------ wp-m2-shapes: shape properties (S11:SHP-003/005)
+	...SHAPE_PROPERTY_SPECS,
+	// ------------------------------------------------ end wp-m2-shapes
 ];
 
 function textStyleOf(clip: Clip) {

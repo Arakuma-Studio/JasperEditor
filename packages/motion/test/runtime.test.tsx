@@ -26,6 +26,7 @@ import {
 	useAnimeDom,
 	useAnimeValues,
 } from '../src/runtime/index.ts';
+import { ANIME_TEMPLATE_IMPLS } from '../src/templates/index.ts';
 import { REST_UNIT_VALUES, TEXT_ANIMATION_IMPLS } from '../src/text/index.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));

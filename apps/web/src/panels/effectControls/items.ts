@@ -13,6 +13,8 @@ import {
 	propertyDefault,
 	type Sequence,
 } from '@jasper/project';
+// wp-m2-shapes
+import { shapePropertyKeys } from '../../shapes/keys.ts';
 import {
 	bindCrop,
 	bindEffectParam,
@@ -117,6 +119,16 @@ export function buildGroups(
 					.map((p) => makeRow(`crop.${p.name}`, [bindCrop(doc, seq, clip, p.name, frame)]))
 					.filter((r): r is Row => r !== null),
 			});
+			// ---- wp-m2-shapes (S11:SHP-005): Shape section with stopwatches for size, fill, stroke and radius.
+			if (clip.kind === 'shape')
+				sections.push({
+					id: `${clip.id}:shape`,
+					title: 'Shape',
+					clip,
+					intrinsic: true,
+					rows: rows(shapePropertyKeys(clip)),
+				});
+			// ---- end wp-m2-shapes
 			const tpl = templateOf(clip, registries.mgTemplates);
 			if (tpl) {
 				sections.push({

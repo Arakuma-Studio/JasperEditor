@@ -204,7 +204,7 @@ describe('placeholder layers', () => {
 		expect(shape).not.toBeNull();
 		expect(shape.style.width).toBe('300px');
 		expect(shape.style.height).toBe('200px');
-		expect(r.container.querySelector('[data-shape-placeholder="ellipse"]')).not.toBeNull();
+		expect(r.container.querySelector('svg[data-shape="ellipse"]')).not.toBeNull();
 		const mg = r.container.querySelector<HTMLElement>('[data-mg-renderer="anime"]')!;
 		// wp-m2-anime-templates mounted the implementation in place of the contracts' placeholder card.
 		expect(mg.querySelector('[data-anime-template="title-reveal@1"]')).not.toBeNull();

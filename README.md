@@ -379,6 +379,24 @@ Corner pins and keyframed Motion export on the native ffmpeg path through the wa
 
 Agents use the `add_tracker`, `track`, `apply_tracking`, `get_tracker` and `set_corner_pin` MCP tools. Tracking runs OpenCV.js (Apache-2.0) in engine worker threads. Details: `docs/specs/09-tracking.md` and `docs/wp-notes/wp-m2-track.md`.
 
+## Shapes
+
+Rectangles and ellipses are `shape` clips (S11 §7, `docs/wp-notes/wp-m2-shapes.md`):
+
+- **Graphics ▸ New Layer ▸ Rectangle / Ellipse** (Ctrl+Alt+R / Ctrl+Alt+E) adds a 400×400 white shape at the
+  playhead on the targeted video track. The **Rectangle** and **Ellipse** tools (Tools panel, Pen flyout) draw one
+  in the Program monitor: drag the box, **Shift** for a square/circle, **Alt** to draw from the centre, **Esc**
+  cancels.
+- **Properties ▸ Shape**: size (link toggle), fill or None, stroke on/off with colour, width and position
+  (inside / center / outside — the visible width is always the width you set), corner radius for rectangles.
+  **Effect Controls ▸ Shape** keyframes size, fill, stroke colour/width and radius.
+- **Edit ▸ Preferences ▸ Graphics ▸ Resize shapes by size**: the transform handles change the shape's size instead
+  of its Motion scale, so strokes keep their width (Alt keeps the opposite side in place, Shift the ratio).
+- Shapes are drawn as inline SVG (`@remotion/shapes` geometry) in the preview and in Remotion renders; with the
+  layer bake they export natively. Agents use `add_shape`, or `clip.update {shape}` / `param.set` on `shape.*`.
+- Tests: `e2e/shapes.spec.ts`; pixel check against an analytic reference with
+  `REMOTION_E2E=1 pnpm vitest run apps/engine/test/shapes-remotion.e2e.test.ts`.
+
 ## Tests
 
 ```bash

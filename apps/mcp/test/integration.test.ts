@@ -161,6 +161,7 @@ describe('jasper-mcp over stdio against a real engine', () => {
 			'add_text',
 			'add_marker',
 			'add_motion_graphic',
+			'add_shape', // wp-m2-shapes
 			'add_transition',
 			'list_transitions',
 			'update_transition',
@@ -712,6 +713,48 @@ describe('jasper-mcp over stdio against a real engine', () => {
 	});
 
 	// ---------------------------------------------------------------- end M2 text animation
+
+	// ---- wp-m2-shapes (S11:SHP-008, §11 test 6)
+	it('add_shape adds rectangles and ellipses; get_timeline shows their geometry; describe_commands documents clip.addShape', async () => {
+		const r = await ok<{ clips: { id: string; kind: string; track: string; name: string; end: number }[] }>(
+			'add_shape',
+			{
+				projectId,
+				type: 'rect',
+				at: 0,
+				size: [640, 160],
+				fill: '#202020cc',
+				stroke: { color: '#ffcc00', width: 6, position: 'inside' },
+				cornerRadius: 24,
+				position: [960, 900],
+				track: 'V4',
+			},
+		);
+		expect(r.clips[0]).toMatchObject({ kind: 'shape', track: 'V4', name: 'Rectangle', end: 150 });
+		const e = await ok<{ clips: { kind: string }[] }>('add_shape', {
+			projectId,
+			type: 'ellipse',
+			at: { seconds: 1 },
+			duration: { seconds: 1 },
+			fill: null,
+			stroke: { color: '#ffffff', width: 4 },
+			track: 'V5',
+		});
+		expect(e.clips[0]).toMatchObject({ kind: 'shape' });
+		const table = textOf(await call('get_timeline', { projectId }));
+		expect(table).toMatch(/rect 640×160 fill #202020cc stroke 6px #ffcc00 inside radius 24/);
+		expect(table).toMatch(/ellipse 400×400 no fill stroke 4px #ffffff center/);
+		expect(
+			(await fails('add_shape', { projectId, type: 'ellipse', at: 0, cornerRadius: 5, track: 'V6' })).code,
+		).toBe('E_INVALID_PARAM');
+		const d = await ok<{
+			commands: { type: string; implemented: boolean; schema: unknown; example?: unknown }[];
+		}>('describe_commands', { types: ['clip.addShape'] });
+		expect(d.commands[0]).toMatchObject({ implemented: true, example: COMMAND_EXAMPLES['clip.addShape'] });
+		expect(JSON.stringify(d.commands[0]!.schema)).toContain('cornerRadius');
+		await ok('delete_clips', { projectId, clipIds: [r.clips[0]!.id] });
+	});
+	// ---- end wp-m2-shapes
 
 	it('apply_commands: transactions, dry runs and every describe_commands example', async () => {
 		const cat = await ok<{ commands: { type: string }[]; exampleTransaction: unknown }>('describe_commands');

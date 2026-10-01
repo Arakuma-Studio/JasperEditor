@@ -49,13 +49,7 @@ const INTENTIONALLY_ABSENT: Record<string, readonly string[]> = {
 		'clip.nest',
 		'mg.editParameters',
 	],
-	'shapes and monitor guides (M2)': [
-		'graphics.newRectangle',
-		'graphics.newEllipse',
-		'program.showRulers',
-		'program.showGuides',
-		'program.lockGuides',
-	],
+	'monitor guides (M2)': ['program.showRulers', 'program.showGuides', 'program.lockGuides'],
 	'panels that do not exist in M1': [
 		'panel.open.audioTrackMixer',
 		'panel.open.mediaBrowser',
@@ -121,6 +115,11 @@ describe('wiring audit (WP-3I)', () => {
 			'project.import',
 			'export.media',
 			'graphics.newTextLayer',
+			// S11:FIX-007 (wp-m2-shapes)
+			'graphics.newRectangle',
+			'graphics.newEllipse',
+			'tool.rectangle',
+			'tool.ellipse',
 			'mg.insertTemplate',
 			'history.undo',
 			'history.redo',
