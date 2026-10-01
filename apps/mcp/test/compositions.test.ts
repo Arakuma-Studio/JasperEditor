@@ -123,6 +123,7 @@ describe.runIf(E2E)('composition tools over stdio against a real engine (MG_E2E=
 		}>('import_mg_bundle', { projectId, path: FIXTURE_PROJECT });
 		expect(imp.compositions.map((c) => [c.id, c.schemaSource]).sort()).toEqual([
 			['Badge', 'inferred'],
+			['LowerThird', 'bundle'],
 			['Title', 'bundle'],
 		]);
 		expect(imp.compositions.find((c) => c.id === 'Title')!.props.delay!.type).toBe('integer');
@@ -135,7 +136,7 @@ describe.runIf(E2E)('composition tools over stdio against a real engine (MG_E2E=
 		const { body: list } = await ok<{ bundles: { compositions: unknown[] }[] }>('list_compositions', {
 			projectId,
 		});
-		expect(list.bundles[0]!.compositions).toHaveLength(2);
+		expect(list.bundles[0]!.compositions).toHaveLength(3);
 
 		const { body: added } = await ok<{
 			appliedBy: string;
@@ -174,6 +175,66 @@ describe.runIf(E2E)('composition tools over stdio against a real engine (MG_E2E=
 		);
 		expect(pre.job).toMatchObject({ kind: 'mg-prerender', state: 'succeeded' });
 		expect(pre.job.result?.masterUrl).toMatch(/master\.mov$/);
+
+		// Hybrid text layers (S08:MGA-003): list the texts of a LowerThird, edit a text and its style in one step.
+		const { body: lt } = await ok<{ clips: { id: string }[] }>('add_composition', {
+			projectId,
+			mediaId: imp.mediaId,
+			compositionId: 'LowerThird',
+			at: 0,
+			track: 'V2',
+		});
+		const ltId = lt.clips[0]!.id;
+		const { body: texts } = await ok<{
+			texts: { path: string; label: string; value: string; style: Record<string, { prop: string }> }[];
+		}>('list_composition_texts', { projectId, clipId: ltId });
+		expect(texts.texts.map((t) => [t.path, t.label])).toEqual([
+			['name.text', 'Name'],
+			['role', 'Role'],
+			['quote', 'Quote'],
+		]);
+		expect(Object.keys(texts.texts[0]!.style).sort()).toEqual([
+			'align',
+			'color',
+			'fontFamily',
+			'fontSize',
+			'fontWeight',
+		]);
+		const noRole = await call('set_composition_text', {
+			projectId,
+			clipId: ltId,
+			texts: [{ text: 'role', style: { align: 'center' } }],
+		});
+		expect(JSON.parse(text(noRole)).error.code).toBe('E_INVALID_PARAM');
+		const tooLong = await call('set_composition_text', {
+			projectId,
+			clipId: ltId,
+			texts: [{ text: 'Name', value: 'x'.repeat(61) }],
+		});
+		expect(JSON.parse(text(tooLong)).error.code).toBe('E_INVALID_PARAM');
+		const ltBefore = await call('render_frame', { projectId, at: 60, width: 480 });
+		const { body: edited } = await ok<{
+			texts: { path: string; value: string; warnings: { code: string }[] }[];
+		}>('set_composition_text', {
+			projectId,
+			clipId: ltId,
+			texts: [
+				{ text: 'name.text', value: 'Grace Hopper, Rear Admiral', style: { color: '#ffcc00', fontSize: 72 } },
+			],
+		});
+		expect(edited.texts[0]).toMatchObject({ path: 'name.text', value: 'Grace Hopper, Rear Admiral' });
+		expect(edited.texts[0]!.warnings.map((w) => w.code)).toEqual(['MG_TEXT_LONG']); // designed for 24
+		const ltAfter = await call('render_frame', { projectId, at: 60, width: 480 });
+		const img = (r: CallToolResult) => (r.content.find((c) => c.type === 'image') as { data: string }).data;
+		expect(img(ltAfter)).not.toBe(img(ltBefore));
+		// One undo step brings back the text and its style.
+		await ok('undo', { projectId });
+		const { body: undone } = await ok<{
+			texts: { value: string; style: Record<string, { value: unknown }> }[];
+		}>('list_composition_texts', { projectId, clipId: ltId });
+		expect(undone.texts[0]!.value).toBe('Ada Lovelace');
+		expect(undone.texts[0]!.style.color!.value).toBe('#ffffff');
+		expect(undone.texts[0]!.style.fontSize!.value).toBe(84);
 
 		// MG_REMOTION_VERSION carries the pin hint (S08:MGA-002).
 		const old = mkdtempSync(join(tmpdir(), 'jasper-mcp-old-'));

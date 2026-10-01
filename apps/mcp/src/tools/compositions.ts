@@ -5,22 +5,34 @@
 //   set_composition_props  props overrides of a composition clip (merge or replace; validated by the schema)
 //   prerender_composition  the clip's preview or ProRes 4444 master as an engine job
 //   scaffold_mg_project    (P1) a new Remotion project from the template, imported and watched
+//   list_composition_texts (M3, wp-m3-mgtext) the texts a composition clip exposes, with style props and limits
+//   set_composition_text   (M3) edit texts (+ font/size/colour/alignment) of a composition clip in one step
 // `render_frame` (render.ts) renders composition clips through the same pre-render path (a native still).
 import type { MgPrerenderRequest, RegisteredMedia } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import {
 	buildRenderSnapshot,
 	type CompositionClip,
+	type CompositionTextLayer,
+	checkCompositionText,
 	compositionClipRenderRange,
+	compositionOfClip,
 	compositionSequenceFrames,
+	compositionTextLayers,
+	findTextLayer,
+	getPropAt,
 	type JsonSchemaNode,
 	type MediaAsset,
 	type MgCompositionInfo,
 	mergeProps,
+	overridesWithEdits,
 	type ProjectDocument,
 	type RenderCompositionSource,
+	type TextEdit,
+	type TextStyleRole,
 	TimeInputSchema,
 	TrackRefSchema,
+	textLayerValue,
 } from '@jasper/project';
 import { z } from 'zod';
 import {
@@ -46,7 +58,8 @@ export const COMPOSITION_GUIDE = `Motion graphics from Remotion projects (compos
 - import_mg_bundle {projectId, path} imports a Remotion project folder (remotion and every @remotion/* package pinned to exactly 4.0.499, dependencies installed; its own remotion.config.ts applies) or a built bundle folder. Each composition becomes placeable; watch: true rebuilds on save and the open editor relinks automatically.
 - list_compositions shows ids, size, fps, length and the props schema (from jasper.mg.json, the project's jasper-schemas.ts zod module, or inferred from defaultProps).
 - add_composition places one (default length = the composition's, at the sequence frame rate); set_composition_props edits its props (validated: wrong types fail with E_INVALID_PARAM); render_frame shows the result.
-- Exports stay on the fast native path: each composition clip is pre-rendered once to a cached ProRes 4444 master (prerender_composition {quality: "master"} warms it); changing props or the bundle makes a new master.`;
+- Exports stay on the fast native path: each composition clip is pre-rendered once to a cached ProRes 4444 master (prerender_composition {quality: "master"} warms it); changing props or the bundle makes a new master.
+- Texts: list_composition_texts {projectId, clipId} shows every text a composition exposes (path, label, current value, limits, and the props that style it: fontFamily/fontSize/fontWeight/italic/color/align/lineHeight/letterSpacing when the composition exposes them); set_composition_text edits one or more texts (and their style) as one undo step. Respect maxChars/maxLines (warnings) and maxLength (errors); check the result with render_frame — layout overflow (text off frame / cut off) is only measured in the editor.`;
 
 const IdArg = z.string().min(1);
 const TimeArg = (what: string) =>
@@ -95,6 +108,54 @@ export function propsSummary(info: MgCompositionInfo): Record<string, unknown> {
 	return out;
 }
 
+/** Texts of a composition for agents (S08:MGA-003): path, label, limits, style roles. */
+function textsSummary(info: MgCompositionInfo) {
+	return compositionTextLayers(info).map((l) => ({
+		path: l.path.join('.'),
+		label: l.label,
+		multiline: l.multiline,
+		...(l.maxChars !== undefined ? { maxChars: l.maxChars } : {}),
+		...(l.maxLines !== undefined ? { maxLines: l.maxLines } : {}),
+		...(l.maxLength !== undefined ? { maxLength: l.maxLength } : {}),
+		style: Object.keys(l.style),
+	}));
+}
+
+/** One text of a clip with its value, default, limits, style values and static warnings. */
+function textDetail(info: MgCompositionInfo, l: CompositionTextLayer, overrides: Record<string, unknown>) {
+	const effective = mergeProps(info.defaultProps, overrides);
+	const value = textLayerValue(effective, l);
+	const style: Record<string, unknown> = {};
+	for (const [role, link] of Object.entries(l.style)) {
+		if (!link) continue;
+		style[role] = {
+			prop: link.path.join('.'),
+			value: getPropAt(effective, link.path),
+			type: link.spec.kind,
+			...(link.spec.options ? { options: link.spec.options } : {}),
+			...(link.spec.range?.min !== undefined ? { min: link.spec.range.min } : {}),
+			...(link.spec.range?.max !== undefined ? { max: link.spec.range.max } : {}),
+		};
+	}
+	return {
+		path: l.path.join('.'),
+		label: l.label,
+		value,
+		default: getPropAt(info.defaultProps, l.path) ?? null,
+		overridden: getPropAt(overrides, l.path) !== undefined,
+		multiline: l.multiline,
+		...(l.maxChars !== undefined ? { maxChars: l.maxChars } : {}),
+		...(l.maxLines !== undefined ? { maxLines: l.maxLines } : {}),
+		...(l.maxLength !== undefined ? { maxLength: l.maxLength } : {}),
+		...(l.minLength !== undefined ? { minLength: l.minLength } : {}),
+		...(l.box ? { safeBox: l.box } : {}),
+		...(l.hint ? { hint: l.hint } : {}),
+		...(l.description ? { description: l.description } : {}),
+		style,
+		warnings: checkCompositionText(l, value).map((i) => ({ code: i.code, message: i.message })),
+	};
+}
+
 function compositionSummary(info: MgCompositionInfo) {
 	return {
 		id: info.id,
@@ -105,6 +166,7 @@ function compositionSummary(info: MgCompositionInfo) {
 		schemaSource: info.schemaSource,
 		...(info.category ? { category: info.category } : {}),
 		props: propsSummary(info),
+		texts: textsSummary(info),
 	};
 }
 
@@ -209,6 +271,39 @@ function clipSource(doc: ProjectDocument, clipId: string) {
 		'Use get_timeline for clip ids.',
 	);
 }
+
+/** A composition clip of the project with its composition info (tool errors when missing). */
+function findCompositionClip(doc: ProjectDocument, clipId: string) {
+	for (const seq of Object.values(doc.sequences)) {
+		const c = seq.clips[clipId];
+		if (c?.kind !== 'composition') continue;
+		const clip = c as CompositionClip;
+		const found = compositionOfClip(doc, clip);
+		if (!found)
+			throw new ToolError(
+				'E_NOT_FOUND',
+				`The composition ${clip.composition.id} of ${clipId} is not in its bundle`,
+				'Re-import the Remotion project (import_mg_bundle).',
+			);
+		return { clip, info: found.info as MgCompositionInfo };
+	}
+	throw new ToolError(
+		'E_NOT_FOUND',
+		`Composition clip ${clipId} not found`,
+		'Use get_timeline for clip ids (kind "composition").',
+	);
+}
+
+const TextStyleArg = z.object({
+	fontFamily: z.string().optional(),
+	fontSize: z.number().optional(),
+	fontWeight: z.union([z.number(), z.string()]).optional(),
+	italic: z.boolean().optional(),
+	color: z.string().optional().describe('CSS colour in the notation the composition uses, e.g. "#ffcc00"'),
+	align: z.string().optional(),
+	lineHeight: z.number().optional(),
+	letterSpacing: z.number().optional(),
+});
 
 export function registerCompositionTools(ctx: ToolContext): void {
 	defineTool(
@@ -404,6 +499,99 @@ export function registerCompositionTools(ctx: ToolContext): void {
 			if (!wait || isTerminal(job)) return jsonResult({ job: jobBody(job, base) });
 			const { job: done, timedOut } = await waitJob(ctx, job.id, 600_000, extra);
 			return jsonResult({ job: jobBody(done, base), ...(timedOut ? { timedOut: true } : {}) });
+		},
+	);
+
+	defineTool(
+		ctx,
+		'list_composition_texts',
+		{
+			title: 'List composition texts',
+			description:
+				'Lists the texts a composition clip exposes (S08 hybrid text layers): path, label, current and default value, limits (maxChars/maxLines = designed for; maxLength = hard), safe box, and the props that style each text (fontFamily, fontSize, fontWeight, italic, color, align, lineHeight, letterSpacing) with their values and allowed options.',
+			input: { projectId: ProjectIdArg, clipId: IdArg.describe('Composition clip id ("clp_…")') },
+			annotations: READ_ONLY,
+		},
+		async ({ projectId, clipId }) => {
+			const { doc } = await loadDoc(ctx, projectId);
+			const { clip, info } = findCompositionClip(doc, clipId);
+			return jsonResult({
+				clipId,
+				compositionId: info.id,
+				texts: compositionTextLayers(info).map((l) => textDetail(info, l, clip.props)),
+			});
+		},
+	);
+
+	defineTool(
+		ctx,
+		'set_composition_text',
+		{
+			title: 'Edit composition texts',
+			description:
+				'Edits texts of a composition clip — the value and/or the style props the composition exposes for it — as ONE undo step. Each entry names a text by path ("title", "name.text") or label. Values are validated against the composition schema (E_INVALID_PARAM); soft limits come back as warnings. The cached ProRes master no longer matches: the next export (or prerender_composition) renders a new one. Check the frame with render_frame.',
+			input: {
+				projectId: ProjectIdArg,
+				clipId: IdArg.describe('Composition clip id ("clp_…")'),
+				texts: z
+					.array(
+						z.object({
+							text: z.string().min(1).describe('Text path (list_composition_texts) or label'),
+							value: z.string().optional().describe('New text ("\\n" breaks lines in multiline texts)'),
+							style: TextStyleArg.optional().describe(
+								'Style props to set, by role (only roles the composition exposes for this text)',
+							),
+						}),
+					)
+					.min(1),
+			},
+			annotations: EDIT,
+		},
+		async ({ projectId, clipId, texts }, extra) => {
+			const { doc } = await loadDoc(ctx, projectId);
+			const { clip, info } = findCompositionClip(doc, clipId);
+			const layers = compositionTextLayers(info);
+			const edits: TextEdit[] = [];
+			const touched: CompositionTextLayer[] = [];
+			for (const t of texts) {
+				const l = findTextLayer(layers, t.text);
+				if (!l)
+					throw new ToolError(
+						'E_NOT_FOUND',
+						`Composition ${info.id} has no text "${t.text}"`,
+						`Texts: ${layers.map((x) => `${x.path.join('.')} (${x.label})`).join(', ') || 'none'}.`,
+					);
+				touched.push(l);
+				if (t.value !== undefined) edits.push({ path: l.path, value: t.value });
+				for (const [role, v] of Object.entries(t.style ?? {})) {
+					if (v === undefined) continue;
+					const link = l.style[role as TextStyleRole];
+					if (!link)
+						throw new ToolError(
+							'E_INVALID_PARAM',
+							`«${l.label}» has no ${role} prop in composition ${info.id}`,
+							`Styles it exposes: ${Object.keys(l.style).join(', ') || 'none'}.`,
+						);
+					edits.push({ path: link.path, value: v });
+				}
+			}
+			if (edits.length === 0)
+				throw new ToolError('E_INVALID_PARAM', 'Nothing to change', 'Give a value and/or style per text.');
+			const next = overridesWithEdits(info.defaultProps, clip.props, edits);
+			const label =
+				touched.length === 1 ? `Edit Text «${touched[0]!.label}»` : `Edit ${touched.length} Texts`;
+			const res = await transact(
+				ctx,
+				projectId,
+				{ label, commands: [{ type: 'clip.update', clipId, patch: { props: next } }] },
+				extra,
+			);
+			const r = requireOk(res);
+			return jsonResult({
+				...txBody(res, r),
+				texts: [...new Set(touched)].map((l) => textDetail(info, l, next)),
+				master: 'Props changed: the cached master is stale; the next export renders a new one.',
+			});
 		},
 	);
 
