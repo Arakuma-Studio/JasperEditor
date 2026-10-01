@@ -172,6 +172,14 @@ exports the Lumetri spec; `defaultEffectRegistry` includes them.
   `hqdn3d`, `perspective`, `boxblur`, `frei0r`) may appear in generated filter text; a unit test scans the
   builder output of the colour test fixtures for them.
 - **CG-055 (P1)** Speed: a 1080p30 60 s export with one graded clip runs at ≥ 70 % of the same export ungraded.
+- **CG-056 (P0, M3 wp-m3-cachegc)** Baked LUT files are content-addressed: `<appdir>/cache/luts/<sha256 of the
+  .cube text>.cube`. States whose tables are identical (sliders keyframed without effect, holds, params that clamp
+  to the same result, the same look on several clips, projects or exports) share one file; nothing is written when
+  the file exists; a process-wide memo (state key → file, 4096 states) skips the bake (~40 ms per 33³ state) for
+  states seen before. The text is byte-identical to the M2 format, so exports do not change. Files are pinned for
+  the export before reuse or write (S04:CA-016) and recorded in the project's export ref set (CA-012); unused ones
+  go with the cache GC (kind `luts`). Smaller lattices were measured and rejected: 17³ instead of 33³ changes
+  10.5 % of 8-bit output values (max 6) for a typical grade; coarser number formats change rounding too.
 
 ## 5. LUT assets (LUT-001…010)
 

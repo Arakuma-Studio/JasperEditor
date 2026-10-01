@@ -483,6 +483,28 @@ graphics)** and lists one graphics group per baked layer.
   test/layer-bake-parallel.e2e.test.ts` (the second compares parallel and sequential bakes byte for byte;
   `LAYER_BAKE_BENCH=1` adds the benchmark); Playwright: `e2e/layer-bake.spec.ts`.
 
+## Media cache
+
+The engine keeps everything it can make again — waveforms, posters, filmstrips, keyframe indexes, proxies, baked
+colour LUTs, warped layers (tracking / keyframed Motion), graphics bakes, motion-graphics renders, export outputs,
+rendered frames, build caches — in one cache under the appdir. **Edit ▸ Preferences ▸ Media Cache…** shows how much
+each kind uses, split into *in use* (running exports, projects open in an editor, files written in the last minutes),
+*used by saved projects* and *unused*:
+
+- **Clean Unused** removes what no project uses (like Premiere's *Delete Unused*).
+- **Clean All (not in use)…** also removes what saved projects use; it is made again when needed (the first preview
+  or export of such a project is slower). What open projects and running exports use is always kept.
+- **Automatic cleaning** (at start-up, every hour and after renders): unused files older than 30 days (graphics bakes
+  and motion-graphics renders 14, export outputs 7, rendered frames 1), then the least recently used unused files
+  while the cache is over its size limit (automatic: 25 GB or 15 % of the free disk, whichever is smaller; or a custom
+  limit; per-kind limits in the table). Files saved projects use are never removed automatically.
+
+Keyframed grades write one LUT per distinct state; identical tables share one file (content-addressed). Removal is
+crash-safe (rename to `.trash-*`, then delete; leftovers of interrupted writes are swept). Agents use
+`get_cache_usage` and `clean_cache`; scripts `GET /api/cache`, `POST /api/cache/clean {"mode":"unused"|"all"}` and
+`GET/PUT /api/cache/settings`. Details: `docs/specs/04-media-render-and-backend.md` §7.5 (CA-010…019),
+`docs/wp-notes/wp-m3-cachegc.md`.
+
 ## Tests
 
 ```bash
