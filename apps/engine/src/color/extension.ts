@@ -12,6 +12,13 @@
 // (`applyLut` of the unbiased table, rounded), max 1.
 // Keyframed grades: the evaluated run is sampled per output frame (`sampleRuns`), one LUT per distinct state,
 // each `lut3d` enabled on its frame window (at most 240 per layer; above that the params are quantised).
+//
+// LUT files (M3, wp-m3-cachegc, S06:CG-056): named by the sha256 of their `.cube` text, so states that bake to the
+// same table — a grade keyframed back to an earlier value, hold segments, params that clamp to the same result, the
+// same look on several clips or exports — share one file; nothing is written when the file exists. A process-wide
+// memo (state key → file) skips the bake itself for states seen before. The text is byte-identical to before (same
+// lattice, same 6-decimal values), so the export output does not change. Files are pinned for the export
+// (`ctx.pin`) before they are reused or written: the cache GC never removes a LUT an export is about to read.
 import { createHash } from 'node:crypto';
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -40,6 +47,8 @@ import { readCubeFile } from './prober.ts';
 export const MAX_LUTS_PER_LAYER = 240;
 /** Added to every baked table value so `lut3d`'s truncating 8-bit store rounds to nearest (see above). */
 const EXPORT_ROUNDING_BIAS = 0.5 / 255;
+/** States remembered process-wide (state key → baked file); each costs ~200 bytes, a bake ~10–50 ms. */
+const LUT_MEMO_SIZE = 4096;
 /** Largest lattice used for export bakes when a run references a bigger imported LUT (S06:CG-012). */
 const MAX_EXPORT_LUT_SIZE = 65;
 /** Filters the shipped LGPL FFmpeg does not contain (ARCHITECTURE D-13 M2 note); never in generated text. */
@@ -80,8 +89,14 @@ export type ColorPrepared = {
 	layers: Map<string, Map<string, LutWindow[]>>;
 	/** LUT assets the grade references that are offline (the grade skips them, S06:CG-004). */
 	offlineLuts: string[];
-	/** Distinct baked LUTs (tests / logs). */
+	/** Distinct run states of this export (tests / logs). */
 	baked: number;
+	/** Distinct LUT files they use (states with identical tables share one, CG-056). */
+	files: number;
+	/** States served by the memo (no bake) / files that already existed (no write) / files written. */
+	reused: number;
+	existing: number;
+	written: number;
 };
 
 export type ColorExtensionOptions = {
@@ -135,28 +150,48 @@ export function createColorExtension(opts: ColorExtensionOptions): NativeExtensi
 		return p;
 	};
 
-	/** Writes a baked LUT once (content-addressed by the run key + the 8-bit rounding variant). */
-	const writeLut = (key: string, lut: Lut): Promise<string> => {
-		const name = `${createHash('sha256').update(`u8r:${key}`).digest('hex')}.cube`;
-		const file = join(opts.lutCacheDir, name);
+	/** State key → LUT file (absolute) of states baked before, most recent last. */
+	const memo = new Map<string, string>();
+	const remember = (key: string, file: string) => {
+		memo.delete(key);
+		memo.set(key, file);
+		if (memo.size > LUT_MEMO_SIZE) memo.delete(memo.keys().next().value!);
+	};
+
+	/** Writes `text` as `<sha256(text)>.cube` unless that file exists (content-addressed, CG-056). */
+	const writeLut = async (
+		text: string,
+		pin: (path: string) => Promise<boolean>,
+		stats: ColorPrepared,
+	): Promise<string> => {
+		const file = join(opts.lutCacheDir, `${createHash('sha256').update(text).digest('hex')}.cube`);
+		// Pinned first: a GC pass cannot remove it between this check and the export reading it.
+		if (await pin(file)) {
+			stats.existing++;
+			return file;
+		}
 		let p = writes.get(file);
 		if (!p) {
 			p = (async () => {
-				if (await exists(file)) return file;
 				await mkdir(opts.lutCacheDir, { recursive: true });
 				const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.partial`;
-				const data = lut.data.map((v) => v + EXPORT_ROUNDING_BIAS);
-				await writeFile(
-					tmp,
-					serializeCube({ ...lut, data, title: 'JasperEditor colour run (8-bit rounding)' }),
-				);
+				await writeFile(tmp, text);
 				await rename(tmp, file);
+				stats.written++;
 				return file;
 			})().finally(() => writes.delete(file));
 			writes.set(file, p);
 		}
 		return p;
 	};
+
+	/** The `.cube` text of a baked run as written for `lut3d` (+0.5/255 so its 8-bit store rounds to nearest). */
+	const cubeText = (lut: Lut) =>
+		serializeCube({
+			...lut,
+			data: lut.data.map((v) => v + EXPORT_ROUNDING_BIAS),
+			title: 'JasperEditor colour run (8-bit rounding)',
+		});
 
 	return {
 		id: 'color',
@@ -167,7 +202,16 @@ export function createColorExtension(opts: ColorExtensionOptions): NativeExtensi
 			const fps = snap.settings.fps;
 			const R0 = snap.range.start;
 			const R1 = snap.range.end;
-			const out: ColorPrepared = { layers: new Map(), offlineLuts: [], baked: 0 };
+			const out: ColorPrepared = {
+				layers: new Map(),
+				offlineLuts: [],
+				baked: 0,
+				files: 0,
+				reused: 0,
+				existing: 0,
+				written: 0,
+			};
+			const pin = ctx.pin ?? exists;
 
 			// LUT assets referenced by any colour effect: load them once (the bake reads them synchronously).
 			const luts = new Map<string, Lut | null>();
@@ -248,9 +292,20 @@ export function createColorExtension(opts: ColorExtensionOptions): NativeExtensi
 					for (const s of states) {
 						let p = bakes.get(s.value.key);
 						if (!p) {
-							const lut = bakeColorRun(s.value.effects, registry, colorCtx, size);
-							p = lut ? writeLut(s.value.key, lut) : Promise.resolve(null);
-							bakes.set(s.value.key, p);
+							const state = s.value;
+							p = (async () => {
+								const known = memo.get(state.key);
+								if (known && (await pin(known))) {
+									out.reused++;
+									return known;
+								}
+								const lut = bakeColorRun(state.effects, registry, colorCtx, size);
+								if (!lut) return null;
+								const file = await writeLut(cubeText(lut), pin, out);
+								remember(state.key, file);
+								return file;
+							})();
+							bakes.set(state.key, p);
 						}
 						windows.push({ start: s.start, end: s.end, file: await p });
 					}
@@ -259,6 +314,16 @@ export function createColorExtension(opts: ColorExtensionOptions): NativeExtensi
 				out.layers.set(c.clipId, perRun);
 			}
 			out.baked = bakes.size;
+			const files = new Set<string>();
+			for (const p of bakes.values()) {
+				const f = await p;
+				if (f) files.add(f);
+			}
+			out.files = files.size;
+			if (out.baked > 1)
+				ctx.log(
+					`[color] ${out.baked} grade states → ${out.files} LUT files (${out.written} written, ${out.existing} existing, ${out.reused} remembered)`,
+				);
 			return out;
 		},
 
