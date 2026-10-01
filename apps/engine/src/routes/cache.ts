@@ -5,6 +5,7 @@
 // The registry itself is a core service (`core.cache`, created with the queue and the project store).
 import { CacheCleanRequestSchema, CacheSettingsSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
+import type { AgentService } from '../agent/service.ts';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
 
@@ -14,6 +15,14 @@ export default async function cacheRoutes(app: FastifyInstance): Promise<void> {
 		if (!core.cache) throw new HttpError(503, 'CACHE_UNAVAILABLE', 'The cache registry is not running');
 		return core.cache;
 	};
+
+	// Every editor window (read-only ones too) keeps an agent relay connection for its project: such projects are
+	// open even when another session holds the lease (CA-014: never clean what an open project needs).
+	const agent = app.jasper.services.agent as AgentService | undefined;
+	const offProbe = agent
+		? core.cache.addOpenProbe((pid) => agent.sessions.connectionsFor(pid).length > 0)
+		: null;
+	app.addHook('onClose', async () => offProbe?.());
 
 	app.get(
 		'/api/cache',

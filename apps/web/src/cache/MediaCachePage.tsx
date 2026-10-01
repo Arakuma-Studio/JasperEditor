@@ -170,6 +170,12 @@ function KindRow(props: {
 	);
 }
 
+function lastGcText(r: CacheGcReport): string {
+	const how = r.mode === 'auto' ? 'automatic' : r.mode === 'all' ? 'Clean All' : 'Clean Unused';
+	const what = r.removedEntries ? `${formatBytes(r.removedBytes)} removed` : 'nothing to remove';
+	return `Last cleaned ${formatAgo(r.at)} (${how}): ${what}`;
+}
+
 function reportText(r: CacheGcReport): string {
 	const parts = [
 		`removed ${r.removedEntries} item${r.removedEntries === 1 ? '' : 's'} (${formatBytes(r.removedBytes)})`,
@@ -252,9 +258,9 @@ export function MediaCachePreferencesPage() {
 				body: (
 					<div className="flex flex-col gap-2">
 						<p>
-							This also removes the files saved projects use (
-							{usage ? formatBytes(usage.referencedBytes + usage.unusedBytes) : 'all of it'} in total). They
-							are made again when needed, so previews and exports of those projects are slower the first time.
+							{usage && usage.referencedBytes + usage.unusedBytes === 0
+								? 'Everything in the cache is in use right now: nothing would be removed.'
+								: `This frees up to ${usage ? formatBytes(usage.referencedBytes + usage.unusedBytes) : 'all of it'}, including files saved projects use. They are made again when needed, so previews and exports of those projects are slower the first time.`}
 						</p>
 						<p className="text-pr-muted">
 							Files of open projects and running exports are kept. Media files and projects are never deleted.
@@ -406,9 +412,7 @@ export function MediaCachePreferencesPage() {
 						Clean All (not in use)…
 					</Button>
 					<span className="text-pr-small text-pr-dim" data-testid="cache-last-gc">
-						{usage?.lastGc
-							? `Last cleaned ${formatAgo(usage.lastGc.at)} (${usage.lastGc.mode === 'auto' ? 'automatic' : usage.lastGc.mode === 'all' ? 'Clean All' : 'Clean Unused'}): ${formatBytes(usage.lastGc.removedBytes)}`
-							: ''}
+						{usage?.lastGc ? lastGcText(usage.lastGc) : ''}
 					</span>
 				</div>
 			</PrefGroup>
@@ -445,7 +449,7 @@ export function MediaCachePreferencesPage() {
 				<PrefRow label="Cache size limit" htmlFor={ids.gb}>
 					<Select
 						label="Cache size limit"
-						className="w-56"
+						className="w-80"
 						value={form?.budget ?? 'auto'}
 						disabled={settingsDisabled || !form?.autoClean}
 						onValueChange={(v) => patch({ budget: v as Form['budget'] })}

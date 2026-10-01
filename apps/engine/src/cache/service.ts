@@ -127,6 +127,7 @@ export class CacheService {
 	private readonly removing = new Map<string, Promise<boolean>>();
 	private readonly ownTrash = new Set<string>();
 	private readonly adapters = new Map<CacheKind, CacheKindAdapter>();
+	private readonly openProbes = new Set<(projectId: string) => boolean>();
 	private readonly projectRefsCache = new Map<string, { revision: number; refs: ProjectCacheRefs }>();
 	private lastScan: ScanResult | null = null;
 	private scanning: Promise<ScanResult> | null = null;
@@ -229,6 +230,27 @@ export class CacheService {
 		} catch (e) {
 			this.o.log?.(`[cache] ${why} pass failed: ${(e as Error).message}`);
 		}
+	}
+
+	/**
+	 * Adds a source of "open in an editor" beyond the project lease (e.g. the agent relay: every editor window,
+	 * read-only ones too, keeps a connection for its project).
+	 */
+	addOpenProbe(probe: (projectId: string) => boolean): () => void {
+		this.openProbes.add(probe);
+		return () => this.openProbes.delete(probe);
+	}
+
+	private isOpen(projectId: string): boolean {
+		if (this.o.leases?.get(projectId)) return true;
+		for (const p of this.openProbes) {
+			try {
+				if (p(projectId)) return true;
+			} catch {
+				// a broken probe never blocks a pass
+			}
+		}
+		return false;
 	}
 
 	registerAdapter(kind: CacheKind, adapter: CacheKindAdapter): () => void {
@@ -408,7 +430,7 @@ export class CacheService {
 			for (const p of await store.list().catch(() => [])) {
 				if (typeof p.revision !== 'number') continue; // not a readable project file
 				existing.add(p.projectId);
-				if (this.o.leases?.get(p.projectId)) open.add(p.projectId);
+				if (this.isOpen(p.projectId)) open.add(p.projectId);
 				let c = this.projectRefsCache.get(p.projectId);
 				if (!c || c.revision !== p.revision) {
 					const doc = await store

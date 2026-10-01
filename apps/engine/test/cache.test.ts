@@ -17,6 +17,7 @@ import { join } from 'node:path';
 import type { CacheGcReport, CacheUsage } from '@jasper/api';
 import {
 	bakeColorRun,
+	buildRenderSnapshot,
 	defaultEffectRegistry,
 	EMPTY_PROBE,
 	LUMETRI_EFFECT_ID,
@@ -25,7 +26,10 @@ import {
 } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { entryOfPath, scanAppdir } from '../src/cache/layout.ts';
+import { projectCacheRefs } from '../src/cache/project-refs.ts';
 import { type CacheService, ORPHAN_AGE_MS } from '../src/cache/service.ts';
+import { masterRequests } from '../src/mg-bundles/native-ext.ts';
+import { prerenderKey } from '../src/mg-bundles/service.ts';
 import { coreServices } from '../src/tools/services.ts';
 import {
 	closeApps,
@@ -170,6 +174,76 @@ describe('cache layout (CA-010)', () => {
 	});
 });
 
+describe('project references computed from the document (CA-012)', () => {
+	it('media fingerprints, bundle hashes and the preview + master render keys of composition clips', () => {
+		const hash = '3'.repeat(64);
+		const d = docWithMedia(71);
+		const reg = d.tx([
+			{
+				type: 'media.register',
+				asset: {
+					kind: 'mg-bundle',
+					fingerprint: `q1:${hash}`,
+					originalName: 'mg',
+					sizeBytes: 1,
+					container: 'remotion-bundle',
+					probe: EMPTY_PROBE,
+					locators: [{ type: 'engine-store', engineId: 'local', key: `mk_${hash.slice(0, 24)}` }],
+					derivation: null,
+					mgBundle: {
+						remotionVersion: '4.0.499',
+						bundleHash: hash,
+						builtAt: '2026-10-01T00:00:00.000Z',
+						source: { type: 'bundle-upload', path: null, name: 'mg' },
+						compositions: [
+							{
+								id: 'Title',
+								width: 1920,
+								height: 1080,
+								fps: 25,
+								durationInFrames: 75,
+								defaultProps: { title: 'Hi' },
+								propsSchema: { type: 'object', properties: { title: { type: 'string' } } },
+								schemaSource: 'inferred',
+							},
+						],
+					},
+				},
+			},
+		]);
+		const mediaId = (reg.results[0] as { mediaId: string }).mediaId;
+		const clipId = (
+			d.tx([{ type: 'clip.addComposition', composition: { mediaId, id: 'Title' }, at: 10, track: 'V2' }])
+				.results[0] as { clipId: string }
+		).clipId;
+		// Trimmed: the export renders frames 12…89 only, the preview the whole composition.
+		d.tx([{ type: 'clip.trim', clipId, edge: 'in', deltaFrames: 12, mode: 'regular' }]);
+		const refs = projectCacheRefs(d.doc, prerenderKey);
+		expect([...refs.fingerprints].sort()).toEqual([hash, FP].sort());
+		expect([...refs.bundleHashes]).toEqual([hash]);
+		// The export's master request (mg native extension) and the editor's preview request (whole composition at
+		// the sequence rate: 75 frames at 25 fps = 90 frames at 30 fps).
+		const snap = buildRenderSnapshot(d.doc, d.seqId, { resolveMedia: () => null, resolveFont: () => null });
+		const master = masterRequests(snap)[0]!.req;
+		const { quality: _q, mediaKey: _m, ...preview } = { ...master, startFrame: 0, durationFrames: 90 };
+		expect([...refs.mgRenderKeys].sort()).toEqual(
+			[prerenderKey(master, hash), prerenderKey(preview, hash)].sort(),
+		);
+		// Another sequence rate or other props → other keys (the old renders become unreferenced).
+		d.tx([{ type: 'clip.update', clipId, patch: { props: { title: 'Changed' } } }]);
+		const changed = projectCacheRefs(d.doc, prerenderKey);
+		expect([...changed.mgRenderKeys].some((k) => refs.mgRenderKeys.has(k))).toBe(false);
+		// Tolerant of junk.
+		expect(
+			projectCacheRefs({ media: { x: { fingerprint: 'nope' } }, sequences: { s: {} } }, prerenderKey),
+		).toEqual({
+			fingerprints: new Set(),
+			mgRenderKeys: new Set(),
+			bundleHashes: new Set(),
+		});
+	});
+});
+
 describe('cache registry and cleaning (CA-011…CA-018)', () => {
 	let app: TestApp;
 	let cache: CacheService;
@@ -272,6 +346,11 @@ describe('cache registry and cleaning (CA-011…CA-018)', () => {
 		expect(existsSync(s2.otherPoster)).toBe(false);
 		expect(r.keptInUse).toBeGreaterThanOrEqual(3);
 		coreServices(app).leases.release(saved, lease.leaseId);
+		// A read-only editor window (no lease; its agent relay connection says the project is open) keeps them too.
+		const off = cache.addOpenProbe((pid) => pid === saved);
+		await clean('all');
+		expect(existsSync(s2.poster)).toBe(true);
+		off();
 		await clean('all');
 		expect(existsSync(s2.poster)).toBe(false);
 		rmProject(app.appdir, saved);
@@ -671,6 +750,12 @@ describe('exports hold and record their cache entries (CA-016, S06:CG-056)', () 
 		await cache.clean('unused');
 		expect(readdirSync(lutDir).filter((f) => f.endsWith('.cube'))).toHaveLength(1);
 		expect(readdirSync(warpDir).filter((f) => f.endsWith('.mov'))).toHaveLength(1);
+		// Ten minutes later (past the grace window that protects files just written or read):
+		const later = 10 * 60 * 1000;
+		for (const id of cache.index.access.keys()) cache.index.access.set(id, Date.now() - later);
+		for (const dir of [lutDir, warpDir]) for (const f of readdirSync(dir)) age(join(dir, f), later);
+		await cache.clean('unused');
+		expect(readdirSync(lutDir).filter((f) => f.endsWith('.cube'))).toHaveLength(1);
 		await cache.clean('all');
 		expect(readdirSync(lutDir).filter((f) => f.endsWith('.cube'))).toHaveLength(0);
 		expect(readdirSync(warpDir).filter((f) => f.endsWith('.mov'))).toHaveLength(0);
