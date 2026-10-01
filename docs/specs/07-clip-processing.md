@@ -83,8 +83,9 @@ Requirement ids: `PRC-NNN` (processing model and jobs), `PST-NNN` (steps), `PRM-
 
 ### 4.1 Stabilise
 
-- **PST-001 (P0)** `{op:'stabilize', method: 'auto'|'vidstab'|'deshake', smoothing (frames), borders:
-  'crop'|'keep', shakiness?, rotation?}`. `vidstab` = libvidstab compiled to **WebAssembly** (PST-002a), the
+- **PST-001 (P0)** `{op:'stabilize', method: 'auto'|'vidstab'|'deshake'|'smoothpath', smoothing (frames), borders:
+  'crop'|'keep', shakiness?, rotation?, lockVertical?, lockRotation?, maxZoom?}` (`smoothpath` and its three
+  fields: PST-005, M3). `vidstab` = libvidstab compiled to **WebAssembly** (PST-002a), the
   same code path on Linux, Windows and macOS; `auto` = vid.stab, falling back to `deshake` only when the WASM
   module cannot be loaded. *(Revised 2026-10-01, producer decision: vid.stab must work on all three OSes, not
   only through a Linux FFmpeg build.)*
@@ -126,6 +127,42 @@ Requirement ids: `PRC-NNN` (processing model and jobs), `PST-NNN` (steps), `PRM-
      (`features.processing.stabilize = 'vidstab'`); `deshake` only when the module is missing.
 - **PST-004 (P0)** deshake (last resort): `deshake=edge=<clamp|blank>:rx=32:ry=32:blocksize=8:contrast=125`, then
   for `borders: 'crop'` a fixed centre crop + scale back of 4 % (deshake has no optimal zoom).
+
+- **PST-005 (P0, M3 `wp-m3-stabpath`) Smooth path** ("trayectoria suavizada"). For a shot from a fixed position
+  with ONE sudden operator reframe / jerk, or a slow uneven drift, that should become a single even camera move.
+  vid.stab is made for continuous handheld jitter: with a very long smoothing window it turned the trailer's T01
+  reframe into a drift but injected vertical bobbing (up to 8 px/frame at 1080p). Algorithm (port of the trailer's
+  `grade/tools/smoothstab.py`):
+  1. Motion: the step's input decoded as 8-bit luma, ≤ 960 px wide; Shi-Tomasi corners (`maxCorners 2000,
+     quality 0.01, minDistance 6`) tracked into the next frame with pyramidal Lucas-Kanade (`21×21`, 3 levels) —
+     OpenCV.js in the worker pool (PST-014); one similarity (tx, ty, rotation, scale) per pair by RANSAC
+     (2-point samples, 1.5 px at the tracking size, deterministic seed) + a robust least-squares refinement on
+     the inliers (adaptive threshold 3·1.4826·median residual, between ⅓ and 1× the RANSAC threshold): the
+     background wins, people moving through the shot are outliers. Pairs with < 12 inliers (cuts, blur, flat
+     frames) count as still; a note reports them when they exceed a quarter of the shot.
+  2. Path: the similarities accumulate to the camera path about the frame centre (frame 0 = reference);
+     x, scale (and y / roll unless locked) are smoothed with a Gaussian of sigma = `smoothing` frames (radius
+     ⌊3σ⌋, edge values held); `lockVertical` / `lockRotation` replace y / roll by their least-squares straight
+     line (no intended tilt / roll).
+  3. Correction_i = smoothed_i ∘ actual_i⁻¹. `borders: 'crop'`: ONE static zoom about the centre for the whole
+     shot — the smallest that keeps every output corner inside the source frame (½ px margin; bisection; +0.2 %,
+     never above the cap) — capped by `maxZoom` (percent, default 112). When the requested smoothing needs more
+     than the cap, the step uses the largest smoothing that fits (bisection on sigma keeping the locks; if even a
+     tiny sigma with the locks does not fit, without them) and a job note explains it ("smoothing 30.0 frames
+     needs 118.7 % zoom, above the 112.0 % cap — used the largest smoothing that fits: 13.8 frames. Raise Max
+     zoom to keep the requested smoothing."). `borders: 'keep'`: no zoom, black moving borders.
+  4. Warp: one resampling per frame, 16-bit RGB, through the vid.stab WASM warp kernel (bicubic, worker threads;
+     the similarity is expressed exactly as vid.stab's transform), edges replicated as a safety net only.
+
+  Report (job notes, shown in the success toast, + sidecar `steps[i].info`): zoom used, raw vs smoothed peak
+  camera speed in px/frame scaled to a 1920-wide frame (and peak acceleration), camera travel and rotation,
+  sigma / locks used, fallback, tracking size, failed pairs, min inliers, timings. Placed after de-judder
+  (PST-021 order), as in the trailer. Availability: `features.processing.smoothPath = 'ready'` when OpenCV.js
+  and the vid.stab WASM module load; otherwise the step fails with `SMOOTHPATH_UNAVAILABLE` (never silently
+  replaced by another method). vid.stab stays the default method. Validation (crudo.mp4 frames 0–124,
+  de-judder auto + smooth path σ 30, both locks, cap 112 %): zoom 111.2 %, camera speed 20.5 → 4.1 px/frame;
+  independent OpenCV measurement on the output: peak 4.28 px/frame, peak acceleration 0.61 (the trailer's
+  T01.mov: 4.44 / 0.98); the same numbers on the remote executor.
 
 ### 4.2 De-judder (frame cadence)
 
@@ -222,8 +259,10 @@ Requirement ids: `PRC-NNN` (processing model and jobs), `PST-NNN` (steps), `PRM-
 
 - **PRU-001 (P0)** **Process Clip…** dialog, from the timeline clip menu (`clipMenuExtensions`), the Project item
   menu (`projectItemMenuExtensions`), the Clip menu and the command palette: step checkboxes in the fixed order of
-  PST-021 with their options (presets Light/Medium/Strong for denoise; smoothing slider and borders for
-  stabilise; model, scale and output size for upscale with the model's licence/attribution line and an Install
+  PST-021 with their options (presets Light/Medium/Strong for denoise; for stabilise the method — Auto / vid.stab /
+  Smooth path (one even move) / deshake — with a one-line explanation of when to use it, then smoothing slider,
+  borders and rotation, or for Smooth path (M3) path smoothing (frames), Lock Vertical (no tilt) / Rotation
+  (level horizon), borders ("Crop (one fixed zoom)") and Max zoom (101–150 %, crop only); model, scale and output size for upscale with the model's licence/attribution line and an Install
   button when missing), executor (Auto / This computer / Remote: <host>) with the probe status, estimated time,
   "Replace in timeline when done" (default on for clip entry points).
 - **PRU-002 (P0)** Progress in the Jobs panel (stage per step, remote upload/download percentages). When done and
@@ -259,6 +298,11 @@ Requirement ids: `PRC-NNN` (processing model and jobs), `PST-NNN` (steps), `PRM-
    seeded random walk of ±24 px) — the global inter-frame motion (phase correlation) variance drops ≥ 60 % with
    vid.stab and ≥ 40 % with deshake; `pnpm ffmpeg:check` passes with the vid.stab build and fails for a build
    recording any other libvidstab commit.
+3b. **Smooth path** (M3): `reframe.mp4` (a jerky 160 px reframe with a vertical bump and a slow drift, plus a
+   textured subject crossing the frame on its own): the measured camera travel equals the fixture's path
+   (± 1.5 px, the subject ignored), the zoom stays ≤ the cap, the smoothed peak speed is < 40 % of the raw one,
+   and an independent column-profile measurement on the output shows the peak frame-to-frame motion halved and
+   no frame-to-frame jump > 2 px; with a 104 % cap and smoothing 60 the job falls back and says so.
 4. **De-judder**: a synthetic 50→30 fps decimated pan (`judder.mp4`) is detected (consistency ≥ 0.8) and after
    processing the per-pair motion steps' coefficient of variation drops ≥ 50 %; a steady 30 fps pan is left
    unchanged in `auto` mode (note "no cadence found").

@@ -116,6 +116,13 @@ Every step keeps the frame count and rate, so timing never changes; the export r
   works on Linux, Windows and macOS; FFmpeg's own vid.stab filters are an optional faster path with our LGPL
   source build (`pnpm ffmpeg:lgpl --from-source`, accepted by `pnpm ffmpeg:check` only for the pinned commit);
   `deshake` is the last resort.
+- Stabilise ▸ **Smooth path (one even move)** (M3, `docs/wp-notes/wp-m3-stabpath.md`): for a shot from a fixed
+  position with one sudden reframe / jerk or a slow uneven drift. It tracks the background (people moving
+  through the shot are ignored), smooths the camera path (Smoothing = Gaussian sigma in frames, 30 is a good
+  start), can lock the vertical path and the rotation to a straight line, and uses ONE fixed zoom for the whole
+  shot, capped by *Max zoom* (default 112 %; when the smoothing needs more, the largest smoothing that fits is
+  used and the finished-job message says so, with the zoom and the peak camera speed before → after). vid.stab
+  stays the default for handheld jitter.
 - De-judder: cadence analysis + flow warp with OpenCV.js (Apache-2.0) in worker threads.
 - Denoise/deblock: LGPL FFmpeg filters only (`atadenoise`, `fftdnoiz`, `nlmeans`, `deblock`).
 - Upscale: ONNX Runtime (`onnxruntime-node`, MIT) with the bundled SPAN 2× model
