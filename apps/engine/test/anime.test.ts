@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EngineCapabilitiesSchema, LicensesResponseSchema } from '@jasper/api';
+import { mgRegistry } from '@jasper/mg-templates';
+import { TEXT_ANIMATION_SPECS } from '@jasper/project';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ANIMEJS_PINNED_VERSION, animejsPackageDir, animeLicense } from '../src/anime/index.ts';
 import type { LayerOverride } from '../src/export/native-ext.ts';
@@ -58,7 +60,23 @@ describe('anime.js on the engine (routes/anime.ts)', () => {
 		const caps = EngineCapabilitiesSchema.parse(
 			(await app.inject({ method: 'GET', url: '/api/capabilities', headers: H })).json(),
 		);
-		expect(caps.features?.anime).toEqual({ animejs: '4.5.0', textPresets: 0, templates: 0 });
+		expect(caps.features?.anime).toEqual({
+			animejs: '4.5.0',
+			textPresets: TEXT_ANIMATION_SPECS.length,
+			templates: mgRegistry.list().filter((t) => t.renderer === 'anime').length,
+		});
+	});
+	it('packaged-like: without the installed package, the committed licence text and the pinned version', () => {
+		const lic = animeLicense(null);
+		expect(lic).toMatchObject({
+			id: 'animejs',
+			version: ANIMEJS_PINNED_VERSION,
+			license: 'MIT',
+			bundled: true,
+		});
+		expect(lic.texts[0]!.text).toBe(
+			readFileSync(join(repo, 'apps/engine/src/anime/third-party/LICENSE-animejs.txt'), 'utf8'),
+		);
 	});
 });
 

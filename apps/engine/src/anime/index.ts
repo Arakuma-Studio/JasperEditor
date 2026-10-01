@@ -52,9 +52,12 @@ export function animejsVersion(dir = animejsPackageDir()): string {
 		: ANIMEJS_PINNED_VERSION;
 }
 
-/** About ▸ Licenses entry (S11 acceptance 8). */
-export function animeLicense(): LicenseComponent {
-	const dir = animejsPackageDir();
+/**
+ * About ▸ Licenses entry (S11 acceptance 8). `installed` is the anime.js package directory (dev/workspace runs);
+ * packaged engines cannot resolve it (anime.js lives in the Remotion bundle) and read the committed copy.
+ */
+export function animeLicense(installed: string | null = animejsPackageDir()): LicenseComponent {
+	const dir = installed;
 	const text =
 		(dir && readFirst([join(dir, 'LICENSE.md'), join(dir, 'LICENSE')])) ??
 		// Committed copy (src/anime/third-party), copied next to the bundled engine by scripts/build.mjs.

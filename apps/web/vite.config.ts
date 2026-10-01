@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 
 const ENGINE = process.env.JASPER_ENGINE_URL ?? 'http://127.0.0.1:47900';
 const WS_ENGINE = ENGINE.replace(/^http/, 'ws');
@@ -9,8 +11,44 @@ const WS_ENGINE = ENGINE.replace(/^http/, 'ws');
 // kept (changeOrigin: false); the dev engine accepts 127.0.0.1:5173 / localhost:5173.
 const http = { target: ENGINE, changeOrigin: false };
 
+// S11:FIX-010: the JavaScript third-party notices (generated at the repo root by `pnpm notices`) ship with the
+// web build as /THIRD_PARTY_NOTICES.md (Help ▸ About links to it); the dev server serves the same file.
+export const NOTICES_FILE = 'THIRD_PARTY_NOTICES.md';
+function thirdPartyNotices(): Plugin {
+	const source = () => readFileSync(fileURLToPath(new URL(`../../${NOTICES_FILE}`, import.meta.url)), 'utf8');
+	return {
+		name: 'jasper-third-party-notices',
+		configureServer(server) {
+			server.middlewares.use(`/${NOTICES_FILE}`, (_req, res) => {
+				res.setHeader('content-type', 'text/markdown; charset=utf-8');
+				res.end(source());
+			});
+		},
+		generateBundle() {
+			this.emitFile({ type: 'asset', fileName: NOTICES_FILE, source: source() });
+		},
+	};
+}
+
+/** Vendor chunk of a module id (stable chunks so app changes do not invalidate them, ARCHITECTURE §13). */
+export function vendorChunk(id: string): string | undefined {
+	// The pure model (schema, commands, render snapshot) is the biggest first-party module and changes less
+	// often than the app: its own chunk keeps the entry chunk under 500 kB.
+	if (/[\\/]packages[\\/]project[\\/]src[\\/]/.test(id)) return 'app-project';
+	if (!id.includes('node_modules')) return undefined;
+	if (/[\\/](remotion|@remotion)[\\/]/.test(id)) return 'vendor-remotion';
+	// S11:ANM-023: anime.js (reached through @jasper/compositions → @jasper/motion) in its own chunk.
+	if (/[\\/]animejs[\\/]/.test(id)) return 'vendor-anime';
+	if (/[\\/](dockview|dockview-core|dockview-react)[\\/]/.test(id)) return 'vendor-dockview';
+	if (/[\\/](@radix-ui|radix-ui|@floating-ui)[\\/]/.test(id)) return 'vendor-radix';
+	if (/[\\/](react|react-dom|scheduler|react-router)[\\/]/.test(id)) return 'vendor-react';
+	if (/[\\/](zod|immer|zustand)[\\/]/.test(id)) return 'vendor-state';
+	if (/[\\/]lucide-react[\\/]/.test(id)) return 'vendor-icons';
+	return 'vendor';
+}
+
 export default defineConfig({
-	plugins: [react(), tailwindcss()],
+	plugins: [react(), tailwindcss(), thirdPartyNotices()],
 	server: {
 		host: '127.0.0.1',
 		port: 5173,
@@ -33,20 +71,7 @@ export default defineConfig({
 		target: 'es2022',
 		rollupOptions: {
 			output: {
-				// Stable vendor chunks so app changes do not invalidate them (ARCHITECTURE §13 startup).
-				manualChunks(id) {
-					// The pure model (schema, commands, render snapshot) is the biggest first-party module and
-					// changes less often than the app: its own chunk keeps the entry chunk under 500 kB.
-					if (/[\\/]packages[\\/]project[\\/]src[\\/]/.test(id)) return 'app-project';
-					if (!id.includes('node_modules')) return undefined;
-					if (/[\\/](remotion|@remotion)[\\/]/.test(id)) return 'vendor-remotion';
-					if (/[\\/](dockview|dockview-core|dockview-react)[\\/]/.test(id)) return 'vendor-dockview';
-					if (/[\\/](@radix-ui|radix-ui|@floating-ui)[\\/]/.test(id)) return 'vendor-radix';
-					if (/[\\/](react|react-dom|scheduler|react-router)[\\/]/.test(id)) return 'vendor-react';
-					if (/[\\/](zod|immer|zustand)[\\/]/.test(id)) return 'vendor-state';
-					if (/[\\/]lucide-react[\\/]/.test(id)) return 'vendor-icons';
-					return 'vendor';
-				},
+				manualChunks: vendorChunk,
 			},
 		},
 	},

@@ -8,7 +8,8 @@
 //   1. LGPL FFmpeg + Remotion binaries directory for the target (`pnpm ffmpeg:lgpl --platform <key>`)
 //      → vendor/ffmpeg-lgpl/<platform>-<arch>, staged as vendor/ffmpeg-lgpl/.package/<os>-<arch> and
 //      shipped as <resources>/ffmpeg-lgpl.
-//   2. `pnpm build` and the prebuilt Remotion bundle + fonts (`build:remotion`).
+//   2. `pnpm build` and the prebuilt Remotion bundle + fonts (`build:remotion`); THIRD_PARTY_NOTICES.md must be
+//      current (`pnpm notices --check`) and present in the web build.
 //   3. apps/engine/dist-deploy: engine.mjs, remotion-bundle/, fonts/ and node_modules with the runtime
 //      closure of @remotion/renderer copied from this workspace (the locked versions) WITHOUT optional
 //      dependencies — so no @remotion/compositor-* package (they bundle a GPL FFmpeg) is ever staged.
@@ -67,6 +68,10 @@ if (!flag('skip-build')) {
 for (const f of ['dist/engine.mjs', 'dist/remotion-bundle/index.html', 'dist/fonts'])
 	if (!existsSync(join(engine, f))) fail(`apps/engine/${f} is missing (run without --skip-build)`);
 if (!existsSync(join(root, 'apps/web/dist/index.html'))) fail('apps/web/dist is missing');
+// S11:FIX-010: the JavaScript third-party notices must be current; the web build ships them (Help ▸ About).
+run('node', ['scripts/third-party-notices.mjs', '--check']);
+if (!existsSync(join(root, 'apps/web/dist/THIRD_PARTY_NOTICES.md')))
+	fail('apps/web/dist/THIRD_PARTY_NOTICES.md is missing (rebuild the web app)');
 
 // ------------------------------------------------------------------ 3. engine deploy directory
 const deploy = join(engine, 'dist-deploy');
@@ -75,6 +80,8 @@ mkdirSync(deploy, { recursive: true });
 cpSync(join(engine, 'dist', 'engine.mjs'), join(deploy, 'engine.mjs'));
 cpSync(join(engine, 'dist', 'remotion-bundle'), join(deploy, 'remotion-bundle'), { recursive: true });
 cpSync(join(engine, 'dist', 'fonts'), join(deploy, 'fonts'), { recursive: true });
+// S11:FIX-010: a copy next to the engine too (<resources>/engine/THIRD_PARTY_NOTICES.md).
+cpSync(join(root, 'THIRD_PARTY_NOTICES.md'), join(deploy, 'THIRD_PARTY_NOTICES.md'));
 // Clip processing (wp-m2-process): jasper-proc + its worker, the vid.stab WASM module, models, licence texts.
 for (const f of [
 	'jasper-proc.mjs',
