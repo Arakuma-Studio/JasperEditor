@@ -1,6 +1,6 @@
 # Spec 11: In-video animation (anime.js), text animators, animated templates, layer bake, shapes
 
-Status: functional spec, v1 (2026-10-01), milestone M2. Audience: the implementers of `wp-m2-anime-contracts`,
+Status: functional spec, v1.1 (2026-10-01; v1.1: graded masters for the Remotion path are PNG sequences, LBK-010/021), milestone M2. Audience: the implementers of `wp-m2-anime-contracts`,
 `wp-m2-anime-core`, `wp-m2-text-anim`, `wp-m2-anime-templates`, `wp-m2-layer-bake` and `wp-m2-shapes`.
 Architecture contracts: `docs/ARCHITECTURE.md` D-31, D-32 and §20. Research: `docs/research/animejs-v4-notes.md`.
 Related specs: S01 (KND-006 text, KND-009 motion graphic, §21 agents), S03 (§5.6 shapes KND-055, KND-065, TXT-020,
@@ -265,8 +265,10 @@ authored animation timelines (JSON "AnimSpec", M3); on-canvas text editing (TXT-
     colour extension's filter (pointwise LUT on straight-alpha RGB — equal to grading before placement because
     colour ops are pointwise, D-21);
   - Remotion export and stills: `prepareForRemotion: true`; for DOM layers with colour effects the bake also writes a
-    graded master (bake + `lut3d`), and `adaptRemotionDoc` injects its signed URL so the composition plays it
-    through `<OffthreadVideo transparent>` (S08:MGC-033 pattern);
+    graded master (bake + `lut3d`, plus the clip's fades for still-recipe sources) as a straight-alpha PNG frame
+    sequence — Remotion's compositor drops the alpha of PNG-in-MOV and decodes ProRes 4444 / VP9 alpha up to 6/255
+    off — and `adaptRemotionDoc` injects one signed URL (`graded.png?n=<frame>`) so the composition shows each
+    frame with `<Img>` (S08:MGC-033 pattern, v1.1 of this spec);
   - preview: the web runtime requests a graded VP9-alpha preview (`POST /api/layer-bake/preview`, 2 s after the last
     change, S08:MGC-023 pattern); until it exists the layer shows ungraded with the existing "Grade pending" chip.
 - **LBK-020 (P0) Render key.** `sha256(canonicalJson({v, recipe, clip: normalised RenderVisualClip (clipId
@@ -274,7 +276,7 @@ authored animation timelines (JSON "AnimSpec", M3); on-canvas text editing (TXT-
   style, fileSha256}], media: [{mediaId, fingerprint, size, mtime}] (incl. LUT assets), bundleId, animejs,
   remotion: '4.0.499', browser: executable identity, gl, still, rect, graded}))[:40]`. `bundleId` = the dev
   `sourceHash` or, for packaged builds, a stamp written by `build-remotion.mjs` (bundle content hash).
-- **LBK-021 (P0) Cache.** `<appdir>/cache/layers/<key>/{master.mov|still.png, graded.mov?, preview.webm?,
+- **LBK-021 (P0) Cache.** `<appdir>/cache/layers/<key>/{master.mov|still.png, graded/NNNNNN.png?, preview.webm?,
   meta.json}`; `meta.json` has `lastUsedAt`; GC removes entries unused for 14 days (a `gc` pass like mg).
 - **LBK-022 (P0) Jobs.** Job kind `layer-bake` (reserved in `JOB_KINDS`), child of the export/still job (`cpuSlots:
   0`, `minSlots: 0`, dedupe `layer-bake:<key>:<parent>`, abort propagation), stage text "Baking graphics i/n",
