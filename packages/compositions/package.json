@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./remotion-entry": "./src/remotion-entry.ts",
-    "./mg-host": "./src/mg-host/protocol.ts"
+    "./mg-host": "./src/mg-host/protocol.ts",
+    "./render-host": "./src/render-host.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",

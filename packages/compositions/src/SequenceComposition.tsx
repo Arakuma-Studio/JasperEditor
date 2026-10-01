@@ -6,6 +6,8 @@
 // Transitions (S01 §13): a clip's Sequence also covers its handles (content before the in-point and after the
 // out-point), its opacity is multiplied by the transition ramps, and a track's mattes (the black of a dip to
 // black) are drawn under its clips.
+// Paint parity (S11:ANM-014): the last child of the root, `FrameRepaint`, has Chrome paint every rendered frame
+// (and every paused Player frame) from scratch, so the pixels never depend on the frames painted before.
 // Re-render budget (S03:ARC-011, NFR-003): `ClipLayer` reads the frame and resolves the clip's values
 // (static clips resolve to the same cached object), then hands them to a memoized `LayerView` that
 // skips rendering when nothing it draws changed. Layers that draw per-frame content (motion graphics, animated
@@ -17,13 +19,14 @@ import {
 	type ResolvedLayerProps,
 	resolveLayerProps,
 } from '@jasper/project';
-import { type ComponentType, memo, useMemo } from 'react';
+import { type ComponentType, memo, useMemo, useRef } from 'react';
 import { AbsoluteFill, Sequence, useCurrentFrame } from 'remotion';
 import { ColorDocContext, type ColorDocValue } from './color/chain.ts';
 import { FontsReadyContext, useFontsReadyState, useLayerFontsReady } from './fonts.ts';
 import { AudioLayer, layerComponentFor } from './layers/index.ts';
 import { rgbaCss } from './metadata.ts';
 import { premountFrames } from './pipeline.ts';
+import { FrameRepaint } from './repaint.tsx';
 import type { LayerProps, RenderDoc, RenderOptions, SequenceCompositionProps } from './types.ts';
 
 /** Kinds whose layer output depends on the frame beyond what `ResolvedLayerProps` captures. */
@@ -154,6 +157,7 @@ const ClipLayer = memo(function ClipLayer({
 });
 
 export function SequenceComposition({ doc, options }: SequenceCompositionProps) {
+	const root = useRef<HTMLDivElement>(null);
 	const fontsReady = useFontsReadyState(doc.fonts);
 	const fps = doc.settings.fps.num / doc.settings.fps.den;
 	const offset = doc.range.start;
@@ -180,7 +184,10 @@ export function SequenceComposition({ doc, options }: SequenceCompositionProps) 
 	return (
 		<FontsReadyContext.Provider value={fontsReady}>
 			<ColorDocContext.Provider value={color}>
-				<AbsoluteFill style={{ backgroundColor: background, overflow: 'hidden', isolation: 'isolate' }}>
+				<AbsoluteFill
+					ref={root}
+					style={{ backgroundColor: background, overflow: 'hidden', isolation: 'isolate' }}
+				>
 					{tracks.map((track) => (
 						<AbsoluteFill key={track.trackId} data-track-id={track.trackId}>
 							{track.mattes.map((m) => (
@@ -234,6 +241,8 @@ export function SequenceComposition({ doc, options }: SequenceCompositionProps) 
 							</Sequence>
 						);
 					})}
+					{/* Last child: every frame is captured as a fresh paint of the settled DOM (repaint.tsx). */}
+					<FrameRepaint target={root} deps={[doc, options]} />
 				</AbsoluteFill>
 			</ColorDocContext.Provider>
 		</FontsReadyContext.Provider>

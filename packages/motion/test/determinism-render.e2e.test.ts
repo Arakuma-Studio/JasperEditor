@@ -8,7 +8,11 @@
 // to `renderFrames` (the frame stage of `renderMedia`) at concurrency 1 and 4 and to one renderer page visiting
 // the frames reversed and shuffled (<Freeze> compositions); `renderMedia` ProRes 4444 at concurrency 1 and 4
 // decodes to identical pixels; the @remotion/player frame matches `renderStill` within 3/255 on ≥ 99.5 % of the
-// pixels. The cost of the value engine for a 200-unit title is measured in the same Chrome.
+// pixels, and a paused Player revisiting frames in any order shows byte-identical pixels. The cost of the value engine
+// for a 200-unit title is measured in the same Chrome.
+// Both compositions repaint every rendered (and paused) frame from scratch (FrameRepaint,
+// packages/compositions/src/repaint.tsx); the render browser creates its pages in their own windows like the engine
+// does with a full Chrome (packages/compositions/src/render-host.ts).
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -16,6 +20,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { renderPagesInOwnWindows } from '../../compositions/src/render-host.ts';
 import { SCENE } from './determinism-fixtures.tsx';
 import { PARITY_DOC_FRAMES, parityDoc } from './determinism-render/doc.ts';
 import { reversedOrder, shuffledOrder } from './determinism-render/order.ts';
@@ -86,6 +91,8 @@ describe.runIf(enabled)('render parity (REMOTION_E2E=1, S11:ANM-014/015)', { tim
 		const { bundle } = fromCompositions('@remotion/bundler');
 		serveUrl = await bundle({ entryPoint: join(here, 'determinism-render', 'entry.tsx') });
 		browser = await r.openBrowser('chrome', { ...browserOpts });
+		// A full Chrome (new headless mode) would open the concurrent pages as hidden tabs (render-host.ts).
+		if (CHROME) expect(renderPagesInOwnWindows(browser)).toBe(true);
 	}, 900_000);
 	afterAll(async () => {
 		await browser?.close({ silent: true });
@@ -261,6 +268,42 @@ describe.runIf(enabled)('render parity (REMOTION_E2E=1, S11:ANM-014/015)', { tim
 				writeFileSync(join(work, `player-${id}.json`), JSON.stringify(report, null, 2));
 				for (const [f, fraction] of Object.entries(report))
 					expect(fraction, `frame ${f}`).toBeLessThanOrEqual(0.005);
+			});
+
+		// Chrome repaints incrementally (partial raster): before FrameRepaint, ~30 % of these revisits of the Sequence
+		// (identical DOM) differed by up to 60/255 at the edges of what the frames in between had changed.
+		for (const id of ['AnimeScene', 'Sequence'])
+			it(`${id}: a paused Player revisiting frames in any order shows byte-identical pixels`, async () => {
+				const props =
+					id === 'Sequence'
+						? { doc, options: { isPreview: true, useProxies: false, transparentBackground: false } }
+						: {};
+				await page.reload();
+				await page.evaluate(
+					([which, p]) =>
+						(window as never as { __parity: { mount(w: string, p: unknown): void } }).__parity.mount(
+							which,
+							p,
+						),
+					[id === 'Sequence' ? 'sequence' : 'scene', props] as const,
+				);
+				const visits = [...Array.from({ length: N }, (_, i) => i), ...shuffledOrder(N), ...reversedOrder(N)];
+				const first = new Map<number, Buffer>();
+				const differing: string[] = [];
+				for (const [i, f] of visits.entries()) {
+					await page.evaluate(
+						(frame) =>
+							(window as never as { __parity: { seek(f: number): Promise<void> } }).__parity.seek(frame),
+						f,
+					);
+					const shot = await page.screenshot({
+						clip: { x: 0, y: 0, width: SCENE.width, height: SCENE.height },
+					});
+					const was = first.get(f);
+					if (!was) first.set(f, shot);
+					else if (!was.equals(shot)) differing.push(`frame ${f} (visit ${i})`);
+				}
+				expect(differing).toEqual([]);
 			});
 
 		it('ANM-015: a 200-unit title computes its values in ≤ 2 ms per frame (median, first visits)', async () => {

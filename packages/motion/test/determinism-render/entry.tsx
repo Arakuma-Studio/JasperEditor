@@ -1,20 +1,17 @@
 // Remotion entry of the render-parity e2e (S11:ANM-014, REMOTION_E2E=1). Compositions:
-// - AnimeScene: the fixture scene (determinism-fixtures.tsx) driven by the current frame;
+// - AnimeScene: the fixture scene (determinism-fixtures.tsx) driven by the current frame (scene.tsx);
 // - Sequence: the real SequenceComposition with the parity document (inputProps {doc, options});
 // - <name>Reversed / <name>Shuffled: output frame i shows frame order[i] through <Freeze>, so one renderer page
 //   visits the frames in that order (the history a reused page accumulates is what the canonical seek defeats).
 import type { ComponentType } from 'react';
 import { Composition, Freeze, registerRoot, useCurrentFrame } from 'remotion';
 import { SequenceComposition } from '../../../compositions/src/SequenceComposition.tsx';
-import { FixtureScene, SCENE } from '../determinism-fixtures.tsx';
+import { SCENE } from '../determinism-fixtures.tsx';
 import { reversedOrder, shuffledOrder } from './order.ts';
+import { AnimeScene } from './scene.tsx';
 
 type AnyProps = Record<string, unknown>;
 const N = SCENE.durationInFrames;
-
-function AnimeScene() {
-	return <FixtureScene frame={useCurrentFrame()} />;
-}
 
 function ordered(Inner: ComponentType<AnyProps>, order: readonly number[]): ComponentType<AnyProps> {
 	return function Ordered(props: AnyProps) {
