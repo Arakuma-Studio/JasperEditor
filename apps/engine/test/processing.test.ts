@@ -3,7 +3,7 @@
 // processed ProRes file.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { EngineJob, ProcessResult } from '@jasper/api';
@@ -13,6 +13,7 @@ import { writeTinySrModel } from '../src/processing/proc/tiny-onnx.ts';
 import { VIDSTAB_PIN } from '../src/processing/vidstab-pin.ts';
 import {
 	closeApps,
+	DocBuilder,
 	ensureFixtures,
 	fixture,
 	JSON_H,
@@ -318,4 +319,86 @@ describe('process jobs (local)', () => {
 		});
 		expect(ls.stdout.trim()).toBe('');
 	}, 120_000);
+
+	it('a sequence using a processed version plans native and exports reading the ProRes file (S07 §8 test 8)', async () => {
+		// A private copy of the source: it is deleted before the export, so the export can only read the
+		// processed file.
+		const copy = join(mkdtempSync(join(tmpdir(), 'jasper-src-')), 'clip-b-copy.mp4');
+		copyFileSync(fixture('clip-b.mp4'), copy);
+		writeFileSync(copy, readFileSync(copy)); // fresh mtime
+		const m = await register(app, copy);
+		const steps = [{ op: 'denoise', method: 'atadenoise', strength: 0.2 }];
+		const r = await app.inject({
+			method: 'POST',
+			url: `/api/media/${m.mediaKey}/process`,
+			headers: JSON_H,
+			payload: { steps, executor: 'local' },
+		});
+		const job = await waitJob((r.json() as EngineJob).id);
+		const res = job.result as ProcessResult;
+		const d = new DocBuilder('hd-720p-30');
+		const original = d.addMedia(m);
+		const placed = d.tx([{ type: 'clip.place', source: { mediaId: original }, at: 0, ref: '$c' }]);
+		const clipId = placed.refs.$c!;
+		const reg = res.registered;
+		const derived = d.tx([
+			{
+				type: 'media.derive',
+				fromMediaId: original,
+				recipe: { op: 'process', steps },
+				asset: {
+					fingerprint: reg.fingerprint,
+					originalName: reg.originalName,
+					sizeBytes: reg.sizeBytes,
+					container: reg.container,
+					probe: reg.probe,
+					locators: [{ type: 'engine-store', engineId: 'local', key: reg.mediaKey }],
+					recipeVersion: res.recipeVersion,
+					recipeHash: res.recipeHash,
+				},
+				replaceInClips: [clipId],
+				ref: '$p',
+			},
+		]);
+		const processedId = derived.refs.$p!;
+		const clip = d.doc.sequences[d.seqId]!.clips[clipId] as unknown as { mediaId: string };
+		expect(clip.mediaId).toBe(processedId);
+		const settings = {
+			sequenceId: d.seqId,
+			range: { type: 'entire' },
+			container: 'mp4',
+			video: {
+				codec: 'h264',
+				width: 1280,
+				height: 720,
+				frameRate: { num: 30, den: 1 },
+				scaling: 'fit',
+				quality: { mode: 'crf', value: 23 },
+				encoderSpeed: 'fast',
+				colorTags: 'rec709',
+			},
+			audio: { codec: 'aac', sampleRate: 48000, channels: 2 },
+			engine: 'auto',
+		};
+		rmSync(copy);
+		const plan = await app.inject({
+			method: 'POST',
+			url: '/api/exports/plan',
+			headers: JSON_H,
+			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings },
+		});
+		expect(plan.statusCode).toBe(200);
+		expect(plan.json()).toMatchObject({ path: 'native', blockers: [] });
+		const start = await app.inject({
+			method: 'POST',
+			url: '/api/exports',
+			headers: JSON_H,
+			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings },
+		});
+		expect(start.statusCode).toBe(202);
+		const done = await waitJob(start.json().id);
+		expect(done.error).toBeUndefined();
+		expect((done.result as { renderPath: string; frames: number }).renderPath).toBe('native');
+		expect((done.result as { frames: number }).frames).toBe(180);
+	}, 300_000);
 });
