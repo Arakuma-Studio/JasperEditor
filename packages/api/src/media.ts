@@ -100,6 +100,11 @@ export const UploadCreateRequestSchema = z.object({
 	byteSize: z.number().int().min(0),
 	mimeType: z.string(),
 	clientFingerprint: z.string().optional(),
+	/**
+	 * M2 (wp-m2-mg, additive): `mg-bundle` = a zip of a built Remotion bundle, completed by
+	 * `POST /api/mg-bundles/import {uploadId}` instead of `…/complete`. Default `media`.
+	 */
+	purpose: z.enum(['media', 'mg-bundle']).optional(),
 });
 export type UploadCreateRequest = z.infer<typeof UploadCreateRequestSchema>;
 export const UploadCreateResponseSchema = z.object({

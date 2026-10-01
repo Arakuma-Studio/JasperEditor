@@ -11,6 +11,7 @@ import { UnsupportedLayer } from './UnsupportedLayer.tsx';
 import { ProxyPendingCard, VideoLayer } from './VideoLayer.tsx';
 
 export { AudioLayer, type AudioLayerProps } from './AudioLayer.tsx';
+export { compositionFrameOf, compositionFramesAt, hasPixelEffects } from './CompositionLayer.tsx';
 export { LayerBox, StubLabel } from './LayerBox.tsx';
 export { type MgRenderState, MgRenderStateContext } from './MotionGraphicLayer.tsx';
 export { OFFLINE_CARD_COLORS } from './OfflineCard.tsx';

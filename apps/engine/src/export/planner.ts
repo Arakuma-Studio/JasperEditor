@@ -273,6 +273,15 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		});
 	}
 	for (const w of snapshot.warnings) warnings.push({ code: w.code, message: w.message, itemIds: [w.clipId] });
+	// M2 (§19.6): warnings of the extensions for the clips they provide (e.g. MG_FPS_MISMATCH).
+	for (const ext of deps.extensions ?? []) {
+		if (!ext.warnings) continue;
+		for (const c of visual) {
+			if (!ext.kinds?.has(c.kind) && !ext.claimsLayer?.(c)) continue;
+			for (const w of ext.warnings(c, { fps: snapshot.settings.fps }))
+				warnings.push({ code: w.code, message: w.message, itemIds: [c.clipId] });
+		}
+	}
 	if (encoder?.message) warnings.push({ code: 'ENCODER_FALLBACK', message: encoder.message });
 
 	// ---- output spec

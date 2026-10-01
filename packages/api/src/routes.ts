@@ -34,6 +34,8 @@ import {
 import { MgRenderRequestSchema, MgTemplatesResponseSchema } from './mg.ts';
 import {
 	MgBundleImportRequestSchema,
+	MgBundleRebuildRequestSchema,
+	MgBundleScaffoldRequestSchema,
 	MgPrerenderRequestSchema,
 	MgPrerenderResultSchema,
 } from './mg-bundles.ts';
@@ -396,7 +398,23 @@ export const ROUTES = {
 	mgBundleRebuild: r({
 		method: 'POST',
 		path: '/api/mg-bundles/:key/rebuild',
+		body: MgBundleRebuildRequestSchema,
 		response: JobQueued,
+		owner: 'wp-m2-mg',
+	}),
+	/** PNG poster of one composition of a bundle at its `thumbnailFrame` (rendered once, cached). */
+	mgBundlePoster: r({
+		method: 'GET',
+		path: '/api/mg-bundles/:key/poster/:compositionId',
+		response: 'binary',
+		owner: 'wp-m2-mg',
+	}),
+	/** P1 (S08:MGC-015): new composition project from the template, imported with watch. */
+	mgBundleScaffold: r({
+		method: 'POST',
+		path: '/api/mg-bundles/scaffold',
+		body: MgBundleScaffoldRequestSchema,
+		response: RegisteredMediaSchema,
 		owner: 'wp-m2-mg',
 	}),
 	mgBundlePrerender: r({

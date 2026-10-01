@@ -85,6 +85,11 @@ export type NativeExtension = {
 	claimsLayer?(clip: RenderVisualClip): boolean;
 	/** Reasons this extension cannot render a clip it claims / provides (capability missing…). */
 	blockers?(clip: RenderVisualClip): string[];
+	/**
+	 * M2 (wp-m2-mg, additive): plan warnings for a clip this extension claims / provides (e.g. MG_FPS_MISMATCH
+	 * for a composition at another frame rate). Added to the RenderPlan with the clip as item.
+	 */
+	warnings?(clip: RenderVisualClip, ctx: { fps: Rational }): { code: string; message: string }[];
 	/** Runs before the ffmpeg composite of an export or still: renders/bakes what `override`/`effectFilter` need. */
 	prepare?(planned: PlannedExportLike, ctx: NativePrepareContext): Promise<unknown>;
 	/** The layer's pre-rendered picture, or null. First extension returning non-null wins. */
