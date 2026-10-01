@@ -111,12 +111,28 @@ function keptParamKeyframes(
 	return { kept, dropped };
 }
 
+/** Aspect ratios closer than this (|ln(a/b)|, ≈ 0.5 %) are the same design canvas (1280×720 ≈ 1920×1080). */
+const ASPECT_EPS = 0.005;
+
+/**
+ * True when a template draws `size` with one of its design canvases (same aspect ratio; the design is fitted
+ * uniformly, so the scale does not matter). Templates that list no canvases accept any size.
+ */
+export function templateSupportsCanvas(
+	info: Pick<MgTemplateInfo, 'canvases'>,
+	size: { width: number; height: number },
+): boolean {
+	if (!info.canvases?.length) return true;
+	const ar = Math.log(Math.max(1, size.width) / Math.max(1, size.height));
+	return info.canvases.some((c) => Math.abs(ar - Math.log(c.width / c.height)) < ASPECT_EPS);
+}
+
 /** clip.update `{template: {version}}` (S11:ATP-009). Returns true when it handled the patch. */
 export function applyTemplatePatch(
 	_doc: DDoc,
-	_seq: DSeq,
+	seq: DSeq,
 	clip: DClip,
-	p: Pick<ClipPatch, 'template'>,
+	p: Pick<ClipPatch, 'template' | 'canvas'>,
 	h: HandlerContext,
 ): boolean {
 	if (p.template === undefined) return false;
@@ -145,6 +161,22 @@ export function applyTemplatePatch(
 		h.fail('E_INVALID_PARAM', `The upgrade of ${id} to version ${to} produced invalid params`, {
 			path: ['template', 'version'],
 		});
+	// The clip's canvas (the one a `canvas` in the same patch sets) must be one the new version draws, when the old
+	// version did: refuse instead of silently letterboxing a design the clip used to fill.
+	const target = (p.canvas ?? mg.canvas) as MgClip['canvas'];
+	const canvas =
+		target === 'sequence'
+			? { width: seq.settings.width, height: seq.settings.height }
+			: { width: target.width, height: target.height };
+	const old = reg.get(id, from);
+	if (!templateSupportsCanvas(info, canvas) && (!old || templateSupportsCanvas(old, canvas)))
+		h.fail(
+			'E_INVALID_PARAM',
+			`Template ${id}@${to} has no ${canvas.width}×${canvas.height} canvas (it draws ${(info.canvases ?? [])
+				.map((c) => `${c.width}×${c.height}`)
+				.join(', ')}); change the clip's canvas first or in the same patch`,
+			{ path: ['template', 'version'] },
+		);
 	const params = parsed.data as Record<string, unknown>;
 	mg.template.version = to;
 	// S11:ATP-002: the renderer stamp follows the registry entry.

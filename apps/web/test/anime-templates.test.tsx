@@ -106,9 +106,13 @@ describe('template upgrades (S11:ATP-009)', () => {
 		const reg = session.ctx.registries.mgTemplates;
 		expect(templateUpgradeFor(reg, clipOf(session, seqId, anime))).toBe(2);
 		expect(templateUpgradeFor(reg, clipOf(session, seqId, fframes))).toBeNull();
-		const ctx = createCommandContext({ engine: engine(), session });
+		const toasts: string[] = [];
+		const ctx = createCommandContext({ engine: engine(), session, toast: (t) => toasts.push(t.message) });
 		session.select('timeline', [fframes], 'replace');
-		expect((await runCommand('mg.updateTemplate', ctx)).reason).toBe('disabled');
+		// Enabled whatever the selection (agents pass clipIds); without an upgradable selection it only explains.
+		expect(await runCommand('mg.updateTemplate', ctx)).toEqual({ ran: true });
+		expect(toasts.at(-1)).toMatch(/template has an update/);
+		expect(clipOf(session, seqId, anime).template.version).toBe(1);
 		session.select('timeline', [anime, fframes], 'replace');
 		expect(await runCommand('mg.updateTemplate', ctx)).toEqual({ ran: true });
 		expect(clipOf(session, seqId, anime).template).toEqual({
@@ -123,6 +127,21 @@ describe('template upgrades (S11:ATP-009)', () => {
 		expect(updateTemplates(session, [fframes])).toEqual({
 			ok: false,
 			message: 'No template update is available',
+		});
+		await session.close();
+	});
+
+	it('mg.updateTemplate honours its clipIds arg without a selection (review fix)', async () => {
+		registerCommands(mgCommands);
+		const { session, seqId, anime, fframes } = await openSession([...MG_CATALOG, revealV2]);
+		const ctx = createCommandContext({ engine: engine(), session, toast: () => {} });
+		session.select('timeline', [], 'replace');
+		expect(await runCommand('mg.updateTemplate', ctx, { clipIds: [anime] })).toEqual({ ran: true });
+		expect(clipOf(session, seqId, anime).template.version).toBe(2);
+		// clipIds without an upgrade: the command fails with the reason
+		expect(await runCommand('mg.updateTemplate', ctx, { clipIds: [fframes] })).toMatchObject({
+			ran: false,
+			reason: 'error',
 		});
 		await session.close();
 	});
@@ -164,6 +183,54 @@ describe('Properties ▸ Template section', () => {
 		expect(templateEngineLabel(session.ctx.registries.mgTemplates, unknown)).toBe('not installed');
 		const u = render(<MgTemplateSection session={session} clips={[unknown]} frame={0} sequenceId={seqId} />);
 		expect(u.container.textContent).toContain('is not installed');
+		u.unmount();
+		await session.close();
+	});
+
+	it('mixed selections: every engine is listed and Re-render shows when any clip is fframes (review fix)', async () => {
+		const { session, seqId, anime, fframes } = await openSession([...MG_CATALOG, revealV2]);
+		const view = (ids: string[]) =>
+			render(
+				<MgTemplateSection
+					session={session}
+					clips={ids.map((id) => clipOf(session, seqId, id))}
+					frame={0}
+					sequenceId={seqId}
+				/>,
+			);
+		// anime first: Re-render is still offered for the fframes clip; the anime clip's update too
+		const m = view([anime, fframes]);
+		expect(m.container.textContent).toContain('Different templates selected.');
+		expect(m.getByTestId('mg-template-engine').textContent).toBe('anime · Remotion / fframes');
+		expect(m.queryByTestId('mg-template-rerender')).not.toBeNull();
+		expect(m.getByTestId('mg-template-update').textContent).toBe('Update template to v2');
+		m.unmount();
+		// fframes first: no Re-render-only bias either way
+		const r = view([fframes, anime]);
+		expect(r.queryByTestId('mg-template-rerender')).not.toBeNull();
+		expect(r.getByTestId('mg-template-update').textContent).toBe('Update template to v2');
+		r.unmount();
+		// two anime clips of different templates: no Re-render
+		const add = session.apply({
+			label: 'add',
+			origin: 'user',
+			sequenceId: seqId,
+			commands: [
+				{
+					type: 'clip.addMotionGraphic',
+					at: 100,
+					duration: 60,
+					track: 'V2',
+					template: { id: 'counter', version: 1 },
+					ref: '$c',
+				},
+			] as never,
+		});
+		if (!add.ok) throw new Error(JSON.stringify(add.errors));
+		const a = view([anime, add.refs.$c!]);
+		expect(a.getByTestId('mg-template-engine').textContent).toBe('anime · Remotion');
+		expect(a.queryByTestId('mg-template-rerender')).toBeNull();
+		a.unmount();
 		await session.close();
 	});
 });

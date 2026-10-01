@@ -229,6 +229,57 @@ describe('template version upgrades (S11:ATP-009, FIX-005)', () => {
 		]);
 		expect(upgradeParams([v1, throws], 't', 1, {})).toBeNull();
 	});
+	it('searches the step graph: backtracks from dead ends and falls back to other steps (review fix)', () => {
+		const params4 = params3.extend({ italic: z.boolean().default(false) });
+		const p3 = (from: number, migrate: (p: Record<string, unknown>) => Record<string, unknown>) =>
+			mk(3, params3, [{ fromVersion: from, migrate }]);
+		const via2 = mk(2, params2, [{ fromVersion: 1, migrate: (p) => ({ title: `via2 ${p.text}` }) }]);
+		const v4from2 = mk(4, params4, [{ fromVersion: 2, migrate: (p) => ({ ...p, italic: true }) }]);
+		// No target: the biggest jump 1 → 3 is a dead end; 1 → 2 → 4 reaches higher.
+		expect(
+			upgradeParams([v1, via2, p3(1, (p) => ({ title: String(p.text) })), v4from2], 't', 1, { text: 'x' }),
+		).toEqual({ version: 4, params: { title: 'via2 x', size: 10, bold: false, italic: true } });
+		// Exact target 4: 1 → 3 cannot reach it; the path 1 → 2 → 4 does.
+		expect(
+			upgradeParams([v1, via2, p3(1, (p) => ({ title: String(p.text) })), v4from2], 't', 1, { text: 'x' }, 4)
+				?.version,
+		).toBe(4);
+		// Exact target 3 when the direct step throws or is invalid: the two-step path through 2.
+		const twoStep = mk(3, params3, [
+			{
+				fromVersion: 1,
+				migrate: () => {
+					throw new Error('broken');
+				},
+			},
+			{ fromVersion: 2, migrate: (p) => ({ ...p, bold: true }) },
+		]);
+		expect(upgradeParams([v1, via2, twoStep], 't', 1, { text: 'x' }, 3)).toEqual({
+			version: 3,
+			params: { title: 'via2 x', size: 10, bold: true },
+		});
+		expect(upgradeParams([v1, via2, twoStep], 't', 1, { text: 'x' })?.version).toBe(3);
+		const invalidDirect = mk(3, params3, [
+			{ fromVersion: 1, migrate: () => ({ title: 1 }) },
+			{ fromVersion: 2, migrate: (p) => p },
+		]);
+		expect(upgradeParams([v1, via2, invalidDirect], 't', 1, { text: 'x' })?.params.title).toBe('via2 x');
+		// A working direct jump is still preferred over a longer path to the same version.
+		const both = mk(3, params3, [
+			{ fromVersion: 1, migrate: (p) => ({ title: `direct ${p.text}` }) },
+			{ fromVersion: 2, migrate: (p) => p },
+		]);
+		expect(upgradeParams([v1, via2, both], 't', 1, { text: 'x' })?.params.title).toBe('direct x');
+		// Only failing steps: null; a reachable lower version when the higher one fails.
+		const invalidOnly = mk(2, params2, [{ fromVersion: 1, migrate: () => ({ size: 'x' }) }]);
+		expect(upgradeParams([v1, invalidOnly], 't', 1, {})).toBeNull();
+		const brokenTo3 = mk(3, params3, [{ fromVersion: 2, migrate: () => ({ bold: 'no' }) }]);
+		expect(upgradeParams([v1, via2, brokenTo3], 't', 1, { text: 'x' })).toEqual({
+			version: 2,
+			params: { title: 'via2 x', size: 10 },
+		});
+		expect(upgradeParams([v1, via2, brokenTo3], 't', 1, { text: 'x' }, 3)).toBeNull();
+	});
 	it('the shipped catalogue has no pending upgrades (every template is at version 1)', () => {
 		for (const d of mgRegistry.definitions())
 			expect(mgRegistry.upgrade(d.id, d.version, d.defaults)).toBeNull();

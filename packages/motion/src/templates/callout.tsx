@@ -25,6 +25,9 @@ type Pt = { x: number; y: number };
 /** `s` scale, `o` opacity, `m` motion-path progress 0…1 (label). */
 type Values = { s: number; o: number; m: number };
 
+/** The pulse ring grows (and fades out) in this phase; it fades in from content 0 up to its start. */
+export const CALLOUT_PULSE_PHASE: Phase = { at: 0.08, dur: 0.45, ease: 'out' };
+
 /** The phase of the leader line draw-on (the label's motion path runs in the same window). */
 export const CALLOUT_LINE_PHASE: Phase = { at: 0.2, dur: 0.5, outEase: 'inOut' };
 
@@ -79,15 +82,22 @@ export function buildCallout(input: CalloutBuildInput): {
 	const ring: Values = { s: 1, o: 0, m: 0 };
 	const label: Values = { s: 0.85, o: 0, m: input.motionPath ? 0 : 1 };
 	addInOut(tl, input, dot, { s: [0, 1] }, { at: 0, dur: 0.25, ease: 'outBack', outEase: 'in' });
-	// The pulse ring is intro-only (it has already faded when the outro starts).
-	addInOut(
-		tl,
-		input,
+	// The pulse ring is intro-only (it has already faded when the outro starts). Its opacity is keyed from content
+	// 0 (0 → 0.8 while the dot pops, then 0.8 → 0 while the ring grows), so seeks before the pulse — the first
+	// frames and head handles — show no ring (a tween starting later would hold its from-value 0.8 there).
+	const pulse = phaseTimes(input, CALLOUT_PULSE_PHASE);
+	const fadeIn = Math.max(1, pulse.introStart);
+	tl.add(
 		ring,
-		{ s: [1, 2.6], o: [0.8, 0] },
-		{ at: 0.08, dur: 0.45, ease: 'out' },
-		{ outro: false },
+		{
+			o: [
+				{ from: 0, to: 0.8, duration: fadeIn, ease: 'out' },
+				{ to: 0, duration: pulse.introDur, ease: 'out' },
+			],
+		},
+		0,
 	);
+	addInOut(tl, input, ring, { s: [1, 2.6] }, CALLOUT_PULSE_PHASE, { outro: false });
 	if (input.motionPath) {
 		// Intro only: in the outro the box fades out where it stands while the line undraws.
 		addInOut(tl, input, label, { m: [0, 1] }, { ...CALLOUT_LINE_PHASE, ease: input.ease }, { outro: false });

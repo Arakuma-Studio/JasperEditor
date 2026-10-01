@@ -1,8 +1,9 @@
 // Properties ▸ Template (S05:ECP-008/PRP-001 actions, S11:ATP-007/008/009; registered through `clipSections` by
 // commands/mg.ts): the template's name, version and engine ("anime · Remotion" / "fframes" / not installed), and
 // its actions — "Update template to vN" when the registry has an upgrade path (one undo step), Re-render (fframes
-// only; hidden for anime templates, which jasper-mg never renders) and Open in Motion Templates. The params form
-// stays in the built-in Parameters section.
+// only; hidden for anime templates, which jasper-mg never renders) and Open in Motion Templates. Mixed selections
+// list every engine and offer the actions any selected clip supports. The params form stays in the built-in
+// Parameters section.
 import type { Clip, MgTemplateRegistry } from '@jasper/project';
 import { useStoreSelector } from '@jasper/session/react';
 import { Button, toast } from '@jasper/ui';
@@ -29,10 +30,13 @@ export function MgTemplateSection({ session, clips }: ClipSectionProps) {
 	const key = (c: MgClip) => `${c.template.id}@${c.template.version}`;
 	const same = mg.every((c) => key(c) === key(first));
 	const info = reg.get(first.template.id, first.template.version);
+	// Mixed selections: every clip counts (not only the first) for the engines shown and the actions offered.
+	const engines = [...new Set(mg.map((c) => templateEngineLabel(reg, c)))];
 	const engine = templateEngineLabel(reg, first);
-	const upgrades = mg.map((c) => templateUpgradeFor(reg, c));
-	const target = upgrades.find((v) => v !== null) ?? null;
+	const upgrades = [...new Set(mg.map((c) => templateUpgradeFor(reg, c)).filter((v) => v !== null))];
 	const anime = info?.renderer === 'anime';
+	// mg.rerender renders the fframes clips of the selection: offered when there is at least one.
+	const hasFframes = engines.includes('fframes');
 	const run = (id: string) => void runtime?.run(id);
 	return (
 		<div className="flex flex-col gap-1 px-2 py-1 text-pr-ui" data-testid="mg-template-section">
@@ -67,10 +71,15 @@ export function MgTemplateSection({ session, clips }: ClipSectionProps) {
 					) : null}
 				</>
 			) : (
-				<p className="text-pr-small text-pr-muted">Different templates selected.</p>
+				<>
+					<p className="text-pr-small text-pr-muted">Different templates selected.</p>
+					<div className="text-pr-small text-pr-muted" data-testid="mg-template-engine">
+						{engines.join(' / ')}
+					</div>
+				</>
 			)}
 			<div className="flex flex-wrap gap-1">
-				{target !== null ? (
+				{upgrades.length > 0 ? (
 					<Button
 						variant="primary"
 						disabled={readOnly}
@@ -84,10 +93,10 @@ export function MgTemplateSection({ session, clips }: ClipSectionProps) {
 								toast({ kind: 'warning', title: 'Could not update the template', detail: r.message });
 						}}
 					>
-						Update template to v{target}
+						{upgrades.length === 1 ? `Update template to v${upgrades[0]}` : 'Update templates'}
 					</Button>
 				) : null}
-				{!anime && engine === 'fframes' ? (
+				{hasFframes ? (
 					<Button
 						disabled={readOnly || !runtime}
 						data-testid="mg-template-rerender"

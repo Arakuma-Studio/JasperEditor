@@ -30,7 +30,8 @@ export const lowerThirdAnim: MgAnimeTemplateDefinition<LowerThirdAnimParams> = {
 	category: 'Lower Thirds',
 	description: 'Bar and panel wipe in, name and role words stagger in; the outro reverses the intro.',
 	renderer: 'anime',
-	renderVersion: 1,
+	// 2: drawing clipped to the canvas (preview = hybrid export).
+	renderVersion: 2,
 	posterAt: 2.5,
 	paramsSchema: lowerThirdAnimParams,
 	defaults: lowerThirdAnimParams.parse({}),

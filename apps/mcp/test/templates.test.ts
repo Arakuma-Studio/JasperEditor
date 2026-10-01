@@ -29,6 +29,7 @@ import {
 	paramsSummary,
 	planParamCommands,
 	previewFrames,
+	previewPhases,
 	TEMPLATES_GUIDE,
 } from '../src/tools/templates.ts';
 
@@ -335,15 +336,17 @@ describe('list_motion_templates (S11:ANA-003)', () => {
 					c: { type: 'array', minItems: 2, maxItems: 2 },
 					d: { type: 'object' },
 					e: { anyOf: [{ const: 'x' }, { const: 'y' }] },
+					f: { type: 'integer', minimum: -9007199254740991, maximum: 9007199254740991 },
 				},
 			},
 		});
 		expect(s).toEqual([
 			{ name: 'a', type: 'number ≥0', default: 3, keyframable: true, description: 'A' },
-			{ name: 'b', type: 'number', default: 2, keyframable: true },
+			{ name: 'b', type: 'number -1000000000000…1000000000000', default: 2, keyframable: true },
 			{ name: 'c', type: 'vec2', default: undefined, keyframable: false },
 			{ name: 'd', type: 'object', default: undefined, keyframable: false },
 			{ name: 'e', type: 'enum x|y', default: undefined, keyframable: false },
+			{ name: 'f', type: 'integer', default: undefined, keyframable: false },
 		]);
 	});
 });
@@ -381,13 +384,13 @@ describe('render_motion_graphic_preview for anime templates (S11:ANA-003)', () =
 		});
 		expect(clip.params).toEqual({ ...ANIME.defaults, title: 'Hello', titleSize: 140 });
 		expect(seq.videoTracks[0]!.id).toBe(clip.trackId);
-		expect(still.frame).toBe(75); // the middle of 5 s at 30 fps
+		expect(still.frame).toBe(84); // the middle of the hold: intro 36 + (150 − 36 − 18) / 2
 		expect(still.width).toBe(802);
 		expect(bodyOf(r)).toMatchObject({
 			template: 'title-reveal@1',
 			renderer: 'anime',
 			renderedBy: 'remotion',
-			frame: 75,
+			frame: 84,
 			jobId: 'job_still1',
 			size: '802x450',
 		});
@@ -396,7 +399,7 @@ describe('render_motion_graphic_preview for anime templates (S11:ANA-003)', () =
 		expect(Buffer.from(img.data, 'base64').equals(PNG)).toBe(true);
 	});
 
-	it('returns several evenly spaced frames with frames: 3', async () => {
+	it('returns intro, hold and outro frames with frames: 3', async () => {
 		const engine = fakeEngine();
 		const { call } = await connect(engine);
 		const r = await call('render_motion_graphic_preview', {
@@ -406,10 +409,49 @@ describe('render_motion_graphic_preview for anime templates (S11:ANA-003)', () =
 			frames: 3,
 		});
 		expect(r.isError, textOf(r)).toBeFalsy();
-		expect(engine.stills.map((s) => s.frame)).toEqual([12, 25, 37]);
+		// 25 fps: intro 30, outro 15 frames (written at 30 fps), hold 5 → intro middle, hold middle, 50 − ceil(15/2)
+		expect(engine.stills.map((s) => s.frame)).toEqual([15, 32, 42]);
 		expect(r.content.filter((c) => c.type === 'image')).toHaveLength(3);
-		expect(bodyOf(r)).toMatchObject({ frames: [12, 25, 37], durationFrames: 50, fps: 25 });
+		expect(bodyOf(r)).toMatchObject({ frames: [15, 32, 42], durationFrames: 50, fps: 25 });
 		expect(previewFrames(1, 3)).toEqual([0]);
+	});
+
+	it('previewFrames samples the template phases (outro included), compressed like animeTemplateTiming', () => {
+		const t = { introFrames: 36, outroFrames: 18, fps: 30 };
+		// 150 frames: intro 0–35, hold 36–131, outro 132–149
+		expect(previewFrames(150, 1, t)).toEqual([84]);
+		expect(previewFrames(150, 2, t)).toEqual([18, 84]);
+		expect(previewFrames(150, 3, t)).toEqual([18, 84, 141]);
+		expect(previewFrames(150, 4, t)).toEqual([12, 24, 84, 141]);
+		expect(previewFrames(150, 5, t)).toEqual([12, 24, 84, 138, 144]);
+		const six = previewFrames(150, 6, t);
+		expect(six).toHaveLength(6);
+		expect(six.filter((f) => f < 36)).toHaveLength(3);
+		expect(six.filter((f) => f >= 132)).toHaveLength(2);
+		// the outro sample always lies inside the outro, also when intro + outro are compressed to the clip
+		for (const d of [10, 20, 40, 54, 60, 300]) {
+			const { intro, outro } = previewPhases(d, t);
+			expect(intro + outro).toBeLessThanOrEqual(d);
+			const f = previewFrames(d, 3, t);
+			expect(f.at(-1), `d=${d}`).toBe(d - Math.ceil(outro / 2));
+			expect(f.at(-1)!).toBeGreaterThanOrEqual(d - outro);
+			expect(f[0]).toBe(Math.floor(intro / 2));
+		}
+		expect(previewPhases(20, t)).toEqual({ intro: 13, outro: 7 });
+		// at 60 fps the reference-rate lengths double
+		expect(previewPhases(600, { ...t, fps: 60 })).toEqual({ intro: 72, outro: 36 });
+		// no outro: its share goes to the hold; no timing: evenly spaced
+		expect(previewFrames(150, 3, { introFrames: 30, outroFrames: 0, fps: 30 })).toEqual([15, 70, 110]);
+		expect(previewFrames(50, 3)).toEqual([12, 25, 37]);
+	});
+
+	it('reports the still path that drew the preview (hybrid included)', async () => {
+		const engine = fakeEngine();
+		engine.setStill({ result: { url: '/renders/x/output', renderPath: 'hybrid' } });
+		const { call } = await connect(engine);
+		const r = await call('render_motion_graphic_preview', { template: 'title-reveal' });
+		expect(r.isError, textOf(r)).toBeFalsy();
+		expect(bodyOf(r)).toMatchObject({ renderedBy: 'hybrid' });
 	});
 
 	it('rejects invalid params with E_INVALID_PARAM before rendering', async () => {

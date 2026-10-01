@@ -195,7 +195,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 		{
 			title: 'Preview motion graphic',
 			description:
-				'Renders a motion-graphic template with the given params and returns frames as PNG images, to check params before adding the graphic. fframes templates use the native renderer (the middle frame plus the URL of the animated WebM-with-alpha preview). Anime templates (renderer "anime") are drawn by Remotion in a headless Chrome from a one-clip sequence of width×height: by default the middle frame; frames: 3 gives intro, hold and outro. Invalid params fail with E_INVALID_PARAM listing the issues.',
+				'Renders a motion-graphic template with the given params and returns frames as PNG images, to check params before adding the graphic. fframes templates use the native renderer (the middle frame plus the URL of the animated WebM-with-alpha preview). Anime templates (renderer "anime") are drawn by Remotion in a headless Chrome from a one-clip sequence of width×height: by default the middle of the hold (the settled design); frames: 2 adds the middle of the intro, frames: 3 the middle of the outro, more frames go to the intro and outro; renderedBy tells which still path drew them (native, hybrid or remotion). Invalid params fail with E_INVALID_PARAM listing the issues.',
 			input: {
 				template: z.string().min(1).describe('Template id, optionally "@version" ("lower-third@1")'),
 				params: z
@@ -220,7 +220,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 					.max(6)
 					.optional()
 					.describe(
-						'Anime templates: how many evenly spaced frames to return (default 1 = the middle; 3 = intro, hold, outro)',
+						'Anime templates: how many frames to return, sampled from the intro, hold and outro (default 1 = middle of the hold; 3 = intro, hold, outro middles)',
 					),
 			},
 			annotations: READ_ONLY,
