@@ -487,6 +487,7 @@ export function ProjectPanel(props: PanelProps) {
 					onRename={() => menu.itemId && setRenaming(menu.itemId)}
 					onOpen={() => menu.itemId && void openItem(session, menu.itemId, ctx, setBinId)}
 					onNewBin={() => createBin(session, binId)}
+					onCommand={(id) => void runIfRegistered(id, ctx)}
 				/>
 			) : null}
 		</div>
@@ -952,11 +953,34 @@ function ContextMenu(props: {
 	onRename(): void;
 	onOpen(): void;
 	onNewBin(): void;
+	/** Runs an Edit command for this panel (wp-clipboard: Cut / Copy / Paste, S01:CLB-007). */
+	onCommand(commandId: string): void;
 }) {
 	const [labels, setLabels] = useState(false);
 	return (
 		<Menu anchor={{ x: props.x, y: props.y }} onClose={props.onClose}>
 			<MenuEntry onClick={props.onOpen}>Open</MenuEntry>
+			<MenuEntry
+				disabled={props.readOnly || !props.itemIds.length}
+				onClick={() => props.onCommand('edit.cut')}
+				testId="project-menu-cut"
+			>
+				Cut
+			</MenuEntry>
+			<MenuEntry
+				disabled={!props.itemIds.length}
+				onClick={() => props.onCommand('edit.copy')}
+				testId="project-menu-copy"
+			>
+				Copy
+			</MenuEntry>
+			<MenuEntry
+				disabled={props.readOnly}
+				onClick={() => props.onCommand('edit.paste')}
+				testId="project-menu-paste"
+			>
+				Paste
+			</MenuEntry>
 			<MenuEntry disabled={props.readOnly || props.itemIds.length !== 1} onClick={props.onRename}>
 				Rename
 			</MenuEntry>

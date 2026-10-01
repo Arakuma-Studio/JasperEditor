@@ -49,6 +49,8 @@ export const WARNING_CODES = [
 	'W_ANIMATION_COMPRESSED',
 	/** M2 (S11:ATP-009, wp-m2-anime-templates): a template upgrade dropped keyframes of params it removed. */
 	'W_KEYFRAMES_DROPPED',
+	/** wp-clipboard (S01:CLB-008): a pasted clip, item or keyframe track had nothing to land on and was skipped. */
+	'W_CLIP_SKIPPED',
 ] as const;
 
 /** A problem report. `commandIndex` is -1 for transaction-level issues (invariants, revision). */

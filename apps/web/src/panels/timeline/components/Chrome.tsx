@@ -210,7 +210,13 @@ export function ZoomBar(props: { viewport: Viewport; extent: number; controller:
 
 // ---------------------------------------------------------------- context menu
 
-export function ContextMenu(props: { x: number; y: number; items: ContextMenuItem[]; onClose(): void }) {
+export function ContextMenu(props: {
+	x: number;
+	y: number;
+	items: ContextMenuItem[];
+	onClose(): void;
+	testId?: string;
+}) {
 	const ref = useRef<HTMLDivElement>(null);
 	const [pos, setPos] = useState({ x: props.x, y: props.y });
 	// Keep the menu inside the window (flip up/left when it would overflow).
@@ -248,7 +254,7 @@ export function ContextMenu(props: { x: number; y: number; items: ContextMenuIte
 			role="menu"
 			className="fixed min-w-[200px] rounded-pr-menu border border-pr-menu-border bg-pr-menu py-1 text-pr-ui text-pr-text shadow-pr-overlay"
 			style={{ left: pos.x, top: pos.y, zIndex: Z.popover }}
-			data-testid="timeline-context-menu"
+			data-testid={props.testId ?? 'timeline-context-menu'}
 		>
 			<MenuItems items={props.items} onClose={props.onClose} />
 		</div>

@@ -16,6 +16,12 @@ const bridge = {
 	/** The bundled jasper-mcp server and how to launch it (Help ▸ Connect an AI Agent…). */
 	mcpInfo: (): Promise<{ entry: string | null; command: string; env: Record<string, string> }> =>
 		ipcRenderer.invoke('jasper:mcp-info'),
+	/** wp-clipboard (S01:CLB-002): the custom application/x-jasper-clipboard format (validated in main). */
+	clipboard: {
+		write: (data: { json: string; html: string; text: string }): Promise<boolean> =>
+			ipcRenderer.invoke('jasper:clipboard-write', data),
+		read: (): Promise<string | null> => ipcRenderer.invoke('jasper:clipboard-read'),
+	},
 	onMenuCommand: (cb: (commandId: string) => void): (() => void) => {
 		const listener = (_e: unknown, id: string) => cb(id);
 		ipcRenderer.on('jasper:menu-command', listener);

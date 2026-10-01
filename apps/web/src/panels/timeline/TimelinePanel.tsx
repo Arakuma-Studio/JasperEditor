@@ -444,7 +444,25 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 
 	const clipMenu = (c: Clip): ContextMenuItem[] => {
 		const linked = !!c.linkId;
+		const readOnly = session.getState().readOnly;
 		return [
+			// wp-clipboard (S01 §20, Premiere clip menu order).
+			{ kind: 'item', label: 'Cut', shortcut: 'Ctrl+X', disabled: readOnly, run: () => run('timeline.cut') },
+			{ kind: 'item', label: 'Copy', shortcut: 'Ctrl+C', run: () => run('timeline.copy') },
+			{
+				kind: 'item',
+				label: 'Paste Attributes…',
+				shortcut: 'Ctrl+Alt+V',
+				disabled: readOnly,
+				run: () => run('timeline.pasteAttributes'),
+			},
+			{
+				kind: 'item',
+				label: 'Remove Attributes…',
+				disabled: readOnly,
+				run: () => run('timeline.removeAttributes'),
+			},
+			{ kind: 'separator' },
 			{ kind: 'item', label: 'Clear', shortcut: 'Delete', run: () => run('timeline.clear') },
 			{
 				kind: 'item',
@@ -804,14 +822,29 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			return;
 		}
 		const gap = gapAt(committedSeq, yh.row.trackId, frame);
-		if (gap)
-			openMenu(e.clientX, e.clientY, [
-				{
-					kind: 'item',
-					label: 'Ripple Delete',
-					run: () => apply('Close Gap', [{ type: 'gap.close', trackId: gap.trackId, at: gap.start }]),
-				},
-			]);
+		// wp-clipboard: Paste / Paste Insert at the playhead from an empty spot (S01:CLB-003/004).
+		const paste: ContextMenuItem[] = [
+			{ kind: 'item', label: 'Paste', shortcut: 'Ctrl+V', run: () => run('timeline.paste') },
+			{
+				kind: 'item',
+				label: 'Paste Insert',
+				shortcut: 'Ctrl+Shift+V',
+				run: () => run('timeline.pasteInsert'),
+			},
+		];
+		openMenu(e.clientX, e.clientY, [
+			...(gap
+				? [
+						{
+							kind: 'item' as const,
+							label: 'Ripple Delete',
+							run: () => apply('Close Gap', [{ type: 'gap.close', trackId: gap.trackId, at: gap.start }]),
+						},
+						{ kind: 'separator' as const },
+					]
+				: []),
+			...paste,
+		]);
 	};
 
 	// ------------------------------------------------------------ drops (TL-492…496)

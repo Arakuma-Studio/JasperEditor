@@ -3,12 +3,50 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+	CLIPBOARD_MAX_BYTES,
+	clipboardReadResult,
+	ELECTRON_CLIPBOARD_FORMAT,
+	isClipboardWrite,
 	isExternalUrlAllowed,
 	isRevealablePath,
 	isSameOrigin,
 	isWindowAction,
 	mcpLaunchInfo,
 } from '../src/security.ts';
+
+describe('clipboard bridge (wp-clipboard, S01:CLB-002/009)', () => {
+	const json = JSON.stringify({ format: 'jasper-clipboard', version: 1, kind: 'clips' });
+	it('writes only sane JasperEditor payloads under the custom format', () => {
+		expect(ELECTRON_CLIPBOARD_FORMAT).toBe(
+			'electron application/osclipboard;format="application/x-jasper-clipboard"',
+		);
+		expect(isClipboardWrite({ json, html: '<span></span>', text: 'Title' })).toBe(true);
+		for (const bad of [
+			null,
+			'x',
+			{ json, html: 1, text: '' },
+			{ json: '{"format":"other"}', html: '', text: '' },
+			{ json: 'not json', html: '', text: '' },
+			{ json: `{"format":"jasper-clipboard","x":"${'a'.repeat(CLIPBOARD_MAX_BYTES)}"}`, html: '', text: '' },
+		])
+			expect(isClipboardWrite(bad)).toBe(false);
+	});
+	it('reads back only the format JSON within the cap', () => {
+		expect(clipboardReadResult(json)).toBe(json);
+		expect(clipboardReadResult('{"format":"x"}')).toBeNull();
+		expect(clipboardReadResult(42)).toBeNull();
+	});
+	it('the preload exposes clipboard read/write over invoke only', () => {
+		const preload = readFileSync(join(__dirname, '../src/preload.cts'), 'utf8');
+		expect(preload).toContain("ipcRenderer.invoke('jasper:clipboard-write', data)");
+		expect(preload).toContain("ipcRenderer.invoke('jasper:clipboard-read')");
+		const main = readFileSync(join(__dirname, '../src/main.ts'), 'utf8');
+		expect(main).toMatch(
+			/'jasper:clipboard-write', async \(e, data: unknown\) => \{\n\t\tif \(!fromApp\(e\) \|\| !isClipboardWrite\(data\)\)/,
+		);
+		expect(main).toMatch(/'jasper:clipboard-read', async \(e\) => \{\n\t\tif \(!fromApp\(e\)\)/);
+	});
+});
 
 describe('desktop security helpers', () => {
 	it('only hands http(s)/mailto links to the OS', () => {

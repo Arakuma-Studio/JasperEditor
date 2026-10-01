@@ -83,3 +83,45 @@ export function mcpLaunchInfo(opts: {
 		env: opts.packaged ? { ELECTRON_RUN_AS_NODE: '1' } : {},
 	};
 }
+
+// ---------------------------------------------------------------- clipboard (wp-clipboard, S01:CLB-002/009)
+
+/** The custom clipboard format next to `text/html` and `text/plain`. */
+export const CLIPBOARD_CUSTOM_FORMAT = 'application/x-jasper-clipboard';
+/** How Electron's clipboard addresses that raw OS format. */
+export const ELECTRON_CLIPBOARD_FORMAT = `electron application/osclipboard;format="${CLIPBOARD_CUSTOM_FORMAT}"`;
+/** Same cap as the payload parser (S01:CLB-009). */
+export const CLIPBOARD_MAX_BYTES = 20 * 1024 * 1024;
+
+export type ClipboardWrite = { json: string; html: string; text: string };
+
+const utf8Bytes = (s: string) => new TextEncoder().encode(s).length;
+
+/**
+ * `jasper:clipboard-write` arguments: three strings within the caps, the JSON a JasperEditor clipboard object
+ * (the renderer is not trusted to put anything else on the OS clipboard under our format).
+ */
+export function isClipboardWrite(v: unknown): v is ClipboardWrite {
+	if (!v || typeof v !== 'object') return false;
+	const { json, html, text } = v as Record<string, unknown>;
+	if (typeof json !== 'string' || typeof html !== 'string' || typeof text !== 'string') return false;
+	if (html.length > 2 * CLIPBOARD_MAX_BYTES || text.length > CLIPBOARD_MAX_BYTES) return false;
+	if (utf8Bytes(json) > CLIPBOARD_MAX_BYTES) return false;
+	return isJasperClipboardJson(json);
+}
+
+/** A JSON object with `format: "jasper-clipboard"` (the full schema check happens in the renderer on paste). */
+export function isJasperClipboardJson(json: string): boolean {
+	try {
+		const o = JSON.parse(json) as { format?: unknown } | null;
+		return !!o && typeof o === 'object' && o.format === 'jasper-clipboard';
+	} catch {
+		return false;
+	}
+}
+
+/** What `jasper:clipboard-read` hands back: the custom format's JSON when sane, else null. */
+export function clipboardReadResult(raw: unknown): string | null {
+	if (typeof raw !== 'string' || utf8Bytes(raw) > CLIPBOARD_MAX_BYTES) return null;
+	return isJasperClipboardJson(raw) ? raw : null;
+}

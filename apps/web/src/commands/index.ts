@@ -3,6 +3,7 @@
 // M2 (wp-m2-layer-bake): graded previews of DOM layers (registers its Program overlay at import)
 import { layerBakeCommands } from '../layer-bake/commands.ts';
 import { appCommands } from './app.ts';
+import { clipboardCommands } from './clipboard.ts';
 import { colorCommands } from './color.ts';
 import { compositionCommands } from './composition.ts';
 import { editCommands } from './edit.ts';
@@ -48,6 +49,8 @@ const COMMAND_MODULES: UiCommand[][] = [
 	textAnimationCommands,
 	shapeCommands,
 	layerBakeCommands,
+	// wp-clipboard (S01 §20)
+	clipboardCommands,
 ];
 
 let registered = false;

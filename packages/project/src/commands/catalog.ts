@@ -3,6 +3,7 @@ import type { z } from 'zod';
 import type { HandlerContext } from './context.ts';
 import { clipCoreHandlers } from './handlers/clip-core.ts';
 import { clipEditHandlers } from './handlers/clip-edit.ts';
+import { CLIPBOARD_OWNER, clipboardHandlers } from './handlers/clipboard.ts';
 import { compositionHandlers } from './handlers/composition.ts';
 import { effectHandlers } from './handlers/effect.ts';
 import { keyframeHandlers } from './handlers/keyframe.ts';
@@ -31,7 +32,9 @@ export type CommandOwner =
 	// M2 animation (ARCHITECTURE §20, S11 §10)
 	| 'wp-m2-text-anim'
 	| 'wp-m2-anime-templates'
-	| 'wp-m2-shapes';
+	| 'wp-m2-shapes'
+	// Clipboard (S01 §20)
+	| 'wp-clipboard';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -123,6 +126,12 @@ const LABELS: Record<CommandType, string> = {
 	'tracker.setSamples': 'Track',
 	'tracker.apply': 'Apply Tracking',
 	'tracker.unlink': 'Unlink Tracking',
+	'clip.paste': 'Paste',
+	'clip.pasteAttributes': 'Paste Attributes',
+	'clip.removeAttributes': 'Remove Attributes',
+	'effect.paste': 'Paste Effects',
+	'keyframe.paste': 'Paste Keyframes',
+	'project.pasteItems': 'Paste',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -138,6 +147,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[compositionHandlers, 'wp-m2-mg'],
 	[trackerHandlers, 'wp-m2-track'],
 	[shapeHandlers, SHAPE_OWNER],
+	[clipboardHandlers, CLIPBOARD_OWNER],
 	[m2Handlers, 'M2'],
 ];
 
@@ -167,7 +177,7 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 			handler: SHAPE_BOX_COMMANDS.has(type) ? keepShapesCentred(handler) : handler,
 			label: LABELS[type],
 			owner,
-			milestone: owner === 'M2' || owner.startsWith('wp-m2-') ? 'M2' : 'M1',
+			milestone: owner === 'M2' || owner.startsWith('wp-m2-') || owner === CLIPBOARD_OWNER ? 'M2' : 'M1',
 		};
 	}
 	return out;

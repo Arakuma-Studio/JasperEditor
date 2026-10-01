@@ -1274,6 +1274,15 @@ type ClipboardPayload = {
 - **CLB-011 (P0)** Cut = copy + `clip.lift` (Premiere's cut leaves a gap). Media assets stay in the project, so the paste resolves.
 - **CLB-012 (P0)** Duplicate (Alt-drag, or the `clip.duplicate` command) uses the same remapping logic without the system clipboard.
 
+Implementation decisions (wp-clipboard, `docs/wp-notes/wp-clipboard.md`):
+- Pastes are the document commands `clip.paste`, `clip.pasteAttributes`, `clip.removeAttributes`, `effect.paste`, `keyframe.paste` and `project.pasteItems` (payload validated in the handler, one transaction each).
+- Additive payload fields: `clips.{trackKinds, frameRate, primaryClipId}` (starts/durations convert to the target frame rate), `effects.source`, `keyframes.{tracks, speed}`, `items.rootItems`, `mediaItems`.
+- A media record added by a paste gets a project item (root, or the target bin), except pure derivation sources and font files; a font with the same family and source in the target is reused.
+- Ctrl/Cmd+V lets the browser fire its paste event (permission-free read of other tabs' copies); Edit ▸ Paste uses the async Clipboard API, then the in-memory copy. JasperEditor content on the system clipboard wins; the in-memory copy wins only when the last copy never reached the system clipboard.
+- Paste Attributes adds M2 rows (text In/Out animation, text style, shape style); Time Remapping and Channel Volume are P2 (S03:DM-002) and have no row.
+- Nested-sequence clips whose sequence is not in the target project are skipped (`W_CLIP_SKIPPED`); a pasted tracker target follows the pasted copy of its plate, else the original plate in the same sequence, else it loses the link.
+- CLB-010 (external text, images, files) is not implemented yet: foreign clipboard content is reported, not pasted.
+
 Beyond the template: the template copied only raw item objects without their assets (pasting into another project produced broken references), did not validate pasted data, always pasted onto new top layers, and had no paste-insert, paste-attributes, effect or keyframe clipboard, or project-item clipboard.
 
 ---

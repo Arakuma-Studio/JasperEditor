@@ -14,7 +14,16 @@ export interface JasperDesktopBridge {
 	focusWindow?(): void;
 	/** Where the bundled `jasper-mcp` server lives and how to launch it (Help ▸ Connect an AI Agent…). */
 	mcpInfo?(): Promise<DesktopMcpInfo>;
+	/** wp-clipboard (S01:CLB-002): the custom `application/x-jasper-clipboard` format next to HTML and text. */
+	clipboard?: DesktopClipboard;
 }
+
+/** The Electron clipboard as the preload exposes it (validated and size-capped in the main process). */
+export type DesktopClipboard = {
+	write(data: { json: string; html: string; text: string }): Promise<boolean>;
+	/** The JSON of the custom format, or null when the clipboard has none. */
+	read(): Promise<string | null>;
+};
 
 /** How an MCP client starts the `jasper-mcp` stdio server that ships with the desktop app. */
 export type DesktopMcpInfo = {

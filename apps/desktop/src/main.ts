@@ -11,9 +11,23 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } from 'electron';
+import {
+	app,
+	BrowserWindow,
+	ClipboardItem,
+	clipboard,
+	dialog,
+	ipcMain,
+	Menu,
+	session,
+	shell,
+} from 'electron';
 import { type EngineProcess, startEngineProcess } from './engine-process.ts';
 import {
+	CLIPBOARD_CUSTOM_FORMAT,
+	clipboardReadResult,
+	ELECTRON_CLIPBOARD_FORMAT,
+	isClipboardWrite,
 	isExternalUrlAllowed,
 	isRevealablePath,
 	isSameOrigin,
@@ -163,6 +177,42 @@ function registerIpc(): void {
 			exists: existsSync(mcpEntry),
 			execPath: process.execPath,
 		});
+	});
+	// wp-clipboard (S01:CLB-002): the JasperEditor payload as the custom application/x-jasper-clipboard format,
+	// written atomically with its text/html and text/plain forms; reads return only that format's JSON.
+	ipcMain.handle('jasper:clipboard-write', async (e, data: unknown) => {
+		if (!fromApp(e) || !isClipboardWrite(data)) return false;
+		try {
+			await clipboard.write([
+				new ClipboardItem({
+					'text/plain': data.text,
+					'text/html': data.html,
+					[ELECTRON_CLIPBOARD_FORMAT]: new Blob([data.json], { type: CLIPBOARD_CUSTOM_FORMAT }),
+				}),
+			]);
+			return true;
+		} catch (err) {
+			log(`clipboard write failed: ${err instanceof Error ? err.message : String(err)}`);
+			return false;
+		}
+	});
+	ipcMain.handle('jasper:clipboard-read', async (e) => {
+		if (!fromApp(e)) return null;
+		try {
+			if (!(await clipboard.has(ELECTRON_CLIPBOARD_FORMAT))) return null;
+			for (const item of await clipboard.read()) {
+				try {
+					const blob = (await item.getType(ELECTRON_CLIPBOARD_FORMAT)) as Blob;
+					const json = clipboardReadResult(await blob.text());
+					if (json) return json;
+				} catch {
+					// this entry does not carry the format
+				}
+			}
+		} catch (err) {
+			log(`clipboard read failed: ${err instanceof Error ? err.message : String(err)}`);
+		}
+		return null;
 	});
 	ipcMain.on('jasper:reveal', (e, p: unknown) => {
 		if (fromApp(e) && isRevealablePath(p) && existsSync(p)) shell.showItemInFolder(p);

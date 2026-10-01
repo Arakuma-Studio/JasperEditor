@@ -26,7 +26,7 @@ function mustLocate(doc: DDoc, fxId: string, h: HandlerContext) {
 }
 
 /** Initial params: registry defaults with validated overrides (values or full Animatables). */
-function buildParams(
+export function buildParams(
 	spec: EffectSpec,
 	overrides: Record<string, unknown> | undefined,
 	h: HandlerContext,

@@ -110,7 +110,7 @@ export function keepShapesCentred<T extends CommandType>(handler: Handler<T>): H
  * Commands whose handlers run inside `keepShapesCentred` (wired in catalog.ts): every command that can change the
  * keys or values of `shape.size` / `shape.stroke.*` — `clip.update {shape}`, the stopwatch, and every keyframe
  * command (moving a key onto another one deletes it; interpolation is listed so the set covers the whole family).
- * Paste (not wired yet) will go through these commands; undo/redo restore whole snapshots (anchor included).
+ * The clipboard's attribute and keyframe pastes are listed too; undo/redo restore whole snapshots (anchor included).
  */
 export const SHAPE_BOX_COMMANDS: ReadonlySet<CommandType> = new Set<CommandType>([
 	'clip.update',
@@ -122,6 +122,10 @@ export const SHAPE_BOX_COMMANDS: ReadonlySet<CommandType> = new Set<CommandType>
 	'keyframe.move',
 	'keyframe.setInterpolation',
 	'keyframes.prune',
+	// wp-clipboard: pasted shape styles and keyframes
+	'clip.pasteAttributes',
+	'clip.removeAttributes',
+	'keyframe.paste',
 ]);
 
 // ---------------------------------------------------------------- fill / stroke materialisation

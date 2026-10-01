@@ -98,7 +98,8 @@ function referencedIds(commands: readonly unknown[], extra: readonly string[] = 
 	const walk = (v: unknown) => {
 		if (looksLikeId(v)) out.add(v);
 		else if (Array.isArray(v)) v.forEach(walk);
-		else if (v && typeof v === 'object') Object.values(v).forEach(walk);
+		// A clipboard payload's ids belong to the copied content, not to entities the transaction touches.
+		else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) if (k !== 'payload') walk(x);
 	};
 	commands.forEach(walk);
 	return out;

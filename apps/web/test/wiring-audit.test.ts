@@ -9,18 +9,6 @@ import { MENUBAR } from '../src/shell/menus/model.ts';
 
 /** Not in M1 (ARCHITECTURE §17 / spec priority P1–P2); menus show them disabled with a reason (SH-031). */
 const INTENTIONALLY_ABSENT: Record<string, readonly string[]> = {
-	'clipboard (S01 §20, M2)': [
-		'edit.cut',
-		'edit.copy',
-		'edit.paste',
-		'edit.pasteInsert',
-		'edit.pasteAttributes',
-		'timeline.copy',
-		'timeline.cut',
-		'timeline.paste',
-		'timeline.pasteInsert',
-		'timeline.pasteAttributes',
-	],
 	'captions (M2)': [
 		'timeline.addCaptionTrack',
 		'timeline.addCaptionAtPlayhead',
@@ -130,6 +118,18 @@ describe('wiring audit (WP-3I)', () => {
 			'app.openProject',
 			'app.newSequence',
 			'help.connectAgent',
+			// wp-clipboard (S01 §20)
+			'edit.cut',
+			'edit.copy',
+			'edit.paste',
+			'edit.pasteInsert',
+			'edit.pasteAttributes',
+			'edit.removeAttributes',
+			'timeline.copy',
+			'timeline.cut',
+			'timeline.paste',
+			'timeline.pasteInsert',
+			'timeline.pasteAttributes',
 			...PANEL_KINDS.map((k) => `panel.open.${k}`),
 		]) {
 			expect(getCommand(id), id).toBeTruthy();

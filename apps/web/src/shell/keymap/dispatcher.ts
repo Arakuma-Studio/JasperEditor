@@ -7,6 +7,8 @@
 // Widgets with their own key handling (lists, scrubby numbers) mark themselves `data-keymap-local` and
 // get the same "widget first" treatment. Key repeat is honored only for repeatable commands (KB-006);
 // hold-to-act commands receive keyup (KB-007).
+
+import { type ClipboardData, readClipboardEvent } from '../../clipboard/system.ts';
 import {
 	chordFromEvent,
 	DEFAULT_KEYMAP,
@@ -125,6 +127,12 @@ export function installKeyboardDispatcher(win: Window, env: DispatcherEnv): () =
 
 	const execute = (e: KeyboardEvent, res: KeyResolution, ctx: CommandCtx) => {
 		const { binding, command } = res;
+		if (command.nativeClipboard === 'paste') {
+			// wp-clipboard (S01:CLB-002): the browser's paste event follows this keydown with the clipboard data.
+			if (!e.repeat)
+				awaitNativePaste(win, (data) => env.run(command, ctx, { ...(binding.args ?? {}), clipboard: data }));
+			return;
+		}
 		e.preventDefault();
 		if (e.repeat && !(binding.repeat || command.repeat)) return; // toggles ignore auto-repeat (KB-006)
 		if (!e.repeat && (binding.keyup || command.onKeyUp)) held.set(e.code, { command, ctx });
@@ -196,4 +204,29 @@ export function installKeyboardDispatcher(win: Window, env: DispatcherEnv): () =
 		win.removeEventListener('keyup', onKeyUp, true);
 		win.removeEventListener('blur', onBlur);
 	};
+}
+
+/** How long a paste chord waits for the browser's paste event before running without its data. */
+export const NATIVE_PASTE_WAIT_MS = 120;
+
+/**
+ * Lets the default action of a paste chord happen and runs `run` with the data of the paste event it fires
+ * (captured and stopped here), or with `null` when the browser fires none.
+ */
+export function awaitNativePaste(win: Window, run: (data: ClipboardData | null) => void): void {
+	let done = false;
+	const finish = (data: ClipboardData | null) => {
+		if (done) return;
+		done = true;
+		win.removeEventListener('paste', onPaste, true);
+		win.clearTimeout(timer);
+		run(data);
+	};
+	const onPaste = (e: Event) => {
+		e.preventDefault();
+		e.stopImmediatePropagation();
+		finish(readClipboardEvent(e as ClipboardEvent));
+	};
+	win.addEventListener('paste', onPaste, true);
+	const timer = win.setTimeout(() => finish(null), NATIVE_PASTE_WAIT_MS);
 }
