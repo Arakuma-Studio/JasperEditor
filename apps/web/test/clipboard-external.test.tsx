@@ -5,6 +5,7 @@
 // centred text clip on the lowest targeted video track (one "Paste Text" step); text fields keep their paste.
 import { EngineClient } from '@jasper/engine-client';
 import {
+	buildClipsPayload,
 	type Clip,
 	createEmptyProject,
 	createSeededIdSource,
@@ -22,11 +23,14 @@ import {
 } from '../src/clipboard/external.ts';
 import {
 	clipboardMemory,
+	DESKTOP_WRITE_AFTER_EVENT_MS,
 	externalContentOf,
 	imageExtension,
 	pasteSourceOf,
 	readClipboardEvent,
 	readSystemClipboard,
+	withDesktopFiles,
+	writeClipboard,
 } from '../src/clipboard/system.ts';
 import {
 	type CommandCtx,
@@ -354,5 +358,81 @@ describe('text fields keep their paste (CLB-010)', () => {
 		} finally {
 			off();
 		}
+	});
+});
+
+describe('desktop transport (CLB-002 defect fix, CLB-010 file lists)', () => {
+	function payload() {
+		const p = project(50);
+		const r = p.session.apply({
+			label: 's',
+			origin: 'user',
+			commands: [
+				{ type: 'clip.addText', at: 0, duration: 30, track: 'V1', content: { text: 'A' }, ref: '$a' },
+			],
+		});
+		if (!r.ok) throw new Error('setup');
+		return buildClipsPayload(p.session.getCommitted(), p.seqId, [r.refs.$a!]);
+	}
+	function desktop(write: (d: unknown) => Promise<boolean>, readFiles = async () => [] as string[]) {
+		const bridge = { write: vi.fn(write), read: async () => null, readFiles: vi.fn(readFiles) };
+		(window as { jasperDesktop?: unknown }).jasperDesktop = { runtime: 'desktop', clipboard: bridge };
+		return bridge;
+	}
+
+	it('writes all formats in one Electron write without a racing web write; falls back to the web when it fails', async () => {
+		const exec = vi.fn(() => false);
+		const doc = document as unknown as { execCommand: unknown };
+		const original = doc.execCommand;
+		doc.execCommand = exec;
+		try {
+			const ok = desktop(async () => true);
+			const stored = writeClipboard(payload());
+			expect(ok.write).toHaveBeenCalledWith({ json: stored.json, html: expect.any(String), text: 'A' });
+			expect(exec).not.toHaveBeenCalled();
+			await vi.waitFor(() => expect(stored.systemWritten).toBe(true));
+			desktop(async () => false);
+			writeClipboard(payload());
+			await vi.waitFor(() => expect(exec).toHaveBeenCalledWith('copy'));
+		} finally {
+			doc.execCommand = original;
+		}
+	});
+
+	it('answers a native copy event at once and writes the Electron clipboard after it', () => {
+		vi.useFakeTimers();
+		const bridge = desktop(async () => true);
+		const data = new Map<string, string>();
+		const e = new Event('copy', { cancelable: true }) as ClipboardEvent;
+		Object.defineProperty(e, 'clipboardData', {
+			value: { setData: (t: string, v: string) => data.set(t, v) },
+		});
+		writeClipboard(payload(), { event: e });
+		expect([...data.keys()].sort()).toEqual(['text/html', 'text/plain']);
+		expect(e.defaultPrevented).toBe(true);
+		expect(bridge.write).not.toHaveBeenCalled();
+		vi.advanceTimersByTime(DESKTOP_WRITE_AFTER_EVENT_MS);
+		expect(bridge.write).toHaveBeenCalledTimes(1);
+	});
+
+	it('completes a paste event without files with the file manager list, never JasperEditor content', async () => {
+		const bridge = desktop(
+			async () => true,
+			async () => ['/m/a.mov'],
+		);
+		expect(await withDesktopFiles({ html: null, text: '/m/a.mov', files: 0 })).toEqual({
+			html: null,
+			text: '/m/a.mov',
+			files: 1,
+			paths: ['/m/a.mov'],
+		});
+		const ours = { html: encodeClipboardHtml(JSON.stringify(payload()), 'A'), text: 'A', files: 0 };
+		expect(await withDesktopFiles(ours)).toBe(ours);
+		const withFiles = { html: null, text: null, files: 1, blobs: [png()] };
+		expect(await withDesktopFiles(withFiles)).toBe(withFiles);
+		expect(bridge.readFiles).toHaveBeenCalledTimes(1);
+		delete (window as { jasperDesktop?: unknown }).jasperDesktop;
+		const plain = { html: null, text: 'x', files: 0 };
+		expect(await withDesktopFiles(plain)).toBe(plain);
 	});
 });

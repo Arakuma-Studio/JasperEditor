@@ -133,8 +133,17 @@ async function writeViaAsyncApi(html: string, text: string): Promise<boolean> {
 }
 
 /**
- * Copies a payload: the in-memory copy at once, then the system clipboard (on the given copy/cut event, else a
- * synchronous copy event, else the async Clipboard API) and, on desktop, the Electron clipboard.
+ * After a copy event the renderer commits the event's data to the OS clipboard asynchronously; the Electron write
+ * (all formats at once) waits this long so it lands last (wp-clipboard-2 defect fix: the two writes raced and the
+ * custom format was sometimes overwritten).
+ */
+export const DESKTOP_WRITE_AFTER_EVENT_MS = 150;
+
+/**
+ * Copies a payload: the in-memory copy at once, then the system clipboard. Desktop: the Electron clipboard writes
+ * text/plain, text/html and application/x-jasper-clipboard in one atomic write (a web write next to it would race
+ * and could drop the custom format); the web paths are the fallback when it fails. Web: the given copy/cut event,
+ * else a synchronous copy event, else the async Clipboard API.
  */
 export function writeClipboard(
 	payload: ClipboardPayload,
@@ -145,26 +154,39 @@ export function writeClipboard(
 	const html = encodeClipboardHtml(json, text);
 	const stored: StoredClipboard = { payload, json, text, systemWritten: false, at: Date.now() };
 	memory = stored;
+	const webWrite = () => {
+		if (typeof document !== 'undefined' && writeViaCopyEvent(document, html, text)) {
+			stored.systemWritten = true;
+		} else if (typeof navigator !== 'undefined') {
+			void writeViaAsyncApi(html, text).then((ok) => {
+				if (ok && memory === stored) stored.systemWritten = true;
+			});
+		}
+	};
+	const desktop = getDesktopBridge()?.clipboard;
+	const desktopWrite = () =>
+		desktop!
+			.write({ json, html, text })
+			.then((ok) => {
+				if (ok && memory === stored) stored.systemWritten = true;
+				return ok;
+			})
+			.catch(() => false);
 	if (opts.event?.clipboardData) {
+		// A native copy/cut event (app menu, browser menu) is answered with its own data either way.
 		opts.event.clipboardData.setData('text/html', html);
 		opts.event.clipboardData.setData('text/plain', text);
 		opts.event.preventDefault();
 		stored.systemWritten = true;
-	} else if (typeof document !== 'undefined' && writeViaCopyEvent(document, html, text)) {
-		stored.systemWritten = true;
-	} else if (typeof navigator !== 'undefined') {
-		void writeViaAsyncApi(html, text).then((ok) => {
-			if (ok && memory === stored) stored.systemWritten = true;
+		if (desktop)
+			setTimeout(() => {
+				if (memory === stored) void desktopWrite();
+			}, DESKTOP_WRITE_AFTER_EVENT_MS);
+	} else if (desktop) {
+		void desktopWrite().then((ok) => {
+			if (!ok && memory === stored) webWrite();
 		});
-	}
-	const desktop = getDesktopBridge()?.clipboard;
-	if (desktop)
-		void desktop
-			.write({ json, html, text })
-			.then((ok) => {
-				if (ok && memory === stored) stored.systemWritten = true;
-			})
-			.catch(() => undefined);
+	} else webWrite();
 	emit();
 	return stored;
 }
@@ -224,6 +246,23 @@ export async function readSystemClipboard(): Promise<ClipboardData | null> {
 		// Permission denied or not focused: the in-memory copy is used.
 		return onlyPaths();
 	}
+}
+
+/**
+ * Desktop: completes paste-event data with the files copied in the OS file manager when the event carried none
+ * (Chromium does not turn every platform's file list into File objects). JasperEditor content is left alone.
+ */
+export async function withDesktopFiles(data: ClipboardData | null): Promise<ClipboardData | null> {
+	const readFiles = getDesktopBridge()?.clipboard?.readFiles;
+	if (!data || !readFiles || data.json || data.blobs?.length || data.paths?.length) return data;
+	if (data.html && decodeClipboardHtml(data.html)) return data;
+	let paths: string[] = [];
+	try {
+		paths = await readFiles();
+	} catch {
+		paths = [];
+	}
+	return paths.length ? { ...data, files: data.files + paths.length, paths } : data;
 }
 
 /** Foreign clipboard content (S01:CLB-010). */

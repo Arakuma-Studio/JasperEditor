@@ -40,6 +40,7 @@ import {
 	type PasteSource,
 	pasteSourceOf,
 	readSystemClipboard,
+	withDesktopFiles,
 	writeClipboard,
 } from './system.ts';
 
@@ -218,7 +219,8 @@ export function cutSelection(ctx: CommandCtx, target: ClipboardTarget, args: Cli
 // ---------------------------------------------------------------- paste
 
 async function sourceOf(args: ClipboardArgs): Promise<PasteSource> {
-	return pasteSourceOf(args.clipboard ?? (await readSystemClipboard()));
+	// CLB-010: a paste event without files may still have desktop file-manager files on the OS clipboard.
+	return pasteSourceOf(args.clipboard ? await withDesktopFiles(args.clipboard) : await readSystemClipboard());
 }
 
 function report(ctx: CommandCtx, label: string, r: TransactionResult | null): void {
