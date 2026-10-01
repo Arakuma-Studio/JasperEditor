@@ -1,0 +1,21 @@
+vid.stab (libvidstab) in vidstab.wasm
+=====================================
+
+vidstab.wasm contains libvidstab, the video stabilisation library by Georg Martius and contributors,
+https://github.com/georgmartius/vid.stab, commit e2445c4081658318223762a696eb1c645c2d7168 (version 1.4.0),
+licensed under the GNU Lesser General Public License version 2.1 or (at your option) any later version
+(relicensed from GPL in August 2026: RELICENSE.md and issue #165 upstream). The licence text is in
+LICENSE-vidstab.txt. It is linked with a small glue layer of JasperEditor (scripts/vidstab-wasm/glue.c),
+licensed LGPL-2.1-or-later as well.
+
+Corresponding source: https://github.com/georgmartius/vid.stab/archive/e2445c4081658318223762a696eb1c645c2d7168.tar.gz
+(sha256 39506541c073b2be1e376b59fc90e6a79ba4d16cbf4a4a2a58a6badc3a4ce1c3) and scripts/vidstab-wasm/ in the JasperEditor sources. Build details and the sha256 of
+the shipped module: VIDSTAB-WASM.json.
+
+Replacing the library (LGPL section 6): vidstab.wasm is a separate file that JasperEditor loads at run time;
+nothing of it is compiled into the application. To use a modified vid.stab, rebuild the module with
+
+    VIDSTAB_SRC=/path/to/your/vid.stab scripts/vidstab-wasm/build.sh /some/outdir
+
+and either replace vidstab.wasm next to jasper-proc.mjs with the result or set the environment variable
+JASPER_VIDSTAB_WASM=/some/outdir/vidstab.wasm. The module interface is the vsx_* functions of glue.c.

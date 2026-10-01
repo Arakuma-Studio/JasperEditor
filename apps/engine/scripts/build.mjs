@@ -21,3 +21,22 @@ await build({
 	},
 	logLevel: 'info',
 });
+
+// Clip processing (wp-m2-process, S07:PRC-011): jasper-proc.mjs, its worker, the vid.stab WASM module and the
+// bundled models next to engine.mjs; licence texts the engine shows in Help ▸ About ▸ Licenses.
+{
+	const { spawnSync } = await import('node:child_process');
+	const { cpSync, mkdirSync } = await import('node:fs');
+	const r = spawnSync(
+		process.execPath,
+		[join(root, 'scripts', 'build-proc.mjs'), '--out', join(root, 'dist')],
+		{
+			stdio: 'inherit',
+		},
+	);
+	if (r.status !== 0) throw new Error('build-proc failed');
+	mkdirSync(join(root, 'dist', 'third-party'), { recursive: true });
+	cpSync(join(root, 'src', 'processing', 'third-party'), join(root, 'dist', 'third-party'), {
+		recursive: true,
+	});
+}

@@ -17,7 +17,7 @@
 //   Remotion's compositor and the license + notice files; the desktop packaging runs this after packing).
 import { spawnSync } from 'node:child_process';
 import { closeSync, existsSync, lstatSync, openSync, readdirSync, readFileSync, readSync } from 'node:fs';
-import { basename, join, relative } from 'node:path';
+import { basename, dirname, join, relative } from 'node:path';
 import {
 	evaluateBuild,
 	isChromiumFfmpeg,
@@ -55,19 +55,31 @@ function ask(file, args) {
 	return `${r.stdout}${r.stderr}`;
 }
 
+/** The `libvidstab` record of the BUILDINFO.json next to an artifact (vid.stab rule, S07:PST-003). */
+export function vidstabRecordFor(file) {
+	const info = join(dirname(file), 'BUILDINFO.json');
+	if (!existsSync(info)) return undefined;
+	try {
+		return JSON.parse(readFileSync(info, 'utf8')).libvidstab;
+	} catch {
+		return undefined;
+	}
+}
+
 /** Checks one artifact; returns { file, method, problems }. */
 export function checkFile(file, name) {
+	const vidstab = vidstabRecordFor(file);
 	if (isRunnableExe(file, name)) {
 		const buildconf = ask(file, ['-buildconf']);
 		const encoders = ask(file, ['-encoders']);
 		const license = ask(file, ['-L']);
 		if (buildconf !== null && encoders !== null && license !== null) {
-			return { file, method: 'run', problems: evaluateBuild({ buildconf, encoders, license }) };
+			return { file, method: 'run', problems: evaluateBuild({ buildconf, encoders, license, vidstab }) };
 		}
 		// Does not run here (missing libraries?): fall back to the embedded strings.
 	}
 	const s = scanBinaryStrings(readFileSync(file));
-	const problems = evaluateBuild(s);
+	const problems = evaluateBuild({ ...s, vidstab });
 	if (!s.buildconf && /^(ffmpeg|ffprobe)|avcodec/i.test(name))
 		problems.push('no embedded FFmpeg configuration found (cannot prove it is LGPL)');
 	return { file, method: 'strings', problems };

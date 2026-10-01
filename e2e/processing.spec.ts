@@ -1,0 +1,160 @@
+// Clip processing UI (S07 §6, acceptance §8 item 9): Process Clip… from the timeline clip menu → engine job →
+// the clip switches to the processed version as ONE undo entry ("Process Clip"), with a "processed" badge and the
+// Media Version section; the Media Version dropdown swaps and undoes; Preferences ▸ Processing saves the remote
+// settings and renders a probe result. The E2E engine has no SSH shim, so the probe targets a closed local port
+// and the spec asserts the rendered "not ready / cannot connect" result.
+import { expect, type Page, test } from '@playwright/test';
+import {
+	appliedLabels,
+	clipElement,
+	createProject,
+	enableAgentBridge,
+	importFiles,
+	query,
+	watchPage,
+} from './support.ts';
+
+test.describe.configure({ mode: 'serial' });
+
+let page: Page;
+let videoClip = '';
+let originalId = '';
+
+type Doc = {
+	media: Record<string, { id: string; originalName: string; derivation: { recipe: { op: string } } | null }>;
+	sequences: Record<string, { clips: Record<string, { id: string; kind: string; mediaId?: string }> }>;
+};
+
+async function doc(): Promise<Doc> {
+	return query<Doc>(page, 'doc.get');
+}
+
+async function clipMedia(): Promise<string | undefined> {
+	const d = await doc();
+	for (const s of Object.values(d.sequences)) if (s.clips[videoClip]) return s.clips[videoClip]!.mediaId;
+	return undefined;
+}
+
+async function badge(): Promise<string> {
+	return clipElement(page, videoClip).evaluate((el) => getComputedStyle(el, '::after').content);
+}
+
+async function undo(): Promise<void> {
+	await page.getByTestId('timeline-track-area').click({ position: { x: 5, y: 5 } });
+	await page.keyboard.press('Control+KeyZ');
+}
+
+test.beforeAll(async ({ browser }) => {
+	page = await browser.newPage();
+	watchPage(page);
+	await enableAgentBridge(page);
+});
+
+test.afterAll(async () => {
+	await page?.close();
+});
+
+test('Process Clip… (denoise) swaps the clip to the processed version in one undo step', async () => {
+	await createProject(page, 'E2E Processing');
+	await importFiles(page, ['clip-b.mp4']);
+	const d0 = await doc();
+	originalId = Object.values(d0.media).find((m) => m.originalName === 'clip-b.mp4')!.id;
+	const placed = await page.evaluate(
+		(mediaId) =>
+			(window as unknown as { jasper: { transact(tx: unknown): Promise<{ ok: boolean }> } }).jasper.transact({
+				label: 'Place clip-b',
+				commands: [{ type: 'clip.place', source: { mediaId }, at: 0 }],
+			}),
+		originalId,
+	);
+	expect(placed.ok).toBe(true);
+	const d1 = await doc();
+	videoClip = Object.values(Object.values(d1.sequences)[0]!.clips).find((c) => c.kind === 'video')!.id;
+	await expect(clipElement(page, videoClip)).toBeVisible();
+
+	// Timeline clip context menu → Process Clip…
+	await clipElement(page, videoClip).click({ button: 'right', position: { x: 30, y: 20 } });
+	// The clip menu is long (labels) and may extend below the viewport; activate the entry directly.
+	await page.getByRole('menuitem', { name: 'Process Clip…' }).dispatchEvent('click');
+	const dialog = page.getByTestId('process-dialog');
+	await expect(dialog).toBeVisible();
+	await dialog.getByRole('checkbox', { name: 'Denoise' }).click();
+	await expect(dialog.getByTestId('process-estimate')).toContainText('estimate');
+	await expect(dialog.getByText(/Replace in timeline when done \(1 clip\)/)).toBeVisible();
+	await dialog.getByRole('button', { name: 'Start' }).click();
+	await expect(dialog).toBeHidden();
+
+	// The job runs in the engine; the client commits media.derive when it succeeds.
+	await expect
+		.poll(() => appliedLabels(page), { timeout: 240_000, intervals: [1000] })
+		.toContain('Process Clip');
+	const labels = await appliedLabels(page);
+	expect(labels.filter((l) => l === 'Process Clip')).toHaveLength(1);
+	const processedId = await clipMedia();
+	expect(processedId).not.toBe(originalId);
+	const d2 = await doc();
+	expect(d2.media[processedId!]?.derivation?.recipe.op).toBe('process');
+	await expect.poll(badge).toBe('"Processed"');
+
+	// Media Version section of the selected clip shows the processed version.
+	await clipElement(page, videoClip).click({ position: { x: 30, y: 20 } });
+	await expect(page.getByTestId('media-version-info')).toContainText('Denoised');
+
+	// One Undo restores the original (and removes the processed version from the project).
+	await undo();
+	await expect.poll(clipMedia).toBe(originalId);
+	await expect.poll(badge).toBe('none');
+	expect(Object.keys((await doc()).media)).toEqual([originalId]);
+});
+
+test('Media Version dropdown swaps and undoes', async () => {
+	// Redo brings the processed version back, then switch with the dropdown.
+	await page.keyboard.press('Control+Shift+KeyZ');
+	await expect.poll(clipMedia).not.toBe(originalId);
+	const processedId = await clipMedia();
+	await clipElement(page, videoClip).click({ position: { x: 30, y: 20 } });
+	const section = page.getByTestId('media-version');
+	await section.getByRole('combobox', { name: 'Media version' }).click();
+	await page.getByRole('option', { name: 'Original' }).click();
+	await expect.poll(clipMedia).toBe(originalId);
+	expect((await appliedLabels(page)).at(-1)).toBe('Use Original Version');
+	await expect.poll(badge).toBe('none');
+	await undo();
+	await expect.poll(clipMedia).toBe(processedId);
+	await expect.poll(badge).toBe('"Processed"');
+});
+
+test('Preferences ▸ Processing saves the remote settings and renders a probe result', async () => {
+	await page.getByTestId('title-bar').getByRole('menuitem', { name: 'Edit', exact: true }).click();
+	await page.getByRole('menuitem', { name: /^Preferences$/ }).hover();
+	await page.getByRole('menuitem', { name: /^Preferences…/ }).click();
+	const prefs = page.getByTestId('preferences-dialog');
+	await expect(prefs).toBeVisible();
+	await prefs.getByTestId('prefs-page-processing').click();
+	await expect(prefs.getByTestId('prefs-processing')).toBeVisible();
+	await expect(prefs.getByTestId('remote-host')).toBeEnabled();
+	await prefs.getByTestId('remote-host').fill('127.0.0.1');
+	await prefs.getByTestId('remote-port').fill('1');
+	await prefs.getByTestId('remote-user').fill('e2e');
+	await prefs.getByTestId('remote-dir').fill('/tmp/jasper-e2e-remote');
+	await prefs.getByTestId('prefs-processing-save').click();
+	await expect(prefs.getByTestId('prefs-processing-status')).toHaveText('Settings saved');
+	const saved = await (await page.request.get('/api/settings/processing')).json();
+	expect(saved.remote).toMatchObject({
+		enabled: false,
+		host: '127.0.0.1',
+		port: 1,
+		user: 'e2e',
+		identityFile: null,
+		remoteDir: '/tmp/jasper-e2e-remote',
+		strictHostKeyChecking: 'accept-new',
+	});
+	// Nothing listens on port 1: the probe returns "not ready" with the ssh error, rendered in the page.
+	await prefs.getByTestId('remote-test').click();
+	const probe = prefs.getByTestId('probe-result');
+	await expect(probe).toBeVisible({ timeout: 60_000 });
+	await expect(probe).toHaveAttribute('data-ok', 'false');
+	await expect(prefs.getByTestId('probe-message')).toContainText('Not ready');
+	await expect(prefs.getByTestId('probe-runtime')).toContainText('not installed');
+	await expect(prefs.getByTestId('model-span-2x-nomosuni-multijpg')).toBeVisible();
+});

@@ -79,7 +79,26 @@
       "svtav1": {
         "url": "https://gitlab.com/AOMediaCodec/SVT-AV1/-/archive/v3.1.2/SVT-AV1-v3.1.2.tar.gz",
         "sha256": "d0d73bfea42fdcc1222272bf2b0e2319e9df5574721298090c3d28315586ecb1"
+      },
+      "vidstab": {
+        "url": "https://github.com/georgmartius/vid.stab/archive/e2445c4081658318223762a696eb1c645c2d7168.tar.gz",
+        "sha256": "39506541c073b2be1e376b59fc90e6a79ba4d16cbf4a4a2a58a6badc3a4ce1c3"
       }
     }
+  },
+  "vidstab": {
+    "$comment": "vid.stab was relicensed GPL-2.0-or-later -> LGPL-2.1-or-later in August 2026 (RELICENSE.md, issue #165). No release tag exists after the relicense (v1.1.2 and older are GPL), so the source build pins a post-relicense master commit. check-lgpl.mjs accepts --enable-libvidstab ONLY when BUILDINFO.json records exactly this commit (ARCHITECTURE D-13, spec S07 PST-003).",
+    "repository": "https://github.com/georgmartius/vid.stab",
+    "commit": "e2445c4081658318223762a696eb1c645c2d7168",
+    "commitDate": "2026-08-14T20:12:27Z",
+    "relicenseCommit": "e4fef65ce54df36294e660884247c62144e10ccd",
+    "relicenseDate": "2026-08-06",
+    "version": "1.4.0",
+    "license": "LGPL-2.1-or-later",
+    "relicenseRecord": "https://github.com/georgmartius/vid.stab/blob/e2445c4081658318223762a696eb1c645c2d7168/RELICENSE.md",
+    "relicenseIssue": "https://github.com/georgmartius/vid.stab/issues/165",
+    "licenseFile": "https://github.com/georgmartius/vid.stab/blob/e2445c4081658318223762a696eb1c645c2d7168/COPYING.LESSER",
+    "cmake": ["-DUSE_OMP=OFF", "-DVIDSTAB_LPSOLVER=builtin", "-DBUILD_SHARED_LIBS=OFF"],
+    "configurePatch": "patches/configure-libvidstab-lgpl.patch"
   }
 }

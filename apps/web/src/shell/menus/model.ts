@@ -109,6 +109,7 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			sep,
 			sub('Motion Graphic', [c('mg.editParameters', 'Edit Parameters…'), c('mg.rerender', 'Re-render')]),
 			c('project.createProxies', 'Create Proxies'),
+			c('process.processClip', 'Process Clip…'),
 		],
 	},
 	{

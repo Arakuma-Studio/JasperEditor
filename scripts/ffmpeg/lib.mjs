@@ -82,7 +82,6 @@ export const FORBIDDEN_FLAGS = [
 	'--enable-libxavs2',
 	'--enable-libdavs2',
 	'--enable-librubberband',
-	'--enable-libvidstab',
 	'--enable-frei0r',
 	'--enable-avisynth',
 	'--enable-libcdio',
@@ -116,14 +115,36 @@ export function configureFlags(text) {
 }
 
 /**
+ * vid.stab (S07:PST-003, ARCHITECTURE D-13 M2 note): `--enable-libvidstab` is only acceptable for a build of
+ * the pinned post-relicense (LGPL-2.1-or-later) vid.stab commit, which the build records in BUILDINFO.json
+ * (`libvidstab: {commit, license}`). Any other vid.stab — every release up to v1.1.2 is GPL — fails.
+ * Returns null when the record is acceptable, else the reason.
+ */
+export function vidstabRecordProblem(record, manifest = loadManifest()) {
+	const pin = manifest.vidstab;
+	if (!record || typeof record !== 'object')
+		return 'configured with --enable-libvidstab but BUILDINFO.json records no libvidstab build (only the pinned relicensed vid.stab is allowed)';
+	if (record.commit !== pin.commit)
+		return `configured with --enable-libvidstab from vid.stab ${String(record.commit ?? '?').slice(0, 12)}, not the pinned post-relicense commit ${pin.commit.slice(0, 12)}`;
+	if (record.license !== 'LGPL-2.1-or-later')
+		return `libvidstab licence recorded as ${record.license}, expected LGPL-2.1-or-later`;
+	return null;
+}
+
+/**
  * Evaluates the build of one ffmpeg binary or library. Inputs are the texts we could obtain: `buildconf`
  * (`-hide_banner -buildconf` or an embedded configuration string), `encoders` (`-hide_banner -encoders`)
- * and `license` (`-L` or the embedded `avcodec_license()` string). Returns the violations (empty = OK).
+ * and `license` (`-L` or the embedded `avcodec_license()` string), plus the `libvidstab` record of the
+ * build's BUILDINFO.json (`vidstab`, see vidstabRecordProblem). Returns the violations (empty = OK).
  */
-export function evaluateBuild({ buildconf = '', encoders = '', license = '' }) {
+export function evaluateBuild({ buildconf = '', encoders = '', license = '', vidstab = undefined }) {
 	const problems = [];
 	const flags = new Set(configureFlags(buildconf));
 	for (const f of FORBIDDEN_FLAGS) if (flags.has(f)) problems.push(`configured with ${f}`);
+	if (flags.has('--enable-libvidstab')) {
+		const p = vidstabRecordProblem(vidstab);
+		if (p) problems.push(p);
+	}
 	for (const line of encoders.split('\n')) {
 		const m = /^\s*[A-Z.]{6}\s+(\S+)/.exec(line);
 		if (m && FORBIDDEN_ENCODERS.includes(m[1])) problems.push(`has the ${m[1]} encoder`);

@@ -84,31 +84,48 @@ Requirement ids: `PRC-NNN` (processing model and jobs), `PST-NNN` (steps), `PRM-
 ### 4.1 Stabilise
 
 - **PST-001 (P0)** `{op:'stabilize', method: 'auto'|'vidstab'|'deshake', smoothing (frames), borders:
-  'crop'|'keep', shakiness?, rotation?}`. `auto` = vid.stab when the engine's FFmpeg has `vidstabdetect`, else
-  `deshake`.
-- **PST-002 (P0)** vid.stab: two passes on a 4:4:4 full-range YUV version of the frames (vid.stab refuses packed
-  RGB): `vidstabdetect=shakiness=<s>:accuracy=15:stepsize=4:mincontrast=0.2:result=<trf>` then
-  `vidstabtransform=input=<trf>:smoothing=<n>:optalgo=gauss:crop=<keep|black>:optzoom=<1 for crop, 0 for
-  keep>:interpol=bicubic` (+ `maxangle=0` when `rotation` is false). Pass 1 may run at reduced resolution for
-  speed with the transforms scaled (P1).
+  'crop'|'keep', shakiness?, rotation?}`. `vidstab` = libvidstab compiled to **WebAssembly** (PST-002a), the
+  same code path on Linux, Windows and macOS; `auto` = vid.stab, falling back to `deshake` only when the WASM
+  module cannot be loaded. *(Revised 2026-10-01, producer decision: vid.stab must work on all three OSes, not
+  only through a Linux FFmpeg build.)*
+- **PST-002 (P0)** vid.stab parameters (the trailer's proven "medium" preset): motion detection
+  `shakiness=<s|5>:accuracy=15:stepsize=4:mincontrast=0.2` on the luma, downscaled to ≤ 960 px wide (the
+  transforms are scaled back); camera path `smoothing=<n>:optalgo=gauss`, corrections capped at
+  `maxshift = round(20 · width / 848)` px and `maxangle = 0.03` rad (`0` when `rotation` is false);
+  `borders: 'crop'` = the smallest static zoom hiding the borders (vid.stab `optzoom=1`), `'keep'` = no zoom,
+  black borders; bicubic interpolation.
+  - **PST-002a (P0) WASM path (primary).** ffmpeg (LGPL) decodes the frames → vid.stab (WASM, SIMD) detects
+    the local motions per frame and computes the smoothed per-frame corrections (x, y, angle, zoom) → jasper-proc
+    applies them to the 16-bit RGB frames with vid.stab's geometry (rotation about the frame centre,
+    translation, zoom) and bicubic kernel, in worker threads → ffmpeg encodes. No FFmpeg vid.stab filters
+    needed. The module is built reproducibly by `scripts/vidstab-wasm/build.sh` (pinned wasi-sdk + vid.stab
+    archive, sha256-checked) and committed as a separate, replaceable file
+    (`apps/engine/src/processing/proc/vidstab/vidstab.wasm` + `VIDSTAB-WASM.json` with commit, archive sha256,
+    toolchain, flags and module sha256, `LICENSE-vidstab.txt`, `NOTICE-vidstab.txt`); `JASPER_VIDSTAB_WASM`
+    points at a user-rebuilt module (LGPL relinking).
+  - **PST-002b (P1) FFmpeg path (optional, faster on Linux).** When the engine's FFmpeg is our LGPL source build
+    with the pinned vid.stab (PST-003), `vidstabdetect`/`vidstabtransform` may be used instead (8-bit 4:4:4,
+    same parameters), opted in with `JASPER_VIDSTAB_ENGINE=ffmpeg`; the engine checks `BUILDINFO.json` first.
+    (Measured on 1080p: the WASM path is as fast or faster and keeps 16 bits, so it stays the default.)
 - **PST-003 (P0)** **Licensing.** vid.stab was relicensed to LGPL-2.1-or-later in August 2026 (upstream master:
   `LICENSE`, `COPYING.LESSER`, `RELICENSE.md`, SPDX headers; issue #165). No release tag exists after the relicense
   (v1.1.2 and older are GPL). Therefore:
   1. `scripts/ffmpeg/manifest.json` pins a **post-relicense commit** of `georgmartius/vid.stab` (hash, commit date,
-     links to `RELICENSE.md` and issue #165, sha256 of the source archive).
-  2. The LGPL FFmpeg source build (`scripts/ffmpeg/build-lgpl-from-source.sh`, used for linux-x64 and macOS)
-     builds libvidstab from that commit and applies a documented one-line configure patch
-     (`scripts/ffmpeg/patches/configure-libvidstab-lgpl.patch`) that moves `libvidstab` from
+     links to `RELICENSE.md` and issue #165, sha256 of the source archive); the WASM build uses the same pin
+     (`scripts/vidstab-wasm/manifest.json` must agree).
+  2. The LGPL FFmpeg source build (`scripts/ffmpeg/build-lgpl-from-source.sh`, linux-x64 and macOS) builds
+     libvidstab from that commit (builtin LP solver, never GLPK; no OpenMP) and applies a documented configure
+     patch (`scripts/ffmpeg/patches/configure-libvidstab-lgpl.patch`) that moves `libvidstab` from
      `EXTERNAL_LIBRARY_GPL_LIST` to `EXTERNAL_LIBRARY_LIST` (FFmpeg 7.1 still lists it as GPL; FFmpeg's own
      `vf_vidstabdetect.c`, `vf_vidstabtransform.c`, `vidstabutils.c` are LGPL-2.1+). The build stays without
-     `--enable-gpl`; `BUILDINFO.json` records `libvidstab: {commit, date, license: 'LGPL-2.1-or-later'}`.
+     `--enable-gpl`; `BUILDINFO.json` records `libvidstab: {commit, date, license: 'LGPL-2.1-or-later', …}`.
   3. The licence guard (`pnpm ffmpeg:check`) accepts `--enable-libvidstab` **only** when `BUILDINFO.json` records
      the pinned post-relicense commit; any other vid.stab build fails the guard.
   4. The About/Licenses screen lists libvidstab with its licence, commit and source link.
-  5. Prebuilt LGPL builds without vid.stab (BtbN, Windows) keep working with `deshake` (capability
-     `features.processing.stabilize = 'deshake'`).
-- **PST-004 (P0)** deshake fallback: `deshake=edge=<clamp|blank>:rx=32:ry=32:blocksize=8:contrast=125`, then for
-  `borders: 'crop'` a fixed centre crop + scale back of 4 % (deshake has no optimal zoom).
+  5. Prebuilt LGPL builds without vid.stab (BtbN, Windows) stabilise with the WASM module
+     (`features.processing.stabilize = 'vidstab'`); `deshake` only when the module is missing.
+- **PST-004 (P0)** deshake (last resort): `deshake=edge=<clamp|blank>:rx=32:ry=32:blocksize=8:contrast=125`, then
+  for `borders: 'crop'` a fixed centre crop + scale back of 4 % (deshake has no optimal zoom).
 
 ### 4.2 De-judder (frame cadence)
 
@@ -135,8 +152,10 @@ Requirement ids: `PRC-NNN` (processing model and jobs), `PST-NNN` (steps), `PRM-
   `atadenoise` (temporal, fast: thresholds `0a/1a/2a = 0.02 + 0.08·s`, `0b/1b/2b = 0.04 + 0.16·s`, `s=9`),
   `fftdnoiz` (medium: `sigma = 2 + 10·s`, `prev=1:next=1`), `nlmeans` (slow, strongest: `s = 1 + 7·s`, `p=7`, `r=15`).
 - **PST-021 (P0)** `{op:'deblock', filter: 'weak'|'strong', block?}` → `deblock=filter=<f>:block=<b|8>`; placed
-  before denoise when both are requested (the UI orders steps: deblock → denoise → stabilise → de-judder →
-  upscale; agents may order freely).
+  before denoise when both are requested (the UI orders steps: deblock → denoise → de-judder → stabilise →
+  upscale; agents may order freely). *(Revised 2026-10-01: de-judder before stabilise — vid.stab smooths the
+  camera path per frame and hides most of a 2-2-1 cadence from the analysis: on crudo.mp4 37–40 s the short/long
+  ratio went 0.52 → 0.86 and `auto` skipped the retiming; the trailer pipeline also de-juddered first.)*
 
 ### 4.4 Super-resolution upscale
 

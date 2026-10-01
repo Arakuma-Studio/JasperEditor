@@ -39,6 +39,7 @@
     "@remotion/renderer": "4.0.499",
     "@techstark/opencv-js": "4.12.0-release.1",
     "fastify": "^5.6.0",
+    "onnxruntime-node": "1.30.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "remotion": "4.0.499",

@@ -101,6 +101,28 @@ cd apps/web && JASPER_ENGINE_URL=http://127.0.0.1:<engine port> pnpm exec vite -
 Electron then takes `JASPER_DESKTOP_DEV_URL=http://127.0.0.1:<vite port>`. Without `JASPER_APPDIR` the engine
 uses the platform appdir (`~/.local/share/jasper` on Linux).
 
+## Clip processing
+
+Processed versions of media (S07, `docs/wp-notes/wp-m2-process.md`): **Clip ▸ Process Clip…** (also in the
+timeline clip and Project item context menus) runs deblock → denoise → stabilise → de-judder → AI upscale as an
+engine job and swaps the clip to the result in one undoable step; **Properties ▸ Media Version** switches back.
+Every step keeps the frame count and rate, so timing never changes; the export reads the processed ProRes file.
+
+- Runtime: `jasper-proc` (`apps/engine/src/processing/proc/`, bundled to `apps/engine/dist/jasper-proc.mjs` by
+  `pnpm --filter @jasper/engine build`), run by the engine locally or on a remote host over SSH (Preferences ▸
+  Processing: host, user, key file, remote dir; *Set up* installs the runtime there).
+- Stabilise: vid.stab (LGPL-2.1+ since its 2026 relicense, pinned commit) compiled to WebAssembly
+  (`apps/engine/src/processing/proc/vidstab/vidstab.wasm`, rebuilt with `scripts/vidstab-wasm/build.sh`), so it
+  works on Linux, Windows and macOS; FFmpeg's own vid.stab filters are an optional faster path with our LGPL
+  source build (`pnpm ffmpeg:lgpl --from-source`, accepted by `pnpm ffmpeg:check` only for the pinned commit);
+  `deshake` is the last resort.
+- De-judder: cadence analysis + flow warp with OpenCV.js (Apache-2.0) in worker threads.
+- Denoise/deblock: LGPL FFmpeg filters only (`atadenoise`, `fftdnoiz`, `nlmeans`, `deblock`).
+- Upscale: ONNX Runtime (`onnxruntime-node`, MIT) with the bundled SPAN 2× model
+  (`apps/engine/models/`, *2xNomosUni_span_multijpg by Philip Hofmann, CC BY 4.0*; conversion:
+  `scripts/models/export-span-onnx.py`). Help ▸ About ▸ Licenses lists all of them.
+- MCP: `process_clip`, `use_media_version`, `list_processing_models`, `test_remote_executor`, …
+
 ## PWA (installable web app)
 
 The Vite dev server does not register the service worker; install from a production build served by the

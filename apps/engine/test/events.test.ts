@@ -115,10 +115,11 @@ describe('capabilities and fonts', () => {
 		const lic = LicensesResponseSchema.parse(
 			(await app.inject({ method: 'GET', url: '/api/licenses', headers: H })).json(),
 		);
-		// M2 (S09:TRK-011): plus OpenCV.js for the trackers.
-		expect(lic.components).toHaveLength(2);
-		expect(lic.components[1]).toMatchObject({ id: 'opencv-js', license: 'Apache-2.0', bundled: true });
-		expect(lic.components[1]!.texts[0]!.text).toMatch(/Apache License/);
+		// FFmpeg first; M2 packages append their runtimes/weights (S09:TRK-011 OpenCV.js; wp-m2-process: vid.stab, ONNX Runtime, …).
+		expect(lic.components.filter((c) => c.id === 'ffmpeg')).toHaveLength(1);
+		const opencv = lic.components.find((c) => c.id === 'opencv-js');
+		expect(opencv).toMatchObject({ id: 'opencv-js', license: 'Apache-2.0', bundled: true });
+		expect(opencv!.texts[0]!.text).toMatch(/Apache License/);
 		expect(lic.components[0]).toMatchObject({ id: 'ffmpeg', bundled: caps.media.ffmpegSource === 'vendor' });
 		expect(lic.components[0]!.texts.length > 0).toBe(caps.media.ffmpegSource === 'vendor');
 		expect(caps.render.native).toBe(true);

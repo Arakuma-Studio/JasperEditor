@@ -94,9 +94,32 @@ export async function ffmpegLicense(input: {
 	};
 }
 
+/**
+ * M2 (additive): packages that ship third-party runtimes or model weights (wp-m2-process: vid.stab WASM,
+ * ONNX Runtime, OpenCV.js, the SPAN weights) contribute their entries to Help ▸ About ▸ Licenses.
+ */
+export type LicenseProvider = () => Promise<LicenseComponent[]> | LicenseComponent[];
+const licenseProviders = new Set<LicenseProvider>();
+export function registerLicenseProvider(fn: LicenseProvider): () => void {
+	licenseProviders.add(fn);
+	return () => licenseProviders.delete(fn);
+}
+
 export async function thirdPartyLicenses(
 	input: Parameters<typeof ffmpegLicense>[0],
 ): Promise<LicensesResponse> {
 	const [ffmpeg, opencv] = await Promise.all([ffmpegLicense(input), openCvLicense()]);
-	return { components: [ffmpeg, opencv].filter((c): c is LicenseComponent => c !== null) };
+	const extra: LicenseComponent[] = [];
+	for (const p of licenseProviders) {
+		try {
+			extra.push(...(await p()));
+		} catch {
+			// a broken provider never hides the FFmpeg entry
+		}
+	}
+	const seen = new Set<string>();
+	const components = [...(ffmpeg ? [ffmpeg] : []), ...(opencv ? [opencv] : []), ...extra].filter(
+		(c) => !seen.has(c.id) && !!seen.add(c.id),
+	);
+	return { components };
 }

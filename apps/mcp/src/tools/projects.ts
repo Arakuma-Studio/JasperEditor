@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { EngineError } from '@jasper/engine-client';
-import { BUILTIN_PRESETS, DEFAULT_PRESET_ID, mediaUsage } from '@jasper/project';
+import { BUILTIN_PRESETS, DEFAULT_PRESET_ID, mediaUsage, mediaVersionsOf } from '@jasper/project';
 import { z } from 'zod';
 import { defineTool, EDIT, loadDoc, READ_ONLY, requireOk, type ToolContext, transact } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
@@ -309,7 +309,7 @@ export function registerProjectTools(ctx: ToolContext): void {
 		{
 			title: 'Get media info',
 			description:
-				'Full details of one media asset: every stream from the probe (codec, size, fps, rotation, channels, sample rate), file locations, and the engine status of its derived files (poster, waveform peaks, filmstrip, proxy).',
+				'Full details of one media asset: every stream from the probe (codec, size, fps, rotation, channels, sample rate), file locations, the engine status of its derived files (poster, waveform peaks, filmstrip, proxy), its derivation (for processed versions: the original and the recipe) and the processed versions of the same original (for use_media_version).',
 			input: {
 				projectId: ProjectIdArg,
 				mediaId: z.string().min(1).describe('Media id ("med_…") from list_media or import_media'),
@@ -339,6 +339,16 @@ export function registerProjectTools(ctx: ToolContext): void {
 				probe: asset.probe,
 				locators: asset.locators,
 				engine,
+				// S07:PRA-002: processed versions (wp-m2-process).
+				derivation: asset.derivation ?? null,
+				versions: mediaVersionsOf(doc, mediaId).map((id, i) => ({
+					mediaId: id,
+					name: doc.media[id]?.originalName ?? id,
+					original: i === 0,
+					...(doc.media[id]?.derivation?.recipe.op === 'process'
+						? { steps: (doc.media[id]!.derivation!.recipe as { steps: unknown[] }).steps }
+						: {}),
+				})),
 			});
 		},
 	);

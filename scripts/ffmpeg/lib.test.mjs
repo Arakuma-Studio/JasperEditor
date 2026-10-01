@@ -112,6 +112,56 @@ describe('checkTree', () => {
 	});
 });
 
+describe('vid.stab rule (S07:PST-003)', () => {
+	const pin = loadManifest().vidstab;
+	const VIDSTAB_CONF = `--prefix=/x --enable-shared --disable-static --enable-libopenh264 --enable-libvpx --enable-libvidstab`;
+	const record = (commit) => ({ commit, date: pin.commitDate, license: 'LGPL-2.1-or-later' });
+
+	it('pins a post-relicense vid.stab commit with its provenance', () => {
+		expect(pin.commit).toMatch(/^[0-9a-f]{40}$/);
+		expect(pin.license).toBe('LGPL-2.1-or-later');
+		expect(pin.relicenseIssue).toMatch(/vid\.stab\/issues\/165$/);
+		expect(pin.relicenseRecord).toContain(`${pin.commit}/RELICENSE.md`);
+		expect(Date.parse(pin.commitDate)).toBeGreaterThanOrEqual(Date.parse(pin.relicenseDate));
+		expect(loadManifest().source.packages.vidstab.sha256).toMatch(/^[0-9a-f]{64}$/);
+		expect(loadManifest().source.packages.vidstab.url).toContain(pin.commit);
+	});
+
+	it('accepts --enable-libvidstab only with the pinned commit recorded', () => {
+		expect(evaluateBuild({ buildconf: VIDSTAB_CONF, vidstab: record(pin.commit) })).toEqual([]);
+		expect(evaluateBuild({ buildconf: VIDSTAB_CONF }).join()).toMatch(/records no libvidstab/);
+		expect(evaluateBuild({ buildconf: VIDSTAB_CONF, vidstab: record('aa'.repeat(20)) }).join()).toMatch(
+			/not the pinned post-relicense commit/,
+		);
+		expect(
+			evaluateBuild({
+				buildconf: VIDSTAB_CONF,
+				vidstab: { ...record(pin.commit), license: 'GPL-2.0-or-later' },
+			}).length,
+		).toBe(1);
+		// A build without vid.stab needs no record.
+		expect(evaluateBuild({ buildconf: LGPL_CONF })).toEqual([]);
+	});
+
+	it('pnpm ffmpeg:check reads the record from BUILDINFO.json next to the binaries', () => {
+		const root = mkdtempSync(join(tmpdir(), 'lgpl-vidstab-'));
+		for (const [name, commit] of [
+			['pinned', pin.commit],
+			['other', 'f'.repeat(40)],
+		]) {
+			const d = join(root, name);
+			mkdirSync(d, { recursive: true });
+			writeFileSync(join(d, 'libavfilter.so.10'), `\0${VIDSTAB_CONF}\0LGPL version 2.1 or later\0`);
+			writeFileSync(join(d, 'BUILDINFO.json'), JSON.stringify({ libvidstab: record(commit) }));
+		}
+		mkdirSync(join(root, 'none'));
+		writeFileSync(join(root, 'none', 'libavfilter.so.10'), `\0${VIDSTAB_CONF}\0LGPL version 2.1 or later\0`);
+		expect(checkTree(join(root, 'pinned'))[0].problems).toEqual([]);
+		expect(checkTree(join(root, 'other'))[0].problems.join()).toMatch(/not the pinned/);
+		expect(checkTree(join(root, 'none'))[0].problems.join()).toMatch(/records no libvidstab/);
+	});
+});
+
 describe('checkPackagedApp', () => {
 	const app = (opts = {}) => {
 		const root = mkdtempSync(join(tmpdir(), 'packaged-'));
