@@ -14,7 +14,7 @@ export const lowerThirdAnimParams = z.strictObject({
 	panelColor: rgbaParam([0.04, 0.06, 0.12, 0.82]),
 	/** Name size in design pixels (the role is 55 % of it). */
 	nameSize: z.number().min(20).max(140).default(58),
-	/** Left edge (side `left`) or right edge (side `right`) of the panel, 0…1 of the design width. */
+	/** Margin from the left (side `left`) or right (side `right`) edge of the canvas, 0…1 of the design width. */
 	x: z.number().min(0).max(1).default(0.0625),
 	/** Top of the panel, 0…1 of the design height. */
 	y: z.number().min(0).max(1).default(0.74),

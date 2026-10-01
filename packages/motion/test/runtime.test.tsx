@@ -25,7 +25,6 @@ import {
 	useAnimeDom,
 	useAnimeValues,
 } from '../src/runtime/index.ts';
-import { ANIME_TEMPLATE_IMPLS } from '../src/templates/index.ts';
 import { REST_UNIT_VALUES, TEXT_ANIMATION_IMPLS } from '../src/text/index.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -257,7 +256,6 @@ describe('text units (S11:TXA-010/011)', () => {
 describe('implementation tables (filled by wave 1)', () => {
 	it('start empty and expose the rest values', () => {
 		expect(TEXT_ANIMATION_IMPLS).toEqual({});
-		expect(ANIME_TEMPLATE_IMPLS).toEqual({});
 		expect(REST_UNIT_VALUES).toEqual({
 			opacity: 1,
 			x: 0,
