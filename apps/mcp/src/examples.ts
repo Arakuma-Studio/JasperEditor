@@ -28,6 +28,21 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		template: { id: 'lower-third', version: 1 },
 		params: { name: 'Jane Doe', title: 'Director' },
 	},
+	// wp-m2-shapes (S11:ANA-006)
+	'clip.addShape': {
+		type: 'clip.addShape',
+		at: 0,
+		duration: { seconds: 4 },
+		track: 'V3',
+		shape: {
+			type: 'rect',
+			size: [640, 160],
+			fill: [0.1, 0.1, 0.1, 0.8],
+			stroke: { color: [1, 0.8, 0, 1], width: 6, position: 'inside' },
+			cornerRadius: 24,
+		},
+		transform: { position: [960, 900] },
+	},
 	'clip.move': { type: 'clip.move', clipIds: [{ clipAt: { track: 'V1', at: 0 } }], deltaFrames: 30 },
 	'clip.trim': {
 		type: 'clip.trim',

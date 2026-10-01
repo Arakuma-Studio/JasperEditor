@@ -60,7 +60,7 @@ async function engineSchema(ctx: ToolContext): Promise<Record<string, unknown>> 
 }
 
 /** Runs a transaction built by a helper tool and returns the applied result plus the touched clips. */
-async function applyHelper(
+export async function applyHelper(
 	ctx: ToolContext,
 	projectId: string,
 	label: string,
@@ -81,7 +81,7 @@ async function applyHelper(
 	return jsonResult({ ...txBody(res, r), ...(clips.length ? { clips } : {}) });
 }
 
-function hexToRgba(hex: string): [number, number, number, number] {
+export function hexToRgba(hex: string): [number, number, number, number] {
 	const m = /^#?([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(hex.trim());
 	if (!m) throw new ToolError('E_INVALID_PARAM', `Invalid color "${hex}"`, 'Use #RRGGBB or #RRGGBBAA.');
 	const n = Number.parseInt(m[1]!, 16);

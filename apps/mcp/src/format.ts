@@ -9,6 +9,7 @@ import {
 	type ProjectDocument,
 	type Rational,
 	type Sequence,
+	type ShapeData,
 	sequenceDuration,
 	sequenceTimecode,
 	sourceOut,
@@ -67,8 +68,44 @@ export function clipSourceText(doc: ProjectDocument, seq: Sequence, clip: Clip):
 		return `motion graphic ${t?.id ?? '?'}@${t?.version ?? '?'}`;
 	}
 	if (clip.kind === 'solid') return 'color matte';
+	// wp-m2-shapes (S11:SHP-008, ANA-008): geometry and paint.
+	if (clip.kind === 'shape') return shapeText(clip.shape);
 	return clip.kind;
 }
+
+// ---------------------------------------------------------------- wp-m2-shapes
+
+/** `#rrggbb`, or `#rrggbbaa` when not opaque. */
+const hexOf = (c: readonly number[]) => {
+	const h = c.map((x) =>
+		Math.round(Math.min(1, Math.max(0, x)) * 255)
+			.toString(16)
+			.padStart(2, '0'),
+	);
+	return `#${h.slice(0, 3).join('')}${h[3] === 'ff' ? '' : h[3]}`;
+};
+
+/** "rect 400×400 fill #ffffff stroke 4px #000000 inside radius 12 (animated: size)". */
+export function shapeText(s: ShapeData): string {
+	const parts = [`${s.type} ${round3(s.size.value[0])}×${round3(s.size.value[1])}`];
+	parts.push(s.fill ? `fill ${hexOf(s.fill.value)}` : 'no fill');
+	if (s.stroke)
+		parts.push(
+			`stroke ${round3(s.stroke.width.value)}px ${hexOf(s.stroke.color.value)} ${s.stroke.position}`,
+		);
+	if (s.type === 'rect' && s.cornerRadius.value > 0) parts.push(`radius ${round3(s.cornerRadius.value)}`);
+	const keyed: [string, { keyframes: unknown[] } | null | undefined][] = [
+		['size', s.size],
+		['fill', s.fill],
+		['stroke color', s.stroke?.color],
+		['stroke width', s.stroke?.width],
+		['radius', s.cornerRadius],
+	];
+	const animated = keyed.filter(([, a]) => (a?.keyframes.length ?? 0) > 0).map(([k]) => k);
+	return `${parts.join(' ')}${animated.length ? ` (animated: ${animated.join(', ')})` : ''}`;
+}
+
+// ---------------------------------------------------------------- end wp-m2-shapes
 
 export type ClipSummary = {
 	id: string;
