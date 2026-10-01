@@ -15,6 +15,7 @@ export const ANIMEJS_VERSION: string = animePackage.version;
  * by the wall clock (values stick), `loop`/`loopDelay`/`alternate` make the duration infinite or the canonical
  * seek history-dependent (R-ANM §1). The lint (S11:ANM-012) rejects them in source; this is the runtime guard.
  */
+// anime-allow: names the params the runtime drops
 const UNSAFE_PARAMS = ['frameRate', 'loop', 'loopDelay', 'alternate'] as const;
 
 /** A paused timeline: `autoplay` is forced to false whatever `params` says; unsafe params are dropped. */
