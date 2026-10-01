@@ -3,7 +3,17 @@ import { join } from 'node:path';
 import { LABEL_COLORS } from '@jasper/project';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { Button, Dialog, IconButton, popoverZClass, TimecodeText, useInDialog, Z } from '../src/index.ts';
+import {
+	Button,
+	DIALOG_ESCAPE_REVERTS,
+	Dialog,
+	escapeRevertsField,
+	IconButton,
+	popoverZClass,
+	TimecodeText,
+	useInDialog,
+	Z,
+} from '../src/index.ts';
 
 const tokens = readFileSync(join(__dirname, '../src/theme/tokens.css'), 'utf8');
 
@@ -165,5 +175,22 @@ describe('popovers inside dialogs (S05:DT-030)', () => {
 		);
 		expect(outside).toBe(false);
 		expect(inside).toBe(true);
+	});
+});
+
+describe('Esc in a dialog field being edited (DIALOG_ESCAPE_REVERTS)', () => {
+	it('the first Esc stays with the edited field; Esc elsewhere closes the dialog', () => {
+		const onOpenChange = vi.fn();
+		render(
+			<Dialog open onOpenChange={onOpenChange} title="T">
+				<input data-testid="editing" {...{ [DIALOG_ESCAPE_REVERTS]: 'true' }} />
+				<input data-testid="idle" />
+			</Dialog>,
+		);
+		fireEvent.keyDown(screen.getByTestId('editing'), { key: 'Escape' });
+		expect(onOpenChange).not.toHaveBeenCalled();
+		fireEvent.keyDown(screen.getByTestId('idle'), { key: 'Escape' });
+		expect(onOpenChange).toHaveBeenCalledWith(false);
+		expect(escapeRevertsField(null)).toBe(false);
 	});
 });

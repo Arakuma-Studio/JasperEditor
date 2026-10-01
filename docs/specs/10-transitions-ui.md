@@ -123,7 +123,7 @@ to commands nobody registers. Goals:
   Premiere's defaults: video in frames, audio and stills in seconds). Seconds are converted at the frame rate of
   the active sequence (NTSC rates: rounded to whole frames, the field says "Rounded to N frames at 29.97 fps");
   the field shows the other unit next to it; invalid input (not a number, fractional frames, < 1 frame, > 60 s)
-  turns the field red with the reason and commits nothing; Enter / blur commit, Esc reverts. Each committed change
+  turns the field red with the reason and commits nothing; Enter / blur commit; Esc while editing reverts the field and keeps the dialog open (a second Esc closes it). Each committed change
   is one History entry ("Default Video Transition Duration", "Default Audio Transition Duration", "Default Still
   Duration") through `project.updateSettings`. Model: `settings.defaultAudioTransitionFrames` (additive, optional;
   absent = the video length; the first video change of an older project pins the audio length so it does not

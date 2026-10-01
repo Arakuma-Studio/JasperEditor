@@ -8,7 +8,7 @@ import { EngineClient } from '@jasper/engine-client';
 import type { Sequence } from '@jasper/project';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentBridge } from '../src/agent-bridge/bridge.ts';
 import { createCommandContext, registerAllCommands, runCommand } from '../src/commands/index.ts';
 import {
@@ -27,7 +27,7 @@ import {
 } from '../src/panels/effects/transition-prefs.ts';
 import { applyTransitionToClips } from '../src/panels/effects/transitions.ts';
 import { MENUBAR } from '../src/shell/menus/model.ts';
-import { PREFERENCES_DIALOG } from '../src/shell/preferences/index.ts';
+import { PREFERENCES_DIALOG, PreferencesDialog } from '../src/shell/preferences/index.ts';
 import {
 	formatStillDuration,
 	formatTransitionDuration,
@@ -362,6 +362,26 @@ describe('Preferences ▸ Timeline page', () => {
 		render(<TimelinePreferencesPage />);
 		expect(screen.getByTestId('prefs-durations-no-project')).toBeTruthy();
 		expect(screen.getByTestId('scope-user')).toBeTruthy();
+	});
+});
+
+describe('Esc in the Preferences dialog', () => {
+	it('the first Esc reverts the edited duration and keeps the dialog open; the next one closes it', () => {
+		const { session } = makeSession({ preset: 'hd-1080p-29.97' });
+		const close = vi.fn();
+		render(<PreferencesDialog page="timeline" session={session} close={close} />);
+		const el = screen.getByTestId('pref-video-duration') as HTMLInputElement;
+		fireEvent.focus(el);
+		fireEvent.change(el, { target: { value: '15' } });
+		expect(el.getAttribute('data-escape-reverts')).toBe('true');
+		fireEvent.keyDown(el, { key: 'Escape' });
+		expect(close).not.toHaveBeenCalled();
+		expect(el.value).toBe('30');
+		expect(el.hasAttribute('data-escape-reverts')).toBe(false);
+		expect(session.getState().history.entries).toEqual([]);
+		fireEvent.keyDown(el, { key: 'Escape' });
+		expect(close).toHaveBeenCalled();
+		expect(session.getCommitted().settings.defaultTransitionFrames).toBe(30);
 	});
 });
 

@@ -9,7 +9,7 @@
 import { CROSS_DISSOLVE, type ProjectSettings, type Rational, TRANSITION_SPECS } from '@jasper/project';
 import type { EditorSession, SessionState } from '@jasper/session';
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
-import { Button, cx, Kbd, Select, TextField } from '@jasper/ui';
+import { Button, cx, DIALOG_ESCAPE_REVERTS, Kbd, Select, TextField } from '@jasper/ui';
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import {
 	type DurationField,
@@ -359,6 +359,7 @@ function DurationRow(props: {
 				<TextField
 					id={id}
 					data-testid={props.testId}
+					{...{ [DIALOG_ESCAPE_REVERTS]: draft !== null ? 'true' : undefined }}
 					aria-label={`${props.label} default duration`}
 					className="w-20 text-right tabular-nums"
 					inputMode="decimal"

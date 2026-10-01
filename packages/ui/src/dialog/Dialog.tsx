@@ -7,7 +7,7 @@ import { type KeyboardEvent, type ReactNode, useSyncExternalStore } from 'react'
 import { cx } from '../cx.ts';
 import { Icon } from '../icons/Icon.tsx';
 import { Button } from '../primitives/Button.tsx';
-import { InDialogContext } from './layer.ts';
+import { escapeRevertsField, InDialogContext } from './layer.ts';
 
 export type DialogSize = 'small' | 'medium' | 'large';
 const WIDTHS: Record<DialogSize, string> = { small: 'w-[400px]', medium: 'w-[560px]', large: 'w-[880px]' };
@@ -87,7 +87,15 @@ export function Dialog(props: DialogProps) {
 							?.querySelector<HTMLElement>('[data-dialog-primary]')
 							?.focus();
 					}}
-					onEscapeKeyDown={() => props.onCancel?.()}
+					onEscapeKeyDown={(e) => {
+						// A field that is being edited takes the first Esc to revert its text (DIALOG_ESCAPE_REVERTS);
+						// the dialog stays open and the field's own keydown handler reverts.
+						if (escapeRevertsField(e.target)) {
+							e.preventDefault();
+							return;
+						}
+						props.onCancel?.();
+					}}
 					className={cx(
 						'fixed z-[var(--pr-z-dialog)] flex max-h-[90vh] max-w-[calc(100vw-32px)] flex-col overflow-hidden',
 						'rounded-pr-menu border border-pr-menu-border bg-pr-panel font-pr text-pr-ui text-pr-text shadow-pr-overlay outline-none',

@@ -139,8 +139,17 @@ test('change the default video transition, alignment and duration; only the dura
 	expect(settings).toMatchObject({ defaultTransitionFrames: 12, defaultAudioTransitionFrames: 15 });
 	// The Effects panel badge follows the preference at once.
 	await page.screenshot({ path: join(ROOT, 'test-results', 'e2e-transition-defaults-changed.png') });
-	await page.keyboard.press('Escape');
+	// Esc while a field is being edited reverts it and keeps the dialog open; the next Esc closes it.
+	await field.fill('99');
+	await field.press('Escape');
+	await expect(dialog()).toBeVisible();
+	await expect(field).toHaveValue('12');
+	await field.press('Escape');
 	await expect(dialog()).toBeHidden();
+	expect(
+		(await query<{ defaultTransitionFrames: number }>(page, 'doc.get', { path: ['settings'] }))
+			.defaultTransitionFrames,
+	).toBe(12);
 	await page
 		.locator('.dv-tab')
 		.filter({ hasText: /^Effects$/ })

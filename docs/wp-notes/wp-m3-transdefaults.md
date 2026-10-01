@@ -33,6 +33,9 @@ S01 §13 TRN-006 and `ProjectSettings`. Closes the "Transition Defaults… is a 
   stack just above the dialog layer (they were under the dialog scrim and could not be clicked — this affected
   every Select in a dialog, e.g. Preferences ▸ General ▸ Theme). Menus and the colour picker popover still use
   the popover layer (none of them is opened from a dialog today); they can adopt `popoverZClass` the same way.
+- `@jasper/ui` `Dialog`: a focused element marked `data-escape-reverts="true"` (`DIALOG_ESCAPE_REVERTS`) takes
+  the first Esc (the dialog stays open, the field reverts its typing); a second Esc, or Esc with nothing being
+  edited, closes the dialog. The Preferences ▸ Timeline duration fields set it while they hold uncommitted text.
 - MCP: `apply_default_transitions {alignment}` + `defaults` in the result, new tool `set_transition_defaults`
   (README tool count 68).
 
@@ -66,5 +69,3 @@ No new dependencies.
 - The shortened-at-creation state is still not stored (TUI-003 by design: caps mark spans that use up the media).
 - A drag from another *application* (or a browser that hides custom drag types) still cannot show a ghost before
   the drop; that is a browser limitation (DataTransfer data is protected until `drop`).
-- Esc inside a duration field closes the Preferences dialog (Radix handles Escape at the document level before
-  the field sees it); the uncommitted text is dropped, nothing is committed.
