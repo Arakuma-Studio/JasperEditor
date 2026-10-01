@@ -308,6 +308,7 @@ export function MotionTemplatesPanel(props: PanelProps) {
 				</label>
 				<select
 					aria-label="Engine"
+					data-testid="motion-templates-engine"
 					className="rounded-pr-control bg-pr-field px-1 py-0.5 text-pr-ui text-pr-text"
 					value={engine}
 					onChange={(e) => setEngine(e.target.value as EngineFilter)}
