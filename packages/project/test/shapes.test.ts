@@ -7,12 +7,15 @@ import {
 	type Clip,
 	checkInvariants,
 	defaultRegistries,
+	defaultShape,
 	evaluate,
+	evaluateShape,
 	exportAgentSchema,
 	flicksPerFrame,
 	propertiesForClip,
 	resolveSceneAt,
 	type ShapeClip,
+	shapeContainsPoint,
 	shapeIntrinsicBox,
 	type Vec2,
 } from '../src/index.ts';
@@ -381,5 +384,35 @@ describe('invariants, snapshot, properties and agent schema', () => {
 		const size = schema.properties.find((p) => p.key === 'shape.size');
 		expect(size?.kinds).toEqual(['shape']);
 		expect(schema.properties.find((p) => p.key === 'shape.cornerRadius')?.kinds).toEqual(['shape']);
+	});
+});
+
+describe('evaluateShape / shapeContainsPoint (render/shape.ts)', () => {
+	it('evaluates and clamps, centres the geometry in the box, drops zero-width strokes', () => {
+		const shape = defaultShape('rect', {
+			size: [100, 40],
+			cornerRadius: 80,
+			stroke: { color: [1, 0, 0, 1], width: 0 },
+		});
+		const g = evaluateShape(shape, 0, { width: 120, height: 60 });
+		expect(g).toMatchObject({ size: [100, 40], origin: [10, 10], cornerRadius: 20, stroke: null });
+		const ell = defaultShape('ellipse', { cornerRadius: 5 });
+		expect(evaluateShape(ell, 0, { width: 400, height: 400 }).cornerRadius).toBe(0);
+	});
+
+	it('hit-tests the drawn geometry: ellipse interior, rounded corners and the outer stroke band', () => {
+		const ell = evaluateShape(defaultShape('ellipse', { size: [200, 100] }), 0, { width: 200, height: 100 });
+		expect(shapeContainsPoint(ell, [100, 50])).toBe(true);
+		expect(shapeContainsPoint(ell, [5, 5])).toBe(false); // inside the box, outside the ellipse
+		expect(shapeContainsPoint(ell, [199, 50])).toBe(true);
+		const rect = defaultShape('rect', {
+			size: [100, 100],
+			cornerRadius: 30,
+			stroke: { color: [0, 0, 0, 1], width: 10, position: 'outside' },
+		});
+		const g = evaluateShape(rect, 0, shapeIntrinsicBox(rect));
+		expect(shapeContainsPoint(g, [5, 5])).toBe(false); // corner cut by the radius
+		expect(shapeContainsPoint(g, [2, 60])).toBe(true); // on the outside stroke band
+		expect(shapeContainsPoint(g, [60, 60])).toBe(true);
 	});
 });
