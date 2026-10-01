@@ -1,23 +1,239 @@
-// Shape clips (M2, S11:SHP-001…003, ARCHITECTURE §20.1): clip.addShape and the `shape` patch of clip.update.
-// Owner: wp-m2-shapes. Contracts: the command schema is registered; the handlers answer E_NOT_IMPLEMENTED.
+// Shape clips (M2, S11:SHP-001…003, ARCHITECTURE §20.1): clip.addShape, the `shape` patch of clip.update,
+// the "None" fill/stroke materialisation behind `param.set shape.*`, and the rule that keeps a shape centred on
+// its anchor when an edit changes its layer box. Owner: wp-m2-shapes.
+//
+// The layer box of a shape is `shapeIntrinsicBox` (largest size over value + keyframes, plus the stroke drawn
+// outside) and the geometry is centred in it. When an edit changes that box, the anchor (value and keys) moves by
+// half the change, so the geometry stays where it was on screen (M(c) = P + R·S·(c − A) is unchanged).
+import type { Draft } from 'immer';
+import {
+	anim,
+	type Box,
+	DEFAULT_SHAPE_SECONDS,
+	defaultShape,
+	defaultTransform,
+	shapeIntrinsicBox,
+} from '../../factories.ts';
+import { kindCapabilities } from '../../registry/kinds.ts';
+import { DEFAULT_SHAPE_STROKE, type PropertySpec, SHAPE_LIMITS } from '../../registry/properties.ts';
+import type { Animatable, RGBA, Vec2 } from '../../schema/common.ts';
+import type { ShapeClip, ShapeData, ShapeStroke } from '../../schema/sequence.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
-import type { ClipPatch } from '../schemas/clip.ts';
-import { type HandlerMap, notImplemented, patchFieldNotImplemented } from './util.ts';
+import { cleanupSequence } from '../placement.ts';
+import type { ClipPatch, ShapePatch } from '../schemas/clip.ts';
+import type { CommandType } from '../schemas/index.ts';
+import { applyTransformPatch, commonFields, frameBox, newGeneratorClip, visualFields } from './clip-core.ts';
+import type { Handler, HandlerMap } from './util.ts';
 
 export const SHAPE_OWNER = 'wp-m2-shapes';
 
-/** clip.update `{shape}` (merged into the current shape). Returns true when it handled the patch. */
+const SHAPE_NAMES = { rect: 'Rectangle', ellipse: 'Ellipse' } as const;
+type DShape = Draft<ShapeData>;
+
+// ---------------------------------------------------------------- validation
+
+const finite = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
+
+function checkColor(v: unknown, field: string, h: HandlerContext): RGBA {
+	if (!Array.isArray(v) || v.length !== 4 || !v.every((x) => finite(x) && x >= 0 && x <= 1))
+		h.fail('E_INVALID_PARAM', `${field} must be an RGBA colour with components in 0..1`, { path: [field] });
+	return [v[0], v[1], v[2], v[3]] as RGBA;
+}
+function checkLength(max: number) {
+	return (v: unknown, field: string, h: HandlerContext): number => {
+		if (!finite(v) || v < 0 || v > max)
+			h.fail('E_INVALID_PARAM', `${field} must be a number in 0..${max} (px)`, { path: [field] });
+		return v as number;
+	};
+}
+function checkSize(v: unknown, field: string, h: HandlerContext): Vec2 {
+	const ok = (x: unknown) => finite(x) && x >= 0 && x <= SHAPE_LIMITS.size;
+	if (!Array.isArray(v) || v.length !== 2 || !v.every(ok))
+		h.fail('E_INVALID_PARAM', `${field} must be [width, height] in 0..${SHAPE_LIMITS.size} (px)`, {
+			path: [field],
+		});
+	return [v[0], v[1]] as Vec2;
+}
+const checkStrokeWidth = checkLength(SHAPE_LIMITS.strokeWidth);
+const checkRadius = checkLength(SHAPE_LIMITS.cornerRadius);
+
+/** A static value becomes a static Animatable (keys dropped, like TransformPatch); an Animatable is checked whole. */
+function animOf<T>(
+	v: T | Animatable<T>,
+	isStatic: boolean,
+	check: (x: unknown, field: string, h: HandlerContext) => T,
+	field: string,
+	h: HandlerContext,
+): Animatable<T> {
+	if (isStatic) return anim(check(v, field, h));
+	const a = v as Animatable<T>;
+	return {
+		...a,
+		value: check(a.value, field, h),
+		keyframes: a.keyframes.map((k) => ({ ...k, value: check(k.value, field, h) })),
+	};
+}
+
+// ---------------------------------------------------------------- centring
+
+function shiftVec(a: Draft<Animatable<Vec2>>, dx: number, dy: number): void {
+	a.value = [a.value[0] + dx, a.value[1] + dy];
+	for (const k of a.keyframes) k.value = [k.value[0] + dx, k.value[1] + dy];
+}
+
+/** Moves the anchor by half the box change so the geometry keeps its place (module comment). */
+export function recenterShape(clip: Draft<ShapeClip>, before: Box): void {
+	const after = shapeIntrinsicBox(clip.shape as ShapeData);
+	const dx = (after.width - before.width) / 2;
+	const dy = (after.height - before.height) / 2;
+	if (dx !== 0 || dy !== 0) shiftVec(clip.transform.anchor, dx, dy);
+}
+
+/**
+ * Wraps a handler of a command that can change shape boxes (clip.update, param.set, keyframe edits): every
+ * shape whose box changed during the command is re-centred on its anchor.
+ */
+export function keepShapesCentred<T extends CommandType>(handler: Handler<T>): Handler<T> {
+	return (doc, cmd, h) => {
+		const before: [Draft<ShapeClip>, Box][] = [];
+		for (const seq of Object.values(doc.sequences))
+			for (const c of Object.values(seq.clips))
+				if (c.kind === 'shape') before.push([c as Draft<ShapeClip>, shapeIntrinsicBox(c.shape as ShapeData)]);
+		const result = handler(doc, cmd, h);
+		for (const [clip, box] of before) recenterShape(clip, box);
+		return result;
+	};
+}
+
+/** Commands whose handlers run inside `keepShapesCentred` (wired in catalog.ts). */
+export const SHAPE_BOX_COMMANDS: ReadonlySet<CommandType> = new Set<CommandType>([
+	'clip.update',
+	'param.set',
+	'param.setAnimated',
+	'keyframe.add',
+	'keyframe.update',
+	'keyframe.remove',
+	'keyframes.prune',
+]);
+
+// ---------------------------------------------------------------- fill / stroke materialisation
+
+function newStroke(): ShapeStroke {
+	return {
+		color: anim<RGBA>([...DEFAULT_SHAPE_STROKE.color] as RGBA),
+		width: anim(DEFAULT_SHAPE_STROKE.width),
+		position: DEFAULT_SHAPE_STROKE.position,
+	};
+}
+
+/**
+ * `param.set` / keyframes on `shape.fill` or `shape.stroke.*` of a shape whose fill or stroke is "None": the
+ * fill (white) or a default stroke is created first, then the write proceeds as usual (S11:SHP-005).
+ */
+export function ensureShapeStorage(clip: DClip, spec: PropertySpec): void {
+	if (clip.kind !== 'shape') return;
+	const s = (clip as Draft<ShapeClip>).shape;
+	if (spec.storagePath[1] === 'fill' && s.fill === null) s.fill = anim<RGBA>([1, 1, 1, 1]);
+	if (spec.storagePath[1] === 'stroke' && s.stroke === null) s.stroke = newStroke();
+}
+
+// ---------------------------------------------------------------- clip.update {shape}
+
+function patchShape(s: DShape, p: ShapePatch, h: HandlerContext): void {
+	if (p.size !== undefined)
+		s.size = animOf<Vec2>(p.size as never, Array.isArray(p.size), checkSize, 'size', h);
+	if (p.cornerRadius !== undefined) {
+		if (s.type !== 'rect') h.fail('E_INVALID_PARAM', 'cornerRadius applies to rectangles only');
+		s.cornerRadius = animOf(
+			p.cornerRadius,
+			typeof p.cornerRadius === 'number',
+			checkRadius,
+			'cornerRadius',
+			h,
+		);
+	}
+	if (p.fill !== undefined)
+		s.fill =
+			p.fill === null ? null : animOf<RGBA>(p.fill as never, Array.isArray(p.fill), checkColor, 'fill', h);
+	if (p.stroke === null) s.stroke = null;
+	else if (p.stroke !== undefined) {
+		const st = (s.stroke ?? newStroke()) as Draft<ShapeStroke>;
+		const { color, width, position } = p.stroke;
+		if (color !== undefined)
+			st.color = animOf<RGBA>(color as never, Array.isArray(color), checkColor, 'stroke.color', h);
+		if (width !== undefined)
+			st.width = animOf(width, typeof width === 'number', checkStrokeWidth, 'stroke.width', h);
+		if (position !== undefined) st.position = position;
+		s.stroke = st;
+	}
+}
+
+/** clip.update `{shape}` (merged into the current shape; the type is fixed). Returns true when it handled it. */
 export function applyShapePatch(
 	_doc: DDoc,
 	_seq: DSeq,
-	_clip: DClip,
+	clip: DClip,
 	p: Pick<ClipPatch, 'shape'>,
 	h: HandlerContext,
 ): boolean {
 	if (p.shape === undefined) return false;
-	return patchFieldNotImplemented(h, 'clip.update', 'shape', SHAPE_OWNER);
+	patchShape((clip as Draft<ShapeClip>).shape, p.shape, h);
+	return true;
 }
 
+// ---------------------------------------------------------------- clip.addShape
+
 export const shapeHandlers: HandlerMap = {
-	'clip.addShape': notImplemented('clip.addShape', SHAPE_OWNER),
+	'clip.addShape': (doc, cmd, h: HandlerContext) => {
+		const input = cmd.shape;
+		const shape = defaultShape(input.type, {
+			...(input.size ? { size: checkSize(input.size, 'shape.size', h) } : {}),
+			...(input.fill !== undefined
+				? { fill: input.fill === null ? null : checkColor(input.fill, 'shape.fill', h) }
+				: {}),
+			...(input.stroke !== undefined
+				? {
+						stroke: input.stroke && {
+							color: checkColor(input.stroke.color, 'shape.stroke.color', h),
+							width: checkStrokeWidth(input.stroke.width, 'shape.stroke.width', h),
+							position: input.stroke.position ?? DEFAULT_SHAPE_STROKE.position,
+						},
+					}
+				: {}),
+			...(input.cornerRadius !== undefined
+				? { cornerRadius: checkRadius(input.cornerRadius, 'shape.cornerRadius', h) }
+				: {}),
+		});
+		if (input.type === 'ellipse' && shape.cornerRadius.value !== 0)
+			h.fail('E_INVALID_PARAM', 'cornerRadius applies to rectangles only', {
+				path: ['shape', 'cornerRadius'],
+			});
+		const { seq, track, at, duration, id } = newGeneratorClip(
+			doc,
+			{ ...cmd, duration: cmd.duration ?? { seconds: DEFAULT_SHAPE_SECONDS } },
+			h,
+			'shape',
+		);
+		const transform = applyTransformPatch(
+			defaultTransform(shapeIntrinsicBox(shape), frameBox(seq), 'none'),
+			cmd.transform,
+		);
+		seq.clips[id] = {
+			...commonFields(
+				id,
+				track.id,
+				at,
+				duration,
+				0,
+				cmd.name ?? SHAPE_NAMES[input.type],
+				kindCapabilities('shape')!.defaultLabel,
+			),
+			kind: 'shape',
+			shape,
+			...visualFields(transform),
+		} as DClip;
+		cleanupSequence(seq, h);
+		h.defineRef(cmd.ref, id);
+		return { clipId: id };
+	},
 };

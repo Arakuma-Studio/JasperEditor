@@ -10,6 +10,7 @@ import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
 import type { CommandOf, ParamAt } from '../schemas/index.ts';
 import { setCompositionProp } from './composition.ts';
+import { ensureShapeStorage } from './shape.ts';
 import type { HandlerMap } from './util.ts';
 
 type ValueRule = {
@@ -106,6 +107,8 @@ export function resolveTarget(
 			clip.kind === 'composition' ? (compositionOfClip(doc as never, clip as Clip)?.info ?? null) : undefined;
 		const spec = resolvePropertySpec(key, template, composition);
 		if (!spec?.appliesTo(clip)) return bad();
+		// wp-m2-shapes (S11:SHP-003): `shape.fill` / `shape.stroke.*` on a "None" fill/stroke create it first.
+		if (spec.group === 'shape') ensureShapeStorage(clip, spec);
 		if (spec.group === 'props') {
 			return {
 				type: 'static',
@@ -214,9 +217,12 @@ export function validateValue(
 			const c = clampN(v);
 			return { value: c, clamped: c !== v };
 		}
-		case 'vec2':
+		case 'vec2': {
 			if (!Array.isArray(v) || v.length !== 2 || !v.every(isNum)) return fail();
-			return { value: [v[0], v[1]], clamped: false };
+			// Per-component range (wp-m2-shapes: `shape.size` ≥ 0); specs without min/max are unchanged.
+			const c = [clampN(v[0]), clampN(v[1])];
+			return { value: c, clamped: c[0] !== v[0] || c[1] !== v[1] };
+		}
 		case 'color': {
 			if (!Array.isArray(v) || v.length !== 4 || !v.every(isNum)) return fail();
 			const c = v.map((x: number) => Math.min(1, Math.max(0, x)));

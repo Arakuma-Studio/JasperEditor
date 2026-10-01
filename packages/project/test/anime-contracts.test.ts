@@ -254,14 +254,11 @@ describe('clip engines and the snapshot (ARCHITECTURE §20.1)', () => {
 
 describe('command contracts (handlers owned by the wave-1 packages)', () => {
 	const fail = (r: ReturnType<Harness['tx']>) => (r.ok ? null : r.errors[0]!);
-	it('clip.addShape is registered, owned by wp-m2-shapes and answers E_NOT_IMPLEMENTED', () => {
+	it('clip.addShape is registered and owned by wp-m2-shapes (implemented there, test/shapes.test.ts)', () => {
 		expect(COMMAND_CATALOG['clip.addShape']).toMatchObject({ owner: 'wp-m2-shapes', milestone: 'M2' });
 		const h = new Harness();
 		const r = h.tx([{ type: 'clip.addShape', at: 0, track: 'V1', shape: { type: 'ellipse' } }]);
-		expect(fail(r)).toMatchObject({
-			code: 'E_NOT_IMPLEMENTED',
-			message: expect.stringMatching(/wp-m2-shapes/),
-		});
+		expect(r.ok).toBe(true);
 		const invalid = h.tx([{ type: 'clip.addShape', at: 0, track: 'V1', shape: { type: 'star' } }]);
 		expect(fail(invalid)?.code).toBe('E_SCHEMA');
 	});
@@ -365,7 +362,7 @@ describe('agent schema (S11:ANA-001)', () => {
 			description: 'Char-staggered title',
 			defaultDurationSeconds: 4,
 		});
-		expect(s.commands['clip.addShape']).toMatchObject({ owner: 'wp-m2-shapes', implemented: false });
+		expect(s.commands['clip.addShape']).toMatchObject({ owner: 'wp-m2-shapes', implemented: true });
 		expect(s.properties.find((p) => p.key === 'transform.position')?.kinds).toContain('shape');
 		expect(s.properties.find((p) => p.key === 'opacity')?.kinds).toContain('shape');
 		expect(s.warningCodes).toContain('W_ANIMATION_COMPRESSED');

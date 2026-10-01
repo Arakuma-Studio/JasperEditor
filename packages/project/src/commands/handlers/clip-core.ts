@@ -57,9 +57,9 @@ import { applyInitialTextAnimation, applyTextAnimationPatch } from './text-anima
 import { type HandlerMap, idList } from './util.ts';
 
 type DTrack = Draft<Track>;
-const frameBox = (seq: DSeq): Box => ({ width: seq.settings.width, height: seq.settings.height });
+export const frameBox = (seq: DSeq): Box => ({ width: seq.settings.width, height: seq.settings.height });
 
-function commonFields(
+export function commonFields(
 	id: string,
 	trackId: string,
 	start: number,
@@ -84,7 +84,7 @@ function commonFields(
 	};
 }
 
-function visualFields(transform: Transform) {
+export function visualFields(transform: Transform) {
 	return { transform, opacity: anim(100), blendMode: 'normal' as const, effects: [] };
 }
 
@@ -96,7 +96,7 @@ function mediaBox(asset: MediaAsset): Box | null {
 	return swap ? { width: vs.height, height: vs.width } : { width: vs.width, height: vs.height };
 }
 
-function applyTransformPatch(t: Transform, p: TransformPatch | undefined): Transform {
+export function applyTransformPatch(t: Transform, p: TransformPatch | undefined): Transform {
 	if (!p) return t;
 	const vec = (v: Vec2 | Animatable<Vec2>) =>
 		Array.isArray(v) ? anim<Vec2>([v[0], v[1]]) : (v as Animatable<Vec2>);
@@ -396,7 +396,7 @@ export function placeSource(
 
 // ---------------------------------------------------------------- generators
 
-function newGeneratorClip(
+export function newGeneratorClip(
 	doc: DDoc,
 	cmd: {
 		sequenceId?: string;
@@ -406,7 +406,7 @@ function newGeneratorClip(
 		id?: string;
 	},
 	h: HandlerContext,
-	kind: 'text' | 'solid' | 'motion-graphic',
+	kind: 'text' | 'solid' | 'motion-graphic' | 'shape',
 ): { seq: DSeq; track: DTrack; at: number; duration: number; id: string } {
 	const seq = h.sequence(doc, cmd.sequenceId);
 	const at = h.frame(seq, cmd.at);

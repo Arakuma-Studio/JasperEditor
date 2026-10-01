@@ -12,7 +12,7 @@ import { paramHandlers } from './handlers/param.ts';
 import { processHandlers } from './handlers/process.ts';
 import { projectHandlers } from './handlers/project.ts';
 import { sequenceHandlers } from './handlers/sequence.ts';
-import { SHAPE_OWNER, shapeHandlers } from './handlers/shape.ts';
+import { keepShapesCentred, SHAPE_BOX_COMMANDS, SHAPE_OWNER, shapeHandlers } from './handlers/shape.ts';
 import { TEXT_ANIMATION_OWNER } from './handlers/text-animation.ts';
 import { trackerHandlers } from './handlers/tracker.ts';
 import { transitionHandlers } from './handlers/transition.ts';
@@ -159,10 +159,12 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 		const found = SOURCES.find(([map]) => map[type]);
 		if (!found) throw new Error(`No handler registered for ${type}`);
 		const [map, owner] = found;
+		const handler = map[type] as Handler<CommandType>;
 		out[type] = {
 			type,
 			schema,
-			handler: map[type] as Handler<CommandType>,
+			// wp-m2-shapes (S11:SHP-001): edits that can change a shape's layer box keep it centred on its anchor.
+			handler: SHAPE_BOX_COMMANDS.has(type) ? keepShapesCentred(handler) : handler,
 			label: LABELS[type],
 			owner,
 			milestone: owner === 'M2' || owner.startsWith('wp-m2-') ? 'M2' : 'M1',

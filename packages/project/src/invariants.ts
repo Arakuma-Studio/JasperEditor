@@ -359,7 +359,8 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 				const sh = r.shape as {
 					size?: AnimLike;
 					cornerRadius?: AnimLike;
-					stroke?: { width?: AnimLike } | null;
+					fill?: AnimLike | null;
+					stroke?: { width?: AnimLike; color?: AnimLike } | null;
 				};
 				const values = (a: AnimLike | undefined) => (a ? [a.value, ...a.keyframes.map((k) => k.value)] : []);
 				const bad = (v: unknown) => typeof v !== 'number' || !Number.isFinite(v) || v < 0;
@@ -369,6 +370,11 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 					issues.push(inv('INV-012', `Shape ${c.id} corner radius must be ≥ 0`, cw));
 				if (sh.stroke && values(sh.stroke.width).some(bad))
 					issues.push(inv('INV-012', `Shape ${c.id} stroke width must be ≥ 0`, cw));
+				// wp-m2-shapes: paint colours are RGBA in 0..1 (value and keyframes).
+				const badColor = (v: unknown) =>
+					!Array.isArray(v) || v.length !== 4 || v.some((x) => bad(x) || (x as number) > 1);
+				if (values(sh.fill ?? undefined).some(badColor) || values(sh.stroke?.color).some(badColor))
+					issues.push(inv('INV-012', `Shape ${c.id} fill and stroke colours must be RGBA in 0..1`, cw));
 			}
 			if (c.linkId && !seq.links[c.linkId]?.members.includes(c.id))
 				issues.push(inv('INV-006', `Clip ${c.id} has a dangling linkId`, cw));
