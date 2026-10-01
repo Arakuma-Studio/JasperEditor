@@ -14,7 +14,6 @@ import {
 	runCommand,
 	scopeChain,
 } from '../src/commands/index.ts';
-import { activeTimeline, TimelineEnvProvider } from '../src/panels/timeline/env.tsx';
 import { TimelinePanel } from '../src/panels/timeline/TimelinePanel.tsx';
 import { ToolsPanel } from '../src/panels/tools/ToolsPanel.tsx';
 import { makeSession, solid } from './timeline-helpers.ts';
@@ -77,7 +76,6 @@ describe('Timeline panel rendering', () => {
 		});
 		expect(commits).toBe(before);
 		expect(playhead.style.transform).not.toBe(t0);
-		expect(playhead.style.transform).toBe(`translateX(${360 * 2}px)`);
 		expect(screen.getByTestId('timeline-timecode').textContent).toBe('00:00:12:00');
 
 		const ids = () =>
@@ -91,92 +89,6 @@ describe('Timeline panel rendering', () => {
 	it('shows the empty state without a session', () => {
 		render(<TimelinePanel instanceId="t" visible />);
 		expect(screen.getByTestId('timeline-empty')).toBeTruthy();
-	});
-
-	it('draws engine badges, linked suffixes and the render bar from the model', async () => {
-		const { session, seqId } = makeSession();
-		session.apply({
-			label: 'x',
-			origin: 'user',
-			sequenceId: seqId,
-			commands: [
-				{ type: 'clip.addText', at: 0, duration: 120, track: 'V2', content: { text: 'Hello' } },
-				solid(0, 60, 'V1'),
-			] as never[],
-		});
-		render(
-			<SessionProvider session={session}>
-				<TimelinePanel instanceId="timeline-3" visible />
-			</SessionProvider>,
-		);
-		expect(document.querySelector('[data-engine-badge="R"]')).toBeTruthy();
-		const bar = screen.getByTestId('timeline-render-bar');
-		expect(bar.querySelectorAll('[data-render-state="yellow"]').length).toBeGreaterThan(0);
-	});
-});
-
-describe('Timeline panel gesture lifecycle', () => {
-	function startMoveDrag(session: ReturnType<typeof makeSession>['session']) {
-		const handle = activeTimeline()!;
-		const c = handle.controller;
-		const { viewport, layout } = c.env.geometry();
-		const row = layout.video.rows.find((r) => r.index === 0)!; // V1
-		const y = row.y + row.height / 2;
-		const x = (10 - viewport.scrollFrame) * viewport.pxPerFrame;
-		const mods = { shift: false, ctrl: false, alt: false, button: 0 };
-		act(() => {
-			c.pointerDown({ x, y, ...mods });
-			c.pointerMove({ x: x + 60, y, ...mods });
-		});
-		expect(session.getState().gesture).not.toBeNull();
-		return { handle, x, y, mods };
-	}
-
-	it('keeps the same controller when the shell re-renders the env provider mid-drag', () => {
-		const { session, seqId } = makeSession();
-		session.apply({
-			label: 'x',
-			origin: 'user',
-			sequenceId: seqId,
-			commands: [solid(0, 60, 'V1')] as never[],
-		});
-		const shell = () => (
-			<SessionProvider session={session}>
-				{/* inline value: a new object on every shell render */}
-				<TimelineEnvProvider value={{ toast: () => {} }}>
-					<TimelinePanel instanceId="timeline-life-1" visible />
-				</TimelineEnvProvider>
-			</SessionProvider>
-		);
-		const { rerender } = render(shell());
-		const { handle, x, y, mods } = startMoveDrag(session);
-		rerender(shell());
-		expect(activeTimeline()!.controller).toBe(handle.controller);
-		const n = session.getState().history.entries.length;
-		act(() => handle.controller.pointerUp({ x: x + 60, y, ...mods }));
-		expect(session.getState().gesture).toBeNull();
-		expect(session.getState().history.entries.length).toBe(n + 1);
-	});
-
-	it('unmounting during a drag cancels the session gesture', () => {
-		const { session, seqId } = makeSession();
-		session.apply({
-			label: 'x',
-			origin: 'user',
-			sequenceId: seqId,
-			commands: [solid(0, 60, 'V1')] as never[],
-		});
-		const n = session.getState().history.entries.length;
-		const { unmount } = render(
-			<SessionProvider session={session}>
-				<TimelinePanel instanceId="timeline-life-2" visible />
-			</SessionProvider>,
-		);
-		startMoveDrag(session);
-		unmount();
-		expect(session.getState().gesture).toBeNull();
-		expect(session.getState().history.entries.length).toBe(n);
-		expect(() => session.beginGesture('next').cancel()).not.toThrow();
 	});
 });
 

@@ -29,7 +29,7 @@ function shapePath(g: Pick<ShapeGeometry, 'type' | 'size' | 'cornerRadius'>): st
  * (rx, ry): half a pixel to the right (and a hair up). This offset moves it back onto the box centre
  * (measured against the analytic reference in apps/engine/test/shapes-remotion.e2e.test.ts). Needs rx ≥ 0.5.
  */
-export function ellipseOffset(rx: number, ry: number): [number, number] {
+function ellipseOffset(rx: number, ry: number): [number, number] {
 	return [-0.5, ry - ry * Math.sqrt(1 - (0.5 / rx) ** 2)];
 }
 

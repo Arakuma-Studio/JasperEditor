@@ -13,7 +13,7 @@ const http = { target: ENGINE, changeOrigin: false };
 
 // S11:FIX-010: the JavaScript third-party notices (generated at the repo root by `pnpm notices`) ship with the
 // web build as /THIRD_PARTY_NOTICES.md (Help ▸ About links to it); the dev server serves the same file.
-export const NOTICES_FILE = 'THIRD_PARTY_NOTICES.md';
+const NOTICES_FILE = 'THIRD_PARTY_NOTICES.md';
 function thirdPartyNotices(): Plugin {
 	const source = () => readFileSync(fileURLToPath(new URL(`../../${NOTICES_FILE}`, import.meta.url)), 'utf8');
 	return {
@@ -31,7 +31,7 @@ function thirdPartyNotices(): Plugin {
 }
 
 /** Vendor chunk of a module id (stable chunks so app changes do not invalidate them, ARCHITECTURE §13). */
-export function vendorChunk(id: string): string | undefined {
+function vendorChunk(id: string): string | undefined {
 	// The pure model (schema, commands, render snapshot) is the biggest first-party module and changes less
 	// often than the app: its own chunk keeps the entry chunk under 500 kB.
 	if (/[\\/]packages[\\/]project[\\/]src[\\/]/.test(id)) return 'app-project';

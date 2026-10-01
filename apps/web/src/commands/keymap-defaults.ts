@@ -269,7 +269,7 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 ];
 
 /** Browser-reserved chords that never reach web pages (S05:KB-013). */
-export const BROWSER_RESERVED: readonly string[] = [
+const BROWSER_RESERVED: readonly string[] = [
 	'Ctrl+KeyN',
 	'Ctrl+KeyW',
 	'Ctrl+KeyT',

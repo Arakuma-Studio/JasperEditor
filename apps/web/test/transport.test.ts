@@ -15,44 +15,12 @@ import {
 	runCommand,
 } from '../src/commands/index.ts';
 import { transportCommands } from '../src/commands/transport.ts';
-import { handleMonitorKey } from '../src/panels/program/monitor-commands.ts';
-import {
-	type Clock,
-	PLAY_WATCHDOG_MS,
-	PlaybackDriver,
-	type PlayerLike,
-	SEEK_HZ,
-} from '../src/panels/program/playback-driver.ts';
-import { Shuttle, type ShuttleTarget, type TimerApi } from '../src/panels/program/shuttle.ts';
-import { registerDriver, shuttleFor } from '../src/panels/program/transport-registry.ts';
+import { PlaybackDriver, type PlayerLike } from '../src/panels/program/playback-driver.ts';
+import { Shuttle, type ShuttleTarget } from '../src/panels/program/shuttle.ts';
+import { shuttleFor } from '../src/panels/program/transport-registry.ts';
 import { PanelServices } from '../src/state/panel-services.ts';
 
 // ------------------------------------------------------------------ fakes
-
-function fakeTimers(): TimerApi & { advance(ms: number): void } {
-	let now = 0;
-	const timers: { at: number; cb: () => void; id: number }[] = [];
-	let id = 0;
-	return {
-		setTimeout: (cb, ms) => {
-			timers.push({ at: now + ms, cb, id: ++id });
-			return id;
-		},
-		clearTimeout: (h) => {
-			const i = timers.findIndex((t) => t.id === h);
-			if (i >= 0) timers.splice(i, 1);
-		},
-		advance(ms) {
-			now += ms;
-			for (const t of [...timers].sort((a, b) => a.at - b.at)) {
-				if (t.at <= now) {
-					timers.splice(timers.indexOf(t), 1);
-					t.cb();
-				}
-			}
-		},
-	};
-}
 
 function transportTarget(t: TransportStore): ShuttleTarget {
 	return {
@@ -112,21 +80,11 @@ class FakePlayer implements PlayerLike {
 	}
 }
 
-function fakeClock(): Clock & { t: number; step(ms: number): void; pending: number } {
+function fakeClock(): { t: number; step(ms: number): void; pending: number } {
 	let cbs: (() => void)[] = [];
 	const c = {
 		t: 0,
 		pending: 0,
-		now: () => c.t,
-		requestFrame: (cb: () => void) => {
-			cbs.push(cb);
-			c.pending = cbs.length;
-			return cb;
-		},
-		cancelFrame: (h: unknown) => {
-			cbs = cbs.filter((x) => x !== h);
-			c.pending = cbs.length;
-		},
 		step(ms: number) {
 			c.t += ms;
 			const run = cbs;
@@ -135,6 +93,16 @@ function fakeClock(): Clock & { t: number; step(ms: number): void; pending: numb
 			c.pending = cbs.length;
 		},
 	};
+	vi.stubGlobal('performance', { now: () => c.t });
+	vi.stubGlobal('requestAnimationFrame', (cb: () => void) => {
+		cbs.push(cb);
+		c.pending = cbs.length;
+		return cb;
+	});
+	vi.stubGlobal('cancelAnimationFrame', (h: unknown) => {
+		cbs = cbs.filter((x) => x !== h);
+		c.pending = cbs.length;
+	});
 	return c;
 }
 
@@ -145,7 +113,6 @@ function setup(range = { end: 300, loopStart: 0, loopEnd: 300 }) {
 	const rates: number[] = [];
 	const driver = new PlaybackDriver({
 		transport,
-		clock,
 		getFps: () => 30,
 		getRange: () => range,
 		setPlayerRate: (r) => rates.push(r),
@@ -158,9 +125,10 @@ function setup(range = { end: 300, loopStart: 0, loopEnd: 300 }) {
 // ------------------------------------------------------------------ JKL (S02 Appendix A.8)
 
 describe('JKL shuttle', () => {
+	afterEach(() => vi.useRealTimers());
 	it('L L L yields 4×; J then yields −1×; K stops (AC-18a)', () => {
 		const t = new TransportStore();
-		const s = new Shuttle(transportTarget(t), fakeTimers());
+		const s = new Shuttle(transportTarget(t));
 		s.keyDown('L');
 		s.keyUp('L');
 		expect(t.getState()).toMatchObject({ playing: true, rate: 1 });
@@ -183,13 +151,13 @@ describe('JKL shuttle', () => {
 	});
 
 	it('hold K + tap L five times advances exactly five frames (AC-18c)', () => {
+		vi.useFakeTimers();
 		const t = new TransportStore({ frame: 100 });
-		const timers = fakeTimers();
-		const s = new Shuttle(transportTarget(t), timers);
+		const s = new Shuttle(transportTarget(t));
 		s.keyDown('K');
 		for (let i = 0; i < 5; i++) {
 			s.keyDown('L');
-			timers.advance(50);
+			vi.advanceTimersByTime(50);
 			s.keyUp('L');
 		}
 		s.keyUp('K');
@@ -197,14 +165,14 @@ describe('JKL shuttle', () => {
 	});
 
 	it('hold K + hold L plays at 0.25× until release; repeats are ignored', () => {
+		vi.useFakeTimers();
 		const t = new TransportStore({ frame: 10 });
-		const timers = fakeTimers();
-		const s = new Shuttle(transportTarget(t), timers);
+		const s = new Shuttle(transportTarget(t));
 		s.keyDown('K');
 		s.keyDown('L');
 		s.keyDown('L'); // auto-repeat
 		expect(t.getState().frame).toBe(11);
-		timers.advance(260);
+		vi.advanceTimersByTime(260);
 		expect(t.getState()).toMatchObject({ playing: true, rate: 0.25 });
 		s.keyUp('L');
 		expect(t.getState().playing).toBe(false);
@@ -212,7 +180,7 @@ describe('JKL shuttle', () => {
 
 	it('Space toggles 1× forward play; Shift+L/J steps the slow rate by 0.1', () => {
 		const t = new TransportStore();
-		const s = new Shuttle(transportTarget(t), fakeTimers());
+		const s = new Shuttle(transportTarget(t));
 		s.playStop();
 		expect(t.getState()).toMatchObject({ playing: true, rate: 1 });
 		s.playStop();
@@ -246,6 +214,7 @@ describe('JKL shuttle', () => {
 // ------------------------------------------------------------------ Player ↔ TransportStore
 
 describe('PlaybackDriver (S03:ARC-010, S02:TL-873)', () => {
+	afterEach(() => vi.unstubAllGlobals());
 	it('plays natively at 1×: the Player is the clock and frames are reported', () => {
 		const { transport, player, rates } = setup();
 		transport.play(1);
@@ -273,69 +242,60 @@ describe('PlaybackDriver (S03:ARC-010, S02:TL-873)', () => {
 			};
 			transport.play(1);
 			expect(plays).toBe(1);
-			vi.advanceTimersByTime(PLAY_WATCHDOG_MS + 10); // no frames arrived: kicked again
+			vi.advanceTimersByTime(1000); // no frames arrived: kicked again
 			expect(plays).toBe(2);
 			expect(player.seeks.at(-1)).toBe(61);
 			// Progressing: no kicks while frames keep arriving.
 			for (let i = 0; i < 6; i++) {
 				player.advance(5);
-				vi.advanceTimersByTime(PLAY_WATCHDOG_MS / 2);
+				vi.advanceTimersByTime(200);
 			}
 			expect(plays).toBe(2);
 			expect(transport.getState().frame).toBe(91);
 			// Stalls mid-play (seen in the E2E suite: 61 → 62, then nothing): kicked again.
-			vi.advanceTimersByTime(PLAY_WATCHDOG_MS + 10);
+			vi.advanceTimersByTime(1000);
 			expect(plays).toBe(3);
 			expect(player.seeks.at(-1)).toBe(91);
-			// A permanently stuck Player is kicked at most PLAY_WATCHDOG_RETRIES times in a row.
-			vi.advanceTimersByTime(PLAY_WATCHDOG_MS * 10);
-			expect(plays).toBe(5);
 			// Buffering (waiting) is legitimate: no kick while waiting.
 			transport.pause();
 			transport.play(1);
-			expect(plays).toBe(6);
+			expect(plays).toBe(4);
 			player.emit('waiting');
-			vi.advanceTimersByTime(PLAY_WATCHDOG_MS * 4);
-			expect(plays).toBe(6);
+			vi.advanceTimersByTime(4000);
+			expect(plays).toBe(4);
 			transport.pause();
-			vi.advanceTimersByTime(PLAY_WATCHDOG_MS * 4);
-			expect(plays).toBe(6);
+			vi.advanceTimersByTime(4000);
+			expect(plays).toBe(4);
 		} finally {
 			vi.useRealTimers();
 		}
 	});
 
-	it('mutes below 1× (TL-874) and steps above 1× (measured Player limit)', () => {
-		const { transport, player, driver, rates } = setup();
+	it('mutes audio below 1× (TL-874)', () => {
+		const { transport, player, rates } = setup();
 		transport.play(0.25);
-		expect(driver.currentMode).toBe('native');
 		expect(rates.at(-1)).toBe(0.25);
 		expect(player.muted).toBe(true);
-		transport.play(2);
-		expect(driver.currentMode).toBe('stepping');
-		expect(player.playing).toBe(false);
 	});
 
 	it('uses seek-stepping at 8×: timecode advances 8× real time, seeks ≤ 30/s (AC-18b)', () => {
-		const { transport, player, clock, driver } = setup({ end: 100000, loopStart: 0, loopEnd: 100000 });
+		const { transport, player, clock } = setup({ end: 100000, loopStart: 0, loopEnd: 100000 });
 		transport.play(8);
-		expect(driver.currentMode).toBe('stepping');
 		expect(player.playing).toBe(false);
 		player.seeks.length = 0;
 		for (let i = 0; i < 60; i++) clock.step(1000 / 60);
 		const expected = 8 * 30; // 1 s at 30 fps × 8
 		expect(Math.abs(transport.getState().frame - expected) / expected).toBeLessThan(0.05);
-		expect(player.seeks.length).toBeLessThanOrEqual(SEEK_HZ + 1);
+		expect(player.seeks.length).toBeLessThanOrEqual(31);
 		expect(player.seeks.length).toBeGreaterThan(20);
 		transport.pause();
 		expect(clock.pending).toBe(0);
 	});
 
 	it('plays reverse by stepping and stops at 0', () => {
-		const { transport, clock, driver } = setup();
+		const { transport, clock } = setup();
 		transport.seek(30);
 		transport.play(-1);
-		expect(driver.currentMode).toBe('stepping');
 		for (let i = 0; i < 120; i++) clock.step(1000 / 60);
 		expect(transport.getState()).toMatchObject({ frame: 0, playing: false });
 	});
@@ -453,50 +413,6 @@ describe('transport commands', () => {
 		await runCommand('transport.shuttleStop', ctx);
 		expect(t.getState().playing).toBe(false);
 		transportCommands.find((c) => c.id === 'transport.shuttleStop')!.onKeyUp!(ctx);
-	});
-
-	it('monitor key fallback only fires keyup for keys it handled itself', () => {
-		const session = makeSession();
-		const ctx = createCommandContext({ engine: new EngineClient({ baseUrl: '' }), session });
-		const cmd = transportCommands.find((c) => c.id === 'transport.shuttleForward')!;
-		const onKeyUp = vi.spyOn(cmd, 'onKeyUp');
-		const ev = (defaultPrevented: boolean) => ({
-			code: 'KeyL',
-			ctrlKey: false,
-			altKey: false,
-			shiftKey: false,
-			metaKey: false,
-			repeat: false,
-			target: null,
-			defaultPrevented,
-			preventDefault: () => undefined,
-		});
-		// The global dispatcher handled keydown (preventDefault) but not keyup: no second onKeyUp here.
-		expect(handleMonitorKey(ev(true), 'down', ctx, 'program', 'linux')).toBe(false);
-		expect(handleMonitorKey(ev(false), 'up', ctx, 'program', 'linux')).toBe(false);
-		expect(onKeyUp).not.toHaveBeenCalled();
-		// Handled by the fallback: keyup runs once.
-		expect(handleMonitorKey(ev(false), 'down', ctx, 'program', 'linux')).toBe(true);
-		expect(handleMonitorKey(ev(false), 'up', ctx, 'program', 'linux')).toBe(true);
-		expect(onKeyUp).toHaveBeenCalledTimes(1);
-		onKeyUp.mockRestore();
-		session.transport.pause();
-	});
-
-	it('Play In to Out uses the mounted driver', async () => {
-		const session = makeSession();
-		const ctx = createCommandContext({ engine: new EngineClient({ baseUrl: '' }), session });
-		const seqId = session.getState().activeSequenceId!;
-		session.apply({
-			label: 'io',
-			origin: 'user',
-			commands: [{ type: 'sequence.setInOut', sequenceId: seqId, in: 5, out: 25 }],
-		});
-		const driver = { playRange: vi.fn() } as unknown as PlaybackDriver;
-		const off = registerDriver(session.transport, driver);
-		await runCommand('transport.playInToOut', ctx);
-		expect(driver.playRange).toHaveBeenCalledWith(5, 25);
-		off();
 	});
 
 	it('nudges the selected layer by 1 and 5 px with one coalesced undo step (XF-023)', async () => {

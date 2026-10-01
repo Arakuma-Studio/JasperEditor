@@ -12,40 +12,25 @@ export type RelayRequestHandler = (
 	payload: unknown,
 ) => Promise<{ result?: unknown; error?: { code: string; message: string } }>;
 
-/** Minimal browser-WebSocket shape (injectable for tests). */
-export interface RelaySocket {
-	readonly readyState: number;
-	onopen: ((ev: unknown) => void) | null;
-	onclose: ((ev: unknown) => void) | null;
-	onerror: ((ev: unknown) => void) | null;
-	onmessage: ((ev: { data: unknown }) => void) | null;
-	send(data: string): void;
-	close(code?: number, reason?: string): void;
-}
-export type RelaySocketFactory = (url: string) => RelaySocket;
-
 export type RelayClientOptions = {
 	url: string;
 	hello(): RelayHello;
 	onRequest: RelayRequestHandler;
 	onEvent?(event: string, payload: unknown): void;
 	onState?(state: RelayState): void;
-	socketFactory?: RelaySocketFactory;
-	minBackoffMs?: number;
-	maxBackoffMs?: number;
 };
 
 const OPEN = 1;
 
 export class AgentRelayClient {
-	private socket: RelaySocket | null = null;
+	private socket: WebSocket | null = null;
 	private stopped = true;
 	private backoff: number;
 	private timer: ReturnType<typeof setTimeout> | null = null;
 	private stateValue: RelayState = 'off';
 
 	constructor(private readonly opts: RelayClientOptions) {
-		this.backoff = opts.minBackoffMs ?? 1000;
+		this.backoff = 1000;
 	}
 
 	get state(): RelayState {
@@ -86,18 +71,16 @@ export class AgentRelayClient {
 	private connect(): void {
 		if (this.stopped) return;
 		this.setState('connecting');
-		let socket: RelaySocket;
+		let socket: WebSocket;
 		try {
-			socket = (this.opts.socketFactory ?? ((u) => new WebSocket(u) as unknown as RelaySocket))(
-				this.opts.url,
-			);
+			socket = new WebSocket(this.opts.url);
 		} catch {
 			this.scheduleReconnect();
 			return;
 		}
 		this.socket = socket;
 		socket.onopen = () => {
-			this.backoff = this.opts.minBackoffMs ?? 1000;
+			this.backoff = 1000;
 			this.sendHello();
 			this.setState('connected');
 		};
@@ -114,7 +97,7 @@ export class AgentRelayClient {
 	private scheduleReconnect(): void {
 		if (this.stopped || this.timer) return;
 		const wait = this.backoff;
-		this.backoff = Math.min(this.opts.maxBackoffMs ?? 30_000, this.backoff * 2);
+		this.backoff = Math.min(30_000, this.backoff * 2);
 		this.timer = setTimeout(() => {
 			this.timer = null;
 			this.connect();

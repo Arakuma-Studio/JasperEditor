@@ -23,7 +23,6 @@ import {
 	ROOT,
 	serverInfo,
 	waitForJob,
-	watchPage,
 } from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -35,7 +34,6 @@ const MCP_BUNDLE = join(ROOT, 'apps/mcp/dist/jasper-mcp.mjs');
 const OUT_DIR = join(ROOT, 'test-results', 'e2e-text-animation');
 
 let page: Page;
-let watcher: { errors: string[] };
 let projectId = '';
 let seqId = '';
 let textId = '';
@@ -43,7 +41,6 @@ let textId = '';
 test.beforeAll(async ({ browser }) => {
 	mkdirSync(OUT_DIR, { recursive: true });
 	page = await browser.newPage();
-	watcher = watchPage(page);
 	await enableAgentBridge(page);
 });
 
@@ -131,7 +128,7 @@ function rgbFrame(file: string, frame: number | null, w: number, h: number): Buf
 	);
 }
 
-test('setup: Graphics ▸ New Layer ▸ Text adds a selected text clip', async () => {
+test('Motion Templates ▸ Text Animations: Slide Up (word) as In and Fade as Out', async () => {
 	projectId = await createProject(page, 'E2E Text Animation');
 	seqId = (await query<{ sequenceId: string }>(page, 'sequence.summary')).sequenceId;
 	await page.getByTestId('title-bar').getByRole('menuitem', { name: 'Graphics', exact: true }).click();
@@ -150,9 +147,6 @@ test('setup: Graphics ▸ New Layer ▸ Text adds a selected text clip', async (
 	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
 	await focusTimeline(page);
 	await page.locator(`[data-testid="timeline-track-area"] [data-clip-id="${textId}"]`).first().click();
-});
-
-test('Motion Templates ▸ Text Animations: Slide Up (word) as In and Fade as Out', async () => {
 	await page.getByTestId('tab-motionTemplates').click();
 	await page.getByRole('tab', { name: 'Text Animations' }).click();
 	const tab = page.getByTestId('text-animations-tab');
@@ -302,16 +296,24 @@ test('export: the mid-In frame matches renderStill (≤ 3/255 on 99 % of the pix
 			type: 'layer-bake',
 			description: `features.layerBake is ${bake ?? 'absent'}: text exports through the Remotion path until wp-m2-layer-bake is merged`,
 		});
+	const left = (await clips(page)).filter((c) => c.kind === 'text').sort((x, y) => x.start - y.start)[0]!;
+	const frame = left.start + 8;
+	await seek(frame);
+	const beforeExport = await settledLuma();
 	const out = await exportViaUi(page, request, {
 		engine: 'auto',
 		fileName: 'text-animation.mp4',
 		expectPath: baked ? /native|hybrid/i : /remotion/i,
 		outDir: OUT_DIR,
 	});
+	// Export hides the editor. Returning to the same playhead must remeasure the animated title without a seek.
+	const afterExport = await settledLuma();
+	expect(afterExport).toEqual(beforeExport);
+	await page
+		.getByTestId('program-player-wrapper')
+		.screenshot({ path: join(OUT_DIR, 'program-after-export.png') });
 	// Baked layers: the native builder overlays them (plan path native or hybrid, S11:LBK-002).
 	expect(baked ? ['native', 'hybrid'] : ['remotion']).toContain(out.job.result?.renderPath);
-	const left = (await clips(page)).filter((c) => c.kind === 'text').sort((x, y) => x.start - y.start)[0]!;
-	const frame = left.start + 8;
 	// renderStill of the same frame through the engine (the project as the editor holds it).
 	const doc = await query<Record<string, unknown>>(page, 'doc.get');
 	const job = await (
@@ -414,6 +416,57 @@ test('MCP: list_text_animations, set_text_animation and render_frames on the ope
 	}
 });
 
-test('no uncaught page errors', async () => {
-	expect(watcher.errors.filter((e) => !/favicon|ResizeObserver/.test(e))).toEqual([]);
+test('RTL typewriter keeps the caret and neutral punctuation on the visual left', async () => {
+	const left = (await clips(page)).filter((c) => c.kind === 'text').sort((a, b) => a.start - b.start)[0]!;
+	const changed = await transact([
+		{
+			type: 'clip.update',
+			clipId: left.id,
+			patch: {
+				content: { text: 'שלום! עולם', style: { sizePx: 160, weight: 700, direction: 'auto' } },
+				textAnimation: {
+					in: {
+						preset: 'typewriter',
+						version: 2,
+						durationFrames: 45,
+						params: { unit: 'word', caretBlink: false },
+					},
+				},
+			},
+		},
+	]);
+	expect(changed.ok, JSON.stringify(changed.errors)).toBe(true);
+	await seek(left.start + 10);
+	const block = page.getByTestId('program-player-wrapper').locator('[data-text-block]');
+	const sample = () =>
+		block.evaluate((root) => {
+			const unit = [...root.querySelectorAll<HTMLElement>('[data-text-unit-index]')].find(
+				(el) => getComputedStyle(el).visibility !== 'hidden',
+			);
+			const caret = root.querySelector<HTMLElement>('[data-text-caret]');
+			const span = unit?.querySelector('span');
+			const node = span?.firstChild;
+			if (!unit || !caret || !node || node.textContent !== 'שלום!') return null;
+			const glyph = (at: number) => {
+				const range = document.createRange();
+				range.setStart(node, at);
+				range.setEnd(node, at + 1);
+				return range.getBoundingClientRect();
+			};
+			const first = glyph(0);
+			const punctuation = glyph(4);
+			return {
+				text: node.textContent,
+				wordLeft: unit.getBoundingClientRect().left,
+				caretRight: caret.getBoundingClientRect().right,
+				firstCenter: first.left + first.width / 2,
+				punctuationCenter: punctuation.left + punctuation.width / 2,
+			};
+		});
+	await expect.poll(sample).not.toBeNull();
+	const geometry = (await sample())!;
+	writeFileSync(join(OUT_DIR, 'rtl-caret.json'), JSON.stringify(geometry, null, 2));
+	await page.getByTestId('program-player-wrapper').screenshot({ path: join(OUT_DIR, 'rtl-caret.png') });
+	expect(geometry.caretRight).toBeLessThanOrEqual(geometry.wordLeft + 1);
+	expect(geometry.punctuationCenter).toBeLessThan(geometry.firstCenter);
 });

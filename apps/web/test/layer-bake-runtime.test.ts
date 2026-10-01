@@ -7,19 +7,18 @@ import { mgRegistry } from '@jasper/mg-templates';
 import {
 	buildRenderSnapshot,
 	type Command,
+	createCounterIdSource,
 	createEmptyProject,
-	createSeededIdSource,
 	defaultRegistries,
 	LUMETRI_EFFECT_ID,
-	type ProjectDocument,
 	type RenderVisualClip,
 } from '@jasper/project';
 import { EditorSession } from '@jasper/session';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { LayerBakeRuntime, layerIdentity } from '../src/layer-bake/runtime.ts';
+import { LayerBakeRuntime } from '../src/layer-bake/runtime.ts';
 
 function makeSession() {
-	const ids = createSeededIdSource(5);
+	const ids = createCounterIdSource(5);
 	const document = createEmptyProject({ ids, name: 'Bake test', preset: 'hd-1080p-30' });
 	const session = new EditorSession({
 		projectId: document.projectId,
@@ -105,7 +104,7 @@ describe('LayerBakeRuntime (S11:LBK-010)', () => {
 	it('asks for the graded preview of graded DOM layers only, after they stop changing', async () => {
 		const { session, graded } = makeSession();
 		const engine = fakeEngine();
-		const rt = new LayerBakeRuntime(session, engine.link, 40);
+		const rt = new LayerBakeRuntime(session, engine.link);
 		try {
 			await vi.waitFor(() => expect(engine.calls).toHaveLength(1), { timeout: 3000 });
 			const { name, body } = engine.calls[0]!;
@@ -120,28 +119,30 @@ describe('LayerBakeRuntime (S11:LBK-010)', () => {
 				rect: { x: 10, y: 20, w: 300, h: 100 },
 			});
 			// Moving the clip in time keeps its preview (no new request).
-			session.apply({
+			const move = session.apply({
 				label: 'move',
 				origin: 'user',
 				commands: [{ type: 'clip.move', clipIds: [graded], deltaFrames: 30 } as Command],
 			});
-			await new Promise((r) => setTimeout(r, 300));
+			expect(move.ok).toBe(true);
+			await new Promise((r) => setTimeout(r, 200));
 			expect(rt.previewFor(clipOf(session, graded))).not.toBeNull();
 			expect(engine.calls).toHaveLength(1);
 			// Editing the text drops it and asks again.
-			session.apply({
+			const edit = session.apply({
 				label: 'edit',
 				origin: 'user',
 				commands: [
 					{ type: 'clip.update', clipIds: [graded], patch: { content: { text: 'Edited' } } } as Command,
 				],
 			});
+			expect(edit.ok).toBe(true);
 			expect(rt.previewFor(clipOf(session, graded))).toBeNull();
 			await vi.waitFor(() => expect(engine.calls).toHaveLength(2), { timeout: 3000 });
 		} finally {
 			rt.dispose();
 		}
-	});
+	}, 10_000);
 
 	it('a layer edited just before its request fires is not stored under its old identity', async () => {
 		vi.useFakeTimers();
@@ -153,19 +154,20 @@ describe('LayerBakeRuntime (S11:LBK-010)', () => {
 			// The request is due 2 s after the scan; the text changes 50 ms before that (the rescan follows 150 ms
 			// after the change, i.e. after the request fired).
 			await vi.advanceTimersByTimeAsync(1940);
-			session.apply({
+			const edit = session.apply({
 				label: 'edit',
 				origin: 'user',
 				commands: [
 					{ type: 'clip.update', clipIds: [graded], patch: { content: { text: 'Late edit' } } } as Command,
 				],
 			});
+			expect(edit.ok).toBe(true);
 			await vi.advanceTimersByTimeAsync(100);
 			// The stale request is dropped; the edited layer is requested once, 2 s after the rescan.
 			expect(engine.calls).toHaveLength(0);
 			await vi.advanceTimersByTimeAsync(2500);
 			expect(engine.calls).toHaveLength(1);
-			const sent = engine.calls[0]!.body.envelope as { document: ProjectDocument; revision: number };
+			const sent = engine.calls[0]!.body.envelope as { document: unknown; revision: number };
 			expect(JSON.stringify(sent.document)).toContain('Late edit');
 			expect(sent.revision).toBe(session.revision);
 			engine.finish('job_0000000000000001', 'e'.repeat(40));
@@ -175,16 +177,5 @@ describe('LayerBakeRuntime (S11:LBK-010)', () => {
 			rt.dispose();
 			vi.useRealTimers();
 		}
-	});
-
-	it('the identity ignores the position in time and the clip id, not the grade or the content', () => {
-		const { session, graded } = makeSession();
-		const seq = { width: 1920, height: 1080, fps: { num: 30, den: 1 } };
-		const c = clipOf(session, graded);
-		const id = layerIdentity(c, seq, {});
-		expect(layerIdentity({ ...c, start: c.start + 100, clipId: 'clp_other' }, seq, {})).toBe(id);
-		expect(layerIdentity({ ...c, effects: [] }, seq, {})).not.toBe(id);
-		expect(layerIdentity({ ...c, intrinsicBox: { width: 1, height: 1 } }, seq, {})).not.toBe(id);
-		expect(layerIdentity(c, { ...seq, width: 1280 }, {})).not.toBe(id);
 	});
 });

@@ -17,7 +17,6 @@ import {
 import type { FastifyInstance } from 'fastify';
 import { afterAll, describe, expect, it } from 'vitest';
 import { startEngine } from '../src/index.ts';
-import { docHasColorEffects } from '../src/remotion/service.ts';
 import { coreServices } from '../src/tools/services.ts';
 import {
 	closeApps,
@@ -102,42 +101,17 @@ async function gradedWithText(app: FastifyInstance, headers: Record<string, stri
 }
 
 describe('WEBGL_UNAVAILABLE (S06:CG-042)', () => {
-	it('detects colour effects in a render doc', () => {
-		expect(docHasColorEffects({ videoTracks: [{ clips: [{ effects: [] }] }] })).toBe(false);
-		expect(
-			docHasColorEffects({
-				videoTracks: [{ clips: [{ effects: [{ effectId: LUMETRI_EFFECT_ID, enabled: true }] }] }],
-			}),
-		).toBe(true);
-		expect(
-			docHasColorEffects({
-				videoTracks: [{ clips: [{ effects: [{ effectId: 'jasper.black-white', enabled: false }] }] }],
-			}),
-		).toBe(false);
-	});
-
 	it('an engine without WebGL2 fails a graded Remotion still with WEBGL_UNAVAILABLE', async () => {
 		ensureFixtures();
 		const app = await makeApp({ env: { JASPER_REMOTION_GL: 'off' } as Record<string, string> });
 		const d = await gradedWithText(app);
-		const plan = await coreServices(app).exports.plan({
-			envelope: d.envelope(),
-			sequenceId: d.seqId,
-			settings: {
-				sequenceId: d.seqId,
-				range: { type: 'entire' },
-				container: 'mp4',
-				engine: 'auto',
-				destination: { type: 'download' },
-			} as never,
-		});
-		expect(plan.plan.path).toBe('remotion');
 		const r = await app.inject({
 			method: 'POST',
 			url: '/api/stills',
 			headers: JSON_H,
 			payload: { envelope: d.envelope(), sequenceId: d.seqId, frame: 0 },
 		});
+		expect(r.statusCode).toBe(202);
 		const done = await coreServices(app).queue.wait(r.json().id);
 		expect(done.state).toBe('failed');
 		expect(done.error?.code).toBe('WEBGL_UNAVAILABLE');

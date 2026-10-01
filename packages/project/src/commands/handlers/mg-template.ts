@@ -11,8 +11,6 @@ import type { Clip } from '../../schema/sequence.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import type { ClipPatch } from '../schemas/clip.ts';
 
-export const MG_TEMPLATE_OWNER = 'wp-m2-anime-templates';
-
 type MgClip = Extract<Clip, { kind: 'motion-graphic' }>;
 type DMgClip = Draft<MgClip>;
 

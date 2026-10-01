@@ -50,7 +50,7 @@ export type RemotionExportPlan =
 	| { mode: 'unavailable'; code: 'ENCODER_UNAVAILABLE'; reason: string };
 
 /** Share of the job progress that the Remotion render takes when a second encode follows. */
-export function renderWeight(encoder: EncoderChoice): number {
+function renderWeight(encoder: EncoderChoice): number {
 	// Software AV1/VP9 encodes are slower than a ProRes render of simple graphics; H.264 is quick.
 	if (encoder.codec === 'h264') return encoder.hardware ? 0.85 : 0.75;
 	return 0.6;

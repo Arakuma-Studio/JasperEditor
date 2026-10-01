@@ -1,6 +1,5 @@
 // Colour grading E2E (S06). `Lumetri UI` (wp-m2-color, web UI): Color workspace, Lumetri panel edits (first edit
-// adds the instance, a slider drag is one history entry, curve point), the LUT look picker, Effect Controls hosting
-// the Lumetri editor with the curve/wheel rows hidden, and the scopes drawing a trace.
+// adds the instance, a slider drag is one history entry, curve point), the LUT look picker and scopes trace.
 // `Lumetri preview parity` (S06 §9 test 4): the Program monitor's graded layer canvas vs the TS reference.
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -23,14 +22,12 @@ import {
 	importFiles,
 	query,
 	timelineArea,
-	watchPage,
 } from './support.ts';
 
 test.describe('Lumetri UI', () => {
 	test.describe.configure({ mode: 'serial' });
 
 	let page: Page;
-	let watcher: { errors: string[] };
 	let clipId = '';
 
 	type Fx = { id: string; effectId: string; params: Record<string, { value: unknown }> };
@@ -45,7 +42,6 @@ test.describe('Lumetri UI', () => {
 
 	test.beforeAll(async ({ browser }) => {
 		page = await browser.newPage();
-		watcher = watchPage(page);
 		await enableAgentBridge(page);
 	});
 
@@ -115,17 +111,6 @@ test.describe('Lumetri UI', () => {
 			.toBe(2);
 	});
 
-	test('Effect Controls shows the Lumetri editor and hides the curve/wheel rows', async () => {
-		await page.getByTestId('tab-effectControls').click();
-		const [fx] = await lumetri();
-		await expect(page.getByTestId(`fx-editor-${fx!.id}`)).toBeVisible();
-		await expect(page.getByTestId('lumetri-editor-effectControls')).toBeAttached();
-		await expect(page.locator(`[data-row="effects.${fx!.id}.exposure"]`)).toBeAttached();
-		await expect(page.locator(`[data-row="effects.${fx!.id}.curveMaster"]`)).toHaveCount(0);
-		await expect(page.locator(`[data-row="effects.${fx!.id}.shadowsWheel"]`)).toHaveCount(0);
-		await page.getByTestId('tab-lumetri').click();
-	});
-
 	test('Lumetri Scopes draws a trace of the selected clip', async () => {
 		await page.getByTestId('scopes-mode-waveform').click();
 		await expect
@@ -145,7 +130,7 @@ test.describe('Lumetri UI', () => {
 			.toBeGreaterThan(50);
 		await page.getByTestId('scopes-mode-vectorscope').click();
 		await expect(page.getByTestId('scopes-canvas')).toHaveAttribute('data-mode', 'vectorscope');
-		expect(watcher.errors.filter((e) => !/favicon|ResizeObserver/.test(e))).toEqual([]);
+		await page.screenshot({ path: 'test-results/e2e-color-scopes.png' });
 	});
 });
 

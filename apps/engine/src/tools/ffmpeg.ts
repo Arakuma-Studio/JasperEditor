@@ -75,7 +75,7 @@ type FfmpegRunOptions = SpawnOptions & {
 };
 
 /** Parses `-progress` key=value blocks; calls back on every `progress=` line. */
-export function createProgressParser(onProgress: (p: FfmpegProgress) => void): (chunk: string) => void {
+function createProgressParser(onProgress: (p: FfmpegProgress) => void): (chunk: string) => void {
 	let buf = '';
 	const cur: Record<string, string> = {};
 	return (chunk) => {

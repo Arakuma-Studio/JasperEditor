@@ -1,6 +1,8 @@
 // PWA checks on the production build served by the engine (ARCHITECTURE §12, §15 item 12, S05 §20):
 // the manifest is linked, valid and installable-shaped; every icon exists with its declared size; the
 // service worker registers, activates and never answers engine routes from its caches.
+
+import { writeFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 
 type ManifestIcon = { src: string; sizes: string; type: string; purpose?: string };
@@ -56,6 +58,7 @@ test('manifest.webmanifest is linked, valid and its icons exist with the declare
 		const [w, h] = icon.sizes.split('x').map(Number);
 		expect([png.readUInt32BE(16), png.readUInt32BE(20)], icon.src).toEqual([w, h]);
 	}
+	writeFileSync('test-results/e2e-pwa-manifest.json', JSON.stringify(m, null, 2));
 });
 
 test('the service worker registers, activates and bypasses engine routes', async ({ page, request }) => {
@@ -85,4 +88,8 @@ test('the service worker registers, activates and bypasses engine routes', async
 		return { status: r.status, cached: cached.some(Boolean) };
 	});
 	expect(viaSw).toEqual({ status: 200, cached: false });
+	writeFileSync(
+		'test-results/e2e-pwa-service-worker.json',
+		JSON.stringify({ scriptURL, caches, ...viaSw }, null, 2),
+	);
 });

@@ -1,12 +1,12 @@
 // Program monitor layer menu (wp-clipboard-2, S03:XF-050/051/038): Reset Motion / Reset Crop, Fit to Frame /
 // Fill Frame / Set to Native (crop- and rotation-aware, centred), Anchor ▸ (the image stays put), Arrange ▸
 // (another video track at the same time, tracks created above the top, never over content), Reveal in Timeline /
-// Project. The geometry and the arrange planner are tested as pure functions, the commands against sessions.
+// Project. Fit and anchor geometry are tested against their visible outcomes, and commands against sessions.
 import { EngineClient } from '@jasper/engine-client';
 import {
 	type Clip,
+	createCounterIdSource,
 	createEmptyProject,
-	createSeededIdSource,
 	defaultRegistries,
 	layerMatrix,
 	layerQuad,
@@ -22,20 +22,9 @@ import {
 	isCommandEnabled,
 	registerAllCommands,
 	runCommand,
-	type ToastRequest,
 } from '../src/commands/index.ts';
-import { programLayerMenu } from '../src/panels/program/layer-menu.ts';
-import {
-	ANCHOR_POINTS,
-	anchorPatch,
-	fitPatch,
-	type LayerState,
-	layerStateAt,
-	planArrange,
-	projectItemOf,
-} from '../src/panels/program/layer-ops.ts';
+import { ANCHOR_POINTS, anchorPatch, fitPatch, type LayerState } from '../src/panels/program/layer-ops.ts';
 import { registerProjectPanel } from '../src/panels/project/instances.ts';
-import { MENUBAR } from '../src/shell/menus/model.ts';
 import { PanelServices } from '../src/state/panel-services.ts';
 import { videoAsset } from './timeline-helpers.ts';
 
@@ -45,7 +34,7 @@ const FRAME = { width: 1920, height: 1080 };
 beforeAll(() => registerAllCommands());
 
 function project(seed: number) {
-	const ids = createSeededIdSource(seed);
+	const ids = createCounterIdSource(seed);
 	const doc = createEmptyProject({ ids, name: `P${seed}`, preset: 'hd-1080p-30' });
 	const session = new EditorSession({
 		projectId: doc.projectId,
@@ -55,7 +44,6 @@ function project(seed: number) {
 	});
 	const seqId = Object.keys(doc.sequences)[0]!;
 	session.openSequence(seqId);
-	const toasts: ToastRequest[] = [];
 	const services = new PanelServices();
 	const ctxFor = (panel: CommandCtx['focus']['panel'] = 'program') =>
 		createCommandContext({
@@ -63,7 +51,6 @@ function project(seed: number) {
 			session,
 			services,
 			focus: { panel, instanceId: panel ?? 'x' },
-			toast: (r) => toasts.push(r),
 		});
 	const apply = (commands: unknown[]) => {
 		const r = session.apply({ label: 'setup', origin: 'user', commands: commands as never });
@@ -74,7 +61,7 @@ function project(seed: number) {
 	const clip = <K extends Clip['kind']>(id: string) => seq().clips[id] as Extract<Clip, { kind: K }>;
 	const history = () => session.getState().history.entries.map((e) => e.label);
 	const run = (id: string, args?: unknown) => runCommand(id, ctxFor(), args);
-	return { session, seqId, ctxFor, apply, seq, clip, toasts, history, run, services };
+	return { session, ctxFor, apply, seq, clip, history, run, services };
 }
 
 const solid = (at: number, duration: number, track: string, ref: string) => ({
@@ -172,54 +159,6 @@ describe('Anchor ▸ (XF-038)', () => {
 	});
 });
 
-describe('Arrange ▸ planner (XF-050)', () => {
-	it('moves above / below the next overlapping layer, creates tracks only above, skips locked tracks', () => {
-		const p = project(40);
-		const r = p.apply([
-			solid(0, 100, 'V1', '$a'),
-			solid(0, 100, 'V2', '$b'),
-			solid(50, 100, 'V3', '$c'),
-			solid(200, 100, 'V1', '$d'),
-			solid(200, 100, 'V2', '$e'),
-			solid(400, 100, 'V3', '$f'),
-			solid(400, 100, 'V2', '$g'),
-			solid(800, 50, 'V2', '$lone'),
-		]);
-		const seq = p.seq();
-		// A (V1) under B (V2) and C (V3): forward and front both land on a new V4.
-		expect(planArrange(seq, [r.refs.$a!], 'forward')).toEqual({
-			moves: [{ clipId: r.refs.$a, deltaTracks: 3 }],
-			newTracks: 1,
-		});
-		expect(planArrange(seq, [r.refs.$a!], 'front').moves[0]!.deltaTracks).toBe(3);
-		// D (V1) under E (V2), V3 free there.
-		expect(planArrange(seq, [r.refs.$d!], 'forward')).toEqual({
-			moves: [{ clipId: r.refs.$d, deltaTracks: 2 }],
-			newTracks: 0,
-		});
-		// F (V3) over G (V2): V1 is free below.
-		expect(planArrange(seq, [r.refs.$f!], 'backward').moves).toEqual([
-			{ clipId: r.refs.$f, deltaTracks: -2 },
-		]);
-		expect(planArrange(seq, [r.refs.$f!], 'back').moves).toEqual([{ clipId: r.refs.$f, deltaTracks: -2 }]);
-		// C (V3) over B (V2) and A (V1): no free track below, nothing is created under V1.
-		expect(planArrange(seq, [r.refs.$c!], 'backward')).toMatchObject({
-			moves: [],
-			reason: /No free video track/,
-		});
-		expect(planArrange(seq, [r.refs.$lone!], 'front')).toMatchObject({
-			moves: [],
-			reason: /Already in front/,
-		});
-		expect(planArrange(seq, [r.refs.$lone!], 'back')).toMatchObject({ moves: [], reason: /Already behind/ });
-		// A locked V3 is skipped: D goes to a new V4.
-		p.apply([{ type: 'track.update', trackId: 'V3', patch: { locked: true } }]);
-		expect(planArrange(p.seq(), [r.refs.$d!], 'forward').moves).toEqual([
-			{ clipId: r.refs.$d, deltaTracks: 3 },
-		]);
-	});
-});
-
 describe('layer commands (XF-050)', () => {
 	function withVideo(seed: number) {
 		const p = project(seed);
@@ -301,8 +240,6 @@ describe('layer commands (XF-050)', () => {
 			[0, 0],
 		]);
 		expect(p.history().at(-1)).toBe('Anchor to Top Left');
-		const st = layerStateAt(p.session.getCommitted(), p.seq(), p.seq().clips[r.refs.$s!]!, 0)!;
-		expect(st.values.anchor).toEqual([0, 0]);
 		expect((await p.run('motion.anchor', { point: 'nowhere' })).reason).toBe('invalid-args');
 	});
 
@@ -360,7 +297,6 @@ describe('layer commands (XF-050)', () => {
 		});
 		try {
 			p.session.select('timeline', [p.video]);
-			expect(projectItemOf(p.session.getCommitted(), p.seq().clips[p.video]!)).toBe(p.item);
 			await p.run('clip.revealInProject');
 			expect(p.session.getState().selection.project.items).toEqual([p.item]);
 			expect(focus).toHaveBeenCalledWith('project');
@@ -377,86 +313,5 @@ describe('layer commands (XF-050)', () => {
 		} finally {
 			off();
 		}
-	});
-});
-
-describe('menus (XF-050 placement)', () => {
-	it('the Program menu lists every XF-050 entry with Anchor ▸ and Arrange ▸ submenus (no Agent ▸, D-18)', () => {
-		const p = project(47);
-		const r = p.apply([solid(0, 60, 'V1', '$s')]);
-		p.session.select('timeline', [r.refs.$s!]);
-		const run = vi.fn();
-		const items = programLayerMenu(p.ctxFor(), p.seq().clips[r.refs.$s!]!, run);
-		const labels = items.map((i) => (i.kind === 'separator' ? '—' : i.label));
-		expect(labels).toEqual([
-			'Cut',
-			'Copy',
-			'Paste',
-			'Paste Attributes…',
-			'—',
-			'Duplicate',
-			'Delete',
-			'Enable',
-			'—',
-			'Reset Motion',
-			'Reset Crop',
-			'Fit to Frame',
-			'Fill Frame',
-			'Set to Native (100%)',
-			'Anchor',
-			'Arrange',
-			'—',
-			'Reveal in Timeline',
-			'Reveal in Project',
-		]);
-		const anchor = items.find((i) => i.kind === 'submenu' && i.label === 'Anchor');
-		if (anchor?.kind !== 'submenu') throw new Error('no Anchor submenu');
-		expect(anchor.items.map((i) => (i.kind === 'item' ? i.label : ''))).toEqual([
-			'Anchor to Center',
-			'Top Left',
-			'Top',
-			'Top Right',
-			'Left',
-			'Right',
-			'Bottom Left',
-			'Bottom',
-			'Bottom Right',
-		]);
-		const br = anchor.items.at(-1)!;
-		if (br.kind === 'item') br.run();
-		expect(run).toHaveBeenCalledWith('motion.anchor', { point: 'bottom-right' });
-		const arrange = items.find((i) => i.kind === 'submenu' && i.label === 'Arrange');
-		if (arrange?.kind !== 'submenu') throw new Error('no Arrange submenu');
-		expect(arrange.items.map((i) => (i.kind === 'item' ? [i.label, i.shortcut, i.disabled] : []))).toEqual([
-			['Bring to Front', 'Ctrl+Shift+]', true],
-			['Bring Forward', 'Ctrl+]', true],
-			['Send Backward', 'Ctrl+[', true],
-			['Send to Back', 'Ctrl+Shift+[', true],
-		]);
-		const disabled = items
-			.filter((i) => i.kind === 'item' && i.disabled)
-			.map((i) => (i as { label: string }).label);
-		expect(disabled).toEqual(['Reset Crop', 'Reveal in Project']);
-	});
-
-	it('the menubar has Clip ▸ Transform (with Anchor ▸) and Graphics ▸ Arrange', () => {
-		const sub = (menu: string, label: string) =>
-			MENUBAR.find((m) => m.id === menu)!.items.find((i) => i.type === 'submenu' && i.label === label) as {
-				items: { type: string; command?: string; args?: unknown }[];
-			};
-		const transform = sub('clip', 'Transform');
-		expect(transform.items.filter((i) => i.type === 'command').map((i) => i.command)).toEqual([
-			'motion.reset',
-			'motion.resetCrop',
-			'motion.fit',
-			'motion.fill',
-			'motion.native',
-		]);
-		expect(sub('graphics', 'Arrange').items.map((i) => i.command)).toEqual([
-			'arrange.bringToFront',
-			'arrange.bringForward',
-			'arrange.sendBackward',
-			'arrange.sendToBack',
-		]);
 	});
 });

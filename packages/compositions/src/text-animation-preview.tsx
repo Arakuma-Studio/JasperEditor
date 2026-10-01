@@ -44,7 +44,7 @@ export function textAnimationPreviewTiming(
 }
 
 /** The render document of a preview (pure; cached per preset/side/params). */
-export function textAnimationPreviewDoc(p: TextAnimationPreviewProps): RenderDoc | null {
+function textAnimationPreviewDoc(p: TextAnimationPreviewProps): RenderDoc | null {
 	const spec = getTextAnimationSpec(p.preset, p.version);
 	if (!spec) return null;
 	const timing = textAnimationPreviewTiming(spec.defaultDurationFrames, p.side);

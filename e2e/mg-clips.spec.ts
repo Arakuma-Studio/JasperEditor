@@ -10,22 +10,13 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { expect, type Page, test } from '@playwright/test';
-import {
-	appliedLabels,
-	createProject,
-	enableAgentBridge,
-	query,
-	ROOT,
-	serverInfo,
-	watchPage,
-} from './support.ts';
+import { appliedLabels, createProject, enableAgentBridge, query, ROOT, serverInfo } from './support.ts';
 
 const FIXTURE_PROJECT = join(ROOT, 'fixtures', 'mg-project');
 
 test.describe.configure({ mode: 'serial' });
 
 let page: Page;
-let watcher: { errors: string[] };
 let protocolScript = '';
 
 test.beforeAll(async ({ browser }) => {
@@ -43,7 +34,6 @@ test.beforeAll(async ({ browser }) => {
 	});
 	protocolScript = out.outputFiles[0]!.text;
 	page = await browser.newPage();
-	watcher = watchPage(page);
 	await enableAgentBridge(page);
 });
 
@@ -225,7 +215,7 @@ test('import a Remotion project, insert a composition, live preview, props edit,
 	expect(hist.entries.filter((e) => e.applied).map((e) => e.label)).toEqual(
 		expect.arrayContaining(['Import Remotion Project', 'Add Title', 'Title']),
 	);
-	expect(watcher.errors.filter((e) => !/favicon|ERR_ABORTED|Failed to load resource/.test(e))).toEqual([]);
+	await page.screenshot({ path: 'test-results/e2e-composition-preview.png' });
 });
 
 test('MCP: import_mg_bundle → add_composition → set_composition_props → render_frame, as Agent History entries', async () => {

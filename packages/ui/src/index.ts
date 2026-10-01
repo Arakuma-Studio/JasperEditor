@@ -17,7 +17,6 @@ export * from './primitives/layout.tsx';
 export * from './primitives/PanelFrame.tsx';
 export * from './primitives/ScrubbyNumber.tsx';
 export * from './primitives/Slider.tsx';
-export * from './primitives/scrubby-math.ts';
 export * from './primitives/TimecodeField.tsx';
 export * from './primitives/TimecodeText.tsx';
 export * from './primitives/Tooltip.tsx';

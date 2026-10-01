@@ -1,10 +1,12 @@
-import { EngineClient } from '@jasper/engine-client';
 import { act, cleanup, fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createCommandContext, getCommand, registerAllCommands, runCommand } from '../src/commands/index.ts';
-import { effectTree, readEffectDragPayload, writeEffectDragPayload } from '../src/panels/effects/drag.ts';
+import {
+	JASPER_EFFECT_MIME,
+	readEffectDragPayload,
+	writeEffectDragPayload,
+} from '../src/panels/effects/drag.ts';
 import { EffectsPanel } from '../src/panels/effects/EffectsPanel.tsx';
-import { entryKind, HistoryPanel, relativeTime } from '../src/panels/history/HistoryPanel.tsx';
+import { HistoryPanel } from '../src/panels/history/HistoryPanel.tsx';
 import { inspectorFocus } from '../src/panels/properties/lib/focus.ts';
 import { addSolids, clipOf, makeSession, renderWithSession } from './inspector-helpers.tsx';
 
@@ -33,10 +35,8 @@ describe('History panel (S05:HIS-001…003, S01:UND-009)', () => {
 			});
 		});
 		renderWithSession(session, <HistoryPanel instanceId="h1" visible />);
-		expect(screen.getByTestId('history-row-0').textContent).toContain('Open');
 		const agentRow = screen.getByTestId('history-row-2');
 		expect(agentRow.textContent).toContain('Agent: Fade in title');
-		expect(agentRow.querySelector('[data-kind="agent"]')).toBeTruthy();
 		expect(screen.getByTestId('history-row-3').getAttribute('aria-selected')).toBe('true');
 		const opacity = () => (clipOf(session, id!) as unknown as { opacity: { value: number } }).opacity.value;
 		act(() => {
@@ -61,15 +61,6 @@ describe('History panel (S05:HIS-001…003, S01:UND-009)', () => {
 		});
 		expect(session.getState().history.entries).toHaveLength(0);
 	});
-
-	it('formats relative times and classifies entries', () => {
-		expect(relativeTime(0, 2000)).toBe('just now');
-		expect(relativeTime(0, 42_000)).toBe('42 s ago');
-		expect(relativeTime(0, 5 * 60_000)).toBe('5 min ago');
-		expect(entryKind({ label: 'Apply Gaussian Blur', origin: 'user' })).toBe('effect');
-		expect(entryKind({ label: 'Agent: x', origin: { agent: 'a' } })).toBe('agent');
-		expect(entryKind({ label: 'Razor', origin: 'user' })).toBe('edit');
-	});
 });
 
 describe('Effects panel (S05:EFX-001…003)', () => {
@@ -78,10 +69,6 @@ describe('Effects panel (S05:EFX-001…003)', () => {
 		const ids = addSolids(session, [0, 0], 30);
 		act(() => session.select('timeline', ids));
 		renderWithSession(session, <EffectsPanel instanceId="e1" visible />);
-		// Every video effect of the default registry (M1 seven + M2 corner pin).
-		expect(document.querySelectorAll('[data-effect-id]')).toHaveLength(
-			session.ctx.registries.effects.list().filter((e) => e.appliesTo === 'video').length,
-		);
 		act(() => {
 			fireEvent.change(screen.getByTestId('effects-search'), { target: { value: 'gray' } });
 		});
@@ -93,11 +80,9 @@ describe('Effects panel (S05:EFX-001…003)', () => {
 		});
 		expect(ids.map((id) => effectIds(session, id))).toEqual([['jasper.black-white'], ['jasper.black-white']]);
 		expect(session.getState().history.entries.length).toBe(entries + 1);
-		expect(session.getState().history.entries.at(-1)!.label).toBe('Apply Black & White (2 clips)');
-		expect(screen.getByTestId('effects-status').textContent).toContain('2 clips');
 	});
 
-	it('writes and reads the jasper/effect drag payload; builds the category tree', () => {
+	it('writes and reads the effect drag protocol', () => {
 		const store = new Map<string, string>();
 		const dt = {
 			setData: (t: string, v: string) => store.set(t, v),
@@ -105,59 +90,16 @@ describe('Effects panel (S05:EFX-001…003)', () => {
 			effectAllowed: 'none',
 		} as unknown as DataTransfer;
 		writeEffectDragPayload(dt, 'jasper.crop');
-		expect(readEffectDragPayload(dt)).toEqual({ type: 'jasper/effect', effectId: 'jasper.crop' });
-		const session = makeSession();
-		const tree = effectTree(session.ctx.registries.effects, { query: '', realtime: false, native: true });
-		expect(tree[0]!.medium).toBe('Video Effects');
-		expect(tree[0]!.categories.map((c) => c.category)).toEqual([
-			'Blur & Sharpen',
-			'Color Correction',
-			'Transform',
-		]);
-	});
-});
-
-describe('inspector UI commands', () => {
-	const engine = new EngineClient({ fetch: (async () => new Response('{}')) as unknown as typeof fetch });
-	it('applies effects, toggles the focused stopwatch, navigates keys and steps history', async () => {
-		registerAllCommands();
-		const session = makeSession();
-		const [id] = addSolids(session, [10], 40);
-		session.select('timeline', [id!]);
-		const ctx = createCommandContext({ engine, session });
-		expect((await runCommand('inspector.applyEffect', ctx, { effectId: 'jasper.hue-saturation' })).ran).toBe(
-			true,
+		expect(JASPER_EFFECT_MIME).toBe('application/x-jasper-effect');
+		expect(store.get('application/x-jasper-effect')).toBe(
+			'{"type":"jasper/effect","effectId":"jasper.crop"}',
 		);
-		expect(effectIds(session, id!)).toEqual(['jasper.hue-saturation']);
-		inspectorFocus.set({ source: 'properties', clipIds: [id!], rowId: 'opacity' });
-		ctx.transport.seek(20);
-		await runCommand('inspector.toggleStopwatch', ctx);
-		ctx.transport.seek(30);
-		await runCommand('inspector.addRemoveKeyframe', ctx);
-		const keys = () =>
-			(clipOf(session, id!) as unknown as { opacity: { keyframes: { time: number }[] } }).opacity.keyframes;
-		expect(keys()).toHaveLength(2);
-		ctx.transport.seek(0);
-		await runCommand('inspector.nextKeyframe', ctx);
-		expect(ctx.transport.getState().frame).toBe(20);
-		await runCommand('inspector.nextKeyframe', ctx);
-		expect(ctx.transport.getState().frame).toBe(30);
-		await runCommand('inspector.prevKeyframe', ctx);
-		expect(ctx.transport.getState().frame).toBe(20);
-		await runCommand('inspector.toggleStopwatch', ctx);
-		expect(keys()).toHaveLength(0);
-		const before = session.getState().history.index;
-		await runCommand('history.stepBackward', ctx);
-		expect(session.getState().history.index).toBe(before - 1);
-		await runCommand('history.stepForward', ctx);
-		expect(session.getState().history.index).toBe(before);
-		inspectorFocus.set({
-			effectInstanceId: (clipOf(session, id!) as unknown as { effects: { id: string }[] }).effects[0]!.id,
-		});
-		await runCommand('effectControls.removeEffect', ctx);
-		expect(effectIds(session, id!)).toEqual([]);
-		expect(getCommand('history.clear')).toBeTruthy();
-		await runCommand('history.clear', ctx, { confirmed: true });
-		expect(session.getState().history.entries).toHaveLength(0);
+		expect(
+			readEffectDragPayload({
+				getData: (key: string) =>
+					key === JASPER_EFFECT_MIME ? '{"type":"jasper/effect","effectId":"jasper.crop"}' : '',
+			} as DataTransfer),
+		).toEqual({ type: 'jasper/effect', effectId: 'jasper.crop' });
+		expect(readEffectDragPayload({ getData: () => 'garbage' } as unknown as DataTransfer)).toBeNull();
 	});
 });

@@ -47,7 +47,7 @@ export function forceCursor(cursor: CursorId | (string & {})): () => void {
 }
 
 /** The currently forced CSS cursor, or null. */
-export function getForcedCursor(): string | null {
+function getForcedCursor(): string | null {
 	return stack.at(-1)?.cursor ?? null;
 }
 

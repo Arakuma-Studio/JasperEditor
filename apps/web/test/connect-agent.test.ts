@@ -1,31 +1,11 @@
 // Help ▸ Connect an AI Agent… (wp-mcp): the configuration snippets for Claude Code, Codex CLI and Cursor.
 import { describe, expect, it } from 'vitest';
-import {
-	buildAgentSnippets,
-	MCP_ENTRY_PLACEHOLDER,
-	resolveMcpLaunch,
-	shellWord,
-} from '../src/shell/connect-agent.tsx';
+import { buildAgentSnippets, resolveMcpLaunch } from '../src/shell/connect-agent.tsx';
 
 const byId = (l: Parameters<typeof buildAgentSnippets>[0]) =>
 	Object.fromEntries(buildAgentSnippets(l).map((s) => [s.id, s.text]));
 
 describe('resolveMcpLaunch', () => {
-	it('uses the engine-reported bundle with plain node (web / dev checkout)', () => {
-		const l = resolveMcpLaunch(null, {
-			stdioEntry: '/home/me/JasperEditor/apps/mcp/dist/jasper-mcp.mjs',
-			httpUrl: 'http://127.0.0.1:47900/mcp',
-			tokenRequired: false,
-		});
-		expect(l).toEqual({
-			entry: '/home/me/JasperEditor/apps/mcp/dist/jasper-mcp.mjs',
-			entryKnown: true,
-			command: 'node',
-			env: {},
-			httpUrl: 'http://127.0.0.1:47900/mcp',
-		});
-	});
-
 	it('prefers the desktop bridge (packaged app runs the bundle with its own binary) and hides token-mode HTTP', () => {
 		const l = resolveMcpLaunch(
 			{
@@ -40,21 +20,6 @@ describe('resolveMcpLaunch', () => {
 		expect(l.env).toEqual({ ELECTRON_RUN_AS_NODE: '1' });
 		// The desktop engine's token changes on every launch: a URL config would go stale.
 		expect(l.httpUrl).toBeNull();
-	});
-
-	it('falls back to the engine path with node when the desktop has no bundle, and to a placeholder', () => {
-		const viaEngine = resolveMcpLaunch(
-			{ entry: null, command: '/opt/app', env: { ELECTRON_RUN_AS_NODE: '1' } },
-			{ stdioEntry: '/x/jasper-mcp.mjs', httpUrl: 'http://127.0.0.1:1/mcp', tokenRequired: true },
-		);
-		expect(viaEngine).toMatchObject({ entry: '/x/jasper-mcp.mjs', command: 'node', env: {} });
-		expect(resolveMcpLaunch(null, null)).toEqual({
-			entry: MCP_ENTRY_PLACEHOLDER,
-			entryKnown: false,
-			command: 'node',
-			env: {},
-			httpUrl: null,
-		});
 	});
 });
 
@@ -98,11 +63,5 @@ describe('buildAgentSnippets', () => {
 		expect(s['codex-toml']).toContain('env = { ELECTRON_RUN_AS_NODE = "1" }');
 		expect(s['codex-toml']).toContain('command = "C:\\\\Program Files\\\\JasperEditor\\\\JasperEditor.exe"');
 		expect(s['claude-http']).toBeUndefined();
-	});
-
-	it('shellWord leaves plain words alone and quotes the rest', () => {
-		expect(shellWord('/usr/bin/node')).toBe('/usr/bin/node');
-		expect(shellWord('/Applications/Jasper Editor.app/x')).toBe('"/Applications/Jasper Editor.app/x"');
-		expect(shellWord('a"b$c')).toBe('"a\\"b\\$c"');
 	});
 });

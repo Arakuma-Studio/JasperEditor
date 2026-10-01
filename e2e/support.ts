@@ -28,16 +28,6 @@ export function serverInfo(): { port: number; appdir: string } {
 	return JSON.parse(readFileSync(join(ROOT, 'test-results', 'e2e-server.json'), 'utf8'));
 }
 
-/** Collects page and console errors so a spec can assert there were none. */
-export function watchPage(page: Page): { errors: string[] } {
-	const errors: string[] = [];
-	page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-	page.on('console', (m) => {
-		if (m.type() === 'error') errors.push(`console: ${m.text()}`);
-	});
-	return { errors };
-}
-
 export async function enableAgentBridge(page: Page): Promise<void> {
 	await page.addInitScript(() => window.localStorage.setItem('jasper:agent-bridge', '1'));
 }

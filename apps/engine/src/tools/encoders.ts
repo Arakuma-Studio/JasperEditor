@@ -304,7 +304,7 @@ type EncodeArgs = {
 };
 
 /** Average bitrate (kbit/s) that roughly matches an x264 CRF, for bitrate-only encoders. */
-export function bitrateForCrf(crf: number, width: number, height: number, fps: number, factor = 1): number {
+function bitrateForCrf(crf: number, width: number, height: number, fps: number, factor = 1): number {
 	// Bits per pixel: 0.15 at CRF 18, halving every 6 CRF steps.
 	const bpp = 0.15 * 2 ** ((18 - crf) / 6);
 	return Math.max(200, Math.round((width * height * fps * bpp * factor) / 1000));
@@ -314,7 +314,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, M
 /** x264 CRF → libvpx-vp9 CRF (0–63): 18 → 32, 23 → 38, 26 → 42. */
 export const vp9Crf = (crf: number) => clamp(crf * 1.25 + 9.5, 4, 63);
 /** x264 CRF → AV1 CRF (SVT-AV1/libaom 0–63): 18 → 28, 23 → 35, 26 → 39. */
-export const av1Crf = (crf: number) => clamp(crf * 1.35 + 3.7, 1, 63);
+const av1Crf = (crf: number) => clamp(crf * 1.35 + 3.7, 1, 63);
 
 /** Pixel format the encoder receives from the filter graph. */
 function pixFmtFor(encoder: string, proresProfile: 'hq' | '4444' = 'hq'): string {
@@ -482,7 +482,7 @@ export function audioEncodeArgs(audioEncoder: string, kbps: number): string[] {
 const hwCache = new Map<string, Promise<HwTestResult[]>>();
 
 /** Test-encode arguments for a hardware encoder (a few black frames to the null muxer). */
-export function hwTestArgs(spec: HwEncoderSpec): string[] {
+function hwTestArgs(spec: HwEncoderSpec): string[] {
 	const pre = spec.vaapi ? ['-vaapi_device', VAAPI_DEVICE] : [];
 	const vf = spec.vaapi ? 'format=nv12,hwupload' : `format=${spec.pixFmt}`;
 	return [
@@ -556,7 +556,7 @@ async function testOne(
 }
 
 /** A short, stable reason from a failed test encode ("Cannot load libcuda.so.1"). */
-export function hwFailureReason(msg: string): string {
+function hwFailureReason(msg: string): string {
 	const lines = msg
 		.split('\n')
 		.map((l) =>

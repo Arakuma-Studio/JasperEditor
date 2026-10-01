@@ -40,8 +40,6 @@ export type DiscoveryOptions = {
 	env?: Env;
 	fetch?: typeof fetch;
 	healthTimeoutMs?: number;
-	/** Skip the default-port probe (tests). */
-	noDefaultPort?: boolean;
 	log?(line: string): void;
 };
 
@@ -139,12 +137,10 @@ export async function discoverEngine(opts: DiscoveryOptions = {}): Promise<Engin
 		};
 	}
 
-	if (!opts.noDefaultPort) {
-		const def = `http://${DEFAULT_ENGINE_HOST}:${DEFAULT_ENGINE_PORT}`;
-		const h = await probe(def);
-		if (h.ok) return { url: def, token: token || null, source: 'default-port', version: h.version };
-		log(`no engine on the default port ${DEFAULT_ENGINE_PORT}: ${h.reason}`);
-	}
+	const def = `http://${DEFAULT_ENGINE_HOST}:${DEFAULT_ENGINE_PORT}`;
+	const h = await probe(def);
+	if (h.ok) return { url: def, token: token || null, source: 'default-port', version: h.version };
+	log(`no engine on the default port ${DEFAULT_ENGINE_PORT}: ${h.reason}`);
 	return null;
 }
 

@@ -1,18 +1,14 @@
 // PreviewThumb (ARCHITECTURE §20.6): poster through <Thumbnail>, one shared hover <Player> after 200 ms,
 // touch / reduced motion → poster only.
-import { act, fireEvent, render } from '@testing-library/react';
+import { act, fireEvent, render, within } from '@testing-library/react';
 import { useCurrentFrame } from 'remotion';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-	activePreviewId,
-	HOVER_PREVIEW_DELAY_MS,
-	PreviewThumb,
-} from '../src/panels/motionTemplates/PreviewThumb.tsx';
+import { PreviewThumb } from '../src/panels/motionTemplates/PreviewThumb.tsx';
 
 function FrameProbe({ label }: { label: string }) {
 	const frame = useCurrentFrame();
 	return (
-		<span data-probe={label} data-frame={frame}>
+		<span>
 			{label}:{frame}
 		</span>
 	);
@@ -31,7 +27,7 @@ const thumb = (label: string, posterFrame = 12) => (
 	/>
 );
 
-const stateOf = (el: Element | null) => el?.getAttribute('data-preview-thumb');
+const frameOf = (el: Element) => el.textContent;
 
 function setReducedMotion(reduce: boolean) {
 	vi.stubGlobal('matchMedia', (q: string) => ({
@@ -59,73 +55,57 @@ describe('PreviewThumb', () => {
 				{thumb('b', 3)}
 			</div>,
 		);
-		const [a, b] = r.container.querySelectorAll('[data-preview-thumb]');
-		expect(stateOf(a!)).toBe('poster');
-		expect(a!.getAttribute('aria-label')).toBe('a preview');
-		expect(a!.querySelector('[data-probe="a"]')?.getAttribute('data-frame')).toBe('12');
-		expect(b!.querySelector('[data-probe="b"]')?.getAttribute('data-frame')).toBe('3');
+		const a = within(r.container).getByRole('img', { name: 'a preview' });
+		const b = within(r.container).getByRole('img', { name: 'b preview' });
+		expect(frameOf(a)).toBe('a:12');
+		expect(frameOf(b)).toBe('b:3');
 
-		fireEvent.pointerEnter(a!, { pointerType: 'mouse' });
+		fireEvent.pointerEnter(a, { pointerType: 'mouse' });
 		act(() => {
-			vi.advanceTimersByTime(HOVER_PREVIEW_DELAY_MS - 10);
+			vi.advanceTimersByTime(190);
 		});
-		expect(stateOf(a!)).toBe('poster');
+		expect(frameOf(a)).toBe('a:12');
 		act(() => {
 			vi.advanceTimersByTime(20);
 		});
-		expect(stateOf(a!)).toBe('playing');
-		expect(a!.querySelector('[data-probe="a"]')).not.toBeNull();
-		expect(activePreviewId()).not.toBeNull();
+		expect(frameOf(a)).toBe('a:0');
 
 		// One Player for the whole app: hovering b moves it there.
-		fireEvent.pointerEnter(b!, { pointerType: 'mouse' });
+		fireEvent.pointerEnter(b, { pointerType: 'mouse' });
 		act(() => {
-			vi.advanceTimersByTime(HOVER_PREVIEW_DELAY_MS);
+			vi.advanceTimersByTime(200);
 		});
-		expect(stateOf(b!)).toBe('playing');
-		expect(stateOf(a!)).toBe('poster');
-		expect(r.container.querySelectorAll('[data-preview-thumb="playing"]')).toHaveLength(1);
+		expect(frameOf(b)).toBe('b:0');
+		expect(frameOf(a)).toBe('a:12');
 
-		fireEvent.pointerLeave(b!, { pointerType: 'mouse' });
-		expect(stateOf(b!)).toBe('poster');
-		expect(activePreviewId()).toBeNull();
+		fireEvent.pointerLeave(b, { pointerType: 'mouse' });
+		expect(frameOf(b)).toBe('b:3');
 	});
 
 	it('leaving before the delay never starts the Player', () => {
 		const r = render(thumb('a'));
-		const a = r.container.querySelector('[data-preview-thumb]')!;
+		const a = within(r.container).getByRole('img', { name: 'a preview' });
 		fireEvent.pointerEnter(a, { pointerType: 'mouse' });
 		fireEvent.pointerLeave(a, { pointerType: 'mouse' });
 		act(() => {
-			vi.advanceTimersByTime(HOVER_PREVIEW_DELAY_MS * 2);
+			vi.advanceTimersByTime(400);
 		});
-		expect(stateOf(a)).toBe('poster');
+		expect(frameOf(a)).toBe('a:12');
 	});
 
 	it('touch and reduced motion keep the poster', () => {
 		const r = render(thumb('a'));
-		const a = r.container.querySelector('[data-preview-thumb]')!;
+		const a = within(r.container).getByRole('img', { name: 'a preview' });
 		fireEvent.pointerEnter(a, { pointerType: 'touch' });
 		act(() => {
-			vi.advanceTimersByTime(HOVER_PREVIEW_DELAY_MS * 2);
+			vi.advanceTimersByTime(400);
 		});
-		expect(stateOf(a)).toBe('poster');
+		expect(frameOf(a)).toBe('a:12');
 		setReducedMotion(true);
 		fireEvent.pointerEnter(a, { pointerType: 'mouse' });
 		act(() => {
-			vi.advanceTimersByTime(HOVER_PREVIEW_DELAY_MS * 2);
+			vi.advanceTimersByTime(400);
 		});
-		expect(stateOf(a)).toBe('poster');
-	});
-
-	it('unmounting the previewing thumb frees the shared Player', () => {
-		const r = render(thumb('a'));
-		fireEvent.pointerEnter(r.container.querySelector('[data-preview-thumb]')!, { pointerType: 'mouse' });
-		act(() => {
-			vi.advanceTimersByTime(HOVER_PREVIEW_DELAY_MS);
-		});
-		expect(activePreviewId()).not.toBeNull();
-		r.unmount();
-		expect(activePreviewId()).toBeNull();
+		expect(frameOf(a)).toBe('a:12');
 	});
 });

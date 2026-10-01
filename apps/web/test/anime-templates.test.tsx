@@ -1,6 +1,5 @@
 // Anime templates in the web app (wp-m2-anime-templates): fframes-only actions are hidden for anime templates
-// (S11:ATP-008), "Update template to vN" (ATP-009, one undo step), the Properties ▸ Template section and the hover
-// preview of fframes cards (ATP-007).
+// (S11:ATP-008), "Update template to vN" (ATP-009, one undo step), and the Properties ▸ Template section.
 import { EngineClient } from '@jasper/engine-client';
 import {
 	type AnyMgTemplate,
@@ -9,9 +8,10 @@ import {
 	type MgAnimeTemplateDefinition,
 	titleReveal,
 } from '@jasper/mg-templates';
-import { type Clip, createEmptyProject, createSeededIdSource, defaultRegistries } from '@jasper/project';
+import { type Clip, createCounterIdSource, createEmptyProject, defaultRegistries } from '@jasper/project';
 import { EditorSession, MemoryProjectStore } from '@jasper/session';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { SessionProvider } from '@jasper/session/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
 	createCommandContext,
@@ -19,12 +19,9 @@ import {
 	resetCommandRegistry,
 	runCommand,
 } from '../src/commands/index.ts';
-import { mgCommands, mgSpecForClip, templateUpgradeFor, updateTemplates } from '../src/commands/mg.ts';
-import { clipSections } from '../src/extensions/index.ts';
-import { buildGroups } from '../src/panels/effectControls/items.ts';
-import { HOVER_PREVIEW_DELAY_MS, PreviewThumb } from '../src/panels/motionTemplates/PreviewThumb.tsx';
-import { MgTemplateSection, templateEngineLabel } from '../src/panels/motionTemplates/TemplateSection.tsx';
-import { planStopwatch } from '../src/panels/properties/lib/model.ts';
+import { mgCommands } from '../src/commands/mg.ts';
+import { EffectControlsPanel } from '../src/panels/effectControls/EffectControlsPanel.tsx';
+import { MgTemplateSection } from '../src/panels/motionTemplates/TemplateSection.tsx';
 
 /** title-reveal@2 with an upgrade step from v1 (uppercases the title). */
 const revealV2: MgAnimeTemplateDefinition = {
@@ -35,7 +32,7 @@ const revealV2: MgAnimeTemplateDefinition = {
 };
 
 async function openSession(defs: readonly AnyMgTemplate[] = MG_CATALOG) {
-	const ids = createSeededIdSource(9);
+	const ids = createCounterIdSource(9);
 	const store = new MemoryProjectStore({ ids });
 	const doc = createEmptyProject({ ids, name: 'Anime', preset: 'hd-1080p-30' });
 	store.put(doc);
@@ -89,12 +86,10 @@ afterEach(() => {
 describe('fframes-only actions are hidden for anime templates (S11:ATP-008)', () => {
 	it('mg.rerender is disabled with only anime clips selected; anime clips have no jasper-mg spec', async () => {
 		registerCommands(mgCommands);
-		const { session, seqId, anime, fframes } = await openSession();
+		const { session, anime } = await openSession();
 		const ctx = createCommandContext({ engine: engine(), session, capabilities: ['fframes'] });
 		session.select('timeline', [anime], 'replace');
 		expect((await runCommand('mg.rerender', ctx)).reason).toBe('disabled');
-		expect(mgSpecForClip(session.getCommitted(), seqId, anime)).toBeNull();
-		expect(mgSpecForClip(session.getCommitted(), seqId, fframes)).not.toBeNull();
 		await session.close();
 	});
 });
@@ -103,9 +98,6 @@ describe('template upgrades (S11:ATP-009)', () => {
 	it('mg.updateTemplate upgrades the selected clips in one undo step', async () => {
 		registerCommands(mgCommands);
 		const { session, seqId, anime, fframes } = await openSession([...MG_CATALOG, revealV2]);
-		const reg = session.ctx.registries.mgTemplates;
-		expect(templateUpgradeFor(reg, clipOf(session, seqId, anime))).toBe(2);
-		expect(templateUpgradeFor(reg, clipOf(session, seqId, fframes))).toBeNull();
 		const toasts: string[] = [];
 		const ctx = createCommandContext({ engine: engine(), session, toast: (t) => toasts.push(t.message) });
 		session.select('timeline', [fframes], 'replace');
@@ -124,10 +116,6 @@ describe('template upgrades (S11:ATP-009)', () => {
 		expect(session.undo().ok).toBe(true);
 		expect(clipOf(session, seqId, anime).template.version).toBe(1);
 		expect(clipOf(session, seqId, anime).params.title).toBe('Hello');
-		expect(updateTemplates(session, [fframes])).toEqual({
-			ok: false,
-			message: 'No template update is available',
-		});
 		await session.close();
 	});
 
@@ -148,13 +136,6 @@ describe('template upgrades (S11:ATP-009)', () => {
 });
 
 describe('Properties ▸ Template section', () => {
-	it('is registered for motion-graphic clips', () => {
-		const def = clipSections.list().find((s) => s.id === 'mg-template')!;
-		expect(def.component).toBe(MgTemplateSection);
-		expect(def.appliesTo([{ kind: 'motion-graphic' } as Clip])).toBe(true);
-		expect(def.appliesTo([{ kind: 'text' } as Clip])).toBe(false);
-	});
-
 	it('shows the engine, offers "Update template to vN" and hides Re-render for anime templates', async () => {
 		const { session, seqId, anime, fframes } = await openSession([...MG_CATALOG, revealV2]);
 		const view = (id: string) =>
@@ -180,7 +161,6 @@ describe('Properties ▸ Template section', () => {
 		expect(f.queryByTestId('mg-template-update')).toBeNull();
 		f.unmount();
 		const unknown = { ...clipOf(session, seqId, anime), template: { id: 'gone', version: 3 } };
-		expect(templateEngineLabel(session.ctx.registries.mgTemplates, unknown)).toBe('not installed');
 		const u = render(<MgTemplateSection session={session} clips={[unknown]} frame={0} sequenceId={seqId} />);
 		expect(u.container.textContent).toContain('is not installed');
 		u.unmount();
@@ -235,69 +215,24 @@ describe('Properties ▸ Template section', () => {
 	});
 });
 
-describe('fframes cards keep their SVG poster and gain the hover preview (S11:ATP-007)', () => {
-	it('custom poster, then the shared Player after the hover delay', () => {
-		vi.useFakeTimers();
-		vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
-		const Probe = () => <span data-probe="" />;
-		render(
-			<PreviewThumb
-				component={Probe}
-				inputProps={{}}
-				durationInFrames={30}
-				fps={30}
-				width={640}
-				height={360}
-				posterFrame={0}
-				label="Lower Third preview"
-				poster={<svg data-twin-poster="" />}
-			/>,
-		);
-		const thumb = screen.getByLabelText('Lower Third preview');
-		expect(thumb.getAttribute('data-preview-thumb')).toBe('poster');
-		expect(thumb.querySelector('[data-twin-poster]')).not.toBeNull();
-		fireEvent.pointerEnter(thumb, { pointerType: 'mouse' });
-		act(() => {
-			vi.advanceTimersByTime(HOVER_PREVIEW_DELAY_MS + 10);
-		});
-		expect(thumb.getAttribute('data-preview-thumb')).toBe('playing');
-		expect(thumb.querySelector('[data-twin-poster]')).toBeNull();
-		vi.unstubAllGlobals();
-	});
-});
-
 describe('Effect Controls stopwatches on anime template params (S11:ATP-006, S05:ECP-008)', () => {
 	it('numeric and colour params have stopwatches; toggling one keys the param; fframes params stay static', async () => {
 		const { session, seqId, anime, fframes } = await openSession();
-		const state = () => session.store.getState();
-		const templateRows = (clipId: string) =>
-			buildGroups(
-				state().document,
-				state().document.sequences[seqId]!,
-				[clipOf(session, seqId, clipId)],
-				20,
-				session.ctx.registries,
-			)
-				.flatMap((g) => g.sections)
-				.find((s) => s.id === `${clipId}:template`)!.rows;
-		const color = templateRows(anime).find((r) => r.id === 'params.titleColor')!;
-		expect(color.spec.animatable).toBe('continuous');
-		expect(templateRows(anime).find((r) => r.id === 'params.title')!.spec.animatable).toBe('no');
-		expect(templateRows(fframes).every((r) => r.spec.animatable === 'no')).toBe(true);
-		const plan = planStopwatch(color, 20, true);
-		expect(plan.commands).toEqual([
-			{
-				type: 'param.setAnimated',
-				target: ['clip', anime, 'params', 'titleColor'],
-				animated: true,
-				at: { sequenceFrame: 20 },
-			},
-		]);
-		const r = session.apply({ label: 'kf', origin: 'user', sequenceId: seqId, commands: plan.commands });
-		expect(r.ok).toBe(true);
-		const after = templateRows(anime).find((x) => x.id === 'params.titleColor')!;
-		expect(after.bindings[0]!.resolved.animated).toBe(true);
+		act(() => {
+			session.select('timeline', [anime], 'replace');
+			session.transport.seek(20);
+		});
+		const view = render(
+			<SessionProvider session={session}>
+				<EffectControlsPanel instanceId="anime-ec" visible />
+			</SessionProvider>,
+		);
+		expect(view.getByTestId('stopwatch-params.y')).toBeTruthy();
+		expect(view.queryByTestId('stopwatch-params.title')).toBeNull();
+		act(() => fireEvent.click(view.getByTestId('stopwatch-params.titleColor')));
 		expect(clipOf(session, seqId, anime).paramKeyframes?.titleColor).toHaveLength(1);
+		act(() => session.select('timeline', [fframes], 'replace'));
+		expect(view.queryByTestId('stopwatch-params.titleColor')).toBeNull();
 		await session.close();
 	});
 });

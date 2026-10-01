@@ -18,7 +18,7 @@ type NullableStore = {
 const NO_SESSION_STORE: NullableStore = { getState: () => null, subscribe: () => () => {} };
 
 /** Presets matching the search and category (pure; tests). */
-export function filterPresets(
+function filterPresets(
 	specs: readonly TextAnimationSpec[],
 	f: { query: string; category: string | null; side: TextAnimationSide },
 ): TextAnimationSpec[] {

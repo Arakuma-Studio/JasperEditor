@@ -51,7 +51,7 @@ const RULES = [
 ];
 
 /** Returns true when a path is exempt from the rule (theme dirs and *.tokens.ts files). */
-export function isExempt(filePath) {
+function isExempt(filePath) {
 	const parts = filePath.split(/[\\/]/);
 	if (parts.includes('theme')) return true;
 	return /\.tokens\.tsx?$/.test(filePath);
@@ -62,7 +62,7 @@ export function isExempt(filePath) {
  * @param {string} text
  * @returns {{line: number, column: number, rule: string, match: string}[]}
  */
-export function findViolations(text) {
+function findViolations(text) {
 	const out = [];
 	const lines = text.split('\n');
 	lines.forEach((line, i) => {

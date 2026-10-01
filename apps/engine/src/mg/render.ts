@@ -26,12 +26,8 @@ export class MgRenderError extends Error {
 	}
 }
 
-/** ffmpeg arguments for the raw RGBA pipe (exported for tests and the docs). */
-export function ffmpegArgs(
-	spec: MgSpecInput,
-	out: { master: string; preview?: string },
-	threads: number,
-): string[] {
+/** ffmpeg arguments for the raw RGBA pipe. */
+function ffmpegArgs(spec: MgSpecInput, out: { master: string; preview?: string }, threads: number): string[] {
 	const args = [
 		'-hide_banner',
 		'-nostdin',

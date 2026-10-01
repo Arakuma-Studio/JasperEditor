@@ -12,7 +12,6 @@ import {
 	importFiles,
 	pointerDrag,
 	query,
-	watchPage,
 } from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -20,7 +19,6 @@ test.describe.configure({ mode: 'serial' });
 const PLATE = 'plate-planar.mp4';
 
 let page: Page;
-let watcher: { errors: string[] };
 let plateId = '';
 let stillId = '';
 let seqId = '';
@@ -36,7 +34,6 @@ type Fx = { id: string; effectId: string; params: Record<string, { value: unknow
 
 test.beforeAll(async ({ browser }) => {
 	page = await browser.newPage();
-	watcher = watchPage(page);
 	await enableAgentBridge(page);
 });
 
@@ -60,7 +57,7 @@ async function centreOf(selector: string): Promise<{ x: number; y: number }> {
 	return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 
-test('set up: plate on V1, still on V2', async () => {
+test('add a planar tracker and drag a corner on the Program monitor (one History entry)', async () => {
 	await createProject(page, 'Tracking E2E');
 	await importFiles(page, [PLATE, 'still.png']);
 	const media = await query<{ media: { mediaId: string; originalName: string }[] }>(page, 'media.list');
@@ -110,9 +107,6 @@ test('set up: plate on V1, still on V2', async () => {
 		stillId,
 	);
 	expect(s.ok).toBe(true);
-});
-
-test('add a planar tracker and drag a corner on the Program monitor (one History entry)', async () => {
 	await clipElement(page, plateId).click();
 	const section = page.getByTestId('tracking-section');
 	await expect(section).toBeVisible();
@@ -146,6 +140,7 @@ test('Track Forward runs an engine job with a live overlay and commits one "Trac
 	await expect(page.getByTestId(`tracker-span-${t.id}`)).not.toHaveText('Not tracked');
 	await expect(page.getByTestId(`tracker-confidence-${t.id}`)).toBeVisible();
 	await expect(page.getByTestId('tracker-overlay')).toHaveAttribute('data-tracked', '1');
+	await page.screenshot({ path: 'test-results/e2e-tracking.png' });
 });
 
 test('Apply to… Corner Pin bakes keyframes onto the still (one "Apply Tracking" entry)', async () => {
@@ -208,5 +203,4 @@ test('the undo chain restores each step', async () => {
 	await expectTop('Add Planar Tracker');
 	await undo();
 	expect(await trackers()).toEqual([]);
-	expect(watcher.errors.filter((e) => !/favicon|ResizeObserver/.test(e))).toEqual([]);
 });

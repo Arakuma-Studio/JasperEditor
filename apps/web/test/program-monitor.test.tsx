@@ -17,7 +17,6 @@ import { monitorStores } from '../src/panels/program/monitor-store.ts';
 import { ProgramMonitor } from '../src/panels/program/ProgramMonitor.tsx';
 import { playerDurationFrames, resolveMediaHandle } from '../src/panels/program/render-doc.ts';
 import { TransformOverlay } from '../src/panels/program/TransformOverlay.tsx';
-import { SourceMonitor } from '../src/panels/source/SourceMonitor.tsx';
 
 function makeSession() {
 	const ids = createCounterIdSource(1);
@@ -61,19 +60,6 @@ function position(session: EditorSession, seqId: string, id: string): number[] {
 
 afterEach(() => cleanup());
 
-describe('Source monitor', () => {
-	it('mounts with the fallback frame rate when every sequence tab is closed', () => {
-		const { session, seqId } = makeSession();
-		session.closeSequenceTab(seqId);
-		const { getByTestId } = render(
-			<SessionProvider session={session}>
-				<SourceMonitor instanceId="source-1" visible />
-			</SessionProvider>,
-		);
-		expect(getByTestId('source-timecode').textContent).toBe('00:00:00:00');
-	});
-});
-
 describe('Program monitor', () => {
 	it('marks, navigates and edits a range through the registered timeline commands', async () => {
 		registerAllCommands();
@@ -113,15 +99,13 @@ describe('Program monitor', () => {
 		]);
 	});
 
-	it('mounts the Player with its chrome for the active sequence', () => {
+	it('shows the active sequence timecode and duration', () => {
 		const { session } = makeSession();
 		const { getByTestId } = render(
 			<SessionProvider session={session}>
 				<ProgramMonitor instanceId="program-1" visible />
 			</SessionProvider>,
 		);
-		expect(getByTestId('program-monitor')).toBeTruthy();
-		expect(getByTestId('program-overlay')).toBeTruthy();
 		expect(getByTestId('program-timecode').textContent).toBe('00:00:00:00');
 		act(() => session.transport.seek(45));
 		expect(getByTestId('program-timecode').textContent).toBe('00:00:01:15');

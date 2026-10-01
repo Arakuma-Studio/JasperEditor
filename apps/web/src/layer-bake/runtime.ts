@@ -23,7 +23,7 @@ import type { EditorSession } from '@jasper/session';
 import { exportEnvelope } from '../export/settings.ts';
 
 /** The layer must be unchanged this long before a preview is requested (S11:LBK-010). */
-export const PREVIEW_IDLE_MS = 2000;
+const PREVIEW_IDLE_MS = 2000;
 
 export type EngineLink = {
 	client: EngineClient;
@@ -61,7 +61,7 @@ function mediaRefs(v: unknown, out: Set<string>): Set<string> {
  * fades included), without name/track, the clip id only when it seeds the drawing, plus the sequence frame and
  * the fingerprints of the LUT assets it references.
  */
-export function layerIdentity(
+function layerIdentity(
 	clip: RenderVisualClip,
 	seq: { width: number; height: number; fps: { num: number; den: number } },
 	media: ProjectDocument['media'],
@@ -101,7 +101,6 @@ export class LayerBakeRuntime implements BakedLayerRuntime {
 	constructor(
 		readonly session: EditorSession,
 		private readonly engine: EngineLink,
-		private readonly idleMs = PREVIEW_IDLE_MS,
 	) {
 		this.offs.push(session.on('doc.changed', () => this.scanSoon()));
 		this.offs.push(
@@ -151,12 +150,6 @@ export class LayerBakeRuntime implements BakedLayerRuntime {
 		if (this.previews.size === 0) return null;
 		const id = this.identityOf(clip);
 		return id ? (this.previews.get(id) ?? null) : null;
-	}
-
-	/** Request state of a clip's current preview (tests, UI). */
-	statusOf(clip: RenderVisualClip): Status | null {
-		const id = this.identityOf(clip);
-		return id ? (this.status.get(id) ?? null) : null;
 	}
 
 	// ------------------------------------------------------------------ scanning
@@ -214,7 +207,7 @@ export class LayerBakeRuntime implements BakedLayerRuntime {
 		const timer = setTimeout(() => {
 			this.scheduled.delete(clipId);
 			void this.submit(sequenceId, clipId, identity);
-		}, this.idleMs);
+		}, PREVIEW_IDLE_MS);
 		this.scheduled.set(clipId, { identity, timer });
 	}
 

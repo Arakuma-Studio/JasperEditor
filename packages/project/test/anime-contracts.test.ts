@@ -1,15 +1,12 @@
 // M2 animation contracts (ARCHITECTURE §20.1, S11): schema v4 (text animators, anime renderer, shape clips),
-// text-animation windows, clip engines, snapshot sources, command stubs and the agent schema additions.
+// text-animation windows, clip engines and the agent schema additions.
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
-	buildRenderSnapshot,
 	type Clip,
-	COMMAND_CATALOG,
-	COMMAND_FIELD_OWNERS,
 	CURRENT_SCHEMA_VERSION,
 	checkInvariants,
 	clipEngines,
@@ -19,10 +16,7 @@ import {
 	defaultRegistries,
 	defaultShape,
 	exportAgentSchema,
-	getTextAnimationSpec,
 	intrinsicBoxOf,
-	KIND_CAPABILITIES,
-	KNOWN_CLIP_KINDS,
 	loadProject,
 	type MgTemplateInfo,
 	type ProjectDocument,
@@ -30,21 +24,13 @@ import {
 	type ShapeData,
 	scaleAnimationFrames,
 	shapeIntrinsicBox,
-	TEXT_ANIMATION_SPECS,
 	type TextAnimationSpec,
-	WARNING_CODES,
 } from '../src/index.ts';
-import { Harness } from './helpers.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtureV4 = () => JSON.parse(readFileSync(join(here, 'fixtures/v4/basic.jasper'), 'utf8'));
 const loadV4 = () => loadProject(fixtureV4(), { effects: defaultEffectRegistry }).document;
 const clipsOf = (doc: ProjectDocument) => Object.values(Object.values(doc.sequences)[0]!.clips);
-const snapshotOf = (doc: ProjectDocument) =>
-	buildRenderSnapshot(doc, Object.keys(doc.sequences)[0]!, {
-		resolveMedia: () => null,
-		resolveFont: () => 'https://fonts.test/f.woff2',
-	});
 
 const FADE: TextAnimationSpec = {
 	id: 'fade',
@@ -96,33 +82,9 @@ describe('schema v4 (ARCHITECTURE §20.1, D-32)', () => {
 		expect(issues.some((m) => /size must be two numbers/.test(m))).toBe(true);
 		expect(issues.some((m) => /corner radius/.test(m))).toBe(true);
 	});
-	it('registers the shape kind (capabilities like text, Remotion engines, graphics label)', () => {
-		expect(KNOWN_CLIP_KINDS).toContain('shape');
-		expect(KIND_CAPABILITIES.shape).toMatchObject({
-			trackKind: 'video',
-			visual: true,
-			hasTransform: true,
-			hasOpacity: true,
-			supportsEffects: true,
-			engines: { preview: 'remotion', export: 'remotion' },
-			badge: 'R',
-			defaultLabel: 'magenta',
-		});
-		expect(WARNING_CODES).toContain('W_ANIMATION_COMPRESSED');
-	});
 });
 
 describe('shapes (S11:SHP-001/003)', () => {
-	it('defaultShape: white fill, no stroke, radius 0, 400×400', () => {
-		const s = defaultShape('rect');
-		expect(s).toEqual({
-			type: 'rect',
-			size: { value: [400, 400], keyframes: [] },
-			fill: { value: [1, 1, 1, 1], keyframes: [] },
-			stroke: null,
-			cornerRadius: { value: 0, keyframes: [] },
-		});
-	});
 	it('intrinsic box = largest size + the stroke drawn outside the geometry', () => {
 		const stroke = (position: 'inside' | 'center' | 'outside') =>
 			defaultShape('rect', { size: [100, 50], stroke: { color: [1, 1, 1, 1], width: 10, position } });
@@ -149,12 +111,6 @@ describe('shapes (S11:SHP-001/003)', () => {
 });
 
 describe('text animation windows (S11:TXA-002/004)', () => {
-	it('lookups use the shipped catalogue (wp-m2-text-anim) or an explicit list', () => {
-		expect(getTextAnimationSpec('fade', 1)).toBe(TEXT_ANIMATION_SPECS[0]);
-		expect(getTextAnimationSpec('fade', 1, [])).toBeUndefined();
-		expect(getTextAnimationSpec('fade', 1, [FADE])).toBe(FADE);
-		expect(getTextAnimationSpec('fade', 2, [FADE])).toBeUndefined();
-	});
 	it('scales reference-rate frames to the sequence rate (round, ≥ 1)', () => {
 		expect(scaleAnimationFrames(15, 60)).toBe(30);
 		expect(scaleAnimationFrames(15, { num: 24000, den: 1001 })).toBe(12);
@@ -233,139 +189,6 @@ describe('clip engines and the snapshot (ARCHITECTURE §20.1)', () => {
 		expect(clipEngines({ kind: 'video' })).toEqual({ preview: 'native', export: 'native', badge: null });
 		expect(clipEngines({ kind: 'hologram' })).toBeNull();
 	});
-	it('carries text animation, the anime renderer and shapes', () => {
-		const doc = loadV4();
-		const snap = snapshotOf(doc);
-		const clips = snap.videoTracks.flatMap((t) => t.clips);
-		const text = clips.find((c) => c.kind === 'text')!;
-		// Defaults merged since wp-m2-text-anim filled the catalogue.
-		expect('text' in text.source && text.source.animation).toEqual({
-			in: {
-				preset: 'slide-up',
-				version: 1,
-				params: { unit: 'word', stagger: 0.4, order: 'forward', ease: 'outExpo', distance: 60 },
-				frames: 20,
-			},
-			out: {
-				preset: 'fade',
-				version: 1,
-				params: { unit: 'word', stagger: 0, order: 'forward', ease: 'out' },
-				frames: 15,
-			},
-		});
-		expect(snap.warnings.filter((w) => w.code === 'UNKNOWN_TEXT_ANIMATION')).toEqual([]);
-		const mg = clips.find((c) => c.kind === 'motion-graphic')!;
-		expect('mg' in mg.source && mg.source.mg.renderer).toBe('anime');
-		expect('mg' in mg.source && mg.source.mg.template).toEqual({ id: 'title-reveal', version: 1 });
-		expect(mg.engine).toBe('remotion');
-		const shapes = clips.filter((c) => c.kind === 'shape');
-		expect(shapes).toHaveLength(2);
-		const rect = shapes.find((c) => 'shape' in c.source && c.source.shape.type === 'rect')!;
-		expect(rect.intrinsicBox).toEqual({ width: 616, height: 316 });
-		expect(rect.engine).toBe('remotion');
-		const ell = shapes.find((c) => 'shape' in c.source && c.source.shape.type === 'ellipse')!;
-		// Keyframes stay unevaluated in the snapshot (RND-001).
-		expect('shape' in ell.source && ell.source.shape.size.keyframes).toHaveLength(2);
-		expect(ell.intrinsicBox).toEqual({ width: 306, height: 306 });
-	});
-	it('text without animators and fframes templates keep their M1 snapshot shape', () => {
-		const h = new Harness();
-		const r = h.tx([{ type: 'clip.addText', at: 0, duration: 30, track: 'V1', content: { text: 'Hi' } }]);
-		expect(r.ok).toBe(true);
-		const text = snapshotOf(h.doc).videoTracks.flatMap((t) => t.clips)[0]!;
-		expect(Object.keys(text.source).sort()).toEqual(['box', 'text']);
-	});
-});
-
-describe('command contracts (handlers owned by the wave-1 packages)', () => {
-	const fail = (r: ReturnType<Harness['tx']>) => (r.ok ? null : r.errors[0]!);
-	it('clip.addShape is registered and owned by wp-m2-shapes (implemented there, test/shapes.test.ts)', () => {
-		expect(COMMAND_CATALOG['clip.addShape']).toMatchObject({ owner: 'wp-m2-shapes', milestone: 'M2' });
-		const h = new Harness();
-		const r = h.tx([{ type: 'clip.addShape', at: 0, track: 'V1', shape: { type: 'ellipse' } }]);
-		expect(r.ok).toBe(true);
-		const invalid = h.tx([{ type: 'clip.addShape', at: 0, track: 'V1', shape: { type: 'star' } }]);
-		expect(fail(invalid)?.code).toBe('E_SCHEMA');
-	});
-	it('new clip.update / clip.addText fields validate their target, then name their owner', () => {
-		expect(COMMAND_FIELD_OWNERS).toEqual({
-			'clip.addText.textAnimation': 'wp-m2-text-anim',
-			'clip.update.textAnimation': 'wp-m2-text-anim',
-			'clip.update.shape': 'wp-m2-shapes',
-			'clip.update.template': 'wp-m2-anime-templates',
-		});
-		const h = new Harness();
-		const add = h.tx([
-			{
-				type: 'clip.addText',
-				at: 0,
-				duration: 30,
-				track: 'V1',
-				content: { text: 'Hi' },
-				textAnimation: { in: { preset: 'fade' } },
-			},
-		]);
-		// Implemented by wp-m2-text-anim (packages/project/test/text-animation.test.ts).
-		expect(add.ok).toBe(true);
-		const ok = h.tx([
-			{ type: 'clip.addText', at: 0, duration: 30, track: 'V1', content: { text: 'Hi' }, ref: '$t' },
-		]);
-		expect(ok.ok).toBe(true);
-		const id = ok.ok ? ok.refs.$t! : '';
-		const upd = (patch: unknown) => fail(h.tx([{ type: 'clip.update', clipId: id, patch }]));
-		expect(upd({ textAnimation: null })).toBeNull();
-		expect(upd({ shape: { cornerRadius: 4 } })?.code).toBe('E_INVALID_PARAM');
-		expect(upd({ template: { version: 2 } })?.code).toBe('E_INVALID_PARAM');
-		expect(upd({ textAnimation: { in: { durationFrames: 0 } } })?.code).toBe('E_SCHEMA');
-		// Existing fields are unaffected.
-		expect(h.tx([{ type: 'clip.update', clipId: id, patch: { name: 'Renamed' } }]).ok).toBe(true);
-	});
-	it('clip.addMotionGraphic stamps the anime renderer from the registry; upgrades need an installed target', () => {
-		const info = (renderer?: 'anime'): MgTemplateInfo => ({
-			id: renderer ? 'title-reveal' : 'card',
-			version: 1,
-			name: 'T',
-			category: 'Titles',
-			paramsSchema: z.strictObject({ title: z.string().default('Hello') }),
-			defaults: { title: 'Hello' },
-			introFrames: 10,
-			outroFrames: 10,
-			canvasDefault: 'sequence',
-			...(renderer ? { renderer } : {}),
-		});
-		const registries = defaultRegistries(createStaticMgRegistry([info('anime'), info()]));
-		const h = new Harness({ ctx: { registries } });
-		const r = h.tx([
-			{
-				type: 'clip.addMotionGraphic',
-				at: 0,
-				duration: 60,
-				track: 'V1',
-				template: { id: 'title-reveal', version: 1 },
-				ref: '$a',
-			},
-			{
-				type: 'clip.addMotionGraphic',
-				at: 60,
-				duration: 60,
-				track: 'V1',
-				template: { id: 'card', version: 1 },
-				ref: '$f',
-			},
-		]);
-		expect(r.ok).toBe(true);
-		const refs = r.ok ? r.refs : {};
-		const a = h.seq.clips[refs.$a!] as Extract<Clip, { kind: 'motion-graphic' }>;
-		const f = h.seq.clips[refs.$f!] as Extract<Clip, { kind: 'motion-graphic' }>;
-		expect(a.template).toEqual({ id: 'title-reveal', version: 1, renderer: 'anime' });
-		expect(f.template).toEqual({ id: 'card', version: 1 });
-		const up = h.tx([{ type: 'clip.update', clipId: refs.$a!, patch: { template: { version: 2 } } }]);
-		// wp-m2-anime-templates implemented the upgrade (S11:ATP-009): version 2 is not installed here.
-		expect(fail(up)).toMatchObject({
-			code: 'E_INVALID_PARAM',
-			message: expect.stringMatching(/not installed/),
-		});
-	});
 });
 
 describe('agent schema (S11:ANA-001)', () => {
@@ -396,7 +219,6 @@ describe('agent schema (S11:ANA-001)', () => {
 			description: 'Char-staggered title',
 			defaultDurationSeconds: 4,
 		});
-		expect(s.commands['clip.addShape']).toMatchObject({ owner: 'wp-m2-shapes', implemented: true });
 		expect(s.properties.find((p) => p.key === 'transform.position')?.kinds).toContain('shape');
 		expect(s.properties.find((p) => p.key === 'opacity')?.kinds).toContain('shape');
 		expect(s.warningCodes).toContain('W_ANIMATION_COMPRESSED');

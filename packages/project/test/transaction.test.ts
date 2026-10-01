@@ -2,10 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
 	applyTransaction,
-	COMMAND_CATALOG,
 	COMMAND_TYPES,
+	createCounterIdSource,
 	createEmptyProject,
-	createSeededIdSource,
 	createStaticMgRegistry,
 	defaultRegistries,
 	exportAgentSchema,
@@ -115,7 +114,7 @@ describe('transactions (S01 §16)', () => {
 	});
 
 	it('enforces the command limit and schemas', () => {
-		const doc = createEmptyProject({ ids: createSeededIdSource(1), name: 'x' });
+		const doc = createEmptyProject({ ids: createCounterIdSource(1), name: 'x' });
 		const many = Array.from({ length: 5001 }, () => ({ type: 'project.rename', name: 'n' }));
 		const { result } = applyTransaction(doc, { label: 'l', origin: 'user', commands: many }, makeCtx());
 		expect(result.ok).toBe(false);
@@ -232,11 +231,6 @@ describe('catalog (ARCHITECTURE §5.3)', () => {
 			'sequence.delete',
 		];
 		for (const t of expected) expect(COMMAND_TYPES).toContain(t);
-		expect(COMMAND_CATALOG['clip.slip'].owner).toBe('WP-2B');
-		expect(COMMAND_CATALOG['effect.add'].owner).toBe('WP-2D');
-		expect(COMMAND_CATALOG['keyframe.add'].owner).toBe('WP-2D');
-		expect(COMMAND_CATALOG['transition.add'].owner).toBe('WP-TR');
-		expect(COMMAND_CATALOG['clip.place'].owner).toBe('WP-00');
 	});
 
 	it('stubs refuse with E_NOT_IMPLEMENTED', () => {

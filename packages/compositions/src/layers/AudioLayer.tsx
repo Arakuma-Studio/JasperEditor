@@ -15,7 +15,7 @@ import type { RenderOptions } from '../types.ts';
  * evaluated at the real sequence frame, so a crossfade ramps through the handles exactly like `afade` does
  * in the native export.
  */
-export function audioLayerGain(
+function audioLayerGain(
 	clip: Pick<
 		RenderAudioClip,
 		'start' | 'duration' | 'sourceIn' | 'speed' | 'gainDb' | 'volumeDb' | 'track' | 'fades' | 'headHandle'

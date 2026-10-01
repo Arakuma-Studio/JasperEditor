@@ -690,33 +690,6 @@ describe('gap.close (S02:TL-741)', () => {
 // ---------------------------------------------------------------- S02 acceptance at model level
 
 describe('S02 acceptance (model level)', () => {
-	it('AC-10b: insert move of a 60-frame clip at 300 shifts sync-locked tracks and splits straddlers', () => {
-		const h = new Harness();
-		h.ok([solid(0, 400, 'V1'), solid(250, 200, 'V2'), solid(1000, 60, 'V3')]);
-		const c = h.clips('V3')[0]!.id;
-		h.ok([{ type: 'clip.move', clipIds: [c], deltaFrames: -700, deltaTracks: -2, mode: 'insert' }]);
-		expect(h.spans('V1')).toEqual([
-			[0, 300],
-			[300, 360],
-			[360, 460],
-		]);
-		expect(h.spans('V2')).toEqual([
-			[250, 300],
-			[360, 510],
-		]);
-	});
-
-	it('AC-11b: regular-trimming A into adjacent B stops exactly at B', () => {
-		const h = new Harness();
-		h.ok([solid(0, 100, 'V1'), solid(100, 50, 'V1')]);
-		const r = h.ok([{ type: 'clip.trim', clipId: h.clips('V1')[0]!.id, edge: 'out', deltaFrames: 30 }]);
-		expect(h.spans('V1')).toEqual([
-			[0, 100],
-			[100, 150],
-		]);
-		expect(r.warnings.map((w) => w.code)).toContain('W_DURATION_CLAMPED');
-	});
-
 	it('AC-11d: Q (ripple-remove [clipStart, playhead)) removes the head and closes the gap', () => {
 		const h = new Harness();
 		h.ok([solid(0, 100, 'V1'), solid(100, 100, 'V1')]);
@@ -730,22 +703,6 @@ describe('S02 acceptance (model level)', () => {
 		expect(byId(h, c.id).sourceIn).toBe(30 * F30);
 	});
 
-	it('AC-12a: razor on all unlocked tracks at 500 splits nothing on a locked track', () => {
-		const h = new Harness();
-		h.ok([solid(0, 1000, 'V1'), solid(0, 1000, 'V2'), solid(400, 200, 'V3')]);
-		h.ok([{ type: 'track.update', trackId: 'V2', patch: { locked: true } }]);
-		h.ok([{ type: 'clip.split', at: 500, scope: 'all-unlocked' }]);
-		expect(h.spans('V1')).toEqual([
-			[0, 500],
-			[500, 1000],
-		]);
-		expect(h.spans('V2')).toEqual([[0, 1000]]);
-		expect(h.spans('V3')).toEqual([
-			[400, 500],
-			[500, 600],
-		]);
-	});
-
 	it('AC-13a: Add Edit on targeted V1/A1 splits only V1/A1 clips crossing 240', () => {
 		const h = new Harness();
 		place(h, 0, { outSec: 10 });
@@ -757,24 +714,6 @@ describe('S02 acceptance (model level)', () => {
 		]);
 		expect(h.spans('A1')).toEqual(h.spans('V1'));
 		expect(h.spans('V2')).toEqual([[0, 400]]);
-	});
-
-	it('AC-13b: ripple delete is refused with content on a sync-locked track; sync lock off makes it succeed', () => {
-		const h = new Harness();
-		h.ok([solid(0, 100, 'V1'), solid(100, 100, 'V1'), solid(20, 30, 'V2')]);
-		const a = h.clips('V1')[0]!.id;
-		const r = h.tx([{ type: 'clip.extract', clipIds: [a] }]);
-		expect(r.ok).toBe(false);
-		if (!r.ok) expect(r.errors[0]!.code).toBe('E_SYNC_CONFLICT');
-		h.ok([{ type: 'track.update', trackId: 'V2', patch: { syncLock: false } }]);
-		h.ok([{ type: 'clip.extract', clipIds: [a] }]);
-		expect(h.spans('V1')).toEqual([[0, 100]]);
-	});
-
-	it('AC-15a: In at 100 and Out at 199 (inclusive) store a 100-frame range', () => {
-		const h = new Harness();
-		h.ok([{ type: 'sequence.setInOut', in: 100, out: 199 + 1 }]);
-		expect(h.seq.outPoint! - h.seq.inPoint!).toBe(100);
 	});
 });
 

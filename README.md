@@ -155,9 +155,10 @@ as inline styles, so the Player, `renderStill` and parallel `renderMedia` agree 
   with `// anime-allow: <reason>`. Biome mirrors the import bans.
 - Text and anime-template layers wait for their font faces (per family/weight/style) before they mount, so they
   never measure or paint with a fallback font.
-- The determinism suite (`packages/motion/test/determinism.test.tsx`) checks every registered text animator and
-  anime template in order, reversed and shuffled against a fresh build per frame. Render parity (stills vs
-  `renderFrames`/`renderMedia` at concurrency 1 and 4, reversed and shuffled visits, Player vs still) and the
+- The determinism suite (`packages/motion/test/determinism.test.tsx`) checks every registered text animator's
+  values in order, reversed and shuffled against a fresh build per frame. The opt-in Chrome suite renders the
+  real sequence with installed anime templates and checks parity (stills vs `renderFrames`/`renderMedia` at
+  concurrency 1 and 4, reversed and shuffled visits, Player vs still) and the
   value-engine cost run with
   `REMOTION_E2E=1 pnpm exec vitest run packages/motion/test/determinism-render.e2e.test.ts`
   (Chrome at `/usr/bin/google-chrome` or `JASPER_BROWSER_EXECUTABLE`).
@@ -480,8 +481,8 @@ graphics)** and lists one graphics group per baked layer.
 - Without the Remotion renderer (no browser / no LGPL FFmpeg directory in a packaged engine) these layers block
   the native path and the plan explains why; `GET /api/capabilities` reports `features.layerBake`.
 - Engine tests with real renders: `REMOTION_E2E=1 pnpm --filter @jasper/engine exec vitest run test/layer-bake.e2e.test.ts
-  test/layer-bake-parallel.e2e.test.ts` (the second compares parallel and sequential bakes byte for byte;
-  `LAYER_BAKE_BENCH=1` adds the benchmark); Playwright: `e2e/layer-bake.spec.ts`.
+  test/layer-bake-parallel.e2e.test.ts` (the second compares parallel and sequential bakes byte for byte);
+  Playwright: `e2e/layer-bake.spec.ts`.
 
 ## Tests
 

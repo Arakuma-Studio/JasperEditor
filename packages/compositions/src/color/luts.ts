@@ -45,12 +45,7 @@ export function loadedLutAsset(url: string): Lut | null | undefined {
 	return e.error !== null ? null : undefined;
 }
 
-/** Test hook. */
-export function clearLutAssets(): void {
-	assets.clear();
-}
-
-export const BAKES_PER_LAYER = 64;
+const BAKES_PER_LAYER = 64;
 const bakes = new Map<string, Map<string, Lut | null>>();
 
 /**
@@ -80,10 +75,4 @@ export function bakedRunLut(
 	lru.set(key, baked);
 	while (lru.size > BAKES_PER_LAYER) lru.delete(lru.keys().next().value!);
 	return baked;
-}
-
-/** Test hook / memory release when a layer unmounts. */
-export function dropLayerBakes(layerId?: string): void {
-	if (layerId === undefined) bakes.clear();
-	else bakes.delete(layerId);
 }

@@ -108,7 +108,7 @@ const FORBIDDEN_ENCODERS = [
 ];
 
 /** Configure switches in a `-buildconf` / `-version` text (or an embedded configuration string). */
-export function configureFlags(text) {
+function configureFlags(text) {
 	return [...text.matchAll(/(?:^|[\s'"])(--(?:enable|disable)-[a-z0-9_-]+)/gi)].map((m) =>
 		m[1].toLowerCase(),
 	);

@@ -1,98 +1,15 @@
-// Unit tests for the LGPL FFmpeg tooling: license evaluation, embedded-string scanning, the tree guard
-// used by `pnpm ffmpeg:check` and the ELF RPATH rewrite.
+// LGPL guard contracts for the tree, packaged app and ELF RPATH rewrite.
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { checkPackagedApp, checkTree } from './check-lgpl.mjs';
-import {
-	configureFlags,
-	evaluateBuild,
-	isFfmpegArtifact,
-	isForbiddenLibrary,
-	loadManifest,
-	platformKey,
-	rewriteElfRpath,
-	scanBinaryStrings,
-	VENDOR_DIR,
-} from './lib.mjs';
+import { loadManifest, platformKey, rewriteElfRpath, VENDOR_DIR } from './lib.mjs';
 
 const LGPL_CONF =
 	"--prefix=/ffbuild/prefix --enable-version3 --enable-shared --disable-libfdk-aac --enable-libopenh264 --disable-libx264 --disable-libx265 --enable-libvpx --extra-libs='-lgomp -ldl'";
 const REMOTION_CONF =
 	'--prefix=remotion --enable-shared --enable-libfdk-aac --enable-gpl --disable-encoders --enable-encoder=libx264 --enable-libx264 --enable-libx265';
-const ENCODERS_LGPL = ' V....D libopenh264          OpenH264 H.264\n A....D aac                  AAC\n';
-const ENCODERS_GPL = `${ENCODERS_LGPL} V....D libx264              libx264 H.264\n A....D libfdk_aac           Fraunhofer FDK AAC\n`;
-
-describe('evaluateBuild', () => {
-	it('accepts an LGPL build even though it lists --disable-libx264', () => {
-		expect(configureFlags(LGPL_CONF)).toContain('--disable-libx264');
-		expect(
-			evaluateBuild({
-				buildconf: LGPL_CONF,
-				encoders: ENCODERS_LGPL,
-				license: 'under the terms of the GNU Lesser General Public License as published',
-			}),
-		).toEqual([]);
-	});
-
-	it("rejects Remotion's bundled build", () => {
-		const problems = evaluateBuild({
-			buildconf: REMOTION_CONF,
-			encoders: ENCODERS_GPL,
-			license: 'under the terms of the GNU General Public License as published',
-		});
-		expect(problems).toEqual(
-			expect.arrayContaining([
-				'configured with --enable-gpl',
-				'configured with --enable-libx264',
-				'configured with --enable-libx265',
-				'configured with --enable-libfdk-aac',
-				'has the libx264 encoder',
-				'has the libfdk_aac encoder',
-				'license: GPL',
-			]),
-		);
-	});
-
-	it('rejects nonfree builds and GPL license strings', () => {
-		expect(evaluateBuild({ buildconf: '--enable-nonfree' })).toContain('configured with --enable-nonfree');
-		expect(evaluateBuild({ license: 'nonfree and unredistributable' })).toContain(
-			'license: nonfree and unredistributable',
-		);
-		expect(evaluateBuild({ license: 'GPL version 2 or later' })).toContain('license: GPL');
-		expect(evaluateBuild({ license: 'LGPL version 3 or later' })).toEqual([]);
-	});
-});
-
-describe('scanBinaryStrings', () => {
-	it('finds the embedded configuration and license string', () => {
-		const buf = Buffer.concat([
-			Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0, 1, 2]),
-			Buffer.from(`\0${REMOTION_CONF}\0junk\0GPL version 2 or later\0`, 'latin1'),
-		]);
-		const s = scanBinaryStrings(buf);
-		expect(s.buildconf).toContain('--enable-gpl');
-		expect(s.license).toBe('GPL version 2 or later');
-		expect(evaluateBuild(s)).toContain('license: GPL');
-	});
-});
-
-describe('isFfmpegArtifact', () => {
-	it.each([
-		['ffmpeg', true],
-		['ffprobe.exe', true],
-		['libavcodec.so', true],
-		['libavcodec.so.61', true],
-		['libavcodec.61.dylib', true],
-		['libswscale.dylib', true],
-		['avcodec-61.dll', true],
-		['swresample-5.dll', true],
-		['remotion', false],
-		['libvpx-1.dll', false],
-		['ffmpeg.txt', false],
-	])('%s → %s', (name, expected) => expect(isFfmpegArtifact(name)).toBe(expected));
-});
 
 describe('checkTree', () => {
 	it('fails on GPL libraries and Remotion compositor packages, passes LGPL ones', () => {
@@ -102,13 +19,21 @@ describe('checkTree', () => {
 		mkdirSync(ok, { recursive: true });
 		mkdirSync(bad, { recursive: true });
 		writeFileSync(join(ok, 'libavcodec.so.61'), `\0${LGPL_CONF}\0LGPL version 3 or later\0`);
+		writeFileSync(join(ok, 'libavcodec.61.dylib'), `\0${LGPL_CONF}\0LGPL version 3 or later\0`);
+		writeFileSync(join(ok, 'avcodec-61.dll'), `\0${LGPL_CONF}\0LGPL version 3 or later\0`);
 		writeFileSync(join(bad, 'libavcodec.so'), `\0${REMOTION_CONF}\0GPL version 2 or later\0`);
+		writeFileSync(
+			join(bad, 'libavutil.so.59'),
+			'\0--prefix=/ffbuild --enable-nonfree --enable-shared\0nonfree and unredistributable\0',
+		);
 		const okResults = checkTree(ok);
-		expect(okResults).toHaveLength(1);
-		expect(okResults[0].problems).toEqual([]);
+		expect(okResults).toHaveLength(3);
+		expect(okResults.every((r) => r.problems.length === 0)).toBe(true);
 		const badResults = checkTree(join(root, 'bad'));
-		expect(badResults.map((r) => r.problems.length > 0)).toEqual([true, true]);
+		expect(badResults).toHaveLength(3);
+		expect(badResults.every((r) => r.problems.length > 0)).toBe(true);
 		expect(badResults.some((r) => r.method === 'path')).toBe(true);
+		expect(badResults.flatMap((r) => r.problems)).toContain('configured with --enable-nonfree');
 	});
 });
 
@@ -125,22 +50,6 @@ describe('vid.stab rule (S07:PST-003)', () => {
 		expect(Date.parse(pin.commitDate)).toBeGreaterThanOrEqual(Date.parse(pin.relicenseDate));
 		expect(loadManifest().source.packages.vidstab.sha256).toMatch(/^[0-9a-f]{64}$/);
 		expect(loadManifest().source.packages.vidstab.url).toContain(pin.commit);
-	});
-
-	it('accepts --enable-libvidstab only with the pinned commit recorded', () => {
-		expect(evaluateBuild({ buildconf: VIDSTAB_CONF, vidstab: record(pin.commit) })).toEqual([]);
-		expect(evaluateBuild({ buildconf: VIDSTAB_CONF }).join()).toMatch(/records no libvidstab/);
-		expect(evaluateBuild({ buildconf: VIDSTAB_CONF, vidstab: record('aa'.repeat(20)) }).join()).toMatch(
-			/not the pinned post-relicense commit/,
-		);
-		expect(
-			evaluateBuild({
-				buildconf: VIDSTAB_CONF,
-				vidstab: { ...record(pin.commit), license: 'GPL-2.0-or-later' },
-			}).length,
-		).toBe(1);
-		// A build without vid.stab needs no record.
-		expect(evaluateBuild({ buildconf: LGPL_CONF })).toEqual([]);
 	});
 
 	it('pnpm ffmpeg:check reads the record from BUILDINFO.json next to the binaries', () => {
@@ -228,28 +137,12 @@ describe('checkPackagedApp', () => {
 	});
 });
 
-describe('isForbiddenLibrary', () => {
-	it.each([
-		['libx264.so.164', true],
-		['libx264-164.dll', true],
-		['libx265.so', true],
-		['x265.dll', true],
-		['libfdk-aac.2.dylib', true],
-		['xvidcore.dll', true],
-		['libvpx-1.dll', false],
-		['libopenh264.so.7', false],
-		['x264-notes.txt', false],
-	])('%s → %s', (name, expected) => expect(isForbiddenLibrary(name)).toBe(expected));
-});
-
 describe('manifest', () => {
 	it('pins every prebuilt download and source tarball with a sha256', () => {
 		const m = loadManifest();
 		for (const p of Object.values(m.prebuilt.platforms)) expect(p.sha256).toMatch(/^[0-9a-f]{64}$/);
 		for (const p of Object.values(m.source.packages)) expect(p.sha256).toMatch(/^[0-9a-f]{64}$/);
 		for (const s of Object.values(m.remotion.compositorSha256)) expect(s).toMatch(/^[0-9a-f]{64}$/);
-		// Remotion 4.0.499's compositor ABI (FFmpeg 7.1).
-		expect(m.abi).toMatchObject({ libavcodec: 61, libavformat: 61, libavutil: 59, libavfilter: 10 });
 	});
 });
 

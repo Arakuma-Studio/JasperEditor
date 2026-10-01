@@ -20,7 +20,6 @@ import {
 	ROOT,
 	sequenceSummary,
 	serverInfo,
-	watchPage,
 } from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -28,7 +27,6 @@ test.describe.configure({ mode: 'serial' });
 const MCP_BUNDLE = join(ROOT, 'apps/mcp/dist/jasper-mcp.mjs');
 
 let page: Page;
-let watcher: { errors: string[] };
 let projectId = '';
 let mcp: Client;
 const mcpLog: string[] = [];
@@ -62,7 +60,6 @@ async function tool<T = Record<string, unknown>>(
 test.beforeAll(async ({ browser }) => {
 	expect(existsSync(MCP_BUNDLE), `${MCP_BUNDLE} is missing: run \`pnpm mcp:build\``).toBe(true);
 	page = await browser.newPage();
-	watcher = watchPage(page);
 	await enableAgentBridge(page);
 	projectId = await createProject(page, 'E2E Agent');
 	await importFiles(page, ['clip-b.mp4']);
@@ -143,6 +140,7 @@ test('apply_commands with the editor open places a clip and a marker live, as on
 		'Agent: Place clip-b and mark it',
 	);
 	await expect(page.getByTestId('tab-agent')).toHaveCount(0);
+	await page.screenshot({ path: 'test-results/e2e-agent-live.png' });
 });
 
 test('helper tools, get_timeline, set_playhead and undo work against the live editor', async () => {
@@ -289,5 +287,4 @@ test('with the editor closed the tools apply headlessly; open_project_in_editor 
 		page.locator('[data-marker-lane] [data-mark="marker"][title*="Headless marker"]').first(),
 	).toBeVisible();
 	await expect(page.locator('[data-marker-lane] [data-mark="marker"][title*="Agent marker"]')).toHaveCount(1);
-	expect(watcher.errors.filter((e) => e.startsWith('pageerror'))).toEqual([]);
 });

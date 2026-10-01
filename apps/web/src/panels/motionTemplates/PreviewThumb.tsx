@@ -48,11 +48,6 @@ function setActive(id: string | null): void {
 	activeId = id;
 	for (const l of listeners) l();
 }
-/** Id of the thumb showing the hover Player (tests, diagnostics). */
-export function activePreviewId(): string | null {
-	return activeId;
-}
-
 function reducedMotion(): boolean {
 	try {
 		return globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;

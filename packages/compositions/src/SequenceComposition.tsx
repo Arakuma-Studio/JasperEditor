@@ -30,7 +30,7 @@ import { FrameRepaint } from './repaint.tsx';
 import type { LayerProps, RenderDoc, RenderOptions, SequenceCompositionProps } from './types.ts';
 
 /** Kinds whose layer output depends on the frame beyond what `ResolvedLayerProps` captures. */
-export const FRAME_DEPENDENT_KINDS: ReadonlySet<string> = new Set([
+const FRAME_DEPENDENT_KINDS: ReadonlySet<string> = new Set([
 	'motion-graphic',
 	'animated-image',
 	'composition',
@@ -44,7 +44,7 @@ const hasKeyframes = (v: { keyframes: unknown[] } | null | undefined): boolean =
  * FRAME_DEPENDENT_KINDS, text clips with animators in their source (S11:TXA-009) and shapes whose geometry or
  * paint is keyframed (evaluated by the layer, S11:SHP-003).
  */
-export function isFrameDependent(clip: Pick<RenderVisualClip, 'kind' | 'source'>): boolean {
+function isFrameDependent(clip: Pick<RenderVisualClip, 'kind' | 'source'>): boolean {
 	if (FRAME_DEPENDENT_KINDS.has(clip.kind)) return true;
 	const src = clip.source;
 	if ('text' in src) return !!src.animation && !!(src.animation.in || src.animation.out);
@@ -66,7 +66,7 @@ const PREMOUNT_KINDS: ReadonlySet<string> = new Set(['video', 'still', 'animated
 
 const staticProps = new WeakMap<RenderVisualClip, ResolvedLayerProps>();
 
-export function isStaticClip(c: RenderVisualClip): boolean {
+function isStaticClip(c: RenderVisualClip): boolean {
 	const t = c.transform;
 	return (
 		c.opacity.keyframes.length === 0 &&
@@ -80,7 +80,7 @@ export function isStaticClip(c: RenderVisualClip): boolean {
  * Evaluated props of a clip at a sequence frame. Static clips return the same object for every frame
  * (S03:ARC-011) so memoized layers do not re-render.
  */
-export function layerPropsAt(clip: RenderVisualClip, frame: number, doc: Pick<RenderDoc, 'settings'>) {
+function layerPropsAt(clip: RenderVisualClip, frame: number, doc: Pick<RenderDoc, 'settings'>) {
 	const contentTime = clipContentTime(clip, frame, doc.settings.fps);
 	if (!isStaticClip(clip)) return { props: resolveLayerProps(clip, contentTime), contentTime };
 	let props = staticProps.get(clip);
@@ -94,7 +94,7 @@ export function layerPropsAt(clip: RenderVisualClip, frame: number, doc: Pick<Re
 type ViewProps = LayerProps & { Component: ComponentType<LayerProps> };
 
 /** Equality for LayerView: frame-independent layers ignore localFrame/contentTime. */
-export function layerViewEqual(a: ViewProps, b: ViewProps): boolean {
+function layerViewEqual(a: ViewProps, b: ViewProps): boolean {
 	if (
 		a.Component !== b.Component ||
 		a.clip !== b.clip ||

@@ -17,8 +17,6 @@ import {
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import type { ClipPatch, TextAnimationInput, TextAnimatorInput } from '../schemas/clip.ts';
 
-export const TEXT_ANIMATION_OWNER = 'wp-m2-text-anim';
-
 type DText = Draft<Extract<Clip, { kind: 'text' }>>;
 
 function specFor(

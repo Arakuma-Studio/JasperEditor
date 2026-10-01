@@ -4,7 +4,6 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { validateValue } from '../src/commands/handlers/param.ts';
 import {
 	applyLut,
 	applyLutMix,
@@ -13,6 +12,7 @@ import {
 	bakeLut,
 	boxToQuad,
 	buildRenderSnapshot,
+	type Clip,
 	CORNER_PIN_EFFECT_ID,
 	CubeParseError,
 	colorRunKey,
@@ -61,50 +61,54 @@ describe('v3 schema (ARCHITECTURE §19.1)', () => {
 });
 
 describe('curve parameter values (S06:CG-030)', () => {
-	const h = {
-		fail: (code: string, msg: string): never => {
-			throw new Error(`${code}: ${msg}`);
-		},
-	} as never;
-	const rule = { kind: 'curve' as const, holdOnly: true };
+	function grade() {
+		const h = new Harness();
+		const mediaId = h.registerVideo({ seconds: 2, audio: false });
+		const { refs } = h.ok([
+			{ type: 'clip.place', source: { mediaId }, at: 0, ref: '$clip' },
+			{ type: 'effect.add', target: { clipId: '$clip' }, effectId: 'jasper.lumetri', ref: '$grade' },
+		]);
+		return { h, clipId: refs.$clip!, effectId: refs.$grade! };
+	}
 	it('accepts, sorts and clamps control points', () => {
-		const r = validateValue(
+		const { h, clipId, effectId } = grade();
+		h.ok([
 			{
-				curve: [
-					[1, 1.2],
-					[0, -0.1],
-					[0.5, 0.6],
-				],
+				type: 'param.set',
+				target: ['effect', effectId, 'curveMaster'],
+				value: {
+					curve: [
+						[1, 1.2],
+						[0, -0.1],
+						[0.5, 0.6],
+					],
+				},
 			},
-			rule,
-			h,
-			'curve',
-		);
-		expect(r.value).toEqual({
+		]);
+		const clip = h.seq.clips[clipId] as Extract<Clip, { kind: 'video' }>;
+		expect(clip.effects[0]!.params.curveMaster!.value).toEqual({
 			curve: [
 				[0, 0],
 				[0.5, 0.6],
 				[1, 1],
 			],
 		});
-		expect(r.clamped).toBe(true);
 	});
 	it('rejects duplicate x, too few points and junk', () => {
-		expect(() =>
-			validateValue(
-				{
-					curve: [
-						[0, 0],
-						[0, 1],
-					],
-				},
-				rule,
-				h,
-				'c',
-			),
-		).toThrow(/E_INVALID_PARAM/);
-		expect(() => validateValue({ curve: [[0, 0]] }, rule, h, 'c')).toThrow(/E_INVALID_PARAM/);
-		expect(() => validateValue([0, 1], rule, h, 'c')).toThrow(/E_INVALID_PARAM/);
+		const { h, effectId } = grade();
+		for (const value of [
+			{
+				curve: [
+					[0, 0],
+					[0, 1],
+				],
+			},
+			{ curve: [[0, 0]] },
+			[0, 1],
+		]) {
+			const r = h.tx([{ type: 'param.set', target: ['effect', effectId, 'curveMaster'], value }]);
+			expect(r.ok ? null : r.errors[0]!.code).toBe('E_INVALID_PARAM');
+		}
 	});
 });
 

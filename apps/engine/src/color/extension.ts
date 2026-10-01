@@ -42,31 +42,6 @@ export const MAX_LUTS_PER_LAYER = 240;
 export const EXPORT_ROUNDING_BIAS = 0.5 / 255;
 /** Largest lattice used for export bakes when a run references a bigger imported LUT (S06:CG-012). */
 export const MAX_EXPORT_LUT_SIZE = 65;
-/** Filters the shipped LGPL FFmpeg does not contain (ARCHITECTURE D-13 M2 note); never in generated text. */
-export const GPL_FILTERS = [
-	'eq',
-	'hqdn3d',
-	'perspective',
-	'boxblur',
-	'smartblur',
-	'delogo',
-	'frei0r',
-	'spp',
-	'pp7',
-	'uspp',
-	'fspp',
-	'mpdecimate',
-	'pullup',
-] as const;
-
-/** GPL filter names used in a filtergraph text (tests: CG-054). */
-export function gplFiltersIn(filter: string): string[] {
-	const used = new Set<string>();
-	for (const m of filter.matchAll(/(?:^|[,;\]\s])([a-z0-9_]+)(?==|,|;|\[|$)/gim))
-		used.add(m[1]!.toLowerCase());
-	return GPL_FILTERS.filter((f) => used.has(f));
-}
-
 export type LutWindow = {
 	/** Sequence frames `[start, end)`. */
 	start: number;

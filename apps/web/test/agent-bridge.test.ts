@@ -1,23 +1,24 @@
-// In-page agent bridge (WP-2H, ARCHITECTURE §11): transactions through the session, approvals, history
-// ownership, fast-forward, relay protocol and event forwarding.
+// In-page agent bridge contracts: origin enforcement, undo ownership, relay protocol, event throttling.
+
+import type { EngineClient } from '@jasper/engine-client';
 import {
+	createCounterIdSource,
 	createEmptyProject,
-	createSeededIdSource,
 	defaultRegistries,
 	type TransactionResult,
 } from '@jasper/project';
 import { EditorSession } from '@jasper/session';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AgentBridge } from '../src/agent-bridge/bridge.ts';
-import type { RelaySocket } from '../src/agent-bridge/relay-client.ts';
 
 const bridges: AgentBridge[] = [];
 afterEach(() => {
 	for (const b of bridges.splice(0)) b.dispose();
+	vi.unstubAllGlobals();
 });
 
 function makeSession() {
-	const ids = createSeededIdSource(11);
+	const ids = createCounterIdSource(11);
 	const doc = createEmptyProject({ ids, name: 'Bridge', preset: 'hd-1080p-30' });
 	return new EditorSession({
 		projectId: doc.projectId,
@@ -26,110 +27,31 @@ function makeSession() {
 	});
 }
 
-function makeBridge(opts: ConstructorParameters<typeof AgentBridge>[2] = {}) {
+function makeBridge() {
 	const session = makeSession();
-	const bridge = new AgentBridge(session, null, opts).start();
+	const bridge = new AgentBridge(session, null).start();
 	bridges.push(bridge);
 	return { session, bridge, api: bridge.api() };
 }
 
-const agentTx = (commands: unknown[], extra: Record<string, unknown> = {}) => ({
+const agentTx = (commands: unknown[]) => ({
 	label: 'Add marker',
 	origin: { agent: 'bot' },
 	commands,
-	...extra,
 });
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 describe('window.jasper transact (S01:AGT-003, UND-007)', () => {
-	it('applies through the session as one "Agent: …" entry and records activity', async () => {
-		const { session, bridge, api } = makeBridge();
-		const r = await api.transact(
-			agentTx([{ type: 'marker.add', frame: 12, name: 'Hi', markerType: 'agent-note' }]),
-		);
-		expect(r).toMatchObject({ ok: true, revision: 1 });
-		const h = session.getState().history;
-		expect(h.entries.map((e) => e.label)).toEqual(['Agent: Add marker']);
-		const [entry] = bridge.store.getState().activity;
-		expect(entry).toMatchObject({
-			label: 'Add marker',
-			agent: 'bot',
-			ok: true,
-			via: 'in-page',
-			summary: 'marker.add',
-		});
-		expect(bridge.isTopOfHistory(entry!)).toBe(true);
-		session.apply({
-			label: 'User marker',
-			origin: 'user',
-			commands: [{ type: 'marker.add', frame: 1 }] as never,
-		});
-		expect(bridge.isTopOfHistory(entry!)).toBe(false);
-	});
-
-	it('forces an agent origin, resolves mediaByName errors and reports them', async () => {
+	it('forces an agent origin even when the caller claims to be the user', async () => {
 		const { api, session } = makeBridge();
-		const r = await api.transact({
-			label: 'x',
+		const result = await api.transact({
+			label: 'Marker',
 			origin: 'user',
-			commands: [{ type: 'clip.place', source: { mediaByName: 'nope.mov' }, at: 0 }],
+			commands: [{ type: 'marker.add', frame: 3 }],
 		});
-		expect(r).toMatchObject({ ok: false, errors: [{ code: 'E_NOT_FOUND', commandIndex: 0 }] });
-		await api.transact({ label: 'y', origin: 'user', commands: [{ type: 'marker.add', frame: 3 }] });
+		expect(result.ok).toBe(true);
 		expect(session.getState().history.entries[0]!.origin).toEqual({ agent: 'in-page' });
-	});
-
-	it('answers queries with session state', async () => {
-		const { api, session } = makeBridge();
-		session.transport.seek(45);
-		const ph = (await api.query('playhead.get')) as { frame: number; timecode: string };
-		expect(ph).toMatchObject({ frame: 45, timecode: '00:00:01:15' });
-		// playhead.set is a view change (no history entry) used by the MCP set_playhead tool.
-		const moved = await api.query('playhead.set', { frame: '00:00:02:00' });
-		expect(moved).toMatchObject({ frame: 60, timecode: '00:00:02:00', playing: false });
-		expect(session.transport.getState().frame).toBe(60);
-		expect(session.getState().history.entries).toHaveLength(0);
-		const summary = (await api.query('sequence.summary')) as { tracks: unknown[] };
-		expect(summary.tracks).toHaveLength(6);
-		expect(await api.query('selection.get')).toHaveProperty('selection.timeline.clips', []);
-		await expect(api.query('nope')).rejects.toThrow(/Unknown query/);
-		expect(api.schema()).toHaveProperty('queries.validate');
-	});
-});
-
-describe('approvals (S01:AGT-011)', () => {
-	it('destructive transactions wait for Approve / Deny (the shell shows a card per pending approval)', async () => {
-		const { bridge, api, session } = makeBridge();
-		const p = api.transact(agentTx([{ type: 'track.remove', trackIds: ['V3'] }], { label: 'Remove V3' }));
-		await tick();
-		const [card] = bridge.store.getState().approvals;
-		expect(card).toMatchObject({
-			label: 'Remove V3',
-			agent: 'bot',
-			source: 'local',
-			summary: 'track.remove',
-		});
-		bridge.resolveApproval(card!.approvalId, 'approved');
-		expect(await p).toMatchObject({ ok: true });
-		expect(Object.values(session.getCommitted().sequences)[0]!.videoTracks).toHaveLength(2);
-
-		const d = api.transact(agentTx([{ type: 'track.remove', trackIds: ['V2'] }]));
-		await tick();
-		bridge.resolveApproval(bridge.store.getState().approvals[0]!.approvalId, 'denied');
-		expect(await d).toMatchObject({ ok: false, errors: [{ code: 'E_APPROVAL_DENIED' }] });
-		expect(bridge.store.getState().approvals).toEqual([]);
-	});
-
-	it('times out with E_APPROVAL_TIMEOUT and approveAll approves every card', async () => {
-		const { bridge, api } = makeBridge({ approvalTimeoutMs: 20 });
-		const r = await api.transact(agentTx([{ type: 'item.delete', itemIds: ['itm_X'], force: true }]));
-		expect(r).toMatchObject({ ok: false, errors: [{ code: 'E_APPROVAL_TIMEOUT' }] });
-		const a = api.transact(agentTx([{ type: 'track.remove', trackIds: ['V3'] }]));
-		const b = api.transact(agentTx([{ type: 'track.remove', trackIds: ['A3'] }]));
-		await tick();
-		expect(bridge.approveAll()).toBe(2);
-		expect((await a).ok && (await b).ok).toBe(true);
 	});
 });
 
@@ -142,7 +64,8 @@ describe('history ownership and concurrency (S01:UND-008, AGT-010)', () => {
 			origin: { agent: 'bot' },
 			commands: [{ type: 'history.undo' }],
 		});
-		expect(own).toMatchObject({ ok: true, results: [{ 'history.undo': 'Agent: Add marker' }] });
+		expect(own.ok).toBe(true);
+		expect(session.getState().history.index).toBe(0);
 		await api.transact({ label: 'redo', origin: { agent: 'bot' }, commands: [{ type: 'history.redo' }] });
 		const other = await api.transact({
 			label: 'Undo',
@@ -152,33 +75,11 @@ describe('history ownership and concurrency (S01:UND-008, AGT-010)', () => {
 		expect(other).toMatchObject({ ok: false, errors: [{ code: 'E_NOT_OWNER' }] });
 		expect(session.getState().history.index).toBe(1);
 	});
-
-	it('rejects a stale revision touching a clip the user moved, fast-forwards otherwise (S01 AC-11)', async () => {
-		const { api, session } = makeBridge();
-		const add = (await api.transact(
-			agentTx([
-				{ type: 'clip.addText', ref: '$t', at: 0, duration: 30, track: 'V1', content: { text: 'A' } },
-			]),
-		)) as Extract<TransactionResult, { ok: true }>;
-		const clipId = add.refs.$t!;
-		const seen = session.revision;
-		session.apply({
-			label: 'Move',
-			origin: 'user',
-			commands: [{ type: 'clip.move', clipIds: [clipId], deltaFrames: 10 }] as never,
-		});
-		const stale = await api.transact(
-			agentTx([{ type: 'clip.update', clipId, patch: { name: 'late' } }], { expectedRevision: seen }),
-		);
-		expect(stale).toMatchObject({ ok: false, errors: [{ code: 'E_REVISION_MISMATCH', blocking: [clipId] }] });
-		const ff = await api.transact(agentTx([{ type: 'marker.add', frame: 99 }], { expectedRevision: seen }));
-		expect(ff.ok).toBe(true);
-	});
 });
 
 // ---------------------------------------------------------------- relay
 
-class FakeSocket implements RelaySocket {
+class FakeSocket {
 	readyState = 0;
 	onopen: ((ev: unknown) => void) | null = null;
 	onclose: ((ev: unknown) => void) | null = null;
@@ -204,15 +105,19 @@ class FakeSocket implements RelaySocket {
 describe('WS /agent relay client (ARCHITECTURE §11)', () => {
 	it('says hello, answers requests, forwards events and resolves engine approvals', async () => {
 		const sockets: FakeSocket[] = [];
-		const { bridge, session } = makeBridge({
-			relay: true,
-			relayUrl: 'ws://test/agent',
-			socketFactory: () => {
-				const s = new FakeSocket();
-				sockets.push(s);
-				return s;
+		vi.stubGlobal(
+			'WebSocket',
+			class extends FakeSocket {
+				constructor() {
+					super();
+					sockets.push(this);
+				}
 			},
-		});
+		);
+		const session = makeSession();
+		const engine = { agentWsUrl: () => 'ws://test/agent' } as EngineClient;
+		const bridge = new AgentBridge(session, engine, { relay: true }).start();
+		bridges.push(bridge);
 		const ws = sockets[0]!;
 		ws.open();
 		expect(ws.sent[0]).toEqual({

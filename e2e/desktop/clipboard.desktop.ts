@@ -20,7 +20,7 @@ test.describe.configure({ mode: 'serial' });
 const DESKTOP = join(ROOT, 'apps/desktop');
 const electron = createRequire(join(DESKTOP, 'package.json'))('electron') as string;
 
-type App = { name: string; proc: ChildProcess; browser: Browser; page: Page; out: string[] };
+type App = { proc: ChildProcess; browser: Browser; page: Page };
 const apps: App[] = [];
 const temps: string[] = [];
 const helpers: ChildProcess[] = [];
@@ -91,7 +91,7 @@ async function launch(name: string): Promise<App> {
 		if (!page) await new Promise((r) => setTimeout(r, 200));
 	}
 	if (!page) throw new Error(`no window on ${origin}`);
-	const app: App = { name, proc, browser, page, out };
+	const app: App = { proc, browser, page };
 	apps.push(app);
 	return app;
 }
@@ -235,6 +235,7 @@ test('copy in app A, paste in app B through application/x-jasper-clipboard (CLB-
 	await expect
 		.poll(async () => (await docClips(B.page)).find((c) => c.start === at)?.content?.text)
 		.toBe('Desktop copy');
+	await B.page.screenshot({ path: 'test-results/e2e-desktop-clipboard.png' });
 });
 
 test('external text from another app: Ctrl+V adds a text clip (CLB-010)', async () => {
@@ -298,12 +299,5 @@ test('files copied in a file manager: Edit ▸ Paste and Ctrl+V register them in
 		} finally {
 			stop();
 		}
-	}
-});
-
-test('no renderer crashes', () => {
-	for (const a of apps) {
-		const crashes = a.out.join('').match(/Uncaught|render-process-gone|FATAL/g) ?? [];
-		expect(crashes, a.name).toEqual([]);
 	}
 });

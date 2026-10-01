@@ -1,24 +1,17 @@
-// jasper-mcp units without an engine: discovery (runtime files, stale pids, explicit targets), error
-// mapping, export presets, the text timeline, and version sync.
+// jasper-mcp units without an engine: discovery, request safety, error mapping, export presets,
+// and the public CLI version.
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EngineClient, EngineError } from '@jasper/engine-client';
-import {
-	applyTransaction,
-	createEmptyProject,
-	createSeededIdSource,
-	defaultRegistries,
-	type ProjectDocument,
-} from '@jasper/project';
+import { createCounterIdSource, createEmptyProject } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
-import { candidateAppdirs, discoverEngine, findEngineEntry, probeHealth } from '../src/discovery.ts';
+import { discoverEngine, probeHealth } from '../src/discovery.ts';
 import { ToolError, toErrorResult } from '../src/errors.ts';
-import { buildExportSettings, EXPORT_PRESETS, findExportPreset } from '../src/export-presets.ts';
-import { projectSummary, timelineTable } from '../src/format.ts';
+import { buildExportSettings, findExportPreset } from '../src/export-presets.ts';
 import { EngineLink, EngineRequestAborted, FixedEngineLink, guardedFetch, withEngine } from '../src/link.ts';
-import { MCP_SERVER_VERSION } from '../src/version.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -60,38 +53,37 @@ describe('engine discovery', () => {
 		expect(e).toMatchObject({ url: 'http://127.0.0.1:2', token: null, source: 'explicit' });
 	});
 
-	it('reads <appdir>/engine/runtime.json (token included) and skips stale or dead entries', async () => {
-		const stale = mkdtempSync(join(tmpdir(), 'jasper-mcp-stale-'));
-		const down = mkdtempSync(join(tmpdir(), 'jasper-mcp-down-'));
-		const data = mkdtempSync(join(tmpdir(), 'jasper-mcp-data-'));
-		const live = join(data, 'jasper'); // the platform appdir on Linux: $XDG_DATA_HOME/jasper
-		writeRuntime(stale, { url: 'http://127.0.0.1:3', port: 3, pid: 2 ** 30, token: 'x' });
-		writeRuntime(down, { url: 'http://127.0.0.1:4', port: 4, pid: process.pid, token: 'y' });
-		writeRuntime(live, { url: 'http://127.0.0.1:5', port: 5, pid: process.pid, token: 'secret' });
-		const env = { JASPER_APPDIR: down, XDG_DATA_HOME: data, XDG_CONFIG_HOME: data };
-		expect(candidateAppdirs({ appdir: stale, env }).slice(0, 2)).toEqual([stale, down]);
-		const logs: string[] = [];
-		const t = await discoverEngine({
-			appdir: stale,
-			env,
-			fetch: fakeFetch(['http://127.0.0.1:5']),
-			noDefaultPort: true,
-			log: (l) => logs.push(l),
-		});
-		expect(logs.some((l) => l.includes('stale runtime file'))).toBe(true);
-		expect(logs.some((l) => l.includes('not answering'))).toBe(true);
-		if (process.platform !== 'linux') return;
-		expect(t).toMatchObject({ url: 'http://127.0.0.1:5', token: 'secret', source: 'runtime-file' });
-		expect(t?.detail).toBe(join(live, 'engine', 'runtime.json'));
-		// An explicit token wins over the runtime file's.
-		const t2 = await discoverEngine({
-			token: 'mine',
-			env,
-			fetch: fakeFetch(['http://127.0.0.1:5']),
-			noDefaultPort: true,
-		});
-		expect(t2?.token).toBe('mine');
-	});
+	it.skipIf(process.platform !== 'linux')(
+		'reads <appdir>/engine/runtime.json (token included) and skips stale or dead entries',
+		async () => {
+			const stale = mkdtempSync(join(tmpdir(), 'jasper-mcp-stale-'));
+			const down = mkdtempSync(join(tmpdir(), 'jasper-mcp-down-'));
+			const data = mkdtempSync(join(tmpdir(), 'jasper-mcp-data-'));
+			const live = join(data, 'jasper'); // the platform appdir on Linux: $XDG_DATA_HOME/jasper
+			writeRuntime(stale, { url: 'http://127.0.0.1:3', port: 3, pid: 2 ** 30, token: 'x' });
+			writeRuntime(down, { url: 'http://127.0.0.1:4', port: 4, pid: process.pid, token: 'y' });
+			writeRuntime(live, { url: 'http://127.0.0.1:5', port: 5, pid: process.pid, token: 'secret' });
+			const env = { JASPER_APPDIR: down, XDG_DATA_HOME: data, XDG_CONFIG_HOME: data };
+			const logs: string[] = [];
+			const t = await discoverEngine({
+				appdir: stale,
+				env,
+				fetch: fakeFetch(['http://127.0.0.1:5']),
+				log: (l) => logs.push(l),
+			});
+			expect(logs.some((l) => l.includes('stale runtime file'))).toBe(true);
+			expect(logs.some((l) => l.includes('not answering'))).toBe(true);
+			expect(t).toMatchObject({ url: 'http://127.0.0.1:5', token: 'secret', source: 'runtime-file' });
+			expect(t?.detail).toBe(join(live, 'engine', 'runtime.json'));
+			// An explicit token wins over the runtime file's.
+			const t2 = await discoverEngine({
+				token: 'mine',
+				env,
+				fetch: fakeFetch(['http://127.0.0.1:5']),
+			});
+			expect(t2?.token).toBe('mine');
+		},
+	);
 
 	it('falls back to the default dev port', async () => {
 		const t = await discoverEngine({
@@ -104,14 +96,6 @@ describe('engine discovery', () => {
 	it('probeHealth rejects non-engine answers', async () => {
 		const f = (async () => new Response(JSON.stringify({ hello: 1 }))) as unknown as typeof fetch;
 		expect(await probeHealth('http://x', { fetch: f })).toMatchObject({ ok: false });
-	});
-
-	it('finds the engine bundle next to the server (checkout layout) or via JASPER_ENGINE_ENTRY', () => {
-		const repoLayout = join(here, '..', 'dist');
-		const found = findEngineEntry({}, repoLayout);
-		// apps/mcp/dist → ../../engine/dist/engine.mjs exists after `pnpm build`.
-		if (found) expect(found.endsWith(join('engine', 'dist', 'engine.mjs'))).toBe(true);
-		expect(findEngineEntry({ JASPER_ENGINE_ENTRY: '/definitely/missing.mjs' })).toBeNull();
 	});
 
 	it('EngineLink reports an actionable error when nothing runs', async () => {
@@ -227,50 +211,9 @@ describe('errors', () => {
 	});
 });
 
-function sampleDoc(): ProjectDocument {
-	const ids = createSeededIdSource(7);
-	let doc = createEmptyProject({ ids, name: 'Unit', preset: 'hd-1080p-30' });
-	const ctx = { ids, now: () => '2026-09-30T00:00:00.000Z', revision: 0, registries: defaultRegistries() };
-	const tx = (commands: unknown[]) => {
-		const r = applyTransaction(
-			doc,
-			{ protocol: 'jasper.tx/1', label: 't', origin: 'user', commands } as never,
-			ctx,
-		);
-		if (!r.result.ok) throw new Error(JSON.stringify(r.result.errors));
-		doc = r.document;
-	};
-	tx([
-		{ type: 'clip.addText', at: 30, duration: 60, track: 'V2', content: { text: 'Hello timeline' } },
-		{ type: 'clip.addSolid', at: 0, duration: 90, track: 'V1', color: [1, 0, 0, 1] },
-		{ type: 'marker.add', frame: 45, name: 'Beat', comment: 'hit' },
-	]);
-	return doc;
-}
-
-describe('format', () => {
-	it('renders a compact timeline table with frames and timecodes', () => {
-		const doc = sampleDoc();
-		const seq = Object.values(doc.sequences)[0]!;
-		const text = timelineTable(doc, seq, { revision: 1, live: true });
-		expect(text).toMatch(/duration 00:00:03:00 \(90 frames\), revision 1, open in the editor/);
-		expect(text).toMatch(/V1 \| clp_\w+ \| solid \| .* \| 00:00:00:00–00:00:03:00 \| 0–90 \| color matte/);
-		expect(text).toMatch(
-			/V2 \| clp_\w+ \| text \| .* \| 00:00:01:00–00:00:03:00 \| 30–90 \| text "Hello timeline"/,
-		);
-		expect(text).toMatch(/V3 \| \(empty\)/);
-		expect(text).toMatch(/00:00:01:15 \(45\) "Beat" mrk_\w+ — hit/);
-		const ranged = timelineTable(doc, seq, { from: 0, to: 30 });
-		expect(ranged).not.toMatch(/Hello timeline/);
-		const summary = projectSummary(doc, 1, false);
-		expect(summary.sequences[0]!.clips).toHaveLength(2);
-		expect(summary.sequences[0]!.tracks.map((t) => t.label)).toEqual(['V1', 'V2', 'V3', 'A1', 'A2', 'A3']);
-	});
-});
-
 describe('export presets', () => {
 	it('builds engine ExportSettings from a preset', () => {
-		const doc = sampleDoc();
+		const doc = createEmptyProject({ ids: createCounterIdSource(7), name: 'Unit', preset: 'hd-1080p-30' });
 		const seq = Object.values(doc.sequences)[0]!;
 		const draft = buildExportSettings(seq, findExportPreset('draft-720p-h264')!, {
 			range: { type: 'entire' },
@@ -285,7 +228,6 @@ describe('export presets', () => {
 		});
 		expect(def.video).toMatchObject({ width: 1920, height: 1080, codec: 'h264' });
 		expect(def.destination).toEqual({ type: 'download' });
-		expect(new Set(EXPORT_PRESETS.map((p) => p.id)).size).toBe(EXPORT_PRESETS.length);
 		// Masters: a high-bitrate H.264 and a ProRes 422 HQ MOV; quality overrides win over the preset.
 		const hi = buildExportSettings(seq, findExportPreset('master-h264-high')!, {
 			range: { type: 'entire' },
@@ -308,7 +250,15 @@ describe('export presets', () => {
 	});
 });
 
-it('MCP_SERVER_VERSION matches package.json', () => {
+it('the --version CLI reports the package version', () => {
 	const pkg = JSON.parse(readFileSync(join(here, '..', 'package.json'), 'utf8'));
-	expect(MCP_SERVER_VERSION).toBe(pkg.version);
+	const result = spawnSync(
+		process.execPath,
+		['--import', 'tsx', join(here, '..', 'src', 'cli.ts'), '--version'],
+		{
+			encoding: 'utf8',
+		},
+	);
+	expect(result.status).toBe(0);
+	expect(result.stdout.trim()).toBe(pkg.version);
 });

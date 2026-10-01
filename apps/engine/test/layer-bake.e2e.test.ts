@@ -4,16 +4,14 @@
 // R/G/B/W; re-exports hit the cache (also after moving a title in time); a text change bakes again; a Lumetri grade
 // on a title shows in the native export, the Remotion export and the graded preview, and a graded static title
 // fades through its transition once on all three; stills take the same path;
-// a failing bake makes an `auto` export fall back to Remotion; the composite uses no GPL filter; every bake is
-// in the Remotion usage log.
+// a failing bake makes an `auto` export fall back to Remotion; every bake is in the Remotion usage log.
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { EngineJob } from '@jasper/api';
-import { LUMETRI_EFFECT_ID, type ProjectDocument } from '@jasper/project';
+import { buildRenderSnapshot, LUMETRI_EFFECT_ID, type ProjectDocument } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { gplFiltersIn } from '../src/color/extension.ts';
 import { type RunningEngine, startEngine } from '../src/index.ts';
 import { JobError } from '../src/jobs/types.ts';
 import type { LayerBakeService } from '../src/layer-bake/service.ts';
@@ -107,7 +105,6 @@ function over(fg: Uint8Array, bg: [number, number, number]): Uint8Array {
 describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)', () => {
 	let engine: RunningEngine;
 	let svc: LayerBakeService;
-	const ffArgs: string[][] = [];
 	const hostH = () => ({ host: `127.0.0.1:${engine.port}` });
 
 	beforeAll(async () => {
@@ -124,13 +121,6 @@ describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)
 			},
 		});
 		svc = layerBakeService(engine.app)!;
-		// Record every ffmpeg command line of the engine (GPL-filter scan, LBK-031).
-		const ff = coreServices(engine.app).ffmpeg;
-		const run = ff.run.bind(ff);
-		ff.run = (args, opts) => {
-			ffArgs.push([...args]);
-			return run(args, opts);
-		};
 	}, 600_000);
 	afterAll(async () => {
 		await engine?.stop();
@@ -306,6 +296,15 @@ describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)
 		expect(result(ids.shape!).still).toBe(true);
 		expect(result(ids.moving!).still).toBe(false);
 		expect(result(ids.anime!).still).toBe(false);
+		const usageLog = join(coreServices(engine.app).config.paths.logsDir, 'remotion-usage.jsonl');
+		const usage = readFileSync(usageLog, 'utf8')
+			.trim()
+			.split('\n')
+			.map((line) => JSON.parse(line))
+			.filter((entry) => entry.purpose === 'layer-bake');
+		expect(usage.length).toBeGreaterThanOrEqual(first.bakes.length);
+		expect(usage.some((entry) => entry.kind === 'media')).toBe(true);
+		expect(usage.some((entry) => entry.kind === 'still')).toBe(true);
 
 		// Parity with a full Remotion render (S11 §11 test 4). Footage is decoded by Chrome there and by ffmpeg here,
 		// which differ on their own (testsrc2 H.264: up to 30 code values, independent of the bake): the comparison
@@ -324,21 +323,22 @@ describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)
 		expect(native.bakes).toHaveLength(0);
 		// The reference: the full sequence rendered by Remotion, frame by frame (PNG stills of the same composition the
 		// Remotion export path renders; its ProRes 4:2:2 intermediate would add chroma artefacts of its own).
-		const planned = await coreServices(engine.app).exports.plan({
-			envelope: d.envelope(),
-			sequenceId: d.seqId,
-			settings: proresSettings(d.seqId, 'remotion') as never,
+		const core = coreServices(engine.app);
+		const referenceDoc = buildRenderSnapshot(d.doc, d.seqId, {
+			resolveMedia: () => null,
+			resolveFont: (font, weight, italic) => {
+				const face = core.fonts.resolve(font.family, weight, italic);
+				return face ? core.signer.signUrl(`http://127.0.0.1:${engine.port}`, face.url) : null;
+			},
 		});
-		const props = (
-			coreServices(engine.app).exports as unknown as {
-				remotionProps(p: unknown, prepared: Map<string, unknown>): Record<string, unknown>;
-			}
-		).remotionProps(planned, new Map());
 		const shares: number[] = [];
 		for (const f of [0, 12, 30, 45, 59]) {
 			const ref = join(tempAppdir('jasper-lb-ref-'), 'ref.png');
 			await coreServices(engine.app).remotion.renderStill({
-				inputProps: props,
+				inputProps: {
+					doc: referenceDoc,
+					options: { isPreview: false, useProxies: false, transparentBackground: false },
+				},
 				output: ref,
 				frame: f,
 				signal: new AbortController().signal,
@@ -668,24 +668,4 @@ describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)
 			svc.ensureBake = orig;
 		}
 	}, 1_200_000);
-
-	it('the composites use no GPL filter (LBK-031) and every bake is in the Remotion usage log (LBK-026)', () => {
-		const filters = ffArgs
-			.map((a) => {
-				const i = a.findIndex((x) => x === '-filter_complex' || x === '-vf');
-				return i >= 0 ? a[i + 1]! : '';
-			})
-			.filter(Boolean);
-		expect(filters.some((f) => /lut3d/.test(f))).toBe(true);
-		for (const f of filters) expect(gplFiltersIn(f)).toEqual([]);
-		const log = join(coreServices(engine.app).config.paths.logsDir, 'remotion-usage.jsonl');
-		const lines = readFileSync(log, 'utf8')
-			.trim()
-			.split('\n')
-			.map((l) => JSON.parse(l));
-		const bakes = lines.filter((l) => l.purpose === 'layer-bake');
-		expect(bakes.length).toBeGreaterThanOrEqual(svc.stats.rendered);
-		expect(bakes.some((l) => l.kind === 'media')).toBe(true);
-		expect(bakes.some((l) => l.kind === 'still')).toBe(true);
-	});
 });

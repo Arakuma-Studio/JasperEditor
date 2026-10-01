@@ -52,7 +52,7 @@ No new dependencies. Native audio crossfades use `afade` (LGPL build).
 
 ## Open issues / gaps
 
-- S10 §8 test 7 preview half (Web Audio analysis in the browser) is covered by a pure gain test (`packages/compositions/test/audio-layer.test.ts`), not an in-browser measurement; the export half is measured with ffmpeg.
+- S10 §8 test 7 preview half (Web Audio analysis in the browser) is not measured in-browser; the export half is measured with ffmpeg by `apps/engine/test/audio-crossfade.test.ts`. The former pure-gain composition test was removed because it inspected a private helper and repeated the project fade formula.
 - "Transition Defaults…" is a command (palette) with a prompt; the shell's Sequence menu entry and a proper dialog are left to the integrator (the menu model is not in this package's paths).
 - Dropping a transition dragged from another window cannot preview a ghost (the id is unreadable during dragover); the drop itself works.
 - The shortened-at-creation state is not stored (TUI-003): caps mark spans that use up the available media instead.

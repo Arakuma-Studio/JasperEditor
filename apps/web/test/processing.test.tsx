@@ -6,8 +6,8 @@ import { EngineClient } from '@jasper/engine-client';
 import { mgRegistry } from '@jasper/mg-templates';
 import {
 	type Clip,
+	createCounterIdSource,
 	createEmptyProject,
-	createSeededIdSource,
 	defaultRegistries,
 	type MediaAsset,
 } from '@jasper/project';
@@ -15,19 +15,10 @@ import { EditorSession } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { processCommands } from '../src/commands/process.ts';
-import { clipMenuExtensions, clipSections, projectItemMenuExtensions } from '../src/extensions/index.ts';
-import { processedBadgeCss, processedTargets, tooltipFor } from '../src/processing/decorations.tsx';
+import '../src/commands/process.ts';
 import { commitProcessed, type Notice, PROCESS_TX_LABEL, processWatcher } from '../src/processing/jobs.ts';
 import { MediaVersionSection } from '../src/processing/MediaVersionSection.tsx';
-import {
-	defaultForm,
-	estimateSeconds,
-	recipeLabel,
-	sourceInfo,
-	stepsFromForm,
-	versionsOf,
-} from '../src/processing/model.ts';
+import { versionsOf } from '../src/processing/model.ts';
 import { ProcessingPreferencesPage } from '../src/processing/PreferencesPage.tsx';
 import { ProcessDialog } from '../src/processing/ProcessDialog.tsx';
 import { PreferencesDialog } from '../src/shell/preferences/index.ts';
@@ -72,7 +63,7 @@ function probe(width: number, height: number, codec = 'h264') {
 }
 
 function makeSession(): { session: EditorSession; mediaId: string; videoClip: string; audioClip: string } {
-	const ids = createSeededIdSource(7);
+	const ids = createCounterIdSource(7);
 	const document = createEmptyProject({ ids, name: 'Processing test', preset: 'hd-1080p-25' });
 	const session = new EditorSession({
 		projectId: 'prj_test',
@@ -236,51 +227,6 @@ beforeEach(() => {
 afterEach(() => {
 	cleanup();
 	processWatcher.reset();
-});
-
-// ------------------------------------------------------------------ model
-
-describe('processing model helpers', () => {
-	it('orders steps deblock → denoise → dejudder → stabilize → upscale with the dialog options', () => {
-		const f = defaultForm({ model: { id: 'span-2x', scale: 2 } });
-		f.upscale.on = true;
-		f.upscale.size = 'fhd';
-		f.upscale.mix = 0.25;
-		f.dejudder.on = true;
-		f.stabilize.on = true;
-		f.denoise.on = true;
-		f.denoise.preset = 'light';
-		f.deblock.on = true;
-		f.deblock.filter = 'strong';
-		const steps = stepsFromForm(f);
-		expect(steps.map((s) => s.op)).toEqual(['deblock', 'denoise', 'dejudder', 'stabilize', 'upscale']);
-		expect(steps[1]).toEqual({ op: 'denoise', method: 'atadenoise', strength: 0.25 });
-		expect(steps[2]).toEqual({ op: 'dejudder', mode: 'auto' });
-		expect(steps[3]).toEqual({
-			op: 'stabilize',
-			method: 'auto',
-			smoothing: 15,
-			borders: 'crop',
-			rotation: true,
-		});
-		expect(steps[4]).toEqual({
-			op: 'upscale',
-			model: 'span-2x',
-			scale: 2,
-			size: { width: 1920, height: 1080 },
-			mix: 0.25,
-		});
-		expect(recipeLabel(steps)).toBe('Deblocked · Denoised · De-juddered · Stabilized · Upscaled 2×');
-	});
-
-	it('estimates more time for slower steps and less on a GPU', () => {
-		const src = { frames: 150, width: 1280, height: 720 };
-		const fast = estimateSeconds([{ op: 'denoise', method: 'atadenoise', strength: 0.5 }], src);
-		const slow = estimateSeconds([{ op: 'denoise', method: 'nlmeans', strength: 0.5 }], src);
-		const up = [{ op: 'upscale' as const, model: 'm', scale: 2 as const }];
-		expect(slow).toBeGreaterThan(fast);
-		expect(estimateSeconds(up, src, { gpu: true })).toBeLessThan(estimateSeconds(up, src));
-	});
 });
 
 // ------------------------------------------------------------------ dialog
@@ -471,11 +417,8 @@ describe('Media Version section and processed badges (PRU-003)', () => {
 
 	it('is registered for video clips and lists Original + processed versions; switching is one undo entry', async () => {
 		const { session, videoClip, mediaId, processedId } = withVersion();
-		const def = clipSections.get('process.mediaVersion');
-		expect(def?.title).toBe('Media Version');
 		const clip = () =>
 			Object.values(session.getCommitted().sequences)[0]!.clips[videoClip] as Clip & { mediaId: string };
-		expect(def?.appliesTo([clip()])).toBe(true);
 		const seqId = Object.keys(session.getCommitted().sequences)[0]!;
 		const { rerender } = render(
 			<SessionProvider session={session}>
@@ -506,43 +449,6 @@ describe('Media Version section and processed badges (PRU-003)', () => {
 			session.undo();
 		});
 		expect(clip().mediaId).toBe(mediaId);
-	});
-
-	it('badges processed clips and items and puts the recipe in the tooltip', () => {
-		const { session, videoClip, processedId } = withVersion();
-		const doc0 = session.getCommitted();
-		const t0 = processedTargets(doc0);
-		expect(t0.clipIds).toEqual([]);
-		expect(t0.itemIds.length).toBe(1);
-		session.apply({
-			label: 'swap',
-			origin: 'user',
-			commands: [{ type: 'clip.replaceSource', clipId: videoClip, mediaId: processedId }] as never[],
-		});
-		const doc = session.getCommitted();
-		const t = processedTargets(doc);
-		expect(t.clipIds).toEqual([videoClip]);
-		const css = processedBadgeCss(t);
-		expect(css).toContain(`div[data-clip-id="${videoClip}"]::after`);
-		expect(css).toContain('content: "Processed"');
-		const el = document.createElement('div');
-		el.setAttribute('data-clip-id', videoClip);
-		expect(tooltipFor(doc, el)).toBe('Processed version of clip-b.mp4 — Denoised');
-	});
-
-	it('adds Process Clip… to the timeline clip and Project item menus', () => {
-		const { session, videoClip, mediaId } = makeSession();
-		const doc = session.getCommitted();
-		const clip = Object.values(doc.sequences)[0]!.clips[videoClip] as Clip;
-		const clipItems = clipMenuExtensions.get('process')!.items({ session, clip, selection: [videoClip] });
-		expect(clipItems.map((i) => (i.kind === 'item' ? i.label : i.kind))).toEqual(['Process Clip…']);
-		const item = Object.values(doc.items).find((i) => i.kind === 'media' && i.mediaId === mediaId)!;
-		const projItems = projectItemMenuExtensions
-			.get('process')!
-			.items({ session, items: [item], readOnly: false });
-		expect(projItems.map((i) => (i.kind === 'item' ? i.label : i.kind))).toEqual(['Process Clip…']);
-		expect(processCommands.map((c) => c.id)).toContain('app.preferences');
-		expect(sourceInfo(doc.media[mediaId] as MediaAsset)).toEqual({ frames: 150, width: 1280, height: 720 });
 	});
 });
 

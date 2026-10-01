@@ -143,15 +143,6 @@ mod tests {
         "width":1920,"height":1080,"fps":{"num":30,"den":1},"durationFrames":150}"#;
 
     #[test]
-    fn parses_a_spec_with_defaults() {
-        let spec = MgSpec::parse(LT).unwrap();
-        assert_eq!(spec.template.id, "lower-third");
-        assert_eq!(spec.source_in_frames, 0);
-        assert_eq!(spec.duration_frames, 150);
-        assert_eq!(spec.params["name"], "A");
-    }
-
-    #[test]
     fn rejects_unknown_fields_and_bad_values() {
         assert!(MgSpec::parse(&LT.replace("\"width\"", "\"bogus\":1,\"width\"")).is_err());
         assert!(MgSpec::parse(&LT.replace("150", "0")).is_err());

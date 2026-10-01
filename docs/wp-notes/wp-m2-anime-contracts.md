@@ -70,7 +70,7 @@ export function groupLines(container: HTMLElement, selector: string): number[];
 ## How to test
 
 - `pnpm lint && pnpm typecheck && pnpm test`.
-- Focused: `pnpm vitest run packages/project/test/anime-contracts.test.ts packages/mg-templates/test/anime-contracts.test.ts packages/motion packages/compositions/test/anime-contracts.test.tsx apps/engine/test/anime.test.ts apps/web/test/anime-contracts.test.tsx apps/web/test/preview-thumb.test.tsx apps/mcp/test/anime-contracts.test.ts scripts/check-anime.test.mjs`.
+- Focused: `pnpm vitest run packages/project/test/anime-contracts.test.ts packages/mg-templates/test/anime-contracts.test.ts packages/motion apps/engine/test/anime.test.ts apps/web/test/anime-contracts.test.tsx apps/web/test/preview-thumb.test.tsx apps/mcp/test/anime-contracts.test.ts scripts/check-anime.test.mjs`.
 - The motion runtime test proves the canonical seek on the R-ANM minimal repro (two `x` tweens with a gap: plain seek 1000 → 500 gives 300, canonical gives 100 = fresh 500) and that `useAnimeValues` returns identical values for shuffled frame orders (fast-check, fixed seeds).
 
 Verification after the rebase on `main` 8a77f15 (2026-10-01): `pnpm install --frozen-lockfile` ok, `pnpm lint`

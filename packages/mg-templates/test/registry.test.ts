@@ -1,21 +1,15 @@
-import {
-	applyTransaction,
-	createEmptyProject,
-	createSeededIdSource,
-	defaultRegistries,
-} from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { createMgRegistry, MG_CATALOG, type MgTemplateDefinition, mgRegistry } from '../src/index.ts';
+import { createMgRegistry, type MgTemplateDefinition, mgRegistry } from '../src/index.ts';
 
-const params = z.object({ title: z.string().min(1), accent: z.array(z.number()).length(4) });
+const params = z.strictObject({ title: z.string().min(1).default('Hello') });
 const sample: MgTemplateDefinition<z.infer<typeof params>> = {
 	id: 'test-card',
 	version: 1,
 	name: 'Test card',
 	category: 'Titles',
 	paramsSchema: params,
-	defaults: { title: 'Hello', accent: [1, 0, 0, 1] },
+	defaults: { title: 'Hello' },
 	introFrames: 10,
 	outroFrames: 10,
 	defaultDurationSeconds: 3,
@@ -23,76 +17,35 @@ const sample: MgTemplateDefinition<z.infer<typeof params>> = {
 	renderSvg: () => '',
 };
 
-describe('@jasper/mg-templates', () => {
-	it('ships lower-third@1 and title-card@1, then the anime templates (S11:ATP-003)', () => {
-		expect(MG_CATALOG.map((d) => `${d.id}@${d.version}`)).toEqual([
-			'lower-third@1',
-			'title-card@1',
-			'title-reveal@1',
-			'lower-third-anim@1',
-			'callout@1',
-			'counter@1',
-		]);
-		expect(mgRegistry.list().map((t) => t.name)).toEqual([
-			'Lower Third',
-			'Title Card',
-			'Title Reveal',
-			'Lower Third (Animated)',
-			'Callout',
-			'Counter',
-		]);
-		expect(mgRegistry.get('lower-third', 1)?.introFrames).toBe(30);
-	});
-	it('implements the project MgTemplateRegistry and validates params through it', () => {
-		const reg = createMgRegistry([sample]);
-		expect(reg.get('test-card', 1)?.name).toBe('Test card');
-		expect(reg.get('test-card', 2)).toBeUndefined();
-		expect(reg.catalogJson()[0]!.paramsSchema.type).toBe('object');
-		expect(reg.catalogJson()[0]!.canvases).toEqual(['1920x1080']);
-		const ids = createSeededIdSource(4);
-		const doc = createEmptyProject({ ids, name: 'mg' });
-		const ctx = { ids, now: () => 't', revision: 0, registries: defaultRegistries(reg) };
-		const ok = applyTransaction(
-			doc,
-			{
-				label: 'MG',
-				origin: 'user',
-				commands: [
-					{
-						type: 'clip.addMotionGraphic',
-						at: 0,
-						duration: 90,
-						track: 'V2',
-						template: { id: 'test-card', version: 1 },
-						params: { title: 'Ana' },
-					},
-				],
-			},
-			ctx,
+describe('@jasper/mg-templates registry', () => {
+	it('ships the required fframes and anime template versions', () => {
+		expect(mgRegistry.list().map(({ id, version }) => `${id}@${version}`)).toEqual(
+			expect.arrayContaining([
+				'callout@1',
+				'counter@1',
+				'lower-third-anim@1',
+				'lower-third@1',
+				'title-card@1',
+				'title-reveal@1',
+			]),
 		);
-		expect(ok.result.ok).toBe(true);
-		const bad = applyTransaction(
-			doc,
-			{
-				label: 'MG',
-				origin: 'user',
-				commands: [
-					{
-						type: 'clip.addMotionGraphic',
-						at: 0,
-						duration: 90,
-						track: 'V2',
-						template: { id: 'test-card', version: 1 },
-						params: { title: '' },
-					},
-				],
-			},
-			ctx,
-		);
-		expect(bad.result.ok).toBe(false);
 	});
-	it('rejects duplicate ids and defaults that fail the schema', () => {
-		expect(() => createMgRegistry([sample, sample])).toThrow();
-		expect(() => createMgRegistry([{ ...sample, defaults: { title: '', accent: [] } }])).toThrow();
+
+	it('exposes template lookup and a JSON schema for API clients', () => {
+		const registry = createMgRegistry([sample]);
+		expect(registry.get('test-card', 1)?.name).toBe('Test card');
+		expect(registry.get('test-card', 2)).toBeUndefined();
+		const entry = registry.catalogJson()[0]!;
+		expect(entry.canvases).toEqual(['1920x1080']);
+		expect(entry.paramsSchema).toMatchObject({
+			type: 'object',
+			additionalProperties: false,
+			properties: { title: { type: 'string', minLength: 1 } },
+		});
+	});
+
+	it('rejects duplicate template versions and invalid defaults', () => {
+		expect(() => createMgRegistry([sample, sample])).toThrow(/Duplicate/);
+		expect(() => createMgRegistry([{ ...sample, defaults: { title: '' } }])).toThrow(/Defaults/);
 	});
 });

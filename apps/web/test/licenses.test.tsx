@@ -84,9 +84,4 @@ describe('ThirdPartyLicenses', () => {
 		expect((screen.getByText('FFmpeg') as HTMLAnchorElement).href).toBe('https://ffmpeg.org/');
 		expect(screen.getByText('GNU Lesser General Public License')).toBeTruthy();
 	});
-
-	it('renders the static notice without an engine', () => {
-		render(<ThirdPartyLicenses />);
-		expect(screen.getByTestId('licenses').textContent).toContain('GNU Lesser General Public License');
-	});
 });

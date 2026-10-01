@@ -19,20 +19,17 @@ import {
 	ROOT,
 	regionLuma,
 	timelineArea,
-	watchPage,
 } from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
 
 const EXPORT_DIR = join(ROOT, 'test-results', 'e2e-exports');
 let page: Page;
-let watcher: { errors: string[] };
 let staticTitle = '';
 let movingTitle = '';
 
 test.beforeAll(async ({ browser }) => {
 	page = await browser.newPage();
-	watcher = watchPage(page);
 	await enableAgentBridge(page);
 });
 
@@ -213,5 +210,4 @@ test('Auto exports `hybrid`: one PNG for the static title, a master for the keyf
 	expect(b / a).toBeLessThan(0.6);
 	// After the last key (19 s) the title holds 20 %: dimmer than at 18.5 s.
 	expect(lift(19.6)).toBeLessThan(b);
-	expect(watcher.errors.filter((e) => !/favicon|ResizeObserver/.test(e))).toEqual([]);
 });

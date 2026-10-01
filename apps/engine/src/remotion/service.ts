@@ -246,18 +246,14 @@ function findUp(dir: string, file: string): string | null {
 }
 
 /** Workspace packages bundled with the compositions (their sources are part of the bundle hash). */
-export const BUNDLED_WORKSPACE_PACKAGES = [
-	'@jasper/project',
-	'@jasper/mg-templates',
-	'@jasper/motion',
-] as const;
+const BUNDLED_WORKSPACE_PACKAGES = ['@jasper/project', '@jasper/mg-templates', '@jasper/motion'] as const;
 
 /**
  * Source hash of the composition bundle inputs: Remotion version, `package.json` + `src/` of the compositions and
  * of the workspace packages they bundle (incl. `@jasper/motion`), and the workspace `pnpm-lock.yaml` so a
  * lockfile-only dependency bump (e.g. anime.js) rebuilds the bundle (S11:FIX-009).
  */
-export function remotionSourceHash(entry: string): string {
+function remotionSourceHash(entry: string): string {
 	const h = createHash('sha256').update(`remotion@${REMOTION_VERSION}\n`);
 	const compositionsRoot = dirname(dirname(entry));
 	const roots = [compositionsRoot];
@@ -929,7 +925,7 @@ export class RemotionService {
 }
 
 /** True when a render doc (RenderSnapshot) has an enabled colour effect (registry `color` op). */
-export function docHasColorEffects(doc: unknown): boolean {
+function docHasColorEffects(doc: unknown): boolean {
 	const tracks = (
 		doc as { videoTracks?: { clips?: { effects?: { effectId: string; enabled: boolean }[] }[] }[] }
 	)?.videoTracks;

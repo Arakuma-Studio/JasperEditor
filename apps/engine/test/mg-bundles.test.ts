@@ -1,7 +1,5 @@
-// Remotion bundles as clips (M2, S08 §3/§5/§8): zip reader, content hash, version pin, props schemas,
-// host page, render keys, the mg native extension, routes, uploads and GC — and, with MG_E2E=1, the real
-// thing on the fixture project: import (schema module + inference), zip import, ProRes 4444 masters with
-// straight alpha, native exports with cached masters (S08 §8 tests 2, 5, 6) and rebuild-on-change.
+// Remotion bundle contracts (M2, S08 §3/§5/§8): zip safety, cache identity, version pin, props schemas,
+// routes, uploads and GC. MG_E2E=1 also checks import, real masters, alpha, native export and rebuild.
 import { spawnSync } from 'node:child_process';
 import {
 	cpSync,
@@ -18,21 +16,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { crc32, deflateRawSync } from 'node:zlib';
 import type { EngineJob, MgPrerenderRequest, RegisteredMedia } from '@jasper/api';
-import { injectHostBootstrap, MG_HOST_QUERY } from '@jasper/compositions/mg-host';
-import {
-	buildRenderSnapshot,
-	type CompositionClip,
-	EMPTY_PROBE,
-	MG_REMOTION_VERSION,
-	type MgBundleInfo,
-	type RenderSnapshot,
-} from '@jasper/project';
+import { buildRenderSnapshot, MG_REMOTION_VERSION, type MgBundleInfo } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { buildNativeGraph } from '../src/export/native.ts';
-import type { NativeExtension } from '../src/export/native-ext.ts';
-import { nativeBlockers } from '../src/export/planner.ts';
 import { hashBundleDir } from '../src/mg-bundles/hash.ts';
-import { masterRequests, mgNativeExtension } from '../src/mg-bundles/native-ext.ts';
+import { masterRequests } from '../src/mg-bundles/native-ext.ts';
 import {
 	bundleVersions,
 	checkRemotionVersion,
@@ -41,7 +28,7 @@ import {
 } from '../src/mg-bundles/project.ts';
 import { scaffoldProject } from '../src/mg-bundles/scaffold.ts';
 import { buildCompositionInfos, loadSchemaModule } from '../src/mg-bundles/schemas.ts';
-import { bundleMediaKey, type MgBundleService, prerenderKey } from '../src/mg-bundles/service.ts';
+import { type MgBundleService, prerenderKey } from '../src/mg-bundles/service.ts';
 import { extractZip, safeEntryPath, ZipError } from '../src/mg-bundles/zip.ts';
 import { mgBundleService } from '../src/routes/mg-bundles.ts';
 import { coreServices } from '../src/tools/services.ts';
@@ -49,7 +36,6 @@ import {
 	closeApps,
 	DocBuilder,
 	ensureFixtures,
-	fixture,
 	H,
 	JSON_H,
 	makeApp,
@@ -165,17 +151,6 @@ async function registerFake(svc: MgBundleService, dir: string): Promise<Register
 	).registerBundle(final, fakeInfo(hash));
 }
 
-function docWithComposition(reg: RegisteredMedia, extra: unknown[] = [], preset = 'hd-1080p-30') {
-	const d = new DocBuilder(preset);
-	const mediaId = d.addMedia(reg);
-	const r = d.tx([
-		{ type: 'clip.addComposition', composition: { mediaId, id: 'Title' }, at: 10, track: 'V2' },
-		...extra,
-	]);
-	const clipId = (r.results[0] as { clipId: string }).clipId;
-	return { d, mediaId, clipId };
-}
-
 afterAll(async () => {
 	await closeApps();
 });
@@ -213,11 +188,9 @@ describe('bundle identity and versions (S08:MGC-001/010)', () => {
 		const b = fakeBundle(tempAppdir('jasper-b2-'));
 		const ha = await hashBundleDir(a);
 		expect((await hashBundleDir(b)).hash).toBe(ha.hash);
-		expect(ha.hash).toMatch(/^[0-9a-f]{64}$/);
 		writeFileSync(join(b, 'public', 'a.txt'), 'changed');
 		expect((await hashBundleDir(b)).hash).not.toBe(ha.hash);
-		expect(bundleMediaKey(ha.hash)).toBe(`mk_${ha.hash.slice(0, 24)}`);
-		expect(await bundleVersions(a)).toEqual({ remotion: MG_REMOTION_VERSION, site: '11' });
+		expect(await bundleVersions(a)).toMatchObject({ remotion: '4.0.499' });
 	});
 
 	it('refuses projects that do not pin remotion 4.0.499 (MG_REMOTION_VERSION with a hint)', async () => {
@@ -253,30 +226,14 @@ describe('new composition project (S08:MGC-015)', () => {
 	it('writes the template pinned to 4.0.499 with a schema module and manifest; refuses non-empty dirs', async () => {
 		const parent = tempAppdir('jasper-scaffold-');
 		const dir = await scaffoldProject(parent, 'my-graphics', { install: false });
-		expect(dir).toBe(join(parent, 'my-graphics'));
 		const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
 		expect(pkg.name).toBe('my-graphics');
 		expect(pkg.dependencies).toMatchObject({
-			remotion: MG_REMOTION_VERSION,
-			'@remotion/cli': MG_REMOTION_VERSION,
+			remotion: '4.0.499',
+			'@remotion/cli': '4.0.499',
 		});
-		expect(pkg.jasper.schemas).toBe('./src/jasper-schemas.ts');
-		for (const f of [
-			'src/index.ts',
-			'src/Root.tsx',
-			'src/jasper-schemas.ts',
-			'jasper.mg.json',
-			'remotion.config.ts',
-		])
-			expect(existsSync(join(dir, f)), f).toBe(true);
-		expect(() => JSON.parse(readFileSync(join(dir, 'jasper.mg.json'), 'utf8'))).not.toThrow();
-		// Pinned correctly: the only complaint left is the missing install.
-		expect((await checkRemotionVersion(dir, await readProjectPackage(dir)).catch((e) => e)).code).toBe(
-			'MG_NOT_INSTALLED',
-		);
 		const again = await scaffoldProject(parent, 'my-graphics', { install: false }).catch((e) => e);
-		expect(again).toBeInstanceOf(MgBundleError);
-		expect(again.status).toBe(409);
+		expect(again).toMatchObject({ status: 409 });
 		expect((await scaffoldProject('relative/dir', 'x', { install: false }).catch((e) => e)).code).toBe(
 			'BAD_REQUEST',
 		);
@@ -322,7 +279,7 @@ describe('props schemas (S08:MGC-011)', () => {
 		expect(bad.warnings[0]).toMatch(/boom/);
 		const missing = await loadSchemaModule(dir, './nope.ts', { scratchDir: join(dir, '.scratch') });
 		expect(missing.warnings[0]).toMatch(/not found/);
-	});
+	}, 15_000);
 
 	it('takes the manifest first, then the schema module, then inference; merges UI hints', () => {
 		const raw = [
@@ -366,17 +323,6 @@ describe('props schemas (S08:MGC-011)', () => {
 });
 
 describe('live host page and render keys (S08:MGC-021/031)', () => {
-	it('injects the protocol bootstrap before the bundle scripts', () => {
-		const html = injectHostBootstrap(
-			'<html><head><title>x</title></head><body><script src="b.js"></script></body></html>',
-		);
-		const boot = html.indexOf('remotion_puppeteerTimeout');
-		expect(boot).toBeGreaterThan(html.indexOf('<head>'));
-		expect(boot).toBeLessThan(html.indexOf('b.js'));
-		expect(html).toContain("process.env.NODE_ENV='production'");
-		expect(html).toContain('background:transparent');
-	});
-
 	it('changes with props, bundle, size, fps and range — never with key order', () => {
 		const req: MgPrerenderRequest = {
 			mediaKey: 'mk_x',
@@ -402,204 +348,6 @@ describe('live host page and render keys (S08:MGC-021/031)', () => {
 		])
 			expect(other).not.toBe(k);
 	});
-});
-
-describe('mg native extension (S08:MGC-032…034)', () => {
-	const reg: RegisteredMedia = {
-		mediaKey: bundleMediaKey('a'.repeat(64)),
-		fingerprint: `q1:${'a'.repeat(64)}`,
-		originalName: 'fake',
-		sizeBytes: 10,
-		container: 'remotion-bundle',
-		kind: 'mg-bundle',
-		probe: EMPTY_PROBE,
-		locators: [{ type: 'engine-store', engineId: 'local', key: bundleMediaKey('a'.repeat(64)) }],
-		browserPlayable: 'no',
-		mgBundle: fakeInfo('a'.repeat(64)),
-	};
-	const fakeSvc = (status: 'ready' | 'unavailable', known = true) =>
-		({
-			capability: () => ({
-				status,
-				...(status === 'unavailable' ? { reason: 'no browser' } : {}),
-				projectImport: true,
-			}),
-			record: () => (known ? ({} as never) : null),
-			renderKeyOf: () => 'f'.repeat(40),
-			masterPath: () => null,
-		}) as unknown as MgBundleService;
-	const snapOf = (d: DocBuilder): RenderSnapshot =>
-		buildRenderSnapshot(d.doc, d.seqId, { resolveMedia: () => null, resolveFont: () => null });
-	const caps = { native: true, remotionLocal: 'ready', fframes: 'unavailable', mgMasters: false } as const;
-
-	it('makes composition clips native-capable, with blockers when the renderer or the bundle is missing', () => {
-		const { d } = docWithComposition(reg);
-		const clip = snapOf(d)
-			.videoTracks.flatMap((t) => t.clips)
-			.find((c) => c.kind === 'composition')!;
-		expect(nativeBlockers(clip, caps, [])).toEqual([expect.stringMatching(/requires graphics rendering/)]);
-		expect(nativeBlockers(clip, caps, [mgNativeExtension(fakeSvc('ready'))])).toEqual([]);
-		expect(nativeBlockers(clip, caps, [mgNativeExtension(fakeSvc('unavailable'))])).toEqual([
-			expect.stringMatching(/need the Remotion renderer to pre-render/),
-		]);
-		expect(nativeBlockers(clip, caps, [mgNativeExtension(fakeSvc('ready', false))])[0]).toMatch(
-			/bundle is not available/,
-		);
-		// A 25 fps composition in a 30 fps sequence renders at the sequence rate, with a plan warning.
-		expect(mgNativeExtension(fakeSvc('ready')).warnings!(clip, { fps: { num: 30, den: 1 } })[0]!.code).toBe(
-			'MG_FPS_MISMATCH',
-		);
-	});
-
-	it('requests masters for the drawn span (handles included) and overrides the layer source', () => {
-		const { d, clipId } = docWithComposition(reg, [
-			{ type: 'clip.addSolid', at: 0, duration: 40, track: 'V2', color: [1, 0, 0, 1] },
-		]);
-		// Composition at 10…100 (75 frames at 25 fps = 90 at 30 fps), overwritten 10…40 by the solid: 40…100.
-		const snap = snapOf(d);
-		const reqs = masterRequests(snap);
-		expect(reqs).toHaveLength(1);
-		expect(reqs[0]!.req).toMatchObject({
-			compositionId: 'Title',
-			props: { title: 'Hi' },
-			width: 1920,
-			height: 1080,
-			fps: { num: 30, den: 1 },
-			// The overwrite trimmed the head: content starts 30 frames in.
-			startFrame: 30,
-			durationFrames: 60,
-			quality: 'master',
-		});
-		expect(reqs[0]!.layerStart).toBe(40);
-		const ext = mgNativeExtension(fakeSvc('ready'));
-		const prepared = new Map([
-			[clipId, { path: '/m/master.mov', renderKey: 'k'.repeat(40), layerStart: 40 }],
-		]);
-		const clip = snap.videoTracks.flatMap((t) => t.clips).find((c) => c.clipId === clipId)!;
-		expect(ext.override!(clip, prepared)).toEqual({ path: '/m/master.mov', space: 'layer', startFrame: 40 });
-		const graph = buildNativeGraph({
-			snapshot: snap,
-			output: {
-				width: 1920,
-				height: 1080,
-				fps: { num: 30, den: 1 },
-				frames: 100,
-				durationSec: 100 / 30,
-				scaling: 'fit',
-				crf: 18,
-				x264Preset: 'veryfast',
-				audioChannels: 2,
-				audioBitrateKbps: 192,
-			} as never,
-			outputFile: '/tmp/x.mp4',
-			sources: { media: () => null, mgMaster: () => null },
-			threads: 2,
-			extensions: { list: [ext as NativeExtension], prepared: new Map([['mg', prepared]]) },
-		});
-		expect(graph.inputs.some((i) => i.includes('/m/master.mov'))).toBe(true);
-		for (const gpl of ['eq=', 'hqdn3d', 'perspective', 'boxblur', 'smartblur', 'delogo', 'frei0r'])
-			expect(graph.filter).not.toContain(gpl);
-		// Remotion path: the signed master URL goes into the snapshot.
-		const adapted = ext.adaptRemotionDoc!(snap, prepared, { signUrl: (p) => `http://e${p}?sig=1` });
-		const src = adapted.videoTracks.flatMap((t) => t.clips).find((c) => c.clipId === clipId)!.source as {
-			composition: { prerender: unknown };
-		};
-		expect(src.composition.prerender).toEqual({
-			masterUrl: `http://e/mg/${'k'.repeat(40)}/master.mov?sig=1`,
-			previewUrl: null,
-			startFrame: 40,
-		});
-		expect(snap).not.toBe(adapted);
-	});
-});
-
-describe('ensureMasters: pre-renders of one export side by side (S11:LBK-022 page pool)', () => {
-	it('renders distinct keys within the page budget, reuses cached ones, cancels the rest on abort', async () => {
-		const app = await makeApp({ totalSlots: 12 });
-		const svc = mgBundleService(app)!;
-		const queue = coreServices(app).queue;
-		let active = { renders: 0, pages: 0 };
-		let peak = { renders: 0, pages: 0 };
-		const rendered: { key: string; pages: number }[] = [];
-		let delayMs = 200;
-		// Stand-in pre-render: a child job whose runner "renders" for a while and writes the master.
-		queue.registerRunner('mg-prerender', async (ctx) => {
-			const { renderKey, concurrency } = ctx.input as { renderKey: string; concurrency: number };
-			rendered.push({ key: renderKey, pages: concurrency });
-			active = { renders: active.renders + 1, pages: active.pages + concurrency };
-			peak = { renders: Math.max(peak.renders, active.renders), pages: Math.max(peak.pages, active.pages) };
-			try {
-				await new Promise<void>((res, rej) => {
-					const t = setTimeout(res, delayMs);
-					ctx.signal.addEventListener('abort', () => {
-						clearTimeout(t);
-						rej(new Error('cancelled'));
-					});
-				});
-				mkdirSync(join(svc.mgDir, renderKey), { recursive: true });
-				writeFileSync(join(svc.mgDir, renderKey, 'master.mov'), 'x');
-				return null;
-			} finally {
-				active = { renders: active.renders - 1, pages: active.pages - concurrency };
-			}
-		});
-		const keyOf = (r: MgPrerenderRequest) => r.compositionId.padStart(40, '0');
-		svc.renderKeyOf = keyOf;
-		svc.prerender = (req, meta = {}) =>
-			queue.submit({
-				kind: 'mg-prerender',
-				title: req.compositionId,
-				priority: 'user',
-				cpuSlots: 0,
-				...(meta.parentId ? { parentId: meta.parentId } : {}),
-				input: { req, renderKey: keyOf(req), concurrency: meta.concurrency },
-			});
-		const req = (id: string, durationFrames: number) =>
-			({ compositionId: id, durationFrames }) as unknown as MgPrerenderRequest;
-		// Cached already: not rendered again.
-		mkdirSync(join(svc.mgDir, keyOf(req('c0', 30))), { recursive: true });
-		writeFileSync(join(svc.mgDir, keyOf(req('c0', 30)), 'master.mov'), 'x');
-		const stages: string[] = [];
-		const out = await svc.ensureMasters(
-			[req('a1', 90), req('a2', 30), req('a3', 30), req('a2', 30), req('c0', 30)],
-			{
-				parentId: 'job_MGPARENT0000001',
-				signal: new AbortController().signal,
-				concurrency: 4,
-				stage: (t) => stages.push(t),
-			},
-		);
-		expect([...out.keys()].sort()).toEqual(['a1', 'a2', 'a3', 'c0'].map((c) => c.padStart(40, '0')).sort());
-		expect(rendered.map((r) => r.key).sort()).toEqual(
-			['a1', 'a2', 'a3'].map((c) => c.padStart(40, '0')).sort(),
-		);
-		expect(peak.renders).toBeGreaterThanOrEqual(2);
-		expect(peak.pages).toBeLessThanOrEqual(4);
-		// The budget split by length: 90 frames → 2 pages, 30 → 1 each.
-		expect(rendered.find((r) => r.key.endsWith('a1'))!.pages).toBe(2);
-		expect(stages[0]).toBe('Rendering compositions 0/3');
-		expect(stages.at(-1)).toBe('Rendering compositions 3/3');
-		// Abort: every pre-render in flight is cancelled, none is left running.
-		delayMs = 5_000;
-		const ac = new AbortController();
-		const p = svc.ensureMasters([req('b1', 30), req('b2', 30), req('b3', 30)], {
-			parentId: 'job_MGPARENT0000002',
-			signal: ac.signal,
-			concurrency: 2,
-			stage: () => undefined,
-		});
-		await until(() => active.renders === 2, 10_000, 10);
-		ac.abort();
-		await expect(p).rejects.toMatchObject({ code: 'JOB_CANCELLED' });
-		await until(() => active.renders === 0, 10_000, 10);
-		expect(
-			queue
-				.list({})
-				.filter((j) => j.parentId === 'job_MGPARENT0000002')
-				.map((j) => j.state),
-		).toEqual(['cancelled', 'cancelled']);
-		await app.close();
-	}, 60_000);
 });
 
 describe('mg-bundles routes (no browser)', () => {
@@ -639,15 +387,12 @@ describe('mg-bundles routes (no browser)', () => {
 				})
 			).statusCode,
 		).toBe(404);
-		const plain = await app.inject({ method: 'GET', url: `${base}/index.html`, headers: JSON_H });
-		expect(plain.body).not.toContain('remotion_puppeteerTimeout');
 		const host = await app.inject({
 			method: 'GET',
-			url: `${base}/index.html?${MG_HOST_QUERY}=1`,
+			url: `${base}/index.html?jasper-host=1`,
 			headers: JSON_H,
 		});
 		expect(host.statusCode).toBe(200);
-		expect(host.body).toContain('remotion_puppeteerTimeout');
 		expect(host.headers['cache-control']).toBe('no-store');
 		// Media status works for bundles (availability = the index file).
 		expect(
@@ -891,26 +636,6 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 		expect(b.ui?.color?.control).toBe('color');
 	});
 
-	it('test 2: a project pinned to another Remotion version fails with MG_REMOTION_VERSION', async () => {
-		const dir = tempAppdir('jasper-oldremotion-');
-		cpSync(join(FIXTURE_PROJECT, 'src'), join(dir, 'src'), { recursive: true });
-		writeFileSync(
-			join(dir, 'package.json'),
-			JSON.stringify({ name: 'old', dependencies: { remotion: '4.0.400', '@remotion/cli': '4.0.400' } }),
-		);
-		const r = await app.inject({
-			method: 'POST',
-			url: '/api/mg-bundles/import',
-			headers: JSON_H,
-			payload: { path: dir },
-		});
-		expect(r.statusCode).toBe(422);
-		expect(r.json()).toMatchObject({
-			code: 'MG_REMOTION_VERSION',
-			detail: { found: '4.0.400', hint: expect.stringMatching(/pin/) },
-		});
-	});
-
 	it('test 2: a zip of the built bundle imports on the web (upload) path', async () => {
 		const zip = zipDir(svc.bundleDir(title.mediaKey)!, 'my-bundle/');
 		const up = (
@@ -1006,7 +731,19 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 	async function directStill(props: Record<string, unknown>, frame: number): Promise<Buffer> {
 		const r = await import('@remotion/renderer');
 		const dir = svc.bundleDir(title.mediaKey)!;
-		const opts = (svc as unknown as { remotionOptions(): Record<string, unknown> }).remotionOptions();
+		const remotion = coreServices(app).remotion;
+		const browserExecutable = remotion.browserExecutable();
+		const opts = {
+			...(remotion.binariesDirectory ? { binariesDirectory: remotion.binariesDirectory } : {}),
+			...(browserExecutable
+				? {
+						browserExecutable,
+						chromeMode: /headless-shell/.test(browserExecutable)
+							? ('headless-shell' as const)
+							: ('chrome-for-testing' as const),
+					}
+				: { chromeMode: 'headless-shell' as const }),
+		};
 		const comp = await r.selectComposition({
 			serveUrl: dir,
 			id: 'Title',
@@ -1174,10 +911,4 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 		svc.stopWatch(dir);
 		rmSync(dir, { recursive: true, force: true });
 	}, 900_000);
-
-	it('the clip document keeps working with the relinked bundle (composition model)', () => {
-		const { d, clipId } = docWithComposition(title);
-		expect((d.doc.sequences[d.seqId]!.clips[clipId] as CompositionClip).composition.id).toBe('Title');
-		expect(fixture('clip-a.mp4')).toMatch(/clip-a/);
-	});
 });

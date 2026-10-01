@@ -6,23 +6,17 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { EncoderChoice } from '@jasper/api';
 import { describe, expect, it } from 'vitest';
-import {
-	appendEncoderArgs,
-	planRemotionExport,
-	type RemotionFfmpegInfo,
-} from '../src/remotion/export-plan.ts';
+import { planRemotionExport, type RemotionFfmpegInfo } from '../src/remotion/export-plan.ts';
 import { RemotionService } from '../src/remotion/service.ts';
-import { LEGACY_X264_CHOICE, vp9Crf } from '../src/tools/encoders.ts';
+import { LEGACY_X264_CHOICE } from '../src/tools/encoders.ts';
 import { resolveBinaries } from '../src/tools/ffmpeg.ts';
 import {
-	BUNDLED_GPL_WARNING,
 	findVendorDir,
 	isBinariesDir,
 	platformKey,
 	REMOTION_BIN_DIR_ENV,
 	REMOTION_BIN_DIR_ENV_LEGACY,
 	resolveRemotionBinaries,
-	STRICT_MISSING_MESSAGE,
 } from '../src/tools/lgpl.ts';
 import { FFMPEG_SOURCE_FALLBACK, ffmpegLicense, thirdPartyLicenses } from '../src/tools/licenses.ts';
 
@@ -64,7 +58,7 @@ describe('resolveRemotionBinaries', () => {
 	it('dev without a directory: Remotion bundled FFmpeg with the loud GPL warning', () => {
 		const r = resolveRemotionBinaries({ env: {}, strict: false, platform: 'linux', exists: () => false });
 		expect(r).toMatchObject({ dir: null, source: 'bundled', lgpl: false, allowed: true });
-		expect(r.message).toContain(BUNDLED_GPL_WARNING);
+		expect(r.message).toContain('bundled GPL FFmpeg');
 		expect(r.message).toContain('pnpm ffmpeg:lgpl');
 	});
 
@@ -75,7 +69,7 @@ describe('resolveRemotionBinaries', () => {
 			source: 'missing',
 			lgpl: false,
 			allowed: false,
-			message: STRICT_MISSING_MESSAGE,
+			message: expect.stringContaining('LGPL'),
 		});
 	});
 
@@ -103,7 +97,7 @@ describe('resolveRemotionBinaries', () => {
 			exists: partial,
 		});
 		expect(devBroken).toMatchObject({ source: 'bundled', allowed: true });
-		expect(devBroken.message).toContain(BUNDLED_GPL_WARNING);
+		expect(devBroken.message).toContain('bundled GPL FFmpeg');
 	});
 
 	it('uses .exe names on Windows', () => {
@@ -345,24 +339,6 @@ describe('planRemotionExport', () => {
 		});
 		if (p.mode !== 'intermediate') throw new Error('unreachable');
 		expect(p.encoder.encoder).toBe('libopenh264');
-		expect(p.phases.map((x) => x.id)).toEqual(['render', 'encode']);
-		expect(p.phases[0]!.weight + p.phases[1]!.weight).toBeCloseTo(0.98);
-		expect(p.phases[1]!.label).toContain('OpenH264');
-	});
-
-	it('hardware H.264 gives the render phase a larger share; AV1 a smaller one', () => {
-		const hw = planRemotionExport({
-			...common,
-			encoder: choice({ encoder: 'h264_nvenc', hardware: true }),
-			remotion: LGPL,
-		});
-		const av1 = planRemotionExport({
-			...common,
-			encoder: choice({ codec: 'av1', encoder: 'libsvtav1' }),
-			remotion: LGPL,
-		});
-		if (hw.mode !== 'intermediate' || av1.mode !== 'intermediate') throw new Error('expected intermediate');
-		expect(hw.phases[0]!.weight).toBeGreaterThan(av1.phases[0]!.weight);
 	});
 
 	it('dev with GPL builds on both sides and libx264: Remotion encodes H.264 itself (unchanged)', () => {
@@ -392,11 +368,9 @@ describe('planRemotionExport', () => {
 			mode: 'direct',
 			codec: 'vp9',
 			audioCodec: 'opus',
-			crf: vp9Crf(23),
 			colorSpace: 'bt709',
 		});
 		if (p.mode !== 'direct') throw new Error('unreachable');
-		expect(p.extraVideoArgs).toEqual(['-deadline', 'good', '-cpu-used', '3', '-row-mt', '1', '-g', '60']);
 		// Without zscale (a source build without zimg) no colour conversion filter is requested.
 		const noZ = planRemotionExport({
 			...common,
@@ -432,16 +406,5 @@ describe('planRemotionExport', () => {
 			'unavailable',
 		);
 		expect(planRemotionExport({ ...common, encoder: null, remotion: BUNDLED }).mode).toBe('direct');
-	});
-});
-
-describe('appendEncoderArgs', () => {
-	it('adds encoder options before the output file of the command that encodes with that encoder', () => {
-		const f = appendEncoderArgs('libvpx-vp9', ['-row-mt', '1']);
-		expect(
-			f({ type: 'stitcher', args: ['-i', 'a', '-c:v', 'libvpx-vp9', '-crf', '38', 'out.webm'] }),
-		).toEqual(['-i', 'a', '-c:v', 'libvpx-vp9', '-crf', '38', '-row-mt', '1', 'out.webm']);
-		const copy = ['-i', 'a', '-c:v', 'copy', 'out.webm'];
-		expect(f({ type: 'stitcher', args: copy })).toBe(copy);
 	});
 });

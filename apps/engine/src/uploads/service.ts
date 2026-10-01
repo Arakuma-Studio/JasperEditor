@@ -50,15 +50,8 @@ export class UploadService {
 			/** `<appdir>/media/.uploads` */
 			dir: string;
 			media: MediaService;
-			now?: () => number;
-			/** Test hook: override the free-space probe. */
-			freeBytes?: (dir: string) => Promise<number | null>;
 		},
 	) {}
-
-	private now(): number {
-		return this.deps.now?.() ?? Date.now();
-	}
 
 	private sessionDir(id: string): string {
 		return join(this.deps.dir, id);
@@ -82,7 +75,7 @@ export class UploadService {
 
 	async create(req: UploadCreateRequest): Promise<{ uploadId: string; chunkSize: number; offset: number }> {
 		await mkdir(this.deps.dir, { recursive: true });
-		const free = await (this.deps.freeBytes ?? freeDiskBytes)(this.deps.dir);
+		const free = await freeDiskBytes(this.deps.dir);
 		if (free !== null && free < req.byteSize + DISK_MARGIN_BYTES) {
 			throw new UploadError('DISK_FULL', 507, 'Not enough free disk space for this upload', {
 				freeBytes: free,
@@ -90,7 +83,7 @@ export class UploadService {
 			});
 		}
 		const uploadId = randomId('up', 12);
-		const t = new Date(this.now()).toISOString();
+		const t = new Date().toISOString();
 		const session: Session = {
 			uploadId,
 			projectId: req.projectId,
@@ -112,7 +105,7 @@ export class UploadService {
 		if (!UPLOAD_ID_RE.test(uploadId)) throw new UploadError('UPLOAD_NOT_FOUND', 404, 'Unknown upload');
 		const s = await readJsonOrNull<Session>(this.metaFile(uploadId));
 		if (!s) throw new UploadError('UPLOAD_NOT_FOUND', 404, 'Unknown upload');
-		if (this.now() - Date.parse(s.touchedAt) > UPLOAD_TTL_MS) {
+		if (Date.now() - Date.parse(s.touchedAt) > UPLOAD_TTL_MS) {
 			await rm(this.sessionDir(uploadId), { recursive: true, force: true });
 			throw new UploadError('UPLOAD_NOT_FOUND', 404, 'Upload session expired');
 		}
@@ -173,7 +166,7 @@ export class UploadService {
 				await truncate(this.dataFile(uploadId), current).catch(() => undefined);
 				throw e;
 			}
-			s.touchedAt = new Date(this.now()).toISOString();
+			s.touchedAt = new Date().toISOString();
 			await atomicWriteJson(this.metaFile(uploadId), s);
 			return { offset: current + written };
 		});
@@ -256,7 +249,7 @@ export class UploadService {
 			const s = await readJsonOrNull<Session>(this.metaFile(id));
 			const touched = s ? Date.parse(s.touchedAt) : 0;
 			if (this.mutex.isBusy(id)) continue;
-			if (!s || this.now() - touched > UPLOAD_TTL_MS) {
+			if (!s || Date.now() - touched > UPLOAD_TTL_MS) {
 				await rm(this.sessionDir(id), { recursive: true, force: true });
 				removed++;
 			}

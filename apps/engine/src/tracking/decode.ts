@@ -22,7 +22,7 @@ export type DecodeSpec = {
 	scale: boolean;
 };
 
-export function decodeArgs(s: DecodeSpec): string[] {
+function decodeArgs(s: DecodeSpec): string[] {
 	const seek = s.start > 0 ? ['-ss', (((s.start - 0.5) * s.fps.den) / s.fps.num).toFixed(6)] : [];
 	const vf = s.scale ? `scale=${s.width}:${s.height}:flags=area,format=gray` : 'format=gray';
 	return [

@@ -5,7 +5,6 @@ import {
 	createCounterIdSource,
 	createEmptyProject,
 	createRandomIdSource,
-	createSeededIdSource,
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
 	flicksToFrames,
@@ -33,12 +32,6 @@ describe('ids (S01:ID-001)', () => {
 		expect(isValidId(id, 'trk')).toBe(false);
 		const set = new Set(Array.from({ length: 1000 }, () => rnd.next('fx')));
 		expect(set.size).toBe(1000);
-	});
-	it('seeded ids are deterministic', () => {
-		const a = createSeededIdSource(42);
-		const b = createSeededIdSource(42);
-		expect([a.next('seq'), a.next('trk')]).toEqual([b.next('seq'), b.next('trk')]);
-		expect(createCounterIdSource().next('clp')).toBe('clp_0000000000000001');
 	});
 });
 
@@ -78,7 +71,7 @@ describe('flicks (S01:TIME-001…007)', () => {
 
 describe('timecode (S02 Appendix A.1)', () => {
 	it('AC-01: new 1080p 29.97 project is drop-frame with V1–V3/A1–A3 and frame 1800 = 00;01;00;02', () => {
-		const doc = createEmptyProject({ ids: createSeededIdSource(1), name: 'P', preset: 'hd-1080p-29.97' });
+		const doc = createEmptyProject({ ids: createCounterIdSource(1), name: 'P', preset: 'hd-1080p-29.97' });
 		const seq = Object.values(doc.sequences)[0]!;
 		expect(seq.settings.frameRate).toEqual({ num: 30000, den: 1001 });
 		expect(seq.settings.dropFrame).toBe(true);

@@ -17,8 +17,8 @@ import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } fr
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const ROOTS = ['apps/web', 'packages/compositions'];
-export const OUTPUT = 'THIRD_PARTY_NOTICES.md';
+const ROOTS = ['apps/web', 'packages/compositions'];
+const OUTPUT = 'THIRD_PARTY_NOTICES.md';
 
 /**
  * Build-time packages (devDependencies of the roots, or the bundlers' own dependencies) whose output ships in the
@@ -27,7 +27,7 @@ export const OUTPUT = 'THIRD_PARTY_NOTICES.md';
  * traversed (only the modules named in `ships` end up in the bundles; those that pull in more are listed too).
  * `from` is the repo directory, or an earlier entry, the package is resolved from.
  */
-export const SHIPPED_BUILD_OUTPUT = [
+const SHIPPED_BUILD_OUTPUT = [
 	// web build (Vite)
 	{ name: 'tailwindcss', from: 'apps/web', ships: 'preflight, theme variables and utilities (the CSS)' },
 	{
@@ -77,7 +77,7 @@ export const SHIPPED_BUILD_OUTPUT = [
 const LICENSE_FILE = /^(?:licen[cs]e|copying|notice)(?:[-_.][\w.-]*)?$/i;
 
 /** Node's lookup: `<dir>/node_modules/<name>` walking up from `fromDir`; the real directory, or null. */
-export function resolvePackageDir(name, fromDir) {
+function resolvePackageDir(name, fromDir) {
 	let dir = fromDir;
 	for (;;) {
 		const cand = join(dir, 'node_modules', name);
@@ -91,7 +91,7 @@ export function resolvePackageDir(name, fromDir) {
 const readJson = (file) => JSON.parse(readFileSync(file, 'utf8'));
 
 /** SPDX-ish licence of a package.json (`license`, legacy `licenses`), or `UNKNOWN`. */
-export function licenseOf(pkg) {
+function licenseOf(pkg) {
 	if (typeof pkg.license === 'string') return pkg.license;
 	if (pkg.license && typeof pkg.license.type === 'string') return pkg.license.type;
 	if (Array.isArray(pkg.licenses))
@@ -100,7 +100,7 @@ export function licenseOf(pkg) {
 }
 
 /** Licence/notice files at the root of a package directory, sorted by name: `[{file, text}]`. */
-export function licenseTexts(dir) {
+function licenseTexts(dir) {
 	return readdirSync(dir)
 		.filter((f) => LICENSE_FILE.test(f))
 		.sort()
@@ -223,7 +223,7 @@ const cleanUrl = (u) =>
 		.replace(/^github:/, 'https://github.com/') ?? null;
 
 /** The Markdown file (deterministic: no dates, no absolute paths). */
-export function renderNotices(notices) {
+function renderNotices(notices) {
 	const lines = [
 		'# Third-party notices',
 		'',

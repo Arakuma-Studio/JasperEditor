@@ -15,12 +15,9 @@ import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	DEFAULT_RENDER_OPTIONS,
-	FontsReadyContext,
-	type FontsReadyState,
 	layerFontFaces,
 	type RenderDoc,
 	SequenceComposition,
-	useFontsReady,
 	useFontsReadyState,
 } from '../src/index.ts';
 
@@ -188,23 +185,7 @@ describe('useFontsReadyState: per-face readiness and the delayRender handle', ()
 		h.unmount();
 		expect(handles().length).toBe(before);
 	});
-
-	it('useFontsReady accepts family names and face queries', () => {
-		const state: FontsReadyState = {
-			allLoaded: false,
-			isLoaded: (family, weight) => family === 'A' && weight !== 700,
-		};
-		const wrapper = ({ children }: { children: React.ReactNode }) => (
-			<FontsReadyContext.Provider value={state}>{children}</FontsReadyContext.Provider>
-		);
-		const ready = (faces: Parameters<typeof useFontsReady>[0]) =>
-			renderHook(() => useFontsReady(faces), { wrapper }).result.current;
-		expect(ready(['A', { family: 'A', weight: 400 }])).toBe(true);
-		expect(ready([{ family: 'A', weight: 700 }])).toBe(false);
-		expect(ready(['B'])).toBe(false);
-	});
 });
-
 describe('layerFontFaces', () => {
 	const fonts = [
 		{ fontId: 'fnt_a', family: 'Alpha', weight: 400, style: 'normal' as const, url: '/a.woff2' },

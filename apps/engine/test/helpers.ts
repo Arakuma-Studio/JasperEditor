@@ -8,8 +8,8 @@ import { fileURLToPath } from 'node:url';
 import type { RegisteredMedia } from '@jasper/api';
 import {
 	applyTransaction,
+	createCounterIdSource,
 	createEmptyProject,
-	createSeededIdSource,
 	defaultRegistries,
 	type IdSource,
 	makeEnvelope,
@@ -125,7 +125,7 @@ export class DocBuilder {
 	readonly ids: IdSource;
 	revision = 0;
 	constructor(preset = 'hd-1080p-30', seed = 11) {
-		this.ids = createSeededIdSource(seed);
+		this.ids = createCounterIdSource(seed);
 		this.doc = createEmptyProject({ ids: this.ids, name: 'Engine test', preset });
 	}
 	get seqId(): string {

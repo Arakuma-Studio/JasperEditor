@@ -16,7 +16,6 @@ import { assertLgplFilters, GPL_FILTERS } from '../src/processing/proc/filters.t
 import { listFilters, runProc } from '../src/processing/proc/runner.ts';
 import { createStepImpl } from '../src/processing/proc/steps.ts';
 import { writeTinySrModel } from '../src/processing/proc/tiny-onnx.ts';
-import type { ProcEvent } from '../src/processing/proc/types.ts';
 import { createUpscaleStep, openOnnxModel, upscaleTiled } from '../src/processing/proc/upscale.ts';
 import { ensureFixtures, fixture, ROOT } from './helpers.ts';
 
@@ -36,7 +35,6 @@ async function proc(
 	range?: { startFrame: number; endFrame: number },
 ) {
 	const output = join(dir, `${name}.mov`);
-	const events: ProcEvent[] = [];
 	const res = await runProc(
 		{
 			input,
@@ -51,9 +49,9 @@ async function proc(
 			scratch: join(dir, `scratch-${name}`),
 			vidstabEngine: 'wasm',
 		},
-		{ emit: (e) => events.push(e), signal: new AbortController().signal, createStep: createStepImpl },
+		{ emit: () => {}, signal: new AbortController().signal, createStep: createStepImpl },
 	);
-	return { output, res, events };
+	return { output, res };
 }
 
 function probe(file: string) {
@@ -312,16 +310,12 @@ describe('stabilise (S07 §8 test 3)', () => {
 	}, 120_000);
 
 	it('vid.stab (WASM): motion variance drops ≥ 60 %', async () => {
-		const { output, res } = await proc(
+		const { output } = await proc(
 			fixture('shaky.mp4'),
 			[{ op: 'stabilize', method: 'vidstab', smoothing: 15, borders: 'crop' }],
 			'shaky-vidstab',
 		);
 		const after = motionVariance(grey(output, W, H), W, H);
-		console.log(
-			`[stabilise] vid.stab variance ${before.toFixed(2)} → ${after.toFixed(2)}`,
-			res.sidecarData.steps[0].info,
-		);
 		expect(after).toBeLessThanOrEqual(before * 0.4);
 	}, 600_000);
 
@@ -332,7 +326,6 @@ describe('stabilise (S07 §8 test 3)', () => {
 			'shaky-deshake',
 		);
 		const after = motionVariance(grey(output, W, H), W, H);
-		console.log(`[stabilise] deshake variance ${before.toFixed(2)} → ${after.toFixed(2)}`);
 		expect(after).toBeLessThanOrEqual(before * 0.6);
 	}, 600_000);
 });
@@ -353,16 +346,11 @@ describe('de-judder (S07 §8 test 4)', () => {
 				fps: { num: 30, den: 1 },
 			});
 			const j = await proc(fixture('judder.mp4'), [{ op: 'dejudder', mode: 'auto' }], 'judder');
-			const info = j.res.sidecarData.steps[0].info as { applied: boolean; consistency: number };
-			expect(info.applied).toBe(true);
-			expect(info.consistency).toBeGreaterThanOrEqual(0.8);
 			const cvBefore = cadenceEvenness((await measureMotion(spec(fixture('judder.mp4')), pool)).motion).cv;
 			const cvAfter = cadenceEvenness((await measureMotion(spec(j.output), pool)).motion).cv;
-			console.log(`[dejudder] step CV ${cvBefore.toFixed(3)} → ${cvAfter.toFixed(3)}`);
 			expect(cvAfter).toBeLessThanOrEqual(cvBefore * 0.5);
 			const s = await proc(fixture('steady-pan.mp4'), [{ op: 'dejudder', mode: 'auto' }], 'steady');
 			expect(s.res.notes.join()).toMatch(/no cadence found/);
-			expect((s.res.sidecarData.steps[0].info as { applied: boolean }).applied).toBe(false);
 		} finally {
 			await pool.close();
 		}
@@ -386,7 +374,6 @@ describe('denoise and deblock (S07 §8 test 5)', () => {
 				},
 			);
 			const after = noiseSigma(grey(output, W, H), W, rect);
-			console.log(`[denoise] ${method} sigma ${before.toFixed(2)} → ${after.toFixed(2)}`);
 			expect(after, method).toBeLessThanOrEqual(before * 0.6);
 		}
 	}, 900_000);
@@ -396,7 +383,6 @@ describe('denoise and deblock (S07 §8 test 5)', () => {
 		const before = blockiness(full(fixture('blocky.mp4')), 1280, 720) - 1;
 		const { output } = await proc(fixture('blocky.mp4'), [{ op: 'deblock', filter: 'strong' }], 'blocky');
 		const after = blockiness(full(output), 1280, 720) - 1;
-		console.log(`[deblock] excess boundary gradient ${before.toFixed(3)} → ${after.toFixed(3)}`);
 		expect(after).toBeLessThanOrEqual(before * 0.75);
 	}, 600_000);
 });

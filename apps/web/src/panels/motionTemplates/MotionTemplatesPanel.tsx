@@ -26,9 +26,9 @@ import { PreviewThumb } from './PreviewThumb.tsx';
 import { RemotionTab } from './RemotionTab.tsx';
 
 /** Engine filter of the Templates tab (S11:ATP-007 adds `anime`). */
-export type EngineFilter = 'all' | 'fframes' | 'anime';
+type EngineFilter = 'all' | 'fframes' | 'anime';
 
-export type GalleryEntry = {
+type GalleryEntry = {
 	ref: MgTemplateRef;
 	name: string;
 	category: string;
@@ -44,9 +44,9 @@ export type GalleryEntry = {
 };
 
 /** Frame rate of the gallery previews. */
-export const PREVIEW_FPS = 30;
+const PREVIEW_FPS = 30;
 /** Composition size of the gallery previews (16:9; templates fit their design canvas into it). */
-export const PREVIEW_SIZE = { width: 640, height: 360 } as const;
+const PREVIEW_SIZE = { width: 640, height: 360 } as const;
 
 type NullableStore = {
 	getState(): SessionState | null;
@@ -56,8 +56,8 @@ const NO_SESSION_STORE: NullableStore = { getState: () => null, subscribe: () =>
 
 const ASPECTS: Record<string, string> = { '1920x1080': '16:9', '1080x1920': '9:16', '1080x1080': '1:1' };
 
-/** Merges the TS catalog with the engine's (native flags of fframes templates); pure for tests. */
-export function galleryEntries(engineTemplates: MgTemplateCatalogEntry[] | null): GalleryEntry[] {
+/** Merges the TS catalog with the engine's native flags for fframes templates. */
+function galleryEntries(engineTemplates: MgTemplateCatalogEntry[] | null): GalleryEntry[] {
 	return mgRegistry.definitions().map((def) => {
 		const remote = engineTemplates?.find((t) => t.id === def.id && t.version === def.version);
 		const anime = isAnimeTemplate(def);
@@ -77,14 +77,14 @@ export function galleryEntries(engineTemplates: MgTemplateCatalogEntry[] | null)
 }
 
 /** Poster frame of a template at the preview rate: `posterAt` (anime) or the middle of its default length. */
-export function posterFrameOf(def: AnyMgTemplate, fps = PREVIEW_FPS): number {
+function posterFrameOf(def: AnyMgTemplate, fps = PREVIEW_FPS): number {
 	const duration = Math.max(1, Math.round(def.defaultDurationSeconds * fps));
 	const at =
 		isAnimeTemplate(def) && def.posterAt !== undefined ? def.posterAt : def.defaultDurationSeconds / 2;
 	return Math.min(duration - 1, Math.max(0, Math.round(at * fps)));
 }
 
-export function filterEntries(
+function filterEntries(
 	entries: GalleryEntry[],
 	f: { query: string; category: string | null; engine: EngineFilter },
 ): GalleryEntry[] {
@@ -99,7 +99,7 @@ export function filterEntries(
 }
 
 /** Static preview: the twin at 50 % of the default duration, 16:9 canvas. */
-export function previewSvg(def: AnySvgMgTemplate): string {
+function previewSvg(def: AnySvgMgTemplate): string {
 	const fps = 30;
 	const duration = Math.max(1, Math.round(def.defaultDurationSeconds * fps));
 	return def.renderSvg(

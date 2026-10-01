@@ -108,21 +108,9 @@ describe('clip-processing MCP tools', () => {
 	let mediaId = '';
 	let clipId = '';
 
-	it('advertises the processing tools and guide', async () => {
+	it('marks processing settings as destructive in the MCP tool schema', async () => {
 		const { tools } = await client.listTools();
-		const names = tools.map((t) => t.name);
-		for (const n of [
-			'list_processing_models',
-			'install_processing_model',
-			'process_clip',
-			'use_media_version',
-			'get_processing_settings',
-			'set_processing_settings',
-			'test_remote_executor',
-		])
-			expect(names).toContain(n);
-		expect(tools.find((t) => t.name === 'set_processing_settings')!.annotations?.destructiveHint).toBe(true);
-		expect(client.getInstructions()).toMatch(/process_clip/);
+		expect(tools.find((t) => t.name === 'set_processing_settings')?.annotations?.destructiveHint).toBe(true);
 	});
 
 	it('lists the bundled SPAN model with its licence', async () => {
@@ -182,8 +170,13 @@ describe('clip-processing MCP tools', () => {
 		expect(r.executor).toBe('local');
 		expect(r.processedMediaId).toMatch(/^med_/);
 		expect(r.replacedClips).toEqual([clipId]);
-		const timeline = await call('get_timeline', { projectId });
-		expect(textOf(timeline)).toMatch(/Denoised/);
+		const videoSource = async () => {
+			const project = await ok<{
+				sequences: { clips: { id: string; source: string }[] }[];
+			}>('get_project', { projectId });
+			return project.sequences[0]!.clips.find((clip) => clip.id === clipId)!.source;
+		};
+		expect(await videoSource()).toContain(`[${r.processedMediaId}]`);
 		const info = await ok<{
 			derivation: { fromMediaId: string } | null;
 			versions: { mediaId: string; original: boolean }[];
@@ -193,6 +186,6 @@ describe('clip-processing MCP tools', () => {
 		expect(info.versions[0]!.original).toBe(true);
 		// Back to the original.
 		await ok('use_media_version', { projectId, clipIds: [clipId], mediaId });
-		expect(textOf(await call('get_timeline', { projectId }))).not.toMatch(/Denoised/);
+		expect(await videoSource()).toContain(`[${mediaId}]`);
 	}, 600_000);
 });

@@ -11,7 +11,7 @@ function currentSwEnv(): SwEnv {
 }
 
 /** PROD, not desktop, and the browser supports service workers. */
-export function shouldRegisterServiceWorker(env: SwEnv = currentSwEnv()): boolean {
+function shouldRegisterServiceWorker(env: SwEnv = currentSwEnv()): boolean {
 	return env.prod && !env.desktop && env.supported;
 }
 

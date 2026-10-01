@@ -244,11 +244,10 @@ export class LayerBakeService {
 		{ refs: number; browser: Promise<SharedRenderBrowser | null> | null }
 	>();
 	/**
-	 * Bakes rendered / reused / joined (rendered for another caller at the same time) since start, shared browsers
-	 * opened (tests, logs).
+	 * Bakes rendered / reused / joined (rendered for another caller at the same time) since start.
 	 */
-	readonly stats = { rendered: 0, reused: 0, joined: 0, graded: 0, clippedFallbacks: 0, browsers: 0 };
-	/** How the bakes of an export run (mutable: tests and benchmarks switch it). */
+	readonly stats = { rendered: 0, reused: 0, joined: 0 };
+	/** How the bakes of an export run. */
 	parallelism: BakeParallelism;
 
 	constructor(private readonly o: LayerBakeOptions) {
@@ -892,10 +891,7 @@ export class LayerBakeService {
 		const s = group ? this.sessions.get(group) : undefined;
 		if (!s) return Promise.resolve(null);
 		s.browser ??= this.core.remotion.openSharedBrowser().then(
-			(b) => {
-				this.stats.browsers++;
-				return b;
-			},
+			(b) => b,
 			(e) => {
 				this.o.log?.(`layer-bake: no shared render browser (${(e as Error).message}); one per bake`);
 				return null;
@@ -1034,7 +1030,6 @@ export class LayerBakeService {
 		if (rect && plan.fullDoc && (await this.clippedAtBorder(ff, tmp, rect, seq, ctx))) {
 			// The layer drew past the planned crop (LBK-005 safety net): render the whole frame instead.
 			ctx.log(`layer-bake: ${plan.clipId} touches the crop border; re-rendering full frame`);
-			this.stats.clippedFallbacks++;
 			rect = null;
 			await render(plan.fullDoc);
 		}
@@ -1247,7 +1242,6 @@ export class LayerBakeService {
 			material: grade.material,
 		};
 		await atomicWriteJson(join(dir, 'meta.json'), meta, true);
-		this.stats.graded++;
 		ctx.progress(1, { stage: 'Done' });
 		if (outputs.includes('preview'))
 			return {

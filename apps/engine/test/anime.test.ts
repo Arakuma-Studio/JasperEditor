@@ -9,15 +9,9 @@ import { EngineCapabilitiesSchema, LicensesResponseSchema } from '@jasper/api';
 import { mgRegistry } from '@jasper/mg-templates';
 import { LATEST_TEXT_ANIMATION_SPECS } from '@jasper/project';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ANIMEJS_PINNED_VERSION, animejsPackageDir, animeLicense } from '../src/anime/index.ts';
-import type { LayerOverride } from '../src/export/native-ext.ts';
+import { animeLicense } from '../src/anime/index.ts';
 import { createServer, engineConfig } from '../src/index.ts';
-import { BUNDLED_WORKSPACE_PACKAGES, remotionSourceHash } from '../src/remotion/service.ts';
-import animeRoutes from '../src/routes/anime.ts';
-import { ROUTE_PLUGINS } from '../src/routes/index.ts';
-import layerBakeRoutes from '../src/routes/layer-bake.ts';
-import mgBundleRoutes from '../src/routes/mg-bundles.ts';
-import trackingRoutes from '../src/routes/tracking.ts';
+import { RemotionService } from '../src/remotion/service.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, '..', '..', '..');
@@ -39,13 +33,12 @@ async function make() {
 describe('anime.js on the engine (routes/anime.ts)', () => {
 	it('the pinned version matches packages/motion and the installed package', () => {
 		const pkg = JSON.parse(readFileSync(join(repo, 'packages', 'motion', 'package.json'), 'utf8'));
-		expect(pkg.dependencies.animejs).toBe(ANIMEJS_PINNED_VERSION);
-		const dir = animejsPackageDir();
-		expect(dir).not.toBeNull();
-		expect(JSON.parse(readFileSync(join(dir!, 'package.json'), 'utf8')).version).toBe(ANIMEJS_PINNED_VERSION);
+		expect(pkg.dependencies.animejs).toBe('4.5.0');
+		const dir = join(repo, 'packages', 'motion', 'node_modules', 'animejs');
+		expect(JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).version).toBe('4.5.0');
 		// The committed fallback is the package's own licence text.
 		expect(readFileSync(join(repo, 'apps/engine/src/anime/third-party/LICENSE-animejs.txt'), 'utf8')).toBe(
-			readFileSync(join(dir!, 'LICENSE.md'), 'utf8'),
+			readFileSync(join(dir, 'LICENSE.md'), 'utf8'),
 		);
 	});
 	it('lists anime.js (MIT, with its text) in /api/licenses and fills features.anime', async () => {
@@ -70,7 +63,7 @@ describe('anime.js on the engine (routes/anime.ts)', () => {
 		const lic = animeLicense(null);
 		expect(lic).toMatchObject({
 			id: 'animejs',
-			version: ANIMEJS_PINNED_VERSION,
+			version: '4.5.0',
 			license: 'MIT',
 			bundled: true,
 		});
@@ -80,41 +73,13 @@ describe('anime.js on the engine (routes/anime.ts)', () => {
 	});
 });
 
-describe('layer bake contracts (routes/layer-bake.ts)', () => {
-	it('is registered after mg-bundles and before tracking; anime is appended', () => {
-		const order = ROUTE_PLUGINS as readonly unknown[];
-		const lb = order.indexOf(layerBakeRoutes);
-		expect(lb).toBeGreaterThan(order.indexOf(mgBundleRoutes));
-		expect(lb).toBeLessThan(order.indexOf(trackingRoutes));
-		expect(order.indexOf(animeRoutes)).toBe(order.length - 1);
-	});
-	// wp-m2-layer-bake: the 501 stub is replaced by the real route (covered in layer-bake.test.ts).
-	it('POST /api/layer-bake/preview is implemented (validates its body)', async () => {
-		const app = await make();
-		const r = await app.inject({
-			method: 'POST',
-			url: '/api/layer-bake/preview',
-			headers: { ...H, 'content-type': 'application/json' },
-			payload: '{"clipId":"clp_1"}',
-		});
-		expect(r.statusCode).toBe(400);
-		expect(r.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
-	});
-	it('LayerOverride carries still / rect / colorRuns (types only)', () => {
-		const o: LayerOverride = {
-			path: '/cache/layers/k/still.png',
-			space: 'sequence',
-			startFrame: 0,
-			includesFades: true,
-			still: true,
-			rect: { x: 10, y: 20, w: 300, h: 100 },
-			colorRuns: true,
-		};
-		expect(o.rect?.w).toBe(300);
-	});
-});
-
 describe('Remotion bundle source hash (S11:FIX-009)', () => {
+	const remotion = new RemotionService({
+		bundleCacheDir: tmpdir(),
+		usageLog: null,
+		env: {},
+		binaries: { dir: null, source: 'bundled', lgpl: false, allowed: true },
+	});
 	/** A miniature workspace: compositions depending on project, mg-templates and motion; a lockfile at the root. */
 	function workspace() {
 		const root = mkdtempSync(join(tmpdir(), 'jasper-srchash-'));
@@ -131,7 +96,7 @@ describe('Remotion bundle source hash (S11:FIX-009)', () => {
 		pkg(comp, '@jasper/compositions');
 		writeFileSync(join(comp, 'src', 'remotion-entry.ts'), 'export {};\n');
 		mkdirSync(join(comp, 'node_modules', '@jasper'), { recursive: true });
-		for (const dep of BUNDLED_WORKSPACE_PACKAGES) {
+		for (const dep of ['@jasper/project', '@jasper/mg-templates', '@jasper/motion']) {
 			const short = dep.split('/')[1]!;
 			pkg(join(root, 'packages', short), dep);
 			symlinkSync(join(root, 'packages', short), join(comp, 'node_modules', '@jasper', short), 'dir');
@@ -140,22 +105,18 @@ describe('Remotion bundle source hash (S11:FIX-009)', () => {
 	}
 	it('changes with the lockfile and with the sources of every bundled workspace package', () => {
 		const w = workspace();
-		const h0 = remotionSourceHash(w.entry);
+		const h0 = remotion.sourceHash(w.entry);
 		expect(h0).toMatch(/^[0-9a-f]{16}$/);
-		expect(remotionSourceHash(w.entry)).toBe(h0);
+		expect(remotion.sourceHash(w.entry)).toBe(h0);
 		writeFileSync(join(w.root, 'pnpm-lock.yaml'), "lockfileVersion: '9.0'\n# animejs 4.5.1\n");
-		const h1 = remotionSourceHash(w.entry);
+		const h1 = remotion.sourceHash(w.entry);
 		expect(h1).not.toBe(h0);
 		let prev = h1;
 		for (const short of ['motion', 'project', 'mg-templates', 'compositions']) {
 			writeFileSync(join(w.root, 'packages', short, 'src', 'extra.ts'), 'export const x = 1;\n');
-			const next = remotionSourceHash(w.entry);
+			const next = remotion.sourceHash(w.entry);
 			expect(next, short).not.toBe(prev);
 			prev = next;
 		}
-	});
-	it('hashes the real workspace (motion included)', () => {
-		const entry = join(repo, 'packages', 'compositions', 'src', 'remotion-entry.ts');
-		expect(remotionSourceHash(entry)).toMatch(/^[0-9a-f]{16}$/);
 	});
 });

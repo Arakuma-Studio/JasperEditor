@@ -13,7 +13,7 @@ import { LATEST_TEXT_ANIMATION_SPECS } from '@jasper/project';
 const here = dirname(fileURLToPath(import.meta.url));
 
 /** The pin of `packages/motion/package.json` (tested); used when the package cannot be resolved (packaged). */
-export const ANIMEJS_PINNED_VERSION = '4.5.0';
+const ANIMEJS_PINNED_VERSION = '4.5.0';
 
 /** Directory of the package that `fromPackageJson`'s package resolves `name` to, or null. */
 function packageRoot(fromPackageJson: string, name: string): string | null {
@@ -34,7 +34,7 @@ function packageRoot(fromPackageJson: string, name: string): string | null {
 }
 
 /** The installed anime.js (dev/workspace): compositions → @jasper/motion → animejs. Null in packaged builds. */
-export function animejsPackageDir(): string | null {
+function animejsPackageDir(): string | null {
 	const compositions = packageRoot(join(here, 'x.js'), '@jasper/compositions');
 	const motion = compositions && packageRoot(join(compositions, 'package.json'), '@jasper/motion');
 	return motion ? packageRoot(join(motion, 'package.json'), 'animejs') : null;

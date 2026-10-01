@@ -91,7 +91,7 @@ export const CLIPBOARD_CUSTOM_FORMAT = 'application/x-jasper-clipboard';
 /** How Electron's clipboard addresses that raw OS format. */
 export const ELECTRON_CLIPBOARD_FORMAT = `electron application/osclipboard;format="${CLIPBOARD_CUSTOM_FORMAT}"`;
 /** Same cap as the payload parser (S01:CLB-009). */
-export const CLIPBOARD_MAX_BYTES = 20 * 1024 * 1024;
+const CLIPBOARD_MAX_BYTES = 20 * 1024 * 1024;
 
 export type ClipboardWrite = { json: string; html: string; text: string };
 
@@ -111,7 +111,7 @@ export function isClipboardWrite(v: unknown): v is ClipboardWrite {
 }
 
 /** A JSON object with `format: "jasper-clipboard"` (the full schema check happens in the renderer on paste). */
-export function isJasperClipboardJson(json: string): boolean {
+function isJasperClipboardJson(json: string): boolean {
 	try {
 		const o = JSON.parse(json) as { format?: unknown } | null;
 		return !!o && typeof o === 'object' && o.format === 'jasper-clipboard';
@@ -132,7 +132,7 @@ export function clipboardReadResult(raw: unknown): string | null {
 export const CLIPBOARD_FILE_LIST_TYPE =
 	/(^|")(text\/uri-list|public\.file-url|x-special\/gnome-copied-files)("|$)/;
 /** At most this many pasted files are handed to the renderer. */
-export const CLIPBOARD_MAX_FILES = 500;
+const CLIPBOARD_MAX_FILES = 500;
 
 /**
  * Absolute local paths of a clipboard file list: `text/uri-list` / `public.file-url` lines (`#` comments) or

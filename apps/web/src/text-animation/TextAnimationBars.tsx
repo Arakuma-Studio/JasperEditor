@@ -17,7 +17,7 @@ import type { InspectorOps } from '../panels/properties/lib/ops.ts';
  * inverse of the proportional compression, so a dragged edge tracks the pointer even while the windows are
  * compressed. Clamped to the longest window the clip can show.
  */
-export function storedFramesForWindow(
+function storedFramesForWindow(
 	duration: number,
 	side: TextAnimationSide,
 	shown: number,

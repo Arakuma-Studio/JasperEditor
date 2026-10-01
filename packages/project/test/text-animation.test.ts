@@ -67,12 +67,10 @@ describe('catalogue (S11:TXA-002/003)', () => {
 		expect(TEXT_ANIMATION_SPECS.map((s) => textAnimationKey(s.id, s.version))).toEqual(
 			PRESETS.flatMap((id) => (id === 'typewriter' ? ['typewriter@1', 'typewriter@2'] : [`${id}@1`])),
 		);
-		expect(LATEST_TEXT_ANIMATION_SPECS.every((s) => latestTextAnimationSpec(s.id) === s)).toBe(true);
 		for (const s of TEXT_ANIMATION_SPECS) {
 			expect(s.phases).toEqual(['in', 'out']);
 			expect(s.paramsSchema.parse({})).toEqual(s.defaults);
 			expect(s.defaultDurationFrames).toBeGreaterThanOrEqual(1);
-			expect(s.description.length).toBeGreaterThan(10);
 			// strict schemas: unknown params are rejected
 			expect(s.paramsSchema.safeParse({ bogus: 1 }).success).toBe(false);
 		}

@@ -24,7 +24,7 @@ import {
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { createStore, type StoreApi } from 'zustand/vanilla';
-import { AgentRelayClient, type RelaySocketFactory, type RelayState } from './relay-client.ts';
+import { AgentRelayClient, type RelayState } from './relay-client.ts';
 
 const APPROVAL_TIMEOUT_MS = 60_000;
 const PLAYHEAD_EVENT_INTERVAL_MS = 100; // ≤ 10 Hz (S01:AGT-004)
@@ -87,10 +87,6 @@ export interface JasperAgentApi {
 export type AgentBridgeOptions = {
 	/** Connect WS /agent (off for in-memory demo sessions and tests). */
 	relay?: boolean;
-	relayUrl?: string;
-	socketFactory?: RelaySocketFactory;
-	approvalTimeoutMs?: number;
-	now?(): number;
 };
 
 let activitySeq = 0;
@@ -108,22 +104,19 @@ export class AgentBridge {
 		{ resolve(d: 'approved' | 'denied' | 'timeout'): void; timer: ReturnType<typeof setTimeout> }
 	>();
 	private readonly disposers: (() => void)[] = [];
-	private readonly now: () => number;
 	private schemaCache: Record<string, unknown> | null = null;
 	private disposed = false;
 
 	constructor(
 		readonly session: EditorSession,
 		readonly engine: EngineClient | null,
-		private readonly opts: AgentBridgeOptions = {},
+		opts: AgentBridgeOptions = {},
 	) {
-		this.now = opts.now ?? (() => Date.now());
 		this.store = createStore<AgentBridgeState>(() => ({ activity: [], approvals: [], relay: 'off' }));
 		this.relay =
-			opts.relay && (opts.relayUrl || engine)
+			opts.relay && engine
 				? new AgentRelayClient({
-						url: opts.relayUrl ?? engine!.agentWsUrl(),
-						socketFactory: opts.socketFactory,
+						url: engine.agentWsUrl(),
 						hello: () => ({
 							projectId: session.projectId,
 							sessionId: session.sessionId,
@@ -195,7 +188,7 @@ export class AgentBridge {
 		let last = 0;
 		let trailing: ReturnType<typeof setTimeout> | null = null;
 		const fire = () => {
-			last = this.now();
+			last = Date.now();
 			const t = s.transport.getState();
 			const payload = {
 				projectId: s.projectId,
@@ -208,7 +201,7 @@ export class AgentBridge {
 		};
 		const offTransport = s.transport.subscribe((next, prev) => {
 			if (next.frame === prev.frame && next.playing === prev.playing) return;
-			const wait = PLAYHEAD_EVENT_INTERVAL_MS - (this.now() - last);
+			const wait = PLAYHEAD_EVENT_INTERVAL_MS - (Date.now() - last);
 			if (wait <= 0) fire();
 			else if (!trailing)
 				trailing = setTimeout(() => {
@@ -281,7 +274,7 @@ export class AgentBridge {
 		const cap = resolveCaptureArgs(env, args);
 		const envelope = makeEnvelope(env.doc, {
 			revision: env.revision,
-			savedAt: new Date(this.now()).toISOString(),
+			savedAt: new Date(Date.now()).toISOString(),
 			platform: 'web',
 		});
 		let job = await this.engine.requestStill({
@@ -290,9 +283,9 @@ export class AgentBridge {
 			frame: cap.frame,
 			width: cap.width,
 		});
-		const until = this.now() + 60_000;
+		const until = Date.now() + 60_000;
 		while (!['succeeded', 'failed', 'cancelled', 'interrupted'].includes(job.state)) {
-			if (this.now() > until)
+			if (Date.now() > until)
 				throw new AgentQueryError('E_NOT_IMPLEMENTED', 'Timed out waiting for the still');
 			await new Promise((r) => setTimeout(r, 250));
 			job = await this.engine.getJob(job.id);
@@ -396,7 +389,7 @@ export class AgentBridge {
 	) {
 		const entry: ActivityEntry = {
 			id: ++activitySeq,
-			time: this.now(),
+			time: Date.now(),
 			label: tx.label,
 			agent: tx.origin.agent,
 			via,
@@ -442,8 +435,8 @@ export class AgentBridge {
 		tx: ReturnType<typeof normalizeAgentTransaction>,
 		reasons: string[],
 	): Promise<'approved' | 'denied' | 'timeout'> {
-		const timeoutMs = this.opts.approvalTimeoutMs ?? APPROVAL_TIMEOUT_MS;
-		const approvalId = `apr_local_${this.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+		const timeoutMs = APPROVAL_TIMEOUT_MS;
+		const approvalId = `apr_local_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 		const approval: PendingApproval = {
 			approvalId,
 			projectId: this.session.projectId,
@@ -451,7 +444,7 @@ export class AgentBridge {
 			agent: tx.origin.agent,
 			reasons,
 			commandCount: tx.commands.length,
-			expiresAt: new Date(this.now() + timeoutMs).toISOString(),
+			expiresAt: new Date(Date.now() + timeoutMs).toISOString(),
 			summary: summarizeTransaction(tx),
 			commands: tx.commands.slice(0, 50),
 			source: 'local',
@@ -494,14 +487,6 @@ export class AgentBridge {
 		const sent = this.relay?.sendEvent('agent.approval.resolve', { approvalId, decision }) ?? false;
 		if (sent) this.removeApproval(approvalId, decision);
 		return sent;
-	}
-
-	/** Approve every pending card. */
-	approveAll(): number {
-		let n = 0;
-		for (const a of [...this.store.getState().approvals])
-			if (this.resolveApproval(a.approvalId, 'approved')) n++;
-		return n;
 	}
 
 	// ------------------------------------------------------------ relay

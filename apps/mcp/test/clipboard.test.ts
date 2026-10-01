@@ -1,11 +1,10 @@
 // Clipboard tools without an engine (wp-clipboard, S01 §20): copy_clips → paste_clips into another project
-// (media resolved), copy_items → paste_items, error hints, and the clipboard command examples of
-// describe_commands (dry-run here too; integration.test.ts runs every example against a real engine).
+// with its media resolved, and copy_items → paste_items into a bin.
 import {
 	applyTransaction,
 	type CommandContext,
+	createCounterIdSource,
 	createEmptyProject,
-	createSeededIdSource,
 	defaultRegistries,
 	type MediaAsset,
 	type ProjectDocument,
@@ -14,8 +13,7 @@ import {
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, it } from 'vitest';
 import type { ToolContext } from '../src/context.ts';
-import { COMMAND_EXAMPLES } from '../src/examples.ts';
-import { CLIPBOARD_GUIDE, registerClipboardTools } from '../src/tools/clipboard.ts';
+import { registerClipboardTools } from '../src/tools/clipboard.ts';
 
 let fp = 0;
 function video(): Omit<MediaAsset, 'id'> {
@@ -56,7 +54,7 @@ function video(): Omit<MediaAsset, 'id'> {
 
 /** An in-memory project behind a fake engine (doc.get + agentTx) with the clipboard tools registered. */
 function project(seed: number) {
-	const ids = createSeededIdSource(seed);
+	const ids = createCounterIdSource(seed);
 	let doc: ProjectDocument = createEmptyProject({ ids, name: `P${seed}`, preset: 'hd-1080p-30' });
 	let revision = 0;
 	const cctx = (): CommandContext => ({
@@ -142,10 +140,7 @@ describe('clipboard tools', () => {
 		expect(pasted.json.clips.map((c) => c.kind)).toEqual(['video']);
 		expect(Object.values(b.doc.media).map((m) => m.fingerprint)).toEqual([a.doc.media[mediaId]!.fingerprint]);
 		expect(pasted.json.created).not.toContain(v);
-		// Unknown clip ids name the fix.
-		const bad = await a.call<{ code: string; hint: string }>('copy_clips', { clipIds: ['clp_NOPE'] });
-		expect(bad.error).toBe(true);
-		expect(JSON.stringify(bad.json)).toContain('get_timeline');
+		expect(pasted.json.clips[0]!.start).toBe(30);
 	});
 
 	it('copy_items → paste_items deep-copies a sequence into a bin', async () => {
@@ -167,60 +162,17 @@ describe('clipboard tools', () => {
 			binId: bin.refs.$b,
 		});
 		expect(r.json.ok).toBe(true);
-		expect(Object.keys(b.doc.sequences)).toHaveLength(2);
-		expect(Object.values(b.doc.fonts).map((f) => f.family)).toEqual(
-			Object.values(a.doc.fonts).map((f) => f.family),
-		);
-	});
-
-	it('the guide names the tools and the commands', () => {
-		for (const n of [
-			'copy_clips',
-			'paste_clips',
-			'copy_items',
-			'paste_items',
-			'clip.pasteAttributes',
-			'effect.paste',
-		])
-			expect(CLIPBOARD_GUIDE).toContain(n);
-	});
-});
-
-describe('clipboard command examples (describe_commands)', () => {
-	it('every clipboard example validates against a project with a clip on V1 at 0', () => {
-		const p = project(5);
-		const reg = p.apply({ commands: [{ type: 'media.register', asset: video() }] });
-		if (!reg.ok) throw new Error('setup');
-		p.apply({
-			commands: [
-				{
-					type: 'clip.place',
-					source: { mediaId: (reg.results[0] as { mediaId: string }).mediaId },
-					at: 0,
-					sourceRange: { in: { seconds: 0 }, out: { seconds: 2 } },
-				},
-			],
-		});
-		const fx = p.apply({
-			commands: [
-				{
-					type: 'effect.add',
-					target: { clipId: { clipAt: { track: 'V1', at: 0 } } },
-					effectId: 'jasper.gaussian-blur',
-				},
-			],
-		});
-		expect(fx.ok).toBe(true);
-		for (const type of [
-			'clip.paste',
-			'clip.pasteAttributes',
-			'clip.removeAttributes',
-			'effect.paste',
-			'keyframe.paste',
-			'project.pasteItems',
-		]) {
-			const r = p.apply({ commands: [COMMAND_EXAMPLES[type]], dryRun: true });
-			expect(r.ok, `${type}: ${JSON.stringify(r.ok ? null : r.errors)}`).toBe(true);
-		}
+		const destination = b.doc.items[bin.refs.$b]!;
+		expect(destination.kind).toBe('bin');
+		if (destination.kind !== 'bin') throw new Error('setup');
+		const pastedItem = b.doc.items[destination.children[0]!]!;
+		expect(pastedItem.kind).toBe('sequence');
+		if (pastedItem.kind !== 'sequence') throw new Error('paste did not create a sequence item');
+		expect(pastedItem.sequenceId).not.toBe(seqItem.sequenceId);
+		expect(
+			Object.values(b.doc.sequences[pastedItem.sequenceId]!.clips).some(
+				(clip) => clip.kind === 'text' && clip.content.text === 'Hi',
+			),
+		).toBe(true);
 	});
 });

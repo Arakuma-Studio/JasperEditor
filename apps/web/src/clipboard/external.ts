@@ -16,7 +16,7 @@ import { type ExternalContent, imageExtension } from './system.ts';
 /** Default length of a pasted text clip (CLB-010; the default graphic duration of XF-060). */
 export const PASTED_TEXT_SECONDS = 5;
 /** Longer clipboard text is cut (a text clip is a title, not a document). */
-export const MAX_PASTED_TEXT = 5000;
+const MAX_PASTED_TEXT = 5000;
 
 export type ExternalPasteEnv = {
 	session: EditorSession;
@@ -26,14 +26,14 @@ export type ExternalPasteEnv = {
 };
 
 /** "Pasted image 2026-10-01 14.03.22" in local time (CLB-010). */
-export function pastedImageName(now: Date): string {
+function pastedImageName(now: Date): string {
 	const p = (n: number) => String(n).padStart(2, '0');
 	const date = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
 	return `Pasted image ${date} ${p(now.getHours())}.${p(now.getMinutes())}.${p(now.getSeconds())}`;
 }
 
 /** Clipboard text as a title: unified line ends, no trailing blanks, capped at MAX_PASTED_TEXT characters. */
-export function normalizePastedText(raw: string): { text: string; truncated: boolean } {
+function normalizePastedText(raw: string): { text: string; truncated: boolean } {
 	const text = raw
 		.replace(/\r\n?/g, '\n')
 		.replace(/[ \t]+$/gm, '')
@@ -57,7 +57,7 @@ export function lowestTargetedTrack(
 }
 
 /** The `clip.addText` command for pasted text (5 s at the playhead, default centred transform). */
-export function pastedTextCommand(seq: Sequence, track: string, at: number, text: string): Command {
+function pastedTextCommand(seq: Sequence, track: string, at: number, text: string): Command {
 	const rate = seq.settings.frameRate;
 	const duration = Math.max(1, Math.round((PASTED_TEXT_SECONDS * rate.num) / rate.den));
 	return {

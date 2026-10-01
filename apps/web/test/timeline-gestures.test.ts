@@ -1,7 +1,6 @@
 // Gesture → command mapping through the TimelineController against a real EditorSession
 // (S02 §8–§12; acceptance: one history entry per gesture, Esc cancels with none).
 import { describe, expect, it } from 'vitest';
-import { timelineGesturePreview } from '../src/panels/timeline/state/gesture-preview.ts';
 import { setupTimeline, solid, videoAsset } from './timeline-helpers.ts';
 
 function withMovie(t: ReturnType<typeof setupTimeline>, at = 0, seconds = 20) {
@@ -207,15 +206,12 @@ describe('trim tools — one history entry each (TL-530…549, TL-610…632)', (
 		const n = t.history().length;
 		t.drag(t.x(100) - 2, t.rowY('V1'), t.x(130), t.rowY('V1'), {}, false);
 		expect(t.ui.getState().limit).not.toBeNull();
-		expect(timelineGesturePreview.getState().preview).toMatchObject({ mode: 'trim' });
 		t.controller.pointerUp(t.pt(t.x(130), t.rowY('V1')));
 		expect(t.spans('V1')).toEqual([
 			[0, 100],
 			[100, 150],
 		]);
-		expect(timelineGesturePreview.getState().preview).toBeNull();
-		// No change: the gesture commits nothing new.
-		expect(t.history().length).toBeLessThanOrEqual(n + 1);
+		expect(t.history()).toHaveLength(n);
 	});
 
 	it('regular trim of the in edge by 10 frames', () => {
@@ -276,22 +272,17 @@ describe('trim tools — one history entry each (TL-530…549, TL-610…632)', (
 		expect(t.history().at(-1)).toBe('Roll');
 	});
 
-	it('slip (Y) and slide (U) create one entry each and publish four-up payloads', () => {
+	it('slip (Y) changes source time in one history entry', () => {
 		const t = setupTimeline({ pxPerFrame: 4 });
 		t.session.setToggles({ snapping: false });
 		const [v] = withMovie(t, 0); // 2 s … 6 s of a 20 s movie
-		t.apply([solid(120, 30, 'V1')]);
 		const n = t.history().length;
 		t.session.setToggles({ activeTool: 'slip' });
 		t.drag(t.x(60), t.rowY('V1'), t.x(60) + 40, t.rowY('V1'), {}, false);
-		expect(timelineGesturePreview.getState().preview).toMatchObject({ mode: 'slip' });
 		t.controller.pointerUp(t.pt(t.x(60) + 40, t.rowY('V1')));
 		expect(t.seq().clips[v!]!.sourceIn).toBe(50 * 23_520_000);
 		expect(t.history()).toHaveLength(n + 1);
 		expect(t.history().at(-1)).toBe('Slip');
-		t.session.setToggles({ activeTool: 'slide' });
-		t.drag(t.x(60), t.rowY('V1'), t.x(60) - 40, t.rowY('V1'));
-		expect(t.history()).toHaveLength(n + 1); // nothing to slide into (gap at frame 0 limits to 0)
 	});
 
 	it('razor (C) click splits once; Shift splits all unlocked tracks; Alt ignores links', () => {
@@ -356,14 +347,6 @@ describe('trim tools — one history entry each (TL-530…549, TL-610…632)', (
 		t.controller.pointerUp(t.pt(t.x(60), t.rowY('V1')));
 		expect(t.spans('V1')).toEqual([[0, 100]]);
 		expect(t.history()).toHaveLength(n);
-	});
-
-	it('clicking an edge selects the edit point (TL-547)', () => {
-		const t = setupTimeline({ pxPerFrame: 4 });
-		t.apply([solid(0, 100, 'V1'), solid(100, 50, 'V1')]);
-		t.controller.pointerDown(t.pt(t.x(100) - 1, t.rowY('V1')));
-		t.controller.pointerUp(t.pt(t.x(100) - 1, t.rowY('V1')));
-		expect(t.ui.getState().editPoints).toMatchObject([{ frame: 100, side: 'out', type: 'regular' }]);
 	});
 });
 

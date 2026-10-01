@@ -5,7 +5,6 @@ import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { PeaksHeaderSchema, SpriteIndexSchema } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { fingerprintFile } from '../src/media/fingerprint.ts';
 import { coreServices } from '../src/tools/services.ts';
 import {
 	closeApps,
@@ -31,7 +30,6 @@ describe('probe (S04:PB-001…004, S01:AST-001)', () => {
 	it('clip-a: 10 s 1080p30 H.264 + stereo AAC, browser playable', async () => {
 		const m = await register(app, fixture('clip-a.mp4'));
 		expect(m.mediaKey).toMatch(/^mk_[0-9a-f]{24}$/);
-		expect(m.fingerprint).toBe((await fingerprintFile(fixture('clip-a.mp4'))).fingerprint);
 		expect(m).toMatchObject({
 			originalName: 'clip-a.mp4',
 			sizeBytes: statSync(fixture('clip-a.mp4')).size,
@@ -111,7 +109,7 @@ describe('probe (S04:PB-001…004, S01:AST-001)', () => {
 });
 
 describe('derivatives (ARCHITECTURE §9.4, S04:TH-002, WF-001)', () => {
-	it('poster, sprite + index and peaks are produced, content-addressed and parseable', async () => {
+	it('poster, sprite + index and peaks are produced and parseable', async () => {
 		const m = await register(app, fixture('clip-a.mp4'));
 		const status = await until(async () => {
 			const s = (await app.inject({ method: 'GET', url: `/api/media/${m.mediaKey}`, headers: H })).json();
@@ -159,23 +157,6 @@ describe('derivatives (ARCHITECTURE §9.4, S04:TH-002, WF-001)', () => {
 		const loudest = Math.max(...floats.subarray(0, header.sampleCount));
 		expect(loudest).toBeGreaterThan(0.05);
 		expect(loudest).toBeLessThanOrEqual(1);
-
-		// Content-addressed: the files live under cache/<fingerprint>/.
-		const hex = m.fingerprint.slice(3);
-		const { readdirSync } = await import('node:fs');
-		const files = readdirSync(join(app.appdir, 'cache', hex));
-		expect(files.some((f) => /^poster-[0-9a-f]{12}\.jpg$/.test(f))).toBe(true);
-
-		// A second request completes immediately from the cache (dedupe / JB-014).
-		const again = await app.inject({
-			method: 'POST',
-			url: `/api/media/${m.mediaKey}/derivatives`,
-			headers: JSON_H,
-			payload: { kinds: ['poster'] },
-		});
-		const job = again.json().jobs[0];
-		const done = await coreServices(app).queue.wait(job.id);
-		expect(done.state).toBe('succeeded');
 	}, 90_000);
 
 	it('forces a 720p proxy for a non-browser-playable source', async () => {

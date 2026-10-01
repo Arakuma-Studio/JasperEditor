@@ -8,13 +8,11 @@ import { compositionHandlers } from './handlers/composition.ts';
 import { effectHandlers } from './handlers/effect.ts';
 import { keyframeHandlers } from './handlers/keyframe.ts';
 import { m2Handlers } from './handlers/m2.ts';
-import { MG_TEMPLATE_OWNER } from './handlers/mg-template.ts';
 import { paramHandlers } from './handlers/param.ts';
 import { processHandlers } from './handlers/process.ts';
 import { projectHandlers } from './handlers/project.ts';
 import { sequenceHandlers } from './handlers/sequence.ts';
 import { keepShapesCentred, SHAPE_BOX_COMMANDS, SHAPE_OWNER, shapeHandlers } from './handlers/shape.ts';
-import { TEXT_ANIMATION_OWNER } from './handlers/text-animation.ts';
 import { trackerHandlers } from './handlers/tracker.ts';
 import { transitionHandlers } from './handlers/transition.ts';
 import type { Handler, HandlerMap } from './handlers/util.ts';
@@ -150,17 +148,6 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[clipboardHandlers, CLIPBOARD_OWNER],
 	[m2Handlers, 'M2'],
 ];
-
-/**
- * Fields of commands owned by another work package than the command itself (M2, ARCHITECTURE §20.1). Until the
- * owner lands, using the field answers E_NOT_IMPLEMENTED naming the owner.
- */
-export const COMMAND_FIELD_OWNERS: Readonly<Record<string, CommandOwner>> = {
-	'clip.addText.textAnimation': TEXT_ANIMATION_OWNER,
-	'clip.update.textAnimation': TEXT_ANIMATION_OWNER,
-	'clip.update.shape': SHAPE_OWNER,
-	'clip.update.template': MG_TEMPLATE_OWNER,
-};
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
 	const out = {} as Record<CommandType, CatalogEntry>;

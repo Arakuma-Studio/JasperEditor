@@ -160,8 +160,10 @@ export function ScrubbyNumber(props: ScrubbyNumberProps) {
 		if (mixed) next = roundTo(d.accum, precision);
 		else {
 			next = clampValue(d.startValue + d.accum, spec);
-			// Keep the accumulator inside the bounds so reversing direction responds immediately.
-			d.accum = next - d.startValue;
+			// Preserve sub-step movement while keeping the accumulator inside the actual bounds.
+			// Rounding after every pointer event would make Ctrl-drag move too fast.
+			if (spec.min !== undefined && d.startValue + d.accum < spec.min) d.accum = spec.min - d.startValue;
+			if (spec.max !== undefined && d.startValue + d.accum > spec.max) d.accum = spec.max - d.startValue;
 		}
 		if (next === d.live) return;
 		d.live = next;

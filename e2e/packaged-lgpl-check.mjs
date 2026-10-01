@@ -260,6 +260,23 @@ expect(
 	!existsSync(marker),
 	`an ffmpeg from PATH was run: ${existsSync(marker) ? readFileSync(marker, 'utf8') : ''}`,
 );
+const artifactDir = join(root, 'test-results');
+mkdirSync(artifactDir, { recursive: true });
+cpSync(output, join(artifactDir, 'e2e-packaged-lgpl.mp4'));
+writeFileSync(
+	join(artifactDir, 'e2e-packaged-lgpl.json'),
+	JSON.stringify(
+		{
+			ffmpegSource: caps.media.ffmpegSource,
+			license: lic.license,
+			renderPath: result.renderPath,
+			encoder: result.encoder,
+			video,
+		},
+		null,
+		2,
+	),
+);
 log('no ffmpeg/ffprobe from PATH was used');
 log('PASS');
 process.exit(0);

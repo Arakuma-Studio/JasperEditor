@@ -1,6 +1,5 @@
 import { act, cleanup, fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { evaluateExpression, parseEntry } from '../src/panels/properties/controls/ScrubbyNumber.tsx';
 import { PropertiesPanel } from '../src/panels/properties/PropertiesPanel.tsx';
 import { addSolids, clipOf, makeSession, renderWithSession } from './inspector-helpers.tsx';
 
@@ -49,7 +48,7 @@ describe('Properties panel (S03 §14, S05:PRP)', () => {
 		expect(ids.map((id) => scaleOf(session, id).value)).toEqual([50, 80, 100]);
 	});
 
-	it('typed relative entry on a mixed field applies to each clip; absolute sets all', () => {
+	it('typed relative entry changes each clip and an expression sets all clips', () => {
 		const session = makeSession();
 		const ids = addSolids(session, [0, 0]);
 		session.apply({
@@ -76,6 +75,17 @@ describe('Properties panel (S03 §14, S05:PRP)', () => {
 		const rotOf = (id: string) =>
 			(clipOf(session, id) as unknown as { transform: { rotation: Anim } }).transform.rotation.value;
 		expect(ids.map(rotOf)).toEqual([20, 40]);
+		act(() => {
+			fireEvent.pointerDown(screen.getByTestId('prop-transform.rotation'), { clientX: 10, button: 0 });
+			fireEvent.pointerUp(window, { clientX: 10 });
+		});
+		act(() => {
+			fireEvent.change(screen.getByTestId('prop-transform.rotation-input'), {
+				target: { value: '=2*(3+4)' },
+			});
+			fireEvent.keyDown(screen.getByTestId('prop-transform.rotation-input'), { key: 'Enter' });
+		});
+		expect(ids.map(rotOf)).toEqual([14, 14]);
 	});
 
 	it('the ◆ toggle creates a key at the playhead content time and removes it again', () => {
@@ -121,17 +131,5 @@ describe('Properties panel (S03 §14, S05:PRP)', () => {
 		).effects;
 		expect(fx.map((e) => e.effectId)).toEqual(['jasper.crop', 'jasper.gaussian-blur']);
 		expect(fx[0]!.params.left!.value).toBeCloseTo(1, 6);
-	});
-
-	it('parses scrubby arithmetic entries', () => {
-		expect(evaluateExpression('2*(3+4)')).toBe(14);
-		expect(evaluateExpression('1,5')).toBe(1.5);
-		expect(evaluateExpression('2+')).toBeNull();
-		expect(parseEntry('+10')!(5)).toBe(15);
-		expect(parseEntry('-5')!(5)).toBe(0);
-		expect(parseEntry('/2')!(5)).toBe(2.5);
-		expect(parseEntry('=-5')!(99)).toBe(-5);
-		expect(parseEntry('42')!(1)).toBe(42);
-		expect(parseEntry('abc')).toBeNull();
 	});
 });

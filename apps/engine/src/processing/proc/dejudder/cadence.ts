@@ -12,7 +12,7 @@ import type { CvPool } from './pool.ts';
 /** Proxy width of the reference analyser; the moving threshold and the 1080p scaling refer to it. */
 export const ANALYSIS_MAX_WIDTH = 424;
 /** Moving-pair threshold on the local mean step, px at a 424 px wide proxy. */
-export const MOVING_PX_AT_424 = 0.35;
+const MOVING_PX_AT_424 = 0.35;
 
 export type CadenceResult = {
 	/** Absolute index of the first analysed frame (phase reference). */
@@ -55,13 +55,13 @@ function mean(values: number[]): number {
 }
 
 /** `np.convolve(motion, ones(3)/3, 'same')`: 3-tap moving mean with zero padding. */
-export function localMean(motion: readonly number[]): number[] {
+function localMean(motion: readonly number[]): number[] {
 	const n = motion.length;
 	return motion.map((v, i) => ((i > 0 ? motion[i - 1] : 0) + v + (i < n - 1 ? motion[i + 1] : 0)) / 3);
 }
 
 /** Per pair: relative step (motion / local mean) and whether the pair moves (PST-011). */
-export function relativeSteps(
+function relativeSteps(
 	motion: readonly number[],
 	opts: CadenceOptions = {},
 ): { rel: number[]; valid: boolean[]; local: number[] } {
@@ -154,7 +154,7 @@ export function cadenceEvenness(motion: readonly number[], opts: CadenceOptions 
 }
 
 /** Size of the grey analysis proxy for a `width`×`height` input (≤ 424 px wide, even dimensions). */
-export function analysisSize(
+function analysisSize(
 	width: number,
 	height: number,
 	maxWidth = ANALYSIS_MAX_WIDTH,

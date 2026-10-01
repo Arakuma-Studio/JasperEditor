@@ -11,7 +11,6 @@ import {
 	enableAgentBridge,
 	importFiles,
 	query,
-	watchPage,
 } from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -46,7 +45,6 @@ async function undo(): Promise<void> {
 
 test.beforeAll(async ({ browser }) => {
 	page = await browser.newPage();
-	watchPage(page);
 	await enableAgentBridge(page);
 });
 
@@ -99,6 +97,7 @@ test('Process Clip… (denoise) swaps the clip to the processed version in one u
 	// Media Version section of the selected clip shows the processed version.
 	await clipElement(page, videoClip).click({ position: { x: 30, y: 20 } });
 	await expect(page.getByTestId('media-version-info')).toContainText('Denoised');
+	await page.screenshot({ path: 'test-results/e2e-processed-clip.png' });
 
 	// One Undo restores the original (and removes the processed version from the project).
 	await undo();

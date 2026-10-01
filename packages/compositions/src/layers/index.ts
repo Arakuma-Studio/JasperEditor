@@ -33,7 +33,6 @@ export {
 	type MgTemplatePreviewProps,
 } from './MotionGraphicLayer.tsx';
 export { OFFLINE_CARD_COLORS } from './OfflineCard.tsx';
-export { textBlockStyle, textFontFamily } from './TextLayer.tsx';
 export {
 	CompositionLayer,
 	MotionGraphicLayer,

@@ -1,47 +1,16 @@
 // Player page of the render-parity e2e (S11:ANM-014/015), bundled with esbuild and opened in Chrome: mounts the
-// scene or the SequenceComposition in a @remotion/player <Player> at 1:1 and exposes `window.__parity`:
+// SequenceComposition in a @remotion/player <Player> at 1:1 and exposes `window.__parity`:
 // `mount`, `seek(frame)` (resolves once the frame is painted) and `bench` (value-engine cost per frame).
+
+import { getTextAnimationSpec } from '@jasper/project';
 import { Player, type PlayerRef } from '@remotion/player';
 import { type ComponentType, createRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { SequenceComposition } from '../../../compositions/src/SequenceComposition.tsx';
 import { valuesAt } from '../../src/runtime/hooks.ts';
-import {
-	createPausedTimeline,
-	frameToMs,
-	hash32,
-	resolveEase,
-	seekCanonical,
-} from '../../src/runtime/index.ts';
-import { REST_UNIT_VALUES, type TextAnimationImpl } from '../../src/text/index.ts';
-import { riseImpl, SCENE } from '../determinism-fixtures.tsx';
-import { AnimeScene } from './scene.tsx';
-
-/** A typical 4-property preset (opacity, y, blur, scale) with a stagger, for the cost measurement. */
-const fourProps: TextAnimationImpl = {
-	key: 'bench-4@1',
-	unitDefault: 'char',
-	build({ units, durationMs }) {
-		const targets = Array.from({ length: units }, () => ({ ...REST_UNIT_VALUES }));
-		const timeline = createPausedTimeline();
-		const per = durationMs / 3;
-		const step = units > 1 ? (durationMs - per) / (units - 1) : 0;
-		for (const [i, t] of targets.entries())
-			timeline.add(
-				t,
-				{
-					opacity: [0, 1],
-					y: [40, 0],
-					blur: [8, 0],
-					scale: [0.6, 1],
-					duration: per,
-					ease: resolveEase('outExpo'),
-				},
-				i * step,
-			);
-		return { timeline, targets };
-	},
-};
+import { frameToMs, hash32 } from '../../src/runtime/index.ts';
+import { TEXT_ANIMATION_IMPLS } from '../../src/text/index.ts';
+import { PARITY_SCENE } from './doc.ts';
 
 type Stats = { median: number; p95: number; max: number; mean: number };
 const stats = (xs: number[]): Stats => {
@@ -56,58 +25,48 @@ const stats = (xs: number[]): Stats => {
 };
 
 /** Per-frame cost of the value engine for `units` units over a `frames`-frame window (every frame a first visit). */
-function bench(
-	units: number,
-	frames: number,
-	preset: 'rise8' | 'four',
-): { values: Stats; seekOnly: Stats; revisit: Stats } {
-	const impl = preset === 'rise8' ? riseImpl() : fourProps;
+function bench(units: number, frames: number): { values: Stats; revisit: Stats } {
+	const impl = TEXT_ANIMATION_IMPLS['blur@1']!;
+	const spec = getTextAnimationSpec('blur', 1)!;
 	const ctx = {
 		units,
 		side: 'in' as const,
 		durationMs: frameToMs(frames, 30),
-		params: {},
+		params: spec.defaults,
 		seed: hash32('bench', 'text-anim', 'in'),
 		box: { width: 1920, height: 400 },
 	};
 	const values: number[] = [];
-	const seekOnly: number[] = [];
 	const revisit: number[] = [];
 	const built = impl.build(ctx);
-	const raw = impl.build(ctx);
 	for (let f = 0; f < frames; f++) {
 		const ms = frameToMs(f, 30);
-		let t0 = performance.now();
+		const t0 = performance.now();
 		valuesAt(built, ms);
 		values.push(performance.now() - t0);
-		t0 = performance.now();
-		seekCanonical(raw.timeline, ms);
-		seekOnly.push(performance.now() - t0);
 	}
 	for (let f = 0; f < frames; f++) {
 		const t0 = performance.now();
 		valuesAt(built, frameToMs(f, 30));
 		revisit.push(performance.now() - t0);
 	}
-	return { values: stats(values), seekOnly: stats(seekOnly), revisit: stats(revisit) };
+	return { values: stats(values), revisit: stats(revisit) };
 }
 
 const player = createRef<PlayerRef>();
 
-function mount(which: 'scene' | 'sequence', inputProps: Record<string, unknown>) {
+function mount(inputProps: Record<string, unknown>) {
 	const root = document.getElementById('root')!;
 	createRoot(root).render(
 		<Player
 			ref={player}
-			component={
-				(which === 'scene' ? AnimeScene : SequenceComposition) as ComponentType<Record<string, unknown>>
-			}
+			component={SequenceComposition as ComponentType<Record<string, unknown>>}
 			inputProps={inputProps}
-			durationInFrames={SCENE.durationInFrames}
-			fps={SCENE.fps}
-			compositionWidth={SCENE.width}
-			compositionHeight={SCENE.height}
-			style={{ width: SCENE.width, height: SCENE.height }}
+			durationInFrames={PARITY_SCENE.durationInFrames}
+			fps={PARITY_SCENE.fps}
+			compositionWidth={PARITY_SCENE.width}
+			compositionHeight={PARITY_SCENE.height}
+			style={{ width: PARITY_SCENE.width, height: PARITY_SCENE.height }}
 			controls={false}
 			clickToPlay={false}
 		/>,

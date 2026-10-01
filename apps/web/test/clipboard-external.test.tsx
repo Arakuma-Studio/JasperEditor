@@ -7,8 +7,8 @@ import { EngineClient } from '@jasper/engine-client';
 import {
 	buildClipsPayload,
 	type Clip,
+	createCounterIdSource,
 	createEmptyProject,
-	createSeededIdSource,
 	defaultRegistries,
 	encodeClipboardHtml,
 } from '@jasper/project';
@@ -16,16 +16,9 @@ import { EditorSession } from '@jasper/session';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installClipboardEvents } from '../src/clipboard/events.ts';
 import {
-	MAX_PASTED_TEXT,
-	normalizePastedText,
-	pastedImageName,
-	pastedTextCommand,
-} from '../src/clipboard/external.ts';
-import {
 	clipboardMemory,
 	DESKTOP_WRITE_AFTER_EVENT_MS,
 	externalContentOf,
-	imageExtension,
 	pasteSourceOf,
 	readClipboardEvent,
 	readSystemClipboard,
@@ -57,7 +50,7 @@ afterEach(() => {
 });
 
 function project(seed: number) {
-	const ids = createSeededIdSource(seed);
+	const ids = createCounterIdSource(seed);
 	const doc = createEmptyProject({ ids, name: `P${seed}`, preset: 'hd-1080p-30' });
 	const session = new EditorSession({
 		projectId: doc.projectId,
@@ -133,9 +126,6 @@ describe('telling external content apart (CLB-010)', () => {
 			text: 'Hi',
 		});
 		expect(externalContentOf({ html: null, text: '  \n ', files: 0 }).text).toBeNull();
-		expect(imageExtension('image/jpeg')).toBe('jpg');
-		expect(imageExtension('image/svg+xml')).toBe('svg');
-		expect(imageExtension('image/webp')).toBe('webp');
 	});
 
 	it('foreign files win over our in-memory copy; JasperEditor HTML is still a payload', () => {
@@ -216,6 +206,12 @@ describe('pasting text (CLB-010)', () => {
 		expect(p.history()).toEqual(['Paste Text']);
 		p.session.undo();
 		expect(Object.keys(p.seq().clips)).toHaveLength(0);
+		await runCommand('edit.paste', p.ctxFor('timeline'), {
+			clipboard: { html: null, text: 'x'.repeat(5010), files: 0 },
+		});
+		expect((Object.values(p.seq().clips)[0] as Extract<Clip, { kind: 'text' }>).content.text).toHaveLength(
+			5000,
+		);
 	});
 
 	it('Program focus pastes text too; the Project panel and Paste Insert explain instead of changing anything', async () => {
@@ -235,28 +231,12 @@ describe('pasting text (CLB-010)', () => {
 		expect(Object.keys(p.seq().clips)).toHaveLength(1);
 		expect(p.history()).toEqual(['Paste Text']);
 	});
-
-	it('normalizes and caps the text; the command is a plain clip.addText', () => {
-		expect(normalizePastedText('\n\nA \t\r\nB\n\n')).toEqual({ text: 'A\nB', truncated: false });
-		const long = normalizePastedText('x'.repeat(MAX_PASTED_TEXT + 10));
-		expect([long.text.length, long.truncated]).toEqual([MAX_PASTED_TEXT, true]);
-		const p = project(33);
-		expect(pastedTextCommand(p.seq(), 'V2', 10, 'Hi')).toEqual({
-			type: 'clip.addText',
-			sequenceId: p.seqId,
-			at: 10,
-			duration: 150,
-			track: 'V2',
-			content: { text: 'Hi' },
-		});
-	});
 });
 
 describe('pasting images and files (CLB-010, LIFE-010)', () => {
 	it('image data becomes "Pasted image <time>", uploaded and placed at the playhead in one step', async () => {
 		vi.useFakeTimers({ toFake: ['Date'] });
 		vi.setSystemTime(new Date(2026, 9, 1, 14, 3, 22));
-		expect(pastedImageName(new Date())).toBe('Pasted image 2026-10-01 14.03.22');
 		const p = project(34);
 		const { scripted, off } = importService(p.session);
 		try {

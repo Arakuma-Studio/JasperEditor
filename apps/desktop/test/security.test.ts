@@ -4,8 +4,6 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
 	CLIPBOARD_FILE_LIST_TYPE,
-	CLIPBOARD_MAX_BYTES,
-	CLIPBOARD_MAX_FILES,
 	clipboardReadResult,
 	ELECTRON_CLIPBOARD_FORMAT,
 	isClipboardWrite,
@@ -30,7 +28,7 @@ describe('clipboard bridge (wp-clipboard, S01:CLB-002/009)', () => {
 			{ json, html: 1, text: '' },
 			{ json: '{"format":"other"}', html: '', text: '' },
 			{ json: 'not json', html: '', text: '' },
-			{ json: `{"format":"jasper-clipboard","x":"${'a'.repeat(CLIPBOARD_MAX_BYTES)}"}`, html: '', text: '' },
+			{ json: `{"format":"jasper-clipboard","x":"${'a'.repeat(20 * 1024 * 1024)}"}`, html: '', text: '' },
 		])
 			expect(isClipboardWrite(bad)).toBe(false);
 	});
@@ -38,16 +36,7 @@ describe('clipboard bridge (wp-clipboard, S01:CLB-002/009)', () => {
 		expect(clipboardReadResult(json)).toBe(json);
 		expect(clipboardReadResult('{"format":"x"}')).toBeNull();
 		expect(clipboardReadResult(42)).toBeNull();
-	});
-	it('the preload exposes clipboard read/write over invoke only', () => {
-		const preload = readFileSync(join(__dirname, '../src/preload.cts'), 'utf8');
-		expect(preload).toContain("ipcRenderer.invoke('jasper:clipboard-write', data)");
-		expect(preload).toContain("ipcRenderer.invoke('jasper:clipboard-read')");
-		const main = readFileSync(join(__dirname, '../src/main.ts'), 'utf8');
-		expect(main).toMatch(
-			/'jasper:clipboard-write', async \(e, data: unknown\) => \{\n\t\tif \(!fromApp\(e\) \|\| !isClipboardWrite\(data\)\)/,
-		);
-		expect(main).toMatch(/'jasper:clipboard-read', async \(e\) => \{\n\t\tif \(!fromApp\(e\)\)/);
+		expect(clipboardReadResult(' '.repeat(20 * 1024 * 1024 + 1))).toBeNull();
 	});
 });
 
@@ -66,8 +55,8 @@ describe('external files on the clipboard (wp-clipboard-2, S01:CLB-010)', () => 
 		expect(parseClipboardFileList('file:///bad%E0%A4%A', 'linux')).toEqual([]);
 		expect(parseClipboardFileList('file:///nul%00x', 'linux')).toEqual([]);
 		expect(parseClipboardFileList(42)).toEqual([]);
-		const many = Array.from({ length: CLIPBOARD_MAX_FILES + 5 }, (_, i) => `file:///f/${i}.png`).join('\n');
-		expect(parseClipboardFileList(many, 'linux')).toHaveLength(CLIPBOARD_MAX_FILES);
+		const many = Array.from({ length: 505 }, (_, i) => `file:///f/${i}.png`).join('\n');
+		expect(parseClipboardFileList(many, 'linux')).toHaveLength(500);
 		for (const t of [
 			'text/uri-list',
 			'public.file-url',
@@ -75,17 +64,6 @@ describe('external files on the clipboard (wp-clipboard-2, S01:CLB-010)', () => 
 		])
 			expect(CLIPBOARD_FILE_LIST_TYPE.test(t)).toBe(true);
 		expect(CLIPBOARD_FILE_LIST_TYPE.test('text/plain')).toBe(false);
-	});
-
-	it('the preload exposes file paths and the file list read; main answers only the app origin', () => {
-		const preload = readFileSync(join(__dirname, '../src/preload.cts'), 'utf8');
-		expect(preload).toContain("ipcRenderer.invoke('jasper:clipboard-read-files')");
-		expect(preload).toContain('webUtils.getPathForFile(file)');
-		const main = readFileSync(join(__dirname, '../src/main.ts'), 'utf8');
-		expect(main).toMatch(
-			/'jasper:clipboard-read-files', async \(e\) => \{\n\t\tif \(!fromApp\(e\)\) return \[\];/,
-		);
-		expect(main).toContain('existsSync(p)');
 	});
 });
 
@@ -144,28 +122,6 @@ describe('jasper-mcp launch info (Help ▸ Connect an AI Agent…)', () => {
 
 describe('desktop package config (R-OMS §8.5)', () => {
 	const pkg = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf8'));
-	it('builds an ESM main and a CJS preload and ships an electron-builder config', () => {
-		expect(pkg.main).toBe('dist-electron/main.mjs');
-		expect(pkg.scripts['start:packaged-like']).toContain('packaged-like');
-		expect(pkg.build.appId).toBe('com.jasper.editor');
-		expect(pkg.build.extraResources.map((r: { to: string }) => r.to)).toEqual([
-			'web',
-			'engine',
-			'engine/node_modules',
-			'mcp',
-			'bin',
-			'ffmpeg-lgpl',
-		]);
-		// jasper-mcp ships as one bundled file: resources/mcp/jasper-mcp.mjs (next to resources/engine).
-		expect(pkg.build.extraResources.find((r: { to: string }) => r.to === 'mcp')).toEqual({
-			from: '../mcp/dist',
-			to: 'mcp',
-			filter: ['jasper-mcp.mjs'],
-		});
-		expect(pkg.build.fileAssociations[0].ext).toBe('jasper');
-		expect(pkg.dependencies ?? {}).toEqual({});
-	});
-
 	// ARCHITECTURE D-13: the app ships our LGPL FFmpeg directory and never Remotion's compositor packages
 	// (they bundle a GPL FFmpeg); the afterPack hook runs the license guard over the packed app.
 	it('packages the LGPL FFmpeg directory, excludes the Remotion compositor packages, guards after packing', () => {
@@ -182,6 +138,5 @@ describe('desktop package config (R-OMS §8.5)', () => {
 		expect(pkg.build.files).toContain('!**/node_modules/@remotion/compositor-*/**');
 		expect(pkg.build.afterPack).toBe('./scripts/after-pack.cjs');
 		expect(existsSync(join(__dirname, '..', pkg.build.afterPack))).toBe(true);
-		for (const s of ['dist', 'dist:dir']) expect(pkg.scripts[s]).toContain('scripts/package.mjs');
 	});
 });

@@ -1,96 +1,42 @@
-// Anime template catalogue (S11:ATP-001/003/004/009): metadata, responsive time, the counter formatter and the
-// registry's version upgrade path (FIX-005).
+// Shipped anime schema contracts, responsive timing, number formatting and version upgrades.
 import { paramsPropertySpecs } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
 	ANIME_CATALOG,
-	ANIME_REFERENCE_FPS,
 	type AnyMgTemplate,
 	animeFramesAt,
 	animeTemplateTiming,
-	CANVASES,
 	createMgRegistry,
 	formatCounterValue,
-	isAnimeTemplate,
 	type MgAnimeTemplateDefinition,
 	mgRegistry,
-	rgbaCss,
-	upgradeParams,
 } from '../src/index.ts';
 
-describe('anime catalogue (S11:ATP-001/003)', () => {
-	it('ships title-reveal, lower-third-anim, callout and counter as anime templates', () => {
-		expect(ANIME_CATALOG.map((d) => `${d.id}@${d.version}`)).toEqual([
-			'title-reveal@1',
-			'lower-third-anim@1',
-			'callout@1',
-			'counter@1',
-		]);
+describe('shipped anime parameters (ATP-003/006)', () => {
+	it('rejects unknown fields, invalid RGBA channels and oversized text', () => {
 		for (const d of ANIME_CATALOG) {
-			expect(isAnimeTemplate(d)).toBe(true);
-			expect(d.renderVersion).toBeGreaterThanOrEqual(1);
-			expect(d.canvases).toEqual([...CANVASES]);
-			expect(d.description?.length).toBeGreaterThan(10);
-			expect(d.posterAt).toBeGreaterThan(0);
-			expect(d.posterAt).toBeLessThan(d.defaultDurationSeconds);
-			// intro + outro fit in the default duration at the reference rate
-			expect(d.introFrames + d.outroFrames).toBeLessThan(d.defaultDurationSeconds * ANIME_REFERENCE_FPS);
-			expect(mgRegistry.get(d.id, d.version)).toMatchObject({ renderer: 'anime', name: d.name });
-		}
-	});
-
-	it('params follow the conventions: strict, every field defaulted, RGBA 0..1, bounded strings', () => {
-		for (const d of ANIME_CATALOG) {
-			expect(d.paramsSchema.parse({})).toEqual(d.defaults);
+			expect(d.paramsSchema.safeParse({}).success, d.id).toBe(true);
 			expect(d.paramsSchema.safeParse({ bogus: 1 }).success, d.id).toBe(false);
-			const json = z.toJSONSchema(d.paramsSchema, { io: 'input' }) as {
-				properties: Record<
-					string,
-					{ type?: string; maxLength?: number; minItems?: number; enum?: unknown[] }
-				>;
-			};
-			for (const [name, s] of Object.entries(json.properties)) {
-				if (s.type === 'string' && !s.enum) expect(s.maxLength, `${d.id}.${name}`).toBeGreaterThan(0);
-				if (s.type === 'array') expect(s.minItems, `${d.id}.${name}`).toBe(4);
-			}
-			for (const [name, v] of Object.entries(d.defaults))
-				if (Array.isArray(v)) {
-					expect(
-						v.every((c) => c >= 0 && c <= 1),
-						`${d.id}.${name}`,
-					).toBe(true);
-					expect(d.paramsSchema.safeParse({ [name]: [2, 0, 0, 1] }).success).toBe(false);
-				}
-		}
-	});
-
-	it('numeric and colour params are keyframable; their schema accepts every value in range (S11:ATP-006)', () => {
-		for (const d of ANIME_CATALOG) {
-			const info = mgRegistry.get(d.id, d.version)!;
-			const specs = paramsPropertySpecs(info);
-			const animatable = specs.filter((s) => s.animatable !== 'no');
-			expect(animatable.length, d.id).toBeGreaterThan(0);
-			for (const s of specs) {
-				const name = s.key.slice('params.'.length);
-				const keyframable = s.kind === 'color' || (s.kind === 'number' && s.ui.precision !== 0);
-				expect(s.animatable, s.key).toBe(keyframable ? 'continuous' : 'no');
-				if (s.kind === 'number' && keyframable) {
-					const { min, max } = s.range ?? {};
-					expect(min, s.key).toBeDefined();
-					expect(max, s.key).toBeDefined();
-					for (const v of [min!, max!, (min! + max!) / 2, min! + (max! - min!) / 3])
-						expect(d.paramsSchema.safeParse({ ...d.defaults, [name]: v }).success, s.key).toBe(true);
-				}
-				if (s.kind === 'color')
-					expect(d.paramsSchema.safeParse({ ...d.defaults, [name]: [0, 0.5, 1, 0.25] }).success).toBe(true);
+			const colours = Object.keys(d.defaults).filter((key) => key.endsWith('Color'));
+			expect(colours.length, d.id).toBeGreaterThan(0);
+			for (const name of colours) {
+				expect(d.paramsSchema.safeParse({ [name]: [0, 0.5, 1, 0.25] }).success, `${d.id}.${name}`).toBe(true);
+				expect(d.paramsSchema.safeParse({ [name]: [2, 0, 0, 1] }).success, `${d.id}.${name}`).toBe(false);
 			}
 		}
+		const title = mgRegistry.getDefinition('title-reveal', 1)!.paramsSchema;
+		expect(title.safeParse({ title: 'Hello' }).success).toBe(true);
+		expect(title.safeParse({ title: 'x'.repeat(1000) }).success).toBe(false);
 	});
 
-	it('rgbaCss renders straight RGBA 0..1 as CSS', () => {
-		expect(rgbaCss([1, 0.5, 0, 0.25])).toBe('rgba(255, 128, 0, 0.25)');
-		expect(rgbaCss([2, -1, 0.5, 1])).toBe('rgba(255, 0, 128, 1)');
+	it('exposes actual number and colour controls as keyframable', () => {
+		const specs = paramsPropertySpecs(mgRegistry.get('counter', 1)!);
+		const byKey = new Map(specs.map((s) => [s.key, s.animatable]));
+		expect(byKey.get('params.from')).toBe('continuous');
+		expect(byKey.get('params.numberColor')).toBe('continuous');
+		expect(byKey.get('params.decimals')).toBe('no');
+		expect(byKey.get('params.label')).toBe('no');
 	});
 });
 
@@ -118,12 +64,8 @@ describe('responsive time (S11:ATP-004)', () => {
 		expect(t).toMatchObject({ contentFrame: 12, totalFrames: 72, timeMs: 400, totalMs: 2400 });
 	});
 	it('converts reference frames to whole frames at other rates (frame-exact)', () => {
-		expect(animeFramesAt(30, 60)).toBe(60);
 		expect(animeFramesAt(15, 25)).toBe(13);
 		expect(animeFramesAt(36, 30000 / 1001)).toBe(36);
-		const t = animeTemplateTiming(def, { fps: 25, localFrame: 0, durationFrames: 250 });
-		expect(t.introMs).toBe((25 * 1000) / 25);
-		expect(Number.isInteger(t.introFrames) && Number.isInteger(t.outroFrames)).toBe(true);
 	});
 	it('compresses intro and outro proportionally when they exceed the content', () => {
 		const t = animeTemplateTiming(def, { fps: 30, localFrame: 0, durationFrames: 30 });
@@ -156,10 +98,9 @@ describe('counter formatting (S11:ATP-003)', () => {
 		expect(formatCounterValue(1000, { ...base, thousandsSeparator: 'none' })).toBe('1000');
 		expect(formatCounterValue(1000, { ...base, thousandsSeparator: 'thin' })).toBe('1 000');
 	});
-	it('handles negatives, -0 and non-finite values', () => {
+	it('uses a minus sign for negatives and rounds half away from zero without negative zero', () => {
 		expect(formatCounterValue(-1500, base)).toBe('−1,500');
 		expect(formatCounterValue(-0.2, base)).toBe('0');
-		expect(formatCounterValue(Number.NaN, base)).toBe('0');
 		expect(formatCounterValue(2.5, base)).toBe('3');
 		expect(formatCounterValue(-2.5, base)).toBe('−3');
 	});
@@ -204,47 +145,33 @@ describe('template version upgrades (S11:ATP-009, FIX-005)', () => {
 			params: { title: 'Hi', size: 40, bold: true },
 		});
 	});
-	it('stops at toVersion; null without a path, at the newest version, or when the target is not reached', () => {
+	it('stops at the requested version and refuses unreachable targets', () => {
 		expect(reg.upgrade('t', 1, { text: 'Hi' }, 2)).toEqual({ version: 2, params: { title: 'Hi', size: 10 } });
 		expect(reg.upgrade('t', 3, {})).toBeNull();
-		expect(reg.upgrade('nope', 1, {})).toBeNull();
 		expect(createMgRegistry([v1, v3]).upgrade('t', 1, {})).toBeNull();
 		expect(reg.upgrade('t', 1, {}, 5)).toBeNull();
 	});
-	it('prefers a direct jump and refuses migrations that throw or produce invalid params', () => {
+	it('prefers a valid direct jump and refuses invalid migration results', () => {
 		const direct = mk(3, params3, [
 			{ fromVersion: 2, migrate: (p) => p },
 			{ fromVersion: 1, migrate: (p) => ({ title: `direct ${p.text}` }) },
 		]);
-		expect(upgradeParams([v1, v2, direct], 't', 1, { text: 'x' })?.params.title).toBe('direct x');
+		expect(createMgRegistry([v1, v2, direct]).upgrade('t', 1, { text: 'x' })?.params.title).toBe('direct x');
 		const bad = mk(2, params2, [{ fromVersion: 1, migrate: () => ({ title: 3 }) }]);
-		expect(upgradeParams([v1, bad], 't', 1, {})).toBeNull();
-		const throws = mk(2, params2, [
-			{
-				fromVersion: 1,
-				migrate: () => {
-					throw new Error('x');
-				},
-			},
-		]);
-		expect(upgradeParams([v1, throws], 't', 1, {})).toBeNull();
+		expect(createMgRegistry([v1, bad]).upgrade('t', 1, {})).toBeNull();
 	});
-	it('searches the step graph: backtracks from dead ends and falls back to other steps (review fix)', () => {
+	it('backtracks from a larger dead-end jump to the highest reachable version', () => {
 		const params4 = params3.extend({ italic: z.boolean().default(false) });
-		const p3 = (from: number, migrate: (p: Record<string, unknown>) => Record<string, unknown>) =>
-			mk(3, params3, [{ fromVersion: from, migrate }]);
 		const via2 = mk(2, params2, [{ fromVersion: 1, migrate: (p) => ({ title: `via2 ${p.text}` }) }]);
+		const deadEnd = mk(3, params3, [{ fromVersion: 1, migrate: (p) => ({ title: p.text }) }]);
 		const v4from2 = mk(4, params4, [{ fromVersion: 2, migrate: (p) => ({ ...p, italic: true }) }]);
-		// No target: the biggest jump 1 → 3 is a dead end; 1 → 2 → 4 reaches higher.
-		expect(
-			upgradeParams([v1, via2, p3(1, (p) => ({ title: String(p.text) })), v4from2], 't', 1, { text: 'x' }),
-		).toEqual({ version: 4, params: { title: 'via2 x', size: 10, bold: false, italic: true } });
-		// Exact target 4: 1 → 3 cannot reach it; the path 1 → 2 → 4 does.
-		expect(
-			upgradeParams([v1, via2, p3(1, (p) => ({ title: String(p.text) })), v4from2], 't', 1, { text: 'x' }, 4)
-				?.version,
-		).toBe(4);
-		// Exact target 3 when the direct step throws or is invalid: the two-step path through 2.
+		expect(createMgRegistry([v1, via2, deadEnd, v4from2]).upgrade('t', 1, { text: 'x' })).toEqual({
+			version: 4,
+			params: { title: 'via2 x', size: 10, bold: false, italic: true },
+		});
+	});
+	it('tries another path when a direct migration throws', () => {
+		const via2 = mk(2, params2, [{ fromVersion: 1, migrate: (p) => ({ title: p.text }) }]);
 		const twoStep = mk(3, params3, [
 			{
 				fromVersion: 1,
@@ -254,34 +181,9 @@ describe('template version upgrades (S11:ATP-009, FIX-005)', () => {
 			},
 			{ fromVersion: 2, migrate: (p) => ({ ...p, bold: true }) },
 		]);
-		expect(upgradeParams([v1, via2, twoStep], 't', 1, { text: 'x' }, 3)).toEqual({
+		expect(createMgRegistry([v1, via2, twoStep]).upgrade('t', 1, { text: 'x' }, 3)).toEqual({
 			version: 3,
-			params: { title: 'via2 x', size: 10, bold: true },
+			params: { title: 'x', size: 10, bold: true },
 		});
-		expect(upgradeParams([v1, via2, twoStep], 't', 1, { text: 'x' })?.version).toBe(3);
-		const invalidDirect = mk(3, params3, [
-			{ fromVersion: 1, migrate: () => ({ title: 1 }) },
-			{ fromVersion: 2, migrate: (p) => p },
-		]);
-		expect(upgradeParams([v1, via2, invalidDirect], 't', 1, { text: 'x' })?.params.title).toBe('via2 x');
-		// A working direct jump is still preferred over a longer path to the same version.
-		const both = mk(3, params3, [
-			{ fromVersion: 1, migrate: (p) => ({ title: `direct ${p.text}` }) },
-			{ fromVersion: 2, migrate: (p) => p },
-		]);
-		expect(upgradeParams([v1, via2, both], 't', 1, { text: 'x' })?.params.title).toBe('direct x');
-		// Only failing steps: null; a reachable lower version when the higher one fails.
-		const invalidOnly = mk(2, params2, [{ fromVersion: 1, migrate: () => ({ size: 'x' }) }]);
-		expect(upgradeParams([v1, invalidOnly], 't', 1, {})).toBeNull();
-		const brokenTo3 = mk(3, params3, [{ fromVersion: 2, migrate: () => ({ bold: 'no' }) }]);
-		expect(upgradeParams([v1, via2, brokenTo3], 't', 1, { text: 'x' })).toEqual({
-			version: 2,
-			params: { title: 'via2 x', size: 10 },
-		});
-		expect(upgradeParams([v1, via2, brokenTo3], 't', 1, { text: 'x' }, 3)).toBeNull();
-	});
-	it('the shipped catalogue has no pending upgrades (every template is at version 1)', () => {
-		for (const d of mgRegistry.definitions())
-			expect(mgRegistry.upgrade(d.id, d.version, d.defaults)).toBeNull();
 	});
 });

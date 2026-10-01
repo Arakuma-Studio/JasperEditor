@@ -3,14 +3,11 @@
 // to a fresh build (or a fresh mount) per frame. `determinism.test.tsx` runs it over TEXT_ANIMATION_IMPLS and
 // ANIME_TEMPLATE_IMPLS, so presets and templates join the suite by being registered; the functions return reports
 // (instead of asserting) so the harness itself is tested against deliberately broken fixtures.
-import type { AnyAnimeMgTemplate } from '@jasper/mg-templates';
 import { type TextAnimationSide, type TextAnimationSpec, toJsonSchema } from '@jasper/project';
-import { act, cleanup, render } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import fc from 'fast-check';
-import { type ComponentType, StrictMode } from 'react';
 import { roundValue, valuesAt } from '../src/runtime/hooks.ts';
 import { frameToMs, hash32, seekCanonical, type Timeline, useAnimeValues } from '../src/runtime/index.ts';
-import type { AnimeTemplateProps } from '../src/templates/index.ts';
 import {
 	REST_UNIT_VALUES,
 	type TextAnimationBuildContext,
@@ -306,101 +303,4 @@ function checkCaret(
 		}
 	}
 	return failures;
-}
-
-/**
- * The markup of `el` with every inline style's declarations sorted: React appends a property that appears later
- * (e.g. a `filter` once blur > 0) after the existing ones, a fresh mount writes them in object order — the same
- * style, serialised differently.
- */
-export function canonicalHtml(el: HTMLElement): string {
-	const copy = el.cloneNode(true) as HTMLElement;
-	for (const node of [copy, ...copy.querySelectorAll<HTMLElement>('[style]')]) {
-		const style = node.getAttribute('style');
-		if (style === null) continue;
-		const decls = style
-			.split(';')
-			.map((d) => d.trim())
-			.filter(Boolean)
-			.sort();
-		node.setAttribute('style', decls.join('; '));
-	}
-	return copy.innerHTML;
-}
-
-export type TemplateCase = { label: string; props: (frame: number) => AnimeTemplateProps; frames: number[] };
-
-/** Props of a template at a content frame: intro + 12 hold frames + outro at 30 fps, the first canvas. */
-export function templateCase(key: string, def: AnyAnimeMgTemplate | undefined): TemplateCase {
-	const fps = 30;
-	const intro = def?.introFrames ?? 15;
-	const outro = def?.outroFrames ?? 15;
-	const total = intro + 12 + outro;
-	const canvas = def?.canvases[0] ?? { width: 1920, height: 1080 };
-	const frames = Array.from({ length: total + 2 }, (_, i) => i - 1);
-	return {
-		label: `${key} ${canvas.width}x${canvas.height}`,
-		frames,
-		props: (frame) => ({
-			params: { ...(def?.defaults ?? {}) },
-			timeMs: frameToMs(frame, fps),
-			totalMs: frameToMs(total, fps),
-			introMs: frameToMs(intro, fps),
-			outroMs: frameToMs(outro, fps),
-			fps,
-			canvas,
-			seed: hash32('clp_DETERMINISM00000', 'template'),
-			isPreview: false,
-		}),
-	};
-}
-
-/**
- * One anime template implementation (S11:ANM-013): the DOM it renders for a frame (after layout effects, i.e.
- * DOM-leaf seeks) is the same mounted once and visited in every order as mounted fresh for that frame, also under
- * StrictMode; rendering never calls Math.random.
- */
-export function checkTemplate(
-	key: string,
-	Component: ComponentType<AnimeTemplateProps>,
-	def: AnyAnimeMgTemplate | undefined,
-): Report {
-	const { label, props, frames } = templateCase(key, def);
-	const failures: string[] = [];
-	const html = canonicalHtml;
-	const fresh = new Map<number, string>();
-	try {
-		const clock = wallClockCalls(() => {
-			for (const f of frames) {
-				const r = render(<Component {...props(f)} />);
-				fresh.set(f, html(r.container));
-				act(() => r.unmount());
-			}
-		}, ['random']);
-		if (clock.calls.length) failures.push('Math.random while rendering (ANM-007)');
-		for (const { name, order } of visitOrders(frames)) {
-			const r = render(<Component {...props(order[0]!)} />);
-			for (const f of order) {
-				r.rerender(<Component {...props(f)} />);
-				if (html(r.container) !== fresh.get(f)) {
-					failures.push(`${name}: frame ${f} differs from a fresh mount`);
-					break;
-				}
-			}
-			act(() => r.unmount());
-		}
-		const mid = frames[Math.floor(frames.length / 2)]!;
-		const strict = render(
-			<StrictMode>
-				<Component {...props(mid)} />
-			</StrictMode>,
-		);
-		if (html(strict.container) !== fresh.get(mid)) failures.push(`StrictMode: frame ${mid} differs`);
-		act(() => strict.unmount());
-	} catch (e) {
-		failures.push(`render threw: ${(e as Error).message}`);
-	} finally {
-		cleanup();
-	}
-	return { label, failures };
 }

@@ -20,7 +20,7 @@
 import { JobError } from '../jobs/types.ts';
 
 /** A page renders at least this many frames (below it, a page's start-up — creation, bundle, fonts — dominates). */
-export const MIN_FRAMES_PER_PAGE = 10;
+const MIN_FRAMES_PER_PAGE = 10;
 /** Renders in flight at most (whatever the budget). */
 export const MAX_RENDERS_IN_FLIGHT = 6;
 
@@ -78,7 +78,7 @@ export type PagePoolOptions = {
 };
 
 /** The pool's budget split: the order tasks start in and their page grants, without running them (tests, logs). */
-export function poolOrder(tasks: readonly Pick<PagePoolTask<unknown>, 'want' | 'weight'>[]): number[] {
+function poolOrder(tasks: readonly Pick<PagePoolTask<unknown>, 'want' | 'weight'>[]): number[] {
 	return tasks
 		.map((_, i) => i)
 		.sort((a, b) => tasks[b]!.want - tasks[a]!.want || tasks[b]!.weight - tasks[a]!.weight || a - b);

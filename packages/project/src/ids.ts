@@ -64,25 +64,6 @@ export function createRandomIdSource(): IdSource {
 	};
 }
 
-/** Deterministic ids for tests: a seeded PRNG (mulberry32) feeding the same encoder. */
-export function createSeededIdSource(seed = 1): IdSource {
-	let state = seed >>> 0;
-	const nextByte = () => {
-		state = (state + 0x6d2b79f5) >>> 0;
-		let t = state;
-		t = Math.imul(t ^ (t >>> 15), t | 1);
-		t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-		return ((t ^ (t >>> 14)) >>> 0) & 0xff;
-	};
-	return {
-		next(prefix) {
-			const bytes = new Uint8Array(10);
-			for (let i = 0; i < bytes.length; i++) bytes[i] = nextByte();
-			return `${prefix}_${encode(bytes)}`;
-		},
-	};
-}
-
 /** Sequential ids (`clp_0000000000000001`, …) — readable ids for fixtures and debugging. */
 export function createCounterIdSource(start = 1): IdSource {
 	let n = start;

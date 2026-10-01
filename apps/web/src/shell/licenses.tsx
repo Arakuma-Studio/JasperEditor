@@ -12,7 +12,7 @@ const LGPL_HOME = 'https://www.gnu.org/licenses/lgpl.html';
 const ANIME_HOME = 'https://animejs.com/';
 const MIT_HOME = 'https://opensource.org/license/mit';
 /** Served next to index.html (vite.config.ts `thirdPartyNotices`). */
-export const NOTICES_URL = `${import.meta.env.BASE_URL}THIRD_PARTY_NOTICES.md`;
+const NOTICES_URL = `${import.meta.env.BASE_URL}THIRD_PARTY_NOTICES.md`;
 
 function ExternalLink(props: { href: string; children: string }) {
 	return (
