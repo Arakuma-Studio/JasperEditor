@@ -1,21 +1,43 @@
 // Text layer (S03:TXT-001…005 subset, KND-050): DOM text inside the clip's text box. Fill, one
 // stroke, background box, shadow, alignment, tracking, leading, caps and the box modes of S01
 // (`autoSize: 'width'` = point text that never wraps; `'height'`/`'none'` = paragraph text that wraps
-// at the box width). Fonts are loaded by the composition (fonts.ts) before the frame renders.
-import type { CSSProperties } from 'react';
-import { FALLBACK_FONT_STACK } from '../fonts.ts';
+// at the box width). Fonts are loaded by the composition (fonts.ts) before the frame renders; until the
+// layer's faces are ready it renders hidden (S11:FIX-003). Styled `runs` are inline spans.
+//
+// M2 text animators (S11 §4.2, wp-m2-text-anim). At rest (outside every window, unknown presets) the layer is
+// exactly the plain text block (ANM-009). Inside a window:
+// 1. the text (caps applied) is segmented into units (`@jasper/motion` segmentText; `char` → `word` for RTL and
+//    complex scripts) and laid out as inline spans in the same text block — the same line breaks, kerning and
+//    shaping as the plain block — and measured once per layout key in a layout effect (offsetLeft/Top/Width/
+//    Height: layout boxes, unaffected by ancestor transforms; line units grouped with `groupLines`) (TXA-011);
+// 2. that flow is hidden and an overlay draws every unit at its measured place as its own box, styled from the
+//    values of the preset's value-engine build (`useAnimeValues`, canonical seek at the window's frame) —
+//    transforms, opacity, blur, letter spacing, reveal (TXA-010). Units may leave the box (no clipping, TXA-012)
+//    except inside mask-reveal's per-line masks. Measured boxes are whole pixels, so the glyph shift at the
+//    window boundary stays below 1 px (TXA-013).
+import { groupLines, hash32, segmentText, type TextSegment, useAnimeValues } from '@jasper/motion';
+import {
+	type ActiveTextAnimation,
+	activeTextAnimation,
+	REST_UNIT_VALUES,
+	type TextAnimationImpl,
+	textAnimationImpl,
+	textAnimationUnit,
+	type UnitValues,
+} from '@jasper/motion/text';
+import type { TextContent, TextStyle } from '@jasper/project';
+import { type CSSProperties, type ReactNode, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { FALLBACK_FONT_STACK, useFontsReady } from '../fonts.ts';
 import { rgbaCss } from '../metadata.ts';
 import type { LayerProps } from '../types.ts';
 import { LayerBox } from './LayerBox.tsx';
 
 type TextSource = Extract<LayerProps['clip']['source'], { text: unknown }>;
+type Fonts = LayerProps['fonts'];
+type TextRun = NonNullable<TextContent['runs']>[number];
+type RunStyle = TextRun['style'];
 
-export function textFontFamily(
-	fontId: string,
-	fonts: LayerProps['fonts'],
-	weight?: number,
-	italic?: boolean,
-): string {
+export function textFontFamily(fontId: string, fonts: Fonts, weight?: number, italic?: boolean): string {
 	const all = fonts ?? [];
 	const face =
 		all.find(
@@ -27,11 +49,40 @@ export function textFontFamily(
 	return face ? `"${face.family.replace(/"/g, '')}", ${FALLBACK_FONT_STACK}` : FALLBACK_FONT_STACK;
 }
 
+/** The family a style renders with (the loaded face's family), or null for the fallback stack. */
+function faceFamily(s: Pick<TextStyle, 'fontId' | 'weight' | 'italic'>, fonts: Fonts): string | null {
+	const all = fonts ?? [];
+	const face =
+		all.find((f) => f.fontId === s.fontId && f.weight === s.weight && (f.style === 'italic') === s.italic) ??
+		all.find((f) => f.fontId === s.fontId);
+	return face?.family ?? null;
+}
+
+function strokeCss(s: Pick<TextStyle, 'strokes'>): CSSProperties {
+	const stroke = s.strokes[0];
+	if (!stroke || stroke.widthPx <= 0) return {};
+	// S03:TXT-003: outside strokes are drawn at double width under the fill (paint-order), so they
+	// never eat into glyphs; centered strokes straddle the outline; inside strokes fall back to
+	// centered in M1 (SVG text path is P1).
+	const outside = stroke.position === 'outside';
+	return {
+		WebkitTextStroke: `${outside ? stroke.widthPx * 2 : stroke.widthPx}px ${rgbaCss(stroke.color)}`,
+		...(outside ? { paintOrder: 'stroke fill' } : {}),
+	};
+}
+
+function shadowCss(shadow: TextStyle['shadow']): string | undefined {
+	if (!shadow) return undefined;
+	const rad = (shadow.angleDeg * Math.PI) / 180;
+	const dx = Math.cos(rad) * shadow.distancePx;
+	const dy = Math.sin(rad) * shadow.distancePx;
+	return `${dx}px ${dy}px ${shadow.blurPx}px ${rgbaCss(shadow.color)}`;
+}
+
 /** Inline style of the text block (pure; unit-tested). */
-export function textBlockStyle(source: TextSource, fonts: LayerProps['fonts']): CSSProperties {
+export function textBlockStyle(source: TextSource, fonts: Fonts): CSSProperties {
 	const s = source.text.style;
 	const pointText = source.box.autoSize === 'width';
-	const stroke = s.strokes[0];
 	const style: CSSProperties = {
 		position: 'absolute',
 		left: 0,
@@ -54,23 +105,473 @@ export function textBlockStyle(source: TextSource, fonts: LayerProps['fonts']): 
 		whiteSpace: pointText ? 'pre' : 'pre-wrap',
 		overflowWrap: pointText ? undefined : 'break-word',
 		fontKerning: 'normal',
+		...strokeCss(s),
 	};
-	if (stroke && stroke.widthPx > 0) {
-		// S03:TXT-003: outside strokes are drawn at double width under the fill (paint-order), so they
-		// never eat into glyphs; centered strokes straddle the outline; inside strokes fall back to
-		// centered in M1 (SVG text path is P1).
-		const outside = stroke.position === 'outside';
-		style.WebkitTextStroke = `${outside ? stroke.widthPx * 2 : stroke.widthPx}px ${rgbaCss(stroke.color)}`;
-		if (outside) style.paintOrder = 'stroke fill';
-	}
-	if (s.shadow) {
-		const rad = (s.shadow.angleDeg * Math.PI) / 180;
-		const dx = Math.cos(rad) * s.shadow.distancePx;
-		const dy = Math.sin(rad) * s.shadow.distancePx;
-		style.textShadow = `${dx}px ${dy}px ${s.shadow.blurPx}px ${rgbaCss(s.shadow.color)}`;
-	}
+	const shadow = shadowCss(s.shadow);
+	if (shadow) style.textShadow = shadow;
 	return style;
 }
+
+/** Inline overrides of a styled run over the block style (only the fields the run sets). */
+export function runStyleCss(run: RunStyle, base: TextStyle, fonts: Fonts): CSSProperties {
+	const s = { ...base, ...run } as TextStyle;
+	const css: CSSProperties = {};
+	if (run.fontId !== undefined || run.weight !== undefined || run.italic !== undefined)
+		css.fontFamily = textFontFamily(s.fontId, fonts, s.weight, s.italic);
+	if (run.weight !== undefined) css.fontWeight = s.weight;
+	if (run.italic !== undefined) css.fontStyle = s.italic ? 'italic' : 'normal';
+	if (run.sizePx !== undefined) css.fontSize = s.sizePx;
+	if (run.lineHeight !== undefined) css.lineHeight = s.lineHeight;
+	if (run.trackingEm !== undefined) css.letterSpacing = `${s.trackingEm}em`;
+	if (run.fill !== undefined) css.color = rgbaCss(s.fill);
+	if (run.allCaps !== undefined) css.textTransform = s.allCaps ? 'uppercase' : 'none';
+	if (run.strokes !== undefined) Object.assign(css, { WebkitTextStroke: '0px transparent' }, strokeCss(s));
+	if (run.shadow !== undefined) css.textShadow = shadowCss(s.shadow) ?? 'none';
+	return css;
+}
+
+// ---------------------------------------------------------------- styled runs
+
+type StyledSpan = { from: number; to: number; style: RunStyle | null };
+
+/** The text cut at run boundaries; each piece carries the merged style of the runs covering it (later win). */
+export function styledSpans(text: string, runs: readonly TextRun[] | undefined): StyledSpan[] {
+	if (!runs?.length) return text ? [{ from: 0, to: text.length, style: null }] : [];
+	const clampI = (i: number) => Math.min(text.length, Math.max(0, i));
+	const cuts = [...new Set([0, text.length, ...runs.flatMap((r) => [clampI(r.from), clampI(r.to)])])].sort(
+		(a, b) => a - b,
+	);
+	const out: StyledSpan[] = [];
+	for (let i = 0; i + 1 < cuts.length; i++) {
+		const from = cuts[i]!;
+		const to = cuts[i + 1]!;
+		const covering = runs.filter((r) => r.from <= from && r.to >= to && r.to > r.from);
+		out.push({
+			from,
+			to,
+			style: covering.length ? Object.assign({}, ...covering.map((r) => r.style)) : null,
+		});
+	}
+	return out;
+}
+
+// ---------------------------------------------------------------- rest
+
+function RestText({ source, fonts, hidden }: { source: TextSource; fonts: Fonts; hidden: boolean }) {
+	const { text, style, runs } = source.text;
+	const block = textBlockStyle(source, fonts);
+	let content: ReactNode = text;
+	if (runs?.length)
+		content = styledSpans(text, runs).map((s) =>
+			s.style ? (
+				<span key={s.from} style={runStyleCss(s.style, style, fonts)}>
+					{text.slice(s.from, s.to)}
+				</span>
+			) : (
+				text.slice(s.from, s.to)
+			),
+		);
+	return (
+		<p data-text-block="" style={hidden ? { ...block, visibility: 'hidden' } : block}>
+			{content}
+		</p>
+	);
+}
+
+// ---------------------------------------------------------------- animated
+
+/** One piece of the flow: a whitespace run or (part of) a unit, in one style. */
+type FlowPiece = {
+	text: string;
+	/** Offset in the caps-applied text (stable React key). */
+	at: number;
+	/** Index into `Flow.styles` (-1 = block style). */
+	style: number;
+	/** Segment unit (char/word index) or -1 for whitespace. */
+	unit: number;
+	/** First piece of its unit (the one `groupLines` measures). */
+	first: boolean;
+};
+
+type Flow = {
+	unit: ReturnType<typeof textAnimationUnit>;
+	pieces: FlowPiece[];
+	styles: RunStyle[];
+	/** Number of segment units (chars or words). */
+	units: number;
+};
+
+/** Segments the caps-applied text into units and cuts them at style boundaries (S11:TXA-010). */
+function buildFlow(source: TextSource, impl: TextAnimationImpl, params: Record<string, unknown>): Flow {
+	const { text, style: base, runs } = source.text;
+	const styles: RunStyle[] = [];
+	// Caps are applied before segmentation (ß → SS counts as two characters).
+	const parts = styledSpans(text, runs).map((s) => {
+		const caps = s.style?.allCaps ?? base.allCaps;
+		const slice = text.slice(s.from, s.to);
+		if (s.style) styles.push(s.style);
+		return { text: caps ? slice.toUpperCase() : slice, style: s.style ? styles.length - 1 : -1 };
+	});
+	const full = parts.map((p) => p.text).join('');
+	const unit = textAnimationUnit(impl, params, full);
+	const segments: TextSegment[] = segmentText(full, unit === 'line' ? 'word' : unit);
+	const pieces: FlowPiece[] = [];
+	let partIndex = 0;
+	let partEnd = parts[0]?.text.length ?? 0;
+	let pos = 0;
+	let units = 0;
+	for (const seg of segments) {
+		let rest = seg.text;
+		let first = true;
+		units = Math.max(units, seg.unitIndex + 1);
+		while (rest.length) {
+			while (pos >= partEnd && partIndex + 1 < parts.length) partEnd += parts[++partIndex]!.text.length;
+			const take = Math.min(rest.length, partEnd - pos);
+			pieces.push({
+				text: rest.slice(0, take),
+				at: pos,
+				style: parts[partIndex]!.style,
+				unit: seg.unitIndex,
+				first,
+			});
+			first = false;
+			rest = rest.slice(take);
+			pos += take;
+		}
+	}
+	return { unit, pieces, styles, units };
+}
+
+type Box = { left: number; top: number; width: number; height: number };
+/** A unit piece with its measured box. */
+type Placed = { piece: FlowPiece; index: number; box: Box };
+
+type Measured = {
+	key: string;
+	/** Layout box of every unit piece (by piece index; whitespace pieces: null). */
+	boxes: (Box | null)[];
+	/** Line of every segment unit. */
+	lineOf: number[];
+	lines: number;
+};
+
+function measureFlow(p: HTMLElement, flow: Flow, key: string): Measured {
+	const boxes: (Box | null)[] = flow.pieces.map(() => null);
+	for (const el of p.querySelectorAll<HTMLElement>('[data-text-piece]')) {
+		boxes[Number(el.dataset.textPiece)] = {
+			left: el.offsetLeft,
+			top: el.offsetTop,
+			width: el.offsetWidth,
+			height: el.offsetHeight,
+		};
+	}
+	const lineOf = groupLines(p, '[data-text-unit]');
+	return { key, boxes, lineOf, lines: lineOf.length ? Math.max(...lineOf) + 1 : 0 };
+}
+
+const union = (boxes: Box[]): Box => {
+	const left = Math.min(...boxes.map((b) => b.left));
+	const top = Math.min(...boxes.map((b) => b.top));
+	const right = Math.max(...boxes.map((b) => b.left + b.width));
+	const bottom = Math.max(...boxes.map((b) => b.top + b.height));
+	return { left, top, width: right - left, height: bottom - top };
+};
+
+/** Style of an animated box from its values (identity values add nothing). */
+function valuesCss(
+	v: Readonly<UnitValues>,
+	shiftX: number,
+	shiftY: number,
+	plainReveal: boolean,
+): CSSProperties {
+	const x = v.x + shiftX;
+	const y = v.y + shiftY;
+	const parts: string[] = [];
+	if (x !== 0 || y !== 0) parts.push(`translate(${x}px, ${y}px)`);
+	if (v.scale !== 1) parts.push(`scale(${v.scale})`);
+	if (v.rotate !== 0) parts.push(`rotate(${v.rotate}deg)`);
+	return {
+		...(parts.length ? { transform: parts.join(' ') } : {}),
+		...(v.opacity !== 1 ? { opacity: Math.min(1, Math.max(0, v.opacity)) } : {}),
+		...(v.blur > 0 ? { filter: `blur(${v.blur}px)` } : {}),
+		...(plainReveal && v.reveal < 1 ? { visibility: 'hidden' as const } : {}),
+	};
+}
+
+function AnimatedText({
+	source,
+	fonts,
+	active,
+	impl,
+	seed,
+}: {
+	source: TextSource;
+	fonts: Fonts;
+	active: ActiveTextAnimation;
+	impl: TextAnimationImpl;
+	seed: number;
+}) {
+	const pRef = useRef<HTMLParagraphElement>(null);
+	const params = active.animator.params;
+	const flow = useMemo(() => buildFlow(source, impl, params), [source, impl, params]);
+	const block = textBlockStyle(source, fonts);
+	const layoutKey = JSON.stringify([source.text, source.box, flow.unit, fonts]);
+	const [measured, setMeasured] = useState<Measured | null>(null);
+	const m = measured?.key === layoutKey ? measured : null;
+	// Measure once per layout key before paint (a display:none layer has no layout yet: retry next render).
+	useLayoutEffect(() => {
+		const p = pRef.current;
+		if (m || !p || p.offsetParent === null) return;
+		setMeasured(measureFlow(p, flow, layoutKey));
+	});
+	const lineMode = flow.unit === 'line';
+	const units = m ? (lineMode ? m.lines : flow.units) : 0;
+	const box = source.box;
+	const buildKey = JSON.stringify([
+		impl.key,
+		active.side,
+		units,
+		active.durationMs,
+		params,
+		seed,
+		box.width,
+		box.height,
+	]);
+	const values = useAnimeValues(
+		buildKey,
+		() =>
+			impl.build({
+				units,
+				...(m ? { lineOf: m.lineOf } : {}),
+				side: active.side,
+				durationMs: active.durationMs,
+				params,
+				seed,
+				box: { width: box.width, height: box.height },
+			}),
+		active.ms,
+	);
+
+	const cssOf = (i: number) => (i < 0 ? undefined : runStyleCss(flow.styles[i]!, source.text.style, fonts));
+	const flowNodes = flow.pieces.map((pc, i) =>
+		pc.unit < 0 ? (
+			pc.style < 0 ? (
+				pc.text
+			) : (
+				<span key={pc.at} style={cssOf(pc.style)}>
+					{pc.text}
+				</span>
+			)
+		) : (
+			<span
+				key={pc.at}
+				data-text-piece={i}
+				{...(pc.first ? { 'data-text-unit': '' } : {})}
+				style={cssOf(pc.style)}
+			>
+				{pc.text}
+			</span>
+		),
+	);
+	if (!m)
+		return (
+			<p ref={pRef} data-text-block="" data-text-animating="measure" style={block}>
+				{flowNodes}
+			</p>
+		);
+	return (
+		<p
+			ref={pRef}
+			data-text-block=""
+			data-text-animating={active.side}
+			style={{ ...block, visibility: 'hidden' }}
+		>
+			{flowNodes}
+			<TextOverlay
+				source={source}
+				fonts={fonts}
+				flow={flow}
+				m={m}
+				values={values}
+				impl={impl}
+				params={params}
+			/>
+		</p>
+	);
+}
+
+/** Grapheme count of a string (letter-spacing is added after every grapheme). */
+const graphemes = (s: string) => segmentText(s, 'char').length;
+
+function TextOverlay({
+	source,
+	fonts,
+	flow,
+	m,
+	values,
+	impl,
+	params,
+}: {
+	source: TextSource;
+	fonts: Fonts;
+	flow: Flow;
+	m: Measured;
+	values: readonly Readonly<UnitValues>[];
+	impl: TextAnimationImpl;
+	params: Record<string, unknown>;
+}) {
+	const base = source.text.style;
+	const lineMode = flow.unit === 'line';
+	const masks = !!impl.lineMasks;
+	const styleOf = (i: number) => (i < 0 ? base : ({ ...base, ...flow.styles[i] } as TextStyle));
+	// Pieces of every segment unit with their boxes (by unit index), and the units of every line.
+	const unitPieces: Placed[][] = Array.from({ length: flow.units }, () => []);
+	flow.pieces.forEach((piece, index) => {
+		const box = m.boxes[index];
+		if (piece.unit >= 0 && box) unitPieces[piece.unit]!.push({ piece, index, box });
+	});
+	const placedUnits = unitPieces.flatMap((list, unit) => (list.length ? [unit] : []));
+	const lines: number[][] = Array.from({ length: m.lines }, () => []);
+	for (const unit of placedUnits) lines[m.lineOf[unit] ?? 0]?.push(unit);
+	const unitValues = (unit: number) => values[lineMode ? (m.lineOf[unit] ?? 0) : unit] ?? REST_UNIT_VALUES;
+	/** Letter-spacing growth of a set of pieces at `em` extra (shifted back by half to grow from the centre). */
+	const spacingShift = (pieces: { piece: FlowPiece }[], em: number) =>
+		em === 0
+			? 0
+			: -pieces.reduce((s, p) => s + em * styleOf(p.piece.style).sizePx * graphemes(p.piece.text), 0) / 2;
+	const pieceNode = (p: Placed, origin: Box, em: number) => {
+		const st = styleOf(p.piece.style);
+		return (
+			<span
+				key={p.piece.at}
+				style={{
+					...(p.piece.style < 0 ? {} : runStyleCss(flow.styles[p.piece.style]!, base, fonts)),
+					position: 'absolute',
+					left: p.box.left - origin.left,
+					top: p.box.top - origin.top,
+					lineHeight: `${p.box.height}px`,
+					whiteSpace: 'pre',
+					...(em !== 0 ? { letterSpacing: `${st.trackingEm + em}em` } : {}),
+				}}
+			>
+				{p.piece.text}
+			</span>
+		);
+	};
+	const strokeW = Math.max(0, ...[base, ...flow.styles].map((s) => s.strokes?.[0]?.widthPx ?? 0));
+	const out: ReactNode[] = [];
+	lines.forEach((units, line) => {
+		if (!units.length) return;
+		const all = units.flatMap((u) => unitPieces[u]!);
+		const lineBox = union(all.map((p) => p.box));
+		const size = Math.max(...all.map((p) => styleOf(p.piece.style).sizePx));
+		// mask-reveal: a clip box around the line with room for accents, strokes and the horizontal motion.
+		const bleedY = Math.ceil(size * 0.2 + strokeW);
+		const bleedX = Math.ceil(size + strokeW);
+		const mask: Box = masks
+			? {
+					left: lineBox.left - bleedX,
+					top: lineBox.top - bleedY,
+					width: lineBox.width + 2 * bleedX,
+					height: lineBox.height + 2 * bleedY,
+				}
+			: { left: 0, top: 0, width: 0, height: 0 };
+		const rise = (v: Readonly<UnitValues>) => (masks ? (1 - v.reveal) * mask.height : 0);
+		const origin = masks ? mask : { left: 0, top: 0, width: 0, height: 0 };
+		let content: ReactNode[];
+		if (lineMode) {
+			const v = unitValues(units[0]!);
+			content = [
+				<div
+					key="line"
+					style={{
+						position: 'absolute',
+						left: lineBox.left - origin.left,
+						top: lineBox.top - origin.top,
+						width: lineBox.width,
+						height: lineBox.height,
+						...valuesCss(v, spacingShift(all, v.letterSpacing), rise(v), !masks),
+					}}
+				>
+					{all.map((p) => pieceNode(p, lineBox, v.letterSpacing))}
+				</div>,
+			];
+		} else {
+			content = units.map((unit) => {
+				const pieces = unitPieces[unit]!;
+				const ub = union(pieces.map((p) => p.box));
+				const v = unitValues(unit);
+				return (
+					<div
+						key={unit}
+						data-text-unit-index={unit}
+						style={{
+							position: 'absolute',
+							left: ub.left - origin.left,
+							top: ub.top - origin.top,
+							width: ub.width,
+							height: ub.height,
+							...valuesCss(v, spacingShift(pieces, v.letterSpacing), rise(v), !masks),
+						}}
+					>
+						{pieces.map((p) => pieceNode(p, ub, v.letterSpacing))}
+					</div>
+				);
+			});
+		}
+		out.push(
+			masks ? (
+				<div
+					key={units[0]}
+					data-text-mask={line}
+					style={{
+						position: 'absolute',
+						left: mask.left,
+						top: mask.top,
+						width: mask.width,
+						height: mask.height,
+						overflow: 'hidden',
+					}}
+				>
+					{content}
+				</div>
+			) : (
+				<div key={units[0]} data-text-line={line} style={{ position: 'absolute', left: 0, top: 0 }}>
+					{content}
+				</div>
+			),
+		);
+	});
+	if (impl.caret?.(params) && placedUnits.length > 0 && !lineMode) {
+		const shown = placedUnits.filter((u) => unitValues(u).reveal >= 1);
+		const rtl = base.direction === 'rtl';
+		const anchor = union(unitPieces[shown.at(-1) ?? placedUnits[0]!]!.map((p) => p.box));
+		const after = shown.length > 0;
+		const width = Math.max(2, Math.round(base.sizePx * 0.06));
+		const x = after !== rtl ? anchor.left + anchor.width : anchor.left - width;
+		out.push(
+			<div
+				key="caret"
+				data-text-caret=""
+				style={{
+					position: 'absolute',
+					left: x,
+					top: anchor.top,
+					width,
+					height: anchor.height,
+					background: rgbaCss(base.fill),
+				}}
+			/>,
+		);
+	}
+	return (
+		<div data-text-overlay="" style={{ position: 'absolute', left: 0, top: 0, visibility: 'visible' }}>
+			{out}
+		</div>
+	);
+}
+
+// ---------------------------------------------------------------- layer
 
 export function TextLayer(layer: LayerProps) {
 	const source = layer.clip.source;
@@ -92,9 +593,36 @@ export function TextLayer(layer: LayerProps) {
 					}}
 				/>
 			) : null}
-			<p data-text-block="" style={textBlockStyle(source, layer.fonts)}>
-				{source.text.text}
-			</p>
+			<TextBody layer={layer} source={source} />
 		</LayerBox>
+	);
+}
+
+function TextBody({ layer, source }: { layer: LayerProps; source: TextSource }) {
+	const { style, runs } = source.text;
+	const families = useMemo(
+		() =>
+			[
+				...new Set(
+					[style, ...(runs ?? []).map((r) => ({ ...style, ...r.style }))]
+						.map((s) => faceFamily(s, layer.fonts))
+						.filter((f): f is string => !!f),
+				),
+			].sort(),
+		[style, runs, layer.fonts],
+	);
+	const fontsReady = useFontsReady(families);
+	const active = activeTextAnimation(source.animation, layer.localFrame, layer.clip.duration, layer.fps);
+	const impl = active ? textAnimationImpl(active.animator) : undefined;
+	if (!fontsReady || !active || !impl)
+		return <RestText source={source} fonts={layer.fonts} hidden={!fontsReady} />;
+	return (
+		<AnimatedText
+			source={source}
+			fonts={layer.fonts}
+			active={active}
+			impl={impl}
+			seed={hash32(layer.clip.clipId, 'text-anim', active.side)}
+		/>
 	);
 }
