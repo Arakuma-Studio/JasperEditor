@@ -39,7 +39,7 @@ import { ProjectIdArg } from './projects.ts';
 /** Appended to the server instructions (EDITING_GUIDE). */
 export const ANIMATION_GUIDE = `Text animation:
 - Text clips can have an In and an Out animator (list_text_animations: fade, slide-*, pop, blur, typewriter, tracking, mask-reveal, rotate-in, drop). Set them with add_text animateIn/animateOut or set_text_animation {clipId(s), in, out}; null removes a side, an object without preset only changes the current side's length or params.
-- In plays over the clip's first visible frames, Out over its last ones (Out is the mirrored In motion), whatever the clip's trims. Lengths default to the preset's (at the sequence rate); give durationFrames or durationSeconds. When In + Out exceed the clip both are scaled to fit (warning W_ANIMATION_COMPRESSED): lengthen the clip or shorten them.
+- In plays over the clip's first visible frames, Out over its last ones (Out is the mirrored In motion), whatever the clip's trims. Lengths default to the preset's (at the sequence rate); give durationFrames or durationSeconds. When In + Out do not fit the clip with one frame left at rest both are scaled to fit (warning W_ANIMATION_COMPRESSED): lengthen the clip or shorten them.
 - Params: unit (char | word | line) is the animated piece, stagger (0…1) the fraction of the window spread across units (0 = all together), order (forward, backward, center, edges, random) who starts first, ease the per-unit easing; distance/blur/scale/angle are preset-specific.
 - Splitting an animated clip keeps In on the left part and Out on the right part. get_timeline shows the animators as in:<preset> out:<preset>.
 - Check the motion with render_frames {clipId, count}: one contact-sheet PNG of evenly spread frames.`;
@@ -115,15 +115,65 @@ export function sequenceFor(doc: ProjectDocument, opts: { sequenceId?: string; c
 	}
 }
 
+/** Where a tool's transaction applies the animators: one clip, the editor selection, or a new clip. */
+export type AnimationTarget = { sequenceId?: string; clipId?: string; selection?: boolean };
+
+/**
+ * The sequence whose frame rate converts durationSeconds, resolved as the transaction resolves its target:
+ * clip.update finds the clip in any sequence (for "$selection" the editor's selected clips), clip.addText uses the
+ * given sequence, else the project's only one — with several and no sequenceId the transaction fails, so does this.
+ */
+export async function targetSequence(
+	ctx: ToolContext,
+	projectId: string,
+	doc: ProjectDocument,
+	where: AnimationTarget,
+): Promise<Sequence> {
+	const seqOf = (id: string) => Object.values(doc.sequences).find((s) => s.clips[id]);
+	if (where.clipId) {
+		const own = seqOf(where.clipId);
+		if (!own)
+			throw new ToolError(
+				'E_NOT_FOUND',
+				`Clip not found: ${where.clipId}`,
+				'get_timeline lists text clip ids.',
+			);
+		return own;
+	}
+	if (where.selection) {
+		const sel = await ctx
+			.engine((c) => c.agentQuery({ projectId, query: 'selection.get', args: {} }))
+			.then(
+				(r) => (r.result as { selection?: { timeline?: { clips?: unknown } } }).selection?.timeline?.clips,
+			)
+			.catch(() => undefined);
+		const own = (Array.isArray(sel) ? sel : [])
+			.map((id) => (typeof id === 'string' ? seqOf(id) : undefined))
+			.find((s) => s);
+		if (own) return own;
+	}
+	if (where.sequenceId) return sequenceFor(doc, { sequenceId: where.sequenceId });
+	const all = Object.values(doc.sequences);
+	if (all.length === 1) return all[0]!;
+	throw new ToolError(
+		'E_INVALID_PARAM',
+		all.length
+			? 'sequenceId is required when the project has several sequences'
+			: 'The project has no sequence',
+		'Call get_project for sequence ids.',
+	);
+}
+
 /**
  * The `textAnimation` of a command from the tool's side arguments (undefined when none is given). The document
- * is only loaded when a side gives durationSeconds (converted at the clip's / the sequence's frame rate).
+ * is only loaded when a side gives durationSeconds (converted at the frame rate of the sequence the transaction
+ * targets, `targetSequence`).
  */
 export async function textAnimationOf(
 	ctx: ToolContext,
 	projectId: string,
 	sides: Sides,
-	where: { sequenceId?: string; clipId?: string },
+	where: AnimationTarget,
 ): Promise<Partial<Record<TextAnimationSide, AnimatorCommand | null>> | undefined> {
 	const given = TEXT_ANIMATION_SIDES.filter((s) => sides[s] !== undefined);
 	if (!given.length) return undefined;
@@ -131,7 +181,11 @@ export async function textAnimationOf(
 		const a = sides[s];
 		return typeof a === 'object' && a?.durationSeconds !== undefined;
 	});
-	const fps = seconds ? fpsOf(sequenceFor((await loadDoc(ctx, projectId)).doc, where).settings.frameRate) : 0;
+	const fps = seconds
+		? fpsOf(
+				(await targetSequence(ctx, projectId, (await loadDoc(ctx, projectId)).doc, where)).settings.frameRate,
+			)
+		: 0;
 	const out: Partial<Record<TextAnimationSide, AnimatorCommand | null>> = {};
 	for (const s of given) {
 		const a = sides[s]!;
@@ -258,7 +312,7 @@ export function registerAnimationTools(ctx: ToolContext): void {
 				ctx,
 				a.projectId,
 				{ in: a.in, out: a.out },
-				{ sequenceId: a.sequenceId, clipId: first },
+				{ sequenceId: a.sequenceId, clipId: first, selection: ids === '$selection' },
 			);
 			if (!patch)
 				throw new ToolError(

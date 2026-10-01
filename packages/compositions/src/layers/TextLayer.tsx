@@ -191,6 +191,8 @@ type FlowPiece = {
 	unit: number;
 	/** First piece of its unit (the one `groupLines` measures). */
 	first: boolean;
+	/** Base direction of its bidi paragraph: the overlay draws every piece as its own box, so it is explicit. */
+	rtl: boolean;
 };
 
 type Flow = {
@@ -200,6 +202,33 @@ type Flow = {
 	/** Number of segment units (chars or words). */
 	units: number;
 };
+
+const PARAGRAPH_SEPARATOR = /\r\n|[\n\r\u0085\u2029]/g;
+/** First strong character (UAX #9 P2): group 1 = right-to-left (RLM, ALM, letters of the RTL blocks), else LTR. */
+const FIRST_STRONG =
+	/(\u200F|\u061C|(?=\p{L})[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF\u{10800}-\u{10FFF}\u{1E800}-\u{1EFFF}])|\u200E|\p{L}/u;
+
+/**
+ * Right-to-left of every bidi paragraph of `text` (by its end offset) for `direction: 'auto'`: the block is
+ * `unicode-bidi: plaintext` (each paragraph takes the direction of its first strong character, none = LTR), but
+ * `unicode-bidi` is not inherited, so the absolutely positioned overlay pieces would each start an LTR paragraph
+ * and reorder neutrals ("שלום!" would draw "!" on the right while animating).
+ */
+export function paragraphDirections(text: string): { end: number; rtl: boolean }[] {
+	const out: { end: number; rtl: boolean }[] = [];
+	let from = 0;
+	const push = (to: number, end: number) => {
+		const m = FIRST_STRONG.exec(text.slice(from, to));
+		out.push({ end, rtl: !!m?.[1] });
+	};
+	for (const sep of text.matchAll(PARAGRAPH_SEPARATOR)) {
+		const end = sep.index + sep[0].length;
+		push(sep.index, end);
+		from = end;
+	}
+	push(text.length, Number.POSITIVE_INFINITY);
+	return out;
+}
 
 /** Segments the caps-applied text into units and cuts them at style boundaries (S11:TXA-010). */
 function buildFlow(source: TextSource, impl: TextAnimationImpl, params: Record<string, unknown>): Flow {
@@ -213,6 +242,9 @@ function buildFlow(source: TextSource, impl: TextAnimationImpl, params: Record<s
 		return { text: caps ? slice.toUpperCase() : slice, style: s.style ? styles.length - 1 : -1 };
 	});
 	const full = parts.map((p) => p.text).join('');
+	const paragraphs = base.direction === 'auto' ? paragraphDirections(full) : [];
+	const rtlAt = (at: number) =>
+		base.direction === 'auto' ? !!paragraphs.find((p) => at < p.end)?.rtl : base.direction === 'rtl';
 	const unit = textAnimationUnit(impl, params, full);
 	const segments: TextSegment[] = segmentText(full, unit === 'line' ? 'word' : unit);
 	const pieces: FlowPiece[] = [];
@@ -233,6 +265,7 @@ function buildFlow(source: TextSource, impl: TextAnimationImpl, params: Record<s
 				style: parts[partIndex]!.style,
 				unit: seg.unitIndex,
 				first,
+				rtl: rtlAt(pos),
 			});
 			first = false;
 			rest = rest.slice(take);
@@ -318,12 +351,25 @@ function AnimatedText({
 	const layoutKey = JSON.stringify([source.text, source.box, flow.unit, fonts]);
 	const [measured, setMeasured] = useState<Measured | null>(null);
 	const m = measured?.key === layoutKey ? measured : null;
-	// Measure once per layout key before paint (a display:none layer has no layout yet: retry next render).
+	// review fix (unmeasured while display:none) — begin
+	const [, relayout] = useState(0);
+	// Measure once per layout key before paint. A display:none layer (e.g. the editor hidden during Export) has no
+	// layout yet: observe the block and render again as soon as it gets one (no playhead move needed).
 	useLayoutEffect(() => {
 		const p = pRef.current;
-		if (m || !p || p.offsetParent === null) return;
-		setMeasured(measureFlow(p, flow, layoutKey));
+		if (m || !p) return;
+		if (p.offsetParent !== null) {
+			setMeasured(measureFlow(p, flow, layoutKey));
+			return;
+		}
+		if (typeof ResizeObserver === 'undefined') return;
+		const ro = new ResizeObserver(() => {
+			if (p.offsetParent !== null) relayout((n) => n + 1);
+		});
+		ro.observe(p);
+		return () => ro.disconnect();
 	});
+	// review fix (unmeasured while display:none) — end
 	const lineMode = flow.unit === 'line';
 	const units = m ? (lineMode ? m.lines : flow.units) : 0;
 	const box = source.box;
@@ -373,9 +419,15 @@ function AnimatedText({
 			</span>
 		),
 	);
+	// Unmeasured: hidden, never the rest state inside a window (review fix).
 	if (!m)
 		return (
-			<p ref={pRef} data-text-block="" data-text-animating="measure" style={block}>
+			<p
+				ref={pRef}
+				data-text-block=""
+				data-text-animating="measure"
+				style={{ ...block, visibility: 'hidden' }}
+			>
 				{flowNodes}
 			</p>
 		);
@@ -451,6 +503,7 @@ function TextOverlay({
 					top: p.box.top - origin.top,
 					lineHeight: `${p.box.height}px`,
 					whiteSpace: 'pre',
+					direction: p.piece.rtl ? 'rtl' : 'ltr',
 					...(em !== 0 ? { letterSpacing: `${st.trackingEm + em}em` } : {}),
 				}}
 			>
@@ -544,8 +597,9 @@ function TextOverlay({
 	});
 	if (impl.caret?.(params) && placedUnits.length > 0 && !lineMode) {
 		const shown = placedUnits.filter((u) => unitValues(u).reveal >= 1);
-		const rtl = base.direction === 'rtl';
-		const anchor = union(unitPieces[shown.at(-1) ?? placedUnits[0]!]!.map((p) => p.box));
+		const anchorPieces = unitPieces[shown.at(-1) ?? placedUnits[0]!]!;
+		const rtl = anchorPieces[0]!.piece.rtl;
+		const anchor = union(anchorPieces.map((p) => p.box));
 		const after = shown.length > 0;
 		const width = Math.max(2, Math.round(base.sizePx * 0.06));
 		const x = after !== rtl ? anchor.left + anchor.width : anchor.left - width;

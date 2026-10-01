@@ -71,8 +71,30 @@ gated (20/20 with `REMOTION_E2E=1`). Playwright `e2e/text-animation.spec.ts`: 8/
 - A word broken across lines by `overflow-wrap` is drawn on its first line during the window.
 - The typewriter caret does not blink.
 - ANM-015 (performance) is wp-m2-anime-core's; most presets animate 1–2 properties per unit (≈ 2N tweens).
-- `text.applyAnimation` stays enabled without a text selection (agents pass `clipIds`); from menus it then reports "Select a text clip first".
+- `text.applyAnimation` and `text.removeAnimation` stay enabled without a text selection (agents pass `clipIds`); from menus they then report "Select a text clip first".
 - Biome's `!**/.claude` ignore makes `pnpm lint` check no files inside an agent worktree; lint was run with that line removed from a temporary copy of `biome.json`.
+
+## Review fixes
+
+Branch `fix/text-anim-review` (from `main` bb7107a); one commit per finding, each with a regression test.
+
+| Finding | Fix | Test |
+|---|---|---|
+| RTL text with `direction: 'auto'` reordered neutrals while animating ("שלום!": "!" jumped sides at the window edge; caret on the wrong side) | `TextLayer.tsx`: `paragraphDirections` resolves the base direction of every bidi paragraph like `unicode-bidi: plaintext` (first strong character, none = LTR; paragraphs split at preserved line breaks); every overlay piece gets an explicit `direction` (`unicode-bidi` is not inherited, so each absolutely positioned piece started its own LTR paragraph); the typewriter caret uses the anchor unit's direction. | `packages/compositions/test/text-animation.test.tsx` (direction auto) |
+| Measuring skipped while the layer is `display:none` and never retried (Program showed rest text inside a window after Export mode until the playhead moved) | `TextLayer.tsx` (delimited `review fix` hunk in the measure effect): while unmeasured and without layout, a `ResizeObserver` on the block re-renders once it gets a layout; the unmeasured pass is `visibility: hidden` (never the rest state inside a window). | same file (measuring while display:none) |
+| In/Out bar drag did not follow the pointer when the windows were compressed | `TextAnimationBars.tsx` `storedFramesForWindow`: the drag moves the drawn (compressed) edge and stores the smallest `durationFrames` that renders it against the other side's stored length (inverse of `compressAnimationWindows`, which is non-decreasing in it, so a binary search; clamped to the longest window the clip can show). Uncompressed windows store exactly what they show (unchanged behaviour). | `apps/web/test/text-animation.test.tsx` (compressed bar edge, inverse) |
+| Agent-exposed `text.removeAnimation` disabled without a selection even with `clipIds` | `commands/text-animation.ts`: same `when` as `text.applyAnimation` (session, not read-only); `run` reports "Select a text clip first" when nothing is targeted. | `apps/web/test/text-animation.test.tsx` (commands) |
+| MCP `durationSeconds` converted at the first sequence's rate | `tools/animation.ts` `targetSequence`: the sequence the transaction targets — the addressed clip's (any sequence), for `"$selection"` the selected clips' (`selection.get`), else `sequenceId`, else the only sequence; several without `sequenceId` fail as the transaction does (`add_text`). `sequenceFor` stays for `render_frames`. Note: transactions have no active-sequence fallback (`HandlerContext.sequence`: given id, else the only sequence), so `add_text` could not convert at a wrong rate *and* succeed; `set_text_animation "$selection"` could. | `apps/mcp/test/animation.test.ts` (two sequences, 25/50 fps) |
+| 1-frame clip with In and Out never showed the text (`{in:1,out:1}`) | Decision: with both sides one frame stays at rest. `compressAnimationWindows` scales both to share `duration − 1` frames whenever `in + out ≥ duration` (each ≥ 1 from 3 frames; a 2-frame clip keeps only the longer side, In on a tie; a 1-frame clip drops both → rest). A single side may still cover the whole clip. Spec S11 §4.1 TXA-004 updated; the W_ANIMATION_COMPRESSED message now says the windows "do not fit" (it also fires when `in + out = duration` with both sides). | `packages/project/test/anime-contracts.test.ts`, `packages/compositions/test/text-animation.test.tsx` (1-frame clip at rest) |
+
+Notes: a dropped side stays in the snapshot's `animation` with `frames: 0` (`activeTextAnimation` treats it as rest). Where both sides compress the split changed by one frame (e.g. 40 + 40 on 60 frames: 30 + 29, was 30 + 30); the tests that pinned the old split were updated.
+
+Verification (2026-10-01, load average 20–100 on 12 cores): `pnpm lint`, `pnpm typecheck`, `pnpm e2e:typecheck` ok. `pnpm test`:
+1507 passed, 111 skipped, 2 failed + 7 suites failed — all timeouts under load (`beforeAll` 180 s in seven engine suites,
+`color-remotion` 60 s, `shell-render` 5 s); the 8 engine files alone 68 passed / 2 skipped, `shell-render` alone 7/7.
+Playwright `e2e/text-animation.spec.ts`: 8/8 in 2 of 6 runs; the other runs fail "revisiting a frame gives identical
+pixels" (2 differing luma samples) — the same intermittent failure on the base bb7107a (1 of 3 runs passed), i.e.
+the render-parity determinism bug being fixed separately, not this branch.
 
 ## For the integrator after merging wp-m2-layer-bake
 

@@ -41,8 +41,7 @@ const RemoveArgs = z.object({
 
 const targets = (ctx: CommandCtx, ids?: readonly string[]) =>
 	ctx.session ? (ids ? textClipIds(ctx.session, ids) : selectedTextClips(ctx.session)) : [];
-const hasTextSelection = (ctx: CommandCtx) =>
-	!!ctx.session && !ctx.session.getState().readOnly && selectedTextClips(ctx.session).length > 0;
+const canEdit = (ctx: CommandCtx) => !!ctx.session && !ctx.session.getState().readOnly;
 
 function report(ctx: CommandCtx, r: Parameters<typeof applyMessage>[0]): void {
 	const m = applyMessage(r);
@@ -78,7 +77,7 @@ export const textAnimationCommands: UiCommand[] = [
 		argsSchema: ApplyArgs,
 		agentExposed: true,
 		// Agents pass clipIds, so the selection is not required to run it.
-		when: (ctx) => !!ctx.session && !ctx.session.getState().readOnly,
+		when: canEdit,
 		run: async (ctx, args) => {
 			const a = ApplyArgs.parse(args ?? {});
 			const ids = targets(ctx, a.clipIds);
@@ -112,12 +111,16 @@ export const textAnimationCommands: UiCommand[] = [
 		scope: 'editing',
 		argsSchema: RemoveArgs,
 		agentExposed: true,
-		when: hasTextSelection,
-		disabledReason: (ctx) => (ctx.session && !hasTextSelection(ctx) ? 'Select a text clip first' : undefined),
+		// Like text.applyAnimation: agents pass clipIds, so the selection is not required to run it.
+		when: canEdit,
 		run: (ctx, args) => {
 			const a = RemoveArgs.parse(args ?? {});
 			const ids = targets(ctx, a.clipIds);
-			if (ctx.session && ids.length) report(ctx, removeTextAnimation(ctx.session, ids, a.side));
+			if (!ctx.session || !ids.length) {
+				ctx.ui.toast({ kind: 'info', message: 'Select a text clip first' });
+				return;
+			}
+			report(ctx, removeTextAnimation(ctx.session, ids, a.side));
 		},
 	},
 ];

@@ -2,7 +2,7 @@
 // step), the commands and menus, the clip context submenu, the Text Animations tab, the Properties / Effect
 // Controls section, the mini-timeline In/Out bars and the timeline wedges.
 import { EngineClient } from '@jasper/engine-client';
-import type { Clip } from '@jasper/project';
+import { type Clip, compressAnimationWindows, resolveTextAnimationWindows } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -20,6 +20,7 @@ import {
 	writeTextAnimationDrag,
 } from '../src/text-animation/actions.ts';
 import { LATEST_TEXT_ANIMATIONS } from '../src/text-animation/PresetPreview.tsx';
+import { storedFramesForWindow } from '../src/text-animation/TextAnimationBars.tsx';
 import { TextAnimationSection } from '../src/text-animation/TextAnimationSection.tsx';
 import { filterPresets, TextAnimationsTab } from '../src/text-animation/TextAnimationsTab.tsx';
 import { TextAnimationWedges } from '../src/text-animation/TextAnimationWedges.tsx';
@@ -142,6 +143,14 @@ describe('commands and menus (S11:TXA-024)', () => {
 			durationFrames: 50,
 		});
 		expect(toasts.at(-1)).toMatch(/shortened to fit/);
+		// with nothing selected, agents still remove by clipIds; without them the user is told to select
+		act(() => session.select('timeline', []));
+		expect((await runCommand('text.removeAnimation', ctx, { clipIds: [a!], side: 'out' })).ran).toBe(true);
+		expect(textOf(session, a!).textAnimation?.out).toBeUndefined();
+		expect(textOf(session, a!).textAnimation?.in?.preset).toBe('fade');
+		expect((await runCommand('text.removeAnimation', ctx, { side: 'both' })).ran).toBe(true);
+		expect(toasts.at(-1)).toBe('Select a text clip first');
+		expect(textOf(session, a!).textAnimation?.in?.preset).toBe('fade');
 	});
 	it('Graphics ▸ Text Animation has Apply In…, Apply Out… and Remove', () => {
 		const graphics = MENUBAR.find((m) => m.id === 'graphics')!;
@@ -295,6 +304,51 @@ describe('Effect Controls (S11:TXA-022)', () => {
 		// the playhead did not move (the ruler seek is not triggered by the edge)
 		expect(session.transport.getState().frame).toBe(5);
 	});
+	it('a compressed bar edge follows the pointer (the drag inverts the compression)', () => {
+		const session = makeSession();
+		const [id] = addTexts(session, 1, 60);
+		applyTextAnimation(session, [id!], { side: 'both', preset: 'fade', durationFrames: 40 });
+		// 40 + 40 do not fit 60 frames: drawn as 30 + 29
+		expect(resolveTextAnimationWindows(textOf(session, id!)).in?.frames).toBe(30);
+		act(() => session.select('timeline', [id!]));
+		renderWithSession(session, <EffectControlsPanel instanceId="ec1" visible />);
+		screen.getByTestId('ec-ruler').getBoundingClientRect = () =>
+			({ left: 0, width: 128, top: 0, height: 34, right: 128, bottom: 34, x: 0, y: 0 }) as DOMRect;
+		// +32 px ≈ +17 frames: the In edge is drawn at 30 + 17 = 47 frames (the stored value grows to 149)
+		act(() => {
+			fireEvent.pointerDown(screen.getByTestId('ec-text-anim-edge-in'), { clientX: 10, button: 0 });
+			fireEvent.pointerMove(window, { clientX: 42 });
+			fireEvent.pointerUp(window, { clientX: 42 });
+		});
+		const clip = textOf(session, id!);
+		expect(clip.textAnimation?.in?.durationFrames).toBe(149);
+		expect(resolveTextAnimationWindows(clip).in?.frames).toBe(47);
+		// the Out edge: −16 px ≈ +8 frames on the window of 12 left after In
+		act(() => {
+			fireEvent.pointerDown(screen.getByTestId('ec-text-anim-edge-out'), { clientX: 100, button: 0 });
+			fireEvent.pointerMove(window, { clientX: 84 });
+			fireEvent.pointerUp(window, { clientX: 84 });
+		});
+		const after = resolveTextAnimationWindows(textOf(session, id!));
+		expect(after.out?.frames).toBe(12 + 8);
+	});
+	it('storedFramesForWindow inverts compressAnimationWindows', () => {
+		// uncompressed: stores what it shows; no other side: up to the clip
+		expect(storedFramesForWindow(60, 'in', 20, 10)).toBe(20);
+		expect(storedFramesForWindow(60, 'out', 80, 0)).toBe(60);
+		expect(storedFramesForWindow(60, 'in', 0, 0)).toBe(1);
+		// beyond what the clip can show: the shortest stored value reaching the longest window (other side ≥ 1)
+		const max = storedFramesForWindow(60, 'in', 500, 10);
+		expect(compressAnimationWindows(60, max, 10).in).toBe(58);
+		expect(compressAnimationWindows(60, max - 1, 10).in).toBeLessThan(58);
+		for (const d of [3, 7, 30, 61])
+			for (const other of [1, 5, 40])
+				for (let shown = 1; shown <= d - 2; shown++) {
+					const s = storedFramesForWindow(d, 'out', shown, other);
+					const w = compressAnimationWindows(d, other, s);
+					expect(w.out).toBe(Math.min(shown, compressAnimationWindows(d, other, 10_000).out));
+				}
+	});
 });
 
 describe('timeline wedges (S11:TXA-023)', () => {
@@ -306,8 +360,8 @@ describe('timeline wedges (S11:TXA-023)', () => {
 			<TextAnimationWedges clip={textOf(session, id!)} pxPerFrame={2} height={40} />,
 		);
 		const svg = container.querySelector('svg')!;
-		// 20 + 20 > 30: compressed to 15 + 15
-		expect(svg.dataset.textAnimWedges).toBe('15/15');
+		// 20 + 20 > 30: compressed to 15 + 14 (one frame stays at rest)
+		expect(svg.dataset.textAnimWedges).toBe('15/14');
 		expect(svg.querySelectorAll('path')).toHaveLength(2);
 		expect(
 			render(

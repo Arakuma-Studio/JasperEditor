@@ -138,7 +138,9 @@ authored animation timelines (JSON "AnimSpec", M3); on-canvas text editing (TXT-
 - **TXA-004 (P0) Anchoring.** Windows anchor to the clip's visible edges (clip time = `localFrame`), not to content
   time. `in` covers frames `[0, in.durationFrames)`, `out` covers `[duration − out.durationFrames, duration)`.
   If `in + out > duration` both are scaled proportionally at render time (no invariant failure) and the command
-  that caused it returns warning `W_ANIMATION_COMPRESSED`. In transition handles (`localFrame < 0` or
+  that caused it returns warning `W_ANIMATION_COMPRESSED`. With both sides set, at least one frame stays at rest:
+  they are scaled to share `duration − 1` frames whenever `in + out ≥ duration` (a 2-frame clip keeps only the
+  longer side, a 1-frame clip drops both and shows the rest state). In transition handles (`localFrame < 0` or
   `≥ duration`) the animator clamps to its start/end state.
 - **TXA-005 (P0) Edits.** Razor/split: the left part keeps `in` and drops `out`; the right part keeps `out` and drops
   `in`. Duplicate/paste/paste attributes copy `textAnimation`. Trims keep the anchoring (durations unchanged).

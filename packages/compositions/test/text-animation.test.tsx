@@ -10,9 +10,9 @@ import {
 	type RenderSnapshot,
 } from '@jasper/project';
 import { Thumbnail } from '@remotion/player';
-import { render } from '@testing-library/react';
+import { act, cleanup, render } from '@testing-library/react';
 import fc from 'fast-check';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
 	DEFAULT_RENDER_OPTIONS,
 	type RenderDoc,
@@ -22,7 +22,7 @@ import {
 	textAnimationPreviewDoc,
 	textAnimationPreviewTiming,
 } from '../src/index.ts';
-import { runStyleCss, styledSpans } from '../src/layers/TextLayer.tsx';
+import { paragraphDirections, runStyleCss, styledSpans } from '../src/layers/TextLayer.tsx';
 
 type Cmd = Record<string, unknown>;
 
@@ -90,6 +90,11 @@ describe('rest state (S11:ANM-009, TXA-010)', () => {
 			expect(animated.block().outerHTML).toBe(plain);
 		}
 	});
+	it('a 1-frame clip with In and Out shows the rest state (S11:TXA-004: one frame stays at rest)', () => {
+		const v = view(docWith({ textAnimation: SLIDE_FADE }, 1), 0);
+		expect(v.block().dataset.textAnimating).toBeUndefined();
+		expect(v.block().outerHTML).toBe(view(docWith({}, 1), 0).block().outerHTML);
+	});
 	it('unknown presets render at rest', () => {
 		const doc = docWith({ textAnimation: SLIDE_FADE });
 		const clip = doc.videoTracks.flatMap((t) => t.clips)[0]!;
@@ -105,6 +110,60 @@ describe('rest state (S11:ANM-009, TXA-010)', () => {
 		const v = view(docWith({ textAnimation: SLIDE_FADE }, 60, 'https://fonts.test/slow.woff2'), 3);
 		expect(v.container.querySelector('[data-text-block]')).toBeNull();
 		expect(v.units()).toHaveLength(0);
+	});
+});
+
+describe('measuring while display:none (review fix)', () => {
+	afterEach(() => {
+		delete (HTMLElement.prototype as { offsetParent?: unknown }).offsetParent;
+		vi.unstubAllGlobals();
+	});
+	it('hides the unmeasured flow inside a window and measures once the block gets a layout', () => {
+		cleanup(); // earlier views (e.g. a layer whose face loads late) must not observe under the stubs below
+		// happy-dom has no offsetParent: emulate a hidden editor (display:none ancestor → null) and a ResizeObserver.
+		let displayed = false;
+		Object.defineProperty(HTMLElement.prototype, 'offsetParent', {
+			configurable: true,
+			get(this: HTMLElement) {
+				return displayed && this !== document.body ? document.body : null;
+			},
+		});
+		const observers: { cb: () => void; target: Element | null }[] = [];
+		vi.stubGlobal(
+			'ResizeObserver',
+			class {
+				o: { cb: () => void; target: Element | null };
+				constructor(cb: () => void) {
+					this.o = { cb, target: null };
+					observers.push(this.o);
+				}
+				observe(target: Element) {
+					this.o.target = target;
+				}
+				unobserve() {
+					this.o.target = null;
+				}
+				disconnect() {
+					this.o.target = null;
+				}
+			},
+		);
+		const v = view(docWith({ textAnimation: SLIDE_FADE }), 2);
+		expect(v.block().dataset.textAnimating).toBe('measure');
+		expect(v.block().style.visibility).toBe('hidden');
+		expect(v.units()).toHaveLength(0);
+		// the text layer observes its block (the player observes its own container)
+		const watching = () => observers.filter((o) => o.target?.hasAttribute('data-text-block'));
+		const live = watching();
+		expect(live.length).toBe(1);
+		// still hidden: a resize notification without layout changes nothing
+		act(() => live[0]!.cb());
+		expect(v.block().dataset.textAnimating).toBe('measure');
+		displayed = true;
+		act(() => live[0]!.cb());
+		expect(v.block().dataset.textAnimating).toBe('in');
+		expect(v.units().map((u) => u.textContent)).toEqual(['Hello', 'brave', 'world']);
+		expect(watching().length).toBe(0);
 	});
 });
 
@@ -151,6 +210,50 @@ describe('inside a window (S11:TXA-010/011/012)', () => {
 			2,
 		);
 		expect(caps.units().map((u) => u.textContent)).toEqual(['S', 'T', 'R', 'A', 'S', 'S', 'E']);
+	});
+	it("direction 'auto': overlay pieces keep the base direction of their paragraph (unicode-bidi: plaintext)", () => {
+		// unicode-bidi is not inherited: without an explicit direction every absolutely positioned piece would start
+		// an LTR paragraph and draw "!" right of "שלום" while the measured RTL flow has it on the left.
+		expect(paragraphDirections('שלום!')).toEqual([{ end: Number.POSITIVE_INFINITY, rtl: true }]);
+		expect(paragraphDirections('(שלום)\n123 Hi\r\n!')).toEqual([
+			{ end: 7, rtl: true },
+			{ end: 15, rtl: false },
+			{ end: Number.POSITIVE_INFINITY, rtl: false },
+		]);
+		expect(paragraphDirections('\u200Fabc')[0]!.rtl).toBe(true);
+		const v = view(
+			docWith({
+				content: { text: 'שלום! (עולם)\nHello (world)' },
+				textAnimation: { in: { preset: 'fade', params: { unit: 'word' } } },
+			}),
+			2,
+		);
+		const pieces = v.units().flatMap((u) => [...u.querySelectorAll<HTMLElement>(':scope > span')]);
+		expect(pieces.map((p) => [p.textContent, p.style.direction])).toEqual([
+			['שלום!', 'rtl'],
+			['(עולם)', 'rtl'],
+			['Hello', 'ltr'],
+			['(world)', 'ltr'],
+		]);
+		// the typewriter caret follows the paragraph direction too (before the last shown unit's left edge)
+		const tw = view(
+			docWith({ content: { text: 'שלום עולם' }, textAnimation: { in: { preset: 'typewriter' } } }),
+			10,
+		);
+		const caret = tw.container.querySelector<HTMLElement>('[data-text-caret]')!;
+		const last = tw
+			.units()
+			.filter((u) => u.style.visibility !== 'hidden')
+			.at(-1)!;
+		expect(Number.parseFloat(caret.style.left)).toBeLessThan(Number.parseFloat(last.style.left));
+		const explicit = view(
+			docWith({
+				content: { text: 'Hi!', style: { direction: 'rtl' } },
+				textAnimation: { in: { preset: 'pop' } },
+			}),
+			2,
+		);
+		expect(explicit.units().every((u) => u.querySelector('span')!.style.direction === 'rtl')).toBe(true);
 	});
 	it('line units animate whole lines (grouped by layout boxes)', () => {
 		const v = view(docWith({ textAnimation: { in: { preset: 'tracking' } } }), 1);
