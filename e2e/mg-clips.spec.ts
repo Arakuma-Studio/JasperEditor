@@ -52,6 +52,7 @@ test.afterAll(async () => {
 });
 
 test('renderer-page protocol contract (Remotion 4.0.499) drives the fixture bundle frame by frame', async ({
+	browser,
 	request,
 }) => {
 	test.setTimeout(600_000);
@@ -60,7 +61,7 @@ test('renderer-page protocol contract (Remotion 4.0.499) drives the fixture bund
 	const reg = (await imported.json()) as { mediaKey: string; mgBundle: { compositions: { id: string }[] } };
 	expect(reg.mgBundle.compositions.map((c) => c.id).sort()).toEqual(['Badge', 'Title']);
 
-	const probe = await page.context().newPage();
+	const probe = await browser.newPage(); // own context: the shared page's context refuses newPage()
 	await probe.goto('/health');
 	await probe.setContent(
 		'<html><body style="margin:0;background:rgb(255,0,0)"><iframe id="h" style="border:0;width:1920px;height:1080px;color-scheme:light"></iframe></body></html>',
