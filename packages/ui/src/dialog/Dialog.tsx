@@ -68,6 +68,9 @@ export function Dialog(props: DialogProps) {
 		const t = e.target as HTMLElement;
 		if (t.tagName === 'TEXTAREA' || t.isContentEditable) return;
 		if (t.tagName === 'BUTTON' && !t.hasAttribute('data-dialog-primary')) return;
+		// Enter on an option of a Select / menu inside the dialog picks that option; React bubbles the event
+		// out of the popup's portal to here, where it must not also run the primary action.
+		if (t.closest('[role="listbox"],[role="menu"],[role="option"],[role="menuitem"]')) return;
 		e.preventDefault();
 		void runPrimary();
 	};

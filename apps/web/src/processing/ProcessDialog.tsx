@@ -213,7 +213,8 @@ export function ProcessDialog(props: HostedDialogProps<ProcessDialogProps>) {
 
 	const model = models?.find((m) => m.id === form.upscale.model) ?? null;
 	const smoothPath = form.stabilize.method === 'smoothpath';
-	const autoStabilize: Exclude<StabilizeMethod, 'auto'> = proc?.stabilize === 'deshake' ? 'deshake' : 'vidstab';
+	const autoStabilize: Exclude<StabilizeMethod, 'auto'> =
+		proc?.stabilize === 'deshake' ? 'deshake' : 'vidstab';
 	const steps = useMemo(() => stepsFromForm(form), [form]);
 	const ops = steps.map((s) => s.op);
 	const remote = settings?.remote ?? null;

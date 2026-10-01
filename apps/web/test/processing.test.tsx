@@ -397,13 +397,15 @@ describe('Process Clip dialog (PRU-001)', () => {
 		expect(screen.getByTestId('stabilize-max-zoom').textContent).toBe('112 %');
 		expect(screen.queryByText('Also stabilize rotation (vid.stab)')).toBeNull();
 		fireEvent.click(screen.getByRole('checkbox', { name: 'Vertical (no tilt)' }));
-		fireEvent.click(within(screen.getByTestId('step-stabilize')).getByRole('button', { name: 'Keep (black edges)' }));
+		fireEvent.click(
+			within(screen.getByTestId('step-stabilize')).getByRole('button', { name: 'Keep (black edges)' }),
+		);
 		expect(screen.queryByTestId('stabilize-max-zoom')).toBeNull();
 		await act(async () => {
 			fireEvent.click(screen.getByRole('button', { name: 'Start' }));
 		});
 		const post = calls.find((c) => c.method === 'POST' && c.url === `/api/media/${KEY}/process`);
-		expect((post?.body as { steps: unknown[] }).steps).toEqual([
+		expect((post?.body as { steps?: unknown[] } | undefined)?.steps).toEqual([
 			{
 				op: 'stabilize',
 				method: 'smoothpath',
