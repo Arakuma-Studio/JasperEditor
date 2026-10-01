@@ -357,7 +357,7 @@ describe('tracker.apply (S09:TRK-020…023, §8.1)', () => {
 		};
 		expect(t.effects[0]!.effectId).toBe('jasper.corner-pin');
 		expect(t.effects[0]!.params.topLeft!.keyframes.length).toBe(30);
-		expect(t.trackedBy).toEqual({
+		expect((t as { trackedBy?: unknown }).trackedBy).toEqual({
 			clipId: plate,
 			trackerId: id,
 			mode: 'corner-pin',
@@ -447,7 +447,7 @@ describe('tracker.apply (S09:TRK-020…023, §8.1)', () => {
 		const r = h.ok([{ type: 'tracker.unlink', clipIds: [target] }]);
 		expect(r.results[0]).toEqual({ clipIds: [target] });
 		const t = clip(h, target) as Clip & { effects: { params: Record<string, { keyframes: unknown[] }> }[] };
-		expect(t.trackedBy).toBeUndefined();
+		expect((t as { trackedBy?: unknown }).trackedBy).toBeUndefined();
 		expect(t.effects[0]!.params.topLeft!.keyframes.length).toBe(30);
 	});
 
@@ -457,7 +457,7 @@ describe('tracker.apply (S09:TRK-020…023, §8.1)', () => {
 		h.ok([{ type: 'tracker.apply', trackerId: id, targetClipId: target, mode: 'corner-pin' }]);
 		h.ok([{ type: 'tracker.remove', trackerIds: [id] }]);
 		const t = clip(h, target) as Clip & { effects: { params: Record<string, { keyframes: unknown[] }> }[] };
-		expect(t.trackedBy).toBeUndefined();
+		expect((t as { trackedBy?: unknown }).trackedBy).toBeUndefined();
 		expect(t.effects[0]!.params.topLeft!.keyframes.length).toBe(30);
 	});
 });

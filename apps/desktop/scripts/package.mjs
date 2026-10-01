@@ -149,7 +149,11 @@ function copyRuntimeClosure(roots, fromDir, dest) {
 }
 
 // onnxruntime-node (MIT): the super-resolution runtime of jasper-proc (native binding, loaded lazily).
-const packages = copyRuntimeClosure(['@remotion/renderer', '@techstark/opencv-js', 'onnxruntime-node'], engine, deploy);
+const packages = copyRuntimeClosure(
+	['@remotion/renderer', '@techstark/opencv-js', 'onnxruntime-node'],
+	engine,
+	deploy,
+);
 const enginePkg = JSON.parse(readFileSync(join(engine, 'package.json'), 'utf8'));
 writeFileSync(
 	join(deploy, 'package.json'),
