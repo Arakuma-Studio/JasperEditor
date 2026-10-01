@@ -8,6 +8,7 @@ import { type TextAnimationSide, type TextAnimationSpec, toJsonSchema } from '@j
 import { act, cleanup, render } from '@testing-library/react';
 import fc from 'fast-check';
 import { type ComponentType, StrictMode } from 'react';
+import { roundValue, valuesAt } from '../src/runtime/hooks.ts';
 import { frameToMs, hash32, seekCanonical, type Timeline, useAnimeValues } from '../src/runtime/index.ts';
 import type { AnimeTemplateProps } from '../src/templates/index.ts';
 import {
@@ -146,7 +147,11 @@ export function checkValueBuild(label: string, build: Build, frames: readonly nu
 	const r = render(<Probe ms={frameToMs(order[0]!, fps)} />);
 	for (const f of order) {
 		r.rerender(<Probe ms={frameToMs(f, fps)} />);
-		const d = diffValues(seen, fresh.get(f)!);
+		// the hook hands React values rounded to 1e-6
+		const want = fresh
+			.get(f)!
+			.map((t) => Object.fromEntries(Object.entries(t).map(([k, v]) => [k, roundValue(v)])));
+		const d = diffValues(seen, want);
 		if (d) {
 			failures.push(`useAnimeValues: frame ${f} differs from a fresh build (${d})`);
 			break;
@@ -250,12 +255,12 @@ export function checkTextAnimation(impl: TextAnimationImpl, spec?: TextAnimation
 			}
 			if (failures.length) break;
 		}
+		// What React renders (useAnimeValues, rounded) equals the un-animated layer exactly.
 		const restAt = ctx.side === 'in' ? ctx.durationMs : 0;
-		seekCanonical(probe.timeline, restAt);
-		for (const [i, t] of probe.targets.entries())
+		for (const [i, t] of valuesAt(build(), restAt).entries())
 			for (const k of UNIT_KEYS) {
 				const want = REST_UNIT_VALUES[k as keyof UnitValues];
-				if (!(Math.abs((t[k] ?? Number.NaN) - want) <= 1e-9)) {
+				if (t[k] !== want) {
 					failures.push(`${ctx.side} at ${restAt} ms: target ${i}.${k} = ${t[k]}, rest is ${want} (ANM-009)`);
 					break;
 				}
@@ -263,6 +268,26 @@ export function checkTextAnimation(impl: TextAnimationImpl, spec?: TextAnimation
 		failures.push(...checkValueBuild(label, build, frames, fps).failures);
 		return { label, failures };
 	});
+}
+
+/**
+ * The markup of `el` with every inline style's declarations sorted: React appends a property that appears later
+ * (e.g. a `filter` once blur > 0) after the existing ones, a fresh mount writes them in object order — the same
+ * style, serialised differently.
+ */
+export function canonicalHtml(el: HTMLElement): string {
+	const copy = el.cloneNode(true) as HTMLElement;
+	for (const node of [copy, ...copy.querySelectorAll<HTMLElement>('[style]')]) {
+		const style = node.getAttribute('style');
+		if (style === null) continue;
+		const decls = style
+			.split(';')
+			.map((d) => d.trim())
+			.filter(Boolean)
+			.sort();
+		node.setAttribute('style', decls.join('; '));
+	}
+	return copy.innerHTML;
 }
 
 export type TemplateCase = { label: string; props: (frame: number) => AnimeTemplateProps; frames: number[] };
@@ -304,7 +329,7 @@ export function checkTemplate(
 ): Report {
 	const { label, props, frames } = templateCase(key, def);
 	const failures: string[] = [];
-	const html = (el: HTMLElement) => el.innerHTML;
+	const html = canonicalHtml;
 	const fresh = new Map<number, string>();
 	try {
 		const clock = wallClockCalls(() => {

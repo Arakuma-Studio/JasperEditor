@@ -4,16 +4,9 @@
 // is proven here on fixture implementations, including deliberately broken ones it must reject.
 import { mgRegistry } from '@jasper/mg-templates';
 import { getTextAnimationSpec, type TextAnimationSpec } from '@jasper/project';
-import { createDrawable } from 'animejs/svg';
-import { useMemo, useRef } from 'react';
+import { useMemo } from 'react';
 import { describe, expect, it } from 'vitest';
-import {
-	createPausedTimeline,
-	resolveEase,
-	seededRandom,
-	useAnimeDom,
-	useAnimeValues,
-} from '../src/runtime/index.ts';
+import { createPausedTimeline } from '../src/runtime/index.ts';
 import { ANIME_TEMPLATE_IMPLS, type AnimeTemplateProps } from '../src/templates/index.ts';
 import {
 	REST_UNIT_VALUES,
@@ -21,86 +14,8 @@ import {
 	type TextAnimationImpl,
 	type UnitValues,
 } from '../src/text/index.ts';
+import { FixtureScene, FixtureTemplate, riseImpl, SCENE } from './determinism-fixtures.tsx';
 import { checkTemplate, checkTextAnimation, paramVariants, visitOrders } from './determinism-harness.tsx';
-
-const HIDDEN: UnitValues = {
-	opacity: 0,
-	x: 12,
-	y: 40,
-	scale: 0.6,
-	rotate: -15,
-	blur: 6,
-	letterSpacing: 0.2,
-	reveal: 0,
-};
-const KEYS = Object.keys(REST_UNIT_VALUES) as (keyof UnitValues)[];
-
-/** A staggered rise in a seeded random order with an overshooting ease (fixture; not shipped). */
-function riseImpl(
-	key = 'fixture-rise@1',
-	mutate?: (targets: UnitValues[]) => UnitValues[],
-): TextAnimationImpl {
-	return {
-		key,
-		unitDefault: 'char',
-		build({ units, side, durationMs, params, seed }) {
-			const targets = Array.from({ length: units }, () => ({ ...REST_UNIT_VALUES }));
-			const rand = seededRandom(seed);
-			const order = targets.map((_, i) => i);
-			for (let i = order.length - 1; i > 0; i--) {
-				const j = Math.floor(rand() * (i + 1));
-				[order[i], order[j]] = [order[j]!, order[i]!];
-			}
-			const per = durationMs / 2;
-			const step = units > 1 ? (durationMs - per) / (units - 1) : 0;
-			const timeline = createPausedTimeline();
-			order.forEach((u, k) => {
-				const props: Record<string, [number, number]> = {};
-				for (const p of KEYS)
-					props[p] = side === 'in' ? [HIDDEN[p], REST_UNIT_VALUES[p]] : [REST_UNIT_VALUES[p], HIDDEN[p]];
-				timeline.add(
-					targets[u]!,
-					{ ...props, duration: per, ease: resolveEase(String(params.ease ?? 'outBack')) },
-					k * step,
-				);
-			});
-			return { timeline, targets: mutate ? mutate(targets) : targets };
-		},
-	};
-}
-
-/** A bar wipe + a fade-out of the same property (two tweens with a gap) and a drawn SVG line (DOM leaf). */
-function FixtureTemplate({ timeMs, totalMs, introMs, outroMs, seed, canvas }: AnimeTemplateProps) {
-	const [bar] = useAnimeValues(
-		`fixture|${totalMs}|${introMs}|${outroMs}|${seed}`,
-		() => {
-			const v = { w: 0, o: 0 };
-			const timeline = createPausedTimeline();
-			timeline.add(v, { w: [0, 600], o: [0, 1], duration: introMs, ease: 'outExpo' }, 0);
-			timeline.add(v, { o: [1, 0], duration: outroMs, ease: 'in' }, totalMs - outroMs);
-			return { timeline, targets: [v] };
-		},
-		timeMs,
-	);
-	const line = useRef<SVGPathElement>(null);
-	useAnimeDom(
-		line,
-		`line|${introMs}`,
-		(root) => {
-			const timeline = createPausedTimeline();
-			timeline.add(createDrawable(root), { draw: ['0 0', '0 1'], duration: introMs, ease: 'linear' }, 0);
-			return timeline;
-		},
-		timeMs,
-		true,
-	);
-	return (
-		<svg width={canvas.width} height={canvas.height} role="img" aria-label="fixture">
-			<rect x={40} y={40} height={20} width={bar!.w} opacity={bar!.o} fill="#3e99f5" />
-			<path ref={line} d="M40 100 L640 100" stroke="#fff" />
-		</svg>
-	);
-}
 
 /** Broken on purpose: one persistent timeline moved with a plain (history-dependent) seek. */
 function PlainSeekTemplate({ timeMs }: AnimeTemplateProps) {
@@ -190,6 +105,14 @@ describe('determinism harness (proven on fixtures)', { timeout: 120_000 }, () =>
 
 	it('accepts a correct anime template (value engine + DOM leaf), mounted once or fresh, StrictMode', () => {
 		expect(checkTemplate('fixture-template@1', FixtureTemplate, undefined).failures).toEqual([]);
+	});
+
+	it('accepts the render-parity scene (title in/out, template with a DOM leaf, shape)', () => {
+		const Scene = ({ timeMs }: AnimeTemplateProps) => (
+			<FixtureScene frame={Math.round((timeMs * SCENE.fps) / 1000)} />
+		);
+		const def = { introFrames: 18, outroFrames: 12, canvases: [SCENE], defaults: {} } as never;
+		expect(checkTemplate('fixture-scene@1', Scene, def).failures).toEqual([]);
 	});
 
 	it('rejects a template driven by a plain seek, and one using Math.random', () => {

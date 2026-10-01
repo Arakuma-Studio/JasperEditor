@@ -8,10 +8,19 @@ import { createScope } from 'animejs/scope';
 import { type RefObject, useLayoutEffect, useMemo, useRef } from 'react';
 import { seekCanonical, type Timeline } from './timeline.ts';
 
+/**
+ * Values handed to React are rounded to 1e-6 (anime.js rounds the strings it writes to 4 decimals, but not plain
+ * object numbers): eased from-values carry float noise (`1.0000000000000002`, `-2.7e-15`), so without rounding
+ * a unit at rest would not render exactly like the un-animated layer (S11:ANM-009), and tiny numbers stringify in
+ * exponent notation, which not every CSS parser accepts in inline styles. `+ 0` turns -0 into 0.
+ */
+const SCALE = 1e6;
+export const roundValue = (v: number): number => (Number.isFinite(v) ? Math.round(v * SCALE) / SCALE + 0 : v);
+
 function snapshot<T extends Record<string, number>>(target: T): Readonly<T> {
 	// String keys only: anime.js marks registered targets with a symbol property.
 	const copy = {} as Record<string, number>;
-	for (const k of Object.keys(target)) copy[k] = target[k] as number;
+	for (const k of Object.keys(target)) copy[k] = roundValue(target[k] as number);
 	return Object.freeze(copy) as Readonly<T>;
 }
 

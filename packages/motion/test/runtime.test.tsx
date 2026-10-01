@@ -311,6 +311,26 @@ describe('runtime hardening (wp-m2-anime-core)', () => {
 		expect(b[0]).toEqual({ x: fresh.targets[0]!.x, o: fresh.targets[0]!.o });
 	});
 
+	it('values handed to React are rounded to 1e-6: exact rest values, no -0, no exponent notation', () => {
+		const build = () => {
+			const o = { opacity: 1, y: 0 };
+			const timeline = createPausedTimeline();
+			timeline.add(o, { opacity: [1, 0], y: [0, 40], duration: 500, ease: 'outBack' }, 0);
+			return { timeline, targets: [o] };
+		};
+		const raw = build();
+		seekCanonical(raw.timeline, 0);
+		// anime.js leaves float noise on plain objects at the start of an eased tween
+		expect(raw.targets[0]!.opacity !== 1 || !Object.is(raw.targets[0]!.y, 0) || raw.targets[0]!.y !== 0).toBe(
+			true,
+		);
+		const [v] = valuesAt(build(), 0);
+		expect(v).toEqual({ opacity: 1, y: 0 });
+		expect(Object.is(v!.y, 0)).toBe(true);
+		for (const ms of [1, 7, 33, 250, 499])
+			for (const x of Object.values(valuesAt(build(), ms)[0]!)) expect(String(x)).not.toMatch(/e/);
+	});
+
 	it('useAnimeValues: StrictMode double renders and a buildKey change give the values of a fresh build', () => {
 		let seen: readonly Readonly<{ v: number }>[] = [];
 		let builds = 0;
