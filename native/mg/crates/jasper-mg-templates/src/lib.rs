@@ -133,7 +133,7 @@ impl Prepared {
         let ft = self.spec.frame_time(index);
         match &self.params {
             TemplateParams::LowerThird(p) => lower_third::render_svg(p, &ft, &self.fit, "mg"),
-            TemplateParams::TitleCard(p) => title_card::render_svg(p, &ft, &self.fit, "mg"),
+            TemplateParams::TitleCard(p) => title_card::render_svg(p, &ft, &self.fit),
         }
     }
 
@@ -179,8 +179,7 @@ impl<const W: usize, const H: usize> Video for AnyTemplate<'_, W, H> {
 mod tests {
     use super::*;
 
-    fn spec(template: &str, params: Value, w: u32, h: u32) -> MgSpec {
-        let id = template.split('@').next().unwrap();
+    fn spec(id: &str, params: Value, w: u32, h: u32) -> MgSpec {
         MgSpec::parse(
             &json!({"template": {"id": id, "version": 1}, "params": params, "width": w, "height": h,
                     "fps": {"num": 30, "den": 1}, "durationFrames": 150})

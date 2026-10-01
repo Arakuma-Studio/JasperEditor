@@ -10,7 +10,7 @@ import { type APIRequestContext, expect, type Locator, type Page } from '@playwr
 export const ROOT = fileURLToPath(new URL('..', import.meta.url));
 export const FIXTURES = join(ROOT, 'fixtures', 'media');
 
-export type ClipRow = {
+type ClipRow = {
 	id: string;
 	kind: string;
 	name: string;
@@ -21,7 +21,7 @@ export type ClipRow = {
 	linked: string[];
 };
 
-export type HistoryEntry = { label: string; origin: unknown; applied: boolean };
+type HistoryEntry = { label: string; origin: unknown; applied: boolean };
 
 /** Engine info written by e2e/serve.mjs (port + temp appdir). */
 export function serverInfo(): { port: number; appdir: string } {
@@ -68,7 +68,7 @@ export async function clips(page: Page, tracks?: string[]): Promise<ClipRow[]> {
 	return [...r.clips].sort((a, b) => a.track.localeCompare(b.track) || a.start - b.start);
 }
 
-export async function history(page: Page): Promise<{ entries: HistoryEntry[]; position: number }> {
+async function history(page: Page): Promise<{ entries: HistoryEntry[]; position: number }> {
 	return query(page, 'history.list');
 }
 
@@ -205,7 +205,7 @@ export async function programPixels(page: Page): Promise<{ layers: number; mean:
 	});
 }
 
-export type ProbeResult = {
+type ProbeResult = {
 	streams: {
 		codec_type: string;
 		codec_name: string;
@@ -244,7 +244,7 @@ export async function waitForJob(
 	}
 }
 
-export type ExportOutcome = {
+type ExportOutcome = {
 	file: string;
 	job: { state: string; result?: Record<string, unknown>; stage?: string };
 };

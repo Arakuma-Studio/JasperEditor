@@ -5,10 +5,10 @@ import type { EngineEventType, EventEnvelope, EventPayload } from '@jasper/api';
 export type EventListener = (e: EventEnvelope) => void;
 export type EventFilter = { projectId?: string };
 
-export const DEFAULT_RING_SIZE = 2000;
+const DEFAULT_RING_SIZE = 2000;
 
 /** Events without a projectId are global and reach every subscriber. */
-export function matchesFilter(e: EventEnvelope, f: EventFilter): boolean {
+function matchesFilter(e: EventEnvelope, f: EventFilter): boolean {
 	return !f.projectId || e.projectId === undefined || e.projectId === f.projectId;
 }
 

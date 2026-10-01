@@ -21,6 +21,7 @@ import {
 	toTrackingPx,
 	trackingSize,
 } from '../src/tracking/geometry.ts';
+import type { PlanarConfig } from '../src/tracking/planar.ts';
 import { trackerConfig, trackSpan, validateTrackRequest } from '../src/tracking/service.ts';
 import { acquireWorker, releaseWorker, shutdownWorkers } from '../src/tracking/worker.ts';
 
@@ -376,26 +377,24 @@ describe('tracking worker (OpenCV.js in worker_threads)', () => {
 			return img;
 		};
 		const quad = [40, 30, 120, 30, 120, 90, 40, 90];
-		await w.call({
-			type: 'init',
-			cfg: {
-				kind: 'planar',
-				width: W,
-				height: H,
-				corners: quad,
-				features: 'inside',
-				refineEdges: false,
-				ecc: false,
-				maxFeatures: 200,
-				qualityLevel: 0.01,
-				minDistance: 4,
-				winSize: 15,
-				maxLevel: 2,
-				fbMax: 1,
-				ransacThreshold: 2,
-				minSurvival: 0.3,
-			},
-		});
+		const cfg = {
+			kind: 'planar',
+			width: W,
+			height: H,
+			corners: quad,
+			features: 'inside',
+			refineEdges: false,
+			ecc: false,
+			maxFeatures: 200,
+			qualityLevel: 0.01,
+			minDistance: 4,
+			winSize: 15,
+			maxLevel: 2,
+			fbMax: 1,
+			ransacThreshold: 2,
+			minSurvival: 0.3,
+		} satisfies PlanarConfig;
+		await w.call({ type: 'init', cfg });
 		const send = async (type: 'reference' | 'frame', img: Uint8Array) =>
 			w.result({ type, frame: 0, buf: img.buffer as ArrayBuffer }, [img.buffer as ArrayBuffer]);
 		expect((await send('reference', tex(0))).values).toEqual(quad);
@@ -408,26 +407,7 @@ describe('tracking worker (OpenCV.js in worker_threads)', () => {
 			),
 		).toBeLessThan(0.2);
 		// A flat reference region has nothing to track: a clear error, and the worker stays usable.
-		await w.call({
-			type: 'init',
-			cfg: {
-				kind: 'planar',
-				width: W,
-				height: H,
-				corners: quad,
-				features: 'inside',
-				refineEdges: false,
-				ecc: false,
-				maxFeatures: 200,
-				qualityLevel: 0.01,
-				minDistance: 4,
-				winSize: 15,
-				maxLevel: 2,
-				fbMax: 1,
-				ransacThreshold: 2,
-				minSurvival: 0.3,
-			},
-		});
+		await w.call({ type: 'init', cfg });
 		await expect(send('reference', new Uint8Array(W * H).fill(90))).rejects.toThrow(/Not enough texture/);
 		await w.call({
 			type: 'init',
@@ -435,7 +415,6 @@ describe('tracking worker (OpenCV.js in worker_threads)', () => {
 		});
 		expect((await send('reference', tex(0))).values).toEqual([80, 60]);
 		const p = await send('frame', tex(-3.25));
-		expect(p.values[0]).toBeCloseTo(76.75, 0);
 		expect(Math.abs(p.values[0]! - 76.75)).toBeLessThan(0.2);
 		expect(p.confidence).toBeGreaterThan(0.9);
 		await releaseWorker(w);

@@ -11,7 +11,6 @@ import {
 	enableAgentBridge,
 	importFiles,
 	query,
-	watchPage,
 } from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -46,7 +45,6 @@ async function undo(): Promise<void> {
 
 test.beforeAll(async ({ browser }) => {
 	page = await browser.newPage();
-	watchPage(page);
 	await enableAgentBridge(page);
 });
 

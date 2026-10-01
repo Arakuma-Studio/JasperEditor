@@ -1,7 +1,7 @@
 // UI commands (ARCHITECTURE §7.3): imports every domain module and registers them once.
 
-// M2 (wp-m2-layer-bake): graded previews of DOM layers (registers its Program overlay at import)
-import { layerBakeCommands } from '../layer-bake/commands.ts';
+// Register the Program overlay that attaches the layer-bake runtime.
+import '../layer-bake/commands.ts';
 import { appCommands } from './app.ts';
 import { clipboardCommands } from './clipboard.ts';
 import { colorCommands } from './color.ts';
@@ -40,19 +40,14 @@ const COMMAND_MODULES: UiCommand[][] = [
 	mgCommands,
 	integrationCommands,
 	helpCommands,
-	// M2 (one module per work package, ARCHITECTURE §19.10)
 	colorCommands,
 	processCommands,
 	compositionCommands,
 	trackingCommands,
 	transitionCommands,
-	// M2 animation (ARCHITECTURE §20.6)
 	textAnimationCommands,
 	shapeCommands,
-	layerBakeCommands,
-	// wp-clipboard (S01 §20)
 	clipboardCommands,
-	// wp-clipboard-2 (S03:XF-050 layer menu)
 	layerCommands,
 ];
 

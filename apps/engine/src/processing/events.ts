@@ -1,7 +1,7 @@
 // jasper-proc NDJSON events (stderr) → job progress (S07:PRC-011, PRU-002).
 import type { ProcEvent } from './proc/types.ts';
 
-export type ProgressSink = (progress: number | null, stage: string) => void;
+type ProgressSink = (progress: number | null, stage: string) => void;
 
 /** Parses NDJSON lines; non-JSON lines (warnings) go to `onText`. */
 export function createEventParser(onEvent: (e: ProcEvent) => void, onText?: (line: string) => void) {

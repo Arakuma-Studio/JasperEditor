@@ -8,7 +8,7 @@ import { terminateTree } from '../tools/process.ts';
 import { MgBundleError } from './project.ts';
 import { TEMPLATE_FILES } from './template/files.ts';
 
-export const INSTALL_TIMEOUT_MS = 10 * 60 * 1000;
+const INSTALL_TIMEOUT_MS = 10 * 60 * 1000;
 
 function onPath(name: string): string | null {
 	const exts = process.platform === 'win32' ? ['.cmd', '.exe', ''] : [''];

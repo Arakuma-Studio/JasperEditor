@@ -1,9 +1,3 @@
-// @jasper/mcp — the JasperEditor MCP server (docs/wp-notes/wp-mcp.md). `cli.ts` is the stdio entry
-// (`jasper-mcp`); the engine imports `createJasperMcpServer` + `FixedEngineLink` for Streamable HTTP at /mcp.
-export * from './discovery.ts';
-export * from './errors.ts';
-export * from './export-presets.ts';
-export * from './format.ts';
-export * from './link.ts';
-export * from './server.ts';
-export * from './version.ts';
+// The engine uses this entry point to serve MCP over HTTP; cli.ts serves stdio.
+export { FixedEngineLink } from './link.ts';
+export { createJasperMcpServer } from './server.ts';

@@ -39,10 +39,8 @@ function propsAt(
 		totalMs: t.totalMs,
 		introMs: t.introMs,
 		outroMs: t.outroMs,
-		fps: FPS,
 		canvas,
 		seed: hash32('clp_TEST', 'template'),
-		isPreview: false,
 	};
 }
 

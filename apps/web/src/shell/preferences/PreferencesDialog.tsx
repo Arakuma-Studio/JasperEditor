@@ -45,7 +45,7 @@ export function PreferencesDialog(props: HostedDialogProps<{ page?: string }>) {
 				</nav>
 				<div className="min-w-0 flex-1 overflow-auto p-4" data-testid="preferences-page">
 					{current ? (
-						<current.component close={() => props.close()} />
+						<current.component />
 					) : (
 						<p className="text-pr-muted">No preference pages are registered.</p>
 					)}

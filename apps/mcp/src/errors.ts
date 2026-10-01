@@ -47,14 +47,14 @@ export const TX_ERROR_HINTS: Record<string, string> = {
 };
 
 /** Hints for requests that were cut off (link.ts `EngineRequestAborted`). */
-export const ABORT_HINTS = {
+const ABORT_HINTS = {
 	timeout:
 		'The engine is busy or stuck. Check engine_status; for long renders use start_export + wait_for_job instead of waiting on one call.',
 	'connection-lost':
 		'The change may or may not have been applied. Re-read the project (get_timeline / get_project) before retrying, so nothing is applied twice.',
 } as const;
 
-export const ENGINE_ERROR_HINTS: Record<string, string> = {
+const ENGINE_ERROR_HINTS: Record<string, string> = {
 	NETWORK:
 		'The JasperEditor engine is not reachable. Start the desktop app or `pnpm dev`, or restart jasper-mcp with --start-engine.',
 	UNAUTHORIZED:
@@ -71,7 +71,7 @@ function text(value: unknown): CallToolResult['content'][number] {
 	return { type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) };
 }
 
-export function errorResult(code: string, message: string, hint?: string, details?: unknown): CallToolResult {
+function errorResult(code: string, message: string, hint?: string, details?: unknown): CallToolResult {
 	return {
 		isError: true,
 		content: [text({ error: { code, message, ...(hint ? { hint } : {}), ...(details ? { details } : {}) } })],
@@ -115,11 +115,11 @@ export function jsonResult(value: unknown, extra: CallToolResult['content'] = []
 /** Why a Remotion render could not run and what to do (env names as read by apps/engine/src/remotion/service.ts). */
 export const REMOTION_HINT =
 	"Text, graphics, effects and anime motion templates render with Remotion in a headless Chrome. Install Google Chrome or Chromium (or set JASPER_BROWSER_EXECUTABLE to its executable), or let the engine download its own headless browser on the first render (needs network access). The engine also needs the Remotion compositions bundle: `pnpm build` produces it (a dev engine bundles the workspace sources itself) or set JASPER_REMOTION_BUNDLE to a built bundle folder; packaged builds also need their LGPL FFmpeg folder (JASPER_REMOTION_BIN_DIR). list_export_presets shows the engine's Remotion state.";
-export const BROWSER_DOWNLOAD_NOTE =
+const BROWSER_DOWNLOAD_NOTE =
 	'No browser is installed yet: the first Remotion render downloads a headless Chrome (needs network access and can take a minute); if that fails, install Google Chrome or set JASPER_BROWSER_EXECUTABLE.';
 export const TEMPLATE_NOT_INSTALLED_HINT =
 	'A clip uses a motion-graphic template this JasperEditor build lacks: update JasperEditor, or replace or delete that clip (get_timeline shows it; details.blockers name the clips).';
-export const WEBGL_HINT =
+const WEBGL_HINT =
 	'The render browser has no WebGL2 (colour grading on the Remotion path needs it): set JASPER_REMOTION_GL to angle, swangle, egl or swiftshader, install Google Chrome, or export with engine "native" when the sequence allows it.';
 
 /** The engine's Remotion capability (`capabilities.render`), fetched only after a failure. */
@@ -139,7 +139,7 @@ const REMOTION_SUSPECT_CODES = new Set([
 ]);
 
 /** The error itself names Remotion or its browser (codes REMOTION_UNAVAILABLE / BROWSER_*, or the message). */
-export function mentionsRemotion(code: string, message: string): boolean {
+function mentionsRemotion(code: string, message: string): boolean {
 	return (
 		code === 'REMOTION_UNAVAILABLE' ||
 		code.startsWith('BROWSER_') ||

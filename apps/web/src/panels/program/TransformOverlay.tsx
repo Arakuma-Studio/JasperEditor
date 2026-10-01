@@ -66,7 +66,7 @@ import {
 } from './transform-math.ts';
 import { type Size, toScreen, toSequence, type View } from './viewport.ts';
 
-export const SAFE_MARGINS = { action: 5, title: 10 } as const;
+const SAFE_MARGINS = { action: 5, title: 10 } as const;
 const DRAG_THRESHOLD = 3;
 const AXIS_LOCK_PX = 6;
 
@@ -160,7 +160,7 @@ export function useOverlayFrame(transport: TransportStore): { frame: number; pla
 
 const pts = (q: readonly Vec2[]) => q.map((p) => `${p[0]},${p[1]}`).join(' ');
 
-export type TransformOverlayProps = {
+type TransformOverlayProps = {
 	session: EditorSession;
 	doc: RenderDoc;
 	view: View;

@@ -17,7 +17,7 @@ import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } fr
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const ROOTS = ['apps/web', 'packages/compositions'];
+const ROOTS = ['apps/web', 'packages/compositions'];
 export const OUTPUT = 'THIRD_PARTY_NOTICES.md';
 
 /**
@@ -77,7 +77,7 @@ export const SHIPPED_BUILD_OUTPUT = [
 const LICENSE_FILE = /^(?:licen[cs]e|copying|notice)(?:[-_.][\w.-]*)?$/i;
 
 /** Node's lookup: `<dir>/node_modules/<name>` walking up from `fromDir`; the real directory, or null. */
-export function resolvePackageDir(name, fromDir) {
+function resolvePackageDir(name, fromDir) {
 	let dir = fromDir;
 	for (;;) {
 		const cand = join(dir, 'node_modules', name);
@@ -100,7 +100,7 @@ export function licenseOf(pkg) {
 }
 
 /** Licence/notice files at the root of a package directory, sorted by name: `[{file, text}]`. */
-export function licenseTexts(dir) {
+function licenseTexts(dir) {
 	return readdirSync(dir)
 		.filter((f) => LICENSE_FILE.test(f))
 		.sort()

@@ -12,7 +12,6 @@ import {
 	checkRepo,
 	findViolations,
 	hasSeed,
-	importsOf,
 	parseImports,
 	RUNTIME_ONLY_NAMES,
 	stripComments,
@@ -306,11 +305,9 @@ describe('check-anime determinism rules (S11:ANM-006)', () => {
 		);
 	});
 	it('helpers: imports, template blanking, chains and comment stripping keep line numbers', () => {
-		expect(importsOf("import a from 'x';\nexport * from \"y\";\nconst z = require('z');")).toEqual([
-			'x',
-			'y',
-			'z',
-		]);
+		expect(
+			parseImports("import a from 'x';\nexport * from \"y\";\nconst z = require('z');").map((i) => i.spec),
+		).toEqual(['x', 'y', 'z']);
 		expect(parseImports("import D, { a as b, type T } from 'm';\nexport * from 'n';")).toEqual([
 			{
 				spec: 'm',

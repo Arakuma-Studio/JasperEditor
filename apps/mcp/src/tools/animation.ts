@@ -123,7 +123,7 @@ export type AnimationTarget = { sequenceId?: string; clipId?: string; selection?
  * clip.update finds the clip in any sequence (for "$selection" the editor's selected clips), clip.addText uses the
  * given sequence, else the project's only one — with several and no sequenceId the transaction fails, so does this.
  */
-export async function targetSequence(
+async function targetSequence(
 	ctx: ToolContext,
 	projectId: string,
 	doc: ProjectDocument,
@@ -240,7 +240,7 @@ const HINTS: Record<string, string> = {
 };
 
 /** At most this many frames per contact sheet, and at most this many pixels per sheet side. */
-export const MAX_SHEET_FRAMES = 24;
+const MAX_SHEET_FRAMES = 24;
 export const MAX_SHEET_SIZE = 2048;
 const SHEET_GAP = 4;
 

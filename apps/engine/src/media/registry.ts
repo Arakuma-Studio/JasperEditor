@@ -9,7 +9,7 @@ import { atomicWriteJson, readJsonOrNull } from '../tools/fs.ts';
 import { KeyedMutex } from '../tools/mutex.ts';
 import type { BrowserPlayable } from './probe.ts';
 
-export type MediaStorage =
+type MediaStorage =
 	/** The user's own file, referenced in place and never modified (S04:AS-003). */
 	| { type: 'path'; path: string }
 	/** A copy owned by the engine under `<appdir>/media/<mediaKey>/` (uploads, "copy into project"). */

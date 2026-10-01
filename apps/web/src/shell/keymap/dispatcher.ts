@@ -207,7 +207,7 @@ export function installKeyboardDispatcher(win: Window, env: DispatcherEnv): () =
 }
 
 /** How long a paste chord waits for the browser's paste event before running without its data. */
-export const NATIVE_PASTE_WAIT_MS = 120;
+const NATIVE_PASTE_WAIT_MS = 120;
 
 /**
  * Lets the default action of a paste chord happen and runs `run` with the data of the paste event it fires

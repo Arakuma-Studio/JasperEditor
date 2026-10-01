@@ -1,5 +1,5 @@
 // M2 animation contracts on the engine (ARCHITECTURE §20.5, S11): routes/anime.ts (licence + features.anime),
-// routes/layer-bake.ts (501 stub, registration order), LayerOverride additions, and the Remotion bundle source
+// routes/layer-bake.ts (registration order), and the Remotion bundle source
 // hash covering @jasper/motion and pnpm-lock.yaml (S11:FIX-009).
 import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -10,7 +10,6 @@ import { mgRegistry } from '@jasper/mg-templates';
 import { LATEST_TEXT_ANIMATION_SPECS } from '@jasper/project';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ANIMEJS_PINNED_VERSION, animejsPackageDir, animeLicense } from '../src/anime/index.ts';
-import type { LayerOverride } from '../src/export/native-ext.ts';
 import { createServer, engineConfig } from '../src/index.ts';
 import { BUNDLED_WORKSPACE_PACKAGES, remotionSourceHash } from '../src/remotion/service.ts';
 import animeRoutes from '../src/routes/anime.ts';
@@ -88,7 +87,6 @@ describe('layer bake contracts (routes/layer-bake.ts)', () => {
 		expect(lb).toBeLessThan(order.indexOf(trackingRoutes));
 		expect(order.indexOf(animeRoutes)).toBe(order.length - 1);
 	});
-	// wp-m2-layer-bake: the 501 stub is replaced by the real route (covered in layer-bake.test.ts).
 	it('POST /api/layer-bake/preview is implemented (validates its body)', async () => {
 		const app = await make();
 		const r = await app.inject({
@@ -99,18 +97,6 @@ describe('layer bake contracts (routes/layer-bake.ts)', () => {
 		});
 		expect(r.statusCode).toBe(400);
 		expect(r.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
-	});
-	it('LayerOverride carries still / rect / colorRuns (types only)', () => {
-		const o: LayerOverride = {
-			path: '/cache/layers/k/still.png',
-			space: 'sequence',
-			startFrame: 0,
-			includesFades: true,
-			still: true,
-			rect: { x: 10, y: 20, w: 300, h: 100 },
-			colorRuns: true,
-		};
-		expect(o.rect?.w).toBe(300);
 	});
 });
 

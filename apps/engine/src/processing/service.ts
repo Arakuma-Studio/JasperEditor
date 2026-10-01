@@ -29,7 +29,7 @@ import { checkIdentity, RemoteError, SshRemote, shq } from './remote.ts';
 import { ProcessingSettingsStore, type StoredProbe } from './settings.ts';
 import { VIDSTAB_PIN } from './vidstab-pin.ts';
 
-export type ProcessJobInput = {
+type ProcessJobInput = {
 	mediaKey: string;
 	steps: ProcessStep[];
 	executor: 'local' | 'remote';
@@ -38,9 +38,6 @@ export type ProcessJobInput = {
 };
 
 type Env = Record<string, string | undefined>;
-
-/** Steps that make sense to run remotely by default (`auto`). */
-const REMOTE_DEFAULT_STEPS = new Set(['upscale', 'dejudder']);
 
 export class ProcessingService {
 	readonly settings: ProcessingSettingsStore;
@@ -145,15 +142,9 @@ export class ProcessingService {
 		const filters = await this.ffmpegFilters();
 		const native = await this.nativeVidstabAllowed();
 		const wasm = await this.vidstabWasmAvailable();
-		let providers: string[] = [];
-		let runtime: 'onnxruntime' | 'none' = 'none';
-		try {
-			const m = await import('./proc/upscale.ts');
-			providers = await m.ortProviders();
-			runtime = providers.length ? 'onnxruntime' : 'none';
-		} catch {
-			runtime = 'none';
-		}
+		const providers: string[] = await import('./proc/upscale.ts')
+			.then((m) => m.ortProviders())
+			.catch(() => []);
 		const s = await this.settings.get();
 		const probe = await this.settings.lastProbe();
 		const installed = (await this.models.list()).filter((m) => m.installed).length;
@@ -169,7 +160,7 @@ export class ProcessingService {
 			denoise: (['atadenoise', 'fftdnoiz', 'nlmeans'] as const).filter((f) => filters.has(f)),
 			deblock: filters.has('deblock'),
 			dejudder,
-			upscale: { runtime, providers, modelsInstalled: installed },
+			upscale: { runtime: providers.length ? 'onnxruntime' : 'none', providers, modelsInstalled: installed },
 			remote: {
 				configured: !!s.remote?.enabled,
 				lastProbe: probe ? { ok: probe.ok, at: probe.at, gpu: probe.gpu, message: probe.message } : null,
@@ -194,7 +185,7 @@ export class ProcessingService {
 		if (!s.remote?.enabled) return 'local';
 		const probe = await this.settings.lastProbe();
 		if (!probe?.ok) return 'local';
-		const useFor = new Set<string>(s.remote.useFor.length ? s.remote.useFor : [...REMOTE_DEFAULT_STEPS]);
+		const useFor = new Set<string>(s.remote.useFor.length ? s.remote.useFor : ['upscale', 'dejudder']);
 		return steps.some((st) => useFor.has(st.op)) ? 'remote' : 'local';
 	}
 
@@ -442,7 +433,7 @@ export class ProcessingService {
 				ctx.progress(0.1, { stage: `Remote · uploading model ${id}` });
 				await wrap('model upload', () => remote.upload(m.path, rp, { signal: ctx.signal }));
 			}
-			models[id] = { path: rp, sha256: m.sha256, ...(m.scale ? { scale: m.scale } : {}) };
+			models[id] = { path: rp, sha256: m.sha256, scale: m.scale };
 		}
 		// 3. Spec + run (setsid + pid file, PRM-005/006).
 		const jobDir = `${L.jobs}/${ctx.job.id}`;
@@ -531,7 +522,7 @@ export class ProcessingService {
 			remote.download(`${jobDir}/out.mov`, output, { signal: ctx.signal, onSpawn: (c) => ctx.trackChild(c) }),
 		);
 		const side = JSON.parse(await readFile(`${output}.json`, 'utf8')) as {
-			output: { sha256: string; frames: number; path: string };
+			output: { sha256: string; frames: number };
 			executor?: unknown;
 		};
 		const got = await sha256File(output);
@@ -545,9 +536,8 @@ export class ProcessingService {
 				true,
 			);
 		// Record where it ran, then clean the remote job directory (the input cache stays, LRU-trimmed).
-		const sc = JSON.parse(await readFile(`${output}.json`, 'utf8')) as Record<string, unknown>;
-		sc.executor = { type: 'remote', host: remote.target, gpu: probe?.gpu ?? null };
-		await writeFile(`${output}.json`, `${JSON.stringify(sc, null, 2)}\n`);
+		side.executor = { type: 'remote', host: remote.target, gpu: probe?.gpu ?? null };
+		await writeFile(`${output}.json`, `${JSON.stringify(side, null, 2)}\n`);
 		await remote.exec(`rm -rf ${shq(jobDir)}`).catch(() => undefined);
 		await remote.trimCache().catch(() => undefined);
 		ctx.progress(0.99, { stage: 'Remote · done' });

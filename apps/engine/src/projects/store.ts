@@ -18,9 +18,9 @@ import { atomicWriteFile, atomicWriteJson, readJsonOrNull } from '../tools/fs.ts
 import { KeyedMutex } from '../tools/mutex.ts';
 import type { LeaseManager } from './leases.ts';
 
-export const PROJECT_ID_RE = /^prj_[0-9A-HJKMNP-TV-Z]{16}$/;
-export const VERSION_INTERVAL_MS = 5 * 60 * 1000;
-export const KEEP_VERSIONS = 20;
+const PROJECT_ID_RE = /^prj_[0-9A-HJKMNP-TV-Z]{16}$/;
+const VERSION_INTERVAL_MS = 5 * 60 * 1000;
+const KEEP_VERSIONS = 20;
 
 export class ProjectError extends Error {
 	constructor(

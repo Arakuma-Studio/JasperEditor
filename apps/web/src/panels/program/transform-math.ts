@@ -15,7 +15,7 @@ export type Quad = [Vec2, Vec2, Vec2, Vec2];
 export const MIN_SCALE = 0.1;
 export const MAX_SCALE = 10000;
 export const HANDLE_HIT = 12;
-export const ROTATE_ZONE = { inner: 6, outer: 20 } as const;
+const ROTATE_ZONE = { inner: 6, outer: 20 } as const;
 export const ANCHOR_HIT = 8;
 export const SMALL_QUAD = 24;
 
@@ -34,7 +34,7 @@ export function pointInQuad(p: Vec2, q: readonly Vec2[]): boolean {
 	return true;
 }
 
-export type HitLayer = { clipId: string; trackId: string; quad: Quad };
+type HitLayer = { clipId: string; trackId: string; quad: Quad };
 
 /**
  * Topmost layer whose quad contains `p` (XF-001). `layers` are in compositing order (bottom → top);
@@ -119,7 +119,7 @@ const add = (a: Vec2, b: Vec2): Vec2 => [a[0] + b[0], a[1] + b[1]];
 
 // ------------------------------------------------------------------ scale (XF-030/031/032)
 
-export type ScaleInput = {
+type ScaleInput = {
 	values: LayerTransformValues;
 	rect: Rect;
 	handle: HandleId;
@@ -131,7 +131,7 @@ export type ScaleInput = {
 	aboutOpposite?: boolean;
 };
 
-export type ScaleResult = {
+type ScaleResult = {
 	scale: number;
 	scaleWidth: number;
 	uniformScale: boolean;
@@ -202,7 +202,7 @@ export function angleDelta(a: number, b: number): number {
 	return d;
 }
 
-export function angleOf(center: Vec2, p: Vec2): number {
+function angleOf(center: Vec2, p: Vec2): number {
 	return (Math.atan2(p[1] - center[1], p[0] - center[0]) * 180) / Math.PI;
 }
 

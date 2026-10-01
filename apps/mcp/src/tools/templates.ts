@@ -72,10 +72,10 @@ function range(min: number | undefined, max: number | undefined): string {
 	return '';
 }
 
-export type ParamKind = 'string' | 'number' | 'integer' | 'boolean' | 'enum' | 'rgba' | 'vec2' | 'json';
+type ParamKind = 'string' | 'number' | 'integer' | 'boolean' | 'enum' | 'rgba' | 'vec2' | 'json';
 
 /** Kind of one params-schema property (mirrors the property specs of @jasper/project `paramsPropertySpecs`). */
-export function paramKind(s0: JsonSchemaNode): { kind: ParamKind; type: string } {
+function paramKind(s0: JsonSchemaNode): { kind: ParamKind; type: string } {
 	const s = unwrapNullable(s0);
 	const t = Array.isArray(s.type) ? (s.type as string[]).find((x) => x !== 'null') : s.type;
 	const options = Array.isArray(s.enum)
@@ -222,7 +222,7 @@ export async function failedJobError(
 // ---------------------------------------------------------------- anime preview (ANA-003)
 
 /** Even, ≥ 2 (encoders and the still path want even frame sizes). */
-export const evenSize = (n: number) => Math.max(2, Math.round(n / 2) * 2);
+const evenSize = (n: number) => Math.max(2, Math.round(n / 2) * 2);
 
 export type AnimePreviewSpec = {
 	params: Record<string, unknown>;
@@ -233,7 +233,7 @@ export type AnimePreviewSpec = {
 };
 
 /** Validates params against the template's JSON Schema (E_INVALID_PARAM listing the issues). */
-export function checkParams(t: MgTemplateCatalogEntry, params: Record<string, unknown>): void {
+function checkParams(t: MgTemplateCatalogEntry, params: Record<string, unknown>): void {
 	const issues = validateJsonSchema(t.paramsSchema as JsonSchemaNode, params);
 	if (issues.length)
 		throw new ToolError(

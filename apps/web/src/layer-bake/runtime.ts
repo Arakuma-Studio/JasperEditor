@@ -23,7 +23,7 @@ import type { EditorSession } from '@jasper/session';
 import { exportEnvelope } from '../export/settings.ts';
 
 /** The layer must be unchanged this long before a preview is requested (S11:LBK-010). */
-export const PREVIEW_IDLE_MS = 2000;
+const PREVIEW_IDLE_MS = 2000;
 
 export type EngineLink = {
 	client: EngineClient;
@@ -332,9 +332,5 @@ export function ensureLayerBakeRuntime(session: EditorSession, engine: EngineLin
 		current.subscribe(cb);
 		cb();
 	}
-	return current;
-}
-
-export function currentLayerBakeRuntime(): LayerBakeRuntime | null {
 	return current;
 }

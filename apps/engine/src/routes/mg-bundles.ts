@@ -26,7 +26,7 @@ import { serveFile } from '../tools/http.ts';
 import { HttpError, parseOr400, sendServiceError } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
 
-export const MG_BUNDLES_SERVICE_KEY = 'mgBundles';
+const MG_BUNDLES_SERVICE_KEY = 'mgBundles';
 
 /** The service registered by this plugin (tests and other plugins). */
 export function mgBundleService(app: FastifyInstance): MgBundleService | null {

@@ -18,10 +18,10 @@ import {
 	type UnitValues,
 } from '../src/text/index.ts';
 
-export type Report = { label: string; failures: string[] };
+type Report = { label: string; failures: string[] };
 
 /** Fixed fast-check seeds: every run visits the same shuffled orders (reproducible failures). */
-export const SHUFFLE_SEEDS = [1, 4242, 90210] as const;
+const SHUFFLE_SEEDS = [1, 4242, 90210] as const;
 const SHUFFLES_PER_SEED = 4;
 
 type Values = readonly Readonly<Record<string, number>>[];
@@ -30,7 +30,7 @@ type Build = () => { timeline: Timeline; targets: Record<string, number>[] };
 const sameNumber = (a: number, b: number) => a === b || (Number.isNaN(a) && Number.isNaN(b));
 
 /** First difference between two value lists, or null (numbers compared exactly; ±0 render alike). */
-export function diffValues(a: Values, b: Values): string | null {
+function diffValues(a: Values, b: Values): string | null {
 	if (a.length !== b.length) return `${a.length} targets vs ${b.length}`;
 	for (let i = 0; i < a.length; i++) {
 		const x = a[i]!;
@@ -75,10 +75,7 @@ export function visitOrders(frames: readonly number[]): { name: string; order: n
 }
 
 /** Counts calls of the wall clock and unseeded randomness while `fn` runs (S11:ANM-003/007). */
-export function wallClockCalls<T>(
-	fn: () => T,
-	which: ('random' | 'date' | 'perf')[] = ['random', 'date', 'perf'],
-) {
+function wallClockCalls<T>(fn: () => T, which: ('random' | 'date' | 'perf')[] = ['random', 'date', 'perf']) {
 	const calls: string[] = [];
 	const restore: (() => void)[] = [];
 	const wrap = <O extends object>(obj: O, key: keyof O & string, name: string) => {
@@ -107,7 +104,7 @@ export function wallClockCalls<T>(
  * visited in every order of `visitOrders`; the hook path (`useAnimeValues`) agrees; builds share no targets; no
  * wall clock or unseeded randomness while building or seeking.
  */
-export function checkValueBuild(label: string, build: Build, frames: readonly number[], fps: number): Report {
+function checkValueBuild(label: string, build: Build, frames: readonly number[], fps: number): Report {
 	const failures: string[] = [];
 	const fresh = new Map<number, Values>();
 	const clock = wallClockCalls(() => {
@@ -162,7 +159,7 @@ export function checkValueBuild(label: string, build: Build, frames: readonly nu
 }
 
 /** Frames `-2 … ceil(durationMs·fps/1000) + 2` (window plus clamped handles). */
-export function windowFrames(durationMs: number, fps: number): number[] {
+function windowFrames(durationMs: number, fps: number): number[] {
 	const n = Math.ceil((durationMs * fps) / 1000);
 	return Array.from({ length: n + 5 }, (_, i) => i - 2);
 }
@@ -188,7 +185,7 @@ export function paramVariants(spec: TextAnimationSpec | undefined): Record<strin
 
 const UNIT_KEYS = Object.keys(REST_UNIT_VALUES).sort();
 
-export type TextCase = { label: string; ctx: TextAnimationBuildContext; fps: number };
+type TextCase = { label: string; ctx: TextAnimationBuildContext; fps: number };
 
 /** [fps, window frames]: 30 fps and an odd rate whose frame times are not whole milliseconds. */
 const RATES: readonly (readonly [number, number])[] = [
@@ -197,7 +194,7 @@ const RATES: readonly (readonly [number, number])[] = [
 ];
 
 /** The contexts a text implementation is checked with: sides × unit counts × param variants × two frame rates. */
-export function textAnimationCases(impl: TextAnimationImpl, spec?: TextAnimationSpec): TextCase[] {
+function textAnimationCases(impl: TextAnimationImpl, spec?: TextAnimationSpec): TextCase[] {
 	const sides: readonly TextAnimationSide[] = spec?.phases ?? ['in', 'out'];
 	const out: TextCase[] = [];
 	const variants = paramVariants(spec);
@@ -313,7 +310,7 @@ function checkCaret(
  * (e.g. a `filter` once blur > 0) after the existing ones, a fresh mount writes them in object order — the same
  * style, serialised differently.
  */
-export function canonicalHtml(el: HTMLElement): string {
+function canonicalHtml(el: HTMLElement): string {
 	const copy = el.cloneNode(true) as HTMLElement;
 	for (const node of [copy, ...copy.querySelectorAll<HTMLElement>('[style]')]) {
 		const style = node.getAttribute('style');
@@ -328,10 +325,10 @@ export function canonicalHtml(el: HTMLElement): string {
 	return copy.innerHTML;
 }
 
-export type TemplateCase = { label: string; props: (frame: number) => AnimeTemplateProps; frames: number[] };
+type TemplateCase = { label: string; props: (frame: number) => AnimeTemplateProps; frames: number[] };
 
 /** Props of a template at a content frame: intro + 12 hold frames + outro at 30 fps, the first canvas. */
-export function templateCase(key: string, def: AnyAnimeMgTemplate | undefined): TemplateCase {
+function templateCase(key: string, def: AnyAnimeMgTemplate | undefined): TemplateCase {
 	const fps = 30;
 	const intro = def?.introFrames ?? 15;
 	const outro = def?.outroFrames ?? 15;
@@ -347,10 +344,8 @@ export function templateCase(key: string, def: AnyAnimeMgTemplate | undefined): 
 			totalMs: frameToMs(total, fps),
 			introMs: frameToMs(intro, fps),
 			outroMs: frameToMs(outro, fps),
-			fps,
 			canvas,
 			seed: hash32('clp_DETERMINISM00000', 'template'),
-			isPreview: false,
 		}),
 	};
 }

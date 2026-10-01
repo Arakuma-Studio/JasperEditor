@@ -45,7 +45,7 @@ export type LayerOverride = {
 	colorRuns?: boolean;
 };
 
-export type NativeEffectSupport = false | 'static' | 'animated';
+type NativeEffectSupport = false | 'static' | 'animated';
 
 /** What an extension sees when the builder asks it for an effect's filter text. */
 export type EffectFilterContext = {

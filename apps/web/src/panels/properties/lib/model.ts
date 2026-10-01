@@ -250,7 +250,7 @@ export function planSet(row: Row, frame: number, compute: (base: unknown, b: Bin
 	return { commands, skipped };
 }
 
-export function clampValue(spec: PropertySpec, v: unknown): unknown {
+function clampValue(spec: PropertySpec, v: unknown): unknown {
 	const lo = spec.range?.min ?? Number.NEGATIVE_INFINITY;
 	const hi = spec.range?.max ?? Number.POSITIVE_INFINITY;
 	if (spec.kind === 'number' && typeof v === 'number') return Math.min(hi, Math.max(lo, v));

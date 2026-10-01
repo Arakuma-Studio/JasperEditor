@@ -13,11 +13,11 @@ import {
 } from '@jasper/project';
 import type { MediaRuntime } from '@jasper/session';
 
-export type ProxyTier = '720' | '540';
-export type MediaUrlFn = (mediaKey: string, variant?: 'original' | { proxy: ProxyTier }) => string;
+type ProxyTier = '720' | '540';
+type MediaUrlFn = (mediaKey: string, variant?: 'original' | { proxy: ProxyTier }) => string;
 
 /** Default URL builder (same-origin engine paths, ARCHITECTURE §8). */
-export const defaultMediaUrl: MediaUrlFn = (key, variant = 'original') => {
+const defaultMediaUrl: MediaUrlFn = (key, variant = 'original') => {
 	const k = encodeURIComponent(key);
 	return variant === 'original' ? `/media/${k}` : `/media/${k}/proxy/${variant.proxy}`;
 };
@@ -65,7 +65,7 @@ export function resolveMediaHandle(
 	};
 }
 
-export type FontCatalogLike = {
+type FontCatalogLike = {
 	fonts: { family: string; files: { weight: number; style: 'normal' | 'italic'; url: string }[] }[];
 };
 
@@ -73,7 +73,7 @@ export type FontCatalogLike = {
  * Font file URL from the engine catalog (`GET /api/fonts`, S04 §18): exact weight/style, else the
  * nearest weight of the same style, else null (the text layer falls back to the default sans).
  */
-export function fontUrlFromCatalog(
+function fontUrlFromCatalog(
 	catalog: FontCatalogLike | null,
 	font: Pick<FontRef, 'family'>,
 	weight: number,
@@ -89,7 +89,7 @@ export function fontUrlFromCatalog(
 	return best.url;
 }
 
-export type RenderDocInput = {
+type RenderDocInput = {
 	doc: ProjectDocument;
 	sequenceId: string;
 	media: Record<string, MediaRuntime>;
@@ -100,7 +100,7 @@ export type RenderDocInput = {
 };
 
 /** Minimum Player length for an empty sequence: 10 s of frames (S03:PGM-001). */
-export const EMPTY_SEQUENCE_SECONDS = 10;
+const EMPTY_SEQUENCE_SECONDS = 10;
 
 export function buildProgramDoc(input: RenderDocInput, prev: RenderDoc | null): RenderDoc {
 	const next = buildRenderSnapshot(input.doc, input.sequenceId, {

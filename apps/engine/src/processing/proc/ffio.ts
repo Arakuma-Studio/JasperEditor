@@ -3,14 +3,11 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import type { DecodeSpec } from './types.ts';
 
-export type RawPixFmt = 'rgb48le' | 'gray' | 'gray16le' | 'yuv444p' | 'rgb24';
+type RawPixFmt = 'rgb48le' | 'gray';
 
 const BYTES_PER_PIXEL: Record<RawPixFmt, number> = {
 	rgb48le: 6,
 	gray: 1,
-	gray16le: 2,
-	yuv444p: 3,
-	rgb24: 3,
 };
 
 export function frameBytes(pixFmt: RawPixFmt, width: number, height: number): number {
@@ -65,11 +62,11 @@ export function exitOf(child: ChildProcess): Promise<number> {
 /**
  * The conversion into `pixFmt` with explicit matrices (never guessed from tags: untagged SD would otherwise
  * decode as BT.601): YUV inputs use `spec.matrix`/`spec.range`; RGB outputs are full-range BT.709 R'G'B';
- * grey/YUV outputs are full-range BT.709 YUV.
+ * grey outputs are full-range BT.709 luma.
  */
-export function conversionFilter(spec: Pick<DecodeSpec, 'matrix' | 'range'>, pixFmt: RawPixFmt): string {
+function conversionFilter(spec: Pick<DecodeSpec, 'matrix' | 'range'>, pixFmt: RawPixFmt): string {
 	const inOpts = spec.matrix ? `in_color_matrix=${spec.matrix}:in_range=${spec.range ?? 'tv'}:` : '';
-	const rgb = pixFmt === 'rgb48le' || pixFmt === 'rgb24';
+	const rgb = pixFmt === 'rgb48le';
 	return `scale=${inOpts}${rgb ? '' : 'out_color_matrix=bt709:'}out_range=pc:flags=bicubic+accurate_rnd+full_chroma_int+full_chroma_inp,format=${pixFmt}`;
 }
 
@@ -79,9 +76,7 @@ export function conversionFilter(spec: Pick<DecodeSpec, 'matrix' | 'range'>, pix
  */
 export async function* decodeFrames(
 	spec: DecodeSpec,
-	opts: { pixFmt: RawPixFmt; width?: number; height?: number; vf?: string; signal?: AbortSignal } = {
-		pixFmt: 'rgb48le',
-	},
+	opts: { pixFmt: RawPixFmt; width?: number; height?: number; vf?: string; signal?: AbortSignal },
 ): AsyncGenerator<Buffer> {
 	const w = opts.width ?? spec.width;
 	const h = opts.height ?? spec.height;
@@ -174,7 +169,7 @@ export class RawWriter {
 	}
 }
 
-/** Helper: a Uint16Array view (little-endian hosts) over a raw rgb48le/gray16le buffer without copying. */
+/** Helper: a Uint16Array view (little-endian hosts) over a raw rgb48le buffer without copying. */
 export function u16(buf: Buffer): Uint16Array {
 	if (buf.byteOffset % 2 === 0) return new Uint16Array(buf.buffer, buf.byteOffset, buf.length / 2);
 	return new Uint16Array(new Uint8Array(buf).buffer);

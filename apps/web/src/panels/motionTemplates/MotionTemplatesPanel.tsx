@@ -26,9 +26,9 @@ import { PreviewThumb } from './PreviewThumb.tsx';
 import { RemotionTab } from './RemotionTab.tsx';
 
 /** Engine filter of the Templates tab (S11:ATP-007 adds `anime`). */
-export type EngineFilter = 'all' | 'fframes' | 'anime';
+type EngineFilter = 'all' | 'fframes' | 'anime';
 
-export type GalleryEntry = {
+type GalleryEntry = {
 	ref: MgTemplateRef;
 	name: string;
 	category: string;
@@ -44,9 +44,9 @@ export type GalleryEntry = {
 };
 
 /** Frame rate of the gallery previews. */
-export const PREVIEW_FPS = 30;
+const PREVIEW_FPS = 30;
 /** Composition size of the gallery previews (16:9; templates fit their design canvas into it). */
-export const PREVIEW_SIZE = { width: 640, height: 360 } as const;
+const PREVIEW_SIZE = { width: 640, height: 360 } as const;
 
 type NullableStore = {
 	getState(): SessionState | null;

@@ -3,16 +3,7 @@ import { join } from 'node:path';
 import { LABEL_COLORS } from '@jasper/project';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import {
-	Button,
-	IconButton,
-	LABEL_DEFAULTS,
-	LABEL_PRESETS,
-	labelColor,
-	PanelFrame,
-	TimecodeText,
-	Z,
-} from '../src/index.ts';
+import { Button, IconButton, TimecodeText, Z } from '../src/index.ts';
 
 const tokens = readFileSync(join(__dirname, '../src/theme/tokens.css'), 'utf8');
 
@@ -112,14 +103,6 @@ describe('@jasper/ui tokens', () => {
 		expect(tokens).toContain('[data-pr-labels="classic"]');
 		expect(tokens).toContain('[data-pr-labels="vibrant"]');
 	});
-	it('presets cover every label and media kinds have their expected defaults', () => {
-		for (const preset of Object.values(LABEL_PRESETS))
-			expect(Object.keys(preset).sort()).toEqual([...LABEL_COLORS].sort());
-		expect(LABEL_DEFAULTS['video-audio']).toBe('violet');
-		expect(LABEL_DEFAULTS['fframes-graphic']).toBe('purple');
-		expect(LABEL_DEFAULTS['remotion-composition']).toBe('magenta');
-		expect(labelColor('iris')).toBe('var(--pr-label-iris)');
-	});
 	it('z-index scale is ordered and mirrored in CSS (S05:DT-030)', () => {
 		const order = [
 			Z.panel,
@@ -141,24 +124,23 @@ describe('@jasper/ui tokens', () => {
 });
 
 describe('@jasper/ui primitives', () => {
-	it('renders buttons, icon buttons, panels and timecode', () => {
+	it('renders buttons, icon buttons and timecode', () => {
 		const onClick = vi.fn();
 		render(
-			<PanelFrame title="Program" actions={<IconButton icon="app.menu" label="Panel menu" />} focused>
+			<div>
 				<Button variant="primary" onClick={onClick}>
 					OK
 				</Button>
 				<IconButton icon="tool.razor" label="Razor Tool" shortcut="C" toggled="selected" />
 				<IconButton icon="tool.ripple" label="Ripple Edit Tool" shortcut="B" />
 				<TimecodeText value="00;01;00;02" size="timeline" />
-			</PanelFrame>,
+			</div>,
 		);
 		fireEvent.click(screen.getByText('OK'));
 		expect(onClick).toHaveBeenCalledOnce();
 		expect(screen.getByLabelText('Razor Tool').getAttribute('title')).toBe('Razor Tool (C)');
 		expect(screen.getByLabelText('Razor Tool').getAttribute('aria-pressed')).toBe('true');
 		expect(screen.getByText('00;01;00;02').className).toContain('pr-tabular');
-		expect(screen.getByText('Program').tagName).toBe('H2');
 		expect(document.querySelector('[data-icon="tool.ripple"]')).toBeTruthy();
 	});
 });

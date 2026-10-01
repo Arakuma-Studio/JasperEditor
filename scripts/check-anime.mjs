@@ -37,22 +37,21 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const DEP_ROOTS = ['apps', 'packages'];
-export const SCAN_ROOTS = ['packages/motion/src', 'packages/compositions/src'];
+const DEP_ROOTS = ['apps', 'packages'];
 const RUNTIME_DIR = 'packages/motion/src/runtime/';
 const RUNTIME_INDEX = 'packages/motion/src/runtime/index.ts';
 const EXTENSIONS = /\.(?:[cm]?[jt]sx?)$/;
 
-/** Files under SCAN_ROOTS excused from the wall-clock rule, with the reason. */
-export const EXEMPT = {
+/** Files under motion/compositions source excused from the wall-clock rule, with the reason. */
+const EXEMPT = {
 	'packages/compositions/src/mg-host/protocol.ts':
 		'drives the Remotion bundle page of composition clips (wall-clock timeouts while waiting for the iframe); no anime.js',
 };
 
-/** Modules banned everywhere under SCAN_ROOTS, and outside the runtime only. */
-export const BANNED_MODULES =
+/** Modules banned everywhere under motion/compositions source, and outside the runtime only. */
+const BANNED_MODULES =
 	/^animejs\/(?:waapi|events|draggable|layout|timer|animation|animatable|text|easings\/irregular|adapters)(?:\/|$)/;
-export const RUNTIME_ONLY_MODULES = /^animejs\/(?:scope|engine)(?:\/|$)/;
+const RUNTIME_ONLY_MODULES = /^animejs\/(?:scope|engine)(?:\/|$)/;
 /** Imported names banned everywhere, and outside the runtime only (with the replacement). */
 export const BANNED_NAMES = new Set([
 	'animate',
@@ -214,11 +213,6 @@ export function parseImports(text) {
 	return out.sort((a, b) => a.line - b.line);
 }
 
-/** Module specifiers imported by a file (static, dynamic, require). */
-export function importsOf(text) {
-	return parseImports(text).map((i) => i.spec);
-}
-
 const isAnime = (spec) => spec === 'animejs' || spec.startsWith('animejs/');
 const isMotion = (spec) => spec === '@jasper/motion' || spec.startsWith('@jasper/motion/');
 
@@ -256,14 +250,13 @@ export function chainNames(code, dot) {
 			i--;
 			continue;
 		}
-		let end = i;
+		const end = i;
 		while (i >= 0 && IDENT_CHAR.test(code[i])) i--;
 		if (end === i) return names;
 		names.push(code.slice(i + 1, end + 1));
 		while (i >= 0 && /\s/.test(code[i])) i--;
 		if (code[i] !== '.') return names;
 		i--;
-		end = i;
 	}
 }
 

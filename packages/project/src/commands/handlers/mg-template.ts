@@ -11,8 +11,6 @@ import type { Clip } from '../../schema/sequence.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import type { ClipPatch } from '../schemas/clip.ts';
 
-export const MG_TEMPLATE_OWNER = 'wp-m2-anime-templates';
-
 type MgClip = Extract<Clip, { kind: 'motion-graphic' }>;
 type DMgClip = Draft<MgClip>;
 
@@ -118,7 +116,7 @@ const ASPECT_EPS = 0.005;
  * True when a template draws `size` with one of its design canvases (same aspect ratio; the design is fitted
  * uniformly, so the scale does not matter). Templates that list no canvases accept any size.
  */
-export function templateSupportsCanvas(
+function templateSupportsCanvas(
 	info: Pick<MgTemplateInfo, 'canvases'>,
 	size: { width: number; height: number },
 ): boolean {

@@ -3,10 +3,10 @@
 import type { Lease } from '@jasper/api';
 import { randomId } from '../tools/fs.ts';
 
-export const LEASE_TTL_MS = 30_000;
-export const LEASE_HEARTBEAT_MS = 10_000;
+const LEASE_TTL_MS = 30_000;
+const LEASE_HEARTBEAT_MS = 10_000;
 
-export class LeaseError extends Error {
+class LeaseError extends Error {
 	constructor(
 		readonly code: 'LEASE_HELD' | 'LEASE_NOT_FOUND',
 		message: string,

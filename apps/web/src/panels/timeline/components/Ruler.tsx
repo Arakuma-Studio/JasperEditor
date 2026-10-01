@@ -268,9 +268,7 @@ export function Ruler(props: RulerProps) {
 							title={
 								s.state === 'red'
 									? 'Needs render: motion graphics (fframes) without a ready master'
-									: s.state === 'green'
-										? 'Rendered preview available'
-										: 'Plays in real time in the live preview'
+									: 'Plays in real time in the live preview'
 							}
 						/>
 					);

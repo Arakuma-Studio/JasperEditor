@@ -2,14 +2,7 @@
 // abort propagation. No renders: tasks are promises the test resolves.
 import { describe, expect, it } from 'vitest';
 import { JobError } from '../src/jobs/types.ts';
-import {
-	MIN_FRAMES_PER_PAGE,
-	type PageGrant,
-	type PagePoolProgress,
-	pageShares,
-	poolOrder,
-	runPagePool,
-} from '../src/remotion/page-pool.ts';
+import { type PageGrant, type PagePoolProgress, pageShares, runPagePool } from '../src/remotion/page-pool.ts';
 
 /** A task the test finishes by hand; records its grant and whether it saw an abort. */
 function manual(want: number, weight = want * 30) {
@@ -49,7 +42,6 @@ describe('page budget', () => {
 		expect(pageShares([25], 6)).toEqual([3]);
 		expect(pageShares([300, 30, 30], 6)).toEqual([5, 1, 1]);
 		expect(pageShares([1, 1, 1], 0)).toEqual([1, 1, 1]);
-		expect(MIN_FRAMES_PER_PAGE).toBe(10);
 	});
 
 	it('starts the largest first and backfills small renders; pages in flight never exceed the budget', async () => {
@@ -58,7 +50,6 @@ describe('page budget', () => {
 		const s1 = manual(1, 1);
 		const s2 = manual(1, 1);
 		const tasks = [s1, mid, big, s2];
-		expect(poolOrder(tasks)).toEqual([2, 1, 0, 3]);
 		const p = runPagePool(tasks, { budget: 6, maxInFlight: 4, signal: new AbortController().signal });
 		await tick();
 		// big takes 4; mid wants 3 and starts with 2 (≥ half); no page left for the stills.

@@ -40,8 +40,6 @@ export type FrameResult = {
 	values: number[];
 	confidence: number;
 	lost: boolean;
-	/** Diagnostics (not part of the result contract). */
-	info?: Record<string, number>;
 };
 
 export type FrameTracker = {
@@ -72,7 +70,6 @@ export function createPlanarTracker(cv: CV, G: typeof Geometry, cfg: PlanarConfi
 		roi: { x: number; y: number; w: number; h: number };
 		/** Reference → anchor frame. */
 		H: number[];
-		isRef: boolean;
 		seq: number;
 	};
 	type Measured = {
@@ -101,7 +98,7 @@ export function createPlanarTracker(cv: CV, G: typeof Geometry, cfg: PlanarConfi
 		a.ptsRoi.delete();
 	}
 
-	function makeAnchor(src: CV, Hra: number[], isRef: boolean): Anchor | null {
+	function makeAnchor(src: CV, Hra: number[]): Anchor | null {
 		const quad = G.quadApply(Hra, refQuad);
 		const roi = G.featureRoi(quad, cfg.features, cfg.winSize + 8, W, H);
 		if (!roi) return null;
@@ -146,7 +143,7 @@ export function createPlanarTracker(cv: CV, G: typeof Geometry, cfg: PlanarConfi
 			pts[2 * i] = d[2 * i] + roi.x;
 			pts[2 * i + 1] = d[2 * i + 1] + roi.y;
 		}
-		return { img, ptsRoi: corners, pts, n, roi, H: Hra.slice(), isRef, seq: goodSeq };
+		return { img, ptsRoi: corners, pts, n, roi, H: Hra.slice(), seq: goodSeq };
 	}
 
 	function measure(a: Anchor, Hpred: number[]): Measured {
@@ -299,14 +296,14 @@ export function createPlanarTracker(cv: CV, G: typeof Geometry, cfg: PlanarConfi
 				modes = G.chooseEdgeModes(img, W, H, refQuad, EDGE_REF);
 				refQuad = G.refineQuadEdges(img, W, H, refQuad, modes, EDGE_REF).quad;
 			}
-			refAnchor = makeAnchor(frame, G.hIdentity(), true);
+			refAnchor = makeAnchor(frame, G.hIdentity());
 			if (!refAnchor)
 				throw new Error(
 					'Not enough texture to track in the reference region (try tracking the surroundings, or a larger region)',
 				);
 			frame.copyTo(lastGoodMat);
 			resetToReference();
-			return { values: refQuad.slice(), confidence: 1, lost: false, info: { features: refAnchor.n } };
+			return { values: refQuad.slice(), confidence: 1, lost: false };
 		},
 
 		track(img): FrameResult {
@@ -325,7 +322,7 @@ export function createPlanarTracker(cv: CV, G: typeof Geometry, cfg: PlanarConfi
 				}
 			}
 			if ((!r.ok || r.survival < cfg.minSurvival) && anchor.seq !== goodSeq) {
-				const fresh = makeAnchor(lastGoodMat, last.H, false);
+				const fresh = makeAnchor(lastGoodMat, last.H);
 				if (fresh) {
 					const r2 = measure(fresh, Hpred);
 					if (r2.ok && (!r.ok || r2.inliers > r.inliers)) {
@@ -356,25 +353,20 @@ export function createPlanarTracker(cv: CV, G: typeof Geometry, cfg: PlanarConfi
 					values: last.out.slice(),
 					confidence: 0,
 					lost: true,
-					info: { survival: r.survival, inliers: r.inliers },
 				};
 			}
-			let ecc = 0;
 			if (cfg.ecc) {
 				const He = eccRefine(Hf);
 				if (He) {
 					Hf = He;
 					quad = G.quadApply(Hf, refQuad);
-					ecc = 1;
 				}
 			}
 			const confidence = G.planarConfidence(r.inliers, r.total, r.meanErr, cfg.ransacThreshold);
 			let out = quad;
-			let refined = 0;
 			if (cfg.refineEdges && modes.some((m) => m)) {
 				const e = G.refineQuadEdges(img, W, H, quad, modes, EDGE);
 				out = e.quad;
-				refined = e.sides.filter((s) => s.accepted).length;
 			}
 			prevH = lostRun === 0 ? last.H : null;
 			last = { H: Hf, quad, out };
@@ -385,14 +377,6 @@ export function createPlanarTracker(cv: CV, G: typeof Geometry, cfg: PlanarConfi
 				values: out.slice(),
 				confidence,
 				lost: false,
-				info: {
-					survival: r.survival,
-					inliers: r.inliers,
-					meanErr: r.meanErr,
-					refined,
-					ecc,
-					anchorRef: anchor.isRef ? 1 : 0,
-				},
 			};
 		},
 

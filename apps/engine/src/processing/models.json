@@ -13,8 +13,7 @@
       "sourceUrl": "https://github.com/Phhofm/models/releases/tag/2xNomosUni_span_multijpg",
       "downloadUrl": null,
       "sha256": "3900e94d2addb11faed3ccddef677a27c5408ead7dfd071b263e857fb5f6c996",
-      "sizeBytes": 1656884,
-      "notes": "Faithful 2× restoration for compressed video: removes H.264 blocking without inventing text; temporally stable. Chosen in the MatsSmile trailer over Real-ESRGAN-family models."
+      "sizeBytes": 1656884
     }
   ]
 }

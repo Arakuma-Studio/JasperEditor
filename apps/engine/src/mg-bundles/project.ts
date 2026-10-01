@@ -99,11 +99,11 @@ export async function checkRemotionVersion(dir: string, pkg: ProjectPackage): Pr
 }
 
 /** The project's `remotion` CLI launcher. */
-export function remotionBin(dir: string): string {
+function remotionBin(dir: string): string {
 	return join(dir, 'node_modules', '.bin', process.platform === 'win32' ? 'remotion.cmd' : 'remotion');
 }
 
-export const BUNDLE_TIMEOUT_MS = 10 * 60 * 1000;
+const BUNDLE_TIMEOUT_MS = 10 * 60 * 1000;
 
 /**
  * Runs `<dir>/node_modules/.bin/remotion bundle --out-dir <outDir>` with a timeout; the combined output is

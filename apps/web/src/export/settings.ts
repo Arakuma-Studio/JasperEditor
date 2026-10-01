@@ -109,7 +109,7 @@ export function planChoiceSummary(plan: RenderPlan, engine: ExportEngineChoice):
 	return reasons.length ? `Auto → ${name}: ${reasons.slice(0, 2).join('; ')}` : `Auto → ${name}`;
 }
 
-export function formatBytes(bytes: number): string {
+function formatBytes(bytes: number): string {
 	if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
 	const units = ['B', 'KB', 'MB', 'GB', 'TB'];
 	let v = bytes;

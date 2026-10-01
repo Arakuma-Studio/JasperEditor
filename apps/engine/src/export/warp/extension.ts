@@ -141,7 +141,7 @@ export function warpFrames(
  * The chain's swscale conversions with slice threads (identical pixels, the single-threaded scaler is the decode
  * bottleneck at 1080p). Only for the warp's own decode; the cache key uses the builder's text.
  */
-export function threadedScalers(filter: string, threads: number): string {
+function threadedScalers(filter: string, threads: number): string {
 	return threads > 1 ? filter.replaceAll(`:${SWS_FLAGS}`, `:${SWS_FLAGS}:threads=${threads}`) : filter;
 }
 

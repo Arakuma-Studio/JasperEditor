@@ -3,7 +3,13 @@
 // the underline's draw-on is a dash length computed from its known width (no DOM geometry).
 import { estimateTextWidth, rgbaCss, type TitleRevealParams, titleRevealParams } from '@jasper/mg-templates';
 import type { CSSProperties } from 'react';
-import { needsShaping, segmentText, type TextSegment, useAnimeValues } from '../runtime/index.ts';
+import {
+	createPausedTimeline,
+	needsShaping,
+	segmentText,
+	type TextSegment,
+	useAnimeValues,
+} from '../runtime/index.ts';
 import {
 	addInOut,
 	DesignStage,
@@ -14,7 +20,6 @@ import {
 	TEMPLATE_FONT,
 	type TemplateTiming,
 	templateFit,
-	templateTimeline,
 } from './common.tsx';
 import type { AnimeTemplateProps } from './types.ts';
 
@@ -39,10 +44,10 @@ export function titleSegments(title: string): TextSegment[] {
  * subtitle: `o`, `y` (em of its size); underline: `d` drawn fraction.
  */
 export function buildTitleReveal(input: TitleRevealBuildInput): {
-	timeline: ReturnType<typeof templateTimeline>;
+	timeline: ReturnType<typeof createPausedTimeline>;
 	targets: Values[];
 } {
-	const tl = templateTimeline();
+	const tl = createPausedTimeline();
 	const n = input.units;
 	const units: Values[] = Array.from({ length: n }, () => ({ o: 0, y: 0.5, d: 0 }));
 	const subtitle: Values = { o: 0, y: 0.6, d: 0 };

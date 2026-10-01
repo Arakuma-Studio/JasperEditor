@@ -100,7 +100,7 @@ export class Harness {
 	}
 }
 
-export function resolveLabel(seq: Sequence, label: string): string {
+function resolveLabel(seq: Sequence, label: string): string {
 	const m = /^([VA])(\d+)$/.exec(label);
 	if (!m) return label;
 	const list = m[1] === 'V' ? seq.videoTracks : seq.audioTracks;

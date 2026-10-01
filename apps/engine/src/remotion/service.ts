@@ -19,9 +19,9 @@ import { selfCheck } from '../tools/ffmpeg.ts';
 import { binaryNames, type RemotionBinaries } from '../tools/lgpl.ts';
 import type { RemotionFfmpegInfo } from './export-plan.ts';
 
-export const COMPOSITION_ID = 'JasperSequence';
+const COMPOSITION_ID = 'JasperSequence';
 export const REMOTION_VERSION = '4.0.499';
-export const DELAY_RENDER_TIMEOUT_MS = 60_000;
+const DELAY_RENDER_TIMEOUT_MS = 60_000;
 /**
  * M2 (S11:LBK-020): identity of a prebuilt compositions bundle, written next to it by `scripts/build-remotion.mjs`
  * (`bundleId` = content hash of the bundle files, `animejs` = the anime.js version inside it).
@@ -69,7 +69,7 @@ export function bt709RemuxArgs(input: string, output: string): string[] {
 export type RemotionUsagePurpose = 'export' | 'still' | 'layer-bake' | 'mg-prerender';
 
 /** Runs ffmpeg (the engine's `Ffmpeg.run` shape; injected so this module stays free of process plumbing). */
-export type FfmpegRunner = {
+type FfmpegRunner = {
 	run(
 		args: readonly string[],
 		opts: { signal?: AbortSignal; onSpawn?(child: ChildProcess): void },
@@ -102,13 +102,7 @@ export type RemotionState = 'ready' | 'needs-browser-download' | 'unavailable';
 /** `chromiumOptions.gl` values Remotion 4.0.499 accepts (null = Chrome's default). */
 export type RemotionGl = 'angle' | 'swangle' | 'egl' | 'swiftshader' | 'vulkan' | 'angle-egl';
 /** Order in which the start-up probe tries OpenGL back ends for WebGL2 (S06:CG-042). */
-export const WEBGL_GL_CANDIDATES: readonly (RemotionGl | null)[] = [
-	null,
-	'angle',
-	'swangle',
-	'egl',
-	'swiftshader',
-];
+const WEBGL_GL_CANDIDATES: readonly (RemotionGl | null)[] = [null, 'angle', 'swangle', 'egl', 'swiftshader'];
 
 /** WebGL2 in the Remotion render browser (colour stage, S06:CG-042). */
 export type RemotionWebglStatus = {
@@ -139,10 +133,7 @@ export type RemotionRenderInput = {
 	audioBitrateKbps?: number;
 };
 
-export type RemotionFfmpegOverride = (info: {
-	type: 'pre-stitcher' | 'stitcher';
-	args: string[];
-}) => string[];
+type RemotionFfmpegOverride = (info: { type: 'pre-stitcher' | 'stitcher'; args: string[] }) => string[];
 
 /** Remotion binaries directory + what its FFmpeg is (capabilities `render.remotionBinaries`). */
 export type RemotionBinariesStatus = RemotionBinaries & {

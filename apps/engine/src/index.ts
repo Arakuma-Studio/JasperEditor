@@ -58,6 +58,7 @@ export function engineConfig(opts: StartEngineOptions): EngineConfig {
 	const dev = opts.dev ?? isTruthyEnv(env[ENV.DEV]);
 	// A second dev stack (other worktree, E2E) runs Vite on another port: JASPER_DEV_WEB_PORT.
 	const devWebPort = Number.parseInt(env[ENV.DEV_WEB_PORT] ?? '', 10) || DEV_WEB_PORT;
+	const webDir = opts.webDir ?? env[ENV.WEB_DIR] ?? null;
 	return {
 		appdir: opts.appdir,
 		paths: appdirPaths(opts.appdir),
@@ -66,14 +67,10 @@ export function engineConfig(opts: StartEngineOptions): EngineConfig {
 		host: opts.host ?? DEFAULT_ENGINE_HOST,
 		port: opts.port,
 		// @fastify/static only accepts an absolute root; `JASPER_WEB_DIR=apps/web/dist` is relative to the cwd.
-		webDir: resolveWebDir(opts.webDir ?? env[ENV.WEB_DIR] ?? null),
+		webDir: webDir ? resolve(webDir) : null,
 		version: ENGINE_VERSION,
 		extraHosts: dev ? [`127.0.0.1:${devWebPort}`, `localhost:${devWebPort}`] : [],
 	};
-}
-
-function resolveWebDir(dir: string | null): string | null {
-	return dir ? resolve(dir) : null;
 }
 
 export async function startEngine(opts: StartEngineOptions): Promise<RunningEngine> {

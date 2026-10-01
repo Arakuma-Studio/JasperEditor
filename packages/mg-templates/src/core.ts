@@ -23,10 +23,6 @@ export function progress(t: number, start: number, duration: number): number {
 	return clamp01((t - start) / duration);
 }
 
-export function mix(a: number, b: number, p: number): number {
-	return a + (b - a) * p;
-}
-
 export function easeOutCubic(p: number): number {
 	const q = 1 - clamp01(p);
 	return 1 - q * q * q;

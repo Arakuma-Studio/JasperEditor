@@ -139,7 +139,20 @@ function createWindow(url: string): BrowserWindow {
 async function maybeScreenshot(win: BrowserWindow): Promise<void> {
 	const target = process.env.JASPER_DESKTOP_SCREENSHOT;
 	if (!target) return;
-	await new Promise((r) => setTimeout(r, Number(process.env.JASPER_DESKTOP_SCREENSHOT_DELAY_MS ?? 3000)));
+	// Vite may finish loading the HTML before its modules mount the app.
+	let rendered = false;
+	for (let i = 0; i < 120 && !rendered && !win.isDestroyed(); i++) {
+		rendered = await win.webContents.executeJavaScript(
+			'Boolean(document.querySelector(\'[data-testid="home"], [data-testid="editor-shell"]\'))',
+		);
+		if (!rendered) await new Promise((r) => setTimeout(r, 250));
+	}
+	if (!rendered) {
+		log('application UI did not render before screenshot timeout');
+		app.exit(1);
+		return;
+	}
+	await new Promise((r) => setTimeout(r, 250));
 	if (win.isDestroyed()) return;
 	const image = await win.webContents.capturePage();
 	mkdirSync(dirname(resolve(target)), { recursive: true });

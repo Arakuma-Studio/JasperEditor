@@ -21,9 +21,9 @@ export type RemotionFfmpegInfo = {
 	filters: readonly string[] | null;
 };
 
-export type RemotionPhase = { id: 'render' | 'encode'; label: string; weight: number };
+type RemotionPhase = { id: 'render' | 'encode'; label: string; weight: number };
 
-export type RemotionExportPlan =
+type RemotionExportPlan =
 	| {
 			mode: 'direct';
 			/** Remotion `codec` / `audioCodec`. */
@@ -48,13 +48,6 @@ export type RemotionExportPlan =
 			reason: string;
 	  }
 	| { mode: 'unavailable'; code: 'ENCODER_UNAVAILABLE'; reason: string };
-
-/** Share of the job progress that the Remotion render takes when a second encode follows. */
-export function renderWeight(encoder: EncoderChoice): number {
-	// Software AV1/VP9 encodes are slower than a ProRes render of simple graphics; H.264 is quick.
-	if (encoder.codec === 'h264') return encoder.hardware ? 0.85 : 0.75;
-	return 0.6;
-}
 
 const has = (list: readonly string[] | null, name: string) => list === null || list.includes(name);
 
@@ -125,7 +118,8 @@ export function planRemotionExport(input: {
 		};
 	}
 
-	const w = renderWeight(encoder);
+	// Software AV1/VP9 encodes take more time than the ProRes render; H.264 is quicker.
+	const w = encoder.codec === 'h264' ? (encoder.hardware ? 0.85 : 0.75) : 0.6;
 	return {
 		mode: 'intermediate',
 		codec: 'prores',

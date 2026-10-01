@@ -40,7 +40,7 @@ import { RevisionTracker } from './revisions.ts';
 import { type AgentConnection, type AgentSocket, RelayError, SessionRegistry } from './sessions.ts';
 import type { AgentProjectStore } from './store.ts';
 
-export const RELAY_TIMEOUT_MS = 30_000;
+const RELAY_TIMEOUT_MS = 30_000;
 
 /** An HTTP-level failure (S04:ENG-022 body `{code, message, detail?, retryable}`). */
 export class AgentApiError extends Error {
@@ -95,7 +95,7 @@ const QUERY_ERROR_STATUS: Record<string, [number, string]> = {
 };
 
 /** Maps a query failure code (E_* from a session or @jasper/project) to an HTTP error. */
-export function queryError(code: string, message: string): AgentApiError {
+function queryError(code: string, message: string): AgentApiError {
 	const [status, httpCode] = QUERY_ERROR_STATUS[code] ?? [502, 'INTERNAL'];
 	return new AgentApiError(status, httpCode, message, { code });
 }

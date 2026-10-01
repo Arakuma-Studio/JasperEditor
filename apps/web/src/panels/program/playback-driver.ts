@@ -13,8 +13,8 @@
 // While paused the store is the source of truth and the Player is seeked on every store change.
 import type { PlayerController, TransportState, TransportStore } from '@jasper/session';
 
-export const NATIVE_MIN_RATE = 0.1;
-export const NATIVE_MAX_RATE = 1;
+const NATIVE_MIN_RATE = 0.1;
+const NATIVE_MAX_RATE = 1;
 export const SEEK_HZ = 30;
 /**
  * Native play watchdog: when no `frameupdate` arrives for this long while playing (and the Player is not
@@ -25,9 +25,9 @@ export const SEEK_HZ = 30;
  */
 export const PLAY_WATCHDOG_MS = 600;
 /** Consecutive kicks without any progress in between; progress restores the budget. */
-export const PLAY_WATCHDOG_RETRIES = 3;
+const PLAY_WATCHDOG_RETRIES = 3;
 
-export function isNativeRate(rate: number): boolean {
+function isNativeRate(rate: number): boolean {
 	return rate >= NATIVE_MIN_RATE && rate <= NATIVE_MAX_RATE;
 }
 
@@ -53,13 +53,13 @@ export type Clock = {
 	cancelFrame(handle: unknown): void;
 };
 
-export const browserClock: Clock = {
+const browserClock: Clock = {
 	now: () => performance.now(),
 	requestFrame: (cb) => requestAnimationFrame(() => cb()),
 	cancelFrame: (h) => cancelAnimationFrame(h as number),
 };
 
-export type PlaybackRange = {
+type PlaybackRange = {
 	/** Last seekable frame (the sequence end; shows black, TL-834). */
 	end: number;
 	/** Loop range when loop is on: In/Out if set, else the whole sequence (TL-875). */
@@ -67,7 +67,7 @@ export type PlaybackRange = {
 	loopEnd: number;
 };
 
-export type DriverOptions = {
+type DriverOptions = {
 	transport: TransportStore;
 	getRange(): PlaybackRange;
 	getFps(): number;
@@ -78,7 +78,7 @@ export type DriverOptions = {
 	onBuffering?(waiting: boolean): void;
 };
 
-export type DriverMode = 'idle' | 'native' | 'stepping';
+type DriverMode = 'idle' | 'native' | 'stepping';
 
 export class PlaybackDriver implements PlayerController {
 	private player: PlayerLike | null = null;

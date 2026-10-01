@@ -65,7 +65,6 @@ const env = {
 	...process.env,
 	ELECTRON_DISABLE_SANDBOX: '1',
 	JASPER_DESKTOP_SCREENSHOT: shot,
-	JASPER_DESKTOP_SCREENSHOT_DELAY_MS: '4000',
 	JASPER_DESKTOP_EXIT: '1',
 };
 
@@ -141,6 +140,7 @@ const code = await new Promise((resolve) => {
 	});
 });
 
+if (code !== 0) fail(`Electron exited with ${code}\n${out.slice(-3000)}`);
 const loaded = /\[desktop\] loaded (http:\/\/127\.0\.0\.1:\d+\/\S*)/.exec(out);
 if (!loaded) fail(`the window never finished loading (exit ${code})\n${out.slice(-3000)}`);
 if (!/\[desktop\] screenshot /.test(out)) fail(`no screenshot was captured (exit ${code})`);

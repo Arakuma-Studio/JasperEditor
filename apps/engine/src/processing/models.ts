@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import type { ProcessingModel } from '@jasper/api';
 import builtin from './models.json' with { type: 'json' };
 
-export type CatalogEntry = {
+type CatalogEntry = {
 	id: string;
 	name: string;
 	architecture: string;
@@ -25,14 +25,13 @@ export type CatalogEntry = {
 	downloadUrl: string | null;
 	sha256: string;
 	sizeBytes: number;
-	notes?: string;
 };
 
-export const MODEL_CATALOG_ENV = 'JASPER_MODEL_CATALOG';
-export const MODELS_DIR_ENV = 'JASPER_BUNDLED_MODELS_DIR';
+const MODEL_CATALOG_ENV = 'JASPER_MODEL_CATALOG';
+const MODELS_DIR_ENV = 'JASPER_BUNDLED_MODELS_DIR';
 
 /** Directory of the bundled models: env override, `models/` next to the bundle, or apps/engine/models. */
-export function bundledModelsDir(env: Record<string, string | undefined> = process.env): string {
+function bundledModelsDir(env: Record<string, string | undefined> = process.env): string {
 	if (env[MODELS_DIR_ENV]) return resolve(env[MODELS_DIR_ENV] as string);
 	const here = dirname(fileURLToPath(import.meta.url));
 	const candidates = [join(here, 'models'), join(here, '..', '..', 'models')];

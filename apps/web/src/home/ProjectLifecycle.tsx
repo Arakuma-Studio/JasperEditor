@@ -23,12 +23,7 @@ import { SessionProvider, useSession, useStoreSelector } from '@jasper/session/r
 import { Button, Z } from '@jasper/ui';
 import { type ReactNode, useEffect, useState, useSyncExternalStore } from 'react';
 import { ExportMode } from '../export/ExportMode.tsx';
-import {
-	isTrackedExport,
-	takeTrackedExport,
-	useExportMode,
-	useExportModeHostedByShell,
-} from '../export/mode.ts';
+import { takeTrackedExport, useExportMode, useExportModeHostedByShell } from '../export/mode.ts';
 import { ImportPromptHost } from '../import/ImportPromptHost.tsx';
 import { createMediaRuntimeSync } from '../import/media-runtime.ts';
 import { EngineImportService } from '../import/service.ts';
@@ -127,19 +122,20 @@ function LifecycleBody(props: {
 			engine.subscribe((e) => {
 				if (!e || (e.type !== 'job.finished' && e.type !== 'job.updated')) return;
 				const job = e.payload;
-				if (!isTrackedExport(job.id) || !TERMINAL_JOB_STATES.has(job.state)) return;
-				const t = takeTrackedExport(job.id);
+				if (!TERMINAL_JOB_STATES.has(job.state)) return;
+				const fileName = takeTrackedExport(job.id);
+				if (fileName === null) return;
 				if (job.state === 'succeeded')
 					notices.push({
 						kind: 'success',
-						message: `Export finished: ${t?.fileName ?? job.title}`,
+						message: `Export finished: ${fileName}`,
 						action: { label: 'Download', href: engine.client.renderOutputUrl(job.id) },
 						durationMs: null,
 					});
 				else if (job.state !== 'cancelled')
 					notices.push({
 						kind: 'error',
-						message: `Export failed: ${t?.fileName ?? job.title}`,
+						message: `Export failed: ${fileName}`,
 						detail: job.error?.message,
 					});
 			}),

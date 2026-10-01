@@ -14,9 +14,9 @@ import { fingerprintFile, fingerprintHex, mediaKeyFor } from './fingerprint.ts';
 import { type ProbeResult, probeFile } from './probe.ts';
 import type { MediaRecord, MediaRegistry } from './registry.ts';
 
-export type ProbeJobInput = { path: string; fingerprint: string; name: string };
+type ProbeJobInput = { path: string; name: string };
 
-export class MediaError extends Error {
+class MediaError extends Error {
 	constructor(
 		readonly code: string,
 		message: string,
@@ -68,7 +68,7 @@ export class MediaService {
 			origin: { type: 'user' },
 			...(projectId ? { projectId } : {}),
 			dedupeKey: `probe:${fingerprintHex(fingerprint)}`,
-			input: { path, fingerprint, name } satisfies ProbeJobInput,
+			input: { path, name } satisfies ProbeJobInput,
 		});
 		const done = await this.deps.queue.wait(job.id);
 		if (done.state !== 'succeeded') {

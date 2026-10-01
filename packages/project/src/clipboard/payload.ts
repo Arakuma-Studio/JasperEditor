@@ -45,8 +45,6 @@ export const CLIPBOARD_FORMAT = 'jasper-clipboard';
 export const CLIPBOARD_VERSION = 1;
 /** CLB-009: payloads larger than this (UTF-8 bytes of the JSON) are refused. */
 export const CLIPBOARD_MAX_BYTES = 20 * 1024 * 1024;
-/** Desktop custom clipboard format (CLB-002). */
-export const CLIPBOARD_MIME = 'application/x-jasper-clipboard';
 export const CLIPBOARD_KINDS = ['clips', 'effects', 'keyframes', 'project-items'] as const;
 export type ClipboardKind = (typeof CLIPBOARD_KINDS)[number];
 

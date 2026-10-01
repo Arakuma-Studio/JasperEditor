@@ -9,7 +9,7 @@ import { guarded, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
 import { TrackingService } from '../tracking/service.ts';
 
-export const TRACKING_SERVICE_KEY = 'tracking';
+const TRACKING_SERVICE_KEY = 'tracking';
 
 export default async function trackingRoutes(app: FastifyInstance): Promise<void> {
 	const core = coreServices(app);

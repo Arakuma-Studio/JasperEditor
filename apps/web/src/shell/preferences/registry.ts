@@ -5,16 +5,11 @@
 import type { ComponentType } from 'react';
 import { createRegistry } from '../../extensions/registry.ts';
 
-export type PreferencesPageProps = {
-	/** Closes the Preferences dialog. */
-	close(): void;
-};
-
-export type PreferencesPageDef = {
+type PreferencesPageDef = {
 	id: string;
 	title: string;
 	order?: number;
-	component: ComponentType<PreferencesPageProps>;
+	component: ComponentType;
 };
 
 export const preferencesPages = createRegistry<PreferencesPageDef>();

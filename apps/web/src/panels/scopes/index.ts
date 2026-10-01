@@ -1,4 +1,3 @@
-// Lumetri Scopes panel (M2, S06). Owner: wp-m2-color. Placeholder until the work package lands.
 import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
 

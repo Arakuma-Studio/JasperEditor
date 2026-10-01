@@ -1,5 +1,5 @@
 // M2 animation contracts (ARCHITECTURE §20.1, S11): schema v4 (text animators, anime renderer, shape clips),
-// text-animation windows, clip engines, snapshot sources, command stubs and the agent schema additions.
+// text-animation windows, clip engines, snapshot sources, command contracts and the agent schema additions.
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,7 +9,6 @@ import {
 	buildRenderSnapshot,
 	type Clip,
 	COMMAND_CATALOG,
-	COMMAND_FIELD_OWNERS,
 	CURRENT_SCHEMA_VERSION,
 	checkInvariants,
 	clipEngines,
@@ -287,13 +286,7 @@ describe('command contracts (handlers owned by the wave-1 packages)', () => {
 		const invalid = h.tx([{ type: 'clip.addShape', at: 0, track: 'V1', shape: { type: 'star' } }]);
 		expect(fail(invalid)?.code).toBe('E_SCHEMA');
 	});
-	it('new clip.update / clip.addText fields validate their target, then name their owner', () => {
-		expect(COMMAND_FIELD_OWNERS).toEqual({
-			'clip.addText.textAnimation': 'wp-m2-text-anim',
-			'clip.update.textAnimation': 'wp-m2-text-anim',
-			'clip.update.shape': 'wp-m2-shapes',
-			'clip.update.template': 'wp-m2-anime-templates',
-		});
+	it('clip.update and clip.addText fields validate their target', () => {
 		const h = new Harness();
 		const add = h.tx([
 			{

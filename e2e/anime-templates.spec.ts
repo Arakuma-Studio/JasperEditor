@@ -61,10 +61,9 @@ async function markupAt(frame: number): Promise<string> {
 	let last = '';
 	await expect
 		.poll(async () => {
-			const html =
-				(await templateIn()
-					.innerHTML()
-					.catch(() => '')) ?? '';
+			const html = await templateIn()
+				.innerHTML()
+				.catch(() => '');
 			const stable = html !== '' && html === last;
 			last = html;
 			return stable;
@@ -374,6 +373,6 @@ test('export (native with layer-bake, else Remotion) matches renderStill', async
 	expect(lit).toBeGreaterThan(1000);
 });
 
-test('no uncaught page errors', async () => {
+test('no uncaught page errors', () => {
 	expect(watcher.errors.filter((e) => e.startsWith('pageerror'))).toEqual([]);
 });

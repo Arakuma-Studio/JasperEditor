@@ -8,7 +8,7 @@ import type { MgSpecInput } from '@jasper/mg-templates';
 
 export type MgQuality = 'preview' | 'master';
 
-export type MgRenderTools = { mg: string; ffmpeg: string; ffprobe: string };
+type MgRenderTools = { mg: string; ffmpeg: string; ffprobe: string };
 
 export class MgRenderError extends Error {
 	constructor(
@@ -127,7 +127,7 @@ function closed(stream: NodeJS.ReadableStream & { closed?: boolean }, ms: number
 }
 
 /** Number of video packets (= frames for intra-only ProRes and VP9 without alt-ref) in a file. */
-export function countFrames(ffprobe: string, file: string): Promise<number> {
+function countFrames(ffprobe: string, file: string): Promise<number> {
 	return new Promise((resolve, reject) => {
 		execFile(
 			ffprobe,

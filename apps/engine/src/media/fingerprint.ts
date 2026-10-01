@@ -3,8 +3,8 @@
 import { createHash } from 'node:crypto';
 import { open } from 'node:fs/promises';
 
-export const FINGERPRINT_PREFIX = 'q1:';
-export const FINGERPRINT_EDGE_BYTES = 4 * 1024 * 1024;
+const FINGERPRINT_PREFIX = 'q1:';
+const FINGERPRINT_EDGE_BYTES = 4 * 1024 * 1024;
 
 async function readExactly(
 	fh: Awaited<ReturnType<typeof open>>,

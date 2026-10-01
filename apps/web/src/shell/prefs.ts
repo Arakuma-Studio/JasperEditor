@@ -16,9 +16,9 @@ export type UiPrefs = {
 	showWorkspaceTabs: boolean;
 };
 
-export const UI_PREFS_KEY = 'jasper:ui-prefs';
+const UI_PREFS_KEY = 'jasper:ui-prefs';
 
-export const DEFAULT_PREFS: UiPrefs = {
+const DEFAULT_PREFS: UiPrefs = {
 	theme: 'darkest',
 	contrast: 'normal',
 	density: 'normal',

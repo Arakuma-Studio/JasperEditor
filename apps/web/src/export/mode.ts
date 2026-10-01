@@ -65,19 +65,15 @@ export function useExportModeHostedByShell(): boolean {
 
 // ------------------------------------------------------------ export jobs started from this client
 
-const tracked = new Map<string, { title: string; fileName: string }>();
+const tracked = new Map<string, string>();
 
 /** Remembers an export job so its completion shows a toast with Download (S05:EX-013, EX-030). */
 export function trackExportJob(job: EngineJob, fileName: string): void {
-	tracked.set(job.id, { title: job.title, fileName });
+	tracked.set(job.id, fileName);
 }
 
-export function takeTrackedExport(jobId: string): { title: string; fileName: string } | null {
+export function takeTrackedExport(jobId: string): string | null {
 	const t = tracked.get(jobId) ?? null;
-	if (t) tracked.delete(jobId);
+	tracked.delete(jobId);
 	return t;
-}
-
-export function isTrackedExport(jobId: string): boolean {
-	return tracked.has(jobId);
 }

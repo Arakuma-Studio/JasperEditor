@@ -202,11 +202,6 @@ export class Ffmpeg {
 
 // ---------------------------------------------------------------- self-check (S04:ENG-011)
 
-/**
- * Encoders the engine expects in every supported build (D-13: an LGPL build; H.264 comes from hardware or
- * OpenH264 and is checked by the encoder selector, libx264 is never required).
- */
-export const REQUIRED_ENCODERS = ['aac', 'prores_ks', 'libvpx-vp9'] as const;
 /** Any of these can write a native export video stream (see `selectVideoEncoder`). */
 const VIDEO_EXPORT_ENCODERS = [
 	'h264_videotoolbox',
@@ -220,20 +215,6 @@ const VIDEO_EXPORT_ENCODERS = [
 	'libvpx-vp9',
 	'libaom-av1',
 ];
-const REQUIRED_FILTERS = [
-	'trim',
-	'atrim',
-	'overlay',
-	'amix',
-	'scale',
-	'fps',
-	'tile',
-	'silencedetect',
-	'scdet',
-	'ebur128',
-	'loudnorm',
-] as const;
-
 export type SelfCheck = {
 	ffmpegVersion: string | null;
 	ffprobeVersion: string | null;
@@ -245,8 +226,6 @@ export type SelfCheck = {
 	hwaccels: string[];
 	/** From the `configuration:` line of `ffmpeg -version` (D-13). */
 	license: 'lgpl' | 'gpl' | 'nonfree' | 'unknown';
-	missingEncoders: string[];
-	missingFilters: string[];
 	/**
 	 * A video export encoder (H.264, AV1 or VP9 — hardware ones still need a test encode, see
 	 * EncoderService) + AAC and the compositing filters exist.
@@ -336,8 +315,6 @@ async function runSelfCheck(bins: BinaryPaths): Promise<SelfCheck> {
 		filters,
 		hwaccels: parseHwaccels(hwa),
 		license: ffv ? parseBuildLicense(ffv) : 'unknown',
-		missingEncoders: REQUIRED_ENCODERS.filter((e) => !encoders.includes(e)),
-		missingFilters: REQUIRED_FILTERS.filter((f) => !filters.includes(f)),
 		nativeRender,
 		errors,
 	};

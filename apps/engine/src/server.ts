@@ -13,7 +13,7 @@ import { registerRoutes } from './routes/index.ts';
 import { systemErrorReply } from './tools/reply.ts';
 import { createCoreServices } from './tools/services.ts';
 
-export const JSON_BODY_LIMIT = 20 * 1024 * 1024;
+const JSON_BODY_LIMIT = 20 * 1024 * 1024;
 
 function safeEqual(a: string, b: string): boolean {
 	const x = Buffer.from(a);
@@ -31,13 +31,13 @@ function readCookie(header: string | undefined, name: string): string | null {
 	return null;
 }
 
-export function allowedHosts(config: EngineConfig): Set<string> {
+function allowedHosts(config: EngineConfig): Set<string> {
 	const hosts = new Set<string>([`127.0.0.1:${config.port}`, `localhost:${config.port}`]);
 	for (const h of config.extraHosts) hosts.add(h);
 	return hosts;
 }
 
-export function isAllowedOrigin(origin: string, config: EngineConfig): boolean {
+function isAllowedOrigin(origin: string, config: EngineConfig): boolean {
 	try {
 		const u = new URL(origin);
 		return (

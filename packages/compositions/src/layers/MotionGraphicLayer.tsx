@@ -163,7 +163,6 @@ function AnimeTemplate(p: {
 	durationFrames: number;
 	sourceInFrames: number;
 	fps: number;
-	isPreview: boolean;
 }) {
 	const fontsReady = useContext(FontsReadyContext).allLoaded;
 	const key = `${p.def.id}@${p.def.version}`;
@@ -189,10 +188,8 @@ function AnimeTemplate(p: {
 			totalMs={t.totalMs}
 			introMs={t.introMs}
 			outroMs={t.outroMs}
-			fps={p.fps}
 			canvas={p.mg.canvas}
 			seed={hash32(p.clipId, 'template')}
-			isPreview={p.isPreview}
 		/>
 	);
 }
@@ -229,7 +226,6 @@ export function MotionGraphicLayer(layer: LayerProps) {
 				durationFrames={clip.duration}
 				sourceInFrames={sourceInFrames}
 				fps={fps}
-				isPreview={options.isPreview}
 			/>
 		);
 	else {
@@ -306,7 +302,6 @@ export function MgTemplatePreview(props: MgTemplatePreviewProps) {
 				durationFrames={durationInFrames}
 				sourceInFrames={0}
 				fps={fps}
-				isPreview
 			/>
 		);
 	else {

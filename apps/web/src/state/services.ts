@@ -4,7 +4,7 @@ import type { RegisteredMedia } from '@jasper/api';
 /** In-app drag of Project panel items onto the timeline/monitors. */
 export type ProjectItemsDragPayload = { type: 'jasper/project-items'; itemIds: string[] };
 /** OS files dropped from the desktop (web: File objects; Electron: paths via the preload bridge). */
-export type OsFilesDragPayload = { type: 'os-files'; files: File[]; paths?: string[] };
+type OsFilesDragPayload = { type: 'os-files'; files: File[]; paths?: string[] };
 export type DragPayload = ProjectItemsDragPayload | OsFilesDragPayload;
 
 /** MIME type used on DataTransfer for in-app item drags. */

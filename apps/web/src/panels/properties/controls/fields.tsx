@@ -7,7 +7,7 @@ type RGBA = [number, number, number, number];
 const to255 = (x: number) => Math.round(Math.min(1, Math.max(0, x)) * 255);
 
 /** `#rrggbb` for `<input type="color">` (alpha is edited separately). */
-export function rgbaToHex(c: readonly number[]): string {
+function rgbaToHex(c: readonly number[]): string {
 	return `#${[c[0] ?? 0, c[1] ?? 0, c[2] ?? 0].map((x) => to255(x).toString(16).padStart(2, '0')).join('')}`;
 }
 function hexToRgb(hex: string): [number, number, number] | null {

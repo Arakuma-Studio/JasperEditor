@@ -8,7 +8,7 @@ import {
 	rgbaCss,
 } from '@jasper/mg-templates';
 import type { CSSProperties } from 'react';
-import { segmentText, type TextSegment, useAnimeValues } from '../runtime/index.ts';
+import { createPausedTimeline, segmentText, type TextSegment, useAnimeValues } from '../runtime/index.ts';
 import {
 	addInOut,
 	DesignStage,
@@ -18,7 +18,6 @@ import {
 	TEMPLATE_FONT,
 	type TemplateTiming,
 	templateFit,
-	templateTimeline,
 } from './common.tsx';
 import type { AnimeTemplateProps } from './types.ts';
 
@@ -33,10 +32,10 @@ export type LowerThirdAnimBuildInput = TemplateTiming & {
 
 /** Targets `[bar, panel, ...nameWords, ...roleWords]`. */
 export function buildLowerThirdAnim(input: LowerThirdAnimBuildInput): {
-	timeline: ReturnType<typeof templateTimeline>;
+	timeline: ReturnType<typeof createPausedTimeline>;
 	targets: Values[];
 } {
-	const tl = templateTimeline();
+	const tl = createPausedTimeline();
 	const bar: Values = { s: 0, w: 0, o: 1, x: 0 };
 	const panel: Values = { s: 1, w: 0, o: 1, x: 0 };
 	const word = (): Values => ({ s: 1, w: 1, o: 0, x: -24 });

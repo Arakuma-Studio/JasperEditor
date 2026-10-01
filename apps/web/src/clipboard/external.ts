@@ -14,7 +14,7 @@ import { getImportService, type ImportService, type ImportTarget } from '../stat
 import { type ExternalContent, imageExtension } from './system.ts';
 
 /** Default length of a pasted text clip (CLB-010; the default graphic duration of XF-060). */
-export const PASTED_TEXT_SECONDS = 5;
+const PASTED_TEXT_SECONDS = 5;
 /** Longer clipboard text is cut (a text clip is a title, not a document). */
 export const MAX_PASTED_TEXT = 5000;
 
@@ -43,7 +43,7 @@ export function normalizePastedText(raw: string): { text: string; truncated: boo
 }
 
 /** Lowest targeted unlocked track of a kind (CLB-003); the lowest unlocked one when none is targeted. */
-export function lowestTargetedTrack(
+function lowestTargetedTrack(
 	seq: Sequence,
 	view: SequenceViewState | undefined,
 	kind: 'video' | 'audio',
@@ -86,7 +86,7 @@ function binFor(ctx: CommandCtx, session: EditorSession): string | null {
 }
 
 /** Whether pasted content is placed in the sequence: the Timeline or Program monitor has the focus. */
-export function placesInSequence(ctx: CommandCtx): boolean {
+function placesInSequence(ctx: CommandCtx): boolean {
 	return ctx.focus.panel === 'timeline' || ctx.focus.panel === 'program';
 }
 

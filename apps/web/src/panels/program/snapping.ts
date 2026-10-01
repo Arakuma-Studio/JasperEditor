@@ -3,7 +3,7 @@
 // screen px; tie-break center-to-center, then frame, guides, safe margins, layers.
 import type { Rect } from '@jasper/project';
 
-export type SnapKind = 'frame' | 'guide' | 'safe' | 'layer';
+type SnapKind = 'frame' | 'guide' | 'safe' | 'layer';
 export type SnapTarget = {
 	value: number;
 	kind: SnapKind;
@@ -13,11 +13,11 @@ export type SnapTarget = {
 	extent?: [number, number];
 	sourceId?: string;
 };
-export type SnapCandidate = { value: number; role: 'min' | 'center' | 'max' };
+type SnapCandidate = { value: number; role: 'min' | 'center' | 'max' };
 export type SnapHit = { delta: number; target: SnapTarget; candidate: SnapCandidate };
 export type SnapTargets = { x: SnapTarget[]; y: SnapTarget[] };
 
-export const SNAP_SCREEN_PX = 6;
+const SNAP_SCREEN_PX = 6;
 const KIND_ORDER: Record<SnapKind, number> = { frame: 0, guide: 1, safe: 2, layer: 3 };
 
 export function snapThreshold(viewScale: number): number {
@@ -73,7 +73,7 @@ export function buildSnapTargets(opts: {
 }
 
 /** Candidates of a moving rect on one axis: min, center, max (SNP-003). */
-export function rectCandidates(r: Rect, axis: 'x' | 'y'): SnapCandidate[] {
+function rectCandidates(r: Rect, axis: 'x' | 'y'): SnapCandidate[] {
 	const a = axis === 'x' ? r.x : r.y;
 	const s = axis === 'x' ? r.width : r.height;
 	return [

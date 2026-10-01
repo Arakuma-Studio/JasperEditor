@@ -94,7 +94,7 @@ const IMAGE_FORMAT = /(^|,)(image2|[a-z0-9]+_pipe|png|apng|webp)(,|$)/;
 const BROWSER_AUDIO = /^(aac|mp3|opus|vorbis|flac|pcm_(s16le|s24le|s32le|f32le|u8|s16be))$/;
 const BROWSER_CONTAINERS = /(mov|mp4|m4a|webm|matroska|ogg|wav|mp3|flac|aac|image2|_pipe|gif|png|webp)/;
 
-export function parseRational(s: string | undefined): { num: number; den: number } | null {
+function parseRational(s: string | undefined): { num: number; den: number } | null {
 	if (!s) return null;
 	const [a, b] = s.split('/');
 	const num = Number(a);
@@ -135,14 +135,14 @@ function hasAlphaFmt(pix: string | undefined): boolean {
  * True when the stream carries an alpha channel. VP8/VP9 in WebM store alpha as Matroska BlockAdditions:
  * ffprobe's native decoders report plain `yuv420p` there and only the `alpha_mode` stream tag tells.
  */
-export function streamHasAlpha(s: Pick<FfStream, 'pix_fmt' | 'tags'>): boolean {
+function streamHasAlpha(s: Pick<FfStream, 'pix_fmt' | 'tags'>): boolean {
 	if (hasAlphaFmt(s.pix_fmt)) return true;
 	for (const [k, v] of Object.entries(s.tags ?? {})) if (k.toLowerCase() === 'alpha_mode') return v === '1';
 	return false;
 }
 
 /** First guess of WebCodecs/`<video>` decodability (S04:PB-004); null = depends on the client (HEVC). */
-export function browserDecodable(s: FfStream, interlaced: boolean): boolean | null {
+function browserDecodable(s: FfStream, interlaced: boolean): boolean | null {
 	if (interlaced) return false;
 	const codec = s.codec_name ?? '';
 	const pix = s.pix_fmt ?? '';

@@ -1,11 +1,11 @@
 # M1 acceptance status (ARCHITECTURE §15)
 
-**Current state: `dev` after wave 3 (WP-3L, WP-3I, WP-3V merged). All 13 items PASS.** The final check on
+**M1 acceptance snapshot: `dev` after wave 3 (WP-3L, WP-3I, WP-3V merged). All 13 items PASS.** The final check on
 `dev` (2026-09-30, below) re-ran every command. The per-item evidence further down is from the WP-3I
 acceptance run on `wp/wp-3i` (based on `dev` at `3f5498d`). The wave-3 merge
 changes are listed in `docs/wp-notes/INTEGRATION-W3.md`, and the re-run on `dev` gives the same results.
 
-**After M1 — wp-mcp (branch `wp/wp-mcp`, not merged yet):** the in-app Agent panel is gone and the agent API
+**After M1 — wp-mcp (merged into `main`):** the in-app Agent panel is gone and the agent API
 ships as an MCP server (`jasper-mcp`, ARCHITECTURE D-18 / §11). Item 10 below is now exercised through MCP;
 see "wp-mcp: Agent panel → MCP server" at the end of this file and `docs/wp-notes/wp-mcp.md`.
 
@@ -124,16 +124,11 @@ Item 1 clean-clone command: `git clone --branch wp/wp-3i <repo> /tmp/wp3i-clean 
 ## wp-mcp: Agent panel → MCP server (after M1)
 
 User decision: remove the in-app Agent panel and expose the agent capabilities as an MCP server for external
-coding agents. Branch `wp/wp-mcp`, ports 48550–48599. Details, tool list and open points:
+coding agents. The wp-mcp acceptance run used ports 48550–48599. Details, tool list and open points:
 `docs/wp-notes/wp-mcp.md`.
 
 | Command | Result |
 |---|---|
-| `pnpm install && pnpm fixtures && pnpm mg:build && pnpm mcp:build` | @@SETUP@@ |
-| `pnpm verify` | @@VERIFY@@ |
-| `E2E_PORT=48560 pnpm e2e` | @@E2E@@ |
-| `pnpm e2e:typecheck` | @@E2ETC@@ |
-| `MCP_TEST_PORT=48551 pnpm exec vitest run --project @jasper/mcp` | @@MCPIT@@ |
 | `DESKTOP_SMOKE_PORT=48570 ELECTRON_DISABLE_SANDBOX=1 pnpm e2e:desktop` | PASS for packaged-like and dev (xvfb); the preload now also exposes `focusWindow()` and `mcpInfo()` |
 | Real clients, throwaway config dirs (`HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME` under `/tmp`) | Claude Code 2.1.285: `claude mcp add jasper -- node …/apps/mcp/dist/jasper-mcp.mjs` → `claude mcp list` "✔ Connected"; also with `--env`, with `--appdir`, and `--transport http …/mcp` against a real engine. Codex CLI 0.159.0: `codex mcp add jasper -- node …` wrote the `[mcp_servers.jasper]` table shown in the README; `codex mcp list` shows it enabled. No model session was run through either client. |
 

@@ -101,7 +101,7 @@ export function FixtureTemplate({ timeMs, totalMs, introMs, outroMs, seed, canva
 }
 
 /** An animated title: char units, the rise animator `in` over `inFrames`, `out` over the last `outFrames`. */
-export function FixtureTitle(props: {
+function FixtureTitle(props: {
 	text: string;
 	frame: number;
 	fps: number;
@@ -163,7 +163,7 @@ export function FixtureTitle(props: {
 }
 
 /** An animated shape (value engine): a rounded rectangle that grows and turns. */
-export function FixtureShape({ frame, fps }: { frame: number; fps: number }) {
+function FixtureShape({ frame, fps }: { frame: number; fps: number }) {
 	const [v] = useAnimeValues(
 		'shape',
 		() => {
@@ -214,10 +214,8 @@ export function FixtureScene({ frame }: { frame: number }) {
 				totalMs={frameToMs(durationInFrames, fps)}
 				introMs={frameToMs(15, fps)}
 				outroMs={frameToMs(10, fps)}
-				fps={fps}
 				canvas={{ width, height: 200 }}
 				seed={hash32('clp_PARITY000000002', 'template')}
-				isPreview={false}
 			/>
 			<FixtureShape frame={frame} fps={fps} />
 		</div>

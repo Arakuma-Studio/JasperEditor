@@ -59,6 +59,3 @@ export function Button({
 	);
 	return disabled && disabledReason ? <Tooltip content={disabledReason}>{button}</Tooltip> : button;
 }
-
-/** Alias matching the S05 §11.1 name. */
-export const TextButton = Button;

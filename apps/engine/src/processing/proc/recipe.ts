@@ -24,7 +24,7 @@ export function recipeHash(
 }
 
 /** Human label of one step (Project item names, job titles, badges). */
-export function stepLabel(step: ProcessStep): string {
+function stepLabel(step: ProcessStep): string {
 	switch (step.op) {
 		case 'stabilize':
 			return 'Stabilized';

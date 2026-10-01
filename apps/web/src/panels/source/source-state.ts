@@ -11,7 +11,7 @@ import {
 import type { EditorSession } from '@jasper/session';
 import { createStore } from 'zustand/vanilla';
 
-export type SourceMonitorState = {
+type SourceMonitorState = {
 	itemId: string | null;
 	recent: string[];
 	/** Source frame rate (sequence fps for stills). */
@@ -22,7 +22,7 @@ export type SourceMonitorState = {
 	markOut: number | null;
 };
 
-export const MAX_RECENT_SOURCES = 20;
+const MAX_RECENT_SOURCES = 20;
 
 export const sourceMonitorState = createStore<SourceMonitorState>(() => ({
 	itemId: null,
@@ -33,7 +33,7 @@ export const sourceMonitorState = createStore<SourceMonitorState>(() => ({
 	markOut: null,
 }));
 
-export type SourceItem = Extract<ProjectItem, { kind: 'media' | 'synthetic' }>;
+type SourceItem = Extract<ProjectItem, { kind: 'media' | 'synthetic' }>;
 
 export function sourceItem(doc: ProjectDocument, itemId: string | null): SourceItem | null {
 	const it = itemId ? doc.items[itemId] : undefined;
@@ -53,8 +53,7 @@ export function assetFps(asset: MediaAsset | null, fallback: number): number {
 
 export const flicksToSourceFrames = (flicks: number, fps: number) =>
 	Math.round((flicks / FLICKS_PER_SECOND) * fps);
-export const sourceFramesToFlicks = (frames: number, fps: number) =>
-	Math.round((frames / fps) * FLICKS_PER_SECOND);
+const sourceFramesToFlicks = (frames: number, fps: number) => Math.round((frames / fps) * FLICKS_PER_SECOND);
 
 /** Opens a media item in the Source monitor (S03:SRC-001). Returns false for non-media items. */
 export function openInSource(session: EditorSession, itemId: string): boolean {

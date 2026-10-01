@@ -30,7 +30,7 @@ export type LayerState = {
 };
 
 /** The playhead clamped into a clip's range (monitor edits key at a frame of the clip). */
-export function frameInClip(clip: Pick<Clip, 'start' | 'duration'>, frame: number): number {
+function frameInClip(clip: Pick<Clip, 'start' | 'duration'>, frame: number): number {
 	return Math.max(clip.start, Math.min(clip.start + clip.duration - 1, frame));
 }
 
@@ -157,7 +157,7 @@ export const ARRANGE_COMMANDS: readonly [string, ArrangeOp][] = [
 	['arrange.sendToBack', 'back'],
 ];
 
-export type ArrangePlan = {
+type ArrangePlan = {
 	/** `clip.move` track offsets, in order (each computed against the moves before it). */
 	moves: { clipId: string; deltaTracks: number }[];
 	/** Why nothing (or not every clip) moved. */

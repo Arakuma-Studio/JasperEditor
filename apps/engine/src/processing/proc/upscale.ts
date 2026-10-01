@@ -15,7 +15,7 @@ type Session = import('onnxruntime-node').InferenceSession;
 
 let ortModule: Ort | null = null;
 /** Loads onnxruntime-node lazily (native binding; not needed by the other steps). */
-export function loadOrt(): Ort {
+function loadOrt(): Ort {
 	if (!ortModule) {
 		const req = createRequire(import.meta.url);
 		ortModule = req('onnxruntime-node') as Ort;
@@ -71,20 +71,20 @@ function cudaLibraryPresent(): boolean {
 	return false;
 }
 
-export const TILE = 256;
+const TILE = 256;
 /**
  * Frames up to this many input pixels run as ONE tile (no overlap work, fewer runs): on the CPU this is
  * 25–35 % faster for 848×480 with SPAN (1.6–1.9 vs 2.1–2.8 s/frame on the loaded test host). Larger frames use
  * 256 px tiles (memory bound for any size, S07:PST-033).
  */
-export const WHOLE_FRAME_MAX_PIXELS = 1_100_000;
-export const OVERLAP = 16;
-export const BATCH = 4;
+const WHOLE_FRAME_MAX_PIXELS = 1_100_000;
+const OVERLAP = 16;
+const BATCH = 4;
 
-export type Tile = { x: number; y: number; w: number; h: number };
+type Tile = { x: number; y: number };
 
 /** Tile origins along one axis: stride TILE-OVERLAP, the last tile clamped to the end. */
-export function tileStarts(size: number, tile = TILE, overlap = OVERLAP): number[] {
+function tileStarts(size: number, tile = TILE, overlap = OVERLAP): number[] {
 	if (size <= tile) return [0];
 	const out: number[] = [];
 	const stride = tile - overlap;
@@ -98,26 +98,11 @@ export function tileStarts(size: number, tile = TILE, overlap = OVERLAP): number
 	return out;
 }
 
-export function tilesFor(width: number, height: number, tile = TILE, overlap = OVERLAP): Tile[] {
-	const xs = tileStarts(width, tile, overlap);
-	const ys = tileStarts(height, tile, overlap);
-	const out: Tile[] = [];
-	for (const y of ys)
-		for (const x of xs) out.push({ x, y, w: Math.min(tile, width), h: Math.min(tile, height) });
-	return out;
-}
-
 /**
  * 1-D feather weight of output sample `i` (0..len-1) of a tile: linear ramps over the overlap (scaled) at the
  * sides that have a neighbour, 1 elsewhere. Never 0, so normalised blending is always defined.
  */
-export function featherWeight(
-	i: number,
-	len: number,
-	ramp: number,
-	hasBefore: boolean,
-	hasAfter: boolean,
-): number {
+function featherWeight(i: number, len: number, ramp: number, hasBefore: boolean, hasAfter: boolean): number {
 	let w = 1;
 	if (hasBefore && i < ramp) w = Math.min(w, (i + 0.5) / ramp);
 	if (hasAfter && len - 1 - i < ramp) w = Math.min(w, (len - 1 - i + 0.5) / ramp);
@@ -196,12 +181,13 @@ export async function upscaleTiled(
 	const oh = height * s;
 	const acc = new Float32Array(ow * oh * 3);
 	const wsum = new Float32Array(ow * oh);
-	const tiles = tilesFor(width, height, tile, overlap);
 	const tw = Math.min(tile, width);
 	const th = Math.min(tile, height);
 	const plane = tw * th;
 	const xs = tileStarts(width, tile, overlap);
 	const ys = tileStarts(height, tile, overlap);
+	const tiles: Tile[] = [];
+	for (const y of ys) for (const x of xs) tiles.push({ x, y });
 	const ramp = overlap * s;
 	// Precomputed 1-D weights per tile column/row index.
 	const wx = xs.map((_, i) => {
@@ -263,14 +249,14 @@ export async function upscaleTiled(
 	return acc;
 }
 
-export function u16ToFloat(data: Uint16Array): Float32Array {
+function u16ToFloat(data: Uint16Array): Float32Array {
 	const out = new Float32Array(data.length);
 	const k = 1 / 65535;
 	for (let i = 0; i < data.length; i++) out[i] = data[i] * k;
 	return out;
 }
 
-export function floatToU16(data: Float32Array): Uint16Array {
+function floatToU16(data: Float32Array): Uint16Array {
 	const out = new Uint16Array(data.length);
 	for (let i = 0; i < data.length; i++) {
 		const v = data[i] * 65535 + 0.5;
@@ -284,7 +270,7 @@ export type UpscaleOptions = {
 	model?: SrModel;
 };
 
-export function outputSize(
+function outputSize(
 	step: Extract<ProcessStep, { op: 'upscale' }>,
 	width: number,
 	height: number,

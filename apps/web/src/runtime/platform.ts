@@ -21,7 +21,7 @@ export interface JasperDesktopBridge {
 }
 
 /** The Electron clipboard as the preload exposes it (validated and size-capped in the main process). */
-export type DesktopClipboard = {
+type DesktopClipboard = {
 	write(data: { json: string; html: string; text: string }): Promise<boolean>;
 	/** The JSON of the custom format, or null when the clipboard has none. */
 	read(): Promise<string | null>;

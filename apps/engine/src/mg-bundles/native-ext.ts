@@ -16,7 +16,7 @@ import {
 import type { LayerOverride, NativeExtension } from '../export/native-ext.ts';
 import type { MgBundleService } from './service.ts';
 
-export type PreparedMasters = Map<string, { path: string; renderKey: string; layerStart: number }>;
+type PreparedMasters = Map<string, { path: string; renderKey: string; layerStart: number }>;
 
 function compositionSource(clip: RenderVisualClip): RenderCompositionSource | null {
 	return clip.kind === 'composition' && 'composition' in clip.source ? clip.source.composition : null;

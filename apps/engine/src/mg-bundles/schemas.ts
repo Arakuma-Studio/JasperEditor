@@ -12,7 +12,7 @@ import { inferPropsSchema, type MgCompositionInfo, type PropsUiHints, schemaUiHi
 import { z } from 'zod';
 import { terminateTree } from '../tools/process.ts';
 
-export const MANIFEST_FILE = 'jasper.mg.json';
+const MANIFEST_FILE = 'jasper.mg.json';
 
 const UiHintSchema = z.looseObject({
 	control: z
@@ -23,7 +23,7 @@ const UiHintSchema = z.looseObject({
 	max: z.number().optional(),
 	step: z.number().optional(),
 });
-export const MgManifestSchema = z.looseObject({
+const MgManifestSchema = z.looseObject({
 	compositions: z
 		.record(
 			z.string(),

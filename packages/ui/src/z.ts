@@ -14,4 +14,3 @@ export const Z = {
 	snapIndicator: 1310,
 	toast: 1400,
 } as const;
-export type ZLayer = keyof typeof Z;

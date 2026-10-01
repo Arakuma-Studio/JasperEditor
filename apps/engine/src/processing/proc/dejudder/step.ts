@@ -222,7 +222,7 @@ export function createDejudderStep(
 			stats.edge++;
 			return Promise.resolve(c);
 		}
-		if (q === 0 ? isCut(c, other) : isCut(other, c)) {
+		if (isCut(c, other)) {
 			stats.cutGuard++;
 			return Promise.resolve(c);
 		}

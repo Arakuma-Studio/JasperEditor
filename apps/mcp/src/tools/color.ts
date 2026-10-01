@@ -164,8 +164,8 @@ function sectionSchema(section: GradeSection, what: string) {
 	return z.strictObject(shape).optional().describe(what);
 }
 
-/** grade_clip input (exported for the unit tests). */
-export const GradeClipInput = {
+/** grade_clip input, also used to build GradeClipSchema. */
+const GradeClipInput = {
 	projectId: ProjectIdArg,
 	clipId: z.string().min(1).describe('Clip id ("clp_…") of a visual clip (video, still, title, graphic…)'),
 	basic: sectionSchema('basic', 'Basic Correction (steps 1–7 of the order of operations)'),
@@ -257,7 +257,7 @@ function itemNameOf(doc: ProjectDocument, mediaId: string): string | undefined {
 }
 
 /** A LUT by mediaId, Project item name or file name; throws a ToolError naming the available LUTs. */
-export function resolveLut(doc: ProjectDocument, ref: string): MediaAsset {
+function resolveLut(doc: ProjectDocument, ref: string): MediaAsset {
 	const byId = doc.media[ref];
 	const found =
 		byId ??
@@ -309,7 +309,7 @@ function findClip(doc: ProjectDocument, clipId: string): { seq: Sequence; clip: 
 }
 
 /** Visual clips that take effects can carry a grade (the same rule as the Lumetri panel). */
-export function gradeEligible(clip: Clip): boolean {
+function gradeEligible(clip: Clip): boolean {
 	if (!isKnownClipKind(clip.kind)) return false;
 	const caps = kindCapabilities(clip.kind);
 	return !!caps?.visual && !!caps.supportsEffects;
@@ -324,10 +324,7 @@ function requireEligible(clip: Clip): void {
 		);
 }
 
-export function isColorInstance(
-	fx: EffectInstance,
-	registry: EffectRegistry = defaultEffectRegistry,
-): boolean {
+function isColorInstance(fx: EffectInstance, registry: EffectRegistry = defaultEffectRegistry): boolean {
 	return isColorEffect(registry.get(fx.effectId, fx.effectVersion));
 }
 
@@ -354,7 +351,7 @@ function contentTimeAt(
 }
 
 /** Params of an effect instance evaluated at content time `t` (missing params take the registry default). */
-export function evaluateEffect(fx: EffectInstance, spec: EffectSpec, t: number): Record<string, unknown> {
+function evaluateEffect(fx: EffectInstance, spec: EffectSpec, t: number): Record<string, unknown> {
 	const out: Record<string, unknown> = {};
 	for (const p of spec.params) {
 		const anim = fx.params[p.name] as Animatable<unknown> | undefined;
@@ -392,9 +389,7 @@ function lutView(doc: ProjectDocument, param: string, value: unknown): LutView |
 }
 
 /** Evaluated Lumetri params in the grade_clip shape (LUTs as mediaId or null, curves as point arrays). */
-export function lumetriGradeView(
-	values: Record<string, unknown>,
-): Record<GradeSection, Record<string, unknown>> {
+function lumetriGradeView(values: Record<string, unknown>): Record<GradeSection, Record<string, unknown>> {
 	const out = { basic: {}, creative: {}, curves: {}, wheels: {} } as Record<
 		GradeSection,
 		Record<string, unknown>

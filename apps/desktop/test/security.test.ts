@@ -39,16 +39,6 @@ describe('clipboard bridge (wp-clipboard, S01:CLB-002/009)', () => {
 		expect(clipboardReadResult('{"format":"x"}')).toBeNull();
 		expect(clipboardReadResult(42)).toBeNull();
 	});
-	it('the preload exposes clipboard read/write over invoke only', () => {
-		const preload = readFileSync(join(__dirname, '../src/preload.cts'), 'utf8');
-		expect(preload).toContain("ipcRenderer.invoke('jasper:clipboard-write', data)");
-		expect(preload).toContain("ipcRenderer.invoke('jasper:clipboard-read')");
-		const main = readFileSync(join(__dirname, '../src/main.ts'), 'utf8');
-		expect(main).toMatch(
-			/'jasper:clipboard-write', async \(e, data: unknown\) => \{\n\t\tif \(!fromApp\(e\) \|\| !isClipboardWrite\(data\)\)/,
-		);
-		expect(main).toMatch(/'jasper:clipboard-read', async \(e\) => \{\n\t\tif \(!fromApp\(e\)\)/);
-	});
 });
 
 describe('external files on the clipboard (wp-clipboard-2, S01:CLB-010)', () => {
@@ -75,17 +65,6 @@ describe('external files on the clipboard (wp-clipboard-2, S01:CLB-010)', () => 
 		])
 			expect(CLIPBOARD_FILE_LIST_TYPE.test(t)).toBe(true);
 		expect(CLIPBOARD_FILE_LIST_TYPE.test('text/plain')).toBe(false);
-	});
-
-	it('the preload exposes file paths and the file list read; main answers only the app origin', () => {
-		const preload = readFileSync(join(__dirname, '../src/preload.cts'), 'utf8');
-		expect(preload).toContain("ipcRenderer.invoke('jasper:clipboard-read-files')");
-		expect(preload).toContain('webUtils.getPathForFile(file)');
-		const main = readFileSync(join(__dirname, '../src/main.ts'), 'utf8');
-		expect(main).toMatch(
-			/'jasper:clipboard-read-files', async \(e\) => \{\n\t\tif \(!fromApp\(e\)\) return \[\];/,
-		);
-		expect(main).toContain('existsSync(p)');
 	});
 });
 

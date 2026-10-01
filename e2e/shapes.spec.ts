@@ -4,10 +4,9 @@
 // corner radius; Effect Controls keyframes the size; undo/redo; MCP add_shape applies live; the export matches
 // a `renderStill` frame of the same document.
 //
-// Export path: shapes are DOM layers. When the engine reports `features.layerBake.state === 'ready'`
-// (wp-m2-layer-bake merged) Auto must plan the native path with baked layers (`native`/`hybrid`); before that
-// merge the planner sends shapes to the Remotion path with a "requires graphics rendering" blocker. The spec
-// asserts whichever applies and records it as an annotation — it never skips.
+// Export path: shapes are DOM layers. When the engine reports `features.layerBake.state === 'ready'`,
+// Auto plans the native path with baked layers (`native`/`hybrid`). If layer bake is unavailable,
+// the planner uses Remotion with a "requires graphics rendering" blocker. The spec checks either path.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -367,7 +366,7 @@ test('export: native with baked layers when the layer bake is ready, else Remoti
 		type: 'export-path',
 		description: baked
 			? 'features.layerBake ready: shapes are baked and exported natively'
-			: 'features.layerBake not ready (wp-m2-layer-bake not merged): shapes export on the Remotion path',
+			: 'features.layerBake unavailable: shapes export on the Remotion path',
 	});
 	const out = await exportViaUi(page, request, {
 		engine: 'auto',

@@ -21,7 +21,7 @@ const CEN = 0x02014b50;
 const LOC = 0x04034b50;
 
 /** Limits against zip bombs (a built bundle is a few MB plus its public/ folder). */
-export const ZIP_LIMITS = { maxEntries: 50_000, maxTotalBytes: 8 * 1024 ** 3 };
+const ZIP_LIMITS = { maxEntries: 50_000, maxTotalBytes: 8 * 1024 ** 3 };
 
 async function readAt(fh: Awaited<ReturnType<typeof open>>, pos: number, len: number): Promise<Buffer> {
 	const buf = Buffer.alloc(len);

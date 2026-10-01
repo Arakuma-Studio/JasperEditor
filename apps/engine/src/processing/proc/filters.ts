@@ -43,7 +43,7 @@ export const GPL_FILTERS = [
 ];
 
 /** Filter names used in a filtergraph text (the token before `=` / `,` / `;` / `[`). */
-export function filterNames(graph: string): string[] {
+function filterNames(graph: string): string[] {
 	const out: string[] = [];
 	for (const part of graph.split(/[,;]/)) {
 		const m = /^\s*(?:\[[^\]]*\]\s*)*([a-z0-9_]+)/i.exec(part);
@@ -65,7 +65,7 @@ export function assertLgplFilters(graph: string, opts: { allowVidstab?: boolean 
 
 const r3 = (v: number) => Math.round(v * 1000) / 1000;
 
-export function denoiseFilter(step: Extract<ProcessStep, { op: 'denoise' }>): {
+function denoiseFilter(step: Extract<ProcessStep, { op: 'denoise' }>): {
 	filter: string;
 	format: FilterStep['format'];
 } {
@@ -98,9 +98,9 @@ export function createDeblockStep(step: Extract<ProcessStep, { op: 'deblock' }>)
 }
 
 /** Fixed centre crop of the deshake fallback for `borders: 'crop'` (deshake has no optimal zoom). */
-export const DESHAKE_CROP = 0.04;
+const DESHAKE_CROP = 0.04;
 
-export function deshakeFilter(
+function deshakeFilter(
 	step: Extract<ProcessStep, { op: 'stabilize' }>,
 	size: { width: number; height: number },
 ): string {

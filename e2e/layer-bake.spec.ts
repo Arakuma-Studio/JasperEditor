@@ -86,22 +86,12 @@ test('footage, a static title after it and a keyframed title (Effect Controls st
 	await props.getByTestId('prop-opacity').click();
 	await props.getByTestId('prop-opacity-input').fill('20');
 	await props.getByTestId('prop-opacity-input').press('Enter');
-	const seqId = (await page.evaluate(() =>
-		(window as unknown as { jasper: { query(n: string): Promise<{ sequenceId: string }> } }).jasper.query(
-			'sequence.summary',
-		),
-	)) as { sequenceId: string };
-	const op = await page.evaluate(
-		([s, c]) =>
-			(window as unknown as { jasper: { query(n: string, a: unknown): Promise<unknown> } }).jasper.query(
-				'doc.get',
-				{ path: ['sequences', s, 'clips', c], fields: ['opacity'] },
-			),
-		[seqId.sequenceId, movingTitle] as const,
-	);
-	expect(
-		(op as { opacity: { keyframes: { value: number }[] } }).opacity.keyframes.map((k) => k.value),
-	).toEqual([100, 20]);
+	const seq = await query<{ sequenceId: string }>(page, 'sequence.summary');
+	const op = await query<{ opacity: { keyframes: { value: number }[] } }>(page, 'doc.get', {
+		path: ['sequences', seq.sequenceId, 'clips', movingTitle],
+		fields: ['opacity'],
+	});
+	expect(op.opacity.keyframes.map((k) => k.value)).toEqual([100, 20]);
 });
 
 test('a Lumetri grade on the static title: "Grade pending", then the graded preview in the Program (FIX-002)', async () => {

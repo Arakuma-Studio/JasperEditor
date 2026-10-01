@@ -83,7 +83,7 @@ function shiftVec(a: Draft<Animatable<Vec2>>, dx: number, dy: number): void {
 }
 
 /** Moves the anchor by half the box change so the geometry keeps its place (module comment). */
-export function recenterShape(clip: Draft<ShapeClip>, before: Box): void {
+function recenterShape(clip: Draft<ShapeClip>, before: Box): void {
 	const after = shapeIntrinsicBox(clip.shape as ShapeData);
 	const dx = (after.width - before.width) / 2;
 	const dy = (after.height - before.height) / 2;

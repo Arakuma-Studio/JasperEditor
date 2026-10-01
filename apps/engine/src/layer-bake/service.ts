@@ -70,25 +70,20 @@ export const LAYER_CACHE_TTL_MS = 14 * 24 * 3600 * 1000;
  * Version of the graded entries' recipe (bumped when graded pixels change for the same inputs). 2: graded stills
  * carry the transition fades; the Remotion-path master is a PNG frame sequence (alpha honoured).
  */
-export const GRADE_VERSION = 2;
+const GRADE_VERSION = 2;
 /** Directory of a graded entry's PNG frames (Remotion path). */
-export const GRADED_FRAMES_DIR = 'graded';
+const GRADED_FRAMES_DIR = 'graded';
 /** File name of graded frame `n`. */
-export const gradedFrameName = (n: number) => `${String(n).padStart(6, '0')}.png`;
+const gradedFrameName = (n: number) => `${String(n).padStart(6, '0')}.png`;
 /** Border alpha (0…255) above which a cropped bake counts as clipped and is rendered full frame instead. */
-export const RECT_CLIP_ALPHA = 2;
+const RECT_CLIP_ALPHA = 2;
 
 /**
  * Engine-relative URL of a cache file (served by `GET /mg/layers/:key/:file`, signable for renders). `graded.png`
  * is the graded frame sequence: one signed URL for the entry, the frame chosen by `n` (`&n=<frame>`).
  */
 export const layerFileUrl = (key: string, file: string) => `/mg/layers/${key}/${file}`;
-export const LAYER_FILES: ReadonlySet<string> = new Set([
-	'master.mov',
-	'still.png',
-	'graded.png',
-	'preview.webm',
-]);
+const LAYER_FILES: ReadonlySet<string> = new Set(['master.mov', 'still.png', 'graded.png', 'preview.webm']);
 
 export type LayerMeta = {
 	kind: 'layer';
@@ -197,7 +192,7 @@ export function bakeParallelismFromEnv(env: Record<string, string | undefined>):
 }
 
 /** Whether the bakes of an export share one render browser by default (measured: see the wp-notes). */
-export const DEFAULT_SHARED_BROWSER = true;
+const DEFAULT_SHARED_BROWSER = true;
 /** Progress poll of a running child job (the parent aggregates it). */
 const PROGRESS_POLL_MS = 250;
 

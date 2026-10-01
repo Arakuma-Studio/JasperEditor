@@ -11,7 +11,7 @@ import { createPointTracker, type PointConfig } from './point.ts';
 
 export type TrackerConfig = PlanarConfig | PointConfig;
 
-export type WorkerRequest =
+type WorkerRequest =
 	| { type: 'init'; cfg: TrackerConfig }
 	| { type: 'reference' | 'frame'; frame: number; buf: ArrayBuffer }
 	| { type: 'release' };
@@ -23,7 +23,7 @@ type WorkerReply =
 	| { type: 'error'; message: string };
 
 /** Worker entry point (evaluated from its source text: parameters and globals only). */
-export function workerMain(
+function workerMain(
 	threads: any,
 	/** The worker's CommonJS `require`, passed in from the source string: a literal `require(...)` here would be
 	 * rewritten by esbuild's ESM bundling into its `__require` shim, which does not exist inside the worker. */

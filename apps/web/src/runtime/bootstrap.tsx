@@ -1,6 +1,4 @@
-// Engine bootstrap (ARCHITECTURE §4.1/§7.5): the SPA uses relative URLs; on startup the EngineProvider
-// pings GET /health. When it fails, this gate shows "Engine not reachable" with the dev hint, a retry,
-// and a way to continue with the in-memory demo project (the browser-only profile W arrives in M2).
+// The engine provider checks /health on startup. This gate offers retry or continuing without the engine.
 import { Button, Icon } from '@jasper/ui';
 import { type ReactNode, useState } from 'react';
 import { useEngine } from '../state/engine.tsx';

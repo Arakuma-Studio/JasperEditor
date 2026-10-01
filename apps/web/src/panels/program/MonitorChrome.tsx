@@ -33,7 +33,7 @@ export function useElementSize<T extends HTMLElement>(): [React.RefObject<T | nu
 
 export type TimecodeFormat = { rate: Rational; dropFrame: boolean; startFrames?: number };
 
-export function formatTc(frame: number, f: TimecodeFormat): string {
+function formatTc(frame: number, f: TimecodeFormat): string {
 	return formatTimecode(frame, f.rate, { dropFrame: f.dropFrame, startFrames: f.startFrames });
 }
 
@@ -151,7 +151,7 @@ export function MonitorSelect<T extends string | number>({
 	);
 }
 
-export type SettingsItem =
+type SettingsItem =
 	| { type: 'toggle'; label: string; checked: boolean; onToggle(): void; shortcut?: string }
 	| { type: 'separator' };
 
@@ -215,7 +215,7 @@ export function SettingsMenu({ items, testId }: { items: SettingsItem[]; testId?
 	);
 }
 
-export type RulerMarker = { id: string; frame: number; color: string };
+type RulerMarker = { id: string; frame: number; color: string };
 
 /**
  * Mini time ruler (S05:PGM-003): ticks, In/Out range, markers and a draggable playhead. Clicking or
@@ -361,11 +361,7 @@ export function MiniRuler({
 }
 
 /** Adaptive tick positions: majors ≥ 80 px apart on a 1/2/5 × seconds grid (S02 A.9 spirit). */
-export function rulerTicks(
-	duration: number,
-	width: number,
-	fps: number,
-): { frame: number; major: boolean }[] {
+function rulerTicks(duration: number, width: number, fps: number): { frame: number; major: boolean }[] {
 	if (duration <= 0 || width <= 0) return [];
 	const pxPerFrame = width / duration;
 	const candidates = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800, 3600].map((s) => Math.round(s * fps));

@@ -6,7 +6,7 @@
 import { type CalloutParams, calloutParams, estimateTextWidth, rgbaCss } from '@jasper/mg-templates';
 import { createDrawable } from 'animejs/svg';
 import { useRef } from 'react';
-import { useAnimeDom, useAnimeValues } from '../runtime/index.ts';
+import { createPausedTimeline, useAnimeDom, useAnimeValues } from '../runtime/index.ts';
 import {
 	addInOut,
 	DesignStage,
@@ -17,7 +17,6 @@ import {
 	TEMPLATE_FONT,
 	type TemplateTiming,
 	templateFit,
-	templateTimeline,
 } from './common.tsx';
 import type { AnimeTemplateProps } from './types.ts';
 
@@ -74,10 +73,10 @@ export type CalloutBuildInput = TemplateTiming & { ease: string; motionPath: boo
 
 /** Value targets `[dot, ring, label]`. */
 export function buildCallout(input: CalloutBuildInput): {
-	timeline: ReturnType<typeof templateTimeline>;
+	timeline: ReturnType<typeof createPausedTimeline>;
 	targets: Values[];
 } {
-	const tl = templateTimeline();
+	const tl = createPausedTimeline();
 	const dot: Values = { s: 0, o: 1, m: 0 };
 	const ring: Values = { s: 1, o: 0, m: 0 };
 	const label: Values = { s: 0.85, o: 0, m: input.motionPath ? 0 : 1 };
@@ -115,7 +114,7 @@ export function buildCallout(input: CalloutBuildInput): {
 export function buildCalloutLine(el: SVGPathElement, input: CalloutBuildInput) {
 	const [line] = createDrawable(el);
 	if (!line) return null;
-	const tl = templateTimeline();
+	const tl = createPausedTimeline();
 	const pt = phaseTimes(input, CALLOUT_LINE_PHASE);
 	tl.add(line, { draw: ['0 0', '0 1'], duration: pt.introDur, ease: input.ease }, pt.introStart);
 	if (pt.outroStart !== null)

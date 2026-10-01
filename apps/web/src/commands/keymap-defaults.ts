@@ -273,10 +273,7 @@ export const BROWSER_RESERVED: readonly string[] = [
 	'Ctrl+KeyN',
 	'Ctrl+KeyW',
 	'Ctrl+KeyT',
-	'Ctrl+Shift+KeyN',
-	'Ctrl+Shift+KeyT',
 	'Ctrl+Shift+KeyW',
-	'Ctrl+Tab',
 	'Ctrl+KeyQ',
 ];
 

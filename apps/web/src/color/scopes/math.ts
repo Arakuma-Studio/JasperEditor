@@ -9,11 +9,11 @@ export const SCOPE_MODES: readonly ScopeMode[] = ['waveform', 'parade', 'vectors
 export type RGB = readonly [number, number, number];
 
 /** Rec.709 luma weights (the same `Y` as the grade maths, S06 §3). */
-export const KR = 0.2126;
-export const KG = 0.7152;
-export const KB = 0.0722;
+const KR = 0.2126;
+const KG = 0.7152;
+const KB = 0.0722;
 
-export const luma = (r: number, g: number, b: number) => KR * r + KG * g + KB * b;
+const luma = (r: number, g: number, b: number) => KR * r + KG * g + KB * b;
 
 /** Rec.709 colour difference, normalised to ±0.5: Cb = (B − Y)/1.8556, Cr = (R − Y)/1.5748 (inputs 0..1). */
 export function ycbcr(r: number, g: number, b: number): { y: number; cb: number; cr: number } {

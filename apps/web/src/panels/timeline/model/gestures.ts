@@ -224,13 +224,15 @@ export function trimPreview(seq: Sequence, clipId: string, edge: 'in' | 'out'): 
 	const c = seq.clips[clipId];
 	if (!c) return null;
 	if (edge === 'out') {
-		const next = clipAt(seq, c.trackId, endOf(c));
+		const end = endOf(c);
+		const next = clipAt(seq, c.trackId, end);
+		const touching = next && next.start === end;
 		return {
 			mode: 'trim',
 			outgoingClipId: c.id,
-			outgoingFrame: endOf(c) - 1,
-			incomingClipId: next && next.start === endOf(c) ? next.id : null,
-			incomingFrame: next && next.start === endOf(c) ? next.start : null,
+			outgoingFrame: end - 1,
+			incomingClipId: touching ? next.id : null,
+			incomingFrame: touching ? next.start : null,
 		};
 	}
 	const prev = c.start > 0 ? clipAt(seq, c.trackId, c.start - 1) : undefined;

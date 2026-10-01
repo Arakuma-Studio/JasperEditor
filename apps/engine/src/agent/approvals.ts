@@ -17,7 +17,7 @@ export type ApprovalGateOptions = {
 	onResolved?(approval: Approval, decision: ApprovalDecision): void;
 };
 
-export const DEFAULT_APPROVAL_TIMEOUT_MS = 60_000;
+const DEFAULT_APPROVAL_TIMEOUT_MS = 60_000;
 
 export class ApprovalGate {
 	private readonly entries = new Map<string, Entry>();

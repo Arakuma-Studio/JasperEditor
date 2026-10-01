@@ -6,7 +6,7 @@
 // `useAnimeValues` would move a 0 → 25,000,000 count in steps of 25.
 import { type CounterParams, counterParams, formatCounterValue, rgbaCss } from '@jasper/mg-templates';
 import { useMemo } from 'react';
-import { roundValue, seekCanonical, useAnimeValues } from '../runtime/index.ts';
+import { createPausedTimeline, roundValue, seekCanonical, useAnimeValues } from '../runtime/index.ts';
 import {
 	addInOut,
 	DesignStage,
@@ -15,7 +15,6 @@ import {
 	TEMPLATE_FONT,
 	type TemplateTiming,
 	templateFit,
-	templateTimeline,
 } from './common.tsx';
 import type { AnimeTemplateProps } from './types.ts';
 
@@ -31,10 +30,10 @@ export function counterCountMs(p: Pick<CounterParams, 'countSeconds'>, t: Templa
 
 /** Targets `[number, label]` (their fades; the count has its own timeline, `buildCounterCount`). */
 export function buildCounter(input: CounterBuildInput): {
-	timeline: ReturnType<typeof templateTimeline>;
+	timeline: ReturnType<typeof createPausedTimeline>;
 	targets: Values[];
 } {
-	const tl = templateTimeline();
+	const tl = createPausedTimeline();
 	const num: Values = { o: 0, y: 0.25 };
 	const label: Values = { o: 0, y: 0.4 };
 	addInOut(tl, input, num, { o: [0, 1], y: [0.25, 0] }, { at: 0, dur: 0.3, ease: 'out' });
@@ -44,10 +43,10 @@ export function buildCounter(input: CounterBuildInput): {
 
 /** The count: progress `p` 0 → 1 from content 0 over `countMs`. */
 export function buildCounterCount(input: Pick<CounterBuildInput, 'countMs' | 'ease'>): {
-	timeline: ReturnType<typeof templateTimeline>;
+	timeline: ReturnType<typeof createPausedTimeline>;
 	target: { p: number };
 } {
-	const tl = templateTimeline();
+	const tl = createPausedTimeline();
 	const target = { p: 0 };
 	tl.add(target, { p: [0, 1], duration: input.countMs, ease: input.ease }, 0);
 	return { timeline: tl, target };

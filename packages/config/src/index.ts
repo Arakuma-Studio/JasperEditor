@@ -32,8 +32,6 @@ export const ENV = {
 	/** Engine / desktop: path of the jasper-mcp bundle shown in Help ▸ Connect an AI Agent… (default: found next to the engine). */
 	MCP_ENTRY: 'JASPER_MCP_ENTRY',
 } as const;
-export type EnvName = (typeof ENV)[keyof typeof ENV];
-
 export type Env = Record<string, string | undefined>;
 
 /** Platform default appdir when neither --appdir nor JASPER_APPDIR is given. */

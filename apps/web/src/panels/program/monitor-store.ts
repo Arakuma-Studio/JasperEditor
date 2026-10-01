@@ -15,9 +15,9 @@ export type MonitorViewState = {
 	snapInMonitor: boolean;
 };
 
-export type MonitorKind = 'program' | 'source';
+type MonitorKind = 'program' | 'source';
 
-export const DEFAULT_MONITOR_VIEW: MonitorViewState = {
+const DEFAULT_MONITOR_VIEW: MonitorViewState = {
 	zoom: 'fit',
 	pan: [0, 0],
 	playbackResolution: 'full',
@@ -46,7 +46,7 @@ function load(kind: MonitorKind): MonitorViewState {
 	}
 }
 
-export function createMonitorStore(kind: MonitorKind, persist = true): StoreApi<MonitorViewState> {
+function createMonitorStore(kind: MonitorKind, persist = true): StoreApi<MonitorViewState> {
 	const store = createStore<MonitorViewState>(() => (persist ? load(kind) : { ...DEFAULT_MONITOR_VIEW }));
 	if (persist) {
 		store.subscribe((s) => {

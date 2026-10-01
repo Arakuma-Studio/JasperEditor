@@ -14,7 +14,7 @@ import { loadVidstabModule, resolveVidstabWasm, VidstabWasm, type VsTransform } 
 
 type StabilizeStep = Extract<ProcessStep, { op: 'stabilize' }>;
 
-export type VidstabStepParams = Pick<StabilizeStep, 'smoothing' | 'borders' | 'shakiness' | 'rotation'> & {
+type VidstabStepParams = Pick<StabilizeStep, 'smoothing' | 'borders' | 'shakiness' | 'rotation'> & {
 	method?: StabilizeStep['method'];
 };
 

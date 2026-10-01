@@ -373,7 +373,7 @@ export function handleFeedback(input: {
 }
 
 /** The model's E_OUT_OF_MEDIA explanation (handlers/transition.ts `noRoomMessage`). */
-export function noRoomMessage(alignment: Alignment, wanted: number, two: boolean): string {
+function noRoomMessage(alignment: Alignment, wanted: number, two: boolean): string {
 	if (!two) return 'The clip is too short for this transition';
 	const { start, end } = transitionSpan(0, wanted, alignment);
 	return (

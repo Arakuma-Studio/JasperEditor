@@ -13,7 +13,7 @@ import {
 } from '@jasper/project';
 import { EditorSession } from '@jasper/session';
 
-export const F30 = FLICKS_PER_SECOND / 30;
+const F30 = FLICKS_PER_SECOND / 30;
 
 export function trackingSession(opts: { plateFrames?: number; solidFrames?: number } = {}) {
 	const ids = createSeededIdSource(7);

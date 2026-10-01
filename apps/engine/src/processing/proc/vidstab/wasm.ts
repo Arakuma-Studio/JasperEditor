@@ -168,7 +168,7 @@ export function vidstabWasmAvailable(): Promise<boolean> {
 	return availability;
 }
 
-export type VidstabPathOptions = {
+type VidstabPathOptions = {
 	smoothing: number;
 	/** vid.stab `optalgo`: 'opt' (L1 optimal, 1.4+), 'gauss', 'avg'. */
 	algo: 'opt' | 'gauss' | 'avg';

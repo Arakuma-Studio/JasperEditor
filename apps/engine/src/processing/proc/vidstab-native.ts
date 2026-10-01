@@ -9,15 +9,15 @@ import { assertLgplFilters, fromFormatToRgb48, toFormat } from './filters.ts';
 import type { DecodeSpec, FrameStep, StepContext } from './types.ts';
 
 /** Escapes a value for a filtergraph option (`:`, `\`, `'`, `,`). */
-export function ffEscape(value: string): string {
+function ffEscape(value: string): string {
 	return value.replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/'/g, "\\'").replace(/,/g, '\\,');
 }
 
-export function vidstabDetectFilter(step: Extract<ProcessStep, { op: 'stabilize' }>, trf: string): string {
+function vidstabDetectFilter(step: Extract<ProcessStep, { op: 'stabilize' }>, trf: string): string {
 	return `vidstabdetect=shakiness=${step.shakiness ?? 5}:accuracy=15:stepsize=4:mincontrast=0.2:result=${ffEscape(trf)}`;
 }
 
-export function vidstabTransformFilter(step: Extract<ProcessStep, { op: 'stabilize' }>, trf: string): string {
+function vidstabTransformFilter(step: Extract<ProcessStep, { op: 'stabilize' }>, trf: string): string {
 	const crop = step.borders === 'crop';
 	return `vidstabtransform=input=${ffEscape(trf)}:smoothing=${step.smoothing}:optalgo=gauss:crop=${crop ? 'keep' : 'black'}:optzoom=${crop ? 1 : 0}:interpol=bicubic${step.rotation === false ? ':maxangle=0' : ''}`;
 }

@@ -8,7 +8,7 @@ import { defineTool, EDIT, type ToolContext } from '../context.ts';
 import { applyHelper, hexToRgba, timeArg } from './editing.ts';
 import { ProjectIdArg } from './projects.ts';
 
-/** Appended to the server instructions (EDITING_GUIDE) when non-empty. */
+/** Appended to the server instructions (EDITING_GUIDE). */
 export const SHAPES_GUIDE = `Shapes (rectangles and ellipses):
 - add_shape adds one on a video track (default 400×400 white, centred, 5 s). Size is in layer pixels; position is where its centre lands in the sequence (0,0 = top left). Strokes keep their visible width whatever the position: inside (within the outline), center or outside.
 - Change a shape with apply_commands: {"type": "clip.update", "clipId": id, "patch": {"shape": {"fill": null | [r,g,b,a], "stroke": null | {"color", "width", "position"}, "size": [w, h], "cornerRadius": n}}} (colours are RGBA floats 0..1; a missing stroke is created with defaults; cornerRadius only for rectangles), or param.set on ["clip", id, "shape", "size" | "fill" | "cornerRadius"] and ["clip", id, "shape", "stroke", "color" | "width" | "position"].

@@ -111,7 +111,7 @@ export function isClipboardWrite(v: unknown): v is ClipboardWrite {
 }
 
 /** A JSON object with `format: "jasper-clipboard"` (the full schema check happens in the renderer on paste). */
-export function isJasperClipboardJson(json: string): boolean {
+function isJasperClipboardJson(json: string): boolean {
 	try {
 		const o = JSON.parse(json) as { format?: unknown } | null;
 		return !!o && typeof o === 'object' && o.format === 'jasper-clipboard';

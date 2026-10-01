@@ -1,7 +1,7 @@
 // Snapping (S02 §9: TL-450…455, Appendix A.3).
 import type { Sequence } from '@jasper/project';
 
-export type SnapKind = 'playhead' | 'marker' | 'inout' | 'clip' | 'zero';
+type SnapKind = 'playhead' | 'marker' | 'inout' | 'clip' | 'zero';
 export type SnapTarget = { frame: number; kind: SnapKind; priority: number; sourceId?: string };
 
 /** TL-453 tie-break priority: playhead > marker > In/Out > clip edge > frame 0. */

@@ -7,14 +7,14 @@ import type { StepImpl } from './types.ts';
 import { createUpscaleStep } from './upscale.ts';
 import { createNativeVidstabStep } from './vidstab-native.ts';
 
-export type StabilizeEngine = 'wasm' | 'ffmpeg' | 'deshake';
+type StabilizeEngine = 'wasm' | 'ffmpeg' | 'deshake';
 
 /**
  * Which implementation a stabilise step uses: `deshake` when asked; otherwise vid.stab — FFmpeg's filters only
  * when the engine vouched for its build (`vidstabEngine: 'ffmpeg'`, PST-003), else the portable WASM build;
  * `auto` falls back to deshake when the WASM module cannot load.
  */
-export async function stabilizeEngine(
+async function stabilizeEngine(
 	step: Extract<ProcessStep, { op: 'stabilize' }>,
 	env: StepEnv,
 	wasmAvailable: () => Promise<boolean>,
@@ -39,7 +39,7 @@ async function wasmAvailable(): Promise<boolean> {
 	}
 }
 
-export async function createStepImpl(step: ProcessStep, _index: number, env: StepEnv): Promise<StepImpl> {
+export async function createStepImpl(step: ProcessStep, env: StepEnv): Promise<StepImpl> {
 	switch (step.op) {
 		case 'deblock':
 			return { kind: 'filter', step: createDeblockStep(step) };
