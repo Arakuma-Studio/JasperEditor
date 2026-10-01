@@ -10,7 +10,7 @@ slot), §20.6 (`commands/shapes.ts`), §20.7 (`tools/shapes.ts`).
 
 | Req | Where | Notes |
 |---|---|---|
-| SHP-001 | `packages/project/src/commands/handlers/shape.ts`, `registry/properties.ts` (block `wp-m2-shapes`), `invariants.ts` | Model from the contracts. **Layer box rule:** the box is `shapeIntrinsicBox` (largest size over value + keys, plus the stroke outside) with the geometry centred in it; every command that can change that box (`clip.update`, `param.set`, `param.setAnimated`, `keyframe.add/update/remove`, `keyframes.prune`) runs inside `keepShapesCentred` (wired once in `catalog.ts`), which moves the anchor (value and keys) by half the box change, so the shape keeps its place on screen (M(c) = P + R·S·(c − A) unchanged). Invariant added: fill/stroke colours RGBA in 0..1. |
+| SHP-001 | `packages/project/src/commands/handlers/shape.ts`, `registry/properties.ts` (block `wp-m2-shapes`), `invariants.ts` | Model from the contracts. **Layer box rule:** the box is `shapeIntrinsicBox` (largest size over the keys, or the static value when there are none, plus the stroke outside) with the geometry centred in it; every command that can change that box (`clip.update`, `param.set`, `param.setAnimated`, `keyframe.add/update/remove/move/setInterpolation`, `keyframes.prune` — see "Review fixes") runs inside `keepShapesCentred` (wired once in `catalog.ts`), which moves the anchor (value and keys) by half the box change, so the shape keeps its place on screen (M(c) = P + R·S·(c − A) unchanged). Invariant added: fill/stroke colours RGBA in 0..1. |
 | SHP-002 | contracts (`kinds.ts`) | Engines remotion/remotion, badge R, magenta label; the timeline shows the name ("Rectangle"/"Ellipse") and the R badge (e2e). |
 | SHP-003 | `handlers/shape.ts`, `clip-core.ts` (exports), `param.ts` (hunk), `catalog.ts` (hunk) | `clip.addShape` with the defaults (400×400 at the sequence centre, white, no stroke, radius 0, 5 s), colour/size/width/radius validation (`E_INVALID_PARAM`, limits in `SHAPE_LIMITS`), placed like text (`newGeneratorClip`: overwrite, creates missing tracks, refuses locked ones). `clip.update {shape}` merges: `null` removes fill/stroke, a partial stroke is created from `DEFAULT_SHAPE_STROKE` (black, 8 px, center), static values replace keys (like `TransformPatch`), Animatables are validated key by key; `cornerRadius` on an ellipse is refused. `param.set` targets `shape.size` (vec2, clamped ≥ 0 per component — `validateValue` now clamps vec2 components to the spec range; no other vec2 spec has one), `shape.fill`, `shape.stroke.color/width/position`, `shape.cornerRadius` (rectangles); a "None" fill/stroke is created on its first write (`ensureShapeStorage`). Keyframes go through the shared keyframe commands and evaluator (`clipAnimatables` iterates `PROPERTY_SPECS`). |
 | SHP-004 | `packages/compositions/src/layers/ShapeLayer.tsx`, `packages/project/src/render/shape.ts` | Inline SVG through `LayerBox`; geometry from `@remotion/shapes` `makeRect` / `makeEllipse` (4.0.499); size/paint/radius evaluated at the content time (`evaluateShape`: clamps, radius ≤ half the shorter side, zero-width strokes dropped). Stroke: center = 1× width; inside = 2× width clipped by the shape; outside = 2× width masked by the shape's complement (translucent strokes never darken the fill; miter corners). Per-layer clip/mask ids (`useId`). Zero sizes draw nothing. Keyframed shapes are frame-dependent (contracts' `isFrameDependent`). |
@@ -72,6 +72,43 @@ None new. `@remotion/shapes` / `@remotion/paths` 4.0.499 were added by the contr
 - **Shapes jumped when their box changed** (contracts gap: the box is the largest keyed size + outside stroke, the geometry is centred in it, but the anchor stayed put): any size/stroke edit or a new largest key moved the shape by half the change. Fixed by `keepShapesCentred` (tests: static edits, stroke position, keys added and removed, anchor keys shifted, rotation/scale kept).
 - **`param.set` on vec2 ignored the spec range** — `shape.size` would reach the invariant check with negative values and reject the transaction instead of clamping with `W_VALUE_CLAMPED`; vec2 components are now clamped.
 - **e2e `sequenceSummary()` was typed with `id`** while the query returns `sequenceId`.
+
+## Review fixes (branch `fix/shapes-review`, on `main` bb7107a)
+
+Tests: `packages/project/test/shapes.test.ts` ▸ "review fixes" (6 cases, all failing before the fix),
+`apps/mcp/test/shapes.test.ts` (1 case).
+
+- **`keyframe.move` made the shape jump (medium).** Moving a key onto another key's time deletes that key; when it
+  held the largest size / outside-stroke width the box shrank without anchor compensation (100×100 rect, keys
+  100@0 / 500@30, move key@0 by 30 frames → centre (960,540) → (760,340)). `SHAPE_BOX_COMMANDS` now also wraps
+  `keyframe.move` and `keyframe.setInterpolation`; a test asserts every `param.*` / `keyframe*.` command and
+  `clip.update` is in the set. Audit of the rest: `clip.update {shape}`, `param.set`, `param.setAnimated` on/off,
+  `keyframe.add/update/remove`, `keyframes.prune` were already wrapped; there is no paste command (timeline
+  paste / paste attributes are not wired yet; when they are they go through these commands, and `effect.add`
+  keyframes are effect params, not shape props); `clip.split/trim/setSpeed` and frame-rate rescale keep key
+  values; undo/redo restore whole document snapshots (anchor included), so they need no wrapper.
+- **Stale static value counted in the box (low-medium).** `shapeIntrinsicBox` takes the max over the keyframes
+  only once a property has keys (size and stroke width; `evaluate` ignores `value` then), the static value
+  otherwise. Transitions stay centred because each one runs inside `keepShapesCentred`: stopwatch on (one key =
+  current value, box unchanged), stopwatch off (value = evaluated value, box re-centred), removing the last key
+  (value = that key). Note: a v4 document saved by a pre-fix build with a stale value larger than its keys would
+  open with the shape offset by half the difference; v4/M2 is unreleased, so no migration was added.
+- **None fill/stroke materialised by the wrong commands (low).** `resolveTarget(…, {create})`: only `param.set`
+  and `keyframe.add` with a `value` create a "None" fill/stroke (`ensureShapeStorage(clip, spec, create)` now
+  returns false instead of creating); `param.setAnimated` (on or off) and `keyframe.add` without a value fail with
+  `E_INVALID_PARAM` and change nothing (S11 §7 SHP-003 sentence; `SHAPES_GUIDE` line). The UI never offers
+  these on None (rows are hidden), so nothing in the web app changes.
+- **`get_timeline` printed the static value of keyed props (nit).** `shapeText` prints the key values in time
+  order for keyframed size / fill / stroke width / stroke colour / radius, e.g.
+  `rect 100×100→200×200 fill #ffffff stroke 2→6px #000000 inside radius 0→12 (animated: size, stroke width,
+  radius)` (consecutive repeats collapsed; more than four values → `first→…→last`). `e2e/shapes.spec.ts` (MCP
+  case) now expects the keyed range `…→800×…`.
+
+Verification (2026-10-01, load average 12–27 on 12 cores): `pnpm lint`, `pnpm typecheck`, `pnpm e2e:typecheck` ok.
+`pnpm test` (`MCP_TEST_PORT=48917`): 1508 passed, 111 skipped, 1 failed + 7 engine files failing in `beforeAll`
+hooks (all timeouts: `color-remotion`, `color`, `export`, `lgpl`, `media`, `processing-remote`, `processing`,
+`warp`); re-run alone in two batches they pass (32 + 36 passed, 2 skipped). `E2E_PORT=<free> pnpm e2e
+e2e/shapes.spec.ts`: 6/6 passed (2.3 min) after updating the MCP regex.
 
 ## Known gaps / notes for the integrator
 

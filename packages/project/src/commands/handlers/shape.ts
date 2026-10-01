@@ -2,9 +2,10 @@
 // the "None" fill/stroke materialisation behind `param.set shape.*`, and the rule that keeps a shape centred on
 // its anchor when an edit changes its layer box. Owner: wp-m2-shapes.
 //
-// The layer box of a shape is `shapeIntrinsicBox` (largest size over value + keyframes, plus the stroke drawn
-// outside) and the geometry is centred in it. When an edit changes that box, the anchor (value and keys) moves by
-// half the change, so the geometry stays where it was on screen (M(c) = P + R·S·(c − A) is unchanged).
+// The layer box of a shape is `shapeIntrinsicBox` (largest size over the keyframes, or the static value when there
+// are none, plus the stroke drawn outside) and the geometry is centred in it. When an edit changes that box, the
+// anchor (value and keys) moves by half the change, so the geometry stays where it was on screen
+// (M(c) = P + R·S·(c − A) is unchanged).
 import type { Draft } from 'immer';
 import {
 	anim,
@@ -105,7 +106,12 @@ export function keepShapesCentred<T extends CommandType>(handler: Handler<T>): H
 	};
 }
 
-/** Commands whose handlers run inside `keepShapesCentred` (wired in catalog.ts). */
+/**
+ * Commands whose handlers run inside `keepShapesCentred` (wired in catalog.ts): every command that can change the
+ * keys or values of `shape.size` / `shape.stroke.*` — `clip.update {shape}`, the stopwatch, and every keyframe
+ * command (moving a key onto another one deletes it; interpolation is listed so the set covers the whole family).
+ * Paste (not wired yet) will go through these commands; undo/redo restore whole snapshots (anchor included).
+ */
 export const SHAPE_BOX_COMMANDS: ReadonlySet<CommandType> = new Set<CommandType>([
 	'clip.update',
 	'param.set',
@@ -113,6 +119,8 @@ export const SHAPE_BOX_COMMANDS: ReadonlySet<CommandType> = new Set<CommandType>
 	'keyframe.add',
 	'keyframe.update',
 	'keyframe.remove',
+	'keyframe.move',
+	'keyframe.setInterpolation',
 	'keyframes.prune',
 ]);
 
@@ -127,14 +135,19 @@ function newStroke(): ShapeStroke {
 }
 
 /**
- * `param.set` / keyframes on `shape.fill` or `shape.stroke.*` of a shape whose fill or stroke is "None": the
- * fill (white) or a default stroke is created first, then the write proceeds as usual (S11:SHP-005).
+ * Storage of a `shape.fill` / `shape.stroke.*` target whose fill or stroke may be "None". With `create` (an explicit
+ * write: `param.set`, `keyframe.add` with a value) the fill (white) or a default stroke is created first and the
+ * write proceeds as usual (S11:SHP-003/005). Returns false when it stays "None" (the caller refuses the command).
  */
-export function ensureShapeStorage(clip: DClip, spec: PropertySpec): void {
-	if (clip.kind !== 'shape') return;
+export function ensureShapeStorage(clip: DClip, spec: PropertySpec, create: boolean): boolean {
+	if (clip.kind !== 'shape') return true;
 	const s = (clip as Draft<ShapeClip>).shape;
-	if (spec.storagePath[1] === 'fill' && s.fill === null) s.fill = anim<RGBA>([1, 1, 1, 1]);
-	if (spec.storagePath[1] === 'stroke' && s.stroke === null) s.stroke = newStroke();
+	const part = spec.storagePath[1];
+	if ((part !== 'fill' && part !== 'stroke') || s[part] !== null) return true;
+	if (!create) return false;
+	if (part === 'fill') s.fill = anim<RGBA>([1, 1, 1, 1]);
+	else s.stroke = newStroke();
+	return true;
 }
 
 // ---------------------------------------------------------------- clip.update {shape}

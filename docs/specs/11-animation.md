@@ -305,7 +305,9 @@ authored animation timelines (JSON "AnimSpec", M3); on-canvas text editing (TXT-
 - **SHP-003 (P0) Commands.** `clip.addShape {trackId, at, duration?, shape: {type, size?, fill?, stroke?,
   cornerRadius?}, transform?}` (defaults: 400×400 at sequence centre, fill white, no stroke, radius 0, duration 5 s),
   `clip.update` patch `shape` (merge), `param.set` on `shape.*` keys; keyframes on `shape.size`, `shape.fill`,
-  `shape.stroke.color`, `shape.stroke.width`, `shape.cornerRadius` (KF evaluator).
+  `shape.stroke.color`, `shape.stroke.width`, `shape.cornerRadius` (KF evaluator). Only an explicit value
+  (`param.set`, `keyframe.add` with `value`) creates a "None" fill or stroke; `param.setAnimated` (on or off) or
+  `keyframe.add` without a value on a "None" fill/stroke fails with `E_INVALID_PARAM` and changes nothing.
 - **SHP-004 (P0) Rendering.** `ShapeLayer` draws inline SVG (geometry from `@remotion/shapes` `makeRect` /
   `makeEllipse`, pinned 4.0.499) inside `LayerBox`; stroke position inside/outside implemented with clip paths /
   doubled width + mask so the visible stroke width equals `width`.

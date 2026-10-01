@@ -229,7 +229,7 @@ function applyInterpolation(
 
 export const keyframeHandlers: HandlerMap = {
 	'keyframe.add': (doc, cmd: CommandOf<'keyframe.add'>, h: HandlerContext) => {
-		const target = resolveTarget(doc, cmd, h);
+		const target = resolveTarget(doc, cmd, h, { create: cmd.value !== undefined });
 		if (target.type !== 'anim') return h.fail('E_INVALID_PARAM', `${target.label} is not animatable`);
 		const anim = target.anim;
 		const time = target.time(cmd.at);

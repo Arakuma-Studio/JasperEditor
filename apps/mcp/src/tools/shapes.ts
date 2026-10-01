@@ -12,7 +12,7 @@ import { ProjectIdArg } from './projects.ts';
 export const SHAPES_GUIDE = `Shapes (rectangles and ellipses):
 - add_shape adds one on a video track (default 400×400 white, centred, 5 s). Size is in layer pixels; position is where its centre lands in the sequence (0,0 = top left). Strokes keep their visible width whatever the position: inside (within the outline), center or outside.
 - Change a shape with apply_commands: {"type": "clip.update", "clipId": id, "patch": {"shape": {"fill": null | [r,g,b,a], "stroke": null | {"color", "width", "position"}, "size": [w, h], "cornerRadius": n}}} (colours are RGBA floats 0..1; a missing stroke is created with defaults; cornerRadius only for rectangles), or param.set on ["clip", id, "shape", "size" | "fill" | "cornerRadius"] and ["clip", id, "shape", "stroke", "color" | "width" | "position"].
-- Size, fill, stroke colour/width and corner radius are keyframable like Motion: param.setAnimated {animated: true, at} then param.set with "at", or keyframe.add. A shape stays centred on its anchor point when its size changes.
+- Size, fill, stroke colour/width and corner radius are keyframable like Motion: param.setAnimated {animated: true, at} then param.set with "at", or keyframe.add. A fill or stroke that is none must get a value first (param.set, or keyframe.add with "value"); param.setAnimated on it fails. A shape stays centred on its anchor point when its size changes.
 - Shapes render in the preview and export through Remotion (natively baked when available); get_timeline shows their geometry.`;
 
 const ColorArg = z.string().describe('Colour "#RRGGBB" or "#RRGGBBAA"');

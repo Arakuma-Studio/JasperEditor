@@ -86,10 +86,15 @@ export function locateEffect(doc: DDoc, fxId: string): EffectLocation | null {
 	return null;
 }
 
+/**
+ * Resolves a parameter path. `create`: the caller writes an explicit value (param.set, keyframe.add with a value),
+ * so a "None" shape fill/stroke may be created first (S11:SHP-003).
+ */
 export function resolveTarget(
 	doc: DDoc,
 	cmd: { target: string[]; sequenceId?: string },
 	h: HandlerContext,
+	opts: { create?: boolean } = {},
 ): Target {
 	const [head, a, ...rest] = cmd.target;
 	const bad = (): never =>
@@ -125,8 +130,14 @@ export function resolveTarget(
 				},
 			};
 		}
-		// wp-m2-shapes (S11:SHP-003): `shape.fill` / `shape.stroke.*` on a "None" fill/stroke create it first.
-		if (spec.group === 'shape') ensureShapeStorage(clip, spec);
+		// wp-m2-shapes (S11:SHP-003): an explicit write to `shape.fill` / `shape.stroke.*` on a "None" fill/stroke
+		// creates it first; any other command on it (stopwatch, keyframe.add without a value) is refused.
+		if (spec.group === 'shape' && !ensureShapeStorage(clip, spec, opts.create === true))
+			h.fail(
+				'E_INVALID_PARAM',
+				`${key}: the shape's ${spec.storagePath[1]} is "None"; set a value to create it`,
+				{ path: cmd.target },
+			);
 		if (spec.group === 'props') {
 			return {
 				type: 'static',
@@ -319,7 +330,7 @@ function upsertKeyframe(anim: Draft<Animatable<unknown>>, kf: Keyframe<unknown>)
 
 export const paramHandlers: HandlerMap = {
 	'param.set': (doc, cmd: CommandOf<'param.set'>, h: HandlerContext) => {
-		const target = resolveTarget(doc, cmd, h);
+		const target = resolveTarget(doc, cmd, h, { create: true });
 		const { value, clamped } = validateValue(cmd.value, target.rule, h, target.label);
 		if (clamped) h.warn('W_VALUE_CLAMPED', `${target.label} clamped to ${JSON.stringify(value)}`);
 		if (target.type === 'static') {

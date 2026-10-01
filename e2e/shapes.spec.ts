@@ -346,8 +346,9 @@ test('MCP add_shape applies live as one "Agent:" History entry (SHP-008)', async
 		})) as CallToolResult;
 		const table = (timeline.content.find((c) => c.type === 'text') as { text: string }).text;
 		expect(table).toMatch(/ellipse 300×300 fill #00ff00 stroke 10px #ffffff outside/);
+		// Keyed size prints its key values (the drawn size → 800 wide), not the static value.
 		expect(table).toMatch(
-			/rect \d+(\.\d+)?×\d+(\.\d+)? fill #ff0000 stroke 12px #0000ff inside radius 24 \(animated: size\)/,
+			/rect \d+(\.\d+)?×\d+(\.\d+)?→800×\d+(\.\d+)? fill #ff0000 stroke 12px #0000ff inside radius 24 \(animated: size\)/,
 		);
 	} finally {
 		await mcp.close().catch(() => {});
