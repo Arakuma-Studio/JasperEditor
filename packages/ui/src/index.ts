@@ -4,6 +4,7 @@ export * from './cursors/ForcedCursor.tsx';
 export * from './cursors/index.ts';
 export * from './cx.ts';
 export * from './dialog/Dialog.tsx';
+export * from './dialog/layer.ts';
 export * from './icons/index.ts';
 export * from './labels.ts';
 export * from './menu/Menu.tsx';

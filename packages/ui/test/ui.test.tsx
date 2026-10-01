@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { LABEL_COLORS } from '@jasper/project';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { Button, IconButton, TimecodeText, Z } from '../src/index.ts';
+import { Button, Dialog, IconButton, popoverZClass, TimecodeText, useInDialog, Z } from '../src/index.ts';
 
 const tokens = readFileSync(join(__dirname, '../src/theme/tokens.css'), 'utf8');
 
@@ -142,5 +142,28 @@ describe('@jasper/ui primitives', () => {
 		expect(screen.getByLabelText('Razor Tool').getAttribute('aria-pressed')).toBe('true');
 		expect(screen.getByText('00;01;00;02').className).toContain('pr-tabular');
 		expect(document.querySelector('[data-icon="tool.ripple"]')).toBeTruthy();
+	});
+});
+
+describe('popovers inside dialogs (S05:DT-030)', () => {
+	it('a Select list opened from a Dialog stacks above the dialog layer; elsewhere on the popover layer', () => {
+		expect(popoverZClass(false)).toBe('z-[var(--pr-z-popover)]');
+		expect(popoverZClass(true)).toBe('z-[calc(var(--pr-z-dialog)+10)]');
+		let inside: boolean | null = null;
+		let outside: boolean | null = null;
+		function Probe({ into }: { into: (v: boolean) => void }) {
+			into(useInDialog());
+			return null;
+		}
+		render(
+			<>
+				<Probe into={(v) => (outside = v)} />
+				<Dialog open onOpenChange={() => {}} title="T">
+					<Probe into={(v) => (inside = v)} />
+				</Dialog>
+			</>,
+		);
+		expect(outside).toBe(false);
+		expect(inside).toBe(true);
 	});
 });

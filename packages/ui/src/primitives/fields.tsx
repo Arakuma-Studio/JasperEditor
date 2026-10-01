@@ -2,6 +2,7 @@
 import { Checkbox as RCheckbox, Select as RSelect, Switch as RSwitch } from 'radix-ui';
 import { type ComponentProps, type KeyboardEvent, type ReactNode, useId, useRef } from 'react';
 import { cx } from '../cx.ts';
+import { popoverZClass, useInDialog } from '../dialog/layer.ts';
 import { Icon } from '../icons/Icon.tsx';
 
 const FIELD =
@@ -101,6 +102,7 @@ export function Select({
 	className,
 	id,
 }: SelectProps) {
+	const inDialog = useInDialog();
 	return (
 		<RSelect.Root value={value} onValueChange={onValueChange} disabled={disabled}>
 			<RSelect.Trigger
@@ -121,7 +123,10 @@ export function Select({
 				<RSelect.Content
 					position="popper"
 					sideOffset={2}
-					className="z-[var(--pr-z-popover)] max-h-[var(--radix-select-content-available-height)] min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-pr-menu border border-pr-menu-border bg-pr-menu p-1 shadow-pr-overlay"
+					className={cx(
+						popoverZClass(inDialog),
+						'max-h-[var(--radix-select-content-available-height)] min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-pr-menu border border-pr-menu-border bg-pr-menu p-1 shadow-pr-overlay',
+					)}
 				>
 					<RSelect.Viewport>
 						{options.map((o) => (

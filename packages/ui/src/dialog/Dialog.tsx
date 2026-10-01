@@ -7,6 +7,7 @@ import { type KeyboardEvent, type ReactNode, useSyncExternalStore } from 'react'
 import { cx } from '../cx.ts';
 import { Icon } from '../icons/Icon.tsx';
 import { Button } from '../primitives/Button.tsx';
+import { InDialogContext } from './layer.ts';
 
 export type DialogSize = 'small' | 'medium' | 'large';
 const WIDTHS: Record<DialogSize, string> = { small: 'w-[400px]', medium: 'w-[560px]', large: 'w-[880px]' };
@@ -115,7 +116,9 @@ export function Dialog(props: DialogProps) {
 					<RDialog.Description className={description ? 'sr-only' : 'hidden'}>
 						{description ?? ''}
 					</RDialog.Description>
-					<div className={cx('min-h-0 flex-1 overflow-auto', bare ? '' : 'p-4')}>{children}</div>
+					<div className={cx('min-h-0 flex-1 overflow-auto', bare ? '' : 'p-4')}>
+						<InDialogContext.Provider value>{children}</InDialogContext.Provider>
+					</div>
 					{primaryLabel ? (
 						<div className="flex h-12 shrink-0 items-center gap-2 border-t border-pr-border-subtle px-4">
 							{footerExtra}
