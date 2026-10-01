@@ -10,6 +10,7 @@ import {
 	readdirSync,
 	readFileSync,
 	rmSync,
+	statSync,
 	utimesSync,
 	writeFileSync,
 } from 'node:fs';
@@ -760,6 +761,47 @@ describe('exports hold and record their cache entries (CA-016, S06:CG-056)', () 
 		expect(readdirSync(lutDir).filter((f) => f.endsWith('.cube'))).toHaveLength(0);
 		expect(readdirSync(warpDir).filter((f) => f.endsWith('.mov'))).toHaveLength(0);
 	}, 600_000);
+});
+
+describe('removed artifacts come back on demand (S04:CA-004)', () => {
+	afterAll(closeApps);
+
+	it('GET /api/media/:key queues the automatic derivatives the cache GC removed', async () => {
+		ensureFixtures();
+		const app = await makeApp();
+		const cache = coreServices(app).cache;
+		await cache.start();
+		const m = await register(app, fixture('clip-b.mp4'));
+		const status = async () =>
+			(await app.inject({ method: 'GET', url: `/api/media/${m.mediaKey}`, headers: H })).json() as {
+				derivatives: Record<string, { state: string }>;
+			};
+		const ready = async () => {
+			const s = await status();
+			return ['poster', 'keyframes', 'sprite', 'peaks'].every((k) => s.derivatives[k]?.state === 'ready');
+		};
+		const until = async (f: () => Promise<boolean>) => {
+			for (let i = 0; i < 600 && !(await f()); i++) await new Promise((r) => setTimeout(r, 200));
+			expect(await f()).toBe(true);
+		};
+		await until(ready);
+		// Past the grace window, nothing references it: Clean All removes the derivatives.
+		const dir = join(app.appdir, 'cache');
+		for (const fp of readdirSync(dir).filter((n) => /^[0-9a-f]{64}$/.test(n))) {
+			const ageTree = (p: string) => {
+				if (statSync(p).isDirectory()) for (const f of readdirSync(p)) ageTree(join(p, f));
+				age(p, 10 * 60 * 1000);
+			};
+			for (const f of readdirSync(join(dir, fp))) ageTree(join(dir, fp, f));
+			for (const id of cache.index.access.keys()) cache.index.access.set(id, 0);
+		}
+		const r = await cache.clean('all', ['media-cache']);
+		expect(r.removedEntries).toBeGreaterThanOrEqual(4);
+		// The next status request (what an editor does when it opens the project) queues them again.
+		const s = await status();
+		expect(['queued', 'running', 'ready']).toContain(s.derivatives.poster!.state);
+		await until(ready);
+	}, 240_000);
 });
 
 beforeAll(() => ensureFixtures());

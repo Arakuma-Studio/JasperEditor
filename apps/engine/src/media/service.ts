@@ -260,7 +260,10 @@ export class MediaService {
 		const r = this.deps.registry.get(mediaKey);
 		if (!r) return null;
 		const online = (await this.deps.registry.availability(mediaKey)) === 'online';
-		const derivatives = await this.deps.derivatives.status(r);
+		let derivatives = await this.deps.derivatives.status(r);
+		// S04:CA-004: artifacts the cache GC removed (or that were never made) are made again when asked for.
+		if (online && this.deps.derivatives.regenerateMissing(r, derivatives).length)
+			derivatives = await this.deps.derivatives.status(r);
 		const busy = Object.values(derivatives).some((d) => d.state === 'queued' || d.state === 'running');
 		return { mediaKey, status: online ? (busy ? 'processing' : 'online') : 'missing', derivatives };
 	}
