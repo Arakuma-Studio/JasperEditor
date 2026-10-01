@@ -13,7 +13,7 @@ import { LayerBakePreviewRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
 import { layerBakeExtension } from '../layer-bake/extension.ts';
 import { hasColorEffects, isDomLayer } from '../layer-bake/layer.ts';
-import { LayerBakeService } from '../layer-bake/service.ts';
+import { bakeParallelismFromEnv, LayerBakeService } from '../layer-bake/service.ts';
 import { serveFile } from '../tools/http.ts';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
@@ -34,7 +34,11 @@ const CONTENT_TYPES: Record<string, string> = {
 
 export default async function layerBakeRoutes(app: FastifyInstance): Promise<void> {
 	const core = coreServices(app);
-	const svc = new LayerBakeService({ core, log: (m) => app.log.info(m) });
+	const svc = new LayerBakeService({
+		core,
+		log: (m) => app.log.info(m),
+		parallelism: bakeParallelismFromEnv(process.env),
+	});
 	app.jasper.services[LAYER_BAKE_SERVICE_KEY] = svc;
 	svc.registerRunners();
 	const unregisterExt = core.registerNativeExtension(layerBakeExtension(svc));

@@ -425,7 +425,11 @@ graphics)** and lists one graphics group per baked layer.
   for its span; animated layers bake a ProRes 4444 master of their drawn span (transition handles included). Small
   layers are rendered only in their region of the frame (union of their per-frame bounds plus a margin; a layer
   that draws past it is re-rendered full frame).
-- Bakes run as child jobs of the export ("Baking graphics 1/3") and are cached under `<appdir>/cache/layers/<key>/`
+- Bakes run as child jobs of the export ("Baking graphics 1/3 · 40 %"), several at a time: they share the export's
+  Remotion page budget (its Remotion concurrency, at most half the cores; a still takes one page, a long animated
+  title more) and one render browser; two exports needing the same bake render it once.
+  `JASPER_LAYER_BAKE_PARALLEL=1` bakes one after the other, `JASPER_LAYER_BAKE_SHARED_BROWSER=0` gives every bake
+  its own browser. Bakes are cached under `<appdir>/cache/layers/<key>/`
   by a content key (clip, font files, media, compositions bundle, anime.js, Remotion, browser, GL back end);
   re-exports and moving a clip in time reuse them; entries unused for 14 days are removed.
 - Colour effects (Lumetri, LUTs…) on these layers are applied by ffmpeg to the bake (`lut3d`); the Remotion path
@@ -435,8 +439,9 @@ graphics)** and lists one graphics group per baked layer.
   Remotion path (warning `NATIVE_FALLBACK` in the job result); a forced **Native** export fails with the error.
 - Without the Remotion renderer (no browser / no LGPL FFmpeg directory in a packaged engine) these layers block
   the native path and the plan explains why; `GET /api/capabilities` reports `features.layerBake`.
-- Engine tests with real renders: `REMOTION_E2E=1 pnpm --filter @jasper/engine exec vitest run test/layer-bake.e2e.test.ts`;
-  Playwright: `e2e/layer-bake.spec.ts`.
+- Engine tests with real renders: `REMOTION_E2E=1 pnpm --filter @jasper/engine exec vitest run test/layer-bake.e2e.test.ts
+  test/layer-bake-parallel.e2e.test.ts` (the second compares parallel and sequential bakes byte for byte;
+  `LAYER_BAKE_BENCH=1` adds the benchmark); Playwright: `e2e/layer-bake.spec.ts`.
 
 ## Tests
 

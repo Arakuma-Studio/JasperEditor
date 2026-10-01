@@ -16,7 +16,7 @@ Branch `wp/m2-layer-bake` (from `main` a7f1f47, contracts merge 3ece27f). Spec: 
 | LBK-010 / FIX-002 | `native.ts` (`colorRunFilters`), `layer-bake/{service,extension}.ts`, `compositions/src/layers/BakedLayer.tsx`, `apps/web/src/layer-bake/*` | Bakes never contain colour effects. **Native:** override `colorRuns: true`; the builder asks the colour extension's `effectFilter` for the clip's runs (`lut3d` + per-frame windows) on the straight-alpha override stream. **Remotion path / stills:** `prepareForRemotion` bakes and writes a graded master (`graded/` = bake + the same `lut3d` filters (+ the fades of a still), straight-alpha PNG frames, see deviations and review fixes); `adaptRemotionDoc` drops colour effects from DOM layers and sets `clip.baked = {url (signed `graded.png`), startFrame, frames, rect}`; the compositions wrapper shows frame n (`&n=`) with `<Img>` in its region. **Preview:** `POST /api/layer-bake/preview` (replaces the 501 stub) → `layer-bake` job → bake (if needed) + graded VP9-alpha preview at half size (BT.709 TV tagged); the web runtime asks 2 s after the layer last changed and the wrapper plays it; until then the layer draws ungraded with the "Grade pending" chip (`GradeChip`). |
 | LBK-020 | `layer-bake/key.ts`, `remotion/service.ts` (`bundleId`, `animejsVersion`, `browserIdentity`, `renderGl`) | `sha256(canonicalJson({v, recipe, frame?, clip, span, width, height, fps, fonts: [{family, weight, style, fileSha256}], media: [{mediaId, fingerprint, size, mtime}], bundleId, animejs, remotion, browser, gl, still, rect, graded}))[:40]`. `clip` = the clip as baked (span-relative times, only enabled non-colour effects, text content/style/runs/box, animator params and compressed window frames, shape data, template params) without name/track; the clip id is a constant **except for seed-bearing layers** (text with an animator, anime templates: `hash32(clipId, …)` seeds, S11:ANM-007) — two identical seeded clips never share a bake. Fonts: the faces the clip draws with (style and styled runs; review fix 5), hashed by file content (cached per path+size+mtime). `bundleId` = dev source hash, or the `jasper-bundle.json` stamp of a prebuilt bundle (content hash otherwise). `gl` = the probed `chromiumOptions.gl`. Anime templates add `renderVersion` (registry `MgAnimeTemplateDefinition.renderVersion`; `null` while not installed); their params and `paramKeyframes` are in the snapshot source, hence in `clip`. |
 | LBK-021 | `service.ts` (`gc`, `lookup`, `markUsed`), route `GET /mg/layers/:key/:file` | `<appdir>/cache/layers/<key>/{master.mov \| still.png, graded/NNNNNN.png, preview.webm, meta.json}`; graded entries are their own keys (bake key + colour effects + LUT identities + timing). `meta.json` `lastUsedAt` refreshed on use; GC at start and daily removes entries unused for 14 days (and orphan dirs by mtime). Files are served under `/mg/layers/` (signable prefix, Range, immutable). |
-| LBK-022 | `service.ts` (`ensureBake`, `ensureGraded`, `runChild`, runner) | Job kind `layer-bake`, child of the export/still (`cpuSlots: 0`, `minSlots: 0`, dedupe `layer-bake:<key>:<parentId>`, parent abort cancels the child; queue cancel cascades). Parent stage "Baking graphics i/n", child "Rendering i/N frames". Remotion concurrency = the export's (`remotionConcurrency(ctx.slots)` via `NativePrepareContext.concurrency`). |
+| LBK-022 | `service.ts` (`ensureBake`, `ensureGraded`, `ensureEntry`, `submitChild`, runner), `remotion/page-pool.ts` | Job kind `layer-bake`, child of the export/still (`cpuSlots: 0`, `minSlots: 0`, dedupe `layer-bake:<key>:<parentId>`, parent abort cancels the child; queue cancel cascades). Parent stage "Baking graphics i/n", child "Rendering i/N frames". The export's Remotion concurrency (`remotionConcurrency(ctx.slots)` via `NativePrepareContext.concurrency`) is a page budget shared by the bakes running side by side (see "Parallel bakes"; before: one bake at a time with all of it). |
 | LBK-023 | `export/service.ts` (`NativePrepareError`, `fallbackToRemotion`) | Any extension `prepare` failure on the native/hybrid path of an `auto` export or still → re-plan with `engine: 'remotion'` (only when that plan succeeds) and render there; result `renderPath: 'remotion'`, `warnings: [{code: 'NATIVE_FALLBACK'}]`, job log line. Forced `native`: fails with the original error (code kept). |
 | LBK-024 | `extension.ts` (`blockers`), `planner.ts` | `remotionLocal: 'unavailable'` or binaries refused → "graphics layers need the Remotion renderer to bake (reason)" per DOM layer; `needs-browser-download` is ready with warning `BROWSER_DOWNLOAD`. DOM-layer colour never needs WebGL (dropped from Remotion docs, applied by ffmpeg). |
 | LBK-025 | `export/service.ts` (`runStill`), `extension.ts`, `service.ts` (`planBake` frame variant) | `POST /api/stills` (and MCP `render_frame`, which uses it) take the export's path: a cached full master/still is reused; otherwise a static layer bakes its still, a non-static one a one-frame bake keyed by the frame. |
@@ -60,6 +60,9 @@ pnpm vitest run --project @jasper/engine apps/engine/test/layer-bake.test.ts    
 pnpm vitest run --project @jasper/compositions packages/compositions/test/baked-layer.test.tsx
 pnpm vitest run --project @jasper/web apps/web/test/layer-bake-runtime.test.ts
 REMOTION_E2E=1 pnpm --filter @jasper/engine exec vitest run test/layer-bake.e2e.test.ts   # ~3–4 min, headless Chrome
+REMOTION_E2E=1 pnpm --filter @jasper/engine exec vitest run test/layer-bake-parallel.e2e.test.ts   # parallel = sequential, joins, cancel (~5 min)
+REMOTION_E2E=1 LAYER_BAKE_BENCH=1 pnpm --filter @jasper/engine exec vitest run test/layer-bake-parallel.e2e.test.ts  # + benchmark
+pnpm vitest run --project @jasper/engine apps/engine/test/page-pool.test.ts   # pool: budget, order, progress, abort
 E2E_PORT=48460 pnpm exec playwright test e2e/layer-bake.spec.ts                         # after `node scripts/e2e-prepare.mjs`
 ```
 
@@ -132,9 +135,79 @@ Deviation: fix 1 puts the fades into the graded files (engine) rather than apply
 masters (and single frames) render through `ClipLayer` with opacity and fades, so applying them again in the wrapper would
 double them; only the still recipe lacked them.
 
+## Parallel bakes (branch `feat/parallel-bakes`)
+
+Closes the known gap "bakes of one export run one after the other". Before, `prepare` planned and baked one clip
+at a time, each bake a child job rendering with the export's whole Remotion concurrency and launching two browsers
+of its own (one for `selectComposition`, one for the render); 8 small layers spent most of their time in those
+fixed costs (launch, page creation, bundle load, ffmpeg stitch, remux, frame count, crop check), with the pages idle.
+
+**Design (LBK-022, refined).**
+
+| Part | What | Where |
+|---|---|---|
+| Page budget | The export's Remotion concurrency (`remotionConcurrency(slots)` = min(granted CPU slots, ⌊cores / 2⌋): 6 for a full export on this 12-core box, 2 for a still job) is the number of Remotion pages the export may have rendering at once — shared by its bakes instead of given to each. | `extension.ts` (`budget`) |
+| Pool | `runPagePool`: at most `min(budget, 6)` bakes in flight (`MAX_RENDERS_IN_FLIGHT`: each bake has a compositor, an ffmpeg stitcher, remux and checks besides its pages). A bake is granted its pages when it starts (Remotion's concurrency is fixed per render): a still 1; the masters split the budget in proportion to their frames (`pageShares`: `round(budget × frames / Σ master frames)`, at least 1, at most one page per 10 frames — `MIN_FRAMES_PER_PAGE` — and the budget), so a long master takes more pages and a lone master all of them, as before. Largest share first, smaller bakes backfill free pages; a bake starts with at least half the pages it wants (any number when nothing else runs). Σ pages in flight ≤ budget. With `maxInFlight` 1 (sequential) every master wants the whole budget. | `remotion/page-pool.ts` |
+| Plan first | All bake (and, on the Remotion path, grade) plans are computed first, in clip order (cheap; the colour extension's `prepare` stays sequential); identical keys are grouped so one render serves every clip that shares it; then the renders run in the pool. | `extension.ts` |
+| Job accounting | Child jobs keep `cpuSlots: 0`, `minSlots: 0` (the queue would otherwise count the export's CPU twice, or block the children behind their own parent): the export holds the slots, and its bakes' pages are carved out of its budget, so the children are bounded by the parent's grant instead of each taking the whole concurrency. The child's stage shows its share: "Rendering 12/60 frames (2 pages)". | `service.ts` (`submitChild`) |
+| Abort | Cancelling the export aborts the pool: every bake in flight cancels its child job and waits for it to settle (the queue's parent→child cascade does the same); queued bakes never start. The first failing bake aborts the others the same way and `prepare` rejects with its error once all have settled (`auto` exports then fall back to Remotion, LBK-023). Nothing started by the pool outlives `prepare`. | `page-pool.ts`, `service.ts` (`follow`) |
+| Dedupe | `LayerBakeService` keeps the entries being rendered (`inflight`, keyed by bake or grade key, registered with no await between the check and the registration). A second `ensureBake` / `ensureGraded` of a key in flight — another export, a still, or another clip — joins that child job (following its progress) instead of rendering it again; if the owning export is cancelled, the joiner renders the key itself; a real failure is the joiner's failure too. A grade job (Remotion path, preview) waits for an in-flight render of its source bake. The queue dedupe key stays `layer-bake:<key>:<parent>`. | `service.ts` (`ensureEntry`) |
+| GC leases | Unchanged: `ensureBake` / `ensureGraded` lease their keys before the lookup until the parent job finishes (joiners too), runners for the job. | `service.ts` |
+| Progress | Parent stage "Baking graphics i/n · p %": i = bakes finished, n = renders, p = progress weighted by frames + a fixed cost of 30 frames per render, from the child jobs' progress (polled every 250 ms; a joined bake reports its owner's). | `extension.ts`, `page-pool.ts` |
+| Browser | One shared render browser per export (`RemotionService.openSharedBrowser`: the probed `gl`; with a full Chrome every page in its own window, `renderPagesInOwnWindows`, so pages of concurrent bakes never hide each other), launched by the first bake that needs it (an all-cached export launches none) and closed when `prepare` ends; passed as `puppeteerInstance` to `selectComposition`, `renderMedia` (masters) and `renderStill`. Without it every bake launches two browsers. Chosen by measurement (below). A crash of the shared browser fails the bakes in flight (then LBK-023 as for any bake failure). | `remotion/service.ts`, `service.ts` (`browserSession`) |
+| Knobs | `JASPER_LAYER_BAKE_PARALLEL=<n>` bakes in flight (`1` = the sequential path: one bake at a time with the whole budget, own browsers); `JASPER_LAYER_BAKE_SHARED_BROWSER=0` one browser per bake. `LayerBakeService.parallelism` (tests). | `service.ts`, `routes/layer-bake.ts` |
+| mg pre-renders | `MgBundleService.ensureMasters` uses the same pool: one pre-render per distinct render key, budget = the export's Remotion concurrency (was a fixed 4 tabs per pre-render, one pre-render after the other), same abort/failure semantics, stage "Rendering compositions i/n · p %". Not in the shared browser: `runPrerender` is also the interactive preview job, owns its browser set-up (bundle serve URL, own-window patch) and an export rarely has more than a few compositions; it is not in the layer-bake pool either (the extensions' `prepare` run one after the other, `mg-bundles` before `layer-bake`, ARCHITECTURE §19.6), so each gets the whole budget in turn. Cross-export joins are not done there (two exports pre-rendering one key at the same time render it twice, as before). | `mg-bundles/service.ts`, `native-ext.ts` |
+
+**Determinism.** A bake's pixels do not depend on the schedule, its page count or the browser it shares: every frame
+is fully repainted (`FrameRepaint`, ANM-014) and every page has its own window. Checked byte for byte (below).
+
+**Measurements** (this box: 12 cores, no GPU, shared with other agents; full Chrome `/usr/bin/google-chrome`, swangle).
+Export of `benchDoc` in `layer-bake-parallel.e2e.test.ts`: 90 frames 1280×720, eight DOM layers — three static
+titles and a static shape (4 `still.png`), a keyframed title (60 frames), two text-animator titles (slide-up 90
+frames, pop 45 frames), an anime template (60 frames) — native ProRes 4444, cold layer cache, warm bundle; bake phase
+= export start → last bake finished. Page budget 6.
+
+| Run | Load (1 min) | Bake phase | Export |
+|---|---|---|---|
+| `main` 74b5bcd (before), 4 rounds | 5–14 | 28.8 / 31.1 / 29.8 / 32.8 s | 33.4–35.8 s |
+| this branch, sequential mode (`JASPER_LAYER_BAKE_PARALLEL=1`), 3 rounds interleaved with the rows below | 11–15 | 34.0 / 35.1 / 35.3 s (median 35.1) | 37.4–39.4 s |
+| parallel, a browser per bake | 11–15 | 13.7 / 17.8 / 15.8 s (median 15.8) | 17.1–21.7 s |
+| **parallel, shared browser (default)** | 11–15 | **14.0 / 14.2 / 13.3 s (median 14.0)** | **16.7–17.9 s** |
+| parallel, at most 3 bakes in flight, shared browser | 11–15 | 15.2 / 16.8 / 15.7 s | 18.3–20.6 s |
+
+The bake phase is 2.5× shorter (the export 2.2×). Timeline of a parallel run: the four masters start at once
+(2 + 1 + 1 + 1 pages) with the first still on the sixth page, the other stills follow on the freed page; sequential:
+8.4 + 6.3 + 4.9 + 4.5 s of masters (6 pages each), then 4 × ~2.5 s of stills — mostly start-up (browser launches,
+page creation, bundle load, stitching, remux, checks), which parallel bakes overlap. The sequential mode is the
+`main` behaviour (its numbers differ by the load only). Under heavier load the equivalence test measured sequential
+48–70 s vs parallel 25–35 s (load 24–60).
+Shared vs own browsers: equal within the noise (median 14.0 vs 15.8 s, less spread when shared), and 1 browser launch
+instead of 16 (every bake launched one for `selectComposition` and one for the render): **shared** is the default.
+Earlier variants measured on the same document (load 20–45, noisier): masters wanting ⌈frames / 30⌉ pages (the third
+master started with 1 page, the fourth waited) 25–44 s; ⌈frames / 15⌉ (masters nearly one after the other) 27–40 s;
+⌈frames / 60⌉ 16–50 s; sequential 40–105 s in the same rounds — the proportional split keeps every master running
+from the start. (A pitfall found while
+measuring: titles whose text overflows its box are re-rendered full frame by the crop safety net, doubling their
+bake; the benchmark keeps the texts within their boxes, `full-frame fallbacks 0`.)
+
+**Equivalence** (`layer-bake-parallel.e2e.test.ts`, REMOTION_E2E): the same document baked sequentially (own browsers)
+and in parallel (shared browser) on a cold cache: the 8 cache entries have the same keys and rects, **8/8 files
+byte-identical** (masters and stills), and the native composites decode to identical pixels (3 runs, load 24–60).
+The same file checks that a second export preparing the same layers while they render joins them (3–6 joined, the
+others already cached by then; 8 renders in all) and that cancelling the export cancels every bake in flight and closes the browser.
+Unit tests: `page-pool.test.ts` (budget split, order and backfill, bounded renders in flight, sequential mode,
+progress, failure and abort), `layer-bake.test.ts` "parallel bakes" (stubbed renders: Σ pages ≤ budget, one shared
+browser closed at the end, stage text, cache hits launch nothing, sequential mode, failure cancels the rest, abort,
+cross-parent join and owner cancellation), `mg-bundles.test.ts` "ensureMasters" (distinct keys, budget, abort).
+
+Verification (2026-10-01, load average 9–30 on 12 cores): `pnpm lint`, `pnpm typecheck`, `pnpm e2e:typecheck` ok;
+`page-pool.test.ts` 7/7, `layer-bake.test.ts` 31/31, `mg-bundles.test.ts` 15/15 (`MG_E2E=1`: 21/21, real pre-renders
+through the pool); `REMOTION_E2E=1 layer-bake.e2e.test.ts` 8/8 (113 s, was 134 s), `layer-bake-parallel.e2e.test.ts`
+3/3; `pnpm test` 1650 passed, 45 skipped, 1 failed — `mg-bundles.test.ts` "converts zod 3 schemas…" at its 5 s default
+timeout (load 30), passes alone (15/15); Playwright `e2e/layer-bake.spec.ts` (built engine + web, `E2E_SKIP_BUILD=0`) 3/3 (2.1 min).
+
 ## Known gaps
 
-- Bakes of one export run one after the other (each with the export's Remotion concurrency).
 - The web preview identity does not include font file contents (font files do not change during a session).
 - `pnpm lint` runs `biome check .`, which checks 0 files inside `.claude/worktrees` (ignored by `biome.json` on this base; fixed on `main`); lint was run with explicit paths (`biome check apps packages scripts e2e …`): clean.
 - Remotion's `OffthreadVideo` YUV range handling also applies to mg masters on the Remotion path (`MGC-033`); not measured here.

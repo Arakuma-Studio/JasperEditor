@@ -88,6 +88,11 @@ export type AlphaMasterInput = {
 	/** ffmpeg used for the BT.709 remux and the frame count (the LGPL directory's or the engine's). */
 	ffmpeg: FfmpegRunner;
 	concurrency?: number;
+	/**
+	 * Render in this browser (shared by several renders, S11:LBK-022) instead of opening one; it stays open. Default:
+	 * a browser of its own, closed after the render.
+	 */
+	browser?: SharedRenderBrowser;
 	onSpawn?(child: ChildProcess): void;
 	onProgress?(p: { renderedFrames: number; totalFrames: number; progress: number }): void;
 };
@@ -156,6 +161,13 @@ const SYSTEM_BROWSERS = [
 
 type RendererModule = typeof import('@remotion/renderer');
 type RenderBrowser = Awaited<ReturnType<RendererModule['openBrowser']>>;
+
+/**
+ * A render browser opened once and used by several renders at the same time (S11:LBK-022 parallel bakes): with a full
+ * Chrome every page gets its own window (`renderPagesInOwnWindows`), so pages of concurrent renders never hide each
+ * other. `close` is idempotent.
+ */
+export type SharedRenderBrowser = { readonly instance: RenderBrowser; close(): Promise<void> };
 
 function findRemotionHeadlessShell(): string | null {
 	// Remotion's ensureBrowser() downloads into the nearest node_modules/.remotion folder.
@@ -661,7 +673,11 @@ export class RemotionService {
 		).catch(() => undefined);
 	}
 
-	private async composition(inputProps: Record<string, unknown>, signal: AbortSignal) {
+	private async composition(
+		inputProps: Record<string, unknown>,
+		signal: AbortSignal,
+		shared?: SharedRenderBrowser,
+	) {
 		// Refuse before bundling or loading the renderer when the LGPL directory is missing (strict mode).
 		const binaries = this.binariesOption();
 		await this.assertWebglFor(inputProps);
@@ -678,6 +694,7 @@ export class RemotionService {
 			logLevel: 'error',
 			...binaries,
 			...browser,
+			...(shared ? { puppeteerInstance: shared.instance } : {}),
 		});
 		return { r, serveUrl, composition, browser };
 	}
@@ -701,6 +718,30 @@ export class RemotionService {
 			return null;
 		}
 		return instance;
+	}
+
+	/**
+	 * S11:LBK-022: one render browser for several renders running at the same time (the bakes of an export): the probed
+	 * `gl`, and with a full Chrome every page in its own window (S11:ANM-014). Pass it as `browser` to
+	 * `renderAlphaMaster` / `renderStill`; the caller closes it.
+	 */
+	async openSharedBrowser(): Promise<SharedRenderBrowser> {
+		this.binariesOption();
+		const r = await this.renderer();
+		const browser = { ...this.browserOptions(), ...(await this.chromiumOptions()) };
+		const instance = await r.openBrowser('chrome', { ...browser, logLevel: 'error' });
+		if (browser.chromeMode === 'chrome-for-testing' && !renderPagesInOwnWindows(instance)) {
+			await instance.close({ silent: true }).catch(() => undefined);
+			throw new JobError('RENDER_FAILED', 'The render browser does not expose its CDP connection', true);
+		}
+		let closed: Promise<void> | null = null;
+		return {
+			instance,
+			close: () => {
+				closed ??= instance.close({ silent: true }).catch(() => undefined);
+				return closed;
+			},
+		};
 	}
 
 	/**
@@ -779,7 +820,11 @@ export class RemotionService {
 	 * Returns the frame count.
 	 */
 	async renderAlphaMaster(input: AlphaMasterInput): Promise<{ frames: number }> {
-		const { r, serveUrl, composition, browser } = await this.composition(input.inputProps, input.signal);
+		const { r, serveUrl, composition, browser } = await this.composition(
+			input.inputProps,
+			input.signal,
+			input.browser,
+		);
 		const { cancelSignal, cancel } = r.makeCancelSignal();
 		const onAbort = () => cancel();
 		input.signal.addEventListener('abort', onAbort, { once: true });
@@ -787,9 +832,11 @@ export class RemotionService {
 		const raw = join(input.scratchDir, `alpha-${process.pid}-${Date.now().toString(36)}-raw.mov`);
 		const tagged = `${raw.slice(0, -'-raw.mov'.length)}.mov`;
 		const concurrency = input.concurrency ?? Math.max(1, Math.floor(availableParallelism() / 2));
+		// Own browser (closed below) unless the caller shares one.
 		let instance: RenderBrowser | null = null;
 		try {
-			instance = await this.renderBrowser(r, browser, concurrency);
+			if (!input.browser) instance = await this.renderBrowser(r, browser, concurrency);
+			const puppeteer = input.browser?.instance ?? instance;
 			await this.recordUsage('media', 'layer-bake');
 			await r.renderMedia({
 				serveUrl,
@@ -805,7 +852,7 @@ export class RemotionService {
 				logLevel: 'error',
 				overwrite: true,
 				...browser,
-				...(instance ? { puppeteerInstance: instance } : {}),
+				...(puppeteer ? { puppeteerInstance: puppeteer } : {}),
 				onProgress: (p) =>
 					input.onProgress?.({ renderedFrames: p.renderedFrames, totalFrames: total, progress: p.progress }),
 			});
@@ -843,8 +890,14 @@ export class RemotionService {
 		 * straight alpha of the page.
 		 */
 		purpose?: RemotionUsagePurpose;
+		/** Render in this shared browser (S11:LBK-022; it stays open) instead of a browser of its own. */
+		browser?: SharedRenderBrowser;
 	}): Promise<void> {
-		const { r, serveUrl, composition, browser } = await this.composition(input.inputProps, input.signal);
+		const { r, serveUrl, composition, browser } = await this.composition(
+			input.inputProps,
+			input.signal,
+			input.browser,
+		);
 		const { cancelSignal, cancel } = r.makeCancelSignal();
 		const onAbort = () => cancel();
 		input.signal.addEventListener('abort', onAbort, { once: true });
@@ -865,6 +918,7 @@ export class RemotionService {
 				...this.binariesOption(),
 				...(input.scale ? { scale: input.scale } : {}),
 				...browser,
+				...(input.browser ? { puppeteerInstance: input.browser.instance } : {}),
 			});
 		} catch (e) {
 			throw mapRenderError(e, input.signal);

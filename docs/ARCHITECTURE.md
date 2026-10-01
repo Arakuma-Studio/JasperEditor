@@ -1188,6 +1188,12 @@ anime-core,text-anim,anime-templates,layer-bake,shapes}.md`. Decisions taken dur
 - **Graded DOM layers on the Remotion path** play straight-alpha PNG sequences (S11 v1.1, LBK-010/021): Remotion's
   compositor drops PNG-in-MOV alpha and decodes ProRes 4444 / VP9 alpha up to 6/255 off.
 - **Bake keys** include the clip id only for seed-bearing layers (text animators, anime templates).
+- **Parallel bakes (LBK-022, `feat/parallel-bakes`).** The bakes of one export (and the mg pre-renders of
+  `ensureMasters`) run side by side through `remotion/page-pool.ts`: the export's Remotion concurrency is a page
+  budget shared by the renders in flight (≤ 6 at once; a still 1 page, the masters split the budget by frames);
+  child jobs keep `cpuSlots: 0` (their pages come out of the parent's grant). The layer bakes of an export render in
+  one shared browser (`RemotionService.openSharedBrowser`, every page in its own window); a key being rendered is
+  joined by any other caller (`LayerBakeService` in-flight map). Output is byte-identical to the sequential path.
 - **Project stores** take the template registry and re-stamp renderers on load (ATP-002); a template upgrade in
   `clip.update` runs before `params` of the same patch.
 - **THIRD_PARTY_NOTICES.md** also lists build output that ships (Tailwind CSS, Vite/webpack runtimes, Remotion
@@ -1195,5 +1201,5 @@ anime-core,text-anim,anime-templates,layer-bake,shapes}.md`. Decisions taken dur
 
 Known gaps (non-blocking): no clip clipboard yet (Paste / Paste Attributes do not exist, so only duplicate copies
 animators); a word broken across lines by `overflow-wrap` animates on its first line; the typewriter caret does not
-blink; bakes of one export run sequentially; an animated shape's selection quad is its largest box; template text
+blink; an animated shape's selection quad is its largest box; template text
 uses a system font stack (Inter / Source Sans 3 / sans-serif); S05:MGT-002 card context menu not done.
