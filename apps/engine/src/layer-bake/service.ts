@@ -43,6 +43,7 @@ import {
 	keyOf,
 	LAYER_BAKE_VERSION,
 	normalisedClip,
+	templateRenderVersion,
 } from './key.ts';
 import {
 	type BakeVariant,
@@ -429,6 +430,7 @@ export class LayerBakeService {
 			gl: env.gl,
 			still: variant.recipe !== 'master',
 			rect,
+			...(clip.kind === 'motion-graphic' ? { renderVersion: templateRenderVersion(clip) } : {}),
 			graded: false,
 		};
 		const docOf = (c: RenderVisualClip, r: Rect | null) =>

@@ -4,6 +4,7 @@
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
+import { isAnimeTemplate, mgRegistry } from '@jasper/mg-templates';
 import { canonicalJson, type RenderVisualClip } from '@jasper/project';
 import type { BakeVariant, Rect } from './layer.ts';
 
@@ -65,9 +66,22 @@ export type KeyMaterial = {
 	gl: string;
 	still: boolean;
 	rect: Rect | null;
+	/**
+	 * Anime templates (S11:ATP-001): the implementation's `renderVersion` from the template registry — a template
+	 * whose drawing changes without a params change bumps it. Absent for other layers.
+	 */
+	renderVersion?: number | null;
 	/** Graded entries (Remotion path, preview): the colour effects and LUT identities; false = ungraded bake. */
 	graded: false | { source: string; effects: unknown; luts: KeyMedia[] };
 };
+
+/** `renderVersion` of the anime template a clip draws (null: not an anime template or not installed). */
+export function templateRenderVersion(c: RenderVisualClip): number | null {
+	const mg = (c.source as { mg?: { template: { id: string; version: number }; renderer?: string } }).mg;
+	if (mg?.renderer !== 'anime') return null;
+	const def = mgRegistry.getDefinition(mg.template.id, mg.template.version);
+	return def && isAnimeTemplate(def) ? def.renderVersion : null;
+}
 
 export function keyOf(material: KeyMaterial): string {
 	return createHash('sha256').update(canonicalJson(material)).digest('hex').slice(0, 40);

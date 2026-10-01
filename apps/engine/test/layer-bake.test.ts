@@ -505,6 +505,11 @@ describe('render keys (LBK-020)', () => {
 		inject(d, ANIME_CLIP, { id: 'clp_ANIME00000000001', track: 'V2', start: 0 });
 		const anime = clipOf(snapOf(d), 'clp_ANIME00000000001');
 		expect(normalisedClip(anime).clipId).toBe('clp_ANIME00000000001');
+		// Anime templates key their registry renderVersion (null while the template is not installed).
+		const pa = await planned(d);
+		const ap = await svc.planBake(pa, clipOf(pa.snapshot, 'clp_ANIME00000000001'), { env: ENV });
+		expect(ap.material).toHaveProperty('renderVersion', null);
+		expect(keyOf({ ...ap.material, renderVersion: 2 })).not.toBe(ap.key);
 		// Stills of a non-static layer without a cached master: a one-frame bake keyed by the frame.
 		const f12 = await keyOfClip(d, t, ENV, 12);
 		const f13 = await keyOfClip(d, t, ENV, 13);
