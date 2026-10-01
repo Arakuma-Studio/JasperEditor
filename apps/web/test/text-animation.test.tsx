@@ -306,8 +306,8 @@ describe('timeline wedges (S11:TXA-023)', () => {
 			<TextAnimationWedges clip={textOf(session, id!)} pxPerFrame={2} height={40} />,
 		);
 		const svg = container.querySelector('svg')!;
-		// 20 + 20 > 30: compressed to 15 + 15
-		expect(svg.dataset.textAnimWedges).toBe('15/15');
+		// 20 + 20 > 30: compressed to 15 + 14 (one frame stays at rest)
+		expect(svg.dataset.textAnimWedges).toBe('15/14');
 		expect(svg.querySelectorAll('path')).toHaveLength(2);
 		expect(
 			render(

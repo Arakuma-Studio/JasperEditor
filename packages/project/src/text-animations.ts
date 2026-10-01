@@ -257,7 +257,7 @@ export type ResolvedTextAnimator = {
 export type TextAnimationWindows = {
 	in?: ResolvedTextAnimator;
 	out?: ResolvedTextAnimator;
-	/** `in + out` exceeded the clip and both were scaled (warning W_ANIMATION_COMPRESSED). */
+	/** The windows did not fit the clip and were scaled (warning W_ANIMATION_COMPRESSED). */
 	compressed: boolean;
 	/** Presets not in the catalogue (preserved, passed through with their stored params). */
 	unknown: string[];
@@ -276,7 +276,10 @@ export function textAnimatorParams(
 
 /**
  * Compressed window lengths (S11:TXA-004): `in` covers `[0, in)`, `out` covers `[duration − out, duration)`.
- * When `in + out > duration` both are scaled proportionally (integers, each ≥ 1 while the clip has room for both).
+ * A single side is cut to the duration. With both sides they must leave one frame at rest (else the text may never
+ * show: two 1-frame windows draw only start states), so when `in + out ≥ duration` both are scaled proportionally
+ * to share `duration − 1` frames (integers, each ≥ 1 from 3 frames on; a 2-frame clip keeps only the longer side,
+ * In on a tie; a 1-frame clip drops both and shows the rest state).
  */
 export function compressAnimationWindows(
 	duration: number,
@@ -284,13 +287,18 @@ export function compressAnimationWindows(
 	outFrames: number,
 ): { in: number; out: number; compressed: boolean } {
 	const d = Math.max(1, Math.floor(duration));
+	if (inFrames === 0 || outFrames === 0) {
+		if (inFrames + outFrames <= d) return { in: inFrames, out: outFrames, compressed: false };
+		return { in: inFrames && d, out: outFrames && d, compressed: true };
+	}
+	const room = d - 1;
 	const total = inFrames + outFrames;
-	if (total <= d) return { in: inFrames, out: outFrames, compressed: false };
-	if (inFrames === 0) return { in: 0, out: d, compressed: true };
-	if (outFrames === 0) return { in: d, out: 0, compressed: true };
-	if (d === 1) return { in: 1, out: 1, compressed: true };
-	const i = Math.min(d - 1, Math.max(1, Math.round((inFrames * d) / total)));
-	return { in: i, out: d - i, compressed: true };
+	if (total <= room) return { in: inFrames, out: outFrames, compressed: false };
+	if (room === 0) return { in: 0, out: 0, compressed: true };
+	if (room === 1)
+		return inFrames >= outFrames ? { in: 1, out: 0, compressed: true } : { in: 0, out: 1, compressed: true };
+	const i = Math.min(room - 1, Math.max(1, Math.round((inFrames * room) / total)));
+	return { in: i, out: room - i, compressed: true };
 }
 
 /**

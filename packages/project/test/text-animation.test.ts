@@ -470,7 +470,7 @@ describe('invariants, repair, snapshot and agents (S11:TXA-008/009, ANA-007)', (
 				preset: 'fade',
 				version: 1,
 				params: { unit: 'word', stagger: 0, order: 'forward', ease: 'out' },
-				frames: 30,
+				frames: 29, // In + Out share 59 frames: one stays at rest
 			},
 		});
 		expect(snap.warnings).toEqual([]);

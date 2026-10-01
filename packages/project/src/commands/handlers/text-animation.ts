@@ -88,7 +88,7 @@ function setSide(clip: DText, side: TextAnimationSide, a: TextAnimator | null): 
 	if (clip.textAnimation && !clip.textAnimation.in && !clip.textAnimation.out) delete clip.textAnimation;
 }
 
-/** Warns when the clip's in + out windows exceed its duration (they are scaled at render time, TXA-004). */
+/** Warns when the clip's windows do not fit its duration (they are scaled at render time, TXA-004). */
 function warnIfCompressed(clip: DText, h: HandlerContext): void {
 	if (compressionOf(clip)) h.warn('W_ANIMATION_COMPRESSED', compressionMessage(clip), ['textAnimation']);
 }
@@ -102,7 +102,7 @@ function compressionOf(clip: { duration: number; textAnimation?: TextAnimation |
 
 function compressionMessage(clip: { id: string; duration: number; textAnimation?: TextAnimation | null }) {
 	const ta = clip.textAnimation!;
-	return `Text animations of ${clip.id} (in ${ta.in?.durationFrames ?? 0} + out ${ta.out?.durationFrames ?? 0} frames) exceed its ${clip.duration} frames and are scaled to fit`;
+	return `Text animations of ${clip.id} (in ${ta.in?.durationFrames ?? 0} + out ${ta.out?.durationFrames ?? 0} frames) do not fit its ${clip.duration} frames (In and Out leave one frame at rest) and are scaled to fit`;
 }
 
 /** clip.addText `textAnimation`: writes the animators of the new clip (called after its layout). */

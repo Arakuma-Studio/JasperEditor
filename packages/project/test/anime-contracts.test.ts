@@ -160,24 +160,42 @@ describe('text animation windows (S11:TXA-002/004)', () => {
 		expect(scaleAnimationFrames(15, { num: 24000, den: 1001 })).toBe(12);
 		expect(scaleAnimationFrames(1, 1)).toBe(1);
 	});
-	it('compresses in + out proportionally when they exceed the clip', () => {
+	it('compresses in + out proportionally when they do not fit the clip with one frame at rest', () => {
 		expect(compressAnimationWindows(100, 20, 30)).toEqual({ in: 20, out: 30, compressed: false });
-		expect(compressAnimationWindows(40, 30, 30)).toEqual({ in: 20, out: 20, compressed: true });
-		expect(compressAnimationWindows(10, 30, 10)).toEqual({ in: 8, out: 2, compressed: true });
-		expect(compressAnimationWindows(10, 1, 100)).toEqual({ in: 1, out: 9, compressed: true });
+		expect(compressAnimationWindows(40, 30, 30)).toEqual({ in: 20, out: 19, compressed: true });
+		expect(compressAnimationWindows(40, 20, 20)).toEqual({ in: 20, out: 19, compressed: true });
+		expect(compressAnimationWindows(41, 20, 20)).toEqual({ in: 20, out: 20, compressed: false });
+		expect(compressAnimationWindows(10, 30, 10)).toEqual({ in: 7, out: 2, compressed: true });
+		expect(compressAnimationWindows(10, 1, 100)).toEqual({ in: 1, out: 8, compressed: true });
+		// A single side may cover the whole clip.
 		expect(compressAnimationWindows(10, 0, 30)).toEqual({ in: 0, out: 10, compressed: true });
-		expect(compressAnimationWindows(1, 5, 5)).toEqual({ in: 1, out: 1, compressed: true });
-		for (let d = 2; d < 60; d++)
+		expect(compressAnimationWindows(10, 10, 0)).toEqual({ in: 10, out: 0, compressed: false });
+		for (let d = 3; d < 60; d++)
 			for (const [a, b] of [
 				[d, d],
 				[1, 3 * d],
 				[2 * d, 1],
 			] as const) {
 				const w = compressAnimationWindows(d, a, b);
-				expect(w.in + w.out).toBeLessThanOrEqual(d);
+				expect(w.in + w.out).toBeLessThanOrEqual(d - 1);
 				expect(w.in).toBeGreaterThanOrEqual(1);
 				expect(w.out).toBeGreaterThanOrEqual(1);
 			}
+	});
+	it('keeps one frame at rest on 1- and 2-frame clips with both sides (the text shows)', () => {
+		expect(compressAnimationWindows(1, 5, 5)).toEqual({ in: 0, out: 0, compressed: true });
+		expect(compressAnimationWindows(1, 1, 1)).toEqual({ in: 0, out: 0, compressed: true });
+		expect(compressAnimationWindows(2, 1, 1)).toEqual({ in: 1, out: 0, compressed: true });
+		expect(compressAnimationWindows(2, 3, 8)).toEqual({ in: 0, out: 1, compressed: true });
+		const clip = {
+			duration: 1,
+			textAnimation: {
+				in: { preset: 'fade', version: 1, durationFrames: 15, params: {} },
+				out: { preset: 'fade', version: 1, durationFrames: 15, params: {} },
+			},
+		};
+		const w = resolveTextAnimationWindows(clip, [FADE]);
+		expect([w.in?.frames, w.out?.frames, w.compressed]).toEqual([0, 0, true]);
 	});
 	it('merges preset defaults for known presets and passes unknown presets through', () => {
 		const clip = {
@@ -189,7 +207,7 @@ describe('text animation windows (S11:TXA-002/004)', () => {
 		};
 		const w = resolveTextAnimationWindows(clip, [FADE]);
 		expect(w.in).toEqual({ preset: 'fade', version: 1, params: { ease: 'out', stagger: 0.5 }, frames: 10 });
-		expect(w.out).toEqual({ preset: 'mystery', version: 3, params: { x: 1 }, frames: 10 });
+		expect(w.out).toEqual({ preset: 'mystery', version: 3, params: { x: 1 }, frames: 9 });
 		expect(w.compressed).toBe(true);
 		expect(w.unknown).toEqual(['mystery@3']);
 		expect(resolveTextAnimationWindows({ duration: 20, textAnimation: { in: null } })).toEqual({

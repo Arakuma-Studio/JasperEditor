@@ -39,7 +39,7 @@ import { ProjectIdArg } from './projects.ts';
 /** Appended to the server instructions (EDITING_GUIDE). */
 export const ANIMATION_GUIDE = `Text animation:
 - Text clips can have an In and an Out animator (list_text_animations: fade, slide-*, pop, blur, typewriter, tracking, mask-reveal, rotate-in, drop). Set them with add_text animateIn/animateOut or set_text_animation {clipId(s), in, out}; null removes a side, an object without preset only changes the current side's length or params.
-- In plays over the clip's first visible frames, Out over its last ones (Out is the mirrored In motion), whatever the clip's trims. Lengths default to the preset's (at the sequence rate); give durationFrames or durationSeconds. When In + Out exceed the clip both are scaled to fit (warning W_ANIMATION_COMPRESSED): lengthen the clip or shorten them.
+- In plays over the clip's first visible frames, Out over its last ones (Out is the mirrored In motion), whatever the clip's trims. Lengths default to the preset's (at the sequence rate); give durationFrames or durationSeconds. When In + Out do not fit the clip with one frame left at rest both are scaled to fit (warning W_ANIMATION_COMPRESSED): lengthen the clip or shorten them.
 - Params: unit (char | word | line) is the animated piece, stagger (0…1) the fraction of the window spread across units (0 = all together), order (forward, backward, center, edges, random) who starts first, ease the per-unit easing; distance/blur/scale/angle are preset-specific.
 - Splitting an animated clip keeps In on the left part and Out on the right part. get_timeline shows the animators as in:<preset> out:<preset>.
 - Check the motion with render_frames {clipId, count}: one contact-sheet PNG of evenly spread frames.`;
