@@ -53,5 +53,25 @@ export const M2FeaturesSchema = z.object({
 			warpStage: z.boolean(),
 		})
 		.optional(),
+	/** M2 animation (S11:LBK-030, filled by routes/anime.ts): the anime.js runtime and its catalogues. */
+	anime: z
+		.object({
+			/** anime.js version bundled with the compositions (pinned exactly, S11:ANM-011). */
+			animejs: z.string(),
+			/** Text animator presets (TEXT_ANIMATION_SPECS). */
+			textPresets: z.number().int().min(0),
+			/** Motion-graphic templates with `renderer: 'anime'`. */
+			templates: z.number().int().min(0),
+		})
+		.optional(),
+	/** wp-m2-layer-bake (S11:LBK-030): native export of DOM layers (text, shapes, anime templates). */
+	layerBake: z
+		.object({
+			state: z.enum(['ready', 'unavailable']),
+			reason: z.string().optional(),
+			/** Size of `<appdir>/cache/layers`. */
+			cacheBytes: z.number().int().min(0),
+		})
+		.optional(),
 });
 export type M2Features = z.infer<typeof M2FeaturesSchema>;

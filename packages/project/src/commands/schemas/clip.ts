@@ -1,10 +1,18 @@
 import { z } from 'zod';
-import { AnimNumberSchema, AnimVec2Schema, LabelColorSchema, RGBASchema } from '../../schema/common.ts';
+import {
+	AnimNumberSchema,
+	AnimRGBASchema,
+	AnimVec2Schema,
+	LabelColorSchema,
+	RGBASchema,
+} from '../../schema/common.ts';
 import { DefaultScalingSchema } from '../../schema/document.ts';
 import {
 	BlendModeSchema,
 	CaptionStyleSchema,
 	ChannelsSchema,
+	SHAPE_STROKE_POSITIONS,
+	ShapeTypeSchema,
 	TextBoxSchema,
 	TextStyleSchema,
 } from '../../schema/sequence.ts';
@@ -51,6 +59,77 @@ const TextContentInput = z.strictObject({
 		.optional(),
 });
 
+// ---------------------------------------------------------------- text animators (M2, S11:TXA-006)
+
+/** A new animator side: `preset` (+ `version`, default the newest), window and params over the preset defaults. */
+export const TextAnimatorInputSchema = z.strictObject({
+	preset: z.string().min(1),
+	version: z.number().int().optional(),
+	/** Default: the preset's default scaled to the sequence fps. */
+	durationFrames: z.number().int().min(1).optional(),
+	params: z.record(z.string(), z.unknown()).optional(),
+});
+export type TextAnimatorInput = z.infer<typeof TextAnimatorInputSchema>;
+/** clip.addText: `null`/absent side = none. */
+export const TextAnimationInputSchema = z.strictObject({
+	in: TextAnimatorInputSchema.nullable().optional(),
+	out: TextAnimatorInputSchema.nullable().optional(),
+});
+export type TextAnimationInput = z.infer<typeof TextAnimationInputSchema>;
+/**
+ * clip.update side patch: `null` removes the side; with `preset` it replaces the side (params reset to the preset
+ * defaults, then merged); without `preset` it merges into the current side.
+ */
+export const TextAnimatorPatchSchema = z.strictObject({
+	preset: z.string().min(1).optional(),
+	version: z.number().int().optional(),
+	durationFrames: z.number().int().min(1).optional(),
+	params: z.record(z.string(), z.unknown()).optional(),
+});
+export const TextAnimationPatchSchema = z.strictObject({
+	in: TextAnimatorPatchSchema.nullable().optional(),
+	out: TextAnimatorPatchSchema.nullable().optional(),
+});
+export type TextAnimationPatch = z.infer<typeof TextAnimationPatchSchema>;
+
+// ---------------------------------------------------------------- shapes (M2, S11:SHP-003)
+
+const vec2 = z.tuple([z.number(), z.number()]);
+/** clip.addShape geometry (static values; keyframes through the keyframe commands). */
+export const ShapeInputSchema = z.strictObject({
+	type: ShapeTypeSchema,
+	/** Layer pixels; default 400×400. */
+	size: z.tuple([z.number().min(0), z.number().min(0)]).optional(),
+	/** Default white; `null` = no fill. */
+	fill: RGBASchema.nullable().optional(),
+	/** Default none. */
+	stroke: z
+		.strictObject({
+			color: RGBASchema,
+			width: z.number().min(0),
+			position: z.enum(SHAPE_STROKE_POSITIONS).optional(),
+		})
+		.nullable()
+		.optional(),
+	cornerRadius: z.number().min(0).optional(),
+});
+export type ShapeInput = z.infer<typeof ShapeInputSchema>;
+/** clip.update `shape` (merged; values static or Animatable like TransformPatch). The type is fixed. */
+export const ShapePatchSchema = z.strictObject({
+	size: z.union([vec2, AnimVec2Schema]).optional(),
+	fill: z.union([RGBASchema, AnimRGBASchema]).nullable().optional(),
+	stroke: z
+		.strictObject({
+			color: z.union([RGBASchema, AnimRGBASchema]).optional(),
+			width: z.union([z.number(), AnimNumberSchema]).optional(),
+			position: z.enum(SHAPE_STROKE_POSITIONS).optional(),
+		})
+		.nullable()
+		.optional(),
+	cornerRadius: z.union([z.number(), AnimNumberSchema]).optional(),
+});
+export type ShapePatch = z.infer<typeof ShapePatchSchema>;
+
 const placementTarget = {
 	sequenceId: IdRefSchema.optional(),
 	at: TimeInputSchema,
@@ -93,6 +172,8 @@ export const ClipAddTextCmd = cmd('clip.addText', {
 	content: TextContentInput,
 	box: TextBoxSchema.partial().optional(),
 	transform: TransformPatch.optional(),
+	/** M2 (S11:TXA-006): in/out animators. */
+	textAnimation: TextAnimationInputSchema.optional(),
 });
 export const ClipAddSolidCmd = cmd('clip.addSolid', { ...placementTarget, color: RGBASchema });
 export const ClipAddMotionGraphicCmd = cmd('clip.addMotionGraphic', {
@@ -114,6 +195,14 @@ export const ClipAddCompositionCmd = cmd('clip.addComposition', {
 	/** Props over the composition's defaultProps (validated against its propsSchema when known). */
 	props: z.record(z.string(), z.unknown()).optional(),
 	canvas: canvas.optional(),
+});
+/** M2 (S11:SHP-003): a rectangle or ellipse (default 400×400 at the sequence centre, 5 s). */
+export const ClipAddShapeCmd = cmd('clip.addShape', {
+	...placementTarget,
+	/** Default 5 s. */
+	duration: TimeInputSchema.optional(),
+	shape: ShapeInputSchema,
+	transform: TransformPatch.optional(),
 });
 export const ClipAddCaptionsCmd = cmd('clip.addCaptions', {
 	sequenceId: IdRefSchema.optional(),
@@ -234,6 +323,12 @@ export const ClipPatchSchema = z.strictObject({
 	loop: z.boolean().optional(),
 	maintainPitch: z.boolean().optional(),
 	style: CaptionStyleSchema.partial().optional(),
+	/** M2 (S11:TXA-006): text clips — `null` removes both sides; see TextAnimationPatchSchema. */
+	textAnimation: TextAnimationPatchSchema.nullable().optional(),
+	/** M2 (S11:SHP-003): shape clips — merged into the current shape. */
+	shape: ShapePatchSchema.optional(),
+	/** M2 (S11:ATP-009): motion-graphic clips — upgrade the template to `version` (params migrated). */
+	template: z.strictObject({ version: z.number().int() }).optional(),
 });
 export type ClipPatch = z.infer<typeof ClipPatchSchema>;
 
@@ -275,6 +370,7 @@ export const CLIP_COMMANDS = [
 	ClipAddSolidCmd,
 	ClipAddMotionGraphicCmd,
 	ClipAddCompositionCmd,
+	ClipAddShapeCmd,
 	ClipAddCaptionsCmd,
 	ClipAddAdjustmentCmd,
 	ClipMoveCmd,

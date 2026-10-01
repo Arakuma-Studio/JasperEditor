@@ -11,6 +11,7 @@ import {
 	type PropsUiHint,
 } from '../composition/json-schema.ts';
 import { contentTimeAt } from '../derive/index.ts';
+import { shapeIntrinsicBox } from '../factories.ts';
 import { evaluate } from '../keyframes.ts';
 import type { Animatable, RGBA } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
@@ -135,6 +136,8 @@ export function intrinsicBoxOf(ctx: PropertyContext): { width: number; height: n
 		const canvas = r.canvas as 'sequence' | { width: number; height: number };
 		return canvas === 'sequence' ? frame : { width: canvas.width, height: canvas.height };
 	}
+	// M2 (S11:SHP-001): size plus the stroke drawn outside the geometry.
+	if (clip.kind === 'shape') return shapeIntrinsicBox(clip.shape);
 	return frame;
 }
 

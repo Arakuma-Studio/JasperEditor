@@ -89,6 +89,8 @@ export function animatable<T extends z.ZodType>(value: T) {
 
 export const AnimNumberSchema = animatable(z.number());
 export const AnimVec2Schema = animatable(Vec2Schema);
+/** M2 (S11:SHP-001): animatable colours (shape fill/stroke). */
+export const AnimRGBASchema = animatable(RGBASchema);
 
 /**
  * A tone curve (ARCHITECTURE §19.2, S06:CG-030): control points `[x, y]` in 0..1, sorted by x, at least two.

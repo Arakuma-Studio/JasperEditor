@@ -41,6 +41,8 @@ export const MIGRATIONS: readonly MigrationStep[] = [
 	{ from: 1, to: 2, migrate: migrateV1ToV2 },
 	// v3 marks M2 additions so older builds open them read-only; existing data needs no changes.
 	{ from: 2, to: 3, migrate: (doc) => doc },
+	// v4 (S11, D-32): text animators, anime templates and shapes; same read-only policy, no data changes.
+	{ from: 3, to: 4, migrate: (doc) => doc },
 ];
 
 function unwrap(raw: unknown): Record<string, unknown> {

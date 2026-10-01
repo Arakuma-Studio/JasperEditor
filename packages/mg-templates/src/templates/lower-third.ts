@@ -20,7 +20,7 @@ import {
 	spring,
 	svgOpen,
 } from '../core.ts';
-import type { MgTemplateDefinition } from '../types.ts';
+import type { MgSvgTemplateDefinition } from '../types.ts';
 
 const PANEL_H = 150;
 const BAR_W = 10;
@@ -94,7 +94,7 @@ export function renderLowerThird(
 	);
 }
 
-export const lowerThird: MgTemplateDefinition<LowerThirdParams> = {
+export const lowerThird: MgSvgTemplateDefinition<LowerThirdParams> = {
 	id: 'lower-third',
 	version: 1,
 	name: 'Lower Third',

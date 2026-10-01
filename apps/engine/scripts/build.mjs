@@ -39,4 +39,6 @@ await build({
 	cpSync(join(root, 'src', 'processing', 'third-party'), join(root, 'dist', 'third-party'), {
 		recursive: true,
 	});
+	// M2 (S11): the anime.js licence text for About ▸ Licenses (the package itself ships in the Remotion bundle).
+	cpSync(join(root, 'src', 'anime', 'third-party'), join(root, 'dist', 'third-party'), { recursive: true });
 }

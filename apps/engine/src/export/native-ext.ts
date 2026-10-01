@@ -26,6 +26,21 @@ export type LayerOverride = {
 	includesFades?: boolean;
 	/** ffmpeg decoder for the input (e.g. `libvpx-vp9` for VP9 alpha); default: automatic. */
 	decoder?: string;
+	/**
+	 * M2 (S11:LBK-004, wp-m2-layer-bake): `path` is one still image (PNG, straight alpha) looped for the layer's
+	 * span like a still clip. Types only until the layer-bake package adds builder support.
+	 */
+	still?: boolean;
+	/**
+	 * M2 (S11:LBK-005): the intermediate covers only this region of the frame (sequence pixels) and is overlaid at
+	 * `x, y` (`sequence` space). Types only on contracts.
+	 */
+	rect?: { x: number; y: number; w: number; h: number };
+	/**
+	 * M2 (S11:LBK-010): the intermediate was rendered without the clip's colour runs; the builder applies them to
+	 * the override stream with the colour extension's filter. Types only on contracts.
+	 */
+	colorRuns?: boolean;
 };
 
 export type NativeEffectSupport = false | 'static' | 'animated';

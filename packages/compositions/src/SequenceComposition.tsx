@@ -8,8 +8,8 @@
 // black) are drawn under its clips.
 // Re-render budget (S03:ARC-011, NFR-003): `ClipLayer` reads the frame and resolves the clip's values
 // (static clips resolve to the same cached object), then hands them to a memoized `LayerView` that
-// skips rendering when nothing it draws changed. Layers that draw per-frame content (motion graphics)
-// are listed in FRAME_DEPENDENT_KINDS and re-render every frame.
+// skips rendering when nothing it draws changed. Layers that draw per-frame content (motion graphics, animated
+// text, keyframed shapes) are `isFrameDependent` and re-render every frame.
 import {
 	clipContentTime,
 	fadeFactor,
@@ -20,7 +20,7 @@ import {
 import { type ComponentType, memo, useMemo } from 'react';
 import { AbsoluteFill, Sequence, useCurrentFrame } from 'remotion';
 import { ColorDocContext, type ColorDocValue } from './color/chain.ts';
-import { useDocumentFonts } from './fonts.ts';
+import { FontsReadyContext, type FontsReadyState, useDocumentFonts } from './fonts.ts';
 import { AudioLayer, layerComponentFor } from './layers/index.ts';
 import { rgbaCss } from './metadata.ts';
 import { premountFrames } from './pipeline.ts';
@@ -32,6 +32,31 @@ export const FRAME_DEPENDENT_KINDS: ReadonlySet<string> = new Set([
 	'animated-image',
 	'composition',
 ]);
+
+const hasKeyframes = (v: { keyframes: unknown[] } | null | undefined): boolean =>
+	(v?.keyframes.length ?? 0) > 0;
+
+/**
+ * Layers whose output depends on the frame beyond `ResolvedLayerProps` (ARCHITECTURE §20.4): the
+ * FRAME_DEPENDENT_KINDS, text clips with animators in their source (S11:TXA-009) and shapes whose geometry or
+ * paint is keyframed (evaluated by the layer, S11:SHP-003).
+ */
+export function isFrameDependent(clip: Pick<RenderVisualClip, 'kind' | 'source'>): boolean {
+	if (FRAME_DEPENDENT_KINDS.has(clip.kind)) return true;
+	const src = clip.source;
+	if ('text' in src) return !!src.animation && !!(src.animation.in || src.animation.out);
+	if ('shape' in src) {
+		const s = src.shape;
+		return (
+			hasKeyframes(s.size) ||
+			hasKeyframes(s.fill) ||
+			hasKeyframes(s.cornerRadius) ||
+			hasKeyframes(s.stroke?.color) ||
+			hasKeyframes(s.stroke?.width)
+		);
+	}
+	return false;
+}
 
 /** Media kinds get a 2 s premount so decoders warm up before the cut (S03:RND-020). */
 const PREMOUNT_KINDS: ReadonlySet<string> = new Set(['video', 'still', 'animated-image']);
@@ -77,7 +102,7 @@ export function layerViewEqual(a: ViewProps, b: ViewProps): boolean {
 		a.fonts !== b.fonts
 	)
 		return false;
-	if (FRAME_DEPENDENT_KINDS.has(a.clip.kind)) return a.localFrame === b.localFrame;
+	if (isFrameDependent(a.clip)) return a.localFrame === b.localFrame;
 	return true;
 }
 
@@ -126,7 +151,8 @@ const ClipLayer = memo(function ClipLayer({
 });
 
 export function SequenceComposition({ doc, options }: SequenceCompositionProps) {
-	useDocumentFonts(doc.fonts);
+	const fontsLoaded = useDocumentFonts(doc.fonts);
+	const fontsReady = useMemo<FontsReadyState>(() => ({ allLoaded: fontsLoaded }), [fontsLoaded]);
 	const fps = doc.settings.fps.num / doc.settings.fps.den;
 	const offset = doc.range.start;
 	const background = options.transparentBackground ? 'transparent' : rgbaCss(doc.settings.backgroundColor);
@@ -150,62 +176,64 @@ export function SequenceComposition({ doc, options }: SequenceCompositionProps) 
 		[doc.media, options.colorBypassClipIds, options.isPreview],
 	);
 	return (
-		<ColorDocContext.Provider value={color}>
-			<AbsoluteFill style={{ backgroundColor: background, overflow: 'hidden', isolation: 'isolate' }}>
-				{tracks.map((track) => (
-					<AbsoluteFill key={track.trackId} data-track-id={track.trackId}>
-						{track.mattes.map((m) => (
-							<Sequence
-								key={`matte-${m.id}`}
-								from={m.start - offset}
-								durationInFrames={m.duration}
-								name="Transition matte"
-							>
-								<AbsoluteFill data-transition-matte={m.id} style={{ backgroundColor: rgbaCss(m.color) }} />
-							</Sequence>
-						))}
-						{track.clips.map((clip) => {
-							const head = clip.headHandle ?? 0;
-							const from = clip.start - head - offset;
-							return (
+		<FontsReadyContext.Provider value={fontsReady}>
+			<ColorDocContext.Provider value={color}>
+				<AbsoluteFill style={{ backgroundColor: background, overflow: 'hidden', isolation: 'isolate' }}>
+					{tracks.map((track) => (
+						<AbsoluteFill key={track.trackId} data-track-id={track.trackId}>
+							{track.mattes.map((m) => (
 								<Sequence
-									key={clip.clipId}
-									from={from}
-									durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
-									name={clip.name}
-									premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
+									key={`matte-${m.id}`}
+									from={m.start - offset}
+									durationInFrames={m.duration}
+									name="Transition matte"
 								>
-									<ClipLayer clip={clip} doc={doc} options={options} />
+									<AbsoluteFill data-transition-matte={m.id} style={{ backgroundColor: rgbaCss(m.color) }} />
 								</Sequence>
-							);
-						})}
-					</AbsoluteFill>
-				))}
-				{doc.audioClips.map((clip) => {
-					// An audio crossfade plays the clip's handles (S10:TUI-052).
-					const head = clip.headHandle ?? 0;
-					const from = clip.start - head - offset;
-					return (
-						<Sequence
-							key={clip.clipId}
-							from={from}
-							durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
-							name={clip.clipId}
-							layout="none"
-						>
-							<AudioLayer
-								clip={clip}
-								media={doc.media[clip.mediaId] ?? null}
-								fps={fps}
-								fpsRational={doc.settings.fps}
-								options={options}
-								master={doc.master}
-								sequenceFrom={from}
-							/>
-						</Sequence>
-					);
-				})}
-			</AbsoluteFill>
-		</ColorDocContext.Provider>
+							))}
+							{track.clips.map((clip) => {
+								const head = clip.headHandle ?? 0;
+								const from = clip.start - head - offset;
+								return (
+									<Sequence
+										key={clip.clipId}
+										from={from}
+										durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
+										name={clip.name}
+										premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
+									>
+										<ClipLayer clip={clip} doc={doc} options={options} />
+									</Sequence>
+								);
+							})}
+						</AbsoluteFill>
+					))}
+					{doc.audioClips.map((clip) => {
+						// An audio crossfade plays the clip's handles (S10:TUI-052).
+						const head = clip.headHandle ?? 0;
+						const from = clip.start - head - offset;
+						return (
+							<Sequence
+								key={clip.clipId}
+								from={from}
+								durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
+								name={clip.clipId}
+								layout="none"
+							>
+								<AudioLayer
+									clip={clip}
+									media={doc.media[clip.mediaId] ?? null}
+									fps={fps}
+									fpsRational={doc.settings.fps}
+									options={options}
+									master={doc.master}
+									sequenceFrom={from}
+								/>
+							</Sequence>
+						);
+					})}
+				</AbsoluteFill>
+			</ColorDocContext.Provider>
+		</FontsReadyContext.Provider>
 	);
 }

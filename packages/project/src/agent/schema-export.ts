@@ -7,6 +7,8 @@ import { isNotImplementedHandler } from '../commands/handlers/util.ts';
 import type { CommandType } from '../commands/schemas/index.ts';
 import { ERROR_CODES, type Registries, TX_PROTOCOL, WARNING_CODES } from '../commands/types.ts';
 import { PROPERTY_SPECS } from '../registry/properties.ts';
+import { KNOWN_CLIP_KINDS } from '../schema/sequence.ts';
+import { TEXT_ANIMATION_SPECS } from '../text-animations.ts';
 
 export type JsonSchema = Record<string, unknown>;
 
@@ -35,6 +37,23 @@ export type AgentSchema = {
 		defaults: unknown;
 		introFrames: number;
 		outroFrames: number;
+		/** M2 (S11:ANA-001): `fframes` or `anime`. */
+		renderer: 'fframes' | 'anime';
+		description?: string;
+		defaultDurationSeconds?: number;
+	}[];
+	/** M2 (S11:ANA-001): text animator presets (in/out animators of text clips). */
+	textAnimations: {
+		id: string;
+		version: number;
+		label: string;
+		category: string;
+		phases: readonly ('in' | 'out')[];
+		paramsSchema: JsonSchema;
+		defaults: unknown;
+		/** At 30 fps; scaled to the sequence rate on apply. */
+		defaultDurationFrames: number;
+		description: string;
 	}[];
 	presets: { id: string; name: string; settings: unknown }[];
 	properties: {
@@ -44,6 +63,8 @@ export type AgentSchema = {
 		unit?: string;
 		range?: unknown;
 		animatable: string;
+		/** M2 (S11:ANA-001): clip kinds the property applies to. */
+		kinds: string[];
 	}[];
 	errorCodes: readonly string[];
 	warningCodes: readonly string[];
@@ -89,6 +110,20 @@ export function exportAgentSchema(registries: Registries): AgentSchema {
 			defaults: t.defaults,
 			introFrames: t.introFrames,
 			outroFrames: t.outroFrames,
+			renderer: t.renderer ?? 'fframes',
+			...(t.description ? { description: t.description } : {}),
+			...(t.defaultDurationSeconds !== undefined ? { defaultDurationSeconds: t.defaultDurationSeconds } : {}),
+		})),
+		textAnimations: TEXT_ANIMATION_SPECS.map((t) => ({
+			id: t.id,
+			version: t.version,
+			label: t.label,
+			category: t.category,
+			phases: t.phases,
+			paramsSchema: toJsonSchema(t.paramsSchema),
+			defaults: t.defaults,
+			defaultDurationFrames: t.defaultDurationFrames,
+			description: t.description,
 		})),
 		presets: registries.presets.list().map((p) => ({ id: p.id, name: p.name, settings: p.settings })),
 		properties: PROPERTY_SPECS.map((p) => ({
@@ -98,6 +133,7 @@ export function exportAgentSchema(registries: Registries): AgentSchema {
 			unit: p.unit,
 			range: p.range,
 			animatable: p.animatable,
+			kinds: KNOWN_CLIP_KINDS.filter((kind) => p.appliesTo({ kind })),
 		})),
 		errorCodes: ERROR_CODES,
 		warningCodes: WARNING_CODES,

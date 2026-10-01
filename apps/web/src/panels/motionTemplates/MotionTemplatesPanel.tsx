@@ -3,13 +3,14 @@
 // double-click / Enter / drag onto the timeline. fframes templates come from @jasper/mg-templates;
 // the engine catalog tells whether the native renderer (jasper-mg) is ready for them.
 import type { MgTemplateCatalogEntry } from '@jasper/api';
-import { type AnyMgTemplate, mgRegistry } from '@jasper/mg-templates';
+import { type AnySvgMgTemplate, isSvgTemplate, mgRegistry } from '@jasper/mg-templates';
 import type { SessionState } from '@jasper/session';
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import { cx, Icon, openDialog, Tabs } from '@jasper/ui';
 import { useEffect, useMemo, useState } from 'react';
 import { MG_IMPORT_DIALOG } from '../../mg-bundles/ImportDialog.tsx';
 import { useEngine } from '../../state/engine.tsx';
+import { TextAnimationsTab } from '../../text-animation/TextAnimationsTab.tsx';
 import type { PanelProps } from '../types.ts';
 import { insertMotionTemplate, type MgTemplateRef, writeMgTemplateDrag } from './insert.ts';
 import { RemotionTab } from './RemotionTab.tsx';
@@ -26,7 +27,7 @@ type GalleryEntry = {
 	native: boolean;
 	durationSeconds: number;
 	aspects: string[];
-	def: AnyMgTemplate;
+	def: AnySvgMgTemplate;
 };
 
 type NullableStore = {
@@ -39,20 +40,24 @@ const ASPECTS: Record<string, string> = { '1920x1080': '16:9', '1080x1920': '9:1
 
 /** Merges the TS catalog with the engine's (native flags); pure for tests. */
 export function galleryEntries(engineTemplates: MgTemplateCatalogEntry[] | null): GalleryEntry[] {
-	return mgRegistry.definitions().map((def) => {
-		const remote = engineTemplates?.find((t) => t.id === def.id && t.version === def.version);
-		return {
-			ref: { id: def.id, version: def.version },
-			name: def.name,
-			category: def.category,
-			description: def.description ?? '',
-			engine: 'fframes',
-			native: remote?.native === true,
-			durationSeconds: def.defaultDurationSeconds,
-			aspects: def.canvases.map((c) => ASPECTS[`${c.width}x${c.height}`] ?? `${c.width}x${c.height}`),
-			def,
-		};
-	});
+	// fframes templates (anime templates join the gallery with wp-m2-anime-templates, S11:ATP-007).
+	return mgRegistry
+		.definitions()
+		.filter(isSvgTemplate)
+		.map((def) => {
+			const remote = engineTemplates?.find((t) => t.id === def.id && t.version === def.version);
+			return {
+				ref: { id: def.id, version: def.version },
+				name: def.name,
+				category: def.category,
+				description: def.description ?? '',
+				engine: 'fframes',
+				native: remote?.native === true,
+				durationSeconds: def.defaultDurationSeconds,
+				aspects: def.canvases.map((c) => ASPECTS[`${c.width}x${c.height}`] ?? `${c.width}x${c.height}`),
+				def,
+			};
+		});
 }
 
 export function filterEntries(
@@ -69,7 +74,7 @@ export function filterEntries(
 }
 
 /** Static preview: the twin at 50 % of the default duration, 16:9 canvas. */
-export function previewSvg(def: AnyMgTemplate): string {
+export function previewSvg(def: AnySvgMgTemplate): string {
 	const fps = 30;
 	const duration = Math.max(1, Math.round(def.defaultDurationSeconds * fps));
 	return def.renderSvg(
@@ -180,12 +185,14 @@ function TemplateCard({
 	);
 }
 
-/** Last tab used (per browser), so the Remotion tab stays open across reloads. */
-function initialTab(): 'templates' | 'remotion' {
+type MotionTemplatesTab = 'templates' | 'textAnimations' | 'remotion';
+const TABS: readonly MotionTemplatesTab[] = ['templates', 'textAnimations', 'remotion'];
+
+/** Last tab used (per browser), so the chosen tab stays open across reloads. */
+function initialTab(): MotionTemplatesTab {
 	try {
-		return globalThis.localStorage?.getItem('jasper.motionTemplates.tab') === 'remotion'
-			? 'remotion'
-			: 'templates';
+		const t = globalThis.localStorage?.getItem('jasper.motionTemplates.tab');
+		return TABS.includes(t as MotionTemplatesTab) ? (t as MotionTemplatesTab) : 'templates';
 	} catch {
 		return 'templates';
 	}
@@ -202,7 +209,7 @@ export function MotionTemplatesPanel(props: PanelProps) {
 	const [category, setCategory] = useState<string | null>(null);
 	const [engine, setEngine] = useState<EngineFilter>('all');
 	const [message, setMessage] = useState<{ kind: 'info' | 'error'; text: string } | null>(null);
-	const [tab, setTab] = useState<'templates' | 'remotion'>(() => initialTab());
+	const [tab, setTab] = useState<MotionTemplatesTab>(() => initialTab());
 	const { client } = useEngine();
 	const entries = useMemo(() => galleryEntries(catalog.templates), [catalog.templates]);
 	const previews = useMemo(() => new Map(entries.map((e) => [e.def, previewSvg(e.def)])), [entries]);
@@ -315,7 +322,7 @@ export function MotionTemplatesPanel(props: PanelProps) {
 				className="h-full"
 				value={tab}
 				onValueChange={(v) => {
-					setTab(v as 'templates' | 'remotion');
+					setTab(v as MotionTemplatesTab);
 					try {
 						globalThis.localStorage?.setItem('jasper.motionTemplates.tab', v);
 					} catch {
@@ -324,6 +331,8 @@ export function MotionTemplatesPanel(props: PanelProps) {
 				}}
 				items={[
 					{ value: 'templates', label: 'Templates', content: templates },
+					// M2 (S11:TXA-020, wp-m2-text-anim)
+					{ value: 'textAnimations', label: 'Text Animations', content: <TextAnimationsTab /> },
 					{
 						value: 'remotion',
 						label: 'Remotion',

@@ -18,7 +18,7 @@ import {
 	type Rgba,
 	svgOpen,
 } from '../core.ts';
-import type { MgTemplateDefinition } from '../types.ts';
+import type { MgSvgTemplateDefinition } from '../types.ts';
 
 const TITLE_SIZE = 96;
 const SUBTITLE_SIZE = 44;
@@ -88,7 +88,7 @@ export function renderTitleCard(
 	return `${s}</g></g></svg>`;
 }
 
-export const titleCard: MgTemplateDefinition<TitleCardParams> = {
+export const titleCard: MgSvgTemplateDefinition<TitleCardParams> = {
 	id: 'title-card',
 	version: 1,
 	name: 'Title Card',

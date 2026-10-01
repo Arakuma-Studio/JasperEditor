@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { schemaFiles } from '../scripts/generate-schemas.ts';
-import { canonicalJson, MG_CATALOG, mgRegistry } from '../src/index.ts';
+import { canonicalJson, FFRAMES_CATALOG, MG_CATALOG, mgRegistry } from '../src/index.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, '..', '..', '..');
@@ -98,7 +98,7 @@ describe.skipIf(!parityEnabled)('native parity (MG_PARITY=1)', () => {
 		const native = JSON.parse(execFileSync(binary, ['schema'], { encoding: 'utf8' })) as {
 			templates: Record<string, unknown>[];
 		};
-		const ts = mgRegistry.catalogJson();
+		const ts = mgRegistry.catalogJson().filter((t) => t.renderer !== 'anime');
 		expect(native.templates.map((t) => `${t.id}@${t.version}`)).toEqual(
 			ts.map((t) => `${t.id}@${t.version}`),
 		);
@@ -132,7 +132,7 @@ describe.skipIf(!parityEnabled)('native parity (MG_PARITY=1)', () => {
 			],
 			'title-card': [{}, { alignment: 'right', subtitle: '', fadeInFrames: 0, background: [1, 1, 1, 0.5] }],
 		};
-		for (const def of MG_CATALOG) {
+		for (const def of FFRAMES_CATALOG) {
 			for (const params of paramSets[def.id]!) {
 				for (const c of cases) {
 					const spec = { template: { id: def.id, version: def.version }, params, ...c };

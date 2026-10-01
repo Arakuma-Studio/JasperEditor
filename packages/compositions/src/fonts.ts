@@ -5,7 +5,7 @@
 // because that helper calls `cancelRender` when a face fails to load, which would abort a whole export
 // for one missing font; S03:TXT-005 wants a fallback to the default sans font instead. The format is
 // derived from the URL extension the same way `@remotion/fonts` does, when possible.
-import { useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { continueRender, delayRender } from 'remotion';
 import type { RenderDoc } from './types.ts';
 
@@ -56,11 +56,33 @@ function loadFontFace(f: FontFaceSpec): Promise<boolean> {
 }
 
 /**
+ * Font readiness for font-dependent layers (S11:FIX-003, ARCHITECTURE §20.4): text and anime-template layers do
+ * not split, measure or build timelines before their faces are loaded. Provided by SequenceComposition from
+ * `useDocumentFonts`. Contracts: one flag for the whole document; wp-m2-anime-core refines it per face
+ * (`isLoaded`). Without a provider every family counts as loaded (standalone layers, tests).
+ */
+export type FontsReadyState = {
+	/** Every face of the document has settled (loaded or failed → fallback stack). */
+	allLoaded: boolean;
+	/** Per-family readiness (optional refinement); falls back to `allLoaded`. */
+	isLoaded?(family: string): boolean;
+};
+export const FontsReadyContext = createContext<FontsReadyState>({ allLoaded: true });
+
+/** True when the faces of every given family have settled. */
+export function useFontsReady(families: readonly string[]): boolean {
+	const state = useContext(FontsReadyContext);
+	return families.every((f) => (state.isLoaded ? state.isLoaded(f) : state.allLoaded));
+}
+
+/**
  * Holds rendering until the document's fonts are loaded (or failed; failed faces fall back to
  * FALLBACK_FONT_STACK). `fonts` should keep its identity while unchanged (see stabilizeRenderDoc).
+ * Returns whether the current `fonts` have settled (M2, FontsReadyContext).
  */
-export function useDocumentFonts(fonts: readonly FontFaceSpec[]): void {
+export function useDocumentFonts(fonts: readonly FontFaceSpec[]): boolean {
 	const [handle] = useState(() => (fonts.length ? delayRender('Loading fonts') : null));
+	const [settled, setSettled] = useState<readonly FontFaceSpec[] | null>(null);
 	useEffect(() => {
 		let cancelled = false;
 		const done = () => {
@@ -73,6 +95,7 @@ export function useDocumentFonts(fonts: readonly FontFaceSpec[]): void {
 		const inner = delayRender(`Loading ${fonts.length} font face(s)`);
 		void Promise.all(fonts.map(loadFontFace)).then(() => {
 			if (!cancelled) {
+				setSettled(fonts);
 				continueRender(inner);
 				done();
 			}
@@ -85,4 +108,5 @@ export function useDocumentFonts(fonts: readonly FontFaceSpec[]): void {
 			done();
 		};
 	}, [fonts, handle]);
+	return fonts.length === 0 || settled === fonts;
 }

@@ -4,6 +4,7 @@ import type { DeepStrip } from './common.ts';
 import {
 	AnimNumberSchema,
 	AnimParamSchema,
+	AnimRGBASchema,
 	AnimVec2Schema,
 	int,
 	LabelColorSchema,
@@ -72,6 +73,25 @@ export const TextBoxSchema = z.looseObject({
 	autoSize: z.enum(['none', 'width', 'height']),
 });
 export type TextBox = DeepStrip<z.infer<typeof TextBoxSchema>>;
+
+/**
+ * M2 (S11:TXA-001, schema v4): one in/out animator of a text clip. `preset` + `version` name a catalogue entry
+ * (`TEXT_ANIMATION_SPECS`, implementations in `@jasper/motion/text`); `durationFrames` is the window length in
+ * sequence frames; `params` are the preset's params (validated by its schema; unknown presets are preserved).
+ */
+export const TextAnimatorSchema = z.looseObject({
+	preset: z.string(),
+	version: int(),
+	durationFrames: z.number().int().min(1),
+	params: z.record(z.string(), z.unknown()),
+});
+export type TextAnimator = DeepStrip<z.infer<typeof TextAnimatorSchema>>;
+/** `null` / absent side = no animator on that side. */
+export const TextAnimationSchema = z.looseObject({
+	in: TextAnimatorSchema.nullable().optional(),
+	out: TextAnimatorSchema.nullable().optional(),
+});
+export type TextAnimation = DeepStrip<z.infer<typeof TextAnimationSchema>>;
 
 export const CaptionStyleSchema = TextStyleSchema.extend({
 	highlight: z.looseObject({ mode: z.enum(['none', 'word', 'karaoke']), color: RGBASchema }),
@@ -179,6 +199,8 @@ export const KNOWN_CLIP_KINDS = [
 	'nest-video',
 	'nest-audio',
 	'adjustment',
+	// M2 (S11:SHP-001, schema v4)
+	'shape',
 ] as const;
 export type KnownClipKind = (typeof KNOWN_CLIP_KINDS)[number];
 
@@ -301,6 +323,8 @@ export const TextClipSchema = z.looseObject({
 	box: TextBoxSchema,
 	layoutPending: z.boolean().optional(),
 	...visualShape,
+	/** M2 (S11:TXA-001): in/out animators (schema v4). */
+	textAnimation: TextAnimationSchema.optional(),
 });
 export const SolidClipSchema = z.looseObject({
 	...commonShape,
@@ -316,10 +340,19 @@ export const CaptionsClipSchema = z.looseObject({
 	transform: TransformSchema,
 	opacity: AnimNumberSchema,
 });
+/** M2 (S11:ATP-001): how a motion-graphic template is drawn — `fframes` (jasper-mg + SVG twin) or `anime`. */
+export const MG_RENDERERS = ['fframes', 'anime'] as const;
+export const MgRendererSchema = z.enum(MG_RENDERERS);
+export type MgRenderer = DeepStrip<z.infer<typeof MgRendererSchema>>;
+
 export const MotionGraphicClipSchema = z.looseObject({
 	...commonShape,
 	kind: z.literal('motion-graphic'),
-	template: z.looseObject({ id: z.string(), version: int() }),
+	/**
+	 * M2 (S11:ATP-002, schema v4): `renderer` is stamped from the template registry by `clip.addMotionGraphic`;
+	 * absent = `fframes` (the M1 templates).
+	 */
+	template: z.looseObject({ id: z.string(), version: int(), renderer: MgRendererSchema.optional() }),
 	params: z.record(z.string(), z.unknown()),
 	canvas: canvasSchema,
 	...visualShape,
@@ -360,6 +393,39 @@ export const AdjustmentClipSchema = z.looseObject({
 	effects: z.array(EffectInstanceSchema),
 });
 
+// ---------------------------------------------------------------- shapes (M2, S11:SHP-001, schema v4)
+
+export const SHAPE_TYPES = ['rect', 'ellipse'] as const;
+export const ShapeTypeSchema = z.enum(SHAPE_TYPES);
+export type ShapeType = DeepStrip<z.infer<typeof ShapeTypeSchema>>;
+export const SHAPE_STROKE_POSITIONS = ['inside', 'center', 'outside'] as const;
+export const ShapeStrokeSchema = z.looseObject({
+	color: AnimRGBASchema,
+	/** Visible stroke width in layer pixels (whatever the position). */
+	width: AnimNumberSchema,
+	position: z.enum(SHAPE_STROKE_POSITIONS),
+});
+export type ShapeStroke = DeepStrip<z.infer<typeof ShapeStrokeSchema>>;
+/** Geometry and paint of a shape clip; every numeric/colour field is an Animatable (KF evaluator). */
+export const ShapeDataSchema = z.looseObject({
+	type: ShapeTypeSchema,
+	/** Width and height in layer pixels. */
+	size: AnimVec2Schema,
+	/** `null` = no fill. */
+	fill: AnimRGBASchema.nullable(),
+	/** `null` = no stroke. */
+	stroke: ShapeStrokeSchema.nullable(),
+	/** Rectangle corner radius in layer pixels (ignored by ellipses). */
+	cornerRadius: AnimNumberSchema,
+});
+export type ShapeData = DeepStrip<z.infer<typeof ShapeDataSchema>>;
+export const ShapeClipSchema = z.looseObject({
+	...commonShape,
+	kind: z.literal('shape'),
+	shape: ShapeDataSchema,
+	...visualShape,
+});
+
 export const KnownClipSchema = z.discriminatedUnion('kind', [
 	VideoClipSchema,
 	AudioClipSchema,
@@ -373,6 +439,7 @@ export const KnownClipSchema = z.discriminatedUnion('kind', [
 	NestVideoClipSchema,
 	NestAudioClipSchema,
 	AdjustmentClipSchema,
+	ShapeClipSchema,
 ]);
 
 export type VideoClip = DeepStrip<z.infer<typeof VideoClipSchema>>;
@@ -387,6 +454,7 @@ export type CompositionClip = DeepStrip<z.infer<typeof CompositionClipSchema>>;
 export type NestVideoClip = DeepStrip<z.infer<typeof NestVideoClipSchema>>;
 export type NestAudioClip = DeepStrip<z.infer<typeof NestAudioClipSchema>>;
 export type AdjustmentClip = DeepStrip<z.infer<typeof AdjustmentClipSchema>>;
+export type ShapeClip = DeepStrip<z.infer<typeof ShapeClipSchema>>;
 export type KnownClip = DeepStrip<z.infer<typeof KnownClipSchema>>;
 
 const ClipCommonSchema = z.looseObject(commonShape);
@@ -424,7 +492,8 @@ export type VisualClip =
 	| SolidClip
 	| MotionGraphicClip
 	| CompositionClip
-	| NestVideoClip;
+	| NestVideoClip
+	| ShapeClip;
 
 // ---------------------------------------------------------------- transitions, links, groups
 

@@ -236,10 +236,44 @@ export const KIND_CAPABILITIES: Record<KnownClipKind, KindCapabilities> = {
 		defaultLabel: 'tan',
 		priority: 'P1',
 	},
+	// M2 (S11:SHP-002): drawn by the compositions (inline SVG); exported natively through the layer bake.
+	shape: {
+		kind: 'shape',
+		trackKind: 'video',
+		source: 'inline',
+		bounded: 'no',
+		visual: true,
+		audio: false,
+		hasTransform: true,
+		hasOpacity: true,
+		supportsEffects: true,
+		supportsSpeed: false,
+		engines: { preview: 'remotion', export: 'remotion' },
+		badge: 'R',
+		m1: true,
+		// The graphics label (S05:DT-021 Remotion graphics), like composition clips.
+		defaultLabel: 'magenta',
+		priority: 'P0',
+	},
 };
 
 export function kindCapabilities(kind: string): KindCapabilities | null {
 	return isKnownClipKind(kind) ? KIND_CAPABILITIES[kind] : null;
+}
+
+export type ClipEngines = Pick<KindCapabilities, 'badge'> & KindCapabilities['engines'];
+
+/**
+ * Engines of one clip (S11:ATP-002, ARCHITECTURE §20.1): the kind's defaults, except motion-graphic clips whose
+ * template is drawn by anime.js (`template.renderer: 'anime'`), which are Remotion-rendered (badge R).
+ * Null for unknown kinds.
+ */
+export function clipEngines(clip: { kind: string; template?: { renderer?: string } }): ClipEngines | null {
+	const caps = kindCapabilities(clip.kind);
+	if (!caps) return null;
+	if (clip.kind === 'motion-graphic' && clip.template?.renderer === 'anime')
+		return { preview: 'remotion', export: 'remotion', badge: 'R' };
+	return { ...caps.engines, badge: caps.badge };
 }
 
 /** Track kind a clip kind belongs on (S01:TRK-003). Unknown kinds return null (any track). */

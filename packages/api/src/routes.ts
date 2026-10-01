@@ -20,6 +20,7 @@ import {
 } from './exports.ts';
 import { FontCatalogSchema } from './fonts.ts';
 import { EngineJobSchema, JobListQuerySchema, JobListResponseSchema } from './jobs.ts';
+import { LayerBakePreviewRequestSchema } from './layer-bake.ts';
 import {
 	DerivativesRequestSchema,
 	MediaRegisterRequestSchema,
@@ -68,7 +69,9 @@ export type RouteOwner =
 	| 'wp-m2-color'
 	| 'wp-m2-process'
 	| 'wp-m2-mg'
-	| 'wp-m2-track';
+	| 'wp-m2-track'
+	// M2 animation (ARCHITECTURE §20, S11 §10)
+	| 'wp-m2-layer-bake';
 
 export type RouteDef = {
 	method: HttpMethod;
@@ -433,6 +436,15 @@ export const ROUTES = {
 		body: TrackRequestSchema,
 		response: EngineJobSchema,
 		owner: 'wp-m2-track',
+	},
+	// ---- M2 animation (ARCHITECTURE §20.5)
+	/** Graded VP9-alpha preview of one DOM layer (S11:LBK-010). */
+	layerBakePreview: {
+		method: 'POST',
+		path: '/api/layer-bake/preview',
+		body: LayerBakePreviewRequestSchema,
+		response: EngineJobSchema,
+		owner: 'wp-m2-layer-bake',
 	},
 } as const satisfies Record<string, RouteDef>;
 

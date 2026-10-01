@@ -4,6 +4,7 @@
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	type Clip,
+	clipEngines,
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
 	kindCapabilities,
@@ -230,7 +231,8 @@ function ClipViewImpl(p: ClipViewProps) {
 	}
 	const showName = p.w >= 12 && (isAudio ? p.display.audioNames : p.display.videoNames);
 	const showBadges = p.w >= 40;
-	const badge = caps?.badge ?? null;
+	// M2 (S11:ATP-002): per clip, so anime templates show R.
+	const badge = clipEngines(c)?.badge ?? null;
 	const hasFx = ((c as { effects?: unknown[] }).effects?.length ?? 0) > 0;
 	const nameOffset = Math.max(0, -p.x);
 	const body = p.offline

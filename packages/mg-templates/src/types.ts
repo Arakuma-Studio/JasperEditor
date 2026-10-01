@@ -21,14 +21,24 @@ export type MgSvgOptions = {
 	idPrefix?: string;
 };
 
-export type MgTemplateDefinition<P extends Record<string, unknown> = Record<string, unknown>> = {
+/**
+ * One step of a template's version upgrade path (S11:ATP-009): params of `fromVersion` → params of the next
+ * version the definition carrying the step accepts.
+ */
+export type MgTemplateUpgradeStep = {
+	fromVersion: number;
+	migrate(params: Record<string, unknown>): Record<string, unknown>;
+};
+
+/** Fields shared by every template, whatever draws it. */
+export type MgTemplateBase<P extends Record<string, unknown> = Record<string, unknown>> = {
 	id: string;
 	version: number;
 	name: string;
 	category: string;
 	/** One-line description for the Motion Templates gallery. */
 	description?: string;
-	/** Must mirror the Rust serde struct of the template (strict object, every field defaulted). */
+	/** Strict object, every field defaulted (fframes: must mirror the Rust serde struct of the template). */
 	paramsSchema: ZodType<P>;
 	defaults: P;
 	/** Frames kept intact when the clip duration changes ("Responsive Design – Time", S01:KND-009). */
@@ -36,13 +46,51 @@ export type MgTemplateDefinition<P extends Record<string, unknown> = Record<stri
 	outroFrames: number;
 	/** Default clip length when the template is inserted (S05:MGT-002). */
 	defaultDurationSeconds: number;
-	/** Canvases the Rust template supports natively (others are scaled). */
+	/** Canvases the template is designed for (others are scaled). */
 	canvases: MgCanvas[];
-	/**
-	 * SVG markup for one frame (straight alpha, transparent background). `frame` is the clip-local frame
-	 * (0-based) at `fps`; the result is a complete `<svg>` element sized to `canvas`.
-	 */
-	renderSvg(params: P, frame: number, fps: number, canvas: MgCanvas, options?: MgSvgOptions): string;
+	/** M2 (S11:ATP-009): upgrade path from older versions of this template id to this version. */
+	upgrades?: readonly MgTemplateUpgradeStep[];
 };
 
+/** fframes template (D-12): rendered by `jasper-mg`, previewed by its TS SVG twin. */
+export type MgSvgTemplateDefinition<P extends Record<string, unknown> = Record<string, unknown>> =
+	MgTemplateBase<P> & {
+		/** Absent = fframes. */
+		renderer?: 'fframes';
+		/**
+		 * SVG markup for one frame (straight alpha, transparent background). `frame` is the clip-local frame
+		 * (0-based) at `fps`; the result is a complete `<svg>` element sized to `canvas`.
+		 */
+		renderSvg(params: P, frame: number, fps: number, canvas: MgCanvas, options?: MgSvgOptions): string;
+	};
+
+/**
+ * M2 (S11:ATP-001): anime.js template — metadata only. The React implementation lives in
+ * `@jasper/motion/templates` (`ANIME_TEMPLATE_IMPLS['id@version']`); this package never imports animejs.
+ */
+export type MgAnimeTemplateDefinition<P extends Record<string, unknown> = Record<string, unknown>> =
+	MgTemplateBase<P> & {
+		renderer: 'anime';
+		/** Bumped whenever the implementation's pixels change (part of the layer-bake render key, S11:LBK-020). */
+		renderVersion: number;
+		/** Poster time in seconds of content time (gallery poster; default: middle of the default duration). */
+		posterAt?: number;
+	};
+
+export type MgTemplateDefinition<P extends Record<string, unknown> = Record<string, unknown>> =
+	| MgSvgTemplateDefinition<P>
+	| MgAnimeTemplateDefinition<P>;
+
 export type AnyMgTemplate = MgTemplateDefinition<any>;
+export type AnySvgMgTemplate = MgSvgTemplateDefinition<any>;
+export type AnyAnimeMgTemplate = MgAnimeTemplateDefinition<any>;
+
+/** True for templates drawn by anime.js (`renderer: 'anime'`). */
+export function isAnimeTemplate(def: AnyMgTemplate): def is AnyAnimeMgTemplate {
+	return def.renderer === 'anime';
+}
+
+/** True for fframes templates (SVG twin + `jasper-mg`). */
+export function isSvgTemplate(def: AnyMgTemplate): def is AnySvgMgTemplate {
+	return def.renderer !== 'anime';
+}

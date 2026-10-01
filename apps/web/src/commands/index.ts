@@ -11,6 +11,8 @@ import { mgCommands } from './mg.ts';
 import { processCommands } from './process.ts';
 import { projectCommands } from './project.ts';
 import { registerCommands } from './registry.ts';
+import { shapeCommands } from './shapes.ts';
+import { textAnimationCommands } from './text-animation.ts';
 import { timelineCommands } from './timeline.ts';
 import { trackingCommands } from './tracking.ts';
 import { transitionCommands } from './transitions.ts';
@@ -39,6 +41,9 @@ const COMMAND_MODULES: UiCommand[][] = [
 	compositionCommands,
 	trackingCommands,
 	transitionCommands,
+	// M2 animation (ARCHITECTURE §20.6)
+	textAnimationCommands,
+	shapeCommands,
 ];
 
 let registered = false;

@@ -1,6 +1,6 @@
 import type { MgTemplateInfo, MgTemplateRegistry } from '@jasper/project';
 import { z } from 'zod';
-import type { AnyMgTemplate } from './types.ts';
+import { type AnyMgTemplate, isAnimeTemplate } from './types.ts';
 
 export type MgRegistry = MgTemplateRegistry & {
 	definitions(): AnyMgTemplate[];
@@ -21,6 +21,8 @@ export type MgCatalogEntryJson = {
 	defaultDurationSeconds: number;
 	description?: string;
 	canvases: string[];
+	/** M2 (S11:ATP-008): present for anime templates only (absent = fframes, unchanged for jasper-mg parity). */
+	renderer?: 'anime';
 };
 
 const key = (id: string, version: number) => `${id}@${version}`;
@@ -36,6 +38,10 @@ function toTemplateInfo(def: AnyMgTemplate): MgTemplateInfo {
 		outroFrames: def.outroFrames,
 		canvasDefault: 'sequence',
 		canvases: def.canvases,
+		// M2 (S11:ATP-001/ANA-001): additive.
+		...(isAnimeTemplate(def) ? { renderer: 'anime' as const } : {}),
+		...(def.description ? { description: def.description } : {}),
+		defaultDurationSeconds: def.defaultDurationSeconds,
 	};
 }
 
@@ -73,6 +79,7 @@ export function createMgRegistry(defs: readonly AnyMgTemplate[]): MgRegistry {
 				defaultDurationSeconds: d.defaultDurationSeconds,
 				...(d.description ? { description: d.description } : {}),
 				canvases: d.canvases.map((c) => `${c.width}x${c.height}`),
+				...(isAnimeTemplate(d) ? { renderer: 'anime' as const } : {}),
 			})),
 	};
 }

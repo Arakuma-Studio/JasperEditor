@@ -10,6 +10,7 @@ export * from './pipeline.ts';
 export { RemotionRoot } from './Root.tsx';
 export {
 	FRAME_DEPENDENT_KINDS,
+	isFrameDependent,
 	isStaticClip,
 	layerPropsAt,
 	layerViewEqual,

@@ -4,6 +4,7 @@ import type { LayerProps } from '../types.ts';
 import { CompositionLayer } from './CompositionLayer.tsx';
 import { MotionGraphicLayer } from './MotionGraphicLayer.tsx';
 import { OfflineCard } from './OfflineCard.tsx';
+import { ShapeLayer } from './ShapeLayer.tsx';
 import { SolidLayer } from './SolidLayer.tsx';
 import { StillLayer } from './StillLayer.tsx';
 import { TextLayer } from './TextLayer.tsx';
@@ -21,6 +22,7 @@ export {
 	MotionGraphicLayer,
 	OfflineCard,
 	ProxyPendingCard,
+	ShapeLayer,
 	SolidLayer,
 	StillLayer,
 	TextLayer,
@@ -36,6 +38,8 @@ export const LAYER_COMPONENTS: Partial<Record<string, ComponentType<LayerProps>>
 	solid: SolidLayer,
 	'motion-graphic': MotionGraphicLayer,
 	composition: CompositionLayer,
+	// M2 (S11:SHP-004, wp-m2-shapes)
+	shape: ShapeLayer,
 };
 
 const MEDIA_KINDS = new Set(['video', 'still', 'animated-image']);
