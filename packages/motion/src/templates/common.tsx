@@ -116,10 +116,13 @@ export function templateFit(canvas: { width: number; height: number }): Fit {
 
 /**
  * The render canvas with a design-space stage inside (position, size and scale of `fit`). Children are laid out in
- * design pixels. Nothing is clipped: animated parts may leave the stage (S11:TXA-012 spirit).
+ * design pixels. The canvas clips its content (`overflow: hidden`, like the fframes SVG twin): what a template draws
+ * outside its canvas is never shown, so the Player, `renderStill` and the hybrid export (whose crop rect is the
+ * layer box plus a bleed, `contentBleed` 0 for motion graphics) agree. Parts may still leave the design stage when
+ * the canvas is wider than the design aspect (the stage is fitted with `contain`).
  */
 export function DesignStage({ fit, children, label }: { fit: Fit; children: ReactNode; label: string }) {
-	const outer: CSSProperties = { position: 'absolute', inset: 0, overflow: 'visible', pointerEvents: 'none' };
+	const outer: CSSProperties = { position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' };
 	const stage: CSSProperties = {
 		position: 'absolute',
 		left: 0,

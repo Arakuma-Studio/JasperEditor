@@ -244,6 +244,8 @@ const BOX_BOUND_EFFECTS: ReadonlySet<string> = new Set([
 /**
  * Extra margin (layer px) around the layer box for what may draw outside it: text stroke, shadow and background
  * padding, text-animator travel (`distance`, `blur`, `scale` params), blur effects. Null = unknown (do not crop).
+ * Motion graphics add none: both renderers clip to their canvas, which is the layer box (the fframes SVG, the anime
+ * templates' `DesignStage`), so the Player shows exactly what the cropped bake renders.
  */
 export function contentBleed(
 	c: RenderVisualClip,

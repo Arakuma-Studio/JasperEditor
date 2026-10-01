@@ -54,10 +54,12 @@ function toTemplateInfo(def: AnyMgTemplate): MgTemplateInfo {
 
 /**
  * Template version upgrade (S11:ATP-009, FIX-005). Definitions carry `upgrades: [{fromVersion, migrate}]` (params
- * of `id@fromVersion` → params of that definition's version). From `fromVersion` the walk repeatedly takes the
- * step to the highest version reachable in one step (not above `toVersion` when given), validating the migrated
- * params with the target's schema (defaults filled in). Null when no step applies, a migration throws or yields
- * invalid params, or `toVersion` is not reached exactly.
+ * of `id@fromVersion` → params of that definition's version). The steps form a graph over the installed versions
+ * (edges only go up); a depth-first search tries the larger jumps first and backtracks: a step whose migration
+ * throws or yields params the target's schema rejects (defaults filled in) is skipped, and the other steps from
+ * that version are tried. Without `toVersion` the result is the highest version reachable; with it, the first
+ * path that reaches exactly `toVersion`. Null when no version above `fromVersion` is reachable (or `toVersion`
+ * is not).
  */
 export function upgradeParams(
 	defs: readonly AnyMgTemplate[],
@@ -66,34 +68,42 @@ export function upgradeParams(
 	params: Record<string, unknown>,
 	toVersion?: number,
 ): MgTemplateUpgrade | null {
-	let version = fromVersion;
-	let current = params;
-	for (;;) {
-		let best: {
-			def: AnyMgTemplate;
-			migrate: (p: Record<string, unknown>) => Record<string, unknown>;
-		} | null = null;
+	type Step = { def: AnyMgTemplate; migrate: (p: Record<string, unknown>) => Record<string, unknown> };
+	/** Steps out of `version`, largest jump first (never above `toVersion`). */
+	const stepsFrom = (version: number): Step[] => {
+		const out: Step[] = [];
 		for (const d of defs) {
 			if (d.id !== id || d.version <= version) continue;
 			if (toVersion !== undefined && d.version > toVersion) continue;
 			const step = d.upgrades?.find((u) => u.fromVersion === version);
-			if (step && (!best || d.version > best.def.version)) best = { def: d, migrate: step.migrate };
+			if (step) out.push({ def: d, migrate: step.migrate });
 		}
-		if (!best) break;
-		let migrated: unknown;
-		try {
-			migrated = best.migrate({ ...current });
-		} catch {
-			return null;
+		return out.sort((a, b) => b.def.version - a.def.version);
+	};
+	const top = defs.reduce((m, d) => (d.id === id ? Math.max(m, d.version) : m), fromVersion);
+	const goal = toVersion ?? top;
+	/** The best upgrade reachable from (`version`, `current`), itself included (versions strictly increase: finite). */
+	const search = (version: number, current: Record<string, unknown>): MgTemplateUpgrade | null => {
+		const here = toVersion === undefined || version === toVersion ? { version, params: current } : null;
+		if (version === goal) return here;
+		let best = here;
+		for (const step of stepsFrom(version)) {
+			let migrated: unknown;
+			try {
+				migrated = step.migrate({ ...current });
+			} catch {
+				continue;
+			}
+			const parsed = step.def.paramsSchema.safeParse(migrated);
+			if (!parsed.success) continue;
+			const found = search(step.def.version, parsed.data as Record<string, unknown>);
+			if (found && (!best || found.version > best.version)) best = found;
+			if (best && best.version === goal) break;
 		}
-		const parsed = best.def.paramsSchema.safeParse(migrated);
-		if (!parsed.success) return null;
-		current = parsed.data as Record<string, unknown>;
-		version = best.def.version;
-	}
-	if (version === fromVersion) return null;
-	if (toVersion !== undefined && version !== toVersion) return null;
-	return { version, params: current };
+		return best;
+	};
+	const result = search(fromVersion, params);
+	return result && result.version !== fromVersion ? result : null;
 }
 
 /** Implements @jasper/project's MgTemplateRegistry over TS template definitions. */

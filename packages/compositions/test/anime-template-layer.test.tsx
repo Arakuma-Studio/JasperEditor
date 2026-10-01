@@ -145,6 +145,49 @@ describe('both renderers through LayerBox (S11:FIX-001, ATP-005)', () => {
 		expect(fframes.style.mixBlendMode).toBe('plus-lighter');
 	});
 
+	it('anime templates clip to their canvas = the layer box, like the hybrid crop (review fix)', () => {
+		// callout with the label near the right edge, scaled to 50 %: the label box leaves the canvas; the layer
+		// clips it at the box (the hybrid export crops the box + bleed, so both show the same).
+		const { doc, refs } = setup([
+			{
+				type: 'clip.addMotionGraphic',
+				at: 0,
+				duration: 150,
+				track: 'V3',
+				template: { id: 'callout', version: 1 },
+				params: { labelX: 0.95 },
+				ref: '$c',
+			},
+		]);
+		const { document, result } = applyTransaction(
+			doc,
+			{
+				label: 'scale',
+				origin: 'user',
+				commands: [{ type: 'param.set', target: ['clip', refs.$c!, 'transform', 'scale'], value: 50 }],
+			},
+			{
+				ids: createCounterIdSource(60),
+				now: () => 't',
+				revision: 1,
+				registries: defaultRegistries(mgRegistry),
+			},
+		);
+		expect(result.ok).toBe(true);
+		const r = renderFrame(snapshotOf(document), 90);
+		const layer = r.container.querySelector<HTMLElement>(`[data-clip-id="${refs.$c}"]`)!;
+		const root = layer.querySelector<HTMLElement>(
+			'[data-mg-renderer="anime"] [data-anime-template="callout@1"]',
+		)!;
+		expect(root.style.overflow).toBe('hidden');
+		expect(root.style.position).toBe('absolute');
+		// the content root fills the template's FILL div, which fills the layer box (the canvas)
+		const fill = root.parentElement!;
+		expect(fill.style.inset).toMatch(/^0(px)?$/);
+		const label = root.querySelector<HTMLElement>('[data-part="label"]')!;
+		expect(Number.parseFloat(label.style.left) + Number.parseFloat(label.style.width)).toBeGreaterThan(1920);
+	});
+
 	it('keeps the fframes twin markup identical and its badge in preview only', () => {
 		const { doc, refs } = setup();
 		const layer = layerAt(doc, refs.$f!, 60);

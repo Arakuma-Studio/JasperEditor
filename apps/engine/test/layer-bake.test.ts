@@ -506,6 +506,8 @@ describe('render keys (LBK-020)', () => {
 		inject(d, ANIME_CLIP, { id: 'clp_ANIME00000000001', track: 'V2', start: 0 });
 		const anime = clipOf(snapOf(d), 'clp_ANIME00000000001');
 		expect(normalisedClip(anime).clipId).toBe('clp_ANIME00000000001');
+		// Anime templates clip their drawing to the canvas (= the layer box), so the crop needs no extra bleed.
+		expect(contentBleed(anime)).toBe(0);
 		// Anime templates key their registry renderVersion (title-reveal@1 is installed by wp-m2-anime-templates;
 		// a template that is not installed keys null).
 		const pa = await planned(d);
@@ -516,7 +518,7 @@ describe('render keys (LBK-020)', () => {
 			'renderVersion',
 			installed && isAnimeTemplate(installed) ? installed.renderVersion : null,
 		);
-		expect(keyOf({ ...ap.material, renderVersion: 2 })).not.toBe(ap.key);
+		expect(keyOf({ ...ap.material, renderVersion: (ap.material.renderVersion ?? 0) + 1 })).not.toBe(ap.key);
 		// Stills of a non-static layer without a cached master: a one-frame bake keyed by the frame.
 		const f12 = await keyOfClip(d, t, ENV, 12);
 		const f13 = await keyOfClip(d, t, ENV, 13);

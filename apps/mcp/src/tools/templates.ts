@@ -48,8 +48,11 @@ export const TEMPLATES_GUIDE = `Motion-graphic templates (add_motion_graphic):
 
 // ---------------------------------------------------------------- catalogue summaries
 
-const HUGE = 1e9;
-const num = (v: unknown) => (typeof v === 'number' && Math.abs(v) < HUGE ? v : undefined);
+/**
+ * Bounds at or beyond the safe-integer range are no bounds (zod's `.int()` writes ±MAX_SAFE_INTEGER into the JSON
+ * Schema); real ranges as wide as the counter's ±1e12 are kept.
+ */
+const num = (v: unknown) => (typeof v === 'number' && Math.abs(v) < Number.MAX_SAFE_INTEGER ? v : undefined);
 
 /** `anyOf`/`oneOf` of one schema plus `null` (zod `.nullable()`) → that schema. */
 function unwrapNullable(s: JsonSchemaNode): JsonSchemaNode {
@@ -298,15 +301,66 @@ export function animePreviewDocument(
 	return { doc: document, sequenceId: seq.id, clipId: result.refs.$mg ?? result.created[0]! };
 }
 
+/** `introFrames`/`outroFrames` of the catalogue are written at this rate (`ANIME_REFERENCE_FPS`, @jasper/mg-templates). */
+const ANIME_REFERENCE_FPS = 30;
+
 /**
- * Poster frames: `count` evenly spaced frames inside the clip (count 1 = the middle frame, past the intro of
- * every built-in anime template at its default length; 3 ≈ intro, hold, outro).
+ * Intro and outro of a `durationFrames` clip at `fps`, in whole frames: the catalogue's lengths converted from the
+ * reference rate and compressed proportionally when they do not both fit (the rule of `animeTemplateTiming` in
+ * @jasper/mg-templates, which this package does not depend on).
  */
-export function previewFrames(durationFrames: number, count = 1): number[] {
-	const out = new Set<number>();
-	for (let i = 0; i < count; i++)
-		out.add(Math.min(durationFrames - 1, Math.floor((durationFrames * (i + 1)) / (count + 1))));
-	return [...out];
+export function previewPhases(
+	durationFrames: number,
+	t: { introFrames?: number; outroFrames?: number; fps: number },
+): { intro: number; outro: number } {
+	const d = Math.max(1, Math.round(durationFrames));
+	const at = (f: number | undefined) => Math.max(0, Math.round(((f ?? 0) * t.fps) / ANIME_REFERENCE_FPS));
+	let intro = at(t.introFrames);
+	let outro = at(t.outroFrames);
+	if (intro + outro > d) {
+		const sum = intro + outro;
+		intro = Math.floor((d * intro) / sum);
+		outro = d - intro;
+	}
+	return { intro, outro };
+}
+
+/**
+ * Poster frames of a `durationFrames` clip. Without the template's timing: `count` evenly spaced frames. With it,
+ * one frame per phase in the order intro, hold, outro: count 1 = the hold's middle (the rest state); 2 = intro
+ * middle + hold; 3 = intro middle, hold middle, `d − ceil(outro/2)` (the outro middle); more frames go to the
+ * intro and the outro alternately (evenly spaced inside each). A phase without frames (no intro / outro, or no
+ * hold left after compression) hands its share to the hold, or to the whole clip.
+ */
+export function previewFrames(
+	durationFrames: number,
+	count = 1,
+	timing?: { introFrames?: number; outroFrames?: number; fps: number },
+): number[] {
+	const d = Math.max(1, Math.round(durationFrames));
+	const n = Math.max(1, Math.round(count));
+	const spread = (start: number, len: number, k: number, fromEnd = false) =>
+		Array.from({ length: k }, (_, i) =>
+			fromEnd
+				? start + len - Math.ceil((len * (i + 1)) / (k + 1))
+				: start + Math.floor((len * (i + 1)) / (k + 1)),
+		);
+	const out: number[] = [];
+	if (!timing) out.push(...spread(0, d, n));
+	else {
+		const { intro, outro } = previewPhases(d, timing);
+		const hold = d - intro - outro;
+		let nIntro = n >= 2 ? Math.ceil((n - 1) / 2) : 0;
+		let nOutro = n >= 3 ? Math.floor((n - 1) / 2) : 0;
+		let nHold = n - nIntro - nOutro;
+		if (intro === 0) [nHold, nIntro] = [nHold + nIntro, 0];
+		if (outro === 0) [nHold, nOutro] = [nHold + nOutro, 0];
+		if (nIntro) out.push(...spread(0, intro, nIntro));
+		if (nHold) out.push(...(hold > 0 ? spread(intro, hold, nHold) : spread(0, d, nHold)));
+		// the outro's samples counted back from the end: 1 sample = d − ceil(outro/2)
+		if (nOutro) out.push(...spread(d - outro, outro, nOutro, true).reverse());
+	}
+	return [...new Set(out.map((f) => Math.min(d - 1, Math.max(0, f))))].sort((a, b) => a - b);
 }
 
 /** Waits up to this long per still: the first Remotion render bundles the compositions (and may download Chrome). */
@@ -338,7 +392,11 @@ export async function animeTemplatePreview(
 		savedAt: new Date().toISOString(),
 		platform: 'mcp',
 	}) as never;
-	const frames = previewFrames(durationFrames, a.frames ?? 1);
+	const frames = previewFrames(durationFrames, a.frames ?? 1, {
+		introFrames: t.introFrames,
+		outroFrames: t.outroFrames,
+		fps,
+	});
 	const images: CallToolResult['content'] = [];
 	const jobs: string[] = [];
 	let renderedBy = 'remotion';
@@ -363,7 +421,8 @@ export async function animeTemplatePreview(
 				{ jobId: done.id },
 			);
 		const result = done.result as { url: string; renderPath?: string };
-		if (result.renderPath) renderedBy = result.renderPath === 'native' ? 'native' : 'remotion';
+		// The still path's own report ('native' | 'hybrid' | 'remotion'); several stills agree (one document).
+		if (result.renderPath) renderedBy = result.renderPath;
 		const { bytes, contentType } = await ctx.engine((c) => c.fetchBytes(result.url));
 		images.push({
 			type: 'image',

@@ -32,7 +32,8 @@ export const titleReveal: MgAnimeTemplateDefinition<TitleRevealParams> = {
 	category: 'Titles',
 	description: 'Characters rise in one by one, the subtitle follows and an accent underline draws on.',
 	renderer: 'anime',
-	renderVersion: 1,
+	// 2: drawing clipped to the canvas (preview = hybrid export).
+	renderVersion: 2,
 	posterAt: 2,
 	paramsSchema: titleRevealParams,
 	defaults: titleRevealParams.parse({}),

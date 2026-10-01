@@ -68,7 +68,8 @@ export const counter: MgAnimeTemplateDefinition<CounterParams> = {
 	description:
 		'A number counts up (or down) with prefix, suffix, decimals and separators in tabular numerals.',
 	renderer: 'anime',
-	renderVersion: 1,
+	// 2: drawing clipped to the canvas (preview = hybrid export), exact count of large ranges.
+	renderVersion: 2,
 	posterAt: 3,
 	paramsSchema: counterParams,
 	defaults: counterParams.parse({}),

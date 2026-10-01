@@ -78,6 +78,13 @@ export function templateUpgradeFor(reg: MgTemplateRegistry, clip: Clip | undefin
 	return up && reg.get(clip.template.id, up.version) ? up.version : null;
 }
 
+/** True when one of `clipIds` (any sequence) has a template upgrade. */
+export function hasTemplateUpgrade(session: EditorSession, clipIds: readonly string[]): boolean {
+	const reg = session.ctx.registries.mgTemplates;
+	const seqs = Object.values(session.store.getState().document.sequences);
+	return clipIds.some((id) => seqs.some((seq) => templateUpgradeFor(reg, seq.clips[id]) !== null));
+}
+
 /**
  * Upgrades the templates of `clipIds` (those with an upgrade path) in one transaction — one undo step — through
  * `clip.update {template: {version}}`. Returns the number of clips upgraded, or an error message.
@@ -178,16 +185,17 @@ export const mgCommands: UiCommand[] = [
 		scope: 'editing',
 		argsSchema: UpdateArgs,
 		agentExposed: true,
-		when: (ctx) => {
-			const reg = ctx.session?.ctx.registries.mgTemplates;
-			const sel = selectedMgClips(ctx, (c) => c?.kind === 'motion-graphic');
-			const seq = sel && ctx.session?.store.getState().document.sequences[sel.sequenceId];
-			return !!reg && !!seq && sel.clipIds.some((id) => templateUpgradeFor(reg, seq.clips[id]) !== null);
-		},
+		// Agents pass clipIds, so the selection is not required to run it (it is checked in `run`, like
+		// text.applyAnimation).
+		when: (ctx) => !!ctx.session && !ctx.session.getState().readOnly,
 		run: (ctx, args) => {
 			if (!ctx.session) throw new Error('No project is open');
 			const a = args as z.infer<typeof UpdateArgs> | undefined;
 			const ids = a?.clipIds ?? selectedMgClips(ctx, (c) => c?.kind === 'motion-graphic')?.clipIds ?? [];
+			if (!a?.clipIds && !hasTemplateUpgrade(ctx.session, ids)) {
+				ctx.ui.toast({ kind: 'info', message: 'Select a motion-graphic clip whose template has an update' });
+				return;
+			}
 			const r = updateTemplates(ctx.session, ids);
 			if (!r.ok) throw new Error(r.message);
 			ctx.ui.toast({ kind: 'info', message: `Updated ${r.updated} template${r.updated === 1 ? '' : 's'}` });

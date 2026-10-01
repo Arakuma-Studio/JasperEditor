@@ -339,6 +339,61 @@ describe('template version upgrade (S11:ATP-009, FIX-005)', () => {
 	});
 });
 
+describe('template upgrade checks the clip canvas against the new version (review fix)', () => {
+	const wide = { width: 1920, height: 1080 };
+	const square = { width: 1080, height: 1080 };
+	function canvasHarness() {
+		const reg = createStaticMgRegistry([
+			{ ...info('c', 1, revealV1, 'anime'), canvases: [wide, square] },
+			{ ...info('c', 2, revealV1, 'anime'), canvases: [wide] },
+		]);
+		const registries = defaultRegistries({
+			...reg,
+			upgrade: (id, from, params, to) =>
+				id === 'c' && from === 1 && (to === undefined || to === 2) ? { version: 2, params } : null,
+		});
+		return new Harness({ ctx: { registries } });
+	}
+	const add = (h: Harness, canvas: unknown) =>
+		h.ok([
+			{
+				type: 'clip.addMotionGraphic',
+				at: 0,
+				duration: 30,
+				track: 'V1',
+				template: { id: 'c', version: 1 },
+				canvas,
+				ref: '$c',
+			} as never,
+		]).refs.$c!;
+	const upgrade = (h: Harness, id: string) =>
+		h.tx([{ type: 'clip.update', clipId: id, patch: { template: { version: 2 } } }]);
+	it('refuses an upgrade whose version lacks the canvas the clip uses', () => {
+		const h = canvasHarness();
+		const id = add(h, square);
+		const e = fail(upgrade(h, id));
+		expect(e?.code).toBe('E_INVALID_PARAM');
+		expect(e?.message).toMatch(/c@2 has no 1080×1080 canvas/);
+		expect(mg(h, id).template.version).toBe(1);
+		// a canvas the new version draws, set in the same patch
+		h.ok([{ type: 'clip.update', clipId: id, patch: { template: { version: 2 }, canvas: wide } }]);
+		expect(mg(h, id)).toMatchObject({ template: { version: 2 }, canvas: wide });
+	});
+	it('accepts the same aspect at another size, the sequence canvas, and canvases the old version lacked too', () => {
+		const h = canvasHarness();
+		const scaled = add(h, { width: 1280, height: 720 });
+		expect(upgrade(h, scaled).ok).toBe(true);
+		expect(mg(h, scaled).template.version).toBe(2);
+		const h2 = canvasHarness();
+		expect(h2.seq.settings.width / h2.seq.settings.height).toBeCloseTo(16 / 9, 3);
+		const seqCanvas = add(h2, 'sequence');
+		expect(upgrade(h2, seqCanvas).ok).toBe(true);
+		const h3 = canvasHarness();
+		const odd = add(h3, { width: 800, height: 600 });
+		expect(upgrade(h3, odd).ok).toBe(true);
+	});
+});
+
 describe('renderer stamp invariant (S11:ATP-002)', () => {
 	function contradicted(): { doc: ProjectDocument; a: string; f: string; reg: MgTemplateRegistry } {
 		const { h, a, f, reg } = setup();

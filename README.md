@@ -205,7 +205,9 @@ value; hovering any card (also the fframes ones) plays a preview. Insert them li
 - Properties ▸ Parameters edits the params; numeric and colour params have stopwatches (Effect Controls and
   Properties) — keyframes are evaluated per frame by the same evaluator as Motion. Properties ▸ Template shows the
   engine and, when a newer version of the template is installed, **Update template to vN** (one undo step).
-- Motion, opacity, every blend mode (incl. Add), effects and corner pins apply to both template kinds.
+- Motion, opacity, every blend mode (incl. Add), effects and corner pins apply to both template kinds. Like the
+  fframes templates, animated templates are clipped to their canvas (what a design draws outside it — e.g. a
+  Callout label pushed past the edge — is hidden in preview and export alike).
 - Preview and Remotion exports draw them in the browser (deterministic: every frame is a pure function of the
   frame number); native exports bake them through the layer-bake extension. They are never sent to `jasper-mg`.
 - A clip whose template is not installed shows a placeholder card and blocks every export ("template id@vN is

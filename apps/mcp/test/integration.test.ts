@@ -994,7 +994,7 @@ describe('wp-m2-anime-templates: anime motion templates over MCP', () => {
 				return;
 			}
 			expect(r.isError, textOf(r)).toBeFalsy();
-			expect(json(r)).toMatchObject({ template: 'title-reveal@1', renderer: 'anime', frame: 75 });
+			expect(json(r)).toMatchObject({ template: 'title-reveal@1', renderer: 'anime', frame: 84 }); // hold middle
 			const img = r.content.find((c) => c.type === 'image') as { data: string; mimeType: string };
 			expect(img.mimeType).toBe('image/png');
 			const png = Buffer.from(img.data, 'base64');

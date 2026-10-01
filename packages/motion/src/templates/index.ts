@@ -8,9 +8,23 @@ import { LowerThirdAnim } from './lower-third-anim.tsx';
 import { TitleReveal } from './title-reveal.tsx';
 import type { AnimeTemplateProps } from './types.ts';
 
-export { buildCallout, buildCalloutLine, CALLOUT_LINE_PHASE, Callout, calloutGeometry } from './callout.tsx';
+export {
+	buildCallout,
+	buildCalloutLine,
+	CALLOUT_LINE_PHASE,
+	CALLOUT_PULSE_PHASE,
+	Callout,
+	calloutGeometry,
+} from './callout.tsx';
 export { addInOut, phaseTimes, staggerRanks, TEMPLATE_FONT, type TemplateTiming } from './common.tsx';
-export { buildCounter, Counter, counterCountMs } from './counter.tsx';
+export {
+	buildCounter,
+	buildCounterCount,
+	Counter,
+	counterCountMs,
+	counterProgressAt,
+	counterValue,
+} from './counter.tsx';
 export { buildLowerThirdAnim, LowerThirdAnim } from './lower-third-anim.tsx';
 export { buildTitleReveal, TitleReveal, titleSegments } from './title-reveal.tsx';
 export type { AnimeTemplateProps } from './types.ts';
