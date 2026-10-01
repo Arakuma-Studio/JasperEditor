@@ -1,0 +1,544 @@
+{
+	"format": "jasper-project",
+	"schemaVersion": 5,
+	"savedAt": "2026-10-01T22:00:00.000Z",
+	"savedBy": {
+		"app": "JasperEditor",
+		"version": "0.1.0",
+		"platform": "web"
+	},
+	"revision": 5,
+	"document": {
+		"schemaVersion": 5,
+		"projectId": "prj_CBW6PKMKT3P3T24S",
+		"name": "v5 fixture",
+		"settings": {
+			"defaultSequencePreset": "hd-1080p-30",
+			"mediaPolicy": {
+				"copyOnImport": false
+			},
+			"proxyPolicy": {
+				"mode": "auto",
+				"preset": "h264-720p",
+				"autoWhen": {
+					"minHeight": 2160,
+					"codecs": [
+						"prores",
+						"dnxhd",
+						"hevc"
+					],
+					"bitDepthAbove": 8
+				}
+			},
+			"defaultStillDurationFrames": 150,
+			"defaultTransitionFrames": 30,
+			"defaultScaling": "fit-if-larger"
+		},
+		"rootItems": [
+			"itm_1NG0Y4316B9MZZ0A",
+			"itm_BFX8XGCBXPXMDAXN",
+			"bin_2R0JVT49SDE9SCBY",
+			"itm_GTEC41C3K8E6B31Q"
+		],
+		"items": {
+			"itm_1NG0Y4316B9MZZ0A": {
+				"id": "itm_1NG0Y4316B9MZZ0A",
+				"kind": "sequence",
+				"name": "Sequence 01",
+				"sequenceId": "seq_7VGVWM1PXWWMV9WF",
+				"label": "forest"
+			},
+			"itm_BFX8XGCBXPXMDAXN": {
+				"id": "itm_BFX8XGCBXPXMDAXN",
+				"kind": "media",
+				"name": "crudo",
+				"mediaId": "med_RA9VX90YMV2554D5",
+				"label": "violet",
+				"marks": {
+					"in": null,
+					"out": null
+				}
+			},
+			"bin_2R0JVT49SDE9SCBY": {
+				"id": "bin_2R0JVT49SDE9SCBY",
+				"kind": "bin",
+				"name": "Processed",
+				"children": [
+					"itm_W956B8NP2V0M6TGK"
+				],
+				"label": "mango"
+			},
+			"itm_W956B8NP2V0M6TGK": {
+				"id": "itm_W956B8NP2V0M6TGK",
+				"kind": "media",
+				"name": "crudo [Denoised · frames 1088–1231]",
+				"mediaId": "med_9N87TTWARDAQZJ1K",
+				"label": "violet",
+				"marks": {
+					"in": null,
+					"out": null
+				}
+			},
+			"itm_GTEC41C3K8E6B31Q": {
+				"id": "itm_GTEC41C3K8E6B31Q",
+				"kind": "media",
+				"name": "T02.mov",
+				"mediaId": "med_F2PZSSWXZ84WK0TB",
+				"label": "violet",
+				"marks": {
+					"in": null,
+					"out": null
+				}
+			}
+		},
+		"media": {
+			"med_RA9VX90YMV2554D5": {
+				"kind": "video",
+				"fingerprint": "q1:0000000000000000000000000000000000000000000000000000000000000001",
+				"originalName": "crudo.mp4",
+				"sizeBytes": 1000,
+				"container": "mov,mp4",
+				"probe": {
+					"durationFlicks": 42336000000,
+					"startTimecode": null,
+					"streams": [
+						{
+							"index": 0,
+							"type": "video",
+							"codec": "h264",
+							"width": 848,
+							"height": 480,
+							"pixelAspect": {
+								"num": 1,
+								"den": 1
+							},
+							"frameRate": {
+								"num": 30,
+								"den": 1
+							},
+							"pixelFormat": "yuv420p",
+							"bitDepth": 8,
+							"color": {
+								"primaries": "bt709",
+								"transfer": "bt709",
+								"matrix": "bt709",
+								"range": "tv"
+							},
+							"browserDecodable": true
+						},
+						{
+							"index": 1,
+							"type": "audio",
+							"codec": "aac",
+							"sampleRate": 48000,
+							"channels": 2,
+							"channelLayout": "stereo"
+						}
+					],
+					"rotationDegrees": 0,
+					"hasAlpha": false,
+					"variableFrameRate": false
+				},
+				"locators": [
+					{
+						"type": "engine-store",
+						"engineId": "local",
+						"key": "mk_1"
+					}
+				],
+				"derivation": null,
+				"importedAt": "2026-09-30T10:00:00.000Z",
+				"id": "med_RA9VX90YMV2554D5"
+			},
+			"med_9N87TTWARDAQZJ1K": {
+				"id": "med_9N87TTWARDAQZJ1K",
+				"kind": "video",
+				"fingerprint": "q1:0000000000000000000000000000000000000000000000000000000000000002",
+				"originalName": "crudo [Denoised · frames 1088–1231].mov",
+				"sizeBytes": 1000,
+				"container": "mov,mp4",
+				"probe": {
+					"durationFlicks": 3386880000,
+					"startTimecode": null,
+					"streams": [
+						{
+							"index": 0,
+							"type": "video",
+							"codec": "h264",
+							"width": 848,
+							"height": 480,
+							"pixelAspect": {
+								"num": 1,
+								"den": 1
+							},
+							"frameRate": {
+								"num": 30,
+								"den": 1
+							},
+							"pixelFormat": "yuv420p",
+							"bitDepth": 8,
+							"color": {
+								"primaries": "bt709",
+								"transfer": "bt709",
+								"matrix": "bt709",
+								"range": "tv"
+							},
+							"browserDecodable": true
+						},
+						{
+							"index": 1,
+							"type": "audio",
+							"codec": "aac",
+							"sampleRate": 48000,
+							"channels": 2,
+							"channelLayout": "stereo"
+						}
+					],
+					"rotationDegrees": 0,
+					"hasAlpha": false,
+					"variableFrameRate": false
+				},
+				"locators": [
+					{
+						"type": "engine-store",
+						"engineId": "local",
+						"key": "mk_2"
+					}
+				],
+				"derivation": {
+					"fromMediaId": "med_RA9VX90YMV2554D5",
+					"recipe": {
+						"op": "process",
+						"steps": [
+							{
+								"op": "denoise",
+								"method": "atadenoise",
+								"strength": 0.25
+							}
+						]
+					},
+					"recipeVersion": 1,
+					"recipeHash": "sha256:abababababababababababababababababababababababababababababababab"
+				},
+				"importedAt": "2026-09-30T10:00:00.000Z",
+				"sourceRange": {
+					"mediaId": "med_RA9VX90YMV2554D5",
+					"sourceName": "crudo.mp4",
+					"firstFrame": 1088,
+					"frames": 144,
+					"frameRate": {
+						"num": 30,
+						"den": 1
+					},
+					"origin": "process"
+				}
+			},
+			"med_F2PZSSWXZ84WK0TB": {
+				"kind": "video",
+				"fingerprint": "q1:0000000000000000000000000000000000000000000000000000000000000003",
+				"originalName": "T02.mov",
+				"sizeBytes": 1000,
+				"container": "mov,mp4",
+				"probe": {
+					"durationFlicks": 3057600000,
+					"startTimecode": null,
+					"streams": [
+						{
+							"index": 0,
+							"type": "video",
+							"codec": "h264",
+							"width": 1920,
+							"height": 1080,
+							"pixelAspect": {
+								"num": 1,
+								"den": 1
+							},
+							"frameRate": {
+								"num": 30,
+								"den": 1
+							},
+							"pixelFormat": "yuv420p",
+							"bitDepth": 8,
+							"color": {
+								"primaries": "bt709",
+								"transfer": "bt709",
+								"matrix": "bt709",
+								"range": "tv"
+							},
+							"browserDecodable": true
+						},
+						{
+							"index": 1,
+							"type": "audio",
+							"codec": "aac",
+							"sampleRate": 48000,
+							"channels": 2,
+							"channelLayout": "stereo"
+						}
+					],
+					"rotationDegrees": 0,
+					"hasAlpha": false,
+					"variableFrameRate": false
+				},
+				"locators": [
+					{
+						"type": "engine-store",
+						"engineId": "local",
+						"key": "mk_3"
+					}
+				],
+				"derivation": null,
+				"importedAt": "2026-09-30T10:00:00.000Z",
+				"sourceRange": {
+					"mediaId": "med_RA9VX90YMV2554D5",
+					"sourceName": "crudo.mp4",
+					"firstFrame": 174,
+					"frames": 130,
+					"frameRate": {
+						"num": 30,
+						"den": 1
+					},
+					"origin": "sidecar"
+				},
+				"id": "med_F2PZSSWXZ84WK0TB"
+			}
+		},
+		"synthetics": {},
+		"transcripts": {},
+		"fonts": {},
+		"sequences": {
+			"seq_7VGVWM1PXWWMV9WF": {
+				"id": "seq_7VGVWM1PXWWMV9WF",
+				"settings": {
+					"frameRate": {
+						"num": 30,
+						"den": 1
+					},
+					"width": 1920,
+					"height": 1080,
+					"pixelAspect": {
+						"num": 1,
+						"den": 1
+					},
+					"dropFrame": false,
+					"startTimecodeFrames": 0,
+					"audioSampleRate": 48000,
+					"masterLayout": "stereo",
+					"backgroundColor": [
+						0,
+						0,
+						0,
+						1
+					],
+					"workingColorSpace": "rec709"
+				},
+				"videoTracks": [
+					{
+						"id": "trk_MYYZQKYTGYE43F21",
+						"kind": "video",
+						"name": null,
+						"locked": false,
+						"syncLock": true,
+						"output": true
+					},
+					{
+						"id": "trk_3JM2VTV6P0FYC5AY",
+						"kind": "video",
+						"name": null,
+						"locked": false,
+						"syncLock": true,
+						"output": true
+					},
+					{
+						"id": "trk_04KQCT7HT4ADVW5P",
+						"kind": "video",
+						"name": null,
+						"locked": false,
+						"syncLock": true,
+						"output": true
+					}
+				],
+				"audioTracks": [
+					{
+						"id": "trk_1KG363X65H01WFVE",
+						"kind": "audio",
+						"name": null,
+						"locked": false,
+						"syncLock": true,
+						"mute": false,
+						"solo": false,
+						"volumeDb": {
+							"value": 0,
+							"keyframes": []
+						},
+						"pan": {
+							"value": 0,
+							"keyframes": []
+						},
+						"channelFormat": "stereo",
+						"effects": []
+					},
+					{
+						"id": "trk_NK09G1BDR3X90EE1",
+						"kind": "audio",
+						"name": null,
+						"locked": false,
+						"syncLock": true,
+						"mute": false,
+						"solo": false,
+						"volumeDb": {
+							"value": 0,
+							"keyframes": []
+						},
+						"pan": {
+							"value": 0,
+							"keyframes": []
+						},
+						"channelFormat": "stereo",
+						"effects": []
+					},
+					{
+						"id": "trk_T0949VADTXC2TYRH",
+						"kind": "audio",
+						"name": null,
+						"locked": false,
+						"syncLock": true,
+						"mute": false,
+						"solo": false,
+						"volumeDb": {
+							"value": 0,
+							"keyframes": []
+						},
+						"pan": {
+							"value": 0,
+							"keyframes": []
+						},
+						"channelFormat": "stereo",
+						"effects": []
+					}
+				],
+				"captionTracks": [],
+				"master": {
+					"volumeDb": {
+						"value": 0,
+						"keyframes": []
+					},
+					"effects": []
+				},
+				"clips": {
+					"clp_MEXYSH5BNXW6G32G": {
+						"id": "clp_MEXYSH5BNXW6G32G",
+						"trackId": "trk_MYYZQKYTGYE43F21",
+						"start": 0,
+						"duration": 120,
+						"sourceIn": 282240000,
+						"speed": {
+							"rate": 1,
+							"reverse": false,
+							"maintainPitch": true
+						},
+						"name": "crudo.mp4",
+						"label": "violet",
+						"enabled": true,
+						"linkId": "lnk_7NYDQZDQE0SN3F2D",
+						"groupId": null,
+						"markers": [],
+						"kind": "video",
+						"mediaId": "med_9N87TTWARDAQZJ1K",
+						"videoStreamIndex": 0,
+						"transform": {
+							"position": {
+								"value": [
+									960,
+									540
+								],
+								"keyframes": []
+							},
+							"anchor": {
+								"value": [
+									424,
+									240
+								],
+								"keyframes": []
+							},
+							"scale": {
+								"value": 100,
+								"keyframes": []
+							},
+							"scaleWidth": {
+								"value": 100,
+								"keyframes": []
+							},
+							"uniformScale": true,
+							"rotation": {
+								"value": 0,
+								"keyframes": []
+							},
+							"flipH": false,
+							"flipV": false
+						},
+						"opacity": {
+							"value": 100,
+							"keyframes": []
+						},
+						"blendMode": "normal",
+						"effects": []
+					},
+					"clp_2RMM7EYNJS2KHQ8Y": {
+						"id": "clp_2RMM7EYNJS2KHQ8Y",
+						"trackId": "trk_1KG363X65H01WFVE",
+						"start": 0,
+						"duration": 120,
+						"sourceIn": 25872000000,
+						"speed": {
+							"rate": 1,
+							"reverse": false,
+							"maintainPitch": true
+						},
+						"name": "crudo.mp4",
+						"label": "caribbean",
+						"enabled": true,
+						"linkId": "lnk_7NYDQZDQE0SN3F2D",
+						"groupId": null,
+						"markers": [],
+						"kind": "audio",
+						"mediaId": "med_RA9VX90YMV2554D5",
+						"channels": {
+							"streamIndex": 1,
+							"map": [
+								0,
+								1
+							]
+						},
+						"gainDb": 0,
+						"volumeDb": {
+							"value": 0,
+							"keyframes": []
+						},
+						"pan": {
+							"value": 0,
+							"keyframes": []
+						},
+						"effects": []
+					}
+				},
+				"transitions": {},
+				"links": {
+					"lnk_7NYDQZDQE0SN3F2D": {
+						"id": "lnk_7NYDQZDQE0SN3F2D",
+						"members": [
+							"clp_MEXYSH5BNXW6G32G",
+							"clp_2RMM7EYNJS2KHQ8Y"
+						]
+					}
+				},
+				"groups": {},
+				"markers": [],
+				"inPoint": null,
+				"outPoint": null,
+				"workArea": null
+			}
+		},
+		"extensions": {}
+	}
+}

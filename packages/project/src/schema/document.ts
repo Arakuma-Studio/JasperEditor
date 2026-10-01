@@ -17,8 +17,11 @@ import { type Sequence, SequenceSchema } from './sequence.ts';
 /** v3 (M2): additive fields only — media kind `mg-bundle`, `lut`/`mgBundle` headers, `process` recipes, trackers,
  * `trackedBy`, curve params (ARCHITECTURE §19.1). Older builds open v3 files read-only (S01:MIG-003).
  * v4 (M2, D-32): additive — `TextClip.textAnimation`, `MotionGraphicClip.template.renderer`, clip kind `shape`
- * (ARCHITECTURE §20.1). */
-export const CURRENT_SCHEMA_VERSION = 4;
+ * (ARCHITECTURE §20.1).
+ * v5 (M3): additive — `MediaAsset.sourceRange` (S07:PRC-015…019: the source frames a processed version or a
+ * rendered file holds). The v4 → v5 migration records the whole-source range on existing processed versions;
+ * later M3 additions may share v5 (older builds open v5 files read-only). */
+export const CURRENT_SCHEMA_VERSION = 5;
 
 export const SourceMarksSchema = z.looseObject({
 	in: z.looseObject({ flicks: nonNegInt() }).nullable(),

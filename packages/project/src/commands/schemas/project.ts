@@ -9,7 +9,9 @@ import {
 	MediaProbeSchema,
 	MgBundleInfoSchema,
 	NativeRecipeSchema,
+	SourceRangeSchema,
 } from '../../schema/media.ts';
+import { SourceFitSchema } from './clip.ts';
 import { ContentTimeInputSchema, cmd, IdListSchema, IdRefSchema, RefDeclSchema } from './common.ts';
 
 export const ProjectRenameCmd = cmd('project.rename', { name: z.string().min(1) });
@@ -68,6 +70,24 @@ export const MediaRelinkCmd = cmd('media.relink', {
 	/** M2 (additive): new size and container of the relinked file. */
 	sizeBytes: z.number().int().min(0).optional(),
 	originalName: z.string().optional(),
+	/**
+	 * M3 (S07:PRC-018, additive) — Replace Footage: the file is a different rendering, not the same bytes moved.
+	 * A changed fingerprint is accepted without `force`; `locators` replaces every locator (the old file's paths
+	 * would point at the wrong bytes) and `container` updates the container.
+	 */
+	replace: z.boolean().optional(),
+	locators: z.array(MediaLocatorSchema).min(1).optional(),
+	container: z.string().optional(),
+	/** The new file's source range (sidecar), or null to clear it; absent = unchanged. */
+	sourceRange: SourceRangeSchema.nullable().optional(),
+	/**
+	 * Keep source timing: every clip using the media is moved in content time so it shows the same source frames
+	 * (by declared source ranges, else by start timecode — `sourceTimingShift`). Default false: content time is
+	 * kept as is.
+	 */
+	keepSourceTiming: z.boolean().optional(),
+	/** When keeping source timing: what to do with clips the new file does not cover (default `refuse`). */
+	fit: SourceFitSchema.optional(),
 });
 export const MediaDeriveCmd = cmd('media.derive', {
 	fromMediaId: IdRefSchema,
@@ -91,6 +111,18 @@ export const MediaDeriveCmd = cmd('media.derive', {
 	binId: IdRefSchema.nullable().optional(),
 	replaceInClips: z.array(IdRefSchema).optional(),
 	ref: RefDeclSchema.optional(),
+	/**
+	 * M3 (S07:PRC-015, additive): the source frames `[startFrame, endFrame)` (at the source's rate) the engine
+	 * processed; absent = the whole source. Recorded as the version's `sourceRange`; swapped clips are remapped.
+	 */
+	range: z.looseObject({ startFrame: z.number().int().min(0), endFrame: z.number().int().min(1) }).optional(),
+	/** M3 (additive): what `replaceInClips` does with clips the version does not cover (default `refuse`). */
+	fit: SourceFitSchema.optional(),
+});
+/** M3 (S07:PRC-019): declares (or clears) the source frames a media file holds. Does not move any clip. */
+export const MediaSetSourceRangeCmd = cmd('media.setSourceRange', {
+	mediaId: IdRefSchema,
+	sourceRange: SourceRangeSchema.nullable(),
 });
 export const MediaRemoveUnusedCmd = cmd('media.removeUnused', {
 	kinds: z.array(MediaKindSchema).optional(),
@@ -146,6 +178,7 @@ export const PROJECT_COMMANDS = [
 	MediaRegisterCmd,
 	MediaRelinkCmd,
 	MediaDeriveCmd,
+	MediaSetSourceRangeCmd,
 	MediaRemoveUnusedCmd,
 	SyntheticCreateCmd,
 	SyntheticUpdateCmd,

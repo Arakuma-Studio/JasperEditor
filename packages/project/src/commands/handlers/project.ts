@@ -1,10 +1,12 @@
 // project.*, bin.create, item.* (S01 §5, §16.2).
+import { frameShiftFlicks, sourceTimingShift } from '../../process/source-range.ts';
 import { defaultLabelForMedia } from '../../registry/kinds.ts';
 import type { ProjectItem } from '../../schema/document.ts';
 import type { MediaAsset } from '../../schema/media.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
 import type { DDoc, HandlerContext } from '../context.ts';
 import { cleanupSequence, removeClip } from '../placement.ts';
+import { replaceMediaFile, type SourceFit } from './process.ts';
 import { type HandlerMap, idList } from './util.ts';
 
 function detachItem(doc: DDoc, itemId: string): void {
@@ -244,17 +246,69 @@ export const projectHandlers: HandlerMap = {
 			);
 		if (cmd.lut && asset.kind !== 'lut')
 			h.fail('E_INVALID_PARAM', `lut only applies to lut assets (${cmd.mediaId} is ${asset.kind})`);
-		if (cmd.fingerprint && cmd.fingerprint !== asset.fingerprint) {
-			// A rebuilt Remotion bundle is new content by definition (S08:MGC-013): no force needed.
-			if (!cmd.force && !(asset.kind === 'mg-bundle' && cmd.mgBundle))
-				h.fail('E_INVALID_PARAM', 'Fingerprint does not match the media (pass force to relink anyway)');
-			asset.fingerprint = cmd.fingerprint;
+		const fingerprintChanges = !!cmd.fingerprint && cmd.fingerprint !== asset.fingerprint;
+		// A rebuilt Remotion bundle is new content by definition (S08:MGC-013), and Replace Footage (S07:PRC-018)
+		// says so explicitly: no force needed.
+		if (fingerprintChanges && !cmd.force && !cmd.replace && !(asset.kind === 'mg-bundle' && cmd.mgBundle))
+			h.fail('E_INVALID_PARAM', 'Fingerprint does not match the media (pass force to relink anyway)');
+		const sr = cmd.sourceRange;
+		if (sr?.mediaId && sr.mediaId !== asset.id && !doc.media[sr.mediaId])
+			h.fail('E_NOT_FOUND', `Source media not found: ${sr.mediaId}`);
+		const keep = !!cmd.keepSourceTiming;
+		if (keep && asset.kind !== 'video' && asset.kind !== 'audio')
+			h.fail(
+				'E_INVALID_PARAM',
+				`Source timing applies to video and audio media (${asset.id} is ${asset.kind})`,
+			);
+		// Keep source timing (S07:PRC-018): how far the new file's content time is from the current one's.
+		let shift = 0;
+		let timing: Extract<ReturnType<typeof sourceTimingShift>, { ok: true }> | null = null;
+		if (keep) {
+			const t = sourceTimingShift(asset as MediaAsset, {
+				originalName: cmd.originalName ?? asset.originalName,
+				probe: (cmd.probe ?? asset.probe) as MediaAsset['probe'],
+				sourceRange: (sr === undefined ? asset.sourceRange : sr) as MediaAsset['sourceRange'],
+			});
+			if (!t.ok) h.fail('E_INVALID_PARAM', `Cannot keep the source timing: ${t.reason}`);
+			if (t.warning) h.warn('W_SOURCE_NAME_MISMATCH', t.warning);
+			timing = t;
+			shift = frameShiftFlicks(t.shiftFrames, t.frameRate);
 		}
-		asset.locators = [cmd.locator, ...asset.locators.filter((l) => l.type !== cmd.locator.type)];
-		if (cmd.probe) asset.probe = cmd.probe;
-		if (cmd.mgBundle) asset.mgBundle = cmd.mgBundle as never;
-		if (cmd.lut) asset.lut = cmd.lut as never;
-		if (cmd.sizeBytes !== undefined) asset.sizeBytes = cmd.sizeBytes;
-		if (cmd.originalName !== undefined) asset.originalName = cmd.originalName;
+		const update = () => {
+			if (fingerprintChanges) asset.fingerprint = cmd.fingerprint!;
+			asset.locators = cmd.locators
+				? (cmd.locators as typeof asset.locators)
+				: [cmd.locator, ...asset.locators.filter((l) => l.type !== cmd.locator.type)];
+			if (cmd.locators && !cmd.locators.some((l) => l.type === cmd.locator.type))
+				asset.locators.unshift(cmd.locator);
+			if (cmd.probe) asset.probe = cmd.probe;
+			if (cmd.mgBundle) asset.mgBundle = cmd.mgBundle as never;
+			if (cmd.lut) asset.lut = cmd.lut as never;
+			if (cmd.sizeBytes !== undefined) asset.sizeBytes = cmd.sizeBytes;
+			if (cmd.originalName !== undefined) asset.originalName = cmd.originalName;
+			if (cmd.container !== undefined) asset.container = cmd.container;
+			if (sr === null) delete (asset as { sourceRange?: unknown }).sourceRange;
+			else if (sr !== undefined) (asset as { sourceRange?: unknown }).sourceRange = sr;
+		};
+		if (!keep && !cmd.replace) {
+			update();
+			return { mediaId: asset.id };
+		}
+		const r = replaceMediaFile(
+			doc,
+			asset.id,
+			shift,
+			(cmd.fit ?? 'refuse') as SourceFit,
+			h,
+			update,
+			timing ? { shiftFrames: timing.shiftFrames, rate: timing.frameRate } : undefined,
+		);
+		return {
+			mediaId: asset.id,
+			shiftFrames: timing?.shiftFrames ?? 0,
+			...(timing ? { basis: timing.basis } : {}),
+			clipIds: r.clipIds,
+			trimmedClipIds: r.trimmed,
+		};
 	},
 };
