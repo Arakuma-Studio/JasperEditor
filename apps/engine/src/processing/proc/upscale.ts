@@ -72,6 +72,12 @@ function cudaLibraryPresent(): boolean {
 }
 
 export const TILE = 256;
+/**
+ * Frames up to this many input pixels run as ONE tile (no overlap work, fewer runs): on the CPU this is
+ * 25–35 % faster for 848×480 with SPAN (1.6–1.9 vs 2.1–2.8 s/frame on the loaded test host). Larger frames use
+ * 256 px tiles (memory bound for any size, S07:PST-033).
+ */
+export const WHOLE_FRAME_MAX_PIXELS = 1_100_000;
 export const OVERLAP = 16;
 export const BATCH = 4;
 
@@ -329,7 +335,14 @@ export function createUpscaleStep(
 			if (!model || !ctxRef) throw new Error('upscale step not opened');
 			const t0 = performance.now();
 			const src = u16ToFloat(frame.data);
-			let out = await upscaleTiled(model, src, frame.width, frame.height);
+			const whole = frame.width * frame.height <= WHOLE_FRAME_MAX_PIXELS;
+			let out = await upscaleTiled(
+				model,
+				src,
+				frame.width,
+				frame.height,
+				whole ? { tile: Math.max(frame.width, frame.height), batch: 1 } : {},
+			);
 			const mw = frame.width * model.scale;
 			const mh = frame.height * model.scale;
 			if (mw !== size.width || mh !== size.height)
