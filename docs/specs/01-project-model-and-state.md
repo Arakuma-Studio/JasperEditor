@@ -902,8 +902,9 @@ Arguments in brackets are optional. "Target tracks" accept ids or labels (`"V2"`
 | `item.delete` | `itemIds`, [`force`] | PRJ-004, PRJ-006 |
 | `item.setMarks` | `itemId`, `in`, `out` | PRJ-005 |
 | `media.register` | `asset: MediaAsset` (already probed), [`binId`], [`ref`] | Adds an asset + project item. The import pipeline (LIFE-010) calls this after probing. If an asset with the same fingerprint exists, it only adds a project item. |
-| `media.relink` | `mediaId`, `locator`, [`probe`] | Replaces locators after a fingerprint check (LIFE-032). |
-| `media.derive` | `fromMediaId`, `recipe`, [`binId`], [`replaceInClips: clipIds`] | Creates a derived asset (AST-021). Optionally swaps the source of the given clips, mapping content time 1:1 (or through the recipe for `reverse`, `range` and `time-stretch`). |
+| `media.relink` | `mediaId`, `locator`, [`probe`], M3: [`replace`, `locators`, `container`, `sourceRange`, `keepSourceTiming`, `fit`] | Replaces locators after a fingerprint check (LIFE-032). M3 Replace Footage (S07:PRC-018): `replace` accepts a different file; `keepSourceTiming` moves every clip of the media so it shows the same source frames. |
+| `media.derive` | `fromMediaId`, `recipe`, [`binId`], [`replaceInClips: clipIds`], M3: [`range`, `fit`] | Creates a derived asset (AST-021). Optionally swaps the source of the given clips, mapping content time 1:1 (or through the recipe for `reverse`, `range` and `time-stretch`); for processed versions through their source ranges (S07:PRC-015/016). |
+| `media.setSourceRange` | `mediaId`, `sourceRange \| null` | M3 (S07:PRC-019): declares the source frames a file holds; a range naming a project media makes the file a version of it. Moves no clip. |
 | `media.removeUnused` | [`kinds`] | Deletes project items and assets not used by any clip (Premiere "Remove Unused"). |
 | `synthetic.create` / `synthetic.update` | kind + params / id + params | AST-010 |
 | `transcript.create` | `mediaId`, `language`, `origin`, `words` | Produced by transcription jobs or subtitle import. |
@@ -946,7 +947,7 @@ Arguments in brackets are optional. "Target tracks" accept ids or labels (`"V2"`
 | `clip.duplicate` | `clipIds`, `at` \| `deltaFrames`, [`tracks`] | Copies with new ids (includes their link groups), overwrite mode. |
 | `clip.update` | `clipId(s)`, `patch` | Patch of non-animated fields (name, label, enabled, text content and box, style, template params, crop-independent props). For animated props use `param.set`. |
 | `clip.setSpeed` | `clipIds`, [`rate`], [`duration`], [`reverse`], [`maintainPitch`], `ripple` | CLP-008 |
-| `clip.replaceSource` | `clipId`, `mediaId`, [`keepDuration`] | Replaces the media, keeping effects and keyframes (Premiere "Replace with Clip"). |
+| `clip.replaceSource` | `clipId`, `mediaId`, [`keepDuration`], M3: [`fit`] | Replaces the media with another version of the same original, keeping effects and keyframes and the source frames shown (S07:PRC-016/017: in-point remapped from the versions' source ranges; `fit: refuse \| trim \| skip` when the version does not cover the clip). |
 | `clip.fitToFrame` | `clipIds`, `mode: 'fit' \| 'fill' \| 'none'` | FX-004 |
 | `clip.link` / `clip.unlink` | `clipIds` | CLP-010 |
 | `clip.group` / `clip.ungroup` | `clipIds` | CLP-012 |
