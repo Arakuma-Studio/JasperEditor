@@ -65,7 +65,9 @@ created — never on this host).
 
 Tests: `apps/engine/test/processing-remote.test.ts` with `JASPER_SSH`/`JASPER_SCP` shims (protocol, setup,
 auto executor, input cache reuse, resumable upload, cancel kills the remote process group, connection loss);
-with `JASPER_TEST_SSH=user@host[:port]` (+ `JASPER_TEST_SSH_KEY`) the same flow runs over real SSH.
+with `JASPER_TEST_SSH=user@host[:port]` (+ `JASPER_TEST_SSH_KEY`) the same flow runs over real SSH. That variant
+was not run here: a private sshd on 127.0.0.1 accepted the key but this account's login shell is `nologin`, and no
+Docker image with Node + sshd was available offline.
 **Manual GPU check (no GPU host now):** configure a Linux x64 host with an NVIDIA driver + CUDA 12 and Node ≥ 20
 in Preferences ▸ Processing, *Set up*, then run onnxruntime-node's CUDA install on the remote
 (`cd <remoteDir>/bin && ONNXRUNTIME_NODE_INSTALL_CUDA=v12 npm rebuild onnxruntime-node`); *Test connection*
@@ -146,3 +148,10 @@ skin natural, no invented texture; compression blocking cleaned up by SPAN.
   `ALPHA_UNSUPPORTED`.
 - Model removal (installed downloads) has no route; bundled models cannot be removed anyway.
 - The FFmpeg-native vid.stab path is 8-bit (yuv444p); the WASM path applies the transforms on 16-bit RGB.
+- Processed-version badges (timeline clip, Project item) are drawn by a stylesheet/tooltip decorator mounted
+  through `programOverlays` (no badge extension point exists in the timeline/Project panels): they show while a
+  Program monitor is open. A `clipBadges`/`projectItemBadges` registry from the panel owners should replace it.
+- The upscale "1920 × 1080" quick size resizes without cropping (848×480 sources get a 0.6 % aspect change);
+  the trailer's fill-and-crop reframe is not offered.
+- Remote: the real-SSH test path was not exercised on this host (see above); no real-GPU run (no host).
+- Branch is based on dev before wp-m2-transitions was merged; not rebased (integrator merges in order).
