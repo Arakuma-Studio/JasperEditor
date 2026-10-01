@@ -8,6 +8,7 @@ import type { Animatable } from '../schema/common.ts';
 import type { Clip, Sequence, Track, TrackKind } from '../schema/sequence.ts';
 import { contentSpanFlicks } from '../time.ts';
 import type { HandlerContext } from './context.ts';
+import { splitTextAnimation } from './handlers/text-animation.ts';
 
 type DSeq = Draft<Sequence>;
 type DClip = Draft<Clip>;
@@ -175,6 +176,8 @@ export function splitClipAt(seq: DSeq, clip: DClip, at: number, h: HandlerContex
 	}
 	clip.duration = at - clip.start;
 	seq.clips[right.id] = right as DClip;
+	// M2 (S11:TXA-005): the left part keeps the In animator, the right part the Out animator.
+	splitTextAnimation(clip, seq.clips[right.id]!);
 	if (clip.groupId && seq.groups[clip.groupId]) seq.groups[clip.groupId]!.members.push(right.id);
 	for (const t of Object.values(seq.transitions)) {
 		if (t.outgoingClipId === clip.id) t.outgoingClipId = right.id;

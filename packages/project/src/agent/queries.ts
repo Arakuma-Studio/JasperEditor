@@ -16,9 +16,10 @@ import { evaluate } from '../keyframes.ts';
 import type { EffectRegistry } from '../registry/effects.ts';
 import { clipContentTime, resolveSceneAt } from '../render/scene.ts';
 import { buildRenderSnapshot, type MediaHandle } from '../render/snapshot.ts';
+import type { Animatable } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { MediaAsset } from '../schema/media.ts';
-import type { Clip, Sequence } from '../schema/sequence.ts';
+import type { Clip, Sequence, TextAnimator } from '../schema/sequence.ts';
 import { flicksToSeconds, fpsOf, type Rational } from '../time.ts';
 import { formatTimecode } from '../timecode.ts';
 import { AddressError, pickSequence, resolveFrameInput } from './addressing.ts';
@@ -153,11 +154,51 @@ function wrap<T>(fn: () => T): T {
 	}
 }
 
+/** Stored value of an Animatable plus whether it has keyframes (agents read the static value). */
+const animSummary = (a: Animatable<unknown>) =>
+	a.keyframes.length ? { value: a.value, keyframes: a.keyframes.length } : a.value;
+
+/**
+ * What a clip shows (S11:ANA-007): media, text (+ its in/out animators), template, shape geometry, composition
+ * (bundle, composition id and prop overrides), synthetic or nested sequence.
+ */
 function clipSource(clip: Clip): Record<string, unknown> {
 	const c = clip as Record<string, unknown>;
 	if (typeof c.mediaId === 'string') return { mediaId: c.mediaId };
-	if (clip.kind === 'text') return { text: (c.content as { text?: string })?.text ?? '' };
+	if (clip.kind === 'text') {
+		const ta = clip.textAnimation;
+		const side = (a: TextAnimator | null | undefined) =>
+			a ? { preset: a.preset, version: a.version, durationFrames: a.durationFrames, params: a.params } : null;
+		return {
+			text: clip.content?.text ?? '',
+			...(ta?.in || ta?.out ? { animation: { in: side(ta.in), out: side(ta.out) } } : {}),
+		};
+	}
 	if (clip.kind === 'motion-graphic') return { template: c.template, params: c.params };
+	if (clip.kind === 'shape') {
+		const s = clip.shape;
+		return {
+			shape: {
+				type: s.type,
+				size: animSummary(s.size),
+				fill: s.fill ? animSummary(s.fill) : null,
+				stroke: s.stroke
+					? {
+							color: animSummary(s.stroke.color),
+							width: animSummary(s.stroke.width),
+							position: s.stroke.position,
+						}
+					: null,
+				...(s.type === 'rect' ? { cornerRadius: animSummary(s.cornerRadius) } : {}),
+			},
+		};
+	}
+	if (clip.kind === 'composition')
+		return {
+			composition: { mediaId: clip.composition.mediaId ?? null, id: clip.composition.id },
+			props: clip.props,
+			canvas: clip.canvas,
+		};
 	if (typeof c.syntheticId === 'string') return { syntheticId: c.syntheticId };
 	if (typeof c.sequenceId === 'string') return { sequenceId: c.sequenceId };
 	return {};

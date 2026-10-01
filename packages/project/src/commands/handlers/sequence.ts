@@ -24,6 +24,7 @@ import {
 } from '../placement.ts';
 import { placeSource } from './clip-core.ts';
 import { assertBin, insertItem } from './project.ts';
+import { remapTextAnimationFrames } from './text-animation.ts';
 import type { HandlerMap } from './util.ts';
 
 function validateSettings(s: SequenceSettings, h: HandlerContext): void {
@@ -70,6 +71,8 @@ function changeFrameRate(seq: DSeq, to: Rational, h: HandlerContext): void {
 		} else {
 			c.start = s;
 			c.duration = e - s;
+			// M2 (S11:TXA-005): animator windows keep their length in time.
+			remapTextAnimationFrames(c, from, to);
 		}
 	}
 	for (const m of seq.markers) {

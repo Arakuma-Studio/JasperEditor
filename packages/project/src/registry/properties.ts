@@ -16,7 +16,21 @@ import { evaluate } from '../keyframes.ts';
 import type { Animatable, RGBA } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { MgCompositionInfo } from '../schema/media.ts';
-import { BLEND_MODES, type Clip, type EffectInstance, type Sequence } from '../schema/sequence.ts';
+import {
+	BLEND_MODES,
+	type Clip,
+	type EffectInstance,
+	type Sequence,
+	type TextAnimation,
+} from '../schema/sequence.ts';
+import {
+	getTextAnimationSpec,
+	latestTextAnimationSpec,
+	scaleAnimationFrames,
+	TEXT_ANIMATION_SIDES,
+	TEXT_ANIMATION_SPECS,
+	type TextAnimationSide,
+} from '../text-animations.ts';
 import { flicksPerFrame, type Rational } from '../time.ts';
 import type { EffectRegistry, EffectSpec, ParamSpec } from './effects.ts';
 import { kindCapabilities } from './kinds.ts';
@@ -45,6 +59,8 @@ export type PropertyGroup =
 	| 'params'
 	/** M2 (S08): composition clip props (`props.<dotted.path>`). */
 	| 'props'
+	/** M2 (S11:TXA-007, wp-m2-text-anim): text animators (`textAnimation.<side>.…`). */
+	| 'textAnimation'
 	| 'effect'
 	| 'crop'
 	| 'box';
@@ -139,6 +155,94 @@ export function intrinsicBoxOf(ctx: PropertyContext): { width: number; height: n
 	// M2 (S11:SHP-001): size plus the stroke drawn outside the geometry.
 	if (clip.kind === 'shape') return shapeIntrinsicBox(clip.shape);
 	return frame;
+}
+
+// ---------------------------------------------------------------- M2 text animators (wp-m2-text-anim)
+// S11:TXA-007: static keys `textAnimation.<side>.preset` (enum incl. `none`) and `.durationFrames`; dynamic keys
+// `textAnimation.<side>.params.<name>` from the chosen preset's schema. Every key is static (`animatable: 'no'`)
+// and written through `clip.update {textAnimation}` (the handler validates the preset's params as a whole).
+
+type TextAnimated = Pick<Clip, 'kind'> & { textAnimation?: TextAnimation | null };
+const SIDE_LABEL: Record<TextAnimationSide, string> = { in: 'In', out: 'Out' };
+const sidePatch = (side: TextAnimationSide, value: unknown) => ({ textAnimation: { [side]: value } });
+
+function textAnimationSideSpecs(side: TextAnimationSide): PropertySpec[] {
+	const presets = TEXT_ANIMATION_SPECS.filter(
+		(s) => s.phases.includes(side) && latestTextAnimationSpec(s.id) === s,
+	);
+	return [
+		{
+			key: `textAnimation.${side}.preset`,
+			label: `${SIDE_LABEL[side]} Animation`,
+			group: 'textAnimation',
+			kind: 'enum',
+			options: ['none', ...presets.map((s) => s.id)],
+			optionLabels: ['None', ...presets.map((s) => s.label)],
+			animatable: 'no',
+			storagePath: ['textAnimation', side, 'preset'],
+			appliesTo: isText,
+			ui: { control: 'select' },
+			defaultValue: 'none',
+			write: {
+				via: 'clip.update',
+				patch: (v) => sidePatch(side, v === 'none' ? null : { preset: v }),
+			},
+			description: `Text animation preset played ${side === 'in' ? 'at the start' : 'at the end'} of the clip (params reset to the preset's defaults).`,
+		},
+		{
+			key: `textAnimation.${side}.durationFrames`,
+			label: `${SIDE_LABEL[side]} Duration`,
+			group: 'textAnimation',
+			kind: 'number',
+			unit: 'frames',
+			range: { min: 1, max: 100000, softMax: 300, step: 1 },
+			animatable: 'no',
+			storagePath: ['textAnimation', side, 'durationFrames'],
+			appliesTo: isText,
+			ui: { control: 'scrub', precision: 0 },
+			defaultValue: ({ clip, seq }: PropertyContext) => {
+				const a = (clip as TextAnimated).textAnimation?.[side];
+				const spec = a ? getTextAnimationSpec(a.preset, a.version) : undefined;
+				return spec ? scaleAnimationFrames(spec.defaultDurationFrames, seq.settings.frameRate) : undefined;
+			},
+			write: { via: 'clip.update', patch: (v) => sidePatch(side, { durationFrames: v }) },
+			description: `Length of the ${side} window in frames, anchored to the clip's ${side === 'in' ? 'first' : 'last'} visible frame.`,
+		},
+	];
+}
+
+const paramSpecCache = new Map<string, PropertySpec[]>();
+
+/** `textAnimation.<side>.params.<name>` specs of the clip's current presets (unknown presets have none). */
+export function textAnimationParamSpecs(clip: TextAnimated): PropertySpec[] {
+	if (clip.kind !== 'text') return [];
+	return TEXT_ANIMATION_SIDES.flatMap((side) => {
+		const a = clip.textAnimation?.[side];
+		const spec = a ? getTextAnimationSpec(a.preset, a.version) : undefined;
+		if (!spec) return [];
+		const cacheKey = `${side}:${spec.id}@${spec.version}`;
+		let specs = paramSpecCache.get(cacheKey);
+		if (!specs) {
+			const json = z.toJSONSchema(spec.paramsSchema, { unrepresentable: 'any', io: 'input' });
+			specs = jsonSchemaPropertySpecs(json as JsonSchemaObject, {
+				keyPrefix: `textAnimation.${side}.params`,
+				storageRoot: ['textAnimation', side, 'params'],
+				group: 'textAnimation',
+				appliesTo: isText,
+				defaults: spec.defaults,
+				nested: false,
+			}).map(({ valueSchema: _v, ...s }) => {
+				const name = s.storagePath[s.storagePath.length - 1]!;
+				return {
+					...s,
+					label: `${SIDE_LABEL[side]} ${s.label}`,
+					write: { via: 'clip.update', patch: (v: unknown) => sidePatch(side, { params: { [name]: v } }) },
+				} satisfies PropertySpec;
+			});
+			paramSpecCache.set(cacheKey, specs);
+		}
+		return specs;
+	});
 }
 
 export const PROPERTY_SPECS: readonly PropertySpec[] = [
@@ -609,6 +713,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		ui: { control: 'color' },
 		defaultValue: WHITE,
 	},
+	// M2 (S11:TXA-007, wp-m2-text-anim): preset + window of each side; params are dynamic (below).
+	...TEXT_ANIMATION_SIDES.flatMap(textAnimationSideSpecs),
 ];
 
 function textStyleOf(clip: Clip) {
@@ -899,6 +1005,7 @@ export function propertiesForClip(
 	composition?: Pick<MgCompositionInfo, 'propsSchema' | 'defaultProps' | 'ui'>,
 ): PropertySpec[] {
 	const base = PROPERTY_SPECS.filter((s) => s.appliesTo(clip));
+	if (clip.kind === 'text') return [...base, ...textAnimationParamSpecs(clip as TextAnimated)];
 	if (template && clip.kind === 'motion-graphic') return [...base, ...paramsPropertySpecs(template)];
 	if (composition && clip.kind === 'composition')
 		return [...base, ...compositionPropsPropertySpecs(composition)];
@@ -906,15 +1013,19 @@ export function propertiesForClip(
 }
 
 /**
- * Resolves a spec for a key, including dynamic `params.<name>` keys (motion graphics, given the template) and
+ * Resolves a spec for a key, including dynamic `params.<name>` keys (motion graphics, given the template),
  * `props.<dotted.path>` keys (composition clips, given the composition; paths below a schema leaf or not
- * described by the schema resolve to a generic `json` spec, validated as a whole when written).
+ * described by the schema resolve to a generic `json` spec, validated as a whole when written) and (M2,
+ * S11:TXA-007) `textAnimation.<side>.params.<name>` keys (text clips, given the clip).
  */
 export function resolvePropertySpec(
 	key: string,
 	template?: MgTemplateInfo,
 	composition?: Pick<MgCompositionInfo, 'propsSchema' | 'defaultProps' | 'ui'> | null,
+	clip?: TextAnimated,
 ): PropertySpec | undefined {
+	if (/^textAnimation\.(in|out)\.params\./.test(key))
+		return clip ? textAnimationParamSpecs(clip).find((s) => s.key === key) : undefined;
 	if (key.startsWith('params.'))
 		return template ? paramsPropertySpecs(template).find((s) => s.key === key) : undefined;
 	if (key.startsWith('props.') && key.length > 'props.'.length) {
