@@ -24,6 +24,35 @@ export const AgentSchemaResponseSchema = z.looseObject({
 	protocol: z.literal('jasper.tx/1'),
 	commands: z.record(z.string(), z.unknown()),
 	errorCodes: z.array(z.string()),
+	/** M2 (S11:ANA-001): motion-graphic templates with their renderer. */
+	mgTemplates: z
+		.array(
+			z.looseObject({
+				id: z.string(),
+				version: z.number().int(),
+				name: z.string(),
+				renderer: z.enum(['fframes', 'anime']).optional(),
+				description: z.string().optional(),
+				defaultDurationSeconds: z.number().optional(),
+			}),
+		)
+		.optional(),
+	/** M2 (S11:ANA-001): text animator presets for `clip.update {textAnimation}`. */
+	textAnimations: z
+		.array(
+			z.looseObject({
+				id: z.string(),
+				version: z.number().int(),
+				label: z.string(),
+				category: z.string(),
+				phases: z.array(z.enum(['in', 'out'])),
+				paramsSchema: z.record(z.string(), z.unknown()),
+				defaults: z.unknown(),
+				defaultDurationFrames: z.number().int().min(1),
+				description: z.string(),
+			}),
+		)
+		.optional(),
 });
 export type AgentSchemaResponse = z.infer<typeof AgentSchemaResponseSchema>;
 

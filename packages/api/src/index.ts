@@ -6,6 +6,7 @@ export * from './events.ts';
 export * from './exports.ts';
 export * from './fonts.ts';
 export * from './jobs.ts';
+export * from './layer-bake.ts';
 export * from './m2-capabilities.ts';
 export * from './media.ts';
 export * from './mg.ts';

@@ -30,6 +30,8 @@ export const MgTemplateCatalogEntrySchema = z.object({
 	canvases: z.array(z.string()),
 	/** true = rendered by the `jasper-mg` binary; false = TS twin only (binary unavailable). */
 	native: z.boolean().optional(),
+	/** M2 (S11:ATP-008): `anime` templates are drawn by `@jasper/motion` and baked by layer-bake; absent = fframes. */
+	renderer: z.enum(['fframes', 'anime']).optional(),
 });
 export type MgTemplateCatalogEntry = z.infer<typeof MgTemplateCatalogEntrySchema>;
 
