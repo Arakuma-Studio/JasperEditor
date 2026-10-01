@@ -336,7 +336,12 @@ export function createUpscaleStep(
 				out = resampleRgb(out, mw, mh, size.width, size.height, 'bicubic');
 			if (mix < 1) {
 				const base = resampleRgb(src, frame.width, frame.height, size.width, size.height, 'lanczos');
-				for (let i = 0; i < out.length; i++) out[i] = mix * out[i] + (1 - mix) * base[i];
+				// The Lanczos reference is clamped first (its ringing overshoots), as in the trailer's sr.py.
+				for (let i = 0; i < out.length; i++) {
+					const b = base[i] < 0 ? 0 : base[i] > 1 ? 1 : base[i];
+					const a = out[i] < 0 ? 0 : out[i] > 1 ? 1 : out[i];
+					out[i] = mix * a + (1 - mix) * b;
+				}
 			}
 			seconds += (performance.now() - t0) / 1000;
 			frames++;

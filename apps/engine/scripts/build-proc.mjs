@@ -32,7 +32,7 @@ mkdirSync(out, { recursive: true });
 
 export const PROC_EXTERNALS = ['onnxruntime-node', '@techstark/opencv-js', '*.node'];
 const banner =
-	"#!/usr/bin/env node\nimport { createRequire as __jasperCreateRequire } from 'node:module'; const require = __jasperCreateRequire(import.meta.url);";
+	"import { createRequire as __jasperCreateRequire } from 'node:module'; const require = __jasperCreateRequire(import.meta.url);";
 const common = {
 	bundle: true,
 	platform: 'node',

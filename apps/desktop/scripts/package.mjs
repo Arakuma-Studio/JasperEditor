@@ -75,6 +75,20 @@ mkdirSync(deploy, { recursive: true });
 cpSync(join(engine, 'dist', 'engine.mjs'), join(deploy, 'engine.mjs'));
 cpSync(join(engine, 'dist', 'remotion-bundle'), join(deploy, 'remotion-bundle'), { recursive: true });
 cpSync(join(engine, 'dist', 'fonts'), join(deploy, 'fonts'), { recursive: true });
+// Clip processing (wp-m2-process): jasper-proc + its worker, the vid.stab WASM module, models, licence texts.
+for (const f of [
+	'jasper-proc.mjs',
+	'jasper-proc.package.json',
+	'dejudder-worker.mjs',
+	'vidstab.wasm',
+	'VIDSTAB-WASM.json',
+	'LICENSE-vidstab.txt',
+	'NOTICE-vidstab.txt',
+	'models',
+	'third-party',
+])
+	if (existsSync(join(engine, 'dist', f)))
+		cpSync(join(engine, 'dist', f), join(deploy, f), { recursive: true });
 
 /** Node's lookup: `<dir>/node_modules/<name>` walking up from the (real) directory of the dependent. */
 function resolvePackage(name, fromDir) {
@@ -134,7 +148,8 @@ function copyRuntimeClosure(roots, fromDir, dest) {
 	return count;
 }
 
-const packages = copyRuntimeClosure(['@remotion/renderer'], engine, deploy);
+// onnxruntime-node (MIT): the super-resolution runtime of jasper-proc (native binding, loaded lazily).
+const packages = copyRuntimeClosure(['@remotion/renderer', 'onnxruntime-node'], engine, deploy);
 const enginePkg = JSON.parse(readFileSync(join(engine, 'package.json'), 'utf8'));
 writeFileSync(
 	join(deploy, 'package.json'),

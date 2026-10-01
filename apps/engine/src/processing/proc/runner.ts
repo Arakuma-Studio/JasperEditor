@@ -347,15 +347,21 @@ export async function runProc(spec: ProcSpec, opts: RunOptions): Promise<RunResu
 			'+write_colr',
 			'-fps_mode',
 			'passthrough',
-			'-frames:v',
-			String(frames),
+			// A range is cut here (and the PCM audio by -t on its input); a whole file ends at the input's EOF so
+			// the copied audio is never truncated by an early stop of the muxer.
+			...(spec.range ? ['-frames:v', String(frames)] : []),
 			'-metadata',
 			`comment=${PROC_NAME} ${PROC_VERSION} recipe ${recipeHash(spec.steps, RECIPE_VERSION, spec.range ?? null).slice(0, 16)}`,
 			'-y',
 			spec.output,
 		];
 	};
-	const audioInput = probe.audioStreams > 0 ? seekArgs : [];
+	const audioInput =
+		probe.audioStreams > 0
+			? spec.range
+				? [...seekArgs.slice(0, -2), '-t', ((frames * fps.den) / fps.num).toFixed(6), ...seekArgs.slice(-2)]
+				: seekArgs
+			: [];
 	const toProres = (fmtFrom: 'rgb' | 'yuv') =>
 		`scale=${fmtFrom === 'yuv' ? 'in_color_matrix=bt709:in_range=pc:' : ''}out_color_matrix=bt709:out_range=tv:flags=accurate_rnd+full_chroma_int+full_chroma_inp+lanczos,format=${alpha ? 'yuva444p12le' : 'yuv422p10le'},setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv`;
 
