@@ -1,59 +1,79 @@
 // @jasper/motion/text — text animator implementations (S11 §4.2, ARCHITECTURE §20.2), keyed `id@version` like
-// `TEXT_ANIMATION_SPECS` in @jasper/project (a test asserts both lists match). Owner: wp-m2-text-anim.
-import type { TextAnimationSide } from '@jasper/project';
-import type { TextUnit, Timeline } from '../runtime/index.ts';
+// `TEXT_ANIMATION_SPECS` in @jasper/project (a test asserts both lists match), and the window maths the text
+// layer needs to seek them (S11:TXA-004). Owner: wp-m2-text-anim.
+import type { ResolvedTextAnimator, TextAnimationSide } from '@jasper/project';
+import { frameToMs, needsShaping, type TextUnit } from '../runtime/index.ts';
+import { PRESET_IMPLS } from './presets.ts';
+import type { TextAnimationImpl } from './types.ts';
+
+export { orderRanks } from './presets.ts';
+export {
+	REST_UNIT_VALUES,
+	type TextAnimationBuildContext,
+	type TextAnimationImpl,
+	type UnitValues,
+} from './types.ts';
+
+/** The shipped implementations (one per catalogue preset). */
+export const TEXT_ANIMATION_IMPLS: Readonly<Record<string, TextAnimationImpl>> = PRESET_IMPLS;
+
+/** The implementation of a resolved animator, or undefined (unknown presets render at rest, S11:TXA-008). */
+export function textAnimationImpl(
+	a: Pick<ResolvedTextAnimator, 'preset' | 'version'>,
+): TextAnimationImpl | undefined {
+	return TEXT_ANIMATION_IMPLS[`${a.preset}@${a.version}`];
+}
+
+/** The side playing at a clip-local frame and the seek time of its In-ordered timeline. */
+export type ActiveTextAnimation = {
+	side: TextAnimationSide;
+	animator: ResolvedTextAnimator;
+	/** Seek time of the In-ordered timeline (Out windows play it mirrored). */
+	ms: number;
+	durationMs: number;
+};
 
 /**
- * Animated values of one unit (char / word / line), all numbers: `opacity` 0…1, `x`/`y` px in the text box
- * space, `scale` factor, `rotate` degrees, `blur` px, `letterSpacing` em (added to the style's tracking),
- * `reveal` 0…1 (mask/typewriter progress; 1 = fully shown).
+ * Window of a clip-local frame (S11:TXA-004): In covers `[0, in)` (frame k → seek k), Out covers
+ * `[duration − out, duration)` played mirrored (its last frame is the In timeline's start). Transition handles
+ * clamp: before the clip the In start state, after it the Out end state. Seek times are whole frames
+ * (`frame · 1000 / fps`, S11:ANM-003). Null = rest.
  */
-export type UnitValues = {
-	opacity: number;
-	x: number;
-	y: number;
-	scale: number;
-	rotate: number;
-	blur: number;
-	letterSpacing: number;
-	reveal: number;
-};
+export function activeTextAnimation(
+	animation: { in?: ResolvedTextAnimator; out?: ResolvedTextAnimator } | undefined,
+	localFrame: number,
+	duration: number,
+	fps: number,
+): ActiveTextAnimation | null {
+	const f = Math.round(localFrame);
+	const a = animation?.in;
+	if (a && a.frames > 0 && f < a.frames)
+		return {
+			side: 'in',
+			animator: a,
+			ms: frameToMs(Math.max(0, f), fps),
+			durationMs: frameToMs(a.frames, fps),
+		};
+	const b = animation?.out;
+	if (b && b.frames > 0 && f >= duration - b.frames) {
+		const k = Math.min(f - (duration - b.frames), b.frames - 1);
+		return {
+			side: 'out',
+			animator: b,
+			ms: frameToMs(b.frames - 1 - k, fps),
+			durationMs: frameToMs(b.frames, fps),
+		};
+	}
+	return null;
+}
 
-/** Values of a unit at rest (outside every window, S11:ANM-009). */
-export const REST_UNIT_VALUES: Readonly<UnitValues> = Object.freeze({
-	opacity: 1,
-	x: 0,
-	y: 0,
-	scale: 1,
-	rotate: 0,
-	blur: 0,
-	letterSpacing: 0,
-	reveal: 1,
-});
-
-export type TextAnimationBuildContext = {
-	/** Number of units (segments with `space: false`). */
-	units: number;
-	/** Line index per unit (line units and line-aware presets; from `groupLines`). */
-	lineOf?: number[];
-	side: TextAnimationSide;
-	/** Window length (compressed frames → ms). */
-	durationMs: number;
-	/** The preset's params with defaults merged (snapshot `animation.<side>.params`). */
-	params: Record<string, unknown>;
-	/** `hash32(clipId, 'text-anim', side)`. */
-	seed: number;
-	/** Text box in layer pixels. */
-	box: { width: number; height: number };
-};
-
-export type TextAnimationImpl = {
-	/** `id@version`. */
-	key: string;
-	unitDefault: TextUnit;
-	/** Pure: fresh targets (one per unit) and a paused timeline over them, `durationMs` long. */
-	build(ctx: TextAnimationBuildContext): { timeline: Timeline; targets: UnitValues[] };
-};
-
-/** The shipped implementations. Empty until wp-m2-text-anim lands. */
-export const TEXT_ANIMATION_IMPLS: Readonly<Record<string, TextAnimationImpl>> = {};
+/** The unit of an animator for a text: its `unit` param (or the preset default); `char` → `word` for RTL/complex scripts. */
+export function textAnimationUnit(
+	impl: TextAnimationImpl,
+	params: Record<string, unknown>,
+	text: string,
+): TextUnit {
+	const u = params.unit;
+	const unit: TextUnit = u === 'char' || u === 'word' || u === 'line' ? u : impl.unitDefault;
+	return unit === 'char' && needsShaping(text) ? 'word' : unit;
+}

@@ -256,7 +256,7 @@ describe('text units (S11:TXA-010/011)', () => {
 
 describe('implementation tables (filled by wave 1)', () => {
 	it('start empty and expose the rest values', () => {
-		expect(TEXT_ANIMATION_IMPLS).toEqual({});
+		expect(Object.keys(TEXT_ANIMATION_IMPLS)).toHaveLength(12); // wp-m2-text-anim (test/text.test.ts)
 		expect(ANIME_TEMPLATE_IMPLS).toEqual({});
 		expect(REST_UNIT_VALUES).toEqual({
 			opacity: 1,
