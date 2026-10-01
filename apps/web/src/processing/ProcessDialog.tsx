@@ -415,7 +415,7 @@ export function ProcessDialog(props: HostedDialogProps<ProcessDialogProps>) {
 						<Opt label="Method">
 							<Select
 								label="Stabilize method"
-								className="w-60"
+								className="w-72"
 								value={form.stabilize.method}
 								onValueChange={(v) => set('stabilize', { method: v as StabilizeMethod })}
 								options={[

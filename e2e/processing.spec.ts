@@ -122,6 +122,68 @@ test('Media Version dropdown swaps and undoes', async () => {
 	await expect.poll(badge).toBe('"Processed"');
 });
 
+test('Process Clip… with Smooth path (keyboard): explained options, job notes report the zoom and speeds', async () => {
+	await clipElement(page, videoClip).click({ button: 'right', position: { x: 30, y: 20 } });
+	await page.getByRole('menuitem', { name: 'Process Clip…' }).dispatchEvent('click');
+	const dialog = page.getByTestId('process-dialog');
+	await expect(dialog).toBeVisible();
+	await dialog.getByRole('checkbox', { name: 'Stabilize' }).click();
+	await expect(dialog.getByTestId('stabilize-method-help')).toContainText('handheld');
+	// Pick the method with the keyboard: Enter on the option must not also press Start.
+	const method = dialog.getByRole('combobox', { name: 'Stabilize method' });
+	await method.click();
+	await expect(page.getByRole('option', { name: 'Smooth path (one even move)' })).toBeVisible();
+	await page.getByRole('option', { name: 'Smooth path (one even move)' }).focus();
+	await page.keyboard.press('Enter');
+	await expect(dialog).toBeVisible();
+	await expect(method).toContainText('Smooth path');
+	await expect(dialog.getByTestId('stabilize-method-help')).toContainText('one sudden reframe or jerk');
+	await expect(dialog.getByTestId('stabilize-path-smoothing')).toHaveText('30 frames');
+	await expect(dialog.getByTestId('stabilize-max-zoom')).toHaveText('112 %');
+	await dialog.getByRole('checkbox', { name: 'Vertical (no tilt)' }).click();
+	await dialog.getByRole('checkbox', { name: 'Rotation (level horizon)' }).click();
+	await dialog.screenshot({ path: 'test-results/e2e/process-dialog-smoothpath.png' });
+	const before = (await appliedLabels(page)).filter((l) => l === 'Process Clip').length;
+	await dialog.getByRole('button', { name: 'Start' }).click();
+	await expect(dialog).toBeHidden();
+	await expect
+		.poll(async () => (await appliedLabels(page)).filter((l) => l === 'Process Clip').length, {
+			timeout: 400_000,
+			intervals: [2000],
+		})
+		.toBe(before + 1);
+	const d = await doc();
+	const processed = d.media[(await clipMedia())!] as unknown as {
+		originalName: string;
+		derivation: { recipe: { op: string; steps: Array<Record<string, unknown>> } };
+	};
+	expect(processed.derivation.recipe.steps).toEqual([
+		{
+			op: 'stabilize',
+			method: 'smoothpath',
+			smoothing: 30,
+			borders: 'crop',
+			lockVertical: true,
+			lockRotation: true,
+			maxZoom: 112,
+		},
+	]);
+	// The job's notes (shown in the success toast) report the zoom and the camera speed before → after.
+	const jobs = (await (await page.request.get('/api/jobs')).json()) as {
+		jobs: Array<{ kind: string; state: string; result?: { notes?: string[] } }>;
+	};
+	const notes = jobs.jobs
+		.filter((j) => j.kind === 'process' && j.state === 'succeeded')
+		.flatMap((j) => j.result?.notes ?? []);
+	expect(notes.join('\n')).toMatch(
+		/smooth path\): zoom [\d.]+ %, camera speed max [\d.]+ → [\d.]+ px\/frame/,
+	);
+	await undo();
+	await expect
+		.poll(async () => (await doc()).media[(await clipMedia())!]?.derivation?.recipe.op)
+		.toBe('process');
+});
+
 test('Preferences ▸ Processing saves the remote settings and renders a probe result', async () => {
 	await page.getByTestId('title-bar').getByRole('menuitem', { name: 'Edit', exact: true }).click();
 	await page.getByRole('menuitem', { name: /^Preferences$/ }).hover();
