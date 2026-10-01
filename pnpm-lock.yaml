@@ -370,6 +370,9 @@ importers:
         specifier: 4.0.499
         version: 4.0.499(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
     devDependencies:
+      '@remotion/player':
+        specifier: 4.0.499
+        version: 4.0.499(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@types/react':
         specifier: ^19.2.0
         version: 19.3.0

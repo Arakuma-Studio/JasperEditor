@@ -143,6 +143,30 @@ composition then appears in **Motion Templates ▸ Remotion**; double-click or d
 - MCP: `import_mg_bundle`, `list_compositions`, `add_composition`, `set_composition_props`,
   `prerender_composition`, `scaffold_mg_project`.
 
+## In-video animation runtime (anime.js)
+
+Animated titles and anime templates (S11, `docs/wp-notes/wp-m2-anime-core.md`) run on **anime.js 4.5.0** (pinned
+exactly) as a seek-driven value engine in `@jasper/motion`: timelines are created paused, moved only with the
+canonical seek (`seek(duration) → seek(0) → seek(frame·1000/fps)`) and animate plain objects that React renders
+as inline styles, so the Player, `renderStill` and parallel `renderMedia` agree frame for frame.
+
+- `node scripts/check-anime.mjs` (part of `pnpm lint`) rejects autoplay, timers, wall clock, unseeded randomness
+  and the other S11:ANM-006 patterns in `packages/motion/src` and `packages/compositions/src`; a line may opt out
+  with `// anime-allow: <reason>`. Biome mirrors the import bans.
+- Text and anime-template layers wait for their font faces (per family/weight/style) before they mount, so they
+  never measure or paint with a fallback font.
+- The determinism suite (`packages/motion/test/determinism.test.tsx`) checks every registered text animator and
+  anime template in order, reversed and shuffled against a fresh build per frame. Render parity (stills vs
+  `renderFrames`/`renderMedia` at concurrency 1 and 4, reversed and shuffled visits, Player vs still) and the
+  value-engine cost run with
+  `REMOTION_E2E=1 pnpm exec vitest run packages/motion/test/determinism-render.e2e.test.ts`
+  (Chrome at `/usr/bin/google-chrome` or `JASPER_BROWSER_EXECUTABLE`).
+- `pnpm notices` regenerates `THIRD_PARTY_NOTICES.md` (the JavaScript packages shipped in the web app and the
+  Remotion bundle, with their licence texts); `pnpm notices --check` fails when it is stale (a test runs it).
+  The web build ships it as `/THIRD_PARTY_NOTICES.md`, linked from Help ▸ About.
+- New composition projects (`POST /api/mg-bundles/scaffold`, MCP `scaffold_mg_project`) include an `AnimeTitle`
+  example and a README section on driving anime.js from the frame in a Remotion composition.
+
 ## PWA (installable web app)
 
 The Vite dev server does not register the service worker; install from a production build served by the
