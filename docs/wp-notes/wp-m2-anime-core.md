@@ -106,3 +106,25 @@ Research: `docs/research/animejs-v4-notes.md` (R-ANM). anime.js pinned at **4.5.
   fonts otherwise should call `useFontsReady` themselves (anime-templates).
 - `apps/desktop/scripts/package.mjs` changes were not run end to end (packaging fetches the LGPL FFmpeg); the
   web build emitting `THIRD_PARTY_NOTICES.md` and the packaged-like `/api/licenses` were verified separately.
+
+## Verification (2026-10-01, shared box, load average 20–45 on 12 cores)
+
+- `pnpm install --frozen-lockfile` ok (after the `@remotion/player` devDependency: `pnpm install --offline`, +3
+  lockfile lines).
+- `pnpm lint`: in a checkout under `.claude/worktrees/` Biome ignores every file (`biome.json` excludes
+  `**/.claude` since a7f1f47 — environmental, not this branch). Verified on a `git archive HEAD` copy outside
+  `.claude`: `biome check` 827 files, 0 errors / 0 warnings; `check-tokens` ok; `check-anime` ok.
+- `pnpm typecheck` ok, `pnpm e2e:typecheck` ok.
+- `pnpm test`: 1306 passed, 36 skipped, 5 failed — `anime-scaffold.test.ts` (esbuild bundle hit the 5 s default
+  timeout; the describe now allows 60 s), `mg-bundles.test.ts` (zod 3 schemas), `processing.test.ts` (cancel),
+  `tracking.test.ts` (input seek), `warp.test.ts` (planner): every one a 5 s / wait timeout under load; the five
+  files re-run alone: 47 passed, 8 skipped, 0 failed.
+- `REMOTION_E2E=1 pnpm vitest run packages/motion/test/determinism-render.e2e.test.ts`: 7/7 passed (three runs;
+  ~5–6 min). Byte-identical PNGs (stills vs c1/c4/reversed/shuffled) for both compositions; ProRes c1 = c4;
+  Player vs still: 0 pixels above 3/255 at frames 0, 5, 11, 17, 24, 31, 39 for both (control frame differs).
+- `REMOTION_E2E=1 JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome pnpm vitest run apps/engine/test/remotion.e2e.test.ts apps/engine/test/color-remotion.test.ts`:
+  5/5 passed (real renders with text and document fonts through the new font gating).
+- Playwright: `E2E_SKIP_LGPL=1 E2E_PORT=48737 pnpm e2e e2e/anime-core.spec.ts`: 2/2 passed.
+- Packaged-like `/api/licenses`: `apps/engine/dist/{engine.mjs,third-party/}` copied to a temp dir outside the
+  repo, started on a free port: `animejs` 4.5.0, MIT, committed text.
+- `pnpm --filter @jasper/web build`: `dist/THIRD_PARTY_NOTICES.md` identical to the checked-in file.

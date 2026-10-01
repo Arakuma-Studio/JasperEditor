@@ -21,7 +21,7 @@ type TimelineModule = {
 	seekCanonical(timeline: unknown, ms: number): void;
 };
 
-describe('scaffold anime.js example (S11:ANM-016)', () => {
+describe('scaffold anime.js example (S11:ANM-016)', { timeout: 60_000 }, () => {
 	it('is scaffolded: AnimeTitle registered, schema + manifest entry, animejs pinned, README rule', async () => {
 		const dir = await scaffoldProject(mkdtempSync(join(tmpdir(), 'jasper-anime-scaffold-')), 'titles', {
 			install: false,
