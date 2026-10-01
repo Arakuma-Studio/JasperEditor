@@ -20,6 +20,7 @@ async function stabilizeEngine(
 	wasmAvailable: () => Promise<boolean>,
 ): Promise<StabilizeEngine> {
 	if (step.method === 'deshake') return 'deshake';
+	if (step.method === 'smoothpath') throw new Error('smoothpath has its own engine');
 	const pref = env.spec.vidstabEngine ?? 'auto';
 	if (pref === 'ffmpeg') {
 		if (env.filters.has('vidstabdetect') && env.filters.has('vidstabtransform')) return 'ffmpeg';
@@ -46,6 +47,17 @@ export async function createStepImpl(step: ProcessStep, env: StepEnv): Promise<S
 		case 'denoise':
 			return { kind: 'filter', step: createDenoiseStep(step) };
 		case 'stabilize': {
+			if (step.method === 'smoothpath') {
+				// PST-005: OpenCV.js tracking + the vid.stab WASM warp kernel; no fallback to another method (the
+				// result would be a different kind of stabilisation), the job fails with a clear code instead.
+				if (!(await wasmAvailable()))
+					throw new ProcError(
+						'SMOOTHPATH_UNAVAILABLE',
+						'smooth path needs the vid.stab WASM warp module, which could not be loaded',
+					);
+				const m = await import('./smoothpath/step.ts');
+				return { kind: 'frames', step: m.createSmoothPathStep(step) };
+			}
 			const engine = await stabilizeEngine(step, env, wasmAvailable);
 			if (engine === 'deshake') return { kind: 'filter', step: createDeshakeStep(step) };
 			if (engine === 'ffmpeg') {

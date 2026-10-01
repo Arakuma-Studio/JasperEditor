@@ -10,7 +10,8 @@ import { canonicalJson, type ProcessStep } from '@jasper/project';
 export const RECIPE_VERSION = 1;
 
 export const PROC_NAME = 'jasper-proc';
-export const PROC_VERSION = '0.1.0';
+/** Runtime version (a remote host with another version is "outdated": Set up again). 0.2.0: smooth path. */
+export const PROC_VERSION = '0.2.0';
 
 /** `recipeHash = sha256(canonicalJson({steps, recipeVersion}))` (+ the range when one is processed). */
 export function recipeHash(

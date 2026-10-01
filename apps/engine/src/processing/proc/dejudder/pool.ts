@@ -1,5 +1,6 @@
-// Worker-thread pool for the de-judder step (S07:PST-014): N workers, each with its own OpenCV.js instance,
-// one task per worker at a time, FIFO queue in the main thread.
+// Worker-thread pool of the OpenCV.js steps — de-judder (S07:PST-014) and the smooth-path stabiliser's feature
+// tracking (PST-005): N workers, each with its own OpenCV.js instance, one task per worker at a time, FIFO
+// queue in the main thread.
 //
 // Bundling (PRC-011): the worker is a separate entry point. From the source tree (vitest / tsx) it is
 // `./worker.mjs` next to this file; in the esbuild bundle `dist/jasper-proc.mjs` it must be emitted as
@@ -27,8 +28,28 @@ export type FlowParams = {
 	smoothSigma: number;
 };
 
+/** Feature tracking parameters (smooth-path stabiliser, PST-005). */
+export type TrackParams = {
+	/** `goodFeaturesToTrack` maxCorners / qualityLevel / minDistance (px of the tracking frame). */
+	maxCorners: number;
+	quality: number;
+	minDistance: number;
+	/** Pyramidal Lucas-Kanade window (px) and pyramid levels. */
+	winSize: number;
+	maxLevel: number;
+};
+
 type WorkerRequest =
 	| { type: 'motion'; id: number; width: number; height: number; a: Uint8Array; b: Uint8Array }
+	| {
+			type: 'track';
+			id: number;
+			width: number;
+			height: number;
+			a: Uint8Array;
+			b: Uint8Array;
+			params: TrackParams;
+	  }
 	| {
 			type: 'warp';
 			id: number;
@@ -47,9 +68,13 @@ type Task = WorkerRequest extends infer R ? (R extends { id: number } ? Omit<R, 
 
 export type MotionResult = { p75: number; dx: number; dy: number };
 
+/** Tracked point pairs (interleaved x,y in tracking-frame pixels) and the number of corners found. */
+export type TrackResult = { p0: Float32Array; p1: Float32Array; corners: number };
+
 type WorkerResponse =
 	| { type: 'ready' }
 	| ({ type: 'motion'; id: number } & MotionResult)
+	| ({ type: 'track'; id: number } & TrackResult)
 	| { type: 'warp'; id: number; data: Uint16Array }
 	| { type: 'error'; id: number; message: string };
 
@@ -122,6 +147,7 @@ export class CvPool {
 				if (msg.type === 'error') job.reject(new Error(`dejudder worker: ${msg.message}`));
 				else if (msg.type === 'warp') job.resolve(msg.data);
 				else if (msg.type === 'motion') job.resolve({ p75: msg.p75, dx: msg.dx, dy: msg.dy });
+				else if (msg.type === 'track') job.resolve({ p0: msg.p0, p1: msg.p1, corners: msg.corners });
 				this.pump();
 			});
 			const fail = (err: Error) => {
@@ -169,6 +195,17 @@ export class CvPool {
 	/** Per-pair motion of two grey proxies (PST-011). The buffers are copied. */
 	motion(width: number, height: number, a: Uint8Array, b: Uint8Array): Promise<MotionResult> {
 		return this.run({ type: 'motion', width, height, a, b });
+	}
+
+	/** Corners of `a` tracked into `b` (PST-005). The buffers are copied. */
+	track(
+		width: number,
+		height: number,
+		a: Uint8Array,
+		b: Uint8Array,
+		params: TrackParams,
+	): Promise<TrackResult> {
+		return this.run({ type: 'track', width, height, a, b, params });
 	}
 
 	/** Backward warp of `near` by `t` of the near→far step (PST-013). The buffers are copied. */

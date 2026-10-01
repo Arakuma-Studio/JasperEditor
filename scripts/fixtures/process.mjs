@@ -2,6 +2,9 @@
 //   shaky.mp4       1080p30, 90 frames: a static test chart panned by a seeded random walk of ±24 px (stabilise)
 //   judder.mp4      640x360 30 fps, 60 frames: a 50 fps pan decimated 2-2-1 to 30 fps (de-judder)
 //   steady-pan.mp4  640x360 30 fps, 60 frames: an even pan (de-judder must leave it alone)
+//   reframe.mp4     848x480 30 fps, 90 frames: a static shot with one jerky operator reframe (160 px right,
+//                   a 6 px vertical bump) and a slow drift, plus a textured "subject" crossing the frame on its
+//                   own (smooth-path stabiliser, PST-005; `reframePath()` is the ground truth)
 //   noisy.mkv       1280x720 25 fps, 50 frames: flat grey patches with temporal noise, sigma ≈ 4.8 levels (denoise)
 //   blocky.mp4      1280x720 25 fps, 50 frames: the test pattern over-compressed with MPEG-4 part 2 at q 31,
 //                   strong 8x8 blocking (deblock)
@@ -36,6 +39,28 @@ function table(values, offset) {
 	return e;
 }
 
+/**
+ * Camera path of reframe.mp4 (crop offset in canvas pixels per frame): still for 25 frames, a jerky reframe of
+ * 160 px to the right over frames 25…45 (smoothstep with alternating ±3 px jerks, like a hand on a tripod
+ * handle) with a 6 px vertical bump, then a slow drift of 0.5 px/frame.
+ */
+export function reframePath(n = 90) {
+	const xs = [];
+	const ys = [];
+	for (let i = 0; i < n; i++) {
+		let x = 0;
+		let y = 0;
+		if (i >= 25 && i <= 45) {
+			const u = (i - 25) / 20;
+			x = 160 * u * u * (3 - 2 * u) + (i < 45 ? (i % 2 ? 3 : -3) : 0);
+			y = Math.round(6 * Math.sin(Math.PI * u));
+		} else if (i > 45) x = 160 + 0.5 * (i - 45);
+		xs.push(Math.round(x));
+		ys.push(y);
+	}
+	return { xs, ys };
+}
+
 export async function fixtures({ ffmpeg, base, h264 }) {
 	const run = (args) => {
 		const r = spawnSync(ffmpeg, [...base, ...args], { encoding: 'utf8' });
@@ -51,7 +76,47 @@ export async function fixtures({ ffmpeg, base, h264 }) {
 	const chart = (W, H) =>
 		`${texture(W, H)}[n];testsrc2=size=${W}x${H}:rate=1:duration=1,format=rgb24[t];[n]format=rgb24[m];[t][m]blend=all_mode=average`;
 	const walk = randomWalk(90);
+	const reframe = reframePath(90);
 	return [
+		{
+			name: 'reframe.mp4',
+			recipe: `reframe-v1:${h264.join(' ')}:${reframe.xs.join(',')}:${reframe.ys.join(',')}`,
+			make: async (out) => {
+				const still = `${out}.still.png`;
+				const subject = `${out}.subject.png`;
+				try {
+					run(['-f', 'lavfi', '-i', chart(1104, 528), '-frames:v', '1', still]);
+					run([
+						...['-f', 'lavfi', '-i', 'testsrc=size=144x208:rate=1:duration=1,format=rgb24'],
+						...['-frames:v', '1', subject],
+					]);
+					run([
+						...['-loop', '1', '-framerate', '30', '-i', still],
+						...['-loop', '1', '-framerate', '30', '-i', subject],
+						...[
+							'-filter_complex',
+							`[0:v]crop=848:480:'${table(reframe.xs, 24)}':'${table(reframe.ys, 24)}'[bg];[bg][1:v]overlay=x='40+n*7':y=150:shortest=1,format=yuv420p[v]`,
+						],
+						...[
+							'-map',
+							'[v]',
+							'-frames:v',
+							'90',
+							...h264,
+							'-an',
+							'-f',
+							'mp4',
+							'-movflags',
+							'+faststart',
+							out,
+						],
+					]);
+				} finally {
+					rmSync(still, { force: true });
+					rmSync(subject, { force: true });
+				}
+			},
+		},
 		{
 			name: 'shaky.mp4',
 			recipe: `shaky-v2:${h264.join(' ')}:${walk.xs.join(',')}:${walk.ys.join(',')}`,

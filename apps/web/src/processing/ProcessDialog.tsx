@@ -28,6 +28,8 @@ import {
 	type ProcessForm,
 	processedSteps,
 	recipeLabel,
+	SMOOTH_PATH_DEFAULTS,
+	type StabilizeMethod,
 	sourceInfo,
 	stepsFromForm,
 } from './model.ts';
@@ -52,6 +54,15 @@ const DENOISE_LABELS: Record<DenoiseMethod, string> = {
 	atadenoise: 'Temporal (atadenoise) — fast',
 	fftdnoiz: 'FFT (fftdnoiz) — medium',
 	nlmeans: 'Non-local means (nlmeans) — slow, strongest',
+};
+
+/** What each stabilise method is for (S07:PRU-001), shown under the method choice. */
+const STABILIZE_HELP: Record<Exclude<StabilizeMethod, 'auto'>, string> = {
+	vidstab:
+		'Removes handheld shake and keeps the intended camera moves. For walking or handheld shots with continuous jitter.',
+	smoothpath:
+		'Turns one sudden reframe or jerk, or a slow uneven drift, into a single even move, with one fixed zoom for the whole shot. Tracks the background, so people moving through the shot are ignored. For shots from a fixed position (tripod, leaning on something).',
+	deshake: 'Fast one-pass fallback; removes less shake than vid.stab.',
 };
 
 function Segmented<T extends string>(props: {
@@ -201,6 +212,8 @@ export function ProcessDialog(props: HostedDialogProps<ProcessDialogProps>) {
 	};
 
 	const model = models?.find((m) => m.id === form.upscale.model) ?? null;
+	const smoothPath = form.stabilize.method === 'smoothpath';
+	const autoStabilize: Exclude<StabilizeMethod, 'auto'> = proc?.stabilize === 'deshake' ? 'deshake' : 'vidstab';
 	const steps = useMemo(() => stepsFromForm(form), [form]);
 	const ops = steps.map((s) => s.op);
 	const remote = settings?.remote ?? null;
@@ -393,7 +406,7 @@ export function ProcessDialog(props: HostedDialogProps<ProcessDialogProps>) {
 					<StepBlock
 						id="stabilize"
 						title="Stabilize"
-						hint="Smooths camera shake (vid.stab or deshake)"
+						hint="Smooths camera shake or an uneven camera move"
 						on={form.stabilize.on}
 						onToggle={(on) => set('stabilize', { on })}
 						unavailable={unavailable.stabilize}
@@ -401,57 +414,129 @@ export function ProcessDialog(props: HostedDialogProps<ProcessDialogProps>) {
 						<Opt label="Method">
 							<Select
 								label="Stabilize method"
-								className="w-52"
+								className="w-60"
 								value={form.stabilize.method}
-								onValueChange={(v) => set('stabilize', { method: v as ProcessForm['stabilize']['method'] })}
+								onValueChange={(v) => set('stabilize', { method: v as StabilizeMethod })}
 								options={[
 									{
 										value: 'auto',
 										label: `Auto (${proc?.stabilize === 'deshake' ? 'deshake' : 'vid.stab'})`,
 									},
 									{ value: 'vidstab', label: 'vid.stab', disabled: proc?.stabilize !== 'vidstab' },
+									{
+										value: 'smoothpath',
+										label: 'Smooth path (one even move)',
+										disabled: proc?.smoothPath !== 'ready',
+									},
 									{ value: 'deshake', label: 'deshake (one pass)' },
 								]}
 							/>
 						</Opt>
-						<Opt label="Smoothing">
-							<div className="w-44 shrink-0">
-								<Slider
-									label="Smoothing"
-									min={1}
-									max={60}
-									value={form.stabilize.smoothing}
-									defaultValue={15}
-									valueText={`${form.stabilize.smoothing} frames`}
-									onChange={(v) => set('stabilize', { smoothing: v })}
-								/>
-							</div>
-							<span
-								className="shrink-0 whitespace-nowrap text-pr-value pr-tabular"
-								data-testid="stabilize-smoothing"
-							>
-								{form.stabilize.smoothing} frames
-							</span>
-						</Opt>
+						<p
+							className="m-0 pb-1 pl-[104px] text-pr-small leading-snug text-pr-dim"
+							data-testid="stabilize-method-help"
+						>
+							{STABILIZE_HELP[form.stabilize.method === 'auto' ? autoStabilize : form.stabilize.method]}
+						</p>
+						{smoothPath ? (
+							<>
+								<Opt label="Smoothing">
+									<div className="w-44 shrink-0">
+										<Slider
+											label="Path smoothing"
+											min={1}
+											max={120}
+											value={form.stabilize.pathSmoothing}
+											defaultValue={SMOOTH_PATH_DEFAULTS.pathSmoothing}
+											valueText={`${form.stabilize.pathSmoothing} frames`}
+											onChange={(v) => set('stabilize', { pathSmoothing: v })}
+										/>
+									</div>
+									<span
+										className="shrink-0 whitespace-nowrap text-pr-value pr-tabular"
+										data-testid="stabilize-path-smoothing"
+										title="Gaussian sigma of the camera path: higher = slower, more even move (and more zoom)"
+									>
+										{form.stabilize.pathSmoothing} frames
+									</span>
+								</Opt>
+								<Opt label="Lock">
+									<Checkbox
+										checked={form.stabilize.lockVertical}
+										onCheckedChange={(c) => set('stabilize', { lockVertical: c })}
+										label="Vertical (no tilt)"
+									/>
+									<Checkbox
+										checked={form.stabilize.lockRotation}
+										onCheckedChange={(c) => set('stabilize', { lockRotation: c })}
+										label="Rotation (level horizon)"
+									/>
+								</Opt>
+							</>
+						) : (
+							<Opt label="Smoothing">
+								<div className="w-44 shrink-0">
+									<Slider
+										label="Smoothing"
+										min={1}
+										max={60}
+										value={form.stabilize.smoothing}
+										defaultValue={15}
+										valueText={`${form.stabilize.smoothing} frames`}
+										onChange={(v) => set('stabilize', { smoothing: v })}
+									/>
+								</div>
+								<span
+									className="shrink-0 whitespace-nowrap text-pr-value pr-tabular"
+									data-testid="stabilize-smoothing"
+								>
+									{form.stabilize.smoothing} frames
+								</span>
+							</Opt>
+						)}
 						<Opt label="Borders">
 							<Segmented
 								label="Borders"
 								value={form.stabilize.borders}
 								onChange={(v) => set('stabilize', { borders: v })}
 								options={[
-									{ value: 'crop', label: 'Crop (zoom in)' },
+									{ value: 'crop', label: smoothPath ? 'Crop (one fixed zoom)' : 'Crop (zoom in)' },
 									{ value: 'keep', label: 'Keep (black edges)' },
 								]}
 							/>
 						</Opt>
-						<Opt label="Rotation">
-							<Checkbox
-								checked={form.stabilize.rotation}
-								disabled={form.stabilize.method === 'deshake'}
-								onCheckedChange={(c) => set('stabilize', { rotation: c })}
-								label="Also stabilize rotation (vid.stab)"
-							/>
-						</Opt>
+						{smoothPath && form.stabilize.borders === 'crop' ? (
+							<Opt label="Max zoom">
+								<div className="w-44 shrink-0">
+									<Slider
+										label="Max zoom"
+										min={101}
+										max={150}
+										value={form.stabilize.maxZoom}
+										defaultValue={SMOOTH_PATH_DEFAULTS.maxZoom}
+										valueText={`${form.stabilize.maxZoom} %`}
+										onChange={(v) => set('stabilize', { maxZoom: v })}
+									/>
+								</div>
+								<span
+									className="shrink-0 whitespace-nowrap text-pr-value pr-tabular"
+									data-testid="stabilize-max-zoom"
+									title="When the smoothing needs more zoom than this, the largest smoothing that fits is used (the job says so)"
+								>
+									{form.stabilize.maxZoom} %
+								</span>
+							</Opt>
+						) : null}
+						{smoothPath ? null : (
+							<Opt label="Rotation">
+								<Checkbox
+									checked={form.stabilize.rotation}
+									disabled={form.stabilize.method === 'deshake'}
+									onCheckedChange={(c) => set('stabilize', { rotation: c })}
+									label="Also stabilize rotation (vid.stab)"
+								/>
+							</Opt>
+						)}
 					</StepBlock>
 
 					<StepBlock

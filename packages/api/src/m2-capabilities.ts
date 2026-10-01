@@ -16,6 +16,11 @@ export const M2FeaturesSchema = z.object({
 	processing: z
 		.object({
 			stabilize: z.enum(['vidstab', 'deshake', 'none']),
+			/**
+			 * wp-m3-stabpath (S07:PST-005): the smooth-path stabiliser (OpenCV.js tracking + the vid.stab WASM warp
+			 * kernel). Absent on older engines = unavailable.
+			 */
+			smoothPath: z.enum(['ready', 'unavailable']).optional(),
 			denoise: z.array(z.enum(['atadenoise', 'fftdnoiz', 'nlmeans'])),
 			deblock: z.boolean(),
 			dejudder: z.enum(['ready', 'unavailable']),
