@@ -107,7 +107,12 @@ function PreviewLayer({ layer, src }: { layer: LayerProps; src: RenderCompositio
 	);
 }
 
-type HostState = { state: 'loading' | 'rendering' | 'ready' | 'error'; message?: string };
+type HostState = {
+	state: 'loading' | 'rendering' | 'ready' | 'error';
+	message?: string;
+	/** Composition frame drawn (ready). wp-m3-mgtext: the on-canvas text editor waits for the playhead's. */
+	frame?: number;
+};
 
 /**
  * The live frame host: one iframe per mounted clip (at most 4 at once, MGC-024), transparent, never
@@ -196,7 +201,7 @@ function LiveHost({
 			try {
 				await driver.configure(cfg);
 				await driver.seek(cfg.compositionId, target.frame);
-				if (want.current === target) live.current.report({ state: 'ready' });
+				if (want.current === target) live.current.report({ state: 'ready', frame: target.frame });
 			} catch (e) {
 				live.current.report({
 					state: 'error',
@@ -230,7 +235,9 @@ function LiveHost({
 				src={hostPageUrl(bundleUrl)}
 				onLoad={onLoad}
 				data-mg-host={src.compositionId}
+				data-mg-host-clip={clip.clipId}
 				data-mg-host-state={hidden ? 'idle' : host.state}
+				data-mg-host-frame={hidden || host.state !== 'ready' ? undefined : host.frame}
 				tabIndex={-1}
 				aria-hidden="true"
 				style={{
