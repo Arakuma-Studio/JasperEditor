@@ -207,8 +207,9 @@ describe('planner (S04:RP-001/008/010)', () => {
 				settings: settings(d.seqId) as never,
 			})
 		).plan;
-		expect(plan.path).toBe('remotion');
-		expect(plan.blockers.map((x) => x.reason).join('\n')).toMatch(/animated opacity/);
+		// M2 (S09:TRK-032, D-28): the warp stage renders keyframed Motion / opacity natively.
+		expect(plan.path).toBe('native');
+		expect(plan.blockers.map((x) => x.reason).join('\n')).not.toMatch(/animated opacity/);
 		const mgClip = { ...planned0(), kind: 'motion-graphic' as const, name: 'LT' };
 		expect(
 			nativeBlockers(mgClip, {
