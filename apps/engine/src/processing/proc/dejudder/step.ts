@@ -85,21 +85,40 @@ export function decideDejudder(r: CadenceResult, mode: 'auto' | 'force'): Dejudd
 	return { apply: true, reason: `dejudder: uneven cadence found (${found}), frames retimed` };
 }
 
-/** Scene-cut guard: mean |Δ| of the channel means on every 8th pixel of every 8th row, normalised to 0..1. */
-export function isCut(a: RgbFrame, b: RgbFrame, threshold = CUT_THRESHOLD): boolean {
-	const { width: w, height: h } = a;
-	let sum = 0;
-	let n = 0;
-	for (let y = 0; y < h; y += CUT_GRID) {
-		for (let x = 0; x < w; x += CUT_GRID) {
+/** Mean of R+G+B over each CUT_GRID×CUT_GRID cell (edge cells partial), as 0..3·65535 sums per pixel. */
+export function cellMeans(f: RgbFrame): Float64Array {
+	const { width: w, height: h, data } = f;
+	const cw = Math.ceil(w / CUT_GRID);
+	const ch = Math.ceil(h / CUT_GRID);
+	const sum = new Float64Array(cw * ch);
+	const cnt = new Float64Array(cw * ch);
+	for (let y = 0; y < h; y++) {
+		const row = ((y / CUT_GRID) | 0) * cw;
+		for (let x = 0; x < w; x++) {
 			const i = (y * w + x) * 3;
-			const ma = a.data[i] + a.data[i + 1] + a.data[i + 2];
-			const mb = b.data[i] + b.data[i + 1] + b.data[i + 2];
-			sum += Math.abs(ma - mb);
-			n++;
+			const c = row + ((x / CUT_GRID) | 0);
+			sum[c] += data[i] + data[i + 1] + data[i + 2];
+			cnt[c]++;
 		}
 	}
-	return n > 0 && sum / (n * 3 * 65535) > threshold;
+	for (let c = 0; c < sum.length; c++) sum[c] /= cnt[c];
+	return sum;
+}
+
+/**
+ * Scene-cut guard (PST-013): mean |Δ| of the 8×8-cell means (R+G+B), normalised to 0..1, above `threshold`.
+ * Cell *means* rather than single sampled pixels (the trailer's `a[::8, ::8]`): point samples measure texture
+ * contrast as soon as fine detail moves a few pixels, so a fast pan over a high-frequency texture sat right at
+ * 0.10 (0.09–0.10) and, depending on the encoder of the very same pan, 16 of 60 frames were mistaken for cuts and
+ * copied. With cell means a 12 px/frame noise-texture pan measures ≈ 0.06, real shot changes on crudo.mp4
+ * 0.20–0.31 and fast real motion ≤ 0.09.
+ */
+export function isCut(a: RgbFrame, b: RgbFrame, threshold = CUT_THRESHOLD): boolean {
+	const ma = cellMeans(a);
+	const mb = cellMeans(b);
+	let sum = 0;
+	for (let c = 0; c < ma.length; c++) sum += Math.abs(ma[c] - mb[c]);
+	return ma.length > 0 && sum / (ma.length * 3 * 65535) > threshold;
 }
 
 export type DejudderStepOptions = {

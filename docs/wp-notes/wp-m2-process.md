@@ -155,3 +155,16 @@ skin natural, no invented texture; compression blocking cleaned up by SPAN.
   the trailer's fill-and-crop reframe is not offered.
 - Remote: the real-SSH test path was not exercised on this host (see above); no real-GPU run (no host).
 - Branch is based on dev before wp-m2-transitions was merged; not rebased (integrator merges in order).
+
+## Post-integration fix (de-judder scene-cut guard)
+
+On integrated `dev` the S07 §8 test 4 failed (step CV 0.283 → 0.175, limit 0.141). Root cause: not OpenCV.js or
+the other packages, but the fixture encoder. `judder.mp4` here had been generated with the LGPL FFmpeg (OpenH264);
+`pnpm fixtures` with the system FFmpeg encodes it with x264, and the fixture recipe did not include the encoder, so
+each environment kept whichever file it made first. On the x264 file the scene-cut guard fired on 16 of 60 frames
+(1 with OpenH264), which were then copied instead of retimed. The guard sampled single pixels on an 8-px grid
+(as the trailer's `a[::8, ::8]`): for a 12 px/frame pan over fine texture that measures texture contrast,
+0.09–0.10 — right at the 0.10 threshold. Fix: the guard compares 8×8-cell means (pan ≈ 0.06, real shot changes on
+crudo.mp4 0.20–0.31, fast real motion ≤ 0.09; corridor validation unchanged: 0 cut guards); new unit test; the
+`shaky`/`judder`/`steady-pan` fixture recipes now include the H.264 encoder arguments so they regenerate per
+encoder. Test 4 passes with both encoders (CV 0.283 → 0.000).

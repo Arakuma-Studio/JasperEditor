@@ -54,7 +54,7 @@ export async function fixtures({ ffmpeg, base, h264 }) {
 	return [
 		{
 			name: 'shaky.mp4',
-			recipe: `shaky-v2:${walk.xs.join(',')}:${walk.ys.join(',')}`,
+			recipe: `shaky-v2:${h264.join(' ')}:${walk.xs.join(',')}:${walk.ys.join(',')}`,
 			make: async (out) => {
 				const still = `${out}.still.png`;
 				try {
@@ -71,7 +71,7 @@ export async function fixtures({ ffmpeg, base, h264 }) {
 		},
 		{
 			name: 'judder.mp4',
-			recipe: 'judder-v1',
+			recipe: `judder-v1:${h264.join(' ')}`,
 			make: async (out) => {
 				const still = `${out}.still.png`;
 				try {
@@ -92,7 +92,7 @@ export async function fixtures({ ffmpeg, base, h264 }) {
 		},
 		{
 			name: 'steady-pan.mp4',
-			recipe: 'steady-pan-v1',
+			recipe: `steady-pan-v1:${h264.join(' ')}`,
 			make: async (out) => {
 				const still = `${out}.still.png`;
 				try {

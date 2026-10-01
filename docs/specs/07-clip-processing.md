@@ -141,8 +141,8 @@ Requirement ids: `PRC-NNN` (processing model and jobs), `PST-NNN` (steps), `PRM-
 - **PST-013 (P0)** Retiming: in each 3-frame cycle the anchor frame is kept; the two others are moved by `shift`
   (default 1/6) of the inter-frame step towards their neighbours by **backward-warping the nearest real frame**
   along dense flow (flow at ≤ 960 px, upsampled; one fixed-point refinement of the flow lookup; cubic sampling,
-  replicate borders). Frames are never blended (no ghosting). A scene-cut guard (mean absolute difference on a
-  sub-sampled grid > 0.10) copies frames across cuts unchanged. One frame of context is read before and after.
+  replicate borders). Frames are never blended (no ghosting). A scene-cut guard (mean absolute difference of the
+  8×8-cell means > 0.10; cell means, not point samples, so fine texture in a fast pan is not taken for a cut) copies frames across cuts unchanged. One frame of context is read before and after.
 - **PST-014 (P0)** Implementation: OpenCV.js (WASM, Apache-2.0, pinned) in worker threads inside `jasper-proc`.
   (A RIFE ONNX variant, MIT weights, is P2.)
 

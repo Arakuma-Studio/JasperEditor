@@ -123,6 +123,31 @@ describe('scene-cut guard', () => {
 		expect(isCut(frame(0), frame(Math.round(0.09 * 65535)))).toBe(false);
 		expect(isCut(frame(0), frame(Math.round(0.11 * 65535)))).toBe(true);
 	});
+	it('a fast pan over fine texture is not a cut; a different picture is', () => {
+		// 1-px random texture (mean |Δ| of point samples between shifted copies ≈ 0.33).
+		let s = 7;
+		const rnd = () => {
+			s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+			return s / 2 ** 32;
+		};
+		const W = 256;
+		const tex = Float64Array.from({ length: (W + 16) * W }, rnd);
+		const view = (dx: number, gain = 1): RgbFrame => {
+			const data = new Uint16Array(W * W * 3);
+			for (let y = 0; y < W; y++)
+				for (let x = 0; x < W; x++)
+					data.fill(
+						Math.round(tex[y * (W + 16) + x + dx] * gain * 65535),
+						(y * W + x) * 3,
+						(y * W + x) * 3 + 3,
+					);
+			return { index: 0, width: W, height: W, data };
+		};
+		expect(isCut(view(0), view(12))).toBe(false);
+		// A different shot: the dark half-gain texture against a bright flat frame.
+		const bright: RgbFrame = { index: 0, width: W, height: W, data: new Uint16Array(W * W * 3).fill(60000) };
+		expect(isCut(view(0, 0.5), bright)).toBe(true);
+	});
 });
 
 describe('worker script resolution', () => {
