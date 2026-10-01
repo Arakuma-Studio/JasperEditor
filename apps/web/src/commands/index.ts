@@ -11,6 +11,7 @@ import { exportCommands } from './export.ts';
 import { helpCommands } from './help.ts';
 import { inspectorCommands } from './inspector.ts';
 import { integrationCommands } from './integration.ts';
+import { layerCommands } from './layer.ts';
 import { mgCommands } from './mg.ts';
 import { processCommands } from './process.ts';
 import { projectCommands } from './project.ts';
@@ -51,6 +52,8 @@ const COMMAND_MODULES: UiCommand[][] = [
 	layerBakeCommands,
 	// wp-clipboard (S01 §20)
 	clipboardCommands,
+	// wp-clipboard-2 (S03:XF-050 layer menu)
+	layerCommands,
 ];
 
 let registered = false;

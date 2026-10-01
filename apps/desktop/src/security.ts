@@ -125,3 +125,43 @@ export function clipboardReadResult(raw: unknown): string | null {
 	if (typeof raw !== 'string' || utf8Bytes(raw) > CLIPBOARD_MAX_BYTES) return null;
 	return isJasperClipboardJson(raw) ? raw : null;
 }
+
+// ---------------------------------------------------------------- external files (wp-clipboard-2, S01:CLB-010)
+
+/** Clipboard types that carry the files copied in a file manager (Electron exposes `text/uri-list`). */
+export const CLIPBOARD_FILE_LIST_TYPE =
+	/(^|")(text\/uri-list|public\.file-url|x-special\/gnome-copied-files)("|$)/;
+/** At most this many pasted files are handed to the renderer. */
+export const CLIPBOARD_MAX_FILES = 500;
+
+/**
+ * Absolute local paths of a clipboard file list: `text/uri-list` / `public.file-url` lines (`#` comments) or
+ * GNOME's `copy\nfile://…` form. Only `file:` URLs on the local host count; other URLs and bad escapes are
+ * dropped, and every path must pass `isRevealablePath`.
+ */
+export function parseClipboardFileList(raw: unknown, platform: string = process.platform): string[] {
+	if (typeof raw !== 'string' || raw.length > CLIPBOARD_MAX_BYTES) return [];
+	const out: string[] = [];
+	for (const line of raw.split(/\r?\n|\0/)) {
+		const s = line.trim();
+		if (!s || s.startsWith('#')) continue;
+		let url: URL;
+		try {
+			url = new URL(s);
+		} catch {
+			continue;
+		}
+		if (url.protocol !== 'file:' || (url.host && url.host !== 'localhost')) continue;
+		let path: string;
+		try {
+			path = decodeURIComponent(url.pathname);
+		} catch {
+			continue;
+		}
+		// file:///C:/x → C:\x on Windows.
+		if (platform === 'win32' && /^\/[A-Za-z]:\//.test(path)) path = path.slice(1).replace(/\//g, '\\');
+		if (isRevealablePath(path) && !out.includes(path)) out.push(path);
+		if (out.length >= CLIPBOARD_MAX_FILES) break;
+	}
+	return out;
+}

@@ -17,6 +17,8 @@ export interface ProjectPanelHandle {
 	deleteSelection(): void;
 	openSelection(): void;
 	importIntoBin(): void;
+	/** wp-clipboard-2 (Reveal in Project): shows the item's bin, unfiltered, scrolled to the item. */
+	reveal?(itemId: string): void;
 }
 
 const handles = new Map<string, { handle: ProjectPanelHandle; at: number }>();

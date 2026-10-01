@@ -229,6 +229,11 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('program.showGuides', 'Ctrl+Semicolon', 'program'),
 	b('program.snapInMonitor', 'Ctrl+Shift+Semicolon', 'program'),
 	b('program.lockGuides', 'Ctrl+Alt+Shift+KeyR', 'program'),
+	// wp-clipboard-2 (S03:XF-050 Arrange ▸, Premiere's Graphics ▸ Arrange chords)
+	b('arrange.bringToFront', 'Ctrl+Shift+BracketRight', 'program'),
+	b('arrange.bringForward', 'Ctrl+BracketRight', 'program'),
+	b('arrange.sendBackward', 'Ctrl+BracketLeft', 'program'),
+	b('arrange.sendToBack', 'Ctrl+Shift+BracketLeft', 'program'),
 	b('program.nudgeLeft', 'Ctrl+ArrowLeft', 'program', R),
 	b('program.nudgeRight', 'Ctrl+ArrowRight', 'program', R),
 	b('program.nudgeUp', 'Ctrl+ArrowUp', 'program', R),

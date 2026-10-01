@@ -16,6 +16,8 @@ export interface JasperDesktopBridge {
 	mcpInfo?(): Promise<DesktopMcpInfo>;
 	/** wp-clipboard (S01:CLB-002): the custom `application/x-jasper-clipboard` format next to HTML and text. */
 	clipboard?: DesktopClipboard;
+	/** wp-clipboard-2 (S01:CLB-010): the absolute path of a pasted/dropped File ('' when it is not a file). */
+	filePath?(file: File): string;
 }
 
 /** The Electron clipboard as the preload exposes it (validated and size-capped in the main process). */
@@ -23,6 +25,8 @@ export type DesktopClipboard = {
 	write(data: { json: string; html: string; text: string }): Promise<boolean>;
 	/** The JSON of the custom format, or null when the clipboard has none. */
 	read(): Promise<string | null>;
+	/** CLB-010: absolute paths of the files copied in the OS file manager (empty when none). */
+	readFiles?(): Promise<string[]>;
 };
 
 /** How an MCP client starts the `jasper-mcp` stdio server that ships with the desktop app. */

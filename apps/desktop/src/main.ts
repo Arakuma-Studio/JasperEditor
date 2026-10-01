@@ -25,6 +25,7 @@ import {
 import { type EngineProcess, startEngineProcess } from './engine-process.ts';
 import {
 	CLIPBOARD_CUSTOM_FORMAT,
+	CLIPBOARD_FILE_LIST_TYPE,
 	clipboardReadResult,
 	ELECTRON_CLIPBOARD_FORMAT,
 	isClipboardWrite,
@@ -34,6 +35,7 @@ import {
 	isWindowAction,
 	MEDIA_EXTENSIONS,
 	mcpLaunchInfo,
+	parseClipboardFileList,
 } from './security.ts';
 
 const here = dirname(fileURLToPath(import.meta.url)); // apps/desktop/dist-electron
@@ -213,6 +215,29 @@ function registerIpc(): void {
 			log(`clipboard read failed: ${err instanceof Error ? err.message : String(err)}`);
 		}
 		return null;
+	});
+	// wp-clipboard-2 (S01:CLB-010): files copied in the OS file manager, as absolute paths that exist; the
+	// renderer registers them in place (S04:IN-003). Edit ▸ Paste needs this: the web API exposes no files.
+	ipcMain.handle('jasper:clipboard-read-files', async (e) => {
+		if (!fromApp(e)) return [];
+		const paths: string[] = [];
+		try {
+			for (const item of await clipboard.read()) {
+				for (const type of item.types) {
+					if (!CLIPBOARD_FILE_LIST_TYPE.test(type)) continue;
+					try {
+						const blob = (await item.getType(type)) as Blob;
+						for (const p of parseClipboardFileList(await blob.text()))
+							if (!paths.includes(p) && existsSync(p)) paths.push(p);
+					} catch {
+						// unreadable entry
+					}
+				}
+			}
+		} catch (err) {
+			log(`clipboard file read failed: ${err instanceof Error ? err.message : String(err)}`);
+		}
+		return paths;
 	});
 	ipcMain.on('jasper:reveal', (e, p: unknown) => {
 		if (fromApp(e) && isRevealablePath(p) && existsSync(p)) shell.showItemInFolder(p);

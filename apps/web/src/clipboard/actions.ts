@@ -34,6 +34,7 @@ import {
 	toPasteAttributes,
 	toRemoveAttributes,
 } from './attributes.ts';
+import { pasteExternal } from './external.ts';
 import {
 	type ClipboardData,
 	type PasteSource,
@@ -272,6 +273,22 @@ export async function pasteInto(
 		return;
 	}
 	const src = await sourceOf(args);
+	if (src.kind === 'external') {
+		// CLB-010: files, image data and text from other apps.
+		const seq = activeSeq(ctx);
+		const session = ctx.session!;
+		return pasteExternal(
+			ctx,
+			{
+				session,
+				seq,
+				view: seq ? session.getState().views[seq.id] : undefined,
+				playhead: ctx.transport.getState().frame,
+			},
+			mode,
+			src.content,
+		);
+	}
 	if (src.kind !== 'payload') return noPayload(ctx, src);
 	const p = src.payload;
 	const session = ctx.session!;

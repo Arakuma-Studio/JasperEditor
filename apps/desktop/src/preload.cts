@@ -1,6 +1,6 @@
 // Preload (sandboxed, CommonJS): exposes the minimal desktop bridge (ARCHITECTURE §12). No media bytes
 // cross IPC; the renderer talks HTTP to the engine like the web build.
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 const bridge = {
 	runtime: 'desktop' as const,
@@ -21,6 +21,16 @@ const bridge = {
 		write: (data: { json: string; html: string; text: string }): Promise<boolean> =>
 			ipcRenderer.invoke('jasper:clipboard-write', data),
 		read: (): Promise<string | null> => ipcRenderer.invoke('jasper:clipboard-read'),
+		/** wp-clipboard-2 (S01:CLB-010): paths of the files copied in the OS file manager. */
+		readFiles: (): Promise<string[]> => ipcRenderer.invoke('jasper:clipboard-read-files'),
+	},
+	/** wp-clipboard-2 (S01:CLB-010): the path of a pasted File ('' for data that is not a file on disk). */
+	filePath: (file: File): string => {
+		try {
+			return webUtils.getPathForFile(file);
+		} catch {
+			return '';
+		}
 	},
 	onMenuCommand: (cb: (commandId: string) => void): (() => void) => {
 		const listener = (_e: unknown, id: string) => cb(id);

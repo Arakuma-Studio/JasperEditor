@@ -3,7 +3,9 @@
 // element plus `text/plain`, through a copy event (no permission needed inside a user gesture), and on desktop
 // the custom `application/x-jasper-clipboard` format through the Electron clipboard. Pastes read the data the
 // browser hands to a paste event, else the Electron clipboard, else the async Clipboard API (may prompt), and
-// fall back to the in-memory copy.
+// fall back to the in-memory copy. Foreign content (S01:CLB-010) comes back as `external`: files and image data
+// (File objects taken from the paste event while it is dispatched, image types of the async API, desktop file
+// paths) and plain text.
 import {
 	type ClipboardPayload,
 	clipboardText,
@@ -14,7 +16,17 @@ import {
 import { getDesktopBridge } from '../runtime/platform.ts';
 
 /** What a paste found on the system clipboard (any field may be missing). */
-export type ClipboardData = { html: string | null; text: string | null; json?: string | null; files: number };
+export type ClipboardData = {
+	html: string | null;
+	text: string | null;
+	json?: string | null;
+	/** How many files the clipboard holds. */
+	files: number;
+	/** CLB-010: the files and image data themselves (only present when there are some). */
+	blobs?: File[];
+	/** CLB-010, desktop: absolute paths of files copied in the OS file manager (registered in place). */
+	paths?: string[];
+};
 
 export type StoredClipboard = {
 	payload: ClipboardPayload;
@@ -24,6 +36,15 @@ export type StoredClipboard = {
 	systemWritten: boolean;
 	at: number;
 };
+
+/** Desktop: the absolute path of a pasted File (Electron `webUtils.getPathForFile`), else null. */
+export function desktopPathOf(f: File): string | null {
+	try {
+		return getDesktopBridge()?.filePath?.(f) || null;
+	} catch {
+		return null;
+	}
+}
 
 let memory: StoredClipboard | null = null;
 const listeners = new Set<() => void>();
@@ -53,7 +74,24 @@ export function readClipboardEvent(e: ClipboardEvent): ClipboardData {
 			return null;
 		}
 	};
-	return { html: get('text/html'), text: get('text/plain'), files: d?.files?.length ?? 0 };
+	// File objects must be taken while the event is dispatched: the DataTransfer is emptied afterwards.
+	const blobs: File[] = [];
+	try {
+		for (const f of Array.from(d?.files ?? [])) blobs.push(f);
+		if (!blobs.length)
+			for (const it of Array.from(d?.items ?? [])) {
+				const f = it.kind === 'file' ? it.getAsFile() : null;
+				if (f) blobs.push(f);
+			}
+	} catch {
+		// no readable files
+	}
+	return {
+		html: get('text/html'),
+		text: get('text/plain'),
+		files: Math.max(d?.files?.length ?? 0, blobs.length),
+		...(blobs.length ? { blobs } : {}),
+	};
 }
 
 /** Writes through a synchronous copy event; false when the browser refused (no user gesture). */
@@ -131,9 +169,24 @@ export function writeClipboard(
 	return stored;
 }
 
-/** Reads the system clipboard without a paste event: Electron's custom format, else the async Clipboard API. */
+/** Image types the async Clipboard API may expose (browsers sanitize to `image/png`; others pass unsanitized). */
+const IMAGE_TYPES = /^image\/(png|jpeg|gif|webp|bmp|avif|svg\+xml)$/;
+
+/** File extension for pasted image data of a MIME type. */
+export function imageExtension(type: string): string {
+	const sub = type.replace(/^image\//, '').toLowerCase();
+	if (sub === 'jpeg') return 'jpg';
+	if (sub === 'svg+xml') return 'svg';
+	return /^[a-z0-9]+$/.test(sub) ? sub : 'png';
+}
+
+/**
+ * Reads the system clipboard without a paste event (Edit ▸ Paste): Electron's custom format, else the async
+ * Clipboard API (HTML, text and image data) plus, on desktop, the paths of files copied in the file manager.
+ */
 export async function readSystemClipboard(): Promise<ClipboardData | null> {
 	const desktop = getDesktopBridge()?.clipboard;
+	let paths: string[] = [];
 	if (desktop) {
 		try {
 			const json = await desktop.read();
@@ -141,37 +194,92 @@ export async function readSystemClipboard(): Promise<ClipboardData | null> {
 		} catch {
 			// fall through to the web API
 		}
+		try {
+			paths = (await desktop.readFiles?.()) ?? [];
+		} catch {
+			paths = [];
+		}
 	}
+	const withPaths = (d: ClipboardData): ClipboardData =>
+		paths.length ? { ...d, files: d.files + paths.length, paths } : d;
+	const onlyPaths = () => (paths.length ? withPaths({ html: null, text: null, files: 0 }) : null);
 	try {
 		const nav = navigator as Navigator & { clipboard?: Clipboard };
-		if (!nav.clipboard?.read) return null;
+		if (!nav.clipboard?.read) return onlyPaths();
 		const items = await nav.clipboard.read();
 		let html: string | null = null;
 		let text: string | null = null;
+		const blobs: File[] = [];
 		for (const it of items) {
 			if (!html && it.types.includes('text/html')) html = await (await it.getType('text/html')).text();
 			if (!text && it.types.includes('text/plain')) text = await (await it.getType('text/plain')).text();
+			const image = it.types.find((t) => IMAGE_TYPES.test(t));
+			if (image) {
+				const blob = await it.getType(image);
+				blobs.push(new File([blob], `image.${imageExtension(image)}`, { type: image }));
+			}
 		}
-		return { html, text, files: 0 };
+		return withPaths({ html, text, files: blobs.length, ...(blobs.length ? { blobs } : {}) });
 	} catch {
 		// Permission denied or not focused: the in-memory copy is used.
-		return null;
+		return onlyPaths();
 	}
+}
+
+/** Foreign clipboard content (S01:CLB-010). */
+export type ExternalContent = {
+	/** Files to import under their own names. */
+	files: File[];
+	/** Desktop: absolute paths to register in place (no upload, S04:IN-003). */
+	paths: string[];
+	/** Image data (a copied bitmap, not a file): imported as "Pasted image <time>". */
+	images: File[];
+	/** Plain text, only when there are no files or images. */
+	text: string | null;
+};
+
+/** The name browsers give image data pasted as a file (`image.png`). */
+const IMAGE_DATA_NAME = /^image\.(png|jpe?g|gif|webp|bmp|avif|svg)$/i;
+
+/**
+ * Splits foreign clipboard data into files, image data and text (CLB-010). A pasted File is image data when it is
+ * an image with the browser's generic name (`image.png`) or none, and no file path (desktop `pathOf`).
+ */
+export function externalContentOf(
+	data: ClipboardData | null | undefined,
+	pathOf: (f: File) => string | null = desktopPathOf,
+): ExternalContent {
+	const files: File[] = [];
+	const images: File[] = [];
+	const paths = [...(data?.paths ?? [])];
+	for (const f of data?.blobs ?? []) {
+		const path = pathOf(f);
+		if (path) {
+			if (!paths.includes(path)) paths.push(path);
+		} else if (f.type.startsWith('image/') && (!f.name || IMAGE_DATA_NAME.test(f.name))) images.push(f);
+		else files.push(f);
+	}
+	const hasFiles = files.length + images.length + paths.length > 0;
+	const text = !hasFiles && data?.text?.trim() ? data.text : null;
+	return { files, paths, images, text };
 }
 
 export type PasteSource =
 	| { kind: 'payload'; payload: ClipboardPayload; from: 'system' | 'memory' }
 	| { kind: 'error'; message: string }
-	/** The system clipboard holds something else (text, files) copied after our last copy. */
-	| { kind: 'external' }
+	/** The system clipboard holds something else (text, files, images) copied after our last copy (CLB-010). */
+	| { kind: 'external'; content: ExternalContent }
 	| { kind: 'empty' };
 
 /**
- * What to paste (CLB-002/009): JasperEditor content on the system clipboard wins (other tabs, other projects);
- * when the system clipboard holds other content, the in-memory copy is used only if our last copy never reached
- * the system clipboard. Everything is validated.
+ * What to paste (CLB-002/009/010): JasperEditor content on the system clipboard wins (other tabs, other
+ * projects); when the system clipboard holds other content, the in-memory copy is used only if our last copy
+ * never reached the system clipboard. Everything is validated.
  */
-export function pasteSourceOf(data: ClipboardData | null | undefined): PasteSource {
+export function pasteSourceOf(
+	data: ClipboardData | null | undefined,
+	pathOf: (f: File) => string | null = desktopPathOf,
+): PasteSource {
 	const json = data?.json ?? (data?.html ? decodeClipboardHtml(data.html) : null);
 	if (json) {
 		const r = parseClipboardPayload(json);
@@ -180,8 +288,10 @@ export function pasteSourceOf(data: ClipboardData | null | undefined): PasteSour
 			: { kind: 'error', message: r.message };
 	}
 	const mem = memory;
-	const foreign = !!data && (!!data.html || !!data.text || data.files > 0) && data.text !== mem?.text;
-	if (foreign && (!mem || mem.systemWritten)) return { kind: 'external' };
+	const hasFiles = !!data && (data.files > 0 || !!data.blobs?.length || !!data.paths?.length);
+	const foreign = !!data && (!!data.html || !!data.text || hasFiles) && (hasFiles || data.text !== mem?.text);
+	if (foreign && (!mem || mem.systemWritten))
+		return { kind: 'external', content: externalContentOf(data, pathOf) };
 	if (!mem) return { kind: 'empty' };
 	return { kind: 'payload', payload: mem.payload, from: 'memory' };
 }

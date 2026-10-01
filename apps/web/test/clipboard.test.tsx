@@ -215,7 +215,10 @@ describe('paste source rules (CLB-002/009)', () => {
 		// Same text as our copy (the HTML was lost): still ours.
 		expect(pasteSourceOf({ html: null, text: stored.text, files: 0 })).toMatchObject({ from: 'memory' });
 		stored.systemWritten = true;
-		expect(pasteSourceOf({ html: null, text: 'something else', files: 0 })).toEqual({ kind: 'external' });
+		expect(pasteSourceOf({ html: null, text: 'something else', files: 0 })).toEqual({
+			kind: 'external',
+			content: { files: [], paths: [], images: [], text: 'something else' },
+		});
 		// Our copy never reached the system clipboard: the in-memory copy wins over older foreign content.
 		stored.systemWritten = false;
 		expect(pasteSourceOf({ html: null, text: 'something else', files: 0 })).toMatchObject({ from: 'memory' });
