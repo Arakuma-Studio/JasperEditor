@@ -149,6 +149,20 @@ describe('timeline copy / paste (CLB-003/004, SEL-006)', () => {
 		expect(getCommand('edit.cut')!.disabledReason!(roCtx)).toBe('The project is open read-only');
 	});
 
+	it('Duplicate selects the copies, and Redo restores that selection (defect fix, SEL-008)', async () => {
+		const p = project(13);
+		const r = p.apply([text(0, 'V1', '$a')]);
+		p.session.select('timeline', [r.refs.$a!]);
+		await runCommand('timeline.duplicate', p.ctxFor('timeline'));
+		const copies = p.session.getState().selection.timeline.clips;
+		expect(copies).toHaveLength(1);
+		expect(copies[0]).not.toBe(r.refs.$a);
+		p.session.undo();
+		expect(p.session.getState().selection.timeline.clips).toEqual([r.refs.$a]);
+		p.session.redo();
+		expect(p.session.getState().selection.timeline.clips).toEqual(copies);
+	});
+
 	it('pastes into another project from the system clipboard data, resolving media (CLB-008)', async () => {
 		const a = project(3);
 		const reg = a.apply([{ type: 'media.register', asset: videoAsset(10) }]);

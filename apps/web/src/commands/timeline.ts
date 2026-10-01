@@ -9,7 +9,7 @@ import {
 	type TransactionResult,
 	trackLabel,
 } from '@jasper/project';
-import type { ActiveTool, EditorSession, SequenceViewState } from '@jasper/session';
+import type { ActiveTool, EditorSession, SequenceViewState, SessionTxInput } from '@jasper/session';
 import { getSourceTransport } from '../panels/program/transport-registry.ts';
 import { setSourceMarks, sourceMonitorState } from '../panels/source/source-state.ts';
 import { activeTimeline, type TimelineHandle } from '../panels/timeline/env.tsx';
@@ -45,7 +45,7 @@ function apply(
 	e: Env,
 	label: string,
 	commands: unknown[],
-	opts: { coalesceKey?: string; quiet?: boolean } = {},
+	opts: { coalesceKey?: string; quiet?: boolean; selectAfter?: SessionTxInput['selectAfter'] } = {},
 ): TransactionResult | null {
 	if (commands.length === 0) return null;
 	const r = e.session.apply({
@@ -54,6 +54,7 @@ function apply(
 		sequenceId: e.seq.id,
 		commands: commands as never[],
 		...(opts.coalesceKey ? { coalesceKey: opts.coalesceKey } : {}),
+		...(opts.selectAfter ? { selectAfter: opts.selectAfter } : {}),
 	});
 	if (!r.ok && !opts.quiet) {
 		const err = r.errors[0];
@@ -643,11 +644,10 @@ export const timelineCommands: UiCommand[] = [
 	cmd('timeline.duplicate', 'Duplicate', T, (ctx, e) => {
 		const clips = selectedClips(e);
 		if (!clips.length) return;
-		const r = apply(ctx, e, 'Duplicate', [{ type: 'clip.duplicate', clipIds: clips.map((c) => c.id) }]);
-		if (r?.ok) {
-			const res = r.results[0] as { clipIds: string[] };
-			e.session.select('timeline', res.clipIds, 'replace', { linked: false }); // SEL-006
-		}
+		// SEL-006/008: the copies are selected, and Redo restores that selection.
+		apply(ctx, e, 'Duplicate', [{ type: 'clip.duplicate', clipIds: clips.map((c) => c.id) }], {
+			selectAfter: (r) => ({ timeline: (r.results[0] as { clipIds: string[] }).clipIds }),
+		});
 	}),
 
 	cmd('timeline.zoomIn', 'Zoom In', T, (_ctx, e) => e.handle?.controller.zoomStep(1), { repeat: true }),
