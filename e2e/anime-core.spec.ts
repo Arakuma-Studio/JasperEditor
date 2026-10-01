@@ -2,7 +2,7 @@
 // engine's /api/licenses and shows the JavaScript third-party notices that the built web app ships as
 // /THIRD_PARTY_NOTICES.md.
 import { expect, type Page, test } from '@playwright/test';
-import { createProject, watchPage } from './support.ts';
+import { createProject, enableAgentBridge, watchPage } from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -12,6 +12,7 @@ let watcher: { errors: string[] };
 test.beforeAll(async ({ browser }) => {
 	page = await browser.newPage();
 	watcher = watchPage(page);
+	await enableAgentBridge(page);
 	await createProject(page, 'E2E Anime Core');
 });
 
