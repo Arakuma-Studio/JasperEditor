@@ -758,7 +758,7 @@ Git workflow for work packages: each package works in its own worktree and branc
 git -C /var/lib/orquester/workspaces/jaspersito/JasperEditor worktree add ../JasperEditor-wt/<wp-id> -b wp/<wp-id> dev
 ```
 
-Commit early and often with Conventional Commits (`feat(project): …`, `fix(engine): …`, `test(timeline): …`, `chore(repo): …`, `docs(arch): …`). Do not merge into `dev`, do not push, do not rewrite other branches; the orchestrator merges `wp/*` branches into `dev` in dependency order. If `pnpm-lock.yaml` conflicts, resolve by re-running `pnpm install` on the merged tree (never hand-edit the lockfile).
+Commit early and often with Conventional Commits (`feat(project): …`, `fix(engine): …`, `test(timeline): …`, `chore(repo): …`, `docs(arch): …`). Do not merge into `main`, do not push, do not rewrite other branches; the orchestrator merges `wp/*` branches into `main` in dependency order (there is no `dev` branch since 2026-10-01: all work lands on `main`). If `pnpm-lock.yaml` conflicts, resolve by re-running `pnpm install` on the merged tree (never hand-edit the lockfile).
 
 ---
 
