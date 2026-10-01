@@ -115,7 +115,8 @@ describe('capabilities and fonts', () => {
 		const lic = LicensesResponseSchema.parse(
 			(await app.inject({ method: 'GET', url: '/api/licenses', headers: H })).json(),
 		);
-		expect(lic.components).toHaveLength(1);
+		// FFmpeg first; M2 packages append their runtimes/weights (wp-m2-process: vid.stab, ONNX Runtime, …).
+		expect(lic.components.filter((c) => c.id === 'ffmpeg')).toHaveLength(1);
 		expect(lic.components[0]).toMatchObject({ id: 'ffmpeg', bundled: caps.media.ffmpegSource === 'vendor' });
 		expect(lic.components[0]!.texts.length > 0).toBe(caps.media.ffmpegSource === 'vendor');
 		expect(caps.render.native).toBe(true);

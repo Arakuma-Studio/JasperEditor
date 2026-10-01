@@ -283,6 +283,20 @@ function normalizeForRoundTrip(c: Clipish, anisotropic: boolean, growing: boolea
 			delete kk.easeIn;
 			delete kk.easeOut;
 		}
+	// Uniform Scale only couples the controls: canonicalise it for anisotropic round trips (documented in the
+	// wp notes): a uniform clip renders with Scale Width = Scale, and equal Scale / Scale Width may come back
+	// with the flag set either way — the rendering is the same.
+	if (anisotropic) {
+		type Anim = { value: number; keyframes: Array<{ id?: string; time?: number; value?: number }> };
+		const t = x.transform as unknown as { uniformScale?: boolean; scale: Anim; scaleWidth: Anim };
+		const strip = (an: Anim) => ({
+			value: an.value,
+			keyframes: an.keyframes.map((k) => ({ time: k.time, value: k.value })),
+		});
+		t.scaleWidth = strip(t.uniformScale ? t.scale : t.scaleWidth) as Anim;
+		t.scale = strip(t.scale) as Anim;
+		delete t.uniformScale;
+	}
 	if (!growing)
 		for (const tr of x.trackers ?? []) {
 			delete tr.reference.patch;
