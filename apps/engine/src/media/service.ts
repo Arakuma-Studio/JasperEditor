@@ -13,8 +13,21 @@ import { KeyedMutex } from '../tools/mutex.ts';
 import { fingerprintFile, fingerprintHex, mediaKeyFor } from './fingerprint.ts';
 import { type ProbeResult, probeFile } from './probe.ts';
 import type { MediaRecord, MediaRegistry } from './registry.ts';
+import { readSourceSidecar } from './sidecar.ts';
 
 type ProbeJobInput = { path: string; name: string };
+
+function derivedFromOf(opts: {
+	fromMediaKey: string;
+	recipeHash: string;
+	range?: { startFrame: number; endFrame: number };
+}): NonNullable<MediaRecord['derivedFrom']> {
+	return {
+		mediaKey: opts.fromMediaKey,
+		recipeHash: opts.recipeHash,
+		...(opts.range ? { range: { startFrame: opts.range.startFrame, endFrame: opts.range.endFrame } } : {}),
+	};
+}
 
 class MediaError extends Error {
 	constructor(
@@ -94,6 +107,16 @@ export class MediaService {
 		} catch {
 			throw new MediaError('ASSET_NOT_FOUND', 'File not found');
 		}
+		const reg = await this.registerResolvedPath(path, opts);
+		// M3 (S07:PRC-019): a source-range sidecar next to the file the user picked (not the resolved link target).
+		const hint = (await readSourceSidecar(resolve(rawPath))) ?? (await readSourceSidecar(path));
+		return hint && reg.kind === 'video' ? { ...reg, sourceHint: hint } : reg;
+	}
+
+	private async registerResolvedPath(
+		path: string,
+		opts: { projectId?: string; copyIntoProject?: boolean },
+	): Promise<RegisteredMedia> {
 		const st = await stat(path).catch(() => null);
 		if (!st?.isFile()) throw new MediaError('ASSET_NOT_FOUND', 'Not a regular file');
 		const { fingerprint, sizeBytes } = await fingerprintFile(path);
@@ -181,7 +204,14 @@ export class MediaService {
 	 */
 	async registerDerived(
 		file: string,
-		opts: { fromMediaKey: string; recipeHash: string; name: string; projectId?: string },
+		opts: {
+			fromMediaKey: string;
+			recipeHash: string;
+			name: string;
+			projectId?: string;
+			/** M3 (S07:PRC-015): the processed source frames, when a range was processed. */
+			range?: { startFrame: number; endFrame: number };
+		},
 	): Promise<RegisteredMedia> {
 		const st = await stat(file).catch(() => null);
 		if (!st?.isFile()) throw new MediaError('ASSET_NOT_FOUND', 'Processed file not found');
@@ -191,9 +221,7 @@ export class MediaService {
 			const existing = this.deps.registry.get(mediaKey);
 			let record: MediaRecord;
 			if (existing && (await this.deps.registry.availability(mediaKey)) === 'online') {
-				record = existing.derivedFrom
-					? existing
-					: { ...existing, derivedFrom: { mediaKey: opts.fromMediaKey, recipeHash: opts.recipeHash } };
+				record = existing.derivedFrom ? existing : { ...existing, derivedFrom: derivedFromOf(opts) };
 				if (record !== existing) await this.deps.registry.put(record);
 			} else {
 				const probe = await this.probe(file, fingerprint, opts.name, opts.projectId);
@@ -207,7 +235,7 @@ export class MediaService {
 						{ type: 'managed', path: file },
 						probe,
 					),
-					derivedFrom: { mediaKey: opts.fromMediaKey, recipeHash: opts.recipeHash },
+					derivedFrom: derivedFromOf(opts),
 				};
 				await this.deps.registry.put(record);
 				this.deps.broadcaster.publish('media.updated', { mediaKey, status: 'processing' }, opts.projectId);

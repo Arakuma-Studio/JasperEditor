@@ -35,8 +35,11 @@ export type MediaRecord = {
 	lut?: LutInfo;
 	/** M2: kind `mg-bundle` header (wp-m2-mg; storage is the bundle directory). */
 	mgBundle?: MgBundleInfo;
-	/** M2: an engine-produced processed version (wp-m2-process): source key and recipe hash. */
-	derivedFrom?: { mediaKey: string; recipeHash: string };
+	/**
+	 * M2: an engine-produced processed version (wp-m2-process): source key and recipe hash; M3 (S07:PRC-015): the
+	 * processed source frames when a range was processed.
+	 */
+	derivedFrom?: { mediaKey: string; recipeHash: string; range?: { startFrame: number; endFrame: number } };
 };
 
 type IndexFile = { version: 1; engineId: string; items: Record<string, MediaRecord> };
