@@ -13,6 +13,7 @@ import {
 import type { MediaRuntime } from '@jasper/session';
 import { labelColor } from '@jasper/ui';
 import { memo, useCallback } from 'react';
+import { useClipBadge } from '../../../extensions/react.ts';
 import { peaksFor, reducePeaks, sheetImage, spriteFor } from '../media/media-cache.ts';
 import { filmstripSlots, nearestTile, tileRect } from '../model/filmstrip.ts';
 import { snapPx } from '../model/viewport.ts';
@@ -71,6 +72,8 @@ function nameFor(c: Clip, linked: boolean, isAudio: boolean): string {
 function ClipViewImpl(p: ClipViewProps) {
 	const c = p.clip;
 	const caps = kindCapabilities(c.kind);
+	// M2 (wp-m2-mg): engine badge state from the extension providers (e.g. Remotion master cached → ✓).
+	const extBadge = useClipBadge(c);
 	const isAudio = caps ? !caps.visual && caps.audio : false;
 	const dprv = dpr();
 	const xr = snapPx(p.x, dprv);
@@ -300,10 +303,11 @@ function ClipViewImpl(p: ClipViewProps) {
 					{showBadges && p.display.engineBadges && badge ? (
 						<span
 							className="shrink-0 text-[10px] font-semibold text-pr-strong opacity-70"
-							title={badge === 'R' ? 'Rendered by Remotion' : 'Rendered by fframes'}
+							title={extBadge?.title ?? (badge === 'R' ? 'Rendered by Remotion' : 'Rendered by fframes')}
 							data-engine-badge={badge}
+							data-engine-badge-state={extBadge?.tone}
 						>
-							{badge}
+							{extBadge?.text ?? badge}
 						</span>
 					) : null}
 				</div>

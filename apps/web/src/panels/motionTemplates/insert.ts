@@ -4,17 +4,25 @@
 import { type AnyMgTemplate, mgRegistry } from '@jasper/mg-templates';
 import type { Command, ProjectDocument, Sequence } from '@jasper/project';
 import type { EditorSession, SequenceViewState } from '@jasper/session';
+import { type CompositionRef, insertComposition } from '../../mg-bundles/insert.ts';
 
 /** DataTransfer type of a template drag from the Motion Templates panel. */
 export const MG_TEMPLATE_MIME = 'application/x-jasper-mg-template';
 
-export type MgTemplateRef = { id: string; version: number };
+/**
+ * A template, or (M2, wp-m2-mg) a composition of an imported Remotion bundle: `composition` set, `id` = the
+ * composition id. Drops onto the Timeline / Program monitor insert it through `clip.addComposition`.
+ */
+export type MgTemplateRef = { id: string; version: number; composition?: CompositionRef };
 export type MgTemplateDragPayload = { type: 'jasper/mg-template'; template: MgTemplateRef };
 
 export function writeMgTemplateDrag(dt: DataTransfer, template: MgTemplateRef): void {
 	const payload: MgTemplateDragPayload = { type: 'jasper/mg-template', template };
 	dt.setData(MG_TEMPLATE_MIME, JSON.stringify(payload));
-	dt.setData('text/plain', `${template.id}@${template.version}`);
+	dt.setData(
+		'text/plain',
+		template.composition ? template.composition.compositionId : `${template.id}@${template.version}`,
+	);
 	dt.effectAllowed = 'copy';
 }
 
@@ -90,6 +98,8 @@ export function insertMotionTemplate(
 	template: MgTemplateRef,
 	opts: { at?: number; trackId?: string } = {},
 ): string {
+	// Remotion compositions share the drag payload and the drop handlers (wp-m2-mg).
+	if (template.composition) return insertComposition(session, template.composition, opts);
 	const state = session.store.getState();
 	const sequenceId = state.activeSequenceId;
 	if (!sequenceId) throw new Error('Open a sequence first');

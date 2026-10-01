@@ -92,14 +92,16 @@ function PreviewLayer({ layer, src }: { layer: LayerProps; src: RenderCompositio
 	const runtime = useCompositionPreviewRuntime();
 	const preview = runtime?.previewFor(clip, src, fps) ?? null;
 	const pixelFx = hasPixelEffects(clip);
-	if (preview) {
-		// The preview covers composition frames `startFrame…`; the clip's Sequence starts at the frame shown at
-		// `start − headHandle`.
-		const first = compositionFrameOf(clip.sourceIn, fps) - (clip.headHandle ?? 0);
-		const trim = first - preview.startFrame;
-		return (
-			<LayerBox layer={layer}>
-				<Sequence from={trim < 0 ? -trim : 0} layout="none" name="Composition preview">
+	// The preview covers composition frames `startFrame…`; the clip's Sequence starts at the frame shown at
+	// `start − headHandle`.
+	const first = compositionFrameOf(clip.sourceIn, fps) - (clip.headHandle ?? 0);
+	const trim = preview ? first - preview.startFrame : 0;
+	// One LayerBox for both: while the preview plays, the live host stays loaded (hidden, idle) so a props edit
+	// switches back to it without reloading the page (MGC-022: edits show within 300 ms).
+	return (
+		<LayerBox layer={layer}>
+			{preview ? (
+				<Sequence key="preview" from={trim < 0 ? -trim : 0} layout="none" name="Composition preview">
 					<Video
 						src={preview.url}
 						trimBefore={Math.max(0, trim)}
@@ -109,10 +111,17 @@ function PreviewLayer({ layer, src }: { layer: LayerProps; src: RenderCompositio
 						showInTimeline={false}
 					/>
 				</Sequence>
-			</LayerBox>
-		);
-	}
-	return <LiveHostLayer layer={layer} src={src} runtime={runtime} gradePending={pixelFx} />;
+			) : null}
+			<LiveHost
+				key="host"
+				layer={layer}
+				src={src}
+				runtime={runtime}
+				hidden={!!preview}
+				gradePending={pixelFx && !preview}
+			/>
+		</LayerBox>
+	);
 }
 
 type HostState = { state: 'loading' | 'rendering' | 'ready' | 'error'; message?: string };
@@ -120,17 +129,20 @@ type HostState = { state: 'loading' | 'rendering' | 'ready' | 'error'; message?:
 /**
  * The live frame host: one iframe per mounted clip (at most 4 at once, MGC-024), transparent, never
  * interactive. Paused → the exact playhead frame (a subtle spinner until ready); playing → the newest frame
- * the page manages (frames may drop, preview only). Props changes reconfigure the page in place.
+ * the page manages (frames may drop, preview only). Props changes reconfigure the page in place. `hidden`
+ * keeps the page loaded but idle (a cached preview is shown instead).
  */
-function LiveHostLayer({
+function LiveHost({
 	layer,
 	src,
 	runtime,
+	hidden,
 	gradePending,
 }: {
 	layer: LayerProps;
 	src: RenderCompositionSource;
 	runtime: CompositionPreviewRuntime | null;
+	hidden: boolean;
 	gradePending: boolean;
 }) {
 	const { clip, fps, contentTime } = layer;
@@ -166,16 +178,17 @@ function LiveHostLayer({
 	}, [runtime, clip.clipId]);
 
 	// Everything the (stable) pump needs lives in refs: it outlives the render that started it.
-	const live = useRef({ config, report: (_s: HostState) => {} });
+	const live = useRef({ config, hidden, report: (_s: HostState) => {} });
 	live.current = {
 		config,
+		hidden,
 		report: (s: HostState) => {
 			setHost(s);
 			runtime?.reportHost?.(clip.clipId, s);
 		},
 	};
 
-	// Drives the page: configure (props) then seek; always to the newest wanted frame.
+	// Drives the page: configure (props) then seek; always to the newest wanted frame. Idle while hidden.
 	const pump = useRef(() => {});
 	pump.current = () => {
 		if (busy.current) return;
@@ -184,6 +197,17 @@ function LiveHostLayer({
 		if (!driver || !target) return;
 		busy.current = true;
 		const { config: cfg, report } = live.current;
+		if (live.current.hidden) {
+			// Warm the hidden page (evaluated + configured) so showing it later only re-applies props.
+			void driver
+				.configure(cfg)
+				.catch(() => undefined)
+				.finally(() => {
+					busy.current = false;
+					if (!live.current.hidden) pump.current();
+				});
+			return;
+		}
 		report({ state: 'rendering' });
 		void (async () => {
 			try {
@@ -205,7 +229,7 @@ function LiveHostLayer({
 	useEffect(() => {
 		want.current = { frame, key: configKey };
 		pump.current();
-	}, [frame, configKey]);
+	}, [frame, configKey, hidden]);
 
 	const onLoad = () => {
 		const win = iframeRef.current?.contentWindow as unknown as HostWindow | null;
@@ -214,16 +238,16 @@ function LiveHostLayer({
 		pump.current();
 	};
 
-	if (!allowed) return <CompositionCard layer={layer} title={clip.name} tone="idle" />;
+	if (!allowed) return hidden ? null : <IdleCard layer={layer} />;
 	return (
-		<LayerBox layer={layer}>
+		<>
 			<iframe
 				ref={iframeRef}
 				title={`Composition ${src.compositionId}`}
 				src={hostPageUrl(bundleUrl)}
 				onLoad={onLoad}
 				data-mg-host={src.compositionId}
-				data-mg-host-state={host.state}
+				data-mg-host-state={hidden ? 'idle' : host.state}
 				tabIndex={-1}
 				aria-hidden="true"
 				style={{
@@ -234,12 +258,37 @@ function LiveHostLayer({
 					height: src.canvas.height,
 					border: 0,
 					background: 'transparent',
-					colorScheme: 'normal',
+					colorScheme: 'light',
 					pointerEvents: 'none',
+					visibility: hidden ? 'hidden' : 'visible',
 				}}
 			/>
-			<HostChips layer={layer} host={host} gradePending={gradePending} />
-		</LayerBox>
+			{hidden ? null : <HostChips layer={layer} host={host} gradePending={gradePending} />}
+		</>
+	);
+}
+
+/** Over the live-host budget: a hatched placeholder in the layer's box (MGC-024). */
+function IdleCard({ layer }: { layer: LayerProps }) {
+	const h = layer.props.box.height;
+	return (
+		<div
+			data-mg-card="idle"
+			style={{
+				position: 'absolute',
+				inset: 0,
+				display: 'flex',
+				alignItems: 'center',
+				justifyContent: 'center',
+				background:
+					'repeating-linear-gradient(45deg, rgba(120,60,160,0.35) 0 14px, rgba(90,40,130,0.35) 14px 28px)',
+				color: 'white',
+				fontFamily: '"Source Sans 3", Arial, sans-serif',
+				fontSize: Math.max(14, h / 14),
+			}}
+		>
+			{layer.clip.name}
+		</div>
 	);
 }
 

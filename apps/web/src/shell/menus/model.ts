@@ -43,6 +43,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('file.revert', 'Revert'),
 			sep,
 			c('project.import', 'Import…'),
+			// M2 (wp-m2-mg, S08:MGU-001)
+			c('mg.importRemotionProject', 'Import Remotion Project…'),
 			c('project.importFromMediaBrowser', 'Import from Media Browser'),
 			sub('Export', [
 				c('export.media', 'Media…'),

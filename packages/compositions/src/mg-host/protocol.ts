@@ -78,7 +78,9 @@ export function hostBootstrapScript(opts: { timeoutMs?: number; logLevel?: strin
 
 /** CSS injected with the bootstrap: transparent page, no margins or scrollbars. */
 export const HOST_PAGE_CSS =
-	'html,body{margin:0!important;padding:0!important;background:transparent!important;overflow:hidden!important;color-scheme:normal}' +
+	// `color-scheme: light` on both sides (here and on the <iframe>): a scheme mismatch makes Chrome paint an
+	// opaque backdrop behind the frame.
+	'html,body{margin:0!important;padding:0!important;background:transparent!important;overflow:hidden!important;color-scheme:light}' +
 	'#video-container{position:absolute;left:0;top:0}';
 
 /** Inserts the bootstrap (and CSS) right after `<head>` of a bundle's index.html. */
@@ -109,6 +111,7 @@ export type CompositionMetadata = {
 export type HostWindow = {
 	remotion_setBundleMode?: (state: Record<string, unknown>) => void;
 	remotion_calculateComposition?: (id: string) => Promise<CompositionMetadata>;
+	remotion_getCompositionNames?: () => string[];
 	remotion_setFrame?: (frame: number, composition: string, attempt: number) => void;
 	remotion_renderReady?: boolean;
 	remotion_cancelledError?: string;
@@ -171,6 +174,25 @@ export async function waitForHostReady(win: HostWindow, timeoutMs = MG_HOST_TIME
 	}
 	const ready = win.document?.fonts?.ready;
 	if (ready) await Promise.race([ready, sleep(2000)]);
+}
+
+/**
+ * Waits until `remotion_getCompositionNames()` lists `id` (compositions register in effects after the root
+ * renders). Resolves anyway after the timeout so `remotion_calculateComposition` reports the real error.
+ */
+async function waitForComposition(win: HostWindow, id: string, timeoutMs: number): Promise<void> {
+	const names = win.remotion_getCompositionNames;
+	if (typeof names !== 'function') return;
+	const until = Date.now() + Math.min(timeoutMs, 10_000);
+	for (;;) {
+		try {
+			if (names().includes(id)) return;
+		} catch {
+			// root not registered yet
+		}
+		if (Date.now() > until) return;
+		await sleep(10);
+	}
 }
 
 export type HostCompositionConfig = {
@@ -241,6 +263,8 @@ export class MgFrameHostDriver {
 				await waitForHostReady(w, timeout);
 				this.evaluated = true;
 			}
+			// Compositions register from React effects of the evaluated root: wait until ours is there.
+			await waitForComposition(w, cfg.compositionId, timeout);
 			let meta: CompositionMetadata;
 			try {
 				meta = await w.remotion_calculateComposition!(cfg.compositionId);
