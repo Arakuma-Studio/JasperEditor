@@ -1165,3 +1165,35 @@ contracts). Template tool changes stay in `tools/render.ts`/`editing.ts` hunks o
 Determinism suite in `packages/motion/test`; Playwright specs `e2e/text-animation.spec.ts`,
 `e2e/anime-templates.spec.ts`, `e2e/shapes.spec.ts`, `e2e/layer-bake.spec.ts`; engine tests gated by `REMOTION_E2E=1`
 for render parity. `scripts/check-anime.mjs` runs in `pnpm lint`.
+
+### 20.9 Status (integrated on `main`, 2026-10-01)
+
+All six packages and the review fixes are merged (`wp-m2-anime-contracts` 3ece27f, `wp-m2-anime-core` 2db5fd7,
+`wp-m2-text-anim` 1753e14, `wp-m2-anime-templates` 86ea2a5, `wp-m2-shapes` 426c028, `wp-m2-layer-bake` 7af71ee,
+then `fix/*-review` and `fix/render-parity`). Details per requirement: `docs/wp-notes/wp-m2-{anime-contracts,
+anime-core,text-anim,anime-templates,layer-bake,shapes}.md`. Decisions taken during integration (normative):
+
+- **Repaint per frame (ANM-014).** Chrome's partial raster made a frame's pixels depend on the frames the page drew
+  before (identical DOM, different anti-aliasing at damage-rect edges). `FrameRepaint`
+  (`packages/compositions/src/repaint.tsx`) forces a full repaint of the composition root on every rendered frame
+  and every paused Player frame (not during playback).
+- **One window per render page.** With a full Chrome (`chrome-for-testing`), Remotion opened parallel pages as tabs
+  and captured a hidden tab's first frame before it was painted; `renderPagesInOwnWindows`
+  (`@jasper/compositions/render-host`) is used by `RemotionService.renderMedia`/`renderAlphaMaster` and the
+  mg-bundle pre-renders whenever concurrency > 1.
+- **Out windows** are the In-ordered timeline seeked mirrored (`activeTextAnimation`); both sides rest at the end of
+  their timeline. When In and Out are both set, one frame always stays at rest (S11:TXA-004).
+- **Anime templates are clipped to their canvas** (preview = baked export); every anime template carries a
+  `renderVersion` that is part of the bake key.
+- **Graded DOM layers on the Remotion path** play straight-alpha PNG sequences (S11 v1.1, LBK-010/021): Remotion's
+  compositor drops PNG-in-MOV alpha and decodes ProRes 4444 / VP9 alpha up to 6/255 off.
+- **Bake keys** include the clip id only for seed-bearing layers (text animators, anime templates).
+- **Project stores** take the template registry and re-stamp renderers on load (ATP-002); a template upgrade in
+  `clip.update` runs before `params` of the same patch.
+- **THIRD_PARTY_NOTICES.md** also lists build output that ships (Tailwind CSS, Vite/webpack runtimes, Remotion
+  bundle entry code) and the engine's `@fontsource` font files.
+
+Known gaps (non-blocking): no clip clipboard yet (Paste / Paste Attributes do not exist, so only duplicate copies
+animators); a word broken across lines by `overflow-wrap` animates on its first line; the typewriter caret does not
+blink; bakes of one export run sequentially; an animated shape's selection quad is its largest box; template text
+uses a system font stack (Inter / Source Sans 3 / sans-serif); S05:MGT-002 card context menu not done.
