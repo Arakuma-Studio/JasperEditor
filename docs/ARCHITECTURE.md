@@ -1,7 +1,8 @@
 # JasperEditor Architecture (v1, milestones M1 and M2)
 
 Status: authoritative architecture for the from-scratch JasperEditor codebase. Written 2026-09-30 by the lead architect;
-§19 (M2: colour grading, clip processing, motion-graphics clips, tracking, transitions UI) added 2026-10-01.
+§19 (M2: colour grading, clip processing, motion-graphics clips, tracking, transitions UI) added 2026-10-01;
+§20 (M2: in-video animation with anime.js, text animators, animated templates, layer bake, shapes) added 2026-10-01.
 Audience: the engineers and autonomous agents who implement JasperEditor. Read this first, then the specs it cites.
 
 **Precedence.** When this document and a spec disagree, this document wins. When two specs disagree, §2.3 decides.
@@ -19,10 +20,12 @@ Specs and research this document is built on (all ours, all clean-room):
 | S08 | `docs/specs/08-motion-graphics-clips.md` (M2: Remotion bundles as clips, props forms, pre-rendered masters) |
 | S09 | `docs/specs/09-tracking.md` (M2: point/planar tracking, corner pin, warp stage) |
 | S10 | `docs/specs/10-transitions-ui.md` (M2: transitions drawn and edited in the timeline) |
+| S11 | `docs/specs/11-animation.md` (M2: anime.js runtime, text animators, animated templates, layer bake, shapes) |
 | R-OMS | `docs/research/orquester-multiplatform-setup.md` |
 | R-NVL | `docs/research/native-video-libraries.md` |
 | R-FF | `docs/research/fframes.md` |
 | R-PUI | `docs/research/premiere-ui-design-spec.md` |
+| R-ANM | `docs/research/animejs-v4-notes.md` |
 
 **Requirement ID collisions.** Several specs reuse the same prefixes (`KF`, `FX`, `KND`, `AGT`, `RND`, `ARC`, `PRJ`, `PGM`, `ENG`, `EX`, `AG`, `TXT`). Always cite requirements with the spec number: `S01:KF-003`, `S03:KF-020`, `S04:EX-001`, `S05:EX-020`. Work packages below follow this convention.
 
@@ -34,6 +37,7 @@ Specs and research this document is built on (all ours, all clean-room):
 - Work only from `docs/specs/*`, `docs/research/*`, this file, public npm/crate documentation, and your own knowledge.
 - All code is original. Remotion's public npm packages (`remotion`, `@remotion/player`, `@remotion/renderer`, `@remotion/bundler`, `@remotion/media`, `@remotion/web-renderer`, `@remotion/captions`, `@remotion/google-fonts`, `@remotion/fonts`, `@remotion/shapes`, `@remotion/gif`, `@remotion/layout-utils`) are allowed dependencies (Remotion license: free for teams of up to 3; set `acknowledgeRemotionLicense` on the Player).
 - fframes (MIT) is an allowed dependency of our Rust crates.
+- anime.js (`animejs`, MIT, pinned exactly) is an allowed dependency of `@jasper/motion` only (D-31).
 
 ---
 
@@ -89,6 +93,8 @@ Platforms: web app (browser), installable PWA (desktop + mobile), Electron deskt
 | D-28 | **Corner pin and keyframed Motion on the native path = warp stage (M2)**: layers are warped per frame in worker threads and cached as sequence-space ProRes 4444 intermediates. | `perspective` is GPL; ffmpeg cannot animate scale/rotation per frame reliably; the warp stage also lifts the M1 "keyframes force Remotion" limit. |
 | D-29 | **Schema v3 (M2)**: additive fields only (mg-bundle kind, LUT/bundle headers, process recipes, trackers, trackedBy, curve params); v2→v3 is a version bump so M1 builds open M2 files read-only. | Honest forward-compatibility signal (S01:MIG-003). |
 | D-30 | **Transitions UI keeps the model's three alignments (M2)**; default transitions are a user preference; audio crossfades between clips land in the same package. | No model change for the UI; Premiere-familiar behaviour. |
+| D-31 | **In-video animation = anime.js v4 (`animejs` `4.5.0`, MIT, pinned exactly) as a seek-driven value engine inside `@jasper/motion`, used only by Remotion-rendered layers (M2).** Timelines are created paused and moved only with the canonical seek (`seek(end) → seek(0) → seek(t)`, R-ANM §1) at `frame·1000/fps`; they animate plain objects whose values React renders as inline styles (D-14); DOM targets only in ref-owned SVG leaves; no autoplay, WAAPI, unseeded randomness, callbacks or wall-clock. Preset/template **metadata** is pure data (`@jasper/project` text animations, `@jasper/mg-templates` with `renderer: 'anime'`); implementations live in `@jasper/motion`. Document keyframes are still evaluated only by `@jasper/project` (S01:KF-009). Uses: text in/out animators, `motion-graphic` templates with `renderer: 'anime'` (fframes templates and twins unchanged, D-12). **All DOM layers (every text clip, shapes, anime templates) are exported natively through the `layer-bake` extension** (S08:MGC-035 generalised): Remotion-rendered sequence-space ProRes 4444 masters, or one PNG for static layers, cached by a content key that includes the anime.js version and the compositions bundle id; colour ops are applied natively to the bake (D-21). Never used in editor chrome, fframes or model transitions. Upgrading anime.js is one dedicated change (like D-19). | Text and template libraries need staggering, timelines, rich eases; the canonical seek and object targets keep compositions a pure function of frame (S03:ARC-003) so Player = `renderStill` = parallel `renderMedia`; baking keeps exports native-first (D-22). User decision 2026-10-01: bake all text (option A). |
+| D-32 | **Schema v4 (M2)**: additive (`TextClip.textAnimation`, `MotionGraphicClip.template.renderer`, clip kind `shape`); v3→v4 is a no-op version bump so older builds open such files read-only. | Same policy as D-29. |
 
 ### 2.2 Pinned toolchain (M1)
 
@@ -102,7 +108,8 @@ Platforms: web app (browser), installable PWA (desktop + mobile), Electron deskt
 | State | zustand `^5.0.0`, immer `^11.1.0`, zod `^4.1.0` | |
 | Dock | dockview-react | `^8.3.0` |
 | Primitives | radix-ui `^1.4.0` (unified package), lucide-react, @fontsource/source-sans-3, @fontsource/inter | latest |
-| Remotion | remotion, @remotion/player, @remotion/renderer, @remotion/bundler, @remotion/media, @remotion/google-fonts | `4.0.499` exact |
+| Remotion | remotion, @remotion/player, @remotion/renderer, @remotion/bundler, @remotion/media, @remotion/google-fonts, @remotion/shapes | `4.0.499` exact |
+| Animation | animejs (only in `@jasper/motion`, D-31) | `4.5.0` exact |
 | Engine | fastify `^5.6`, @fastify/static (latest major whose `fastify-plugin` accepts fastify 5; 10.x at time of writing), @fastify/websocket `^11`, @fastify/cookie `^11` | |
 | Desktop | electron `^44` (fallback `^39` if install fails on Node 20), electron-builder `^26.15`, esbuild | |
 | Dev tools | tsx `^4.20`, concurrently, cross-env, @biomejs/biome `^2.5` | |
@@ -201,6 +208,7 @@ JasperEditor/
     ├── ui/                       # @jasper/ui — tokens, Tailwind bridge, dockview theme, primitives, icons, cursors
     ├── compositions/             # @jasper/compositions — SequenceComposition + layers (Player + renderer)
     ├── mg-templates/             # @jasper/mg-templates — template catalog, param schemas, TS SVG twins
+    ├── motion/                   # @jasper/motion — anime.js runtime (D-31), text animator and anime template implementations
     └── config/                   # @jasper/config — appdir layout, env parsing, ports (Node only)
 ```
 
@@ -213,7 +221,8 @@ api            → zod, project
 engine-client  → api                             (fetch + ReadableStream; runs in browser and Node 20)
 session        → project, api, engine-client, zustand; react only in ./react subpath
 ui             → react, radix-ui, lucide-react, dockview-react (theme only); type-only project imports allowed
-compositions   → remotion, @remotion/*, project, mg-templates   (NO session, ui, tailwind)
+motion         → animejs, remotion, project, mg-templates; react as peer   (only compositions imports it)
+compositions   → remotion, @remotion/*, project, mg-templates, motion   (NO session, ui, tailwind)
 config         → node built-ins
 web            → everything above except config
 engine         → project, api, config, mg-templates, compositions (bundled via @remotion/bundler), fastify…
@@ -516,7 +525,7 @@ Rules (S03 §2–§5, S01 §22):
 - The composition is a pure function of its props; it never reads editor stores (S03:ARC-003). Overlays (selection handles, safe margins, snap lines) are drawn **outside** the Player by the Program monitor (S03:ARC-004).
 - Each clip is a `<Sequence from={start} durationInFrames={duration} premountFor={…}>`; per-layer order: source → effects (registry `preview.css`/SVG) → transform (`translate(P) rotate(θ) scale(sx,sy) translate(−A)`, `transform-origin: 0 0`, S03:DM-012) → opacity → blend (S03 §4.2 with crop as the first effect).
 - Media layers use `@remotion/media` `<Video>`/`<Audio>` in the Player and `OffthreadVideo`/`@remotion/media` in renders (verify 4.0.499 behavior; choose per `getRemotionEnvironment()`), `trimBefore` from `sourceIn`, `playbackRate = speed`, volume callback from evaluated `volumeDb` (S03:KND-010/011).
-- Motion-graphic layers call the template's TS SVG twin `renderSvg(params, localFrame, fps, canvas)` and inject the SVG (WP-2G). Text layers use DOM text with fonts loaded through `@remotion/fonts` `loadFont({family, url})` + `delayRender` (S03:KND-050).
+- Motion-graphic layers call the template's TS SVG twin `renderSvg(params, localFrame, fps, canvas)` and inject the SVG (WP-2G). Text layers use DOM text with fonts loaded through the `FontFace` API (`packages/compositions/src/fonts.ts`, `loadFontFace`) + `delayRender` (S03:KND-050); font-dependent layers do not render or measure before their faces are loaded (S11:FIX-003).
 - Offline media renders the "Media Offline" card (S03:RND-032).
 - Player (WP-2C): `inputProps = useMemo({doc, options})` rebuilt only when the drawn document reference or media runtime changes; `acknowledgeRemotionLicense`, `controls={false}`, clicks/space disabled; the Player drives `TransportStore` while playing, `seekTo` when paused (S03:PGM-001…003, ARC-010).
 
@@ -1039,3 +1048,114 @@ Registration happens at module load of the package's command module `apps/web/sr
    to our source build (longer build, same ABI); Windows keeps BtbN + `deshake` until a cross build exists.
 4. **Host key policy** default `accept-new` (convenient) vs `yes` (strict).
 5. **Composition fps mismatch** policy (S08:MGC-005: override fps and warn) — acceptable?
+
+## 20. M2: in-video animation (anime.js), text animators, animated templates, layer bake, shapes
+
+Spec S11 (`docs/specs/11-animation.md`), decisions D-31 and D-32, research R-ANM. Built by six work packages: the
+contracts package `wp-m2-anime-contracts` lands on `main` first (with minimal working implementations), then five
+packages run in parallel worktrees (`wp/m2-<name>` branches): `wp-m2-anime-core`, `wp-m2-text-anim`,
+`wp-m2-anime-templates`, `wp-m2-layer-bake`, `wp-m2-shapes`. Ownership: S11 §10. Rules of §16.3/§19.8 apply
+(additive contract changes with `Contract-Change:`; per-package wp-notes; README subsection per package).
+
+### 20.1 Document model (schema v4, D-32)
+
+| Addition | Where |
+|---|---|
+| `CURRENT_SCHEMA_VERSION = 4`; v3→v4 no-op migration; fixture `packages/project/test/fixtures/v4/basic.jasper` with an animated text, an anime template clip and two shapes | `schema/document.ts`, `migrations.ts` |
+| `TextAnimatorSchema = {preset, version, durationFrames ≥ 1, params}` (loose); `TextClip.textAnimation?: {in?: TextAnimator \| null, out?: TextAnimator \| null}` | `schema/sequence.ts` |
+| `MotionGraphicClip.template.renderer?: 'fframes' \| 'anime'` (absent = fframes) | `schema/sequence.ts` |
+| `KNOWN_CLIP_KINDS += 'shape'`; `ShapeClip.shape = {type: 'rect' \| 'ellipse', size: Animatable<vec2>, fill: Animatable<RGBA> \| null, stroke: {color: Animatable<RGBA>, width: Animatable<number>, position: 'inside' \| 'center' \| 'outside'} \| null, cornerRadius: Animatable<number>}` (+ transform, opacity, blendMode, effects like text) | `schema/sequence.ts`, factories |
+| `TextAnimationSpec`, `TEXT_ANIMATION_SPECS` (empty on contracts; filled by text-anim), `getTextAnimationSpec(id, version)` | `src/text-animations.ts` (exported from the index) |
+| `MgTemplateInfo.renderer?`, `description?`, `defaultDurationSeconds?` | `registry/mg.ts` |
+| Command schemas: `clip.addShape`; `ClipPatchSchema += textAnimation, shape, template: {version}`; `clip.addText.textAnimation?` — handlers answer `E_NOT_IMPLEMENTED` for the new fields until their package lands (catalogue records owner) | `commands/schemas/clip.ts`, `catalog.ts` |
+| `WARNING_CODES += 'W_ANIMATION_COMPRESSED'` | `commands/types.ts` |
+| `clipEngines(clip) → {preview, export, badge}` (kind defaults; `motion-graphic` with `renderer: 'anime'` → remotion/remotion/'R'); `KIND_CAPABILITIES.shape` | `registry/kinds.ts` |
+| Snapshot: `engine` from `clipEngines`; text source `animation?: {in?, out?: {preset, version, params, frames}}` (defaults merged when the preset is known; compressed to the clip, S11:TXA-004); `mg` source `renderer`; new source variant `{shape: ShapeData}` (Animatables unevaluated, RND-001) | `render/snapshot.ts` |
+| `exportAgentSchema`: `textAnimations[]`, `mgTemplates[].renderer/description/defaultDurationSeconds`, shape properties | `agent/schema-export.ts`, `packages/api/src/agent.ts` |
+
+### 20.2 `@jasper/motion` runtime API (`packages/motion/src/runtime/index.ts`)
+
+```ts
+export type { Timeline } from 'animejs';
+export const ANIMEJS_VERSION: string;                                    // '4.5.0', stamped from package.json
+export function createPausedTimeline(params?: TimelineParams): Timeline; // autoplay forced false
+export function seekCanonical(tl: Timeline, ms: number): void;           // seek(duration) → seek(0) → seek(ms), muted
+export function frameToMs(frame: number, fps: number): number;          // frame * 1000 / fps
+export function hash32(...parts: (string | number)[]): number;          // FNV-1a 32-bit, stable across realms
+export function seededRandom(seed: number): () => number;               // createSeededRandom(seed)
+export const EASES: Readonly<Record<EaseName, string>>;                 // closed list → anime ease strings
+export type EaseName = 'linear' | 'in' | 'out' | 'inOut' | 'outBack' | 'outElastic' | 'outBounce' | 'outExpo' | 'inOutExpo' | 'steps';
+/** Value engine: build creates targets + a paused timeline on plain objects (pure, run in useMemo keyed by buildKey);
+ *  the hook seeks canonically during render and returns frozen copies of the targets' values. */
+export function useAnimeValues<T extends Record<string, number>>(
+  buildKey: string, build: () => { timeline: Timeline; targets: T[] }, ms: number): readonly Readonly<T>[];
+/** DOM leaves (SVG drawable/morph/motion path): built in useLayoutEffect inside createScope({root}), reverted on
+ *  cleanup, rebuilt when buildKey/ready change, seeked canonically in a per-ms layout effect. */
+export function useAnimeDom<E extends Element>(
+  ref: RefObject<E | null>, buildKey: string, build: (root: E) => Timeline | null, ms: number, ready: boolean): void;
+export type TextUnit = 'char' | 'word' | 'line';
+export type TextSegment = { text: string; unitIndex: number; space: boolean };
+export function segmentText(text: string, unit: 'char' | 'word', locale?: string): TextSegment[];
+export function needsShaping(text: string): boolean;                     // RTL / complex scripts → word fallback
+export function groupLines(container: HTMLElement, selector: string): number[]; // line index per matched element, by offsetTop
+```
+
+`@jasper/motion/text` exports `TEXT_ANIMATION_IMPLS: Record<string /* id@version */, TextAnimationImpl>` with
+`TextAnimationImpl = {key, unitDefault: TextUnit, build(ctx: {units: number, lineOf?: number[], side: 'in'|'out',
+durationMs, params, seed, box}) → {timeline, targets: UnitValues[]}}` and `UnitValues = {opacity, x, y, scale, rotate,
+blur, letterSpacing, reveal}` (all numbers; px/deg/em as documented per field). `@jasper/motion/templates` exports
+`ANIME_TEMPLATE_IMPLS: Record<string /* id@version */, React.ComponentType<AnimeTemplateProps>>` with
+`AnimeTemplateProps = {params, timeMs, totalMs, introMs, outroMs, fps, canvas: {width, height}, seed, isPreview}`.
+
+### 20.3 Templates metadata (`@jasper/mg-templates`)
+
+`MgTemplateDefinition = MgSvgTemplateDefinition (renderer?: 'fframes', renderSvg) | MgAnimeTemplateDefinition
+(renderer: 'anime', renderVersion, posterAt?)`; shared base unchanged (id, version, name, category, description?,
+paramsSchema, defaults, intro/outro frames, defaultDurationSeconds, canvases) plus `upgrades?: {fromVersion,
+migrate(params)}[]` (S11:ATP-009). `isAnimeTemplate(def)`. `toTemplateInfo`/`catalogJson` pass `renderer`; the
+fframes parity/twin tests iterate fframes templates only. `@jasper/mg-templates` never imports animejs.
+
+### 20.4 Compositions
+
+- `isFrameDependent(clip)` replaces the kind check in `layerViewEqual`: kinds `motion-graphic`, `animated-image`,
+  `composition`, plus text clips with `animation` in their source.
+- `FontsReadyContext` from `useDocumentFonts` (`fonts.ts`): `useFontsReady(families)` → boolean; contracts ship a
+  version that resolves when the document's faces are loaded; core refines it per face (S11:FIX-003).
+- Layer table: `shape → ShapeLayer` (placeholder: a grey box of `intrinsicBox` until wp-m2-shapes);
+  `MotionGraphicLayer` renders an "anime template" placeholder card for `renderer: 'anime'` until
+  wp-m2-anime-templates.
+- `package.json`: `@jasper/motion` (workspace), `@remotion/shapes` `4.0.499`.
+
+### 20.5 Engine
+
+- Route plugins appended to `ROUTE_PLUGINS`: `routes/anime.ts` (licence provider for anime.js, capability provider
+  `features.anime`; owned by core) and `routes/layer-bake.ts` (registered after `mg-bundles`, before `tracking`;
+  stub on contracts; owned by layer-bake).
+- `LayerOverride += still?: boolean, rect?: {x, y, w, h}, colorRuns?: boolean` (types only on contracts; builder
+  support by layer-bake).
+- `@jasper/api`: `M2FeaturesSchema += anime?: {animejs, textPresets, templates}, layerBake?: {state, reason?,
+  cacheBytes}`; `MgCatalogEntry.renderer?`; route `layerBakePreview` (`POST /api/layer-bake/preview`, owner
+  wp-m2-layer-bake, 501 stub).
+- Remotion bundle `sourceHash` hashes `pnpm-lock.yaml` and the sources of `@jasper/motion` too (S11:FIX-009).
+
+### 20.6 Web
+
+- `COMMAND_MODULES += commands/text-animation.ts, commands/shapes.ts` (empty registrations on contracts).
+- Motion Templates panel: third tab "Text Animations" rendering `apps/web/src/text-animation/TextAnimationsTab.tsx`
+  (placeholder on contracts, owned by text-anim).
+- `apps/web/src/panels/motionTemplates/PreviewThumb.tsx`: `{component, inputProps, durationInFrames, fps, width,
+  height, posterFrame}` → poster via `<Thumbnail>`, one shared hover `<Player autoPlay loop>` after 200 ms,
+  reduced-motion/touch → poster only.
+- Tokens: `--pr-engine-anime` (appended block).
+
+### 20.7 MCP
+
+`apps/mcp/src/tools/animation.ts` (`registerAnimationTools`, `ANIMATION_GUIDE`, owned by text-anim) and
+`tools/shapes.ts` (`registerShapeTools`, `SHAPES_GUIDE`, owned by shapes) wired in `server.ts` (empty on
+contracts). Template tool changes stay in `tools/render.ts`/`editing.ts` hunks owned by anime-templates (S11 §10).
+
+### 20.8 Tests
+
+Determinism suite in `packages/motion/test`; Playwright specs `e2e/text-animation.spec.ts`,
+`e2e/anime-templates.spec.ts`, `e2e/shapes.spec.ts`, `e2e/layer-bake.spec.ts`; engine tests gated by `REMOTION_E2E=1`
+for render parity. `scripts/check-anime.mjs` runs in `pnpm lint`.
