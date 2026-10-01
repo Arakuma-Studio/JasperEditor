@@ -4,7 +4,6 @@
 import { Player, type PlayerRef } from '@remotion/player';
 import { type ComponentType, createRef } from 'react';
 import { createRoot } from 'react-dom/client';
-import { useCurrentFrame } from 'remotion';
 import { SequenceComposition } from '../../../compositions/src/SequenceComposition.tsx';
 import { valuesAt } from '../../src/runtime/hooks.ts';
 import {
@@ -15,11 +14,8 @@ import {
 	seekCanonical,
 } from '../../src/runtime/index.ts';
 import { REST_UNIT_VALUES, type TextAnimationImpl } from '../../src/text/index.ts';
-import { FixtureScene, riseImpl, SCENE } from '../determinism-fixtures.tsx';
-
-function AnimeScene() {
-	return <FixtureScene frame={useCurrentFrame()} />;
-}
+import { riseImpl, SCENE } from '../determinism-fixtures.tsx';
+import { AnimeScene } from './scene.tsx';
 
 /** A typical 4-property preset (opacity, y, blur, scale) with a stagger, for the cost measurement. */
 const fourProps: TextAnimationImpl = {

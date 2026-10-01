@@ -8,6 +8,8 @@ export * from './mg-host/protocol.ts';
 export * from './mg-host/runtime.ts';
 export * from './pipeline.ts';
 export { RemotionRoot } from './Root.tsx';
+export { renderPagesInOwnWindows } from './render-host.ts';
+export { FrameRepaint, repaintFromScratch, wantsFullRepaint } from './repaint.tsx';
 export {
 	FRAME_DEPENDENT_KINDS,
 	isFrameDependent,
