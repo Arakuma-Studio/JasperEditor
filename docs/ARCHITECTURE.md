@@ -1103,7 +1103,9 @@ export function groupLines(container: HTMLElement, selector: string): number[]; 
 `@jasper/motion/text` exports `TEXT_ANIMATION_IMPLS: Record<string /* id@version */, TextAnimationImpl>` with
 `TextAnimationImpl = {key, unitDefault: TextUnit, build(ctx: {units: number, lineOf?: number[], side: 'in'|'out',
 durationMs, params, seed, box}) → {timeline, targets: UnitValues[]}}` and `UnitValues = {opacity, x, y, scale, rotate,
-blur, letterSpacing, reveal}` (all numbers; px/deg/em as documented per field). `@jasper/motion/templates` exports
+blur, letterSpacing, reveal}` (all numbers; px/deg/em as documented per field); optional `lineMasks`, `caret(params)`
+and `caretVisible({params, side, ms, durationMs, fps, units, shown})` (blink, a pure function of the frame;
+typewriter@2). `@jasper/motion/templates` exports
 `ANIME_TEMPLATE_IMPLS: Record<string /* id@version */, React.ComponentType<AnimeTemplateProps>>` with
 `AnimeTemplateProps = {params, timeMs, totalMs, introMs, outroMs, fps, canvas: {width, height}, seed, isPreview}`.
 
@@ -1194,6 +1196,5 @@ anime-core,text-anim,anime-templates,layer-bake,shapes}.md`. Decisions taken dur
   bundle entry code) and the engine's `@fontsource` font files.
 
 Known gaps (non-blocking): no clip clipboard yet (Paste / Paste Attributes do not exist, so only duplicate copies
-animators); a word broken across lines by `overflow-wrap` animates on its first line; the typewriter caret does not
-blink; bakes of one export run sequentially; an animated shape's selection quad is its largest box; template text
+animators); a word broken across lines by `overflow-wrap` animates on its first line; bakes of one export run sequentially; an animated shape's selection quad is its largest box; template text
 uses a system font stack (Inter / Source Sans 3 / sans-serif); S05:MGT-002 card context menu not done.

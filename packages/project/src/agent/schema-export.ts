@@ -8,7 +8,7 @@ import type { CommandType } from '../commands/schemas/index.ts';
 import { ERROR_CODES, type Registries, TX_PROTOCOL, WARNING_CODES } from '../commands/types.ts';
 import { PROPERTY_SPECS } from '../registry/properties.ts';
 import { KNOWN_CLIP_KINDS } from '../schema/sequence.ts';
-import { TEXT_ANIMATION_SPECS } from '../text-animations.ts';
+import { LATEST_TEXT_ANIMATION_SPECS, TEXT_ANIMATION_SPECS } from '../text-animations.ts';
 
 export type JsonSchema = Record<string, unknown>;
 
@@ -54,6 +54,8 @@ export type AgentSchema = {
 		/** At 30 fps; scaled to the sequence rate on apply. */
 		defaultDurationFrames: number;
 		description: string;
+		/** The newest version of its preset (what new animations use); older versions only render saved documents. */
+		latest: boolean;
 	}[];
 	presets: { id: string; name: string; settings: unknown }[];
 	properties: {
@@ -124,6 +126,8 @@ export function exportAgentSchema(registries: Registries): AgentSchema {
 			defaults: t.defaults,
 			defaultDurationFrames: t.defaultDurationFrames,
 			description: t.description,
+			// Superseded versions stay valid in documents; new animations use the latest (S11:TXA-002).
+			latest: LATEST_TEXT_ANIMATION_SPECS.includes(t),
 		})),
 		presets: registries.presets.list().map((p) => ({ id: p.id, name: p.name, settings: p.settings })),
 		properties: PROPERTY_SPECS.map((p) => ({

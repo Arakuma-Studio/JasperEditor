@@ -4,6 +4,7 @@
 // `add_text` animateIn/animateOut (editing.ts) reuse AnimateArg and textAnimationOf.
 import {
 	fpsOf,
+	LATEST_TEXT_ANIMATION_SPECS,
 	latestTextAnimationSpec,
 	type MgCompositionInfo,
 	type ProjectDocument,
@@ -12,7 +13,6 @@ import {
 	sequenceTimecode,
 	TEXT_ANIMATION_REFERENCE_FPS,
 	TEXT_ANIMATION_SIDES,
-	TEXT_ANIMATION_SPECS,
 	type TextAnimationSide,
 	TimeInputSchema,
 	toJsonSchema,
@@ -205,11 +205,14 @@ export function animationLabel(patch: Partial<Record<TextAnimationSide, Animator
 	return `Text Animation: ${parts.join(', ')}`;
 }
 
-/** The list_text_animations catalogue (pure): every preset with its default length and a params summary. */
+/**
+ * The list_text_animations catalogue (pure): the newest version of every preset (what `set_text_animation` applies)
+ * with its default length and a params summary. Superseded versions stay valid in saved projects but are not listed.
+ */
 export function textAnimationCatalogue() {
 	return {
 		referenceFps: TEXT_ANIMATION_REFERENCE_FPS,
-		presets: TEXT_ANIMATION_SPECS.map((s) => ({
+		presets: LATEST_TEXT_ANIMATION_SPECS.map((s) => ({
 			id: s.id,
 			version: s.version,
 			label: s.label,
@@ -230,7 +233,7 @@ export function textAnimationCatalogue() {
 
 /** Text-animation hints for the codes whose generic hint is about something else. */
 const HINTS: Record<string, string> = {
-	E_UNKNOWN_EFFECT: `Text animation presets: ${TEXT_ANIMATION_SPECS.map((s) => s.id).join(', ')} (list_text_animations).`,
+	E_UNKNOWN_EFFECT: `Text animation presets: ${LATEST_TEXT_ANIMATION_SPECS.map((s) => s.id).join(', ')} (list_text_animations).`,
 	E_INVALID_PARAM:
 		'Check the params against list_text_animations (names, enums, ranges). A side without preset needs an existing animation on that side; text animations only apply to text clips.',
 	E_NOT_FOUND: 'Look clip ids up with get_timeline.',

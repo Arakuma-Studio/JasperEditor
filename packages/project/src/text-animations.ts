@@ -63,17 +63,21 @@ const easeParam = (d: (typeof TEXT_ANIMATION_EASES)[number]) =>
 const distanceParam = (d: number) =>
 	z.number().min(0).max(4000).default(d).describe('Travel in pixels of the text box');
 
-/** Builds a spec whose `defaults` are exactly what its schema yields for `{}`. */
+const typewriterUnitParam = () =>
+	z.enum(['char', 'word']).default('char').describe('Typed piece: each character or word');
+
+/** Builds a spec whose `defaults` are exactly what its schema yields for `{}` (version 1 unless given). */
 function preset(
 	s: Omit<TextAnimationSpec, 'defaults' | 'phases' | 'version' | 'paramsSchema'> & {
 		params: z.ZodRawShape;
+		version?: number;
 	},
 ): TextAnimationSpec {
-	const { params, ...rest } = s;
+	const { params, version = 1, ...rest } = s;
 	const paramsSchema = z.strictObject(params);
 	return {
 		...rest,
-		version: 1,
+		version,
 		phases: ['in', 'out'],
 		paramsSchema,
 		defaults: paramsSchema.parse({}) as Record<string, unknown>,
@@ -97,8 +101,10 @@ const slide = (id: string, label: string, direction: string) =>
 	});
 
 /**
- * The shipped presets (S11:TXA-003). Every preset works as In and Out; Out plays the mirrored motion (the In
- * motion reversed in time: the last unit in is the first out).
+ * The shipped presets (S11:TXA-003), every version. Every preset works as In and Out; Out plays the mirrored motion
+ * (the In motion reversed in time: the last unit in is the first out). A change of a preset's output for the same
+ * params adds a new version (`id@n+1`) and keeps the old entry, so saved projects render identically; pickers,
+ * galleries and agent catalogues list only `LATEST_TEXT_ANIMATION_SPECS`.
  */
 export const TEXT_ANIMATION_SPECS: readonly TextAnimationSpec[] = [
 	preset({
@@ -146,6 +152,7 @@ export const TEXT_ANIMATION_SPECS: readonly TextAnimationSpec[] = [
 			blur: z.number().min(0).max(200).default(16).describe('Start blur radius in pixels'),
 		},
 	}),
+	// typewriter@1: superseded by @2 (blinking caret, typing span); kept so saved projects render unchanged.
 	preset({
 		id: 'typewriter',
 		label: 'Typewriter',
@@ -153,8 +160,38 @@ export const TEXT_ANIMATION_SPECS: readonly TextAnimationSpec[] = [
 		defaultDurationFrames: 30,
 		description: 'Characters appear one after another, with an optional caret (out: deleted backwards).',
 		params: {
-			unit: z.enum(['char', 'word']).default('char').describe('Typed piece: each character or word'),
+			unit: typewriterUnitParam(),
 			caret: z.boolean().default(true).describe('Show a caret after the last typed unit'),
+		},
+	}),
+	preset({
+		id: 'typewriter',
+		version: 2,
+		label: 'Typewriter',
+		category: 'Typewriter',
+		defaultDurationFrames: 45,
+		description:
+			'Characters appear one after another behind a caret that blinks whenever typing pauses (out: the caret blinks, then the text is deleted backwards).',
+		params: {
+			unit: typewriterUnitParam(),
+			caret: z.boolean().default(true).describe('Show a caret after the last typed unit'),
+			caretBlink: z
+				.boolean()
+				.default(true)
+				.describe('Blink the caret while typing pauses (solid while typing; never shown at rest)'),
+			blinkRate: z.number().min(0.5).max(4).default(2).describe('Caret blinks per second'),
+			delay: z
+				.number()
+				.min(0)
+				.max(0.9)
+				.default(0)
+				.describe('Fraction of the window before the first unit is typed'),
+			typing: z
+				.number()
+				.min(0.05)
+				.max(1)
+				.default(0.6)
+				.describe('Fraction of the window spent typing (at most 1 − delay); the rest is idle'),
 		},
 	}),
 	preset({
@@ -213,6 +250,11 @@ export const TEXT_ANIMATION_SPECS: readonly TextAnimationSpec[] = [
 		},
 	}),
 ];
+
+/** The newest version of every preset, in catalogue order (what new animations are applied with). */
+export const LATEST_TEXT_ANIMATION_SPECS: readonly TextAnimationSpec[] = TEXT_ANIMATION_SPECS.filter(
+	(s) => !TEXT_ANIMATION_SPECS.some((o) => o.id === s.id && o.version > s.version),
+);
 
 export const textAnimationKey = (id: string, version: number) => `${id}@${version}`;
 

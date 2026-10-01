@@ -103,6 +103,25 @@ describe('determinism harness (proven on fixtures)', { timeout: 120_000 }, () =>
 		expect(failuresOf(checkTextAnimation(long)).join('\n')).toMatch(/timeline lasts/);
 	});
 
+	it('checks a blinking caret: rejects one driven by the wall clock or by the visit history', () => {
+		const ok: TextAnimationImpl = {
+			...riseImpl('fixture-caret@1'),
+			caretVisible: ({ ms }) => ms % 500 < 250,
+		};
+		expect(failuresOf(checkTextAnimation(ok))).toEqual([]);
+		const clock: TextAnimationImpl = {
+			...riseImpl('fixture-caret-clock@1'),
+			caretVisible: () => Date.now() % 2 === 0,
+		};
+		expect(failuresOf(checkTextAnimation(clock)).join('\n')).toMatch(/caret: wall clock.*Date\.now/);
+		let calls = 0;
+		const history: TextAnimationImpl = {
+			...riseImpl('fixture-caret-history@1'),
+			caretVisible: () => ++calls % 3 === 0,
+		};
+		expect(failuresOf(checkTextAnimation(history)).join('\n')).toMatch(/caret .*differs from a fresh build/);
+	});
+
 	it('accepts a correct anime template (value engine + DOM leaf), mounted once or fresh, StrictMode', () => {
 		expect(checkTemplate('fixture-template@1', FixtureTemplate, undefined).failures).toEqual([]);
 	});

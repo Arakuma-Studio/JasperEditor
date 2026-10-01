@@ -59,4 +59,24 @@ export type TextAnimationImpl = {
 	lineMasks?: boolean;
 	/** M2 (wp-m2-text-anim, additive): draws a caret after the last shown unit when this returns true. */
 	caret?(params: Record<string, unknown>): boolean;
+	/**
+	 * Additive (typewriter@2): whether the caret is lit at a frame of the window (blink). A pure function of the
+	 * frame (S11:ANM-003), never the wall clock; absent = lit whenever `caret` is true.
+	 */
+	caretVisible?(ctx: TextCaretContext): boolean;
+};
+
+/** One frame of a window as the caret sees it (`caretVisible`). */
+export type TextCaretContext = {
+	/** The preset's params with defaults merged. */
+	params: Record<string, unknown>;
+	side: TextAnimationSide;
+	/** Seek time of the In-ordered timeline (Out windows seek it mirrored). */
+	ms: number;
+	durationMs: number;
+	fps: number;
+	/** Units the timeline was built with. */
+	units: number;
+	/** Units fully shown at this frame (`reveal >= 1`). */
+	shown: number;
 };

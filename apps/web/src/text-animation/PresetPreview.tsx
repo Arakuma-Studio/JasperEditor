@@ -7,16 +7,14 @@ import {
 	type TextAnimationPreviewSide,
 	textAnimationPreviewTiming,
 } from '@jasper/compositions';
-import { TEXT_ANIMATION_SPECS, type TextAnimationSide, type TextAnimationSpec } from '@jasper/project';
+import { LATEST_TEXT_ANIMATION_SPECS, type TextAnimationSide, type TextAnimationSpec } from '@jasper/project';
 import { cx } from '@jasper/ui';
 import { Popover } from 'radix-ui';
 import { useState } from 'react';
 import { PreviewThumb } from '../panels/motionTemplates/PreviewThumb.tsx';
 
-/** The newest version of every preset id, in catalogue order. */
-export const LATEST_TEXT_ANIMATIONS: readonly TextAnimationSpec[] = TEXT_ANIMATION_SPECS.filter(
-	(s) => !TEXT_ANIMATION_SPECS.some((o) => o.id === s.id && o.version > s.version),
-);
+/** The newest version of every preset id, in catalogue order (superseded versions only render saved projects). */
+export const LATEST_TEXT_ANIMATIONS: readonly TextAnimationSpec[] = LATEST_TEXT_ANIMATION_SPECS;
 
 export function PresetPreview({
 	spec,

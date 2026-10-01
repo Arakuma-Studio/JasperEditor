@@ -179,6 +179,27 @@ describe('DOM layers and static detection (LBK-001, LBK-004)', () => {
 			},
 		} as unknown as RenderVisualClip;
 		expect(isStaticLayer(withAnim)).toBe(false);
+		// The blinking typewriter caret (typewriter@2) is frame-dependent like every animator, and its blink params
+		// are part of the key (the snapshot's resolved params are in the normalised clip).
+		const typewriter = (blinkRate: number) =>
+			({
+				...withAnim,
+				source: {
+					...(textClip.source as object),
+					animation: {
+						in: {
+							preset: 'typewriter',
+							version: 2,
+							params: { unit: 'char', caret: true, caretBlink: true, blinkRate, delay: 0, typing: 0.6 },
+							frames: 45,
+						},
+					},
+				},
+			}) as unknown as RenderVisualClip;
+		expect(isStaticLayer(typewriter(2))).toBe(false);
+		expect(JSON.stringify(normalisedClip(typewriter(2)))).not.toBe(
+			JSON.stringify(normalisedClip(typewriter(3))),
+		);
 		// Keyframed shape props (deep scan of the source).
 		const shape = clipOf(s, 'clp_SHAPE00000000001');
 		const kf = { id: 'k', time: 0, value: [10, 10], interpolation: 'linear', easeIn: {}, easeOut: {} };

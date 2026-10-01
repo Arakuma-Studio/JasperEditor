@@ -16,6 +16,7 @@ import {
 	REST_UNIT_VALUES,
 	type TextAnimationBuildContext,
 	type TextAnimationImpl,
+	type TextCaretContext,
 	type UnitValues,
 } from './types.ts';
 
@@ -110,15 +111,76 @@ function impl(
 	id: string,
 	unitDefault: TextUnit,
 	build: Build,
-	extra: Pick<TextAnimationImpl, 'lineMasks' | 'caret'> = {},
+	extra: Pick<TextAnimationImpl, 'lineMasks' | 'caret' | 'caretVisible'> = {},
+	version = 1,
 ): TextAnimationImpl {
-	const defaults = getTextAnimationSpec(id, 1)?.defaults ?? {};
+	const defaults = getTextAnimationSpec(id, version)?.defaults ?? {};
 	return {
-		key: `${id}@1`,
+		key: `${id}@${version}`,
 		unitDefault,
 		build: (ctx) => build(ctx, { ...defaults, ...ctx.params }),
 		...extra,
 	};
+}
+
+/**
+ * Keystroke times of a typewriter window: unit `i` is typed at `start + slot·i` (shown from the first frame after
+ * it). `delay` / `typing` are fractions of the window (typewriter@2; @1 has neither: delay 0, typing 1).
+ */
+export function typewriterSchedule(
+	units: number,
+	durationMs: number,
+	p: Params,
+): { start: number; slot: number } {
+	const total = Math.max(1, durationMs);
+	const delay = Math.min(0.9, Math.max(0, num(p.delay, 0)));
+	const typing = Math.min(1 - delay, Math.max(0.05, num(p.typing, 1)));
+	return { start: total * delay, slot: (total * typing) / Math.max(1, Math.floor(units)) };
+}
+
+/** One unit after another, each shown at the start of its slot (step ease from the start). */
+function typewriter(ctx: TextAnimationBuildContext, s: { start: number; slot: number }) {
+	const n = Math.max(0, Math.floor(ctx.units));
+	const targets = Array.from({ length: n }, () => ({ ...REST_UNIT_VALUES, opacity: 0, reveal: 0 }));
+	const timeline = createPausedTimeline();
+	targets.forEach((target, i) => {
+		timeline.add(
+			target,
+			{ reveal: [0, 1], opacity: [0, 1], duration: s.slot, ease: steps(1, true) },
+			s.start + s.slot * i,
+		);
+	});
+	return { timeline, targets };
+}
+
+/**
+ * Blinking caret of typewriter@2, a pure function of the frame (S11:ANM-003) like a text editor's: lit for the
+ * first half of every blink period (`1 / blinkRate` s) counted from its anchor, so it is solid while units follow
+ * each other faster than half a period, lit on every frame where a unit was just typed (or deleted), and blinks
+ * while typing pauses. The anchor is the last keystroke in the window's own playing direction:
+ * - In: the time the last shown unit was typed (`start + slot·(shown − 1)`), or the window start before the first;
+ * - Out (deletes backwards): the time the last deleted unit went (`start + slot·shown` on the In timeline, which
+ *   Out plays backwards), or the Out window's first frame before the first deletion.
+ * `caretBlink: false` keeps the caret solid. The caret only exists inside a window (never at rest, S11:ANM-009).
+ */
+export function typewriterCaretVisible(c: TextCaretContext): boolean {
+	const p = c.params;
+	if (p.caret === false) return false;
+	if (p.caretBlink === false) return true;
+	const rate = Math.min(4, Math.max(0.5, num(p.blinkRate, 2)));
+	const n = Math.max(0, Math.floor(c.units));
+	const shown = Math.min(n, Math.max(0, Math.floor(c.shown)));
+	const { start, slot } = typewriterSchedule(n, c.durationMs, p);
+	let elapsed: number;
+	if (c.side === 'in') elapsed = c.ms - (shown > 0 ? start + slot * (shown - 1) : 0);
+	else {
+		// The Out window's first frame seeks the In timeline at its last frame (`durationMs − 1 frame`).
+		const anchor = shown < n ? start + slot * shown : c.durationMs - 1000 / Math.max(1, c.fps);
+		elapsed = anchor - c.ms;
+	}
+	// Half periods since the anchor; a hair of tolerance so frame times that land on a boundary are stable.
+	const halves = Math.floor((Math.max(0, elapsed) * 2 * rate) / 1000 + 1e-9);
+	return halves % 2 === 0;
 }
 
 const slide = (id: string, axis: 'x' | 'y', sign: 1 | -1) =>
@@ -156,25 +218,15 @@ const PRESETS: readonly TextAnimationImpl[] = [
 			c.order,
 		);
 	}),
+	impl('typewriter', 'char', (ctx) => typewriter(ctx, typewriterSchedule(ctx.units, ctx.durationMs, {})), {
+		caret: (p) => p.caret !== false,
+	}),
 	impl(
 		'typewriter',
 		'char',
-		(ctx) => {
-			// One unit after another, each shown at the start of its slot (step ease from the start).
-			const n = Math.max(0, Math.floor(ctx.units));
-			const slot = Math.max(1, ctx.durationMs) / Math.max(1, n);
-			const targets = Array.from({ length: n }, () => ({ ...REST_UNIT_VALUES, opacity: 0, reveal: 0 }));
-			const timeline = createPausedTimeline();
-			targets.forEach((target, i) => {
-				timeline.add(
-					target,
-					{ reveal: [0, 1], opacity: [0, 1], duration: slot, ease: steps(1, true) },
-					slot * i,
-				);
-			});
-			return { timeline, targets };
-		},
-		{ caret: (p) => p.caret !== false },
+		(ctx, p) => typewriter(ctx, typewriterSchedule(ctx.units, ctx.durationMs, p)),
+		{ caret: (p) => p.caret !== false, caretVisible: typewriterCaretVisible },
+		2,
 	),
 	impl('tracking', 'line', (ctx, p) => {
 		const c = common(p, 'outExpo');

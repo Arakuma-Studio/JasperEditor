@@ -220,6 +220,8 @@ describe('Text Animations tab (S11:TXA-020)', () => {
 		expect(
 			filterPresets(LATEST_TEXT_ANIMATIONS, { query: 'caret', category: null, side: 'in' }).map((s) => s.id),
 		).toEqual(['typewriter']);
+		// one card per preset: the newest version (typewriter@2), never the superseded typewriter@1
+		expect(LATEST_TEXT_ANIMATIONS.filter((s) => s.id === 'typewriter').map((s) => s.version)).toEqual([2]);
 		expect(
 			filterPresets(LATEST_TEXT_ANIMATIONS, { query: '', category: 'Pop', side: 'out' }).map((s) => s.id),
 		).toEqual(['pop']);

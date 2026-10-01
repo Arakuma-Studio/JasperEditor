@@ -268,8 +268,44 @@ export function checkTextAnimation(impl: TextAnimationImpl, spec?: TextAnimation
 				}
 			}
 		failures.push(...checkValueBuild(label, build, frames, fps).failures);
+		if (impl.caretVisible) failures.push(...checkCaret(impl, ctx, build, frames, fps));
 		return { label, failures };
 	});
+}
+
+/**
+ * A caret that blinks (`caretVisible`) is part of the frame's output: lit/dark at every frame of the window equals
+ * the fresh-build answer whatever the visit order, without the wall clock (S11:ANM-003).
+ */
+function checkCaret(
+	impl: TextAnimationImpl,
+	ctx: TextAnimationBuildContext,
+	build: Build,
+	frames: readonly number[],
+	fps: number,
+): string[] {
+	const caretOf = (b: ReturnType<Build>, f: number) => {
+		const ms = frameToMs(f, fps);
+		seekCanonical(b.timeline, ms);
+		const shown = b.targets.filter((t) => (t.reveal ?? 1) >= 1).length;
+		return impl.caretVisible!({ ...ctx, ms, durationMs: ctx.durationMs, fps, shown });
+	};
+	const inWindow = frames.filter((f) => f >= 0 && frameToMs(f, fps) < ctx.durationMs);
+	const failures: string[] = [];
+	const fresh = new Map<number, boolean>();
+	const clock = wallClockCalls(() => {
+		for (const f of inWindow) fresh.set(f, caretOf(build(), f));
+	});
+	if (clock.calls.length) failures.push(`caret: wall clock / unseeded randomness: ${clock.calls.join(', ')}`);
+	for (const { name, order } of visitOrders(inWindow)) {
+		const one = build();
+		const f = order.find((f) => caretOf(one, f) !== fresh.get(f));
+		if (f !== undefined) {
+			failures.push(`caret ${name}: frame ${f} differs from a fresh build`);
+			break;
+		}
+	}
+	return failures;
 }
 
 /**
