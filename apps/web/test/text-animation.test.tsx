@@ -143,6 +143,14 @@ describe('commands and menus (S11:TXA-024)', () => {
 			durationFrames: 50,
 		});
 		expect(toasts.at(-1)).toMatch(/shortened to fit/);
+		// with nothing selected, agents still remove by clipIds; without them the user is told to select
+		act(() => session.select('timeline', []));
+		expect((await runCommand('text.removeAnimation', ctx, { clipIds: [a!], side: 'out' })).ran).toBe(true);
+		expect(textOf(session, a!).textAnimation?.out).toBeUndefined();
+		expect(textOf(session, a!).textAnimation?.in?.preset).toBe('fade');
+		expect((await runCommand('text.removeAnimation', ctx, { side: 'both' })).ran).toBe(true);
+		expect(toasts.at(-1)).toBe('Select a text clip first');
+		expect(textOf(session, a!).textAnimation?.in?.preset).toBe('fade');
 	});
 	it('Graphics ▸ Text Animation has Apply In…, Apply Out… and Remove', () => {
 		const graphics = MENUBAR.find((m) => m.id === 'graphics')!;
