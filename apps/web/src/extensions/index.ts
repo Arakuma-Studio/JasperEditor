@@ -1,6 +1,6 @@
 // M2 UI extension points (ARCHITECTURE §19.10). Each work package registers into these from its own module;
 // the host panels (Effect Controls, Properties, Program monitor, Timeline, Project) render what is registered.
-import type { Clip, EffectInstance, EffectSpec, ProjectItem } from '@jasper/project';
+import type { Clip, EffectInstance, EffectSpec, ProjectItem, Rational } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import type { ComponentType } from 'react';
 import { createRegistry } from './registry.ts';
@@ -121,6 +121,54 @@ export function clipBadgeFor(clip: Clip): ClipBadgeState | null {
 		}
 	}
 	return null;
+}
+
+// ---------------------------------------------------------------- Timeline: clip decorations (wp-m3-trackui)
+
+/**
+ * What a clip decoration receives: the clip and its placement as the timeline draws it. `x`/`w` are unrounded
+ * clip-area px of the clip start and width (the clip body element starts at `x`, so body-local px = clip-area
+ * px − `x`); `scrollFrame`/`pxPerFrame` map frames to px (`x = (frame − scrollFrame) · pxPerFrame`).
+ * Decorations are rendered inside the virtualised, memoised clip view: they must not subscribe to the transport.
+ */
+export type ClipDecorationProps = {
+	clip: Clip;
+	x: number;
+	w: number;
+	height: number;
+	viewportWidth: number;
+	scrollFrame: number;
+	pxPerFrame: number;
+	rate: Rational;
+	selected: boolean;
+	trackLocked: boolean;
+};
+
+/**
+ * A per-clip timeline decoration (S09:TRU-005 tracker/link glyphs): a `badge` in the clip's name strip (shown
+ * when the clip is ≥ 40 px wide, also with names hidden; the strip itself ignores the pointer, so a badge that
+ * reacts to clicks sets `pointer-events: auto` on itself) and/or an `overlay` inside the clip body (positioned
+ * absolutely by the decoration; keep it out of the trim edge zones when it takes pointer input). `appliesTo`
+ * runs on every clip render: keep it O(1).
+ */
+export type ClipDecorationDef = {
+	id: string;
+	order?: number;
+	appliesTo(clip: Clip): boolean;
+	badge?: ComponentType<ClipDecorationProps>;
+	overlay?: ComponentType<ClipDecorationProps>;
+};
+export const clipDecorations = createRegistry<ClipDecorationDef>();
+
+/** The decorations that apply to a clip (a failing `appliesTo` never breaks the timeline). */
+export function decorationsFor(defs: readonly ClipDecorationDef[], clip: Clip): ClipDecorationDef[] {
+	return defs.filter((d) => {
+		try {
+			return d.appliesTo(clip);
+		} catch {
+			return false;
+		}
+	});
 }
 
 /** Collects the menu items of every registered extension, separated from each other. */
