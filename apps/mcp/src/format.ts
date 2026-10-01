@@ -24,7 +24,7 @@ import {
 
 const round3 = (x: number) => Math.round(x * 1000) / 1000;
 
-export function sequenceName(doc: ProjectDocument, seqId: string): string {
+function sequenceName(doc: ProjectDocument, seqId: string): string {
 	for (const item of Object.values(doc.items))
 		if (item.kind === 'sequence' && item.sequenceId === seqId) return item.name;
 	return seqId;
@@ -166,7 +166,7 @@ function sortedClips(seq: Sequence): Clip[] {
 	);
 }
 
-export function sequenceSummary(doc: ProjectDocument, seq: Sequence) {
+function sequenceSummary(doc: ProjectDocument, seq: Sequence) {
 	const r = seq.settings.frameRate as Rational;
 	const duration = sequenceDuration(seq);
 	return {

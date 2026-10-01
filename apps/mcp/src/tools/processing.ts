@@ -66,7 +66,7 @@ function clipMedia(doc: ProjectDocument, clipId: string): { clipId: string; medi
 }
 
 /** `media.derive` for a finished process job (the asset = the engine's RegisteredMedia of the output). */
-export function mediaDeriveCommand(
+function mediaDeriveCommand(
 	fromMediaId: string,
 	steps: unknown[],
 	res: ProcessResult,

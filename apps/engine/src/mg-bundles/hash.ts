@@ -6,10 +6,10 @@ import { createReadStream } from 'node:fs';
 import { readdir, realpath, stat } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 
-export type BundleFile = { rel: string; abs: string; size: number };
+type BundleFile = { rel: string; abs: string; size: number };
 
 /** Every regular file under `root` (following symlinks), sorted by relative POSIX path. */
-export async function listBundleFiles(
+async function listBundleFiles(
 	root: string,
 	opts: { skip?: (rel: string) => boolean } = {},
 ): Promise<BundleFile[]> {

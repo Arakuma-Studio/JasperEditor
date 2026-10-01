@@ -7,7 +7,7 @@ import { useEngineOrNull } from '../state/engine.tsx';
 import { ensureLayerBakeRuntime } from './runtime.ts';
 
 /** Attaches the runtime of `session` (once connected to an engine). */
-export function useLayerBakeRuntimeAttach(session: EditorSession | null): void {
+function useLayerBakeRuntimeAttach(session: EditorSession | null): void {
 	const engine = useEngineOrNull();
 	useEffect(() => {
 		if (!session || !engine || engine.status !== 'connected') return;

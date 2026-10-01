@@ -348,15 +348,15 @@ export function edgeSamples(
 
 /**
  * Robust fit of `off = a + b·t` (Huber, then Tukey biweight IRLS) starting from the median offset. Returns the
- * line, per-sample absolute residuals, their median and the number of samples within `inlierTol`.
+ * line, median absolute residual and the number of samples within `inlierTol`.
  */
 export function robustOffsetFit(
 	t: number[],
 	off: number[],
 	inlierTol: number,
-): { a: number; b: number; median: number; inliers: number; residuals: number[] } {
+): { a: number; b: number; median: number; inliers: number } {
 	const n = t.length;
-	if (n === 0) return { a: 0, b: 0, median: Number.POSITIVE_INFINITY, inliers: 0, residuals: [] };
+	if (n === 0) return { a: 0, b: 0, median: Number.POSITIVE_INFINITY, inliers: 0 };
 	const sorted = [...off].sort((x, y) => x - y);
 	let a = sorted[Math.floor(n / 2)]!;
 	let b = 0;
@@ -400,7 +400,6 @@ export function robustOffsetFit(
 		b,
 		median: rs[Math.floor(n / 2)]!,
 		inliers: residuals.filter((r) => r <= inlierTol).length,
-		residuals,
 	};
 }
 
@@ -423,13 +422,6 @@ export function intersectLines(
 
 export type EdgeSideResult = {
 	accepted: boolean;
-	samples: number;
-	inliers: number;
-	residual: number;
-	/** Largest distance of the fitted line from the predicted side at its ends, px. */
-	shift: number;
-	/** Fitted side (ends at the predicted corners' parameters), or null. */
-	line: [[number, number], [number, number]] | null;
 };
 
 /**
@@ -465,7 +457,7 @@ export function refineQuadEdges(
 		const mode = modes[k] ?? null;
 		if (!mode) {
 			sideLines.push(predicted);
-			sides.push({ accepted: false, samples: 0, inliers: 0, residual: 0, shift: 0, line: null });
+			sides.push({ accepted: false });
 			continue;
 		}
 		const s = edgeSamples(img, w, h, p, q, nrm, opts.band, opts.n, mode, opts.minContrast);
@@ -481,14 +473,7 @@ export function refineQuadEdges(
 			[q[0] + nrm[0] * (fit.a + fit.b), q[1] + nrm[1] * (fit.a + fit.b)],
 		];
 		sideLines.push(ok ? line : predicted);
-		sides.push({
-			accepted: ok,
-			samples: s.t.length,
-			inliers: fit.inliers,
-			residual: s.t.length ? fit.median : 0,
-			shift: s.t.length ? shift : 0,
-			line: s.t.length ? line : null,
-		});
+		sides.push({ accepted: ok });
 	}
 	if (!sides.some((s) => s.accepted)) return { quad: [...quad], sides };
 	const out: number[] = [];

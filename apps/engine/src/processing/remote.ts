@@ -9,8 +9,8 @@ import { basename, join } from 'node:path';
 import type { RemoteExecutorSettings, RemoteProbeResult } from '@jasper/api';
 import { PROC_NAME, PROC_VERSION, RECIPE_VERSION } from './proc/recipe.ts';
 
-export const SSH_ENV = { ssh: 'JASPER_SSH', scp: 'JASPER_SCP', rsync: 'JASPER_RSYNC' } as const;
-export const REMOTE_CACHE_LIMIT_BYTES = 20 * 1024 ** 3;
+const SSH_ENV = { ssh: 'JASPER_SSH', scp: 'JASPER_SCP', rsync: 'JASPER_RSYNC' } as const;
+const REMOTE_CACHE_LIMIT_BYTES = 20 * 1024 ** 3;
 
 export class RemoteError extends Error {
 	constructor(
@@ -27,9 +27,9 @@ export function shq(word: string): string {
 	return `'${word.replace(/'/g, `'\\''`)}'`;
 }
 
-export type ExecResult = { code: number; stdout: string; stderr: string };
+type ExecResult = { code: number; stdout: string; stderr: string };
 
-export type ExecOptions = {
+type ExecOptions = {
 	stdin?: string | Buffer;
 	signal?: AbortSignal;
 	onStderr?(chunk: string): void;
@@ -92,7 +92,7 @@ function run(bin: string, args: string[], opts: ExecOptions = {}): Promise<ExecR
 	});
 }
 
-export type RemoteLayout = {
+type RemoteLayout = {
 	root: string;
 	bin: string;
 	models: string;
@@ -101,7 +101,7 @@ export type RemoteLayout = {
 	ffmpeg: string;
 };
 
-export function remoteLayout(remoteDir: string): RemoteLayout {
+function remoteLayout(remoteDir: string): RemoteLayout {
 	const root = remoteDir.replace(/\/+$/, '');
 	return {
 		root,
@@ -190,8 +190,8 @@ export class SshRemote {
 	/** rsync is used when present on both ends (resumable transfers), else scp. */
 	async hasRsync(): Promise<boolean> {
 		if (this.rsyncOk !== null) return this.rsyncOk;
-		const local = await run(this.bin('rsync'), ['--version']).catch(() => ({ code: 1 }) as ExecResult);
-		if (local.code !== 0) return (this.rsyncOk = false);
+		const local = await run(this.bin('rsync'), ['--version']).catch(() => null);
+		if (local?.code !== 0) return (this.rsyncOk = false);
 		const remote = await this.exec('command -v rsync >/dev/null 2>&1 && echo yes || echo no').catch(
 			() => null,
 		);
@@ -365,7 +365,7 @@ export class SshRemote {
 	}
 }
 
-export function emptyProbe(): RemoteProbeResult & { cpus: number | null; ffmpegPath: string | null } {
+function emptyProbe(): RemoteProbeResult & { cpus: number | null; ffmpegPath: string | null } {
 	return {
 		ok: false,
 		message: '',

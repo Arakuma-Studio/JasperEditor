@@ -14,7 +14,6 @@ export type ProcProbe = {
 	matrix: 'bt709' | 'bt601' | 'bt2020' | 'fcc' | 'smpte240m';
 	range: 'tv' | 'pc';
 	audioStreams: number;
-	codec: string;
 };
 
 function run(bin: string, args: string[]): Promise<string> {
@@ -35,7 +34,7 @@ function run(bin: string, args: string[]): Promise<string> {
 	});
 }
 
-export function parseRational(s: string | undefined): Rational | null {
+function parseRational(s: string | undefined): Rational | null {
 	if (!s) return null;
 	const [n, d] = s.split('/').map(Number);
 	if (!Number.isFinite(n) || !n) return null;
@@ -85,7 +84,6 @@ export async function probeInput(ffprobe: string, file: string): Promise<ProcPro
 		matrix: matrixOf(v.color_space as string | undefined),
 		range: v.color_range === 'pc' ? 'pc' : 'tv',
 		audioStreams: json.streams.filter((s) => s.codec_type === 'audio').length,
-		codec: String(v.codec_name ?? ''),
 	};
 }
 

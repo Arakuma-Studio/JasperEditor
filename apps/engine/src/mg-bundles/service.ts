@@ -43,11 +43,11 @@ import { buildCompositionInfos, loadSchemaModule, type RawComposition, readManif
 import { extractZip, ZipError } from './zip.ts';
 
 /** CPU slots of one pre-render (S08:MGC-030) and of a bundle build. */
-export const MG_PRERENDER_SLOTS = 4;
-export const MG_BUNDLE_SLOTS = 4;
+const MG_PRERENDER_SLOTS = 4;
+const MG_BUNDLE_SLOTS = 4;
 /** Render directories unused for this long are removed by the GC pass (S08:MGC-031). */
-export const MG_RENDER_TTL_MS = 14 * 24 * 3600 * 1000;
-export const MG_DELAY_RENDER_TIMEOUT_MS = 60_000;
+const MG_RENDER_TTL_MS = 14 * 24 * 3600 * 1000;
+const MG_DELAY_RENDER_TIMEOUT_MS = 60_000;
 const KEY_RE = /^[0-9a-f]{40}$/;
 const MEDIA_KEY_RE = /^mk_[0-9a-f]{24}$/;
 
@@ -84,7 +84,7 @@ export type BundleJobInput =
 	| { op: 'import-zip'; file: string; name: string; projectId?: string }
 	| { op: 'rebuild'; key: string; projectId?: string };
 
-export type PrerenderJobInput = {
+type PrerenderJobInput = {
 	req: MgPrerenderRequest;
 	renderKey: string;
 	/** Browser tabs (child jobs of an export run inside the export's CPU budget). */

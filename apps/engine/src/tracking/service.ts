@@ -27,10 +27,10 @@ import {
 	type TrackingWorker,
 } from './worker.ts';
 
-export const PLANAR_METHOD = 'klt-homography@1';
-export const POINT_METHOD = 'template@1';
+const PLANAR_METHOD = 'klt-homography@1';
+const POINT_METHOD = 'template@1';
 /** Frames at or below this go to the interactive lane (S09:TRK-010). */
-export const INTERACTIVE_MAX_FRAMES = 300;
+const INTERACTIVE_MAX_FRAMES = 300;
 const EVENT_INTERVAL_MS = 100;
 const IN_FLIGHT = 3;
 const CHUNK_BYTES = 128 * 1024 * 1024;

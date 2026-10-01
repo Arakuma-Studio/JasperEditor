@@ -39,7 +39,7 @@ function cached<T>(map: Map<string, Entry<T>>, key: string, load: () => Promise<
 }
 
 /** Engine mediaKey of an asset (engine-store locator, ARCHITECTURE D-09). */
-export function mediaKeyOf(asset: MediaAsset | undefined): string | null {
+function mediaKeyOf(asset: MediaAsset | undefined): string | null {
 	const loc = asset?.locators.find((l) => l.type === 'engine-store') as { key?: string } | undefined;
 	return loc?.key ?? null;
 }

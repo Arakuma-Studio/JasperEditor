@@ -23,7 +23,7 @@ import { drawGain, waveBars } from '../model/waveform.ts';
 import type { ThumbnailStyle } from '../state/prefs.ts';
 import { CanvasTiles, cssVar, dpr, type TileDraw } from './canvas.tsx';
 
-export const NAME_STRIP_PX = 14;
+const NAME_STRIP_PX = 14;
 const OVERSCAN_PX = 256;
 
 export type ClipDisplay = {

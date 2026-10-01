@@ -50,7 +50,7 @@ export type PageGrant = {
 	progress(p: number): void;
 };
 
-export type PagePoolTask<T> = {
+type PagePoolTask<T> = {
 	/** Pages the task can use well (1 for stills; `pageShares` for masters). */
 	want: number;
 	/** Weight of the task in the aggregated progress (frames, plus a fixed cost per render). */
@@ -68,7 +68,7 @@ export type PagePoolProgress = {
 	fraction: number;
 };
 
-export type PagePoolOptions = {
+type PagePoolOptions = {
 	/** Total pages of the renders in flight (≥ 1). */
 	budget: number;
 	/** Renders in flight at most (default `min(budget, MAX_RENDERS_IN_FLIGHT)`; 1 = one after the other). */
@@ -76,13 +76,6 @@ export type PagePoolOptions = {
 	signal: AbortSignal;
 	onProgress?(p: PagePoolProgress): void;
 };
-
-/** The pool's budget split: the order tasks start in and their page grants, without running them (tests, logs). */
-function poolOrder(tasks: readonly Pick<PagePoolTask<unknown>, 'want' | 'weight'>[]): number[] {
-	return tasks
-		.map((_, i) => i)
-		.sort((a, b) => tasks[b]!.want - tasks[a]!.want || tasks[b]!.weight - tasks[a]!.weight || a - b);
-}
 
 /**
  * Runs `tasks` within the page budget; resolves with their results in input order. Rejects with the first failure
@@ -94,7 +87,9 @@ export function runPagePool<T>(tasks: readonly PagePoolTask<T>[], o: PagePoolOpt
 	const results: T[] = new Array(tasks.length);
 	const progress = tasks.map(() => 0);
 	const totalWeight = tasks.reduce((s, t) => s + Math.max(0, t.weight), 0) || 1;
-	const pending = poolOrder(tasks);
+	const pending = tasks
+		.map((_, i) => i)
+		.sort((a, b) => tasks[b]!.want - tasks[a]!.want || tasks[b]!.weight - tasks[a]!.weight || a - b);
 	const inner = new AbortController();
 	let used = 0;
 	let running = 0;

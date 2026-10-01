@@ -28,7 +28,7 @@ mkdirSync(appdir, { recursive: true });
 // The specs read this file to find the appdir (e.g. to inspect the project store on disk).
 const infoFile = join(root, 'test-results', 'e2e-server.json');
 mkdirSync(dirname(infoFile), { recursive: true });
-writeFileSync(infoFile, JSON.stringify({ port: Number(port), appdir, pid: process.pid }));
+writeFileSync(infoFile, JSON.stringify({ port: Number(port), appdir }));
 
 const child = spawn(process.execPath, [engineBundle, '--port', port, '--appdir', appdir], {
 	cwd: root,

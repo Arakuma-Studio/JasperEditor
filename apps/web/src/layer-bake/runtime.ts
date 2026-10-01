@@ -327,7 +327,3 @@ export function ensureLayerBakeRuntime(session: EditorSession, engine: EngineLin
 	}
 	return current;
 }
-
-export function currentLayerBakeRuntime(): LayerBakeRuntime | null {
-	return current;
-}

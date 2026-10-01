@@ -132,7 +132,7 @@ export function freeVideoTrack(seq: Sequence, at: number, duration: number, pref
 	return `V${seq.videoTracks.length + 1}`;
 }
 
-export const DEFAULT_TEXT_SECONDS = 5;
+const DEFAULT_TEXT_SECONDS = 5;
 
 /** Type tool click: a point-text clip at the playhead centered on `point` (XF-060). */
 export function addTextAt(session: EditorSession, point: Vec2, frame: number): string | null {

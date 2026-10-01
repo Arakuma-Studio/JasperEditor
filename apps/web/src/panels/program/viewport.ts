@@ -6,10 +6,10 @@ export type Size = { width: number; height: number };
 export type View = { scale: number; x: number; y: number };
 export type Zoom = 'fit' | number;
 
-export const FIT_PAD = 16;
+const FIT_PAD = 16;
 export const ZOOM_PRESETS = [10, 25, 50, 75, 100, 150, 200, 400, 800] as const;
-export const MIN_ZOOM = 10;
-export const MAX_ZOOM = 800;
+const MIN_ZOOM = 10;
+const MAX_ZOOM = 800;
 export const WHEEL_ZOOM_STEP = 1.1;
 
 export function fitScale(viewport: Size, frame: Size, pad = FIT_PAD): number {
@@ -18,7 +18,7 @@ export function fitScale(viewport: Size, frame: Size, pad = FIT_PAD): number {
 	return Math.max(0.001, s);
 }
 
-export function zoomScale(zoom: Zoom, viewport: Size, frame: Size): number {
+function zoomScale(zoom: Zoom, viewport: Size, frame: Size): number {
 	return zoom === 'fit' ? fitScale(viewport, frame) : zoom / 100;
 }
 
@@ -45,7 +45,7 @@ export function clampPan(pan: Vec2, viewport: Size, frame: Size, scale: number):
 	return [axis(pan[0], viewport.width, frame.width), axis(pan[1], viewport.height, frame.height)];
 }
 
-export function clampZoom(percent: number): number {
+function clampZoom(percent: number): number {
 	return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, percent));
 }
 

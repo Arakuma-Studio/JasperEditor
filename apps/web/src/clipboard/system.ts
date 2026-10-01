@@ -38,7 +38,7 @@ export type StoredClipboard = {
 };
 
 /** Desktop: the absolute path of a pasted File (Electron `webUtils.getPathForFile`), else null. */
-export function desktopPathOf(f: File): string | null {
+function desktopPathOf(f: File): string | null {
 	try {
 		return getDesktopBridge()?.filePath?.(f) || null;
 	} catch {

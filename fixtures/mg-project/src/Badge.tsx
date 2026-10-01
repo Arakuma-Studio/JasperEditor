@@ -8,7 +8,7 @@ export const Badge = ({ label, color, size, rounded }: BadgeProps) => {
 	const { fps } = useVideoConfig();
 	const pulse = 1 + 0.06 * Math.sin((frame / fps) * Math.PI * 2);
 	return (
-		<AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent' }}>
+		<AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center' }}>
 			<div
 				data-testid="badge"
 				style={{

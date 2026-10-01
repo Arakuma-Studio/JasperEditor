@@ -9,8 +9,8 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 /** Sessions idle longer than this are closed. */
-export const MCP_SESSION_IDLE_MS = 30 * 60_000;
-export const MCP_MAX_SESSIONS = 32;
+const MCP_SESSION_IDLE_MS = 30 * 60_000;
+const MCP_MAX_SESSIONS = 32;
 
 type Session = {
 	transport: StreamableHTTPServerTransport;

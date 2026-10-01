@@ -27,9 +27,6 @@ export type CommandOwner =
 	| 'wp-m2-process'
 	| 'wp-m2-mg'
 	| 'wp-m2-track'
-	// M2 animation (ARCHITECTURE §20, S11 §10)
-	| 'wp-m2-text-anim'
-	| 'wp-m2-anime-templates'
 	| 'wp-m2-shapes'
 	// Clipboard (S01 §20)
 	| 'wp-clipboard';

@@ -28,7 +28,7 @@ export type ToastRequest = {
 	durationMs?: number;
 };
 
-export type DialogKind = string;
+type DialogKind = string;
 
 export interface CommandCtx {
 	session: EditorSession | null;

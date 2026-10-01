@@ -54,7 +54,7 @@ async function transact(p: Page, label: string, commands: unknown[]): Promise<Re
 			(
 				window as unknown as {
 					jasper: {
-						transact(tx: unknown): Promise<{ ok: boolean; refs?: Record<string, string>; errors?: unknown }>;
+						transact(tx: unknown): Promise<{ ok: boolean; refs?: Record<string, string> }>;
 					};
 				}
 			).jasper.transact({ label: l, commands: c }),

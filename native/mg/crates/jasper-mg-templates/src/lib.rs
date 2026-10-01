@@ -133,7 +133,7 @@ impl Prepared {
         let ft = self.spec.frame_time(index);
         match &self.params {
             TemplateParams::LowerThird(p) => lower_third::render_svg(p, &ft, &self.fit, "mg"),
-            TemplateParams::TitleCard(p) => title_card::render_svg(p, &ft, &self.fit, "mg"),
+            TemplateParams::TitleCard(p) => title_card::render_svg(p, &ft, &self.fit),
         }
     }
 

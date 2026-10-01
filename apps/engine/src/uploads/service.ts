@@ -11,9 +11,9 @@ import type { MediaService } from '../media/service.ts';
 import { atomicWriteJson, freeDiskBytes, randomId, readJsonOrNull, safeFileName } from '../tools/fs.ts';
 import { KeyedMutex } from '../tools/mutex.ts';
 
-export const UPLOAD_TTL_MS = 24 * 3600 * 1000;
+const UPLOAD_TTL_MS = 24 * 3600 * 1000;
 /** Keep this much free space beyond the upload itself. */
-export const DISK_MARGIN_BYTES = 256 * 1024 * 1024;
+const DISK_MARGIN_BYTES = 256 * 1024 * 1024;
 const UPLOAD_ID_RE = /^up_[0-9a-f]{24}$/;
 
 type Session = {
@@ -21,15 +21,12 @@ type Session = {
 	projectId: string;
 	fileName: string;
 	byteSize: number;
-	mimeType: string;
-	clientFingerprint?: string;
 	/** M2 (wp-m2-mg): `mg-bundle` uploads are completed by the bundle import, not the media registry. */
 	purpose?: 'media' | 'mg-bundle';
-	createdAt: string;
 	touchedAt: string;
 };
 
-export class UploadError extends Error {
+class UploadError extends Error {
 	constructor(
 		readonly code: string,
 		readonly status: number,
@@ -89,10 +86,7 @@ export class UploadService {
 			projectId: req.projectId,
 			fileName: safeFileName(req.fileName, 'upload.bin'),
 			byteSize: req.byteSize,
-			mimeType: req.mimeType,
-			...(req.clientFingerprint ? { clientFingerprint: req.clientFingerprint } : {}),
 			...(req.purpose && req.purpose !== 'media' ? { purpose: req.purpose } : {}),
-			createdAt: t,
 			touchedAt: t,
 		};
 		await mkdir(this.sessionDir(uploadId), { recursive: true });

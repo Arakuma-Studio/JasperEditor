@@ -19,7 +19,7 @@ import { registerTrackingTools, TRACKING_GUIDE } from './tools/tracking.ts';
 import { registerTransitionTools, TRANSITION_GUIDE } from './tools/transitions.ts';
 import { MCP_SERVER_VERSION } from './version.ts';
 
-export const MCP_SERVER_NAME = 'jasper-editor';
+const MCP_SERVER_NAME = 'jasper-editor';
 
 /** How to drive JasperEditor; sent as the server's `instructions` and by the `edit-video` prompt. */
 export const EDITING_GUIDE = `JasperEditor is a Premiere-style video editor. These tools edit its projects through the local engine.
@@ -45,14 +45,11 @@ const FULL_GUIDE = [
 	COMPOSITION_GUIDE,
 	TRACKING_GUIDE,
 	TRANSITION_GUIDE,
-	// M2 animation (ARCHITECTURE §20.7): empty strings until wp-m2-text-anim / wp-m2-shapes fill them.
 	ANIMATION_GUIDE,
 	SHAPES_GUIDE,
-	TEMPLATES_GUIDE, // wp-m2-anime-templates (S11:ANA-003)
-	CLIPBOARD_GUIDE, // wp-clipboard (S01 §20)
-]
-	.filter((g) => g.length > 0)
-	.join('\n\n');
+	TEMPLATES_GUIDE,
+	CLIPBOARD_GUIDE,
+].join('\n\n');
 
 export type JasperMcpOptions = {
 	link: EngineConnection;
@@ -60,7 +57,7 @@ export type JasperMcpOptions = {
 	agentName?: string;
 };
 
-export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServer; ctx: ToolContext } {
+export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServer } {
 	const server = new McpServer(
 		{ name: MCP_SERVER_NAME, title: 'JasperEditor', version: MCP_SERVER_VERSION },
 		{
@@ -79,11 +76,11 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerTransitionTools(ctx);
 	registerAnimationTools(ctx);
 	registerShapeTools(ctx);
-	registerTemplateTools(ctx); // wp-m2-anime-templates (S11:ANA-003): set_motion_graphic_params
-	registerClipboardTools(ctx); // wp-clipboard (S01 §20): copy_clips, paste_clips, copy_items, paste_items
+	registerTemplateTools(ctx);
+	registerClipboardTools(ctx);
 	registerResources(ctx);
 	registerPrompts(ctx);
-	return { server, ctx };
+	return { server };
 }
 
 function registerResources(ctx: ToolContext): void {

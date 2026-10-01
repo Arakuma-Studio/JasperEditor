@@ -27,7 +27,7 @@ export type FlowParams = {
 	smoothSigma: number;
 };
 
-export type WorkerRequest =
+type WorkerRequest =
 	| { type: 'motion'; id: number; width: number; height: number; a: Uint8Array; b: Uint8Array }
 	| {
 			type: 'warp';
@@ -68,7 +68,7 @@ export function resolveWorkerUrl(env: NodeJS.ProcessEnv = process.env, base: str
 }
 
 type Slot = { worker: Worker; busy: boolean };
-type Pending = { task: Task; transfer: ArrayBuffer[]; resolve: (v: any) => void; reject: (e: Error) => void };
+type Pending = { task: Task; resolve: (v: any) => void; reject: (e: Error) => void };
 
 export class CvPool {
 	private readonly slots: Slot[] = [];
@@ -153,15 +153,15 @@ export class CvPool {
 			const id = this.nextId++;
 			slot.busy = true;
 			this.inflight.set(id, job);
-			slot.worker.postMessage({ ...job.task, id }, job.transfer);
+			slot.worker.postMessage({ ...job.task, id });
 		}
 	}
 
-	private run<T>(task: Task, transfer: ArrayBuffer[] = []): Promise<T> {
+	private run<T>(task: Task): Promise<T> {
 		if (this.failure) return Promise.reject(this.failure);
 		if (this.closed) return Promise.reject(new Error('dejudder pool is closed'));
 		return new Promise<T>((resolve, reject) => {
-			this.queue.push({ task, transfer, resolve, reject });
+			this.queue.push({ task, resolve, reject });
 			this.pump();
 		});
 	}

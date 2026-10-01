@@ -10,7 +10,7 @@ export type ShapePrefs = {
 	linkSize: boolean;
 };
 
-export const SHAPE_PREFS_KEY = 'jasper:shape-prefs';
+const SHAPE_PREFS_KEY = 'jasper:shape-prefs';
 const DEFAULTS: ShapePrefs = { resizeBySize: false, linkSize: false };
 
 function load(): ShapePrefs {

@@ -38,7 +38,7 @@ import {
  * A native extension's `prepare` failed (S11:LBK-023): an `auto` export or still falls back to the Remotion path
  * when that path is eligible; a forced `native` one fails with the cause.
  */
-export class NativePrepareError extends Error {
+class NativePrepareError extends Error {
 	constructor(readonly failure: unknown) {
 		super((failure as Error)?.message ?? String(failure));
 		this.name = 'NativePrepareError';
@@ -46,7 +46,7 @@ export class NativePrepareError extends Error {
 }
 
 /** Remotion concurrency of an export with `slots` CPU slots (S04:RR-004; bakes follow it, S11:LBK-022). */
-export function remotionConcurrency(slots: number): number {
+function remotionConcurrency(slots: number): number {
 	return Math.max(1, Math.min(slots, Math.floor(availableParallelism() / 2)));
 }
 
@@ -69,10 +69,10 @@ type StoredRequest =
 	| { kind: 'export'; request: ExportStartRequest }
 	| { kind: 'still'; request: StillRequest };
 
-export const JOB_ID_RE = /^job_[0-9a-f]{16}$/;
+const JOB_ID_RE = /^job_[0-9a-f]{16}$/;
 
 /** Same retention as the job journal (S04:JB-030: 7 days): older jobs cannot be retried anyway. */
-export const REQUEST_RETENTION_MS = 7 * 24 * 3600 * 1000;
+const REQUEST_RETENTION_MS = 7 * 24 * 3600 * 1000;
 
 export type ExportServiceDeps = {
 	rendersDir: string;
@@ -787,7 +787,7 @@ function sequenceName(p: PlannedExport): string {
 }
 
 /** `dest` with the extension of the file actually written (a WebM fallback never lands in `x.mp4`). */
-export function withExtension(dest: string, ext: string): string {
+function withExtension(dest: string, ext: string): string {
 	const cur = extname(dest);
 	if (cur.toLowerCase() === ext.toLowerCase()) return dest;
 	return /^\.(mp4|webm|mov|m4v|mkv)$/i.test(cur) ? dest.slice(0, -cur.length) + ext : dest + ext;

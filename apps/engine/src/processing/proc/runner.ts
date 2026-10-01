@@ -45,7 +45,7 @@ export class ProcError extends Error {
 	}
 }
 
-export type StepFactory = (step: ProcessStep, index: number, env: StepEnv) => Promise<StepImpl> | StepImpl;
+type StepFactory = (step: ProcessStep, env: StepEnv) => Promise<StepImpl> | StepImpl;
 
 /** What the factory may know about the runtime (capabilities of the ffmpeg in use). */
 export type StepEnv = { ffmpeg: string; spec: ProcSpec; filters: ReadonlySet<string> };
@@ -60,7 +60,7 @@ export type RunResult = {
 	sidecarData: Sidecar;
 };
 
-export type Sidecar = {
+type Sidecar = {
 	name: string;
 	version: string;
 	recipeVersion: number;
@@ -231,8 +231,8 @@ export async function runProc(spec: ProcSpec, opts: RunOptions): Promise<RunResu
 	const env: StepEnv = { ffmpeg: spec.ffmpeg, spec, filters };
 	const stages: Stage[] = [];
 	for (const [i, s] of spec.steps.entries()) {
-		const impl = await opts.createStep(s, i, env);
-		stages.push({ kind: impl.kind, index: i, op: s.op, step: impl.step } as Stage);
+		const impl = await opts.createStep(s, env);
+		stages.push({ ...impl, index: i, op: s.op });
 	}
 	emit({ event: 'start', frames, steps: stages.map((s) => s.step.name) });
 

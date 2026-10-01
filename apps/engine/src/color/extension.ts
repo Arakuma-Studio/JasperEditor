@@ -39,10 +39,10 @@ import { readCubeFile } from './prober.ts';
 /** Most distinct LUTs one layer may use in an export (S06:CG-052). */
 export const MAX_LUTS_PER_LAYER = 240;
 /** Added to every baked table value so `lut3d`'s truncating 8-bit store rounds to nearest (see above). */
-export const EXPORT_ROUNDING_BIAS = 0.5 / 255;
+const EXPORT_ROUNDING_BIAS = 0.5 / 255;
 /** Largest lattice used for export bakes when a run references a bigger imported LUT (S06:CG-012). */
-export const MAX_EXPORT_LUT_SIZE = 65;
-export type LutWindow = {
+const MAX_EXPORT_LUT_SIZE = 65;
+type LutWindow = {
 	/** Sequence frames `[start, end)`. */
 	start: number;
 	end: number;

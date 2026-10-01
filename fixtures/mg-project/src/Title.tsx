@@ -10,7 +10,7 @@ export const Title = ({ title, accent, delay }: TitleProps) => {
 	const enter = interpolate(t, [0, 0.5], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
 	const bar = interpolate(t, [0.2, 0.8], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
 	return (
-		<AbsoluteFill style={{ backgroundColor: 'transparent' }}>
+		<AbsoluteFill>
 			<div
 				data-testid="title-panel"
 				style={{

@@ -37,11 +37,11 @@ export type PanelTitleContext = {
 };
 
 /** Panel menu model (S05:PC-010/011): entries reference UI command ids. */
-export type MenuItem =
+type MenuItem =
 	| { type: 'command'; command: string; label?: string }
 	| { type: 'submenu'; label: string; items: MenuItem[] }
 	| { type: 'separator' };
-export type MenuModel = MenuItem[];
+type MenuModel = MenuItem[];
 
 export interface PanelDefinition {
 	kind: PanelKind;

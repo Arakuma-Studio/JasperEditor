@@ -88,7 +88,7 @@ function inClip(clip: Pick<Clip, 'start' | 'duration'>, frame: number): number {
 }
 
 /** Content time of a clip at a sequence frame (clamped into the clip), integer flicks. */
-export function contentTimeAt(doc: ProjectDocument, seq: Sequence, clip: Clip, frame: number): number {
+function contentTimeAt(doc: ProjectDocument, seq: Sequence, clip: Clip, frame: number): number {
 	return layerTimeAt(trackLayerOf(doc, seq, clip), inClip(clip, frame), seq.settings.frameRate as Rational);
 }
 

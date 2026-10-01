@@ -14,7 +14,7 @@ import {
 import { ToolError } from './errors.ts';
 
 /** No engine request may hang a tool call: the longest legitimate wait is a 60 s approval. */
-export const DEFAULT_REQUEST_TIMEOUT_MS = 180_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 180_000;
 
 /**
  * Thrown (as an `AbortError`, so the engine client does not turn it into a retryable NETWORK error) when a

@@ -110,7 +110,7 @@ impl TitleCardParams {
     }
 }
 
-pub fn render_svg(p: &TitleCardParams, ft: &FrameTime, fit: &Fit, _id_prefix: &str) -> String {
+pub fn render_svg(p: &TitleCardParams, ft: &FrameTime, fit: &Fit) -> String {
     let t = ft.t;
     let fade_in = ft.frames_to_seconds(f64::from(p.fade_in_frames));
     let fade_out = ft.frames_to_seconds(f64::from(p.fade_out_frames));

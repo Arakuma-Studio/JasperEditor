@@ -1,7 +1,5 @@
-// Shell storage (S05:SH-020/021): a small versioned key-value adapter with load/save/migrate. The web/PWA
-// implementation uses localStorage; the Electron implementation can write JSON files with the same
-// interface. Every persisted shape carries a `version`: older values are migrated, newer or corrupt ones
-// are discarded (that key only) and the caller shows a one-time warning toast.
+// Shell storage (S05:SH-020/021): a versioned key-value adapter. Older values are migrated; newer or
+// corrupt values are discarded and the caller shows a warning toast.
 
 export interface ShellStorage {
 	getItem(key: string): string | null;
@@ -44,12 +42,12 @@ export type VersionedKey<T> = {
 	version: number;
 	/** Validates the migrated payload; return null when invalid. */
 	parse(data: unknown): T | null;
-	/** Migrates a payload stored at `fromVersion` to the current version (SH-020 `migrate`). */
+	/** Migrates a payload stored at `fromVersion` to the current version (SH-020). */
 	migrate?(data: unknown, fromVersion: number): unknown;
 	fallback(): T;
 };
 
-/** Loads a versioned value; corrupt or newer data discards the key and returns the fallback. */
+/** Loads a versioned value; migrates older data and resets corrupt or newer data. */
 export function loadVersioned<T>(storage: ShellStorage | null, spec: VersionedKey<T>): LoadResult<T> {
 	const raw = storage?.getItem(spec.key) ?? null;
 	if (raw === null) return { status: 'missing', value: spec.fallback() };

@@ -177,7 +177,7 @@ function Snippet({ s }: { s: AgentSnippet }) {
 
 type Loaded = { desktop: DesktopMcpInfo | null; engine: AgentMcpInfo | null };
 
-export function ConnectAgentDialog(props: HostedDialogProps<{ engine?: EngineClient | null }>) {
+function ConnectAgentDialog(props: HostedDialogProps<{ engine?: EngineClient | null }>) {
 	const [info, setInfo] = useState<Loaded | null>(null);
 	const engine = props.engine ?? null;
 	useEffect(() => {

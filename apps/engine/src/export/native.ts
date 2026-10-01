@@ -33,7 +33,7 @@ import {
 } from './native-ext.ts';
 import type { LocalMedia, OutputSpec } from './planner.ts';
 
-export const SAMPLE_RATE = 48000;
+const SAMPLE_RATE = 48000;
 /**
  * swscale flags for every YUV ↔ RGB conversion of the composite. Without `accurate_rnd` the default
  * converters round down (a full-frame clip came out about one code value darker per generation), and
@@ -47,7 +47,7 @@ export const SWS_FLAGS = 'flags=bicubic+accurate_rnd+full_chroma_int+full_chroma
 export const BT709_FRAME_TAGS = 'setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv';
 const OFFLINE_RGBA: [number, number, number, number] = [0.55, 0.05, 0.08, 1];
 
-export type NativeSourceResolver = {
+type NativeSourceResolver = {
 	/** Online local media for a mediaId (null = offline). */
 	media(mediaId: string): LocalMedia | null;
 	/** Motion-graphic master file (ProRes 4444, frame 0 = clip start) for a clip, from WP-2G. */

@@ -4,7 +4,7 @@
 // Value engine only (S11:ANM-004): builds animate plain objects; React renders inline styles from their values.
 import { type Fit, fitCanvas } from '@jasper/mg-templates';
 import type { CSSProperties, ReactNode } from 'react';
-import { createPausedTimeline, resolveEase, seededRandom, type Timeline } from '../runtime/index.ts';
+import { resolveEase, seededRandom, type Timeline } from '../runtime/index.ts';
 
 /** Timing every template build receives (ms of content time; see `animeTemplateTiming`). */
 export type TemplateTiming = { totalMs: number; introMs: number; outroMs: number };
@@ -67,11 +67,6 @@ export function phaseTimes(
 	return { introStart, introDur, outroStart, outroDur };
 }
 
-/** A paused timeline spanning the whole content (so seeks inside the hold land on the intro's end values). */
-export function templateTimeline(): Timeline {
-	return createPausedTimeline({ defaults: { ease: 'out' } });
-}
-
 /** The ease string of a template `ease` param (unknown names fall back to `out`). */
 export function easeOf(name: string): string {
 	const e = resolveEase(name);
@@ -84,29 +79,23 @@ export function easeOf(name: string): string {
  */
 export function staggerRanks(n: number, order: 'forward' | 'center' | 'random', seed: number): number[] {
 	const idx = Array.from({ length: n }, (_, i) => i);
+	if (order !== 'center' && order !== 'random') return idx;
+	const perm = [...idx];
 	if (order === 'center') {
 		const mid = (n - 1) / 2;
-		const sorted = [...idx].sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid) || a - b);
-		const ranks = new Array<number>(n);
-		sorted.forEach((unit, rank) => {
-			ranks[unit] = rank;
-		});
-		return ranks;
-	}
-	if (order === 'random') {
+		perm.sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid) || a - b);
+	} else {
 		const rnd = seededRandom(seed);
-		const perm = [...idx];
 		for (let i = perm.length - 1; i > 0; i--) {
 			const j = Math.floor(rnd() * (i + 1));
 			[perm[i], perm[j]] = [perm[j]!, perm[i]!];
 		}
-		const ranks = new Array<number>(n);
-		perm.forEach((unit, rank) => {
-			ranks[unit] = rank;
-		});
-		return ranks;
 	}
-	return idx;
+	const ranks = new Array<number>(n);
+	perm.forEach((unit, rank) => {
+		ranks[unit] = rank;
+	});
+	return ranks;
 }
 
 /** Design canvas for a render canvas (closest aspect of 16:9 / 9:16 / 1:1, uniform contain). */

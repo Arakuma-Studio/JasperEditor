@@ -5,8 +5,6 @@ import type { EditorSession } from '@jasper/session';
 import type { ComponentType } from 'react';
 import { createRegistry } from './registry.ts';
 
-export { createRegistry, type Registry } from './registry.ts';
-
 /** Menu entries contributed to context menus (same shape as the timeline's ContextMenuItem). */
 export type MenuItemSpec =
 	| { kind: 'item'; label: string; shortcut?: string; disabled?: boolean; checked?: boolean; run(): void }
@@ -73,7 +71,7 @@ export const programOverlays = createRegistry<ProgramOverlayDef>();
 
 // ---------------------------------------------------------------- context menus
 
-export type ClipMenuContext = { session: EditorSession; clip: Clip; selection: readonly string[] };
+type ClipMenuContext = { session: EditorSession; clip: Clip; selection: readonly string[] };
 export type ClipMenuExtension = {
 	id: string;
 	items(ctx: ClipMenuContext): MenuItemSpec[];
@@ -82,7 +80,7 @@ export type ClipMenuExtension = {
 /** Timeline clip context menu additions (appended after a separator). */
 export const clipMenuExtensions = createRegistry<ClipMenuExtension>();
 
-export type ProjectItemMenuContext = {
+type ProjectItemMenuContext = {
 	session: EditorSession;
 	items: readonly ProjectItem[];
 	readOnly: boolean;

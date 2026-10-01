@@ -46,7 +46,7 @@ export class FocusStore {
 export const focusStore = new FocusStore();
 
 /** Finds the panel instance an element belongs to (dock content or tab). */
-export function panelFromElement(el: Element | null): { instanceId: string; kind: PanelKind } | null {
+function panelFromElement(el: Element | null): { instanceId: string; kind: PanelKind } | null {
 	const host = el?.closest?.(`[${PANEL_INSTANCE_ATTR}]`);
 	if (!host) return null;
 	const instanceId = host.getAttribute(PANEL_INSTANCE_ATTR);

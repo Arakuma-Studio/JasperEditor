@@ -1,6 +1,4 @@
-// Layout-mode switch (S05:SH-003, §19.1, ARCHITECTURE §7.1): desktop | compact | tablet | phone,
-// re-evaluated on resize/orientation change (debounced 150 ms). M1 implements desktop and compact; tablet
-// and phone render the compact shell plus a "Touch layout coming soon" notice.
+// Re-evaluate desktop, compact, tablet and phone layouts after resize or orientation changes.
 import { useEffect, useState } from 'react';
 import { hasCoarsePointer } from '../runtime/platform.ts';
 

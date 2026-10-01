@@ -106,7 +106,7 @@ export function editBlocked(ctx: CommandCtx): string | undefined {
 // ---------------------------------------------------------------- copy
 
 /** What Copy would copy in this panel, or why it cannot. */
-export function copyPayload(ctx: CommandCtx, target: ClipboardTarget): ClipboardPayload | string {
+function copyPayload(ctx: CommandCtx, target: ClipboardTarget): ClipboardPayload | string {
 	const session = ctx.session;
 	if (!session) return 'Open a project first';
 	const doc = session.getCommitted();

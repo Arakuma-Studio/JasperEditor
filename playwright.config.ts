@@ -1,7 +1,5 @@
-// Playwright E2E smoke (WP-3I, ARCHITECTURE §15 item 13). Runs headless against the *built* engine, which
-// also serves the built web app (`e2e/serve.mjs`), on 127.0.0.1:${E2E_PORT:-48110} with a temp appdir.
-// Uses the system Chrome (`channel: 'chrome'`, D-16). Run `pnpm build && pnpm fixtures` first
-// (`pnpm e2e` does both when the outputs are missing, see scripts/e2e-prepare.mjs).
+// Runs against the built engine serving the built web app with a temporary appdir.
+// `pnpm e2e` prepares fixtures, binaries, and builds before Playwright starts.
 import { defineConfig } from '@playwright/test';
 
 const port = Number(process.env.E2E_PORT ?? 48110);

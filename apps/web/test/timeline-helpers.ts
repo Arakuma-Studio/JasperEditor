@@ -16,8 +16,8 @@ import {
 } from '../src/panels/timeline/state/controller.ts';
 import { createTimelineUiStore } from '../src/panels/timeline/state/ui-store.ts';
 
-export const WIDTH = 1000;
-export const HEIGHT = 404;
+const WIDTH = 1000;
+const HEIGHT = 404;
 
 export function makeSession(opts: { preset?: string; seed?: number } = {}) {
 	const ids = createCounterIdSource(opts.seed ?? 1);

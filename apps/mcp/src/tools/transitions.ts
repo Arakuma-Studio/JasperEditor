@@ -32,7 +32,7 @@ import { pickSequence, transitionPlacement } from '../format.ts';
 import { TIME_FORMATS } from './editing.ts';
 import { ProjectIdArg } from './projects.ts';
 
-/** Appended to the server instructions (EDITING_GUIDE) when non-empty. */
+/** Appended to the server instructions (EDITING_GUIDE). */
 export const TRANSITION_GUIDE = `Transitions:
 - add_transition adds one at an edit point (track + at) or a fade at a clip edge (clipId + edge). apply_default_transitions puts the default transition (cross-dissolve / constant-power, the project's default length) on every edge of the given clips in one step; pass media: ["video", "audio"] to include the linked audio.
 - list_transitions shows each transition's id, type, track, cut, span and the media handles of its clips; get_timeline lists them per track too. update_transition changes the length, alignment or type (within video or within audio); remove_transitions deletes them.

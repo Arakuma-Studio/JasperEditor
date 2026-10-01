@@ -4,7 +4,7 @@ import type { ChildProcess } from 'node:child_process';
 import type { EngineJob, JobKind } from '@jasper/api';
 
 export type JobPriority = EngineJob['priority'];
-export type JobOrigin = EngineJob['origin'];
+type JobOrigin = EngineJob['origin'];
 
 export type JobSubmit = {
 	kind: JobKind;

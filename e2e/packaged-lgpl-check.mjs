@@ -133,9 +133,8 @@ let up = false;
 for (let i = 0; i < 240 && !up; i++) {
 	try {
 		up = (await fetch(`${url}/health`)).ok;
-	} catch {
-		await new Promise((r) => setTimeout(r, 250));
-	}
+	} catch {}
+	if (!up) await new Promise((r) => setTimeout(r, 250));
 	if (child.exitCode !== null) fail(`the packaged engine exited with code ${child.exitCode}`);
 }
 expect(up, 'the packaged engine did not start');

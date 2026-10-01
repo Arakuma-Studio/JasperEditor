@@ -188,7 +188,7 @@ if (existsSync(pluginDir)) {
 		.filter((f) => f.endsWith('.mjs'))
 		.sort()) {
 		const mod = await import(pathToFileURL(join(pluginDir, file)).href);
-		fixtures.push(...(await mod.fixtures({ ffmpeg, base, h264, aac, bt709, outDir, root })));
+		fixtures.push(...(await mod.fixtures({ ffmpeg, base, h264, aac })));
 	}
 }
 

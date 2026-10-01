@@ -20,9 +20,9 @@ import {
 	layerFileUrl,
 } from './service.ts';
 
-export const LAYER_BAKE_EXTENSION_ID = 'layer-bake';
+const LAYER_BAKE_EXTENSION_ID = 'layer-bake';
 
-export type PreparedLayer = {
+type PreparedLayer = {
 	/** Native composite (absent when prepared for the Remotion path). */
 	override?: LayerOverride;
 	bake?: BakeResult;
@@ -37,7 +37,7 @@ export type PreparedLayer = {
 export type LayerBakePrepared = Map<string, PreparedLayer>;
 
 /** Fixed cost of a render (browser page, bundle, stitch, checks) in frames, for the aggregated progress. */
-export const RENDER_FIXED_COST_FRAMES = 30;
+const RENDER_FIXED_COST_FRAMES = 30;
 
 /** What the native builder (override) or the Remotion path (graded master) gets for one clip. */
 function entryOf(
@@ -123,7 +123,9 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 			const groups = new Map<string, typeof items>();
 			for (const it of items) {
 				const k = it.grade?.key ?? it.plan.key;
-				groups.set(k, [...(groups.get(k) ?? []), it]);
+				const group = groups.get(k);
+				if (group) group.push(it);
+				else groups.set(k, [it]);
 			}
 			const renders = [...groups.values()];
 			const isMaster = (g: typeof items) => g[0]!.plan.variant.recipe === 'master';

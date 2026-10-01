@@ -15,10 +15,6 @@ pub fn progress(t: f64, start: f64, duration: f64) -> f64 {
     clamp01((t - start) / duration)
 }
 
-pub fn mix(a: f64, b: f64, p: f64) -> f64 {
-    a + (b - a) * p
-}
-
 pub fn ease_out_cubic(p: f64) -> f64 {
     let q = 1.0 - clamp01(p);
     1.0 - q * q * q

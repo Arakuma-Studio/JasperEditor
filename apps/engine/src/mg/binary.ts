@@ -6,14 +6,14 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ENV } from '@jasper/config';
 
-export const MG_EXE = process.platform === 'win32' ? 'jasper-mg.exe' : 'jasper-mg';
+const MG_EXE = process.platform === 'win32' ? 'jasper-mg.exe' : 'jasper-mg';
 
 export type MgBinaryResolution =
 	| { path: string; source: 'env' | 'dev' | 'packaged' }
 	| { path: null; reason: string; tried: string[] };
 
 /** Walks up from `start` looking for a checkout containing native/mg/Cargo.toml. */
-export function findRepoRoot(start: string, maxLevels = 8): string | null {
+function findRepoRoot(start: string, maxLevels = 8): string | null {
 	let dir = resolve(start);
 	for (let i = 0; i <= maxLevels; i++) {
 		if (existsSync(join(dir, 'native', 'mg', 'Cargo.toml'))) return dir;
@@ -83,7 +83,7 @@ export function resolveMgBinary(opts: ResolveMgOptions = {}): MgBinaryResolution
 	};
 }
 
-export type MgVersionInfo = {
+type MgVersionInfo = {
 	name: string;
 	version: string;
 	fframes: string;
@@ -91,7 +91,7 @@ export type MgVersionInfo = {
 	templates: string[];
 };
 
-export type MgNativeTemplate = {
+type MgNativeTemplate = {
 	id: string;
 	version: number;
 	name: string;

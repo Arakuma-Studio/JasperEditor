@@ -17,7 +17,7 @@ type EngineJson = Record<string, unknown> & {
 	processingState?: { lastProbe?: StoredProbe | null };
 };
 
-export const DEFAULT_SETTINGS: ProcessingSettings = { remote: null };
+const DEFAULT_SETTINGS: ProcessingSettings = { remote: null };
 
 export class SettingsError extends Error {
 	constructor(
@@ -29,7 +29,7 @@ export class SettingsError extends Error {
 }
 
 /** PRM-009: validates user-provided remote settings (paths are never interpreted by a shell). */
-export function validateSettings(s: ProcessingSettings): void {
+function validateSettings(s: ProcessingSettings): void {
 	const r = s.remote;
 	if (!r) return;
 	if (!/^[A-Za-z0-9._-]+$/.test(r.user)) throw new SettingsError('INVALID_SETTINGS', 'Invalid SSH user name');

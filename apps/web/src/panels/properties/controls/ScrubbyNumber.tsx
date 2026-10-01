@@ -103,7 +103,7 @@ function parseEntry(text: string): ValueFn | null {
 	return v === null ? null : () => v;
 }
 
-export function formatNumber(v: number, precision: number): string {
+function formatNumber(v: number, precision: number): string {
 	const r = v.toFixed(precision);
 	return r === `-${(0).toFixed(precision)}` ? (0).toFixed(precision) : r;
 }

@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { FontCatalog, FontFamily } from '@jasper/api';
 
-export const CATALOG_IDS = [
+const CATALOG_IDS = [
 	'inter',
 	'source-sans-3',
 	'roboto',
@@ -21,8 +21,8 @@ export const CATALOG_IDS = [
 ] as const;
 
 /** Default family for unknown fonts (the app UI font, ARCHITECTURE §7.4). */
-export const FALLBACK_FAMILY = 'Source Sans 3';
-export const SUBSETS = ['latin', 'latin-ext'] as const;
+const FALLBACK_FAMILY = 'Source Sans 3';
+const SUBSETS = ['latin', 'latin-ext'] as const;
 
 type Metadata = {
 	id: string;

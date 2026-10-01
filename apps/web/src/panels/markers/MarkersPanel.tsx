@@ -1,6 +1,3 @@
-// Markers panel body (S05:MRK-001): color swatch, name, In, Duration, Comment for the active sequence's
-// markers; search; double-click (or Enter) moves the playhead to the marker. Editing arrives with the
-// Marker dialog (M2); the empty state offers Add Marker (timeline.addMarker, owned by WP-2B).
 import { formatTimecode, type Sequence } from '@jasper/project';
 import type { SessionState } from '@jasper/session';
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';

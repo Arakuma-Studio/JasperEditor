@@ -200,7 +200,6 @@ Typewriter types behind a caret that blinks while typing pauses, like an editor'
 
 ## Animated templates (anime.js)
 
-<!-- wp-m2-anime-templates -->
 **Motion Templates ▸ Templates** also lists animated templates drawn with anime.js (S11 §5,
 `docs/wp-notes/wp-m2-anime-templates.md`): **Title Reveal**, **Lower Third (Animated)**, **Callout** and
 **Counter**. Their cards carry the badge **R** and the label *anime · Remotion*; the engine filter has an `anime`
@@ -541,7 +540,7 @@ Playwright specs:
 | `pnpm dev:desktop` | builds the Electron main/preload and launches it against `JASPER_DESKTOP_DEV_URL` (default 5173) |
 | `pnpm typecheck` | `tsc --noEmit` in every package |
 | `pnpm test` | Vitest (all packages and apps as projects); `FUZZ=1 pnpm test` runs the long property sweeps |
-| `pnpm lint` | Biome + `scripts/check-tokens.mjs` (no color literals outside theme files, S05:DT-002) |
+| `pnpm lint` | Biome + design-token and anime.js checks (`scripts/check-tokens.mjs`, `scripts/check-anime.mjs`) |
 | `pnpm format` | Biome formatter |
 | `pnpm build` | web (`vite build`), engine (`dist/engine.mjs`), desktop (`dist-electron/`), MCP server (`apps/mcp/dist/jasper-mcp.mjs`) |
 | `pnpm mcp:build` | only the MCP server: esbuild bundle `apps/mcp/dist/jasper-mcp.mjs` (one executable file) |

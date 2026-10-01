@@ -7,7 +7,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ENV, type Env } from '@jasper/config';
 
-export const MCP_BUNDLE_NAME = 'jasper-mcp.mjs';
+const MCP_BUNDLE_NAME = 'jasper-mcp.mjs';
 
 export function findMcpEntry(
 	env: Env = process.env,

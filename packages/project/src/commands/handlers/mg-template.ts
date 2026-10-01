@@ -116,7 +116,7 @@ const ASPECT_EPS = 0.005;
  * True when a template draws `size` with one of its design canvases (same aspect ratio; the design is fitted
  * uniformly, so the scale does not matter). Templates that list no canvases accept any size.
  */
-export function templateSupportsCanvas(
+function templateSupportsCanvas(
 	info: Pick<MgTemplateInfo, 'canvases'>,
 	size: { width: number; height: number },
 ): boolean {

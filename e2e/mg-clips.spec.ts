@@ -75,7 +75,6 @@ test('renderer-page protocol contract (Remotion 4.0.499) drives the fixture bund
 			};
 			hostPageUrl(base: string): string;
 			bundleServeUrl(key: string): string;
-			MG_HOST_REQUIRED_GLOBALS: string[];
 		};
 		const M = (window as unknown as { MgHost: Host }).MgHost;
 		const f = document.getElementById('h') as HTMLIFrameElement;
@@ -108,7 +107,6 @@ test('renderer-page protocol contract (Remotion 4.0.499) drives the fixture bund
 		const opacityAt0 = panel ? Number(getComputedStyle(panel).opacity) : -1;
 		return {
 			check: M.checkHostProtocol(w),
-			required: M.MG_HOST_REQUIRED_GLOBALS,
 			globals,
 			setFrame,
 			meta,
@@ -169,7 +167,7 @@ test('import a Remotion project, insert a composition, live preview, props edit,
 	await expect(card).toBeVisible();
 	await expect(page.locator('[data-testid="remotion-tab"] [data-composition="Badge"]')).toBeVisible();
 	await card.dblclick();
-	const comp = await expect
+	await expect
 		.poll(async () => {
 			const s = await query<{ clips: { id: string; kind: string; start: number; end: number }[] }>(
 				page,
@@ -179,7 +177,6 @@ test('import a Remotion project, insert a composition, live preview, props edit,
 			return s.clips.find((c) => c.kind === 'composition') ?? null;
 		})
 		.not.toBeNull();
-	void comp;
 	const clip = (
 		await query<{ clips: { id: string; kind: string; start: number; end: number }[] }>(
 			page,
@@ -210,7 +207,7 @@ test('import a Remotion project, insert a composition, live preview, props edit,
 		'idle',
 	);
 
-	// The schema rejects a bad value with a visible message; history has the edit.
+	// The history includes the import, insert and title edit.
 	const hist = await query<{ entries: { label: string; applied: boolean }[] }>(page, 'history.list');
 	expect(hist.entries.filter((e) => e.applied).map((e) => e.label)).toEqual(
 		expect.arrayContaining(['Import Remotion Project', 'Add Title', 'Title']),

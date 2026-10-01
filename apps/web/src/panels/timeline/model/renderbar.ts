@@ -3,8 +3,7 @@
 // red = motion graphics (fframes master not known to be ready) and nothing else.
 import { buildRenderSnapshot, engineAffinity, type MediaHandle, type ProjectDocument } from '@jasper/project';
 
-type RenderState = 'green' | 'yellow' | 'red';
-export type RenderSegment = { startFrame: number; endFrame: number; state: RenderState };
+export type RenderSegment = { startFrame: number; endFrame: number; state: 'yellow' | 'red' };
 
 const stubMedia = (): MediaHandle => ({
 	url: '',

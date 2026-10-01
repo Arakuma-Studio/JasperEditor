@@ -1,8 +1,8 @@
 // S11 §11 test 2 (wp-m2-text-anim): text animators through the real UI of the built app — Graphics ▸ New Layer ▸
 // Text, "Slide Up" (by word) as In and "Fade" as Out from Motion Templates ▸ Text Animations, the Program
 // animates, scrubbing back and forth gives identical pixels on revisits, the razor keeps In on the left part and
-// Out on the right one, undo/redo, the export (native/hybrid with baked layers once wp-m2-layer-bake is merged,
-// the Remotion path before — annotated, never skipped) whose mid-In frame matches `renderStill`, and the MCP
+// Out on the right one, undo/redo, the export (native/hybrid with baked layers when available, or Remotion)
+// whose mid-In frame matches `renderStill`, and the MCP
 // tools (list_text_animations, set_text_animation, render_frames) on the open editor.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -294,7 +294,7 @@ test('export: the mid-In frame matches renderStill (≤ 3/255 on 99 % of the pix
 	if (!baked)
 		test.info().annotations.push({
 			type: 'layer-bake',
-			description: `features.layerBake is ${bake ?? 'absent'}: text exports through the Remotion path until wp-m2-layer-bake is merged`,
+			description: `features.layerBake is ${bake ?? 'absent'}: text exports through the Remotion path`,
 		});
 	const left = (await clips(page)).filter((c) => c.kind === 'text').sort((x, y) => x.start - y.start)[0]!;
 	const frame = left.start + 8;

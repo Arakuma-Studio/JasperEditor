@@ -21,8 +21,8 @@ import {
 } from './types.ts';
 
 const LANE_RANK: Record<EngineJob['priority'], number> = { interactive: 0, user: 1, background: 2 };
-export const UPDATE_THROTTLE_MS = 250;
-export const CANCEL_DEADLINE_MS = 4500;
+const UPDATE_THROTTLE_MS = 250;
+const CANCEL_DEADLINE_MS = 4500;
 const KEEP_FINISHED = 500;
 const KEEP_FINISHED_MS = 7 * 24 * 3600 * 1000;
 

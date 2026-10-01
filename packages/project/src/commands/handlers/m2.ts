@@ -1,5 +1,4 @@
-// Commands scheduled for milestone M2 (ARCHITECTURE §5.3): schemas are defined so agents see them,
-// handlers refuse with E_NOT_IMPLEMENTED until their milestone.
+// Declared commands that still return E_NOT_IMPLEMENTED.
 import { type HandlerMap, notImplemented } from './util.ts';
 
 const OWNER = 'M2';

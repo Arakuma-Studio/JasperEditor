@@ -5,7 +5,7 @@ const SHUTTLE_RATES = [1, 2, 4, 8] as const;
 const K_HOLD_SLOW_RATE = 0.25;
 const K_HOLD_DELAY_MS = 250;
 
-export type ShuttleKey = 'J' | 'K' | 'L';
+type ShuttleKey = 'J' | 'K' | 'L';
 
 export interface ShuttleTarget {
 	play(rate: number): void;

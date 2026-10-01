@@ -51,7 +51,7 @@ export function mgSpecForClip(doc: ProjectDocument, sequenceId: string, clipId: 
 type MgClip = Extract<Clip, { kind: 'motion-graphic' }>;
 
 /** True for clips of an installed fframes template (the only ones jasper-mg renders, S11:ATP-008). */
-export function isFframesClip(clip: Clip | undefined): clip is MgClip {
+function isFframesClip(clip: Clip | undefined): clip is MgClip {
 	if (clip?.kind !== 'motion-graphic') return false;
 	const def = mgRegistry.getDefinition(clip.template.id, clip.template.version);
 	return !!def && isSvgTemplate(def);
@@ -79,7 +79,7 @@ export function templateUpgradeFor(reg: MgTemplateRegistry, clip: Clip | undefin
 }
 
 /** True when one of `clipIds` (any sequence) has a template upgrade. */
-export function hasTemplateUpgrade(session: EditorSession, clipIds: readonly string[]): boolean {
+function hasTemplateUpgrade(session: EditorSession, clipIds: readonly string[]): boolean {
 	const reg = session.ctx.registries.mgTemplates;
 	const seqs = Object.values(session.store.getState().document.sequences);
 	return clipIds.some((id) => seqs.some((seq) => templateUpgradeFor(reg, seq.clips[id]) !== null));

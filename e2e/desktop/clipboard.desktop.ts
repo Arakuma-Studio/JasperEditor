@@ -13,7 +13,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type Browser, chromium, expect, type Page, test } from '@playwright/test';
-import { clipBox, FIXTURES, query, ROOT } from '../support.ts';
+import { appliedLabels, clipBox, FIXTURES, query, ROOT } from '../support.ts';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -113,11 +113,6 @@ async function docClips(page: Page): Promise<DocClip[]> {
 	return Object.values(s.clips);
 }
 
-async function labels(page: Page): Promise<string[]> {
-	const h = await query<{ entries: { label: string; applied: boolean }[] }>(page, 'history.list');
-	return h.entries.filter((e) => e.applied).map((e) => e.label);
-}
-
 type Media = { id: string; locators: { type: string; path?: string }[] };
 async function mediaAt(page: Page, path: string): Promise<Media | undefined> {
 	const media = await query<Record<string, Media>>(page, 'doc.get', { path: ['media'] });
@@ -179,13 +174,21 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
 	for (const h of helpers) h.kill('SIGTERM');
+	const stopped = apps.map(
+		(a) =>
+			new Promise<void>((resolve) => {
+				if (a.proc.exitCode !== null || a.proc.signalCode !== null) resolve();
+				else a.proc.once('close', () => resolve());
+			}),
+	);
 	for (const a of apps) {
 		await a.browser.close().catch(() => undefined);
 		a.proc.kill('SIGTERM');
 	}
-	await new Promise((r) => setTimeout(r, 1500));
-	for (const a of apps) if (a.proc.exitCode === null) a.proc.kill('SIGKILL');
-	for (const d of temps) rmSync(d, { recursive: true, force: true });
+	await Promise.race([Promise.all(stopped), new Promise((r) => setTimeout(r, 1500))]);
+	for (const a of apps) if (a.proc.exitCode === null && a.proc.signalCode === null) a.proc.kill('SIGKILL');
+	await Promise.all(stopped);
+	for (const d of temps) rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 test('copy in app A, paste in app B through application/x-jasper-clipboard (CLB-002)', async () => {
@@ -228,7 +231,7 @@ test('copy in app A, paste in app B through application/x-jasper-clipboard (CLB-
 	await expect.poll(async () => (await docClips(B.page)).length).toBe(1);
 	const pasted = (await docClips(B.page))[0]!;
 	expect([pasted.kind, pasted.start, pasted.content?.text]).toEqual(['text', at, 'Desktop copy']);
-	expect((await labels(B.page)).at(-1)).toBe('Paste');
+	expect((await appliedLabels(B.page)).at(-1)).toBe('Paste');
 	// Ctrl+V in B goes through the paste event (the HTML form of the same payload).
 	at = await atEnd(B.page);
 	await B.page.keyboard.press('Control+KeyV');
@@ -246,7 +249,7 @@ test('external text from another app: Ctrl+V adds a text clip (CLB-010)', async 
 		await expect
 			.poll(async () => (await docClips(B.page)).find((c) => c.start === at)?.content?.text)
 			.toBe('Desktop external text');
-		expect((await labels(B.page)).at(-1)).toBe('Paste Text');
+		expect((await appliedLabels(B.page)).at(-1)).toBe('Paste Text');
 	} finally {
 		stop();
 	}
@@ -265,7 +268,7 @@ test('external image data: Ctrl+V and Edit ▸ Paste import "Pasted image <time>
 			else await B.page.keyboard.press('Control+KeyV');
 			await expect.poll(async () => (await pastedImages(B.page)).length, { timeout: 60_000 }).toBe(n);
 			await expect.poll(async () => (await docClips(B.page)).find((c) => c.start === at)?.kind).toBe('still');
-			expect((await labels(B.page)).at(-1)).toBe('Import 1 file');
+			expect((await appliedLabels(B.page)).at(-1)).toBe('Import 1 file');
 		} finally {
 			stop();
 		}
@@ -295,7 +298,7 @@ test('files copied in a file manager: Edit ▸ Paste and Ctrl+V register them in
 			await expect
 				.poll(async () => (await docClips(B.page)).some((c) => c.start === at && c.mediaId === mediaId))
 				.toBe(true);
-			expect((await labels(B.page)).at(-1)).toBe('Import 1 file');
+			expect((await appliedLabels(B.page)).at(-1)).toBe('Import 1 file');
 		} finally {
 			stop();
 		}

@@ -5,15 +5,15 @@ import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-export const PROC_ENV = 'JASPER_PROC';
-export const PROC_BUNDLE = 'jasper-proc.mjs';
+const PROC_ENV = 'JASPER_PROC';
+const PROC_BUNDLE = 'jasper-proc.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-export type ProcCommand = { command: string; args: string[]; entry: string; kind: 'bundle' | 'source' };
+type ProcCommand = { command: string; args: string[] };
 
 /** The source entry (checkout only). */
-export function procSourceEntry(): string | null {
+function procSourceEntry(): string | null {
 	const candidates = [join(here, 'proc', 'cli.ts'), join(here, '..', 'src', 'processing', 'proc', 'cli.ts')];
 	return candidates.find((c) => existsSync(c)) ?? null;
 }
@@ -34,7 +34,7 @@ export function procCommand(env: Record<string, string | undefined> = process.en
 	const src = procSourceEntry();
 	if (src && !explicit) return tsxCommand(src);
 	const bundle = procBundle(env);
-	if (bundle) return { command: process.execPath, args: [bundle], entry: bundle, kind: 'bundle' };
+	if (bundle) return { command: process.execPath, args: [bundle] };
 	if (src) return tsxCommand(src);
 	throw new Error('jasper-proc is not available (no bundle and no source)');
 }
@@ -47,5 +47,5 @@ function tsxCommand(entry: string): ProcCommand {
 	} catch {
 		loader = 'tsx/esm';
 	}
-	return { command: process.execPath, args: ['--import', loader, entry], entry, kind: 'source' };
+	return { command: process.execPath, args: ['--import', loader, entry] };
 }

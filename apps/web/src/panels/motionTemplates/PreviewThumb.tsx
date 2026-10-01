@@ -13,7 +13,7 @@ import {
 	useSyncExternalStore,
 } from 'react';
 
-export type PreviewThumbProps<P extends Record<string, unknown>> = {
+type PreviewThumbProps<P extends Record<string, unknown>> = {
 	component: ComponentType<P>;
 	inputProps: P;
 	durationInFrames: number;

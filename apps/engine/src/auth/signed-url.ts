@@ -2,7 +2,7 @@
 // headless browser of local Remotion renders. A signature covers exactly one path and an expiry.
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
-export const DEFAULT_SIGNED_URL_TTL_SEC = 6 * 60 * 60;
+const DEFAULT_SIGNED_URL_TTL_SEC = 6 * 60 * 60;
 
 /** Paths that may be signed (media, derivatives, fonts, renders). Everything else needs normal auth. */
 const SIGNABLE = /^\/(media|fonts|renders|mg)\//;

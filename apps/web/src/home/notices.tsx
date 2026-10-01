@@ -3,7 +3,7 @@ import { Button, IconButton, Z } from '@jasper/ui';
 import { useEffect, useSyncExternalStore } from 'react';
 import type { ToastRequest } from '../commands/types.ts';
 
-export type Notice = {
+type Notice = {
 	id: number;
 	kind: 'info' | 'success' | 'warning' | 'error';
 	message: string;

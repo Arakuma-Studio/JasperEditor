@@ -249,7 +249,7 @@ class Resolver {
  * time (or stretched to the target's duration with `scale`), with new ids. Times are rounded, clamped to ≥ 0 and
  * deduplicated (the later key wins).
  */
-export function retimeKeys<T>(
+function retimeKeys<T>(
 	keys: readonly Keyframe<T>[],
 	from: { timing: ClipTiming; rate: Rational },
 	to: { timing: ClipTiming; rate: Rational },
@@ -478,7 +478,7 @@ type AttributeSource = {
 };
 
 /** Attribute sources of a payload: the copied effects, or the copied clips with the primary one first. */
-export function attributeSources(p: ClipboardPayload): AttributeSource[] {
+function attributeSources(p: ClipboardPayload): AttributeSource[] {
 	if (p.kind === 'effects' && p.effects) {
 		const e = p.effects;
 		return [

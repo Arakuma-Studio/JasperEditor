@@ -1,11 +1,11 @@
 // Forks the bundled engine in an Electron utilityProcess (ARCHITECTURE D-17, §12; R-OMS §8.5): ESM bundle
 // apps/engine/dist/engine.mjs with `--port 0`, per-launch JASPER_LOCAL_TOKEN, JASPER_WEB_DIR and
 // JASPER_APPDIR. Resolves once the engine posts {type:'ready', port} on its parentPort.
-import { type UtilityProcess, utilityProcess } from 'electron';
+import { utilityProcess } from 'electron';
 
-export type EngineProcess = { port: number; origin: string; child: UtilityProcess; stop(): Promise<void> };
+export type EngineProcess = { origin: string; stop(): Promise<void> };
 
-export type StartEngineOptions = {
+type StartEngineOptions = {
 	entry: string;
 	appdir: string;
 	webDir: string;
@@ -53,9 +53,7 @@ export function startEngineProcess(opts: StartEngineOptions): Promise<EngineProc
 			clearTimeout(timer);
 			const origin = `http://127.0.0.1:${msg.port}`;
 			resolve({
-				port: msg.port,
 				origin,
-				child,
 				stop: async () => {
 					if (exited) return;
 					child.kill();

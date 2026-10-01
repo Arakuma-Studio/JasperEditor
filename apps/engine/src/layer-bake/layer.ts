@@ -66,7 +66,7 @@ export function effectRunsOrderWarning(
 }
 
 /** True when any Animatable inside `v` has keyframes (deep: Motion, opacity, effects, shape props, params…). */
-export function hasKeyframesDeep(v: unknown): boolean {
+function hasKeyframesDeep(v: unknown): boolean {
 	if (!v || typeof v !== 'object') return false;
 	if (Array.isArray(v)) return v.some(hasKeyframesDeep);
 	const o = v as Record<string, unknown>;
@@ -274,9 +274,9 @@ export function clipFonts<F extends FaceOf>(clip: RenderVisualClip, fonts: reado
 }
 
 /** Share of the frame below which a crop rect is used (a rect covering more renders the full frame). */
-export const RECT_MAX_AREA_SHARE = 0.85;
+const RECT_MAX_AREA_SHARE = 0.85;
 /** Bleed around the layer's per-frame bounds, as a share of the sequence height (S11:LBK-005). */
-export const RECT_BLEED_SHARE = 0.1;
+const RECT_BLEED_SHARE = 0.1;
 /** Effects whose drawing stays inside the layer box (or are applied by ffmpeg): no extra bleed. */
 const BOX_BOUND_EFFECTS: ReadonlySet<string> = new Set([
 	'jasper.crop',

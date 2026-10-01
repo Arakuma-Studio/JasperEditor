@@ -24,7 +24,7 @@ import { atomicWriteJson, exists } from '../tools/fs.ts';
 import { PEAKS_PER_SECOND, PEAKS_SAMPLE_RATE, planarBytes, reducePeaksFromChild } from './peaks.ts';
 
 /** Generator versions: bumping one invalidates only that artifact kind (S04:CA-002). */
-export const GENERATOR_VERSIONS: Record<DerivativeKind, number> = {
+const GENERATOR_VERSIONS: Record<DerivativeKind, number> = {
 	keyframes: 1,
 	poster: 1,
 	sprite: 1,
@@ -34,10 +34,10 @@ export const GENERATOR_VERSIONS: Record<DerivativeKind, number> = {
 	'proxy-540': 1,
 };
 
-export const SPRITE_TILE_WIDTH = 160;
-export const SPRITE_COLUMNS = 10;
-export const SPRITE_TILES_PER_SHEET = 100;
-export const POSTER_WIDTH = 320;
+const SPRITE_TILE_WIDTH = 160;
+const SPRITE_COLUMNS = 10;
+const SPRITE_TILES_PER_SHEET = 100;
+const POSTER_WIDTH = 320;
 
 const JOB_KIND: Record<DerivativeKind, JobKind> = {
 	keyframes: 'keyframes',
@@ -67,7 +67,7 @@ const TITLES: Record<DerivativeKind, string> = {
 /** What `alphaProxy` needs from a media record. */
 export type AlphaSource = Pick<MediaRecord, 'kind' | 'probe'>;
 
-export type DerivativeJobInput = { mediaKey: string; kind: DerivativeKind };
+type DerivativeJobInput = { mediaKey: string; kind: DerivativeKind };
 
 export type ArtifactPaths = {
 	/** The file whose existence marks the artifact complete (JSON header / index / media file). */
@@ -81,7 +81,7 @@ export type ArtifactPaths = {
  * Proxies of sources with an alpha channel keep it: VP9 `yuva420p` in WebM, which Chromium plays with
  * transparency (H.264 has no alpha: an MP4 proxy of a ProRes 4444 overlay would hide the footage under it).
  */
-export const ALPHA_PROXY_ENCODER = 'libvpx-vp9';
+const ALPHA_PROXY_ENCODER = 'libvpx-vp9';
 
 function paramsFor(
 	kind: DerivativeKind,
@@ -111,7 +111,7 @@ function paramsFor(
 	}
 }
 
-export function paramsHash(kind: DerivativeKind, proxyEncoder?: string | null, alpha = false): string {
+function paramsHash(kind: DerivativeKind, proxyEncoder?: string | null, alpha = false): string {
 	return createHash('sha256')
 		.update(JSON.stringify({ kind, v: GENERATOR_VERSIONS[kind], p: paramsFor(kind, proxyEncoder, alpha) }))
 		.digest('hex')
@@ -119,7 +119,7 @@ export function paramsHash(kind: DerivativeKind, proxyEncoder?: string | null, a
 }
 
 /** Which derivative kinds make sense for a media record. */
-export function applicableKinds(r: Pick<MediaRecord, 'kind' | 'hasAudio'>): DerivativeKind[] {
+function applicableKinds(r: Pick<MediaRecord, 'kind' | 'hasAudio'>): DerivativeKind[] {
 	switch (r.kind) {
 		case 'video':
 			return [
@@ -142,7 +142,7 @@ export function applicableKinds(r: Pick<MediaRecord, 'kind' | 'hasAudio'>): Deri
 }
 
 /** Kinds queued automatically after registration (S04:IN-011, ARCHITECTURE §9.4). */
-export function autoKinds(r: Pick<MediaRecord, 'kind' | 'hasAudio' | 'browserPlayable'>): DerivativeKind[] {
+function autoKinds(r: Pick<MediaRecord, 'kind' | 'hasAudio' | 'browserPlayable'>): DerivativeKind[] {
 	switch (r.kind) {
 		case 'video':
 			return [

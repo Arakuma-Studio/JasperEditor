@@ -18,7 +18,7 @@ import { serveFile } from '../tools/http.ts';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
 
-export const LAYER_BAKE_SERVICE_KEY = 'layerBake';
+const LAYER_BAKE_SERVICE_KEY = 'layerBake';
 
 /** The service registered by this plugin (tests and other plugins). */
 export function layerBakeService(app: FastifyInstance): LayerBakeService | null {

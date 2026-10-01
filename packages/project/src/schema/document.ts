@@ -128,15 +128,6 @@ export type ProjectDocument = {
 	extensions: Record<string, unknown>;
 };
 
-/** On-disk envelope shared by every ProjectStore adapter (S01:PER-002). */
-export const ProjectEnvelopeSchema = z.looseObject({
-	format: z.literal('jasper-project'),
-	schemaVersion: z.number().int().min(1),
-	savedAt: z.string(),
-	savedBy: z.looseObject({ app: z.string(), version: z.string(), platform: z.string() }),
-	revision: nonNegInt(),
-	document: z.unknown(),
-});
 export type ProjectEnvelope = {
 	format: 'jasper-project';
 	schemaVersion: number;

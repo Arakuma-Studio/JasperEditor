@@ -5,9 +5,9 @@ import { type AgentWsClientMessage, AgentWsServerMessageSchema } from '@jasper/a
 
 export type RelayState = 'off' | 'connecting' | 'connected' | 'disconnected';
 
-export type RelayHello = { projectId: string; sessionId: string; leaseId: string | null };
+type RelayHello = { projectId: string; sessionId: string; leaseId: string | null };
 
-export type RelayRequestHandler = (
+type RelayRequestHandler = (
 	kind: 'tx' | 'query' | 'schema',
 	payload: unknown,
 ) => Promise<{ result?: unknown; error?: { code: string; message: string } }>;

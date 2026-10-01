@@ -50,7 +50,7 @@ None new. `@remotion/shapes` / `@remotion/paths` 4.0.499 were added by the contr
 
 ## How to test
 
-- Unit/component: `pnpm vitest run packages/project/test/shapes.test.ts apps/web/test/shapes.test.tsx apps/mcp/test/shapes.test.ts`.
+- Unit/component: `pnpm vitest run packages/project/test/shapes.test.ts apps/web/test/shapes.test.tsx`; browser/agent workflow: `pnpm exec playwright test e2e/shapes.spec.ts`.
 - Pixel test (real Chrome render through the engine's `/api/stills`, compared with a 4×4-supersampled analytic reference): `REMOTION_E2E=1 pnpm vitest run apps/engine/test/shapes-remotion.e2e.test.ts`.
 - MCP end to end: `MCP_TEST_PORT=<free> pnpm vitest run apps/mcp/test/integration.test.ts`.
 - Playwright: `E2E_PORT=<free> pnpm e2e e2e/shapes.spec.ts` (without `--`; builds engine, web and jasper-mcp first).

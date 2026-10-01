@@ -7,7 +7,7 @@ import { JobError } from '../jobs/types.ts';
 import type { AssetProber } from '../media/probe.ts';
 
 /** Largest `.cube` file accepted (a 256³ float table is ~420 MB of text; 65³ is ~7 MB). */
-export const MAX_CUBE_BYTES = 64 * 1024 * 1024;
+const MAX_CUBE_BYTES = 64 * 1024 * 1024;
 
 /** Reads and parses a `.cube` file; throws `JobError('INVALID_LUT', …)` with the parser's line number. */
 export async function readCubeFile(file: string): Promise<Lut> {

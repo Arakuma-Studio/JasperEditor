@@ -28,8 +28,8 @@ import { type MgQuality, MgRenderError, renderPoster, runMgPipe } from './render
 import { isAnimeTemplateClip } from './templates.ts';
 
 /** CPU slots of one mg-render job (ARCHITECTURE §9.3); also the renderer/encoder thread count. */
-export const MG_RENDER_SLOTS = 4;
-export const MG_FILES = ['master.mov', 'preview.webm', 'poster.png'] as const;
+const MG_RENDER_SLOTS = 4;
+const MG_FILES = ['master.mov', 'preview.webm', 'poster.png'] as const;
 const KEY_RE = /^[0-9a-f]{40}$/;
 
 export type MgCapability = { fframes: 'ready' | 'unavailable'; fframesReason?: string };

@@ -61,13 +61,10 @@ export class WarpPool {
 	private local: { vs: VidstabWasm; src: number; dst: number; bytes: number } | null = null;
 	private failed: Error | null = null;
 
-	private constructor(
-		readonly module: WebAssembly.Module,
-		readonly threads: number,
-	) {}
+	private constructor(readonly threads: number) {}
 
 	static async create(module: WebAssembly.Module, threads: number): Promise<WarpPool> {
-		const pool = new WarpPool(module, Math.max(1, Math.floor(threads)));
+		const pool = new WarpPool(Math.max(1, Math.floor(threads)));
 		if (pool.threads === 1) {
 			pool.local = { vs: await VidstabWasm.create(module), src: 0, dst: 0, bytes: 0 };
 			return pool;
