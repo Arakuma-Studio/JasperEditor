@@ -131,12 +131,13 @@ export class ProcessingService {
 		return this.wasmOk;
 	}
 
-	/** Which vid.stab engine jasper-proc should use (env JASPER_VIDSTAB_ENGINE overrides). */
+	/**
+	 * Which vid.stab engine jasper-proc should use: the WASM module (16-bit, as fast or faster than FFmpeg's
+	 * filters in our measurements); FFmpeg's filters only when asked (`JASPER_VIDSTAB_ENGINE=ffmpeg`) AND the
+	 * engine's FFmpeg is our LGPL build with the pinned vid.stab.
+	 */
 	async vidstabEngine(): Promise<'wasm' | 'ffmpeg'> {
-		const pref = this.env.JASPER_VIDSTAB_ENGINE;
-		if (pref === 'wasm') return 'wasm';
-		if (await this.nativeVidstabAllowed())
-			return pref === 'ffmpeg' || !pref || pref === 'auto' ? 'ffmpeg' : 'wasm';
+		if (this.env.JASPER_VIDSTAB_ENGINE === 'ffmpeg' && (await this.nativeVidstabAllowed())) return 'ffmpeg';
 		return 'wasm';
 	}
 
