@@ -1,4 +1,7 @@
 // UI commands (ARCHITECTURE §7.3): imports every domain module and registers them once.
+
+// M2 (wp-m2-layer-bake): graded previews of DOM layers (registers its Program overlay at import)
+import { layerBakeCommands } from '../layer-bake/commands.ts';
 import { appCommands } from './app.ts';
 import { colorCommands } from './color.ts';
 import { compositionCommands } from './composition.ts';
@@ -44,6 +47,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	// M2 animation (ARCHITECTURE §20.6)
 	textAnimationCommands,
 	shapeCommands,
+	layerBakeCommands,
 ];
 
 let registered = false;
