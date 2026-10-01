@@ -58,7 +58,8 @@ describe('anime.js on the engine (routes/anime.ts)', () => {
 		const caps = EngineCapabilitiesSchema.parse(
 			(await app.inject({ method: 'GET', url: '/api/capabilities', headers: H })).json(),
 		);
-		expect(caps.features?.anime).toEqual({ animejs: '4.5.0', textPresets: 0, templates: 0 });
+		// wp-m2-anime-templates ships 4 anime templates (S11:ATP-003); text presets come with wp-m2-text-anim.
+		expect(caps.features?.anime).toEqual({ animejs: '4.5.0', textPresets: expect.any(Number), templates: 4 });
 	});
 });
 
