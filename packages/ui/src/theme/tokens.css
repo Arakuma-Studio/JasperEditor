@@ -374,3 +374,8 @@
 	--pr-transition-refused: var(--pr-danger);
 	--pr-transition-default-badge: var(--pr-accent);
 }
+
+/* M2 animation (S11:ATP-007, ARCHITECTURE §20.6): engine badge of anime templates ("anime · Remotion"). */
+:root {
+	--pr-engine-anime: #ff7ab8;
+}

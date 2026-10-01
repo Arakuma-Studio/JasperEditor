@@ -10,6 +10,7 @@ import { cx, Icon, openDialog, Tabs } from '@jasper/ui';
 import { useEffect, useMemo, useState } from 'react';
 import { MG_IMPORT_DIALOG } from '../../mg-bundles/ImportDialog.tsx';
 import { useEngine } from '../../state/engine.tsx';
+import { TextAnimationsTab } from '../../text-animation/TextAnimationsTab.tsx';
 import type { PanelProps } from '../types.ts';
 import { insertMotionTemplate, type MgTemplateRef, writeMgTemplateDrag } from './insert.ts';
 import { RemotionTab } from './RemotionTab.tsx';
@@ -184,12 +185,14 @@ function TemplateCard({
 	);
 }
 
-/** Last tab used (per browser), so the Remotion tab stays open across reloads. */
-function initialTab(): 'templates' | 'remotion' {
+type MotionTemplatesTab = 'templates' | 'textAnimations' | 'remotion';
+const TABS: readonly MotionTemplatesTab[] = ['templates', 'textAnimations', 'remotion'];
+
+/** Last tab used (per browser), so the chosen tab stays open across reloads. */
+function initialTab(): MotionTemplatesTab {
 	try {
-		return globalThis.localStorage?.getItem('jasper.motionTemplates.tab') === 'remotion'
-			? 'remotion'
-			: 'templates';
+		const t = globalThis.localStorage?.getItem('jasper.motionTemplates.tab');
+		return TABS.includes(t as MotionTemplatesTab) ? (t as MotionTemplatesTab) : 'templates';
 	} catch {
 		return 'templates';
 	}
@@ -206,7 +209,7 @@ export function MotionTemplatesPanel(props: PanelProps) {
 	const [category, setCategory] = useState<string | null>(null);
 	const [engine, setEngine] = useState<EngineFilter>('all');
 	const [message, setMessage] = useState<{ kind: 'info' | 'error'; text: string } | null>(null);
-	const [tab, setTab] = useState<'templates' | 'remotion'>(() => initialTab());
+	const [tab, setTab] = useState<MotionTemplatesTab>(() => initialTab());
 	const { client } = useEngine();
 	const entries = useMemo(() => galleryEntries(catalog.templates), [catalog.templates]);
 	const previews = useMemo(() => new Map(entries.map((e) => [e.def, previewSvg(e.def)])), [entries]);
@@ -319,7 +322,7 @@ export function MotionTemplatesPanel(props: PanelProps) {
 				className="h-full"
 				value={tab}
 				onValueChange={(v) => {
-					setTab(v as 'templates' | 'remotion');
+					setTab(v as MotionTemplatesTab);
 					try {
 						globalThis.localStorage?.setItem('jasper.motionTemplates.tab', v);
 					} catch {
@@ -328,6 +331,8 @@ export function MotionTemplatesPanel(props: PanelProps) {
 				}}
 				items={[
 					{ value: 'templates', label: 'Templates', content: templates },
+					// M2 (S11:TXA-020, wp-m2-text-anim)
+					{ value: 'textAnimations', label: 'Text Animations', content: <TextAnimationsTab /> },
 					{
 						value: 'remotion',
 						label: 'Remotion',
