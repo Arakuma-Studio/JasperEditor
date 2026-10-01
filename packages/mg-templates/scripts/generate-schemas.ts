@@ -9,7 +9,8 @@ const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'schemas');
 
 export function schemaFiles(): Record<string, unknown> {
 	const files: Record<string, unknown> = {};
-	const catalog = mgRegistry.catalogJson();
+	// fframes templates only: these files mirror `jasper-mg schema` (anime templates have no Rust twin).
+	const catalog = mgRegistry.catalogJson().filter((t) => t.renderer !== 'anime');
 	for (const entry of catalog) files[`${entry.id}@${entry.version}.json`] = entry.paramsSchema;
 	files['catalog.json'] = { templates: catalog };
 	return files;

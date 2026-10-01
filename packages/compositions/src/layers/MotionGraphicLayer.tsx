@@ -3,7 +3,7 @@
 // the standard layer matrix (S03:DM-012), opacity and blend mode place it like any other layer. The
 // exported master comes from the `jasper-mg` binary; the twin mirrors its markup.
 // Inline styles only (ARCHITECTURE D-14).
-import { type AnyMgTemplate, mgRegistry } from '@jasper/mg-templates';
+import { type AnyMgTemplate, isSvgTemplate, mgRegistry } from '@jasper/mg-templates';
 import { FLICKS_PER_SECOND, matrixToCss } from '@jasper/project';
 import { type CSSProperties, createContext, useContext, useMemo } from 'react';
 import type { LayerProps } from '../types.ts';
@@ -76,7 +76,7 @@ export function MotionGraphicLayer(layer: LayerProps) {
 	const renderState = useContext(MgRenderStateContext)(clip.clipId);
 	const sourceInFrames = Math.max(0, Math.round((clip.sourceIn * fps) / FLICKS_PER_SECOND));
 	const svg =
-		def && mg && params
+		def && isSvgTemplate(def) && mg && params
 			? def.renderSvg(params, localFrame, fps, mg.canvas, {
 					durationFrames: clip.duration,
 					sourceInFrames,

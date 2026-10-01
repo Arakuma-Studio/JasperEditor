@@ -5,9 +5,9 @@ import {
 	easeOutCubic,
 	escapeXml,
 	estimateTextWidth,
+	FFRAMES_CATALOG,
 	fitCanvas,
 	lowerThird,
-	MG_CATALOG,
 	mgRegistry,
 	mgRenderKeyMaterial,
 	num,
@@ -63,7 +63,7 @@ describe('core math (mirrors jasper-mg-core)', () => {
 });
 
 describe('SVG twins', () => {
-	for (const def of MG_CATALOG) {
+	for (const def of FFRAMES_CATALOG) {
 		const fps = 30;
 		const duration = Math.round(def.defaultDurationSeconds * fps);
 		it(`${def.id}@${def.version} renders deterministic SVG at frames 0 / mid / end`, () => {
