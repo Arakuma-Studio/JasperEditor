@@ -972,7 +972,7 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 	}, 600_000);
 
 	/** Exports a sequence (ProRes HQ for exact comparisons); returns the job and its child jobs. */
-	async function exportDoc(d: DocBuilder, opts: { frames?: [number, number] } = {}) {
+	async function exportDoc(d: DocBuilder, opts: { frames?: [number, number]; profile?: 'hq' | '4444' } = {}) {
 		const settings = {
 			sequenceId: d.seqId,
 			range: opts.frames
@@ -982,7 +982,7 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 			engine: 'native',
 			video: {
 				codec: 'prores',
-				proresProfile: 'hq',
+				proresProfile: opts.profile ?? 'hq',
 				width: 1920,
 				height: 1080,
 				frameRate: { num: 30, den: 1 },
@@ -1190,7 +1190,9 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 			{ path: ['quote'], value: 'It is easier to ask forgiveness\nthan it is to get permission.' },
 		]);
 		d.tx([{ type: 'clip.update', clipId, patch: { props: next } }]);
-		const second = await exportDoc(d);
+		// ProRes 4444 out: saturated yellow type on a dark panel loses colour at its edges in 4:2:2 (HQ), which
+		// is the codec, not the placement or the text being compared here.
+		const second = await exportDoc(d, { profile: '4444' });
 		expect(second.children.filter((j) => j.kind === 'mg-prerender')).toHaveLength(1); // new render key
 		const props = mergeProps(lt.defaultProps, next);
 		const share = (got: Uint8Array, exp: Uint8Array) => {
@@ -1201,7 +1203,8 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 		const grey = [128, 128, 128] as [number, number, number];
 		// Held text: sequence frame 60 = composition frame 45.
 		const held = decode(second.out, { frame: 60, pix: 'rgb24', ffmpeg: ff });
-		expect(share(held, over(await directStill(props, 45, 'LowerThird'), grey))).toBeGreaterThanOrEqual(0.99);
+		const heldExpected = over(await directStill(props, 45, 'LowerThird'), grey);
+		expect(share(held, heldExpected)).toBeGreaterThanOrEqual(0.99);
 		// The previous text is gone (the master was re-rendered, not reused).
 		expect(share(held, over(await directStill(lt.defaultProps, 45, 'LowerThird'), grey))).toBeLessThan(0.99);
 		// Frame-exact during the entrance: sequence frame 20 = composition frame 5, not 4 or 6.
@@ -1209,9 +1212,26 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 		expect(share(moving, over(await directStill(props, 5, 'LowerThird'), grey))).toBeGreaterThanOrEqual(0.99);
 		expect(share(moving, over(await directStill(props, 4, 'LowerThird'), grey))).toBeLessThan(0.99);
 		expect(share(moving, over(await directStill(props, 6, 'LowerThird'), grey))).toBeLessThan(0.99);
-		// The embedded face matters: the same props with a system family render differently.
+		// The embedded face is what the export drew: inside the name's box the export matches the Inter render and
+		// not the same props drawn with a system family.
+		const box = (exp: Uint8Array) => {
+			let n = 0;
+			let all = 0;
+			for (let y = 690; y < 830; y++)
+				for (let x = 130; x < 1190; x++)
+					for (let c = 0; c < 3; c++) {
+						const i = (y * 1920 + x) * 3 + c;
+						all++;
+						if (Math.abs(held[i]! - exp[i]!) <= 3) n++;
+					}
+			return n / all;
+		};
 		const sans = mergeProps(props, { name: { fontFamily: 'sans-serif' } });
-		expect(share(held, over(await directStill(sans, 45, 'LowerThird'), grey))).toBeLessThan(0.99);
+		// (Glyph edges dominate this box, so the bar is lower than the whole-frame 99 %: measured 97 %.)
+		const withInter = box(heldExpected);
+		const withSans = box(over(await directStill(sans, 45, 'LowerThird'), grey));
+		expect(withInter).toBeGreaterThanOrEqual(0.95);
+		expect(withSans).toBeLessThan(withInter - 0.03);
 	}, 1_200_000);
 
 	it('rebuilds a watched project after a source edit: new bundle hash, new master (MGC-013)', async () => {
