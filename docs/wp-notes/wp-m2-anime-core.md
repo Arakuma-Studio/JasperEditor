@@ -128,3 +128,67 @@ Research: `docs/research/animejs-v4-notes.md` (R-ANM). anime.js pinned at **4.5.
 - Packaged-like `/api/licenses`: `apps/engine/dist/{engine.mjs,third-party/}` copied to a temp dir outside the
   repo, started on a free port: `animejs` 4.5.0, MIT, committed text.
 - `pnpm --filter @jasper/web build`: `dist/THIRD_PARTY_NOTICES.md` identical to the checked-in file.
+
+## Review fixes (branch `fix/anime-guard-review`)
+
+- **Lint and Biome mirror missed autoplaying / wall-clock APIs** (`scripts/check-anime.mjs`, `biome.json`;
+  tests in `scripts/check-anime.test.mjs`, each reviewer case under `packages/motion/src/templates/`):
+  - `Timeline` (the class; `new Timeline()` autoplays) is runtime-only like `createTimeline` (lint + Biome
+    `animejs/timeline` and root lists); `Scope` and `globals` (page-global defaults) runtime-only too.
+  - `set`, `sync`, `keepTime` (`set()` = `new JSAnimation(…).resume()`, `sync()` = `new Timer(…).resume()`) are
+    banned names everywhere (lint + Biome `animejs/utils` and root lists, runtime override included), and so are
+    the classes behind the banned modules that the root module re-exports (`Timer`, `JSAnimation`, `Animatable`,
+    `Draggable`, `WAAPIAnimation`, `ScrollObserver`, `TextSplitter`, `AutoLayout`, `createLayout`, `split`,
+    `scrollContainers`) and the `text`/`utils` namespace objects. New call rules: `new Timeline/Timer/…`
+    (`new-tickable`), `utils.sync/keepTime` (`utils-sync`).
+  - Timelines (`timelineIdentifiers`, still type-free): any binding from a call of a `…Timeline`/`…timeline`
+    function (`templateTimeline()`, `new Timeline()`, `await`/member-qualified calls, plain re-assignment and
+    `this.x = …`), of a function of the file declared to return `Timeline` (whose name then counts in call chains:
+    `make().call(…)`), names annotated `Timeline` / `ReturnType<typeof …Timeline>` (parameters, fields) and
+    `{ timeline: t }` / `{ tl: t }` renames. `.set/.call/.reverse` on those are reported; Maps, arrays and
+    `fn.call` stay clean.
+  - `stagger(…)` with `from: 'random'`/`jitter` needs a seed expression or the shorthand `{ seed }`: a literal
+    `false`/`undefined`/`void 0` (anime.js: unseeded, `Math.random`) and `0`/`true`/`null` (one constant seed for
+    every clip, not `hash32(clipId, …)`, ANM-007) are reported.
+  - `performance?.now`, `Date?.now`, `Math?.random` and computed `['now']` access are matched.
+  - The shorthand `{ duration, loop }` / `{ loop }` is a `loop` violation; `autoplay` is reported unless it is
+    the literal `false` (shorthand `{ autoplay }` and variables included).
+  - `import type { … }` names are no longer checked by the lint (types are not values). Biome's
+    `noRestrictedImports` still reports a type-only `Timeline` import from `animejs/timeline` outside the
+    runtime; use the runtime's `Timeline` re-export (as every template already does).
+  - The tree passes unchanged (`node scripts/check-anime.mjs`: ok; no new `anime-allow:`). Verified with a probe
+    file that Biome reports `set`/`sync`/`keepTime` from `animejs/utils` (templates and runtime) and `Timeline`
+    from `animejs/timeline` (templates).
+- **Runtime guard** (`packages/motion/src/runtime/timeline.ts`; `runtime.test.tsx`): `createPausedTimeline` also
+  strips `frameRate`, `loop`, `loopDelay`, `alternate`, `autoplay` and a `'blend'` composition (string or enum
+  value) from `params.defaults`, which children inherit (a default `loop` made every child's duration 1e12; a
+  child `frameRate` below the timeline's gates it by the wall clock in `tick`). The caller's object is not
+  mutated; other defaults (`ease`, `duration`, `composition: 'none'`) are kept. The test fails without the fix.
+- **Notices missed build-time packages whose output ships** (`scripts/third-party-notices.mjs`,
+  `THIRD_PARTY_NOTICES.md` 104 → 116 packages; `third-party-notices.test.mjs`, README): an explicit
+  `SHIPPED_BUILD_OUTPUT` list, each package added alone (its dependencies are not traversed), resolved from a
+  repo directory or an earlier entry. Audited against every `node_modules` source in the sourcemaps of
+  `vite build` (apps/web) and `build:remotion` (apps/engine) plus the emitted CSS (new `pnpm notices --audit
+  <dir>…`, `packagesInSourcemaps`):
+  - web: `tailwindcss` (preflight, theme variables, utilities in the CSS; v4.3's preflight no longer carries a
+    modern-normalize banner, so Tailwind's MIT licence covers it — no separate modern-normalize text was added),
+    `vite` (modulepreload polyfill, `__vitePreload`, the CommonJS interop helpers of its bundled
+    `@rollup/plugin-commonjs`; its `LICENSE.md` includes the bundled dependencies' licences, ~2.1k lines).
+    `@vitejs/plugin-react` and `@tailwindcss/vite` inject nothing in production; no esbuild helpers appear.
+  - Remotion bundle: `webpack` (runtime), `@remotion/bundler` (setup-environment, react-shim), and the bundle
+    entry `@remotion/studio` renderEntry with what it imports: `@remotion/studio-shared`, `timeline-utils`,
+    `renderer` (`pure`/`client` only), `web-renderer`, `media-utils`, `zod-types`, `canvas-capture`,
+    `@jridgewell/trace-mapping`/`resolve-uri`/`sourcemap-codec`, `@mediabunny/{aac,flac,mp3}-encoder` (MPL-2.0,
+    like `mediabunny`). Not shipped (checked): css-loader/style-loader, react-refresh, esbuild, rspack.
+  - The "excludes dev-only tools" test no longer lists `vite`/`@remotion/bundler`/`@remotion/renderer` (they now
+    ship) and checks the build tools that do not (`typescript`, `esbuild`, `@vitejs/plugin-react`, …).
+  - Gap (not changed, for the integrator): the packaged engine also ships the `apps/engine` `@fontsource/*` font
+    files (OFL/Apache, ten families) next to the Remotion bundle (`dist/fonts`, `build:remotion`); neither this
+    file (its roots are the web app and the compositions closure) nor `/api/licenses` (FFmpeg, anime.js) lists
+    them. Only `@fontsource/source-sans-3` (the web UI font) is listed.
+- Verification (2026-10-01, shared box, load average 30–60): `pnpm lint` ok (Biome 896 files, check-tokens,
+  check-anime), `pnpm typecheck` ok, `node scripts/third-party-notices.mjs --check` current (116 packages),
+  `--audit apps/web/dist apps/engine/dist/remotion-bundle` clean (15 packages missing before the fix).
+  `pnpm test`: 1509 passed, 111 skipped, 8 files failed, all on hook/test timeouts under load (engine
+  `color`, `color-remotion`, `export`, `lgpl`, `media`, `processing`, `processing-remote`, `warp`); those eight
+  re-run alone: 68 passed, 2 skipped, 0 failed.
