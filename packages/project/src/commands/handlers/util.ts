@@ -16,6 +16,19 @@ export function notImplemented<T extends CommandType>(type: T, owner: string): H
 	return stub;
 }
 
+/**
+ * Refuses one field of an otherwise implemented command whose implementation belongs to another work package
+ * (M2, ARCHITECTURE §20.1; owners are listed in `COMMAND_FIELD_OWNERS`).
+ */
+export function patchFieldNotImplemented(
+	h: HandlerContext,
+	type: CommandType,
+	field: string,
+	owner: string,
+): never {
+	return h.fail('E_NOT_IMPLEMENTED', `${type} ${field} is not implemented yet (${owner})`, { path: [field] });
+}
+
 /** True when the handler is a `notImplemented()` stub (drives `implemented` in the agent schema). */
 export function isNotImplementedHandler(handler: unknown): boolean {
 	return typeof handler === 'function' && STUBS.has(handler);

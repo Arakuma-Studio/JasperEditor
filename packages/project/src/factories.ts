@@ -8,6 +8,9 @@ import type { FontRef } from './schema/media.ts';
 import type {
 	Sequence,
 	SequenceSettings,
+	ShapeData,
+	ShapeStroke,
+	ShapeType,
 	Speed,
 	TextStyle,
 	Track,
@@ -175,4 +178,60 @@ export function defaultTextStyle(fontId: string): TextStyle {
 		shadow: null,
 		allCaps: false,
 	};
+}
+
+// ---------------------------------------------------------------- shapes (M2, S11:SHP-001/003)
+
+/** Default shape size in layer pixels (S11:SHP-003). */
+export const DEFAULT_SHAPE_SIZE: Vec2 = [400, 400];
+/** Default length of a new shape clip (S11:SHP-003). */
+export const DEFAULT_SHAPE_SECONDS = 5;
+
+/** A new shape: white fill, no stroke, radius 0 (S11:SHP-003). Values are static Animatables. */
+export function defaultShape(
+	type: ShapeType,
+	opts: {
+		size?: Vec2;
+		fill?: RGBA | null;
+		stroke?: { color: RGBA; width: number; position?: ShapeStroke['position'] } | null;
+		cornerRadius?: number;
+	} = {},
+): ShapeData {
+	const fill = opts.fill === undefined ? WHITE : opts.fill;
+	const stroke = opts.stroke ?? null;
+	return {
+		type,
+		size: anim<Vec2>([...(opts.size ?? DEFAULT_SHAPE_SIZE)]),
+		fill: fill ? anim<RGBA>([...fill]) : null,
+		stroke: stroke
+			? {
+					color: anim<RGBA>([...stroke.color]),
+					width: anim(stroke.width),
+					position: stroke.position ?? 'center',
+				}
+			: null,
+		cornerRadius: anim(opts.cornerRadius ?? 0),
+	};
+}
+
+const maxOf = (a: Animatable<number>): number => Math.max(a.value, ...a.keyframes.map((k) => k.value));
+
+/**
+ * Intrinsic (layer) box of a shape (S11:SHP-001): the largest size it takes (static value and every keyframe)
+ * plus the part of the stroke drawn outside the geometry — the whole width for `outside`, half for `center`.
+ * The geometry is centred in the box.
+ */
+export function shapeIntrinsicBox(shape: ShapeData): Box {
+	const w = Math.max(shape.size.value[0], ...shape.size.keyframes.map((k) => k.value[0]));
+	const h = Math.max(shape.size.value[1], ...shape.size.keyframes.map((k) => k.value[1]));
+	const s = shape.stroke;
+	const outside = !s
+		? 0
+		: s.position === 'outside'
+			? maxOf(s.width)
+			: s.position === 'center'
+				? maxOf(s.width) / 2
+				: 0;
+	const pad = Math.max(0, outside) * 2;
+	return { width: Math.max(0, w) + pad, height: Math.max(0, h) + pad };
 }

@@ -45,6 +45,8 @@ export const WARNING_CODES = [
 	'W_LAYOUT_PENDING',
 	'W_DEDUPED',
 	'W_VALUE_CLAMPED',
+	/** M2 (S11:TXA-004): in + out text animators exceed the clip and are scaled at render time. */
+	'W_ANIMATION_COMPRESSED',
 ] as const;
 
 /** A problem report. `commandIndex` is -1 for transaction-level issues (invariants, revision). */

@@ -51,6 +51,9 @@ import type { ClipPatch, TransformPatch } from '../schemas/clip.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { rollTrim } from './clip-edit.ts';
 import { applyCompositionPatch } from './composition.ts';
+import { applyTemplatePatch } from './mg-template.ts';
+import { applyShapePatch } from './shape.ts';
+import { applyInitialTextAnimation, applyTextAnimationPatch } from './text-animation.ts';
 import { type HandlerMap, idList } from './util.ts';
 
 type DTrack = Draft<Track>;
@@ -672,6 +675,8 @@ export const clipCoreHandlers: HandlerMap = {
 		const clip = seq.clips[id] as Draft<Extract<Clip, { kind: 'text' }>>;
 		layoutText(clip, h, seq.settings.width);
 		if (!cmd.transform?.anchor) clip.transform.anchor.value = [clip.box.width / 2, clip.box.height / 2];
+		// M2 (S11:TXA-006, wp-m2-text-anim).
+		applyInitialTextAnimation(doc, seq, clip as DClip, cmd.textAnimation, h);
 		cleanupSequence(seq, h);
 		h.defineRef(cmd.ref, id);
 		return { clipId: id };
@@ -701,7 +706,12 @@ export const clipCoreHandlers: HandlerMap = {
 		seq.clips[id] = {
 			...commonFields(id, track.id, at, duration, 0, cmd.name ?? info.name, 'purple'),
 			kind: 'motion-graphic',
-			template: { id: info.id, version: info.version },
+			// M2 (S11:ATP-002): anime templates are stamped; absent = fframes.
+			template: {
+				id: info.id,
+				version: info.version,
+				...(info.renderer === 'anime' ? { renderer: 'anime' } : {}),
+			},
 			params,
 			canvas,
 			...visualFields(defaultTransform(box, frameBox(seq), canvas === 'sequence' ? 'none' : 'fit-if-larger')),
@@ -879,6 +889,13 @@ function applyClipPatch(doc: DDoc, seq: DSeq, clip: DClip, p: ClipPatch, h: Hand
 		}
 		if (p.canvas !== undefined) mg.canvas = p.canvas as never;
 	}
+	// M2 (S11, ARCHITECTURE §20.1): fields implemented by wp-m2-text-anim, wp-m2-shapes, wp-m2-anime-templates.
+	if (p.textAnimation !== undefined) need(clip.kind === 'text', 'textAnimation');
+	applyTextAnimationPatch(doc, seq, clip, p, h);
+	if (p.shape !== undefined) need(clip.kind === 'shape', 'shape');
+	applyShapePatch(doc, seq, clip, p, h);
+	if (p.template !== undefined) need(clip.kind === 'motion-graphic', 'template');
+	applyTemplatePatch(doc, seq, clip, p, h);
 	if (p.blendMode !== undefined) {
 		need(!!caps?.hasOpacity && clip.kind !== 'captions', 'blendMode');
 		c.blendMode = p.blendMode;

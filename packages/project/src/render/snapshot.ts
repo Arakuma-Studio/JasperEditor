@@ -1,7 +1,8 @@
 // Render snapshot (S01:RND-001…005, ARCHITECTURE §5.5): the self-contained JSON value handed to the
 // Remotion composition, the native planner and the Program overlay. Keyframes stay unevaluated.
 import { compositionOfClip, mergeProps } from '../composition/props.ts';
-import { type EngineId, isBoundedContent, kindCapabilities } from '../registry/kinds.ts';
+import { shapeIntrinsicBox } from '../factories.ts';
+import { clipEngines, type EngineId, isBoundedContent, kindCapabilities } from '../registry/kinds.ts';
 import type { Animatable, RGBA } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { FontRef, MediaAsset } from '../schema/media.ts';
@@ -10,11 +11,14 @@ import {
 	type Clip,
 	type EffectInstance,
 	isKnownClipKind,
+	type MgRenderer,
+	type ShapeData,
 	type Speed,
 	type TextBox,
 	type TextContent,
 	type Transform,
 } from '../schema/sequence.ts';
+import { type ResolvedTextAnimator, resolveTextAnimationWindows } from '../text-animations.ts';
 import type { Rational } from '../time.ts';
 import {
 	type RenderAudioFade,
@@ -56,17 +60,27 @@ export function mediaDecodeHints(
 	};
 }
 
+/**
+ * M2 (S11:TXA-009): the animators of a text clip as rendered — params with the preset defaults merged (known
+ * presets) and window lengths compressed to the clip (TXA-004). Absent sides have no animator.
+ */
+export type RenderTextAnimation = { in?: ResolvedTextAnimator; out?: ResolvedTextAnimator };
+
 export type RenderVisualSource =
 	| { mediaId: string }
-	| { text: TextContent; box: TextBox }
+	| { text: TextContent; box: TextBox; animation?: RenderTextAnimation }
 	| { color: RGBA }
 	| {
 			mg: {
 				template: { id: string; version: number };
 				params: Record<string, unknown>;
 				canvas: { width: number; height: number };
+				/** M2 (S11:ATP-002): absent = `fframes`. */
+				renderer?: MgRenderer;
 			};
 	  }
+	/** M2 (S11:SHP-001): a shape; Animatables unevaluated (RND-001), evaluated per frame by the layer. */
+	| { shape: ShapeData }
 	/**
 	 * M2 (S08): a composition of an `mg-bundle` asset. `media[mediaId]` resolves the bundle (`url` = its serve
 	 * URL). The pre-rendered alpha master is found by the consumers (engine: cache; preview: MG runtime).
@@ -269,6 +283,19 @@ export function buildRenderSnapshot(
 				}
 				case 'text': {
 					source = { text: c.content, box: c.box };
+					if (c.textAnimation && (c.textAnimation.in || c.textAnimation.out)) {
+						const w = resolveTextAnimationWindows(c);
+						source.animation = {
+							...(w.in ? { in: w.in } : {}),
+							...(w.out ? { out: w.out } : {}),
+						};
+						for (const key of w.unknown)
+							warnings.push({
+								clipId: c.id,
+								code: 'UNKNOWN_TEXT_ANIMATION',
+								message: `Text animation ${key} is not installed; the text is drawn without it`,
+							});
+					}
 					box = { width: c.box.width, height: c.box.height };
 					const font = doc.fonts[c.content.style.fontId];
 					if (font) {
@@ -302,8 +329,21 @@ export function buildRenderSnapshot(
 				}
 				case 'motion-graphic': {
 					const canvas = c.canvas === 'sequence' ? frame : { width: c.canvas.width, height: c.canvas.height };
-					source = { mg: { template: c.template, params: c.params, canvas } };
+					const { renderer, ...template } = c.template;
+					source = {
+						mg: {
+							template,
+							params: c.params,
+							canvas,
+							...(renderer === 'anime' ? { renderer } : {}),
+						},
+					};
 					box = canvas;
+					break;
+				}
+				case 'shape': {
+					source = { shape: c.shape };
+					box = shapeIntrinsicBox(c.shape);
 					break;
 				}
 				case 'composition': {
@@ -371,7 +411,7 @@ export function buildRenderSnapshot(
 				blendMode: (r.blendMode as BlendMode | undefined) ?? 'normal',
 				effects: (r.effects as EffectInstance[] | undefined) ?? [],
 				intrinsicBox: box,
-				engine: caps.engines.export,
+				engine: clipEngines(c)?.export ?? caps.engines.export,
 				...(c.kind === 'animated-image' ? { loop: c.loop } : {}),
 				bounded: isBoundedContent(c),
 				...transitionFields(transitions.clips.get(c.id)),

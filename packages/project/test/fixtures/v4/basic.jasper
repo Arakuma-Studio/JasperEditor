@@ -1,0 +1,577 @@
+{
+	"format": "jasper-project",
+	"schemaVersion": 4,
+	"savedAt": "2026-10-01T09:00:00.000Z",
+	"savedBy": {
+		"app": "JasperEditor",
+		"version": "0.1.0",
+		"platform": "web"
+	},
+	"revision": 3,
+	"document": {
+		"schemaVersion": 4,
+		"projectId": "prj_3GENJY181SWBDS3B",
+		"name": "v4 fixture",
+		"settings": {
+			"defaultSequencePreset": "hd-1080p-30",
+			"mediaPolicy": {
+				"copyOnImport": false
+			},
+			"proxyPolicy": {
+				"mode": "auto",
+				"preset": "h264-720p",
+				"autoWhen": {
+					"minHeight": 2160,
+					"codecs": [
+						"prores",
+						"dnxhd",
+						"hevc"
+					],
+					"bitDepthAbove": 8
+				}
+			},
+			"defaultStillDurationFrames": 150,
+			"defaultTransitionFrames": 30,
+			"defaultScaling": "fit-if-larger"
+		},
+		"rootItems": [
+			"itm_QVCSRJ0ZN3G99AEE"
+		],
+		"items": {
+			"itm_QVCSRJ0ZN3G99AEE": {
+				"id": "itm_QVCSRJ0ZN3G99AEE",
+				"kind": "sequence",
+				"name": "Sequence 01",
+				"sequenceId": "seq_KQBE9JAM8012F4MF",
+				"label": "forest"
+			}
+		},
+		"media": {},
+		"synthetics": {},
+		"transcripts": {},
+		"fonts": {
+			"fnt_GM81F5BKBKT54EPR": {
+				"id": "fnt_GM81F5BKBKT54EPR",
+				"family": "Source Sans 3",
+				"source": {
+					"type": "bundled"
+				}
+			}
+		},
+		"sequences": {
+			"seq_KQBE9JAM8012F4MF": {
+				"id": "seq_KQBE9JAM8012F4MF",
+				"settings": {
+					"frameRate": {
+						"num": 30,
+						"den": 1
+					},
+					"width": 1920,
+					"height": 1080,
+					"pixelAspect": {
+						"num": 1,
+						"den": 1
+					},
+					"dropFrame": false,
+					"startTimecodeFrames": 0,
+					"audioSampleRate": 48000,
+					"masterLayout": "stereo",
+					"backgroundColor": [
+						0,
+						0,
+						0,
+						1
+					],
+					"workingColorSpace": "rec709"
+				},
+				"videoTracks": [
+					{
+						"id": "trk_3H547JW08WWHZQ7A",
+						"kind": "video",
+						"name": null,
+						"locked": false,
+						"syncLock": true,
+						"output": true
+					},
+					{
+						"id": "trk_GDYMQ62P19SJYMMJ",
+						"kind": "video",
+						"name": null,
+						"locked": false,
+						"syncLock": true,
+						"output": true
+					},
+					{
+						"id": "trk_WZ71SR3Q4SY93GRG",
+						"kind": "video",
+						"name": null,
+						"locked": false,
+						"syncLock": true,
+						"output": true
+					}
+				],
+				"audioTracks": [
+					{
+						"id": "trk_BHJMKG2GKJG3KWZV",
+						"kind": "audio",
+						"name": null,
+						"locked": false,
+						"syncLock": true,
+						"mute": false,
+						"solo": false,
+						"volumeDb": {
+							"value": 0,
+							"keyframes": []
+						},
+						"pan": {
+							"value": 0,
+							"keyframes": []
+						},
+						"channelFormat": "stereo",
+						"effects": []
+					},
+					{
+						"id": "trk_1NXTYXFY9Z0PSMC1",
+						"kind": "audio",
+						"name": null,
+						"locked": false,
+						"syncLock": true,
+						"mute": false,
+						"solo": false,
+						"volumeDb": {
+							"value": 0,
+							"keyframes": []
+						},
+						"pan": {
+							"value": 0,
+							"keyframes": []
+						},
+						"channelFormat": "stereo",
+						"effects": []
+					},
+					{
+						"id": "trk_0WDPDZ7K9S39G9H7",
+						"kind": "audio",
+						"name": null,
+						"locked": false,
+						"syncLock": true,
+						"mute": false,
+						"solo": false,
+						"volumeDb": {
+							"value": 0,
+							"keyframes": []
+						},
+						"pan": {
+							"value": 0,
+							"keyframes": []
+						},
+						"channelFormat": "stereo",
+						"effects": []
+					}
+				],
+				"captionTracks": [],
+				"master": {
+					"volumeDb": {
+						"value": 0,
+						"keyframes": []
+					},
+					"effects": []
+				},
+				"clips": {
+					"clp_66BDFXMPTPQDSEMA": {
+						"id": "clp_66BDFXMPTPQDSEMA",
+						"trackId": "trk_GDYMQ62P19SJYMMJ",
+						"start": 0,
+						"duration": 120,
+						"sourceIn": 0,
+						"speed": {
+							"rate": 1,
+							"reverse": false,
+							"maintainPitch": true
+						},
+						"name": "Animated Title",
+						"label": "lavender",
+						"enabled": true,
+						"linkId": null,
+						"groupId": null,
+						"markers": [],
+						"kind": "text",
+						"content": {
+							"text": "Animated Title",
+							"style": {
+								"fontId": "fnt_GM81F5BKBKT54EPR",
+								"weight": 400,
+								"italic": false,
+								"sizePx": 100,
+								"lineHeight": 1.2,
+								"trackingEm": 0,
+								"align": "center",
+								"direction": "auto",
+								"fill": [
+									1,
+									1,
+									1,
+									1
+								],
+								"strokes": [],
+								"background": null,
+								"shadow": null,
+								"allCaps": false
+							}
+						},
+						"box": {
+							"width": 1200,
+							"height": 140,
+							"autoSize": "none"
+						},
+						"transform": {
+							"position": {
+								"value": [
+									960,
+									540
+								],
+								"keyframes": []
+							},
+							"anchor": {
+								"value": [
+									600,
+									70
+								],
+								"keyframes": []
+							},
+							"scale": {
+								"value": 100,
+								"keyframes": []
+							},
+							"scaleWidth": {
+								"value": 100,
+								"keyframes": []
+							},
+							"uniformScale": true,
+							"rotation": {
+								"value": 0,
+								"keyframes": []
+							},
+							"flipH": false,
+							"flipV": false
+						},
+						"opacity": {
+							"value": 100,
+							"keyframes": []
+						},
+						"blendMode": "normal",
+						"effects": [],
+						"textAnimation": {
+							"in": {
+								"preset": "slide-up",
+								"version": 1,
+								"durationFrames": 20,
+								"params": {
+									"unit": "word",
+									"stagger": 0.4
+								}
+							},
+							"out": {
+								"preset": "fade",
+								"version": 1,
+								"durationFrames": 15,
+								"params": {}
+							}
+						}
+					},
+					"clp_VEYXW57CH91ZEK52": {
+						"id": "clp_VEYXW57CH91ZEK52",
+						"trackId": "trk_3H547JW08WWHZQ7A",
+						"start": 0,
+						"duration": 150,
+						"sourceIn": 0,
+						"speed": {
+							"rate": 1,
+							"reverse": false,
+							"maintainPitch": false
+						},
+						"name": "Title Reveal",
+						"label": "purple",
+						"enabled": true,
+						"linkId": null,
+						"groupId": null,
+						"markers": [],
+						"kind": "motion-graphic",
+						"template": {
+							"id": "title-reveal",
+							"version": 1,
+							"renderer": "anime"
+						},
+						"params": {
+							"title": "Hello",
+							"subtitle": "World"
+						},
+						"canvas": "sequence",
+						"transform": {
+							"position": {
+								"value": [
+									960,
+									540
+								],
+								"keyframes": []
+							},
+							"anchor": {
+								"value": [
+									960,
+									540
+								],
+								"keyframes": []
+							},
+							"scale": {
+								"value": 100,
+								"keyframes": []
+							},
+							"scaleWidth": {
+								"value": 100,
+								"keyframes": []
+							},
+							"uniformScale": true,
+							"rotation": {
+								"value": 0,
+								"keyframes": []
+							},
+							"flipH": false,
+							"flipV": false
+						},
+						"opacity": {
+							"value": 100,
+							"keyframes": []
+						},
+						"blendMode": "normal",
+						"effects": []
+					},
+					"clp_3ZN7BJXAHGY9J4G2": {
+						"id": "clp_3ZN7BJXAHGY9J4G2",
+						"trackId": "trk_WZ71SR3Q4SY93GRG",
+						"start": 0,
+						"duration": 90,
+						"sourceIn": 0,
+						"speed": {
+							"rate": 1,
+							"reverse": false,
+							"maintainPitch": false
+						},
+						"name": "Rectangle",
+						"label": "magenta",
+						"enabled": true,
+						"linkId": null,
+						"groupId": null,
+						"markers": [],
+						"kind": "shape",
+						"shape": {
+							"type": "rect",
+							"size": {
+								"value": [
+									600,
+									300
+								],
+								"keyframes": []
+							},
+							"fill": {
+								"value": [
+									0.2,
+									0.4,
+									0.9,
+									1
+								],
+								"keyframes": []
+							},
+							"stroke": {
+								"color": {
+									"value": [
+										1,
+										1,
+										1,
+										1
+									],
+									"keyframes": []
+								},
+								"width": {
+									"value": 8,
+									"keyframes": []
+								},
+								"position": "outside"
+							},
+							"cornerRadius": {
+								"value": 24,
+								"keyframes": []
+							}
+						},
+						"transform": {
+							"position": {
+								"value": [
+									960,
+									540
+								],
+								"keyframes": []
+							},
+							"anchor": {
+								"value": [
+									308,
+									158
+								],
+								"keyframes": []
+							},
+							"scale": {
+								"value": 100,
+								"keyframes": []
+							},
+							"scaleWidth": {
+								"value": 100,
+								"keyframes": []
+							},
+							"uniformScale": true,
+							"rotation": {
+								"value": 0,
+								"keyframes": []
+							},
+							"flipH": false,
+							"flipV": false
+						},
+						"opacity": {
+							"value": 100,
+							"keyframes": []
+						},
+						"blendMode": "normal",
+						"effects": []
+					},
+					"clp_G0T74Q462ZTWRN16": {
+						"id": "clp_G0T74Q462ZTWRN16",
+						"trackId": "trk_WZ71SR3Q4SY93GRG",
+						"start": 90,
+						"duration": 60,
+						"sourceIn": 0,
+						"speed": {
+							"rate": 1,
+							"reverse": false,
+							"maintainPitch": false
+						},
+						"name": "Ellipse",
+						"label": "magenta",
+						"enabled": true,
+						"linkId": null,
+						"groupId": null,
+						"markers": [],
+						"kind": "shape",
+						"shape": {
+							"type": "ellipse",
+							"size": {
+								"value": [
+									300,
+									300
+								],
+								"keyframes": [
+									{
+										"id": "kf_ED745FPND1HFW76X",
+										"time": 0,
+										"value": [
+											100,
+											100
+										],
+										"interpolation": "linear",
+										"easeIn": {
+											"influence": 0.333,
+											"slope": 0
+										},
+										"easeOut": {
+											"influence": 0.333,
+											"slope": 0
+										}
+									},
+									{
+										"id": "kf_747JSDC150M628C0",
+										"time": 1411200000,
+										"value": [
+											300,
+											300
+										],
+										"interpolation": "linear",
+										"easeIn": {
+											"influence": 0.333,
+											"slope": 0
+										},
+										"easeOut": {
+											"influence": 0.333,
+											"slope": 0
+										}
+									}
+								]
+							},
+							"fill": null,
+							"stroke": {
+								"color": {
+									"value": [
+										1,
+										0.8,
+										0,
+										1
+									],
+									"keyframes": []
+								},
+								"width": {
+									"value": 6,
+									"keyframes": []
+								},
+								"position": "center"
+							},
+							"cornerRadius": {
+								"value": 0,
+								"keyframes": []
+							}
+						},
+						"transform": {
+							"position": {
+								"value": [
+									960,
+									540
+								],
+								"keyframes": []
+							},
+							"anchor": {
+								"value": [
+									153,
+									153
+								],
+								"keyframes": []
+							},
+							"scale": {
+								"value": 100,
+								"keyframes": []
+							},
+							"scaleWidth": {
+								"value": 100,
+								"keyframes": []
+							},
+							"uniformScale": true,
+							"rotation": {
+								"value": 0,
+								"keyframes": []
+							},
+							"flipH": false,
+							"flipV": false
+						},
+						"opacity": {
+							"value": 100,
+							"keyframes": []
+						},
+						"blendMode": "normal",
+						"effects": []
+					}
+				},
+				"transitions": {},
+				"links": {},
+				"groups": {},
+				"markers": [],
+				"inPoint": null,
+				"outPoint": null,
+				"workArea": null
+			}
+		},
+		"extensions": {}
+	}
+}

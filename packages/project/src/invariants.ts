@@ -341,6 +341,35 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 			if (c.kind === 'text' && content?.style?.fontId && !doc.fonts[content.style.fontId]) {
 				issues.push(inv('INV-006', `Clip ${c.id} references missing font ${content.style.fontId}`, cw));
 			}
+			// M2 (S11:TXA-008): animator windows are whole frames ≥ 1 (unknown presets are preserved).
+			const ta = r.textAnimation as
+				| Record<string, { durationFrames?: unknown } | null | undefined>
+				| undefined;
+			if (c.kind === 'text' && ta) {
+				for (const side of ['in', 'out'] as const) {
+					const d = ta[side]?.durationFrames;
+					if (ta[side] && (typeof d !== 'number' || !Number.isInteger(d) || d < 1))
+						issues.push(
+							inv('INV-012', `Clip ${c.id} ${side} animation duration must be a whole frame count ≥ 1`, cw),
+						);
+				}
+			}
+			// M2 (S11:SHP-001): shape geometry is non-negative.
+			if (c.kind === 'shape') {
+				const sh = r.shape as {
+					size?: AnimLike;
+					cornerRadius?: AnimLike;
+					stroke?: { width?: AnimLike } | null;
+				};
+				const values = (a: AnimLike | undefined) => (a ? [a.value, ...a.keyframes.map((k) => k.value)] : []);
+				const bad = (v: unknown) => typeof v !== 'number' || !Number.isFinite(v) || v < 0;
+				if (values(sh.size).some((v) => !Array.isArray(v) || v.length !== 2 || v.some(bad)))
+					issues.push(inv('INV-012', `Shape ${c.id} size must be two numbers ≥ 0`, cw));
+				if (values(sh.cornerRadius).some(bad))
+					issues.push(inv('INV-012', `Shape ${c.id} corner radius must be ≥ 0`, cw));
+				if (sh.stroke && values(sh.stroke.width).some(bad))
+					issues.push(inv('INV-012', `Shape ${c.id} stroke width must be ≥ 0`, cw));
+			}
 			if (c.linkId && !seq.links[c.linkId]?.members.includes(c.id))
 				issues.push(inv('INV-006', `Clip ${c.id} has a dangling linkId`, cw));
 			if (c.groupId && !seq.groups[c.groupId]?.members.includes(c.id))
