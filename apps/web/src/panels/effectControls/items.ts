@@ -96,6 +96,15 @@ export function buildGroups(
 				intrinsic: true,
 				rows: rows(['opacity', 'blendMode']),
 			});
+			// M2 (wp-m2-text-anim, S11:TXA-022): the Text Animation section (body drawn by TextAnimationSection).
+			if (clip.kind === 'text')
+				sections.push({
+					id: `${clip.id}:textAnimation`,
+					title: 'Text Animation',
+					clip,
+					intrinsic: true,
+					rows: [],
+				});
 			sections.push({
 				id: `${clip.id}:crop`,
 				title: 'Crop',

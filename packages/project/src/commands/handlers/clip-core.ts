@@ -851,7 +851,8 @@ export const clipCoreHandlers: HandlerMap = {
 	},
 };
 
-function applyClipPatch(doc: DDoc, seq: DSeq, clip: DClip, p: ClipPatch, h: HandlerContext): void {
+/** Applies one clip.update patch to a clip (also used by param.set on `clip.update`-written text properties). */
+export function applyClipPatch(doc: DDoc, seq: DSeq, clip: DClip, p: ClipPatch, h: HandlerContext): void {
 	const c = clip as Draft<Record<string, unknown>> & DClip;
 	const caps = kindCapabilities(clip.kind);
 	const need = (ok: boolean, field: string) => {

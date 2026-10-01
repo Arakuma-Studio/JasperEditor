@@ -1,0 +1,85 @@
+// Effect Controls mini-timeline In/Out bars (S11:TXA-022): drawn over the head and tail of the clip bar of the
+// ruler with the windows as rendered (compressed when In + Out exceed the clip); dragging a bar's inner edge
+// changes that side's duration — one gesture, one undo step (Escape cancels).
+import { type Clip, resolveTextAnimationWindows, type TextAnimationSide } from '@jasper/project';
+import type { PointerEvent as ReactPointerEvent } from 'react';
+import { pctOf, type Range } from '../panels/effectControls/lib.ts';
+import type { InspectorOps } from '../panels/properties/lib/ops.ts';
+
+export function TextAnimationBars({ clip, range, ops }: { clip: Clip; range: Range; ops: InspectorOps }) {
+	if (clip.kind !== 'text' || !clip.textAnimation) return null;
+	const w = resolveTextAnimationWindows(clip);
+	const startDrag = (e: ReactPointerEvent<HTMLElement>, side: TextAnimationSide, frames: number) => {
+		if (e.button !== 0) return;
+		// The ruler under the bars seeks on press.
+		e.stopPropagation();
+		e.preventDefault();
+		const ruler = (e.currentTarget as HTMLElement).closest('[data-testid="ec-ruler"]');
+		const width = ruler?.getBoundingClientRect().width || 1;
+		const framesPerPx = (range.end - range.start) / width;
+		const x0 = e.clientX;
+		const label = `${side === 'in' ? 'In' : 'Out'} Animation Duration`;
+		if (!ops.scrub.start(label)) return;
+		let last = frames;
+		const move = (ev: PointerEvent) => {
+			const delta = Math.round((ev.clientX - x0) * framesPerPx) * (side === 'in' ? 1 : -1);
+			const next = Math.max(1, Math.min(clip.duration, frames + delta));
+			if (next === last) return;
+			last = next;
+			ops.scrub.update([
+				{
+					type: 'clip.update',
+					clipId: clip.id,
+					patch: { textAnimation: { [side]: { durationFrames: next } } },
+				},
+			]);
+		};
+		const end = (cancelled: boolean) => {
+			window.removeEventListener('pointermove', move);
+			window.removeEventListener('pointerup', up);
+			window.removeEventListener('keydown', key, true);
+			ops.scrub.end(cancelled || last === frames);
+		};
+		const up = () => end(false);
+		const key = (ev: KeyboardEvent) => {
+			if (ev.key === 'Escape') end(true);
+		};
+		window.addEventListener('pointermove', move);
+		window.addEventListener('pointerup', up);
+		window.addEventListener('keydown', key, true);
+	};
+	const bar = (side: TextAnimationSide) => {
+		const a = w[side];
+		const stored = clip.textAnimation?.[side];
+		if (!a || !stored) return null;
+		const from = side === 'in' ? clip.start : clip.start + clip.duration - a.frames;
+		const left = pctOf(range, from);
+		const right = pctOf(range, from + a.frames);
+		return (
+			<span
+				key={side}
+				data-testid={`ec-text-anim-bar-${side}`}
+				title={`${side === 'in' ? 'In' : 'Out'}: ${a.preset} · ${a.frames} f${w.compressed ? ' (shortened to fit)' : ''}`}
+				className="absolute top-[16px] h-[14px] bg-pr-accent-fill opacity-70"
+				style={{ left: `${left}%`, width: `${right - left}%` }}
+			>
+				<span
+					data-testid={`ec-text-anim-edge-${side}`}
+					aria-label={`Drag to change the ${side === 'in' ? 'In' : 'Out'} duration`}
+					role="slider"
+					aria-valuenow={stored.durationFrames}
+					tabIndex={-1}
+					className="absolute inset-y-0 w-[6px] cursor-col-resize bg-pr-accent"
+					style={side === 'in' ? { right: -3 } : { left: -3 }}
+					onPointerDown={(e) => startDrag(e, side, stored.durationFrames)}
+				/>
+			</span>
+		);
+	};
+	return (
+		<>
+			{bar('in')}
+			{bar('out')}
+		</>
+	);
+}

@@ -177,6 +177,12 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('graphics.newEllipse', 'Ellipse'),
 			]),
 			c('mg.insertTemplate', 'Insert Motion Template…'),
+			// M2 (wp-m2-text-anim, S11:TXA-024)
+			sub('Text Animation', [
+				c('text.applyAnimation', 'Apply In…', { side: 'in' }),
+				c('text.applyAnimation', 'Apply Out…', { side: 'out' }),
+				c('text.removeAnimation', 'Remove', { side: 'both' }),
+			]),
 		],
 	},
 	{

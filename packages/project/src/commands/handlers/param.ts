@@ -8,7 +8,9 @@ import type { Animatable, Keyframe } from '../../schema/common.ts';
 import type { Clip, EffectInstance, Track } from '../../schema/sequence.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
+import { ClipPatchSchema } from '../schemas/clip.ts';
 import type { CommandOf, ParamAt } from '../schemas/index.ts';
+import { applyClipPatch } from './clip-core.ts';
 import { setCompositionProp } from './composition.ts';
 import type { HandlerMap } from './util.ts';
 
@@ -104,8 +106,23 @@ export function resolveTarget(
 		// Composition clips (S08:MGC-007): `props.<path>` from the composition's schema (null = bundle unknown).
 		const composition =
 			clip.kind === 'composition' ? (compositionOfClip(doc as never, clip as Clip)?.info ?? null) : undefined;
-		const spec = resolvePropertySpec(key, template, composition);
+		const spec = resolvePropertySpec(key, template, composition, clip as Clip);
 		if (!spec?.appliesTo(clip)) return bad();
+		// M2 (wp-m2-text-anim; S11:FIX-004, TXA-007): text properties written by clip.update (style and box fields,
+		// text animators) take the clip.update path, so layout re-runs and animator params are validated whole.
+		const write = spec.write;
+		if (clip.kind === 'text' && write?.via === 'clip.update') {
+			return {
+				type: 'static',
+				rule: ruleFromProperty(spec),
+				label: key,
+				set: (v) => {
+					const patch = ClipPatchSchema.safeParse(write.patch(v, clip as Clip));
+					if (!patch.success) h.fail('E_INVALID_PARAM', `Invalid value for ${key}: ${JSON.stringify(v)}`);
+					applyClipPatch(doc, seq, clip, patch.data, h);
+				},
+			};
+		}
 		if (spec.group === 'props') {
 			return {
 				type: 'static',

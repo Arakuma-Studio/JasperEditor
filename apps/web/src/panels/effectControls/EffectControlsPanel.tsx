@@ -28,6 +28,15 @@ import {
 } from 'react';
 import { effectEditorFor } from '../../extensions/index.ts';
 import {
+	applyMessage,
+	applyTextAnimation,
+	dropSide,
+	isTextAnimationDrag,
+	readTextAnimationDrag,
+} from '../../text-animation/actions.ts';
+import { TextAnimationBars } from '../../text-animation/TextAnimationBars.tsx';
+import { TextAnimationSection } from '../../text-animation/TextAnimationSection.tsx';
+import {
 	applyEffectToClips,
 	isEffectDrag,
 	JASPER_EFFECT_INSTANCE_MIME,
@@ -359,6 +368,12 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	};
 	const onDragOver = (e: DragEvent) => {
 		const types = Array.from(e.dataTransfer.types ?? []);
+		// M2 (wp-m2-text-anim, S11:TXA-020): text animation presets apply to the shown text clip.
+		if (isTextAnimationDrag(e.dataTransfer) && primary.kind === 'text') {
+			e.preventDefault();
+			e.dataTransfer.dropEffect = 'copy';
+			return;
+		}
 		if (!isEffectDrag(e.dataTransfer) && !types.includes(JASPER_EFFECT_INSTANCE_MIME)) return;
 		e.preventDefault();
 		e.dataTransfer.dropEffect = types.includes(JASPER_EFFECT_INSTANCE_MIME) ? 'move' : 'copy';
@@ -367,6 +382,20 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	const onDrop = (e: DragEvent) => {
 		const slot = slotOf(e);
 		setDropSlot(null);
+		// M2 (wp-m2-text-anim): over the mini-timeline the drop position picks the side, elsewhere In.
+		const textAnim = readTextAnimationDrag(e.dataTransfer);
+		if (textAnim) {
+			e.preventDefault();
+			const lane = (e.target as HTMLElement).closest('[data-lane], [data-testid="ec-ruler"]');
+			const r = lane?.getBoundingClientRect();
+			const f = r
+				? range.start + ((e.clientX - r.left) / Math.max(1, r.width)) * (range.end - range.start)
+				: null;
+			const side = f === null ? 'in' : dropSide(primary, f);
+			const m = applyMessage(applyTextAnimation(session, [primary.id], { side, ...textAnim }));
+			if (m) notices.hint(m.text);
+			return;
+		}
 		const instance = e.dataTransfer.getData(JASPER_EFFECT_INSTANCE_MIME);
 		const effects = (primary as { effects?: { id: string }[] }).effects ?? [];
 		if (instance) {
@@ -466,6 +495,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 									name: primary.name || primary.kind,
 								}}
 								transport={session.transport}
+								overlay={<TextAnimationBars clip={primary} range={range} ops={ops} />}
 							/>,
 						)}
 					</div>
@@ -586,6 +616,11 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 											</div>
 											{lane(<SummaryLane rows={s.rows} seq={seq} range={range} />)}
 										</div>
+										{open && s.id.endsWith(':textAnimation') ? (
+											<div style={left} data-testid="ec-text-animation">
+												<TextAnimationSection session={session} clipIds={[s.clip.id]} host="effectControls" />
+											</div>
+										) : null}
 										{open && editor && s.fx && s.effect ? (
 											<div data-testid={`fx-editor-${s.fx.id}`} style={left}>
 												<editor.component

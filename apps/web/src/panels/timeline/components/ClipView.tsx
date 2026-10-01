@@ -15,6 +15,7 @@ import type { MediaRuntime } from '@jasper/session';
 import { labelColor } from '@jasper/ui';
 import { memo, useCallback } from 'react';
 import { useClipBadge } from '../../../extensions/react.ts';
+import { TextAnimationWedges } from '../../../text-animation/TextAnimationWedges.tsx';
 import { peaksFor, reducePeaks, sheetImage, spriteFor } from '../media/media-cache.ts';
 import { filmstripSlots, nearestTile, tileRect } from '../model/filmstrip.ts';
 import { snapPx } from '../model/viewport.ts';
@@ -334,6 +335,8 @@ function ClipViewImpl(p: ClipViewProps) {
 						);
 					})
 				: null}
+			{/* M2 (wp-m2-text-anim, S11:TXA-023): In/Out wedges of animated text clips. */}
+			<TextAnimationWedges clip={c} pxPerFrame={p.pxPerFrame} height={p.height} />
 			{p.trackLocked ? (
 				<div
 					className="pointer-events-none absolute inset-0"

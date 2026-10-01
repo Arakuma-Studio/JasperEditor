@@ -17,4 +17,6 @@ export {
 	SequenceComposition,
 } from './SequenceComposition.tsx';
 export * from './stabilize.ts';
+// M2 (wp-m2-text-anim, S11:TXA-020)
+export * from './text-animation-preview.tsx';
 export * from './types.ts';

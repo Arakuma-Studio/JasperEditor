@@ -10,6 +10,7 @@ import { contentDurationFlicks, isBoundedContent, trackKindFor } from './registr
 import type { ProjectDocument } from './schema/document.ts';
 import type { Clip, EffectInstance, Sequence, Track } from './schema/sequence.ts';
 import { isKnownClipKind } from './schema/sequence.ts';
+import { getTextAnimationSpec } from './text-animations.ts';
 import {
 	contentSpanFlicks,
 	flicksPerFrame,
@@ -341,7 +342,8 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 			if (c.kind === 'text' && content?.style?.fontId && !doc.fonts[content.style.fontId]) {
 				issues.push(inv('INV-006', `Clip ${c.id} references missing font ${content.style.fontId}`, cw));
 			}
-			// M2 (S11:TXA-008): animator windows are whole frames ≥ 1 (unknown presets are preserved).
+			// M2 (S11:TXA-008): animator windows are whole frames ≥ 1; known presets have valid params (unknown
+			// presets are preserved and skipped by the renderers).
 			const ta = r.textAnimation as
 				| Record<string, { durationFrames?: unknown } | null | undefined>
 				| undefined;
@@ -352,6 +354,8 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 						issues.push(
 							inv('INV-012', `Clip ${c.id} ${side} animation duration must be a whole frame count ≥ 1`, cw),
 						);
+					if (invalidAnimatorParams(ta[side]))
+						issues.push(inv('INV-012', `Clip ${c.id} ${side} animation params are invalid`, cw));
 				}
 			}
 			// M2 (S11:SHP-001): shape geometry is non-negative.
@@ -508,6 +512,14 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 	return issues;
 }
 
+/** M2 (wp-m2-text-anim, S11:TXA-008): a known preset whose stored params its schema rejects. */
+function invalidAnimatorParams(a: unknown): boolean {
+	const x = a as { preset?: unknown; version?: unknown; params?: unknown } | null | undefined;
+	if (!x || typeof x.preset !== 'string' || typeof x.version !== 'number') return false;
+	const spec = getTextAnimationSpec(x.preset, x.version);
+	return !!spec && !spec.paramsSchema.safeParse(x.params).success;
+}
+
 // ---------------------------------------------------------------- repair (S01:PER-004)
 
 export type RepairEntry = { action: string; entity: string; detail: string };
@@ -617,6 +629,20 @@ export function repairDocument(
 					(c as Record<string, unknown>)[field] = null;
 					note('drop-reference', c.id, `dangling ${field}`);
 				}
+			}
+		}
+		// M2 (wp-m2-text-anim, S11:TXA-008): animator params a known preset rejects are reset to its defaults.
+		for (const c of Object.values(seq.clips)) {
+			if (c.kind !== 'text' || !c.textAnimation) continue;
+			for (const side of ['in', 'out'] as const) {
+				const a = c.textAnimation[side];
+				if (!a || !invalidAnimatorParams(a)) continue;
+				a.params = { ...getTextAnimationSpec(a.preset, a.version)!.defaults };
+				note(
+					'reset-params',
+					c.id,
+					`${side} animation ${a.preset}@${a.version}: invalid params reset to defaults`,
+				);
 			}
 		}
 		for (const t of Object.values(seq.transitions)) {

@@ -149,9 +149,9 @@ describe('shapes (S11:SHP-001/003)', () => {
 });
 
 describe('text animation windows (S11:TXA-002/004)', () => {
-	it('the catalogue is empty on contracts; lookups take an explicit list', () => {
-		expect(TEXT_ANIMATION_SPECS).toEqual([]);
-		expect(getTextAnimationSpec('fade', 1)).toBeUndefined();
+	it('lookups use the shipped catalogue (wp-m2-text-anim) or an explicit list', () => {
+		expect(getTextAnimationSpec('fade', 1)).toBe(TEXT_ANIMATION_SPECS[0]);
+		expect(getTextAnimationSpec('fade', 1, [])).toBeUndefined();
 		expect(getTextAnimationSpec('fade', 1, [FADE])).toBe(FADE);
 		expect(getTextAnimationSpec('fade', 2, [FADE])).toBeUndefined();
 	});
@@ -220,15 +220,22 @@ describe('clip engines and the snapshot (ARCHITECTURE §20.1)', () => {
 		const snap = snapshotOf(doc);
 		const clips = snap.videoTracks.flatMap((t) => t.clips);
 		const text = clips.find((c) => c.kind === 'text')!;
+		// Defaults merged since wp-m2-text-anim filled the catalogue.
 		expect('text' in text.source && text.source.animation).toEqual({
-			in: { preset: 'slide-up', version: 1, params: { unit: 'word', stagger: 0.4 }, frames: 20 },
-			out: { preset: 'fade', version: 1, params: {}, frames: 15 },
+			in: {
+				preset: 'slide-up',
+				version: 1,
+				params: { unit: 'word', stagger: 0.4, order: 'forward', ease: 'outExpo', distance: 60 },
+				frames: 20,
+			},
+			out: {
+				preset: 'fade',
+				version: 1,
+				params: { unit: 'word', stagger: 0, order: 'forward', ease: 'out' },
+				frames: 15,
+			},
 		});
-		// Nothing is installed on contracts: both presets are reported.
-		expect(snap.warnings.filter((w) => w.code === 'UNKNOWN_TEXT_ANIMATION').map((w) => w.clipId)).toEqual([
-			text.clipId,
-			text.clipId,
-		]);
+		expect(snap.warnings.filter((w) => w.code === 'UNKNOWN_TEXT_ANIMATION')).toEqual([]);
 		const mg = clips.find((c) => c.kind === 'motion-graphic')!;
 		expect('mg' in mg.source && mg.source.mg.renderer).toBe('anime');
 		expect('mg' in mg.source && mg.source.mg.template).toEqual({ id: 'title-reveal', version: 1 });
@@ -283,15 +290,15 @@ describe('command contracts (handlers owned by the wave-1 packages)', () => {
 				textAnimation: { in: { preset: 'fade' } },
 			},
 		]);
-		expect(fail(add)).toMatchObject({ code: 'E_NOT_IMPLEMENTED', path: ['textAnimation'] });
+		// Implemented by wp-m2-text-anim (packages/project/test/text-animation.test.ts).
+		expect(add.ok).toBe(true);
 		const ok = h.tx([
 			{ type: 'clip.addText', at: 0, duration: 30, track: 'V1', content: { text: 'Hi' }, ref: '$t' },
 		]);
 		expect(ok.ok).toBe(true);
 		const id = ok.ok ? ok.refs.$t! : '';
 		const upd = (patch: unknown) => fail(h.tx([{ type: 'clip.update', clipId: id, patch }]));
-		expect(upd({ textAnimation: null })?.message).toMatch(/wp-m2-text-anim/);
-		expect(upd({ textAnimation: { in: { durationFrames: 10 } } })?.code).toBe('E_NOT_IMPLEMENTED');
+		expect(upd({ textAnimation: null })).toBeNull();
 		expect(upd({ shape: { cornerRadius: 4 } })?.code).toBe('E_INVALID_PARAM');
 		expect(upd({ template: { version: 2 } })?.code).toBe('E_INVALID_PARAM');
 		expect(upd({ textAnimation: { in: { durationFrames: 0 } } })?.code).toBe('E_SCHEMA');
@@ -359,7 +366,7 @@ describe('agent schema (S11:ANA-001)', () => {
 			defaultDurationSeconds: 4,
 		};
 		const s = exportAgentSchema(defaultRegistries(createStaticMgRegistry([info])));
-		expect(s.textAnimations).toEqual([]);
+		expect(s.textAnimations.map((t) => t.id)).toContain('slide-up');
 		expect(s.mgTemplates[0]).toMatchObject({
 			renderer: 'anime',
 			description: 'Char-staggered title',

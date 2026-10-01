@@ -1,7 +1,7 @@
 // Text animator catalogue (S11:TXA-002…004, ARCHITECTURE §20.1): pure metadata of the in/out presets of text
-// clips. Implementations live in `@jasper/motion/text`, keyed `id@version`. The catalogue is filled by
-// wp-m2-text-anim; the window maths (anchoring + compression) is shared by the snapshot, commands and the UI.
-import type { ZodType } from 'zod';
+// clips. Implementations live in `@jasper/motion/text`, keyed `id@version` (a motion test asserts both lists
+// match). The window maths (anchoring + compression) is shared by the snapshot, commands and the UI.
+import { type ZodType, z } from 'zod';
 import type { TextAnimation, TextAnimator } from './schema/sequence.ts';
 import type { Rational } from './time.ts';
 
@@ -27,10 +27,204 @@ export type TextAnimationSpec = {
 	description: string;
 };
 
-/** The shipped presets (S11:TXA-003). Empty until wp-m2-text-anim lands. */
-export const TEXT_ANIMATION_SPECS: readonly TextAnimationSpec[] = [];
+// ---------------------------------------------------------------- the catalogue (S11:TXA-003)
+
+/** Animated piece of the text (S11 §0 *Unit*). */
+export const TEXT_ANIMATION_UNITS = ['char', 'word', 'line'] as const;
+/** Order in which the stagger visits the units (`random` is seeded by the clip id). */
+export const TEXT_ANIMATION_ORDERS = ['forward', 'backward', 'center', 'edges', 'random'] as const;
+/** Ease names: the closed list of `@jasper/motion` `EASES` (a motion test asserts both lists match). */
+export const TEXT_ANIMATION_EASES = [
+	'linear',
+	'in',
+	'out',
+	'inOut',
+	'outBack',
+	'outElastic',
+	'outBounce',
+	'outExpo',
+	'inOutExpo',
+	'steps',
+] as const;
+
+const unitParam = (d: (typeof TEXT_ANIMATION_UNITS)[number]) =>
+	z.enum(TEXT_ANIMATION_UNITS).default(d).describe('Animated piece: each character, word or laid-out line');
+const staggerParam = (d: number) =>
+	z
+		.number()
+		.min(0)
+		.max(1)
+		.default(d)
+		.describe('Fraction of the window spread across the units (0 = all together)');
+const orderParam = () =>
+	z.enum(TEXT_ANIMATION_ORDERS).default('forward').describe('Order in which the units start');
+const easeParam = (d: (typeof TEXT_ANIMATION_EASES)[number]) =>
+	z.enum(TEXT_ANIMATION_EASES).default(d).describe('Easing of each unit');
+const distanceParam = (d: number) =>
+	z.number().min(0).max(4000).default(d).describe('Travel in pixels of the text box');
+
+/** Builds a spec whose `defaults` are exactly what its schema yields for `{}`. */
+function preset(
+	s: Omit<TextAnimationSpec, 'defaults' | 'phases' | 'version' | 'paramsSchema'> & {
+		params: z.ZodRawShape;
+	},
+): TextAnimationSpec {
+	const { params, ...rest } = s;
+	const paramsSchema = z.strictObject(params);
+	return {
+		...rest,
+		version: 1,
+		phases: ['in', 'out'],
+		paramsSchema,
+		defaults: paramsSchema.parse({}) as Record<string, unknown>,
+	};
+}
+
+const slide = (id: string, label: string, direction: string) =>
+	preset({
+		id,
+		label,
+		category: 'Slide',
+		defaultDurationFrames: 20,
+		description: `Units slide ${direction} into place while fading in (out: the mirrored motion).`,
+		params: {
+			unit: unitParam('word'),
+			stagger: staggerParam(0.3),
+			order: orderParam(),
+			ease: easeParam('outExpo'),
+			distance: distanceParam(60),
+		},
+	});
+
+/**
+ * The shipped presets (S11:TXA-003). Every preset works as In and Out; Out plays the mirrored motion (the In
+ * motion reversed in time: the last unit in is the first out).
+ */
+export const TEXT_ANIMATION_SPECS: readonly TextAnimationSpec[] = [
+	preset({
+		id: 'fade',
+		label: 'Fade',
+		category: 'Fade',
+		defaultDurationFrames: 15,
+		description: 'Opacity from 0 to 100 %, optionally staggered across units.',
+		params: {
+			unit: unitParam('word'),
+			stagger: staggerParam(0),
+			order: orderParam(),
+			ease: easeParam('out'),
+		},
+	}),
+	slide('slide-up', 'Slide Up', 'up'),
+	slide('slide-down', 'Slide Down', 'down'),
+	slide('slide-left', 'Slide Left', 'left'),
+	slide('slide-right', 'Slide Right', 'right'),
+	preset({
+		id: 'pop',
+		label: 'Pop',
+		category: 'Pop',
+		defaultDurationFrames: 20,
+		description: 'Units scale up from a small size with a springy overshoot.',
+		params: {
+			unit: unitParam('char'),
+			stagger: staggerParam(0.4),
+			order: orderParam(),
+			scale: z.number().min(0).max(4).default(0).describe('Start scale (1 = 100 %)'),
+			bounce: z.number().min(0).max(0.9).default(0.5).describe('Spring bounce (0 = no overshoot)'),
+		},
+	}),
+	preset({
+		id: 'blur',
+		label: 'Blur',
+		category: 'Blur',
+		defaultDurationFrames: 20,
+		description: 'Units come into focus from a blur while fading in.',
+		params: {
+			unit: unitParam('word'),
+			stagger: staggerParam(0.2),
+			order: orderParam(),
+			ease: easeParam('out'),
+			blur: z.number().min(0).max(200).default(16).describe('Start blur radius in pixels'),
+		},
+	}),
+	preset({
+		id: 'typewriter',
+		label: 'Typewriter',
+		category: 'Typewriter',
+		defaultDurationFrames: 30,
+		description: 'Characters appear one after another, with an optional caret (out: deleted backwards).',
+		params: {
+			unit: z.enum(['char', 'word']).default('char').describe('Typed piece: each character or word'),
+			caret: z.boolean().default(true).describe('Show a caret after the last typed unit'),
+		},
+	}),
+	preset({
+		id: 'tracking',
+		label: 'Tracking',
+		category: 'Tracking',
+		defaultDurationFrames: 30,
+		description: 'Letter spacing collapses from wide while fading in (out: expands while fading out).',
+		params: {
+			unit: unitParam('line'),
+			stagger: staggerParam(0),
+			order: orderParam(),
+			ease: easeParam('outExpo'),
+			spacing: z.number().min(0).max(5).default(0.5).describe('Extra letter spacing at the start, in em'),
+		},
+	}),
+	preset({
+		id: 'mask-reveal',
+		label: 'Mask Reveal',
+		category: 'Reveal',
+		defaultDurationFrames: 20,
+		description: 'Units rise into view from behind a mask at each line.',
+		params: {
+			unit: unitParam('line'),
+			stagger: staggerParam(0.3),
+			order: orderParam(),
+			ease: easeParam('outExpo'),
+		},
+	}),
+	preset({
+		id: 'rotate-in',
+		label: 'Rotate In',
+		category: 'Rotate',
+		defaultDurationFrames: 20,
+		description: 'Units turn into place around their centre while fading in.',
+		params: {
+			unit: unitParam('char'),
+			stagger: staggerParam(0.4),
+			order: orderParam(),
+			ease: easeParam('outBack'),
+			angle: z.number().min(-720).max(720).default(90).describe('Start rotation in degrees'),
+		},
+	}),
+	preset({
+		id: 'drop',
+		label: 'Drop',
+		category: 'Drop',
+		defaultDurationFrames: 25,
+		description: 'Units fall from above and bounce into place.',
+		params: {
+			unit: unitParam('char'),
+			stagger: staggerParam(0.4),
+			order: orderParam(),
+			ease: easeParam('outBounce'),
+			distance: distanceParam(120),
+		},
+	}),
+];
 
 export const textAnimationKey = (id: string, version: number) => `${id}@${version}`;
+
+/** The newest catalogue version of a preset id, or undefined. */
+export function latestTextAnimationSpec(
+	id: string,
+	specs: readonly TextAnimationSpec[] = TEXT_ANIMATION_SPECS,
+): TextAnimationSpec | undefined {
+	let best: TextAnimationSpec | undefined;
+	for (const s of specs) if (s.id === id && (!best || s.version > best.version)) best = s;
+	return best;
+}
 
 /** Catalogue entry by id and version, or undefined. */
 export function getTextAnimationSpec(

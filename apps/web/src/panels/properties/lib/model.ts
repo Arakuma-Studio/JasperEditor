@@ -87,7 +87,8 @@ export function bindProperty(
 	frame: number,
 	mg?: MgTemplateRegistry,
 ): Binding | null {
-	const spec = resolvePropertySpec(key, mg ? templateOf(clip, mg) : undefined);
+	// M2 (wp-m2-text-anim, S11:TXA-007): the clip resolves its dynamic `textAnimation.<side>.params.*` keys.
+	const spec = resolvePropertySpec(key, mg ? templateOf(clip, mg) : undefined, undefined, clip);
 	if (!spec?.appliesTo(clip)) return null;
 	const resolved = resolvePropertyAt({ doc, seq, clip }, spec, frame);
 	return { clip, spec, path: propertyKeyToParamPath({ clipId: clip.id }, key), resolved };

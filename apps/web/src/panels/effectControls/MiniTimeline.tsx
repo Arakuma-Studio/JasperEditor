@@ -6,6 +6,7 @@ import type { TransportStore } from '@jasper/session';
 import { cx } from '@jasper/ui';
 import {
 	type MouseEvent as ReactMouseEvent,
+	type ReactNode,
 	type PointerEvent as ReactPointerEvent,
 	type RefObject,
 	useEffect,
@@ -130,6 +131,8 @@ export function Ruler(props: {
 	range: Range;
 	clip: { start: number; duration: number; name: string };
 	transport: TransportStore;
+	/** M2 (wp-m2-text-anim, S11:TXA-022): drawn over the clip bar (text animation In/Out bars). */
+	overlay?: ReactNode;
 }) {
 	const { range, seq } = props;
 	const ref = useRef<HTMLDivElement>(null);
@@ -200,6 +203,7 @@ export function Ruler(props: {
 			>
 				<span className="truncate">{props.clip.name}</span>
 			</span>
+			{props.overlay}
 		</div>
 	);
 }

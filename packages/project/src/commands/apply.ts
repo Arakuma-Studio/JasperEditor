@@ -10,6 +10,7 @@ import { COMMAND_CATALOG, isCommandType } from './catalog.ts';
 import { HandlerContext, substituteRefs } from './context.ts';
 import { diffDocuments } from './diff.ts';
 import { collectOrphans } from './handlers/project.ts';
+import { compressionWarnings } from './handlers/text-animation.ts';
 import type { Command } from './schemas/index.ts';
 import {
 	type CommandContext,
@@ -224,6 +225,9 @@ export function applyTransaction(
 			};
 		}
 	}
+
+	// M2 (wp-m2-text-anim, S11:TXA-004): text animators compressed by trims, razor, speed or rate changes.
+	for (const w of compressionWarnings(doc, next, h.warnings)) h.warnings.push({ commandIndex: -1, ...w });
 
 	const unchanged = next === doc;
 	const committed = !tx.dryRun && !unchanged;

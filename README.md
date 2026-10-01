@@ -167,6 +167,30 @@ as inline styles, so the Player, `renderStill` and parallel `renderMedia` agree 
 - New composition projects (`POST /api/mg-bundles/scaffold`, MCP `scaffold_mg_project`) include an `AnimeTitle`
   example and a README section on driving anime.js from the frame in a Remotion composition.
 
+## Text animations
+
+Text clips can animate in and out (S11 §4, `docs/wp-notes/wp-m2-text-anim.md`): twelve presets — Fade, Slide
+Up/Down/Left/Right, Pop, Blur, Typewriter, Tracking, Mask Reveal, Rotate In, Drop — per character, word or line,
+with stagger, order (forward, backward, centre, edges, seeded random), ease and preset-specific params.
+
+- **Motion Templates ▸ Text Animations**: cards with a hover preview; double-click (or Enter) applies to the
+  selected text clips (the In / Out chip picks the side), the card menu offers Apply as In / Apply as Out, and
+  dragging a card onto a text clip in the Timeline, Program or Effect Controls applies it (first half of the clip
+  = In, second half = Out).
+- **Properties / Effect Controls ▸ Text Animation**: preset picker, duration in frames and the params; Effect
+  Controls also draws the In/Out windows on its mini-timeline — drag a bar's inner edge to change the duration.
+  The timeline shows head/tail wedges on animated text clips.
+- **Graphics ▸ Text Animation ▸ Apply In… / Apply Out… / Remove** and the clip context menu.
+- Windows are anchored to the clip's first and last visible frames (Out plays the In motion mirrored); when In +
+  Out exceed the clip both are shortened proportionally (warning `W_ANIMATION_COMPRESSED`). The razor keeps In
+  on the left part and Out on the right part.
+- Rendering is a pure function of the frame (anime.js 4.5.0 as a seek-only value engine, `@jasper/motion`), so
+  the Program, `renderStill` and parallel `renderMedia` agree.
+- Commands / MCP: `clip.addText {textAnimation}`, `clip.update {textAnimation}`, `param.set
+  textAnimation.<side>.…`; UI commands `text.applyAnimation` / `text.removeAnimation`; MCP
+  `list_text_animations`, `set_text_animation`, `add_text {animateIn, animateOut}`, `render_frames` (contact
+  sheet).
+
 ## PWA (installable web app)
 
 The Vite dev server does not register the service worker; install from a production build served by the

@@ -12,6 +12,7 @@ import {
 	sequenceDuration,
 	sequenceTimecode,
 	sourceOut,
+	TEXT_ANIMATION_SIDES,
 	type Track,
 	type Transition,
 	trackLabel,
@@ -60,11 +61,14 @@ export function clipSourceText(doc: ProjectDocument, seq: Sequence, clip: Clip):
 	}
 	if (clip.kind === 'text') {
 		const t = (c.content as { text?: string } | undefined)?.text ?? '';
-		return `text "${t.length > 40 ? `${t.slice(0, 40)}…` : t}"`;
+		// M2 (S11:ANA-008): the in/out text animators, e.g. `in:slide-up out:fade`.
+		const anim = clip.textAnimation;
+		const sides = TEXT_ANIMATION_SIDES.flatMap((s) => (anim?.[s] ? [`${s}:${anim[s].preset}`] : []));
+		return `text "${t.length > 40 ? `${t.slice(0, 40)}…` : t}"${sides.length ? ` ${sides.join(' ')}` : ''}`;
 	}
 	if (clip.kind === 'motion-graphic') {
-		const t = c.template as { id?: string; version?: number } | undefined;
-		return `motion graphic ${t?.id ?? '?'}@${t?.version ?? '?'}`;
+		const t = c.template as { id?: string; version?: number; renderer?: string } | undefined;
+		return `motion graphic ${t?.id ?? '?'}@${t?.version ?? '?'}${t?.renderer === 'anime' ? ' (anime)' : ''}`;
 	}
 	if (clip.kind === 'solid') return 'color matte';
 	return clip.kind;

@@ -297,20 +297,23 @@ export function buildRenderSnapshot(
 							});
 					}
 					box = { width: c.box.width, height: c.box.height };
-					const font = doc.fonts[c.content.style.fontId];
-					if (font) {
-						const key = `${font.id}:${c.content.style.weight}:${c.content.style.italic}`;
-						if (!fontKeys.has(key)) {
-							const url = opts.resolveFont(font, c.content.style.weight, c.content.style.italic);
-							if (url) {
-								fontKeys.set(key, {
-									fontId: font.id,
-									family: font.family,
-									weight: c.content.style.weight,
-									style: c.content.style.italic ? 'italic' : 'normal',
-									url,
-								});
-							}
+					// M2 (wp-m2-text-anim, S11:TXA-010): styled runs may use other faces than the base style.
+					const base = c.content.style;
+					const faces = [base, ...(c.content.runs ?? []).map((r) => ({ ...base, ...r.style }))];
+					for (const face of faces) {
+						const font = doc.fonts[face.fontId];
+						if (!font) continue;
+						const key = `${font.id}:${face.weight}:${face.italic}`;
+						if (fontKeys.has(key)) continue;
+						const url = opts.resolveFont(font, face.weight, face.italic);
+						if (url) {
+							fontKeys.set(key, {
+								fontId: font.id,
+								family: font.family,
+								weight: face.weight,
+								style: face.italic ? 'italic' : 'normal',
+								url,
+							});
 						}
 					}
 					break;
