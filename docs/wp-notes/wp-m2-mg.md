@@ -82,8 +82,10 @@ Results (engine 48140, web 52140):
 
 ## Known gaps
 
-- MGC-035 (P1) hybrid text layers: not implemented (acceptance test 8 not covered).
-- MGU-005: P2 per spec, not done.
+- MGC-035 (P1) hybrid text layers: not implemented here (acceptance test 8 not covered). → Native text clips are
+  baked by wp-m2-layer-bake (path `hybrid`, test 8 = layer-bake e2e parity); texts inside composition clips are
+  wp-m3-mgtext (MGC-036…039, `docs/wp-notes/wp-m3-mgtext.md`).
+- MGU-005: P2 per spec, not done. → Done in wp-m3-mgtext (on-canvas editing, promoted to P1).
 - MGC-024: live-host budget is first-come, not ranked by distance to the playhead.
 - `OffthreadVideo` / `<Video>` inside a composition is not shown in the live host (the renderer serves those frames; the preview WebM and masters are correct).
 - Props edit latency in the dev build is ~270 ms with the host visible but ~600 ms when switching from the preview WebM (an editor-wide synchronous commit in dev React; the production E2E stays under 500 ms).

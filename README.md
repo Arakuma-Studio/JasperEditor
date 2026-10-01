@@ -139,9 +139,30 @@ composition then appears in **Motion Templates ▸ Remotion**; double-click or d
 - Export: the native path composites cached ProRes 4444 masters with straight alpha, rendered by Remotion on
   demand (child jobs) and keyed by bundle hash + props + size + fps + range, so a prop or code change renders a
   new one. The clip badge turns from "R" to "✓" when the master is cached.
-- `fixtures/mg-project/` is a minimal example (Title with a zod schema, Badge inferred).
+- `fixtures/mg-project/` is a minimal example (Title with a zod schema, Badge inferred, LowerThird with an
+  embedded font and text layers).
 - MCP: `import_mg_bundle`, `list_compositions`, `add_composition`, `set_composition_props`,
-  `prerender_composition`, `scaffold_mg_project`.
+  `prerender_composition`, `scaffold_mg_project`, `list_composition_texts`, `set_composition_text`.
+
+### Texts inside compositions (hybrid text layers)
+
+Every text a composition exposes gets its own editor in **Properties ▸ Composition ▸ Text** (S08:MGC-036…039,
+`docs/wp-notes/wp-m3-mgtext.md`): a multi-line field that updates the Program monitor while you type and lands as
+one History step ("Edit Text «…»") when you press Enter (Ctrl+Enter in multi-line texts) or leave the field
+(Esc reverts), plus the props that style it — font (the fonts embedded in the bundle), weight, size, colour,
+alignment — when the composition has them. **Double-click the text in the Program monitor** to edit it in place,
+in the composition's own font. Warnings tell you when a text is longer than designed, has too many lines, runs off
+the frame, is cut off by its box or leaves its safe area (measured in the bundle's own page). The edit changes the
+clip's props, so the cached master is re-rendered and the native export shows the new text.
+
+Which strings are texts: declare them in `jasper.mg.json`
+(`"compositions": {"<id>": {"texts": {"<prop.path>": {"label", "multiline", "maxChars", "maxLines", "box": {x, y,
+width, height}, "frame", "hint", "style": {"color": "<prop>", …}}}}}`; `false` hides one), annotate the schema
+(`"x-jasper-text": true` — zod 4 `.meta({'x-jasper-text': true})`), hint `ui.<prop>.control: "text" | "textarea"`,
+or just use plain string props. Style props are found by convention — a text object
+`{headline: {text, color, fontSize, fontFamily, fontWeight, align}}` or prefixed siblings `title` + `titleColor`,
+`titleSize`, `titleFont`, `titleAlign`… — or named in the manifest's `style`. Copy written in code becomes editable by
+moving it into a prop with the old text as its default (see the wp-notes for the MatsSmile caption shots).
 
 ## In-video animation runtime (anime.js)
 
@@ -332,7 +353,7 @@ Tools (67; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the
 - Clip processing: `list_processing_models` `install_processing_model` `process_clip` `use_media_version`
   `get_processing_settings` `set_processing_settings` `test_remote_executor`.
 - Remotion projects: `import_mg_bundle` `list_compositions` `add_composition` `set_composition_props`
-  `prerender_composition` `scaffold_mg_project`.
+  `prerender_composition` `scaffold_mg_project` `list_composition_texts` `set_composition_text`.
 - Tracking: `add_tracker` `track` `apply_tracking` `get_tracker` `set_corner_pin`.
 - Transitions: `list_transitions` `update_transition` `remove_transitions` `apply_default_transitions`.
 - Animation and graphics: `list_text_animations` `set_text_animation` `render_frames` `set_motion_graphic_params`
