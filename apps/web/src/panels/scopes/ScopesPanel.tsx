@@ -22,7 +22,7 @@ import type { PanelProps } from '../types.ts';
 
 const MODE_LABEL: Record<ScopeMode, string> = {
 	waveform: 'Waveform',
-	parade: 'RGB Parade',
+	parade: 'Parade',
 	vectorscope: 'Vectorscope',
 	histogram: 'Histogram',
 };
@@ -249,7 +249,11 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 	return (
 		<>
 			<header className="flex h-[28px] shrink-0 items-center gap-1 border-b border-pr-border-subtle px-2">
-				<div className="flex items-center gap-[2px]" role="tablist" aria-label="Scope">
+				<div
+					className="flex min-w-0 items-center gap-[2px] overflow-hidden"
+					role="tablist"
+					aria-label="Scope"
+				>
 					{SCOPE_MODES.map((m) => (
 						<button
 							key={m}
@@ -257,7 +261,7 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 							role="tab"
 							aria-selected={mode === m}
 							className={cx(
-								'h-[20px] rounded-pr-control px-2 text-pr-small',
+								'h-[20px] shrink-0 whitespace-nowrap rounded-pr-control px-2 text-pr-small',
 								mode === m ? 'bg-pr-selected text-pr-strong' : 'text-pr-muted hover:bg-pr-hover',
 							)}
 							onClick={() => setMode(m)}
@@ -267,10 +271,6 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 						</button>
 					))}
 				</div>
-				<span className="flex-1" />
-				<span className="truncate text-pr-small text-pr-dim" title="Source">
-					Selected clip (graded)
-				</span>
 			</header>
 			<div ref={boxRef} className="relative min-h-0 flex-1" style={{ background: 'var(--pr-scope-bg)' }}>
 				<canvas
@@ -280,6 +280,9 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 					data-mode={mode}
 					data-has-trace={last.current ? 'true' : 'false'}
 				/>
+				<span className="pointer-events-none absolute top-1 right-2 text-pr-small text-pr-dim">
+					Selected clip (graded)
+				</span>
 				{status ? (
 					<p
 						className="pointer-events-none absolute inset-x-0 bottom-2 text-center text-pr-small text-pr-muted"

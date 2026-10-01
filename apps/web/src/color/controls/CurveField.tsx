@@ -18,6 +18,8 @@ import { type RowWriteContext, useRowWriter } from '../rowEdit.ts';
 
 /** SVG units of the square editor (also the fallback pixel size when layout is unavailable). */
 export const CURVE_BOX = 200;
+/** Margin (SVG units) around the box so the end points are drawn whole. */
+const MARGIN = 6;
 /** Pointer tolerance of a point, in px. */
 const HIT_PX = 7;
 /** Distance outside the box (px) at which a dragged point is removed. */
@@ -67,16 +69,20 @@ export function CurveField(props: {
 
 	const toUnit = (el: Element, clientX: number, clientY: number) => {
 		const r = el.getBoundingClientRect();
-		const w = r.width || CURVE_BOX;
-		const h = r.height || CURVE_BOX;
+		// The rendered box includes the margin; without layout (tests) the box is CURVE_BOX px, no margin.
+		const scale = r.width ? r.width / (CURVE_BOX + 2 * MARGIN) : 1;
+		const left = r.left + (r.width ? MARGIN * scale : 0);
+		const top = r.top + (r.height ? MARGIN * scale : 0);
+		const w = CURVE_BOX * scale;
+		const h = CURVE_BOX * scale;
 		return {
-			x: (clientX - r.left) / w,
-			y: 1 - (clientY - r.top) / h,
+			x: (clientX - left) / w,
+			y: 1 - (clientY - top) / h,
 			outside:
-				clientX < r.left - REMOVE_PX ||
-				clientX > r.left + w + REMOVE_PX ||
-				clientY < r.top - REMOVE_PX ||
-				clientY > r.top + h + REMOVE_PX,
+				clientX < left - REMOVE_PX ||
+				clientX > left + w + REMOVE_PX ||
+				clientY < top - REMOVE_PX ||
+				clientY > top + h + REMOVE_PX,
 			tol: HIT_PX / w,
 		};
 	};
@@ -152,9 +158,10 @@ export function CurveField(props: {
 	return (
 		<div className="flex w-full flex-col items-center gap-1">
 			<svg
-				viewBox={`0 0 ${CURVE_BOX} ${CURVE_BOX}`}
+				viewBox={`${-MARGIN} ${-MARGIN} ${CURVE_BOX + 2 * MARGIN} ${CURVE_BOX + 2 * MARGIN}`}
 				className="aspect-square w-full max-w-[240px] cursor-crosshair rounded-pr-control"
 				style={{ background: 'var(--pr-curve-bg)', touchAction: 'none' }}
+				overflow="visible"
 				role="img"
 				aria-label={`${row.label} editor (${pts.length} points)`}
 				onPointerDown={onPointerDown}
@@ -162,6 +169,7 @@ export function CurveField(props: {
 				data-testid={props['data-testid']}
 				data-points={JSON.stringify(pts)}
 			>
+				<rect x={0} y={0} width={CURVE_BOX} height={CURVE_BOX} fill="none" stroke="var(--pr-curve-grid)" />
 				{grid.map((g) => (
 					<g key={g} stroke="var(--pr-curve-grid)" strokeWidth={1}>
 						<line x1={g} y1={0} x2={g} y2={CURVE_BOX} />

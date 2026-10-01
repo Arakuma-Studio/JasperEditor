@@ -259,7 +259,7 @@ function CurvesEditor({ row, ctx }: { row: (name: string) => Row; ctx: RowWriteC
 	};
 	return (
 		<div className="flex flex-col items-center gap-1 px-2 py-1" data-lumetri-param={current.param}>
-			<div className="flex w-full items-center gap-1" role="tablist" aria-label="Curve channel">
+			<div className="flex w-full flex-wrap items-center gap-1" role="tablist" aria-label="Curve channel">
 				{CURVES.map(tabButton)}
 				<span className="flex-1" />
 				<MiniButton

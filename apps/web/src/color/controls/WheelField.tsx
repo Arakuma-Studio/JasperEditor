@@ -21,7 +21,7 @@ export function WheelField(props: {
 	'data-testid'?: string;
 }) {
 	const { row } = props;
-	const writer = useRowWriter(row, props.ctx);
+	const writer = useRowWriter(row, props.ctx, `${row.label} Wheel`);
 	const cleanup = useRef<(() => void) | null>(null);
 	useEffect(() => () => cleanup.current?.(), []);
 	const v = wheelVec(row.bindings[0]?.resolved.value);
