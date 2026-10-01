@@ -10,6 +10,7 @@ import { createRequire } from 'node:module';
 import { availableParallelism } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { renderPagesInOwnWindows } from '@jasper/compositions/render-host';
 import { ENV } from '@jasper/config';
 import { defaultEffectRegistry } from '@jasper/project';
 import { animejsVersion } from '../anime/index.ts';
@@ -154,6 +155,7 @@ const SYSTEM_BROWSERS = [
 ];
 
 type RendererModule = typeof import('@remotion/renderer');
+type RenderBrowser = Awaited<ReturnType<RendererModule['openBrowser']>>;
 
 function findRemotionHeadlessShell(): string | null {
 	// Remotion's ensureBrowser() downloads into the nearest node_modules/.remotion folder.
@@ -681,6 +683,27 @@ export class RemotionService {
 	}
 
 	/**
+	 * S11:ANM-014: the browser of a render with `concurrency` pages, or null to let Remotion open its own. A full
+	 * Chrome (`chrome-for-testing`, new headless mode) would open the pages as tabs of one window, hidden while
+	 * another tab is in front, and Remotion captured a page's first frame right after showing it, before Chrome had
+	 * painted it (a black or partial frame). Here every page gets its own window (`renderPagesInOwnWindows`).
+	 * Remotion's chrome-headless-shell has no tabs: null.
+	 */
+	private async renderBrowser(
+		r: RendererModule,
+		browser: Awaited<ReturnType<RemotionService['composition']>>['browser'],
+		concurrency: number,
+	): Promise<RenderBrowser | null> {
+		if (concurrency <= 1 || browser.chromeMode !== 'chrome-for-testing') return null;
+		const instance = await r.openBrowser('chrome', { ...browser, logLevel: 'error' });
+		if (!renderPagesInOwnWindows(instance)) {
+			await instance.close({ silent: true }).catch(() => undefined);
+			return null;
+		}
+		return instance;
+	}
+
+	/**
 	 * `renderMedia` (S04:RR-001/004/005/006/011): a ProRes/PCM intermediate, a direct VP9/Opus WebM, or
 	 * (dev with Remotion's GPL build only) H.264/AAC — see export-plan.ts.
 	 */
@@ -689,8 +712,10 @@ export class RemotionService {
 		const { cancelSignal, cancel } = r.makeCancelSignal();
 		const onAbort = () => cancel();
 		input.signal.addEventListener('abort', onAbort, { once: true });
-		const cores = availableParallelism();
+		const concurrency = input.concurrency ?? Math.max(1, Math.floor(availableParallelism() / 2));
+		let instance: RenderBrowser | null = null;
 		try {
+			instance = await this.renderBrowser(r, browser, concurrency);
 			await this.recordUsage('media', 'export');
 			await r.renderMedia({
 				serveUrl,
@@ -717,7 +742,7 @@ export class RemotionService {
 							}),
 				...this.binariesOption(),
 				outputLocation: input.output,
-				concurrency: input.concurrency ?? Math.max(1, Math.floor(cores / 2)),
+				concurrency,
 				cancelSignal,
 				timeoutInMilliseconds: DELAY_RENDER_TIMEOUT_MS,
 				licenseKey: this.licenseKey,
@@ -725,6 +750,7 @@ export class RemotionService {
 				overwrite: true,
 				...(input.scale ? { scale: input.scale } : {}),
 				...browser,
+				...(instance ? { puppeteerInstance: instance } : {}),
 				onProgress: (p) =>
 					input.onProgress?.({
 						progress: p.progress,
@@ -743,6 +769,7 @@ export class RemotionService {
 			throw mapRenderError(e, input.signal);
 		} finally {
 			input.signal.removeEventListener('abort', onAbort);
+			await instance?.close({ silent: true }).catch(() => undefined);
 		}
 	}
 
@@ -759,7 +786,10 @@ export class RemotionService {
 		const total = composition.durationInFrames;
 		const raw = join(input.scratchDir, `alpha-${process.pid}-${Date.now().toString(36)}-raw.mov`);
 		const tagged = `${raw.slice(0, -'-raw.mov'.length)}.mov`;
+		const concurrency = input.concurrency ?? Math.max(1, Math.floor(availableParallelism() / 2));
+		let instance: RenderBrowser | null = null;
 		try {
+			instance = await this.renderBrowser(r, browser, concurrency);
 			await this.recordUsage('media', 'layer-bake');
 			await r.renderMedia({
 				serveUrl,
@@ -768,13 +798,14 @@ export class RemotionService {
 				...ALPHA_MASTER_OPTIONS,
 				...this.binariesOption(),
 				outputLocation: raw,
-				concurrency: input.concurrency ?? Math.max(1, Math.floor(availableParallelism() / 2)),
+				concurrency,
 				cancelSignal,
 				timeoutInMilliseconds: DELAY_RENDER_TIMEOUT_MS,
 				licenseKey: this.licenseKey,
 				logLevel: 'error',
 				overwrite: true,
 				...browser,
+				...(instance ? { puppeteerInstance: instance } : {}),
 				onProgress: (p) =>
 					input.onProgress?.({ renderedFrames: p.renderedFrames, totalFrames: total, progress: p.progress }),
 			});
@@ -782,6 +813,7 @@ export class RemotionService {
 			throw mapRenderError(e, input.signal);
 		} finally {
 			input.signal.removeEventListener('abort', onAbort);
+			await instance?.close({ silent: true }).catch(() => undefined);
 		}
 		await input.ffmpeg.run(bt709RemuxArgs(raw, tagged), {
 			signal: input.signal,
