@@ -651,6 +651,148 @@ describe('jasper-mcp over stdio against a real engine', () => {
 	});
 });
 
+// ---- wp-m2-anime-templates (S11:ANA-003, ANA-005, §11 item 6): anime motion templates over MCP. The Remotion
+// preview / render_frame step needs a headless Chrome and bundles the compositions (minutes on a cold machine),
+// so like apps/engine/test/remotion.e2e.test.ts it runs only with REMOTION_E2E=1.
+const REMOTION_E2E = process.env.REMOTION_E2E === '1';
+
+describe('wp-m2-anime-templates: anime motion templates over MCP', () => {
+	if (!REMOTION_E2E)
+		console.warn(
+			'[wp-m2-anime-templates] REMOTION_E2E is not 1: the Remotion preview of an anime template is skipped',
+		);
+	let projectId = '';
+	let clipId = '';
+	type Summary = {
+		id: string;
+		renderer: string;
+		native: boolean;
+		params: { name: string; type: string; keyframable: boolean }[];
+		paramsSchema: { properties: Record<string, unknown> };
+	};
+
+	it('list_motion_templates: anime entries with renderer, native and a params summary', async () => {
+		const cat = await ok<{ templates: Summary[] }>('list_motion_templates');
+		const anime = cat.templates.filter((t) => t.renderer === 'anime').map((t) => t.id);
+		expect(anime).toEqual(expect.arrayContaining(['title-reveal', 'lower-third-anim', 'callout', 'counter']));
+		const tr = cat.templates.find((t) => t.id === 'title-reveal')!;
+		expect(tr.native).toBe(false);
+		expect(Object.keys(tr.paramsSchema.properties)).toContain('titleSize');
+		const p = (n: string) => tr.params.find((x) => x.name === n)!;
+		expect(p('titleSize')).toMatchObject({ type: 'number 24…240', keyframable: true });
+		expect(p('accentColor')).toMatchObject({ type: 'rgba', keyframable: true });
+		expect(p('title')).toMatchObject({ type: 'string ≤120', keyframable: false });
+		expect(p('alignment')).toMatchObject({ type: 'enum left|center|right', keyframable: false });
+		const counter = cat.templates.find((t) => t.id === 'counter')!;
+		expect(counter.params.find((x) => x.name === 'decimals')).toMatchObject({ keyframable: false });
+		const lt = cat.templates.find((t) => t.id === 'lower-third')!;
+		expect(lt.renderer).toBe('fframes');
+		expect(lt.params.every((x) => !x.keyframable)).toBe(true);
+	});
+
+	it('add_motion_graphic places title-reveal; set_motion_graphic_params edits and keyframes it', async () => {
+		projectId = (await ok<{ projectId: string }>('create_project', { name: 'MCP anime templates' }))
+			.projectId;
+		const added = await ok<{ clips: { id: string; kind: string; track: string; end: number }[] }>(
+			'add_motion_graphic',
+			{ projectId, template: 'title-reveal', params: { title: 'MCP Anime' }, at: 0, track: 'V2' },
+		);
+		expect(added.clips[0]).toMatchObject({ kind: 'motion-graphic', track: 'V2', end: 150 });
+		clipId = added.clips[0]!.id;
+		expect(textOf(await call('get_timeline', { projectId }))).toMatch(/title-reveal@1/);
+
+		const edited = await ok<{ clip: { renderer: string; params: Record<string, unknown> } }>(
+			'set_motion_graphic_params',
+			{ projectId, clipId, params: { title: 'Edited by MCP', titleSize: 150, alignment: 'left' } },
+		);
+		expect(edited.clip.renderer).toBe('anime');
+		expect(edited.clip.params).toMatchObject({ title: 'Edited by MCP', titleSize: 150, alignment: 'left' });
+		await ok('set_motion_graphic_params', {
+			projectId,
+			clipId,
+			params: { titleSize: 60 },
+			at: 0,
+			keyframe: true,
+		});
+		const kf = await ok<{ clip: { keyframes: Record<string, number> } }>('set_motion_graphic_params', {
+			projectId,
+			clipId,
+			params: { titleSize: 200 },
+			at: { seconds: 2 },
+		});
+		expect(kf.clip.keyframes).toEqual({ titleSize: 2 });
+
+		// The stored project shows the new params and keyframes.
+		const res = await client.readResource({ uri: `jasper://projects/${projectId}/document` });
+		const doc = JSON.parse((res.contents[0] as { text: string }).text) as {
+			sequences: Record<string, { clips: Record<string, Record<string, unknown>> }>;
+		};
+		const clip = Object.values(doc.sequences).find((s) => s.clips[clipId])!.clips[clipId]!;
+		expect(clip.template).toMatchObject({ id: 'title-reveal', version: 1, renderer: 'anime' });
+		expect(clip.params).toMatchObject({ title: 'Edited by MCP', alignment: 'left' });
+		expect((clip.paramKeyframes as Record<string, unknown[]>).titleSize).toHaveLength(2);
+
+		const bad = await fails('set_motion_graphic_params', { projectId, clipId, params: { colour: 1 } });
+		expect(bad.code).toBe('E_INVALID_PARAM');
+		expect(bad.hint).toMatch(/titleSize/);
+		const notKf = await fails('set_motion_graphic_params', {
+			projectId,
+			clipId,
+			params: { title: 'x' },
+			at: 0,
+			keyframe: true,
+		});
+		expect(notKf.code).toBe('E_INVALID_PARAM');
+		const range = await fails('set_motion_graphic_params', {
+			projectId,
+			clipId,
+			params: { titleSize: 9999 },
+		});
+		expect(range.code).toBe('E_INVALID_PARAM');
+	});
+
+	it('render_motion_graphic_preview validates anime params without rendering', async () => {
+		const e = await fails('render_motion_graphic_preview', {
+			template: 'title-reveal',
+			params: { titleSize: 'huge' },
+		});
+		expect(e.code).toBe('E_INVALID_PARAM');
+	});
+
+	it.skipIf(!REMOTION_E2E)(
+		'previews an anime template and renders the timeline with Remotion (REMOTION_E2E=1)',
+		async () => {
+			const presets = await ok<{ engine: { remotion: string } }>('list_export_presets');
+			const r = await call('render_motion_graphic_preview', {
+				template: 'title-reveal@1',
+				params: { title: 'Preview' },
+				width: 640,
+				height: 360,
+			});
+			if (presets.engine.remotion === 'unavailable') {
+				// No Remotion on this engine: the failure must say what to install.
+				expect(r.isError).toBe(true);
+				expect(json<{ error: { hint?: string } }>(r).error.hint).toMatch(/JASPER_BROWSER_EXECUTABLE/);
+				return;
+			}
+			expect(r.isError, textOf(r)).toBeFalsy();
+			expect(json(r)).toMatchObject({ template: 'title-reveal@1', renderer: 'anime', frame: 75 });
+			const img = r.content.find((c) => c.type === 'image') as { data: string; mimeType: string };
+			expect(img.mimeType).toBe('image/png');
+			const png = Buffer.from(img.data, 'base64');
+			expect(png.subarray(1, 4).toString('latin1')).toBe('PNG');
+			expect(png.readUInt32BE(16)).toBe(640);
+			expect(png.readUInt32BE(20)).toBe(360);
+			// The timeline with the keyframed clip renders too (Remotion path; the bundle is warm now).
+			const f = await call('render_frame', { projectId, at: { seconds: 2 }, width: 320 });
+			expect(f.isError, textOf(f)).toBeFalsy();
+			expect(f.content.some((c) => c.type === 'image')).toBe(true);
+		},
+		900_000,
+	);
+});
+// ---- end wp-m2-anime-templates
+
 describe('jasper-mcp --start-engine', () => {
 	it('starts a headless engine when none is running and stops it on exit', async () => {
 		const dir = mkdtempSync(join(tmpdir(), 'jasper-mcp-auto-'));

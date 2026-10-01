@@ -25,6 +25,15 @@ import {
 import { pickSequence, timelineTable } from '../format.ts';
 import { timeArg } from './editing.ts';
 import { ProjectIdArg } from './projects.ts';
+// wp-m2-anime-templates (S11:ANA-003, ANA-005): template summaries, anime previews and render-failure hints.
+import {
+	animeTemplatePreview,
+	failedJobError,
+	findTemplate,
+	renderErrorHint,
+	renderToolError,
+	templateSummary,
+} from './templates.ts';
 
 const SequenceIdArg = z
 	.string()
@@ -91,13 +100,15 @@ export function registerRenderTools(ctx: ToolContext): void {
 			annotations: READ_ONLY,
 		},
 		async ({ projectId, at, width, sequenceId }) => {
-			const q = await ctx.engine((c) =>
-				c.agentQuery({
-					projectId,
-					query: 'frame.capture',
-					args: { frame: at, width: width ?? 640, ...(sequenceId ? { sequenceId } : {}) },
-				}),
-			);
+			const q = await ctx
+				.engine((c) =>
+					c.agentQuery({
+						projectId,
+						query: 'frame.capture',
+						args: { frame: at, width: width ?? 640, ...(sequenceId ? { sequenceId } : {}) },
+					}),
+				)
+				.catch((e) => renderToolError(ctx, e)); // wp-m2-anime-templates (S11:ANA-005): actionable hints
 			const r = q.result as { url?: string; frame?: number; sequenceId?: string; renderPath?: string };
 			if (!r?.url) throw new ToolError('INTERNAL', 'The engine returned no image');
 			const { bytes, contentType } = await ctx.engine((c) => c.fetchBytes(r.url!));
@@ -167,25 +178,14 @@ export function registerRenderTools(ctx: ToolContext): void {
 		{
 			title: 'List motion-graphic templates',
 			description:
-				'Motion-graphic templates available to add_motion_graphic: id, version, name, description, default length, default params and the JSON Schema of their params. Also reports whether the native fframes renderer is ready.',
+				'Motion-graphic templates available to add_motion_graphic: id, version, name, description, default length, renderer ("fframes" = the native jasper-mg renderer; "anime" = drawn by Remotion, previewable and exportable without the fframes renderer), native (rendered by jasper-mg), a compact params list (type with range or options, default, keyframable = numeric/colour params of anime templates, animatable with set_motion_graphic_params), the defaults and the full JSON Schema of the params. Also reports whether the native fframes renderer is ready.',
 			input: {},
 			annotations: READ_ONLY,
 		},
 		async () => {
 			const r = await ctx.engine((c) => c.mgTemplates());
-			return jsonResult({
-				renderer: r.renderer,
-				templates: r.templates.map((t) => ({
-					id: t.id,
-					version: t.version,
-					name: t.name,
-					category: t.category,
-					...(t.description ? { description: t.description } : {}),
-					...(t.defaultDurationSeconds ? { defaultDurationSeconds: t.defaultDurationSeconds } : {}),
-					defaults: t.defaults,
-					paramsSchema: t.paramsSchema,
-				})),
-			});
+			// wp-m2-anime-templates (S11:ANA-003): renderer, native and a compact params summary per template.
+			return jsonResult({ renderer: r.renderer, templates: r.templates.map(templateSummary) });
 		},
 	);
 
@@ -195,7 +195,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 		{
 			title: 'Preview motion graphic',
 			description:
-				'Renders a motion-graphic template with the given params (native fframes renderer) and returns its middle frame as a PNG image, plus the URL of the animated preview (WebM with alpha). Use it to check params before adding the graphic.',
+				'Renders a motion-graphic template with the given params and returns frames as PNG images, to check params before adding the graphic. fframes templates use the native renderer (the middle frame plus the URL of the animated WebM-with-alpha preview). Anime templates (renderer "anime") are drawn by Remotion in a headless Chrome from a one-clip sequence of width×height: by default the middle frame; frames: 3 gives intro, hold and outro. Invalid params fail with E_INVALID_PARAM listing the issues.',
 			input: {
 				template: z.string().min(1).describe('Template id, optionally "@version" ("lower-third@1")'),
 				params: z
@@ -213,26 +213,28 @@ export function registerRenderTools(ctx: ToolContext): void {
 					.optional()
 					.describe('Length (default: template default)'),
 				fps: z.number().int().min(1).max(60).optional().describe('Frame rate (default 30)'),
+				frames: z
+					.number()
+					.int()
+					.min(1)
+					.max(6)
+					.optional()
+					.describe(
+						'Anime templates: how many evenly spaced frames to return (default 1 = the middle; 3 = intro, hold, outro)',
+					),
 			},
 			annotations: READ_ONLY,
 		},
 		async (a, extra) => {
-			const [id, v] = a.template.split('@');
 			const cat = await ctx.engine((c) => c.mgTemplates());
-			const t = cat.templates
-				.filter((x) => x.id === id && (v === undefined || x.version === Number(v)))
-				.sort((x, y) => y.version - x.version)[0];
-			if (!t)
-				throw new ToolError(
-					'E_NOT_FOUND',
-					`Unknown motion template "${a.template}"`,
-					`Available: ${cat.templates.map((x) => `${x.id}@${x.version}`).join(', ')}.`,
-				);
+			const t = findTemplate(cat, a.template);
+			// wp-m2-anime-templates (S11:ANA-003): anime templates are drawn by Remotion (engine still path).
+			if (t.renderer === 'anime') return animeTemplatePreview(ctx, t, a, extra);
 			if (cat.renderer.status !== 'ready')
 				throw new ToolError(
 					'RENDERER_UNAVAILABLE',
 					`The native motion-graphics renderer is unavailable${cat.renderer.reason ? `: ${cat.renderer.reason}` : ''}`,
-					'Build it with `pnpm mg:build`; add_motion_graphic still works (the editor previews with its SVG twin). Use render_frame on a timeline with the graphic instead.',
+					'Build it with `pnpm mg:build`; add_motion_graphic still works (the editor previews with its SVG twin). Use render_frame on a timeline with the graphic instead. Anime templates (renderer "anime" in list_motion_templates) preview without it.',
 				);
 			const fps = a.fps ?? 30;
 			const job = await ctx.engine((c) =>
@@ -408,15 +410,26 @@ export function registerRenderTools(ctx: ToolContext): void {
 				savedAt: new Date().toISOString(),
 				platform: 'mcp',
 			}) as never;
-			const plan = await ctx.engine((c) => c.planExport({ envelope, sequenceId: seq.id, settings }));
-			const job = await ctx.engine((c) =>
-				c.startExport({
-					envelope,
-					sequenceId: seq.id,
-					settings,
-					...(plan.planId ? { planId: plan.planId } : {}),
-				}),
+			// wp-m2-anime-templates (S11:ANA-005): plan/start failures and Remotion warnings carry actionable hints.
+			const plan = await ctx
+				.engine((c) => c.planExport({ envelope, sequenceId: seq.id, settings }))
+				.catch((e) => renderToolError(ctx, e));
+			const job = await ctx
+				.engine((c) =>
+					c.startExport({
+						envelope,
+						sequenceId: seq.id,
+						settings,
+						...(plan.planId ? { planId: plan.planId } : {}),
+					}),
+				)
+				.catch((e) => renderToolError(ctx, e));
+			const remotionWarnings = plan.warnings.filter(
+				(w) => w.code === 'REMOTION_UNAVAILABLE' || w.code.startsWith('BROWSER_'),
 			);
+			const hint = remotionWarnings.length
+				? await renderErrorHint(ctx, remotionWarnings[0]!.code, remotionWarnings[0]!.message)
+				: undefined;
 			return jsonResult({
 				jobId: job.id,
 				state: job.state,
@@ -429,6 +442,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 					...(plan.encoder ? { encoder: plan.encoder.label } : {}),
 					...(plan.warnings.length ? { warnings: plan.warnings.slice(0, 5).map((w) => w.message) } : {}),
 				},
+				...(hint ? { hint } : {}),
 				next: 'Call wait_for_job with this jobId.',
 			});
 		},
@@ -487,13 +501,12 @@ export function registerRenderTools(ctx: ToolContext): void {
 		async ({ jobId, timeoutSeconds }, extra) => {
 			const { job, timedOut } = await waitJob(ctx, jobId, (timeoutSeconds ?? 120) * 1000, extra);
 			const body = jobBody(job, ctx.link.target?.url ?? '');
+			// wp-m2-anime-templates (S11:ANA-005): render failures (Remotion/Chrome, missing templates) get hints.
 			if (isTerminal(job) && job.state !== 'succeeded')
-				throw new ToolError(
-					job.error?.code ?? `JOB_${job.state.toUpperCase()}`,
-					job.error?.message ?? `The job ${job.state}`,
-					job.state === 'cancelled'
-						? undefined
-						: 'Check the job error; get_project / engine_status may help.',
+				throw await failedJobError(
+					ctx,
+					job,
+					'Check the job error; get_project / engine_status may help.',
 					body,
 				);
 			return jsonResult({ ...body, ...(timedOut ? { timedOut: true } : {}) });
