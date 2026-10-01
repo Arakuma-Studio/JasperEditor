@@ -74,33 +74,37 @@ export function CornerPinEditor(props: EffectEditorProps) {
 					onClick={() => trackingStore.setState({ cornerPinTool: !pinTool })}
 					data-testid="corner-pin-handles-toggle"
 				/>
-				<span className="text-pr-small text-pr-muted">Drag the corners on the Program monitor</span>
+				<span className="min-w-0 flex-1 truncate text-pr-small text-pr-muted">
+					{pinTool ? 'Handles on' : 'Handles'}
+				</span>
+				{driven ? (
+					<>
+						<SmallButton
+							icon={RefreshCw}
+							disabled={readOnly || !loc}
+							onClick={() => act(() => reapplyTracking(session, clip.id))}
+							title="Re-bake the tracker over the overlap (replaces the corner keyframes there)"
+							data-testid="corner-pin-reapply"
+						>
+							Re-apply
+						</SmallButton>
+						<SmallButton
+							icon={Unlink}
+							disabled={readOnly}
+							onClick={() => act(() => unlinkTracking(session, clip.id))}
+							title="Stop following the tracker; the keyframes stay"
+							data-testid="corner-pin-unlink"
+						>
+							Unlink
+						</SmallButton>
+					</>
+				) : null}
 			</div>
 			{driven ? (
-				<div className="flex flex-wrap items-center gap-1" data-testid="corner-pin-driven">
-					<span className="min-w-0 flex-1 truncate text-pr-small text-pr-text">
-						Driven by tracker <span className="text-pr-strong">{loc?.tracker.name ?? '(removed)'}</span> on{' '}
-						<span className="text-pr-strong">{loc?.clip.name || 'clip'}</span>
-					</span>
-					<SmallButton
-						icon={RefreshCw}
-						disabled={readOnly || !loc}
-						onClick={() => act(() => reapplyTracking(session, clip.id))}
-						title="Re-bake the tracker over the overlap (replaces the corner keyframes there)"
-						data-testid="corner-pin-reapply"
-					>
-						Re-apply
-					</SmallButton>
-					<SmallButton
-						icon={Unlink}
-						disabled={readOnly}
-						onClick={() => act(() => unlinkTracking(session, clip.id))}
-						title="Stop following the tracker; the keyframes stay"
-						data-testid="corner-pin-unlink"
-					>
-						Unlink
-					</SmallButton>
-				</div>
+				<p className="pl-[26px] text-pr-small text-pr-muted" data-testid="corner-pin-driven">
+					Driven by tracker <span className="text-pr-text">{loc?.tracker.name ?? '(removed)'}</span> on{' '}
+					<span className="text-pr-text">{loc?.clip.name || 'clip'}</span>
+				</p>
 			) : null}
 			{!convex ? (
 				<p

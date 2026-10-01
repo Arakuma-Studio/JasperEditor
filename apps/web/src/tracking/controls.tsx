@@ -11,6 +11,8 @@ export function ToolButton(props: {
 	disabled?: boolean;
 	active?: boolean;
 	danger?: boolean;
+	/** Solid glyph (Stop). */
+	filled?: boolean;
 	'data-testid'?: string;
 }) {
 	const Glyph = props.icon;
@@ -34,7 +36,12 @@ export function ToolButton(props: {
 				)}
 				data-testid={props['data-testid']}
 			>
-				<Glyph size={14} strokeWidth={1.75} aria-hidden />
+				<Glyph
+					size={props.filled ? 11 : 14}
+					strokeWidth={1.75}
+					fill={props.filled ? 'currentColor' : 'none'}
+					aria-hidden
+				/>
 			</button>
 		</Tooltip>
 	);

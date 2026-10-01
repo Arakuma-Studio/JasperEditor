@@ -18,6 +18,7 @@ import {
 	ChevronsLeft,
 	ChevronsLeftRight,
 	ChevronsRight,
+	CornerDownRight,
 	Crosshair,
 	Link2,
 	type LucideIcon,
@@ -26,7 +27,6 @@ import {
 	StepBack,
 	StepForward,
 	Trash2,
-	Undo2,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { ClipSectionProps } from '../extensions/index.ts';
@@ -275,6 +275,7 @@ function TrackerControls({
 					label="Stop Tracking"
 					disabled={!busy}
 					danger
+					filled
 					onClick={() => engine && void stopTrack(engine, tracker.id)}
 					data-testid="track-stop"
 				/>
@@ -388,7 +389,7 @@ function TrackerControls({
 				<div className="px-2 pt-[2px] text-pr-small text-pr-muted" data-testid="tracking-targets">
 					{targets.map((t) => (
 						<div key={t.clipId} className="flex items-center gap-1">
-							<Undo2 size={11} className="rotate-180 text-pr-icon" aria-hidden />
+							<CornerDownRight size={11} className="shrink-0 text-pr-icon" aria-hidden />
 							<span className="truncate">
 								Drives {seqClips?.[t.clipId]?.name || 'clip'} (
 								{t.mode === 'corner-pin' ? 'Corner Pin' : 'Motion'})
@@ -398,7 +399,7 @@ function TrackerControls({
 				</div>
 			) : null}
 			<p className="px-2 pt-1 text-pr-small text-pr-dim">
-				{clip.name ? `${clip.name}: ` : ''}drag the corners on the Program monitor to fit the surface.
+				Drag the corners, edges or inside of the quad on the Program monitor to fit the surface.
 			</p>
 		</div>
 	);

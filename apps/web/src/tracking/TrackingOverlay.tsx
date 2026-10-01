@@ -234,7 +234,8 @@ function TrackerLayer(props: {
 	const g = live
 		? { ...live, confidence: job!.progress!.confidence, tracked: true }
 		: trackerGeometryAt(tracker, layer.contentTime, { smoothing: 0 });
-	const tone = g.tracked ? TONE_VAR[confidenceTone(g.confidence)] : 'var(--pr-accent)';
+	// Before tracking the reference quad is white (the plate's own selection box is accent blue).
+	const tone = g.tracked ? TONE_VAR[confidenceTone(g.confidence)] : 'var(--pr-text-strong)';
 	const trail = (job ? job.trail : trailAt(tracker, layer.contentTime)).map((p) =>
 		mediaToScreen(map, view, p),
 	);
