@@ -13,6 +13,7 @@ export const AGENT_QUERIES = [
 	'playhead.get',
 	'playhead.set',
 	'history.list',
+	'preferences.get',
 	'validate',
 	'frame.capture',
 ] as const;
