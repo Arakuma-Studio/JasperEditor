@@ -177,7 +177,7 @@ describe.runIf(E2E)('composition tools over stdio against a real engine (MG_E2E=
 		expect(pre.job.result?.masterUrl).toMatch(/master\.mov$/);
 
 		// Hybrid text layers (S08:MGA-003): list the texts of a LowerThird, edit a text and its style in one step.
-		const { body: lt } = await ok<{ clips: { id: string }[] }>('add_composition', {
+		const { body: lt } = await ok<{ clips: { id: string }[]; revision: number }>('add_composition', {
 			projectId,
 			mediaId: imp.mediaId,
 			compositionId: 'LowerThird',
@@ -214,6 +214,7 @@ describe.runIf(E2E)('composition tools over stdio against a real engine (MG_E2E=
 		expect(JSON.parse(text(tooLong)).error.code).toBe('E_INVALID_PARAM');
 		const ltBefore = await call('render_frame', { projectId, at: 60, width: 480 });
 		const { body: edited } = await ok<{
+			revision: number;
 			texts: { path: string; value: string; warnings: { code: string }[] }[];
 		}>('set_composition_text', {
 			projectId,
@@ -227,14 +228,15 @@ describe.runIf(E2E)('composition tools over stdio against a real engine (MG_E2E=
 		const ltAfter = await call('render_frame', { projectId, at: 60, width: 480 });
 		const img = (r: CallToolResult) => (r.content.find((c) => c.type === 'image') as { data: string }).data;
 		expect(img(ltAfter)).not.toBe(img(ltBefore));
-		// One undo step brings back the text and its style.
-		await ok('undo', { projectId });
-		const { body: undone } = await ok<{
-			texts: { value: string; style: Record<string, { value: unknown }> }[];
+		// Text and style landed in ONE transaction (one revision, one undo step in an open editor).
+		expect(edited.revision).toBe(lt.revision + 1);
+		const { body: now } = await ok<{
+			texts: { value: string; overridden: boolean; style: Record<string, { value: unknown }> }[];
 		}>('list_composition_texts', { projectId, clipId: ltId });
-		expect(undone.texts[0]!.value).toBe('Ada Lovelace');
-		expect(undone.texts[0]!.style.color!.value).toBe('#ffffff');
-		expect(undone.texts[0]!.style.fontSize!.value).toBe(84);
+		expect(now.texts[0]).toMatchObject({ value: 'Grace Hopper, Rear Admiral', overridden: true });
+		expect(now.texts[0]!.style.color!.value).toBe('#ffcc00');
+		expect(now.texts[0]!.style.fontSize!.value).toBe(72);
+		expect(now.texts[1]!.overridden).toBe(false);
 
 		// MG_REMOTION_VERSION carries the pin hint (S08:MGA-002).
 		const old = mkdtempSync(join(tmpdir(), 'jasper-mcp-old-'));

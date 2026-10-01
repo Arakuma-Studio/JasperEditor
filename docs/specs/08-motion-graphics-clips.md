@@ -276,5 +276,5 @@ separate audio intermediate), nested JasperEditor sequences inside compositions.
    3/255 on 99 % of the frame, frame-exact during the entrance (±1 frame fails), drawn with the embedded font;
    the Properties editor previews while typing and commits one History entry; a double-click on the quote in the
    Program monitor edits it in place in the bundle font; long text shows the off-frame / cut-off / safe-area
-   warnings; MCP `list_composition_texts` → `set_composition_text` → `render_frame` changes the frame and one
-   `undo` restores text and style.
+   warnings; MCP `list_composition_texts` → `set_composition_text` (text + colour + size: one revision) →
+   `render_frame` changes the frame.
