@@ -50,7 +50,7 @@ function mediaKeyOf(doc: Doc, mediaId: string): string {
 			'Call list_media for valid ids.',
 		);
 	const loc = asset.locators.find((l) => l.type === 'engine-store');
-	if (!loc || loc.type !== 'engine-store')
+	if (loc?.type !== 'engine-store')
 		throw new ToolError(
 			'E_INVALID_PARAM',
 			`Media ${mediaId} is not known to the engine`,

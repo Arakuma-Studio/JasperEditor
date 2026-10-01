@@ -27,5 +27,5 @@
     "onnxruntime": "1.30.0",
     "python": "3.12.3"
   },
-  "verifiedMaxAbsDiff": 6.9141387939453125e-06
+  "verifiedMaxAbsDiff": 6.9141387939453125e-6
 }
