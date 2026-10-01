@@ -253,7 +253,7 @@ test('TXA-013: char units at the window boundary sit on the glyphs of the plain 
 	// Last In frame: the overlay draws every character box (layout px = screen px / Player scale).
 	await seek(left.start + 9);
 	await expect(block).toHaveAttribute('data-text-animating', 'in');
-	const split = await block.evaluate((p) => {
+	const split = await block.evaluate((p: HTMLElement) => {
 		const scale = p.getBoundingClientRect().width / p.offsetWidth;
 		const base = p.getBoundingClientRect();
 		return [...p.querySelectorAll('[data-text-overlay] [data-text-unit-index] span')].map((s) => {
@@ -264,7 +264,7 @@ test('TXA-013: char units at the window boundary sit on the glyphs of the plain 
 	// First rest frame: the plain text node; glyph boxes from a Range per character (test-only measurement).
 	await seek(left.start + 10);
 	await expect(block).not.toHaveAttribute('data-text-animating', /.+/);
-	const plain = await block.evaluate((p) => {
+	const plain = await block.evaluate((p: HTMLElement) => {
 		const scale = p.getBoundingClientRect().width / p.offsetWidth;
 		const base = p.getBoundingClientRect();
 		const node = p.firstChild as Text;
@@ -281,7 +281,9 @@ test('TXA-013: char units at the window boundary sit on the glyphs of the plain 
 		return out;
 	});
 	expect(split.map((s) => s.text)).toEqual(plain.map((s) => s.text));
-	const shift = Math.max(...split.map((s, i) => Math.max(Math.abs(s.x - plain[i]!.x), Math.abs(s.y - plain[i]!.y))));
+	const shift = Math.max(
+		...split.map((s, i) => Math.max(Math.abs(s.x - plain[i]!.x), Math.abs(s.y - plain[i]!.y))),
+	);
 	test.info().annotations.push({ type: 'glyph-shift-px', description: shift.toFixed(3) });
 	expect(shift).toBeLessThanOrEqual(1);
 	// Back to the tab's preset for the export.
@@ -306,7 +308,8 @@ test('export: the mid-In frame matches renderStill (≤ 3/255 on 99 % of the pix
 		expectPath: baked ? /native|hybrid/i : /remotion/i,
 		outDir: OUT_DIR,
 	});
-	expect(out.job.result?.renderPath).toBe(baked ? 'native' : 'remotion');
+	// Baked layers: the native builder overlays them (plan path native or hybrid, S11:LBK-002).
+	expect(baked ? ['native', 'hybrid'] : ['remotion']).toContain(out.job.result?.renderPath);
 	const left = (await clips(page)).filter((c) => c.kind === 'text').sort((x, y) => x.start - y.start)[0]!;
 	const frame = left.start + 8;
 	// renderStill of the same frame through the engine (the project as the editor holds it).
