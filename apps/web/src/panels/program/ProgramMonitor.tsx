@@ -33,6 +33,7 @@ import {
 	useRef,
 	useState,
 } from 'react';
+import { useColorBypass } from '../../color/actions.ts';
 import { runCommand } from '../../commands/index.ts';
 import { programOverlays } from '../../extensions/index.ts';
 import { useRegistry } from '../../extensions/react.ts';
@@ -171,9 +172,17 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 		return d;
 	}, [drawn, seqId, seq, media, useProxies, tier, fontCatalog]);
 	const transparent = (seq?.settings.backgroundColor[3] ?? 1) === 0;
+	// Before/after (S06:CGU-005, wp-m2-color): clips whose colour effects the preview bypasses.
+	const colorBypass = useColorBypass();
 	const options = useMemo<RenderOptions>(
-		() => ({ ...DEFAULT_RENDER_OPTIONS, isPreview: true, useProxies, transparentBackground: transparent }),
-		[useProxies, transparent],
+		() => ({
+			...DEFAULT_RENDER_OPTIONS,
+			isPreview: true,
+			useProxies,
+			transparentBackground: transparent,
+			...(colorBypass.length ? { colorBypassClipIds: colorBypass } : {}),
+		}),
+		[useProxies, transparent, colorBypass],
 	);
 	const inputProps = useMemo(() => (doc ? { doc, options } : null), [doc, options]);
 	const duration = seqId ? playerDurationFrames(drawn, seqId) : 1;

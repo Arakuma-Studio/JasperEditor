@@ -219,6 +219,10 @@ export const ICONS = {
 	'media.video': Film,
 	'media.image': Image,
 	'media.captions': Captions,
+	/** LUT asset (wp-m2-color): a lattice cube. */
+	'media.lut': g('M12 3l8 4.5v9L12 21l-8-4.5v-9z', 'M4 7.5l8 4.5 8-4.5', 'M12 12v9'),
+	/** Before/after split (wp-m2-color, S06:CGU-005). */
+	'color.compare': g(FRAME, 'M12 3v18', 'M15 8l3 4-3 4'),
 
 	// ------------------------------------------------------------ app chrome
 	'app.search': Search,

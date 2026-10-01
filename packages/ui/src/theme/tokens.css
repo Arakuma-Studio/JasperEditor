@@ -315,6 +315,46 @@
 	--pr-label-yellow-tint: #f5ed9f;
 }
 
+/* wp-m2-color: Lumetri Color panel (sliders, curves, wheels) and Lumetri Scopes (S06 §6–§7). */
+:root {
+	--pr-slider-track: #3a3a3a;
+	--pr-slider-fill: var(--pr-accent);
+	--pr-slider-center: #6a6a6a;
+	--pr-slider-thumb: #d6d6d6;
+	--pr-slider-thumb-border: #1d1d1d;
+	--pr-slider-temperature: linear-gradient(90deg, #3d7bd9, #8f8f8f 50%, #e2a93b);
+	--pr-slider-tint: linear-gradient(90deg, #43b04a, #8f8f8f 50%, #c24fc0);
+	--pr-slider-saturation: linear-gradient(90deg, #8f8f8f, #d9483b 50%, #ff2a00);
+	--pr-curve-bg: #121212;
+	--pr-curve-grid: rgba(255, 255, 255, 0.12);
+	--pr-curve-master: #e3e3e3;
+	--pr-curve-red: #f0524f;
+	--pr-curve-green: #3fcf5a;
+	--pr-curve-blue: #4a8df5;
+	/* Hue ring: θ = atan2(y, x) with 0° red, 120° green, 240° blue (y up); `from 90deg` puts 0° at the right. */
+	--pr-wheel-hue: conic-gradient(from 90deg, #ff3b3b, #ff3bff, #3b3bff, #3bffff, #3bff3b, #ffff3b, #ff3b3b);
+	--pr-wheel-desat: radial-gradient(
+		circle closest-side,
+		rgba(128, 128, 128, 1) 0%,
+		rgba(128, 128, 128, 0.82) 30%,
+		rgba(128, 128, 128, 0.25) 88%,
+		rgba(128, 128, 128, 0) 100%
+	);
+	--pr-wheel-cross: rgba(0, 0, 0, 0.55);
+	--pr-wheel-puck: #ffffff;
+	--pr-wheel-puck-ring: rgba(0, 0, 0, 0.8);
+	--pr-scope-bg: #000000;
+	--pr-scope-graticule: rgba(255, 255, 255, 0.25);
+	--pr-scope-label: rgba(255, 255, 255, 0.55);
+	--pr-scope-trace: #6cf08a;
+	--pr-scope-trace-luma: #e8e8e8;
+	--pr-scope-red: #ff5a50;
+	--pr-scope-green: #55ef6a;
+	--pr-scope-blue: #5a8cff;
+	--pr-scope-skin: #e3a36f;
+	--pr-scope-target: rgba(255, 255, 255, 0.6);
+}
+
 /* wp-m2-transitions: transitions drawn on the timeline (S10:TUI-001…006, TUI-020…022). */
 :root {
 	--pr-transition-fill: rgba(112, 112, 128, 0.72);

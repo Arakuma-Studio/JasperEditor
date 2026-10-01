@@ -111,8 +111,9 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 						}
 					}
 					if (p.type === 'media') {
+						// M2 (S06:CG-004): `{mediaId: ''}` is "None" (ParamValue has no null).
 						const m = (v as { mediaId?: string }).mediaId;
-						if (!m || !doc.media[m])
+						if (typeof m !== 'string' || (m !== '' && !doc.media[m]))
 							issues.push(
 								inv('INV-006', `${fx.effectId}.${name} references missing media ${m}`, [...where, fx.id]),
 							);

@@ -294,6 +294,17 @@ export function buildRenderSnapshot(
 				default:
 					source = { unsupported: c.kind };
 			}
+			// M2 (S06:LUT-003): LUT assets referenced by effect params (`{mediaId}`) get media handles too.
+			for (const fx of (r.effects as EffectInstance[] | undefined) ?? []) {
+				if (!fx.enabled) continue;
+				for (const p of Object.values(fx.params)) {
+					const refs = [p.value, ...p.keyframes.map((k) => k.value)];
+					for (const v of refs) {
+						const id = (v as { mediaId?: unknown } | null)?.mediaId;
+						if (typeof id === 'string' && id && doc.media[id]) useMedia(id);
+					}
+				}
+			}
 			clips.push({
 				clipId: c.id,
 				kind: c.kind,

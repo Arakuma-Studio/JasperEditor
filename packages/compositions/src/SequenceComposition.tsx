@@ -20,6 +20,7 @@ import {
 } from '@jasper/project';
 import { type ComponentType, memo, useMemo } from 'react';
 import { AbsoluteFill, Sequence, useCurrentFrame } from 'remotion';
+import { ColorDocContext, type ColorDocValue } from './color/chain.ts';
 import { useDocumentFonts } from './fonts.ts';
 import { AudioLayer, layerComponentFor } from './layers/index.ts';
 import { rgbaCss } from './metadata.ts';
@@ -165,53 +166,64 @@ export function SequenceComposition({ doc, options }: SequenceCompositionProps) 
 			})),
 		[doc.videoTracks, options.layerFilter],
 	);
+	// M2 colour stage (S06): LUT assets referenced by effect params and the preview before/after bypass.
+	const color = useMemo<ColorDocValue>(
+		() => ({
+			media: doc.media,
+			bypass: new Set(options.colorBypassClipIds ?? []),
+			isPreview: options.isPreview,
+		}),
+		[doc.media, options.colorBypassClipIds, options.isPreview],
+	);
 	return (
-		<AbsoluteFill style={{ backgroundColor: background, overflow: 'hidden', isolation: 'isolate' }}>
-			{tracks.map((track) => (
-				<AbsoluteFill key={track.trackId} data-track-id={track.trackId}>
-					{track.mattes.map((m) => (
-						<Sequence
-							key={`matte-${m.id}`}
-							from={m.start - offset}
-							durationInFrames={m.duration}
-							name="Transition matte"
-						>
-							<AbsoluteFill data-transition-matte={m.id} style={{ backgroundColor: rgbaCss(m.color) }} />
-						</Sequence>
-					))}
-					{track.clips.map((clip) => {
-						const head = clip.headHandle ?? 0;
-						const from = clip.start - head - offset;
-						return (
+		<ColorDocContext.Provider value={color}>
+			<AbsoluteFill style={{ backgroundColor: background, overflow: 'hidden', isolation: 'isolate' }}>
+				{tracks.map((track) => (
+					<AbsoluteFill key={track.trackId} data-track-id={track.trackId}>
+						{track.mattes.map((m) => (
 							<Sequence
-								key={clip.clipId}
-								from={from}
-								durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
-								name={clip.name}
-								premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
+								key={`matte-${m.id}`}
+								from={m.start - offset}
+								durationInFrames={m.duration}
+								name="Transition matte"
 							>
-								<ClipLayer clip={clip} doc={doc} options={options} />
+								<AbsoluteFill data-transition-matte={m.id} style={{ backgroundColor: rgbaCss(m.color) }} />
 							</Sequence>
-						);
-					})}
-				</AbsoluteFill>
-			))}
-			{doc.audioClips.map((clip) => {
-				// An audio crossfade plays the clip's handles (S10:TUI-052).
-				const head = clip.headHandle ?? 0;
-				const from = clip.start - head - offset;
-				return (
-					<Sequence
-						key={clip.clipId}
-						from={from}
-						durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
-						name={clip.clipId}
-						layout="none"
-					>
-						<AudioClipLayer clip={clip} doc={doc} options={options} from={from} />
-					</Sequence>
-				);
-			})}
-		</AbsoluteFill>
+						))}
+						{track.clips.map((clip) => {
+							const head = clip.headHandle ?? 0;
+							const from = clip.start - head - offset;
+							return (
+								<Sequence
+									key={clip.clipId}
+									from={from}
+									durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
+									name={clip.name}
+									premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
+								>
+									<ClipLayer clip={clip} doc={doc} options={options} />
+								</Sequence>
+							);
+						})}
+					</AbsoluteFill>
+				))}
+				{doc.audioClips.map((clip) => {
+					// An audio crossfade plays the clip's handles (S10:TUI-052).
+					const head = clip.headHandle ?? 0;
+					const from = clip.start - head - offset;
+					return (
+						<Sequence
+							key={clip.clipId}
+							from={from}
+							durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
+							name={clip.clipId}
+							layout="none"
+						>
+							<AudioClipLayer clip={clip} doc={doc} options={options} from={from} />
+						</Sequence>
+					);
+				})}
+			</AbsoluteFill>
+		</ColorDocContext.Provider>
 	);
 }

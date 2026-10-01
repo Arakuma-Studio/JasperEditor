@@ -3,8 +3,14 @@
 // and reset ⟲. Every numeric scrub is one gesture = one undo step; discrete edits are one transaction.
 import type { Command, ProjectDocument, Sequence } from '@jasper/project';
 import type { TransportStore } from '@jasper/session';
+import { useSessionOrNull } from '@jasper/session/react';
 import { cx } from '@jasper/ui';
 import { type ReactNode, useRef } from 'react';
+import { browseForLut } from '../../../color/actions.ts';
+import { CurveField } from '../../../color/controls/CurveField.tsx';
+import { LutPicker } from '../../../color/controls/LutPicker.tsx';
+import { Slider } from '../../../color/controls/Slider.tsx';
+import { WheelField } from '../../../color/controls/WheelField.tsx';
 import { inspectorFocus } from '../lib/focus.ts';
 import {
 	animState,
@@ -55,6 +61,7 @@ export function PropertyRow(props: {
 	const clips = row.bindings.length;
 	const label = editLabel(row, clips);
 	const scrubRow = useRef<Row | null>(null);
+	const session = useSessionOrNull();
 	const anim = animState(row);
 	const animatable = spec.animatable !== 'no';
 	const outside = row.bindings.every((b) => b.resolved.outside);
@@ -120,8 +127,61 @@ export function PropertyRow(props: {
 		);
 	};
 
+	// M2 controls (wp-m2-color): sliders, LUT pickers, tone curves and colour wheels, reusable by any effect.
+	const writeCtx = { ops: ctx.ops, live, hint: ctx.hint };
+	const controlEditor = (): ReactNode => {
+		const { mixed, value } = rowValue(row);
+		switch (spec.ui.control) {
+			case 'slider': {
+				if (spec.kind !== 'number') return null;
+				const min = spec.range?.min ?? 0;
+				const max = spec.range?.max ?? 100;
+				return (
+					<span className="flex min-w-0 flex-1 items-center gap-2">
+						<Slider
+							value={mixed || typeof value !== 'number' ? null : value}
+							min={min}
+							max={max}
+							step={spec.range?.step}
+							bipolar={spec.ui.bipolar ?? min < 0}
+							label={row.label}
+							onStart={() => {
+								scrubRow.current = row;
+								return ctx.ops.scrub.start(label);
+							}}
+							onChange={(v) => scrubTo(() => v)}
+							onEnd={scrubEnd}
+							onReset={() => reset()}
+							data-testid={`slider-${row.id}`}
+						/>
+						{numberEditor()}
+					</span>
+				);
+			}
+			case 'media':
+				return (
+					<LutPicker
+						doc={ctx.doc}
+						value={mixed ? null : value}
+						label={row.label}
+						onChange={(mediaId) => commitFn(() => ({ mediaId }))}
+						onBrowse={session ? () => browseForLut(session) : undefined}
+						data-testid={`prop-${row.id}`}
+					/>
+				);
+			case 'curve':
+				return <CurveField row={row} ctx={writeCtx} data-testid={`prop-${row.id}`} />;
+			case 'wheel':
+				return <WheelField row={row} ctx={writeCtx} title="" data-testid={`prop-${row.id}`} />;
+			default:
+				return null;
+		}
+	};
+
 	const editor = (() => {
 		if (props.editor) return props.editor;
+		const custom = controlEditor();
+		if (custom) return custom;
 		const { mixed, value } = rowValue(row);
 		switch (spec.kind) {
 			case 'number':

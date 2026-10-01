@@ -57,6 +57,33 @@ alpha. So VP9-alpha preview files are usable for fframes previews in Chromium/El
 tested; S03:KND-060 keeps the PNG/WebP fallback for it). Rendering VP9-alpha in `renderMedia` was not
 tested.
 
+## Colour stage frame source (wp-m2-color, S06:CG-041)
+
+Verified in the 4.0.499 sources and end to end (headless Chrome render, Player in Chrome):
+
+- `remotion` 4.0.499 ships canvas **effects**: `createEffect({type, backend: '2d' | 'webgl2' | 'webgpu', setup(target),
+  apply({source, target, state, params, width, height, flipSourceY}), cleanup, calculateKey, schema, validateParams})`
+  returns a factory of `EffectDescriptor`s. `@remotion/media` `<Video effects={[…]}>` and `<Img effects={[…]}>` run the
+  chain on the decoded frame: in the Player on every painted frame (and again when the `effects` prop changes while
+  paused: `redrawCurrentFrame`), in renders inside the frame-extraction promise **before** `continueRender`, so the
+  captured frame is the graded one. `<Img effects>` renders a `CanvasImage` (numeric `width`/`height` required).
+- The chain (`Internals.runEffectChain`) ping-pongs through a per-element canvas pool; WebGL2 pool contexts are
+  created with `premultipliedAlpha: true`, `preserveDrawingBuffer: true`, `UNPACK_PREMULTIPLY_ALPHA_WEBGL = true`; the
+  last pass is drawn onto the element's 2D canvas with `drawImage`. A lost context marks the canvas and
+  `runEffectChain` throws after the pass (`assertContextNotLost`).
+- JasperEditor's colour stage (`packages/compositions/src/color/`) is one `webgl2` effect per colour run (the baked
+  33³ LUT as an `RGB32F` 3D texture, `texelFetch` tetrahedral — no filtering) plus `2d` `ctx.filter` passes for
+  CSS-filter effects that precede a grade. The pass sets `UNPACK_PREMULTIPLY_ALPHA_WEBGL = false` and
+  `UNPACK_FLIP_Y_WEBGL = flipSourceY` itself.
+- `<OffthreadVideo>` has no `effects`; its `onVideoFrame(img)` fires from `<Img onImageFrame>` **before** the image's
+  `continueRender`, so a synchronous `delayRender` + draw into our `ColorCanvas` (Internals `useEffectChainState` +
+  `runEffectChain`) is captured in renders. The `<OffthreadVideo>` stays mounted (opacity 0).
+- Headless render browser: Remotion's default `chromiumOptions.gl` (no flag) already gives WebGL2 on this host
+  (`ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)))`); the engine probes `null → angle → swangle → egl →
+  swiftshader` at start-up and uses the first one with a WebGL2 context (`JASPER_REMOTION_GL` forces one, `off`
+  disables). Graded Remotion stills equal the TypeScript reference (`applyLut` of the baked LUT) on 100 % of chart
+  pixels (max 1 code value).
+
 ## Not verified (follow-ups)
 
 - `numberOfSharedAudioTags` interplay with `@remotion/media` `<Audio>` (we pass 8; `@remotion/media`
