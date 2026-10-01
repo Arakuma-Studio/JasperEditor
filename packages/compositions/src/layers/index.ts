@@ -1,6 +1,7 @@
 // Layer dispatch: clip kind → layer component. The only registration point for layer renderers.
 import type { ComponentType } from 'react';
 import type { LayerProps } from '../types.ts';
+import { needsBakedPicture, withBakedLayer } from './BakedLayer.tsx';
 import { CompositionLayer } from './CompositionLayer.tsx';
 import { MotionGraphicLayer } from './MotionGraphicLayer.tsx';
 import { OfflineCard } from './OfflineCard.tsx';
@@ -12,6 +13,16 @@ import { UnsupportedLayer } from './UnsupportedLayer.tsx';
 import { ProxyPendingCard, VideoLayer } from './VideoLayer.tsx';
 
 export { AudioLayer, type AudioLayerProps } from './AudioLayer.tsx';
+// M2 (wp-m2-layer-bake)
+export {
+	type BakedLayerPreview,
+	type BakedLayerRuntime,
+	hasDomColorEffects,
+	isDomLayerClip,
+	needsBakedPicture,
+	setBakedLayerRuntime,
+	withBakedLayer,
+} from './BakedLayer.tsx';
 export { compositionFrameOf, compositionFramesAt, hasPixelEffects } from './CompositionLayer.tsx';
 export { LayerBox } from './LayerBox.tsx';
 export {
@@ -52,5 +63,7 @@ const MEDIA_KINDS = new Set(['video', 'still', 'animated-image']);
 /** Picks the component for a layer: offline media → OfflineCard, unknown kinds → UnsupportedLayer. */
 export function layerComponentFor(layer: Pick<LayerProps, 'clip' | 'media'>): ComponentType<LayerProps> {
 	if (MEDIA_KINDS.has(layer.clip.kind) && !layer.media) return OfflineCard;
-	return LAYER_COMPONENTS[layer.clip.kind] ?? UnsupportedLayer;
+	const component = LAYER_COMPONENTS[layer.clip.kind] ?? UnsupportedLayer;
+	// M2 (S11:LBK-010, wp-m2-layer-bake): a DOM layer with a baked (graded) picture or colour effects is wrapped.
+	return needsBakedPicture(layer.clip) ? withBakedLayer(component) : component;
 }

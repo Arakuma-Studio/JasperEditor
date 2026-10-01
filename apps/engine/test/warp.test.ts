@@ -376,8 +376,10 @@ describe('planner with the warp stage (S09 §8.5)', () => {
 			{ type: 'effect.add', target: { clipId: tr.refs.$t }, effectId: CORNER_PIN_EFFECT_ID, params: PIN },
 		]);
 		p = await plan(t);
-		expect(p.path).toBe('remotion');
-		expect(p.blockers.map((b) => b.reason).join('\n')).toMatch(/text layer/);
+		// M2 (S11:LBK-001, wp-m2-layer-bake): text is claimed by the layer bake, corner pin included (the bake
+		// draws it with matrix3d), so it stays native (`hybrid`) and the warp stage leaves it alone.
+		expect(p.path).toBe('hybrid');
+		expect(p.blockers).toEqual([]);
 	});
 });
 

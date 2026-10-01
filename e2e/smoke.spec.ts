@@ -253,15 +253,14 @@ test('Type tool click in the Program monitor adds a text clip', async () => {
 	expect((await appliedLabels(page)).at(-1)).toMatch(/Text/);
 });
 
-test('with the text clip, Auto plans the Remotion path; the Remotion export succeeds', async ({
-	request,
-}) => {
+// M2 (S11:LBK-001, wp-m2-layer-bake): Auto bakes text (`hybrid`, e2e/layer-bake.spec.ts); the Remotion path is
+// exercised by forcing it.
+test('with the text clip, the forced Remotion export succeeds', async ({ request }) => {
 	const frames = await sequenceFrames();
 	const out = await exportViaUi(page, request, {
-		engine: 'auto',
+		engine: 'remotion',
 		fileName: 'smoke-remotion.mp4',
 		expectPath: /remotion/i,
-		expectBlocker: /text/i,
 		outDir: EXPORT_DIR,
 	});
 	expect(out.job.result?.renderPath).toBe('remotion');

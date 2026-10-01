@@ -121,6 +121,13 @@ export const ExportResultSchema = z.object({
 	 * deliverable; `direct` = Remotion encoded it (VP9/Opus, or H.264 in a GPL dev setup).
 	 */
 	remotionOutput: z.enum(['direct', 'intermediate']).optional(),
+	/** M2 (wp-m2-layer-bake, additive): the path that produced the file (`hybrid` = native with baked layers). */
+	renderPath: z.enum(['native', 'hybrid', 'remotion']).optional(),
+	/**
+	 * M2 (S11:LBK-023, additive): run-time warnings, e.g. `NATIVE_FALLBACK` when a native preparation step failed
+	 * and an `auto` export was rendered on the Remotion path instead.
+	 */
+	warnings: z.array(z.object({ code: z.string(), message: z.string() })).optional(),
 });
 export type ExportResult = z.infer<typeof ExportResultSchema>;
 

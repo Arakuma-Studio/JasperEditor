@@ -18,7 +18,6 @@ import type { FontCatalogService } from '../fonts/catalog.ts';
 import type { JobQueue } from '../jobs/queue.ts';
 import { type JobContext, JobError } from '../jobs/types.ts';
 import type { MediaRegistry } from '../media/registry.ts';
-import { isAnimeTemplateClip } from '../mg/templates.ts'; // wp-m2-anime-templates
 import { appendEncoderArgs, planRemotionExport } from '../remotion/export-plan.ts';
 import type { RemotionService } from '../remotion/service.ts';
 import { audioEncodeArgs, type EncoderService, videoEncodeArgs } from '../tools/encoders.ts';
@@ -26,7 +25,30 @@ import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { exists, randomId } from '../tools/fs.ts';
 import { BT709_FRAME_TAGS, buildNativeGraph, SWS_FLAGS } from './native.ts';
 import { type NativeExtension, NativeExtensionRegistry, prepareExtensions } from './native-ext.ts';
-import { mediaKeyOf, type PlanCapabilities, PlanError, type PlannedExport, planExport } from './planner.ts';
+import {
+	isAnimeTemplate,
+	mediaKeyOf,
+	type PlanCapabilities,
+	PlanError,
+	type PlannedExport,
+	planExport,
+} from './planner.ts';
+
+/**
+ * A native extension's `prepare` failed (S11:LBK-023): an `auto` export or still falls back to the Remotion path
+ * when that path is eligible; a forced `native` one fails with the cause.
+ */
+export class NativePrepareError extends Error {
+	constructor(readonly failure: unknown) {
+		super((failure as Error)?.message ?? String(failure));
+		this.name = 'NativePrepareError';
+	}
+}
+
+/** Remotion concurrency of an export with `slots` CPU slots (S04:RR-004; bakes follow it, S11:LBK-022). */
+export function remotionConcurrency(slots: number): number {
+	return Math.max(1, Math.min(slots, Math.floor(availableParallelism() / 2)));
+}
 
 export type MgMasterRequest = {
 	clip: RenderVisualClip;
@@ -151,18 +173,7 @@ export class ExportService {
 				sequenceId: req.sequenceId,
 				settings: { ...req.settings, sequenceId: req.sequenceId },
 			},
-			{
-				registry: this.deps.registry,
-				fonts: this.deps.fonts,
-				capabilities: caps,
-				extensions: this.nativeExtensions.all(),
-				...(this.deps.encoders
-					? {
-							selectEncoder: (r) => this.deps.encoders!.select(r),
-							lgplOnly: this.deps.encoders.inventory.lgplOnly,
-						}
-					: {}),
-			},
+			this.planDeps(caps),
 		);
 	}
 
@@ -198,7 +209,12 @@ export class ExportService {
 			minSlots: Math.ceil(cores / 2),
 			origin,
 			projectId: planned.document.projectId,
-			stage: planned.plan.path === 'native' ? 'Queued (native)' : 'Queued (Remotion)',
+			stage:
+				planned.plan.path === 'remotion'
+					? 'Queued (Remotion)'
+					: planned.plan.path === 'hybrid'
+						? 'Queued (native + baked graphics)'
+						: 'Queued (native)',
 			input: { request: file },
 		});
 	}
@@ -257,10 +273,10 @@ export class ExportService {
 		ctx: JobContext,
 	): Promise<Map<string, string> | null> {
 		const masters = new Map<string, string>();
+		// Anime templates (S11:ATP-008) are Remotion graphics: baked by the layer-bake extension, not by fframes.
 		const clips = planned.snapshot.videoTracks
 			.flatMap((t) => t.clips)
-			// wp-m2-anime-templates (S11:ATP-008): anime templates have no jasper-mg master (layer-bake bakes them).
-			.filter((c) => c.kind === 'motion-graphic' && !isAnimeTemplateClip(c));
+			.filter((c) => c.kind === 'motion-graphic' && !isAnimeTemplate(c));
 		if (clips.length === 0) return masters;
 		if (!this.mgProvider) return null;
 		for (const clip of clips) {
@@ -287,14 +303,22 @@ export class ExportService {
 		still = false,
 	): Promise<number> {
 		const exts = this.nativeExtensions.all();
-		const prepared = await prepareExtensions(exts, planned, {
-			signal: ctx.signal,
-			stage: (text) => ctx.progress(0, { stage: text }),
-			scratchDir: () => ctx.scratchDir(),
-			log: (text) => ctx.log(text),
-			jobId: ctx.job.id,
-			...(planned.document.projectId ? { projectId: planned.document.projectId } : {}),
-		});
+		let prepared: Map<string, unknown>;
+		try {
+			prepared = await prepareExtensions(exts, planned, {
+				signal: ctx.signal,
+				stage: (text) => ctx.progress(0, { stage: text }),
+				scratchDir: () => ctx.scratchDir(),
+				log: (text) => ctx.log(text),
+				jobId: ctx.job.id,
+				...(planned.document.projectId ? { projectId: planned.document.projectId } : {}),
+				purpose: 'native',
+				concurrency: remotionConcurrency(ctx.slots),
+			});
+		} catch (e) {
+			if (ctx.signal.aborted) throw e;
+			throw new NativePrepareError(e);
+		}
 		const graph = buildNativeGraph({
 			snapshot: planned.snapshot,
 			output: planned.output,
@@ -431,7 +455,58 @@ export class ExportService {
 			log: (text) => ctx.log(text),
 			jobId: ctx.job.id,
 			...(planned.document.projectId ? { projectId: planned.document.projectId } : {}),
+			purpose: 'remotion',
+			concurrency: remotionConcurrency(ctx.slots),
 		});
+	}
+
+	/**
+	 * S11:LBK-023: after a native preparation step failed, re-plans an `auto` export/still on the Remotion path.
+	 * Returns null when that is not allowed (forced `native`, cancelled, Remotion not eligible): the caller then
+	 * fails with the original error.
+	 */
+	private async fallbackToRemotion(
+		e: unknown,
+		input: Parameters<typeof planExport>[0],
+		ctx: JobContext,
+		warnings: { code: string; message: string }[],
+	): Promise<PlannedExport | null> {
+		if (!(e instanceof NativePrepareError) || ctx.signal.aborted || input.settings.engine === 'native')
+			return null;
+		let planned: PlannedExport;
+		try {
+			planned = await planExport(
+				{ ...input, settings: { ...input.settings, engine: 'remotion' } },
+				this.planDeps(await this.deps.capabilities()),
+			);
+		} catch {
+			return null;
+		}
+		const message = `The native path could not be prepared (${e.message.slice(0, 300)}); rendered with Remotion instead`;
+		warnings.push({ code: 'NATIVE_FALLBACK', message });
+		ctx.log(`warning NATIVE_FALLBACK: ${message}`);
+		ctx.progress(0, { stage: 'Falling back to Remotion' });
+		return planned;
+	}
+
+	private planDeps(caps: PlanCapabilities): Parameters<typeof planExport>[1] {
+		return {
+			registry: this.deps.registry,
+			fonts: this.deps.fonts,
+			capabilities: caps,
+			extensions: this.nativeExtensions.all(),
+			...(this.deps.encoders
+				? {
+						selectEncoder: (r) => this.deps.encoders!.select(r),
+						lgplOnly: this.deps.encoders.inventory.lgplOnly,
+					}
+				: {}),
+		};
+	}
+
+	/** The cause of a native preparation failure (what a forced native export fails with). */
+	private unwrap(e: unknown): unknown {
+		return e instanceof NativePrepareError ? e.failure : e;
 	}
 
 	/** Snapshot with signed absolute media and font URLs for the headless browser (S04:RR-003, MS-003). */
@@ -491,11 +566,12 @@ export class ExportService {
 		const encoder = planned.output.encoder;
 		const output = join(dir, `output.${encoder?.container ?? 'mp4'}`);
 		ctx.addPartial(dir);
-		let frames: number;
+		let frames = 0;
 		let remotionOutput: 'direct' | 'intermediate' | undefined;
 		let path = planned.plan.path;
 		let masters = new Map<string, string>();
-		if (path === 'native') {
+		const warnings: { code: string; message: string }[] = [];
+		if (path === 'native' || path === 'hybrid') {
 			const m = await this.collectMgMasters(planned, ctx);
 			if (m === null) {
 				if (req.settings.engine === 'native') {
@@ -504,10 +580,27 @@ export class ExportService {
 				path = 'remotion';
 			} else masters = m;
 		}
-		if (path === 'native') {
-			frames = await this.runNative(planned, masters, output, ctx);
-		} else {
-			const cores = availableParallelism();
+		if (path === 'native' || path === 'hybrid') {
+			try {
+				frames = await this.runNative(planned, masters, output, ctx);
+			} catch (e) {
+				// S11:LBK-023: a failed preparation (bake, warp, pre-render…) of an `auto` export → Remotion path.
+				const replanned = await this.fallbackToRemotion(
+					e,
+					{
+						envelope: req.envelope,
+						sequenceId: req.sequenceId,
+						settings: { ...req.settings, sequenceId: req.sequenceId },
+					},
+					ctx,
+					warnings,
+				);
+				if (!replanned) throw this.unwrap(e);
+				planned = replanned;
+				path = 'remotion';
+			}
+		}
+		if (path === 'remotion') {
 			const seqW = planned.snapshot.settings.width;
 			// D-13 (wp-lgpl): Remotion renders a ProRes intermediate that our ffmpeg encodes with the selected
 			// encoder, or encodes VP9/Opus itself; only a dev setup with GPL builds on both sides lets Remotion
@@ -532,7 +625,7 @@ export class ExportService {
 				inputProps: this.remotionProps(planned, prepared),
 				output: target,
 				signal: ctx.signal,
-				concurrency: Math.max(1, Math.min(ctx.slots, Math.floor(cores / 2))),
+				concurrency: remotionConcurrency(ctx.slots),
 				crf: rp.mode === 'direct' ? rp.crf : planned.output.crf,
 				x264Preset: planned.output.x264Preset,
 				audioBitrateKbps: planned.output.audioBitrateKbps,
@@ -589,6 +682,7 @@ export class ExportService {
 			path: finalPath,
 			renderPath: path,
 			...(remotionOutput ? { remotionOutput } : {}),
+			...(warnings.length ? { warnings } : {}),
 			planId: planned.plan.planId,
 		};
 		this.deps.broadcaster.publish(
@@ -618,22 +712,20 @@ export class ExportService {
 			destination: { type: 'download' },
 		};
 		let planned: PlannedExport;
+		const input: Parameters<typeof planExport>[0] = {
+			envelope: req.envelope,
+			sequenceId: req.sequenceId,
+			settings,
+			rangeOverride: { start: req.frame, end: req.frame + 1 },
+			still: true,
+		};
 		try {
-			planned = await planExport(
-				{
-					envelope: req.envelope,
-					sequenceId: req.sequenceId,
-					settings,
-					rangeOverride: { start: req.frame, end: req.frame + 1 },
-					still: true,
-				},
-				{
-					registry: this.deps.registry,
-					fonts: this.deps.fonts,
-					capabilities: await this.deps.capabilities(),
-					extensions: this.nativeExtensions.all(),
-				},
-			);
+			planned = await planExport(input, {
+				registry: this.deps.registry,
+				fonts: this.deps.fonts,
+				capabilities: await this.deps.capabilities(),
+				extensions: this.nativeExtensions.all(),
+			});
 		} catch (e) {
 			if (e instanceof PlanError) throw new JobError(e.code, e.message, false, e.detail);
 			throw e;
@@ -650,14 +742,25 @@ export class ExportService {
 		ctx.addPartial(dir);
 		let path = planned.plan.path;
 		let masters = new Map<string, string>();
-		if (path === 'native') {
+		const warnings: { code: string; message: string }[] = [];
+		if (path === 'native' || path === 'hybrid') {
 			const m = await this.collectMgMasters(planned, ctx);
 			if (m === null) path = 'remotion';
 			else masters = m;
 		}
-		if (path === 'native') {
-			await this.runNative(planned, masters, output, ctx, true);
-		} else {
+		if (path === 'native' || path === 'hybrid') {
+			// S11:LBK-025: stills and MCP `render_frame` take the export's path — one baked frame per DOM layer
+			// (or its cached master / still) — and fall back to Remotion like `auto` exports (LBK-023).
+			try {
+				await this.runNative(planned, masters, output, ctx, true);
+			} catch (e) {
+				const replanned = await this.fallbackToRemotion(e, input, ctx, warnings);
+				if (!replanned) throw this.unwrap(e);
+				planned = replanned;
+				path = 'remotion';
+			}
+		}
+		if (path === 'remotion') {
 			const prepared = await this.prepareForRemotion(planned, ctx);
 			await this.deps.remotion.renderStill({
 				inputProps: this.remotionProps(planned, prepared),
@@ -668,7 +771,11 @@ export class ExportService {
 			});
 		}
 		await rm((ctx.input as { request: string }).request, { force: true });
-		return { url: `/renders/${ctx.job.id}/output`, renderPath: path };
+		return {
+			url: `/renders/${ctx.job.id}/output`,
+			renderPath: path,
+			...(warnings.length ? { warnings } : {}),
+		};
 	}
 }
 

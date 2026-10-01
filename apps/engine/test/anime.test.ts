@@ -88,7 +88,8 @@ describe('layer bake contracts (routes/layer-bake.ts)', () => {
 		expect(lb).toBeLessThan(order.indexOf(trackingRoutes));
 		expect(order.indexOf(animeRoutes)).toBe(order.length - 1);
 	});
-	it('POST /api/layer-bake/preview answers 501 naming wp-m2-layer-bake', async () => {
+	// wp-m2-layer-bake: the 501 stub is replaced by the real route (covered in layer-bake.test.ts).
+	it('POST /api/layer-bake/preview is implemented (validates its body)', async () => {
 		const app = await make();
 		const r = await app.inject({
 			method: 'POST',
@@ -96,8 +97,8 @@ describe('layer bake contracts (routes/layer-bake.ts)', () => {
 			headers: { ...H, 'content-type': 'application/json' },
 			payload: '{"clipId":"clp_1"}',
 		});
-		expect(r.statusCode).toBe(501);
-		expect(r.json()).toMatchObject({ code: 'NOT_IMPLEMENTED', detail: { owner: 'wp-m2-layer-bake' } });
+		expect(r.statusCode).toBe(400);
+		expect(r.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
 	});
 	it('LayerOverride carries still / rect / colorRuns (types only)', () => {
 		const o: LayerOverride = {

@@ -31,7 +31,9 @@ function useProjectSession(projectId: string): SessionHostState {
 		let cancelled = false;
 		setState({ status: 'opening' });
 		const target =
-			projectId === DEMO_PROJECT_ID ? demoStore() : { store: new EngineProjectStore(engine, { mgTemplates: mgRegistry }), projectId };
+			projectId === DEMO_PROJECT_ID
+				? demoStore()
+				: { store: new EngineProjectStore(engine, { mgTemplates: mgRegistry }), projectId };
 		EditorSession.open({
 			store: target.store,
 			projectId: target.projectId,

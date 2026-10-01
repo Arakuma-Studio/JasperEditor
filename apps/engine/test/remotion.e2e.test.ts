@@ -28,7 +28,19 @@ describe.runIf(enabled)('Remotion render (REMOTION_E2E=1)', () => {
 		});
 		try {
 			const d = new DocBuilder('hd-720p-30');
-			d.tx([{ type: 'clip.addText', at: 0, duration: 30, track: 'V1', content: { text: 'Hello Jasper' } }]);
+			const t = d.tx([
+				{
+					type: 'clip.addText',
+					at: 0,
+					duration: 30,
+					track: 'V1',
+					content: { text: 'Hello Jasper' },
+					ref: '$t',
+				},
+			]).refs.$t!;
+			// M2 (S11:LBK-001, wp-m2-layer-bake): plain text is baked natively (`hybrid`); a blend mode keeps this
+			// sequence on the Remotion path, which is what this suite exercises (export and still).
+			d.tx([{ type: 'clip.update', clipIds: [t], patch: { blendMode: 'screen' } }]);
 			const base = {
 				envelope: d.envelope(),
 				sequenceId: d.seqId,

@@ -842,6 +842,8 @@ export class MgBundleService {
 			await mkdir(dir, { recursive: true });
 			const ff = this.ffmpeg();
 			const files = { master: false, preview: false, poster: false };
+			// S04:LC-004 / S11:LBK-026 (wp-m2-layer-bake): pre-renders are Remotion renders, logged like exports.
+			await this.core.remotion.recordUsage('media', 'mg-prerender');
 			if (req.quality === 'master') {
 				const raw = join(scratch, 'master-raw.mov');
 				await r.renderMedia({
@@ -1113,6 +1115,8 @@ export class MgBundleService {
 		const opts = this.remotionOptions();
 		await mkdir(dirname(file), { recursive: true });
 		const tmp = `${file}.${process.pid}.tmp.png`;
+		// S11:LBK-026 (wp-m2-layer-bake): posters are Remotion renders too.
+		await this.core.remotion.recordUsage('still', 'mg-prerender');
 		const selected = await r.selectComposition({
 			serveUrl: dir,
 			id: comp.id,

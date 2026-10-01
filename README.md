@@ -397,6 +397,30 @@ Rectangles and ellipses are `shape` clips (S11 §7, `docs/wp-notes/wp-m2-shapes.
 - Tests: `e2e/shapes.spec.ts`; pixel check against an analytic reference with
   `REMOTION_E2E=1 pnpm vitest run apps/engine/test/shapes-remotion.e2e.test.ts`.
 
+## Export: titles, shapes and animated templates (layer bake)
+
+Text clips, shapes and anime motion templates are drawn by the browser (React/DOM), yet exports stay on the fast
+native ffmpeg path: the engine **bakes** each of these layers through Remotion into a cached straight-alpha master
+and overlays it (S11 §6, `docs/wp-notes/wp-m2-layer-bake.md`). The export plan then says **Hybrid (native +
+graphics)** and lists one graphics group per baked layer.
+
+- A layer without any animation (no keyframes, no text animator, not an anime template) bakes **one PNG**, looped
+  for its span; animated layers bake a ProRes 4444 master of their drawn span (transition handles included). Small
+  layers are rendered only in their region of the frame (union of their per-frame bounds plus a margin; a layer
+  that draws past it is re-rendered full frame).
+- Bakes run as child jobs of the export ("Baking graphics 1/3") and are cached under `<appdir>/cache/layers/<key>/`
+  by a content key (clip, font files, media, compositions bundle, anime.js, Remotion, browser, GL back end);
+  re-exports and moving a clip in time reuse them; entries unused for 14 days are removed.
+- Colour effects (Lumetri, LUTs…) on these layers are applied by ffmpeg to the bake (`lut3d`); the Remotion path
+  plays a graded copy; in the Program monitor the layer shows **Grade pending** until a graded preview arrives
+  (about 2 s after the last change, then the bake time).
+- Stills and the MCP `render_frame` tool take the same path. If a bake fails, an **Auto** export falls back to the
+  Remotion path (warning `NATIVE_FALLBACK` in the job result); a forced **Native** export fails with the error.
+- Without the Remotion renderer (no browser / no LGPL FFmpeg directory in a packaged engine) these layers block
+  the native path and the plan explains why; `GET /api/capabilities` reports `features.layerBake`.
+- Engine tests with real renders: `REMOTION_E2E=1 pnpm --filter @jasper/engine exec vitest run test/layer-bake.e2e.test.ts`;
+  Playwright: `e2e/layer-bake.spec.ts`.
+
 ## Tests
 
 ```bash
@@ -438,6 +462,8 @@ Playwright specs:
   an approval-gated `track.remove` denied and then approved on the shell's approval card, Help ▸ Connect an AI
   Agent…, a headless apply with the editor closed, and `open_project_in_editor` bringing the project back.
 - `e2e/pwa.spec.ts` — manifest, icons and service worker of the production build.
+- `e2e/layer-bake.spec.ts` — footage + static title + keyframed title, a Lumetri grade on a title ("Grade
+  pending" → graded preview in the Program), Auto export planned `hybrid` with baked titles, output pixels.
 - `e2e/mg-clips.spec.ts` — Remotion page-protocol contract (4.0.499), File ▸ Import Remotion Project… →
   Remotion tab → live host → props edit within 500 ms → preview WebM, and the MCP composition tools.
 

@@ -76,7 +76,10 @@ export class MemoryProjectStore implements ProjectStore {
 	}
 	async open(projectId: string, opts: { readOnly?: boolean } = {}): Promise<OpenedProject> {
 		const e = this.entry(projectId);
-		const loaded = loadProject(JSON.parse(JSON.stringify(e.envelope)), { ids: this.ids, mgTemplates: this.mgTemplates });
+		const loaded = loadProject(JSON.parse(JSON.stringify(e.envelope)), {
+			ids: this.ids,
+			mgTemplates: this.mgTemplates,
+		});
 		return {
 			document: loaded.document,
 			revision: e.envelope.revision,
@@ -139,7 +142,10 @@ export class MemoryProjectStore implements ProjectStore {
 	}
 	async importFile(file: Blob | { path: string }): Promise<string> {
 		if (!(file instanceof Blob)) throw new Error('MemoryProjectStore imports Blobs only');
-		const loaded = loadProject(JSON.parse(await file.text()), { ids: this.ids, mgTemplates: this.mgTemplates });
+		const loaded = loadProject(JSON.parse(await file.text()), {
+			ids: this.ids,
+			mgTemplates: this.mgTemplates,
+		});
 		return this.copyAs(loaded.document, loaded.document.name);
 	}
 	async acquireLease(

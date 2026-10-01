@@ -1,6 +1,7 @@
 // Export planner (ARCHITECTURE §9.5, S04 §11): builds the render snapshot with engine-local media,
 // classifies every layer for the native path and returns an S04:RP-010 RenderPlan with per-clip blockers
-// (RP-008) and warnings (offline media, VFR sources, missing fonts). M1 paths: `native` | `remotion`.
+// (RP-008) and warnings (offline media, VFR sources, missing fonts). Paths: `native` | `remotion`, and M2
+// `hybrid` = the native composite with layers an extension baked (S11:LBK-002).
 import { createHash } from 'node:crypto';
 import type { EncoderChoice, ExportSettings, RenderPlan } from '@jasper/api';
 import { mgRegistry } from '@jasper/mg-templates';
@@ -24,7 +25,6 @@ import { alphaDecoder } from '../media/alpha.ts';
 import type { MediaRecord, MediaRegistry } from '../media/registry.ts';
 // wp-m2-anime-templates (S11:ATP-002/008/010)
 import {
-	animeTemplateBlocker,
 	missingTemplates,
 	missingTemplatesDetail,
 	missingTemplatesMessage,
@@ -213,16 +213,20 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	const warnings: RenderPlan['warnings'] = [];
 	const visual = snapshot.videoTracks.flatMap((t) => t.clips);
 	const mgClips: string[] = [];
+	// M2 (S11:LBK-002, wp-m2-layer-bake): layers an extension pre-renders with a graphics engine (DOM layers baked
+	// through Remotion) — listed as graphics groups; the native path is then `hybrid`.
+	const baked: { clipId: string; engine: 'remotion'; frames: number }[] = [];
 	for (const c of visual) {
 		for (const reason of nativeBlockers(c, deps.capabilities, deps.extensions ?? [], deps.effects))
 			blockers.push({ itemId: c.clipId, path: 'native', reason });
-		// wp-m2-anime-templates (S11:ATP-008): anime templates go native only through an extension claiming them.
-		const anime = animeTemplateBlocker(
-			c,
-			(deps.extensions ?? []).some((e) => e.claimsLayer?.(c)),
-		);
-		if (anime) blockers.push({ itemId: c.clipId, path: 'native', reason: anime });
-		if (c.kind === 'motion-graphic') mgClips.push(c.clipId);
+		const bakeEngine = (deps.extensions ?? []).map((e) => e.bakes?.(c) ?? null).find((x) => x !== null);
+		if (bakeEngine)
+			baked.push({
+				clipId: c.clipId,
+				engine: bakeEngine,
+				frames: c.duration + (c.headHandle ?? 0) + (c.tailHandle ?? 0),
+			});
+		else if (c.kind === 'motion-graphic' && !isAnimeTemplate(c)) mgClips.push(c.clipId);
 		// Alpha WebM needs the libvpx decoder on the native path (Remotion decodes it in the browser).
 		const dec = 'mediaId' in c.source ? alphaDecoder(media[c.source.mediaId]?.record.probe) : null;
 		if (dec && deps.capabilities.decoders && !deps.capabilities.decoders.includes(dec))
@@ -343,14 +347,16 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 
 	// ---- path choice (S04:RP-001, RP-012)
 	const nativeEligible = blockers.length === 0;
-	let path: 'native' | 'remotion';
+	// `hybrid` = the native composite with baked graphics layers (S04 §11.2, S11:LBK-002).
+	const nativePath = baked.length > 0 ? 'hybrid' : 'native';
+	let path: 'native' | 'hybrid' | 'remotion';
 	if (settings.engine === 'native') {
 		if (!nativeEligible) {
 			throw new PlanError('PATH_NOT_ELIGIBLE', 409, 'The native path cannot render this sequence', {
 				blockers,
 			});
 		}
-		path = 'native';
+		path = nativePath;
 	} else if (settings.engine === 'remotion') {
 		if (deps.capabilities.remotionLocal === 'unavailable') {
 			throw new PlanError('PATH_NOT_ELIGIBLE', 409, 'Remotion rendering is unavailable on this engine', {
@@ -358,8 +364,14 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			});
 		}
 		path = 'remotion';
-	} else path = nativeEligible ? 'native' : 'remotion';
+	} else path = nativeEligible ? nativePath : 'remotion';
 
+	// S11:LBK-024: baking needs the browser too; a pending download is not a blocker.
+	if (path === 'hybrid' && deps.capabilities.remotionLocal === 'needs-browser-download')
+		warnings.push({
+			code: 'BROWSER_DOWNLOAD',
+			message: 'Baking graphics layers first downloads a headless browser',
+		});
 	if (path === 'remotion') {
 		if (!encoder && deps.lgplOnly && !input.still) {
 			throw new PlanError(
@@ -399,10 +411,11 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 
 	const frames = range.end - range.start;
 	const pixels = output.width * output.height;
+	const pixelFactor = Math.max(0.25, pixels / (1920 * 1080));
+	// Baked layers (uncached): Remotion at ~8 fps over each layer's drawn span (S04:RP-009 seed).
+	const bakeSeconds = path === 'hybrid' ? baked.reduce((s, b) => s + b.frames / 8, 0) * pixelFactor : 0;
 	const estimateSeconds =
-		path === 'native'
-			? (durationSec / 1.5) * Math.max(0.25, pixels / (1920 * 1080))
-			: (frames / 8) * Math.max(0.25, pixels / (1920 * 1080));
+		path !== 'remotion' ? (durationSec / 1.5) * pixelFactor + bakeSeconds : (frames / 8) * pixelFactor;
 	const bpp = 0.1 * 2 ** ((18 - output.crf) / 6);
 	const estimateBytes = Math.round(
 		(pixels * fpsNum(output.fps) * durationSec * bpp) / 8 +
@@ -412,7 +425,10 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	const graphicsGroups: RenderPlan['segments'][number]['graphicsGroups'] =
 		path === 'remotion'
 			? [{ id: 'g1', engine: 'remotion', itemIds: visual.map((c) => c.clipId) }]
-			: mgClips.map((id, i) => ({ id: `mg${i + 1}`, engine: 'fframes' as const, itemIds: [id] }));
+			: [
+					...mgClips.map((id, i) => ({ id: `mg${i + 1}`, engine: 'fframes' as const, itemIds: [id] })),
+					...baked.map((b, i) => ({ id: `lb${i + 1}`, engine: b.engine, itemIds: [b.clipId] })),
+				];
 	const documentRevision = input.envelope.revision;
 	const planId = planIdOf({
 		documentRevision,
@@ -431,7 +447,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			{
 				startFrame: range.start,
 				endFrame: range.end,
-				mode: path === 'remotion' ? 'remotion' : mgClips.length > 0 ? 'mixed' : 'native',
+				mode: path === 'remotion' ? 'remotion' : mgClips.length + baked.length > 0 ? 'mixed' : 'native',
 				graphicsGroups,
 			},
 		],
@@ -457,6 +473,11 @@ function localHandle(asset: MediaAsset, m: LocalMedia): MediaHandle {
 		rotation: r.probe.rotationDegrees,
 		...mediaDecodeHints(r.probe),
 	};
+}
+
+/** A motion-graphic clip rendered by Remotion (`renderer: 'anime'`, S11:ATP-002), not by fframes. */
+export function isAnimeTemplate(c: Pick<RenderVisualClip, 'kind' | 'source'>): boolean {
+	return c.kind === 'motion-graphic' && 'mg' in c.source && c.source.mg.renderer === 'anime';
 }
 
 /**
@@ -487,6 +508,12 @@ export function nativeBlockers(
 				? `text layer "${c.name}" requires graphics rendering`
 				: `${label} requires graphics rendering (not a native-capable layer)`,
 		);
+		return out;
+	}
+	// M2 (S11:LBK-002): anime templates are Remotion graphics (baked by the layer-bake extension, which claims them
+	// above); the fframes checks apply to fframes templates only.
+	if (c.kind === 'motion-graphic' && isAnimeTemplate(c)) {
+		out.push(`${label} requires graphics rendering (anime template)`);
 		return out;
 	}
 	if (c.kind === 'motion-graphic' && !(caps.fframes === 'ready' && caps.mgMasters)) {

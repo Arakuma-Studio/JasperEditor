@@ -2,6 +2,7 @@
 // `@jasper/compositions/remotion-entry` (prebuilt for packaged installs, otherwise bundled once and cached
 // under `<appdir>/remotion/bundle/<sourceHash>`), `selectComposition('JasperSequence')`, then `renderMedia`
 // or `renderStill` with the configured license key and a headless browser.
+import type { ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { appendFile, mkdir, rename, rm } from 'node:fs/promises';
@@ -11,6 +12,7 @@ import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ENV } from '@jasper/config';
 import { defaultEffectRegistry } from '@jasper/project';
+import { animejsVersion } from '../anime/index.ts';
 import { JobError } from '../jobs/types.ts';
 import { selfCheck } from '../tools/ffmpeg.ts';
 import { binaryNames, type RemotionBinaries } from '../tools/lgpl.ts';
@@ -19,6 +21,75 @@ import type { RemotionFfmpegInfo } from './export-plan.ts';
 export const COMPOSITION_ID = 'JasperSequence';
 export const REMOTION_VERSION = '4.0.499';
 export const DELAY_RENDER_TIMEOUT_MS = 60_000;
+/**
+ * M2 (S11:LBK-020): identity of a prebuilt compositions bundle, written next to it by `scripts/build-remotion.mjs`
+ * (`bundleId` = content hash of the bundle files, `animejs` = the anime.js version inside it).
+ */
+export const BUNDLE_STAMP_FILE = 'jasper-bundle.json';
+export type BundleStamp = { bundleId: string; animejs: string; remotion: string };
+
+/** Remotion's straight-alpha ProRes 4444 master settings (S08:MGC-030, S11:LBK-003): PNG frames, muted. */
+export const ALPHA_MASTER_OPTIONS = {
+	codec: 'prores',
+	proResProfile: '4444',
+	pixelFormat: 'yuva444p10le',
+	imageFormat: 'png',
+	colorSpace: 'bt709',
+	muted: true,
+} as const;
+
+/**
+ * Lossless remux that stamps BT.709 colour tags on a Remotion master (Remotion leaves them unset; the pixels are
+ * 709). Arguments for `Ffmpeg.run`.
+ */
+export function bt709RemuxArgs(input: string, output: string): string[] {
+	return [
+		'-i',
+		input,
+		'-map',
+		'0:v:0',
+		'-c',
+		'copy',
+		'-color_primaries',
+		'bt709',
+		'-color_trc',
+		'bt709',
+		'-colorspace',
+		'bt709',
+		'-movflags',
+		'+write_colr',
+		'-f',
+		'mov',
+		output,
+	];
+}
+
+/** What a Remotion call is for, in the usage log (S04:LC-004). */
+export type RemotionUsagePurpose = 'export' | 'still' | 'layer-bake' | 'mg-prerender';
+
+/** Runs ffmpeg (the engine's `Ffmpeg.run` shape; injected so this module stays free of process plumbing). */
+export type FfmpegRunner = {
+	run(
+		args: readonly string[],
+		opts: { signal?: AbortSignal; onSpawn?(child: ChildProcess): void },
+	): Promise<unknown>;
+	countVideoFrames(file: string, opts: { signal?: AbortSignal }): Promise<number>;
+};
+
+/** Input of `renderAlphaMaster` (S11:LBK-003). */
+export type AlphaMasterInput = {
+	/** `{doc, options}` with `transparentBackground: true` (and usually a `layerFilter`). */
+	inputProps: Record<string, unknown>;
+	/** Final master file (written atomically: rendered to `scratchDir`, remuxed, then renamed). */
+	output: string;
+	scratchDir: string;
+	signal: AbortSignal;
+	/** ffmpeg used for the BT.709 remux and the frame count (the LGPL directory's or the engine's). */
+	ffmpeg: FfmpegRunner;
+	concurrency?: number;
+	onSpawn?(child: ChildProcess): void;
+	onProgress?(p: { renderedFrames: number; totalFrames: number; progress: number }): void;
+};
 
 export type RemotionState = 'ready' | 'needs-browser-download' | 'unavailable';
 
@@ -197,6 +268,9 @@ export function remotionSourceHash(entry: string): string {
 export class RemotionService {
 	private serveUrlPromise: Promise<string> | null = null;
 	private rendererPromise: Promise<RendererModule> | null = null;
+	/** Identity of the bundle this process renders with (S11:LBK-020), computed once like the serve URL. */
+	private bundleIdValue: string | null = null;
+	private stampValue: BundleStamp | null | undefined;
 
 	constructor(
 		private readonly opts: {
@@ -366,6 +440,77 @@ export class RemotionService {
 		return this.serveUrlPromise;
 	}
 
+	/** The stamp of the prebuilt bundle (`jasper-bundle.json`), or null (dev bundles, unstamped builds). */
+	private bundleStamp(): BundleStamp | null {
+		if (this.stampValue !== undefined) return this.stampValue;
+		const dir = this.prebuiltBundle();
+		let stamp: BundleStamp | null = null;
+		if (dir) {
+			try {
+				const raw = JSON.parse(readFileSync(join(dir, BUNDLE_STAMP_FILE), 'utf8')) as Partial<BundleStamp>;
+				if (typeof raw.bundleId === 'string' && raw.bundleId)
+					stamp = {
+						bundleId: raw.bundleId,
+						animejs: typeof raw.animejs === 'string' ? raw.animejs : animejsVersion(),
+						remotion: typeof raw.remotion === 'string' ? raw.remotion : REMOTION_VERSION,
+					};
+			} catch {
+				// no stamp: bundleId() hashes the bundle instead
+			}
+		}
+		this.stampValue = stamp;
+		return stamp;
+	}
+
+	/**
+	 * Identity of the compositions bundle renders use (S11:LBK-020): the stamp of a prebuilt bundle (packaged), the
+	 * content hash of an unstamped prebuilt bundle, or the dev source hash (the one that names the cached bundle).
+	 * Computed once per process, like the serve URL.
+	 */
+	bundleId(): string {
+		if (this.bundleIdValue) return this.bundleIdValue;
+		const prebuilt = this.prebuiltBundle();
+		if (prebuilt) {
+			const stamp = this.bundleStamp();
+			if (stamp) this.bundleIdValue = stamp.bundleId;
+			else {
+				const h = createHash('sha256');
+				hashTree(prebuilt, h);
+				this.bundleIdValue = `content-${h.digest('hex').slice(0, 16)}`;
+			}
+			return this.bundleIdValue;
+		}
+		const entry = this.entryPoint();
+		this.bundleIdValue = entry ? this.sourceHash(entry) : 'none';
+		return this.bundleIdValue;
+	}
+
+	/** anime.js version inside the bundle (S11:ANM-011): the stamp of a prebuilt bundle, else the workspace's. */
+	animejsVersion(): string {
+		return this.bundleStamp()?.animejs ?? animejsVersion();
+	}
+
+	/**
+	 * Identity of the render browser (S11:LBK-020): the executable with its size and mtime (a browser update changes
+	 * it), or Remotion's own download.
+	 */
+	browserIdentity(): string {
+		const exe = this.browserExecutable() ?? findRemotionHeadlessShell();
+		if (!exe) return 'remotion-download';
+		try {
+			const st = statSync(exe);
+			return `${exe}|${st.size}|${Math.round(st.mtimeMs)}`;
+		} catch {
+			return exe;
+		}
+	}
+
+	/** The `chromiumOptions.gl` renders use (awaits the WebGL probe once): `default`, a back end, or `none`. */
+	async renderGl(): Promise<string> {
+		const s = await this.probeWebgl().catch(() => this.webgl);
+		return s.state === 'ok' ? (s.gl ?? 'default') : 'none';
+	}
+
 	private async buildServeUrl(): Promise<string> {
 		const prebuilt = this.prebuiltBundle();
 		if (prebuilt) return prebuilt;
@@ -373,6 +518,7 @@ export class RemotionService {
 		if (!entry)
 			throw new JobError('BINARY_MISSING', 'No Remotion bundle and no composition sources available', false);
 		const hash = this.sourceHash(entry);
+		this.bundleIdValue = hash;
 		const outDir = join(this.opts.bundleCacheDir, hash);
 		if (existsSync(join(outDir, 'index.html'))) return outDir;
 		await mkdir(this.opts.bundleCacheDir, { recursive: true });
@@ -500,12 +646,17 @@ export class RemotionService {
 			);
 	}
 
-	private async recordUsage(kind: 'media' | 'still'): Promise<void> {
+	/**
+	 * Remotion usage log for license reporting (S04:LC-004): one line per render call. M2 (S11:LBK-026): public so
+	 * layer bakes and mg pre-renders (which drive `@remotion/renderer` themselves) log too; `purpose` says why.
+	 */
+	async recordUsage(kind: 'media' | 'still', purpose?: RemotionUsagePurpose): Promise<void> {
 		if (!this.opts.usageLog) return;
 		await mkdir(dirname(this.opts.usageLog), { recursive: true });
-		await appendFile(this.opts.usageLog, `${JSON.stringify({ at: new Date().toISOString(), kind })}\n`).catch(
-			() => undefined,
-		);
+		await appendFile(
+			this.opts.usageLog,
+			`${JSON.stringify({ at: new Date().toISOString(), kind, ...(purpose ? { purpose } : {}) })}\n`,
+		).catch(() => undefined);
 	}
 
 	private async composition(inputProps: Record<string, unknown>, signal: AbortSignal) {
@@ -540,7 +691,7 @@ export class RemotionService {
 		input.signal.addEventListener('abort', onAbort, { once: true });
 		const cores = availableParallelism();
 		try {
-			await this.recordUsage('media');
+			await this.recordUsage('media', 'export');
 			await r.renderMedia({
 				serveUrl,
 				composition,
@@ -595,6 +746,59 @@ export class RemotionService {
 		}
 	}
 
+	/**
+	 * M2 (S11:LBK-003): a straight-alpha ProRes 4444 master of `inputProps` (`yuva444p10le`, PNG frames, muted,
+	 * BT.709 tags stamped by a lossless remux, frame count verified) — what the layer bake overlays natively.
+	 * Returns the frame count.
+	 */
+	async renderAlphaMaster(input: AlphaMasterInput): Promise<{ frames: number }> {
+		const { r, serveUrl, composition, browser } = await this.composition(input.inputProps, input.signal);
+		const { cancelSignal, cancel } = r.makeCancelSignal();
+		const onAbort = () => cancel();
+		input.signal.addEventListener('abort', onAbort, { once: true });
+		const total = composition.durationInFrames;
+		const raw = join(input.scratchDir, `alpha-${process.pid}-${Date.now().toString(36)}-raw.mov`);
+		const tagged = `${raw.slice(0, -'-raw.mov'.length)}.mov`;
+		try {
+			await this.recordUsage('media', 'layer-bake');
+			await r.renderMedia({
+				serveUrl,
+				composition,
+				inputProps: input.inputProps,
+				...ALPHA_MASTER_OPTIONS,
+				...this.binariesOption(),
+				outputLocation: raw,
+				concurrency: input.concurrency ?? Math.max(1, Math.floor(availableParallelism() / 2)),
+				cancelSignal,
+				timeoutInMilliseconds: DELAY_RENDER_TIMEOUT_MS,
+				licenseKey: this.licenseKey,
+				logLevel: 'error',
+				overwrite: true,
+				...browser,
+				onProgress: (p) =>
+					input.onProgress?.({ renderedFrames: p.renderedFrames, totalFrames: total, progress: p.progress }),
+			});
+		} catch (e) {
+			throw mapRenderError(e, input.signal);
+		} finally {
+			input.signal.removeEventListener('abort', onAbort);
+		}
+		await input.ffmpeg.run(bt709RemuxArgs(raw, tagged), {
+			signal: input.signal,
+			...(input.onSpawn ? { onSpawn: input.onSpawn } : {}),
+		});
+		await rm(raw, { force: true });
+		const frames = await input.ffmpeg.countVideoFrames(tagged, { signal: input.signal });
+		if (frames !== total)
+			throw new JobError('FRAME_COUNT_MISMATCH', `The master has ${frames} frames, expected ${total}`, true, {
+				expected: total,
+				actual: frames,
+			});
+		await mkdir(dirname(input.output), { recursive: true });
+		await rename(tagged, input.output);
+		return { frames };
+	}
+
 	/** `renderStill` to PNG (S04:EX-030, ARCHITECTURE §9.2 stills). `frame` is composition-relative. */
 	async renderStill(input: {
 		inputProps: Record<string, unknown>;
@@ -602,13 +806,18 @@ export class RemotionService {
 		frame: number;
 		scale?: number;
 		signal: AbortSignal;
+		/**
+		 * Usage-log purpose (default `still`). Layer bakes render with `transparentBackground`: the PNG keeps the
+		 * straight alpha of the page.
+		 */
+		purpose?: RemotionUsagePurpose;
 	}): Promise<void> {
 		const { r, serveUrl, composition, browser } = await this.composition(input.inputProps, input.signal);
 		const { cancelSignal, cancel } = r.makeCancelSignal();
 		const onAbort = () => cancel();
 		input.signal.addEventListener('abort', onAbort, { once: true });
 		try {
-			await this.recordUsage('still');
+			await this.recordUsage('still', input.purpose ?? 'still');
 			await r.renderStill({
 				serveUrl,
 				composition,

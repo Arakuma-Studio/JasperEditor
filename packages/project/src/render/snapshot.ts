@@ -147,6 +147,13 @@ export type RenderVisualClip = {
 	headHandle?: number;
 	tailHandle?: number;
 	fades?: RenderFade[];
+	/**
+	 * M2 (S11:LBK-010, wp-m2-layer-bake): a pre-rendered picture of the whole placed layer (sequence space: Motion,
+	 * effects, grade, opacity and fades baked, straight alpha) that the composition plays instead of drawing the
+	 * layer — the colour-graded master of a DOM layer on the Remotion path. `startFrame` = sequence frame shown by
+	 * its frame 0; `rect` = the region of the frame it covers (absent = the whole frame). Set by the engine only.
+	 */
+	baked?: { url: string; startFrame: number; rect?: { x: number; y: number; w: number; h: number } };
 };
 
 export type RenderAudioClip = {

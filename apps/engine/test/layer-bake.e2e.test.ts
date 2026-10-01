@@ -1,0 +1,584 @@
+// Layer bake end to end (S11 §11 test 4, REMOTION_E2E=1): a listening engine bakes text, shapes and anime-template
+// layers through headless Chrome. Footage + static title + keyframed title + shape + anime template plan `hybrid`;
+// the static layers bake one PNG; the output matches a full Remotion render; masters keep straight alpha over
+// R/G/B/W; re-exports hit the cache (also after moving a title in time); a text change bakes again; a Lumetri grade
+// on a title shows in the native export, the Remotion export and the graded preview; stills take the same path;
+// a failing bake makes an `auto` export fall back to Remotion; the composite uses no GPL filter; every bake is
+// in the Remotion usage log.
+import { spawnSync } from 'node:child_process';
+import { appendFileSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { EngineJob } from '@jasper/api';
+import { LUMETRI_EFFECT_ID, type ProjectDocument } from '@jasper/project';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { gplFiltersIn } from '../src/color/extension.ts';
+import { type RunningEngine, startEngine } from '../src/index.ts';
+import { JobError } from '../src/jobs/types.ts';
+import type { LayerBakeService } from '../src/layer-bake/service.ts';
+import { layerBakeService } from '../src/routes/layer-bake.ts';
+import { coreServices } from '../src/tools/services.ts';
+import { DocBuilder, ensureFixtures, fixture, JSON_H, register, tempAppdir, until } from './helpers.ts';
+
+const enabled = process.env.REMOTION_E2E === '1';
+const PORT = Number(process.env.JASPER_E2E_PORT ?? 0);
+const W = 1280;
+const H = 720;
+
+const FIXTURE_V4 = join(
+	__dirname,
+	'..',
+	'..',
+	'..',
+	'packages',
+	'project',
+	'test',
+	'fixtures',
+	'v4',
+	'basic.jasper',
+);
+const v4 = JSON.parse(readFileSync(FIXTURE_V4, 'utf8')).document as ProjectDocument;
+const v4seq = Object.values(v4.sequences)[0]!;
+
+function inject(
+	d: DocBuilder,
+	clip: Record<string, unknown>,
+	o: { id: string; track: string; start: number },
+) {
+	const seq = d.doc.sequences[d.seqId]!;
+	const c = { ...structuredClone(clip), id: o.id, trackId: d.track(o.track), start: o.start };
+	d.doc = {
+		...d.doc,
+		sequences: { ...d.doc.sequences, [d.seqId]: { ...seq, clips: { ...seq.clips, [o.id]: c as never } } },
+	};
+	d.revision++;
+}
+
+/** Measurements: console and `<tmp>/layer-bake-e2e.txt` (Vitest hides the console of passing tests). */
+function report(line: string): void {
+	console.info(line);
+	appendFileSync(join(tmpdir(), 'layer-bake-e2e.txt'), `${new Date().toISOString()} ${line}\n`);
+}
+
+/** Decodes frame `n` of a video (or a PNG) to raw pixels. */
+function decode(file: string, o: { frame?: number; pix: 'rgba' | 'rgb24'; decoder?: string }): Buffer {
+	const r = spawnSync(
+		'ffmpeg',
+		[
+			'-v',
+			'error',
+			...(o.decoder ? ['-c:v', o.decoder] : []),
+			'-i',
+			file,
+			...(o.frame !== undefined
+				? ['-vf', `select=eq(n\\,${o.frame})`, '-frames:v', '1']
+				: ['-frames:v', '1']),
+			'-pix_fmt',
+			o.pix,
+			'-f',
+			'rawvideo',
+			'pipe:1',
+		],
+		{ maxBuffer: 1 << 28 },
+	);
+	if (r.status !== 0) throw new Error(`decode failed: ${r.stderr}`);
+	return r.stdout;
+}
+
+/** Share of samples within `tol`. */
+function within(a: Uint8Array, b: Uint8Array, tol: number): number {
+	expect(a.length).toBe(b.length);
+	let n = 0;
+	for (let i = 0; i < a.length; i++) if (Math.abs(a[i]! - b[i]!) <= tol) n++;
+	return n / a.length;
+}
+
+/** Straight-alpha composite of RGBA over a flat colour → RGB. */
+function over(fg: Uint8Array, bg: [number, number, number]): Uint8Array {
+	const out = new Uint8Array((fg.length / 4) * 3);
+	for (let i = 0, j = 0; i < fg.length; i += 4, j += 3) {
+		const a = fg[i + 3]! / 255;
+		for (let c = 0; c < 3; c++) out[j + c] = Math.round(fg[i + c]! * a + bg[c]! * (1 - a));
+	}
+	return out;
+}
+
+describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)', () => {
+	let engine: RunningEngine;
+	let svc: LayerBakeService;
+	const ffArgs: string[][] = [];
+	const hostH = () => ({ host: `127.0.0.1:${engine.port}` });
+
+	beforeAll(async () => {
+		ensureFixtures();
+		engine = await startEngine({
+			appdir: tempAppdir('jasper-lb-e2e-'),
+			port: PORT,
+			dev: true,
+			env: {
+				PATH: process.env.PATH,
+				...(process.env.JASPER_BROWSER_EXECUTABLE
+					? { JASPER_BROWSER_EXECUTABLE: process.env.JASPER_BROWSER_EXECUTABLE }
+					: {}),
+			},
+		});
+		svc = layerBakeService(engine.app)!;
+		// Record every ffmpeg command line of the engine (GPL-filter scan, LBK-031).
+		const ff = coreServices(engine.app).ffmpeg;
+		const run = ff.run.bind(ff);
+		ff.run = (args, opts) => {
+			ffArgs.push([...args]);
+			return run(args, opts);
+		};
+	}, 600_000);
+	afterAll(async () => {
+		await engine?.stop();
+	});
+
+	const queue = () => coreServices(engine.app).queue;
+	const children = (id: string) =>
+		queue()
+			.list({})
+			.filter((j) => j.parentId === id);
+	const wait = async (id: string): Promise<EngineJob> => {
+		await until(
+			() => ['succeeded', 'failed', 'cancelled'].includes(queue().get(id)?.state ?? ''),
+			1_200_000,
+			250,
+		);
+		return queue().get(id)!;
+	};
+
+	const proresSettings = (seqId: string, engineName: 'auto' | 'native' | 'remotion') => ({
+		sequenceId: seqId,
+		range: { type: 'entire' },
+		container: 'mov',
+		engine: engineName,
+		video: {
+			codec: 'prores',
+			proresProfile: '4444',
+			width: W,
+			height: H,
+			frameRate: { num: 30, den: 1 },
+			scaling: 'fit',
+			quality: { mode: 'crf', value: 10 },
+			encoderSpeed: 'fast',
+			colorTags: 'rec709',
+		},
+	});
+
+	async function exportDoc(d: DocBuilder, engineName: 'auto' | 'native' | 'remotion') {
+		const settings = proresSettings(d.seqId, engineName);
+		const plan = (
+			await engine.app.inject({
+				method: 'POST',
+				url: '/api/exports/plan',
+				headers: { ...JSON_H, ...hostH() },
+				payload: { envelope: d.envelope(), sequenceId: d.seqId, settings },
+			})
+		).json();
+		const r = await engine.app.inject({
+			method: 'POST',
+			url: '/api/exports',
+			headers: { ...JSON_H, ...hostH() },
+			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings },
+		});
+		expect(r.statusCode, r.body).toBeLessThan(300);
+		const done = await wait(r.json().id);
+		const out = join(coreServices(engine.app).config.paths.rendersDir, done.id, 'output.mov');
+		return { plan, done, out, bakes: children(done.id).filter((j) => j.kind === 'layer-bake') };
+	}
+
+	async function still(d: DocBuilder, frame: number) {
+		const r = await engine.app.inject({
+			method: 'POST',
+			url: '/api/stills',
+			headers: { ...JSON_H, ...hostH() },
+			payload: { envelope: d.envelope(), sequenceId: d.seqId, frame },
+		});
+		const done = await wait(r.json().id);
+		return {
+			done,
+			file: join(coreServices(engine.app).config.paths.rendersDir, done.id, 'output.png'),
+			bakes: children(done.id).filter((j) => j.kind === 'layer-bake'),
+		};
+	}
+
+	/** The test sequence: footage, a static title, a keyframed title, a shape and an anime template. */
+	async function mainDoc(): Promise<{ d: DocBuilder; ids: Record<string, string> }> {
+		const footage = await register(engine.app, fixture('clip-a.mp4'), hostH());
+		const d = new DocBuilder('hd-720p-30');
+		const a = d.addMedia(footage);
+		d.tx([
+			{
+				type: 'clip.place',
+				source: { mediaId: a },
+				at: 0,
+				sourceRange: { in: { seconds: 0 }, out: { seconds: 2 } },
+			},
+			{ type: 'track.add', kind: 'video', count: 3 },
+		]);
+		const ids: Record<string, string> = {};
+		ids.static = d.tx([
+			{
+				type: 'clip.addText',
+				at: 0,
+				duration: 60,
+				track: 'V2',
+				content: { text: 'Static title', style: { sizePx: 64, fill: [1, 0.9, 0.2, 1] } },
+				box: { width: 520, height: 90, autoSize: 'none' },
+				transform: { position: [640, 120] },
+				ref: '$s',
+			},
+		]).refs.$s!;
+		ids.moving = d.tx([
+			{
+				type: 'clip.addText',
+				at: 10,
+				duration: 40,
+				track: 'V3',
+				content: {
+					text: 'Moving title',
+					style: { sizePx: 56, shadow: { color: [0, 0, 0, 0.8], angleDeg: 45, distancePx: 6, blurPx: 8 } },
+				},
+				box: { width: 460, height: 80, autoSize: 'none' },
+				ref: '$m',
+			},
+		]).refs.$m!;
+		d.tx([
+			{
+				type: 'param.setAnimated',
+				target: ['clip', ids.moving, 'transform', 'position'],
+				animated: true,
+				at: { sequenceFrame: 10 },
+			},
+			{
+				type: 'param.setAnimated',
+				target: ['clip', ids.moving, 'opacity'],
+				animated: true,
+				at: { sequenceFrame: 10 },
+			},
+		]);
+		d.tx([
+			{
+				type: 'param.set',
+				target: ['clip', ids.moving, 'transform', 'position'],
+				value: [400, 600],
+				at: { sequenceFrame: 49 },
+			},
+			{ type: 'param.set', target: ['clip', ids.moving, 'opacity'], value: 30, at: { sequenceFrame: 49 } },
+		]);
+		const shape = structuredClone(v4seq.clips.clp_3ZN7BJXAHGY9J4G2) as unknown as Record<string, unknown>;
+		(shape.transform as { position: { value: number[] }; scale: { value: number } }).position.value = [
+			1050, 560,
+		];
+		(shape.transform as { scale: { value: number } }).scale.value = 40;
+		inject(d, { ...shape, duration: 60 }, { id: 'clp_SHAPE0000000E2E1', track: 'V4', start: 0 });
+		ids.shape = 'clp_SHAPE0000000E2E1';
+		const anime = structuredClone(v4seq.clips.clp_VEYXW57CH91ZEK52) as unknown as Record<string, unknown>;
+		(anime.transform as { scale: { value: number } }).scale.value = 30;
+		(anime.transform as { position: { value: number[] } }).position.value = [250, 560];
+		inject(
+			d,
+			{ ...anime, duration: 45, canvas: { width: 1280, height: 720 } },
+			{ id: 'clp_ANIME0000000E2E1', track: 'V5', start: 5 },
+		);
+		ids.anime = 'clp_ANIME0000000E2E1';
+		return { d, ids };
+	}
+
+	let main: Awaited<ReturnType<typeof mainDoc>>;
+	let first: Awaited<ReturnType<typeof exportDoc>>;
+
+	it('plans hybrid; bakes one PNG per static layer; the output matches a full Remotion render (≤ 3/255 on 99 %)', async () => {
+		main = await mainDoc();
+		const { d, ids } = main;
+		first = await exportDoc(d, 'auto');
+		expect(first.done.state, JSON.stringify(first.done.error)).toBe('succeeded');
+		expect(first.plan.path).toBe('hybrid');
+		expect(first.done.result).toMatchObject({ renderPath: 'hybrid', frames: 60 });
+		const byClip = (id: string) =>
+			first.bakes.find((j) => j.title.endsWith(d.doc.sequences[d.seqId]!.clips[id]!.name))!;
+		expect(first.bakes).toHaveLength(4);
+		const result = (id: string) => byClip(id).result as { still: boolean; rect: unknown; path: string };
+		expect(result(ids.static!).still).toBe(true);
+		expect(result(ids.shape!).still).toBe(true);
+		expect(result(ids.moving!).still).toBe(false);
+		expect(result(ids.anime!).still).toBe(false);
+
+		// Parity with a full Remotion render (S11 §11 test 4). Footage is decoded by Chrome there and by ffmpeg here,
+		// which differ on their own (testsrc2 H.264: up to 30 code values, independent of the bake): the comparison
+		// runs with the footage disabled over a grey background, everything else unchanged (no new bake).
+		const footage = d.clipIds().find((id) => d.doc.sequences[d.seqId]!.clips[id]!.kind === 'video')!;
+		d.tx([
+			{ type: 'clip.update', clipIds: [footage], patch: { enabled: false } },
+			{
+				type: 'sequence.updateSettings',
+				sequenceId: d.seqId,
+				settings: { backgroundColor: [0.3, 0.32, 0.35, 1] },
+			},
+		]);
+		const native = await exportDoc(d, 'auto');
+		expect(native.done.state, JSON.stringify(native.done.error)).toBe('succeeded');
+		expect(native.bakes).toHaveLength(0);
+		// The reference: the full sequence rendered by Remotion, frame by frame (PNG stills of the same composition the
+		// Remotion export path renders; its ProRes 4:2:2 intermediate would add chroma artefacts of its own).
+		const planned = await coreServices(engine.app).exports.plan({
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			settings: proresSettings(d.seqId, 'remotion') as never,
+		});
+		const props = (
+			coreServices(engine.app).exports as unknown as {
+				remotionProps(p: unknown, prepared: Map<string, unknown>): Record<string, unknown>;
+			}
+		).remotionProps(planned, new Map());
+		const shares: number[] = [];
+		for (const f of [0, 12, 30, 45, 59]) {
+			const ref = join(tempAppdir('jasper-lb-ref-'), 'ref.png');
+			await coreServices(engine.app).remotion.renderStill({
+				inputProps: props,
+				output: ref,
+				frame: f,
+				signal: new AbortController().signal,
+			});
+			shares.push(within(decode(native.out, { frame: f, pix: 'rgb24' }), decode(ref, { pix: 'rgb24' }), 3));
+		}
+		report(
+			`[LBK parity] native(hybrid) vs Remotion stills, share within 3/255 per frame: ${shares.map((s) => s.toFixed(4)).join(' ')}`,
+		);
+		for (const s of shares) expect(s).toBeGreaterThanOrEqual(0.99);
+		d.tx([
+			{ type: 'clip.update', clipIds: [footage], patch: { enabled: true } },
+			{ type: 'sequence.updateSettings', sequenceId: d.seqId, settings: { backgroundColor: [0, 0, 0, 1] } },
+		]);
+		// LBK-005: the titles are small: their bakes cover a crop rect of the frame.
+		report(
+			`[LBK rect] ${JSON.stringify(first.bakes.map((j) => [j.title, (j.result as { rect: unknown }).rect]))}`,
+		);
+		expect(result(ids.static!).rect).not.toBeNull();
+		expect(result(ids.moving!).rect).not.toBeNull();
+	}, 1_800_000);
+
+	it('masters keep straight alpha: over R/G/B/W within 2/255 of the browser still', async () => {
+		const { d, ids } = main;
+		const planned = await coreServices(engine.app).exports.plan({
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			settings: proresSettings(d.seqId, 'auto') as never,
+		});
+		const clip = planned.snapshot.videoTracks.flatMap((t) => t.clips).find((c) => c.clipId === ids.moving)!;
+		const plan = await svc.planBake(planned, clip, { env: await svc.environment() });
+		const bake = (await svc.lookup(plan.key))!;
+		expect(bake.still).toBe(false);
+		// The document the master was rendered from (its crop rect, or the full frame after a crop fallback).
+		const doc = bake.rect ? plan.doc : (plan.fullDoc ?? plan.doc);
+		expect([doc.settings.width, doc.settings.height]).toEqual([bake.width, bake.height]);
+		const k = 20; // master frame (sequence frame 30)
+		const out = join(tempAppdir('jasper-lb-still-'), 'still.png');
+		await coreServices(engine.app).remotion.renderStill({
+			inputProps: {
+				doc: { ...doc, range: { start: k, end: k + 1 }, durationFrames: 1 },
+				options: {
+					isPreview: false,
+					useProxies: false,
+					transparentBackground: true,
+					layerFilter: [ids.moving],
+				},
+			},
+			output: out,
+			frame: 0,
+			signal: new AbortController().signal,
+		});
+		const png = decode(out, { pix: 'rgba' });
+		const mframe = decode(bake.path, { frame: k, pix: 'rgba' });
+		let semi = 0;
+		let worst = 0;
+		for (const bg of [
+			[255, 0, 0],
+			[0, 255, 0],
+			[0, 0, 255],
+			[255, 255, 255],
+		] as [number, number, number][]) {
+			const a = over(mframe, bg);
+			const b = over(png, bg);
+			for (let i = 0, j = 0; i < png.length; i += 4, j += 3) {
+				const alpha = png[i + 3]!;
+				if (alpha === 0 || alpha === 255) continue;
+				semi++;
+				for (let c = 0; c < 3; c++) worst = Math.max(worst, Math.abs(a[j + c]! - b[j + c]!));
+			}
+		}
+		report(`[LBK alpha] semi-transparent samples ${semi}, worst difference ${worst}/255`);
+		expect(semi).toBeGreaterThan(1000); // anti-aliased glyph edges and the shadow
+		expect(worst).toBeLessThanOrEqual(2);
+	}, 600_000);
+
+	it('re-exports hit the cache; moving a title in time hits it too; a text change bakes again', async () => {
+		const { d, ids } = main;
+		const again = await exportDoc(d, 'auto');
+		expect(again.done.state).toBe('succeeded');
+		expect(again.bakes).toHaveLength(0);
+		// Move the keyframed title 5 frames later (its keyframes move with it).
+		d.tx([{ type: 'clip.move', clipIds: [ids.moving!], deltaFrames: 5 }]);
+		const moved = await exportDoc(d, 'auto');
+		expect(moved.done.state).toBe('succeeded');
+		expect(moved.bakes).toHaveLength(0);
+		// The moved title is drawn 5 frames later: export frame 35 shows what frame 30 showed before.
+		expect(
+			within(
+				decode(moved.out, { frame: 35, pix: 'rgb24' }),
+				decode(first.out, { frame: 30, pix: 'rgb24' }),
+				3,
+			),
+		).toBeLessThan(1);
+		d.tx([{ type: 'clip.update', clipIds: [ids.static!], patch: { content: { text: 'Changed title' } } }]);
+		const changed = await exportDoc(d, 'auto');
+		expect(changed.done.state).toBe('succeeded');
+		expect(changed.bakes).toHaveLength(1);
+	}, 1_800_000);
+
+	it('stills take the same path: cached masters are reused, else one frame per layer is baked (LBK-025)', async () => {
+		const { d } = main;
+		const s = await still(d, 30);
+		expect(s.done.state, JSON.stringify(s.done.error)).toBe('succeeded');
+		expect(s.done.result).toMatchObject({ renderPath: 'hybrid' });
+		expect(s.bakes).toHaveLength(0);
+		const exp = await exportDoc(d, 'auto');
+		expect(
+			within(decode(s.file, { pix: 'rgb24' }), decode(exp.out, { frame: 30, pix: 'rgb24' }), 3),
+		).toBeGreaterThanOrEqual(0.99);
+		// A new keyframed title (no master yet): the still bakes one frame of it.
+		const t = d.tx([
+			{ type: 'clip.addText', at: 0, duration: 30, track: 'V2', content: { text: 'Fresh' }, ref: '$f' },
+		]).refs.$f!;
+		d.tx([
+			{
+				type: 'param.setAnimated',
+				target: ['clip', t, 'opacity'],
+				animated: true,
+				at: { sequenceFrame: 60 },
+			},
+		]);
+		d.tx([{ type: 'clip.move', clipIds: [t], deltaFrames: 60 }]);
+		d.tx([{ type: 'param.set', target: ['clip', t, 'opacity'], value: 0, at: { sequenceFrame: 89 } }]);
+		const s2 = await still(d, 70);
+		expect(s2.done.state, JSON.stringify(s2.done.error)).toBe('succeeded');
+		expect(s2.bakes).toHaveLength(1);
+		expect(s2.bakes[0]!.result).toMatchObject({ still: true, frames: 1 });
+	}, 1_800_000);
+
+	it('a Lumetri grade on a title shows in the native export, the Remotion export and the graded preview (FIX-002)', async () => {
+		const d = new DocBuilder('hd-720p-30');
+		d.tx([
+			{ type: 'sequence.updateSettings', sequenceId: d.seqId, settings: { backgroundColor: [0, 0, 0, 1] } },
+		]);
+		const t = d.tx([
+			{
+				type: 'clip.addText',
+				at: 0,
+				duration: 20,
+				track: 'V1',
+				content: { text: 'RED', style: { sizePx: 300, weight: 900, fill: [1, 0, 0, 1] } },
+				box: { width: 900, height: 360, autoSize: 'none' },
+				ref: '$t',
+			},
+		]).refs.$t!;
+		d.tx([
+			{ type: 'effect.add', target: { clipId: t }, effectId: LUMETRI_EFFECT_ID, params: { saturation: 0 } },
+		]);
+		// The glyph area: brightest pixels of the frame (the text), compared per channel.
+		// The glyphs: mean colour of the pixels brighter than the black background.
+		const textColour = (rgb: Uint8Array) => {
+			const sum = [0, 0, 0];
+			let n = 0;
+			for (let i = 0; i < rgb.length; i += 3) {
+				if (rgb[i]! + rgb[i + 1]! + rgb[i + 2]! < 90) continue;
+				for (let c = 0; c < 3; c++) sum[c]! += rgb[i + c]!;
+				n++;
+			}
+			return sum.map((v) => Math.round(v / Math.max(1, n)));
+		};
+		const grey = (c: number[]) => Math.max(...c) - Math.min(...c);
+		const nat = await exportDoc(d, 'auto');
+		expect(nat.done.state, JSON.stringify(nat.done.error)).toBe('succeeded');
+		expect(nat.done.result).toMatchObject({ renderPath: 'hybrid' });
+		const natRgb = decode(nat.out, { frame: 10, pix: 'rgb24' });
+		const rem = await exportDoc(d, 'remotion');
+		expect(rem.done.state, JSON.stringify(rem.done.error)).toBe('succeeded');
+		const remRgb = decode(rem.out, { frame: 10, pix: 'rgb24' });
+		const r = await engine.app.inject({
+			method: 'POST',
+			url: '/api/layer-bake/preview?wait=1',
+			headers: { ...JSON_H, ...hostH() },
+			payload: { envelope: d.envelope(), sequenceId: d.seqId, clipId: t },
+		});
+		expect(r.statusCode, r.body).toBe(200);
+		const pres = r.json().result as {
+			key: string;
+			previewUrl: string;
+			rect: { w: number; h: number } | null;
+		};
+		const prev = svc.filePath(pres.key, 'preview.webm')!;
+		const prevRgb = decode(prev, { frame: 10, pix: 'rgb24', decoder: 'libvpx-vp9' });
+		const colours = [textColour(natRgb), textColour(remRgb), textColour(prevRgb)];
+		report(`[LBK grade] mean glyph colour native/remotion/preview: ${JSON.stringify(colours)}`);
+		// Saturation 0 turns the red title grey (luma of red ≈ 54/255); ungraded it would be (255, 0, 0).
+		for (const c of colours) {
+			expect(grey(c)).toBeLessThanOrEqual(12);
+			expect(c[0]).toBeGreaterThan(30);
+			expect(c[0]).toBeLessThan(120);
+		}
+		// The three paths agree (the preview is VP9 at half size: a little looser).
+		expect(Math.abs(colours[0]![0]! - colours[1]![0]!)).toBeLessThanOrEqual(3);
+		expect(Math.abs(colours[0]![0]! - colours[2]![0]!)).toBeLessThanOrEqual(5);
+		// Native and Remotion agree on the whole frame.
+		expect(within(natRgb, remRgb, 3)).toBeGreaterThanOrEqual(0.99);
+		// The file route serves the preview.
+		const get = await engine.app.inject({ method: 'GET', url: pres.previewUrl, headers: hostH() });
+		expect(get.statusCode).toBe(200);
+		expect(get.headers['content-type']).toBe('video/webm');
+	}, 1_800_000);
+
+	it('a failing bake: `auto` falls back to Remotion with a warning, forced native fails (LBK-023)', async () => {
+		const d = new DocBuilder('hd-720p-30');
+		d.tx([{ type: 'clip.addText', at: 0, duration: 15, track: 'V1', content: { text: 'Fallback' } }]);
+		const orig = svc.ensureBake.bind(svc);
+		svc.ensureBake = async () => {
+			throw new JobError('LAYER_BAKE_FAILED', 'synthetic bake failure', true);
+		};
+		try {
+			const auto = await exportDoc(d, 'auto');
+			expect(auto.done.state, JSON.stringify(auto.done.error)).toBe('succeeded');
+			expect(auto.done.result).toMatchObject({
+				renderPath: 'remotion',
+				warnings: [{ code: 'NATIVE_FALLBACK', message: expect.stringMatching(/synthetic bake failure/) }],
+			});
+			const forced = await exportDoc(d, 'native');
+			expect(forced.done.state).toBe('failed');
+			expect(forced.done.error).toMatchObject({ code: 'LAYER_BAKE_FAILED' });
+		} finally {
+			svc.ensureBake = orig;
+		}
+	}, 1_200_000);
+
+	it('the composites use no GPL filter (LBK-031) and every bake is in the Remotion usage log (LBK-026)', () => {
+		const filters = ffArgs
+			.map((a) => {
+				const i = a.findIndex((x) => x === '-filter_complex' || x === '-vf');
+				return i >= 0 ? a[i + 1]! : '';
+			})
+			.filter(Boolean);
+		expect(filters.some((f) => /lut3d/.test(f))).toBe(true);
+		for (const f of filters) expect(gplFiltersIn(f)).toEqual([]);
+		const log = join(coreServices(engine.app).config.paths.logsDir, 'remotion-usage.jsonl');
+		const lines = readFileSync(log, 'utf8')
+			.trim()
+			.split('\n')
+			.map((l) => JSON.parse(l));
+		const bakes = lines.filter((l) => l.purpose === 'layer-bake');
+		expect(bakes.length).toBeGreaterThanOrEqual(svc.stats.rendered);
+		expect(bakes.some((l) => l.kind === 'media')).toBe(true);
+		expect(bakes.some((l) => l.kind === 'still')).toBe(true);
+	});
+});
