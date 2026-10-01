@@ -186,7 +186,8 @@ export class ProcessingService {
 		const s = await this.settings.get();
 		if (req === 'local') return 'local';
 		if (req === 'remote') {
-			if (!s.remote) throw new JobError('REMOTE_NOT_CONFIGURED', 'No remote executor is configured', false);
+			if (!s.remote)
+				throw new JobError('REMOTE_NOT_CONFIGURED', 'The remote executor is not configured', false);
 			return 'remote';
 		}
 		if (!s.remote?.enabled) return 'local';
@@ -393,7 +394,8 @@ export class ProcessingService {
 
 	private async remote(): Promise<SshRemote> {
 		const s = await this.settings.get();
-		if (!s.remote) throw new JobError('REMOTE_NOT_CONFIGURED', 'No remote executor is configured', false);
+		if (!s.remote)
+			throw new JobError('REMOTE_NOT_CONFIGURED', 'The remote executor is not configured', false);
 		checkIdentity(s.remote);
 		return new SshRemote(s.remote, join(this.core.config.paths.tmpDir, 'ssh'), this.env);
 	}
@@ -557,7 +559,7 @@ export class ProcessingService {
 		if (!s.remote)
 			throw new JobError(
 				'REMOTE_NOT_CONFIGURED',
-				'No remote executor is configured (Preferences ▸ Processing)',
+				'The remote executor is not configured (Preferences ▸ Processing)',
 				false,
 			);
 		const remote = await this.remote();
@@ -574,7 +576,7 @@ export class ProcessingService {
 		if (!s.remote)
 			throw new JobError(
 				'REMOTE_NOT_CONFIGURED',
-				'No remote executor is configured (Preferences ▸ Processing)',
+				'The remote executor is not configured (Preferences ▸ Processing)',
 				false,
 			);
 		return this.core.queue.submit({
