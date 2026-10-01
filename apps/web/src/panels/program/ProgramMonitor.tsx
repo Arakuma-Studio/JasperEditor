@@ -29,9 +29,12 @@ import { useColorBypass } from '../../color/actions.ts';
 import { runCommand } from '../../commands/index.ts';
 import { programOverlays } from '../../extensions/index.ts';
 import { useRegistry } from '../../extensions/react.ts';
+import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import { useEngineOrNull } from '../../state/engine.tsx';
+import { ContextMenu } from '../timeline/components/Chrome.tsx';
 import { markerVar } from '../timeline/components/ClipView.tsx';
 import type { PanelProps } from '../types.ts';
+import { programLayerMenu } from './layer-menu.ts';
 import {
 	durationLabel,
 	MiniRuler,
@@ -150,6 +153,10 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 	const [viewportRef, viewport] = useElementSize<HTMLDivElement>();
 	const view = computeView(viewport, frameSize, monitor.zoom, monitor.pan);
 	const ctx = useMonitorCommandCtx({ session, panel: 'program', instanceId, engine });
+	// S03:XF-050 (wp-clipboard): layer context menu; inside the shell its commands get the live context (toasts).
+	const shell = useShellRuntimeOrNull();
+	const [layerMenu, setLayerMenu] = useState<{ x: number; y: number; clipId: string | null } | null>(null);
+	const menuCtx = () => shell?.getCtx() ?? ctx;
 
 	// ------------------------------------------------------------------ Player ↔ TransportStore (ARC-010)
 	const live = useRef({ seq, end, fps });
@@ -365,6 +372,7 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 					transport={transport}
 					monitor={monitor}
 					onPan={setPan}
+					onContextMenu={setLayerMenu}
 				/>
 				{/* M2 overlays registered by feature packages (tracker, corner pin handles; ARCHITECTURE §19.10). */}
 				{overlays
@@ -544,6 +552,19 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 					<Scissors size={16} />
 				</TransportButton>
 			</div>
+			{layerMenu ? (
+				<ContextMenu
+					x={layerMenu.x}
+					y={layerMenu.y}
+					testId="program-context-menu"
+					items={programLayerMenu(
+						menuCtx(),
+						(layerMenu.clipId && session.getCommitted().sequences[seq.id]?.clips[layerMenu.clipId]) || null,
+						(id) => void runCommand(id, menuCtx()),
+					)}
+					onClose={() => setLayerMenu(null)}
+				/>
+			) : null}
 		</div>
 	);
 }

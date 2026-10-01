@@ -63,4 +63,9 @@ export interface UiCommand {
 	disabledReason?(ctx: CommandCtx): string | undefined;
 	/** Alias or internal command: not listed in the command palette. */
 	hidden?: boolean;
+	/**
+	 * wp-clipboard (S01:CLB-002): bound to a paste chord, the command runs from the browser's paste event (its data
+	 * as `args.clipboard`) instead of the keydown, so the system clipboard is read without a permission prompt.
+	 */
+	nativeClipboard?: 'paste';
 }

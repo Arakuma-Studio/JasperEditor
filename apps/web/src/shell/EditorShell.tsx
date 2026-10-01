@@ -14,6 +14,7 @@ import {
 	useSyncExternalStore,
 } from 'react';
 import { useNavigate } from 'react-router';
+import { installClipboardEvents } from '../clipboard/events.ts';
 import { ExportMode } from '../export/ExportMode.tsx';
 import { claimExportModeHost, exportMode, useExportMode } from '../export/mode.ts';
 import { setMonitorPanelServices } from '../panels/program/monitor-commands.ts';
@@ -295,6 +296,8 @@ function ShellBody() {
 			}),
 		[runtime],
 	);
+	// wp-clipboard (S01:CLB-002): copy/cut/paste events from the browser or app menu run the Edit commands.
+	useEffect(() => installClipboardEvents(window, (id, args) => void runtime.run(id, args)), [runtime]);
 	// Electron native menu clicks arrive as command ids (S05:MN-001, §21).
 	useEffect(() => getDesktopBridge()?.onMenuCommand((id) => void runtime.run(id)), [runtime]);
 

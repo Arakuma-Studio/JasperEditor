@@ -168,6 +168,8 @@ export type TransformOverlayProps = {
 	transport: TransportStore;
 	monitor: MonitorViewState;
 	onPan(pan: Vec2): void;
+	/** S03:XF-050: right-click; the layer under the pointer (topmost, unlocked) is selected first. */
+	onContextMenu?(at: { x: number; y: number; clipId: string | null }): void;
 };
 
 export function TransformOverlay({
@@ -178,6 +180,7 @@ export function TransformOverlay({
 	transport,
 	monitor,
 	onPan,
+	onContextMenu,
 }: TransformOverlayProps) {
 	const { frame, playing } = useOverlayFrame(transport);
 	const selected = useStoreSelector(session.store, (s) => s.selection.timeline.clips);
@@ -692,6 +695,13 @@ export function TransformOverlay({
 			onPointerMove={onPointerMove}
 			onPointerUp={onPointerUp}
 			onPointerCancel={() => endGesture(false)}
+			onContextMenu={(e) => {
+				e.preventDefault();
+				if (gestureRef.current) return;
+				const id = layerAt(toSeq(e).seq);
+				if (id && !selectedSet.has(id)) session.select('timeline', [id], 'replace', { primary: id });
+				onContextMenu?.({ x: e.clientX, y: e.clientY, clipId: id });
+			}}
 			onPointerLeave={() => !gestureRef.current && setHover(null)}
 			onDragOver={onDragOver}
 			onDragLeave={() => setDropHint(null)}

@@ -34,8 +34,17 @@ import type {
 
 export type SessionContext = Omit<CommandContext, 'revision' | 'selection' | 'entityRevisions'>;
 
-/** Transaction input accepted by the session; `coalesceKey` merges repeated user edits (S01:UND-006). */
-export type SessionTxInput = TxInput & { coalesceKey?: string };
+/**
+ * Transaction input accepted by the session; `coalesceKey` merges repeated user edits (S01:UND-006). `selectAfter`
+ * (S01:SEL-006/008) picks the selection that follows the result (pasted clips, pasted items): it becomes the
+ * history entry's "after" selection, so Redo restores it too.
+ */
+export type SessionTxInput = TxInput & {
+	coalesceKey?: string;
+	selectAfter?: (
+		result: Extract<TransactionResult, { ok: true }>,
+	) => { timeline?: readonly string[]; project?: readonly string[] } | null;
+};
 
 export type EditorSessionOptions = {
 	projectId: string;
@@ -276,12 +285,27 @@ export class EditorSession {
 
 	private commit(tx: SessionTxInput, ctx: CommandContext): TransactionResult {
 		const before = this.store.getState();
-		const { coalesceKey, ...rest } = tx;
+		const { coalesceKey, selectAfter, ...rest } = tx;
 		const { document, result } = applyTransaction(before.document, { protocol: TX_PROTOCOL, ...rest }, ctx);
 		if (!result.ok || tx.dryRun || document === before.document) return result;
 		const origin = tx.origin as Origin;
 		const label = agentLabel(tx.label, origin);
-		const selectionAfter = filterSelection(before.selection, document);
+		let selectionAfter = filterSelection(before.selection, document);
+		const follow = selectAfter?.(result);
+		if (follow) {
+			const s = selectionAfter;
+			const clips = follow.timeline
+				? [...new Set(follow.timeline)].filter((id) => isClipIn(document, id))
+				: null;
+			const items = follow.project ? [...new Set(follow.project)].filter((id) => !!document.items[id]) : null;
+			selectionAfter = {
+				...s,
+				...(clips
+					? { timeline: { ...s.timeline, clips, transitions: [], gaps: [], primaryClip: clips[0] ?? null } }
+					: {}),
+				...(items ? { project: { items, primary: items[items.length - 1] ?? null } } : {}),
+			};
+		}
 		for (const id of [...result.created, ...result.changed, ...result.deleted])
 			this.entityRevisions.set(id, result.revision);
 		if (origin !== 'system' && origin !== 'migration') {
@@ -619,4 +643,8 @@ export class EditorSession {
 		this.emit('closed', {});
 		this.listeners.clear();
 	}
+}
+
+function isClipIn(doc: ProjectDocument, clipId: string): boolean {
+	return Object.values(doc.sequences).some((seq) => !!seq.clips[clipId]);
 }

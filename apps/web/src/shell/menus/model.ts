@@ -72,6 +72,7 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('edit.paste', 'Paste'),
 			c('edit.pasteInsert', 'Paste Insert'),
 			c('edit.pasteAttributes', 'Paste Attributes…'),
+			c('edit.removeAttributes', 'Remove Attributes…'),
 			c('edit.clear', 'Clear'),
 			c('edit.rippleDelete', 'Ripple Delete'),
 			c('edit.duplicate', 'Duplicate'),

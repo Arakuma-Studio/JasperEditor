@@ -288,3 +288,26 @@ describe('selection, views, runtime, transport', () => {
 		expect(seen).toEqual([10, 11, 12, 0]);
 	});
 });
+
+describe('selectAfter (S01:SEL-006/008, wp-clipboard)', () => {
+	it('selects the result of a transaction and records it as the history "after" selection', async () => {
+		const { open } = setup();
+		const s = await open();
+		s.apply({ label: 'Add', origin: 'user', commands: [solid(0)] });
+		const [first] = clipIds(s.getCommitted());
+		s.select('timeline', [first!]);
+		const r = s.apply({
+			label: 'Paste',
+			origin: 'user',
+			commands: [solid(100, 'V2')],
+			selectAfter: (res) => ({ timeline: res.created.filter((id) => id.startsWith('clp_')) }),
+		});
+		expect(r.ok).toBe(true);
+		const pasted = clipIds(s.getCommitted()).filter((id) => id !== first);
+		expect(s.getState().selection.timeline).toMatchObject({ clips: pasted, primaryClip: pasted[0] });
+		s.undo();
+		expect(s.getState().selection.timeline.clips).toEqual([first]);
+		s.redo();
+		expect(s.getState().selection.timeline.clips).toEqual(pasted);
+	});
+});

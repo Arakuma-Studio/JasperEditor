@@ -27,6 +27,7 @@ import {
 	useState,
 } from 'react';
 import { effectEditorFor } from '../../extensions/index.ts';
+import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import {
 	applyMessage,
 	applyTextAnimation,
@@ -137,6 +138,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	const [dragTip, setDragTip] = useState<string | null>(null);
 	const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
 	const keySel = useSessionState((s) => s.selection.keyframes);
+	const shell = useShellRuntimeOrNull();
 	const selectedTransitions = useSessionState((s) => s.selection.timeline.transitions.length);
 	const transportStore = useMemo(
 		() => ({
@@ -742,6 +744,21 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 							{m.label}
 						</button>
 					))}
+					{shell ? (
+						// S03:EC-024 / wp-clipboard: Copy keys (pasted at the playhead with Ctrl/Cmd+V).
+						<button
+							type="button"
+							role="menuitem"
+							className="mt-1 block w-full border-t border-pr-border-subtle px-3 pt-1 pb-[3px] text-left text-pr-ui text-pr-text hover:bg-pr-accent-fill hover:text-pr-on-accent"
+							data-testid="ec-kf-copy"
+							onClick={() => {
+								void shell.run('edit.copy');
+								setMenu(null);
+							}}
+						>
+							Copy
+						</button>
+					) : null}
 					<button
 						type="button"
 						role="menuitem"
