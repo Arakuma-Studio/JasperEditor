@@ -223,10 +223,54 @@ export function referencedMediaIds(v: unknown, out: Set<string> = new Set()): Se
 	return out;
 }
 
-/** Font faces of `fonts` the clip uses (its JSON mentions the font id: text style, runs, template params). */
-export function clipFonts<F extends { fontId: string }>(clip: RenderVisualClip, fonts: readonly F[]): F[] {
-	const json = JSON.stringify(clip.source);
-	return fonts.filter((f) => json.includes(JSON.stringify(f.fontId)));
+type FaceOf = { fontId: string; family: string; weight: number; style: string };
+
+/** The face a text style draws with: the exact weight/style, else the font's first face (as TextLayer resolves it). */
+function faceFor<F extends FaceOf>(
+	fonts: readonly F[],
+	fontId: string,
+	weight: number,
+	italic: boolean,
+): F | undefined {
+	return (
+		fonts.find((f) => f.fontId === fontId && f.weight === weight && (f.style === 'italic') === italic) ??
+		fonts.find((f) => f.fontId === fontId)
+	);
+}
+
+function stringsIn(v: unknown, out: Set<string>): Set<string> {
+	if (typeof v === 'string') out.add(v);
+	else if (Array.isArray(v)) for (const x of v) stringsIn(x, out);
+	else if (v && typeof v === 'object') for (const x of Object.values(v)) stringsIn(x, out);
+	return out;
+}
+
+/**
+ * Font faces of `fonts` the clip draws with (the bake document's fonts and the key's). Text: the face of its style
+ * and of every styled run (exact font/weight/style, else the font's first face — what TextLayer picks), so other
+ * weights of the same font used elsewhere in the sequence (or missing from a sub-range export) do not change the
+ * key. Other sources (anime template params): every face of a font they name by id or family.
+ */
+export function clipFonts<F extends FaceOf>(clip: RenderVisualClip, fonts: readonly F[]): F[] {
+	const src = clip.source as {
+		text?: {
+			style?: { fontId?: string; weight?: number; italic?: boolean };
+			runs?: { style?: { fontId?: string; weight?: number; italic?: boolean } }[];
+		};
+	};
+	const used = new Set<F>();
+	if (src.text) {
+		const base = src.text.style ?? {};
+		for (const st of [base, ...(src.text.runs ?? []).map((r) => ({ ...base, ...r.style }))]) {
+			if (!st.fontId) continue;
+			const f = faceFor(fonts, st.fontId, st.weight ?? 400, st.italic ?? false);
+			if (f) used.add(f);
+		}
+	} else {
+		const named = stringsIn(clip.source, new Set());
+		for (const f of fonts) if (named.has(f.fontId) || named.has(f.family)) used.add(f);
+	}
+	return fonts.filter((f) => used.has(f));
 }
 
 /** Share of the frame below which a crop rect is used (a rect covering more renders the full frame). */

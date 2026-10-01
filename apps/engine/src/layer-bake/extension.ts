@@ -3,7 +3,7 @@
 // layer through Remotion into a cached straight-alpha master (or one PNG for static layers) as child jobs of the
 // export/still; `override` hands it to the builder as a `sequence` override (`still`, `rect`, `colorRuns`).
 // Colour effects of DOM layers (FIX-002) are applied by ffmpeg to the bake (native), or baked into a graded master
-// that the composition plays on the Remotion path (`prepareForRemotion` + `adaptRemotionDoc`).
+// (PNG frame sequence) that the composition plays on the Remotion path (`prepareForRemotion` + `adaptRemotionDoc`).
 import { availableParallelism } from 'node:os';
 import type { RenderSnapshot, RenderVisualClip } from '@jasper/project';
 import type { LayerOverride, NativeExtension, NativePrepareContext } from '../export/native-ext.ts';
@@ -19,7 +19,12 @@ export type PreparedLayer = {
 	override?: LayerOverride;
 	bake?: BakeResult;
 	/** Graded master for the Remotion path (LBK-010). */
-	graded?: { key: string; rect: { x: number; y: number; w: number; h: number } | null; startFrame: number };
+	graded?: {
+		key: string;
+		rect: { x: number; y: number; w: number; h: number } | null;
+		startFrame: number;
+		frames: number;
+	};
 };
 export type LayerBakePrepared = Map<string, PreparedLayer>;
 
@@ -91,7 +96,7 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 						jobId: ctx.jobId,
 					});
 					const g = await svc.ensureGraded(plan, grade, meta);
-					entry.graded = { key: g.key, rect: g.rect, startFrame: plan.startFrame };
+					entry.graded = { key: g.key, rect: g.rect, startFrame: plan.startFrame, frames: grade.frames };
 				}
 				out.set(clip.clipId, entry);
 			}
@@ -122,8 +127,9 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 						...(g
 							? {
 									baked: {
-										url: signUrl(layerFileUrl(g.key, 'graded.mov')),
+										url: signUrl(layerFileUrl(g.key, 'graded.png')),
 										startFrame: g.startFrame,
+										frames: g.frames,
 										...(g.rect ? { rect: g.rect } : {}),
 									},
 								}

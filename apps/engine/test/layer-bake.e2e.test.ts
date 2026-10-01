@@ -2,7 +2,8 @@
 // layers through headless Chrome. Footage + static title + keyframed title + shape + anime template plan `hybrid`;
 // the static layers bake one PNG; the output matches a full Remotion render; masters keep straight alpha over
 // R/G/B/W; re-exports hit the cache (also after moving a title in time); a text change bakes again; a Lumetri grade
-// on a title shows in the native export, the Remotion export and the graded preview; stills take the same path;
+// on a title shows in the native export, the Remotion export and the graded preview, and a graded static title
+// fades through its transition once on all three; stills take the same path;
 // a failing bake makes an `auto` export fall back to Remotion; the composite uses no GPL filter; every bake is
 // in the Remotion usage log.
 import { spawnSync } from 'node:child_process';
@@ -538,6 +539,112 @@ describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)
 		const get = await engine.app.inject({ method: 'GET', url: pres.previewUrl, headers: hostH() });
 		expect(get.statusCode).toBe(200);
 		expect(get.headers['content-type']).toBe('video/webm');
+	}, 1_800_000);
+
+	it('a graded static title fades through its transition once on every path: native, Remotion, preview (review fix 1)', async () => {
+		// Over a grey background, so that the layer's alpha shows (the transparent part of its region must stay grey).
+		const d = new DocBuilder('hd-720p-30');
+		d.tx([
+			{
+				type: 'sequence.updateSettings',
+				sequenceId: d.seqId,
+				settings: { backgroundColor: [0.5, 0.5, 0.5, 1] },
+			},
+		]);
+		const t = d.tx([
+			{
+				type: 'clip.addText',
+				at: 10,
+				duration: 30,
+				track: 'V1',
+				content: { text: 'FADE', style: { sizePx: 260, weight: 900, fill: [1, 0, 0, 1] } },
+				box: { width: 1000, height: 320, autoSize: 'none' },
+				ref: '$t',
+			},
+		]).refs.$t!;
+		d.tx([
+			{ type: 'effect.add', target: { clipId: t }, effectId: LUMETRI_EFFECT_ID, params: { saturation: 0 } },
+			{ type: 'transition.add', clipId: t, edge: 'in', effectId: 'jasper.cross-dissolve', duration: 10 },
+		]);
+		const planned = await coreServices(engine.app).exports.plan({
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			settings: proresSettings(d.seqId, 'auto') as never,
+		});
+		const clip = planned.snapshot.videoTracks.flatMap((tr) => tr.clips).find((c) => c.clipId === t)!;
+		const ramp = clip.fades!.find((f) => f.type === 'in')!;
+		expect(ramp.frames).toBeGreaterThanOrEqual(8);
+		const spanStart = clip.start - (clip.headHandle ?? 0);
+		const mid = ramp.start + Math.round(ramp.frames / 2);
+		const full = clip.start + clip.duration - 5;
+		const expected = Math.min(1, Math.max(0, (mid - ramp.start) / ramp.frames));
+		const bg = (rgb: Uint8Array) => rgb[0]!; // top-left pixel: background
+		// The glyphs: pixels of the path's own full-opacity frame clearly darker than the background (grey glyphs ≈ 54).
+		const measure = (fullRgb: Uint8Array, midRgb: Uint8Array) => {
+			const b = bg(fullRgb);
+			let fullSum = 0;
+			let midSum = 0;
+			let n = 0;
+			let bgOk = 0;
+			let bgN = 0;
+			for (let i = 0; i < fullRgb.length; i += 3) {
+				if (b - fullRgb[i]! > 40) {
+					fullSum += b - fullRgb[i]!;
+					midSum += b - midRgb[i]!;
+					n++;
+				} else if (Math.abs(b - fullRgb[i]!) <= 3) {
+					// Not glyph (nor an anti-aliased edge): the background must show through, also mid-fade.
+					bgN++;
+					if (Math.abs(midRgb[i]! - b) <= 3 && Math.abs(midRgb[i + 2]! - b) <= 3) bgOk++;
+				}
+			}
+			expect(n).toBeGreaterThan(1000);
+			return { bg: b, glyph: b - fullSum / n, ratio: midSum / fullSum, background: bgOk / bgN, bgN };
+		};
+		const nat = await exportDoc(d, 'auto');
+		expect(nat.done.state, JSON.stringify(nat.done.error)).toBe('succeeded');
+		expect(nat.done.result).toMatchObject({ renderPath: 'hybrid' });
+		const rem = await exportDoc(d, 'remotion');
+		expect(rem.done.state, JSON.stringify(rem.done.error)).toBe('succeeded');
+		expect(rem.done.result).toMatchObject({ renderPath: 'remotion' });
+		const r = await engine.app.inject({
+			method: 'POST',
+			url: '/api/layer-bake/preview?wait=1',
+			headers: { ...JSON_H, ...hostH() },
+			payload: { envelope: d.envelope(), sequenceId: d.seqId, clipId: t },
+		});
+		expect(r.statusCode, r.body).toBe(200);
+		const prev = svc.filePath((r.json().result as { key: string }).key, 'preview.webm')!;
+		// The preview is the layer alone (VP9 alpha, half size): composited over the background grey here.
+		const grey = decode(nat.out, { frame: 0, pix: 'rgb24' })[0]!;
+		const vp9 = (frame: number) =>
+			over(decode(prev, { frame: frame - spanStart, pix: 'rgba', decoder: 'libvpx-vp9' }), [
+				grey,
+				grey,
+				grey,
+			]);
+		const out = (file: string, frame: number) => decode(file, { frame, pix: 'rgb24' });
+		const m = {
+			native: measure(out(nat.out, full), out(nat.out, mid)),
+			remotion: measure(out(rem.out, full), out(rem.out, mid)),
+			preview: measure(vp9(full), vp9(mid)),
+		};
+		report(
+			`[LBK fades] graded static title over grey, frame ${mid} of a ${ramp.frames}-frame fade-in (expected ×${expected.toFixed(2)}): ${JSON.stringify(m)}`,
+		);
+		for (const [name, v] of Object.entries(m)) {
+			// Graded grey glyphs at full opacity (ungraded red would be far off), faded exactly once mid-ramp (not
+			// popping in, not faded twice), and the transparent part of the layer shows the background.
+			expect(v.glyph, name).toBeGreaterThan(30);
+			expect(v.glyph, name).toBeLessThan(80);
+			expect(Math.abs(v.ratio - expected), name).toBeLessThanOrEqual(0.12);
+			expect(v.background, name).toBeGreaterThanOrEqual(0.99);
+		}
+		expect(Math.abs(m.native.glyph - m.remotion.glyph)).toBeLessThanOrEqual(3);
+		expect(Math.abs(m.native.ratio - m.remotion.ratio)).toBeLessThanOrEqual(0.03);
+		// Native and Remotion agree on the whole frame, mid-fade and at full opacity.
+		for (const f of [mid, full])
+			expect(within(out(nat.out, f), out(rem.out, f), 3), `frame ${f}`).toBeGreaterThanOrEqual(0.99);
 	}, 1_800_000);
 
 	it('a failing bake: `auto` falls back to Remotion with a warning, forced native fails (LBK-023)', async () => {

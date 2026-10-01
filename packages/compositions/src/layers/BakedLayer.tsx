@@ -1,17 +1,20 @@
 // Baked pictures of DOM layers (M2, S11:LBK-010 — FIX-002; owner wp-m2-layer-bake). Text, shapes and anime templates
 // are drawn by React/DOM, which has no colour stage: their colour effects (D-21) are applied by ffmpeg to a baked
 // master instead. This wrapper (applied to the DOM layer components in the layer table) shows that picture:
-// - renders (`isPreview: false`): `clip.baked` — the graded master the engine injects on the Remotion path — played
-//   through <OffthreadVideo transparent> in its region of the frame;
+// - renders (`isPreview: false`): `clip.baked` — the graded master the engine injects on the Remotion path, a
+//   straight-alpha PNG frame sequence — shown frame by frame with <Img> in its region of the frame (Remotion's
+//   OffthreadVideo drops the alpha of RGBA video and converts YUVA video a few code values off);
 // - preview (Player): the graded VP9-alpha preview of the clip's current state, when the host app's runtime has it
 //   (`setBakedLayerRuntime`, apps/web/src/layer-bake/runtime.ts); until then the layer draws ungraded with a
 //   "Grade pending" chip.
-// The baked picture is the whole placed layer (Motion, effects, opacity and transition fades included), so it is
-// positioned in sequence pixels, outside the layer box. Layers without colour effects are untouched.
+// The baked picture is the whole placed layer (Motion, effects, opacity and transition fades included — the engine
+// fades graded stills, whose bakes have no fades, when it grades them), so it is positioned in sequence pixels,
+// outside the layer box, and `layer.props.opacity` (which carries the fade factor of `ClipLayer`) is deliberately
+// not applied again: opacity and fades reach the frame exactly once. Layers without colour effects are untouched.
 import { defaultEffectRegistry, type RenderVisualClip } from '@jasper/project';
 import { Video } from '@remotion/media';
 import { type ComponentType, type CSSProperties, useSyncExternalStore } from 'react';
-import { OffthreadVideo, Sequence } from 'remotion';
+import { Img, Sequence, useCurrentFrame } from 'remotion';
 import { blendModeCss } from '../pipeline.ts';
 import type { LayerProps } from '../types.ts';
 import { GradeChip, LayerBox } from './LayerBox.tsx';
@@ -88,7 +91,10 @@ function regionStyle(
 
 const FILL: CSSProperties = { width: '100%', height: '100%', display: 'block' };
 
-/** Engine renders: the injected graded master (frame 0 = sequence frame `baked.startFrame`). */
+/**
+ * Engine renders: the injected graded master (frame 0 = sequence frame `baked.startFrame`). Opacity and fades are in
+ * its pixels: no CSS opacity here.
+ */
 function BakedMaster({ layer }: { layer: LayerProps }) {
 	const { clip } = layer;
 	const baked = clip.baked!;
@@ -101,13 +107,25 @@ function BakedMaster({ layer }: { layer: LayerProps }) {
 			data-baked="master"
 			style={regionStyle(baked.rect, clip)}
 		>
-			<Sequence from={offset} layout="none" name="Baked layer">
-				<OffthreadVideo src={baked.url} transparent muted style={FILL} showInTimeline={false} />
+			<Sequence from={offset} durationInFrames={baked.frames} layout="none" name="Baked layer">
+				<BakedFrame url={baked.url} frames={baked.frames} />
 			</Sequence>
 		</div>
 	);
 }
 
+/** URL of frame `n` of a baked frame sequence. */
+export function bakedFrameUrl(url: string, n: number): string {
+	return `${url}${url.includes('?') ? '&' : '?'}n=${n}`;
+}
+
+/** The current frame of a baked frame sequence (frame 0 = the start of the enclosing Sequence). */
+function BakedFrame({ url, frames }: { url: string; frames: number }) {
+	const n = Math.min(Math.max(0, useCurrentFrame()), Math.max(0, frames - 1));
+	return <Img src={bakedFrameUrl(url, n)} style={FILL} alt="" />;
+}
+
+/** Player: the graded preview (opacity and fades are in its pixels, like the master's). */
 function BakedPreview({ layer, preview }: { layer: LayerProps; preview: BakedLayerPreview }) {
 	const { clip } = layer;
 	return (
