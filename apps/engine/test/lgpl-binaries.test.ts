@@ -291,9 +291,12 @@ describe('third-party licenses (About dialog, D-13)', () => {
 			license: 'gpl',
 		});
 		expect(swapped).toMatchObject({ bundled: false, texts: [] });
-		expect(await thirdPartyLicenses({ ffmpegPath: null, ffmpegVersion: null, license: 'unknown' })).toEqual({
-			components: [],
-		});
+		// Without ffmpeg only the OpenCV.js entry (S09:TRK-011) remains.
+		expect(
+			(
+				await thirdPartyLicenses({ ffmpegPath: null, ffmpegVersion: null, license: 'unknown' })
+			).components.map((c) => c.id),
+		).toEqual(['opencv-js']);
 	});
 
 	const vendor = findVendorDir();

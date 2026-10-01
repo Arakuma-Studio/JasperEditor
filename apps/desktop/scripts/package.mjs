@@ -134,7 +134,7 @@ function copyRuntimeClosure(roots, fromDir, dest) {
 	return count;
 }
 
-const packages = copyRuntimeClosure(['@remotion/renderer'], engine, deploy);
+const packages = copyRuntimeClosure(['@remotion/renderer', '@techstark/opencv-js'], engine, deploy);
 const enginePkg = JSON.parse(readFileSync(join(engine, 'package.json'), 'utf8'));
 writeFileSync(
 	join(deploy, 'package.json'),
