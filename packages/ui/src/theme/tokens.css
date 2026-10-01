@@ -379,3 +379,9 @@
 :root {
 	--pr-engine-anime: #ff7ab8;
 }
+
+/* M3 (wp-m3-cachegc): dropdowns opened inside a dialog (Preferences pages) must sit above the dialog's scrim and
+   below tooltips. */
+:root {
+	--pr-z-dialog-popover: 1150;
+}

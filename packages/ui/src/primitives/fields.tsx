@@ -121,7 +121,7 @@ export function Select({
 				<RSelect.Content
 					position="popper"
 					sideOffset={2}
-					className="z-[var(--pr-z-popover)] max-h-[var(--radix-select-content-available-height)] min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-pr-menu border border-pr-menu-border bg-pr-menu p-1 shadow-pr-overlay"
+					className="z-[var(--pr-z-dialog-popover)] max-h-[var(--radix-select-content-available-height)] min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-pr-menu border border-pr-menu-border bg-pr-menu p-1 shadow-pr-overlay"
 				>
 					<RSelect.Viewport>
 						{options.map((o) => (
