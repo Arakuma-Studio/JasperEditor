@@ -133,6 +133,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			sub('Motion Graphic', [c('mg.editParameters', 'Edit Parameters…'), c('mg.rerender', 'Re-render')]),
 			c('project.createProxies', 'Create Proxies'),
 			c('process.processClip', 'Process Clip…'),
+			// wp-m3-inpoint (S07:PRC-018): Replace Footage… for the selected Project item / clip's media.
+			c('media.replaceFootage', 'Replace Footage…'),
 		],
 	},
 	{

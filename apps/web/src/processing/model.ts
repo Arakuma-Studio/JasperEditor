@@ -2,7 +2,16 @@
 // the steps a Process Clip dialog state produces. Pure (no React, no engine) so tests and the badge host share
 // it. The label/order helpers mirror apps/engine/src/processing/proc/recipe.ts (web may not import engine code,
 // ARCHITECTURE §3.1).
-import { FLICKS_PER_SECOND, type MediaAsset, type ProcessStep, type ProjectDocument } from '@jasper/project';
+import {
+	FLICKS_PER_SECOND,
+	type MediaAsset,
+	mediaFrameCount,
+	mediaVersionsOf,
+	originalMediaId,
+	type ProcessStep,
+	type ProjectDocument,
+	rootFrameSpan,
+} from '@jasper/project';
 
 export type StepOp = ProcessStep['op'];
 
@@ -49,43 +58,43 @@ export function isProcessed(asset: Pick<MediaAsset, 'derivation'> | undefined | 
 	return processedSteps(asset) !== null;
 }
 
-/** Derivations a clip can swap between (same frame count and rate): processing and plain transcodes. */
-function isVersion(asset: MediaAsset | undefined): boolean {
-	const op = asset?.derivation?.recipe.op;
-	return op === 'process' || op === 'transcode';
-}
-
-/** The original a media asset is a version of (itself for originals; null for unknown ids). */
+/**
+ * The original a media asset is a version of (itself for originals; null for unknown ids): processed versions
+ * and files declaring a source range of another media (S07:PRC-015…019; `originalMediaId` of the model).
+ */
 export function originalOf(doc: MediaTable, mediaId: string): string | null {
-	let id = mediaId;
-	const seen = new Set<string>();
-	for (;;) {
-		const m = doc.media[id] as MediaAsset | undefined;
-		if (!m) return seen.size === 0 ? null : id;
-		if (seen.has(id)) return id;
-		seen.add(id);
-		const from = m.derivation?.fromMediaId;
-		if (!isVersion(m) || !from || !doc.media[from]) return id;
-		id = from;
-	}
+	return originalMediaId(doc, mediaId);
 }
 
-/** The original first, then every processed version of it (document order). */
+/** The original first, then every version of it (document order). */
 export function versionsOf(doc: MediaTable, mediaId: string): string[] {
-	const original = originalOf(doc, mediaId);
-	if (!original) return [];
-	const rest = Object.keys(doc.media).filter((id) => id !== original && originalOf(doc, id) === original);
-	return [original, ...rest];
+	return mediaVersionsOf(doc, mediaId);
 }
 
-/** Label of a version in the Media Version dropdown: "Original" or its step labels. */
+/**
+ * The source frames a version holds when it is not the whole original, e.g. `frames 1088–1231`; null for the
+ * whole original (or when unknown).
+ */
+export function versionFrames(doc: MediaTable, mediaId: string): string | null {
+	const span = rootFrameSpan(doc, mediaId);
+	if (!span || span.rootId === mediaId) return null;
+	const total = mediaFrameCount(doc.media[span.rootId] as MediaAsset | undefined);
+	if (span.start === 0 && total !== null && span.end >= total) return null;
+	return `frames ${span.start}–${span.end - 1}`;
+}
+
+/**
+ * Label of a version in the Media Version dropdown: "Original", the step labels of a processed version, or the
+ * file name of a render declaring its source — with the source frames it holds when it is a range.
+ */
 export function versionLabel(doc: MediaTable, mediaId: string): string {
 	const m = doc.media[mediaId] as MediaAsset | undefined;
 	if (!m) return mediaId;
+	if (originalOf(doc, mediaId) === mediaId) return 'Original';
 	const steps = processedSteps(m);
-	if (steps) return recipeLabel(steps);
-	if (isVersion(m)) return m.originalName;
-	return 'Original';
+	const frames = versionFrames(doc, mediaId);
+	const base = steps ? recipeLabel(steps) : m.originalName;
+	return frames ? `${base} · ${frames}` : base;
 }
 
 /** Tooltip text of a processed version: `Processed version of <original> — Denoised · Upscaled 2×`. */
