@@ -236,28 +236,47 @@ export class TrackingService {
 			return p;
 		};
 
-		const forwardPass = async (w: TrackingWorker) => {
-			await w.ready;
-			await w.call({ type: 'init', cfg });
+		/**
+		 * A pass runs on one or more workers. With several, frames are dealt round-robin after the reference: each
+		 * worker tracks every n-th frame from the reference on its own (prediction, anchors), so they need no shared
+		 * state; lost frames are re-filled in pass order afterwards.
+		 */
+		const makeLane = async (workers: TrackingWorker[]) => {
+			await Promise.all(workers.map((w) => w.ready));
+			await Promise.all(workers.map((w) => w.call({ type: 'init', cfg })));
+			const inflight: Promise<void>[] = [];
+			let seq = 0;
+			return {
+				async push(frame: number, buf: Uint8Array) {
+					if (seq === 0) {
+						for (let i = 1; i < workers.length; i++)
+							inflight.push(feed(workers[i]!, frame, buf.slice(), true));
+						inflight.push(feed(workers[0]!, frame, buf, true));
+					} else inflight.push(feed(workers[(seq - 1) % workers.length]!, frame, buf, false));
+					seq++;
+					while (inflight.length >= IN_FLIGHT * workers.length) await inflight.shift();
+				},
+				async drain() {
+					await Promise.all(inflight.splice(0));
+				},
+			};
+		};
+
+		const forwardPass = async (workers: TrackingWorker[]) => {
+			const lane = await makeLane(workers);
 			const child = spawnDecoder(
 				this.core.ffmpeg,
 				{ ...decodeBase, start: ref, count: span.end - ref },
 				spawnOpts,
 			);
-			const inflight: Promise<void>[] = [];
 			let frame = ref;
-			for await (const buf of readFrames(child, frameBytes, signal)) {
-				inflight.push(feed(w, frame, buf, frame === ref));
-				frame++;
-				if (inflight.length >= IN_FLIGHT) await inflight.shift();
-			}
-			await Promise.all(inflight);
+			for await (const buf of readFrames(child, frameBytes, signal)) await lane.push(frame++, buf);
+			await lane.drain();
 			if (frame === ref) throw noReferenceFrame(ref);
 		};
 
-		const backwardPass = async (w: TrackingWorker) => {
-			await w.ready;
-			await w.call({ type: 'init', cfg });
+		const backwardPass = async (workers: TrackingWorker[]) => {
+			const lane = await makeLane(workers);
 			const K = Math.max(8, Math.min(90, Math.floor(CHUNK_BYTES / frameBytes)));
 			const chunk = (hi: number): Promise<{ lo: number; frames: Uint8Array[] }> => {
 				const lo = Math.max(span.start, hi - K);
@@ -275,15 +294,11 @@ export class TrackingService {
 				const { lo, frames } = got;
 				next = lo > span.start ? chunk(lo) : null;
 				if (first && frames.length < hi - lo) throw noReferenceFrame(ref);
-				const inflight: Promise<void>[] = [];
-				for (let i = frames.length - 1; i >= 0; i--) {
-					inflight.push(feed(w, lo + i, frames[i]!, first));
-					first = false;
-					if (inflight.length >= IN_FLIGHT) await inflight.shift();
-				}
-				await Promise.all(inflight);
+				first = false;
+				for (let i = frames.length - 1; i >= 0; i--) await lane.push(lo + i, frames[i]!);
 				hi = lo;
 			}
+			await lane.drain();
 		};
 
 		let aborted: (e: Error) => void = () => undefined;
@@ -303,14 +318,16 @@ export class TrackingService {
 		let ok = false;
 		try {
 			ctx.progress(0, { stage: 'Starting tracker' });
+			// Two CPU slots: both directions in parallel (one worker each), or one direction on two workers.
+			const slots = Math.max(1, ctx.slots);
 			let work: Promise<unknown>;
-			if (fwd && bwd && ctx.slots >= 2)
-				work = Promise.all([forwardPass(takeWorker()), backwardPass(takeWorker())]);
+			if (fwd && bwd && slots >= 2)
+				work = Promise.all([forwardPass([takeWorker()]), backwardPass([takeWorker()])]);
 			else {
-				const w = takeWorker();
+				const ws = Array.from({ length: Math.min(2, slots) }, () => takeWorker());
 				work = (async () => {
-					if (fwd) await forwardPass(w);
-					if (bwd) await backwardPass(w);
+					if (fwd) await forwardPass(ws);
+					if (bwd) await backwardPass(ws);
 				})();
 			}
 			await Promise.race([work, abortPromise]);
@@ -330,21 +347,20 @@ export class TrackingService {
 			}
 		}
 
-		// Frames the file did not have (a range past its end): hold the nearest tracked values, confidence 0.
-		const lost: number[] = [];
-		for (let i = 0; i < total; i++) {
-			if (!have[i]) {
-				let j = -1;
-				for (let d = 1; d < total && j < 0; d++) {
-					if (i - d >= 0 && have[i - d]) j = i - d;
-					else if (i + d < total && have[i + d]) j = i + d;
-				}
-				if (j >= 0) data.set(data.subarray(j * stride, (j + 1) * stride), i * stride);
+		// Lost frames repeat the last good values in pass order (away from the reference); frames the file did not
+		// have (a range past its end) too, with confidence 0.
+		const refIdx = ref - span.start;
+		const hold = (i: number, from: number) => {
+			if (!have[i] || lostFlag[i]) {
+				data.set(data.subarray(from * stride, (from + 1) * stride), i * stride);
 				conf[i] = 0;
 				lostFlag[i] = 1;
 			}
-			if (lostFlag[i]) lost.push(span.start + i);
-		}
+		};
+		for (let i = refIdx + 1; i < total; i++) hold(i, i - 1);
+		for (let i = refIdx - 1; i >= 0; i--) hold(i, i + 1);
+		const lost: number[] = [];
+		for (let i = 0; i < total; i++) if (lostFlag[i]) lost.push(span.start + i);
 		if (pendingEvent) publish(pendingEvent);
 		const secs = t0 ? (performance.now() - t0) / 1000 : 0;
 		ctx.log(`tracked ${done}/${total} frames at ${size.width}x${size.height} in ${secs.toFixed(2)} s`);
