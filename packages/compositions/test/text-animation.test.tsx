@@ -90,6 +90,11 @@ describe('rest state (S11:ANM-009, TXA-010)', () => {
 			expect(animated.block().outerHTML).toBe(plain);
 		}
 	});
+	it('a 1-frame clip with In and Out shows the rest state (S11:TXA-004: one frame stays at rest)', () => {
+		const v = view(docWith({ textAnimation: SLIDE_FADE }, 1), 0);
+		expect(v.block().dataset.textAnimating).toBeUndefined();
+		expect(v.block().outerHTML).toBe(view(docWith({}, 1), 0).block().outerHTML);
+	});
 	it('unknown presets render at rest', () => {
 		const doc = docWith({ textAnimation: SLIDE_FADE });
 		const clip = doc.videoTracks.flatMap((t) => t.clips)[0]!;
