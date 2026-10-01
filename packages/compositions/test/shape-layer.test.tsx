@@ -16,6 +16,7 @@ import { makeEllipse, makeRect } from '@remotion/shapes';
 import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_RENDER_OPTIONS, SequenceComposition } from '../src/index.ts';
+import { ellipseOffset } from '../src/layers/ShapeLayer.tsx';
 
 const FPS = 30;
 
@@ -65,6 +66,12 @@ const add = (shape: Record<string, unknown>, extra: Record<string, unknown> = {}
 	...extra,
 });
 
+/** Geometry offset of an ellipse at `(ox, oy)` in its box, with the makeEllipse correction. */
+function ellipseTranslate(ox: number, oy: number, rx: number, ry: number): string {
+	const [fx, fy] = ellipseOffset(rx, ry);
+	return `translate(${ox + fx} ${oy + fy})`;
+}
+
 function layerOf(root: HTMLElement, clipId: string) {
 	const box = root.querySelector<HTMLElement>(`[data-clip-id="${clipId}"]`)!;
 	const svg = box.querySelector('svg[data-shape]');
@@ -106,6 +113,21 @@ describe('ShapeLayer geometry', () => {
 		const ell = layerOf(root, refs.$e!);
 		expect(ell.svg?.getAttribute('data-shape')).toBe('ellipse');
 		expect(ell.fill?.getAttribute('d')).toBe(makeEllipse({ rx: 150, ry: 50 }).path);
+		expect(ell.translate).toBe(ellipseTranslate(0, 0, 150, 50));
+	});
+
+	it("re-centres makeEllipse's arc (centre (rx + 0.5, ry·√(1 − (0.5/rx)²))) on the box centre", () => {
+		for (const [rx, ry] of [
+			[150, 100],
+			[0.5, 3],
+			[2, 40],
+		] as const) {
+			const [fx, fy] = ellipseOffset(rx, ry);
+			// The arc from (rx, 0) to (rx + 1, 0) on the ellipse with radii (rx, ry) has its centre at:
+			const cy = ry * Math.sqrt(1 - (0.5 / rx) ** 2);
+			expect(rx + 0.5 + fx).toBeCloseTo(rx, 12);
+			expect(cy + fy).toBeCloseTo(ry, 12);
+		}
 	});
 
 	it.each([
@@ -197,14 +219,14 @@ describe('ShapeLayer geometry', () => {
 		// The box is the largest size; the geometry is centred in it.
 		const start = at(0);
 		expect(start.box.style.width).toBe('300px');
-		expect(start.translate).toBe('translate(100 50)');
+		expect(start.translate).toBe(ellipseTranslate(100, 50, 50, 50));
 		expect(start.fill?.getAttribute('d')).toBe(makeEllipse({ rx: 50, ry: 50 }).path);
 		const mid = at(10);
-		expect(mid.translate).toBe('translate(50 25)');
+		expect(mid.translate).toBe(ellipseTranslate(50, 25, 100, 75));
 		expect(mid.fill?.getAttribute('d')).toBe(makeEllipse({ rx: 100, ry: 75 }).path);
 		expect(mid.fill?.getAttribute('fill')).toBe('rgba(128, 128, 128, 1)');
 		const end = at(30);
-		expect(end.translate).toBe('translate(0 0)');
+		expect(end.translate).toBe(ellipseTranslate(0, 0, 150, 100));
 		expect(end.fill?.getAttribute('fill')).toBe('rgba(0, 0, 0, 1)');
 	});
 

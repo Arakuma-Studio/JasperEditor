@@ -16,12 +16,21 @@ import { rgbaCss } from '../metadata.ts';
 import type { LayerProps } from '../types.ts';
 import { LayerBox } from './LayerBox.tsx';
 
-/** SVG path of the geometry with its top-left at (0, 0). */
+/** SVG path of the geometry with its top-left at (0, 0) (ellipses: see `ellipseOffset`). */
 function shapePath(g: Pick<ShapeGeometry, 'type' | 'size' | 'cornerRadius'>): string {
 	const [w, h] = g.size;
 	return g.type === 'ellipse'
 		? makeEllipse({ rx: w / 2, ry: h / 2 }).path
 		: makeRect({ width: w, height: h, cornerRadius: g.cornerRadius }).path;
+}
+
+/**
+ * `makeEllipse` draws one arc from (rx, 0) to (rx + 1, 0), so its centre is (rx + 0.5, ry·√(1 − (0.5/rx)²)), not
+ * (rx, ry): half a pixel to the right (and a hair up). This offset moves it back onto the box centre
+ * (measured against the analytic reference in apps/engine/test/shapes-remotion.e2e.test.ts). Needs rx ≥ 0.5.
+ */
+export function ellipseOffset(rx: number, ry: number): [number, number] {
+	return [-0.5, ry - ry * Math.sqrt(1 - (0.5 / rx) ** 2)];
 }
 
 export function ShapeLayer(layer: LayerProps) {
@@ -30,7 +39,7 @@ export function ShapeLayer(layer: LayerProps) {
 	const src = layer.clip.source;
 	const g = 'shape' in src ? evaluateShape(src.shape, layer.contentTime, box) : null;
 	const [w, h] = g?.size ?? [0, 0];
-	const drawn = !!g && w > 0 && h > 0;
+	const drawn = !!g && h > 0 && w >= (g.type === 'ellipse' ? 1 : 0) && w > 0;
 	return (
 		<LayerBox layer={layer}>
 			{drawn ? (
@@ -55,8 +64,9 @@ function ShapeGraphic({ g, uid }: { g: ShapeGeometry; uid: string }) {
 	const s = g.stroke;
 	const strokeWidth = s ? (s.position === 'center' ? s.width : s.width * 2) : 0;
 	const pad = s ? s.width + 1 : 0;
+	const [fx, fy] = g.type === 'ellipse' ? ellipseOffset(w / 2, h / 2) : [0, 0];
 	return (
-		<g transform={`translate(${g.origin[0]} ${g.origin[1]})`}>
+		<g transform={`translate(${g.origin[0] + fx} ${g.origin[1] + fy})`}>
 			{s?.position === 'inside' ? (
 				<defs>
 					<clipPath id={`${uid}-in`}>
