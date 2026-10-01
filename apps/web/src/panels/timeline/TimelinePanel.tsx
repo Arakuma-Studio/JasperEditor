@@ -29,6 +29,13 @@ import { clipMenuExtensions, collectMenuItems } from '../../extensions/index.ts'
 import { useEngineOrNull } from '../../state/engine.tsx';
 import { getImportService, PROJECT_ITEMS_MIME } from '../../state/services.ts';
 import {
+	applyMessage,
+	applyTextAnimation,
+	dropSide,
+	isTextAnimationDrag,
+	readTextAnimationDrag,
+} from '../../text-animation/actions.ts';
+import {
 	activeTransitionDrag,
 	applyEffectToClips,
 	endTransitionDrag,
@@ -825,8 +832,9 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			onTransitionDragOver(e);
 			return;
 		}
-		// Effects (WP-2D) drop onto the clip under the pointer; no insert/overwrite indicator.
-		if (isEffectDrag(e.dataTransfer)) {
+		// Effects (WP-2D) and text animations (M2, wp-m2-text-anim) drop onto the clip under the pointer; no
+		// insert/overwrite indicator.
+		if (isEffectDrag(e.dataTransfer) || isTextAnimationDrag(e.dataTransfer)) {
 			e.preventDefault();
 			e.dataTransfer.dropEffect = 'copy';
 			return;
@@ -856,6 +864,21 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			const r = applyEffectToClips(session, effect.effectId, [hit.clip.id]);
 			if (!r) toast('warning', 'This effect cannot be applied to that clip.');
 			else if (!r.ok) toast('error', r.errors[0]?.message ?? 'Could not apply the effect.');
+			return;
+		}
+		// M2 (wp-m2-text-anim, S11:TXA-020): a text animation preset applies to the text clip under the pointer; the
+		// drop position picks the side (first half of the clip = In, second half = Out).
+		const textAnim = readTextAnimationDrag(e.dataTransfer);
+		if (textAnim) {
+			const p = local(e);
+			const hit = hitTest(committedSeq, geomRef.current.layout, geomRef.current.viewport, p.x, p.y);
+			if (hit.kind !== 'clip' || hit.clip.kind !== 'text') {
+				toast('warning', 'Drop text animations onto a text clip.');
+				return;
+			}
+			const side = dropSide(hit.clip, t.frame);
+			const m = applyMessage(applyTextAnimation(session, [hit.clip.id], { side, ...textAnim }));
+			if (m) toast(m.kind, m.text);
 			return;
 		}
 		const mg = readMgTemplateDrag(e.dataTransfer);

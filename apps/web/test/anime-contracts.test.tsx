@@ -22,7 +22,8 @@ afterEach(() => globalThis.localStorage?.removeItem('jasper.motionTemplates.tab'
 
 describe('command modules (ARCHITECTURE §20.6)', () => {
 	it('registers the (empty) text-animation and shapes modules; the shape commands stay unregistered', () => {
-		expect(textAnimationCommands).toEqual([]);
+		// wp-m2-text-anim fills its module (apps/web/test/text-animation.test.tsx)
+		expect(textAnimationCommands.map((c) => c.id)).toEqual(['text.applyAnimation', 'text.removeAnimation']);
 		expect(shapeCommands).toEqual([]);
 		registerAllCommands();
 		expect(getCommand('graphics.newRectangle')).toBeUndefined();
@@ -41,7 +42,6 @@ describe('Motion Templates ▸ Text Animations tab (S11:TXA-020)', () => {
 		expect(tabs).toEqual(['Templates', 'Text Animations', 'Remotion']);
 		fireEvent.mouseDown(screen.getByRole('tab', { name: 'Text Animations' }), { button: 0 });
 		expect(await screen.findByTestId('text-animations-tab')).toBeTruthy();
-		expect(screen.getByText('Text animation presets are not installed yet.')).toBeTruthy();
 		expect(globalThis.localStorage?.getItem('jasper.motionTemplates.tab')).toBe('textAnimations');
 	});
 });

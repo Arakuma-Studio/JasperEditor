@@ -23,6 +23,11 @@ import {
 	useRef,
 	useState,
 } from 'react';
+import {
+	applyTextAnimation,
+	isTextAnimationDrag,
+	readTextAnimationDrag,
+} from '../../text-animation/actions.ts';
 import { applyEffectToClips, isEffectDrag, readEffectDragPayload } from '../effects/drag.ts';
 import { insertMotionTemplate, MG_TEMPLATE_MIME, readMgTemplateDrag } from '../motionTemplates/insert.ts';
 import { activeSequence, addTextAt, transformAt, transformCommands } from './edits.ts';
@@ -593,6 +598,14 @@ export function TransformOverlay({
 			e.preventDefault();
 			dt.dropEffect = 'copy';
 		}
+		// M2 (wp-m2-text-anim, S11:TXA-020): text animation presets drop onto a text layer.
+		if (isTextAnimationDrag(dt)) {
+			const hit = layerAt(toSeq(e).seq);
+			const ok = !!hit && scene.find((l) => l.clip.clipId === hit)?.clip.kind === 'text';
+			dt.dropEffect = ok ? 'copy' : 'none';
+			setDropHint(ok ? hit : null);
+			if (ok) e.preventDefault();
+		}
 	};
 	const onDrop = (e: React.DragEvent<SVGSVGElement>) => {
 		setDropHint(null);
@@ -601,6 +614,18 @@ export function TransformOverlay({
 			e.preventDefault();
 			const hit = layerAt(toSeq(e).seq);
 			if (hit) applyEffectToClips(session, effect.effectId, [hit]);
+			return;
+		}
+		// M2 (wp-m2-text-anim, S11:TXA-020): left half of the text layer = In, right half = Out.
+		const textAnim = readTextAnimationDrag(e.dataTransfer);
+		if (textAnim) {
+			e.preventDefault();
+			const p = toSeq(e).seq;
+			const layer = scene.find((l) => l.clip.clipId === layerAt(p));
+			if (layer?.clip.kind !== 'text') return;
+			const xs = (layer.props.quad as Quad).map((q) => q[0]);
+			const side = p[0] < (Math.min(...xs) + Math.max(...xs)) / 2 ? 'in' : 'out';
+			applyTextAnimation(session, [layer.clip.clipId], { side, ...textAnim });
 			return;
 		}
 		const mg = readMgTemplateDrag(e.dataTransfer);
