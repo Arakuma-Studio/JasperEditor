@@ -19,7 +19,6 @@ import {
 	isSameOrigin,
 	isWindowAction,
 	MEDIA_EXTENSIONS,
-	makeToken,
 	mcpLaunchInfo,
 } from './security.ts';
 
@@ -102,10 +101,6 @@ function createWindow(url: string): BrowserWindow {
 		},
 	});
 	win.once('ready-to-show', () => win.show());
-	win.webContents.setWindowOpenHandler(({ url: target }) => {
-		openExternalSafe(target);
-		return { action: 'deny' };
-	});
 	win.webContents.on('will-navigate', (event, target) => {
 		if (!isSameOrigin(target, appOrigin)) {
 			event.preventDefault();
@@ -193,7 +188,7 @@ async function startPackagedLike(): Promise<string> {
 	if (!existsSync(engineEntry)) throw new Error(`engine bundle missing: ${engineEntry} (run pnpm build)`);
 	if (!existsSync(join(webDir, 'index.html')))
 		throw new Error(`web build missing: ${webDir} (run pnpm build)`);
-	const token = makeToken((n) => randomBytes(n));
+	const token = randomBytes(32).toString('base64url');
 	const dir = appdir();
 	mkdirSync(dir, { recursive: true });
 	engine = await startEngineProcess({ entry: engineEntry, appdir: dir, webDir, token, resourcesDir });

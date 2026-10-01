@@ -35,46 +35,13 @@ describe('engine server (ARCHITECTURE §9.1, §4.2)', () => {
 		expect(r.headers['x-jasper-api']).toBe('1');
 	});
 
-	it('every §9.2 route is registered: WP-2F routes are implemented, others answer 501', async () => {
+	it('registers every route in the API contract', async () => {
 		const app = await make();
-		for (const [name, route] of Object.entries(ROUTES)) {
-			// /events streams (tested in events.test.ts); mg* are implemented by WP-2G (test/mg.test.ts) and
-			// agent* by WP-2H (test/agent.test.ts).
-			if (
-				name === 'health' ||
-				name === 'events' ||
-				name.startsWith('mg') ||
-				name.startsWith('agent') ||
-				name === 'mcp'
-			)
-				continue;
-			const url = route.path
-				.replace(/:([A-Za-z]+)/g, (_, p: string) => (p === 'projectId' ? 'prj_0000000000000001' : `x${p}`))
-				.replace('*', 'inter/400.woff2');
-			const r = await app.inject({
-				method: route.method,
-				url:
-					route.path.includes('/api/uploads/:uploadId') && route.method === 'PUT' ? `${url}?offset=0` : url,
-				headers: {
-					...H,
-					...(route.method === 'POST' || route.method === 'PUT'
-						? { 'content-type': 'application/json' }
-						: {}),
-				},
-				payload: route.method === 'POST' || route.method === 'PUT' ? '{}' : undefined,
-			});
-			expect(r.headers['x-jasper-api'], `${route.method} ${route.path}`).toBe('1');
-			if (route.owner === 'WP-2F') {
-				expect(r.statusCode, `${route.method} ${route.path}`).not.toBe(501);
-				if (r.statusCode >= 400) expect(r.json()).toHaveProperty('code');
-			} else if (route.owner.startsWith('wp-m2-')) {
-				// M2 work packages replace their stubs; each tests its own routes. Stubs answer 501.
-				if (r.statusCode === 501) expect(r.json()).toMatchObject({ code: 'NOT_IMPLEMENTED' });
-				else if (r.statusCode >= 400) expect(r.json()).toHaveProperty('code');
-			} else {
-				expect(r.statusCode, `${route.method} ${route.path}`).toBe(501);
-				expect(r.json()).toMatchObject({ code: 'NOT_IMPLEMENTED', retryable: false });
-			}
+		await app.ready();
+		for (const route of Object.values(ROUTES)) {
+			expect(app.hasRoute({ method: route.method, url: route.path }), `${route.method} ${route.path}`).toBe(
+				true,
+			);
 		}
 	});
 

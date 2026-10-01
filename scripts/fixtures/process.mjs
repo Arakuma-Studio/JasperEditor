@@ -10,7 +10,7 @@ import { spawnSync } from 'node:child_process';
 import { rmSync } from 'node:fs';
 
 /** Deterministic random walk (LCG), clamped to ±limit, as integer offsets. */
-export function randomWalk(n, limit = 24, seed = 1234567, step = 6) {
+function randomWalk(n, limit = 24, seed = 1234567, step = 6) {
 	let s = seed >>> 0;
 	const rnd = () => {
 		s = (Math.imul(s, 1664525) + 1013904223) >>> 0;

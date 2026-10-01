@@ -37,7 +37,7 @@ import {
 } from '../model/gestures.ts';
 import { type Hit, hitTest } from '../model/hit.ts';
 import { clampHeight, type RegionKind, regionIndexAt, type TrackAreaLayout } from '../model/layout.ts';
-import { collectSnapTargets, type SnapTarget, thresholdFrames } from '../model/snapping.ts';
+import { collectSnapTargets, type SnapTarget } from '../model/snapping.ts';
 import { cursorFor, type GestureKind, resolveGesture } from '../model/tools.ts';
 import {
 	bodyDragAlignment,
@@ -54,12 +54,12 @@ import {
 	clampZoom,
 	deltaFramesFromPx,
 	extentEnd,
-	frameToX,
 	keyZoomAnchorX,
 	minPxPerFrame,
 	normalizeWheel,
 	PX_PER_FRAME_MAX,
 	revealFrame,
+	seekFrameAt,
 	type Viewport,
 	wheelIntent,
 	ZOOM_STEP,
@@ -82,7 +82,7 @@ export type PointerInfo = {
 	button?: number;
 };
 
-export interface ControllerEnv {
+interface ControllerEnv {
 	session: EditorSession;
 	sequenceId(): string | null;
 	ui: TimelineUiStore;
@@ -143,8 +143,8 @@ type TransitionDrag = DragBase & {
 	/** The last requested update equals the original transition (commit nothing). */
 	unchanged: boolean;
 };
-type HandDrag = DragBase & { kind: 'hand'; scroll0: number; scrollY0: number; region: RegionKind };
-type ZoomDrag = DragBase & { kind: 'zoom'; alt: boolean };
+type HandDrag = DragBase & { kind: 'hand'; scrollY0: number; region: RegionKind };
+type ZoomDrag = DragBase & { kind: 'zoom' };
 
 type Drag = MoveDrag | EdgeDrag | BodyDrag | MarqueeDrag | HandDrag | ZoomDrag | TransitionDrag;
 
@@ -165,23 +165,20 @@ export class TimelineController {
 		return this.env.session;
 	}
 	/** The drawn sequence (transient during gestures, S01:SES-007). */
-	seq(): Sequence | null {
+	private seq(): Sequence | null {
 		const id = this.env.sequenceId();
 		return id ? ((this.session.getDrawn().sequences[id] as Sequence | undefined) ?? null) : null;
 	}
-	committedSeq(): Sequence | null {
+	private committedSeq(): Sequence | null {
 		const id = this.env.sequenceId();
 		return id ? ((this.session.getCommitted().sequences[id] as Sequence | undefined) ?? null) : null;
 	}
-	view(): SequenceViewState | null {
+	private view(): SequenceViewState | null {
 		const id = this.env.sequenceId();
 		return id ? (this.session.getState().views[id] ?? null) : null;
 	}
 	get dragging(): boolean {
 		return this.drag !== null;
-	}
-	get dragKind(): string | null {
-		return this.drag?.kind ?? null;
 	}
 
 	private tool() {
@@ -193,15 +190,12 @@ export class TimelineController {
 	private playhead() {
 		return this.session.transport.getState().frame;
 	}
-	private rate(seq: Sequence): Rational {
-		return seq.settings.frameRate;
-	}
 	/** Transitions of a (drawn or committed) sequence, indexed per track (S10:TUI-004). */
-	transitions(seq: Sequence): TransitionIndex {
+	private transitions(seq: Sequence): TransitionIndex {
 		return transitionIndex(seq, this.session.getDrawn().media);
 	}
 	/** Hit test with transitions (S10:TUI-010). */
-	hitAt(seq: Sequence, x: number, y: number): Hit {
+	private hitAt(seq: Sequence, x: number, y: number): Hit {
 		const { viewport, layout } = this.env.geometry();
 		return hitTest(seq, layout, viewport, x, y, this.transitions(seq));
 	}
@@ -308,7 +302,7 @@ export class TimelineController {
 				this.beginHand(p, layout);
 				return true;
 			case 'zoom':
-				this.drag = { ...base, kind: 'zoom', alt: p.alt };
+				this.drag = { ...base, kind: 'zoom' };
 				return true;
 			default:
 				return false;
@@ -523,7 +517,6 @@ export class TimelineController {
 			downScroll: this.env.geometry().viewport.scrollFrame,
 			started: false,
 			last: p,
-			scroll0: this.env.geometry().viewport.scrollFrame,
 			scrollY0: region === 'video' ? (v?.scrollYVideo ?? 0) : (v?.scrollYAudio ?? 0),
 			region,
 		};
@@ -638,7 +631,7 @@ export class TimelineController {
 		}
 		const cmd = moveCommand(base, d.moving, delta, d.grabbedKind, offset, mode);
 		const r = d.gesture.update([cmd as never]);
-		const rate = this.rate(base);
+		const rate = base.settings.frameRate;
 		const lines = [signed(delta, rate, base.settings.dropFrame)];
 		if (offset !== 0) {
 			const first = base.clips[d.moving.find((id) => base.clips[id]) ?? ''];
@@ -736,7 +729,7 @@ export class TimelineController {
 			}
 		}
 		const drawn = this.seq();
-		const rate = this.rate(base);
+		const rate = base.settings.frameRate;
 		let actualDelta = delta;
 		if (r.ok && d.kind !== 'stretch')
 			actualDelta = (r.results[0] as { deltaFrames?: number })?.deltaFrames ?? delta;
@@ -781,7 +774,7 @@ export class TimelineController {
 				? { type: 'clip.slip', clipIds: d.ids, deltaFrames: delta }
 				: { type: 'clip.slide', clipId: d.clip.id, deltaFrames: delta };
 		const r = d.gesture.update([cmd as never]);
-		const rate = this.rate(base);
+		const rate = base.settings.frameRate;
 		const actual = r.ok ? ((r.results[0] as { deltaFrames?: number })?.deltaFrames ?? delta) : 0;
 		const drawn = this.seq();
 		const now = drawn?.clips[d.clip.id];
@@ -802,16 +795,10 @@ export class TimelineController {
 		}
 	}
 
-	private transitionTooltip(
-		base: Sequence,
-		duration: number,
-		clamped: boolean,
-		extra: string[] = [],
-	): string[] {
-		const rate = this.rate(base);
+	private transitionTooltip(base: Sequence, duration: number, clamped: boolean): string[] {
+		const rate = base.settings.frameRate;
 		const lines = [
 			`Duration ${formatTimecode(duration, rate, { dropFrame: base.settings.dropFrame })} (${duration})`,
-			...extra,
 		];
 		if (clamped) lines.push('Limited by media handles');
 		return lines;
@@ -920,7 +907,7 @@ export class TimelineController {
 
 	private updateHand(d: HandDrag, p: PointerInfo): void {
 		const { viewport } = this.env.geometry();
-		const scrollFrame = d.scroll0 - (p.x - d.downX) / viewport.pxPerFrame;
+		const scrollFrame = d.downScroll - (p.x - d.downX) / viewport.pxPerFrame;
 		this.setScroll(scrollFrame);
 		const dy = p.y - d.downY;
 		if (d.region === 'video') this.setView({ scrollYVideo: Math.max(0, d.scrollY0 + dy) });
@@ -1073,10 +1060,10 @@ export class TimelineController {
 		this.setView({ scrollFrame: next });
 	}
 
-	private applyViewport(v: Viewport, keepPrev = false): void {
+	private applyViewport(v: Viewport): void {
 		const ext = this.extent(v);
 		this.setView({ pxPerFrame: v.pxPerFrame, scrollFrame: clampScroll(v, ext) });
-		if (!keepPrev) this.env.ui.setState({ zoomPrev: null });
+		this.env.ui.setState({ zoomPrev: null });
 	}
 
 	zoomBy(factor: number, anchorX: number, v = this.env.geometry().viewport): void {
@@ -1194,7 +1181,7 @@ export class TimelineController {
 		if (!seq) return 0;
 		const v = this.env.geometry().viewport;
 		const end = sequenceDuration(seq);
-		let f = Math.max(0, Math.min(end, Math.floor(v.scrollFrame + x / v.pxPerFrame)));
+		let f = seekFrameAt(v, x, end);
 		if (snap) {
 			const targets = collectSnapTargets(seq, { playhead: null });
 			const s = snapEdge(f, targets, v.pxPerFrame, true);
@@ -1205,13 +1192,5 @@ export class TimelineController {
 		if (t.getState().playing) t.pause(); // TL-832
 		t.seek(f);
 		return f;
-	}
-
-	frameX(frame: number): number {
-		return frameToX(this.env.geometry().viewport, frame);
-	}
-
-	thresholdFrames(): number {
-		return thresholdFrames(this.env.geometry().viewport.pxPerFrame);
 	}
 }

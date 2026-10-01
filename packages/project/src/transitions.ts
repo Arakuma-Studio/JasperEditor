@@ -390,14 +390,6 @@ export function audioFadeGain(fades: readonly RenderAudioFade[] | undefined, fra
 	return k;
 }
 
-/** The transitions at a clip edge (`in` = head, `out` = tail). */
-export function transitionAtEdge(seq: Sequence, clipId: string, edge: 'in' | 'out'): Transition | null {
-	for (const t of Object.values(seq.transitions)) {
-		if (edge === 'in' ? t.incomingClipId === clipId : t.outgoingClipId === clipId) return t;
-	}
-	return null;
-}
-
 /** Clips that meet at frame `at` on a track: the one ending there and the one starting there. */
 export function clipsAtEditPoint(
 	seq: Sequence,

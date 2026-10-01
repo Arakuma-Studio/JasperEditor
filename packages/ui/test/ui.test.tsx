@@ -5,10 +5,8 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import {
 	Button,
-	ICONS,
 	IconButton,
 	LABEL_DEFAULTS,
-	LABEL_NAMES,
 	LABEL_PRESETS,
 	labelColor,
 	PanelFrame,
@@ -114,8 +112,7 @@ describe('@jasper/ui tokens', () => {
 		expect(tokens).toContain('[data-pr-labels="classic"]');
 		expect(tokens).toContain('[data-pr-labels="vibrant"]');
 	});
-	it('label names match the document LabelColor and presets cover every label', () => {
-		expect([...LABEL_NAMES].sort()).toEqual([...LABEL_COLORS].sort());
+	it('presets cover every label and media kinds have their expected defaults', () => {
 		for (const preset of Object.values(LABEL_PRESETS))
 			expect(Object.keys(preset).sort()).toEqual([...LABEL_COLORS].sort());
 		expect(LABEL_DEFAULTS['video-audio']).toBe('violet');
@@ -163,6 +160,5 @@ describe('@jasper/ui primitives', () => {
 		expect(screen.getByText('00;01;00;02').className).toContain('pr-tabular');
 		expect(screen.getByText('Program').tagName).toBe('H2');
 		expect(document.querySelector('[data-icon="tool.ripple"]')).toBeTruthy();
-		expect(Object.keys(ICONS).length).toBeGreaterThan(40);
 	});
 });

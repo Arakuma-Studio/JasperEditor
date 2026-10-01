@@ -76,10 +76,6 @@ export class ClientJobStore {
 		this.jobs = this.jobs.filter((j) => !TERMINAL_JOB_STATES.has(j.state));
 		this.emit();
 	}
-	/** Running or queued jobs (drives the beforeunload guard, IN-013). */
-	activeCount(): number {
-		return this.jobs.filter((j) => !TERMINAL_JOB_STATES.has(j.state)).length;
-	}
 }
 
 /** The app-wide client job store. */

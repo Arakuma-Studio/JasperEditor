@@ -175,13 +175,4 @@ export class ModelStore {
 		this.verified.set(dest, e.sha256);
 		return { path: dest, alreadyInstalled: false };
 	}
-
-	async remove(id: string): Promise<void> {
-		const e = this.entry(id);
-		if (!e) throw new ModelError('MODEL_UNKNOWN', `Unknown model ${id}`);
-		if (e.bundled)
-			throw new ModelError('MODEL_BUNDLED', `${e.name} ships with the app and cannot be removed`);
-		await rm(this.pathOf(e), { force: true });
-		this.verified.delete(this.pathOf(e));
-	}
 }

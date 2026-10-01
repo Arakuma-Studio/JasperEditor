@@ -29,10 +29,8 @@ export type KindCapabilities = {
 	priority: 'P0' | 'P1' | 'P2';
 };
 
-const cap = (c: KindCapabilities) => c;
-
 export const KIND_CAPABILITIES: Record<KnownClipKind, KindCapabilities> = {
-	video: cap({
+	video: {
 		kind: 'video',
 		trackKind: 'video',
 		source: 'media',
@@ -48,8 +46,8 @@ export const KIND_CAPABILITIES: Record<KnownClipKind, KindCapabilities> = {
 		m1: true,
 		defaultLabel: 'iris',
 		priority: 'P0',
-	}),
-	audio: cap({
+	},
+	audio: {
 		kind: 'audio',
 		trackKind: 'audio',
 		source: 'media',
@@ -65,8 +63,8 @@ export const KIND_CAPABILITIES: Record<KnownClipKind, KindCapabilities> = {
 		m1: true,
 		defaultLabel: 'caribbean',
 		priority: 'P0',
-	}),
-	still: cap({
+	},
+	still: {
 		kind: 'still',
 		trackKind: 'video',
 		source: 'media',
@@ -82,8 +80,8 @@ export const KIND_CAPABILITIES: Record<KnownClipKind, KindCapabilities> = {
 		m1: true,
 		defaultLabel: 'lavender',
 		priority: 'P0',
-	}),
-	'animated-image': cap({
+	},
+	'animated-image': {
 		kind: 'animated-image',
 		trackKind: 'video',
 		source: 'media',
@@ -99,8 +97,8 @@ export const KIND_CAPABILITIES: Record<KnownClipKind, KindCapabilities> = {
 		m1: true,
 		defaultLabel: 'lavender',
 		priority: 'P0',
-	}),
-	text: cap({
+	},
+	text: {
 		kind: 'text',
 		trackKind: 'video',
 		source: 'inline',
@@ -116,8 +114,8 @@ export const KIND_CAPABILITIES: Record<KnownClipKind, KindCapabilities> = {
 		m1: true,
 		defaultLabel: 'lavender',
 		priority: 'P0',
-	}),
-	solid: cap({
+	},
+	solid: {
 		kind: 'solid',
 		trackKind: 'video',
 		source: 'synthetic',
@@ -133,8 +131,8 @@ export const KIND_CAPABILITIES: Record<KnownClipKind, KindCapabilities> = {
 		m1: true,
 		defaultLabel: 'tan',
 		priority: 'P0',
-	}),
-	captions: cap({
+	},
+	captions: {
 		kind: 'captions',
 		trackKind: 'caption',
 		source: 'transcript',
@@ -150,8 +148,8 @@ export const KIND_CAPABILITIES: Record<KnownClipKind, KindCapabilities> = {
 		m1: false,
 		defaultLabel: 'mango',
 		priority: 'P0',
-	}),
-	'motion-graphic': cap({
+	},
+	'motion-graphic': {
 		kind: 'motion-graphic',
 		trackKind: 'video',
 		source: 'template',
@@ -167,10 +165,10 @@ export const KIND_CAPABILITIES: Record<KnownClipKind, KindCapabilities> = {
 		m1: true,
 		defaultLabel: 'purple',
 		priority: 'P0',
-	}),
+	},
 	// M2 (S08:MGC-004): bounded by the composition's duration; exported natively through cached ProRes 4444
 	// masters rendered by Remotion (the badge stays R).
-	composition: cap({
+	composition: {
 		kind: 'composition',
 		trackKind: 'video',
 		source: 'composition',
@@ -186,8 +184,8 @@ export const KIND_CAPABILITIES: Record<KnownClipKind, KindCapabilities> = {
 		m1: true,
 		defaultLabel: 'magenta',
 		priority: 'P0',
-	}),
-	'nest-video': cap({
+	},
+	'nest-video': {
 		kind: 'nest-video',
 		trackKind: 'video',
 		source: 'sequence',
@@ -203,8 +201,8 @@ export const KIND_CAPABILITIES: Record<KnownClipKind, KindCapabilities> = {
 		m1: false,
 		defaultLabel: 'forest',
 		priority: 'P1',
-	}),
-	'nest-audio': cap({
+	},
+	'nest-audio': {
 		kind: 'nest-audio',
 		trackKind: 'audio',
 		source: 'sequence',
@@ -220,8 +218,8 @@ export const KIND_CAPABILITIES: Record<KnownClipKind, KindCapabilities> = {
 		m1: false,
 		defaultLabel: 'forest',
 		priority: 'P1',
-	}),
-	adjustment: cap({
+	},
+	adjustment: {
 		kind: 'adjustment',
 		trackKind: 'video',
 		source: 'synthetic',
@@ -237,7 +235,7 @@ export const KIND_CAPABILITIES: Record<KnownClipKind, KindCapabilities> = {
 		m1: false,
 		defaultLabel: 'tan',
 		priority: 'P1',
-	}),
+	},
 };
 
 export function kindCapabilities(kind: string): KindCapabilities | null {
@@ -247,10 +245,6 @@ export function kindCapabilities(kind: string): KindCapabilities | null {
 /** Track kind a clip kind belongs on (S01:TRK-003). Unknown kinds return null (any track). */
 export function trackKindFor(kind: string): TrackKind | null {
 	return kindCapabilities(kind)?.trackKind ?? null;
-}
-
-export function isVisualKind(kind: string): boolean {
-	return kindCapabilities(kind)?.visual ?? false;
 }
 
 export function hasTransform(clip: Clip): clip is Extract<Clip, { transform: unknown }> & Clip {

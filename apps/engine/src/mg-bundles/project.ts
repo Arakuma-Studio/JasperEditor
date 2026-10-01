@@ -2,7 +2,7 @@
 // `remotion bundle` CLI (its remotion.config.ts, Tailwind and webpack overrides apply), bundle-directory checks.
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { readFile, stat, writeFile } from 'node:fs/promises';
+import { readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { MG_REMOTION_VERSION } from '@jasper/project';
 import { terminateTree } from '../tools/process.ts';
@@ -121,7 +121,8 @@ export async function bundleProject(
 		onSpawn?(child: import('node:child_process').ChildProcess): void;
 	},
 ): Promise<void> {
-	const bin = remotionBin(dir);
+	// Package-manager launchers resolve dependencies relative to their own location.
+	const bin = await realpath(remotionBin(dir));
 	const args = ['bundle', '--out-dir', outDir, '--log=info'];
 	const log: string[] = [];
 	const child = spawn(bin, args, {

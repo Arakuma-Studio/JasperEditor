@@ -244,10 +244,3 @@ export function sanitizeLayout(raw: unknown, known: ReadonlySet<string> = KNOWN)
 	if (typeof raw.activeGroup === 'string') out.activeGroup = raw.activeGroup;
 	return out as unknown as SerializedDockview;
 }
-
-/** Panel kinds present in a serialized layout. */
-export function kindsInLayout(layout: SerializedDockview): PanelKind[] {
-	return Object.values(layout.panels)
-		.map((p) => (p.params as { kind?: PanelKind } | undefined)?.kind)
-		.filter((k): k is PanelKind => !!k);
-}

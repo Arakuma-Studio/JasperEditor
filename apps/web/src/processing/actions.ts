@@ -35,7 +35,7 @@ export function targetsForClips(
 }
 
 /** Every video clip (any sequence) that uses `mediaId`. */
-export function clipsUsingMedia(doc: ProjectDocument, mediaId: string): string[] {
+function clipsUsingMedia(doc: ProjectDocument, mediaId: string): string[] {
 	const out: string[] = [];
 	for (const seq of Object.values(doc.sequences))
 		for (const c of Object.values(seq.clips) as VideoClipLike[])

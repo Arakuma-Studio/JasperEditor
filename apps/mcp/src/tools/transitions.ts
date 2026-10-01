@@ -6,7 +6,6 @@ import {
 	clipHandles,
 	linkedPartners,
 	type ProjectDocument,
-	resolveFrameInput,
 	type Sequence,
 	sequenceTimecode,
 	TimeInputSchema,
@@ -20,6 +19,7 @@ import {
 	DESTRUCTIVE,
 	defineTool,
 	EDIT,
+	frameOf,
 	loadDoc,
 	READ_ONLY,
 	requireOk,
@@ -221,14 +221,6 @@ async function summariesOf(ctx: ToolContext, projectId: string, ids: readonly st
 	return out;
 }
 
-function frameOf(seq: Sequence, t: unknown): number {
-	try {
-		return resolveFrameInput(seq, t);
-	} catch (e) {
-		throw new ToolError('E_INVALID_PARAM', (e as Error).message, TIME_FORMATS);
-	}
-}
-
 export function registerTransitionTools(ctx: ToolContext): void {
 	defineTool(
 		ctx,
@@ -258,8 +250,8 @@ export function registerTransitionTools(ctx: ToolContext): void {
 			} catch (e) {
 				throw new ToolError('E_NOT_FOUND', (e as Error).message, 'Call get_project for sequence ids.');
 			}
-			const from = range?.from !== undefined ? frameOf(seq, range.from) : undefined;
-			const to = range?.to !== undefined ? frameOf(seq, range.to) : undefined;
+			const from = range?.from !== undefined ? frameOf(seq, range.from, TIME_FORMATS) : undefined;
+			const to = range?.to !== undefined ? frameOf(seq, range.to, TIME_FORMATS) : undefined;
 			return jsonResult({
 				sequenceId: seq.id,
 				revision: revision ?? null,

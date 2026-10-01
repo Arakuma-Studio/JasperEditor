@@ -36,8 +36,6 @@ export type WarpRenderJob = {
 	workers: number;
 	/** ffmpeg threads of the encoder. */
 	threads: number;
-	/** `-alpha_bits 16` (both supported builds have it; kept optional for exotic builds). */
-	alphaBits?: boolean;
 	signal: AbortSignal;
 	onSpawn?(child: ChildProcess): void;
 	onProgress?(done: number, total: number): void;
@@ -78,7 +76,7 @@ export function decoderArgs(inputs: string[][], filter: string, frames: number):
  * workers) on stdin → ProRes 4444 with a 16-bit alpha plane, tagged BT.709.
  */
 export function encoderArgs(
-	o: { width: number; height: number; fps: Rational; threads: number; alphaBits?: boolean },
+	o: { width: number; height: number; fps: Rational; threads: number },
 	output: string,
 ): string[] {
 	return [
@@ -115,7 +113,8 @@ export function encoderArgs(
 		// round trip far below one 8-bit code value (PSNR ≈ 65 dB on camera footage).
 		'-q:v',
 		'2',
-		...(o.alphaBits === false ? [] : ['-alpha_bits', '16']),
+		'-alpha_bits',
+		'16',
 		'-vendor',
 		'apl0',
 		'-colorspace',
@@ -165,7 +164,7 @@ export async function renderWarpLayer(ff: Ffmpeg, job: WarpRenderJob): Promise<{
 			const onAbort = () => fail(new Error('cancelled'));
 			job.signal.addEventListener('abort', onAbort, { once: true });
 
-			const enc = ff.spawnRaw(encoderArgs({ ...job, threads: job.threads }, tmp), {
+			const enc = ff.spawnRaw(encoderArgs(job, tmp), {
 				stdin: 'pipe',
 				signal: job.signal,
 				onSpawn: track,

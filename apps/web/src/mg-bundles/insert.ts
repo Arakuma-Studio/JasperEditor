@@ -7,7 +7,7 @@ import type { EditorSession, SequenceViewState } from '@jasper/session';
 export type CompositionRef = { mediaId: string; compositionId: string };
 
 /** Track for a new composition clip: topmost targeted unlocked video track, else topmost unlocked, else V1. */
-export function targetTrackFor(
+function targetTrackFor(
 	doc: ProjectDocument,
 	sequenceId: string,
 	view: Pick<SequenceViewState, 'targeting'> | null,
@@ -21,7 +21,7 @@ export function targetTrackFor(
 }
 
 /** The `clip.addComposition` command for a composition at `at` (frames). */
-export function planCompositionInsert(
+function planCompositionInsert(
 	doc: ProjectDocument,
 	sequenceId: string,
 	ref: CompositionRef,
@@ -29,7 +29,6 @@ export function planCompositionInsert(
 		at: number;
 		trackId?: string;
 		view: Pick<SequenceViewState, 'targeting'> | null;
-		props?: Record<string, unknown>;
 	},
 ): { command: Command; label: string } {
 	const asset = doc.media[ref.mediaId];
@@ -42,7 +41,6 @@ export function planCompositionInsert(
 			composition: { mediaId: ref.mediaId, id: ref.compositionId },
 			at: Math.max(0, Math.round(opts.at)),
 			track: opts.trackId ?? targetTrackFor(doc, sequenceId, opts.view),
-			...(opts.props ? { props: opts.props } : {}),
 		} as Command,
 		label: `Add ${ref.compositionId}`,
 	};

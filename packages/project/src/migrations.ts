@@ -36,32 +36,22 @@ function migrateV1ToV2(doc: Rec): Rec {
 	return doc;
 }
 
-/**
- * vN → vN+1 migrations, applied in order. Each step keeps a fixture under test/fixtures/v<N>/ that must
- * keep loading (S01:MIG-002).
- */
-/**
- * v2 → v3 (M2, ARCHITECTURE §19.1): no data changes. The version bump only marks documents that may contain
- * the M2 additions (mg-bundle assets, trackers, curve params…) so M1 builds open them read-only.
- */
-function migrateV2ToV3(doc: Rec): Rec {
-	return doc;
-}
-
+/** Migrations run in order; every supported version keeps a loadable fixture (S01:MIG-002). */
 export const MIGRATIONS: readonly MigrationStep[] = [
 	{ from: 1, to: 2, migrate: migrateV1ToV2 },
-	{ from: 2, to: 3, migrate: migrateV2ToV3 },
+	// v3 marks M2 additions so older builds open them read-only; existing data needs no changes.
+	{ from: 2, to: 3, migrate: (doc) => doc },
 ];
 
-function unwrap(raw: unknown): { doc: Record<string, unknown>; fromEnvelope: boolean } {
+function unwrap(raw: unknown): Record<string, unknown> {
 	if (!raw || typeof raw !== 'object') throw new Error('Project data is not an object');
 	const o = raw as Record<string, unknown>;
 	if (o.format === 'jasper-project') {
 		if (!o.document || typeof o.document !== 'object') throw new Error('Envelope has no document');
-		return { doc: o.document as Record<string, unknown>, fromEnvelope: true };
+		return o.document as Record<string, unknown>;
 	}
 	if (o.format !== undefined) throw new Error(`Unknown project format ${String(o.format)}`);
-	return { doc: o, fromEnvelope: false };
+	return o;
 }
 
 /**
@@ -73,7 +63,7 @@ export function migrate(raw: unknown): {
 	report: MigrationReport;
 	readOnly: boolean;
 } {
-	const { doc } = unwrap(raw);
+	const doc = unwrap(raw);
 	const version = typeof doc.schemaVersion === 'number' ? doc.schemaVersion : 1;
 	if (version > CURRENT_SCHEMA_VERSION) {
 		return {

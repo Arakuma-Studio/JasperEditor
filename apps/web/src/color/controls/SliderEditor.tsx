@@ -4,7 +4,7 @@
 import { useRef } from 'react';
 import { ScrubbyNumber } from '../../panels/properties/controls/ScrubbyNumber.tsx';
 import type { Row } from '../../panels/properties/lib/model.ts';
-import { rowDefault, rowNumber } from '../model.ts';
+import { rowNumber } from '../model.ts';
 import { type RowWriteContext, useRowWriter } from '../rowEdit.ts';
 import { Slider } from './Slider.tsx';
 
@@ -26,7 +26,7 @@ export function SliderEditor(props: {
 	const scrubBase = useRef(value);
 	const min = row.spec.range?.min ?? -100;
 	const max = row.spec.range?.max ?? 100;
-	const def = rowDefault(row);
+	const def = row.spec.defaultValue;
 	const tid = props['data-testid'];
 	return (
 		<span className="flex w-full min-w-0 items-center gap-2">

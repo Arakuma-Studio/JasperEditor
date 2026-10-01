@@ -4,7 +4,7 @@
 import { useSyncExternalStore } from 'react';
 import type { DuplicateChoice } from './transaction.ts';
 
-export type MismatchInfo = {
+type MismatchInfo = {
 	clipName: string;
 	clip: { width: number; height: number; fps: string };
 	sequence: { name: string; width: number; height: number; fps: string };
@@ -21,7 +21,7 @@ export interface ImportPrompts {
 export type PendingPrompt =
 	| { id: number; kind: 'duplicates'; names: string[]; resolve(c: DuplicateChoice): void }
 	| { id: number; kind: 'mismatch'; info: MismatchInfo; resolve(c: 'change' | 'keep'): void }
-	| { id: number; kind: 'failures'; failed: ImportFailure[]; committed: number; resolve(): void };
+	| { id: number; kind: 'failures'; failed: ImportFailure[]; committed: number };
 
 export class PromptQueue implements ImportPrompts {
 	private queue: PendingPrompt[] = [];
@@ -52,7 +52,7 @@ export class PromptQueue implements ImportPrompts {
 		return new Promise((resolve) => this.push({ id: ++this.seq, kind: 'mismatch', info, resolve }));
 	}
 	failures(info: { failed: ImportFailure[]; committed: number }): void {
-		this.push({ id: ++this.seq, kind: 'failures', ...info, resolve: () => undefined });
+		this.push({ id: ++this.seq, kind: 'failures', ...info });
 	}
 }
 

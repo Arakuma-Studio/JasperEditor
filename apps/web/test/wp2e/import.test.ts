@@ -87,7 +87,6 @@ describe('import transaction (S01:LIFE-010 step 6)', () => {
 	it('bin import: one "Import N files" transaction of media.register commands into the target bin', async () => {
 		const { session } = await memorySession();
 		const prepared: PreparedMedia[] = ['a.mp4', 'b.mp4'].map((n, i) => ({
-			reg: registered(n),
 			name: n,
 			asset: buildMediaAsset(registered(n), { id: `med_000000000000000${i + 1}`, now: 't' }),
 			existingMediaId: null,
@@ -114,13 +113,11 @@ describe('import transaction (S01:LIFE-010 step 6)', () => {
 		const seq = Object.values(doc.sequences)[0]!;
 		const prepared: PreparedMedia[] = [
 			{
-				reg: registered('a.mp4'),
 				name: 'a.mp4',
 				asset: buildMediaAsset(registered('a.mp4', { seconds: 2 }), { id: 'med_000000000000000A', now: 't' }),
 				existingMediaId: null,
 			},
 			{
-				reg: registered('b.mp4'),
 				name: 'b.mp4',
 				asset: buildMediaAsset(registered('b.mp4', { seconds: 3 }), { id: 'med_000000000000000B', now: 't' }),
 				existingMediaId: null,

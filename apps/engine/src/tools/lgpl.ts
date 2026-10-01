@@ -18,7 +18,7 @@ export const REMOTION_BIN_DIR_ENV = 'JASPER_REMOTION_BIN_DIR';
 /** Older name (wp-3l); still honoured. */
 export const REMOTION_BIN_DIR_ENV_LEGACY = 'JASPER_REMOTION_BINARIES_DIR';
 /** `0` disables the dev vendor directory lookup (use PATH ffmpeg and Remotion's bundled one). */
-export const FFMPEG_VENDOR_ENV = 'JASPER_FFMPEG_VENDOR';
+const FFMPEG_VENDOR_ENV = 'JASPER_FFMPEG_VENDOR';
 /** Name of the LGPL binaries directory inside packaged resources. */
 export const RESOURCES_LGPL_DIR = 'ffmpeg-lgpl';
 
@@ -87,7 +87,7 @@ export function findVendorDir(
 	return null;
 }
 
-export type BinariesSource = 'env' | 'resources' | 'vendor' | 'bundled' | 'missing';
+type BinariesSource = 'env' | 'resources' | 'vendor' | 'bundled' | 'missing';
 
 export type RemotionBinaries = {
 	/** `binariesDirectory` for Remotion; null = Remotion's own compositor package (or nothing, if strict). */

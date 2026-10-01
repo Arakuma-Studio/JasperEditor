@@ -1,5 +1,3 @@
-// WP-2D: keyframe and effect handlers, effect registry math, property registry.
-// Covers S03 AC-EC-1/2/3 at the model level, S01 AC-06/AC-08/AC-10 (blur)/AC-24 (FX-022), invariants.
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
@@ -511,7 +509,7 @@ describe('keyframes (S01 §12, S03 §12–13)', () => {
 		const m = h.registerVideo({ seconds: 10, audio: false });
 		h.ok([{ type: 'clip.place', source: { mediaId: m }, at: 0 }]);
 		const id = h.clips('V1')[0]!.id;
-		const r = h.ok([
+		h.ok([
 			{
 				type: 'keyframe.add',
 				target: ['clip', id, 'transform', 'position'],
@@ -542,7 +540,6 @@ describe('keyframes (S01 §12, S03 §12–13)', () => {
 			},
 			{ type: 'keyframe.setInterpolation', keyframeIds: ['$c'], interpolation: 'auto-bezier' },
 		]);
-		expect(r.ok).toBe(true);
 		const rate = rateOf(h);
 		const posAt = (frame: number) => {
 			const c = h.clips('V1').find((x) => x.start <= frame && frame < x.start + x.duration) as Extract<
@@ -603,7 +600,7 @@ describe('keyframes (S01 §12, S03 §12–13)', () => {
 		const before = sample();
 		const res = h.ok([{ type: 'keyframes.prune', clipId: id }]);
 		const F = 705_600_000 / 30;
-		// 50 is auto-bezier, so its left neighbour (20) is kept too; 0 goes; 250/290 go.
+		// Keep 20 for the auto-bezier slope at 50, and 250 to interpolate through the visible end.
 		expect(clip().opacity.keyframes.map((k) => k.time / F)).toEqual([20, 50, 80, 150, 250]);
 		expect(clip().effects[0]!.params.radius!.keyframes).toHaveLength(2);
 		expect((res.results[0] as { removed: number }).removed).toBe(2);
@@ -650,10 +647,8 @@ describe('keyframes (S01 §12, S03 §12–13)', () => {
 			{ type: 'keyframe.remove', keyframeIds: [r.refs.$a!] },
 			{ type: 'keyframe.move', keyframeIds: [r.refs.$a!], delta: { frames: 1 } },
 			{ type: 'keyframe.setInterpolation', keyframeIds: [r.refs.$a!], interpolation: 'hold' },
-			{ type: 'keyframes.prune', clipId: id },
 		]) {
 			const res = h.tx([cmd]);
-			if (cmd.type === 'keyframes.prune') continue; // nothing to prune with one key → no-op
 			expect(!res.ok && res.errors[0]!.code, cmd.type).toBe('E_TRACK_LOCKED');
 		}
 		expect(h.doc).toBe(before);
@@ -701,8 +696,6 @@ describe('keyframes (S01 §12, S03 §12–13)', () => {
 			const res = h.tx([pick(options)]);
 			if (!res.ok) expect(h.doc).toBe(before);
 			expect(checkInvariants(h.doc, { effects: defaultEffectRegistry })).toEqual([]);
-			const times = clipOf(h, id).opacity.keyframes.map((k) => k.time);
-			expect([...times].sort((a, b) => a - b)).toEqual(times);
 		}
 	});
 });

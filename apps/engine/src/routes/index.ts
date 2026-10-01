@@ -1,5 +1,4 @@
-// Registers one plugin per area (ARCHITECTURE §9.1). Owners replace their plugin's body; this list only
-// changes additively.
+// Registers one plugin per area (ARCHITECTURE §9.1).
 import type { FastifyInstance } from 'fastify';
 import agentRoutes from './agent.ts';
 import capabilitiesRoutes from './capabilities.ts';

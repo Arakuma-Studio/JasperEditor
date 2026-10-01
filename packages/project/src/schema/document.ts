@@ -144,16 +144,6 @@ export type ProjectEnvelope = {
 	document: ProjectDocument;
 };
 
-/** Parses a document with zod (no migration, no invariants). */
-export function parseDocument(raw: unknown): ProjectDocument {
-	return ProjectDocumentSchema.parse(raw) as ProjectDocument;
-}
-export function safeParseDocument(raw: unknown) {
-	return ProjectDocumentSchema.safeParse(raw) as
-		| { success: true; data: ProjectDocument }
-		| { success: false; error: z.ZodError };
-}
-
 export function makeEnvelope(
 	document: ProjectDocument,
 	meta: { revision: number; savedAt: string; platform: string; appVersion?: string },

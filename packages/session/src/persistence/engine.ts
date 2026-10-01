@@ -5,7 +5,7 @@
 //   forgot the lease (restart, expiry while the laptop slept) and "take over" support.
 // - duplicate / export / import are composed client-side from the M1 routes; restoring a version needs a
 //   route that M1 does not have (see docs/wp-notes/WP-2E.md).
-import type { EnvelopeJson, Lease, ProjectSummary, VersionInfo } from '@jasper/api';
+import type { Lease, ProjectSummary, VersionInfo } from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
 import {
 	createRandomIdSource,
@@ -220,11 +220,7 @@ export class EngineProjectStore implements ProjectStore {
 		const copy = JSON.parse(JSON.stringify(doc)) as ProjectDocument;
 		copy.projectId = projectId;
 		copy.name = name;
-		await this.engine.putProject(
-			projectId,
-			this.envelope(copy, fresh.revision + 1) as unknown as EnvelopeJson,
-			fresh.revision,
-		);
+		await this.engine.putProject(projectId, this.envelope(copy, fresh.revision + 1), fresh.revision);
 		return projectId;
 	}
 
@@ -329,7 +325,7 @@ export class EngineProjectStore implements ProjectStore {
 					keepalive: true,
 					credentials: 'include',
 					// Token-only auth (no cookie) needs the bearer header too, or the lease just expires.
-					headers: this.engine.authorizationHeaders?.() ?? {},
+					headers: this.engine.authorizationHeaders(),
 				}).catch(() => undefined);
 			} catch {
 				// unload: nothing else to do

@@ -2,7 +2,7 @@
 // clip length. Colors come from --pr-* tokens resolved at draw time (no literals, S05:DT-002).
 import { memo, useEffect, useRef } from 'react';
 
-export const TILE_MAX_PX = 512;
+const TILE_MAX_PX = 512;
 
 export type TileDraw = (
 	ctx: CanvasRenderingContext2D,
@@ -20,7 +20,7 @@ export function dpr(): number {
 }
 
 /** Splits `[x0, x1)` into tiles of at most TILE_MAX_PX, aligned to multiples of TILE_MAX_PX. */
-export function tileRanges(x0: number, x1: number, max = TILE_MAX_PX): { x0: number; width: number }[] {
+function tileRanges(x0: number, x1: number, max = TILE_MAX_PX): { x0: number; width: number }[] {
 	const out: { x0: number; width: number }[] = [];
 	if (x1 <= x0) return out;
 	let a = Math.floor(x0 / max) * max;

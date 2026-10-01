@@ -63,7 +63,7 @@ export function createSequence(
 ): Sequence {
 	return {
 		id: id ?? ids.next('seq'),
-		settings: structuredCloneJson(settings),
+		settings: JSON.parse(JSON.stringify(settings)) as SequenceSettings,
 		videoTracks: Array.from({ length: tracks.video }, () => createTrack(ids, 'video')),
 		audioTracks: Array.from({ length: tracks.audio }, () => createTrack(ids, 'audio')),
 		captionTracks: Array.from({ length: tracks.caption ?? 0 }, () => createTrack(ids, 'caption')),
@@ -175,9 +175,4 @@ export function defaultTextStyle(fontId: string): TextStyle {
 		shadow: null,
 		allCaps: false,
 	};
-}
-
-/** JSON-safe deep clone (documents are plain JSON by S01:DOC-001). */
-export function structuredCloneJson<T>(v: T): T {
-	return JSON.parse(JSON.stringify(v)) as T;
 }

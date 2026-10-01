@@ -7,54 +7,17 @@ import { EASE_PRESETS } from '../../keyframes.ts';
 import type { EffectSpec } from '../../registry/effects.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
 import { type Animatable, EaseSchema, InterpolationSchema, type ParamValue } from '../../schema/common.ts';
-import { type EffectInstance, isKnownClipKind, type Track } from '../../schema/sequence.ts';
-import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
+import { type EffectInstance, isKnownClipKind } from '../../schema/sequence.ts';
+import type { DDoc, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { refreshAutoBezier } from './keyframe.ts';
-import { ruleFromParam, validateValue } from './param.ts';
+import { locateEffect, ruleFromParam, validateValue } from './param.ts';
 import type { HandlerMap } from './util.ts';
 
 type DEffect = Draft<EffectInstance>;
 
-export type EffectLocation = {
-	seq: DSeq;
-	/** The stack that holds the effect (clip, track or master effects). */
-	list: DEffect[];
-	index: number;
-	fx: DEffect;
-	clip: DClip | null;
-	track: Draft<Track> | null;
-};
-
-/** Finds an effect instance anywhere in the document. */
-export function locateEffect(doc: DDoc, fxId: string): EffectLocation | null {
-	for (const seq of Object.values(doc.sequences)) {
-		for (const clip of Object.values(seq.clips)) {
-			const list = (clip as { effects?: DEffect[] }).effects;
-			const index = list?.findIndex((e) => e.id === fxId) ?? -1;
-			if (list && index >= 0) return { seq, list, index, fx: list[index]!, clip, track: null };
-		}
-		for (const t of [...seq.videoTracks, ...seq.audioTracks]) {
-			const index = t.effects?.findIndex((e) => e.id === fxId) ?? -1;
-			if (t.effects && index >= 0)
-				return { seq, list: t.effects, index, fx: t.effects[index]!, clip: null, track: t };
-		}
-		const index = seq.master.effects.findIndex((e) => e.id === fxId);
-		if (index >= 0)
-			return {
-				seq,
-				list: seq.master.effects,
-				index,
-				fx: seq.master.effects[index]!,
-				clip: null,
-				track: null,
-			};
-	}
-	return null;
-}
-
-function mustLocate(doc: DDoc, fxId: string, h: HandlerContext): EffectLocation {
+function mustLocate(doc: DDoc, fxId: string, h: HandlerContext) {
 	const loc = locateEffect(doc, fxId);
 	if (!loc) return h.fail('E_NOT_FOUND', `Effect instance not found: ${fxId}`);
 	if (loc.clip) assertUnlocked(findTrackIn(loc.seq, loc.clip.trackId)!.track, h);

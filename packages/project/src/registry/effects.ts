@@ -447,8 +447,8 @@ const pinCorner = (name: string, label: string, def: [number, number]): ParamSpe
 /**
  * Corner Pin (M2, ARCHITECTURE §19.5, S09:TRK-050): pins the layer's four corners (normalized to its box,
  * TL/TR/BR/BL) before Motion. Rendered by the scene resolver as a projective layer map (`projective`):
- * CSS `matrix3d` in the preview, the engine warp stage on the native path (wp-m2-track; until then the
- * planner routes it to Remotion). A non-convex quad is ignored (the layer draws unpinned).
+ * CSS `matrix3d` in the preview, the engine warp stage on the native path. A non-convex quad is ignored
+ * (the layer draws unpinned).
  */
 export const CORNER_PIN_EFFECT: EffectSpec = {
 	id: 'jasper.corner-pin',
@@ -497,7 +497,7 @@ export type EffectLike = {
 	params: Record<string, unknown>;
 };
 
-/** Params with registry defaults filled in (missing or mistyped values fall back to the default). */
+/** Params with registry defaults filled in for missing or null values. */
 export function effectiveParams(spec: EffectSpec, params: Record<string, unknown>): EffectParams {
 	const out: EffectParams = {};
 	for (const p of spec.params) {

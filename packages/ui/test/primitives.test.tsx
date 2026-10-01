@@ -1,6 +1,7 @@
 import { RATES } from '@jasper/project';
-import { act, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { useState } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	CURSORS,
 	clampValue,
@@ -14,6 +15,7 @@ import {
 	forceCursor,
 	getForcedCursor,
 	IconButton,
+	PanelErrorBoundary,
 	parseHex,
 	type ResolvedMenuItem,
 	rgbaToHex,
@@ -26,14 +28,11 @@ import {
 	type TreeNode,
 } from '../src/index.ts';
 
-afterEach(() => {
-	document.body.innerHTML = '';
-});
+afterEach(cleanup);
 
-function drag(el: Element, xs: number[], opts: { shiftKey?: boolean; escapeAt?: number } = {}) {
+function drag(el: Element, xs: number[], opts: { shiftKey?: boolean } = {}) {
 	fireEvent.pointerDown(el, { pointerId: 1, button: 0, clientX: xs[0], buttons: 1 });
-	xs.slice(1).forEach((x, i) => {
-		if (opts.escapeAt === i) fireEvent.keyDown(window, { key: 'Escape' });
+	xs.slice(1).forEach((x) => {
 		fireEvent.pointerMove(el, { pointerId: 1, clientX: x, buttons: 1, shiftKey: opts.shiftKey });
 	});
 	fireEvent.pointerUp(el, { pointerId: 1, clientX: xs.at(-1), button: 0 });
@@ -186,49 +185,58 @@ describe('TimecodeField (AC-TY-1)', () => {
 	});
 });
 
+describe('PanelErrorBoundary', () => {
+	it('reloads crashed children with fresh component state', () => {
+		const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+		function Panel({ crash = false }: { crash?: boolean }) {
+			const [count, setCount] = useState(0);
+			if (crash) throw new Error('Panel failed');
+			return <button onClick={() => setCount(count + 1)}>Count {count}</button>;
+		}
+		try {
+			const { rerender } = render(
+				<PanelErrorBoundary name="Test panel">
+					<Panel />
+				</PanelErrorBoundary>,
+			);
+			fireEvent.click(screen.getByText('Count 0'));
+			expect(screen.getByText('Count 1')).toBeTruthy();
+			rerender(
+				<PanelErrorBoundary name="Test panel">
+					<Panel crash />
+				</PanelErrorBoundary>,
+			);
+			expect(screen.getByRole('alert').textContent).toContain('Panel failed');
+			rerender(
+				<PanelErrorBoundary name="Test panel">
+					<Panel />
+				</PanelErrorBoundary>,
+			);
+			fireEvent.click(screen.getByText('Reload Panel'));
+			expect(screen.queryByRole('alert')).toBeNull();
+			expect(screen.getByText('Count 0')).toBeTruthy();
+		} finally {
+			errorLog.mockRestore();
+		}
+	});
+});
+
 describe('toasts (S05:TS-003/004, AC-TS-1)', () => {
-	function clock() {
-		let now = 0;
-		const timers: { at: number; fn: () => void; id: number }[] = [];
-		let id = 0;
-		return {
-			timers: {
-				now: () => now,
-				setTimeout: (fn: () => void, ms: number) => {
-					timers.push({ at: now + ms, fn, id: ++id });
-					return id;
-				},
-				clearTimeout: (h: unknown) => {
-					const i = timers.findIndex((t) => t.id === h);
-					if (i >= 0) timers.splice(i, 1);
-				},
-			},
-			advance(ms: number) {
-				now += ms;
-				for (const t of [...timers].sort((a, b) => a.at - b.at)) {
-					if (t.at <= now && timers.includes(t)) {
-						timers.splice(timers.indexOf(t), 1);
-						t.fn();
-					}
-				}
-			},
-		};
-	}
+	beforeEach(() => vi.useFakeTimers());
+	afterEach(() => vi.useRealTimers());
 
 	it('five rapid identical errors merge into one "×5" toast', () => {
-		const c = clock();
-		const store = new ToastStore(c.timers);
+		const store = new ToastStore();
 		for (let i = 0; i < 5; i++) {
 			store.show({ kind: 'error', title: 'Export failed' });
-			c.advance(300);
+			vi.advanceTimersByTime(300);
 		}
 		expect(store.getState().toasts).toHaveLength(1);
 		expect(store.getState().toasts[0]?.count).toBe(5);
 	});
 
 	it('shows at most three and keeps an error with an action until dismissed', () => {
-		const c = clock();
-		const store = new ToastStore(c.timers);
+		const store = new ToastStore();
 		const sticky = store.show({
 			kind: 'error',
 			title: 'Disk full',
@@ -237,7 +245,7 @@ describe('toasts (S05:TS-003/004, AC-TS-1)', () => {
 		for (let i = 0; i < 4; i++) store.show({ kind: 'info', title: `Info ${i}` });
 		expect(store.visible().shown).toHaveLength(3);
 		expect(store.visible().hidden).toBe(2);
-		c.advance(60_000);
+		vi.advanceTimersByTime(60_000);
 		expect(store.getState().toasts.map((t) => t.id)).toEqual([sticky]);
 		store.dismiss(sticky);
 		expect(store.getState().toasts).toHaveLength(0);
@@ -245,8 +253,7 @@ describe('toasts (S05:TS-003/004, AC-TS-1)', () => {
 	});
 
 	it('dedupeKey replaces in place and progress converts to success', () => {
-		const c = clock();
-		const store = new ToastStore(c.timers);
+		const store = new ToastStore();
 		const id = store.show({
 			kind: 'progress',
 			title: 'Exporting',
@@ -256,23 +263,22 @@ describe('toasts (S05:TS-003/004, AC-TS-1)', () => {
 		store.show({ kind: 'progress', title: 'Exporting', dedupeKey: 'job-1', progress: { value: 0.5 } });
 		expect(store.getState().toasts).toHaveLength(1);
 		expect(store.getState().toasts[0]?.progress?.value).toBe(0.5);
-		c.advance(60_000);
+		vi.advanceTimersByTime(60_000);
 		expect(store.getState().toasts).toHaveLength(1);
 		store.update(id, { kind: 'success', title: 'Export finished' });
-		c.advance(4100);
+		vi.advanceTimersByTime(4100);
 		expect(store.getState().toasts).toHaveLength(0);
 	});
 
 	it('timers pause while hovered or blurred', () => {
-		const c = clock();
-		const store = new ToastStore(c.timers);
+		const store = new ToastStore();
 		store.show({ kind: 'info', title: 'Saved' });
-		c.advance(3000);
+		vi.advanceTimersByTime(3000);
 		store.setPaused(true);
-		c.advance(10_000);
+		vi.advanceTimersByTime(10_000);
 		expect(store.getState().toasts).toHaveLength(1);
 		store.setPaused(false);
-		c.advance(1100);
+		vi.advanceTimersByTime(1100);
 		expect(store.getState().toasts).toHaveLength(0);
 	});
 });
@@ -401,9 +407,9 @@ describe('icons, cursors and tooltips (S05:IC-004/010/011, TT-002)', () => {
 		expect(screen.queryByTestId('forced-cursor')).toBeNull();
 	});
 	it('icon buttons fall back to a title tooltip and use Radix under a TooltipHost', () => {
-		render(<IconButton icon="tool.razor" label="Razor Tool" shortcut="C" />);
+		const { unmount } = render(<IconButton icon="tool.razor" label="Razor Tool" shortcut="C" />);
 		expect(screen.getByLabelText('Razor Tool').getAttribute('title')).toBe('Razor Tool (C)');
-		document.body.innerHTML = '';
+		unmount();
 		render(
 			<TooltipHost>
 				<IconButton icon="tool.razor" label="Razor Tool" shortcut="C" disabled disabledReason="No sequence" />

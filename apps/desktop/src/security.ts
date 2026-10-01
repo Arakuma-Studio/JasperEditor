@@ -19,11 +19,6 @@ export function isSameOrigin(url: string, origin: string): boolean {
 	}
 }
 
-/** 32 random bytes, base64url (the per-launch engine token, ARCHITECTURE §4.2). */
-export function makeToken(randomBytes: (n: number) => Uint8Array): string {
-	return Buffer.from(randomBytes(32)).toString('base64url');
-}
-
 /** Media file extensions offered by the native import dialog (S04 ingest formats). */
 export const MEDIA_EXTENSIONS = [
 	'mp4',

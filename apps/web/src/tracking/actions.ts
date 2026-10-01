@@ -45,7 +45,7 @@ import { optionsOf, patchRunning, setActiveTracker, setError, trackingStore } fr
 export type TrackingEngine = Pick<EngineClient, 'call' | 'getJob' | 'cancelJob'>;
 
 const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
-export const POLL_MS = 400;
+const POLL_MS = 400;
 
 export const TRACK_MODE_LABEL: Record<TrackMode, string> = {
 	forward: 'Track Forward',
@@ -302,7 +302,7 @@ function followPlayhead(session: EditorSession, trackerId: string, sourceFrame: 
 }
 
 /** Fetches the finished job and commits its result (one "Track" history entry), or reports the failure. */
-export async function finishTrack(
+async function finishTrack(
 	session: EditorSession,
 	engine: TrackingEngine,
 	trackerId: string,
@@ -401,7 +401,7 @@ export async function stopTrack(engine: TrackingEngine, trackerId: string): Prom
 
 export type ApplyMode = 'corner-pin' | 'position' | 'position-scale-rotation';
 
-export function applyCommand(trackerId: string, targetClipId: string, mode: ApplyMode): Command {
+function applyCommand(trackerId: string, targetClipId: string, mode: ApplyMode): Command {
 	return (
 		mode === 'corner-pin'
 			? { type: 'tracker.apply', trackerId, targetClipId, mode: 'corner-pin' }

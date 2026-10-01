@@ -11,7 +11,7 @@ import {
 	parseEngineRuntime,
 } from '@jasper/config';
 import type { FastifyInstance } from 'fastify';
-import type { EngineConfig } from './context.ts';
+import { type EngineConfig, isLoopbackHost } from './context.ts';
 import { createServer } from './server.ts';
 import { ENGINE_VERSION } from './version.ts';
 
@@ -74,12 +74,6 @@ export function engineConfig(opts: StartEngineOptions): EngineConfig {
 
 function resolveWebDir(dir: string | null): string | null {
 	return dir ? resolve(dir) : null;
-}
-
-const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
-
-export function isLoopbackHost(host: string): boolean {
-	return LOOPBACK_HOSTS.has(host.toLowerCase());
 }
 
 export async function startEngine(opts: StartEngineOptions): Promise<RunningEngine> {
@@ -156,7 +150,7 @@ function removeRuntimeFile(file: string | null): void {
 // ---------------------------------------------------------------- service interface for WP-2G / WP-2H
 // (documented in docs/wp-notes/WP-2F.md)
 export { UrlSigner } from './auth/signed-url.ts';
-export type { EngineConfig, EngineContext } from './context.ts';
+export { type EngineConfig, type EngineContext, isLoopbackHost } from './context.ts';
 export { Broadcaster } from './events/broadcaster.ts';
 export type { MgMasterProvider, MgMasterRequest } from './export/service.ts';
 export { JobQueue } from './jobs/queue.ts';

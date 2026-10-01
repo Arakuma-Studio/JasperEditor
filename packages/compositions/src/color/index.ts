@@ -22,11 +22,8 @@ export {
 	createColorGl,
 	destroyColorGl,
 	drawThroughLut,
-	FRAGMENT_SHADER,
 	lutTexture,
-	setColorStageBackend,
 	sourceSize,
-	VERTEX_SHADER,
 	webGl2Renderer,
 } from './gl.ts';
 export {

@@ -9,7 +9,6 @@ export interface AgentSocket {
 	readonly readyState: number;
 	send(data: string): void;
 	close(code?: number, reason?: string): void;
-	terminate?(): void;
 	ping?(): void;
 	on(event: 'message', cb: (data: unknown) => void): unknown;
 	on(event: 'close', cb: () => void): unknown;
@@ -40,23 +39,13 @@ type Pending = {
 };
 
 export type AgentConnection = {
-	readonly id: string;
 	readonly socket: AgentSocket;
 	projectId: string | null;
 	sessionId: string | null;
 	leaseId: string | null;
-	readonly connectedAt: number;
 	helloAt: number;
 	lastSeen: number;
 	readonly pending: Map<string, Pending>;
-};
-
-export type ConnectionInfo = {
-	id: string;
-	projectId: string | null;
-	sessionId: string | null;
-	leaseId: string | null;
-	connectedAt: string;
 };
 
 export type SessionRegistryOptions = {
@@ -101,19 +90,17 @@ export class SessionRegistry {
 						}
 					}, every)
 				: null;
-		(this.heartbeat as { unref?: () => void } | null)?.unref?.();
+		this.heartbeat?.unref();
 	}
 
 	/** Registers a new socket; messages are handled until it closes. */
 	attach(socket: AgentSocket): AgentConnection {
 		const t = this.now();
 		const conn: AgentConnection = {
-			id: randomUUID(),
 			socket,
 			projectId: null,
 			sessionId: null,
 			leaseId: null,
-			connectedAt: t,
 			helloAt: 0,
 			lastSeen: t,
 			pending: new Map(),
@@ -237,16 +224,6 @@ export class SessionRegistry {
 		let n = 0;
 		for (const c of this.connectionsFor(projectId)) if (this.send(c, { type: 'event', event, payload })) n++;
 		return n;
-	}
-
-	list(): ConnectionInfo[] {
-		return [...this.conns].map((c) => ({
-			id: c.id,
-			projectId: c.projectId,
-			sessionId: c.sessionId,
-			leaseId: c.leaseId,
-			connectedAt: new Date(c.connectedAt).toISOString(),
-		}));
 	}
 
 	close(): void {

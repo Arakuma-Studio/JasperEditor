@@ -16,21 +16,21 @@ import {
 	canonicalJson,
 	compositionClipRenderRange,
 	compositionRenderKeyMaterial,
-	type MediaAsset,
 	type ProjectDocument,
 	type Rational,
 	type RenderCompositionSource,
 	type RenderVisualClip,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
+import { mediaKeyOf } from '../import/assets.ts';
 
 /** Live frame hosts mounted at once (S08:MGC-024). */
-export const MAX_LIVE_HOSTS = 4;
+const MAX_LIVE_HOSTS = 4;
 /** Props must be stable this long before a preview pre-render is requested (MGC-023). */
-export const PREVIEW_IDLE_MS = 2000;
+const PREVIEW_IDLE_MS = 2000;
 
-export type HostStatus = { state: 'loading' | 'rendering' | 'ready' | 'error'; message?: string };
-export type RenderStatus = {
+type HostStatus = { state: 'loading' | 'rendering' | 'ready' | 'error'; message?: string };
+type RenderStatus = {
 	state: 'none' | 'scheduled' | 'queued' | 'rendering' | 'ready' | 'failed';
 	progress?: number;
 	error?: string;
@@ -48,14 +48,8 @@ export type EngineLink = {
 
 const fpsNum = (r: Rational) => r.num / r.den;
 
-/** Engine key of an asset (engine-store locator). */
-export function engineKeyOf(asset: Pick<MediaAsset, 'locators'> | undefined): string | null {
-	const l = asset?.locators.find((x) => x.type === 'engine-store');
-	return l && l.type === 'engine-store' ? l.key : null;
-}
-
 /** Composition clips of a sequence as the render snapshot sees them (effective props, handles). */
-export function compositionClips(
+function compositionClips(
 	doc: ProjectDocument,
 	sequenceId: string,
 ): { clip: RenderVisualClip; src: RenderCompositionSource }[] {
@@ -70,7 +64,7 @@ export function compositionClips(
 }
 
 /** Preview request of a clip: the whole composition at the sequence rate, at the clip's canvas (MGC-023). */
-export function previewRequest(
+function previewRequest(
 	src: RenderCompositionSource,
 	fps: Rational,
 	projectId?: string,
@@ -91,7 +85,7 @@ export function previewRequest(
 }
 
 /** Master request of a clip: its drawn span incl. transition handles (what the native export renders). */
-export function masterRequest(
+function masterRequest(
 	clip: RenderVisualClip,
 	src: RenderCompositionSource,
 	fps: Rational,
@@ -115,13 +109,13 @@ export function masterRequest(
 }
 
 /** Stable identity of a request (without quality/project). */
-export function requestKey(req: MgPrerenderRequest): string {
+function requestKey(req: MgPrerenderRequest): string {
 	const { quality: _q, projectId: _p, ...rest } = req;
 	return canonicalJson(rest);
 }
 
 /** The engine's render key (sha256 → 40 hex) of a request, for cache lookups (MGC-031). */
-export async function renderKeyOf(req: MgPrerenderRequest, bundleHash: string): Promise<string> {
+async function renderKeyOf(req: MgPrerenderRequest, bundleHash: string): Promise<string> {
 	const material = compositionRenderKeyMaterial({ ...req, bundleHash });
 	const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(material));
 	return [...new Uint8Array(digest)]
@@ -161,7 +155,6 @@ export class MgRuntime implements CompositionPreviewRuntime {
 	constructor(
 		readonly session: EditorSession,
 		private readonly engine: EngineLink,
-		private readonly opts: { idleMs?: number } = {},
 	) {
 		this.offs.push(session.on('doc.changed', () => this.scanSoon()));
 		this.offs.push(
@@ -223,11 +216,6 @@ export class MgRuntime implements CompositionPreviewRuntime {
 		};
 	}
 
-	/** Master of the clip's current props is cached (timeline ✓ badge, MGU-004). */
-	masterReady(clipId: string): boolean {
-		return this.status(clipId).master.state === 'ready';
-	}
-
 	// ------------------------------------------------------------------ scanning the document
 
 	private scanSoon(ms = 150): void {
@@ -240,7 +228,7 @@ export class MgRuntime implements CompositionPreviewRuntime {
 	}
 
 	/** Recomputes every composition clip's requests; schedules previews and master cache lookups. */
-	scan(): void {
+	private scan(): void {
 		if (this.disposed) return;
 		const s = this.session.store.getState();
 		const seqId = s.activeSequenceId;
@@ -280,7 +268,7 @@ export class MgRuntime implements CompositionPreviewRuntime {
 				this.renders.delete(`preview:${existing.key}`);
 		}
 		// Colour effects cannot read the live iframe: ask for the preview at once (MGC-025).
-		const delay = hasPixelEffects(clip) ? 0 : (this.opts.idleMs ?? PREVIEW_IDLE_MS);
+		const delay = hasPixelEffects(clip) ? 0 : PREVIEW_IDLE_MS;
 		const layerKey = layerPreviewKey(src, fps);
 		this.renders.set(`preview:${key}`, { state: 'scheduled' });
 		const timer = setTimeout(() => {
@@ -379,9 +367,7 @@ export class MgRuntime implements CompositionPreviewRuntime {
 	/** Relinks the asset of a rebuilt bundle (system transaction, no History entry, MGC-013). */
 	private onRebuilt(ev: Extract<TypedEvent, { type: 'mgBundle.rebuilt' }>['payload']): void {
 		const doc = this.session.getCommitted();
-		const asset = Object.values(doc.media).find(
-			(m) => m.kind === 'mg-bundle' && engineKeyOf(m) === ev.oldKey,
-		);
+		const asset = Object.values(doc.media).find((m) => m.kind === 'mg-bundle' && mediaKeyOf(m) === ev.oldKey);
 		if (!asset || this.session.getState().readOnly) return;
 		const loc = asset.locators.find((l) => l.type === 'engine-store');
 		const engineId = loc && loc.type === 'engine-store' ? loc.engineId : 'local';
@@ -414,25 +400,6 @@ export class MgRuntime implements CompositionPreviewRuntime {
 		const req = masterRequest(found.clip, found.src, seq.settings.frameRate, this.session.projectId);
 		if (!req) return null;
 		return this.submit(req, requestKey(req));
-	}
-
-	/** Requests the preview of a clip now (no idle delay). */
-	async renderPreview(clipId: string): Promise<EngineJob | null> {
-		const s = this.session.store.getState();
-		const seqId = s.activeSequenceId;
-		if (!seqId) return null;
-		const seq = s.document.sequences[seqId]!;
-		const found = compositionClips(s.document, seqId).find((x) => x.clip.clipId === clipId);
-		if (!found) return null;
-		const req = previewRequest(found.src, seq.settings.frameRate, this.session.projectId);
-		if (!req) return null;
-		const fps = fpsNum(seq.settings.frameRate);
-		const sched = this.scheduled.get(clipId);
-		if (sched) {
-			clearTimeout(sched.timer);
-			this.scheduled.delete(clipId);
-		}
-		return this.submit(req, requestKey(req), layerPreviewKey(found.src, fps));
 	}
 }
 
@@ -472,11 +439,4 @@ export function ensureMgRuntime(session: EditorSession, engine: EngineLink): MgR
 
 export function currentMgRuntime(): MgRuntime | null {
 	return current;
-}
-
-export function disposeMgRuntime(session: EditorSession): void {
-	if (current?.session !== session) return;
-	current.dispose();
-	current = null;
-	for (const cb of facadeListeners) cb();
 }

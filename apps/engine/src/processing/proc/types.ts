@@ -108,7 +108,7 @@ export type ProcSpec = {
 	threads: number;
 	device: 'cpu' | 'cuda';
 	scratch: string;
-	/** Optional vid.stab engine preference (`auto` = native ffmpeg filters when present, else WASM). */
+	/** Optional vid.stab engine preference (`auto` tries WASM; native FFmpeg requires explicit selection). */
 	vidstabEngine?: 'auto' | 'wasm' | 'ffmpeg';
 };
 

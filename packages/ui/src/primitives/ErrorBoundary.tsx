@@ -11,10 +11,10 @@ export type PanelErrorBoundaryProps = {
 	onError?(error: unknown, info: ErrorInfo): void;
 };
 
-type State = { error: unknown; componentStack: string; key: number };
+type State = { error: unknown; componentStack: string };
 
 export class PanelErrorBoundary extends Component<PanelErrorBoundaryProps, State> {
-	state: State = { error: null, componentStack: '', key: 0 };
+	state: State = { error: null, componentStack: '' };
 
 	static getDerivedStateFromError(error: unknown): Partial<State> {
 		return { error: error ?? new Error('Unknown error') };
@@ -32,7 +32,7 @@ export class PanelErrorBoundary extends Component<PanelErrorBoundaryProps, State
 	}
 
 	render() {
-		if (!this.state.error) return <ErrorKey k={this.state.key}>{this.props.children}</ErrorKey>;
+		if (!this.state.error) return this.props.children;
 		return (
 			<div
 				role="alert"
@@ -47,10 +47,7 @@ export class PanelErrorBoundary extends Component<PanelErrorBoundaryProps, State
 					{this.state.error instanceof Error ? this.state.error.message : String(this.state.error)}
 				</p>
 				<div className="flex gap-2">
-					<Button
-						variant="primary"
-						onClick={() => this.setState((s) => ({ error: null, componentStack: '', key: s.key + 1 }))}
-					>
+					<Button variant="primary" onClick={() => this.setState({ error: null, componentStack: '' })}>
 						Reload Panel
 					</Button>
 					<Button
@@ -64,12 +61,4 @@ export class PanelErrorBoundary extends Component<PanelErrorBoundaryProps, State
 			</div>
 		);
 	}
-}
-
-/** Remounts children on reload by changing the key. */
-function ErrorKey({ k, children }: { k: number; children?: ReactNode }) {
-	return <ErrorKeyInner key={k}>{children}</ErrorKeyInner>;
-}
-function ErrorKeyInner({ children }: { children?: ReactNode }) {
-	return <>{children}</>;
 }

@@ -5,7 +5,7 @@
 // unpremultiplied, the LUT maps RGB only, the output is premultiplied for the (premultiplied) canvas.
 import type { Lut } from '@jasper/project';
 
-export const VERTEX_SHADER = `#version 300 es
+const VERTEX_SHADER = `#version 300 es
 in vec2 a_pos;
 void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }
 `;
@@ -14,7 +14,7 @@ void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }
  * Fragment shader. `u_src` is sampled with `texelFetch` at the output pixel (scaled when the source size differs),
  * `u_lut` is the `size³` table in `.cube` order (x = red fastest, y = green, z = blue).
  */
-export const FRAGMENT_SHADER = `#version 300 es
+const FRAGMENT_SHADER = `#version 300 es
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -271,18 +271,11 @@ export function webGl2Renderer(): string | null {
 }
 
 export type ColorStageBackend = 'webgl' | 'cpu';
-let forcedBackend: ColorStageBackend | null = null;
-/** Forces the pass backend (tests / diagnostics; `localStorage['jasper:color-stage']` does the same). */
-export function setColorStageBackend(b: ColorStageBackend | null): void {
-	forcedBackend = b;
-}
-
 /**
  * Backend of the colour passes (S06:CG-043): WebGL2 on a hardware GPU; the CPU pass (identical maths) when the
  * WebGL2 implementation is a software rasterizer, where it is 2–3× faster (see cpu.ts).
  */
 export function colorStageBackend(): ColorStageBackend {
-	if (forcedBackend) return forcedBackend;
 	try {
 		const ls = typeof localStorage !== 'undefined' ? localStorage.getItem('jasper:color-stage') : null;
 		if (ls === 'webgl' || ls === 'cpu') return ls;

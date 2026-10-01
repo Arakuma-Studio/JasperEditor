@@ -13,7 +13,7 @@ export const JOB_GROUPS: { id: JobGroupId; label: string; collapsedByDefault?: b
 	{ id: 'other', label: 'Other' },
 ];
 
-export function groupOf(job: Pick<EngineJob, 'kind'>): JobGroupId {
+function groupOf(job: Pick<EngineJob, 'kind'>): JobGroupId {
 	switch (job.kind) {
 		case 'export':
 		case 'still':
@@ -36,7 +36,7 @@ export function groupOf(job: Pick<EngineJob, 'kind'>): JobGroupId {
 	}
 }
 
-export type JobStatus =
+type JobStatus =
 	| 'Queued'
 	| 'Running'
 	| 'Cancelling'
@@ -105,7 +105,7 @@ export const canRetry = (job: AnyJob) =>
 export const isDownloadable = (job: AnyJob) =>
 	!job.client && job.kind === 'export' && job.state === 'succeeded';
 
-export type JobGroupView = { id: JobGroupId; label: string; jobs: AnyJob[]; active: number };
+type JobGroupView = { id: JobGroupId; label: string; jobs: AnyJob[]; active: number };
 
 /** Newest first within groups; empty groups omitted. */
 export function groupJobs(jobs: AnyJob[], hidden: ReadonlySet<string> = new Set()): JobGroupView[] {
@@ -129,7 +129,7 @@ export function groupJobs(jobs: AnyJob[], hidden: ReadonlySet<string> = new Set(
 	});
 }
 
-export type JobsSummary = {
+type JobsSummary = {
 	running: number;
 	queued: number;
 	failed: number;

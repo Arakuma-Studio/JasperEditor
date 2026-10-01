@@ -6,13 +6,7 @@ import {
 } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import {
-	createMgRegistry,
-	MG_CATALOG,
-	type MgTemplateDefinition,
-	mgRegistry,
-	templateFrame,
-} from '../src/index.ts';
+import { createMgRegistry, MG_CATALOG, type MgTemplateDefinition, mgRegistry } from '../src/index.ts';
 
 const params = z.object({ title: z.string().min(1), accent: z.array(z.number()).length(4) });
 const sample: MgTemplateDefinition<z.infer<typeof params>> = {
@@ -26,8 +20,7 @@ const sample: MgTemplateDefinition<z.infer<typeof params>> = {
 	outroFrames: 10,
 	defaultDurationSeconds: 3,
 	canvases: [{ width: 1920, height: 1080 }],
-	renderSvg: (p, frame, _fps, c) =>
-		`<svg xmlns="http://www.w3.org/2000/svg" width="${c.width}" height="${c.height}"><text x="10" y="50" opacity="${Math.min(1, frame / 10)}">${p.title}</text></svg>`,
+	renderSvg: () => '',
 };
 
 describe('@jasper/mg-templates', () => {
@@ -83,16 +76,9 @@ describe('@jasper/mg-templates', () => {
 			ctx,
 		);
 		expect(bad.result.ok).toBe(false);
-		expect(sample.renderSvg(sample.defaults, 5, 30, { width: 1920, height: 1080 })).toContain('<svg');
 	});
 	it('rejects duplicate ids and defaults that fail the schema', () => {
 		expect(() => createMgRegistry([sample, sample])).toThrow();
 		expect(() => createMgRegistry([{ ...sample, defaults: { title: '', accent: [] } }])).toThrow();
-	});
-	it('keeps intro and outro lengths when the clip stretches', () => {
-		expect(templateFrame(5, 100, sample)).toEqual({ phase: 'intro', t: 0.5 });
-		expect(templateFrame(50, 100, sample).phase).toBe('hold');
-		expect(templateFrame(95, 100, sample)).toEqual({ phase: 'outro', t: 0.5 });
-		expect(templateFrame(3, 8, sample).phase).toBe('intro');
 	});
 });

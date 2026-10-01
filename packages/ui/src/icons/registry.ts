@@ -211,7 +211,6 @@ export const ICONS = {
 	'panel.info': Info,
 	'panel.markers': Bookmark,
 	'panel.jobs': ListTodo,
-	// M2 (wp-m2-color may replace with dedicated glyphs)
 	'panel.lumetri': Palette,
 	'panel.scopes': Activity,
 

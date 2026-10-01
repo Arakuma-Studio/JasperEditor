@@ -3,16 +3,14 @@
 // OpenH264; libx264 is only a dev convenience when the build happens to have it; without any H.264
 // encoder exports fall back to AV1 (MP4) or VP9 (WebM) with a capability message. Audio: native `aac`,
 // Opus via `libopus`. Alpha intermediates: `prores_ks`.
-//
-// Everything here except `probeHardwareEncoders` is pure (unit-tested with mocked encoder lists).
 import { existsSync } from 'node:fs';
 import type { EncoderChoice, EncodingCapabilities, VideoCodec } from '@jasper/api';
 import { runTool } from './process.ts';
 
 /** Env switch: ignore GPL/nonfree encoders even when the build has them (tests, license audits). */
-export const LGPL_ONLY_ENV = 'JASPER_FFMPEG_LGPL_ONLY';
+const LGPL_ONLY_ENV = 'JASPER_FFMPEG_LGPL_ONLY';
 /** Env switch: `0`/`off` skips hardware encoder test encodes (all hardware encoders count as unusable). */
-export const HW_ENCODERS_ENV = 'JASPER_HW_ENCODERS';
+const HW_ENCODERS_ENV = 'JASPER_HW_ENCODERS';
 
 /** Encoders that make an FFmpeg build GPL (or nonfree). Never selected in LGPL-only mode. */
 export const GPL_ENCODERS = new Set([
@@ -25,7 +23,7 @@ export const GPL_ENCODERS = new Set([
 	'libfdk_aac', // nonfree with GPL, LGPL-compatible only without --enable-gpl; treated as excluded
 ]);
 
-export type HwEncoderSpec = {
+type HwEncoderSpec = {
 	encoder: string;
 	label: string;
 	/** Platforms where the encoder can work at all (others are skipped without a test). */
@@ -45,10 +43,9 @@ export const HW_H264: readonly HwEncoderSpec[] = [
 	{ encoder: 'h264_vaapi', label: 'VA-API', platforms: ['linux'], pixFmt: 'nv12', vaapi: true },
 ];
 
-export const VAAPI_DEVICE = '/dev/dri/renderD128';
+const VAAPI_DEVICE = '/dev/dri/renderD128';
 
 const SOFTWARE_LABELS: Record<string, string> = {
-	prores_ks: 'prores_ks',
 	libopenh264: 'OpenH264',
 	libx264: 'x264',
 	'libvpx-vp9': 'libvpx',
@@ -68,7 +65,7 @@ const PROXY_FALLBACK: readonly [VideoCodec, string][] = [
 	['av1', 'libaom-av1'],
 ];
 
-export type HwTestResult = { encoder: string; usable: boolean; reason?: string };
+type HwTestResult = { encoder: string; usable: boolean; reason?: string };
 
 export type EncoderInventory = {
 	/** `ffmpeg -encoders` names as listed by the build. */
@@ -81,7 +78,7 @@ export type EncoderInventory = {
 	hardware: readonly HwTestResult[];
 };
 
-export type EncoderPurpose = 'export' | 'proxy';
+type EncoderPurpose = 'export' | 'proxy';
 
 export type EncoderRequest = {
 	purpose: EncoderPurpose;
@@ -139,7 +136,7 @@ export function parseHwaccels(out: string): string[] {
 // ---------------------------------------------------------------- selection
 
 /** Encoders the selector may use: GPL/nonfree ones removed in LGPL-only mode. */
-export function effectiveEncoders(inv: Pick<EncoderInventory, 'encoders' | 'lgplOnly'>): string[] {
+function effectiveEncoders(inv: Pick<EncoderInventory, 'encoders' | 'lgplOnly'>): string[] {
 	return inv.encoders.filter((e) => !(inv.lgplOnly && GPL_ENCODERS.has(e)));
 }
 
@@ -163,7 +160,7 @@ function codecName(c: VideoCodec): string {
 	return c === 'h264' ? 'H.264' : c === 'vp9' ? 'VP9' : c === 'prores' ? 'ProRes' : 'AV1';
 }
 
-export function encoderLabel(codec: VideoCodec, encoder: string): string {
+function encoderLabel(codec: VideoCodec, encoder: string): string {
 	const hw = HW_H264.find((h) => h.encoder === encoder);
 	if (hw) return `${codecName(codec)} · ${hw.label} (hardware)`;
 	return `${codecName(codec)} · ${SOFTWARE_LABELS[encoder] ?? encoder} (software)`;
@@ -197,8 +194,7 @@ function makeChoice(
 	purpose: EncoderPurpose,
 	message?: string,
 ): EncoderChoice {
-	const have = new Set(effectiveEncoders(inv));
-	const opus = have.has('libopus');
+	const opus = effectiveEncoders(inv).includes('libopus');
 	// Proxies stay MP4 whatever the codec (Chrome plays VP9/AV1 in MP4; one proxy URL/content type).
 	// ProRes masters are MOV with 16-bit PCM audio.
 	const container: EncoderChoice['container'] =
@@ -237,6 +233,7 @@ export function selectVideoEncoder(inv: EncoderInventory, req: EncoderRequest): 
 	const order = req.purpose === 'proxy' ? PROXY_FALLBACK : EXPORT_FALLBACK;
 	for (const [codec, enc] of order) {
 		if (byCodec[codec].includes(enc)) {
+			const choice = makeChoice(inv, codec, enc, req.purpose);
 			const why =
 				want === 'h264'
 					? `H.264 is unavailable (no usable hardware encoder, no OpenH264${inv.lgplOnly ? ', libx264 ignored in LGPL-only mode' : ''})`
@@ -244,8 +241,9 @@ export function selectVideoEncoder(inv: EncoderInventory, req: EncoderRequest): 
 			const what =
 				req.purpose === 'proxy'
 					? `proxies use ${codecName(codec)} (MP4)`
-					: `exporting ${codecName(codec)} (${makeChoice(inv, codec, enc, req.purpose).container.toUpperCase()})`;
-			return makeChoice(inv, codec, enc, req.purpose, [note, `${why}: ${what}`].filter(Boolean).join('. '));
+					: `exporting ${codecName(codec)} (${choice.container.toUpperCase()})`;
+			choice.message = [note, `${why}: ${what}`].filter(Boolean).join('. ');
+			return choice;
 		}
 	}
 	return null;
@@ -275,7 +273,7 @@ export function encodingCapabilities(inv: EncoderInventory): EncodingCapabilitie
 
 // ---------------------------------------------------------------- arguments
 
-export type EncodeParams = {
+type EncodeParams = {
 	/** x264-style CRF 0–51 (the export quality setting); mapped per encoder. */
 	crf: number;
 	speed: 'fast' | 'balanced' | 'best';
@@ -296,7 +294,7 @@ export type EncodeParams = {
 	proresProfile?: 'hq' | '4444';
 };
 
-export type EncodeArgs = {
+type EncodeArgs = {
 	/** Global options placed before the inputs (hardware device init). */
 	pre: string[];
 	/** Filters appended to the end of the video chain (pixel format, hardware upload). */
@@ -305,14 +303,11 @@ export type EncodeArgs = {
 	video: string[];
 };
 
-/** Bits per pixel of H.264 at an x264 CRF (0.15 at CRF 18, halving every 6 CRF steps). */
-export function h264Bpp(crf: number): number {
-	return 0.15 * 2 ** ((18 - crf) / 6);
-}
-
 /** Average bitrate (kbit/s) that roughly matches an x264 CRF, for bitrate-only encoders. */
 export function bitrateForCrf(crf: number, width: number, height: number, fps: number, factor = 1): number {
-	return Math.max(200, Math.round((width * height * fps * h264Bpp(crf) * factor) / 1000));
+	// Bits per pixel: 0.15 at CRF 18, halving every 6 CRF steps.
+	const bpp = 0.15 * 2 ** ((18 - crf) / 6);
+	return Math.max(200, Math.round((width * height * fps * bpp * factor) / 1000));
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Math.round(v)));
@@ -322,7 +317,7 @@ export const vp9Crf = (crf: number) => clamp(crf * 1.25 + 9.5, 4, 63);
 export const av1Crf = (crf: number) => clamp(crf * 1.35 + 3.7, 1, 63);
 
 /** Pixel format the encoder receives from the filter graph. */
-export function pixFmtFor(encoder: string, proresProfile: 'hq' | '4444' = 'hq'): string {
+function pixFmtFor(encoder: string, proresProfile: 'hq' | '4444' = 'hq'): string {
 	if (encoder === 'prores_ks') return proresProfile === '4444' ? 'yuv444p10le' : 'yuv422p10le';
 	return HW_H264.find((h) => h.encoder === encoder)?.pixFmt ?? 'yuv420p';
 }
@@ -332,9 +327,8 @@ export function videoEncodeArgs(choice: Pick<EncoderChoice, 'encoder'>, p: Encod
 	const fps = p.fps.num / p.fps.den;
 	const gop = p.gop ?? Math.max(1, Math.round(fps * 2));
 	const crf = clamp(p.crf, 0, 51);
-	const kbps = (factor: number) => p.bitrateKbps ?? bitrateForCrf(crf, p.width, p.height, fps, factor);
 	const rate = (factor: number) => {
-		const b = kbps(factor);
+		const b = p.bitrateKbps ?? bitrateForCrf(crf, p.width, p.height, fps, factor);
 		return ['-b:v', `${b}k`, '-maxrate', `${Math.round(b * 1.5)}k`, '-bufsize', `${b * 2}k`];
 	};
 	const enc = choice.encoder;
@@ -580,12 +574,12 @@ export function hwFailureReason(msg: string): string {
 }
 
 /** Truthy env flag (`1`, `true`, `yes`, `on`). */
-export function envFlag(v: string | undefined): boolean {
+function envFlag(v: string | undefined): boolean {
 	return !!v && /^(1|true|yes|on)$/i.test(v.trim());
 }
 
 /** `JASPER_HW_ENCODERS=0|off|false|no` disables hardware probing. */
-export function hwProbingDisabled(env: Record<string, string | undefined>): boolean {
+function hwProbingDisabled(env: Record<string, string | undefined>): boolean {
 	const v = env[HW_ENCODERS_ENV];
 	return !!v && /^(0|false|no|off)$/i.test(v.trim());
 }

@@ -11,7 +11,7 @@ const hasSequence = (ctx: CommandCtx) =>
  * Export source (S05:EX-001): a selected sequence item when the Project panel is focused, else the
  * active sequence (Timeline / Program).
  */
-export function exportSourceSequence(ctx: CommandCtx): string | null {
+function exportSourceSequence(ctx: CommandCtx): string | null {
 	const s = ctx.session;
 	if (!s) return null;
 	if (ctx.focus.panel === 'project') {

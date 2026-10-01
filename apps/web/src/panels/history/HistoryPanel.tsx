@@ -20,7 +20,7 @@ export function relativeTime(then: number, now: number): string {
 	return h < 24 ? `${h} h ago` : `${Math.round(h / 24)} d ago`;
 }
 
-export type EntryKind = 'agent' | 'effect' | 'edit';
+type EntryKind = 'agent' | 'effect' | 'edit';
 export function entryKind(e: Pick<HistoryEntryView, 'origin' | 'label'>): EntryKind {
 	if (typeof e.origin === 'object') return 'agent';
 	return /effect|keyframe|animation|interpolation|crop|blur/i.test(e.label) ? 'effect' : 'edit';

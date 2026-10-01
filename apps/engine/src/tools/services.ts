@@ -4,7 +4,7 @@
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { UrlSigner } from '../auth/signed-url.ts';
-import type { EngineConfig } from '../context.ts';
+import { type EngineConfig, isLoopbackHost } from '../context.ts';
 import { DerivativeService } from '../derivatives/service.ts';
 import { Broadcaster } from '../events/broadcaster.ts';
 import type { NativeExtension } from '../export/native-ext.ts';
@@ -151,7 +151,7 @@ export async function createCoreServices(
 		broadcaster,
 		signer,
 		origin,
-		localMode: config.dev || ['127.0.0.1', 'localhost', '::1'].includes(config.host.toLowerCase()),
+		localMode: config.dev || isLoopbackHost(config.host),
 		capabilities: async (): Promise<PlanCapabilities> => {
 			const caps = await capabilities.get();
 			return {

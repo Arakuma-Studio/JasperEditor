@@ -34,8 +34,4 @@ export class RevisionTracker {
 		if (expectedRevision !== undefined && expectedRevision < t.base) return undefined;
 		return t.revisions;
 	}
-
-	forget(projectId: string): void {
-		this.projects.delete(projectId);
-	}
 }

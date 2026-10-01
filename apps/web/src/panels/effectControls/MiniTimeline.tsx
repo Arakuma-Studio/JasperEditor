@@ -16,7 +16,7 @@ import {
 import { exactFrameOf, type Row } from '../properties/lib/model.ts';
 import { glyphHalves, halfPath, pctOf, type Range, rulerTicks } from './lib.ts';
 
-export function KeyGlyph(props: {
+function KeyGlyph(props: {
 	left: ReturnType<typeof glyphHalves>['left'];
 	right: ReturnType<typeof glyphHalves>['right'];
 	selected?: boolean;
@@ -40,7 +40,7 @@ export function KeyGlyph(props: {
 	);
 }
 
-export type KeyPointerHandler = (
+type KeyPointerHandler = (
 	e: ReactPointerEvent<HTMLElement>,
 	info: { clipId: string; keyframeId: string; frame: number },
 ) => void;
@@ -120,7 +120,7 @@ export function SummaryLane(props: { rows: Row[]; seq: Sequence; range: Range })
 }
 
 /** Premiere-style short ruler label: drop a leading zero hour field (`00:00:02:00` → `00:02:00`). */
-export function rulerLabel(tc: string): string {
+function rulerLabel(tc: string): string {
 	return /^00[:;]/.test(tc) ? tc.slice(3) : tc;
 }
 

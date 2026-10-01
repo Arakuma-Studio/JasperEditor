@@ -19,7 +19,6 @@ export const CATALOG_IDS = [
 	'playfair-display',
 	'jetbrains-mono',
 ] as const;
-export type CatalogFontId = (typeof CATALOG_IDS)[number];
 
 /** Default family for unknown fonts (the app UI font, ARCHITECTURE §7.4). */
 export const FALLBACK_FAMILY = 'Source Sans 3';

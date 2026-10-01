@@ -5,10 +5,8 @@ import {
 	applyMatrix,
 	type LayerTransformValues,
 	layerMatrix,
-	type Mat2D,
 	type Rect,
 	scaleFactors,
-	visibleRect,
 } from '@jasper/project';
 
 export type Vec2 = [number, number];
@@ -107,14 +105,6 @@ export function handlePoint(rect: Rect, h: HandleId): Vec2 {
 	}
 }
 
-/** Visible rect of a layer in layer space (natural box minus crop, S03:DM-010). */
-export function layerRect(
-	box: { width: number; height: number },
-	crop: { left: number; top: number; right: number; bottom: number } | null,
-): Rect {
-	return visibleRect(box, crop ?? undefined);
-}
-
 // ------------------------------------------------------------------ rotation helpers
 
 export function rotate(v: Vec2, deg: number): Vec2 {
@@ -126,11 +116,6 @@ export function rotate(v: Vec2, deg: number): Vec2 {
 
 const sub = (a: Vec2, b: Vec2): Vec2 => [a[0] - b[0], a[1] - b[1]];
 const add = (a: Vec2, b: Vec2): Vec2 => [a[0] + b[0], a[1] + b[1]];
-
-export function clampScale(s: number): number {
-	const sign = s < 0 ? -1 : 1;
-	return sign * Math.min(MAX_SCALE, Math.max(MIN_SCALE, Math.abs(s)));
-}
 
 // ------------------------------------------------------------------ scale (XF-030/031/032)
 
@@ -327,13 +312,6 @@ export function rotateAboutPoint(
 }
 
 // ------------------------------------------------------------------ screen geometry for the overlay
-
-export type ScreenHandle = { id: HandleId; at: Vec2 };
-
-/** Handle positions in any target space given a layer→target mapping. */
-export function layerHandles(m: Mat2D, rect: Rect, map: (p: Vec2) => Vec2): ScreenHandle[] {
-	return HANDLE_IDS.map((id) => ({ id, at: map(applyMatrix(m, handlePoint(rect, id))) }));
-}
 
 /** Distance from a point to the nearest corner of a quad, and whether it lies outside the quad. */
 export function rotationZoneHit(quadScreen: Quad, p: Vec2): boolean {

@@ -145,7 +145,7 @@ export const BLACK_WHITE_OP: ColorOp = {
 
 export const LUMETRI_EFFECT_ID = 'jasper.lumetri';
 
-const bipolar = (name: string, label: string, group: string, extra: Partial<ParamSpec> = {}): ParamSpec => ({
+const bipolar = (name: string, label: string, group: string): ParamSpec => ({
 	name,
 	label,
 	type: 'number',
@@ -154,7 +154,6 @@ const bipolar = (name: string, label: string, group: string, extra: Partial<Para
 	animatable: true,
 	group,
 	ui: { control: 'slider', bipolar: true },
-	...extra,
 });
 
 const lutParam = (name: string, label: string, group: string): ParamSpec => ({
@@ -262,8 +261,6 @@ export const LUMETRI_EDITOR_PARAMS: readonly string[] = [
 	'highlightsWheel',
 ];
 
-export const LUMETRI_OP: ColorOp = { build: (p, ctx) => lumetriFn(p, ctx) };
-
 export const LUMETRI_EFFECT: EffectSpec = {
 	id: LUMETRI_EFFECT_ID,
 	version: 1,
@@ -278,15 +275,8 @@ export const LUMETRI_EFFECT: EffectSpec = {
 	// The colour stage (WebGL LUT) realizes it; there is no CSS approximation.
 	preview: {},
 	native: null,
-	color: LUMETRI_OP,
+	color: { build: lumetriFn },
 	capabilities: { preview: 'webgl', export: ['remotion', 'native'] },
-};
-
-/** Colour ops of the M1 colour effects, by effect id (S06:CG-003). */
-export const M1_COLOR_OPS: Readonly<Record<string, ColorOp>> = {
-	'jasper.brightness-contrast': BRIGHTNESS_CONTRAST_OP,
-	'jasper.hue-saturation': HUE_SATURATION_OP,
-	'jasper.black-white': BLACK_WHITE_OP,
 };
 
 /** The colour effects added by M2 (registered by default through `M2_EFFECTS`). */

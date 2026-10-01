@@ -24,5 +24,3 @@ const bridge = {
 };
 
 contextBridge.exposeInMainWorld('jasperDesktop', bridge);
-
-export type JasperDesktopBridge = typeof bridge;

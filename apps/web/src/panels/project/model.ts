@@ -37,7 +37,7 @@ export const FILTERS: { id: ProjectFilter; label: string }[] = [
 	{ id: 'unused', label: 'Unused' },
 ];
 
-export type ItemStatus = 'online' | 'offline' | 'error' | 'resolving' | 'analyzing' | 'needs-engine' | '';
+type ItemStatus = 'online' | 'offline' | 'error' | 'resolving' | 'analyzing' | 'needs-engine' | '';
 
 export type ProjectRow = {
 	id: string;
@@ -68,20 +68,18 @@ export type ProjectRow = {
 	usage: number;
 	proxy: string;
 	status: ItemStatus;
-	/** Children count for bins. */
-	children: number;
 };
 
 export type SortKey = 'name' | 'frameRate' | 'duration' | 'usage' | 'status' | 'user';
 
 /** Children of a bin (null = project root) in user order. */
-export function binChildren(doc: ProjectDocument, binId: string | null): string[] {
+function binChildren(doc: ProjectDocument, binId: string | null): string[] {
 	if (!binId) return doc.rootItems;
 	const bin = doc.items[binId];
 	return bin?.kind === 'bin' ? bin.children : [];
 }
 
-export function parentBinOf(doc: ProjectDocument, itemId: string): string | null {
+function parentBinOf(doc: ProjectDocument, itemId: string): string | null {
 	for (const it of Object.values(doc.items))
 		if (it.kind === 'bin' && it.children.includes(itemId)) return it.id;
 	return null;
@@ -129,7 +127,7 @@ function timecodeAt(flicks: number, rate: Rational): string {
 
 const CHANNEL_NAMES: Record<number, string> = { 1: 'Mono', 2: 'Stereo', 6: '5.1' };
 
-export function describeMedia(
+function describeMedia(
 	asset: MediaAsset,
 ): Pick<
 	ProjectRow,
@@ -165,12 +163,12 @@ function derivativeText(rt: MediaRuntime | undefined): string {
 }
 
 /** `33³ · Title` of a LUT asset (S06:LUT-002). */
-export function lutInfoText(asset: MediaAsset): string {
+function lutInfoText(asset: MediaAsset): string {
 	const title = asset.lut?.title;
 	return [lutSizeText(asset), title].filter(Boolean).join(' · ');
 }
 
-export function statusOf(rt: MediaRuntime | undefined): ItemStatus {
+function statusOf(rt: MediaRuntime | undefined): ItemStatus {
 	if (!rt) return '';
 	if (rt.availability === 'offline') return 'offline';
 	if (rt.availability === 'error') return 'error';
@@ -181,7 +179,7 @@ export function statusOf(rt: MediaRuntime | undefined): ItemStatus {
 	return 'online';
 }
 
-export function rowFor(
+function rowFor(
 	doc: ProjectDocument,
 	item: ProjectItem,
 	depth: number,
@@ -204,11 +202,10 @@ export function rowFor(
 		usage: 0,
 		proxy: '',
 		status: '' as ItemStatus,
-		children: 0,
 	};
 	switch (item.kind) {
 		case 'bin':
-			return { ...base, type: 'bin', children: item.children.length };
+			return { ...base, type: 'bin' };
 		case 'search-bin':
 			return { ...base, type: 'search-bin' };
 		case 'sequence': {
@@ -293,7 +290,7 @@ function compare(a: ProjectRow, b: ProjectRow, key: SortKey): number {
 	}
 }
 
-export type RowQuery = {
+type RowQuery = {
 	binId: string | null;
 	search: string;
 	filter: ProjectFilter;
@@ -330,16 +327,10 @@ export function projectRows(
 		}
 		for (const row of rows) {
 			seen.add(row.id);
-			const isBin = row.item.kind === 'bin';
-			if (flat) {
-				if ((!search || row.name.toLowerCase().includes(search)) && matchesFilter(row, q.filter))
-					out.push(row);
-				if (isBin) visit((row.item as { children: string[] }).children, depth + 1, seen);
-			} else {
+			if (!flat || ((!search || row.name.toLowerCase().includes(search)) && matchesFilter(row, q.filter)))
 				out.push(row);
-				if (isBin && q.expanded?.has(row.id))
-					visit((row.item as { children: string[] }).children, depth + 1, seen);
-			}
+			if (row.item.kind === 'bin' && (flat || q.expanded?.has(row.id)))
+				visit(row.item.children, depth + 1, seen);
 		}
 	};
 	visit(binChildren(doc, q.binId), 0, new Set());

@@ -2,7 +2,6 @@ import { EngineClient } from '@jasper/engine-client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import {
-	COMMAND_MODULES,
 	createCommandContext,
 	getCommand,
 	isCommandChecked,
@@ -14,7 +13,7 @@ import {
 } from '../src/commands/index.ts';
 import { getPanelDefinition, PANEL_DEFINITIONS } from '../src/panels/registry.ts';
 import { PANEL_KINDS } from '../src/panels/types.ts';
-import { PanelServices, ServiceNotMountedError } from '../src/state/panel-services.ts';
+import { PanelServices } from '../src/state/panel-services.ts';
 
 const engine = new EngineClient({ fetch: (async () => new Response('{}')) as unknown as typeof fetch });
 
@@ -66,29 +65,6 @@ describe('UI command registry (ARCHITECTURE §7.3)', () => {
 		off();
 		expect(getCommand('test.hello')).toBeUndefined();
 	});
-
-	it('has one (empty) module per domain owner', () => {
-		expect(Object.keys(COMMAND_MODULES).sort()).toEqual(
-			[
-				'app',
-				'edit',
-				'export',
-				'help',
-				'inspector',
-				'mg',
-				'project',
-				'timeline',
-				'transport',
-				'integration',
-				// M2 (ARCHITECTURE §19.10)
-				'color',
-				'process',
-				'composition',
-				'tracking',
-				'transitions',
-			].sort(),
-		);
-	});
 });
 
 describe('panel registry (ARCHITECTURE §7.2)', () => {
@@ -112,20 +88,19 @@ describe('panel services (S05:SH-005)', () => {
 	it('publishes services per instance and handles "not mounted"', () => {
 		const s = new PanelServices();
 		expect(s.get('programPlayer')).toBeNull();
-		expect(() => s.require('programPlayer')).toThrow(ServiceNotMountedError);
-		const missing = vi.fn();
-		expect(s.with('programPlayer', (p) => p.play(), missing)).toBeUndefined();
-		expect(missing).toHaveBeenCalled();
 		const a = { seekTo: vi.fn(), play: vi.fn(), pause: vi.fn(), getContainer: () => null };
 		const b = { ...a, play: vi.fn() };
 		const offA = s.register('programPlayer', 'program-1', a);
 		const offB = s.register('programPlayer', 'program-2', b);
-		s.with('programPlayer', (p) => p.play());
+		s.get('programPlayer')?.play();
 		expect(b.play).toHaveBeenCalled();
 		expect(s.get('programPlayer', 'program-1')).toBe(a);
 		offB();
 		expect(s.get('programPlayer')).toBe(a);
+		const offReplacement = s.register('programPlayer', 'program-1', b);
 		offA();
-		expect(s.isMounted('programPlayer')).toBe(false);
+		expect(s.get('programPlayer')).toBe(b);
+		offReplacement();
+		expect(s.get('programPlayer')).toBeNull();
 	});
 });

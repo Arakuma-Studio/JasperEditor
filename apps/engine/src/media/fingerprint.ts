@@ -6,19 +6,6 @@ import { open } from 'node:fs/promises';
 export const FINGERPRINT_PREFIX = 'q1:';
 export const FINGERPRINT_EDGE_BYTES = 4 * 1024 * 1024;
 
-/** Fingerprint of an in-memory buffer (test vectors, small payloads). */
-export function fingerprintBuffer(buf: Uint8Array): string {
-	const size = Buffer.alloc(8);
-	size.writeBigUInt64BE(BigInt(buf.length));
-	const h = createHash('sha256').update(size);
-	if (buf.length <= 2 * FINGERPRINT_EDGE_BYTES) h.update(buf);
-	else {
-		h.update(buf.subarray(0, FINGERPRINT_EDGE_BYTES));
-		h.update(buf.subarray(buf.length - FINGERPRINT_EDGE_BYTES));
-	}
-	return FINGERPRINT_PREFIX + h.digest('hex');
-}
-
 async function readExactly(
 	fh: Awaited<ReturnType<typeof open>>,
 	position: number,

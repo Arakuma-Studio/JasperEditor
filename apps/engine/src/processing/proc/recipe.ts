@@ -42,21 +42,3 @@ export function stepLabel(step: ProcessStep): string {
 export function recipeLabel(steps: readonly ProcessStep[]): string {
 	return steps.map(stepLabel).join(' · ');
 }
-
-/**
- * UI order of steps (PST-021, revised): deblock → denoise → de-judder → stabilise → upscale. De-judder must see
- * the original capture cadence: stabilising first smooths the camera path per *frame* and hides most of the 2-2-1
- * pattern from the cadence analysis (measured on crudo.mp4 37–40 s: short/long 0.52 → 0.86, consistency
- * 100 % → 62 %, so `auto` skipped the retiming), as the trailer pipeline already did (dejudder before vid.stab).
- */
-export const STEP_ORDER: readonly ProcessStep['op'][] = [
-	'deblock',
-	'denoise',
-	'dejudder',
-	'stabilize',
-	'upscale',
-];
-
-export function sortSteps(steps: readonly ProcessStep[]): ProcessStep[] {
-	return [...steps].sort((a, b) => STEP_ORDER.indexOf(a.op) - STEP_ORDER.indexOf(b.op));
-}

@@ -147,16 +147,6 @@ describe('clip.trim (S02 §11, AC-11a, AC-11c)', () => {
 			[120, 170],
 		]);
 	});
-
-	it('roll (WP-2B, full coverage in clip-edit.test.ts) moves the edit point', () => {
-		const h = new Harness();
-		h.ok([solid(0, 100, 'V1'), solid(100, 50, 'V1')]);
-		h.ok([{ type: 'clip.trim', clipId: h.clips('V1')[0]!.id, edge: 'out', deltaFrames: 5, mode: 'roll' }]);
-		expect(h.spans('V1')).toEqual([
-			[0, 105],
-			[105, 150],
-		]);
-	});
 });
 
 describe('clip.split (S01:CLP-007, S02 AC-12a, AC-1a)', () => {

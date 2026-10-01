@@ -4,10 +4,10 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import { setPriority } from 'node:os';
 
-export const KILL_GRACE_MS = 3000;
+const KILL_GRACE_MS = 3000;
 
 /** Signals a whole process group (POSIX), falling back to the single child. */
-export function signalTree(child: ChildProcess, signal: NodeJS.Signals): void {
+function signalTree(child: ChildProcess, signal: NodeJS.Signals): void {
 	if (child.pid === undefined) return;
 	try {
 		if (process.platform !== 'win32') process.kill(-child.pid, signal);
@@ -18,17 +18,6 @@ export function signalTree(child: ChildProcess, signal: NodeJS.Signals): void {
 		} catch {
 			// already gone
 		}
-	}
-}
-
-/** True while the process (group leader) exists. */
-export function isAlive(pid: number | undefined): boolean {
-	if (pid === undefined) return false;
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch {
-		return false;
 	}
 }
 

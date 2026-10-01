@@ -41,7 +41,7 @@ import { clipSummary } from '../format.ts';
 import { LOCAL_ENGINE_ID } from '../media.ts';
 import { ProjectIdArg } from './projects.ts';
 
-/** Appended to the server instructions (EDITING_GUIDE) when non-empty. */
+/** Appended to the server instructions (EDITING_GUIDE). */
 export const COMPOSITION_GUIDE = `Motion graphics from Remotion projects (composition clips):
 - import_mg_bundle {projectId, path} imports a Remotion project folder (remotion and every @remotion/* package pinned to exactly 4.0.499, dependencies installed; its own remotion.config.ts applies) or a built bundle folder. Each composition becomes placeable; watch: true rebuilds on save and the open editor relinks automatically.
 - list_compositions shows ids, size, fps, length and the props schema (from jasper.mg.json, the project's jasper-schemas.ts zod module, or inferred from defaultProps).
@@ -61,10 +61,8 @@ function engineToolError(e: unknown): never {
 	throw e;
 }
 
-const engineKey = (m: Pick<MediaAsset, 'locators'>) => {
-	const l = m.locators.find((x) => x.type === 'engine-store');
-	return l && l.type === 'engine-store' ? l.key : null;
-};
+const engineKey = (m: Pick<MediaAsset, 'locators'>) =>
+	m.locators.find((x) => x.type === 'engine-store')?.key ?? null;
 
 /** Compact props schema: top-level props with type, default and constraints. */
 export function propsSummary(info: MgCompositionInfo): Record<string, unknown> {

@@ -17,7 +17,7 @@ import {
 import { type RowWriteContext, useRowWriter } from '../rowEdit.ts';
 
 /** SVG units of the square editor (also the fallback pixel size when layout is unavailable). */
-export const CURVE_BOX = 200;
+const CURVE_BOX = 200;
 /** Margin (SVG units) around the box so the end points are drawn whole. */
 const MARGIN = 6;
 /** Pointer tolerance of a point, in px. */

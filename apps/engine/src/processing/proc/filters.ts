@@ -5,7 +5,7 @@ import type { FilterStep, StepContext } from './types.ts';
 
 /**
  * Filters that exist only in GPL builds and must never appear in generated filter text (D-13 M2 note). Checked
- * against the LGPL FFmpeg 7.1 build: none of these is present there (apps/engine/test/processing-proc.test.ts).
+ * against the LGPL FFmpeg 7.1 build: none of these is present there (apps/engine/test/processing-steps.test.ts).
  */
 export const GPL_FILTERS = [
 	'eq',
@@ -131,7 +131,6 @@ export function toFormat(format: FilterStep['format'], fromYuvMatrix?: string, f
 
 /** Working format (after `toFormat`) → rgb48le full-range BT.709 R'G'B'. */
 export function fromFormatToRgb48(format: FilterStep['format']): string {
-	if (format === 'rgb48le') return 'format=rgb48le';
-	if (format === 'gbrp16le') return 'format=rgb48le';
+	if (format === 'rgb48le' || format === 'gbrp16le') return 'format=rgb48le';
 	return 'scale=in_color_matrix=bt709:in_range=pc:out_range=pc:flags=accurate_rnd+full_chroma_int+full_chroma_inp,format=rgb48le';
 }

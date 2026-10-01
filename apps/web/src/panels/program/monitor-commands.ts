@@ -1,5 +1,4 @@
-// Command plumbing for the monitors: a CommandCtx for buttons, command-with-fallback for ids owned by
-// other packages (timeline.markIn…), and a keyboard fallback for when no global keymap dispatcher
+// Command plumbing for monitor buttons and a keyboard fallback when no global keymap dispatcher
 // handled the event (the WP-2A dispatcher runs in the capture phase and calls preventDefault on the
 // events it handles, so this bubble-phase handler only acts on unhandled keys).
 import { EngineClient } from '@jasper/engine-client';
@@ -52,17 +51,6 @@ export function useMonitorCommandCtx(opts: {
 			}),
 		[engine, session, panel, instanceId],
 	);
-}
-
-/** Runs a command; when it is not registered (owner package not merged yet) runs `fallback`. */
-export async function runWithFallback(
-	id: string,
-	ctx: CommandCtx,
-	fallback: () => void,
-	args?: unknown,
-): Promise<void> {
-	const r = await runCommand(id, ctx, args);
-	if (!r.ran && r.reason === 'unknown') fallback();
 }
 
 export function detectPlatform(): Platform {

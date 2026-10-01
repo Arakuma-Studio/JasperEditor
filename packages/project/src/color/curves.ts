@@ -3,12 +3,6 @@
 // segment coefficients so evaluation inside a LUT bake allocates nothing.
 import type { Vec2 } from '../schema/common.ts';
 
-/** The identity curve (the default of every curve param). */
-export const IDENTITY_CURVE: readonly Vec2[] = [
-	[0, 0],
-	[1, 1],
-];
-
 /** Most control points a curve may carry (S06:CGU-001). */
 export const MAX_CURVE_POINTS = 64;
 
@@ -40,8 +34,7 @@ export function normalizeCurve(points: readonly (readonly number[])[] | null | u
 }
 
 /** True when the points describe `y = x` on 0..1 (every point on the diagonal, ends at 0 and 1). */
-export function isIdentityCurve(points: readonly Vec2[] | null): boolean {
-	if (!points || points.length < 2) return true;
+function isIdentityCurve(points: readonly Vec2[]): boolean {
 	const first = points[0]!;
 	const last = points[points.length - 1]!;
 	if (first[0] > 1e-9 || last[0] < 1 - 1e-9) {

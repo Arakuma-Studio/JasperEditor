@@ -50,7 +50,7 @@ const QUALITIES = ['fast', 'balanced', 'best'] as const;
 const QUALITY_LABELS = ['Fast', 'Balanced', 'Best'];
 
 /** Short `m:ss:ff` (or `s:ff`) source timecode for the tracked span. */
-export function shortTc(frame: number, rate: Rational | null): string {
+function shortTc(frame: number, rate: Rational | null): string {
 	const fps = rate ? Math.round(rate.num / rate.den) : 30;
 	const f = Math.max(0, Math.round(frame));
 	const ff = f % fps;
@@ -61,7 +61,7 @@ export function shortTc(frame: number, rate: Rational | null): string {
 	return m > 0 ? `${m}:${pad(s)}:${pad(ff)}` : `${s}:${pad(ff)}`;
 }
 
-export function spanLabel(tracker: ClipTracker, rate: Rational | null): string {
+function spanLabel(tracker: ClipTracker, rate: Rational | null): string {
 	const s = tracker.samples;
 	const sum = samplesSummary(s);
 	if (!s || sum.count === 0) return 'Not tracked';

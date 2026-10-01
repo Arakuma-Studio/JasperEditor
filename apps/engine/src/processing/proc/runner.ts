@@ -22,7 +22,7 @@ import {
 	u16,
 } from './ffio.ts';
 import { assertLgplFilters, fromFormatToRgb48, toFormat } from './filters.ts';
-import { countFrames, type ProcProbe, probeInput } from './probe.ts';
+import { countFrames, probeInput } from './probe.ts';
 import { PROC_NAME, PROC_VERSION, RECIPE_VERSION, recipeHash } from './recipe.ts';
 import type {
 	DecodeSpec,
@@ -91,7 +91,7 @@ export type Sidecar = {
 	createdAt: string;
 };
 
-type StageInfo = { index: number; name: string; op: string; info: Record<string, unknown>; seconds: number };
+type StageInfo = { name: string; op: string; info: Record<string, unknown>; seconds: number };
 
 const fpsText = (r: Rational) => `${r.num}/${r.den}`;
 
@@ -125,7 +125,6 @@ export async function listFilters(ffmpeg: string): Promise<Set<string>> {
 export function filterAdapter(
 	step: FilterStep,
 	ffmpeg: string,
-	fps: Rational,
 	opts: { allowVidstab?: boolean } = {},
 ): FrameStep {
 	let child: ReturnType<typeof spawnFfmpeg> | null = null;
@@ -152,7 +151,7 @@ export function filterAdapter(
 					'-s',
 					`${ctx.width}x${ctx.height}`,
 					'-r',
-					fpsText(fps),
+					fpsText(ctx.fps),
 					'-i',
 					'-',
 					'-vf',
@@ -239,7 +238,6 @@ export async function runProc(spec: ProcSpec, opts: RunOptions): Promise<RunResu
 
 	const notes: string[] = [];
 	const infos: StageInfo[] = stages.map((s) => ({
-		index: s.index,
 		name: s.step.name,
 		op: s.op,
 		info: {},
@@ -368,7 +366,6 @@ export async function runProc(spec: ProcSpec, opts: RunOptions): Promise<RunResu
 	let outW = probe.width;
 	let outH = probe.height;
 	let pos = 0;
-	let written = 0;
 	let intermediateCount = 0;
 	const tmpFiles: string[] = [];
 
@@ -406,7 +403,7 @@ export async function runProc(spec: ProcSpec, opts: RunOptions): Promise<RunResu
 			let last: RegExpExecArray | null = null;
 			for (let x = m.exec(d.toString()); x; x = m.exec(d.toString())) last = x;
 			if (last) {
-				written = Number(last[1]);
+				const written = Number(last[1]);
 				emit({ event: 'progress', step: stages.length - 1, stage: 'filters', done: written, total: frames });
 			}
 		});
@@ -418,7 +415,6 @@ export async function runProc(spec: ProcSpec, opts: RunOptions): Promise<RunResu
 		if (code !== 0) throw new ProcError('FFMPEG_FAILED', `ffmpeg failed (${code}): ${err.trim()}`);
 		const secs = (performance.now() - tf) / 1000;
 		for (const i of infos) i.seconds = Math.round((secs / infos.length) * 1000) / 1000;
-		written = frames;
 	} else {
 		while (pos < stages.length) {
 			checkAbort();
@@ -457,7 +453,7 @@ export async function runProc(spec: ProcSpec, opts: RunOptions): Promise<RunResu
 			const runners: Array<{ stage: Stage; step: FrameStep; count: number }> = [];
 			let geom = { width: source.width, height: source.height };
 			for (const st of chain) {
-				const step = st.kind === 'frames' ? st.step : filterAdapter(st.step, spec.ffmpeg, fps);
+				const step = st.kind === 'frames' ? st.step : filterAdapter(st.step, spec.ffmpeg);
 				const g = await step.open(ctxFor(st, geom));
 				runners.push({ stage: st, step, count: 0 });
 				geom = g;
@@ -596,7 +592,6 @@ export async function runProc(spec: ProcSpec, opts: RunOptions): Promise<RunResu
 					);
 			if (sunk !== frames)
 				throw new ProcError('FRAME_COUNT_MISMATCH', `wrote ${sunk} frames, expected ${frames}`);
-			written = sunk;
 			if (!last) {
 				source = {
 					ffmpeg: spec.ffmpeg,
@@ -610,7 +605,6 @@ export async function runProc(spec: ProcSpec, opts: RunOptions): Promise<RunResu
 		}
 	}
 	for (const f of tmpFiles) rmSync(f, { force: true });
-	void written;
 
 	// Verify (PRC-013).
 	const got = await countFrames(spec.ffprobe, spec.output);
@@ -661,9 +655,7 @@ export async function runProc(spec: ProcSpec, opts: RunOptions): Promise<RunResu
 
 export function cleanupPartial(spec: ProcSpec): void {
 	killChildren('SIGKILL');
-	for (const c of children) children.delete(c);
+	children.clear();
 	rmSync(spec.output, { force: true });
 	rmSync(`${spec.output}.json`, { force: true });
 }
-
-export type { ProcProbe };

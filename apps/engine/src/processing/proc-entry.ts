@@ -1,6 +1,5 @@
 // Where the jasper-proc CLI is (S07:PRC-011): JASPER_PROC, the bundle next to the engine bundle
 // (dist/jasper-proc.mjs, packaged resources), or the TypeScript source run through tsx (dev, tests).
-// `ensureProcBundle()` builds the standalone bundle on demand in a checkout (remote setup uploads it).
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';

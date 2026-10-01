@@ -167,14 +167,11 @@ export function createAutosaver(
 		return inFlight;
 	}
 
-	const offDoc = session.on('doc.changed', () => schedule());
+	const offDoc = session.on('doc.changed', schedule);
 	const offGesture = session.on('gesture.changed', ({ active }) => {
 		if (!active) schedule();
 	});
-	let lastState = session.store.getState();
-	const offStore = session.store.subscribe((st) => {
-		const prev = lastState;
-		lastState = st;
+	const offStore = session.store.subscribe((st, prev) => {
 		if (st.readOnly !== prev.readOnly || st.lease !== prev.lease) {
 			const before = status.paused;
 			if (syncPause() === null && before !== null) schedule();

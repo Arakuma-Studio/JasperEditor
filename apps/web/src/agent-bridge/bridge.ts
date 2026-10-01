@@ -26,8 +26,8 @@ import type { EditorSession } from '@jasper/session';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { AgentRelayClient, type RelaySocketFactory, type RelayState } from './relay-client.ts';
 
-export const APPROVAL_TIMEOUT_MS = 60_000;
-export const PLAYHEAD_EVENT_INTERVAL_MS = 100; // ≤ 10 Hz (S01:AGT-004)
+const APPROVAL_TIMEOUT_MS = 60_000;
+const PLAYHEAD_EVENT_INTERVAL_MS = 100; // ≤ 10 Hz (S01:AGT-004)
 const MAX_ACTIVITY = 200;
 
 export type ActivityEntry = {

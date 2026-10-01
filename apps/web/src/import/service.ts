@@ -39,7 +39,7 @@ import {
 } from './transaction.ts';
 import { type UnloadGuard, uploadUnloadGuard } from './unload-guard.ts';
 
-export type ImportServiceDeps = {
+type ImportServiceDeps = {
 	engine: EngineClient;
 	session: EditorSession;
 	prompts?: ImportPrompts;
@@ -248,7 +248,6 @@ export class EngineImportService implements ImportService {
 		const doc = this.session.getCommitted();
 		const now = this.now().toISOString();
 		const prepared: PreparedMedia[] = acquired.map((a) => ({
-			reg: a.reg,
 			name: a.name,
 			asset: buildMediaAsset(a.reg, {
 				id: this.session.ctx.ids.next('med'),
@@ -307,19 +306,18 @@ export class EngineImportService implements ImportService {
 		});
 		this.selectImported(mediaIds, clipIds);
 		if (failed.length) this.prompts.failures({ failed, committed: prepared.length });
-		return { mediaIds: [...new Set(mediaIds)], clipIds, failed, registered: prepared.map((p) => p.reg) };
+		return { mediaIds: [...new Set(mediaIds)], clipIds, failed, registered: acquired.map((a) => a.reg) };
 	}
 
 	private placementContext(target: ImportTarget): ImportPlacementContext | undefined {
 		if (target.kind !== 'program') return undefined;
 		const view = this.session.getState().views[target.sequenceId];
 		const seq = this.session.getCommitted().sequences[target.sequenceId];
-		const firstOr = (ids: string[] | undefined, fallback: string | undefined) => ids?.[0] ?? fallback ?? null;
 		return {
 			playheadFrame: this.session.transport.getState().frame,
 			targetTracks: {
-				video: firstOr(view?.targeting.video, seq?.videoTracks[0]?.id),
-				audio: firstOr(view?.targeting.audio, seq?.audioTracks[0]?.id),
+				video: view?.targeting.video[0] ?? seq?.videoTracks[0]?.id ?? null,
+				audio: view?.targeting.audio[0] ?? seq?.audioTracks[0]?.id ?? null,
 			},
 		};
 	}
@@ -415,13 +413,12 @@ export class EngineImportService implements ImportService {
 }
 
 function collectIds(
-	result: TransactionResult,
+	result: Extract<TransactionResult, { ok: true }>,
 	registerIndex: (number | null)[],
 	placeIndex: (number | null)[],
 	mediaIds: string[],
 	clipIds: string[],
 ) {
-	if (!result.ok) return;
 	for (const i of registerIndex) {
 		if (i === null) continue;
 		const r = result.results[i] as { mediaId?: string } | undefined;

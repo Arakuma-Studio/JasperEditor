@@ -7,7 +7,7 @@ import { cx, Dialog, type HostedDialogProps } from '@jasper/ui';
 import { useMemo, useState } from 'react';
 import { type ApplyMode, activeSeq, applyCandidates, applyTracking } from './actions.ts';
 
-export type ApplyTrackingDialogProps = { session: EditorSession; trackerId: string; targetClipId?: string };
+type ApplyTrackingDialogProps = { session: EditorSession; trackerId: string; targetClipId?: string };
 
 const MODES: { id: ApplyMode; label: string; hint: string; planarOnly?: boolean }[] = [
 	{

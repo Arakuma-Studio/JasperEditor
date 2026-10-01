@@ -24,7 +24,7 @@ export function rulerTicks(r: Range, target = 6): number[] {
 	return out;
 }
 
-export type GlyphHalf = 'linear' | 'bezier' | 'auto' | 'hold';
+type GlyphHalf = 'linear' | 'bezier' | 'auto' | 'hold';
 
 const half = (i: Interpolation): GlyphHalf =>
 	i === 'linear' ? 'linear' : i === 'hold' ? 'hold' : i === 'auto-bezier' ? 'auto' : 'bezier';
@@ -116,8 +116,4 @@ export function interpolationCommand(keyframeIds: string[], preset: Interpolatio
 		default:
 			return { ...base, interpolation: preset } as Command;
 	}
-}
-
-export function presetLabel(preset: InterpolationPreset): string {
-	return INTERPOLATION_MENU.find((m) => m.preset === preset)?.label ?? preset;
 }

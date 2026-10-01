@@ -26,8 +26,6 @@ beforeAll(async () => {
 });
 afterAll(closeApps);
 
-const CODEC_NAME: Record<string, string> = { h264: 'h264', vp9: 'vp9', av1: 'av1' };
-
 function probe(file: string) {
 	const r = spawnSync('ffprobe', [
 		'-v',
@@ -136,7 +134,7 @@ describe('LGPL-only mode (JASPER_FFMPEG_LGPL_ONLY=1)', () => {
 		const v = info.streams.find((x) => x.codec_type === 'video')!;
 		const au = info.streams.find((x) => x.codec_type === 'audio')!;
 		expect(v).toMatchObject({
-			codec_name: CODEC_NAME[chosen.codec],
+			codec_name: chosen.codec,
 			width: 640,
 			height: 360,
 			pix_fmt: 'yuv420p',
@@ -165,7 +163,7 @@ describe('LGPL-only mode (JASPER_FFMPEG_LGPL_ONLY=1)', () => {
 		expect(core.derivatives.url(m.mediaKey, 'proxy-540')).toMatch(/\?v=[0-9a-f]{12}$/);
 		const info = probe(file);
 		const v = info.streams.find((x) => x.codec_type === 'video')!;
-		expect(v.codec_name).toBe(CODEC_NAME[choice.codec]);
+		expect(v.codec_name).toBe(choice.codec);
 		expect(Number(v.height)).toBeLessThanOrEqual(540);
 		expect(info.format.format_name).toContain('mp4');
 		await until(async () => {

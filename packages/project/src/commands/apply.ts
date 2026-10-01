@@ -22,7 +22,7 @@ import {
 
 export const DEFAULT_MAX_COMMANDS = 5000;
 
-export const OriginSchema = z.union([
+const OriginSchema = z.union([
 	z.literal('user'),
 	z.literal('system'),
 	z.literal('migration'),
@@ -60,7 +60,7 @@ function fail(revision: number, errors: Issue[]): { ok: false; revision: number;
 }
 
 /** Parses and validates every command; returns typed commands or the schema issues. */
-export function validateCommands(raw: readonly unknown[]): { commands: Command[]; errors: Issue[] } {
+function validateCommands(raw: readonly unknown[]): { commands: Command[]; errors: Issue[] } {
 	const errors: Issue[] = [];
 	const commands: Command[] = [];
 	raw.forEach((c, i) => {
@@ -92,7 +92,7 @@ export function validateCommands(raw: readonly unknown[]): { commands: Command[]
 }
 
 /** Ids a transaction reads or writes explicitly (for the AGT-010 fast-forward rule). */
-export function referencedIds(commands: readonly unknown[], extra: readonly string[] = []): Set<string> {
+function referencedIds(commands: readonly unknown[], extra: readonly string[] = []): Set<string> {
 	const out = new Set(extra);
 	const walk = (v: unknown) => {
 		if (looksLikeId(v)) out.add(v);
@@ -153,11 +153,7 @@ export function applyTransaction(
 	if (errors.length > 0) return { document: doc, result: fail(ctx.revision, errors) };
 
 	const refs = new Map<string, string>();
-	const h = new HandlerContext(
-		ctx,
-		{ label: tx.label, origin: tx.origin as Origin, sequenceId: tx.sequenceId },
-		refs,
-	);
+	const h = new HandlerContext(ctx, { origin: tx.origin, sequenceId: tx.sequenceId }, refs);
 	const results: unknown[] = [];
 	let next: ProjectDocument;
 	try {
@@ -244,12 +240,4 @@ export function applyTransaction(
 			results,
 		},
 	};
-}
-
-/** Updates a per-entity last-changed revision map after a committed transaction (for AGT-010). */
-export function recordEntityRevisions(
-	map: Map<string, number>,
-	result: Extract<TransactionResult, { ok: true }>,
-): void {
-	for (const id of [...result.created, ...result.changed, ...result.deleted]) map.set(id, result.revision);
 }

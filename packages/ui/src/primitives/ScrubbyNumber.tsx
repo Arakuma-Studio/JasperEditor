@@ -79,7 +79,7 @@ export function ScrubbyNumber(props: ScrubbyNumberProps) {
 		setLive(null);
 	};
 
-	// Esc during a drag reverts (CT-023). Listens only while a drag is in progress.
+	// Esc during a drag reverts (CT-023).
 	useEffect(() => {
 		const onKey = (e: globalThis.KeyboardEvent) => {
 			const d = drag.current;
@@ -163,7 +163,7 @@ export function ScrubbyNumber(props: ScrubbyNumberProps) {
 			// Keep the accumulator inside the bounds so reversing direction responds immediately.
 			d.accum = next - d.startValue;
 		}
-		if (next === d.live && d.scrubbing) return;
+		if (next === d.live) return;
 		d.live = next;
 		setLive(next);
 		cb.current.onScrub?.(next, mixed ? next : roundTo(next - d.startValue, precision + 1));

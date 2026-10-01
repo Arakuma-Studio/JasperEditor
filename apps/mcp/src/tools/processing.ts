@@ -1,15 +1,8 @@
 // M2 MCP tools: clip processing (S07:PRA-001) — list_processing_models, install_processing_model, process_clip,
 // use_media_version, get_processing_settings, set_processing_settings, test_remote_executor. Owner:
 // wp-m2-process (ARCHITECTURE §19.9).
-import type {
-	EngineJob,
-	ProcessingModel,
-	ProcessingSettings,
-	ProcessResult,
-	RegisteredMedia,
-	RemoteProbeResult,
-} from '@jasper/api';
-import { EngineError } from '@jasper/engine-client';
+import type { ProcessingSettings, ProcessResult, RegisteredMedia } from '@jasper/api';
+import { type EngineClient, EngineError } from '@jasper/engine-client';
 import { type MediaLocator, ProcessStepSchema, type ProjectDocument } from '@jasper/project';
 import { z } from 'zod';
 import {
@@ -39,9 +32,7 @@ const StepsArg = z
 		'Processing steps, e.g. [{"op":"denoise","method":"fftdnoiz","strength":0.5},{"op":"upscale","model":"span-2x-nomosuni-multijpg","scale":2}]',
 	);
 
-type Doc = ProjectDocument;
-
-function mediaKeyOf(doc: Doc, mediaId: string): string {
+function mediaKeyOf(doc: ProjectDocument, mediaId: string): string {
 	const asset = doc.media[mediaId];
 	if (!asset)
 		throw new ToolError(
@@ -50,7 +41,7 @@ function mediaKeyOf(doc: Doc, mediaId: string): string {
 			'Call list_media for valid ids.',
 		);
 	const loc = asset.locators.find((l) => l.type === 'engine-store');
-	if (loc?.type !== 'engine-store')
+	if (!loc)
 		throw new ToolError(
 			'E_INVALID_PARAM',
 			`Media ${mediaId} is not known to the engine`,
@@ -59,7 +50,7 @@ function mediaKeyOf(doc: Doc, mediaId: string): string {
 	return loc.key;
 }
 
-function clipMedia(doc: Doc, clipId: string): { clipId: string; mediaId: string } {
+function clipMedia(doc: ProjectDocument, clipId: string): { clipId: string; mediaId: string } {
 	for (const seq of Object.values(doc.sequences)) {
 		const clip = seq.clips[clipId] as { kind?: string; mediaId?: string } | undefined;
 		if (!clip) continue;
@@ -103,9 +94,9 @@ export function mediaDeriveCommand(
 	};
 }
 
-async function engineCall<T>(ctx: ToolContext, fn: Parameters<ToolContext['engine']>[0]): Promise<T> {
+async function engineCall<T>(ctx: ToolContext, fn: (client: EngineClient) => Promise<T>): Promise<T> {
 	try {
-		return (await ctx.engine(fn)) as T;
+		return await ctx.engine(fn);
 	} catch (e) {
 		const code =
 			e instanceof EngineError ? ((e.detail as { code?: string } | undefined)?.code ?? e.code) : null;
@@ -131,7 +122,7 @@ export function registerProcessingTools(ctx: ToolContext): void {
 			annotations: READ_ONLY,
 		},
 		async () => {
-			const r = await engineCall<{ models: ProcessingModel[] }>(ctx, (c) => c.call('processingModels'));
+			const r = await engineCall(ctx, (c) => c.call('processingModels'));
 			return jsonResult(r);
 		},
 	);
@@ -147,9 +138,7 @@ export function registerProcessingTools(ctx: ToolContext): void {
 			annotations: EDIT,
 		},
 		async ({ modelId }) => {
-			const job = await engineCall<EngineJob>(ctx, (c) =>
-				c.call('processingModelInstall', { params: { modelId } }),
-			);
+			const job = await engineCall(ctx, (c) => c.call('processingModelInstall', { params: { modelId } }));
 			return jsonResult({
 				...jobBody(job, ctx.link.target?.url ?? ''),
 				next: 'Call wait_for_job with this jobId.',
@@ -195,7 +184,7 @@ export function registerProcessingTools(ctx: ToolContext): void {
 			const fromMediaId =
 				derivation?.recipe?.op === 'process' && derivation.fromMediaId ? derivation.fromMediaId : source;
 			const key = mediaKeyOf(doc, fromMediaId);
-			const job = await engineCall<EngineJob>(ctx, (c) =>
+			const job = await engineCall(ctx, (c) =>
 				c.call('mediaProcess', {
 					params: { key },
 					body: { steps, executor: executor ?? 'auto', projectId },
@@ -287,7 +276,7 @@ export function registerProcessingTools(ctx: ToolContext): void {
 			input: {},
 			annotations: READ_ONLY,
 		},
-		async () => jsonResult(await engineCall<ProcessingSettings>(ctx, (c) => c.call('processingSettingsGet'))),
+		async () => jsonResult(await engineCall(ctx, (c) => c.call('processingSettingsGet'))),
 	);
 
 	defineTool(
@@ -318,7 +307,7 @@ export function registerProcessingTools(ctx: ToolContext): void {
 			annotations: DESTRUCTIVE,
 		},
 		async ({ projectId, remote, localSlots }) => {
-			const current = await engineCall<ProcessingSettings>(ctx, (c) => c.call('processingSettingsGet'));
+			const current = await engineCall(ctx, (c) => c.call('processingSettingsGet'));
 			const next: ProcessingSettings = {
 				remote:
 					remote === undefined
@@ -341,7 +330,7 @@ export function registerProcessingTools(ctx: ToolContext): void {
 						? { localSlots: current.localSlots }
 						: {}),
 			};
-			const saved = await engineCall<ProcessingSettings>(ctx, (c) =>
+			const saved = await engineCall(ctx, (c) =>
 				c.call('processingSettingsPut', {
 					body: next,
 					query: { approvalProjectId: projectId, agent: ctx.agentName() },
@@ -365,6 +354,6 @@ export function registerProcessingTools(ctx: ToolContext): void {
 			input: {},
 			annotations: READ_ONLY,
 		},
-		async () => jsonResult(await engineCall<RemoteProbeResult>(ctx, (c) => c.call('processingRemoteProbe'))),
+		async () => jsonResult(await engineCall(ctx, (c) => c.call('processingRemoteProbe'))),
 	);
 }

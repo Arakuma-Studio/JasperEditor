@@ -6,11 +6,11 @@ import { hitTransition, type TransitionHit, type TransitionIndex } from './trans
 import { frameToX, type Viewport, xToFrameExact } from './viewport.ts';
 
 /** TL-531: edge zone width measured inside the clip. */
-export function edgeZonePx(clipWidthPx: number): number {
+function edgeZonePx(clipWidthPx: number): number {
 	return Math.min(8, Math.max(3, clipWidthPx / 4));
 }
 
-export type EdgeZone = 'body' | 'in' | 'out';
+type EdgeZone = 'body' | 'in' | 'out';
 
 export type Hit =
 	| { kind: 'clip'; clip: Clip; zone: EdgeZone; row: TrackRow; frame: number }
@@ -64,12 +64,4 @@ function clipHit(seq: Sequence, row: TrackRow, v: Viewport, x: number, frame: nu
 	const gap = gapAt(seq, row.trackId, Math.floor(frame));
 	if (gap) return { kind: 'gap', gap, row, frame };
 	return { kind: 'empty', row, frame };
-}
-
-/** The clip on the other side of an edit point (for roll/two-up), if it touches. */
-export function neighbourAcross(seq: Sequence, clip: Clip, edge: 'in' | 'out'): Clip | undefined {
-	if (edge === 'out') return clipAt(seq, clip.trackId, clip.start + clip.duration);
-	if (clip.start === 0) return undefined;
-	const prev = clipAt(seq, clip.trackId, clip.start - 1);
-	return prev && prev.start + prev.duration === clip.start ? prev : undefined;
 }

@@ -7,6 +7,7 @@ import { cx } from '../cx.ts';
 import { Icon } from '../icons/Icon.tsx';
 import type { IconId } from '../icons/registry.ts';
 import {
+	MAX_VISIBLE,
 	type Toast,
 	type ToastAction,
 	type ToastKind,
@@ -124,10 +125,8 @@ function ToastCard({ t, store, runCommand }: { t: Toast; store: ToastStore; runC
 /** Mount once per window (S05:SH-004). */
 export function ToastHost({ store = windowStore, runCommand, bottomOffset = 0 }: ToastHostProps) {
 	const state = useSyncExternalStore(store.subscribe, store.getState, store.getState);
-	const { shown, hidden } = (() => {
-		const all = state.toasts;
-		return { shown: all.slice(-3), hidden: Math.max(0, all.length - 3) };
-	})();
+	const shown = state.toasts.slice(-MAX_VISIBLE);
+	const hidden = Math.max(0, state.toasts.length - MAX_VISIBLE);
 
 	// Timers pause while the window is blurred (TS-003).
 	useEffect(() => {

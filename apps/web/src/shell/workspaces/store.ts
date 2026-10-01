@@ -30,14 +30,14 @@ export type WorkspacesState = {
 };
 
 export const WORKSPACES_KEY = 'jasper:workspaces';
-export const WORKSPACES_VERSION = 1;
-export const SAVE_DEBOUNCE_MS = 300;
+const WORKSPACES_VERSION = 1;
+const SAVE_DEBOUNCE_MS = 300;
 
 function builtinRecord(id: string, name: string): WorkspaceRecord {
 	return { id, name, builtIn: true, showInBar: true, current: null, saved: null };
 }
 
-export function defaultWorkspacesState(): WorkspacesState {
+function defaultWorkspacesState(): WorkspacesState {
 	const workspaces: Record<string, WorkspaceRecord> = {};
 	for (const w of BUILTIN_WORKSPACES) workspaces[w.id] = builtinRecord(w.id, w.name);
 	for (const w of LAYOUT_PRESETS) workspaces[w.id] = { ...builtinRecord(w.id, w.name), showInBar: false };
@@ -49,7 +49,7 @@ function isLayout(x: unknown): x is SerializedDockview | null {
 }
 
 /** Validates stored data; unknown built-ins are re-added, missing ones restored (new builds). */
-export function parseWorkspacesState(data: unknown): WorkspacesState | null {
+function parseWorkspacesState(data: unknown): WorkspacesState | null {
 	if (!data || typeof data !== 'object') return null;
 	const d = data as Partial<WorkspacesState>;
 	if (

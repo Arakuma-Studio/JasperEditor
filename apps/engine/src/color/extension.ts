@@ -31,12 +31,8 @@ import {
 	type ResolvedEffect,
 	serializeCube,
 } from '@jasper/project';
-import {
-	type EffectFilterContext,
-	type NativeExtension,
-	type PlannedExportLike,
-	sampleRuns,
-} from './../export/native-ext.ts';
+import { type EffectFilterContext, type NativeExtension, sampleRuns } from '../export/native-ext.ts';
+import type { PlannedExport } from '../export/planner.ts';
 import { exists } from '../tools/fs.ts';
 import { readCubeFile } from './prober.ts';
 
@@ -162,11 +158,11 @@ export function createColorExtension(opts: ColorExtensionOptions): NativeExtensi
 		return p;
 	};
 
-	const ext: NativeExtension = {
+	return {
 		id: 'color',
 		effectSupport: (_effectId, spec) => (spec?.color ? 'animated' : false),
 
-		async prepare(planned: PlannedExportLike, ctx): Promise<ColorPrepared> {
+		async prepare(planned: PlannedExport, ctx): Promise<ColorPrepared> {
 			const snap = planned.snapshot;
 			const fps = snap.settings.fps;
 			const R0 = snap.range.start;
@@ -262,7 +258,7 @@ export function createColorExtension(opts: ColorExtensionOptions): NativeExtensi
 				}
 				out.layers.set(c.clipId, perRun);
 			}
-			out.baked = [...bakes.values()].length;
+			out.baked = bakes.size;
 			return out;
 		},
 
@@ -293,5 +289,4 @@ export function createColorExtension(opts: ColorExtensionOptions): NativeExtensi
 			return parts.join(',');
 		},
 	};
-	return ext;
 }

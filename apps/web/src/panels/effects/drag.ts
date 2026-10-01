@@ -9,7 +9,7 @@ import type { Command, EffectRegistry, TransactionResult } from '@jasper/project
 import { effectBadges, isKnownClipKind, kindCapabilities } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 
-export type EffectDragPayload = { type: 'jasper/effect'; effectId: string };
+type EffectDragPayload = { type: 'jasper/effect'; effectId: string };
 
 export const JASPER_EFFECT_MIME = 'application/x-jasper-effect';
 /** In-panel reorder of an applied effect instance (Effect Controls, S03:EC-030). */
@@ -131,9 +131,9 @@ export function effectTree(
  * plus a `jasper-transition:<effectId>` text/plain fallback. The timeline resolves the drop target while
  * dragging (data is unreadable during dragover, so the id is also kept in `activeTransitionDrag()`).
  */
-export type TransitionDragPayload = { type: 'jasper/transition'; effectId: string };
+type TransitionDragPayload = { type: 'jasper/transition'; effectId: string };
 
-export const JASPER_TRANSITION_MIME = 'application/x-jasper-transition';
+const JASPER_TRANSITION_MIME = 'application/x-jasper-transition';
 
 let dragging: string | null = null;
 

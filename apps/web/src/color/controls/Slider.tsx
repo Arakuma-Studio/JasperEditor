@@ -4,7 +4,7 @@
 import { cx } from '@jasper/ui';
 import { type CSSProperties, type PointerEvent, useEffect, useRef } from 'react';
 
-export type SliderProps = {
+type SliderProps = {
 	value: number | null;
 	min: number;
 	max: number;
@@ -27,14 +27,7 @@ export type SliderProps = {
 /** Fallback track width when layout is unavailable (tests). */
 const FALLBACK_W = 100;
 
-export function sliderValueAt(
-	x: number,
-	width: number,
-	min: number,
-	max: number,
-	step = 0,
-	origin = min,
-): number {
+function sliderValueAt(x: number, width: number, min: number, max: number, step = 0, origin = min): number {
 	const t = Math.min(1, Math.max(0, x / (width || FALLBACK_W)));
 	let v = min + t * (max - min);
 	if (step > 0) v = Math.round((v - origin) / step) * step + origin;

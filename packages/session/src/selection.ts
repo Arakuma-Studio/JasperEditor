@@ -1,5 +1,5 @@
 // Selection helpers (S01 §15).
-import type { ProjectDocument, Sequence } from '@jasper/project';
+import type { ProjectDocument } from '@jasper/project';
 import type { Selection, SelectMode } from './types.ts';
 
 export function emptySelection(): Selection {
@@ -40,7 +40,7 @@ export function expandClipSelection(
 	const out = new Set<string>();
 	for (const id of clipIds) {
 		out.add(id);
-		for (const seq of Object.values(doc.sequences) as Sequence[]) {
+		for (const seq of Object.values(doc.sequences)) {
 			const c = seq.clips[id];
 			if (!c) continue;
 			if (linked && c.linkId) for (const m of seq.links[c.linkId]?.members ?? []) out.add(m);
@@ -50,19 +50,14 @@ export function expandClipSelection(
 	return [...out];
 }
 
-function allClipIds(doc: ProjectDocument): Set<string> {
-	const s = new Set<string>();
-	for (const seq of Object.values(doc.sequences)) for (const id of Object.keys(seq.clips)) s.add(id);
-	return s;
-}
-
 /** Drops ids that no longer exist (S01:SEL-002). Returns the same object when nothing changed. */
 export function filterSelection(sel: Selection, doc: ProjectDocument): Selection {
-	const clips = allClipIds(doc);
+	const clips = new Set<string>();
 	const transitions = new Set<string>();
 	const markers = new Set<string>();
 	const tracks = new Set<string>();
 	for (const seq of Object.values(doc.sequences)) {
+		for (const id of Object.keys(seq.clips)) clips.add(id);
 		for (const id of Object.keys(seq.transitions)) transitions.add(id);
 		for (const m of seq.markers) markers.add(m.id);
 		for (const t of [...seq.videoTracks, ...seq.audioTracks, ...seq.captionTracks]) tracks.add(t.id);

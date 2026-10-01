@@ -18,7 +18,7 @@ import {
 } from '../agent-bridge/index.ts';
 
 /** "claude-code wants to run 1 command: track.remove" */
-export function approvalSentence(a: Pick<PendingApproval, 'agent' | 'commandCount' | 'summary'>): string {
+function approvalSentence(a: Pick<PendingApproval, 'agent' | 'commandCount' | 'summary'>): string {
 	const n = a.commandCount;
 	return `${a.agent} wants to run ${n} command${n === 1 ? '' : 's'}${a.summary ? `: ${a.summary}` : ''}`;
 }

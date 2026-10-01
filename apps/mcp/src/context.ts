@@ -3,7 +3,13 @@
 // tool registration wrapper that turns failures into MCP tool errors.
 import type { AgentTxResponse, EngineJob } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
-import { approvalReasons, type ProjectDocument, type TransactionResult } from '@jasper/project';
+import {
+	approvalReasons,
+	type ProjectDocument,
+	resolveFrameInput,
+	type Sequence,
+	type TransactionResult,
+} from '@jasper/project';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type {
@@ -84,6 +90,19 @@ export async function loadDoc(ctx: ToolContext, projectId: string): Promise<Load
 	if (!doc || typeof doc !== 'object' || !doc.sequences)
 		throw new ToolError('INTERNAL', 'The engine returned no document');
 	return { doc, revision: r.revision, live: r.via === 'session' };
+}
+
+/** Resolve a tool's sequence time while preserving its actionable input hint. */
+export function frameOf(
+	seq: Sequence,
+	t: unknown,
+	hint = 'Times are frames, {"seconds": x} or "HH:MM:SS:FF".',
+): number {
+	try {
+		return resolveFrameInput(seq, t);
+	} catch (e) {
+		throw new ToolError('E_INVALID_PARAM', (e as Error).message, hint);
+	}
 }
 
 // ---------------------------------------------------------------- progress

@@ -1,4 +1,4 @@
-// ProjectStore interface, exactly S01:PER-001 (WP-2E owns this folder after WP-00).
+// ProjectStore interface (S01:PER-001).
 import type { Lease, ProjectSummary, VersionInfo } from '@jasper/api';
 import type { Issue, ProjectDocument, RepairEntry } from '@jasper/project';
 

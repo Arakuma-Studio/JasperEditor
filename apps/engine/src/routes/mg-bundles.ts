@@ -17,6 +17,7 @@ import {
 } from '@jasper/api';
 import { injectHostBootstrap, MG_HOST_QUERY } from '@jasper/compositions/mg-host';
 import type { FastifyInstance, FastifyReply, FastifyRequest, RouteGenericInterface } from 'fastify';
+import { isLoopbackHost } from '../context.ts';
 import { mgNativeExtension } from '../mg-bundles/native-ext.ts';
 import { MgBundleError } from '../mg-bundles/project.ts';
 import { scaffoldProject } from '../mg-bundles/scaffold.ts';
@@ -26,8 +27,6 @@ import { HttpError, parseOr400, sendServiceError } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
 
 export const MG_BUNDLES_SERVICE_KEY = 'mgBundles';
-
-const isLoopback = (host: string) => ['127.0.0.1', 'localhost', '::1'].includes(host.toLowerCase());
 
 /** The service registered by this plugin (tests and other plugins). */
 export function mgBundleService(app: FastifyInstance): MgBundleService | null {
@@ -59,7 +58,7 @@ type KeyParams = { Params: { key: string } };
 
 export default async function mgBundleRoutes(app: FastifyInstance): Promise<void> {
 	const core = coreServices(app);
-	const localMode = core.config.dev || isLoopback(core.config.host);
+	const localMode = core.config.dev || isLoopbackHost(core.config.host);
 	const svc = new MgBundleService({ core, localMode, log: (m) => app.log.info(m) });
 	app.jasper.services[MG_BUNDLES_SERVICE_KEY] = svc;
 	svc.registerRunners();

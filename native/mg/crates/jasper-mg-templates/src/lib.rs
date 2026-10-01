@@ -1,7 +1,7 @@
 //! JasperEditor motion-graphic templates for fframes (ARCHITECTURE D-12, §10.2; R-FF Design C).
 //!
 //! Every template reads its parameters from the runtime JSON spec; nothing is recompiled per edit.
-//! [`AnyTemplate`] dispatches to the selected template and implements [`fframes::Video`] for each
+//! [`AnyTemplate`] implements [`fframes::Video`] for a prepared template on each
 //! design canvas through const generics (`AnyTemplate<1920, 1080>`, `<1080, 1920>`, `<1080, 1080>`).
 //! Other output sizes are drawn by the canvas with the closest aspect ratio, scaled uniformly.
 //!
@@ -143,25 +143,15 @@ impl Prepared {
     }
 }
 
-/// Template dispatch implementing `fframes::Video` for one design canvas `W`x`H`.
+/// A prepared template implementing `fframes::Video` for one design canvas `W`x`H`.
 #[derive(Debug)]
-pub enum AnyTemplate<'a, const W: usize, const H: usize> {
-    LowerThird(&'a Prepared),
-    TitleCard(&'a Prepared),
+pub struct AnyTemplate<'a, const W: usize, const H: usize> {
+    prepared: &'a Prepared,
 }
 
 impl<'a, const W: usize, const H: usize> AnyTemplate<'a, W, H> {
     pub fn new(prepared: &'a Prepared) -> Self {
-        match prepared.params {
-            TemplateParams::LowerThird(_) => Self::LowerThird(prepared),
-            TemplateParams::TitleCard(_) => Self::TitleCard(prepared),
-        }
-    }
-
-    pub fn prepared(&self) -> &'a Prepared {
-        match self {
-            Self::LowerThird(p) | Self::TitleCard(p) => p,
-        }
+        Self { prepared }
     }
 }
 
@@ -172,7 +162,7 @@ impl<const W: usize, const H: usize> Video for AnyTemplate<'_, W, H> {
     const BACKGROUND_COLOR: Color = Color::TRANSPARENT;
 
     fn duration(&self) -> Duration<'_> {
-        Duration::Frames(self.prepared().spec.duration_frames as usize)
+        Duration::Frames(self.prepared.spec.duration_frames as usize)
     }
 
     fn audio(&self) -> AudioMap<'_> {
@@ -181,7 +171,7 @@ impl<const W: usize, const H: usize> Video for AnyTemplate<'_, W, H> {
     }
 
     fn render_frame<'a>(&'a self, frame: Frame, _ctx: &FFramesContext<'a, '_>) -> Svgr<'a> {
-        Svgr::from(self.prepared().svg(frame.index as u32))
+        Svgr::from(self.prepared.svg(frame.index as u32))
     }
 }
 

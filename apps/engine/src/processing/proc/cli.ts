@@ -8,6 +8,7 @@
 import { mkdirSync, readFileSync } from 'node:fs';
 import { ProcessStepSchema } from '@jasper/project';
 import { z } from 'zod';
+import { killChildren } from './ffio.ts';
 import { PROC_NAME, PROC_VERSION, RECIPE_VERSION } from './recipe.ts';
 import { cleanupPartial, ProcError, runProc } from './runner.ts';
 import { createStepImpl } from './steps.ts';
@@ -76,7 +77,11 @@ export async function main(argv: string[]): Promise<number> {
 	}
 	mkdirSync(spec.scratch, { recursive: true });
 	const ac = new AbortController();
-	const onSignal = () => ac.abort();
+	const onSignal = () => {
+		ac.abort();
+		// Cancelled output is discarded. Reap detached FFmpeg children before the engine kills this process.
+		killChildren('SIGKILL');
+	};
 	process.once('SIGTERM', onSignal);
 	process.once('SIGINT', onSignal);
 	try {

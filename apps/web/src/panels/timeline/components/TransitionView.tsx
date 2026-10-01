@@ -7,10 +7,10 @@ import { formatTimecode, type Rational } from '@jasper/project';
 import { memo } from 'react';
 import type { TransitionGeom } from '../model/transitions.ts';
 import { transitionBand } from '../model/transitions.ts';
-import { snapPx, type Viewport } from '../model/viewport.ts';
+import { frameToX, snapPx, type Viewport } from '../model/viewport.ts';
 import { dpr } from './canvas.tsx';
 
-export type TransitionViewProps = {
+type TransitionViewProps = {
 	id: string;
 	x: number;
 	w: number;
@@ -29,7 +29,7 @@ export type TransitionViewProps = {
 const ALIGN_LABEL = { center: 'Center at Cut', 'start-at-cut': 'Start at Cut', 'end-at-cut': 'End at Cut' };
 
 /** Tooltip text (TUI-001): type, duration (timecode + frames), alignment, handles used. */
-export function transitionTitle(g: TransitionGeom, rate: Rational, dropFrame: boolean): string {
+function transitionTitle(g: TransitionGeom, rate: Rational, dropFrame: boolean): string {
 	const label = g.spec?.label ?? g.t.effectId;
 	const d = g.end - g.start;
 	const lines = [
@@ -68,7 +68,7 @@ export function transitionViewProps(
 ): TransitionViewProps {
 	return {
 		id: g.t.id,
-		x: (g.start - v.scrollFrame) * v.pxPerFrame,
+		x: frameToX(v, g.start),
 		w: (g.end - g.start) * v.pxPerFrame,
 		rowHeight,
 		label: g.spec?.label ?? g.t.effectId,
@@ -84,7 +84,7 @@ export function transitionViewProps(
 }
 
 /** SVG path (viewBox 100×100, y down) of a fade: `in` rises from bottom-left, `out` falls. */
-export function rampPath(kind: 'in' | 'out', curve: 'linear' | 'equal-power', x0 = 0, x1 = 100): string {
+function rampPath(kind: 'in' | 'out', curve: 'linear' | 'equal-power', x0 = 0, x1 = 100): string {
 	if (curve === 'linear') return kind === 'in' ? `M${x0} 100 L${x1} 0` : `M${x0} 0 L${x1} 100`;
 	const pts: string[] = [];
 	for (let i = 0; i <= 16; i++) {

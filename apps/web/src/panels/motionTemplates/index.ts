@@ -3,8 +3,6 @@
 import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
 
-export { insertMotionTemplate, MG_TEMPLATE_MIME, readMgTemplateDrag } from './insert.ts';
-
 const motionTemplatesPanel: PanelDefinition = {
 	kind: 'motionTemplates',
 	title: () => 'Motion Templates',

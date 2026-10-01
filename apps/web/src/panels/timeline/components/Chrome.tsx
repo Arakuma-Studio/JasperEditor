@@ -1,10 +1,10 @@
 // Timeline chrome: sequence tabs (S05:TLC-001), header toolbar (TLC-002/003), zoom scroll bar
-// (TL-112, TLC-030), context menu and gesture tooltip. Menus are local until WP-2A's primitives land.
+// (TL-112, TLC-030), context menu and gesture tooltip.
 import type { EditorSession } from '@jasper/session';
 import { useSessionState } from '@jasper/session/react';
 import { IconButton, labelColor, Z } from '@jasper/ui';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { frameToX, type Viewport } from '../model/viewport.ts';
+import { frameToX, type Viewport, wheelZoomFactor } from '../model/viewport.ts';
 import type { TimelineController } from '../state/controller.ts';
 import { setPrefs, type TimelinePrefs } from '../state/prefs.ts';
 import type { ContextMenuItem, Tooltip } from '../state/ui-store.ts';
@@ -181,7 +181,7 @@ export function ZoomBar(props: { viewport: Viewport; extent: number; controller:
 		<div
 			className="relative h-[14px] w-full bg-pr-panel"
 			onWheel={(e) =>
-				props.controller.zoomBy(Math.exp(-e.deltaY * 0.0025), frameToX(v, e.nativeEvent.offsetX / scale || 0))
+				props.controller.zoomBy(wheelZoomFactor(e.deltaY), frameToX(v, e.nativeEvent.offsetX / scale || 0))
 			}
 			onDoubleClick={() => props.controller.toggleZoomToSequence()}
 			onPointerMove={onMove}

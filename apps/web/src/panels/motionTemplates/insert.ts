@@ -14,7 +14,7 @@ export const MG_TEMPLATE_MIME = 'application/x-jasper-mg-template';
  * composition id. Drops onto the Timeline / Program monitor insert it through `clip.addComposition`.
  */
 export type MgTemplateRef = { id: string; version: number; composition?: CompositionRef };
-export type MgTemplateDragPayload = { type: 'jasper/mg-template'; template: MgTemplateRef };
+type MgTemplateDragPayload = { type: 'jasper/mg-template'; template: MgTemplateRef };
 
 export function writeMgTemplateDrag(dt: DataTransfer, template: MgTemplateRef): void {
 	const payload: MgTemplateDragPayload = { type: 'jasper/mg-template', template };
@@ -39,10 +39,7 @@ export function readMgTemplateDrag(dt: Pick<DataTransfer, 'getData'>): MgTemplat
 }
 
 /** Default clip length in frames at the sequence rate. */
-export function defaultDurationFrames(
-	def: Pick<AnyMgTemplate, 'defaultDurationSeconds'>,
-	seq: Sequence,
-): number {
+function defaultDurationFrames(def: Pick<AnyMgTemplate, 'defaultDurationSeconds'>, seq: Sequence): number {
 	const { num, den } = seq.settings.frameRate;
 	return Math.max(1, Math.round((def.defaultDurationSeconds * num) / den));
 }
@@ -59,7 +56,7 @@ export function targetVideoTrack(seq: Sequence, view: Pick<SequenceViewState, 't
 	return top ? top.id : 'V1';
 }
 
-export type InsertPlan = { command: Command; label: string };
+type InsertPlan = { command: Command; label: string };
 
 /** Builds the `clip.addMotionGraphic` command for a template at `at` (frames). */
 export function planMotionTemplateInsert(

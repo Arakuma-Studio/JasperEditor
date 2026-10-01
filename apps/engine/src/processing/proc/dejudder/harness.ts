@@ -45,11 +45,9 @@ export async function runFrameStep(
 	const sink = onFrame ?? ((f: RgbFrame) => void frames.push(f));
 	let inputFrames = 0;
 	let outputFrames = 0;
-	let expected = 0;
 	const take = async (out: RgbFrame[]) => {
 		for (const f of out) {
-			if (f.index !== expected) throw new Error(`frame order: got ${f.index}, expected ${expected}`);
-			expected++;
+			if (f.index !== outputFrames) throw new Error(`frame order: got ${f.index}, expected ${outputFrames}`);
 			outputFrames++;
 			await sink(f);
 		}

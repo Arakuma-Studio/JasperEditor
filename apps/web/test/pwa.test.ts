@@ -1,20 +1,13 @@
-// PWA (WP-2H, ARCHITECTURE §12, S05:PWA-001/004): route classifier (bypass media/API/Range), equivalence
-// with public/sw.js, manifest with separate maskable icons, registration gating.
+// PWA (WP-2H, ARCHITECTURE §12, S05:PWA-001/004): route classifier (bypass media/API/Range)
+// in the shipped public/sw.js, manifest with separate maskable icons, registration gating.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { shouldRegisterServiceWorker } from '../src/pwa/register.ts';
-import {
-	ASSETS_CACHE,
-	BYPASS_PREFIXES,
-	CACHE_FIRST_PREFIXES,
-	classifyRequest,
-	PRECACHE_URLS,
-	SHELL_CACHE,
-	type SwRequestInfo,
-	type SwRoute,
-} from '../src/pwa/sw-routes.ts';
+
+type SwRoute = 'bypass' | 'navigate' | 'asset' | 'static';
+type SwRequestInfo = { url: string; method: string; origin: string; mode?: string; hasRange?: boolean };
 
 const ORIGIN = 'http://127.0.0.1:47900';
 const PUBLIC = join(__dirname, '../public');
@@ -30,6 +23,8 @@ const CASES: [SwRequestInfo, SwRoute][] = [
 	[get('/api'), 'bypass'],
 	[get('/events?since=4'), 'bypass'],
 	[get('/agent'), 'bypass'],
+	[get('/mcp'), 'bypass'],
+	[get('/mcp/tools'), 'bypass'],
 	[get('/ws/anything'), 'bypass'],
 	[get('/health'), 'bypass'],
 	[get('/media/mk_1'), 'bypass'],
@@ -59,55 +54,74 @@ const CASES: [SwRequestInfo, SwRoute][] = [
 ];
 
 function loadSw() {
-	const self: Record<string, unknown> = { addEventListener: () => undefined, location: { origin: ORIGIN } };
-	runInNewContext(readFileSync(join(PUBLIC, 'sw.js'), 'utf8'), {
-		self,
-		URL,
-		caches: {},
-		fetch: () => undefined,
-		Response,
-	});
-	return self.__jasperSw as {
+	const handlers = new Map<string, (event: unknown) => void>();
+	const put = vi.fn();
+	const fetch = vi.fn().mockRejectedValue(new Error('Offline'));
+	const caches = { match: vi.fn().mockResolvedValue(undefined), open: vi.fn().mockResolvedValue({ put }) };
+	const self = {
+		addEventListener: (name: string, handler: (event: unknown) => void) => handlers.set(name, handler),
+		location: { origin: ORIGIN },
+	};
+	const sw = runInNewContext(
+		`${readFileSync(join(PUBLIC, 'sw.js'), 'utf8')}\n({ classifyRequest, SHELL_CACHE, PRECACHE_URLS })`,
+		{ self, URL, caches, fetch, Response },
+	) as {
 		classifyRequest(r: SwRequestInfo): SwRoute;
-		VERSION: string;
 		SHELL_CACHE: string;
-		ASSETS_CACHE: string;
-		BYPASS_PREFIXES: string[];
-		CACHE_FIRST_PREFIXES: string[];
 		PRECACHE_URLS: string[];
 	};
+	return { ...sw, handlers, fetch, caches, put };
 }
 
-describe('service worker route classifier (S05:PWA-004)', () => {
+describe('service worker routing and caching (S05:PWA-004)', () => {
+	const sw = loadSw();
 	it.each(CASES)('%j → %s', (req, route) => {
-		expect(classifyRequest(req)).toBe(route);
+		expect(sw.classifyRequest(req)).toBe(route);
 	});
 
-	it('public/sw.js classifies exactly like sw-routes.ts and uses the same caches and lists', () => {
-		const sw = loadSw();
-		for (const [req] of CASES) expect(sw.classifyRequest(req), req.url).toBe(classifyRequest(req));
-		// Every prefix × mode × method × range combination.
-		for (const p of [...BYPASS_PREFIXES, ...CACHE_FIRST_PREFIXES, '/', '/x', '/project/1'])
-			for (const mode of ['navigate', 'cors', 'no-cors', undefined])
-				for (const method of ['GET', 'HEAD', 'POST'])
-					for (const hasRange of [false, true]) {
-						const req = get(`${p}${p.endsWith('/') ? 'a' : '/a'}`, { mode, method, hasRange });
-						expect(sw.classifyRequest(req)).toBe(classifyRequest(req));
-					}
-		expect(sw.SHELL_CACHE).toBe(SHELL_CACHE);
-		expect(sw.ASSETS_CACHE).toBe(ASSETS_CACHE);
-		expect(SHELL_CACHE).toMatch(/^jasper-shell-v\d+$/);
-		expect(ASSETS_CACHE).toMatch(/^jasper-assets-v\d+$/);
-		expect([...sw.BYPASS_PREFIXES]).toEqual([...BYPASS_PREFIXES]);
-		expect([...sw.CACHE_FIRST_PREFIXES]).toEqual([...CACHE_FIRST_PREFIXES]);
-		expect([...sw.PRECACHE_URLS]).toEqual([...PRECACHE_URLS]);
+	it('bypasses Range requests at the fetch handler', () => {
+		const respondWith = vi.fn();
+		sw.handlers.get('fetch')!({
+			request: new Request(`${ORIGIN}/assets/index.js`, { headers: { Range: 'bytes=0-99' } }),
+			respondWith,
+		});
+		expect(respondWith).not.toHaveBeenCalled();
+		expect(sw.fetch).not.toHaveBeenCalled();
+		expect(sw.caches.open).not.toHaveBeenCalled();
 	});
 
-	it('answers misses with Response.error() and never caches Range requests', () => {
-		const src = readFileSync(join(PUBLIC, 'sw.js'), 'utf8');
-		expect(src).toContain('Response.error()');
-		expect(src).not.toContain('addAll(');
-		expect(src).toContain("request.headers.has('range')");
+	it.each(['/assets/missing.js', '/manifest.webmanifest', '/project/prj_1'])(
+		'answers an offline cache miss with a network error: %s',
+		async (path) => {
+			const worker = loadSw();
+			const respondWith = vi.fn();
+			worker.handlers.get('fetch')!({
+				request: {
+					url: `${ORIGIN}${path}`,
+					method: 'GET',
+					headers: new Headers(),
+					mode: path.startsWith('/project') ? 'navigate' : 'cors',
+				},
+				respondWith,
+			});
+			const response = await respondWith.mock.calls[0]![0];
+			expect(response.type).toBe('error');
+			expect(worker.put).not.toHaveBeenCalled();
+		},
+	);
+
+	it('precaches available shell files even when another file fails', async () => {
+		const worker = loadSw();
+		worker.fetch.mockImplementation(async (url: string) => {
+			if (url === '/icons/icon-192.png') throw new Error('Missing icon');
+			return new Response('shell');
+		});
+		const waitUntil = vi.fn();
+		worker.handlers.get('install')!({ waitUntil });
+		await waitUntil.mock.calls[0]![0];
+		expect(worker.caches.open).toHaveBeenCalledWith(worker.SHELL_CACHE);
+		expect(worker.put).toHaveBeenCalledWith('/index.html', expect.any(Response));
+		expect(worker.put).toHaveBeenCalledTimes(worker.PRECACHE_URLS.length - 1);
 	});
 });
 

@@ -9,7 +9,7 @@ import { type RowWriteContext, useRowWriter } from '../rowEdit.ts';
 import { SliderEditor } from './SliderEditor.tsx';
 
 /** Fallback wheel diameter when layout is unavailable (tests). */
-export const WHEEL_FALLBACK = 120;
+const WHEEL_FALLBACK = 120;
 
 export function WheelField(props: {
 	row: Row;

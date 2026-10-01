@@ -1,7 +1,6 @@
 // Builds the ONE "Import N files" transaction of S01:LIFE-010 step 6: `media.register` for every file that
 // is committed (+ `clip.place` when the drop target is the timeline or the Program monitor), preceded by
 // `sequence.updateSettings` when the user accepted the clip-mismatch prompt (S01:SEQ-005, S04:IN-008).
-import type { RegisteredMedia } from '@jasper/api';
 import {
 	type Command,
 	flicksPerFrame,
@@ -13,7 +12,6 @@ import type { ImportTarget } from '../state/services.ts';
 import { placementFrames, type SequenceSettingsPatch } from './assets.ts';
 
 export type PreparedMedia = {
-	reg: RegisteredMedia;
 	asset: MediaAsset;
 	/** Display name of the new project item (the file name). */
 	name: string;
@@ -38,18 +36,13 @@ export type ImportPlacementContext = {
 	targetTracks?: { video?: string | null; audio?: string | null };
 };
 
-export type BuiltImport = {
+type BuiltImport = {
 	tx: TxInput | null;
-	label: string;
 	/** Index of each prepared file's `media.register` command (null when an existing asset was reused). */
 	registerIndex: (number | null)[];
 	/** Index of each prepared file's `clip.place` command (null when not placed). */
 	placeIndex: (number | null)[];
 };
-
-export function importLabel(n: number): string {
-	return `Import ${n} ${n === 1 ? 'file' : 'files'}`;
-}
 
 export function buildImportTransaction(input: {
 	doc: ProjectDocument;
@@ -64,7 +57,7 @@ export function buildImportTransaction(input: {
 	const commands: Command[] = [];
 	const registerIndex: (number | null)[] = [];
 	const placeIndex: (number | null)[] = [];
-	const label = importLabel(prepared.length);
+	const label = `Import ${prepared.length} ${prepared.length === 1 ? 'file' : 'files'}`;
 
 	const sequenceId = target.kind === 'timeline' || target.kind === 'program' ? target.sequenceId : undefined;
 	const seq = sequenceId ? doc.sequences[sequenceId] : undefined;
@@ -123,7 +116,6 @@ export function buildImportTransaction(input: {
 
 	return {
 		tx: commands.length ? { label, origin: 'user', commands } : null,
-		label,
 		registerIndex,
 		placeIndex,
 	};
@@ -157,16 +149,10 @@ export function buildPlaceItemsTransaction(input: {
 	target: Extract<ImportTarget, { kind: 'timeline' | 'program' }>;
 	matchSettings?: SequenceSettingsPatch | null;
 	placement?: ImportPlacementContext;
-}): { tx: TxInput | null; placeIndex: number[]; skipped: { itemId: string; reason: string }[] } {
+}): { tx: TxInput | null; placeIndex: number[] } {
 	const { doc, target } = input;
 	const seq = doc.sequences[target.sequenceId];
-	const skipped: { itemId: string; reason: string }[] = [];
-	if (!seq)
-		return {
-			tx: null,
-			placeIndex: [],
-			skipped: input.itemIds.map((itemId) => ({ itemId, reason: 'No sequence' })),
-		};
+	if (!seq) return { tx: null, placeIndex: [] };
 	const commands: Command[] = [];
 	const placeIndex: number[] = [];
 	if (input.matchSettings)
@@ -179,25 +165,11 @@ export function buildPlaceItemsTransaction(input: {
 	let cursor = target.kind === 'timeline' ? target.at : Math.max(0, input.placement?.playheadFrame ?? 0);
 	for (const itemId of input.itemIds) {
 		const item = doc.items[itemId];
-		if (!item) {
-			skipped.push({ itemId, reason: 'Item not found' });
-			continue;
-		}
-		if (item.kind === 'bin' || item.kind === 'search-bin') {
-			skipped.push({ itemId, reason: 'Bins cannot be placed' });
-			continue;
-		}
-		if (item.kind === 'sequence') {
-			skipped.push({ itemId, reason: 'Nesting sequences arrives in M2' });
-			continue;
-		}
+		if (!item || item.kind === 'bin' || item.kind === 'search-bin' || item.kind === 'sequence') continue;
 		let frames = 0;
 		if (item.kind === 'media') {
 			const asset = doc.media[item.mediaId];
-			if (!asset || asset.kind === 'font' || asset.kind === 'lut') {
-				skipped.push({ itemId, reason: 'This media cannot be placed on a timeline' });
-				continue;
-			}
+			if (!asset || asset.kind === 'font' || asset.kind === 'lut') continue;
 			const marks = item.marks;
 			if (asset.kind === 'video' || asset.kind === 'audio') {
 				const F = flicksPerFrame(rate);
@@ -219,5 +191,5 @@ export function buildPlaceItemsTransaction(input: {
 		cursor += frames;
 	}
 	const label = target.kind === 'timeline' && target.mode === 'insert' ? 'Insert' : 'Overwrite';
-	return { tx: placeIndex.length ? { label, origin: 'user', commands } : null, placeIndex, skipped };
+	return { tx: placeIndex.length ? { label, origin: 'user', commands } : null, placeIndex };
 }

@@ -5,7 +5,6 @@
 import { useSessionOrNull } from '@jasper/session/react';
 import { EmptyState, openDialog, type ResolvedMenuItem, toast } from '@jasper/ui';
 import {
-	type ComponentType,
 	type ReactNode,
 	useCallback,
 	useEffect,
@@ -45,15 +44,6 @@ import type { WorkspaceRecord } from './workspaces/store.ts';
 
 // ------------------------------------------------------------------ mode views (Import / Export)
 
-const modeViews = new Map<Exclude<ShellMode, 'edit'>, ComponentType>();
-/** Import/Export mode bodies are provided by their owners (WP-2E); the shell shows a placeholder. */
-export function registerModeView(mode: Exclude<ShellMode, 'edit'>, component: ComponentType): () => void {
-	modeViews.set(mode, component);
-	return () => {
-		if (modeViews.get(mode) === component) modeViews.delete(mode);
-	};
-}
-
 /** Export mode (WP-2E) rendered in the shell's mode area (S05:EX-001, HD-003). */
 function ShellExportView() {
 	const state = useExportMode();
@@ -63,25 +53,16 @@ function ShellExportView() {
 		</div>
 	);
 }
-registerModeView('export', ShellExportView);
 
-function ModePlaceholder({ mode }: { mode: Exclude<ShellMode, 'edit'> }) {
+function ImportMode() {
 	const runtime = useShellRuntime();
 	return (
-		<div className="flex h-full items-center justify-center bg-pr-panel" data-testid={`mode-view-${mode}`}>
+		<div className="flex h-full items-center justify-center bg-pr-panel" data-testid="mode-view-import">
 			<EmptyState
-				icon={mode === 'import' ? 'app.import' : 'app.export'}
-				message={
-					mode === 'import'
-						? 'Import mode: browse and ingest media'
-						: 'Export mode: choose destinations, engine and settings'
-				}
+				icon="app.import"
+				message="Import mode: browse and ingest media"
 				detail="This view is provided by the project and export work package."
-				action={
-					mode === 'import'
-						? { label: 'Import…', onClick: () => void runtime.run('project.import') }
-						: { label: 'Export Media…', onClick: () => void runtime.run('export.media') }
-				}
+				action={{ label: 'Import…', onClick: () => void runtime.run('project.import') }}
 			/>
 		</div>
 	);
@@ -401,7 +382,6 @@ function ShellBody() {
 	const closePalette = useCallback(() => setPalette(null), []);
 
 	const compactHeader = !desktopLike;
-	const ModeView = mode !== 'edit' ? modeViews.get(mode) : undefined;
 	return (
 		<div
 			className="flex h-full min-h-0 flex-col bg-pr-app font-pr text-pr-text"
@@ -449,7 +429,7 @@ function ShellBody() {
 						windowMenu={windowMenu}
 					/>
 				</div>
-				{mode !== 'edit' ? ModeView ? <ModeView /> : <ModePlaceholder mode={mode} /> : null}
+				{mode === 'export' ? <ShellExportView /> : mode === 'import' ? <ImportMode /> : null}
 			</main>
 			<CommandPalette query={palette} onClose={closePalette} sources={sources} />
 			<AgentApprovals />

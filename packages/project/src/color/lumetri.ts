@@ -7,11 +7,11 @@ import { curveFn } from './curves.ts';
 import { applyLut, applyLutMix, type Lut, type Rgb } from './lut.ts';
 
 /** Rec.709 luma weights (S06 §3 `Y(v)`). */
-export const LUMA_R = 0.2126;
-export const LUMA_G = 0.7152;
-export const LUMA_B = 0.0722;
+const LUMA_R = 0.2126;
+const LUMA_G = 0.7152;
+const LUMA_B = 0.0722;
 /** BT.1886 simplification used for the linear-light steps: `L = v^2.4`. */
-export const DISPLAY_GAMMA = 2.4;
+const DISPLAY_GAMMA = 2.4;
 
 export type LumetriParams = {
 	inputLut: string | null;
@@ -62,7 +62,7 @@ function vec(p: EffectParams, k: string): [number, number] {
 }
 
 /** Reads (and clamps to the S06:CG-002 ranges) the Lumetri params; missing values take their defaults. */
-export function readLumetriParams(p: EffectParams): LumetriParams {
+function readLumetriParams(p: EffectParams): LumetriParams {
 	return {
 		inputLut: mediaRef(p, 'inputLut'),
 		temperature: num(p, 'temperature', 0, -100, 100),
@@ -117,7 +117,7 @@ export function wheelDirection(wheel: readonly [number, number]): Rgb {
 }
 
 /** Hermite smoothstep with the usual clamp of `t` (S06 §3 `smooth(a, b, x)`). */
-export function smoothstep(a: number, b: number, x: number): number {
+function smoothstep(a: number, b: number, x: number): number {
 	const t = clamp((x - a) / (b - a), 0, 1);
 	return t * t * (3 - 2 * t);
 }

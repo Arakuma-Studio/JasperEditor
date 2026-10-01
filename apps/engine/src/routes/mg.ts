@@ -10,12 +10,11 @@ import {
 	createMgService,
 	MG_SERVICE_KEY,
 	MgRenderError,
-	type MgService,
 	mgCapabilityProvider,
 	mgMasterHook,
 } from '../mg/index.ts';
 import { sendError } from '../server.ts';
-import type { CoreServices } from '../tools/services.ts';
+import { coreServices } from '../tools/services.ts';
 
 const CONTENT_TYPES: Record<string, string> = {
 	'master.mov': 'video/quicktime',
@@ -23,69 +22,35 @@ const CONTENT_TYPES: Record<string, string> = {
 	'poster.png': 'image/png',
 };
 
-type EventSink = { publish?: (type: string, payload: unknown, projectId?: string) => void };
-
-/** Returns the engine's MG service, creating and probing it on first use. */
-export async function ensureMgService(app: FastifyInstance): Promise<MgService> {
-	const services = app.jasper.services;
-	const existing = services[MG_SERVICE_KEY] as MgService | undefined;
-	if (existing) return existing;
-	const core0 = services.core as CoreServices | undefined;
+export default async function mgRoutes(app: FastifyInstance): Promise<void> {
+	const core = coreServices(app);
 	const service = createMgService({
 		mgDir: app.jasper.config.paths.mgDir,
-		...(core0 ? { tools: core0.ffmpeg.bins } : {}),
-		// Forwards job events to the engine broadcaster when WP-2F registers one as services.events.
-		emit: (type, job) => (services.events as EventSink | undefined)?.publish?.(type, job, job.projectId),
+		tools: core.ffmpeg.bins,
+		emit: (type, job) => core.broadcaster.publish(type, job, job.projectId),
 	});
-	services[MG_SERVICE_KEY] = service;
+	app.jasper.services[MG_SERVICE_KEY] = service;
 	// Graceful shutdown (S04:ENG-004): kill jasper-mg/ffmpeg children and remove their temp dirs.
 	app.addHook('onClose', async () => {
 		await service.shutdown();
 	});
 	await service.refresh();
-	// WP-2F hooks: `render.fframes` in GET /api/capabilities and MG masters for native exports.
-	const core = services.core as CoreServices | undefined;
-	if (core) {
-		core.registerCapabilityProvider(mgCapabilityProvider(service));
-		core.registerMgMasterProvider(mgMasterHook(service));
-		// mg-render jobs run on the MG service's scheduler; list/get/cancel/retry them through /api/jobs.
-		core.queue.registerExternalSource({
-			owns: (id) => id.startsWith('job_mg_'),
-			list: () => service.listJobs(),
-			get: (id) => service.getJob(id),
-			cancel: (id) => service.cancel(id),
-			retry: (id) => {
-				const job = service.retry(id);
-				if (!job) throw new JobError('JOB_NOT_RETRYABLE', `Job ${id} cannot be retried`);
-				return job;
-			},
-		});
-	}
+	core.registerCapabilityProvider(mgCapabilityProvider(service));
+	core.registerMgMasterProvider(mgMasterHook(service));
+	// mg-render jobs run on the MG service's scheduler; list/get/cancel/retry them through /api/jobs.
+	core.queue.registerExternalSource({
+		owns: (id) => id.startsWith('job_mg_'),
+		list: () => service.listJobs(),
+		get: (id) => service.getJob(id),
+		cancel: (id) => service.cancel(id),
+		retry: (id) => {
+			const job = service.retry(id);
+			if (!job) throw new JobError('JOB_NOT_RETRYABLE', `Job ${id} cannot be retried`);
+			return job;
+		},
+	});
 	const cap = service.capability();
 	app.log.info(`[mg] fframes ${cap.fframes}${cap.fframesReason ? `: ${cap.fframesReason}` : ''}`);
-	return service;
-}
-
-function parseRange(header: string, size: number): { start: number; end: number } | null | 'invalid' {
-	const m = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
-	if (!m || (m[1] === '' && m[2] === '')) return 'invalid';
-	let start: number;
-	let end: number;
-	if (m[1] === '') {
-		const suffix = Number(m[2]);
-		if (suffix === 0) return 'invalid';
-		start = Math.max(0, size - suffix);
-		end = size - 1;
-	} else {
-		start = Number(m[1]);
-		end = m[2] === '' ? size - 1 : Math.min(Number(m[2]), size - 1);
-	}
-	if (start > end || start >= size) return 'invalid';
-	return { start, end };
-}
-
-export default async function mgRoutes(app: FastifyInstance): Promise<void> {
-	const service = await ensureMgService(app);
 
 	app.get('/api/motion-graphics/templates', async () => service.templates());
 
@@ -137,8 +102,7 @@ export default async function mgRoutes(app: FastifyInstance): Promise<void> {
 		const range = req.headers.range;
 		if (range) {
 			const r = parseRange(range, size);
-			if (r === 'invalid' || r === null)
-				return reply.code(416).header('content-range', `bytes */${size}`).send();
+			if (r === 'invalid') return reply.code(416).header('content-range', `bytes */${size}`).send();
 			reply
 				.code(206)
 				.header('content-range', `bytes ${r.start}-${r.end}/${size}`)
@@ -148,4 +112,22 @@ export default async function mgRoutes(app: FastifyInstance): Promise<void> {
 		reply.header('content-length', String(size));
 		return reply.send(createReadStream(path));
 	});
+}
+
+function parseRange(header: string, size: number): { start: number; end: number } | 'invalid' {
+	const m = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+	if (!m || (m[1] === '' && m[2] === '')) return 'invalid';
+	let start: number;
+	let end: number;
+	if (m[1] === '') {
+		const suffix = Number(m[2]);
+		if (suffix === 0) return 'invalid';
+		start = Math.max(0, size - suffix);
+		end = size - 1;
+	} else {
+		start = Number(m[1]);
+		end = m[2] === '' ? size - 1 : Math.min(Number(m[2]), size - 1);
+	}
+	if (start > end || start >= size) return 'invalid';
+	return { start, end };
 }

@@ -29,8 +29,8 @@ import {
 	layerOverride,
 	type NativeExtension,
 	type NativePrepareContext,
-	type PlannedExportLike,
 } from '../native-ext.ts';
+import type { PlannedExport } from '../planner.ts';
 import { destRect } from './kernel.ts';
 import { decoderArgs, renderWarpLayer, type WarpFrameSpec, WarpRenderError } from './render.ts';
 
@@ -190,7 +190,7 @@ export function createWarpExtension(deps: WarpDeps): WarpExtension {
 
 	async function prepareClip(
 		c: RenderVisualClip,
-		planned: PlannedExportLike,
+		planned: PlannedExport,
 		ctx: NativePrepareContext,
 		before: readonly NativeExtension[],
 		index: number,

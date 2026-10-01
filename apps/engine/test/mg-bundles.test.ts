@@ -605,7 +605,10 @@ describe('mg-bundles routes (no browser)', () => {
 		mkdirSync(fframes);
 		writeFileSync(join(fframes, 'meta.json'), JSON.stringify({ key: 'd', verified: true }));
 		expect(await svc.gc()).toBe(0);
-		await svc.ageRender(key, '2026-01-01T00:00:00.000Z');
+		const metaFile = join(dir, 'meta.json');
+		const meta = JSON.parse(readFileSync(metaFile, 'utf8'));
+		meta.lastUsedAt = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+		writeFileSync(metaFile, JSON.stringify(meta));
 		expect(await svc.gc()).toBe(1);
 		expect(existsSync(dir)).toBe(false);
 		expect(existsSync(fframes)).toBe(true);
@@ -1045,14 +1048,14 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 		symlinkSync(join(FIXTURE_PROJECT, 'node_modules'), join(dir, 'node_modules'));
 		const events: { type: string; payload: unknown }[] = [];
 		const off = coreServices(app).broadcaster.subscribe((e) => events.push(e), {});
-		const first = (
-			await app.inject({
-				method: 'POST',
-				url: '/api/mg-bundles/import',
-				headers: JSON_H,
-				payload: { path: dir, watch: true, projectId },
-			})
-		).json() as RegisteredMedia;
+		const response = await app.inject({
+			method: 'POST',
+			url: '/api/mg-bundles/import',
+			headers: JSON_H,
+			payload: { path: dir, watch: true, projectId },
+		});
+		expect(response.statusCode, response.body).toBe(200);
+		const first = response.json() as RegisteredMedia;
 		expect(svc.watching().some((w) => w.dir === dir)).toBe(true);
 		const src = join(dir, 'src', 'Title.tsx');
 		writeFileSync(src, readFileSync(src, 'utf8').replace('borderRadius: 24', 'borderRadius: 4'));

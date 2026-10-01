@@ -1,5 +1,5 @@
 // Tracking overlay geometry (S09:TRU-002/003): media px ↔ sequence px ↔ screen px through a plate's layer map and
-// the monitor view, quad drags (corner / edge / body), hit testing, corner-pin normalisation through the inverse
+// the monitor view, quad drags (corner / edge / body), corner-pin normalisation through the inverse
 // Motion, confidence tones, trails and default placement.
 import {
 	applyMat3,
@@ -19,7 +19,6 @@ import {
 	defaultQuadIn,
 	dragQuad,
 	dragQuadInMedia,
-	hitQuad,
 	mediaToScreen,
 	pinIsConvex,
 	pinnedCornersSeq,
@@ -85,15 +84,6 @@ describe('media px ↔ screen px', () => {
 
 describe('quad drags', () => {
 	const screenQuad = quadToScreen(motion, view, REF);
-
-	it('hit-tests corners before edges before the body', () => {
-		expect(hitQuad(screenQuad, screenQuad[2])).toEqual({ kind: 'corner', index: 2 });
-		const mid: Vec2 = [(screenQuad[0][0] + screenQuad[1][0]) / 2, (screenQuad[0][1] + screenQuad[1][1]) / 2];
-		expect(hitQuad(screenQuad, mid)).toEqual({ kind: 'edge', index: 0 });
-		const c: Vec2 = [(screenQuad[0][0] + screenQuad[2][0]) / 2, (screenQuad[0][1] + screenQuad[2][1]) / 2];
-		expect(hitQuad(screenQuad, c)).toEqual({ kind: 'body' });
-		expect(hitQuad(screenQuad, [-500, -500])).toBeNull();
-	});
 
 	it('moves one corner, two for an edge, all for the body', () => {
 		const d: Vec2 = [5, -3];

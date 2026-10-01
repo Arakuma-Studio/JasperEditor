@@ -34,35 +34,30 @@ const SLOT_OF_JOB: Partial<Record<EngineJob['kind'], Slot>> = {
 
 type ProxyKind = 'proxy-720' | 'proxy-540';
 type ProxyTiers = Partial<Record<ProxyKind, { status: DerivativeStatus; url?: string }>>;
-const PROXY_STATE_RANK: Record<string, number> = { ready: 4, running: 3, queued: 2, failed: 1, none: 0 };
+const PROXY_STATE_RANK: Record<DerivativeStatus['state'], number> = {
+	ready: 4,
+	running: 3,
+	queued: 2,
+	failed: 1,
+	none: 0,
+};
 
 /** The proxy tier the runtime reports: a ready one (720 first), else the one that is furthest along. */
-export function bestProxyTier(tiers: ProxyTiers): { status: DerivativeStatus; url?: string } {
+function bestProxyTier(tiers: ProxyTiers): { status: DerivativeStatus; url?: string } {
 	let best: { status: DerivativeStatus; url?: string } = { status: { state: 'none', progress: 0 } };
 	for (const kind of ['proxy-720', 'proxy-540'] as const) {
 		const t = tiers[kind];
-		if (t && (PROXY_STATE_RANK[t.status.state] ?? 0) > (PROXY_STATE_RANK[best.status.state] ?? 0)) best = t;
+		if (t && PROXY_STATE_RANK[t.status.state] > PROXY_STATE_RANK[best.status.state]) best = t;
 	}
 	return best;
 }
-
-function toStatus(d: ApiDerivativeStatus | undefined): DerivativeStatus | null {
-	if (!d) return null;
-	return { state: d.state, progress: d.progress, ...(d.error ? { error: d.error } : {}) };
-}
-
-export type MediaRuntimeSync = {
-	/** Resolves the status of every engine-backed asset again (e.g. after the engine reconnects). */
-	refreshAll(): void;
-	dispose(): void;
-};
 
 /** Keeps `session.state.media` in sync with the engine. */
 export function createMediaRuntimeSync(
 	session: EditorSession,
 	engine: EngineClient,
 	subscribe: Subscribe | null,
-): MediaRuntimeSync {
+): { dispose(): void } {
 	/** mediaKey → media ids (several assets may share a key after "import again" in other projects). */
 	let byKey = new Map<string, string[]>();
 	let byFingerprint = new Map<string, string[]>();
@@ -83,66 +78,74 @@ export function createMediaRuntimeSync(
 		return media;
 	};
 
-	const patchKey = (key: string, patch: (id: string) => Partial<MediaRuntime>) => {
+	const patchKey = (key: string, patch: Partial<MediaRuntime>) => {
 		if (disposed) return;
-		for (const id of byKey.get(key) ?? []) session.setMediaRuntime(id, patch(id));
+		for (const id of byKey.get(key) ?? []) session.setMediaRuntime(id, patch);
 	};
 
 	const applyDerivative = (key: string, kind: DerivativeKind, status: DerivativeStatus, url?: string) => {
 		const slot = SLOT_OF_KIND[kind];
-		if (!slot) return;
+		if (!slot || disposed || !byKey.has(key)) return;
 		const ready = status.state === 'ready';
-		patchKey(key, () => {
-			switch (slot) {
-				case 'poster':
-					return ready ? { posterUrl: url ?? engine.mediaUrl(key, 'poster') } : {};
-				case 'thumbs':
-					return {
-						thumbs: status,
-						...(ready ? { spriteUrl: url ?? engine.mediaUrl(key, 'sprite.json') } : {}),
-					};
-				case 'peaks':
-					return { peaks: status, ...(ready ? { peaksUrl: url ?? engine.mediaUrl(key, 'peaks.json') } : {}) };
-				case 'proxy': {
-					// Both tiers share the runtime's one proxy slot: a tier that was never made ("none") must not
-					// hide the other tier's ready proxy (the mandatory proxy of ProRes media is the 720 one).
-					const tiers = proxyTiers.get(key) ?? {};
-					tiers[kind as ProxyKind] = {
-						status,
-						...(ready
-							? { url: url ?? engine.mediaUrl(key, { proxy: kind === 'proxy-540' ? '540' : '720' }) }
-							: {}),
-					};
-					proxyTiers.set(key, tiers);
-					const best = bestProxyTier(tiers);
-					return { proxy: best.status, ...(best.url ? { proxyUrl: best.url } : {}) };
-				}
+		switch (slot) {
+			case 'poster':
+				patchKey(key, ready ? { posterUrl: url ?? engine.mediaUrl(key, 'poster') } : {});
+				break;
+			case 'thumbs':
+				patchKey(key, {
+					thumbs: status,
+					...(ready ? { spriteUrl: url ?? engine.mediaUrl(key, 'sprite.json') } : {}),
+				});
+				break;
+			case 'peaks':
+				patchKey(key, {
+					peaks: status,
+					...(ready ? { peaksUrl: url ?? engine.mediaUrl(key, 'peaks.json') } : {}),
+				});
+				break;
+			case 'proxy': {
+				// Both tiers share the runtime's one proxy slot: a tier that was never made ("none") must not
+				// hide the other tier's ready proxy (the mandatory proxy of ProRes media is the 720 one).
+				const tiers = proxyTiers.get(key) ?? {};
+				tiers[kind as ProxyKind] = {
+					status,
+					...(ready
+						? { url: url ?? engine.mediaUrl(key, { proxy: kind === 'proxy-540' ? '540' : '720' }) }
+						: {}),
+				};
+				proxyTiers.set(key, tiers);
+				const best = bestProxyTier(tiers);
+				patchKey(key, { proxy: best.status, ...(best.url ? { proxyUrl: best.url } : {}) });
 			}
-		});
+		}
 	};
 
 	const applyStatus = (s: Pick<MediaStatus, 'mediaKey' | 'status' | 'derivatives'>) => {
 		const availability: MediaRuntime['availability'] =
 			s.status === 'missing' ? 'offline' : s.status === 'error' ? 'error' : 'online';
-		patchKey(s.mediaKey, () => ({ availability, playbackUrl: engine.mediaUrl(s.mediaKey) }));
+		patchKey(s.mediaKey, { availability, playbackUrl: engine.mediaUrl(s.mediaKey) });
 		for (const [kind, d] of Object.entries(s.derivatives ?? {}) as [DerivativeKind, ApiDerivativeStatus][]) {
-			const st = toStatus(d);
-			if (st) applyDerivative(s.mediaKey, kind, st, d.url);
+			applyDerivative(
+				s.mediaKey,
+				kind,
+				{ state: d.state, progress: d.progress, ...(d.error ? { error: d.error } : {}) },
+				d.url,
+			);
 		}
 	};
 
 	const resolve = (key: string) => {
-		patchKey(key, () => ({ availability: 'resolving', playbackUrl: engine.mediaUrl(key) }));
+		patchKey(key, { availability: 'resolving', playbackUrl: engine.mediaUrl(key) });
 		engine
 			.mediaStatus(key)
 			.then((s) => applyStatus(s))
 			.catch((e) => {
 				if (e instanceof EngineError && (e.code === 'ASSET_NOT_FOUND' || e.code === 'NOT_FOUND'))
-					patchKey(key, () => ({ availability: 'offline' }));
+					patchKey(key, { availability: 'offline' });
 				else if (e instanceof EngineError && e.code === 'NETWORK')
-					patchKey(key, () => ({ availability: 'needs-engine' }));
+					patchKey(key, { availability: 'needs-engine' });
 				// Older/stub engines: assume the original is served and wait for events.
-				else patchKey(key, () => ({ availability: 'online' }));
+				else patchKey(key, { availability: 'online' });
 			});
 	};
 
@@ -219,10 +222,6 @@ export function createMediaRuntimeSync(
 	const offEvents = subscribe ? subscribe(onEvent) : () => undefined;
 
 	return {
-		refreshAll() {
-			known.clear();
-			syncNew();
-		},
 		dispose() {
 			disposed = true;
 			offDoc();

@@ -17,7 +17,7 @@ export type EngineState = {
 	status: EngineStatus;
 	version: string | null;
 	capabilities: EngineCapabilities | null;
-	/** Why capabilities are missing (e.g. NOT_IMPLEMENTED while WP-2F lands). */
+	/** Why capabilities could not be loaded. */
 	capabilitiesError: string | null;
 	events: EventStreamState;
 	/** Subscribe to every event envelope. */

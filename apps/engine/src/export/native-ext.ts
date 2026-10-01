@@ -10,9 +10,6 @@
 import type { EffectSpec, Rational, RenderSnapshot, RenderVisualClip, ResolvedEffect } from '@jasper/project';
 import type { PlannedExport } from './planner.ts';
 
-/** What `prepare` receives: the planned export (document, snapshot with engine-local media, output spec). */
-export type PlannedExportLike = PlannedExport;
-
 /**
  * A pre-rendered picture that replaces part of a layer's pipeline in the native composite.
  * - `layer`: replaces the decoded source only. Frames are `intrinsicBox`-sized (scaled if not); the builder
@@ -91,7 +88,7 @@ export type NativeExtension = {
 	 */
 	warnings?(clip: RenderVisualClip, ctx: { fps: Rational }): { code: string; message: string }[];
 	/** Runs before the ffmpeg composite of an export or still: renders/bakes what `override`/`effectFilter` need. */
-	prepare?(planned: PlannedExportLike, ctx: NativePrepareContext): Promise<unknown>;
+	prepare?(planned: PlannedExport, ctx: NativePrepareContext): Promise<unknown>;
 	/** The layer's pre-rendered picture, or null. First extension returning non-null wins. */
 	override?(clip: RenderVisualClip, prepared: unknown): LayerOverride | null;
 	/**
@@ -144,7 +141,7 @@ export type PreparedExtensions = ReadonlyMap<string, unknown>;
 /** Runs every extension's `prepare` in registration order. */
 export async function prepareExtensions(
 	exts: readonly NativeExtension[],
-	planned: PlannedExportLike,
+	planned: PlannedExport,
 	ctx: NativePrepareContext,
 ): Promise<Map<string, unknown>> {
 	const out = new Map<string, unknown>();

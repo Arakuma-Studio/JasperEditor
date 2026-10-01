@@ -61,7 +61,7 @@ function targetedTracks(e: Env, medium: Medium): string[] {
 }
 
 /** The `transition.applyDefault` commands of one invocation (TUI-030). */
-export function defaultTransitionCommands(
+function defaultTransitionCommands(
 	ctx: CommandCtx,
 	e: Env,
 	media: readonly Medium[],
@@ -127,7 +127,7 @@ function applyDefaults(
 }
 
 /** TUI-015: removes the selected transitions (one entry). False when none is selected. */
-export function clearSelectedTransitions(ctx: CommandCtx): boolean {
+function clearSelectedTransitions(ctx: CommandCtx): boolean {
 	const e = envOf(ctx);
 	if (!e) return false;
 	const ids = e.session.getState().selection.timeline.transitions.filter((id) => !!e.seq.transitions[id]);

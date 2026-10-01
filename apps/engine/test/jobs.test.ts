@@ -9,7 +9,7 @@ import { Broadcaster } from '../src/events/broadcaster.ts';
 import { JobQueue } from '../src/jobs/queue.ts';
 import { JobError, type JobRunner } from '../src/jobs/types.ts';
 import { Ffmpeg, resolveBinaries } from '../src/tools/ffmpeg.ts';
-import { isAlive, spawnTool } from '../src/tools/process.ts';
+import { spawnTool } from '../src/tools/process.ts';
 import { closeApps, H, makeApp, tempAppdir, until } from './helpers.ts';
 
 const queues: JobQueue[] = [];
@@ -215,7 +215,7 @@ describe('cancellation (S04:JB-020, QA-007)', () => {
 		expect(done.state).toBe('cancelled');
 		expect(took).toBeLessThan(5000);
 		for (const g of pgids) {
-			expect(isAlive(g)).toBe(false);
+			expect(() => process.kill(g, 0)).toThrow('ESRCH');
 			expect(groupMembers(g)).toEqual([]);
 		}
 		expect(existsSync(partial)).toBe(false);

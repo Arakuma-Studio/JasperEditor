@@ -5,14 +5,14 @@ import { evaluate, isHoldOnlyValue } from '../../keyframes.ts';
 import type { ParamSpec } from '../../registry/effects.ts';
 import { type PropertySpec, resolvePropertySpec } from '../../registry/properties.ts';
 import type { Animatable, Keyframe } from '../../schema/common.ts';
-import type { Clip, EffectInstance } from '../../schema/sequence.ts';
+import type { Clip, EffectInstance, Track } from '../../schema/sequence.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
 import type { CommandOf, ParamAt } from '../schemas/index.ts';
 import { setCompositionProp } from './composition.ts';
 import type { HandlerMap } from './util.ts';
 
-export type ValueRule = {
+type ValueRule = {
 	kind: 'number' | 'vec2' | 'color' | 'enum' | 'boolean' | 'string' | 'media' | 'curve' | 'json';
 	range?: { min?: number; max?: number };
 	options?: readonly string[];
@@ -37,7 +37,7 @@ export function ruleFromParam(p: ParamSpec): ValueRule {
 	return { kind: p.type, range: p.range, options: p.options, holdOnly: !p.animatable };
 }
 
-function getAt(obj: unknown, path: readonly string[]): unknown {
+export function getAt(obj: unknown, path: readonly string[]): unknown {
 	let cur = obj as Record<string, unknown> | undefined;
 	for (const k of path) {
 		if (!cur || typeof cur !== 'object') return undefined;
@@ -46,21 +46,38 @@ function getAt(obj: unknown, path: readonly string[]): unknown {
 	return cur;
 }
 
-function findEffect(
-	doc: DDoc,
-	fxId: string,
-): { seq: DSeq; fx: Draft<EffectInstance>; clip: DClip | null } | null {
+type EffectLocation = {
+	seq: DSeq;
+	list: Draft<EffectInstance>[];
+	index: number;
+	fx: Draft<EffectInstance>;
+	clip: DClip | null;
+	track: Draft<Track> | null;
+};
+
+/** Finds an effect instance in a clip, track or master stack. */
+export function locateEffect(doc: DDoc, fxId: string): EffectLocation | null {
 	for (const seq of Object.values(doc.sequences)) {
 		for (const clip of Object.values(seq.clips)) {
-			const fx = (clip as { effects?: Draft<EffectInstance>[] }).effects?.find((e) => e.id === fxId);
-			if (fx) return { seq, fx, clip };
+			const list = (clip as { effects?: Draft<EffectInstance>[] }).effects;
+			const index = list?.findIndex((e) => e.id === fxId) ?? -1;
+			if (list && index >= 0) return { seq, list, index, fx: list[index]!, clip, track: null };
 		}
 		for (const t of [...seq.videoTracks, ...seq.audioTracks]) {
-			const fx = t.effects?.find((e) => e.id === fxId);
-			if (fx) return { seq, fx, clip: null };
+			const index = t.effects?.findIndex((e) => e.id === fxId) ?? -1;
+			if (t.effects && index >= 0)
+				return { seq, list: t.effects, index, fx: t.effects[index]!, clip: null, track: t };
 		}
-		const fx = seq.master.effects.find((e) => e.id === fxId);
-		if (fx) return { seq, fx, clip: null };
+		const index = seq.master.effects.findIndex((e) => e.id === fxId);
+		if (index >= 0)
+			return {
+				seq,
+				list: seq.master.effects,
+				index,
+				fx: seq.master.effects[index]!,
+				clip: null,
+				track: null,
+			};
 	}
 	return null;
 }
@@ -132,7 +149,7 @@ export function resolveTarget(
 		};
 	}
 	if (head === 'effect' && a && rest.length === 1) {
-		const found = findEffect(doc, a);
+		const found = locateEffect(doc, a);
 		if (!found) return h.fail('E_NOT_FOUND', `Effect instance not found: ${a}`);
 		const effSpec = h.registries.effects.get(found.fx.effectId, found.fx.effectVersion);
 		if (!effSpec)

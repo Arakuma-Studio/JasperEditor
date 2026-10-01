@@ -187,8 +187,7 @@ const tx = await call('POST', '/api/agent/tx', {
 	},
 });
 expect(tx.result.ok, `tx rejected: ${JSON.stringify(tx.result.errors)}`);
-const project = await call('GET', `/api/projects/${projectId}`);
-const envelope = project.envelope ?? project;
+const { envelope } = await call('GET', `/api/projects/${projectId}`);
 const sequenceId = Object.keys(envelope.document.sequences)[0];
 const request = {
 	envelope,

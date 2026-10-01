@@ -91,7 +91,6 @@ export function candidateAppdirs(opts: Pick<DiscoveryOptions, 'appdir' | 'env'> 
 
 export function readRuntimeFile(appdir: string): EngineRuntimeInfo | null {
 	const file = appdirPaths(appdir).runtimeFile;
-	if (!existsSync(file)) return null;
 	try {
 		return parseEngineRuntime(JSON.parse(readFileSync(file, 'utf8')));
 	} catch {

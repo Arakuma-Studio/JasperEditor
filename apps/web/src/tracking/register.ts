@@ -89,7 +89,7 @@ export function registerTrackingUi(): void {
 }
 
 /** Trackers of video clips below `clip` that it overlaps (it could follow them). */
-export function platesBelow(
+function platesBelow(
 	session: Parameters<typeof activeSeq>[0],
 	clip: Clip,
 ): { plate: VideoClip; tracker: ClipTracker }[] {

@@ -311,7 +311,7 @@ function traceBitmap(r: ScopeResult): HTMLCanvasElement | null {
 	return c;
 }
 
-export function drawScope(
+function drawScope(
 	g: CanvasRenderingContext2D,
 	W: number,
 	H: number,

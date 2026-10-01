@@ -29,7 +29,7 @@ import {
 } from './lib.mjs';
 
 /** Executable format of a file: 'elf' | 'macho' | 'pe' | null. */
-export function binaryFormat(file) {
+function binaryFormat(file) {
 	const fd = openSync(file, 'r');
 	const b = Buffer.alloc(4);
 	try {
@@ -56,7 +56,7 @@ function ask(file, args) {
 }
 
 /** The `libvidstab` record of the BUILDINFO.json next to an artifact (vid.stab rule, S07:PST-003). */
-export function vidstabRecordFor(file) {
+function vidstabRecordFor(file) {
 	const info = join(dirname(file), 'BUILDINFO.json');
 	if (!existsSync(info)) return undefined;
 	try {
@@ -67,7 +67,7 @@ export function vidstabRecordFor(file) {
 }
 
 /** Checks one artifact; returns { file, method, problems }. */
-export function checkFile(file, name) {
+function checkFile(file, name) {
 	const vidstab = vidstabRecordFor(file);
 	if (isRunnableExe(file, name)) {
 		const buildconf = ask(file, ['-buildconf']);

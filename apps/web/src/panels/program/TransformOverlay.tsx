@@ -11,6 +11,7 @@ import {
 	type Rect,
 	type ResolvedLayer,
 	resolveSceneAt,
+	visibleRect,
 } from '@jasper/project';
 import type { EditorSession, Gesture, TransportStore } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
@@ -34,10 +35,10 @@ import {
 	CORNERS,
 	groupScaleFactor,
 	HANDLE_HIT,
+	HANDLE_IDS,
 	type HandleId,
 	handlePoint,
 	hitTest,
-	layerRect,
 	moveAnchor,
 	type Quad,
 	RotationTracker,
@@ -94,7 +95,6 @@ type GestureState =
 			clips: ClipStart[];
 			center: Vec2;
 			tracker: RotationTracker;
-			theta0: number;
 			group: boolean;
 			startScreen: Vec2;
 			moved: boolean;
@@ -191,8 +191,8 @@ export function TransformOverlay({
 	const pendingRef = useRef<{ cmds: Parameters<Gesture['update']>[0] } | null>(null);
 	const rafRef = useRef<number | null>(null);
 	const svgRef = useRef<SVGSVGElement>(null);
-	const live = useRef({ scene, view, selLayers, frame, monitor, doc });
-	live.current = { scene, view, selLayers, frame, monitor, doc };
+	const live = useRef({ scene, view, selLayers, frame, monitor });
+	live.current = { scene, view, selLayers, frame, monitor };
 
 	const toSeq = (e: { clientX: number; clientY: number }): { seq: Vec2; screen: Vec2 } => {
 		const r = svgRef.current!.getBoundingClientRect();
@@ -264,6 +264,15 @@ export function TransformOverlay({
 	const groupBox = (layers: readonly ResolvedLayer[]): Rect | null =>
 		unionBounds(layers.map((l) => l.props.bounds));
 
+	const layerAt = (p: Vec2): string | null =>
+		hitTest(
+			live.current.scene
+				.filter((l) => l.props.transform)
+				.map((l) => ({ clipId: l.clip.clipId, trackId: l.clip.trackId, quad: l.props.quad as Quad })),
+			p,
+			locked,
+		);
+
 	const onPointerDown = (e: ReactPointerEvent<SVGSVGElement>) => {
 		// A text selection left by an earlier drag makes Chromium start a native drag of it on the next
 		// press, which cancels the pointer stream (pointercancel → the gesture is dropped). Clear it.
@@ -287,7 +296,7 @@ export function TransformOverlay({
 		// Handles / anchor / rotation of the current selection (XF-010…012, XF-037).
 		if (sel.length === 1) {
 			const l = sel[0]!;
-			const rect = layerRect(l.props.box, l.props.crop);
+			const rect = visibleRect(l.props.box, l.props.crop ?? undefined);
 			const anchorScreen = toScreen(view, applyMatrix(l.props.matrix, l.props.transform!.anchor));
 			const cs = clipStart(l.clip.clipId);
 			if (!cs) return;
@@ -329,7 +338,6 @@ export function TransformOverlay({
 					clips: [cs],
 					center,
 					tracker: new RotationTracker(center, p, cs.v0.rotation),
-					theta0: cs.v0.rotation,
 					group: false,
 					startScreen: screen,
 					moved: false,
@@ -364,7 +372,6 @@ export function TransformOverlay({
 						clips,
 						center,
 						tracker: new RotationTracker(center, p, 0),
-						theta0: 0,
 						group: true,
 						startScreen: screen,
 						moved: false,
@@ -374,13 +381,7 @@ export function TransformOverlay({
 			}
 		}
 		// Hit test and selection (XF-001, XF-003, XF-005).
-		const hit = hitTest(
-			live.current.scene
-				.filter((l) => l.props.transform)
-				.map((l) => ({ clipId: l.clip.clipId, trackId: l.clip.trackId, quad: l.props.quad as Quad })),
-			p,
-			locked,
-		);
+		const hit = layerAt(p);
 		if (!hit) {
 			if (!e.shiftKey && !e.ctrlKey && !e.metaKey) session.clearSelection('timeline');
 			return;
@@ -421,9 +422,7 @@ export function TransformOverlay({
 	const handleUnder = (l: ResolvedLayer, rect: Rect, screen: Vec2): HandleId | null => {
 		const quad = layerScreenQuad(l);
 		const small = Math.min(dist(quad[0], quad[1]), dist(quad[1], quad[2])) < SMALL_QUAD;
-		const ids: readonly HandleId[] = small
-			? CORNERS
-			: (['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const);
+		const ids: readonly HandleId[] = small ? CORNERS : HANDLE_IDS;
 		for (const id of ids) {
 			const at = toScreen(view, applyMatrix(l.props.matrix, handlePoint(rect, id)));
 			if (Math.abs(at[0] - screen[0]) <= HANDLE_HIT / 2 && Math.abs(at[1] - screen[1]) <= HANDLE_HIT / 2)
@@ -432,7 +431,7 @@ export function TransformOverlay({
 		return null;
 	};
 	const groupHandleUnder = (box: Rect, screen: Vec2): HandleId | null => {
-		for (const id of ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const) {
+		for (const id of HANDLE_IDS) {
 			const at = toScreen(view, handlePoint(box, id));
 			if (Math.abs(at[0] - screen[0]) <= HANDLE_HIT / 2 && Math.abs(at[1] - screen[1]) <= HANDLE_HIT / 2)
 				return id;
@@ -553,17 +552,11 @@ export function TransformOverlay({
 		else if (tool === 'hand') c = 'grab';
 		else if (sel.length === 1) {
 			const l = sel[0]!;
-			const h = handleUnder(l, layerRect(l.props.box, l.props.crop), screen);
+			const h = handleUnder(l, visibleRect(l.props.box, l.props.crop ?? undefined), screen);
 			if (h) c = handleCursor(h, l.props.transform!.rotation);
 			else if (rotationZoneHit(layerScreenQuad(l), screen)) c = 'alias';
 		}
-		const hit = hitTest(
-			live.current.scene
-				.filter((l) => l.props.transform)
-				.map((l) => ({ clipId: l.clip.clipId, trackId: l.clip.trackId, quad: l.props.quad as Quad })),
-			p,
-			locked,
-		);
+		const hit = layerAt(p);
 		if (c === 'default' && hit) c = 'move';
 		setCursor(c);
 		setHover(hit);
@@ -582,14 +575,6 @@ export function TransformOverlay({
 	// Effects dropped on the Program monitor apply to the layer under the pointer (S05:EFX-010, like the
 	// timeline); motion templates dropped anywhere on it are inserted at the playhead (S05:MGT-002).
 	const [dropHint, setDropHint] = useState<string | null>(null);
-	const layerAt = (p: Vec2): string | null =>
-		hitTest(
-			live.current.scene
-				.filter((l) => l.props.transform)
-				.map((l) => ({ clipId: l.clip.clipId, trackId: l.clip.trackId, quad: l.props.quad as Quad })),
-			p,
-			locked,
-		);
 	const onDragOver = (e: React.DragEvent<SVGSVGElement>) => {
 		const dt = e.dataTransfer;
 		if (isEffectDrag(dt)) {
@@ -722,9 +707,9 @@ function handleCursor(h: HandleId, rotation: number): string {
 function SelectionBox({ layer, view }: { layer: ResolvedLayer; view: View }) {
 	const quad = layer.props.quad.map((p) => toScreen(view, p as Vec2)) as Quad;
 	const t = layer.props.transform!;
-	const rect = layerRect(layer.props.box, layer.props.crop);
+	const rect = visibleRect(layer.props.box, layer.props.crop ?? undefined);
 	const small = Math.min(dist(quad[0], quad[1]), dist(quad[1], quad[2])) < SMALL_QUAD;
-	const ids: readonly HandleId[] = small ? CORNERS : (['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const);
+	const ids: readonly HandleId[] = small ? CORNERS : HANDLE_IDS;
 	const anchor = toScreen(view, applyMatrix(layer.props.matrix, t.anchor));
 	return (
 		<g data-testid="overlay-selection" data-clip-id={layer.clip.clipId}>
@@ -776,7 +761,7 @@ function GroupBox({ box, view }: { box: Rect; view: View }) {
 				stroke="var(--pr-accent)"
 				strokeWidth={1}
 			/>
-			{(['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const).map((id) => {
+			{HANDLE_IDS.map((id) => {
 				const at = toScreen(view, handlePoint(box, id));
 				return (
 					<rect

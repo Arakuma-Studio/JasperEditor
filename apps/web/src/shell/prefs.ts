@@ -96,11 +96,6 @@ export const prefsStore = {
 		listeners.add(l);
 		return () => listeners.delete(l);
 	},
-	/** Test helper. */
-	reload(): void {
-		state = load();
-		for (const l of [...listeners]) l();
-	},
 };
 
 export function useUiPrefs(): UiPrefs {

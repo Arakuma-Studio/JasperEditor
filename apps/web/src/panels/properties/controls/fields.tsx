@@ -10,7 +10,7 @@ const to255 = (x: number) => Math.round(Math.min(1, Math.max(0, x)) * 255);
 export function rgbaToHex(c: readonly number[]): string {
 	return `#${[c[0] ?? 0, c[1] ?? 0, c[2] ?? 0].map((x) => to255(x).toString(16).padStart(2, '0')).join('')}`;
 }
-export function hexToRgb(hex: string): [number, number, number] | null {
+function hexToRgb(hex: string): [number, number, number] | null {
 	const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex.trim());
 	if (!m) return null;
 	return [
@@ -20,7 +20,7 @@ export function hexToRgb(hex: string): [number, number, number] | null {
 	];
 }
 /** CSS color of a document RGBA value (document data, not UI chrome). */
-export function rgbaCss(c: readonly number[]): string {
+function rgbaCss(c: readonly number[]): string {
 	return `rgba(${to255(c[0] ?? 0)}, ${to255(c[1] ?? 0)}, ${to255(c[2] ?? 0)}, ${Math.min(1, Math.max(0, c[3] ?? 1))})`; // tokens-allow: document color
 }
 

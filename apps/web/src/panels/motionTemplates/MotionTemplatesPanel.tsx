@@ -14,9 +14,9 @@ import type { PanelProps } from '../types.ts';
 import { insertMotionTemplate, type MgTemplateRef, writeMgTemplateDrag } from './insert.ts';
 import { RemotionTab } from './RemotionTab.tsx';
 
-export type EngineFilter = 'all' | 'fframes' | 'remotion';
+type EngineFilter = 'all' | 'fframes' | 'remotion';
 
-export type GalleryEntry = {
+type GalleryEntry = {
 	ref: MgTemplateRef;
 	name: string;
 	category: string;

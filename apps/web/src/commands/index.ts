@@ -22,29 +22,29 @@ export * from './keymap-defaults.ts';
 export * from './registry.ts';
 export * from './types.ts';
 
-export const COMMAND_MODULES: Record<string, UiCommand[]> = {
-	app: appCommands,
-	edit: editCommands,
-	timeline: timelineCommands,
-	transport: transportCommands,
-	inspector: inspectorCommands,
-	project: projectCommands,
-	export: exportCommands,
-	mg: mgCommands,
-	integration: integrationCommands,
-	help: helpCommands,
+const COMMAND_MODULES: UiCommand[][] = [
+	appCommands,
+	editCommands,
+	timelineCommands,
+	transportCommands,
+	inspectorCommands,
+	projectCommands,
+	exportCommands,
+	mgCommands,
+	integrationCommands,
+	helpCommands,
 	// M2 (one module per work package, ARCHITECTURE §19.10)
-	color: colorCommands,
-	process: processCommands,
-	composition: compositionCommands,
-	tracking: trackingCommands,
-	transitions: transitionCommands,
-};
+	colorCommands,
+	processCommands,
+	compositionCommands,
+	trackingCommands,
+	transitionCommands,
+];
 
 let registered = false;
 /** Registers every domain module (idempotent). */
 export function registerAllCommands(): void {
 	if (registered) return;
 	registered = true;
-	for (const list of Object.values(COMMAND_MODULES)) registerCommands(list);
+	for (const list of COMMAND_MODULES) registerCommands(list);
 }

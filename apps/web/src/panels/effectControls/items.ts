@@ -17,7 +17,6 @@ import {
 	bindCrop,
 	bindEffectParam,
 	bindProperty,
-	contextOf,
 	cropEffectOf,
 	isAudioClip,
 	isVisualClip,
@@ -42,7 +41,7 @@ export type FxSection = {
 	missing?: boolean;
 };
 
-export type EcGroup = { id: 'video' | 'audio'; title: string; sections: FxSection[] };
+type EcGroup = { id: 'video' | 'audio'; title: string; sections: FxSection[] };
 
 /** The primary clip plus its linked partner of the other medium (video clip + its audio, S01:KND-003). */
 export function shownClips(seq: Sequence, primary: Clip): Clip[] {
@@ -63,11 +62,11 @@ export function buildGroups(
 	seq: Sequence,
 	clips: readonly Clip[],
 	frame: number,
-	registries: { effects: EffectRegistry; mg: MgTemplateRegistry },
+	registries: { effects: EffectRegistry; mgTemplates: MgTemplateRegistry },
 ): EcGroup[] {
 	const groups: EcGroup[] = [];
 	for (const clip of clips) {
-		const prop = (key: string) => bindProperty(doc, seq, clip, key, frame, registries.mg);
+		const prop = (key: string) => bindProperty(doc, seq, clip, key, frame, registries.mgTemplates);
 		const rows = (keys: string[]) =>
 			keys.map((k) => makeRow(k, [prop(k)])).filter((r): r is Row => r !== null);
 		const sections: FxSection[] = [];
@@ -109,7 +108,7 @@ export function buildGroups(
 					.map((p) => makeRow(`crop.${p.name}`, [bindCrop(doc, seq, clip, p.name, frame)]))
 					.filter((r): r is Row => r !== null),
 			});
-			const tpl = templateOf(clip, registries.mg);
+			const tpl = templateOf(clip, registries.mgTemplates);
 			if (tpl) {
 				sections.push({
 					id: `${clip.id}:template`,
@@ -175,6 +174,6 @@ export function rowVisible(doc: ProjectDocument, seq: Sequence, row: Row, filter
 	if (b.resolved.animated) return true;
 	if (filter === 'animated') return false;
 	if (b.spec.defaultValue === undefined) return false;
-	const d = propertyDefault(contextOf(doc, seq, b.clip), b.spec);
+	const d = propertyDefault({ doc, seq, clip: b.clip }, b.spec);
 	return JSON.stringify(d) !== JSON.stringify(b.resolved.value);
 }

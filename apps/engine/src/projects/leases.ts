@@ -41,7 +41,6 @@ export class LeaseManager {
 		return l ? { ...l } : null;
 	}
 
-	/** Acquires (or refreshes, for the same session) the lease. */
 	/**
 	 * Grants (or, for the same session, renews) the project's lease. `takeOver` (S01:PER-040, WP-2E) revokes
 	 * another session's lease: the new lease has a fresh id, so the old holder's next heartbeat answers

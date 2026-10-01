@@ -18,7 +18,7 @@ function desktopFolderPicker(): DesktopFolderBridge['pickFolder'] | null {
 	return typeof b?.pickFolder === 'function' ? b.pickFolder.bind(b) : null;
 }
 
-export function ImportRemotionDialog(
+function ImportRemotionDialog(
 	props: HostedDialogProps<{ session?: EditorSession | null; engine?: EngineClient | null; path?: string }>,
 ) {
 	const engineState = useEngineOrNull();

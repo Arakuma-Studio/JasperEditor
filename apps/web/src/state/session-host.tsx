@@ -1,5 +1,5 @@
 // Opens an EditorSession for /project/:projectId and provides it to the tree (ARCHITECTURE §7.5).
-// `demo` opens an in-memory project so the shell can run before the engine store exists (WP-2F).
+// `demo` opens an in-memory project so the shell can run without an engine.
 import { mgRegistry } from '@jasper/mg-templates';
 import { createEmptyProject, createRandomIdSource, defaultRegistries } from '@jasper/project';
 import { EditorSession, EngineProjectStore, MemoryProjectStore, type ProjectStore } from '@jasper/session';
@@ -23,7 +23,7 @@ function demoStore(): { store: ProjectStore; projectId: string } {
 	return { store, projectId: doc.projectId };
 }
 
-export function useProjectSession(projectId: string): SessionHostState {
+function useProjectSession(projectId: string): SessionHostState {
 	const engine = useEngineClient();
 	const [state, setState] = useState<SessionHostState>({ status: 'opening' });
 	useEffect(() => {

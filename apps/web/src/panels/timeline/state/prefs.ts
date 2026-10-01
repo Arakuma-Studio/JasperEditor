@@ -12,7 +12,6 @@ export type TimelinePrefs = {
 	showAudioNames: boolean;
 	showWaveforms: boolean;
 	rectifiedWaveforms: boolean;
-	showThroughEdits: boolean;
 	showClipMarkers: boolean;
 	showFxBadges: boolean;
 	showEngineBadges: boolean;
@@ -27,7 +26,7 @@ export type TimelinePrefs = {
 export const HEADER_MIN = 140;
 export const HEADER_MAX = 280;
 
-export function defaultPrefs(): TimelinePrefs {
+function defaultPrefs(): TimelinePrefs {
 	return {
 		version: 1,
 		headerWidth: 176,
@@ -36,7 +35,6 @@ export function defaultPrefs(): TimelinePrefs {
 		showAudioNames: true,
 		showWaveforms: true,
 		rectifiedWaveforms: true,
-		showThroughEdits: true,
 		showClipMarkers: true,
 		showFxBadges: true,
 		showEngineBadges: true,
@@ -78,6 +76,5 @@ export function timelinePrefs(): StoreApi<TimelinePrefs> {
 }
 
 export function setPrefs(patch: Partial<TimelinePrefs>): void {
-	const s = timelinePrefs();
-	s.setState({ ...s.getState(), ...patch });
+	timelinePrefs().setState(patch);
 }

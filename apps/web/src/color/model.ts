@@ -42,7 +42,7 @@ export function firstLumetri(clip: Clip): EffectInstance | null {
 	return effectsOf(clip).find((e) => e.effectId === LUMETRI_EFFECT_ID) ?? null;
 }
 
-export function lumetriParam(name: string, spec: EffectSpec = LUMETRI_EFFECT): ParamSpec {
+function lumetriParam(name: string, spec: EffectSpec = LUMETRI_EFFECT): ParamSpec {
 	const p = spec.params.find((x) => x.name === name);
 	if (!p) throw new Error(`jasper.lumetri has no parameter ${name}`);
 	return p;
@@ -54,7 +54,7 @@ const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
  * Binding of one Lumetri param: the existing first instance, or registry defaults whose first edit adds the
  * instance (`effect.add` with the edited value and a `$ref`) in the same transaction — one undo step.
  */
-export function bindLumetri(
+function bindLumetri(
 	doc: ProjectDocument,
 	seq: Sequence,
 	clip: Clip,
@@ -103,11 +103,6 @@ export function rowNumber(row: Row, fallback = 0): number {
 	return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
 }
 
-export function rowDefault(row: Row): unknown {
-	const d = row.spec.defaultValue;
-	return typeof d === 'function' ? undefined : d;
-}
-
 // ---------------------------------------------------------------- tone curves (S06:CGU-001)
 
 export type CurvePoint = [number, number];
@@ -117,7 +112,7 @@ const IDENTITY: CurvePoint[] = [
 	[1, 1],
 ];
 /** Minimum x distance between neighbouring points (keeps x strictly increasing). */
-export const CURVE_MIN_GAP = 0.01;
+const CURVE_MIN_GAP = 0.01;
 const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
 const round4 = (x: number) => Math.round(x * 10000) / 10000;
 
@@ -220,7 +215,7 @@ export function wheelVec(v: unknown): [number, number] {
 
 // ---------------------------------------------------------------- LUT assets (S06:LUT-002/005)
 
-export type LutItem = {
+type LutItem = {
 	mediaId: string;
 	name: string;
 	size: number | null;
@@ -282,7 +277,7 @@ export type CopiedColorEffect = {
 	from?: ClipTiming;
 };
 
-export function isColorInstance(fx: EffectInstance, registry: EffectRegistry): boolean {
+function isColorInstance(fx: EffectInstance, registry: EffectRegistry): boolean {
 	return isColorEffect(registry.get(fx.effectId, fx.effectVersion));
 }
 

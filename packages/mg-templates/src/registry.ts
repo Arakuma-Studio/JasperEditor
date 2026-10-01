@@ -1,6 +1,6 @@
 import type { MgTemplateInfo, MgTemplateRegistry } from '@jasper/project';
 import { z } from 'zod';
-import type { AnyMgTemplate, MgCanvas } from './types.ts';
+import type { AnyMgTemplate } from './types.ts';
 
 export type MgRegistry = MgTemplateRegistry & {
 	definitions(): AnyMgTemplate[];
@@ -24,9 +24,7 @@ export type MgCatalogEntryJson = {
 };
 
 const key = (id: string, version: number) => `${id}@${version}`;
-export const canvasLabel = (c: MgCanvas) => `${c.width}x${c.height}`;
-
-export function toTemplateInfo(def: AnyMgTemplate): MgTemplateInfo {
+function toTemplateInfo(def: AnyMgTemplate): MgTemplateInfo {
 	return {
 		id: def.id,
 		version: def.version,
@@ -74,24 +72,7 @@ export function createMgRegistry(defs: readonly AnyMgTemplate[]): MgRegistry {
 				outroFrames: d.outroFrames,
 				defaultDurationSeconds: d.defaultDurationSeconds,
 				...(d.description ? { description: d.description } : {}),
-				canvases: d.canvases.map(canvasLabel),
+				canvases: d.canvases.map((c) => `${c.width}x${c.height}`),
 			})),
 	};
-}
-
-/**
- * Maps a clip-local frame to the template's own timeline so intro and outro keep their length when
- * the clip is longer or shorter than the template's natural duration (S01:KND-009).
- */
-export function templateFrame(
-	frame: number,
-	clipFrames: number,
-	def: Pick<AnyMgTemplate, 'introFrames' | 'outroFrames'>,
-): { phase: 'intro' | 'hold' | 'outro'; t: number } {
-	const intro = Math.min(def.introFrames, Math.floor(clipFrames / 2));
-	const outro = Math.min(def.outroFrames, clipFrames - intro);
-	if (frame < intro) return { phase: 'intro', t: intro === 0 ? 1 : frame / intro };
-	if (frame >= clipFrames - outro)
-		return { phase: 'outro', t: outro === 0 ? 1 : (frame - (clipFrames - outro)) / outro };
-	return { phase: 'hold', t: 0 };
 }

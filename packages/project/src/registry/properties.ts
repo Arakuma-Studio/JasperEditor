@@ -10,6 +10,7 @@ import {
 	type JsonSchemaNode as JsonSchema,
 	type PropsUiHint,
 } from '../composition/json-schema.ts';
+import { contentTimeAt } from '../derive/index.ts';
 import { evaluate } from '../keyframes.ts';
 import type { Animatable, RGBA } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
@@ -107,7 +108,6 @@ const hasOpacity = (c: Pick<Clip, 'kind'>) => !!kindCapabilities(c.kind)?.hasOpa
 const isAudio = (c: Pick<Clip, 'kind'>) => c.kind === 'audio' || c.kind === 'nest-audio';
 const isText = (c: Pick<Clip, 'kind'>) => c.kind === 'text';
 
-const spec = (s: PropertySpec) => s;
 const styleWrite = (field: string): PropertySpec['write'] => ({
 	via: 'clip.update',
 	patch: (v) => ({ content: { style: { [field]: v } } }),
@@ -139,7 +139,7 @@ export function intrinsicBoxOf(ctx: PropertyContext): { width: number; height: n
 }
 
 export const PROPERTY_SPECS: readonly PropertySpec[] = [
-	spec({
+	{
 		key: 'transform.position',
 		label: 'Position',
 		group: 'motion',
@@ -152,8 +152,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		ui: { control: 'vec2', precision: 1 },
 		defaultValue: ({ seq }: PropertyContext) => [seq.settings.width / 2, seq.settings.height / 2],
 		description: 'Where the anchor point lands in the frame (sequence pixels).',
-	}),
-	spec({
+	},
+	{
 		key: 'transform.anchor',
 		label: 'Anchor Point',
 		group: 'motion',
@@ -169,8 +169,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 			return [b.width / 2, b.height / 2];
 		},
 		description: 'Pivot of scale and rotation in layer pixels.',
-	}),
-	spec({
+	},
+	{
 		key: 'transform.scale',
 		label: 'Scale',
 		group: 'motion',
@@ -182,8 +182,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		appliesTo: hasTransform,
 		ui: { control: 'scrub', precision: 1 },
 		defaultValue: 100,
-	}),
-	spec({
+	},
+	{
 		key: 'transform.scaleWidth',
 		label: 'Scale Width',
 		group: 'motion',
@@ -196,8 +196,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		ui: { control: 'scrub', precision: 1 },
 		defaultValue: 100,
 		description: 'Horizontal scale, used when Uniform Scale is off.',
-	}),
-	spec({
+	},
+	{
 		key: 'transform.uniformScale',
 		label: 'Uniform Scale',
 		group: 'motion',
@@ -207,8 +207,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		appliesTo: hasTransform,
 		ui: { control: 'toggle' },
 		defaultValue: true,
-	}),
-	spec({
+	},
+	{
 		key: 'transform.rotation',
 		label: 'Rotation',
 		group: 'motion',
@@ -220,8 +220,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		appliesTo: hasTransform,
 		ui: { control: 'angle', precision: 1 },
 		defaultValue: 0,
-	}),
-	spec({
+	},
+	{
 		key: 'transform.flipH',
 		label: 'Flip Horizontal',
 		group: 'motion',
@@ -231,8 +231,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		appliesTo: hasTransform,
 		ui: { control: 'toggle' },
 		defaultValue: false,
-	}),
-	spec({
+	},
+	{
 		key: 'transform.flipV',
 		label: 'Flip Vertical',
 		group: 'motion',
@@ -242,8 +242,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		appliesTo: hasTransform,
 		ui: { control: 'toggle' },
 		defaultValue: false,
-	}),
-	spec({
+	},
+	{
 		key: 'opacity',
 		label: 'Opacity',
 		group: 'opacity',
@@ -255,8 +255,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		appliesTo: hasOpacity,
 		ui: { control: 'slider', precision: 1 },
 		defaultValue: 100,
-	}),
-	spec({
+	},
+	{
 		key: 'blendMode',
 		label: 'Blend Mode',
 		group: 'opacity',
@@ -268,8 +268,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		appliesTo: (c) => hasOpacity(c) && c.kind !== 'captions',
 		ui: { control: 'select' },
 		defaultValue: 'normal',
-	}),
-	spec({
+	},
+	{
 		key: 'gainDb',
 		label: 'Gain',
 		group: 'audio',
@@ -282,8 +282,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		ui: { control: 'scrub', bipolar: true, precision: 1 },
 		defaultValue: 0,
 		description: 'Clip gain before effects (not keyframable).',
-	}),
-	spec({
+	},
+	{
 		key: 'volumeDb',
 		label: 'Level',
 		group: 'audio',
@@ -295,8 +295,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		appliesTo: isAudio,
 		ui: { control: 'scrub', bipolar: true, precision: 1 },
 		defaultValue: 0,
-	}),
-	spec({
+	},
+	{
 		key: 'pan',
 		label: 'Pan',
 		group: 'audio',
@@ -308,8 +308,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		ui: { control: 'scrub', bipolar: true, precision: 0 },
 		defaultValue: 0,
 		description: 'Balance, −100 = left, +100 = right.',
-	}),
-	spec({
+	},
+	{
 		key: 'text.content',
 		label: 'Text',
 		group: 'text',
@@ -319,8 +319,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		appliesTo: isText,
 		ui: { control: 'text', multiline: true },
 		write: { via: 'clip.update', patch: (v) => ({ content: { text: v } }) },
-	}),
-	spec({
+	},
+	{
 		key: 'text.fontId',
 		label: 'Font',
 		group: 'text',
@@ -330,8 +330,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		appliesTo: isText,
 		ui: { control: 'select' },
 		write: styleWrite('fontId'),
-	}),
-	spec({
+	},
+	{
 		key: 'text.weight',
 		label: 'Weight',
 		group: 'text',
@@ -343,8 +343,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		ui: { control: 'select', precision: 0 },
 		defaultValue: 400,
 		write: styleWrite('weight'),
-	}),
-	spec({
+	},
+	{
 		key: 'text.italic',
 		label: 'Italic',
 		group: 'text',
@@ -355,8 +355,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		ui: { control: 'toggle' },
 		defaultValue: false,
 		write: styleWrite('italic'),
-	}),
-	spec({
+	},
+	{
 		key: 'text.sizePx',
 		label: 'Font Size',
 		group: 'text',
@@ -370,8 +370,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		defaultValue: 100,
 		write: styleWrite('sizePx'),
 		description: 'Layout-affecting, so hold-only; animate Motion › Scale to animate size (S03:TXT-007).',
-	}),
-	spec({
+	},
+	{
 		key: 'text.lineHeight',
 		label: 'Leading',
 		group: 'text',
@@ -383,8 +383,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		ui: { control: 'scrub', precision: 2 },
 		defaultValue: 1.2,
 		write: styleWrite('lineHeight'),
-	}),
-	spec({
+	},
+	{
 		key: 'text.trackingEm',
 		label: 'Tracking',
 		group: 'text',
@@ -396,8 +396,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		ui: { control: 'scrub', precision: 0 },
 		defaultValue: 0,
 		write: styleWrite('trackingEm'),
-	}),
-	spec({
+	},
+	{
 		key: 'text.align',
 		label: 'Align',
 		group: 'text',
@@ -410,8 +410,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		ui: { control: 'select' },
 		defaultValue: 'center',
 		write: styleWrite('align'),
-	}),
-	spec({
+	},
+	{
 		key: 'text.fill',
 		label: 'Fill',
 		group: 'text',
@@ -422,8 +422,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		ui: { control: 'color' },
 		defaultValue: WHITE,
 		write: styleWrite('fill'),
-	}),
-	spec({
+	},
+	{
 		key: 'text.strokeWidth',
 		label: 'Stroke Width',
 		group: 'text',
@@ -444,8 +444,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 			},
 		},
 		description: 'Outside stroke (0 = no stroke).',
-	}),
-	spec({
+	},
+	{
 		key: 'text.strokeColor',
 		label: 'Stroke Color',
 		group: 'text',
@@ -464,8 +464,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 				};
 			},
 		},
-	}),
-	spec({
+	},
+	{
 		key: 'text.backgroundColor',
 		label: 'Background',
 		group: 'box',
@@ -491,8 +491,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 			},
 		},
 		description: 'Box behind the text (alpha 0 removes it).',
-	}),
-	spec({
+	},
+	{
 		key: 'text.backgroundPadding',
 		label: 'Box Padding',
 		group: 'box',
@@ -517,8 +517,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 				};
 			},
 		},
-	}),
-	spec({
+	},
+	{
 		key: 'text.backgroundRadius',
 		label: 'Box Radius',
 		group: 'box',
@@ -543,8 +543,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 				};
 			},
 		},
-	}),
-	spec({
+	},
+	{
 		key: 'text.boxWidth',
 		label: 'Box Width',
 		group: 'box',
@@ -556,8 +556,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		appliesTo: isText,
 		ui: { control: 'scrub', precision: 0 },
 		write: { via: 'clip.update', patch: (v) => ({ box: { width: v } }) },
-	}),
-	spec({
+	},
+	{
 		key: 'text.boxHeight',
 		label: 'Box Height',
 		group: 'box',
@@ -569,8 +569,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		appliesTo: isText,
 		ui: { control: 'scrub', precision: 0 },
 		write: { via: 'clip.update', patch: (v) => ({ box: { height: v } }) },
-	}),
-	spec({
+	},
+	{
 		key: 'text.autoSize',
 		label: 'Auto Size',
 		group: 'box',
@@ -582,8 +582,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		appliesTo: isText,
 		ui: { control: 'select' },
 		write: { via: 'clip.update', patch: (v) => ({ box: { autoSize: v } }) },
-	}),
-	spec({
+	},
+	{
 		key: 'text.allCaps',
 		label: 'All Caps',
 		group: 'text',
@@ -594,8 +594,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		ui: { control: 'toggle' },
 		defaultValue: false,
 		write: styleWrite('allCaps'),
-	}),
-	spec({
+	},
+	{
 		key: 'solid.color',
 		label: 'Color',
 		group: 'solid',
@@ -605,7 +605,7 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		appliesTo: (c) => c.kind === 'solid',
 		ui: { control: 'color' },
 		defaultValue: WHITE,
-	}),
+	},
 ];
 
 function textStyleOf(clip: Clip) {
@@ -974,12 +974,7 @@ export function clipContentTimeAtFrame(
 	rate: Rational,
 ): { time: number; outside: boolean } {
 	const f = Math.min(clip.start + clip.duration - 1, Math.max(clip.start, frame));
-	const F = flicksPerFrame(rate);
-	const i = f - clip.start;
-	const time = clip.speed.reverse
-		? clip.sourceIn + (clip.duration - 1 - i) * F * clip.speed.rate
-		: clip.sourceIn + i * F * clip.speed.rate;
-	return { time, outside: f !== frame };
+	return { time: contentTimeAt(clip, f, rate), outside: f !== frame };
 }
 
 /** Sequence frame at which a content time is shown (inverse of the above; may lie outside the clip). */
@@ -1044,15 +1039,6 @@ export function propertyWriteCommand(
 	return atFrame !== undefined && s.animatable !== 'no'
 		? { type: 'param.set', target, value, at: { sequenceFrame: atFrame } }
 		: { type: 'param.set', target, value };
-}
-
-/** Clamps a numeric value (and vector components) to the spec range. */
-export function clampToSpec(s: Pick<PropertySpec, 'kind' | 'range'>, v: unknown): unknown {
-	const f = (x: number) =>
-		Math.min(s.range?.max ?? Number.POSITIVE_INFINITY, Math.max(s.range?.min ?? Number.NEGATIVE_INFINITY, x));
-	if (s.kind === 'number' && typeof v === 'number') return f(v);
-	if (s.kind === 'color' && Array.isArray(v)) return v.map((x) => Math.min(1, Math.max(0, Number(x))));
-	return v;
 }
 
 // ---------------------------------------------------------------- JSON Schema (S03:PRP-003)
@@ -1149,39 +1135,6 @@ export function clipPropertiesJsonSchema(
 	};
 }
 
-/** Every static registry entry with its value schema (for `schema.get` and docs). */
-export function propertyRegistryJson(): {
-	key: string;
-	label: string;
-	group: PropertyGroup;
-	kinds: string[];
-	schema: JsonSchemaObject;
-}[] {
-	const kinds = [
-		'video',
-		'audio',
-		'still',
-		'animated-image',
-		'text',
-		'solid',
-		'captions',
-		'motion-graphic',
-		'composition',
-		'nest-video',
-		'nest-audio',
-		'adjustment',
-	] as const;
-	return PROPERTY_SPECS.map((s) => ({
-		key: s.key,
-		label: s.label,
-		group: s.group,
-		kinds: kinds.filter((k) => s.appliesTo({ kind: k })),
-		schema: propertyJsonSchema(s),
-	}));
-}
-
-// ---------------------------------------------------------------- key <-> ParamPath
-
 export type PropertyOwner = { clipId: string } | { trackId: string } | { master: true; sequenceId?: string };
 
 /** Property key + owner → ParamPath (S01:CMD-010). */
@@ -1193,26 +1146,4 @@ export function propertyKeyToParamPath(owner: PropertyOwner, key: string): Param
 	if ('clipId' in owner) return ['clip', owner.clipId, ...key.split('.')];
 	if ('trackId' in owner) return ['track', owner.trackId, ...key.split('.')];
 	return owner.sequenceId ? ['master', owner.sequenceId, key] : ['master', key];
-}
-
-/** ParamPath → owner + property key (inverse of `propertyKeyToParamPath`). */
-export function paramPathToPropertyKey(
-	path: readonly string[],
-): { owner: PropertyOwner | { effectId: string }; key: string } | null {
-	const [head, a, ...rest] = path;
-	if (!head || a === undefined) return null;
-	switch (head) {
-		case 'clip':
-			return rest.length ? { owner: { clipId: a }, key: rest.join('.') } : null;
-		case 'track':
-			return rest.length ? { owner: { trackId: a }, key: rest.join('.') } : null;
-		case 'effect':
-			return rest.length ? { owner: { effectId: a }, key: `effects.${a}.${rest.join('.')}` } : null;
-		case 'master':
-			return rest.length
-				? { owner: { master: true, sequenceId: a }, key: rest.join('.') }
-				: { owner: { master: true }, key: a };
-		default:
-			return null;
-	}
 }

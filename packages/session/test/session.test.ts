@@ -7,7 +7,7 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createAutosaver, EditorSession, MemoryProjectStore, TransportStore } from '../src/index.ts';
 
-function setup(opts: { clock?: () => number } = {}) {
+function setup() {
 	const ids = createCounterIdSource(1);
 	const store = new MemoryProjectStore({ ids, now: () => '2026-09-30T10:00:00.000Z' });
 	const doc = createEmptyProject({ ids, name: 'S', preset: 'hd-1080p-30' });
@@ -19,7 +19,6 @@ function setup(opts: { clock?: () => number } = {}) {
 		doc,
 		ctx,
 		open: (sessionId = 's1') => EditorSession.open({ store, projectId: doc.projectId, ctx, sessionId }),
-		clock: opts.clock,
 	};
 }
 

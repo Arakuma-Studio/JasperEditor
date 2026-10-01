@@ -10,8 +10,6 @@ export type MgQuality = 'preview' | 'master';
 
 export type MgRenderTools = { mg: string; ffmpeg: string; ffprobe: string };
 
-export type MgRenderOutputs = { master: string; preview?: string; poster?: string };
-
 export class MgRenderError extends Error {
 	constructor(
 		readonly code:

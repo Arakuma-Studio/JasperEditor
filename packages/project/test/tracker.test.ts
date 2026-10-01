@@ -10,7 +10,6 @@ import {
 	type ClipTracker,
 	checkInvariants,
 	defaultEffectRegistry,
-	FLICKS_PER_SECOND,
 	flicksPerFrame,
 	layerMatrix,
 	mergeSamples,
@@ -111,7 +110,7 @@ function addPlanar(h: Harness, plate: string): string {
 	return (r.results[0] as { trackerId: string }).trackerId;
 }
 
-function plateMapAt(h: Harness, plate: string, f: number) {
+function plateMapAt(h: Harness, plate: string) {
 	const c = h.seq.clips[plate] as Clip & {
 		transform: {
 			position: { value: Vec2 };
@@ -130,7 +129,6 @@ function plateMapAt(h: Harness, plate: string, f: number) {
 		flipH: false,
 		flipV: false,
 	});
-	void f;
 	return (p: Vec2) => applyMatrix(m, p);
 }
 
@@ -364,7 +362,7 @@ describe('tracker.apply (S09:TRK-020…023, §8.1)', () => {
 			effectInstanceId: res.effectInstanceId,
 		});
 		const snap = buildRenderSnapshot(h.doc, h.seqId, { resolveMedia: () => null, resolveFont: () => null });
-		const toSeq = plateMapAt(h, plate, 0);
+		const toSeq = plateMapAt(h, plate);
 		for (const f of [0, 7, 15, 29]) {
 			const layer = resolveSceneAt(snap, f).find((l) => l.clip.clipId === target)!;
 			const want = truthQuad(f).map(toSeq);
@@ -422,7 +420,7 @@ describe('tracker.apply (S09:TRK-020…023, §8.1)', () => {
 			};
 		};
 		expect(t.transform.position.keyframes.length).toBe(30);
-		const toSeq = plateMapAt(h, plate, 0);
+		const toSeq = plateMapAt(h, plate);
 		const want = toSeq([c[0] + 20, c[1]]);
 		expect(t.transform.position.keyframes[20]!.value[0]).toBeCloseTo(want[0], 4);
 		expect(t.transform.position.keyframes[20]!.value[1]).toBeCloseTo(want[1], 4);
@@ -487,6 +485,5 @@ describe('planTrack (S09:TRK-010, TRK-024)', () => {
 		expect(here.request.reference.corners![0]).toEqual(truthQuad(40)[0]);
 		const back = planTrack(h.doc, id, { mode: 'step-back', at: 40 * F });
 		expect(back.request.range).toEqual({ startFrame: 39, endFrame: 41 });
-		expect(FLICKS_PER_SECOND / F).toBe(30);
 	});
 });

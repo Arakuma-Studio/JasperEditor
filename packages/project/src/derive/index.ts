@@ -168,21 +168,6 @@ export function prevEditPoint(seq: Sequence, frame: number, trackIds?: readonly 
 
 // ---------------------------------------------------------------- links and groups
 
-export type MembershipMaps = { linkOf: Map<string, string>; groupOf: Map<string, string> };
-const membershipCache = new WeakMap<object, MembershipMaps>();
-
-export function membershipMaps(seq: Sequence): MembershipMaps {
-	const cached = membershipCache.get(seq.clips);
-	if (cached && (cached as unknown as { links: unknown }).links === seq.links) return cached;
-	const linkOf = new Map<string, string>();
-	const groupOf = new Map<string, string>();
-	for (const l of Object.values(seq.links)) for (const m of l.members) linkOf.set(m, l.id);
-	for (const g of Object.values(seq.groups)) for (const m of g.members) groupOf.set(m, g.id);
-	const maps = Object.assign({ linkOf, groupOf }, { links: seq.links });
-	membershipCache.set(seq.clips, maps);
-	return maps;
-}
-
 /** Link partners of a clip (excluding itself). */
 export function linkedPartners(seq: Sequence, clipId: string): Clip[] {
 	const c = seq.clips[clipId];
@@ -193,16 +178,6 @@ export function linkedPartners(seq: Sequence, clipId: string): Clip[] {
 		.filter((m) => m !== clipId)
 		.map((m) => seq.clips[m]!)
 		.filter(Boolean);
-}
-
-/** Expands a clip set with link partners (linked selection, S01:SEL-004). */
-export function expandWithLinks(seq: Sequence, clipIds: readonly string[]): string[] {
-	const out = new Set<string>();
-	for (const id of clipIds) {
-		out.add(id);
-		for (const p of linkedPartners(seq, id)) out.add(p.id);
-	}
-	return [...out];
 }
 
 // ---------------------------------------------------------------- content time
@@ -294,29 +269,4 @@ export function mediaUsage(doc: ProjectDocument): Record<string, MediaUsage> {
 		}
 	}
 	return out;
-}
-
-/** Ids of everything that references `id` (media, synthetic, transcript, sequence) — for delete warnings. */
-export function referencesTo(
-	doc: ProjectDocument,
-	id: string,
-): { items: string[]; clips: { sequenceId: string; clipId: string }[] } {
-	const items = Object.values(doc.items)
-		.filter(
-			(i) =>
-				(i as Record<string, unknown>).mediaId === id ||
-				(i as Record<string, unknown>).sequenceId === id ||
-				(i as Record<string, unknown>).syntheticId === id,
-		)
-		.map((i) => i.id);
-	const clips: { sequenceId: string; clipId: string }[] = [];
-	for (const seq of Object.values(doc.sequences)) {
-		for (const c of Object.values(seq.clips)) {
-			const r = c as Record<string, unknown>;
-			if (r.mediaId === id || r.syntheticId === id || r.transcriptId === id || r.sequenceId === id) {
-				clips.push({ sequenceId: seq.id, clipId: c.id });
-			}
-		}
-	}
-	return { items, clips };
 }

@@ -1,7 +1,6 @@
 // A CommandCtx for WP-2E surfaces (Project panel footer, Export mode, banners). Toasts go to the WP-2E notice
 // host. Inside the editor shell the context shares the shell's PanelServices, so shell-driven commands
 // (`panel.open.jobs`, `panel.open.motionTemplates`, …) are enabled from these surfaces too.
-import type { EditorSession } from '@jasper/session';
 import { useSessionOrNull } from '@jasper/session/react';
 import { useMemo } from 'react';
 import { createCommandContext } from '../commands/context.ts';
@@ -20,10 +19,10 @@ export function useLocalCommandCtx(focus?: FocusInfo): CommandCtx {
 		() =>
 			createCommandContext({
 				engine: engine.client,
-				session: session as EditorSession | null,
+				session,
 				focus,
 				capabilities: flags,
-				toast: (r) => toastFromRequest(r),
+				toast: toastFromRequest,
 				...(services ? { services } : {}),
 			}),
 		[engine.client, session, flags, focus, services],

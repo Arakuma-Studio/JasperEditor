@@ -5,7 +5,7 @@
 // entry); with no editor open the engine applies it headlessly and saves a new revision.
 //
 //   node scripts/agent-demo.mjs <projectId> [--engine http://127.0.0.1:47900] [--token <t>] [--agent <name>]
-//   node scripts/agent-demo.mjs --list            # list projects (needs WP-2F's /api/projects)
+//   node scripts/agent-demo.mjs --list            # list projects
 //
 // Env: JASPER_ENGINE_URL, JASPER_LOCAL_TOKEN.
 
@@ -41,9 +41,7 @@ async function call(method, path, body) {
 		json = text;
 	}
 	if (!res.ok) {
-		const err = new Error(`${method} ${path} → ${res.status} ${json?.code ?? ''} ${json?.message ?? text}`);
-		err.status = res.status;
-		throw err;
+		throw new Error(`${method} ${path} → ${res.status} ${json?.code ?? ''} ${json?.message ?? text}`);
 	}
 	return json;
 }

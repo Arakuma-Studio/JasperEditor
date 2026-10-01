@@ -16,9 +16,7 @@
   "dependencies": {
     "@jasper/mg-templates": "workspace:*",
     "@jasper/project": "workspace:*",
-    "@remotion/fonts": "4.0.499",
     "@remotion/media": "4.0.499",
-    "@remotion/player": "4.0.499",
     "remotion": "4.0.499"
   },
   "peerDependencies": {
@@ -27,6 +25,7 @@
   },
   "devDependencies": {
     "@remotion/bundler": "4.0.499",
+    "@remotion/player": "4.0.499",
     "@remotion/renderer": "4.0.499",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",

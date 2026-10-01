@@ -3,9 +3,6 @@
 import { lazyPanel } from '../lazy.ts';
 import type { PanelDefinition } from '../types.ts';
 
-export { useAllJobs, useJobsSummary } from './JobsPanel.tsx';
-export { summarizeJobs } from './model.ts';
-
 const jobs: PanelDefinition = {
 	kind: 'jobs',
 	title: () => 'Jobs',

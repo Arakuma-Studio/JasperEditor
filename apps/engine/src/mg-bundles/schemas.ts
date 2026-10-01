@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { inferPropsSchema, type MgCompositionInfo, type PropsUiHints, schemaUiHints } from '@jasper/project';
 import { z } from 'zod';
 import { terminateTree } from '../tools/process.ts';
@@ -278,11 +278,4 @@ export function buildCompositionInfos(
 			...(m?.thumbnailFrame !== undefined ? { thumbnailFrame: m.thumbnailFrame } : {}),
 		} as MgCompositionInfo;
 	});
-}
-
-/** Where to look for the manifest of a project dir / bundle dir. */
-export function manifestDirs(sourceDir: string | null, bundleDir: string): string[] {
-	return [...(sourceDir ? [sourceDir] : []), bundleDir, dirname(bundleDir)].filter(
-		(d, i, a) => a.indexOf(d) === i,
-	);
 }

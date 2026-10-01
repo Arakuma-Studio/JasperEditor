@@ -60,7 +60,7 @@ function toForm(r: RemoteExecutorSettings | null): RemoteForm {
 }
 
 /** The settings to PUT, or a validation message. Empty host/user/dir with the toggle off = no remote. */
-export function settingsFromForm(
+function settingsFromForm(
 	f: RemoteForm,
 	localSlots: string,
 ): { settings: ProcessingSettings } | { error: string } {
@@ -92,7 +92,7 @@ export function settingsFromForm(
 	return { settings };
 }
 
-export function ProbeResultView({ probe, at }: { probe: RemoteProbeResult; at?: string | null }) {
+function ProbeResultView({ probe, at }: { probe: RemoteProbeResult; at?: string | null }) {
 	const row = (label: string, value: string | null, testId: string) => (
 		<div className="contents">
 			<dt className="text-pr-muted">{label}</dt>

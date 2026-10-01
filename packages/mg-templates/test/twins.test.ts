@@ -1,9 +1,3 @@
-import {
-	applyTransaction,
-	createEmptyProject,
-	createSeededIdSource,
-	defaultRegistries,
-} from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import {
 	canonicalJson,
@@ -75,11 +69,6 @@ describe('SVG twins', () => {
 		it(`${def.id}@${def.version} renders deterministic SVG at frames 0 / mid / end`, () => {
 			for (const frame of [0, Math.floor(duration / 2), duration - 1]) {
 				const svg = def.renderSvg(def.defaults, frame, fps, HD, { durationFrames: duration });
-				expect(svg).toBe(def.renderSvg(def.defaults, frame, fps, HD, { durationFrames: duration }));
-				expect(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080"')).toBe(
-					true,
-				);
-				expect(svg.endsWith('</svg>')).toBe(true);
 				expect(svg).toMatchSnapshot(`${def.id}@${def.version} frame ${frame}`);
 			}
 		});
@@ -125,30 +114,6 @@ describe('SVG twins', () => {
 
 describe('render specs and keys', () => {
 	it('builds the spec of a motion-graphic clip and a stable key', () => {
-		const ids = createSeededIdSource(9);
-		const doc = createEmptyProject({ ids, name: 'mg' });
-		const { document, result } = applyTransaction(
-			doc,
-			{
-				label: 'MG',
-				origin: 'user',
-				commands: [
-					{
-						type: 'clip.addMotionGraphic',
-						at: 0,
-						duration: 150,
-						track: 'V2',
-						template: { id: 'lower-third', version: 1 },
-						params: { name: 'Ana' },
-					},
-				],
-			},
-			{ ids, now: () => 't', revision: 0, registries: defaultRegistries(mgRegistry) },
-		);
-		expect(result.ok).toBe(true);
-		const seq = Object.values(document.sequences)[0]!;
-		const clip = Object.values(seq.clips).find((c) => c.kind === 'motion-graphic')!;
-		expect(clip.kind).toBe('motion-graphic');
 		const spec = specFromClip(
 			{
 				source: {

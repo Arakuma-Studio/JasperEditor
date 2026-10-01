@@ -9,7 +9,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const SCAN_ROOTS = ['packages/ui/src', 'apps/web/src'];
+const SCAN_ROOTS = ['packages/ui/src', 'apps/web/src'];
 const EXTENSIONS = /\.(?:[cm]?[jt]sx?|css)$/;
 const PALETTES = [
 	'neutral',

@@ -28,7 +28,6 @@ import { type MgQuality, MgRenderError, renderPoster, runMgPipe } from './render
 /** CPU slots of one mg-render job (ARCHITECTURE §9.3); also the renderer/encoder thread count. */
 export const MG_RENDER_SLOTS = 4;
 export const MG_FILES = ['master.mov', 'preview.webm', 'poster.png'] as const;
-export type MgFileName = (typeof MG_FILES)[number];
 const KEY_RE = /^[0-9a-f]{40}$/;
 
 export type MgCapability = { fframes: 'ready' | 'unavailable'; fframesReason?: string };
@@ -257,7 +256,7 @@ export function createMgService(opts: MgServiceOptions) {
 			const poster = join(tmp, 'poster.png');
 			await renderPoster(mgBinary, spec, Math.floor(spec.durationFrames / 2), poster).catch(() => {});
 			const dir = dirFor(key);
-			for (const f of ['master.mov', 'preview.webm', 'poster.png']) {
+			for (const f of MG_FILES) {
 				if (existsSync(join(tmp, f))) renameSync(join(tmp, f), join(dir, f));
 			}
 			writeFileSync(

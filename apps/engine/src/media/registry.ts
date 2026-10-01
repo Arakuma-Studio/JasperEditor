@@ -70,21 +70,8 @@ export class MediaRegistry {
 		return this.index.items[mediaKey] ?? null;
 	}
 
-	list(): MediaRecord[] {
-		return Object.values(this.index.items);
-	}
-
-	byFingerprint(fingerprint: string): MediaRecord | null {
-		return this.list().find((r) => r.fingerprint === fingerprint) ?? null;
-	}
-
 	async put(record: MediaRecord): Promise<void> {
 		this.index.items[record.mediaKey] = record;
-		await this.flush();
-	}
-
-	async remove(mediaKey: string): Promise<void> {
-		delete this.index.items[mediaKey];
 		await this.flush();
 	}
 

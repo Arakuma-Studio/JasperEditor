@@ -2,8 +2,6 @@
 // Properties ▸ Tracking → drag a corner on the Program monitor (one History entry) → Track Forward (engine job,
 // live overlay) → Apply to… Corner Pin (one entry) → drag a corner-pin handle at a frame (keyframe updated, one
 // entry) → the undo chain restores each step.
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import {
 	appliedLabels,
@@ -11,15 +9,15 @@ import {
 	clips,
 	createProject,
 	enableAgentBridge,
-	FIXTURES,
 	importFiles,
+	pointerDrag,
 	query,
 	watchPage,
 } from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
 
-const PLATE = existsSync(join(FIXTURES, 'plate-planar.mp4')) ? 'plate-planar.mp4' : 'clip-a.mp4';
+const PLATE = 'plate-planar.mp4';
 
 let page: Page;
 let watcher: { errors: string[] };
@@ -60,16 +58,6 @@ async function centreOf(selector: string): Promise<{ x: number; y: number }> {
 	const box = await page.locator(selector).first().boundingBox();
 	if (!box) throw new Error(`${selector} is not visible`);
 	return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-}
-
-async function drag(from: { x: number; y: number }, to: { x: number; y: number }): Promise<void> {
-	await page.mouse.move(from.x, from.y);
-	await page.mouse.down();
-	for (let i = 1; i <= 10; i++) {
-		await page.mouse.move(from.x + ((to.x - from.x) * i) / 10, from.y + ((to.y - from.y) * i) / 10);
-		await page.waitForTimeout(16);
-	}
-	await page.mouse.up();
 }
 
 test('set up: plate on V1, still on V2', async () => {
@@ -135,7 +123,7 @@ test('add a planar tracker and drag a corner on the Program monitor (one History
 	const before = (await trackers())[0]!;
 	const labels0 = (await appliedLabels(page)).length;
 	const c0 = await centreOf('[data-testid="tracker-corner-0"] rect:last-child');
-	await drag(c0, { x: c0.x - 12, y: c0.y - 8 });
+	await pointerDrag(page, c0, { x: c0.x - 12, y: c0.y - 8 }, { steps: 10 });
 	await expect.poll(async () => (await appliedLabels(page)).length).toBe(labels0 + 1);
 	expect((await appliedLabels(page)).at(-1)).toBe('Adjust Tracker');
 	const after = (await trackers())[0]!;
@@ -190,7 +178,7 @@ test('drag a corner-pin handle at a frame: the keyframe there changes (one entry
 	const keysBefore = pin0.params.bottomRight!.keyframes;
 	const labels0 = (await appliedLabels(page)).length;
 	const h = await centreOf('[data-testid="corner-pin-handle-2"] circle:last-child');
-	await drag(h, { x: h.x + 15, y: h.y + 10 });
+	await pointerDrag(page, h, { x: h.x + 15, y: h.y + 10 }, { steps: 10 });
 	await expect.poll(async () => (await appliedLabels(page)).length).toBe(labels0 + 1);
 	expect((await appliedLabels(page)).at(-1)).toBe('Corner Pin');
 	const keysAfter = (await pinOf())!.params.bottomRight!.keyframes;

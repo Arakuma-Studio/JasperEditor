@@ -3,7 +3,7 @@
 // requested frames; positions derive from exact time so thumbnails never drift from the clip edges.
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '@jasper/project';
 
-export type SpriteTile = { sheet: number; index: number; timeSec: number };
+type SpriteTile = { sheet: number; index: number; timeSec: number };
 export type SpriteIndexLike = { tileWidth: number; tileHeight: number; columns: number; tiles: SpriteTile[] };
 
 /** TH-003: the tile at or before `timeSec` (tiles sorted by time), or the first tile. */
@@ -39,7 +39,7 @@ export type Slot = {
 	timeSec: number;
 };
 
-export type SlotInput = {
+type SlotInput = {
 	/** Clip placement. */
 	start: number;
 	duration: number;

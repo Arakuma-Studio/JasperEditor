@@ -10,14 +10,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type RunningEngine, startEngine } from '../src/index.ts';
 
 const TOKEN = 'mcp-test-token';
-const PORT = Number(process.env.ENGINE_MCP_TEST_PORT ?? 48553);
 let engine: RunningEngine;
 
 beforeAll(async () => {
 	const appdir = mkdtempSync(join(tmpdir(), 'jasper-engine-mcp-'));
 	engine = await startEngine({
 		appdir,
-		port: PORT,
+		port: 0,
 		dev: false,
 		token: TOKEN,
 		env: { PATH: process.env.PATH },

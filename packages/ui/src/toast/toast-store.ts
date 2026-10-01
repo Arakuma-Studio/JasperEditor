@@ -147,13 +147,12 @@ export class ToastStore {
 		if (!cur) return;
 		const now = this.t.now();
 		const kindChanged = patch.kind !== undefined && patch.kind !== cur.kind;
+		const restartTimer = kindChanged || patch.durationMs !== undefined;
 		const next: Toast = { ...cur, ...patch, updatedAt: now };
-		if (kindChanged || patch.durationMs !== undefined) {
-			next.remainingMs = defaultDuration(next);
-			this.set({ toasts: this.state.toasts.map((x) => (x.id === id ? next : x)) });
-			this.schedule(next);
-			if (kindChanged) this.appendLog(next, now);
-		} else this.set({ toasts: this.state.toasts.map((x) => (x.id === id ? next : x)) });
+		if (restartTimer) next.remainingMs = defaultDuration(next);
+		this.set({ toasts: this.state.toasts.map((x) => (x.id === id ? next : x)) });
+		if (restartTimer) this.schedule(next);
+		if (kindChanged) this.appendLog(next, now);
 	}
 
 	dismiss(id: number): void {

@@ -7,7 +7,6 @@
 // the next search window doubles.
 //
 // WORKER-SAFE: evaluated from its source text in the worker; only its parameters and JS globals are used.
-import type * as Geometry from './geometry.ts';
 import type { FrameTracker } from './planar.ts';
 
 export type PointConfig = {
@@ -25,7 +24,7 @@ export type PointConfig = {
 
 type CV = any;
 
-export function createPointTracker(cv: CV, _G: typeof Geometry, cfg: PointConfig): FrameTracker {
+export function createPointTracker(cv: CV, cfg: PointConfig): FrameTracker {
 	const W = cfg.width;
 	const H = cfg.height;
 	const patch = Math.max(5, cfg.patch | 1);

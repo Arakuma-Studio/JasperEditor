@@ -25,7 +25,7 @@ import {
 } from './model.ts';
 
 /** Engine + client jobs of the current project (or all when no project is open). */
-export function useAllJobs(): { jobs: AnyJob[]; error: string | null } {
+function useAllJobs(): { jobs: AnyJob[]; error: string | null } {
 	const session = useSessionOrNull();
 	const { jobs, error } = useJobs(session ? { projectId: session.projectId } : {});
 	const client = useClientJobs();

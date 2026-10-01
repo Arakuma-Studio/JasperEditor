@@ -1,10 +1,8 @@
 // Command API types (S01 §16, ARCHITECTURE §5.3).
-import type { Draft } from 'immer';
 import type { IdSource } from '../ids.ts';
 import type { PresetRegistry } from '../presets.ts';
 import type { EffectRegistry } from '../registry/effects.ts';
 import type { MgTemplateRegistry } from '../registry/mg.ts';
-import type { ProjectDocument } from '../schema/document.ts';
 import type { TextBox, TextContent } from '../schema/sequence.ts';
 
 export const TX_PROTOCOL = 'jasper.tx/1';
@@ -48,7 +46,6 @@ export const WARNING_CODES = [
 	'W_DEDUPED',
 	'W_VALUE_CLAMPED',
 ] as const;
-export type WarningCode = (typeof WARNING_CODES)[number];
 
 /** A problem report. `commandIndex` is -1 for transaction-level issues (invariants, revision). */
 export type Issue = {
@@ -115,5 +112,3 @@ export class CommandError extends Error {
 		this.blocking = opts?.blocking;
 	}
 }
-
-export type DraftDoc = Draft<ProjectDocument>;

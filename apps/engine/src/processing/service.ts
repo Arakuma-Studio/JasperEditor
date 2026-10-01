@@ -21,7 +21,7 @@ import type { MediaRecord } from '../media/registry.ts';
 import { safeFileName } from '../tools/fs.ts';
 import type { CoreServices } from '../tools/services.ts';
 import { createEventParser, ProgressTracker } from './events.ts';
-import { type CatalogEntry, loadCatalog, ModelError, ModelStore, sha256File } from './models.ts';
+import { loadCatalog, ModelError, ModelStore, sha256File } from './models.ts';
 import { RECIPE_VERSION, recipeHash, recipeLabel } from './proc/recipe.ts';
 import type { ProcEvent, ProcSpec } from './proc/types.ts';
 import { procBundle, procCommand } from './proc-entry.ts';
@@ -733,10 +733,6 @@ export class ProcessingService {
 			if (e instanceof ModelError) throw new JobError(e.code, e.message, e.code === 'DOWNLOAD_FAILED');
 			throw e;
 		}
-	}
-
-	catalogEntry(id: string): CatalogEntry | null {
-		return this.models.entry(id);
 	}
 }
 

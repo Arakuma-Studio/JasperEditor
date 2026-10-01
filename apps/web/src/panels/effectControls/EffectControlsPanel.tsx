@@ -7,7 +7,12 @@
 import type { Command } from '@jasper/project';
 import { formatTimecode } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
-import { useSessionOrNull, useSessionState, useStoreSelector } from '@jasper/session/react';
+import {
+	useSessionOrNull,
+	useSessionState,
+	useStoreSelector,
+	useTransportFrame,
+} from '@jasper/session/react';
 import { cx, TimecodeText } from '@jasper/ui';
 import {
 	type DragEvent,
@@ -33,7 +38,7 @@ import { CaretGlyph, FxGlyph, GripGlyph, ResetGlyph, TrashGlyph } from '../prope
 import { useNotices } from '../properties/controls/Notices.tsx';
 import { PropertyRow, type RowContext } from '../properties/controls/PropertyRow.tsx';
 import { inspectorFocus } from '../properties/lib/focus.ts';
-import { registriesOf, useInspectorData, usePlayheadFrame } from '../properties/lib/hooks.ts';
+import { useInspectorData } from '../properties/lib/hooks.ts';
 import { exactFrameOf, planReset, type Row } from '../properties/lib/model.ts';
 import { useInspectorOps } from '../properties/lib/ops.ts';
 import type { PanelProps } from '../types.ts';
@@ -109,10 +114,10 @@ type KeyDrag = {
 
 function EffectControlsBody({ session, instanceId }: { session: EditorSession; instanceId: string }) {
 	const data = useInspectorData();
-	const frame = usePlayheadFrame(50);
+	const frame = useTransportFrame(50).frame;
 	const ops = useInspectorOps(session);
 	const notices = useNotices();
-	const registries = registriesOf(session);
+	const registries = session.ctx.registries;
 	const [showTimeline, setShowTimeline] = usePersisted(`jasper.ec.${instanceId}.timeline`, true);
 	const [leftPct, setLeftPct] = usePersisted(`jasper.ec.${instanceId}.split`, 55);
 	const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});

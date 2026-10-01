@@ -11,7 +11,7 @@ import { Home } from '../../src/home/Home.tsx';
 import { notices } from '../../src/home/notices.tsx';
 import { buildMediaAsset } from '../../src/import/assets.ts';
 import { clientJobs } from '../../src/import/client-jobs.ts';
-import { bestProxyTier, createMediaRuntimeSync } from '../../src/import/media-runtime.ts';
+import { createMediaRuntimeSync } from '../../src/import/media-runtime.ts';
 import { JobsPanel } from '../../src/panels/jobs/JobsPanel.tsx';
 import { ProjectDialogHost } from '../../src/panels/project/dialogs.tsx';
 import { ProjectPanel } from '../../src/panels/project/ProjectPanel.tsx';
@@ -328,6 +328,7 @@ describe('media runtime sync (S01:LIFE-050)', () => {
 		expect(session.getState().media[mediaId]).toMatchObject({
 			availability: 'online',
 			playbackUrl: '/media/mk_CLIPA0001',
+			proxy: { state: 'none' },
 		});
 		const emit = (e: unknown) => {
 			for (const l of listeners) (l as (e: unknown) => void)(e);
@@ -357,10 +358,24 @@ describe('media runtime sync (S01:LIFE-050)', () => {
 		expect(rt.thumbs.state).toBe('ready');
 		expect(rt.spriteUrl).toBe('/media/mk_CLIPA0001/sprite.json');
 		expect(rt.proxy).toMatchObject({ state: 'running', progress: 0.25 });
+		emit({
+			id: 4,
+			type: 'media.updated',
+			createdAt: 't',
+			payload: {
+				mediaKey: 'mk_CLIPA0001',
+				status: 'online',
+				derivatives: {
+					'proxy-720': { state: 'none', progress: 0 },
+					'proxy-540': { state: 'queued', progress: 0 },
+				},
+			},
+		});
+		expect(session.getState().media[mediaId]?.proxy.state).toBe('queued');
 		// A status that lists the ready 720 proxy before the never-made 540 tier keeps the proxy ready: the
 		// Program monitor needs it for media the browser cannot decode (ProRes).
 		emit({
-			id: 4,
+			id: 5,
 			type: 'media.updated',
 			createdAt: 't',
 			payload: {
@@ -376,10 +391,6 @@ describe('media runtime sync (S01:LIFE-050)', () => {
 			proxy: { state: 'ready' },
 			proxyUrl: '/media/mk_CLIPA0001/proxy/720?v=abc',
 		});
-		expect(bestProxyTier({ 'proxy-540': { status: { state: 'queued', progress: 0 } } }).status.state).toBe(
-			'queued',
-		);
-		expect(bestProxyTier({}).status.state).toBe('none');
 		sync.dispose();
 	});
 });
@@ -444,7 +455,7 @@ describe('Jobs panel (S05:JOB-001…005)', () => {
 		expect(screen.getByTestId('jobs-summary').textContent).toContain('2 running');
 	});
 
-	it('shows running engine jobs as Stalled when the engine is disconnected (JOB-005)', async () => {
+	it('keeps client uploads running when the engine is disconnected (JOB-005)', async () => {
 		const engine = new ScriptedEngine();
 		engine.handlers = [() => ({ status: 503, body: { code: 'INTERNAL', message: 'down', retryable: true } })];
 		clientJobs.add({ kind: 'upload', title: 'Upload – x.mp4', progress: 0.1 });

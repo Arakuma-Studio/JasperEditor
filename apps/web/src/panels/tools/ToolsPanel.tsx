@@ -1,27 +1,14 @@
 // Tools panel (S05:TOOL-001…005, R-PUI §10, S02:TL-590): a 40 px strip of 28×28 tool buttons with
 // flyout groups (long-press 350 ms or right-click). The active tool is session state
 // (`toggles.activeTool`) so the Timeline and the Program monitor read the same value.
-import type { ActiveTool } from '@jasper/session';
-import { useSessionOrNull, useSessionState } from '@jasper/session/react';
-import { ICONS, Icon, type IconId, Tooltip } from '@jasper/ui';
+import { useSession, useSessionOrNull, useSessionState } from '@jasper/session/react';
+import { Icon, Tooltip } from '@jasper/ui';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { TOOL_GROUPS, TOOLS, type ToolId } from '../timeline/model/tools.ts';
 import type { PanelProps } from '../types.ts';
 
 const LONG_PRESS_MS = 350;
 const FACE_KEY = 'jasper.tools.faces.v1';
-
-function ToolGlyph({ tool, size = 16 }: { tool: ToolId; size?: number }) {
-	const id = TOOLS[tool].icon;
-	if (id in ICONS) return <Icon id={id as IconId} size={size} />;
-	if (tool === 'trackSelectBackward')
-		return (
-			<span className="inline-flex" style={{ transform: 'scaleX(-1)' }}>
-				<Icon id="tool.trackSelectForward" size={size} />
-			</span>
-		);
-	return <Icon id="tool.selection" size={size} />;
-}
 
 function loadFaces(): Record<number, ToolId> {
 	try {
@@ -48,13 +35,13 @@ export function ToolsPanel(_props: PanelProps) {
 }
 
 function ToolStrip() {
+	const session = useSession();
 	const active = useSessionState((s) => s.toggles.activeTool);
 	const [faces, setFaces] = useState<Record<number, ToolId>>(loadFaces);
 	const [flyout, setFlyout] = useState<number | null>(null);
 	const [horizontal, setHorizontal] = useState(false);
 	const rootRef = useRef<HTMLDivElement>(null);
 	const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const sessionRef = useSessionOrNullRef();
 
 	useLayoutEffect(() => {
 		const el = rootRef.current;
@@ -77,7 +64,7 @@ function ToolStrip() {
 	}, [flyout]);
 
 	const choose = (group: number, tool: ToolId) => {
-		sessionRef.current?.setToggles({ activeTool: tool as ActiveTool });
+		session.setToggles({ activeTool: tool });
 		const next = { ...faces, [group]: tool };
 		setFaces(next);
 		try {
@@ -132,7 +119,7 @@ function ToolStrip() {
 									setFlyout(gi);
 								}}
 							>
-								<ToolGlyph tool={face} />
+								<Icon id={TOOLS[face].icon} size={16} />
 								{group.length > 1 ? (
 									<span
 										className="absolute right-[2px] bottom-[2px] size-0"
@@ -161,7 +148,7 @@ function ToolStrip() {
 										onClick={() => choose(gi, t)}
 										data-tool-option={t}
 									>
-										<ToolGlyph tool={t} />
+										<Icon id={TOOLS[t].icon} size={16} />
 										<span className="flex-1">{TOOLS[t].label}</span>
 										<span className="text-pr-muted">{TOOLS[t].key}</span>
 									</button>
@@ -173,11 +160,4 @@ function ToolStrip() {
 			})}
 		</div>
 	);
-}
-
-function useSessionOrNullRef() {
-	const session = useSessionOrNull();
-	const ref = useRef(session);
-	ref.current = session;
-	return ref;
 }

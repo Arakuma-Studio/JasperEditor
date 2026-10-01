@@ -9,6 +9,7 @@
 // ONNX Runtime, OpenCV.js and the bundled model weights (Help ▸ About ▸ Licenses).
 import { ProcessingSettingsSchema, ProcessRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
+import type { AgentService } from '../agent/service.ts';
 import { MEDIA_KEY_RE } from '../media/fingerprint.ts';
 import { processingLicenses } from '../processing/licenses.ts';
 import { ProcessingService } from '../processing/service.ts';
@@ -18,27 +19,7 @@ import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
 
 type KeyParams = { Params: { key: string } };
-/** The parts of the agent service (services.agent) used for approvals. */
-type AgentLike = {
-	isLive(projectId: string): boolean;
-	approvals: {
-		request(req: {
-			projectId: string;
-			label: string;
-			agent: string;
-			reasons: string[];
-			commandCount: number;
-			summary?: string;
-		}): { decision: Promise<'approved' | 'denied' | 'timeout'> };
-	};
-};
 type ModelParams = { Params: { modelId: string } };
-
-export function processingService(app: FastifyInstance): ProcessingService {
-	const s = app.jasper.services.processing as ProcessingService | undefined;
-	if (!s) throw new Error('processing service not initialized');
-	return s;
-}
 
 export default async function processingRoutes(app: FastifyInstance): Promise<void> {
 	const core = coreServices(app);
@@ -48,15 +29,13 @@ export default async function processingRoutes(app: FastifyInstance): Promise<vo
 	core.registerCapabilityProvider(async () => ({ features: { processing: await svc.features() } }));
 	registerLicenseProvider(() => processingLicenses(svc));
 
-	const origin = (_req: unknown) => ({ type: 'user' as const });
-
 	app.post<KeyParams>(
 		'/api/media/:key/process',
 		guarded<KeyParams>(async (req) => {
 			if (!MEDIA_KEY_RE.test(req.params.key) || !core.registry.get(req.params.key))
 				throw new HttpError(404, 'ASSET_NOT_FOUND', 'Unknown media key');
 			const body = parseOr400(ProcessRequestSchema, req.body ?? {});
-			return svc.submitProcess(req.params.key, body, origin(req));
+			return svc.submitProcess(req.params.key, body);
 		}),
 	);
 
@@ -68,9 +47,9 @@ export default async function processingRoutes(app: FastifyInstance): Promise<vo
 	app.post<ModelParams>(
 		'/api/processing/models/:modelId/install',
 		guarded<ModelParams>(async (req) => {
-			if (!svc.catalogEntry(req.params.modelId))
+			if (!svc.models.entry(req.params.modelId))
 				throw new HttpError(404, 'MODEL_UNKNOWN', `Unknown model ${req.params.modelId}`);
-			return svc.submitInstall(req.params.modelId, origin(req));
+			return svc.submitInstall(req.params.modelId);
 		}),
 	);
 
@@ -88,7 +67,7 @@ export default async function processingRoutes(app: FastifyInstance): Promise<vo
 			// window that has `approvalProjectId` open (S07:PRA-001), like destructive transactions.
 			const approvalProjectId = req.query.approvalProjectId;
 			if (approvalProjectId) {
-				const agent = app.jasper.services.agent as AgentLike | undefined;
+				const agent = app.jasper.services.agent as AgentService | undefined;
 				if (!agent?.isLive(approvalProjectId))
 					throw new HttpError(
 						409,
@@ -140,9 +119,9 @@ export default async function processingRoutes(app: FastifyInstance): Promise<vo
 
 	app.post(
 		'/api/processing/remote/setup',
-		guarded(async (req) => {
+		guarded(async () => {
 			try {
-				return await svc.submitSetup(origin(req));
+				return await svc.submitSetup();
 			} catch (e) {
 				const err = e as { code?: string; message?: string };
 				if (err.code === 'REMOTE_NOT_CONFIGURED') throw new HttpError(409, err.code, err.message ?? '');

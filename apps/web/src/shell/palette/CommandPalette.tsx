@@ -42,7 +42,7 @@ function activeSequence(session: EditorSession | null): Sequence | null {
 }
 
 /** Builds palette rows for a query (exported for tests). */
-export function buildPaletteRows(
+function buildPaletteRows(
 	raw: string,
 	env: ReturnType<typeof useShellRuntime> & { getCtx: ReturnType<typeof useCommandCtx> },
 	src: PaletteSources,

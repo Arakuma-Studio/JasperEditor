@@ -15,7 +15,6 @@ import {
 	type ParamPath,
 	type ParamSpec,
 	type ProjectDocument,
-	type PropertyContext,
 	type PropertySpec,
 	propertyDefault,
 	propertyKeyToParamPath,
@@ -75,10 +74,6 @@ export type Row = {
 	bindings: Binding[];
 };
 
-export function contextOf(doc: ProjectDocument, seq: Sequence, clip: Clip): PropertyContext {
-	return { doc, seq, clip };
-}
-
 export function templateOf(clip: Clip, mg: MgTemplateRegistry) {
 	return clip.kind === 'motion-graphic' ? mg.get(clip.template.id, clip.template.version) : undefined;
 }
@@ -94,7 +89,7 @@ export function bindProperty(
 ): Binding | null {
 	const spec = resolvePropertySpec(key, mg ? templateOf(clip, mg) : undefined);
 	if (!spec?.appliesTo(clip)) return null;
-	const resolved = resolvePropertyAt(contextOf(doc, seq, clip), spec, frame);
+	const resolved = resolvePropertyAt({ doc, seq, clip }, spec, frame);
 	return { clip, spec, path: propertyKeyToParamPath({ clipId: clip.id }, key), resolved };
 }
 
@@ -113,7 +108,7 @@ export function bindEffectParam(
 		clip,
 		spec,
 		path: ['effect', fx.id, param.name],
-		resolved: resolvePropertyAt(contextOf(doc, seq, clip), spec, frame),
+		resolved: resolvePropertyAt({ doc, seq, clip }, spec, frame),
 		param: param.name,
 	};
 }
@@ -184,17 +179,10 @@ export function vecComponent(row: Row, i: 0 | 1): number | null {
 	return vals.every((v) => v === vals[0]) ? vals[0]! : null;
 }
 
-export type AnimState = 'none' | 'some' | 'all';
+type AnimState = 'none' | 'some' | 'all';
 export function animState(row: Row): AnimState {
 	const n = row.bindings.filter((b) => b.resolved.animated).length;
 	return n === 0 ? 'none' : n === row.bindings.length ? 'all' : 'some';
-}
-
-/** Sequence frames (possibly fractional) of every key of a binding. */
-export function keyFrames(b: Binding, seq: Sequence): { id: string; frame: number }[] {
-	const anim = b.resolved.anim;
-	if (!anim) return [];
-	return anim.keyframes.map((k) => ({ id: k.id, frame: exactFrameOf(b.clip, k.time, seq) }));
 }
 
 /** Exact (fractional) sequence frame of a content time. */
@@ -214,14 +202,13 @@ export function keyAtFrame(b: Binding, seq: Sequence, frame: number): string | n
 	return k?.id ?? null;
 }
 
-export const insideClip = (clip: Clip, frame: number) =>
-	frame >= clip.start && frame < clip.start + clip.duration;
-export const clampIntoClip = (clip: Clip, frame: number) =>
+const insideClip = (clip: Clip, frame: number) => frame >= clip.start && frame < clip.start + clip.duration;
+const clampIntoClip = (clip: Clip, frame: number) =>
 	Math.min(clip.start + clip.duration - 1, Math.max(clip.start, frame));
 
 // ---------------------------------------------------------------- commands
 
-export type EditPlan = {
+type EditPlan = {
 	commands: Command[];
 	/** Animated clips skipped because the playhead is outside them (S03:PRP-020 `playhead-outside-clip`). */
 	skipped: string[];
@@ -236,7 +223,7 @@ function paramSet(path: ParamPath, value: unknown, frame?: number): Command {
 }
 
 /** Write one value to one binding (auto mode: keyframe when animated, else static). */
-export function writeBinding(b: Binding, value: unknown, frame: number, refIndex: number): Command[] | null {
+function writeBinding(b: Binding, value: unknown, frame: number, refIndex: number): Command[] | null {
 	if (b.spec.write?.via === 'clip.update') return [propertyWriteCommand(b.clip, b.spec, value) as Command];
 	if (!b.path) {
 		const ref = `$own${refIndex}`;
@@ -338,7 +325,7 @@ export function planReset(row: Row, doc: ProjectDocument, seq: Sequence, frame: 
 	const existing = row.bindings.filter((b) => b.path !== null && b.spec.defaultValue !== undefined);
 	if (existing.length === 0) return { commands: [], skipped: [] };
 	return planSet({ ...row, bindings: existing }, frame, (_base, b) =>
-		propertyDefault(contextOf(doc, seq, b.clip), b.spec),
+		propertyDefault({ doc, seq, clip: b.clip }, b.spec),
 	);
 }
 

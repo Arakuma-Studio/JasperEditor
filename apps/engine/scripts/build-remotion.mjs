@@ -1,7 +1,7 @@
 // Pre-bundles @jasper/compositions for packaged engines (S04:RR-001, R-OMS §8.6): writes the Remotion serve
 // folder to dist/remotion-bundle and copies the bundled font files to dist/fonts, so a packaged engine never
 // runs webpack and never needs node_modules for fonts. Dev engines bundle on demand into <appdir>/remotion.
-import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,8 +24,7 @@ await bundle({
 	},
 });
 rmSync(out, { recursive: true, force: true });
-cpSync(tmp, out, { recursive: true });
-rmSync(tmp, { recursive: true, force: true });
+renameSync(tmp, out);
 console.log(`[build:remotion] ${out} (${((Date.now() - started) / 1000).toFixed(1)} s)`);
 
 // Fonts: the curated catalog (src/fonts/catalog.ts) looks for <dist>/fonts/<id>/{metadata.json,files/*.woff2}.

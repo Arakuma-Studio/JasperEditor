@@ -19,7 +19,7 @@ const withPanel = (fn: (p: ProjectPanelHandle) => void) => (ctx: CommandCtx) => 
 const hasPanel = (ctx: CommandCtx) => !!panel(ctx);
 
 /** File ▸ Import (Ctrl+I): native dialog on desktop (paths), browser file picker on web (uploads). */
-export async function runImport(ctx: CommandCtx, session: EditorSession): Promise<void> {
+async function runImport(ctx: CommandCtx, session: EditorSession): Promise<void> {
 	const service =
 		(getImportService() as EngineImportService | null) ??
 		new EngineImportService({ engine: ctx.engine, session });

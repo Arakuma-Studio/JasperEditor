@@ -91,7 +91,6 @@ export function reducePeaksFromChild(
 	return new Promise((resolve, reject) => {
 		const worker = new Worker(WORKER_SOURCE, { eval: true, workerData: { channels, samplesPerPeak } });
 		let stderr = '';
-		let childDone = false;
 		let failed = false;
 		const fail = (e: Error) => {
 			if (failed) return;
@@ -116,13 +115,11 @@ export function reducePeaksFromChild(
 		});
 		child.on('error', (e) => fail(e));
 		child.on('close', (code) => {
-			childDone = true;
 			if (signal?.aborted) fail(Object.assign(new Error('cancelled'), { code: 'JOB_CANCELLED' }));
 			else if (code !== 0)
 				fail(Object.assign(new Error(`ffmpeg exited ${code}: ${stderr.trim()}`), { code: 'TOOL_FAILED' }));
 			else worker.postMessage({ type: 'end' });
 		});
-		void childDone;
 	});
 }
 

@@ -129,7 +129,6 @@ describe('autosave timing (S01:PER-020)', () => {
 
 describe('page lifecycle (S01:PER-022)', () => {
 	it('re-attaching right after dispose (StrictMode remount) yields a working controller', async () => {
-		vi.useFakeTimers();
 		const { store, session } = await setup();
 		const first = attachPersistence(session, { window: null, document: null });
 		const disposing = first.dispose();

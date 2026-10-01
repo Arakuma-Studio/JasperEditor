@@ -1,8 +1,9 @@
 // Scene resolution (S03:ARC-001/011): the visible layer stack at one frame, with evaluated values and
 // layer matrices. Static clips resolve to the same `props` object on every frame.
+
+import { contentTimeAt } from '../derive/index.ts';
 import { evaluate } from '../keyframes.ts';
 import type { ParamValue, Vec2 } from '../schema/common.ts';
-import { flicksPerFrame, type Rational } from '../time.ts';
 import {
 	applyMat3,
 	boxToQuad,
@@ -102,18 +103,7 @@ function isStaticClip(c: RenderVisualClip): boolean {
 	return c.effects.every((fx) => Object.values(fx.params).every((p) => p.keyframes.length === 0));
 }
 
-/** Content time at a sequence frame for a snapshot clip (S01:CLP-004). */
-export function clipContentTime(
-	c: Pick<RenderVisualClip, 'start' | 'duration' | 'sourceIn' | 'speed'>,
-	frame: number,
-	fps: Rational,
-): number {
-	const F = flicksPerFrame(fps);
-	const i = frame - c.start;
-	return c.speed.reverse
-		? c.sourceIn + (c.duration - 1 - i) * F * c.speed.rate
-		: c.sourceIn + i * F * c.speed.rate;
-}
+export { contentTimeAt as clipContentTime };
 
 /** Evaluated props of a clip at content time `t` (no caching). */
 export function resolveLayerProps(c: RenderVisualClip, t: number): ResolvedLayerProps {
@@ -180,11 +170,6 @@ export function layerMapOf(props: Pick<ResolvedLayerProps, 'projective' | 'matri
 	return props.projective ?? mat3FromMat2D(props.matrix);
 }
 
-/** Per-frame layer map of a clip at sequence frame `frame` (content time from the clip's timing). */
-export function layerMapAtFrame(c: RenderVisualClip, frame: number, fps: Rational): Mat3 {
-	return layerMapOf(resolveLayerProps(c, clipContentTime(c, frame, fps)));
-}
-
 const staticCache = new WeakMap<RenderVisualClip, ResolvedLayerProps>();
 
 /** Binary search for the clip covering `frame` in a start-sorted, non-overlapping list. */
@@ -207,7 +192,7 @@ export function resolveSceneAt(snapshot: RenderSnapshot, frame: number): Resolve
 	snapshot.videoTracks.forEach((track, trackIndex) => {
 		const c = clipCovering(track.clips, frame);
 		if (!c) return;
-		const t = clipContentTime(c, frame, snapshot.settings.fps);
+		const t = contentTimeAt(c, frame, snapshot.settings.fps);
 		let props: ResolvedLayerProps;
 		if (isStaticClip(c)) {
 			props = staticCache.get(c) ?? resolveLayerProps(c, t);

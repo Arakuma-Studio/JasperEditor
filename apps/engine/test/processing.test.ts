@@ -104,6 +104,7 @@ beforeAll(async () => {
 afterAll(async () => {
 	delete process.env.JASPER_MODEL_CATALOG;
 	await closeApps();
+	if (catalogDir) rmSync(catalogDir, { recursive: true, force: true });
 });
 
 describe('processing routes', () => {
@@ -190,7 +191,7 @@ describe('processing routes', () => {
 		expect(m.vidstab.license).toBe(VIDSTAB_PIN.license);
 	});
 
-	it('rejects unknown media, unknown and uninstalled models', async () => {
+	it('rejects unknown media and uninstalled models', async () => {
 		const r = await app.inject({
 			method: 'POST',
 			url: '/api/media/mk_000000000000000000000000/process',
@@ -323,7 +324,7 @@ describe('process jobs (local)', () => {
 	it('a sequence using a processed version plans native and exports reading the ProRes file (S07 §8 test 8)', async () => {
 		// A private copy of the source: it is deleted before the export, so the export can only read the
 		// processed file.
-		const copy = join(mkdtempSync(join(tmpdir(), 'jasper-src-')), 'clip-b-copy.mp4');
+		const copy = join(catalogDir, 'clip-b-copy.mp4');
 		copyFileSync(fixture('clip-b.mp4'), copy);
 		writeFileSync(copy, readFileSync(copy)); // fresh mtime
 		const m = await register(app, copy);

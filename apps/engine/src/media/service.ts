@@ -42,10 +42,6 @@ export class MediaService {
 		},
 	) {}
 
-	get registry(): MediaRegistry {
-		return this.deps.registry;
-	}
-
 	registerRunners(): void {
 		this.deps.queue.registerRunner('probe', (ctx) => this.runProbe(ctx));
 	}
@@ -234,8 +230,6 @@ export class MediaService {
 		storage: MediaRecord['storage'],
 		p: ProbeResult | MediaRecord,
 	): MediaRecord {
-		const probeResult = 'probe' in p && 'registeredAt' in p ? null : (p as ProbeResult);
-		const rec = p as MediaRecord;
 		return {
 			mediaKey,
 			fingerprint,
@@ -247,12 +241,12 @@ export class MediaService {
 			probe: p.probe,
 			browserPlayable: p.browserPlayable,
 			storage,
-			durationSec: probeResult ? probeResult.durationSec : rec.durationSec,
-			display: probeResult ? probeResult.display : rec.display,
-			hasAudio: probeResult ? probeResult.hasAudio : rec.hasAudio,
-			interlaced: probeResult ? probeResult.interlaced : !!rec.interlaced,
+			durationSec: p.durationSec,
+			display: p.display,
+			hasAudio: p.hasAudio,
+			interlaced: !!p.interlaced,
 			registeredAt: new Date().toISOString(),
-			...((probeResult ? probeResult.lut : rec.lut) ? { lut: probeResult ? probeResult.lut : rec.lut } : {}),
+			...(p.lut ? { lut: p.lut } : {}),
 		};
 	}
 

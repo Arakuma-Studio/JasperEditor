@@ -25,7 +25,7 @@ function activeSequence(session: EditorSession): Sequence | null {
 }
 
 /** The focused property row of the Properties / Effect Controls panel, rebuilt from the committed doc. */
-export function focusedRow(
+function focusedRow(
 	ctx: CommandCtx,
 ): { session: EditorSession; seq: Sequence; row: Row; frame: number } | null {
 	const session = ctx.session;

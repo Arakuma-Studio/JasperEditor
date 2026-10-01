@@ -36,7 +36,7 @@ function useRegistryVersion(): number {
 }
 
 /** Live label/enabled/shortcut for a command id (header buttons reflect SH-031). */
-export function useCommandButton(id: string, fallback: string) {
+function useCommandButton(id: string, fallback: string) {
 	useRegistryVersion();
 	const runtime = useShellRuntime();
 	const getCtx = useCommandCtx();

@@ -13,7 +13,6 @@
 import {
 	clipContentTime,
 	fadeFactor,
-	type RenderAudioClip,
 	type RenderVisualClip,
 	type ResolvedLayerProps,
 	resolveLayerProps,
@@ -126,31 +125,6 @@ const ClipLayer = memo(function ClipLayer({
 	);
 });
 
-function AudioClipLayer({
-	clip,
-	doc,
-	options,
-	from,
-}: {
-	clip: RenderAudioClip;
-	doc: RenderDoc;
-	options: RenderOptions;
-	from: number;
-}) {
-	const fps = doc.settings.fps.num / doc.settings.fps.den;
-	return (
-		<AudioLayer
-			clip={clip}
-			media={doc.media[clip.mediaId] ?? null}
-			fps={fps}
-			fpsRational={doc.settings.fps}
-			options={options}
-			master={doc.master}
-			sequenceFrom={from}
-		/>
-	);
-}
-
 export function SequenceComposition({ doc, options }: SequenceCompositionProps) {
 	useDocumentFonts(doc.fonts);
 	const fps = doc.settings.fps.num / doc.settings.fps.den;
@@ -219,7 +193,15 @@ export function SequenceComposition({ doc, options }: SequenceCompositionProps) 
 							name={clip.clipId}
 							layout="none"
 						>
-							<AudioClipLayer clip={clip} doc={doc} options={options} from={from} />
+							<AudioLayer
+								clip={clip}
+								media={doc.media[clip.mediaId] ?? null}
+								fps={fps}
+								fpsRational={doc.settings.fps}
+								options={options}
+								master={doc.master}
+								sequenceFrom={from}
+							/>
 						</Sequence>
 					);
 				})}

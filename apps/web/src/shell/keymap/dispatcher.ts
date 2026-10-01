@@ -96,7 +96,7 @@ export function classifyTarget(target: EventTarget | null): TargetKind {
 type Mods = { ctrlKey: boolean; altKey: boolean; metaKey: boolean; shiftKey: boolean };
 
 /** Chords that text fields handle natively (never stolen from an editable element). */
-export function isTextEditingChord(e: Mods & { code: string }, platform: Platform): boolean {
+function isTextEditingChord(e: Mods & { code: string }, platform: Platform): boolean {
 	const primary = platform === 'mac' ? e.metaKey : e.ctrlKey;
 	if (primary && !e.altKey && ['KeyA', 'KeyC', 'KeyV', 'KeyX', 'KeyZ', 'KeyY'].includes(e.code)) return true;
 	if ((primary || e.altKey) && /^(Arrow|Backspace|Delete|Home|End)/.test(e.code)) return true;
@@ -105,7 +105,7 @@ export function isTextEditingChord(e: Mods & { code: string }, platform: Platfor
 }
 
 /** Suspended in editable elements: single keys and Shift+key, except Esc/Enter (KB-005). */
-export function suspendedInEditable(e: Mods & { code: string }): boolean {
+function suspendedInEditable(e: Mods & { code: string }): boolean {
 	if (e.code === 'Escape' || e.code === 'Enter' || e.code === 'NumpadEnter') return false;
 	return !e.ctrlKey && !e.altKey && !e.metaKey;
 }

@@ -28,7 +28,7 @@ export function serverInfo(): { port: number; appdir: string } {
 	return JSON.parse(readFileSync(join(ROOT, 'test-results', 'e2e-server.json'), 'utf8'));
 }
 
-/** Collects page errors and failed engine requests so a spec can assert there were none. */
+/** Collects page and console errors so a spec can assert there were none. */
 export function watchPage(page: Page): { errors: string[] } {
 	const errors: string[] = [];
 	page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
@@ -237,8 +237,7 @@ export async function waitForJob(
 	for (;;) {
 		const res = await request.get(`/api/jobs/${jobId}`);
 		expect(res.ok()).toBe(true);
-		const body = await res.json();
-		const job = body.job ?? body;
+		const job = await res.json();
 		if (['succeeded', 'failed', 'cancelled', 'interrupted'].includes(job.state)) return job;
 		if (Date.now() - t0 > timeoutMs) throw new Error(`job ${jobId} still ${job.state} after ${timeoutMs} ms`);
 		await new Promise((r) => setTimeout(r, 500));
@@ -246,10 +245,8 @@ export async function waitForJob(
 }
 
 export type ExportOutcome = {
-	jobId: string;
 	file: string;
 	job: { state: string; result?: Record<string, unknown>; stage?: string };
-	planText: string;
 };
 
 /**
@@ -268,15 +265,13 @@ export async function exportViaUi(
 		expectBlocker?: RegExp;
 	},
 ): Promise<ExportOutcome> {
-	await page.getByTestId('timeline-timecode').click();
-	await page.keyboard.press('Escape');
+	await focusTimeline(page);
 	await page.keyboard.press('Control+KeyM');
 	await expect(page.getByTestId('export-mode')).toBeVisible();
 	await page.getByTestId('export-engine').selectOption(opts.engine);
 	await page.getByTestId('export-filename').fill(opts.fileName);
 	const planPath = page.getByTestId('plan-path');
 	await expect(planPath).toContainText(opts.expectPath, { timeout: 30_000 });
-	const planText = (await planPath.innerText()).trim();
 	if (opts.expectBlocker) await expect(page.getByTestId('plan-blockers')).toContainText(opts.expectBlocker);
 	const before = new Set(
 		((await (await request.get('/api/jobs')).json()).jobs as { id: string }[]).map((j) => j.id),
@@ -305,7 +300,7 @@ export async function exportViaUi(
 	const d = await download;
 	const file = join(opts.outDir, opts.fileName);
 	await d.saveAs(file);
-	return { jobId, file, job: job as ExportOutcome['job'], planText };
+	return { file, job };
 }
 
 /** Mean luma (0–255) of a region (fractions of the frame) of the frame at `timeSec`, decoded with ffmpeg. */

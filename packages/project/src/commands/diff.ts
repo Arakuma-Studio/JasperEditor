@@ -57,10 +57,7 @@ export function diffDocuments(before: ProjectDocument, after: ProjectDocument): 
 		for (const [id, seq] of Object.entries(after.sequences)) {
 			const prev = before.sequences[id];
 			if (!prev) {
-				out.created.push(id);
-				const tmp: DocDiff = { created: [], changed: [], deleted: [] };
-				diffRecord({}, seq.clips, tmp);
-				out.created.push(...tmp.created);
+				out.created.push(id, ...Object.keys(seq.clips));
 				continue;
 			}
 			if (prev === seq) continue;

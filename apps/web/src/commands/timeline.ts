@@ -588,8 +588,7 @@ export const timelineCommands: UiCommand[] = [
 		const existing = e.seq.markers.find((m) => m.frame === e.playhead);
 		if (existing) {
 			// TL-791: a second M on the same frame opens the marker dialog.
-			if (e.handle?.openMarkerEditor) e.handle.openMarkerEditor(existing.id);
-			else ctx.ui.openDialog('marker', { sequenceId: e.seq.id, markerId: existing.id });
+			ctx.ui.openDialog('marker', { sequenceId: e.seq.id, markerId: existing.id });
 			return;
 		}
 		apply(ctx, e, 'Add Marker', [{ type: 'marker.add', frame: e.playhead }]);

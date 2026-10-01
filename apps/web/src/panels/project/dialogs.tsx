@@ -6,7 +6,7 @@ import { useState, useSyncExternalStore } from 'react';
 import { notices } from '../../home/notices.tsx';
 import { Dialog } from '../../import/ImportPromptHost.tsx';
 
-export type ProjectDialog =
+type ProjectDialog =
 	| { kind: 'newSequence'; binId: string | null }
 	| {
 			kind: 'confirm';
@@ -40,7 +40,7 @@ export const projectDialogs = {
 };
 
 /** Next free "Sequence N" name. */
-export function nextSequenceName(names: string[]): string {
+function nextSequenceName(names: string[]): string {
 	let n = 1;
 	const taken = new Set(names);
 	while (taken.has(`Sequence ${String(n).padStart(2, '0')}`)) n++;

@@ -93,7 +93,6 @@ export type RenderDocInput = {
 	doc: ProjectDocument;
 	sequenceId: string;
 	media: Record<string, MediaRuntime>;
-	useProxies: boolean;
 	proxyTier?: ProxyTier;
 	mediaUrl?: MediaUrlFn;
 	/** Engine font catalog (null while unavailable: text falls back to the default sans). */

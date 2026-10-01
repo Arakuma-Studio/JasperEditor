@@ -15,7 +15,6 @@
     "@jasper/api": "workspace:*",
     "@jasper/engine-client": "workspace:*",
     "@jasper/project": "workspace:*",
-    "immer": "^11.1.0",
     "zustand": "^5.0.0"
   },
   "peerDependencies": {

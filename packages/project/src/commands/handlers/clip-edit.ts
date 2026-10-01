@@ -12,7 +12,7 @@ import { type Box, scaleForMode } from '../../factories.ts';
 import { contentDurationFlicks, isBoundedContent, kindCapabilities } from '../../registry/kinds.ts';
 import type { MediaAsset } from '../../schema/media.ts';
 import type { Clip, Track } from '../../schema/sequence.ts';
-import { contentSpanFlicks, FRAME_EPS, flicksPerFrame, type Rational } from '../../time.ts';
+import { contentSpanFlicks, FRAME_EPS, flicksPerFrame } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import {
 	allTracksIn,
@@ -39,8 +39,6 @@ import type { CommandOf } from '../schemas/index.ts';
 import { type HandlerMap, idList } from './util.ts';
 
 type DTrack = Draft<Track>;
-const EPS = FRAME_EPS;
-const rateOf = (seq: DSeq) => seq.settings.frameRate as Rational;
 
 // ---------------------------------------------------------------- shared helpers
 
@@ -50,27 +48,18 @@ function trackOf(seq: DSeq, clip: DClip, h: HandlerContext): DTrack {
 	return t.track;
 }
 
-function isLocked(seq: DSeq, trackId: string): boolean {
-	return !!findTrackIn(seq, trackId)?.track.locked;
-}
-
-function mediaDuration(doc: DDoc, clip: DClip): number | null {
-	// Media duration, or the composition length for composition clips (S08:MGC-004).
-	return contentDurationFlicks(doc as unknown as { media: Record<string, MediaAsset> }, clip as Clip);
-}
-
 /**
  * Content handles of a clip in sequence frames (S01:CLP-005): `head` = how far the in edge can extend
  * to the left, `tail` = how far the out edge can extend to the right. Unbounded kinds have an infinite
  * tail but still cannot show content before content time 0.
  */
-export function contentRoom(doc: DDoc, seq: DSeq, c: DClip): { head: number; tail: number } {
-	const step = flicksPerFrame(rateOf(seq)) * c.speed.rate;
-	const dur = mediaDuration(doc, c);
+function contentRoom(doc: DDoc, seq: DSeq, c: DClip): { head: number; tail: number } {
+	const step = flicksPerFrame(seq.settings.frameRate) * c.speed.rate;
+	const dur = contentDurationFlicks(doc, c);
 	const bounded = isBoundedContent(c as Clip) && dur !== null;
-	const before = Math.max(0, Math.floor(c.sourceIn / step + EPS));
+	const before = Math.max(0, Math.floor(c.sourceIn / step + FRAME_EPS));
 	const after = bounded
-		? Math.max(0, Math.floor((dur! - c.sourceIn) / step + EPS) - c.duration)
+		? Math.max(0, Math.floor((dur! - c.sourceIn) / step + FRAME_EPS) - c.duration)
 		: Number.POSITIVE_INFINITY;
 	return c.speed.reverse ? { head: after, tail: before } : { head: before, tail: after };
 }
@@ -107,7 +96,8 @@ function coincidentPartners(seq: DSeq, clip: DClip, pick: (c: DClip) => number):
 	const out: DClip[] = [];
 	for (const id of seq.links[clip.linkId]!.members) {
 		const p = seq.clips[id];
-		if (!p || p.id === clip.id || pick(p) !== pick(clip) || isLocked(seq, p.trackId)) continue;
+		if (!p || p.id === clip.id || pick(p) !== pick(clip) || findTrackIn(seq, p.trackId)?.track.locked)
+			continue;
 		out.push(p);
 	}
 	return out;
@@ -208,7 +198,7 @@ function slipHandler(doc: DDoc, cmd: CommandOf<'clip.slip'>, h: HandlerContext):
 		'Slip',
 	);
 	if (d === 0) return { deltaFrames: 0 };
-	const r = rateOf(seq);
+	const r = seq.settings.frameRate;
 	for (const c of movable) {
 		const shift = contentSpanFlicks(d, r, c.speed.rate);
 		c.sourceIn = Math.max(0, c.speed.reverse ? c.sourceIn + shift : c.sourceIn - shift);
@@ -300,7 +290,7 @@ function setSpeedHandler(doc: DDoc, cmd: CommandOf<'clip.setSpeed'>, h: HandlerC
 		cmd.maintainPitch === undefined
 	)
 		h.fail('E_INVALID_PARAM', 'clip.setSpeed needs rate, duration, reverse or maintainPitch');
-	const r = rateOf(seq);
+	const r = seq.settings.frameRate;
 	const F = flicksPerFrame(r);
 	const wantDuration = cmd.duration === undefined ? undefined : h.durationFrames(seq, cmd.duration);
 	if (wantDuration !== undefined && wantDuration < 1)
@@ -331,7 +321,7 @@ function setSpeedHandler(doc: DDoc, cmd: CommandOf<'clip.setSpeed'>, h: HandlerC
 		} else if (cmd.rate !== undefined && wantDuration !== undefined) {
 			rate = cmd.rate;
 			duration = wantDuration;
-			const dur = mediaDuration(doc, c);
+			const dur = contentDurationFlicks(doc, c);
 			if (isBoundedContent(c as Clip) && dur !== null) {
 				const need = c.sourceIn + contentSpanFlicks(duration, r, rate);
 				if (need > dur + F * rate + 1)
@@ -556,23 +546,23 @@ function fitToFrameHandler(doc: DDoc, cmd: CommandOf<'clip.fitToFrame'>, h: Hand
 
 // ---------------------------------------------------------------- range lift / extract (S02:TL-690)
 
-function rangeTracks(
-	seq: DSeq,
-	refs: readonly string[] | undefined,
-	h: HandlerContext,
-): { tracks: DTrack[]; explicit: boolean } {
-	if (!refs) return { tracks: allTracksIn(seq).filter((t) => !t.locked), explicit: false };
+function rangeTracks(seq: DSeq, refs: readonly string[] | undefined, h: HandlerContext): DTrack[] {
+	if (!refs) return allTracksIn(seq).filter((t) => !t.locked);
 	const tracks = refs.map((ref) => {
 		const t = h.track(seq, ref);
 		assertUnlocked(t, h);
 		return t;
 	});
-	return { tracks: [...new Map(tracks.map((t) => [t.id, t])).values()], explicit: true };
+	return [...new Map(tracks.map((t) => [t.id, t])).values()];
 }
 
-function rangeBounds(seq: DSeq, cmd: { from: unknown; to: unknown }, h: HandlerContext): [number, number] {
-	const from = h.frame(seq, cmd.from as CommandOf<'range.lift'>['from']);
-	const to = h.frame(seq, cmd.to as CommandOf<'range.lift'>['to']);
+function rangeBounds(
+	seq: DSeq,
+	cmd: Pick<CommandOf<'range.lift'>, 'from' | 'to'>,
+	h: HandlerContext,
+): [number, number] {
+	const from = h.frame(seq, cmd.from);
+	const to = h.frame(seq, cmd.to);
 	if (from < 0 || to <= from) h.fail('E_INVALID_PARAM', `Invalid range ${from}–${to}`);
 	return [from, to];
 }
@@ -580,7 +570,7 @@ function rangeBounds(seq: DSeq, cmd: { from: unknown; to: unknown }, h: HandlerC
 function rangeLiftHandler(doc: DDoc, cmd: CommandOf<'range.lift'>, h: HandlerContext): unknown {
 	const seq = h.sequence(doc, cmd.sequenceId);
 	const [from, to] = rangeBounds(seq, cmd, h);
-	const { tracks } = rangeTracks(seq, cmd.tracks, h);
+	const tracks = rangeTracks(seq, cmd.tracks, h);
 	const splits: SplitRecord[] = [];
 	for (const t of tracks) splits.push(...clearRange(seq, t.id, from, to, h));
 	relinkSplits(seq, splits, h);
@@ -591,7 +581,7 @@ function rangeLiftHandler(doc: DDoc, cmd: CommandOf<'range.lift'>, h: HandlerCon
 function rangeExtractHandler(doc: DDoc, cmd: CommandOf<'range.extract'>, h: HandlerContext): unknown {
 	const seq = h.sequence(doc, cmd.sequenceId);
 	const [from, to] = rangeBounds(seq, cmd, h);
-	const { tracks } = rangeTracks(seq, cmd.tracks, h);
+	const tracks = rangeTracks(seq, cmd.tracks, h);
 	// Targeted tracks plus every sync-locked unlocked track lose the marked range, then it closes.
 	const ids = new Set(tracks.map((t) => t.id));
 	for (const t of syncFollowerTracks(seq, ids)) ids.add(t.id);

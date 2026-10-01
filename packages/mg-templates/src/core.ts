@@ -2,6 +2,7 @@
 // here has a Rust twin with the same name (snake_case there) and the same arithmetic, so the SVG the
 // Player shows and the SVG fframes rasterizes for export agree (ARCHITECTURE D-12, §10.2).
 // Change both sides together and keep `pnpm --filter @jasper/mg-templates test` + MG_PARITY green.
+import type { MgCanvas } from './types.ts';
 
 /** Font stack of every template; the native binary embeds Inter (OFL). */
 export const FONT_FAMILY = "Inter, 'Inter 24pt', 'Source Sans 3', sans-serif";
@@ -62,10 +63,8 @@ export function spring(t: number, stiffness: number, damping: number, mass: numb
 
 // ------------------------------------------------------------------ canvas.rs
 
-export type MgCanvasSize = { width: number; height: number };
-
 /** Design canvases of every template (16:9, 9:16, 1:1). */
-export const CANVASES: readonly MgCanvasSize[] = [
+export const CANVASES: readonly MgCanvas[] = [
 	{ width: 1920, height: 1080 },
 	{ width: 1080, height: 1920 },
 	{ width: 1080, height: 1080 },
@@ -178,7 +177,7 @@ export function fitGroupOpen(fit: Fit): string {
 // ------------------------------------------------------------------ text.rs
 
 /** Approximate advance of one character in em (tuned for Inter). */
-export function charEm(ch: string): number {
+function charEm(ch: string): number {
 	if (ch === ' ') return 0.28;
 	if ("iljI.,:;'!|".includes(ch)) return 0.3;
 	if (ch === 'f' || ch === 't' || ch === 'r') return 0.38;

@@ -19,7 +19,7 @@ import { originalOf, versionLabel, versionsOf } from './model.ts';
 import { ProcessingPreferencesPage } from './PreferencesPage.tsx';
 import { PROCESS_DIALOG, ProcessDialog } from './ProcessDialog.tsx';
 
-export const PROCESS_MENU_LABEL = 'Process Clip…';
+const PROCESS_MENU_LABEL = 'Process Clip…';
 
 /** "Media Version" submenu for a clip (Original + processed versions of the same original). */
 function versionMenu(doc: ProjectDocument, mediaId: string, run: (id: string) => void): MenuItemSpec | null {

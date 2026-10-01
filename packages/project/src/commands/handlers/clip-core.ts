@@ -9,7 +9,6 @@ import {
 	defaultSpeed,
 	defaultTextStyle,
 	defaultTransform,
-	scaleForMode,
 } from '../../factories.ts';
 import {
 	contentDurationFlicks,
@@ -22,7 +21,7 @@ import type { Animatable, LabelColor, Vec2 } from '../../schema/common.ts';
 import type { DefaultScaling, ProjectItem } from '../../schema/document.ts';
 import type { MediaAsset, SyntheticSource } from '../../schema/media.ts';
 import type { Clip, TextBox, TextContent, TextStyle, Track, Transform } from '../../schema/sequence.ts';
-import { FRAME_EPS, flicksPerFrame, type Rational, supportsDropFrame } from '../../time.ts';
+import { FRAME_EPS, flicksPerFrame, supportsDropFrame } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import {
 	allTracksIn,
@@ -55,11 +54,9 @@ import { applyCompositionPatch } from './composition.ts';
 import { type HandlerMap, idList } from './util.ts';
 
 type DTrack = Draft<Track>;
-const rateOf = (seq: DSeq) => seq.settings.frameRate as Rational;
 const frameBox = (seq: DSeq): Box => ({ width: seq.settings.width, height: seq.settings.height });
 
 function commonFields(
-	_h: HandlerContext,
 	id: string,
 	trackId: string,
 	start: number,
@@ -89,7 +86,7 @@ function visualFields(transform: Transform) {
 }
 
 /** Intrinsic box of a media asset: probed size with rotation applied (S01:KND-020, AST-002). */
-export function mediaBox(asset: MediaAsset): Box | null {
+function mediaBox(asset: MediaAsset): Box | null {
 	const vs = asset.probe.streams.find((s) => s.type === 'video');
 	if (vs?.type !== 'video') return null;
 	const swap = asset.probe.rotationDegrees === 90 || asset.probe.rotationDegrees === 270;
@@ -100,15 +97,14 @@ function applyTransformPatch(t: Transform, p: TransformPatch | undefined): Trans
 	if (!p) return t;
 	const vec = (v: Vec2 | Animatable<Vec2>) =>
 		Array.isArray(v) ? anim<Vec2>([v[0], v[1]]) : (v as Animatable<Vec2>);
-	const num = (v: number | Animatable<number>) =>
-		typeof v === 'number' ? anim(v) : (v as Animatable<number>);
+	const num = (v: number | Animatable<number>) => (typeof v === 'number' ? anim(v) : v);
 	return {
 		...t,
-		...(p.position !== undefined ? { position: vec(p.position as Vec2 | Animatable<Vec2>) } : {}),
-		...(p.anchor !== undefined ? { anchor: vec(p.anchor as Vec2 | Animatable<Vec2>) } : {}),
-		...(p.scale !== undefined ? { scale: num(p.scale as number | Animatable<number>) } : {}),
-		...(p.scaleWidth !== undefined ? { scaleWidth: num(p.scaleWidth as number | Animatable<number>) } : {}),
-		...(p.rotation !== undefined ? { rotation: num(p.rotation as number | Animatable<number>) } : {}),
+		...(p.position !== undefined ? { position: vec(p.position) } : {}),
+		...(p.anchor !== undefined ? { anchor: vec(p.anchor) } : {}),
+		...(p.scale !== undefined ? { scale: num(p.scale) } : {}),
+		...(p.scaleWidth !== undefined ? { scaleWidth: num(p.scaleWidth) } : {}),
+		...(p.rotation !== undefined ? { rotation: num(p.rotation) } : {}),
 		...(p.uniformScale !== undefined ? { uniformScale: p.uniformScale } : {}),
 		...(p.flipH !== undefined ? { flipH: p.flipH } : {}),
 		...(p.flipV !== undefined ? { flipV: p.flipV } : {}),
@@ -123,42 +119,18 @@ function makeRoom(
 	at: number,
 	n: number,
 	mode: 'overwrite' | 'insert',
-	opts: { rippleMarkers?: boolean; except?: ReadonlySet<string> } = {},
+	rippleMarkers = true,
 ): void {
 	let splits: SplitRecord[] = [];
 	if (mode === 'overwrite') {
-		for (const t of dest) splits.push(...clearRange(seq, t.id, at, at + n, h, opts.except));
+		for (const t of dest) splits.push(...clearRange(seq, t.id, at, at + n, h));
 	} else {
 		const edited = new Set(dest.map((t) => t.id));
 		const tracks = [...edited, ...syncFollowerTracks(seq, edited).map((t) => t.id)];
-		splits = insertShiftExcept(seq, tracks, at, n, h, opts.except);
-		if (opts.rippleMarkers !== false) shiftMarkers(seq, at, n);
+		splits = insertShift(seq, tracks, at, n, h);
+		if (rippleMarkers) shiftMarkers(seq, at, n);
 	}
 	relinkSplits(seq, splits, h);
-}
-
-/** insertShift that leaves `except` clips (being moved) where they are. */
-function insertShiftExcept(
-	seq: DSeq,
-	trackIds: readonly string[],
-	at: number,
-	n: number,
-	h: HandlerContext,
-	except?: ReadonlySet<string>,
-): SplitRecord[] {
-	if (!except || except.size === 0) return insertShift(seq, trackIds, at, n, h);
-	const splits: SplitRecord[] = [];
-	for (const trackId of trackIds) {
-		for (const c of trackClips(seq, trackId)) {
-			if (except.has(c.id)) continue;
-			if (c.start < at && end(c) > at) {
-				const linkId = c.linkId;
-				splits.push({ originalLinkId: linkId, rightId: splitClipAt(seq, c, at, h).id });
-			}
-		}
-		for (const c of trackClips(seq, trackId)) if (!except.has(c.id) && c.start >= at) c.start += n;
-	}
-	return splits;
 }
 
 function prepareTrack(seq: DSeq, ref: string, kind: string, h: HandlerContext, create: boolean): DTrack {
@@ -168,7 +140,7 @@ function prepareTrack(seq: DSeq, ref: string, kind: string, h: HandlerContext, c
 	return t;
 }
 
-export type PlaceOptions = {
+type PlaceOptions = {
 	source: { mediaId?: string; syntheticId?: string; sequenceId?: string; projectItemId?: string };
 	sourceRange?: { in: number; out: number };
 	at: number;
@@ -192,7 +164,7 @@ export function placeSource(
 	h: HandlerContext,
 	o: PlaceOptions,
 ): { clipIds: string[]; linkId: string | null } {
-	const rate = rateOf(seq);
+	const rate = seq.settings.frameRate;
 	const F = flicksPerFrame(rate);
 	let item: ProjectItem | undefined;
 	let mediaId = o.source.mediaId;
@@ -287,7 +259,7 @@ export function placeSource(
 				kind: 'video',
 				trackRef: videoTrackRef,
 				build: (id, trackId, start, duration, si) => ({
-					...commonFields(h, id, trackId, start, duration, si, name, label('video')),
+					...commonFields(id, trackId, start, duration, si, name, label('video')),
 					kind: 'video',
 					mediaId: asset.id,
 					videoStreamIndex: asset.probe.streams.find((s) => s.type === 'video')!.index,
@@ -302,7 +274,6 @@ export function placeSource(
 				build: (id, trackId, start, duration, si) =>
 					({
 						...commonFields(
-							h,
 							id,
 							trackId,
 							start,
@@ -348,7 +319,7 @@ export function placeSource(
 					kind: 'audio',
 					trackRef,
 					build: (id, trackId, start, duration, si) => ({
-						...commonFields(h, id, trackId, start, duration, si, name, label('audio')),
+						...commonFields(id, trackId, start, duration, si, name, label('audio')),
 						kind: 'audio',
 						mediaId: asset.id,
 						channels,
@@ -374,7 +345,7 @@ export function placeSource(
 				kind: 'adjustment',
 				trackRef: o.videoTrack ?? 'V1',
 				build: (id, trackId, start, duration, si) => ({
-					...commonFields(h, id, trackId, start, duration, si, name, item?.label ?? 'tan'),
+					...commonFields(id, trackId, start, duration, si, name, item?.label ?? 'tan'),
 					kind: 'adjustment',
 					syntheticId: syn.id,
 					opacity: anim(100),
@@ -387,7 +358,7 @@ export function placeSource(
 				kind: 'solid',
 				trackRef: o.videoTrack ?? 'V1',
 				build: (id, trackId, start, duration, si) => ({
-					...commonFields(h, id, trackId, start, duration, si, name, item?.label ?? 'tan'),
+					...commonFields(id, trackId, start, duration, si, name, item?.label ?? 'tan'),
 					kind: 'solid',
 					syntheticId: syn.id,
 					...visualFields(defaultTransform(frameBox(seq), frameBox(seq), 'none')),
@@ -402,7 +373,7 @@ export function placeSource(
 	const dest = plans.map((p) => prepareTrack(seq, p.trackRef, p.kind, h, create));
 	if (new Set(dest.map((t) => t.id)).size !== dest.length)
 		h.fail('E_INVALID_PARAM', 'Two placed clips target the same track');
-	makeRoom(seq, h, dest, o.at, frames!, o.mode, { rippleMarkers: o.rippleMarkers });
+	makeRoom(seq, h, dest, o.at, frames!, o.mode, o.rippleMarkers);
 	const clipIds: string[] = [];
 	plans.forEach((p, i) => {
 		const id = h.ids.next('clp');
@@ -512,13 +483,12 @@ function trimLimits(
 	ripple: boolean,
 	members: ReadonlySet<string>,
 ): TrimLimits {
-	const F = flicksPerFrame(rateOf(seq));
+	const F = flicksPerFrame(seq.settings.frameRate);
 	const step = F * c.speed.rate;
-	const eps = FRAME_EPS;
 	let min = Number.NEGATIVE_INFINITY;
 	let max = Number.POSITIVE_INFINITY;
 	// Media duration, or the composition length for composition clips (S08:MGC-004).
-	const dur = contentDurationFlicks(doc as unknown as { media: Record<string, MediaAsset> }, c as Clip);
+	const dur = contentDurationFlicks(doc, c);
 	const bounded = isBoundedContent(c as Clip) && dur !== null;
 	const others = trackClips(seq, c.trackId).filter((x) => x.id !== c.id && !members.has(x.id));
 	if (edge === 'in') {
@@ -528,8 +498,8 @@ function trimLimits(
 			const prevEnd = Math.max(0, ...others.filter((x) => end(x) <= c.start).map(end));
 			min = Math.max(min, prevEnd - c.start);
 		}
-		if (!c.speed.reverse) min = Math.max(min, -Math.floor(c.sourceIn / step + eps));
-		else if (bounded) min = Math.max(min, -(Math.floor((dur! - c.sourceIn) / step + eps) - c.duration));
+		if (!c.speed.reverse) min = Math.max(min, -Math.floor(c.sourceIn / step + FRAME_EPS));
+		else if (bounded) min = Math.max(min, -(Math.floor((dur! - c.sourceIn) / step + FRAME_EPS) - c.duration));
 	} else {
 		min = Math.max(min, 1 - c.duration);
 		if (!ripple) {
@@ -540,8 +510,8 @@ function trimLimits(
 			max = Math.min(max, nextStart - end(c));
 		}
 		if (!c.speed.reverse && bounded)
-			max = Math.min(max, Math.floor((dur! - c.sourceIn) / step + eps) - c.duration);
-		else if (c.speed.reverse) max = Math.min(max, Math.floor(c.sourceIn / step + eps));
+			max = Math.min(max, Math.floor((dur! - c.sourceIn) / step + FRAME_EPS) - c.duration);
+		else if (c.speed.reverse) max = Math.min(max, Math.floor(c.sourceIn / step + FRAME_EPS));
 	}
 	return { min, max };
 }
@@ -648,8 +618,8 @@ export const clipCoreHandlers: HandlerMap = {
 			'mediaId' in cmd.source ? (doc.media[cmd.source.mediaId] as MediaAsset | undefined) : undefined;
 		const range = cmd.sourceRange
 			? {
-					in: h.flicks(cmd.sourceRange.in, asset, rateOf(seq)),
-					out: h.flicks(cmd.sourceRange.out, asset, rateOf(seq)),
+					in: h.flicks(cmd.sourceRange.in, asset, seq.settings.frameRate),
+					out: h.flicks(cmd.sourceRange.out, asset, seq.settings.frameRate),
 				}
 			: undefined;
 		const audio = cmd.tracks?.audio;
@@ -693,7 +663,7 @@ export const clipCoreHandlers: HandlerMap = {
 		const transform = applyTransformPatch(defaultTransform(box, frameBox(seq), 'none'), cmd.transform);
 		const name = cmd.name ?? (cmd.content.text.split('\n')[0]!.slice(0, 40) || 'Text');
 		seq.clips[id] = {
-			...commonFields(h, id, track.id, at, duration, 0, name, 'lavender'),
+			...commonFields(id, track.id, at, duration, 0, name, 'lavender'),
 			kind: 'text',
 			content,
 			box,
@@ -711,7 +681,7 @@ export const clipCoreHandlers: HandlerMap = {
 		const synId = h.ids.next('syn');
 		doc.synthetics[synId] = { id: synId, kind: 'color-matte', color: [...cmd.color] };
 		seq.clips[id] = {
-			...commonFields(h, id, track.id, at, duration, 0, cmd.name ?? 'Color Matte', 'tan'),
+			...commonFields(id, track.id, at, duration, 0, cmd.name ?? 'Color Matte', 'tan'),
 			kind: 'solid',
 			syntheticId: synId,
 			...visualFields(defaultTransform(frameBox(seq), frameBox(seq), 'none')),
@@ -729,7 +699,7 @@ export const clipCoreHandlers: HandlerMap = {
 		const canvas = cmd.canvas ?? (info.canvasDefault === 'sequence' ? 'sequence' : { ...info.canvasDefault });
 		const box = canvas === 'sequence' ? frameBox(seq) : canvas;
 		seq.clips[id] = {
-			...commonFields(h, id, track.id, at, duration, 0, cmd.name ?? info.name, 'purple'),
+			...commonFields(id, track.id, at, duration, 0, cmd.name ?? info.name, 'purple'),
 			kind: 'motion-graphic',
 			template: { id: info.id, version: info.version },
 			params,
@@ -770,7 +740,7 @@ export const clipCoreHandlers: HandlerMap = {
 			const n = Math.max(...plan.map((p) => p.end)) - at;
 			const edited = new Set(plan.map((p) => p.dest.id));
 			const tracks = [...edited, ...syncFollowerTracks(seq, edited).map((t) => t.id)];
-			relinkSplits(seq, insertShiftExcept(seq, tracks, at, n, h, moving), h);
+			relinkSplits(seq, insertShift(seq, tracks, at, n, h, moving), h);
 			if (cmd.rippleMarkers !== false) shiftMarkers(seq, at, n);
 		}
 		for (const p of plan) {
@@ -894,9 +864,7 @@ function applyClipPatch(doc: DDoc, seq: DSeq, clip: DClip, p: ClipPatch, h: Hand
 	}
 	// M2 (S08:MGC-007): composition clips take `props` (whole override object) and `canvas`.
 	if (p.props !== undefined) need(clip.kind === 'composition', 'props');
-	if (applyCompositionPatch(doc, seq, clip, p, h)) {
-		// handled
-	} else if (p.params !== undefined || p.canvas !== undefined) {
+	if (!applyCompositionPatch(doc, clip, p, h) && (p.params !== undefined || p.canvas !== undefined)) {
 		need(clip.kind === 'motion-graphic', p.params ? 'params' : 'canvas');
 		const mg = clip as Draft<Extract<Clip, { kind: 'motion-graphic' }>>;
 		if (p.params !== undefined) {
@@ -936,5 +904,4 @@ function applyClipPatch(doc: DDoc, seq: DSeq, clip: DClip, p: ClipPatch, h: Hand
 		need(clip.kind === 'captions', 'style');
 		c.style = { ...(c.style as object), ...p.style };
 	}
-	void scaleForMode;
 }

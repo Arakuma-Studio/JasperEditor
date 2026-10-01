@@ -6,6 +6,7 @@ import { EngineClient } from '@jasper/engine-client';
 import {
 	type Clip,
 	formatTimecode,
+	gapAt,
 	LABEL_COLORS,
 	type MediaAsset,
 	type ProjectItem,
@@ -25,6 +26,7 @@ import { dropLutItems } from '../../color/actions.ts';
 import { createCommandContext } from '../../commands/context.ts';
 import { runCommand } from '../../commands/registry.ts';
 import { clipMenuExtensions, collectMenuItems } from '../../extensions/index.ts';
+import { useEngineOrNull } from '../../state/engine.tsx';
 import { getImportService, PROJECT_ITEMS_MIME } from '../../state/services.ts';
 import {
 	activeTransitionDrag,
@@ -48,7 +50,6 @@ import {
 	registerTimelineInstance,
 	type TimelineHandle,
 	touchTimelineInstance,
-	useOptionalEngineClient,
 	useTimelineEnv,
 } from './env.tsx';
 import { mediaCacheVersion } from './media/media-cache.ts';
@@ -118,7 +119,7 @@ function TimelineForSession(props: PanelProps & { session: EditorSession }) {
 function TimelineBody(props: PanelProps & { session: EditorSession; seqId: string }) {
 	const { session, seqId } = props;
 	const env = useTimelineEnv();
-	const engine = useOptionalEngineClient();
+	const engine = useEngineOrNull()?.client ?? null;
 	const [ui] = useState(createTimelineUiStore);
 	const prefs = useStoreSelector(timelinePrefs(), (s) => s);
 	const mac = useMemo(isMac, []);
@@ -181,7 +182,6 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 	const layout = useMemo(
 		() =>
 			computeLayout({
-				width: size.w,
 				height: size.h,
 				dividerRatio: view.dividerRatio,
 				videoTracks: seq.videoTracks,
@@ -320,7 +320,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		[],
 	);
 
-	// Escape / S during a pointer gesture: a gesture-local listener (the keymap owns other keys).
+	// Escape during a pointer gesture: a gesture-local listener (the keymap owns other keys).
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
 			if (!controller.dragging) return;
@@ -796,7 +796,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			openMenu(e.clientX, e.clientY, clipMenu(c));
 			return;
 		}
-		const gap = committedSeq && gapAtFrame(committedSeq, yh.row.trackId, frame);
+		const gap = gapAt(committedSeq, yh.row.trackId, frame);
 		if (gap)
 			openMenu(e.clientX, e.clientY, [
 				{
@@ -1169,7 +1169,6 @@ function PlayheadOverlay(props: {
 			<PlayheadLine
 				transport={props.transport}
 				viewportRef={props.viewportRef}
-				rulerHeight={RULER_H}
 				onFrame={props.onFrame}
 				onHeadPointerDown={(e) => {
 					e.stopPropagation();
@@ -1195,21 +1194,4 @@ function PlayheadOverlay(props: {
 
 function formatDuration(frames: number, rate: Rational, dropFrame: boolean): string {
 	return `${formatTimecode(frames, rate, { dropFrame })} (${frames})`;
-}
-
-function gapAtFrame(
-	seq: Sequence,
-	trackId: string,
-	frame: number,
-): { trackId: string; start: number; end: number } | null {
-	const clips = Object.values(seq.clips)
-		.filter((c) => c.trackId === trackId)
-		.sort((a, b) => a.start - b.start);
-	let cursor = 0;
-	for (const c of clips) {
-		if (c.start > cursor && frame >= cursor && frame < c.start)
-			return { trackId, start: cursor, end: c.start };
-		cursor = Math.max(cursor, c.start + c.duration);
-	}
-	return null;
 }

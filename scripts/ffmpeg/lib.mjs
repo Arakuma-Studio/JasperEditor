@@ -23,7 +23,7 @@ export function platformKey(platform = process.platform, arch = process.arch, mu
 	return `${platform}-${arch}${platform === 'linux' && musl ? '-musl' : ''}`;
 }
 
-export function isMusl() {
+function isMusl() {
 	if (process.platform !== 'linux') return false;
 	const report = process.report?.getReport?.();
 	return !!report && typeof report === 'object' && !report.header?.glibcVersionRuntime;
@@ -71,7 +71,7 @@ export async function sha256File(file) {
  * EXTERNAL_LIBRARY_NONFREE_LIST, HWACCEL_LIBRARY_NONFREE_LIST, plus `--enable-gpl` / `--enable-nonfree`
  * themselves and GPL-only components). `--disable-libx264` is fine; only `--enable-*` counts.
  */
-export const FORBIDDEN_FLAGS = [
+const FORBIDDEN_FLAGS = [
 	'--enable-gpl',
 	'--enable-nonfree',
 	'--enable-libx264',
@@ -97,7 +97,7 @@ export const FORBIDDEN_FLAGS = [
 ];
 
 /** Encoders that only exist in GPL/nonfree builds. */
-export const FORBIDDEN_ENCODERS = [
+const FORBIDDEN_ENCODERS = [
 	'libx264',
 	'libx264rgb',
 	'libx265',
@@ -120,7 +120,7 @@ export function configureFlags(text) {
  * (`libvidstab: {commit, license}`). Any other vid.stab — every release up to v1.1.2 is GPL — fails.
  * Returns null when the record is acceptable, else the reason.
  */
-export function vidstabRecordProblem(record, manifest = loadManifest()) {
+function vidstabRecordProblem(record, manifest = loadManifest()) {
 	const pin = manifest.vidstab;
 	if (!record || typeof record !== 'object')
 		return 'configured with --enable-libvidstab but BUILDINFO.json records no libvidstab build (only the pinned relicensed vid.stab is allowed)';

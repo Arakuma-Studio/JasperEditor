@@ -5,7 +5,6 @@
 import {
 	type AgentQueryRequest,
 	type AgentTxResponse,
-	type Approval,
 	ENGINE_ERROR_CODES,
 	TransactionResultSchema,
 } from '@jasper/api';
@@ -35,6 +34,7 @@ import {
 	summarizeTransaction,
 	type TransactionResult,
 } from '@jasper/project';
+import { KeyedMutex } from '../tools/mutex.ts';
 import { type ApprovalDecision, ApprovalGate } from './approvals.ts';
 import { RevisionTracker } from './revisions.ts';
 import { type AgentConnection, type AgentSocket, RelayError, SessionRegistry } from './sessions.ts';
@@ -65,7 +65,7 @@ export type StillCaptureRequest = {
 
 export type AgentServiceOptions = {
 	engineVersion: string;
-	/** Resolved on every use so WP-2F's store can be registered after the agent routes. */
+	/** Resolves the engine's project-store adapter. */
 	store: () => AgentProjectStore;
 	registries: Registries;
 	/** Publishes an engine event (`/events`); `projectId` scopes it. */
@@ -106,7 +106,7 @@ export class AgentService {
 	readonly sessions: SessionRegistry;
 	readonly approvals: ApprovalGate;
 	readonly revisions = new RevisionTracker();
-	private readonly locks = new Map<string, Promise<unknown>>();
+	private readonly mutex = new KeyedMutex();
 	private readonly ids: IdSource;
 	private readonly now: () => Date;
 	private readonly relayTimeoutMs: number;
@@ -201,7 +201,7 @@ export class AgentService {
 	async query(
 		req: AgentQueryRequest,
 	): Promise<{ result: unknown; revision?: number; via: 'session' | 'headless' }> {
-		const holder = this.sessions.holder(req.projectId) ?? this.anySession(req.projectId);
+		const holder = this.sessions.holder(req.projectId) ?? this.sessions.connectionsFor(req.projectId).at(-1);
 		if (holder) {
 			try {
 				const out = await this.sessions.request(
@@ -257,10 +257,6 @@ export class AgentService {
 			if (e instanceof AgentQueryError) throw queryError(e.code, e.message);
 			throw e;
 		}
-	}
-
-	private anySession(projectId: string): AgentConnection | null {
-		return this.sessions.connectionsFor(projectId).at(-1) ?? null;
 	}
 
 	private dryRun(
@@ -417,7 +413,7 @@ export class AgentService {
 		projectId: string,
 		tx: ReturnType<typeof normalizeAgentTransaction>,
 	): Promise<TransactionResult> {
-		return this.serialize(projectId, async () => {
+		return this.mutex.run(projectId, async () => {
 			if (historyPseudoCommand(tx))
 				return fail(
 					-1,
@@ -484,17 +480,6 @@ export class AgentService {
 		});
 	}
 
-	private serialize<T>(projectId: string, fn: () => Promise<T>): Promise<T> {
-		const prev = this.locks.get(projectId) ?? Promise.resolve();
-		const next = prev.then(fn, fn);
-		const tail = next.catch(() => undefined);
-		this.locks.set(projectId, tail);
-		void tail.then(() => {
-			if (this.locks.get(projectId) === tail) this.locks.delete(projectId);
-		});
-		return next;
-	}
-
 	// ------------------------------------------------------------ session events
 
 	private onSessionEvent(conn: AgentConnection, event: string, payload: unknown): void {
@@ -530,10 +515,5 @@ export class AgentService {
 	/** True when an editor session holding the lease is connected (transactions apply live). */
 	isLive(projectId: string): boolean {
 		return this.sessions.holder(projectId) !== null;
-	}
-
-	/** Pending approvals (for diagnostics and tests). */
-	pendingApprovals(projectId?: string): Approval[] {
-		return this.approvals.pending(projectId);
 	}
 }

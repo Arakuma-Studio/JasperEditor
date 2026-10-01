@@ -154,14 +154,10 @@ export function mediaSummary(doc: ProjectDocument, m: MediaAsset) {
 		name: mediaName(doc, m.id),
 		kind: m.kind,
 		durationSeconds: m.probe.durationFlicks === null ? null : round3(flicksToSeconds(m.probe.durationFlicks)),
-		...(vs && vs.type === 'video'
-			? { video: `${vs.width}x${vs.height} @ ${round3(fpsOf(vs.frameRate))} fps ${vs.codec}` }
-			: {}),
+		...(vs ? { video: `${vs.width}x${vs.height} @ ${round3(fpsOf(vs.frameRate))} fps ${vs.codec}` } : {}),
 		...(as.length
 			? {
-					audio: as
-						.map((a) => (a.type === 'audio' ? `${a.channels} ch ${a.sampleRate} Hz ${a.codec}` : ''))
-						.join(', '),
+					audio: as.map((a) => `${a.channels} ch ${a.sampleRate} Hz ${a.codec}`).join(', '),
 				}
 			: {}),
 	};

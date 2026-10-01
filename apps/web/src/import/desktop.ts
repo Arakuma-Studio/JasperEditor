@@ -13,7 +13,7 @@ export function getDesktopBridge(): DesktopBridge | null {
 }
 
 /** File extensions accepted by the web file picker (S01:LIFE-011, S04:IN-001). */
-export const IMPORT_ACCEPT = [
+const IMPORT_ACCEPT = [
 	'video/*',
 	'audio/*',
 	'image/*',

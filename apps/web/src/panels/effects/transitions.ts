@@ -19,7 +19,7 @@ const CATEGORY: Record<string, string> = {
 	[CONSTANT_POWER]: 'Crossfade',
 };
 
-export type TransitionBin = {
+type TransitionBin = {
 	medium: 'Video Transitions' | 'Audio Transitions';
 	appliesTo: 'video' | 'audio';
 	categories: { category: string; transitions: TransitionSpec[] }[];

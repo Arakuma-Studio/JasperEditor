@@ -6,8 +6,8 @@ import type { Vec2 } from '../schema/common.ts';
 import type { ClipTracker, TrackerSamples } from '../schema/sequence.ts';
 import { FLICKS_PER_SECOND, type Rational } from '../time.ts';
 
-export const PLANAR_STRIDE = 8;
-export const POINT_STRIDE = 2;
+const PLANAR_STRIDE = 8;
+const POINT_STRIDE = 2;
 
 /** Values per sample for a tracker kind. */
 export function strideOf(kind: ClipTracker['kind']): 2 | 8 {
@@ -29,13 +29,11 @@ export function stepOfRate(rate: Rational): number {
 	return Math.round((FLICKS_PER_SECOND * rate.den) / rate.num);
 }
 
-/** Raw values and confidence of sample `i` (clamped to the span). */
-export function sampleValues(s: TrackerSamples, i: number): { values: number[]; confidence: number } {
-	const n = sampleCount(s);
-	const k = Math.min(n - 1, Math.max(0, i));
+/** Raw values and confidence of sample `i`. The caller bounds the index. */
+function sampleValues(s: TrackerSamples, i: number): { values: number[]; confidence: number } {
 	return {
-		values: s.data.slice(k * s.stride, (k + 1) * s.stride),
-		confidence: s.confidence[k] ?? 0,
+		values: s.data.slice(i * s.stride, (i + 1) * s.stride),
+		confidence: s.confidence[i] ?? 0,
 	};
 }
 
@@ -57,7 +55,7 @@ export function valuesAt(s: TrackerSamples, t: number): { values: number[]; conf
 	};
 }
 
-export function valuesToQuad(v: readonly number[]): Quad {
+function valuesToQuad(v: readonly number[]): Quad {
 	return [
 		[v[0]!, v[1]!],
 		[v[2]!, v[3]!],
@@ -66,7 +64,7 @@ export function valuesToQuad(v: readonly number[]): Quad {
 	];
 }
 
-export function quadToValues(q: Quad): number[] {
+function quadToValues(q: Quad): number[] {
 	return [q[0][0], q[0][1], q[1][0], q[1][1], q[2][0], q[2][1], q[3][0], q[3][1]];
 }
 
@@ -167,7 +165,7 @@ export function mergeSamples(
 	return { start: existing.start + first * step, step, stride, data, confidence: conf };
 }
 
-export function cloneSamples(s: TrackerSamples): TrackerSamples {
+function cloneSamples(s: TrackerSamples): TrackerSamples {
 	return { start: s.start, step: s.step, stride: s.stride, data: [...s.data], confidence: [...s.confidence] };
 }
 

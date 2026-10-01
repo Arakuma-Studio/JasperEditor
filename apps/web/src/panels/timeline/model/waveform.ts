@@ -52,10 +52,10 @@ export function drawGain(gainDb: number, volumeDb: number): number {
 	return 10 ** ((gainDb + volumeDb) / 20);
 }
 
-export type WaveBar = { x: number; top: number; height: number; clipped: boolean };
+type WaveBar = { x: number; top: number; height: number; clipped: boolean };
 
 /** Floor of the logarithmic display scale: amplitudes at or below this level draw as zero height. */
-export const WAVE_LOG_FLOOR_DB = -48;
+const WAVE_LOG_FLOOR_DB = -48;
 
 /**
  * Display height (0…1) of a linear amplitude. `log` maps dBFS linearly between WAVE_LOG_FLOOR_DB and
@@ -85,13 +85,9 @@ export function waveBars(
 		const v = columns[c]! * gain;
 		const clipped = v > 1;
 		const a = waveHeight(v, scale);
-		if (style === 'rectified') {
-			const h = a * lane.height;
-			out.push({ x: lane.x + c, top: lane.top + lane.height - h, height: h, clipped });
-		} else {
-			const h = a * lane.height;
-			out.push({ x: lane.x + c, top: lane.top + (lane.height - h) / 2, height: h, clipped });
-		}
+		const h = a * lane.height;
+		const top = style === 'rectified' ? lane.top + lane.height - h : lane.top + (lane.height - h) / 2;
+		out.push({ x: lane.x + c, top, height: h, clipped });
 	}
 	return out;
 }

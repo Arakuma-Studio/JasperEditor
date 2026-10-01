@@ -6,6 +6,7 @@ import {
 	type MediaRegisterResponse,
 } from '@jasper/api';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { isLoopbackHost } from '../context.ts';
 import { MEDIA_KEY_RE } from '../media/fingerprint.ts';
 import type { MediaRecord } from '../media/registry.ts';
 import { contentTypeFor, serveFile } from '../tools/http.ts';
@@ -31,7 +32,7 @@ export default async function mediaRoutes(app: FastifyInstance): Promise<void> {
 		guarded(async (req) => {
 			// Path registration is a local/desktop feature (S04:SC-002). M1 engines are loopback-only, so it is
 			// always local; a future remote mode must restrict it to configured media roots.
-			if (!core.config.dev && !isLoopback(core.config.host)) {
+			if (!core.config.dev && !isLoopbackHost(core.config.host)) {
 				throw new HttpError(403, 'LOCAL_MODE_ONLY', 'Path registration is only available in local mode');
 			}
 			const body = parseOr400(MediaRegisterRequestSchema, req.body);
@@ -205,8 +206,4 @@ export default async function mediaRoutes(app: FastifyInstance): Promise<void> {
 			);
 		}),
 	);
-}
-
-function isLoopback(host: string): boolean {
-	return ['127.0.0.1', 'localhost', '::1'].includes(host.toLowerCase());
 }

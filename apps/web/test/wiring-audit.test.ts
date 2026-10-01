@@ -1,6 +1,6 @@
 // Wiring audit (WP-3I, ARCHITECTURE §7.2/§7.3): every command id referenced by the default keymap or a menu is
-// either registered or listed here as intentionally absent in M1 (reason per group). A newly unregistered id
-// (typo, dropped registration) fails this test; registering one of the listed ids needs no change here.
+// either registered or listed here as intentionally absent (reason per group). The exception list must
+// only contain missing commands, so implemented features cannot quietly become unregistered again.
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_KEYMAP, getCommand, registerAllCommands } from '../src/commands/index.ts';
 import { PANEL_DEFINITIONS } from '../src/panels/registry.ts';
@@ -20,11 +20,6 @@ const INTENTIONALLY_ABSENT: Record<string, readonly string[]> = {
 		'timeline.paste',
 		'timeline.pasteInsert',
 		'timeline.pasteAttributes',
-	],
-	'transitions (M2)': [
-		'timeline.applyDefaultVideoTransition',
-		'timeline.applyDefaultAudioTransition',
-		'timeline.applyDefaultTransitionsToSelection',
 	],
 	'captions (M2)': [
 		'timeline.addCaptionTrack',
@@ -75,7 +70,6 @@ const INTENTIONALLY_ABSENT: Record<string, readonly string[]> = {
 		'file.revert',
 		'app.quit',
 		'app.keyboardShortcuts',
-		'app.preferences',
 		'app.notices',
 		'project.settings',
 		'project.mediaProperties',
@@ -143,11 +137,7 @@ describe('wiring audit (WP-3I)', () => {
 		}
 	});
 
-	it('every panel kind has exactly one definition with a component', () => {
-		for (const kind of PANEL_KINDS) {
-			const defs = PANEL_DEFINITIONS.filter((d) => d.kind === kind);
-			expect(defs.length, kind).toBe(1);
-			expect(defs[0]!.component, kind).toBeTruthy();
-		}
+	it('intentional exceptions are still unregistered', () => {
+		expect([...ABSENT].filter((id) => getCommand(id))).toEqual([]);
 	});
 });

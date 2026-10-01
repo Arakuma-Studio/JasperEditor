@@ -84,12 +84,7 @@ export function transitionGeom(seq: Sequence, media: MediaRecord, t: Transition)
 		incoming: incoming ? { duration: incoming.duration, head } : null,
 	});
 	const d = Math.max(1, duration);
-	const span =
-		oneSided === 'in'
-			? { start: cut, end: cut + d }
-			: oneSided === 'out'
-				? { start: cut - d, end: cut }
-				: transitionSpan(cut, d, t.alignment);
+	const span = spanOf(cut, d, t.alignment, oneSided);
 	const used = oneSided ? { tail: 0, head: 0 } : handleUse(t.effectId, cut, span.start, span.end);
 	return {
 		t,
@@ -145,9 +140,9 @@ export function transitionsInRange(
 // ---------------------------------------------------------------- px geometry and hit-testing
 
 /** Minimum hit width so 1–2 px transitions at low zoom stay selectable (S10 §8 test 1). */
-export const MIN_HIT_PX = 3;
+const MIN_HIT_PX = 3;
 /** TUI-010: edge zones at both ends of the transition rect. */
-export const EDGE_ZONE_PX = 4;
+const EDGE_ZONE_PX = 4;
 /** Name strip of a clip body (ClipView NAME_STRIP_PX); transitions sit below it. */
 const NAME_STRIP = 14;
 
@@ -157,7 +152,7 @@ export function transitionBand(rowHeight: number): { top: number; height: number
 	return { top, height: Math.max(4, rowHeight - 1 - 2 - top) };
 }
 
-export type TransitionRect = { x: number; w: number; top: number; height: number };
+type TransitionRect = { x: number; w: number; top: number; height: number };
 
 export function transitionRect(g: TransitionGeom, v: Viewport, rowHeight: number): TransitionRect {
 	const x = frameToX(v, g.start);
@@ -174,7 +169,7 @@ export function resizableEdges(g: TransitionGeom): { start: boolean; end: boolea
 	return { start: true, end: true };
 }
 
-export type TransitionZone = 'start' | 'end' | 'body';
+type TransitionZone = 'start' | 'end' | 'body';
 export type TransitionHit = { geom: TransitionGeom; zone: TransitionZone };
 
 /**
@@ -231,7 +226,7 @@ export function hitTransition(
 
 // ---------------------------------------------------------------- gestures (TUI-012/013)
 
-export type EdgeDragResult = { duration: number; alignment: Alignment };
+type EdgeDragResult = { duration: number; alignment: Alignment };
 
 /**
  * Edge drag → requested duration and alignment (before `fitTransitionDuration`, which the handler
@@ -284,7 +279,7 @@ export function bodyDragAlignment(
 }
 
 /** Span of a would-be transition (fades sit inside the clip at its edge). */
-export function spanOf(
+function spanOf(
 	cut: number,
 	duration: number,
 	alignment: Alignment,
@@ -298,9 +293,9 @@ export function spanOf(
 // ---------------------------------------------------------------- drop resolution (TUI-021…024)
 
 /** ±px band around an edit point where the drop targets the cut itself. */
-export const DROP_BAND_PX = 12;
+const DROP_BAND_PX = 12;
 
-export type HandleFeedback = {
+type HandleFeedback = {
 	/** Requested span (default duration) and what fits (`fitTransitionDuration`). */
 	wanted: { start: number; end: number };
 	fitted: { start: number; end: number } | null;

@@ -2,13 +2,13 @@
 // locally in a temporary "remote" directory (protocol, resume, cancel, cleanup, errors). With
 // JASPER_TEST_SSH=user@host[:port] (e.g. a local sshd or a Docker container with this user's key) the same
 // flow also runs over real SSH. No GPU: CUDA is reported unavailable and ONNX runs on the CPU.
-import { spawnSync } from 'node:child_process';
 import {
 	chmodSync,
 	existsSync,
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
+	rmSync,
 	statSync,
 	writeFileSync,
 } from 'node:fs';
@@ -117,6 +117,8 @@ afterAll(async () => {
 	for (const k of ['JASPER_SSH', 'JASPER_SCP', 'JASPER_RSYNC', 'SSH_SHIM_LOG', 'JASPER_REMOTE_NPM'])
 		delete process.env[k];
 	await closeApps();
+	if (shimDir) rmSync(shimDir, { recursive: true, force: true });
+	if (remoteDir) rmSync(remoteDir, { recursive: true, force: true });
 });
 
 describe('remote executor (shims)', () => {
@@ -225,9 +227,6 @@ describe('remote executor (shims)', () => {
 
 	it('an interrupted upload resumes (rsync --partial --inplace)', async () => {
 		const big = join(shimDir, 'big.bin');
-		spawnSync('head', ['-c', String(24 * 1024 * 1024), '/dev/urandom'], {
-			stdio: ['ignore', 'pipe', 'ignore'],
-		});
 		writeFileSync(big, Buffer.alloc(24 * 1024 * 1024, 7));
 		// A slow rsync for the first attempt.
 		const slow = writeShim('rsync-slow', '#!/usr/bin/env bash\nexec rsync --bwlimit=4000 "$@"\n');

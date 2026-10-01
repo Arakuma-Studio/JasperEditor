@@ -92,11 +92,10 @@ export function TimecodeField(props: TimecodeFieldProps) {
 			// Keep the old value and flash the display red once.
 			setEditing(false);
 			setInvalid(true);
-			return false;
+			return;
 		}
 		setEditing(false);
 		props.onCommit?.(parsed);
-		return true;
 	};
 
 	const onKey = (e: KeyboardEvent<HTMLInputElement>) => {

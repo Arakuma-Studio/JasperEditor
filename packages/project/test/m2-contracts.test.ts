@@ -1,5 +1,5 @@
 // M2 shared contracts (ARCHITECTURE §19): LUTs, colour-run fusion, homographies / corner pin, the v3 schema
-// additions and the M2 command stubs.
+// additions.
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,7 +13,6 @@ import {
 	bakeLut,
 	boxToQuad,
 	buildRenderSnapshot,
-	COMMAND_CATALOG,
 	CORNER_PIN_EFFECT_ID,
 	CubeParseError,
 	colorRunKey,
@@ -298,19 +297,5 @@ describe('homographies and corner pin (S09:TRK-050)', () => {
 		h2.ok([{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V1', color: [1, 0, 0, 1] }]);
 		const s2 = buildRenderSnapshot(h2.doc, h2.seqId, { resolveMedia: () => null, resolveFont: () => null });
 		expect(resolveSceneAt(s2, 0)[0]!.props.projective).toBeNull();
-	});
-});
-
-describe('M2 command stubs (ARCHITECTURE §19.8)', () => {
-	it('are registered with their work package and refuse until implemented', () => {
-		expect(COMMAND_CATALOG['tracker.apply'].owner).toBe('wp-m2-track');
-		expect(COMMAND_CATALOG['tracker.apply'].milestone).toBe('M2');
-		expect(COMMAND_CATALOG['media.derive'].owner).toBe('wp-m2-process');
-		expect(COMMAND_CATALOG['clip.addComposition'].owner).toBe('wp-m2-mg');
-		// tracker.* is implemented (wp-m2-track): an unknown tracker is a plain E_NOT_FOUND.
-		const h = new Harness();
-		const r = h.tx([{ type: 'tracker.remove', trackerIds: ['tkr_0000000000000001'] }]);
-		expect(r.ok).toBe(false);
-		if (!r.ok) expect(r.errors[0]!.code).toBe('E_NOT_FOUND');
 	});
 });

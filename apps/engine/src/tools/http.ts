@@ -58,7 +58,7 @@ function emptyBody(): Readable {
 	return Readable.from([]);
 }
 
-export type ByteRange = { start: number; end: number };
+type ByteRange = { start: number; end: number };
 
 /**
  * Parses a `Range` header for a resource of `size` bytes. Returns `null` (serve the whole file) for a
@@ -81,7 +81,7 @@ export function parseRange(header: string | undefined, size: number): ByteRange 
 	return { start, end };
 }
 
-export type ServeFileOptions = {
+type ServeFileOptions = {
 	contentType?: string;
 	/** `immutable` for content-addressed artifacts; `revalidate` (no-cache + ETag) for originals. */
 	cache: 'immutable' | 'revalidate' | 'none';

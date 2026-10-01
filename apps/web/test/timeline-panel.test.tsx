@@ -1,6 +1,8 @@
 // Component tests for the Timeline and Tools panels (happy-dom): virtualization on a 3 000-clip /
 // 40-track sequence, playhead moves without React re-renders (TL-155), tool switching by key.
 import { EngineClient } from '@jasper/engine-client';
+import { checkInvariants } from '@jasper/project';
+import { EditorSession } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { Profiler } from 'react';
@@ -22,27 +24,38 @@ afterEach(() => cleanup());
 
 function bigSession() {
 	const { session, seqId } = makeSession();
-	session.apply({
-		label: 'tracks',
-		origin: 'user',
-		sequenceId: seqId,
-		commands: [{ type: 'track.add', kind: 'video', count: 37 }] as never[],
-	});
-	const commands: unknown[] = [];
-	for (let t = 0; t < 40; t++)
-		for (let i = 0; i < 75; i++) commands.push(solid(i * 25 + (t % 5), 20, `V${t + 1}`));
 	const r = session.apply({
-		label: 'fill',
+		label: 'fixture',
 		origin: 'user',
 		sequenceId: seqId,
-		commands: commands as never[],
+		commands: [{ type: 'track.add', kind: 'video', count: 37 }, solid(0, 20, 'V1')] as never[],
 	});
-	if (!r.ok) throw new Error(JSON.stringify(r.errors.slice(0, 2)));
-	return { session, seqId };
+	if (!r.ok) throw new Error(JSON.stringify(r.errors));
+	// Rendering needs a large valid document; thousands of placement commands only repeat handler work.
+	const document = structuredClone(session.getCommitted());
+	const seq = document.sequences[seqId]!;
+	const template = Object.values(seq.clips)[0]!;
+	seq.clips = {};
+	for (let t = 0; t < seq.videoTracks.length; t++) {
+		for (let i = 0; i < 75; i++) {
+			const id = session.ctx.ids.next('clp');
+			seq.clips[id] = {
+				...structuredClone(template),
+				id,
+				trackId: seq.videoTracks[t]!.id,
+				start: i * 25 + (t % 5),
+			};
+		}
+	}
+	expect(checkInvariants(document)).toEqual([]);
+	return {
+		session: new EditorSession({ projectId: document.projectId, document, ctx: session.ctx }),
+		seqId,
+	};
 }
 
 describe('Timeline panel rendering', () => {
-	it('renders 3 000 clips on 40 tracks with virtualization; the playhead moves without React re-renders', async () => {
+	it('virtualizes and scrolls 3 000 clips on 40 tracks; the playhead moves without React re-renders', async () => {
 		const { session, seqId } = bigSession();
 		expect(Object.keys(session.getCommitted().sequences[seqId]!.clips)).toHaveLength(3000);
 		let commits = 0;
@@ -66,15 +79,7 @@ describe('Timeline panel rendering', () => {
 		expect(playhead.style.transform).not.toBe(t0);
 		expect(playhead.style.transform).toBe(`translateX(${360 * 2}px)`);
 		expect(screen.getByTestId('timeline-timecode').textContent).toBe('00:00:12:00');
-	}, 60_000);
 
-	it('scrolling mounts a different window of clips (TL-151)', async () => {
-		const { session, seqId } = bigSession();
-		render(
-			<SessionProvider session={session}>
-				<TimelinePanel instanceId="timeline-2" visible />
-			</SessionProvider>,
-		);
 		const ids = () =>
 			new Set([...document.querySelectorAll('[data-clip-id]')].map((e) => e.getAttribute('data-clip-id')));
 		const a = ids();

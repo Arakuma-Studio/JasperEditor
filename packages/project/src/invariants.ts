@@ -2,10 +2,11 @@
 // locked tracks never shift, so there is no invariant about them) and conservative load-time repairs
 // (S01:PER-004).
 import type { Issue } from './commands/types.ts';
+import { clipEnd } from './derive/index.ts';
 import { createTrack } from './factories.ts';
 import { type IdPrefix, type IdSource, idPrefixOf, isValidId } from './ids.ts';
 import type { EffectRegistry } from './registry/effects.ts';
-import { contentDurationFlicks, isBoundedContent, kindCapabilities, trackKindFor } from './registry/kinds.ts';
+import { contentDurationFlicks, isBoundedContent, trackKindFor } from './registry/kinds.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import type { Clip, EffectInstance, Sequence, Track } from './schema/sequence.ts';
 import { isKnownClipKind } from './schema/sequence.ts';
@@ -51,20 +52,18 @@ function valueShape(v: unknown): string {
 	return typeof v;
 }
 
-const clipEnd = (c: Clip) => c.start + c.duration;
-
 export type InvariantOptions = { effects?: EffectRegistry };
 
 export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {}): Issue[] {
 	const issues: Issue[] = [];
-	const seen = new Map<string, string>();
+	const seen = new Set<string>();
 	const claim = (id: string, prefix: IdPrefix | IdPrefix[], where: string[]) => {
 		const prefixes = Array.isArray(prefix) ? prefix : [prefix];
 		if (!isValidId(id) || !prefixes.includes(idPrefixOf(id)!)) {
 			issues.push(inv('INV-001', `Malformed id ${id} (expected ${prefixes.join('/')}_…)`, where));
 		}
 		if (seen.has(id)) issues.push(inv('INV-001', `Duplicate id ${id}`, where));
-		else seen.set(id, where.join('.'));
+		else seen.add(id);
 	};
 
 	// INV-001: ids, record keys
@@ -477,7 +476,6 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 		if (!usedTrs.has(t.id) && !(t.mediaId && usedMedia.has(t.mediaId)))
 			issues.push(inv('INV-014', `Transcript ${t.id} is not referenced`, ['transcripts', t.id]));
 	}
-	void kindCapabilities;
 	return issues;
 }
 

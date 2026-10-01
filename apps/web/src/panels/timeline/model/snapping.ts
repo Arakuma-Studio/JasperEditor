@@ -5,8 +5,8 @@ export type SnapKind = 'playhead' | 'marker' | 'inout' | 'clip' | 'zero';
 export type SnapTarget = { frame: number; kind: SnapKind; priority: number; sourceId?: string };
 
 /** TL-453 tie-break priority: playhead > marker > In/Out > clip edge > frame 0. */
-export const SNAP_PRIORITY: Record<SnapKind, number> = { playhead: 5, marker: 4, inout: 3, clip: 2, zero: 1 };
-export const SNAP_THRESHOLD_PX = 8;
+const SNAP_PRIORITY: Record<SnapKind, number> = { playhead: 5, marker: 4, inout: 3, clip: 2, zero: 1 };
+const SNAP_THRESHOLD_PX = 8;
 
 /** Collects targets at gesture begin, excluding the manipulated clips (and their partners) (TL-451). */
 export function collectSnapTargets(

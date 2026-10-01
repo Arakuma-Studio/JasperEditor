@@ -4,27 +4,13 @@ import { mgRegistry } from '@jasper/mg-templates';
 import { defaultRegistries } from '@jasper/project';
 import type { FastifyInstance } from 'fastify';
 import { AgentApiError, AgentService, type StillCaptureRequest } from './service.ts';
-import { type AgentProjectStore, FsAgentProjectStore } from './store.ts';
+import type { AgentProjectStore } from './store.ts';
 
 export * from './approvals.ts';
 export * from './revisions.ts';
 export * from './service.ts';
 export * from './sessions.ts';
 export * from './store.ts';
-
-/** Service keys on `app.jasper.services` (ARCHITECTURE §9.1: wave-2 services register there). */
-export const AGENT_SERVICE_KEY = 'agent';
-/** Optional override of the headless project store (e.g. an adapter over WP-2F's store). */
-export const AGENT_STORE_KEY = 'agentStore';
-/** Event fan-out used for `/events` (WP-2F's broadcaster): `{ publish(type, payload, projectId?) }`. */
-export const EVENTS_SERVICE_KEY = 'events';
-
-type EventsLike = { publish?: (type: string, payload: unknown, projectId?: string) => unknown };
-
-export function isAgentProjectStore(v: unknown): v is AgentProjectStore {
-	const s = v as AgentProjectStore | undefined;
-	return typeof s?.load === 'function' && typeof s?.save === 'function';
-}
 
 /** Polls an engine job through the app's own routes until it finishes. */
 async function waitForJob(
@@ -64,7 +50,6 @@ function fromInject(status: number, body: string): AgentApiError {
 /** Creates the agent service for an engine instance and registers it as `services.agent`. */
 export function createAgentService(app: FastifyInstance): AgentService {
 	const { config, services } = app.jasper;
-	const fsStore = new FsAgentProjectStore(config.paths);
 	const internalHeaders = (): Record<string, string> => ({
 		host: `127.0.0.1:${config.port}`,
 		...(config.token ? { authorization: `Bearer ${config.token}` } : {}),
@@ -72,10 +57,10 @@ export function createAgentService(app: FastifyInstance): AgentService {
 	const service = new AgentService({
 		engineVersion: config.version,
 		registries: defaultRegistries(mgRegistry),
-		store: () => (isAgentProjectStore(services[AGENT_STORE_KEY]) ? services[AGENT_STORE_KEY] : fsStore),
+		store: () => services.agentStore as AgentProjectStore,
 		publish: (type, payload, projectId) => {
-			const events = services[EVENTS_SERVICE_KEY] as EventsLike | undefined;
-			events?.publish?.(type, payload, projectId);
+			const events = services.events as { publish(type: string, payload: unknown, projectId?: string): void };
+			events.publish(type, payload, projectId);
 		},
 		captureStill: async (req: StillCaptureRequest) => {
 			const headers = { ...internalHeaders(), 'content-type': 'application/json' };
@@ -96,6 +81,6 @@ export function createAgentService(app: FastifyInstance): AgentService {
 			return { jobId: job.id, sequenceId: req.sequenceId, frame: req.frame, ...(result as object) };
 		},
 	});
-	services[AGENT_SERVICE_KEY] = service;
+	services.agent = service;
 	return service;
 }

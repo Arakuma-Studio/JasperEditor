@@ -34,7 +34,7 @@ export type MenuEnv = {
 	disabledReason?: string;
 };
 
-export const CAPABILITY_REASONS: Record<Capability, string> = {
+const CAPABILITY_REASONS: Record<Capability, string> = {
 	engine: 'Requires the engine. Start it with “pnpm dev:engine”.',
 	nativeFfmpeg: 'Requires the native engine. Connect to an engine in Preferences ▸ Engine.',
 	fframes: 'Requires the fframes renderer (jasper-mg) on the engine.',

@@ -37,7 +37,19 @@ export function decodeArgs(s: DecodeSpec): string[] {
 
 /** Starts ffmpeg for `spec`; the child is killed when `opts.signal` aborts. */
 export function spawnDecoder(ff: Ffmpeg, spec: DecodeSpec, opts: SpawnOptions = {}): ChildProcess {
-	return ff.spawnRaw(decodeArgs(spec), opts);
+	const { signal, ...spawnOpts } = opts;
+	const child = ff.spawnRaw(decodeArgs(spec), spawnOpts);
+	if (signal) {
+		// Decoders only produce disposable pipe output. Waiting for FFmpeg's graceful teardown can
+		// exceed the tracking cancellation deadline, especially with buffered frames and decoder threads.
+		const cancel = () => void terminateTree(child, 0);
+		if (signal.aborted) cancel();
+		else {
+			signal.addEventListener('abort', cancel, { once: true });
+			child.once('exit', () => signal.removeEventListener('abort', cancel));
+		}
+	}
+	return child;
 }
 
 /**

@@ -80,8 +80,7 @@ async function planFor(url) {
 		},
 	});
 	if (!tx.result.ok) fail(`tx rejected: ${JSON.stringify(tx.result.errors)}`);
-	const project = await call(url, 'GET', `/api/projects/${projectId}`);
-	const envelope = project.envelope ?? project;
+	const { envelope } = await call(url, 'GET', `/api/projects/${projectId}`);
 	const doc = envelope.document;
 	const sequenceId = Object.keys(doc.sequences)[0];
 	const plan = await call(url, 'POST', '/api/exports/plan', {

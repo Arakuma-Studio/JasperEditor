@@ -14,7 +14,7 @@ import {
 import { anim, type Box, defaultTransform } from '../../factories.ts';
 import type { MgCompositionInfo } from '../../schema/media.ts';
 import type { Clip, CompositionClip } from '../../schema/sequence.ts';
-import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
+import type { DClip, DDoc, HandlerContext } from '../context.ts';
 import {
 	assertKindFits,
 	assertUnlocked,
@@ -29,16 +29,12 @@ import type { HandlerMap } from './util.ts';
 
 type DComp = Draft<CompositionClip>;
 
-const isPlainObject = (v: unknown): v is Record<string, unknown> =>
-	!!v && typeof v === 'object' && !Array.isArray(v);
-
 /** The composition of an mg-bundle asset, or a command error naming what is missing. */
-export function requireComposition(
+function requireComposition(
 	doc: DDoc,
-	ref: { mediaId?: string; id: string },
+	ref: { mediaId: string; id: string },
 	h: HandlerContext,
 ): MgCompositionInfo {
-	if (!ref.mediaId) return h.fail('E_INVALID_PARAM', 'composition.mediaId (the mg-bundle asset) is required');
 	const asset = doc.media[ref.mediaId];
 	if (!asset) return h.fail('E_NOT_FOUND', `Media not found: ${ref.mediaId}`);
 	if (asset.kind !== 'mg-bundle' || !asset.mgBundle)
@@ -92,7 +88,6 @@ export function setCompositionProp(
  */
 export function applyCompositionPatch(
 	doc: DDoc,
-	seq: DSeq,
 	clip: DClip,
 	p: Pick<ClipPatch, 'props' | 'canvas' | 'params'>,
 	h: HandlerContext,
@@ -105,15 +100,11 @@ export function applyCompositionPatch(
 		);
 	const c = clip as DComp;
 	if (p.props !== undefined) {
-		if (!isPlainObject(p.props)) h.fail('E_INVALID_PARAM', 'props must be an object of overrides');
 		const found = compositionOfClip(doc as never, c as unknown as Clip);
 		if (found) checkProps(found.info as MgCompositionInfo, p.props, h);
 		c.props = JSON.parse(JSON.stringify(p.props)) as never;
 	}
-	if (p.canvas !== undefined) {
-		c.canvas = p.canvas as never;
-		void seq;
-	}
+	if (p.canvas !== undefined) c.canvas = p.canvas as never;
 	return true;
 }
 
@@ -121,7 +112,6 @@ export const compositionHandlers: HandlerMap = {
 	'clip.addComposition': (doc, cmd: CommandOf<'clip.addComposition'>, h: HandlerContext) => {
 		const info = requireComposition(doc, cmd.composition, h);
 		const overrides = cmd.props ?? {};
-		if (!isPlainObject(overrides)) h.fail('E_INVALID_PARAM', 'props must be an object of overrides');
 		checkProps(info, overrides, h);
 		const seq = h.sequence(doc, cmd.sequenceId);
 		const rate = seq.settings.frameRate;

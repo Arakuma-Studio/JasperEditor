@@ -88,7 +88,6 @@ export function setupTimeline(opts: { pxPerFrame?: number; scrollFrame?: number 
 		return {
 			viewport: { scrollFrame: v.scrollFrame, pxPerFrame: v.pxPerFrame, width: WIDTH },
 			layout: computeLayout({
-				width: WIDTH,
 				height: HEIGHT,
 				dividerRatio: v.dividerRatio,
 				videoTracks: seq.videoTracks,

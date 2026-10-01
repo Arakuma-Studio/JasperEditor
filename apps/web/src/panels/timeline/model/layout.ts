@@ -2,14 +2,14 @@
 // The video region is bottom-aligned (V1 sits on the divider, tracks grow upward); the audio region is
 // top-aligned (A1 under the divider, tracks grow downward). Each region scrolls on its own.
 
-export const DIVIDER_PX = 4;
-export const MASTER_ROW_PX = 28;
-export const TRACK_MIN_PX = 20;
-export const TRACK_MAX_PX = 240;
+const DIVIDER_PX = 4;
+const MASTER_ROW_PX = 28;
+const TRACK_MIN_PX = 20;
+const TRACK_MAX_PX = 240;
 export const DEFAULT_VIDEO_PX = 32;
 export const DEFAULT_AUDIO_PX = 40;
 /** TL-263 height steps. */
-export const HEIGHT_STEPS = [20, 32, 48, 72, 108, 160, 240] as const;
+const HEIGHT_STEPS = [20, 32, 48, 72, 108, 160, 240] as const;
 
 export type RegionKind = 'video' | 'audio';
 
@@ -28,15 +28,11 @@ export type RegionLayout = {
 	/** Region top in track-area coordinates and visible height. */
 	top: number;
 	height: number;
-	/** Total content height of the rows (excluding the master row for audio). */
-	contentHeight: number;
-	scroll: number;
 	maxScroll: number;
 	rows: TrackRow[];
 };
 
 export type TrackAreaLayout = {
-	width: number;
 	height: number;
 	video: RegionLayout;
 	audio: RegionLayout;
@@ -62,7 +58,6 @@ export function stepHeight(h: number, dir: 1 | -1): number {
 }
 
 export function computeLayout(opts: {
-	width: number;
 	height: number;
 	dividerRatio: number;
 	videoTracks: readonly { id: string }[];
@@ -114,15 +109,12 @@ export function computeLayout(opts: {
 	});
 
 	return {
-		width: opts.width,
 		height: opts.height,
 		dividerTop,
 		video: {
 			kind: 'video',
 			top: 0,
 			height: vh,
-			contentHeight: vContent,
-			scroll: vScroll,
 			maxScroll: vMax,
 			// Top → bottom (V_n first, V1 last).
 			rows: videoRows,
@@ -131,8 +123,6 @@ export function computeLayout(opts: {
 			kind: 'audio',
 			top: audioTop,
 			height: ah,
-			contentHeight: aContent,
-			scroll: aScroll,
 			maxScroll: aMax,
 			rows: audioRows,
 		},
@@ -149,7 +139,7 @@ export function visibleRows(region: RegionLayout): TrackRow[] {
 	return rows.filter((_, i) => hit[i] || hit[i - 1] || hit[i + 1]);
 }
 
-export type YHit =
+type YHit =
 	| { kind: 'track'; row: TrackRow }
 	| { kind: 'above-video'; region: 'video'; index: number }
 	| { kind: 'below-audio'; region: 'audio'; index: number }

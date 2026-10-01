@@ -1,5 +1,4 @@
-// Engine context shared by route plugins. Wave-2 packages add their services here additively
-// (optional fields), so plugins can depend on them without touching server.ts.
+// Engine configuration and service context shared by route plugins.
 import type { AppdirPaths } from '@jasper/config';
 
 export type EngineConfig = {
@@ -22,6 +21,12 @@ export type EngineContext = {
 	/** Optional services registered by wave-2 packages (jobs, media registry, events, mg, agent…). */
 	services: Record<string, unknown>;
 };
+
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
+
+export function isLoopbackHost(host: string): boolean {
+	return LOOPBACK_HOSTS.has(host.toLowerCase());
+}
 
 declare module 'fastify' {
 	interface FastifyInstance {

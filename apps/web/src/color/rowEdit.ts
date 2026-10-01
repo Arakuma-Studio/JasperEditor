@@ -6,14 +6,13 @@ import { useRef } from 'react';
 import { editLabel, planSet, type Row } from '../panels/properties/lib/model.ts';
 import type { InspectorOps } from '../panels/properties/lib/ops.ts';
 
-export type RowWriter = {
+type RowWriter = {
 	/** One transaction. */
 	commit(value: unknown): void;
 	/** Starts a gesture; false when another gesture is running. */
 	begin(): boolean;
 	update(value: unknown): void;
 	end(cancelled: boolean): void;
-	readonly active: boolean;
 };
 
 export type RowWriteContext = {
@@ -26,13 +25,10 @@ export type RowWriteContext = {
 
 const OUTSIDE_HINT = 'Move the playhead over the clip to add a keyframe';
 
-export function createRowWriter(getRow: () => Row, ctx: RowWriteContext, label?: string): RowWriter {
+function createRowWriter(getRow: () => Row, ctx: RowWriteContext, label?: string): RowWriter {
 	let base: Row | null = null;
 	const labelOf = (row: Row) => label ?? editLabel(row, row.bindings.length);
 	return {
-		get active() {
-			return base !== null;
-		},
 		commit(value) {
 			const row = getRow();
 			const plan = planSet(row, ctx.live(), () => value);

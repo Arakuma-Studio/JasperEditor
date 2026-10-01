@@ -5,18 +5,7 @@
 // poster under `<appdir>/mg/<renderKey>/`), posters of the Motion Templates panel and GC.
 import { createHash } from 'node:crypto';
 import { existsSync, type FSWatcher, watch as fsWatch } from 'node:fs';
-import {
-	cp,
-	mkdir,
-	readdir,
-	readFile,
-	realpath,
-	rename,
-	rm,
-	stat,
-	utimes,
-	writeFile,
-} from 'node:fs/promises';
+import { cp, mkdir, readdir, realpath, rename, rm, stat } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import type {
 	EngineJob,
@@ -58,7 +47,6 @@ export const MG_BUNDLE_SLOTS = 4;
 export const MG_RENDER_TTL_MS = 14 * 24 * 3600 * 1000;
 export const MG_DELAY_RENDER_TIMEOUT_MS = 60_000;
 const KEY_RE = /^[0-9a-f]{40}$/;
-const HASH_RE = /^[0-9a-f]{64}$/;
 const MEDIA_KEY_RE = /^mk_[0-9a-f]{24}$/;
 
 /** Engine media key of a bundle: `mk_` + 24 hex of its content hash (ARCHITECTURE D-09). */
@@ -106,7 +94,6 @@ type Watch = {
 	key: string;
 	watchers: FSWatcher[];
 	timer: NodeJS.Timeout | null;
-	rebuilding: boolean;
 };
 
 type RenderMeta = {
@@ -441,7 +428,6 @@ export class MgBundleService {
 		await checkRemotionVersion(dir, pkg);
 		ctx.progress(0.05, { stage: 'Bundling (remotion bundle)' });
 		await mkdir(this.logsDir, { recursive: true });
-		let pct = 0.05;
 		await bundleProject(dir, out, {
 			signal: ctx.signal,
 			logFile: join(this.logsDir, `${ctx.job.id}.log`),
@@ -449,8 +435,7 @@ export class MgBundleService {
 			onLog: (line) => {
 				const m = /Bundling\s+(\d+)%/.exec(line);
 				if (m) {
-					pct = 0.05 + (Number(m[1]) / 100) * 0.55;
-					ctx.progress(pct, { stage: `Bundling ${m[1]}%` });
+					ctx.progress(0.05 + (Number(m[1]) / 100) * 0.55, { stage: `Bundling ${m[1]}%` });
 				}
 				ctx.log(line);
 			},
@@ -631,7 +616,7 @@ export class MgBundleService {
 			if (persist) await this.saveWatches();
 			return;
 		}
-		const w: Watch = { dir, key, watchers: [], timer: null, rebuilding: false };
+		const w: Watch = { dir, key, watchers: [], timer: null };
 		const trigger = () => {
 			if (w.timer) clearTimeout(w.timer);
 			w.timer = setTimeout(() => {
@@ -1172,25 +1157,5 @@ export class MgBundleService {
 			}
 		}
 		return removed;
-	}
-
-	/** Test hook: ages a render directory. */
-	async ageRender(renderKey: string, lastUsedAt: string): Promise<void> {
-		const file = join(this.renderDir(renderKey), 'meta.json');
-		const meta = await readJsonOrNull<RenderMeta>(file);
-		if (!meta) return;
-		meta.lastUsedAt = lastUsedAt;
-		await writeFile(file, JSON.stringify(meta));
-		await utimes(file, new Date(lastUsedAt), new Date(lastUsedAt)).catch(() => undefined);
-	}
-
-	/** Reads a bundle's index.html (for the host page). */
-	async indexHtml(key: string): Promise<string | null> {
-		const dir = this.bundleDir(key);
-		return dir ? readFile(join(dir, 'index.html'), 'utf8') : null;
-	}
-
-	static isHash(s: string): boolean {
-		return HASH_RE.test(s);
 	}
 }

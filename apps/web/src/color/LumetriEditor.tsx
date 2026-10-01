@@ -27,7 +27,7 @@ import { WheelField } from './controls/WheelField.tsx';
 import { curvePoints, curveValue, isIdentityPoints, lumetriRow } from './model.ts';
 import { type RowWriteContext, useRowWriter } from './rowEdit.ts';
 
-export type LumetriEditorProps = {
+type LumetriEditorProps = {
 	session: EditorSession;
 	doc: ProjectDocument;
 	seq: Sequence;

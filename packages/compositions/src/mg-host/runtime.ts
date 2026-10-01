@@ -1,10 +1,10 @@
 // Preview runtime of composition clips (M2, S08:MGC-020…025). The composition stays a pure function of its
 // props; what it cannot know from the snapshot — which VP9-alpha previews are cached for the clips' current
 // props, how many live frame hosts may run — comes from a runtime the host app installs (the web app's
-// apps/web/src/mg-bundles/runtime.ts) through `setCompositionPreviewRuntime`, or from a React provider.
+// apps/web/src/mg-bundles/runtime.ts) through `setCompositionPreviewRuntime`.
 // Engine renders never use it (they get `prerender.masterUrl` in the snapshot).
 import type { RenderCompositionSource, RenderVisualClip } from '@jasper/project';
-import { createContext, useContext, useSyncExternalStore } from 'react';
+import { useSyncExternalStore } from 'react';
 
 /** A cached preview of a clip: VP9 alpha WebM covering composition frames `startFrame…` at the sequence rate. */
 export type CompositionPreview = { url: string; startFrame: number; durationFrames: number };
@@ -37,24 +37,16 @@ export function setCompositionPreviewRuntime(r: CompositionPreviewRuntime | null
 	for (const l of listeners) l();
 }
 
-export function getCompositionPreviewRuntime(): CompositionPreviewRuntime | null {
-	return installed;
-}
-
-/** Overrides the installed runtime for a subtree (tests, a second monitor). */
-export const CompositionPreviewContext = createContext<CompositionPreviewRuntime | null>(null);
-
-const noopSubscribe = (cb: () => void) => {
+const subscribeRuntime = (cb: () => void) => {
 	listeners.add(cb);
 	return () => listeners.delete(cb);
 };
 
 /** The runtime in effect and a version that changes whenever it notifies. */
 export function useCompositionPreviewRuntime(): CompositionPreviewRuntime | null {
-	const fromContext = useContext(CompositionPreviewContext);
-	const rt = fromContext ?? installed;
+	const rt = installed;
 	useSyncExternalStore(
-		rt ? rt.subscribe : noopSubscribe,
+		rt ? rt.subscribe : subscribeRuntime,
 		() => (rt ? rt.version() : 0),
 		() => 0,
 	);

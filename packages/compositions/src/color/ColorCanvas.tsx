@@ -24,7 +24,6 @@ import {
 export type ColorCanvasHandle = {
 	/** Draws a source picture through the chain (resolves false when superseded by a newer draw). */
 	draw(source: CanvasImageSource): Promise<boolean>;
-	canvas(): HTMLCanvasElement | null;
 };
 
 export type ColorCanvasProps = {
@@ -83,7 +82,7 @@ export const ColorCanvas = forwardRef<ColorCanvasHandle, ColorCanvasProps>(funct
 		[chain, memoized, width, height, rendering],
 	);
 
-	useImperativeHandle(ref, () => ({ draw, canvas: () => canvasRef.current }), [draw]);
+	useImperativeHandle(ref, () => ({ draw }), [draw]);
 
 	// Declarative source, and redraw of the last source when the passes change (paused preview edits).
 	useEffect(() => {

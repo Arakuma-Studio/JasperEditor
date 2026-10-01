@@ -1,5 +1,5 @@
 // Project panel operations as document transactions (S01 §5, §16.2; S05:PRJ-003/006/007).
-import { clipsInRange, type LabelColor, type ProjectDocument, type RGBA } from '@jasper/project';
+import { clipsInRange, type LabelColor, type ProjectDocument } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import type { CommandCtx } from '../../commands/types.ts';
 import { notices } from '../../home/notices.tsx';
@@ -9,7 +9,7 @@ import { isInside } from './model.ts';
 
 const fail = (message: string, detail?: string) => notices.push({ kind: 'error', message, detail });
 
-export function nextBinName(doc: ProjectDocument): string {
+function nextBinName(doc: ProjectDocument): string {
 	const taken = new Set(
 		Object.values(doc.items)
 			.filter((i) => i.kind === 'bin')
@@ -134,40 +134,11 @@ export async function openItem(
 	}
 }
 
-/** Color mattes need `synthetic.create` (M2); the New Item entry is hidden while it is not implemented. */
-export function colorMatteSupported(session: EditorSession): boolean {
-	const r = session.apply({
-		label: 'probe',
-		origin: 'user',
-		dryRun: true,
-		commands: [
-			{ type: 'synthetic.create', kind: 'color-matte', params: { color: [0, 0, 0, 1] }, name: 'Color Matte' },
-		],
-	});
-	return r.ok;
-}
-
-export function createColorMatte(
-	session: EditorSession,
-	binId: string | null,
-	color: RGBA = [0, 0, 0, 1],
-): void {
-	const r = session.apply({
-		label: 'New Color Matte',
-		origin: 'user',
-		commands: [
-			{ type: 'synthetic.create', kind: 'color-matte', params: { color }, binId, name: 'Color Matte' },
-		],
-	});
-	if (!r.ok) fail('Could not create the color matte', r.errors[0]?.message);
-}
-
 /**
- * New Item ▸ Text: the graphics command when a package registered one, else a 5 s text clip at the
- * playhead on the lowest video track that is free there (a new track when none is).
+ * New Item ▸ Text: a 5 s text clip at the playhead on the lowest video track that is free there
+ * (a new track when none is).
  */
-export async function createText(session: EditorSession, ctx: CommandCtx): Promise<void> {
-	if (await runIfRegistered('graphics.newText', ctx)) return;
+export function createText(session: EditorSession): void {
 	const state = session.getState();
 	const seqId = state.activeSequenceId;
 	const seq = seqId ? session.getCommitted().sequences[seqId] : undefined;
@@ -191,12 +162,4 @@ export async function createText(session: EditorSession, ctx: CommandCtx): Promi
 		const clipId = (r.results[0] as { clipId?: string } | undefined)?.clipId;
 		if (clipId) session.select('timeline', [clipId], 'replace');
 	}
-}
-
-/** New Item ▸ Motion Graphic: opens the Motion Templates panel when it is registered. */
-export async function openMotionTemplates(ctx: CommandCtx): Promise<boolean> {
-	return (
-		(await runIfRegistered('panel.open.motionTemplates', ctx)) ||
-		(await runIfRegistered('mg.openTemplates', ctx))
-	);
 }

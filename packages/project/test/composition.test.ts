@@ -52,7 +52,7 @@ const BADGE_DEFAULTS = {
 	tags: ['fixture', 'badge'],
 };
 
-export function bundleInfo(over: Partial<MgBundleInfo> = {}): MgBundleInfo {
+function bundleInfo(over: Partial<MgBundleInfo> = {}): MgBundleInfo {
 	const badge = inferPropsSchema(BADGE_DEFAULTS);
 	return {
 		remotionVersion: '4.0.499',
@@ -87,7 +87,7 @@ export function bundleInfo(over: Partial<MgBundleInfo> = {}): MgBundleInfo {
 	};
 }
 
-export function bundleAsset(info: MgBundleInfo = bundleInfo()): Omit<MediaAsset, 'id'> {
+function bundleAsset(info: MgBundleInfo = bundleInfo()): Omit<MediaAsset, 'id'> {
 	return {
 		kind: 'mg-bundle',
 		fingerprint: `q1:${info.bundleHash}`,

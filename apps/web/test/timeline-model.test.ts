@@ -165,7 +165,6 @@ describe('layout (TL-114…116, TL-261…263)', () => {
 	const tracks = (p: string, n: number) => Array.from({ length: n }, (_, i) => ({ id: `${p}${i + 1}` }));
 	it('video is bottom-aligned above the divider, audio top-aligned below it', () => {
 		const l = computeLayout({
-			width: 800,
 			height: 404,
 			dividerRatio: 0.5,
 			videoTracks: tracks('v', 3),
@@ -188,7 +187,6 @@ describe('layout (TL-114…116, TL-261…263)', () => {
 
 	it('virtualizes rows to the visible band plus one', () => {
 		const l = computeLayout({
-			width: 800,
 			height: 204,
 			dividerRatio: 0.5,
 			videoTracks: tracks('v', 40),

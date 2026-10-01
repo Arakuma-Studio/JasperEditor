@@ -1,6 +1,5 @@
-// The complete M1 route table (ARCHITECTURE §9.2). One entry per route: method, path template,
-// request schemas and response kind. The engine validates with it and @jasper/engine-client
-// builds one typed method per entry.
+// Engine route contracts: method, path template, request schemas and response kind.
+// Shared by engine validation and typed calls in @jasper/engine-client.
 import { z } from 'zod';
 import {
 	AgentMcpInfoSchema,
@@ -86,359 +85,355 @@ export type RouteDef = {
 	owner: RouteOwner;
 };
 
-const r = <T extends RouteDef>(d: T) => d;
-const JobQueued = EngineJobSchema;
-const JobsResponse = z.object({ jobs: z.array(EngineJobSchema) });
-
 export const ROUTES = {
-	health: r({ method: 'GET', path: '/health', response: HealthSchema, public: true, owner: 'WP-2F' }),
-	capabilities: r({
+	health: { method: 'GET', path: '/health', response: HealthSchema, public: true, owner: 'WP-2F' },
+	capabilities: {
 		method: 'GET',
 		path: '/api/capabilities',
 		response: EngineCapabilitiesSchema,
 		owner: 'WP-2F',
-	}),
+	},
 	/** Third-party licenses for the About dialog (D-13: FFmpeg license text + source link). */
-	licenses: r({
+	licenses: {
 		method: 'GET',
 		path: '/api/licenses',
 		response: LicensesResponseSchema,
 		owner: 'WP-2F',
-	}),
-	events: r({
+	},
+	events: {
 		method: 'GET',
 		path: '/events',
 		query: z.object({ since: z.string().optional(), projectId: z.string().optional() }),
 		response: 'ndjson',
 		owner: 'WP-2F',
-	}),
+	},
 
-	projectsList: r({
+	projectsList: {
 		method: 'GET',
 		path: '/api/projects',
 		response: ProjectListResponseSchema,
 		owner: 'WP-2F',
-	}),
-	projectsCreate: r({
+	},
+	projectsCreate: {
 		method: 'POST',
 		path: '/api/projects',
 		body: ProjectCreateRequestSchema,
 		response: ProjectCreateResponseSchema,
 		owner: 'WP-2F',
-	}),
-	projectGet: r({
+	},
+	projectGet: {
 		method: 'GET',
 		path: '/api/projects/:projectId',
 		response: ProjectGetResponseSchema,
 		owner: 'WP-2F',
-	}),
-	projectPut: r({
+	},
+	projectPut: {
 		method: 'PUT',
 		path: '/api/projects/:projectId',
 		body: EnvelopeSchema,
 		headers: ['if-match'],
 		response: ProjectPutResponseSchema,
 		owner: 'WP-2F',
-	}),
-	projectPutView: r({
+	},
+	projectPutView: {
 		method: 'PUT',
 		path: '/api/projects/:projectId/view',
 		body: ProjectViewSchema,
 		response: OkSchema,
 		owner: 'WP-2F',
-	}),
-	projectVersions: r({
+	},
+	projectVersions: {
 		method: 'GET',
 		path: '/api/projects/:projectId/versions',
 		response: VersionListResponseSchema,
 		owner: 'WP-2F',
-	}),
-	projectDelete: r({
+	},
+	projectDelete: {
 		method: 'DELETE',
 		path: '/api/projects/:projectId',
 		response: OkSchema,
 		owner: 'WP-2F',
-	}),
-	leaseAcquire: r({
+	},
+	leaseAcquire: {
 		method: 'POST',
 		path: '/api/projects/:projectId/lease',
 		body: LeaseRequestSchema,
 		response: LeaseSchema,
 		owner: 'WP-2F',
-	}),
-	leaseHeartbeat: r({
+	},
+	leaseHeartbeat: {
 		method: 'POST',
 		path: '/api/projects/:projectId/lease/:leaseId/heartbeat',
 		response: LeaseSchema,
 		owner: 'WP-2F',
-	}),
-	leaseRelease: r({
+	},
+	leaseRelease: {
 		method: 'DELETE',
 		path: '/api/projects/:projectId/lease/:leaseId',
 		response: OkSchema,
 		owner: 'WP-2F',
-	}),
+	},
 
-	mediaRegister: r({
+	mediaRegister: {
 		method: 'POST',
 		path: '/api/media/register',
 		body: MediaRegisterRequestSchema,
 		response: MediaRegisterResponseSchema,
 		owner: 'WP-2F',
-	}),
-	uploadCreate: r({
+	},
+	uploadCreate: {
 		method: 'POST',
 		path: '/api/uploads',
 		body: UploadCreateRequestSchema,
 		response: UploadCreateResponseSchema,
 		owner: 'WP-2F',
-	}),
-	uploadAppend: r({
+	},
+	uploadAppend: {
 		method: 'PUT',
 		path: '/api/uploads/:uploadId',
 		query: z.object({ offset: z.string().regex(/^\d+$/) }),
 		body: 'binary',
 		response: UploadAppendResponseSchema,
 		owner: 'WP-2F',
-	}),
-	uploadComplete: r({
+	},
+	uploadComplete: {
 		method: 'POST',
 		path: '/api/uploads/:uploadId/complete',
 		response: RegisteredMediaSchema,
 		owner: 'WP-2F',
-	}),
-	uploadAbort: r({ method: 'DELETE', path: '/api/uploads/:uploadId', response: OkSchema, owner: 'WP-2F' }),
-	mediaStatus: r({
+	},
+	uploadAbort: { method: 'DELETE', path: '/api/uploads/:uploadId', response: OkSchema, owner: 'WP-2F' },
+	mediaStatus: {
 		method: 'GET',
 		path: '/api/media/:mediaKey',
 		response: MediaStatusSchema,
 		owner: 'WP-2F',
-	}),
-	mediaDerivatives: r({
+	},
+	mediaDerivatives: {
 		method: 'POST',
 		path: '/api/media/:mediaKey/derivatives',
 		body: DerivativesRequestSchema,
-		response: JobsResponse,
+		response: JobListResponseSchema,
 		owner: 'WP-2F',
-	}),
-	mediaFile: r({ method: 'GET', path: '/media/:mediaKey', response: 'binary', owner: 'WP-2F' }),
-	mediaProxy: r({ method: 'GET', path: '/media/:mediaKey/proxy/:tier', response: 'binary', owner: 'WP-2F' }),
-	mediaPoster: r({ method: 'GET', path: '/media/:mediaKey/poster.jpg', response: 'binary', owner: 'WP-2F' }),
-	mediaSpriteIndex: r({
+	},
+	mediaFile: { method: 'GET', path: '/media/:mediaKey', response: 'binary', owner: 'WP-2F' },
+	mediaProxy: { method: 'GET', path: '/media/:mediaKey/proxy/:tier', response: 'binary', owner: 'WP-2F' },
+	mediaPoster: { method: 'GET', path: '/media/:mediaKey/poster.jpg', response: 'binary', owner: 'WP-2F' },
+	mediaSpriteIndex: {
 		method: 'GET',
 		path: '/media/:mediaKey/sprite.json',
 		response: 'binary',
 		owner: 'WP-2F',
-	}),
-	mediaSpriteSheet: r({
+	},
+	mediaSpriteSheet: {
 		method: 'GET',
 		path: '/media/:mediaKey/sprite/:sheet',
 		response: 'binary',
 		owner: 'WP-2F',
-	}),
-	mediaPeaksHeader: r({
+	},
+	mediaPeaksHeader: {
 		method: 'GET',
 		path: '/media/:mediaKey/peaks.json',
 		response: 'binary',
 		owner: 'WP-2F',
-	}),
-	mediaPeaksStream: r({
+	},
+	mediaPeaksStream: {
 		method: 'GET',
 		path: '/media/:mediaKey/peaks/:stream',
 		response: 'binary',
 		owner: 'WP-2F',
-	}),
+	},
 
-	jobsList: r({
+	jobsList: {
 		method: 'GET',
 		path: '/api/jobs',
 		query: JobListQuerySchema,
 		response: JobListResponseSchema,
 		owner: 'WP-2F',
-	}),
-	jobGet: r({ method: 'GET', path: '/api/jobs/:jobId', response: EngineJobSchema, owner: 'WP-2F' }),
-	jobCancel: r({
+	},
+	jobGet: { method: 'GET', path: '/api/jobs/:jobId', response: EngineJobSchema, owner: 'WP-2F' },
+	jobCancel: {
 		method: 'POST',
 		path: '/api/jobs/:jobId/cancel',
 		response: EngineJobSchema,
 		owner: 'WP-2F',
-	}),
-	jobRetry: r({ method: 'POST', path: '/api/jobs/:jobId/retry', response: EngineJobSchema, owner: 'WP-2F' }),
+	},
+	jobRetry: { method: 'POST', path: '/api/jobs/:jobId/retry', response: EngineJobSchema, owner: 'WP-2F' },
 
-	exportPlan: r({
+	exportPlan: {
 		method: 'POST',
 		path: '/api/exports/plan',
 		body: ExportPlanRequestSchema,
 		response: RenderPlanSchema,
 		owner: 'WP-2F',
-	}),
-	exportStart: r({
+	},
+	exportStart: {
 		method: 'POST',
 		path: '/api/exports',
 		body: ExportStartRequestSchema,
-		response: JobQueued,
+		response: EngineJobSchema,
 		owner: 'WP-2F',
-	}),
-	renderOutput: r({ method: 'GET', path: '/renders/:jobId/output', response: 'binary', owner: 'WP-2F' }),
-	stills: r({
+	},
+	renderOutput: { method: 'GET', path: '/renders/:jobId/output', response: 'binary', owner: 'WP-2F' },
+	stills: {
 		method: 'POST',
 		path: '/api/stills',
 		body: StillRequestSchema,
-		response: JobQueued,
+		response: EngineJobSchema,
 		owner: 'WP-2F',
-	}),
+	},
 
-	fontsList: r({ method: 'GET', path: '/api/fonts', response: FontCatalogSchema, owner: 'WP-2F' }),
-	fontFile: r({ method: 'GET', path: '/fonts/*', response: 'binary', owner: 'WP-2F' }),
+	fontsList: { method: 'GET', path: '/api/fonts', response: FontCatalogSchema, owner: 'WP-2F' },
+	fontFile: { method: 'GET', path: '/fonts/*', response: 'binary', owner: 'WP-2F' },
 
-	mgTemplates: r({
+	mgTemplates: {
 		method: 'GET',
 		path: '/api/motion-graphics/templates',
 		response: MgTemplatesResponseSchema,
 		owner: 'WP-2G',
-	}),
-	mgRender: r({
+	},
+	mgRender: {
 		method: 'POST',
 		path: '/api/motion-graphics/render',
 		body: MgRenderRequestSchema,
-		response: JobQueued,
+		response: EngineJobSchema,
 		owner: 'WP-2G',
-	}),
-	mgFile: r({ method: 'GET', path: '/mg/:key/:file', response: 'binary', owner: 'WP-2G' }),
+	},
+	mgFile: { method: 'GET', path: '/mg/:key/:file', response: 'binary', owner: 'WP-2G' },
 
-	agentSchema: r({
+	agentSchema: {
 		method: 'GET',
 		path: '/api/agent/schema',
 		response: AgentSchemaResponseSchema,
 		owner: 'WP-2H',
-	}),
-	agentQuery: r({
+	},
+	agentQuery: {
 		method: 'POST',
 		path: '/api/agent/query',
 		body: AgentQueryRequestSchema,
 		response: AgentQueryResponseSchema,
 		owner: 'WP-2H',
-	}),
-	agentTx: r({
+	},
+	agentTx: {
 		method: 'POST',
 		path: '/api/agent/tx',
 		body: AgentTxRequestSchema,
 		response: AgentTxResponseSchema,
 		owner: 'WP-2H',
-	}),
-	agentWs: r({ method: 'GET', path: '/agent', response: 'websocket', owner: 'WP-2H' }),
-	agentOpenProject: r({
+	},
+	agentWs: { method: 'GET', path: '/agent', response: 'websocket', owner: 'WP-2H' },
+	agentOpenProject: {
 		method: 'POST',
 		path: '/api/agent/open-project',
 		body: AgentOpenProjectRequestSchema,
 		response: AgentOpenProjectResponseSchema,
 		owner: 'wp-mcp',
-	}),
-	agentMcpInfo: r({
+	},
+	agentMcpInfo: {
 		method: 'GET',
 		path: '/api/agent/mcp-info',
 		response: AgentMcpInfoSchema,
 		owner: 'wp-mcp',
-	}),
+	},
 	/** MCP Streamable HTTP endpoint (same tools as the `jasper-mcp` stdio server). */
-	mcp: r({ method: 'POST', path: '/mcp', response: 'binary', owner: 'wp-mcp' }),
+	mcp: { method: 'POST', path: '/mcp', response: 'binary', owner: 'wp-mcp' },
 
 	// ---- M2 (ARCHITECTURE §19.7). Colour needs no routes of its own: LUTs are media (`.cube` → kind `lut`).
-	mediaProcess: r({
+	mediaProcess: {
 		method: 'POST',
 		path: '/api/media/:key/process',
 		body: ProcessRequestSchema,
-		response: JobQueued,
+		response: EngineJobSchema,
 		owner: 'wp-m2-process',
-	}),
-	processingModels: r({
+	},
+	processingModels: {
 		method: 'GET',
 		path: '/api/processing/models',
 		response: ProcessingModelsResponseSchema,
 		owner: 'wp-m2-process',
-	}),
-	processingModelInstall: r({
+	},
+	processingModelInstall: {
 		method: 'POST',
 		path: '/api/processing/models/:modelId/install',
-		response: JobQueued,
+		response: EngineJobSchema,
 		owner: 'wp-m2-process',
-	}),
-	processingSettingsGet: r({
+	},
+	processingSettingsGet: {
 		method: 'GET',
 		path: '/api/settings/processing',
 		response: ProcessingSettingsSchema,
 		owner: 'wp-m2-process',
-	}),
-	processingSettingsPut: r({
+	},
+	processingSettingsPut: {
 		method: 'PUT',
 		path: '/api/settings/processing',
 		body: ProcessingSettingsSchema,
 		response: ProcessingSettingsSchema,
 		owner: 'wp-m2-process',
-	}),
-	processingRemoteProbe: r({
+	},
+	processingRemoteProbe: {
 		method: 'POST',
 		path: '/api/processing/remote/probe',
 		response: RemoteProbeResultSchema,
 		owner: 'wp-m2-process',
-	}),
-	processingRemoteSetup: r({
+	},
+	processingRemoteSetup: {
 		method: 'POST',
 		path: '/api/processing/remote/setup',
-		response: JobQueued,
+		response: EngineJobSchema,
 		owner: 'wp-m2-process',
-	}),
-	mgBundleImport: r({
+	},
+	mgBundleImport: {
 		method: 'POST',
 		path: '/api/mg-bundles/import',
 		body: MgBundleImportRequestSchema,
 		response: RegisteredMediaSchema,
 		owner: 'wp-m2-mg',
-	}),
-	mgBundleRebuild: r({
+	},
+	mgBundleRebuild: {
 		method: 'POST',
 		path: '/api/mg-bundles/:key/rebuild',
 		body: MgBundleRebuildRequestSchema,
-		response: JobQueued,
+		response: EngineJobSchema,
 		owner: 'wp-m2-mg',
-	}),
+	},
 	/** PNG poster of one composition of a bundle at its `thumbnailFrame` (rendered once, cached). */
-	mgBundlePoster: r({
+	mgBundlePoster: {
 		method: 'GET',
 		path: '/api/mg-bundles/:key/poster/:compositionId',
 		response: 'binary',
 		owner: 'wp-m2-mg',
-	}),
+	},
 	/** P1 (S08:MGC-015): new composition project from the template, imported with watch. */
-	mgBundleScaffold: r({
+	mgBundleScaffold: {
 		method: 'POST',
 		path: '/api/mg-bundles/scaffold',
 		body: MgBundleScaffoldRequestSchema,
 		response: RegisteredMediaSchema,
 		owner: 'wp-m2-mg',
-	}),
-	mgBundlePrerender: r({
+	},
+	mgBundlePrerender: {
 		method: 'POST',
 		path: '/api/mg-bundles/prerender',
 		body: MgPrerenderRequestSchema,
-		response: JobQueued,
+		response: EngineJobSchema,
 		owner: 'wp-m2-mg',
-	}),
-	mgBundlePrerenderGet: r({
+	},
+	mgBundlePrerenderGet: {
 		method: 'GET',
 		path: '/api/mg-bundles/prerender/:renderKey',
 		response: MgPrerenderResultSchema,
 		owner: 'wp-m2-mg',
-	}),
+	},
 	/** Static files of an imported bundle (the Remotion serve URL; the preview frame host loads it). */
-	mgBundleFiles: r({ method: 'GET', path: '/mg/bundles/:key/*', response: 'binary', owner: 'wp-m2-mg' }),
-	trackingTrack: r({
+	mgBundleFiles: { method: 'GET', path: '/mg/bundles/:key/*', response: 'binary', owner: 'wp-m2-mg' },
+	trackingTrack: {
 		method: 'POST',
 		path: '/api/tracking/track',
 		body: TrackRequestSchema,
-		response: JobQueued,
+		response: EngineJobSchema,
 		owner: 'wp-m2-track',
-	}),
+	},
 } as const satisfies Record<string, RouteDef>;
 
 export type RouteName = keyof typeof ROUTES;

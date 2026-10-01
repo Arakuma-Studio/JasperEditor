@@ -1,5 +1,4 @@
-// `GET /api/capabilities` (S04:RT-002 subset, ARCHITECTURE §9.2). Other packages contribute through
-// capability providers: WP-2G sets `render.fframes` with `registerCapabilityProvider`.
+// `GET /api/capabilities` (S04:RT-002, ARCHITECTURE §9.2).
 import { availableParallelism } from 'node:os';
 import type { EngineCapabilities } from '@jasper/api';
 import { API_VERSION } from '@jasper/api';
@@ -63,10 +62,6 @@ export class CapabilityService {
 		},
 	) {}
 
-	get selfCheck(): SelfCheck {
-		return this.deps.selfCheck;
-	}
-
 	/** Registers a provider; returns an unregister function. Emits `capabilities.changed`. */
 	register(fn: CapabilityProvider): () => void {
 		this.providers.add(fn);
@@ -82,7 +77,7 @@ export class CapabilityService {
 		this.deps.broadcaster.publish('capabilities.changed', {});
 	}
 
-	base(): EngineCapabilities {
+	private base(): EngineCapabilities {
 		const sc = this.deps.selfCheck;
 		const { config } = this.deps;
 		const encoding = this.deps.encoders?.capabilities();

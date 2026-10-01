@@ -63,15 +63,6 @@ export async function exists(path: string): Promise<boolean> {
 	}
 }
 
-export async function fileSize(path: string): Promise<number | null> {
-	try {
-		const s = await stat(path);
-		return s.isFile() ? s.size : null;
-	} catch {
-		return null;
-	}
-}
-
 /** Free bytes on the filesystem holding `path`, or null when unknown. */
 export async function freeDiskBytes(path: string): Promise<number | null> {
 	try {

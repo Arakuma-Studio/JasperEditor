@@ -36,7 +36,7 @@ export type ClipDisplay = {
 	clipMarkers: boolean;
 };
 
-export type ClipViewProps = {
+type ClipViewProps = {
 	clip: Clip;
 	/** Unrounded clip-area x of the clip start and its width (viewport px). */
 	x: number;
@@ -204,7 +204,7 @@ function ClipViewImpl(p: ClipViewProps) {
 						ctx.fillRect(b.x, b.top, 1, b.height);
 						if (b.clipped && danger) {
 							ctx.fillStyle = danger;
-							ctx.fillRect(b.x, style === 'rectified' ? b.top : b.top, 1, Math.min(2, b.height));
+							ctx.fillRect(b.x, b.top, 1, Math.min(2, b.height));
 						}
 					}
 				}

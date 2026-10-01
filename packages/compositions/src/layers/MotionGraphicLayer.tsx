@@ -1,4 +1,4 @@
-// Motion-graphic (fframes) layer — owned by WP-2G (ARCHITECTURE §8, D-12; S03:KND-060…062).
+// Motion-graphic (fframes) layer (ARCHITECTURE §8, D-12; S03:KND-060…062).
 // Renders the template's TypeScript SVG twin for the clip-local frame at the template canvas size;
 // the standard layer matrix (S03:DM-012), opacity and blend mode place it like any other layer. The
 // exported master comes from the `jasper-mg` binary; the twin mirrors its markup.

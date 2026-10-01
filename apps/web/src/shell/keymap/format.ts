@@ -12,7 +12,7 @@ import {
  * UI command ids used by menus/palette → the id the default keymap binds (WP-00 keymap names). Both ids
  * are registered (the keymap id as a hidden alias), so shortcuts appear next to the canonical entry.
  */
-export const KEYMAP_ALIASES: Readonly<Record<string, string>> = {
+const KEYMAP_ALIASES: Readonly<Record<string, string>> = {
 	'palette.open': 'app.commandPalette',
 	'file.save': 'app.save',
 	'panel.close': 'app.closePanel',
@@ -68,7 +68,7 @@ const CODE_NAMES: Record<string, string> = {
 
 const MAC_CODE_NAMES: Record<string, string> = { Backspace: '⌫', Delete: '⌦', Enter: '↩', Escape: '⎋' };
 
-export function keyName(code: string, platform: Platform): string {
+function keyName(code: string, platform: Platform): string {
 	if (platform === 'mac' && MAC_CODE_NAMES[code]) return MAC_CODE_NAMES[code];
 	const mapped = layoutMap?.get(code);
 	if (

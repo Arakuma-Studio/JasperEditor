@@ -73,7 +73,7 @@ type Pending = { task: Task; transfer: ArrayBuffer[]; resolve: (v: any) => void;
 export class CvPool {
 	private readonly slots: Slot[] = [];
 	private readonly queue: Pending[] = [];
-	private readonly inflight = new Map<number, Pending & { slot: Slot }>();
+	private readonly inflight = new Map<number, Pending>();
 	private nextId = 1;
 	private failure: Error | null = null;
 	private closed = false;
@@ -152,7 +152,7 @@ export class CvPool {
 			if (!job) return;
 			const id = this.nextId++;
 			slot.busy = true;
-			this.inflight.set(id, { ...job, slot });
+			this.inflight.set(id, job);
 			slot.worker.postMessage({ ...job.task, id }, job.transfer);
 		}
 	}

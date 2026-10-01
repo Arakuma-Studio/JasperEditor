@@ -208,11 +208,7 @@ export class SshRemote {
 	 * Uploads a local file to `remotePath` (PRM-005). rsync: `--partial --inplace` into `<path>.part`, which a
 	 * retry resumes; scp restarts the file. The final rename makes the file appear atomically.
 	 */
-	async upload(
-		local: string,
-		remotePath: string,
-		opts: ExecOptions & { onProgress?(pct: number): void } = {},
-	): Promise<void> {
+	async upload(local: string, remotePath: string, opts: ExecOptions = {}): Promise<void> {
 		const part = `${remotePath}.part`;
 		const dir = remotePath.slice(0, remotePath.lastIndexOf('/'));
 		await this.execOk(`mkdir -p ${shq(dir)}`, 'mkdir', { signal: opts.signal });
@@ -249,7 +245,7 @@ export class SshRemote {
 		await this.execOk(`mv -f ${shq(part)} ${shq(remotePath)}`, 'rename upload', { signal: opts.signal });
 	}
 
-	/** Downloads `remotePath` to `local` (resumable with rsync into `<local>.part`). */
+	/** Downloads `remotePath` to `local` (resumable with rsync). */
 	async download(remotePath: string, local: string, opts: ExecOptions = {}): Promise<void> {
 		await this.ensureControlDir();
 		let r: ExecResult;

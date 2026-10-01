@@ -1,7 +1,5 @@
-// JasperEditor service worker (ARCHITECTURE §12, S05:PWA-004/005, R-OMS §3.5/§8.3). Hand-written and
-// copied verbatim to dist/. `classifyRequest` mirrors apps/web/src/pwa/sw-routes.ts; the unit test
-// apps/web/test/pwa.test.ts runs both over the same cases, so change them together and bump VERSION
-// whenever the cached shell must be invalidated.
+// JasperEditor service worker (ARCHITECTURE §12, S05:PWA-004/005, R-OMS §3.5/§8.3).
+// Served as-is; pwa.test.ts exercises this script directly. Bump VERSION to invalidate the cached shell.
 
 const VERSION = 'v1';
 const SHELL_CACHE = `jasper-shell-${VERSION}`;
@@ -19,7 +17,7 @@ const PRECACHE_URLS = [
 	'/icons/icon-512.png',
 ];
 
-/** 'bypass' | 'navigate' | 'asset' | 'static' — keep equal to sw-routes.ts classifyRequest. */
+/** 'bypass' | 'navigate' | 'asset' | 'static'. */
 function classifyRequest(req) {
 	if (req.method !== 'GET') return 'bypass';
 	if (req.hasRange) return 'bypass';
@@ -38,17 +36,6 @@ function classifyRequest(req) {
 	return 'static';
 }
 
-// Exposed for the equivalence test (harmless in browsers).
-self.__jasperSw = {
-	VERSION,
-	SHELL_CACHE,
-	ASSETS_CACHE,
-	BYPASS_PREFIXES,
-	CACHE_FIRST_PREFIXES,
-	PRECACHE_URLS,
-	classifyRequest,
-};
-
 self.addEventListener('install', (event) => {
 	// Not cache.addAll: one missing file must not fail the whole install.
 	event.waitUntil(
@@ -62,7 +49,7 @@ self.addEventListener('install', (event) => {
 			),
 		),
 	);
-	// No skipWaiting here: the page shows "Update available · Reload" and posts SKIP_WAITING (S05:PWA-005).
+	// Let existing tabs finish with their current worker before this version activates.
 });
 
 self.addEventListener('activate', (event) => {

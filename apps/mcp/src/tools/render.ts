@@ -3,10 +3,11 @@
 // cancel_job, wait_for_job.
 import { isAbsolute } from 'node:path';
 import type { ExportSettings } from '@jasper/api';
-import { makeEnvelope, resolveFrameInput, sequenceTimecode } from '@jasper/project';
+import { makeEnvelope, sequenceTimecode } from '@jasper/project';
 import { z } from 'zod';
 import {
 	defineTool,
+	frameOf,
 	isTerminal,
 	jobBody,
 	loadDoc,
@@ -36,18 +37,6 @@ function pickSeq(doc: Parameters<typeof pickSequence>[0], sequenceId?: string) {
 		return pickSequence(doc, sequenceId);
 	} catch (e) {
 		throw new ToolError('E_NOT_FOUND', (e as Error).message, 'Call get_project for sequence ids.');
-	}
-}
-
-function frameOf(seq: Parameters<typeof resolveFrameInput>[0], t: unknown): number {
-	try {
-		return resolveFrameInput(seq, t);
-	} catch (e) {
-		throw new ToolError(
-			'E_INVALID_PARAM',
-			(e as Error).message,
-			'Times are frames, {"seconds": x} or "HH:MM:SS:FF".',
-		);
 	}
 }
 

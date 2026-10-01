@@ -7,23 +7,15 @@ import { intrinsicBoxOf } from '../../registry/properties.ts';
 import { isConvexQuad, type Quad } from '../../render/homography.ts';
 import { CORNER_PIN_EFFECT_ID, CORNER_PIN_PARAMS } from '../../render/scene.ts';
 import type { Animatable, Keyframe, Vec2 } from '../../schema/common.ts';
-import type { ProjectDocument } from '../../schema/document.ts';
 import type {
-	Clip,
 	ClipTracker,
 	EffectInstance,
-	Sequence,
 	TrackerSamples,
 	Transform,
 	VideoClip,
 } from '../../schema/sequence.ts';
 import type { Rational } from '../../time.ts';
-import {
-	computeTrackingApply,
-	type TrackLayer,
-	type TransformKey,
-	trackLayerOf,
-} from '../../tracking/apply.ts';
+import { computeTrackingApply, type TransformKey, trackLayerOf } from '../../tracking/apply.ts';
 import {
 	mergeSamples,
 	reanchorSamples,
@@ -65,16 +57,8 @@ function checkQuad(corners: readonly Vec2[], h: HandlerContext): Vec2[] {
 	return q;
 }
 
-function mediaBoxOf(doc: DDoc, seq: DSeq, clip: DClip): { width: number; height: number } {
-	return intrinsicBoxOf({ clip: clip as never, doc: doc as ProjectDocument, seq: seq as never });
-}
-
 function defaultPatch(box: { width: number; height: number }): number {
 	return Math.max(12, Math.round(Math.min(box.width, box.height) * 0.04));
-}
-
-function trackLayer(doc: DDoc, seq: DSeq, clip: DClip): TrackLayer {
-	return trackLayerOf(doc as ProjectDocument, seq as Sequence, clip as Clip);
 }
 
 /** Replaces the keyframes of `anim` whose time lies in `[t0, t1]` by `keys` (linear); keeps the others. */
@@ -125,7 +109,7 @@ export const trackerHandlers: HandlerMap = {
 		if (clip.kind !== 'video')
 			h.fail('E_INVALID_PARAM', `Trackers go on video clips, not ${clip.kind} clips`, { path: [clip.id] });
 		assertClipUnlocked(seq, clip, h);
-		const box = mediaBoxOf(doc, seq, clip);
+		const box = intrinsicBoxOf({ doc, seq, clip });
 		const time = h.clipContentTime(seq, clip, cmd.at);
 		const v = clip as Draft<VideoClip>;
 		v.trackers ??= [];
@@ -253,7 +237,7 @@ export const trackerHandlers: HandlerMap = {
 		if (seq.id !== pseq.id) h.fail('E_INVALID_PARAM', 'The target must be in the plate clip’s sequence');
 		if (target.id === plate.id) h.fail('E_INVALID_PARAM', 'A clip cannot follow its own tracker');
 		assertClipUnlocked(seq, target, h);
-		const tl = trackLayer(doc, seq, target);
+		const tl = trackLayerOf(doc, seq, target);
 		if (!tl.transform) h.fail('E_INVALID_PARAM', `${target.kind} clips have no Motion to drive`);
 		const fps = seq.settings.frameRate as Rational;
 		const overlap = {
@@ -274,13 +258,12 @@ export const trackerHandlers: HandlerMap = {
 		try {
 			result = computeTrackingApply({
 				fps,
-				plate: trackLayer(doc, seq, plate),
+				plate: trackLayerOf(doc, seq, plate),
 				target: tl,
 				tracker: tracker as ClipTracker,
 				mode: cmd.mode,
 				...(cmd.components ? { components: cmd.components } : {}),
 				range,
-				...(existingPin ? { cornerPinId: existingPin.id } : {}),
 			});
 		} catch (e) {
 			return h.fail('E_INVALID_PARAM', (e as Error).message);

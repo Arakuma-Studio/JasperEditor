@@ -105,9 +105,8 @@ describe('selectVideoEncoder (D-13)', () => {
 		expect(c.message).toBeUndefined();
 		const a = videoEncodeArgs(c, P);
 		expect(a.video).not.toContain('-crf');
-		const kbps = bitrateForCrf(18, 1920, 1080, 30, 1.3);
 		expect(a.video).toEqual(
-			expect.arrayContaining(['-c:v', 'libopenh264', '-b:v', `${kbps}k`, '-rc_mode', 'bitrate', '-g', '60']),
+			expect.arrayContaining(['-c:v', 'libopenh264', '-b:v', '12131k', '-rc_mode', 'bitrate', '-g', '60']),
 		);
 		expect(a.video.join(' ')).toContain('-allow_skip_frames 0');
 		expect(a.video.join(' ')).toContain('-pix_fmt yuv420p');
@@ -336,8 +335,7 @@ describe('parsing and hardware probing', () => {
 			{ encoder: 'h264_nvenc', usable: true },
 			{ encoder: 'h264_qsv', usable: false, reason: 'Error creating a MFX session' },
 		]);
-		const again = await probeHardwareEncoders(fake, listed, { platform: 'linux' });
-		expect(again).toBe(r); // cached promise result
+		await probeHardwareEncoders(fake, listed, { platform: 'linux' });
 		const { readFileSync } = await import('node:fs');
 		expect(readFileSync(log, 'utf8').trim().split('\n')).toHaveLength(2);
 		expect(hwTestArgs(HW_H264.find((h) => h.encoder === 'h264_vaapi')!).join(' ')).toContain(

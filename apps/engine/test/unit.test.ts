@@ -7,7 +7,7 @@ import { UrlSigner } from '../src/auth/signed-url.ts';
 import { createPeakReducer } from '../src/derivatives/peaks.ts';
 import { Broadcaster } from '../src/events/broadcaster.ts';
 import { atempoChain } from '../src/export/native.ts';
-import { fingerprintBuffer, fingerprintFile, mediaKeyFor } from '../src/media/fingerprint.ts';
+import { fingerprintFile, mediaKeyFor } from '../src/media/fingerprint.ts';
 import { mapProbe, rotationOf } from '../src/media/probe.ts';
 import { createProgressParser } from '../src/tools/ffmpeg.ts';
 import { parseRange } from '../src/tools/http.ts';
@@ -36,8 +36,7 @@ describe('fingerprint (S01:AST-003)', () => {
 		],
 	];
 	for (const [name, buf, hex] of vectors) {
-		it(`${name}: buffer and file agree with the vector`, async () => {
-			expect(fingerprintBuffer(buf)).toBe(`q1:${hex}`);
+		it(`${name}: file agrees with the vector`, async () => {
 			const file = join(tempAppdir('jasper-fp-'), 'f.bin');
 			writeFileSync(file, buf);
 			const r = await fingerprintFile(file);
@@ -306,11 +305,10 @@ describe('dev web port (WP-3I)', () => {
 
 	it('resolves a relative JASPER_WEB_DIR against the working directory (@fastify/static needs an absolute root)', async () => {
 		const { engineConfig } = await import('../src/index.ts');
-		const { isAbsolute, resolve } = await import('node:path');
+		const { resolve } = await import('node:path');
 		const base = { appdir: '/tmp/jasper-x', port: 48121, dev: false } as const;
 		const rel = engineConfig({ ...base, env: { JASPER_WEB_DIR: 'apps/web/dist' } }).webDir;
 		expect(rel).toBe(resolve('apps/web/dist'));
-		expect(isAbsolute(rel ?? '')).toBe(true);
 		expect(engineConfig({ ...base, webDir: '/srv/web', env: {} }).webDir).toBe('/srv/web');
 		expect(engineConfig({ ...base, env: {} }).webDir).toBeNull();
 	});

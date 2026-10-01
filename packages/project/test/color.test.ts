@@ -409,7 +409,6 @@ describe('colour runs with Lumetri (S06:CG-011/012)', () => {
 		const bc = BRIGHTNESS_CONTRAST_OP.build({ brightness: 5, contrast: -20 }, NO_LUTS)!;
 		const lu = lumetriFn({ temperature: 10, exposure: -0.3, saturation: 90, shadows: 20 }, NO_LUTS)!;
 		let worst = 0;
-		let within = 0;
 		for (let i = 0; i < 2000; i++) {
 			const c: Rgb = [Math.random(), Math.random(), Math.random()];
 			const ref: Rgb = [...c];
@@ -420,10 +419,8 @@ describe('colour runs with Lumetri (S06:CG-011/012)', () => {
 			let e = 0;
 			for (let k = 0; k < 3; k++) e = Math.max(e, Math.abs(got[k]! - ref[k]!));
 			worst = Math.max(worst, e);
-			if (e < 1 / 255) within++;
 		}
 		// A smooth grade (no clipping kinks) interpolates at 33³ to well below one 8-bit code value.
-		expect(within / 2000).toBe(1);
 		expect(worst).toBeLessThan(0.5 / 255);
 	});
 

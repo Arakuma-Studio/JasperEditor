@@ -152,7 +152,7 @@ export function ColorPicker({ value, onChange, onChangeStart, alpha = true, swat
 			setHex(rgbaToHex(latest.current, alpha));
 			return;
 		}
-		pick(alpha ? parsed : [parsed[0], parsed[1], parsed[2], 1]);
+		pick(parsed);
 	};
 
 	const eyeDropperCtor =
@@ -161,6 +161,7 @@ export function ColorPicker({ value, onChange, onChangeStart, alpha = true, swat
 			: undefined;
 
 	const solid = hsvToCss(hsv);
+	const color = rgbaToCss([...hsvToRgb(hsv), a]);
 	return (
 		<div className="flex w-[224px] flex-col gap-2 p-2" data-testid="color-picker">
 			<div
@@ -218,7 +219,7 @@ export function ColorPicker({ value, onChange, onChangeStart, alpha = true, swat
 				<span
 					className="h-[22px] w-8 shrink-0 rounded-pr-control border border-pr-border-strong"
 					style={{
-						background: `linear-gradient(${rgbaToCss([...hsvToRgb(hsv), a] as Rgba)}, ${rgbaToCss([...hsvToRgb(hsv), a] as Rgba)}), ${CHECKER}`,
+						background: `linear-gradient(${color}, ${color}), ${CHECKER}`,
 					}}
 				/>
 				<TextField
@@ -303,9 +304,8 @@ function Row({ title, children }: { title: string; children: ReactNode }) {
 	);
 }
 
-export type ColorSwatchProps = Omit<ColorPickerProps, 'onChange'> & {
+export type ColorSwatchProps = ColorPickerProps & {
 	label: string;
-	onChange(color: Rgba, change: ColorChange): void;
 	disabled?: boolean;
 	className?: string;
 };

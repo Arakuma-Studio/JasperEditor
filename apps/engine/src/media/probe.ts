@@ -164,7 +164,6 @@ export function mapProbe(json: { streams?: FfStream[]; format?: FfFormat }): Pro
 	const all = json.streams ?? [];
 	const videos = all.filter((s) => s.codec_type === 'video' && !s.disposition?.attached_pic);
 	const audios = all.filter((s) => s.codec_type === 'audio');
-	const subs = all.filter((s) => s.codec_type === 'subtitle');
 	if (videos.length === 0 && audios.length === 0) {
 		throw new ToolError('UNSUPPORTED_MEDIA', 'No video or audio stream found');
 	}
@@ -232,7 +231,6 @@ export function mapProbe(json: { streams?: FfStream[]; format?: FfFormat }): Pro
 			});
 		}
 	}
-	void subs;
 
 	const rotationDegrees = v0 ? rotationOf(v0) : 0;
 	const timecode =

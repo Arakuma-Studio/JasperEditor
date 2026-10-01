@@ -75,7 +75,7 @@ describe('vid.stab WASM module', () => {
 		expect(new Set(imports)).toEqual(new Set(['wasi_snapshot_preview1']));
 	});
 
-	it('honours JASPER_VIDSTAB_WASM and returns null when nothing exists', () => {
+	it('honours JASPER_VIDSTAB_WASM and falls back when the override is missing', () => {
 		const real = resolveVidstabWasm() as string;
 		expect(resolveVidstabWasm({ JASPER_VIDSTAB_WASM: real })).toBe(real);
 		expect(resolveVidstabWasm({ JASPER_VIDSTAB_WASM: '/nonexistent/vidstab.wasm' })).toBe(real);

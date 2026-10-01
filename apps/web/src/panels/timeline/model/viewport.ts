@@ -9,7 +9,7 @@ export const PX_PER_FRAME_MAX = 48;
 /** TL-106: discrete zoom step factor. */
 export const ZOOM_STEP = 1.5;
 /** TL-110: left margin so frame 0 is not glued to the header. */
-export const LEFT_PAD_PX = 16;
+const LEFT_PAD_PX = 16;
 
 export const frameToX = (v: Viewport, frame: number): number => (frame - v.scrollFrame) * v.pxPerFrame;
 export const xToFrameExact = (v: Viewport, x: number): number => v.scrollFrame + x / v.pxPerFrame;
@@ -25,7 +25,7 @@ export function boundaryFrameAt(v: Viewport, x: number): number {
 }
 
 /** Symmetric rounding so that +d and -d pixel drags give opposite frame deltas. */
-export function roundHalfAway(x: number): number {
+function roundHalfAway(x: number): number {
 	return (x < 0 ? -Math.round(-x) : Math.round(x)) + 0;
 }
 
@@ -49,7 +49,7 @@ export function clampZoom(p: number, min: number, max = PX_PER_FRAME_MAX): numbe
 	return Math.min(max, Math.max(min, p));
 }
 
-export type ExtentInfo = {
+type ExtentInfo = {
 	end: number;
 	playhead: number;
 	outPoint: number | null;
@@ -92,7 +92,7 @@ export function normalizeWheel(e: { deltaX: number; deltaY: number; deltaMode: n
 	return { dx: e.deltaX * k, dy: e.deltaY * k };
 }
 
-export type WheelIntent =
+type WheelIntent =
 	| { kind: 'zoom'; factor: number }
 	| { kind: 'hscroll'; px: number }
 	| { kind: 'vscroll'; px: number }

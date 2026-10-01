@@ -162,7 +162,7 @@ const doc = buildRenderSnapshot(document, seqId, {
 });
 const inputProps = {
 	doc,
-	options: { isPreview: false, useProxies: false, transparentBackground: false, showOffline: true },
+	options: { isPreview: false, useProxies: false, transparentBackground: false },
 };
 
 // ---------------------------------------------------------------- bundle + render

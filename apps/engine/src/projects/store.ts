@@ -6,13 +6,11 @@ import { join } from 'node:path';
 import type { ProjectSummary, VersionInfo } from '@jasper/api';
 import type { AppdirPaths } from '@jasper/config';
 import {
-	CURRENT_SCHEMA_VERSION,
 	createEmptyProject,
 	createRandomIdSource,
 	defaultPresetRegistry,
 	makeEnvelope,
 	migrate,
-	type ProjectDocument,
 	ProjectDocumentSchema,
 	type ProjectEnvelope,
 } from '@jasper/project';
@@ -54,10 +52,6 @@ export class ProjectStoreFs {
 
 	constructor(private readonly opts: ProjectStoreOptions) {
 		this.now = opts.now ?? (() => new Date());
-	}
-
-	get leases(): LeaseManager {
-		return this.opts.leases;
 	}
 
 	private check(projectId: string): void {
@@ -246,35 +240,7 @@ export class ProjectStoreFs {
 		);
 		this.opts.leases.forget(projectId);
 	}
-
-	// ------------------------------------------------------------------ document-level API (agents, headless)
-
-	/** Loads and migrates the document (for headless agent transactions, WP-2H). */
-	async loadDocument(
-		projectId: string,
-	): Promise<{ document: ProjectDocument; revision: number; readOnly: boolean }> {
-		const env = await this.readEnvelope(projectId);
-		const m = migrate(env);
-		return { document: m.document, revision: env.revision, readOnly: m.readOnly };
-	}
-
-	/** Saves a document with optimistic concurrency (`baseRevision` must be current). */
-	async saveDocument(
-		projectId: string,
-		document: ProjectDocument,
-		meta: { baseRevision: number; revision?: number },
-	): Promise<{ revision: number }> {
-		const env = makeEnvelope(document, {
-			revision: meta.revision ?? meta.baseRevision + 1,
-			savedAt: this.now().toISOString(),
-			platform: this.opts.platform ?? process.platform,
-			appVersion: this.opts.appVersion,
-		});
-		return this.save(projectId, env as unknown as StoredEnvelope, meta.baseRevision);
-	}
 }
-
-export { CURRENT_SCHEMA_VERSION };
 
 /** Save time encoded in a version id (`2026-09-30T10-00-00-000Z`), falling back to the file mtime. */
 function versionTime(v: { id: string; mtimeMs: number }): number {

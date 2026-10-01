@@ -79,16 +79,12 @@ export class EngineClient {
 		return `${this.baseUrl}${path}${qs ? `?${qs}` : ''}`;
 	}
 
-	private authHeaders(): Record<string, string> {
-		return this.token ? { authorization: `Bearer ${this.token}` } : {};
-	}
-
 	/**
 	 * Headers that authenticate a request made outside `call()` (e.g. keepalive requests during `pagehide`):
 	 * `Authorization: Bearer <token>` in token mode, nothing when the session cookie is used.
 	 */
 	authorizationHeaders(): Record<string, string> {
-		return this.authHeaders();
+		return this.token ? { authorization: `Bearer ${this.token}` } : {};
 	}
 
 	/** Low-level typed call by route name. */
@@ -98,7 +94,7 @@ export class EngineClient {
 		const binary = 'body' in route && route.body === 'binary';
 		const headers: Record<string, string> = {
 			accept: 'application/json',
-			...this.authHeaders(),
+			...this.authorizationHeaders(),
 			...(opts.headers ?? {}),
 		};
 		let body: BodyInit | undefined;
@@ -290,7 +286,11 @@ export class EngineClient {
 		const url = /^https?:/.test(path) ? path : this.url(path);
 		let res: Response;
 		try {
-			res = await this.fetchImpl(url, { headers: this.authHeaders(), signal, credentials: 'include' });
+			res = await this.fetchImpl(url, {
+				headers: this.authorizationHeaders(),
+				signal,
+				credentials: 'include',
+			});
 		} catch (e) {
 			if ((e as { name?: string })?.name === 'AbortError') throw e;
 			throw new EngineError('NETWORK', `Engine not reachable: ${(e as Error)?.message ?? e}`, {
@@ -354,7 +354,7 @@ export class EngineClient {
 			{
 				...streamOpts,
 				since: opts.since ?? null,
-				headers: this.authHeaders(),
+				headers: this.authorizationHeaders(),
 			},
 		);
 	}

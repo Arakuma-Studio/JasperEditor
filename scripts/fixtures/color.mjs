@@ -35,7 +35,7 @@ function chunk(type, data) {
 	crc.writeUInt32BE(crc32(td));
 	return Buffer.concat([len, td, crc]);
 }
-export function encodePng(width, height, rgb) {
+function encodePng(width, height, rgb) {
 	const raw = Buffer.alloc((width * 3 + 1) * height);
 	for (let y = 0; y < height; y++) {
 		raw[y * (width * 3 + 1)] = 0; // filter: none
@@ -110,7 +110,7 @@ const SKIN = [
 	[60, 38, 28],
 ];
 
-export function makeChart() {
+function makeChart() {
 	const px = Buffer.alloc(W * H * 3);
 	const set = (x, y, c) => {
 		const o = (y * W + x) * 3;
@@ -166,7 +166,7 @@ export function makeChart() {
 // ---------------------------------------------------------------- .cube files
 const f6 = (x) => (Math.round(x * 1e6) / 1e6).toFixed(6);
 /** A teal/orange-ish look: warm highlights, cool shadows, a gentle S-curve and a saturation lift. */
-export function lookFn(r, g, b) {
+function lookFn(r, g, b) {
 	const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
 	const s = (x) => x - 0.08 * Math.sin(2 * Math.PI * x); // monotone S-curve (slope ≥ 0.5)
 	let R = r + 0.06 * y - 0.03 * (1 - y);
@@ -178,7 +178,7 @@ export function lookFn(r, g, b) {
 	B = yy + (B - yy) * 1.15;
 	return [s(Math.max(0, Math.min(1, R))), s(Math.max(0, Math.min(1, G))), s(Math.max(0, Math.min(1, B)))];
 }
-export function makeLook33() {
+function makeLook33() {
 	const n = 33;
 	const lines = [
 		'# Created by a colour-grading suite (vendor-style header)',
@@ -198,7 +198,7 @@ export function makeLook33() {
 			}
 	return `${lines.join('\r\n')}\r\n`;
 }
-export function makeTone1d() {
+function makeTone1d() {
 	const n = 1024;
 	const lines = ['TITLE "S-curve 1D"', '# 1D per-channel tone curve', `LUT_1D_SIZE ${n}`];
 	for (let i = 0; i < n; i++) {
@@ -208,11 +208,11 @@ export function makeTone1d() {
 	}
 	return `${lines.join('\n')}\n`;
 }
-export function makeBrokenCount() {
+function makeBrokenCount() {
 	const lines = ['TITLE "Broken"', 'LUT_3D_SIZE 2', '0 0 0', '1 0 0', '0 1 0'];
 	return `${lines.join('\n')}\n`;
 }
-export function makeBrokenNumber() {
+function makeBrokenNumber() {
 	return [
 		'# broken',
 		'LUT_3D_SIZE 2',

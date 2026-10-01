@@ -21,7 +21,7 @@ export type Notices = {
 	element: ReactNode;
 };
 
-export type ConfirmRequest = {
+type ConfirmRequest = {
 	message: string;
 	actions: { label: string; primary?: boolean; run(): void }[];
 	dontAskAgainKey?: string;

@@ -151,7 +151,7 @@ describe('scene-cut guard', () => {
 });
 
 describe('worker script resolution', () => {
-	it('env override, then the bundled name, then the source file', () => {
+	it('honours the env override and resolves the source worker by default', () => {
 		expect(resolveWorkerUrl({ JASPER_DEJUDDER_WORKER: '/opt/x/w.mjs' }).pathname).toBe('/opt/x/w.mjs');
 		expect(resolveWorkerUrl({}).pathname.endsWith('/dejudder/worker.mjs')).toBe(true);
 	});

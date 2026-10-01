@@ -1,4 +1,4 @@
-// Import service and drag payload contracts (S01:LIFE-010/012, S02:TL-492). WP-2E implements them.
+// Import service and drag payload contracts (S01:LIFE-010/012, S02:TL-492).
 import type { RegisteredMedia } from '@jasper/api';
 
 /** In-app drag of Project panel items onto the timeline/monitors. */
@@ -52,25 +52,17 @@ export interface ImportService {
 // ProjectLifecycle.tsx); timeline/monitor drop handlers look it up here and tolerate `null`.
 
 let currentImportService: ImportService | null = null;
-const importServiceListeners = new Set<() => void>();
 
 /** Registers the active ImportService; returns the unregister function. */
 export function registerImportService(service: ImportService): () => void {
 	currentImportService = service;
-	for (const l of [...importServiceListeners]) l();
 	return () => {
 		if (currentImportService !== service) return;
 		currentImportService = null;
-		for (const l of [...importServiceListeners]) l();
 	};
 }
 
 /** The active ImportService, or null when no project is open. */
 export function getImportService(): ImportService | null {
 	return currentImportService;
-}
-
-export function subscribeImportService(listener: () => void): () => void {
-	importServiceListeners.add(listener);
-	return () => importServiceListeners.delete(listener);
 }

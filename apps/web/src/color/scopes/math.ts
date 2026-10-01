@@ -21,7 +21,7 @@ export function ycbcr(r: number, g: number, b: number): { y: number; cb: number;
 	return { y, cb: (b - y) / (2 * (1 - KB)), cr: (r - y) / (2 * (1 - KR)) };
 }
 
-export type Plane = { width: number; height: number; counts: Uint32Array };
+type Plane = { width: number; height: number; counts: Uint32Array };
 
 const plane = (width: number, height: number): Plane => ({
 	width,
@@ -140,7 +140,7 @@ export function renderDensity(
 	height: number,
 	color: RGB,
 	out: Uint8ClampedArray = new Uint8ClampedArray(width * height * 4),
-	opts: { gain?: number; xOffset?: number; stride?: number; additive?: boolean } = {},
+	opts: { gain?: number; xOffset?: number; stride?: number } = {},
 ): Uint8ClampedArray {
 	const gain = opts.gain ?? 1;
 	const stride = opts.stride ?? width;
@@ -155,17 +155,10 @@ export function renderDensity(
 			if (c === 0) continue;
 			const a = Math.min(1, Math.log1p(c) * norm * gain * 1.6 + 0.18);
 			const o = (y * stride + x + x0) * 4;
-			if (opts.additive) {
-				out[o] = Math.min(255, out[o]! + color[0] * a);
-				out[o + 1] = Math.min(255, out[o + 1]! + color[1] * a);
-				out[o + 2] = Math.min(255, out[o + 2]! + color[2] * a);
-				out[o + 3] = Math.max(out[o + 3]!, 255 * a);
-			} else {
-				out[o] = color[0];
-				out[o + 1] = color[1];
-				out[o + 2] = color[2];
-				out[o + 3] = 255 * a;
-			}
+			out[o] = color[0];
+			out[o + 1] = color[1];
+			out[o + 2] = color[2];
+			out[o + 3] = 255 * a;
 		}
 	}
 	return out;

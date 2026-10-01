@@ -10,13 +10,13 @@ import {
 	serializeCube,
 } from '@jasper/project';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as gl from '../src/color/gl.ts';
 import {
 	BAKES_PER_LAYER,
 	bakedRunLut,
 	clearLutAssets,
 	colorStageStatus,
 	dropLayerBakes,
-	FRAGMENT_SHADER,
 	loadedLutAsset,
 	loadLutAsset,
 	lutUrlKey,
@@ -41,6 +41,7 @@ afterEach(() => {
 	clearLutAssets();
 	dropLayerBakes();
 	colorStageStatus.reset();
+	vi.restoreAllMocks();
 });
 
 describe('planColorStage (S06:CG-040)', () => {
@@ -172,19 +173,17 @@ describe('LUT assets and bakes (S06:LUT-003, CG-013)', () => {
 	});
 });
 
-describe('shader (S06:CG-040)', () => {
-	it('samples the LUT with texelFetch (no hardware filtering) and keeps straight alpha', () => {
-		expect(FRAGMENT_SHADER).toContain('texelFetch(u_lut');
-		expect(FRAGMENT_SHADER).not.toMatch(/texture\(u_lut/);
-		expect(FRAGMENT_SHADER).toContain('o_color = vec4(rgb * s.a, s.a)');
-	});
-
+describe('colour stage status', () => {
 	it('context loss flips the stage status and restores it (CG-045)', () => {
-		expect(['ok', 'unavailable']).toContain(colorStageStatus.get());
+		vi.spyOn(gl, 'canUseWebGl2').mockReturnValue(true);
+		expect(colorStageStatus.get()).toBe('ok');
 		colorStageStatus.contextLost();
-		if (colorStageStatus.get() !== 'unavailable') expect(colorStageStatus.get()).toBe('lost');
+		colorStageStatus.contextLost();
+		expect(colorStageStatus.get()).toBe('lost');
 		colorStageStatus.contextRestored();
-		expect(colorStageStatus.get()).not.toBe('lost');
+		expect(colorStageStatus.get()).toBe('lost');
+		colorStageStatus.contextRestored();
+		expect(colorStageStatus.get()).toBe('ok');
 	});
 });
 
@@ -221,14 +220,5 @@ describe('CPU pass (software WebGL hosts, S06:CG-043)', () => {
 			expect(px[p + 3]).toBe(src[p + 3]); // alpha untouched
 		}
 		expect(diff).toBeLessThanOrEqual(1); // ties round half-to-even vs Math.round
-	});
-
-	it('the backend can be forced (tests / diagnostics)', async () => {
-		const { colorStageBackend, setColorStageBackend } = await import('../src/index.ts');
-		setColorStageBackend('cpu');
-		expect(colorStageBackend()).toBe('cpu');
-		setColorStageBackend('webgl');
-		expect(colorStageBackend()).toBe('webgl');
-		setColorStageBackend(null);
 	});
 });

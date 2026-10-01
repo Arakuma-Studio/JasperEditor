@@ -104,32 +104,3 @@ export function GradeChip({ layer, text = 'Grade unavailable' }: { layer: LayerP
 		</div>
 	);
 }
-
-/** Placeholder content: a labeled, outlined box (kept for layers that are not implemented yet). */
-export function StubLabel({ layer, title, tint }: { layer: LayerProps; title: string; tint: string }) {
-	return (
-		<LayerBox
-			layer={layer}
-			style={{ background: tint, outline: '2px solid rgba(255,255,255,0.6)', outlineOffset: -2 }}
-		>
-			<div
-				style={{
-					position: 'absolute',
-					inset: 0,
-					display: 'flex',
-					alignItems: 'center',
-					justifyContent: 'center',
-					flexDirection: 'column',
-					gap: 8,
-					color: 'white',
-					fontFamily: 'sans-serif',
-					fontSize: Math.max(12, Math.min(48, layer.props.box.height / 12)),
-					textAlign: 'center',
-				}}
-			>
-				<div style={{ fontWeight: 600 }}>{title}</div>
-				<div style={{ opacity: 0.8 }}>{layer.clip.name}</div>
-			</div>
-		</LayerBox>
-	);
-}

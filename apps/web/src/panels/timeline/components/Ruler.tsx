@@ -1,6 +1,6 @@
 // Ruler (S02 §5: TL-200…214, TL-763/764, TL-790…794; S05:TLC-004): canvas ticks and labels, In/Out
 // brackets and shading, the marker lane and the render bar. Clicking/dragging scrubs (TL-203).
-import type { Marker, Sequence } from '@jasper/project';
+import { type Marker, type Sequence, sequenceDuration } from '@jasper/project';
 import type { EditorSession, Gesture } from '@jasper/session';
 import { useCallback, useRef } from 'react';
 import type { RenderSegment } from '../model/renderbar.ts';
@@ -10,12 +10,12 @@ import type { TimelineController } from '../state/controller.ts';
 import { markerVar } from './ClipView.tsx';
 import { CanvasTiles, cssVar, type TileDraw } from './canvas.tsx';
 
-export const TICKS_H = 24;
-export const MARKER_LANE_H = 14;
-export const RENDER_BAR_H = 4;
+const TICKS_H = 24;
+const MARKER_LANE_H = 14;
+const RENDER_BAR_H = 4;
 export const RULER_H = TICKS_H + MARKER_LANE_H + RENDER_BAR_H + 2;
 
-export type RulerProps = {
+type RulerProps = {
 	seq: Sequence;
 	viewport: Viewport;
 	session: EditorSession;
@@ -51,7 +51,7 @@ export function Ruler(props: RulerProps) {
 			const ticks = rulerTicks(v, seq.settings.frameRate, {
 				dropFrame: seq.settings.dropFrame,
 				startFrames: seq.settings.startTimecodeFrames,
-				sequenceEnd: Math.max(0, ...Object.values(seq.clips).map((c) => c.start + c.duration)),
+				sequenceEnd: sequenceDuration({ clips: seq.clips }),
 				x0: tile.x0 - 120,
 				x1: tile.x0 + tile.width + 120,
 			});

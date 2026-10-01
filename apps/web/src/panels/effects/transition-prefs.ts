@@ -3,11 +3,11 @@
 import { CONSTANT_POWER, CROSS_DISSOLVE, transitionSpec } from '@jasper/project';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 
-export type TransitionDefaults = { version: 1; video: string; audio: string };
+type TransitionDefaults = { version: 1; video: string; audio: string };
 
 const KEY = 'jasper.transitions.defaults.v1';
 
-export function builtInDefaults(): TransitionDefaults {
+function builtInDefaults(): TransitionDefaults {
 	return { version: 1, video: CROSS_DISSOLVE, audio: CONSTANT_POWER };
 }
 

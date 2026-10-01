@@ -2,7 +2,6 @@
 // pointerdown anywhere inside a panel (capture phase, before the panel's handlers), on focusin from
 // keyboard navigation, when a tab is activated and through focus commands. Menus, dialogs, popovers and
 // toasts are portaled outside panels, so opening them never moves panel focus (FO-004).
-import { useSyncExternalStore } from 'react';
 import { PANEL_KINDS, type PanelKind } from '../panels/types.ts';
 
 export type FocusState = {
@@ -46,10 +45,6 @@ export class FocusStore {
 /** The window's focus store. */
 export const focusStore = new FocusStore();
 
-export function useFocusState(): FocusState {
-	return useSyncExternalStore(focusStore.subscribe, focusStore.getState, focusStore.getState);
-}
-
 /** Finds the panel instance an element belongs to (dock content or tab). */
 export function panelFromElement(el: Element | null): { instanceId: string; kind: PanelKind } | null {
 	const host = el?.closest?.(`[${PANEL_INSTANCE_ATTR}]`);
@@ -65,7 +60,6 @@ export const pointer = { x: -1, y: -1 };
 
 /**
  * Installs the capture-phase focus listeners on a document (FO-001). Returns the uninstaller.
- * `root` limits focus changes to events inside the dock/shell element (floating groups included).
  */
 export function installFocusTracking(doc: Document, store: FocusStore = focusStore): () => void {
 	const onPointer = (e: Event) => {

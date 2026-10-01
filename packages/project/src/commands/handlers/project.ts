@@ -7,7 +7,7 @@ import type { DDoc, HandlerContext } from '../context.ts';
 import { cleanupSequence, removeClip } from '../placement.ts';
 import { type HandlerMap, idList } from './util.ts';
 
-export function detachItem(doc: DDoc, itemId: string): void {
+function detachItem(doc: DDoc, itemId: string): void {
 	const ri = doc.rootItems.indexOf(itemId);
 	if (ri >= 0) doc.rootItems.splice(ri, 1);
 	for (const it of Object.values(doc.items)) {

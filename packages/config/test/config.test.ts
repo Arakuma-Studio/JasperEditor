@@ -2,10 +2,7 @@ import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
 	appdirPaths,
-	DEFAULT_ENGINE_PORT,
-	DEV_WEB_PORT,
 	desktopAppdir,
-	ENV,
 	isTruthyEnv,
 	parseEngineRuntime,
 	readFlag,
@@ -14,13 +11,6 @@ import {
 } from '../src/index.ts';
 
 describe('@jasper/config', () => {
-	it('exposes the ports', () => {
-		expect(DEFAULT_ENGINE_PORT).toBe(47900);
-		expect(DEV_WEB_PORT).toBe(5173);
-		expect(ENV.APPDIR).toBe('JASPER_APPDIR');
-		expect(ENV.LOCAL_TOKEN).toBe('JASPER_LOCAL_TOKEN');
-	});
-
 	it('reads flags in both forms', () => {
 		expect(readFlag(['--appdir', '/x'], 'appdir')).toBe('/x');
 		expect(readFlag(['--appdir=/y'], 'appdir')).toBe('/y');

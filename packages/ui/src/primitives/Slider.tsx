@@ -2,7 +2,6 @@
 // fill from the center; double-click the thumb resets to the default. Keyboard: arrows = step,
 // Shift+arrows = 10 steps, Home/End = min/max (Radix). Always paired with a ScrubbyNumber by callers.
 import { Slider as RSlider } from 'radix-ui';
-import { useRef } from 'react';
 import { cx } from '../cx.ts';
 
 export type SliderProps = {
@@ -29,7 +28,6 @@ export type SliderProps = {
 
 export function Slider(props: SliderProps) {
 	const { value, min, max, step = 1, bipolar, label, disabled, className } = props;
-	const dragging = useRef(false);
 	const span = max - min || 1;
 	const pct = ((value - min) / span) * 100;
 	const center = bipolar ? ((Math.min(Math.max(0, min), max) - min) / span) * 100 : 0;
@@ -45,14 +43,10 @@ export function Slider(props: SliderProps) {
 			aria-label={label}
 			onPointerDown={() => {
 				if (disabled) return;
-				dragging.current = true;
 				props.onChangeStart?.();
 			}}
 			onValueChange={([v]) => props.onChange?.(v ?? value)}
-			onValueCommit={([v]) => {
-				dragging.current = false;
-				props.onCommit?.(v ?? value);
-			}}
+			onValueCommit={([v]) => props.onCommit?.(v ?? value)}
 			className={cx(
 				'relative flex h-4 w-full min-w-16 touch-none items-center select-none',
 				disabled && 'opacity-40',

@@ -1,5 +1,6 @@
 // Per-command handler context and argument resolution (temp refs, track labels, time forms).
 import type { Draft } from 'immer';
+import { contentTimeAt } from '../derive/index.ts';
 import { type IdPrefix, isValidId } from '../ids.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { MediaAsset } from '../schema/media.ts';
@@ -19,7 +20,7 @@ export class HandlerContext {
 	commandIndex = 0;
 	constructor(
 		readonly ctx: CommandContext,
-		readonly tx: { label: string; origin: Origin; sequenceId?: string },
+		readonly tx: { origin: Origin; sequenceId?: string },
 		readonly refs: Map<string, string>,
 	) {}
 
@@ -142,12 +143,7 @@ export class HandlerContext {
 	clipContentTime(seq: DSeq, clip: DClip, at: ParamAt | undefined): number {
 		const rate = seq.settings.frameRate as Rational;
 		const F = flicksPerFrame(rate);
-		const fromSeqFrame = (f: number) => {
-			const i = f - clip.start;
-			return clip.speed.reverse
-				? clip.sourceIn + (clip.duration - 1 - i) * F * clip.speed.rate
-				: clip.sourceIn + i * F * clip.speed.rate;
-		};
+		const fromSeqFrame = (f: number) => contentTimeAt(clip, f, rate);
 		let t: number;
 		if (at === undefined) t = fromSeqFrame(clip.start);
 		else if (typeof at === 'string') t = fromSeqFrame(this.frame(seq, at));
@@ -171,7 +167,7 @@ export class HandlerContext {
 	}
 }
 
-export function idExists(doc: DDoc | ProjectDocument, id: string): boolean {
+function idExists(doc: DDoc | ProjectDocument, id: string): boolean {
 	if (doc.projectId === id || doc.items[id] || doc.media[id] || doc.synthetics[id] || doc.transcripts[id])
 		return true;
 	if (doc.fonts[id] || doc.sequences[id]) return true;

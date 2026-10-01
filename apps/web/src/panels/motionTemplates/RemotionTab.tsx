@@ -7,10 +7,10 @@ import type { EditorSession, SessionState } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
 import { Button, cx, EmptyState, Icon } from '@jasper/ui';
 import { useMemo, useState } from 'react';
+import { mediaKeyOf } from '../../import/assets.ts';
 import { bundleErrorText, rebuildBundle } from '../../mg-bundles/import.ts';
 import { insertComposition } from '../../mg-bundles/insert.ts';
 import { useMgRuntimeAttach } from '../../mg-bundles/RuntimeHost.tsx';
-import { engineKeyOf } from '../../mg-bundles/runtime.ts';
 import { writeMgTemplateDrag } from './insert.ts';
 
 type NullableStore = {
@@ -19,10 +19,10 @@ type NullableStore = {
 };
 const NO_SESSION_STORE: NullableStore = { getState: () => null, subscribe: () => () => {} };
 
-export type BundleEntry = { asset: MediaAsset; compositions: MgCompositionInfo[] };
+type BundleEntry = { asset: MediaAsset; compositions: MgCompositionInfo[] };
 
 /** The project's bundles (sorted by name) with their compositions, filtered by a query. */
-export function bundleEntries(media: Record<string, MediaAsset>, query = ''): BundleEntry[] {
+function bundleEntries(media: Record<string, MediaAsset>, query = ''): BundleEntry[] {
 	const q = query.trim().toLowerCase();
 	return Object.values(media)
 		.filter((m) => m.kind === 'mg-bundle' && m.mgBundle)
@@ -47,7 +47,7 @@ function CompositionCard(props: {
 	disabled: boolean;
 }) {
 	const { asset, comp } = props;
-	const key = engineKeyOf(asset);
+	const key = mediaKeyOf(asset);
 	const [failed, setFailed] = useState(false);
 	const poster = key
 		? `/api/mg-bundles/${encodeURIComponent(key)}/poster/${encodeURIComponent(comp.id)}`

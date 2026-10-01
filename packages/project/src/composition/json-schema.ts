@@ -38,7 +38,7 @@ function deepEqual(a: unknown, b: unknown): boolean {
 }
 
 /** Resolves a local `$ref` (`#`, `#/$defs/x`, `#/definitions/x`, any `#/a/b` pointer) against the root. */
-export function resolveSchemaRef(root: JsonSchemaNode, ref: string): JsonSchemaNode | boolean | undefined {
+function resolveSchemaRef(root: JsonSchemaNode, ref: string): JsonSchemaNode | boolean | undefined {
 	if (!ref.startsWith('#')) return undefined;
 	const parts = ref
 		.slice(1)
@@ -50,7 +50,7 @@ export function resolveSchemaRef(root: JsonSchemaNode, ref: string): JsonSchemaN
 		if (!isObj(cur) && !Array.isArray(cur)) return undefined;
 		cur = (cur as Record<string, unknown>)[p];
 	}
-	return isObj(cur) || typeof cur === 'boolean' ? (cur as JsonSchemaNode | boolean) : undefined;
+	return isObj(cur) || typeof cur === 'boolean' ? cur : undefined;
 }
 
 /** Follows `$ref` chains (at most 32 hops) and returns the target schema. */
@@ -100,11 +100,9 @@ function visit(
 
 	if (s.type !== undefined) {
 		const types = Array.isArray(s.type) ? (s.type as string[]) : [s.type as string];
-		const ok = types.some((ty) =>
-			ty === 'integer' ? t === 'number' && Number.isInteger(v) : ty === 'number' ? t === 'number' : ty === t,
-		);
+		const ok = types.some((ty) => (ty === 'integer' ? t === 'number' && Number.isInteger(v) : ty === t));
 		if (!ok) {
-			push(`expected ${types.join(' or ')}, got ${t === 'number' && !Number.isInteger(v) ? 'number' : t}`);
+			push(`expected ${types.join(' or ')}, got ${t}`);
 			return;
 		}
 	}

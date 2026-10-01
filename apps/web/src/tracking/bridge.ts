@@ -14,7 +14,7 @@ let active: {
 	session: { current: EditorSession };
 } | null = null;
 
-export function attachTrackingBridge(
+function attachTrackingBridge(
 	subscribe: Subscribe,
 	engine: TrackingEngine,
 	session: EditorSession,

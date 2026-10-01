@@ -6,7 +6,7 @@ import type { TrackMode, TrackPlan, TrackQuality, Vec2 } from '@jasper/project';
 import { useSyncExternalStore } from 'react';
 import { createStore } from 'zustand/vanilla';
 
-export type TrackerOptions = {
+type TrackerOptions = {
 	quality: TrackQuality;
 	/** Planar: take features from a ring around the quad (screens whose content changes). */
 	surroundings: boolean;
@@ -14,14 +14,14 @@ export type TrackerOptions = {
 	refineEdges: boolean;
 };
 
-export const DEFAULT_OPTIONS: TrackerOptions = {
+const DEFAULT_OPTIONS: TrackerOptions = {
 	quality: 'balanced',
 	surroundings: false,
 	refineEdges: true,
 };
-export const POINT_OPTIONS: TrackerOptions = { quality: 'balanced', surroundings: false, refineEdges: false };
+const POINT_OPTIONS: TrackerOptions = { quality: 'balanced', surroundings: false, refineEdges: false };
 
-export type LiveProgress = {
+type LiveProgress = {
 	/** Source frame of the plate media. */
 	frame: number;
 	data: number[];
@@ -44,7 +44,7 @@ export type RunningTrack = {
 	finishing?: boolean;
 };
 
-export type TrackingState = {
+type TrackingState = {
 	/** The tracker whose overlay is shown (it must belong to a selected clip). */
 	activeTrackerId: string | null;
 	options: Record<string, TrackerOptions>;

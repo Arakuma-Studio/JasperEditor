@@ -4,11 +4,13 @@
 // draws unpinned, TRK-030).
 import {
 	type Clip,
+	CORNER_PIN_PARAMS,
 	clipContentTime,
 	evaluate,
 	findTracker,
 	intrinsicBoxOf,
 	type Rational,
+	type TrackedBy,
 } from '@jasper/project';
 import { useSessionState } from '@jasper/session/react';
 import { Move, RefreshCw, TriangleAlert, Unlink } from 'lucide-react';
@@ -19,22 +21,13 @@ import { SmallButton, ToolButton } from './controls.tsx';
 import { CORNER_PIN_DEFAULTS, pinIsConvex, type Quad } from './geometry.ts';
 import { trackingStore, useTracking } from './store.ts';
 
-type TrackedBy = {
-	clipId: string;
-	trackerId: string;
-	mode: 'corner-pin' | 'transform';
-	effectInstanceId?: string;
-};
-
-const PARAMS = ['topLeft', 'topRight', 'bottomRight', 'bottomLeft'] as const;
-
 /** Corner-pin params of an effect instance evaluated at a sequence frame (normalised). */
-export function pinAt(clip: Clip, fx: EffectEditorProps['fx'], frame: number, fps: Rational): Quad {
+function pinAt(clip: Clip, fx: EffectEditorProps['fx'], frame: number, fps: Rational): Quad {
 	const inClip = Math.min(clip.start + clip.duration - 1, Math.max(clip.start, frame));
 	const t = clipContentTime(clip, inClip, fps);
-	return PARAMS.map((k, i) => {
+	return CORNER_PIN_PARAMS.map((k, i) => {
 		const a = fx.params[k];
-		const v = a ? (evaluate(a as never, t) as unknown) : null;
+		const v = a ? evaluate(a, t) : null;
 		return Array.isArray(v) && v.length === 2 ? [Number(v[0]), Number(v[1])] : CORNER_PIN_DEFAULTS[i]!;
 	}) as Quad;
 }
@@ -50,7 +43,7 @@ export function CornerPinEditor(props: EffectEditorProps) {
 	const driven =
 		tb && tb.mode === 'corner-pin' && (!tb.effectInstanceId || tb.effectInstanceId === fx.id) ? tb : null;
 	const loc = driven ? findTracker(doc, driven.trackerId) : null;
-	const box = seq ? intrinsicBoxOf({ clip, doc, seq } as never) : { width: 1920, height: 1080 };
+	const box = seq ? intrinsicBoxOf({ clip, doc, seq }) : { width: 1920, height: 1080 };
 	const convex = seq ? pinIsConvex(pinAt(clip, fx, frame, seq.settings.frameRate), box) : true;
 	const act = (fn: () => void) => {
 		try {

@@ -276,10 +276,9 @@ describe('gain law of the crossfade curves', () => {
 	const inc = (curve: RenderAudioFade['curve']): RenderAudioFade[] => [{ type: 'in', ...span, curve }];
 	const frames = Array.from({ length: 401 }, (_, i) => 85 + i * 0.075); // 85…115, fractional too
 
-	it('constant power: outgoing² + incoming² = 1 (within 0.5 dB) across the span', () => {
+	it('constant power: outgoing² + incoming² = 1 across the span', () => {
 		for (const f of frames) {
 			const p = audioFadeGain(out('equal-power'), f) ** 2 + audioFadeGain(inc('equal-power'), f) ** 2;
-			expect(Math.abs(10 * Math.log10(p))).toBeLessThan(0.5);
 			expect(p).toBeCloseTo(1, 12);
 		}
 		expect(audioFadeGain(out('equal-power'), 100)).toBeCloseTo(Math.SQRT1_2, 12);

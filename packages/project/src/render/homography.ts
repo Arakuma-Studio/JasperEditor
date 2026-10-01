@@ -8,8 +8,6 @@ export type Mat3 = [number, number, number, number, number, number, number, numb
 /** Corners in the order TL, TR, BR, BL (the S03 layer-quad order). */
 export type Quad = [Vec2, Vec2, Vec2, Vec2];
 
-export const MAT3_IDENTITY: Mat3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
-
 export function mat3FromMat2D(m: Mat2D): Mat3 {
 	return [m.a, m.c, m.e, m.b, m.d, m.f, 0, 0, 1];
 }

@@ -2,7 +2,7 @@
 // panels come from the panel registry; Program and Timeline are keep-alive (renderer "always", SH-006);
 // every panel has an error boundary (PC-032) and receives `visible` (SH-007). Tabs follow PC-001…009:
 // context titles, the ≡ panel menu on the active tab, × on hover, middle-click close, overflow list,
-// attention dot; the empty workspace shows DK-043; a maximized group shows a Restore button (DK-041).
+// the empty workspace shows DK-043; a maximized group shows a Restore button (DK-041).
 import type { SessionState } from '@jasper/session';
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import {
@@ -33,7 +33,6 @@ import {
 	useMemo,
 	useRef,
 	useState,
-	useSyncExternalStore,
 } from 'react';
 import { sourceMonitorState } from '../../panels/source/source-state.ts';
 import type { PanelDefinition, PanelKind, PanelTitleContext } from '../../panels/types.ts';
@@ -56,30 +55,6 @@ function useDock(): DockCtx {
 	const d = useContext(DockContext);
 	if (!d) throw new Error('DockContext missing');
 	return d;
-}
-
-// ------------------------------------------------------------------ attention dots (PC-009)
-
-const attention = new Set<PanelKind>();
-const attentionListeners = new Set<() => void>();
-let attentionVersion = 0;
-/** Marks an inactive tab (e.g. a finished job); cleared when the tab becomes active. */
-export function setPanelAttention(kind: PanelKind, on = true): void {
-	if (on === attention.has(kind)) return;
-	if (on) attention.add(kind);
-	else attention.delete(kind);
-	attentionVersion++;
-	for (const l of [...attentionListeners]) l();
-}
-function useAttention(kind: PanelKind): boolean {
-	useSyncExternalStore(
-		(l) => {
-			attentionListeners.add(l);
-			return () => attentionListeners.delete(l);
-		},
-		() => attentionVersion,
-	);
-	return attention.has(kind);
 }
 
 // ------------------------------------------------------------------ titles (PC-002)
@@ -172,7 +147,6 @@ function PanelTab(props: IDockviewPanelHeaderProps<{ kind: PanelKind }>) {
 	const def = panels.get(kind);
 	const title = panelTitle(def, useTitleContext(props.params), props.api.title ?? kind);
 	const [active, setActive] = useState(props.api.isVisible);
-	const attn = useAttention(kind);
 	const menu = usePanelMenu(props.api.id, def);
 	// Fixed-width strips (Tools 40 px, Audio Meters 52 px): the title cannot fit, so the tab shows only the
 	// centered panel-menu glyph, as in Premiere; the title stays available as tooltip and aria-label.
@@ -183,9 +157,6 @@ function PanelTab(props: IDockviewPanelHeaderProps<{ kind: PanelKind }>) {
 		setActive(props.api.isVisible);
 		return () => d.dispose();
 	}, [props.api]);
-	useEffect(() => {
-		if (active && attn) setPanelAttention(kind, false);
-	}, [active, attn, kind]);
 	useEffect(() => {
 		if (props.api.title !== title) props.api.setTitle(title);
 	}, [props.api, title]);
@@ -213,9 +184,6 @@ function PanelTab(props: IDockviewPanelHeaderProps<{ kind: PanelKind }>) {
 				)}
 			>
 				<span className={narrow ? 'sr-only' : 'truncate'}>{title}</span>
-				{attn && !active ? (
-					<span className="size-1.5 shrink-0 rounded-full bg-pr-accent" data-testid="tab-attention" />
-				) : null}
 				{active && props.tabLocation === 'header' ? (
 					<DropdownMenu
 						items={menu}

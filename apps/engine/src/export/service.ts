@@ -418,7 +418,6 @@ export class ExportService {
 		});
 	}
 
-	/** Snapshot with signed absolute media and font URLs for the headless browser (S04:RR-003, MS-003). */
 	/** M2 (§19.6): runs `prepare` of the extensions that serve the Remotion path too. */
 	private async prepareForRemotion(planned: PlannedExport, ctx: JobContext): Promise<Map<string, unknown>> {
 		const exts = this.nativeExtensions.all().filter((e) => e.prepareForRemotion);
@@ -433,6 +432,7 @@ export class ExportService {
 		});
 	}
 
+	/** Snapshot with signed absolute media and font URLs for the headless browser (S04:RR-003, MS-003). */
 	private remotionProps(
 		planned: PlannedExport,
 		prepared: ReadonlyMap<string, unknown> = new Map(),
@@ -469,7 +469,7 @@ export class ExportService {
 		}
 		return {
 			doc,
-			options: { isPreview: false, useProxies: false, transparentBackground: false, showOffline: true },
+			options: { isPreview: false, useProxies: false, transparentBackground: false },
 		};
 	}
 

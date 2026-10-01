@@ -15,7 +15,7 @@ type BuildInfo = {
 		version?: string | null;
 		license?: string;
 		sourceUrl?: string;
-		origin?: { kind?: string; release?: string; url?: string };
+		origin?: { kind?: string; release?: string };
 	};
 };
 
@@ -98,7 +98,7 @@ export async function ffmpegLicense(input: {
  * M2 (additive): packages that ship third-party runtimes or model weights (wp-m2-process: vid.stab WASM,
  * ONNX Runtime, OpenCV.js, the SPAN weights) contribute their entries to Help ▸ About ▸ Licenses.
  */
-export type LicenseProvider = () => Promise<LicenseComponent[]> | LicenseComponent[];
+type LicenseProvider = () => Promise<LicenseComponent[]> | LicenseComponent[];
 const licenseProviders = new Set<LicenseProvider>();
 export function registerLicenseProvider(fn: LicenseProvider): () => void {
 	licenseProviders.add(fn);

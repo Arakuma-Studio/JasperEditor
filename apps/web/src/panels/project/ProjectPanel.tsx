@@ -7,7 +7,7 @@ import { useSession, useSessionState } from '@jasper/session/react';
 import { Button, cx, Icon, IconButton, type IconId, LABEL_DISPLAY_NAMES, LABEL_NAMES } from '@jasper/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { collectMenuItems, type MenuItemSpec, projectItemMenuExtensions } from '../../extensions/index.ts';
-import { useLocalCommandCtx } from '../../home/ui-bridge.ts';
+import { runIfRegistered, useLocalCommandCtx } from '../../home/ui-bridge.ts';
 import { mediaKeyOf } from '../../import/assets.ts';
 import { type ClientJob, useClientJobs } from '../../import/client-jobs.ts';
 import { pickFilesInBrowser } from '../../import/desktop.ts';
@@ -15,18 +15,7 @@ import { EngineImportService, readDataTransfer, writeProjectItemsDrag } from '..
 import { useEngine } from '../../state/engine.tsx';
 import { getImportService, PROJECT_ITEMS_MIME } from '../../state/services.ts';
 import type { PanelProps } from '../types.ts';
-import {
-	colorMatteSupported,
-	createBin,
-	createColorMatte,
-	createText,
-	deleteItems,
-	moveItems,
-	openItem,
-	openMotionTemplates,
-	renameItem,
-	setLabel,
-} from './actions.ts';
+import { createBin, createText, deleteItems, moveItems, openItem, renameItem, setLabel } from './actions.ts';
 import { projectDialogs } from './dialogs.tsx';
 import { type ProjectViewMode, registerProjectPanel, touchProjectPanel } from './instances.ts';
 import {
@@ -250,7 +239,6 @@ export function ProjectPanel(props: PanelProps) {
 
 	const crumbs = breadcrumb(doc, binId);
 	const total = rows.length;
-	const showMatte = useMemo(() => colorMatteSupported(session), [session]);
 
 	const rowHandlers = (row: ProjectRow) => ({
 		onClick: (e: React.MouseEvent) => select(row.id, e),
@@ -480,11 +468,10 @@ export function ProjectPanel(props: PanelProps) {
 							Sequence…
 						</MenuEntry>
 						<MenuEntry onClick={() => createBin(session, binId)}>Bin</MenuEntry>
-						{showMatte ? (
-							<MenuEntry onClick={() => createColorMatte(session, binId)}>Color Matte…</MenuEntry>
-						) : null}
-						<MenuEntry onClick={() => void createText(session, ctx)}>Text</MenuEntry>
-						<MenuEntry onClick={() => void openMotionTemplates(ctx)}>Motion Graphic…</MenuEntry>
+						<MenuEntry onClick={() => createText(session)}>Text</MenuEntry>
+						<MenuEntry onClick={() => void runIfRegistered('panel.open.motionTemplates', ctx)}>
+							Motion Graphic…
+						</MenuEntry>
 					</Menu>
 				) : null}
 			</div>
@@ -547,7 +534,7 @@ function PendingImports({ jobs }: { jobs: ClientJob[] }) {
 	);
 }
 
-export function ProgressRing({ value, size = 12 }: { value: number; size?: number }) {
+function ProgressRing({ value, size = 12 }: { value: number; size?: number }) {
 	const r = size / 2 - 1.5;
 	const c = 2 * Math.PI * r;
 	return (

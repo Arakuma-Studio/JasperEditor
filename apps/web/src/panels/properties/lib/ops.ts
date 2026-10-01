@@ -4,11 +4,10 @@ import type { Command, TransactionResult } from '@jasper/project';
 import type { EditorSession, Gesture } from '@jasper/session';
 import { useMemo, useRef } from 'react';
 
-export type ScrubHandle = {
+type ScrubHandle = {
 	start(label: string): boolean;
 	update(commands: Command[]): TransactionResult | null;
 	end(cancelled: boolean): TransactionResult | null;
-	readonly active: boolean;
 };
 
 export type InspectorOps = {
@@ -17,7 +16,7 @@ export type InspectorOps = {
 };
 
 /** Applies a user transaction; empty command lists are a no-op. */
-export function applyUser(
+function applyUser(
 	session: EditorSession,
 	label: string,
 	commands: Command[],
@@ -33,9 +32,6 @@ export function applyUser(
 export function createScrub(session: EditorSession): ScrubHandle {
 	let gesture: Gesture | null = null;
 	return {
-		get active() {
-			return !!gesture?.active;
-		},
 		start(label) {
 			if (gesture?.active) return true;
 			if (session.gestureActive) return false;

@@ -47,8 +47,6 @@ export class PlanError extends Error {
 	}
 }
 
-/** Effects the native builder reproduces exactly (static params only); M2 extensions add more (§19.6). */
-export const NATIVE_EFFECTS = BUILTIN_NATIVE_EFFECTS;
 const NATIVE_VISUAL_KINDS = new Set(['video', 'still', 'solid', 'motion-graphic']);
 
 export type OutputSpec = {
@@ -90,10 +88,6 @@ export type PlannedExport = {
 export function mediaKeyOf(asset: Pick<MediaAsset, 'locators'>): string | null {
 	for (const l of asset.locators) if (l.type === 'engine-store') return l.key;
 	return null;
-}
-
-function staticOk(a: { keyframes: readonly unknown[] } | undefined | null): boolean {
-	return !isAnimated(a);
 }
 
 function fpsNum(r: Rational): number {
@@ -213,7 +207,12 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	}
 	for (const a of snapshot.audioClips) {
 		const why: string[] = [];
-		if (!staticOk(a.volumeDb) || !staticOk(a.pan) || !staticOk(a.track.volumeDb) || !staticOk(a.track.pan))
+		if (
+			isAnimated(a.volumeDb) ||
+			isAnimated(a.pan) ||
+			isAnimated(a.track.volumeDb) ||
+			isAnimated(a.track.pan)
+		)
 			why.push('animated audio levels are not supported by the native path in M1');
 		if (a.pan.value !== 0 || a.track.pan.value !== 0)
 			why.push('audio pan is not supported by the native path in M1');
@@ -221,7 +220,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		if (a.speed.reverse) why.push('reversed audio is not supported by the native path');
 		for (const reason of why) blockers.push({ itemId: a.clipId, path: 'native', reason });
 	}
-	if (!staticOk(snapshot.master.volumeDb))
+	if (isAnimated(snapshot.master.volumeDb))
 		blockers.push({ path: 'native', reason: 'animated master volume' });
 	const video0 = settings.video;
 	const encoder = deps.selectEncoder
@@ -472,20 +471,20 @@ export function nativeBlockers(
 	const t = c.transform;
 	if (
 		t &&
-		(!staticOk(t.position) ||
-			!staticOk(t.anchor) ||
-			!staticOk(t.scale) ||
-			!staticOk(t.scaleWidth) ||
-			!staticOk(t.rotation))
+		(isAnimated(t.position) ||
+			isAnimated(t.anchor) ||
+			isAnimated(t.scale) ||
+			isAnimated(t.scaleWidth) ||
+			isAnimated(t.rotation))
 	)
 		out.push(`${label} has animated Motion (keyframes), not native in M1`);
-	if (!staticOk(c.opacity)) out.push(`${label} has animated opacity, not native in M1`);
+	if (isAnimated(c.opacity)) out.push(`${label} has animated opacity, not native in M1`);
 	if (c.blendMode !== 'normal') out.push(`${label} uses blend mode "${c.blendMode}"`);
 	if (c.speed.reverse) out.push(`${label} plays in reverse`);
 	for (const fx of c.effects) {
 		if (!fx.enabled) continue;
 		const animated = Object.values(fx.params).some((p) => isAnimated(p));
-		if (NATIVE_EFFECTS.has(fx.effectId)) {
+		if (BUILTIN_NATIVE_EFFECTS.has(fx.effectId)) {
 			if (animated) out.push(`${label} has an animated ${fx.effectId}`);
 			continue;
 		}

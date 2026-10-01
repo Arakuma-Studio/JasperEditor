@@ -5,32 +5,26 @@
 // are realized by the Program monitor's PlaybackDriver with seek-stepping (TL-873).
 // Also registered here: monitor-scoped commands (fit, loop, nudge, snap) and the Source hand-off
 // (source.open, Insert `,` / Overwrite `.`), because the monitors own those behaviors.
-import { nextEditPoint, prevEditPoint } from '@jasper/project';
+import { nextEditPoint, prevEditPoint, sequenceDuration } from '@jasper/project';
 import type { TransportStore } from '@jasper/session';
 import { z } from 'zod';
-import {
-	activeSequence,
-	NUDGE_LARGE,
-	NUDGE_SMALL,
-	nudgeSelection,
-	sequenceEnd,
-} from '../panels/program/edits.ts';
+import { activeSequence, NUDGE_LARGE, NUDGE_SMALL, nudgeSelection } from '../panels/program/edits.ts';
 import { monitorStores } from '../panels/program/monitor-store.ts';
 import { driverFor, getSourceTransport, shuttleFor } from '../panels/program/transport-registry.ts';
 import { openInSource, performSourceEdit, sourceMonitorState } from '../panels/source/source-state.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
 /** Large step for Shift+←/→ (S02:TL-876 preference default). */
-export const LARGE_STEP_FRAMES = 5;
+const LARGE_STEP_FRAMES = 5;
 /** Play Around pre/post-roll (S02:TL-877 preference default). */
-export const PLAY_AROUND_SECONDS = 2;
+const PLAY_AROUND_SECONDS = 2;
 
 function isSource(ctx: CommandCtx): boolean {
 	return ctx.focus.panel === 'source' && getSourceTransport() !== null;
 }
 
 /** The transport the command acts on. */
-export function activeTransport(ctx: CommandCtx): TransportStore {
+function activeTransport(ctx: CommandCtx): TransportStore {
 	return (isSource(ctx) ? getSourceTransport() : null) ?? ctx.transport;
 }
 
@@ -38,7 +32,7 @@ export function activeTransport(ctx: CommandCtx): TransportStore {
 function endFrame(ctx: CommandCtx): number {
 	if (isSource(ctx)) return Math.max(0, sourceMonitorState.getState().durationFrames - 1);
 	const seq = ctx.session ? activeSequence(ctx.session) : null;
-	return seq ? sequenceEnd(seq) : 0;
+	return seq ? sequenceDuration(seq) : 0;
 }
 
 function inOut(ctx: CommandCtx): { in: number | null; out: number | null } {

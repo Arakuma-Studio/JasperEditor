@@ -13,8 +13,7 @@ import {
 } from 'react';
 import { cx } from '../cx.ts';
 
-type HostState = { enabled: boolean };
-const HostContext = createContext<HostState | null>(null);
+const HostContext = createContext<boolean | null>(null);
 
 export type TooltipHostProps = {
 	children?: ReactNode;
@@ -26,7 +25,7 @@ export type TooltipHostProps = {
 /** Mount once per window, above every tooltipped control (S05:SH-004). */
 export function TooltipHost({ children, enabled = true, delayMs = 600 }: TooltipHostProps) {
 	return (
-		<HostContext.Provider value={{ enabled }}>
+		<HostContext.Provider value={enabled}>
 			<RTooltip.Provider delayDuration={delayMs} skipDelayDuration={300}>
 				{children}
 			</RTooltip.Provider>
@@ -56,12 +55,12 @@ function plainText(node: ReactNode): string | undefined {
 
 export function Tooltip({ content, detail, side = 'bottom', align = 'center', children }: TooltipProps) {
 	const host = useContext(HostContext);
-	if (!host) {
+	if (host === null) {
 		const title = [plainText(content), plainText(detail)].filter(Boolean).join('\n');
 		if (!title || !isValidElement(children)) return children;
 		return cloneElement(children as ReactElement<{ title?: string }>, { title });
 	}
-	if (!host.enabled) return children;
+	if (!host) return children;
 	return (
 		<RTooltip.Root>
 			<RTooltip.Trigger asChild>{children}</RTooltip.Trigger>

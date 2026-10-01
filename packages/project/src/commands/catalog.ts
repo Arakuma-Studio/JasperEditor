@@ -1,5 +1,4 @@
 // The single registration point for document commands: type → schema, handler, label, owner.
-// Wave-2 owners replace handler bodies in their own files; this table only changes additively.
 import type { z } from 'zod';
 import type { HandlerContext } from './context.ts';
 import { clipCoreHandlers } from './handlers/clip-core.ts';

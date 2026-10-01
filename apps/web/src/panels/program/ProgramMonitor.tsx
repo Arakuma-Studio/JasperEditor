@@ -24,23 +24,14 @@ import {
 	StepBack,
 	StepForward,
 } from 'lucide-react';
-import {
-	type CSSProperties,
-	useCallback,
-	useEffect,
-	useLayoutEffect,
-	useMemo,
-	useRef,
-	useState,
-} from 'react';
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useColorBypass } from '../../color/actions.ts';
 import { runCommand } from '../../commands/index.ts';
 import { programOverlays } from '../../extensions/index.ts';
 import { useRegistry } from '../../extensions/react.ts';
-import { useEngine } from '../../state/engine.tsx';
+import { useEngineOrNull } from '../../state/engine.tsx';
 import { markerVar } from '../timeline/components/ClipView.tsx';
 import type { PanelProps } from '../types.ts';
-import { addMarkerAt, liftOrExtract, setSequenceMark } from './edits.ts';
 import {
 	durationLabel,
 	MiniRuler,
@@ -49,16 +40,12 @@ import {
 	TimecodeDisplay,
 	type TimecodeFormat,
 	TransportButton,
+	useElementSize,
 	useTransportPlaying,
 } from './MonitorChrome.tsx';
 import { MgRenderStateProvider } from './mg-render-state.tsx';
 import { checkerboard } from './monitor.tokens.ts';
-import {
-	handleMonitorKey,
-	monitorPanelServices,
-	runWithFallback,
-	useMonitorCommandCtx,
-} from './monitor-commands.ts';
+import { handleMonitorKey, monitorPanelServices, useMonitorCommandCtx } from './monitor-commands.ts';
 import {
 	monitorStores,
 	PLAYBACK_RESOLUTIONS,
@@ -102,37 +89,6 @@ export function ProgramMonitor(props: PanelProps) {
 	return <ProgramMonitorBody session={session} instanceId={props.instanceId} />;
 }
 
-function useElementSize<T extends HTMLElement>(): [React.RefObject<T | null>, Size] {
-	const ref = useRef<T>(null);
-	const [size, setSize] = useState<Size>({ width: 0, height: 0 });
-	useLayoutEffect(() => {
-		const el = ref.current;
-		if (!el) return;
-		const measure = () =>
-			setSize((s) =>
-				s.width === el.clientWidth && s.height === el.clientHeight
-					? s
-					: { width: el.clientWidth, height: el.clientHeight },
-			);
-		measure();
-		if (typeof ResizeObserver === 'undefined') return;
-		const ro = new ResizeObserver(measure);
-		ro.observe(el);
-		return () => ro.disconnect();
-	}, []);
-	return [ref, size];
-}
-
-/** The engine client when an EngineProvider is mounted (tests and Storybook-like hosts may omit it). */
-export function useOptionalEngineClient(): EngineClient | null {
-	try {
-		// biome-ignore lint/correctness/useHookAtTopLevel: always called; only the missing-provider throw is caught
-		return useEngine().client;
-	} catch {
-		return null;
-	}
-}
-
 function useFontCatalog(engine: EngineClient | null): FontCatalog | null {
 	const [catalog, setCatalog] = useState<FontCatalog | null>(null);
 	useEffect(() => {
@@ -150,7 +106,7 @@ function useFontCatalog(engine: EngineClient | null): FontCatalog | null {
 }
 
 function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; instanceId: string }) {
-	const engine = useOptionalEngineClient();
+	const engine = useEngineOrNull()?.client ?? null;
 	const transport = session.transport;
 	const overlays = useRegistry(programOverlays);
 	const seqId = useSessionState((s) => s.activeSequenceId);
@@ -165,12 +121,12 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 	const doc = useMemo(() => {
 		if (!seqId || !seq) return null;
 		const d = buildProgramDoc(
-			{ doc: drawn, sequenceId: seqId, media, useProxies, proxyTier: tier, fontCatalog },
+			{ doc: drawn, sequenceId: seqId, media, proxyTier: tier, fontCatalog },
 			prevDoc.current,
 		);
 		prevDoc.current = d;
 		return d;
-	}, [drawn, seqId, seq, media, useProxies, tier, fontCatalog]);
+	}, [drawn, seqId, seq, media, tier, fontCatalog]);
 	const transparent = (seq?.settings.backgroundColor[3] ?? 1) === 0;
 	// Before/after (S06:CGU-005, wp-m2-color): clips whose colour effects the preview bypasses.
 	const colorBypass = useColorBypass();
@@ -210,7 +166,7 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 					const e = live.current.end;
 					return { end: e, loopStart: s?.inPoint ?? 0, loopEnd: s?.outPoint ?? e };
 				},
-				setPlayerRate: (r) => setPlayerRate(r),
+				setPlayerRate,
 				onBuffering: setBuffering,
 			}),
 		[transport],
@@ -320,7 +276,6 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 		[],
 	);
 	const run = (id: string) => void runCommand(id, ctx);
-	const frameNow = () => transport.getState().frame;
 	const proxyChip = doc ? usesProxies(doc, options) : false;
 	const playerStyle = useMemo<CSSProperties>(
 		() => ({ width: frameSize.width, height: frameSize.height }),
@@ -516,9 +471,7 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 					label="Add Marker"
 					shortcut="M"
 					testId="btn-add-marker"
-					onClick={() =>
-						void runWithFallback('timeline.addMarker', ctx, () => addMarkerAt(session, frameNow()))
-					}
+					onClick={() => run('timeline.addMarker')}
 				>
 					<Bookmark size={16} />
 				</TransportButton>
@@ -526,9 +479,7 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 					label="Mark In"
 					shortcut="I"
 					testId="btn-mark-in"
-					onClick={() =>
-						void runWithFallback('timeline.markIn', ctx, () => setSequenceMark(session, 'in', frameNow()))
-					}
+					onClick={() => run('timeline.markIn')}
 				>
 					<span className="font-pr text-[15px] leading-none">{'{'}</span>
 				</TransportButton>
@@ -536,9 +487,7 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 					label="Mark Out"
 					shortcut="O"
 					testId="btn-mark-out"
-					onClick={() =>
-						void runWithFallback('timeline.markOut', ctx, () => setSequenceMark(session, 'out', frameNow()))
-					}
+					onClick={() => run('timeline.markOut')}
 				>
 					<span className="font-pr text-[15px] leading-none">{'}'}</span>
 				</TransportButton>
@@ -546,7 +495,7 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 					label="Go to In"
 					shortcut="Shift+I"
 					testId="btn-go-in"
-					onClick={() => void runWithFallback('timeline.goToIn', ctx, () => seek(seq.inPoint ?? 0))}
+					onClick={() => run('timeline.goToIn')}
 				>
 					<ArrowLeftToLine size={16} />
 				</TransportButton>
@@ -579,40 +528,22 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 					label="Go to Out"
 					shortcut="Shift+O"
 					testId="btn-go-out"
-					onClick={() =>
-						void runWithFallback('timeline.goToOut', ctx, () =>
-							seek(seq.outPoint !== null ? seq.outPoint - 1 : end),
-						)
-					}
+					onClick={() => run('timeline.goToOut')}
 				>
 					<ArrowRightToLine size={16} />
 				</TransportButton>
-				<TransportButton
-					label="Lift"
-					shortcut=";"
-					testId="btn-lift"
-					onClick={() =>
-						void runWithFallback('timeline.lift', ctx, () => reportEdit(liftOrExtract(session, 'lift')))
-					}
-				>
+				<TransportButton label="Lift" shortcut=";" testId="btn-lift" onClick={() => run('timeline.lift')}>
 					<ArrowUpFromLine size={16} />
 				</TransportButton>
 				<TransportButton
 					label="Extract"
 					shortcut="'"
 					testId="btn-extract"
-					onClick={() =>
-						void runWithFallback('timeline.extract', ctx, () => reportEdit(liftOrExtract(session, 'extract')))
-					}
+					onClick={() => run('timeline.extract')}
 				>
 					<Scissors size={16} />
 				</TransportButton>
-				{/* Export Frame (PGM-006) stays hidden until the engine stills route exists (WP-2F). */}
 			</div>
 		</div>
 	);
-}
-
-function reportEdit(r: { ok: boolean; message?: string }) {
-	if (!r.ok) console.info(`[program] ${r.message ?? 'edit failed'}`);
 }

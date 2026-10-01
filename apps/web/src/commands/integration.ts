@@ -14,17 +14,16 @@ function shellOf(ctx: CommandCtx): ShellController | null {
 }
 
 /** A command that runs another registered command (menus/keymap use canonical ids of other packages). */
-function delegate(id: string, label: string, target: string, extra: Partial<UiCommand> = {}): UiCommand {
+function delegate(id: string, label: string, target: string): UiCommand {
 	return {
 		id,
 		label,
 		scope: 'global',
-		...extra,
 		when: (ctx) => {
 			const cmd = getCommand(target);
 			return !!cmd && (cmd.when ? cmd.when(ctx) : true);
 		},
-		disabledReason: (ctx) => getCommand(target)?.disabledReason?.(ctx) ?? undefined,
+		disabledReason: (ctx) => getCommand(target)?.disabledReason?.(ctx),
 		run: async (ctx, args) => {
 			await runCommand(target, ctx, args);
 		},

@@ -6,6 +6,7 @@ import {
 	type ReactNode,
 	useContext,
 	useEffect,
+	useMemo,
 	useRef,
 	useState,
 	useSyncExternalStore,
@@ -40,24 +41,24 @@ export function useStoreSelector<S, T>(
 	selector: (s: S) => T,
 	equality: (a: T, b: T) => boolean = Object.is,
 ): T {
-	const cache = useRef<{ state: S; value: T } | null>(null);
-	const selRef = useRef(selector);
-	const eqRef = useRef(equality);
-	selRef.current = selector;
-	eqRef.current = equality;
-	const getSnapshot = () => {
-		const state = store.getState();
-		const c = cache.current;
-		if (c && c.state === state) return c.value;
-		const value = selRef.current(state);
-		if (c && eqRef.current(c.value, value)) {
-			cache.current = { state, value: c.value };
-			return c.value;
-		}
-		cache.current = { state, value };
-		return value;
-	};
-	return useSyncExternalStore(store.subscribe, getSnapshot, getSnapshot);
+	const committed = useRef<{ value: T } | null>(null);
+	const getSnapshot = useMemo(() => {
+		let cache: { state: S; value: T } | null = null;
+		return () => {
+			const state = store.getState();
+			if (cache && cache.state === state) return cache.value;
+			const selected = selector(state);
+			const previous = cache ?? committed.current;
+			const value = previous && equality(previous.value, selected) ? previous.value : selected;
+			cache = { state, value };
+			return value;
+		};
+	}, [store, selector, equality]);
+	const value = useSyncExternalStore(store.subscribe, getSnapshot, getSnapshot);
+	useEffect(() => {
+		committed.current = { value };
+	}, [value]);
+	return value;
 }
 
 export function useSessionState<T>(selector: (s: SessionState) => T, equality?: (a: T, b: T) => boolean): T {

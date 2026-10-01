@@ -6,7 +6,7 @@ import { type RegisteredMedia, UPLOAD_CHUNK_BYTES, UploadOffsetMismatchSchema } 
 import { type EngineClient, EngineError } from '@jasper/engine-client';
 import type { Command, MediaAsset } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
-import { buildMediaAsset, LOCAL_ENGINE_ID } from '../import/assets.ts';
+import { buildMediaAsset, LOCAL_ENGINE_ID, mediaKeyOf } from '../import/assets.ts';
 import { clientJobs } from '../import/client-jobs.ts';
 
 export type BundleImportResult = { mediaId: string; reused: boolean; media: RegisteredMedia };
@@ -21,7 +21,7 @@ export function bundleErrorText(e: unknown): string {
 }
 
 /** The document asset of a registered bundle (keeps the `mgBundle` header). */
-export function bundleAsset(reg: RegisteredMedia, id: string, now: string): MediaAsset {
+function bundleAsset(reg: RegisteredMedia, id: string, now: string): MediaAsset {
 	const asset = buildMediaAsset(reg, { id, engineId: LOCAL_ENGINE_ID, now });
 	return { ...asset, ...(reg.mgBundle ? { mgBundle: reg.mgBundle } : {}) };
 }
@@ -30,17 +30,13 @@ export function bundleAsset(reg: RegisteredMedia, id: string, now: string): Medi
  * Adds (or refreshes) the bundle in the project: an asset with the same engine key is reused; a rebuilt
  * version of a bundle already in the project (same project folder) is relinked instead of duplicated.
  */
-export function commitBundle(
+function commitBundle(
 	session: EditorSession,
 	reg: RegisteredMedia,
 	label = 'Import Remotion Project',
 ): BundleImportResult {
 	const doc = session.getCommitted();
-	const keyOf = (m: MediaAsset) => {
-		const l = m.locators.find((x) => x.type === 'engine-store');
-		return l && l.type === 'engine-store' ? l.key : null;
-	};
-	const same = Object.values(doc.media).find((m) => m.kind === 'mg-bundle' && keyOf(m) === reg.mediaKey);
+	const same = Object.values(doc.media).find((m) => m.kind === 'mg-bundle' && mediaKeyOf(m) === reg.mediaKey);
 	if (same) return { mediaId: same.id, reused: true, media: reg };
 	const srcPath = reg.mgBundle?.source.path ?? null;
 	const previous = srcPath

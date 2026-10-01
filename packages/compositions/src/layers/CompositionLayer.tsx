@@ -1,4 +1,4 @@
-// Composition clip layer (M2, S08:MGC-020…025, MGC-033). Owner: wp-m2-mg.
+// Composition clip layer (M2, S08:MGC-020…025, MGC-033).
 // Renders (isPreview false, engine): the pre-rendered ProRes 4444 master through <OffthreadVideo transparent>
 // (`prerender.masterUrl`, a signed URL the engine puts in the snapshot). Preview (Player), in order of
 // preference: the cached VP9-alpha preview of the clip's current props (played like a media layer: exact
@@ -16,22 +16,12 @@ import {
 import { Video } from '@remotion/media';
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
 import { OffthreadVideo, Sequence } from 'remotion';
-import {
-	bundleServeUrl,
-	type HostWindow,
-	hostPageUrl,
-	MgFrameHostDriver,
-	MgHostProtocolError,
-} from '../mg-host/protocol.ts';
+import { bundleServeUrl, type HostWindow, hostPageUrl, MgFrameHostDriver } from '../mg-host/protocol.ts';
 import { type CompositionPreviewRuntime, useCompositionPreviewRuntime } from '../mg-host/runtime.ts';
 import type { LayerProps } from '../types.ts';
 import { LayerBox } from './LayerBox.tsx';
 
 const FILL: CSSProperties = { width: '100%', height: '100%', display: 'block' };
-
-function sourceOf(clip: RenderVisualClip): RenderCompositionSource | null {
-	return 'composition' in clip.source ? clip.source.composition : null;
-}
 
 /** Composition frame (at the sequence rate) shown at content time `t` (flicks). */
 export function compositionFrameOf(contentTime: number, fps: number): number {
@@ -56,17 +46,10 @@ export function hasPixelEffects(clip: RenderVisualClip): boolean {
 
 export function CompositionLayer(layer: LayerProps) {
 	const { clip, options } = layer;
-	const src = sourceOf(clip);
-	if (!src?.bundle)
-		return <CompositionCard layer={layer} title="Composition bundle missing" tone="offline" />;
+	const src = 'composition' in clip.source ? clip.source.composition : null;
+	if (!src?.bundle) return <CompositionCard layer={layer} title="Composition bundle missing" />;
 	if (src.info === null || src.info === undefined)
-		return (
-			<CompositionCard
-				layer={layer}
-				title={`Composition ${src.compositionId} not in bundle`}
-				tone="offline"
-			/>
-		);
+		return <CompositionCard layer={layer} title={`Composition ${src.compositionId} not in bundle`} />;
 	if (!options.isPreview) return <MasterLayer layer={layer} src={src} />;
 	return <PreviewLayer layer={layer} src={src} />;
 }
@@ -75,7 +58,7 @@ export function CompositionLayer(layer: LayerProps) {
 function MasterLayer({ layer, src }: { layer: LayerProps; src: RenderCompositionSource }) {
 	const { clip } = layer;
 	const url = src.prerender?.masterUrl;
-	if (!url) return <CompositionCard layer={layer} title="Composition master not rendered" tone="offline" />;
+	if (!url) return <CompositionCard layer={layer} title="Composition master not rendered" />;
 	const layerStart = clip.start - (clip.headHandle ?? 0);
 	const offset = (src.prerender?.startFrame ?? layerStart) - layerStart;
 	return (
@@ -217,7 +200,7 @@ function LiveHost({
 			} catch (e) {
 				live.current.report({
 					state: 'error',
-					message: e instanceof MgHostProtocolError || e instanceof Error ? e.message : String(e),
+					message: e instanceof Error ? e.message : String(e),
 				});
 			} finally {
 				busy.current = false;
@@ -358,29 +341,13 @@ function HostChips({
 	);
 }
 
-/** A card in the layer's box: missing bundle/composition (offline colours) or an idle placeholder. */
-function CompositionCard({
-	layer,
-	title,
-	tone,
-}: {
-	layer: LayerProps;
-	title: string;
-	tone: 'offline' | 'idle';
-}) {
+/** A card in the layer's box for a missing bundle, composition or rendered master. */
+function CompositionCard({ layer, title }: { layer: LayerProps; title: string }) {
 	const h = layer.props.box.height;
 	return (
-		<LayerBox
-			layer={layer}
-			style={{
-				background:
-					tone === 'offline'
-						? 'rgb(179, 38, 30)'
-						: 'repeating-linear-gradient(45deg, rgba(120,60,160,0.35) 0 14px, rgba(90,40,130,0.35) 14px 28px)',
-			}}
-		>
+		<LayerBox layer={layer} style={{ background: 'rgb(179, 38, 30)' }}>
 			<div
-				data-mg-card={tone}
+				data-mg-card="offline"
 				style={{
 					position: 'absolute',
 					inset: 0,

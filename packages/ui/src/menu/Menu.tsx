@@ -5,7 +5,7 @@
 // check/icon column, right-aligned shortcut, submenu chevron; highlight = accent fill with white text;
 // disabled items are tertiary but stay hoverable so their reason tooltip shows (S05:SH-031).
 import { ContextMenu as RContext, DropdownMenu as RDropdown, Menubar as RMenubar } from 'radix-ui';
-import type { ComponentType, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { cx } from '../cx.ts';
 import { Icon } from '../icons/Icon.tsx';
 import type { IconId } from '../icons/registry.ts';
@@ -37,21 +37,18 @@ export type ResolvedMenuItem =
 	| { type: 'label'; id: string; label: string };
 
 /** Radix exposes the same part names for DropdownMenu, ContextMenu and Menubar. */
-type Kit = {
-	Item: ComponentType<any>;
-	CheckboxItem: ComponentType<any>;
-	ItemIndicator: ComponentType<any>;
-	Separator: ComponentType<any>;
-	Label: ComponentType<any>;
-	Sub: ComponentType<any>;
-	SubTrigger: ComponentType<any>;
-	SubContent: ComponentType<any>;
-	Portal: ComponentType<any>;
-};
-
-const DROPDOWN_KIT: Kit = RDropdown as unknown as Kit;
-const CONTEXT_KIT: Kit = RContext as unknown as Kit;
-const MENUBAR_KIT: Kit = RMenubar as unknown as Kit;
+type Kit = Pick<
+	typeof RDropdown,
+	| 'Item'
+	| 'CheckboxItem'
+	| 'ItemIndicator'
+	| 'Separator'
+	| 'Label'
+	| 'Sub'
+	| 'SubTrigger'
+	| 'SubContent'
+	| 'Portal'
+>;
 
 export const MENU_CONTENT =
 	'z-[var(--pr-z-popover)] min-w-[200px] max-h-[var(--radix-dropdown-menu-content-available-height,80vh)] overflow-y-auto ' +
@@ -196,7 +193,7 @@ export function DropdownMenu({
 					sideOffset={2}
 					collisionPadding={8}
 				>
-					{renderItems(DROPDOWN_KIT, typeof items === 'function' ? items() : items)}
+					{renderItems(RDropdown, typeof items === 'function' ? items() : items)}
 				</RDropdown.Content>
 			</RDropdown.Portal>
 		</RDropdown.Root>
@@ -220,7 +217,7 @@ export function ContextMenu({ children, items, onOpenChange, disabled }: Context
 			</RContext.Trigger>
 			<RContext.Portal>
 				<RContext.Content className={MENU_CONTENT} collisionPadding={8}>
-					{renderItems(CONTEXT_KIT, typeof items === 'function' ? items() : items)}
+					{renderItems(RContext, typeof items === 'function' ? items() : items)}
 				</RContext.Content>
 			</RContext.Portal>
 		</RContext.Root>
@@ -271,5 +268,5 @@ export function MenuBar({ menus, className, value, onValueChange }: MenuBarProps
 }
 
 function MenuBarItems({ menu }: { menu: MenuBarMenu }) {
-	return <>{renderItems(MENUBAR_KIT, menu.items())}</>;
+	return <>{renderItems(RMenubar, menu.items())}</>;
 }

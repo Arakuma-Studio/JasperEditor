@@ -7,7 +7,7 @@ import { useLocation, useNavigate } from 'react-router';
 import { getDesktopBridge } from '../runtime/platform.ts';
 import { useEngineEvents } from '../state/engine.tsx';
 
-export const projectPath = (projectId: string) => `/project/${encodeURIComponent(projectId)}`;
+const projectPath = (projectId: string) => `/project/${encodeURIComponent(projectId)}`;
 
 export function AgentOpenProject() {
 	const navigate = useNavigate();

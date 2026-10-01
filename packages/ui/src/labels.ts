@@ -1,27 +1,10 @@
 // Label colors (S05:DT-020…022, R-PUI §3.4). Names match the document's LabelColor (S01:PRJ-001);
 // the colors themselves live in theme/tokens.css (and theme/label-presets.ts for canvas drawing).
-import type { LabelColor } from '@jasper/project';
+import { LABEL_COLORS, type LabelColor } from '@jasper/project';
 
 export type LabelName = LabelColor;
 
-export const LABEL_NAMES: readonly LabelName[] = [
-	'violet',
-	'iris',
-	'caribbean',
-	'lavender',
-	'cerulean',
-	'forest',
-	'rose',
-	'mango',
-	'purple',
-	'blue',
-	'teal',
-	'magenta',
-	'tan',
-	'green',
-	'brown',
-	'yellow',
-];
+export const LABEL_NAMES: readonly LabelName[] = [...LABEL_COLORS];
 
 /** Neutral display names (S05:DT-022) so the UI never copies trade dress. */
 export const LABEL_DISPLAY_NAMES: Record<LabelName, string> = {

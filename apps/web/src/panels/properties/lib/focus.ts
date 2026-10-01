@@ -1,7 +1,7 @@
 // The inspector's focused property and effect (for UI commands: stopwatch toggle, next/previous
 // keyframe, reset, remove effect). A tiny external store: panels write it on pointer/focus, commands read it.
 
-export type InspectorFocus = {
+type InspectorFocus = {
 	/** Panel that set the focus. */
 	source: 'properties' | 'effectControls' | null;
 	/** Clips the focused row edits. */

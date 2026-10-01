@@ -20,7 +20,7 @@ type ListState =
 	| { status: 'error'; code: string; message: string };
 
 /** M1 default preset (ARCHITECTURE §15: "New Project (1080p 29.97 preset)"). */
-export const HOME_DEFAULT_PRESET = 'hd-1080p-29.97';
+const HOME_DEFAULT_PRESET = 'hd-1080p-29.97';
 
 function errorOf(e: unknown): { code: string; message: string } {
 	return {
@@ -304,7 +304,7 @@ function EmptyState(props: { onCreate(): void; disabled: boolean }) {
 	);
 }
 
-export function NewProjectDialog(props: {
+function NewProjectDialog(props: {
 	busy?: boolean;
 	onCancel(): void;
 	onCreate(name: string, preset: string): void;

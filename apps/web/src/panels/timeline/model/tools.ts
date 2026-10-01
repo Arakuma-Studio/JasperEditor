@@ -2,11 +2,12 @@
 // dispatcher's decision table (tool × hit × modifiers → gesture) from the TL §12.14 matrix.
 import { isBoundedContent, kindCapabilities } from '@jasper/project';
 import type { ActiveTool } from '@jasper/session';
+import type { IconId } from '@jasper/ui';
 import type { Hit } from './hit.ts';
 
 export type ToolId = ActiveTool;
 
-export type ToolInfo = { id: ToolId; label: string; key: string; icon: string };
+type ToolInfo = { id: ToolId; label: string; key: string; icon: IconId };
 
 export const TOOLS: Record<ToolId, ToolInfo> = {
 	selection: { id: 'selection', label: 'Selection Tool', key: 'V', icon: 'tool.selection' },

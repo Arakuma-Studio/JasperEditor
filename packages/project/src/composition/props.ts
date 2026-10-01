@@ -5,13 +5,13 @@ import { canonicalJson } from '../color/runs.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { MediaAsset, MgCompositionInfo } from '../schema/media.ts';
 import type { Clip } from '../schema/sequence.ts';
-import { FLICKS_PER_SECOND, type Rational } from '../time.ts';
+import { FLICKS_PER_SECOND, fpsOf, type Rational } from '../time.ts';
 import { type JsonSchemaNode, type SchemaIssue, validateJsonSchema } from './json-schema.ts';
 
 /** Remotion version every bundle and pre-render is pinned to (ARCHITECTURE D-19). */
 export const MG_REMOTION_VERSION = '4.0.499';
 /** Bump when the pre-render recipe (codecs, flags, re-mux) changes: every cached master is re-rendered. */
-export const MG_PRERENDER_RECIPE = 1;
+const MG_PRERENDER_RECIPE = 1;
 
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
 	!!v && typeof v === 'object' && !Array.isArray(v);
@@ -36,7 +36,7 @@ export function mergeProps(
 		}
 		return clone(b);
 	};
-	return (merge(defaults ?? {}, overrides ?? {}) as Record<string, unknown>) ?? {};
+	return merge(defaults ?? {}, overrides ?? {}) as Record<string, unknown>;
 }
 
 function clone<T>(v: T): T {
@@ -66,18 +66,16 @@ export function setPropOverride(
 	value: unknown,
 ): Record<string, unknown> {
 	if (path.length === 0) return isPlainObject(value) ? clone(value) : overrides;
-	const root: Record<string, unknown> = clone(overrides) ?? {};
+	const root = clone(overrides);
 	let cur: Record<string, unknown> | unknown[] = root;
 	for (let i = 0; i < path.length - 1; i++) {
 		const k = path[i]!;
 		const nextIsIndex = /^\d+$/.test(path[i + 1]!);
-		const get = (c: Record<string, unknown> | unknown[]) =>
-			Array.isArray(c) ? c[Number(k)] : (c as Record<string, unknown>)[k];
-		let next = get(cur);
+		let next = Array.isArray(cur) ? cur[Number(k)] : cur[k];
 		if (!(isPlainObject(next) || Array.isArray(next))) {
 			const eff = getPropAt(effective, path.slice(0, i + 1));
 			next = isPlainObject(eff) || Array.isArray(eff) ? clone(eff) : nextIsIndex ? [] : {};
-		} else if (Array.isArray(next)) next = [...next];
+		}
 		if (Array.isArray(cur)) cur[Number(k)] = next;
 		else cur[k] = next;
 		cur = next as Record<string, unknown> | unknown[];
@@ -94,7 +92,7 @@ export function unsetPropOverride(
 	path: readonly string[],
 ): Record<string, unknown> {
 	if (path.length === 0) return {};
-	const root = clone(overrides) ?? {};
+	const root = clone(overrides);
 	const stack: [Record<string, unknown>, string][] = [];
 	let cur: unknown = root;
 	for (let i = 0; i < path.length - 1; i++) {
@@ -151,8 +149,6 @@ export function formatSchemaIssues(issues: readonly SchemaIssue[], max = 4): str
 
 // ---------------------------------------------------------------- time (S08:MGC-004/005)
 
-const fpsOf = (r: Rational) => r.num / r.den;
-
 /** The composition's own frame rate differs from the sequence rate (warning MG_FPS_MISMATCH, MGC-005). */
 export function compositionFpsMismatch(info: Pick<MgCompositionInfo, 'fps'>, seqRate: Rational): boolean {
 	return Math.abs(info.fps - fpsOf(seqRate)) > 1e-3;
@@ -168,11 +164,6 @@ export function compositionSequenceFrames(
 ): number {
 	if (!compositionFpsMismatch(info, seqRate)) return info.durationInFrames;
 	return Math.max(1, Math.round((info.durationInFrames * fpsOf(seqRate)) / info.fps));
-}
-
-/** Content duration of a composition (flicks): the bound of a composition clip (MGC-004). */
-export function compositionDurationFlicks(info: Pick<MgCompositionInfo, 'fps' | 'durationInFrames'>): number {
-	return Math.round((info.durationInFrames * FLICKS_PER_SECOND) / info.fps);
 }
 
 /** Composition frame (at the sequence rate) shown at content time `t` (flicks): floor(t · fps + ε). */
@@ -205,7 +196,7 @@ export function compositionClipRenderRange(
 
 // ---------------------------------------------------------------- pre-render key (S08:MGC-031)
 
-export type CompositionRenderKeyInput = {
+type CompositionRenderKeyInput = {
 	bundleHash: string;
 	compositionId: string;
 	/** Effective props. */

@@ -6,7 +6,7 @@ import { createTrack } from '../factories.ts';
 import { trackKindFor } from '../registry/kinds.ts';
 import type { Animatable } from '../schema/common.ts';
 import type { Clip, Sequence, Track, TrackKind } from '../schema/sequence.ts';
-import { contentSpanFlicks, type Rational } from '../time.ts';
+import { contentSpanFlicks } from '../time.ts';
 import type { HandlerContext } from './context.ts';
 
 type DSeq = Draft<Sequence>;
@@ -14,7 +14,6 @@ type DClip = Draft<Clip>;
 type DTrack = Draft<Track>;
 
 export const end = (c: { start: number; duration: number }) => c.start + c.duration;
-const rateOf = (seq: DSeq) => seq.settings.frameRate as Rational;
 
 // ---------------------------------------------------------------- tracks
 
@@ -49,7 +48,7 @@ export function resolveTrackIn(seq: DSeq | Sequence, ref: string): string | null
 }
 
 /** Parses a label into kind + zero-based index (for auto-creating missing tracks). */
-export function parseTrackLabel(ref: string): { kind: TrackKind; index: number } | null {
+function parseTrackLabel(ref: string): { kind: TrackKind; index: number } | null {
 	const m = /^([VAC])(\d+)$/i.exec(ref);
 	if (!m || Number(m[2]) < 1) return null;
 	const kind = m[1]!.toUpperCase() === 'V' ? 'video' : m[1]!.toUpperCase() === 'A' ? 'audio' : 'caption';
@@ -102,7 +101,7 @@ export function trackClips(seq: DSeq, trackId: string): DClip[] {
 
 /** Sets a clip's timeline range, keeping content glued to the picture (speed-aware, S02:TL-533). */
 export function setClipRange(seq: DSeq, clip: DClip, newStart: number, newEnd: number): void {
-	const r = rateOf(seq);
+	const r = seq.settings.frameRate;
 	const oldStart = clip.start;
 	const oldEnd = end(clip);
 	if (clip.speed.reverse) clip.sourceIn += contentSpanFlicks(oldEnd - newEnd, r, clip.speed.rate);
@@ -160,7 +159,7 @@ export function reidentifyClipChildren(clip: Clip, h: HandlerContext): void {
 export function splitClipAt(seq: DSeq, clip: DClip, at: number, h: HandlerContext): DClip {
 	if (!(clip.start < at && at < end(clip)))
 		h.fail('E_INVALID_PARAM', `Frame ${at} is not inside clip ${clip.id}`);
-	const r = rateOf(seq);
+	const r = seq.settings.frameRate;
 	const right = snapshot(clip) as Clip;
 	right.id = h.ids.next('clp');
 	reidentifyClipChildren(right, h);
@@ -262,7 +261,7 @@ export function contentInRange(seq: DSeq, trackId: string, f: number, n: number)
 
 /**
  * Insert shift (S02 A.5): on each track, split clips straddling `at`, then shift clips at/after `at`
- * by `n`. Returns split records (right parts) for relinking.
+ * by `n`, leaving `except` clips in place. Returns split records (right parts) for relinking.
  */
 export function insertShift(
 	seq: DSeq,
@@ -270,18 +269,20 @@ export function insertShift(
 	at: number,
 	n: number,
 	h: HandlerContext,
+	except: ReadonlySet<string> = new Set(),
 ): SplitRecord[] {
 	const splits: SplitRecord[] = [];
 	if (n <= 0) return splits;
 	for (const trackId of trackIds) {
 		for (const c of trackClips(seq, trackId)) {
+			if (except.has(c.id)) continue;
 			if (c.start < at && end(c) > at) {
 				const linkId = c.linkId;
 				const right = splitClipAt(seq, c, at, h);
 				splits.push({ originalLinkId: linkId, rightId: right.id });
 			}
 		}
-		for (const c of trackClips(seq, trackId)) if (c.start >= at) c.start += n;
+		for (const c of trackClips(seq, trackId)) if (!except.has(c.id) && c.start >= at) c.start += n;
 	}
 	return splits;
 }

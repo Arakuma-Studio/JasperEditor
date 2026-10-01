@@ -197,7 +197,7 @@ describe('AC-25: invariants under random transactions', () => {
 			{ type: 'clip.addSolid', at: 100, duration: 150, track: 'V2', color: [0, 0, 0, 1] },
 		]);
 		const base = h.doc;
-		const stats = { ok: 0, rejected: 0 };
+		let accepted = 0;
 		const ids = createRandomIdSource();
 		fc.assert(
 			fc.property(
@@ -214,7 +214,7 @@ describe('AC-25: invariants under random transactions', () => {
 							makeCtx({ revision }, ids),
 						);
 						if (result.ok) {
-							stats.ok++;
+							accepted++;
 							const issues = checkInvariants(document);
 							if (issues.length)
 								throw new Error(
@@ -223,7 +223,6 @@ describe('AC-25: invariants under random transactions', () => {
 							doc = document;
 							revision = result.revision;
 						} else {
-							stats.rejected++;
 							if (document !== doc) throw new Error('rejected transaction changed the document');
 							const bad = result.errors.filter((e) => e.code === 'E_INVARIANT' || e.code === 'E_INTERNAL');
 							if (bad.length)
@@ -236,6 +235,6 @@ describe('AC-25: invariants under random transactions', () => {
 			),
 			{ numRuns: RUNS, seed: FUZZ ? undefined : 20260930 },
 		);
-		expect(stats.ok).toBeGreaterThan(RUNS / 2);
+		expect(accepted).toBeGreaterThan(RUNS / 2);
 	}, 600_000);
 });

@@ -30,25 +30,26 @@ function createStore<T>(initial: T) {
 
 // ---------------------------------------------------------------- grade clipboard (CGU-004)
 
-const clipboard = createStore<{ effects: CopiedColorEffect[]; from: string } | null>(null);
+let clipboard: { effects: CopiedColorEffect[] } | null = null;
 
 export const gradeClipboard = {
-	get: clipboard.get,
-	subscribe: clipboard.subscribe,
-	clear: () => clipboard.set(null),
+	get: () => clipboard,
+	clear: () => {
+		clipboard = null;
+	},
 };
 
 /** Copies every colour effect of the clip; false when it has none. */
 export function copyGradeFrom(session: EditorSession, clip: Clip): boolean {
 	const effects = copyGrade(clip, session.ctx.registries.effects);
 	if (effects.length === 0) return false;
-	clipboard.set({ effects, from: clip.id });
+	clipboard = { effects };
 	return true;
 }
 
 /** Pastes the copied grade onto the clips (one undo step). */
 export function pasteGradeTo(session: EditorSession, clipIds: readonly string[]): TransactionResult | null {
-	const grade = clipboard.get();
+	const grade = clipboard;
 	if (!grade) return null;
 	const commands = planPasteGrade(
 		session.getCommitted(),
@@ -120,7 +121,7 @@ export async function browseForLut(session: EditorSession): Promise<string | nul
 	if (imported) return imported;
 	// Duplicates reuse the existing asset (same fingerprint).
 	for (const reg of result.registered) {
-		const fp = (reg as { fingerprint?: string }).fingerprint;
+		const fp = reg.fingerprint;
 		const hit = Object.values(doc.media).find((m) => m.kind === 'lut' && fp && m.fingerprint === fp);
 		if (hit) return hit.id;
 	}
@@ -134,7 +135,6 @@ const bypass = createStore<readonly string[]>([]);
 /** Clip ids whose colour effects the Program monitor bypasses (preview only). */
 export const colorBypass = {
 	get: bypass.get,
-	subscribe: bypass.subscribe,
 	isBypassed: (clipId: string) => bypass.get().includes(clipId),
 	toggle(clipId: string) {
 		const cur = bypass.get();
@@ -145,8 +145,4 @@ export const colorBypass = {
 
 export function useColorBypass(): readonly string[] {
 	return useSyncExternalStore(bypass.subscribe, bypass.get, bypass.get);
-}
-
-export function useGradeClipboard() {
-	return useSyncExternalStore(clipboard.subscribe, clipboard.get, clipboard.get);
 }

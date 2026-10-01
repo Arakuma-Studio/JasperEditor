@@ -11,10 +11,11 @@ import {
 	type TrackRow,
 	visibleRows,
 } from '../model/layout.ts';
+import { wheelZoomFactor } from '../model/viewport.ts';
 import type { TimelineController } from '../state/controller.ts';
 import type { ContextMenuItem, TimelineUiStore } from '../state/ui-store.ts';
 
-export type TrackHeadersProps = {
+type TrackHeadersProps = {
 	seq: Sequence;
 	layout: TrackAreaLayout;
 	view: SequenceViewState;
@@ -223,7 +224,7 @@ function Header(props: TrackHeadersProps & { row: TrackRow; track: Track }) {
 			}}
 			onWheel={(e) => {
 				if (!e.altKey) return;
-				props.controller.setTrackHeight(track.id, row.height * Math.exp(-e.deltaY * 0.0025));
+				props.controller.setTrackHeight(track.id, row.height * wheelZoomFactor(e.deltaY));
 			}}
 		>
 			<IconButton
@@ -340,7 +341,7 @@ export function TrackHeaders(props: TrackHeadersProps) {
 					e.clientY - e.currentTarget.getBoundingClientRect().top < layout.dividerTop
 						? layout.video
 						: layout.audio;
-				const f = Math.exp(-e.deltaY * 0.0025);
+				const f = wheelZoomFactor(e.deltaY);
 				for (const r of region.rows) props.controller.setTrackHeight(r.trackId, r.height * f);
 			}}
 			data-testid="timeline-track-headers"

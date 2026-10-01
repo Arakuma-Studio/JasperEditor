@@ -21,16 +21,9 @@ import {
 	StepForward,
 	X,
 } from 'lucide-react';
-import {
-	type CSSProperties,
-	useCallback,
-	useEffect,
-	useLayoutEffect,
-	useMemo,
-	useRef,
-	useState,
-} from 'react';
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { chordFromEvent } from '../../commands/index.ts';
+import { useEngineOrNull } from '../../state/engine.tsx';
 import {
 	durationLabel,
 	MiniRuler,
@@ -39,16 +32,16 @@ import {
 	TimecodeDisplay,
 	type TimecodeFormat,
 	TransportButton,
+	useElementSize,
 	useTransportPlaying,
 } from '../program/MonitorChrome.tsx';
 import { checkerboard } from '../program/monitor.tokens.ts';
 import { detectPlatform, handleMonitorKey, useMonitorCommandCtx } from '../program/monitor-commands.ts';
 import { monitorStores } from '../program/monitor-store.ts';
-import { useOptionalEngineClient } from '../program/ProgramMonitor.tsx';
 import { PlaybackDriver } from '../program/playback-driver.ts';
 import { resolveMediaHandle } from '../program/render-doc.ts';
 import { registerDriver, setSourceTransport } from '../program/transport-registry.ts';
-import { computeView, type Size, ZOOM_PRESETS } from '../program/viewport.ts';
+import { computeView, ZOOM_PRESETS } from '../program/viewport.ts';
 import type { PanelProps } from '../types.ts';
 import {
 	assetFps,
@@ -77,37 +70,16 @@ export function SourceMonitor(props: PanelProps) {
 	return <SourceMonitorBody session={session} instanceId={props.instanceId} />;
 }
 
-function useSize<T extends HTMLElement>(): [React.RefObject<T | null>, Size] {
-	const ref = useRef<T>(null);
-	const [size, setSize] = useState<Size>({ width: 0, height: 0 });
-	useLayoutEffect(() => {
-		const el = ref.current;
-		if (!el) return;
-		const measure = () =>
-			setSize((s) =>
-				s.width === el.clientWidth && s.height === el.clientHeight
-					? s
-					: { width: el.clientWidth, height: el.clientHeight },
-			);
-		measure();
-		if (typeof ResizeObserver === 'undefined') return;
-		const ro = new ResizeObserver(measure);
-		ro.observe(el);
-		return () => ro.disconnect();
-	}, []);
-	return [ref, size];
-}
-
 function SourceMonitorBody({ session, instanceId }: { session: EditorSession; instanceId: string }) {
-	const engine = useOptionalEngineClient();
+	const engine = useEngineOrNull()?.client ?? null;
 	const src = useStoreSelector(sourceMonitorState, (s) => s);
 	const doc = useStoreSelector(session.store, (s) => s.document);
 	const media = useStoreSelector(session.store, (s) => s.media);
 	const useProxies = useStoreSelector(session.store, (s) => s.toggles.useProxies);
 	const seqRate = useStoreSelector(session.store, (s) => {
 		const seq = s.activeSequenceId ? s.document.sequences[s.activeSequenceId] : undefined;
-		return seq?.settings.frameRate ?? { num: 30, den: 1 };
-	});
+		return seq?.settings.frameRate;
+	}) ?? { num: 30, den: 1 };
 	const monitor = useStoreSelector(monitorStores.source, (s) => s);
 	const item = sourceItem(doc, src.itemId);
 	const asset = sourceAsset(doc, item);
@@ -121,7 +93,7 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 	const canvas = handle ? assetCanvas(handle) : { width: 1280, height: 720 };
 	const transport = useMemo(() => new TransportStore(), []);
 	const ctx = useMonitorCommandCtx({ session, panel: 'source', instanceId, engine });
-	const [viewportRef, viewport] = useSize<HTMLDivElement>();
+	const [viewportRef, viewport] = useElementSize<HTMLDivElement>();
 	const view = computeView(viewport, canvas, monitor.zoom, [0, 0]);
 
 	// Mirror marks (document, flicks) → source frames for the transport commands.

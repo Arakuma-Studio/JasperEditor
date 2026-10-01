@@ -198,11 +198,3 @@ describe.runIf(enabled && !!LGPL_DIR)('Remotion with the LGPL binaries directory
 		expect(png.headers['content-type']).toBe('image/png');
 	}, 300_000);
 });
-
-describe.runIf(enabled && !LGPL_DIR)('Remotion with the LGPL binaries directory', () => {
-	it.skip('run `pnpm ffmpeg:lgpl` (or set JASPER_REMOTION_BIN_DIR) to run this test', () => {});
-});
-
-describe.skipIf(enabled)('Remotion with the LGPL binaries directory', () => {
-	it.skip('set REMOTION_E2E=1 to run the Remotion LGPL end-to-end render', () => {});
-});

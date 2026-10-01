@@ -49,9 +49,8 @@ export function findTracker(doc: ProjectDocument, trackerId: string): TrackerLoc
 	for (const seq of Object.values(doc.sequences)) {
 		for (const clip of Object.values(seq.clips)) {
 			if (clip.kind !== 'video') continue;
-			const v = clip as VideoClip;
-			const tracker = v.trackers?.find((t) => t.id === trackerId);
-			if (tracker) return { sequenceId: seq.id, clip: v, tracker };
+			const tracker = clip.trackers?.find((t) => t.id === trackerId);
+			if (tracker) return { sequenceId: seq.id, clip, tracker };
 		}
 	}
 	return null;
@@ -64,7 +63,7 @@ export function mediaFrameRate(asset: MediaAsset | undefined): Rational | null {
 }
 
 /** Source frames `[first, end)` the clip shows (its content span), clamped to the media when its length is known. */
-export function clipSourceFrames(
+function clipSourceFrames(
 	clip: Pick<VideoClip, 'sourceIn' | 'duration' | 'speed'>,
 	seqRate: Rational,
 	step: number,

@@ -36,7 +36,7 @@ import { defaultPresetRegistry } from './presets.ts';
 import { defaultEffectRegistry } from './registry/effects.ts';
 import { emptyMgRegistry, type MgTemplateRegistry } from './registry/mg.ts';
 
-/** Default registries (crop-only effects, no templates, built-in presets). */
+/** Built-in effects and presets, with optional motion-graphic templates. */
 export function defaultRegistries(mgTemplates: MgTemplateRegistry = emptyMgRegistry): Registries {
 	return { effects: defaultEffectRegistry, mgTemplates, presets: defaultPresetRegistry };
 }

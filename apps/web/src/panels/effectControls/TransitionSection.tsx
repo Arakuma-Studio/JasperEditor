@@ -28,11 +28,10 @@ const ALIGNMENTS: readonly Transition['alignment'][] = ['center', 'start-at-cut'
 const ALIGNMENT_LABELS = ['Center at Cut', 'Start at Cut', 'End at Cut'];
 
 /** The selected transition of the active sequence (last selected), from the drawn document. */
-export function useSelectedTransition(): { seq: Sequence; geom: TransitionGeom } | null {
+function useSelectedTransition(): { seq: Sequence; geom: TransitionGeom } | null {
 	const data = useInspectorData();
 	const ids = useSessionState((s) => s.selection.timeline.transitions);
-	const seqId = data.activeSequenceId;
-	const seq = seqId ? (data.doc.sequences[seqId] as Sequence | undefined) : undefined;
+	const seq = data.selection?.seq;
 	if (!seq) return null;
 	for (let i = ids.length - 1; i >= 0; i--) {
 		const t = seq.transitions[ids[i]!];

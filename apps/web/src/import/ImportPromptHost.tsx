@@ -121,17 +121,13 @@ function PromptView({ p, queue }: { p: PendingPrompt; queue: PromptQueue }) {
 			</Dialog>
 		);
 	}
-	const close = () => {
-		settle();
-		p.resolve();
-	};
 	return (
 		<Dialog
 			title={`Import finished with ${p.failed.length} ${p.failed.length === 1 ? 'error' : 'errors'}`}
 			testId="prompt-failures"
-			onEscape={close}
+			onEscape={settle}
 			footer={
-				<Button variant="primary" data-autofocus onClick={close}>
+				<Button variant="primary" data-autofocus onClick={settle}>
 					OK
 				</Button>
 			}

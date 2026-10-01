@@ -101,10 +101,6 @@ export class JobQueue {
 		if (this.started) this.pump();
 	}
 
-	hasRunner(kind: JobKind): boolean {
-		return this.runners.has(kind);
-	}
-
 	/** Adds jobs from another scheduler to get/list/cancel/retry; returns the unregister function. */
 	registerExternalSource(source: ExternalJobSource): () => void {
 		this.external.add(source);

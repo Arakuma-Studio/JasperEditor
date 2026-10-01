@@ -8,7 +8,7 @@ import { parseBuildLicense, parseHwaccels } from './encoders.ts';
 import { RESOURCES_LGPL_DIR } from './lgpl.ts';
 import { runTool, type SpawnOptions, spawnTool, ToolError } from './process.ts';
 
-export type BinaryPaths = { ffmpeg: string | null; ffprobe: string | null };
+type BinaryPaths = { ffmpeg: string | null; ffprobe: string | null };
 
 /** Where the ffmpeg binary came from (D-13 resolution order). */
 export type FfmpegSource = 'env' | 'resources' | 'vendor' | 'path' | 'missing';
@@ -68,9 +68,9 @@ export type FfmpegProgress = {
 	done: boolean;
 };
 
-export type FfmpegRunOptions = SpawnOptions & {
+type FfmpegRunOptions = SpawnOptions & {
 	onProgress?(p: FfmpegProgress): void;
-	/** Extra global flags placed before `args` (default: none). */
+	/** FFmpeg logging level (default: error). */
 	loglevel?: 'error' | 'warning' | 'info';
 };
 
@@ -105,10 +105,6 @@ export function createProgressParser(onProgress: (p: FfmpegProgress) => void): (
 
 export class Ffmpeg {
 	constructor(readonly bins: BinaryPaths) {}
-
-	get available(): boolean {
-		return this.bins.ffmpeg !== null && this.bins.ffprobe !== null;
-	}
 
 	private need(name: 'ffmpeg' | 'ffprobe'): string {
 		const b = this.bins[name];
@@ -224,7 +220,7 @@ const VIDEO_EXPORT_ENCODERS = [
 	'libvpx-vp9',
 	'libaom-av1',
 ];
-export const REQUIRED_FILTERS = [
+const REQUIRED_FILTERS = [
 	'trim',
 	'atrim',
 	'overlay',
@@ -351,9 +347,4 @@ async function runSelfCheck(bins: BinaryPaths): Promise<SelfCheck> {
 export function sec(seconds: number): string {
 	const v = Math.max(0, seconds);
 	return v.toFixed(6);
-}
-
-/** `frames × den / num` seconds (S04:RN-022). */
-export function framesToSec(frames: number, fps: { num: number; den: number }): number {
-	return (frames * fps.den) / fps.num;
 }

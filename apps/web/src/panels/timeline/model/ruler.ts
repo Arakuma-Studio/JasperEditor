@@ -9,9 +9,9 @@ import {
 } from '@jasper/project';
 import { frameToX, type Viewport } from './viewport.ts';
 
-export const MIN_MAJOR_PX = 80;
-export const MIN_MINOR_PX = 8;
-export const PER_FRAME_TICKS_PX = 6;
+const MIN_MAJOR_PX = 80;
+const MIN_MINOR_PX = 8;
+const PER_FRAME_TICKS_PX = 6;
 
 /** Candidate major intervals in (nominal) frames, ascending (TL-201). */
 export function majorCandidates(rate: Rational): number[] {
@@ -24,7 +24,7 @@ export function majorCandidates(rate: Rational): number[] {
 	return [...new Set(out)].sort((a, b) => a - b);
 }
 
-export type TickPlan = { major: number; minor: number; perFrame: boolean };
+type TickPlan = { major: number; minor: number; perFrame: boolean };
 
 /** A.9: smallest major with ≥ 80 px; minor division of [10, 5, 4, 2] with ≥ 8 px; per-frame ticks ≥ 6 px/frame. */
 export function chooseTicks(pxPerFrame: number, rate: Rational): TickPlan {
@@ -41,7 +41,7 @@ export function chooseTicks(pxPerFrame: number, rate: Rational): TickPlan {
 	return { major, minor, perFrame: pxPerFrame >= PER_FRAME_TICKS_PX };
 }
 
-export type Tick = { frame: number; x: number; kind: 'major' | 'minor' | 'frame'; label?: string };
+type Tick = { frame: number; x: number; kind: 'major' | 'minor' | 'frame'; label?: string };
 
 function nominalToFrame(n: number, rate: Rational, drop: boolean): number {
 	if (!drop) return n;

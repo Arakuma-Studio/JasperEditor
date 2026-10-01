@@ -14,7 +14,6 @@ export type RenderOptions = {
 	transparentBackground: boolean;
 	/** clipIds to render (M2 hybrid alpha intermediates); undefined = all. */
 	layerFilter?: string[];
-	showOffline: boolean;
 	/**
 	 * M2 (S06:CGU-005, preview only): clips whose colour effects are bypassed ("before" of the before/after
 	 * toggle). Ignored in renders.
@@ -24,7 +23,7 @@ export type RenderOptions = {
 
 export type SequenceCompositionProps = { doc: RenderDoc; options: RenderOptions };
 
-/** Props every visual layer component receives (WP-2C/WP-2G implement the real layers). */
+/** Props every visual layer component receives. */
 export type LayerProps = {
 	clip: RenderVisualClip;
 	/** Evaluated values and the layer matrix at the current frame. */
@@ -57,7 +56,6 @@ export const DEFAULT_RENDER_OPTIONS: RenderOptions = {
 	isPreview: true,
 	useProxies: false,
 	transparentBackground: false,
-	showOffline: true,
 };
 
 /** An empty 1080p30 document (default props for the Remotion Studio and tests). */

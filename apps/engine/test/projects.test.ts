@@ -3,10 +3,11 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { appdirPaths } from '@jasper/config';
 import { EngineClient } from '@jasper/engine-client';
+import { CURRENT_SCHEMA_VERSION } from '@jasper/project';
 import { EngineProjectStore } from '@jasper/session';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { LeaseManager } from '../src/projects/leases.ts';
-import { CURRENT_SCHEMA_VERSION, ProjectStoreFs } from '../src/projects/store.ts';
+import { ProjectStoreFs } from '../src/projects/store.ts';
 import { closeApps, H, JSON_H, makeApp, type TestApp, tempAppdir } from './helpers.ts';
 
 let app: TestApp;
@@ -185,9 +186,9 @@ describe('projects (ARCHITECTURE §9.2)', () => {
 		expect(versions.map((v) => v.revision)).toEqual([2, 0]);
 		await store.saveView(id, { version: 1, playhead: 42 });
 		expect(JSON.parse(readFileSync(paths.projectViewFile(id), 'utf8'))).toEqual({ version: 1, playhead: 42 });
-		const loaded = await store.loadDocument(id);
+		const loaded = await store.get(id);
 		expect(loaded.revision).toBe(3);
-		expect(loaded.document.name).toBe('V');
+		expect(loaded.envelope.document.name).toBe('V');
 		await store.delete(id);
 		expect(existsSync(join(paths.projectsDir, id))).toBe(false);
 	});

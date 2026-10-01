@@ -102,10 +102,10 @@ Platforms: web app (browser), installable PWA (desktop + mobile), Electron deskt
 | State | zustand `^5.0.0`, immer `^11.1.0`, zod `^4.1.0` | |
 | Dock | dockview-react | `^8.3.0` |
 | Primitives | radix-ui `^1.4.0` (unified package), lucide-react, @fontsource/source-sans-3, @fontsource/inter | latest |
-| Remotion | remotion, @remotion/player, @remotion/renderer, @remotion/bundler, @remotion/media, @remotion/fonts, @remotion/google-fonts | `4.0.499` exact |
+| Remotion | remotion, @remotion/player, @remotion/renderer, @remotion/bundler, @remotion/media, @remotion/google-fonts | `4.0.499` exact |
 | Engine | fastify `^5.6`, @fastify/static (latest major whose `fastify-plugin` accepts fastify 5; 10.x at time of writing), @fastify/websocket `^11`, @fastify/cookie `^11` | |
 | Desktop | electron `^44` (fallback `^39` if install fails on Node 20), electron-builder `^26.15`, esbuild | |
-| Dev tools | tsx `^4.20`, concurrently, wait-on, cross-env, @biomejs/biome `^2.5` | |
+| Dev tools | tsx `^4.20`, concurrently, cross-env, @biomejs/biome `^2.5` | |
 | Tests | vitest `^4.1.0`, fast-check, happy-dom, @testing-library/react, @playwright/test `^1.55` | |
 | Rust | rustc/cargo 1.96, `fframes = "=1.0.3"` (no `h264` feature), serde, serde_json, clap | |
 
@@ -505,7 +505,7 @@ export interface CommandCtx { session: EditorSession | null; transport: Transpor
 export const SEQUENCE_COMPOSITION_ID = 'JasperSequence';
 export type RenderDoc = RenderSnapshot;            // media URLs + font URLs already resolved for this consumer
 export type RenderOptions = { isPreview: boolean; useProxies: boolean; transparentBackground: boolean;
-  layerFilter?: string[] /* clipIds; M2 hybrid */; showOffline: boolean };
+  layerFilter?: string[] /* clipIds; M2 hybrid */ };
 export const SequenceComposition: React.FC<{ doc: RenderDoc; options: RenderOptions }>;
 export const calculateSequenceMetadata: CalculateMetadataFunction<{doc: RenderDoc; options: RenderOptions}>;
 export const AssetComposition: React.FC<{ asset: MediaHandle; fps: number }>;   // Source monitor (M2 if not done in M1)
@@ -708,7 +708,7 @@ Agent proposals rendered as timeline ghosts (dry-run results), UI command tools 
 - Packaged mode (M1: `pnpm --filter @jasper/desktop start:packaged-like` smoke, no installer signing): fork `apps/engine/dist/engine.mjs` via `utilityProcess.fork` with `--port 0`, env `JASPER_LOCAL_TOKEN`, `JASPER_WEB_DIR=apps/web/dist`, wait for `{type:'ready', port}`, set `jasper_session` cookie, `loadURL('http://127.0.0.1:<port>/')`. Frameless window (`titleBarStyle:'hidden'`, overlay `#1d1d1d`), `setWindowOpenHandler` deny + `shell.openExternal`, `will-navigate` guard, background `#1d1d1d`, `show` on ready-to-show.
 - electron-builder config per R-OMS §8.5 (extraResources for web build, engine bundle, the `jasper-mcp` bundle as `resources/mcp/jasper-mcp.mjs`, native bin, `ffmpeg-lgpl`). Packaging runs through `apps/desktop/scripts/package.mjs` (`pnpm --filter @jasper/desktop dist:dir` / `dist`): it fetches the LGPL FFmpeg directory for the target (D-13), stages `apps/engine/dist-deploy` (engine bundle, prebuilt Remotion bundle, fonts, the runtime closure of `@remotion/renderer` without optional dependencies, so no `@remotion/compositor-*`), runs the license guard and then electron-builder, whose `afterPack` hook (`scripts/after-pack.cjs`) runs the guard again over the packed app. Packaged main passes `JASPER_RESOURCES_DIR=process.resourcesPath`; the engine finds `<resources>/ffmpeg-lgpl`. Unpacked builds (`--dir`) for Linux and (cross-packed) Windows were produced and checked (`pnpm e2e:packaged`); signed installers are M3.
 
-**PWA (S05 §20, R-OMS §3/§8.3):** `public/manifest.webmanifest` (standalone, `display_override` WCO, `#000000`/`#1d1d1d`, 192/512 icons + separate padded maskable icons, `file_handlers` for `.jasper`), hand-written `public/sw.js` (versioned caches `jasper-shell-vN`, `jasper-assets-vN`; network-first navigations with `/index.html` fallback; cache-first `/assets/*`; **bypass** `/api`, `/events`, `/agent`, `/mcp`, `/ws`, `/health`, `/media`, `/mg`, `/renders`, `blob:`, cross-origin, and any request with a `Range` header (engine-served `/fonts/*` may be cache-first); `Response.error()` on misses), registration only when `import.meta.env.PROD && !window.jasperDesktop`. The route-classification function lives in `apps/web/src/pwa/sw-routes.ts` (unit-tested) and is inlined into `sw.js` at build by a tiny Vite plugin or duplicated with a test asserting equality.
+**PWA (S05 §20, R-OMS §3/§8.3):** `public/manifest.webmanifest` (standalone, `display_override` WCO, `#000000`/`#1d1d1d`, 192/512 icons + separate padded maskable icons, `file_handlers` for `.jasper`), hand-written `public/sw.js` (versioned caches `jasper-shell-vN`, `jasper-assets-vN`; network-first navigations with `/index.html` fallback; cache-first `/assets/*`; **bypass** `/api`, `/events`, `/agent`, `/mcp`, `/ws`, `/health`, `/media`, `/mg`, `/renders`, `blob:`, cross-origin, and any request with a `Range` header (engine-served `/fonts/*` may be cache-first); `Response.error()` on misses), registration only when `import.meta.env.PROD && !window.jasperDesktop`. The route-classification function lives in `public/sw.js`; `apps/web/test/pwa.test.ts` exercises that shipped script directly, including routing and cache failure handling.
 
 ---
 
@@ -961,8 +961,8 @@ type NativeExtension = {
 
 - Route plugins (one per package, registered in `ROUTE_PLUGINS`): `routes/color.ts` (no routes; registers the
   `.cube` prober, colour extension, capability), `routes/processing.ts`, `routes/mg-bundles.ts`,
-  `routes/tracking.ts` (501 stubs from `routes/stub.ts`). The route table `ROUTES` in `@jasper/api` lists every M2
-  route with its owner; the engine route-coverage test accepts implemented or stubbed `wp-m2-*` routes.
+  `routes/tracking.ts`. The route table `ROUTES` in `@jasper/api` lists every M2 route with its owner;
+  the engine route-coverage test verifies that every declared route is registered.
 - Clients call M2 routes with the typed generic `engine.call('<routeName>', {params, body})` — **no new
   `EngineClient` methods** (avoids five packages editing `client.ts`).
 - Job kinds (`@jasper/api` `JOB_KINDS`): `process`, `track`, `mg-bundle`, `mg-prerender`, `layer-bake`,

@@ -1,15 +1,12 @@
 // Document edits issued by the monitors: transform writes (S03:PRP-020 through `param.set` with the
-// playhead as `at`, so animated properties get a keyframe), nudges (XF-023), text creation (XF-060),
-// marks and markers used by the monitor button bar.
+// playhead as `at`, so animated properties get a keyframe), nudges (XF-023) and text creation (XF-060).
 import {
 	type Clip,
 	type Command,
 	contentTimeAt,
 	evaluate,
 	type LayerTransformValues,
-	type ProjectDocument,
 	type Sequence,
-	sequenceDuration,
 	type Transform,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
@@ -50,19 +47,15 @@ export function transformAt(seq: Sequence, clip: VisualWithTransform, frame: num
 }
 
 /** Selected clips with Motion that are visible at `frame`, on unlocked tracks. */
-export function selectedTransformClips(
-	session: EditorSession,
-	frame: number,
-	visibleOnly = true,
-): VisualWithTransform[] {
+function selectedTransformClips(session: EditorSession, frame: number): VisualWithTransform[] {
 	const seq = activeSequence(session);
 	if (!seq) return [];
-	const locked = new Set([...seq.videoTracks].filter((t) => t.locked).map((t) => t.id));
+	const locked = new Set(seq.videoTracks.filter((t) => t.locked).map((t) => t.id));
 	const out: VisualWithTransform[] = [];
 	for (const id of session.getState().selection.timeline.clips) {
 		const c = seq.clips[id];
 		if (!hasTransform(c) || locked.has(c.trackId)) continue;
-		if (visibleOnly && (frame < c.start || frame >= c.start + c.duration)) continue;
+		if (frame < c.start || frame >= c.start + c.duration) continue;
 		out.push(c);
 	}
 	return out;
@@ -169,79 +162,4 @@ export function addTextAt(session: EditorSession, point: Vec2, frame: number): s
 	const id = r.refs.$text ?? r.created.find((x) => x.startsWith('clp_')) ?? null;
 	if (id) session.select('timeline', [id], 'replace');
 	return id;
-}
-
-// ------------------------------------------------------------------ marks and markers (button bar fallbacks)
-
-export function sequenceEnd(seq: Sequence): number {
-	return sequenceDuration(seq);
-}
-
-export function setSequenceMark(session: EditorSession, which: 'in' | 'out', frame: number): boolean {
-	const seq = activeSequence(session);
-	if (!seq) return false;
-	let inP = seq.inPoint;
-	let outP = seq.outPoint;
-	if (which === 'in') {
-		inP = frame;
-		if (outP !== null && outP <= inP) outP = null;
-	} else {
-		outP = frame + 1; // outPoint is exclusive (S01:TIME-001); marking includes the playhead frame
-		if (inP !== null && inP >= outP) inP = null;
-	}
-	return session.apply({
-		label: which === 'in' ? 'Mark In' : 'Mark Out',
-		origin: 'user',
-		sequenceId: seq.id,
-		commands: [{ type: 'sequence.setInOut', sequenceId: seq.id, in: inP, out: outP } as Command],
-	}).ok;
-}
-
-export function addMarkerAt(session: EditorSession, frame: number): boolean {
-	const seq = activeSequence(session);
-	if (!seq) return false;
-	return session.apply({
-		label: 'Add Marker',
-		origin: 'user',
-		sequenceId: seq.id,
-		commands: [{ type: 'marker.add', sequenceId: seq.id, frame } as Command],
-	}).ok;
-}
-
-export function liftOrExtract(
-	session: EditorSession,
-	mode: 'lift' | 'extract',
-): { ok: boolean; message?: string } {
-	const seq = activeSequence(session);
-	if (!seq) return { ok: false, message: 'No sequence' };
-	if (seq.inPoint === null && seq.outPoint === null) return { ok: false, message: 'Set In and Out first' };
-	const from = seq.inPoint ?? 0;
-	const to = seq.outPoint ?? sequenceDuration(seq);
-	const view = session.getState().views[seq.id];
-	const targeted = [...(view?.targeting.video ?? []), ...(view?.targeting.audio ?? [])];
-	const r = session.apply({
-		label: mode === 'lift' ? 'Lift' : 'Extract',
-		origin: 'user',
-		sequenceId: seq.id,
-		commands: [
-			{
-				type: mode === 'lift' ? 'range.lift' : 'range.extract',
-				sequenceId: seq.id,
-				from,
-				to,
-				...(targeted.length ? { tracks: targeted } : {}),
-			} as Command,
-		],
-	});
-	return r.ok ? { ok: true } : { ok: false, message: r.errors[0]?.message };
-}
-
-/** In/Out of the active sequence for transport (Go to In/Out, Play In to Out). */
-export function sequenceMarks(
-	doc: ProjectDocument,
-	sequenceId: string | null,
-): { in: number | null; out: number | null; end: number } {
-	const seq = sequenceId ? doc.sequences[sequenceId] : undefined;
-	if (!seq) return { in: null, out: null, end: 0 };
-	return { in: seq.inPoint, out: seq.outPoint, end: sequenceDuration(seq) };
 }

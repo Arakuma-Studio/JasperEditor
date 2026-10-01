@@ -44,7 +44,7 @@ const LABEL = 'w-[34%] shrink-0 truncate text-pr-ui text-pr-muted';
 type RGBA = [number, number, number, number];
 
 /** Parses `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, `rgb()` / `rgba()` (0..1 floats). */ // tokens-allow: prop value (CSS colour string), not a UI colour
-export function parseCssColor(s: string): RGBA | null {
+function parseCssColor(s: string): RGBA | null {
 	const v = s.trim();
 	let m = /^#([0-9a-f]{3,4})$/i.exec(v);
 	if (m) {
@@ -68,7 +68,7 @@ export function parseCssColor(s: string): RGBA | null {
 }
 
 /** Formats `c` in the notation of `like` (`#rrggbb`, `#rrggbbaa`, `rgba()`), so schema patterns keep matching. */ // tokens-allow: prop value (CSS colour string), not a UI colour
-export function formatCssColor(c: RGBA, like: string): string {
+function formatCssColor(c: RGBA, like: string): string {
 	const h = (x: number) =>
 		Math.round(Math.min(1, Math.max(0, x)) * 255)
 			.toString(16)
@@ -86,7 +86,7 @@ export function formatCssColor(c: RGBA, like: string): string {
 }
 
 /** Overrides = the parts of `value` that differ from `defaults` (objects compared key by key). */
-export function diffOverrides(
+function diffOverrides(
 	defaults: Record<string, unknown>,
 	value: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -111,7 +111,7 @@ function useMgStatus(runtime: MgRuntime | null, clipId: string): ClipMgStatus | 
 	return useMemo(() => runtime?.status(clipId) ?? null, [runtime, clipId, version]);
 }
 
-export function statusText(s: ClipMgStatus | null): { text: string; tone: 'ok' | 'busy' | 'warn' | 'idle' } {
+function statusText(s: ClipMgStatus | null): { text: string; tone: 'ok' | 'busy' | 'warn' | 'idle' } {
 	if (!s) return { text: 'Live preview', tone: 'idle' };
 	const pct = (p?: number) => (p !== undefined ? ` ${Math.round(p * 100)} %` : '');
 	if (s.master.state === 'rendering' || s.master.state === 'queued')
@@ -173,8 +173,8 @@ function OneComposition(props: {
 	const st = statusText(status);
 	const readOnly = useSessionState((s) => s.readOnly);
 
-	const apply = (label: string, commands: Command[], coalesceKey?: string) => {
-		const r = session.apply({ label, origin: 'user', commands, ...(coalesceKey ? { coalesceKey } : {}) });
+	const apply = (label: string, commands: Command[]) => {
+		const r = session.apply({ label, origin: 'user', commands });
 		if (!r.ok) setMessage({ kind: 'error', text: r.errors.map((e) => e.message).join('; ') });
 		else setMessage(null);
 		return r;

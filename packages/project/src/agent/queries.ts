@@ -3,7 +3,14 @@
 // Frames are integers and are always accompanied by timecode strings for LLM readability (TL-951).
 import { z } from 'zod';
 import type { TransactionResult } from '../commands/types.ts';
-import { clipsInRange, linkedPartners, sequenceDuration, sourceOut, trackLabel } from '../derive/index.ts';
+import {
+	allTracks,
+	clipsInRange,
+	linkedPartners,
+	sequenceDuration,
+	sourceOut,
+	trackLabel,
+} from '../derive/index.ts';
 import { checkInvariants } from '../invariants.ts';
 import { evaluate } from '../keyframes.ts';
 import type { EffectRegistry } from '../registry/effects.ts';
@@ -11,7 +18,7 @@ import { clipContentTime, resolveSceneAt } from '../render/scene.ts';
 import { buildRenderSnapshot, type MediaHandle } from '../render/snapshot.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { MediaAsset } from '../schema/media.ts';
-import type { Clip, Sequence, Track } from '../schema/sequence.ts';
+import type { Clip, Sequence } from '../schema/sequence.ts';
 import { flicksToSeconds, fpsOf, type Rational } from '../time.ts';
 import { formatTimecode } from '../timecode.ts';
 import { AddressError, pickSequence, resolveFrameInput } from './addressing.ts';
@@ -137,10 +144,6 @@ function sequenceName(doc: ProjectDocument, seqId: string): string {
 	return seqId;
 }
 
-function allTracksOf(seq: Sequence): Track[] {
-	return [...seq.videoTracks, ...seq.audioTracks, ...seq.captionTracks];
-}
-
 function wrap<T>(fn: () => T): T {
 	try {
 		return fn();
@@ -148,10 +151,6 @@ function wrap<T>(fn: () => T): T {
 		if (e instanceof AddressError) throw new AgentQueryError(e.code, e.message);
 		throw e;
 	}
-}
-
-function rate(seq: Sequence): Rational {
-	return seq.settings.frameRate as Rational;
 }
 
 function clipSource(clip: Clip): Record<string, unknown> {
@@ -165,7 +164,7 @@ function clipSource(clip: Clip): Record<string, unknown> {
 }
 
 function clipRow(seq: Sequence, clip: Clip) {
-	const r = rate(seq);
+	const r = seq.settings.frameRate;
 	return {
 		id: clip.id,
 		kind: clip.kind,
@@ -225,7 +224,7 @@ function docGet(env: AgentQueryEnv, args: z.infer<(typeof AGENT_QUERY_ARGS)['doc
 
 function sequenceSummary(env: AgentQueryEnv, args: { sequenceId?: string }) {
 	const seq = wrap(() => pickSequence(env.doc, args.sequenceId, env.session?.activeSequenceId));
-	const r = rate(seq);
+	const r = seq.settings.frameRate;
 	const duration = sequenceDuration(seq);
 	const clips = Object.values(seq.clips);
 	return {
@@ -244,7 +243,7 @@ function sequenceSummary(env: AgentQueryEnv, args: { sequenceId?: string }) {
 			timecode: sequenceTimecode(seq, duration),
 			seconds: round3((duration * r.den) / r.num),
 		},
-		tracks: allTracksOf(seq).map((t) => ({
+		tracks: allTracks(seq).map((t) => ({
 			id: t.id,
 			label: trackLabel(seq, t.id),
 			kind: t.kind,
@@ -286,7 +285,7 @@ function clipsInRangeQuery(
 		const from = resolveFrameInput(seq, args.from);
 		const to = resolveFrameInput(seq, args.to);
 		if (to <= from) throw new AgentQueryError('E_INVALID_PARAM', '`to` must be after `from`');
-		const all = allTracksOf(seq);
+		const all = allTracks(seq);
 		const tracks = args.tracks?.length
 			? args.tracks.map((ref) => {
 					const t = all.find(

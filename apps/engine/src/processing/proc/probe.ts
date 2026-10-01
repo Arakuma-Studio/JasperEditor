@@ -72,23 +72,7 @@ export async function probeInput(ffprobe: string, file: string): Promise<ProcPro
 	const fps = parseRational(v.r_frame_rate as string) ??
 		parseRational(v.avg_frame_rate as string) ?? { num: 25, den: 1 };
 	let frames = Number(v.nb_frames);
-	if (!Number.isFinite(frames) || frames <= 0) {
-		const counted = JSON.parse(
-			await run(ffprobe, [
-				'-v',
-				'error',
-				'-select_streams',
-				'v:0',
-				'-count_packets',
-				'-show_entries',
-				'stream=nb_read_packets',
-				'-of',
-				'json',
-				file,
-			]),
-		) as { streams: Array<{ nb_read_packets?: string }> };
-		frames = Number(counted.streams[0]?.nb_read_packets ?? 0);
-	}
+	if (!Number.isFinite(frames) || frames <= 0) frames = await countFrames(ffprobe, file);
 	const pixFmt = String(v.pix_fmt ?? 'yuv420p');
 	const alphaTag = v.tags?.alpha_mode === '1' || v.tags?.ALPHA_MODE === '1';
 	return {
@@ -115,7 +99,7 @@ export async function countFrames(ffprobe: string, file: string): Promise<number
 			'v:0',
 			'-count_packets',
 			'-show_entries',
-			'stream=nb_read_packets,width,height,r_frame_rate',
+			'stream=nb_read_packets',
 			'-of',
 			'json',
 			file,

@@ -6,7 +6,7 @@ import type { RenderPlan, VideoCodec } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import { formatTimecode, type Sequence } from '@jasper/project';
 import { useSession, useSessionState } from '@jasper/session/react';
-import { Button, cx, IconButton, TimecodeText } from '@jasper/ui';
+import { Button, IconButton, TimecodeText } from '@jasper/ui';
 import { useEffect, useMemo, useState } from 'react';
 import { notices } from '../home/notices.tsx';
 import { runIfRegistered, useLocalCommandCtx } from '../home/ui-bridge.ts';
@@ -90,7 +90,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 	const [encoderChoice, setEncoderChoice] = useState<string>(remembered?.encoder ?? '');
 	const [plan, setPlan] = useState<PlanState>({ status: 'idle' });
 	const [starting, setStarting] = useState(false);
-	const close = props.onClose ?? (() => exportMode.close());
+	const close = props.onClose ?? exportMode.close;
 
 	useEffect(() => {
 		if (!sequenceId) return;
@@ -430,7 +430,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 					pill
 					data-testid="export-start"
 					disabled={!canExport}
-					className={cx(starting ? 'opacity-60' : '')}
+					className={starting ? 'opacity-60' : ''}
 					onClick={() => void startExport()}
 				>
 					Export

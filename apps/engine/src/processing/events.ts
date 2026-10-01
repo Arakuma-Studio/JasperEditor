@@ -32,11 +32,9 @@ export function createEventParser(onEvent: (e: ProcEvent) => void, onText?: (lin
  */
 export class ProgressTracker {
 	private readonly fractions: number[];
-	private stage = 'Starting';
 	notes: string[] = [];
 	error: { code: string; message: string } | null = null;
 	done: { frames: number; sidecar: string } | null = null;
-	frames = 0;
 
 	constructor(
 		readonly steps: number,
@@ -50,9 +48,7 @@ export class ProgressTracker {
 	handle(e: ProcEvent): void {
 		switch (e.event) {
 			case 'start':
-				this.frames = e.frames;
-				this.stage = `Processing ${e.frames} frames`;
-				this.sink(this.base, this.stage);
+				this.sink(this.base, `Processing ${e.frames} frames`);
 				break;
 			case 'progress': {
 				const f = e.total > 0 ? Math.min(1, e.done / e.total) : 0;
@@ -63,9 +59,9 @@ export class ProgressTracker {
 					// A step that produces frames has finished the steps before it.
 					for (let i = 0; i < e.step; i++) this.fractions[i] = Math.max(this.fractions[i], v);
 				}
-				this.stage = `Step ${Math.min(e.step + 1, this.steps)}/${this.steps} · ${e.stage} · ${e.done}/${e.total}`;
+				const stage = `Step ${Math.min(e.step + 1, this.steps)}/${this.steps} · ${e.stage} · ${e.done}/${e.total}`;
 				const overall = this.fractions.reduce((a, b) => a + b, 0) / this.fractions.length;
-				this.sink(this.base + this.span * overall, this.stage);
+				this.sink(this.base + this.span * overall, stage);
 				break;
 			}
 			case 'note':

@@ -16,15 +16,17 @@ import {
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import type WebSocket from 'ws';
+import { createCoreAgentStore } from '../src/agent/core-store.ts';
 import {
 	type AgentProjectStore,
 	AgentService,
 	type AgentSocket,
-	FsAgentProjectStore,
 	type SaveOutcome,
 } from '../src/agent/index.ts';
 import { findMcpEntry } from '../src/agent/mcp-entry.ts';
 import { createServer, engineConfig } from '../src/index.ts';
+import { LeaseManager } from '../src/projects/leases.ts';
+import { ProjectStoreFs } from '../src/projects/store.ts';
 
 const H = { host: '127.0.0.1:47900' };
 const apps: FastifyInstance[] = [];
@@ -535,7 +537,7 @@ describe('AgentService timeouts', () => {
 					m.event === 'agent.approval.resolved' && (m.payload as { decision: string }).decision === 'timeout',
 			),
 		).toBe(true);
-		expect(service.pendingApprovals()).toEqual([]);
+		expect(service.approvals.pending()).toEqual([]);
 	});
 
 	it('ignores approval answers from connections that never said hello', async () => {
@@ -598,12 +600,14 @@ describe('AgentService timeouts', () => {
 	});
 });
 
-describe('FsAgentProjectStore', () => {
-	it('writes atomically and refuses a stale base revision', async () => {
+describe('core agent project-store adapter', () => {
+	it('persists the envelope and refuses a stale base revision', async () => {
 		const appdir = mkdtempSync(join(tmpdir(), 'jasper-agent-store-'));
 		const paths = appdirPaths(appdir);
 		const { projectId } = seedProject(paths.projectFile);
-		const store = new FsAgentProjectStore(paths);
+		const leases = new LeaseManager();
+		const projects = new ProjectStoreFs({ paths, leases, appVersion: 'test' });
+		const store = createCoreAgentStore(projects, leases);
 		const cur = await store.load(projectId);
 		expect(cur?.revision).toBe(0);
 		expect(await store.save(projectId, { ...cur!.envelope, revision: 1 }, 0)).toEqual({
@@ -613,6 +617,10 @@ describe('FsAgentProjectStore', () => {
 		expect(await store.save(projectId, { ...cur!.envelope, revision: 1 }, 0)).toEqual({
 			ok: false,
 			conflict: true,
+			revision: 1,
+		});
+		expect(await store.load(projectId)).toEqual({
+			envelope: expect.objectContaining({ revision: 1 }),
 			revision: 1,
 		});
 		expect(await store.load('../etc')).toBeNull();

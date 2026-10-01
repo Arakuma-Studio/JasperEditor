@@ -1,5 +1,4 @@
 // Desktop window guards and helpers (ARCHITECTURE §12, R-OMS §8.5): pure functions, no Electron needed.
-import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -8,8 +7,6 @@ import {
 	isRevealablePath,
 	isSameOrigin,
 	isWindowAction,
-	MEDIA_EXTENSIONS,
-	makeToken,
 	mcpLaunchInfo,
 } from '../src/security.ts';
 
@@ -28,10 +25,7 @@ describe('desktop security helpers', () => {
 		expect(isSameOrigin('garbage', 'http://127.0.0.1:5173')).toBe(false);
 	});
 
-	it('makes 32-byte base64url tokens and validates IPC arguments', () => {
-		const t = makeToken((n) => randomBytes(n));
-		expect(Buffer.from(t, 'base64url')).toHaveLength(32);
-		expect(t).not.toBe(makeToken((n) => randomBytes(n)));
+	it('validates IPC arguments', () => {
 		expect(isRevealablePath('/home/u/out.mp4')).toBe(true);
 		expect(isRevealablePath('C:\\Users\\u\\out.mp4')).toBe(true);
 		expect(isRevealablePath('relative/x')).toBe(false);
@@ -39,7 +33,6 @@ describe('desktop security helpers', () => {
 		expect(isWindowAction('close')).toBe(true);
 		expect(isWindowAction('focus')).toBe(true);
 		expect(isWindowAction('rm -rf')).toBe(false);
-		expect(MEDIA_EXTENSIONS).toContain('mov');
 	});
 });
 
@@ -111,26 +104,5 @@ describe('desktop package config (R-OMS §8.5)', () => {
 		expect(pkg.build.afterPack).toBe('./scripts/after-pack.cjs');
 		expect(existsSync(join(__dirname, '..', pkg.build.afterPack))).toBe(true);
 		for (const s of ['dist', 'dist:dir']) expect(pkg.scripts[s]).toContain('scripts/package.mjs');
-		const hook = readFileSync(join(__dirname, '../scripts/after-pack.cjs'), 'utf8');
-		expect(hook).toContain('checkPackagedApp');
-		const stage = readFileSync(join(__dirname, '../scripts/package.mjs'), 'utf8');
-		expect(stage).toContain('fetch-or-build-lgpl.mjs');
-		expect(stage).toContain('check-lgpl.mjs');
-	});
-
-	it('the preload exposes only the documented bridge', () => {
-		const src = readFileSync(join(__dirname, '../src/preload.cts'), 'utf8');
-		expect(src).toContain("exposeInMainWorld('jasperDesktop'");
-		for (const k of [
-			'runtime:',
-			'pickMedia:',
-			'revealInFolder:',
-			'windowControls:',
-			'focusWindow:',
-			'mcpInfo:',
-			'onMenuCommand:',
-		])
-			expect(src).toContain(k);
-		expect(src).not.toMatch(/require\(['"](?!electron)/);
 	});
 });

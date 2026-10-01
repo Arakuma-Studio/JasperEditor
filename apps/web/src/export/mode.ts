@@ -4,7 +4,7 @@
 import type { EngineJob } from '@jasper/api';
 import { useSyncExternalStore } from 'react';
 
-export type ExportModeState = { open: boolean; sequenceId: string | null };
+type ExportModeState = { open: boolean; sequenceId: string | null };
 
 let state: ExportModeState = { open: false, sequenceId: null };
 const listeners = new Set<() => void>();

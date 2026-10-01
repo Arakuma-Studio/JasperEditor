@@ -20,6 +20,7 @@ import { autoSlope } from '../keyframes.ts';
 import type { Animatable, Keyframe, Vec2 } from '../schema/common.ts';
 import type { MediaAsset } from '../schema/media.ts';
 import type { ClipTracker, Transform } from '../schema/sequence.ts';
+import { scaleTracker } from '../tracking/samples.ts';
 
 export type PixelSize = { width: number; height: number };
 
@@ -154,26 +155,6 @@ function rescaleTransform(
 	return { ...t, anchor, scale, scaleWidth, uniformScale };
 }
 
-function rescaleTracker(tr: ClipTracker, oldSize: PixelSize, newSize: PixelSize): ClipTracker {
-	const fx = newSize.width / oldSize.width;
-	const fy = newSize.height / oldSize.height;
-	const px = (v: number) => v * fx;
-	const py = (v: number) => v * fy;
-	const pt = (p: Vec2): Vec2 => [px(p[0]), py(p[1])];
-	// Square template/search sizes follow the geometric mean of the axis factors (integers in the schema).
-	const len = (v: number) => Math.max(1, Math.round(v * Math.sqrt(fx * fy)));
-	const ref = tr.reference;
-	const reference: ClipTracker['reference'] = { ...ref };
-	if (ref.corners) reference.corners = ref.corners.map(pt);
-	if (ref.point) reference.point = pt(ref.point);
-	if (ref.patch !== undefined) reference.patch = len(ref.patch);
-	if (ref.search !== undefined) reference.search = len(ref.search);
-	const samples = tr.samples
-		? { ...tr.samples, data: tr.samples.data.map((v, i) => (i % 2 === 0 ? px(v) : py(v))) }
-		: null;
-	return { ...tr, reference, samples };
-}
-
 /**
  * Motion compensation for swapping a clip's source from a media of `oldSize` to one of `newSize` (layer boxes,
  * see `mediaIntrinsicSize`) so that the rendered framing is identical (S07:PRC-006). Pure: returns a new clip
@@ -190,6 +171,9 @@ export function rescaleClipForSource<C extends RescalableClip>(
 	const out = clone(clip);
 	if (oldSize.width === newSize.width && oldSize.height === newSize.height) return out;
 	out.transform = rescaleTransform(out.transform, oldSize, newSize, opts);
-	if (out.trackers) out.trackers = out.trackers.map((tr) => rescaleTracker(tr, oldSize, newSize));
+	if (out.trackers)
+		out.trackers = out.trackers.map((tr) =>
+			scaleTracker(tr, newSize.width / oldSize.width, newSize.height / oldSize.height),
+		);
 	return out;
 }

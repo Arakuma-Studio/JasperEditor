@@ -9,7 +9,6 @@ import { frameToX, type Viewport } from '../model/viewport.ts';
 export function PlayheadLine(props: {
 	transport: TransportStore;
 	viewportRef: RefObject<Viewport>;
-	rulerHeight: number;
 	onHeadPointerDown?(e: React.PointerEvent): void;
 	/** Called on every transport change (follow-playhead logic lives in the panel). */
 	onFrame?(frame: number, playing: boolean): void;

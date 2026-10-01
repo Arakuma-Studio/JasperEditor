@@ -1,6 +1,5 @@
 // The JasperEditor MCP server (tools, resources, prompts). Transport-agnostic: `cli.ts` serves it over
 // stdio (jasper-mcp), the engine serves the same definitions over Streamable HTTP at /mcp.
-import type { ProjectDocument } from '@jasper/project';
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { loadDoc, makeContext, type ToolContext } from './context.ts';
@@ -35,11 +34,14 @@ Rules:
 - Undo/redo only touch this agent's own History entries.
 - Errors come back as tool errors with a code and a hint on what to do next.`;
 
-/** M2 guide sections contributed by the feature tool modules (ARCHITECTURE §19.9). */
-const M2_GUIDES = [COLOR_GUIDE, PROCESSING_GUIDE, COMPOSITION_GUIDE, TRACKING_GUIDE, TRANSITION_GUIDE].filter(
-	(g) => g.trim().length > 0,
-);
-const FULL_GUIDE = M2_GUIDES.length ? `${EDITING_GUIDE}\n\n${M2_GUIDES.join('\n\n')}` : EDITING_GUIDE;
+const FULL_GUIDE = [
+	EDITING_GUIDE,
+	COLOR_GUIDE,
+	PROCESSING_GUIDE,
+	COMPOSITION_GUIDE,
+	TRACKING_GUIDE,
+	TRANSITION_GUIDE,
+].join('\n\n');
 
 export type JasperMcpOptions = {
 	link: EngineConnection;
@@ -59,7 +61,6 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerProjectTools(ctx);
 	registerEditingTools(ctx);
 	registerRenderTools(ctx);
-	// M2 feature tools (one module per work package).
 	registerColorTools(ctx);
 	registerProcessingTools(ctx);
 	registerCompositionTools(ctx);
@@ -115,7 +116,7 @@ function registerResources(ctx: ToolContext): void {
 		},
 		async (uri, { projectId }) => {
 			const { doc, revision, live } = await loadDoc(ctx, String(projectId));
-			const seq = pickSequence(doc as ProjectDocument);
+			const seq = pickSequence(doc);
 			return {
 				contents: [
 					{ uri: uri.href, mimeType: 'text/plain', text: timelineTable(doc, seq, { revision, live }) },

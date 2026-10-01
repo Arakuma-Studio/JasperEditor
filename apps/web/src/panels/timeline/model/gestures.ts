@@ -7,7 +7,7 @@ import { deltaFramesFromPx, type Viewport, xToFrameExact } from './viewport.ts';
 
 // ---------------------------------------------------------------- move (TL-480…491)
 
-export type MoveDeltaInput = {
+type MoveDeltaInput = {
 	dxPx: number;
 	pxPerFrame: number;
 	starts: readonly number[];
@@ -53,7 +53,7 @@ export function axisConstraint(dx: number, dy: number, shift: boolean): { dx: nu
 	return Math.abs(dx) >= Math.abs(dy) ? { dx, dy: 0 } : { dx: 0, dy };
 }
 
-export type TrackKindKey = 'video' | 'audio';
+type TrackKindKey = 'video' | 'audio';
 
 /**
  * TL-486/487: vertical offset for the grabbed side, clamped so no clip of that kind goes below index 0.

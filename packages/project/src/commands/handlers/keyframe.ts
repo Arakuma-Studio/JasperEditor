@@ -13,7 +13,7 @@ import { type EffectInstance, isKnownClipKind, type Track } from '../../schema/s
 import { flicksPerFrame, type Rational } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import type { CommandOf, ParamPath } from '../schemas/index.ts';
-import { resolveTarget, type Target, validateValue } from './param.ts';
+import { getAt, resolveTarget, type Target, validateValue } from './param.ts';
 import type { HandlerMap } from './util.ts';
 
 type DAnim = Draft<Animatable<unknown>>;
@@ -29,17 +29,8 @@ function isAnim(v: unknown): v is DAnim {
 	);
 }
 
-function getAt(obj: unknown, path: readonly string[]): unknown {
-	let cur = obj as Record<string, unknown> | undefined;
-	for (const k of path) {
-		if (!cur || typeof cur !== 'object') return undefined;
-		cur = cur[k] as Record<string, unknown> | undefined;
-	}
-	return cur;
-}
-
 /** One animatable parameter somewhere in the document. */
-export type AnimLocation = {
+type AnimLocation = {
 	anim: DAnim;
 	/** ParamPath addressing it (S01:CMD-010). */
 	path: ParamPath;
@@ -49,7 +40,7 @@ export type AnimLocation = {
 };
 
 /** Every animatable parameter of one clip: intrinsic properties and applied effect params. */
-export function clipAnimatables(seq: DSeq, clip: DClip): AnimLocation[] {
+function clipAnimatables(seq: DSeq, clip: DClip): AnimLocation[] {
 	const out: AnimLocation[] = [];
 	if (isKnownClipKind(clip.kind)) {
 		for (const s of PROPERTY_SPECS) {
@@ -58,8 +49,7 @@ export function clipAnimatables(seq: DSeq, clip: DClip): AnimLocation[] {
 			if (isAnim(a)) out.push({ anim: a, path: ['clip', clip.id, ...s.key.split('.')], seq, clip });
 		}
 	}
-	for (const fx of ((clip as { effects?: Draft<EffectInstance>[] }).effects ??
-		[]) as Draft<EffectInstance>[]) {
+	for (const fx of (clip as { effects?: Draft<EffectInstance>[] }).effects ?? []) {
 		for (const [name, a] of Object.entries(fx.params)) {
 			if (isAnim(a)) out.push({ anim: a, path: ['effect', fx.id, name], seq, clip });
 		}
@@ -80,7 +70,7 @@ function trackAnimatables(seq: DSeq, t: Draft<Track>): AnimLocation[] {
 }
 
 /** Every animatable parameter of the document (clips, tracks, master). */
-export function allAnimatables(doc: DDoc): AnimLocation[] {
+function allAnimatables(doc: DDoc): AnimLocation[] {
 	const out: AnimLocation[] = [];
 	for (const seq of Object.values(doc.sequences)) {
 		for (const clip of Object.values(seq.clips)) out.push(...clipAnimatables(seq, clip));
@@ -141,10 +131,9 @@ function segmentVelocity(kfs: readonly Keyframe<unknown>[], i: number): number {
  * honest for the UI and for a later switch to `bezier` (which then starts from the auto shape).
  */
 export function refreshAutoBezier(anim: DAnim): void {
-	const kfs = anim.keyframes as Keyframe<unknown>[];
-	kfs.forEach((k, i) => {
-		if (k.interpolation !== 'auto-bezier') return;
-		const key = anim.keyframes[i] as DKey;
+	const kfs = anim.keyframes;
+	kfs.forEach((key, i) => {
+		if (key.interpolation !== 'auto-bezier') return;
 		key.easeIn = { influence: AUTO_INFLUENCE, slope: autoSlope(kfs, i, 'in') };
 		key.easeOut = { influence: AUTO_INFLUENCE, slope: autoSlope(kfs, i, 'out') };
 	});
@@ -170,13 +159,9 @@ function matchContinuous(anim: DAnim, i: number, edited: 'in' | 'out'): void {
 	}
 }
 
-function sortKeys(anim: DAnim): void {
-	anim.keyframes.sort((a, b) => a.time - b.time);
-}
-
 function finish(anims: Iterable<DAnim>): void {
 	for (const a of anims) {
-		sortKeys(a);
+		a.keyframes.sort((x, y) => x.time - y.time);
 		refreshAutoBezier(a);
 	}
 }
@@ -283,7 +268,6 @@ export const keyframeHandlers: HandlerMap = {
 		for (const loc of found) {
 			targetOf(doc, loc, h); // lock check
 			const i = loc.anim.keyframes.findIndex((k) => k.id === loc.key.id);
-			if (i < 0) continue;
 			const [removed] = loc.anim.keyframes.splice(i, 1);
 			// Removing the last key turns the stopwatch off and keeps that key's value (S01:KF-005).
 			if (loc.anim.keyframes.length === 0) loc.anim.value = clone(removed!.value) as never;
@@ -340,8 +324,8 @@ export const keyframeHandlers: HandlerMap = {
 		const found = locate(doc, cmd.keyframeIds, h);
 		const touched = new Set<DAnim>();
 		// Process in time order so neighbour conversions see the final state of earlier keys.
-		const ordered = [...found].sort((a, b) => a.key.time - b.key.time);
-		for (const loc of ordered) {
+		found.sort((a, b) => a.key.time - b.key.time);
+		for (const loc of found) {
 			targetOf(doc, loc, h);
 			applyInterpolation(loc.anim, loc.key, cmd.interpolation, cmd.easeIn, cmd.easeOut);
 			touched.add(loc.anim);

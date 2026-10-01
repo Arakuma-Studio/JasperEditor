@@ -9,16 +9,12 @@ import { useEffect, useState } from 'react';
 import { continueRender, delayRender } from 'remotion';
 import type { RenderDoc } from './types.ts';
 
-export type FontFaceSpec = RenderDoc['fonts'][number];
+type FontFaceSpec = RenderDoc['fonts'][number];
 
 /** Fallback stack appended to every family (S03:TXT-005). */
 export const FALLBACK_FONT_STACK = '"Source Sans 3", "Source Sans Pro", Arial, Helvetica, sans-serif';
 
 const loaded = new Map<string, Promise<boolean>>();
-
-export function fontKey(f: Pick<FontFaceSpec, 'family' | 'weight' | 'style' | 'url'>): string {
-	return `${f.family}|${f.weight}|${f.style}|${f.url}`;
-}
 
 /** CSS `format()` hint from the URL extension, or undefined when unknown. */
 export function fontFormatFromUrl(url: string): string | undefined {
@@ -38,8 +34,8 @@ export function fontFormatFromUrl(url: string): string | undefined {
 }
 
 /** Loads one face once per page; resolves false (never rejects) when it cannot be loaded. */
-export function loadFontFace(f: FontFaceSpec): Promise<boolean> {
-	const key = fontKey(f);
+function loadFontFace(f: FontFaceSpec): Promise<boolean> {
+	const key = `${f.family}|${f.weight}|${f.style}|${f.url}`;
 	const existing = loaded.get(key);
 	if (existing) return existing;
 	const p = (async () => {

@@ -26,12 +26,12 @@ const bridges = new WeakMap<EditorSession, AgentBridge>();
 const listeners = new Set<() => void>();
 
 /** The bridge of a session (null until the session host started it). */
-export function getAgentBridge(session: EditorSession | null | undefined): AgentBridge | null {
+function getAgentBridge(session: EditorSession | null | undefined): AgentBridge | null {
 	return session ? (bridges.get(session) ?? null) : null;
 }
 
 /** Whether `window.jasper` is installed (ARCHITECTURE §11: dev and Electron builds). */
-export function shouldExposeWindowApi(): boolean {
+function shouldExposeWindowApi(): boolean {
 	if (typeof window === 'undefined') return false;
 	if (import.meta.env?.DEV) return true;
 	if ((window as { jasperDesktop?: unknown }).jasperDesktop) return true;
@@ -43,7 +43,7 @@ export function shouldExposeWindowApi(): boolean {
 }
 
 /** Starts the bridge for a session; returns the stop function. */
-export function startAgentBridge(
+function startAgentBridge(
 	session: EditorSession,
 	engine: EngineClient | null,
 	opts: AgentBridgeOptions & { exposeWindow?: boolean } = {},

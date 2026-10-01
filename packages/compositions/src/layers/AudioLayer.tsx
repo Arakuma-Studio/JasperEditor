@@ -60,8 +60,7 @@ export function AudioLayer({
 		(f: number) => audioLayerGain(clip, volumeFrameToClipFrame(f, sequenceFrom), { num, den }, master),
 		[clip, num, den, master, sequenceFrom],
 	);
-	if (!media?.hasAudio && media?.kind !== 'audio') return null;
-	if (!media) return null;
+	if (!media || (!media.hasAudio && media.kind !== 'audio')) return null;
 	return (
 		<Audio
 			src={mediaSrc(media, options)}

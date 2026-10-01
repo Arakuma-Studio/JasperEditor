@@ -55,7 +55,7 @@ async function fetchJson(url: string): Promise<unknown> {
 const spriteIndexes = new Map<string, Entry<SpriteIndex>>();
 const images = new Map<string, Entry<HTMLImageElement>>();
 
-export type SpriteSource = { index: SpriteIndex; sheetUrl(n: number): string };
+type SpriteSource = { index: SpriteIndex; sheetUrl(n: number): string };
 
 /** Sprite index for an asset (runtime URL first, else the engine URL); null until loaded. */
 export function spriteFor(
@@ -94,7 +94,7 @@ export function sheetImage(url: string): HTMLImageElement | null {
 
 // ---------------------------------------------------------------- peaks
 
-export type PeaksData = { header: PeaksHeader; channels: Float32Array[]; key: string };
+type PeaksData = { header: PeaksHeader; channels: Float32Array[]; key: string };
 const peaks = new Map<string, Entry<PeaksData>>();
 
 /** Peaks of one audio stream (planar float32 per channel, WF-001), or null until loaded. */

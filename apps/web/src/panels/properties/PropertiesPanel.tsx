@@ -2,13 +2,13 @@
 // sequence settings; clips selected → the clip sections. Same registry and write path as Effect
 // Controls, with a ◆ toggle per property instead of the mini-timeline.
 import type { EditorSession } from '@jasper/session';
-import { useSessionOrNull, useSessionState } from '@jasper/session/react';
+import { useSessionOrNull, useSessionState, useTransportFrame } from '@jasper/session/react';
 import { TransitionSection } from '../effectControls/TransitionSection.tsx';
 import type { PanelProps } from '../types.ts';
 import { ClipProperties } from './ClipProperties.tsx';
 import { useNotices } from './controls/Notices.tsx';
 import type { RowContext } from './controls/PropertyRow.tsx';
-import { useInspectorData, usePlayheadFrame } from './lib/hooks.ts';
+import { useInspectorData } from './lib/hooks.ts';
 import { useInspectorOps } from './lib/ops.ts';
 import { SequenceProperties } from './SequenceProperties.tsx';
 
@@ -32,17 +32,13 @@ function Empty({ text }: { text: string }) {
 
 function PropertiesBody({ session }: { session: EditorSession }) {
 	const data = useInspectorData();
-	const frame = usePlayheadFrame();
+	const frame = useTransportFrame(66).frame;
 	const ops = useInspectorOps(session);
 	const notices = useNotices();
 	const selectedTransitions = useSessionState((s) => s.selection.timeline.transitions.length);
 	const seqName = useSessionState((s) => {
 		const seqId = s.activeSequenceId;
-		const item = Object.values(s.document.items).find(
-			(i) =>
-				(i as { kind: string; sequenceId?: string }).kind === 'sequence' &&
-				(i as { sequenceId?: string }).sequenceId === seqId,
-		);
+		const item = Object.values(s.document.items).find((i) => i.kind === 'sequence' && i.sequenceId === seqId);
 		return item?.name ?? 'Sequence';
 	});
 	if (!data.selection) return <Empty text="Open a sequence to see its properties." />;

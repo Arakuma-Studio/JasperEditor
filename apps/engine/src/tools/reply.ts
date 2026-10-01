@@ -97,7 +97,6 @@ export function sendServiceError(reply: FastifyReply, e: unknown) {
 	const err = e as {
 		code?: string;
 		status?: number;
-		statusCode?: number;
 		message?: string;
 		detail?: unknown;
 	};

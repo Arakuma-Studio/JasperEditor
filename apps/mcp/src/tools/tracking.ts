@@ -19,7 +19,6 @@ import {
 	plateMapAt,
 	type Quad,
 	type Rational,
-	resolveFrameInput,
 	type Sequence,
 	samplesFromTrackResult,
 	samplesSummary,
@@ -34,6 +33,7 @@ import {
 	defineTool,
 	EDIT,
 	type Extra,
+	frameOf,
 	isTerminal,
 	loadDoc,
 	READ_ONLY,
@@ -47,7 +47,7 @@ import { jsonResult, ToolError } from '../errors.ts';
 import { TIME_FORMATS, timeArg } from './editing.ts';
 import { ProjectIdArg } from './projects.ts';
 
-/** Appended to the server instructions (EDITING_GUIDE) when non-empty. */
+/** Appended to the server instructions (EDITING_GUIDE). */
 export const TRACKING_GUIDE = [
 	'Tracking / screen replacement: put the plate (the footage with the screen or sign) on V1 and the replacement (image, video, composition) on a track above it.',
 	'add_tracker (kind "planar", corners = the screen corners TL, TR, BR, BL in the plate media pixels at a frame where they are visible; corners may lie outside the frame) → track (runs the engine tracker, stores the samples; use refineEdges for screens with a visible bezel) → apply_tracking (mode "corner-pin" pins the replacement onto the screen; "position" / "position-scale-rotation" make it follow).',
@@ -69,14 +69,6 @@ function sequenceOf(doc: ProjectDocument, clipId: string): { seq: Sequence; clip
 	throw new ToolError('E_NOT_FOUND', `Clip not found: ${clipId}`, 'Look clip ids up with get_timeline.');
 }
 
-function frameOf(seq: Sequence, t: unknown): number {
-	try {
-		return resolveFrameInput(seq, t);
-	} catch (e) {
-		throw new ToolError('E_INVALID_PARAM', (e as Error).message, TIME_FORMATS);
-	}
-}
-
 function locateTracker(doc: ProjectDocument, trackerId: string) {
 	const loc = findTracker(doc, trackerId);
 	if (!loc)
@@ -90,7 +82,7 @@ function locateTracker(doc: ProjectDocument, trackerId: string) {
 
 function mediaKeyOf(doc: ProjectDocument, mediaId: string): string {
 	const asset = doc.media[mediaId];
-	const key = asset?.locators.find((l) => l.type === 'engine-store') as { key?: string } | undefined;
+	const key = asset?.locators.find((l) => l.type === 'engine-store');
 	if (!key?.key)
 		throw new ToolError(
 			'E_NOT_FOUND',
@@ -160,7 +152,7 @@ export function registerTrackingTools(ctx: ToolContext): void {
 		async ({ projectId, clipId, kind, at, corners, point, patch, search, name }, extra) => {
 			const { doc } = await loadDoc(ctx, projectId);
 			const { seq } = sequenceOf(doc, clipId);
-			const frame = frameOf(seq, at);
+			const frame = frameOf(seq, at, TIME_FORMATS);
 			const cmd = {
 				type: 'tracker.add',
 				clipId,
@@ -234,7 +226,7 @@ export function registerTrackingTools(ctx: ToolContext): void {
 				: (args.direction ?? 'both');
 			let at: number | undefined;
 			if (args.from !== undefined) {
-				const f = frameOf(loc.seq, args.from);
+				const f = frameOf(loc.seq, args.from, TIME_FORMATS);
 				at = layerTimeAt(clip, f, loc.seq.settings.frameRate);
 			}
 			let plan: ReturnType<typeof planTrack>;
@@ -251,8 +243,8 @@ export function registerTrackingTools(ctx: ToolContext): void {
 			const request = { ...plan.request };
 			if (args.range) {
 				const fps = loc.seq.settings.frameRate;
-				const f0 = frameOf(loc.seq, args.range.start);
-				const f1 = frameOf(loc.seq, args.range.end);
+				const f0 = frameOf(loc.seq, args.range.start, TIME_FORMATS);
+				const f1 = frameOf(loc.seq, args.range.end, TIME_FORMATS);
 				const a = Math.round(layerTimeAt(clip, Math.max(clip.start, f0), fps) / plan.step);
 				const b = Math.round(
 					layerTimeAt(clip, Math.min(clip.start + clip.duration, f1) - 1, fps) / plan.step,
@@ -361,7 +353,12 @@ export function registerTrackingTools(ctx: ToolContext): void {
 				mode: mode === 'corner-pin' ? 'corner-pin' : 'transform',
 				...(mode === 'position' ? { components: ['position'] } : {}),
 				...(range
-					? { range: { start: frameOf(loc.seq, range.start), end: frameOf(loc.seq, range.end) } }
+					? {
+							range: {
+								start: frameOf(loc.seq, range.start, TIME_FORMATS),
+								end: frameOf(loc.seq, range.end, TIME_FORMATS),
+							},
+						}
 					: {}),
 			});
 			const res = await transact(ctx, projectId, { label: 'Apply Tracking', commands }, extra);
@@ -397,7 +394,7 @@ export function registerTrackingTools(ctx: ToolContext): void {
 			const fps = seq.settings.frameRate;
 			const layer = trackLayerOf(doc, seq, clip);
 			const list = frames?.length
-				? frames.map((f) => frameOf(seq, f))
+				? frames.map((f) => frameOf(seq, f, TIME_FORMATS))
 				: [clip.start, clip.start + Math.floor(clip.duration / 2), clip.start + clip.duration - 1];
 			const at = list.map((f) => {
 				const t = layerTimeAt(layer, f, fps);
@@ -458,7 +455,7 @@ export function registerTrackingTools(ctx: ToolContext): void {
 			const layer = trackLayerOf(doc, seq, clip);
 			if (!layer.transform)
 				throw new ToolError('E_INVALID_PARAM', `${clip.kind} clips cannot be corner pinned`);
-			const frame = at !== undefined ? frameOf(seq, at) : clip.start;
+			const frame = at !== undefined ? frameOf(seq, at, TIME_FORMATS) : clip.start;
 			let norm: Quad;
 			if (space === 'normalized') norm = corners.map((p) => [p[0], p[1]]) as Quad;
 			else {

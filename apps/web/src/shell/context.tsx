@@ -1,7 +1,7 @@
 // Shell runtime context: the live CommandCtx (session, transport, focus, services, engine, capabilities,
 // toast/dialog adapters), the per-window PanelServices, and the ShellController published as the
 // `shell` panel service so UI commands can drive the dock, workspaces, palette and modes
-// (S05:SH-004/005, KB-001). Panels use `usePanelServices()` and `useRunCommand()` from here.
+// (S05:SH-004/005, KB-001).
 import type { EditorSession } from '@jasper/session';
 import { useSessionOrNull } from '@jasper/session/react';
 import { openDialog as openUiDialog, toast as uiToast } from '@jasper/ui';
@@ -174,16 +174,6 @@ export function useShellRuntime(): ShellRuntime {
 
 export function useShellRuntimeOrNull(): ShellRuntime | null {
 	return useContext(RuntimeContext);
-}
-
-/** The per-window panel service registry (S05:SH-005). */
-export function usePanelServices(): PanelServices {
-	return useShellRuntime().services;
-}
-
-/** `run(commandId, args)` through the registry (S05:KB-001). */
-export function useRunCommand(): (id: string, args?: unknown) => Promise<boolean> {
-	return useShellRuntime().run;
 }
 
 /** The live CommandCtx getter (menus and buttons evaluate enabled/checked when they render/open). */

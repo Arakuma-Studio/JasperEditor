@@ -13,7 +13,7 @@ export type StepOp = ProcessStep['op'];
 export const STEP_ORDER: readonly StepOp[] = ['deblock', 'denoise', 'dejudder', 'stabilize', 'upscale'];
 
 /** Human label of one step (item names, badges, tooltips), e.g. `Stabilized`, `Upscaled 2×`. */
-export function stepLabel(step: ProcessStep): string {
+function stepLabel(step: ProcessStep): string {
 	switch (step.op) {
 		case 'stabilize':
 			return 'Stabilized';
@@ -34,10 +34,6 @@ export function recipeLabel(steps: readonly ProcessStep[]): string {
 	return steps.map(stepLabel).join(' · ');
 }
 
-export function sortSteps(steps: readonly ProcessStep[]): ProcessStep[] {
-	return [...steps].sort((a, b) => STEP_ORDER.indexOf(a.op) - STEP_ORDER.indexOf(b.op));
-}
-
 type MediaTable = Pick<ProjectDocument, 'media'>;
 
 /** The processing steps of a processed version (derivation recipe `process`), or null for other media. */
@@ -46,7 +42,7 @@ export function processedSteps(
 ): ProcessStep[] | null {
 	const d = asset?.derivation;
 	if (d?.recipe.op !== 'process') return null;
-	return (d.recipe as { steps: ProcessStep[] }).steps;
+	return d.recipe.steps;
 }
 
 export function isProcessed(asset: Pick<MediaAsset, 'derivation'> | undefined | null): boolean {
@@ -200,7 +196,7 @@ const SEC_PER_FRAME_720P: Record<string, number> = {
 const ENCODE_SEC_PER_FRAME_720P = 0.01;
 const OVERHEAD_SEC = 4;
 
-export type SourceInfo = { frames: number; width: number; height: number };
+type SourceInfo = { frames: number; width: number; height: number };
 
 /** Source frames and size of a video asset (null when the probe has no video stream or duration). */
 export function sourceInfo(asset: MediaAsset | undefined): SourceInfo | null {

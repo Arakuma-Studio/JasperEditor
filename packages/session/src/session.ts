@@ -274,13 +274,13 @@ export class EditorSession {
 		return new Promise((resolve) => this.queue.push({ tx, resolve }));
 	}
 
-	private commit(tx: SessionTxInput, ctx: CommandContext, labelOverride?: string): TransactionResult {
+	private commit(tx: SessionTxInput, ctx: CommandContext): TransactionResult {
 		const before = this.store.getState();
 		const { coalesceKey, ...rest } = tx;
 		const { document, result } = applyTransaction(before.document, { protocol: TX_PROTOCOL, ...rest }, ctx);
 		if (!result.ok || tx.dryRun || document === before.document) return result;
 		const origin = tx.origin as Origin;
-		const label = agentLabel(labelOverride ?? tx.label, origin);
+		const label = agentLabel(tx.label, origin);
 		const selectionAfter = filterSelection(before.selection, document);
 		for (const id of [...result.created, ...result.changed, ...result.deleted])
 			this.entityRevisions.set(id, result.revision);

@@ -38,7 +38,6 @@ describe('transition.update {effectId} (TUI-050)', () => {
 		to: string;
 		audio?: boolean;
 		code?: string;
-		effectId?: string;
 	}[] = [
 		{ name: 'cross dissolve → dip to black', from: 'jasper.cross-dissolve', to: 'jasper.dip-to-black' },
 		{ name: 'dip to black → cross dissolve', from: 'jasper.dip-to-black', to: 'jasper.cross-dissolve' },
@@ -151,7 +150,6 @@ describe('transition.applyDefault M2 fields (TUI-051)', () => {
 		expect(transitions(h).every((t) => t.effectId === 'jasper.cross-dissolve' && t.duration === 30)).toBe(
 			true,
 		);
-		expect(transitions(h).every((t) => t.trackId === 'trk_v1' || t.trackId.startsWith('trk'))).toBe(true);
 	});
 
 	const table: {

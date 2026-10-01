@@ -3,7 +3,7 @@
 import type { ProcessStep } from '@jasper/project';
 import { createDeblockStep, createDenoiseStep, createDeshakeStep } from './filters.ts';
 import { filterAdapter, ProcError, type StepEnv } from './runner.ts';
-import type { FrameStep, StepImpl } from './types.ts';
+import type { StepImpl } from './types.ts';
 import { createUpscaleStep } from './upscale.ts';
 import { createNativeVidstabStep } from './vidstab-native.ts';
 
@@ -30,13 +30,9 @@ export async function stabilizeEngine(
 	throw new ProcError('VIDSTAB_UNAVAILABLE', 'the vid.stab WASM module could not be loaded');
 }
 
-async function wasmModule() {
-	return import('./vidstab/index.ts');
-}
-
 async function wasmAvailable(): Promise<boolean> {
 	try {
-		const m = await wasmModule();
+		const m = await import('./vidstab/wasm.ts');
 		return await m.vidstabWasmAvailable();
 	} catch {
 		return false;
@@ -53,42 +49,19 @@ export async function createStepImpl(step: ProcessStep, _index: number, env: Ste
 			const engine = await stabilizeEngine(step, env, wasmAvailable);
 			if (engine === 'deshake') return { kind: 'filter', step: createDeshakeStep(step) };
 			if (engine === 'ffmpeg') {
-				const fps = { num: 0, den: 1 };
 				return {
 					kind: 'frames',
-					step: createNativeVidstabStep(step, (f) =>
-						filterAdapterLazy(f, env.ffmpeg, fps, { allowVidstab: true }),
-					),
+					step: createNativeVidstabStep(step, (f) => filterAdapter(f, env.ffmpeg, { allowVidstab: true })),
 				};
 			}
-			const m = await wasmModule();
-			return { kind: 'frames', step: m.createVidstabStep(step) as FrameStep };
+			const m = await import('./vidstab/step.ts');
+			return { kind: 'frames', step: m.createVidstabStep(step) };
 		}
 		case 'dejudder': {
 			const m = await import('./dejudder/step.ts');
-			return { kind: 'frames', step: m.createDejudderStep(step) as FrameStep };
+			return { kind: 'frames', step: m.createDejudderStep(step) };
 		}
 		case 'upscale':
 			return { kind: 'frames', step: createUpscaleStep(step) };
 	}
-}
-
-/** filterAdapter that takes the frame rate from the step context at open time. */
-function filterAdapterLazy(
-	f: { name: string; format: 'yuv444p'; filter: () => string },
-	ffmpeg: string,
-	_fps: { num: number; den: number },
-	opts: { allowVidstab?: boolean },
-): FrameStep {
-	let inner: FrameStep | null = null;
-	return {
-		name: f.name,
-		async open(ctx) {
-			inner = filterAdapter(f, ffmpeg, ctx.fps, opts);
-			return inner.open(ctx);
-		},
-		push: (frame) => (inner as FrameStep).push(frame),
-		end: () => (inner as FrameStep).end(),
-		close: async () => inner?.close?.(),
-	};
 }

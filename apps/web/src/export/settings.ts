@@ -11,8 +11,8 @@ import type {
 import { fpsOf, makeEnvelope, type ProjectDocument, type Sequence, sequenceDuration } from '@jasper/project';
 
 export const MATCH_SEQUENCE_PRESET = { id: 'match-sequence-h264', label: 'Match Sequence – H.264' } as const;
-export const DEFAULT_CRF = 18;
-export const AUDIO_KBPS = 256;
+const DEFAULT_CRF = 18;
+const AUDIO_KBPS = 256;
 
 export type ExportEngineChoice = ExportSettings['engine'];
 export type ExportRangeChoice = 'entire' | 'in-out';
@@ -96,7 +96,7 @@ const PATH_NAMES: Record<string, string> = {
 	browser: 'In browser',
 };
 
-export function planPathName(path: RenderPlan['path']): string {
+function planPathName(path: RenderPlan['path']): string {
 	if (path.startsWith('cloud:')) return `Cloud (${path.slice(6)})`;
 	return PATH_NAMES[path] ?? path;
 }
@@ -176,7 +176,7 @@ const ENCODER_NAMES: Record<string, string> = {
 };
 const GPL = new Set(['libx264', 'libx264rgb', 'libx265']);
 
-export type ChoiceOption<T extends string> = { value: T; label: string; available: boolean; reason?: string };
+type ChoiceOption<T extends string> = { value: T; label: string; available: boolean; reason?: string };
 
 /** Codec choices; unavailable ones stay listed but disabled (S05:EX-012). */
 export function codecOptions(enc: EncodingCapabilities | undefined): ChoiceOption<VideoCodec>[] {

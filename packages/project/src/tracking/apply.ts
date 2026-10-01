@@ -59,8 +59,6 @@ export type TrackingApplyInput = {
 	range: { start: number; end: number };
 	/** Overrides `tracker.smoothing`. */
 	smoothing?: number;
-	/** Effect instance id of the target's corner pin (excluded from the target's own map). */
-	cornerPinId?: string;
 };
 
 export type CornerPinKey = { frame: number; time: number; corners: Quad };
@@ -149,9 +147,6 @@ export function computeTrackingApply(input: TrackingApplyInput): TrackingApplyRe
 	const radius = input.smoothing ?? tracker.smoothing ?? 0;
 	const samples = tracker.samples && radius > 0 ? smoothSamples(tracker.samples, radius) : tracker.samples;
 	const geometryAt = (t: number) => trackerGeometryAt(tracker, t, { samples, smoothing: 0 });
-	const targetEffects = target.effects.filter((e) => e.id !== input.cornerPinId);
-	const frames: number[] = [];
-	for (let f = range.start; f < range.end; f++) frames.push(f);
 	let tMin = Number.POSITIVE_INFINITY;
 	let tMax = Number.NEGATIVE_INFINITY;
 	const seen = new Set<number>();
@@ -160,7 +155,7 @@ export function computeTrackingApply(input: TrackingApplyInput): TrackingApplyRe
 		if (tracker.kind !== 'planar') throw new Error('A corner pin needs a planar tracker');
 		if (!target.transform) throw new Error('The target clip has no Motion');
 		const keys: CornerPinKey[] = [];
-		for (const f of frames) {
+		for (let f = range.start; f < range.end; f++) {
 			const tp = layerTimeAt(plate, f, fps);
 			const tt = layerTimeAt(target, f, fps);
 			if (seen.has(tt)) continue;
@@ -168,7 +163,7 @@ export function computeTrackingApply(input: TrackingApplyInput): TrackingApplyRe
 			const g = geometryAt(tp);
 			if (!g.corners) throw new Error('The tracker has no corners');
 			const P = plateMapAt(plate, tp);
-			const M = mat3FromMat2D(resolveLayerProps(asLayer(target, targetEffects), tt).matrix);
+			const M = motionMapAt(target, tt);
 			const Mi = invertMat3(M);
 			if (!Mi) throw new Error('The target has a zero scale at a frame of the range');
 			const corners = g.corners.map((p) => {
@@ -215,7 +210,7 @@ export function computeTrackingApply(input: TrackingApplyInput): TrackingApplyRe
 	const keys: TransformKey[] = [];
 	let lastAngle = refAngle;
 	let unwrap = 0;
-	for (const f of frames) {
+	for (let f = range.start; f < range.end; f++) {
 		const tp = layerTimeAt(plate, f, fps);
 		const tt = layerTimeAt(target, f, fps);
 		if (seen.has(tt)) continue;

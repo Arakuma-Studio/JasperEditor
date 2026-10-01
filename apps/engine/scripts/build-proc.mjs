@@ -30,7 +30,6 @@ const outIdx = argv.indexOf('--out');
 const out = outIdx >= 0 ? argv[outIdx + 1] : join(root, 'dist');
 mkdirSync(out, { recursive: true });
 
-export const PROC_EXTERNALS = ['onnxruntime-node', '@techstark/opencv-js', '*.node'];
 const banner =
 	"import { createRequire as __jasperCreateRequire } from 'node:module'; const require = __jasperCreateRequire(import.meta.url);";
 const common = {
@@ -40,7 +39,7 @@ const common = {
 	target: 'node20',
 	sourcemap: false,
 	legalComments: 'none',
-	external: PROC_EXTERNALS,
+	external: ['onnxruntime-node', '@techstark/opencv-js', '*.node'],
 	banner: { js: banner },
 	logLevel: 'warning',
 	loader: { '.wasm': 'file' },

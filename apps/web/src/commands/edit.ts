@@ -12,13 +12,13 @@ function historyOf(session: EditorSession | null) {
 }
 
 /** Label of the step that Undo would revert, or null. */
-export function undoLabel(session: EditorSession | null): string | null {
+function undoLabel(session: EditorSession | null): string | null {
 	const h = historyOf(session);
 	return h?.canUndo ? (h.entries[h.index - 1]?.label ?? null) : null;
 }
 
 /** Label of the step that Redo would re-apply, or null. */
-export function redoLabel(session: EditorSession | null): string | null {
+function redoLabel(session: EditorSession | null): string | null {
 	const h = historyOf(session);
 	return h?.canRedo ? (h.entries[h.index]?.label ?? null) : null;
 }

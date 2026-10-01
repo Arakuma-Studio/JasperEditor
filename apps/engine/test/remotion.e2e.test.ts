@@ -184,7 +184,3 @@ describe.runIf(enabled)('Remotion render in LGPL-only mode (REMOTION_E2E=1)', ()
 		}
 	}, 300_000);
 });
-
-describe.skipIf(enabled)('Remotion render', () => {
-	it.skip('set REMOTION_E2E=1 to run the Remotion end-to-end render', () => {});
-});

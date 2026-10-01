@@ -1,6 +1,4 @@
-// Minimal toast host for WP-2E surfaces (import results, export completion with Download, S05 §13).
-// `toastFromRequest` adapts the shell's ToastRequest; WP-2A's toast host can replace <NoticeHost/> by
-// forwarding `notices` entries.
+// Notices for import results and export completion, including download links (S05 §13).
 import { Button, IconButton, Z } from '@jasper/ui';
 import { useEffect, useSyncExternalStore } from 'react';
 import type { ToastRequest } from '../commands/types.ts';
@@ -16,7 +14,7 @@ export type Notice = {
 	durationMs?: number | null;
 };
 
-export class NoticeStore {
+class NoticeStore {
 	private list: Notice[] = [];
 	private readonly listeners = new Set<() => void>();
 	private seq = 0;

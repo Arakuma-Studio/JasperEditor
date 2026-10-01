@@ -38,7 +38,7 @@ export class ApprovalGate {
 		};
 		const decision = new Promise<ApprovalDecision>((resolve) => {
 			const timer = setTimeout(() => this.settle(approval.approvalId, 'timeout'), this.timeoutMs);
-			(timer as { unref?: () => void }).unref?.();
+			timer.unref();
 			this.entries.set(approval.approvalId, { approval, resolve, timer });
 		});
 		this.opts.onRequested?.(approval);

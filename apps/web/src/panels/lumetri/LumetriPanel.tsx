@@ -4,7 +4,7 @@
 // clip) and "Add Lumetri" for stacked grades.
 import type { Command } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
-import { useSessionOrNull } from '@jasper/session/react';
+import { useSessionOrNull, useTransportFrame } from '@jasper/session/react';
 import { cx, Icon } from '@jasper/ui';
 import { colorBypass, useColorBypass } from '../../color/actions.ts';
 import { LumetriEditor } from '../../color/LumetriEditor.tsx';
@@ -12,7 +12,7 @@ import { firstLumetri, gradeEligible } from '../../color/model.ts';
 import { MiniButton } from '../properties/controls/fields.tsx';
 import { FxGlyph } from '../properties/controls/glyphs.tsx';
 import { useNotices } from '../properties/controls/Notices.tsx';
-import { registriesOf, useInspectorData, usePlayheadFrame } from '../properties/lib/hooks.ts';
+import { useInspectorData } from '../properties/lib/hooks.ts';
 import { useInspectorOps } from '../properties/lib/ops.ts';
 import type { PanelProps } from '../types.ts';
 
@@ -45,7 +45,7 @@ function Empty({ text }: { text: string }) {
 
 function LumetriBody({ session }: { session: EditorSession }) {
 	const data = useInspectorData();
-	const frame = usePlayheadFrame(50);
+	const frame = useTransportFrame(50).frame;
 	const ops = useInspectorOps(session);
 	const notices = useNotices();
 	const bypassed = useColorBypass();
@@ -55,7 +55,7 @@ function LumetriBody({ session }: { session: EditorSession }) {
 	if (!clip) return <Empty text="Select a clip in the Timeline to grade it." />;
 	if (!gradeEligible(clip)) return <Empty text="Lumetri Color applies to video, still and graphic clips." />;
 	const fx = firstLumetri(clip);
-	const effect = fx ? registriesOf(session).effects.get(fx.effectId, fx.effectVersion) : undefined;
+	const effect = fx ? session.ctx.registries.effects.get(fx.effectId, fx.effectVersion) : undefined;
 	const isBypassed = bypassed.includes(clip.id);
 	const count = ((clip as { effects?: { effectId: string }[] }).effects ?? []).filter(
 		(e) => e.effectId === 'jasper.lumetri',

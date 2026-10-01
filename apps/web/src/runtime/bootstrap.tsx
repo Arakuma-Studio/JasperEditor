@@ -5,7 +5,7 @@ import { Button, Icon } from '@jasper/ui';
 import { type ReactNode, useState } from 'react';
 import { useEngine } from '../state/engine.tsx';
 
-export function EngineUnreachable({ onRetry, onContinue }: { onRetry(): void; onContinue(): void }) {
+function EngineUnreachable({ onRetry, onContinue }: { onRetry(): void; onContinue(): void }) {
 	return (
 		<div
 			className="flex h-full items-center justify-center bg-pr-app p-6 font-pr text-pr-text"

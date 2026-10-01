@@ -39,50 +39,6 @@ export function quadToScreen(layerMap: Mat3, view: View, q: readonly Vec2[]): Qu
 /** What a pointer grabbed on a tracker quad: a corner (0..3 = TL, TR, BR, BL), an edge (i → i+1) or the body. */
 export type QuadPart = { kind: 'corner'; index: number } | { kind: 'edge'; index: number } | { kind: 'body' };
 
-export const CORNER_HIT = 8;
-export const EDGE_HIT = 5;
-
-function distToSegment(p: Vec2, a: Vec2, b: Vec2): number {
-	const dx = b[0] - a[0];
-	const dy = b[1] - a[1];
-	const len2 = dx * dx + dy * dy;
-	const t = len2 > 0 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2)) : 0;
-	return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
-}
-
-const cross = (o: Vec2, a: Vec2, b: Vec2) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
-
-/** Point inside a convex quad of either winding. */
-export function insideQuad(p: Vec2, q: readonly Vec2[]): boolean {
-	let pos = false;
-	let neg = false;
-	for (let i = 0; i < q.length; i++) {
-		const c = cross(q[i]!, q[(i + 1) % q.length]!, p);
-		if (c > 1e-9) pos = true;
-		else if (c < -1e-9) neg = true;
-		if (pos && neg) return false;
-	}
-	return true;
-}
-
-/** Hit test in screen px: corners first, then edges, then the inside. */
-export function hitQuad(q: readonly Vec2[], p: Vec2, corner = CORNER_HIT, edge = EDGE_HIT): QuadPart | null {
-	let best = -1;
-	let bestD = corner;
-	q.forEach((c, i) => {
-		const d = Math.hypot(p[0] - c[0], p[1] - c[1]);
-		if (d <= bestD) {
-			best = i;
-			bestD = d;
-		}
-	});
-	if (best >= 0) return { kind: 'corner', index: best };
-	for (let i = 0; i < q.length; i++) {
-		if (distToSegment(p, q[i]!, q[(i + 1) % q.length]!) <= edge) return { kind: 'edge', index: i };
-	}
-	return insideQuad(p, q) ? { kind: 'body' } : null;
-}
-
 /** New corners after dragging `part` by `delta` (same space as the corners): corner = one, edge = two, body = all. */
 export function dragQuad(start: Quad, part: QuadPart, delta: Vec2): Quad {
 	return start.map((p, i) =>
@@ -115,7 +71,7 @@ export function dragQuadInMedia(
 }
 
 /** Whether corner `i` follows a drag of `part`. */
-export function partMoves(part: QuadPart, i: number): boolean {
+function partMoves(part: QuadPart, i: number): boolean {
 	return (
 		part.kind === 'body' ||
 		(part.kind === 'corner' && part.index === i) ||
@@ -146,7 +102,7 @@ export function sizeFromCorner(centre: Vec2, corner: Vec2, min = 4): number {
 
 // ------------------------------------------------------------------ confidence and trails
 
-export type ConfidenceTone = 'good' | 'fair' | 'poor';
+type ConfidenceTone = 'good' | 'fair' | 'poor';
 
 /** Green ≥ 0.8, amber ≥ 0.5, red below (TRU-002). */
 export function confidenceTone(c: number): ConfidenceTone {
@@ -226,12 +182,12 @@ export function pinParams(params: Record<string, unknown>): Quad {
 }
 
 /** Normalised → layer px. */
-export function denormalise(q: readonly Vec2[], box: { width: number; height: number }): Quad {
+function denormalise(q: readonly Vec2[], box: { width: number; height: number }): Quad {
 	return q.map((p) => [p[0] * box.width, p[1] * box.height]) as Quad;
 }
 
 /** Layer px → normalised. */
-export function normalise(p: Vec2, box: { width: number; height: number }): Vec2 {
+function normalise(p: Vec2, box: { width: number; height: number }): Vec2 {
 	return [box.width ? p[0] / box.width : 0, box.height ? p[1] / box.height : 0];
 }
 

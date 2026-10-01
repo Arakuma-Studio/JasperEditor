@@ -1,14 +1,7 @@
 // The clip area of both regions (S02:TL-150 layers): track backgrounds, virtualized clip bodies,
 // gesture overlays. Pointer input is forwarded to the TimelineController by the panel.
 import type { EngineClient } from '@jasper/engine-client';
-import {
-	type Clip,
-	clipsInRange,
-	type MediaAsset,
-	outOfSyncOffsets,
-	type Sequence,
-	type Track,
-} from '@jasper/project';
+import { clipsInRange, type MediaAsset, outOfSyncOffsets, type Sequence, type Track } from '@jasper/project';
 import type { GapRef, MediaRuntime } from '@jasper/session';
 import { useMemo } from 'react';
 import { type RegionLayout, rowOf, type TrackAreaLayout, visibleRows } from '../model/layout.ts';
@@ -18,7 +11,7 @@ import type { EditPointSel, TimelineUiState } from '../state/ui-store.ts';
 import { type ClipDisplay, ClipView } from './ClipView.tsx';
 import { TransitionGhostView, TransitionView, transitionViewProps } from './TransitionView.tsx';
 
-export type TrackAreaProps = {
+type TrackAreaProps = {
 	seq: Sequence;
 	layout: TrackAreaLayout;
 	viewport: Viewport;
@@ -47,14 +40,6 @@ export type TrackAreaProps = {
 	selectedTransitions?: ReadonlySet<string>;
 };
 
-/** Clips mounted for a row: the visible frame window ± 50 % overscan (TL-151). */
-export function visibleClips(seq: Sequence, trackId: string, v: Viewport): Clip[] {
-	const visible = v.width / v.pxPerFrame;
-	const f0 = Math.floor(v.scrollFrame - visible * 0.5);
-	const f1 = Math.ceil(v.scrollFrame + visible * 1.5);
-	return clipsInRange(seq, trackId, f0, f1);
-}
-
 function trackOf(seq: Sequence, id: string): Track | undefined {
 	return seq.videoTracks.find((t) => t.id === id) ?? seq.audioTracks.find((t) => t.id === id);
 }
@@ -63,6 +48,10 @@ function Region(props: TrackAreaProps & { region: RegionLayout; offsets: Record<
 	const { seq, viewport: v, region } = props;
 	const rows = visibleRows(region);
 	const anySolo = seq.audioTracks.some((t) => t.solo);
+	// Clips and transitions share the visible frame window ± 50 % overscan (TL-151).
+	const visible = v.width / v.pxPerFrame;
+	const f0 = Math.floor(v.scrollFrame - visible * 0.5);
+	const f1 = Math.ceil(v.scrollFrame + visible * 1.5);
 	return (
 		<div
 			className="absolute right-0 left-0 overflow-hidden"
@@ -77,16 +66,8 @@ function Region(props: TrackAreaProps & { region: RegionLayout; offsets: Record<
 				);
 				const dimmed =
 					region.kind === 'video' ? track.output === false : !!track.mute || (anySolo && !track.solo);
-				const clips = visibleClips(seq, track.id, v);
-				const visible = v.width / v.pxPerFrame;
-				const trans = props.transitions
-					? transitionsInRange(
-							props.transitions,
-							track.id,
-							Math.floor(v.scrollFrame - visible * 0.5),
-							Math.ceil(v.scrollFrame + visible * 1.5),
-						)
-					: [];
+				const clips = clipsInRange(seq, track.id, f0, f1);
+				const trans = props.transitions ? transitionsInRange(props.transitions, track.id, f0, f1) : [];
 				return (
 					<div
 						key={track.id}
@@ -175,9 +156,7 @@ function EditPointMarks(props: { points: readonly EditPointSel[]; layout: TrackA
 	return (
 		<>
 			{props.points.map((e) => {
-				const row = [...props.layout.video.rows, ...props.layout.audio.rows].find(
-					(r) => r.trackId === e.trackId,
-				);
+				const row = rowOf(props.layout, e.trackId);
 				if (!row) return null;
 				const x = frameToX(props.v, e.frame);
 				const color = e.type === 'ripple' ? 'var(--pr-trim-ripple)' : 'var(--pr-trim-regular)';

@@ -103,12 +103,6 @@ export function quadBounds(q: readonly Vec2[]): Rect {
 	return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
 }
 
-/** CSS transform realizing the layer matrix with `transform-origin: 0 0` (S03:DM-012). */
-export function cssTransform(v: LayerTransformValues): string {
-	const { sx, sy } = scaleFactors(v);
-	return `translate(${v.position[0]}px, ${v.position[1]}px) rotate(${v.rotation}deg) scale(${sx}, ${sy}) translate(${-v.anchor[0]}px, ${-v.anchor[1]}px)`;
-}
-
 export function matrixToCss(m: Mat2D): string {
 	return `matrix(${m.a}, ${m.b}, ${m.c}, ${m.d}, ${m.e}, ${m.f})`;
 }

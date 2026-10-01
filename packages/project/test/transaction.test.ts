@@ -241,12 +241,9 @@ describe('catalog (ARCHITECTURE §5.3)', () => {
 
 	it('stubs refuse with E_NOT_IMPLEMENTED', () => {
 		const h = new Harness();
-		h.ok([solid(0, 30, 'V1')]);
-		for (const cmd of [{ type: 'sequence.delete', sequenceId: h.seqId }]) {
-			const r = h.tx([cmd]);
-			expect(r.ok, cmd.type).toBe(false);
-			if (!r.ok) expect(r.errors[0]!.code, cmd.type).toBe('E_NOT_IMPLEMENTED');
-		}
+		const r = h.tx([{ type: 'sequence.delete', sequenceId: h.seqId }]);
+		expect(r.ok).toBe(false);
+		if (!r.ok) expect(r.errors[0]!.code).toBe('E_NOT_IMPLEMENTED');
 	});
 
 	it('flags approval-gated commands (S01:AGT-011)', () => {

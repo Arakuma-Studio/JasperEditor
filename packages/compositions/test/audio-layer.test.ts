@@ -3,7 +3,6 @@
 import { audioFadeGain, type RenderAudioFade } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { audioLayerGain } from '../src/layers/AudioLayer.tsx';
-import { videoTrimBefore } from '../src/pipeline.ts';
 
 const flat = { value: 0, keyframes: [] };
 const fps = { num: 30, den: 1 };
@@ -45,12 +44,5 @@ describe('audio layer gain through crossfade handles', () => {
 		const loud = { ...incoming, gainDb: 20 * Math.log10(0.5) };
 		expect(audioLayerGain(loud, 5, fps)).toBeCloseTo(0.5 * audioFadeGain([inc], 95), 9);
 		expect(audioLayerGain(loud, 50, fps)).toBeCloseTo(0.5, 9);
-	});
-
-	it('starts the incoming media headHandle frames earlier (trimBefore)', () => {
-		const clip = { sourceIn: 705_600_000, speed: { rate: 1 }, headHandle: 10 }; // 1 s in
-		expect(videoTrimBefore(clip, fps)).toBeCloseTo(20, 9);
-		expect(videoTrimBefore({ ...clip, speed: { rate: 2 } }, fps)).toBeCloseTo(10, 9);
-		expect(videoTrimBefore({ ...clip, headHandle: undefined }, fps)).toBeCloseTo(30, 9);
 	});
 });

@@ -1,10 +1,8 @@
 // Integration points of the Timeline panel with the shell: panel services, toasts, the import
 // service and dialogs. The shell (WP-2A) can provide them with <TimelineEnvProvider>; without a provider
 // the panel falls back to a shared PanelServices instance and console toasts, so it works standalone.
-import type { EngineClient } from '@jasper/engine-client';
 import { createContext, type ReactNode, useContext, useMemo } from 'react';
 import type { ToastRequest } from '../../commands/types.ts';
-import { useEngine } from '../../state/engine.tsx';
 import { PanelServices } from '../../state/panel-services.ts';
 import type { ImportService } from '../../state/services.ts';
 import type { TimelineController } from './state/controller.ts';
@@ -19,8 +17,6 @@ export interface TimelineHandle {
 	sequenceId(): string | null;
 	/** Escape: cancels the active gesture; false when nothing was active. */
 	cancelGesture(): boolean;
-	/** Opens the panel's context-menu UI at client coordinates (used by the ruler/marker commands). */
-	openMarkerEditor?(markerId: string): void;
 }
 
 declare module '../../state/panel-services.ts' {
@@ -41,11 +37,6 @@ export type TimelineEnv = {
 };
 
 const shared = new PanelServices();
-
-/** PanelServices used when no shell provides one (standalone mounting, tests). */
-export function fallbackPanelServices(): PanelServices {
-	return shared;
-}
 
 const defaultEnv: TimelineEnv = {
 	services: shared,
@@ -73,16 +64,6 @@ export function TimelineEnvProvider(props: { value: Partial<TimelineEnv>; childr
 
 export function useTimelineEnv(): TimelineEnv {
 	return useContext(EnvContext) ?? defaultEnv;
-}
-
-/** The engine client when an EngineProvider is mounted, else null (tests, storybook-like mounts). */
-export function useOptionalEngineClient(): EngineClient | null {
-	try {
-		// biome-ignore lint/correctness/useHookAtTopLevel: always called (the try only catches the provider-missing throw)
-		return useEngine().client;
-	} catch {
-		return null;
-	}
 }
 
 // ---------------------------------------------------------------- instance registry

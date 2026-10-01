@@ -86,10 +86,6 @@ export function parseTimecode(input: string, rate: Rational, opts?: TimecodeOpti
 	return signed - (opts?.startFrames ?? 0);
 }
 
-export function isTimecodeString(s: string): boolean {
-	return /^\s*-?\d{1,3}[:;]\d{1,2}[:;]\d{1,2}[:;.]\d{1,3}\s*$/.test(s);
-}
-
 export type TimecodeEntryContext = TimecodeOptions & {
 	/** Current value (playhead) for relative entries like `+15` or `-1:00`. */
 	current: number;

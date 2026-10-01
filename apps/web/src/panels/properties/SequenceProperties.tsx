@@ -27,7 +27,7 @@ const SIZE_PRESETS: { id: string; label: string; w: number; h: number }[] = [
 	{ id: '1080x1350', label: '4:5 Portrait 1080 × 1350', w: 1080, h: 1350 },
 ];
 
-export function rateLabel(r: Rational): string {
+function rateLabel(r: Rational): string {
 	const fps = r.num / r.den;
 	return Number.isInteger(fps) ? `${fps} fps` : `${(Math.round(fps * 1000) / 1000).toFixed(3)} fps`;
 }

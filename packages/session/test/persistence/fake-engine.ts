@@ -3,7 +3,7 @@
 import { EngineClient } from '@jasper/engine-client';
 import { createCounterIdSource, createEmptyProject, makeEnvelope } from '@jasper/project';
 
-type Stored = { envelope: Record<string, unknown>; view: unknown; revision: number; versions: number };
+type Stored = { envelope: Record<string, unknown>; view: unknown; revision: number };
 type LeaseRec = { leaseId: string; sessionId: string; expiresAt: number };
 
 export type FakeRequest = { method: string; path: string; headers: Record<string, string>; body: unknown };
@@ -28,7 +28,6 @@ export class FakeEngine {
 			}),
 			view: null,
 			revision: 0,
-			versions: 0,
 		});
 		return doc.projectId;
 	}
@@ -83,7 +82,6 @@ export class FakeEngine {
 				envelope: makeEnvelope(doc, { revision: 0, savedAt: 'x', platform: 'fake' }),
 				view: null,
 				revision: 0,
-				versions: 0,
 			});
 			return this.json({ projectId: doc.projectId });
 		}
@@ -101,7 +99,6 @@ export class FakeEngine {
 				if (base !== p.revision) return this.err(409, 'REVISION_CONFLICT', { revision: p.revision });
 				p.envelope = body;
 				p.revision = Math.max(p.revision + 1, Number(body.revision) || 0);
-				p.versions++;
 				return this.json({ revision: p.revision });
 			}
 		}

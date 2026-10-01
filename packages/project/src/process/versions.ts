@@ -41,7 +41,7 @@ export function mediaVersionsOf(doc: MediaTable, mediaId: string): string[] {
 }
 
 /** Label of one processing step in item names, e.g. `Stabilized`, `Upscaled 2×` (S07:PRC-004). */
-export function processStepLabel(step: ProcessStep): string {
+function processStepLabel(step: ProcessStep): string {
 	switch (step.op) {
 		case 'stabilize':
 			return 'Stabilized';

@@ -23,7 +23,7 @@ import { originalOf, recipeLabel } from './model.ts';
 
 export const PROCESS_TX_LABEL = 'Process Clip';
 
-export type ProcessWatch = {
+type ProcessWatch = {
 	jobId: string;
 	engine: EngineClient;
 	session: EditorSession;
@@ -43,7 +43,7 @@ export type ProcessWatch = {
  * The `media.derive` command for a finished process job, or an error message. Clips that were deleted, are not
  * video clips or no longer use a version of the same original are left out of `replaceInClips`.
  */
-export function deriveCommand(
+function deriveCommand(
 	doc: ProjectDocument,
 	input: {
 		fromMediaId: string;
@@ -120,7 +120,7 @@ export function commitProcessed(
 
 // ------------------------------------------------------------------ submit
 
-export type StartInput = {
+type StartInput = {
 	engine: EngineClient;
 	session: EditorSession;
 	mediaId: string;
@@ -192,21 +192,17 @@ function isRemoteFailure(w: ProcessWatch, job: EngineJob): boolean {
 	);
 }
 
-export class ProcessWatcher {
+class ProcessWatcher {
 	private pending = new Map<string, ProcessWatch>();
 	/** Failed jobs by dedupe key: a Retry from the Jobs panel (a new job, same key) is followed again. */
 	private failed = new Map<string, { watch: ProcessWatch; at: number }>();
 	private timer: ReturnType<typeof setInterval> | null = null;
 	private busy = false;
-	private listeners = new Set<() => void>();
-
-	constructor(
-		private opts: { pollMs: number; notify: Notify; now(): number } = {
-			pollMs: 1000,
-			notify: (t) => defaultNotify(t),
-			now: () => Date.now(),
-		},
-	) {}
+	private opts: { pollMs: number; notify: Notify; now(): number } = {
+		pollMs: 1000,
+		notify: defaultNotify,
+		now: () => Date.now(),
+	};
 
 	configure(patch: Partial<{ pollMs: number; notify: Notify; now(): number }>): void {
 		this.opts = { ...this.opts, ...patch };
@@ -219,18 +215,12 @@ export class ProcessWatcher {
 			? { ...w, replaceInClips: [...new Set([...prev.replaceInClips, ...w.replaceInClips])] }
 			: w;
 		this.pending.set(w.jobId, merged);
-		this.emit();
 		this.schedule();
 	}
 
-	/** Job ids being followed (tests, UI). */
+	/** Jobs being followed. */
 	list(): ProcessWatch[] {
 		return [...this.pending.values()];
-	}
-
-	subscribe(cb: () => void): () => void {
-		this.listeners.add(cb);
-		return () => this.listeners.delete(cb);
 	}
 
 	/** Test helper. */
@@ -239,11 +229,6 @@ export class ProcessWatcher {
 		this.failed.clear();
 		if (this.timer) clearInterval(this.timer);
 		this.timer = null;
-		this.emit();
-	}
-
-	private emit(): void {
-		for (const l of [...this.listeners]) l();
 	}
 
 	private schedule(): void {
@@ -269,13 +254,11 @@ export class ProcessWatcher {
 				} catch (e) {
 					if (e instanceof EngineError && (e.code === 'NOT_FOUND' || e.code === 'JOB_NOT_FOUND')) {
 						this.pending.delete(w.jobId);
-						this.emit();
 					}
 					continue; // engine unreachable: keep waiting
 				}
 				if (!TERMINAL_JOB_STATES.has(job.state)) continue;
 				this.pending.delete(w.jobId);
-				this.emit();
 				if (job.state === 'succeeded') this.succeeded(w, job);
 				else if (job.state === 'failed' || job.state === 'interrupted') this.failedJob(w, job);
 				// cancelled: the user did it in the Jobs panel; nothing to commit

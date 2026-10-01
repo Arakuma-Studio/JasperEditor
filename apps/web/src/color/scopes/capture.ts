@@ -3,7 +3,7 @@
 // picture as its first `canvas` (video layers, graded stills) or `img` (ungraded stills). A `video` is accepted
 // as a last resort (ungraded source while the colour stage is not mounted).
 
-export const SCOPE_MAX_WIDTH = 256;
+const SCOPE_MAX_WIDTH = 256;
 
 export type Frame = { data: Uint8ClampedArray; width: number; height: number };
 
@@ -29,7 +29,7 @@ export function findClipSource(clipId: string, root: ParentNode = document): Sou
 	return null;
 }
 
-export function sourceSize(el: Source): { width: number; height: number } {
+function sourceSize(el: Source): { width: number; height: number } {
 	if (el instanceof HTMLVideoElement) return { width: el.videoWidth, height: el.videoHeight };
 	if (el instanceof HTMLImageElement) return { width: el.naturalWidth, height: el.naturalHeight };
 	return { width: el.width, height: el.height };
@@ -46,7 +46,8 @@ let scratch: HTMLCanvasElement | null = null;
 
 /** Draws the source into a ≤ 256 px wide canvas and returns its pixels; null when not drawable (yet). */
 export function readFrame(el: Source, max = SCOPE_MAX_WIDTH): Frame | null {
-	const size = readbackSize(sourceSize(el).width, sourceSize(el).height, max);
+	const { width, height } = sourceSize(el);
+	const size = readbackSize(width, height, max);
 	if (!size) return null;
 	scratch ??= document.createElement('canvas');
 	if (scratch.width !== size.width) scratch.width = size.width;

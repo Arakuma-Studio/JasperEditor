@@ -27,7 +27,6 @@ import {
 	type ParamSpec,
 	type ProjectDocument,
 	type Rational,
-	resolveFrameInput,
 	retimeKeyframes,
 	type Sequence,
 	sequenceTimecode,
@@ -37,6 +36,7 @@ import {
 	DESTRUCTIVE,
 	defineTool,
 	EDIT,
+	frameOf,
 	loadDoc,
 	READ_ONLY,
 	requireOk,
@@ -183,12 +183,8 @@ export const GradeClipInput = {
 	).optional(),
 };
 export const GradeClipSchema = z.object(GradeClipInput);
-export type GradeClipArgs = z.infer<typeof GradeClipSchema>;
 
 export type Clamped = { field: string; given: unknown; applied: unknown };
-
-/** A LUT reference before it is resolved against the document (`{lutRef}`), or a final param value. */
-type PendingValue = unknown | { lutRef: string | null };
 
 /**
  * Validates and clamps the grade sections to the registry ranges: numbers to [min, max], curves normalised
@@ -196,10 +192,10 @@ type PendingValue = unknown | { lutRef: string | null };
  * `{lutRef}` until `resolveLutRefs`. Returns the values keyed by param name and what had to be clamped.
  */
 export function normalizeGrade(args: Partial<Record<GradeSection, Record<string, unknown> | undefined>>): {
-	params: Record<string, PendingValue>;
+	params: Record<string, unknown>;
 	clamped: Clamped[];
 } {
-	const params: Record<string, PendingValue> = {};
+	const params: Record<string, unknown> = {};
 	const clamped: Clamped[] = [];
 	for (const f of GRADE_FIELDS) {
 		const raw = args[f.section]?.[f.key];
@@ -288,7 +284,7 @@ export function resolveLut(doc: ProjectDocument, ref: string): MediaAsset {
 /** Replaces `{lutRef}` placeholders with `{mediaId}` param values (`''` = none). */
 export function resolveLutRefs(
 	doc: ProjectDocument,
-	params: Record<string, PendingValue>,
+	params: Record<string, unknown>,
 ): Record<string, unknown> {
 	const out: Record<string, unknown> = {};
 	for (const [k, v] of Object.entries(params)) {
@@ -532,18 +528,6 @@ async function livePlayhead(ctx: ToolContext, projectId: string, seqId: string):
 	return null;
 }
 
-function frameOf(seq: Sequence, t: unknown): number {
-	try {
-		return resolveFrameInput(seq, t);
-	} catch (e) {
-		throw new ToolError(
-			'E_INVALID_PARAM',
-			(e as Error).message,
-			'Times are frames, {"seconds": x} or "HH:MM:SS:FF".',
-		);
-	}
-}
-
 export function registerColorTools(ctx: ToolContext): void {
 	defineTool(
 		ctx,
@@ -624,7 +608,7 @@ export function registerColorTools(ctx: ToolContext): void {
 			annotations: EDIT,
 		},
 		async (args, extra) => {
-			const { params: pending, clamped } = normalizeGrade(args as GradeClipArgs);
+			const { params: pending, clamped } = normalizeGrade(args);
 			const names = Object.keys(pending);
 			const instance = args.instance ?? 'first';
 			const { doc, live } = await loadDoc(ctx, args.projectId);

@@ -53,7 +53,7 @@ export function workerMain(
 			if (m.type === 'init') {
 				tracker?.dispose();
 				tracker = null;
-				tracker = m.cfg.kind === 'planar' ? makePlanar(cv, G, m.cfg) : makePoint(cv, G, m.cfg);
+				tracker = m.cfg.kind === 'planar' ? makePlanar(cv, G, m.cfg) : makePoint(cv, m.cfg);
 				port.postMessage({ type: 'ok' });
 			} else if (m.type === 'reference' || m.type === 'frame') {
 				if (!tracker) throw new Error('tracker not initialised');

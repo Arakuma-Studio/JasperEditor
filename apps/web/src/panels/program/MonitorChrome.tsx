@@ -8,6 +8,28 @@ import { useStoreSelector } from '@jasper/session/react';
 import { Tooltip, tooltipText } from '@jasper/ui';
 import { Check, Settings } from 'lucide-react';
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { Size } from './viewport.ts';
+
+export function useElementSize<T extends HTMLElement>(): [React.RefObject<T | null>, Size] {
+	const ref = useRef<T>(null);
+	const [size, setSize] = useState<Size>({ width: 0, height: 0 });
+	useLayoutEffect(() => {
+		const el = ref.current;
+		if (!el) return;
+		const measure = () =>
+			setSize((s) =>
+				s.width === el.clientWidth && s.height === el.clientHeight
+					? s
+					: { width: el.clientWidth, height: el.clientHeight },
+			);
+		measure();
+		if (typeof ResizeObserver === 'undefined') return;
+		const ro = new ResizeObserver(measure);
+		ro.observe(el);
+		return () => ro.disconnect();
+	}, []);
+	return [ref, size];
+}
 
 export type TimecodeFormat = { rate: Rational; dropFrame: boolean; startFrames?: number };
 
@@ -94,7 +116,7 @@ export function TimecodeDisplay({
 	);
 }
 
-/** Small native select styled with tokens (WP-2A ships the full Select primitive). */
+/** Small native select styled with tokens. */
 export function MonitorSelect<T extends string | number>({
 	label,
 	value,
