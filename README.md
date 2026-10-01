@@ -315,11 +315,22 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Core tools: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
-`import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
-`add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic` `add_transition` ·
-`get_timeline` `render_frame` `get_playhead` `set_playhead` · `list_motion_templates`
-`render_motion_graphic_preview` · `list_export_presets` `start_export` `get_job` `cancel_job` `wait_for_job`.
+Tools (63; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+- Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
+  `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
+  `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
+  `add_transition` · `get_timeline` `render_frame` `get_playhead` `set_playhead` · `list_motion_templates`
+  `render_motion_graphic_preview` · `list_export_presets` `start_export` `get_job` `cancel_job` `wait_for_job`.
+- Colour: `import_lut` `grade_clip` `get_grade` `copy_grade`.
+- Clip processing: `list_processing_models` `install_processing_model` `process_clip` `use_media_version`
+  `get_processing_settings` `set_processing_settings` `test_remote_executor`.
+- Remotion projects: `import_mg_bundle` `list_compositions` `add_composition` `set_composition_props`
+  `prerender_composition` `scaffold_mg_project`.
+- Tracking: `add_tracker` `track` `apply_tracking` `get_tracker` `set_corner_pin`.
+- Transitions: `list_transitions` `update_transition` `remove_transitions` `apply_default_transitions`.
+- Animation and graphics: `list_text_animations` `set_text_animation` `render_frames` `set_motion_graphic_params`
+  `add_shape`.
+
 Resources: `jasper://projects/{projectId}/document`, `jasper://projects/{projectId}/timeline`,
 `jasper://guide`. Prompt: `edit-video`.
 
