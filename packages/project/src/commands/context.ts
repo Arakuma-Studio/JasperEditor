@@ -181,7 +181,8 @@ function idExists(doc: DDoc | ProjectDocument, id: string): boolean {
 
 const REF_RE = /^\$[A-Za-z_][\w.-]*$/;
 const ID_KEY_RE = /(?:Id|Ids)$|^(?:target|track|tracks)$/;
-const DECL_KEYS = new Set(['ref', 'itemRef', 'type']);
+// `payload` (clipboard commands) is data from another document: its ids are never refs or selections.
+const DECL_KEYS = new Set(['ref', 'itemRef', 'type', 'payload']);
 
 /**
  * Replaces temp refs (`$name`), `"$selection"` and `"$selection.primary"` in id-bearing arguments
