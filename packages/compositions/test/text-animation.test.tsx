@@ -22,7 +22,7 @@ import {
 	textAnimationPreviewDoc,
 	textAnimationPreviewTiming,
 } from '../src/index.ts';
-import { runStyleCss, styledSpans } from '../src/layers/TextLayer.tsx';
+import { paragraphDirections, runStyleCss, styledSpans } from '../src/layers/TextLayer.tsx';
 
 type Cmd = Record<string, unknown>;
 
@@ -151,6 +151,50 @@ describe('inside a window (S11:TXA-010/011/012)', () => {
 			2,
 		);
 		expect(caps.units().map((u) => u.textContent)).toEqual(['S', 'T', 'R', 'A', 'S', 'S', 'E']);
+	});
+	it("direction 'auto': overlay pieces keep the base direction of their paragraph (unicode-bidi: plaintext)", () => {
+		// unicode-bidi is not inherited: without an explicit direction every absolutely positioned piece would start
+		// an LTR paragraph and draw "!" right of "שלום" while the measured RTL flow has it on the left.
+		expect(paragraphDirections('שלום!')).toEqual([{ end: Number.POSITIVE_INFINITY, rtl: true }]);
+		expect(paragraphDirections('(שלום)\n123 Hi\r\n!')).toEqual([
+			{ end: 7, rtl: true },
+			{ end: 15, rtl: false },
+			{ end: Number.POSITIVE_INFINITY, rtl: false },
+		]);
+		expect(paragraphDirections('\u200Fabc')[0]!.rtl).toBe(true);
+		const v = view(
+			docWith({
+				content: { text: 'שלום! (עולם)\nHello (world)' },
+				textAnimation: { in: { preset: 'fade', params: { unit: 'word' } } },
+			}),
+			2,
+		);
+		const pieces = v.units().flatMap((u) => [...u.querySelectorAll<HTMLElement>(':scope > span')]);
+		expect(pieces.map((p) => [p.textContent, p.style.direction])).toEqual([
+			['שלום!', 'rtl'],
+			['(עולם)', 'rtl'],
+			['Hello', 'ltr'],
+			['(world)', 'ltr'],
+		]);
+		// the typewriter caret follows the paragraph direction too (before the last shown unit's left edge)
+		const tw = view(
+			docWith({ content: { text: 'שלום עולם' }, textAnimation: { in: { preset: 'typewriter' } } }),
+			10,
+		);
+		const caret = tw.container.querySelector<HTMLElement>('[data-text-caret]')!;
+		const last = tw
+			.units()
+			.filter((u) => u.style.visibility !== 'hidden')
+			.at(-1)!;
+		expect(Number.parseFloat(caret.style.left)).toBeLessThan(Number.parseFloat(last.style.left));
+		const explicit = view(
+			docWith({
+				content: { text: 'Hi!', style: { direction: 'rtl' } },
+				textAnimation: { in: { preset: 'pop' } },
+			}),
+			2,
+		);
+		expect(explicit.units().every((u) => u.querySelector('span')!.style.direction === 'rtl')).toBe(true);
 	});
 	it('line units animate whole lines (grouped by layout boxes)', () => {
 		const v = view(docWith({ textAnimation: { in: { preset: 'tracking' } } }), 1);
