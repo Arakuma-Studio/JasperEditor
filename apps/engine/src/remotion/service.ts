@@ -132,6 +132,68 @@ function hashTree(root: string, h: ReturnType<typeof createHash>): void {
 	}
 }
 
+/** Root directory of workspace package `name` as resolved from `fromPackageJson` (null when not installed). */
+function packageRootOf(fromPackageJson: string, name: string): string | null {
+	try {
+		// Resolve the package entry: workspace packages do not export their package.json.
+		let dir = dirname(createRequire(fromPackageJson).resolve(name));
+		for (;;) {
+			const pkg = join(dir, 'package.json');
+			if (existsSync(pkg) && (JSON.parse(readFileSync(pkg, 'utf8')) as { name?: string }).name === name)
+				return dir;
+			const up = dirname(dir);
+			if (up === dir) return null;
+			dir = up;
+		}
+	} catch {
+		return null;
+	}
+}
+
+function findUp(dir: string, file: string): string | null {
+	for (;;) {
+		const p = join(dir, file);
+		if (existsSync(p)) return p;
+		const up = dirname(dir);
+		if (up === dir) return null;
+		dir = up;
+	}
+}
+
+/** Workspace packages bundled with the compositions (their sources are part of the bundle hash). */
+export const BUNDLED_WORKSPACE_PACKAGES = [
+	'@jasper/project',
+	'@jasper/mg-templates',
+	'@jasper/motion',
+] as const;
+
+/**
+ * Source hash of the composition bundle inputs: Remotion version, `package.json` + `src/` of the compositions and
+ * of the workspace packages they bundle (incl. `@jasper/motion`), and the workspace `pnpm-lock.yaml` so a
+ * lockfile-only dependency bump (e.g. anime.js) rebuilds the bundle (S11:FIX-009).
+ */
+export function remotionSourceHash(entry: string): string {
+	const h = createHash('sha256').update(`remotion@${REMOTION_VERSION}\n`);
+	const compositionsRoot = dirname(dirname(entry));
+	const roots = [compositionsRoot];
+	for (const dep of BUNDLED_WORKSPACE_PACKAGES) {
+		const r = packageRootOf(join(compositionsRoot, 'package.json'), dep);
+		if (r) roots.push(r);
+	}
+	for (const r of roots) {
+		h.update(`#${relative(dirname(compositionsRoot), r)}\n`);
+		const pkg = join(r, 'package.json');
+		if (existsSync(pkg)) h.update(readFileSync(pkg));
+		hashTree(join(r, 'src'), h);
+	}
+	const lock = findUp(compositionsRoot, 'pnpm-lock.yaml');
+	if (lock) {
+		h.update('#pnpm-lock.yaml\n');
+		h.update(readFileSync(lock));
+	}
+	return h.digest('hex').slice(0, 16);
+}
+
 export class RemotionService {
 	private serveUrlPromise: Promise<string> | null = null;
 	private rendererPromise: Promise<RendererModule> | null = null;
@@ -290,26 +352,9 @@ export class RemotionService {
 		return this.rendererPromise;
 	}
 
-	/** Source hash of the composition bundle inputs (package versions + sources). */
+	/** Source hash of the composition bundle inputs (see `remotionSourceHash`). */
 	sourceHash(entry: string): string {
-		const h = createHash('sha256').update(`remotion@${REMOTION_VERSION}\n`);
-		const compositionsRoot = dirname(dirname(entry));
-		const req = createRequire(entry);
-		const roots = [compositionsRoot];
-		for (const dep of ['@jasper/project', '@jasper/mg-templates']) {
-			try {
-				roots.push(dirname(req.resolve(`${dep}/package.json`)));
-			} catch {
-				// optional
-			}
-		}
-		for (const r of roots) {
-			h.update(`#${relative(dirname(compositionsRoot), r)}\n`);
-			const pkg = join(r, 'package.json');
-			if (existsSync(pkg)) h.update(readFileSync(pkg));
-			hashTree(join(r, 'src'), h);
-		}
-		return h.digest('hex').slice(0, 16);
+		return remotionSourceHash(entry);
 	}
 
 	/** The Remotion serve URL: prebuilt bundle, or a cached bundle of the workspace sources. */

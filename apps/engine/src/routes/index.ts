@@ -1,12 +1,14 @@
 // Registers one plugin per area (ARCHITECTURE §9.1).
 import type { FastifyInstance } from 'fastify';
 import agentRoutes from './agent.ts';
+import animeRoutes from './anime.ts';
 import capabilitiesRoutes from './capabilities.ts';
 import colorRoutes from './color.ts';
 import eventsRoutes from './events.ts';
 import exportsRoutes from './exports.ts';
 import fontsRoutes from './fonts.ts';
 import jobsRoutes from './jobs.ts';
+import layerBakeRoutes from './layer-bake.ts';
 import mcpRoutes from './mcp.ts';
 import mediaRoutes from './media.ts';
 import mgRoutes from './mg.ts';
@@ -34,7 +36,10 @@ export const ROUTE_PLUGINS = [
 	colorRoutes,
 	processingRoutes,
 	mgBundleRoutes,
+	// M2 animation (ARCHITECTURE §20.5): layer-bake's extension sits between mg-bundles and tracking (warp).
+	layerBakeRoutes,
 	trackingRoutes,
+	animeRoutes,
 ] as const;
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
