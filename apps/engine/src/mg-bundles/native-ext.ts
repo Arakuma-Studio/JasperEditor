@@ -105,6 +105,12 @@ export function mgNativeExtension(svc: MgBundleService): NativeExtension {
 					{ ...(ctx.projectId ? { projectId: ctx.projectId } : {}), singleFrame: still },
 				)[0]!;
 			});
+			// M3 (wp-m3-cachegc): the masters are held for this export before they are looked up or rendered.
+			if (ctx.pin)
+				for (const w of wanted) {
+					const key = svc.renderKeyOf(w.req);
+					if (key) await ctx.pin(svc.renderDirOf(key));
+				}
 			const paths = await svc.ensureMasters(
 				wanted.map((w) => w.req),
 				{

@@ -260,8 +260,11 @@ export function createWarpExtension(deps: WarpDeps): WarpExtension {
 			.digest('hex')
 			.slice(0, 40);
 		const path = join(deps.cacheDir, `${key}.mov`);
+		// M3 (wp-m3-cachegc): held for this export before the reuse check (the cache GC never removes it meanwhile;
+		// a removal in progress is waited for and then counts as a miss).
+		const present = ctx.pin ? await ctx.pin(path) : true;
 		try {
-			if ((await stat(path)).size > 0) {
+			if (present && (await stat(path)).size > 0) {
 				stats.reused++;
 				stats.last = { clipId: c.clipId, key, frames: n, ms: 0, fps: 0, reused: true };
 				ctx.log(`warp: ${c.clipId} reused ${path}`);

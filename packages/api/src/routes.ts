@@ -11,6 +11,12 @@ import {
 	AgentTxRequestSchema,
 	AgentTxResponseSchema,
 } from './agent.ts';
+import {
+	CacheCleanRequestSchema,
+	CacheGcReportSchema,
+	CacheSettingsSchema,
+	CacheUsageSchema,
+} from './cache.ts';
 import { EngineCapabilitiesSchema, HealthSchema, LicensesResponseSchema } from './capabilities.ts';
 import {
 	ExportPlanRequestSchema,
@@ -71,7 +77,9 @@ export type RouteOwner =
 	| 'wp-m2-mg'
 	| 'wp-m2-track'
 	// M2 animation (ARCHITECTURE §20, S11 §10)
-	| 'wp-m2-layer-bake';
+	| 'wp-m2-layer-bake'
+	// M3
+	| 'wp-m3-cachegc';
 
 export type RouteDef = {
 	method: HttpMethod;
@@ -455,6 +463,30 @@ export const ROUTES = {
 		path: '/mg/layers/:key/:file',
 		response: 'binary',
 		owner: 'wp-m2-layer-bake',
+	},
+	// ---- M3 media cache (S04 §7.5 CA-010…CA-019)
+	/** Usage per cache kind, budgets, last cleaning (Preferences ▸ Media Cache, MCP get_cache_usage). */
+	cacheUsage: { method: 'GET', path: '/api/cache', response: CacheUsageSchema, owner: 'wp-m3-cachegc' },
+	/** "Clean Unused" / "Clean All (not in use)" / one automatic pass; answers when the pass is done. */
+	cacheClean: {
+		method: 'POST',
+		path: '/api/cache/clean',
+		body: CacheCleanRequestSchema,
+		response: CacheGcReportSchema,
+		owner: 'wp-m3-cachegc',
+	},
+	cacheSettingsGet: {
+		method: 'GET',
+		path: '/api/cache/settings',
+		response: CacheSettingsSchema,
+		owner: 'wp-m3-cachegc',
+	},
+	cacheSettingsPut: {
+		method: 'PUT',
+		path: '/api/cache/settings',
+		body: CacheSettingsSchema,
+		response: CacheSettingsSchema,
+		owner: 'wp-m3-cachegc',
 	},
 } as const satisfies Record<string, RouteDef>;
 

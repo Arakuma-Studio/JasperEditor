@@ -1,0 +1,91 @@
+// What a saved project needs from the cache, computed from its document (M3, S04:CA-012): the media cache files and
+// proxies of every media asset it holds (by content fingerprint, CA-001), the pre-renders (preview and master) of its
+// composition clips (the render keys the editor and the export ask for, S08:MGC-023/031/032) and the Motion Templates
+// posters of its composition bundles. Caches whose keys depend on an export's evaluation (baked LUTs, warped layers,
+// graphics bakes) are referenced through the ref sets that exports record (`CacheService.commitHolderRefs`).
+import type { MgPrerenderRequest } from '@jasper/api';
+import {
+	buildRenderSnapshot,
+	compositionClipRenderRange,
+	compositionSequenceFrames,
+	type ProjectDocument,
+} from '@jasper/project';
+import { fingerprintHex } from '../media/fingerprint.ts';
+
+export type ProjectCacheRefs = {
+	/** Fingerprint hex (64) of every media asset (derivatives live under `cache/<hex>/`). */
+	fingerprints: Set<string>;
+	/** `mg/<key>` pre-render keys of the composition clips (previews and export masters). */
+	mgRenderKeys: Set<string>;
+	/** Bundle hashes (Motion Templates posters `mg/posters/<hash>/`). */
+	bundleHashes: Set<string>;
+};
+
+/** The render-key function of the mg-bundles service (`prerenderKey`). */
+export type RenderKeyFn = (
+	req: Pick<
+		MgPrerenderRequest,
+		'compositionId' | 'props' | 'width' | 'height' | 'fps' | 'startFrame' | 'durationFrames'
+	>,
+	bundleHash: string,
+) => string;
+
+export function emptyRefs(): ProjectCacheRefs {
+	return { fingerprints: new Set(), mgRenderKeys: new Set(), bundleHashes: new Set() };
+}
+
+/**
+ * The cache references of a stored document. Tolerant: unknown shapes are skipped; a sequence whose snapshot fails
+ * (older or invalid document) only loses its composition keys (media references come from the raw document).
+ */
+export function projectCacheRefs(doc: unknown, renderKey: RenderKeyFn | null): ProjectCacheRefs {
+	const out = emptyRefs();
+	const d = doc as Partial<ProjectDocument> | null;
+	if (!d || typeof d !== 'object') return out;
+	for (const asset of Object.values(d.media ?? {})) {
+		const a = asset as { fingerprint?: unknown; mgBundle?: { bundleHash?: unknown } } | null;
+		if (typeof a?.fingerprint === 'string') {
+			try {
+				out.fingerprints.add(fingerprintHex(a.fingerprint));
+			} catch {
+				// not an engine fingerprint (browser-only media)
+			}
+		}
+		if (typeof a?.mgBundle?.bundleHash === 'string') out.bundleHashes.add(a.mgBundle.bundleHash);
+	}
+	if (out.bundleHashes.size === 0 || !renderKey) return out;
+	for (const seqId of Object.keys(d.sequences ?? {})) {
+		try {
+			const snap = buildRenderSnapshot(d as ProjectDocument, seqId, {
+				resolveMedia: () => null,
+				resolveFont: () => null,
+			});
+			const fps = snap.settings.fps;
+			for (const clip of snap.videoTracks.flatMap((t) => t.clips)) {
+				const src = 'composition' in clip.source ? clip.source.composition : null;
+				if (!src?.info || !src.bundle?.hash) continue;
+				const total = compositionSequenceFrames(src.info, fps);
+				const base = {
+					compositionId: src.compositionId,
+					props: src.props,
+					width: src.canvas.width,
+					height: src.canvas.height,
+					fps: { num: fps.num, den: fps.den },
+				};
+				// Preview (editor, MGC-023): the whole composition at the sequence rate.
+				out.mgRenderKeys.add(renderKey({ ...base, startFrame: 0, durationFrames: total }, src.bundle.hash));
+				// Master (native export, MGC-032): the drawn span incl. transition handles.
+				const range = compositionClipRenderRange(clip, fps, total);
+				out.mgRenderKeys.add(
+					renderKey(
+						{ ...base, startFrame: range.startFrame, durationFrames: range.durationFrames },
+						src.bundle.hash,
+					),
+				);
+			}
+		} catch {
+			// an invalid or older document: media references only
+		}
+	}
+	return out;
+}

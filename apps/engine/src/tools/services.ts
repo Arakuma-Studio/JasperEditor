@@ -4,6 +4,7 @@
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { UrlSigner } from '../auth/signed-url.ts';
+import { CacheService } from '../cache/service.ts';
 import { type EngineConfig, isLoopbackHost } from '../context.ts';
 import { DerivativeService } from '../derivatives/service.ts';
 import { Broadcaster } from '../events/broadcaster.ts';
@@ -14,6 +15,7 @@ import { FontCatalogService } from '../fonts/catalog.ts';
 import { JobQueue } from '../jobs/queue.ts';
 import { MediaRegistry } from '../media/registry.ts';
 import { MediaService } from '../media/service.ts';
+import { prerenderKey } from '../mg-bundles/service.ts';
 import { LeaseManager } from '../projects/leases.ts';
 import { ProjectStoreFs } from '../projects/store.ts';
 import { RemotionService } from '../remotion/service.ts';
@@ -41,6 +43,8 @@ export type CoreServices = {
 	remotion: RemotionService;
 	exports: ExportService;
 	capabilities: CapabilityService;
+	/** M3 (wp-m3-cachegc): the cache registry and garbage collector (S04 §7.5). */
+	cache: CacheService;
 	/** Absolute engine origin (`http://127.0.0.1:<port>`) for signed URLs handed to headless renderers. */
 	origin(): string;
 	/** WP-2G: contribute to `GET /api/capabilities` (e.g. `render.fframes`). */
@@ -163,6 +167,19 @@ export async function createCoreServices(
 			};
 		},
 	});
+	const cache = new CacheService({
+		appdir: config.appdir,
+		paths,
+		queue,
+		projects,
+		leases,
+		broadcaster,
+		renderKey: prerenderKey,
+		exposePaths: config.dev || isLoopbackHost(config.host),
+		...(env.JASPER_CACHE_AUTO_GC !== undefined ? { autoTimers: env.JASPER_CACHE_AUTO_GC !== '0' } : {}),
+		log: opts.log,
+	});
+	exportsSvc.cache = cache;
 	media.registerRunners();
 	derivatives.registerRunners();
 	exportsSvc.registerRunners();
@@ -185,6 +202,7 @@ export async function createCoreServices(
 		remotion,
 		exports: exportsSvc,
 		capabilities,
+		cache,
 		origin,
 		registerCapabilityProvider: (fn) => capabilities.register(fn),
 		registerNativeExtension: (ext) => exportsSvc.registerNativeExtension(ext),
@@ -198,10 +216,12 @@ export async function createCoreServices(
 			queue.start();
 			uploads.start();
 			void exportsSvc.sweepRequests().catch(() => {});
+			void cache.start().catch((e) => opts.log?.(`[cache] start failed: ${(e as Error).message}`));
 		},
 		async stop() {
 			uploads.stop();
 			await queue.shutdown();
+			await cache.stop();
 		},
 	};
 }

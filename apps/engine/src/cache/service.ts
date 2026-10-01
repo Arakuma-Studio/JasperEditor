@@ -1,0 +1,777 @@
+// The engine's cache registry and garbage collector (M3, S04 §7.5 CA-003, CA-010…CA-019) — Premiere's Media Cache for
+// every regenerable file the engine writes (layout.ts lists the kinds and where they live).
+//
+// Entries are found by scanning the appdir (the disk is the truth); the index (store.ts) adds last access times and the
+// project ref sets that exports record. Three protections decide what a pass may remove:
+//   in use      — pinned by a running job (`acquire`/`pin`, released when the job ends), busy (an active job renders
+//                 it: its dedupe key or id names the entry; an owner adapter says so), written or used in the last
+//                 minutes (grace), or referenced by a project that is open in an editor (live lease);
+//   referenced  — needed by a saved project: its media's derivatives, its composition clips' pre-renders (computed from
+//                 the document, project-refs.ts) and what its last export / still / preview used (recorded ref sets);
+//   unused      — everything else.
+// Modes: `auto` (start-up, hourly, after renders): unused entries past their age limit, then LRU eviction of unused
+// entries while a kind or the total is over budget; `unused` ("Clean Unused"): every unused entry; `all` ("Clean All
+// (not in use)"): referenced entries too — they are regenerated on demand. Removal is crash-safe: the entry is renamed
+// to a `.trash-*` name first (atomic; lookups miss from then on), then deleted; a crash leaves only trash and
+// temporary files of interrupted writes, which the orphan sweep removes. Lookups that `acquire` an entry wait for a
+// removal in progress and then miss (the producer regenerates).
+import { randomBytes } from 'node:crypto';
+import { lstat, rename, rm } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
+import {
+	CACHE_KINDS,
+	type CacheGcReport,
+	type CacheKind,
+	type CacheKindUsage,
+	type CacheSettings,
+	type CacheUsage,
+	TERMINAL_JOB_STATES,
+} from '@jasper/api';
+import type { AppdirPaths } from '@jasper/config';
+import type { Broadcaster } from '../events/broadcaster.ts';
+import type { JobQueue } from '../jobs/queue.ts';
+import type { LeaseManager } from '../projects/leases.ts';
+import type { ProjectStoreFs } from '../projects/store.ts';
+import { exists, freeDiskBytes } from '../tools/fs.ts';
+import { addServeHook } from '../tools/http.ts';
+import {
+	type EntryRef,
+	entryOfPath,
+	isTrashName,
+	KIND_DEF,
+	KIND_DEFS,
+	type Orphan,
+	otherUsage,
+	type ScannedEntry,
+	type ScanResult,
+	scanAppdir,
+} from './layout.ts';
+import { type ProjectCacheRefs, projectCacheRefs, type RenderKeyFn } from './project-refs.ts';
+import { CacheIndexStore, CacheSettingsStore } from './store.ts';
+
+const DAY_MS = 24 * 3600 * 1000;
+/** Entries written or used this recently count as in use (a producer may be about to read what it just wrote). */
+export const CACHE_GRACE_MS = 2 * 60 * 1000;
+/** Temporary files of writes are orphans once nothing has written to them for this long. */
+export const ORPHAN_AGE_MS = 60 * 60 * 1000;
+/** A pin of a job the queue does not know (pseudo job ids) expires after this long. */
+const UNKNOWN_HOLDER_TTL_MS = 10 * 60 * 1000;
+/** CA-003: automatic budget = min(25 GB, 15 % of the free disk at start). */
+const AUTO_BUDGET_CAP = 25 * 1024 ** 3;
+const AUTO_BUDGET_SHARE = 0.15;
+/** Usage answers from a scan at most this old. */
+const SCAN_TTL_MS = 15_000;
+/** Job kinds after which an automatic pass is scheduled (they write cache entries). */
+const RENDER_JOB_KINDS = new Set(['export', 'still', 'proxy', 'mg-prerender', 'layer-bake', 'process']);
+
+export type CacheMode = 'auto' | 'unused' | 'all';
+
+/** Owner hooks for a kind (e.g. the layer-bake service: its leases and its lookups that wait for a removal). */
+export type CacheKindAdapter = {
+	/** True while the owner uses the entry (leases, renders in flight). */
+	busy?(key: string): boolean;
+	/** Wraps the removal (the owner's lookups can wait for it); must call `remove` and return its result. */
+	remove?(key: string, remove: () => Promise<boolean>): Promise<boolean>;
+};
+
+export type CacheServiceOptions = {
+	appdir: string;
+	paths: AppdirPaths;
+	queue?: JobQueue | null;
+	projects?: ProjectStoreFs | null;
+	leases?: LeaseManager | null;
+	broadcaster?: Broadcaster | null;
+	/** Pre-render key of composition requests (mg-bundles `prerenderKey`); null = no composition refs. */
+	renderKey?: RenderKeyFn | null;
+	/** Show the cache location in usage answers (local mode). */
+	exposePaths?: boolean;
+	/** Automatic passes (start-up, hourly, after renders). Default on, off under vitest unless set. */
+	autoTimers?: boolean;
+	startupDelayMs?: number;
+	intervalMs?: number;
+	afterRenderDelayMs?: number;
+	graceMs?: number;
+	orphanAgeMs?: number;
+	now?: () => number;
+	log?(msg: string): void;
+};
+
+type Classified = {
+	entry: ScannedEntry;
+	lastAccess: number;
+	/** Why it must stay, or null. */
+	inUse: string | null;
+	/** Saved projects that reference it. */
+	projects: Set<string>;
+};
+
+type ProjectsInfo = {
+	/** entry id → project ids referencing it. */
+	refsOf(e: EntryRef): Set<string>;
+	open: Set<string>;
+	existing: Set<string>;
+};
+
+export class CacheService {
+	readonly index: CacheIndexStore;
+	readonly settingsStore: CacheSettingsStore;
+	/** entry id → holder → count. */
+	private readonly pins = new Map<string, Map<string, number>>();
+	/** holder → entry ids. */
+	private readonly held = new Map<string, Set<string>>();
+	private serveSeq = 0;
+	private offServe: (() => void) | null = null;
+	/** holder → pinned at (ms). */
+	private readonly holderSince = new Map<string, number>();
+	private readonly releaseHooked = new Set<string>();
+	private readonly removing = new Map<string, Promise<boolean>>();
+	private readonly ownTrash = new Set<string>();
+	private readonly adapters = new Map<CacheKind, CacheKindAdapter>();
+	private readonly projectRefsCache = new Map<string, { revision: number; refs: ProjectCacheRefs }>();
+	private lastScan: ScanResult | null = null;
+	private scanning: Promise<ScanResult> | null = null;
+	private gcChain: Promise<unknown> = Promise.resolve();
+	private autoBudget: number | null = null;
+	private freeAtStart: number | null = null;
+	private timers: NodeJS.Timeout[] = [];
+	private afterRenderTimer: NodeJS.Timeout | null = null;
+	private offEvents: (() => void) | null = null;
+	private started: Promise<void> | null = null;
+	private readonly now: () => number;
+
+	constructor(private readonly o: CacheServiceOptions) {
+		this.index = new CacheIndexStore(join(o.paths.engineDir, 'cache-index.json'));
+		this.settingsStore = new CacheSettingsStore(join(o.paths.engineDir, 'cache.json'));
+		this.now = o.now ?? (() => Date.now());
+	}
+
+	private get grace(): number {
+		return this.o.graceMs ?? CACHE_GRACE_MS;
+	}
+
+	// ------------------------------------------------------------------ lifecycle
+
+	/** Loads the index, measures the automatic budget, starts the automatic passes (CA-015). */
+	start(): Promise<void> {
+		this.started ??= this.doStart();
+		return this.started;
+	}
+
+	private async doStart(): Promise<void> {
+		await this.index.load();
+		// Served cache files (derivatives, renders, masters…) count as used and stay while they stream.
+		this.offServe = addServeHook((file) => {
+			const ref = this.ref(file);
+			if (!ref) return undefined;
+			const holder = `serve:${++this.serveSeq}`;
+			this.pin(holder, ref);
+			this.touch(ref);
+			return () => this.release(holder);
+		});
+		this.freeAtStart = await freeDiskBytes(this.o.appdir);
+		const scan = await this.scan(true).catch(() => null);
+		const cacheBytes = scan ? scan.entries.reduce((s, e) => s + e.bytes, 0) : 0;
+		// "15 % of the free disk at start" counts the cache itself as reclaimable space.
+		this.autoBudget =
+			this.freeAtStart === null
+				? AUTO_BUDGET_CAP
+				: Math.max(
+						1024 ** 3,
+						Math.min(AUTO_BUDGET_CAP, Math.floor((this.freeAtStart + cacheBytes) * AUTO_BUDGET_SHARE)),
+					);
+		const timers =
+			this.o.autoTimers ?? (process.env.JASPER_CACHE_AUTO_GC ?? (process.env.VITEST ? '0' : '1')) !== '0';
+		if (timers) {
+			const t0 = setTimeout(() => void this.autoPass('start-up'), this.o.startupDelayMs ?? 20_000);
+			const t1 = setInterval(() => void this.autoPass('hourly'), this.o.intervalMs ?? 3600_000);
+			t0.unref?.();
+			t1.unref?.();
+			this.timers.push(t0, t1);
+			this.offEvents =
+				this.o.broadcaster?.subscribe((e) => {
+					if (e.type !== 'job.finished') return;
+					const kind = (e.payload as { kind?: string } | null)?.kind;
+					if (kind && RENDER_JOB_KINDS.has(kind)) this.scheduleAfterRender();
+				}) ?? null;
+		}
+	}
+
+	async stop(): Promise<void> {
+		for (const t of this.timers) clearTimeout(t);
+		this.timers = [];
+		if (this.afterRenderTimer) clearTimeout(this.afterRenderTimer);
+		this.afterRenderTimer = null;
+		this.offEvents?.();
+		this.offEvents = null;
+		this.offServe?.();
+		this.offServe = null;
+		await this.gcChain.catch(() => undefined);
+		await this.index.flush().catch(() => undefined);
+	}
+
+	private scheduleAfterRender(): void {
+		if (this.afterRenderTimer) return;
+		this.afterRenderTimer = setTimeout(() => {
+			this.afterRenderTimer = null;
+			void this.autoPass('after render');
+		}, this.o.afterRenderDelayMs ?? 60_000);
+		this.afterRenderTimer.unref?.();
+	}
+
+	private async autoPass(why: string): Promise<void> {
+		try {
+			const s = await this.settings();
+			const r = await this.clean(s.autoClean ? 'auto' : 'orphans');
+			if (r.removedEntries || r.removedOrphans)
+				this.o.log?.(
+					`[cache] ${why}: removed ${r.removedEntries} entries (${r.removedBytes} bytes) and ${r.removedOrphans} orphans`,
+				);
+		} catch (e) {
+			this.o.log?.(`[cache] ${why} pass failed: ${(e as Error).message}`);
+		}
+	}
+
+	registerAdapter(kind: CacheKind, adapter: CacheKindAdapter): () => void {
+		this.adapters.set(kind, adapter);
+		return () => {
+			if (this.adapters.get(kind) === adapter) this.adapters.delete(kind);
+		};
+	}
+
+	// ------------------------------------------------------------------ settings
+
+	settings(): Promise<CacheSettings> {
+		return this.settingsStore.get();
+	}
+
+	/** Saves the settings; applies at once (S04:ENG-012): a pass runs with the new limits. */
+	async putSettings(next: CacheSettings): Promise<CacheSettings> {
+		const saved = await this.settingsStore.put(next);
+		if (saved.autoClean) void this.clean('auto').catch(() => undefined);
+		return saved;
+	}
+
+	private maxAgeMs(kind: CacheKind, s: CacheSettings): number | null {
+		const days = this.maxAgeDays(kind, s);
+		return days === null ? null : days * DAY_MS;
+	}
+
+	private maxAgeDays(kind: CacheKind, s: CacheSettings): number | null {
+		const o = s.kinds[kind]?.maxAgeDays;
+		if (o !== undefined) return o;
+		const d = KIND_DEF.get(kind)?.defaultMaxAgeDays;
+		return d !== undefined ? d : s.maxAgeDays;
+	}
+
+	private kindBudget(kind: CacheKind, s: CacheSettings): number | null {
+		return s.kinds[kind]?.maxBytes ?? null;
+	}
+
+	/** Effective total budget (the automatic one when not set). */
+	totalBudget(s: CacheSettings): number | null {
+		return s.maxTotalBytes ?? this.autoBudget ?? AUTO_BUDGET_CAP;
+	}
+
+	// ------------------------------------------------------------------ entries, access, pins
+
+	/** The cache entry of a path (file or directory inside an entry), or null. */
+	ref(path: string): EntryRef | null {
+		return entryOfPath(this.o.appdir, path, /\.png$/i.test(path));
+	}
+
+	/** Records a use (LRU order, age limit). */
+	touch(pathOrRef: string | EntryRef): void {
+		const ref = typeof pathOrRef === 'string' ? this.ref(pathOrRef) : pathOrRef;
+		if (!ref) return;
+		this.index.access.set(ref.id, this.now());
+		this.index.changed();
+	}
+
+	/** Holds an entry against every pass until `release(holder)` (synchronous: no pass can start in between). */
+	pin(holder: string, pathOrRef: string | EntryRef): EntryRef | null {
+		const ref = typeof pathOrRef === 'string' ? this.ref(pathOrRef) : pathOrRef;
+		if (!ref) return null;
+		let m = this.pins.get(ref.id);
+		if (!m) {
+			m = new Map();
+			this.pins.set(ref.id, m);
+		}
+		m.set(holder, (m.get(holder) ?? 0) + 1);
+		let h = this.held.get(holder);
+		if (!h) this.held.set(holder, (h = new Set()));
+		h.add(ref.id);
+		if (!this.holderSince.has(holder)) this.holderSince.set(holder, this.now());
+		this.hookJobRelease(holder);
+		return ref;
+	}
+
+	/** Drops every pin of a holder. */
+	release(holder: string): void {
+		this.holderSince.delete(holder);
+		this.releaseHooked.delete(holder);
+		for (const id of this.held.get(holder) ?? []) {
+			const m = this.pins.get(id);
+			if (m?.delete(holder) && m.size === 0) this.pins.delete(id);
+		}
+		this.held.delete(holder);
+	}
+
+	/** Entry ids a holder pins. */
+	holderEntries(holder: string): string[] {
+		return [...(this.held.get(holder) ?? [])];
+	}
+
+	/**
+	 * Pins a path for `holder`, waits for a removal of its entry in progress, and tells whether it exists — the safe
+	 * replacement of `exists(path)` for producers that reuse a cached file (CA-016). Paths outside the cache are only
+	 * checked for existence.
+	 */
+	async acquire(holder: string, path: string): Promise<boolean> {
+		const ref = this.pin(holder, path);
+		if (ref) {
+			const pending = this.removing.get(ref.id);
+			if (pending) await pending.catch(() => false);
+			this.touch(ref);
+		}
+		return exists(path);
+	}
+
+	/** `acquire` for job `jobId` (holder `job:<id>`, released when the job ends). */
+	acquireForJob(jobId: string, path: string): Promise<boolean> {
+		return this.acquire(`job:${jobId}`, path);
+	}
+
+	/** Holders `job:<id>` are released when the queue reports the job finished. */
+	private hookJobRelease(holder: string): void {
+		if (!holder.startsWith('job:') || this.releaseHooked.has(holder) || !this.o.queue) return;
+		const id = holder.slice(4);
+		const q = this.o.queue;
+		if (!q.get(id)) return; // pseudo ids expire (validateHolders)
+		this.releaseHooked.add(holder);
+		void q
+			.wait(id)
+			.catch(() => undefined)
+			.then(() => {
+				// Let the job's own completion code (ref commits) run first.
+				setTimeout(() => this.release(holder), 0);
+			});
+	}
+
+	/** Drops pins of holders that are gone (finished jobs; unknown jobs after a while). */
+	private validateHolders(): void {
+		const q = this.o.queue;
+		const t = this.now();
+		for (const [holder, since] of [...this.holderSince]) {
+			if (holder.startsWith('serve:')) {
+				// A response whose close event never came (should not happen): the pin expires.
+				if (t - since > UNKNOWN_HOLDER_TTL_MS) this.release(holder);
+				continue;
+			}
+			if (!holder.startsWith('job:')) continue;
+			const job = q?.get(holder.slice(4));
+			const gone = job ? TERMINAL_JOB_STATES.has(job.state) : t - since > UNKNOWN_HOLDER_TTL_MS;
+			if (gone) this.release(holder);
+		}
+	}
+
+	// ------------------------------------------------------------------ project references
+
+	/**
+	 * Replaces the ref set of a scope (`export:<projectId>:<sequenceId>`, `still:…`, `preview:…`): the entries a
+	 * saved project needs beyond what its document tells (CA-012). Persisted (they survive restarts).
+	 */
+	setRefs(scope: string, projectId: string, entries: readonly (string | EntryRef)[]): void {
+		const ids = new Set<string>();
+		for (const e of entries) {
+			if (typeof e !== 'string') ids.add(e.id);
+			else if (CACHE_KINDS.includes(e.slice(0, e.indexOf(':')) as CacheKind)) ids.add(e);
+			else {
+				const ref = this.ref(e);
+				if (ref) ids.add(ref.id);
+			}
+		}
+		this.index.refs.set(scope, { projectId, entries: [...ids].sort(), updatedAt: this.now() });
+		this.index.changed();
+	}
+
+	/** Records what a holder (an export/still job) pins as the scope's ref set. */
+	commitHolderRefs(holder: string, scope: string, projectId: string): void {
+		this.setRefs(scope, projectId, this.holderEntries(holder));
+	}
+
+	private async projectsInfo(): Promise<ProjectsInfo> {
+		const existing = new Set<string>();
+		const open = new Set<string>();
+		const computed = new Map<string, ProjectCacheRefs>();
+		const store = this.o.projects;
+		if (store) {
+			for (const p of await store.list().catch(() => [])) {
+				if (typeof p.revision !== 'number') continue; // not a readable project file
+				existing.add(p.projectId);
+				if (this.o.leases?.get(p.projectId)) open.add(p.projectId);
+				let c = this.projectRefsCache.get(p.projectId);
+				if (!c || c.revision !== p.revision) {
+					const doc = await store
+						.get(p.projectId)
+						.then((g) => (g.envelope as { document?: unknown }).document)
+						.catch(() => null);
+					c = { revision: p.revision, refs: projectCacheRefs(doc, this.o.renderKey ?? null) };
+					this.projectRefsCache.set(p.projectId, c);
+				}
+				computed.set(p.projectId, c.refs);
+			}
+			for (const pid of [...this.projectRefsCache.keys()])
+				if (!existing.has(pid)) this.projectRefsCache.delete(pid);
+		}
+		const recorded = new Map<string, Set<string>>();
+		for (const set of this.index.refs.values()) {
+			if (!existing.has(set.projectId)) continue;
+			for (const id of set.entries) {
+				let s = recorded.get(id);
+				if (!s) recorded.set(id, (s = new Set()));
+				s.add(set.projectId);
+			}
+		}
+		const refsOf = (e: EntryRef): Set<string> => {
+			const out = new Set(recorded.get(e.id) ?? []);
+			for (const [pid, r] of computed) {
+				if (e.kind === 'media-cache' || e.kind === 'proxies') {
+					if (r.fingerprints.has(e.key.slice(0, 64))) out.add(pid);
+				} else if (e.kind === 'mg-renders') {
+					if (r.mgRenderKeys.has(e.key)) out.add(pid);
+				} else if (e.kind === 'mg-posters') {
+					if (r.bundleHashes.has(e.key)) out.add(pid);
+				}
+			}
+			return out;
+		};
+		return { refsOf, open, existing };
+	}
+
+	// ------------------------------------------------------------------ scanning, classification
+
+	/** A fresh (or recent) scan of the appdir. */
+	async scan(force = false): Promise<ScanResult> {
+		if (!force && this.lastScan && this.now() - this.lastScan.scannedAt < SCAN_TTL_MS) return this.lastScan;
+		// A walk in flight answers this call too (a pass only removes what it found; ENOENT is fine).
+		this.scanning ??= scanAppdir(this.o.appdir)
+			.then((r) => {
+				this.lastScan = r;
+				return r;
+			})
+			.finally(() => {
+				this.scanning = null;
+			});
+		return this.scanning;
+	}
+
+	/** Active job ids and the dedupe keys of active jobs (renders in flight name their entries there). */
+	private activeJobs(): { ids: Set<string>; dedupe: string[] } {
+		const ids = new Set<string>();
+		const dedupe: string[] = [];
+		for (const j of this.o.queue?.list({ active: true }) ?? []) {
+			ids.add(j.id);
+			if (j.dedupeKey) dedupe.push(j.dedupeKey);
+		}
+		return { ids, dedupe };
+	}
+
+	private classify(
+		entries: readonly ScannedEntry[],
+		info: ProjectsInfo,
+		active: { ids: Set<string>; dedupe: string[] },
+	): Classified[] {
+		this.validateHolders();
+		return entries.map((entry) => {
+			const lastAccess = Math.max(this.index.access.get(entry.id) ?? 0, entry.mtimeMs, entry.usedMs ?? 0);
+			const projects = info.refsOf(entry);
+			return {
+				entry,
+				lastAccess,
+				projects,
+				inUse: this.inUseReason(entry, lastAccess, projects, info, active),
+			};
+		});
+	}
+
+	/** Why an entry must stay right now (null = it may go). Synchronous. */
+	private inUseReason(
+		e: ScannedEntry,
+		lastAccess: number,
+		projects: Set<string>,
+		info: ProjectsInfo,
+		active: { ids: Set<string>; dedupe: string[] },
+	): string | null {
+		if (this.pins.get(e.id)?.size) return 'pinned';
+		if (this.adapters.get(e.kind)?.busy?.(e.key)) return 'busy';
+		const token = e.kind === 'media-cache' || e.kind === 'proxies' ? e.key.slice(0, 64) : e.key;
+		if (e.kind === 'exports' || e.kind === 'stills' ? active.ids.has(e.key) : false) return 'job';
+		if (active.dedupe.some((k) => k.includes(token))) return 'rendering';
+		if (e.kind === 'bundles' && this.isCurrentBundle(e)) return 'current';
+		if (this.now() - lastAccess < this.grace) return 'recent';
+		for (const pid of projects) if (info.open.has(pid)) return 'open project';
+		return null;
+	}
+
+	/** The newest Remotion bundle is the one the engine renders with (older ones are leftovers). */
+	private isCurrentBundle(e: ScannedEntry): boolean {
+		if (!e.key.startsWith('remotion/')) return false;
+		const all = (this.lastScan?.entries ?? []).filter(
+			(x) => x.kind === 'bundles' && x.key.startsWith('remotion/'),
+		);
+		const newest = all.reduce<ScannedEntry | null>((a, b) => (!a || b.mtimeMs > a.mtimeMs ? b : a), null);
+		return newest?.id === e.id;
+	}
+
+	// ------------------------------------------------------------------ usage (CA-013)
+
+	async usage(): Promise<CacheUsage> {
+		const [scan, settings, info] = await Promise.all([this.scan(true), this.settings(), this.projectsInfo()]);
+		const classified = this.classify(scan.entries, info, this.activeJobs());
+		const kinds: CacheKindUsage[] = KIND_DEFS.map((d) => {
+			const mine = classified.filter((c) => c.entry.kind === d.kind);
+			const sum = (f: (c: Classified) => boolean) => mine.filter(f).reduce((s, c) => s + c.entry.bytes, 0);
+			const oldest = mine.reduce((m, c) => Math.min(m, c.lastAccess), Number.POSITIVE_INFINITY);
+			return {
+				kind: d.kind,
+				label: d.label,
+				description: d.description,
+				entries: mine.length,
+				bytes: sum(() => true),
+				inUseBytes: sum((c) => c.inUse !== null),
+				referencedBytes: sum((c) => c.inUse === null && c.projects.size > 0),
+				unusedBytes: sum((c) => c.inUse === null && c.projects.size === 0),
+				maxBytes: this.kindBudget(d.kind, settings),
+				maxAgeDays: this.maxAgeDays(d.kind, settings),
+				defaultMaxAgeDays: d.defaultMaxAgeDays !== undefined ? d.defaultMaxAgeDays : settings.maxAgeDays,
+				oldestAccess: Number.isFinite(oldest) && oldest > 0 ? new Date(oldest).toISOString() : null,
+			};
+		});
+		const total = (k: keyof CacheKindUsage) => kinds.reduce((s, x) => s + (x[k] as number), 0);
+		return {
+			location: this.o.exposePaths ? this.o.appdir : null,
+			totalBytes: total('bytes'),
+			inUseBytes: total('inUseBytes'),
+			referencedBytes: total('referencedBytes'),
+			unusedBytes: total('unusedBytes'),
+			maxTotalBytes: this.totalBudget(settings),
+			automaticBudget: settings.maxTotalBytes === null,
+			freeDiskBytes: await freeDiskBytes(this.o.appdir),
+			kinds,
+			other: await otherUsage(this.o.appdir),
+			settings,
+			lastGc: this.index.lastGc,
+			scannedAt: new Date(scan.scannedAt).toISOString(),
+		};
+	}
+
+	// ------------------------------------------------------------------ cleaning (CA-014…CA-018)
+
+	/**
+	 * One cleaning pass (serialised with other passes). `orphans` only sweeps temporary files. `kinds` limits what is
+	 * removed (the orphan sweep always runs).
+	 */
+	clean(mode: CacheMode | 'orphans', kinds?: readonly CacheKind[]): Promise<CacheGcReport> {
+		const run = this.gcChain.catch(() => undefined).then(() => this.runPass(mode, kinds));
+		this.gcChain = run;
+		return run;
+	}
+
+	private async runPass(mode: CacheMode | 'orphans', kinds?: readonly CacheKind[]): Promise<CacheGcReport> {
+		const t = this.now();
+		const settings = await this.settings();
+		const scan = await this.scan(true);
+		const info = await this.projectsInfo();
+		const active = this.activeJobs();
+		const report: CacheGcReport = {
+			at: new Date(t).toISOString(),
+			mode: mode === 'orphans' ? 'auto' : mode,
+			removedEntries: 0,
+			removedBytes: 0,
+			removedOrphans: await this.sweepOrphans(scan.orphans, active.ids),
+			keptInUse: 0,
+			keptReferenced: 0,
+			failed: 0,
+			byKind: {},
+		};
+		// Ref sets of deleted projects go away (CA-012).
+		for (const [scope, set] of [...this.index.refs])
+			if (!info.existing.has(set.projectId)) {
+				this.index.refs.delete(scope);
+				this.index.changed();
+			}
+		if (mode !== 'orphans') {
+			const only = kinds ? new Set(kinds) : null;
+			const classified = this.classify(scan.entries, info, active);
+			const victims = this.select(mode, classified, only, settings, report);
+			for (const c of victims) {
+				const r = await this.removeEntry(c, info, mode);
+				if (r === 'removed') {
+					report.removedEntries++;
+					report.removedBytes += c.entry.bytes;
+					const k = (report.byKind[c.entry.kind] ??= { entries: 0, bytes: 0 });
+					k.entries++;
+					k.bytes += c.entry.bytes;
+				} else if (r === 'failed') report.failed++;
+				else report.keptInUse++;
+			}
+			// Forget access times and refs of entries that are gone (pinned ids stay: they may be written soon).
+			const present = new Set(scan.entries.map((e) => e.id));
+			for (const c of victims) present.delete(c.entry.id);
+			for (const id of [...this.index.access.keys()])
+				if (!present.has(id) && !this.pins.has(id)) this.index.access.delete(id);
+			for (const [scope, set] of this.index.refs) {
+				const kept = set.entries.filter((id) => present.has(id) || this.pins.has(id));
+				if (kept.length !== set.entries.length) this.index.refs.set(scope, { ...set, entries: kept });
+			}
+			this.index.lastGc = report;
+			this.index.changed();
+		}
+		this.lastScan = null;
+		await this.index.flush().catch(() => undefined);
+		if (mode !== 'orphans' && (report.removedEntries || mode !== 'auto'))
+			this.o.broadcaster?.publish('cache.cleaned', report);
+		return report;
+	}
+
+	/** Which entries a pass removes (in order). Counts what is kept. */
+	private select(
+		mode: CacheMode,
+		all: readonly Classified[],
+		only: ReadonlySet<CacheKind> | null,
+		s: CacheSettings,
+		report: CacheGcReport,
+	): Classified[] {
+		const t = this.now();
+		const inScope = (c: Classified) => !only || only.has(c.entry.kind);
+		const candidates: Classified[] = [];
+		for (const c of all) {
+			if (!inScope(c)) continue;
+			if (c.inUse) report.keptInUse++;
+			else if (c.projects.size > 0 && mode !== 'all') report.keptReferenced++;
+			else candidates.push(c);
+		}
+		if (mode !== 'auto') return candidates;
+		const out = new Set<Classified>();
+		// 1. Age (per kind).
+		for (const c of candidates) {
+			const max = this.maxAgeMs(c.entry.kind, s);
+			if (max !== null && t - c.lastAccess > max) out.add(c);
+		}
+		// 2. Kind budgets, then 3. the total budget: least recently used unused entries first.
+		const lru = candidates.filter((c) => !out.has(c)).sort((a, b) => a.lastAccess - b.lastAccess);
+		const bytesOf = (f: (c: Classified) => boolean) =>
+			all.filter((c) => f(c) && !out.has(c)).reduce((sum, c) => sum + c.entry.bytes, 0);
+		for (const kind of CACHE_KINDS) {
+			const max = this.kindBudget(kind, s);
+			if (max === null) continue;
+			let size = bytesOf((c) => c.entry.kind === kind);
+			for (const c of lru) {
+				if (size <= max) break;
+				if (c.entry.kind !== kind || out.has(c)) continue;
+				out.add(c);
+				size -= c.entry.bytes;
+			}
+		}
+		const total = this.totalBudget(s);
+		if (total !== null) {
+			let size = bytesOf(() => true);
+			for (const c of lru) {
+				if (size <= total) break;
+				if (out.has(c)) continue;
+				out.add(c);
+				size -= c.entry.bytes;
+			}
+		}
+		return [...out].sort((a, b) => a.lastAccess - b.lastAccess);
+	}
+
+	/**
+	 * Removes one entry if nothing protects it at this moment. The checks and the start of the removal happen in one
+	 * synchronous step, so a pin taken by `acquire` either comes first (the entry stays) or waits for the removal.
+	 */
+	private async removeEntry(
+		c: Classified,
+		info: ProjectsInfo,
+		mode: CacheMode,
+	): Promise<'removed' | 'kept' | 'failed'> {
+		const e = c.entry;
+		if (this.removing.has(e.id)) return 'kept';
+		const lastAccess = Math.max(c.lastAccess, this.index.access.get(e.id) ?? 0);
+		const projects = c.projects;
+		if (this.inUseReason(e, lastAccess, projects, info, this.activeJobs())) return 'kept';
+		if (mode !== 'all' && projects.size > 0) return 'kept';
+		const doRemove = () => this.removePaths(e.paths);
+		const adapter = this.adapters.get(e.kind);
+		const p = (adapter?.remove ? adapter.remove(e.key, doRemove) : doRemove()).finally(() =>
+			this.removing.delete(e.id),
+		);
+		this.removing.set(e.id, p);
+		try {
+			return (await p) ? 'removed' : 'failed';
+		} catch {
+			return 'failed';
+		}
+	}
+
+	/**
+	 * Crash-safe removal: every path is first renamed to `.trash-<rand>-<name>` (atomic; files first, so a derivative's
+	 * marker file disappears before its directory), then deleted. A rename that fails (file busy on Windows) aborts:
+	 * the entry stays for the next pass. Trash that cannot be deleted is swept later.
+	 */
+	private async removePaths(paths: readonly string[]): Promise<boolean> {
+		const kinds = await Promise.all(
+			paths.map(async (p) => ({
+				p,
+				dir: await lstat(p)
+					.then((s) => s.isDirectory())
+					.catch(() => null),
+			})),
+		);
+		const ordered = kinds.filter((k) => k.dir !== null).sort((a, b) => Number(a.dir) - Number(b.dir));
+		const moved: { from: string; to: string }[] = [];
+		for (const { p } of ordered) {
+			const to = join(dirname(p), `.trash-${randomBytes(4).toString('hex')}-${basename(p)}`);
+			try {
+				this.ownTrash.add(to);
+				await rename(p, to);
+				moved.push({ from: p, to });
+			} catch (err) {
+				this.ownTrash.delete(to);
+				if ((err as NodeJS.ErrnoException).code === 'ENOENT') continue;
+				// Put back what was already moved: the entry stays whole for the next pass.
+				for (const m of moved.reverse()) {
+					await rename(m.to, m.from).catch(() => undefined);
+					this.ownTrash.delete(m.to);
+				}
+				return false;
+			}
+		}
+		const trash = moved.map((m) => m.to);
+		for (const t of trash) {
+			await rm(t, { recursive: true, force: true }).catch(() => undefined);
+			this.ownTrash.delete(t);
+		}
+		return true;
+	}
+
+	/** Removes stale temporary files (crashed writes), trash and scratch of jobs that are gone (CA-017). */
+	private async sweepOrphans(orphans: readonly Orphan[], activeJobs: ReadonlySet<string>): Promise<number> {
+		const t = this.now();
+		const maxAge = this.o.orphanAgeMs ?? ORPHAN_AGE_MS;
+		let n = 0;
+		for (const o of orphans) {
+			const name = basename(o.path);
+			if (this.ownTrash.has(o.path)) continue;
+			if (/^job_[0-9a-f]{16}$/.test(name) && activeJobs.has(name)) continue;
+			if (!isTrashName(name) && t - o.mtimeMs <= maxAge) continue;
+			try {
+				await rm(o.path, { recursive: true, force: true });
+				n++;
+			} catch {
+				// busy: next pass
+			}
+		}
+		return n;
+	}
+}

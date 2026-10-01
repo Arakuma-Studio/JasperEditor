@@ -2,6 +2,7 @@
 import type { FastifyInstance } from 'fastify';
 import agentRoutes from './agent.ts';
 import animeRoutes from './anime.ts';
+import cacheRoutes from './cache.ts';
 import capabilitiesRoutes from './capabilities.ts';
 import colorRoutes from './color.ts';
 import eventsRoutes from './events.ts';
@@ -40,6 +41,8 @@ export const ROUTE_PLUGINS = [
 	layerBakeRoutes,
 	trackingRoutes,
 	animeRoutes,
+	// M3 (wp-m3-cachegc): Preferences ▸ Media Cache routes over the core cache registry.
+	cacheRoutes,
 ] as const;
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {

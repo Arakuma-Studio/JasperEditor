@@ -1,6 +1,7 @@
 // NDJSON event stream `GET /events` (ARCHITECTURE §9.2, S04 §19.3, ENG-023).
 import { z } from 'zod';
 import { ApprovalSchema } from './agent.ts';
+import { CacheGcReportSchema } from './cache.ts';
 import { EngineJobSchema } from './jobs.ts';
 import { DerivativeKindSchema, DerivativeStatusSchema } from './media.ts';
 import { MgBundleRebuiltEventSchema } from './mg-bundles.ts';
@@ -56,6 +57,8 @@ export const EVENT_PAYLOADS = {
 	'editor.openProject': z.object({ projectId: z.string(), agent: z.string().optional() }),
 	/** M2 (wp-m2-mg, S08:MGC-013): a Remotion bundle was rebuilt; editors relink the asset keyed `oldKey`. */
 	'mgBundle.rebuilt': MgBundleRebuiltEventSchema,
+	/** M3 (wp-m3-cachegc, S04:CA-014): a cleaning pass removed cache entries (Preferences ▸ Media Cache refreshes). */
+	'cache.cleaned': CacheGcReportSchema,
 } as const;
 export type EngineEventType = keyof typeof EVENT_PAYLOADS;
 export const ENGINE_EVENT_TYPES = Object.keys(EVENT_PAYLOADS) as EngineEventType[];
