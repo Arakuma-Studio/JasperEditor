@@ -388,6 +388,10 @@ function EditorBox({
 				: rect.x;
 	const shift = align === 'center' ? '-50%' : align === 'right' || align === 'end' ? '-100%' : '0';
 	const top = first.y - Math.max(0, (lineHeight - first.height) / 2);
+	// Texts in the lower half are usually bottom-anchored (captions, lower thirds): the editor grows upwards.
+	const last = m.lines[m.lines.length - 1] ?? rect;
+	const anchorBottom = rect.y + rect.height / 2 > src.canvas.height / 2;
+	const bottom = last.y + last.height + Math.max(0, (lineHeight - last.height) / 2);
 
 	useLayoutEffect(() => {
 		const el = ref.current;
@@ -433,8 +437,8 @@ function EditorBox({
 	const editorStyle: CSSProperties & { fieldSizing?: string } = {
 		position: 'absolute',
 		left: anchorX,
-		top,
-		transform: `translateX(${shift})`,
+		top: anchorBottom ? bottom : top,
+		transform: `translate(${shift}, ${anchorBottom ? '-100%' : '0'})`,
 		minWidth: Math.max(rect.width, (st?.fontSize ?? 40) * 2),
 		maxWidth: src.canvas.width * 1.5,
 		margin: 0,
@@ -461,7 +465,11 @@ function EditorBox({
 		pointerEvents: 'auto',
 	};
 	// Help/warnings under the text, in screen space (UI size, not scaled with the frame).
-	const below = toSequence(layer, [anchorX, rect.y + Math.max(rect.height, lineHeight)]);
+	// The tip goes on the side the editor does not grow to.
+	const below = toSequence(layer, [
+		anchorX,
+		anchorBottom ? bottom : rect.y + Math.max(rect.height, lineHeight),
+	]);
 	const tip = [view.x + below[0] * view.scale, view.y + below[1] * view.scale];
 	const warn = error ?? issues.find((i) => i.severity !== 'info')?.message ?? null;
 	const keyHint = tl.multiline
@@ -522,6 +530,7 @@ function EditorBox({
 			<div
 				className="absolute z-10 max-w-[360px] rounded-pr-control bg-pr-tooltip px-2 py-1 text-pr-small shadow"
 				style={{ left: tip[0], top: tip[1] + 10, transform: `translateX(${shift})` }}
+				data-anchor={anchorBottom ? 'bottom' : 'top'}
 				data-testid="mg-text-canvas-tip"
 			>
 				{warn ? (
