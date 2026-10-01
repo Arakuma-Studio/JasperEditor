@@ -8,23 +8,29 @@
 // 2. Module and name bans over `packages/motion/src` and `packages/compositions/src` (ANM-006): `animejs/waapi`,
 //    `/events`, `/draggable`, `/layout`, `/timer`, `/animation`, `/animatable`, `/text`, `/easings/irregular`,
 //    `/adapters` everywhere; `animejs/scope` and `animejs/engine` outside the runtime
-//    (`packages/motion/src/runtime`). Imported names (aliases included): `animate`, `createTimer`,
-//    `createAnimatable`, `createDraggable`, `onScroll`, `splitText`, `scrambleText`, `random`, `randomPick`,
-//    `shuffle`, `irregular`, `waapi` everywhere; `createTimeline`, `createScope`, `engine`, `createSeededRandom`
-//    outside the runtime (use `createPausedTimeline`, `useAnimeDom`, `seededRandom`); namespace imports of anime.js
-//    outside the runtime (they hide the names above).
+//    (`packages/motion/src/runtime`). Imported value names (aliases included; `import type` is fine): `animate`,
+//    `createTimer`, `createAnimatable`, `createDraggable`, `onScroll`, `splitText`, `scrambleText`, `random`,
+//    `randomPick`, `shuffle`, `irregular`, `waapi`, `set`, `sync`, `keepTime`, the classes behind the banned
+//    modules (`Timer`, `JSAnimation`…) and the `text`/`utils` namespace objects everywhere; `createTimeline`,
+//    `Timeline`, `createScope`, `Scope`, `engine`, `globals`, `createSeededRandom` outside the runtime (use
+//    `createPausedTimeline`, `useAnimeDom`, `seededRandom`); namespace imports of anime.js outside the runtime
+//    (they hide the names above).
 // 3. Wall clock / unseeded randomness over the same roots (ANM-003/007): `Math.random`, `Date.now`, `new Date`,
-//    `performance.now`.
+//    `performance.now` (also through `?.` and `['now']`).
 // 4. anime.js call patterns in files that use anime.js (import `animejs` or `@jasper/motion`, or live in
 //    `packages/motion/src`): `animate()` (also `el.animate()`, WAAPI), `createTimer`, `createAnimatable`,
-//    `createDraggable`, `onScroll`, `.play()/.resume()/.restart()`, `.reverse()` on a timeline, `autoplay: true`,
-//    `utils.random/randomPick/shuffle`, the `irregular` ease, `scrambleText`, `splitText`/`text.split`,
-//    `frameRate`, `composition: 'blend'`, `loop`, `.set()`/`.call()` on a timeline or `utils`, writes to
-//    `engine.*` and `engine.update()`, `stagger(…)` with `from: 'random'` or `jitter` but no `seed`, timers and
+//    `createDraggable`, `onScroll`, `.play()/.resume()/.restart()`, `.reverse()` on a timeline, `autoplay` other
+//    than a literal `false` (the shorthand `{ autoplay }` included), `new Timeline/Timer/JSAnimation/…`,
+//    `utils.random/randomPick/shuffle/sync/keepTime`, the `irregular` ease, `scrambleText`, `splitText`/
+//    `text.split`, `frameRate`, `composition: 'blend'`, `loop` (the shorthand `{ duration, loop }` included),
+//    `.set()`/`.call()` on a timeline or `utils`, writes to `engine.*` and `engine.update()`, `stagger(…)` with
+//    `from: 'random'` or `jitter` but no seed (or a literal `false`/`undefined`/`0`/`true`/`null` one), timers and
 //    animation frames (`setTimeout`, `setInterval`, `requestAnimationFrame`); outside the runtime also a plain
 //    `.seek()` (use `seekCanonical`, ANM-002).
-//    A timeline is an identifier bound to `createPausedTimeline(…)`/`createTimeline(…)`, one named `tl`/`timeline`/
-//    `…Timeline`/`…Tl`, `utils`, or a call chain that started with `.add(` on the same line.
+//    A timeline (`timelineIdentifiers`) is an identifier bound to a call of a `…Timeline`/`…timeline` function
+//    (`createPausedTimeline`, `templateTimeline`…) or of a function of the file declared to return `Timeline`, one
+//    annotated `Timeline`/`ReturnType<typeof …Timeline>`, one named `tl`/`timeline`/`…Timeline`/`…Tl`, `utils`, or
+//    a call chain through one of these or `.add(`.
 // A line may opt out with `anime-allow: <reason>` in a comment on that line or the line above (the reason is
 // required). Comments are ignored when matching.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -61,11 +67,33 @@ export const BANNED_NAMES = new Set([
 	'shuffle',
 	'irregular',
 	'waapi',
+	// `set()` = `new JSAnimation(…).resume()`, `sync()` = `new Timer(…).resume()`; `keepTime` tracks live tickables
+	'set',
+	'sync',
+	'keepTime',
+	// the classes behind the banned modules and functions (the root module exports them), and the `text` /
+	// `utils` namespace objects (they hide the names above)
+	'Timer',
+	'JSAnimation',
+	'Animatable',
+	'Draggable',
+	'WAAPIAnimation',
+	'ScrollObserver',
+	'TextSplitter',
+	'AutoLayout',
+	'createLayout',
+	'split',
+	'scrollContainers',
+	'text',
+	'utils',
 ]);
 export const RUNTIME_ONLY_NAMES = {
 	createTimeline: 'createPausedTimeline',
+	Timeline: 'createPausedTimeline',
 	createScope: 'useAnimeDom',
+	Scope: 'useAnimeDom',
 	engine: 'nothing (page-global settings)',
+	globals: 'nothing (page-global defaults)',
 	createSeededRandom: 'seededRandom',
 };
 
@@ -194,11 +222,15 @@ export function importsOf(text) {
 const isAnime = (spec) => spec === 'animejs' || spec.startsWith('animejs/');
 const isMotion = (spec) => spec === '@jasper/motion' || spec.startsWith('@jasper/motion/');
 
+/** `object.name`, `object?.name`, `object['name']` and `object?.['name']`, whitespace allowed. */
+const member = (object, name) =>
+	new RegExp(String.raw`\b${object}\s*(?:\??\.\s*${name}\b|(?:\?\.)?\s*\[\s*(['"\x60])${name}\1\s*\])`, 'g');
+
 const WALL_CLOCK = [
-	{ id: 'math-random', re: /\bMath\.random\b/g },
-	{ id: 'date-now', re: /\bDate\.now\b/g },
+	{ id: 'math-random', re: member('Math', 'random') },
+	{ id: 'date-now', re: member('Date', 'now') },
 	{ id: 'new-date', re: /\bnew\s+Date\b/g },
-	{ id: 'performance-now', re: /\bperformance\.now\b/g },
+	{ id: 'performance-now', re: member('performance', 'now') },
 ];
 
 const TIMELINE_NAME = /^(?:tl|timeline|[\w$]*Timeline|[\w$]*Tl|utils|add)$/;
@@ -250,19 +282,38 @@ function animeApiRules(rel, timelines) {
 		{ id: 'on-scroll', re: /\bonScroll\b/g },
 		{ id: 'play', re: /\.(?:play|resume|restart)\s*\(/g },
 		{ id: 'play', re: /\.reverse\s*\(/g, when: onTimeline },
-		{ id: 'autoplay', re: /\bautoplay\s*:\s*true\b/g },
+		// anything but a literal `false` (a variable may hold `true`), the shorthand `{ autoplay }` included
+		{ id: 'autoplay', re: /\bautoplay\s*:(?!\s*false\b)|(?<=[{,]\s*)autoplay(?=\s*[,}])/g },
+		// these classes autoplay or run on the wall clock (`new Timeline()` defaults to `autoplay: true`)
+		{
+			id: 'new-tickable',
+			re: /\bnew\s+(?:Timeline|Timer|JSAnimation|Animatable|Draggable|WAAPIAnimation|ScrollObserver|TextSplitter|AutoLayout|Scope)\b/g,
+		},
 		{ id: 'unseeded-random', re: /\butils\.(?:random|randomPick|shuffle)\b|\brandomPick\b|\bshuffle\s*\(/g },
+		{ id: 'utils-sync', re: /\butils\s*\??\.\s*(?:sync|keepTime)\b/g },
 		{ id: 'irregular', re: /\birregular\b/g },
 		{ id: 'scramble-text', re: /\bscrambleText\b/g },
 		{ id: 'split-text', re: /\bsplitText\b|\btext\.split\b/g },
 		{ id: 'frame-rate', re: /\bframeRate\b/g },
 		{ id: 'blend', re: /\bcomposition\s*:\s*['"]blend['"]/g },
-		{ id: 'loop', re: /\bloop\s*:/g },
+		// `loop: …` and the shorthand `{ duration, loop }`
+		{ id: 'loop', re: /\bloop\s*:|(?<=[{,]\s*)loop(?=\s*[,}])/g },
 		{ id: 'timeline-set-call', re: /\.(?:set|call)\s*\(/g, when: onTimeline },
 		{ id: 'engine-write', re: /\bengine\.(?:[\w$]+\s*=(?!=)|update\s*\()/g },
 		{ id: 'timer', re: /\b(?:setTimeout|setInterval|requestAnimationFrame)\s*\(/g },
 		...(inRuntime ? [] : [{ id: 'plain-seek', re: /\.seek\s*\(/g }]),
 	];
+}
+
+/**
+ * Whether `stagger(…)` arguments carry a seed: `seed: <expression>` or the shorthand `{ seed }`. A literal
+ * `false`/`undefined`/`void 0` is unseeded for anime.js (`Math.random`); `0`/`true`/`null` are one constant seed
+ * for every clip, not `hash32(clipId, …)` (ANM-007).
+ */
+export function hasSeed(args) {
+	if (/(?<=[{,]\s*)seed(?=\s*[,}])/.test(args)) return true;
+	const m = /\bseed\s*:\s*([^,}]*)/.exec(args);
+	return !!m && !/^(?:false|true|null|undefined|void\s+0|[+-]?0+(?:\.0*)?|0[xob]0+|0n)$/.test(m[1].trim());
 }
 
 /** `stagger(…)` calls whose arguments ask for randomness without a seed (`from: 'random'`, `jitter`). */
@@ -278,7 +329,7 @@ function unseededStaggers(lines) {
 			else if (text[end] === ')' && --depth === 0) break;
 		}
 		const args = text.slice(m.index, end + 1);
-		if (/['"]random['"]|\bjitter\b/.test(args) && !/\bseed\s*:/.test(args)) {
+		if (/['"]random['"]|\bjitter\b/.test(args) && !hasSeed(args)) {
 			const before = text.slice(0, m.index).split('\n');
 			out.push({ line: before.length, column: before[before.length - 1].length + 1, match: 'stagger(' });
 		}
@@ -319,12 +370,33 @@ function scan(raw, rules) {
 	return out;
 }
 
-/** Identifiers bound to a timeline: `const x = createPausedTimeline(…)` / `createTimeline(…)`. */
-function timelineIdentifiers(code) {
+/**
+ * Identifiers bound to a timeline in comment-free `code` (no types: heuristics). Timeline factories are functions
+ * named `…Timeline`/`…timeline` (`createPausedTimeline`, `createTimeline`, `templateTimeline`, `new Timeline`) and
+ * the functions of this file declared to return `Timeline` (those names count too: `make().set(…)`). Bound are
+ * variables and members assigned a factory call (`const t = templateTimeline()`, `this.intro = …`, `t = …`),
+ * names annotated `Timeline` or `ReturnType<typeof …Timeline>` (parameters, fields), and `t` in
+ * `{ timeline: t }` / `{ tl: t }` (destructuring renames).
+ */
+export function timelineIdentifiers(code) {
 	const ids = new Set();
-	const re =
-		/\b(?:const|let|var)\s+([\w$]+)\s*(?::[^=]+)?=\s*(?:createPausedTimeline|createTimeline)\s*[(<]/g;
-	for (let m = re.exec(code); m; m = re.exec(code)) ids.add(m[1]);
+	const factories = [String.raw`[\w$]*[Tt]imeline`];
+	const returning =
+		/\bfunction\s*\*?\s*([\w$]+)\s*(?:<[^>]*>)?\s*\([^)]*\)\s*:\s*Timeline\b|\b(?:const|let|var)\s+([\w$]+)\s*=\s*(?:async\s+)?(?:\([^)]*\)|[\w$]+)\s*:\s*Timeline\s*=>/g;
+	for (let m = returning.exec(code); m; m = returning.exec(code)) {
+		const name = m[1] ?? m[2];
+		factories.push(name.replaceAll('$', '\\$'));
+		ids.add(name);
+	}
+	const patterns = [
+		new RegExp(
+			String.raw`(?<![\w$])([\w$]+)\s*(?::[^=;{}()\n]+)?=(?![=>])\s*(?:await\s+)?(?:new\s+)?(?:[\w$]+\s*\.\s*)*(?:${factories.join('|')})\s*[(<]`,
+			'g',
+		),
+		/(?<![\w$])([\w$]+)\s*\??\s*:\s*(?:ReturnType\s*<\s*typeof\s+[\w$]*[Tt]imeline\s*>|(?:[\w$]+\.)?Timeline\b)/g,
+		/[{,]\s*(?:tl|timeline)\s*:\s*([\w$]+)\s*(?=[,}=])/g,
+	];
+	for (const re of patterns) for (let m = re.exec(code); m; m = re.exec(code)) ids.add(m[1]);
 	return ids;
 }
 
@@ -354,7 +426,7 @@ export function findViolations(rel, text) {
 		if (spec === 'animejs' && !imp.typeOnly && inMotion && rel !== RUNTIME_INDEX)
 			report('animejs-root-import', imp);
 		if (imp.namespace && !inRuntime) report('namespace-import', imp);
-		for (const { imported } of imp.names) {
+		for (const { imported } of imp.typeOnly ? [] : imp.names) {
 			if (BANNED_NAMES.has(imported)) report('banned-name', imp, imported);
 			else if (Object.hasOwn(RUNTIME_ONLY_NAMES, imported) && !inRuntime)
 				report('runtime-only-name', imp, imported);

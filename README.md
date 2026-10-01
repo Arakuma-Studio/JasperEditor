@@ -163,7 +163,11 @@ as inline styles, so the Player, `renderStill` and parallel `renderMedia` agree 
   (Chrome at `/usr/bin/google-chrome` or `JASPER_BROWSER_EXECUTABLE`).
 - `pnpm notices` regenerates `THIRD_PARTY_NOTICES.md` (the JavaScript packages shipped in the web app and the
   Remotion bundle, with their licence texts); `pnpm notices --check` fails when it is stale (a test runs it).
-  The web build ships it as `/THIRD_PARTY_NOTICES.md`, linked from Help ▸ About.
+  The web build ships it as `/THIRD_PARTY_NOTICES.md`, linked from Help ▸ About. Build tools whose output
+  ships (Tailwind's CSS, Vite's and webpack's runtimes, Remotion's bundle entry) are an explicit list in
+  `scripts/third-party-notices.mjs`; after `pnpm --filter @jasper/web build` and
+  `pnpm --filter @jasper/engine build:remotion`,
+  `pnpm notices --audit apps/web/dist apps/engine/dist/remotion-bundle` reports shipped packages it misses.
 - New composition projects (`POST /api/mg-bundles/scaffold`, MCP `scaffold_mg_project`) include an `AnimeTitle`
   example and a README section on driving anime.js from the frame in a Remotion composition.
 

@@ -14,14 +14,34 @@ export const ANIMEJS_VERSION: string = animePackage.version;
  * Timeline params that break seek-only driving, dropped by `createPausedTimeline`: `frameRate` gates rendering
  * by the wall clock (values stick), `loop`/`loopDelay`/`alternate` make the duration infinite or the canonical
  * seek history-dependent (R-ANM §1). The lint (S11:ANM-012) rejects them in source; this is the runtime guard.
+ * Also dropped from `params.defaults`, which every child inherits (a child's `frameRate` gates it by the wall
+ * clock in `tick`, a default `loop` makes every child infinite), with `autoplay` and a `'blend'` composition.
  */
 // anime-allow: names the params the runtime drops
 const UNSAFE_PARAMS = ['frameRate', 'loop', 'loopDelay', 'alternate'] as const;
+const UNSAFE_DEFAULTS = [...UNSAFE_PARAMS, 'autoplay'] as const;
+/** `compositionTypes.blend` of anime.js (`'blend'` or its enum value). */
+const BLEND = 2;
 
-/** A paused timeline: `autoplay` is forced to false whatever `params` says; unsafe params are dropped. */
+type Defaults = NonNullable<TimelineParams['defaults']>;
+
+/** `defaults` without the unsafe keys (a copy; the caller's object is untouched). */
+function safeDefaults(defaults: Defaults): Defaults {
+	const safe: Defaults = { ...defaults };
+	for (const k of UNSAFE_DEFAULTS) delete safe[k];
+	const composition: unknown = safe.composition;
+	if (composition === 'blend' || composition === BLEND) delete safe.composition;
+	return safe;
+}
+
+/**
+ * A paused timeline: `autoplay` is forced to false whatever `params` says; unsafe params are dropped, at the top
+ * level and in `defaults`.
+ */
 export function createPausedTimeline(params?: TimelineParams): Timeline {
 	const safe: TimelineParams = { ...params };
 	for (const k of UNSAFE_PARAMS) delete safe[k];
+	if (safe.defaults) safe.defaults = safeDefaults(safe.defaults);
 	return createTimeline({ ...safe, autoplay: false });
 }
 

@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { act, render } from '@testing-library/react';
 import { engine } from 'animejs/engine';
+import { createTimeline } from 'animejs/timeline';
 import fc from 'fast-check';
 import { StrictMode, useRef } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -290,6 +291,45 @@ describe('runtime hardening (wp-m2-anime-core)', () => {
 		expect(o.v).toBe(0);
 		seekCanonical(tl, 5000);
 		expect(o.v).toBe(100);
+	});
+
+	it('createPausedTimeline drops the unsafe keys from defaults too (children inherit them)', () => {
+		const defaults = {
+			frameRate: 1,
+			loop: true,
+			loopDelay: 100,
+			alternate: true,
+			autoplay: true,
+			composition: 'blend',
+			ease: 'linear',
+			duration: 1000,
+		} as const;
+		// the hazard: a default loop makes every child (and the timeline) infinite
+		const raw = createTimeline({ autoplay: false, defaults: { loop: true } });
+		raw.add({ v: 0 }, { v: [0, 1], duration: 1000 });
+		expect(raw.duration).toBeGreaterThan(1e9); // anime clamps infinity to 1e12
+		raw.revert();
+
+		const tl = createPausedTimeline({ defaults } as never);
+		const o = { v: 0 };
+		tl.add(o, { v: [0, 100] });
+		expect(tl.duration).toBe(1000);
+		for (const [ms, v] of [
+			[250, 25],
+			[750, 75],
+			[500, 50],
+			[1000, 100],
+		] as const) {
+			seekCanonical(tl, ms);
+			expect(o.v, `${ms} ms`).toBe(v);
+		}
+		expect(tl.defaults).toMatchObject({ ease: 'linear', duration: 1000 });
+		expect(tl.defaults.frameRate).not.toBe(1);
+		expect(tl.defaults.composition).not.toBe('blend');
+		expect(tl.defaults.loop).not.toBe(true);
+		// the caller's object is untouched; other compositions are kept
+		expect(defaults.loop).toBe(true);
+		expect(createPausedTimeline({ defaults: { composition: 'none' } }).defaults.composition).toBe('none');
 	});
 
 	it('resolveEase steps: non-finite counts fall back to 8', () => {
