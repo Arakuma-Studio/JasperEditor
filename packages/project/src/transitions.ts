@@ -46,14 +46,16 @@ export const TRANSITION_SPECS: readonly TransitionSpec[] = [
 		version: 1,
 		label: 'Constant Gain',
 		appliesTo: 'audio',
-		description: 'Linear audio fade at one clip edge (fade in at the head, fade out at the tail).',
+		description:
+			'Linear audio crossfade between two clips (the amplitudes sum to 1); at a single clip edge a linear fade in or out.',
 	},
 	{
 		id: CONSTANT_POWER,
 		version: 1,
 		label: 'Constant Power',
 		appliesTo: 'audio',
-		description: 'Equal-power (quarter sine) audio fade at one clip edge.',
+		description:
+			'Equal-power (quarter sine) audio crossfade between two clips (no level dip or bump); at a single clip edge an equal-power fade.',
 	},
 ];
 
@@ -284,25 +286,95 @@ export type RenderAudioFade = {
 	curve: 'linear' | 'equal-power';
 };
 
-/** Audio fades (one-sided constant gain / constant power transitions) per audio clip id. */
-export function resolveAudioFades(seq: Sequence): Map<string, RenderAudioFade[]> {
-	const out = new Map<string, RenderAudioFade[]>();
+/** What the audio transitions of a sequence mean for one audio clip (S01:TRN-004, S10:TUI-052). */
+export type AudioClipTransitionRender = {
+	/** Frames of content played before the clip's start (incoming side of a crossfade). */
+	headHandle: number;
+	/** Frames of content played after the clip's end (outgoing side of a crossfade). */
+	tailHandle: number;
+	fades: RenderAudioFade[];
+};
+
+export type ResolvedAudioTransitions = {
+	/** clipId → handles and gain ramps (only clips touched by a rendered audio transition). */
+	clips: Map<string, AudioClipTransitionRender>;
+	/** Crossfades that are not rendered, with the reason (no room in the media handles). */
+	skipped: { transitionId: string; reason: string }[];
+};
+
+/**
+ * What the audio transitions (constant gain / constant power) of a sequence mean for rendering. One-sided
+ * ones are gain ramps over the clip's own first / last frames. A two-sided one (a crossfade, S10:TUI-052)
+ * covers `transitionSpan(cut, d, alignment)` = [s, e): the outgoing clip plays `e − cut` frames into its tail
+ * handle and fades out over [s, e), the incoming one starts `cut − s` frames early (head handle) and fades in
+ * over the same span. Linear ramps keep the sum of the amplitudes at 1, equal-power (quarter sine / cosine)
+ * ramps the sum of the powers. Handles are clamped to what the media holds at render time (as for video),
+ * so a crossfade whose clips were trimmed afterwards degrades to a shorter one.
+ */
+export function resolveAudioTransitions(
+	doc: Pick<ProjectDocument, 'media'>,
+	seq: Sequence,
+): ResolvedAudioTransitions {
+	const clips = new Map<string, AudioClipTransitionRender>();
+	const skipped: ResolvedAudioTransitions['skipped'] = [];
+	const entry = (id: string) => {
+		let e = clips.get(id);
+		if (!e) {
+			e = { headHandle: 0, tailHandle: 0, fades: [] };
+			clips.set(id, e);
+		}
+		return e;
+	};
 	const audioTracks = new Set(seq.audioTracks.map((t) => t.id));
 	for (const t of Object.values(seq.transitions)) {
 		if (!audioTracks.has(t.trackId)) continue;
 		const spec = transitionSpec(t.effectId);
 		if (spec?.appliesTo !== 'audio') continue;
 		const curve = t.effectId === CONSTANT_POWER ? 'equal-power' : 'linear';
-		const push = (id: string, f: RenderAudioFade) => out.set(id, [...(out.get(id) ?? []), f]);
 		const o = t.outgoingClipId ? seq.clips[t.outgoingClipId] : undefined;
 		const i = t.incomingClipId ? seq.clips[t.incomingClipId] : undefined;
-		if (o && i) continue; // audio crossfades need handles on both clips: not rendered yet
-		if (i) push(i.id, { type: 'in', start: i.start, frames: Math.min(t.duration, i.duration), curve });
-		else if (o) {
+		if (o && i) {
+			if (!o.enabled || !i.enabled) continue;
+			if (clipEnd(o) !== i.start) continue; // not adjacent (INV-010); cleanup removes these
+			const cut = i.start;
+			const d = fitTransitionDuration({
+				effectId: t.effectId,
+				wanted: t.duration,
+				alignment: t.alignment,
+				outgoing: { duration: o.duration, tail: clipHandles(doc, seq, o).tail },
+				incoming: { duration: i.duration, head: clipHandles(doc, seq, i).head },
+			});
+			if (d <= 0) {
+				skipped.push({ transitionId: t.id, reason: 'no media handles for the audio crossfade' });
+				continue;
+			}
+			const { start, end } = transitionSpan(cut, d, t.alignment);
+			const a = entry(o.id);
+			const b = entry(i.id);
+			a.tailHandle = Math.max(a.tailHandle, end - cut);
+			b.headHandle = Math.max(b.headHandle, cut - start);
+			a.fades.push({ type: 'out', start, frames: d, curve });
+			b.fades.push({ type: 'in', start, frames: d, curve });
+		} else if (i) {
+			entry(i.id).fades.push({ type: 'in', start: i.start, frames: Math.min(t.duration, i.duration), curve });
+		} else if (o) {
 			const d = Math.min(t.duration, o.duration);
-			push(o.id, { type: 'out', start: clipEnd(o) - d, frames: d, curve });
+			entry(o.id).fades.push({ type: 'out', start: clipEnd(o) - d, frames: d, curve });
 		}
 	}
+	return { clips, skipped };
+}
+
+/**
+ * Audio fades per audio clip id (see `resolveAudioTransitions`, which also gives the handles a crossfade
+ * plays). Without `doc` the media length is unknown: tail handles are then only limited by the clips.
+ */
+export function resolveAudioFades(
+	seq: Sequence,
+	doc: Pick<ProjectDocument, 'media'> = { media: {} },
+): Map<string, RenderAudioFade[]> {
+	const out = new Map<string, RenderAudioFade[]>();
+	for (const [id, x] of resolveAudioTransitions(doc, seq).clips) if (x.fades.length) out.set(id, x.fades);
 	return out;
 }
 

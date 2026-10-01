@@ -494,7 +494,7 @@ export function registerEditingTools(ctx: ToolContext): void {
 		{
 			title: 'Add transition',
 			description:
-				'Adds a transition at an edit point or a fade at a clip edge (transition.add). Address it by clipId + edge ("in" = head, "out" = tail) or by track + at (the frame where one clip ends and the next begins). Video: cross-dissolve (the incoming clip fades in over the outgoing one; needs media beyond the cut, "handles") or dip-to-black; at a free clip edge they are fades from/to transparent or black. Audio tracks: constant-gain or constant-power fades. The duration is shortened (with a warning) to what the clips and their handles allow.',
+				'Adds a transition at an edit point or a fade at a clip edge (transition.add). Address it by clipId + edge ("in" = head, "out" = tail) or by track + at (the frame where one clip ends and the next begins). Video: cross-dissolve (the incoming clip fades in over the outgoing one; needs media beyond the cut, "handles") or dip-to-black; at a free clip edge they are fades from/to transparent or black. Audio tracks: constant-gain or constant-power fades at a clip edge (clipId + edge), or crossfades between two audio clips at an edit point (track + at). The duration is shortened (with a warning) to what the clips and their handles allow.',
 			input: {
 				projectId: ProjectIdArg,
 				type: z

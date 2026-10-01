@@ -121,3 +121,55 @@ export function effectTree(
 				})),
 		}));
 }
+
+// ---------------------------------------------------------------- transitions (S10:TUI-020)
+
+/**
+ * Contract (M2, wp-m2-transitions): dragging a transition from the Effects panel puts
+ *   DataTransfer[JASPER_TRANSITION_MIME] = JSON.stringify({ type: 'jasper/transition', effectId })
+ * plus a `jasper-transition:<effectId>` text/plain fallback. The timeline resolves the drop target while
+ * dragging (data is unreadable during dragover, so the id is also kept in `activeTransitionDrag()`).
+ */
+export type TransitionDragPayload = { type: 'jasper/transition'; effectId: string };
+
+export const JASPER_TRANSITION_MIME = 'application/x-jasper-transition';
+
+let dragging: string | null = null;
+
+export function writeTransitionDragPayload(dt: DataTransfer, effectId: string): void {
+	const payload: TransitionDragPayload = { type: 'jasper/transition', effectId };
+	dt.setData(JASPER_TRANSITION_MIME, JSON.stringify(payload));
+	dt.setData('text/plain', `jasper-transition:${effectId}`);
+	dt.effectAllowed = 'copy';
+	dragging = effectId;
+}
+
+/** The transition being dragged in this window (set on dragstart, cleared on dragend). */
+export function activeTransitionDrag(): string | null {
+	return dragging;
+}
+export function endTransitionDrag(): void {
+	dragging = null;
+}
+
+export function isTransitionDrag(dt: DataTransfer | null): boolean {
+	return !!dt && Array.from(dt.types ?? []).includes(JASPER_TRANSITION_MIME);
+}
+
+export function readTransitionDragPayload(dt: DataTransfer | null): TransitionDragPayload | null {
+	if (!dt) return null;
+	const raw = dt.getData(JASPER_TRANSITION_MIME);
+	if (raw) {
+		try {
+			const p = JSON.parse(raw) as Partial<TransitionDragPayload>;
+			if (p.type === 'jasper/transition' && typeof p.effectId === 'string')
+				return { type: p.type, effectId: p.effectId };
+		} catch {
+			return null;
+		}
+	}
+	const text = dt.getData('text/plain');
+	return text.startsWith('jasper-transition:')
+		? { type: 'jasper/transition', effectId: text.slice('jasper-transition:'.length) }
+		: null;
+}

@@ -11,10 +11,12 @@ import {
 } from '@jasper/project';
 import type { GapRef, MediaRuntime } from '@jasper/session';
 import { useMemo } from 'react';
-import { type RegionLayout, type TrackAreaLayout, visibleRows } from '../model/layout.ts';
+import { type RegionLayout, rowOf, type TrackAreaLayout, visibleRows } from '../model/layout.ts';
+import { type TransitionIndex, transitionsInRange } from '../model/transitions.ts';
 import { frameToX, type Viewport } from '../model/viewport.ts';
 import type { EditPointSel, TimelineUiState } from '../state/ui-store.ts';
 import { type ClipDisplay, ClipView } from './ClipView.tsx';
+import { TransitionGhostView, TransitionView, transitionViewProps } from './TransitionView.tsx';
 
 export type TrackAreaProps = {
 	seq: Sequence;
@@ -30,8 +32,19 @@ export type TrackAreaProps = {
 	mediaVersion: number;
 	overlays: Pick<
 		TimelineUiState,
-		'marquee' | 'snapFrame' | 'razor' | 'insertAt' | 'limit' | 'editPoints' | 'drop' | 'flash'
+		| 'marquee'
+		| 'snapFrame'
+		| 'razor'
+		| 'insertAt'
+		| 'limit'
+		| 'editPoints'
+		| 'drop'
+		| 'flash'
+		| 'transitionGhost'
 	>;
+	/** S10: per-track transition index of the drawn sequence and the selected transition ids. */
+	transitions?: TransitionIndex;
+	selectedTransitions?: ReadonlySet<string>;
 };
 
 /** Clips mounted for a row: the visible frame window ± 50 % overscan (TL-151). */
@@ -65,6 +78,15 @@ function Region(props: TrackAreaProps & { region: RegionLayout; offsets: Record<
 				const dimmed =
 					region.kind === 'video' ? track.output === false : !!track.mute || (anySolo && !track.solo);
 				const clips = visibleClips(seq, track.id, v);
+				const visible = v.width / v.pxPerFrame;
+				const trans = props.transitions
+					? transitionsInRange(
+							props.transitions,
+							track.id,
+							Math.floor(v.scrollFrame - visible * 0.5),
+							Math.ceil(v.scrollFrame + visible * 1.5),
+						)
+					: [];
 				return (
 					<div
 						key={track.id}
@@ -129,6 +151,19 @@ function Region(props: TrackAreaProps & { region: RegionLayout; offsets: Record<
 								/>
 							);
 						})}
+						{trans.map((g) => (
+							<TransitionView
+								key={g.t.id}
+								{...transitionViewProps(
+									g,
+									v,
+									row.height,
+									!!props.selectedTransitions?.has(g.t.id),
+									seq.settings.frameRate,
+									seq.settings.dropFrame,
+								)}
+							/>
+						))}
 					</div>
 				);
 			})}
@@ -245,6 +280,19 @@ export function TrackArea(props: TrackAreaProps) {
 					</span>
 				</div>
 			) : null}
+			{overlays.transitionGhost
+				? (() => {
+						const row = rowOf(layout, overlays.transitionGhost.trackId);
+						return row ? (
+							<TransitionGhostView
+								ghost={overlays.transitionGhost}
+								rowY={row.y}
+								rowHeight={row.height}
+								v={v}
+							/>
+						) : null;
+					})()
+				: null}
 			{overlays.snapFrame !== null ? (
 				<div
 					className="pointer-events-none absolute top-0 bottom-0"

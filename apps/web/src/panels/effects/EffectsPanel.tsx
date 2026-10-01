@@ -1,14 +1,25 @@
 // Effects panel (S05:EFX-001…003, R-PUI §12): search, "Real-time" / "Native" badge filters, a tree of
 // bins (Video Effects by category, Audio Effects), drag an effect onto a timeline clip or the Effect
 // Controls panel, or double-click to apply it to the selected clips (one undo step for N clips).
-import { type EffectSpec, effectBadges } from '@jasper/project';
+import { type EffectSpec, effectBadges, type TransitionSpec } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
-import { useSessionOrNull, useSessionState } from '@jasper/session/react';
+import { useSessionOrNull, useSessionState, useStoreSelector } from '@jasper/session/react';
 import { cx } from '@jasper/ui';
 import { useMemo, useState } from 'react';
 import { CaretGlyph, FxGlyph } from '../properties/controls/glyphs.tsx';
+import { ContextMenu } from '../timeline/components/Chrome.tsx';
+import type { ContextMenuItem } from '../timeline/state/ui-store.ts';
 import type { PanelProps } from '../types.ts';
-import { applyEffectToClips, clipsAccepting, effectTree, writeEffectDragPayload } from './drag.ts';
+import {
+	applyEffectToClips,
+	clipsAccepting,
+	effectTree,
+	endTransitionDrag,
+	writeEffectDragPayload,
+	writeTransitionDragPayload,
+} from './drag.ts';
+import { setDefaultTransition, transitionDefaults } from './transition-prefs.ts';
+import { applyTransitionToClips, transitionTree } from './transitions.ts';
 
 export function EffectsPanel(props: PanelProps) {
 	const session = useSessionOrNull();
@@ -60,6 +71,34 @@ function EffectsBody({ session }: { session: EditorSession }) {
 		() => effectTree(registry, { query, realtime, native }),
 		[registry, query, realtime, native],
 	);
+	// S10:TUI-020: transition bins (native-capable and real-time, so the badge filters keep them).
+	const transitionBins = useMemo(() => transitionTree(query), [query]);
+	const defaults = useStoreSelector(transitionDefaults(), (s) => s);
+	const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
+	const applyTransition = (t: TransitionSpec) => {
+		const r = applyTransitionToClips(session, t.id, selected);
+		setStatus(
+			r === null
+				? selected.length
+					? `${t.label} cannot be applied to the selected clips.`
+					: 'Select clips in the Timeline first.'
+				: r.ok
+					? `Applied ${t.label} to ${r.count} edit point${r.count === 1 ? '' : 's'}.`
+					: r.message,
+		);
+	};
+	const transitionMenu = (t: TransitionSpec): ContextMenuItem[] => [
+		{
+			kind: 'item',
+			label: 'Set Selected as Default Transition',
+			checked: defaults[t.appliesTo] === t.id,
+			run: () => {
+				setDefaultTransition(t.id);
+				setStatus(`${t.label} is the default ${t.appliesTo} transition.`);
+			},
+		},
+		{ kind: 'item', label: 'Apply to Selected Clips', run: () => applyTransition(t) },
+	];
 
 	const apply = (e: EffectSpec) => {
 		const targets = clipsAccepting(session, e.id, selected);
@@ -168,7 +207,69 @@ function EffectsBody({ session }: { session: EditorSession }) {
 							: null}
 					</div>
 				))}
+				{transitionBins.map((bin) => (
+					<div key={bin.medium} data-testid={`effects-bin-${bin.appliesTo}-transitions`}>
+						<TreeFolder
+							label={bin.medium}
+							open={!closed[bin.medium] || !!query}
+							depth={0}
+							onToggle={() => toggle(bin.medium)}
+						/>
+						{!closed[bin.medium] || query
+							? bin.categories.map((cat) => {
+									const id = `${bin.medium}/${cat.category}`;
+									const open = !closed[id] || !!query;
+									return (
+										<div key={id}>
+											<TreeFolder label={cat.category} open={open} depth={1} onToggle={() => toggle(id)} />
+											{open
+												? cat.transitions.map((t) => {
+														const isDefault = defaults[t.appliesTo] === t.id;
+														return (
+															<div
+																key={t.id}
+																role="treeitem"
+																tabIndex={0}
+																aria-selected={focused === t.id}
+																draggable
+																title={`${t.description}\nDrag onto an edit point or clip edge in the Timeline.${isDefault ? `\nDefault ${t.appliesTo} transition.` : ''}`}
+																className={cx(
+																	'flex h-[var(--pr-row-h)] cursor-grab items-center gap-1 pr-2 pl-[38px] text-pr-ui',
+																	focused === t.id ? 'bg-pr-selected' : 'hover:bg-pr-hover',
+																)}
+																onClick={() => setFocused(t.id)}
+																onDoubleClick={() => applyTransition(t)}
+																onKeyDown={(ev) => ev.key === 'Enter' && applyTransition(t)}
+																onContextMenu={(ev) => {
+																	ev.preventDefault();
+																	setFocused(t.id);
+																	setMenu({ x: ev.clientX, y: ev.clientY, items: transitionMenu(t) });
+																}}
+																onDragStart={(ev) => writeTransitionDragPayload(ev.dataTransfer, t.id)}
+																onDragEnd={endTransitionDrag}
+																data-transition-effect-id={t.id}
+																data-default={isDefault || undefined}
+															>
+																<TransitionGlyph audio={t.appliesTo === 'audio'} isDefault={isDefault} />
+																<span className="min-w-0 flex-1 truncate">{t.label}</span>
+																<span
+																	className="text-[10px] text-pr-engine-native"
+																	title="Renders on the native (ffmpeg) path"
+																>
+																	N
+																</span>
+															</div>
+														);
+													})
+												: null}
+										</div>
+									);
+								})
+							: null}
+					</div>
+				))}
 			</div>
+			{menu ? <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} /> : null}
 			{status ? (
 				<p
 					className="shrink-0 border-t border-pr-border-subtle px-2 py-1 text-pr-small text-pr-muted"
@@ -179,6 +280,29 @@ function EffectsBody({ session }: { session: EditorSession }) {
 				</p>
 			) : null}
 		</>
+	);
+}
+
+/** Transition item icon; the default transition gets the blue outline badge (Premiere convention). */
+function TransitionGlyph(props: { audio: boolean; isDefault: boolean }) {
+	return (
+		<span
+			className="inline-flex size-[15px] shrink-0 items-center justify-center rounded-[2px] text-pr-icon"
+			style={
+				props.isDefault ? { boxShadow: 'inset 0 0 0 1px var(--pr-transition-default-badge)' } : undefined
+			}
+			title={props.isDefault ? 'Default transition' : undefined}
+			data-default-badge={props.isDefault || undefined}
+		>
+			<svg width={11} height={11} viewBox="0 0 11 11" aria-hidden="true">
+				<path
+					d={props.audio ? 'M1 9 Q5 1 10 2 M1 2 Q6 1 10 9' : 'M1 10 L10 1 M1 1 L10 10'}
+					fill="none"
+					stroke="currentColor"
+					strokeWidth={1.2}
+				/>
+			</svg>
+		</span>
 	);
 }
 
