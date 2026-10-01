@@ -33,6 +33,8 @@ export const ROUTE_PLUGINS = [
 	mgRoutes,
 	agentRoutes,
 	mcpRoutes,
+	// M3 (wp-m3-cachegc): Media Cache routes over the core cache registry (after agent: its relay marks open projects).
+	cacheRoutes,
 	// M2 (ARCHITECTURE §19.8): one plugin per work package.
 	colorRoutes,
 	processingRoutes,
@@ -41,8 +43,6 @@ export const ROUTE_PLUGINS = [
 	layerBakeRoutes,
 	trackingRoutes,
 	animeRoutes,
-	// M3 (wp-m3-cachegc): Preferences ▸ Media Cache routes over the core cache registry.
-	cacheRoutes,
 ] as const;
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
