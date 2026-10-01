@@ -61,7 +61,7 @@ export function createPlanarTracker(cv: CV, G: typeof Geometry, cfg: PlanarConfi
 	const lkCriteria = new cv.TermCriteria(cv.TermCriteria_COUNT + cv.TermCriteria_EPS, 30, 0.01);
 	const eccCriteria = new cv.TermCriteria(cv.TermCriteria_COUNT + cv.TermCriteria_EPS, 40, 1e-5);
 	const EDGE = { band: 4, n: 48, maxShift: 3, maxResidual: 0.75, minFraction: 0.35, minContrast: 2 };
-	const EDGE_REF = { band: 8, n: 48, maxShift: 8, maxResidual: 1, minFraction: 0.35, minContrast: 2 };
+	const EDGE_REF = { band: 6, n: 48, maxShift: 6, maxResidual: 1, minFraction: 0.35, minContrast: 2 };
 
 	type Anchor = {
 		img: CV;

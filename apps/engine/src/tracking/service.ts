@@ -185,9 +185,9 @@ export class TrackingService {
 			if (i < 0 || i >= total || have[i]) return;
 			if (!t0) t0 = performance.now();
 			have[i] = 1;
-			const values = G.toMediaPx(res.values, size.sx, size.sy);
+			const values = G.toMediaPx(res.values, size.sx, size.sy).map(round3);
 			data.set(values, i * stride);
-			conf[i] = res.lost ? 0 : Math.max(0, Math.min(1, res.confidence));
+			conf[i] = res.lost ? 0 : round3(Math.max(0, Math.min(1, res.confidence)));
 			lostFlag[i] = res.lost ? 1 : 0;
 			done++;
 			ctx.progress(done / total, { stage: `Tracking ${done}/${total}` });
@@ -352,14 +352,18 @@ export class TrackingService {
 			startFrame: span.start,
 			fps: input.fps,
 			stride,
-			data: Array.from(data, (v) => Math.round(v * 1000) / 1000),
-			confidence: Array.from(conf, (v) => Math.round(v * 1000) / 1000),
+			data: Array.from(data),
+			confidence: Array.from(conf),
 			method: planar ? PLANAR_METHOD : POINT_METHOD,
 			lost,
 			...(r.trackerId ? { trackerId: r.trackerId } : {}),
 			...(secs > 0 && done > 1 ? { framesPerSec: Math.round(((done - 1) / secs) * 10) / 10 } : {}),
 		};
 	}
+}
+
+function round3(v: number): number {
+	return Math.round(v * 1000) / 1000;
 }
 
 function noReferenceFrame(ref: number): JobError {

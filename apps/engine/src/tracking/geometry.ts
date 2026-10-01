@@ -227,7 +227,8 @@ export function sampleGray(img: Uint8Array, w: number, h: number, x: number, y: 
 /**
  * Edge samples along the segment p→q: `n` normals at t ∈ [0.1, 0.9], each sampled over ±`band` px (0.5 px steps,
  * lightly smoothed). `rise`/`fall`: the strongest luminance step increasing/decreasing towards the inside; `valley`:
- * the darkest point (a thin dark line such as a bezel mask). Sub-pixel parabolic peak. Returns the position `t` along
+ * a dark line such as a bezel mask (its centre between the half-depth crossings). Of the strong candidates on a normal
+ * the one nearest to the given side wins. Sub-pixel parabolic peak for steps. Returns the position `t` along
  * the side and the signed offset along the inward normal of each accepted sample. Normals leaving the frame are
  * skipped.
  */
@@ -242,9 +243,10 @@ export function edgeSamples(
 	n: number,
 	mode: EdgeMode,
 	minContrast: number,
-): { t: number[]; off: number[] } {
+): { t: number[]; off: number[]; strength: number[] } {
 	const ts: number[] = [];
 	const offs: number[] = [];
+	const strengths: number[] = [];
 	const steps = Math.max(4, Math.round(band * 2));
 	const m = 2 * steps + 1;
 	const raw = new Float64Array(m);
@@ -270,44 +272,78 @@ export function edgeSamples(
 			const b = raw[Math.min(m - 1, i + 1)]!;
 			prof[i] = 0.25 * a + 0.5 * raw[i]! + 0.25 * b;
 		}
-		let k = -1;
-		let best = Number.NEGATIVE_INFINITY;
-		if (mode === 'valley') {
-			for (let i = 1; i < m - 1; i++) {
-				score[i] = -prof[i]!;
-				if (score[i]! > best) {
-					best = score[i]!;
-					k = i;
-				}
+		// Candidate peaks (local maxima of the score) and their strength: the step size, or for a valley its depth
+		// below the brighter sides. The strong candidate (≥ half the strongest) NEAREST to the given line wins, so a
+		// refinement snaps to the edge the user placed the side on, not to a stronger edge further away.
+		if (mode === 'valley') for (let i = 0; i < m; i++) score[i] = -prof[i]!;
+		else {
+			const sign = mode === 'rise' ? 1 : -1;
+			score[0] = 0;
+			score[m - 1] = 0;
+			for (let i = 1; i < m - 1; i++) score[i] = (sign * (prof[i + 1]! - prof[i - 1]!)) / 2;
+		}
+		let strongest = 0;
+		const cand: number[] = [];
+		const strength: number[] = [];
+		for (let i = 2; i < m - 2; i++) {
+			if (score[i]! < score[i - 1]! || score[i]! < score[i + 1]!) continue;
+			let st: number;
+			if (mode === 'valley') {
+				let leftMax = 0;
+				let rightMax = 0;
+				for (let j = 0; j < i; j++) leftMax = Math.max(leftMax, prof[j]!);
+				for (let j = i + 1; j < m; j++) rightMax = Math.max(rightMax, prof[j]!);
+				st = Math.min(leftMax, rightMax) - prof[i]!;
+				if (st < minContrast * 3) continue;
+			} else {
+				st = score[i]!;
+				if (st < minContrast) continue;
 			}
-			if (k <= 1 || k >= m - 2) continue;
+			cand.push(i);
+			strength.push(st);
+			strongest = Math.max(strongest, st);
+		}
+		let k = -1;
+		let kStrength = 0;
+		for (let c = 0; c < cand.length; c++)
+			if (strength[c]! >= 0.5 * strongest && (k < 0 || Math.abs(cand[c]! - steps) < Math.abs(k - steps))) {
+				k = cand[c]!;
+				kStrength = strength[c]!;
+			}
+		if (k < 0) continue;
+		let pos: number;
+		if (mode === 'valley') {
+			// Centre between the half-height crossings of each flank (each against its own bright side): robust for
+			// flat-bottomed dark lines wider than a pixel and for unequal sides (bright bezel, dim picture).
 			let leftMax = 0;
 			let rightMax = 0;
-			for (let i = 0; i < k; i++) leftMax = Math.max(leftMax, prof[i]!);
-			for (let i = k + 1; i < m; i++) rightMax = Math.max(rightMax, prof[i]!);
-			if (Math.min(leftMax, rightMax) - prof[k]! < minContrast * 3) continue;
+			for (let j = 0; j < k; j++) leftMax = Math.max(leftMax, prof[j]!);
+			for (let j = k + 1; j < m; j++) rightMax = Math.max(rightMax, prof[j]!);
+			const levelL = 0.5 * (prof[k]! + leftMax);
+			const levelR = 0.5 * (prof[k]! + rightMax);
+			let l = k;
+			while (l > 0 && prof[l]! < levelL) l--;
+			let r = k;
+			while (r < m - 1 && prof[r]! < levelR) r++;
+			if (prof[l]! < levelL || prof[r]! < levelR) continue;
+			const xl = l + (levelL - prof[l]!) / (prof[l + 1]! - prof[l]!);
+			const xr = r - (levelR - prof[r]!) / (prof[r - 1]! - prof[r]!);
+			pos = (xl + xr) / 2;
 		} else {
-			const sign = mode === 'rise' ? 1 : -1;
-			for (let i = 1; i < m - 1; i++) {
-				score[i] = (sign * (prof[i + 1]! - prof[i - 1]!)) / 2;
-				if (score[i]! > best) {
-					best = score[i]!;
-					k = i;
-				}
-			}
-			if (k <= 1 || k >= m - 2 || best < minContrast) continue;
+			const a = score[k - 1]!;
+			const b = score[k]!;
+			const c = score[k + 1]!;
+			const den = a - 2 * b + c;
+			let sub = Math.abs(den) > 1e-9 ? (0.5 * (a - c)) / den : 0;
+			if (sub > 0.5) sub = 0.5;
+			else if (sub < -0.5) sub = -0.5;
+			pos = k + sub;
 		}
-		const a = score[k - 1]!;
-		const b = score[k]!;
-		const c = score[k + 1]!;
-		const den = a - 2 * b + c;
-		let sub = Math.abs(den) > 1e-9 ? (0.5 * (a - c)) / den : 0;
-		if (sub > 0.5) sub = 0.5;
-		else if (sub < -0.5) sub = -0.5;
 		ts.push(t);
-		offs.push((k - steps + sub) * 0.5);
+		offs.push((pos - steps) * 0.5);
+		strengths.push(kStrength);
 	}
-	return { t: ts, off: offs };
+	return { t: ts, off: offs, strength: strengths };
 }
 
 /**
@@ -469,8 +505,8 @@ export function refineQuadEdges(
 }
 
 /**
- * On the reference frame: which edge kind each side shows (a step up or down going inward, or a dark valley), from
- * the mode whose fit gathers the most consistent samples in a wide band. Sides where nothing fits get null (never
+ * On the reference frame: which edge kind each side shows (a step up or down going inward, or a dark valley): of the
+ * modes that fit a straight line well, the one nearest to the given side. Sides where nothing fits get null (never
  * refined).
  */
 export function chooseEdgeModes(
@@ -488,17 +524,23 @@ export function chooseEdgeModes(
 		const p: [number, number] = [quad[2 * k]!, quad[2 * k + 1]!];
 		const q: [number, number] = [quad[2 * j]!, quad[2 * j + 1]!];
 		const nrm: [number, number] = [lines[k]![0]!, lines[k]![1]!];
+		// Among the modes that fit, the one whose line lies nearest to the given side (within 0.5 px: the stronger
+		// edge), so the reference snap never jumps across a bezel to a stronger edge further away.
 		let best: EdgeMode | null = null;
-		let bestScore = 0;
+		let bestDist = Number.POSITIVE_INFINITY;
+		let bestStrength = 0;
 		for (const mode of candidates) {
 			const s = edgeSamples(img, w, h, p, q, nrm, opts.band, opts.n, mode, opts.minContrast);
 			const fit = robustOffsetFit(s.t, s.off, 1);
 			if (fit.inliers < Math.max(6, Math.ceil(opts.n * opts.minFraction)) || fit.median > opts.maxResidual)
 				continue;
-			const score = fit.inliers / (1 + fit.median);
-			if (score > bestScore) {
-				bestScore = score;
+			const dist = Math.abs(fit.a + fit.b * 0.5);
+			const sorted = [...s.strength].sort((x, y) => x - y);
+			const strength = sorted[Math.floor(sorted.length / 2)]!;
+			if (dist < bestDist - 0.5 || (dist < bestDist + 0.5 && strength > bestStrength)) {
 				best = mode;
+				bestDist = Math.min(dist, bestDist);
+				bestStrength = strength;
 			}
 		}
 		out.push(best);
