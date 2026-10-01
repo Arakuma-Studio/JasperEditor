@@ -122,6 +122,8 @@ export const SHAPE_BOX_COMMANDS: ReadonlySet<CommandType> = new Set<CommandType>
 	'keyframe.move',
 	'keyframe.setInterpolation',
 	'keyframes.prune',
+	// wp-m3-trackui: keyframe simplification (S09:TRK-023)
+	'keyframes.simplify',
 	// wp-clipboard: pasted shape styles and keyframes
 	'clip.pasteAttributes',
 	'clip.removeAttributes',

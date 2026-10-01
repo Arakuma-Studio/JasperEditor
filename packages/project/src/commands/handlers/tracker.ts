@@ -2,6 +2,7 @@
 // Trackers live on the plate (video) clip in media pixels and content time; `apply` bakes them into ordinary
 // keyframes of the target (a `jasper.corner-pin` effect or Motion), so manual correction = keyframe editing.
 import type { Draft } from 'immer';
+import type { SimplifyReport } from '../../animation/simplify-doc.ts';
 import { EASE_PRESETS } from '../../keyframes.ts';
 import { intrinsicBoxOf } from '../../registry/properties.ts';
 import { isConvexQuad, type Quad } from '../../render/homography.ts';
@@ -27,6 +28,8 @@ import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { effectHandlers } from './effect.ts';
+import { clipAnimatables } from './keyframe.ts';
+import { simplifyLocations, trackedLocations } from './simplify.ts';
 import type { HandlerMap } from './util.ts';
 
 type DTracker = Draft<ClipTracker>;
@@ -320,12 +323,41 @@ export const trackerHandlers: HandlerMap = {
 			mode: cmd.mode,
 			...(effectInstanceId ? { effectInstanceId } : {}),
 		};
+		// wp-m3-trackui (S09:TRK-023): optional simplification of the keys just baked (only those inside the range).
+		let simplified: SimplifyReport | undefined;
+		if (cmd.simplify) {
+			// Only the parameters this apply wrote (transform mode may drive a subset of Motion).
+			const wrote = new Set<string>();
+			if (result.mode === 'transform') {
+				const k = result.keys;
+				if (k.some((x) => x.position)) wrote.add('transform.position');
+				if (k.some((x) => x.scale !== undefined)) wrote.add('transform.scale').add('transform.scaleWidth');
+				if (k.some((x) => x.rotation !== undefined)) wrote.add('transform.rotation');
+			}
+			const written = trackedLocations(clipAnimatables(seq, target), target)
+				.filter((loc) => result.mode === 'corner-pin' || wrote.has(loc.path.slice(2).join('.')))
+				.map((loc) => ({
+					loc,
+					selected: new Set(loc.anim.keyframes.filter((k) => k.time >= t0 && k.time <= t1).map((k) => k.id)),
+				}));
+			simplified = simplifyLocations(doc, written, cmd.simplify.tolerance, h);
+		}
 		return {
 			targetClipId: target.id,
 			mode: cmd.mode,
 			frames: result.keys.length,
 			range,
 			...(effectInstanceId ? { effectInstanceId } : {}),
+			...(simplified
+				? {
+						simplified: {
+							before: simplified.before,
+							after: simplified.after,
+							maxError: simplified.maxError,
+							tolerance: simplified.tolerance,
+						},
+					}
+				: {}),
 		};
 	},
 };

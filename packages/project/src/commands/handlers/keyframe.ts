@@ -31,7 +31,7 @@ function isAnim(v: unknown): v is DAnim {
 }
 
 /** One animatable parameter somewhere in the document. */
-type AnimLocation = {
+export type AnimLocation = {
 	anim: DAnim;
 	/** ParamPath addressing it (S01:CMD-010). */
 	path: ParamPath;
@@ -41,7 +41,7 @@ type AnimLocation = {
 };
 
 /** Every animatable parameter of one clip: intrinsic properties and applied effect params. */
-function clipAnimatables(seq: DSeq, clip: DClip): AnimLocation[] {
+export function clipAnimatables(seq: DSeq, clip: DClip): AnimLocation[] {
 	const out: AnimLocation[] = [];
 	if (isKnownClipKind(clip.kind)) {
 		for (const s of PROPERTY_SPECS) {
@@ -85,7 +85,7 @@ function trackAnimatables(seq: DSeq, t: Draft<Track>): AnimLocation[] {
 }
 
 /** Every animatable parameter of the document (clips, tracks, master). */
-function allAnimatables(doc: DDoc): AnimLocation[] {
+export function allAnimatables(doc: DDoc): AnimLocation[] {
 	const out: AnimLocation[] = [];
 	for (const seq of Object.values(doc.sequences)) {
 		for (const clip of Object.values(seq.clips)) out.push(...clipAnimatables(seq, clip));
@@ -99,10 +99,10 @@ function allAnimatables(doc: DDoc): AnimLocation[] {
 	return out;
 }
 
-type Located = AnimLocation & { key: DKey };
+export type Located = AnimLocation & { key: DKey };
 
 /** Finds keyframes by id; fails with E_NOT_FOUND for any missing id. */
-function locate(doc: DDoc, ids: readonly string[], h: HandlerContext): Located[] {
+export function locate(doc: DDoc, ids: readonly string[], h: HandlerContext): Located[] {
 	const want = new Set(ids);
 	const found = new Map<string, Located>();
 	for (const loc of allAnimatables(doc)) {
@@ -114,7 +114,7 @@ function locate(doc: DDoc, ids: readonly string[], h: HandlerContext): Located[]
 }
 
 /** Target resolution (validation rule, lock check) for a located parameter. */
-function targetOf(doc: DDoc, loc: AnimLocation, h: HandlerContext): Extract<Target, { type: 'anim' }> {
+export function targetOf(doc: DDoc, loc: AnimLocation, h: HandlerContext): Extract<Target, { type: 'anim' }> {
 	const t = resolveTarget(doc, { target: [...loc.path], sequenceId: loc.seq.id }, h);
 	if (t.type !== 'anim') return h.fail('E_INVALID_PARAM', `${t.label} is not animatable`);
 	return t;
@@ -174,7 +174,7 @@ function matchContinuous(anim: DAnim, i: number, edited: 'in' | 'out'): void {
 	}
 }
 
-function finish(anims: Iterable<DAnim>): void {
+export function finish(anims: Iterable<DAnim>): void {
 	for (const a of anims) {
 		a.keyframes.sort((x, y) => x.time - y.time);
 		refreshAutoBezier(a);

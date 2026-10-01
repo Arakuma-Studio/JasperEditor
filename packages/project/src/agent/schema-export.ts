@@ -17,7 +17,13 @@ export type AgentSchema = {
 	transaction: JsonSchema;
 	commands: Record<
 		CommandType,
-		{ label: string; owner: CommandOwner; milestone: 'M1' | 'M2'; implemented: boolean; schema: JsonSchema }
+		{
+			label: string;
+			owner: CommandOwner;
+			milestone: 'M1' | 'M2' | 'M3';
+			implemented: boolean;
+			schema: JsonSchema;
+		}
 	>;
 	effects: {
 		id: string;
