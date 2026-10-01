@@ -25,13 +25,16 @@ type WorkerReply =
 /** Worker entry point (evaluated from its source text: parameters and globals only). */
 export function workerMain(
 	threads: any,
+	/** The worker's CommonJS `require`, passed in from the source string: a literal `require(...)` here would be
+	 * rewritten by esbuild's ESM bundling into its `__require` shim, which does not exist inside the worker. */
+	load: (id: string) => any,
 	cvPath: string,
 	G: typeof Geometry,
 	makePlanar: typeof createPlanarTracker,
 	makePoint: typeof createPointTracker,
 ): void {
 	const port = threads.parentPort;
-	const cvModule: any = require(cvPath);
+	const cvModule: any = load(cvPath);
 	let cv: any = null;
 	let tracker: ReturnType<typeof makePlanar> | null = null;
 	const pending: WorkerRequest[] = [];
@@ -98,7 +101,7 @@ function workerSource(): string {
 		createPointTracker.toString(),
 		workerMain.toString(),
 		`const G = { ${geo.map(([k, f]) => `${k}: ${f.name}`).join(', ')} };`,
-		`${workerMain.name}(require('node:worker_threads'), ${JSON.stringify(openCvPath())}, G, ${createPlanarTracker.name}, ${createPointTracker.name});`,
+		`${workerMain.name}(require('node:worker_threads'), require, ${JSON.stringify(openCvPath())}, G, ${createPlanarTracker.name}, ${createPointTracker.name});`,
 	].join('\n');
 	return cachedSource;
 }
