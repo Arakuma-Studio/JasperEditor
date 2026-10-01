@@ -14,7 +14,12 @@ import { ProxyPendingCard, VideoLayer } from './VideoLayer.tsx';
 export { AudioLayer, type AudioLayerProps } from './AudioLayer.tsx';
 export { compositionFrameOf, compositionFramesAt, hasPixelEffects } from './CompositionLayer.tsx';
 export { LayerBox } from './LayerBox.tsx';
-export { type MgRenderState, MgRenderStateContext } from './MotionGraphicLayer.tsx';
+export {
+	type MgRenderState,
+	MgRenderStateContext,
+	MgTemplatePreview,
+	type MgTemplatePreviewProps,
+} from './MotionGraphicLayer.tsx';
 export { OFFLINE_CARD_COLORS } from './OfflineCard.tsx';
 export { textBlockStyle, textFontFamily } from './TextLayer.tsx';
 export {

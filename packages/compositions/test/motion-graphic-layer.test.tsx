@@ -57,7 +57,8 @@ describe('MotionGraphicLayer', () => {
 		const props = mgLayer(60)();
 		const { container } = render(<MotionGraphicLayer {...props} />);
 		const root = container.querySelector('[data-kind="motion-graphic"]') as HTMLElement;
-		expect(root.dataset.mgTemplate).toBe('lower-third@1');
+		// S11:FIX-001: the box is LayerBox; the template attributes sit on its content.
+		expect(root.querySelector<HTMLElement>('[data-mg-template]')?.dataset.mgTemplate).toBe('lower-third@1');
 		expect(root.style.width).toBe('1920px');
 		expect(root.style.transformOrigin).toBe('0 0');
 		const svg = container.querySelector('svg')!;
@@ -95,7 +96,7 @@ describe('MotionGraphicLayer', () => {
 			},
 		};
 		const { container } = render(<MotionGraphicLayer {...props} clip={clip} />);
-		expect(container.textContent).toContain('Unknown motion template gone@3');
+		expect(container.textContent).toContain('Template gone@3 is not installed');
 		expect(container.querySelector('svg')).toBeNull();
 	});
 });

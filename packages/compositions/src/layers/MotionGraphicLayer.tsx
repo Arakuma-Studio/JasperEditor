@@ -1,14 +1,33 @@
-// Motion-graphic (fframes) layer (ARCHITECTURE §8, D-12; S03:KND-060…062). M2: anime templates
-// (`renderer: 'anime'`, S11:ATP-005) draw a placeholder card until wp-m2-anime-templates mounts their
-// `@jasper/motion/templates` implementation here.
-// Renders the template's TypeScript SVG twin for the clip-local frame at the template canvas size;
-// the standard layer matrix (S03:DM-012), opacity and blend mode place it like any other layer. The
-// exported master comes from the `jasper-mg` binary; the twin mirrors its markup.
-// Inline styles only (ARCHITECTURE D-14).
-import { type AnyMgTemplate, isSvgTemplate, mgRegistry } from '@jasper/mg-templates';
-import { FLICKS_PER_SECOND, matrixToCss } from '@jasper/project';
-import { type CSSProperties, createContext, useContext, useMemo } from 'react';
+// Motion-graphic layer (ARCHITECTURE §8, D-12, D-31; S03:KND-060…062; S11:ATP-004/005/006, FIX-001).
+// Dispatches on the template's renderer (the registry definition when the template is installed; the clip's
+// stamp otherwise):
+// - fframes: the template's TypeScript SVG twin for the clip-local frame at the template canvas size (the exported
+//   master comes from `jasper-mg`; the twin mirrors its markup, unchanged by M2);
+// - anime (M2): the `@jasper/motion/templates` implementation, mounted with responsive-time props (intro anchored
+//   at content 0, outro at the content end) and its keyframed params evaluated for this frame;
+// - not installed: a placeholder card (exports refuse such clips, S11:ATP-010).
+// Both renderers draw through LayerBox (FIX-001): Motion, corner pin (projective), opacity, every blend mode
+// (incl. `add`) and the CSS/SVG effect stages apply like on any other layer. Inline styles only (D-14).
+import {
+	type AnyMgTemplate,
+	animeTemplateTiming,
+	isAnimeTemplate,
+	isSvgTemplate,
+	mgRegistry,
+} from '@jasper/mg-templates';
+import { hash32 } from '@jasper/motion';
+import { ANIME_TEMPLATE_IMPLS } from '@jasper/motion/templates';
+import {
+	evaluateTemplateParams,
+	FLICKS_PER_SECOND,
+	type Keyframe,
+	type RenderVisualClip,
+} from '@jasper/project';
+import { type CSSProperties, createContext, type ReactNode, useContext, useMemo } from 'react';
+import { AbsoluteFill, useCurrentFrame, useVideoConfig } from 'remotion';
+import { FontsReadyContext } from '../fonts.ts';
 import type { LayerProps } from '../types.ts';
+import { LayerBox } from './LayerBox.tsx';
 
 /** Engine render state of a motion-graphic clip (S03:KND-060 badge: none | rendering n% | ready). */
 export type MgRenderState =
@@ -24,6 +43,8 @@ export type MgRenderState =
 export const MgRenderStateContext = createContext<(clipId: string) => MgRenderState | undefined>(
 	() => undefined,
 );
+
+type MgSource = Extract<RenderVisualClip['source'], { mg: unknown }>['mg'];
 
 function resolveParams(def: AnyMgTemplate, params: Record<string, unknown>): Record<string, unknown> {
 	const parsed = def.paramsSchema.safeParse(params);
@@ -70,74 +91,241 @@ function RenderBadge({ state, height }: { state: MgRenderState | undefined; heig
 	);
 }
 
+/** Card drawn for templates that are not installed (or anime templates without an implementation). */
+function PlaceholderCard({ text, height }: { text: string; height: number }) {
+	return (
+		<div
+			data-mg-placeholder=""
+			style={{
+				position: 'absolute',
+				inset: 0,
+				display: 'flex',
+				alignItems: 'center',
+				justifyContent: 'center',
+				background: 'rgba(98, 0, 183, 0.35)',
+				outline: '2px dashed rgba(255,255,255,0.6)',
+				outlineOffset: -2,
+				color: 'white',
+				fontFamily: 'sans-serif',
+				fontSize: Math.max(12, height / 20),
+			}}
+		>
+			{text}
+		</div>
+	);
+}
+
+/** The fframes twin's markup for a frame (null when the definition is not an SVG template). */
+function twinMarkup(
+	def: AnyMgTemplate,
+	params: Record<string, unknown>,
+	o: {
+		frame: number;
+		fps: number;
+		canvas: { width: number; height: number };
+		durationFrames: number;
+		sourceInFrames: number;
+		idPrefix: string;
+	},
+): string | null {
+	if (!isSvgTemplate(def)) return null;
+	return def.renderSvg(params, o.frame, o.fps, o.canvas, {
+		durationFrames: o.durationFrames,
+		sourceInFrames: o.sourceInFrames,
+		idPrefix: o.idPrefix,
+	});
+}
+
+function SvgTwin({ markup }: { markup: string }) {
+	return (
+		<div
+			style={{ position: 'absolute', inset: 0, lineHeight: 0 }}
+			// Markup is produced by our own twin; params are XML-escaped there (core.ts escapeXml).
+			// biome-ignore lint/security/noDangerouslySetInnerHtml: trusted, escaped template output
+			dangerouslySetInnerHTML={{ __html: markup }}
+		/>
+	);
+}
+
+/**
+ * An anime template for one frame: keyframed params evaluated at `contentTime` (shared evaluator, S11:ATP-006),
+ * schema-resolved, responsive time from the clip (S11:ATP-004), seed `hash32(clipId, 'template')`. Rendered only
+ * once the document's font faces have settled (S11:FIX-003; renders wait through `delayRender` anyway).
+ */
+function AnimeTemplate(p: {
+	def: AnyMgTemplate;
+	mg: Pick<MgSource, 'template' | 'params' | 'canvas'> & {
+		paramKeyframes?: Record<string, Keyframe<unknown>[]>;
+	};
+	clipId: string;
+	localFrame: number;
+	contentTime: number;
+	durationFrames: number;
+	sourceInFrames: number;
+	fps: number;
+	isPreview: boolean;
+}) {
+	const fontsReady = useContext(FontsReadyContext).allLoaded;
+	const key = `${p.def.id}@${p.def.version}`;
+	const Impl = ANIME_TEMPLATE_IMPLS[key];
+	const info = useMemo(() => mgRegistry.get(p.def.id, p.def.version), [p.def]);
+	const evaluated = evaluateTemplateParams(info, p.mg.params, p.mg.paramKeyframes, p.contentTime);
+	const params = useMemo(() => resolveParams(p.def, evaluated), [p.def, evaluated]);
+	if (!Impl)
+		return (
+			<PlaceholderCard text={`Anime template ${key} has no implementation`} height={p.mg.canvas.height} />
+		);
+	if (!fontsReady) return null;
+	const t = animeTemplateTiming(p.def, {
+		fps: p.fps,
+		localFrame: p.localFrame,
+		durationFrames: p.durationFrames,
+		sourceInFrames: p.sourceInFrames,
+	});
+	return (
+		<Impl
+			params={params}
+			timeMs={t.timeMs}
+			totalMs={t.totalMs}
+			introMs={t.introMs}
+			outroMs={t.outroMs}
+			fps={p.fps}
+			canvas={p.mg.canvas}
+			seed={hash32(p.clipId, 'template')}
+			isPreview={p.isPreview}
+		/>
+	);
+}
+
 export function MotionGraphicLayer(layer: LayerProps) {
 	const { clip, props, localFrame, fps, options } = layer;
 	const mg = 'mg' in clip.source ? clip.source.mg : null;
 	const def = mg ? mgRegistry.getDefinition(mg.template.id, mg.template.version) : undefined;
-	const params = useMemo(() => (def && mg ? resolveParams(def, mg.params) : null), [def, mg]);
+	const svgParams = useMemo(
+		() => (def && mg && isSvgTemplate(def) ? resolveParams(def, mg.params) : null),
+		[def, mg],
+	);
 	const renderState = useContext(MgRenderStateContext)(clip.clipId);
 	const sourceInFrames = Math.max(0, Math.round((clip.sourceIn * fps) / FLICKS_PER_SECOND));
-	const svg =
-		def && isSvgTemplate(def) && mg && params
-			? def.renderSvg(params, localFrame, fps, mg.canvas, {
-					durationFrames: clip.duration,
-					sourceInFrames,
-					idPrefix: `mg-${clip.clipId}`,
-				})
-			: null;
-	const box: CSSProperties = {
-		position: 'absolute',
-		left: 0,
-		top: 0,
-		width: props.box.width,
-		height: props.box.height,
-		transformOrigin: '0 0',
-		transform: matrixToCss(props.matrix),
-		opacity: props.opacity / 100,
-		mixBlendMode: clip.blendMode === 'normal' ? undefined : (clip.blendMode as CSSProperties['mixBlendMode']),
-		overflow: 'hidden',
-	};
+	// The registry decides when the template is installed; the stamp only for unknown templates (S11:ATP-002).
+	const renderer = def ? (isAnimeTemplate(def) ? 'anime' : 'fframes') : (mg?.renderer ?? 'fframes');
+	let content: ReactNode;
+	if (!mg) content = <PlaceholderCard text="Motion graphic" height={props.box.height} />;
+	else if (!def)
+		content = (
+			<PlaceholderCard
+				text={`Template ${mg.template.id}@${mg.template.version} is not installed`}
+				height={props.box.height}
+			/>
+		);
+	else if (isAnimeTemplate(def))
+		content = (
+			<AnimeTemplate
+				def={def}
+				mg={mg}
+				clipId={clip.clipId}
+				localFrame={localFrame}
+				contentTime={layer.contentTime}
+				durationFrames={clip.duration}
+				sourceInFrames={sourceInFrames}
+				fps={fps}
+				isPreview={options.isPreview}
+			/>
+		);
+	else {
+		const markup = twinMarkup(def, svgParams ?? def.defaults, {
+			frame: localFrame,
+			fps,
+			canvas: mg.canvas,
+			durationFrames: clip.duration,
+			sourceInFrames,
+			idPrefix: `mg-${clip.clipId}`,
+		});
+		content = markup ? <SvgTwin markup={markup} /> : null;
+	}
+	const showBadge = options.isPreview && !!mg && !!def && renderer === 'fframes';
 	return (
-		<div
-			data-clip-id={clip.clipId}
-			data-kind={clip.kind}
-			data-mg-template={mg ? `${mg.template.id}@${mg.template.version}` : undefined}
-			data-mg-renderer={mg?.renderer ?? 'fframes'}
-			style={box}
+		<LayerBox
+			layer={layer}
+			overlay={showBadge ? <RenderBadge state={renderState} height={props.box.height} /> : undefined}
 		>
-			{svg ? (
-				<div
-					style={{ position: 'absolute', inset: 0, lineHeight: 0 }}
-					// Markup is produced by our own twin; params are XML-escaped there (core.ts escapeXml).
-					// biome-ignore lint/security/noDangerouslySetInnerHtml: trusted, escaped template output
-					dangerouslySetInnerHTML={{ __html: svg }}
-				/>
-			) : (
-				<div
-					style={{
-						position: 'absolute',
-						inset: 0,
-						display: 'flex',
-						alignItems: 'center',
-						justifyContent: 'center',
-						background: 'rgba(98, 0, 183, 0.35)',
-						outline: '2px dashed rgba(255,255,255,0.6)',
-						outlineOffset: -2,
-						color: 'white',
-						fontFamily: 'sans-serif',
-						fontSize: Math.max(12, props.box.height / 20),
-					}}
-				>
-					{mg
-						? mg.renderer === 'anime'
-							? `Anime template ${mg.template.id}@${mg.template.version}`
-							: `Unknown motion template ${mg.template.id}@${mg.template.version}`
-						: 'Motion graphic'}
-				</div>
-			)}
-			{options.isPreview && mg?.renderer !== 'anime' ? (
-				<RenderBadge state={renderState} height={props.box.height} />
-			) : null}
-		</div>
+			<div
+				data-mg-template={mg ? `${mg.template.id}@${mg.template.version}` : undefined}
+				data-mg-renderer={renderer}
+				data-mg-installed={def ? 'true' : 'false'}
+				style={FILL}
+			>
+				{content}
+			</div>
+		</LayerBox>
+	);
+}
+
+const FILL: CSSProperties = { position: 'absolute', inset: 0 };
+
+/** Props of `MgTemplatePreview` (gallery posters and hover previews, S11:ATP-007). */
+export type MgTemplatePreviewProps = {
+	templateId: string;
+	version: number;
+	/** Params over the template defaults (default: the defaults). */
+	params?: Record<string, unknown>;
+	/** Backdrop behind the template (default: transparent). */
+	background?: string;
+};
+
+/**
+ * A template alone on a canvas of the composition's size, `durationInFrames` long (gallery posters / hover
+ * previews in the Motion Templates panel, through `<Thumbnail>` / `<Player>`). Same drawing code as the layer:
+ * the SVG twin for fframes templates, the `@jasper/motion` implementation for anime templates.
+ */
+export function MgTemplatePreview(props: MgTemplatePreviewProps) {
+	const frame = useCurrentFrame();
+	const { fps, width, height, durationInFrames } = useVideoConfig();
+	const def = mgRegistry.getDefinition(props.templateId, props.version);
+	const canvas = { width, height };
+	const params = useMemo(
+		() => (def ? resolveParams(def, { ...def.defaults, ...(props.params ?? {}) }) : null),
+		[def, props.params],
+	);
+	let content: ReactNode = null;
+	if (!def || !params)
+		content = (
+			<PlaceholderCard
+				text={`Template ${props.templateId}@${props.version} is not installed`}
+				height={height}
+			/>
+		);
+	else if (isAnimeTemplate(def))
+		content = (
+			<AnimeTemplate
+				def={def}
+				mg={{ template: { id: def.id, version: def.version }, params, canvas }}
+				clipId={`preview:${def.id}@${def.version}`}
+				localFrame={frame}
+				contentTime={Math.round((frame * FLICKS_PER_SECOND) / fps)}
+				durationFrames={durationInFrames}
+				sourceInFrames={0}
+				fps={fps}
+				isPreview
+			/>
+		);
+	else {
+		const markup = twinMarkup(def, params, {
+			frame,
+			fps,
+			canvas,
+			durationFrames: durationInFrames,
+			sourceInFrames: 0,
+			idPrefix: `mgp-${def.id}-${def.version}`,
+		});
+		content = markup ? <SvgTwin markup={markup} /> : null;
+	}
+	return (
+		<AbsoluteFill
+			style={{ background: props.background ?? 'transparent' }}
+			data-mg-preview-template={props.templateId}
+		>
+			{content}
+		</AbsoluteFill>
 	);
 }
