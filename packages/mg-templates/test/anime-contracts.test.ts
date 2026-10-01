@@ -61,9 +61,16 @@ describe('template definitions (ARCHITECTURE §20.3)', () => {
 	it('validates anime defaults like fframes ones', () => {
 		expect(() => createMgRegistry([{ ...reveal, defaults: { title: 3 } as never }])).toThrow(/Defaults/);
 	});
-	it('the shipped registry only lists fframes templates in the jasper-mg schema files', () => {
+	it('the shipped registry marks anime entries; the jasper-mg schema files list fframes templates only', () => {
 		const json = mgRegistry.catalogJson();
-		expect(json.every((t) => t.renderer === undefined)).toBe(true);
+		// wp-m2-anime-templates added the anime catalogue (S11:ATP-003); fframes entries stay unmarked.
+		expect(json.filter((t) => t.renderer === undefined).map((t) => t.id)).toEqual([
+			'lower-third',
+			'title-card',
+		]);
+		expect(json.filter((t) => t.renderer === 'anime').length).toBeGreaterThan(0);
+		const files = readdirSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'schemas'));
+		expect(files.sort()).toEqual(['catalog.json', 'lower-third@1.json', 'title-card@1.json']);
 	});
 	it('never imports animejs (ARCHITECTURE §3.1, S11:ANM-022)', () => {
 		const root = join(dirname(fileURLToPath(import.meta.url)), '..', 'src');

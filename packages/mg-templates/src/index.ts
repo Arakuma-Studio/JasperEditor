@@ -6,6 +6,7 @@ export * from './catalog.ts';
 export * from './core.ts';
 export * from './registry.ts';
 export * from './spec.ts';
+export * from './templates/anime/index.ts';
 export * from './templates/lower-third.ts';
 export * from './templates/title-card.ts';
 export * from './types.ts';

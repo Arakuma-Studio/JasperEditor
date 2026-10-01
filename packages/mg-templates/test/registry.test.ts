@@ -24,9 +24,23 @@ const sample: MgTemplateDefinition<z.infer<typeof params>> = {
 };
 
 describe('@jasper/mg-templates', () => {
-	it('ships lower-third@1 and title-card@1', () => {
-		expect(MG_CATALOG.map((d) => `${d.id}@${d.version}`)).toEqual(['lower-third@1', 'title-card@1']);
-		expect(mgRegistry.list().map((t) => t.name)).toEqual(['Lower Third', 'Title Card']);
+	it('ships lower-third@1 and title-card@1, then the anime templates (S11:ATP-003)', () => {
+		expect(MG_CATALOG.map((d) => `${d.id}@${d.version}`)).toEqual([
+			'lower-third@1',
+			'title-card@1',
+			'title-reveal@1',
+			'lower-third-anim@1',
+			'callout@1',
+			'counter@1',
+		]);
+		expect(mgRegistry.list().map((t) => t.name)).toEqual([
+			'Lower Third',
+			'Title Card',
+			'Title Reveal',
+			'Lower Third (Animated)',
+			'Callout',
+			'Counter',
+		]);
 		expect(mgRegistry.get('lower-third', 1)?.introFrames).toBe(30);
 	});
 	it('implements the project MgTemplateRegistry and validates params through it', () => {
