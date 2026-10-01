@@ -157,6 +157,7 @@ export function stepsFromForm(f: ProcessForm): ProcessStep[] {
 	if (f.deblock.on) steps.push({ op: 'deblock', filter: f.deblock.filter });
 	if (f.denoise.on)
 		steps.push({ op: 'denoise', method: f.denoise.method, strength: DENOISE_PRESETS[f.denoise.preset] });
+	if (f.dejudder.on) steps.push({ op: 'dejudder', mode: f.dejudder.mode });
 	if (f.stabilize.on)
 		steps.push({
 			op: 'stabilize',
@@ -165,7 +166,6 @@ export function stepsFromForm(f: ProcessForm): ProcessStep[] {
 			borders: f.stabilize.borders,
 			rotation: f.stabilize.rotation,
 		});
-	if (f.dejudder.on) steps.push({ op: 'dejudder', mode: f.dejudder.mode });
 	if (f.upscale.on && f.upscale.model) {
 		const u: Extract<ProcessStep, { op: 'upscale' }> = {
 			op: 'upscale',

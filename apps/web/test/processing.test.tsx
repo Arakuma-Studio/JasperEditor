@@ -255,7 +255,8 @@ describe('processing model helpers', () => {
 		const steps = stepsFromForm(f);
 		expect(steps.map((s) => s.op)).toEqual(['deblock', 'denoise', 'dejudder', 'stabilize', 'upscale']);
 		expect(steps[1]).toEqual({ op: 'denoise', method: 'atadenoise', strength: 0.25 });
-		expect(steps[2]).toEqual({
+		expect(steps[2]).toEqual({ op: 'dejudder', mode: 'auto' });
+		expect(steps[3]).toEqual({
 			op: 'stabilize',
 			method: 'auto',
 			smoothing: 15,
@@ -269,7 +270,7 @@ describe('processing model helpers', () => {
 			size: { width: 1920, height: 1080 },
 			mix: 0.25,
 		});
-		expect(recipeLabel(steps)).toBe('Deblocked · Denoised · Stabilized · De-juddered · Upscaled 2×');
+		expect(recipeLabel(steps)).toBe('Deblocked · Denoised · De-juddered · Stabilized · Upscaled 2×');
 	});
 
 	it('estimates more time for slower steps and less on a GPU', () => {
