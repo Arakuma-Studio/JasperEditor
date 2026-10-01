@@ -1,4 +1,6 @@
-// Motion-graphic (fframes) layer (ARCHITECTURE §8, D-12; S03:KND-060…062).
+// Motion-graphic (fframes) layer (ARCHITECTURE §8, D-12; S03:KND-060…062). M2: anime templates
+// (`renderer: 'anime'`, S11:ATP-005) draw a placeholder card until wp-m2-anime-templates mounts their
+// `@jasper/motion/templates` implementation here.
 // Renders the template's TypeScript SVG twin for the clip-local frame at the template canvas size;
 // the standard layer matrix (S03:DM-012), opacity and blend mode place it like any other layer. The
 // exported master comes from the `jasper-mg` binary; the twin mirrors its markup.
@@ -100,6 +102,7 @@ export function MotionGraphicLayer(layer: LayerProps) {
 			data-clip-id={clip.clipId}
 			data-kind={clip.kind}
 			data-mg-template={mg ? `${mg.template.id}@${mg.template.version}` : undefined}
+			data-mg-renderer={mg?.renderer ?? 'fframes'}
 			style={box}
 		>
 			{svg ? (
@@ -125,10 +128,16 @@ export function MotionGraphicLayer(layer: LayerProps) {
 						fontSize: Math.max(12, props.box.height / 20),
 					}}
 				>
-					{mg ? `Unknown motion template ${mg.template.id}@${mg.template.version}` : 'Motion graphic'}
+					{mg
+						? mg.renderer === 'anime'
+							? `Anime template ${mg.template.id}@${mg.template.version}`
+							: `Unknown motion template ${mg.template.id}@${mg.template.version}`
+						: 'Motion graphic'}
 				</div>
 			)}
-			{options.isPreview ? <RenderBadge state={renderState} height={props.box.height} /> : null}
+			{options.isPreview && mg?.renderer !== 'anime' ? (
+				<RenderBadge state={renderState} height={props.box.height} />
+			) : null}
 		</div>
 	);
 }

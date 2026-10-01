@@ -297,10 +297,16 @@ importers:
       '@jasper/mg-templates':
         specifier: workspace:*
         version: link:../mg-templates
+      '@jasper/motion':
+        specifier: workspace:*
+        version: link:../motion
       '@jasper/project':
         specifier: workspace:*
         version: link:../project
       '@remotion/media':
+        specifier: 4.0.499
+        version: 4.0.499(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@remotion/shapes':
         specifier: 4.0.499
         version: 4.0.499(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       remotion:
@@ -2016,6 +2022,9 @@ packages:
       react: '>=16.8.0'
       react-dom: '>=16.8.0'
 
+  '@remotion/paths@4.0.499':
+    resolution: {integrity: sha512-RVUzWEEJZui00REAeSDRHeAvtkRbtseR0K1lE08wzAilsIiMr0IYhpFS9I2wsQdC58NG+1d+sD58gzG7KDCZvQ==}
+
   '@remotion/player@4.0.499':
     resolution: {integrity: sha512-3qEjNUj0KamSgWLXDhXnHdVMIx0EBsdr7XM5+QGldj1EiZH54vXVKJsWJj6SYfPbaskfEWI0wjKGGh0ml3vJrw==}
     peerDependencies:
@@ -2024,6 +2033,12 @@ packages:
 
   '@remotion/renderer@4.0.499':
     resolution: {integrity: sha512-KqzYTBIYVWuqKd5tfYaBq9CWKRYZJq6/PL5++/20dQaTSHQQEMTpyyGrOs0RsyCiy8Ofr8eYB765mIeIxulS4Q==}
+    peerDependencies:
+      react: '>=16.8.0'
+      react-dom: '>=16.8.0'
+
+  '@remotion/shapes@4.0.499':
+    resolution: {integrity: sha512-BiPPosvImIyzmWU7a0+9Xg00MIHrGwRO4NvYf/KKQEeLJVzTbKrZeVnhLRla9ihsF2cyz/k2Vf/Fgpnpadmpew==}
     peerDependencies:
       react: '>=16.8.0'
       react-dom: '>=16.8.0'
@@ -5881,6 +5896,8 @@ snapshots:
       remotion: 4.0.499(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       zod: 4.4.3
 
+  '@remotion/paths@4.0.499': {}
+
   '@remotion/player@4.0.499(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
       react: 19.3.0
@@ -5908,6 +5925,13 @@ snapshots:
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
+
+  '@remotion/shapes@4.0.499(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+    dependencies:
+      '@remotion/paths': 4.0.499
+      react: 19.3.0
+      react-dom: 19.3.0(react@19.3.0)
+      remotion: 4.0.499(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
 
   '@remotion/streaming@4.0.499': {}
 
