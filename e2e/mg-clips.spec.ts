@@ -59,7 +59,7 @@ test('renderer-page protocol contract (Remotion 4.0.499) drives the fixture bund
 	const imported = await request.post('/api/mg-bundles/import', { data: { path: FIXTURE_PROJECT } });
 	expect(imported.status(), await imported.text()).toBe(200);
 	const reg = (await imported.json()) as { mediaKey: string; mgBundle: { compositions: { id: string }[] } };
-	expect(reg.mgBundle.compositions.map((c) => c.id).sort()).toEqual(['Badge', 'Title']);
+	expect(reg.mgBundle.compositions.map((c) => c.id).sort()).toEqual(['Badge', 'LowerThird', 'Title']);
 
 	const probe = await browser.newPage(); // own context: the shared page's context refuses newPage()
 	await probe.goto('/health');
@@ -260,7 +260,7 @@ test('MCP: import_mg_bundle → add_composition → set_composition_props → re
 			mediaId: string;
 			compositions: { id: string; props: Record<string, unknown> }[];
 		}>('import_mg_bundle', { projectId, path: FIXTURE_PROJECT });
-		expect(imp.body.compositions.map((c) => c.id).sort()).toEqual(['Badge', 'Title']);
+		expect(imp.body.compositions.map((c) => c.id).sort()).toEqual(['Badge', 'LowerThird', 'Title']);
 		expect(imp.body.compositions.find((c) => c.id === 'Title')!.props.title).toMatchObject({
 			type: 'string',
 		});

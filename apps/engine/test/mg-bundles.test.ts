@@ -22,9 +22,12 @@ import { injectHostBootstrap, MG_HOST_QUERY } from '@jasper/compositions/mg-host
 import {
 	buildRenderSnapshot,
 	type CompositionClip,
+	compositionTextLayers,
 	EMPTY_PROBE,
 	MG_REMOTION_VERSION,
 	type MgBundleInfo,
+	mergeProps,
+	overridesWithEdits,
 	type RenderSnapshot,
 } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -362,6 +365,17 @@ describe('props schemas (S08:MGC-011)', () => {
 			category: 'Shots',
 			ui: { bg: { control: 'color' } },
 		});
+		// wp-m3-mgtext (S08:MGC-036): `texts` declarations merge entry by entry ("*" + the id's own).
+		const texts = buildCompositionInfos(raw.slice(1, 2), {
+			manifest: {
+				compositions: {
+					'*': { texts: { t: { label: 'Headline', maxChars: 30 }, other: false } },
+					B: { texts: { t: { label: 'Copy', maxLines: 2 } } },
+				},
+			},
+			moduleSchemas: {},
+		});
+		expect(texts[0]!.texts).toEqual({ t: { label: 'Copy', maxLines: 2 }, other: false });
 	});
 });
 
@@ -945,7 +959,7 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 		// Same content → same content address and key; source says it was uploaded.
 		expect(z.mediaKey).toBe(title.mediaKey);
 		expect(z.mgBundle?.source).toMatchObject({ type: 'bundle-upload', path: null, name: 'my-bundle' });
-		expect(z.mgBundle?.compositions.map((c) => c.id).sort()).toEqual(['Badge', 'Title']);
+		expect(z.mgBundle?.compositions.map((c) => c.id).sort()).toEqual(['Badge', 'LowerThird', 'Title']);
 		// Re-register the project-dir header for the next tests.
 		title = (
 			await app.inject({
@@ -1002,14 +1016,14 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 		return { plan, done, children, out };
 	}
 
-	/** A direct Remotion still of the Title composition (RGBA, straight alpha). */
-	async function directStill(props: Record<string, unknown>, frame: number): Promise<Buffer> {
+	/** A direct Remotion still of a fixture composition (RGBA, straight alpha); default Title. */
+	async function directStill(props: Record<string, unknown>, frame: number, id = 'Title'): Promise<Buffer> {
 		const r = await import('@remotion/renderer');
 		const dir = svc.bundleDir(title.mediaKey)!;
 		const opts = (svc as unknown as { remotionOptions(): Record<string, unknown> }).remotionOptions();
 		const comp = await r.selectComposition({
 			serveUrl: dir,
-			id: 'Title',
+			id,
 			inputProps: props,
 			logLevel: 'error',
 			...opts,
@@ -1128,6 +1142,76 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 		d.tx([{ type: 'param.set', target: ['clip', clipId, 'props', 'title'], value: 'Changed' }]);
 		const third = await exportDoc(d, { frames: [15, 75] });
 		expect(third.children.filter((j) => j.kind === 'mg-prerender')).toHaveLength(1);
+	}, 1_200_000);
+
+	it('hybrid text layers (S08 §8 test 9): a text + style edit renders a new master; the export is frame-exact with the embedded font', async () => {
+		const lt = title.mgBundle!.compositions.find((c) => c.id === 'LowerThird')!;
+		expect(lt.texts).toMatchObject({ 'name.text': { label: 'Name', maxChars: 24 }, quote: { maxLines: 2 } });
+		const layers = compositionTextLayers(lt);
+		expect(layers.map((l) => l.path.join('.'))).toEqual(['name.text', 'role', 'quote']);
+		const name = layers[0]!;
+		expect(Object.keys(name.style).sort()).toEqual([
+			'align',
+			'color',
+			'fontFamily',
+			'fontSize',
+			'fontWeight',
+		]);
+
+		const d = new DocBuilder('hd-1080p-30');
+		const mediaId = d.addMedia(title);
+		d.tx([
+			{
+				type: 'sequence.updateSettings',
+				sequenceId: d.seqId,
+				settings: { backgroundColor: [0.5, 0.5, 0.5, 1] },
+			},
+		]);
+		const r0 = d.tx([
+			{
+				type: 'clip.addComposition',
+				composition: { mediaId, id: 'LowerThird' },
+				at: 15,
+				track: 'V1',
+				duration: 60,
+			},
+		]);
+		const clipId = (r0.results[0] as { clipId: string }).clipId;
+		const first = await exportDoc(d);
+		expect(first.plan.path).toBe('native');
+		expect(first.children.filter((j) => j.kind === 'mg-prerender')).toHaveLength(1);
+
+		// The edit an editor makes: the text and two of its style props in one override object, one step.
+		const clip = d.doc.sequences[d.seqId]!.clips[clipId] as CompositionClip;
+		const next = overridesWithEdits(lt.defaultProps, clip.props, [
+			{ path: name.path, value: 'Grace Hopper' },
+			{ path: name.style.color!.path, value: '#ffcc00' },
+			{ path: name.style.fontSize!.path, value: 100 },
+			{ path: ['quote'], value: 'It is easier to ask forgiveness\nthan it is to get permission.' },
+		]);
+		d.tx([{ type: 'clip.update', clipId, patch: { props: next } }]);
+		const second = await exportDoc(d);
+		expect(second.children.filter((j) => j.kind === 'mg-prerender')).toHaveLength(1); // new render key
+		const props = mergeProps(lt.defaultProps, next);
+		const share = (got: Uint8Array, exp: Uint8Array) => {
+			let n = 0;
+			for (let i = 0; i < exp.length; i++) if (Math.abs(got[i]! - exp[i]!) <= 3) n++;
+			return n / exp.length;
+		};
+		const grey = [128, 128, 128] as [number, number, number];
+		// Held text: sequence frame 60 = composition frame 45.
+		const held = decode(second.out, { frame: 60, pix: 'rgb24', ffmpeg: ff });
+		expect(share(held, over(await directStill(props, 45, 'LowerThird'), grey))).toBeGreaterThanOrEqual(0.99);
+		// The previous text is gone (the master was re-rendered, not reused).
+		expect(share(held, over(await directStill(lt.defaultProps, 45, 'LowerThird'), grey))).toBeLessThan(0.99);
+		// Frame-exact during the entrance: sequence frame 20 = composition frame 5, not 4 or 6.
+		const moving = decode(second.out, { frame: 20, pix: 'rgb24', ffmpeg: ff });
+		expect(share(moving, over(await directStill(props, 5, 'LowerThird'), grey))).toBeGreaterThanOrEqual(0.99);
+		expect(share(moving, over(await directStill(props, 4, 'LowerThird'), grey))).toBeLessThan(0.99);
+		expect(share(moving, over(await directStill(props, 6, 'LowerThird'), grey))).toBeLessThan(0.99);
+		// The embedded face matters: the same props with a system family render differently.
+		const sans = mergeProps(props, { name: { fontFamily: 'sans-serif' } });
+		expect(share(held, over(await directStill(sans, 45, 'LowerThird'), grey))).toBeLessThan(0.99);
 	}, 1_200_000);
 
 	it('rebuilds a watched project after a source edit: new bundle hash, new master (MGC-013)', async () => {
