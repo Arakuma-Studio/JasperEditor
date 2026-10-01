@@ -272,7 +272,7 @@ test('B (ripple edit tool) trims the tail and ripples later clips; Ctrl-move ins
 test('Graphics ▸ Text adds a text clip; Properties scrub is one undo step; Program overlay move/scale/rotate', async () => {
 	await page.getByTestId('title-bar').getByRole('menuitem', { name: 'Graphics', exact: true }).click();
 	await page.getByRole('menuitem', { name: /New Layer/ }).click();
-	await page.getByRole('menuitem', { name: /^Text/ }).click();
+	await page.getByRole('menuitem', { name: /^Text(?! Animation)/ }).click();
 	await expect.poll(async () => (await clips(page)).filter((c) => c.kind === 'text').length).toBe(1);
 	const text = (await clips(page)).find((c) => c.kind === 'text')!;
 	expect(await selection()).toEqual([text.id]);
