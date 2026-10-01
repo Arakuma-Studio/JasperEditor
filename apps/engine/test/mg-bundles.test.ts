@@ -47,9 +47,9 @@ import { coreServices } from '../src/tools/services.ts';
 import {
 	closeApps,
 	DocBuilder,
-	H,
 	ensureFixtures,
 	fixture,
+	H,
 	JSON_H,
 	makeApp,
 	ROOT,
@@ -309,6 +309,24 @@ describe('props schemas (S08:MGC-011)', () => {
 		expect(infos[1]!.ui).toEqual({ t: { control: 'textarea' } });
 		expect(infos[1]!.thumbnailFrame).toBe(5);
 		expect(infos[2]!.defaultProps).toEqual({ when: '1970-01-01T00:00:00.000Z' });
+		// "*" applies to every composition without its own entry.
+		const wild = buildCompositionInfos(raw.slice(1, 2), {
+			manifest: {
+				compositions: {
+					'*': {
+						propsSchema: { type: 'object', properties: { bg: { type: 'string' } } },
+						ui: { bg: { control: 'color' } },
+						category: 'Shots',
+					},
+				},
+			},
+			moduleSchemas: {},
+		});
+		expect(wild[0]).toMatchObject({
+			schemaSource: 'manifest',
+			category: 'Shots',
+			ui: { bg: { control: 'color' } },
+		});
 	});
 });
 

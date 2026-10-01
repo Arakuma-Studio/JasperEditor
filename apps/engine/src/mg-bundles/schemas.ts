@@ -231,12 +231,26 @@ export function buildCompositionInfos(
 ): MgCompositionInfo[] {
 	return raw.map((c) => {
 		const defaultProps = plain(c.defaultProps);
-		const m = opts.manifest?.compositions?.[c.id];
+		// `"*"` = defaults for every composition (registry-style projects whose shots share runtime props); an
+		// entry for the id wins field by field.
+		const all = opts.manifest?.compositions ?? {};
+		const m = all[c.id] || all['*'] ? { ...(all['*'] ?? {}), ...(all[c.id] ?? {}) } : undefined;
 		const inferred = inferPropsSchema(defaultProps);
 		let propsSchema: Record<string, unknown>;
 		let schemaSource: MgCompositionInfo['schemaSource'];
 		let ui: PropsUiHints;
-		if (m?.propsSchema) {
+		const ownSchema = !!all[c.id]?.propsSchema;
+		if (m?.propsSchema && !ownSchema && !opts.moduleSchemas[c.id]) {
+			// The "*" schema (shared runtime props) plus what the composition's own defaultProps infer.
+			const shared = m.propsSchema as { properties?: Record<string, unknown> };
+			const inferredProps = (inferred.schema.properties ?? {}) as Record<string, unknown>;
+			propsSchema = {
+				...m.propsSchema,
+				properties: { ...inferredProps, ...(shared.properties ?? {}) },
+			};
+			schemaSource = 'manifest';
+			ui = { ...inferred.ui, ...schemaUiHints(propsSchema, defaultProps) };
+		} else if (m?.propsSchema && ownSchema) {
 			propsSchema = m.propsSchema;
 			schemaSource = 'manifest';
 			ui = schemaUiHints(propsSchema, defaultProps);
