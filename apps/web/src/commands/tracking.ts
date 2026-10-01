@@ -7,9 +7,10 @@
 //   tracking.trackFromHere[Backward]       re-track from the (corrected) geometry at the playhead
 //   tracking.stop                          cancel the running job
 //   tracking.apply                         "Apply Tracking…" dialog
+//   keyframes.simplify                     "Simplify Keyframes…" for selected keys / clips (wp-m3-trackui)
 //   tracking.toggleCornerPinHandles        corner-pin handles on the Program monitor
 //   tracking.removeTracker                 remove the active tracker
-import type { TrackMode } from '@jasper/project';
+import type { Clip, TrackMode } from '@jasper/project';
 import { openDialog } from '@jasper/ui';
 import {
 	addTracker,
@@ -21,6 +22,7 @@ import {
 	TRACK_MODE_LABEL,
 } from '../tracking/actions.ts';
 import { registerTrackingUi } from '../tracking/register.ts';
+import { clipHasDenseKeys, openSimplify, openSimplifyClips } from '../tracking/simplify-actions.ts';
 import { trackingStore } from '../tracking/store.ts';
 import { APPLY_DIALOG } from '../tracking/TrackingSection.tsx';
 import type { CommandCtx, UiCommand } from './types.ts';
@@ -28,6 +30,19 @@ import type { CommandCtx, UiCommand } from './types.ts';
 registerTrackingUi();
 
 const writable = (ctx: CommandCtx) => !!ctx.session && !ctx.session.getState().readOnly;
+
+/** Selected keyframes (3+) or the selected clips with keyframes, for Simplify Keyframes…. */
+function simplifyTarget(ctx: CommandCtx): { keyframeIds?: string[]; clips: Clip[] } | null {
+	const s = ctx.session?.getState();
+	if (!s) return null;
+	const keys = s.selection.keyframes?.keyframeIds ?? [];
+	if (keys.length >= 3) return { keyframeIds: [...keys], clips: [] };
+	const seq = s.activeSequenceId ? s.document.sequences[s.activeSequenceId] : undefined;
+	const clips = (s.selection.timeline.clips ?? [])
+		.map((id) => seq?.clips[id])
+		.filter((c): c is Clip => !!c && clipHasDenseKeys(c));
+	return clips.length ? { clips } : null;
+}
 const current = (ctx: CommandCtx) => (ctx.session ? currentTracker(ctx.session) : null);
 const isRunning = (ctx: CommandCtx) => {
 	const c = current(ctx);
@@ -134,6 +149,26 @@ export const trackingCommands: UiCommand[] = [
 		run(ctx) {
 			const c = current(ctx);
 			if (c) removeTracker(ctx.session!, c.tracker.id);
+		},
+	},
+	{
+		id: 'keyframes.simplify',
+		label: 'Simplify Keyframes…',
+		description:
+			'Reduces the keyframes of the selected keyframes or clips to the fewest that stay within a tolerance at every frame (S09:TRK-023).',
+		scope: 'editing',
+		when: (ctx) => writable(ctx) && !!simplifyTarget(ctx),
+		disabledReason: () => 'Select keyframes or a clip with keyframes',
+		run(ctx) {
+			const t = simplifyTarget(ctx);
+			if (!t || !ctx.session) return;
+			if (t.keyframeIds)
+				void openSimplify(
+					ctx.session,
+					{ keyframeIds: t.keyframeIds },
+					`${t.keyframeIds.length} selected keyframes`,
+				);
+			else void openSimplifyClips(ctx.session, t.clips);
 		},
 	},
 	{

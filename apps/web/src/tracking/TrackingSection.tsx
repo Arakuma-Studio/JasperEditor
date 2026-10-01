@@ -23,6 +23,7 @@ import {
 	Link2,
 	type LucideIcon,
 	Scan,
+	Spline,
 	Square,
 	StepBack,
 	StepForward,
@@ -42,6 +43,7 @@ import {
 import { useTrackingBridge } from './bridge.ts';
 import { Row, SmallButton, ToolButton } from './controls.tsx';
 import { confidenceTone, TONE_VAR } from './geometry.ts';
+import { openSimplifyTracker } from './simplify-actions.ts';
 import { optionsOf, setActiveTracker, setError, setOptions, useTracking } from './store.ts';
 
 export const APPLY_DIALOG = 'tracking.apply';
@@ -367,6 +369,19 @@ function TrackerControls({
 				>
 					Apply to…
 				</SmallButton>
+				<SmallButton
+					icon={Spline}
+					onClick={() => void openSimplifyTracker(session, tracker.id)}
+					disabled={readOnly || busy || targets.length === 0}
+					title={
+						targets.length
+							? 'Reduce the per-frame keyframes of the clips this tracker drives, within a tolerance'
+							: 'Apply the tracker to a clip first'
+					}
+					data-testid="tracking-simplify"
+				>
+					Simplify…
+				</SmallButton>
 				<span className="flex-1" />
 				<ToolButton
 					icon={Trash2}
@@ -390,7 +405,8 @@ function TrackerControls({
 							<CornerDownRight size={11} className="shrink-0 text-pr-icon" aria-hidden />
 							<span className="truncate">
 								Drives {seqClips?.[t.clipId]?.name || 'clip'} (
-								{t.mode === 'corner-pin' ? 'Corner Pin' : 'Motion'})
+								{t.mode === 'corner-pin' ? 'Corner Pin' : 'Motion'}
+								{simplifiedOf(seqClips?.[t.clipId])})
 							</span>
 						</div>
 					))}
@@ -401,6 +417,13 @@ function TrackerControls({
 			</p>
 		</div>
 	);
+}
+
+/** ", simplified ≤ 0.25 px" when the target's tracked keys were simplified (S09:TRK-023). */
+function simplifiedOf(clip: unknown): string {
+	const tol = (clip as { trackedBy?: { simplify?: { tolerance: number } } } | undefined)?.trackedBy?.simplify
+		?.tolerance;
+	return tol ? `, simplified ≤ ${tol} px` : '';
 }
 
 function sameTargets(a: { clipId: string; mode: string }[], b: { clipId: string; mode: string }[]): boolean {

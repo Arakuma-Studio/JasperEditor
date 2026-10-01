@@ -1,6 +1,6 @@
 // Registers the tracking UI into the M2 extension points (ARCHITECTURE §19.10): the Properties ▸ Tracking section,
 // the Program overlay (tracker + corner-pin handles), the corner-pin Effect Controls editor, timeline clip menu
-// entries, the "Apply Tracking" dialog and the timeline tracker / link glyphs (S09:TRU-005, `clipDecorations`).
+// entries, the "Apply Tracking" and "Simplify Keyframes" dialogs and the timeline tracker / link glyphs (S09:TRU-005, `clipDecorations`).
 // Called once at start-up from commands/tracking.ts.
 import { type Clip, type ClipTracker, CORNER_PIN_EFFECT_ID, type VideoClip } from '@jasper/project';
 import { openDialog, registerDialog } from '@jasper/ui';
@@ -15,6 +15,8 @@ import {
 import { ApplyTrackingDialog } from './ApplyTrackingDialog.tsx';
 import { activeSeq, addTracker, applyCandidates } from './actions.ts';
 import { CornerPinEditor } from './CornerPinEditor.tsx';
+import { SIMPLIFY_DIALOG, SimplifyKeyframesDialog } from './SimplifyKeyframesDialog.tsx';
+import { clipHasDenseKeys, openSimplifyClips } from './simplify-actions.ts';
 import { setActiveTracker } from './store.ts';
 import { TrackedLinkBadge, TrackerBadge, TrackerStrips } from './TimelineGlyphs.tsx';
 import { TrackingOverlay } from './TrackingOverlay.tsx';
@@ -45,6 +47,7 @@ export function registerTrackingUi(): void {
 		component: CornerPinEditor,
 	});
 	registerDialog(APPLY_DIALOG, ApplyTrackingDialog);
+	registerDialog(SIMPLIFY_DIALOG, SimplifyKeyframesDialog);
 	clipDecorations.register({
 		id: 'tracking.plate',
 		order: 60,
@@ -99,6 +102,14 @@ export function registerTrackingUi(): void {
 					})),
 				});
 			}
+			// S09:TRK-023: dense keys (tracking output, recorded animation) → Simplify Keyframes….
+			if (clipHasDenseKeys(clip))
+				items.push({
+					kind: 'item',
+					label: 'Simplify Keyframes…',
+					disabled: readOnly,
+					run: () => void openSimplifyClips(session, [clip]),
+				});
 			return items;
 		},
 	});
