@@ -564,7 +564,7 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 								menuCtx(),
 								(layerMenu.clipId && session.getCommitted().sequences[seq.id]?.clips[layerMenu.clipId]) ||
 									null,
-								(id) => void runCommand(id, menuCtx()),
+								(id, args) => void runCommand(id, menuCtx(), args),
 							)}
 							onClose={() => setLayerMenu(null)}
 						/>,

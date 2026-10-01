@@ -79,7 +79,8 @@ function binChildren(doc: ProjectDocument, binId: string | null): string[] {
 	return bin?.kind === 'bin' ? bin.children : [];
 }
 
-function parentBinOf(doc: ProjectDocument, itemId: string): string | null {
+/** The bin that holds an item (null = the project root). */
+export function parentBinOf(doc: ProjectDocument, itemId: string): string | null {
 	for (const it of Object.values(doc.items))
 		if (it.kind === 'bin' && it.children.includes(itemId)) return it.id;
 	return null;

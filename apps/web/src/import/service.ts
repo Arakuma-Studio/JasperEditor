@@ -110,7 +110,7 @@ export class EngineImportService implements ImportService {
 	}
 
 	async importFiles(
-		input: { files?: File[]; paths?: string[] },
+		input: { files?: File[]; paths?: string[]; names?: (string | undefined)[] },
 		target: ImportTarget,
 		onProgress?: (p: ImportProgress) => void,
 	): Promise<ImportResult> {
@@ -209,7 +209,7 @@ export class EngineImportService implements ImportService {
 						});
 						this.jobs.update(jobId, { state: 'succeeded', progress: 1, stage: 'Uploaded' });
 						onProgress?.({ fileName: file.name, phase: 'done', loaded: file.size, total: file.size });
-						results[i] = { reg, name: file.name, path: null };
+						results[i] = { reg, name: input.names?.[i] || file.name, path: null };
 					} catch (e) {
 						const info = errorInfo(e);
 						const cancelled = controller.signal.aborted;

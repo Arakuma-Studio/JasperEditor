@@ -1,0 +1,309 @@
+// Desktop clipboard runtime check (wp-clipboard-2, S01:CLB-002/010): two packaged-like JasperEditor desktop apps
+// (separate processes, profiles, engines and projects) under one X display, driven over CDP. Copy in app A writes
+// the custom `application/x-jasper-clipboard` format through the Electron clipboard; app B reads it back from the
+// OS clipboard and pastes it (Edit ▸ Paste through the bridge, Ctrl+V through the paste event). A helper Electron
+// process ("another application") then puts external text, image data and file lists on the clipboard, which B
+// pastes as a text clip, "Pasted image <time>" assets and files registered in place (no upload).
+//
+// Run with `pnpm e2e:desktop-clipboard` (e2e/desktop-clipboard.mjs builds and starts a headless X server).
+import { type ChildProcess, spawn } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { createServer } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { type Browser, chromium, expect, type Page, test } from '@playwright/test';
+import { clipBox, FIXTURES, query, ROOT } from '../support.ts';
+
+test.describe.configure({ mode: 'serial' });
+
+const DESKTOP = join(ROOT, 'apps/desktop');
+const electron = createRequire(join(DESKTOP, 'package.json'))('electron') as string;
+
+type App = { name: string; proc: ChildProcess; browser: Browser; page: Page; out: string[] };
+const apps: App[] = [];
+const temps: string[] = [];
+const helpers: ChildProcess[] = [];
+let A: App;
+let B: App;
+
+function freePort(): Promise<number> {
+	return new Promise((resolve, reject) => {
+		const s = createServer();
+		s.once('error', reject);
+		s.listen(0, '127.0.0.1', () => {
+			const { port } = s.address() as { port: number };
+			s.close(() => resolve(port));
+		});
+	});
+}
+
+function collect(proc: ChildProcess): string[] {
+	const out: string[] = [];
+	proc.stdout?.on('data', (d) => out.push(String(d)));
+	proc.stderr?.on('data', (d) => out.push(String(d)));
+	return out;
+}
+
+async function waitForLine(
+	out: string[],
+	proc: ChildProcess,
+	re: RegExp,
+	ms: number,
+): Promise<RegExpExecArray> {
+	const t0 = Date.now();
+	for (;;) {
+		const m = re.exec(out.join(''));
+		if (m) return m;
+		if (proc.exitCode !== null) throw new Error(`exited ${proc.exitCode}: ${out.join('').slice(-2000)}`);
+		if (Date.now() - t0 > ms) throw new Error(`timeout waiting for ${re}: ${out.join('').slice(-2000)}`);
+		await new Promise((r) => setTimeout(r, 200));
+	}
+}
+
+/** Launches one packaged-like desktop app (it forks its own engine) and attaches to its window over CDP. */
+async function launch(name: string): Promise<App> {
+	const appdir = mkdtempSync(join(tmpdir(), `jasper-desk-${name}-`));
+	const userData = mkdtempSync(join(tmpdir(), `jasper-desk-profile-${name}-`));
+	temps.push(appdir, userData);
+	const cdp = await freePort();
+	const proc = spawn(electron, [DESKTOP, `--user-data-dir=${userData}`, `--remote-debugging-port=${cdp}`], {
+		cwd: DESKTOP,
+		env: {
+			...process.env,
+			ELECTRON_DISABLE_SANDBOX: '1',
+			JASPER_DESKTOP_MODE: 'packaged-like',
+			JASPER_APPDIR: appdir,
+		},
+		stdio: ['ignore', 'pipe', 'pipe'],
+	});
+	const out = collect(proc);
+	const origin = (
+		await waitForLine(out, proc, /\[desktop\] loaded (http:\/\/127\.0\.0\.1:\d+)\//, 120_000)
+	)[1]!;
+	const browser = await chromium.connectOverCDP(`http://127.0.0.1:${cdp}`);
+	let page: Page | undefined;
+	for (let i = 0; i < 100 && !page; i++) {
+		page = browser
+			.contexts()[0]
+			?.pages()
+			.find((p) => p.url().startsWith(origin));
+		if (!page) await new Promise((r) => setTimeout(r, 200));
+	}
+	if (!page) throw new Error(`no window on ${origin}`);
+	const app: App = { name, proc, browser, page, out };
+	apps.push(app);
+	return app;
+}
+
+async function newProject(page: Page, name: string): Promise<void> {
+	await expect(page.getByTestId('home')).toBeVisible({ timeout: 60_000 });
+	await page.getByTestId('home-new').click();
+	await page.getByTestId('new-project-name').fill(name);
+	await page.getByTestId('new-project-create').click();
+	await expect(page.getByTestId('editor-shell')).toBeVisible();
+	await expect(page.getByTestId('timeline-track-area')).toBeVisible();
+	await expect.poll(() => page.evaluate(() => !!(window as { jasper?: unknown }).jasper)).toBe(true);
+}
+
+type DocClip = { id: string; kind: string; start: number; mediaId?: string; content?: { text: string } };
+async function docClips(page: Page): Promise<DocClip[]> {
+	const seqId = (await query<{ sequenceId: string }>(page, 'sequence.summary')).sequenceId;
+	const s = await query<{ clips: Record<string, DocClip> }>(page, 'doc.get', { path: ['sequences', seqId] });
+	return Object.values(s.clips);
+}
+
+async function labels(page: Page): Promise<string[]> {
+	const h = await query<{ entries: { label: string; applied: boolean }[] }>(page, 'history.list');
+	return h.entries.filter((e) => e.applied).map((e) => e.label);
+}
+
+type Media = { id: string; locators: { type: string; path?: string }[] };
+async function mediaAt(page: Page, path: string): Promise<Media | undefined> {
+	const media = await query<Record<string, Media>>(page, 'doc.get', { path: ['media'] });
+	return Object.values(media).find((m) => m.locators.some((l) => l.type === 'path' && l.path === path));
+}
+
+async function pastedImages(page: Page): Promise<{ name: string; mediaId?: string }[]> {
+	const items = await query<Record<string, { name: string; mediaId?: string }>>(page, 'doc.get', {
+		path: ['items'],
+	});
+	return Object.values(items).filter((i) => /^Pasted image \d{4}-\d\d-\d\d \d\d\.\d\d\.\d\d/.test(i.name));
+}
+
+/** The custom format as the desktop bridge reads it from the OS clipboard (null when absent). */
+const bridgeRead = (page: Page) =>
+	page.evaluate(() =>
+		(
+			window as unknown as { jasperDesktop: { clipboard: { read(): Promise<string | null> } } }
+		).jasperDesktop.clipboard.read(),
+	);
+
+/** Playhead to the sequence end (where nothing is overwritten) with the Timeline focused; returns the frame. */
+async function atEnd(page: Page): Promise<number> {
+	await query(page, 'playhead.set', { frame: 1_000_000 });
+	await page.getByTestId('timeline-timecode').click();
+	await page.keyboard.press('Escape');
+	return (await query<{ frame: number }>(page, 'playhead.get')).frame;
+}
+
+async function editPaste(page: Page): Promise<void> {
+	await page.getByTestId('title-bar').getByRole('menubar').getByRole('menuitem', { name: 'Edit' }).click();
+	await page
+		.getByRole('menuitem', { name: /^Paste(\s|$)/ })
+		.first()
+		.click();
+}
+
+/** Runs the helper ("another app"), which owns the OS clipboard until it is stopped. */
+async function external(kind: 'text' | 'image' | 'files', data: string): Promise<() => void> {
+	const proc = spawn(electron, [join(ROOT, 'e2e/desktop/clipboard-helper.cjs')], {
+		env: {
+			...process.env,
+			ELECTRON_DISABLE_SANDBOX: '1',
+			JASPER_HELPER_KIND: kind,
+			JASPER_HELPER_DATA: data,
+		},
+		stdio: ['ignore', 'pipe', 'pipe'],
+	});
+	helpers.push(proc);
+	await waitForLine(collect(proc), proc, /\[helper\] ready/, 30_000);
+	return () => proc.kill('SIGTERM');
+}
+
+test.beforeAll(async () => {
+	test.setTimeout(300_000);
+	[A, B] = await Promise.all([launch('a'), launch('b')]);
+	await Promise.all([newProject(A.page, 'Desktop A'), newProject(B.page, 'Desktop B')]);
+});
+
+test.afterAll(async () => {
+	for (const h of helpers) h.kill('SIGTERM');
+	for (const a of apps) {
+		await a.browser.close().catch(() => undefined);
+		a.proc.kill('SIGTERM');
+	}
+	await new Promise((r) => setTimeout(r, 1500));
+	for (const a of apps) if (a.proc.exitCode === null) a.proc.kill('SIGKILL');
+	for (const d of temps) rmSync(d, { recursive: true, force: true });
+});
+
+test('copy in app A, paste in app B through application/x-jasper-clipboard (CLB-002)', async () => {
+	const r = await A.page.evaluate(() =>
+		(
+			window as unknown as {
+				jasper: { transact(tx: unknown): Promise<{ ok: boolean; refs: Record<string, string> }> };
+			}
+		).jasper.transact({
+			label: 'Setup',
+			commands: [
+				{
+					type: 'clip.addText',
+					at: 0,
+					duration: 60,
+					track: 'V1',
+					content: { text: 'Desktop copy' },
+					ref: '$t',
+				},
+			],
+		}),
+	);
+	expect(r.ok).toBe(true);
+	const id = r.refs.$t!;
+	await expect
+		.poll(async () => {
+			const box = await clipBox(A.page, id);
+			await A.page.mouse.click(box.x + Math.min(20, box.width / 2), box.y + box.height / 2);
+			return (await query<{ selection: { timeline: { clips: string[] } } }>(A.page, 'selection.get'))
+				.selection.timeline.clips;
+		})
+		.toEqual([id]);
+	await A.page.keyboard.press('Control+KeyC');
+	// The other process reads the custom format back from the OS clipboard.
+	await expect.poll(() => bridgeRead(B.page), { timeout: 15_000 }).toContain('"format":"jasper-clipboard"');
+	expect(await bridgeRead(B.page)).toContain('Desktop copy');
+	// Edit ▸ Paste in B goes through the bridge (no paste event, no web clipboard permission involved).
+	let at = await atEnd(B.page);
+	await editPaste(B.page);
+	await expect.poll(async () => (await docClips(B.page)).length).toBe(1);
+	const pasted = (await docClips(B.page))[0]!;
+	expect([pasted.kind, pasted.start, pasted.content?.text]).toEqual(['text', at, 'Desktop copy']);
+	expect((await labels(B.page)).at(-1)).toBe('Paste');
+	// Ctrl+V in B goes through the paste event (the HTML form of the same payload).
+	at = await atEnd(B.page);
+	await B.page.keyboard.press('Control+KeyV');
+	await expect
+		.poll(async () => (await docClips(B.page)).find((c) => c.start === at)?.content?.text)
+		.toBe('Desktop copy');
+});
+
+test('external text from another app: Ctrl+V adds a text clip (CLB-010)', async () => {
+	const stop = await external('text', 'Desktop external text');
+	try {
+		const at = await atEnd(B.page);
+		await B.page.keyboard.press('Control+KeyV');
+		await expect
+			.poll(async () => (await docClips(B.page)).find((c) => c.start === at)?.content?.text)
+			.toBe('Desktop external text');
+		expect((await labels(B.page)).at(-1)).toBe('Paste Text');
+	} finally {
+		stop();
+	}
+});
+
+test('external image data: Ctrl+V and Edit ▸ Paste import "Pasted image <time>" (CLB-010)', async () => {
+	// Two different images: the same bytes twice would ask "use existing / import again" (S04:IN-007).
+	for (const [png, how, n] of [
+		['still.png', 'keys', 1],
+		['chart.png', 'menu', 2],
+	] as const) {
+		const stop = await external('image', join(FIXTURES, png));
+		try {
+			const at = await atEnd(B.page);
+			if (how === 'menu') await editPaste(B.page);
+			else await B.page.keyboard.press('Control+KeyV');
+			await expect.poll(async () => (await pastedImages(B.page)).length, { timeout: 60_000 }).toBe(n);
+			await expect.poll(async () => (await docClips(B.page)).find((c) => c.start === at)?.kind).toBe('still');
+			expect((await labels(B.page)).at(-1)).toBe('Import 1 file');
+		} finally {
+			stop();
+		}
+	}
+});
+
+test('files copied in a file manager: Edit ▸ Paste and Ctrl+V register them in place and place them (CLB-010)', async () => {
+	for (const [file, how] of [
+		[join(FIXTURES, 'tone.wav'), 'menu'],
+		[join(FIXTURES, 'clip-b.mp4'), 'keys'],
+	] as const) {
+		const stop = await external('files', file);
+		try {
+			const at = await atEnd(B.page);
+			// The bridge sees the file manager's list (main reads and validates it).
+			expect(
+				await B.page.evaluate(() =>
+					(
+						window as unknown as { jasperDesktop: { clipboard: { readFiles(): Promise<string[]> } } }
+					).jasperDesktop.clipboard.readFiles(),
+				),
+			).toEqual([file]);
+			if (how === 'menu') await editPaste(B.page);
+			else await B.page.keyboard.press('Control+KeyV');
+			await expect.poll(async () => !!(await mediaAt(B.page, file)), { timeout: 60_000 }).toBe(true);
+			const mediaId = (await mediaAt(B.page, file))!.id;
+			await expect
+				.poll(async () => (await docClips(B.page)).some((c) => c.start === at && c.mediaId === mediaId))
+				.toBe(true);
+			expect((await labels(B.page)).at(-1)).toBe('Import 1 file');
+		} finally {
+			stop();
+		}
+	}
+});
+
+test('no renderer crashes', () => {
+	for (const a of apps) {
+		const crashes = a.out.join('').match(/Uncaught|render-process-gone|FATAL/g) ?? [];
+		expect(crashes, a.name).toEqual([]);
+	}
+});

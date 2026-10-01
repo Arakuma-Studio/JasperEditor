@@ -46,6 +46,7 @@ import {
 } from '../effects/drag.ts';
 import { setDefaultTransition } from '../effects/transition-prefs.ts';
 import { insertMotionTemplate, MG_TEMPLATE_MIME, readMgTemplateDrag } from '../motionTemplates/insert.ts';
+import { projectItemOf } from '../program/layer-ops.ts';
 import type { PanelProps } from '../types.ts';
 import { ContextMenu, GestureTooltip, SequenceTabs, Toolbar, ZoomBar } from './components/Chrome.tsx';
 import { PlayheadLine, TimecodeReadout } from './components/Playhead.tsx';
@@ -509,6 +510,13 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 				kind: 'item',
 				label: 'Set to Frame Size (Fill)',
 				run: () => apply('Set to Frame Size', [{ type: 'clip.fitToFrame', clipIds: [c.id], mode: 'fill' }]),
+			},
+			// wp-clipboard-2 (S02:TL-930, S05 timeline clip menu): only clips that come from a project item.
+			{
+				kind: 'item',
+				label: 'Reveal in Project',
+				disabled: !projectItemOf(session.getCommitted(), c),
+				run: () => run('clip.revealInProject', { clipId: c.id }),
 			},
 			// M2 entries registered by feature packages (Process…, Track…; ARCHITECTURE §19.10).
 			...collectMenuItems(clipMenuExtensions.list(), {

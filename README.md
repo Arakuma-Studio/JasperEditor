@@ -436,10 +436,23 @@ Copy and paste work like Premiere's (S01 §20, `docs/wp-notes/wp-clipboard.md`):
   fingerprint, else added (offline until reachable). It travels as `text/html` (embedded) + `text/plain`, on
   desktop also as `application/x-jasper-clipboard`, and stays in memory for same-tab pastes. Text fields keep
   their own copy/paste.
+- **Content from other apps** (S01:CLB-010): files are imported (and placed at the playhead on the lowest targeted
+  tracks when the Timeline or Program monitor has the focus; desktop file-manager copies register in place, no
+  upload), copied image data becomes an image asset named "Pasted image <date> <time>" (placed the same way), and
+  plain text in the Timeline or Program monitor becomes a 5 s centred text clip on the lowest targeted video track.
+  Each is one undo step. Browsers expose no files to Edit ▸ Paste, so paste files with Ctrl/Cmd+V on the web.
+- **Program monitor right-click on a layer** (S03:XF-050) also has Reset Motion, Reset Crop, Fit to Frame, Fill
+  Frame, Set to Native (100%), Anchor ▸ (centre, corners, edges; the image stays put), Arrange ▸ (Bring to Front /
+  Forward, Send Backward / to Back: the clip moves to another video track at the same time, new tracks only above
+  the top; Ctrl/Cmd+[ / ] with Shift in the monitor), Reveal in Timeline and Reveal in Project — also in
+  Clip ▸ Transform, Graphics ▸ Arrange and (Reveal in Project) the Timeline clip menu.
 - Agents: `copy_clips` / `paste_clips` / `copy_items` / `paste_items`, or the commands `clip.paste`,
   `clip.pasteAttributes`, `clip.removeAttributes`, `effect.paste`, `keyframe.paste`, `project.pasteItems` in
   `apply_commands`.
-- Tests: `packages/project/test/clipboard.test.ts`, `apps/web/test/clipboard.test.tsx`, `e2e/clipboard.spec.ts`.
+- Tests: `packages/project/test/clipboard.test.ts`, `apps/web/test/clipboard.test.tsx`,
+  `apps/web/test/clipboard-external.test.tsx`, `apps/web/test/program-layer-menu.test.tsx`, `e2e/clipboard.spec.ts`;
+  desktop: `pnpm e2e:desktop-clipboard` (two desktop apps + a helper "other app" under xvfb: copy in one, paste in
+  the other through `application/x-jasper-clipboard`; external text, image data and file-manager files).
 
 ## Export: titles, shapes and animated templates (layer bake)
 
@@ -476,7 +489,8 @@ graphics)** and lists one graphics group per baked layer.
 pnpm fixtures && pnpm mg:build   # optional first: some engine tests skip without jasper-mg
 pnpm verify              # lint + typecheck + unit/integration tests + build
 pnpm e2e                 # builds engine + web + jasper-mcp, then Playwright (headless Chrome) against the built engine
-pnpm e2e:desktop         # Electron under xvfb: packaged-like and dev mode, screenshots in test-results/
+pnpm e2e:desktop         # Electron under xvfb: packaged-like and dev mode, screenshots in test-results/, then the clipboard check
+pnpm e2e:desktop-clipboard  # two packaged-like desktop apps over CDP: cross-app copy/paste and external pastes
 pnpm e2e:mg-fallback     # fframes ready → native plan; jasper-mg missing → Remotion plan with the reason
 pnpm e2e:packaged        # after `pnpm --filter @jasper/desktop dist:dir`: packed engine + LGPL FFmpeg only
 
@@ -537,6 +551,7 @@ Playwright specs:
 | `pnpm --filter @jasper/desktop dist:dir` / `dist` | stages and packs the desktop app (unpacked directory / installers) with the LGPL FFmpeg |
 | `pnpm e2e` | builds, then the Playwright suite (`e2e/`) |
 | `pnpm e2e:desktop` / `e2e:mg-fallback` / `e2e:typecheck` | Electron smoke / fframes fallback check / `tsc` over `e2e/` |
+| `pnpm e2e:desktop-clipboard` | desktop clipboard runtime check under xvfb (`playwright.desktop.config.ts`, `E2E_SKIP_BUILD=1` reuses builds) |
 | `pnpm e2e:packaged` | packed-app check: license guard, packed engine with only the shipped LGPL FFmpeg, Remotion export |
 | `pnpm verify` | lint + typecheck + test + build |
 

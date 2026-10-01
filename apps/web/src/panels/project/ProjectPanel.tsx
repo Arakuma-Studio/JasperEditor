@@ -24,6 +24,7 @@ import {
 	FILTERS,
 	type ProjectFilter,
 	type ProjectRow,
+	parentBinOf,
 	projectRows,
 	type SortKey,
 } from './model.ts';
@@ -189,9 +190,33 @@ export function ProjectPanel(props: PanelProps) {
 					if (selection.primary) void openItem(session, selection.primary, ctx, setBinId);
 				},
 				importIntoBin: () => void importDialog(),
+				reveal: (itemId) => {
+					// wp-clipboard-2 (S03:XF-050 Reveal in Project): show the item's bin, unfiltered, scrolled to it.
+					setBinId(parentBinOf(session.getCommitted(), itemId));
+					setSearch('');
+					setFilter('all');
+					setRevealId(itemId);
+				},
 			}),
 		[props.instanceId, binId, view, updateView, session, selection.primary, selected, ctx, importDialog],
 	);
+	const [revealId, setRevealId] = useState<string | null>(null);
+	useEffect(() => {
+		if (!revealId) return;
+		// The bin switch renders first: look for the row for a few frames.
+		let tries = 0;
+		let raf = 0;
+		const find = () => {
+			const el = Array.from(rootRef.current?.querySelectorAll('[data-item-id]') ?? []).find(
+				(x) => x.getAttribute('data-item-id') === revealId,
+			);
+			if (el) (el as HTMLElement).scrollIntoView?.({ block: 'nearest' });
+			if (el || ++tries > 30) setRevealId(null);
+			else raf = requestAnimationFrame(find);
+		};
+		find();
+		return () => cancelAnimationFrame(raf);
+	}, [revealId]);
 
 	// ---------------------------------------------------------------- drag and drop (S05:PRJ-007)
 

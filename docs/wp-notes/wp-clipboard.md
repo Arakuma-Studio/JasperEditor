@@ -41,13 +41,42 @@ CMD-001, TRK-006, LIFE-030. Implementation decisions are recorded at the end of 
 - Unit: `pnpm vitest run packages/project/test/clipboard.test.ts apps/web/test/clipboard.test.tsx apps/mcp/test/clipboard.test.ts apps/desktop/test/security.test.ts packages/session/test/session.test.ts`.
 - Playwright: `E2E_PORT=<port> pnpm e2e e2e/clipboard.spec.ts` (keyboard copy/paste of an animated text, keyframed shape and anime template; undo/redo; Paste Insert; Paste Attributes dialog; Program monitor menu; Effect Controls keys; Project panel sequence; cross-project paste in a second tab through the system clipboard).
 
+## wp-clipboard-2 (branch `wp/clipboard-2`)
+
+| Req | Where | Notes |
+|---|---|---|
+| CLB-010 | `apps/web/src/clipboard/{system,external,actions}.ts`, `apps/web/src/import/{service,transaction}.ts`, `apps/web/src/state/services.ts` | `readClipboardEvent` keeps the event's File objects (`files`, else file `items`) as `blobs`; Edit ▸ Paste reads image types (`image/png`, jpeg, gif, webp, bmp, avif, svg) through `navigator.clipboard.read()`. `pasteSourceOf` returns `external` with `externalContentOf`: image data (generic `image.png`-style name, no path) vs files vs desktop paths vs text (only without files). `pasteExternal`: files + images through the ImportService (one "Import N files" step; images uploaded as "Pasted image YYYY-MM-DD HH.MM.SS.png" with that item name via the additive `importFiles({names})`), placed at the playhead on the lowest targeted video track and the lowest targeted audio track (additive `ImportTarget.timeline.audioTrackId`) with the Timeline or Program focused, else into the selected/current bin; text → `clip.addText` (5 s, default centred, lowest targeted unlocked video track, ≤ 5,000 chars, "Paste Text", the clip selected). Paste Insert inserts files; text with Paste Insert or outside Timeline/Program shows an info toast. Import errors → error toast; per-file failures → the import failure dialog. |
+| CLB-010 desktop | `apps/desktop/src/{main.ts,preload.cts,security.ts}` | `jasperDesktop.filePath(file)` (`webUtils.getPathForFile`) turns pasted Files into paths registered in place; `clipboard.readFiles()` → IPC `jasper:clipboard-read-files` (app origin only) parses `text/uri-list` / `public.file-url` / `x-special/gnome-copied-files` (`parseClipboardFileList`: local `file:` URLs, revealable absolute paths, ≤ 500, existing files). Used by Edit ▸ Paste and, through `withDesktopFiles`, by Ctrl/Cmd+V when the paste event carried no files. |
+| XF-050 | `apps/web/src/commands/layer.ts`, `apps/web/src/panels/program/{layer-ops,layer-menu}.ts` | UI commands `motion.reset` (Reset Motion = `clip.removeAttributes {motion}`), `motion.resetCrop` (removes `jasper.crop`, disabled without a crop), `motion.fit` / `motion.fill` / `motion.native` (XF-051: scale for the visible rect after crop with the rotated bounds, visible rect centred; Native = 100% about the anchor; `param.set` at the playhead clamped into the clip, so animated properties get a key), `motion.anchor {point}` (XF-038 centre + 9-point grid; A' = q, P' = M(q), pixels unchanged), `arrange.bringToFront/bringForward/sendBackward/sendToBack` (`planArrange`: above/below the nearest/farthest layer overlapping in time, onto the first free unlocked video track, a new track only above the top (S02:TL-266), refused below V1; one `clip.move` per clip with `deltaTracks.video`, linked audio untouched (TL-486)), `clip.revealInTimeline` (selects, focuses the Timeline, reveals the start) and `clip.revealInProject` (media / synthetic / nested-sequence item: selected, Project panel focused, its bin shown unfiltered and scrolled — `ProjectPanelHandle.reveal`). Menus: Program layer menu (XF-050 order, Anchor ▸ / Arrange ▸ submenus), Clip ▸ Transform (+ Anchor ▸) and Reveal in Project/Timeline, Graphics ▸ Arrange (S05), Timeline clip menu ▸ Reveal in Project (S02:TL-930). Keys: Ctrl/Cmd+] / [ (+Shift: to front / back) in the `program` scope (no conflicts, KB-011). The old Program entries "Scale/Set to Frame Size" became Fit to Frame / Fill Frame (the Timeline clip menu keeps Premiere's scale-only `clip.fitToFrame`). |
+| XF-050 Agent ▸ | — | Not built: AGT-040 is superseded by ARCHITECTURE D-18 (no in-app agent; agents connect over MCP). |
+| Desktop check | `e2e/desktop/clipboard.desktop.ts`, `e2e/desktop/clipboard-helper.cjs`, `e2e/desktop-clipboard.mjs`, `playwright.desktop.config.ts` | `pnpm e2e:desktop-clipboard` (also at the end of `pnpm e2e:desktop`): two packaged-like apps (own profiles, engines, projects) under one xvfb display, attached over CDP; copy in A → B reads `application/x-jasper-clipboard` through the bridge and pastes it (Edit ▸ Paste and Ctrl+V); a helper Electron process owns the clipboard with external text, PNG image data (Ctrl+V and Edit ▸ Paste) and a GNOME-style file list (Edit ▸ Paste and Ctrl+V → registered in place with a `path` locator). |
+
+### Defects fixed (wp-clipboard-2)
+
+- Desktop copies wrote the clipboard twice (copy-event web write + Electron write) and the two raced: the
+  custom `application/x-jasper-clipboard` format was intermittently overwritten (seen in the Electron run: B read
+  `null` after A's copy). Desktop now writes all three formats in one Electron write (web paths only as fallback);
+  a native copy event is answered at once and the Electron write follows after `DESKTOP_WRITE_AFTER_EVENT_MS`.
+- Ctrl/Cmd+V of files copied in a Linux file manager pasted nothing in Electron (the paste event had no Files);
+  it now falls back to the desktop file list.
+
+### How to test (wp-clipboard-2)
+
+- Unit: `pnpm vitest run apps/web/test/clipboard-external.test.tsx apps/web/test/program-layer-menu.test.tsx apps/web/test/clipboard.test.tsx apps/desktop/test/security.test.ts`.
+- Playwright: `E2E_PORT=<port> pnpm e2e e2e/clipboard.spec.ts` (adds: Program menu Fit/Anchor/Arrange/Reveal,
+  external text Ctrl+V + undo/redo, image data via Edit ▸ Paste, an OS file in a paste event, text fields).
+- Desktop: `pnpm e2e:desktop-clipboard` (needs xvfb-run and the Electron binary).
+
 ## Known gaps
 
-- CLB-010 (external text, images, files) is not implemented: foreign clipboard content is reported, not pasted.
-- The Electron custom format (`electron application/osclipboard;format=…`) is typechecked and unit-tested at the
-  validation level only; no packaged desktop run was possible here (no Electron binary installed).
-- XF-050's Anchor ▸, Arrange ▸, Reveal in Timeline/Project, Agent ▸, Reset Motion/Crop entries are not in the
-  Program menu yet; EC-004's effect-header menu (Copy, …) does not exist yet (headers copy with Ctrl/Cmd+C).
+- Web: the async Clipboard API exposes no files, so Edit ▸ Paste of files only works on desktop (Ctrl/Cmd+V works
+  everywhere the browser hands files to the paste event).
+- A Chromium/Electron `text/uri-list` write is stored through the XDG file-transfer portal on Linux, which xvfb
+  hosts lack, so the desktop check emulates a file manager with `x-special/gnome-copied-files`; real file managers
+  (Nautilus, Dolphin, Finder, Explorer) were not exercised here (Windows `FileNameW` / macOS multi-file
+  `NSFilenamesPboardType` lists are not parsed: only `public.file-url` / uri-lists).
+- Pasting the same image data twice asks "use existing / import again" (S04:IN-007), like any re-import.
+- EC-004's effect-header menu (Copy, …) does not exist yet (headers copy with Ctrl/Cmd+C).
 - Paste Grade (S06) keeps its own in-memory grade clipboard (replace semantics); general Paste Attributes appends
   colour effects like any other effect.
 - Nested-sequence clips paste only where their sequence exists (nesting itself is M2-pending).

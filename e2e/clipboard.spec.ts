@@ -4,6 +4,8 @@
 // dialog, undo/redo, the Program monitor's right-click menu, keyframes in Effect Controls, a sequence in the
 // Project panel, and a cross-project paste in a second tab through the system clipboard (media resolved by
 // fingerprint). Setup edits go through the in-page agent API; every clipboard action goes through the real UI.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import {
 	appliedLabels,
@@ -11,9 +13,11 @@ import {
 	clips,
 	createProject,
 	enableAgentBridge,
+	FIXTURES,
 	focusTimeline,
 	importFiles,
 	playheadFrame,
+	programPixels,
 	query,
 	sequenceSummary,
 	watchPage,
@@ -242,6 +246,7 @@ test('Program monitor right-click on a layer: Copy, then Paste from the menu (XF
 	await page.mouse.click(wrapper.x + wrapper.width / 2, wrapper.y + wrapper.height / 2, { button: 'right' });
 	const menu = page.getByTestId('program-context-menu');
 	await expect(menu).toBeVisible();
+	// Anchor ▸ and Arrange ▸ are hover submenus (their items are hidden until then).
 	await expect(menu.getByRole('menuitem')).toHaveText([
 		/Cut/,
 		/Copy/,
@@ -250,9 +255,16 @@ test('Program monitor right-click on a layer: Copy, then Paste from the menu (XF
 		/Duplicate/,
 		/Delete/,
 		/Enable/,
-		/Scale to Frame Size/,
-		/Set to Frame Size/,
+		/Reset Motion/,
+		/Reset Crop/,
+		/Fit to Frame/,
+		/Fill Frame/,
+		/Set to Native \(100%\)/,
+		/Reveal in Timeline/,
+		/Reveal in Project/,
 	]);
+	await expect(menu.getByText('Anchor', { exact: true })).toBeVisible();
+	await expect(menu.getByText('Arrange', { exact: true })).toBeVisible();
 	const picked = (await selection())[0]!;
 	await menu.getByRole('menuitem', { name: /^Copy/ }).click();
 	await query(page, 'playhead.set', { frame: 100_000 }); // stops at the sequence end
@@ -346,6 +358,184 @@ test('cross-project paste in another tab through the system clipboard (media res
 	expect(pasted.mediaId).not.toBe(mediaId);
 	expect(otherWatch.errors.filter((e) => e.startsWith('pageerror'))).toEqual([]);
 	await other.close();
+});
+
+// ---------------------------------------------------------------- wp-clipboard-2
+
+type Item = { id: string; kind: string; name: string; mediaId?: string };
+
+async function items(p: Page = page): Promise<Record<string, Item>> {
+	return query<Record<string, Item>>(p, 'doc.get', { path: ['items'] });
+}
+
+/** Opens the Program monitor menu on the layer under a point of the player (fractions of its box). */
+async function programMenuAt(fx: number, fy: number) {
+	const w = (await page.getByTestId('program-player-wrapper').boundingBox())!;
+	await page.mouse.click(w.x + w.width * fx, w.y + w.height * fy, { button: 'right' });
+	const menu = page.getByTestId('program-context-menu');
+	await expect(menu).toBeVisible();
+	return menu;
+}
+
+test('Program monitor layer menu: Fit to Frame, Anchor ▸, Arrange ▸, Reveal in Timeline / Project (XF-050)', async () => {
+	const video = (await docClips())[ids.video]!;
+	const audioId = Object.values(await docClips()).find(
+		(c) => c.linkId === video.linkId && c.kind === 'audio',
+	)!.id;
+	const audioTrack = (await docClips())[audioId]!.trackId;
+	await transact(page, 'Shrink', [
+		{ type: 'param.set', target: ['clip', ids.video, 'transform', 'scale'], value: 40 },
+		{ type: 'param.set', target: ['clip', ids.video, 'transform', 'position'], value: [700, 400] },
+	]);
+	await query(page, 'playhead.set', { frame: video.start + 10 });
+	// Fit to Frame: the layer is scaled to fit and centred (XF-051).
+	let menu = await programMenuAt(0.4, 0.4);
+	await menu.getByRole('menuitem', { name: /^Fit to Frame/ }).click();
+	await expect.poll(async () => (await docClips())[ids.video]!.transform!.scale.value).not.toBe(40);
+	type T = { position: Anim<[number, number]>; anchor: Anim<[number, number]> };
+	const tr = async () => (await docClips())[ids.video]!.transform as unknown as T;
+	expect((await tr()).position.value).toEqual([960, 540]);
+	expect((await appliedLabels(page)).at(-1)).toBe('Fit to Frame');
+	// Anchor ▸ Top Left: the anchor moves to the layer's corner, the image stays where it is.
+	const before = await programPixels(page);
+	menu = await programMenuAt(0.3, 0.3);
+	await menu.getByText('Anchor', { exact: true }).hover();
+	await menu.getByRole('menuitem', { name: 'Top Left' }).click();
+	await expect.poll(async () => (await tr()).anchor.value).toEqual([0, 0]);
+	expect((await appliedLabels(page)).at(-1)).toBe('Anchor to Top Left');
+	const after = await programPixels(page);
+	expect(Math.abs(after.mean - before.mean)).toBeLessThan(2);
+	// Arrange ▸ Bring Forward: above the text on V2 (V3 is free), the linked audio keeps its track.
+	await transact(page, 'Text above', [
+		{
+			type: 'clip.addText',
+			at: video.start,
+			duration: video.duration,
+			track: 'V2',
+			content: { text: 'Above' },
+			sequenceId: seqId,
+		},
+	]);
+	const v3 = (await sequenceSummary(page)).tracks!.find((t) => t.label === 'V3')!.id;
+	menu = await programMenuAt(0.15, 0.15);
+	await menu.getByText('Arrange', { exact: true }).hover();
+	await menu.getByRole('menuitem', { name: /^Bring Forward/ }).click();
+	await expect.poll(async () => (await docClips())[ids.video]!.trackId).toBe(v3);
+	expect((await docClips())[audioId]!.trackId).toBe(audioTrack);
+	expect((await appliedLabels(page)).at(-1)).toBe('Bring Forward');
+	// Reveal in Project selects the clip's item in the Project panel.
+	menu = await programMenuAt(0.15, 0.15);
+	await menu.getByRole('menuitem', { name: /^Reveal in Project/ }).click();
+	const item = Object.values(await items()).find((i) => i.kind === 'media' && i.mediaId === video.mediaId)!;
+	await expect
+		.poll(
+			async () =>
+				(await query<{ selection: { project: { items: string[] } } }>(page, 'selection.get')).selection
+					.project.items,
+		)
+		.toEqual([item.id]);
+	await expect(
+		page.locator(`[data-testid="project-panel"] [data-item-id="${item.id}"]`).first(),
+	).toBeVisible();
+	// Reveal in Timeline brings the Timeline forward with the clip in view.
+	menu = await programMenuAt(0.15, 0.15);
+	await menu.getByRole('menuitem', { name: /^Reveal in Timeline/ }).click();
+	await expect(
+		page.locator(`[data-testid="timeline-track-area"] [data-clip-id="${ids.video}"]`).first(),
+	).toBeVisible();
+	expect(await selection()).toContain(ids.video);
+});
+
+test('external text: Ctrl+V on the Timeline adds a 5 s centred text clip at the playhead, one undo step (CLB-010)', async () => {
+	await page.bringToFront();
+	await page.evaluate(() => navigator.clipboard.writeText('Hello from another app'));
+	await query(page, 'playhead.set', { frame: 100_000 });
+	const at = await playheadFrame(page);
+	await focusTimeline(page);
+	const n = Object.keys(await docClips()).length;
+	await page.keyboard.press('Control+KeyV');
+	await expect.poll(async () => Object.keys(await docClips()).length).toBe(n + 1);
+	const text = Object.values(await docClips()).find((c) => c.kind === 'text' && c.start === at)!;
+	expect(text.duration).toBe(150);
+	expect((text as unknown as { content: { text: string } }).content.text).toBe('Hello from another app');
+	expect((text.transform as unknown as { position: Anim<number[]> }).position.value).toEqual([960, 540]);
+	expect(text.trackId).toBe((await sequenceSummary(page)).tracks!.find((t) => t.label === 'V1')!.id);
+	expect(await selection()).toEqual([text.id]);
+	expect((await appliedLabels(page)).at(-1)).toBe('Paste Text');
+	await page.keyboard.press('Control+KeyZ');
+	await expect.poll(async () => Object.keys(await docClips()).length).toBe(n);
+	await page.keyboard.press('Control+Shift+KeyZ');
+	await expect.poll(async () => Object.keys(await docClips()).length).toBe(n + 1);
+});
+
+test('external image data: Edit ▸ Paste imports "Pasted image <time>" and places it at the playhead (CLB-010)', async () => {
+	await page.evaluate(async () => {
+		const c = document.createElement('canvas');
+		c.width = 64;
+		c.height = 48;
+		const g = c.getContext('2d')!;
+		g.fillStyle = '#3080ff';
+		g.fillRect(0, 0, 64, 48);
+		const blob = await new Promise<Blob>((r) => c.toBlob((b) => r(b!), 'image/png'));
+		await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+	});
+	await query(page, 'playhead.set', { frame: 100_000 });
+	const at = await playheadFrame(page);
+	await focusTimeline(page);
+	const n = Object.keys(await docClips()).length;
+	await page.getByTestId('title-bar').getByRole('menubar').getByRole('menuitem', { name: 'Edit' }).click();
+	await page
+		.getByRole('menuitem', { name: /^Paste(\s|$)/ })
+		.first()
+		.click();
+	await expect.poll(async () => Object.keys(await docClips()).length, { timeout: 60_000 }).toBe(n + 1);
+	const pasted = Object.values(await items()).find((i) =>
+		/^Pasted image \d{4}-\d\d-\d\d \d\d\.\d\d\.\d\d$/.test(i.name),
+	);
+	expect(pasted, JSON.stringify(Object.values(await items()).map((i) => i.name))).toBeTruthy();
+	const clip = Object.values(await docClips()).find((c) => c.start === at && c.mediaId === pasted!.mediaId)!;
+	expect(clip.kind).toBe('still');
+	expect((await appliedLabels(page)).at(-1)).toBe('Import 1 file');
+});
+
+test('an OS file in a paste event is imported under its name and placed (CLB-010, LIFE-010)', async () => {
+	const bytes = readFileSync(join(FIXTURES, 'still.png')).toString('base64');
+	await query(page, 'playhead.set', { frame: 100_000 });
+	const at = await playheadFrame(page);
+	await focusTimeline(page);
+	await page.evaluate((b64) => {
+		const bin = Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0));
+		const dt = new DataTransfer();
+		dt.items.add(new File([bin], 'still.png', { type: 'image/png' }));
+		document.body.dispatchEvent(
+			new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }),
+		);
+	}, bytes);
+	await expect
+		.poll(async () => Object.values(await items()).filter((i) => i.name === 'still.png').length, {
+			timeout: 60_000,
+		})
+		.toBe(1);
+	const item = Object.values(await items()).find((i) => i.name === 'still.png')!;
+	await expect
+		.poll(async () =>
+			Object.values(await docClips()).some((c) => c.start === at && c.mediaId === item.mediaId),
+		)
+		.toBe(true);
+	expect((await appliedLabels(page)).at(-1)).toBe('Import 1 file');
+});
+
+test('text fields keep their own paste (CLB-010 never hijacks inputs)', async () => {
+	await page.evaluate(() => navigator.clipboard.writeText('needle'));
+	await page.getByTestId('tab-project').click();
+	const search = page.getByTestId('project-search');
+	await search.click();
+	const labels = (await appliedLabels(page)).length;
+	await page.keyboard.press('Control+KeyV');
+	await expect(search).toHaveValue('needle');
+	await page.waitForTimeout(300);
+	expect((await appliedLabels(page)).length).toBe(labels);
+	await search.fill('');
 });
 
 test('no page errors', () => {

@@ -3,6 +3,7 @@
 // WP-2E, mg WP-2G). There is no Agent menu: external agents connect over MCP (Help ▸ Connect an AI
 // Agent…). Unregistered ids render disabled with a reason (SH-031); the label here is only the fallback
 // shown until the owner registers the command (MN-001).
+import { ANCHOR_POINTS, ARRANGE_COMMANDS, ARRANGE_LABELS } from '../../panels/program/layer-ops.ts';
 import type { ShellMenuItem } from './resolve.ts';
 
 const c = (command: string, label: string, args?: unknown): ShellMenuItem => ({
@@ -13,6 +14,11 @@ const c = (command: string, label: string, args?: unknown): ShellMenuItem => ({
 });
 const sub = (label: string, items: ShellMenuItem[]): ShellMenuItem => ({ type: 'submenu', label, items });
 const sep: ShellMenuItem = { type: 'separator' };
+
+/** Anchor ▸ (S03:XF-038): Center, then the 9-point grid (same entries as the Program monitor layer menu). */
+const ANCHOR_MENU: ShellMenuItem[] = ANCHOR_POINTS.map((p) => c('motion.anchor', p.label, { point: p.id }));
+/** Arrange ▸ (S03:XF-050). */
+const ARRANGE_MENU: ShellMenuItem[] = ARRANGE_COMMANDS.map(([id, op]) => c(id, ARRANGE_LABELS[op]));
 
 export type MenubarMenuModel = {
 	id: string;
@@ -110,6 +116,20 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('timeline.ungroup', 'Ungroup'),
 			c('clip.nest', 'Nest…'),
 			sep,
+			// wp-clipboard-2 (S03:XF-050/051/038): the Program monitor layer menu's transform entries.
+			sub('Transform', [
+				c('motion.reset', 'Reset Motion'),
+				c('motion.resetCrop', 'Reset Crop'),
+				sep,
+				c('motion.fit', 'Fit to Frame'),
+				c('motion.fill', 'Fill Frame'),
+				c('motion.native', 'Set to Native (100%)'),
+				sep,
+				sub('Anchor', ANCHOR_MENU),
+			]),
+			c('clip.revealInProject', 'Reveal in Project'),
+			c('clip.revealInTimeline', 'Reveal in Timeline'),
+			sep,
 			sub('Motion Graphic', [c('mg.editParameters', 'Edit Parameters…'), c('mg.rerender', 'Re-render')]),
 			c('project.createProxies', 'Create Proxies'),
 			c('process.processClip', 'Process Clip…'),
@@ -178,6 +198,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('graphics.newEllipse', 'Ellipse'),
 			]),
 			c('mg.insertTemplate', 'Insert Motion Template…'),
+			// wp-clipboard-2 (S05 Graphics and Titles ▸ Arrange, S03:XF-050)
+			sub('Arrange', ARRANGE_MENU),
 			// M2 (wp-m2-text-anim, S11:TXA-024)
 			sub('Text Animation', [
 				c('text.applyAnimation', 'Apply In…', { side: 'in' }),

@@ -34,11 +34,13 @@ import {
 	toPasteAttributes,
 	toRemoveAttributes,
 } from './attributes.ts';
+import { pasteExternal } from './external.ts';
 import {
 	type ClipboardData,
 	type PasteSource,
 	pasteSourceOf,
 	readSystemClipboard,
+	withDesktopFiles,
 	writeClipboard,
 } from './system.ts';
 
@@ -217,7 +219,8 @@ export function cutSelection(ctx: CommandCtx, target: ClipboardTarget, args: Cli
 // ---------------------------------------------------------------- paste
 
 async function sourceOf(args: ClipboardArgs): Promise<PasteSource> {
-	return pasteSourceOf(args.clipboard ?? (await readSystemClipboard()));
+	// CLB-010: a paste event without files may still have desktop file-manager files on the OS clipboard.
+	return pasteSourceOf(args.clipboard ? await withDesktopFiles(args.clipboard) : await readSystemClipboard());
 }
 
 function report(ctx: CommandCtx, label: string, r: TransactionResult | null): void {
@@ -272,6 +275,22 @@ export async function pasteInto(
 		return;
 	}
 	const src = await sourceOf(args);
+	if (src.kind === 'external') {
+		// CLB-010: files, image data and text from other apps.
+		const seq = activeSeq(ctx);
+		const session = ctx.session!;
+		return pasteExternal(
+			ctx,
+			{
+				session,
+				seq,
+				view: seq ? session.getState().views[seq.id] : undefined,
+				playhead: ctx.transport.getState().frame,
+			},
+			mode,
+			src.content,
+		);
+	}
 	if (src.kind !== 'payload') return noPayload(ctx, src);
 	const p = src.payload;
 	const session = ctx.session!;

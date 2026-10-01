@@ -130,7 +130,13 @@ function placementTracks(
 	const seq = doc.sequences[sequenceId];
 	if (!seq) return null;
 	if (target.kind === 'timeline') {
-		if (seq.videoTracks.some((t) => t.id === target.trackId)) return { video: target.trackId };
+		if (seq.videoTracks.some((t) => t.id === target.trackId)) {
+			const audio =
+				target.audioTrackId && seq.audioTracks.some((t) => t.id === target.audioTrackId)
+					? { audio: target.audioTrackId }
+					: {};
+			return { video: target.trackId, ...audio };
+		}
 		if (seq.audioTracks.some((t) => t.id === target.trackId)) return { audio: target.trackId };
 		return null;
 	}

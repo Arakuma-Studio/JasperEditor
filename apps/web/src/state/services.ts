@@ -12,7 +12,15 @@ export const PROJECT_ITEMS_MIME = 'application/x-jasper-project-items';
 
 export type ImportTarget =
 	| { kind: 'bin'; binId: string | null }
-	| { kind: 'timeline'; sequenceId: string; at: number; trackId: string; mode: 'overwrite' | 'insert' }
+	| {
+			kind: 'timeline';
+			sequenceId: string;
+			at: number;
+			trackId: string;
+			mode: 'overwrite' | 'insert';
+			/** wp-clipboard-2 (CLB-010): audio goes here when `trackId` is a video track (default: mirrored index). */
+			audioTrackId?: string;
+	  }
 	| { kind: 'program'; sequenceId: string };
 
 export type ImportProgress = {
@@ -34,7 +42,12 @@ export type ImportResult = {
 export interface ImportService {
 	/** Imports OS files (upload on web, path registration on desktop) and commits one transaction. */
 	importFiles(
-		input: { files?: File[]; paths?: string[] },
+		input: {
+			files?: File[];
+			paths?: string[];
+			/** wp-clipboard-2 (CLB-010): project item names for `files` (same order; default the file name). */
+			names?: (string | undefined)[];
+		},
 		target: ImportTarget,
 		onProgress?: (p: ImportProgress) => void,
 	): Promise<ImportResult>;

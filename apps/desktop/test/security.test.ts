@@ -3,7 +3,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+	CLIPBOARD_FILE_LIST_TYPE,
 	CLIPBOARD_MAX_BYTES,
+	CLIPBOARD_MAX_FILES,
 	clipboardReadResult,
 	ELECTRON_CLIPBOARD_FORMAT,
 	isClipboardWrite,
@@ -12,6 +14,7 @@ import {
 	isSameOrigin,
 	isWindowAction,
 	mcpLaunchInfo,
+	parseClipboardFileList,
 } from '../src/security.ts';
 
 describe('clipboard bridge (wp-clipboard, S01:CLB-002/009)', () => {
@@ -45,6 +48,44 @@ describe('clipboard bridge (wp-clipboard, S01:CLB-002/009)', () => {
 			/'jasper:clipboard-write', async \(e, data: unknown\) => \{\n\t\tif \(!fromApp\(e\) \|\| !isClipboardWrite\(data\)\)/,
 		);
 		expect(main).toMatch(/'jasper:clipboard-read', async \(e\) => \{\n\t\tif \(!fromApp\(e\)\)/);
+	});
+});
+
+describe('external files on the clipboard (wp-clipboard-2, S01:CLB-010)', () => {
+	it('parses uri-lists and GNOME copies into local absolute paths only', () => {
+		expect(
+			parseClipboardFileList(
+				'# comment\r\nfile:///home/me/a%20b.mov\r\nhttps://example.com/x.mp4\r\nfile://otherhost/c.png\r\nfile:///home/me/a%20b.mov\r\n',
+				'linux',
+			),
+		).toEqual(['/home/me/a b.mov']);
+		expect(
+			parseClipboardFileList('copy\nfile:///tmp/one.png\nfile://localhost/tmp/two.wav', 'linux'),
+		).toEqual(['/tmp/one.png', '/tmp/two.wav']);
+		expect(parseClipboardFileList('file:///C:/Media/clip.mp4', 'win32')).toEqual(['C:\\Media\\clip.mp4']);
+		expect(parseClipboardFileList('file:///bad%E0%A4%A', 'linux')).toEqual([]);
+		expect(parseClipboardFileList('file:///nul%00x', 'linux')).toEqual([]);
+		expect(parseClipboardFileList(42)).toEqual([]);
+		const many = Array.from({ length: CLIPBOARD_MAX_FILES + 5 }, (_, i) => `file:///f/${i}.png`).join('\n');
+		expect(parseClipboardFileList(many, 'linux')).toHaveLength(CLIPBOARD_MAX_FILES);
+		for (const t of [
+			'text/uri-list',
+			'public.file-url',
+			'electron application/osclipboard;format="text/uri-list"',
+		])
+			expect(CLIPBOARD_FILE_LIST_TYPE.test(t)).toBe(true);
+		expect(CLIPBOARD_FILE_LIST_TYPE.test('text/plain')).toBe(false);
+	});
+
+	it('the preload exposes file paths and the file list read; main answers only the app origin', () => {
+		const preload = readFileSync(join(__dirname, '../src/preload.cts'), 'utf8');
+		expect(preload).toContain("ipcRenderer.invoke('jasper:clipboard-read-files')");
+		expect(preload).toContain('webUtils.getPathForFile(file)');
+		const main = readFileSync(join(__dirname, '../src/main.ts'), 'utf8');
+		expect(main).toMatch(
+			/'jasper:clipboard-read-files', async \(e\) => \{\n\t\tif \(!fromApp\(e\)\) return \[\];/,
+		);
+		expect(main).toContain('existsSync(p)');
 	});
 });
 
