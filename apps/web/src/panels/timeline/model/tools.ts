@@ -63,10 +63,18 @@ export type GestureKind =
 	| 'zoom'
 	| 'select'
 	| 'gap'
+	| 'transitionEdge'
+	| 'transitionBody'
 	| 'none';
 
 /** TL-591 dispatcher: what a pointer-down does for the active tool on this hit. */
 export function resolveGesture(tool: ToolId, hit: Hit, mods: Mods): GestureKind {
+	if (hit.kind === 'transition') {
+		// S10:TUI-010/016: the selection tools edit transitions; every other tool acts on what is underneath.
+		if (tool === 'selection' || tool === 'type')
+			return hit.transition.zone === 'body' ? 'transitionBody' : 'transitionEdge';
+		return resolveGesture(tool, hit.under, mods);
+	}
 	const onClip = hit.kind === 'clip';
 	const edge = onClip && hit.zone !== 'body';
 	const empty = hit.kind === 'empty' || hit.kind === 'gap' || hit.kind === 'none' || hit.kind === 'new-track';
@@ -111,7 +119,19 @@ export function resolveGesture(tool: ToolId, hit: Hit, mods: Mods): GestureKind 
 /** CSS cursor per tool and hover target (TL-530, S05:IC-010; standard cursors in M1). */
 export function cursorFor(tool: ToolId, hit: Hit, mods: Mods): string {
 	const g = resolveGesture(tool, hit, mods);
+	if (hit.kind === 'transition' && g !== 'transitionEdge' && g !== 'transitionBody')
+		return cursorFor(tool, hit.under, mods);
 	switch (g) {
+		case 'transitionEdge':
+			return hit.kind === 'transition' &&
+				hit.transition.geom.t.alignment === 'center' &&
+				!hit.transition.geom.oneSided
+				? 'ew-resize'
+				: hit.kind === 'transition' && hit.transition.zone === 'start'
+					? 'w-resize'
+					: 'e-resize';
+		case 'transitionBody':
+			return hit.kind === 'transition' && !hit.transition.geom.oneSided ? 'grab' : 'default';
 		case 'trim':
 		case 'ripple':
 		case 'stretch':

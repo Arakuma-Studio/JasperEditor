@@ -566,11 +566,13 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 				? a.channels.streamIndex
 				: m.record.probe.streams.find((s) => s.type === 'audio')?.index;
 			if (stream === undefined) continue;
-			const f0 = Math.max(a.start, R0);
-			const f1 = Math.min(a.start + a.duration, R1);
+			// A crossfade plays the clip's handles: content from `headHandle` frames before its start to
+			// `tailHandle` frames after its end (S10:TUI-052); its fades cover the span.
+			const f0 = Math.max(a.start - (a.headHandle ?? 0), R0);
+			const f1 = Math.min(a.start + a.duration + (a.tailHandle ?? 0), R1);
 			if (f1 <= f0) continue;
 			const n = f1 - f0;
-			const startSec = audioContentSec(a, f0, F);
+			const startSec = Math.max(0, audioContentSec(a, f0, F));
 			const k = addInput(['-ss', sec(startSec), '-t', sec(n * frameSec * a.speed.rate + 0.1), '-i', m.path]);
 			const db = a.gainDb + a.volumeDb.value + a.track.volumeDb.value + snap.master.volumeDb.value;
 			const samples = Math.round(n * frameSec * SAMPLE_RATE);
@@ -641,7 +643,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 	return { args, filter, inputs, outputFrames: output.frames, durationSec: output.durationSec };
 }
 
-/** Content time in seconds of an audio clip at sequence frame `f` (S01:CLP-004). */
+/** Content time in seconds of an audio clip at sequence frame `f` (S01:CLP-004; before `start` = head handle). */
 function audioContentSec(a: RenderAudioClip, f: number, F: number): number {
 	const i = f - a.start;
 	return (a.sourceIn + i * F * a.speed.rate) / FLICKS_PER_SECOND;

@@ -13,7 +13,10 @@ import {
 	sequenceTimecode,
 	sourceOut,
 	type Track,
+	type Transition,
 	trackLabel,
+	transitionSpan,
+	transitionSpec,
 } from '@jasper/project';
 
 const round3 = (x: number) => Math.round(x * 1000) / 1000;
@@ -176,7 +179,41 @@ export function projectSummary(doc: ProjectDocument, revision: number | undefine
 	};
 }
 
-/** `get_timeline`: a compact text table (one row per clip) plus markers. */
+/**
+ * Where a transition sits: the cut (the outgoing clip's end, else the incoming clip's start) and the span
+ * `[start, end)` it covers around it. Null when neither of its clips exists any more.
+ */
+export function transitionPlacement(
+	seq: Sequence,
+	t: Transition,
+): { cut: number; start: number; end: number } | null {
+	const out = t.outgoingClipId ? seq.clips[t.outgoingClipId] : undefined;
+	const inc = t.incomingClipId ? seq.clips[t.incomingClipId] : undefined;
+	const cut = out ? out.start + out.duration : inc ? inc.start : null;
+	if (cut === null) return null;
+	return { cut, ...transitionSpan(cut, t.duration, t.alignment) };
+}
+
+/** `get_timeline`: one line per transition overlapping [from, to), in track order then time. */
+export function transitionLines(seq: Sequence, from = 0, to = Number.POSITIVE_INFINITY): string[] {
+	const order = new Map(tracksOf(seq).map((t, i) => [t.id, i]));
+	return Object.values(seq.transitions)
+		.map((t) => ({ t, p: transitionPlacement(seq, t) }))
+		.filter(
+			(x): x is { t: Transition; p: NonNullable<typeof x.p> } => !!x.p && x.p.start < to && x.p.end > from,
+		)
+		.sort((a, b) => (order.get(a.t.trackId) ?? 0) - (order.get(b.t.trackId) ?? 0) || a.p.cut - b.p.cut)
+		.map(({ t, p }) => {
+			const kind =
+				t.outgoingClipId && t.incomingClipId ? t.alignment : t.incomingClipId ? 'fade in' : 'fade out';
+			return (
+				`  ${trackLabel(seq, t.trackId) ?? t.trackId} ${t.id} ${transitionSpec(t.effectId)?.label ?? t.effectId} ` +
+				`${sequenceTimecode(seq, p.start)}–${sequenceTimecode(seq, p.end)} (${p.start}–${p.end}) ${kind}, ${t.duration} frames`
+			);
+		});
+}
+
+/** `get_timeline`: a compact text table (one row per clip) plus transitions and markers. */
 export function timelineTable(
 	doc: ProjectDocument,
 	seq: Sequence,
@@ -223,6 +260,8 @@ export function timelineTable(
 			);
 		}
 	}
+	const transitions = transitionLines(seq, from, to);
+	if (transitions.length) lines.push('Transitions:', ...transitions);
 	const markers = seq.markers.filter((m) => m.frame >= from && m.frame < to);
 	if (markers.length) {
 		lines.push('Markers:');

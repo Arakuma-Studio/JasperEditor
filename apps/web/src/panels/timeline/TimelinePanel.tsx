@@ -5,11 +5,17 @@
 import { EngineClient } from '@jasper/engine-client';
 import {
 	type Clip,
+	formatTimecode,
 	LABEL_COLORS,
 	type MediaAsset,
 	type ProjectItem,
+	parseTimecodeEntry,
+	type Rational,
 	type Sequence,
 	sequenceDuration,
+	TRANSITION_SPECS,
+	type Transition,
+	transitionSpec,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useSessionOrNull, useSessionState, useStoreSelector } from '@jasper/session/react';
@@ -19,7 +25,16 @@ import { createCommandContext } from '../../commands/context.ts';
 import { runCommand } from '../../commands/registry.ts';
 import { clipMenuExtensions, collectMenuItems } from '../../extensions/index.ts';
 import { getImportService, PROJECT_ITEMS_MIME } from '../../state/services.ts';
-import { applyEffectToClips, isEffectDrag, readEffectDragPayload } from '../effects/drag.ts';
+import {
+	activeTransitionDrag,
+	applyEffectToClips,
+	endTransitionDrag,
+	isEffectDrag,
+	isTransitionDrag,
+	readEffectDragPayload,
+	readTransitionDragPayload,
+} from '../effects/drag.ts';
+import { setDefaultTransition } from '../effects/transition-prefs.ts';
 import { insertMotionTemplate, MG_TEMPLATE_MIME, readMgTemplateDrag } from '../motionTemplates/insert.ts';
 import type { PanelProps } from '../types.ts';
 import { ContextMenu, GestureTooltip, SequenceTabs, Toolbar, ZoomBar } from './components/Chrome.tsx';
@@ -40,13 +55,26 @@ import { itemDurationFrames } from './model/drop.ts';
 import { hitTest } from './model/hit.ts';
 import { computeLayout, hitY, regionIndexAt } from './model/layout.ts';
 import { renderSegments } from './model/renderbar.ts';
+import {
+	type DropTarget,
+	dropCommand,
+	hitTransition,
+	resolveTransitionDrop,
+	type TransitionGeom,
+	transitionIndex,
+} from './model/transitions.ts';
 import { boundaryFrameAt, extentEnd, followPage, followSmooth, type Viewport } from './model/viewport.ts';
 import { type Geometry, type PointerInfo, TimelineController } from './state/controller.ts';
 import { timelineGesturePreview } from './state/gesture-preview.ts';
 import { HEADER_MAX, HEADER_MIN, setPrefs, timelinePrefs } from './state/prefs.ts';
-import { type ContextMenuItem, createTimelineUiStore } from './state/ui-store.ts';
+import { type ContextMenuItem, createTimelineUiStore, type TransitionGhost } from './state/ui-store.ts';
 
 const EMPTY: readonly string[] = [];
+const ALIGNMENTS: readonly [Transition['alignment'], string][] = [
+	['center', 'Center at Cut'],
+	['start-at-cut', 'Start at Cut'],
+	['end-at-cut', 'End at Cut'],
+];
 
 function mods(e: { shiftKey: boolean; ctrlKey: boolean; altKey: boolean; metaKey: boolean }, mac: boolean) {
 	return { shift: e.shiftKey, ctrl: mac ? e.metaKey : e.ctrlKey, alt: e.altKey };
@@ -100,6 +128,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 	const committedDoc = useSessionState((s) => s.document);
 	const view = useSessionState((s) => s.views[seqId]!);
 	const selectedClips = useSessionState((s) => s.selection.timeline.clips);
+	const selectedTransitionIds = useSessionState((s) => s.selection.timeline.transitions);
 	// The sequence tab strip only shows with 2+ open sequences (SequenceTabs hideSingle); the playhead
 	// overlay starts below it.
 	const openTabs = useSessionState((s) => s.tabs.open.length);
@@ -119,6 +148,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			editPoints: s.editPoints,
 			drop: s.drop,
 			flash: s.flash,
+			transitionGhost: s.transitionGhost,
 		}),
 		(a, b) =>
 			a.marquee === b.marquee &&
@@ -128,7 +158,8 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			a.limit === b.limit &&
 			a.editPoints === b.editPoints &&
 			a.drop === b.drop &&
-			a.flash === b.flash,
+			a.flash === b.flash &&
+			a.transitionGhost === b.transitionGhost,
 	);
 	const cursor = useStoreSelector(ui, (s) => s.cursor);
 	const tooltip = useStoreSelector(ui, (s) => s.tooltip);
@@ -345,6 +376,9 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 
 	// ------------------------------------------------------------ derived
 	const selectedSet = useMemo(() => new Set(selectedClips), [selectedClips]);
+	// S10:TUI-004: per-track transition index of the drawn sequence (follows gestures, TUI-005).
+	const transitions = useMemo(() => transitionIndex(seq, media), [seq, media]);
+	const selectedTransitions = useMemo(() => new Set(selectedTransitionIds), [selectedTransitionIds]);
 	const segments = useMemo(() => renderSegments(committedDoc, seqId), [committedDoc, seqId]);
 	const extent = useMemo(() => {
 		const lastMarker = committedSeq.markers.length
@@ -459,6 +493,252 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		];
 	};
 
+	// ------------------------------------------------------------ transitions (S10)
+	const updateTransition = (label: string, t: Transition, patch: Record<string, unknown>) => {
+		const r = apply(label, [{ type: 'transition.update', transitionId: t.id, ...patch }]);
+		if (r.ok && r.warnings.length) toast('info', r.warnings[0]!.message);
+	};
+	/** TUI-045: Set Duration…, Alignment ▸, Replace With ▸, Clear, Set as Default Transition. */
+	const transitionMenu = (g: TransitionGeom): ContextMenuItem[] => {
+		const t = g.t;
+		const medium = g.spec?.appliesTo ?? 'video';
+		const ids = () => {
+			const sel = session.getState().selection.timeline.transitions;
+			return sel.includes(t.id) ? sel : [t.id];
+		};
+		return [
+			{
+				kind: 'item',
+				label: 'Set Duration…',
+				run: () => {
+					const rate = committedSeq.settings.frameRate;
+					const text =
+						typeof window !== 'undefined'
+							? window.prompt('Transition duration (timecode or frames)', String(t.duration))
+							: null;
+					if (!text) return;
+					const n = /^\d+$/.test(text.trim())
+						? Number(text.trim())
+						: parseTimecodeEntry(text, rate, {
+								current: t.duration,
+								dropFrame: committedSeq.settings.dropFrame,
+							});
+					if (n && n > 0) updateTransition('Transition Duration', t, { duration: Math.round(n) });
+					else toast('warning', `Not a duration: ${text}`);
+				},
+			},
+			{
+				kind: 'submenu',
+				label: 'Alignment',
+				items: ALIGNMENTS.map(([a, label]) => ({
+					kind: 'item' as const,
+					label,
+					checked: t.alignment === a,
+					disabled: !!g.oneSided,
+					run: () => updateTransition('Transition Alignment', t, { alignment: a }),
+				})),
+			},
+			{
+				kind: 'submenu',
+				label: 'Replace With',
+				items: TRANSITION_SPECS.filter((s) => s.appliesTo === medium).map((s) => ({
+					kind: 'item' as const,
+					label: s.label,
+					checked: t.effectId === s.id,
+					run: () => updateTransition('Replace Transition', t, { effectId: s.id }),
+				})),
+			},
+			{ kind: 'separator' },
+			{
+				kind: 'item',
+				label: 'Clear',
+				shortcut: 'Delete',
+				run: () => {
+					const list = ids();
+					const r = apply(list.length > 1 ? 'Clear Transitions' : 'Clear Transition', [
+						{ type: 'transition.remove', transitionIds: list },
+					]);
+					if (r.ok) session.select('transitions', [], 'replace');
+				},
+			},
+			{
+				kind: 'item',
+				label: 'Set as Default Transition',
+				disabled: !g.spec,
+				run: () => {
+					if (setDefaultTransition(t.effectId))
+						toast('info', `${g.spec?.label ?? t.effectId} is the default ${medium} transition`);
+				},
+			},
+		];
+	};
+
+	/** TUI-011: double-click a transition → Effect Controls shows it. */
+	const onDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+		const p = local(e);
+		const g = geomRef.current;
+		const yh = hitY(g.layout, p.y);
+		if (yh.kind !== 'track') return;
+		const th = hitTransition(transitions, yh.row, g.viewport, p.x, p.y - yh.row.y);
+		if (!th) return;
+		session.select('timeline', [], 'replace');
+		session.select('transitions', [th.geom.t.id], 'replace');
+		run('panel.focus.effectControls');
+	};
+
+	/** TUI-021/022: drop target (on the committed sequence) for a transition dragged over the tracks. */
+	const transitionDropAt = (e: React.DragEvent, effectId: string | null): DropTarget | null | 'unknown' => {
+		if (!effectId) return 'unknown';
+		const spec = transitionSpec(effectId);
+		if (!spec) return null;
+		const p = local(e);
+		const g = geomRef.current;
+		const yh = hitY(g.layout, p.y);
+		if (yh.kind !== 'track') return null;
+		const track = [...committedSeq.videoTracks, ...committedSeq.audioTracks].find(
+			(t) => t.id === yh.row.trackId,
+		);
+		if (!track || track.locked) return null;
+		const committedIndex = transitionIndex(committedSeq, committedDoc.media);
+		const over = hitTransition(committedIndex, yh.row, g.viewport, p.x, p.y - yh.row.y)?.geom ?? null;
+		return resolveTransitionDrop({
+			seq: committedSeq,
+			media: committedDoc.media,
+			trackId: track.id,
+			trackKind: yh.row.kind,
+			spec,
+			v: g.viewport,
+			x: p.x,
+			over,
+			wanted: committedDoc.settings.defaultTransitionFrames,
+		});
+	};
+	const showTransitionGhost = (
+		ghost: TransitionGhost | null,
+		lines: string[] | null,
+		x: number,
+		y: number,
+	) => {
+		const cur = ui.getState();
+		if (
+			JSON.stringify(cur.transitionGhost) !== JSON.stringify(ghost) ||
+			JSON.stringify(cur.tooltip?.lines ?? null) !== JSON.stringify(lines)
+		)
+			ui.setState({ transitionGhost: ghost, tooltip: lines ? { x, y, lines } : null, drop: null });
+	};
+	const onTransitionDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+		const effectId = activeTransitionDrag();
+		const target = transitionDropAt(e, effectId);
+		const p = local(e);
+		if (target === 'unknown') {
+			// Dragged from another window: the id is unreadable until the drop.
+			e.preventDefault();
+			e.dataTransfer.dropEffect = 'copy';
+			return;
+		}
+		if (!target || target.refused) {
+			// TUI-022: refused (N = 0) or not a track of this medium → no drop, cursor not-allowed.
+			e.dataTransfer.dropEffect = 'none';
+			showTransitionGhost(
+				target?.kind === 'add'
+					? {
+							trackId: target.trackId,
+							wanted: target.feedback.wanted,
+							fitted: null,
+							bands: target.feedback.bands,
+							missing: target.feedback.missing,
+							refused: true,
+						}
+					: null,
+				target?.refused ? ['Insufficient media: the transition cannot be added', target.refused] : null,
+				p.x,
+				p.y,
+			);
+			return;
+		}
+		e.preventDefault();
+		e.dataTransfer.dropEffect = 'copy';
+		const rate = committedSeq.settings.frameRate;
+		const dropFrame = committedSeq.settings.dropFrame;
+		if (target.kind === 'replace') {
+			const geom = (transitions.get(target.transition.trackId) ?? []).find(
+				(x) => x.t.id === target.transition.id,
+			);
+			const span = geom ? { start: geom.start, end: geom.end } : { start: 0, end: 0 };
+			showTransitionGhost(
+				{
+					trackId: target.transition.trackId,
+					wanted: span,
+					fitted: span,
+					bands: [],
+					missing: [],
+					refused: false,
+					replace: true,
+				},
+				[`Replace with ${transitionSpec(effectId ?? '')?.label ?? 'transition'}`],
+				p.x,
+				p.y,
+			);
+			return;
+		}
+		const f = target.feedback;
+		const where = target.oneSided
+			? target.oneSided === 'in'
+				? 'Fade in'
+				: 'Fade out'
+			: (ALIGNMENTS.find(([a]) => a === target.alignment)?.[1] ?? '');
+		const lines = [`${where} · ${formatDuration(f.fittedDuration, rate, dropFrame)}`];
+		if (f.fittedDuration < f.wantedDuration)
+			lines.push(`Insufficient media: the transition will be ${f.fittedDuration} frames`);
+		showTransitionGhost(
+			{
+				trackId: target.trackId,
+				wanted: f.wanted,
+				fitted: f.fitted,
+				bands: f.bands,
+				missing: f.missing,
+				refused: false,
+			},
+			lines,
+			p.x,
+			p.y,
+		);
+	};
+	/** TUI-023/024: one entry "Add Transition" / "Replace Transition"; shortening warnings as toasts. */
+	const onTransitionDrop = (e: React.DragEvent<HTMLDivElement>) => {
+		const payload = readTransitionDragPayload(e.dataTransfer);
+		endTransitionDrag();
+		ui.setState({ transitionGhost: null, tooltip: null });
+		if (!payload) return;
+		const spec = transitionSpec(payload.effectId);
+		if (!spec) {
+			toast('warning', `Unknown transition ${payload.effectId}`);
+			return;
+		}
+		const target = transitionDropAt(e, payload.effectId);
+		if (target === 'unknown' || !target) {
+			toast('warning', `${spec.label} cannot be dropped there.`);
+			return;
+		}
+		if (target.refused) {
+			toast('warning', target.refused);
+			return;
+		}
+		const r = apply(target.kind === 'replace' ? 'Replace Transition' : 'Add Transition', [
+			dropCommand(target, spec.id),
+		]);
+		if (!r.ok) return;
+		for (const w of r.warnings) toast('warning', w.message);
+		const id =
+			target.kind === 'replace'
+				? target.transition.id
+				: (r.results[0] as { transitionId?: string }).transitionId;
+		if (id) {
+			session.select('timeline', [], 'replace');
+			session.select('transitions', [id], 'replace');
+		}
+	};
+
 	// ------------------------------------------------------------ track-area handlers
 	const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
 		touchTimelineInstance(props.instanceId);
@@ -495,6 +775,16 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		const g = geomRef.current;
 		const yh = hitY(g.layout, p.y);
 		if (yh.kind !== 'track') return;
+		const th = hitTransition(transitions, yh.row, g.viewport, p.x, p.y - yh.row.y);
+		if (th) {
+			// TUI-045: right-clicking a transition selects it and opens its menu.
+			if (!selectedTransitions.has(th.geom.t.id)) {
+				session.select('timeline', [], 'replace');
+				session.select('transitions', [th.geom.t.id], 'replace');
+			}
+			openMenu(e.clientX, e.clientY, transitionMenu(th.geom));
+			return;
+		}
 		const frame = Math.floor(g.viewport.scrollFrame + p.x / g.viewport.pxPerFrame);
 		const c = Object.values(seq.clips).find(
 			(x) => x.trackId === yh.row.trackId && x.start <= frame && frame < x.start + x.duration,
@@ -530,6 +820,10 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 	};
 	const onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
 		const types = Array.from(e.dataTransfer?.types ?? []);
+		if (isTransitionDrag(e.dataTransfer)) {
+			onTransitionDragOver(e);
+			return;
+		}
 		// Effects (WP-2D) drop onto the clip under the pointer; no insert/overwrite indicator.
 		if (isEffectDrag(e.dataTransfer)) {
 			e.preventDefault();
@@ -546,6 +840,10 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 	};
 	const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
 		e.preventDefault();
+		if (isTransitionDrag(e.dataTransfer)) {
+			onTransitionDrop(e);
+			return;
+		}
 		const t = dropTarget(e);
 		ui.setState({ drop: null });
 		const effect = readEffectDragPayload(e.dataTransfer);
@@ -793,7 +1091,8 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 					onPointerLeave={() => controller.leave()}
 					onContextMenu={onContextMenu}
 					onDragOver={onDragOver}
-					onDragLeave={() => ui.setState({ drop: null })}
+					onDragLeave={() => ui.setState({ drop: null, transitionGhost: null, tooltip: null })}
+					onDoubleClick={onDoubleClick}
 					onDrop={onDrop}
 					data-testid="timeline-clip-area"
 				>
@@ -810,6 +1109,8 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 						display={display}
 						mediaVersion={mediaVersion}
 						overlays={overlays}
+						transitions={transitions}
+						selectedTransitions={selectedTransitions}
 					/>
 					<GestureTooltip tooltip={tooltip} width={size.w} />
 				</div>
@@ -880,6 +1181,10 @@ function PlayheadOverlay(props: {
 			/>
 		</div>
 	);
+}
+
+function formatDuration(frames: number, rate: Rational, dropFrame: boolean): string {
+	return `${formatTimecode(frames, rate, { dropFrame })} (${frames})`;
 }
 
 function gapAtFrame(

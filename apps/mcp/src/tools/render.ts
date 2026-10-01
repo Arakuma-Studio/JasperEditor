@@ -58,7 +58,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 		{
 			title: 'Get timeline',
 			description:
-				'The timeline of one sequence as a compact text table: one row per clip with track, clip id, kind, name, start–end timecode and frames, source (media file and in/out seconds, text, or template) and linked partners; then markers and In/Out. Optionally only clips overlapping [from, to).',
+				'The timeline of one sequence as a compact text table: one row per clip with track, clip id, kind, name, start–end timecode and frames, source (media file and in/out seconds, text, or template) and linked partners; then transitions per track (id, type, span, alignment or fade in/out, duration), markers and In/Out. Optionally only what overlaps [from, to).',
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,

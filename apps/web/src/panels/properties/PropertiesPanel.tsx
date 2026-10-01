@@ -3,6 +3,7 @@
 // Controls, with a ◆ toggle per property instead of the mini-timeline.
 import type { EditorSession } from '@jasper/session';
 import { useSessionOrNull, useSessionState } from '@jasper/session/react';
+import { TransitionSection } from '../effectControls/TransitionSection.tsx';
 import type { PanelProps } from '../types.ts';
 import { ClipProperties } from './ClipProperties.tsx';
 import { useNotices } from './controls/Notices.tsx';
@@ -34,6 +35,7 @@ function PropertiesBody({ session }: { session: EditorSession }) {
 	const frame = usePlayheadFrame();
 	const ops = useInspectorOps(session);
 	const notices = useNotices();
+	const selectedTransitions = useSessionState((s) => s.selection.timeline.transitions.length);
 	const seqName = useSessionState((s) => {
 		const seqId = s.activeSequenceId;
 		const item = Object.values(s.document.items).find(
@@ -44,6 +46,8 @@ function PropertiesBody({ session }: { session: EditorSession }) {
 		return item?.name ?? 'Sequence';
 	});
 	if (!data.selection) return <Empty text="Open a sequence to see its properties." />;
+	if (data.selection.clips.length === 0 && selectedTransitions > 0)
+		return <TransitionSection session={session} host="properties" />;
 	const { seq, clips } = data.selection;
 	const ctx: RowContext = {
 		doc: data.doc,
