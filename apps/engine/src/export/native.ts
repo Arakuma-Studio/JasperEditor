@@ -26,7 +26,6 @@ import { sec } from '../tools/ffmpeg.ts';
 import {
 	BUILTIN_NATIVE_EFFECTS,
 	type LayerOverride,
-	layerOverride,
 	type NativeExtension,
 	type PreparedExtensions,
 } from './native-ext.ts';
@@ -172,6 +171,26 @@ export function audioFadeFilters(
 		),
 		...(pad > 0 ? [`atrim=start_sample=${pad}`, 'asetpts=PTS-STARTPTS'] : []),
 	];
+}
+
+/**
+ * The override a layer is drawn from: the first `sequence` override (a fully placed layer, e.g. the warp stage,
+ * which sources the picture itself from an earlier extension's `layer` override, ARCHITECTURE §19.6), else the
+ * first `layer` override, else null.
+ */
+export function pickOverride(
+	list: readonly NativeExtension[],
+	prepared: PreparedExtensions,
+	clip: RenderVisualClip,
+): LayerOverride | null {
+	let first: LayerOverride | null = null;
+	for (const ext of list) {
+		const o = ext.override?.(clip, prepared.get(ext.id));
+		if (!o) continue;
+		if (o.space === 'sequence') return o;
+		first ??= o;
+	}
+	return first;
 }
 
 export type LayerSourceOptions = {
@@ -413,7 +432,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 
 		// M2 (§19.6): a pre-rendered picture from an extension replaces the source ('layer') or the whole placed
 		// layer ('sequence', overlaid at 0,0 with only the transition fades applied here).
-		const override = exts ? layerOverride(exts.list, exts.prepared, c) : null;
+		const override = exts ? pickOverride(exts.list, exts.prepared, c) : null;
 		if (override?.space === 'sequence') {
 			const k = addInput([
 				...(override.decoder ? ['-c:v', override.decoder] : []),
