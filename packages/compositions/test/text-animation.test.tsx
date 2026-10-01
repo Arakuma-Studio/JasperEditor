@@ -10,9 +10,9 @@ import {
 	type RenderSnapshot,
 } from '@jasper/project';
 import { Thumbnail } from '@remotion/player';
-import { render } from '@testing-library/react';
+import { act, cleanup, render } from '@testing-library/react';
 import fc from 'fast-check';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
 	DEFAULT_RENDER_OPTIONS,
 	type RenderDoc,
@@ -105,6 +105,60 @@ describe('rest state (S11:ANM-009, TXA-010)', () => {
 		const v = view(docWith({ textAnimation: SLIDE_FADE }, 60, 'https://fonts.test/slow.woff2'), 3);
 		expect(v.container.querySelector('[data-text-block]')).toBeNull();
 		expect(v.units()).toHaveLength(0);
+	});
+});
+
+describe('measuring while display:none (review fix)', () => {
+	afterEach(() => {
+		delete (HTMLElement.prototype as { offsetParent?: unknown }).offsetParent;
+		vi.unstubAllGlobals();
+	});
+	it('hides the unmeasured flow inside a window and measures once the block gets a layout', () => {
+		cleanup(); // earlier views (e.g. a layer whose face loads late) must not observe under the stubs below
+		// happy-dom has no offsetParent: emulate a hidden editor (display:none ancestor → null) and a ResizeObserver.
+		let displayed = false;
+		Object.defineProperty(HTMLElement.prototype, 'offsetParent', {
+			configurable: true,
+			get(this: HTMLElement) {
+				return displayed && this !== document.body ? document.body : null;
+			},
+		});
+		const observers: { cb: () => void; target: Element | null }[] = [];
+		vi.stubGlobal(
+			'ResizeObserver',
+			class {
+				o: { cb: () => void; target: Element | null };
+				constructor(cb: () => void) {
+					this.o = { cb, target: null };
+					observers.push(this.o);
+				}
+				observe(target: Element) {
+					this.o.target = target;
+				}
+				unobserve() {
+					this.o.target = null;
+				}
+				disconnect() {
+					this.o.target = null;
+				}
+			},
+		);
+		const v = view(docWith({ textAnimation: SLIDE_FADE }), 2);
+		expect(v.block().dataset.textAnimating).toBe('measure');
+		expect(v.block().style.visibility).toBe('hidden');
+		expect(v.units()).toHaveLength(0);
+		// the text layer observes its block (the player observes its own container)
+		const watching = () => observers.filter((o) => o.target?.hasAttribute('data-text-block'));
+		const live = watching();
+		expect(live.length).toBe(1);
+		// still hidden: a resize notification without layout changes nothing
+		act(() => live[0]!.cb());
+		expect(v.block().dataset.textAnimating).toBe('measure');
+		displayed = true;
+		act(() => live[0]!.cb());
+		expect(v.block().dataset.textAnimating).toBe('in');
+		expect(v.units().map((u) => u.textContent)).toEqual(['Hello', 'brave', 'world']);
+		expect(watching().length).toBe(0);
 	});
 });
 

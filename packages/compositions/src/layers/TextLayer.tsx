@@ -351,12 +351,25 @@ function AnimatedText({
 	const layoutKey = JSON.stringify([source.text, source.box, flow.unit, fonts]);
 	const [measured, setMeasured] = useState<Measured | null>(null);
 	const m = measured?.key === layoutKey ? measured : null;
-	// Measure once per layout key before paint (a display:none layer has no layout yet: retry next render).
+	// review fix (unmeasured while display:none) — begin
+	const [, relayout] = useState(0);
+	// Measure once per layout key before paint. A display:none layer (e.g. the editor hidden during Export) has no
+	// layout yet: observe the block and render again as soon as it gets one (no playhead move needed).
 	useLayoutEffect(() => {
 		const p = pRef.current;
-		if (m || !p || p.offsetParent === null) return;
-		setMeasured(measureFlow(p, flow, layoutKey));
+		if (m || !p) return;
+		if (p.offsetParent !== null) {
+			setMeasured(measureFlow(p, flow, layoutKey));
+			return;
+		}
+		if (typeof ResizeObserver === 'undefined') return;
+		const ro = new ResizeObserver(() => {
+			if (p.offsetParent !== null) relayout((n) => n + 1);
+		});
+		ro.observe(p);
+		return () => ro.disconnect();
 	});
+	// review fix (unmeasured while display:none) — end
 	const lineMode = flow.unit === 'line';
 	const units = m ? (lineMode ? m.lines : flow.units) : 0;
 	const box = source.box;
@@ -406,9 +419,15 @@ function AnimatedText({
 			</span>
 		),
 	);
+	// Unmeasured: hidden, never the rest state inside a window (review fix).
 	if (!m)
 		return (
-			<p ref={pRef} data-text-block="" data-text-animating="measure" style={block}>
+			<p
+				ref={pRef}
+				data-text-block=""
+				data-text-animating="measure"
+				style={{ ...block, visibility: 'hidden' }}
+			>
 				{flowNodes}
 			</p>
 		);
