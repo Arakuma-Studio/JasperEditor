@@ -154,7 +154,14 @@ afterAll(async () => {
 describe('tracking tools (S09:TRA-001/002, §8 item 7)', () => {
 	it('lists the tracking tools with render_frame guidance', async () => {
 		const { tools } = await client.listTools();
-		for (const n of ['add_tracker', 'track', 'apply_tracking', 'get_tracker', 'set_corner_pin'])
+		for (const n of [
+			'add_tracker',
+			'track',
+			'apply_tracking',
+			'get_tracker',
+			'set_corner_pin',
+			'simplify_keyframes',
+		])
 			expect(tools.map((t) => t.name)).toContain(n);
 		expect(tools.find((t) => t.name === 'apply_tracking')!.description).toMatch(/render_frame/);
 		expect(client.getInstructions()).toMatch(/add_tracker/);
@@ -213,6 +220,30 @@ describe('tracking tools (S09:TRA-001/002, §8 item 7)', () => {
 			targetClipId: targetId,
 			mode: 'corner-pin',
 		});
+		// S09:TRK-023 / TRA-003: simplify the 150 per-frame keys of each corner (dry run first, then for real).
+		type Simplified = {
+			keyframesBefore: number;
+			keyframesAfter: number;
+			maxDeviation: number;
+			dryRun?: boolean;
+		};
+		const dry = await ok<Simplified>('simplify_keyframes', {
+			projectId,
+			trackerId: added.trackerId,
+			tolerance: 0.25,
+			dryRun: true,
+		});
+		expect(dry.dryRun).toBe(true);
+		expect(dry.keyframesBefore).toBe(4 * 150);
+		expect(dry.keyframesAfter).toBeLessThan(dry.keyframesBefore);
+		expect(dry.maxDeviation).toBeLessThanOrEqual(0.25);
+		const done = await ok<Simplified>('simplify_keyframes', {
+			projectId,
+			clipId: targetId,
+			trackedOnly: true,
+			tolerance: 0.25,
+		});
+		expect(done.keyframesAfter).toBe(dry.keyframesAfter);
 
 		const width = 1280;
 		const s = width / 1920;

@@ -322,7 +322,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (67; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (68; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -333,7 +333,7 @@ Tools (67; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the
   `get_processing_settings` `set_processing_settings` `test_remote_executor`.
 - Remotion projects: `import_mg_bundle` `list_compositions` `add_composition` `set_composition_props`
   `prerender_composition` `scaffold_mg_project`.
-- Tracking: `add_tracker` `track` `apply_tracking` `get_tracker` `set_corner_pin`.
+- Tracking: `add_tracker` `track` `apply_tracking` `get_tracker` `set_corner_pin` `simplify_keyframes`.
 - Transitions: `list_transitions` `update_transition` `remove_transitions` `apply_default_transitions`.
 - Animation and graphics: `list_text_animations` `set_text_animation` `render_frames` `set_motion_graphic_params`
   `add_shape`.

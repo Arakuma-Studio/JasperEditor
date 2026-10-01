@@ -322,6 +322,7 @@ export const trackerHandlers: HandlerMap = {
 			trackerId: tracker.id,
 			mode: cmd.mode,
 			...(effectInstanceId ? { effectInstanceId } : {}),
+			...(cmd.simplify ? { simplify: { tolerance: cmd.simplify.tolerance } } : {}),
 		};
 		// wp-m3-trackui (S09:TRK-023): optional simplification of the keys just baked (only those inside the range).
 		let simplified: SimplifyReport | undefined;

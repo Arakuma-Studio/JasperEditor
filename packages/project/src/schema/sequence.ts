@@ -267,6 +267,11 @@ export const TrackedBySchema = z.looseObject({
 	mode: z.enum(['corner-pin', 'transform']),
 	/** Corner-pin effect instance written by the apply (mode `corner-pin`). */
 	effectInstanceId: z.string().optional(),
+	/**
+	 * M3 (wp-m3-trackui, S09:TRK-023): the baked keys were simplified with this tolerance (sequence px); re-applying
+	 * the tracker from the UI simplifies again with it.
+	 */
+	simplify: z.looseObject({ tolerance: z.number().positive() }).optional(),
 });
 export type TrackedBy = DeepStrip<z.infer<typeof TrackedBySchema>>;
 

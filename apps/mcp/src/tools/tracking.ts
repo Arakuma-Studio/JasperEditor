@@ -8,6 +8,7 @@ import {
 	type ClipTracker,
 	CORNER_PIN_EFFECT_ID,
 	CORNER_PIN_PARAMS,
+	DEFAULT_SIMPLIFY_TOLERANCE,
 	findTracker,
 	invertMat3,
 	layerTimeAt,
@@ -20,10 +21,12 @@ import {
 	type Quad,
 	type Rational,
 	type Sequence,
+	type SimplifyReport,
 	samplesFromTrackResult,
 	samplesSummary,
 	stepOfRate,
 	type TrackMode,
+	trackedTargets,
 	trackerGeometryAt,
 	trackLayerOf,
 	type Vec2,
@@ -52,6 +55,7 @@ export const TRACKING_GUIDE = [
 	'Tracking / screen replacement: put the plate (the footage with the screen or sign) on V1 and the replacement (image, video, composition) on a track above it.',
 	'add_tracker (kind "planar", corners = the screen corners TL, TR, BR, BL in the plate media pixels at a frame where they are visible; corners may lie outside the frame) → track (runs the engine tracker, stores the samples; use refineEdges for screens with a visible bezel) → apply_tracking (mode "corner-pin" pins the replacement onto the screen; "position" / "position-scale-rotation" make it follow).',
 	'Always check the result with render_frame at a few times (start, middle, end, fast motion); fix a frame with set_corner_pin or move the tracker corners (add_tracker again / apply_commands tracker.update) and re-track.',
+	'Tracking bakes one keyframe per frame; simplify_keyframes (or apply_tracking simplifyTolerance) reduces them to the fewest keys that stay within a tolerance in pixels (default 0.1 px) at every frame — preview with dryRun, then apply.',
 ].join(' ');
 
 const Vec2Arg = z.tuple([z.number(), z.number()]);
@@ -93,6 +97,7 @@ function mediaKeyOf(doc: ProjectDocument, mediaId: string): string {
 }
 
 const round2 = (v: number) => Math.round(v * 100) / 100;
+const round4 = (v: number) => Math.round(v * 1e4) / 1e4;
 const roundPt = (p: readonly number[]): Vec2 => [round2(p[0]!), round2(p[1]!)];
 
 function summaryOf(tracker: ClipTracker, mediaRate: Rational | null) {
@@ -338,10 +343,18 @@ export function registerTrackingTools(ctx: ToolContext): void {
 				range: z
 					.object({ start: timeArg('First sequence time'), end: timeArg('End sequence time (exclusive)') })
 					.optional(),
+				simplifyTolerance: z
+					.number()
+					.positive()
+					.max(100)
+					.optional()
+					.describe(
+						'Also simplify the baked per-frame keyframes in the same step, keeping the result within this many sequence pixels of the track at every frame (e.g. 0.1–0.5)',
+					),
 			},
 			annotations: EDIT,
 		},
-		async ({ projectId, trackerId, targetClipId, mode, smoothing, range }, extra) => {
+		async ({ projectId, trackerId, targetClipId, mode, smoothing, range, simplifyTolerance }, extra) => {
 			const { doc } = await loadDoc(ctx, projectId);
 			const loc = locateTracker(doc, trackerId);
 			const commands: unknown[] = [];
@@ -360,10 +373,17 @@ export function registerTrackingTools(ctx: ToolContext): void {
 							},
 						}
 					: {}),
+				...(simplifyTolerance !== undefined ? { simplify: { tolerance: simplifyTolerance } } : {}),
 			});
 			const res = await transact(ctx, projectId, { label: 'Apply Tracking', commands }, extra);
 			const r = requireOk(res);
-			return jsonResult({ ...txBody(res, r), next: 'Check the result with render_frame at a few times.' });
+			const applied = r.results.at(-1) as { frames?: number; simplified?: unknown } | undefined;
+			return jsonResult({
+				...txBody(res, r),
+				...(applied?.frames !== undefined ? { frames: applied.frames } : {}),
+				...(applied?.simplified ? { simplified: applied.simplified } : {}),
+				next: 'Check the result with render_frame at a few times.',
+			});
 		},
 	);
 
@@ -496,6 +516,103 @@ export function registerTrackingTools(ctx: ToolContext): void {
 				...txBody(res, r),
 				normalizedCorners: norm.map((p) => [Math.round(p[0] * 1e6) / 1e6, Math.round(p[1] * 1e6) / 1e6]),
 				next: 'Check with render_frame.',
+			});
+		},
+	);
+	defineTool(
+		ctx,
+		'simplify_keyframes',
+		{
+			title: 'Simplify keyframes',
+			description:
+				'Reduces dense keyframes (tracking output: corner pins and Motion baked one key per frame; recorded animation) to the fewest keys whose animation stays within `tolerance` of the original at EVERY frame — sequence pixels for Motion (position/scale/rotation/anchor) and corner pins (largest displacement of the drawn picture), the parameter\'s own units otherwise (e.g. % for opacity). Kept keys keep their times and values; segments become linear or fitted Bezier eases. Pick what to simplify with exactly one of: clipId (every keyframed parameter of the clip; trackedOnly = only what apply_tracking wrote), trackerId (the clips that tracker drives), targets (parameter paths) or keyframeIds (only those keys may go). Use dryRun to preview the counts and the measured maximum deviation; one History entry "Simplify Keyframes" otherwise.',
+			input: {
+				projectId: ProjectIdArg,
+				tolerance: z
+					.number()
+					.positive()
+					.max(10_000)
+					.optional()
+					.describe(
+						'Maximum deviation at any frame (default 0.1): sequence px for geometry, units otherwise',
+					),
+				clipId: z.string().min(1).optional().describe('Simplify the keyframed parameters of this clip'),
+				trackedOnly: z
+					.boolean()
+					.optional()
+					.describe('With clipId: only the corner pin / Motion keys written by apply_tracking'),
+				trackerId: TrackerIdArg.optional().describe(
+					'Simplify the tracked keys of every clip this tracker drives',
+				),
+				targets: z
+					.array(z.array(z.string().min(1)).min(2))
+					.min(1)
+					.optional()
+					.describe(
+						'Parameter paths, e.g. ["clip","clp_…","transform","position"] or ["effect","fx_…","topLeft"]',
+					),
+				keyframeIds: z.array(z.string().min(1)).min(1).optional().describe('Only these keys may be removed'),
+				dryRun: z.boolean().optional().describe('Report what would happen without changing the project'),
+			},
+			annotations: EDIT,
+		},
+		async ({ projectId, tolerance, clipId, trackedOnly, trackerId, targets, keyframeIds, dryRun }, extra) => {
+			const given = [clipId, trackerId, targets, keyframeIds].filter((x) => x !== undefined).length;
+			if (given !== 1)
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'Give exactly one of clipId, trackerId, targets or keyframeIds',
+					'clipId is the usual choice after apply_tracking.',
+				);
+			let selection: Record<string, unknown>;
+			if (trackerId) {
+				const { doc } = await loadDoc(ctx, projectId);
+				locateTracker(doc, trackerId);
+				const clipIds = trackedTargets(doc, trackerId).map((t) => t.clipId);
+				if (!clipIds.length)
+					throw new ToolError(
+						'E_INVALID_PARAM',
+						'No clip follows this tracker yet',
+						'Bake it first with apply_tracking.',
+					);
+				selection = { clipIds, trackedOnly: true };
+			} else if (clipId) selection = { clipIds: [clipId], ...(trackedOnly ? { trackedOnly: true } : {}) };
+			else if (targets) selection = { targets };
+			else selection = { keyframeIds };
+			const res = await transact(
+				ctx,
+				projectId,
+				{
+					label: 'Simplify Keyframes',
+					commands: [
+						{ type: 'keyframes.simplify', tolerance: tolerance ?? DEFAULT_SIMPLIFY_TOLERANCE, ...selection },
+					],
+					...(dryRun ? { dryRun: true } : {}),
+				},
+				extra,
+			);
+			const r = requireOk(res);
+			const rep = r.results[0] as SimplifyReport;
+			return jsonResult({
+				...txBody(res, r, dryRun === true),
+				tolerance: rep.tolerance,
+				keyframesBefore: rep.before,
+				keyframesAfter: rep.after,
+				removed: rep.removed,
+				maxDeviation: round4(rep.maxError),
+				groups: rep.groups.map((g) => ({
+					kind: g.kind,
+					clipId: g.clipId,
+					unit: g.unit,
+					maxDeviation: round4(g.maxError),
+					meanDeviation: round4(g.meanError),
+					parameters: g.paths,
+				})),
+				properties: rep.properties.map((p) => ({ path: p.path, before: p.before, after: p.after })),
+				...(rep.skipped.length ? { skipped: rep.skipped } : {}),
+				next: dryRun
+					? 'Run again without dryRun to apply.'
+					: 'Check a few frames with render_frame; undo restores the dense keys.',
 			});
 		},
 	);

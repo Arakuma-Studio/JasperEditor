@@ -177,6 +177,13 @@ export const simplifyHandlers: HandlerMap = {
 		const locations = resolveLocations(doc, cmd, h);
 		if (!locations.length) h.fail('E_INVALID_PARAM', 'Nothing to simplify: no keyframed parameters selected');
 		const report = simplifyLocations(doc, locations, cmd.tolerance, h, { details: cmd.details === true });
+		// Simplifying the tracked keys of a target remembers the tolerance: re-applying the tracker from the UI
+		// simplifies again (S09:TRK-023).
+		if (cmd.trackedOnly)
+			for (const id of cmd.clipIds ?? []) {
+				const tb = (h.clip(doc, id).clip as { trackedBy?: Draft<TrackedBy> }).trackedBy;
+				if (tb) tb.simplify = { tolerance: cmd.tolerance };
+			}
 		if (report.properties.length === 0)
 			h.warn('W_NOTHING_TO_SIMPLIFY', 'No parameter has three or more keyframes to simplify');
 		return report;
