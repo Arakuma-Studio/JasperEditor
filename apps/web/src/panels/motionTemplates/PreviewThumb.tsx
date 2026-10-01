@@ -3,7 +3,15 @@
 // <Player>. One Player is shared by the whole app: hovering another card moves it there. Touch input and
 // `prefers-reduced-motion: reduce` keep the poster only.
 import { Player, Thumbnail } from '@remotion/player';
-import { type ComponentType, useCallback, useEffect, useId, useRef, useSyncExternalStore } from 'react';
+import {
+	type ComponentType,
+	type ReactNode,
+	useCallback,
+	useEffect,
+	useId,
+	useRef,
+	useSyncExternalStore,
+} from 'react';
 
 export type PreviewThumbProps<P extends Record<string, unknown>> = {
 	component: ComponentType<P>;
@@ -17,6 +25,11 @@ export type PreviewThumbProps<P extends Record<string, unknown>> = {
 	/** Accessible name of the preview. */
 	label?: string;
 	className?: string;
+	/**
+	 * wp-m2-anime-templates (S11:ATP-007): a custom static poster instead of the `<Thumbnail>` (fframes cards keep
+	 * their SVG twin poster and gain the hover preview).
+	 */
+	poster?: ReactNode;
 };
 
 /** Delay before the hover preview starts. */
@@ -109,6 +122,8 @@ export function PreviewThumb<P extends Record<string, unknown>>(props: PreviewTh
 					spaceKeyToPlayOrPause={false}
 					acknowledgeRemotionLicense
 				/>
+			) : props.poster !== undefined ? (
+				props.poster
 			) : (
 				<Thumbnail
 					{...common}

@@ -35,8 +35,14 @@ export interface MgTemplateRegistry {
 	/**
 	 * M2 (S11:ATP-009, optional): migrates params of `id@fromVersion` to the newest version that has an upgrade
 	 * path; null when there is none. Implemented by `@jasper/mg-templates` (wp-m2-anime-templates).
+	 * `toVersion` (additive, wp-m2-anime-templates): stop at that version (null when the path does not reach it).
 	 */
-	upgrade?(id: string, fromVersion: number, params: Record<string, unknown>): MgTemplateUpgrade | null;
+	upgrade?(
+		id: string,
+		fromVersion: number,
+		params: Record<string, unknown>,
+		toVersion?: number,
+	): MgTemplateUpgrade | null;
 }
 
 export const emptyMgRegistry: MgTemplateRegistry = {

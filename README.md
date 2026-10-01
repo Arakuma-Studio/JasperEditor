@@ -191,6 +191,28 @@ with stagger, order (forward, backward, centre, edges, seeded random), ease and 
   `list_text_animations`, `set_text_animation`, `add_text {animateIn, animateOut}`, `render_frames` (contact
   sheet).
 
+## Animated templates (anime.js)
+
+<!-- wp-m2-anime-templates -->
+**Motion Templates ▸ Templates** also lists animated templates drawn with anime.js (S11 §5,
+`docs/wp-notes/wp-m2-anime-templates.md`): **Title Reveal**, **Lower Third (Animated)**, **Callout** and
+**Counter**. Their cards carry the badge **R** and the label *anime · Remotion*; the engine filter has an `anime`
+value; hovering any card (also the fframes ones) plays a preview. Insert them like the fframes templates
+(double-click, Enter or drag onto the timeline / Program).
+
+- Timing is responsive: the intro starts at the clip start, the outro ends at the clip end, the middle stretches
+  when you trim the clip (frame-exact at any frame rate).
+- Properties ▸ Parameters edits the params; numeric and colour params have stopwatches (Effect Controls and
+  Properties) — keyframes are evaluated per frame by the same evaluator as Motion. Properties ▸ Template shows the
+  engine and, when a newer version of the template is installed, **Update template to vN** (one undo step).
+- Motion, opacity, every blend mode (incl. Add), effects and corner pins apply to both template kinds.
+- Preview and Remotion exports draw them in the browser (deterministic: every frame is a pure function of the
+  frame number); native exports bake them through the layer-bake extension. They are never sent to `jasper-mg`.
+- A clip whose template is not installed shows a placeholder card and blocks every export ("template id@vN is
+  not installed").
+- MCP: `list_motion_templates` (renderer + params summary), `add_motion_graphic`, `set_motion_graphic_params`,
+  `render_motion_graphic_preview` (a Remotion still for anime templates).
+
 ## PWA (installable web app)
 
 The Vite dev server does not register the service worker; install from a production build served by the

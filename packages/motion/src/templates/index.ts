@@ -2,25 +2,24 @@
 // `id@version` like the `renderer: 'anime'` entries of @jasper/mg-templates (a test asserts both lists match).
 // Owner: wp-m2-anime-templates.
 import type { ComponentType } from 'react';
+import { Callout } from './callout.tsx';
+import { Counter } from './counter.tsx';
+import { LowerThirdAnim } from './lower-third-anim.tsx';
+import { TitleReveal } from './title-reveal.tsx';
+import type { AnimeTemplateProps } from './types.ts';
 
-/** Props of an anime template implementation (S11:ATP-005). Times in ms of content time (S11:ATP-004). */
-export type AnimeTemplateProps = {
-	/** Params parsed by the template's schema (defaults merged; keyframed params evaluated for this frame). */
-	params: Record<string, unknown>;
-	/** Seek time: content frame → ms (S11:ANM-003). */
-	timeMs: number;
-	/** Content length of the clip. */
-	totalMs: number;
-	/** Intro anchored at content time 0, outro at the content end; the hold stretches. */
-	introMs: number;
-	outroMs: number;
-	fps: number;
-	/** Render size (the clip's canvas); design pixels are fitted with `fitCanvas`. */
-	canvas: { width: number; height: number };
-	/** `hash32(clipId, 'template')`. */
-	seed: number;
-	isPreview: boolean;
-};
+export { buildCallout, buildCalloutLine, CALLOUT_LINE_PHASE, Callout, calloutGeometry } from './callout.tsx';
+export { addInOut, phaseTimes, staggerRanks, TEMPLATE_FONT, type TemplateTiming } from './common.tsx';
+export { buildCounter, Counter, counterCountMs } from './counter.tsx';
+export { buildLowerThirdAnim, LowerThirdAnim } from './lower-third-anim.tsx';
+export { buildTitleReveal, TitleReveal, titleSegments } from './title-reveal.tsx';
+export type { AnimeTemplateProps } from './types.ts';
 
-/** The shipped implementations. Empty until wp-m2-anime-templates lands. */
-export const ANIME_TEMPLATE_IMPLS: Readonly<Record<string, ComponentType<AnimeTemplateProps>>> = {};
+/** The shipped implementations (S11:ATP-001/003). */
+export const ANIME_TEMPLATE_IMPLS: Readonly<Record<string, ComponentType<AnimeTemplateProps>>> =
+	Object.freeze({
+		'title-reveal@1': TitleReveal,
+		'lower-third-anim@1': LowerThirdAnim,
+		'callout@1': Callout,
+		'counter@1': Counter,
+	});

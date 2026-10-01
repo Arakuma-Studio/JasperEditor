@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import type { EngineJob, MgRenderSpec, MgTemplateCatalogEntry, MgTemplatesResponse } from '@jasper/api';
 import { ENV } from '@jasper/config';
 import {
+	isAnimeTemplate,
 	type MgRational,
 	type MgRegistry,
 	type MgSpecInput,
@@ -24,6 +25,7 @@ import {
 	resolveMgBinary,
 } from './binary.ts';
 import { type MgQuality, MgRenderError, renderPoster, runMgPipe } from './render.ts';
+import { isAnimeTemplateClip } from './templates.ts';
 
 /** CPU slots of one mg-render job (ARCHITECTURE §9.3); also the renderer/encoder thread count. */
 export const MG_RENDER_SLOTS = 4;
@@ -135,8 +137,23 @@ export function createMgService(opts: MgServiceOptions) {
 		};
 	}
 
+	/**
+	 * S11:ATP-008: anime templates are drawn by Remotion (baked by the layer-bake extension), never by jasper-mg.
+	 * Throws MgRenderError('INVALID_SPEC', …, {code: 'ANIME_TEMPLATE'}) for them.
+	 */
+	function refuseAnime(spec: Pick<MgRenderSpec, 'template'>): void {
+		const def = registry.getDefinition(spec.template.id, spec.template.version);
+		if (def && isAnimeTemplate(def))
+			throw new MgRenderError(
+				'INVALID_SPEC',
+				`${def.id}@${def.version} is an anime template: it is drawn by Remotion (previews, Remotion exports) and baked for native exports, not rendered by the fframes renderer`,
+				{ code: 'ANIME_TEMPLATE' },
+			);
+	}
+
 	/** Validates the template and params against the TS catalog (mirror of the Rust structs). */
 	function validateSpec(spec: MgRenderSpec | MgSpecInput): MgSpecInput {
+		refuseAnime(spec);
 		const def = registry.getDefinition(spec.template.id, spec.template.version);
 		if (!def)
 			throw new MgRenderError(
@@ -324,6 +341,7 @@ export function createMgService(opts: MgServiceOptions) {
 		quality: MgQuality,
 		meta: { projectId?: string; origin?: EngineJob['origin']; parentId?: string } = {},
 	): { job: EngineJob; done: Promise<EngineJob>; joined: boolean } {
+		refuseAnime(input);
 		if (probe.status !== 'ready') throw new MgRenderError('BINARY_MISSING', probe.reason);
 		const spec = validateSpec(input);
 		const key = renderKey(spec);
@@ -461,6 +479,8 @@ export function createMgService(opts: MgServiceOptions) {
 		clip: Pick<RenderVisualClip, 'source' | 'duration' | 'sourceIn'>,
 		ctx: { fps: MgRational; projectId?: string; parentId?: string; signal?: AbortSignal },
 	): Promise<string | null> {
+		// S11:ATP-008: anime templates have no jasper-mg master (layer-bake bakes them; null = Remotion path).
+		if (isAnimeTemplateClip(clip, registry)) return null;
 		const spec = specFromClip(clip, ctx.fps, registry);
 		if (!spec) return null;
 		return masterFor(spec, ctx);
@@ -472,6 +492,7 @@ export function createMgService(opts: MgServiceOptions) {
 		probe: () => probe,
 		resolution: () => resolution,
 		templates,
+		refuseAnime,
 		validateSpec,
 		renderKey,
 		cached,

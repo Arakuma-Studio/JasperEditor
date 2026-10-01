@@ -8,6 +8,7 @@ import type { MgCapability, MgService } from './service.ts';
 export * from './binary.ts';
 export * from './render.ts';
 export * from './service.ts';
+export * from './templates.ts';
 
 /** Service key under `app.jasper.services` (routes/mg.ts registers it at startup). */
 export const MG_SERVICE_KEY = 'mg';

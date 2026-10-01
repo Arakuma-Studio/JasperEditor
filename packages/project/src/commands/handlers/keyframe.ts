@@ -13,6 +13,7 @@ import { type EffectInstance, isKnownClipKind, type Track } from '../../schema/s
 import { flicksPerFrame, type Rational } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import type { CommandOf, ParamPath } from '../schemas/index.ts';
+import { PRUNE_EMPTY_KEYFRAMES, templateParamDraftAnim } from './mg-template.ts';
 import { getAt, resolveTarget, type Target, validateValue } from './param.ts';
 import type { HandlerMap } from './util.ts';
 
@@ -52,6 +53,20 @@ function clipAnimatables(seq: DSeq, clip: DClip): AnimLocation[] {
 	for (const fx of (clip as { effects?: Draft<EffectInstance>[] }).effects ?? []) {
 		for (const [name, a] of Object.entries(fx.params)) {
 			if (isAnim(a)) out.push({ anim: a, path: ['effect', fx.id, name], seq, clip });
+		}
+	}
+	// S11:ATP-006: keyframed params of anime templates (dynamic `params.<name>` keys; edits validate through
+	// param.ts target resolution, which needs the template to be installed).
+	if (clip.kind === 'motion-graphic') {
+		const kf = (clip as { paramKeyframes?: Record<string, unknown[]> }).paramKeyframes ?? {};
+		for (const name of Object.keys(kf)) {
+			if ((kf[name]?.length ?? 0) === 0) continue;
+			out.push({
+				anim: templateParamDraftAnim(clip, name),
+				path: ['clip', clip.id, 'params', name],
+				seq,
+				clip,
+			});
 		}
 	}
 	return out;
@@ -163,6 +178,8 @@ function finish(anims: Iterable<DAnim>): void {
 	for (const a of anims) {
 		a.keyframes.sort((x, y) => x.time - y.time);
 		refreshAutoBezier(a);
+		// Template param views drop an emptied keyframe list (S11:ATP-006).
+		(a as { [PRUNE_EMPTY_KEYFRAMES]?: () => void })[PRUNE_EMPTY_KEYFRAMES]?.();
 	}
 }
 

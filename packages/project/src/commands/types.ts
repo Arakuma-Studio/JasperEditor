@@ -47,6 +47,8 @@ export const WARNING_CODES = [
 	'W_VALUE_CLAMPED',
 	/** M2 (S11:TXA-004): in + out text animators exceed the clip and are scaled at render time. */
 	'W_ANIMATION_COMPRESSED',
+	/** M2 (S11:ATP-009, wp-m2-anime-templates): a template upgrade dropped keyframes of params it removed. */
+	'W_KEYFRAMES_DROPPED',
 ] as const;
 
 /** A problem report. `commandIndex` is -1 for transaction-level issues (invariants, revision). */

@@ -3,6 +3,7 @@
 // (RP-008) and warnings (offline media, VFR sources, missing fonts). M1 paths: `native` | `remotion`.
 import { createHash } from 'node:crypto';
 import type { EncoderChoice, ExportSettings, RenderPlan } from '@jasper/api';
+import { mgRegistry } from '@jasper/mg-templates';
 import {
 	buildRenderSnapshot,
 	defaultEffectRegistry,
@@ -21,6 +22,14 @@ import {
 import type { FontCatalogService } from '../fonts/catalog.ts';
 import { alphaDecoder } from '../media/alpha.ts';
 import type { MediaRecord, MediaRegistry } from '../media/registry.ts';
+// wp-m2-anime-templates (S11:ATP-002/008/010)
+import {
+	animeTemplateBlocker,
+	missingTemplates,
+	missingTemplatesDetail,
+	missingTemplatesMessage,
+	TEMPLATE_NOT_INSTALLED,
+} from '../mg/templates.ts';
 import { type EncoderRequest, LEGACY_X264_CHOICE } from '../tools/encoders.ts';
 import { BUILTIN_NATIVE_EFFECTS, type NativeExtension } from './native-ext.ts';
 
@@ -152,7 +161,7 @@ export type PlanDeps = {
 export async function planExport(input: PlanInput, deps: PlanDeps): Promise<PlannedExport> {
 	let document: ProjectDocument;
 	try {
-		const loaded = loadProject(input.envelope);
+		const loaded = loadProject(input.envelope, { mgTemplates: mgRegistry }); // wp-m2-anime-templates: re-stamp renderers
 		document = loaded.document;
 	} catch (e) {
 		throw new PlanError('VALIDATION_FAILED', 400, `Invalid project: ${(e as Error).message}`);
@@ -187,6 +196,18 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		},
 	});
 
+	// ---- wp-m2-anime-templates (S11:ATP-010, FIX-008): templates this build lacks block every path (native,
+	// Remotion, stills) instead of exporting the placeholder card.
+	const missing = missingTemplates(snapshot);
+	if (missing.length > 0)
+		throw new PlanError(
+			TEMPLATE_NOT_INSTALLED,
+			409,
+			missingTemplatesMessage(missing),
+			missingTemplatesDetail(missing),
+		);
+	// ---- end wp-m2-anime-templates
+
 	// ---- classification
 	const blockers: RenderPlan['blockers'] = [];
 	const warnings: RenderPlan['warnings'] = [];
@@ -195,6 +216,12 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	for (const c of visual) {
 		for (const reason of nativeBlockers(c, deps.capabilities, deps.extensions ?? [], deps.effects))
 			blockers.push({ itemId: c.clipId, path: 'native', reason });
+		// wp-m2-anime-templates (S11:ATP-008): anime templates go native only through an extension claiming them.
+		const anime = animeTemplateBlocker(
+			c,
+			(deps.extensions ?? []).some((e) => e.claimsLayer?.(c)),
+		);
+		if (anime) blockers.push({ itemId: c.clipId, path: 'native', reason: anime });
 		if (c.kind === 'motion-graphic') mgClips.push(c.clipId);
 		// Alpha WebM needs the libvpx decoder on the native path (Remotion decodes it in the browser).
 		const dec = 'mediaId' in c.source ? alphaDecoder(media[c.source.mediaId]?.record.probe) : null;

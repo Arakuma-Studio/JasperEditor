@@ -294,7 +294,11 @@ export class AgentService {
 		const stored = await this.opts.store().load(projectId);
 		if (!stored) throw new AgentApiError(404, 'PROJECT_NOT_FOUND', `Project not found: ${projectId}`);
 		try {
-			const loaded = loadProject(stored.envelope, { ids: this.ids, effects: this.opts.registries.effects });
+			const loaded = loadProject(stored.envelope, {
+				ids: this.ids,
+				effects: this.opts.registries.effects,
+				mgTemplates: this.opts.registries.mgTemplates, // wp-m2-anime-templates (S11:ATP-002)
+			});
 			return {
 				doc: loaded.document,
 				revision: stored.revision,

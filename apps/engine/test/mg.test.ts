@@ -73,9 +73,14 @@ describe('jasper-mg resolution and capability', () => {
 		const body = MgTemplatesResponseSchema.parse(res.json());
 		expect(body.renderer.status).toBe('unavailable');
 		expect(body.renderer.reason).toContain('JASPER_MG=/nonexistent');
-		expect(body.templates.map((t) => [t.id, t.native])).toEqual([
-			['lower-third', false],
-			['title-card', false],
+		// fframes templates first, then the anime templates (wp-m2-anime-templates, never native: S11:ATP-008)
+		expect(body.templates.map((t) => [t.id, t.native, t.renderer ?? 'fframes'])).toEqual([
+			['lower-third', false, 'fframes'],
+			['title-card', false, 'fframes'],
+			['title-reveal', false, 'anime'],
+			['lower-third-anim', false, 'anime'],
+			['callout', false, 'anime'],
+			['counter', false, 'anime'],
 		]);
 		expect(body.templates[0]!.defaults).toEqual(lowerThird.defaults);
 		const service = app.jasper.services.mg as MgService;
@@ -180,7 +185,8 @@ describe.skipIf(!canRender)('real jasper-mg renders', () => {
 			(await app.inject({ method: 'GET', url: '/api/motion-graphics/templates', headers: H })).json(),
 		);
 		expect(templates.renderer.status).toBe('ready');
-		expect(templates.templates.every((t) => t.native)).toBe(true);
+		expect(templates.templates.filter((t) => t.renderer !== 'anime').every((t) => t.native)).toBe(true);
+		expect(templates.templates.filter((t) => t.renderer === 'anime').every((t) => !t.native)).toBe(true);
 
 		const res = await app.inject({
 			method: 'POST',
@@ -375,6 +381,6 @@ describe('service without a server', () => {
 			/Unknown template/,
 		);
 		expect(() => service.requestRender(lt150, 'master')).toThrow();
-		expect(mgRegistry.list()).toHaveLength(2);
+		expect(mgRegistry.list().filter((t) => t.renderer !== 'anime')).toHaveLength(2); // + anime templates (S11)
 	});
 });

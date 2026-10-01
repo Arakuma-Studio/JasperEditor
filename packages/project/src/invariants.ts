@@ -7,6 +7,7 @@ import { createTrack } from './factories.ts';
 import { type IdPrefix, type IdSource, idPrefixOf, isValidId } from './ids.ts';
 import type { EffectRegistry } from './registry/effects.ts';
 import { contentDurationFlicks, isBoundedContent, trackKindFor } from './registry/kinds.ts';
+import type { MgTemplateRegistry } from './registry/mg.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import type { Clip, EffectInstance, Sequence, Track } from './schema/sequence.ts';
 import { isKnownClipKind } from './schema/sequence.ts';
@@ -53,7 +54,27 @@ function valueShape(v: unknown): string {
 	return typeof v;
 }
 
-export type InvariantOptions = { effects?: EffectRegistry };
+export type InvariantOptions = {
+	effects?: EffectRegistry;
+	/** wp-m2-anime-templates (S11:ATP-002): checks renderer stamps against known templates when given. */
+	mgTemplates?: MgTemplateRegistry;
+};
+
+// ---- wp-m2-anime-templates (S11:ATP-002): the renderer stamp of a motion-graphic clip must agree with a known
+// registry entry (absent = fframes); unknown templates keep whatever they carry (preserved, KND-030 spirit).
+function templateStampIssue(
+	c: { template: { id: string; version: number; renderer?: string } },
+	reg: MgTemplateRegistry | undefined,
+): string | null {
+	const info = reg?.get(c.template.id, c.template.version);
+	if (!info) return null;
+	const want = info.renderer ?? 'fframes';
+	const have = c.template.renderer ?? 'fframes';
+	return want === have
+		? null
+		: `renderer "${have}" contradicts template ${c.template.id}@${c.template.version} ("${want}")`;
+}
+// ---- end wp-m2-anime-templates
 
 export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {}): Issue[] {
 	const issues: Issue[] = [];
@@ -374,6 +395,25 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 				if (sh.stroke && values(sh.stroke.width).some(bad))
 					issues.push(inv('INV-012', `Shape ${c.id} stroke width must be ≥ 0`, cw));
 			}
+			// ---- wp-m2-anime-templates (S11:ATP-002/006): renderer stamp and template param keyframes
+			if (c.kind === 'motion-graphic') {
+				const stamp = templateStampIssue(c, opts.mgTemplates);
+				if (stamp) issues.push(inv('INV-012', `Clip ${c.id} ${stamp}`, [...cw, 'template']));
+				for (const [name, list] of Object.entries(c.paramKeyframes ?? {})) {
+					const path = [...cw, 'paramKeyframes', name];
+					const shape = valueShape((c.params as Record<string, unknown>)[name]);
+					let last = Number.NEGATIVE_INFINITY;
+					for (const k of list) {
+						claim(k.id, 'kf', [...path, k.id]);
+						if (!(k.time > last))
+							issues.push(inv('INV-011', 'Keyframes must have strictly increasing times', path));
+						last = k.time;
+						if (valueShape(k.value) !== shape)
+							issues.push(inv('INV-011', 'Keyframe value type does not match the parameter', path));
+					}
+				}
+			}
+			// ---- end wp-m2-anime-templates
 			if (c.linkId && !seq.links[c.linkId]?.members.includes(c.id))
 				issues.push(inv('INV-006', `Clip ${c.id} has a dangling linkId`, cw));
 			if (c.groupId && !seq.groups[c.groupId]?.members.includes(c.id))
@@ -532,10 +572,38 @@ export type RepairEntry = { action: string; entity: string; detail: string };
 export function repairDocument(
 	input: ProjectDocument,
 	ids: IdSource,
+	opts: Pick<InvariantOptions, 'mgTemplates'> = {},
 ): { document: ProjectDocument; report: RepairEntry[] } {
 	const doc = JSON.parse(JSON.stringify(input)) as ProjectDocument;
 	const report: RepairEntry[] = [];
 	const note = (action: string, entity: string, detail: string) => report.push({ action, entity, detail });
+
+	// ---- wp-m2-anime-templates (S11:ATP-002/006): re-stamp renderers from the registry; drop malformed param
+	// keyframe lists (unsorted / duplicate times / wrong value type) — the static params stay.
+	for (const seq of Object.values(doc.sequences) as Sequence[]) {
+		for (const c of Object.values(seq.clips)) {
+			if (c.kind !== 'motion-graphic') continue;
+			const info = opts.mgTemplates?.get(c.template.id, c.template.version);
+			if (info && templateStampIssue(c, opts.mgTemplates)) {
+				if (info.renderer === 'anime') c.template.renderer = 'anime';
+				else delete c.template.renderer;
+				note('restamp-renderer', c.id, `renderer set from template ${c.template.id}@${c.template.version}`);
+			}
+			const pk = c.paramKeyframes;
+			if (!pk) continue;
+			for (const [name, list] of Object.entries(pk)) {
+				const shape = valueShape((c.params as Record<string, unknown>)[name]);
+				const ok = list.every(
+					(k, i) => valueShape(k.value) === shape && (i === 0 || k.time > list[i - 1]!.time),
+				);
+				if (ok && list.length > 0) continue;
+				delete pk[name];
+				if (list.length > 0) note('drop-keyframes', c.id, `malformed keyframes of params.${name} removed`);
+			}
+			if (Object.keys(pk).length === 0) delete c.paramKeyframes;
+		}
+	}
+	// ---- end wp-m2-anime-templates
 
 	// Bin tree: drop missing references and duplicates, reattach orphans at the root.
 	const placed = new Set<string>();

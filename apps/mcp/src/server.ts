@@ -13,6 +13,7 @@ import { PROCESSING_GUIDE, registerProcessingTools } from './tools/processing.ts
 import { registerProjectTools } from './tools/projects.ts';
 import { registerRenderTools } from './tools/render.ts';
 import { registerShapeTools, SHAPES_GUIDE } from './tools/shapes.ts';
+import { registerTemplateTools, TEMPLATES_GUIDE } from './tools/templates.ts'; // wp-m2-anime-templates
 import { registerTrackingTools, TRACKING_GUIDE } from './tools/tracking.ts';
 import { registerTransitionTools, TRANSITION_GUIDE } from './tools/transitions.ts';
 import { MCP_SERVER_VERSION } from './version.ts';
@@ -46,6 +47,7 @@ const FULL_GUIDE = [
 	// M2 animation (ARCHITECTURE §20.7): empty strings until wp-m2-text-anim / wp-m2-shapes fill them.
 	ANIMATION_GUIDE,
 	SHAPES_GUIDE,
+	TEMPLATES_GUIDE, // wp-m2-anime-templates (S11:ANA-003)
 ]
 	.filter((g) => g.length > 0)
 	.join('\n\n');
@@ -75,6 +77,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerTransitionTools(ctx);
 	registerAnimationTools(ctx);
 	registerShapeTools(ctx);
+	registerTemplateTools(ctx); // wp-m2-anime-templates (S11:ANA-003): set_motion_graphic_params
 	registerResources(ctx);
 	registerPrompts(ctx);
 	return { server, ctx };

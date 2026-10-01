@@ -7,6 +7,7 @@ import {
 	AnimRGBASchema,
 	AnimVec2Schema,
 	int,
+	keyframeSchema,
 	LabelColorSchema,
 	nonNegInt,
 	RationalSchema,
@@ -345,6 +346,9 @@ export const MG_RENDERERS = ['fframes', 'anime'] as const;
 export const MgRendererSchema = z.enum(MG_RENDERERS);
 export type MgRenderer = DeepStrip<z.infer<typeof MgRendererSchema>>;
 
+/** wp-m2-anime-templates (S11:ATP-006): one keyframe of an anime template param (a number or an RGBA tuple). */
+export const MgParamKeyframeSchema = keyframeSchema(z.union([z.number(), z.array(z.number())]));
+
 export const MotionGraphicClipSchema = z.looseObject({
 	...commonShape,
 	kind: z.literal('motion-graphic'),
@@ -354,6 +358,10 @@ export const MotionGraphicClipSchema = z.looseObject({
 	 */
 	template: z.looseObject({ id: z.string(), version: int(), renderer: MgRendererSchema.optional() }),
 	params: z.record(z.string(), z.unknown()),
+	// ---- wp-m2-anime-templates (S11:ATP-006): keyframes of numeric/colour params of anime templates, per param
+	// name, in content time (flicks). The static value stays in `params`; absent/empty = not animated.
+	paramKeyframes: z.record(z.string(), z.array(MgParamKeyframeSchema)).optional(),
+	// ---- end wp-m2-anime-templates
 	canvas: canvasSchema,
 	...visualShape,
 });

@@ -12,6 +12,7 @@ import { ClipPatchSchema } from '../schemas/clip.ts';
 import type { CommandOf, ParamAt } from '../schemas/index.ts';
 import { applyClipPatch } from './clip-core.ts';
 import { setCompositionProp } from './composition.ts';
+import { templateParamDraftAnim, templateParamsValidator } from './mg-template.ts';
 import type { HandlerMap } from './util.ts';
 
 type ValueRule = {
@@ -132,6 +133,16 @@ export function resolveTarget(
 			};
 		}
 		const time = (at: ParamAt | undefined) => h.clipContentTime(seq, clip, at);
+		// ---- wp-m2-anime-templates (S11:ATP-006): keyframable params of anime templates
+		if (spec.group === 'params' && spec.animatable !== 'no' && template) {
+			const anim = templateParamDraftAnim(
+				clip,
+				spec.storagePath[1]!,
+				templateParamsValidator(template, key, h),
+			);
+			return { type: 'anim', anim, rule: ruleFromProperty(spec), time, label: key };
+		}
+		// ---- end wp-m2-anime-templates
 		if (spec.animatable !== 'no') {
 			const anim = getAt(clip, spec.storagePath) as Draft<Animatable<unknown>> | undefined;
 			if (!anim) return bad();

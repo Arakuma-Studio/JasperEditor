@@ -1,9 +1,18 @@
 // Motion Templates panel (S05 §16.14 MGT-001/002): a gallery of motion-graphic templates with search,
-// category and engine filters, a static SVG preview at 50 % of each template, and insert by
-// double-click / Enter / drag onto the timeline. fframes templates come from @jasper/mg-templates;
-// the engine catalog tells whether the native renderer (jasper-mg) is ready for them.
+// category and engine filters, posters with an animated hover preview, and insert by double-click / Enter /
+// drag onto the timeline. Templates come from @jasper/mg-templates: fframes templates (poster = the SVG twin at
+// 50 %; the engine catalog tells whether the native renderer jasper-mg is ready for them) and, since M2, anime
+// templates (S11:ATP-007: badge "R", label "anime · Remotion", poster = a Remotion <Thumbnail> at `posterAt`).
+// Both kinds get the shared hover <Player> (PreviewThumb) over `MgTemplatePreview` from @jasper/compositions.
 import type { MgTemplateCatalogEntry } from '@jasper/api';
-import { type AnySvgMgTemplate, isSvgTemplate, mgRegistry } from '@jasper/mg-templates';
+import { MgTemplatePreview } from '@jasper/compositions';
+import {
+	type AnyMgTemplate,
+	type AnySvgMgTemplate,
+	isAnimeTemplate,
+	isSvgTemplate,
+	mgRegistry,
+} from '@jasper/mg-templates';
 import type { SessionState } from '@jasper/session';
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import { cx, Icon, openDialog, Tabs } from '@jasper/ui';
@@ -13,22 +22,31 @@ import { useEngine } from '../../state/engine.tsx';
 import { TextAnimationsTab } from '../../text-animation/TextAnimationsTab.tsx';
 import type { PanelProps } from '../types.ts';
 import { insertMotionTemplate, type MgTemplateRef, writeMgTemplateDrag } from './insert.ts';
+import { PreviewThumb } from './PreviewThumb.tsx';
 import { RemotionTab } from './RemotionTab.tsx';
 
-type EngineFilter = 'all' | 'fframes' | 'remotion';
+/** Engine filter of the Templates tab (S11:ATP-007 adds `anime`). */
+export type EngineFilter = 'all' | 'fframes' | 'anime';
 
-type GalleryEntry = {
+export type GalleryEntry = {
 	ref: MgTemplateRef;
 	name: string;
 	category: string;
 	description: string;
-	engine: 'fframes' | 'remotion';
-	/** Rendered natively by jasper-mg (false: preview/export through the TS twin + Remotion). */
+	engine: 'fframes' | 'anime';
+	/** "fframes" / "anime · Remotion" (S11:ATP-007). */
+	engineLabel: string;
+	/** fframes: rendered natively by jasper-mg (false: preview/export through the TS twin + Remotion). Anime: false. */
 	native: boolean;
 	durationSeconds: number;
 	aspects: string[];
-	def: AnySvgMgTemplate;
+	def: AnyMgTemplate;
 };
+
+/** Frame rate of the gallery previews. */
+export const PREVIEW_FPS = 30;
+/** Composition size of the gallery previews (16:9; templates fit their design canvas into it). */
+export const PREVIEW_SIZE = { width: 640, height: 360 } as const;
 
 type NullableStore = {
 	getState(): SessionState | null;
@@ -38,26 +56,32 @@ const NO_SESSION_STORE: NullableStore = { getState: () => null, subscribe: () =>
 
 const ASPECTS: Record<string, string> = { '1920x1080': '16:9', '1080x1920': '9:16', '1080x1080': '1:1' };
 
-/** Merges the TS catalog with the engine's (native flags); pure for tests. */
+/** Merges the TS catalog with the engine's (native flags of fframes templates); pure for tests. */
 export function galleryEntries(engineTemplates: MgTemplateCatalogEntry[] | null): GalleryEntry[] {
-	// fframes templates (anime templates join the gallery with wp-m2-anime-templates, S11:ATP-007).
-	return mgRegistry
-		.definitions()
-		.filter(isSvgTemplate)
-		.map((def) => {
-			const remote = engineTemplates?.find((t) => t.id === def.id && t.version === def.version);
-			return {
-				ref: { id: def.id, version: def.version },
-				name: def.name,
-				category: def.category,
-				description: def.description ?? '',
-				engine: 'fframes',
-				native: remote?.native === true,
-				durationSeconds: def.defaultDurationSeconds,
-				aspects: def.canvases.map((c) => ASPECTS[`${c.width}x${c.height}`] ?? `${c.width}x${c.height}`),
-				def,
-			};
-		});
+	return mgRegistry.definitions().map((def) => {
+		const remote = engineTemplates?.find((t) => t.id === def.id && t.version === def.version);
+		const anime = isAnimeTemplate(def);
+		return {
+			ref: { id: def.id, version: def.version },
+			name: def.name,
+			category: def.category,
+			description: def.description ?? '',
+			engine: anime ? 'anime' : 'fframes',
+			engineLabel: anime ? 'anime · Remotion' : 'fframes',
+			native: !anime && remote?.native === true,
+			durationSeconds: def.defaultDurationSeconds,
+			aspects: def.canvases.map((c) => ASPECTS[`${c.width}x${c.height}`] ?? `${c.width}x${c.height}`),
+			def,
+		};
+	});
+}
+
+/** Poster frame of a template at the preview rate: `posterAt` (anime) or the middle of its default length. */
+export function posterFrameOf(def: AnyMgTemplate, fps = PREVIEW_FPS): number {
+	const duration = Math.max(1, Math.round(def.defaultDurationSeconds * fps));
+	const at =
+		isAnimeTemplate(def) && def.posterAt !== undefined ? def.posterAt : def.defaultDurationSeconds / 2;
+	return Math.min(duration - 1, Math.max(0, Math.round(at * fps)));
 }
 
 export function filterEntries(
@@ -69,7 +93,8 @@ export function filterEntries(
 		(e) =>
 			(f.engine === 'all' || e.engine === f.engine) &&
 			(!f.category || e.category === f.category) &&
-			(!q || `${e.name} ${e.category} ${e.description} ${e.ref.id}`.toLowerCase().includes(q)),
+			(!q ||
+				`${e.name} ${e.category} ${e.description} ${e.ref.id} ${e.engineLabel}`.toLowerCase().includes(q)),
 	);
 }
 
@@ -120,6 +145,33 @@ function useEngineCatalog(): { templates: MgTemplateCatalogEntry[] | null; rende
 	return state;
 }
 
+/** The engine badge of a card: "F" (fframes; "F*" without the native renderer) or "R" (anime · Remotion). */
+function EngineBadge({ entry }: { entry: GalleryEntry }) {
+	if (entry.engine === 'anime')
+		return (
+			<span
+				data-engine-badge="R"
+				className="absolute top-1 right-1 rounded-pr-pill bg-pr-engine-anime px-1 text-pr-small text-pr-on-accent"
+				title="anime · Remotion (preview and export through Remotion; native exports bake it)"
+			>
+				R
+			</span>
+		);
+	return (
+		<span
+			data-engine-badge="F"
+			className="absolute top-1 right-1 rounded-pr-pill bg-pr-engine-fframes px-1 text-pr-small text-pr-on-accent"
+			title={
+				entry.native
+					? 'fframes · native renderer ready'
+					: 'fframes · SVG preview (native renderer unavailable)'
+			}
+		>
+			F{entry.native ? '' : '*'}
+		</span>
+	);
+}
+
 function TemplateCard({
 	entry,
 	svg,
@@ -127,7 +179,8 @@ function TemplateCard({
 	disabled,
 }: {
 	entry: GalleryEntry;
-	svg: string;
+	/** fframes poster (the SVG twin); null for anime templates (Remotion <Thumbnail> poster). */
+	svg: string | null;
 	onInsert(): void;
 	disabled: boolean;
 }) {
@@ -154,24 +207,30 @@ function TemplateCard({
 		>
 			<div
 				className="relative aspect-video w-full overflow-hidden rounded-pr-control bg-pr-field-deep"
-				data-mg-preview
+				data-mg-preview={entry.engine}
 			>
-				<div
-					className="absolute inset-0 [&>svg]:h-full [&>svg]:w-full"
-					// Twin output: params are XML-escaped by @jasper/mg-templates.
-					// biome-ignore lint/security/noDangerouslySetInnerHtml: trusted, escaped template output
-					dangerouslySetInnerHTML={{ __html: svg }}
-				/>
-				<span
-					className="absolute top-1 right-1 rounded-pr-pill bg-pr-engine-fframes px-1 text-pr-small text-pr-on-accent"
-					title={
-						entry.native
-							? 'fframes · native renderer ready'
-							: 'fframes · SVG preview (native renderer unavailable)'
+				<PreviewThumb
+					component={MgTemplatePreview}
+					inputProps={{ templateId: entry.ref.id, version: entry.ref.version }}
+					durationInFrames={Math.max(1, Math.round(entry.durationSeconds * PREVIEW_FPS))}
+					fps={PREVIEW_FPS}
+					width={PREVIEW_SIZE.width}
+					height={PREVIEW_SIZE.height}
+					posterFrame={posterFrameOf(entry.def)}
+					label={`${entry.name} preview`}
+					className="absolute inset-0"
+					poster={
+						svg === null ? undefined : (
+							<div
+								className="absolute inset-0 [&>svg]:h-full [&>svg]:w-full"
+								// Twin output: params are XML-escaped by @jasper/mg-templates.
+								// biome-ignore lint/security/noDangerouslySetInnerHtml: trusted, escaped template output
+								dangerouslySetInnerHTML={{ __html: svg }}
+							/>
+						)
 					}
-				>
-					F{entry.native ? '' : '*'}
-				</span>
+				/>
+				<EngineBadge entry={entry} />
 			</div>
 			<div className="flex items-baseline justify-between gap-1 px-0.5">
 				<span className="truncate text-pr-ui text-pr-text">{entry.name}</span>
@@ -180,6 +239,9 @@ function TemplateCard({
 			<div className="flex gap-1 px-0.5 text-pr-small text-pr-muted">
 				<span className="truncate">{entry.category}</span>
 				<span className="ml-auto shrink-0">{entry.aspects.join(' · ')}</span>
+			</div>
+			<div className="truncate px-0.5 text-pr-small text-pr-dim" data-engine-label={entry.engine}>
+				{entry.engineLabel}
 			</div>
 		</li>
 	);
@@ -212,7 +274,10 @@ export function MotionTemplatesPanel(props: PanelProps) {
 	const [tab, setTab] = useState<MotionTemplatesTab>(() => initialTab());
 	const { client } = useEngine();
 	const entries = useMemo(() => galleryEntries(catalog.templates), [catalog.templates]);
-	const previews = useMemo(() => new Map(entries.map((e) => [e.def, previewSvg(e.def)])), [entries]);
+	const previews = useMemo(
+		() => new Map(entries.map((e) => [e.def, isSvgTemplate(e.def) ? previewSvg(e.def) : null])),
+		[entries],
+	);
 	const categories = useMemo(() => [...new Set(entries.map((e) => e.category))].sort(), [entries]);
 	const visible = filterEntries(entries, { query, category, engine });
 	const canInsert = !!session && hasSequence;
@@ -243,13 +308,14 @@ export function MotionTemplatesPanel(props: PanelProps) {
 				</label>
 				<select
 					aria-label="Engine"
+					data-testid="motion-templates-engine"
 					className="rounded-pr-control bg-pr-field px-1 py-0.5 text-pr-ui text-pr-text"
 					value={engine}
 					onChange={(e) => setEngine(e.target.value as EngineFilter)}
 				>
 					<option value="all">All engines</option>
 					<option value="fframes">fframes</option>
-					<option value="remotion">Remotion</option>
+					<option value="anime">anime · Remotion</option>
 				</select>
 			</div>
 			<div className="flex flex-wrap gap-1" role="toolbar" aria-label="Categories">
@@ -271,9 +337,7 @@ export function MotionTemplatesPanel(props: PanelProps) {
 			</div>
 			<div className="min-h-0 flex-1 overflow-auto">
 				{visible.length === 0 ? (
-					<p className="p-2 text-center text-pr-small text-pr-muted">
-						{engine === 'remotion' ? 'No Remotion templates yet.' : 'No templates match.'}
-					</p>
+					<p className="p-2 text-center text-pr-small text-pr-muted">No templates match.</p>
 				) : (
 					<ul
 						className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-1"
@@ -283,7 +347,7 @@ export function MotionTemplatesPanel(props: PanelProps) {
 							<TemplateCard
 								key={`${e.ref.id}@${e.ref.version}`}
 								entry={e}
-								svg={previews.get(e.def) ?? ''}
+								svg={previews.get(e.def) ?? null}
 								disabled={!canInsert}
 								onInsert={() => insert(e)}
 							/>

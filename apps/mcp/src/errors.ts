@@ -109,3 +109,82 @@ export function toErrorResult(e: unknown): CallToolResult {
 export function jsonResult(value: unknown, extra: CallToolResult['content'] = []): CallToolResult {
 	return { content: [text(value), ...extra] };
 }
+
+// ---- wp-m2-anime-templates (S11:ANA-005): render failures (stills, exports, previews) → actionable hints.
+
+/** Why a Remotion render could not run and what to do (env names as read by apps/engine/src/remotion/service.ts). */
+export const REMOTION_HINT =
+	"Text, graphics, effects and anime motion templates render with Remotion in a headless Chrome. Install Google Chrome or Chromium (or set JASPER_BROWSER_EXECUTABLE to its executable), or let the engine download its own headless browser on the first render (needs network access). The engine also needs the Remotion compositions bundle: `pnpm build` produces it (a dev engine bundles the workspace sources itself) or set JASPER_REMOTION_BUNDLE to a built bundle folder; packaged builds also need their LGPL FFmpeg folder (JASPER_REMOTION_BIN_DIR). list_export_presets shows the engine's Remotion state.";
+export const BROWSER_DOWNLOAD_NOTE =
+	'No browser is installed yet: the first Remotion render downloads a headless Chrome (needs network access and can take a minute); if that fails, install Google Chrome or set JASPER_BROWSER_EXECUTABLE.';
+export const TEMPLATE_NOT_INSTALLED_HINT =
+	'A clip uses a motion-graphic template this JasperEditor build lacks: update JasperEditor, or replace or delete that clip (get_timeline shows it; details.blockers name the clips).';
+export const WEBGL_HINT =
+	'The render browser has no WebGL2 (colour grading on the Remotion path needs it): set JASPER_REMOTION_GL to angle, swangle, egl or swiftshader, install Google Chrome, or export with engine "native" when the sequence allows it.';
+
+/** The engine's Remotion capability (`capabilities.render`), fetched only after a failure. */
+export type RenderCapsHint = {
+	remotionLocal?: 'ready' | 'needs-browser-download' | 'unavailable';
+	remotionBinaries?: { message?: string };
+};
+
+/** Failure codes that may come from a missing Remotion/browser setup when the engine reports it unavailable. */
+const REMOTION_SUSPECT_CODES = new Set([
+	'BINARY_MISSING',
+	'RENDER_FAILED',
+	'RENDER_TIMEOUT',
+	'PATH_NOT_ELIGIBLE',
+	'NOT_IMPLEMENTED',
+	'INTERNAL',
+]);
+
+/** The error itself names Remotion or its browser (codes REMOTION_UNAVAILABLE / BROWSER_*, or the message). */
+export function mentionsRemotion(code: string, message: string): boolean {
+	return (
+		code === 'REMOTION_UNAVAILABLE' ||
+		code.startsWith('BROWSER_') ||
+		/remotion|headless|chrom(e|ium)|browser|puppeteer/i.test(message)
+	);
+}
+
+function blockerReasons(detail: unknown): string[] {
+	const list = (detail as { blockers?: unknown } | undefined)?.blockers;
+	if (!Array.isArray(list)) return [];
+	const reasons = list
+		.map((b) => (b as { reason?: unknown } | null)?.reason)
+		.filter((r): r is string => typeof r === 'string');
+	return [...new Set(reasons)].slice(0, 5);
+}
+
+/**
+ * Hint for a failed render (still, export, preview) from its error code and message, the plan error detail
+ * (`blockers`) and, when known, the engine's Remotion capability. undefined = nothing specific to say.
+ */
+export function renderHint(
+	code: string,
+	message: string,
+	caps?: RenderCapsHint,
+	detail?: unknown,
+): string | undefined {
+	if (code === 'TEMPLATE_NOT_INSTALLED') return TEMPLATE_NOT_INSTALLED_HINT;
+	if (code === 'WEBGL_UNAVAILABLE') return WEBGL_HINT;
+	const parts: string[] = [];
+	if (code === 'PATH_NOT_ELIGIBLE') {
+		const reasons = blockerReasons(detail);
+		parts.push(
+			`The requested render path cannot render this sequence${reasons.length ? ` (${reasons.join('; ')})` : ''}. Export with engine "auto" (picks a path that can render everything) or "remotion".`,
+		);
+	}
+	const suspect = REMOTION_SUSPECT_CODES.has(code);
+	const remotion = mentionsRemotion(code, message) || (caps?.remotionLocal === 'unavailable' && suspect);
+	if (remotion) {
+		parts.push(REMOTION_HINT);
+		if (caps?.remotionLocal === 'unavailable')
+			parts.push('This engine reports Remotion as unavailable (capabilities render.remotionLocal).');
+		if (caps?.remotionBinaries?.message) parts.push(caps.remotionBinaries.message);
+	}
+	if (caps?.remotionLocal === 'needs-browser-download' && (remotion || suspect))
+		parts.push(BROWSER_DOWNLOAD_NOTE);
+	return parts.length ? parts.join(' ') : undefined;
+}
+// ---- end wp-m2-anime-templates
