@@ -171,6 +171,28 @@ export const LutInfoSchema = z.looseObject({
 });
 export type LutInfo = DeepStrip<z.infer<typeof LutInfoSchema>>;
 
+/**
+ * A text layer a composition declares (M3, wp-m3-mgtext, S08:MGC-036): manifest `texts.<prop.path>` or the
+ * `x-jasper-text` JSON Schema annotation. Style roles name the props that style the text (dotted paths).
+ */
+export const MgTextDeclSchema = z.looseObject({
+	label: z.string().optional(),
+	multiline: z.boolean().optional(),
+	/** Soft limits: warnings, not errors (the schema's maxLength is the hard one). */
+	maxChars: z.number().int().positive().optional(),
+	maxLines: z.number().int().positive().optional(),
+	/** Safe area of the text in composition pixels: a measured text outside it is reported. */
+	box: z
+		.object({ x: z.number(), y: z.number(), width: z.number().positive(), height: z.number().positive() })
+		.optional(),
+	/** Composition frame where the text is fully laid out (measuring, on-canvas editing). */
+	frame: z.number().int().min(0).optional(),
+	/** One line of help shown under the editor (e.g. a markup convention). */
+	hint: z.string().optional(),
+	style: z.record(z.string(), z.string()).optional(),
+});
+export type MgTextDecl = DeepStrip<z.infer<typeof MgTextDeclSchema>>;
+
 /** One composition of an imported Remotion bundle (M2, S08:MGC-010). */
 export const MgCompositionInfoSchema = z.looseObject({
 	id: z.string(),
@@ -192,6 +214,11 @@ export const MgCompositionInfoSchema = z.looseObject({
 	category: z.string().optional(),
 	/** Manifest `thumbnailFrame` (poster frame; default 0). */
 	thumbnailFrame: z.number().int().min(0).optional(),
+	/**
+	 * M3 (wp-m3-mgtext, S08:MGC-036, additive): text layers declared by `jasper.mg.json` `texts`, keyed by the
+	 * dotted prop path of the text; `false` hides a string prop that would otherwise be discovered as a text.
+	 */
+	texts: z.record(z.string(), z.union([z.literal(false), MgTextDeclSchema])).optional(),
 });
 export type MgCompositionInfo = DeepStrip<z.infer<typeof MgCompositionInfoSchema>>;
 

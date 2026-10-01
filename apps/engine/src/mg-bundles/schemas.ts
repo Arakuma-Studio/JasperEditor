@@ -8,7 +8,13 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { isAbsolute, join, resolve } from 'node:path';
-import { inferPropsSchema, type MgCompositionInfo, type PropsUiHints, schemaUiHints } from '@jasper/project';
+import {
+	inferPropsSchema,
+	type MgCompositionInfo,
+	MgTextDeclSchema,
+	type PropsUiHints,
+	schemaUiHints,
+} from '@jasper/project';
 import { z } from 'zod';
 import { terminateTree } from '../tools/process.ts';
 
@@ -32,6 +38,8 @@ const MgManifestSchema = z.looseObject({
 				ui: z.record(z.string(), UiHintSchema).optional(),
 				category: z.string().optional(),
 				thumbnailFrame: z.number().int().min(0).optional(),
+				// wp-m3-mgtext (S08:MGC-036): text layers by prop path; `false` hides a discovered string.
+				texts: z.record(z.string(), z.union([z.literal(false), MgTextDeclSchema])).optional(),
 			}),
 		)
 		.optional(),
@@ -235,6 +243,8 @@ export function buildCompositionInfos(
 		// entry for the id wins field by field.
 		const all = opts.manifest?.compositions ?? {};
 		const m = all[c.id] || all['*'] ? { ...(all['*'] ?? {}), ...(all[c.id] ?? {}) } : undefined;
+		// Text declarations merge entry by entry (the id's own win), like `ui`.
+		const texts = { ...(all['*']?.texts ?? {}), ...(all[c.id]?.texts ?? {}) };
 		const inferred = inferPropsSchema(defaultProps);
 		let propsSchema: Record<string, unknown>;
 		let schemaSource: MgCompositionInfo['schemaSource'];
@@ -276,6 +286,7 @@ export function buildCompositionInfos(
 			...(Object.keys(mergedUi).length ? { ui: mergedUi } : {}),
 			...(m?.category ? { category: m.category } : {}),
 			...(m?.thumbnailFrame !== undefined ? { thumbnailFrame: m.thumbnailFrame } : {}),
+			...(Object.keys(texts).length ? { texts } : {}),
 		} as MgCompositionInfo;
 	});
 }
