@@ -185,7 +185,12 @@ export function cutSelection(ctx: CommandCtx, target: ClipboardTarget, args: Cli
 	}
 	if (target === 'project') {
 		writeClipboard(p, { event: args.event });
-		deleteItems(session, p.items!.rootItems);
+		// Only the selected items: the payload's extra roots (nested sequences' items) stay in the project.
+		const doc = session.getCommitted();
+		deleteItems(
+			session,
+			session.getState().selection.project.items.filter((id) => doc.items[id]),
+		);
 		return;
 	}
 	let commands: Command[] = [];

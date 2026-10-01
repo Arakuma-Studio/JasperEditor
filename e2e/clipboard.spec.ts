@@ -147,16 +147,17 @@ test('Ctrl+C / Ctrl+V on the timeline: new ids, every M2 field kept, copies sele
 	await clickClip(ids.template, true);
 	expect((await selection()).sort()).toEqual([ids.text, ids.shape, ids.template].sort());
 	await page.keyboard.press('Control+KeyC');
-	await query(page, 'playhead.set', { frame: 300 });
+	await query(page, 'playhead.set', { frame: 90 });
+	expect(await playheadFrame(page)).toBe(90);
 	const before = await docClips();
 	await page.keyboard.press('Control+KeyV');
 	await expect.poll(async () => Object.keys(await docClips()).length).toBe(6);
 	const after = await docClips();
 	const pasted = Object.values(after).filter((c) => !before[c.id]);
 	const byKind = Object.fromEntries(pasted.map((c) => [c.kind, c]));
-	expect(byKind.text!.start).toBe(300);
-	expect(byKind.shape!.start).toBe(310);
-	expect(byKind['motion-graphic']!.start).toBe(300);
+	expect(byKind.text!.start).toBe(90);
+	expect(byKind.shape!.start).toBe(100);
+	expect(byKind['motion-graphic']!.start).toBe(90);
 	// Same tracks (V1 lowest targeted by default), same content, new nested ids.
 	for (const [kind, src] of [
 		['text', before[ids.text]!],
@@ -165,9 +166,10 @@ test('Ctrl+C / Ctrl+V on the timeline: new ids, every M2 field kept, copies sele
 	] as const) {
 		const copy = byKind[kind]!;
 		expect(copy.trackId).toBe(src.trackId);
-		expect(JSON.stringify(strip(copy)).replace(/"(kf|fx|mrk|tkr)_[0-9A-Z]{16}"/g, '"id"')).toBe(
-			JSON.stringify(strip(src)).replace(/"(kf|fx|mrk|tkr)_[0-9A-Z]{16}"/g, '"id"'),
-		);
+		// Same content (key order aside) once nested ids are masked.
+		const masked = (c: DocClip) =>
+			JSON.parse(JSON.stringify(strip(c)).replace(/"(kf|fx|mrk|tkr)_[0-9A-Z]{16}"/g, '"id"'));
+		expect(masked(copy)).toEqual(masked(src));
 		for (const id of idsIn(copy)) expect(idsIn(src)).not.toContain(id);
 	}
 	expect(byKind.text!.textAnimation).toEqual(before[ids.text]!.textAnimation);
@@ -178,7 +180,7 @@ test('Ctrl+C / Ctrl+V on the timeline: new ids, every M2 field kept, copies sele
 		[600, 120],
 	]);
 	expect((await selection()).sort()).toEqual(pasted.map((c) => c.id).sort());
-	expect(await playheadFrame(page)).toBe(390);
+	expect(await playheadFrame(page)).toBe(180);
 	expect((await appliedLabels(page)).at(-1)).toBe('Paste');
 });
 
@@ -195,18 +197,20 @@ test('Paste Insert (Ctrl+Shift+V) ripples later clips on the destination and syn
 	await clickClip(ids.text);
 	await page.keyboard.press('Control+KeyC');
 	const before = await docClips();
-	const laterShape = Object.values(before).find((c) => c.kind === 'shape' && c.start === 310)!;
-	await query(page, 'playhead.set', { frame: 200 });
+	const laterShape = Object.values(before).find((c) => c.kind === 'shape' && c.start === 100)!;
+	await query(page, 'playhead.set', { frame: 90 });
 	await page.keyboard.press('Control+Shift+KeyV');
 	await expect.poll(async () => Object.keys(await docClips()).length).toBe(7);
 	const after = await docClips();
-	expect(after[laterShape.id]!.start).toBe(370); // shifted by the 60-frame text
+	expect(after[laterShape.id]!.start).toBe(160); // shifted by the 60-frame text
 	expect((await appliedLabels(page)).at(-1)).toBe('Paste Insert');
 });
 
 test('Paste Attributes… (Ctrl+Alt+V): the dialog lists the copied attributes; only the checked ones paste', async () => {
 	const all = await docClips();
-	const target = Object.values(all).find((c) => c.kind === 'text' && c.id !== ids.text && c.start >= 300)!;
+	const target = Object.values(all).find(
+		(c) => c.kind === 'text' && c.id !== ids.text && c.trackId === all[ids.text]!.trackId,
+	)!;
 	await transact(page, 'Reset target', [
 		{ type: 'param.set', target: ['clip', target.id, 'opacity'], value: 100 },
 	]);
@@ -251,7 +255,8 @@ test('Program monitor right-click on a layer: Copy, then Paste from the menu (XF
 	]);
 	const picked = (await selection())[0]!;
 	await menu.getByRole('menuitem', { name: /^Copy/ }).click();
-	await query(page, 'playhead.set', { frame: 600 });
+	await query(page, 'playhead.set', { frame: 100_000 }); // stops at the sequence end
+	const end = await playheadFrame(page);
 	const n = Object.keys(await docClips()).length;
 	await page.mouse.click(wrapper.x + 5, wrapper.y + 5, { button: 'right' });
 	await page
@@ -260,7 +265,7 @@ test('Program monitor right-click on a layer: Copy, then Paste from the menu (XF
 		.first()
 		.click();
 	await expect.poll(async () => Object.keys(await docClips()).length).toBe(n + 1);
-	const copy = Object.values(await docClips()).find((c) => c.start === 600)!;
+	const copy = Object.values(await docClips()).find((c) => c.start === end)!;
 	expect(copy.kind).toBe((await docClips())[picked]!.kind);
 });
 
@@ -302,14 +307,16 @@ test('cross-project paste in another tab through the system clipboard (media res
 	await importFiles(page, ['clip-a.mp4']);
 	const media = await query<{ media: { mediaId: string; originalName: string }[] }>(page, 'media.list');
 	const mediaId = media.media.find((m) => m.originalName === 'clip-a.mp4')!.mediaId;
+	const tail = (await query<{ duration: { frames: number } }>(page, 'sequence.summary')).duration.frames;
 	const refs = await transact(page, 'Place', [
 		{
 			type: 'clip.place',
 			source: { mediaId },
-			at: 650,
+			at: tail,
 			tracks: { video: 'V1', audio: 'A1' },
 			sourceRange: { in: { seconds: 0 }, out: { seconds: 2 } },
 			matchSequence: 'keep',
+			sequenceId: seqId,
 			ref: '$v',
 		},
 	]);
@@ -317,7 +324,7 @@ test('cross-project paste in another tab through the system clipboard (media res
 	const fingerprint = (
 		await query<Record<string, { fingerprint: string }>>(page, 'doc.get', { path: ['media'] })
 	)[mediaId]!.fingerprint;
-	await query(page, 'playhead.set', { frame: 650 });
+	await query(page, 'playhead.set', { frame: tail });
 	await clickClip(ids.video);
 	await page.keyboard.press('Control+KeyC');
 

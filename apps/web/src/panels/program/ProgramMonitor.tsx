@@ -25,6 +25,7 @@ import {
 	StepForward,
 } from 'lucide-react';
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useColorBypass } from '../../color/actions.ts';
 import { runCommand } from '../../commands/index.ts';
 import { programOverlays } from '../../extensions/index.ts';
@@ -552,19 +553,24 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 					<Scissors size={16} />
 				</TransportButton>
 			</div>
-			{layerMenu ? (
-				<ContextMenu
-					x={layerMenu.x}
-					y={layerMenu.y}
-					testId="program-context-menu"
-					items={programLayerMenu(
-						menuCtx(),
-						(layerMenu.clipId && session.getCommitted().sequences[seq.id]?.clips[layerMenu.clipId]) || null,
-						(id) => void runCommand(id, menuCtx()),
-					)}
-					onClose={() => setLayerMenu(null)}
-				/>
-			) : null}
+			{/* Portaled: the dock's split views clip and stack their panels' fixed descendants. */}
+			{layerMenu
+				? createPortal(
+						<ContextMenu
+							x={layerMenu.x}
+							y={layerMenu.y}
+							testId="program-context-menu"
+							items={programLayerMenu(
+								menuCtx(),
+								(layerMenu.clipId && session.getCommitted().sequences[seq.id]?.clips[layerMenu.clipId]) ||
+									null,
+								(id) => void runCommand(id, menuCtx()),
+							)}
+							onClose={() => setLayerMenu(null)}
+						/>,
+						document.body,
+					)
+				: null}
 		</div>
 	);
 }
