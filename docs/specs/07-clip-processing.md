@@ -205,15 +205,27 @@ Requirement ids: `PRC-NNN` (processing model and jobs), `PST-NNN` (steps), `PRM-
      tiny sigma with the locks does not fit, without them) and a job note explains it ("smoothing 30.0 frames
      needs 118.7 % zoom, above the 112.0 % cap — used the largest smoothing that fits: 13.8 frames. Raise Max
      zoom to keep the requested smoothing."). `borders: 'keep'`: no zoom, black moving borders.
-  4. Warp: one resampling per frame, 16-bit RGB, through the vid.stab WASM warp kernel (bicubic, worker threads;
-     the similarity is expressed exactly as vid.stab's transform), edges replicated as a safety net only.
+  4. Warp: one resampling per frame, 16-bit RGB, bicubic, edges replicated as a safety net only (black for
+     `keep`) — through the vid.stab WASM warp kernel (row bands in worker threads; the similarity is expressed
+     exactly as vid.stab's transform) when the module loads, else **OpenCV.js `warpAffine`** with the same backward
+     map (`INTER_CUBIC | WARP_INVERSE_MAP`, frames in parallel in the worker pool; `JASPER_SMOOTHPATH_WARP=wasm|
+     opencv` forces one). The two differ only in the cubic kernel (Catmull-Rom vs a = −0.75): 54.5 dB PSNR between
+     them on `reframe.mp4`; on crudo T01 both give 111.2 % and a measured peak of 4.28 / 4.05 px/frame.
+  5. **Cuts** (M3): a shot containing a cut is stabilised per segment. A pair is a cut when the de-judder's scene-cut
+     guard (PST-013, 8×8-cell means > 0.10) fires AND fewer than 30 % of the tracked corners fit one camera motion
+     (crudo.mp4 frames 0–1800: its 7 real cuts 0.01–0.20, fast real motion ≥ 0.38 — the guard alone fired on the
+     T01 reframe). Each segment gets its own camera path, smoothing fallback and **its own static zoom**: a shared
+     zoom (the segments' max) was rejected because the framing change coincides with the cut anyway and the shot
+     needing less zoom would lose resolution for nothing. Reported as `cuts` (first frame of each new shot) and
+     `segments` in the sidecar, and "2 shots (cut at frame 45) stabilised separately, zoom 111.8 % / 100.9 %" in
+     the job note.
 
   Report (job notes, shown in the success toast, + sidecar `steps[i].info`): zoom used, raw vs smoothed peak
   camera speed in px/frame scaled to a 1920-wide frame (and peak acceleration), camera travel and rotation,
   sigma / locks used, fallback, tracking size, failed pairs, min inliers, timings. Placed after de-judder
   (PST-021 order), as in the trailer. Availability: `features.processing.smoothPath = 'ready'` when OpenCV.js
-  and the vid.stab WASM module load; otherwise the step fails with `SMOOTHPATH_UNAVAILABLE` (never silently
-  replaced by another method). vid.stab stays the default method. Validation (crudo.mp4 frames 0–124,
+  loads (the vid.stab WASM module is optional, see 4.); otherwise the step fails with `SMOOTHPATH_UNAVAILABLE`
+  (never silently replaced by another method). vid.stab stays the default method. Validation (crudo.mp4 frames 0–124,
   de-judder auto + smooth path σ 30, both locks, cap 112 %): zoom 111.2 %, camera speed 20.5 → 4.1 px/frame;
   independent OpenCV measurement on the output: peak 4.28 px/frame, peak acceleration 0.61 (the trailer's
   T01.mov: 4.44 / 0.98); the same numbers on the remote executor.

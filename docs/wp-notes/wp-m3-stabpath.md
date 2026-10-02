@@ -13,9 +13,9 @@ trailer's `MatsSmileTrailer/grade/tools/smoothstab.py` (our own code), which fix
 | Where | What |
 |---|---|
 | `apps/engine/src/processing/proc/smoothpath/math.ts` | pure math: least-squares similarity, deterministic RANSAC + robust LS refinement, Gaussian / straight-line path smoothing, corrections, border test, minimal static zoom (capped), plan with fallback to the largest smoothing that fits, conversion to the vid.stab warp transform |
-| `…/smoothpath/step.ts` | the FrameStep: analysis (8-bit luma ≤ 960 px → OpenCV.js corner tracking in the worker pool → similarities → plan), warp through the vid.stab WASM warp kernel (16-bit, bicubic, workers), notes + sidecar info |
-| `…/dejudder/worker.mjs`, `pool.ts` | the OpenCV worker gains a `track` request (goodFeaturesToTrack + calcOpticalFlowPyrLK); `CvPool.track()` |
-| `…/proc/steps.ts` | `method: 'smoothpath'` → the step; `SMOOTHPATH_UNAVAILABLE` when the WASM warp module is missing (never silently another method) |
+| `…/smoothpath/step.ts` | the FrameStep: analysis (8-bit luma ≤ 960 px → scene cuts → OpenCV.js corner tracking in the worker pool → similarities → one plan per shot), warp through the vid.stab WASM kernel (16-bit, bicubic, row bands in workers) or, when it does not load, OpenCV.js `warpAffine` (frames in parallel), notes + sidecar info |
+| `…/dejudder/worker.mjs`, `pool.ts`, `step.ts` | the OpenCV worker gains `track` (goodFeaturesToTrack + calcOpticalFlowPyrLK) and `warpAffine` requests (`CvPool.track()`, `CvPool.warpAffine()`); the scene-cut guard is shared (`cutScore`, `greyCellMeans`) |
+| `…/proc/steps.ts` | `method: 'smoothpath'` → the step; `SMOOTHPATH_UNAVAILABLE` only when OpenCV.js is missing (never silently another method) |
 | `packages/project/src/schema/media.ts` | stabilize step: `method` + `'smoothpath'`; optional `lockVertical`, `lockRotation`, `maxZoom` (percent). `smoothing` = the Gaussian sigma in frames for smoothpath. Additive: no migration |
 | `packages/api/src/m2-capabilities.ts`, `processing/service.ts` | `features.processing.smoothPath: 'ready'|'unavailable'` |
 | `apps/web/src/processing/{model.ts,ProcessDialog.tsx}` | method "Smooth path (one even move)" + a help line per method; path smoothing 1–120 frames (default 30), Lock Vertical (no tilt) / Rotation (level horizon), Borders "Crop (one fixed zoom)" / Keep, Max zoom 101–150 % (default 112, crop only). The vid.stab smoothing (15) is kept separately |
@@ -134,9 +134,23 @@ pnpm vitest run --project @jasper/ui packages/ui/test/primitives.test.tsx
 E2E_PORT=52610 pnpm e2e e2e/processing.spec.ts
 ```
 
+## Fallback warp and cuts (integration round)
+
+- **No hard dependency on vid.stab WASM**: when the module does not load (or `JASPER_SMOOTHPATH_WARP=opencv`),
+  the warp runs as OpenCV.js `warpAffine(INTER_CUBIC | WARP_INVERSE_MAP)` with the same backward map and border
+  rule, frames in parallel in the OpenCV worker pool. Measured: 54.5 dB PSNR against the WASM warp on
+  reframe.mp4; crudo T01 111.2 %, measured peak 4.28 (WASM) / 4.05 (OpenCV) px/frame; 12.5 vs 77 ms/frame latency
+  at 848×480 (OpenCV frames overlap, so throughput is closer). Tested in `smoothpath.test.ts` and in the
+  colour-range test (OpenCV warp, `keep` borders: black, neutral).
+- **Cuts**: a pair is a cut when the de-judder's cell-mean guard fires (> 0.10) AND < 30 % of the tracked corners
+  fit one motion. The guard alone fired inside the T01 operator reframe (0.102 at frame 38) — a false cut there
+  produced a 141 px jump, so the tracking condition is required (crudo 0–1800: real cuts 0.01–0.20 inliers, real
+  motion ≥ 0.38). Each shot gets its own path, fallback and own zoom (decision and reason in spec PST-005 5.).
+  Tests: planning unit test (a cut treated as motion would need far more than the cap), the reframe.mp4 cut
+  fixture (cut at 45 found, each shot's travel = ground truth ± 1.5 px, zooms 111.8 % / 100.9 %) and, where the
+  footage exists, crudo.mp4 (the reframe 20–60 has no cut; frame 404 is one).
+
 ## Open issues
 
-- The smooth path needs the vid.stab WASM module for its warp; an OpenCV `warpAffine` fallback was not added
-  (3–5× slower at 1080p, and the module ships with the app).
-- A shot containing a cut should be split first: pairs across a cut count as still (identity), so the path is
-  continuous but the zoom is computed over both parts.
+- None known for this package. The colour-range requirement is PRC-020 (renumbered after wp-m3-inpoint took
+  PRC-015…019); commit `d18561c`'s message still says "PRC-016" (history is not rewritten).

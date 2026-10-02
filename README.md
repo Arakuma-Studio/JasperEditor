@@ -121,8 +121,8 @@ Every step keeps the frame count and rate, so timing never changes; the export r
   through the shot are ignored), smooths the camera path (Smoothing = Gaussian sigma in frames, 30 is a good
   start), can lock the vertical path and the rotation to a straight line, and uses ONE fixed zoom for the whole
   shot, capped by *Max zoom* (default 112 %; when the smoothing needs more, the largest smoothing that fits is
-  used and the finished-job message says so, with the zoom and the peak camera speed before → after). vid.stab
-  stays the default for handheld jitter.
+  used and the finished-job message says so, with the zoom and the peak camera speed before → after). A clip
+  containing a cut is stabilised shot by shot. vid.stab stays the default for handheld jitter.
 - De-judder: cadence analysis + flow warp with OpenCV.js (Apache-2.0) in worker threads.
 - Denoise/deblock: LGPL FFmpeg filters only (`atadenoise`, `fftdnoiz`, `nlmeans`, `deblock`).
 - Upscale: ONNX Runtime (`onnxruntime-node`, MIT) with the bundled SPAN 2× model
