@@ -24,11 +24,14 @@ import {
 	type JsonSchemaNode,
 	type MediaAsset,
 	type MgCompositionInfo,
+	type MgTextMeasurement,
+	measuredTextIssues,
 	mergeProps,
 	overridesWithEdits,
 	type ProjectDocument,
 	type RenderCompositionSource,
 	type TextEdit,
+	type TextIssue,
 	type TextStyleRole,
 	TimeInputSchema,
 	TrackRefSchema,
@@ -59,7 +62,7 @@ export const COMPOSITION_GUIDE = `Motion graphics from Remotion projects (compos
 - list_compositions shows ids, size, fps, length and the props schema (from jasper.mg.json, the project's jasper-schemas.ts zod module, or inferred from defaultProps).
 - add_composition places one (default length = the composition's, at the sequence frame rate); set_composition_props edits its props (validated: wrong types fail with E_INVALID_PARAM); render_frame shows the result.
 - Exports stay on the fast native path: each composition clip is pre-rendered once to a cached ProRes 4444 master (prerender_composition {quality: "master"} warms it); changing props or the bundle makes a new master.
-- Texts: list_composition_texts {projectId, clipId} shows every text a composition exposes (path, label, current value, limits, and the props that style it: fontFamily/fontSize/fontWeight/italic/color/align/lineHeight/letterSpacing when the composition exposes them); set_composition_text edits one or more texts (and their style) as one undo step. Respect maxChars/maxLines (warnings) and maxLength (errors); check the result with render_frame — layout overflow (text off frame / cut off) is only measured in the editor.`;
+- Texts: list_composition_texts {projectId, clipId} shows every text a composition exposes (path, label, current value, limits, and the props that style it: fontFamily/fontSize/fontWeight/italic/color/align/lineHeight/letterSpacing when the composition exposes them); set_composition_text edits one or more texts (and their style) as one undo step. Respect maxChars/maxLines (warnings) and maxLength (errors); both tools also measure the layout by rendering the composition in the engine (warnings MG_TEXT_OFF_FRAME, MG_TEXT_CLIPPED, MG_TEXT_OUTSIDE_BOX, MG_TEXT_LINES, with the text's box): fix those by shortening or breaking the text, then check with render_frame.`;
 
 const IdArg = z.string().min(1);
 const TimeArg = (what: string) =>
@@ -122,7 +125,12 @@ function textsSummary(info: MgCompositionInfo) {
 }
 
 /** One text of a clip with its value, default, limits, style values and static warnings. */
-function textDetail(info: MgCompositionInfo, l: CompositionTextLayer, overrides: Record<string, unknown>) {
+function textDetail(
+	info: MgCompositionInfo,
+	l: CompositionTextLayer,
+	overrides: Record<string, unknown>,
+	layout?: TextLayout,
+) {
 	const effective = mergeProps(info.defaultProps, overrides);
 	const value = textLayerValue(effective, l);
 	const style: Record<string, unknown> = {};
@@ -152,8 +160,83 @@ function textDetail(info: MgCompositionInfo, l: CompositionTextLayer, overrides:
 		...(l.hint ? { hint: l.hint } : {}),
 		...(l.description ? { description: l.description } : {}),
 		style,
-		warnings: checkCompositionText(l, value).map((i) => ({ code: i.code, message: i.message })),
+		warnings: [
+			...checkCompositionText(l, value),
+			...(layout?.issues.get(l.path.join('.')) ?? []).filter(
+				(i) => !checkCompositionText(l, value).some((s) => s.code === i.code),
+			),
+		].map((i) => ({ code: i.code, message: i.message, ...(i.severity === 'info' ? { info: true } : {}) })),
+		...(layout?.rects.get(l.path.join('.')) ? { rect: layout.rects.get(l.path.join('.')) } : {}),
 	};
+}
+
+type TextLayout = {
+	issues: Map<string, TextIssue[]>;
+	rects: Map<string, { x: number; y: number; width: number; height: number }>;
+	status: string;
+};
+
+/**
+ * Layout warnings of a clip's texts (S08:MGC-037): the engine renders the composition with the effective props
+ * at each text's measuring frame in its headless browser and the page's text probe locates the texts. Never
+ * fails the tool: when measuring is impossible, `status` says why.
+ */
+async function measureLayout(
+	ctx: ToolContext,
+	doc: ProjectDocument,
+	clip: CompositionClip,
+	info: MgCompositionInfo,
+	overrides: Record<string, unknown>,
+): Promise<TextLayout> {
+	const issues = new Map<string, TextIssue[]>();
+	const rects = new Map<string, { x: number; y: number; width: number; height: number }>();
+	const layers = compositionTextLayers(info);
+	const asset = clip.composition.mediaId ? doc.media[clip.composition.mediaId] : undefined;
+	const key = asset ? engineKey(asset) : null;
+	const seq = Object.values(doc.sequences).find((s) => s.clips[clip.id]);
+	if (!key || !seq || layers.length === 0)
+		return {
+			issues,
+			rects,
+			status: layers.length ? 'not measured: the bundle is not on this engine' : 'no texts',
+		};
+	const canvas =
+		clip.canvas === 'sequence' || !clip.canvas
+			? { width: seq.settings.width, height: seq.settings.height }
+			: clip.canvas;
+	const rate = seq.settings.frameRate;
+	const total = compositionSequenceFrames(info, rate);
+	const effective = mergeProps(info.defaultProps, overrides);
+	const groups = new Map<number, { id: string; text: string }[]>();
+	for (const l of layers) {
+		const f = Math.max(0, Math.min(total - 1, l.frame ?? Math.floor(total / 2)));
+		groups.set(f, [...(groups.get(f) ?? []), { id: l.path.join('.'), text: textLayerValue(effective, l) }]);
+	}
+	try {
+		const r = await ctx.engine((c) =>
+			c.call('mgBundleMeasureTexts', {
+				body: {
+					mediaKey: key,
+					compositionId: info.id,
+					props: effective,
+					width: canvas.width,
+					height: canvas.height,
+					fps: rate.num / rate.den,
+					durationInFrames: total,
+					frames: [...groups].slice(0, 8).map(([frame, items]) => ({ frame, items })),
+				},
+			}),
+		);
+		for (const m of r.measurements as unknown as MgTextMeasurement[]) {
+			const l = layers.find((x) => x.path.join('.') === m.id);
+			if (!l) continue;
+			issues.set(m.id, measuredTextIssues(l, m, canvas));
+			if (m.rect) rects.set(m.id, m.rect);
+		}
+		return { issues, rects, status: 'measured in the engine (rendered composition)' };
+	} catch (e) {
+		return { issues, rects, status: `not measured: ${e instanceof Error ? e.message : String(e)}` };
+	}
 }
 
 function compositionSummary(info: MgCompositionInfo) {
@@ -508,17 +591,26 @@ export function registerCompositionTools(ctx: ToolContext): void {
 		{
 			title: 'List composition texts',
 			description:
-				'Lists the texts a composition clip exposes (S08 hybrid text layers): path, label, current and default value, limits (maxChars/maxLines = designed for; maxLength = hard), safe box, and the props that style each text (fontFamily, fontSize, fontWeight, italic, color, align, lineHeight, letterSpacing) with their values and allowed options.',
-			input: { projectId: ProjectIdArg, clipId: IdArg.describe('Composition clip id ("clp_…")') },
+				"Lists the texts a composition clip exposes (S08 hybrid text layers): path, label, current and default value, limits (maxChars/maxLines = designed for; maxLength = hard), safe box, the props that style each text (fontFamily, fontSize, fontWeight, italic, color, align, lineHeight, letterSpacing) with their values and allowed options, and warnings — including layout ones measured by rendering the composition in the engine (runs off the frame, cut off by its box, outside its safe area, too many lines) with the text's box in composition pixels.",
+			input: {
+				projectId: ProjectIdArg,
+				clipId: IdArg.describe('Composition clip id ("clp_…")'),
+				measure: z
+					.boolean()
+					.optional()
+					.describe('Render the composition to check the layout (default true; a few seconds)'),
+			},
 			annotations: READ_ONLY,
 		},
-		async ({ projectId, clipId }) => {
+		async ({ projectId, clipId, measure }) => {
 			const { doc } = await loadDoc(ctx, projectId);
 			const { clip, info } = findCompositionClip(doc, clipId);
+			const layout = measure === false ? undefined : await measureLayout(ctx, doc, clip, info, clip.props);
 			return jsonResult({
 				clipId,
 				compositionId: info.id,
-				texts: compositionTextLayers(info).map((l) => textDetail(info, l, clip.props)),
+				texts: compositionTextLayers(info).map((l) => textDetail(info, l, clip.props, layout)),
+				layout: layout?.status ?? 'not measured (measure: false)',
 			});
 		},
 	);
@@ -529,7 +621,7 @@ export function registerCompositionTools(ctx: ToolContext): void {
 		{
 			title: 'Edit composition texts',
 			description:
-				'Edits texts of a composition clip — the value and/or the style props the composition exposes for it — as ONE undo step. Each entry names a text by path ("title", "name.text") or label. Values are validated against the composition schema (E_INVALID_PARAM); soft limits come back as warnings. The cached ProRes master no longer matches: the next export (or prerender_composition) renders a new one. Check the frame with render_frame.',
+				'Edits texts of a composition clip — the value and/or the style props the composition exposes for it — as ONE undo step. Each entry names a text by path ("title", "name.text") or label. Values are validated against the composition schema (E_INVALID_PARAM); soft limits and the measured layout (off frame, cut off, outside the safe area, extra lines) come back as warnings. The cached ProRes master no longer matches: the next export (or prerender_composition) renders a new one. Check the frame with render_frame.',
 			input: {
 				projectId: ProjectIdArg,
 				clipId: IdArg.describe('Composition clip id ("clp_…")'),
@@ -544,10 +636,14 @@ export function registerCompositionTools(ctx: ToolContext): void {
 						}),
 					)
 					.min(1),
+				measure: z
+					.boolean()
+					.optional()
+					.describe('Render the result to check the layout (default true; a few seconds)'),
 			},
 			annotations: EDIT,
 		},
-		async ({ projectId, clipId, texts }, extra) => {
+		async ({ projectId, clipId, texts, measure }, extra) => {
 			const { doc } = await loadDoc(ctx, projectId);
 			const { clip, info } = findCompositionClip(doc, clipId);
 			const layers = compositionTextLayers(info);
@@ -587,9 +683,12 @@ export function registerCompositionTools(ctx: ToolContext): void {
 				extra,
 			);
 			const r = requireOk(res);
+			const after = (await loadDoc(ctx, projectId)).doc;
+			const layout = measure === false ? undefined : await measureLayout(ctx, after, clip, info, next);
 			return jsonResult({
 				...txBody(res, r),
-				texts: [...new Set(touched)].map((l) => textDetail(info, l, next)),
+				texts: [...new Set(touched)].map((l) => textDetail(info, l, next, layout)),
+				layout: layout?.status ?? 'not measured (measure: false)',
 				master: 'Props changed: the cached master is stale; the next export renders a new one.',
 			});
 		},
