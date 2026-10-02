@@ -3,11 +3,11 @@
 // what the open project uses; the automatic-cleaning settings save through the engine (the size-limit dropdown
 // opens above the dialog).
 
-import { existsSync, mkdtempSync, readdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
-import { createProject, enableAgentBridge, importFiles, ROOT, watchPage } from './support.ts';
+import { createProject, enableAgentBridge, importFiles, ROOT, serverInfo, watchPage } from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -21,6 +21,17 @@ async function usage(): Promise<Usage> {
 }
 
 const kind = (u: Usage, k: string) => u.kinds.find((x) => x.kind === k)!;
+
+/** Relative paths and sizes of every file under `dir` (sorted). */
+function listTree(dir: string, prefix = ''): string[] {
+	const out: string[] = [];
+	for (const n of readdirSync(dir).sort()) {
+		const p = join(dir, n);
+		if (statSync(p).isDirectory()) out.push(...listTree(p, `${prefix}${n}/`));
+		else out.push(`${prefix}${n} ${statSync(p).size}`);
+	}
+	return out;
+}
 
 test.beforeAll(async ({ browser }) => {
 	page = await browser.newPage();
@@ -38,10 +49,25 @@ test.afterAll(async () => {
 test('the Media Cache page shows the cache of the open project and cleaning keeps what it uses', async () => {
 	await createProject(page, 'E2E Media Cache');
 	await importFiles(page, ['clip-a.mp4']);
-	// Waveform peaks, poster, filmstrip and keyframe index of the import are cache entries.
+	// The open project's media cache files (waveform peaks, poster, filmstrip, keyframe index) live under
+	// `cache/<fingerprint>/`. The engine is shared by every spec: other (closed) projects' files are in the usage too,
+	// and Clean All may legitimately remove them — so this spec measures its own project's files.
+	const fp = await page.evaluate(() => {
+		const doc = (window as unknown as { jasper: { query(n: string): Promise<unknown> } }).jasper;
+		return doc.query('doc.get').then((d) => {
+			const m = Object.values(
+				(d as { media: Record<string, { originalName: string; fingerprint: string }> }).media,
+			);
+			return m.find((x) => x.originalName === 'clip-a.mp4')!.fingerprint;
+		});
+	});
+	const own = join(serverInfo().appdir, 'cache', fp.replace(/^q1:/, ''));
+	const ownFiles = () => (existsSync(own) ? listTree(own) : []);
 	await expect
-		.poll(async () => kind(await usage(), 'media-cache').entries, { timeout: 120_000 })
-		.toBeGreaterThanOrEqual(3);
+		.poll(() => ownFiles().filter((f) => /^(poster|keyframes|peaks|sprite)-/.test(f)).length, {
+			timeout: 120_000,
+		})
+		.toBeGreaterThanOrEqual(4);
 
 	await page.getByTestId('title-bar').getByRole('menuitem', { name: 'Edit', exact: true }).click();
 	await page.getByRole('menuitem', { name: /^Preferences$/ }).hover();
@@ -57,10 +83,10 @@ test('the Media Cache page shows the cache of the open project and cleaning keep
 	await page.screenshot({ path: join(ROOT, 'test-results', 'media-cache-page.png') });
 
 	// Clean Unused: the open project's files stay.
-	const before = kind(await usage(), 'media-cache').bytes;
+	const before = ownFiles();
 	await prefs.getByTestId('cache-clean-unused').click();
 	await expect(prefs.getByTestId('cache-status')).toContainText('Clean Unused: removed');
-	expect(kind(await usage(), 'media-cache').bytes).toBeGreaterThanOrEqual(before);
+	expect(ownFiles()).toEqual(before);
 
 	// Clean All asks first; confirmed, it still keeps what the open project uses.
 	await prefs.getByTestId('cache-clean-all').click();
@@ -71,8 +97,9 @@ test('the Media Cache page shows the cache of the open project and cleaning keep
 	await prefs.getByTestId('cache-clean-all').click();
 	await page.getByTestId('confirm-dialog').getByRole('button', { name: 'Clean All' }).click();
 	await expect(prefs.getByTestId('cache-status')).toContainText('Clean All: removed');
+	expect(ownFiles()).toEqual(before);
+	// Whatever is left of the media cache is in use (open project, recent files of other specs).
 	const after = kind(await usage(), 'media-cache');
-	expect(after.bytes).toBeGreaterThanOrEqual(before);
 	expect(after.inUseBytes).toBe(after.bytes);
 	await expect(prefs.getByTestId('cache-last-gc')).toContainText('Clean All');
 });

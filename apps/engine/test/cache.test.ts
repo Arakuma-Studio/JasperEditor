@@ -364,6 +364,28 @@ describe('cache registry and cleaning (CA-011…CA-018)', () => {
 		rmProject(app.appdir, saved);
 	});
 
+	it('an open project keeps what its editor shows before the autosave (live document; integration regression)', async () => {
+		// The editor imported clip X (artifacts already old: the same file was imported long ago in another project)
+		// and has not autosaved yet: the saved document has no media, the live one has.
+		const d = new DocBuilder('hd-1080p-30', 61);
+		const pid = saveProject(app.appdir, d);
+		const live = docWithMedia(61); // same seed → same projectId, plus the media
+		expect(live.doc.projectId).toBe(pid);
+		const s = fresh();
+		const offOpen = cache.addOpenProbe((p) => p === pid);
+		const offLive = cache.addLiveDocumentSource(async (p) => (p === pid ? live.doc : null));
+		await clean('all');
+		expect(existsSync(s.poster) && existsSync(s.proxy) && existsSync(s.spriteSheet)).toBe(true);
+		expect(existsSync(s.otherPoster)).toBe(false);
+		// Without the live document only the saved one counts: the files go.
+		offLive();
+		const s2 = fresh();
+		await clean('all');
+		expect(existsSync(s2.poster)).toBe(false);
+		offOpen();
+		rmProject(app.appdir, pid);
+	});
+
 	it('automatic passes: per-kind age limits, then LRU eviction under kind and total budgets; referenced entries stay (CA-003, CA-015)', async () => {
 		const p = (...x: string[]) => join(app.appdir, ...x);
 		// Ages: exports 7 d, stills 1 d, LUTs 30 d (global default).

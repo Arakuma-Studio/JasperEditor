@@ -30,7 +30,20 @@ export default async function cacheRoutes(app: FastifyInstance): Promise<void> {
 	const offProbe = agent
 		? core.cache.addOpenProbe((pid) => agent.sessions.connectionsFor(pid).length > 0)
 		: null;
-	app.addHook('onClose', async () => offProbe?.());
+	// …and their editors answer with the live document (refs of media imported but not saved yet).
+	const offLive = agent
+		? core.cache.addLiveDocumentSource(async (pid) => {
+				const conn = agent.sessions.holder(pid) ?? agent.sessions.connectionsFor(pid).at(-1);
+				if (!conn) return null;
+				const out = await agent.sessions.request(conn, 'query', { query: 'doc.get', args: {} }, 3000);
+				if (out.error) return null;
+				return ((out.result ?? {}) as { result?: unknown }).result ?? null;
+			})
+		: null;
+	app.addHook('onClose', async () => {
+		offProbe?.();
+		offLive?.();
+	});
 	// fframes motion-graphic renders (`mg/<key>`) that saved projects use are referenced like composition renders.
 	const mg = app.jasper.services.mg as MgService | undefined;
 	if (mg) core.cache.setFframesRenderKey((clip, fps) => mg.clipRenderKey(clip, fps));
