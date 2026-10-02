@@ -140,7 +140,7 @@ function LiveHost({
 	const want = useRef<{ frame: number; key: string; hidden: boolean } | null>(null);
 	const busy = useRef(false);
 	const [host, setHost] = useState<HostState>({ state: 'loading' });
-	const [allowed, setAllowed] = useState(true);
+	const [acquired, setAcquired] = useState(true);
 	const bundleUrl = runtime?.bundleUrl?.(src.bundle!.key ?? '') ?? bundleServeUrl(src.bundle!.key ?? '');
 	const total = compositionFramesAt(info, fps);
 	const frame = Math.max(0, Math.min(total - 1, compositionFrameOf(contentTime, fps)));
@@ -154,16 +154,18 @@ function LiveHost({
 	);
 	const configKey = useMemo(() => JSON.stringify(config), [config]);
 
-	// Live host budget (MGC-024).
+	// Live host budget (MGC-024). wp-m3-mgtext: runtimes with `hostAllowed` decide per render (a clip being edited
+	// on canvas takes a slot, the clip farthest from the playhead gives it up).
 	useEffect(() => {
 		const release = runtime?.acquireHost?.(clip.clipId);
 		if (release === null) {
-			setAllowed(false);
+			setAcquired(false);
 			return;
 		}
-		setAllowed(true);
+		setAcquired(true);
 		return () => release?.();
 	}, [runtime, clip.clipId]);
+	const allowed = runtime?.hostAllowed ? runtime.hostAllowed(clip.clipId) : acquired;
 
 	// Everything the (stable) pump needs lives in refs: it outlives the render that started it.
 	const live = useRef({ config, hidden, report: (_s: HostState) => {} });
