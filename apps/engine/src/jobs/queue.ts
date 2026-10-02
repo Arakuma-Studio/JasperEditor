@@ -548,6 +548,27 @@ export class JobQueue {
 		);
 	}
 
+	/**
+	 * M3 (wp-m3-cachegc, S04:CA-020): drops finished jobs the journal would not restore (older than 7 days beyond the
+	 * newest 500; interrupted ones stay) from memory and rewrites the journal. Returns the number dropped.
+	 */
+	prune(): number {
+		const cutoff = this.now().getTime() - KEEP_FINISHED_MS;
+		const finished = [...this.entries.values()]
+			.filter((e) => TERMINAL_JOB_STATES.has(e.job.state) && e.job.state !== 'interrupted')
+			.sort((a, b) => a.seq - b.seq);
+		let dropped = 0;
+		finished.forEach((e, i) => {
+			if (i >= finished.length - KEEP_FINISHED) return;
+			if (Date.parse(e.job.finishedAt ?? e.job.createdAt) >= cutoff) return;
+			if (e.waiters.length) return;
+			this.entries.delete(e.job.id);
+			dropped++;
+		});
+		this.compactJournal();
+		return dropped;
+	}
+
 	private compactJournal(): void {
 		const path = this.opts.journalPath;
 		if (!path) return;

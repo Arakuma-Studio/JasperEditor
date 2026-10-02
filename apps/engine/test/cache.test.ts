@@ -16,10 +16,14 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import type { CacheGcReport, CacheUsage } from '@jasper/api';
+import { appdirPaths } from '@jasper/config';
+import { mgRegistry } from '@jasper/mg-templates';
 import {
+	applyTransaction,
 	bakeColorRun,
 	buildRenderSnapshot,
 	defaultEffectRegistry,
+	defaultRegistries,
 	EMPTY_PROBE,
 	LUMETRI_EFFECT_ID,
 	makeEnvelope,
@@ -27,8 +31,11 @@ import {
 } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { entryOfPath, scanAppdir } from '../src/cache/layout.ts';
+import { logsUsage, maintainLogs, USAGE_LOG } from '../src/cache/logs.ts';
 import { projectCacheRefs } from '../src/cache/project-refs.ts';
 import { type CacheService, ORPHAN_AGE_MS } from '../src/cache/service.ts';
+import { JobQueue } from '../src/jobs/queue.ts';
+import type { MgService } from '../src/mg/index.ts';
 import { masterRequests } from '../src/mg-bundles/native-ext.ts';
 import { prerenderKey } from '../src/mg-bundles/service.ts';
 import { coreServices } from '../src/tools/services.ts';
@@ -802,6 +809,122 @@ describe('removed artifacts come back on demand (S04:CA-004)', () => {
 		expect(['queued', 'running', 'ready']).toContain(s.derivatives.poster!.state);
 		await until(ready);
 	}, 240_000);
+});
+
+describe('fframes motion-graphic renders are referenced by saved projects (CA-012)', () => {
+	afterAll(closeApps);
+
+	it('the render key of a motion-graphic clip comes from the document; edited params release the old render', async () => {
+		const app = await makeApp();
+		const cache = coreServices(app).cache;
+		await cache.start();
+		const mg = app.jasper.services.mg as MgService;
+		const d = new DocBuilder('hd-1080p-30', 91);
+		// Motion-graphic templates need the mg registry (DocBuilder uses the default registries).
+		const mgTx = (commands: unknown[]) => {
+			const { document, result } = applyTransaction(
+				d.doc,
+				{ label: 'mg', origin: 'user', sequenceId: d.seqId, commands: commands as never },
+				{
+					ids: d.ids,
+					now: () => '2026-10-01T00:00:00.000Z',
+					revision: d.revision,
+					registries: defaultRegistries(mgRegistry),
+				},
+			);
+			if (!result.ok) throw new Error(JSON.stringify(result.errors));
+			d.doc = document;
+			d.revision = result.revision;
+			return result;
+		};
+		const clipId = (
+			mgTx([
+				{
+					type: 'clip.addMotionGraphic',
+					at: 0,
+					duration: 90,
+					track: 'V2',
+					template: { id: 'lower-third', version: 1 },
+				},
+			]).results[0] as { clipId: string }
+		).clipId;
+		const snap = buildRenderSnapshot(d.doc, d.seqId, { resolveMedia: () => null, resolveFont: () => null });
+		const clip = snap.videoTracks.flatMap((t) => t.clips).find((c) => c.clipId === clipId)!;
+		const key = mg.clipRenderKey(clip, snap.settings.fps)!;
+		expect(key).toMatch(/^[0-9a-f]{40}$/);
+		expect(projectCacheRefs(d.doc, null, (c, fps) => mg.clipRenderKey(c, fps)).mgRenderKeys).toEqual(
+			new Set([key]),
+		);
+		// A render of it (old) and an unrelated one: Clean Unused keeps the project's.
+		const dir = join(app.appdir, 'mg', key);
+		put(join(dir, 'master.mov'));
+		put(join(dir, 'meta.json'));
+		const other = join(app.appdir, 'mg', '9'.repeat(40));
+		put(join(other, 'master.mov'));
+		const pid = saveProject(app.appdir, d);
+		await cache.clean('unused');
+		expect(existsSync(join(dir, 'master.mov'))).toBe(true);
+		expect(existsSync(other)).toBe(false);
+		// Other params → another key: the saved project no longer references the old render.
+		mgTx([{ type: 'clip.update', clipId, patch: { params: { name: 'Someone else' } } }]);
+		saveProject(app.appdir, d);
+		await cache.clean('unused');
+		expect(existsSync(dir)).toBe(false);
+		rmProject(app.appdir, pid);
+	});
+});
+
+describe('engine logs and the job journal do not grow forever (CA-020)', () => {
+	it('log retention by age and size; the Remotion usage log keeps 13 months; usage reports them', async () => {
+		const appdir = tempAppdir('jasper-logs-');
+		const paths = appdirPaths(appdir);
+		const logs = paths.logsDir;
+		const old = put(join(logs, '2026-01-01.log'), 1000, 60 * DAY);
+		const job = put(join(logs, 'jobs', 'job_0000000000000001.log'), 1000, 45 * DAY);
+		const recent = put(join(logs, 'mg-bundles', 'job_0000000000000002.log'), 3000, 2 * DAY);
+		const recent2 = put(join(logs, 'jobs', 'job_0000000000000003.log'), 3000, 1 * DAY);
+		const now = Date.now();
+		const lines: string[] = [];
+		for (let i = 0; i < 9000; i++)
+			lines.push(
+				JSON.stringify({
+					at: new Date(now - (i % 2 ? 500 : 30) * DAY).toISOString(),
+					kind: 'media',
+					purpose: 'export' + 'x'.repeat(100),
+				}),
+			);
+		writeFileSync(join(logs, USAGE_LOG), `${lines.join('\n')}\n`);
+		const r = await maintainLogs(paths, { maxAgeDays: 30, maxBytes: 4000 }, now);
+		expect(existsSync(old) || existsSync(job)).toBe(false);
+		expect(existsSync(recent)).toBe(false); // oldest beyond the 4000-byte limit
+		expect(existsSync(recent2)).toBe(true);
+		expect(r.removedFiles).toBe(3);
+		const kept = readFileSync(join(logs, USAGE_LOG), 'utf8').trim().split('\n');
+		expect(kept).toHaveLength(4500); // the 500-day-old half went
+		const u = await logsUsage(paths);
+		expect(u.files).toBe(2);
+	});
+
+	it('the job journal is compacted: finished jobs older than 7 days beyond the newest 500 go', async () => {
+		const appdir = tempAppdir('jasper-journal-');
+		const journalPath = join(appdir, 'jobs.jsonl');
+		let t = Date.parse('2026-09-01T00:00:00Z');
+		const q = new JobQueue({ journalPath, tmpDir: join(appdir, 'tmp'), now: () => new Date(t) });
+		q.registerRunner('probe', async () => ({ ok: true }));
+		q.start();
+		const ids: string[] = [];
+		for (let i = 0; i < 520; i++)
+			ids.push(q.submit({ kind: 'probe', title: `p${i}`, priority: 'background', cpuSlots: 0 }).id);
+		for (const id of ids) await q.wait(id);
+		const linesBefore = readFileSync(journalPath, 'utf8').trim().split('\n').length;
+		expect(linesBefore).toBeGreaterThan(520);
+		t += 8 * DAY;
+		expect(q.prune()).toBe(20);
+		expect(readFileSync(journalPath, 'utf8').trim().split('\n')).toHaveLength(500);
+		expect(q.get(ids[0]!)).toBeNull();
+		expect(q.get(ids[519]!)).not.toBeNull();
+		await q.shutdown();
+	});
 });
 
 beforeAll(() => ensureFixtures());

@@ -92,6 +92,11 @@ export class CacheSettingsStore {
 		return this.cached;
 	}
 
+	/** Forget the cached value (the file was written elsewhere, e.g. by a cache move). */
+	invalidate(): void {
+		this.cached = null;
+	}
+
 	async put(next: CacheSettings): Promise<CacheSettings> {
 		const value = CacheSettingsSchema.parse(next);
 		return this.mutex.run('settings', async () => {

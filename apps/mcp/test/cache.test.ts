@@ -51,7 +51,14 @@ const USAGE: CacheUsage = {
 		},
 	],
 	other: [],
-	settings: { autoClean: true, maxTotalBytes: null, maxAgeDays: 30, kinds: {} },
+	settings: {
+		autoClean: true,
+		maxTotalBytes: null,
+		maxAgeDays: 30,
+		kinds: {},
+		logs: { maxAgeDays: 30, maxBytes: 256 * MB },
+		location: null,
+	},
 	lastGc: null,
 	scannedAt: '2026-10-01T00:00:00.000Z',
 };
@@ -65,6 +72,33 @@ async function connect() {
 		const json = (b: unknown) =>
 			new Response(JSON.stringify(b), { status: 200, headers: { 'x-jasper-api': '1' } });
 		if (path === '/api/cache') return json(USAGE);
+		if (path === '/api/cache/location/check')
+			return json({
+				path: `${body.path}/JasperEditor Media Cache`,
+				isDefault: false,
+				ok: body.path !== '/nope',
+				message: body.path === '/nope' ? '/nope is not writable' : null,
+				exists: true,
+				writable: body.path !== '/nope',
+				freeBytes: 1,
+				requiredBytes: 0,
+				sameDevice: true,
+				sameAsCurrent: false,
+			});
+		const job = (state: string) => ({
+			id: 'job_0000000000000042',
+			kind: 'cache-move',
+			title: 'Move media cache',
+			origin: { type: 'user' },
+			state,
+			progress: state === 'succeeded' ? 1 : 0,
+			createdAt: '2026-10-01T00:00:00.000Z',
+			priority: 'interactive',
+			cpuSlots: 8,
+			...(state === 'succeeded' ? { result: { location: '/fast/JasperEditor Media Cache' } } : {}),
+		});
+		if (path === '/api/cache/location') return json(job('queued'));
+		if (path === '/api/jobs/job_0000000000000042') return json(job('succeeded'));
 		if (path === '/api/cache/clean')
 			return json({
 				at: '2026-10-01T00:00:00.000Z',
@@ -123,6 +157,18 @@ describe('media cache MCP tools (S04:CA-019)', () => {
 		const tools = (await client.listTools()).tools;
 		expect(tools.find((t) => t.name === 'get_cache_usage')?.annotations?.readOnlyHint).toBe(true);
 		expect(tools.find((t) => t.name === 'clean_cache')?.annotations?.destructiveHint).toBe(true);
+		await client.close();
+	});
+
+	it('set_cache_location checks the folder, starts the move and waits for it', async () => {
+		const { client, call, calls } = await connect();
+		const bad = await call('set_cache_location', { path: '/nope' });
+		expect(bad.r.isError).toBe(true);
+		expect(bad.text).toContain('not writable');
+		expect(calls.some((c) => c.url === '/api/cache/location')).toBe(false);
+		const { json } = await call('set_cache_location', { path: '/fast', mode: 'move' });
+		expect(calls.find((c) => c.url === '/api/cache/location')?.body).toEqual({ path: '/fast', mode: 'move' });
+		expect(json).toMatchObject({ state: 'succeeded', location: '/fast/JasperEditor Media Cache' });
 		await client.close();
 	});
 

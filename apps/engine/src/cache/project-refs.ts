@@ -9,6 +9,8 @@ import {
 	compositionClipRenderRange,
 	compositionSequenceFrames,
 	type ProjectDocument,
+	type Rational,
+	type RenderVisualClip,
 } from '@jasper/project';
 import { fingerprintHex } from '../media/fingerprint.ts';
 
@@ -38,7 +40,14 @@ export function emptyRefs(): ProjectCacheRefs {
  * The cache references of a stored document. Tolerant: unknown shapes are skipped; a sequence whose snapshot fails
  * (older or invalid document) only loses its composition keys (media references come from the raw document).
  */
-export function projectCacheRefs(doc: unknown, renderKey: RenderKeyFn | null): ProjectCacheRefs {
+/** Render key of a motion-graphic (fframes) clip in a snapshot (M1 mg service `clipRenderKey`). */
+export type ClipRenderKeyFn = (clip: RenderVisualClip, fps: Rational) => string | null;
+
+export function projectCacheRefs(
+	doc: unknown,
+	renderKey: RenderKeyFn | null,
+	fframesKey: ClipRenderKeyFn | null = null,
+): ProjectCacheRefs {
 	const out = emptyRefs();
 	const d = doc as Partial<ProjectDocument> | null;
 	if (!d || typeof d !== 'object') return out;
@@ -53,7 +62,7 @@ export function projectCacheRefs(doc: unknown, renderKey: RenderKeyFn | null): P
 		}
 		if (typeof a?.mgBundle?.bundleHash === 'string') out.bundleHashes.add(a.mgBundle.bundleHash);
 	}
-	if (out.bundleHashes.size === 0 || !renderKey) return out;
+	if ((out.bundleHashes.size === 0 || !renderKey) && !fframesKey) return out;
 	for (const seqId of Object.keys(d.sequences ?? {})) {
 		try {
 			const snap = buildRenderSnapshot(d as ProjectDocument, seqId, {
@@ -62,8 +71,14 @@ export function projectCacheRefs(doc: unknown, renderKey: RenderKeyFn | null): P
 			});
 			const fps = snap.settings.fps;
 			for (const clip of snap.videoTracks.flatMap((t) => t.clips)) {
+				// fframes motion-graphic clips (M1): master and preview live under one key.
+				if (fframesKey && 'mg' in clip.source) {
+					const k = fframesKey(clip, fps);
+					if (k) out.mgRenderKeys.add(k);
+					continue;
+				}
 				const src = 'composition' in clip.source ? clip.source.composition : null;
-				if (!src?.info || !src.bundle?.hash) continue;
+				if (!renderKey || !src?.info || !src.bundle?.hash) continue;
 				const total = compositionSequenceFrames(src.info, fps);
 				const base = {
 					compositionId: src.compositionId,

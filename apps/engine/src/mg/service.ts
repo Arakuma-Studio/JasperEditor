@@ -486,7 +486,23 @@ export function createMgService(opts: MgServiceOptions) {
 		return masterFor(spec, ctx);
 	}
 
+	/**
+	 * M3 (wp-m3-cachegc, S04:CA-012): the `mg/<key>` render key of a motion-graphic clip (master and preview share it),
+	 * or null (anime template, not an mg clip, invalid params). Lets the cache keep the renders saved projects use.
+	 */
+	function clipRenderKey(clip: Pick<RenderVisualClip, 'source' | 'duration' | 'sourceIn'>, fps: MgRational) {
+		if (isAnimeTemplateClip(clip, registry)) return null;
+		const spec = specFromClip(clip, fps, registry);
+		if (!spec) return null;
+		try {
+			return renderKey(validateSpec(spec));
+		} catch {
+			return null;
+		}
+	}
+
 	return {
+		clipRenderKey,
 		refresh,
 		capability,
 		probe: () => probe,

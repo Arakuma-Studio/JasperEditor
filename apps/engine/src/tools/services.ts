@@ -180,6 +180,7 @@ export async function createCoreServices(
 		log: opts.log,
 	});
 	exportsSvc.cache = cache;
+	cache.registerRunners();
 	media.registerRunners();
 	derivatives.registerRunners();
 	exportsSvc.registerRunners();

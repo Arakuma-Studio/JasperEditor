@@ -74,9 +74,30 @@ Also fixed (found while verifying the UI): every `Select` inside a dialog opened
   warp layer; after an engine restart Clean Unused kept all 62 (0 missing). Opening v6 afterwards re-queued its
   derivatives (163 media cache files back within 40 s, 53 proxy jobs queued). Screenshots: `/tmp/cachegc-shots/`.
 
+## Second round (closing the open items)
+
+| Req | Where | Notes |
+|---|---|---|
+| CA-012 fframes | `mg/service.ts` `clipRenderKey`, `cache/project-refs.ts`, `routes/cache.ts` | Saved documents' motion-graphic (fframes) clips → `specFromClip` → the M1 render key (master and preview share `mg/<key>`); anime templates excluded. Test: an edited param releases the old render. |
+| CA-020 | `cache/logs.ts`, `JobQueue.prune`, `CacheService.maintainLogs` | Log retention 30 days / 256 MB (today's log kept), Remotion usage log trimmed to 400 days past 1 MB (LC-004 monthly counts), journal compacted past 2 MB (finished > 7 days beyond newest 500, also from memory). Usage row "Logs and job history" with its limits. |
+| CA-021 | `cache/location.ts`, `CacheService.{checkLocation,startMove,runMove}`, `index.ts` (`prepareAppdir` → `repairCacheLocation`), routes, MCP `set_cache_location`, page `LocationPanel` | Links (junctions on Windows) from `<appdir>/{cache,mg,renders,tmp}` into `<folder>/JasperEditor Media Cache/`; exclusive `cache-move` job (all CPU slots) in the GC chain; same disk = rename, other disk = copy to `.partial-<id>` with progress; journal + start-up repair (rollback / complete / fallback when unavailable). Desktop "Browse…" uses `jasperDesktop.pickFolder` when the shell provides it (else typed path). |
+| UI | `MediaCachePage.tsx` | Days accept `never`; logs row; Location ▸ Change… panel (Check, Move / Start new + keep old, Move back to default, progress). |
+
+Tests: `apps/engine/test/cache-location.test.ts` (validation, same-disk move + export through the links + restart +
+move back, cross-disk copy /var → /tmp, fresh + keepOld, repair of an interrupted switch, unavailable location
+fallback, token-mode access), `cache.test.ts` (fframes refs, logs retention + usage-log trim, journal prune),
+`media-cache.test.tsx` (never, logs limits, location flow), `apps/mcp/test/cache.test.ts` (set_cache_location),
+`e2e/media-cache.spec.ts` (never + logs saved; move to a folder and back in the real UI).
+
+### Dropdowns inside dialogs (for the integrator)
+
+wp-m3-transdefaults fixed the same bug differently. Mine: `packages/ui/src/theme/tokens.css` — appended block
+`--pr-z-dialog-popover: 1150` (lines 382–387, "M3 (wp-m3-cachegc)" comment); `packages/ui/src/primitives/
+fields.tsx` — `Select`'s `RSelect.Content` class `z-[var(--pr-z-popover)]` → `z-[var(--pr-z-dialog-popover)]` (one
+class in the `className` of `RSelect.Content`, line 124). Keep one of the two fixes; either makes the Media Cache
+page's "Cache size limit" and "What to do with the current cache" dropdowns work.
+
 ## Open / not done
 
-- fframes (M1 `motion-graphic`) render keys are not computed from documents (age/LRU only, no saved-project ref).
-- Cache location is shown but not movable (desktop "move cache" of CA-003).
-- Per-kind "never" age (null) is API-only; the page uses empty = default.
-- `engine/logs` and the job journal are not managed here.
+- Nothing functional. A move needs no running jobs (it waits); a cache location on a network share works if the
+  OS allows directory links there.

@@ -3,6 +3,8 @@
 // what the open project uses; the automatic-cleaning settings save through the engine (the size-limit dropdown
 // opens above the dialog).
 
+import { existsSync, mkdtempSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import { createProject, enableAgentBridge, importFiles, ROOT, watchPage } from './support.ts';
@@ -47,7 +49,7 @@ test('the Media Cache page shows the cache of the open project and cleaning keep
 	const prefs = page.getByTestId('preferences-dialog');
 	await expect(prefs.getByTestId('prefs-cache')).toBeVisible();
 	await expect(prefs.getByTestId('prefs-page-media-cache')).toHaveAttribute('aria-current', 'page');
-	await expect(prefs.getByTestId('cache-table').getByRole('row')).toHaveCount(11);
+	await expect(prefs.getByTestId('cache-table').getByRole('row')).toHaveCount(12); // header, 10 kinds, logs
 	await expect
 		.poll(async () => Number(await prefs.getByTestId('cache-kind-media-cache-entries').textContent()))
 		.toBeGreaterThanOrEqual(3);
@@ -91,9 +93,46 @@ test('automatic cleaning settings: custom size limit and a per-kind limit are sa
 		maxTotalBytes: 50 * 1024 ** 3,
 		maxAgeDays: 21,
 		kinds: { proxies: { maxBytes: 12 * 1024 ** 3 } },
+		logs: { maxAgeDays: 30, maxBytes: 256 * 1024 ** 2 },
+		location: null,
 	});
 	await expect(prefs.getByTestId('cache-total')).toContainText('of 50.0 GB');
 	await prefs.getByTestId('cache-save').scrollIntoViewIfNeeded();
 	await page.screenshot({ path: join(ROOT, 'test-results', 'media-cache-settings.png') });
+	// Exports never expire; logs keep 14 days.
+	await prefs.getByTestId('cache-kind-exports-days').fill('never');
+	await prefs.getByTestId('cache-logs-days').fill('14');
+	await prefs.getByTestId('cache-save').click();
+	await expect(prefs.getByTestId('cache-status')).toHaveText('Settings saved');
+	const s2 = await (await page.request.get('/api/cache/settings')).json();
+	expect(s2.kinds.exports).toEqual({ maxAgeDays: null });
+	expect(s2.logs.maxAgeDays).toBe(14);
+	expect(errors).toEqual([]);
+});
+
+test('Change… moves the cache to another folder and back (CA-021)', async () => {
+	const prefs = page.getByTestId('preferences-dialog');
+	const dest = mkdtempSync(join(tmpdir(), 'jasper-e2e-cache-'));
+	const before = (await (await page.request.get('/api/cache')).json()) as { location: string };
+	await prefs.getByTestId('cache-location-change').scrollIntoViewIfNeeded();
+	await prefs.getByTestId('cache-location-change').click();
+	await prefs.getByTestId('cache-location-path').fill(dest);
+	await prefs.getByTestId('cache-location-check').click();
+	await expect(prefs.getByTestId('cache-location-result')).toContainText('free');
+	await page.screenshot({ path: join(ROOT, 'test-results', 'media-cache-location.png') });
+	await prefs.getByTestId('cache-location-move').click();
+	await expect(prefs.getByTestId('cache-status')).toHaveText('The media cache location changed', {
+		timeout: 120_000,
+	});
+	const target = join(dest, 'JasperEditor Media Cache');
+	await expect(prefs.getByTestId('cache-location')).toHaveText(target);
+	expect(readdirSync(join(target, 'cache')).length).toBeGreaterThan(0); // the imported media's cache moved along
+	// The editor keeps working: the media's poster is served through the new location.
+	await expect.poll(async () => kind(await usage(), 'media-cache').entries).toBeGreaterThanOrEqual(3);
+	// Back to the default location.
+	await prefs.getByTestId('cache-location-change').click();
+	await prefs.getByTestId('cache-location-default').click();
+	await expect(prefs.getByTestId('cache-location')).toHaveText(before.location, { timeout: 120_000 });
+	expect(existsSync(join(target, 'cache'))).toBe(false);
 	expect(errors).toEqual([]);
 });

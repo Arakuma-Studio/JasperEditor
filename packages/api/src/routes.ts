@@ -14,6 +14,9 @@ import {
 import {
 	CacheCleanRequestSchema,
 	CacheGcReportSchema,
+	CacheLocationCheckSchema,
+	CacheLocationRequestSchema,
+	CacheMoveRequestSchema,
 	CacheSettingsSchema,
 	CacheUsageSchema,
 } from './cache.ts';
@@ -479,6 +482,22 @@ export const ROUTES = {
 		method: 'GET',
 		path: '/api/cache/settings',
 		response: CacheSettingsSchema,
+		owner: 'wp-m3-cachegc',
+	},
+	/** Validates a cache folder: writable, free space for a move, same disk (S04:CA-021). Local mode only. */
+	cacheLocationCheck: {
+		method: 'POST',
+		path: '/api/cache/location/check',
+		body: CacheLocationRequestSchema,
+		response: CacheLocationCheckSchema,
+		owner: 'wp-m3-cachegc',
+	},
+	/** Moves the cache (or starts a fresh one) to a folder: a `cache-move` job. Local mode only. */
+	cacheLocationSet: {
+		method: 'POST',
+		path: '/api/cache/location',
+		body: CacheMoveRequestSchema,
+		response: EngineJobSchema,
 		owner: 'wp-m3-cachegc',
 	},
 	cacheSettingsPut: {

@@ -1,0 +1,285 @@
+// Movable media cache location (M3, S04:CA-021, wp-m3-cachegc): validation, moves on the same disk (rename) and to
+// another disk (copy with progress), a fresh start keeping the old files, moving back to the data folder, the engine
+// keeps working through the links (an export after the move), the setting survives a restart, an interrupted switch is
+// completed at the next start, an unavailable location falls back to a fresh cache, and the HTTP / local-mode rules.
+import {
+	existsSync,
+	lstatSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import type { CacheLocationCheck, EngineJob } from '@jasper/api';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import {
+	CACHE_SUBDIR,
+	linkTarget,
+	MOVED_DIRS,
+	physicalRoot,
+	repairCacheLocation,
+} from '../src/cache/location.ts';
+import { coreServices } from '../src/tools/services.ts';
+import {
+	closeApps,
+	DocBuilder,
+	ensureFixtures,
+	fixture,
+	H,
+	JSON_H,
+	makeApp,
+	register,
+	type TestApp,
+	tempAppdir,
+} from './helpers.ts';
+
+/** A folder on another disk than os.tmpdir() when the host has one (here /var vs /tmp), else null. */
+function otherDiskDir(): string | null {
+	for (const base of ['/tmp', '/dev/shm', '/var/tmp', '/var/lib/orquester/tmp']) {
+		try {
+			mkdirSync(base, { recursive: true });
+			if (lstatSync(base).dev !== lstatSync(tmpdir()).dev)
+				return mkdtempSync(join(base, 'jasper-cache-loc-'));
+		} catch {
+			// not usable
+		}
+	}
+	return null;
+}
+
+function seedCache(appdir: string): string[] {
+	const files = [
+		join(appdir, 'cache', 'luts', `${'a'.repeat(64)}.cube`),
+		join(appdir, 'cache', 'warp', `${'b'.repeat(40)}.mov`),
+		join(appdir, 'mg', 'c'.repeat(40), 'master.mov'),
+		join(appdir, 'renders', 'job_0000000000000001', 'output.mp4'),
+	];
+	for (const f of files) {
+		mkdirSync(join(f, '..'), { recursive: true });
+		writeFileSync(f, Buffer.alloc(4096, 7));
+	}
+	return files.map((f) => f.slice(appdir.length + 1));
+}
+
+async function move(app: TestApp, body: Record<string, unknown>): Promise<EngineJob> {
+	const r = await app.inject({ method: 'POST', url: '/api/cache/location', headers: JSON_H, payload: body });
+	expect(r.statusCode, r.body).toBe(202);
+	return coreServices(app).queue.wait((r.json() as EngineJob).id);
+}
+
+async function check(app: TestApp, path: string | null): Promise<CacheLocationCheck> {
+	const r = await app.inject({
+		method: 'POST',
+		url: '/api/cache/location/check',
+		headers: JSON_H,
+		payload: { path },
+	});
+	expect(r.statusCode, r.body).toBe(200);
+	return r.json();
+}
+
+beforeAll(() => ensureFixtures());
+afterAll(closeApps);
+
+describe('cache location (S04:CA-021)', () => {
+	it('validates folders: absolute, writable, outside the data and cache folders, empty, free space', async () => {
+		const app = await makeApp();
+		const dest = mkdtempSync(join(tmpdir(), 'jasper-cache-dest-'));
+		expect((await check(app, 'relative/dir')).ok).toBe(false);
+		expect(await check(app, null)).toMatchObject({ ok: false, sameAsCurrent: true, isDefault: true });
+		expect((await check(app, join(app.appdir, 'cache', 'x'))).message).toMatch(/outside/);
+		const good = await check(app, dest);
+		expect(good).toMatchObject({ ok: true, writable: true, sameDevice: true, requiredBytes: 0 });
+		expect(good.path).toBe(join(dest, CACHE_SUBDIR));
+		mkdirSync(join(dest, CACHE_SUBDIR, 'cache'), { recursive: true });
+		writeFileSync(join(dest, CACHE_SUBDIR, 'cache', 'x'), 'x');
+		expect((await check(app, dest)).message).toMatch(/not empty/);
+		const bad = await app.inject({
+			method: 'POST',
+			url: '/api/cache/location',
+			headers: JSON_H,
+			payload: { path: dest, mode: 'move' },
+		});
+		expect(bad.statusCode).toBe(422);
+		expect(bad.json().code).toBe('CACHE_LOCATION_INVALID');
+	});
+
+	it('moves on the same disk (rename), keeps working through the links, survives a restart, moves back', async () => {
+		const appdir = tempAppdir('jasper-cache-move-');
+		const files = seedCache(appdir);
+		let app = await makeApp({ appdir });
+		const dest = mkdtempSync(join(tmpdir(), 'jasper-cache-dest-'));
+		const job = await move(app, { path: dest, mode: 'move' });
+		expect(job.state, JSON.stringify(job.error)).toBe('succeeded');
+		const root = join(dest, CACHE_SUBDIR);
+		expect(job.result).toMatchObject({ location: root, isDefault: false, mode: 'move' });
+		for (const d of MOVED_DIRS) expect(await linkTarget(appdir, d)).toBe(resolve(join(root, d)));
+		for (const f of files) {
+			expect(existsSync(join(root, f))).toBe(true);
+			expect(existsSync(join(appdir, f))).toBe(true); // through the link
+		}
+		const settings = JSON.parse(readFileSync(join(appdir, 'engine', 'cache.json'), 'utf8'));
+		expect(settings.location).toBe(dest);
+		const u = (await app.inject({ method: 'GET', url: '/api/cache', headers: H })).json();
+		expect(u).toMatchObject({ location: root, locationIsDefault: false });
+		expect(u.kinds.find((k: { kind: string }) => k.kind === 'luts').entries).toBe(1);
+		// A PUT of the settings keeps the location.
+		await app.inject({
+			method: 'PUT',
+			url: '/api/cache/settings',
+			headers: JSON_H,
+			payload: { autoClean: false, maxTotalBytes: null, maxAgeDays: 30, kinds: {}, location: null },
+		});
+		expect(
+			(await app.inject({ method: 'GET', url: '/api/cache/settings', headers: H })).json().location,
+		).toBe(dest);
+
+		// An export writes through the links into the new location.
+		const m = await register(app, fixture('clip-b.mp4'));
+		const d = new DocBuilder('hd-720p-30', 81);
+		const mid = d.addMedia(m);
+		d.tx([
+			{
+				type: 'clip.place',
+				source: { mediaId: mid },
+				at: 0,
+				sourceRange: { in: { seconds: 0 }, out: { seconds: 1 } },
+			},
+		]);
+		const ex = await app.inject({
+			method: 'POST',
+			url: '/api/exports',
+			headers: JSON_H,
+			payload: {
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				settings: {
+					sequenceId: d.seqId,
+					range: { type: 'entire' },
+					container: 'mp4',
+					video: {
+						codec: 'h264',
+						width: 640,
+						height: 360,
+						frameRate: { num: 30, den: 1 },
+						scaling: 'fit',
+						quality: { mode: 'crf', value: 23 },
+						encoderSpeed: 'fast',
+						colorTags: 'rec709',
+					},
+					audio: { codec: 'aac', sampleRate: 48000, channels: 2 },
+					engine: 'native',
+				},
+			},
+		});
+		expect(ex.statusCode).toBe(202);
+		const done = await coreServices(app).queue.wait(ex.json().id);
+		expect(done.state, JSON.stringify(done.error)).toBe('succeeded');
+		expect(existsSync(join(root, 'renders', done.id, 'output.mp4'))).toBe(true);
+
+		// Restart: the links and the setting stay.
+		await app.close();
+		app = await makeApp({ appdir });
+		expect(await linkTarget(appdir, 'cache')).toBe(resolve(join(root, 'cache')));
+		expect(existsSync(join(appdir, files[0]!))).toBe(true);
+
+		// Back to the data folder.
+		const back = await move(app, { path: null, mode: 'move' });
+		expect(back.state, JSON.stringify(back.error)).toBe('succeeded');
+		for (const dir of MOVED_DIRS) {
+			expect(await linkTarget(appdir, dir)).toBeNull();
+			expect(lstatSync(join(appdir, dir)).isDirectory()).toBe(true);
+		}
+		for (const f of files) expect(existsSync(join(appdir, f))).toBe(true);
+		expect(existsSync(join(root, 'cache'))).toBe(false);
+		expect(JSON.parse(readFileSync(join(appdir, 'engine', 'cache.json'), 'utf8')).location).toBeNull();
+	}, 300_000);
+
+	it('moves to another disk by copying with progress; the old files go', async () => {
+		const dest = otherDiskDir();
+		if (!dest) return; // single-disk host
+		const appdir = tempAppdir('jasper-cache-xdev-');
+		const files = seedCache(appdir);
+		const app = await makeApp({ appdir });
+		expect((await check(app, dest)).sameDevice).toBe(false);
+		expect((await check(app, dest)).requiredBytes).toBeGreaterThanOrEqual(4 * 4096);
+		const stages: string[] = [];
+		const off = coreServices(app).broadcaster.subscribe((e) => {
+			const j = e.payload as EngineJob;
+			if (e.type === 'job.updated' && j.kind === 'cache-move' && j.stage) stages.push(j.stage);
+		});
+		const job = await move(app, { path: dest, mode: 'move' });
+		off();
+		expect(job.state, JSON.stringify(job.error)).toBe('succeeded');
+		// (progress events are throttled to 4/s: a 16 KB copy may report only the final state)
+		expect(stages.every((s) => /Waiting|Copying|Switching|Removing|Done|Queued/.test(s))).toBe(true);
+		const root = join(dest, CACHE_SUBDIR);
+		for (const f of files) {
+			expect(readFileSync(join(root, f)).length).toBe(4096);
+			expect(existsSync(join(appdir, f))).toBe(true);
+		}
+		// Nothing of the old cache is left in the data folder (only the links), no partial copies at the target.
+		expect(readdirSync(appdir).filter((n) => n.startsWith('.cache-old'))).toEqual([]);
+		expect(readdirSync(root).filter((n) => n.includes('.partial-'))).toEqual([]);
+		expect(job.result).toMatchObject({ movedBytes: 4 * 4096 });
+	}, 300_000);
+
+	it('a fresh start keeps the old files on request (and removes them otherwise)', async () => {
+		const appdir = tempAppdir('jasper-cache-fresh-');
+		const files = seedCache(appdir);
+		const app = await makeApp({ appdir });
+		const dest = mkdtempSync(join(tmpdir(), 'jasper-cache-dest-'));
+		const job = await move(app, { path: dest, mode: 'fresh', keepOld: true });
+		expect(job.state, JSON.stringify(job.error)).toBe('succeeded');
+		expect(existsSync(join(appdir, files[0]!))).toBe(false); // the new cache is empty
+		const kept = readdirSync(appdir).find((n) => n.startsWith('Old Media Cache'))!;
+		expect(kept).toBeTruthy();
+		expect(existsSync(join(appdir, kept, files[0]!))).toBe(true);
+		// Fresh again (back home), not kept: the custom location's files go.
+		writeFileSync(join(appdir, 'cache', 'x.cube'), 'x');
+		const back = await move(app, { path: null, mode: 'fresh' });
+		expect(back.state).toBe('succeeded');
+		expect(existsSync(join(dest, CACHE_SUBDIR, 'cache'))).toBe(false);
+	}, 120_000);
+
+	it('the start-up repair completes an interrupted switch and falls back when the location is gone', () => {
+		const appdir = tempAppdir('jasper-cache-repair-');
+		const files = seedCache(appdir);
+		const dest = mkdtempSync(join(tmpdir(), 'jasper-cache-dest-'));
+		// Crash right after the setting was written (journal "switching"), before any link existed.
+		mkdirSync(join(appdir, 'engine'), { recursive: true });
+		writeFileSync(join(appdir, 'engine', 'cache.json'), JSON.stringify({ location: dest }));
+		writeFileSync(
+			join(appdir, 'engine', 'cache-move.json'),
+			JSON.stringify({ id: 'abcd', state: 'switching', from: null, to: dest, mode: 'move', keepOld: false }),
+		);
+		const r = repairCacheLocation(appdir);
+		expect(r).toEqual({ location: dest, warning: null });
+		const root = physicalRoot(appdir, dest);
+		for (const d of MOVED_DIRS) expect(lstatSync(join(appdir, d)).isSymbolicLink()).toBe(true);
+		for (const f of files) expect(existsSync(join(root, f))).toBe(true); // same disk: the data moved
+		// The location disappears (drive unplugged): a fresh cache in the data folder, with a warning.
+		// (a folder below a plain file cannot be created, like a folder on an unplugged drive)
+		const plain = join(dest, 'plain-file');
+		writeFileSync(plain, 'x');
+		writeFileSync(join(appdir, 'engine', 'cache.json'), JSON.stringify({ location: join(plain, 'drive') }));
+		const gone = repairCacheLocation(appdir);
+		expect(gone.warning).toMatch(/not available/);
+		for (const d of MOVED_DIRS) expect(lstatSync(join(appdir, d)).isDirectory()).toBe(true);
+	});
+
+	it('is a local-mode feature', async () => {
+		const app = await makeApp({ dev: false, token: 'secret' });
+		// Token mode on loopback is still local (desktop); the route answers with the check.
+		const r = await app.inject({
+			method: 'POST',
+			url: '/api/cache/location/check',
+			headers: { ...JSON_H, authorization: 'Bearer secret' },
+			payload: { path: null },
+		});
+		expect(r.statusCode).toBe(200);
+	});
+});

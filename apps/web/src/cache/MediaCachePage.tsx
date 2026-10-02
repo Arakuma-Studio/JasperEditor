@@ -2,10 +2,18 @@
 // the engine's cache usage per kind (in use / referenced by saved projects / unused), "Clean Unused", "Clean All
 // (not in use)…", and the automatic cleaning settings — age limit, total budget, per-kind limits. Engine settings
 // have their own Save button (the engine validates them), like Preferences ▸ Processing.
-import type { CacheGcReport, CacheKind, CacheKindUsage, CacheSettings, CacheUsage } from '@jasper/api';
+import type {
+	CacheGcReport,
+	CacheKind,
+	CacheKindUsage,
+	CacheLocationCheck,
+	CacheSettings,
+	CacheUsage,
+	EngineJob,
+} from '@jasper/api';
 import { Button, Checkbox, confirmDialog, cx, Select, TextField } from '@jasper/ui';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { errorText, formatAgo, formatBytes } from '../processing/engine-jobs.ts';
+import { errorText, followJob, formatAgo, formatBytes } from '../processing/engine-jobs.ts';
 import { PrefGroup, PrefRow } from '../shell/preferences/GeneralPage.tsx';
 import { useEngine } from '../state/engine.tsx';
 
@@ -19,7 +27,13 @@ type Form = {
 	budget: 'auto' | 'custom';
 	gb: string;
 	kinds: Partial<Record<CacheKind, KindForm>>;
+	logsDays: string;
+	logsMb: string;
 };
+
+/** Per-kind "Days": empty = the kind's default, a number, or "never" (kept until cleaned by hand). */
+const NEVER = 'never';
+const MB = 1024 ** 2;
 
 const num = (n: number) => String(Math.round(n * 100) / 100);
 
@@ -31,7 +45,7 @@ function toForm(s: CacheSettings): Form {
 	][]) {
 		kinds[k] = {
 			maxGb: v.maxBytes ? num(v.maxBytes / GB) : '',
-			days: v.maxAgeDays === undefined || v.maxAgeDays === null ? '' : num(v.maxAgeDays),
+			days: v.maxAgeDays === undefined ? '' : v.maxAgeDays === null ? NEVER : num(v.maxAgeDays),
 		};
 	}
 	return {
@@ -41,6 +55,8 @@ function toForm(s: CacheSettings): Form {
 		budget: s.maxTotalBytes === null ? 'auto' : 'custom',
 		gb: s.maxTotalBytes === null ? '' : num(s.maxTotalBytes / GB),
 		kinds,
+		logsDays: s.logs.maxAgeDays === null ? NEVER : num(s.logs.maxAgeDays),
+		logsMb: s.logs.maxBytes === null ? '' : num(s.logs.maxBytes / MB),
 	};
 }
 
@@ -69,14 +85,31 @@ function fromForm(f: Form, prev: CacheSettings): { settings: CacheSettings } | {
 			if (gb === null) return { error: 'Size limits are GB values above 0 (empty = no limit)' };
 			entry.maxBytes = Math.round(gb * GB);
 		}
-		if (v.days.trim()) {
-			const d = pos(v.days);
-			if (d === null) return { error: 'Age limits are days above 0 (empty = the default)' };
+		const days = v.days.trim().toLowerCase();
+		if (days === NEVER) entry.maxAgeDays = null;
+		else if (days) {
+			const d = pos(days);
+			if (d === null) return { error: 'Days are numbers above 0, "never", or empty for the default' };
 			entry.maxAgeDays = d;
-		} else if (prev.kinds[k]?.maxAgeDays === null) entry.maxAgeDays = null; // "never" set elsewhere (API)
+		}
 		if (Object.keys(entry).length) kinds[k] = entry;
 	}
-	return { settings: { autoClean: f.autoClean, maxAgeDays, maxTotalBytes, kinds } };
+	const logsDays = f.logsDays.trim().toLowerCase();
+	const logsAge = logsDays === NEVER || logsDays === '' ? null : pos(logsDays);
+	if (logsDays && logsDays !== NEVER && logsAge === null)
+		return { error: 'Log retention is a number of days above 0 or "never"' };
+	const logsMb = f.logsMb.trim() ? pos(f.logsMb) : null;
+	if (f.logsMb.trim() && logsMb === null) return { error: 'The log size limit is MB above 0 (empty = none)' };
+	return {
+		settings: {
+			autoClean: f.autoClean,
+			maxAgeDays,
+			maxTotalBytes,
+			kinds,
+			logs: { maxAgeDays: logsAge, maxBytes: logsMb === null ? null : Math.round(logsMb * MB) },
+			location: prev.location,
+		},
+	};
 }
 
 /** One stacked bar: in use / referenced by saved projects / unused, over the budget. */
@@ -156,7 +189,8 @@ function KindRow(props: {
 			</td>
 			<td className="px-1 py-0.5">
 				<TextField
-					aria-label={`${k.label}: delete unused files after (days)`}
+					aria-label={`${k.label}: delete unused files after (days, or "never")`}
+					title='Days: empty = default, "never" = keep until cleaned by hand'
 					className="h-5 w-14 text-right"
 					inputMode="decimal"
 					placeholder={k.defaultMaxAgeDays === null ? 'never' : num(k.defaultMaxAgeDays)}
@@ -186,6 +220,188 @@ function reportText(r: CacheGcReport): string {
 	return parts.join(' · ');
 }
 
+type DesktopFolderBridge = { pickFolder?(opts?: { title?: string }): Promise<string | null> };
+
+function desktopFolderPicker(): DesktopFolderBridge['pickFolder'] | null {
+	const b = (globalThis as { jasperDesktop?: DesktopFolderBridge }).jasperDesktop;
+	return typeof b?.pickFolder === 'function' ? b.pickFolder.bind(b) : null;
+}
+
+/**
+ * Change the cache location (S04:CA-021): a folder (typed, or picked on the desktop), checked by the engine (writable,
+ * free space, same disk), then moved with the existing cache — or a fresh cache started there — as a `cache-move`
+ * job that waits for running jobs and runs alone. Progress is shown here; the engine switches when it succeeds.
+ */
+function LocationPanel(props: { usage: CacheUsage; onDone(): void; onClose(): void }) {
+	const { client } = useEngine();
+	const inputId = useId();
+	const [path, setPath] = useState('');
+	const [mode, setMode] = useState<'move' | 'fresh'>('move');
+	const [keepOld, setKeepOld] = useState(false);
+	const [check, setCheck] = useState<CacheLocationCheck | null>(null);
+	const [job, setJob] = useState<EngineJob | null>(null);
+	const [error, setError] = useState<string | null>(null);
+	const [busy, setBusy] = useState(false);
+	const pick = desktopFolderPicker();
+	const target = (useDefault: boolean) => (useDefault ? null : path.trim());
+
+	const runCheck = async (useDefault = false) => {
+		const p = target(useDefault);
+		if (p === '') return;
+		setBusy(true);
+		setError(null);
+		try {
+			setCheck(await client.call('cacheLocationCheck', { body: { path: p } }));
+		} catch (e) {
+			setError(errorText(e));
+		} finally {
+			setBusy(false);
+		}
+	};
+
+	const start = async (useDefault = false) => {
+		const p = target(useDefault);
+		if (p === '') return;
+		setBusy(true);
+		setError(null);
+		try {
+			const started = (await client.call('cacheLocationSet', {
+				body: { path: p, mode, ...(mode === 'fresh' ? { keepOld } : {}) },
+			})) as EngineJob;
+			setJob(started);
+			const end = await followJob(client, started.id, { onUpdate: setJob, intervalMs: 500 });
+			if (end.state === 'succeeded') props.onDone();
+			else setError(`${end.error?.code ?? end.state}: ${end.error?.message ?? ''}`);
+		} catch (e) {
+			setError(errorText(e));
+		} finally {
+			setBusy(false);
+		}
+	};
+
+	const progress =
+		job && !['succeeded', 'failed', 'cancelled'].includes(job.state)
+			? `${job.stage ?? job.state}${job.progress != null && job.progress > 0 ? ` · ${Math.round(job.progress * 100)} %` : ''}`
+			: null;
+	return (
+		<div
+			className="mt-1 ml-[172px] flex flex-col gap-2 rounded-pr-control border border-pr-border-subtle bg-pr-field-deep p-2"
+			data-testid="cache-location-panel"
+		>
+			<div className="flex items-center gap-2">
+				<label htmlFor={inputId} className="shrink-0 text-pr-muted">
+					New folder
+				</label>
+				<TextField
+					id={inputId}
+					className="min-w-0 flex-1 font-mono"
+					placeholder="/Volumes/Fast SSD or D:\\Cache"
+					value={path}
+					disabled={busy}
+					onChange={(e) => {
+						setPath(e.target.value);
+						setCheck(null);
+					}}
+					data-testid="cache-location-path"
+				/>
+				{pick ? (
+					<Button
+						disabled={busy}
+						onClick={() =>
+							void pick({ title: 'Media Cache Location' }).then((p) => {
+								if (p) {
+									setPath(p);
+									setCheck(null);
+								}
+							})
+						}
+					>
+						Browse…
+					</Button>
+				) : null}
+				<Button
+					disabled={busy || !path.trim()}
+					onClick={() => void runCheck()}
+					data-testid="cache-location-check"
+				>
+					Check
+				</Button>
+			</div>
+			<div className="flex flex-wrap items-center gap-3">
+				<Select
+					label="What to do with the current cache"
+					className="w-72"
+					value={mode}
+					disabled={busy}
+					onValueChange={(v) => setMode(v as 'move' | 'fresh')}
+					options={[
+						{ value: 'move', label: 'Move the existing cache there' },
+						{ value: 'fresh', label: 'Start a new, empty cache there' },
+					]}
+				/>
+				{mode === 'fresh' ? (
+					<Checkbox
+						checked={keepOld}
+						disabled={busy}
+						onCheckedChange={setKeepOld}
+						label="Keep the old files (not deleted)"
+						aria-label="Keep the old cache files"
+					/>
+				) : null}
+			</div>
+			{check ? (
+				<p
+					className={cx('text-pr-small', check.ok ? 'text-pr-muted' : 'text-pr-danger')}
+					role={check.ok ? 'status' : 'alert'}
+					data-testid="cache-location-result"
+				>
+					{check.ok
+						? `${check.path} · ${check.freeBytes !== null ? `${formatBytes(check.freeBytes)} free` : 'free space unknown'} · ${
+								mode === 'fresh'
+									? 'starts empty'
+									: check.sameDevice
+										? 'same disk: moved instantly'
+										: `copies ${formatBytes(check.requiredBytes)}`
+							}`
+						: check.message}
+				</p>
+			) : null}
+			{progress ? (
+				<p className="text-pr-small text-pr-text" data-testid="cache-location-progress">
+					{progress}
+				</p>
+			) : null}
+			{error ? (
+				<p className="text-pr-small text-pr-danger" role="alert" data-testid="cache-location-error">
+					{error}
+				</p>
+			) : null}
+			<div className="flex items-center gap-2">
+				<Button
+					variant="primary"
+					busy={busy && !!job}
+					disabled={busy || !path.trim() || (check !== null && !check.ok)}
+					onClick={() => void start()}
+					data-testid="cache-location-move"
+				>
+					{mode === 'move' ? 'Move Cache' : 'Use New Folder'}
+				</Button>
+				{!props.usage.locationIsDefault ? (
+					<Button disabled={busy} onClick={() => void start(true)} data-testid="cache-location-default">
+						{mode === 'move' ? 'Move Back to Default' : 'Use Default Location'}
+					</Button>
+				) : null}
+				<Button variant="quiet" disabled={busy} onClick={props.onClose}>
+					Cancel
+				</Button>
+				<span className="text-pr-small text-pr-dim">
+					Waits for running jobs; nothing else runs while the cache moves.
+				</span>
+			</div>
+		</div>
+	);
+}
+
 export function MediaCachePreferencesPage() {
 	const { client, subscribe } = useEngine();
 	const ids = { days: useId(), gb: useId() };
@@ -193,6 +409,7 @@ export function MediaCachePreferencesPage() {
 	const [form, setForm] = useState<Form | null>(null);
 	const [dirty, setDirty] = useState(false);
 	const [busy, setBusy] = useState<null | 'load' | 'save' | 'unused' | 'all'>('load');
+	const [moving, setMoving] = useState(false);
 	const [status, setStatus] = useState<{ kind: 'ok' | 'error' | 'info'; text: string } | null>(null);
 	const mounted = useRef(true);
 	const dirtyRef = useRef(false);
@@ -326,7 +543,32 @@ export function MediaCachePreferencesPage() {
 						>
 							{usage.location}
 						</span>
+						<span className="shrink-0 text-pr-small text-pr-dim">
+							{usage.locationIsDefault === false ? '(custom)' : '(default)'}
+						</span>
+						{!moving ? (
+							<Button
+								variant="quiet"
+								className="ml-auto shrink-0"
+								disabled={!!busy}
+								onClick={() => setMoving(true)}
+								data-testid="cache-location-change"
+							>
+								Change…
+							</Button>
+						) : null}
 					</PrefRow>
+				) : null}
+				{usage?.location && moving ? (
+					<LocationPanel
+						usage={usage}
+						onClose={() => setMoving(false)}
+						onDone={() => {
+							setMoving(false);
+							setStatus({ kind: 'ok', text: 'The media cache location changed' });
+							void load();
+						}}
+					/>
 				) : null}
 				<PrefRow label="Usage">
 					<span className="shrink-0 text-pr-strong" data-testid="cache-total">
@@ -383,6 +625,51 @@ export function MediaCachePreferencesPage() {
 									onChange={(next) => form && patch({ kinds: { ...form.kinds, [k.kind]: next } })}
 								/>
 							))}
+							{usage?.logs && form ? (
+								<tr className="border-t border-pr-border bg-pr-panel-alt" data-testid="cache-logs">
+									<td
+										className="max-w-0 truncate px-1.5 py-0.5 text-pr-text"
+										title="Engine logs and the job history: not cache, never removed by Clean Unused / Clean All"
+									>
+										Logs and job history
+									</td>
+									<td className="px-1.5 py-0.5 text-right tabular-nums">{usage.logs.files}</td>
+									<td
+										className="px-1.5 py-0.5 text-right tabular-nums text-pr-strong"
+										data-testid="cache-logs-bytes"
+									>
+										{formatBytes(usage.logs.bytes)}
+									</td>
+									<td colSpan={3} className="px-1.5 py-0.5 text-pr-dim">
+										kept by age and size
+									</td>
+									<td className="px-1 py-0.5">
+										<TextField
+											aria-label="Logs: size limit in MB"
+											title="MB (empty = no limit)"
+											className="h-5 w-16 text-right"
+											inputMode="decimal"
+											placeholder="none"
+											value={form.logsMb}
+											disabled={settingsDisabled}
+											onChange={(e) => patch({ logsMb: e.target.value })}
+											data-testid="cache-logs-max"
+										/>
+									</td>
+									<td className="px-1 py-0.5">
+										<TextField
+											aria-label='Logs: delete after (days, or "never")'
+											className="h-5 w-14 text-right"
+											inputMode="decimal"
+											placeholder={NEVER}
+											value={form.logsDays}
+											disabled={settingsDisabled}
+											onChange={(e) => patch({ logsDays: e.target.value })}
+											data-testid="cache-logs-days"
+										/>
+									</td>
+								</tr>
+							) : null}
 							{!usage ? (
 								<tr>
 									<td colSpan={8} className="px-1.5 py-2 text-pr-muted">
@@ -475,7 +762,9 @@ export function MediaCachePreferencesPage() {
 				</PrefRow>
 				<p className="pl-[172px] text-pr-small text-pr-muted">
 					Over the limit, the least recently used unused files go first. Files of open projects, running jobs
-					and saved projects are never removed automatically. Per-kind limits are in the table above.
+					and saved projects are never removed automatically. Per-kind limits are in the table above (Days:
+					empty = the default, “never” = keep until cleaned by hand); logs are kept by their own age and size
+					limits.
 				</p>
 				<div className="mt-2 flex items-center gap-2">
 					<Button

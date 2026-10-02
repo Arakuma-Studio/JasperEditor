@@ -542,8 +542,8 @@ proxies during playback switches source within one second without changing the p
   `lastUsedAt`, newest mtime). The index is written atomically and debounced; losing it only loses access times and
   recorded references.
 - **CA-012 (P0)** References: a saved project references the derivatives of its media (by fingerprint), the preview
-  and master pre-renders of its composition clips (the render keys the editor and the export compute), the posters
-  of its bundles, and what its last export / still / graded-layer preview of each sequence / clip read (ref sets
+  and master pre-renders of its composition clips (the render keys the editor and the export compute), the renders
+  of its fframes motion-graphic clips (the M1 render key of each clip's spec), the posters of its bundles, and what its last export / still / graded-layer preview of each sequence / clip read (ref sets
   recorded by the job, replaced by the next run of the same scope, persisted across restarts, dropped when the
   project is deleted).
 - **CA-013 (P0)** Usage (`GET /api/cache`, Preferences ▸ Media Cache, MCP `get_cache_usage`) reports per kind the
@@ -570,7 +570,27 @@ proxies during playback switches source within one second without changing the p
   file on Windows: retried next pass). The orphan sweep removes trash, temporary files of interrupted writes once
   nothing wrote to them for an hour, and scratch directories of jobs that are gone.
 - **CA-018 (P1)** Passes are serialised; the usage scan is shared by concurrent callers.
-- **CA-019 (P1)** Agents: MCP `get_cache_usage` (MB per kind) and `clean_cache {mode: unused|all, kinds?}`.
+- **CA-019 (P1)** Agents: MCP `get_cache_usage` (MB per kind, location, logs), `clean_cache {mode: unused|all,
+  kinds?}` and `set_cache_location {path|null, mode?, keepOld?, wait?}`.
+- **CA-020 (P1)** Engine logs and the job journal are not cache but must not grow forever: log files
+  (`engine/logs/**`) older than `logs.maxAgeDays` (default 30) go, then the oldest while the folder exceeds
+  `logs.maxBytes` (default 256 MB; today's log is kept); the Remotion usage log (LC-004) drops lines older than
+  400 days once it passes 1 MB (13 months of monthly counts always kept); the job journal is compacted (finished jobs
+  older than 7 days beyond the newest 500, also dropped from memory) whenever it passes 2 MB. Runs with every
+  automatic pass. Usage shows "Logs and job history" (size, files) with its two limits; Clean Unused / All never touch
+  them. Per-kind age limits accept `null` ("never": kept until cleaned by hand) in the UI too.
+- **CA-021 (P1)** Cache location (Preferences ▸ Media Cache ▸ Location ▸ Change…, `POST /api/cache/location/check`,
+  `POST /api/cache/location`, MCP `set_cache_location`; local mode only): a chosen folder gets a
+  `JasperEditor Media Cache` sub-folder holding `cache/`, `mg/`, `renders/` and `tmp/` (tmp moves along so renames from
+  job scratch into the cache stay on one disk); `<appdir>/<dir>` becomes a directory link (junction on Windows), so
+  every service keeps its paths. The check validates an absolute, writable folder outside the data and current cache
+  folders whose cache sub-folders are empty, with free space for the copy (+100 MB). The move is a `cache-move` job
+  that takes every CPU slot (waits for running jobs; nothing else starts) inside the cleaning chain: *move* renames on
+  the same disk or copies with progress to `<dir>.partial-<id>` first; *fresh* starts empty (`keepOld` keeps the old
+  files as `Old Media Cache <id>`). The setting is written, then each link switched atomically; the old files go
+  last. `engine/cache-move.json` journals the steps: at start the engine rolls back an interrupted copy, completes an
+  interrupted switch, re-creates links, and falls back to a fresh cache in the data folder (with a warning) when the
+  location is unavailable. A settings PUT never changes the location.
 
 ---
 

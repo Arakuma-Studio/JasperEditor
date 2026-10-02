@@ -64,9 +64,32 @@ const REPORT: CacheGcReport = {
 	byKind: { luts: { entries: 29, bytes: 20 * MB } },
 };
 
+function moveJob(state: string, progress = 0, stage?: string) {
+	return {
+		id: 'job_move000000000001',
+		kind: 'cache-move',
+		title: 'Move media cache',
+		origin: { type: 'user' },
+		state,
+		progress,
+		...(stage ? { stage } : {}),
+		createdAt: '2026-10-01T10:00:00.000Z',
+		priority: 'interactive',
+		cpuSlots: 8,
+	};
+}
+
 function fakeEngine() {
 	const calls: Call[] = [];
-	let settings: CacheSettings = { autoClean: true, maxTotalBytes: null, maxAgeDays: 30, kinds: {} };
+	let settings: CacheSettings = {
+		autoClean: true,
+		maxTotalBytes: null,
+		maxAgeDays: 30,
+		kinds: {},
+		logs: { maxAgeDays: 30, maxBytes: 256 * MB },
+		location: null,
+	};
+	let jobPolls = 0;
 	let last: CacheGcReport | null = null;
 	const json = (b: unknown, status = 200) =>
 		new Response(JSON.stringify(b), { status, headers: { 'x-jasper-api': '1' } });
@@ -75,11 +98,39 @@ function fakeEngine() {
 		const body = init?.body ? JSON.parse(String(init.body)) : undefined;
 		calls.push({ method, url, body });
 		if (url === '/health') return json({ ok: true, version: '0.1.0', apiVersion: 1 });
-		if (url === '/api/cache') return json(usageOf(settings, last));
+		if (url === '/api/cache')
+			return json({
+				...usageOf(settings, last),
+				...(settings.location
+					? { location: `${settings.location}/JasperEditor Media Cache`, locationIsDefault: false }
+					: { locationIsDefault: true }),
+				logs: { bytes: 3 * MB, files: 12, journalBytes: MB },
+			});
 		if (url === '/api/cache/settings' && method === 'PUT') {
 			settings = body;
 			return json(body);
 		}
+		if (url === '/api/cache/location/check')
+			return json({
+				path: `${body.path}/JasperEditor Media Cache`,
+				isDefault: body.path === null,
+				ok: body.path !== '/full',
+				message: body.path === '/full' ? 'Not enough free space there: the cache needs 430 MB' : null,
+				exists: true,
+				writable: true,
+				freeBytes: 500 * GB,
+				requiredBytes: 430 * MB,
+				sameDevice: false,
+				sameAsCurrent: false,
+			});
+		if (url === '/api/cache/location') {
+			settings = { ...settings, location: body.path };
+			return json(moveJob('queued'), 202);
+		}
+		if (url === '/api/jobs/job_move000000000001')
+			return json(
+				++jobPolls < 2 ? moveJob('running', 0.5, 'Copying cache/ · 215 MB') : moveJob('succeeded', 1),
+			);
 		if (url === '/api/cache/clean') {
 			last = { ...REPORT, mode: body.mode };
 			return json(last);
@@ -108,7 +159,7 @@ describe('Preferences ▸ Media Cache (S04:CA-013/CA-014)', () => {
 		);
 		expect(screen.getByTestId('cache-location').textContent).toBe('/home/me/.local/share/jasper');
 		const rows = within(screen.getByTestId('cache-table')).getAllByRole('row');
-		expect(rows).toHaveLength(1 + CACHE_KINDS.length);
+		expect(rows).toHaveLength(2 + CACHE_KINDS.length); // header, kinds, logs
 		expect(screen.getByTestId('cache-kind-luts-entries').textContent).toBe('30');
 		expect(screen.getByTestId('cache-kind-proxies-bytes').textContent).toBe('400.0 MB');
 		// Per-kind age placeholders show the defaults (exports: 7 days).
@@ -184,9 +235,79 @@ describe('Preferences ▸ Media Cache (S04:CA-013/CA-014)', () => {
 			kinds: { proxies: { maxBytes: Math.round(8.5 * GB) }, luts: { maxAgeDays: 3 } } satisfies Partial<
 				Record<CacheKind, unknown>
 			>,
+			logs: { maxAgeDays: 30, maxBytes: 256 * MB },
+			location: null,
 		});
 		// The saved values come back into the form.
 		expect((screen.getByTestId('cache-kind-proxies-max') as HTMLInputElement).value).toBe('8.5');
+	});
+});
+
+describe('Media Cache: never-expiring kinds, logs, location (CA-020, CA-021)', () => {
+	it('a kind can be set to "never"; logs show their size and their own limits', async () => {
+		const { calls } = mount();
+		await waitFor(() => expect(screen.getByTestId('cache-logs-bytes').textContent).toBe('3.0 MB'));
+		expect((screen.getByTestId('cache-logs-days') as HTMLInputElement).value).toBe('30');
+		expect((screen.getByTestId('cache-logs-max') as HTMLInputElement).value).toBe('256');
+		fireEvent.change(screen.getByTestId('cache-kind-exports-days'), { target: { value: 'Never' } });
+		fireEvent.change(screen.getByTestId('cache-logs-days'), { target: { value: 'never' } });
+		fireEvent.change(screen.getByTestId('cache-logs-max'), { target: { value: '64' } });
+		await act(async () => {
+			fireEvent.click(screen.getByTestId('cache-save'));
+		});
+		await waitFor(() => expect(screen.getByTestId('cache-status').textContent).toBe('Settings saved'));
+		const put = calls.filter((c) => c.method === 'PUT').at(-1)!;
+		expect(put.body).toMatchObject({
+			kinds: { exports: { maxAgeDays: null } },
+			logs: { maxAgeDays: null, maxBytes: 64 * MB },
+		});
+		// Shown back as "never".
+		expect((screen.getByTestId('cache-kind-exports-days') as HTMLInputElement).value).toBe('never');
+		fireEvent.change(screen.getByTestId('cache-kind-exports-days'), { target: { value: 'soon' } });
+		await act(async () => {
+			fireEvent.click(screen.getByTestId('cache-save'));
+		});
+		expect(screen.getByTestId('cache-status').textContent).toContain('"never"');
+	});
+
+	it('Change… checks a folder, refuses an unusable one, moves with progress and refreshes', async () => {
+		const { calls } = mount();
+		await waitFor(() =>
+			expect(screen.getByTestId('cache-location').textContent).toBe('/home/me/.local/share/jasper'),
+		);
+		fireEvent.click(screen.getByTestId('cache-location-change'));
+		fireEvent.change(screen.getByTestId('cache-location-path'), { target: { value: '/full' } });
+		await act(async () => {
+			fireEvent.click(screen.getByTestId('cache-location-check'));
+		});
+		await waitFor(() =>
+			expect(screen.getByTestId('cache-location-result').textContent).toContain('Not enough free space'),
+		);
+		expect((screen.getByTestId('cache-location-move') as HTMLButtonElement).disabled).toBe(true);
+		fireEvent.change(screen.getByTestId('cache-location-path'), { target: { value: '/mnt/fast' } });
+		await act(async () => {
+			fireEvent.click(screen.getByTestId('cache-location-check'));
+		});
+		await waitFor(() =>
+			expect(screen.getByTestId('cache-location-result').textContent).toContain('copies 430.0 MB'),
+		);
+		await act(async () => {
+			fireEvent.click(screen.getByTestId('cache-location-move'));
+		});
+		await waitFor(
+			() => expect(screen.getByTestId('cache-status').textContent).toBe('The media cache location changed'),
+			{
+				timeout: 5000,
+			},
+		);
+		expect(calls.find((c) => c.url === '/api/cache/location')?.body).toEqual({
+			path: '/mnt/fast',
+			mode: 'move',
+		});
+		await waitFor(() =>
+			expect(screen.getByTestId('cache-location').textContent).toBe('/mnt/fast/JasperEditor Media Cache'),
+		);
+		expect(screen.queryByTestId('cache-location-panel')).toBeNull();
 	});
 });
 

@@ -16,20 +16,23 @@
 // temporary files of interrupted writes, which the orphan sweep removes. Lookups that `acquire` an entry wait for a
 // removal in progress and then miss (the producer regenerates).
 import { randomBytes } from 'node:crypto';
-import { lstat, rename, rm } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
+import { lstat, rename, rm, stat } from 'node:fs/promises';
+import { basename, dirname, join, resolve } from 'node:path';
 import {
 	CACHE_KINDS,
 	type CacheGcReport,
 	type CacheKind,
 	type CacheKindUsage,
+	type CacheLocationCheck,
 	type CacheSettings,
 	type CacheUsage,
+	type EngineJob,
 	TERMINAL_JOB_STATES,
 } from '@jasper/api';
 import type { AppdirPaths } from '@jasper/config';
 import type { Broadcaster } from '../events/broadcaster.ts';
 import type { JobQueue } from '../jobs/queue.ts';
+import { type JobContext, JobError } from '../jobs/types.ts';
 import type { LeaseManager } from '../projects/leases.ts';
 import type { ProjectStoreFs } from '../projects/store.ts';
 import { exists, freeDiskBytes } from '../tools/fs.ts';
@@ -46,7 +49,14 @@ import {
 	type ScanResult,
 	scanAppdir,
 } from './layout.ts';
-import { type ProjectCacheRefs, projectCacheRefs, type RenderKeyFn } from './project-refs.ts';
+import { checkLocation, finishCleanup, moveCache, physicalRoot } from './location.ts';
+import { JOURNAL_COMPACT_BYTES, logsUsage, maintainLogs } from './logs.ts';
+import {
+	type ClipRenderKeyFn,
+	type ProjectCacheRefs,
+	projectCacheRefs,
+	type RenderKeyFn,
+} from './project-refs.ts';
 import { CacheIndexStore, CacheSettingsStore } from './store.ts';
 
 const DAY_MS = 24 * 3600 * 1000;
@@ -65,6 +75,31 @@ const SCAN_TTL_MS = 15_000;
 const RENDER_JOB_KINDS = new Set(['export', 'still', 'proxy', 'mg-prerender', 'layer-bake', 'process']);
 
 export type CacheMode = 'auto' | 'unused' | 'all';
+
+/** A cache folder that cannot be used (HTTP 422 with the check). */
+export class CacheLocationError extends Error {
+	constructor(
+		message: string,
+		readonly check: CacheLocationCheck,
+	) {
+		super(message);
+		this.name = 'CacheLocationError';
+	}
+}
+
+function emptyReport(t: number): CacheGcReport {
+	return {
+		at: new Date(t).toISOString(),
+		mode: 'auto',
+		removedEntries: 0,
+		removedBytes: 0,
+		removedOrphans: 0,
+		keptInUse: 0,
+		keptReferenced: 0,
+		failed: 0,
+		byKind: {},
+	};
+}
 
 /** Owner hooks for a kind (e.g. the layer-bake service: its leases and its lookups that wait for a removal). */
 export type CacheKindAdapter = {
@@ -128,6 +163,7 @@ export class CacheService {
 	private readonly ownTrash = new Set<string>();
 	private readonly adapters = new Map<CacheKind, CacheKindAdapter>();
 	private readonly openProbes = new Set<(projectId: string) => boolean>();
+	private fframesKey: ClipRenderKeyFn | null = null;
 	private readonly projectRefsCache = new Map<string, { revision: number; refs: ProjectCacheRefs }>();
 	private lastScan: ScanResult | null = null;
 	private scanning: Promise<ScanResult> | null = null;
@@ -160,6 +196,7 @@ export class CacheService {
 
 	private async doStart(): Promise<void> {
 		await this.index.load();
+		void finishCleanup(this.o.appdir).catch(() => undefined);
 		// Served cache files (derivatives, renders, masters…) count as used and stay while they stream.
 		this.offServe = addServeHook((file) => {
 			const ref = this.ref(file);
@@ -169,7 +206,7 @@ export class CacheService {
 			this.touch(ref);
 			return () => this.release(holder);
 		});
-		this.freeAtStart = await freeDiskBytes(this.o.appdir);
+		this.freeAtStart = await freeDiskBytes(physicalRoot(this.o.appdir, (await this.settings()).location));
 		const scan = await this.scan(true).catch(() => null);
 		const cacheBytes = scan ? scan.entries.reduce((s, e) => s + e.bytes, 0) : 0;
 		// "15 % of the free disk at start" counts the cache itself as reclaimable space.
@@ -223,6 +260,7 @@ export class CacheService {
 		try {
 			const s = await this.settings();
 			const r = await this.clean(s.autoClean ? 'auto' : 'orphans');
+			await this.maintainLogs(s);
 			if (r.removedEntries || r.removedOrphans)
 				this.o.log?.(
 					`[cache] ${why}: removed ${r.removedEntries} entries (${r.removedBytes} bytes) and ${r.removedOrphans} orphans`,
@@ -230,6 +268,110 @@ export class CacheService {
 		} catch (e) {
 			this.o.log?.(`[cache] ${why} pass failed: ${(e as Error).message}`);
 		}
+	}
+
+	/**
+	 * S04:CA-020: log retention (age, then size) and the job journal compacted once it passes 2 MB. Runs with every
+	 * automatic pass (and on demand). Returns what was removed.
+	 */
+	async maintainLogs(
+		s?: CacheSettings,
+	): Promise<{ removedFiles: number; removedBytes: number; prunedJobs: number }> {
+		const settings = s ?? (await this.settings());
+		const r = await maintainLogs(this.o.paths, settings.logs, this.now()).catch(() => ({
+			removedFiles: 0,
+			removedBytes: 0,
+		}));
+		let prunedJobs = 0;
+		const journal = await stat(this.o.paths.jobsJournal).catch(() => null);
+		if (this.o.queue && journal && journal.size > JOURNAL_COMPACT_BYTES) prunedJobs = this.o.queue.prune();
+		return { ...r, prunedJobs };
+	}
+
+	// ------------------------------------------------------------------ location (CA-021)
+
+	/** The location setting (null = the data folder) and the physical folder holding the cache folders. */
+	async location(): Promise<{ location: string | null; root: string }> {
+		const location = (await this.settings()).location;
+		return { location, root: physicalRoot(this.o.appdir, location) };
+	}
+
+	async checkLocation(path: string | null, mode: 'move' | 'fresh' = 'move'): Promise<CacheLocationCheck> {
+		return checkLocation(this.o.appdir, (await this.location()).location, path, mode);
+	}
+
+	/**
+	 * Queues the `cache-move` job (it takes every CPU slot: it waits for running jobs and runs alone). Throws a
+	 * CacheLocationError when the folder is not usable.
+	 */
+	async startMove(req: {
+		path: string | null;
+		mode: 'move' | 'fresh';
+		keepOld?: boolean;
+	}): Promise<EngineJob> {
+		const check = await this.checkLocation(req.path, req.mode);
+		if (!check.ok) throw new CacheLocationError(check.message ?? 'The folder cannot hold the cache', check);
+		const q = this.o.queue;
+		if (!q) throw new CacheLocationError('No job queue', check);
+		return q.submit({
+			kind: 'cache-move',
+			title: req.mode === 'move' ? `Move media cache to ${check.path}` : `New media cache in ${check.path}`,
+			priority: 'interactive',
+			cpuSlots: q.totalSlots,
+			minSlots: q.totalSlots,
+			origin: { type: 'user' },
+			dedupeKey: 'cache-move',
+			stage: 'Waiting for running jobs',
+			input: { path: req.path === null ? null : resolve(req.path), mode: req.mode, keepOld: !!req.keepOld },
+		});
+	}
+
+	/** Registers the `cache-move` runner (core services, after the queue exists). */
+	registerRunners(): void {
+		this.o.queue?.registerRunner('cache-move', (ctx) => this.runMove(ctx));
+	}
+
+	private async runMove(ctx: JobContext): Promise<unknown> {
+		const input = ctx.input as { path: string | null; mode: 'move' | 'fresh'; keepOld: boolean };
+		const from = (await this.location()).location;
+		// Inside the pass chain: no cleaning pass runs during the move.
+		const run = this.gcChain
+			.catch(() => undefined)
+			.then(async () => {
+				const check = await checkLocation(this.o.appdir, from, input.path, input.mode);
+				if (!check.ok) throw new JobError('CACHE_LOCATION_INVALID', check.message ?? 'Invalid folder', false);
+				const others = (this.o.queue?.list({ active: true }) ?? []).filter(
+					(j) => j.id !== ctx.job.id && j.state === 'running',
+				);
+				if (others.length)
+					throw new JobError(
+						'CACHE_BUSY',
+						`${others.length} job(s) are still running; try again when they finish`,
+						true,
+					);
+				const r = await moveCache({
+					appdir: this.o.appdir,
+					from,
+					to: input.path,
+					mode: input.mode,
+					keepOld: input.keepOld,
+					signal: ctx.signal,
+					onProgress: (p, stage) => ctx.progress(p, { stage }),
+				});
+				this.settingsStore.invalidate();
+				this.lastScan = null;
+				this.projectRefsCache.clear();
+				return {
+					location: check.path,
+					isDefault: input.path === null,
+					movedBytes: r.movedBytes,
+					mode: input.mode,
+				};
+			});
+		this.gcChain = run;
+		const result = await run;
+		this.o.broadcaster?.publish('cache.cleaned', { ...(this.index.lastGc ?? emptyReport(this.now())) });
+		return result;
 	}
 
 	/**
@@ -253,6 +395,12 @@ export class CacheService {
 		return false;
 	}
 
+	/** The fframes render key of a motion-graphic clip (set by the cache routes from the M1 mg service). */
+	setFframesRenderKey(fn: ClipRenderKeyFn | null): void {
+		this.fframesKey = fn;
+		this.projectRefsCache.clear();
+	}
+
 	registerAdapter(kind: CacheKind, adapter: CacheKindAdapter): () => void {
 		this.adapters.set(kind, adapter);
 		return () => {
@@ -268,7 +416,8 @@ export class CacheService {
 
 	/** Saves the settings; applies at once (S04:ENG-012): a pass runs with the new limits. */
 	async putSettings(next: CacheSettings): Promise<CacheSettings> {
-		const saved = await this.settingsStore.put(next);
+		// The location changes only through a move (CA-021).
+		const saved = await this.settingsStore.put({ ...next, location: (await this.settings()).location });
 		if (saved.autoClean) void this.clean('auto').catch(() => undefined);
 		return saved;
 	}
@@ -437,7 +586,10 @@ export class CacheService {
 						.get(p.projectId)
 						.then((g) => (g.envelope as { document?: unknown }).document)
 						.catch(() => null);
-					c = { revision: p.revision, refs: projectCacheRefs(doc, this.o.renderKey ?? null) };
+					c = {
+						revision: p.revision,
+						refs: projectCacheRefs(doc, this.o.renderKey ?? null, this.fframesKey),
+					};
 					this.projectRefsCache.set(p.projectId, c);
 				}
 				computed.set(p.projectId, c.refs);
@@ -571,14 +723,16 @@ export class CacheService {
 		});
 		const total = (k: keyof CacheKindUsage) => kinds.reduce((s, x) => s + (x[k] as number), 0);
 		return {
-			location: this.o.exposePaths ? this.o.appdir : null,
+			location: this.o.exposePaths ? physicalRoot(this.o.appdir, settings.location) : null,
+			locationIsDefault: settings.location === null,
+			logs: await logsUsage(this.o.paths),
 			totalBytes: total('bytes'),
 			inUseBytes: total('inUseBytes'),
 			referencedBytes: total('referencedBytes'),
 			unusedBytes: total('unusedBytes'),
 			maxTotalBytes: this.totalBudget(settings),
 			automaticBudget: settings.maxTotalBytes === null,
-			freeDiskBytes: await freeDiskBytes(this.o.appdir),
+			freeDiskBytes: await freeDiskBytes(physicalRoot(this.o.appdir, settings.location)),
 			kinds,
 			other: await otherUsage(this.o.appdir),
 			settings,

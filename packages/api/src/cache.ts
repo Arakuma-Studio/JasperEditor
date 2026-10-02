@@ -40,8 +40,60 @@ export const CacheSettingsSchema = z.object({
 	/** Unused entries older than this are removed; null = never. Kinds may override it (`kinds`). */
 	maxAgeDays: z.number().positive().max(3650).nullable().default(30),
 	kinds: z.partialRecord(CacheKindSchema, CacheKindLimitsSchema).default({}),
+	/**
+	 * Engine logs and the job journal (S04:CA-020; not caches): log files older than `maxAgeDays` go, then the oldest
+	 * while the folder exceeds `maxBytes`. null = no limit.
+	 */
+	logs: z
+		.object({
+			maxAgeDays: z.number().positive().max(3650).nullable().default(30),
+			maxBytes: z
+				.number()
+				.int()
+				.positive()
+				.nullable()
+				.default(256 * 1024 * 1024),
+		})
+		.default({ maxAgeDays: 30, maxBytes: 256 * 1024 * 1024 }),
+	/**
+	 * Cache folder (S04:CA-021); null = inside the engine's data folder. Read-only here: it changes through
+	 * `POST /api/cache/location` (a `cache-move` job); a PUT keeps the current value.
+	 */
+	location: z.string().nullable().default(null),
 });
 export type CacheSettings = z.infer<typeof CacheSettingsSchema>;
+
+/** `POST /api/cache/location/check` and the `path` of a move: an absolute folder, or null = the default location. */
+export const CacheLocationRequestSchema = z.object({ path: z.string().min(1).nullable() });
+
+/** What a move to a folder would need, and whether it can go there. */
+export const CacheLocationCheckSchema = z.object({
+	/** Resolved absolute folder (the cache keeps `cache/`, `mg/`, `renders/` and `tmp/` in it). */
+	path: z.string(),
+	isDefault: z.boolean(),
+	ok: z.boolean(),
+	/** Why not (or a warning when ok). */
+	message: z.string().nullable(),
+	exists: z.boolean(),
+	writable: z.boolean(),
+	freeBytes: z.number().int().min(0).nullable(),
+	/** Bytes a move copies (the current cache; 0 when the folder is on the same disk: it is renamed). */
+	requiredBytes: z.number().int().min(0),
+	sameDevice: z.boolean(),
+	sameAsCurrent: z.boolean(),
+});
+export type CacheLocationCheck = z.infer<typeof CacheLocationCheckSchema>;
+
+/**
+ * `POST /api/cache/location` → EngineJob (kind `cache-move`). `move` brings the current cache along (renamed on the
+ * same disk, copied with progress otherwise); `fresh` starts empty there and removes the old files unless
+ * `keepOld`. The job waits for running jobs and runs alone; the engine switches when it succeeds.
+ */
+export const CacheMoveRequestSchema = CacheLocationRequestSchema.extend({
+	mode: z.enum(['move', 'fresh']),
+	keepOld: z.boolean().optional(),
+});
+export type CacheMoveRequest = z.infer<typeof CacheMoveRequestSchema>;
 
 /** One kind's usage (bytes are what is on disk now). */
 export const CacheKindUsageSchema = z.object({
@@ -93,6 +145,16 @@ export type CacheGcReport = z.infer<typeof CacheGcReportSchema>;
 export const CacheUsageSchema = z.object({
 	/** Cache location (local mode only; null on a remote engine). */
 	location: z.string().nullable(),
+	/** M3 (CA-021): the cache is in the engine's data folder (no custom location). */
+	locationIsDefault: z.boolean().optional(),
+	/** M3 (CA-020): engine logs + job journal (not cache; retention in `settings.logs`). */
+	logs: z
+		.object({
+			bytes: z.number().int().min(0),
+			files: z.number().int().min(0),
+			journalBytes: z.number().int().min(0),
+		})
+		.optional(),
 	totalBytes: z.number().int().min(0),
 	inUseBytes: z.number().int().min(0),
 	referencedBytes: z.number().int().min(0),
