@@ -148,6 +148,8 @@ export class MgRuntime implements CompositionPreviewRuntime {
 	/** clipId → current request keys. */
 	private readonly clipKeys = new Map<string, { preview: string | null; master: string | null }>();
 	private readonly masterLookups = new Set<string>();
+	/** wp-m3-mgtext (S08:MGU-005): the clip whose texts are edited on canvas shows its live host. */
+	private textEditing: string | null = null;
 	private readonly offs: (() => void)[] = [];
 	private disposed = false;
 	private scanTimer: ReturnType<typeof setTimeout> | null = null;
@@ -185,17 +187,88 @@ export class MgRuntime implements CompositionPreviewRuntime {
 		for (const l of [...this.listeners]) l();
 	}
 
-	previewFor(_clip: RenderVisualClip, src: RenderCompositionSource, fps: number): CompositionPreview | null {
+	previewFor(clip: RenderVisualClip, src: RenderCompositionSource, fps: number): CompositionPreview | null {
+		if (clip.clipId === this.textEditing) return null;
 		return this.previews.get(layerPreviewKey(src, fps)) ?? null;
 	}
 
+	/**
+	 * On-canvas text editing (wp-m3-mgtext, S08:MGU-005): the clip shows its live frame host (the page whose DOM
+	 * the editor reads) instead of the cached preview until `null`.
+	 */
+	setTextEditing(clipId: string | null): void {
+		if (this.textEditing === clipId) return;
+		this.textEditing = clipId;
+		// MGC-024 budget: a clip without a first-come slot takes the one of the holder farthest from the playhead.
+		const hasSlot = !!clipId && this.mountedHosts.slice(0, MAX_LIVE_HOSTS).includes(clipId);
+		this.evictedForEdit = clipId && !hasSlot ? this.farthestHolder(clipId) : null;
+		this.notify();
+	}
+
+	/** Clips with a mounted composition layer, in mount order (MGC-024 is first-come). */
+	private readonly mountedHosts: string[] = [];
+	/** The clip that gave its live host up to the clip edited on canvas (wp-m3-mgtext). */
+	private evictedForEdit: string | null = null;
+
 	acquireHost(clipId: string): (() => void) | null {
-		if (!this.activeHosts.has(clipId) && this.activeHosts.size >= MAX_LIVE_HOSTS) return null;
+		if (!this.mountedHosts.includes(clipId)) this.mountedHosts.push(clipId);
 		this.activeHosts.add(clipId);
+		this.notifySoon();
 		return () => {
+			const i = this.mountedHosts.indexOf(clipId);
+			if (i >= 0) this.mountedHosts.splice(i, 1);
 			this.activeHosts.delete(clipId);
 			this.hosts.delete(clipId);
+			this.notifySoon();
 		};
+	}
+
+	/**
+	 * At most MAX_LIVE_HOSTS live hosts (MGC-024): first-come among the mounted clips, except that the clip edited
+	 * on canvas always gets one — the mounted clip farthest from the playhead gives up its slot meanwhile.
+	 */
+	hostAllowed(clipId: string): boolean {
+		const editing =
+			this.textEditing && this.mountedHosts.includes(this.textEditing) ? this.textEditing : null;
+		if (clipId === editing) return true;
+		const others = this.mountedHosts.filter((id) => id !== editing && id !== this.evictedForEdit);
+		const slots = editing ? MAX_LIVE_HOSTS - 1 : MAX_LIVE_HOSTS;
+		return others.slice(0, slots).includes(clipId);
+	}
+
+	/** The mounted clip farthest from the playhead among the first-come holders (null when a slot is free). */
+	private farthestHolder(except: string): string | null {
+		const holders = this.mountedHosts.filter((id) => id !== except).slice(0, MAX_LIVE_HOSTS);
+		if (this.mountedHosts.filter((id) => id !== except).length < MAX_LIVE_HOSTS) return null;
+		const s = this.session.store.getState();
+		const seq = s.activeSequenceId ? s.document.sequences[s.activeSequenceId] : undefined;
+		const f = this.session.transport.getState().frame;
+		let best: string | null = null;
+		let bestD = -1;
+		for (const id of holders) {
+			const c = seq?.clips[id];
+			const d = c
+				? f < c.start
+					? c.start - f
+					: f >= c.start + c.duration
+						? f - (c.start + c.duration - 1)
+						: 0
+				: 1e12;
+			if (d > bestD) {
+				best = id;
+				bestD = d;
+			}
+		}
+		return best;
+	}
+
+	private notifyTimer: ReturnType<typeof setTimeout> | null = null;
+	private notifySoon(): void {
+		if (this.notifyTimer) return;
+		this.notifyTimer = setTimeout(() => {
+			this.notifyTimer = null;
+			if (!this.disposed) this.notify();
+		}, 0);
 	}
 
 	reportHost(clipId: string, status: HostStatus): void {
@@ -421,6 +494,7 @@ const facade: CompositionPreviewRuntime = {
 	},
 	version: () => (current ? current.version() : -1),
 	acquireHost: (clipId) => (current ? current.acquireHost(clipId) : () => undefined),
+	hostAllowed: (clipId) => (current ? current.hostAllowed(clipId) : true),
 	reportHost: (clipId, status) => current?.reportHost(clipId, status),
 };
 

@@ -22,10 +22,16 @@ import { injectHostBootstrap, MG_HOST_QUERY } from '@jasper/compositions/mg-host
 import {
 	buildRenderSnapshot,
 	type CompositionClip,
+	compositionTextLayers,
 	EMPTY_PROBE,
 	MG_REMOTION_VERSION,
 	type MgBundleInfo,
+	type MgTextMeasurement,
+	measuredTextIssues,
+	mergeProps,
+	overridesWithEdits,
 	type RenderSnapshot,
+	textLayerValue,
 } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildNativeGraph } from '../src/export/native.ts';
@@ -362,6 +368,17 @@ describe('props schemas (S08:MGC-011)', () => {
 			category: 'Shots',
 			ui: { bg: { control: 'color' } },
 		});
+		// wp-m3-mgtext (S08:MGC-036): `texts` declarations merge entry by entry ("*" + the id's own).
+		const texts = buildCompositionInfos(raw.slice(1, 2), {
+			manifest: {
+				compositions: {
+					'*': { texts: { t: { label: 'Headline', maxChars: 30 }, other: false } },
+					B: { texts: { t: { label: 'Copy', maxLines: 2 } } },
+				},
+			},
+			moduleSchemas: {},
+		});
+		expect(texts[0]!.texts).toEqual({ t: { label: 'Copy', maxLines: 2 }, other: false });
 	});
 });
 
@@ -945,7 +962,7 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 		// Same content → same content address and key; source says it was uploaded.
 		expect(z.mediaKey).toBe(title.mediaKey);
 		expect(z.mgBundle?.source).toMatchObject({ type: 'bundle-upload', path: null, name: 'my-bundle' });
-		expect(z.mgBundle?.compositions.map((c) => c.id).sort()).toEqual(['Badge', 'Title']);
+		expect(z.mgBundle?.compositions.map((c) => c.id).sort()).toEqual(['Badge', 'LowerThird', 'Title']);
 		// Re-register the project-dir header for the next tests.
 		title = (
 			await app.inject({
@@ -958,7 +975,7 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 	}, 600_000);
 
 	/** Exports a sequence (ProRes HQ for exact comparisons); returns the job and its child jobs. */
-	async function exportDoc(d: DocBuilder, opts: { frames?: [number, number] } = {}) {
+	async function exportDoc(d: DocBuilder, opts: { frames?: [number, number]; profile?: 'hq' | '4444' } = {}) {
 		const settings = {
 			sequenceId: d.seqId,
 			range: opts.frames
@@ -968,7 +985,7 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 			engine: 'native',
 			video: {
 				codec: 'prores',
-				proresProfile: 'hq',
+				proresProfile: opts.profile ?? 'hq',
 				width: 1920,
 				height: 1080,
 				frameRate: { num: 30, den: 1 },
@@ -1002,14 +1019,14 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 		return { plan, done, children, out };
 	}
 
-	/** A direct Remotion still of the Title composition (RGBA, straight alpha). */
-	async function directStill(props: Record<string, unknown>, frame: number): Promise<Buffer> {
+	/** A direct Remotion still of a fixture composition (RGBA, straight alpha); default Title. */
+	async function directStill(props: Record<string, unknown>, frame: number, id = 'Title'): Promise<Buffer> {
 		const r = await import('@remotion/renderer');
 		const dir = svc.bundleDir(title.mediaKey)!;
 		const opts = (svc as unknown as { remotionOptions(): Record<string, unknown> }).remotionOptions();
 		const comp = await r.selectComposition({
 			serveUrl: dir,
-			id: 'Title',
+			id,
 			inputProps: props,
 			logLevel: 'error',
 			...opts,
@@ -1129,6 +1146,152 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 		const third = await exportDoc(d, { frames: [15, 75] });
 		expect(third.children.filter((j) => j.kind === 'mg-prerender')).toHaveLength(1);
 	}, 1_200_000);
+
+	it('hybrid text layers (S08 §8 test 9): a text + style edit renders a new master; the export is frame-exact with the embedded font', async () => {
+		const lt = title.mgBundle!.compositions.find((c) => c.id === 'LowerThird')!;
+		expect(lt.texts).toMatchObject({ 'name.text': { label: 'Name', maxChars: 24 }, quote: { maxLines: 2 } });
+		const layers = compositionTextLayers(lt);
+		expect(layers.map((l) => l.path.join('.'))).toEqual(['name.text', 'role', 'quote']);
+		const name = layers[0]!;
+		expect(Object.keys(name.style).sort()).toEqual([
+			'align',
+			'color',
+			'fontFamily',
+			'fontSize',
+			'fontWeight',
+		]);
+
+		const d = new DocBuilder('hd-1080p-30');
+		const mediaId = d.addMedia(title);
+		d.tx([
+			{
+				type: 'sequence.updateSettings',
+				sequenceId: d.seqId,
+				settings: { backgroundColor: [0.5, 0.5, 0.5, 1] },
+			},
+		]);
+		const r0 = d.tx([
+			{
+				type: 'clip.addComposition',
+				composition: { mediaId, id: 'LowerThird' },
+				at: 15,
+				track: 'V1',
+				duration: 60,
+			},
+		]);
+		const clipId = (r0.results[0] as { clipId: string }).clipId;
+		const first = await exportDoc(d);
+		expect(first.plan.path).toBe('native');
+		expect(first.children.filter((j) => j.kind === 'mg-prerender')).toHaveLength(1);
+
+		// The edit an editor makes: the text and two of its style props in one override object, one step.
+		const clip = d.doc.sequences[d.seqId]!.clips[clipId] as CompositionClip;
+		const next = overridesWithEdits(lt.defaultProps, clip.props, [
+			{ path: name.path, value: 'Grace Hopper' },
+			{ path: name.style.color!.path, value: '#ffcc00' },
+			{ path: name.style.fontSize!.path, value: 100 },
+			{ path: ['quote'], value: 'It is easier to ask forgiveness\nthan it is to get permission.' },
+		]);
+		d.tx([{ type: 'clip.update', clipId, patch: { props: next } }]);
+		// ProRes 4444 out: saturated yellow type on a dark panel loses colour at its edges in 4:2:2 (HQ), which
+		// is the codec, not the placement or the text being compared here.
+		const second = await exportDoc(d, { profile: '4444' });
+		expect(second.children.filter((j) => j.kind === 'mg-prerender')).toHaveLength(1); // new render key
+		const props = mergeProps(lt.defaultProps, next);
+		const share = (got: Uint8Array, exp: Uint8Array) => {
+			let n = 0;
+			for (let i = 0; i < exp.length; i++) if (Math.abs(got[i]! - exp[i]!) <= 3) n++;
+			return n / exp.length;
+		};
+		const grey = [128, 128, 128] as [number, number, number];
+		// Held text: sequence frame 60 = composition frame 45.
+		const held = decode(second.out, { frame: 60, pix: 'rgb24', ffmpeg: ff });
+		const heldExpected = over(await directStill(props, 45, 'LowerThird'), grey);
+		expect(share(held, heldExpected)).toBeGreaterThanOrEqual(0.99);
+		// The previous text is gone (the master was re-rendered, not reused).
+		expect(share(held, over(await directStill(lt.defaultProps, 45, 'LowerThird'), grey))).toBeLessThan(0.99);
+		// Frame-exact during the entrance: sequence frame 20 = composition frame 5, not 4 or 6.
+		const moving = decode(second.out, { frame: 20, pix: 'rgb24', ffmpeg: ff });
+		expect(share(moving, over(await directStill(props, 5, 'LowerThird'), grey))).toBeGreaterThanOrEqual(0.99);
+		expect(share(moving, over(await directStill(props, 4, 'LowerThird'), grey))).toBeLessThan(0.99);
+		expect(share(moving, over(await directStill(props, 6, 'LowerThird'), grey))).toBeLessThan(0.99);
+		// The embedded face is what the export drew: inside the name's box the export matches the Inter render and
+		// not the same props drawn with a system family.
+		const box = (exp: Uint8Array) => {
+			let n = 0;
+			let all = 0;
+			for (let y = 690; y < 830; y++)
+				for (let x = 130; x < 1190; x++)
+					for (let c = 0; c < 3; c++) {
+						const i = (y * 1920 + x) * 3 + c;
+						all++;
+						if (Math.abs(held[i]! - exp[i]!) <= 3) n++;
+					}
+			return n / all;
+		};
+		const sans = mergeProps(props, { name: { fontFamily: 'sans-serif' } });
+		// (Glyph edges dominate this box, so the bar is lower than the whole-frame 99 %: measured 97 %.)
+		const withInter = box(heldExpected);
+		const withSans = box(over(await directStill(sans, 45, 'LowerThird'), grey));
+		expect(withInter).toBeGreaterThanOrEqual(0.95);
+		expect(withSans).toBeLessThan(withInter - 0.03);
+	}, 1_200_000);
+
+	it('measures text layout in the engine browser (S08:MGC-037): clipped name, quote off frame and outside its box', async () => {
+		const lt = title.mgBundle!.compositions.find((c) => c.id === 'LowerThird')!;
+		const layers = compositionTextLayers(lt);
+		const props = mergeProps(lt.defaultProps, {
+			name: { text: 'Augusta Ada King, Countess of Lovelace' },
+			quote:
+				'Imagination is the *Discovering Faculty*, pre-eminently. It is that which penetrates into the unseen worlds around us, the worlds of Science. It is that which feels and discovers.',
+		});
+		const items = layers.map((l) => ({ id: l.path.join('.'), text: textLayerValue(props, l) }));
+		const payload = {
+			mediaKey: title.mediaKey,
+			compositionId: 'LowerThird',
+			props,
+			width: 1920,
+			height: 1080,
+			fps: 30,
+			durationInFrames: 120,
+			frames: [{ frame: 60, items }],
+		};
+		const r = await app.inject({
+			method: 'POST',
+			url: '/api/mg-bundles/measure-texts',
+			headers: JSON_H,
+			payload,
+		});
+		expect(r.statusCode, r.body).toBe(200);
+		const body = r.json() as { measurements: MgTextMeasurement[]; fonts: string[] };
+		expect(body.fonts).toContain('Inter');
+		const by = new Map(body.measurements.map((m) => [m.id, m]));
+		const issues = (id: string) =>
+			measuredTextIssues(layers.find((l) => l.path.join('.') === id)!, by.get(id)!, {
+				width: 1920,
+				height: 1080,
+			}).map((i) => i.code);
+		// The name runs past its panel (overflow hidden): cut off.
+		expect(by.get('name.text')).toMatchObject({ found: true, visible: true });
+		expect(by.get('name.text')!.clippedBy).toMatchObject({ x: 96, width: 1100 });
+		expect(issues('name.text')).toEqual(['MG_TEXT_CLIPPED']);
+		expect(issues('role')).toEqual([]);
+		// The quote (markup ignored when matching) wraps to more rows than designed and leaves its safe box.
+		expect(by.get('quote')).toMatchObject({ found: true });
+		expect(by.get('quote')!.lines.length).toBeGreaterThan(2);
+		expect(issues('quote')).toEqual(['MG_TEXT_OUTSIDE_BOX', 'MG_TEXT_LINES']);
+		expect(by.get('quote')!.style).toMatchObject({ fontSize: 54 });
+		// Cached: the same request answers without a browser.
+		const t0 = Date.now();
+		const again = await app.inject({
+			method: 'POST',
+			url: '/api/mg-bundles/measure-texts',
+			headers: JSON_H,
+			payload,
+		});
+		expect(again.json()).toEqual(body);
+		expect(Date.now() - t0).toBeLessThan(5000);
+	}, 600_000);
 
 	it('rebuilds a watched project after a source edit: new bundle hash, new master (MGC-013)', async () => {
 		const dir = mkdtempSync(join(tmpdir(), 'jasper-watch-'));

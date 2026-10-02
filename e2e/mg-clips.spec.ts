@@ -59,7 +59,7 @@ test('renderer-page protocol contract (Remotion 4.0.499) drives the fixture bund
 	const imported = await request.post('/api/mg-bundles/import', { data: { path: FIXTURE_PROJECT } });
 	expect(imported.status(), await imported.text()).toBe(200);
 	const reg = (await imported.json()) as { mediaKey: string; mgBundle: { compositions: { id: string }[] } };
-	expect(reg.mgBundle.compositions.map((c) => c.id).sort()).toEqual(['Badge', 'Title']);
+	expect(reg.mgBundle.compositions.map((c) => c.id).sort()).toEqual(['Badge', 'LowerThird', 'Title']);
 
 	const probe = await browser.newPage(); // own context: the shared page's context refuses newPage()
 	await probe.goto('/health');
@@ -202,7 +202,8 @@ test('import a Remotion project, insert a composition, live preview, props edit,
 	await expect(page.getByTestId('composition-section')).toBeVisible();
 
 	// Editing the title in Properties updates the Program monitor within 500 ms (S08 §8 test 4).
-	const field = page.getByTestId('prop-props.title');
+	// wp-m3-mgtext: `title` is a text layer (ui control "text"): its editor is in Properties ▸ Composition ▸ Text.
+	const field = page.getByTestId('text-title');
 	await field.fill('Edited in Properties');
 	const t0 = Date.now();
 	await field.press('Enter');
@@ -220,7 +221,7 @@ test('import a Remotion project, insert a composition, live preview, props edit,
 	// The history includes the import, insert and title edit.
 	const hist = await query<{ entries: { label: string; applied: boolean }[] }>(page, 'history.list');
 	expect(hist.entries.filter((e) => e.applied).map((e) => e.label)).toEqual(
-		expect.arrayContaining(['Import Remotion Project', 'Add Title', 'Title']),
+		expect.arrayContaining(['Import Remotion Project', 'Add Title', 'Edit Text «Title»']),
 	);
 	expect(watcher.errors.filter((e) => !/favicon|ERR_ABORTED|Failed to load resource/.test(e))).toEqual([]);
 });
@@ -260,7 +261,7 @@ test('MCP: import_mg_bundle → add_composition → set_composition_props → re
 			mediaId: string;
 			compositions: { id: string; props: Record<string, unknown> }[];
 		}>('import_mg_bundle', { projectId, path: FIXTURE_PROJECT });
-		expect(imp.body.compositions.map((c) => c.id).sort()).toEqual(['Badge', 'Title']);
+		expect(imp.body.compositions.map((c) => c.id).sort()).toEqual(['Badge', 'LowerThird', 'Title']);
 		expect(imp.body.compositions.find((c) => c.id === 'Title')!.props.title).toMatchObject({
 			type: 'string',
 		});

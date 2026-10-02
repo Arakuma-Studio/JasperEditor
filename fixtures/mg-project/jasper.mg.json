@@ -8,6 +8,22 @@
         "title": { "control": "text" }
       }
     },
+    "LowerThird": {
+      "category": "Titles",
+      "thumbnailFrame": 60,
+      "texts": {
+        "name.text": { "label": "Name", "maxChars": 24 },
+        "role": { "label": "Role", "maxChars": 40 },
+        "quote": {
+          "label": "Quote",
+          "multiline": true,
+          "maxLines": 2,
+          "box": { "x": 90, "y": 110, "width": 1420, "height": 160 },
+          "accent": "accent",
+          "hint": "Line breaks start a new row; *asterisks* mark the accent colour."
+        }
+      }
+    },
     "Badge": {
       "category": "Badges"
     }

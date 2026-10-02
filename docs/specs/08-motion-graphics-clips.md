@@ -77,7 +77,7 @@ separate audio intermediate), nested JasperEditor sequences inside compositions.
   defaultProps. Remotion does not expose zod schemas as data, so `propsSchema` comes from, in order:
   1. **Manifest** `jasper.mg.json` in the project root (or bundle root):
      `{"compositions": {"<id>": {"propsSchema": {JSON Schema}, "ui"?: {"<prop>": {"control": "color"|"text"|
-     "textarea"|"slider"|"asset", …}}, "category"?, "thumbnailFrame"?}}}`.
+     "textarea"|"slider"|"asset", …}}, "category"?, "thumbnailFrame"?, "texts"? (MGC-036)}}}`.
   2. **Schema module** (project directories): `package.json` → `"jasper": {"schemas": "./src/jasper-schemas.ts"}`
      exporting `Record<compositionId, ZodType>`. The engine bundles that module for Node with esbuild (externals:
      `zod`), imports it in a child process, and converts: zod 4 → `z.toJSONSchema`, zod 3 (what Remotion's
@@ -154,11 +154,50 @@ separate audio intermediate), nested JasperEditor sequences inside compositions.
 - **MGC-034 (P0)** Blockers: `mgBundles.status: 'unavailable'` (no Remotion renderer/browser) → composition clips
   block the native path with "composition clips need the Remotion renderer to pre-render" (the Remotion path would
   fail too; the plan reports it).
-- **MGC-035 (P1) Hybrid text layers**: the same extension may also claim `text` clips: pre-render the layer through
-  JasperEditor's own composition (`SequenceComposition` with `layerFilter: [clipId]`, `transparentBackground:
-  true`) to a sequence-space ProRes 4444 intermediate (`override.space = 'sequence', includesFades: true`), so
-  sequences with titles stay native (ARCHITECTURE D-11 "hybrid"). Render key over the clip's snapshot JSON + fonts
-  + compositions bundle hash.
+- **MGC-035 (P1) Hybrid text layers** — two halves:
+  1. *Native text clips* (the original statement): the native path keeps sequences with titles native by
+     pre-rendering each `text` clip through JasperEditor's own composition (`layerFilter: [clipId]`,
+     `transparentBackground`) to a sequence-space ProRes 4444 intermediate (`override.space = 'sequence',
+     includesFades: true`), keyed by the clip's snapshot JSON + fonts + bundle identity. **Delivered by the layer
+     bake (S11 §6, LBK-001…LBK-026, extension `layer-bake`, plan path `hybrid`)**, which claims every DOM layer
+     (text, shape, anime templates) instead of the `mg` extension; acceptance test 8 is covered by
+     `apps/engine/test/layer-bake.e2e.test.ts` (text frames ≥ 99 % within 3/255 of the Remotion render).
+  2. *Texts inside composition clips* (M3, wp-m3-mgtext): MGC-036…039 below.
+- **MGC-036 (P1) Text layers of a composition.** A composition exposes as *text layers* the string props (any
+  depth, dotted paths) that are, in this order: declared in the manifest `compositions.<id>.texts.<prop.path>`
+  (`{label?, multiline?, maxChars?, maxLines?, box?: {x, y, width, height}, frame?, hint?, accent?, style?:
+  {<role>: <prop.path>}}`; `accent` = the text uses the `*…*` accent markup, drawn in that CSS colour or the colour
+  held by that prop; `false` hides a string; the `"*"` entry merges entry by entry); annotated `"x-jasper-text": true |
+  {…same fields}` in the JSON Schema (zod 4: `.meta({'x-jasper-text': …})`); hinted `ui.<path>.control: "text" |
+  "textarea"`; or plain strings (no enum/pattern/format/const, not a colour or asset, not named like a URL, id,
+  font, mode, variant, alignment, colour…). Style props are linked per role (`fontFamily`, `fontSize`,
+  `fontWeight`, `italic`, `color`, `align`, `lineHeight`, `letterSpacing`) by the manifest `style`, else by
+  convention: a *text object* (`{headline: {text, color, fontSize|size, fontFamily|font, fontWeight|weight,
+  align|textAlign, …}}`, labelled by the object) or *prefixed siblings* (`title` + `titleColor`, `titleFontSize` /
+  `titleSize`, `titleFont` / `titleFontFamily`, `titleWeight`, `titleAlign`, `titleItalic`, `titleLineHeight`,
+  `titleLetterSpacing`, also `title_color`). A linked prop must fit its role (colour control, number, enum…).
+  `MgCompositionInfo.texts` (additive) carries the manifest declarations; `compositionTextLayers(info)` is the
+  shared, pure discovery (`packages/project/src/composition/texts.ts`).
+- **MGC-037 (P1) Checks.** Errors (edit refused): the props schema (`maxLength`, `minLength`, type). Warnings
+  (allowed): more characters than `maxChars`, more rows than `maxLines`, a line break in a single-line text, and
+  layout measured in the bundle's own page at the text's `frame` (manifest, else the composition's
+  `thumbnailFrame`, else the middle): the text **runs off the frame**, is **cut off by its box** (an ancestor with
+  `overflow` ≠ visible), shows an **ellipsis**, **leaves its safe area** (`box`), or **wraps to more lines** than
+  `maxLines`. A text not drawn at that frame is reported as not checkable (info). The editor measures in an
+  off-screen host page; the **engine** measures for agents (`POST /api/mg-bundles/measure-texts`): its own headless
+  browser (the Remotion one) opens the bundle through a private loopback server (random port, random path prefix,
+  host bootstrap injected; no engine route or signed URL involved) and the probe renders the composition through
+  the renderer-page protocol at each frame and locates the texts; results are cached per request. The page's *text probe*
+  (`packages/compositions/src/mg-host/text-probe.ts`, installed by the host bootstrap) locates a prop's text by
+  its characters — whitespace, case and `*_~` markup ignored, so copy split across spans and rows still matches.
+- **MGC-038 (P1) Edits.** A text edit is `param.set` on `["clip", id, "props", …path]`; a text with style changes
+  (on-canvas editor, MCP) is one `clip.update {props}` built by `overridesWithEdits` — either way one History
+  step. Edits change the effective props, hence the render key (MGC-031): the cached preview and master no longer
+  match, the next export renders a new master and shows the new text (§8 test 9).
+- **MGC-039 (P1) Bundle fonts.** The host bootstrap records the faces a bundle registers (`new FontFace(…)`,
+  `@remotion/fonts`, `@font-face`). The editor adds them to its own document under a per-bundle alias so the
+  on-canvas editor draws in the composition's font, and font menus of text layers list the bundle's families
+  (they render identically on every export path, which uses the same bundle).
 
 ## 6. User interface
 
@@ -174,7 +213,26 @@ separate audio intermediate), nested JasperEditor sequences inside compositions.
   "Reset to defaults", "Edit as JSON", "Rebuild bundle" (project directories), "Render master now".
 - **MGU-004 (P0)** Timeline: composition clips use the graphics label colour and an "R" engine badge that turns
   into a check mark when the master for the current props is cached.
-- **MGU-005 (P1)** Program monitor: text props flagged `"ui": {"control": "text"}` can be edited on canvas? — P2.
+- **MGU-005 (P1, was P2; wp-m3-mgtext)** Program monitor: **double-click** a composition clip's text (selection
+  tool) — or **Edit on canvas** next to a text in Properties — opens an in-place editor: the clip shows its live
+  frame host (not the cached preview), the text under the pointer is located in the page and hidden, and a field
+  in the same box, size, weight, colour, alignment and bundle font takes its place, mapped through the layer's
+  Motion and corner pin. Texts in the lower half grow upwards. Texts with `accent` markup are edited styled:
+  `*…*` spans in the accent colour with the asterisks hidden, shown dimmed only while the caret is inside (or next
+  to) that span, so the markup stays editable. If the clip has no live host (MGC-024 budget), it gets one for the
+  edit: the clip farthest from the playhead gives up its slot until the edit ends. Texts drawn on a canvas, in SVG
+  or WebGL cannot be located in the page: they are edited in Properties only. Enter (single-line) / Ctrl+Enter (multi-line) or a
+  click elsewhere applies (one History step "Edit Text «label»"; schema errors are shown and keep the editor
+  open), Esc cancels; playback, a deleted clip or a playhead outside the clip closes it. From Properties the
+  playhead moves into the clip (the text's `frame`). Where no text is under the pointer, a note points to
+  Properties and its field takes the focus. Extension point: `layerDoubleClickHandlers` (web).
+- **MGU-006 (P1, wp-m3-mgtext)** Properties ▸ Composition ▸ **Text** (above the remaining props): per text a
+  label, a character counter (`n/maxChars`, else `n/maxLength`; amber/red when over), Edit on canvas, Reset; a
+  multi-line field (single-line input for single-line texts) that previews live while typing (one gesture →
+  one History step on Enter / Ctrl+Enter / leaving the field; Esc reverts; invalid values never reach the preview
+  and are not applied); its style props (Font = the bundle's families or the schema's enum, Weight 100–900, Size,
+  Colour, Align buttons, Italic, Leading, Tracking); the static and measured warnings (MGC-037) and the manifest
+  `hint`. The generic form lists only the props no text editor owns.
 
 ## 7. Agents (MGA)
 
@@ -187,6 +245,14 @@ separate audio intermediate), nested JasperEditor sequences inside compositions.
   - `prerender_composition {projectId, clipId, quality?}` (job);
   - `scaffold_mg_project {dir, name}` (P1, local mode).
   `render_frame` renders composition clips through the same pre-render (native still) path.
+- **MGA-003 (P1, wp-m3-mgtext)** `list_composition_texts {projectId, clipId}` → texts with path, label, value,
+  default, limits, safe box, hint and style props (prop, value, type, options, range) plus static warnings;
+  `set_composition_text {projectId, clipId, texts: [{text: path|label, value?, style?: {fontFamily, fontSize,
+  fontWeight, italic, color, align, lineHeight, letterSpacing}}]}` → one transaction (one undo step), schema
+  errors as `E_INVALID_PARAM`, unknown texts `E_NOT_FOUND` with the list, unexposed style roles
+  `E_INVALID_PARAM` with the exposed ones. `list_compositions` lists each composition's texts. Both text tools
+  return the layout warnings measured by the engine (MGC-037) with each text's box and a `layout` status
+  (`measure: false` skips the render).
 - **MGA-002 (P0)** Errors carry actionable hints (`MG_REMOTION_VERSION`: "the project uses remotion X; JasperEditor
   needs 4.0.499 — pin it in package.json and reinstall").
 
@@ -212,4 +278,15 @@ separate audio intermediate), nested JasperEditor sequences inside compositions.
 7. **MCP**: `import_mg_bundle` → `add_composition` → `set_composition_props` → `render_frame` on the fixture
    produces the edited title; the history shows agent entries.
 8. **Hybrid text (P1)**: a sequence with footage + text plans `native` when the extension claims text; the text
-   frame matches the Remotion render within 3/255.
+   frame matches the Remotion render within 3/255. (Covered by the layer bake, S11 §6: path `hybrid`.)
+9. **Texts in compositions (P1, wp-m3-mgtext)**: the fixture's `LowerThird` (text object `name`, prefixed `role`
+   style props, manifest `texts` with limits and a safe box, Inter Bold embedded in the bundle) lists three
+   texts with their style roles; editing the name text + colour + size and the quote as one step renders a new
+   master and the native export frame at the hold matches a direct Remotion still of the edited props within
+   3/255 on 99 % of the frame, frame-exact during the entrance (±1 frame fails), drawn with the embedded font;
+   the Properties editor previews while typing and commits one History entry; a double-click on the quote in the
+   Program monitor edits it in place in the bundle font; long text shows the off-frame / cut-off / safe-area
+   warnings; the quote's `*…*` accent is drawn in the accent colour while editing on canvas; with four other
+   compositions holding the live hosts, editing on canvas takes the farthest one's host; MCP
+   `list_composition_texts` → `set_composition_text` (text + colour + size: one revision) → `render_frame`
+   changes the frame, and a too-long name comes back with `MG_TEXT_CLIPPED` measured in the engine.

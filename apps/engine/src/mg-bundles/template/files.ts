@@ -61,6 +61,10 @@ build/
       "thumbnailFrame": 30,
       "ui": {
         "accent": { "control": "color" }
+      },
+      "texts": {
+        "name": { "label": "Name", "maxChars": 28 },
+        "role": { "label": "Role", "maxChars": 40 }
       }
     },
     "AnimeTitle": {
@@ -80,6 +84,11 @@ Motion graphics for JasperEditor, as a Remotion 4.0.499 project.
 - \`src/Root.tsx\` registers the compositions (keep \`remotion\` and every \`@remotion/*\` package at exactly 4.0.499).
 - \`src/jasper-schemas.ts\` exports one zod schema per composition id: JasperEditor turns it into the props form.
 - \`jasper.mg.json\` adds form hints (\`color\`, \`textarea\`, \`slider\`…), a category and the poster frame.
+- Texts: string props become text layers JasperEditor edits in Properties ▸ Composition ▸ Text and on canvas
+  (double-click). \`texts\` in \`jasper.mg.json\` sets labels, \`maxChars\` / \`maxLines\`, a safe \`box\` and the
+  props that style each text (\`"style": {"color": "nameColor", "fontSize": "nameSize"}\`); a text object
+  \`{text, color, fontSize, fontFamily, align}\` or prefixed props (\`nameColor\`, \`nameSize\`) are found
+  without it. Fonts you load in the bundle (\`@remotion/fonts\`, \`FontFace\`) are offered in the font menu.
 - Transparent backgrounds composite over the footage; JasperEditor renders ProRes 4444 masters for exports.
 
 JasperEditor watches \`src/\`, \`public/\`, \`remotion.config.ts\` and \`jasper.mg.json\` and rebuilds on save.

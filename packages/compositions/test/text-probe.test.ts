@@ -1,0 +1,87 @@
+// Text probe of the live frame host (M3, wp-m3-mgtext, S08:MGC-037/039): matching a prop value in the page
+// (copy split into spans and rows, markup and case ignored), hiding/restoring it, bundle font sources. Layout
+// (boxes, lines, clipping) needs a real browser: e2e/mg-texts.spec.ts.
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { hostBootstrapScript, locateTexts, TEXT_PROBE_SCRIPT, textProbeOf } from '../src/mg-host/protocol.ts';
+
+type Win = Window & { __jasperTexts?: unknown; FontFace?: unknown };
+
+describe('text probe (S08:MGC-037/039)', () => {
+	let recorded: unknown[];
+	beforeEach(() => {
+		recorded = [];
+		const w = window as Win;
+		delete w.__jasperTexts;
+		// A stand-in for the browser's FontFace (happy-dom has none).
+		w.FontFace = function FontFace(this: unknown, family: string, source: unknown) {
+			recorded.push([family, source]);
+			return { family, status: 'unloaded' };
+		};
+		document.body.innerHTML = '';
+		new Function(TEXT_PROBE_SCRIPT)();
+	});
+	afterEach(() => {
+		document.body.innerHTML = '';
+	});
+
+	it('is part of the host bootstrap', () => {
+		expect(hostBootstrapScript()).toContain('__jasperTexts');
+	});
+
+	it('finds copy split into spans and rows, ignoring whitespace, case and *markup*', () => {
+		document.body.innerHTML =
+			'<div id="cap"><div><span>La clínica sabe que</span></div><div><span>tu paciente </span><span>ha llegado.</span></div></div><p>Other</p>';
+		const [m, other, missing] = locateTexts(
+			window,
+			[
+				{ id: 'headline', text: 'La clínica sabe que\ntu paciente *ha llegado.*' },
+				{ id: 'other', text: 'OTHER' },
+				{ id: 'missing', text: 'Not on screen' },
+			],
+			{ width: 1920, height: 1080 },
+		);
+		expect(m).toMatchObject({ id: 'headline', found: true });
+		expect(other).toMatchObject({ id: 'other', found: true });
+		expect(missing).toMatchObject({ id: 'missing', found: false, rect: null });
+		expect(m!.style).not.toBeNull();
+	});
+
+	it('hides the located text for the on-canvas editor and restores it', () => {
+		document.body.innerHTML =
+			'<div><span id="a">Un solo panel.</span><span id="b" style="visibility: visible">Todo tu negocio.</span><span id="c">Keep</span></div>';
+		const api = textProbeOf(window)!;
+		expect(api.hide('Un solo panel. Todo tu negocio.')).toBe(true);
+		const vis = (id: string) => (document.getElementById(id) as HTMLElement).style.visibility;
+		expect([vis('a'), vis('b'), vis('c')]).toEqual(['hidden', 'hidden', '']);
+		api.restore();
+		expect([vis('a'), vis('b'), vis('c')]).toEqual(['', 'visible', '']);
+		expect(api.hide('nowhere')).toBe(false);
+	});
+
+	it('records the fonts the bundle registers through FontFace, with absolute URLs', () => {
+		const FF = (window as Win).FontFace as new (f: string, s: unknown, d?: unknown) => unknown;
+		new FF('Brand Sans', 'url(public/fonts/brand.woff2) format("woff2")', { weight: '800' });
+		new FF('Data Face', new ArrayBuffer(4));
+		const fonts = textProbeOf(window)!.fonts();
+		expect(recorded).toHaveLength(2);
+		expect(fonts[0]).toMatchObject({ family: 'Brand Sans', weight: '800', style: 'normal' });
+		expect(fonts[0]!.source).toMatch(/^url\("http.*\/public\/fonts\/brand\.woff2"\) format\("woff2"\)$/);
+		expect(fonts[1]).toMatchObject({ family: 'Data Face' });
+		expect(fonts[1]!.buffer).toBeInstanceOf(ArrayBuffer);
+	});
+
+	it('a page without the probe reports every text as not found', () => {
+		expect(locateTexts({}, [{ id: 'x', text: 'y' }], { width: 1, height: 1 })).toEqual([
+			{
+				id: 'x',
+				found: false,
+				visible: false,
+				rect: null,
+				lines: [],
+				clippedBy: null,
+				truncated: false,
+				style: null,
+			},
+		]);
+	});
+});

@@ -67,6 +67,38 @@ export const MgPrerenderResultSchema = z.object({
 export type MgPrerenderResult = z.infer<typeof MgPrerenderResultSchema>;
 
 /**
+ * `POST /api/mg-bundles/measure-texts` (wp-m3-mgtext, S08:MGC-037): the engine's own headless browser renders
+ * the composition with `props` at each frame and its text probe locates the given texts there (layout warnings
+ * for agents). `fps` is the render rate (the sequence rate), `durationInFrames` the composition length at it.
+ */
+export const MgTextMeasureRequestSchema = z.object({
+	mediaKey: z.string(),
+	compositionId: z.string(),
+	props: z.record(z.string(), z.unknown()),
+	width: z.number().int().positive(),
+	height: z.number().int().positive(),
+	fps: z.number().positive(),
+	durationInFrames: z.number().int().positive(),
+	frames: z
+		.array(
+			z.object({
+				frame: z.number().int().min(0),
+				items: z.array(z.object({ id: z.string(), text: z.string() })).min(1),
+			}),
+		)
+		.min(1)
+		.max(8),
+});
+export type MgTextMeasureRequest = z.infer<typeof MgTextMeasureRequestSchema>;
+
+/** Result: one `MgTextMeasurement` (@jasper/project) per item, and the font families the bundle registers. */
+export const MgTextMeasureResultSchema = z.object({
+	measurements: z.array(z.looseObject({ id: z.string(), found: z.boolean() })),
+	fonts: z.array(z.string()),
+});
+export type MgTextMeasureResult = z.infer<typeof MgTextMeasureResultSchema>;
+
+/**
  * Event `mgBundle.rebuilt` (S08:MGC-013): a watched or manually rebuilt project produced a new bundle. Open
  * editors relink the asset whose engine key is `oldKey` (media.relink with the new key and header, as a system
  * transaction).

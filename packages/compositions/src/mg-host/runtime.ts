@@ -21,6 +21,12 @@ export type CompositionPreviewRuntime = {
 	bundleUrl?(mediaKey: string): string;
 	/** Live host budget (MGC-024: at most 4 at once); returns a release function or null (budget exhausted). */
 	acquireHost?(clipId: string): (() => void) | null;
+	/**
+	 * wp-m3-mgtext (additive): whether a mounted clip may show its live host now. When present it overrides the
+	 * null of `acquireHost` (the runtime re-evaluates on every notification, e.g. to make room for a clip whose
+	 * texts are edited on canvas).
+	 */
+	hostAllowed?(clipId: string): boolean;
 	/** Live host status reports (Properties "live / preview ready / rendering"). */
 	reportHost?(
 		clipId: string,

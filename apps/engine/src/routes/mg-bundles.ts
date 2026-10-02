@@ -14,6 +14,7 @@ import {
 	MgBundleRebuildRequestSchema,
 	MgBundleScaffoldRequestSchema,
 	MgPrerenderRequestSchema,
+	MgTextMeasureRequestSchema,
 } from '@jasper/api';
 import { injectHostBootstrap, MG_HOST_QUERY } from '@jasper/compositions/mg-host';
 import type { FastifyInstance, FastifyReply, FastifyRequest, RouteGenericInterface } from 'fastify';
@@ -118,6 +119,12 @@ export default async function mgBundleRoutes(app: FastifyInstance): Promise<void
 			}
 			return reply.code(202).send(job);
 		}),
+	);
+
+	// wp-m3-mgtext (S08:MGC-037): text layout in the engine's headless browser (agents' overflow warnings).
+	app.post(
+		'/api/mg-bundles/measure-texts',
+		mgGuarded(async (req) => svc.measureTexts(parseOr400(MgTextMeasureRequestSchema, req.body))),
 	);
 
 	app.get<{ Params: { renderKey: string } }>(

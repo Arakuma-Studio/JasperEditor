@@ -48,6 +48,8 @@ import {
 	MgBundleScaffoldRequestSchema,
 	MgPrerenderRequestSchema,
 	MgPrerenderResultSchema,
+	MgTextMeasureRequestSchema,
+	MgTextMeasureResultSchema,
 } from './mg-bundles.ts';
 import {
 	ProcessingModelsResponseSchema,
@@ -445,6 +447,14 @@ export const ROUTES = {
 		method: 'GET',
 		path: '/api/mg-bundles/prerender/:renderKey',
 		response: MgPrerenderResultSchema,
+		owner: 'wp-m2-mg',
+	},
+	/** wp-m3-mgtext (S08:MGC-037): text layout of a composition, measured in the engine's headless browser. */
+	mgBundleMeasureTexts: {
+		method: 'POST',
+		path: '/api/mg-bundles/measure-texts',
+		body: MgTextMeasureRequestSchema,
+		response: MgTextMeasureResultSchema,
 		owner: 'wp-m2-mg',
 	},
 	/** Static files of an imported bundle (the Remotion serve URL; the preview frame host loads it). */

@@ -107,7 +107,12 @@ function PreviewLayer({ layer, src }: { layer: LayerProps; src: RenderCompositio
 	);
 }
 
-type HostState = { state: 'loading' | 'rendering' | 'ready' | 'error'; message?: string };
+type HostState = {
+	state: 'loading' | 'rendering' | 'ready' | 'error';
+	message?: string;
+	/** Composition frame drawn (ready). wp-m3-mgtext: the on-canvas text editor waits for the playhead's. */
+	frame?: number;
+};
 
 /**
  * The live frame host: one iframe per mounted clip (at most 4 at once, MGC-024), transparent, never
@@ -135,7 +140,7 @@ function LiveHost({
 	const want = useRef<{ frame: number; key: string; hidden: boolean } | null>(null);
 	const busy = useRef(false);
 	const [host, setHost] = useState<HostState>({ state: 'loading' });
-	const [allowed, setAllowed] = useState(true);
+	const [acquired, setAcquired] = useState(true);
 	const bundleUrl = runtime?.bundleUrl?.(src.bundle!.key ?? '') ?? bundleServeUrl(src.bundle!.key ?? '');
 	const total = compositionFramesAt(info, fps);
 	const frame = Math.max(0, Math.min(total - 1, compositionFrameOf(contentTime, fps)));
@@ -149,16 +154,18 @@ function LiveHost({
 	);
 	const configKey = useMemo(() => JSON.stringify(config), [config]);
 
-	// Live host budget (MGC-024).
+	// Live host budget (MGC-024). wp-m3-mgtext: runtimes with `hostAllowed` decide per render (a clip being edited
+	// on canvas takes a slot, the clip farthest from the playhead gives it up).
 	useEffect(() => {
 		const release = runtime?.acquireHost?.(clip.clipId);
 		if (release === null) {
-			setAllowed(false);
+			setAcquired(false);
 			return;
 		}
-		setAllowed(true);
+		setAcquired(true);
 		return () => release?.();
 	}, [runtime, clip.clipId]);
+	const allowed = runtime?.hostAllowed ? runtime.hostAllowed(clip.clipId) : acquired;
 
 	// Everything the (stable) pump needs lives in refs: it outlives the render that started it.
 	const live = useRef({ config, hidden, report: (_s: HostState) => {} });
@@ -196,7 +203,7 @@ function LiveHost({
 			try {
 				await driver.configure(cfg);
 				await driver.seek(cfg.compositionId, target.frame);
-				if (want.current === target) live.current.report({ state: 'ready' });
+				if (want.current === target) live.current.report({ state: 'ready', frame: target.frame });
 			} catch (e) {
 				live.current.report({
 					state: 'error',
@@ -230,7 +237,9 @@ function LiveHost({
 				src={hostPageUrl(bundleUrl)}
 				onLoad={onLoad}
 				data-mg-host={src.compositionId}
+				data-mg-host-clip={clip.clipId}
 				data-mg-host-state={hidden ? 'idle' : host.state}
+				data-mg-host-frame={hidden || host.state !== 'ready' ? undefined : host.frame}
 				tabIndex={-1}
 				aria-hidden="true"
 				style={{

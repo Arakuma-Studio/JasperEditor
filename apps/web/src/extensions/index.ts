@@ -69,6 +69,25 @@ export type ProgramOverlayDef = {
 };
 export const programOverlays = createRegistry<ProgramOverlayDef>();
 
+/**
+ * wp-m3-mgtext (S08:MGU-005, additive): a double-click on a layer in the Program monitor (selection tool). The
+ * first handler returning true consumes it (e.g. composition clips open their on-canvas text editor).
+ */
+export type LayerDoubleClickContext = {
+	session: EditorSession;
+	clip: Clip;
+	/** The double-clicked point in sequence pixels. */
+	point: [number, number];
+	/** Sequence frame shown. */
+	frame: number;
+};
+export type LayerDoubleClickHandler = {
+	id: string;
+	run(ctx: LayerDoubleClickContext): boolean;
+	order?: number;
+};
+export const layerDoubleClickHandlers = createRegistry<LayerDoubleClickHandler>();
+
 // ---------------------------------------------------------------- context menus
 
 type ClipMenuContext = { session: EditorSession; clip: Clip; selection: readonly string[] };

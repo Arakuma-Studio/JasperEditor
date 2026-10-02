@@ -11,15 +11,18 @@ import { z } from 'zod';
 import {
 	clipBadgeProviders,
 	clipSections,
+	layerDoubleClickHandlers,
 	programOverlays,
 	projectItemMenuExtensions,
 } from '../extensions/index.ts';
+import { CanvasTextEditorHost } from '../mg-bundles/CanvasTextEditor.tsx';
 import { CompositionSection } from '../mg-bundles/CompositionSection.tsx';
 import { MG_IMPORT_DIALOG, registerImportRemotionDialog } from '../mg-bundles/ImportDialog.tsx';
 import { bundleErrorText, rebuildBundle } from '../mg-bundles/import.ts';
 import { insertComposition } from '../mg-bundles/insert.ts';
 import { MgRuntimeHost } from '../mg-bundles/RuntimeHost.tsx';
 import { currentMgRuntime } from '../mg-bundles/runtime.ts';
+import { startCanvasTextEdit } from '../mg-bundles/text-edit.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
 const InsertArgs = z.object({
@@ -143,6 +146,23 @@ programOverlays.register({
 	active: () => true,
 	component: MgRuntimeHost,
 	order: 0,
+});
+
+// wp-m3-mgtext (S08:MGU-005): in-place text editing of composition clips in the Program monitor.
+programOverlays.register({
+	id: 'mg-text-editor',
+	active: () => true,
+	component: CanvasTextEditorHost,
+	order: 5,
+});
+
+layerDoubleClickHandlers.register({
+	id: 'mg-text',
+	run: ({ session, clip, point }) => {
+		if (clip.kind !== 'composition' || session.getState().readOnly) return false;
+		startCanvasTextEdit(session, clip.id, { point });
+		return true;
+	},
 });
 
 clipBadgeProviders.register({

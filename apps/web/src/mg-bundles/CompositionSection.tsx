@@ -3,6 +3,8 @@
 // textarea, colour, number, toggle, select, JSON for arrays and free-form values), Reset to defaults, Edit as
 // JSON, Rebuild bundle (project folders) and Render master now. Edits are `param.set` on
 // `["clip", id, "props", …]` (one History entry each; scrubs are one gesture), validated by the model.
+// M3 (wp-m3-mgtext, S08:MGU-006): the composition's texts come first with their own editors (CompositionTexts);
+// the generic form lists the remaining props.
 import {
 	type Clip,
 	type Command,
@@ -10,11 +12,13 @@ import {
 	compositionFpsMismatch,
 	compositionOfClip,
 	compositionPropsPropertySpecs,
+	compositionTextLayers,
 	effectiveCompositionProps,
 	getPropAt,
 	type MediaAsset,
 	type PropertySpec,
 	propertyKeyToParamPath,
+	textLayerPropertyKeys,
 	unsetPropOverride,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
@@ -32,6 +36,7 @@ import {
 import { ResetGlyph } from '../panels/properties/controls/glyphs.tsx';
 import { ScrubbyNumber } from '../panels/properties/controls/ScrubbyNumber.tsx';
 import { createScrub } from '../panels/properties/lib/ops.ts';
+import { CompositionTexts } from './CompositionTexts.tsx';
 import { bundleErrorText, rebuildBundle } from './import.ts';
 import { useMgRuntimeAttach } from './RuntimeHost.tsx';
 import { type ClipMgStatus, currentMgRuntime, type MgRuntime } from './runtime.ts';
@@ -168,7 +173,13 @@ function OneComposition(props: {
 	const status = useMgStatus(runtime, clip.id);
 	const [jsonOpen, setJsonOpen] = useState(false);
 	const [message, setMessage] = useState<{ kind: 'info' | 'error'; text: string } | null>(null);
-	const specs = useMemo(() => (found ? compositionPropsPropertySpecs(found.info) : []), [found]);
+	const info = found?.info;
+	const textLayers = useMemo(() => (info ? compositionTextLayers(info) : []), [info]);
+	const specs = useMemo(() => {
+		if (!info) return [];
+		const owned = textLayerPropertyKeys(textLayers);
+		return compositionPropsPropertySpecs(info).filter((s) => !owned.has(s.key));
+	}, [info, textLayers]);
 	const effective = useMemo(() => effectiveCompositionProps(doc, clip), [doc, clip]);
 	const st = statusText(status);
 	const readOnly = useSessionState((s) => s.readOnly);
@@ -240,9 +251,31 @@ function OneComposition(props: {
 					sequence rate.
 				</p>
 			) : null}
+			{textLayers.length ? (
+				<>
+					<SubHeading>Text</SubHeading>
+					<CompositionTexts
+						session={session}
+						clip={clip}
+						info={found.info}
+						layers={textLayers}
+						effective={effective}
+						seq={
+							seq
+								? { width: seq.settings.width, height: seq.settings.height, rate: seq.settings.frameRate }
+								: null
+						}
+						disabled={readOnly}
+						onMessage={setMessage}
+					/>
+					{specs.length ? <SubHeading>Props</SubHeading> : null}
+				</>
+			) : null}
 			<div className="pt-1" data-testid="composition-props">
 				{specs.length === 0 ? (
-					<p className="px-2 text-pr-small text-pr-muted">This composition has no props.</p>
+					textLayers.length ? null : (
+						<p className="px-2 text-pr-small text-pr-muted">This composition has no props.</p>
+					)
 				) : (
 					specs.map((spec) => (
 						<PropRow
@@ -343,6 +376,15 @@ function OneComposition(props: {
 	);
 }
 
+function SubHeading(props: { children: ReactNode }) {
+	return (
+		<div className="mt-2 flex items-center gap-2 px-2 text-pr-small text-pr-muted uppercase tracking-wide">
+			<span>{props.children}</span>
+			<span className="h-px flex-1 bg-pr-border" />
+		</div>
+	);
+}
+
 function PropRow(props: {
 	session: EditorSession;
 	clip: Clip;
@@ -380,7 +422,7 @@ function PropRow(props: {
 	);
 }
 
-function PropEditor(props: {
+export function PropEditor(props: {
 	session: EditorSession;
 	clip: Clip;
 	spec: PropertySpec;

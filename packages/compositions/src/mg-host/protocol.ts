@@ -15,6 +15,9 @@
 //   "ready" = window.remotion_renderReady === true (every delayRender() handle continued) and
 //     document.fonts.ready; window.remotion_cancelledError (string stack) = the page failed.
 // Pure TypeScript (no React): the engine imports the bootstrap for the HTML it serves.
+// M3 (wp-m3-mgtext): the bootstrap also installs the text probe (text-probe.ts: bundle fonts, text layout).
+
+import { TEXT_PROBE_SCRIPT } from './text-probe.ts';
 
 export const MG_HOST_REMOTION_VERSION = '4.0.499';
 /** `window.siteVersion` of 4.0.499 bundles (Remotion's `requiredVersion` in set-props-and-env). */
@@ -46,7 +49,8 @@ export function bundleServeUrl(mediaKey: string): string {
 
 /**
  * The script the engine injects at the top of `<head>` of a host page (before the bundle's own scripts): the
- * globals `setPropsAndEnv` sets with `evaluateOnNewDocument`, plus a transparent page background.
+ * globals `setPropsAndEnv` sets with `evaluateOnNewDocument`, plus a transparent page background, then the
+ * text probe (M3, S08:MGC-037/039: it must see the bundle's `new FontFace(…)` calls, so it runs first too).
  */
 export function hostBootstrapScript(opts: { timeoutMs?: number; logLevel?: string } = {}): string {
 	const timeout = Math.max(1000, Math.floor(opts.timeoutMs ?? MG_HOST_TIMEOUT_MS));
@@ -73,6 +77,7 @@ export function hostBootstrapScript(opts: { timeoutMs?: number; logLevel?: strin
 		'window.confirm=function(){return false;};',
 		'window.__jasperMgHost=1;',
 		'})();',
+		TEXT_PROBE_SCRIPT,
 	].join('');
 }
 
@@ -330,3 +335,11 @@ export class MgFrameHostDriver {
 		return this.run(() => this.seekNow(compositionId, frame));
 	}
 }
+
+// M3 (wp-m3-mgtext): the text probe's typed helpers travel with the protocol (`@jasper/compositions/mg-host`).
+export {
+	type BundleFontSource,
+	locateTexts,
+	TEXT_PROBE_SCRIPT,
+	textProbeOf,
+} from './text-probe.ts';

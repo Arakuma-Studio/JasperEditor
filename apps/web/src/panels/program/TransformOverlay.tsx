@@ -23,6 +23,7 @@ import {
 	useRef,
 	useState,
 } from 'react';
+import { layerDoubleClickHandlers } from '../../extensions/index.ts';
 // wp-m2-shapes: geometry hit-test (XF-001) and "Resize shapes by size" handles (S11:SHP-007).
 import {
 	hitsLayerGeometry,
@@ -695,6 +696,21 @@ export function TransformOverlay({
 			onPointerMove={onPointerMove}
 			onPointerUp={onPointerUp}
 			onPointerCancel={() => endGesture(false)}
+			// wp-m3-mgtext (S08:MGU-005): double-click a layer → registered handlers (on-canvas text editing).
+			onDoubleClick={(e) => {
+				if (gestureRef.current || tool === 'hand' || tool === 'type') return;
+				const p = toSeq(e).seq;
+				const id = layerAt(p);
+				const clip = id ? activeSequence(session)?.clips[id] : undefined;
+				if (!clip) return;
+				for (const h of layerDoubleClickHandlers.list()) {
+					try {
+						if (h.run({ session, clip, point: [p[0], p[1]], frame: live.current.frame })) break;
+					} catch (err) {
+						console.warn('[program] double-click handler failed', err);
+					}
+				}
+			}}
 			onContextMenu={(e) => {
 				e.preventDefault();
 				if (gestureRef.current) return;
