@@ -75,6 +75,15 @@ Requirement ids: `PRC-NNN` (processing model and jobs), `PST-NNN` (steps), `PRM-
   sidecar `<output>.json` (steps, versions, timings, notes, executor, model ids + sha256).
 - **PRC-014 (P0)** Cancel kills the process tree (local) or the remote process group (§5), deletes partial
   outputs; retry re-runs from scratch (steps are deterministic apart from GPU fp16 rounding).
+- **PRC-016 (P0, M3) Range integrity.** Every `scale` jasper-proc generates states its output range (and its
+  input range for YUV input) — FFmpeg 6.1 converts full-range YUV to TV range in a `scale` without one, which the
+  next stage (explicit `in_range=pc`) reads as full range: blacks at 16, whites at 235. Measured with FFmpeg 6.1
+  (system) and the LGPL 7.1 on crudo.mp4 shadows/highlights and a synthetic 0…255 ramp: the only affected path
+  was deshake `borders: 'crop'` (its crop + `scale` back), alone or after any other step; vid.stab (WASM and
+  FFmpeg-native), smooth path, de-judder, denoise and deblock, and their combinations kept 0…255. Guarded by
+  `apps/engine/test/processing-range.test.ts` (static check of the generated filter text + every stabilise method
+  and combination, TV- and full-range sources, run with every FFmpeg on the machine, measured on the decoded
+  output: black ≤ 2, white ≥ 253, no colour cast on achromatic content).
 - **PRC-015 (P1)** Range processing: `range` processes a sub-range of the source (e.g. just the used part plus
   handles) and registers a shorter processed file whose `derivation` records the range; the swap maps `sourceIn`
   accordingly. P0 processes the whole file.
@@ -126,7 +135,10 @@ Requirement ids: `PRC-NNN` (processing model and jobs), `PST-NNN` (steps), `PRM-
   5. Prebuilt LGPL builds without vid.stab (BtbN, Windows) stabilise with the WASM module
      (`features.processing.stabilize = 'vidstab'`); `deshake` only when the module is missing.
 - **PST-004 (P0)** deshake (last resort): `deshake=edge=<clamp|blank>:rx=32:ry=32:blocksize=8:contrast=125`, then
-  for `borders: 'crop'` a fixed centre crop + scale back of 4 % (deshake has no optimal zoom).
+  for `borders: 'crop'` a fixed centre crop + scale back of 4 % (deshake has no optimal zoom). *(M3:)* deshake is
+  8-bit YUV only and `edge=blank` fills every plane with 0 — green in YUV — so it runs on the 8-bit R'G'B' planes
+  relabelled as yuv444p (`format=gbrp,mergeplanes=0x000102:yuv444p,deshake…,mergeplanes=0x000102:gbrp`): blank
+  is true black, motion is estimated on G, the crop + scale happen in RGB (no YUV range involved, PRC-016).
 
 - **PST-005 (P0, M3 `wp-m3-stabpath`) Smooth path** ("trayectoria suavizada"). For a shot from a fixed position
   with ONE sudden operator reframe / jerk, or a slow uneven drift, that should become a single even camera move.

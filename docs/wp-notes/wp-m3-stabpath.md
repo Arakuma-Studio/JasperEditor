@@ -64,9 +64,46 @@ report numbers. The remote directory was deleted afterwards.
 
 Time on this (shared, load 11–20) host for the 124 frames: tracking 17 s, warp ~0.14 s/frame (6 threads).
 
-## 2. Colour range of processed (stabilised) clips
+## 2. Colour range of processed (stabilised) clips (PRC-016)
 
-(see below)
+Question: does the editor have the trailer's bug (FFmpeg 6.1: stabilised full-range YUV → a scale/format without
+an output range is silently converted to TV range, then read as full range → blacks/whites ~13…237)?
+Measured on real decoded output — not by reading code — with BOTH the system FFmpeg 6.1.1 and the vendored LGPL
+7.1.5, every stabilise method alone and in combinations (vid.stab WASM, vid.stab FFmpeg-native, smooth path,
+deshake crop/keep; + deblock, atadenoise, fftdnoiz, nlmeans, de-judder), on crudo.mp4 (two ranges with deep
+shadows and clipped highlights) and synthetic 0…255 fixtures (ramp + black/white patches + R/G/B/C/M/Y, shaken;
+TV-range H.264, full-range yuvj420p and full-range 4:4:4 FFV1). Y black/white patch levels, per-channel R'G'B'
+min/max/percentiles, ramp span, decoded by both FFmpegs; plus the FFV1 gbrp16le intermediates round-tripped
+between versions (bit-exact). Harness (kept outside the repo): `/tmp/rangecheck/run_matrix.py` (+ `report.py`).
+
+| path | FFmpeg 6.1 | FFmpeg 7.1 (LGPL, shipped) |
+|---|---|---|
+| vid.stab WASM / native, smooth path, de-judder, denoise (all three), deblock, combinations | 0…255 kept | 0…255 kept |
+| **deshake `borders: 'crop'`** (alone or after any step) | **black 16, white 235, ramp 16…235 — the bug** | kept |
+| **deshake `borders: 'keep'`** | **borders GREEN** (Y = U = V = 0) | **borders green** |
+| deblock + fftdnoiz + de-judder + deshake | **segfault in FFmpeg 6.1's deshake** (synthetic) | kept |
+
+Root causes: (1) the deshake crop step's `crop,scale=W:H:flags=bicubic` on full-range yuv444p had no range: 6.1
+converted to TV range, `toProres` (`in_range=pc`) then lifted blacks/capped whites (minimal repro: `format=yuv444p`
+(pc) → `scale=W:H` → `scale=in_range=pc:…`); (2) `deshake=edge=blank` fills every plane with 0 (green in YUV).
+Fix (`proc/filters.ts`): deshake now runs on the 8-bit R'G'B' planes relabelled as yuv444p
+(`format=gbrp,mergeplanes=0x000102:yuv444p,deshake…,mergeplanes=0x000102:gbrp`, LGPL filters): blank is true
+black, no YUV range exists in that path, the crop + scale happen in RGB (and state their range anyway); FFmpeg 6.1
+no longer crashes on it. Every other generated `scale` states its output range (`ffio.ts` decode resize too).
+After the fix all paths keep 0…255 with both FFmpegs (synthetic: black 0 / white 255, ramp 0…255, no cast; crudo:
+black 1.8–2.0 like the source). The remote executor (home PC, system FFmpeg 6.1): deshake crop (with the first form of the fix,
+an explicit range on its scale; the final RGB-plane form was verified locally with the same FFmpeg 6.1.1) and
+deblock + atadenoise + de-judder + smooth path outputs measure Y p0.1 1.9–2.3 / p99.9 238.6–241.0 vs the
+source's 2.0 / 239.9.
+`RECIPE_VERSION` → 2 so deshake files made by the old code are not reused. (crudo_A's brightest patch reads
+236.7 instead of 238.7 after deshake — identical with both FFmpegs and on the RGB/YUV paths alike: interpolation
+of a small specular area, not range.)
+
+Regression test `apps/engine/test/processing-range.test.ts`: a static check that every generated `scale` states
+`out_range`, and every stabilise method + combinations on TV- and full-range synthetic sources, run with EVERY
+FFmpeg found (LGPL + system), decoded by both, asserting black ≤ 2, white ≥ 253 and no colour cast (p99.99 of
+max(|R−G|,|B−G|) ≤ 6). Before the fix it failed exactly on the bug: black 16 (deshake crop, 6.1), colour cast 131
+(deshake keep, both), and the static check.
 
 ## Contract changes (additive)
 
@@ -76,6 +113,8 @@ Time on this (shared, load 11–20) host for the 124 frames: tracking 17 s, warp
 - OpenCV worker (`proc/dejudder/worker.mjs`) `track` request; `CvPool.track()`.
 - jasper-proc `PROC_VERSION` 0.2.0: remote hosts report "runtime outdated" until *Set up* runs again (needed: the
   remote worker must know `track`).
+- `proc/filters.ts` deshake: `FilterStep.format` 'rgb48le' (RGB planes through deshake), `filterNames()` ignores
+  quoted option values; `RECIPE_VERSION` 2.
 - `packages/ui` Dialog: Enter on an option of a Select / menu inside a dialog no longer also runs the primary
   action (React bubbles the key out of the popup portal; picking a stabilise method with the keyboard started the
   job). Regression test in `packages/ui/test/primitives.test.tsx`.
@@ -89,10 +128,10 @@ shipped and listed.
 
 ```bash
 pnpm fixtures                                   # + reframe.mp4
-pnpm vitest run --project @jasper/engine apps/engine/test/smoothpath.test.ts apps/engine/test/processing-steps.test.ts
+pnpm vitest run --project @jasper/engine apps/engine/test/smoothpath.test.ts apps/engine/test/processing-range.test.ts apps/engine/test/processing-steps.test.ts
 pnpm vitest run --project @jasper/web apps/web/test/processing.test.tsx
 pnpm vitest run --project @jasper/ui packages/ui/test/primitives.test.tsx
-E2E_PORT=52610 pnpm e2e -- e2e/processing.spec.ts
+E2E_PORT=52610 pnpm e2e e2e/processing.spec.ts
 ```
 
 ## Open issues
