@@ -163,6 +163,7 @@ export class CacheService {
 	private readonly ownTrash = new Set<string>();
 	private readonly adapters = new Map<CacheKind, CacheKindAdapter>();
 	private readonly openProbes = new Set<(projectId: string) => boolean>();
+	private readonly liveDocs = new Set<(projectId: string) => Promise<unknown | null>>();
 	private fframesKey: ClipRenderKeyFn | null = null;
 	private readonly projectRefsCache = new Map<string, { revision: number; refs: ProjectCacheRefs }>();
 	private lastScan: ScanResult | null = null;
@@ -383,6 +384,24 @@ export class CacheService {
 		return () => this.openProbes.delete(probe);
 	}
 
+	/**
+	 * Adds a source of the live (possibly unsaved) document of an open project — the editor's document is ahead of
+	 * the saved file between autosaves (a media imported a second ago). Open projects are referenced by the union of
+	 * their saved and live documents. The source answers null when it cannot (no editor, timeout).
+	 */
+	addLiveDocumentSource(source: (projectId: string) => Promise<unknown | null>): () => void {
+		this.liveDocs.add(source);
+		return () => this.liveDocs.delete(source);
+	}
+
+	private async liveDocument(projectId: string): Promise<unknown | null> {
+		for (const src of this.liveDocs) {
+			const doc = await src(projectId).catch(() => null);
+			if (doc && typeof doc === 'object') return doc;
+		}
+		return null;
+	}
+
 	private isOpen(projectId: string): boolean {
 		if (this.o.leases?.get(projectId)) return true;
 		for (const p of this.openProbes) {
@@ -596,6 +615,25 @@ export class CacheService {
 			}
 			for (const pid of [...this.projectRefsCache.keys()])
 				if (!existing.has(pid)) this.projectRefsCache.delete(pid);
+			// Open projects: what their editors show right now counts too (not saved yet, CA-012/CA-014).
+			await Promise.all(
+				[...open].map(async (pid) => {
+					const doc = await this.liveDocument(pid);
+					if (!doc) return;
+					const live = projectCacheRefs(doc, this.o.renderKey ?? null, this.fframesKey);
+					const saved = computed.get(pid);
+					computed.set(
+						pid,
+						saved
+							? {
+									fingerprints: new Set([...saved.fingerprints, ...live.fingerprints]),
+									mgRenderKeys: new Set([...saved.mgRenderKeys, ...live.mgRenderKeys]),
+									bundleHashes: new Set([...saved.bundleHashes, ...live.bundleHashes]),
+								}
+							: live,
+					);
+				}),
+			);
 		}
 		const recorded = new Map<string, Set<string>>();
 		for (const set of this.index.refs.values()) {
