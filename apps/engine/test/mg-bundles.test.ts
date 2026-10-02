@@ -1243,7 +1243,7 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 		const props = mergeProps(lt.defaultProps, {
 			name: { text: 'Augusta Ada King, Countess of Lovelace' },
 			quote:
-				'Imagination is the *Discovering Faculty*, pre-eminently. It is that which penetrates into the unseen worlds',
+				'Imagination is the *Discovering Faculty*, pre-eminently. It is that which penetrates into the unseen worlds around us, the worlds of Science. It is that which feels and discovers.',
 		});
 		const items = layers.map((l) => ({ id: l.path.join('.'), text: textLayerValue(props, l) }));
 		const payload = {
