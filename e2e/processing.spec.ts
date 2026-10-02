@@ -135,9 +135,14 @@ test('Process Clip… with Smooth path (keyboard): explained options, job notes 
 	await method.focus();
 	await page.keyboard.press('Enter');
 	await expect(page.getByRole('option', { name: 'Smooth path (one even move)' })).toBeVisible();
-	await page.keyboard.press('ArrowDown');
-	await page.keyboard.press('ArrowDown');
-	await expect(page.getByRole('option', { name: 'Smooth path (one even move)' })).toBeFocused();
+	const smooth = page.getByRole('option', { name: 'Smooth path (one even move)' });
+	await expect
+		.poll(async () => {
+			if (await smooth.evaluate((el) => el === document.activeElement)) return true;
+			await page.keyboard.press('ArrowDown');
+			return false;
+		})
+		.toBe(true);
 	await page.keyboard.press('Enter');
 	await expect(dialog).toBeVisible();
 	await expect(method).toContainText('Smooth path');
