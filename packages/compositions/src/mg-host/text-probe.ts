@@ -222,6 +222,74 @@ var api = {
 		});
 	}
 };
+// Headless measuring (the engine's own browser, S08:MGC-037): the same renderer-page protocol as the live host
+// driver (protocol.ts MgFrameHostDriver), run inside the page so the engine needs no module bundling.
+function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+async function pageReady(timeout) {
+	var until = Date.now() + timeout;
+	for (;;) {
+		if (typeof W.remotion_cancelledError === 'string') throw new Error(W.remotion_cancelledError.split('\n')[0]);
+		if (W.remotion_renderReady === true) break;
+		if (Date.now() > until) throw new Error('The composition page was not ready after ' + timeout + ' ms');
+		await sleep(10);
+	}
+	try { await Promise.race([document.fonts.ready, sleep(2000)]); } catch (e) {}
+}
+var evaluated = false;
+var mounted = null;
+api.render = async function (c) {
+	var t = c.timeoutMs || 30000;
+	var until = Date.now() + t;
+	while (typeof W.remotion_setBundleMode !== 'function' || typeof W.remotion_calculateComposition !== 'function') {
+		if (Date.now() > until) throw new Error('Not a Remotion 4.0.499 bundle page');
+		await sleep(10);
+	}
+	var key = JSON.stringify([c.compositionId, c.props, c.width, c.height, c.fps, c.durationInFrames]);
+	if (mounted !== key) {
+		W.remotion_inputProps = JSON.stringify(c.props || {});
+		if (!evaluated) { W.remotion_setBundleMode({ type: 'evaluation' }); await pageReady(t); evaluated = true; }
+		if (typeof W.remotion_getCompositionNames === 'function') {
+			var u2 = Date.now() + Math.min(t, 10000);
+			while (Date.now() < u2) {
+				try { if (W.remotion_getCompositionNames().indexOf(c.compositionId) >= 0) break; } catch (e) {}
+				await sleep(10);
+			}
+		}
+		var meta = await W.remotion_calculateComposition(c.compositionId);
+		W.remotion_setBundleMode({
+			type: 'composition',
+			compositionName: c.compositionId,
+			serializedResolvedPropsWithSchema: meta.serializedResolvedPropsWithCustomSchema,
+			compositionDurationInFrames: c.durationInFrames || meta.durationInFrames,
+			compositionFps: c.fps || meta.fps,
+			compositionHeight: c.height || meta.height,
+			compositionWidth: c.width || meta.width,
+			compositionDefaultCodec: meta.defaultCodec || 'h264',
+			compositionDefaultOutName: meta.defaultOutName || null,
+			compositionDefaultVideoImageFormat: meta.defaultVideoImageFormat || null,
+			compositionDefaultPixelFormat: meta.defaultPixelFormat || null,
+			compositionDefaultProResProfile: meta.defaultProResProfile || null,
+			compositionDefaultSampleRate: meta.defaultSampleRate || 48000
+		});
+		await pageReady(t);
+		mounted = key;
+	}
+	var last = Math.max(0, (c.durationInFrames || 1) - 1);
+	W.remotion_setFrame(Math.max(0, Math.min(last, Math.round(c.frame || 0))), c.compositionId, 1);
+	await pageReady(t);
+};
+/** Renders the composition at each requested frame and locates that frame's texts; plus the bundle's families. */
+api.measure = async function (c) {
+	var out = [];
+	for (var i = 0; i < c.frames.length; i++) {
+		var f = c.frames[i];
+		await api.render(Object.assign({}, c, { frame: f.frame }));
+		out = out.concat(api.locate(f.items, { width: c.width, height: c.height }));
+	}
+	var fams = [];
+	fonts().forEach(function (x) { if (fams.indexOf(x.family) < 0) fams.push(x.family); });
+	return { measurements: out, fonts: fams };
+};
 W.__jasperTexts = api;
 })();`;
 

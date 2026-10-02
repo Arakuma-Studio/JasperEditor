@@ -12,6 +12,8 @@ import type {
 	MgBundleRebuiltEvent,
 	MgPrerenderRequest,
 	MgPrerenderResult,
+	MgTextMeasureRequest,
+	MgTextMeasureResult,
 	RegisteredMedia,
 } from '@jasper/api';
 import { renderPagesInOwnWindows } from '@jasper/compositions/render-host';
@@ -40,6 +42,7 @@ import {
 	readProjectPackage,
 } from './project.ts';
 import { buildCompositionInfos, loadSchemaModule, type RawComposition, readManifest } from './schemas.ts';
+import { measureBundleTexts } from './text-measure.ts';
 import { extractZip, ZipError } from './zip.ts';
 
 /** CPU slots of one pre-render (S08:MGC-030) and of a bundle build. */
@@ -695,6 +698,44 @@ export class MgBundleService {
 	}
 
 	/** Cached result of a render key (master and/or preview present), or null. */
+	// ------------------------------------------------------------------ text layout (wp-m3-mgtext, MGC-037)
+
+	private measureChain: Promise<unknown> = Promise.resolve();
+	private readonly measureCache = new Map<string, MgTextMeasureResult>();
+
+	/**
+	 * Measures where the given texts land in the composition rendered with `props` (the engine's headless browser;
+	 * one measurement at a time, results cached by request).
+	 */
+	measureTexts(req: MgTextMeasureRequest): Promise<MgTextMeasureResult> {
+		this.requireReady();
+		const dir = this.bundleDir(req.mediaKey);
+		if (!dir) throw new MgBundleError('MG_NOT_A_BUNDLE', `Bundle ${req.mediaKey} is not available`, 404);
+		const key = createHash('sha256').update(JSON.stringify(req)).digest('hex');
+		const hit = this.measureCache.get(key);
+		if (hit) return Promise.resolve(hit);
+		const run = this.measureChain.then(async () => {
+			const again = this.measureCache.get(key);
+			if (again) return again;
+			const { binariesDirectory: _b, ...browser } = this.remotionOptions();
+			let result: MgTextMeasureResult;
+			try {
+				result = await measureBundleTexts(await this.renderer(), dir, req, browser);
+			} catch (e) {
+				throw new MgBundleError(
+					'MG_RENDER_FAILED',
+					`Measuring the texts of ${req.compositionId} failed: ${(e as Error).message.split('\n')[0]}`,
+					422,
+				);
+			}
+			this.measureCache.set(key, result);
+			if (this.measureCache.size > 64) this.measureCache.delete(this.measureCache.keys().next().value!);
+			return result;
+		});
+		this.measureChain = run.catch(() => undefined);
+		return run;
+	}
+
 	async cached(renderKey: string): Promise<MgPrerenderResult | null> {
 		if (!KEY_RE.test(renderKey)) return null;
 		const dir = this.renderDir(renderKey);
