@@ -80,6 +80,8 @@ export default async function mediaRoutes(app: FastifyInstance): Promise<void> {
 			return media.discard(req.params.mediaKey, {
 				projectsDir: core.config.paths.projectsDir,
 				cacheDir: core.config.paths.cacheDir,
+				// M3 (wp-m3-cachegc): derivatives go through the cache registry (crash-safe, pin-aware).
+				cache: core.cache,
 			});
 		}),
 	);

@@ -16,7 +16,7 @@
 // temporary files of interrupted writes, which the orphan sweep removes. Lookups that `acquire` an entry wait for a
 // removal in progress and then miss (the producer regenerates).
 import { randomBytes } from 'node:crypto';
-import { lstat, rename, rm, stat } from 'node:fs/promises';
+import { lstat, rename, rm, rmdir, stat } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import {
 	CACHE_KINDS,
@@ -713,6 +713,7 @@ export class CacheService {
 		projects: Set<string>,
 		info: ProjectsInfo,
 		active: { ids: Set<string>; dedupe: string[] },
+		ignoreRecent = false,
 	): string | null {
 		if (this.pins.get(e.id)?.size) return 'pinned';
 		if (this.adapters.get(e.kind)?.busy?.(e.key)) return 'busy';
@@ -720,7 +721,7 @@ export class CacheService {
 		if (e.kind === 'exports' || e.kind === 'stills' ? active.ids.has(e.key) : false) return 'job';
 		if (active.dedupe.some((k) => k.includes(token))) return 'rendering';
 		if (e.kind === 'bundles' && this.isCurrentBundle(e)) return 'current';
-		if (this.now() - lastAccess < this.grace) return 'recent';
+		if (!ignoreRecent && this.now() - lastAccess < this.grace) return 'recent';
 		for (const pid of projects) if (info.open.has(pid)) return 'open project';
 		return null;
 	}
@@ -907,14 +908,14 @@ export class CacheService {
 	private async removeEntry(
 		c: Classified,
 		info: ProjectsInfo,
-		mode: CacheMode,
+		mode: CacheMode | 'discard',
 	): Promise<'removed' | 'kept' | 'failed'> {
 		const e = c.entry;
 		if (this.removing.has(e.id)) return 'kept';
 		const lastAccess = Math.max(c.lastAccess, this.index.access.get(e.id) ?? 0);
 		const projects = c.projects;
-		if (this.inUseReason(e, lastAccess, projects, info, this.activeJobs())) return 'kept';
-		if (mode !== 'all' && projects.size > 0) return 'kept';
+		if (this.inUseReason(e, lastAccess, projects, info, this.activeJobs(), mode === 'discard')) return 'kept';
+		if (mode !== 'all' && mode !== 'discard' && projects.size > 0) return 'kept';
 		const doRemove = () => this.removePaths(e.paths);
 		const adapter = this.adapters.get(e.kind);
 		const p = (adapter?.remove ? adapter.remove(e.key, doRemove) : doRemove()).finally(() =>
@@ -922,9 +923,55 @@ export class CacheService {
 		);
 		this.removing.set(e.id, p);
 		try {
-			return (await p) ? 'removed' : 'failed';
+			const ok = await p;
+			if (ok) this.index.access.delete(e.id);
+			// A media's `cache/<fingerprint>/` folder goes with its last entry.
+			if (ok && (e.kind === 'media-cache' || e.kind === 'proxies'))
+				await rmdir(dirname(e.paths[0]!)).catch(() => undefined);
+			return ok ? 'removed' : 'failed';
 		} catch {
 			return 'failed';
+		}
+	}
+
+	/**
+	 * Removes the media cache files and proxies of one content fingerprint (`cache/<hex>/`) — a media being discarded
+	 * (wp-m3-inpoint `MediaService.discard`: no stored project uses it). Same protections as a pass except the grace
+	 * window (they were just made for it): entries pinned (a job reading, a response streaming), rendered by an active
+	 * job, or shown by an open project are waited for up to `waitMs` (default 10 s; cancelled jobs end within ~5 s),
+	 * then left in place — the next pass removes them once unused. Crash-safe removal; access times dropped.
+	 */
+	async removeFingerprint(
+		fingerprintHex: string,
+		opts: { waitMs?: number } = {},
+	): Promise<{ removed: number; removedBytes: number; kept: number }> {
+		if (!/^[0-9a-f]{64}$/.test(fingerprintHex)) throw new Error(`Invalid fingerprint ${fingerprintHex}`);
+		const deadline = this.now() + (opts.waitMs ?? 10_000);
+		let removed = 0;
+		let removedBytes = 0;
+		for (;;) {
+			const scan = await this.scan(true);
+			const mine = scan.entries.filter(
+				(e) => (e.kind === 'media-cache' || e.kind === 'proxies') && e.key.startsWith(`${fingerprintHex}/`),
+			);
+			const info = await this.projectsInfo();
+			const classified = this.classify(mine, info, this.activeJobs());
+			let kept = 0;
+			for (const c of classified) {
+				const r = await this.removeEntry(c, info, 'discard');
+				if (r === 'removed') {
+					removed++;
+					removedBytes += c.entry.bytes;
+				} else kept++;
+			}
+			if (kept === 0 || this.now() >= deadline) {
+				this.lastScan = null;
+				this.index.changed();
+				// The fingerprint folder itself once it is empty (temporary files of a cancelled job are its own).
+				if (kept === 0) await rmdir(join(this.o.appdir, 'cache', fingerprintHex)).catch(() => undefined);
+				return { removed, removedBytes, kept };
+			}
+			await new Promise((r) => setTimeout(r, 250));
 		}
 	}
 

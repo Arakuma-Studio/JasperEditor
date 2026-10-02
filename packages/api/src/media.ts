@@ -53,6 +53,11 @@ export type RegisteredMedia = z.infer<typeof RegisteredMediaSchema>;
 export const MediaDiscardResponseSchema = z.object({
 	deleted: z.boolean(),
 	reason: z.enum(['deleted', 'not-managed', 'derived', 'in-use']),
+	/**
+	 * M3 (wp-m3-cachegc, additive): cached derivatives still in use after the wait (a job reading one, a response
+	 * streaming) — left for the next cache cleaning pass, which removes them once unused.
+	 */
+	cacheKept: z.number().int().min(0).optional(),
 });
 export type MediaDiscardResponse = z.infer<typeof MediaDiscardResponseSchema>;
 

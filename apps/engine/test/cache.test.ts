@@ -14,7 +14,7 @@ import {
 	utimesSync,
 	writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { CacheGcReport, CacheUsage } from '@jasper/api';
 import { appdirPaths } from '@jasper/config';
 import { mgRegistry } from '@jasper/mg-templates';
@@ -831,6 +831,68 @@ describe('removed artifacts come back on demand (S04:CA-004)', () => {
 		expect(['queued', 'running', 'ready']).toContain(s.derivatives.poster!.state);
 		await until(ready);
 	}, 240_000);
+});
+
+describe('discarding a media removes its cache through the registry (wp-m3-inpoint PRC-018 × CA-016/017)', () => {
+	afterAll(closeApps);
+
+	it('DELETE /api/media/:key waits for a derivative a job still pins; one pinned for good is left to the GC', async () => {
+		ensureFixtures();
+		const app = await makeApp();
+		const cache = coreServices(app).cache;
+		await cache.start();
+		const managed = async (tag: string) => {
+			const src = join(app.appdir, `${tag}.mp4`);
+			writeFileSync(src, Buffer.concat([readFileSync(fixture('clip-b.mp4')), Buffer.from(tag)]));
+			const r = await app.inject({
+				method: 'POST',
+				url: '/api/media/register',
+				headers: JSON_H,
+				payload: { projectId: 'prj_0000000000000001', paths: [src], copyIntoProject: true },
+			});
+			const reg = (r.json() as { items: { mediaKey: string; fingerprint: string }[] }).items[0]!;
+			const dir = join(app.appdir, 'cache', reg.fingerprint.replace(/^q1:/, ''));
+			// Derivatives made (poster, keyframes, peaks, sprite).
+			for (let i = 0; i < 600; i++) {
+				const s = (
+					await app.inject({ method: 'GET', url: `/api/media/${reg.mediaKey}`, headers: H })
+				).json() as {
+					derivatives: Record<string, { state: string }>;
+				};
+				if (['poster', 'keyframes', 'sprite', 'peaks'].every((k) => s.derivatives[k]?.state === 'ready'))
+					break;
+				await new Promise((r) => setTimeout(r, 200));
+			}
+			const poster = readdirSync(dir).find((f) => f.startsWith('poster-'))!;
+			return { reg, dir, poster: join(dir, poster) };
+		};
+		const del = (key: string) => app.inject({ method: 'DELETE', url: `/api/media/${key}`, headers: H });
+
+		// 1. A job reads the poster; it finishes after ~1 s: the discard waits for it, then everything goes.
+		const a = await managed('discard-wait');
+		cache.pin('job:job_reader0000000001', a.poster);
+		setTimeout(() => cache.release('job:job_reader0000000001'), 1000);
+		const t0 = Date.now();
+		const r1 = await del(a.reg.mediaKey);
+		expect(r1.json()).toEqual({ deleted: true, reason: 'deleted' });
+		expect(Date.now() - t0).toBeGreaterThanOrEqual(900);
+		expect(existsSync(a.dir)).toBe(false); // entries and the fingerprint folder; no trash left
+		expect(readdirSync(join(app.appdir, 'cache')).filter((n) => n.startsWith('.trash'))).toEqual([]);
+
+		// 2. Pinned for good (a long export): the media goes, the pinned derivative stays (reported) and is not
+		//    removed under the reader; once released, the next pass removes it (no project references it).
+		const b = await managed('discard-busy');
+		cache.pin('job:job_reader0000000002', b.poster);
+		const r2 = await del(b.reg.mediaKey);
+		expect(r2.json()).toEqual({ deleted: true, reason: 'deleted', cacheKept: 1 });
+		expect(existsSync(b.poster)).toBe(true);
+		expect(readdirSync(b.dir)).toEqual([basename(b.poster)]);
+		cache.release('job:job_reader0000000002');
+		for (const id of cache.index.access.keys()) cache.index.access.set(id, 0);
+		age(b.poster, 10 * 60 * 1000);
+		await cache.clean('unused');
+		expect(existsSync(b.dir)).toBe(false);
+	}, 300_000);
 });
 
 describe('fframes motion-graphic renders are referenced by saved projects (CA-012)', () => {
