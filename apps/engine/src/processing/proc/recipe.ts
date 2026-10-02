@@ -7,7 +7,9 @@ import { canonicalJson, type ProcessStep } from '@jasper/project';
  * Bump when the output of the same steps changes (algorithm or encoder settings). Part of the recipe hash, so
  * processed files of an older processor are not reused.
  */
-export const RECIPE_VERSION = 1;
+// 2 (wp-m3-stabpath): deshake outputs changed — full range kept with FFmpeg 6.1 (crop), black (not green)
+// borders (keep) — so files processed by version 1 are not reused.
+export const RECIPE_VERSION = 2;
 
 export const PROC_NAME = 'jasper-proc';
 /** Runtime version (a remote host with another version is "outdated": Set up again). 0.2.0: smooth path. */
