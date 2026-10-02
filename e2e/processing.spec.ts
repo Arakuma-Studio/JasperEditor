@@ -129,11 +129,15 @@ test('Process Clip… with Smooth path (keyboard): explained options, job notes 
 	await expect(dialog).toBeVisible();
 	await dialog.getByRole('checkbox', { name: 'Stabilize' }).click();
 	await expect(dialog.getByTestId('stabilize-method-help')).toContainText('handheld');
-	// Pick the method with the keyboard: Enter on the option must not also press Start.
+	// Pick the method with the keyboard only: Enter opens the focused Select (no global shortcut takes it), the
+	// arrows move, Enter on the option picks it without also pressing Start.
 	const method = dialog.getByRole('combobox', { name: 'Stabilize method' });
-	await method.click();
+	await method.focus();
+	await page.keyboard.press('Enter');
 	await expect(page.getByRole('option', { name: 'Smooth path (one even move)' })).toBeVisible();
-	await page.getByRole('option', { name: 'Smooth path (one even move)' }).focus();
+	await page.keyboard.press('ArrowDown');
+	await page.keyboard.press('ArrowDown');
+	await expect(page.getByRole('option', { name: 'Smooth path (one even move)' })).toBeFocused();
 	await page.keyboard.press('Enter');
 	await expect(dialog).toBeVisible();
 	await expect(method).toContainText('Smooth path');

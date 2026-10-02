@@ -2,7 +2,7 @@ import { EngineClient } from '@jasper/engine-client';
 import { mgRegistry } from '@jasper/mg-templates';
 import { createEmptyProject, createRandomIdSource, defaultRegistries } from '@jasper/project';
 import { EditorSession, MemoryProjectStore } from '@jasper/session';
-import { toasts } from '@jasper/ui';
+import { Dialog, Select, toasts } from '@jasper/ui';
 import { act, render } from '@testing-library/react';
 import { type DockviewApi, DockviewReact } from 'dockview-react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -362,6 +362,45 @@ describe('keyboard dispatcher', () => {
 		});
 		expect(res?.command.id).toBe('x.global');
 		expect(classifyTarget(document.createElement('textarea'))).toBe('editable');
+	});
+
+	it('keys in a modal dialog reach its controls: Enter / Space / ↓ open a focused Select, no shortcut runs', async () => {
+		const play = vi.fn();
+		const next = vi.fn();
+		const { off } = mount('timeline', [
+			cmd('transport.playStop', 'editing', play),
+			cmd('transport.nextEdit', 'editing', next),
+		]);
+		try {
+			for (const key of ['Enter', ' ', 'ArrowDown']) {
+				const view = render(
+					<Dialog open onOpenChange={() => {}} title="D" primaryLabel="Go" onPrimary={() => false}>
+						<Select
+							label="Pick"
+							value="a"
+							onValueChange={() => {}}
+							options={[
+								{ value: 'a', label: 'Alpha' },
+								{ value: 'b', label: 'Beta' },
+							]}
+						/>
+					</Dialog>,
+				);
+				const trigger = view.getByRole('combobox', { name: 'Pick' });
+				expect(classifyTarget(trigger)).toBe('overlay');
+				trigger.focus();
+				const code = key === ' ' ? 'Space' : key;
+				await act(async () => {
+					trigger.dispatchEvent(new KeyboardEvent('keydown', { key, code, bubbles: true, cancelable: true }));
+				});
+				expect(trigger.getAttribute('aria-expanded'), key).toBe('true');
+				view.unmount();
+			}
+			expect(play).not.toHaveBeenCalled();
+			expect(next).not.toHaveBeenCalled();
+		} finally {
+			off();
+		}
 	});
 
 	it('AC-KB-4: the default keymap has no duplicate bindings per scope (every platform/runtime)', () => {

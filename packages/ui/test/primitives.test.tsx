@@ -465,3 +465,15 @@ describe('Dialog Enter key (S05)', () => {
 		expect(onPrimary).toHaveBeenCalledTimes(1);
 	});
 });
+
+describe('Dialog is modal for assistive tech and keyboard dispatchers (S05)', () => {
+	it('sets aria-modal on the dialog element', () => {
+		render(
+			<Dialog open onOpenChange={() => {}} title="M" primaryLabel="Go" onPrimary={() => false}>
+				<span>body</span>
+			</Dialog>,
+		);
+		const el = screen.getByRole('dialog');
+		expect(el.getAttribute('aria-modal')).toBe('true');
+	});
+});
