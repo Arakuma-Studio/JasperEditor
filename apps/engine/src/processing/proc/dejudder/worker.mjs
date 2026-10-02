@@ -226,6 +226,34 @@ function track(msg) {
 	}
 }
 
+/**
+ * Similarity / affine warp of an rgb48 frame (smooth-path stabiliser fallback, PST-005): `m` is the BACKWARD map
+ * (output pixel → source pixel) as [a, b, c, d, e, f]; bicubic, replicated or black borders.
+ */
+function warpAffine(msg) {
+	const { width: w, height: h, data, m, border } = msg;
+	const src = new cv.Mat(h, w, cv.CV_16UC3);
+	const dst = new cv.Mat();
+	const M = cv.matFromArray(2, 3, cv.CV_64F, m);
+	try {
+		src.data16U.set(data);
+		cv.warpAffine(
+			src,
+			dst,
+			M,
+			new cv.Size(w, h),
+			cv.INTER_CUBIC | cv.WARP_INVERSE_MAP,
+			border === 1 ? cv.BORDER_REPLICATE : cv.BORDER_CONSTANT,
+			new cv.Scalar(0, 0, 0, 0),
+		);
+		return new Uint16Array(dst.data16U);
+	} finally {
+		src.delete();
+		dst.delete();
+		M.delete();
+	}
+}
+
 async function main() {
 	const port = parentPort;
 	if (!port) throw new Error('dejudder worker: not running in a worker thread');
@@ -239,6 +267,9 @@ async function main() {
 		try {
 			if (msg.type === 'motion') {
 				port.postMessage({ type: 'motion', id: msg.id, ...motion(msg) });
+			} else if (msg.type === 'warpAffine') {
+				const data = warpAffine(msg);
+				port.postMessage({ type: 'warp', id: msg.id, data }, [data.buffer]);
 			} else if (msg.type === 'track') {
 				const r = track(msg);
 				port.postMessage({ type: 'track', id: msg.id, ...r }, [r.p0.buffer, r.p1.buffer]);

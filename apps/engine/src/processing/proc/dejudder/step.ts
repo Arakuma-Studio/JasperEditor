@@ -117,11 +117,36 @@ export function cellMeans(f: RgbFrame): Float64Array {
  * 0.20–0.31 and fast real motion ≤ 0.09.
  */
 export function isCut(a: RgbFrame, b: RgbFrame, threshold = CUT_THRESHOLD): boolean {
-	const ma = cellMeans(a);
-	const mb = cellMeans(b);
+	return cutScore(cellMeans(a), cellMeans(b)) > threshold;
+}
+
+/** The scene-cut measure of two frames' cell means (`cellMeans` / `greyCellMeans`): mean |Δ|, 0..1. */
+export function cutScore(ma: Float64Array, mb: Float64Array): number {
+	if (!ma.length || ma.length !== mb.length) return 0;
 	let sum = 0;
 	for (let c = 0; c < ma.length; c++) sum += Math.abs(ma[c] - mb[c]);
-	return ma.length > 0 && sum / (ma.length * 3 * 65535) > threshold;
+	return sum / (ma.length * 3 * 65535);
+}
+
+/**
+ * `cellMeans` of an 8-bit grey frame on the same scale (a grey pixel v counts as R = G = B = 257·v), so the
+ * smooth-path analysis (PST-005), which only decodes luma, uses the very same cut guard and threshold.
+ */
+export function greyCellMeans(grey: Uint8Array, w: number, h: number): Float64Array {
+	const cw = Math.ceil(w / CUT_GRID);
+	const ch = Math.ceil(h / CUT_GRID);
+	const sum = new Float64Array(cw * ch);
+	const cnt = new Float64Array(cw * ch);
+	for (let y = 0; y < h; y++) {
+		const row = ((y / CUT_GRID) | 0) * cw;
+		for (let x = 0; x < w; x++) {
+			const c = row + ((x / CUT_GRID) | 0);
+			sum[c] += 3 * 257 * grey[y * w + x];
+			cnt[c]++;
+		}
+	}
+	for (let c = 0; c < sum.length; c++) sum[c] /= cnt[c];
+	return sum;
 }
 
 export type DejudderStepOptions = {

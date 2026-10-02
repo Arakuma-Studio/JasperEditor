@@ -42,6 +42,17 @@ export type TrackParams = {
 type WorkerRequest =
 	| { type: 'motion'; id: number; width: number; height: number; a: Uint8Array; b: Uint8Array }
 	| {
+			type: 'warpAffine';
+			id: number;
+			width: number;
+			height: number;
+			data: Uint16Array;
+			/** Backward map (output → source) [a, b, c, d, e, f]. */
+			m: number[];
+			/** 1 = replicate, 0 = black. */
+			border: 0 | 1;
+	  }
+	| {
 			type: 'track';
 			id: number;
 			width: number;
@@ -206,6 +217,17 @@ export class CvPool {
 		params: TrackParams,
 	): Promise<TrackResult> {
 		return this.run({ type: 'track', width, height, a, b, params });
+	}
+
+	/** Affine warp of an rgb48 frame by a backward map, bicubic (smooth-path fallback warp). The buffer is copied. */
+	warpAffine(
+		width: number,
+		height: number,
+		data: Uint16Array,
+		m: number[],
+		border: 0 | 1,
+	): Promise<Uint16Array> {
+		return this.run({ type: 'warpAffine', width, height, data, m, border });
 	}
 
 	/** Backward warp of `near` by `t` of the near→far step (PST-013). The buffers are copied. */

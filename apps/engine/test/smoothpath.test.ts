@@ -19,6 +19,7 @@ import {
 	lineFit,
 	type Mat3,
 	minimalZoom,
+	planSegmentedSmoothPath,
 	planSmoothPath,
 	ransacSimilarity,
 	type Similarity,
@@ -230,6 +231,29 @@ describe('zoom and plan', () => {
 		expect(plan.zoom).toBeLessThanOrEqual(1.01);
 	});
 
+	it('a cut splits the shot: each segment gets its own path and zoom (a jump across the cut would not fit)', () => {
+		const a = jerk();
+		// second shot: a slow 0.5 px/frame drift; between them a "pair" that is really a cut (400 px jump)
+		const b = Array.from({ length: 59 }, () => sim(0, 1, -0.5, 0));
+		const pairs = [...a.slice(0, 44), sim(0, 1, -400, 0), ...b];
+		const o = { sigma: 20, lockVertical: true, lockRotation: true, maxZoom: 1.2, borders: 'crop' as const };
+		const whole = planSmoothPath(pairs, W, H, o);
+		expect(whole.fallback).not.toBeNull(); // treating the cut as camera motion needs far more zoom
+		const seg = planSegmentedSmoothPath(pairs, new Set([44]), W, H, o);
+		expect(seg.segments.map((s) => [s.firstFrame, s.stats.frames])).toEqual([
+			[0, 45],
+			[45, 60],
+		]);
+		expect(seg.backward).toHaveLength(pairs.length + 1);
+		expect(seg.segments.every((s) => s.fallback === null)).toBe(true);
+		expect(seg.segments[1]!.zoom).toBeLessThan(seg.segments[0]!.zoom); // own zoom per shot
+		expect(seg.zoom).toBe(seg.segments[0]!.zoom);
+		expect(seg.segments[1]!.stats.travelPx[0]).toBeCloseTo(-29.5, 6);
+		// the cut pair is not a camera move: the second shot starts on its own path
+		expect(seg.stats.rawSpeedMax1080).toBeLessThan(400);
+		expect(planSegmentedSmoothPath(pairs, new Set(), W, H, o).segments).toHaveLength(1);
+	});
+
 	it("borders 'keep' never zooms", () => {
 		const plan = planSmoothPath(jerk(), W, H, {
 			sigma: 30,
@@ -330,14 +354,14 @@ describe('smooth path on reframe.mp4 (jerky reframe + independent subject)', () 
 	});
 	afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-	const run = async (name: string, step: ProcessStep) => {
+	const run = async (name: string, step: ProcessStep, input = fixture('reframe.mp4')) => {
 		const output = join(dir, `${name}.mov`);
 		const scratch = join(dir, `scratch-${name}`);
 		mkdirSync(scratch, { recursive: true });
 		const events: ProcEvent[] = [];
 		const res = await runProc(
 			{
-				input: fixture('reframe.mp4'),
+				input,
 				output,
 				steps: [step],
 				ffmpeg: FFMPEG,
@@ -406,4 +430,115 @@ describe('smooth path on reframe.mp4 (jerky reframe + independent subject)', () 
 			true,
 		);
 	}, 600_000);
+
+	it('warps the same with the vid.stab WASM kernel and the OpenCV.js fallback', async () => {
+		const step: ProcessStep = {
+			op: 'stabilize',
+			method: 'smoothpath',
+			smoothing: 12,
+			borders: 'crop',
+			maxZoom: 115,
+		};
+		const saved = process.env.JASPER_SMOOTHPATH_WARP;
+		try {
+			process.env.JASPER_SMOOTHPATH_WARP = 'wasm';
+			const w = await run('rf-wasm', step);
+			process.env.JASPER_SMOOTHPATH_WARP = 'opencv';
+			const c = await run('rf-opencv', step);
+			expect(w.info.warp.engine).toBe('wasm');
+			expect(c.info.warp.engine).toBe('opencv');
+			expect(c.res.frames).toBe(90);
+			expect(c.info.zoomPercent).toBe(w.info.zoomPercent);
+			// same geometry: the two bicubic kernels (Catmull-Rom vs OpenCV a = −0.75) differ only in fine detail
+			const psnr = spawnSync(
+				FFMPEG,
+				['-v', 'info', '-i', w.output, '-i', c.output, '-lavfi', '[0:v][1:v]psnr', '-f', 'null', '-'],
+				{ encoding: 'utf8' },
+			);
+			const avg = Number(/PSNR .*average:([\d.]+|inf)/.exec(psnr.stderr)?.[1]);
+			console.log(`[smoothpath] wasm vs opencv warp PSNR ${avg} dB`);
+			expect(avg).toBeGreaterThan(38);
+			// and the stabilisation itself is as good with either
+			const peak = (a: number[]) => Math.max(...a.map(Math.abs));
+			expect(peak(columnShifts(c.output))).toBeLessThanOrEqual(peak(columnShifts(w.output)) + 1);
+		} finally {
+			if (saved === undefined) delete process.env.JASPER_SMOOTHPATH_WARP;
+			else process.env.JASPER_SMOOTHPATH_WARP = saved;
+		}
+	}, 900_000);
+
+	it('a shot with a cut is stabilised per segment (own path and zoom), the cut found by the de-judder guard', async () => {
+		const t = await truth();
+		// frames 0–44 of reframe.mp4, then a different shot: frames 45–89 mirrored and inverted
+		const cutInput = join(dir, 'cut.mkv');
+		const r = spawnSync(FFMPEG, [
+			...['-v', 'error', '-y', '-i', fixture('reframe.mp4'), '-filter_complex'],
+			'[0:v]split[a][b];[a]trim=end_frame=45,setpts=PTS-STARTPTS[a1];[b]trim=start_frame=45,setpts=PTS-STARTPTS,hflip,negate[b1];[a1][b1]concat=n=2:v=1[v]',
+			...['-map', '[v]', '-c:v', 'ffv1', '-pix_fmt', 'yuv420p', cutInput],
+		]);
+		expect(r.status, r.stderr?.toString()).toBe(0);
+		const { info, notes, res } = await run(
+			'rf-cut',
+			{
+				op: 'stabilize',
+				method: 'smoothpath',
+				smoothing: 12,
+				borders: 'crop',
+				lockVertical: true,
+				maxZoom: 120,
+			},
+			cutInput,
+		);
+		expect(res.frames).toBe(90);
+		console.log('[smoothpath] cut', JSON.stringify(info.segments), notes);
+		expect(info.cuts).toEqual([45]);
+		expect(
+			info.segments.map((s: { firstFrame: number; frames: number }) => [s.firstFrame, s.frames]),
+		).toEqual([
+			[0, 45],
+			[45, 45],
+		]);
+		// each shot's own camera travel (the second one is mirrored: it moves the other way)
+		const [s1, s2] = info.segments;
+		expect(Math.abs(s1.travelPx[0] + (t.xs[44] - t.xs[0]))).toBeLessThan(1.5);
+		expect(Math.abs(s2.travelPx[0] - (t.xs[89] - t.xs[45]))).toBeLessThan(1.5);
+		expect(s1.zoomPercent).not.toBe(s2.zoomPercent);
+		for (const s of info.segments) expect(s.zoomPercent).toBeLessThanOrEqual(120);
+		expect(notes.some((n) => /2 shots \(cut at frame 45\) stabilised separately/.test(n))).toBe(true);
+	}, 900_000);
+});
+
+// Real footage (read-only, outside the repo; skipped where it is not present): the cut decision on crudo.mp4.
+const CRUDO = '/var/lib/orquester/workspaces/jaspersito/MatsSmileTrailer/raw/crudo.mp4';
+describe.skipIf(!existsSync(CRUDO))('cut decision on real footage (crudo.mp4)', () => {
+	it('the operator reframe (frames 30–50) is not a cut; the shot change at frame 404 is', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'jasper-smoothpath-crudo-'));
+		try {
+			for (const [start, end, cuts] of [
+				[20, 60, []],
+				[390, 420, [14]],
+			] as const) {
+				const output = join(dir, `c${start}.mov`);
+				mkdirSync(join(dir, `s${start}`), { recursive: true });
+				const res = await runProc(
+					{
+						input: CRUDO,
+						output,
+						steps: [{ op: 'stabilize', method: 'smoothpath', smoothing: 10, borders: 'crop', maxZoom: 120 }],
+						range: { startFrame: start, endFrame: end },
+						ffmpeg: FFMPEG,
+						ffprobe: FFPROBE,
+						models: {},
+						threads: 4,
+						device: 'cpu',
+						scratch: join(dir, `s${start}`),
+					},
+					{ emit: () => {}, signal: new AbortController().signal, createStep: createStepImpl },
+				);
+				expect(res.sidecarData.steps[0]!.info.cuts).toEqual(cuts);
+			}
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	}, 900_000);
 });

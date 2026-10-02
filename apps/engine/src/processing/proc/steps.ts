@@ -48,14 +48,17 @@ export async function createStepImpl(step: ProcessStep, env: StepEnv): Promise<S
 			return { kind: 'filter', step: createDenoiseStep(step) };
 		case 'stabilize': {
 			if (step.method === 'smoothpath') {
-				// PST-005: OpenCV.js tracking + the vid.stab WASM warp kernel; no fallback to another method (the
-				// result would be a different kind of stabilisation), the job fails with a clear code instead.
-				if (!(await wasmAvailable()))
+				// PST-005: OpenCV.js tracking; the warp uses the vid.stab WASM kernel when it loads, else OpenCV.js.
+				// Never silently replaced by another method (a different kind of stabilisation).
+				let m: typeof import('./smoothpath/step.ts');
+				try {
+					m = await import('./smoothpath/step.ts');
+				} catch (e) {
 					throw new ProcError(
 						'SMOOTHPATH_UNAVAILABLE',
-						'smooth path needs the vid.stab WASM warp module, which could not be loaded',
+						`smooth path needs OpenCV.js: ${(e as Error).message}`,
 					);
-				const m = await import('./smoothpath/step.ts');
+				}
 				return { kind: 'frames', step: m.createSmoothPathStep(step) };
 			}
 			const engine = await stabilizeEngine(step, env, wasmAvailable);

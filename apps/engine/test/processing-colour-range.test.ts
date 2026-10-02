@@ -194,6 +194,9 @@ const RECIPES: Record<string, ProcessStep[]> = {
 			maxZoom: 115,
 		},
 	],
+	'smooth path (OpenCV.js warp)': [
+		{ op: 'stabilize', method: 'smoothpath', smoothing: 10, borders: 'keep', lockVertical: true },
+	],
 	'deshake crop': [{ op: 'stabilize', method: 'deshake', smoothing: 10, borders: 'crop' }],
 	'deshake keep': [{ op: 'stabilize', method: 'deshake', smoothing: 10, borders: 'keep' }],
 	'deblock + atadenoise + vid.stab': [
@@ -284,6 +287,9 @@ describe.skipIf(!FFMPEGS.length)('stabilised output keeps true black and white (
 					const output = join(dir, `${id}.mov`);
 					const scratch = join(dir, `scratch-${id}`);
 					mkdirSync(scratch, { recursive: true });
+					// The OpenCV.js fallback warp (PST-005) is chosen by the environment, like a machine without WASM.
+					const savedWarp = process.env.JASPER_SMOOTHPATH_WARP;
+					if (name.includes('OpenCV')) process.env.JASPER_SMOOTHPATH_WARP = 'opencv';
 					await runProc(
 						{
 							input: inputs[range],
@@ -298,7 +304,10 @@ describe.skipIf(!FFMPEGS.length)('stabilised output keeps true black and white (
 							vidstabEngine: 'wasm',
 						},
 						{ emit: () => {}, signal: new AbortController().signal, createStep: createStepImpl },
-					);
+					).finally(() => {
+						if (savedWarp === undefined) delete process.env.JASPER_SMOOTHPATH_WARP;
+						else process.env.JASPER_SMOOTHPATH_WARP = savedWarp;
+					});
 					// The output is ProRes tagged TV range: decode it as such (with the same ffmpeg and the LGPL one).
 					for (const dec of [fx.ffmpeg, FFMPEGS[0]!.ffmpeg]) {
 						const l = levels(dec, output, 'tv');

@@ -560,3 +560,55 @@ export function backwardToVsTransform(
 		zoom: (1 - z) * 100,
 	};
 }
+
+// ------------------------------------------------------------------ shots with cuts
+
+export type SegmentPlan = SmoothPathPlan & { firstFrame: number };
+
+export type SegmentedPlan = {
+	/** Per output frame, as SmoothPathPlan.backward (all segments concatenated). */
+	backward: number[][];
+	/** Each segment = one shot between cuts, planned on its own (own path, own smoothing fallback, own zoom). */
+	segments: SegmentPlan[];
+	/** Largest zoom of the segments (report). */
+	zoom: number;
+	/** Peak speeds over all segments (the pair across a cut is not a camera move and is never counted). */
+	stats: { rawSpeedMax1080: number; smoothedSpeedMax1080: number };
+};
+
+/**
+ * Splits a shot at its cuts and plans every segment independently (S07:PST-005, M3): the pairs across a cut
+ * (`cutAfter` holds pair indices i: frame i → i+1 is a cut) are not camera motion, so each shot gets its own
+ * camera path, smoothing (and fallback) and its OWN static zoom. A shared zoom (the max) was rejected: the framing
+ * change would coincide with the cut anyway, and the shot needing less zoom would lose resolution for nothing.
+ */
+export function planSegmentedSmoothPath(
+	pairs: readonly Similarity[],
+	cutAfter: ReadonlySet<number>,
+	width: number,
+	height: number,
+	o: SmoothPathOptions,
+): SegmentedPlan {
+	const frames = pairs.length + 1;
+	const segments: SegmentPlan[] = [];
+	let first = 0;
+	for (let i = 0; i <= pairs.length; i++) {
+		const end = i === pairs.length || cutAfter.has(i);
+		if (!end) continue;
+		const last = i; // frames first..last
+		const plan = planSmoothPath(pairs.slice(first, last), width, height, o);
+		segments.push({ ...plan, firstFrame: first });
+		first = last + 1;
+	}
+	const backward = segments.flatMap((s) => s.backward);
+	if (backward.length !== frames) throw new Error(`segmented plan: ${backward.length} frames for ${frames}`);
+	return {
+		backward,
+		segments,
+		zoom: Math.max(...segments.map((s) => s.zoom)),
+		stats: {
+			rawSpeedMax1080: Math.max(...segments.map((s) => s.stats.rawSpeedMax1080)),
+			smoothedSpeedMax1080: Math.max(...segments.map((s) => s.stats.smoothedSpeedMax1080)),
+		},
+	};
+}
