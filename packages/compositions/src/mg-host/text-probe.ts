@@ -225,12 +225,14 @@ var api = {
 // Headless measuring (the engine's own browser, S08:MGC-037): the same renderer-page protocol as the live host
 // driver (protocol.ts MgFrameHostDriver), run inside the page so the engine needs no module bundling.
 function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+// anime-allow: wall-clock timeouts of the page protocol, never animation time
+function now() { return Date.now(); }
 async function pageReady(timeout) {
-	var until = Date.now() + timeout;
+	var until = now() + timeout;
 	for (;;) {
 		if (typeof W.remotion_cancelledError === 'string') throw new Error(W.remotion_cancelledError.split('\n')[0]);
 		if (W.remotion_renderReady === true) break;
-		if (Date.now() > until) throw new Error('The composition page was not ready after ' + timeout + ' ms');
+		if (now() > until) throw new Error('The composition page was not ready after ' + timeout + ' ms');
 		await sleep(10);
 	}
 	try { await Promise.race([document.fonts.ready, sleep(2000)]); } catch (e) {}
@@ -239,9 +241,9 @@ var evaluated = false;
 var mounted = null;
 api.render = async function (c) {
 	var t = c.timeoutMs || 30000;
-	var until = Date.now() + t;
+	var until = now() + t;
 	while (typeof W.remotion_setBundleMode !== 'function' || typeof W.remotion_calculateComposition !== 'function') {
-		if (Date.now() > until) throw new Error('Not a Remotion 4.0.499 bundle page');
+		if (now() > until) throw new Error('Not a Remotion 4.0.499 bundle page');
 		await sleep(10);
 	}
 	var key = JSON.stringify([c.compositionId, c.props, c.width, c.height, c.fps, c.durationInFrames]);
@@ -249,8 +251,8 @@ api.render = async function (c) {
 		W.remotion_inputProps = JSON.stringify(c.props || {});
 		if (!evaluated) { W.remotion_setBundleMode({ type: 'evaluation' }); await pageReady(t); evaluated = true; }
 		if (typeof W.remotion_getCompositionNames === 'function') {
-			var u2 = Date.now() + Math.min(t, 10000);
-			while (Date.now() < u2) {
+			var u2 = now() + Math.min(t, 10000);
+			while (now() < u2) {
 				try { if (W.remotion_getCompositionNames().indexOf(c.compositionId) >= 0) break; } catch (e) {}
 				await sleep(10);
 			}

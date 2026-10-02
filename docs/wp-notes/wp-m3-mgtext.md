@@ -102,17 +102,19 @@ Results (dev stack engine 48630 / web 52630, appdir `/tmp/wp-m3-mgtext/appdir`):
 pnpm vitest run --project @jasper/project packages/project/test/composition-texts.test.ts
 pnpm vitest run --project @jasper/compositions packages/compositions/test/text-probe.test.ts
 pnpm vitest run --project @jasper/engine apps/engine/test/mg-bundles.test.ts          # manifest texts (unit)
-MG_E2E=1 pnpm vitest run --project @jasper/engine apps/engine/test/mg-bundles.test.ts -t "hybrid text layers"
+MG_E2E=1 pnpm vitest run --project @jasper/engine apps/engine/test/mg-bundles.test.ts -t "hybrid text layers|measures text layout"
 MG_E2E=1 MCP_MG_TEST_PORT=48632 pnpm vitest run --project @jasper/mcp apps/mcp/test/compositions.test.ts
 E2E_PORT=48630 pnpm e2e e2e/mg-texts.spec.ts      # also e2e/mg-clips.spec.ts (fixture now has 3 compositions)
 ```
 
-Results on this branch (host heavily loaded): unit `composition-texts` 8/8, `text-probe` 5/5, web
-`composition-texts` 4/4, engine `mg-bundles` unit 15/15 (one zod-3 schema test timed out once at 5 s under load,
-passes alone); `MG_E2E` engine "hybrid text layers" passed (export vs direct still ≥ 99 % within 3/255 at the
-hold, frame-exact at the entrance, embedded font inside the name box); `MG_E2E` MCP compositions 2/2;
-Playwright `mg-texts` 2/2 and `mg-clips` 3/3 (`E2E_PORT=48630`); full `pnpm test` 156 files passed, the only
-failure was the README tool count (fixed: 69 tools); `pnpm -s typecheck` and `pnpm -s lint` clean.
+Results on this branch (host heavily loaded): unit `composition-texts` 10/10, `text-probe` 5/5, web
+`composition-texts` 4/4 and `mg-runtime-budget` 2/2, engine `mg-text-measure` 1/1 and `mg-bundles` unit; `MG_E2E`
+engine "test 2", "hybrid text layers" (export vs direct still ≥ 99 % within 3/255, frame-exact, embedded font)
+and "measures text layout in the engine browser" (clipped name, wrapped quote outside its box) passed; `MG_E2E` MCP
+compositions 2/2 (port 48632; includes engine-measured `MG_TEXT_CLIPPED`); Playwright `mg-texts` 3/3 (accent
+markup, host borrowing) and `mg-clips` 3/3 (`E2E_PORT=48630`); full `pnpm test` green apart from the anime-lint
+false positive on the probe's protocol timeouts (fixed with an `anime-allow` helper, re-run green);
+`pnpm -s typecheck` and `pnpm -s lint` clean.
 
 ## Known gaps / deviations
 
