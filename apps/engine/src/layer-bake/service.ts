@@ -225,6 +225,7 @@ export class LayerBakeService {
 	private readonly hashes = new FileHashCache();
 	private readonly now: () => Date;
 	private gcTimer: NodeJS.Timeout | null = null;
+	private offCache: (() => void) | null = null;
 	private bytes = 0;
 	private bytesPending: Promise<void> | null = null;
 	/** Keys read by running jobs (lease count): the GC never removes them (S11:LBK-021). */
@@ -313,6 +314,27 @@ export class LayerBakeService {
 
 	async start(): Promise<void> {
 		await mkdir(this.dir, { recursive: true });
+		const cache = this.core.cache;
+		if (cache) {
+			// M3 (wp-m3-cachegc): the engine's cache registry cleans `cache/layers/` (kind `layers`, 14 days by default)
+			// with project references and budgets; it keeps leased and in-flight entries, and its removals go through
+			// `removing` so that lookups wait for them and miss.
+			this.offCache = cache.registerAdapter('layers', {
+				busy: (key) => this.leases.has(key) || this.inflight.has(key),
+				remove: (key, remove) => {
+					const p = remove();
+					const done = p
+						.then(
+							() => undefined,
+							() => undefined,
+						)
+						.finally(() => this.removing.delete(key));
+					this.removing.set(key, done);
+					return p.finally(() => void this.refreshBytes());
+				},
+			});
+			return;
+		}
 		void this.gc().catch(() => undefined);
 		this.gcTimer = setInterval(() => void this.gc().catch(() => undefined), 24 * 3600 * 1000);
 		this.gcTimer.unref();
@@ -321,6 +343,8 @@ export class LayerBakeService {
 	stop(): void {
 		if (this.gcTimer) clearInterval(this.gcTimer);
 		this.gcTimer = null;
+		this.offCache?.();
+		this.offCache = null;
 	}
 
 	/**

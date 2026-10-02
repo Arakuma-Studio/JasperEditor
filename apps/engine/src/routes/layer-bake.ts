@@ -107,6 +107,13 @@ export default async function layerBakeRoutes(app: FastifyInstance): Promise<voi
 				...(projectId ? { projectId } : {}),
 				origin: { type: 'user' },
 			});
+			// M3 (wp-m3-cachegc): the project's latest preview of this clip needs the bake and its graded entry
+			// (replaced on the next preview of the clip; dropped when the project is deleted).
+			if (projectId)
+				core.cache.setRefs(`layer-preview:${projectId}:${body.clipId}`, projectId, [
+					join(svc.dir, bake.key),
+					join(svc.dir, grade.key),
+				]);
 			if (req.query.wait === '1') {
 				const done = await core.queue.wait(job.id);
 				if (done.state !== 'succeeded')

@@ -224,9 +224,13 @@ export class MgBundleService {
 		for (const n of await readdir(this.bundlesDir).catch(() => [] as string[]))
 			if (n.startsWith('.staging-')) await rm(join(this.bundlesDir, n), { recursive: true, force: true });
 		if (this.o.localMode) await this.restoreWatches();
-		void this.gc().catch(() => undefined);
-		this.gcTimer = setInterval(() => void this.gc().catch(() => undefined), 24 * 3600 * 1000);
-		this.gcTimer.unref();
+		// M3 (wp-m3-cachegc): the engine's cache registry cleans `mg/<renderKey>/` (kind `mg-renders`) with project
+		// references, pins and budgets; this service's own 14-day pass only runs without it.
+		if (!this.core.cache) {
+			void this.gc().catch(() => undefined);
+			this.gcTimer = setInterval(() => void this.gc().catch(() => undefined), 24 * 3600 * 1000);
+			this.gcTimer.unref();
+		}
 	}
 
 	async stop(): Promise<void> {
@@ -692,6 +696,11 @@ export class MgBundleService {
 
 	private renderDir(renderKey: string): string {
 		return join(this.mgDir, renderKey);
+	}
+
+	/** `<appdir>/mg/<renderKey>` (M3: the cache entry exports pin). */
+	renderDirOf(renderKey: string): string {
+		return this.renderDir(renderKey);
 	}
 
 	/** Cached result of a render key (master and/or preview present), or null. */

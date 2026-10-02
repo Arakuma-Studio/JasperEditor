@@ -93,6 +93,7 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('app.preferences', 'General…'),
 				// wp-m3-transdefaults (S10:TUI-031): default transitions and durations.
 				c('app.preferences', 'Timeline…', { page: 'timeline' }),
+				c('cache.preferences', 'Media Cache…'),
 				sub('Appearance', [
 					c('view.theme.darkest', 'Darkest'),
 					c('view.theme.dark', 'Dark'),

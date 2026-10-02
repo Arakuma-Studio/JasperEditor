@@ -11,6 +11,7 @@ import {
 	parseEngineRuntime,
 } from '@jasper/config';
 import type { FastifyInstance } from 'fastify';
+import { repairCacheLocation } from './cache/location.ts';
 import { type EngineConfig, isLoopbackHost } from './context.ts';
 import { createServer } from './server.ts';
 import { ENGINE_VERSION } from './version.ts';
@@ -36,6 +37,8 @@ export type RunningEngine = {
 
 export function prepareAppdir(appdir: string): void {
 	const p = appdirPaths(appdir);
+	// M3 (wp-m3-cachegc, S04:CA-021): the cache folders may live elsewhere (links); finish an interrupted move first.
+	repairCacheLocation(appdir, (m) => console.warn(m));
 	for (const dir of [
 		p.engineDir,
 		p.logsDir,

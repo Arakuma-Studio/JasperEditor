@@ -2,6 +2,7 @@
 import type { FastifyInstance } from 'fastify';
 import agentRoutes from './agent.ts';
 import animeRoutes from './anime.ts';
+import cacheRoutes from './cache.ts';
 import capabilitiesRoutes from './capabilities.ts';
 import colorRoutes from './color.ts';
 import eventsRoutes from './events.ts';
@@ -32,6 +33,8 @@ export const ROUTE_PLUGINS = [
 	mgRoutes,
 	agentRoutes,
 	mcpRoutes,
+	// M3 (wp-m3-cachegc): Media Cache routes over the core cache registry (after agent: its relay marks open projects).
+	cacheRoutes,
 	// M2 (ARCHITECTURE §19.8): one plugin per work package.
 	colorRoutes,
 	processingRoutes,

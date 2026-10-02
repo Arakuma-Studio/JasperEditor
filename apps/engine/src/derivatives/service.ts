@@ -316,6 +316,19 @@ export class DerivativeService {
 		return jobs;
 	}
 
+	/**
+	 * S04:CA-004 (M3, wp-m3-cachegc): the automatic artifacts of a media that are missing — never made, or removed by
+	 * the cache GC — are queued again (failed ones stay failed until retried). Returns the jobs queued.
+	 */
+	regenerateMissing(
+		r: MediaRecord,
+		status: Readonly<Record<DerivativeKind, DerivativeStatus>>,
+		projectId?: string,
+	): EngineJob[] {
+		const missing = autoKinds(r).filter((k) => status[k]?.state === 'none');
+		return missing.length ? this.request(r, missing, projectId ? { projectId } : {}) : [];
+	}
+
 	/** IN-011 follow-up jobs after registration. */
 	autoQueue(r: MediaRecord, projectId?: string): EngineJob[] {
 		return this.request(r, autoKinds(r), { ...(projectId ? { projectId } : {}) });

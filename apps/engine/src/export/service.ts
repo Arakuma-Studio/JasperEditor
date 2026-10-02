@@ -13,6 +13,7 @@ import {
 	type RenderVisualClip,
 } from '@jasper/project';
 import type { UrlSigner } from '../auth/signed-url.ts';
+import type { CacheService } from '../cache/service.ts';
 import type { Broadcaster } from '../events/broadcaster.ts';
 import type { FontCatalogService } from '../fonts/catalog.ts';
 import type { JobQueue } from '../jobs/queue.ts';
@@ -24,7 +25,12 @@ import { audioEncodeArgs, type EncoderService, videoEncodeArgs } from '../tools/
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { exists, randomId } from '../tools/fs.ts';
 import { BT709_FRAME_TAGS, buildNativeGraph, SWS_FLAGS } from './native.ts';
-import { type NativeExtension, NativeExtensionRegistry, prepareExtensions } from './native-ext.ts';
+import {
+	layerOverride,
+	type NativeExtension,
+	NativeExtensionRegistry,
+	prepareExtensions,
+} from './native-ext.ts';
 import {
 	isAnimeTemplate,
 	mediaKeyOf,
@@ -96,6 +102,11 @@ export class ExportService {
 	private mgProvider: MgMasterProvider | null = null;
 	/** M2 native extensions (ARCHITECTURE §19.6). */
 	readonly nativeExtensions = new NativeExtensionRegistry();
+	/**
+	 * M3 (wp-m3-cachegc): the cache registry. Exports and stills pin every cache file they read for the job's
+	 * lifetime and record them as used by their project (`export:<projectId>:<sequenceId>`, CA-012/CA-016).
+	 */
+	cache: CacheService | null = null;
 
 	constructor(private readonly deps: ExportServiceDeps) {}
 
@@ -250,6 +261,38 @@ export class ExportService {
 		}
 	}
 
+	// ------------------------------------------------------------------ cache (M3, wp-m3-cachegc)
+
+	/** `NativePrepareContext.pin` of a job: holds the cache entry of `path` until the job ends. */
+	private pinFor(ctx: JobContext): ((path: string) => Promise<boolean>) | undefined {
+		const cache = this.cache;
+		return cache ? (path) => cache.acquireForJob(ctx.job.id, path) : undefined;
+	}
+
+	/** Pins what the composite reads from the cache: every layer override and fframes master. */
+	private async pinInputs(
+		ctx: JobContext,
+		planned: PlannedExport,
+		exts: readonly NativeExtension[],
+		prepared: ReadonlyMap<string, unknown>,
+		masters: ReadonlyMap<string, string> = new Map(),
+	): Promise<void> {
+		if (!this.cache) return;
+		const paths = new Set(masters.values());
+		for (const clip of planned.snapshot.videoTracks.flatMap((t) => t.clips)) {
+			const o = layerOverride(exts, prepared, clip);
+			if (o) paths.add(o.path);
+		}
+		for (const p of paths) await this.cache.acquireForJob(ctx.job.id, p);
+	}
+
+	/** Records the cache entries this job used as its project's ref set for the sequence (survives restarts). */
+	private commitRefs(ctx: JobContext, planned: PlannedExport, what: 'export' | 'still'): void {
+		const pid = planned.document.projectId;
+		if (!this.cache || !pid) return;
+		this.cache.commitHolderRefs(`job:${ctx.job.id}`, `${what}:${pid}:${planned.sequenceId}`, pid);
+	}
+
 	// ------------------------------------------------------------------ runners
 
 	private async loadRequest(ctx: JobContext): Promise<StoredRequest> {
@@ -314,11 +357,13 @@ export class ExportService {
 				...(planned.document.projectId ? { projectId: planned.document.projectId } : {}),
 				purpose: 'native',
 				concurrency: remotionConcurrency(ctx.slots),
+				...(this.pinFor(ctx) ? { pin: this.pinFor(ctx) } : {}),
 			});
 		} catch (e) {
 			if (ctx.signal.aborted) throw e;
 			throw new NativePrepareError(e);
 		}
+		await this.pinInputs(ctx, planned, exts, prepared, masters);
 		const graph = buildNativeGraph({
 			snapshot: planned.snapshot,
 			output: planned.output,
@@ -457,6 +502,10 @@ export class ExportService {
 			...(planned.document.projectId ? { projectId: planned.document.projectId } : {}),
 			purpose: 'remotion',
 			concurrency: remotionConcurrency(ctx.slots),
+			...(this.pinFor(ctx) ? { pin: this.pinFor(ctx) } : {}),
+		}).then(async (prepared) => {
+			await this.pinInputs(ctx, planned, exts, prepared);
+			return prepared;
 		});
 	}
 
@@ -685,6 +734,7 @@ export class ExportService {
 			...(warnings.length ? { warnings } : {}),
 			planId: planned.plan.planId,
 		};
+		this.commitRefs(ctx, planned, 'export');
 		this.deps.broadcaster.publish(
 			'export.finished',
 			{
@@ -770,6 +820,7 @@ export class ExportService {
 				signal: ctx.signal,
 			});
 		}
+		this.commitRefs(ctx, planned, 'still');
 		await rm((ctx.input as { request: string }).request, { force: true });
 		return {
 			url: `/renders/${ctx.job.id}/output`,

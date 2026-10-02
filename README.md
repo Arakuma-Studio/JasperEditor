@@ -348,7 +348,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (71; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (72; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -366,6 +366,7 @@ Tools (71; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the
 - Animation and graphics: `list_text_animations` `set_text_animation` `render_frames` `set_motion_graphic_params`
   `add_shape`.
 - Clipboard: `copy_clips` `paste_clips` `copy_items` `paste_items`.
+- Media cache: `get_cache_usage` `clean_cache` `set_cache_location`.
 
 Resources: `jasper://projects/{projectId}/document`, `jasper://projects/{projectId}/timeline`,
 `jasper://guide`. Prompt: `edit-video`.
@@ -532,6 +533,34 @@ graphics)** and lists one graphics group per baked layer.
 - Engine tests with real renders: `REMOTION_E2E=1 pnpm --filter @jasper/engine exec vitest run test/layer-bake.e2e.test.ts
   test/layer-bake-parallel.e2e.test.ts` (the second compares parallel and sequential bakes byte for byte;
   `LAYER_BAKE_BENCH=1` adds the benchmark); Playwright: `e2e/layer-bake.spec.ts`.
+
+## Media cache
+
+The engine keeps everything it can make again — waveforms, posters, filmstrips, keyframe indexes, proxies, baked
+colour LUTs, warped layers (tracking / keyframed Motion), graphics bakes, motion-graphics renders, export outputs,
+rendered frames, build caches — in one cache under the appdir. **Edit ▸ Preferences ▸ Media Cache…** shows how much
+each kind uses, split into *in use* (running exports, projects open in an editor, files written in the last minutes),
+*used by saved projects* and *unused*:
+
+- **Clean Unused** removes what no project uses (like Premiere's *Delete Unused*).
+- **Clean All (not in use)…** also removes what saved projects use; it is made again when needed (the first preview
+  or export of such a project is slower). What open projects and running exports use is always kept.
+- **Automatic cleaning** (at start-up, every hour and after renders): unused files older than 30 days (graphics bakes
+  and motion-graphics renders 14, export outputs 7, rendered frames 1), then the least recently used unused files
+  while the cache is over its size limit (automatic: 25 GB or 15 % of the free disk, whichever is smaller; or a custom
+  limit; per-kind limits in the table). Files saved projects use are never removed automatically.
+
+**Location** (Change…): the cache can live on another disk — pick a folder, Check it (writable, free space), then
+*Move the existing cache there* (instant on the same disk, copied with progress otherwise) or *Start a new, empty
+cache there*; Move Back to Default returns it to the data folder. The move waits for running jobs. Days per kind may
+be `never`. Engine logs and the job history are not cache; they are kept 30 days / 256 MB by default (same table).
+
+Keyframed grades write one LUT per distinct state; identical tables share one file (content-addressed). Removal is
+crash-safe (rename to `.trash-*`, then delete; leftovers of interrupted writes are swept). Agents use
+`get_cache_usage`, `clean_cache` and `set_cache_location`; scripts `GET /api/cache`, `POST /api/cache/clean
+{"mode":"unused"|"all"}`, `GET/PUT /api/cache/settings` and `POST /api/cache/location[/check]`. Details:
+`docs/specs/04-media-render-and-backend.md` §7.5 (CA-010…021),
+`docs/wp-notes/wp-m3-cachegc.md`.
 
 ## Tests
 

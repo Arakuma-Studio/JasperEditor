@@ -88,6 +88,13 @@ export type NativePrepareContext = {
 	 */
 	purpose?: 'native' | 'remotion';
 	concurrency?: number;
+	/**
+	 * M3 (wp-m3-cachegc, additive): holds a cache file (or a file inside a cache entry) for this export/still until the
+	 * job ends — the cache GC never removes it meanwhile, and the export records it as used by its project — and tells
+	 * whether it exists (waiting for a removal in progress, which then counts as missing). Call it BEFORE checking or
+	 * writing a cached file; absent (unit tests) = plain existence check.
+	 */
+	pin?(path: string): Promise<boolean>;
 };
 
 export type NativeExtension = {

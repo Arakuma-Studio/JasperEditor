@@ -25,6 +25,8 @@ export const JOB_KINDS = [
 	'mg-prerender',
 	'layer-bake',
 	'remote-setup',
+	// M3 (wp-m3-cachegc): moving the media cache to another folder (S04:CA-021)
+	'cache-move',
 ] as const;
 export const JobKindSchema = z.enum(JOB_KINDS);
 export type JobKind = z.infer<typeof JobKindSchema>;

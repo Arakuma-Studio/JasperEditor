@@ -527,7 +527,70 @@ proxies during playback switches source within one second without changing the p
   15% of free disk at start, whichever is smaller; configurable in Settings ▸ Media Cache). Artifacts used by the open
   project are pinned. Settings shows the size, a "Clean cache now" button and the cache location (desktop: movable).
 - **CA-004 (P0)** Missing or corrupt artifacts are regenerated transparently on demand; the client treats an
-  artifact 404 as "not ready" and subscribes to its readiness event.
+  artifact 404 as "not ready" and subscribes to its readiness event. *(M3: `GET /api/media/:key` queues the automatic
+  derivatives whose state is `none` — e.g. after a Clean All — so opening a project brings them back.)*
+
+#### Media cache registry and garbage collection (M3, wp-m3-cachegc)
+
+- **CA-010 (P0)** One registry covers every regenerable file the engine writes, by kind: media cache files
+  (keyframe index, poster, filmstrip, peaks), proxies, baked colour LUTs, warped layers, graphics bakes (layer bake),
+  motion-graphics renders (composition pre-renders, fframes renders), Motion Templates posters, export outputs,
+  rendered frames (stills) and build caches (Remotion bundles, jasper-proc bundle). Entries are found by scanning the
+  appdir (the disk is the truth); `engine/cache-index.json` only adds what the disk cannot tell. Media files, processed
+  versions, composition bundles, models and projects are never cache.
+- **CA-011 (P0)** Each entry has a kind, a key, its paths, its size and a last access (served files, pins, owner
+  `lastUsedAt`, newest mtime). The index is written atomically and debounced; losing it only loses access times and
+  recorded references.
+- **CA-012 (P0)** References: a saved project references the derivatives of its media (by fingerprint), the preview
+  and master pre-renders of its composition clips (the render keys the editor and the export compute), the renders
+  of its fframes motion-graphic clips (the M1 render key of each clip's spec), the posters of its bundles, and what its last export / still / graded-layer preview of each sequence / clip read (ref sets
+  recorded by the job, replaced by the next run of the same scope, persisted across restarts, dropped when the
+  project is deleted).
+- **CA-013 (P0)** Usage (`GET /api/cache`, Preferences ▸ Media Cache, MCP `get_cache_usage`) reports per kind the
+  entries and bytes split into *in use*, *referenced by saved projects* and *unused*, the effective limits, the total
+  against the budget, free disk, the cache location (local mode) and the last cleaning.
+- **CA-014 (P0)** Cleaning (`POST /api/cache/clean`, MCP `clean_cache`): **Clean Unused** removes every unused
+  entry; **Clean All (not in use)** also removes what saved projects reference (regenerated on demand, CA-004). Never
+  removed: entries pinned by a running job, rendered by an active job (its dedupe key or id names the entry), held by
+  an owner (layer-bake leases), referenced by a project open in an editor (lease or editor relay connection), written
+  or used in the last 2 minutes, and the current Remotion bundle. The UI asks before Clean All.
+- **CA-015 (P1)** Automatic cleaning (on by default; at start-up, hourly and 60 s after export/still/proxy/
+  pre-render/bake/process jobs): unused entries older than their kind's age limit (global 30 days; graphics bakes and
+  motion-graphics renders 14, export outputs 7, rendered frames 1), then least-recently-used unused entries while a
+  kind's size limit or the total budget (CA-003: automatic = min(25 GB, 15 % of free disk + cache at start), or
+  custom) is exceeded. Referenced and in-use entries are never removed automatically, even over budget (the UI says
+  so). Settings (`GET/PUT /api/cache/settings`, `<appdir>/engine/cache.json`) apply at once (ENG-012).
+- **CA-016 (P0)** Concurrency: producers that reuse or write a cached file first pin it for their job
+  (`NativePrepareContext.pin` / `CacheService.acquire`), which waits for a removal in progress and then reports a miss;
+  a pass checks protection and starts a removal in one synchronous step. Exports and stills pin every cache file the
+  composite reads (layer overrides, fframes masters, LUTs) until the job ends; served cache files are pinned while
+  they stream.
+- **CA-017 (P0)** Crash safety: writers use temporary names and atomic renames; a removal renames the entry to
+  `.trash-*` first (atomic: lookups miss from then on), then deletes it, and puts it back when a rename fails (a busy
+  file on Windows: retried next pass). The orphan sweep removes trash, temporary files of interrupted writes once
+  nothing wrote to them for an hour, and scratch directories of jobs that are gone.
+- **CA-018 (P1)** Passes are serialised; the usage scan is shared by concurrent callers.
+- **CA-019 (P1)** Agents: MCP `get_cache_usage` (MB per kind, location, logs), `clean_cache {mode: unused|all,
+  kinds?}` and `set_cache_location {path|null, mode?, keepOld?, wait?}`.
+- **CA-020 (P1)** Engine logs and the job journal are not cache but must not grow forever: log files
+  (`engine/logs/**`) older than `logs.maxAgeDays` (default 30) go, then the oldest while the folder exceeds
+  `logs.maxBytes` (default 256 MB; today's log is kept); the Remotion usage log (LC-004) drops lines older than
+  400 days once it passes 1 MB (13 months of monthly counts always kept); the job journal is compacted (finished jobs
+  older than 7 days beyond the newest 500, also dropped from memory) whenever it passes 2 MB. Runs with every
+  automatic pass. Usage shows "Logs and job history" (size, files) with its two limits; Clean Unused / All never touch
+  them. Per-kind age limits accept `null` ("never": kept until cleaned by hand) in the UI too.
+- **CA-021 (P1)** Cache location (Preferences ▸ Media Cache ▸ Location ▸ Change…, `POST /api/cache/location/check`,
+  `POST /api/cache/location`, MCP `set_cache_location`; local mode only): a chosen folder gets a
+  `JasperEditor Media Cache` sub-folder holding `cache/`, `mg/`, `renders/` and `tmp/` (tmp moves along so renames from
+  job scratch into the cache stay on one disk); `<appdir>/<dir>` becomes a directory link (junction on Windows), so
+  every service keeps its paths. The check validates an absolute, writable folder outside the data and current cache
+  folders whose cache sub-folders are empty, with free space for the copy (+100 MB). The move is a `cache-move` job
+  that takes every CPU slot (waits for running jobs; nothing else starts) inside the cleaning chain: *move* renames on
+  the same disk or copies with progress to `<dir>.partial-<id>` first; *fresh* starts empty (`keepOld` keeps the old
+  files as `Old Media Cache <id>`). The setting is written, then each link switched atomically; the old files go
+  last. `engine/cache-move.json` journals the steps: at start the engine rolls back an interrupted copy, completes an
+  interrupted switch, re-creates links, and falls back to a fresh cache in the data folder (with a warning) when the
+  location is unavailable. A settings PUT never changes the location.
 
 ---
 
