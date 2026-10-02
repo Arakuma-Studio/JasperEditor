@@ -190,16 +190,93 @@ test('double-click a text in the Program monitor edits it in place in the bundle
 	await input.press('Control+a');
 	await input.pressSequentially('Imagination is the Discovering Faculty,');
 	await input.press('Enter'); // a new row in a multi-line text
-	await input.pressSequentially('pre-eminently.');
+	await input.pressSequentially('*pre-eminently.*');
+	// Accent markup (manifest `accent: "accent"`): the span is drawn in the accent colour; its asterisks show only
+	// while the caret is between them.
+	const accentSpan = input.locator('[data-accent]');
+	await expect(accentSpan).toHaveText('pre-eminently.');
+	expect(await accentSpan.evaluate((el) => getComputedStyle(el).color)).toBe('rgb(51, 102, 255)');
+	// The caret after the closing asterisk is outside the span: the markup is hidden.
+	const marks = input.locator('[data-mark]');
+	await expect(marks).toHaveCount(2);
+	const display = () => marks.evaluateAll((els) => els.map((e) => getComputedStyle(e).display));
+	await expect.poll(display).toEqual(['none', 'none']);
+	await input.press('ArrowLeft'); // into the span: its asterisks show (dimmed) and can be edited
+	await expect.poll(display).toEqual(['inline', 'inline']);
+	await input.press('Control+Home'); // out again
+	await expect.poll(display).toEqual(['none', 'none']);
 	await input.press('Control+Enter');
 	await expect(input).toBeHidden();
 	await expect.poll(async () => (await appliedLabels(page)).slice(before)).toEqual(['Edit Text «Quote»']);
-	expect((await props()).quote).toBe('Imagination is the Discovering Faculty,\npre-eminently.');
+	expect((await props()).quote).toBe('Imagination is the Discovering Faculty,\n*pre-eminently.*');
 	await expect
 		.poll(() => hostText('lt-quote'), { timeout: 10_000 })
 		.toBe('Imagination is the Discovering Faculty,\npre-eminently.');
 	await expect(page.getByTestId('text-quote')).toHaveValue(
-		'Imagination is the Discovering Faculty,\npre-eminently.',
+		'Imagination is the Discovering Faculty,\n*pre-eminently.*',
 	);
+	expect(watcher.errors.filter((e) => !/favicon|ERR_ABORTED|Failed to load resource/.test(e))).toEqual([]);
+});
+
+test('more than 4 composition clips: editing on canvas takes a live host from the clip farthest from the playhead', async () => {
+	test.setTimeout(900_000);
+	const mediaId = await page.evaluate(async () => {
+		const api = (window as unknown as { jasper: { query(n: string, a: unknown): Promise<unknown> } }).jasper;
+		const m = (await api.query('media.list', {})) as { media: { mediaId: string; kind: string }[] };
+		return m.media.find((x) => x.kind === 'mg-bundle')!.mediaId;
+	});
+	const transact = (commands: unknown[]) =>
+		page.evaluate(
+			async (c) =>
+				(
+					window as unknown as { jasper: { transact(tx: unknown): Promise<Record<string, unknown>> } }
+				).jasper.transact({ label: 'setup', commands: c }),
+			commands,
+		);
+	// Four badges mount first and take the four live hosts…
+	const r1 = await transact(
+		['V2', 'V3', 'V4', 'V5'].map((track) => ({
+			type: 'clip.addComposition',
+			composition: { mediaId, id: 'Badge' },
+			at: 200,
+			track,
+		})),
+	);
+	expect(r1.ok, JSON.stringify(r1)).toBe(true);
+	await query(page, 'playhead.set', { frame: 230 });
+	const hosts = page.locator('[data-testid="program-monitor"] iframe[data-mg-host]');
+	await expect(hosts).toHaveCount(4, { timeout: 60_000 });
+	// …so a fifth composition (the LowerThird on top) shows the idle card.
+	const r2 = await transact([
+		{
+			type: 'clip.addComposition',
+			composition: { mediaId, id: 'LowerThird' },
+			at: 200,
+			track: 'V6',
+			ref: '$lt',
+		},
+	]);
+	expect(r2.ok, JSON.stringify(r2)).toBe(true);
+	const lt = (r2.refs as Record<string, string>).$lt!;
+	await query(page, 'playhead.set', { frame: 240 }); // badges are 60 frames long: 200–259
+	await expect(page.locator('[data-testid="program-monitor"] [data-mg-card="idle"]')).toHaveCount(1, {
+		timeout: 30_000,
+	});
+	await expect(page.locator(`iframe[data-mg-host-clip="${lt}"]`)).toHaveCount(0);
+
+	// Double-click its quote: it gets a live host (still 4 in all) and the editor opens on the text.
+	const p = await screenPoint(400, 150);
+	await page.mouse.dblclick(p.x, p.y);
+	const input = page.getByTestId('mg-text-canvas-input');
+	await expect(input).toBeVisible({ timeout: 60_000 });
+	await expect(input).toHaveAttribute('data-text-path', 'quote');
+	await expect(page.locator(`iframe[data-mg-host-clip="${lt}"]`)).toHaveCount(1);
+	await expect(hosts).toHaveCount(4);
+	await expect(page.locator('[data-testid="program-monitor"] [data-mg-card="idle"]')).toHaveCount(1);
+	// Done editing: the budget goes back to first-come.
+	await input.press('Escape');
+	await expect(input).toBeHidden();
+	await expect(page.locator(`iframe[data-mg-host-clip="${lt}"]`)).toHaveCount(0, { timeout: 30_000 });
+	await expect(hosts).toHaveCount(4);
 	expect(watcher.errors.filter((e) => !/favicon|ERR_ABORTED|Failed to load resource/.test(e))).toEqual([]);
 });

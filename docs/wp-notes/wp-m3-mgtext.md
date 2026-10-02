@@ -26,7 +26,10 @@ export natively. That is this package (MGC-036…039).
 | MGC-039 fonts | `text-probe.ts` (FontFace wrapper + `@font-face` CSSOM), `apps/web/src/mg-bundles/bundle-fonts.ts` | Faces recorded with absolute URLs (or the raw buffer, copied into the editor's realm), registered in the editor document as `jmg-<key>-<family>`; the computed `font-family` of the text is rewritten to the alias. Font menus of linked `fontFamily` string props list the bundle's families. |
 | MGU-006 Properties | `apps/web/src/mg-bundles/CompositionTexts.tsx`, `CompositionSection.tsx` | "Text" above "Props". Per text: label, counter (`n/maxChars` or `n/maxLength`, amber/red), Edit on canvas, Reset; textarea/input with live preview while typing (`createScrub` gesture; invalid values never reach the preview, Esc reverts, Enter / Ctrl+Enter / blur commits one step "Edit Text «label»"); style rows (Font select of bundle families, Weight 100–900 select, Size scrub, Colour swatch, Align buttons, Italic, Leading, Tracking — the generic `PropEditor` otherwise); warnings (static while typing, measured when not focused); manifest `hint`. Generic form skips owned keys. |
 | MGU-005 on canvas | `apps/web/src/mg-bundles/{CanvasTextEditor,text-edit}.tsx`, `extensions/index.ts` (`layerDoubleClickHandlers`), `TransformOverlay.tsx` (`onDoubleClick`), `runtime.ts` (`setTextEditing`), `CompositionLayer.tsx` (`data-mg-host-clip`, `data-mg-host-frame`) | Double-click (selection tool) → handler → editor overlay (Program overlay registry). The clip is forced to its live host; the editor waits for the host to draw the playhead's composition frame, probes all texts, picks the one under the pointer (line boxes ± 12 px, else nearest ≤ 64 px, else the only visible one), hides it, registers the bundle fonts and renders a `field-sizing: content` textarea in the layer's coordinate system (view transform · layer matrix or corner-pin matrix3d) with the probed size/weight/colour (opaque)/line height/tracking/alignment/transform. Lower-half texts grow upwards. Enter / Ctrl+Enter / blur applies (schema errors keep it open), Esc cancels; playback, a vanished layer or a playhead outside the clip closes it. From Properties it seeks into the clip (the text's `frame`). No text under the pointer → a note and the Properties field takes the focus. |
-| MGA-003 MCP | `apps/mcp/src/tools/compositions.ts` | `list_composition_texts`, `set_composition_text` (one transaction; path or label; style by role; `E_NOT_FOUND` lists the texts, unexposed roles list the exposed ones; soft-limit warnings in the result); `list_compositions` gains `texts`; `COMPOSITION_GUIDE` updated. |
+| MGA-003 MCP | `apps/mcp/src/tools/compositions.ts` | `list_composition_texts`, `set_composition_text` (one transaction; path or label; style by role; `E_NOT_FOUND` lists the texts, unexposed roles list the exposed ones); both return the static and the engine-measured layout warnings with each text's box and a `layout` status (`measure: false` skips it); `list_compositions` gains `texts`; `COMPOSITION_GUIDE` updated. |
+| MGC-037 engine measuring | `apps/engine/src/mg-bundles/text-measure.ts`, `service.ts` (`measureTexts`), `routes/mg-bundles.ts`, `@jasper/api` `mgBundleMeasureTexts` | `POST /api/mg-bundles/measure-texts`: a private loopback HTTP server serves the bundle directory under a random prefix (index.html with the host bootstrap) for the duration of the call; the engine's own headless browser (Remotion's `openBrowser`, same executable/mode as renders) opens it at the composition size and calls `__jasperTexts.measure` — the probe's in-page copy of the renderer-page protocol (evaluation → calculateComposition → composition mode → setFrame per frame) then `locate`. One measurement at a time, cached per request (64). Failures never fail the MCP tool (`layout: "not measured: …"`). |
+| MGU-005 accent markup | `apps/web/src/mg-bundles/MarkupEditor.tsx`, `texts.ts` (`accentRuns`, `textAccentColor`), manifest `texts.<path>.accent` | The on-canvas field is a plain-text contentEditable rebuilt from the raw value after every input (caret restored by character offset): `*…*` spans in the accent colour (a CSS colour or a colour prop), asterisks hidden except in the span holding the caret (dimmed). Enter inserts a row, paste is plain text. |
+| MGC-024 + editing | `runtime.ts` (`acquireHost`, `hostAllowed`, `setTextEditing`), `CompositionLayer.tsx` (`hostAllowed`), `mg-host/runtime.ts` (`hostAllowed?`) | The budget is decided per render: first-come among mounted clips; the clip edited on canvas always gets a host and, when it had none, the first-come holder farthest from the playhead gives its slot up until the edit ends (idle card meanwhile). |
 | Template | `apps/engine/src/mg-bundles/template/files.ts` | Scaffolded projects declare `texts` for their LowerThird and the README explains the conventions. |
 
 ## Contract changes (additive; `Contract-Change:` in the commits)
@@ -66,7 +69,8 @@ convention that makes them editable without touching their look:
 2. Each shot: `const TEMPLATE = segmentsOf(…)` (was `LINES`), the component takes `{headline?: string}` and computes
    `LINES = editableHeadline(headline, TEMPLATE)`, and `mgShot('MG07', MG07, {defaultProps: {headline:
    headlineText(TEMPLATE)}})`. Shade width/height follow the edited rows as before.
-3. `jasper.mg.json`: the M2 `"*"` entry (runtime props `matte`, `bg`, `guides`) plus per shot
+3. `jasper.mg.json` (each headline also declares `"accent": "#3E99F5"`, so the on-canvas editor draws the accent
+   rows in the trailer blue): the M2 `"*"` entry (runtime props `matte`, `bg`, `guides`) plus per shot
    `"texts": {"headline": {"label": "Headline", "multiline": true, "maxChars": 48|40|40|72, "maxLines": 2|2|1|3,
    "hint": "One row per line; *asterisks* mark the accent colour (#3E99F5)…"}}`, with safe boxes from the shot
    headers where they state one (MG07 `{x: 0, y: 810, width: 874, height: 270}` — clears her face and the
@@ -112,15 +116,11 @@ failure was the README tool count (fixed: 69 tools); `pnpm -s typecheck` and `pn
 
 ## Known gaps / deviations
 
-- Layout warnings are measured in the editor (a browser page); MCP returns the static ones and agents check with
-  `render_frame`. An engine-side measurement would need the headless page to load the bundle with the host
-  bootstrap through authenticated, signed bundle URLs (a signed-prefix scheme), left for later.
-- The on-canvas editor draws the raw prop value (e.g. `*accent*` markup, plain colour) in the text's font, size and
-  first colour — it replaces the rendered text while editing, it is not the composition's own rendering; the
-  composition shows the result on apply. Texts drawn on a canvas/SVG/WebGL (not DOM text) cannot be located: they
-  stay editable in Properties.
+- The on-canvas editor draws the text in its font, size, colour, alignment and the declared accent markup; other
+  per-span styling a composition applies (animations, per-word colours without a declared markup) shows on apply.
+  Texts drawn on a canvas/SVG/WebGL (not DOM text) cannot be located: they stay editable in Properties only.
 - Matching is by characters: a composition that transforms the copy beyond case/whitespace/`*_~` (e.g. typewriter
   reveal mid-way, number formatting) is "not drawn" at frames where the shown text differs; the measuring frame
   (`texts.<path>.frame`) and Properties still work.
-- A text editor needs the clip's live host: with more than 4 live hosts mounted (MGC-024 budget) the on-canvas
-  editor reports that the composition did not render and points to Properties.
+- The MGC-024 budget stays first-come for everything except the clip being edited on canvas (not ranked by
+  distance to the playhead while playing/scrubbing, to avoid hosts reloading as the playhead moves).

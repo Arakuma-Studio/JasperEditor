@@ -26,9 +26,12 @@ import {
 	EMPTY_PROBE,
 	MG_REMOTION_VERSION,
 	type MgBundleInfo,
+	type MgTextMeasurement,
+	measuredTextIssues,
 	mergeProps,
 	overridesWithEdits,
 	type RenderSnapshot,
+	textLayerValue,
 } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildNativeGraph } from '../src/export/native.ts';
@@ -1233,6 +1236,62 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 		expect(withInter).toBeGreaterThanOrEqual(0.95);
 		expect(withSans).toBeLessThan(withInter - 0.03);
 	}, 1_200_000);
+
+	it('measures text layout in the engine browser (S08:MGC-037): clipped name, quote off frame and outside its box', async () => {
+		const lt = title.mgBundle!.compositions.find((c) => c.id === 'LowerThird')!;
+		const layers = compositionTextLayers(lt);
+		const props = mergeProps(lt.defaultProps, {
+			name: { text: 'Augusta Ada King, Countess of Lovelace' },
+			quote:
+				'Imagination is the *Discovering Faculty*, pre-eminently. It is that which penetrates into the unseen worlds',
+		});
+		const items = layers.map((l) => ({ id: l.path.join('.'), text: textLayerValue(props, l) }));
+		const payload = {
+			mediaKey: title.mediaKey,
+			compositionId: 'LowerThird',
+			props,
+			width: 1920,
+			height: 1080,
+			fps: 30,
+			durationInFrames: 120,
+			frames: [{ frame: 60, items }],
+		};
+		const r = await app.inject({
+			method: 'POST',
+			url: '/api/mg-bundles/measure-texts',
+			headers: JSON_H,
+			payload,
+		});
+		expect(r.statusCode, r.body).toBe(200);
+		const body = r.json() as { measurements: MgTextMeasurement[]; fonts: string[] };
+		expect(body.fonts).toContain('Inter');
+		const by = new Map(body.measurements.map((m) => [m.id, m]));
+		const issues = (id: string) =>
+			measuredTextIssues(layers.find((l) => l.path.join('.') === id)!, by.get(id)!, {
+				width: 1920,
+				height: 1080,
+			}).map((i) => i.code);
+		// The name runs past its panel (overflow hidden): cut off.
+		expect(by.get('name.text')).toMatchObject({ found: true, visible: true });
+		expect(by.get('name.text')!.clippedBy).toMatchObject({ x: 96, width: 1100 });
+		expect(issues('name.text')).toEqual(['MG_TEXT_CLIPPED']);
+		expect(issues('role')).toEqual([]);
+		// The quote (markup ignored when matching) wraps to more rows than designed and leaves its safe box.
+		expect(by.get('quote')).toMatchObject({ found: true });
+		expect(by.get('quote')!.lines.length).toBeGreaterThan(2);
+		expect(issues('quote')).toEqual(['MG_TEXT_OUTSIDE_BOX', 'MG_TEXT_LINES']);
+		expect(by.get('quote')!.style).toMatchObject({ fontSize: 54 });
+		// Cached: the same request answers without a browser.
+		const t0 = Date.now();
+		const again = await app.inject({
+			method: 'POST',
+			url: '/api/mg-bundles/measure-texts',
+			headers: JSON_H,
+			payload,
+		});
+		expect(again.json()).toEqual(body);
+		expect(Date.now() - t0).toBeLessThan(5000);
+	}, 600_000);
 
 	it('rebuilds a watched project after a source edit: new bundle hash, new master (MGC-013)', async () => {
 		const dir = mkdtempSync(join(tmpdir(), 'jasper-watch-'));

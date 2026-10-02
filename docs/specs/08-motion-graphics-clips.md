@@ -165,8 +165,9 @@ separate audio intermediate), nested JasperEditor sequences inside compositions.
   2. *Texts inside composition clips* (M3, wp-m3-mgtext): MGC-036…039 below.
 - **MGC-036 (P1) Text layers of a composition.** A composition exposes as *text layers* the string props (any
   depth, dotted paths) that are, in this order: declared in the manifest `compositions.<id>.texts.<prop.path>`
-  (`{label?, multiline?, maxChars?, maxLines?, box?: {x, y, width, height}, frame?, hint?, style?: {<role>:
-  <prop.path>}}`; `false` hides a string; the `"*"` entry merges entry by entry); annotated `"x-jasper-text": true |
+  (`{label?, multiline?, maxChars?, maxLines?, box?: {x, y, width, height}, frame?, hint?, accent?, style?:
+  {<role>: <prop.path>}}`; `accent` = the text uses the `*…*` accent markup, drawn in that CSS colour or the colour
+  held by that prop; `false` hides a string; the `"*"` entry merges entry by entry); annotated `"x-jasper-text": true |
   {…same fields}` in the JSON Schema (zod 4: `.meta({'x-jasper-text': …})`); hinted `ui.<path>.control: "text" |
   "textarea"`; or plain strings (no enum/pattern/format/const, not a colour or asset, not named like a URL, id,
   font, mode, variant, alignment, colour…). Style props are linked per role (`fontFamily`, `fontSize`,
@@ -182,7 +183,11 @@ separate audio intermediate), nested JasperEditor sequences inside compositions.
   layout measured in the bundle's own page at the text's `frame` (manifest, else the composition's
   `thumbnailFrame`, else the middle): the text **runs off the frame**, is **cut off by its box** (an ancestor with
   `overflow` ≠ visible), shows an **ellipsis**, **leaves its safe area** (`box`), or **wraps to more lines** than
-  `maxLines`. A text not drawn at that frame is reported as not checkable (info). The page's *text probe*
+  `maxLines`. A text not drawn at that frame is reported as not checkable (info). The editor measures in an
+  off-screen host page; the **engine** measures for agents (`POST /api/mg-bundles/measure-texts`): its own headless
+  browser (the Remotion one) opens the bundle through a private loopback server (random port, random path prefix,
+  host bootstrap injected; no engine route or signed URL involved) and the probe renders the composition through
+  the renderer-page protocol at each frame and locates the texts; results are cached per request. The page's *text probe*
   (`packages/compositions/src/mg-host/text-probe.ts`, installed by the host bootstrap) locates a prop's text by
   its characters — whitespace, case and `*_~` markup ignored, so copy split across spans and rows still matches.
 - **MGC-038 (P1) Edits.** A text edit is `param.set` on `["clip", id, "props", …path]`; a text with style changes
@@ -212,7 +217,11 @@ separate audio intermediate), nested JasperEditor sequences inside compositions.
   tool) — or **Edit on canvas** next to a text in Properties — opens an in-place editor: the clip shows its live
   frame host (not the cached preview), the text under the pointer is located in the page and hidden, and a field
   in the same box, size, weight, colour, alignment and bundle font takes its place, mapped through the layer's
-  Motion and corner pin. Texts in the lower half grow upwards. Enter (single-line) / Ctrl+Enter (multi-line) or a
+  Motion and corner pin. Texts in the lower half grow upwards. Texts with `accent` markup are edited styled:
+  `*…*` spans in the accent colour with the asterisks hidden, shown dimmed only while the caret is inside (or next
+  to) that span, so the markup stays editable. If the clip has no live host (MGC-024 budget), it gets one for the
+  edit: the clip farthest from the playhead gives up its slot until the edit ends. Texts drawn on a canvas, in SVG
+  or WebGL cannot be located in the page: they are edited in Properties only. Enter (single-line) / Ctrl+Enter (multi-line) or a
   click elsewhere applies (one History step "Edit Text «label»"; schema errors are shown and keep the editor
   open), Esc cancels; playback, a deleted clip or a playhead outside the clip closes it. From Properties the
   playhead moves into the clip (the text's `frame`). Where no text is under the pointer, a note points to
@@ -241,8 +250,9 @@ separate audio intermediate), nested JasperEditor sequences inside compositions.
   `set_composition_text {projectId, clipId, texts: [{text: path|label, value?, style?: {fontFamily, fontSize,
   fontWeight, italic, color, align, lineHeight, letterSpacing}}]}` → one transaction (one undo step), schema
   errors as `E_INVALID_PARAM`, unknown texts `E_NOT_FOUND` with the list, unexposed style roles
-  `E_INVALID_PARAM` with the exposed ones. `list_compositions` lists each composition's texts. Layout warnings are
-  measured in the editor only (agents check with `render_frame`).
+  `E_INVALID_PARAM` with the exposed ones. `list_compositions` lists each composition's texts. Both text tools
+  return the layout warnings measured by the engine (MGC-037) with each text's box and a `layout` status
+  (`measure: false` skips the render).
 - **MGA-002 (P0)** Errors carry actionable hints (`MG_REMOTION_VERSION`: "the project uses remotion X; JasperEditor
   needs 4.0.499 — pin it in package.json and reinstall").
 
@@ -276,5 +286,7 @@ separate audio intermediate), nested JasperEditor sequences inside compositions.
    3/255 on 99 % of the frame, frame-exact during the entrance (±1 frame fails), drawn with the embedded font;
    the Properties editor previews while typing and commits one History entry; a double-click on the quote in the
    Program monitor edits it in place in the bundle font; long text shows the off-frame / cut-off / safe-area
-   warnings; MCP `list_composition_texts` → `set_composition_text` (text + colour + size: one revision) →
-   `render_frame` changes the frame.
+   warnings; the quote's `*…*` accent is drawn in the accent colour while editing on canvas; with four other
+   compositions holding the live hosts, editing on canvas takes the farthest one's host; MCP
+   `list_composition_texts` → `set_composition_text` (text + colour + size: one revision) → `render_frame`
+   changes the frame, and a too-long name comes back with `MG_TEXT_CLIPPED` measured in the engine.

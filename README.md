@@ -151,13 +151,15 @@ Every text a composition exposes gets its own editor in **Properties ▸ Composi
 one History step ("Edit Text «…»") when you press Enter (Ctrl+Enter in multi-line texts) or leave the field
 (Esc reverts), plus the props that style it — font (the fonts embedded in the bundle), weight, size, colour,
 alignment — when the composition has them. **Double-click the text in the Program monitor** to edit it in place,
-in the composition's own font. Warnings tell you when a text is longer than designed, has too many lines, runs off
-the frame, is cut off by its box or leaves its safe area (measured in the bundle's own page). The edit changes the
+in the composition's own font (texts that declare the `*accent*` markup show it in the accent colour; a clip
+without a live preview slot borrows one for the edit). Warnings tell you when a text is longer than designed, has too many lines, runs off
+the frame, is cut off by its box or leaves its safe area (measured in the bundle's own page — and by the engine
+for agents, so the MCP text tools return the same warnings). The edit changes the
 clip's props, so the cached master is re-rendered and the native export shows the new text.
 
 Which strings are texts: declare them in `jasper.mg.json`
 (`"compositions": {"<id>": {"texts": {"<prop.path>": {"label", "multiline", "maxChars", "maxLines", "box": {x, y,
-width, height}, "frame", "hint", "style": {"color": "<prop>", …}}}}}`; `false` hides one), annotate the schema
+width, height}, "frame", "hint", "accent", "style": {"color": "<prop>", …}}}}}`; `false` hides one), annotate the schema
 (`"x-jasper-text": true` — zod 4 `.meta({'x-jasper-text': true})`), hint `ui.<prop>.control: "text" | "textarea"`,
 or just use plain string props. Style props are found by convention — a text object
 `{headline: {text, color, fontSize, fontFamily, fontWeight, align}}` or prefixed siblings `title` + `titleColor`,

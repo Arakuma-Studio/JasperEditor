@@ -224,7 +224,7 @@ describe.runIf(E2E)('composition tools over stdio against a real engine (MG_E2E=
 			],
 		});
 		expect(edited.texts[0]).toMatchObject({ path: 'name.text', value: 'Grace Hopper, Rear Admiral' });
-		expect(edited.texts[0]!.warnings.map((w) => w.code)).toEqual(['MG_TEXT_LONG']); // designed for 24
+		expect(edited.texts[0]!.warnings.map((w) => w.code)).toContain('MG_TEXT_LONG'); // designed for 24
 		const ltAfter = await call('render_frame', { projectId, at: 60, width: 480 });
 		const img = (r: CallToolResult) => (r.content.find((c) => c.type === 'image') as { data: string }).data;
 		expect(img(ltAfter)).not.toBe(img(ltBefore));
@@ -237,6 +237,32 @@ describe.runIf(E2E)('composition tools over stdio against a real engine (MG_E2E=
 		expect(now.texts[0]!.style.color!.value).toBe('#ffcc00');
 		expect(now.texts[0]!.style.fontSize!.value).toBe(72);
 		expect(now.texts[1]!.overridden).toBe(false);
+		// Layout warnings measured by the engine (its headless browser renders the composition): a name too long
+		// for its panel is cut off; the warning names it and the result says it was measured.
+		const { body: long } = await ok<{
+			layout: string;
+			texts: { path: string; warnings: { code: string }[]; rect?: { width: number } }[];
+		}>('set_composition_text', {
+			projectId,
+			clipId: ltId,
+			texts: [{ text: 'name.text', value: 'Augusta Ada King, Countess of Lovelace' }],
+		});
+		expect(long.layout).toMatch(/^measured/);
+		expect(long.texts[0]!.warnings.map((w) => w.code)).toEqual(['MG_TEXT_LONG', 'MG_TEXT_CLIPPED']);
+		expect(long.texts[0]!.rect!.width).toBeGreaterThan(1100);
+		const { body: listed2 } = await ok<{
+			layout: string;
+			texts: { path: string; warnings: { code: string }[] }[];
+		}>('list_composition_texts', { projectId, clipId: ltId });
+		expect(listed2.texts.find((t) => t.path === 'name.text')!.warnings.map((w) => w.code)).toContain(
+			'MG_TEXT_CLIPPED',
+		);
+		const { body: quick } = await ok<{ layout: string }>('list_composition_texts', {
+			projectId,
+			clipId: ltId,
+			measure: false,
+		});
+		expect(quick.layout).toMatch(/not measured/);
 
 		// MG_REMOTION_VERSION carries the pin hint (S08:MGA-002).
 		const old = mkdtempSync(join(tmpdir(), 'jasper-mcp-old-'));
