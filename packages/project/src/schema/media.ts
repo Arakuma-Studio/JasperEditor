@@ -189,6 +189,11 @@ export const MgTextDeclSchema = z.looseObject({
 	frame: z.number().int().min(0).optional(),
 	/** One line of help shown under the editor (e.g. a markup convention). */
 	hint: z.string().optional(),
+	/**
+	 * The text uses the accent markup: `*…*` spans render in this colour (a CSS colour, or the dotted path of the
+	 * colour prop that holds it). The on-canvas editor draws them so and hides the asterisks (wp-m3-mgtext).
+	 */
+	accent: z.string().optional(),
 	style: z.record(z.string(), z.string()).optional(),
 });
 export type MgTextDecl = DeepStrip<z.infer<typeof MgTextDeclSchema>>;

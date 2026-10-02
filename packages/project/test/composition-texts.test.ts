@@ -3,6 +3,7 @@
 // checks; multi-value edits as one override object.
 import { describe, expect, it } from 'vitest';
 import {
+	accentRuns,
 	checkCompositionText,
 	compositionTextLayers,
 	findTextLayer,
@@ -12,6 +13,7 @@ import {
 	measuredTextIssues,
 	mergeProps,
 	overridesWithEdits,
+	textAccentColor,
 	textLayerPropertyKeys,
 	textLayerValue,
 	validateTextEdit,
@@ -280,5 +282,30 @@ describe('text edits (S08:MGC-038)', () => {
 		expect(validateTextEdit(TITLE, {}, [{ path: title!.path, value: 42 }])).toEqual([
 			'title: expected string, got number',
 		]);
+	});
+});
+
+describe('accent markup (S08:MGU-005)', () => {
+	it('splits *…* spans into runs that concatenate back to the value', () => {
+		const v = 'Un solo panel.\n*Todo tu negocio.*';
+		const runs = accentRuns(v);
+		expect(runs.map((r) => [v.slice(r.start, r.end), r.kind])).toEqual([
+			['Un solo panel.\n', 'plain'],
+			['*', 'mark'],
+			['Todo tu negocio.', 'accent'],
+			['*', 'mark'],
+		]);
+		expect(runs.map((r) => v.slice(r.start, r.end)).join('')).toBe(v);
+		expect(accentRuns('a *open').map((r) => r.kind)).toEqual(['plain', 'mark', 'accent']);
+	});
+
+	it('resolves the accent colour from a literal or a colour prop', () => {
+		expect(textAccentColor({ accent: '#3E99F5' }, {})).toBe('#3E99F5');
+		expect(textAccentColor({ accent: 'theme.accent' }, { theme: { accent: '#ff0000' } })).toBe('#ff0000');
+		expect(textAccentColor({ accent: 'missing' }, {})).toBeNull();
+		expect(textAccentColor({}, {})).toBeNull();
+		const quote = compositionTextLayers(lowerThird({ texts: { quote: { accent: 'accent' } } }))[0]!;
+		expect(quote.accent).toBe('accent');
+		expect(textAccentColor(quote, LOWER_THIRD_DEFAULTS)).toBe('#3366ff');
 	});
 });

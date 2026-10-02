@@ -1,8 +1,9 @@
 // A lower third that draws with a font embedded in the bundle (public/fonts/Inter-Bold.ttf, SIL OFL 1.1), used
 // by the hybrid text layer tests (S08:MGC-036…039): the name is a text object {text, color, fontSize,
 // fontFamily, fontWeight, align}, the role has prefixed style props (roleColor, roleSize), the quote is a
-// two-row text (jasper.mg.json declares its limits and safe box). The name panel clips (overflow hidden), so a
-// long name is cut off; the quote wraps at 1400 px. Timing derives from useVideoConfig().fps.
+// two-row text with *accent* markup (jasper.mg.json declares its limits, safe box and accent prop). The name
+// panel clips (overflow hidden), so a long name is cut off; the quote wraps at 1400 px. Timing derives from
+// useVideoConfig().fps.
 import { useEffect, useState } from 'react';
 import {
 	AbsoluteFill,
@@ -60,7 +61,17 @@ export const LowerThird = ({ name, role, roleColor, roleSize, quote, accent }: L
 					opacity: enter,
 				}}
 			>
-				{quote}
+				{/* Accent markup (jasper.mg.json `accent`): *…* spans in the accent colour, asterisks not drawn. */}
+				{quote.split('*').map((part, i) =>
+					i % 2 === 1 ? (
+						// biome-ignore lint/suspicious/noArrayIndexKey: the parts of one string, in order
+						<span key={i} data-accent="" style={{ color: accent }}>
+							{part}
+						</span>
+					) : (
+						part
+					),
+				)}
 			</div>
 			<div
 				data-testid="lt-panel"

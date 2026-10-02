@@ -17,7 +17,7 @@
 
 import { compositionPropsPropertySpecs, type PropertySpec } from '../registry/properties.ts';
 import type { MgCompositionInfo, MgTextDecl } from '../schema/media.ts';
-import { type JsonSchemaNode, validateJsonSchema } from './json-schema.ts';
+import { isCssColor, type JsonSchemaNode, validateJsonSchema } from './json-schema.ts';
 import { getPropAt, mergeProps, setPropOverride } from './props.ts';
 
 export const TEXT_STYLE_ROLES = [
@@ -68,6 +68,8 @@ export type CompositionTextLayer = {
 	/** Composition frame where the text is laid out (manifest), else the composition's thumbnail frame. */
 	frame?: number;
 	hint?: string;
+	/** Accent markup: `*…*` spans render in this colour (CSS colour, or the dotted path of a colour prop). */
+	accent?: string;
 	description?: string;
 	/** Props that style this text, by role. */
 	style: Partial<Record<TextStyleRole, StyleLink>>;
@@ -225,6 +227,7 @@ function computeTextLayers(info: InfoForTexts): CompositionTextLayer[] {
 					? { frame: info.thumbnailFrame }
 					: {}),
 			...(decl.hint ? { hint: decl.hint } : {}),
+			...(decl.accent ? { accent: decl.accent } : {}),
 			...(spec.description ? { description: spec.description } : {}),
 		};
 		return layer;
@@ -421,6 +424,43 @@ export function measuredTextIssues(
 }
 
 // ---------------------------------------------------------------- edits (S08:MGC-038)
+
+/** The colour of a text's accent spans: the declared CSS colour, or the value of the declared colour prop. */
+export function textAccentColor(
+	layer: Pick<CompositionTextLayer, 'accent'>,
+	effective: Record<string, unknown>,
+): string | null {
+	const a = layer.accent;
+	if (!a) return null;
+	if (isCssColor(a)) return a;
+	const v = getPropAt(effective, a.split('.'));
+	return typeof v === 'string' && isCssColor(v) ? v : null;
+}
+
+/**
+ * The accent markup of a value as runs (`*…*` = accent; an unclosed `*` runs to the end): offsets into the raw
+ * string, the asterisks as `mark` runs. Concatenating the runs gives the value back.
+ */
+export function accentRuns(
+	value: string,
+): { start: number; end: number; kind: 'plain' | 'mark' | 'accent' }[] {
+	const out: { start: number; end: number; kind: 'plain' | 'mark' | 'accent' }[] = [];
+	let inside = false;
+	let i = 0;
+	while (i < value.length) {
+		if (value[i] === '*') {
+			out.push({ start: i, end: i + 1, kind: 'mark' });
+			inside = !inside;
+			i++;
+			continue;
+		}
+		let j = i;
+		while (j < value.length && value[j] !== '*') j++;
+		out.push({ start: i, end: j, kind: inside ? 'accent' : 'plain' });
+		i = j;
+	}
+	return out;
+}
 
 /** The current value of a text (effective props), '' when unset or not a string. */
 export function textLayerValue(effective: Record<string, unknown>, layer: CompositionTextLayer): string {

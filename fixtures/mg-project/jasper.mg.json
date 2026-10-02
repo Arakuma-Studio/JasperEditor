@@ -19,7 +19,8 @@
           "multiline": true,
           "maxLines": 2,
           "box": { "x": 90, "y": 110, "width": 1420, "height": 160 },
-          "hint": "Line breaks start a new row."
+          "accent": "accent",
+          "hint": "Line breaks start a new row; *asterisks* mark the accent colour."
         }
       }
     },

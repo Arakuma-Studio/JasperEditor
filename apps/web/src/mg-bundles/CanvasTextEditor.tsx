@@ -23,6 +23,7 @@ import {
 	type RenderCompositionSource,
 	type ResolvedLayer,
 	resolveSceneAt,
+	textAccentColor,
 	textLayerValue,
 	validateTextEdit,
 } from '@jasper/project';
@@ -32,6 +33,7 @@ import { useStore } from 'zustand';
 import type { ProgramOverlayHostProps } from '../extensions/index.ts';
 import type { View } from '../panels/program/viewport.ts';
 import { aliasFontFamily, registerBundleFonts } from './bundle-fonts.ts';
+import { MarkupEditor } from './MarkupEditor.tsx';
 import { currentMgRuntime } from './runtime.ts';
 import {
 	type CanvasTextEdit,
@@ -372,7 +374,7 @@ function EditorBox({
 	const { layer: tl, m } = target;
 	const [text, setText] = useState(target.original);
 	const [error, setError] = useState<string | null>(null);
-	const ref = useRef<HTMLTextAreaElement>(null);
+	const ref = useRef<HTMLDivElement>(null);
 	const done = useRef(false);
 	const info = fullInfo(session, src)!;
 	const st = m.style;
@@ -394,11 +396,16 @@ function EditorBox({
 	const bottom = last.y + last.height + Math.max(0, (lineHeight - last.height) / 2);
 
 	useLayoutEffect(() => {
-		const el = ref.current;
+		const el = ref.current?.querySelector<HTMLElement>('[data-testid="mg-text-canvas-input"]');
 		if (!el) return;
 		el.focus({ preventScroll: true });
-		el.select();
+		const sel = window.getSelection();
+		const r = document.createRange();
+		r.selectNodeContents(el);
+		sel?.removeAllRanges();
+		sel?.addRange(r);
 	}, []);
+	const accent = textAccentColor(tl, src.props);
 
 	const issues = useMemo(() => checkCompositionText(tl, text), [tl, text]);
 
@@ -434,8 +441,9 @@ function EditorBox({
 		: matrixToCss(layer.props.matrix);
 	const color = opaque(st?.color ?? 'white');
 	const inv = 1 / Math.max(1e-6, view.scale);
-	const editorStyle: CSSProperties & { fieldSizing?: string } = {
+	const editorStyle: CSSProperties = {
 		position: 'absolute',
+		display: 'inline-block',
 		left: anchorX,
 		top: anchorBottom ? bottom : top,
 		transform: `translate(${shift}, ${anchorBottom ? '-100%' : '0'})`,
@@ -460,8 +468,7 @@ function EditorBox({
 		textTransform: st?.textTransform as CSSProperties['textTransform'],
 		whiteSpace: 'pre',
 		overflow: 'hidden',
-		resize: 'none',
-		fieldSizing: 'content',
+		cursor: 'text',
 		pointerEvents: 'auto',
 	};
 	// Help/warnings under the text, in screen space (UI size, not scaled with the frame).
@@ -472,9 +479,11 @@ function EditorBox({
 	]);
 	const tip = [view.x + below[0] * view.scale, view.y + below[1] * view.scale];
 	const warn = error ?? issues.find((i) => i.severity !== 'info')?.message ?? null;
-	const keyHint = tl.multiline
-		? 'Ctrl+Enter to apply · Enter for a new line · Esc to cancel'
-		: 'Enter to apply · Esc to cancel';
+	const keyHint = `${
+		tl.multiline
+			? 'Ctrl+Enter to apply · Enter for a new line · Esc to cancel'
+			: 'Enter to apply · Esc to cancel'
+	}${accent ? ' · *word* = accent colour' : ''}`;
 	return (
 		<div className="pointer-events-none absolute inset-0 overflow-hidden" data-testid="mg-text-canvas-editor">
 			<div
@@ -489,6 +498,7 @@ function EditorBox({
 				}}
 			>
 				<div
+					ref={ref}
 					style={{
 						position: 'absolute',
 						left: 0,
@@ -499,17 +509,16 @@ function EditorBox({
 						transform: layerCss,
 					}}
 				>
-					<textarea
-						ref={ref}
+					<MarkupEditor
 						aria-label={`Edit ${tl.label}`}
 						data-testid="mg-text-canvas-input"
 						data-text-path={tl.path.join('.')}
-						spellCheck={false}
-						rows={1}
 						value={text}
+						accent={accent}
+						multiline={tl.multiline}
 						style={editorStyle}
-						onChange={(e) => {
-							setText(e.target.value);
+						onChange={(v) => {
+							setText(v);
 							setError(null);
 						}}
 						onBlur={commit}
@@ -523,7 +532,6 @@ function EditorBox({
 								commit();
 							}
 						}}
-						onKeyUp={(e) => e.stopPropagation()}
 					/>
 				</div>
 			</div>
