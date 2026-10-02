@@ -1,8 +1,8 @@
 // Media ingest on the engine (S01:LIFE-010, S04 §5): canonicalize → fingerprint → dedupe → probe (an
 // interactive-lane job) → registry record → follow-up derivative jobs (S04:IN-011).
-import { copyFile, mkdir, realpath, rename, rm, stat } from 'node:fs/promises';
-import { basename, isAbsolute, join, resolve } from 'node:path';
-import type { MediaStatus, RegisteredMedia } from '@jasper/api';
+import { copyFile, mkdir, readdir, readFile, realpath, rename, rm, stat } from 'node:fs/promises';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import type { MediaDiscardResponse, MediaStatus, RegisteredMedia } from '@jasper/api';
 import type { DerivativeService } from '../derivatives/service.ts';
 import type { Broadcaster } from '../events/broadcaster.ts';
 import type { JobQueue } from '../jobs/queue.ts';
@@ -13,8 +13,21 @@ import { KeyedMutex } from '../tools/mutex.ts';
 import { fingerprintFile, fingerprintHex, mediaKeyFor } from './fingerprint.ts';
 import { type ProbeResult, probeFile } from './probe.ts';
 import type { MediaRecord, MediaRegistry } from './registry.ts';
+import { readSourceSidecar } from './sidecar.ts';
 
 type ProbeJobInput = { path: string; name: string };
+
+function derivedFromOf(opts: {
+	fromMediaKey: string;
+	recipeHash: string;
+	range?: { startFrame: number; endFrame: number };
+}): NonNullable<MediaRecord['derivedFrom']> {
+	return {
+		mediaKey: opts.fromMediaKey,
+		recipeHash: opts.recipeHash,
+		...(opts.range ? { range: { startFrame: opts.range.startFrame, endFrame: opts.range.endFrame } } : {}),
+	};
+}
 
 class MediaError extends Error {
 	constructor(
@@ -94,6 +107,16 @@ export class MediaService {
 		} catch {
 			throw new MediaError('ASSET_NOT_FOUND', 'File not found');
 		}
+		const reg = await this.registerResolvedPath(path, opts);
+		// M3 (S07:PRC-019): a source-range sidecar next to the file the user picked (not the resolved link target).
+		const hint = (await readSourceSidecar(resolve(rawPath))) ?? (await readSourceSidecar(path));
+		return hint && reg.kind === 'video' ? { ...reg, sourceHint: hint } : reg;
+	}
+
+	private async registerResolvedPath(
+		path: string,
+		opts: { projectId?: string; copyIntoProject?: boolean },
+	): Promise<RegisteredMedia> {
 		const st = await stat(path).catch(() => null);
 		if (!st?.isFile()) throw new MediaError('ASSET_NOT_FOUND', 'Not a regular file');
 		const { fingerprint, sizeBytes } = await fingerprintFile(path);
@@ -181,7 +204,14 @@ export class MediaService {
 	 */
 	async registerDerived(
 		file: string,
-		opts: { fromMediaKey: string; recipeHash: string; name: string; projectId?: string },
+		opts: {
+			fromMediaKey: string;
+			recipeHash: string;
+			name: string;
+			projectId?: string;
+			/** M3 (S07:PRC-015): the processed source frames, when a range was processed. */
+			range?: { startFrame: number; endFrame: number };
+		},
 	): Promise<RegisteredMedia> {
 		const st = await stat(file).catch(() => null);
 		if (!st?.isFile()) throw new MediaError('ASSET_NOT_FOUND', 'Processed file not found');
@@ -191,9 +221,7 @@ export class MediaService {
 			const existing = this.deps.registry.get(mediaKey);
 			let record: MediaRecord;
 			if (existing && (await this.deps.registry.availability(mediaKey)) === 'online') {
-				record = existing.derivedFrom
-					? existing
-					: { ...existing, derivedFrom: { mediaKey: opts.fromMediaKey, recipeHash: opts.recipeHash } };
+				record = existing.derivedFrom ? existing : { ...existing, derivedFrom: derivedFromOf(opts) };
 				if (record !== existing) await this.deps.registry.put(record);
 			} else {
 				const probe = await this.probe(file, fingerprint, opts.name, opts.projectId);
@@ -207,7 +235,7 @@ export class MediaService {
 						{ type: 'managed', path: file },
 						probe,
 					),
-					derivedFrom: { mediaKey: opts.fromMediaKey, recipeHash: opts.recipeHash },
+					derivedFrom: derivedFromOf(opts),
 				};
 				await this.deps.registry.put(record);
 				this.deps.broadcaster.publish('media.updated', { mediaKey, status: 'processing' }, opts.projectId);
@@ -218,6 +246,35 @@ export class MediaService {
 					...(opts.projectId ? { projectId: opts.projectId } : {}),
 				});
 			return this.deps.registry.toRegistered(record, { exposePath: this.deps.exposePaths });
+		});
+	}
+
+	/**
+	 * Discards a media a client registered but never committed (M3, S07:PRC-018: Replace Footage cancelled after
+	 * its upload). Deletes only engine-managed copies under `<mediaDir>/<key>/` that no stored project file or
+	 * project version references; the user's own files (path storage) and processed versions are never touched.
+	 * Running jobs on the media are cancelled; its cached derivatives are removed.
+	 */
+	async discard(
+		mediaKey: string,
+		opts: { projectsDir: string; cacheDir: string },
+	): Promise<MediaDiscardResponse> {
+		return this.mutex.run(mediaKey, async () => {
+			const r = this.deps.registry.get(mediaKey);
+			if (!r) throw new MediaError('ASSET_NOT_FOUND', 'Unknown media key');
+			if (r.storage.type !== 'managed') return { deleted: false, reason: 'not-managed' };
+			if (r.derivedFrom) return { deleted: false, reason: 'derived' };
+			if (await referencedByProjects(opts.projectsDir, mediaKey)) return { deleted: false, reason: 'in-use' };
+			for (const j of this.deps.queue.list())
+				if (j.assetId === mediaKey && !['succeeded', 'failed', 'cancelled', 'interrupted'].includes(j.state))
+					this.deps.queue.cancel(j.id);
+			await this.deps.registry.remove(mediaKey);
+			const dir = dirname(r.storage.path);
+			if (dir === join(this.deps.mediaDir, mediaKey)) await rm(dir, { recursive: true, force: true });
+			else await rm(r.storage.path, { force: true });
+			await rm(join(opts.cacheDir, fingerprintHex(r.fingerprint)), { recursive: true, force: true });
+			this.deps.broadcaster.publish('media.updated', { mediaKey, status: 'missing' });
+			return { deleted: true, reason: 'deleted' };
 		});
 	}
 
@@ -264,4 +321,27 @@ export class MediaService {
 		const busy = Object.values(derivatives).some((d) => d.state === 'queued' || d.state === 'running');
 		return { mediaKey, status: online ? (busy ? 'processing' : 'online') : 'missing', derivatives };
 	}
+}
+
+/** Whether any stored project file or project version under `projectsDir` mentions `mediaKey`. */
+async function referencedByProjects(projectsDir: string, mediaKey: string): Promise<boolean> {
+	const walk = async (dir: string): Promise<boolean> => {
+		let entries: import('node:fs').Dirent[];
+		try {
+			entries = await readdir(dir, { withFileTypes: true });
+		} catch {
+			return false;
+		}
+		for (const e of entries) {
+			const p = join(dir, e.name);
+			if (e.isDirectory()) {
+				if (await walk(p)) return true;
+			} else if (e.isFile()) {
+				const text = await readFile(p, 'utf8').catch(() => '');
+				if (text.includes(mediaKey)) return true;
+			}
+		}
+		return false;
+	};
+	return walk(projectsDir);
 }

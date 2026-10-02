@@ -173,6 +173,29 @@ export const DerivationSchema = z.looseObject({
 });
 export type Derivation = DeepStrip<z.infer<typeof DerivationSchema>>;
 
+/**
+ * M3 (S07:PRC-015…019, schema v5): the source frames a file holds — file frame `i` shows frame
+ * `firstFrame + i` of its source. Processed versions record the range they were made from (the whole source or
+ * a range with handles); files imported or relinked with a source-range sidecar record what the sidecar says.
+ * Frame correspondence is by index (de-judder retimes the picture but keeps the frame count), so the file and
+ * the source must share the frame rate for a clip to switch between them.
+ */
+export const SourceRangeSchema = z.looseObject({
+	/** The project media holding the source frames; null when the source is not in the project. */
+	mediaId: z.string().nullable(),
+	/** File name of the source (e.g. `crudo.mp4`) — matching and display when `mediaId` is null. */
+	sourceName: z.string().nullable().optional(),
+	/** Source frame shown by the first frame of this file. */
+	firstFrame: nonNegInt(),
+	/** Frames this file holds. */
+	frames: z.number().int().min(1),
+	/** Rate the source frames are counted at (the source's video rate). */
+	frameRate: RationalSchema,
+	/** Where the range comes from: the engine's processing, a sidecar file, or a client/agent. */
+	origin: z.enum(['process', 'sidecar', 'manual']),
+});
+export type SourceRange = DeepStrip<z.infer<typeof SourceRangeSchema>>;
+
 /** Parsed header of a LUT asset (M2, S06:CG-050). The table itself stays in the file (`/media/<key>`). */
 export const LutInfoSchema = z.looseObject({
 	format: z.literal('cube'),
@@ -239,6 +262,8 @@ export const MediaAssetSchema = z.looseObject({
 	lut: LutInfoSchema.optional(),
 	/** kind `mg-bundle` (M2). */
 	mgBundle: MgBundleInfoSchema.optional(),
+	/** M3 (S07:PRC-015, schema v5): the source frames this file holds (processed versions, sidecars). */
+	sourceRange: SourceRangeSchema.optional(),
 });
 export type MediaAsset = DeepStrip<z.infer<typeof MediaAssetSchema>>;
 

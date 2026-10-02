@@ -26,8 +26,35 @@ export const RegisteredMediaSchema = z.object({
 	lut: LutInfoSchema.optional(),
 	/** kind `mg-bundle` (M2, S08): compositions, copied into `MediaAsset.mgBundle`. */
 	mgBundle: MgBundleInfoSchema.optional(),
+	/**
+	 * M3 (S07:PRC-019): a source-range sidecar found next to a file registered by path (`<name>.json` or
+	 * `<stem>.json`, see `parseSourceSidecar`). Clients turn it into `MediaAsset.sourceRange`
+	 * (`sourceRangeFromSidecar`). Not stored by the engine: read at registration.
+	 */
+	sourceHint: z
+		.object({
+			sidecar: z.string(),
+			sourceName: z.string().nullable(),
+			firstFrame: z.number().int().min(0),
+			frames: z.number().int().min(1).nullable(),
+			frameRate: z.object({ num: z.number().int().positive(), den: z.number().int().positive() }).nullable(),
+			handles: z.tuple([z.number().int().min(0), z.number().int().min(0)]).nullable(),
+		})
+		.optional(),
 });
 export type RegisteredMedia = z.infer<typeof RegisteredMediaSchema>;
+
+/**
+ * `DELETE /api/media/:mediaKey` (M3, S07:PRC-018): discards a media the client registered but did not commit
+ * (Replace Footage cancelled after the upload). Only engine-managed copies (uploads, "copy into project") that no
+ * stored project or project version references are deleted — never the user's own files (`path` storage) nor
+ * processed versions (content-addressed, reused).
+ */
+export const MediaDiscardResponseSchema = z.object({
+	deleted: z.boolean(),
+	reason: z.enum(['deleted', 'not-managed', 'derived', 'in-use']),
+});
+export type MediaDiscardResponse = z.infer<typeof MediaDiscardResponseSchema>;
 
 export const MediaRegisterRequestSchema = z.object({
 	projectId: z.string(),

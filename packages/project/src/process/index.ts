@@ -1,3 +1,5 @@
-// Clip processing helpers (S07): processed versions and Motion compensation for source swaps.
+// Clip processing helpers (S07): processed versions, Motion compensation and source-range remaps for swaps.
 export * from './rescale.ts';
+export * from './sidecar.ts';
+export * from './source-range.ts';
 export * from './versions.ts';

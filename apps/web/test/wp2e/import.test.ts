@@ -192,6 +192,41 @@ describe('EngineImportService', () => {
 		expect(session.getState().selection.project.items).toHaveLength(2);
 	});
 
+	it('web: a source-range sidecar picked with a render makes it a version of its source (M3, S07:PRC-019)', async () => {
+		const { session, engine, service } = await setup();
+		engine.media.set('crudo.mp4', registered('crudo.mp4', { key: 'mk_CRUDO0001', seconds: 60 }));
+		engine.media.set('T02.mov', registered('T02.mov', { key: 'mk_T02000001', seconds: 130 / 30 }));
+		const sidecar = new File(
+			[JSON.stringify({ first_src_frame: 174, frames: 130, spec: { src: 'raw/crudo.mp4' } })],
+			'T02.json',
+			{
+				type: 'application/json',
+			},
+		);
+		// The render comes first in the batch: the range is resolved after every media.register.
+		const result = await service.importFiles(
+			{ files: [file('T02.mov'), sidecar, file('crudo.mp4')] },
+			{ kind: 'bin', binId: null },
+		);
+		expect(result.failed).toEqual([]);
+		expect(result.mediaIds).toHaveLength(2);
+		const doc = session.getCommitted();
+		const t02 = Object.values(doc.media).find((m) => m.originalName === 'T02.mov')!;
+		const crudo = Object.values(doc.media).find((m) => m.originalName === 'crudo.mp4')!;
+		expect(t02.sourceRange).toEqual({
+			mediaId: crudo.id,
+			sourceName: 'crudo.mp4',
+			firstFrame: 174,
+			frames: 130,
+			frameRate: { num: 30, den: 1 },
+			origin: 'sidecar',
+		});
+		expect(crudo.sourceRange).toBeUndefined();
+		// The sidecar was read, not uploaded.
+		expect(engine.requests.filter((r) => r.method === 'POST' && r.path === '/api/uploads')).toHaveLength(2);
+		expect(session.getState().history.entries.map((e) => e.label)).toEqual(['Import 2 files']);
+	});
+
 	it('lists per-file failures and commits the rest (S04 §5.3 AC 2)', async () => {
 		const { session, engine, service, log, jobs } = await setup();
 		engine.media.set('good.mp4', registered('good.mp4'));

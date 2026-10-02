@@ -1,312 +1,311 @@
-// Colour range of processed clips (S07:PRC-003, PRC-016): every stabilise method (vid.stab WASM, smooth path,
-// deshake crop/keep) and the denoise / deblock / de-judder combinations keep true black and white — measured on
-// real decoded output, with EVERY ffmpeg available here: the LGPL FFmpeg 7.1 and the system FFmpeg 6.1 (which
-// silently converts full → TV range in a `scale` without an explicit output range; the trailer pipeline had
-// that bug: blacks lifted to 16, whites capped at 235 → "13…237"). Also a static guard: every `scale` the
-// processor generates states its output range.
+// Source ranges on the engine (M3, wp-m3-inpoint, S07:PRC-015…019): a processed range holds exactly the source
+// frames it says (frame-coded fixture), the result carries the range, the media registry records it, a clip
+// swapped onto the ranged version exports on the native path showing the same source frames as on the
+// original (and back), and a source-range sidecar next to a file registered by path is reported.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import {
+	copyFileSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { ProcessStep } from '@jasper/project';
+import type { EngineJob, ProcessResult, RegisteredMedia } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { coreServices } from '../src/tools/services.ts';
 import {
-	createDeblockStep,
-	createDenoiseStep,
-	createDeshakeStep,
-	fromFormatToRgb48,
-	toFormat,
-} from '../src/processing/proc/filters.ts';
-import { runProc } from '../src/processing/proc/runner.ts';
-import { createStepImpl } from '../src/processing/proc/steps.ts';
-import type { StepContext } from '../src/processing/proc/types.ts';
-import { ROOT } from './helpers.ts';
+	closeApps,
+	DocBuilder,
+	ensureFixtures,
+	fixture,
+	JSON_H,
+	makeApp,
+	register,
+	type TestApp,
+	until,
+} from './helpers.ts';
 
-// ---------------------------------------------------------------- static guard
+const H = { host: '127.0.0.1:47900' };
+let app: TestApp;
+let dir: string;
 
-/** `scale` filters of a graph that do not set `out_range` (ffmpeg 6.1 then picks TV range for YUV output). */
-function scalesWithoutRange(graph: string): string[] {
-	return graph.split(/[,;]/).filter((f) => /^\s*(\[[^\]]*\]\s*)*scale=/.test(f) && !/out_range=/.test(f));
+/** The burned-in 6-bit frame number of `fixtures/media/frame-code.mp4` (1920×1080) at one frame of a file. */
+function frameCode(file: string, frame: number): number {
+	const r = spawnSync('ffmpeg', [
+		...['-v', 'error', '-i', file],
+		...['-vf', `select=eq(n\\,${frame}),scale=1920:1080,format=rgb24,crop=420:1:40:70`],
+		...['-frames:v', '1', '-f', 'rawvideo', '-'],
+	]);
+	let code = 0;
+	for (let b = 0; b < 6; b++) if (r.stdout[(30 + 70 * b) * 3]! > 127) code |= 1 << b;
+	return code;
 }
 
-describe('generated filter text states the output range of every scale', () => {
-	const ctx = { width: 1280, height: 720 } as StepContext;
-	const graphs: Record<string, string> = {
-		'deshake crop': createDeshakeStep({
-			op: 'stabilize',
-			method: 'deshake',
-			smoothing: 15,
-			borders: 'crop',
-		}).filter(ctx),
-		'deshake keep': createDeshakeStep({
-			op: 'stabilize',
-			method: 'deshake',
-			smoothing: 15,
-			borders: 'keep',
-		}).filter(ctx),
-		deblock: createDeblockStep({ op: 'deblock', filter: 'weak' }).filter(ctx),
-		atadenoise: createDenoiseStep({ op: 'denoise', method: 'atadenoise', strength: 0.5 }).filter(ctx),
-		nlmeans: createDenoiseStep({ op: 'denoise', method: 'nlmeans', strength: 0.5 }).filter(ctx),
-		'to yuv444p': toFormat('yuv444p'),
-		'to yuv444p16le from tv': toFormat('yuv444p16le', 'bt709', 'tv'),
-		'to rgb48 from yuv': fromFormatToRgb48('yuv444p'),
-	};
-	for (const [name, g] of Object.entries(graphs))
-		it(name, () => {
-			expect(scalesWithoutRange(g)).toEqual([]);
-		});
-});
-
-// ---------------------------------------------------------------- measured on real output
-
-const LGPL_DIR = join(ROOT, 'vendor', 'ffmpeg-lgpl', `${process.platform}-${process.arch}`);
-
-function version(ffmpeg: string): string | null {
-	const r = spawnSync(ffmpeg, ['-hide_banner', '-version'], { encoding: 'utf8' });
-	if (r.status !== 0) return null;
-	return /ffmpeg version (\S+)/.exec(r.stdout)?.[1] ?? null;
-}
-
-/** Every distinct ffmpeg on this host: the LGPL build and the system one (6.1 on Ubuntu 24.04). */
-const FFMPEGS = (() => {
-	const out: Array<{ name: string; ffmpeg: string; ffprobe: string }> = [];
-	if (existsSync(join(LGPL_DIR, 'ffmpeg')))
-		out.push({ name: 'lgpl', ffmpeg: join(LGPL_DIR, 'ffmpeg'), ffprobe: join(LGPL_DIR, 'ffprobe') });
-	const sys = version('ffmpeg');
-	if (sys && spawnSync('ffprobe', ['-version']).status === 0)
-		out.push({ name: `system ${sys}`, ffmpeg: 'ffmpeg', ffprobe: 'ffprobe' });
-	return out;
-})();
-
-const W = 480;
-const H = 272;
-const N = 30;
-const PAD = 12;
-/** The black and white patches (output coordinates before jitter). */
-const BLACK = { x0: 40, y0: 30, x1: 200, y1: 110 };
-const WHITE = { x0: 280, y0: 30, x1: 440, y1: 110 };
-
-/** Seeded textured canvas with a black and a white patch and a 0…255 ramp, shaken by a seeded walk. */
-function fixtureFrames(): Buffer {
-	let s = 987654321;
-	const rnd = () => {
-		s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
-		return s / 2 ** 32;
-	};
-	const CW = W + 2 * PAD;
-	const CH = H + 2 * PAD;
-	const canvas = new Uint8Array(CW * CH * 3).fill(128);
-	const rect = (x0: number, y0: number, x1: number, y1: number, v: (x: number, y: number) => number) => {
-		for (let y = y0; y < y1; y++)
-			for (let x = x0; x < x1; x++) {
-				const c = v(x, y);
-				const i = ((y + PAD) * CW + x + PAD) * 3;
-				canvas[i] = canvas[i + 1] = canvas[i + 2] = c;
-			}
-	};
-	// texture (features for the trackers) everywhere, incl. the pad
-	for (let k = 0; k < 700; k++) {
-		const x = Math.floor(rnd() * (CW - 10));
-		const y = Math.floor(rnd() * (CH - 10));
-		const sz = 3 + Math.floor(rnd() * 7);
-		const c = 40 + Math.floor(rnd() * 176);
-		for (let yy = y; yy < y + sz; yy++)
-			for (let xx = x; xx < x + sz; xx++) {
-				const i = (yy * CW + xx) * 3;
-				canvas[i] = canvas[i + 1] = canvas[i + 2] = c;
-			}
-	}
-	rect(BLACK.x0, BLACK.y0, BLACK.x1, BLACK.y1, () => 0);
-	rect(WHITE.x0, WHITE.y0, WHITE.x1, WHITE.y1, () => 255);
-	rect(40, 140, 440, 190, (x) => Math.round(((x - 40) / 399) * 255));
-	const frames = Buffer.alloc(W * H * 3 * N);
-	let ox = 0;
-	let oy = 0;
-	for (let f = 0; f < N; f++) {
-		if (f > 0) {
-			ox = Math.max(-PAD + 2, Math.min(PAD - 2, ox + Math.round((rnd() * 2 - 1) * 4)));
-			oy = Math.max(-PAD + 2, Math.min(PAD - 2, oy + Math.round((rnd() * 2 - 1) * 4)));
-		}
-		for (let y = 0; y < H; y++) {
-			const src = ((y + PAD + oy) * CW + PAD + ox) * 3;
-			Buffer.from(canvas.buffer, src, W * 3).copy(frames, (f * H + y) * W * 3);
-		}
-	}
-	return frames;
-}
-
-/**
- * Levels of a whole file decoded with its tagged range (R'G'B' 0…255): the 0.5th / 99.5th percentiles over all
- * pixels and channels (the fixture is ~10 % pure black and ~10 % pure white, so the stabilisers' motion and
- * zoom do not matter), and the 99.99th percentile of the chroma deviation max(|R−G|, |B−G|) (the fixture is
- * achromatic: anything coloured — e.g. green borders — is a bug).
- */
-function levels(
-	ffmpeg: string,
-	file: string,
-	range: 'tv' | 'pc',
-): { low: number; high: number; chroma: number } {
-	const res = spawnSync(
-		ffmpeg,
+function frameCount(file: string): number {
+	const r = spawnSync(
+		'ffprobe',
 		[
 			'-v',
 			'error',
-			'-i',
+			'-count_frames',
+			'-select_streams',
+			'v:0',
+			'-show_entries',
+			'stream=nb_read_frames',
+			'-of',
+			'csv=p=0',
 			file,
-			'-vf',
-			`scale=in_color_matrix=bt709:in_range=${range}:out_range=pc:flags=accurate_rnd+full_chroma_int,format=rgb24`,
-			'-f',
-			'rawvideo',
-			'-',
 		],
-		{ maxBuffer: 256 * 1024 * 1024 },
+		{ encoding: 'utf8' },
 	);
-	const d = res.stdout;
-	const hist = new Float64Array(256);
-	const dev = new Float64Array(256);
-	for (let i = 0; i + 2 < d.length; i += 3) {
-		hist[d[i]]++;
-		hist[d[i + 1]]++;
-		hist[d[i + 2]]++;
-		dev[Math.max(Math.abs(d[i] - d[i + 1]), Math.abs(d[i + 2] - d[i + 1]))]++;
-	}
-	const pct = (h: Float64Array, p: number) => {
-		const total = h.reduce((x, y) => x + y, 0);
-		let acc = 0;
-		for (let v = 0; v < 256; v++) {
-			acc += h[v];
-			if (acc >= total * p) return v;
-		}
-		return 255;
-	};
-	return { low: pct(hist, 0.005), high: pct(hist, 0.995), chroma: pct(dev, 0.9999) };
+	return Number(r.stdout.trim());
 }
 
-const RECIPES: Record<string, ProcessStep[]> = {
-	'vid.stab': [{ op: 'stabilize', method: 'vidstab', smoothing: 10, borders: 'crop' }],
-	'smooth path': [
-		{
-			op: 'stabilize',
-			method: 'smoothpath',
-			smoothing: 10,
-			borders: 'crop',
-			lockVertical: true,
-			maxZoom: 115,
+async function waitJob(id: string, timeoutMs = 240_000): Promise<EngineJob> {
+	return until(
+		async () => {
+			const j = (await app.inject({ method: 'GET', url: `/api/jobs/${id}`, headers: H })).json() as EngineJob;
+			return ['succeeded', 'failed', 'cancelled', 'interrupted'].includes(j.state) ? j : null;
 		},
-	],
-	'deshake crop': [{ op: 'stabilize', method: 'deshake', smoothing: 10, borders: 'crop' }],
-	'deshake keep': [{ op: 'stabilize', method: 'deshake', smoothing: 10, borders: 'keep' }],
-	'deblock + atadenoise + vid.stab': [
-		{ op: 'deblock', filter: 'weak' },
-		{ op: 'denoise', method: 'atadenoise', strength: 0.5 },
-		{ op: 'stabilize', method: 'vidstab', smoothing: 10, borders: 'crop' },
-	],
-	'nlmeans + deshake crop': [
-		{ op: 'denoise', method: 'nlmeans', strength: 0.3 },
-		{ op: 'stabilize', method: 'deshake', smoothing: 10, borders: 'crop' },
-	],
-	'dejudder + deshake crop': [
-		{ op: 'dejudder', mode: 'force' },
-		{ op: 'stabilize', method: 'deshake', smoothing: 10, borders: 'crop' },
-	],
-	'deblock + fftdnoiz + dejudder + smooth path': [
-		{ op: 'deblock', filter: 'strong' },
-		{ op: 'denoise', method: 'fftdnoiz', strength: 0.5 },
-		{ op: 'dejudder', mode: 'force' },
-		{ op: 'stabilize', method: 'smoothpath', smoothing: 10, borders: 'crop', maxZoom: 115 },
-	],
-};
+		timeoutMs,
+		200,
+	);
+}
 
-describe.skipIf(!FFMPEGS.length)('stabilised output keeps true black and white (all ffmpegs)', () => {
-	let dir: string;
-	const inputs: Record<'tv' | 'pc', string> = { tv: '', pc: '' };
-	beforeAll(() => {
-		dir = mkdtempSync(join(tmpdir(), 'jasper-range-'));
-		const raw = fixtureFrames();
-		const ff = FFMPEGS[0]!.ffmpeg;
-		for (const range of ['tv', 'pc'] as const) {
-			const out = join(dir, `ramp-${range}.mkv`);
-			const r = spawnSync(
-				ff,
-				[
-					...[
-						'-v',
-						'error',
-						'-y',
-						'-f',
-						'rawvideo',
-						'-pix_fmt',
-						'rgb24',
-						'-s',
-						`${W}x${H}`,
-						'-r',
-						'30',
-						'-i',
-						'-',
-					],
-					...[
-						'-vf',
-						`scale=out_color_matrix=bt709:out_range=${range}:flags=accurate_rnd+full_chroma_int,format=yuv420p`,
-					],
-					...[
-						'-color_primaries',
-						'bt709',
-						'-color_trc',
-						'bt709',
-						'-colorspace',
-						'bt709',
-						'-color_range',
-						range,
-					],
-					...['-c:v', 'ffv1', out],
-				],
-				{ input: raw },
-			);
-			if (r.status !== 0) throw new Error(r.stderr.toString());
-			inputs[range] = out;
-		}
+const exportSettings = (seqId: string) => ({
+	sequenceId: seqId,
+	range: { type: 'entire' },
+	container: 'mp4',
+	video: {
+		codec: 'h264',
+		width: 1920,
+		height: 1080,
+		frameRate: { num: 30, den: 1 },
+		scaling: 'fit',
+		quality: { mode: 'crf', value: 18 },
+		encoderSpeed: 'fast',
+		colorTags: 'rec709',
+	},
+	audio: { codec: 'aac', sampleRate: 48000, channels: 2 },
+	engine: 'native',
+});
+
+async function exportCodes(d: DocBuilder, frames: number[]): Promise<number[]> {
+	const start = await app.inject({
+		method: 'POST',
+		url: '/api/exports',
+		headers: JSON_H,
+		payload: { envelope: d.envelope(), sequenceId: d.seqId, settings: exportSettings(d.seqId) },
+	});
+	expect(start.statusCode).toBe(202);
+	const done = await waitJob(start.json().id);
+	expect(done.error).toBeUndefined();
+	expect((done.result as { renderPath: string }).renderPath).toBe('native');
+	const file = (await coreServices(app).exports.outputFile(start.json().id))!;
+	return frames.map((f) => frameCode(file, f));
+}
+
+beforeAll(async () => {
+	ensureFixtures();
+	dir = mkdtempSync(join(tmpdir(), 'jasper-range-'));
+	app = await makeApp({ totalSlots: 8 });
+}, 60_000);
+
+afterAll(async () => {
+	await closeApps();
+	if (dir) rmSync(dir, { recursive: true, force: true });
+});
+
+let codedMedia: RegisteredMedia;
+const coded = () => codedMedia;
+
+describe('ranged processing (S07:PRC-015)', () => {
+	let coded: RegisteredMedia;
+	let res: ProcessResult;
+	const steps = [{ op: 'deblock', filter: 'weak' }];
+
+	it('processes exactly the source frames [12, 48): result range, registry record, frame-exact content', async () => {
+		coded = await register(app, fixture('frame-code.mp4'));
+		codedMedia = coded;
+		const r = await app.inject({
+			method: 'POST',
+			url: `/api/media/${coded.mediaKey}/process`,
+			headers: JSON_H,
+			payload: { steps, executor: 'local', range: { startFrame: 12, endFrame: 48 } },
+		});
+		expect(r.statusCode).toBe(200);
+		const job = await waitJob((r.json() as EngineJob).id);
+		expect(job.error).toBeUndefined();
+		expect(job.title).toContain('frames 12–47');
+		res = job.result as ProcessResult;
+		expect(res.range).toEqual({ startFrame: 12, endFrame: 48 });
+		expect(res.registered.originalName).toBe('frame-code [Deblocked · frames 12–47].mov');
+		const index = JSON.parse(readFileSync(join(app.appdir, 'engine', 'media-index.json'), 'utf8'));
+		const rec = index.items[res.registered.mediaKey];
+		expect(rec.derivedFrom).toMatchObject({
+			mediaKey: coded.mediaKey,
+			range: { startFrame: 12, endFrame: 48 },
+		});
+		const out = rec.storage.path as string;
+		expect(frameCount(out)).toBe(36);
+		expect([0, 1, 17, 35].map((i) => frameCode(out, i))).toEqual([12, 13, 29, 47]);
+	}, 300_000);
+
+	it('a clip swapped onto the ranged version exports the same source frames on the native path, and back', async () => {
+		const d = new DocBuilder('hd-1080p-30', 23);
+		const original = d.addMedia(coded);
+		const placed = d.tx([
+			{
+				type: 'clip.place',
+				source: { mediaId: original },
+				at: 0,
+				sourceRange: { in: { sourceFrames: 20 }, out: { sourceFrames: 40 } },
+				matchSequence: 'keep',
+				ref: '$c',
+			},
+		]);
+		const clipId = placed.refs.$c!;
+		const frames = [0, 1, 9, 19];
+		const before = await exportCodes(d, frames);
+		expect(before).toEqual([20, 21, 29, 39]);
+		const reg = res.registered;
+		const derived = d.tx([
+			{
+				type: 'media.derive',
+				fromMediaId: original,
+				recipe: { op: 'process', steps },
+				asset: {
+					fingerprint: reg.fingerprint,
+					originalName: reg.originalName,
+					sizeBytes: reg.sizeBytes,
+					container: reg.container,
+					probe: reg.probe,
+					locators: [{ type: 'engine-store', engineId: 'local', key: reg.mediaKey }],
+					recipeVersion: res.recipeVersion,
+					recipeHash: res.recipeHash,
+				},
+				range: res.range,
+				replaceInClips: [clipId],
+				ref: '$p',
+			},
+		]);
+		const clip = () =>
+			d.doc.sequences[d.seqId]!.clips[clipId] as unknown as {
+				mediaId: string;
+				sourceIn: number;
+				start: number;
+			};
+		expect(clip().mediaId).toBe(derived.refs.$p);
+		expect(clip().sourceIn).toBe(8 * 23_520_000);
+		expect(clip().start).toBe(0);
+		const plan = await app.inject({
+			method: 'POST',
+			url: '/api/exports/plan',
+			headers: JSON_H,
+			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings: exportSettings(d.seqId) },
+		});
+		expect(plan.json()).toMatchObject({ path: 'native', blockers: [] });
+		expect(await exportCodes(d, frames)).toEqual(before);
+		d.tx([{ type: 'clip.replaceSource', clipId, mediaId: original }]);
+		expect(clip().sourceIn).toBe(20 * 23_520_000);
+		expect(await exportCodes(d, frames)).toEqual(before);
+	}, 300_000);
+});
+
+describe('source-range sidecars (S07:PRC-019)', () => {
+	it('reports the sidecar next to a file registered by path (trailer grade format)', async () => {
+		const file = join(dir, 'T02.mp4');
+		copyFileSync(fixture('frame-code.mp4'), file);
+		writeFileSync(
+			join(dir, 'T02.json'),
+			JSON.stringify({
+				id: 'T02',
+				frames: 64,
+				first_src_frame: 174,
+				handles: [0, 8],
+				spec: { src: 'raw/crudo.mp4' },
+			}),
+		);
+		const reg = await register(app, file);
+		expect(reg.sourceHint).toEqual({
+			sidecar: 'T02.json',
+			sourceName: 'crudo.mp4',
+			firstFrame: 174,
+			frames: 64,
+			frameRate: null,
+			handles: [0, 8],
+		});
+		// No sidecar → no hint.
+		const plain = await register(app, fixture('clip-b.mp4'));
+		expect(plain.sourceHint).toBeUndefined();
+	}, 60_000);
+});
+
+describe('discarding an uncommitted media (S07:PRC-018, Replace Footage cancelled)', () => {
+	const del = (key: string) => app.inject({ method: 'DELETE', url: `/api/media/${key}`, headers: H });
+
+	it('deletes an engine-managed copy no project uses: file, record and derivatives', async () => {
+		const src = join(dir, 'discard-me.mp4');
+		copyFileSync(fixture('clip-b.mp4'), src);
+		writeFileSync(src, Buffer.concat([readFileSync(src), Buffer.from('discard')])); // unique bytes
+		const r = await app.inject({
+			method: 'POST',
+			url: '/api/media/register',
+			headers: JSON_H,
+			payload: { projectId: 'prj_0000000000000001', paths: [src], copyIntoProject: true },
+		});
+		const reg = (r.json() as { items: RegisteredMedia[] }).items[0]!;
+		const managed = join(app.appdir, 'media', reg.mediaKey);
+		expect(existsSync(managed)).toBe(true);
+		const res = await del(reg.mediaKey);
+		expect(res.statusCode).toBe(200);
+		expect(res.json()).toEqual({ deleted: true, reason: 'deleted' });
+		expect(existsSync(managed)).toBe(false);
+		expect(existsSync(src)).toBe(true); // the user's file is untouched
+		expect(
+			(await app.inject({ method: 'GET', url: `/api/media/${reg.mediaKey}`, headers: H })).statusCode,
+		).toBe(404);
 	}, 120_000);
-	afterAll(() => {
-		if (!process.env.JASPER_KEEP_RANGE_TEST) rmSync(dir, { recursive: true, force: true });
-		else console.log(`[range] kept ${dir}`);
-	});
 
-	it('the fixture itself decodes to 0 / 255, achromatic', () => {
-		for (const range of ['tv', 'pc'] as const)
-			expect(levels(FFMPEGS[0]!.ffmpeg, inputs[range], range)).toEqual({ low: 0, high: 255, chroma: 0 });
-	});
-
-	for (const fx of FFMPEGS)
-		for (const [name, steps] of Object.entries(RECIPES))
-			for (const range of ['tv', 'pc'] as const)
-				it(`${name} · ${fx.name} · ${range}-range source`, async () => {
-					const id = `${name}-${fx.name}-${range}`.replace(/[^a-z0-9]+/gi, '_');
-					const output = join(dir, `${id}.mov`);
-					const scratch = join(dir, `scratch-${id}`);
-					mkdirSync(scratch, { recursive: true });
-					await runProc(
-						{
-							input: inputs[range],
-							output,
-							steps,
-							ffmpeg: fx.ffmpeg,
-							ffprobe: fx.ffprobe,
-							models: {},
-							threads: 2,
-							device: 'cpu',
-							scratch,
-							vidstabEngine: 'wasm',
-						},
-						{ emit: () => {}, signal: new AbortController().signal, createStep: createStepImpl },
-					);
-					// The output is ProRes tagged TV range: decode it as such (with the same ffmpeg and the LGPL one).
-					for (const dec of [fx.ffmpeg, FFMPEGS[0]!.ffmpeg]) {
-						const l = levels(dec, output, 'tv');
-						const what = `(${name}, ${fx.name}, ${range}-range source, decoded by ${dec})`;
-						expect(l.low, `black level ${what}`).toBeLessThanOrEqual(2);
-						expect(l.high, `white level ${what}`).toBeGreaterThanOrEqual(253);
-						expect(l.chroma, `colour cast on achromatic content ${what}`).toBeLessThanOrEqual(6);
-					}
-					if (!process.env.JASPER_KEEP_RANGE_TEST) rmSync(output, { force: true });
-				}, 300_000);
+	it("never deletes the user's own files, processed versions or media a stored project uses", async () => {
+		const byPath = await register(app, fixture('clip-a.mp4'));
+		expect((await del(byPath.mediaKey)).json()).toEqual({ deleted: false, reason: 'not-managed' });
+		expect(existsSync(fixture('clip-a.mp4'))).toBe(true);
+		const usedSrc = join(dir, 'used.mp4');
+		writeFileSync(usedSrc, Buffer.concat([readFileSync(fixture('clip-b.mp4')), Buffer.from('used')]));
+		const r = await app.inject({
+			method: 'POST',
+			url: '/api/media/register',
+			headers: JSON_H,
+			payload: { projectId: 'prj_0000000000000001', paths: [usedSrc], copyIntoProject: true },
+		});
+		const used = (r.json() as { items: RegisteredMedia[] }).items[0]!;
+		const pdir = join(app.appdir, 'projects', 'prj_00000000000000UU');
+		mkdirSync(pdir, { recursive: true });
+		writeFileSync(
+			join(pdir, 'project.jasper'),
+			JSON.stringify({ format: 'jasper-project', key: used.mediaKey }),
+		);
+		expect((await del(used.mediaKey)).json()).toEqual({ deleted: false, reason: 'in-use' });
+		expect(existsSync(join(app.appdir, 'media', used.mediaKey))).toBe(true);
+		const res = await app.inject({
+			method: 'POST',
+			url: `/api/media/${coded().mediaKey}/process`,
+			headers: JSON_H,
+			payload: {
+				steps: [{ op: 'deblock', filter: 'weak' }],
+				executor: 'local',
+				range: { startFrame: 12, endFrame: 48 },
+			},
+		});
+		const job = await waitJob((res.json() as EngineJob).id);
+		expect((await del((job.result as ProcessResult).registered.mediaKey)).json()).toEqual({
+			deleted: false,
+			reason: 'derived',
+		});
+	}, 300_000);
 });

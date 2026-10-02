@@ -28,8 +28,12 @@ describe('persistence envelope and migrations (S01:PER-002, MIG-001…005)', () 
 		const env = fixture();
 		const m = migrate(env);
 		expect(m.readOnly).toBe(false);
-		expect(m.report).toEqual({ fromVersion: 1, toVersion: 4, steps: ['v1→v2', 'v2→v3', 'v3→v4'] });
-		expect(m.document.schemaVersion).toBe(4);
+		expect(m.report).toEqual({
+			fromVersion: 1,
+			toVersion: 5,
+			steps: ['v1→v2', 'v2→v3', 'v3→v4', 'v4→v5'],
+		});
+		expect(m.document.schemaVersion).toBe(5);
 		const before = Object.values(env.document.sequences)[0] as Record<string, any>;
 		const after = Object.values(m.document.sequences)[0]!;
 		for (const c of Object.values(before.clips as Record<string, any>)) {
@@ -55,19 +59,19 @@ describe('persistence envelope and migrations (S01:PER-002, MIG-001…005)', () 
 		const m = migrate(env);
 		expect(Object.values(m.document.sequences)[0]!.clips[audio.id]!.label).toBe('rose');
 	});
-	it('the v2 fixture loads unchanged (v2 → v3 → v4 are version bumps only) and newer versions open read-only', () => {
+	it('the v2 fixture loads unchanged (v2 → v3 → v4 → v5 change no data it holds) and newer versions open read-only', () => {
 		const env = fixtureV2();
 		const m = migrate(env);
 		expect(m.readOnly).toBe(false);
-		expect(m.report.steps).toEqual(['v2→v3', 'v3→v4']);
-		expect(m.document).toEqual({ ...env.document, schemaVersion: 4 });
+		expect(m.report.steps).toEqual(['v2→v3', 'v3→v4', 'v4→v5']);
+		expect(m.document).toEqual({ ...env.document, schemaVersion: 5 });
 		const r2 = loadProject(env, { effects: defaultEffectRegistry });
 		expect(r2.repairs).toEqual([]);
 		expect(r2.issues).toEqual([]);
 		const newer = {
 			...env,
-			schemaVersion: 5,
-			document: { ...env.document, schemaVersion: 5, futureField: { a: 1 } },
+			schemaVersion: 6,
+			document: { ...env.document, schemaVersion: 6, futureField: { a: 1 } },
 		};
 		const r = loadProject(newer);
 		expect(r.readOnly).toBe(true);

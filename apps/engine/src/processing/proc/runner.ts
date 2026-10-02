@@ -314,6 +314,21 @@ export async function runProc(spec: ProcSpec, opts: RunOptions): Promise<RunResu
 		return { ...src, vf, width: geom.width, height: geom.height, matrix, range };
 	};
 
+	/** One source frame at absolute index `abs` decoded like `src` (null outside the file) — range context. */
+	const rangeContextFrame = async (src: DecodeSpec, abs: number, rel: number): Promise<RgbFrame | null> => {
+		if (abs < 0 || abs >= probe.frames) return null;
+		const inputArgs =
+			abs > 0
+				? ['-ss', (((abs - 0.5) * fps.den) / fps.num).toFixed(6), '-i', spec.input]
+				: ['-i', spec.input];
+		let got: RgbFrame | null = null;
+		for await (const buf of decodeFrames({ ...src, inputArgs, frames: 1 }, { pixFmt: 'rgb48le', signal }))
+			got ??= { index: rel, width: src.width, height: src.height, data: u16(buf) };
+		return got;
+	};
+	/** True while the chain reads the source file itself (not an FFV1 intermediate). */
+	let onSource = true;
+
 	const alpha = probe.hasAlpha;
 	const encodeArgs = (): string[] => {
 		const audio =
@@ -448,6 +463,21 @@ export async function runProc(spec: ProcSpec, opts: RunOptions): Promise<RunResu
 				await first.step.analyse(source, ctxFor(first, source));
 				infos[first.index].seconds += (performance.now() - ta) / 1000;
 				checkAbort();
+			}
+			// 3b. PST-013 (M3): a de-judder working directly on a source RANGE reads its edge neighbours from the
+			// source (the frame before / after the range, through the same fused head filters) instead of copying
+			// the edge frames. Used for the flow only, never emitted.
+			if (
+				spec.range &&
+				onSource &&
+				first?.kind === 'frames' &&
+				'setRangeContext' in first.step &&
+				typeof first.step.setRangeContext === 'function'
+			) {
+				const src = source;
+				(
+					first.step as unknown as { setRangeContext(f: (rel: number) => Promise<RgbFrame | null>): void }
+				).setRangeContext((rel) => rangeContextFrame(src, start + rel, rel));
 			}
 			// 4. Open the stages (geometry propagates).
 			const runners: Array<{ stage: Stage; step: FrameStep; count: number }> = [];
@@ -593,6 +623,7 @@ export async function runProc(spec: ProcSpec, opts: RunOptions): Promise<RunResu
 			if (sunk !== frames)
 				throw new ProcError('FRAME_COUNT_MISMATCH', `wrote ${sunk} frames, expected ${frames}`);
 			if (!last) {
+				onSource = false;
 				source = {
 					ffmpeg: spec.ffmpeg,
 					inputArgs: ['-i', sinkPath],

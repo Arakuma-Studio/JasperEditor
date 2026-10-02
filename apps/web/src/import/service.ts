@@ -7,7 +7,14 @@
 // 5. per-file failure summary; beforeunload guard while uploads run (S04:IN-013).
 import type { RegisteredMedia } from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
-import { formatTimecode, type ProjectDocument, type TransactionResult } from '@jasper/project';
+import {
+	formatTimecode,
+	type ProjectDocument,
+	parseSourceSidecar,
+	type SourceSidecarInfo,
+	sidecarCandidates,
+	type TransactionResult,
+} from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import {
 	type DragPayload,
@@ -52,7 +59,49 @@ type ImportServiceDeps = {
 	now?: () => Date;
 };
 
-type Acquired = { reg: RegisteredMedia; name: string; path: string | null };
+type Acquired = {
+	reg: RegisteredMedia;
+	name: string;
+	path: string | null;
+	/** M3 (S07:PRC-019): source-range sidecar of the file. */
+	hint?: SourceSidecarInfo | null;
+};
+
+const isJson = (f: File) => f.name.toLowerCase().endsWith('.json');
+
+/**
+ * Source-range sidecars among dropped/picked files (M3, S07:PRC-019): `.json` files that parse as one, keyed by
+ * lower-case file name. Other JSON files are left in the batch (they fail as unsupported media, as before).
+ */
+async function splitSidecars(
+	files: File[],
+): Promise<{ media: File[]; sidecars: Map<string, SourceSidecarInfo> }> {
+	const sidecars = new Map<string, SourceSidecarInfo>();
+	const media: File[] = [];
+	for (const f of files) {
+		if (!isJson(f)) {
+			media.push(f);
+			continue;
+		}
+		let info: SourceSidecarInfo | null = null;
+		try {
+			info = parseSourceSidecar(JSON.parse(await f.text()), f.name);
+		} catch {
+			info = null;
+		}
+		if (info) sidecars.set(f.name.toLowerCase(), info);
+		else media.push(f);
+	}
+	return { media, sidecars };
+}
+
+function sidecarFor(fileName: string, sidecars: Map<string, SourceSidecarInfo>): SourceSidecarInfo | null {
+	for (const n of sidecarCandidates(fileName)) {
+		const hit = sidecars.get(n.toLowerCase());
+		if (hit) return hit;
+	}
+	return null;
+}
 
 const errorInfo = (e: unknown): { code: string; message: string } =>
 	e instanceof EngineError
@@ -149,7 +198,7 @@ export class EngineImportService implements ImportService {
 						remaining.find((p) => baseName(p) === reg.originalName) ??
 						null;
 					if (path) remaining.splice(remaining.indexOf(path), 1);
-					acquired.push({ reg, name: reg.originalName, path });
+					acquired.push({ reg, name: reg.originalName, path, hint: reg.sourceHint ?? null });
 					onProgress?.({ fileName: reg.originalName, phase: 'done', loaded: 1, total: 1 });
 				}
 				for (const e of r.errors) {
@@ -173,8 +222,13 @@ export class EngineImportService implements ImportService {
 			}
 		}
 
-		// 1b. web files → chunked uploads (client-side jobs), bounded parallelism
-		const files = input.files ?? [];
+		// 1b. web files → chunked uploads (client-side jobs), bounded parallelism; source-range sidecars picked
+		// with them are read here, not uploaded (M3, S07:PRC-019).
+		const picked = input.files ?? [];
+		// (Only awaited when JSON files are present: the unload guard below must start synchronously otherwise.)
+		const { media: files, sidecars } = picked.some(isJson)
+			? await splitSidecars(picked)
+			: { media: picked, sidecars: new Map<string, SourceSidecarInfo>() };
 		if (files.length) {
 			const release = this.guard.begin();
 			try {
@@ -209,7 +263,12 @@ export class EngineImportService implements ImportService {
 						});
 						this.jobs.update(jobId, { state: 'succeeded', progress: 1, stage: 'Uploaded' });
 						onProgress?.({ fileName: file.name, phase: 'done', loaded: file.size, total: file.size });
-						results[i] = { reg, name: input.names?.[i] || file.name, path: null };
+						results[i] = {
+							reg,
+							name: input.names?.[(input.files ?? []).indexOf(file)] || file.name,
+							path: null,
+							hint: sidecarFor(file.name, sidecars),
+						};
 					} catch (e) {
 						const info = errorInfo(e);
 						const cancelled = controller.signal.aborted;
@@ -256,6 +315,7 @@ export class EngineImportService implements ImportService {
 				path: a.path,
 			}),
 			existingMediaId: findExistingMedia(doc, a.reg.fingerprint),
+			...(a.hint ? { sourceHint: a.hint } : {}),
 		}));
 
 		// 2. duplicates: one prompt per batch (S04:IN-007)

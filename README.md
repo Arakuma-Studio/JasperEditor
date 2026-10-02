@@ -130,6 +130,32 @@ Every step keeps the frame count and rate, so timing never changes; the export r
   `scripts/models/export-span-onnx.py`). Help ▸ About ▸ Licenses lists all of them.
 - MCP: `process_clip`, `use_media_version`, `list_processing_models`, `test_remote_executor`, …
 
+### Source ranges: versions that cover a different part of the source
+
+A processed version or a graded render may hold a different source range than the clip's file — only the
+part a clip uses plus handles, or a render made for another cut (S07 PRC-015…019,
+`docs/wp-notes/wp-m3-inpoint.md`). Every such file records the source frames it holds (`sourceRange`), and
+switching a clip between files keeps it on **exactly the same source frames**: the in-point (with keyframes,
+clip markers and tracker data) is remapped, the timeline position and duration stay, and trims and transitions
+see the handles the new file really has.
+
+- **Process Clip…** from a clip offers *Clip range + handles* (default 12 frames each side): only those frames
+  are processed (much faster), and the clip swaps onto the result frame-exactly. *Whole media* is the M2 behaviour.
+- **Properties ▸ Media Version** (and the clip menu) lists the original, processed versions and renders that
+  declare the same source, with the frames each holds (`Denoised · frames 1088–1231`) and the clip's handles.
+  A version that does not hold every frame of the clip asks to trim the clip to the frames it holds.
+- **Clip ▸ Replace Footage…** (also in the Project item menu) replaces a media's file for every clip that uses
+  it. With a source-range sidecar or matching start timecodes, *Keep source timing* (on by default) moves the
+  in-points so the clips keep showing the same source moments; clips the new file does not hold are listed and
+  refused, or trimmed on request.
+- **Sidecars**: a `<file>.json` or `<stem>.json` next to a rendered file (found by the engine for files imported
+  by path; on the web pick it together with the video) with `{"first_src_frame": 174, "frames": 130,
+  "source": "crudo.mp4"}` (also the trailer grade pipeline's format with `spec.src` and `handles`, and
+  jasper-proc's own sidecar) records the range; when the named source is in the project the file becomes one of
+  its versions.
+- MCP: `process_clip {handles | range}`, `use_media_version {fit}`, `replace_footage`, `set_media_source_range`;
+  `get_media_info` lists the source frames of every version.
+
 ## Motion graphics from Remotion projects
 
 Remotion projects become media (S08, `docs/wp-notes/wp-m2-mg.md`): **File ▸ Import Remotion Project…** takes a
@@ -329,7 +355,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (67; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (69; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -337,7 +363,8 @@ Tools (67; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the
   `render_motion_graphic_preview` · `list_export_presets` `start_export` `get_job` `cancel_job` `wait_for_job`.
 - Colour: `import_lut` `grade_clip` `get_grade` `copy_grade`.
 - Clip processing: `list_processing_models` `install_processing_model` `process_clip` `use_media_version`
-  `get_processing_settings` `set_processing_settings` `test_remote_executor`.
+  `get_processing_settings` `set_processing_settings` `test_remote_executor` `replace_footage`
+  `set_media_source_range`.
 - Remotion projects: `import_mg_bundle` `list_compositions` `add_composition` `set_composition_props`
   `prerender_composition` `scaffold_mg_project`.
 - Tracking: `add_tracker` `track` `apply_tracking` `get_tracker` `set_corner_pin`.

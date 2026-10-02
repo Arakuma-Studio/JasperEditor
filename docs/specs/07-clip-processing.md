@@ -75,18 +75,60 @@ Requirement ids: `PRC-NNN` (processing model and jobs), `PST-NNN` (steps), `PRM-
   sidecar `<output>.json` (steps, versions, timings, notes, executor, model ids + sha256).
 - **PRC-014 (P0)** Cancel kills the process tree (local) or the remote process group (§5), deletes partial
   outputs; retry re-runs from scratch (steps are deterministic apart from GPU fp16 rounding).
-- **PRC-016 (P0, M3) Range integrity.** Every `scale` jasper-proc generates states its output range (and its
+- **PRC-015 (P0, M3)** Range processing: `range = {startFrame, endFrame}` (source frames at the source's rate,
+  end exclusive) processes a sub-range of the source — typically the frames the selected clips show plus N
+  frames of handles — and registers a shorter processed file. `ProcessResult.range` reports it, the engine
+  records it in `MediaRecord.derivedFrom.range`, and `media.derive {range}` stores it as the version's
+  **`MediaAsset.sourceRange`** `{mediaId: <source>, sourceName, firstFrame, frames, frameRate, origin: 'process'}`
+  (whole-source versions get `firstFrame: 0`; schema v5, the v4 → v5 migration adds it to M2 versions). Item
+  and file names carry the range: `crudo [Denoised · frames 1088–1231]`.
+- **PRC-016 (P0, M3)** Source-frame-exact swaps. File frame `i` of a media with a source range is frame
+  `firstFrame + i` of its source (frames correspond by index: de-judder retimes the picture but keeps the frame
+  count; the file, the source and the range's `frameRate` must share the rate, else the link is refused). The
+  links compose up to the root original (versions of versions), so for any two versions of one original the
+  content-time shift is `Δ = shift(from) − shift(to)` with `shift = firstFrame · F(rate)` per link.
+  `clip.replaceSource` (and Media Version, the processing job's auto-swap, MCP `use_media_version`) moves
+  everything the clip stores in content time by Δ — `sourceIn`, every keyframe (Motion, opacity, effect
+  parameters), clip markers, tracker samples and reference times — and keeps `start`, `duration` and speed, so
+  every timeline frame shows the same source frame (forward and reverse, any speed, sequence rate ≠ media
+  rate). Swapping back applies −Δ and restores the clip exactly. Handles (TRN-003) follow from the new
+  `sourceIn` and the new file's length: trims and transitions see what the file really holds; a transition
+  that loses handles warns `W_TRANSITION_SHORTENED`. Markers / tracker samples that would fall before the new
+  file's first frame are removed with a warning (content time cannot be negative there).
+- **PRC-017 (P0, M3)** Coverage. A version that does not hold every source frame a clip shows is refused with
+  `E_OUT_OF_MEDIA` naming the frames (`T02.mov holds frames 174–303 of crudo.mp4; clip … shows frames
+  160–219 (14 before its first frame)`). `fit: 'trim'` trims the clip — and linked clips on unlocked tracks that
+  share the trimmed edge — to the covered frames (transitions on a trimmed edge are removed); `fit: 'skip'`
+  leaves that clip unchanged with `W_CLIP_SKIPPED` (used by the processing job's auto-swap when a clip changed
+  while the job ran). The tolerance at the end of a file is 1/16 of a file frame (probe durations are rounded),
+  never more than INV-005's.
+- **PRC-018 (P0, M3)** Replace Footage (`media.relink {replace: true, locators, sourceRange?, keepSourceTiming?,
+  fit?}`): replaces the file behind a media for every clip that uses it (a changed fingerprint is accepted
+  without `force`; all locators are replaced). With `keepSourceTiming` every clip, project-item source mark and
+  transcript of the media moves by the offset between the two files (`sourceTimingShift`): (1) both declare a
+  source range of the same source → `old.firstFrame − new.firstFrame`; (2) only the new file declares one → the
+  current file is taken to be that source (a warning when the names differ); (3) only the current file does →
+  the new file is taken to be the source (back to the raw); (4) otherwise both start timecodes. Without a basis
+  the command fails; without `keepSourceTiming` content time is kept. In both cases every clip is checked
+  against the new file (PRC-017: `refuse` | `trim`). Processed versions are not replaced (process again). A file chosen in the Replace Footage dialog but not committed (another pick, cancel/close, a failed replace, closing during the upload) is discarded at once with `DELETE /api/media/:mediaKey`, which deletes only engine-managed copies no stored project or project version references.
+- **PRC-019 (P0, M3)** Declared source ranges. `media.setSourceRange {mediaId, sourceRange | null}` records which
+  source frames a file holds (origin `manual`), refusing self links, cycles and rate mismatches; a file whose
+  range names a project media becomes one of its versions (`originalMediaId`, `mediaVersionsOf`). Source-range
+  **sidecars** — `<file>.json` or `<stem>.json` next to the file — are read by the engine for files registered by
+  path (`RegisteredMedia.sourceHint`) and by the web client for a `.json` picked/dropped with an uploaded video
+  (`parseSourceSidecar`: `first_src_frame` | `firstFrame`, optional `frames`, `fps`, `handles` `[pre, post]` or
+  `{pre, post}`, `source` / `src` / `spec.src`; jasper-proc's own sidecar). Imports record them as
+  `sourceRange` (origin `sidecar`), resolving the source by file name among the project's media and the same
+  import batch (never the same bytes).
+- **PRC-020 (P0, M3) Range integrity.** Every `scale` jasper-proc generates states its output range (and its
   input range for YUV input) — FFmpeg 6.1 converts full-range YUV to TV range in a `scale` without one, which the
   next stage (explicit `in_range=pc`) reads as full range: blacks at 16, whites at 235. Measured with FFmpeg 6.1
   (system) and the LGPL 7.1 on crudo.mp4 shadows/highlights and a synthetic 0…255 ramp: the only affected path
   was deshake `borders: 'crop'` (its crop + `scale` back), alone or after any other step; vid.stab (WASM and
   FFmpeg-native), smooth path, de-judder, denoise and deblock, and their combinations kept 0…255. Guarded by
-  `apps/engine/test/processing-range.test.ts` (static check of the generated filter text + every stabilise method
+  `apps/engine/test/processing-colour-range.test.ts` (static check of the generated filter text + every stabilise method
   and combination, TV- and full-range sources, run with every FFmpeg on the machine, measured on the decoded
   output: black ≤ 2, white ≥ 253, no colour cast on achromatic content).
-- **PRC-015 (P1)** Range processing: `range` processes a sub-range of the source (e.g. just the used part plus
-  handles) and registers a shorter processed file whose `derivation` records the range; the swap maps `sourceIn`
-  accordingly. P0 processes the whole file.
 
 ## 4. Steps (PST)
 
@@ -138,7 +180,7 @@ Requirement ids: `PRC-NNN` (processing model and jobs), `PST-NNN` (steps), `PRM-
   for `borders: 'crop'` a fixed centre crop + scale back of 4 % (deshake has no optimal zoom). *(M3:)* deshake is
   8-bit YUV only and `edge=blank` fills every plane with 0 — green in YUV — so it runs on the 8-bit R'G'B' planes
   relabelled as yuv444p (`format=gbrp,mergeplanes=0x000102:yuv444p,deshake…,mergeplanes=0x000102:gbrp`): blank
-  is true black, motion is estimated on G, the crop + scale happen in RGB (no YUV range involved, PRC-016).
+  is true black, motion is estimated on G, the crop + scale happen in RGB (no YUV range involved, PRC-020).
 
 - **PST-005 (P0, M3 `wp-m3-stabpath`) Smooth path** ("trayectoria suavizada"). For a shot from a fixed position
   with ONE sudden operator reframe / jerk, or a slow uneven drift, that should become a single even camera move.
@@ -191,7 +233,7 @@ Requirement ids: `PRC-NNN` (processing model and jobs), `PST-NNN` (steps), `PRM-
   (default 1/6) of the inter-frame step towards their neighbours by **backward-warping the nearest real frame**
   along dense flow (flow at ≤ 960 px, upsampled; one fixed-point refinement of the flow lookup; cubic sampling,
   replicate borders). Frames are never blended (no ghosting). A scene-cut guard (mean absolute difference of the
-  8×8-cell means > 0.10; cell means, not point samples, so fine texture in a fast pan is not taken for a cut) copies frames across cuts unchanged. One frame of context is read before and after.
+  8×8-cell means > 0.10; cell means, not point samples, so fine texture in a fast pan is not taken for a cut) copies frames across cuts unchanged. One frame of context is read before and after: when a **range** is processed the runner decodes the source frame just before / after it through the same head filters (M3, wp-m3-inpoint), used for the flow only and never emitted, so the range's first/last frames are retimed exactly as in a whole-file run; only the very start/end of the source (or a frame step placed before de-judder) has no context and is copied (sidecar `info.contextFrames`, `info.edge`).
 - **PST-014 (P0)** Implementation: OpenCV.js (WASM, Apache-2.0, pinned) in worker threads inside `jasper-proc`.
   (A RIFE ONNX variant, MIT weights, is P2.)
 
@@ -282,6 +324,15 @@ Requirement ids: `PRC-NNN` (processing model and jobs), `PST-NNN` (steps), `PRM-
 - **PRU-003 (P0)** Clip-level switch: clips on a processed version show a small badge on the timeline clip
   (`clipMenuExtensions` + a clip section) and the Properties section **Media Version** (`clipSections`) with a
   dropdown "Original / <each processed version of the same original>" → `clip.replaceSource` (one undo entry).
+- **PRU-005 (P0, M3)** Ranges in the UI. The Process Clip dialog opened for clips has *Frames: Clip range +
+  handles* (default, 12 frames each side, editable) / *Whole media*, with the source frames it will process; the
+  estimate uses that frame count. Media Version labels show the frames a version holds
+  (`Denoised · frames 1088–1231`, `T02.mov · frames 174–303`) and the selected clip's handles; choosing a version
+  that does not cover the clip asks to trim it (one undo entry). **Clip ▸ Replace Footage…** (and the Project
+  item menu) opens a dialog: current file, *Choose File…* (desktop: native picker, registered in place; web:
+  upload, a sidecar may be picked with it), the sidecar / timecode found, *Keep source timing* (on when a basis
+  exists) with the in-point shift, the clips the new file does not hold with *Trim them*; **Replace** commits
+  one undo entry "Replace Footage".
 - **PRU-004 (P0)** **Preferences ▸ Processing** page: remote executor settings (PRM-001), Test connection
   (PRM-003 result rendered), Set up remote (PRM-004 job), local slots, installed models with sizes and licences
   (install/remove). This package also creates the Preferences dialog shell (`app.preferences`, currently
@@ -298,6 +349,11 @@ Requirement ids: `PRC-NNN` (processing model and jobs), `PST-NNN` (steps), `PRM-
     like destructive commands, because it changes where media is sent);
   - `test_remote_executor {}`.
 - **PRA-002 (P0)** `get_media_info` includes `derivation` and the list of processed versions of a media item.
+- **PRA-003 (P0, M3)** Source ranges for agents: `process_clip {handles: N | range}` processes the clip's frames
+  plus handles (or an explicit range) and reports `range` / `sourceFrames`; `process_clip` and
+  `use_media_version` take `fit: refuse | trim | skip`; `replace_footage {mediaId, path, keepSourceTiming?
+  (default true), fit?}`; `set_media_source_range {mediaId, sourceMediaId | null, firstFrame, frames?, clear?}`;
+  `import_media` records sidecar ranges; `get_media_info` adds `sourceRange` and each version's `sourceFrames`.
 
 ## 8. Acceptance tests
 
@@ -332,3 +388,12 @@ Requirement ids: `PRC-NNN` (processing model and jobs), `PST-NNN` (steps), `PRM-
 10. **MCP**: `process_clip` (denoise, local, `replace: true`, `wait: true`) on the fixture project returns the
     processed media id and the clip now references it; `test_remote_executor` without settings returns a clear
     "not configured" error.
+11. **Source ranges (M3)**: property tests over random sources, rates (24/25/29.97/30/60), clip speeds, reverse,
+    handles and keyframes/markers: after a swap onto a range every timeline frame shows the same source frame,
+    start/duration are unchanged, and swapping back restores the clip exactly; coverage refuse/trim/skip; Replace
+    Footage by sidecar range, back to the raw, and by timecode; the v5 fixture loads. Engine: a ranged process of
+    `frame-code.mp4` holds exactly frames 12…47; a clip swapped onto it (and back) exports the same frame codes
+    on the native path; a sidecar next to a registered file is reported. MCP: `process_clip {handles}`,
+    `use_media_version {fit}`, sidecar import, `set_media_source_range`, `replace_footage`. E2E: process a
+    sub-range with handles from the UI, swap, `render_frame` shows the same frame codes at several frames, swap
+    back; Replace Footage keeps source timing.

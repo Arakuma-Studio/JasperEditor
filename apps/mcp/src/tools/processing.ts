@@ -1,9 +1,23 @@
 // M2 MCP tools: clip processing (S07:PRA-001) — list_processing_models, install_processing_model, process_clip,
 // use_media_version, get_processing_settings, set_processing_settings, test_remote_executor. Owner:
-// wp-m2-process (ARCHITECTURE §19.9).
+// wp-m2-process (ARCHITECTURE §19.9). M3 (wp-m3-inpoint, S07:PRA-003): source ranges — process_clip handles /
+// range, use_media_version fit, replace_footage, set_media_source_range.
+import { existsSync, statSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 import type { ProcessingSettings, ProcessResult, RegisteredMedia } from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
-import { type MediaLocator, ProcessStepSchema, type ProjectDocument } from '@jasper/project';
+import {
+	type MediaLocator,
+	mediaFrameCount,
+	mediaFrameRate,
+	ProcessStepSchema,
+	type ProjectDocument,
+	processRangeForClips,
+	type Rational,
+	rootFrameSpan,
+	type SourceRange,
+	sourceRangeFromSidecar,
+} from '@jasper/project';
 import { z } from 'zod';
 import {
 	DESTRUCTIVE,
@@ -19,11 +33,11 @@ import {
 	waitJob,
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
-import { LOCAL_ENGINE_ID } from '../media.ts';
+import { LOCAL_ENGINE_ID, mediaRegisterCommand } from '../media.ts';
 import { ProjectIdArg } from './projects.ts';
 
 /** Appended to the server instructions (EDITING_GUIDE). */
-export const PROCESSING_GUIDE = `Clip processing (processed versions of media): process_clip runs restoration on the engine and makes a new media version — steps (in this order in the UI): deblock {filter: weak|strong}, denoise {method: atadenoise (fast, temporal) | fftdnoiz (medium) | nlmeans (slow, strongest), strength 0..1}, dejudder {mode: auto|force} (evens out 2-2-1 cadence of 50→30 fps footage without changing the frame count; auto skips footage without such a cadence; put it before stabilize), stabilize {method: auto|vidstab|deshake|smoothpath, smoothing frames (vid.stab: 15 = steady handheld, 8 = mild), borders: crop|keep} — vid.stab (default) removes handheld jitter and keeps intended moves; smoothpath turns one sudden reframe/jerk or a slow uneven drift into a single even move with ONE static zoom for the whole shot (tracks the background, ignores people moving through it): smoothing = Gaussian sigma in frames (30 is a good start), lockVertical / lockRotation make y / roll a straight line (static-position shots), maxZoom = zoom cap in percent (default 112; when the smoothing needs more the largest smoothing that fits is used and the job notes say so, with the zoom used and the raw vs smoothed peak camera speed), upscale {model (list_processing_models), scale 2|4, size?: {width, height}, mix?}. Every step keeps the frame count and rate, so the clip's timing never changes; the export reads the processed ProRes file (no render-time cost). Use replace: true to swap the clip to the result (framing is compensated automatically when the size changes); use_media_version switches clips between the original and any processed version. Heavy jobs take minutes on a CPU: start with wait: false and poll with wait_for_job, then call process_clip again with the same arguments and wait: true to commit (the finished file is reused). A remote GPU executor can be configured in Preferences ▸ Processing (set_processing_settings needs the user's approval).`;
+export const PROCESSING_GUIDE = `Clip processing (processed versions of media): process_clip runs restoration on the engine and makes a new media version — steps (in this order in the UI): deblock {filter: weak|strong}, denoise {method: atadenoise (fast, temporal) | fftdnoiz (medium) | nlmeans (slow, strongest), strength 0..1}, dejudder {mode: auto|force} (evens out 2-2-1 cadence of 50→30 fps footage without changing the frame count; auto skips footage without such a cadence; put it before stabilize), stabilize {method: auto|vidstab|deshake|smoothpath, smoothing frames (vid.stab: 15 = steady handheld, 8 = mild), borders: crop|keep} — vid.stab (default) removes handheld jitter and keeps intended moves; smoothpath turns one sudden reframe/jerk or a slow uneven drift into a single even move with ONE static zoom for the whole shot (tracks the background, ignores people moving through it): smoothing = Gaussian sigma in frames (30 is a good start), lockVertical / lockRotation make y / roll a straight line (static-position shots), maxZoom = zoom cap in percent (default 112; when the smoothing needs more the largest smoothing that fits is used and the job notes say so, with the zoom used and the raw vs smoothed peak camera speed), upscale {model (list_processing_models), scale 2|4, size?: {width, height}, mix?}. Every step keeps the frame count and rate, so the clip's timing never changes; the export reads the processed ProRes file (no render-time cost). Use replace: true to swap the clip to the result (framing is compensated automatically when the size changes); use_media_version switches clips between the original and any processed version. To process only what a clip uses, pass handles: N (the clip's frames plus N frames each side; much faster than the whole file) or an explicit range {startFrame, endFrame}: the version records the source range it holds, and swapping keeps the clip on exactly the same source frames (its in-point is remapped, timeline position and duration stay; trims and transitions see the version's real handles). A version that does not cover a clip is refused unless fit: "trim" | "skip". Renders made outside the editor (graded files with a source-range sidecar "first_src_frame") become versions of their source at import_media; replace_footage swaps a media's file keeping source timing; set_media_source_range declares a range by hand. Heavy jobs take minutes on a CPU: start with wait: false and poll with wait_for_job, then call process_clip again with the same arguments and wait: true to commit (the finished file is reused). A remote GPU executor can be configured in Preferences ▸ Processing (set_processing_settings needs the user's approval).`;
 
 const StepsArg = z
 	.array(ProcessStepSchema)
@@ -50,9 +64,24 @@ function mediaKeyOf(doc: ProjectDocument, mediaId: string): string {
 	return loc.key;
 }
 
-function clipMedia(doc: ProjectDocument, clipId: string): { clipId: string; mediaId: string } {
+type ClipRef = {
+	clipId: string;
+	mediaId: string;
+	seqRate: Rational;
+	clip: { sourceIn: number; duration: number; speed: { rate: number; reverse: boolean }; mediaId: string };
+};
+
+function clipMedia(doc: ProjectDocument, clipId: string): ClipRef {
 	for (const seq of Object.values(doc.sequences)) {
-		const clip = seq.clips[clipId] as { kind?: string; mediaId?: string } | undefined;
+		const clip = seq.clips[clipId] as
+			| {
+					kind?: string;
+					mediaId?: string;
+					sourceIn: number;
+					duration: number;
+					speed: { rate: number; reverse: boolean };
+			  }
+			| undefined;
 		if (!clip) continue;
 		if (clip.kind !== 'video' || !clip.mediaId)
 			throw new ToolError(
@@ -60,7 +89,12 @@ function clipMedia(doc: ProjectDocument, clipId: string): { clipId: string; medi
 				`Clip ${clipId} is not a video clip`,
 				'Pass a video clip id or a mediaId.',
 			);
-		return { clipId, mediaId: clip.mediaId };
+		return {
+			clipId,
+			mediaId: clip.mediaId,
+			seqRate: seq.settings.frameRate,
+			clip: { sourceIn: clip.sourceIn, duration: clip.duration, speed: clip.speed, mediaId: clip.mediaId },
+		};
 	}
 	throw new ToolError('E_NOT_FOUND', `No clip ${clipId}`, 'Call get_timeline for clip ids.');
 }
@@ -71,6 +105,7 @@ function mediaDeriveCommand(
 	steps: unknown[],
 	res: ProcessResult,
 	replaceInClips: string[] = [],
+	fit?: 'refuse' | 'trim' | 'skip',
 ) {
 	const reg: RegisteredMedia = res.registered;
 	const locators: MediaLocator[] = [{ type: 'engine-store', engineId: LOCAL_ENGINE_ID, key: reg.mediaKey }];
@@ -90,9 +125,18 @@ function mediaDeriveCommand(
 			recipeHash: res.recipeHash,
 		},
 		...(replaceInClips.length ? { replaceInClips } : {}),
+		...(res.range ? { range: res.range } : {}),
+		...(fit ? { fit } : {}),
 		ref: '$processed',
 	};
 }
+
+const FitArg = z
+	.enum(['refuse', 'trim', 'skip'])
+	.optional()
+	.describe(
+		'When the target version does not hold every source frame a clip shows: refuse (default, error naming the frames), trim (trim the clip and linked clips sharing the edge to the covered frames) or skip (leave that clip as it is)',
+	);
 
 async function engineCall<T>(ctx: ToolContext, fn: (client: EngineClient) => Promise<T>): Promise<T> {
 	try {
@@ -159,22 +203,52 @@ export function registerProcessingTools(ctx: ToolContext): void {
 				mediaId: z.string().optional().describe('Media id ("med_…") to process (instead of clipId)'),
 				steps: StepsArg,
 				executor: z.enum(['auto', 'local', 'remote']).optional(),
+				handles: z
+					.number()
+					.int()
+					.min(0)
+					.max(10_000)
+					.optional()
+					.describe(
+						'Process only the frames the clip (clipId) shows plus this many frames of handles on each side (instead of the whole media)',
+					),
+				range: z
+					.object({ startFrame: z.number().int().min(0), endFrame: z.number().int().min(1) })
+					.optional()
+					.describe('Process only these source frames [startFrame, endFrame) of the media that is processed'),
 				replace: z
 					.boolean()
 					.optional()
 					.describe('Swap the clip (clipId) to the processed version when done (needs wait: true)'),
+				fit: FitArg,
 				wait: z.boolean().optional().describe('Wait for the job and commit the result (default false)'),
 				timeoutSeconds: z.number().int().min(1).max(900).optional(),
 			},
 			annotations: EDIT,
 		},
-		async ({ projectId, clipId, mediaId, steps, executor, replace, wait, timeoutSeconds }, extra) => {
+		async (
+			{ projectId, clipId, mediaId, steps, executor, handles, range, replace, fit, wait, timeoutSeconds },
+			extra,
+		) => {
 			if (!clipId && !mediaId)
 				throw new ToolError('E_INVALID_PARAM', 'Give clipId or mediaId', 'get_timeline lists clip ids.');
 			if (replace && !clipId)
 				throw new ToolError('E_INVALID_PARAM', 'replace needs clipId', 'Pass the clip to swap.');
+			if (handles !== undefined && !clipId)
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'handles needs clipId',
+					'Pass the clip whose frames are processed.',
+				);
+			if (handles !== undefined && range)
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'Give handles or range, not both',
+					'handles derives the range from the clip.',
+				);
 			const { doc } = await loadDoc(ctx, projectId);
-			const source = clipId ? clipMedia(doc, clipId).mediaId : (mediaId as string);
+			const ref = clipId ? clipMedia(doc, clipId) : null;
+			const source = ref ? ref.mediaId : (mediaId as string);
 			// Process the original when the clip already uses a processed version.
 			const asset = doc.media[source];
 			const derivation = asset?.derivation as
@@ -184,10 +258,27 @@ export function registerProcessingTools(ctx: ToolContext): void {
 			const fromMediaId =
 				derivation?.recipe?.op === 'process' && derivation.fromMediaId ? derivation.fromMediaId : source;
 			const key = mediaKeyOf(doc, fromMediaId);
+			// S07:PRC-015: the clip's frames (mapped into the processed media) plus handles.
+			let processRange = range;
+			if (handles !== undefined && ref) {
+				const r = processRangeForClips(doc, [{ clip: ref.clip, seqRate: ref.seqRate }], fromMediaId, handles);
+				if (!r)
+					throw new ToolError(
+						'E_INVALID_PARAM',
+						`The frames of clip ${clipId} cannot be located in media ${fromMediaId}`,
+						'Process the whole media (omit handles) or pass range.',
+					);
+				processRange = r;
+			}
 			const job = await engineCall(ctx, (c) =>
 				c.call('mediaProcess', {
 					params: { key },
-					body: { steps, executor: executor ?? 'auto', projectId },
+					body: {
+						steps,
+						executor: executor ?? 'auto',
+						projectId,
+						...(processRange ? { range: processRange } : {}),
+					},
 				}),
 			);
 			const base = ctx.link.target?.url ?? '';
@@ -218,21 +309,29 @@ export function registerProcessingTools(ctx: ToolContext): void {
 				projectId,
 				{
 					label: 'Process Clip',
-					commands: [mediaDeriveCommand(fromMediaId, steps, res, replace && clipId ? [clipId] : [])],
+					commands: [mediaDeriveCommand(fromMediaId, steps, res, replace && clipId ? [clipId] : [], fit)],
 				},
 				extra,
 			);
 			const ok = requireOk(res2);
-			const processedMediaId =
-				ok.refs.$processed ?? (ok.results[0] as { mediaId?: string } | undefined)?.mediaId;
+			const derived = ok.results[0] as
+				| { mediaId?: string; clipIds?: string[]; skippedClipIds?: string[]; trimmedClipIds?: string[] }
+				| undefined;
+			const processedMediaId = ok.refs.$processed ?? derived?.mediaId;
+			const after = processedMediaId ? (await loadDoc(ctx, projectId).catch(() => null))?.doc : null;
+			const span = processedMediaId && after ? rootFrameSpan(after, processedMediaId) : null;
 			return jsonResult({
 				jobId: done.id,
 				state: done.state,
 				processedMediaId,
 				fromMediaId,
+				...(res.range ? { range: res.range } : {}),
+				...(span ? { sourceFrames: { of: span.rootId, start: span.start, end: span.end } } : {}),
 				executor: res.executor,
 				notes: res.notes,
-				replacedClips: replace && clipId ? [clipId] : [],
+				replacedClips: derived?.clipIds ?? [],
+				...(derived?.skippedClipIds?.length ? { skippedClips: derived.skippedClipIds } : {}),
+				...(derived?.trimmedClipIds?.length ? { trimmedClips: derived.trimmedClipIds } : {}),
 				transaction: txBody(res2, ok),
 			});
 		},
@@ -244,25 +343,39 @@ export function registerProcessingTools(ctx: ToolContext): void {
 		{
 			title: 'Use media version',
 			description:
-				'Switches video clips to another version of the same media: the original or any processed version (media ids from get_media_info → processedVersions). Timing, effects and keyframes stay; Motion is compensated when the pixel size differs. One undoable step.',
+				"Switches video clips to another version of the same media: the original, any processed version or a render declaring a source range of it (media ids from get_media_info → versions, with the source frames each holds). The clips keep showing exactly the same source frames at the same timeline place: the in-point (and keyframes, markers, tracker data) is remapped from the versions' source ranges; timing, effects and keyframes stay; Motion is compensated when the pixel size differs; handles become what the new file holds. A version that does not cover a clip is refused unless fit says otherwise. One undoable step.",
 			input: {
 				projectId: ProjectIdArg,
 				clipIds: z.array(z.string().min(1)).min(1).describe('Video clip ids'),
 				mediaId: z.string().min(1).describe('Target media id (original or processed version)'),
+				fit: FitArg,
 			},
 			annotations: EDIT,
 		},
-		async ({ projectId, clipIds, mediaId }, extra) => {
+		async ({ projectId, clipIds, mediaId, fit }, extra) => {
 			const res = await transact(
 				ctx,
 				projectId,
 				{
 					label: 'Use Media Version',
-					commands: clipIds.map((clipId) => ({ type: 'clip.replaceSource', clipId, mediaId })),
+					commands: clipIds.map((clipId) => ({
+						type: 'clip.replaceSource',
+						clipId,
+						mediaId,
+						...(fit ? { fit } : {}),
+					})),
 				},
 				extra,
 			);
-			return jsonResult(txBody(res, requireOk(res)));
+			const ok = requireOk(res);
+			const results = ok.results as {
+				clipId: string;
+				changed: boolean;
+				shiftFrames?: number;
+				trimmed?: unknown;
+				skipped?: string;
+			}[];
+			return jsonResult({ ...txBody(res, ok), clips: results });
 		},
 	);
 
@@ -355,5 +468,174 @@ export function registerProcessingTools(ctx: ToolContext): void {
 			annotations: READ_ONLY,
 		},
 		async () => jsonResult(await engineCall(ctx, (c) => c.call('processingRemoteProbe'))),
+	);
+
+	defineTool(
+		ctx,
+		'replace_footage',
+		{
+			title: 'Replace footage',
+			description:
+				'Replaces the file behind a media item for every clip that uses it (Project panel ▸ Replace Footage…), e.g. the raw camera file by a graded render of part of it, or back. keepSourceTiming (default true): every clip keeps showing the same source frames at the same timeline place — the in-points (keyframes, markers, source marks) move by the offset between the two files, taken from source ranges (a sidecar next to the new file such as <name>.json with "first_src_frame", or the range the media already records) or else from the files\' start timecodes; refused when neither says where the files sit (pass keepSourceTiming: false to keep the in-points as they are). Clips the new file does not hold are refused unless fit: "trim". The new file is registered in place (absolute path on this machine). One undoable step "Replace Footage".',
+			input: {
+				projectId: ProjectIdArg,
+				mediaId: z.string().min(1).describe('Media id ("med_…") whose file is replaced'),
+				path: z.string().min(1).describe('Absolute path of the new file'),
+				keepSourceTiming: z
+					.boolean()
+					.optional()
+					.describe('Keep the clips on the same source frames (default true)'),
+				fit: z
+					.enum(['refuse', 'trim'])
+					.optional()
+					.describe('Clips the new file does not cover: refuse (default) or trim them to the covered frames'),
+				copyIntoProject: z.boolean().optional(),
+			},
+			annotations: EDIT,
+		},
+		async ({ projectId, mediaId, path, keepSourceTiming, fit, copyIntoProject }, extra) => {
+			if (!isAbsolute(path))
+				throw new ToolError('NOT_ABSOLUTE', 'Use an absolute path', 'e.g. /home/me/grade/T02.mov');
+			if (!existsSync(path) || !statSync(path).isFile())
+				throw new ToolError(
+					'FILE_NOT_FOUND',
+					`No such file: ${path}`,
+					'Pass an existing file on this machine.',
+				);
+			const { doc } = await loadDoc(ctx, projectId);
+			const asset = doc.media[mediaId];
+			if (!asset)
+				throw new ToolError(
+					'E_NOT_FOUND',
+					`No media ${mediaId} in this project`,
+					'Call list_media for valid ids.',
+				);
+			if (asset.derivation?.recipe.op === 'process')
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					`Media ${mediaId} is a processed version`,
+					'Replace the original instead, or process it again.',
+				);
+			const reg = await ctx.engine((c) =>
+				c.registerMedia({ projectId, paths: [path], ...(copyIntoProject ? { copyIntoProject: true } : {}) }),
+			);
+			const item = reg.items[0];
+			if (!item) {
+				const e = reg.errors[0];
+				throw new ToolError(e?.code ?? 'UNSUPPORTED_MEDIA', e?.message ?? 'The file could not be registered');
+			}
+			if (item.kind !== asset.kind)
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					`The new file is ${item.kind}, the media is ${asset.kind}`,
+					'Replace footage with a file of the same kind.',
+				);
+			const reg0 = mediaRegisterCommand(item, '$unused', '$unused').asset;
+			const sourceRange: SourceRange | null = item.sourceHint
+				? sourceRangeFromSidecar(doc, item.sourceHint, {
+						probe: item.probe,
+						id: mediaId,
+						fingerprint: item.fingerprint,
+					})
+				: null;
+			const res = await transact(
+				ctx,
+				projectId,
+				{
+					label: 'Replace Footage',
+					commands: [
+						{
+							type: 'media.relink',
+							mediaId,
+							replace: true,
+							locator: reg0.locators[0],
+							locators: reg0.locators,
+							fingerprint: item.fingerprint,
+							probe: item.probe,
+							sizeBytes: item.sizeBytes,
+							originalName: item.originalName,
+							container: item.container,
+							sourceRange,
+							keepSourceTiming: keepSourceTiming ?? true,
+							...(fit ? { fit } : {}),
+						},
+					],
+				},
+				extra,
+			);
+			const ok = requireOk(res);
+			return jsonResult({
+				...(ok.results[0] as Record<string, unknown>),
+				sourceRange,
+				...(item.sourceHint ? { sidecar: item.sourceHint.sidecar } : {}),
+				transaction: txBody(res, ok),
+			});
+		},
+	);
+
+	defineTool(
+		ctx,
+		'set_media_source_range',
+		{
+			title: 'Set media source range',
+			description:
+				'Declares which source frames a media file holds: file frame 0 is frame firstFrame of sourceMediaId (same frame rate; frames counted one to one). The file then becomes a version of that source (use_media_version can switch clips to it, keeping the same source frames). Pass sourceMediaId: null with sourceName for a source that is not in the project (used by replace_footage to keep timing), or clear: true to remove the declaration. Does not move any clip. One undoable step.',
+			input: {
+				projectId: ProjectIdArg,
+				mediaId: z.string().min(1).describe("The rendered file's media id"),
+				sourceMediaId: z.string().min(1).nullable().optional().describe('The source media id, or null'),
+				sourceName: z.string().optional().describe('Source file name (when sourceMediaId is null)'),
+				firstFrame: z
+					.number()
+					.int()
+					.min(0)
+					.optional()
+					.describe("Source frame shown by the file's first frame"),
+				frames: z.number().int().min(1).optional().describe('Frames in the file (default: from its probe)'),
+				clear: z.boolean().optional(),
+			},
+			annotations: EDIT,
+		},
+		async ({ projectId, mediaId, sourceMediaId, sourceName, firstFrame, frames, clear }, extra) => {
+			let sourceRange: SourceRange | null = null;
+			if (!clear) {
+				const { doc } = await loadDoc(ctx, projectId);
+				const asset = doc.media[mediaId];
+				if (!asset)
+					throw new ToolError(
+						'E_NOT_FOUND',
+						`No media ${mediaId} in this project`,
+						'Call list_media for valid ids.',
+					);
+				if (firstFrame === undefined)
+					throw new ToolError('E_INVALID_PARAM', 'firstFrame is required', 'Or pass clear: true.');
+				const src = sourceMediaId ? doc.media[sourceMediaId] : undefined;
+				if (sourceMediaId && !src)
+					throw new ToolError('E_NOT_FOUND', `No media ${sourceMediaId} in this project`, 'Call list_media.');
+				const rate = mediaFrameRate(src) ?? mediaFrameRate(asset);
+				const n = frames ?? mediaFrameCount(asset);
+				if (!rate || !n)
+					throw new ToolError(
+						'E_INVALID_PARAM',
+						'The media has no video frame rate or duration',
+						'Pass frames.',
+					);
+				sourceRange = {
+					mediaId: sourceMediaId ?? null,
+					sourceName: sourceName ?? src?.originalName ?? null,
+					firstFrame,
+					frames: n,
+					frameRate: rate,
+					origin: 'manual',
+				};
+			}
+			const res = await transact(
+				ctx,
+				projectId,
+				{ label: 'Set Source Range', commands: [{ type: 'media.setSourceRange', mediaId, sourceRange }] },
+				extra,
+			);
+			return jsonResult({ sourceRange, ...txBody(res, requireOk(res)) });
+		},
 	);
 }

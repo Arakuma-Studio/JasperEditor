@@ -64,7 +64,7 @@ report numbers. The remote directory was deleted afterwards.
 
 Time on this (shared, load 11–20) host for the 124 frames: tracking 17 s, warp ~0.14 s/frame (6 threads).
 
-## 2. Colour range of processed (stabilised) clips (PRC-016)
+## 2. Colour range of processed (stabilised) clips (PRC-020)
 
 Question: does the editor have the trailer's bug (FFmpeg 6.1: stabilised full-range YUV → a scale/format without
 an output range is silently converted to TV range, then read as full range → blacks/whites ~13…237)?
@@ -99,7 +99,7 @@ source's 2.0 / 239.9.
 236.7 instead of 238.7 after deshake — identical with both FFmpegs and on the RGB/YUV paths alike: interpolation
 of a small specular area, not range.)
 
-Regression test `apps/engine/test/processing-range.test.ts`: a static check that every generated `scale` states
+Regression test `apps/engine/test/processing-colour-range.test.ts`: a static check that every generated `scale` states
 `out_range`, and every stabilise method + combinations on TV- and full-range synthetic sources, run with EVERY
 FFmpeg found (LGPL + system), decoded by both, asserting black ≤ 2, white ≥ 253 and no colour cast (p99.99 of
 max(|R−G|,|B−G|) ≤ 6). Before the fix it failed exactly on the bug: black 16 (deshake crop, 6.1), colour cast 131
@@ -128,7 +128,7 @@ shipped and listed.
 
 ```bash
 pnpm fixtures                                   # + reframe.mp4
-pnpm vitest run --project @jasper/engine apps/engine/test/smoothpath.test.ts apps/engine/test/processing-range.test.ts apps/engine/test/processing-steps.test.ts
+pnpm vitest run --project @jasper/engine apps/engine/test/smoothpath.test.ts apps/engine/test/processing-colour-range.test.ts apps/engine/test/processing-steps.test.ts
 pnpm vitest run --project @jasper/web apps/web/test/processing.test.tsx
 pnpm vitest run --project @jasper/ui packages/ui/test/primitives.test.tsx
 E2E_PORT=52610 pnpm e2e e2e/processing.spec.ts
