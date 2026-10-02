@@ -24,6 +24,7 @@ import {
 	samplesEnd,
 	samplesFromTrackResult,
 	sequenceFramesOfContent,
+	type TrackedBy,
 	type TrackMode,
 	trackedTargets,
 	trackLayerOf,
@@ -39,6 +40,7 @@ import {
 	TRAIL_LENGTH,
 	visibleMediaRect,
 } from './geometry.ts';
+import { recordLiveProgress } from './live.ts';
 import { optionsOf, patchRunning, setActiveTracker, setError, trackingStore } from './store.ts';
 
 /** The subset of the engine client the tracking actions use (tests pass a fake). */
@@ -270,6 +272,14 @@ export function handleEngineEvent(session: EditorSession, engine: TrackingEngine
 			},
 			trail,
 		});
+		// Timeline strips: the frames tracked so far (throttled redraws, no document change).
+		recordLiveProgress(trackerId, {
+			jobId: r.jobId ?? p.data.jobId,
+			frame: p.data.frame,
+			confidence: p.data.confidence,
+			step: r.plan.step,
+			stride: p.data.data.length === 2 ? 2 : 8,
+		});
 		followPlayhead(session, trackerId, p.data.frame);
 		return;
 	}
@@ -373,11 +383,18 @@ export function commitTrackResult(
 				mode: t.mode,
 				...(t.mode === 'transform' ? { components: animatedComponents(target) } : {}),
 				range: { start, end },
+				...simplifyOf(target),
 			} as Command);
 		}
 	}
 	run(session, 'Track', commands);
 	setActiveTracker(trackerId);
+}
+
+/** The remembered simplification of a tracked target (S09:TRK-023): re-applies simplify again with it. */
+function simplifyOf(target: Clip): { simplify?: { tolerance: number } } {
+	const tol = (target as { trackedBy?: TrackedBy }).trackedBy?.simplify?.tolerance;
+	return tol ? { simplify: { tolerance: tol } } : {};
 }
 
 /** Motion components a transform-mode target already follows (the animated ones; all three when none). */
@@ -401,28 +418,39 @@ export async function stopTrack(engine: TrackingEngine, trackerId: string): Prom
 
 export type ApplyMode = 'corner-pin' | 'position' | 'position-scale-rotation';
 
-function applyCommand(trackerId: string, targetClipId: string, mode: ApplyMode): Command {
+function applyCommand(
+	trackerId: string,
+	targetClipId: string,
+	mode: ApplyMode,
+	simplifyTolerance?: number,
+): Command {
+	const simplify = simplifyTolerance ? { simplify: { tolerance: simplifyTolerance } } : {};
 	return (
 		mode === 'corner-pin'
-			? { type: 'tracker.apply', trackerId, targetClipId, mode: 'corner-pin' }
+			? { type: 'tracker.apply', trackerId, targetClipId, mode: 'corner-pin', ...simplify }
 			: {
 					type: 'tracker.apply',
 					trackerId,
 					targetClipId,
 					mode: 'transform',
 					components: mode === 'position' ? ['position'] : ['position', 'scale', 'rotation'],
+					...simplify,
 				}
 	) as Command;
 }
 
-/** Bakes the tracker onto the target (one history entry "Apply Tracking"). */
+/**
+ * Bakes the tracker onto the target (one history entry "Apply Tracking"); with `simplifyTolerance` the baked keys
+ * are simplified in the same step (S09:TRK-023).
+ */
 export function applyTracking(
 	session: EditorSession,
 	trackerId: string,
 	targetClipId: string,
 	mode: ApplyMode,
+	simplifyTolerance?: number,
 ): void {
-	run(session, 'Apply Tracking', [applyCommand(trackerId, targetClipId, mode)]);
+	run(session, 'Apply Tracking', [applyCommand(trackerId, targetClipId, mode, simplifyTolerance)]);
 }
 
 /** Re-applies the tracker that drives `targetClipId` with its recorded mode over the overlap. */
@@ -440,6 +468,7 @@ export function reapplyTracking(session: EditorSession, targetClipId: string): v
 			targetClipId,
 			mode: tb.mode,
 			...(tb.mode === 'transform' ? { components: animatedComponents(target) } : {}),
+			...simplifyOf(target),
 		} as Command,
 	]);
 }

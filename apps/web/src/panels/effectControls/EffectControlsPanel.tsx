@@ -37,6 +37,7 @@ import {
 } from '../../text-animation/actions.ts';
 import { TextAnimationBars } from '../../text-animation/TextAnimationBars.tsx';
 import { TextAnimationSection } from '../../text-animation/TextAnimationSection.tsx';
+import { openSimplify } from '../../tracking/simplify-actions.ts';
 import {
 	applyEffectToClips,
 	isEffectDrag,
@@ -233,6 +234,19 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	const applyPreset = (ids: string[], preset: InterpolationPreset) => {
 		const label = INTERPOLATION_MENU.find((m) => m.preset === preset)?.label ?? preset;
 		ops.apply(`Keyframe Interpolation: ${label}`, [interpolationCommand(ids, preset)]);
+	};
+
+	/** ParamPaths of the parameters holding the given keys (Simplify Keyframes… on fewer than 3 keys). */
+	const keyParamPaths = (ids: readonly string[]): string[][] => {
+		const want = new Set(ids);
+		const out = new Map<string, string[]>();
+		for (const g of groups)
+			for (const s of g.sections)
+				for (const r of s.rows)
+					for (const b of r.bindings)
+						if (b.path && (b.resolved.anim?.keyframes ?? []).some((k) => want.has(k.id)))
+							out.set(b.path.join('/'), [...b.path]);
+		return [...out.values()];
 	};
 
 	const keyFramesOfClip = (clipId: string, exclude: ReadonlySet<string>) => {
@@ -759,6 +773,25 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 							Copy
 						</button>
 					) : null}
+					{/* wp-m3-trackui (S09:TRK-023): Simplify Keyframes… — the selected keys (3+), else their parameters. */}
+					<button
+						type="button"
+						role="menuitem"
+						className="mt-1 block w-full border-t border-pr-border-subtle px-3 pt-1 pb-[3px] text-left text-pr-ui text-pr-text hover:bg-pr-accent-fill hover:text-pr-on-accent"
+						data-testid="ec-kf-simplify"
+						onClick={() => {
+							const ids = menu.ids;
+							setMenu(null);
+							if (ids.length >= 3) {
+								void openSimplify(session, { keyframeIds: ids }, `${ids.length} selected keyframes`);
+								return;
+							}
+							const paths = keyParamPaths(ids);
+							if (paths.length) void openSimplify(session, { targets: paths });
+						}}
+					>
+						Simplify Keyframes…
+					</button>
 					<button
 						type="button"
 						role="menuitem"

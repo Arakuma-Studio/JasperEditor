@@ -129,6 +129,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				sep,
 				sub('Anchor', ANCHOR_MENU),
 			]),
+			// wp-m3-trackui (S09:TRK-023)
+			c('keyframes.simplify', 'Simplify Keyframes…'),
 			c('clip.revealInProject', 'Reveal in Project'),
 			c('clip.revealInTimeline', 'Reveal in Timeline'),
 			sep,

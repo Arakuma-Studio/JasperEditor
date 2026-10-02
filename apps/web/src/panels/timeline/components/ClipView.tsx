@@ -1,6 +1,7 @@
 // One clip body (S02 §7: TL-320…334; S05:TLC-040/041). DOM body positioned with translateX in viewport
 // coordinates (TL-153); filmstrip and waveform drawn into ≤ 512 px canvas tiles positioned from exact
-// time so they never drift from the clip edges (TL-102, TL-158).
+// time so they never drift from the clip edges (TL-102, TL-158). Registered `clipDecorations` add badges to
+// the name strip and overlays to the body (S09:TRU-005 tracker/link glyphs, ARCHITECTURE §19.10).
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	type Clip,
@@ -14,7 +15,13 @@ import {
 import type { MediaRuntime } from '@jasper/session';
 import { labelColor } from '@jasper/ui';
 import { memo, useCallback } from 'react';
-import { useClipBadge } from '../../../extensions/react.ts';
+import {
+	type ClipDecorationDef,
+	type ClipDecorationProps,
+	clipDecorations,
+	decorationsFor,
+} from '../../../extensions/index.ts';
+import { useClipBadge, useRegistry } from '../../../extensions/react.ts';
 import { TextAnimationWedges } from '../../../text-animation/TextAnimationWedges.tsx';
 import { peaksFor, reducePeaks, sheetImage, spriteFor } from '../media/media-cache.ts';
 import { filmstripSlots, nearestTile, tileRect } from '../model/filmstrip.ts';
@@ -76,6 +83,7 @@ function ClipViewImpl(p: ClipViewProps) {
 	const caps = kindCapabilities(c.kind);
 	// M2 (wp-m2-mg): engine badge state from the extension providers (e.g. Remotion master cached → ✓).
 	const extBadge = useClipBadge(c);
+	const decorations = decorationsFor(useRegistry(clipDecorations), c);
 	const isAudio = caps ? !caps.visual && caps.audio : false;
 	const dprv = dpr();
 	const xr = snapPx(p.x, dprv);
@@ -232,6 +240,22 @@ function ClipViewImpl(p: ClipViewProps) {
 	}
 	const showName = p.w >= 12 && (isAudio ? p.display.audioNames : p.display.videoNames);
 	const showBadges = p.w >= 40;
+	const decoBadges = showBadges ? decorations.filter((d) => d.badge) : [];
+	const decoOverlays = decorations.filter((d) => d.overlay);
+	const decoProps: ClipDecorationProps | null = decorations.length
+		? {
+				clip: c,
+				x: p.x,
+				w: p.w,
+				height: p.height,
+				viewportWidth: p.viewportWidth,
+				scrollFrame: p.scrollFrame,
+				pxPerFrame: p.pxPerFrame,
+				rate: p.rate,
+				selected: p.selected,
+				trackLocked: p.trackLocked,
+			}
+		: null;
 	// M2 (S11:ATP-002): per clip, so anime templates show R.
 	const badge = clipEngines(c)?.badge ?? null;
 	const hasFx = ((c as { effects?: unknown[] }).effects?.length ?? 0) > 0;
@@ -281,15 +305,20 @@ function ClipViewImpl(p: ClipViewProps) {
 					version={p.mediaVersion}
 				/>
 			) : null}
-			{showName ? (
+			{showName || decoBadges.length ? (
 				<div
 					className="pointer-events-none absolute top-0 right-0 flex h-[14px] items-center gap-1 pr-1 text-[11px] leading-[14px] text-pr-strong"
 					style={{ left: nameOffset, paddingLeft: 4 }}
 				>
-					<span className="min-w-0 flex-1 truncate">
-						{p.offline ? `Media Offline · ${c.name}` : nameFor(c, p.linked, isAudio)}
-					</span>
-					{showBadges && p.syncOffset ? (
+					{showName ? (
+						<span className="min-w-0 flex-1 truncate">
+							{p.offline ? `Media Offline · ${c.name}` : nameFor(c, p.linked, isAudio)}
+						</span>
+					) : (
+						<span className="flex-1" />
+					)}
+					{decoProps ? decoBadges.map((d) => <DecorationBadge key={d.id} def={d} props={decoProps} />) : null}
+					{showName && showBadges && p.syncOffset ? (
 						<span
 							className="shrink-0 rounded-[2px] px-[3px] text-[10px] leading-[12px] text-pr-strong"
 							style={{ background: 'var(--pr-danger)' }}
@@ -298,12 +327,12 @@ function ClipViewImpl(p: ClipViewProps) {
 							{p.syncOffset > 0 ? `+${p.syncOffset}` : p.syncOffset}
 						</span>
 					) : null}
-					{showBadges && p.display.fxBadges && hasFx ? (
+					{showName && showBadges && p.display.fxBadges && hasFx ? (
 						<span className="shrink-0 text-[10px] text-pr-strong opacity-80" title="Effects applied">
 							fx
 						</span>
 					) : null}
-					{showBadges && p.display.engineBadges && badge ? (
+					{showName && showBadges && p.display.engineBadges && badge ? (
 						<span
 							className="shrink-0 text-[10px] font-semibold text-pr-strong opacity-70"
 							title={extBadge?.title ?? (badge === 'R' ? 'Rendered by Remotion' : 'Rendered by fframes')}
@@ -337,6 +366,7 @@ function ClipViewImpl(p: ClipViewProps) {
 				: null}
 			{/* M2 (wp-m2-text-anim, S11:TXA-023): In/Out wedges of animated text clips. */}
 			<TextAnimationWedges clip={c} pxPerFrame={p.pxPerFrame} height={p.height} />
+			{decoProps ? decoOverlays.map((d) => <DecorationOverlay key={d.id} def={d} props={decoProps} />) : null}
 			{p.trackLocked ? (
 				<div
 					className="pointer-events-none absolute inset-0"
@@ -345,6 +375,16 @@ function ClipViewImpl(p: ClipViewProps) {
 			) : null}
 		</div>
 	);
+}
+
+function DecorationBadge({ def, props }: { def: ClipDecorationDef; props: ClipDecorationProps }) {
+	const Badge = def.badge!;
+	return <Badge {...props} />;
+}
+
+function DecorationOverlay({ def, props }: { def: ClipDecorationDef; props: ClipDecorationProps }) {
+	const Overlay = def.overlay!;
+	return <Overlay {...props} />;
 }
 
 function maxOf(a: Float32Array, b: Float32Array): Float32Array {

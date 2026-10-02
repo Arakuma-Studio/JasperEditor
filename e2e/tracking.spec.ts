@@ -1,7 +1,7 @@
 // Tracking UI acceptance (S09 §8 item 6, TRU-001…004): a plate on V1 and a still on V2; add a planar tracker in
 // Properties ▸ Tracking → drag a corner on the Program monitor (one History entry) → Track Forward (engine job,
 // live overlay) → Apply to… Corner Pin (one entry) → drag a corner-pin handle at a frame (keyframe updated, one
-// entry) → the undo chain restores each step.
+// entry) → timeline glyphs (TRU-005) → Simplify… (TRK-023, one entry) → the undo chain restores each step.
 import { expect, type Page, test } from '@playwright/test';
 import {
 	appliedLabels,
@@ -188,14 +188,52 @@ test('drag a corner-pin handle at a frame: the keyframe there changes (one entry
 	expect(changed[0]!.value[0]).toBeGreaterThan(keysBefore.find((k) => k.time === changed[0]!.time)!.value[0]);
 });
 
+test('timeline glyphs: tracker badge and confidence strip on the plate, link on the still (S09:TRU-005)', async () => {
+	const badge = page.locator(`[data-testid="clip-tracker-badge"][data-clip-id="${plateId}"]`);
+	await expect(badge).toBeVisible();
+	await expect(badge).toHaveAttribute('aria-label', /Planar Tracker 1/);
+	await expect(
+		page.locator(`[data-clip-id="${plateId}"] [data-testid="clip-tracker-strip"]`).first(),
+	).toBeVisible();
+	const link = page.locator(`[data-testid="clip-tracked-link"][data-clip-id="${stillId}"]`);
+	await expect(link).toHaveAttribute('aria-label', /Follows Planar Tracker 1/);
+	// Clicking the link selects the plate and reveals Properties ▸ Tracking with the tracker active.
+	await link.click();
+	await expect(page.getByTestId('tracking-section')).toBeVisible();
+	await expect(page.getByTestId('tracker-controls')).toBeVisible();
+	await expect(page.getByTestId('tracker-overlay')).toBeVisible();
+});
+
+test('Simplify… reduces the tracked keys within the tolerance as one entry (S09:TRK-023)', async () => {
+	const before = (await pinOf())!.params.topLeft!.keyframes.length;
+	const labels0 = (await appliedLabels(page)).length;
+	await page.getByTestId('tracking-simplify').click();
+	const dialog = page.getByTestId('simplify-dialog');
+	await expect(dialog).toBeVisible();
+	await page.getByTestId('simplify-preset-0.5').click();
+	await expect(page.getByTestId('simplify-deviation')).toContainText('tolerance 0.500');
+	await expect(page.getByTestId('simplify-graph')).toBeVisible();
+	// The preview is a gesture: nothing committed yet.
+	expect((await appliedLabels(page)).length).toBe(labels0);
+	await dialog.getByRole('button', { name: 'Apply', exact: true }).click();
+	await expect(dialog).toBeHidden();
+	await expect.poll(async () => (await appliedLabels(page)).slice(labels0)).toEqual(['Simplify Keyframes']);
+	const after = (await pinOf())!.params.topLeft!.keyframes.length;
+	expect(after).toBeLessThan(before);
+	const still = await clipDoc<{ trackedBy?: { simplify?: { tolerance: number } } }>(stillId);
+	expect(still.trackedBy?.simplify?.tolerance).toBe(0.5);
+});
+
 test('the undo chain restores each step', async () => {
 	const expectTop = async (label: string) =>
 		expect.poll(async () => (await appliedLabels(page)).at(-1)).toBe(label);
-	await expectTop('Corner Pin');
+	await expectTop('Simplify Keyframes');
 	await page.getByTestId('program-monitor').click({ position: { x: 5, y: 5 } });
 	const undo = async () => {
 		await page.keyboard.press('Control+KeyZ');
 	};
+	await undo();
+	await expectTop('Corner Pin');
 	await undo();
 	await expectTop('Apply Tracking');
 	await undo();

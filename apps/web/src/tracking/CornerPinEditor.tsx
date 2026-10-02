@@ -13,12 +13,13 @@ import {
 	type TrackedBy,
 } from '@jasper/project';
 import { useSessionState } from '@jasper/session/react';
-import { Move, RefreshCw, TriangleAlert, Unlink } from 'lucide-react';
+import { Move, RefreshCw, Spline, TriangleAlert, Unlink } from 'lucide-react';
 import { useState } from 'react';
 import type { EffectEditorProps } from '../extensions/index.ts';
 import { reapplyTracking, unlinkTracking } from './actions.ts';
 import { SmallButton, ToolButton } from './controls.tsx';
 import { CORNER_PIN_DEFAULTS, pinIsConvex, type Quad } from './geometry.ts';
+import { openSimplify } from './simplify-actions.ts';
 import { trackingStore, useTracking } from './store.ts';
 
 /** Corner-pin params of an effect instance evaluated at a sequence frame (normalised). */
@@ -82,6 +83,23 @@ export function CornerPinEditor(props: EffectEditorProps) {
 							Re-apply
 						</SmallButton>
 						<SmallButton
+							icon={Spline}
+							disabled={readOnly}
+							onClick={() =>
+								act(() => {
+									void openSimplify(
+										session,
+										{ clipIds: [clip.id], trackedOnly: true },
+										`Corner Pin of ${clip.name || 'clip'}`,
+									);
+								})
+							}
+							title="Reduce the per-frame corner keyframes within a tolerance"
+							data-testid="corner-pin-simplify"
+						>
+							Simplify…
+						</SmallButton>
+						<SmallButton
 							icon={Unlink}
 							disabled={readOnly}
 							onClick={() => act(() => unlinkTracking(session, clip.id))}
@@ -97,6 +115,7 @@ export function CornerPinEditor(props: EffectEditorProps) {
 				<p className="pl-[26px] text-pr-small text-pr-muted" data-testid="corner-pin-driven">
 					Driven by tracker <span className="text-pr-text">{loc?.tracker.name ?? '(removed)'}</span> on{' '}
 					<span className="text-pr-text">{loc?.clip.name || 'clip'}</span>
+					{driven.simplify ? ` · simplified ≤ ${driven.simplify.tolerance} px` : ''}
 				</p>
 			) : null}
 			{!convex ? (

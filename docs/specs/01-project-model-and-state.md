@@ -745,6 +745,12 @@ type Ease = { influence: number; slope: number }; // influence in (0, 1]; slope 
   - Moving keyframes keeps them sorted. Moving one onto another keyframe's time replaces that keyframe.
   - Keyframe times are snapped to the sequence frame grid when created through the UI. Agents may pass any content time. It is snapped to the grid of the sequence that owns the clip.
 - **KF-006 (P0)** Keyframes outside the clip's visible range are kept (they still shape interpolation). Effect Controls shows them past the clip edge, as Premiere does. A command `keyframes.prune {clipId}` removes keyframes that do not affect the visible range.
+- **KF-010 (P1, M3)** `keyframes.simplify {tolerance, keyframeIds | targets | clipIds [, trackedOnly], details?}`
+  reduces keyframes to the fewest whose animation stays within `tolerance` of the original at every frame of the
+  owner (and every original key time): sequence pixels for Motion and corner pins (displacement of the drawn
+  picture), the parameter's own units otherwise. Kept keys keep id, time and value; segments become `linear` or a
+  fitted `bezier` ease; keys outside the selected span are untouched; hold-only parameters are skipped. One
+  transaction; the result reports counts and the measured deviation (S09:TRK-023).
 - **KF-007 (P0)** Hold-only types (booleans, enums, strings, font ids, media refs) always behave as `hold` whatever `interpolation` says.
 - **KF-008 (P1)** Spatial interpolation of `position` (curved motion paths with spatial tangents) is reserved: v1 moves position along straight lines, with temporal easing only.
 - **KF-009 (P0)** Remotion evaluates keyframes per frame in the composition (with the same `project-model` evaluator, not a separate one). The native engine compiles keyframed parameters into per-segment filter expressions or renders those clips through the hybrid path. See `docs/research/native-video-libraries.md` §6.
@@ -965,6 +971,7 @@ Arguments in brackets are optional. "Target tracks" accept ids or labels (`"V2"`
 | `keyframe.add` / `keyframe.update` / `keyframe.remove` / `keyframe.move` | `target`, keyframe fields | KF-001, KF-005 |
 | `keyframe.setInterpolation` | `keyframeIds`, `interpolation`, [`easeIn`], [`easeOut`] | KF-004 |
 | `keyframes.prune` | `clipId` | KF-006 |
+| `keyframes.simplify` | `tolerance`, one of `keyframeIds` / `targets` / `clipIds` (+ `trackedOnly`), [`details`] | KF-010 |
 | `transition.add` | `trackId`, `at` (edit point frame) \| `{clipId, edge}`, `effectId`, [`duration`], [`alignment`], [`handles`] | TRN-001–TRN-004 |
 | `transition.update` / `transition.remove` | | |
 | `transition.applyDefault` | `clipIds`, `edges: 'both' \| 'in' \| 'out'` | Premiere Shift+D |

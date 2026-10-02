@@ -49,6 +49,11 @@ export const TrackerApplyCmd = cmd('tracker.apply', {
 		.optional(),
 	/** Sequence frames to bake (default: the overlap of both clips). */
 	range: z.strictObject({ start: z.number().int().min(0), end: z.number().int().min(1) }).optional(),
+	/**
+	 * wp-m3-trackui (additive, S09:TRK-023): simplify the baked keys in the same transaction, keeping the animation
+	 * within `tolerance` sequence pixels of the per-frame track at every frame.
+	 */
+	simplify: z.strictObject({ tolerance: z.number().positive().max(10_000) }).optional(),
 });
 
 /** wp-m2-track (additive): drops the `trackedBy` link of target clips; their keyframes stay (S09:TRU-004 Unlink). */

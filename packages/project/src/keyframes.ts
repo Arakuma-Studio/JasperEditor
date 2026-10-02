@@ -79,7 +79,8 @@ export function autoSlope<T>(kfs: readonly Keyframe<T>[], i: number, side: 'in' 
 	return Math.min(3, Math.max(0, across / seg));
 }
 
-function outgoingEase<T>(kfs: readonly Keyframe<T>[], i: number): Ease {
+/** Effective ease leaving key i as the evaluator uses it (linear → 1/3·1, auto-bezier → computed). */
+export function outgoingEase<T>(kfs: readonly Keyframe<T>[], i: number): Ease {
 	const k = kfs[i]!;
 	if (k.interpolation === 'auto-bezier')
 		return { influence: AUTO_INFLUENCE, slope: autoSlope(kfs, i, 'out') };
@@ -87,7 +88,8 @@ function outgoingEase<T>(kfs: readonly Keyframe<T>[], i: number): Ease {
 	return k.easeOut;
 }
 
-function incomingEase<T>(kfs: readonly Keyframe<T>[], i: number): Ease {
+/** Effective ease arriving at key i as the evaluator uses it. */
+export function incomingEase<T>(kfs: readonly Keyframe<T>[], i: number): Ease {
 	const k = kfs[i]!;
 	if (k.interpolation === 'auto-bezier') return { influence: AUTO_INFLUENCE, slope: autoSlope(kfs, i, 'in') };
 	if (k.interpolation === 'linear') return LINEAR_EASE;

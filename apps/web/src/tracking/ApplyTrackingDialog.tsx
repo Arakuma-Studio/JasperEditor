@@ -1,11 +1,22 @@
 // "Apply Tracking" dialog (S09:TRU-001, TRK-020…023): pick a target among the clips overlapping the plate on
-// tracks above it, and a mode — Corner Pin (planar trackers), Position, or Position + Scale + Rotation. Applying
-// is one history entry "Apply Tracking".
+// tracks above it, and a mode — Corner Pin (planar trackers), Position, or Position + Scale + Rotation — and,
+// optionally, simplify the baked per-frame keys within a tolerance (S09:TRK-023). Applying is one history entry
+// "Apply Tracking".
 import { type Clip, findTracker, formatTimecode } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
-import { cx, Dialog, type HostedDialogProps } from '@jasper/ui';
+import { Checkbox, cx, Dialog, type HostedDialogProps, ScrubbyNumber } from '@jasper/ui';
 import { useMemo, useState } from 'react';
 import { type ApplyMode, activeSeq, applyCandidates, applyTracking } from './actions.ts';
+import { lastSimplifyTolerance } from './SimplifyKeyframesDialog.tsx';
+
+const SIMPLIFY_KEY = 'jasper.tracking.applySimplify';
+const loadSimplify = (): boolean => {
+	try {
+		return globalThis.localStorage?.getItem(SIMPLIFY_KEY) === '1';
+	} catch {
+		return false;
+	}
+};
 
 type ApplyTrackingDialogProps = { session: EditorSession; trackerId: string; targetClipId?: string };
 
@@ -46,6 +57,8 @@ export function ApplyTrackingDialog(props: HostedDialogProps<ApplyTrackingDialog
 			null,
 	);
 	const [mode, setMode] = useState<ApplyMode>(planar ? 'corner-pin' : 'position');
+	const [simplify, setSimplify] = useState(loadSimplify);
+	const [tolerance, setTolerance] = useState(lastSimplifyTolerance);
 	const [error, setError] = useState<string | null>(null);
 	const finish = () => {
 		setOpen(false);
@@ -54,7 +67,12 @@ export function ApplyTrackingDialog(props: HostedDialogProps<ApplyTrackingDialog
 	const apply = () => {
 		if (!info || !target) return false;
 		try {
-			applyTracking(session, trackerId, target, mode);
+			applyTracking(session, trackerId, target, mode, simplify ? tolerance : undefined);
+			try {
+				globalThis.localStorage?.setItem(SIMPLIFY_KEY, simplify ? '1' : '0');
+			} catch {
+				// private mode
+			}
 		} catch (e) {
 			setError((e as Error).message);
 			return false;
@@ -156,6 +174,32 @@ export function ApplyTrackingDialog(props: HostedDialogProps<ApplyTrackingDialog
 							);
 						})}
 					</fieldset>
+					<div className="flex flex-col gap-1" data-testid="tracking-apply-simplify">
+						<div className="flex items-center gap-2">
+							<Checkbox
+								checked={simplify}
+								onCheckedChange={setSimplify}
+								label="Simplify keyframes"
+								aria-label="Simplify keyframes"
+							/>
+							<ScrubbyNumber
+								value={tolerance}
+								label="Simplify tolerance"
+								unit="px"
+								min={0.001}
+								max={100}
+								step={0.01}
+								precision={3}
+								disabled={!simplify}
+								onScrubEnd={(v) => setTolerance(v)}
+								onCommit={(v) => setTolerance(v)}
+								className="w-[72px]"
+							/>
+						</div>
+						<span className="pl-[22px] text-pr-small text-pr-muted">
+							Keep only the keys needed to stay within the tolerance at every frame (instead of one per frame)
+						</span>
+					</div>
 					{error ? (
 						<p className="text-pr-small text-pr-danger" role="alert">
 							{error}

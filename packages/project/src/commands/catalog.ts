@@ -13,6 +13,7 @@ import { processHandlers } from './handlers/process.ts';
 import { projectHandlers } from './handlers/project.ts';
 import { sequenceHandlers } from './handlers/sequence.ts';
 import { keepShapesCentred, SHAPE_BOX_COMMANDS, SHAPE_OWNER, shapeHandlers } from './handlers/shape.ts';
+import { simplifyHandlers } from './handlers/simplify.ts';
 import { trackerHandlers } from './handlers/tracker.ts';
 import { transitionHandlers } from './handlers/transition.ts';
 import type { Handler, HandlerMap } from './handlers/util.ts';
@@ -28,6 +29,7 @@ export type CommandOwner =
 	| 'wp-m2-mg'
 	| 'wp-m2-track'
 	| 'wp-m2-shapes'
+	| 'wp-m3-trackui'
 	// Clipboard (S01 §20)
 	| 'wp-clipboard';
 
@@ -38,7 +40,7 @@ export type CatalogEntry = {
 	/** Default History label (the transaction label wins; S01:UND-002). */
 	label: string;
 	owner: CommandOwner;
-	milestone: 'M1' | 'M2';
+	milestone: 'M1' | 'M2' | 'M3';
 };
 
 const LABELS: Record<CommandType, string> = {
@@ -122,6 +124,7 @@ const LABELS: Record<CommandType, string> = {
 	'tracker.setSamples': 'Track',
 	'tracker.apply': 'Apply Tracking',
 	'tracker.unlink': 'Unlink Tracking',
+	'keyframes.simplify': 'Simplify Keyframes',
 	'clip.paste': 'Paste',
 	'clip.pasteAttributes': 'Paste Attributes',
 	'clip.removeAttributes': 'Remove Attributes',
@@ -142,6 +145,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[processHandlers, 'wp-m2-process'],
 	[compositionHandlers, 'wp-m2-mg'],
 	[trackerHandlers, 'wp-m2-track'],
+	[simplifyHandlers, 'wp-m3-trackui'],
 	[shapeHandlers, SHAPE_OWNER],
 	[clipboardHandlers, CLIPBOARD_OWNER],
 	[m2Handlers, 'M2'],
@@ -162,7 +166,11 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 			handler: SHAPE_BOX_COMMANDS.has(type) ? keepShapesCentred(handler) : handler,
 			label: LABELS[type],
 			owner,
-			milestone: owner === 'M2' || owner.startsWith('wp-m2-') || owner === CLIPBOARD_OWNER ? 'M2' : 'M1',
+			milestone: owner.startsWith('wp-m3-')
+				? 'M3'
+				: owner === 'M2' || owner.startsWith('wp-m2-') || owner === CLIPBOARD_OWNER
+					? 'M2'
+					: 'M1',
 		};
 	}
 	return out;

@@ -348,7 +348,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (70; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (71; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -360,7 +360,7 @@ Tools (70; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the
   `set_media_source_range`.
 - Remotion projects: `import_mg_bundle` `list_compositions` `add_composition` `set_composition_props`
   `prerender_composition` `scaffold_mg_project`.
-- Tracking: `add_tracker` `track` `apply_tracking` `get_tracker` `set_corner_pin`.
+- Tracking: `add_tracker` `track` `apply_tracking` `get_tracker` `set_corner_pin` `simplify_keyframes`.
 - Transitions: `list_transitions` `update_transition` `remove_transitions` `apply_default_transitions`
   `set_transition_defaults`.
 - Animation and graphics: `list_text_animations` `set_text_animation` `render_frames` `set_motion_graphic_params`
@@ -422,9 +422,13 @@ The result is ordinary Corner Pin keyframes. To correct a frame, drag the pin's 
 
 Point trackers drive Position (and planar ones optionally Scale and Rotation) for elements that follow something.
 
+On the timeline the plate shows a tracker badge and a confidence strip per tracker (green / amber / red, lost frames marked; hover a frame for its confidence), and the clip that follows shows a link glyph. Click either to jump to the tracker in Properties ▸ Tracking.
+
+Tracking bakes one keyframe per frame. **Simplify…** (Properties ▸ Tracking, the Corner Pin editor, Clip ▸ Simplify Keyframes…, or right-click keyframes in Effect Controls — it works on any keyframed parameter) keeps only the keys needed to stay within a tolerance at every frame: in pixels of the picture for Motion and Corner Pin, in the parameter's units otherwise. The dialog previews the result live with the key count and the measured deviation; Apply is one undo step. The Apply Tracking dialog can simplify in the same step.
+
 Corner pins and keyframed Motion export on the native ffmpeg path through the warp stage: an LGPL-safe per-frame warp, cached as ProRes 4444 under `<appdir>/cache/warp/`.
 
-Agents use the `add_tracker`, `track`, `apply_tracking`, `get_tracker` and `set_corner_pin` MCP tools. Tracking runs OpenCV.js (Apache-2.0) in engine worker threads. Details: `docs/specs/09-tracking.md` and `docs/wp-notes/wp-m2-track.md`.
+Agents use the `add_tracker`, `track`, `apply_tracking`, `get_tracker`, `set_corner_pin` and `simplify_keyframes` MCP tools. Tracking runs OpenCV.js (Apache-2.0) in engine worker threads. Details: `docs/specs/09-tracking.md`, `docs/wp-notes/wp-m2-track.md` and `docs/wp-notes/wp-m3-trackui.md`.
 
 ## Shapes
 
