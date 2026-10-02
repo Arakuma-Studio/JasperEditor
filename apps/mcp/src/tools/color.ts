@@ -50,10 +50,10 @@ import { ProjectIdArg } from './projects.ts';
 
 // ---------------------------------------------------------------- the grade_clip shape ↔ Lumetri params
 
-export type GradeSection = 'basic' | 'creative' | 'curves' | 'wheels';
+type GradeSection = 'basic' | 'creative' | 'curves' | 'wheels';
 
 /** grade_clip / get_grade field → `jasper.lumetri` param name (S06:CG-002 is the contract). */
-export const GRADE_FIELDS: readonly { section: GradeSection; key: string; param: string }[] = [
+const GRADE_FIELDS: readonly { section: GradeSection; key: string; param: string }[] = [
 	{ section: 'basic', key: 'inputLut', param: 'inputLut' },
 	{ section: 'basic', key: 'temperature', param: 'temperature' },
 	{ section: 'basic', key: 'tint', param: 'tint' },
@@ -88,7 +88,7 @@ function lumetriParam(name: string): ParamSpec {
 const fmt = (x: unknown) => (typeof x === 'number' ? String(x) : JSON.stringify(x));
 
 /** "−100…100, default 0" style range text of a numeric param (from the registry). */
-export function rangeText(p: ParamSpec): string {
+function rangeText(p: ParamSpec): string {
 	const unit = p.unit === '%' ? ' %' : p.unit ? ` ${p.unit}` : '';
 	return `${p.range?.min ?? '−∞'}…${p.range?.max ?? '∞'}${unit}, default ${fmt(p.default)}`;
 }
@@ -164,7 +164,7 @@ function sectionSchema(section: GradeSection, what: string) {
 	return z.strictObject(shape).optional().describe(what);
 }
 
-/** grade_clip input, also used to build GradeClipSchema. */
+/** grade_clip input. */
 const GradeClipInput = {
 	projectId: ProjectIdArg,
 	clipId: z.string().min(1).describe('Clip id ("clp_…") of a visual clip (video, still, title, graphic…)'),
@@ -182,16 +182,14 @@ const GradeClipInput = {
 		'Only for params that are already keyframed: the time (inside the clip) where the value is set as a keyframe; default the editor playhead when it is on the clip',
 	).optional(),
 };
-export const GradeClipSchema = z.object(GradeClipInput);
-
-export type Clamped = { field: string; given: unknown; applied: unknown };
+type Clamped = { field: string; given: unknown; applied: unknown };
 
 /**
  * Validates and clamps the grade sections to the registry ranges: numbers to [min, max], curves normalised
  * (clamped to 0…1, sorted, one point per x), wheel vectors scaled into the unit disc. LUT references stay
  * `{lutRef}` until `resolveLutRefs`. Returns the values keyed by param name and what had to be clamped.
  */
-export function normalizeGrade(args: Partial<Record<GradeSection, Record<string, unknown> | undefined>>): {
+function normalizeGrade(args: Partial<Record<GradeSection, Record<string, unknown> | undefined>>): {
 	params: Record<string, unknown>;
 	clamped: Clamped[];
 } {
@@ -282,10 +280,7 @@ function resolveLut(doc: ProjectDocument, ref: string): MediaAsset {
 }
 
 /** Replaces `{lutRef}` placeholders with `{mediaId}` param values (`''` = none). */
-export function resolveLutRefs(
-	doc: ProjectDocument,
-	params: Record<string, unknown>,
-): Record<string, unknown> {
+function resolveLutRefs(doc: ProjectDocument, params: Record<string, unknown>): Record<string, unknown> {
 	const out: Record<string, unknown> = {};
 	for (const [k, v] of Object.entries(params)) {
 		if (v && typeof v === 'object' && 'lutRef' in v) {
@@ -414,7 +409,7 @@ function lumetriGradeView(values: Record<string, unknown>): Record<GradeSection,
  * order, bypass state, keyframes re-timed) are inserted where the target's first colour effect was (appended
  * when it had none). Non-colour effects stay where they are. Params unknown to the effect spec are dropped.
  */
-export function planCopyGrade(
+function planCopyGrade(
 	doc: ProjectDocument,
 	fromClipId: string,
 	toClipIds: readonly string[],

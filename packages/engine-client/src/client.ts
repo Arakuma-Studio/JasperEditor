@@ -6,6 +6,7 @@ import {
 	API_HEADER,
 	API_VERSION,
 	buildPath,
+	type DerivativeKind,
 	type EngineJob,
 	ErrorShapeSchema,
 	type ExportPlanRequest,
@@ -227,6 +228,9 @@ export class EngineClient {
 	}
 	mediaStatus(mediaKey: string) {
 		return this.call('mediaStatus', { params: { mediaKey } });
+	}
+	requestDerivatives(mediaKey: string, kinds: DerivativeKind[]) {
+		return this.call('mediaDerivatives', { params: { mediaKey }, body: { kinds } });
 	}
 	listJobs(query: JobListQuery = {}) {
 		return this.call('jobsList', { query });

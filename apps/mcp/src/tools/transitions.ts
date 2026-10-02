@@ -188,9 +188,9 @@ type Alignment = Transition['alignment'];
 const ALIGNMENTS: readonly Alignment[] = ['center', 'start-at-cut', 'end-at-cut'];
 
 /** The editor user's default transitions as `preferences.get` returns them (S10:TUI-034). */
-export type EditorTransitionDefaults = { video?: unknown; audio?: unknown; alignment?: unknown };
+type EditorTransitionDefaults = { video?: unknown; audio?: unknown; alignment?: unknown };
 
-export type ResolvedTransitionDefaults = {
+type ResolvedTransitionDefaults = {
 	videoEffectId: string;
 	audioEffectId: string;
 	alignment: Alignment;
@@ -202,7 +202,7 @@ export type ResolvedTransitionDefaults = {
  * What apply_default_transitions uses (pure): the call's arguments, else the open editor's preferences
  * (when they are valid ids of the right medium), else the built-ins (cross dissolve, constant power, center).
  */
-export function resolveTransitionDefaults(
+function resolveTransitionDefaults(
 	args: { videoType?: string; audioType?: string; alignment?: Alignment },
 	editor: EditorTransitionDefaults | null,
 ): ResolvedTransitionDefaults {

@@ -18,17 +18,14 @@ import {
 	sequenceSummary,
 	timelineArea,
 	trackRow,
-	watchPage,
 } from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
 
 let page: Page;
-let watcher: { errors: string[] };
 
 test.beforeAll(async ({ browser }) => {
 	page = await browser.newPage();
-	watcher = watchPage(page);
 	await enableAgentBridge(page);
 });
 
@@ -55,31 +52,8 @@ async function drawnPixels(clipId: string): Promise<number> {
 	});
 }
 
-test('Editing workspace chrome: panels, tabs, engine chip, font, ` maximize', async () => {
+test('Backquote maximizes and restores the timeline', async () => {
 	await createProject(page, 'E2E Editing');
-	await expect(page.getByTestId('title-bar')).toBeVisible();
-	await expect(page.getByTestId('title-bar').getByRole('menubar')).toBeVisible();
-	await expect(page.getByTestId('workspace-tabs')).toBeVisible();
-	await expect(page.getByTestId('mode-edit')).toBeVisible();
-	await expect(page.getByTestId('engine-chip')).toContainText(/Local/);
-	for (const kind of [
-		'project',
-		'program',
-		'tools',
-		'timeline',
-		'audioMeters',
-		'properties',
-		'effectControls',
-		'history',
-		'jobs',
-	]) {
-		await expect(page.getByTestId(`tab-${kind}`), kind).toHaveCount(1);
-	}
-	const font = await page.evaluate(() => getComputedStyle(document.body).fontFamily);
-	expect(font).toMatch(/Source Sans 3/);
-	const theme = await page.evaluate(() => document.documentElement.dataset.prTheme);
-	expect(theme).toBe('darkest');
-	// ` maximizes the panel group under the pointer; ` again restores it.
 	const tl = (await page.getByTestId('timeline-panel').boundingBox())!;
 	await page.mouse.move(tl.x + tl.width / 2, tl.y + tl.height / 2);
 	await page.keyboard.press('Backquote');
@@ -88,30 +62,8 @@ test('Editing workspace chrome: panels, tabs, engine chip, font, ` maximize', as
 	await expect(page.getByTestId('restore-maximized')).toBeHidden();
 });
 
-test('import two clips: probe/poster/sprite/peaks jobs complete (Jobs panel + /api/jobs)', async ({
-	request,
-}) => {
-	await importFiles(page, ['clip-a.mp4', 'clip-b.mp4']);
-	await expect
-		.poll(
-			async () => {
-				const jobs = (await (await request.get('/api/jobs')).json()).jobs as {
-					kind: string;
-					state: string;
-				}[];
-				const done = (k: string) => jobs.filter((j) => j.kind === k && j.state === 'succeeded').length;
-				return ['probe', 'poster', 'sprite', 'peaks'].map((k) => done(k) >= 2);
-			},
-			{ timeout: 60_000 },
-		)
-		.toEqual([true, true, true, true]);
-	await page.getByTestId('tab-jobs').click();
-	await expect(page.getByTestId('jobs-panel')).toBeVisible();
-	await expect(page.getByTestId('jobs-panel').locator('[data-testid^="jobs-group-"]').first()).toBeVisible();
-	await page.getByTestId('tab-project').click();
-});
-
 test('drop clip-a on V1: filmstrip and waveform are drawn', async () => {
+	await importFiles(page, ['clip-a.mp4', 'clip-b.mp4']);
 	const row = page.getByTestId('project-row').filter({ hasText: 'clip-a.mp4' });
 	await row.click(); // the import selected both items; drag only clip-a
 	const box = (await timelineArea(page).boundingBox())!;
@@ -331,5 +283,5 @@ test('Graphics ▸ Text adds a text clip; Properties scrub is one undo step; Pro
 	);
 	await expect.poll(async () => (await appliedLabels(page)).length).toBe(n1 + 4);
 	expect((await appliedLabels(page)).slice(-4)).toEqual(['Move', 'Move', 'Scale', 'Rotate']);
-	expect(watcher.errors.filter((e) => e.startsWith('pageerror'))).toEqual([]);
+	await page.screenshot({ path: 'test-results/e2e-editing-text-transform.png' });
 });

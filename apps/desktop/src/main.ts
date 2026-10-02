@@ -8,7 +8,7 @@
 // The engine writes <appdir>/engine/runtime.json, which is how the bundled jasper-mcp server
 // (resources/mcp/jasper-mcp.mjs; Help ▸ Connect an AI Agent…) finds this app's engine and token.
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -126,39 +126,12 @@ function createWindow(url: string): BrowserWindow {
 	win.webContents.on('will-attach-webview', (event) => event.preventDefault());
 	win.webContents.on('did-finish-load', () => {
 		log(`loaded ${win.webContents.getURL()} (${mode})`);
-		void maybeScreenshot(win);
 	});
 	win.webContents.on('did-fail-load', (_e, code, desc, failedUrl) =>
 		log(`failed to load ${failedUrl}: ${code} ${desc}`),
 	);
 	void win.loadURL(url);
 	return win;
-}
-
-/** Smoke-test hook: JASPER_DESKTOP_SCREENSHOT=<png> captures the window after load; *_EXIT=1 then quits. */
-async function maybeScreenshot(win: BrowserWindow): Promise<void> {
-	const target = process.env.JASPER_DESKTOP_SCREENSHOT;
-	if (!target) return;
-	// Vite may finish loading the HTML before its modules mount the app.
-	let rendered = false;
-	for (let i = 0; i < 120 && !rendered && !win.isDestroyed(); i++) {
-		rendered = await win.webContents.executeJavaScript(
-			'Boolean(document.querySelector(\'[data-testid="home"], [data-testid="editor-shell"]\'))',
-		);
-		if (!rendered) await new Promise((r) => setTimeout(r, 250));
-	}
-	if (!rendered) {
-		log('application UI did not render before screenshot timeout');
-		app.exit(1);
-		return;
-	}
-	await new Promise((r) => setTimeout(r, 250));
-	if (win.isDestroyed()) return;
-	const image = await win.webContents.capturePage();
-	mkdirSync(dirname(resolve(target)), { recursive: true });
-	writeFileSync(resolve(target), image.toPNG());
-	log(`screenshot ${resolve(target)} (${image.getSize().width}x${image.getSize().height})`);
-	if (process.env.JASPER_DESKTOP_EXIT === '1') app.quit();
 }
 
 /** IPC is answered only for frames on the app origin (not for any other frame that might get loaded). */

@@ -1,8 +1,8 @@
 // Shared fixtures for timeline tests: a real EditorSession on an in-memory document, a controller
 // with a fixed geometry, and a probed video asset factory (no engine needed).
 import {
+	createCounterIdSource,
 	createEmptyProject,
-	createSeededIdSource,
 	defaultRegistries,
 	type MediaAsset,
 	type Sequence,
@@ -20,7 +20,7 @@ const WIDTH = 1000;
 const HEIGHT = 404;
 
 export function makeSession(opts: { preset?: string; seed?: number } = {}) {
-	const ids = createSeededIdSource(opts.seed ?? 1);
+	const ids = createCounterIdSource(opts.seed ?? 1);
 	const doc = createEmptyProject({ ids, name: 'T', preset: opts.preset ?? 'hd-1080p-30' });
 	const session = new EditorSession({
 		projectId: doc.projectId,

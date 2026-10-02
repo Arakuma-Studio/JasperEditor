@@ -1,5 +1,5 @@
 // @jasper/motion/text — text animator implementations (S11 §4.2, ARCHITECTURE §20.2), keyed `id@version` like
-// `TEXT_ANIMATION_SPECS` in @jasper/project (a test asserts both lists match), and the window maths the text
+// `TEXT_ANIMATION_SPECS` in @jasper/project, and the window maths the text
 // layer needs to seek them (S11:TXA-004). Owner: wp-m2-text-anim.
 import type { ResolvedTextAnimator, TextAnimationSide } from '@jasper/project';
 import { frameToMs, needsShaping, type TextUnit } from '../runtime/index.ts';

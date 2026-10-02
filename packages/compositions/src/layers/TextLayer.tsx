@@ -37,7 +37,7 @@ type Fonts = LayerProps['fonts'];
 type TextRun = NonNullable<TextContent['runs']>[number];
 type RunStyle = TextRun['style'];
 
-export function textFontFamily(fontId: string, fonts: Fonts, weight?: number, italic?: boolean): string {
+function textFontFamily(fontId: string, fonts: Fonts, weight?: number, italic?: boolean): string {
 	const all = fonts ?? [];
 	const face =
 		all.find(
@@ -79,8 +79,8 @@ function shadowCss(shadow: TextStyle['shadow']): string | undefined {
 	return `${dx}px ${dy}px ${shadow.blurPx}px ${rgbaCss(shadow.color)}`;
 }
 
-/** Inline style of the text block (pure; unit-tested). */
-export function textBlockStyle(source: TextSource, fonts: Fonts): CSSProperties {
+/** Inline style of the text block. */
+function textBlockStyle(source: TextSource, fonts: Fonts): CSSProperties {
 	const s = source.text.style;
 	const pointText = source.box.autoSize === 'width';
 	const style: CSSProperties = {
@@ -113,7 +113,7 @@ export function textBlockStyle(source: TextSource, fonts: Fonts): CSSProperties 
 }
 
 /** Inline overrides of a styled run over the block style (only the fields the run sets). */
-export function runStyleCss(run: RunStyle, base: TextStyle, fonts: Fonts): CSSProperties {
+function runStyleCss(run: RunStyle, base: TextStyle, fonts: Fonts): CSSProperties {
 	const s = { ...base, ...run } as TextStyle;
 	const css: CSSProperties = {};
 	if (run.fontId !== undefined || run.weight !== undefined || run.italic !== undefined)
@@ -135,7 +135,7 @@ export function runStyleCss(run: RunStyle, base: TextStyle, fonts: Fonts): CSSPr
 type StyledSpan = { from: number; to: number; style: RunStyle | null };
 
 /** The text cut at run boundaries; each piece carries the merged style of the runs covering it (later win). */
-export function styledSpans(text: string, runs: readonly TextRun[] | undefined): StyledSpan[] {
+function styledSpans(text: string, runs: readonly TextRun[] | undefined): StyledSpan[] {
 	if (!runs?.length) return text ? [{ from: 0, to: text.length, style: null }] : [];
 	const clampI = (i: number) => Math.min(text.length, Math.max(0, i));
 	const cuts = [...new Set([0, text.length, ...runs.flatMap((r) => [clampI(r.from), clampI(r.to)])])].sort(
@@ -214,7 +214,7 @@ const FIRST_STRONG =
  * `unicode-bidi` is not inherited, so the absolutely positioned overlay pieces would each start an LTR paragraph
  * and reorder neutrals ("שלום!" would draw "!" on the right while animating).
  */
-export function paragraphDirections(text: string): { end: number; rtl: boolean }[] {
+function paragraphDirections(text: string): { end: number; rtl: boolean }[] {
 	const out: { end: number; rtl: boolean }[] = [];
 	let from = 0;
 	const push = (to: number, end: number) => {

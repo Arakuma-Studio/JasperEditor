@@ -269,8 +269,3 @@ export type IconId = keyof typeof ICONS;
 export function isCustomGlyph(src: IconSource): src is CustomGlyph {
 	return typeof src === 'object' && src !== null && (src as CustomGlyph).kind === 'custom';
 }
-
-/** Ids of every icon drawn by us (not lucide), for the glyph inventory test (S05:IC-004). */
-export function customGlyphIds(): IconId[] {
-	return (Object.keys(ICONS) as IconId[]).filter((id) => isCustomGlyph(ICONS[id]));
-}

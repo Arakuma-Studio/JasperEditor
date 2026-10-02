@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	buildRenderSnapshot,
 	checkInvariants,
-	createSeededIdSource,
+	createCounterIdSource,
 	defaultEffectRegistry,
 	loadProject,
 	migrate,
@@ -155,7 +155,7 @@ describe('repair (S01:PER-004, AC-20)', () => {
 		const solid = Object.values(seq.clips as Record<string, any>).find((c) => c.kind === 'solid')!;
 		solid.trackId = text.trackId;
 		solid.start = text.start + 10; // overlaps the text clip
-		const r = loadProject(env, { ids: createSeededIdSource(3), effects: defaultEffectRegistry });
+		const r = loadProject(env, { ids: createCounterIdSource(3), effects: defaultEffectRegistry });
 		expect(r.repairs.map((x) => x.action)).toContain('move-overlap');
 		expect(r.issues).toEqual([]);
 		const s = Object.values(r.document.sequences)[0]!;
@@ -169,7 +169,7 @@ describe('repair (S01:PER-004, AC-20)', () => {
 		const audio = Object.values(seq.clips as Record<string, any>).find((c) => c.kind === 'audio')!;
 		delete seq.clips[audio.id];
 		env.document.rootItems.push('itm_000000000000GONE');
-		const r = loadProject(env, { ids: createSeededIdSource(3) });
+		const r = loadProject(env, { ids: createCounterIdSource(3) });
 		expect(r.issues).toEqual([]);
 		expect(r.repairs.map((x) => x.action)).toEqual(
 			expect.arrayContaining(['drop-reference', 'dissolve-links']),

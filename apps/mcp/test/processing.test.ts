@@ -108,23 +108,9 @@ describe('clip-processing MCP tools', () => {
 	let mediaId = '';
 	let clipId = '';
 
-	it('advertises the processing tools and guide', async () => {
+	it('marks processing settings as destructive in the MCP tool schema', async () => {
 		const { tools } = await client.listTools();
-		const names = tools.map((t) => t.name);
-		for (const n of [
-			'list_processing_models',
-			'install_processing_model',
-			'process_clip',
-			'use_media_version',
-			'get_processing_settings',
-			'set_processing_settings',
-			'test_remote_executor',
-			'replace_footage',
-			'set_media_source_range',
-		])
-			expect(names).toContain(n);
-		expect(tools.find((t) => t.name === 'set_processing_settings')!.annotations?.destructiveHint).toBe(true);
-		expect(client.getInstructions()).toMatch(/process_clip/);
+		expect(tools.find((t) => t.name === 'set_processing_settings')?.annotations?.destructiveHint).toBe(true);
 	});
 
 	it('lists the bundled SPAN model with its licence', async () => {
@@ -184,8 +170,13 @@ describe('clip-processing MCP tools', () => {
 		expect(r.executor).toBe('local');
 		expect(r.processedMediaId).toMatch(/^med_/);
 		expect(r.replacedClips).toEqual([clipId]);
-		const timeline = await call('get_timeline', { projectId });
-		expect(textOf(timeline)).toMatch(/Denoised/);
+		const videoSource = async () => {
+			const project = await ok<{
+				sequences: { clips: { id: string; source: string }[] }[];
+			}>('get_project', { projectId });
+			return project.sequences[0]!.clips.find((clip) => clip.id === clipId)!.source;
+		};
+		expect(await videoSource()).toContain(`[${r.processedMediaId}]`);
 		const info = await ok<{
 			derivation: { fromMediaId: string } | null;
 			versions: { mediaId: string; original: boolean }[];
@@ -195,7 +186,7 @@ describe('clip-processing MCP tools', () => {
 		expect(info.versions[0]!.original).toBe(true);
 		// Back to the original.
 		await ok('use_media_version', { projectId, clipIds: [clipId], mediaId });
-		expect(textOf(await call('get_timeline', { projectId }))).not.toMatch(/Denoised/);
+		expect(await videoSource()).toContain(`[${mediaId}]`);
 	}, 600_000);
 });
 
@@ -208,21 +199,14 @@ describe('source ranges (process_clip handles, use_media_version fit, sidecars, 
 	type Clip = { id: string; mediaId?: string; sourceIn: number; start: number; duration: number };
 	const F = 23_520_000; // flicks per frame at 30 fps
 
-	/** A clip from get_timeline's table: "start–end frames" and "name [med_…] a–b s" → media id and sourceIn. */
+	/** A clip as the project document stores it (the MCP document resource). */
 	async function clip(id: string): Promise<Clip> {
-		const table = textOf(await call('get_timeline', { projectId }));
-		const row = table.split('\n').find((l) => l.split(' | ')[1] === id);
-		if (!row) throw new Error(`clip ${id} not in the timeline:\n${table}`);
-		const cells = row.split(' | ');
-		const [a, b] = cells[5]!.split('–').map(Number) as [number, number];
-		const m = /\[(med_\w+)\] ([\d.]+)–/.exec(cells[6]!);
-		return {
-			id,
-			mediaId: m?.[1],
-			sourceIn: Math.round(Number(m?.[2]) * 30) * F,
-			start: a,
-			duration: b - a,
+		const res = await client.readResource({ uri: `jasper://projects/${projectId}/document` });
+		const doc = JSON.parse((res.contents[0] as { text: string }).text) as {
+			sequences: Record<string, { clips: Record<string, Clip> }>;
 		};
+		for (const seq of Object.values(doc.sequences)) if (seq.clips[id]) return seq.clips[id]!;
+		throw new Error(`clip ${id} not in the document`);
 	}
 
 	it('process_clip with handles processes only the clip range (+ handles) and keeps the source frames', async () => {

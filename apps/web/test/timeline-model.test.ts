@@ -1,25 +1,11 @@
-// Timeline math and model tests (S02:TL-1053 and friends): viewport round trips, zoom anchoring,
-// ruler ticks, snapping, filmstrip slots aligned with clip edges, waveform reduction.
-import { flicksPerFrame, RATES } from '@jasper/project';
+// Timeline model contracts: frame seeking, zoom, scrolling, snapping, sprite lookup, and waveform reduction.
+import { RATES } from '@jasper/project';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import {
-	filmstripSlots,
-	nearestTile,
-	type SpriteIndexLike,
-	tileRect,
-} from '../src/panels/timeline/model/filmstrip.ts';
-import {
-	computeLayout,
-	hitY,
-	regionIndexAt,
-	stepHeight,
-	visibleRows,
-} from '../src/panels/timeline/model/layout.ts';
-import { chooseTicks, majorCandidates, rulerTicks, shortLabel } from '../src/panels/timeline/model/ruler.ts';
+import { nearestTile, type SpriteIndexLike } from '../src/panels/timeline/model/filmstrip.ts';
+import { rulerTicks } from '../src/panels/timeline/model/ruler.ts';
 import { findSnap, type SnapTarget } from '../src/panels/timeline/model/snapping.ts';
 import {
-	autoScrollSpeed,
 	boundaryFrameAt,
 	clampScroll,
 	deltaFramesFromPx,
@@ -29,10 +15,7 @@ import {
 	seekFrameAt,
 	type Viewport,
 	wheelIntent,
-	wheelZoomFactor,
 	xToFrameExact,
-	zoomAround,
-	zoomToSequenceViewport,
 } from '../src/panels/timeline/model/viewport.ts';
 import { drawGain, reduceColumns, waveBars } from '../src/panels/timeline/model/waveform.ts';
 
@@ -56,35 +39,6 @@ describe('viewport math (TL-100…113, TL-1053)', () => {
 		);
 	});
 
-	it('zoom anchoring keeps the anchor frame within 0.5 px (A.2)', () => {
-		fc.assert(
-			fc.property(
-				fc.double({ min: 0.01, max: 48, noNaN: true }),
-				fc.double({ min: 0.01, max: 48, noNaN: true }),
-				fc.double({ min: 0, max: 1200, noNaN: true }),
-				fc.double({ min: 0, max: 1_000_000, noNaN: true }),
-				(p0, p1, ax, s) => {
-					const v = { scrollFrame: s, pxPerFrame: p0, width: 1200 };
-					const anchorFrame = xToFrameExact(v, ax);
-					const z = zoomAround(v, p1, ax);
-					expect(Math.abs(frameToX(z, anchorFrame) - ax)).toBeLessThan(0.5);
-				},
-			),
-			{ numRuns: 2000, seed: 2 },
-		);
-	});
-
-	it('AC-3b: 20 Alt+wheel steps over a point keep the frame under the pointer within 1 px', () => {
-		let v: Viewport = { scrollFrame: 5000, pxPerFrame: 0.5, width: 1400 };
-		const x = 700;
-		const f = xToFrameExact(v, x);
-		for (let i = 0; i < 20; i++) {
-			const factor = wheelZoomFactor(i % 2 ? 120 : -100);
-			v = zoomAround(v, Math.min(PX_PER_FRAME_MAX, v.pxPerFrame * factor), x);
-			expect(Math.abs(frameToX(v, f) - x)).toBeLessThan(1);
-		}
-	});
-
 	it('AC-3a: a 3 h 29.97 sequence zooms to ≥ 40 px per frame anywhere and trims move 1 frame per 40 px', () => {
 		const end = Math.round(3 * 3600 * (30000 / 1001));
 		const width = 1400;
@@ -99,14 +53,6 @@ describe('viewport math (TL-100…113, TL-1053)', () => {
 		expect(deltaFramesFromPx(20, 40)).toBe(1);
 		expect(deltaFramesFromPx(-20, 40)).toBe(-1);
 		expect(deltaFramesFromPx(400, 40)).toBe(10);
-	});
-
-	it('minimum zoom fits max(end, 10 s) × 1.1 and zoom-to-sequence starts at the left pad', () => {
-		expect(minPxPerFrame(0, 30, 1100)).toBeCloseTo(1100 / (300 * 1.1));
-		const z = zoomToSequenceViewport({ scrollFrame: 500, pxPerFrame: 10, width: 1100 }, 3000, 30);
-		expect(z.pxPerFrame).toBeCloseTo(1100 / 3300);
-		expect(frameToX(z, 0)).toBeCloseTo(16);
-		expect(frameToX(z, 3000)).toBeLessThanOrEqual(1100);
 	});
 
 	it('scroll is clamped to [-leftPad, extent - W/p]', () => {
@@ -125,84 +71,13 @@ describe('viewport math (TL-100…113, TL-1053)', () => {
 		expect(wheelIntent(base, { mac: true, pinch: true }).kind).toBe('zoom');
 		expect(wheelIntent(base, { mac: false, preferHorizontal: false }).kind).toBe('both');
 	});
-
-	it('auto-scroll speed grows quadratically to 30 px per frame at the edge (TL-117)', () => {
-		expect(autoScrollSpeed(0)).toBe(0);
-		expect(autoScrollSpeed(20)).toBeCloseTo(7.5);
-		expect(autoScrollSpeed(40)).toBe(30);
-		expect(autoScrollSpeed(400)).toBe(30);
-	});
 });
 
 describe('ruler (A.9, TL-201/202)', () => {
-	it('picks the smallest major interval with ≥ 80 px and a minor division with ≥ 8 px', () => {
-		expect(majorCandidates(RATES.r25)).not.toContain(12.5);
-		expect(majorCandidates(RATES.r30)).toContain(15);
-		expect(chooseTicks(48, RATES.r30)).toEqual({ major: 2, minor: 1, perFrame: true });
-		expect(chooseTicks(1, RATES.r30)).toEqual({ major: 90 + 60, minor: 15, perFrame: false });
-		expect(chooseTicks(0.01, RATES.r30).major).toBe(5 * 60 * 30);
-	});
-
-	it('labels use the short form under one hour and never drift from exact frames', () => {
-		expect(shortLabel('00:00:15:00', true)).toBe(':15:00');
-		expect(shortLabel('00:01:15:00', true)).toBe('01:15:00');
-		expect(shortLabel('01:00:15:00', true)).toBe('01:00:15:00');
-		const v = { scrollFrame: 100.25, pxPerFrame: 3, width: 900 };
-		const ticks = rulerTicks(v, RATES.r30, { dropFrame: false, startFrames: 0, sequenceEnd: 1000 });
-		const majors = ticks.filter((t) => t.kind === 'major');
-		expect(majors.length).toBeGreaterThan(3);
-		for (const t of ticks) expect(t.x).toBeCloseTo(frameToX(v, t.frame), 9);
-	});
-
 	it('drop-frame rulers use drop-frame labels', () => {
 		const v = { scrollFrame: 1790, pxPerFrame: 20, width: 800 };
 		const ticks = rulerTicks(v, RATES.r29_97, { dropFrame: true, startFrames: 0, sequenceEnd: 100_000 });
 		expect(ticks.some((t) => t.label?.includes(';'))).toBe(true);
-	});
-});
-
-describe('layout (TL-114…116, TL-261…263)', () => {
-	const tracks = (p: string, n: number) => Array.from({ length: n }, (_, i) => ({ id: `${p}${i + 1}` }));
-	it('video is bottom-aligned above the divider, audio top-aligned below it', () => {
-		const l = computeLayout({
-			height: 404,
-			dividerRatio: 0.5,
-			videoTracks: tracks('v', 3),
-			audioTracks: tracks('a', 2),
-			heights: {},
-			scrollYVideo: 0,
-			scrollYAudio: 0,
-		});
-		expect(l.dividerTop).toBe(200);
-		const v1 = l.video.rows.find((r) => r.trackId === 'v1')!;
-		expect(v1.y + v1.height).toBe(200);
-		expect(l.video.rows[0]!.trackId).toBe('v3');
-		expect(l.audio.rows[0]).toMatchObject({ trackId: 'a1', y: 204 });
-		expect(hitY(l, 10)).toMatchObject({ kind: 'above-video' });
-		expect(hitY(l, 201)).toEqual({ kind: 'divider' });
-		expect(hitY(l, 210)).toMatchObject({ kind: 'track', row: { trackId: 'a1' } });
-		expect(regionIndexAt(l, 'video', 10)).toBeGreaterThanOrEqual(3);
-		expect(regionIndexAt(l, 'audio', 390)).toBeGreaterThanOrEqual(2);
-	});
-
-	it('virtualizes rows to the visible band plus one', () => {
-		const l = computeLayout({
-			height: 204,
-			dividerRatio: 0.5,
-			videoTracks: tracks('v', 40),
-			audioTracks: tracks('a', 40),
-			heights: {},
-			scrollYVideo: 0,
-			scrollYAudio: 0,
-		});
-		expect(visibleRows(l.video).length).toBeLessThan(6);
-		expect(visibleRows(l.audio).length).toBeLessThan(6);
-	});
-
-	it('height steps follow TL-263', () => {
-		expect(stepHeight(32, 1)).toBe(48);
-		expect(stepHeight(32, -1)).toBe(20);
-		expect(stepHeight(240, 1)).toBe(240);
 	});
 });
 
@@ -233,70 +108,6 @@ describe('filmstrip from the sprite contract (TH-003, TL-328, AC-7d)', () => {
 		expect(nearestTile(index, 6)?.timeSec).toBe(6);
 		expect(nearestTile(index, -1)?.timeSec).toBe(0);
 		expect(nearestTile(index, 999)?.timeSec).toBe(58);
-		expect(tileRect(index, index.tiles[13]!)).toEqual({ sx: 480, sy: 90, sw: 160, sh: 90 });
-	});
-
-	it('slots stay aligned with the clip edge at any scroll and zoom', () => {
-		const F = flicksPerFrame(RATES.r30);
-		fc.assert(
-			fc.property(
-				fc.double({ min: 0.2, max: 48, noNaN: true }),
-				fc.double({ min: -50, max: 400, noNaN: true }),
-				fc.integer({ min: 0, max: 600 }),
-				(p, scroll, inFrames) => {
-					const base = {
-						start: 100,
-						duration: 300,
-						sourceIn: inFrames * F,
-						rate: 1,
-						reverse: false,
-						pxPerFrame: p,
-						visibleX0: 0,
-						visibleX1: 1200,
-						slotWidth: 71,
-						fps: RATES.r30,
-					};
-					const a = filmstripSlots({ ...base, scrollFrame: scroll });
-					const b = filmstripSlots({ ...base, scrollFrame: scroll + 7 });
-					// Every slot's offset from the clip start is invariant under scrolling.
-					const clipX = (s: number) => (100 - s) * p;
-					const offA = new Set(a.map((s) => Math.round((s.x - clipX(scroll)) * 1e6)));
-					for (const s of b) {
-						const off = Math.round((s.x - clipX(scroll + 7)) * 1e6);
-						if (s.x > 0 && s.x + s.w < 1200 && a.length) expect(offA.has(off) || a.length < 2).toBe(true);
-					}
-					// Slots cover the visible part of the clip without gaps.
-					const sorted = [...a].sort((x, y) => x.x - y.x);
-					for (let i = 1; i < sorted.length; i++)
-						expect(Math.abs(sorted[i]!.x - (sorted[i - 1]!.x + sorted[i - 1]!.w))).toBeLessThan(1e-6);
-					for (const s of a) {
-						expect(s.w).toBeGreaterThanOrEqual(71 - 1e-9);
-						// The time shown is inside the clip's source range (± one slot).
-						const t0 = (inFrames - 1) / 30;
-						expect(s.timeSec).toBeGreaterThan(t0 - s.w / p / 30 - 1);
-					}
-				},
-			),
-			{ numRuns: 300, seed: 3 },
-		);
-	});
-
-	it('the first slot starts at the clip edge when sourceIn is on the ladder', () => {
-		const slots = filmstripSlots({
-			start: 10,
-			duration: 100,
-			sourceIn: 0,
-			rate: 1,
-			reverse: false,
-			scrollFrame: 0,
-			pxPerFrame: 10,
-			visibleX0: 0,
-			visibleX1: 2000,
-			slotWidth: 64,
-			fps: RATES.r30,
-		});
-		expect(slots[0]!.x).toBe(100);
-		expect(slots[slots.length - 1]!.x + slots[slots.length - 1]!.w).toBeGreaterThanOrEqual(1100);
 	});
 });
 

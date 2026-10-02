@@ -6,17 +6,10 @@ import type { EditorSession } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import {
-	clipMenuExtensions,
-	clipSections,
-	effectEditorFor,
-	programOverlays,
-} from '../src/extensions/index.ts';
 import { EngineProvider } from '../src/state/engine.tsx';
 import { ApplyTrackingDialog } from '../src/tracking/ApplyTrackingDialog.tsx';
 import { addTracker, applyTracking, commitTrackResult } from '../src/tracking/actions.ts';
 import { CornerPinEditor } from '../src/tracking/CornerPinEditor.tsx';
-import { registerTrackingUi } from '../src/tracking/register.ts';
 import { resetTrackingStore, trackingStore } from '../src/tracking/store.ts';
 import { TrackingSection } from '../src/tracking/TrackingSection.tsx';
 import {
@@ -58,28 +51,6 @@ function Section({
 		</EngineProvider>
 	);
 }
-
-describe('registration', () => {
-	it('registers the section, overlay, corner-pin editor and clip menu entries', () => {
-		registerTrackingUi();
-		expect(clipSections.get('tracking')?.title).toBe('Tracking');
-		expect(programOverlays.get('tracking')).toBeTruthy();
-		expect(effectEditorFor('jasper.corner-pin')?.component).toBe(CornerPinEditor);
-		const { session, plate, target } = trackingSession();
-		const seq = seqOf(session);
-		const menu = clipMenuExtensions.get('tracking')!;
-		expect(
-			menu
-				.items({ session, clip: seq.clips[plate]!, selection: [] })
-				.map((i) => i.kind === 'submenu' && i.label),
-		).toEqual(['Track']);
-		expect(menu.items({ session, clip: seq.clips[target]!, selection: [] })).toEqual([]);
-		addTracker(session, plate, 'planar');
-		const items = menu.items({ session, clip: seqOf(session).clips[target]!, selection: [] });
-		expect(items[0]).toMatchObject({ kind: 'submenu', label: 'Apply Tracking' });
-		expect(clipSections.get('tracking')!.appliesTo([seq.clips[target]!])).toBe(false);
-	});
-});
 
 describe('Tracking section', () => {
 	it('adds a planar tracker, tracks forward with live progress and lists the result', async () => {

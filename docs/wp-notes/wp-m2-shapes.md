@@ -26,7 +26,7 @@ slot), §20.6 (`commands/shapes.ts`), §20.7 (`tools/shapes.ts`).
 - `@jasper/session`: `ActiveTool += 'rectangle' | 'ellipse'`.
 - Web: `TOOLS` / `TOOL_GROUPS` (Pen group = pen, rectangle, ellipse).
 - MCP: `editing.ts` exports `applyHelper` and `hexToRgba` (reused by `add_shape`).
-- `@jasper/compositions`: `ellipseOffset` exported from `layers/ShapeLayer.tsx` (not from the package index).
+- `@jasper/compositions`: `ellipseOffset` is private to `layers/ShapeLayer.tsx`.
 
 ## Cross-package edits (delimited, minimal)
 
@@ -50,7 +50,7 @@ None new. `@remotion/shapes` / `@remotion/paths` 4.0.499 were added by the contr
 
 ## How to test
 
-- Unit/component: `pnpm vitest run packages/project/test/shapes.test.ts packages/compositions/test/shape-layer.test.tsx apps/web/test/shapes.test.tsx apps/mcp/test/shapes.test.ts`.
+- Unit/component: `pnpm vitest run packages/project/test/shapes.test.ts apps/web/test/shapes.test.tsx`; browser/agent workflow: `pnpm exec playwright test e2e/shapes.spec.ts`.
 - Pixel test (real Chrome render through the engine's `/api/stills`, compared with a 4×4-supersampled analytic reference): `REMOTION_E2E=1 pnpm vitest run apps/engine/test/shapes-remotion.e2e.test.ts`.
 - MCP end to end: `MCP_TEST_PORT=<free> pnpm vitest run apps/mcp/test/integration.test.ts`.
 - Playwright: `E2E_PORT=<free> pnpm e2e e2e/shapes.spec.ts` (without `--`; builds engine, web and jasper-mcp first).
@@ -68,7 +68,7 @@ None new. `@remotion/shapes` / `@remotion/paths` 4.0.499 were added by the contr
 
 ## Defects fixed
 
-- **`@remotion/shapes` `makeEllipse` is off-centre:** it draws one arc from (rx, 0) to (rx + 1, 0), so the ellipse's centre is (rx + 0.5, ry·√(1 − (0.5/rx)²)) — every ellipse was half a pixel right of its box (the pixel test measured 174/255 errors on circle edges). `ShapeLayer` offsets ellipses back (`ellipseOffset`, unit-tested); after the fix the worst error is 62/255 (AA only).
+- **`@remotion/shapes` `makeEllipse` is off-centre:** it draws one arc from (rx, 0) to (rx + 1, 0), so the ellipse's centre is (rx + 0.5, ry·√(1 − (0.5/rx)²)) — every ellipse was half a pixel right of its box (the pixel test measured 174/255 errors on circle edges). `ShapeLayer` offsets ellipses back (`ellipseOffset`, checked by the analytic pixel render); after the fix the worst error is 62/255 (AA only).
 - **Shapes jumped when their box changed** (contracts gap: the box is the largest keyed size + outside stroke, the geometry is centred in it, but the anchor stayed put): any size/stroke edit or a new largest key moved the shape by half the change. Fixed by `keepShapesCentred` (tests: static edits, stroke position, keys added and removed, anchor keys shifted, rotation/scale kept).
 - **`param.set` on vec2 ignored the spec range** — `shape.size` would reach the invariant check with negative values and reject the transaction instead of clamping with `W_VALUE_CLAMPED`; vec2 components are now clamped.
 - **e2e `sequenceSummary()` was typed with `id`** while the query returns `sequenceId`.

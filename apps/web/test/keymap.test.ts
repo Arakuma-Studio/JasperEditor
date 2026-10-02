@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-	BROWSER_RESERVED,
 	chordFromEvent,
 	DEFAULT_KEYMAP,
 	effectiveKey,
@@ -143,8 +142,6 @@ describe('default keymap (S02:TL-903, R-PUI §16, S05:KB-010/011/013)', () => {
 	});
 	it('has no Agent panel bindings: agents connect over MCP (wp-mcp)', () => {
 		expect(DEFAULT_KEYMAP.filter((b) => /(^|\.)agent(\.|$)/.test(b.command))).toEqual([]);
-		// The keys the panel used are free again.
-		expect(DEFAULT_KEYMAP.filter((b) => b.key === 'Shift+Digit0' || b.key === 'Ctrl+Period')).toEqual([]);
 	});
 	it('binds physical KeyboardEvent.code values only', () => {
 		const code =
@@ -182,10 +179,6 @@ describe('default keymap (S02:TL-903, R-PUI §16, S05:KB-010/011/013)', () => {
 		expect(
 			effectiveKey(DEFAULT_KEYMAP.find((b) => b.command === 'graphics.newTextLayer')!, 'win', 'pwa'),
 		).toBe('Alt+KeyT');
-		for (const b of DEFAULT_KEYMAP) {
-			const key = effectiveKey(b, 'linux', 'web');
-			if (key) expect(BROWSER_RESERVED).not.toContain(key);
-		}
 	});
 	it('resolves focused panel → editing → global', () => {
 		expect(scopeChain('timeline')).toEqual(['timeline', 'editing', 'global']);

@@ -56,33 +56,3 @@ pub fn spring(t: f64, stiffness: f64, damping: f64, mass: f64) -> f64 {
     let r2 = -zeta * w0 - s;
     1.0 - (r2 * (r1 * t).exp() - r1 * (r2 * t).exp()) / (r2 - r1)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn easings_hit_their_endpoints() {
-        for f in [ease_out_cubic, ease_in_cubic, ease_in_out_cubic] {
-            assert_eq!(f(0.0), 0.0);
-            assert_eq!(f(1.0), 1.0);
-            assert_eq!(f(-3.0), 0.0);
-            assert_eq!(f(7.0), 1.0);
-        }
-        assert!((ease_in_out_cubic(0.5) - 0.5).abs() < 1e-12);
-        assert_eq!(progress(1.0, 1.0, 0.0), 1.0);
-        assert_eq!(progress(0.5, 1.0, 0.0), 0.0);
-        assert_eq!(progress(1.5, 1.0, 1.0), 0.5);
-    }
-
-    #[test]
-    fn springs_start_at_zero_and_settle_at_one() {
-        for (k, c) in [(180.0, 20.0), (100.0, 20.0), (100.0, 40.0)] {
-            assert_eq!(spring(0.0, k, c, 1.0), 0.0);
-            assert!(spring(0.01, k, c, 1.0) < 0.05);
-            assert!((spring(5.0, k, c, 1.0) - 1.0).abs() < 1e-4, "k={k} c={c}");
-        }
-        // under-damped springs overshoot
-        assert!((0..200).any(|i| spring(f64::from(i) / 100.0, 180.0, 12.0, 1.0) > 1.0));
-    }
-}

@@ -111,7 +111,7 @@ type TemplateLike = Pick<MgTemplateCatalogEntry, 'paramsSchema' | 'defaults' | '
  * Compact params of a template. keyframable = anime template and a non-integer number or an RGBA colour
  * (S11:ATP-006, the same rule as `isKeyframableTemplateParam`).
  */
-export function paramsSummary(t: TemplateLike): ParamSummary[] {
+function paramsSummary(t: TemplateLike): ParamSummary[] {
 	const props = ((t.paramsSchema as JsonSchemaNode).properties ?? {}) as Record<string, JsonSchemaNode>;
 	const anime = t.renderer === 'anime';
 	return Object.entries(props).map(([name, s]) => {
@@ -249,7 +249,7 @@ function checkParams(t: MgTemplateCatalogEntry, params: Record<string, unknown>)
  * template's defaults merged under `params`. The template registry is built from the catalogue entry (params
  * were validated against its JSON Schema already, so its zod schema is permissive).
  */
-export function animePreviewDocument(
+function animePreviewDocument(
 	t: MgTemplateCatalogEntry,
 	spec: AnimePreviewSpec,
 ): { doc: ProjectDocument; sequenceId: string; clipId: string } {
@@ -309,7 +309,7 @@ const ANIME_REFERENCE_FPS = 30;
  * reference rate and compressed proportionally when they do not both fit (the rule of `animeTemplateTiming` in
  * @jasper/mg-templates, which this package does not depend on).
  */
-export function previewPhases(
+function previewPhases(
 	durationFrames: number,
 	t: { introFrames?: number; outroFrames?: number; fps: number },
 ): { intro: number; outro: number } {
@@ -332,7 +332,7 @@ export function previewPhases(
  * intro and the outro alternately (evenly spaced inside each). A phase without frames (no intro / outro, or no
  * hold left after compression) hands its share to the hold, or to the whole clip.
  */
-export function previewFrames(
+function previewFrames(
 	durationFrames: number,
 	count = 1,
 	timing?: { introFrames?: number; outroFrames?: number; fps: number },
@@ -469,7 +469,7 @@ export type ParamsPlan = { commands: unknown[]; staticParams: string[]; keyframe
  * `param.setAnimated {animated: true}` (when not animated yet) and `param.set {value, at}`; already animated
  * params given with `at` get `param.set {value, at}` (a keyframe there).
  */
-export function planParamCommands(
+function planParamCommands(
 	clip: Pick<MotionGraphicClip, 'id' | 'params' | 'paramKeyframes' | 'template'>,
 	t: TemplateLike & Pick<MgTemplateCatalogEntry, 'id' | 'version'>,
 	params: Record<string, unknown>,

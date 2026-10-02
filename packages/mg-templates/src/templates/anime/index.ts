@@ -1,5 +1,5 @@
 // Anime templates (S11 §5): metadata of the `renderer: 'anime'` catalogue entries. Implementations live in
-// `@jasper/motion/templates` (`ANIME_TEMPLATE_IMPLS`, keyed `id@version`; a test asserts both lists match).
+// `@jasper/motion/templates` (`ANIME_TEMPLATE_IMPLS`, keyed `id@version`).
 import type { AnyAnimeMgTemplate } from '../../types.ts';
 import { callout } from './callout.ts';
 import { counter } from './counter.ts';

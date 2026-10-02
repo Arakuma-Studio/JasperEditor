@@ -98,7 +98,7 @@ function evenCeil(x: number): number {
 }
 
 /** atempo chain for a constant speed (each instance limited to 0.5…100). */
-export function atempoChain(speed: number): string[] {
+function atempoChain(speed: number): string[] {
 	if (Math.abs(speed - 1) < 1e-9) return [];
 	const parts: number[] = [];
 	let s = speed;
@@ -180,7 +180,7 @@ export function audioFadeFilters(
  * which sources the picture itself from an earlier extension's `layer` override, ARCHITECTURE §19.6), else the
  * first `layer` override, else null.
  */
-export function pickOverride(
+function pickOverride(
 	list: readonly NativeExtension[],
 	prepared: PreparedExtensions,
 	clip: RenderVisualClip,

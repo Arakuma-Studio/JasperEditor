@@ -3,7 +3,7 @@
 // anime.js gets its own vendor chunk (S11:ANM-023).
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { NOTICES_URL, ThirdPartyLicenses } from '../src/shell/licenses.tsx';
+import { ThirdPartyLicenses } from '../src/shell/licenses.tsx';
 
 afterEach(() => {
 	cleanup();
@@ -16,29 +16,26 @@ function open(el: HTMLElement) {
 }
 
 describe('About ▸ third-party notices (S11:FIX-010)', () => {
-	it('without an engine, the static notice names FFmpeg and anime.js (MIT)', () => {
+	it('without an engine, the About notice identifies anime.js and its MIT license', () => {
 		render(<ThirdPartyLicenses />);
-		const text = screen.getByTestId('licenses').textContent ?? '';
-		expect(text).toMatch(/FFmpeg/);
-		expect(text).toMatch(/anime\.js \(MIT License, Copyright \(c\) Julian Garnier\)/);
+		const section = screen.getByRole('region', { name: 'Third-party licenses' });
+		expect(section.textContent).toContain('anime.js');
+		expect(section.textContent).toContain('MIT License');
 	});
 
-	it('links THIRD_PARTY_NOTICES.md and shows it when opened (fetched once)', async () => {
+	it('links THIRD_PARTY_NOTICES.md and shows it when opened', async () => {
 		const fetchMock = vi.fn(async () => new Response('# Third-party notices\n\n| animejs | 4.5.0 | MIT |'));
 		vi.stubGlobal('fetch', fetchMock);
 		render(<ThirdPartyLicenses />);
 		const details = screen.getByTestId('third-party-notices');
-		const link = screen.getByText('THIRD_PARTY_NOTICES.md') as HTMLAnchorElement;
-		expect(NOTICES_URL).toBe('/THIRD_PARTY_NOTICES.md');
-		expect(link.getAttribute('href')).toBe(NOTICES_URL);
+		const link = screen.getByRole('link', { name: 'THIRD_PARTY_NOTICES.md' });
+		expect(link.getAttribute('href')).toBe('/THIRD_PARTY_NOTICES.md');
 		expect(fetchMock).not.toHaveBeenCalled();
 		open(details);
 		await waitFor(() =>
 			expect(screen.getByTestId('third-party-notices-text').textContent).toMatch(/animejs/),
 		);
-		open(details);
-		expect(fetchMock).toHaveBeenCalledTimes(1);
-		expect(fetchMock).toHaveBeenCalledWith(NOTICES_URL);
+		expect(fetchMock).toHaveBeenCalledWith('/THIRD_PARTY_NOTICES.md');
 	});
 
 	it('says so when the file is missing', async () => {

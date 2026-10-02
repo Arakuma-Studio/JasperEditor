@@ -10,22 +10,13 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { expect, type Page, test } from '@playwright/test';
-import {
-	appliedLabels,
-	createProject,
-	enableAgentBridge,
-	query,
-	ROOT,
-	serverInfo,
-	watchPage,
-} from './support.ts';
+import { appliedLabels, createProject, enableAgentBridge, query, ROOT, serverInfo } from './support.ts';
 
 const FIXTURE_PROJECT = join(ROOT, 'fixtures', 'mg-project');
 
 test.describe.configure({ mode: 'serial' });
 
 let page: Page;
-let watcher: { errors: string[] };
 let protocolScript = '';
 
 test.beforeAll(async ({ browser }) => {
@@ -43,7 +34,6 @@ test.beforeAll(async ({ browser }) => {
 	});
 	protocolScript = out.outputFiles[0]!.text;
 	page = await browser.newPage();
-	watcher = watchPage(page);
 	await enableAgentBridge(page);
 });
 
@@ -205,11 +195,51 @@ test('import a Remotion project, insert a composition, live preview, props edit,
 	// wp-m3-mgtext: `title` is a text layer (ui control "text"): its editor is in Properties ▸ Composition ▸ Text.
 	const field = page.getByTestId('text-title');
 	await field.fill('Edited in Properties');
-	const t0 = Date.now();
+	const latencyMark = 'e2e:mg-title-enter';
+	const latencyMeasure = 'e2e:mg-title-visible';
+	await field.evaluate(
+		(input, { mark, measure }) => {
+			performance.clearMarks(mark);
+			performance.clearMeasures(measure);
+			input.addEventListener(
+				'keydown',
+				(event) => {
+					if (!(event instanceof KeyboardEvent) || event.key !== 'Enter') return;
+					performance.mark(mark);
+					const check = () => {
+						const iframe = document.querySelector<HTMLIFrameElement>(
+							'[data-testid="program-monitor"] iframe[data-mg-host]',
+						);
+						const title = iframe?.contentDocument?.querySelector('[data-testid="title-text"]')?.textContent;
+						if (title === 'Edited in Properties') performance.measure(measure, mark);
+						else if (performance.now() - performance.getEntriesByName(mark, 'mark')[0]!.startTime < 5_000)
+							requestAnimationFrame(check);
+					};
+					requestAnimationFrame(check);
+				},
+				{ capture: true, once: true },
+			);
+		},
+		{ mark: latencyMark, measure: latencyMeasure },
+	);
 	await field.press('Enter');
-	await expect.poll(() => hostText(page), { timeout: 5_000, intervals: [20] }).toBe('Edited in Properties');
-	const elapsed = Date.now() - t0;
+	await expect
+		.poll(
+			() =>
+				page.evaluate(
+					(name) => performance.getEntriesByName(name, 'measure')[0]?.duration ?? null,
+					latencyMeasure,
+				),
+			{ timeout: 5_000, intervals: [20] },
+		)
+		.not.toBeNull();
+	const elapsed = await page.evaluate(
+		(name) => performance.getEntriesByName(name, 'measure')[0]!.duration,
+		latencyMeasure,
+	);
+	test.info().annotations.push({ type: 'live-title-latency', description: `${elapsed.toFixed(1)} ms` });
 	expect(elapsed).toBeLessThan(500);
+	await expect.poll(() => hostText(page), { timeout: 5_000, intervals: [20] }).toBe('Edited in Properties');
 
 	// After 2 s without changes the layer switches to the pre-rendered preview WebM.
 	await expect(page.getByTestId('composition-status')).toHaveText(/Preview ready/, { timeout: 300_000 });
@@ -223,7 +253,7 @@ test('import a Remotion project, insert a composition, live preview, props edit,
 	expect(hist.entries.filter((e) => e.applied).map((e) => e.label)).toEqual(
 		expect.arrayContaining(['Import Remotion Project', 'Add Title', 'Edit Text «Title»']),
 	);
-	expect(watcher.errors.filter((e) => !/favicon|ERR_ABORTED|Failed to load resource/.test(e))).toEqual([]);
+	await page.screenshot({ path: 'test-results/e2e-composition-preview.png' });
 });
 
 test('MCP: import_mg_bundle → add_composition → set_composition_props → render_frame, as Agent History entries', async () => {

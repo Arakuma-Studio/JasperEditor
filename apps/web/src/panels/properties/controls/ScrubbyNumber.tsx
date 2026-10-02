@@ -36,7 +36,7 @@ export type ScrubbyNumberProps = {
 const DRAG_THRESHOLD = 3;
 
 /** Evaluates `+ - * /` arithmetic with parentheses; accepts `,` as decimal separator (S03:NFR-032). */
-export function evaluateExpression(src: string): number | null {
+function evaluateExpression(src: string): number | null {
 	const s = src.replace(/,/g, '.').replace(/\s+/g, '');
 	let i = 0;
 	const peek = () => s[i];
@@ -83,7 +83,7 @@ export function evaluateExpression(src: string): number | null {
 }
 
 /** Parses a typed entry into a value function (relative when it starts with an operator). */
-export function parseEntry(text: string): ValueFn | null {
+function parseEntry(text: string): ValueFn | null {
 	const t = text.trim();
 	if (!t) return null;
 	if (t.startsWith('=')) {

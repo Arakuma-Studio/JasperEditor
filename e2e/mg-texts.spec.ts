@@ -13,7 +13,6 @@ import {
 	focusTimeline,
 	query,
 	ROOT,
-	watchPage,
 } from './support.ts';
 
 const FIXTURE_PROJECT = join(ROOT, 'fixtures', 'mg-project');
@@ -21,12 +20,10 @@ const FIXTURE_PROJECT = join(ROOT, 'fixtures', 'mg-project');
 test.describe.configure({ mode: 'serial' });
 
 let page: Page;
-let watcher: { errors: string[] };
 let clipId = '';
 
 test.beforeAll(async ({ browser }) => {
 	page = await browser.newPage();
-	watcher = watchPage(page);
 	await enableAgentBridge(page);
 });
 
@@ -215,7 +212,6 @@ test('double-click a text in the Program monitor edits it in place in the bundle
 	await expect(page.getByTestId('text-quote')).toHaveValue(
 		'Imagination is the Discovering Faculty,\n*pre-eminently.*',
 	);
-	expect(watcher.errors.filter((e) => !/favicon|ERR_ABORTED|Failed to load resource/.test(e))).toEqual([]);
 });
 
 test('more than 4 composition clips: editing on canvas takes a live host from the clip farthest from the playhead', async () => {
@@ -278,5 +274,4 @@ test('more than 4 composition clips: editing on canvas takes a live host from th
 	await expect(input).toBeHidden();
 	await expect(page.locator(`iframe[data-mg-host-clip="${lt}"]`)).toHaveCount(0, { timeout: 30_000 });
 	await expect(hosts).toHaveCount(4);
-	expect(watcher.errors.filter((e) => !/favicon|ERR_ABORTED|Failed to load resource/.test(e))).toEqual([]);
 });

@@ -30,11 +30,6 @@ export const colorStageStatus = {
 		lostContexts = Math.max(0, lostContexts - 1);
 		emit();
 	},
-	/** Tests. */
-	reset(): void {
-		lostContexts = 0;
-		emit();
-	},
 };
 
 export function useColorStageStatus(): ColorStageState {

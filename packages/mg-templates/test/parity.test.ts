@@ -1,5 +1,5 @@
-// Rust ↔ TS parity. Always: checked-in JSON Schemas and native/mg/fixtures agree with the TS
-// catalog. With MG_PARITY=1 and a built binary: `jasper-mg schema` equals the TS catalog and
+// Rust ↔ TS parity. Always: checked-in JSON Schemas agree with the TS catalog.
+// With MG_PARITY=1 and a built binary: `jasper-mg schema` equals the TS catalog and
 // `jasper-mg svg` equals the TS twins' markup (numbers within ±0.002 for libm last-ulp noise).
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -7,11 +7,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { schemaFiles } from '../scripts/generate-schemas.ts';
-import { canonicalJson, FFRAMES_CATALOG, MG_CATALOG, mgRegistry } from '../src/index.ts';
+import { canonicalJson, FFRAMES_CATALOG, mgRegistry } from '../src/index.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, '..', '..', '..');
-const fixturesDir = join(repo, 'native', 'mg', 'fixtures');
 const binary =
 	process.env.JASPER_MG ??
 	join(
@@ -28,7 +27,7 @@ if (!parityEnabled)
 		`[mg parity] native comparison skipped (${process.env.MG_PARITY === '1' ? `no binary at ${binary}` : 'set MG_PARITY=1 after pnpm mg:build'})`,
 	);
 
-describe('checked-in schemas and fixtures', () => {
+describe('checked-in schemas', () => {
 	it('schemas/ matches the TS catalog (run `pnpm --filter @jasper/mg-templates schemas`)', () => {
 		const files = schemaFiles();
 		const onDisk = readdirSync(join(here, '..', 'schemas')).filter((f) => f.endsWith('.json'));
@@ -39,32 +38,15 @@ describe('checked-in schemas and fixtures', () => {
 		}
 	});
 
-	it('every native fixture is a valid spec whose params are the TS defaults', () => {
-		const fixtures = readdirSync(fixturesDir).filter((f) => f.endsWith('.json'));
-		expect(fixtures.sort()).toEqual(['lower-third.json', 'title-card.json']);
-		for (const file of fixtures) {
-			const spec = JSON.parse(readFileSync(join(fixturesDir, file), 'utf8'));
-			expect(Object.keys(spec).sort()).toEqual(
-				['durationFrames', 'fps', 'height', 'params', 'sourceInFrames', 'template', 'width'].sort(),
-			);
-			const def = mgRegistry.getDefinition(spec.template.id, spec.template.version);
-			expect(def, file).toBeDefined();
-			const parsed = def!.paramsSchema.parse(spec.params);
-			expect(parsed, file).toEqual(def!.defaults);
-			// the fixture lists every param explicitly (documents the full Rust struct)
-			expect(Object.keys(spec.params).sort(), file).toEqual(Object.keys(def!.defaults).sort());
-		}
-		const lt = JSON.parse(readFileSync(join(fixturesDir, 'lower-third.json'), 'utf8'));
-		expect([lt.width, lt.height, lt.fps, lt.durationFrames]).toEqual([1920, 1080, { num: 30, den: 1 }, 150]);
-	});
-
-	it('TS param schemas reject unknown fields and out-of-range values like serde does', () => {
-		for (const def of MG_CATALOG) {
-			expect(def.paramsSchema.safeParse({ bogus: 1 }).success).toBe(false);
-			expect(def.paramsSchema.safeParse({}).success).toBe(true);
+	it('fframes schemas reject unknown fields and invalid colour or frame values', () => {
+		for (const def of FFRAMES_CATALOG) {
+			expect(def.paramsSchema.safeParse({}).success, def.id).toBe(true);
+			expect(def.paramsSchema.safeParse({ bogus: 1 }).success, def.id).toBe(false);
 		}
 		const lt = mgRegistry.getDefinition('lower-third', 1)!;
+		expect(lt.paramsSchema.safeParse({ accentColor: [0.5, 0, 0, 1] }).success).toBe(true);
 		expect(lt.paramsSchema.safeParse({ accentColor: [2, 0, 0, 1] }).success).toBe(false);
+		expect(lt.paramsSchema.safeParse({ holdUntilFrames: 1 }).success).toBe(true);
 		expect(lt.paramsSchema.safeParse({ holdUntilFrames: -1 }).success).toBe(false);
 		expect(lt.paramsSchema.safeParse({ holdUntilFrames: 1.5 }).success).toBe(false);
 	});

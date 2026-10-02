@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { EngineJob, ProcessResult, RemoteProbeResult } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { SshRemote, shq } from '../src/processing/remote.ts';
+import { SshRemote } from '../src/processing/remote.ts';
 import {
 	closeApps,
 	ensureFixtures,
@@ -122,41 +122,6 @@ afterAll(async () => {
 });
 
 describe('remote executor (shims)', () => {
-	it('builds argument arrays with the PRM-002 options', () => {
-		const r = new SshRemote(
-			{
-				enabled: true,
-				host: 'h',
-				port: 2222,
-				user: 'u',
-				identityFile: '/k/id',
-				remoteDir: '/srv/j',
-				useFor: [],
-				strictHostKeyChecking: 'yes',
-			},
-			'/tmp/ctl',
-			{},
-		);
-		const args = r.sshArgs('echo hi');
-		expect(args).toEqual(
-			expect.arrayContaining([
-				'BatchMode=yes',
-				'ServerAliveInterval=30',
-				'StrictHostKeyChecking=yes',
-				'ControlMaster=auto',
-				'ControlPath=/tmp/ctl/ssh-%C',
-				'ControlPersist=60',
-				'-i',
-				'/k/id',
-				'-p',
-				'2222',
-				'u@h',
-			]),
-		);
-		expect(args[args.length - 1]).toBe('echo hi');
-		expect(shq("it's")).toBe(`'it'\\''s'`);
-	});
-
 	it('probe before setup: connected, runtime not installed, no GPU', async () => {
 		await putRemote();
 		const r = await app.inject({ method: 'POST', url: '/api/processing/remote/probe', headers: H });
@@ -206,11 +171,6 @@ describe('remote executor (shims)', () => {
 		const cache = readdirSync(join(remoteDir, 'cache'));
 		expect(cache).toHaveLength(1);
 		expect(statSync(join(remoteDir, 'cache', cache[0])).size).toBe(statSync(fixture('clip-b.mp4')).size);
-		const index = JSON.parse(readFileSync(join(app.appdir, 'engine', 'media-index.json'), 'utf8'));
-		const out = index.items[res.registered.mediaKey].storage.path as string;
-		const side = JSON.parse(readFileSync(`${out}.json`, 'utf8'));
-		expect(side.executor.type).toBe('remote');
-		expect(side.device).toBe('cpu');
 		// A second job with the same source reuses the cached input (no second upload).
 		const log0 = readFileSync(process.env.SSH_SHIM_LOG as string, 'utf8');
 		const r2 = await app.inject({

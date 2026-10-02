@@ -11,8 +11,10 @@ export type AnimeTemplateProps = {
 	/** Intro anchored at content time 0, outro at the content end; the hold stretches. */
 	introMs: number;
 	outroMs: number;
+	fps: number;
 	/** Render size (the clip's canvas); design pixels are fitted with `fitCanvas`. */
 	canvas: { width: number; height: number };
 	/** `hash32(clipId, 'template')`. */
 	seed: number;
+	isPreview: boolean;
 };

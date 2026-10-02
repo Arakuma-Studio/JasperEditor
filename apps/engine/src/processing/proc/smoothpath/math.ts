@@ -541,7 +541,7 @@ export function planSmoothPath(
 
 /**
  * A backward similarity map (output → source, 2×3) as vid.stab's transform (x, y, alpha, zoom %) for the
- * shared 16-bit warp kernel (vidstab/math.ts `backwardAffine` is the inverse of this).
+ * shared 16-bit warp kernel (vidstab/math.ts `sourcePoint` maps points with the result).
  */
 export function backwardToVsTransform(
 	m: readonly number[],

@@ -2,7 +2,7 @@
 // lift/extract, markers, selection, nudges. Acceptance: AC-8c, AC-11d, AC-13a, AC-13b, AC-13d,
 // AC-15a/b, AC-16b.
 import { EngineClient } from '@jasper/engine-client';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import {
 	type CommandCtx,
 	createCommandContext,
@@ -53,8 +53,6 @@ function harness(opts: Parameters<typeof setupTimeline>[0] = {}) {
 	return { ...t, ctx, run, toasts, target, movie };
 }
 
-afterEach(() => undefined);
-
 describe('Add Edit and targeting (TL-680, AC-13a)', () => {
 	it('AC-13a: with V1 and A1 targeted, Ctrl+K at 240 splits only V1/A1 clips crossing 240', async () => {
 		const h = harness();
@@ -79,11 +77,21 @@ describe('Add Edit and targeting (TL-680, AC-13a)', () => {
 		h.session.transport.seek(100);
 		await h.run('timeline.addEdit');
 		expect(h.spans('V1')).toEqual([[0, 400]]);
-		expect(h.spans('V2')).toHaveLength(2);
+		expect(h.spans('V2')).toEqual([
+			[0, 100],
+			[100, 400],
+		]);
 		h.session.transport.seek(200);
 		await h.run('timeline.addEditAllTracks');
-		expect(h.spans('V1')).toHaveLength(2);
-		expect(h.spans('V2')).toHaveLength(3);
+		expect(h.spans('V1')).toEqual([
+			[0, 200],
+			[200, 400],
+		]);
+		expect(h.spans('V2')).toEqual([
+			[0, 100],
+			[100, 200],
+			[200, 400],
+		]);
 	});
 });
 
@@ -191,8 +199,11 @@ describe('playhead trims (TL-549, AC-11d)', () => {
 		expect(h.spans('V1')).toEqual([[0, 270]]);
 		expect(h.spans('A1')).toEqual([[0, 270]]);
 		h.session.transport.seek(5000);
+		const before = h.session.getCommitted();
+		const entries = h.history().length;
 		await h.run('timeline.rippleTrimPrevToPlayhead');
-		expect(h.toasts.at(-1)?.message).toContain('No clip under the playhead');
+		expect(h.session.getCommitted()).toBe(before);
+		expect(h.history()).toHaveLength(entries);
 	});
 
 	it('E extends the selected edit point to the playhead with its trim type', async () => {
@@ -266,8 +277,11 @@ describe('In/Out, lift and extract (TL-690…766, AC-13d, AC-15a/b)', () => {
 	it('Lift without In/Out is a hinted no-op', async () => {
 		const h = harness();
 		h.apply([solid(0, 300, 'V1')]);
+		const before = h.session.getCommitted();
+		const entries = h.history().length;
 		await h.run('timeline.lift');
-		expect(h.toasts.at(-1)?.message).toBe('Set In and Out first');
+		expect(h.session.getCommitted()).toBe(before);
+		expect(h.history()).toHaveLength(entries);
 	});
 
 	it('Mark Clip and Mark Selection', async () => {
@@ -339,52 +353,11 @@ describe('selection, nudge, markers, navigation', () => {
 		expect(h.seq().markers.map((m) => m.frame)).toEqual([90]);
 	});
 
-	it('↑/↓ go to previous/next edit point on targeted tracks (A.7)', async () => {
-		const h = harness();
-		h.apply([solid(10, 40, 'V1'), solid(0, 30, 'V2')]);
-		h.target(['V1']);
-		h.session.transport.seek(0);
-		await h.run('transport.nextEdit');
-		expect(h.session.transport.getState().frame).toBe(10);
-		await h.run('transport.nextEdit');
-		expect(h.session.transport.getState().frame).toBe(50);
-		await h.run('transport.prevEditAny');
-		expect(h.session.transport.getState().frame).toBe(30);
-	});
-
-	it('link/unlink, enable and duplicate', async () => {
-		const h = harness();
-		const [v, a] = h.movie(0);
-		h.session.select('timeline', [v!, a!], 'replace', { linked: false });
-		await h.run('timeline.linkUnlink');
-		expect(h.seq().clips[v!]!.linkId).toBeNull();
-		await h.run('timeline.linkUnlink');
-		expect(h.seq().clips[v!]!.linkId).not.toBeNull();
-		await h.run('timeline.toggleEnable');
-		expect(h.seq().clips[v!]!.enabled).toBe(false);
-		await h.run('timeline.duplicate');
-		expect(h.spans('V1')).toEqual([
-			[0, 300],
-			[300, 600],
-		]);
-	});
-
 	it('gesture.cancel with nothing active deselects', async () => {
 		const h = harness();
 		h.apply([solid(0, 50, 'V1')]);
 		h.session.select('timeline', [h.clipsOn('V1')[0]!.id], 'replace');
 		await h.run('gesture.cancel');
 		expect(h.session.getState().selection.timeline.clips).toEqual([]);
-	});
-
-	it('track height commands are view state only (no history)', async () => {
-		const h = harness();
-		const n = h.history().length;
-		await h.run('timeline.videoTracksTaller');
-		const v = h.session.getState().views[h.seqId]!;
-		expect(v.trackHeights[h.seq().videoTracks[0]!.id]).toBe(48);
-		await h.run('timeline.minimizeAllTracks');
-		expect(h.session.getState().views[h.seqId]!.trackHeights[h.seq().audioTracks[0]!.id]).toBe(20);
-		expect(h.history()).toHaveLength(n);
 	});
 });

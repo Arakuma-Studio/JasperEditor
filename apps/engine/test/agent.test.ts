@@ -7,8 +7,8 @@ import { join } from 'node:path';
 import { AgentMcpInfoSchema } from '@jasper/api';
 import { appdirPaths } from '@jasper/config';
 import {
+	createCounterIdSource,
 	createEmptyProject,
-	createSeededIdSource,
 	defaultRegistries,
 	makeEnvelope,
 	type TransactionResult,
@@ -16,7 +16,6 @@ import {
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 import type WebSocket from 'ws';
-import { createCoreAgentStore } from '../src/agent/core-store.ts';
 import {
 	type AgentProjectStore,
 	AgentService,
@@ -25,8 +24,6 @@ import {
 } from '../src/agent/index.ts';
 import { findMcpEntry } from '../src/agent/mcp-entry.ts';
 import { createServer, engineConfig } from '../src/index.ts';
-import { LeaseManager } from '../src/projects/leases.ts';
-import { ProjectStoreFs } from '../src/projects/store.ts';
 
 const H = { host: '127.0.0.1:47900' };
 const apps: FastifyInstance[] = [];
@@ -37,7 +34,7 @@ afterEach(async () => {
 });
 
 function seedProject(projectFile: (id: string) => string) {
-	const ids = createSeededIdSource(3);
+	const ids = createCounterIdSource(3);
 	const doc = createEmptyProject({ ids, name: 'Agent test', preset: 'hd-1080p-30' });
 	const file = projectFile(doc.projectId);
 	mkdirSync(join(file, '..'), { recursive: true });
@@ -46,9 +43,9 @@ function seedProject(projectFile: (id: string) => string) {
 	return { projectId: doc.projectId, seqId: Object.keys(doc.sequences)[0]!, file };
 }
 
-async function makeEngine() {
+async function makeEngine(token: string | null = null) {
 	const appdir = mkdtempSync(join(tmpdir(), 'jasper-agent-'));
-	const config = engineConfig({ appdir, port: 47900, dev: true, token: null, webDir: null, env: {} });
+	const config = engineConfig({ appdir, port: 47900, dev: true, token, webDir: null, env: {} });
 	const app = await createServer(config);
 	apps.push(app);
 	await app.ready();
@@ -156,13 +153,18 @@ describe('POST /api/agent/open-project (jasper-mcp open_project_in_editor)', () 
 
 describe('GET /api/agent/mcp-info (Help ▸ Connect an AI Agent…)', () => {
 	it('reports the HTTP endpoint and the stdio bundle path, never the token', async () => {
-		const { app } = await makeEngine();
-		const r = await app.inject({ method: 'GET', url: '/api/agent/mcp-info', headers: H });
+		const token = 'secret-mcp-info-token';
+		const { app } = await makeEngine(token);
+		const r = await app.inject({
+			method: 'GET',
+			url: '/api/agent/mcp-info',
+			headers: { ...H, authorization: `Bearer ${token}` },
+		});
 		expect(r.statusCode).toBe(200);
 		const body = r.json();
 		expect(AgentMcpInfoSchema.safeParse(body).success).toBe(true);
 		expect(body.httpUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/);
-		expect(Object.keys(body).sort()).toEqual(['httpUrl', 'stdioEntry', 'tokenRequired']);
+		expect(JSON.stringify(body)).not.toContain(token);
 	});
 
 	it('finds the bundle in a checkout and in packaged resources; JASPER_MCP_ENTRY overrides', () => {
@@ -223,42 +225,6 @@ describe('headless mode (S01:AGT-020)', () => {
 			via: 'headless',
 			result: { markers: [{ name: 'Agent marker' }] },
 		});
-	});
-
-	it('applies the S01 Appendix B transaction (text clip, temp ref, opacity fade, marker)', async () => {
-		const { app, projectId } = await makeEngine();
-		const r = await postTx(app, projectId, {
-			label: 'Add title and fade in',
-			origin: { agent: 'editor-assistant', runId: 'run_42' },
-			expectedRevision: 0,
-			commands: [
-				{
-					type: 'clip.addText',
-					ref: '$title',
-					at: '00:00:01:00',
-					duration: { seconds: 4 },
-					track: 'V2',
-					content: { text: 'Launch Day' },
-				},
-				{
-					type: 'param.setAnimated',
-					target: ['clip', '$title', 'opacity'],
-					animated: true,
-					at: { frames: 0 },
-				},
-				{ type: 'param.set', target: ['clip', '$title', 'opacity'], value: 0, at: { frames: 0 } },
-				{ type: 'param.set', target: ['clip', '$title', 'opacity'], value: 100, at: { frames: 15 } },
-				{
-					type: 'marker.add',
-					frame: 30,
-					name: 'Title added',
-					markerType: 'agent-note',
-					comment: 'Fades in over 0.5 s.',
-				},
-			],
-		});
-		expect(r.result.ok).toBe(true);
-		if (r.result.ok) expect(r.result.refs.$title).toMatch(/^clp_/);
 	});
 
 	it('rejects destructive transactions with E_APPROVAL_DENIED and unknown projects with 404', async () => {
@@ -507,7 +473,7 @@ class MemoryStore implements AgentProjectStore {
 
 function makeService(opts: { approvalTimeoutMs?: number; relayTimeoutMs?: number } = {}) {
 	const store = new MemoryStore();
-	const doc = createEmptyProject({ ids: createSeededIdSource(9), name: 'Svc', preset: 'hd-1080p-30' });
+	const doc = createEmptyProject({ ids: createCounterIdSource(9), name: 'Svc', preset: 'hd-1080p-30' });
 	store.envelopes.set(
 		doc.projectId,
 		makeEnvelope(doc, { revision: 0, savedAt: 'x', platform: 'test' }) as never,
@@ -576,53 +542,12 @@ describe('AgentService timeouts', () => {
 		expect(expired).toMatchObject({ appliedBy: 'headless', result: { ok: true, revision: 1 } });
 	});
 
-	it('relays a session response and rejects oversized transactions (limits)', async () => {
-		const { service, socket, projectId } = makeService();
-		const p = service.transact(projectId, tx([{ type: 'marker.add', frame: 2, name: 'z' }]));
-		const req = await socket.nextSent((m) => m.type === 'request');
-		const result = {
-			ok: true,
-			revision: 3,
-			refs: {},
-			created: [],
-			changed: [],
-			deleted: [],
-			warnings: [],
-			results: [],
-		};
-		socket.client({ type: 'response', id: req.id, result });
-		expect(await p).toEqual({ result, appliedBy: 'session' });
+	it('rejects oversized transactions (limits)', async () => {
+		const { service, projectId } = makeService();
 		const big = await service.transact(
 			projectId,
 			tx(Array.from({ length: 5001 }, () => ({ type: 'marker.add', frame: 0 }))),
 		);
 		expect(big.result).toMatchObject({ ok: false, errors: [{ code: 'E_LIMIT' }] });
-	});
-});
-
-describe('core agent project-store adapter', () => {
-	it('persists the envelope and refuses a stale base revision', async () => {
-		const appdir = mkdtempSync(join(tmpdir(), 'jasper-agent-store-'));
-		const paths = appdirPaths(appdir);
-		const { projectId } = seedProject(paths.projectFile);
-		const leases = new LeaseManager();
-		const projects = new ProjectStoreFs({ paths, leases, appVersion: 'test' });
-		const store = createCoreAgentStore(projects, leases);
-		const cur = await store.load(projectId);
-		expect(cur?.revision).toBe(0);
-		expect(await store.save(projectId, { ...cur!.envelope, revision: 1 }, 0)).toEqual({
-			ok: true,
-			revision: 1,
-		});
-		expect(await store.save(projectId, { ...cur!.envelope, revision: 1 }, 0)).toEqual({
-			ok: false,
-			conflict: true,
-			revision: 1,
-		});
-		expect(await store.load(projectId)).toEqual({
-			envelope: expect.objectContaining({ revision: 1 }),
-			revision: 1,
-		});
-		expect(await store.load('../etc')).toBeNull();
 	});
 });

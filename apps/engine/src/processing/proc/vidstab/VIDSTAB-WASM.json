@@ -1,7 +1,7 @@
 {
   "file": "vidstab.wasm",
-  "sha256": "af97cf3357c030a1ccbbdba5b4d7a2dfa26544c1d14b39817ba756cab30f933d",
-  "bytes": 169094,
+  "sha256": "45c32b683e3afbda4a7ad77a0fe6a175293aa0788503f2af69897d7f59522871",
+  "bytes": 161810,
   "vidstab": {
     "repository": "https://github.com/georgmartius/vid.stab",
     "commit": "e2445c4081658318223762a696eb1c645c2d7168",
@@ -111,7 +111,6 @@
     "vsx_malloc",
     "vsx_free",
     "vsx_version",
-    "vsx_set_simd",
     "vsx_simd",
     "vsx_detect_free",
     "vsx_detect_init",
@@ -126,12 +125,7 @@
     "vsx_path_compute",
     "vsx_path_result",
     "vsx_path_zoom",
-    "vsx_warp_rgb48",
-    "vsx_ref_free",
-    "vsx_ref_init",
-    "vsx_ref_src",
-    "vsx_ref_dst",
-    "vsx_ref_apply"
+    "vsx_warp_rgb48"
   ],
   "rebuild": "scripts/vidstab-wasm/build.sh"
 }

@@ -1,7 +1,7 @@
 import {
 	applyTransaction,
+	createCounterIdSource,
 	createEmptyProject,
-	createSeededIdSource,
 	defaultRegistries,
 	makeEnvelope,
 } from '@jasper/project';
@@ -137,7 +137,7 @@ describe('@jasper/api schemas', () => {
 		expect(EngineCapabilitiesSchema.parse(caps).render.fframes).toBe('unavailable');
 	});
 	it('round-trips a real envelope, export request and transaction result', () => {
-		const ids = createSeededIdSource(1);
+		const ids = createCounterIdSource(1);
 		const doc = createEmptyProject({ ids, name: 'A' });
 		const env = makeEnvelope(doc, { revision: 3, savedAt: 't', platform: 'web' });
 		const seqId = Object.keys(doc.sequences)[0]!;

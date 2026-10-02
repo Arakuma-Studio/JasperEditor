@@ -15,7 +15,7 @@ import type { PlayerController, TransportState, TransportStore } from '@jasper/s
 
 const NATIVE_MIN_RATE = 0.1;
 const NATIVE_MAX_RATE = 1;
-export const SEEK_HZ = 30;
+const SEEK_HZ = 30;
 /**
  * Native play watchdog: when no `frameupdate` arrives for this long while playing (and the Player is not
  * buffering), the Player has stalled. Observed in 4.0.499 with @remotion/media after seeks: the store
@@ -23,7 +23,7 @@ export const SEEK_HZ = 30;
  * can also happen after the first frame (61 → 62, then nothing), so the watchdog stays armed for the
  * whole native playback; at slow rates the window grows to three frame periods.
  */
-export const PLAY_WATCHDOG_MS = 600;
+const PLAY_WATCHDOG_MS = 600;
 /** Consecutive kicks without any progress in between; progress restores the budget. */
 const PLAY_WATCHDOG_RETRIES = 3;
 
@@ -47,7 +47,7 @@ export interface PlayerLike {
 	removeEventListener(name: PlayerEvent, cb: Listener): void;
 }
 
-export type Clock = {
+type Clock = {
 	now(): number;
 	requestFrame(cb: () => void): unknown;
 	cancelFrame(handle: unknown): void;
@@ -73,7 +73,6 @@ type DriverOptions = {
 	getFps(): number;
 	/** Applies the rate to the Player (a React prop in Remotion). */
 	setPlayerRate(rate: number): void;
-	clock?: Clock;
 	/** Buffering state for the dropped-frame/buffering indicator. */
 	onBuffering?(waiting: boolean): void;
 };
@@ -93,16 +92,11 @@ export class PlaybackDriver implements PlayerController {
 	private frameEvents = 0;
 	private buffering = false;
 	private watchdog: ReturnType<typeof setTimeout> | null = null;
-	private readonly clock: Clock;
+	private readonly clock = browserClock;
 	private readonly off: (() => void)[] = [];
 
 	constructor(private readonly opts: DriverOptions) {
-		this.clock = opts.clock ?? browserClock;
 		this.off.push(opts.transport.subscribe((s, prev) => this.onTransport(s, prev)));
-	}
-
-	get currentMode(): DriverMode {
-		return this.mode;
 	}
 
 	/** Connects a mounted Player (or disconnects with null). */

@@ -5,7 +5,7 @@
 // float64, so it equals the TypeScript reference exactly (8-bit rounding by Uint8ClampedArray).
 import type { Lut } from '@jasper/project';
 
-export type PreparedLut = {
+type PreparedLut = {
 	/** Lattice offset of the lower corner per 8-bit code value, per axis (already × stride). */
 	r0: Int32Array;
 	g0: Int32Array;
@@ -23,7 +23,7 @@ export type PreparedLut = {
 const prepared = new WeakMap<Lut, PreparedLut>();
 
 /** Per-code-value lookup tables for a 3D LUT (cached per LUT object). */
-export function prepareLut(lut: Lut): PreparedLut {
+function prepareLut(lut: Lut): PreparedLut {
 	const hit = prepared.get(lut);
 	if (hit) return hit;
 	const n = lut.size;

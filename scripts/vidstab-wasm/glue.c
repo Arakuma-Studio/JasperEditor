@@ -19,7 +19,6 @@
  *   warp        vsx_warp_rgb48: applies one transform to interleaved 16-bit RGB in float, bicubic
  *               (the Catmull-Rom kernel of vid.stab's interpolateBiCub), same geometry as vid.stab's
  *               transformPlanar; row bands so several instances can share one frame.
- *   reference   vsx_ref_*: vid.stab's own 8-bit transform (for validating the warp numerically).
  *
  * WASM SIMD: the motion-detection kernels (compareSubImg / contrastSubImg1) have SSE2/AVX2/NEON versions
  * upstream but nothing for wasm32, and clang's <emmintrin.h> is x86-only, so this file carries wasm_simd128
@@ -93,10 +92,6 @@ EXPORT(vsx_version) const char* vsx_version(void) { return LIBVIDSTAB_VERSION; }
 
 /* ------------------------------------------------- WASM SIMD motion kernels --- */
 
-static int use_simd = 1;
-/** 1: install the wasm_simd128 kernels (default when compiled with -msimd128); 0: vid.stab's scalar C. */
-EXPORT(vsx_set_simd) void vsx_set_simd(int on) { use_simd = on; }
-
 #ifdef __wasm_simd128__
 static inline unsigned int hadd_u32x4(v128_t v) {
   return wasm_u32x4_extract_lane(v, 0) + wasm_u32x4_extract_lane(v, 1) + wasm_u32x4_extract_lane(v, 2) +
@@ -166,16 +161,12 @@ static const char* simd_name = "scalar";
 static void install_kernels(void) {
   vs_simd_init();
 #ifdef __wasm_simd128__
-  if (use_simd) {
-    compareSubImg = compare_wasm;
-    contrastSubImg1 = contrast_wasm;
-    simd_name = "wasm-simd128";
-    return;
-  }
-  compareSubImg = compareSubImg_thr;
-  /* contrastSubImg1 keeps vid.stab's portable default (vs_simd_init found no x86/ARM kernels). */
-#endif
+  compareSubImg = compare_wasm;
+  contrastSubImg1 = contrast_wasm;
+  simd_name = "wasm-simd128";
+#else
   simd_name = vs_simd_active_name();
+#endif
 }
 EXPORT(vsx_simd) const char* vsx_simd(void) { return simd_name; }
 
@@ -530,54 +521,4 @@ void vsx_warp_rgb48(const uint16_t* src, int srcRow0, int srcRows, uint16_t* dst
 #endif
     }
   }
-}
-
-/* --------------------------------------- reference: vid.stab's 8-bit transform --- */
-
-static VSTransformData ref_td;
-static VSFrameInfo ref_fi;
-static int ref_ready = 0;
-static uint8_t* ref_src = NULL;
-static uint8_t* ref_dst = NULL;
-
-EXPORT(vsx_ref_free) void vsx_ref_free(void) {
-  if (ref_ready) vsTransformDataCleanup(&ref_td);
-  ref_ready = 0;
-  free(ref_src);
-  free(ref_dst);
-  ref_src = ref_dst = NULL;
-}
-
-/** vid.stab's own transform on 8-bit gray frames. crop: 0 keep, 1 black; interpol: 0..3 (3 = bicubic). */
-EXPORT(vsx_ref_init) int vsx_ref_init(int width, int height, int crop, int interpol) {
-  glue_setup();
-  vsx_ref_free();
-  if (!vsFrameInfoInit(&ref_fi, width, height, PF_GRAY8)) return -1;
-  VSTransformConfig conf = vsTransformGetDefaultConfig("vidstab-wasm-ref");
-  conf.crop = crop ? VSCropBorder : VSKeepBorder;
-  conf.interpolType = (VSInterpolType)interpol;
-  conf.optZoom = 0;
-  conf.smoothing = 0;
-  conf.estimateLensDistortion = 0;
-  conf.lensCorrection = VSLensCorrectOff;
-  conf.fov = 0.0;
-  memset(&ref_td, 0, sizeof(ref_td));
-  if (vsTransformDataInit(&ref_td, &conf, &ref_fi, &ref_fi) != VS_OK) return -1;
-  ref_ready = 1;
-  ref_src = (uint8_t*)calloc((size_t)width * height, 1);
-  ref_dst = (uint8_t*)calloc((size_t)width * height, 1);
-  return ref_src && ref_dst ? 0 : -1;
-}
-EXPORT(vsx_ref_src) uint8_t* vsx_ref_src(void) { return ref_src; }
-EXPORT(vsx_ref_dst) uint8_t* vsx_ref_dst(void) { return ref_dst; }
-
-EXPORT(vsx_ref_apply) int vsx_ref_apply(double x, double y, double alpha, double zoom) {
-  if (!ref_ready) return -1;
-  VSFrame s, d;
-  vsFrameFillFromBuffer(&s, ref_src, &ref_fi);
-  vsFrameFillFromBuffer(&d, ref_dst, &ref_fi);
-  if (vsTransformPrepare(&ref_td, &s, &d) != VS_OK) return -1;
-  VSTransform t = new_transform(x, y, alpha, zoom, 0, 0, 0);
-  if (vsDoTransform(&ref_td, t) != VS_OK) return -1;
-  return vsTransformFinish(&ref_td) == VS_OK ? 0 : -1;
 }

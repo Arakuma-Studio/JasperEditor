@@ -4,7 +4,6 @@
 import { spawnSync } from 'node:child_process';
 import { EngineCapabilitiesSchema, RenderPlanSchema } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { GPL_ENCODERS } from '../src/tools/encoders.ts';
 import { coreServices } from '../src/tools/services.ts';
 import {
 	closeApps,
@@ -69,7 +68,16 @@ describe('LGPL-only mode (JASPER_FFMPEG_LGPL_ONLY=1)', () => {
 		const enc = caps.media.encoding!;
 		expect(enc.lgplOnly).toBe(true);
 		// The raw list still shows what the build has; the selector ignores the GPL entries.
-		for (const e of Object.values(enc.codecs).flat()) expect(GPL_ENCODERS.has(e)).toBe(false);
+		for (const e of Object.values(enc.codecs).flat())
+			expect([
+				'libx264',
+				'libx264rgb',
+				'libx265',
+				'libxvid',
+				'libxavs',
+				'libxavs2',
+				'libfdk_aac',
+			]).not.toContain(e);
 		expect(enc.export).not.toBeNull();
 		expect(enc.export!.gpl).toBe(false);
 		expect(enc.proxy!.gpl).toBe(false);

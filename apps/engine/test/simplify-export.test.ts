@@ -1,27 +1,33 @@
-// Export after "Simplify keyframes" (S09:TRK-023, TRK-032): the warp stage's per-frame layer maps (what the native
-// export renders) of a tracked corner pin and of tracked Motion move by at most the tolerance in sequence pixels
-// after keyframes.simplify, and the warped pixels follow (a gradient texture differs by at most gradient × shift).
+// Export after "Simplify keyframes" (S09:TRK-023, TRK-032): the per-frame layer maps of the render snapshot (what
+// the native export's warp stage renders) of a tracked corner pin and of tracked Motion move by at most the
+// tolerance in sequence pixels after keyframes.simplify, and the warped pixels follow (a gradient texture differs
+// by at most gradient × shift).
 import {
 	applyMat3,
 	applyTransaction,
 	buildRenderSnapshot,
+	clipContentTime,
+	createCounterIdSource,
 	createEmptyProject,
-	createSeededIdSource,
 	defaultRegistries,
 	FLICKS_PER_SECOND,
+	invertMat3,
+	layerMapOf,
 	type Mat3,
+	multiplyMat3,
 	type ProjectDocument,
 	type Quad,
+	resolveLayerProps,
 	type SimplifyReport,
 	type Vec2,
 } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
-import { warpFrame, warpFrames } from '../src/export/warp/index.ts';
+import { destRect, warpFrame } from '../src/export/warp/kernel.ts';
 
 const N = 90;
 const F = FLICKS_PER_SECOND / 30;
 
-function run(doc: ProjectDocument, seqId: string, commands: unknown[], ids = createSeededIdSource(9)) {
+function run(doc: ProjectDocument, seqId: string, commands: unknown[], ids = createCounterIdSource(9)) {
 	const { document, result } = applyTransaction(
 		doc,
 		{ label: 't', origin: 'user', sequenceId: seqId, commands: commands as never },
@@ -33,7 +39,7 @@ function run(doc: ProjectDocument, seqId: string, commands: unknown[], ids = cre
 
 /** A solid (sequence-sized box) driven by a dense noisy track: corner pin or Motion (position/scale/rotation). */
 function trackedDoc(mode: 'pin' | 'motion') {
-	const ids = createSeededIdSource(5);
+	const ids = createCounterIdSource(5);
 	const d = createEmptyProject({ ids, name: 'T', preset: 'hd-1080p-30' });
 	const seqId = Object.keys(d.sequences)[0]!;
 	let seed = 42;
@@ -89,10 +95,28 @@ function trackedDoc(mode: 'pin' | 'motion') {
 	return { doc: document, seqId, clipId: result.refs.$s! };
 }
 
+/**
+ * Per-frame layer maps (source px → sequence px) of the sequence-sized solid on V1, and the warp inputs of each
+ * frame (inverse map, opacity, destination rect), from the render snapshot the native export renders.
+ */
 function mapsOf(doc: ProjectDocument, seqId: string) {
 	const snap = buildRenderSnapshot(doc, seqId, { resolveMedia: () => null, resolveFont: () => null });
 	const c = snap.videoTracks[0]!.clips[0]!;
-	return warpFrames(c, 0, N, snap.settings.fps, { sw: 1920, sh: 1080, width: 1920, height: 1080 });
+	const toLayer: Mat3 = [c.intrinsicBox.width / 1920, 0, 0, 0, c.intrinsicBox.height / 1080, 0, 0, 0, 1];
+	const maps: Mat3[] = [];
+	const specs: { inv: Mat3 | null; opacity: number; rect: ArrayLike<number> | null }[] = [];
+	for (let f = 0; f < N; f++) {
+		const props = resolveLayerProps(c, clipContentTime(c, f, snap.settings.fps));
+		const fwd = multiplyMat3(layerMapOf(props), toLayer);
+		const inv = invertMat3(fwd);
+		maps.push(fwd);
+		specs.push({
+			inv,
+			opacity: props.opacity / 100,
+			rect: inv ? destRect(fwd, 1920, 1080, 1920, 1080) : null,
+		});
+	}
+	return { maps, specs };
 }
 
 /** Largest distance between two forward maps over a 17×17 grid of the source frame. */

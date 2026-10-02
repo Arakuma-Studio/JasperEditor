@@ -1,13 +1,13 @@
 // Test helpers for the WP-2D inspector panels: an in-memory EditorSession with solid clips.
 import { mgRegistry } from '@jasper/mg-templates';
-import { type Clip, createEmptyProject, createSeededIdSource, defaultRegistries } from '@jasper/project';
+import { type Clip, createCounterIdSource, createEmptyProject, defaultRegistries } from '@jasper/project';
 import { EditorSession } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
 import { render } from '@testing-library/react';
 import type { ReactNode } from 'react';
 
 export function makeSession(): EditorSession {
-	const ids = createSeededIdSource(11);
+	const ids = createCounterIdSource(11);
 	const document = createEmptyProject({ ids, name: 'Inspector test', preset: 'hd-1080p-30' });
 	return new EditorSession({
 		projectId: document.projectId,

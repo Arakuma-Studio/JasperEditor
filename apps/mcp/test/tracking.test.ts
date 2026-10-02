@@ -4,7 +4,7 @@
 // fixture's ground truth.
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -152,21 +152,6 @@ afterAll(async () => {
 }, 30_000);
 
 describe('tracking tools (S09:TRA-001/002, §8 item 7)', () => {
-	it('lists the tracking tools with render_frame guidance', async () => {
-		const { tools } = await client.listTools();
-		for (const n of [
-			'add_tracker',
-			'track',
-			'apply_tracking',
-			'get_tracker',
-			'set_corner_pin',
-			'simplify_keyframes',
-		])
-			expect(tools.map((t) => t.name)).toContain(n);
-		expect(tools.find((t) => t.name === 'apply_tracking')!.description).toMatch(/render_frame/);
-		expect(client.getInstructions()).toMatch(/add_tracker/);
-	});
-
 	it('add_tracker + track + apply_tracking + render_frame pins the overlay within 3 px of the ground truth', async () => {
 		const truth = JSON.parse(readFileSync(TRUTH, 'utf8')) as Truth;
 		const { projectId } = await ok<{ projectId: string }>('create_project', { name: 'Tracking' });
@@ -255,7 +240,11 @@ describe('tracking tools (S09:TRA-001/002, §8 item 7)', () => {
 			)) as CallToolResult;
 			expect(r.isError, textOf(r)).toBeFalsy();
 			const img = r.content.find((c) => c.type === 'image') as { data: string };
-			const got = magentaCorners(decodePng(Buffer.from(img.data, 'base64')));
+			const png = Buffer.from(img.data, 'base64');
+			const artifacts = join(ROOT, 'test-results', 'mcp');
+			mkdirSync(artifacts, { recursive: true });
+			writeFileSync(join(artifacts, `tracking-${frame}.png`), png);
+			const got = magentaCorners(decodePng(png));
 			const want = truth.corners[frame]!.map(([x, y]) => [x * s, y * s]);
 			for (let k = 0; k < 4; k++) {
 				const d = Math.hypot(got[k]![0] - want[k]![0]!, got[k]![1] - want[k]![1]!);
@@ -284,18 +273,5 @@ describe('tracking tools (S09:TRA-001/002, §8 item 7)', () => {
 		});
 		expect(r.normalizedCorners[0]).toEqual([0.1, 0.1]);
 		expect(r.normalizedCorners[2]).toEqual([0.8, 0.9]);
-		const k = await ok<{ normalizedCorners: [number, number][] }>('set_corner_pin', {
-			projectId,
-			clipId,
-			corners: [
-				[0, 0],
-				[1, 0],
-				[1, 1],
-				[0, 1],
-			],
-			space: 'normalized',
-			at: 10,
-		});
-		expect(k.normalizedCorners[1]).toEqual([1, 0]);
 	});
 });

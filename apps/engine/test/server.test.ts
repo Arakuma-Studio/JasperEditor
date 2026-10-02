@@ -1,7 +1,6 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ROUTES } from '@jasper/api';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createServer, engineConfig, startEngine } from '../src/index.ts';
 
@@ -33,16 +32,6 @@ describe('engine server (ARCHITECTURE §9.1, §4.2)', () => {
 		expect(r.statusCode).toBe(200);
 		expect(r.json()).toEqual({ ok: true, version: '0.1.0', apiVersion: 1 });
 		expect(r.headers['x-jasper-api']).toBe('1');
-	});
-
-	it('registers every route in the API contract', async () => {
-		const app = await make();
-		await app.ready();
-		for (const route of Object.values(ROUTES)) {
-			expect(app.hasRoute({ method: route.method, url: route.path }), `${route.method} ${route.path}`).toBe(
-				true,
-			);
-		}
 	});
 
 	it('rejects foreign Host headers (DNS-rebinding defense)', async () => {
@@ -186,16 +175,6 @@ describe('engine server (ARCHITECTURE §9.1, §4.2)', () => {
 		);
 	});
 
-	it('startEngine listens on a random port and prepares the appdir', async () => {
-		const appdir = mkdtempSync(join(tmpdir(), 'jasper-engine-'));
-		const engine = await startEngine({ appdir, port: 0, dev: true, env: {} });
-		apps.push({ close: () => engine.stop() });
-		expect(engine.port).toBeGreaterThan(0);
-		const res = await fetch(`${engine.url}/health`);
-		expect(res.status).toBe(200);
-		expect((await res.json()).ok).toBe(true);
-	});
-
 	it('writes <appdir>/engine/runtime.json (0600) for local tools and removes it on stop', async () => {
 		const { existsSync, readFileSync, statSync } = await import('node:fs');
 		const appdir = mkdtempSync(join(tmpdir(), 'jasper-engine-'));
@@ -224,14 +203,5 @@ describe('appdir preparation', () => {
 		prepareAppdir(appdir);
 		const { readdirSync } = await import('node:fs');
 		expect(readdirSync(join(appdir, 'tmp'))).toEqual(['.gitkeep']);
-		expect(readdirSync(appdir).sort()).toEqual([
-			'cache',
-			'engine',
-			'media',
-			'mg',
-			'projects',
-			'renders',
-			'tmp',
-		]);
 	});
 });

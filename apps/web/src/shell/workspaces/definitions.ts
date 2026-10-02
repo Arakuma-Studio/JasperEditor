@@ -199,9 +199,3 @@ export const DEFAULT_WORKSPACE_ID = 'editing';
 export function builtinWorkspace(id: string): WorkspaceDefinition | undefined {
 	return LAYOUT_PRESETS.find((w) => w.id === id) ?? BUILTIN_WORKSPACES.find((w) => w.id === id);
 }
-
-/** Every panel kind a layout references, in order (duplicates preserved for validation). */
-export function panelsIn(node: LayoutNode): PanelKind[] {
-	if ('group' in node) return [...node.group];
-	return node.children.flatMap((c) => panelsIn(c.node));
-}

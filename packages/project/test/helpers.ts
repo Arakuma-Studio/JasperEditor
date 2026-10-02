@@ -1,8 +1,8 @@
 import {
 	applyTransaction,
 	type CommandContext,
+	createCounterIdSource,
 	createEmptyProject,
-	createSeededIdSource,
 	defaultRegistries,
 	type IdSource,
 	type MediaAsset,
@@ -13,7 +13,7 @@ import {
 
 export function makeCtx(
 	overrides: Partial<CommandContext> = {},
-	ids: IdSource = createSeededIdSource(7),
+	ids: IdSource = createCounterIdSource(7),
 ): CommandContext {
 	return {
 		ids,
@@ -31,7 +31,7 @@ export class Harness {
 	readonly ids: IdSource;
 	entityRevisions = new Map<string, number>();
 	constructor(opts: { preset?: string; seed?: number; ctx?: Partial<CommandContext> } = {}) {
-		this.ids = createSeededIdSource(opts.seed ?? 1);
+		this.ids = createCounterIdSource(opts.seed ?? 1);
 		this.doc = createEmptyProject({ ids: this.ids, name: 'Test', preset: opts.preset ?? 'hd-1080p-30' });
 		this.extra = opts.ctx ?? {};
 	}

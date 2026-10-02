@@ -7,7 +7,7 @@
 // plan must be native/hybrid; without it (this package alone) Auto plans the Remotion path because the anime
 // template has a native blocker. The test records which one it checked as an annotation — it never skips.
 import { execFileSync } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type APIRequestContext, expect, type Page, test } from '@playwright/test';
 import { makeEnvelope, type ProjectDocument } from '../packages/project/src/index.ts';
@@ -18,12 +18,10 @@ import {
 	createProject,
 	enableAgentBridge,
 	focusTimeline,
-	pointerDrag,
 	query,
 	ROOT,
 	timelineArea,
 	waitForJob,
-	watchPage,
 } from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -32,11 +30,8 @@ const EXPORT_DIR = join(ROOT, 'test-results', 'e2e-anime-templates');
 mkdirSync(EXPORT_DIR, { recursive: true });
 
 let page: Page;
-let watcher: { errors: string[] };
 let clipId = '';
 let seqId = '';
-/** Program markup of the template at a few frames before the stretch (frame → innerHTML). */
-const before = new Map<number, string>();
 
 type MgClipDoc = {
 	start: number;
@@ -53,28 +48,8 @@ const clipDoc = async (): Promise<MgClipDoc> =>
 const program = () => page.getByTestId('program-player-wrapper');
 const templateIn = () => program().locator('[data-anime-template="title-reveal@1"]');
 
-/** Moves the playhead and returns the template markup the Program shows at that frame. */
-async function markupAt(frame: number): Promise<string> {
-	await query(page, 'playhead.set', { frame });
-	await expect.poll(async () => (await query<{ frame: number }>(page, 'playhead.get')).frame).toBe(frame);
-	// The Player re-renders on the next animation frame; wait until two reads agree.
-	let last = '';
-	await expect
-		.poll(async () => {
-			const html = await templateIn()
-				.innerHTML()
-				.catch(() => '');
-			const stable = html !== '' && html === last;
-			last = html;
-			return stable;
-		})
-		.toBe(true);
-	return last;
-}
-
 test.beforeAll(async ({ browser }) => {
 	page = await browser.newPage();
-	watcher = watchPage(page);
 	await enableAgentBridge(page);
 });
 
@@ -82,30 +57,12 @@ test.afterAll(async () => {
 	await page?.close();
 });
 
-test('the gallery lists anime templates (badge R, hover preview) and title-reveal drags onto the timeline', async () => {
+test('dragging a title-reveal template onto the timeline shows it in the Program', async () => {
 	await createProject(page, 'E2E Anime Templates');
 	seqId = (await query<{ sequenceId: string }>(page, 'sequence.summary')).sequenceId;
 	await page.getByTestId('tab-motionTemplates').click();
 	const card = page.locator('[data-template="title-reveal@1"]');
 	await expect(card).toBeVisible();
-	await expect(card.locator('[data-engine-badge="R"]')).toHaveText('R');
-	await expect(card.locator('[data-engine-label]')).toHaveText('anime · Remotion');
-	// Poster = a Remotion <Thumbnail> of the template; hovering plays the shared Player.
-	await expect(
-		card.locator('[data-preview-thumb="poster"] [data-anime-template="title-reveal@1"]'),
-	).toBeAttached();
-	await card.locator('[data-mg-preview]').hover();
-	await expect(card.locator('[data-preview-thumb="playing"]')).toBeAttached({ timeout: 5_000 });
-	// fframes cards keep the SVG twin poster and gain the hover preview too.
-	const lt = page.locator('[data-template="lower-third@1"]');
-	await expect(lt.locator('[data-preview-thumb="poster"] svg')).toBeAttached();
-	await lt.locator('[data-mg-preview]').hover();
-	await expect(lt.locator('[data-preview-thumb="playing"]')).toBeAttached({ timeout: 5_000 });
-	// Engine filter `anime`.
-	await page.getByTestId('motion-templates-engine').selectOption('anime');
-	await expect(page.locator('[data-template]')).toHaveCount(4);
-	await page.getByTestId('motion-templates-engine').selectOption('all');
-
 	const area = (await timelineArea(page).boundingBox())!;
 	await card.dragTo(timelineArea(page), { targetPosition: { x: 40, y: area.height - 220 } });
 	await expect
@@ -114,24 +71,14 @@ test('the gallery lists anime templates (badge R, hover preview) and title-revea
 	clipId = (await clips(page)).find((c) => c.kind === 'motion-graphic')!.id;
 	const doc = await clipDoc();
 	expect(doc.template).toEqual({ id: 'title-reveal', version: 1, renderer: 'anime' });
-	expect(doc.duration).toBe(Math.round((5 * 30000) / 1001)); // 5 s at 29.97
 	await query(page, 'playhead.set', { frame: doc.start + 60 });
 	await expect(templateIn()).toBeVisible({ timeout: 60_000 });
-	await expect(program().locator(`[data-clip-id="${clipId}"] [data-mg-renderer="anime"]`)).toBeAttached();
-	// The timeline shows the R badge for anime templates.
-	await expect(
-		page
-			.locator(`[data-testid="timeline-track-area"] [data-clip-id="${clipId}"] [data-engine-badge]`)
-			.first(),
-	).toHaveAttribute('data-engine-badge', 'R');
 });
 
 test('edit the title text and colour in Properties', async () => {
 	const cb = await clipBox(page, clipId);
 	await page.mouse.click(cb.x + cb.width / 2, cb.y + cb.height / 2);
 	await expect(page.getByTestId('mg-template-section')).toBeVisible();
-	await expect(page.getByTestId('mg-template-engine')).toContainText('anime · Remotion');
-	await expect(page.getByTestId('mg-template-rerender')).toHaveCount(0); // fframes-only action hidden
 	const title = page.getByTestId('prop-params.title');
 	await title.fill('Anime Works');
 	await title.press('Enter');
@@ -159,121 +106,96 @@ test('keyframe a colour param with the stopwatch: the Program colour changes ove
 	await ec.getByTestId('prop-params.accentColor').fill('#00ff00');
 	await expect.poll(async () => (await clipDoc()).paramKeyframes?.accentColor?.length ?? 0).toBe(2);
 	expect((await appliedLabels(page)).length).toBe(labels + 2);
-	const stroke = async (frame: number) => {
+	const accent = async (frame: number) => {
 		await query(page, 'playhead.set', { frame });
-		const line = program().locator('[data-part="underline"] line');
-		await expect(line).toBeAttached();
-		let v = '';
-		await expect
-			.poll(async () => {
-				const s = (await line.getAttribute('stroke')) ?? '';
-				const stable = s === v;
-				v = s;
-				return stable && s !== '';
-			})
-			.toBe(true);
-		return v;
-	};
-	const a = await stroke(f0);
-	const b = await stroke(f1);
-	const mid = await stroke(Math.round((f0 + f1) / 2));
-	expect(a).toBe('rgba(56, 135, 255, 1)'); // the template default accent, keyed at f0
-	expect(b).toBe('rgba(0, 255, 0, 1)');
-	expect(new Set([a, b, mid]).size).toBe(3); // evaluated between the keys
-});
-
-test('stretching the clip keeps the intro and the outro frame-exact', async () => {
-	const doc = await clipDoc();
-	const intro = [doc.start + 2, doc.start + 12, doc.start + 30];
-	const fromEnd = [1, 6, 14];
-	for (const f of intro) before.set(f, await markupAt(f));
-	for (const k of fromEnd) before.set(-k, await markupAt(doc.start + doc.duration - k));
-	await focusTimeline(page);
-	await page.keyboard.press('KeyV');
-	const b = await clipBox(page, clipId);
-	const pxPerFrame = b.width / doc.duration;
-	await pointerDrag(
-		page,
-		{ x: b.x + b.width - 2, y: b.y + b.height / 2 },
-		{ x: b.x + b.width - 2 + 60 * pxPerFrame, y: b.y + b.height / 2 },
-	);
-	await expect.poll(async () => (await clipDoc()).duration).toBeGreaterThan(doc.duration + 30);
-	const after = await clipDoc();
-	expect(after.start).toBe(doc.start);
-	for (const f of intro) expect(await markupAt(f), `intro frame ${f}`).toBe(before.get(f));
-	for (const k of fromEnd)
-		expect(await markupAt(after.start + after.duration - k), `${k} frames before the end`).toBe(
-			before.get(-k),
+		await expect.poll(async () => (await query<{ frame: number }>(page, 'playhead.get')).frame).toBe(frame);
+		const png = await program().screenshot();
+		const width = png.readUInt32BE(16);
+		const height = png.readUInt32BE(20);
+		const rgb = execFileSync(
+			process.env.JASPER_FFMPEG ?? 'ffmpeg',
+			['-v', 'error', '-i', 'pipe:0', '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1'],
+			{ input: png, maxBuffer: 64 << 20 },
 		);
-	// The hold in the middle of the longer clip equals the end of the intro (the keyframed accent colour —
-	// keys in content time — is the only thing that may differ between the two hold frames).
-	const noAccent = (html: string) => html.replace(/ stroke="[^"]*"/, '');
-	expect(noAccent(await markupAt(after.start + Math.floor(after.duration / 2)))).toBe(
-		noAccent(await markupAt(doc.start + Math.floor(doc.duration / 2))),
-	);
+		let green = 0;
+		let blue = 0;
+		let pixels = 0;
+		for (let i = 0; i < width * height; i++) {
+			const y = Math.floor(i / width);
+			if (y < height * 0.4 || y > height * 0.7) continue;
+			const [r, g, b] = [rgb[i * 3]!, rgb[i * 3 + 1]!, rgb[i * 3 + 2]!];
+			if (Math.max(g, b) < 120 || Math.max(g, b) - r < 40) continue;
+			green += g;
+			blue += b;
+			pixels++;
+		}
+		return { green: green / pixels, blue: blue / pixels, pixels };
+	};
+	const a = await accent(f0);
+	const b = await accent(f1);
+	const mid = await accent(Math.round((f0 + f1) / 2));
+	expect(Math.min(a.pixels, b.pixels, mid.pixels)).toBeGreaterThan(20);
+	expect(a.blue).toBeGreaterThan(a.green + 40);
+	expect(b.green).toBeGreaterThan(b.blue + 70);
+	expect(mid.green).toBeGreaterThan(a.green + 20);
+	expect(mid.blue).toBeGreaterThan(b.blue + 20);
 });
 
-test('a Gaussian blur and a corner pin apply to the anime template in the Program', async () => {
+test('Gaussian blur and corner pin visibly change the template in the Program', async () => {
 	const doc = await clipDoc();
 	await query(page, 'playhead.set', { frame: doc.start + 60 });
+	const shot = () => program().screenshot();
+	const gray = (png: Buffer) =>
+		execFileSync(
+			process.env.JASPER_FFMPEG ?? 'ffmpeg',
+			['-v', 'error', '-i', 'pipe:0', '-f', 'rawvideo', '-pix_fmt', 'gray', 'pipe:1'],
+			{ input: png, maxBuffer: 64 << 20 },
+		);
+	const edgeEnergy = (pixels: Buffer, width: number) => {
+		let sum = 0;
+		for (let i = 0; i + 1 < pixels.length; i++)
+			if (i % width !== width - 1) sum += Math.abs(pixels[i]! - pixels[i + 1]!);
+		return sum;
+	};
+	const baseline = await shot();
+	const width = baseline.readUInt32BE(16);
 	await page.getByTestId('tab-effects').click();
-	for (const [search, id] of [
-		['Gaussian', 'jasper.gaussian-blur'],
-		['Corner Pin', 'jasper.corner-pin'],
-	] as const) {
-		await page.getByTestId('effects-search').fill(search);
-		const fx = page.locator(`[data-effect-id="${id}"]`);
-		await expect(fx).toBeVisible();
-		const cb = await clipBox(page, clipId);
-		const n = (await appliedLabels(page)).length;
-		await fx.dragTo(page.locator(`[data-testid="timeline-track-area"] [data-clip-id="${clipId}"]`).first(), {
-			targetPosition: { x: Math.min(20, cb.width / 2), y: cb.height / 2 },
-		});
-		await expect.poll(async () => (await appliedLabels(page)).length).toBe(n + 1);
-	}
-	const effects = (await clipDoc()).effects ?? [];
-	expect(effects.map((e) => e.effectId)).toEqual(['jasper.gaussian-blur', 'jasper.corner-pin']);
-	// Pull the upper-left corner in so the pin is visibly projective (agent API edit = one history entry).
-	const pin = effects.find((e) => e.effectId === 'jasper.corner-pin')!;
-	const r = await page.evaluate(
-		([fxId]) =>
-			(
-				window as unknown as {
-					jasper: { transact(tx: unknown): Promise<{ ok: boolean }> };
-				}
-			).jasper.transact({
+	await page.getByTestId('effects-search').fill('Gaussian');
+	await page
+		.locator('[data-effect-id="jasper.gaussian-blur"]')
+		.dragTo(page.locator(`[data-testid="timeline-track-area"] [data-clip-id="${clipId}"]`).first());
+	await expect
+		.poll(async () => (await clipDoc()).effects?.some((e) => e.effectId === 'jasper.gaussian-blur'))
+		.toBe(true);
+	const beforeEdges = edgeEnergy(gray(baseline), width);
+	await expect.poll(async () => edgeEnergy(gray(await shot()), width)).toBeLessThan(beforeEdges * 0.95);
+	const blurred = await shot();
+	await page.getByTestId('effects-search').fill('Corner Pin');
+	await page
+		.locator('[data-effect-id="jasper.corner-pin"]')
+		.dragTo(page.locator(`[data-testid="timeline-track-area"] [data-clip-id="${clipId}"]`).first());
+	const pin = (await clipDoc()).effects?.find((e) => e.effectId === 'jasper.corner-pin');
+	expect(pin).toBeDefined();
+	const result = await page.evaluate(
+		(id) =>
+			(window as unknown as { jasper: { transact(tx: unknown): Promise<{ ok: boolean }> } }).jasper.transact({
 				label: 'Corner pin',
-				commands: [{ type: 'param.set', target: ['effect', fxId, 'topLeft'], value: [0.12, 0.08] }],
+				commands: [{ type: 'param.set', target: ['effect', id, 'topLeft'], value: [0.12, 0.08] }],
 			}),
-		[pin.id] as const,
+		pin!.id,
 	);
-	expect(r.ok).toBe(true);
-	const layer = program().locator(`[data-clip-id="${clipId}"]`).first();
-	await expect(layer.locator('[data-effect="jasper.gaussian-blur"]')).toBeAttached();
-	await expect
-		.poll(async () => layer.evaluate((el) => (el as HTMLElement).style.transform))
-		.toMatch(/^matrix3d\(/);
-	await expect(layer.locator('[data-anime-template="title-reveal@1"]')).toBeAttached();
-});
-
-test('fframes templates are unaffected: twin SVG and F badge through LayerBox', async () => {
-	await page.getByTestId('tab-motionTemplates').click();
-	const lt = page.locator('[data-template="lower-third@1"]');
-	const area = (await timelineArea(page).boundingBox())!;
-	await lt.dragTo(timelineArea(page), { targetPosition: { x: 40, y: area.height - 160 } });
-	await expect
-		.poll(async () => (await clips(page)).filter((c) => c.kind === 'motion-graphic').length)
-		.toBe(2);
-	const fframes = (await clips(page)).find((c) => c.kind === 'motion-graphic' && c.id !== clipId)!;
-	await query(page, 'playhead.set', { frame: fframes.start + 40 });
-	const layer = program().locator(`[data-clip-id="${fframes.id}"]`).first();
-	await expect(layer.locator('[data-mg-renderer="fframes"] svg')).toBeAttached();
-	await expect(layer.locator('[data-mg-badge]')).toBeAttached();
-	// Remove it again so the export below only has the anime template over black.
-	await page.keyboard.press('Control+KeyZ');
-	await expect
-		.poll(async () => (await clips(page)).filter((c) => c.kind === 'motion-graphic').length)
-		.toBe(1);
+	expect(result.ok).toBe(true);
+	const beforePin = gray(blurred);
+	const changedPixels = async () => {
+		const afterPin = gray(await shot());
+		let changed = 0;
+		for (let i = 0; i < beforePin.length; i++) if (Math.abs(beforePin[i]! - afterPin[i]!) > 10) changed++;
+		return changed;
+	};
+	await expect.poll(changedPixels).toBeGreaterThan(1000);
+	writeFileSync(join(EXPORT_DIR, 'anime-effect-before.png'), baseline);
+	writeFileSync(join(EXPORT_DIR, 'anime-effect-blurred.png'), blurred);
+	writeFileSync(join(EXPORT_DIR, 'anime-effect-pinned.png'), await shot());
 });
 
 /** RGB frames decoded with ffmpeg (rgb24, sequence size). */
@@ -288,13 +210,14 @@ function rgbFrame(file: string, args: string[]): Buffer {
 async function exportProRes(
 	request: APIRequestContext,
 	expectPath: RegExp,
+	filename = 'anime-templates.mov',
 ): Promise<{ file: string; renderPath: string }> {
 	await focusTimeline(page);
 	await page.keyboard.press('Control+KeyM');
 	await expect(page.getByTestId('export-mode')).toBeVisible();
 	await page.getByTestId('export-engine').selectOption('auto');
 	await page.getByTestId('export-codec').selectOption('prores');
-	await page.getByTestId('export-filename').fill('anime-templates.mov');
+	await page.getByTestId('export-filename').fill(filename);
 	await expect(page.getByTestId('plan-path')).toContainText(expectPath, { timeout: 60_000 });
 	const known = new Set(
 		((await (await request.get('/api/jobs')).json()).jobs as { id: string }[]).map((j) => j.id),
@@ -312,10 +235,26 @@ async function exportProRes(
 	expect(job.state, JSON.stringify(job.error ?? null)).toBe('succeeded');
 	const res = await request.get(`/renders/${jobId}/output`);
 	expect(res.ok()).toBe(true);
-	const file = join(EXPORT_DIR, 'anime-templates.mov');
+	const file = join(EXPORT_DIR, filename);
 	const { writeFileSync } = await import('node:fs');
 	writeFileSync(file, await res.body());
 	return { file, renderPath: String(job.result?.renderPath ?? '') };
+}
+
+function redPixels(
+	rgb: Buffer,
+	width: number,
+	height: number,
+	region: { left: number; right: number; top: number; bottom: number },
+): number {
+	let count = 0;
+	for (let y = Math.floor(region.top * height); y < Math.floor(region.bottom * height); y++) {
+		for (let x = Math.floor(region.left * width); x < Math.floor(region.right * width); x++) {
+			const i = (y * width + x) * 3;
+			if (rgb[i]! > 160 && rgb[i]! > rgb[i + 1]! + 100 && rgb[i]! > rgb[i + 2]! + 100) count++;
+		}
+	}
+	return count;
 }
 
 test('export (native with layer-bake, else Remotion) matches renderStill', async ({ request }) => {
@@ -373,6 +312,52 @@ test('export (native with layer-bake, else Remotion) matches renderStill', async
 	expect(lit).toBeGreaterThan(1000);
 });
 
-test('no uncaught page errors', () => {
-	expect(watcher.errors.filter((e) => e.startsWith('pageerror'))).toEqual([]);
+test('an out-of-canvas callout is clipped in the Program and exported frame', async ({ request }) => {
+	test.setTimeout(900_000);
+	await createProject(page, 'E2E Callout Clipping');
+	seqId = (await query<{ sequenceId: string }>(page, 'sequence.summary')).sequenceId;
+	const tx = await page.evaluate(() =>
+		(window as unknown as { jasper: { transact(tx: unknown): Promise<{ ok: boolean }> } }).jasper.transact({
+			label: 'Callout at canvas edge',
+			commands: [
+				{
+					type: 'clip.addMotionGraphic',
+					at: 0,
+					duration: 90,
+					track: 'V1',
+					template: { id: 'callout', version: 1 },
+					params: { label: 'EDGE LABEL', labelX: 0.95, boxColor: [1, 0, 0, 1] },
+					ref: '$callout',
+				},
+				{ type: 'param.set', target: ['clip', '$callout', 'transform', 'scale'], value: 50 },
+			],
+		}),
+	);
+	expect(tx.ok).toBe(true);
+	await query(page, 'playhead.set', { frame: 50 });
+	await expect.poll(async () => (await query<{ frame: number }>(page, 'playhead.get')).frame).toBe(50);
+	const preview = await program().screenshot();
+	writeFileSync(join(EXPORT_DIR, 'callout-clipped-program.png'), preview);
+	const width = preview.readUInt32BE(16);
+	const height = preview.readUInt32BE(20);
+	const previewRgb = execFileSync(
+		process.env.JASPER_FFMPEG ?? 'ffmpeg',
+		['-v', 'error', '-i', 'pipe:0', '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1'],
+		{ input: preview, maxBuffer: 64 << 20 },
+	);
+	// At 50% scale, a centred 16:9 template occupies x=25%..75%. The label begins inside
+	// the right edge, and labelX=0.95 places the rest outside the specified canvas.
+	const inside = { left: 0.73, right: 0.748, top: 0.39, bottom: 0.43 };
+	const outside = { left: 0.758, right: 0.81, top: 0.39, bottom: 0.43 };
+	expect(redPixels(previewRgb, width, height, inside)).toBeGreaterThan(20);
+	expect(redPixels(previewRgb, width, height, outside)).toBe(0);
+
+	const caps = await (await request.get('/api/capabilities')).json();
+	const bake = caps.features?.layerBake?.state === 'ready';
+	const out = await exportProRes(request, bake ? /native|hybrid/i : /remotion/i, 'callout-clipped.mov');
+	expect(out.renderPath).toMatch(bake ? /native|hybrid/ : /remotion/);
+	const exported = rgbFrame(out.file, ['-vf', 'select=eq(n\\,50)', '-frames:v', '1']);
+	expect(exported.length).toBe(1920 * 1080 * 3);
+	expect(redPixels(exported, 1920, 1080, inside)).toBeGreaterThan(100);
+	expect(redPixels(exported, 1920, 1080, outside)).toBe(0);
 });

@@ -48,7 +48,7 @@ export type TrackJobInput = {
 };
 
 /** Source frames a request produces samples for: [start, end). */
-export function trackSpan(r: Pick<TrackRequest, 'reference' | 'range' | 'direction'>): {
+function trackSpan(r: Pick<TrackRequest, 'reference' | 'range' | 'direction'>): {
 	start: number;
 	end: number;
 } {
@@ -69,7 +69,7 @@ function mediaFacts(rec: MediaRecord): Omit<TrackJobInput, 'request' | 'file'> |
 }
 
 /** Semantic checks beyond the schema; returns an error message or null. */
-export function validateTrackRequest(
+function validateTrackRequest(
 	r: TrackRequest,
 	facts: { display: { width: number; height: number }; frameCount: number | null },
 ): string | null {
@@ -391,7 +391,7 @@ function noReferenceFrame(ref: number): JobError {
 }
 
 /** Worker tracker configuration for a request at a tracking size (geometry in tracking px). */
-export function trackerConfig(
+function trackerConfig(
 	r: TrackRequest,
 	size: { width: number; height: number; sx: number; sy: number },
 ): TrackerConfig {

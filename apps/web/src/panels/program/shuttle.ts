@@ -1,5 +1,5 @@
 // JKL shuttle state machine (S02 Appendix A.8, TL-872; S03:PGM-003). Pure logic over a small target
-// interface so it can be unit-tested with fake timers; transport commands drive one instance per
+// interface; transport commands drive one instance per
 // TransportStore.
 const SHUTTLE_RATES = [1, 2, 4, 8] as const;
 const K_HOLD_SLOW_RATE = 0.25;
@@ -16,28 +16,15 @@ export interface ShuttleTarget {
 	currentRate(): number;
 }
 
-export type TimerApi = {
-	setTimeout(cb: () => void, ms: number): unknown;
-	clearTimeout(handle: unknown): void;
-};
-
-const defaultTimers: TimerApi = {
-	setTimeout: (cb, ms) => setTimeout(cb, ms),
-	clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
-};
-
 export class Shuttle {
 	direction: -1 | 0 | 1 = 0;
 	step = 0;
 	kHeld = false;
 	private readonly held = new Set<ShuttleKey>();
-	private holdTimer: unknown = null;
+	private holdTimer: ReturnType<typeof setTimeout> | null = null;
 	private slowKey: ShuttleKey | null = null;
 
-	constructor(
-		private readonly target: ShuttleTarget,
-		private readonly timers: TimerApi = defaultTimers,
-	) {}
+	constructor(private readonly target: ShuttleTarget) {}
 
 	/** Effective rate of the state machine (0 = paused). */
 	get rate(): number {
@@ -59,7 +46,7 @@ export class Shuttle {
 			// Hold K + tap J/L: one frame; keep holding for 0.25× playback until release.
 			this.target.step(dir);
 			this.cancelHold();
-			this.holdTimer = this.timers.setTimeout(() => {
+			this.holdTimer = setTimeout(() => {
 				this.holdTimer = null;
 				if (this.held.has(key) && this.kHeld) {
 					this.slowKey = key;
@@ -128,7 +115,7 @@ export class Shuttle {
 
 	private cancelHold(): void {
 		if (this.holdTimer !== null) {
-			this.timers.clearTimeout(this.holdTimer);
+			clearTimeout(this.holdTimer);
 			this.holdTimer = null;
 		}
 	}

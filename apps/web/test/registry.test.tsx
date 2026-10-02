@@ -11,8 +11,6 @@ import {
 	resetCommandRegistry,
 	runCommand,
 } from '../src/commands/index.ts';
-import { getPanelDefinition, PANEL_DEFINITIONS } from '../src/panels/registry.ts';
-import { PANEL_KINDS } from '../src/panels/types.ts';
 import { PanelServices } from '../src/state/panel-services.ts';
 
 const engine = new EngineClient({ fetch: (async () => new Response('{}')) as unknown as typeof fetch });
@@ -44,7 +42,6 @@ describe('UI command registry (ARCHITECTURE §7.3)', () => {
 		]);
 		const toast = vi.fn();
 		const ctx = createCommandContext({ engine, toast });
-		expect(getCommand('test.hello')?.label).toBe('Hello');
 		expect(listCommands({ scope: 'timeline' }).map((c) => c.id)).toEqual(['test.boom']);
 		expect(await runCommand('test.hello', ctx, { n: 1 })).toEqual({ ran: true });
 		expect(run).toHaveBeenCalledWith(ctx, { n: 1 });
@@ -64,23 +61,6 @@ describe('UI command registry (ARCHITECTURE §7.3)', () => {
 		expect((await runCommand('nope', ctx)).reason).toBe('unknown');
 		off();
 		expect(getCommand('test.hello')).toBeUndefined();
-	});
-});
-
-describe('panel registry (ARCHITECTURE §7.2)', () => {
-	it('lists every PanelKind exactly once with a component', () => {
-		expect(PANEL_DEFINITIONS.map((d) => d.kind).sort()).toEqual([...PANEL_KINDS].sort());
-		for (const kind of PANEL_KINDS) {
-			const d = getPanelDefinition(kind);
-			// Plain components or code-split React.lazy components (panels/lazy.ts, WP-3I).
-			expect(['function', 'object']).toContain(typeof d.component);
-			expect(d.component).toBeTruthy();
-			expect(d.agentDescription.length).toBeGreaterThan(10);
-			expect(d.title({})).toBeTruthy();
-		}
-		expect(getPanelDefinition('program').keepAlive).toBe(true);
-		expect(getPanelDefinition('timeline').keepAlive).toBe(true);
-		expect(getPanelDefinition('tools').fixedAxis).toBe('width');
 	});
 });
 

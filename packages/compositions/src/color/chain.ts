@@ -26,18 +26,18 @@ import { bakedRunLut, loadedLutAsset, loadLutAsset, lutUrlKey } from './luts.ts'
 import { useColorStageStatus } from './status.ts';
 
 /** Effects that commute with pointwise colour ops (geometry only). */
-export const COLOR_COMMUTING_EFFECTS: ReadonlySet<string> = new Set([
+const COLOR_COMMUTING_EFFECTS: ReadonlySet<string> = new Set([
 	'jasper.crop',
 	'jasper.flip-horizontal',
 	'jasper.flip-vertical',
 	'jasper.corner-pin',
 ]);
 
-export type ChainStep =
+type ChainStep =
 	| { kind: 'lut'; effects: ResolvedEffect[] }
 	| { kind: 'css'; effect: ResolvedEffect; filter: string };
 
-export type ColorPlan = {
+type ColorPlan = {
 	/** Canvas passes on the source picture, in order. */
 	steps: ChainStep[];
 	/** Effects drawn as CSS/SVG wrapper stages (LayerBox), stack order. */
@@ -50,7 +50,7 @@ export type ColorPlan = {
 	reordered: string[];
 };
 
-export function planColorStage(
+function planColorStage(
 	effects: readonly ResolvedEffect[],
 	opts: { webgl: boolean; bypass: boolean; registry?: EffectRegistry },
 ): ColorPlan {
@@ -114,7 +114,7 @@ export function planColorStage(
 }
 
 /** Media ids referenced by `{mediaId}` params of the given effects. */
-export function referencedMedia(effects: readonly ResolvedEffect[]): string[] {
+function referencedMedia(effects: readonly ResolvedEffect[]): string[] {
 	const out = new Set<string>();
 	for (const fx of effects)
 		for (const v of Object.values(fx.params)) {

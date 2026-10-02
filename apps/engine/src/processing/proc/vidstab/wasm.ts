@@ -38,7 +38,6 @@ type Exports = {
 	vsx_malloc(n: number): number;
 	vsx_free(p: number): void;
 	vsx_version(): number;
-	vsx_set_simd(on: number): void;
 	vsx_simd(): number;
 	vsx_detect_free(): void;
 	vsx_detect_init(
@@ -83,11 +82,6 @@ type Exports = {
 		y0: number,
 		y1: number,
 	): void;
-	vsx_ref_free(): void;
-	vsx_ref_init(w: number, h: number, crop: number, interpol: number): number;
-	vsx_ref_src(): number;
-	vsx_ref_dst(): number;
-	vsx_ref_apply(x: number, y: number, alpha: number, zoom: number): number;
 };
 
 /** WASI preview1 stubs: no files, no environment, stderr collected. Everything else fails with ENOSYS. */
@@ -228,10 +222,6 @@ export class VidstabWasm {
 		return this.cstr(this.ex.vsx_simd());
 	}
 
-	setSimd(on: boolean): void {
-		this.ex.vsx_set_simd(on ? 1 : 0);
-	}
-
 	setLogLevel(level: number): void {
 		this.ex.vsx_set_log_level(level);
 	}
@@ -362,23 +352,5 @@ export class VidstabWasm {
 			y0,
 			y1,
 		);
-	}
-
-	// --- reference: vid.stab's own 8-bit transform -----------------------------------------------------------
-
-	/** Applies vid.stab's transform (bicubic, crop=black by default) to an 8-bit gray frame. */
-	referenceTransform(
-		gray: Uint8Array,
-		width: number,
-		height: number,
-		t: VsTransform,
-		crop: 0 | 1 = 1,
-	): Uint8Array {
-		if (this.ex.vsx_ref_init(width, height, crop, 3) !== 0) throw new Error('vid.stab transform init failed');
-		this.u8(this.ex.vsx_ref_src(), width * height).set(gray);
-		if (this.ex.vsx_ref_apply(t.x, t.y, t.alpha, t.zoom) !== 0) throw new Error('vid.stab transform failed');
-		const out = this.u8(this.ex.vsx_ref_dst(), width * height).slice();
-		this.ex.vsx_ref_free();
-		return out;
 	}
 }

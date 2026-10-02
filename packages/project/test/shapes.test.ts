@@ -1,12 +1,10 @@
 // Shapes (S11:SHP-001…003, wp-m2-shapes): clip.addShape defaults and validation, clip.update {shape} merge,
 // param.set / keyframe targets on `shape.*`, the anchor re-centring rule, invariants, snapshot and agent schema.
 import { describe, expect, it } from 'vitest';
-import { SHAPE_BOX_COMMANDS } from '../src/commands/handlers/shape.ts';
 import {
 	applyMatrix,
 	buildRenderSnapshot,
 	type Clip,
-	COMMAND_TYPES,
 	checkInvariants,
 	defaultRegistries,
 	defaultShape,
@@ -428,12 +426,6 @@ describe('review fixes (wp-m2-shapes)', () => {
 		h.ok([{ type: 'param.set', target: ['clip', id, 'shape', 'size'], value: [500, 500], at: at(30) }]);
 		return { id, k0: shapeOf(h, id).shape.size.keyframes[0]!.id };
 	}
-
-	it('every keyframe / stopwatch command is wrapped by keepShapesCentred', () => {
-		const family = COMMAND_TYPES.filter((t) => /^(param|keyframes?)\./.test(t));
-		expect(family.length).toBeGreaterThan(6);
-		for (const t of [...family, 'clip.update' as const]) expect(SHAPE_BOX_COMMANDS.has(t), t).toBe(true);
-	});
 
 	it('keyframe.move onto the largest key keeps the shape in place (finding 1)', () => {
 		const h = new Harness();

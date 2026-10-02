@@ -27,7 +27,7 @@ import {
 } from '../src/processing/proc/smoothpath/math.ts';
 import { createStepImpl } from '../src/processing/proc/steps.ts';
 import type { ProcEvent } from '../src/processing/proc/types.ts';
-import { backwardAffine, sourcePoint } from '../src/processing/proc/vidstab/math.ts';
+import { sourcePoint } from '../src/processing/proc/vidstab/math.ts';
 import { fixture, ROOT } from './helpers.ts';
 
 function rng(seed: number): () => number {
@@ -279,11 +279,17 @@ describe('zoom and plan', () => {
 			const ib = -fwd.b / det;
 			const back = [ia, -ib, -(ia * fwd.tx + ib * fwd.ty), ib, ia, -(-ib * fwd.tx + ia * fwd.ty)];
 			const t = backwardToVsTransform(back, w, h);
-			const m = backwardAffine(t, w, h);
-			for (let i = 0; i < 6; i++) expect(m[i]).toBeCloseTo(back[i], 9);
-			const [sx, sy] = sourcePoint(t, w, h, 100, 50);
-			expect(sx).toBeCloseTo(back[0] * 100 + back[1] * 50 + back[2], 9);
-			expect(sy).toBeCloseTo(back[3] * 100 + back[4] * 50 + back[5], 9);
+			// vid.stab's map of the transform agrees with the backward map everywhere (three non-collinear points
+			// pin an affine map down).
+			for (const [x, y] of [
+				[0, 0],
+				[100, 50],
+				[w - 1, h - 1],
+			] as const) {
+				const [sx, sy] = sourcePoint(t, w, h, x, y);
+				expect(sx).toBeCloseTo(back[0] * x + back[1] * y + back[2], 9);
+				expect(sy).toBeCloseTo(back[3] * x + back[4] * y + back[5], 9);
+			}
 		}
 	});
 });

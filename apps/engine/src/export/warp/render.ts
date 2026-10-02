@@ -75,7 +75,7 @@ export function decoderArgs(inputs: string[][], filter: string, frames: number):
  * ffmpeg arguments of the encoder: raw W×H `yuva444p10le` frames (BT.709 TV range, converted by the warp
  * workers) on stdin → ProRes 4444 with a 16-bit alpha plane, tagged BT.709.
  */
-export function encoderArgs(
+function encoderArgs(
 	o: { width: number; height: number; fps: Rational; threads: number },
 	output: string,
 ): string[] {

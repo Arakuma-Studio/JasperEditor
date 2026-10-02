@@ -20,6 +20,12 @@ import {
 } from '@jasper/project';
 
 export const PARITY_DOC_FRAMES = 40;
+export const PARITY_SCENE = {
+	width: 1280,
+	height: 720,
+	fps: 30,
+	durationInFrames: PARITY_DOC_FRAMES,
+} as const;
 
 export function parityDoc(): RenderSnapshot {
 	const ids = createCounterIdSource(1);

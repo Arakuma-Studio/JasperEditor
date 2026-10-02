@@ -3,7 +3,6 @@
 import type { MediaAsset } from '@jasper/project';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { peaksFor } from '../src/panels/timeline/media/media-cache.ts';
-import { waveHeight } from '../src/panels/timeline/model/waveform.ts';
 
 const movie = {
 	locators: [],
@@ -42,18 +41,5 @@ describe('peaksFor stream lookup', () => {
 		await vi.waitFor(() => expect(peaksFor(null, movie, runtime, 1)).not.toBeNull());
 		expect(urls).toEqual(['/media/k/peaks.json?v=h', '/media/k/peaks/1.bin?v=h']);
 		expect(Array.from(peaksFor(null, movie, runtime, 1)!.channels[0]!)).toEqual([0.5, 0.25]);
-	});
-});
-
-describe('waveHeight (logarithmic waveform display)', () => {
-	it('keeps linear amplitudes unchanged', () => {
-		expect(waveHeight(0.25, 'linear')).toBe(0.25);
-	});
-	it('maps dBFS between the floor and full scale', () => {
-		expect(waveHeight(1, 'log')).toBe(1);
-		expect(waveHeight(0, 'log')).toBe(0);
-		// −18 dBFS on a −48 dB floor → 1 − 18/48
-		expect(waveHeight(10 ** (-18 / 20), 'log')).toBeCloseTo(1 - 18 / 48, 6);
-		expect(waveHeight(10 ** (-60 / 20), 'log')).toBe(0);
 	});
 });

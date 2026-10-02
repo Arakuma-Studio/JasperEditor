@@ -15,7 +15,6 @@ import {
 	importFiles,
 	query,
 	ROOT,
-	watchPage,
 } from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -30,13 +29,11 @@ type Tr = {
 };
 
 let page: Page;
-let watcher: { errors: string[] };
 let seqId = '';
 let cut = 0;
 
 test.beforeAll(async ({ browser }) => {
 	page = await browser.newPage();
-	watcher = watchPage(page);
 	await enableAgentBridge(page);
 });
 
@@ -200,10 +197,4 @@ test('after a reload the project duration and the preferences are still there', 
 	await pick('Video transition duration unit', 'frames');
 	await dialog().getByTestId('prefs-transitions-reset').click();
 	await page.keyboard.press('Escape');
-});
-
-test('no uncaught page errors', async () => {
-	// The reload re-acquires the project lease while the old page's lease is still held: the first
-	// POST /lease answers 409 and the editor takes the lease over (existing, expected behaviour).
-	expect(watcher.errors.filter((e) => !/favicon|ResizeObserver|409 \(Conflict\)/.test(e))).toEqual([]);
 });

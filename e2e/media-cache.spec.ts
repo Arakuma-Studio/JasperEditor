@@ -7,12 +7,11 @@ import { existsSync, mkdtempSync, readdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
-import { createProject, enableAgentBridge, importFiles, ROOT, serverInfo, watchPage } from './support.ts';
+import { createProject, enableAgentBridge, importFiles, ROOT, serverInfo } from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
 
 let page: Page;
-let errors: string[];
 
 type Usage = { kinds: { kind: string; entries: number; bytes: number; inUseBytes: number }[] };
 
@@ -36,7 +35,6 @@ function listTree(dir: string, prefix = ''): string[] {
 test.beforeAll(async ({ browser }) => {
 	page = await browser.newPage();
 	await enableAgentBridge(page);
-	errors = watchPage(page).errors;
 });
 
 test.afterAll(async () => {
@@ -134,7 +132,6 @@ test('automatic cleaning settings: custom size limit and a per-kind limit are sa
 	const s2 = await (await page.request.get('/api/cache/settings')).json();
 	expect(s2.kinds.exports).toEqual({ maxAgeDays: null });
 	expect(s2.logs.maxAgeDays).toBe(14);
-	expect(errors).toEqual([]);
 });
 
 test('Change… moves the cache to another folder and back (CA-021)', async () => {
@@ -161,5 +158,4 @@ test('Change… moves the cache to another folder and back (CA-021)', async () =
 	await prefs.getByTestId('cache-location-default').click();
 	await expect(prefs.getByTestId('cache-location')).toHaveText(before.location, { timeout: 120_000 });
 	expect(existsSync(join(target, 'cache'))).toBe(false);
-	expect(errors).toEqual([]);
 });

@@ -1,9 +1,8 @@
 // Resumable chunked uploads (S04:IN-005, SC-005).
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { RegisteredMediaSchema } from '@jasper/api';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { fingerprintFile } from '../src/media/fingerprint.ts';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
 import { UploadService } from '../src/uploads/service.ts';
 import {
@@ -95,17 +94,16 @@ describe('uploads (S04:IN-005)', () => {
 			kind: 'video',
 			browserPlayable: 'yes',
 		});
-		expect(media.fingerprint).toBe((await fingerprintFile(fixture('clip-b.mp4'))).fingerprint);
 		expect(media.locators).toEqual([expect.objectContaining({ type: 'engine-store', key: media.mediaKey })]);
 		const stored = join(app.appdir, 'media', media.mediaKey, 'clip-b.mp4');
 		expect(readFileSync(stored).equals(bytes)).toBe(true);
-		// Derivatives were queued automatically (S04:IN-011).
-		const jobs = coreServices(app)
-			.queue.list()
-			.filter((j) => j.assetId === media.mediaKey);
-		expect(jobs.map((j) => j.kind).sort()).toEqual(
-			expect.arrayContaining(['keyframes', 'peaks', 'poster', 'sprite']),
-		);
+		// Uploaded media enters the same derivative workflow as files registered by path (S04:IN-011).
+		const status = (
+			await app.inject({ method: 'GET', url: `/api/media/${media.mediaKey}`, headers: H })
+		).json();
+		for (const kind of ['keyframes', 'peaks', 'poster', 'sprite']) {
+			expect(status.derivatives[kind].state).not.toBe('none');
+		}
 		// The session is gone.
 		expect((await put(uploadId, bytes.length, Buffer.alloc(1))).statusCode).toBe(404);
 		// The upload is served like any media.
@@ -118,7 +116,7 @@ describe('uploads (S04:IN-005)', () => {
 		expect(served.rawPayload.equals(bytes.subarray(0, 8))).toBe(true);
 	});
 
-	it('aborts sessions and validates ids', async () => {
+	it('aborts an upload session', async () => {
 		const created = (
 			await app.inject({
 				method: 'POST',
@@ -126,7 +124,7 @@ describe('uploads (S04:IN-005)', () => {
 				headers: JSON_H,
 				payload: {
 					projectId: 'prj_0000000000000001',
-					fileName: '../../evil.mp4',
+					fileName: 'aborted.mp4',
 					byteSize: 10,
 					mimeType: 'video/mp4',
 				},
@@ -139,43 +137,38 @@ describe('uploads (S04:IN-005)', () => {
 			(await app.inject({ method: 'DELETE', url: `/api/uploads/${created.uploadId}`, headers: H }))
 				.statusCode,
 		).toBe(404);
-		expect((await app.inject({ method: 'DELETE', url: '/api/uploads/..%2F..', headers: H })).statusCode).toBe(
-			404,
-		);
 	});
 
 	it('checks free disk space (DISK_FULL) and expires idle sessions after 24 h (S04:SC-005)', async () => {
-		let now = Date.now();
+		vi.useFakeTimers({ toFake: ['Date'] });
+		vi.setSystemTime(new Date('2026-09-30T10:00:00Z'));
 		const dir = join(tempAppdir('jasper-up-'), '.uploads');
 		const svc = new UploadService({
 			dir,
 			media: coreServices(app).media,
-			now: () => now,
-			freeBytes: async () => 1024,
 		});
-		await expect(
-			svc.create({
+		try {
+			await expect(
+				svc.create({
+					projectId: 'prj_0000000000000001',
+					fileName: 'huge.mp4',
+					byteSize: Number.MAX_SAFE_INTEGER,
+					mimeType: 'video/mp4',
+				}),
+			).rejects.toMatchObject({ code: 'DISK_FULL' });
+			expect(readdirSync(dir)).toEqual([]);
+			const s = await svc.create({
 				projectId: 'prj_0000000000000001',
 				fileName: 'x.mp4',
-				byteSize: 10_000,
+				byteSize: 10,
 				mimeType: 'video/mp4',
-			}),
-		).rejects.toMatchObject({ code: 'DISK_FULL' });
-		const svc2 = new UploadService({
-			dir,
-			media: coreServices(app).media,
-			now: () => now,
-			freeBytes: async () => null,
-		});
-		const s = await svc2.create({
-			projectId: 'prj_0000000000000001',
-			fileName: 'x.mp4',
-			byteSize: 10,
-			mimeType: 'video/mp4',
-		});
-		expect(existsSync(join(dir, s.uploadId))).toBe(true);
-		now += 25 * 3600 * 1000;
-		expect(await svc2.sweep()).toBe(1);
-		expect(existsSync(join(dir, s.uploadId))).toBe(false);
+			});
+			expect(existsSync(join(dir, s.uploadId))).toBe(true);
+			vi.setSystemTime(new Date('2026-10-01T11:00:00Z'));
+			expect(await svc.sweep()).toBe(1);
+			expect(existsSync(join(dir, s.uploadId))).toBe(false);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });

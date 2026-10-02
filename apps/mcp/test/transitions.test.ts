@@ -1,23 +1,21 @@
-// Transition tools (S10:TUI-060) without an engine: the list_transitions summaries, the clip expansion of
-// apply_default_transitions, effect id names and the get_timeline "Transitions:" block.
+// apply_default_transitions (S10:TUI-034) through the MCP protocol against an in-memory engine: the types and
+// alignment come from the call, else from the open editor's preferences (`preferences.get`), else the built-ins.
+// The real-engine workflow (headless, built-ins, set_transition_defaults lengths) is in integration.test.ts.
+import type { EngineClient } from '@jasper/engine-client';
 import {
 	applyTransaction,
+	createCounterIdSource,
 	createEmptyProject,
-	createSeededIdSource,
 	defaultRegistries,
 	type MediaAsset,
-	type Sequence,
+	type ProjectDocument,
 } from '@jasper/project';
-import { describe, expect, it } from 'vitest';
-import { timelineTable, transitionLines } from '../src/format.ts';
-import {
-	expandForMedia,
-	listTransitions,
-	resolveTransitionDefaults,
-	TRANSITION_GUIDE,
-	transitionEffectId,
-	transitionSummary,
-} from '../src/tools/transitions.ts';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { afterEach, describe, expect, it } from 'vitest';
+import type { EngineConnection } from '../src/link.ts';
+import { createJasperMcpServer } from '../src/server.ts';
 
 let fp = 0;
 /** A probed 10 s 1080p30 video with stereo audio. */
@@ -59,28 +57,36 @@ function videoAsset(): Omit<MediaAsset, 'id'> {
 }
 
 /**
- * Two linked video+audio clips cut at frame 100 (clip a: media frames 30–130, clip b: 60–160), a 20-frame
- * cross dissolve at the cut, a 10-frame dip to black at b's tail and a 15-frame audio fade in at a's head.
+ * An engine whose project (two linked video+audio clips cut at frame 100, with media handles on both sides)
+ * lives in memory; `editor` is what an open editor answers to `preferences.get` (null: no editor open).
  */
-function sample() {
-	const ids = createSeededIdSource(11);
-	let doc = createEmptyProject({ ids, name: 'Transitions', preset: 'hd-1080p-30' });
-	const ctx = { ids, now: () => '2026-09-30T00:00:00.000Z', revision: 0, registries: defaultRegistries() };
-	const tx = (commands: unknown[]) => {
-		const r = applyTransaction(
-			doc,
-			{ protocol: 'jasper.tx/1', label: 't', origin: 'user', commands } as never,
-			ctx,
-		);
-		if (!r.result.ok) throw new Error(JSON.stringify(r.result.errors));
-		doc = r.document;
+function fakeEngine(editor: Record<string, unknown> | null) {
+	const ids = createCounterIdSource(7);
+	let doc: ProjectDocument = createEmptyProject({ ids, name: 'Transitions', preset: 'hd-1080p-30' });
+	let revision = 0;
+	const apply = (tx: Record<string, unknown>) => {
+		const r = applyTransaction(doc, { protocol: 'jasper.tx/1', ...tx, origin: 'user' } as never, {
+			ids,
+			now: () => '2026-09-30T00:00:00.000Z',
+			revision,
+			registries: defaultRegistries(),
+		});
+		if (r.result.ok && !tx.dryRun) {
+			doc = r.document;
+			revision++;
+		}
 		return r.result;
 	};
-	const media = tx([
+	const setup = (commands: unknown[]) => {
+		const r = apply({ label: 'setup', commands });
+		if (!r.ok) throw new Error(JSON.stringify(r.errors));
+		return r.results;
+	};
+	const media = setup([
 		{ type: 'media.register', asset: videoAsset() },
 		{ type: 'media.register', asset: videoAsset() },
-	]).results as { mediaId: string }[];
-	const placed = tx([
+	]) as { mediaId: string }[];
+	const placed = setup([
 		{
 			type: 'clip.place',
 			source: { mediaId: media[0]!.mediaId },
@@ -93,152 +99,111 @@ function sample() {
 			at: 100,
 			sourceRange: { in: { sourceFrames: 60 }, out: { sourceFrames: 160 } },
 		},
-	]).results as { clipIds: string[] }[];
-	const [va, aa] = placed[0]!.clipIds as [string, string];
-	const [vb, ab] = placed[1]!.clipIds as [string, string];
-	const added = tx([
-		{ type: 'transition.add', trackId: 'V1', at: 100, effectId: 'jasper.cross-dissolve', duration: 20 },
-		{ type: 'transition.add', clipId: vb, edge: 'out', effectId: 'jasper.dip-to-black', duration: 10 },
-		{ type: 'transition.add', clipId: aa, edge: 'in', effectId: 'jasper.constant-gain', duration: 15 },
-	]).results as { transitionId: string }[];
-	const [dissolve, dip, fade] = added.map((r) => r.transitionId) as [string, string, string];
-	const seq = Object.values(doc.sequences)[0]! as Sequence;
-	return { doc, seq, va, aa, vb, ab, dissolve, dip, fade };
+	]) as { clipIds: string[] }[];
+	const client = {
+		agentQuery: async (req: { query: string }) => {
+			if (req.query === 'preferences.get') {
+				if (!editor) throw new Error('preferences.get needs an open editor');
+				return { result: { preferences: { transitions: editor } }, revision, via: 'session' };
+			}
+			return { result: doc, revision, via: editor ? 'session' : 'headless' };
+		},
+		agentTx: async (req: { transaction: Record<string, unknown> }) => ({
+			result: apply(req.transaction),
+			appliedBy: 'headless',
+		}),
+	};
+	const link: EngineConnection = {
+		target: { url: 'http://engine.test', token: null, source: 'explicit' },
+		client: async () => client as unknown as EngineClient,
+		invalidate: () => {},
+		close: async () => {},
+	};
+	return { link, outgoing: placed[0]!.clipIds[0]! };
 }
 
-describe('list_transitions summaries', () => {
-	it('describes a two-sided transition: cut, span, handles and what the span uses', () => {
-		const { doc, seq, va, vb, dissolve } = sample();
-		expect(transitionSummary(doc, seq, seq.transitions[dissolve]!)).toEqual({
-			id: dissolve,
-			effectId: 'jasper.cross-dissolve',
-			type: 'cross-dissolve',
-			label: 'Cross Dissolve',
-			medium: 'video',
-			track: 'V1',
-			trackId: seq.videoTracks[0]!.id,
-			cut: 100,
-			cutTimecode: '00:00:03:10',
-			span: { start: 90, end: 110, startTimecode: '00:00:03:00', endTimecode: '00:00:03:20' },
-			duration: 20,
-			alignment: 'center',
-			oneSided: false,
-			outgoingClipId: va,
-			incomingClipId: vb,
-			// a: 300 media frames − in 30 − 100 used = 170 after its out-point; b starts at media frame 60.
-			handles: { outgoingTail: 170, incomingHead: 60 },
-			uses: { outgoingTail: 10, incomingHead: 10 },
-		});
-	});
-
-	it('describes fades as one-sided with a fixed alignment and one clip handle', () => {
-		const { doc, seq, vb, dip, fade, aa } = sample();
-		expect(transitionSummary(doc, seq, seq.transitions[dip]!)).toMatchObject({
-			type: 'dip-to-black',
-			label: 'Dip to Black',
-			cut: 200,
-			span: { start: 190, end: 200 },
-			alignment: 'end-at-cut',
-			oneSided: true,
-			outgoingClipId: vb,
-			incomingClipId: null,
-			handles: { outgoingTail: 140 },
-		});
-		const f = transitionSummary(doc, seq, seq.transitions[fade]!);
-		expect(f).toMatchObject({
-			medium: 'audio',
-			track: 'A1',
-			cut: 0,
-			span: { start: 0, end: 15 },
-			alignment: 'start-at-cut',
-			oneSided: true,
-			incomingClipId: aa,
-			handles: { incomingHead: 30 },
-		});
-		expect(f.uses).toBeUndefined();
-	});
-
-	it('lists in track order then time, filtered by range', () => {
-		const { doc, seq, dissolve, dip, fade } = sample();
-		expect(listTransitions(doc, seq).map((t) => t.id)).toEqual([dissolve, dip, fade]);
-		expect(listTransitions(doc, seq, { from: 0, to: 50 }).map((t) => t.id)).toEqual([fade]);
-		expect(listTransitions(doc, seq, { from: 105, to: 195 }).map((t) => t.id)).toEqual([dissolve, dip]);
-		expect(listTransitions(doc, seq, { from: 200 })).toEqual([]);
-	});
-
-	it('marks transitions whose clips are gone or whose effect is unknown', () => {
-		const { doc, seq, dissolve } = sample();
-		const t = { ...seq.transitions[dissolve]!, outgoingClipId: 'clp_gone', incomingClipId: null };
-		expect(transitionSummary(doc, seq, t)).toMatchObject({ cut: null, handles: {} });
-		const u = { ...seq.transitions[dissolve]!, effectId: 'acme.swirl' };
-		expect(transitionSummary(doc, seq, u)).toMatchObject({ label: 'acme.swirl', supported: false });
-	});
+let open: Client[] = [];
+afterEach(async () => {
+	for (const c of open) await c.close().catch(() => {});
+	open = [];
 });
 
-describe('apply_default_transitions helpers', () => {
-	it('adds linked partners of the requested media', () => {
-		const { doc, va, aa, vb, ab } = sample();
-		expect(expandForMedia(doc, [va, vb], ['video'])).toEqual([va, vb]);
-		expect(expandForMedia(doc, [va, vb], ['video', 'audio'])).toEqual([va, vb, aa, ab]);
-		expect(expandForMedia(doc, [aa], ['video'])).toEqual([aa, va]);
-		expect(expandForMedia(doc, ['clp_unknown'], ['video', 'audio'])).toEqual(['clp_unknown']);
-	});
+type Applied = {
+	defaults: { video?: string; audio?: string; alignment: string; source: string };
+	transitions: { effectId: string; track: string; cut: number; alignment: string }[];
+};
 
-	it('accepts short type names and effect ids', () => {
-		expect(transitionEffectId('dip-to-black')).toBe('jasper.dip-to-black');
-		expect(transitionEffectId(' jasper.constant-gain ')).toBe('jasper.constant-gain');
-		expect(TRANSITION_GUIDE).toMatch(/start-at-cut/);
-		expect(TRANSITION_GUIDE).toMatch(/W_TRANSITION_SHORTENED/);
-	});
-});
-
-describe('get_timeline transitions block', () => {
-	it('lists transitions per track with span, alignment and length', () => {
-		const { doc, seq, dissolve, dip, fade } = sample();
-		const text = timelineTable(doc, seq);
-		expect(text).toMatch(/\nTransitions:\n/);
-		expect(text).toContain(
-			`  V1 ${dissolve} Cross Dissolve 00:00:03:00–00:00:03:20 (90–110) center, 20 frames`,
-		);
-		expect(text).toContain(`  V1 ${dip} Dip to Black 00:00:06:10–00:00:06:20 (190–200) fade out, 10 frames`);
-		expect(text).toContain(`  A1 ${fade} Constant Gain 00:00:00:00–00:00:00:15 (0–15) fade in, 15 frames`);
-		expect(transitionLines(seq, 120, 180)).toEqual([]);
-		expect(timelineTable(doc, seq, { from: 120, to: 180 })).not.toMatch(/Transitions:/);
-	});
-});
+/** Calls apply_default_transitions on the outgoing clip's tail (the cut at 100), video and audio. */
+async function applyDefaults(editor: Record<string, unknown> | null, args: Record<string, unknown> = {}) {
+	const engine = fakeEngine(editor);
+	const { server } = createJasperMcpServer({ link: engine.link, agentName: 'transitions-test' });
+	const [a, b] = InMemoryTransport.createLinkedPair();
+	await server.connect(a);
+	const client = new Client({ name: 'transitions-test', version: '1' });
+	await client.connect(b);
+	open.push(client);
+	const r = (await client.callTool({
+		name: 'apply_default_transitions',
+		arguments: {
+			projectId: 'prj_test',
+			clipIds: [engine.outgoing],
+			edges: 'out',
+			media: ['video', 'audio'],
+			durationFrames: 10,
+			...args,
+		},
+	})) as CallToolResult;
+	const text = (r.content.find((c) => c.type === 'text') as { text: string } | undefined)?.text ?? '';
+	expect(r.isError, text).toBeFalsy();
+	const body = JSON.parse(text) as Applied;
+	const atCut = body.transitions
+		.filter((t) => t.cut === 100)
+		.map((t) => [t.track, t.effectId, t.alignment])
+		.sort();
+	return { defaults: body.defaults, atCut };
+}
 
 describe('apply_default_transitions defaults (S10:TUI-034)', () => {
-	it('call arguments, else the open editor’s preferences, else the built-ins', () => {
-		expect(resolveTransitionDefaults({}, null)).toEqual({
-			videoEffectId: 'jasper.cross-dissolve',
-			audioEffectId: 'jasper.constant-power',
-			alignment: 'center',
-			source: 'built-in',
-		});
+	it('uses the open editor’s default types and alignment', async () => {
 		const editor = { video: 'jasper.dip-to-black', audio: 'jasper.constant-gain', alignment: 'end-at-cut' };
-		expect(resolveTransitionDefaults({}, editor)).toEqual({
-			videoEffectId: 'jasper.dip-to-black',
-			audioEffectId: 'jasper.constant-gain',
-			alignment: 'end-at-cut',
-			source: 'editor preferences',
-		});
-		expect(
-			resolveTransitionDefaults({ videoType: 'cross-dissolve', alignment: 'center' }, editor),
-		).toMatchObject({
-			videoEffectId: 'jasper.cross-dissolve',
-			audioEffectId: 'jasper.constant-gain',
+		const r = await applyDefaults(editor);
+		expect(r.defaults).toMatchObject({ ...editor, source: 'editor preferences' });
+		expect(r.atCut).toEqual([
+			['A1', 'jasper.constant-gain', 'end-at-cut'],
+			['V1', 'jasper.dip-to-black', 'end-at-cut'],
+		]);
+	});
+
+	it('lets call arguments override the editor value by value', async () => {
+		const editor = { video: 'jasper.dip-to-black', audio: 'jasper.constant-gain', alignment: 'end-at-cut' };
+		const r = await applyDefaults(editor, { videoType: 'cross-dissolve', alignment: 'start-at-cut' });
+		expect(r.atCut).toEqual([
+			['A1', 'jasper.constant-gain', 'start-at-cut'],
+			['V1', 'jasper.cross-dissolve', 'start-at-cut'],
+		]);
+		const all = await applyDefaults(editor, {
+			videoType: 'dip-to-black',
+			audioType: 'constant-power',
 			alignment: 'center',
 		});
-		expect(
-			resolveTransitionDefaults(
-				{ videoType: 'dip-to-black', audioType: 'constant-gain', alignment: 'start-at-cut' },
-				null,
-			).source,
-		).toBe('call');
-		// Invalid editor values (wrong medium, unknown alignment) are ignored.
-		expect(
-			resolveTransitionDefaults({}, { video: 'jasper.constant-power', audio: 'x', alignment: 'middle' }),
-		).toMatchObject({ videoEffectId: 'jasper.cross-dissolve', alignment: 'center', source: 'built-in' });
-		expect(TRANSITION_GUIDE).toMatch(/set_transition_defaults/);
+		expect(all.defaults.source).toBe('call');
+		expect(all.atCut).toEqual([
+			['A1', 'jasper.constant-power', 'center'],
+			['V1', 'jasper.dip-to-black', 'center'],
+		]);
+	});
+
+	it('falls back to the built-ins without an editor and for invalid editor values', async () => {
+		const builtIn = [
+			['A1', 'jasper.constant-power', 'center'],
+			['V1', 'jasper.cross-dissolve', 'center'],
+		];
+		const headless = await applyDefaults(null);
+		expect(headless.defaults.source).toBe('built-in');
+		expect(headless.atCut).toEqual(builtIn);
+		// Wrong medium, unknown id, unknown alignment: ignored.
+		const invalid = await applyDefaults({ video: 'jasper.constant-power', audio: 'x', alignment: 'middle' });
+		expect(invalid.defaults.source).toBe('built-in');
+		expect(invalid.atCut).toEqual(builtIn);
 	});
 });

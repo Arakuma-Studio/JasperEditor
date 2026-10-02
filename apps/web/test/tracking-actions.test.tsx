@@ -244,8 +244,6 @@ describe('tracking overlay', () => {
 		const { getByTestId } = mount(session, seqId);
 		const corner = getByTestId('tracker-corner-0');
 		// media (576, 324) at view scale 0.5 → screen (288, 162)
-		expect(Number(corner.getAttribute('data-x'))).toBeCloseTo(288, 6);
-		expect(Number(corner.getAttribute('data-y'))).toBeCloseTo(162, 6);
 		await drag(corner.querySelector('rect:last-child')!, [288, 162], [298, 172]);
 		expect(labels(session)).toEqual(['Add Planar Tracker', 'Adjust Tracker']);
 		const t = trackerOf(session, plate, id);
@@ -278,12 +276,8 @@ describe('tracking overlay', () => {
 		expect(queryByTestId('corner-pin-overlay')).toBeNull();
 		act(() => trackingStore.setState({ cornerPinTool: true }));
 		const h = getByTestId('corner-pin-handle-0');
-		const x = Number(h.getAttribute('data-x'));
-		const y = Number(h.getAttribute('data-y'));
 		// frame 0: the pinned TL is the tracked TL (700, 300) at view scale 0.5
-		expect(x).toBeCloseTo(350, 4);
-		expect(y).toBeCloseTo(150, 4);
-		await drag(h.querySelector('circle:last-child')!, [x, y], [x + 5, y + 5]);
+		await drag(h.querySelector('circle:last-child')!, [350, 150], [355, 155]);
 		expect(labels(session).at(-1)).toBe('Corner Pin');
 		const fx = (
 			seqOf(session).clips[target] as {

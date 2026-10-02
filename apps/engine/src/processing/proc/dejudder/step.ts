@@ -20,7 +20,7 @@ import { CvPool, type FlowParams } from './pool.ts';
 export type DejudderStepSpec = Extract<ProcessStep, { op: 'dejudder' }>;
 
 /** PST-012 thresholds for `auto`. */
-export const DEJUDDER_THRESHOLDS = {
+const DEJUDDER_THRESHOLDS = {
 	minConsistency: 0.8,
 	maxShortToLong: 0.8,
 	minMovingShare: 0.3,
@@ -31,7 +31,7 @@ export const DEJUDDER_THRESHOLDS = {
 export const CUT_THRESHOLD = 0.1;
 const CUT_GRID = 8;
 
-export const DEFAULT_SHIFT = 1 / 6;
+const DEFAULT_SHIFT = 1 / 6;
 
 /**
  * Warp flow defaults (Farnebäck; OpenCV.js has no DIS). Tuned with validate.ts-style experiments on
@@ -39,7 +39,7 @@ export const DEFAULT_SHIFT = 1 / 6;
  * error on real pairs and on synthetic translations, removed the ≈1 px waviness that full-resolution
  * Farnebäck flow put on straight edges in flat areas, and costs ~0.1 s per warp (one worker).
  */
-export const DEFAULT_FLOW: FlowParams = {
+const DEFAULT_FLOW: FlowParams = {
 	maxWidth: 480,
 	pyrScale: 0.5,
 	levels: 4,
@@ -51,7 +51,7 @@ export const DEFAULT_FLOW: FlowParams = {
 	smoothSigma: 4,
 };
 
-export type DejudderDecision = {
+type DejudderDecision = {
 	apply: boolean;
 	/** Human-readable reason (job note). */
 	reason: string;
@@ -61,7 +61,7 @@ const pct = (x: number) => `${Math.round(x * 100)} %`;
 const fix = (x: number, d = 2) => (Number.isFinite(x) ? x.toFixed(d) : 'n/a');
 
 /** PST-012: whether to retime, given the analysis. `force` skips the thresholds but needs a phase. */
-export function decideDejudder(r: CadenceResult, mode: 'auto' | 'force'): DejudderDecision {
+function decideDejudder(r: CadenceResult, mode: 'auto' | 'force'): DejudderDecision {
 	const t = DEJUDDER_THRESHOLDS;
 	if (r.shortPhase === null)
 		return {
@@ -89,7 +89,7 @@ export function decideDejudder(r: CadenceResult, mode: 'auto' | 'force'): Dejudd
 }
 
 /** Mean of R+G+B over each CUT_GRID×CUT_GRID cell (edge cells partial), as 0..3·65535 sums per pixel. */
-export function cellMeans(f: RgbFrame): Float64Array {
+function cellMeans(f: RgbFrame): Float64Array {
 	const { width: w, height: h, data } = f;
 	const cw = Math.ceil(w / CUT_GRID);
 	const ch = Math.ceil(h / CUT_GRID);
@@ -116,7 +116,7 @@ export function cellMeans(f: RgbFrame): Float64Array {
  * copied. With cell means a 12 px/frame noise-texture pan measures ≈ 0.06, real shot changes on crudo.mp4
  * 0.20–0.31 and fast real motion ≤ 0.09.
  */
-export function isCut(a: RgbFrame, b: RgbFrame, threshold = CUT_THRESHOLD): boolean {
+function isCut(a: RgbFrame, b: RgbFrame, threshold = CUT_THRESHOLD): boolean {
 	return cutScore(cellMeans(a), cellMeans(b)) > threshold;
 }
 
@@ -158,8 +158,6 @@ export type DejudderStepOptions = {
 	flow?: Partial<FlowParams>;
 	/** Analysis proxy width (default 424). */
 	analysisMaxWidth?: number;
-	/** Use this cadence instead of analysing (tests / re-runs); still subject to the auto/force decision. */
-	cadence?: CadenceResult;
 	/** Frames in flight per worker (default 2). */
 	inFlightPerWorker?: number;
 };
@@ -181,7 +179,6 @@ export type RangeContextFetcher = (relativeIndex: number) => Promise<RgbFrame | 
 
 export type DejudderFrameStep = FrameStep & {
 	readonly cadence: CadenceResult | null;
-	readonly decision: DejudderDecision | null;
 	readonly stats: DejudderStats;
 	/** Called by the runner before `open` when a range of a source is processed (PST-013). */
 	setRangeContext(fetch: RangeContextFetcher): void;
@@ -203,7 +200,7 @@ export function createDejudderStep(
 	let fetchContext: RangeContextFetcher | null = null;
 	let ctx: StepContext | null = null;
 	let pool: CvPool | null = null;
-	let cadence: CadenceResult | null = opts.cadence ?? null;
+	let cadence: CadenceResult | null = null;
 	let decision: DejudderDecision | null = null;
 	let phase = 0;
 	let prev: RgbFrame | null = null;
@@ -320,9 +317,6 @@ export function createDejudderStep(
 		name: 'dejudder',
 		get cadence() {
 			return cadence;
-		},
-		get decision() {
-			return decision;
 		},
 		stats,
 

@@ -1,5 +1,5 @@
 // @jasper/motion/templates — React implementations of the anime templates (S11 §5, ARCHITECTURE §20.2), keyed
-// `id@version` like the `renderer: 'anime'` entries of @jasper/mg-templates (a test asserts both lists match).
+// `id@version` like the `renderer: 'anime'` entries of @jasper/mg-templates.
 // Owner: wp-m2-anime-templates.
 import type { ComponentType } from 'react';
 import { Callout } from './callout.tsx';

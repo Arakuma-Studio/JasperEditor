@@ -18,16 +18,12 @@ export function trackMgRenderJob(clipId: string, jobId: string): void {
 	for (const l of [...listeners]) l();
 }
 
-export function mgRenderJobForClip(clipId: string): string | undefined {
-	return jobByClip.get(clipId);
-}
-
 function subscribe(l: () => void): () => void {
 	listeners.add(l);
 	return () => listeners.delete(l);
 }
 
-export function mgRenderStateOf(job: EngineJob | undefined): MgRenderState | undefined {
+function mgRenderStateOf(job: EngineJob | undefined): MgRenderState | undefined {
 	if (!job) return undefined;
 	switch (job.state) {
 		case 'queued':

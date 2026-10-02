@@ -41,20 +41,7 @@ export const WARP_VERSION = 1;
 /** Kinds whose picture the source chain can produce (composition: from an earlier extension's `layer` override). */
 const WARP_KINDS: ReadonlySet<string> = new Set(['video', 'still', 'animated-image', 'solid', 'composition']);
 
-export type WarpPrepared = ReadonlyMap<string, { path: string; startFrame: number }>;
-
-export type WarpStats = {
-	/** Layers rendered by the warp stage (cache misses). */
-	rendered: number;
-	/** Layers served from the cache. */
-	reused: number;
-	/** Frames warped and the time spent on rendered layers (decode + warp + encode). */
-	frames: number;
-	ms: number;
-	last?: { clipId: string; key: string; frames: number; ms: number; fps: number; reused: boolean };
-};
-
-export type WarpExtension = NativeExtension & { readonly stats: WarpStats };
+type WarpPrepared = ReadonlyMap<string, { path: string; startFrame: number }>;
 
 export type WarpDeps = {
 	ffmpeg: Ffmpeg;
@@ -81,7 +68,7 @@ function motionAnimated(c: RenderVisualClip): boolean {
 }
 
 /** Layers the warp stage renders: an enabled corner pin, keyframed Motion or animated opacity. */
-export function warpClaims(c: RenderVisualClip): boolean {
+function warpClaims(c: RenderVisualClip): boolean {
 	if (!WARP_KINDS.has(c.kind) || !c.transform) return false;
 	return (
 		c.effects.some((fx) => fx.enabled && fx.effectId === CORNER_PIN_EFFECT_ID) ||
@@ -91,7 +78,7 @@ export function warpClaims(c: RenderVisualClip): boolean {
 }
 
 /** First drawn / one-past-last frame of a clip in an export range (with transition handles, like the builder). */
-export function layerSpan(c: RenderVisualClip, range: { start: number; end: number }): [number, number] {
+function layerSpan(c: RenderVisualClip, range: { start: number; end: number }): [number, number] {
 	return [
 		Math.max(c.start - (c.headHandle ?? 0), range.start),
 		Math.min(c.start + c.duration + (c.tailHandle ?? 0), range.end),
@@ -104,7 +91,7 @@ const r9 = (x: number) => {
 };
 
 /** Per-frame layer maps (source frame px → sequence px) and opacities of a clip over `[f0, f1)`. */
-export function warpFrames(
+function warpFrames(
 	c: RenderVisualClip,
 	f0: number,
 	f1: number,
@@ -154,10 +141,9 @@ async function fileFingerprint(path: string): Promise<string> {
 	}
 }
 
-export function createWarpExtension(deps: WarpDeps): WarpExtension {
+export function createWarpExtension(deps: WarpDeps): NativeExtension {
 	const effects = deps.effects ?? defaultEffectRegistry;
 	const threads = Math.max(1, deps.threads ?? availableParallelism());
-	const stats: WarpStats = { rendered: 0, reused: 0, frames: 0, ms: 0 };
 	const others = () => deps.getExtensions().filter((e) => e.id !== WARP_EXTENSION_ID);
 
 	function blockers(c: RenderVisualClip): string[] {
@@ -265,8 +251,6 @@ export function createWarpExtension(deps: WarpDeps): WarpExtension {
 		const present = ctx.pin ? await ctx.pin(path) : true;
 		try {
 			if (present && (await stat(path)).size > 0) {
-				stats.reused++;
-				stats.last = { clipId: c.clipId, key, frames: n, ms: 0, fps: 0, reused: true };
 				ctx.log(`warp: ${c.clipId} reused ${path}`);
 				return { path, startFrame: f0 };
 			}
@@ -304,11 +288,7 @@ export function createWarpExtension(deps: WarpDeps): WarpExtension {
 			throw e;
 		}
 		const ms = Date.now() - started;
-		stats.rendered++;
-		stats.frames += n;
-		stats.ms += ms;
 		const fpsOut = n / Math.max(1e-3, ms / 1000);
-		stats.last = { clipId: c.clipId, key, frames: n, ms, fps: fpsOut, reused: false };
 		const msg = `warp: ${c.clipId} ${n} frames in ${ms} ms (${fpsOut.toFixed(1)} fps) → ${path}`;
 		ctx.log(msg);
 		deps.log?.(msg);
@@ -317,7 +297,6 @@ export function createWarpExtension(deps: WarpDeps): WarpExtension {
 
 	return {
 		id: WARP_EXTENSION_ID,
-		stats,
 		claimsLayer: warpClaims,
 		blockers,
 		async prepare(planned, ctx): Promise<WarpPrepared> {

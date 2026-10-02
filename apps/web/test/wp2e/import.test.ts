@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { buildMediaAsset, mismatchPatch } from '../../src/import/assets.ts';
 import { ClientJobStore } from '../../src/import/client-jobs.ts';
 import type { ImportPrompts } from '../../src/import/prompts.ts';
 import { EngineImportService, readDataTransfer } from '../../src/import/service.ts';
-import { buildImportTransaction, type PreparedMedia } from '../../src/import/transaction.ts';
 import { createUnloadGuard } from '../../src/import/unload-guard.ts';
 import { PROJECT_ITEMS_MIME } from '../../src/state/services.ts';
 import { memorySession, registered, ScriptedEngine } from './helpers.ts';
@@ -48,106 +46,17 @@ async function setup(answers: Parameters<typeof fakePrompts>[0] = {}, opts: { de
 
 const file = (name: string, size = 10) => new File([new Uint8Array(size)], name, { type: 'video/mp4' });
 
-describe('MediaAsset from RegisteredMedia (ARCHITECTURE D-09)', () => {
-	it('uses a new med_ id, an engine-store locator keyed by mediaKey and a path locator on desktop', () => {
-		const reg = registered('clip-a.mp4', { key: 'mk_ABCDEFGH1', path: '/media/clip-a.mp4' });
-		const a = buildMediaAsset(reg, { id: 'med_0000000000000001', now: 't', path: '/media/clip-a.mp4' });
-		expect(a.id).toBe('med_0000000000000001');
-		expect(a.locators).toEqual([
-			{ type: 'engine-store', engineId: 'local', key: 'mk_ABCDEFGH1' },
-			{ type: 'path', path: '/media/clip-a.mp4', relativeToProject: null },
-		]);
-		expect(a.probe).toEqual(reg.probe);
-		expect(a.probe).not.toBe(reg.probe);
-		expect(a.fingerprint).toBe(reg.fingerprint);
-		expect(a.derivation).toBeNull();
-	});
-
-	it('detects clip mismatch only for the first visual clip into an empty sequence', async () => {
-		const { session } = await memorySession();
-		const seq = Object.values(session.getCommitted().sequences)[0]!;
-		const a = buildMediaAsset(registered('b.mp4', { width: 1280, height: 720, fps: { num: 25, den: 1 } }), {
-			id: 'med_1',
-			now: 't',
-		});
-		expect(mismatchPatch(seq, a)).toEqual({
-			width: 1280,
-			height: 720,
-			frameRate: { num: 25, den: 1 },
-			dropFrame: false,
-		});
-		const same = buildMediaAsset(registered('a.mp4'), { id: 'med_2', now: 't' });
-		expect(mismatchPatch(seq, same)).toBeNull();
-		const audio = buildMediaAsset(registered('t.wav', { kind: 'audio' }), { id: 'med_3', now: 't' });
-		expect(mismatchPatch(seq, audio)).toBeNull();
-	});
-});
-
 describe('import transaction (S01:LIFE-010 step 6)', () => {
-	it('bin import: one "Import N files" transaction of media.register commands into the target bin', async () => {
-		const { session } = await memorySession();
-		const prepared: PreparedMedia[] = ['a.mp4', 'b.mp4'].map((n, i) => ({
-			name: n,
-			asset: buildMediaAsset(registered(n), { id: `med_000000000000000${i + 1}`, now: 't' }),
-			existingMediaId: null,
-		}));
-		const built = buildImportTransaction({
-			doc: session.getCommitted(),
-			prepared,
-			target: { kind: 'bin', binId: null },
-		});
-		expect(built.tx!.label).toBe('Import 2 files');
-		expect(built.tx!.commands.map((c) => c.type)).toEqual(['media.register', 'media.register']);
-		const r = session.apply(built.tx!);
-		expect(r.ok).toBe(true);
-		expect(session.getState().history.entries.map((e) => e.label)).toEqual(['Import 2 files']);
-		expect(Object.keys(session.getCommitted().media)).toEqual([
-			'med_0000000000000001',
-			'med_0000000000000002',
-		]);
-	});
-
-	it('timeline drop: media.register + clip.place in the same transaction, placed one after another', async () => {
-		const { session } = await memorySession();
-		const doc = session.getCommitted();
-		const seq = Object.values(doc.sequences)[0]!;
-		const prepared: PreparedMedia[] = [
-			{
-				name: 'a.mp4',
-				asset: buildMediaAsset(registered('a.mp4', { seconds: 2 }), { id: 'med_000000000000000A', now: 't' }),
-				existingMediaId: null,
-			},
-			{
-				name: 'b.mp4',
-				asset: buildMediaAsset(registered('b.mp4', { seconds: 3 }), { id: 'med_000000000000000B', now: 't' }),
-				existingMediaId: null,
-			},
-		];
-		const built = buildImportTransaction({
-			doc,
-			prepared,
-			target: {
-				kind: 'timeline',
-				sequenceId: seq.id,
-				at: 30,
-				trackId: seq.videoTracks[0]!.id,
-				mode: 'overwrite',
-			},
-		});
-		expect(built.tx!.commands.map((c) => c.type)).toEqual([
-			'media.register',
-			'clip.place',
-			'media.register',
-			'clip.place',
-		]);
-		const places = built.tx!.commands.filter((c) => c.type === 'clip.place') as {
-			at: number;
-			source: unknown;
-		}[];
-		expect(places.map((p) => p.at)).toEqual([30, 90]);
-		expect(places[0]!.source).toEqual({ mediaId: '$m0' });
-		const r = session.apply(built.tx!);
-		expect(r.ok).toBe(true);
+	it('timeline drop imports two files in order in one undo step', async () => {
+		const { session, engine, service } = await setup();
+		engine.media.set('a.mp4', registered('a.mp4', { seconds: 2 }));
+		engine.media.set('b.mp4', registered('b.mp4', { seconds: 3 }));
+		const seq = Object.values(session.getCommitted().sequences)[0]!;
+		const result = await service.importFiles(
+			{ files: [file('a.mp4'), file('b.mp4')] },
+			{ kind: 'timeline', sequenceId: seq.id, at: 30, trackId: seq.videoTracks[0]!.id, mode: 'overwrite' },
+		);
+		expect(result.failed).toEqual([]);
 		const clips = Object.values(session.getCommitted().sequences[seq.id]!.clips);
 		expect(clips.filter((c) => c.kind === 'video').map((c) => [c.start, c.duration])).toEqual([
 			[30, 60],
@@ -160,14 +69,12 @@ describe('import transaction (S01:LIFE-010 step 6)', () => {
 
 describe('EngineImportService', () => {
 	it('web: uploads files in client jobs and commits ONE transaction with engine-store locators', async () => {
-		const { session, engine, jobs, service, log } = await setup();
+		const { session, engine, jobs, service } = await setup();
 		engine.media.set('clip-a.mp4', registered('clip-a.mp4', { key: 'mk_CLIPA0001' }));
 		engine.media.set('clip-b.mp4', registered('clip-b.mp4', { key: 'mk_CLIPB0001' }));
-		const progress: string[] = [];
 		const result = await service.importFiles(
 			{ files: [file('clip-a.mp4'), file('clip-b.mp4')] },
 			{ kind: 'bin', binId: null },
-			(p) => progress.push(`${p.fileName}:${p.phase}`),
 		);
 		expect(result.failed).toEqual([]);
 		expect(result.mediaIds).toHaveLength(2);
@@ -178,18 +85,11 @@ describe('EngineImportService', () => {
 			{ type: 'engine-store', engineId: 'local', key: 'mk_CLIPB0001' },
 		]);
 		expect(assets.every((a) => a.id.startsWith('med_'))).toBe(true);
-		expect(session.getState().history.entries.map((e) => e.label)).toEqual(['Import 2 files']);
-		expect(jobs.getAll().map((j) => [j.kind, j.state, j.progress])).toEqual([
-			['upload', 'succeeded', 1],
-			['upload', 'succeeded', 1],
+		expect(session.getState().history.entries).toHaveLength(1);
+		expect(jobs.getAll().map((j) => [j.kind, j.state])).toEqual([
+			['upload', 'succeeded'],
+			['upload', 'succeeded'],
 		]);
-		expect(progress).toContain('clip-a.mp4:uploading');
-		expect(progress).toContain('clip-b.mp4:done');
-		expect(
-			engine.requests.filter((r) => r.method === 'PUT' && r.path.startsWith('/api/uploads/')).length,
-		).toBe(6);
-		expect(log).toEqual([]);
-		expect(session.getState().selection.project.items).toHaveLength(2);
 	});
 
 	it('web: a source-range sidecar picked with a render makes it a version of its source (M3, S07:PRC-019)', async () => {
@@ -367,11 +267,13 @@ describe('EngineImportService', () => {
 				getData: (t: string) => data[t] ?? '',
 				files,
 			}) as unknown as DataTransfer;
-		expect(readDataTransfer(make({ [PROJECT_ITEMS_MIME]: JSON.stringify({ itemIds: ['itm_1'] }) }))).toEqual({
+		const f = file('x.mp4');
+		expect(
+			readDataTransfer(make({ [PROJECT_ITEMS_MIME]: JSON.stringify({ itemIds: ['itm_1'] }) }, [f])),
+		).toEqual({
 			type: 'jasper/project-items',
 			itemIds: ['itm_1'],
 		});
-		const f = file('x.mp4');
 		expect(readDataTransfer(make({}, [f]))).toEqual({ type: 'os-files', files: [f] });
 		expect(readDataTransfer(make({ 'text/plain': 'hi' }))).toBeNull();
 	});

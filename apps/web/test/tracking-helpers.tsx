@@ -5,8 +5,8 @@ import type { EngineClient } from '@jasper/engine-client';
 import { mgRegistry } from '@jasper/mg-templates';
 import {
 	type Command,
+	createCounterIdSource,
 	createEmptyProject,
-	createSeededIdSource,
 	defaultRegistries,
 	FLICKS_PER_SECOND,
 	type Quad,
@@ -16,7 +16,7 @@ import { EditorSession } from '@jasper/session';
 const F30 = FLICKS_PER_SECOND / 30;
 
 export function trackingSession(opts: { plateFrames?: number; solidFrames?: number } = {}) {
-	const ids = createSeededIdSource(7);
+	const ids = createCounterIdSource(7);
 	const document = createEmptyProject({ ids, name: 'Tracking test', preset: 'hd-1080p-30' });
 	const session = new EditorSession({
 		projectId: document.projectId,

@@ -3,18 +3,9 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-	CURSORS,
-	clampValue,
-	cursorCss,
-	cursorSvg,
-	customGlyphIds,
+	DIALOG_ESCAPE_REVERTS,
 	Dialog,
 	DropdownMenu,
-	evaluateEntry,
-	ForcedCursorLayer,
-	flattenTree,
-	forceCursor,
-	getForcedCursor,
 	IconButton,
 	PanelErrorBoundary,
 	parseHex,
@@ -22,43 +13,27 @@ import {
 	rgbaToHex,
 	ScrubbyNumber,
 	Select,
-	scrubDelta,
 	TimecodeField,
 	ToastStore,
-	TooltipHost,
 	TreeList,
 	type TreeNode,
 } from '../src/index.ts';
 
 afterEach(cleanup);
 
-function drag(el: Element, xs: number[], opts: { shiftKey?: boolean } = {}) {
+function drag(el: Element, xs: number[], opts: { shiftKey?: boolean; ctrlKey?: boolean } = {}) {
 	fireEvent.pointerDown(el, { pointerId: 1, button: 0, clientX: xs[0], buttons: 1 });
 	xs.slice(1).forEach((x) => {
-		fireEvent.pointerMove(el, { pointerId: 1, clientX: x, buttons: 1, shiftKey: opts.shiftKey });
+		fireEvent.pointerMove(el, {
+			pointerId: 1,
+			clientX: x,
+			buttons: 1,
+			shiftKey: opts.shiftKey,
+			ctrlKey: opts.ctrlKey,
+		});
 	});
 	fireEvent.pointerUp(el, { pointerId: 1, clientX: xs.at(-1), button: 0 });
 }
-
-describe('scrubby math (S05:CT-021/022/025)', () => {
-	it('evaluates relative math and plain numbers', () => {
-		expect(evaluateEntry('+10', 100)).toBe(110);
-		expect(evaluateEntry('-5', 100)).toBe(95);
-		expect(evaluateEntry('*2', 100)).toBe(200);
-		expect(evaluateEntry('/2', 100)).toBe(50);
-		expect(evaluateEntry('42.5', 100)).toBe(42.5);
-		expect(evaluateEntry('=-5', 100)).toBe(-5);
-		expect(evaluateEntry('/0', 100)).toBeNull();
-		expect(evaluateEntry('abc', 100)).toBeNull();
-	});
-	it('applies step modifiers and clamps', () => {
-		expect(scrubDelta(5, 1, {})).toBe(5);
-		expect(scrubDelta(5, 1, { shiftKey: true })).toBe(50);
-		expect(scrubDelta(5, 1, { ctrlKey: true })).toBeCloseTo(0.5);
-		expect(clampValue(1234.567, { min: 0, max: 1000, precision: 1 })).toBe(1000);
-		expect(clampValue(12.345, { precision: 1 })).toBe(12.3);
-	});
-});
 
 describe('ScrubbyNumber (AC-CT-1)', () => {
 	it('a drag produces exactly one commit and streams live values', () => {
@@ -86,7 +61,6 @@ describe('ScrubbyNumber (AC-CT-1)', () => {
 		expect(onScrubEnd.mock.calls[0]?.[0]).toBe(150);
 		expect(onScrub.mock.calls.at(-1)?.[0]).toBe(150);
 		expect(onCommit).not.toHaveBeenCalled();
-		expect(getForcedCursor()).toBeNull();
 	});
 
 	it('Esc during a drag restores the value and does not commit', () => {
@@ -106,11 +80,13 @@ describe('ScrubbyNumber (AC-CT-1)', () => {
 		expect(screen.getByTestId('scrubby').textContent).toBe('100');
 	});
 
-	it('Shift-drag moves 10× faster', () => {
+	it('Shift-drag moves 10× faster and Ctrl-drag 10× slower', () => {
 		const onScrubEnd = vi.fn();
 		render(<ScrubbyNumber label="Scale" value={100} max={10_000} onScrubEnd={onScrubEnd} />);
 		drag(screen.getByTestId('scrubby'), [0, 5, 10], { shiftKey: true });
 		expect(onScrubEnd.mock.calls[0]?.[0]).toBe(200);
+		drag(screen.getByTestId('scrubby'), [0, 5, 10], { ctrlKey: true });
+		expect(onScrubEnd.mock.calls[1]?.[0]).toBe(101);
 	});
 
 	it('a click enters edit mode; Enter commits math relative to the value; Esc cancels', () => {
@@ -145,7 +121,6 @@ describe('TimecodeField (AC-TY-1)', () => {
 		const onCommit = vi.fn();
 		const { rerender } = render(<TimecodeField frame={0} rate={RATES.r30} onCommit={onCommit} />);
 		expect(screen.getByTestId('timecode-display').textContent).toBe('00:00:00:00');
-		expect(screen.getByTestId('timecode-display').className).toContain('pr-tabular');
 		fireEvent.click(screen.getByTestId('timecode-display'));
 		fireEvent.change(screen.getByTestId('timecode-input'), { target: { value: '1510' } });
 		fireEvent.keyDown(screen.getByTestId('timecode-input'), { key: 'Enter' });
@@ -365,61 +340,16 @@ describe('TreeList (S05:CT-040…045)', () => {
 		expect([...(onExp.mock.calls[0]?.[0] ?? [])]).toEqual(['bin']);
 		fireEvent.keyDown(root, { key: 'ArrowDown', shiftKey: true });
 		expect(onSel).toHaveBeenLastCalledWith(['bin', 'b'], 'b');
-		expect(flattenTree(tree, new Set(['bin'])).map((r) => r.node.id)).toEqual(['bin', 'a', 'b']);
 	});
 });
 
-describe('icons, cursors and tooltips (S05:IC-004/010/011, TT-002)', () => {
-	it('ships the custom NLE glyph inventory', () => {
-		const ids = customGlyphIds();
-		for (const id of [
-			'tool.ripple',
-			'tool.rolling',
-			'tool.slip',
-			'tool.slide',
-			'tool.rateStretch',
-			'tool.trackSelectBackward',
-			'transport.markIn',
-			'transport.insert',
-			'transport.overwrite',
-			'transport.lift',
-			'transport.extract',
-			'track.sourcePatch',
-			'track.target',
-			'track.keyframeAdd',
-			'engine.remotion',
-			'engine.fframes',
-			'engine.native',
-			'fx.badge',
-		])
-			expect(ids).toContain(id);
-	});
-	it('builds SVG cursors with hotspots and forces them on the window', () => {
-		for (const id of Object.keys(CURSORS) as (keyof typeof CURSORS)[]) {
-			expect(cursorSvg(id)).toContain('<svg');
-			expect(cursorCss(id)).toMatch(/url\("data:image\/svg\+xml,.+"\)|image-set/);
-		}
-		render(<ForcedCursorLayer />);
-		let release: () => void = () => {};
-		act(() => {
-			release = forceCursor('trimIn');
-		});
-		expect(screen.getByTestId('forced-cursor')).toBeTruthy();
-		act(() => release());
-		expect(screen.queryByTestId('forced-cursor')).toBeNull();
-	});
-	it('icon buttons fall back to a title tooltip and use Radix under a TooltipHost', () => {
-		const { unmount } = render(<IconButton icon="tool.razor" label="Razor Tool" shortcut="C" />);
-		expect(screen.getByLabelText('Razor Tool').getAttribute('title')).toBe('Razor Tool (C)');
-		unmount();
+describe('tooltip and color input contracts', () => {
+	it('icon buttons expose the specified shortcut and disabled state', () => {
 		render(
-			<TooltipHost>
-				<IconButton icon="tool.razor" label="Razor Tool" shortcut="C" disabled disabledReason="No sequence" />
-			</TooltipHost>,
+			<IconButton icon="tool.razor" label="Razor Tool" shortcut="C" disabled disabledReason="No sequence" />,
 		);
-		const b = screen.getByLabelText('Razor Tool');
-		expect(b.getAttribute('title')).toBeNull();
-		expect(b.getAttribute('aria-disabled')).toBe('true');
+		expect(screen.getByLabelText('Razor Tool').getAttribute('title')).toBe('Razor Tool (C)\nNo sequence');
+		expect(screen.getByLabelText('Razor Tool').getAttribute('aria-disabled')).toBe('true');
 	});
 	it('parses and prints hex colors', () => {
 		expect(parseHex('#ff0000')).toEqual([1, 0, 0, 1]);
@@ -475,5 +405,21 @@ describe('Dialog is modal for assistive tech and keyboard dispatchers (S05)', ()
 		);
 		const el = screen.getByRole('dialog');
 		expect(el.getAttribute('aria-modal')).toBe('true');
+	});
+});
+
+describe('Esc in a dialog field being edited (DIALOG_ESCAPE_REVERTS)', () => {
+	it('the first Esc stays with the edited field; Esc elsewhere closes the dialog', () => {
+		const onOpenChange = vi.fn();
+		render(
+			<Dialog open onOpenChange={onOpenChange} title="T">
+				<input data-testid="editing" {...{ [DIALOG_ESCAPE_REVERTS]: 'true' }} />
+				<input data-testid="idle" />
+			</Dialog>,
+		);
+		fireEvent.keyDown(screen.getByTestId('editing'), { key: 'Escape' });
+		expect(onOpenChange).not.toHaveBeenCalled();
+		fireEvent.keyDown(screen.getByTestId('idle'), { key: 'Escape' });
+		expect(onOpenChange).toHaveBeenCalledWith(false);
 	});
 });

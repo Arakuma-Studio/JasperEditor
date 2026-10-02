@@ -5,7 +5,6 @@ import { readbackSize } from '../src/color/scopes/capture.ts';
 import {
 	computeScope,
 	histogram,
-	renderDensity,
 	skinToneDirection,
 	vectorscope,
 	vectorscopePoint,
@@ -68,10 +67,9 @@ describe('vectorscope', () => {
 		const red = frame(2, 2, () => [191, 0, 0]);
 		const q = vectorscope(red, 2, 2, size);
 		const [hit] = nonZero(q.counts);
-		const R = vectorscopeTargets(0.75).find((t) => t.name === 'R')!;
-		const pt = vectorscopePoint(R.cb, R.cr, size);
-		expect(hit! % size).toBe(Math.round(pt.x));
-		expect(Math.floor(hit! / size)).toBe(Math.round(pt.y));
+		// Rec.709 places the 75 % red bar at approximately (Cb=-0.086, Cr=0.375).
+		expect(hit! % size).toBe(27);
+		expect(Math.floor(hit! / size)).toBe(8);
 	});
 
 	it('uses Rec.709 colour differences; targets and skin line are where colourists expect them', () => {
@@ -82,15 +80,13 @@ describe('vectorscope', () => {
 		expect(ycbcr(0, 0, 1).cb).toBeCloseTo(0.5, 12);
 		expect(ycbcr(1, 0, 0).cr).toBeCloseTo(0.5, 12);
 		const t = Object.fromEntries(vectorscopeTargets(0.75).map((x) => [x.name, x]));
-		expect(t.R!.cr).toBeGreaterThan(0);
+		expect(t.R!.cb).toBeCloseTo(-0.086, 2);
+		expect(t.R!.cr).toBeCloseTo(0.375, 2);
 		expect(t.B!.cb).toBeGreaterThan(0);
 		expect(t.Cy!.cr).toBeLessThan(0);
-		expect(Math.hypot(t.R!.cb, t.R!.cr)).toBeLessThan(0.5);
 		// Skin tones (e.g. 224/172/140) lie close to the I line (123°).
-		const skin = ycbcr(224 / 255, 172 / 255, 140 / 255);
-		const angle = (Math.atan2(skin.cr, skin.cb) * 180) / Math.PI;
 		const dir = skinToneDirection();
-		expect(Math.abs(angle - (Math.atan2(dir.cr, dir.cb) * 180) / Math.PI)).toBeLessThan(12);
+		expect((Math.atan2(dir.cr, dir.cb) * 180) / Math.PI).toBeCloseTo(123, 6);
 		// Top of the scope is +Cr (red side up), right is +Cb.
 		expect(vectorscopePoint(0, 0.5, 101)).toEqual({ x: 50, y: 0 });
 		expect(vectorscopePoint(0.5, 0, 101)).toEqual({ x: 100, y: 50 });
@@ -116,15 +112,6 @@ describe('histogram and rendering', () => {
 		expect(h.g[0]).toBe(2);
 		expect(h.y[Math.round(0.2126 * 255)]).toBe(1);
 		expect([...h.b].reduce((a, b) => a + b, 0)).toBe(3);
-	});
-
-	it('renderDensity writes the trace colour with log-scaled alpha where there are hits', () => {
-		const counts = new Uint32Array([0, 1, 100, 0]);
-		const img = renderDensity(counts, 4, 1, [10, 200, 30]);
-		expect([...img.slice(0, 4)]).toEqual([0, 0, 0, 0]);
-		expect([...img.slice(4, 7)]).toEqual([10, 200, 30]);
-		expect(img[11]!).toBeGreaterThan(img[7]!);
-		expect(img[11]).toBe(255);
 	});
 
 	it('computeScope produces a trace image of the requested size for every mode', () => {

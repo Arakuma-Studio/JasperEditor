@@ -41,7 +41,7 @@ function activeSequence(session: EditorSession | null): Sequence | null {
 	return (s.document.sequences[s.activeSequenceId] as Sequence | undefined) ?? null;
 }
 
-/** Builds palette rows for a query (exported for tests). */
+/** Builds palette rows for a query. */
 function buildPaletteRows(
 	raw: string,
 	env: ReturnType<typeof useShellRuntime> & { getCtx: ReturnType<typeof useCommandCtx> },

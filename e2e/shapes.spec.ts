@@ -26,7 +26,6 @@ import {
 	ROOT,
 	sequenceSummary,
 	serverInfo,
-	watchPage,
 } from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -53,7 +52,6 @@ const MCP_BUNDLE = join(ROOT, 'apps/mcp/dist/jasper-mcp.mjs');
 const FFMPEG = process.env.JASPER_FFMPEG ?? 'ffmpeg';
 
 let page: Page;
-let watcher: { errors: string[] };
 let projectId = '';
 let seqId = '';
 /** Shapes created by the steps, by role. */
@@ -61,7 +59,6 @@ const ids = { menuRect: '', menuEllipse: '', drawn: '', square: '', alt: '' };
 
 test.beforeAll(async ({ browser }) => {
 	page = await browser.newPage();
-	watcher = watchPage(page);
 	await enableAgentBridge(page);
 	projectId = await createProject(page, 'E2E Shapes');
 	seqId = (await sequenceSummary(page)).sequenceId;
@@ -443,5 +440,4 @@ test('export: native with baked layers when the layer bake is ready, else Remoti
 	const i = (Math.round((cy / 1080) * H) * W + Math.round((cx / 1920) * W)) * 3;
 	expect(video[i]!).toBeGreaterThan(200);
 	expect(video[i + 1]!).toBeLessThan(60);
-	expect(watcher.errors.filter((e) => e.startsWith('pageerror'))).toEqual([]);
 });

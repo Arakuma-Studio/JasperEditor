@@ -2,21 +2,8 @@
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { coreServices } from '../../tools/services.ts';
-import { createWarpExtension, type WarpDeps, type WarpExtension } from './extension.ts';
-
-export {
-	createWarpExtension,
-	layerSpan,
-	WARP_EXTENSION_ID,
-	WARP_VERSION,
-	type WarpDeps,
-	type WarpExtension,
-	type WarpPrepared,
-	type WarpStats,
-	warpClaims,
-	warpFrames,
-} from './extension.ts';
-export { destRect, type PixelRect, warpFrame } from './kernel.ts';
+import type { NativeExtension } from '../native-ext.ts';
+import { createWarpExtension, type WarpDeps } from './extension.ts';
 
 /**
  * Builds the `warp` extension from the engine's core services (cache `<appdir>/cache/warp`), registers it
@@ -25,7 +12,7 @@ export { destRect, type PixelRect, warpFrame } from './kernel.ts';
 export function registerWarpStage(
 	app: FastifyInstance,
 	opts: Pick<WarpDeps, 'threads' | 'effects'> = {},
-): WarpExtension {
+): NativeExtension {
 	const core = coreServices(app);
 	const ext = createWarpExtension({
 		ffmpeg: core.ffmpeg,

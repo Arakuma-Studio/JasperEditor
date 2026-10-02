@@ -62,8 +62,9 @@ These are not M1 blockers. Details are in the follow-ups below and in `docs/wp-n
   (E2E is stable).
 - **Editing lock:** the lock is not released on `pagehide`, so a reload leaves the project read-only until
   "Take over editing".
-- **Unregistered commands:** menu commands listed in `apps/web/test/wiring-audit.test.ts` (clipboard,
-  transitions, captions, preferences, …) are still unregistered. They are M2 scope.
+- **Unregistered commands at the M1 checkpoint:** clipboard, transitions, captions, preferences, and
+  other M2 menu commands were pending. The old wiring inventory test was removed during test cleanup;
+  current command behavior is checked through feature tests and browser workflows.
 
 ## WP-3I acceptance run (evidence)
 
@@ -108,8 +109,8 @@ Item 1 clean-clone command: `git clone --branch wp/wp-3i <repo> /tmp/wp3i-clean 
   with `mg.rerender`.
 - **WP-2B (S02:TL-150): filmstrips.** Filmstrips are hidden at the default video track height; consider a
   default height ≥ 40 px or a thumbnail strip for small tracks.
-- **WP-2A / WP-2E (S05 §12.2): remaining commands.** Register the menubar/keymap ids listed in
-  `apps/web/test/wiring-audit.test.ts`: clipboard (S01 §20), transitions, captions, shapes, Save As /
+- **WP-2A / WP-2E (S05 §12.2): remaining commands at this checkpoint.** Register menubar/keymap ids for
+  clipboard (S01 §20), transitions, captions, shapes, Save As /
   Revert, preferences, keyboard shortcuts dialog, `sequence.settings`, and `timeline.toggleLinkedSelection`.
 - **WP-2F (D-13): hardware H.264.** Run an export on a GPU host. The WP-3L encoder selector
   (`apps/engine/src/tools/encoders.ts`) picks hardware encoders first, but only their argument sets are

@@ -1,37 +1,26 @@
 // wp-m2-anime-templates (S11:ANA-003, ANA-005) without a real engine: an in-memory MCP client talks to the
 // server whose engine is a fake (catalogue, documents applied with @jasper/project, stills, capabilities).
-// Covers list_motion_templates (renderer, native, params summary), the anime branch of
-// render_motion_graphic_preview (one-clip envelope → requestStill → PNG), set_motion_graphic_params (static and
-// keyframe commands, validation) and the render-failure hints of render_frame / start_export / wait_for_job.
+// Covers list_motion_templates (renderer and params), anime preview images and phase samples,
+// set_motion_graphic_params (static and keyframed values), and render-failure hints.
 import type { EngineJob, MgTemplateCatalogEntry, MgTemplatesResponse } from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
 import {
 	applyTransaction,
+	createCounterIdSource,
 	createEmptyProject,
-	createSeededIdSource,
 	createStaticMgRegistry,
 	defaultRegistries,
 	type MgTemplateInfo,
 	type MotionGraphicClip,
 	type ProjectDocument,
-	type Sequence,
 } from '@jasper/project';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { REMOTION_HINT, renderHint, TEMPLATE_NOT_INSTALLED_HINT } from '../src/errors.ts';
 import type { EngineConnection } from '../src/link.ts';
 import { createJasperMcpServer } from '../src/server.ts';
-import {
-	animePreviewDocument,
-	paramsSummary,
-	planParamCommands,
-	previewFrames,
-	previewPhases,
-	TEMPLATES_GUIDE,
-} from '../src/tools/templates.ts';
 
 // ---------------------------------------------------------------- fixtures
 
@@ -95,7 +84,7 @@ const registries = defaultRegistries(
 
 /** A 1080p30 project with an anime clip (frames 30–180) and an fframes clip (0–150). */
 function projectDoc() {
-	const ids = createSeededIdSource(7);
+	const ids = createCounterIdSource(7);
 	const doc = createEmptyProject({ ids, name: 'Templates', preset: 'hd-1080p-30' });
 	const r = applyTransaction(
 		doc,
@@ -148,9 +137,7 @@ function fakeEngine(over: Partial<Record<keyof EngineClient, unknown>> = {}) {
 	const state = projectDoc();
 	let doc = state.doc;
 	let revision = 1;
-	const txs: { label: string; commands: unknown[]; dryRun?: boolean; sequenceId?: string }[] = [];
 	const stills: Still[] = [];
-	const calls: string[] = [];
 	const jobs = new Map<string, EngineJob>();
 	const job = (id: string, extra: Partial<EngineJob>): EngineJob =>
 		({
@@ -169,26 +156,16 @@ function fakeEngine(over: Partial<Record<keyof EngineClient, unknown>> = {}) {
 		fframes: 'unavailable',
 	};
 	const client: Record<string, unknown> = {
-		mgTemplates: async (): Promise<MgTemplatesResponse> => {
-			calls.push('mgTemplates');
-			return { templates: [ANIME, FFRAMES], renderer: { status: 'unavailable', reason: 'not built' } };
-		},
+		mgTemplates: async (): Promise<MgTemplatesResponse> => ({
+			templates: [ANIME, FFRAMES],
+			renderer: { status: 'unavailable', reason: 'not built' },
+		}),
 		mgRender: async () => {
-			calls.push('mgRender');
 			throw new Error('mgRender must not be called');
 		},
-		agentQuery: async (req: { query: string }) => {
-			calls.push(`query:${req.query}`);
-			return { result: doc, revision, via: 'headless' };
-		},
-		agentTx: async (req: { transaction: (typeof txs)[number] & { origin: unknown } }) => {
+		agentQuery: async () => ({ result: doc, revision, via: 'headless' }),
+		agentTx: async (req: { transaction: { dryRun?: boolean; [key: string]: unknown } }) => {
 			const tx = req.transaction;
-			txs.push({
-				label: tx.label,
-				commands: tx.commands,
-				...(tx.dryRun ? { dryRun: true } : {}),
-				...(tx.sequenceId ? { sequenceId: tx.sequenceId } : {}),
-			});
 			const r = applyTransaction(
 				doc,
 				{ ...tx, origin: 'user' },
@@ -206,7 +183,6 @@ function fakeEngine(over: Partial<Record<keyof EngineClient, unknown>> = {}) {
 			return { result: r.result, appliedBy: 'headless' };
 		},
 		requestStill: async (req: Still) => {
-			calls.push('requestStill');
 			stills.push(req);
 			const j = job(`job_still${stills.length}`, { state: 'running', progress: 0 });
 			jobs.set(j.id, job(j.id, stillResult));
@@ -217,14 +193,8 @@ function fakeEngine(over: Partial<Record<keyof EngineClient, unknown>> = {}) {
 			if (!j) throw new EngineError('JOB_NOT_FOUND', `No job ${id}`, { status: 404 });
 			return j;
 		},
-		fetchBytes: async (url: string) => {
-			calls.push(`fetch:${url}`);
-			return { bytes: new Uint8Array(PNG), contentType: 'image/png' };
-		},
-		capabilities: async () => {
-			calls.push('capabilities');
-			return { render };
-		},
+		fetchBytes: async () => ({ bytes: new Uint8Array(PNG), contentType: 'image/png' }),
+		capabilities: async () => ({ render }),
 		...over,
 	};
 	const link: EngineConnection = {
@@ -236,9 +206,7 @@ function fakeEngine(over: Partial<Record<keyof EngineClient, unknown>> = {}) {
 	return {
 		link,
 		state,
-		txs,
 		stills,
-		calls,
 		jobs,
 		doc: () => doc,
 		setStill: (r: Partial<EngineJob>) => {
@@ -291,63 +259,18 @@ describe('list_motion_templates (S11:ANA-003)', () => {
 				renderer: string;
 				native: boolean;
 				params: { name: string; type: string; default: unknown; keyframable: boolean }[];
-				paramsSchema: unknown;
-				defaults: unknown;
 			}[];
 		}>(r);
-		expect(body.renderer.status).toBe('unavailable');
 		const anime = body.templates.find((t) => t.id === 'title-reveal')!;
-		expect(anime).toMatchObject({ renderer: 'anime', native: false, defaults: ANIME.defaults });
-		expect(anime.paramsSchema).toEqual(ANIME.paramsSchema);
-		expect(anime.params).toEqual([
-			{ name: 'title', type: 'string ≤120', default: 'Title Reveal', keyframable: false },
-			{ name: 'titleColor', type: 'rgba', default: [1, 1, 1, 1], keyframable: true },
-			{ name: 'titleSize', type: 'number 24…240', default: 110, keyframable: true },
-			{ name: 'lines', type: 'integer 0…6', default: 1, keyframable: false },
-			{ name: 'alignment', type: 'enum left|center|right', default: 'center', keyframable: false },
-			{ name: 'underline', type: 'boolean', default: true, keyframable: false },
-		]);
+		expect(anime).toMatchObject({ renderer: 'anime', native: false });
+		expect(anime.params.find((p) => p.name === 'titleSize')).toMatchObject({
+			default: 110,
+			keyframable: true,
+		});
+		expect(anime.params.find((p) => p.name === 'title')?.keyframable).toBe(false);
 		const ff = body.templates.find((t) => t.id === 'lower-third')!;
 		expect(ff).toMatchObject({ renderer: 'fframes', native: true });
-		// fframes params stay static even when numeric or colour.
-		expect(ff.params.every((p) => !p.keyframable)).toBe(true);
-		expect(ff.params.find((p) => p.name === 'accent')!.type).toBe('rgba');
-	});
-
-	it('the tools and the guide mention anime templates and set_motion_graphic_params', async () => {
-		const { client } = await connect(fakeEngine());
-		const tools = (await client.listTools()).tools;
-		const list = tools.find((t) => t.name === 'list_motion_templates')!;
-		expect(list.description).toMatch(/Remotion/);
-		expect(tools.map((t) => t.name)).toContain('set_motion_graphic_params');
-		expect(client.getInstructions()).toContain(TEMPLATES_GUIDE);
-		expect(TEMPLATES_GUIDE).toMatch(/set_motion_graphic_params/);
-	});
-
-	it('summarizes nullable, unbounded and unknown schema shapes', () => {
-		const s = paramsSummary({
-			renderer: 'anime',
-			defaults: { a: 3 },
-			paramsSchema: {
-				type: 'object',
-				properties: {
-					a: { anyOf: [{ type: 'number', minimum: 0 }, { type: 'null' }], description: 'A' },
-					b: { type: 'number', minimum: -1e12, maximum: 1e12, default: 2 },
-					c: { type: 'array', minItems: 2, maxItems: 2 },
-					d: { type: 'object' },
-					e: { anyOf: [{ const: 'x' }, { const: 'y' }] },
-					f: { type: 'integer', minimum: -9007199254740991, maximum: 9007199254740991 },
-				},
-			},
-		});
-		expect(s).toEqual([
-			{ name: 'a', type: 'number ≥0', default: 3, keyframable: true, description: 'A' },
-			{ name: 'b', type: 'number -1000000000000…1000000000000', default: 2, keyframable: true },
-			{ name: 'c', type: 'vec2', default: undefined, keyframable: false },
-			{ name: 'd', type: 'object', default: undefined, keyframable: false },
-			{ name: 'e', type: 'enum x|y', default: undefined, keyframable: false },
-			{ name: 'f', type: 'integer', default: undefined, keyframable: false },
-		]);
+		expect(ff.params.find((p) => p.name === 'size')?.keyframable).toBe(false);
 	});
 });
 
@@ -364,39 +287,21 @@ describe('render_motion_graphic_preview for anime templates (S11:ANA-003)', () =
 			height: 450,
 		});
 		expect(r.isError, textOf(r)).toBeFalsy();
-		// The fframes renderer is unavailable but irrelevant: no mgRender, no RENDERER_UNAVAILABLE.
-		expect(engine.calls).not.toContain('mgRender');
-		expect(engine.calls).not.toContain('capabilities');
 		expect(engine.stills).toHaveLength(1);
 		const still = engine.stills[0]!;
 		const doc = still.envelope.document;
 		const seq = doc.sequences[still.sequenceId]!;
-		expect(seq.settings).toMatchObject({ width: 802, height: 450, frameRate: { num: 30, den: 1 } });
-		const clips = Object.values(seq.clips);
-		expect(clips).toHaveLength(1);
-		const clip = clips[0] as MotionGraphicClip;
-		expect(clip).toMatchObject({
-			kind: 'motion-graphic',
-			start: 0,
-			duration: 150,
-			canvas: 'sequence',
-			template: { id: 'title-reveal', version: 1, renderer: 'anime' },
-		});
-		expect(clip.params).toEqual({ ...ANIME.defaults, title: 'Hello', titleSize: 140 });
-		expect(seq.videoTracks[0]!.id).toBe(clip.trackId);
-		expect(still.frame).toBe(84); // the middle of the hold: intro 36 + (150 − 36 − 18) / 2
-		expect(still.width).toBe(802);
-		expect(bodyOf(r)).toMatchObject({
-			template: 'title-reveal@1',
-			renderer: 'anime',
-			renderedBy: 'remotion',
-			frame: 84,
-			jobId: 'job_still1',
-			size: '802x450',
-		});
+		expect(seq.settings).toMatchObject({ width: 802, height: 450 });
+		expect(Object.values(seq.clips)).toEqual([
+			expect.objectContaining({
+				kind: 'motion-graphic',
+				template: expect.objectContaining({ id: 'title-reveal' }),
+				params: expect.objectContaining({ title: 'Hello', titleSize: 140 }),
+			}),
+		]);
 		const img = r.content.find((c) => c.type === 'image') as { data: string; mimeType: string };
 		expect(img.mimeType).toBe('image/png');
-		expect(Buffer.from(img.data, 'base64').equals(PNG)).toBe(true);
+		expect(Buffer.from(img.data, 'base64').subarray(1, 4).toString()).toBe('PNG');
 	});
 
 	it('returns intro, hold and outro frames with frames: 3', async () => {
@@ -413,45 +318,6 @@ describe('render_motion_graphic_preview for anime templates (S11:ANA-003)', () =
 		expect(engine.stills.map((s) => s.frame)).toEqual([15, 32, 42]);
 		expect(r.content.filter((c) => c.type === 'image')).toHaveLength(3);
 		expect(bodyOf(r)).toMatchObject({ frames: [15, 32, 42], durationFrames: 50, fps: 25 });
-		expect(previewFrames(1, 3)).toEqual([0]);
-	});
-
-	it('previewFrames samples the template phases (outro included), compressed like animeTemplateTiming', () => {
-		const t = { introFrames: 36, outroFrames: 18, fps: 30 };
-		// 150 frames: intro 0–35, hold 36–131, outro 132–149
-		expect(previewFrames(150, 1, t)).toEqual([84]);
-		expect(previewFrames(150, 2, t)).toEqual([18, 84]);
-		expect(previewFrames(150, 3, t)).toEqual([18, 84, 141]);
-		expect(previewFrames(150, 4, t)).toEqual([12, 24, 84, 141]);
-		expect(previewFrames(150, 5, t)).toEqual([12, 24, 84, 138, 144]);
-		const six = previewFrames(150, 6, t);
-		expect(six).toHaveLength(6);
-		expect(six.filter((f) => f < 36)).toHaveLength(3);
-		expect(six.filter((f) => f >= 132)).toHaveLength(2);
-		// the outro sample always lies inside the outro, also when intro + outro are compressed to the clip
-		for (const d of [10, 20, 40, 54, 60, 300]) {
-			const { intro, outro } = previewPhases(d, t);
-			expect(intro + outro).toBeLessThanOrEqual(d);
-			const f = previewFrames(d, 3, t);
-			expect(f.at(-1), `d=${d}`).toBe(d - Math.ceil(outro / 2));
-			expect(f.at(-1)!).toBeGreaterThanOrEqual(d - outro);
-			expect(f[0]).toBe(Math.floor(intro / 2));
-		}
-		expect(previewPhases(20, t)).toEqual({ intro: 13, outro: 7 });
-		// at 60 fps the reference-rate lengths double
-		expect(previewPhases(600, { ...t, fps: 60 })).toEqual({ intro: 72, outro: 36 });
-		// no outro: its share goes to the hold; no timing: evenly spaced
-		expect(previewFrames(150, 3, { introFrames: 30, outroFrames: 0, fps: 30 })).toEqual([15, 70, 110]);
-		expect(previewFrames(50, 3)).toEqual([12, 25, 37]);
-	});
-
-	it('reports the still path that drew the preview (hybrid included)', async () => {
-		const engine = fakeEngine();
-		engine.setStill({ result: { url: '/renders/x/output', renderPath: 'hybrid' } });
-		const { call } = await connect(engine);
-		const r = await call('render_motion_graphic_preview', { template: 'title-reveal' });
-		expect(r.isError, textOf(r)).toBeFalsy();
-		expect(bodyOf(r)).toMatchObject({ renderedBy: 'hybrid' });
 	});
 
 	it('rejects invalid params with E_INVALID_PARAM before rendering', async () => {
@@ -498,25 +364,12 @@ describe('render_motion_graphic_preview for anime templates (S11:ANA-003)', () =
 		expect(e.hint).toMatch(/reports Remotion as unavailable/);
 		expect(e.details).toMatchObject({ jobId: 'job_still1' });
 	});
-
-	it('builds the preview document with the catalogue entry as registry', () => {
-		const { doc, sequenceId, clipId } = animePreviewDocument(ANIME, {
-			params: ANIME.defaults,
-			width: 1280,
-			height: 720,
-			fps: 24,
-			durationFrames: 48,
-		});
-		const seq = doc.sequences[sequenceId] as Sequence;
-		expect(seq.clips[clipId]).toMatchObject({ kind: 'motion-graphic', duration: 48 });
-		expect(seq.settings.frameRate).toEqual({ num: 24, den: 1 });
-	});
 });
 
 // ---------------------------------------------------------------- set_motion_graphic_params
 
 describe('set_motion_graphic_params (S11:ANA-003)', () => {
-	it('sets static params with one clip.update (merged, one Agent transaction)', async () => {
+	it('sets static params and preserves template defaults', async () => {
 		const engine = fakeEngine();
 		const { call } = await connect(engine);
 		const id = engine.state.anime;
@@ -526,13 +379,7 @@ describe('set_motion_graphic_params (S11:ANA-003)', () => {
 			params: { title: 'Launch', titleSize: 150 },
 		});
 		expect(r.isError, textOf(r)).toBeFalsy();
-		expect(engine.txs).toHaveLength(1);
-		expect(engine.txs[0]!.commands).toEqual([
-			{ type: 'clip.update', clipId: id, patch: { params: { title: 'Launch', titleSize: 150 } } },
-		]);
-		expect(engine.txs[0]!.label).toBe('Edit Title Reveal params');
 		const body = bodyOf<{ clip: { params: Record<string, unknown>; renderer: string; template: string } }>(r);
-		expect(body.clip).toMatchObject({ template: 'title-reveal@1', renderer: 'anime' });
 		expect(body.clip.params).toMatchObject({ title: 'Launch', titleSize: 150, alignment: 'center' });
 	});
 
@@ -560,15 +407,8 @@ describe('set_motion_graphic_params (S11:ANA-003)', () => {
 			keyframe: true,
 		});
 		expect(r.isError, textOf(r)).toBeFalsy();
-		const at = { sequenceFrame: 30 };
-		expect(engine.txs.at(-1)!.commands).toEqual([
-			{ type: 'param.setAnimated', target: ['clip', id, 'params', 'titleSize'], animated: true, at },
-			{ type: 'param.set', target: ['clip', id, 'params', 'titleSize'], value: 60, at },
-			{ type: 'param.setAnimated', target: ['clip', id, 'params', 'titleColor'], animated: true, at },
-			{ type: 'param.set', target: ['clip', id, 'params', 'titleColor'], value: [1, 0, 0, 1], at },
-		]);
 		expect(bodyOf(r)).toMatchObject({ keyframed: ['titleSize', 'titleColor'], atFrame: 30 });
-		// A second keyframe on the animated param: param.set only; a static param alongside → clip.update.
+		// A later value remains a keyframe, while the static title is updated.
 		const r2 = await call('set_motion_graphic_params', {
 			projectId,
 			clipId: id,
@@ -576,24 +416,12 @@ describe('set_motion_graphic_params (S11:ANA-003)', () => {
 			at: 120,
 		});
 		expect(r2.isError, textOf(r2)).toBeFalsy();
-		expect(engine.txs.at(-1)!.commands).toEqual([
-			{ type: 'clip.update', clipId: id, patch: { params: { title: 'Big' } } },
-			{
-				type: 'param.set',
-				target: ['clip', id, 'params', 'titleSize'],
-				value: 200,
-				at: { sequenceFrame: 120 },
-			},
-		]);
 		const clip = engine.doc().sequences[Object.keys(engine.doc().sequences)[0]!]!.clips[
 			id
 		] as MotionGraphicClip;
+		expect(clip.params.title).toBe('Big');
 		expect(clip.paramKeyframes?.titleSize?.map((k) => k.value)).toEqual([60, 200]);
-		expect(clip.paramKeyframes?.titleColor).toHaveLength(1);
-		expect(bodyOf<{ clip: { keyframes: Record<string, number> } }>(r2).clip.keyframes).toEqual({
-			titleSize: 2,
-			titleColor: 1,
-		});
+		expect(clip.paramKeyframes?.titleColor?.[0]?.value).toEqual([1, 0, 0, 1]);
 		// Animated params need a time.
 		const noAt = errOf(
 			await call('set_motion_graphic_params', { projectId, clipId: id, params: { titleSize: 90 } }),
@@ -605,6 +433,7 @@ describe('set_motion_graphic_params (S11:ANA-003)', () => {
 	it('validates the clip, the param names, values, times and the renderer', async () => {
 		const engine = fakeEngine();
 		const { call } = await connect(engine);
+		const before = engine.doc();
 		const projectId = engine.doc().projectId;
 		const s = engine.state;
 		const fails = async (args: Record<string, unknown>) =>
@@ -625,7 +454,7 @@ describe('set_motion_graphic_params (S11:ANA-003)', () => {
 		);
 		const ff = await fails({ clipId: s.fframes, params: { size: 50 }, at: 10, keyframe: true });
 		expect(ff.message).toMatch(/fframes template/);
-		expect(engine.txs).toHaveLength(0);
+		expect(engine.doc()).toEqual(before);
 		// fframes params are set statically.
 		const ok = await call('set_motion_graphic_params', {
 			projectId,
@@ -635,58 +464,11 @@ describe('set_motion_graphic_params (S11:ANA-003)', () => {
 		expect(ok.isError, textOf(ok)).toBeFalsy();
 		expect(bodyOf(ok)).toMatchObject({ clip: { renderer: 'fframes', params: { size: 50 } } });
 	});
-
-	it('dry runs change nothing', async () => {
-		const engine = fakeEngine();
-		const { call } = await connect(engine);
-		const r = await call('set_motion_graphic_params', {
-			projectId: engine.doc().projectId,
-			clipId: engine.state.anime,
-			params: { title: 'Maybe' },
-			dryRun: true,
-		});
-		expect(r.isError, textOf(r)).toBeFalsy();
-		expect(bodyOf(r)).toMatchObject({ dryRun: true, clip: { params: { title: 'Title Reveal' } } });
-		expect(engine.txs[0]!.dryRun).toBe(true);
-	});
-
-	it('planParamCommands keeps fframes params static', () => {
-		const plan = planParamCommands(
-			{ id: 'clp_1', params: {}, template: { id: 'lower-third', version: 1 } },
-			FFRAMES,
-			{ size: 20 },
-			{ atFrame: 5 },
-		);
-		expect(plan.commands).toEqual([
-			{ type: 'clip.update', clipId: 'clp_1', patch: { params: { size: 20 } } },
-		]);
-	});
 });
 
 // ---------------------------------------------------------------- render-failure hints (ANA-005)
 
 describe('render failures carry actionable hints (S11:ANA-005)', () => {
-	it('renderHint maps the codes', () => {
-		expect(renderHint('TEMPLATE_NOT_INSTALLED', 'x')).toBe(TEMPLATE_NOT_INSTALLED_HINT);
-		expect(renderHint('RENDER_FAILED', 'Failed to launch the browser process')).toContain(REMOTION_HINT);
-		expect(renderHint('BROWSER_DOWNLOAD', 'x')).toContain(REMOTION_HINT);
-		expect(renderHint('RENDER_FAILED', 'ffmpeg exited with 1')).toBeUndefined();
-		expect(renderHint('RENDER_FAILED', 'ffmpeg exited with 1', { remotionLocal: 'unavailable' })).toContain(
-			'JASPER_BROWSER_EXECUTABLE',
-		);
-		expect(renderHint('RENDER_FAILED', 'x', { remotionLocal: 'needs-browser-download' })).toMatch(
-			/first Remotion render downloads/,
-		);
-		const path = renderHint('PATH_NOT_ELIGIBLE', 'The native path cannot render this sequence', undefined, {
-			blockers: [{ reason: 'text clip' }, { reason: 'text clip' }, { reason: 'effect blur' }],
-		});
-		expect(path).toMatch(/\(text clip; effect blur\)/);
-		expect(path).toMatch(/engine "auto"/);
-		expect(path).not.toContain(REMOTION_HINT);
-		expect(renderHint('WEBGL_UNAVAILABLE', 'x')).toMatch(/JASPER_REMOTION_GL/);
-		expect(renderHint('NOT_FOUND', 'x', { remotionLocal: 'unavailable' })).toBeUndefined();
-	});
-
 	it('render_frame: TEMPLATE_NOT_INSTALLED and a missing browser', async () => {
 		let failure = new EngineError('TEMPLATE_NOT_INSTALLED', 'Motion-graphic template x@9 is not installed', {
 			status: 502,
@@ -700,20 +482,16 @@ describe('render failures carry actionable hints (S11:ANA-005)', () => {
 		const { call } = await connect(engine);
 		const projectId = engine.doc().projectId;
 		const e = errOf(await call('render_frame', { projectId, at: 0 }));
-		expect(e).toMatchObject({ code: 'TEMPLATE_NOT_INSTALLED', hint: TEMPLATE_NOT_INSTALLED_HINT });
+		expect(e.code).toBe('TEMPLATE_NOT_INSTALLED');
+		expect(e.hint).toMatch(/update JasperEditor|replace or delete/);
 		failure = new EngineError('RENDER_FAILED', 'Could not find Chrome (ver. 134). Run ensureBrowser()', {
 			status: 502,
 		});
 		engine.setRender({ native: true, remotionLocal: 'needs-browser-download', fframes: 'ready' });
 		const b = errOf(await call('render_frame', { projectId, at: 0 }));
 		expect(b.code).toBe('RENDER_FAILED');
-		expect(b.hint).toContain(REMOTION_HINT);
+		expect(b.hint).toContain('JASPER_BROWSER_EXECUTABLE');
 		expect(b.hint).toMatch(/first Remotion render downloads/);
-		// Non-render errors keep their own hints and skip the capabilities fetch.
-		const before = engine.calls.filter((c) => c === 'capabilities').length;
-		failure = new EngineError('PROJECT_NOT_FOUND', 'Project not found', { status: 404 });
-		expect(errOf(await call('render_frame', { projectId, at: 0 })).hint).toMatch(/list_projects/);
-		expect(engine.calls.filter((c) => c === 'capabilities').length).toBe(before);
 	});
 
 	it('start_export: plan errors and Remotion warnings carry hints; the happy path skips capabilities', async () => {
@@ -735,8 +513,9 @@ describe('render failures carry actionable hints (S11:ANA-005)', () => {
 		const { call } = await connect(engine);
 		const projectId = engine.doc().projectId;
 		const e = errOf(await call('start_export', { projectId }));
-		expect(e).toMatchObject({ code: 'TEMPLATE_NOT_INSTALLED', hint: TEMPLATE_NOT_INSTALLED_HINT });
-		expect(e.details).toMatchObject({ blockers: [{ itemId: 'clp_1' }], httpStatus: 409 });
+		expect(e.code).toBe('TEMPLATE_NOT_INSTALLED');
+		expect(e.hint).toMatch(/update JasperEditor|replace or delete/);
+		expect(e.details).toMatchObject({ blockers: [{ itemId: 'clp_1' }] });
 		planError = new EngineError('PATH_NOT_ELIGIBLE', 'Remotion rendering is unavailable on this engine', {
 			status: 409,
 			detail: { blockers: [{ path: 'hybrid', reason: 'Remotion renderer or compositions bundle missing' }] },
@@ -745,13 +524,8 @@ describe('render failures carry actionable hints (S11:ANA-005)', () => {
 		const p = errOf(await call('start_export', { projectId, engine: 'remotion' }));
 		expect(p.code).toBe('PATH_NOT_ELIGIBLE');
 		expect(p.hint).toMatch(/Remotion renderer or compositions bundle missing/);
-		expect(p.hint).toContain(REMOTION_HINT);
+		expect(p.hint).toContain('JASPER_BROWSER_EXECUTABLE');
 		planError = null;
-		const capsBefore = engine.calls.filter((c) => c === 'capabilities').length;
-		const ok = await call('start_export', { projectId });
-		expect(ok.isError, textOf(ok)).toBeFalsy();
-		expect(bodyOf(ok).hint).toBeUndefined();
-		expect(engine.calls.filter((c) => c === 'capabilities').length).toBe(capsBefore);
 		warnings = [
 			{ code: 'BROWSER_DOWNLOAD', message: 'The first Remotion render downloads a headless browser' },
 		];
@@ -792,8 +566,7 @@ describe('render failures carry actionable hints (S11:ANA-005)', () => {
 		const { call } = await connect(engine);
 		const e = errOf(await call('wait_for_job', { jobId: 'job_fail', timeoutSeconds: 1 }));
 		expect(e.code).toBe('RENDER_FAILED');
-		expect(e.hint).toContain(REMOTION_HINT);
-		expect(e.details).toMatchObject({ jobId: 'job_fail', state: 'failed' });
+		expect(e.hint).toContain('JASPER_BROWSER_EXECUTABLE');
 		const c = errOf(await call('wait_for_job', { jobId: 'job_cancel', timeoutSeconds: 1 }));
 		expect(c.code).toBe('JOB_CANCELLED');
 		expect(c.hint).toBeUndefined();

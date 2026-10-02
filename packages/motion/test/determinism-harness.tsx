@@ -3,14 +3,11 @@
 // to a fresh build (or a fresh mount) per frame. `determinism.test.tsx` runs it over TEXT_ANIMATION_IMPLS and
 // ANIME_TEMPLATE_IMPLS, so presets and templates join the suite by being registered; the functions return reports
 // (instead of asserting) so the harness itself is tested against deliberately broken fixtures.
-import type { AnyAnimeMgTemplate } from '@jasper/mg-templates';
 import { type TextAnimationSide, type TextAnimationSpec, toJsonSchema } from '@jasper/project';
-import { act, cleanup, render } from '@testing-library/react';
+import { render } from '@testing-library/react';
 import fc from 'fast-check';
-import { type ComponentType, StrictMode } from 'react';
 import { roundValue, valuesAt } from '../src/runtime/hooks.ts';
 import { frameToMs, hash32, seekCanonical, type Timeline, useAnimeValues } from '../src/runtime/index.ts';
-import type { AnimeTemplateProps } from '../src/templates/index.ts';
 import {
 	REST_UNIT_VALUES,
 	type TextAnimationBuildContext,
@@ -18,10 +15,10 @@ import {
 	type UnitValues,
 } from '../src/text/index.ts';
 
-type Report = { label: string; failures: string[] };
+export type Report = { label: string; failures: string[] };
 
 /** Fixed fast-check seeds: every run visits the same shuffled orders (reproducible failures). */
-const SHUFFLE_SEEDS = [1, 4242, 90210] as const;
+export const SHUFFLE_SEEDS = [1, 4242, 90210] as const;
 const SHUFFLES_PER_SEED = 4;
 
 type Values = readonly Readonly<Record<string, number>>[];
@@ -30,7 +27,7 @@ type Build = () => { timeline: Timeline; targets: Record<string, number>[] };
 const sameNumber = (a: number, b: number) => a === b || (Number.isNaN(a) && Number.isNaN(b));
 
 /** First difference between two value lists, or null (numbers compared exactly; ±0 render alike). */
-function diffValues(a: Values, b: Values): string | null {
+export function diffValues(a: Values, b: Values): string | null {
 	if (a.length !== b.length) return `${a.length} targets vs ${b.length}`;
 	for (let i = 0; i < a.length; i++) {
 		const x = a[i]!;
@@ -75,7 +72,10 @@ export function visitOrders(frames: readonly number[]): { name: string; order: n
 }
 
 /** Counts calls of the wall clock and unseeded randomness while `fn` runs (S11:ANM-003/007). */
-function wallClockCalls<T>(fn: () => T, which: ('random' | 'date' | 'perf')[] = ['random', 'date', 'perf']) {
+export function wallClockCalls<T>(
+	fn: () => T,
+	which: ('random' | 'date' | 'perf')[] = ['random', 'date', 'perf'],
+) {
 	const calls: string[] = [];
 	const restore: (() => void)[] = [];
 	const wrap = <O extends object>(obj: O, key: keyof O & string, name: string) => {
@@ -104,7 +104,7 @@ function wallClockCalls<T>(fn: () => T, which: ('random' | 'date' | 'perf')[] = 
  * visited in every order of `visitOrders`; the hook path (`useAnimeValues`) agrees; builds share no targets; no
  * wall clock or unseeded randomness while building or seeking.
  */
-function checkValueBuild(label: string, build: Build, frames: readonly number[], fps: number): Report {
+export function checkValueBuild(label: string, build: Build, frames: readonly number[], fps: number): Report {
 	const failures: string[] = [];
 	const fresh = new Map<number, Values>();
 	const clock = wallClockCalls(() => {
@@ -159,7 +159,7 @@ function checkValueBuild(label: string, build: Build, frames: readonly number[],
 }
 
 /** Frames `-2 … ceil(durationMs·fps/1000) + 2` (window plus clamped handles). */
-function windowFrames(durationMs: number, fps: number): number[] {
+export function windowFrames(durationMs: number, fps: number): number[] {
 	const n = Math.ceil((durationMs * fps) / 1000);
 	return Array.from({ length: n + 5 }, (_, i) => i - 2);
 }
@@ -185,7 +185,7 @@ export function paramVariants(spec: TextAnimationSpec | undefined): Record<strin
 
 const UNIT_KEYS = Object.keys(REST_UNIT_VALUES).sort();
 
-type TextCase = { label: string; ctx: TextAnimationBuildContext; fps: number };
+export type TextCase = { label: string; ctx: TextAnimationBuildContext; fps: number };
 
 /** [fps, window frames]: 30 fps and an odd rate whose frame times are not whole milliseconds. */
 const RATES: readonly (readonly [number, number])[] = [
@@ -194,7 +194,7 @@ const RATES: readonly (readonly [number, number])[] = [
 ];
 
 /** The contexts a text implementation is checked with: sides × unit counts × param variants × two frame rates. */
-function textAnimationCases(impl: TextAnimationImpl, spec?: TextAnimationSpec): TextCase[] {
+export function textAnimationCases(impl: TextAnimationImpl, spec?: TextAnimationSpec): TextCase[] {
 	const sides: readonly TextAnimationSide[] = spec?.phases ?? ['in', 'out'];
 	const out: TextCase[] = [];
 	const variants = paramVariants(spec);
@@ -303,99 +303,4 @@ function checkCaret(
 		}
 	}
 	return failures;
-}
-
-/**
- * The markup of `el` with every inline style's declarations sorted: React appends a property that appears later
- * (e.g. a `filter` once blur > 0) after the existing ones, a fresh mount writes them in object order — the same
- * style, serialised differently.
- */
-function canonicalHtml(el: HTMLElement): string {
-	const copy = el.cloneNode(true) as HTMLElement;
-	for (const node of [copy, ...copy.querySelectorAll<HTMLElement>('[style]')]) {
-		const style = node.getAttribute('style');
-		if (style === null) continue;
-		const decls = style
-			.split(';')
-			.map((d) => d.trim())
-			.filter(Boolean)
-			.sort();
-		node.setAttribute('style', decls.join('; '));
-	}
-	return copy.innerHTML;
-}
-
-type TemplateCase = { label: string; props: (frame: number) => AnimeTemplateProps; frames: number[] };
-
-/** Props of a template at a content frame: intro + 12 hold frames + outro at 30 fps, the first canvas. */
-function templateCase(key: string, def: AnyAnimeMgTemplate | undefined): TemplateCase {
-	const fps = 30;
-	const intro = def?.introFrames ?? 15;
-	const outro = def?.outroFrames ?? 15;
-	const total = intro + 12 + outro;
-	const canvas = def?.canvases[0] ?? { width: 1920, height: 1080 };
-	const frames = Array.from({ length: total + 2 }, (_, i) => i - 1);
-	return {
-		label: `${key} ${canvas.width}x${canvas.height}`,
-		frames,
-		props: (frame) => ({
-			params: { ...(def?.defaults ?? {}) },
-			timeMs: frameToMs(frame, fps),
-			totalMs: frameToMs(total, fps),
-			introMs: frameToMs(intro, fps),
-			outroMs: frameToMs(outro, fps),
-			canvas,
-			seed: hash32('clp_DETERMINISM00000', 'template'),
-		}),
-	};
-}
-
-/**
- * One anime template implementation (S11:ANM-013): the DOM it renders for a frame (after layout effects, i.e.
- * DOM-leaf seeks) is the same mounted once and visited in every order as mounted fresh for that frame, also under
- * StrictMode; rendering never calls Math.random.
- */
-export function checkTemplate(
-	key: string,
-	Component: ComponentType<AnimeTemplateProps>,
-	def: AnyAnimeMgTemplate | undefined,
-): Report {
-	const { label, props, frames } = templateCase(key, def);
-	const failures: string[] = [];
-	const html = canonicalHtml;
-	const fresh = new Map<number, string>();
-	try {
-		const clock = wallClockCalls(() => {
-			for (const f of frames) {
-				const r = render(<Component {...props(f)} />);
-				fresh.set(f, html(r.container));
-				act(() => r.unmount());
-			}
-		}, ['random']);
-		if (clock.calls.length) failures.push('Math.random while rendering (ANM-007)');
-		for (const { name, order } of visitOrders(frames)) {
-			const r = render(<Component {...props(order[0]!)} />);
-			for (const f of order) {
-				r.rerender(<Component {...props(f)} />);
-				if (html(r.container) !== fresh.get(f)) {
-					failures.push(`${name}: frame ${f} differs from a fresh mount`);
-					break;
-				}
-			}
-			act(() => r.unmount());
-		}
-		const mid = frames[Math.floor(frames.length / 2)]!;
-		const strict = render(
-			<StrictMode>
-				<Component {...props(mid)} />
-			</StrictMode>,
-		);
-		if (html(strict.container) !== fresh.get(mid)) failures.push(`StrictMode: frame ${mid} differs`);
-		act(() => strict.unmount());
-	} catch (e) {
-		failures.push(`render threw: ${(e as Error).message}`);
-	} finally {
-		cleanup();
-	}
-	return { label, failures };
 }

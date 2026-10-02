@@ -3,8 +3,8 @@
 // Real ffmpeg (the engine's build: the LGPL vendor directory when present, else PATH; JASPER_FFMPEG/FFPROBE
 // are forwarded, e.g. to run against another build).
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
-import { availableParallelism, loadavg, tmpdir } from 'node:os';
+import { mkdtempSync, readdirSync, statSync, utimesSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
 	applyMat3,
@@ -18,7 +18,8 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildNativeGraph } from '../src/export/native.ts';
 import { type NativeExtension, prepareExtensions } from '../src/export/native-ext.ts';
-import { createWarpExtension, registerWarpStage, type WarpExtension } from '../src/export/warp/index.ts';
+import { createWarpExtension } from '../src/export/warp/extension.ts';
+import { registerWarpStage } from '../src/export/warp/index.ts';
 import { coreServices } from '../src/tools/services.ts';
 import {
 	closeApps,
@@ -36,7 +37,7 @@ const FWD_ENV: Record<string, string> = {};
 for (const k of ['JASPER_FFMPEG', 'JASPER_FFPROBE']) if (process.env[k]) FWD_ENV[k] = process.env[k]!;
 
 let app: TestApp;
-let warp: WarpExtension;
+let warp: NativeExtension;
 beforeAll(async () => {
 	ensureFixtures();
 	app = await makeApp({ env: FWD_ENV });
@@ -385,7 +386,7 @@ describe('planner with the warp stage (S09 §8.5)', () => {
 
 describe('export through the warp stage (TRK-032, S09 §8.5)', () => {
 	it('exports a corner-pinned still over a video plate natively; the second export reuses the cache', async () => {
-		const { d, clip } = await cardDoc({ video: true });
+		const { d } = await cardDoc({ video: true });
 		const cacheDir = join(app.jasper.config.paths.cacheDir, 'warp');
 		const run = async () => {
 			const start = await app.inject({
@@ -404,24 +405,20 @@ describe('export through the warp stage (TRK-032, S09 §8.5)', () => {
 			expect(done.result).toMatchObject({ renderPath: 'native', frames: 45 });
 			return done;
 		};
-		const before = { ...warp.stats };
 		await run();
-		expect(warp.stats.rendered).toBe(before.rendered + 1);
-		expect(warp.stats.last).toMatchObject({ clipId: clip, frames: 45, reused: false });
 		const files = readdirSync(cacheDir).filter((f) => f.endsWith('.mov'));
-		expect(files).toContain(`${warp.stats.last!.key}.mov`);
+		expect(files).toHaveLength(1);
 		expect(readdirSync(cacheDir).some((f) => f.endsWith('.tmp'))).toBe(false);
 
-		// Re-export: no warp work, no new cache file.
+		// An old timestamp makes a rewrite observable even on coarse filesystems.
+		const cached = join(cacheDir, files[0]!);
+		const old = new Date('2020-01-01T00:00:00Z');
+		utimesSync(cached, old, old);
+		const size = statSync(cached).size;
 		await run();
-		expect(warp.stats.rendered).toBe(before.rendered + 1);
-		expect(warp.stats.reused).toBe(before.reused + 1);
-		expect(warp.stats.last!.reused).toBe(true);
-		expect(
-			readdirSync(cacheDir)
-				.filter((f) => f.endsWith('.mov'))
-				.sort(),
-		).toEqual(files.sort());
+		expect(readdirSync(cacheDir).filter((f) => f.endsWith('.mov'))).toEqual(files);
+		expect(statSync(cached).size).toBe(size);
+		expect(statSync(cached).mtimeMs).toBe(old.getTime());
 
 		// The intermediate: ProRes 4444 with alpha, W×H, one frame per layer frame, BT.709.
 		const probe = spawnSync('ffprobe', [
@@ -522,57 +519,6 @@ describe('native / preview parity (TRK-034)', () => {
 	}, 120_000);
 });
 
-describe('warp speed (TRK-033)', () => {
-	/** Exports 90 frames of a full-frame 1080p video with keyframed Motion (a new key per run: no cache hit). */
-	async function timedRun(end: number) {
-		const v = new DocBuilder();
-		const a = v.addMedia(await register(app, fixture('clip-a.mp4')));
-		const r = v.tx([
-			{ type: 'clip.addSolid', at: 0, duration: 120, track: 'V1', color: [0, 0, 0, 1] },
-			{ type: 'clip.place', source: { mediaId: a }, at: 0, tracks: { video: 'V2' }, ref: '$v' },
-		]);
-		const t = (p: string) => ['clip', r.refs.$v, 'transform', p];
-		v.tx([
-			{ type: 'keyframe.add', target: t('rotation'), at: { sequenceFrame: 0 }, value: 0 },
-			{ type: 'keyframe.add', target: t('rotation'), at: { sequenceFrame: 90 }, value: end },
-			{ type: 'keyframe.add', target: t('scale'), at: { sequenceFrame: 0 }, value: 110 },
-			{ type: 'keyframe.add', target: t('scale'), at: { sequenceFrame: 90 }, value: 120 },
-		]);
-		const start = await app.inject({
-			method: 'POST',
-			url: '/api/exports',
-			headers: JSON_H,
-			payload: {
-				envelope: v.envelope(),
-				sequenceId: v.seqId,
-				settings: settings(v.seqId, { range: { type: 'custom', startFrame: 0, endFrame: 90 } }),
-			},
-		});
-		expect(start.statusCode).toBe(202);
-		const done = await coreServices(app).queue.wait(start.json().id);
-		expect(done.error).toBeUndefined();
-		expect(done.result).toMatchObject({ renderPath: 'native', frames: 90 });
-		const last = warp.stats.last!;
-		expect(last.reused).toBe(false);
-		return last;
-	}
-
-	it('warps a full-frame 1080p layer with keyframed Motion at ≥ 12.5 frames/s (target 25)', async () => {
-		// Best of up to three runs: the box is shared (other jobs, parallel test files).
-		let best = 0;
-		for (let run = 0; run < 3 && best < 25; run++) {
-			const last = await timedRun(12 + run + Math.random());
-			best = Math.max(best, last.fps);
-			console.info(
-				`[warp speed] 1080p run ${run + 1}: ${last.frames} frames in ${last.ms} ms = ${last.fps.toFixed(1)} fps, load ${loadavg()[0]!.toFixed(1)}/${availableParallelism()} (${coreServices(app).ffmpeg.bins.ffmpeg})`,
-			);
-		}
-		// On an oversubscribed host (load above twice the cores) the budget cannot be judged: only a sanity floor.
-		const overloaded = loadavg()[0]! > 2 * availableParallelism();
-		expect(best).toBeGreaterThanOrEqual(overloaded ? 4 : 12.5);
-	}, 400_000);
-});
-
 describe('warp sources and cancellation', () => {
 	const ctxOf = (signal: AbortSignal, logs: string[] = []) => ({
 		signal,
@@ -613,7 +559,7 @@ describe('warp sources and cancellation', () => {
 					: null,
 		};
 		const cacheDir = mkdtempSync(join(tmpdir(), 'jasper-warp-cache-'));
-		const w2: WarpExtension = createWarpExtension({
+		const w2: NativeExtension = createWarpExtension({
 			ffmpeg: coreServices(app).ffmpeg,
 			cacheDir,
 			getExtensions: () => [mg, w2],

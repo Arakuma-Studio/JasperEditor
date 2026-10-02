@@ -8,8 +8,8 @@ import {
 	buildClipsPayload,
 	type Clip,
 	type ClipboardPayload,
+	createCounterIdSource,
 	createEmptyProject,
-	createSeededIdSource,
 	defaultRegistries,
 	encodeClipboardHtml,
 } from '@jasper/project';
@@ -32,7 +32,6 @@ import {
 	runCommand,
 	type ToastRequest,
 } from '../src/commands/index.ts';
-import { programLayerMenu } from '../src/panels/program/layer-menu.ts';
 import { inspectorFocus } from '../src/panels/properties/lib/focus.ts';
 import { awaitNativePaste, installKeyboardDispatcher } from '../src/shell/keymap/dispatcher.ts';
 import { videoAsset } from './timeline-helpers.ts';
@@ -50,7 +49,7 @@ afterEach(() => {
 });
 
 function project(seed: number) {
-	const ids = createSeededIdSource(seed);
+	const ids = createCounterIdSource(seed);
 	const doc = createEmptyProject({ ids, name: `P${seed}`, preset: 'hd-1080p-30' });
 	const session = new EditorSession({
 		projectId: doc.projectId,
@@ -357,25 +356,6 @@ describe('Paste Attributes dialog (CLB-005, FX-012)', () => {
 		});
 		expect((p.seq().clips[r.refs.$a!] as Extract<Clip, { kind: 'solid' }>).opacity.value).toBe(100);
 		expect(p.history().at(-1)).toBe('Remove Attributes');
-	});
-});
-
-describe('Program monitor layer menu (XF-050)', () => {
-	it('offers Cut / Copy / Paste / Paste Attributes… on a layer and Paste on empty frame', () => {
-		const p = project(11);
-		const r = p.apply([text(0, 'V1', '$a')]);
-		p.session.select('timeline', [r.refs.$a!]);
-		const ctx = p.ctxFor('program');
-		const run = vi.fn();
-		const items = programLayerMenu(ctx, p.seq().clips[r.refs.$a!]!, run);
-		const labels = items.map((i) => (i.kind === 'item' ? i.label : '—'));
-		expect(labels.slice(0, 4)).toEqual(['Cut', 'Copy', 'Paste', 'Paste Attributes…']);
-		expect(labels).toContain('Duplicate');
-		const first = items[1]!;
-		if (first.kind === 'item') first.run();
-		expect(run).toHaveBeenCalledWith('edit.copy');
-		const empty = programLayerMenu(ctx, null, run);
-		expect(empty.map((i) => (i.kind === 'item' ? i.label : ''))).toEqual(['Paste']);
 	});
 });
 

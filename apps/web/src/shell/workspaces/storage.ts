@@ -1,5 +1,5 @@
-// Shell storage (S05:SH-020/021): a versioned key-value adapter. Every persisted shape carries a
-// `version`; unsupported versions and corrupt values are discarded and the caller shows a warning toast.
+// Shell storage (S05:SH-020/021): a versioned key-value adapter. Older values are migrated; newer or
+// corrupt values are discarded and the caller shows a warning toast.
 
 export interface ShellStorage {
 	getItem(key: string): string | null;
@@ -40,12 +40,14 @@ export type LoadResult<T> =
 export type VersionedKey<T> = {
 	key: string;
 	version: number;
-	/** Validates the payload; return null when invalid. */
+	/** Validates the migrated payload; return null when invalid. */
 	parse(data: unknown): T | null;
+	/** Migrates a payload stored at `fromVersion` to the current version (SH-020). */
+	migrate?(data: unknown, fromVersion: number): unknown;
 	fallback(): T;
 };
 
-/** Loads a versioned value; corrupt or newer data discards the key and returns the fallback. */
+/** Loads a versioned value; migrates older data and resets corrupt or newer data. */
 export function loadVersioned<T>(storage: ShellStorage | null, spec: VersionedKey<T>): LoadResult<T> {
 	const raw = storage?.getItem(spec.key) ?? null;
 	if (raw === null) return { status: 'missing', value: spec.fallback() };
@@ -71,10 +73,18 @@ export function loadVersioned<T>(storage: ShellStorage | null, spec: VersionedKe
 		return reset('corrupt');
 	const { version, data } = envelope as { version: number; data: unknown };
 	if (version > spec.version) return reset('newer');
-	if (version < spec.version) return reset('invalid');
+	let payload = data;
+	if (version < spec.version) {
+		if (!spec.migrate) return reset('invalid');
+		try {
+			payload = spec.migrate(data, version);
+		} catch {
+			return reset('invalid');
+		}
+	}
 	let value: T | null = null;
 	try {
-		value = spec.parse(data);
+		value = spec.parse(payload);
 	} catch {
 		value = null;
 	}

@@ -37,7 +37,7 @@ export type AgentSnippet = {
  * Quotes a shell word when it needs it. Double quotes work in POSIX shells, PowerShell and cmd; backslashes
  * stay as they are so Windows paths survive (inside POSIX double quotes `\P` is a literal backslash + P).
  */
-export function shellWord(s: string): string {
+function shellWord(s: string): string {
 	return /^[A-Za-z0-9_@%+=:,./-]+$/.test(s) ? s : `"${s.replace(/(["$`])/g, '\\$1')}"`;
 }
 

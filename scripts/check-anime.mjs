@@ -53,7 +53,7 @@ const BANNED_MODULES =
 	/^animejs\/(?:waapi|events|draggable|layout|timer|animation|animatable|text|easings\/irregular|adapters)(?:\/|$)/;
 const RUNTIME_ONLY_MODULES = /^animejs\/(?:scope|engine)(?:\/|$)/;
 /** Imported names banned everywhere, and outside the runtime only (with the replacement). */
-export const BANNED_NAMES = new Set([
+const BANNED_NAMES = new Set([
 	'animate',
 	'createTimer',
 	'createAnimatable',
@@ -86,7 +86,7 @@ export const BANNED_NAMES = new Set([
 	'text',
 	'utils',
 ]);
-export const RUNTIME_ONLY_NAMES = {
+const RUNTIME_ONLY_NAMES = {
 	createTimeline: 'createPausedTimeline',
 	Timeline: 'createPausedTimeline',
 	createScope: 'useAnimeDom',
@@ -97,7 +97,7 @@ export const RUNTIME_ONLY_NAMES = {
 };
 
 /** Blanks out comments (keeps line numbers); string contents stay. Approximate but enough for this lint. */
-export function stripComments(text) {
+function stripComments(text) {
 	let out = '';
 	let i = 0;
 	let quote = null;
@@ -138,7 +138,7 @@ export function stripComments(text) {
  * Blanks the contents of template literals (keeps line breaks): source code held as data (the scaffolded
  * project's files, ANM-016) is not an import of this file.
  */
-export function blankTemplates(code) {
+function blankTemplates(code) {
 	let out = '';
 	let quote = null;
 	for (let i = 0; i < code.length; i++) {
@@ -170,7 +170,7 @@ const DYNAMIC_RE = /(?:\bimport|\brequire)\s*\(\s*(['"])([^'"]+)\1/g;
  * Imports of a file: `{spec, line, typeOnly, namespace, names: [{imported, local}]}` for static imports and
  * re-exports (multi-line clauses included), dynamic `import()` and `require()`.
  */
-export function parseImports(text) {
+function parseImports(text) {
 	const code = blankTemplates(stripComments(text));
 	const lineAt = (index) => code.slice(0, index).split('\n').length;
 	const out = [];
@@ -234,7 +234,7 @@ const IDENT_CHAR = /[\w$]/;
  * Names along the member/call chain that ends at the `.` at `dot` (`this.tl.add(a).set` → `add`, `tl`, `this`),
  * walking back over balanced `(…)` / `[…]`, whitespace and line breaks.
  */
-export function chainNames(code, dot) {
+function chainNames(code, dot) {
 	const names = [];
 	let i = dot - 1;
 	for (;;) {
@@ -303,7 +303,7 @@ function animeApiRules(rel, timelines) {
  * `false`/`undefined`/`void 0` is unseeded for anime.js (`Math.random`); `0`/`true`/`null` are one constant seed
  * for every clip, not `hash32(clipId, …)` (ANM-007).
  */
-export function hasSeed(args) {
+function hasSeed(args) {
 	if (/(?<=[{,]\s*)seed(?=\s*[,}])/.test(args)) return true;
 	const m = /\bseed\s*:\s*([^,}]*)/.exec(args);
 	return !!m && !/^(?:false|true|null|undefined|void\s+0|[+-]?0+(?:\.0*)?|0[xob]0+|0n)$/.test(m[1].trim());
@@ -371,7 +371,7 @@ function scan(raw, rules) {
  * names annotated `Timeline` or `ReturnType<typeof …Timeline>` (parameters, fields), and `t` in
  * `{ timeline: t }` / `{ tl: t }` (destructuring renames).
  */
-export function timelineIdentifiers(code) {
+function timelineIdentifiers(code) {
 	const ids = new Set();
 	const factories = [String.raw`[\w$]*[Tt]imeline`];
 	const returning =

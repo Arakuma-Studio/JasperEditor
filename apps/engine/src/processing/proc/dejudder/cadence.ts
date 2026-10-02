@@ -55,7 +55,7 @@ function mean(values: number[]): number {
 }
 
 /** `np.convolve(motion, ones(3)/3, 'same')`: 3-tap moving mean with zero padding. */
-export function localMean(motion: readonly number[]): number[] {
+function localMean(motion: readonly number[]): number[] {
 	const n = motion.length;
 	return motion.map((v, i) => ((i > 0 ? motion[i - 1] : 0) + v + (i < n - 1 ? motion[i + 1] : 0)) / 3);
 }
@@ -154,7 +154,7 @@ export function cadenceEvenness(motion: readonly number[], opts: CadenceOptions 
 }
 
 /** Size of the grey analysis proxy for a `width`×`height` input (≤ 424 px wide, even dimensions). */
-export function analysisSize(
+function analysisSize(
 	width: number,
 	height: number,
 	maxWidth = ANALYSIS_MAX_WIDTH,

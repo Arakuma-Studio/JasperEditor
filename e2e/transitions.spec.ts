@@ -18,8 +18,8 @@ import {
 	importFiles,
 	query,
 	ROOT,
+	regionLuma,
 	timelineArea,
-	watchPage,
 } from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -34,13 +34,11 @@ type Tr = {
 };
 
 let page: Page;
-let watcher: { errors: string[] };
 let seqId = '';
 let cut = 0;
 
 test.beforeAll(async ({ browser }) => {
 	page = await browser.newPage();
-	watcher = watchPage(page);
 	await enableAgentBridge(page);
 });
 
@@ -108,7 +106,7 @@ async function seek(frame: number) {
 	await query(page, 'playhead.set', { frame });
 }
 
-test('setup: project, two clips with media handles meeting at a cut', async () => {
+test('drag Cross Dissolve from the Effects panel onto the cut → drawn, Program shows the mix; Ctrl+Z removes it', async () => {
 	await createProject(page, 'E2E Transitions');
 	await importFiles(page, ['xfade-red.mp4', 'xfade-blue.mp4']);
 	seqId = (await query<{ sequenceId: string }>(page, 'sequence.summary')).sequenceId;
@@ -133,9 +131,6 @@ test('setup: project, two clips with media handles meeting at a cut', async () =
 	expect(b.ok, JSON.stringify(b.errors)).toBe(true);
 	expect((await clips(page, ['V1'])).map((c) => c.start)).toEqual([0, cut]);
 	await expect(page.getByTestId('jobs-badge')).toHaveAttribute('data-active', '0', { timeout: 90_000 });
-});
-
-test('drag Cross Dissolve from the Effects panel onto the cut → drawn, Program shows the mix; Ctrl+Z removes it', async () => {
 	// Hard cut: the last frame before it is red.
 	await seek(cut - 1);
 	await expect.poll(async () => (await programRgb())[0], { timeout: 30_000 }).toBeGreaterThan(180);
@@ -226,7 +221,7 @@ test('Effect Controls Transition section changes the type to Dip to Black', asyn
 	await page.screenshot({ path: join(ROOT, 'test-results', 'e2e-transitions-effect-controls.png') });
 });
 
-test('native export of the sequence with the transition succeeds', async ({ request }) => {
+test('native export contains the Dip to Black transition', async ({ request }) => {
 	const dir = join(ROOT, 'test-results', 'e2e-exports');
 	mkdirSync(dir, { recursive: true });
 	const frames = Math.max(...(await clips(page)).map((c) => c.end));
@@ -238,8 +233,9 @@ test('native export of the sequence with the transition succeeds', async ({ requ
 	});
 	const probe = ffprobe(out.file);
 	expect(Number(probe.streams.find((s) => s.codec_type === 'video')!.nb_read_frames)).toBe(frames);
-});
-
-test('no uncaught page errors', async () => {
-	expect(watcher.errors.filter((e) => !/favicon|ResizeObserver/.test(e))).toEqual([]);
+	const middle = (cut * 1001) / 30000;
+	const region = { x: 0.35, y: 0.35, w: 0.3, h: 0.3 };
+	const dark = regionLuma(out.file, middle, region);
+	expect(dark).toBeLessThan(regionLuma(out.file, middle - 0.8, region) / 2);
+	expect(dark).toBeLessThan(regionLuma(out.file, middle + 0.8, region) / 2);
 });

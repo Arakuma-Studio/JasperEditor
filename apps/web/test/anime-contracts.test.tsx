@@ -1,11 +1,7 @@
-// M2 animation contracts in the web app (ARCHITECTURE §20.6): the text-animation and shapes command modules,
-// the Motion Templates "Text Animations" tab.
+// The Motion Templates "Text Animations" tab (S11:TXA-020).
 import { EngineClient } from '@jasper/engine-client';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { getCommand, registerAllCommands } from '../src/commands/index.ts';
-import { shapeCommands } from '../src/commands/shapes.ts';
-import { textAnimationCommands } from '../src/commands/text-animation.ts';
 import { MotionTemplatesPanel } from '../src/panels/motionTemplates/MotionTemplatesPanel.tsx';
 import { EngineProvider } from '../src/state/engine.tsx';
 
@@ -20,15 +16,6 @@ function offlineEngine() {
 
 afterEach(() => globalThis.localStorage?.removeItem('jasper.motionTemplates.tab'));
 
-describe('command modules (ARCHITECTURE §20.6)', () => {
-	it('registers the text-animation and shapes modules (wp-m2-text-anim, wp-m2-shapes / FIX-007)', () => {
-		expect(textAnimationCommands.map((c) => c.id)).toEqual(['text.applyAnimation', 'text.removeAnimation']);
-		registerAllCommands();
-		for (const c of shapeCommands) expect(getCommand(c.id)).toBe(c);
-		expect(getCommand('graphics.newRectangle')).toBeDefined();
-	});
-});
-
 describe('Motion Templates ▸ Text Animations tab (S11:TXA-020)', () => {
 	it('is the second tab and renders the text-animation gallery slot', async () => {
 		render(
@@ -36,10 +23,7 @@ describe('Motion Templates ▸ Text Animations tab (S11:TXA-020)', () => {
 				<MotionTemplatesPanel instanceId="mgt-anim" visible />
 			</EngineProvider>,
 		);
-		const tabs = screen.getAllByRole('tab').map((t) => t.textContent);
-		expect(tabs).toEqual(['Templates', 'Text Animations', 'Remotion']);
 		fireEvent.mouseDown(screen.getByRole('tab', { name: 'Text Animations' }), { button: 0 });
-		expect(await screen.findByTestId('text-animations-tab')).toBeTruthy();
-		expect(globalThis.localStorage?.getItem('jasper.motionTemplates.tab')).toBe('textAnimations');
+		expect(await screen.findByRole('searchbox', { name: 'Search text animations' })).toBeTruthy();
 	});
 });

@@ -35,8 +35,8 @@ export type FlatRow = {
 	posInSet: number;
 };
 
-/** Flattens expanded nodes in display order (exported for tests and custom renderers). */
-export function flattenTree(nodes: readonly TreeNode[], expanded: ReadonlySet<string>): FlatRow[] {
+/** Flattens expanded nodes in display order for the tree renderer. */
+function flattenTree(nodes: readonly TreeNode[], expanded: ReadonlySet<string>): FlatRow[] {
 	const out: FlatRow[] = [];
 	const walk = (list: readonly TreeNode[], depth: number, parentId: string | null) => {
 		list.forEach((node, i) => {

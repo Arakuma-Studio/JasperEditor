@@ -1,6 +1,4 @@
-// Pure transform math of the vid.stab step (unit-testable, no WASM): the geometry of vid.stab's
-// transformPlanar, scaling of detection-resolution transforms, band planning for the parallel warp, and a
-// (slow) TypeScript reference of the 16-bit warp that glue.c's vsx_warp_rgb48 implements with WASM SIMD.
+// Transform math for the vid.stab step: scaling detection transforms and planning bands for the parallel warp.
 import type { VsTransform } from './wasm.ts';
 
 /**
@@ -23,16 +21,6 @@ export function sourcePoint(
 	const dx = x - cx;
 	const dy = y - cy;
 	return [c * dx - s * dy + cx - t.x, s * dx + c * dy + cy - t.y];
-}
-
-/** The same map as a 2×3 affine matrix [a, b, tx, c, d, ty]: x_s = a·x + b·y + tx, y_s = c·x + d·y + ty. */
-export function backwardAffine(t: VsTransform, width: number, height: number): number[] {
-	const z = 1 - t.zoom / 100;
-	const c = z * Math.cos(t.alpha);
-	const s = z * Math.sin(t.alpha);
-	const cx = Math.floor(width / 2);
-	const cy = Math.floor(height / 2);
-	return [c, -s, -c * cx + s * cy + cx - t.x, s, c, -s * cx - c * cy + cy - t.y];
 }
 
 /**
@@ -119,58 +107,4 @@ export function correctionStats(ts: VsTransform[]): {
 		maxAngle,
 		zoom: { min: ts.length ? zmin : 0, max: ts.length ? zmax : 0 },
 	};
-}
-
-/** vid.stab's bicubic kernel (interpolateBiCub: Catmull-Rom, a = −0.5) as the 4 weights of offset t ∈ [0, 1). */
-export function cubicWeights(t: number): [number, number, number, number] {
-	const t2 = t * t;
-	const t3 = t2 * t;
-	return [
-		0.5 * (-t + 2 * t2 - t3),
-		0.5 * (2 - 5 * t2 + 3 * t3),
-		0.5 * (t + 4 * t2 - 3 * t3),
-		0.5 * (-t2 + t3),
-	];
-}
-
-/**
- * Reference implementation of the 16-bit warp (glue.c vsx_warp_rgb48, used by the tests): interleaved rgb48,
- * bicubic with clamped taps; border 'black' fades the edge pixel to black over 10 px outside the frame (like
- * vid.stab's interpolateBiLinBorder with crop=black), 'replicate' clamps.
- */
-export function warpRgb48Reference(
-	src: Uint16Array,
-	width: number,
-	height: number,
-	t: VsTransform,
-	border: 'black' | 'replicate',
-): Uint16Array {
-	const out = new Uint16Array(width * height * 3);
-	const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
-	for (let y = 0; y < height; y++) {
-		for (let x = 0; x < width; x++) {
-			const [xs, ys] = sourcePoint(t, width, height, x, y);
-			const ix = Math.floor(xs);
-			const iy = Math.floor(ys);
-			let fade = 0;
-			if (border === 'black' && (ix < 0 || iy < 0 || ix + 1 >= width || iy + 1 >= height)) {
-				const c = clamp(Math.max(-10 - ix, -10 - iy, ix + 1 - 10 - width, iy + 1 - 10 - height), 0, 10);
-				if (c === 10) continue;
-				fade = c / 10;
-			}
-			const wx = cubicWeights(xs - ix);
-			const wy = cubicWeights(ys - iy);
-			for (let ch = 0; ch < 3; ch++) {
-				let acc = 0;
-				for (let r = 0; r < 4; r++) {
-					const row = clamp(iy - 1 + r, 0, height - 1) * width;
-					let h = 0;
-					for (let k = 0; k < 4; k++) h += wx[k] * src[(row + clamp(ix - 1 + k, 0, width - 1)) * 3 + ch];
-					acc += wy[r] * h;
-				}
-				out[(y * width + x) * 3 + ch] = clamp(Math.floor(acc * (1 - fade) + 0.5), 0, 65535);
-			}
-		}
-	}
-	return out;
 }

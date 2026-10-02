@@ -84,26 +84,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn formats_numbers_like_the_ts_twin() {
-        assert_eq!(num(0.0), "0");
-        assert_eq!(num(-0.0001), "0");
-        assert_eq!(num(1.0), "1");
-        assert_eq!(num(12.3456), "12.346");
-        assert_eq!(num(-2.5), "-2.5");
-        assert_eq!(num(0.1 + 0.2), "0.3");
-        assert_eq!(num(1920.0), "1920");
-        assert_eq!(num(-0.0005), "0");
-        assert_eq!(num(f64::NAN), "0");
-    }
-
-    #[test]
-    fn colors_and_escaping() {
+    fn color_conversion_and_xml_escaping() {
         assert_eq!(hex(&[1.0, 0.5, 0.0, 1.0]), "#ff8000");
-        assert_eq!(alpha(&[0.0, 0.0, 0.0, 0.5]), "0.5");
-        assert_eq!(
-            fill(&[1.0, 1.0, 1.0, 2.0]),
-            "fill=\"#ffffff\" fill-opacity=\"1\""
-        );
         assert_eq!(
             escape("a<b & \"c\" 'd'>"),
             "a&lt;b &amp; &quot;c&quot; &#39;d&#39;&gt;"

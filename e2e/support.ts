@@ -28,16 +28,6 @@ export function serverInfo(): { port: number; appdir: string } {
 	return JSON.parse(readFileSync(join(ROOT, 'test-results', 'e2e-server.json'), 'utf8'));
 }
 
-/** Collects page and console errors so a spec can assert there were none. */
-export function watchPage(page: Page): { errors: string[] } {
-	const errors: string[] = [];
-	page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-	page.on('console', (m) => {
-		if (m.type() === 'error') errors.push(`console: ${m.text()}`);
-	});
-	return { errors };
-}
-
 export async function enableAgentBridge(page: Page): Promise<void> {
 	await page.addInitScript(() => window.localStorage.setItem('jasper:agent-bridge', '1'));
 }
@@ -263,6 +253,7 @@ export async function exportViaUi(
 		outDir: string;
 		/** The plan's blocker list must explain the path choice (S04:RP-010). */
 		expectBlocker?: RegExp;
+		jobTimeoutMs?: number;
 	},
 ): Promise<ExportOutcome> {
 	await focusTimeline(page);
@@ -288,7 +279,7 @@ export async function exportViaUi(
 			return jobId;
 		})
 		.not.toBe('');
-	const job = await waitForJob(request, jobId);
+	const job = await waitForJob(request, jobId, opts.jobTimeoutMs);
 	expect(job.state, JSON.stringify(job.error ?? null)).toBe('succeeded');
 	// Download through the Jobs panel (the export opened it).
 	const jobsPanel = page.getByTestId('jobs-panel');

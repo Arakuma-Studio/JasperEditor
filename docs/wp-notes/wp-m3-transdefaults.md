@@ -55,8 +55,8 @@ No new dependencies.
 
 - `pnpm vitest run --project @jasper/project packages/project/test/transition-defaults.test.ts`
 - `pnpm vitest run --project @jasper/web apps/web/test/transition-defaults.test.tsx` (+ the existing
-  `transitions-*.test.ts(x)`, `shell.test.tsx`, `wiring-audit.test.ts`, `agent-bridge.test.ts`)
-- `pnpm vitest run --project @jasper/mcp apps/mcp/test/transitions.test.ts apps/mcp/test/readme-tools.test.ts`;
+  `transitions-*.test.ts(x)`, `shell.test.tsx`, `agent-bridge.test.ts`)
+- `pnpm vitest run --project @jasper/mcp apps/mcp/test/transitions.test.ts`;
   `MCP_TEST_PORT=48661 pnpm vitest run --project @jasper/mcp apps/mcp/test/integration.test.ts`
 - E2E: after a build (`pnpm e2e` prepares fixtures and builds, but runs every spec), `E2E_PORT=48660 npx playwright test
   e2e/transition-defaults.spec.ts e2e/transitions.spec.ts` (dialog from the

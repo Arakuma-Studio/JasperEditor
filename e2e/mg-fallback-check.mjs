@@ -5,7 +5,7 @@
 //
 //   node e2e/mg-fallback-check.mjs      # after `pnpm build && pnpm mg:build`
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -109,5 +109,8 @@ if (missing.fframes !== 'unavailable' || missing.plan.path !== 'remotion')
 	fail('expected unavailable → remotion');
 if (!missing.plan.blockers.some((b) => /fframes/.test(b.reason)))
 	fail('the remotion plan does not explain why');
+const artifactDir = join(root, 'test-results');
+mkdirSync(artifactDir, { recursive: true });
+writeFileSync(join(artifactDir, 'e2e-mg-fallback.json'), JSON.stringify({ ready, missing }, null, 2));
 console.log('[mg-fallback] PASS');
 process.exit(0);

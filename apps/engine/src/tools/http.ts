@@ -64,7 +64,7 @@ type ByteRange = { start: number; end: number };
  * Parses a `Range` header for a resource of `size` bytes. Returns `null` (serve the whole file) for a
  * missing, malformed or multi-range header, `'unsatisfiable'` for ranges outside the file.
  */
-export function parseRange(header: string | undefined, size: number): ByteRange | null | 'unsatisfiable' {
+function parseRange(header: string | undefined, size: number): ByteRange | null | 'unsatisfiable' {
 	if (!header) return null;
 	const m = /^\s*bytes\s*=\s*(\d*)\s*-\s*(\d*)\s*$/i.exec(header);
 	if (!m) return null; // multi-range or other units: ignore (RFC 9110 allows a full 200)

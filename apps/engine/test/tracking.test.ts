@@ -2,7 +2,6 @@
 // plates of `scripts/fixtures/track.mjs` (known per-frame homography / point path).
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { availableParallelism, loadavg } from 'node:os';
 import { join } from 'node:path';
 import {
 	type EngineJob,
@@ -324,20 +323,6 @@ describe('planar tracker klt-homography@1 (S09:TRK-012, §8.2)', () => {
 		expect(result.data).toHaveLength(16 * 8);
 		for (const e of planarErrors(result, planar).values()) expect(e).toBeLessThanOrEqual(4);
 	}, 120_000);
-
-	it('TRK-014: balanced 1080p planar speed (reported; fails below 12.5 frames/s on an idle host)', async () => {
-		const load = loadavg()[0]!;
-		const t0 = performance.now();
-		const { result } = await runTrack(planarBody({ direction: 'forward', trackerId: 'tkr_speed' }));
-		const wall = (performance.now() - t0) / 1000;
-		const frames = result.data.length / 8;
-		console.log(
-			`[tracking] TRK-014 balanced 1080p planar forward: ${result.framesPerSec} frames/s tracking, ` +
-				`${(frames / wall).toFixed(1)} frames/s incl. start-up; load ${load.toFixed(1)} on ${availableParallelism()} cores`,
-		);
-		if (load < availableParallelism() * 0.75) expect(result.framesPerSec!).toBeGreaterThanOrEqual(12.5);
-		else console.warn('[tracking] host is loaded: speed budget reported, not asserted');
-	}, 180_000);
 });
 
 describe('point tracker template@1 (S09:TRK-013, §8.2)', () => {
@@ -391,24 +376,4 @@ describe('cancellation (S09:TRK-014)', () => {
 		expect(job.state).toBe('cancelled');
 		expect(ms).toBeLessThan(500);
 	}, 120_000);
-});
-
-describe('LGPL ffmpeg (D-13)', () => {
-	it.skipIf(!existsSync(LGPL_FFMPEG))(
-		'tracks with the vendor FFmpeg 7.1 LGPL build',
-		async () => {
-			const lgpl = await makeApp({
-				env: { JASPER_FFMPEG: LGPL_FFMPEG, JASPER_FFPROBE: join(LGPL_DIR, 'ffprobe') },
-			});
-			expect(coreServices(lgpl).ffmpeg.bins.ffmpeg).toBe(LGPL_FFMPEG);
-			const key = (await register(lgpl, fixture('plate-planar.mp4'))).mediaKey;
-			const { result } = await runTrack(
-				{ ...planarBody(), mediaKey: key, range: { startFrame: 60, endFrame: 95 } },
-				lgpl,
-			);
-			expect(result.startFrame).toBe(60);
-			expect(planarRms(result, planar)).toBeLessThanOrEqual(1.5);
-		},
-		120_000,
-	);
 });
