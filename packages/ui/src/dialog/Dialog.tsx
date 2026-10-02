@@ -69,6 +69,9 @@ export function Dialog(props: DialogProps) {
 		const t = e.target as HTMLElement;
 		if (t.tagName === 'TEXTAREA' || t.isContentEditable) return;
 		if (t.tagName === 'BUTTON' && !t.hasAttribute('data-dialog-primary')) return;
+		// Enter on an option of a Select / menu inside the dialog picks that option; React bubbles the event
+		// out of the popup's portal to here, where it must not also run the primary action.
+		if (t.closest('[role="listbox"],[role="menu"],[role="option"],[role="menuitem"]')) return;
 		e.preventDefault();
 		void runPrimary();
 	};
@@ -80,6 +83,11 @@ export function Dialog(props: DialogProps) {
 				<RDialog.Content
 					data-testid={props['data-testid'] ?? 'dialog'}
 					onKeyDown={onKeyDown}
+					// A modal dialog: assistive tech AND the app's keyboard dispatcher (which leaves `[role=dialog]
+					// [aria-modal=true]` alone) must treat it as one — without it, global shortcuts (Space = play,
+					// ↓ = next edit, Enter = render) ran on keys meant for the dialog's controls and swallowed them:
+					// a focused Select could not be opened with Enter / Space / ↓.
+					aria-modal="true"
 					onOpenAutoFocus={(e) => {
 						if (props.initialFocus !== 'primary') return;
 						e.preventDefault();

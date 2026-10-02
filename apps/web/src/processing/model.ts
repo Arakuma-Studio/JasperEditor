@@ -112,15 +112,27 @@ export type DenoisePreset = 'light' | 'medium' | 'strong';
 export const DENOISE_PRESETS: Record<DenoisePreset, number> = { light: 0.25, medium: 0.5, strong: 0.8 };
 export type DenoiseMethod = 'atadenoise' | 'fftdnoiz' | 'nlmeans';
 
+export type StabilizeMethod = 'auto' | 'vidstab' | 'deshake' | 'smoothpath';
+
+/** Smooth-path defaults (the trailer's proven settings: sigma 30 frames, at most 112 %). */
+export const SMOOTH_PATH_DEFAULTS = { pathSmoothing: 30, maxZoom: 112 } as const;
+
 export type ProcessForm = {
 	deblock: { on: boolean; filter: 'weak' | 'strong' };
 	denoise: { on: boolean; method: DenoiseMethod; preset: DenoisePreset };
 	stabilize: {
 		on: boolean;
-		method: 'auto' | 'vidstab' | 'deshake';
+		method: StabilizeMethod;
+		/** vid.stab / deshake: smoothing window (frames). */
 		smoothing: number;
+		/** Smooth path (S07:PST-005): Gaussian sigma of the camera path (frames). */
+		pathSmoothing: number;
 		borders: 'crop' | 'keep';
 		rotation: boolean;
+		lockVertical: boolean;
+		lockRotation: boolean;
+		/** Smooth path: largest static zoom, percent. */
+		maxZoom: number;
 	};
 	dejudder: { on: boolean; mode: 'auto' | 'force' };
 	upscale: {
@@ -142,7 +154,17 @@ export function defaultForm(
 	return {
 		deblock: { on: false, filter: 'weak' },
 		denoise: { on: false, method: opts.denoiseMethod ?? 'atadenoise', preset: 'medium' },
-		stabilize: { on: false, method: 'auto', smoothing: 15, borders: 'crop', rotation: true },
+		stabilize: {
+			on: false,
+			method: 'auto',
+			smoothing: 15,
+			pathSmoothing: SMOOTH_PATH_DEFAULTS.pathSmoothing,
+			borders: 'crop',
+			rotation: true,
+			lockVertical: false,
+			lockRotation: false,
+			maxZoom: SMOOTH_PATH_DEFAULTS.maxZoom,
+		},
 		dejudder: { on: false, mode: 'auto' },
 		upscale: {
 			on: false,
@@ -163,14 +185,27 @@ export function stepsFromForm(f: ProcessForm): ProcessStep[] {
 	if (f.denoise.on)
 		steps.push({ op: 'denoise', method: f.denoise.method, strength: DENOISE_PRESETS[f.denoise.preset] });
 	if (f.dejudder.on) steps.push({ op: 'dejudder', mode: f.dejudder.mode });
-	if (f.stabilize.on)
-		steps.push({
-			op: 'stabilize',
-			method: f.stabilize.method,
-			smoothing: Math.round(Math.min(120, Math.max(1, f.stabilize.smoothing))),
-			borders: f.stabilize.borders,
-			rotation: f.stabilize.rotation,
-		});
+	if (f.stabilize.on) {
+		const st = f.stabilize;
+		if (st.method === 'smoothpath')
+			steps.push({
+				op: 'stabilize',
+				method: 'smoothpath',
+				smoothing: Math.round(Math.min(120, Math.max(1, st.pathSmoothing))),
+				borders: st.borders,
+				lockVertical: st.lockVertical,
+				lockRotation: st.lockRotation,
+				...(st.borders === 'crop' ? { maxZoom: Math.round(Math.min(200, Math.max(100, st.maxZoom))) } : {}),
+			});
+		else
+			steps.push({
+				op: 'stabilize',
+				method: st.method,
+				smoothing: Math.round(Math.min(120, Math.max(1, st.smoothing))),
+				borders: st.borders,
+				rotation: st.rotation,
+			});
+	}
 	if (f.upscale.on && f.upscale.model) {
 		const u: Extract<ProcessStep, { op: 'upscale' }> = {
 			op: 'upscale',
@@ -199,6 +234,7 @@ const SEC_PER_FRAME_720P: Record<string, number> = {
 	'denoise:nlmeans': 0.35,
 	'stabilize:vidstab': 0.05,
 	'stabilize:deshake': 0.03,
+	'stabilize:smoothpath': 0.12,
 	dejudder: 0.12,
 	upscale: 1.2,
 };

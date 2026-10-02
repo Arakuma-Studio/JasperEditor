@@ -140,6 +140,7 @@ function result(): ProcessResult {
 
 const PROCESSING_FEATURES = {
 	stabilize: 'vidstab',
+	smoothPath: 'ready',
 	denoise: ['atadenoise', 'fftdnoiz', 'nlmeans'],
 	deblock: true,
 	dejudder: 'ready',
@@ -277,6 +278,38 @@ describe('processing model helpers', () => {
 		expect(recipeLabel(steps)).toBe('Deblocked · Denoised · De-juddered · Stabilized · Upscaled 2×');
 	});
 
+	it('maps the smooth-path options (sigma, locks, zoom cap only when cropping) — S07:PST-005', () => {
+		const f = defaultForm();
+		f.stabilize.on = true;
+		f.stabilize.method = 'smoothpath';
+		f.stabilize.lockVertical = true;
+		f.stabilize.lockRotation = true;
+		expect(stepsFromForm(f)).toEqual([
+			{
+				op: 'stabilize',
+				method: 'smoothpath',
+				smoothing: 30,
+				borders: 'crop',
+				lockVertical: true,
+				lockRotation: true,
+				maxZoom: 112,
+			},
+		]);
+		f.stabilize.borders = 'keep';
+		f.stabilize.pathSmoothing = 500;
+		expect(stepsFromForm(f)[0]).toEqual({
+			op: 'stabilize',
+			method: 'smoothpath',
+			smoothing: 120,
+			borders: 'keep',
+			lockVertical: true,
+			lockRotation: true,
+		});
+		// the vid.stab smoothing is kept separately
+		f.stabilize.method = 'vidstab';
+		expect(stepsFromForm(f)[0]).toMatchObject({ method: 'vidstab', smoothing: 15, rotation: true });
+	});
+
 	it('estimates more time for slower steps and less on a GPU', () => {
 		const src = { frames: 150, width: 1280, height: 720 };
 		const fast = estimateSeconds([{ op: 'denoise', method: 'atadenoise', strength: 0.5 }], src);
@@ -333,6 +366,59 @@ describe('Process Clip dialog (PRU-001)', () => {
 		});
 		// Followed at module level with the clip to replace.
 		expect(processWatcher.list().map((w) => [w.jobId, w.replaceInClips])).toEqual([['job_1', [videoClip]]]);
+	});
+
+	it('offers Smooth path with its own options and explains when to use each method', async () => {
+		const { session, mediaId, videoClip } = makeSession();
+		const { client, calls } = fakeEngine();
+		render(
+			<EngineProvider client={client} connectEvents={false}>
+				<ProcessDialog
+					session={session}
+					mediaId={mediaId}
+					clipIds={[videoClip]}
+					replaceDefault
+					origin="clip"
+					close={() => {}}
+				/>
+			</EngineProvider>,
+		);
+		await waitFor(() => expect(calls.some((c) => c.url === '/api/processing/models')).toBe(true));
+		fireEvent.click(screen.getByRole('checkbox', { name: 'Stabilize' }));
+		expect(screen.getByTestId('stabilize-method-help').textContent).toContain('handheld');
+		const trigger = screen.getByRole('combobox', { name: 'Stabilize method' });
+		await act(async () => {
+			fireEvent.keyDown(trigger, { key: 'Enter' });
+		});
+		const option = await screen.findByRole('option', { name: 'Smooth path (one even move)' });
+		await act(async () => {
+			fireEvent.keyDown(option, { key: 'Enter' });
+		});
+		const help = screen.getByTestId('stabilize-method-help').textContent ?? '';
+		expect(help).toContain('one sudden reframe or jerk');
+		expect(help).toContain('one fixed zoom');
+		expect(screen.getByTestId('stabilize-path-smoothing').textContent).toBe('30 frames');
+		expect(screen.getByTestId('stabilize-max-zoom').textContent).toBe('112 %');
+		expect(screen.queryByText('Also stabilize rotation (vid.stab)')).toBeNull();
+		fireEvent.click(screen.getByRole('checkbox', { name: 'Vertical (no tilt)' }));
+		fireEvent.click(
+			within(screen.getByTestId('step-stabilize')).getByRole('button', { name: 'Keep (black edges)' }),
+		);
+		expect(screen.queryByTestId('stabilize-max-zoom')).toBeNull();
+		await act(async () => {
+			fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+		});
+		const post = calls.find((c) => c.method === 'POST' && c.url === `/api/media/${KEY}/process`);
+		expect((post?.body as { steps?: unknown[] } | undefined)?.steps).toEqual([
+			{
+				op: 'stabilize',
+				method: 'smoothpath',
+				smoothing: 30,
+				borders: 'keep',
+				lockVertical: true,
+				lockRotation: false,
+			},
+		]);
 	});
 
 	it('shows the model licence line for upscale and the remote option disabled without settings', async () => {

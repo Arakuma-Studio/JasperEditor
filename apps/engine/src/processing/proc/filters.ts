@@ -45,7 +45,8 @@ export const GPL_FILTERS = [
 /** Filter names used in a filtergraph text (the token before `=` / `,` / `;` / `[`). */
 function filterNames(graph: string): string[] {
 	const out: string[] = [];
-	for (const part of graph.split(/[,;]/)) {
+	// Quoted option values (geq expressions) may contain commas: drop them before splitting.
+	for (const part of graph.replace(/'[^']*'/g, "''").split(/[,;]/)) {
 		const m = /^\s*(?:\[[^\]]*\]\s*)*([a-z0-9_]+)/i.exec(part);
 		if (m) out.push(m[1]);
 	}
@@ -100,24 +101,41 @@ export function createDeblockStep(step: Extract<ProcessStep, { op: 'deblock' }>)
 /** Fixed centre crop of the deshake fallback for `borders: 'crop'` (deshake has no optimal zoom). */
 const DESHAKE_CROP = 0.04;
 
+/**
+ * deshake works on 8-bit YUV only, and its `edge=blank` fills uncovered pixels with 0 in EVERY plane — green in
+ * YUV (U = V = 0), not black. So the step runs deshake on the R'G'B' planes carried in a yuv444p frame
+ * (`mergeplanes` only relabels the planes: G→Y, B→U, R→V, no conversion): blank is then true black, motion is
+ * estimated on G, and no YUV range is involved at all — FFmpeg 6.1 converted the full-range yuv444p of the
+ * former crop + scale to TV range, which the next stage read as full range (blacks 16, whites 235; measured).
+ */
 function deshakeFilter(
 	step: Extract<ProcessStep, { op: 'stabilize' }>,
 	size: { width: number; height: number },
 ): string {
 	const edge = step.borders === 'crop' ? 'clamp' : 'blank';
-	const base = `deshake=edge=${edge}:rx=32:ry=32:blocksize=8:contrast=125`;
-	if (step.borders !== 'crop') return base;
-	// Crop 4 % (even sizes) centred, then scale back to the input size.
-	const cw = Math.round((size.width * (1 - DESHAKE_CROP)) / 2) * 2;
-	const ch = Math.round((size.height * (1 - DESHAKE_CROP)) / 2) * 2;
-	return `${base},crop=${cw}:${ch}:${(size.width - cw) / 2}:${(size.height - ch) / 2},scale=${size.width}:${size.height}:flags=bicubic`;
+	const parts = [
+		'format=gbrp',
+		'mergeplanes=0x000102:yuv444p',
+		`deshake=edge=${edge}:rx=32:ry=32:blocksize=8:contrast=125`,
+		'mergeplanes=0x000102:gbrp',
+	];
+	if (step.borders === 'crop') {
+		// Crop 4 % (even sizes) centred, then scale back to the input size (in RGB: no range to lose).
+		const cw = Math.round((size.width * (1 - DESHAKE_CROP)) / 2) * 2;
+		const ch = Math.round((size.height * (1 - DESHAKE_CROP)) / 2) * 2;
+		parts.push(
+			`crop=${cw}:${ch}:${(size.width - cw) / 2}:${(size.height - ch) / 2}`,
+			`scale=${size.width}:${size.height}:flags=bicubic:in_range=pc:out_range=pc`,
+		);
+	}
+	return parts.join(',');
 }
 
 export function createDeshakeStep(step: Extract<ProcessStep, { op: 'stabilize' }>): FilterStep {
 	return {
 		name: 'stabilize(deshake)',
-		// deshake is 8-bit YUV only.
-		format: 'yuv444p',
+		// 16-bit RGB in; the filter goes to 8-bit planar RGB for deshake (8-bit only) and back.
+		format: 'rgb48le',
 		filter: (ctx: StepContext) => deshakeFilter(step, ctx),
 	};
 }

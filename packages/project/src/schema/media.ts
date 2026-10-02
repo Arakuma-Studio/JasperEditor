@@ -89,9 +89,13 @@ export type MediaLocator = DeepStrip<z.infer<typeof MediaLocatorSchema>>;
 export const ProcessStepSchema = z.discriminatedUnion('op', [
 	z.looseObject({
 		op: z.literal('stabilize'),
-		/** `auto` = vid.stab when the FFmpeg build has it, else `deshake`. */
-		method: z.enum(['auto', 'vidstab', 'deshake']),
-		/** Camera-path smoothing radius in frames. */
+		/**
+		 * `auto` = vid.stab (WASM), else `deshake`. `smoothpath` (S07:PST-005) = background tracking + one
+		 * Gaussian-smoothed camera path + one static zoom for the whole shot: for a sudden reframe / jerk or a
+		 * slow drift that should become an even move.
+		 */
+		method: z.enum(['auto', 'vidstab', 'deshake', 'smoothpath']),
+		/** Camera-path smoothing in frames: vid.stab's window radius; the Gaussian sigma for `smoothpath`. */
 		smoothing: z.number().int().min(1).max(120),
 		/** `crop` zooms in just enough to hide the moving borders; `keep` leaves them (black). */
 		borders: z.enum(['crop', 'keep']),
@@ -99,6 +103,15 @@ export const ProcessStepSchema = z.discriminatedUnion('op', [
 		shakiness: z.number().int().min(1).max(10).optional(),
 		/** Also stabilize rotation (vid.stab only). */
 		rotation: z.boolean().optional(),
+		/** `smoothpath`: the vertical camera path becomes a straight line (no intended tilt). */
+		lockVertical: z.boolean().optional(),
+		/** `smoothpath`: the roll becomes a straight line (no intended rotation). */
+		lockRotation: z.boolean().optional(),
+		/**
+		 * `smoothpath` with `borders: 'crop'`: largest static zoom in percent (default 112). When the requested
+		 * smoothing needs more, the largest smoothing that fits is used and the job notes say so.
+		 */
+		maxZoom: z.number().min(100).max(200).optional(),
 	}),
 	z.looseObject({
 		op: z.literal('dejudder'),

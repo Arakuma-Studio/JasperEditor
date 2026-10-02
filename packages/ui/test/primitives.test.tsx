@@ -8,6 +8,7 @@ import {
 	cursorCss,
 	cursorSvg,
 	customGlyphIds,
+	Dialog,
 	DropdownMenu,
 	evaluateEntry,
 	ForcedCursorLayer,
@@ -20,6 +21,7 @@ import {
 	type ResolvedMenuItem,
 	rgbaToHex,
 	ScrubbyNumber,
+	Select,
 	scrubDelta,
 	TimecodeField,
 	ToastStore,
@@ -423,5 +425,55 @@ describe('icons, cursors and tooltips (S05:IC-004/010/011, TT-002)', () => {
 		expect(parseHex('#ff0000')).toEqual([1, 0, 0, 1]);
 		expect(rgbaToHex([0, 1, 0, 0.5], true)).toBe('#00ff0080');
 		expect(parseHex('zzz')).toBeNull();
+	});
+});
+
+describe('Dialog Enter key (S05)', () => {
+	it('Enter runs the primary action, but not when it picks an option of a Select inside the dialog', async () => {
+		const onPrimary = vi.fn(() => false);
+		function Host() {
+			const [v, setV] = useState('a');
+			return (
+				<Dialog open onOpenChange={() => {}} title="T" primaryLabel="Go" onPrimary={onPrimary}>
+					<Select
+						label="Pick"
+						value={v}
+						onValueChange={setV}
+						options={[
+							{ value: 'a', label: 'Alpha' },
+							{ value: 'b', label: 'Beta' },
+						]}
+					/>
+					<input aria-label="field" />
+				</Dialog>
+			);
+		}
+		render(<Host />);
+		const trigger = screen.getByRole('combobox', { name: 'Pick' });
+		await act(async () => {
+			fireEvent.keyDown(trigger, { key: 'Enter' });
+		});
+		const option = await screen.findByRole('option', { name: 'Beta' });
+		await act(async () => {
+			fireEvent.keyDown(option, { key: 'Enter' });
+		});
+		expect(onPrimary).not.toHaveBeenCalled();
+		expect(screen.getByRole('combobox', { name: 'Pick' }).textContent).toContain('Beta');
+		await act(async () => {
+			fireEvent.keyDown(screen.getByRole('textbox', { name: 'field' }), { key: 'Enter' });
+		});
+		expect(onPrimary).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe('Dialog is modal for assistive tech and keyboard dispatchers (S05)', () => {
+	it('sets aria-modal on the dialog element', () => {
+		render(
+			<Dialog open onOpenChange={() => {}} title="M" primaryLabel="Go" onPrimary={() => false}>
+				<span>body</span>
+			</Dialog>,
+		);
+		const el = screen.getByRole('dialog');
+		expect(el.getAttribute('aria-modal')).toBe('true');
 	});
 });

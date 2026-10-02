@@ -1,4 +1,5 @@
-// De-judder worker thread (S07:PST-013/014): OpenCV.js (WASM) optical flow + backward warp.
+// OpenCV.js worker thread of jasper-proc: de-judder optical flow + backward warp (S07:PST-013/014) and the
+// sparse feature tracking of the smooth-path stabiliser (S07:PST-005, `track`).
 //
 // Plain ESM JavaScript on purpose: worker threads cannot run TypeScript under Node 20 without a loader, and
 // this file must run unchanged from the source tree (tests, tsx) AND be bundled by esbuild into
@@ -182,6 +183,77 @@ function warp(msg) {
 	}
 }
 
+/**
+ * Sparse feature tracking between two grey frames (smooth-path stabiliser, PST-005): Shi-Tomasi corners on
+ * `a` (`goodFeaturesToTrack`), pyramidal Lucas-Kanade into `b`. Returns the tracked pairs (status 1) as
+ * interleaved x,y Float32Arrays; the similarity fit (RANSAC) runs in the main thread (smoothpath/math.ts).
+ */
+function track(msg) {
+	const { width: w, height: h, a, b, params: p } = msg;
+	const ma = new cv.Mat(h, w, cv.CV_8UC1);
+	const mb = new cv.Mat(h, w, cv.CV_8UC1);
+	const p0 = new cv.Mat();
+	const p1 = new cv.Mat();
+	const st = new cv.Mat();
+	const err = new cv.Mat();
+	const none = new cv.Mat();
+	try {
+		ma.data.set(a);
+		mb.data.set(b);
+		cv.goodFeaturesToTrack(ma, p0, p.maxCorners, p.quality, p.minDistance, none, 3, false, 0.04);
+		const n = p0.rows;
+		if (n === 0) return { p0: new Float32Array(0), p1: new Float32Array(0), corners: 0 };
+		const crit = new cv.TermCriteria(cv.TermCriteria_COUNT + cv.TermCriteria_EPS, 30, 0.01);
+		cv.calcOpticalFlowPyrLK(ma, mb, p0, p1, st, err, new cv.Size(p.winSize, p.winSize), p.maxLevel, crit);
+		const s = st.data;
+		const f0 = p0.data32F;
+		const f1 = p1.data32F;
+		let k = 0;
+		for (let i = 0; i < n; i++) if (s[i] === 1) k++;
+		const o0 = new Float32Array(2 * k);
+		const o1 = new Float32Array(2 * k);
+		for (let i = 0, j = 0; i < n; i++) {
+			if (s[i] !== 1) continue;
+			o0[j] = f0[2 * i];
+			o0[j + 1] = f0[2 * i + 1];
+			o1[j] = f1[2 * i];
+			o1[j + 1] = f1[2 * i + 1];
+			j += 2;
+		}
+		return { p0: o0, p1: o1, corners: n };
+	} finally {
+		for (const m of [ma, mb, p0, p1, st, err, none]) m.delete();
+	}
+}
+
+/**
+ * Similarity / affine warp of an rgb48 frame (smooth-path stabiliser fallback, PST-005): `m` is the BACKWARD map
+ * (output pixel → source pixel) as [a, b, c, d, e, f]; bicubic, replicated or black borders.
+ */
+function warpAffine(msg) {
+	const { width: w, height: h, data, m, border } = msg;
+	const src = new cv.Mat(h, w, cv.CV_16UC3);
+	const dst = new cv.Mat();
+	const M = cv.matFromArray(2, 3, cv.CV_64F, m);
+	try {
+		src.data16U.set(data);
+		cv.warpAffine(
+			src,
+			dst,
+			M,
+			new cv.Size(w, h),
+			cv.INTER_CUBIC | cv.WARP_INVERSE_MAP,
+			border === 1 ? cv.BORDER_REPLICATE : cv.BORDER_CONSTANT,
+			new cv.Scalar(0, 0, 0, 0),
+		);
+		return new Uint16Array(dst.data16U);
+	} finally {
+		src.delete();
+		dst.delete();
+		M.delete();
+	}
+}
+
 async function main() {
 	const port = parentPort;
 	if (!port) throw new Error('dejudder worker: not running in a worker thread');
@@ -195,6 +267,12 @@ async function main() {
 		try {
 			if (msg.type === 'motion') {
 				port.postMessage({ type: 'motion', id: msg.id, ...motion(msg) });
+			} else if (msg.type === 'warpAffine') {
+				const data = warpAffine(msg);
+				port.postMessage({ type: 'warp', id: msg.id, data }, [data.buffer]);
+			} else if (msg.type === 'track') {
+				const r = track(msg);
+				port.postMessage({ type: 'track', id: msg.id, ...r }, [r.p0.buffer, r.p1.buffer]);
 			} else if (msg.type === 'warp') {
 				const data = warp(msg);
 				port.postMessage({ type: 'warp', id: msg.id, data }, [data.buffer]);

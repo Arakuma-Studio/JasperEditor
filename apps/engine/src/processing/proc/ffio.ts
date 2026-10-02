@@ -83,7 +83,11 @@ export async function* decodeFrames(
 	const filters: string[] = [];
 	if (spec.vf) filters.push(spec.vf);
 	if (opts.vf) filters.push(opts.vf);
-	if (w !== spec.width || h !== spec.height) filters.push(`scale=${w}:${h}:flags=area`);
+	if (w !== spec.width || h !== spec.height) {
+		// Keep the range: FFmpeg 6.1 converts full-range YUV to TV range in a scale without an output range.
+		const r = spec.matrix ? (spec.range ?? 'tv') : 'pc';
+		filters.push(`scale=${w}:${h}:flags=area:in_range=${r}:out_range=${r}`);
+	}
 	filters.push(conversionFilter(spec, opts.pixFmt));
 	const child = spawnFfmpeg(spec.ffmpeg, [
 		...spec.inputArgs,

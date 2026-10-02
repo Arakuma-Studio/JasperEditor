@@ -157,6 +157,7 @@ export class ProcessingService {
 		}
 		return {
 			stabilize: native || wasm ? 'vidstab' : filters.has('deshake') ? 'deshake' : 'none',
+			smoothPath: dejudder === 'ready' ? 'ready' : 'unavailable',
 			denoise: (['atadenoise', 'fftdnoiz', 'nlmeans'] as const).filter((f) => filters.has(f)),
 			deblock: filters.has('deblock'),
 			dejudder,
