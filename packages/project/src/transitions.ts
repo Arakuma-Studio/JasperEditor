@@ -63,6 +63,20 @@ export function transitionSpec(effectId: string): TransitionSpec | null {
 	return TRANSITION_SPECS.find((s) => s.id === effectId) ?? null;
 }
 
+/**
+ * The project's default transition length for a medium, in frames (S10:TUI-032): video
+ * `settings.defaultTransitionFrames`, audio `settings.defaultAudioTransitionFrames` (falls back to the video
+ * length in projects that do not have it).
+ */
+export function defaultTransitionFrames(
+	settings: Pick<ProjectDocument['settings'], 'defaultTransitionFrames' | 'defaultAudioTransitionFrames'>,
+	medium: 'video' | 'audio',
+): number {
+	return medium === 'audio'
+		? (settings.defaultAudioTransitionFrames ?? settings.defaultTransitionFrames)
+		: settings.defaultTransitionFrames;
+}
+
 const EPS = FRAME_EPS;
 /** Kinds whose picture does not depend on content time: they have handles on both sides (TRN-003). */
 const STATIC_KINDS = new Set(['still', 'solid', 'text']);

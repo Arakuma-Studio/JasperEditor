@@ -1,7 +1,10 @@
 // Edit ▸ Preferences (S07:PRU-004): a dialog shell with the registered pages listed on the left
 // (`registerPreferencesPage`) and the selected page on the right. Pages apply or save their own settings
 // (UI preferences apply immediately; engine settings have their own Save button because the engine validates
-// them), so the dialog has no OK/Cancel footer.
+// them), so the dialog has no OK/Cancel footer. The opener passes the editor session when a project is open
+// (`session`, M3): pages read it with `useSessionOrNull()` for project-scoped settings (Timeline ▸ durations).
+import type { EditorSession } from '@jasper/session';
+import { SessionProvider } from '@jasper/session/react';
 import { cx, Dialog, type HostedDialogProps, registerDialog } from '@jasper/ui';
 import { useState } from 'react';
 import { useRegistry } from '../../extensions/react.ts';
@@ -10,7 +13,9 @@ import { preferencesPages, registerPreferencesPage } from './registry.ts';
 
 export const PREFERENCES_DIALOG = 'shell.preferences';
 
-export function PreferencesDialog(props: HostedDialogProps<{ page?: string }>) {
+export function PreferencesDialog(
+	props: HostedDialogProps<{ page?: string; session?: EditorSession | null }>,
+) {
 	const pages = useRegistry(preferencesPages);
 	const [selected, setSelected] = useState<string | undefined>(props.page);
 	const current = pages.find((p) => p.id === selected) ?? pages[0];
@@ -45,7 +50,9 @@ export function PreferencesDialog(props: HostedDialogProps<{ page?: string }>) {
 				</nav>
 				<div className="min-w-0 flex-1 overflow-auto p-4" data-testid="preferences-page">
 					{current ? (
-						<current.component />
+						<SessionProvider session={props.session ?? null}>
+							<current.component />
+						</SessionProvider>
 					) : (
 						<p className="text-pr-muted">No preference pages are registered.</p>
 					)}

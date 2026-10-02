@@ -24,6 +24,7 @@ import {
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { createStore, type StoreApi } from 'zustand/vanilla';
+import { transitionPreferences } from '../panels/effects/transition-prefs.ts';
 import { AgentRelayClient, type RelaySocketFactory, type RelayState } from './relay-client.ts';
 
 const APPROVAL_TIMEOUT_MS = 60_000;
@@ -265,6 +266,8 @@ export class AgentBridge {
 				},
 				history: () => ({ entries: s.getState().history.entries, position: s.getState().history.index }),
 				mediaRuntime: (id: string) => s.getState().media[id] ?? null,
+				// M3 (S10:TUI-034): the user's default transitions, so agents apply the same ones as Ctrl+D.
+				preferences: () => ({ transitions: transitionPreferences() }),
 			},
 		};
 	}

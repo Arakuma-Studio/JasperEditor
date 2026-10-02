@@ -167,6 +167,7 @@ describe('jasper-mcp over stdio against a real engine', () => {
 			'update_transition',
 			'remove_transitions',
 			'apply_default_transitions',
+			'set_transition_defaults',
 			'get_timeline',
 			'render_frame',
 			'get_playhead',
@@ -413,11 +414,58 @@ describe('jasper-mcp over stdio against a real engine', () => {
 			['cross-dissolve', 270, true, 8],
 		]);
 		expect(applied.transitions.some((x) => x.track === 'A1')).toBe(true);
-		const all = await list();
-		expect(all.map((x) => x.id)).not.toContain(id);
+		expect((await list()).map((x) => x.id)).not.toContain(id);
 		expect((await list({ from: 260, to: 275 })).every((x) => x.cut === 270)).toBe(true);
 
+		// M3 (S10:TUI-032…034): headless there is no editor, so the built-in types are used; the alignment
+		// is an argument; the project's per-medium lengths come from set_transition_defaults (one entry).
+		const before = (await list()).map((x) => x.id);
+		const set = await ok<{ defaults: Record<string, number>; changed?: string[] }>(
+			'set_transition_defaults',
+			{
+				projectId,
+				videoDurationFrames: 12,
+				audioDurationFrames: 6,
+				stillDurationSeconds: 4,
+			},
+		);
+		expect(set.defaults).toEqual({
+			videoDurationFrames: 12,
+			audioDurationFrames: 6,
+			stillDurationSeconds: 4,
+		});
+		expect((await fails('set_transition_defaults', { projectId })).code).toBe('E_INVALID_PARAM');
+		const listed = await ok<{ defaultTransitionFrames: number; defaultAudioTransitionFrames: number }>(
+			'list_transitions',
+			{ projectId },
+		);
+		expect(listed).toMatchObject({ defaultTransitionFrames: 12, defaultAudioTransitionFrames: 6 });
+		const ends = await ok<{ transitions: T[]; defaults: Record<string, unknown> }>(
+			'apply_default_transitions',
+			{
+				projectId,
+				clipIds: [left.id],
+				edges: 'out',
+				media: ['video', 'audio'],
+				alignment: 'end-at-cut',
+			},
+		);
+		expect(ends.defaults).toMatchObject({
+			video: 'jasper.cross-dissolve',
+			audio: 'jasper.constant-power',
+			alignment: 'end-at-cut',
+			durationFrames: { video: 12, audio: 6 },
+			source: 'built-in',
+		});
+		const atCut = ends.transitions.filter((x) => x.cut === 150);
+		expect(atCut.map((x) => [x.track, x.alignment, x.duration]).sort()).toEqual([
+			['A1', 'end-at-cut', 6],
+			['V1', 'end-at-cut', 12],
+		]);
+		expect(before.length).toBeGreaterThan(0);
+
 		// Remove them all again: the export below renders plain cuts.
+		const all = await list();
 		const removed = await ok<{ removed: string[]; deleted: string[] }>('remove_transitions', {
 			projectId,
 			transitionIds: all.map((x) => x.id),

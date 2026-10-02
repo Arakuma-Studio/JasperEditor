@@ -348,7 +348,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (69; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (70; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -361,7 +361,8 @@ Tools (69; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the
 - Remotion projects: `import_mg_bundle` `list_compositions` `add_composition` `set_composition_props`
   `prerender_composition` `scaffold_mg_project`.
 - Tracking: `add_tracker` `track` `apply_tracking` `get_tracker` `set_corner_pin`.
-- Transitions: `list_transitions` `update_transition` `remove_transitions` `apply_default_transitions`.
+- Transitions: `list_transitions` `update_transition` `remove_transitions` `apply_default_transitions`
+  `set_transition_defaults`.
 - Animation and graphics: `list_text_animations` `set_text_animation` `render_frames` `set_motion_graphic_params`
   `add_shape`.
 - Clipboard: `copy_clips` `paste_clips` `copy_items` `paste_items`.
@@ -442,6 +443,25 @@ Rectangles and ellipses are `shape` clips (S11 §7, `docs/wp-notes/wp-m2-shapes.
   layer bake they export natively. Agents use `add_shape`, or `clip.update {shape}` / `param.set` on `shape.*`.
 - Tests: `e2e/shapes.spec.ts`; pixel check against an analytic reference with
   `REMOTION_E2E=1 pnpm vitest run apps/engine/test/shapes-remotion.e2e.test.ts`.
+
+## Transitions and their defaults
+
+Drag a transition from Effects ▸ Video Transitions / Audio Transitions onto a cut, or use the default-transition
+keys: **Ctrl+D** (video), **Ctrl+Shift+D** (audio), **Shift+D** (both, on the selected clips) — also in the
+Sequence menu and the clip menu (Apply Default Transitions). **Sequence ▸ Transition Defaults…** (= Edit ▸
+Preferences ▸ Timeline) sets what they create:
+
+- *Default transitions — this computer* (a user preference, not in the project, not in History): the default
+  video and audio transition (also "Set Selected as Default Transition" in the Effects panel and the transition
+  context menu; the default has a blue outline in the Effects panel) and the alignment of transitions between two
+  clips (Center / Start / End at Cut).
+- *Default durations — this project* (saved with the project; each change is one History step): video
+  transition, audio transition and still image default durations, in frames or seconds (seconds are converted at
+  the active sequence's frame rate and rounded to whole frames).
+
+Agents use the same defaults: `apply_default_transitions` takes the editor's default types and alignment when the
+project is open in the editor (otherwise cross dissolve / constant power / center, or what the call passes), and
+`set_transition_defaults` changes the project's durations.
 
 ## Clipboard
 

@@ -130,6 +130,9 @@ export function effectTree(
  *   DataTransfer[JASPER_TRANSITION_MIME] = JSON.stringify({ type: 'jasper/transition', effectId })
  * plus a `jasper-transition:<effectId>` text/plain fallback. The timeline resolves the drop target while
  * dragging (data is unreadable during dragover, so the id is also kept in `activeTransitionDrag()`).
+ * M3 (additive): the id is also encoded in a type name, `application/x-jasper-transition-id.<effectId>`,
+ * because types (not data) are readable during dragover — a drag from another window of the app can show
+ * its ghost too (`transitionDragId(dt)`).
  */
 type TransitionDragPayload = { type: 'jasper/transition'; effectId: string };
 
@@ -141,13 +144,26 @@ export function writeTransitionDragPayload(dt: DataTransfer, effectId: string): 
 	const payload: TransitionDragPayload = { type: 'jasper/transition', effectId };
 	dt.setData(JASPER_TRANSITION_MIME, JSON.stringify(payload));
 	dt.setData('text/plain', `jasper-transition:${effectId}`);
+	dt.setData(`${TRANSITION_ID_TYPE_PREFIX}${effectId.toLowerCase()}`, effectId);
 	dt.effectAllowed = 'copy';
 	dragging = effectId;
 }
 
+const TRANSITION_ID_TYPE_PREFIX = 'application/x-jasper-transition-id.';
+
 /** The transition being dragged in this window (set on dragstart, cleared on dragend). */
 export function activeTransitionDrag(): string | null {
 	return dragging;
+}
+
+/**
+ * The dragged transition's id during dragover: this window's drag, else the id encoded in the types (a drag
+ * from another window; type names are lower-cased by browsers, effect ids are lower case).
+ */
+export function transitionDragId(dt: DataTransfer | null): string | null {
+	if (dragging) return dragging;
+	const t = Array.from(dt?.types ?? []).find((x) => x.startsWith(TRANSITION_ID_TYPE_PREFIX));
+	return t ? t.slice(TRANSITION_ID_TYPE_PREFIX.length) : null;
 }
 export function endTransitionDrag(): void {
 	dragging = null;

@@ -6,12 +6,20 @@
 // through `transition.applyDefault` with the M2 fields. TUI-015: Delete / Backspace with transitions selected
 // removes them (the Timeline's Clear / Ripple Delete are wrapped: with no transition selected they run as
 // before). TUI-046: the clip context menu gains "Apply Default Transitions".
+// M3 (wp-m3-transdefaults, TUI-031…033): Sequence ▸ Transition Defaults… opens Edit ▸ Preferences ▸ Timeline
+// (registered here): the user's default types and alignment, the project's default durations.
 import type { Clip, Sequence, TransactionResult } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { clipMenuExtensions } from '../extensions/index.ts';
-import { transitionDefaults } from '../panels/effects/transition-prefs.ts';
+import { defaultTransitionFields } from '../panels/effects/transition-prefs.ts';
 import { activeTimeline } from '../panels/timeline/env.tsx';
 import { nearestEditPoint } from '../panels/timeline/model/transitions.ts';
+import {
+	PREFERENCES_DIALOG,
+	registerPreferencesDialog,
+	registerPreferencesPage,
+} from '../shell/preferences/index.ts';
+import { TimelinePreferencesPage } from '../transitions/TimelinePreferencesPage.tsx';
 import { timelineCommands } from './timeline.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
@@ -67,12 +75,7 @@ function defaultTransitionCommands(
 	media: readonly Medium[],
 	requireSelection: boolean,
 ): Record<string, unknown>[] {
-	const prefs = transitionDefaults().getState();
-	const fields = {
-		media: [...media],
-		...(media.includes('video') ? { videoEffectId: prefs.video } : {}),
-		...(media.includes('audio') ? { audioEffectId: prefs.audio } : {}),
-	};
+	const fields = defaultTransitionFields(media);
 	const clips = selectedClips(e, media);
 	if (clips.length)
 		return [{ type: 'transition.applyDefault', clipIds: clips.map((c) => c.id), edges: 'both', ...fields }];
@@ -160,6 +163,20 @@ function withTransitionClear(id: string): UiCommand[] {
 
 const T = 'timeline' as const;
 
+/** Opens Edit ▸ Preferences at the Timeline page (with the session for the project-scoped durations). */
+function openTimelinePreferences(ctx: CommandCtx): void {
+	registerPreferencesDialog();
+	ctx.ui.openDialog(PREFERENCES_DIALOG, { page: TIMELINE_PREFS_PAGE, session: ctx.session ?? null });
+}
+
+export const TIMELINE_PREFS_PAGE = 'timeline';
+registerPreferencesPage({
+	id: TIMELINE_PREFS_PAGE,
+	title: 'Timeline',
+	order: 20,
+	component: TimelinePreferencesPage,
+});
+
 export const transitionCommands: UiCommand[] = [
 	{
 		id: 'timeline.applyDefaultVideoTransition',
@@ -191,35 +208,13 @@ export const transitionCommands: UiCommand[] = [
 		run: (ctx) => void applyDefaults(ctx, ['video', 'audio'], 'Apply Default Transitions', true),
 	},
 	{
-		// TUI-031 (P1): the project's default transition duration (Sequence ▸ Transition Defaults…).
+		// TUI-031 (P1): Sequence ▸ Transition Defaults… → Edit ▸ Preferences ▸ Timeline.
 		id: 'sequence.transitionDefaults',
 		label: 'Transition Defaults…',
-		description: 'Set the default transition duration of the project (frames)',
+		description:
+			'Default video and audio transitions, their alignment, and the default transition and still durations (Preferences ▸ Timeline)',
 		scope: 'global',
-		when: (ctx) => !!ctx.session,
-		run: (ctx) => {
-			const session = ctx.session;
-			if (!session || typeof window === 'undefined') return;
-			const cur = session.getCommitted().settings.defaultTransitionFrames;
-			const text = window.prompt('Default transition duration (frames)', String(cur));
-			if (text === null) return;
-			const n = Math.round(Number(text.trim()));
-			if (!Number.isFinite(n) || n < 1) {
-				ctx.ui.toast({ kind: 'warning', message: `Not a duration: ${text}` });
-				return;
-			}
-			const r = session.apply({
-				label: 'Transition Defaults',
-				origin: 'user',
-				commands: [{ type: 'project.updateSettings', settings: { defaultTransitionFrames: n } }] as never[],
-			});
-			if (!r.ok)
-				ctx.ui.toast({
-					kind: 'warning',
-					message: 'Transition Defaults: not possible',
-					detail: r.errors[0]?.message,
-				});
-		},
+		run: (ctx) => openTimelinePreferences(ctx),
 	},
 	...withTransitionClear('timeline.clear'),
 	...withTransitionClear('timeline.rippleDelete'),
@@ -232,7 +227,6 @@ clipMenuExtensions.register({
 	items: ({ session, clip, selection }) => {
 		const ids = selection.includes(clip.id) ? [...selection] : [clip.id];
 		const run = (edges: 'in' | 'out' | 'both') => {
-			const prefs = transitionDefaults().getState();
 			const r = session.apply({
 				label: 'Apply Default Transitions',
 				origin: 'user',
@@ -241,9 +235,7 @@ clipMenuExtensions.register({
 						type: 'transition.applyDefault',
 						clipIds: ids,
 						edges,
-						media: ['video', 'audio'],
-						videoEffectId: prefs.video,
-						audioEffectId: prefs.audio,
+						...defaultTransitionFields(['video', 'audio']),
 					},
 				] as never[],
 			});

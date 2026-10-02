@@ -3,7 +3,10 @@
 // editing.ts. Every edit is one transaction, i.e. one "Agent: <label>" History entry.
 import {
 	type Clip,
+	CONSTANT_POWER,
+	CROSS_DISSOLVE,
 	clipHandles,
+	defaultTransitionFrames,
 	linkedPartners,
 	type ProjectDocument,
 	type Sequence,
@@ -34,7 +37,8 @@ import { ProjectIdArg } from './projects.ts';
 
 /** Appended to the server instructions (EDITING_GUIDE). */
 export const TRANSITION_GUIDE = `Transitions:
-- add_transition adds one at an edit point (track + at) or a fade at a clip edge (clipId + edge). apply_default_transitions puts the default transition (cross-dissolve / constant-power, the project's default length) on every edge of the given clips in one step; pass media: ["video", "audio"] to include the linked audio.
+- add_transition adds one at an edit point (track + at) or a fade at a clip edge (clipId + edge). apply_default_transitions puts the default transitions on every edge of the given clips in one step (the editor user's default types and alignment from Preferences ▸ Timeline when the editor is open, else cross-dissolve / constant-power, center; the project's default length per medium); pass media: ["video", "audio"] to include the linked audio.
+- set_transition_defaults changes the project's default lengths (video and audio transitions, stills); the default types and alignment are the user's preferences in the editor and can only be overridden per call.
 - list_transitions shows each transition's id, type, track, cut, span and the media handles of its clips; get_timeline lists them per track too. update_transition changes the length, alignment or type (within video or within audio); remove_transitions deletes them.
 - A transition between two clips needs media beyond the cut ("handles"): center needs both, start-at-cut only the outgoing clip's tail handle, end-at-cut only the incoming clip's head handle. Durations are shortened to what fits (warning W_TRANSITION_SHORTENED); E_OUT_OF_MEDIA means nothing fits: try another alignment or trim the clips.`;
 
@@ -180,6 +184,58 @@ export function expandForMedia(
 	return [...out];
 }
 
+type Alignment = Transition['alignment'];
+const ALIGNMENTS: readonly Alignment[] = ['center', 'start-at-cut', 'end-at-cut'];
+
+/** The editor user's default transitions as `preferences.get` returns them (S10:TUI-034). */
+export type EditorTransitionDefaults = { video?: unknown; audio?: unknown; alignment?: unknown };
+
+export type ResolvedTransitionDefaults = {
+	videoEffectId: string;
+	audioEffectId: string;
+	alignment: Alignment;
+	/** Where the values not given in the call came from. */
+	source: 'call' | 'editor preferences' | 'built-in';
+};
+
+/**
+ * What apply_default_transitions uses (pure): the call's arguments, else the open editor's preferences
+ * (when they are valid ids of the right medium), else the built-ins (cross dissolve, constant power, center).
+ */
+export function resolveTransitionDefaults(
+	args: { videoType?: string; audioType?: string; alignment?: Alignment },
+	editor: EditorTransitionDefaults | null,
+): ResolvedTransitionDefaults {
+	const pref = (v: unknown, medium: 'video' | 'audio') =>
+		typeof v === 'string' && transitionSpec(v)?.appliesTo === medium ? v : undefined;
+	const ev = pref(editor?.video, 'video');
+	const ea = pref(editor?.audio, 'audio');
+	const eal = ALIGNMENTS.includes(editor?.alignment as Alignment)
+		? (editor!.alignment as Alignment)
+		: undefined;
+	const allGiven = !!(args.videoType && args.audioType && args.alignment);
+	return {
+		videoEffectId: args.videoType ? transitionEffectId(args.videoType) : (ev ?? CROSS_DISSOLVE),
+		audioEffectId: args.audioType ? transitionEffectId(args.audioType) : (ea ?? CONSTANT_POWER),
+		alignment: args.alignment ?? eal ?? 'center',
+		source: allGiven ? 'call' : editor && (ev || ea || eal) ? 'editor preferences' : 'built-in',
+	};
+}
+
+/** The open editor's default transitions, or null (no editor open, or an editor without the query). */
+async function editorTransitionDefaults(
+	ctx: ToolContext,
+	projectId: string,
+): Promise<EditorTransitionDefaults | null> {
+	try {
+		const q = await ctx.engine((c) => c.agentQuery({ projectId, query: 'preferences.get', args: {} }));
+		const t = (q.result as { preferences?: { transitions?: unknown } } | undefined)?.preferences?.transitions;
+		return t && typeof t === 'object' ? (t as EditorTransitionDefaults) : null;
+	} catch {
+		return null;
+	}
+}
+
 /** Transition-specific hints for the codes whose generic hint is about something else. */
 const HINTS: Record<string, string> = {
 	E_UNKNOWN_EFFECT: `Transition types: ${TYPE_LIST} (video: cross-dissolve, dip-to-black; audio: constant-gain, constant-power).`,
@@ -257,6 +313,7 @@ export function registerTransitionTools(ctx: ToolContext): void {
 				revision: revision ?? null,
 				editorOpen: live,
 				defaultTransitionFrames: doc.settings.defaultTransitionFrames,
+				defaultAudioTransitionFrames: defaultTransitionFrames(doc.settings, 'audio'),
 				transitions: listTransitions(doc, seq, { from, to }),
 			});
 		},
@@ -349,7 +406,7 @@ export function registerTransitionTools(ctx: ToolContext): void {
 		'apply_default_transitions',
 		{
 			title: 'Apply default transitions',
-			description: `Puts a transition on the edges of the given clips in one step (transition.applyDefault): at an edit point between two clips a two-sided transition (alignment center), at a free clip edge a fade. media picks the tracks (default ["video"]); with ["video", "audio"] the linked audio of the given video clips is included. Types default to cross-dissolve (video) and constant-power (audio), the length to the project's default transition length. Edges without room are skipped; longer lengths are shortened (W_TRANSITION_SHORTENED). An edge's existing transition is replaced. Returns the created transitions.`,
+			description: `Puts a transition on the edges of the given clips in one step (transition.applyDefault): at an edit point between two clips a two-sided transition (alignment center), at a free clip edge a fade. media picks the tracks (default ["video"]); with ["video", "audio"] the linked audio of the given video clips is included. Types and the alignment default to the editor user's defaults (Preferences ▸ Timeline, the same as Ctrl+D) when the project is open in the editor, else cross-dissolve (video), constant-power (audio) and center; the length to the project's default length of each medium (set_transition_defaults). Edges without room are skipped; longer lengths are shortened (W_TRANSITION_SHORTENED). An edge's existing transition is replaced. Returns the created transitions and the defaults used.`,
 			input: {
 				projectId: ProjectIdArg,
 				clipIds: z.array(z.string().min(1)).min(1).max(1000).describe('Clip ids ("clp_…") from get_timeline'),
@@ -378,15 +435,26 @@ export function registerTransitionTools(ctx: ToolContext): void {
 					.min(1)
 					.max(600)
 					.optional()
-					.describe("Length in frames (default: the project's default transition length)"),
+					.describe("Length in frames (default: the project's default length of each medium)"),
+				alignment: AlignmentArg.optional().describe(
+					"Alignment of the transitions between two clips (default: the editor user's default, else center). center needs handles on both clips, start-at-cut only on the outgoing clip, end-at-cut only on the incoming one; edit points without room for it are skipped. Fades at a free clip edge have a fixed alignment.",
+				),
 				sequenceId: SequenceIdArg,
 			},
 			annotations: EDIT,
 		},
-		async ({ projectId, clipIds, edges, media, videoType, audioType, durationFrames, sequenceId }, extra) => {
+		async (
+			{ projectId, clipIds, edges, media, videoType, audioType, durationFrames, alignment, sequenceId },
+			extra,
+		) => {
 			const kinds = media ?? ['video'];
 			const { doc } = await loadDoc(ctx, projectId);
 			const ids = expandForMedia(doc, clipIds, kinds);
+			const given = { videoType, audioType, alignment };
+			const defaults = resolveTransitionDefaults(
+				given,
+				videoType && audioType && alignment ? null : await editorTransitionDefaults(ctx, projectId),
+			);
 			const { res, r } = await run(
 				ctx,
 				projectId,
@@ -397,8 +465,9 @@ export function registerTransitionTools(ctx: ToolContext): void {
 						clipIds: ids,
 						edges: edges ?? 'both',
 						media: kinds,
-						...(videoType ? { videoEffectId: transitionEffectId(videoType) } : {}),
-						...(audioType ? { audioEffectId: transitionEffectId(audioType) } : {}),
+						videoEffectId: defaults.videoEffectId,
+						audioEffectId: defaults.audioEffectId,
+						alignment: defaults.alignment,
 						...(durationFrames !== undefined ? { duration: durationFrames } : {}),
 					},
 				],
@@ -409,12 +478,94 @@ export function registerTransitionTools(ctx: ToolContext): void {
 			return jsonResult({
 				...txBody(res, r),
 				clipIds: ids,
+				defaults: {
+					...(kinds.includes('video') ? { video: defaults.videoEffectId } : {}),
+					...(kinds.includes('audio') ? { audio: defaults.audioEffectId } : {}),
+					alignment: defaults.alignment,
+					durationFrames: durationFrames ?? {
+						video: defaultTransitionFrames(doc.settings, 'video'),
+						audio: defaultTransitionFrames(doc.settings, 'audio'),
+					},
+					source: defaults.source,
+				},
 				transitions: await summariesOf(ctx, projectId, created),
 				...(created.length
 					? {}
 					: {
 							note: 'No transition was added: the clip edges have no room (clip length or media handles) or are on locked tracks or tracks of another medium.',
 						}),
+			});
+		},
+	);
+	defineTool(
+		ctx,
+		'set_transition_defaults',
+		{
+			title: 'Set transition defaults',
+			description:
+				'Changes the project\'s default lengths (project.updateSettings, one undoable History entry "Agent: Transition Defaults"): the video and audio transition lengths in frames (used by apply_default_transitions, add_transition without a duration and transitions dropped in the editor) and the still image length in seconds (new stills). Existing transitions and clips keep their length. The default transition types and alignment are the editor user\'s preferences (Preferences ▸ Timeline) and are not part of the project. Returns the defaults after the change.',
+			input: {
+				projectId: ProjectIdArg,
+				videoDurationFrames: z
+					.number()
+					.int()
+					.min(1)
+					.max(3600)
+					.optional()
+					.describe('Default video transition length in frames'),
+				audioDurationFrames: z
+					.number()
+					.int()
+					.min(1)
+					.max(3600)
+					.optional()
+					.describe('Default audio transition length in frames'),
+				stillDurationSeconds: z
+					.number()
+					.min(1 / 30)
+					.max(3600)
+					.optional()
+					.describe('Default still image length in seconds (kept in 1/30 s)'),
+			},
+			annotations: EDIT,
+		},
+		async ({ projectId, videoDurationFrames, audioDurationFrames, stillDurationSeconds }, extra) => {
+			if (
+				videoDurationFrames === undefined &&
+				audioDurationFrames === undefined &&
+				stillDurationSeconds === undefined
+			)
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'Nothing to change',
+					'Pass videoDurationFrames, audioDurationFrames and/or stillDurationSeconds.',
+				);
+			const { doc } = await loadDoc(ctx, projectId);
+			const settings: Record<string, number> = {};
+			if (videoDurationFrames !== undefined) {
+				settings.defaultTransitionFrames = videoDurationFrames;
+				// Older projects keep one length for both media: pin the audio one so it does not follow.
+				if (doc.settings.defaultAudioTransitionFrames === undefined)
+					settings.defaultAudioTransitionFrames = doc.settings.defaultTransitionFrames;
+			}
+			if (audioDurationFrames !== undefined) settings.defaultAudioTransitionFrames = audioDurationFrames;
+			if (stillDurationSeconds !== undefined)
+				settings.defaultStillDurationFrames = Math.max(1, Math.round(stillDurationSeconds * 30));
+			const { res, r } = await run(
+				ctx,
+				projectId,
+				'Transition Defaults',
+				[{ type: 'project.updateSettings', settings }],
+				extra,
+			);
+			const after = (await loadDoc(ctx, projectId)).doc.settings;
+			return jsonResult({
+				...txBody(res, r),
+				defaults: {
+					videoDurationFrames: defaultTransitionFrames(after, 'video'),
+					audioDurationFrames: defaultTransitionFrames(after, 'audio'),
+					stillDurationSeconds: after.defaultStillDurationFrames / 30,
+				},
 			});
 		},
 	);

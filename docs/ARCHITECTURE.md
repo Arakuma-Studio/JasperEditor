@@ -1029,6 +1029,12 @@ Registration happens at module load of the package's command module `apps/web/sr
 (`color`, `process`, `composition`, `tracking`, `transitions`; all in `COMMAND_MODULES`). Panels: `lumetri` and
 `scopes` exist as placeholders (color). Dialogs register with `registerDialog` from the same modules. Preferences
 (`app.preferences`, currently unregistered) are created by the process package with a page registry.
+M3 (wp-m3-transdefaults): the Preferences dialog takes the opener's `session` (`app.preferences` passes
+`ctx.session`) and provides it to its pages through `SessionProvider`, so a page can edit project-scoped settings
+(`useSessionOrNull()`; null without an open project). Pages: General (0), Timeline (20, transitions package:
+default transitions = user preference, default durations = project settings, S10:TUI-031…033), Graphics (30),
+Processing (50). User preferences that change what an edit does are exposed to agents through the session-only
+query `preferences.get` (S10:TUI-034).
 
 ### 19.11 Tests, fixtures, verification
 

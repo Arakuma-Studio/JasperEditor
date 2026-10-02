@@ -111,7 +111,42 @@ to commands nobody registers. Goals:
 - **TUI-031 (P0)** Default transitions and duration: Effects panel context menu "Set Selected as Default
   Transition" (per medium) stored in user preferences (web `localStorage`, like timeline prefs); default duration =
   the project's `defaultTransitionFrames`, editable in Sequence ▸ Transition Defaults… (P1: a small dialog that runs
-  `project.updateSettings`).
+  `project.updateSettings`). **M3 (wp-m3-transdefaults):** Sequence ▸ Transition Defaults…, Edit ▸ Preferences ▸
+  Timeline… and the transition context menu's "Transition Defaults…" open **Preferences ▸ Timeline** (a page of the
+  Preferences dialog). It has two groups whose scope is labelled: *Default transitions — This computer* (default
+  video transition and default audio transition, picked from the Effects panel's Video/Audio Transitions; the
+  alignment of TUI-033; Reset) and *Default durations — This project* (TUI-032). Preference changes apply at once
+  (the Effects panel badge, Ctrl+D, agents) and are never in History; another window of the app follows them
+  (`storage` event).
+- **TUI-032 (P0, M3)** **Default durations per project.** Video transition, audio transition and still image
+  default durations, each entered in frames or seconds (a per-field unit menu remembered as a user preference;
+  Premiere's defaults: video in frames, audio and stills in seconds). Seconds are converted at the frame rate of
+  the active sequence (NTSC rates: rounded to whole frames, the field says "Rounded to N frames at 29.97 fps");
+  the field shows the other unit next to it; invalid input (not a number, fractional frames, < 1 frame, > 60 s)
+  turns the field red with the reason and commits nothing; Enter / blur commit; Esc while editing reverts the field and keeps the dialog open (a second Esc closes it). Each committed change
+  is one History entry ("Default Video Transition Duration", "Default Audio Transition Duration", "Default Still
+  Duration") through `project.updateSettings`. Model: `settings.defaultAudioTransitionFrames` (additive, optional;
+  absent = the video length; the first video change of an older project pins the audio length so it does not
+  follow); `defaultTransitionFrames(settings, medium)`; `transition.add` without `duration` and
+  `transition.applyDefault` use the length of the track's medium; the drop ghost (TUI-021) uses the dragged
+  transition's medium. Stills keep the S01:KND-004 storage (1/30 s, rescaled per sequence). Without an open project
+  the group says so.
+- **TUI-033 (P0, M3)** **Default alignment.** Center at Cut / Start at Cut / End at Cut for the two-sided
+  transitions created by Ctrl+D, Ctrl+Shift+D, Shift+D, the clip menu's Apply Default Transitions and the Effects
+  panel's Apply to Selected Clips (`transition.applyDefault {alignment}`, additive). Fades keep their fixed
+  alignment; an edit point without the handle the chosen alignment needs is skipped (as before). Drops keep the
+  pointer-based alignment of TUI-021.
+- **TUI-034 (P0, M3)** **Agents.** The session-only agent query `preferences.get` returns
+  `{preferences: {transitions: {video, audio, alignment}}}` from the open editor. MCP `apply_default_transitions`
+  uses, per value, the call's argument (`videoType`, `audioType`, `alignment` — new), else the editor's
+  preferences, else the built-ins (cross dissolve, constant power, center), and reports what it used
+  (`defaults.source`). `set_transition_defaults {videoDurationFrames?, audioDurationFrames?, stillDurationSeconds?}`
+  changes the project durations (one entry); `list_transitions` reports both lengths.
+- **TUI-035 (P1, M3)** Sequence menu: Apply Video Transition, Apply Audio Transition, Apply Default Transitions to
+  Selection, Transition Defaults… (S05 §12.2).
+- **TUI-036 (P1, M3)** A transition dragged from another window of the app shows its drop ghost too: the id is
+  also encoded in a drag type name (`application/x-jasper-transition-id.<effectId>`), since types are readable
+  during dragover and data is not. Drags whose types a browser hides fall back to "drop without ghost".
 
 ## 5. Editing in the inspector (TUI-040…046)
 

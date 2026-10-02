@@ -13,6 +13,7 @@ import { timelineTable, transitionLines } from '../src/format.ts';
 import {
 	expandForMedia,
 	listTransitions,
+	resolveTransitionDefaults,
 	TRANSITION_GUIDE,
 	transitionEffectId,
 	transitionSummary,
@@ -203,5 +204,41 @@ describe('get_timeline transitions block', () => {
 		expect(text).toContain(`  A1 ${fade} Constant Gain 00:00:00:00–00:00:00:15 (0–15) fade in, 15 frames`);
 		expect(transitionLines(seq, 120, 180)).toEqual([]);
 		expect(timelineTable(doc, seq, { from: 120, to: 180 })).not.toMatch(/Transitions:/);
+	});
+});
+
+describe('apply_default_transitions defaults (S10:TUI-034)', () => {
+	it('call arguments, else the open editor’s preferences, else the built-ins', () => {
+		expect(resolveTransitionDefaults({}, null)).toEqual({
+			videoEffectId: 'jasper.cross-dissolve',
+			audioEffectId: 'jasper.constant-power',
+			alignment: 'center',
+			source: 'built-in',
+		});
+		const editor = { video: 'jasper.dip-to-black', audio: 'jasper.constant-gain', alignment: 'end-at-cut' };
+		expect(resolveTransitionDefaults({}, editor)).toEqual({
+			videoEffectId: 'jasper.dip-to-black',
+			audioEffectId: 'jasper.constant-gain',
+			alignment: 'end-at-cut',
+			source: 'editor preferences',
+		});
+		expect(
+			resolveTransitionDefaults({ videoType: 'cross-dissolve', alignment: 'center' }, editor),
+		).toMatchObject({
+			videoEffectId: 'jasper.cross-dissolve',
+			audioEffectId: 'jasper.constant-gain',
+			alignment: 'center',
+		});
+		expect(
+			resolveTransitionDefaults(
+				{ videoType: 'dip-to-black', audioType: 'constant-gain', alignment: 'start-at-cut' },
+				null,
+			).source,
+		).toBe('call');
+		// Invalid editor values (wrong medium, unknown alignment) are ignored.
+		expect(
+			resolveTransitionDefaults({}, { video: 'jasper.constant-power', audio: 'x', alignment: 'middle' }),
+		).toMatchObject({ videoEffectId: 'jasper.cross-dissolve', alignment: 'center', source: 'built-in' });
+		expect(TRANSITION_GUIDE).toMatch(/set_transition_defaults/);
 	});
 });

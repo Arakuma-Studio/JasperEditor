@@ -146,7 +146,8 @@ export const processCommands: UiCommand[] = [
 		run: (ctx, args) => {
 			registerPreferencesDialog();
 			const page = (args as z.infer<typeof PrefsArgs>)?.page;
-			ctx.ui.openDialog(PREFERENCES_DIALOG, page ? { page } : {});
+			// M3 (wp-m3-transdefaults): pages with project-scoped settings read the open session.
+			ctx.ui.openDialog(PREFERENCES_DIALOG, { ...(page ? { page } : {}), session: ctx.session ?? null });
 		},
 	},
 	{
@@ -156,7 +157,7 @@ export const processCommands: UiCommand[] = [
 		scope: 'global',
 		run: (ctx) => {
 			registerPreferencesDialog();
-			ctx.ui.openDialog(PREFERENCES_DIALOG, { page: 'processing' });
+			ctx.ui.openDialog(PREFERENCES_DIALOG, { page: 'processing', session: ctx.session ?? null });
 		},
 	},
 ];

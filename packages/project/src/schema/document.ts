@@ -97,6 +97,8 @@ export const ProjectSettingsSchema = z.looseObject({
 	proxyPolicy: ProxyPolicySchema,
 	defaultStillDurationFrames: z.number().int().min(1),
 	defaultTransitionFrames: z.number().int().min(1),
+	/** M3 (S10:TUI-032): default audio transition length; absent = `defaultTransitionFrames`. */
+	defaultAudioTransitionFrames: z.number().int().min(1).optional(),
 	defaultScaling: DefaultScalingSchema,
 });
 export type ProjectSettings = DeepStrip<z.infer<typeof ProjectSettingsSchema>>;

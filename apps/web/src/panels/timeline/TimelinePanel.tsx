@@ -5,6 +5,7 @@
 import { EngineClient } from '@jasper/engine-client';
 import {
 	type Clip,
+	defaultTransitionFrames,
 	formatTimecode,
 	gapAt,
 	LABEL_COLORS,
@@ -36,13 +37,13 @@ import {
 	readTextAnimationDrag,
 } from '../../text-animation/actions.ts';
 import {
-	activeTransitionDrag,
 	applyEffectToClips,
 	endTransitionDrag,
 	isEffectDrag,
 	isTransitionDrag,
 	readEffectDragPayload,
 	readTransitionDragPayload,
+	transitionDragId,
 } from '../effects/drag.ts';
 import { setDefaultTransition } from '../effects/transition-prefs.ts';
 import { insertMotionTemplate, MG_TEMPLATE_MIME, readMgTemplateDrag } from '../motionTemplates/insert.ts';
@@ -604,6 +605,8 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 						toast('info', `${g.spec?.label ?? t.effectId} is the default ${medium} transition`);
 				},
 			},
+			// M3 (TUI-031): the dialog with the default types, alignment and durations.
+			{ kind: 'item', label: 'Transition Defaults…', run: () => run('sequence.transitionDefaults') },
 		];
 	};
 
@@ -644,7 +647,8 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			v: g.viewport,
 			x: p.x,
 			over,
-			wanted: committedDoc.settings.defaultTransitionFrames,
+			// S10:TUI-032: the project's default length of the transition's medium (Preferences ▸ Timeline).
+			wanted: defaultTransitionFrames(committedDoc.settings, spec.appliesTo),
 		});
 	};
 	const showTransitionGhost = (
@@ -661,11 +665,11 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			ui.setState({ transitionGhost: ghost, tooltip: lines ? { x, y, lines } : null, drop: null });
 	};
 	const onTransitionDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-		const effectId = activeTransitionDrag();
+		const effectId = transitionDragId(e.dataTransfer);
 		const target = transitionDropAt(e, effectId);
 		const p = local(e);
 		if (target === 'unknown') {
-			// Dragged from another window: the id is unreadable until the drop.
+			// A drag whose id is not readable before the drop (a browser that hides custom types, or another app).
 			e.preventDefault();
 			e.dataTransfer.dropEffect = 'copy';
 			return;

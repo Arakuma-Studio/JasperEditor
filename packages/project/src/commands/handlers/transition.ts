@@ -14,6 +14,7 @@ import {
 	CROSS_DISSOLVE,
 	clipHandles,
 	clipsAtEditPoint,
+	defaultTransitionFrames,
 	fitTransitionDuration,
 	TRANSITION_SPECS,
 	type TransitionSpec,
@@ -112,7 +113,7 @@ function addTransition(doc: DDoc, a: AddArgs, h: HandlerContext) {
 		: incoming
 			? 'start-at-cut'
 			: 'end-at-cut';
-	const wanted = a.duration ?? doc.settings.defaultTransitionFrames;
+	const wanted = a.duration ?? defaultTransitionFrames(doc.settings, spec.appliesTo);
 	const duration = fit(doc, seq, a.effectId, wanted, alignment, outgoing, incoming);
 	if (duration < wanted) {
 		if (duration === 0) h.fail('E_OUT_OF_MEDIA', noRoomMessage(alignment, wanted, two));
@@ -279,7 +280,11 @@ export const transitionHandlers: HandlerMap = {
 					`${spec.label} is not ${kind === 'video' ? 'a video' : 'an audio'} transition`,
 				);
 		}
-		const wanted = cmd.duration ?? doc.settings.defaultTransitionFrames;
+		// S10:TUI-032/033: each medium's project default length; the user's alignment for two-sided ones.
+		const wantedFor = {
+			video: cmd.duration ?? defaultTransitionFrames(doc.settings, 'video'),
+			audio: cmd.duration ?? defaultTransitionFrames(doc.settings, 'audio'),
+		};
 		const created: string[] = [];
 		const done = new Set<string>();
 		for (const clip of clips) {
@@ -287,6 +292,7 @@ export const transitionHandlers: HandlerMap = {
 			if (track.kind !== 'video' && track.kind !== 'audio') continue;
 			if (!media.has(track.kind) || track.locked) continue;
 			const effectId = effectFor[track.kind];
+			const wanted = wantedFor[track.kind];
 			for (const edge of cmd.edges === 'both' ? (['in', 'out'] as const) : [cmd.edges]) {
 				const cut = edge === 'in' ? clip.start : end(clip);
 				// Where two clips meet: a cross dissolve / an audio crossfade (S10:TUI-052); free edges: fades.
@@ -295,12 +301,16 @@ export const transitionHandlers: HandlerMap = {
 				if (done.has(key)) continue;
 				done.add(key);
 				const two = !!outgoing && !!incoming;
-				const alignment: Transition['alignment'] = two ? 'center' : incoming ? 'start-at-cut' : 'end-at-cut';
+				const alignment: Transition['alignment'] = two
+					? (cmd.alignment ?? 'center')
+					: incoming
+						? 'start-at-cut'
+						: 'end-at-cut';
 				// Edit points without room are skipped instead of failing the whole command.
 				if (fit(doc, seq, effectId, wanted, alignment, outgoing, incoming) === 0) continue;
 				const r = addTransition(
 					doc,
-					{ seq, trackId: clip.trackId, outgoing, incoming, effectId, duration: wanted },
+					{ seq, trackId: clip.trackId, outgoing, incoming, effectId, duration: wanted, alignment },
 					h,
 				);
 				created.push(r.transitionId);

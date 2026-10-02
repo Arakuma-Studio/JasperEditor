@@ -63,6 +63,7 @@ export const AGENT_QUERY_ARGS = {
 		frame: TimeArg.describe('Frame to move the playhead to: frames, {frames}, {seconds} or timecode'),
 	}),
 	'history.list': z.object({}),
+	'preferences.get': z.object({}),
 	validate: z.object({
 		transaction: z.record(z.string(), z.unknown()).optional().describe('Dry-run this transaction'),
 	}),
@@ -87,6 +88,8 @@ export const AGENT_QUERY_DESCRIPTIONS: Record<AgentQuery, string> = {
 	'playhead.set':
 		'Moves the playhead of the active sequence (a view change, not an edit; needs an open session).',
 	'history.list': 'Undo history entries with labels, origins and revisions (needs an open session).',
+	'preferences.get':
+		"The editor user's preferences that change what edits do, e.g. the default transitions and their alignment (needs an open session).",
 	validate: 'The invariant report of the document, or the dry-run result of a transaction.',
 	'frame.capture': 'A PNG still of the Program output at a frame (engine /api/stills; max 1280 px).',
 };
@@ -97,6 +100,7 @@ export const SESSION_ONLY_QUERIES: ReadonlySet<AgentQuery> = new Set([
 	'playhead.get',
 	'playhead.set',
 	'history.list',
+	'preferences.get',
 ]);
 
 export type AgentHistoryEntry = {
@@ -125,6 +129,8 @@ export type AgentQueryEnv = {
 		seek?(frame: number): number;
 		history(): { entries: AgentHistoryEntry[]; position: number };
 		mediaRuntime?(mediaId: string): unknown;
+		/** M3 (S10:TUI-034): the user's edit preferences (`{ transitions: { video, audio, alignment } }`). */
+		preferences?(): Record<string, unknown>;
 	};
 };
 
@@ -540,6 +546,8 @@ export function runAgentQuery(env: AgentQueryEnv, name: string, rawArgs: unknown
 			return playheadSet(env, args);
 		case 'history.list':
 			return historyList(env);
+		case 'preferences.get':
+			return { preferences: needSession(env, 'preferences.get').preferences?.() ?? {} };
 		case 'validate':
 			return validateQuery(env, args);
 		case 'frame.capture':

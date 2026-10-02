@@ -10,6 +10,7 @@ import {
 	transitionSpec,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
+import { transitionDefaults } from './transition-prefs.ts';
 
 /** Sub-folder of each built-in transition (unknown future ids land in "Other"). */
 const CATEGORY: Record<string, string> = {
@@ -57,8 +58,8 @@ export function transitionTree(
 }
 
 /**
- * Applies a transition at both edges of the selected clips of its medium (two-sided where clips meet),
- * as one history entry. Null when no selected clip is of that medium.
+ * Applies a transition at both edges of the selected clips of its medium (two-sided where clips meet, with
+ * the user's default alignment; the project's default length of that medium), as one history entry. Null when no selected clip is of that medium.
  */
 export function applyTransitionToClips(
 	session: EditorSession,
@@ -84,6 +85,8 @@ export function applyTransitionToClips(
 				edges: 'both',
 				media: [spec.appliesTo],
 				...(spec.appliesTo === 'video' ? { videoEffectId: spec.id } : { audioEffectId: spec.id }),
+				// M3 (TUI-033): the user's default alignment, as Ctrl+D.
+				alignment: transitionDefaults().getState().alignment,
 			},
 		] as never[],
 	});

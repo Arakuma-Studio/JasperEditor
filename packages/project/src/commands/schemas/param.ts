@@ -103,8 +103,10 @@ export const TransitionApplyDefaultCmd = cmd('transition.applyDefault', {
 	/** M2: the user's default transitions (defaults: cross dissolve / constant power). */
 	videoEffectId: z.string().min(1).optional(),
 	audioEffectId: z.string().min(1).optional(),
-	/** M2: duration override (default: project `defaultTransitionFrames`). */
+	/** M2: duration override (default: the project's default length of each medium, S10:TUI-032). */
 	duration: z.number().int().min(1).optional(),
+	/** M3 (S10:TUI-033): alignment of the two-sided ones (default center); fades keep their fixed alignment. */
+	alignment: z.enum(['center', 'start-at-cut', 'end-at-cut']).optional(),
 });
 
 export const PARAM_COMMANDS = [
