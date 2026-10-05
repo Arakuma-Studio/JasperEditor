@@ -45,7 +45,8 @@ export type Picture =
 	| { kind: 'solid'; color: string }
 	| { kind: 'ramp' }
 	| { kind: 'bars' }
-	| { kind: 'disc'; color?: string };
+	| { kind: 'disc'; color?: string }
+	| { kind: 'text'; text: string; color?: string };
 
 async function painter(pic: Picture): Promise<Paint> {
 	switch (pic.kind) {
@@ -73,6 +74,14 @@ async function painter(pic: Picture): Promise<Paint> {
 					ctx.fillStyle = c;
 					ctx.fillRect(b.x + (b.w * i) / cols.length, b.y, Math.ceil(b.w / cols.length), b.h);
 				});
+			};
+		case 'text':
+			return (ctx, b) => {
+				ctx.fillStyle = pic.color ?? '#e8b030';
+				ctx.font = `bold ${Math.round(b.h * 0.45)}px sans-serif`;
+				ctx.textAlign = 'center';
+				ctx.textBaseline = 'middle';
+				ctx.fillText(pic.text, b.x + b.w / 2, b.y + b.h / 2, b.w * 0.95);
 			};
 		case 'disc':
 			return (ctx, b) => {
