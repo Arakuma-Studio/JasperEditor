@@ -62,6 +62,12 @@ export class TransitionHub {
 		return t;
 	}
 
+	/** Forgets the pictures (the stage left its span: the next visit must not show another frame's sides). */
+	clear(): void {
+		this.pictures.out = null;
+		this.pictures.in = null;
+	}
+
 	subscribe(cb: () => void): () => void {
 		this.listeners.add(cb);
 		return () => this.listeners.delete(cb);
@@ -299,6 +305,8 @@ export function TransitionStage(props: {
 		schedule();
 		return off;
 	}, [hub, schedule]);
+	// Leaving the span (unmount) forgets the pictures; re-renders inside the span keep them.
+	useLayoutEffect(() => () => hub.clear(), [hub]);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: redraw when the frame or the param values change
 	useLayoutEffect(() => {
 		schedule();
