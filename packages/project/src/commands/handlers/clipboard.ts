@@ -20,6 +20,7 @@ import {
 import type { ClipTiming } from '../../color/retime.ts';
 import { anim, defaultTransform } from '../../factories.ts';
 import { isHoldOnlyValue } from '../../keyframes.ts';
+import { isVec2Value, refreshAutoTangents, reversedSpatial } from '../../keyframes-spatial.ts';
 import { defaultLabelForMedia, kindCapabilities, trackKindFor } from '../../registry/kinds.ts';
 import { intrinsicBoxOf } from '../../registry/properties.ts';
 import type { Keyframe } from '../../schema/common.ts';
@@ -258,6 +259,8 @@ function retimeKeys<T>(
 	const fromSpan = from.timing.duration * flicksPerFrame(from.rate);
 	const toSpan = to.timing.duration * flicksPerFrame(to.rate);
 	const k = scale && fromSpan > 0 ? toSpan / fromSpan : 1;
+	// Onto a clip running the other way the path is traversed backwards: spatial in/out tangents swap.
+	const flip = from.timing.speed.reverse !== to.timing.speed.reverse;
 	const byTime = new Map<number, Keyframe<T>>();
 	for (const key of keys) {
 		const c = (key.time - from.timing.sourceIn) / from.timing.speed.rate;
@@ -266,7 +269,9 @@ function retimeKeys<T>(
 			? to.timing.sourceIn + (toSpan - seqOffset) * to.timing.speed.rate
 			: to.timing.sourceIn + seqOffset * to.timing.speed.rate;
 		const time = Math.max(0, Math.round(content));
-		byTime.set(time, { ...clone(key), id: h.ids.next('kf'), time });
+		const copy: Keyframe<T> = { ...clone(key), id: h.ids.next('kf'), time };
+		if (flip && copy.spatial) copy.spatial = reversedSpatial(copy.spatial);
+		byTime.set(time, copy);
 	}
 	return [...byTime.values()].sort((a, b) => a.time - b.time);
 }
@@ -776,6 +781,13 @@ function pasteKeyframes(doc: DDoc, cmd: CommandOf<'keyframe.paste'>, h: HandlerC
 			const v = validateValue(value, target.rule, h, target.label);
 			if (v.clamped) h.warn('W_VALUE_CLAMPED', `${target.label} clamped to ${JSON.stringify(v.value)}`);
 			const hold = target.rule.holdOnly || isHoldOnlyValue(v.value);
+			// Spatial paths travel with the keys onto point properties (S03 §12.5 copy/paste row).
+			const spatial =
+				!hold && target.rule.spatial && k.spatial && isVec2Value(v.value)
+					? dir < 0
+						? reversedSpatial(k.spatial)
+						: clone(k.spatial)
+					: undefined;
 			incoming.set(time, {
 				id: h.ids.next('kf'),
 				time,
@@ -783,6 +795,7 @@ function pasteKeyframes(doc: DDoc, cmd: CommandOf<'keyframe.paste'>, h: HandlerC
 				interpolation: hold ? 'hold' : k.interpolation,
 				easeIn: { influence: k.easeIn.influence, slope: k.easeIn.slope },
 				easeOut: { influence: k.easeOut.influence, slope: k.easeOut.slope },
+				...(spatial ? { spatial } : {}),
 			});
 		}
 		if (incoming.size === 0) continue;
@@ -792,6 +805,7 @@ function pasteKeyframes(doc: DDoc, cmd: CommandOf<'keyframe.paste'>, h: HandlerC
 			...incoming.values(),
 		].sort((a, b) => a.time - b.time);
 		target.anim.keyframes = merged as never;
+		refreshAutoTangents(target.anim.keyframes as Keyframe<unknown>[]);
 		refreshAutoBezier(target.anim);
 		(target.anim as { [PRUNE_EMPTY_KEYFRAMES]?: () => void })[PRUNE_EMPTY_KEYFRAMES]?.();
 		pasted.push(...[...incoming.values()].map((k) => k.id));

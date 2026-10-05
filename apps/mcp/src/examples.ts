@@ -146,6 +146,25 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		target: ['clip', '$clip', 'opacity'],
 		value: 0.5,
 	},
+	// spatial-motion-path (S03:KF-021/030): a curved position key and its tangents (sequence px offsets).
+	'keyframe.add': {
+		type: 'keyframe.add',
+		target: ['clip', '$clip', 'transform', 'position'],
+		at: { sequenceFrame: 30 },
+		value: [1400, 300],
+		spatial: { mode: 'auto-bezier' },
+		ref: '$key',
+	},
+	'keyframe.setSpatialInterpolation': {
+		type: 'keyframe.setSpatialInterpolation',
+		keyframeIds: ['$key'],
+		mode: 'continuous-bezier',
+	},
+	'keyframe.setTangents': {
+		type: 'keyframe.setTangents',
+		keyframeId: '$key',
+		outTangent: [200, -120],
+	},
 	'transition.add': {
 		type: 'transition.add',
 		clipId: { clipAt: { track: 'V1', at: 0 } },

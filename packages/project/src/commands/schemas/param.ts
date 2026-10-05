@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { EaseSchema, InterpolationSchema } from '../../schema/common.ts';
+import {
+	EaseSchema,
+	InterpolationSchema,
+	SpatialInterpolationSchema,
+	Vec2Schema,
+} from '../../schema/common.ts';
 import { cmd, IdRefSchema, ParamAtSchema, ParamPathSchema, RefDeclSchema, TrackRefSchema } from './common.ts';
 
 export const ParamSetCmd = cmd('param.set', {
@@ -15,6 +20,17 @@ export const ParamSetAnimatedCmd = cmd('param.setAnimated', {
 	sequenceId: IdRefSchema.optional(),
 });
 
+/**
+ * Spatial interpolation of a vec2 point key (S03:KF-021/030, wave1 spatial-motion-path). Tangents are offsets
+ * from the key's value in value units (sequence px for Motion position); omitted ones keep the key's current
+ * effective tangents (Auto Bezier derives them from the neighbours and ignores given ones).
+ */
+export const SpatialInputSchema = z.strictObject({
+	mode: SpatialInterpolationSchema,
+	inTangent: Vec2Schema.optional(),
+	outTangent: Vec2Schema.optional(),
+});
+
 export const KeyframeAddCmd = cmd('keyframe.add', {
 	target: ParamPathSchema,
 	at: ParamAtSchema,
@@ -22,6 +38,8 @@ export const KeyframeAddCmd = cmd('keyframe.add', {
 	interpolation: InterpolationSchema.optional(),
 	easeIn: EaseSchema.optional(),
 	easeOut: EaseSchema.optional(),
+	/** Additive (spatial-motion-path): point properties only; default = the property's (Auto Bezier for position). */
+	spatial: SpatialInputSchema.optional(),
 	sequenceId: IdRefSchema.optional(),
 	ref: RefDeclSchema.optional(),
 });
@@ -31,6 +49,8 @@ export const KeyframeUpdateCmd = cmd('keyframe.update', {
 	interpolation: InterpolationSchema.optional(),
 	easeIn: EaseSchema.optional(),
 	easeOut: EaseSchema.optional(),
+	/** Additive (spatial-motion-path): point properties only. */
+	spatial: SpatialInputSchema.optional(),
 });
 export const KeyframeRemoveCmd = cmd('keyframe.remove', { keyframeIds: z.array(IdRefSchema).min(1) });
 export const KeyframeMoveCmd = cmd('keyframe.move', {
@@ -47,6 +67,26 @@ export const KeyframeSetInterpolationCmd = cmd('keyframe.setInterpolation', {
 	easeOut: EaseSchema.optional(),
 });
 export const KeyframesPruneCmd = cmd('keyframes.prune', { clipId: IdRefSchema });
+/**
+ * Right-click ▸ Spatial Interpolation (S03:KF-021) on keys of vec2 point properties. Switching a Linear key to
+ * Bezier / Continuous Bezier starts from its Auto Bezier tangents; Continuous aligns the in tangent opposite the
+ * out tangent (keeping its length); Linear zeroes them.
+ */
+export const KeyframeSetSpatialCmd = cmd('keyframe.setSpatialInterpolation', {
+	keyframeIds: z.array(IdRefSchema).min(1),
+	mode: SpatialInterpolationSchema,
+});
+/**
+ * Edits the spatial tangents of one key (motion-path handle drag, S03:OVL-020). A key that is not Bezier becomes
+ * Continuous Bezier and the side not given turns to stay opposite (keeping its length), unless
+ * `breakContinuity` (Alt-drag) makes it Bezier with independent sides. Both sides given and not opposite → Bezier.
+ */
+export const KeyframeSetTangentsCmd = cmd('keyframe.setTangents', {
+	keyframeId: IdRefSchema,
+	inTangent: Vec2Schema.optional(),
+	outTangent: Vec2Schema.optional(),
+	breakContinuity: z.boolean().optional(),
+});
 
 const EffectTarget = z.union([
 	z.strictObject({ clipId: IdRefSchema }),
@@ -118,6 +158,8 @@ export const PARAM_COMMANDS = [
 	KeyframeMoveCmd,
 	KeyframeSetInterpolationCmd,
 	KeyframesPruneCmd,
+	KeyframeSetSpatialCmd,
+	KeyframeSetTangentsCmd,
 	EffectAddCmd,
 	EffectRemoveCmd,
 	EffectReorderCmd,

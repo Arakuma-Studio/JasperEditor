@@ -2,9 +2,10 @@
 import type { Draft } from 'immer';
 import { compositionOfClip } from '../../composition/props.ts';
 import { evaluate, isHoldOnlyValue } from '../../keyframes.ts';
+import { newKeySpatial, refreshAutoTangents } from '../../keyframes-spatial.ts';
 import type { ParamSpec } from '../../registry/effects.ts';
 import { type PropertySpec, resolvePropertySpec } from '../../registry/properties.ts';
-import type { Animatable, Keyframe } from '../../schema/common.ts';
+import type { Animatable, Keyframe, SpatialInterpolation } from '../../schema/common.ts';
 import type { Clip, EffectInstance, Track } from '../../schema/sequence.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
@@ -21,6 +22,8 @@ type ValueRule = {
 	range?: { min?: number; max?: number };
 	options?: readonly string[];
 	holdOnly: boolean;
+	/** vec2 point parameters: the spatial interpolation of new keys (S03:KF-021); absent = not a point. */
+	spatial?: SpatialInterpolation;
 };
 
 /** A resolved parameter target: either an Animatable (keyframable) or a static setter. */
@@ -35,10 +38,22 @@ export type Target =
 	| { type: 'static'; set(v: unknown): void; rule: ValueRule; label: string };
 
 function ruleFromProperty(s: PropertySpec): ValueRule {
-	return { kind: s.kind, range: s.range, options: s.options, holdOnly: s.animatable === 'hold-only' };
+	return {
+		kind: s.kind,
+		range: s.range,
+		options: s.options,
+		holdOnly: s.animatable === 'hold-only',
+		...(s.kind === 'vec2' && s.animatable === 'continuous' && s.spatial ? { spatial: s.spatial } : {}),
+	};
 }
 export function ruleFromParam(p: ParamSpec): ValueRule {
-	return { kind: p.type, range: p.range, options: p.options, holdOnly: !p.animatable };
+	return {
+		kind: p.type,
+		range: p.range,
+		options: p.options,
+		holdOnly: !p.animatable,
+		...(p.type === 'vec2' && p.animatable && p.spatial ? { spatial: p.spatial } : {}),
+	};
 }
 
 export function getAt(obj: unknown, path: readonly string[]): unknown {
@@ -306,7 +321,15 @@ export function validateValue(
 	}
 }
 
-function newKeyframe(h: HandlerContext, time: number, value: unknown, hold: boolean): Keyframe<unknown> {
+/** A new key: Linear temporal, and the parameter's default spatial interpolation for points (S03:KF-021). */
+export function newKeyframe(
+	h: HandlerContext,
+	time: number,
+	value: unknown,
+	hold: boolean,
+	spatial?: SpatialInterpolation,
+): Keyframe<unknown> {
+	const s = hold ? undefined : newKeySpatial(spatial, value);
 	return {
 		id: h.ids.next('kf'),
 		time,
@@ -314,18 +337,22 @@ function newKeyframe(h: HandlerContext, time: number, value: unknown, hold: bool
 		interpolation: hold ? 'hold' : 'linear',
 		easeIn: { influence: 1 / 3, slope: 1 },
 		easeOut: { influence: 1 / 3, slope: 1 },
+		...(s ? { spatial: s } : {}),
 	};
 }
 
 function upsertKeyframe(anim: Draft<Animatable<unknown>>, kf: Keyframe<unknown>): string {
 	const existing = anim.keyframes.find((k) => k.time === kf.time);
+	let id = kf.id;
 	if (existing) {
 		existing.value = kf.value as never;
-		return existing.id;
+		id = existing.id;
+	} else {
+		anim.keyframes.push(kf as never);
+		anim.keyframes.sort((x, y) => x.time - y.time);
 	}
-	anim.keyframes.push(kf as never);
-	anim.keyframes.sort((x, y) => x.time - y.time);
-	return kf.id;
+	refreshAutoTangents(anim.keyframes as Keyframe<unknown>[]);
+	return id;
 }
 
 export const paramHandlers: HandlerMap = {
@@ -341,7 +368,7 @@ export const paramHandlers: HandlerMap = {
 		if (target.anim.keyframes.length > 0) {
 			const t = target.time(cmd.at);
 			const hold = target.rule.holdOnly || isHoldOnlyValue(value);
-			const id = upsertKeyframe(target.anim, newKeyframe(h, t, value, hold));
+			const id = upsertKeyframe(target.anim, newKeyframe(h, t, value, hold, target.rule.spatial));
 			return { applied: value, clamped, keyframeId: id, time: t };
 		}
 		target.anim.value = value as never;
@@ -359,6 +386,7 @@ export const paramHandlers: HandlerMap = {
 				t,
 				JSON.parse(JSON.stringify(anim.value)),
 				target.rule.holdOnly || isHoldOnlyValue(anim.value),
+				target.rule.spatial,
 			);
 			anim.keyframes.push(kf as never);
 			return { keyframeId: kf.id, time: t };

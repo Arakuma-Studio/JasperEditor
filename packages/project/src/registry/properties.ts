@@ -13,7 +13,7 @@ import {
 import { contentTimeAt } from '../derive/index.ts';
 import { DEFAULT_SHAPE_SIZE, shapeIntrinsicBox } from '../factories.ts';
 import { evaluate } from '../keyframes.ts';
-import type { Animatable, Keyframe, RGBA } from '../schema/common.ts';
+import type { Animatable, Keyframe, RGBA, SpatialInterpolation } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { MgCompositionInfo } from '../schema/media.ts';
 import {
@@ -82,6 +82,11 @@ export type PropertySpec = {
 	range?: { min?: number; max?: number; softMin?: number; softMax?: number; step?: number };
 	/** `continuous` = interpolated keyframes; `hold-only` = step keyframes (S01:KF-007); `no` = static field. */
 	animatable: 'continuous' | 'hold-only' | 'no';
+	/**
+	 * vec2 point properties with a spatial path (S03:KF-021): the spatial interpolation new keys get. Absent = not
+	 * spatial (the keys never carry `spatial`; e.g. scale-like vectors, shape size, colour wheels).
+	 */
+	spatial?: SpatialInterpolation;
 	options?: readonly string[];
 	optionLabels?: readonly string[];
 	/**
@@ -355,6 +360,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		range: { step: 0.1 },
 		animatable: 'continuous',
 		storagePath: ['transform', 'position'],
+		// S03:KF-021: new position keys are Auto Bezier spatial with Linear temporal (Premiere's default feel).
+		spatial: 'auto-bezier',
 		appliesTo: hasTransform,
 		ui: { control: 'vec2', precision: 1 },
 		defaultValue: ({ seq }: PropertyContext) => [seq.settings.width / 2, seq.settings.height / 2],
@@ -369,6 +376,7 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		range: { step: 0.1 },
 		animatable: 'continuous',
 		storagePath: ['transform', 'anchor'],
+		spatial: 'auto-bezier',
 		appliesTo: hasTransform,
 		ui: { control: 'vec2', precision: 1 },
 		defaultValue: (ctx: PropertyContext) => {
@@ -1156,6 +1164,7 @@ export function effectParamPropertySpec(fxId: string, effect: EffectSpec, p: Par
 		unit: p.unit === 'Hz' ? undefined : p.unit,
 		range: p.range,
 		animatable: p.animatable ? 'continuous' : 'hold-only',
+		...(p.type === 'vec2' && p.animatable && p.spatial ? { spatial: p.spatial } : {}),
 		options: p.options,
 		optionLabels: p.optionLabels,
 		storagePath: ['$effect', fxId, p.name],

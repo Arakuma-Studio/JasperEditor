@@ -71,6 +71,8 @@ export type AgentSchema = {
 		unit?: string;
 		range?: unknown;
 		animatable: string;
+		/** vec2 points (spatial-motion-path, S03:KF-021): the spatial interpolation of new keys. */
+		spatial?: string;
 		/** M2 (S11:ANA-001): clip kinds the property applies to. */
 		kinds: string[];
 	}[];
@@ -143,6 +145,7 @@ export function exportAgentSchema(registries: Registries): AgentSchema {
 			unit: p.unit,
 			range: p.range,
 			animatable: p.animatable,
+			...(p.spatial ? { spatial: p.spatial } : {}),
 			kinds: KNOWN_CLIP_KINDS.filter((kind) => p.appliesTo({ kind })),
 		})),
 		errorCodes: ERROR_CODES,

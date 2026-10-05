@@ -61,6 +61,30 @@ export type Interpolation = DeepStrip<z.infer<typeof InterpolationSchema>>;
 export const EaseSchema = z.looseObject({ influence: z.number().gt(0).max(1), slope: z.number().min(0) });
 export type Ease = DeepStrip<z.infer<typeof EaseSchema>>;
 
+/**
+ * Spatial interpolation of a vec2 point keyframe (S03:KF-021, KF-030; wave1 spatial-motion-path). Same vocabulary
+ * as the temporal `Interpolation`, without `hold`: `linear` = straight segments (tangents ignored), `bezier` =
+ * independent in/out tangents, `auto-bezier` = tangents derived from the neighbours (Catmull-Rom, `(next − prev)
+ * / 6`; the stored ones are a cache for the UI), `continuous-bezier` = user tangents kept opposite
+ * (`in = −k · out`).
+ */
+export const SPATIAL_INTERPOLATIONS = ['linear', 'bezier', 'auto-bezier', 'continuous-bezier'] as const;
+export const SpatialInterpolationSchema = z.enum(SPATIAL_INTERPOLATIONS);
+export type SpatialInterpolation = DeepStrip<z.infer<typeof SpatialInterpolationSchema>>;
+
+/**
+ * Per-key spatial data of vec2 point properties. Tangents are offsets from the key's value in value units
+ * (sequence px for Motion position): the path segment a → b is the cubic Bézier
+ * `a.v, a.v + a.outTangent, b.v + b.inTangent, b.v`. Absent = `linear` (documents written before spatial
+ * interpolation existed evaluate exactly as before; S01:MIG-005, additive).
+ */
+export const SpatialSchema = z.looseObject({
+	mode: SpatialInterpolationSchema,
+	inTangent: Vec2Schema,
+	outTangent: Vec2Schema,
+});
+export type Spatial = { mode: SpatialInterpolation; inTangent: Vec2; outTangent: Vec2 };
+
 export type Keyframe<T> = {
 	id: string;
 	time: number;
@@ -68,6 +92,8 @@ export type Keyframe<T> = {
 	interpolation: Interpolation;
 	easeIn: Ease;
 	easeOut: Ease;
+	/** vec2 point properties only (S03:KF-030); absent = linear spatial. */
+	spatial?: Spatial;
 };
 export type Animatable<T> = { value: T; keyframes: Keyframe<T>[] };
 
@@ -79,6 +105,7 @@ export function keyframeSchema<T extends z.ZodType>(value: T) {
 		interpolation: InterpolationSchema,
 		easeIn: EaseSchema,
 		easeOut: EaseSchema,
+		spatial: SpatialSchema.optional(),
 	});
 }
 

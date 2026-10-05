@@ -18,6 +18,7 @@ export * from './factories.ts';
 export * from './ids.ts';
 export * from './invariants.ts';
 export * from './keyframes.ts';
+export * from './keyframes-spatial.ts';
 export * from './migrations.ts';
 export * from './presets.ts';
 export * from './process/index.ts';

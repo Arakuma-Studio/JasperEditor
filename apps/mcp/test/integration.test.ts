@@ -449,6 +449,46 @@ describe('MCP over stdio with a token-protected engine', () => {
 		expect(invalid.isError).toBe(true);
 		expect(json<{ error: { code: string } }>(invalid).error.code).toBe('E_INVALID_PARAM');
 	});
+
+	it('reads a curved motion path and sets its spatial interpolation (S03:KF-021)', async () => {
+		const added = await ok<{ clips: { id: string }[] }>('add_shape', {
+			projectId,
+			type: 'ellipse',
+			at: 0,
+			track: 'V3',
+		});
+		const clipId = added.clips[0]!.id;
+		const pos = ['clip', clipId, 'transform', 'position'];
+		await ok('apply_commands', {
+			projectId,
+			label: 'Animate',
+			commands: [
+				{ type: 'keyframe.add', target: pos, at: { sequenceFrame: 0 }, value: [200, 200] },
+				{ type: 'keyframe.add', target: pos, at: { sequenceFrame: 30 }, value: [960, 900] },
+				{ type: 'keyframe.add', target: pos, at: { sequenceFrame: 60 }, value: [1700, 200] },
+			],
+		});
+		type Path = {
+			keys: { keyframeId: string; frame: number; spatial: string; outTangent: number[] }[];
+			points: { frame: number; position: number[] }[];
+			pathLength: number;
+		};
+		const path = await ok<Path>('get_motion_path', { projectId, clipId, samples: 7 });
+		expect(path.keys.map((k) => [k.frame, k.spatial])).toEqual([
+			[0, 'auto-bezier'],
+			[30, 'auto-bezier'],
+			[60, 'auto-bezier'],
+		]);
+		expect(path.keys[1]!.outTangent).toEqual([250, 0]);
+		expect(path.points).toHaveLength(7);
+		const curved = path.pathLength;
+		await ok('set_spatial_interpolation', { projectId, clipId, mode: 'linear' });
+		const straight = await ok<Path>('get_motion_path', { projectId, clipId });
+		expect(straight.keys.every((k) => k.spatial === 'linear')).toBe(true);
+		expect(straight.pathLength).toBeLessThan(curved);
+		const bad = await call('set_spatial_interpolation', { projectId, mode: 'bezier' });
+		expect(bad.isError).toBe(true);
+	});
 });
 
 describe('jasper-mcp --start-engine', () => {

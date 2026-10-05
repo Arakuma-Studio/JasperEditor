@@ -4,7 +4,7 @@
 // realizations: a browser preview (CSS style fragment or inline SVG filter) and an ffmpeg filter string
 // for the native export path. Unknown ids are preserved and bypassed by the renderers (S01:FX-022).
 import type { Lut, Rgb } from '../color/lut.ts';
-import type { ParamValue } from '../schema/common.ts';
+import type { ParamValue, SpatialInterpolation } from '../schema/common.ts';
 import type { MediaKind } from '../schema/media.ts';
 import {
 	BLACK_WHITE_OP,
@@ -45,6 +45,11 @@ export type ParamSpec = {
 	unit?: 'px' | '%' | 'deg' | 'dB' | 'frames' | 's' | 'Hz';
 	/** Enums, booleans, strings and media refs are hold-only (S01:KF-007). */
 	animatable: boolean;
+	/**
+	 * Animatable vec2 *points* (S03:KF-021): the spatial interpolation new keys get; their keys may carry curved
+	 * spatial paths. Absent = not a point (component-wise lerp only, e.g. colour wheels).
+	 */
+	spatial?: SpatialInterpolation;
 	options?: readonly string[];
 	/** Human labels for `options` (same order). */
 	optionLabels?: readonly string[];
@@ -442,6 +447,8 @@ const pinCorner = (name: string, label: string, def: [number, number]): ParamSpe
 	default: def,
 	range: { softMin: -1, softMax: 2, step: 0.001 },
 	animatable: true,
+	// Points (spatial paths available); new keys stay straight like the tracker's (S09).
+	spatial: 'linear',
 });
 
 /**
