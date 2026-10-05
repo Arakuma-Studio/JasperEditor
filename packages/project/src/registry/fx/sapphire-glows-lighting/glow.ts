@@ -196,6 +196,20 @@ vec4 sgl_boxRead(sampler2D t, vec2 uv, float d) {
   }
   return acc / float(n * n);
 }
+// Reflect edge mode: a layer-normalised point mirrored into the box.
+vec2 sgl_mirrorNorm(vec2 n) { vec2 m = mod(n, 2.0); return mix(m, 2.0 - m, step(1.0, m)); }
+// The effect input at v_uv, box-filtered over d texels (downscaled bright passes); reflect = 1 mirrors the layer
+// into the padding (Edge Mode: Reflect) so light near the frame edge does not fade.
+vec4 sgl_srcRead(float d, int reflect) {
+  vec2 uv = v_uv;
+  if (reflect == 1) uv = fx_uvOfLayerNorm(sgl_mirrorNorm(fx_layerNorm()));
+  return sgl_boxRead(u_source, uv, d);
+}
+// Level weight (see levelWeights in glow.ts): level k of L on a profile 2^(slope·x) shifted by shift octaves.
+float sgl_levelW(float k, float L, float slope, float shift) {
+  float x = k - shift;
+  return exp2(slope * (x - (L - 1.0))) * clamp(L - x, 0.0, 1.0) * clamp(x + 1.0, 0.0, 1.0);
+}
 // Soft threshold of a value (luma or channel): 0 below t, ramping to 1 over softness s.
 float sgl_soft(float v, float t, float s) { return clamp((v - t) / max(s, 1.0e-4), 0.0, 1.0); }
 // Rainbow spectrum 0..1 (red → yellow → green → cyan → blue → violet), energy-balanced.

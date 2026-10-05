@@ -28,7 +28,9 @@ export async function openSglPage(): Promise<{ browser: Browser; page: Page }> {
 		format: 'iife',
 		platform: 'browser',
 		target: 'es2022',
-		define: { 'process.env.NODE_ENV': '"production"' },
+		define: {
+			'process.env.NODE_ENV': '"production"',
+		},
 		logLevel: 'silent',
 	});
 	const browser = await chromium.launch({

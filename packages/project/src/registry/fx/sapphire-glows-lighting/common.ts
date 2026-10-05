@@ -167,7 +167,5 @@ float sgl_atmosphere(vec2 n, float ar, float amp, float freq, float detail, floa
   float v = fx_fbm3(vec3(n.x * freq * 4.0, n.y * ar * freq * 4.0, t * 0.25), oct, 2.0, 0.5 + 0.2 * detail, fract(seed));
   return max(0.0, 1.0 + amp * v * 1.5);
 }
-// Reflect edge mode: the layer-normalised point mirrored into the box.
-vec2 sgl_mirrorNorm(vec2 n) { vec2 m = mod(n, 2.0); return mix(m, 2.0 - m, step(1.0, m)); }
 `,
 };
