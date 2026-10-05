@@ -61,7 +61,7 @@ float stc_fbm3(vec3 p, float octaves, float gain, float seed) {
   return sum / sqrt(max(norm, 1.0e-6));
 }
 // Noise (≈ −1..1) → texture value 0..1 with Sapphire-like contrast (not clamped: Offset/Brightness act first).
-float stc_unit(float n) { return 0.5 + 0.85 * n; }
+float stc_unit(float n) { return 0.5 + 0.65 * n; }
 
 // Sapphire clouds: plain fBm translated by Shift, or (Boiling Mode) 3D fBm evolving at Boil Speed with the
 // gain Boil Details. \`t\` is the boil time (seconds × speed).
@@ -74,7 +74,7 @@ float stc_clouds(vec2 p, float octaves, bool boil, float details, float t, float
 // the centre; returns plane coordinates (= q · zDist when latitude is 0). Positive latitude tilts the plane down
 // (horizon below the frame centre), negative up. \`facing\` > 0 where the ray hits the plane (else: past the horizon).
 vec2 stc_plane(vec2 q, float zDist, float latitudeDeg, float lens, out float facing) {
-  float f = max(lens, 0.05) * 1.2;
+  float f = max(lens, 0.05) * 0.6;
   float a = fx_deg(clamp(latitudeDeg, -89.0, 89.0));
   vec3 d = vec3(q, f);
   vec3 e2 = vec3(0.0, cos(a), sin(a));

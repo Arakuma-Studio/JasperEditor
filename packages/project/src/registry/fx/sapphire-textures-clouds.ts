@@ -35,7 +35,8 @@ const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) 
 const single = (frag: string, timeInvariant = false): GpuEffect => ({
 	kind: 'generator',
 	...(timeInvariant ? { timeInvariant: true } : {}),
-	passes: [{ include: [STC_CORE, STC_RAMP, STC_FINISH], frag }],
+	// The ramp chunk reads the Color0/Color1 uniforms: only effects that use it declare them.
+	passes: [{ include: frag.includes('stc_ramp') ? [STC_CORE, STC_RAMP, STC_FINISH] : [STC_CORE, STC_FINISH], frag }],
 });
 
 function texture(init: {
@@ -112,7 +113,7 @@ void main() {${CLOUDS_COORDS}
   vec3 c = vec3(stc_fbm(p, u_octaves, 0.5, stc_seed(u_seed, 1.0)),
                 stc_fbm(p, u_octaves, 0.5, stc_seed(u_seed, 2.0)),
                 stc_fbm(p, u_octaves, 0.5, stc_seed(u_seed, 3.0)));
-  c = 0.5 + 1.1 * c;
+  c = 0.5 + 0.55 * c;
   c = fx_saturate(c, u_saturation);
   fragColor = stc_finish(c * u_brightness * u_scaleColors.rgb + u_offset);
 }`),
@@ -147,7 +148,7 @@ void main() {${CLOUDS_COORDS}
   vec3 cn = vec3(stc_fbm(pc, u_colorOctaves, 0.5, stc_seed(cs, 1.0)),
                  stc_fbm(pc, u_colorOctaves, 0.5, stc_seed(cs, 2.0)),
                  stc_fbm(pc, u_colorOctaves, 0.5, stc_seed(cs, 3.0)));
-  vec3 tint = max(vec3(0.0), 1.0 + u_colorAmount * 2.5 * cn * u_colorNoiseColor.rgb);
+  vec3 tint = max(vec3(0.0), 1.0 + u_colorAmount * 1.6 * cn * u_colorNoiseColor.rgb);
   fragColor = stc_finish(v * tint * u_brightness * u_color.rgb + u_offset);
 }`),
 });
@@ -249,9 +250,9 @@ void main() {
   float r = length(pl);
   float ri = max(u_innerRadius, 1.0e-3);
   float rr = max(r, ri);
-  // Rotation ∝ 1/r outside the inner radius (Vortex Start/Speed = degrees at the frame edge), phased in inside it.
+  // Rotation ∝ 1/√r outside the inner radius (Vortex Start/Speed = degrees at the frame edge), phased in inside it.
   float edge = 0.5 * stc_aspect();
-  float ang = fx_deg(u_vortexStart + u_vortexSpeed * u_time) * edge * r / (rr * rr) + fx_deg(u_angleOffset);
+  float ang = fx_deg(u_vortexStart + u_vortexSpeed * u_time) * sqrt(edge / rr) * (r / rr) + fx_deg(u_angleOffset);
   pl = fx_rot(ang) * pl;${PLANE_CLOUDS}
   fragColor = stc_finish(stc_ramp1(v));
 }`),
@@ -486,16 +487,16 @@ export const S_TEXTURE_LOOPS = texture({
 		...finishParams(),
 	],
 	gpu: single(/* glsl */ `
-// Line along the integer contours of x: half-width Thickness/4 (in contour spacings), soft edges, anti-aliased.
+// Line along the integer contours of x: half-width Thickness/2 (in contour spacings), soft edges, anti-aliased.
 float loopLine(float x, float thick, float soft) {
   float c = abs(x - floor(x + 0.5));
-  float hw = clamp(thick, -1.0, 2.0) * 0.25;
+  float hw = clamp(thick, -1.0, 2.0) * 0.5;
   float s = max(soft, 0.0) * 0.25 + fwidth(x) + 1.0e-4;
   return 1.0 - smoothstep(hw - 0.5 * s, hw + 0.5 * s, c);
 }
 float loopSet(vec2 p, float freq, float thick, float k, float ph) {
-  float n = stc_fbm(p * freq + vec2(17.3, -9.1) * k, 2.0, 0.5, stc_seed(u_seed, k));
-  return loopLine(n * u_loopFreq + ph, u_thickness + thick, u_softness + u_smooth);
+  float n = stc_fbm(p * 0.5 * freq + vec2(17.3, -9.1) * k, 2.0, 0.5, stc_seed(u_seed, k));
+  return loopLine(n * u_loopFreq * 0.4 + ph, u_thickness + thick, u_softness + u_smooth);
 }
 void main() {${SHIFTED}
   float ph = u_phaseStart + u_phaseSpeed * u_time;
@@ -552,9 +553,11 @@ float turb3(vec3 p, float octaves, float gain, float seed) {
 }
 void main() {
   vec2 q = stc_screen() - stc_yUp(u_shiftStart + u_shiftSpeed * u_time);
-  vec2 p = q * vec2(u_frequency * u_frequencyRelX, u_frequency) * 3.0;
-  float t = turb3(vec3(p, u_boilSpeed * u_time * 0.35), u_octaves, clamp(u_details, 0.0, 1.0) * 1.15, u_seed);
-  float v = max(t * 3.2 - u_threshold, 0.0) / max(1.0 - 0.5 * u_threshold, 0.1);
+  vec2 p = q * vec2(u_frequency * u_frequencyRelX, u_frequency) * 6.0;
+  float t = turb3(vec3(p, u_boilSpeed * u_time * 0.35), u_octaves, 0.35 + 0.6 * clamp(u_details, 0.0, 1.0), u_seed);
+  // Creases (|noise| ≈ 0) are the dark grooves between rounded grains; Threshold cuts the low values to black.
+  float g = 1.0 - pow(max(1.0 - t * 2.2, 0.0), 2.0);
+  float v = max(g - u_threshold, 0.0) / max(1.0 - u_threshold, 0.05);
   fragColor = stc_finish(stc_ramp1(v));
 }`),
 });
@@ -739,13 +742,13 @@ export const S_TEXTURE_NOISE_EMBOSS = texture({
 	],
 	gpu: single(
 		/* glsl */ `
-float bump(vec2 p) { return u_bumpsScale * max(stc_unit(stc_fbm(p, u_octaves, 0.5, u_seed)) - u_bumpsThreshold, 0.0); }
+float bump(vec2 p) { return u_bumpsScale * max(0.5 + 0.5 * stc_fbm(p, u_octaves, 0.5, u_seed) - u_bumpsThreshold, 0.0); }
 void main() {${SHIFTED}
   vec2 fq = vec2(u_frequency * u_frequencyRelX, u_frequency);
   float e = 0.015 + 0.25 * u_bumpsSmooth;
   vec2 g = vec2(bump(p + vec2(e, 0.0)) - bump(p - vec2(e, 0.0)), bump(p + vec2(0.0, e)) - bump(p - vec2(0.0, e))) / (2.0 * e);
-  // Slope in texture space (heights are in units of 1/25 frame height per Bumps Scale unit).
-  vec3 nrm = normalize(vec3(-g * fq * 0.04, 1.0));
+  // Slope in texture space (heights are in units of 1/50 frame height per Bumps Scale unit).
+  vec3 nrm = normalize(vec3(-g * fq * 0.02, 1.0));
   vec2 ld = stc_yUp(u_lightDir);
   vec3 l = normalize(vec3(ld, sqrt(max(0.0, 1.0 - dot(ld, ld))) + 0.05));
   float diffuse = max(dot(nrm, l), 0.0);
@@ -766,10 +769,12 @@ const noisePaintPasses = (p: EffectParams, ctx: FxPlanContext): ShaderPass[] => 
 		frag: /* glsl */ `
 void main() {
   vec2 p = (stc_screen() - stc_yUp(u_noiseShift)) * vec2(u_noiseFrequency * u_noiseFreqRelX, u_noiseFrequency);
-  vec3 c = vec3(stc_fbm(p, u_noiseOctaves, 0.5, stc_seed(u_seed, 1.0)),
-                stc_fbm(p, u_noiseOctaves, 0.5, stc_seed(u_seed, 2.0)),
-                stc_fbm(p, u_noiseOctaves, 0.5, stc_seed(u_seed, 3.0)));
-  fragColor = vec4(clamp(0.5 + 1.2 * c, 0.0, 1.0), 1.0);
+  // A luminance noise plus a softer chroma noise (a painting, not a rainbow).
+  float l = stc_fbm(p, u_noiseOctaves, 0.5, stc_seed(u_seed, 1.0));
+  vec3 ch = vec3(stc_fbm(p * 0.7, u_noiseOctaves, 0.5, stc_seed(u_seed, 2.0)),
+                 stc_fbm(p * 0.7, u_noiseOctaves, 0.5, stc_seed(u_seed, 3.0)),
+                 stc_fbm(p * 0.7, u_noiseOctaves, 0.5, stc_seed(u_seed, 4.0)));
+  fragColor = vec4(clamp(0.5 + 0.8 * l + 0.6 * (ch - dot(ch, vec3(1.0 / 3.0))), 0.0, 1.0), 1.0);
 }`,
 	},
 	{
@@ -801,7 +806,7 @@ void main() {
   ivec2 c = ivec2(floor(g));
   float jf = floor(u_jitterFrames + 0.5);
   int epoch = jf >= 1.0 ? int(floor(u_frame / jf)) : 0;
-  float halfW = 0.42;
+  float halfW = 0.34;
   float halfLen = clamp(0.45 + abs(u_strokeLength) * 0.22, halfW, 1.6);
   float px = 1.0 / max(cs * stc_heightPx(), 1.0);
   vec3 col = texture(u_noise, v_uv).rgb;
@@ -941,20 +946,24 @@ export const S_TEXTURE_RIDGES = texture({
 	gpu: single(/* glsl */ `
 void main() {
   vec2 q = stc_screen() - stc_yUp(u_shiftStart + u_shiftSpeed * u_time);
-  vec3 pp = vec3(q * u_frequency * vec2(u_relFreqX, u_relFreqY) * 2.0, u_boilSpeed * u_time * 0.3);
+  vec3 pp = vec3(q * u_frequency * vec2(u_relFreqX, u_relFreqY) * 1.2, u_boilSpeed * u_time * 0.3);
   float inv = u_inversionThreshold;
   float sharp = 1.0 + 3.0 * max(abs(inv) - 1.0, 0.0);
   float n = clamp(u_ridgedFractalOctaves, 1.0, 8.0);
-  float acc = 0.0, ws = 0.0, amp = 1.0;
+  // Ridged multifractal: each pass is weighted by the previous one, so finer swirls grow along the bright ridges.
+  float acc = 0.0, ws = 0.0, amp = 1.0, weight = 1.0;
   for (int k = 0; k < 8; k++) {
     float w = clamp(n - float(k), 0.0, 1.0);
     if (w <= 0.0) break;
     float s = stc_fbm3(pp, u_noiseOctaves, clamp(u_noiseDetails, 0.0, 2.0), stc_seed(u_seed, float(k)));
     float u = clamp(0.5 + 0.5 * s, 0.0, 1.0);
-    float ridge = 1.0 - min(abs(s) * 1.6, 1.0);
+    float ridge = 1.0 - min(abs(s) * 1.4, 1.0);
+    ridge *= ridge * ridge;
     float v = inv >= 0.0 ? mix(u, ridge, min(inv, 1.0)) : mix(u, 1.0 - ridge, min(-inv, 1.0));
-    acc += w * amp * pow(v, sharp);
+    float sig = pow(v, sharp) * weight;
+    acc += w * amp * sig;
     ws += w * amp;
+    weight = clamp(sig * 2.0, 0.0, 1.0);
     amp *= u_octaveGain;
     pp = vec3(STC_OCT * pp.xy * (0.5 * u_octaveFreqScale), pp.z * u_octaveFreqScale);
   }
