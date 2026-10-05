@@ -94,11 +94,11 @@ describe.runIf(enabled)(
 		});
 
 		it('animated clouds move between frames; a time-invariant texture does not', async () => {
-			const a = await still('jasper.s.clouds-vortex', 15);
-			const b = await still('jasper.s.clouds-vortex', 45);
+			const a = await still('jasper.s.clouds-vortex', 5);
+			const b = await still('jasper.s.clouds-vortex', 25);
 			expect(diff(a, b)).toBeGreaterThan(3);
-			const c = await still('jasper.s.texture-noise-emboss', 15);
-			const d = await still('jasper.s.texture-noise-emboss', 45);
+			const c = await still('jasper.s.texture-noise-emboss', 5);
+			const d = await still('jasper.s.texture-noise-emboss', 25);
 			expect(diff(c, d)).toBe(0);
 		});
 	},
