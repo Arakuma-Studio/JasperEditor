@@ -7,7 +7,7 @@ import { fxCanvasLayout } from '../../src/fx/plan.ts';
 
 type Px = [number, number, number, number];
 type Scene = {
-	kind: 'photo' | 'ramp' | 'quad' | 'bars' | 'transparent' | 'solid' | 'disc';
+	kind: 'photo' | 'ramp' | 'quad' | 'bars' | 'transparent' | 'solid' | 'disc' | 'invertStrip';
 	dx?: number;
 	dy?: number;
 	/** photo: scale about the box centre. */
@@ -77,6 +77,17 @@ function paintScene(
 			ctx.beginPath();
 			ctx.arc(x + b.w / 2, y + b.h / 2, Math.min(b.w, b.h) / 4, 0, Math.PI * 2);
 			ctx.fill();
+			break;
+		case 'invertStrip':
+			// An inverting 2D LUT strip of a 4³ cube (16 × 4: x = red + 4·blue, y = green).
+			for (let py = 0; py < 4; py++)
+				for (let px = 0; px < 16; px++) {
+					const r = (px % 4) / 3;
+					const g = py / 3;
+					const bl = Math.floor(px / 4) / 3;
+					ctx.fillStyle = `rgb(${255 * (1 - r)},${255 * (1 - g)},${255 * (1 - bl)})`;
+					ctx.fillRect(b.x + px, b.y + py, 1, 1);
+				}
 			break;
 		case 'transparent':
 			break;
