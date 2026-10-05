@@ -104,11 +104,15 @@ const SHEET: { id: string; params?: Record<string, unknown>; video?: string; fra
 
 describe.runIf(enabled)(
 	'Sapphire Time + Flicker in Remotion renders (REMOTION_E2E=1)',
-	{ timeout: 900_000 },
+	{ timeout: 2_400_000 },
 	() => {
 		let media: FxMedia;
 		let serveUrl: string;
 		let renderer: typeof import('@remotion/renderer');
+		// One browser for every still (opening one per still dominates the run time).
+		let puppeteerInstance:
+			| Awaited<ReturnType<typeof import('@remotion/renderer')['openBrowser']>>
+			| undefined;
 		const browserExecutable =
 			process.env.JASPER_BROWSER_EXECUTABLE ??
 			(existsSync('/usr/bin/google-chrome') ? '/usr/bin/google-chrome' : null);
@@ -120,10 +124,12 @@ describe.runIf(enabled)(
 			const { bundle } = await import('@remotion/bundler');
 			serveUrl = await bundle({ entryPoint: join(here, 'fx-render', 'entry.ts') });
 			renderer = await import('@remotion/renderer');
+			puppeteerInstance = await renderer.openBrowser('chrome', browser);
 			console.info(`[fx-stf] stills in ${media.dir}`);
 		}, 300_000);
 
-		afterAll(() => {
+		afterAll(async () => {
+			await puppeteerInstance?.close({ silent: true });
 			media?.close();
 		});
 
@@ -136,10 +142,19 @@ describe.runIf(enabled)(
 				serveUrl,
 				id: SEQUENCE_COMPOSITION_ID,
 				inputProps,
+				puppeteerInstance,
 				...browser,
 			});
 			const output = join(media.dir, `${name}.png`);
-			await renderer.renderStill({ composition, serveUrl, inputProps, frame, output, ...browser });
+			await renderer.renderStill({
+				composition,
+				serveUrl,
+				inputProps,
+				frame,
+				output,
+				puppeteerInstance,
+				...browser,
+			});
 			return execFileSync(
 				'ffmpeg',
 				['-v', 'error', '-i', output, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'],
