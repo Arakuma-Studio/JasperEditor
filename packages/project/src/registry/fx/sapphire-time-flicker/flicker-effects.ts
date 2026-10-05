@@ -145,7 +145,12 @@ function measuringEffect(init: {
 }): EffectSpec {
 	const v = init.variant;
 	const weight = v.matte ? ' * fl_matte(n)' : '';
-	const image = v.kind === 'match' ? 'texture(u_match, n)' : 'texture(u_source, fx_uvOfLayerNorm(n))';
+	// Without a Match clip the reduction finds nothing (st.a = 0) and the source passes through. (Media sizes and the
+	// sample count are only bound in passes that sample the texture, so these checks live in the reduction passes.)
+	const image =
+		v.kind === 'match'
+			? '(u_match_size.x > 0.0 ? texture(u_match, n) : vec4(0.0))'
+			: 'texture(u_source, fx_uvOfLayerNorm(n))';
 	const target =
 		v.kind === 'remove'
 			? v.color
@@ -181,7 +186,7 @@ function measuringEffect(init: {
 						),
 					);
 				const refGlsl = ref
-					? `if (u_sampleCount > 0) { vec4 r = texture(u_flRef, vec2(0.5)); if (r.a > 0.0) target = ${
+					? `{ vec4 r = texture(u_flRef, vec2(0.5)); if (r.a > 0.0) target = ${
 							v.color ? 'r.rgb' : 'vec3(fx_luma(r.rgb))'
 						}; }`
 					: '';
@@ -190,7 +195,6 @@ function measuringEffect(init: {
 					frag: /* glsl */ `
 void main() {
   vec4 src = texture(u_source, v_uv);
-  ${v.kind === 'match' ? 'if (u_match_size.x <= 0.0) { fragColor = src; return; }' : ''}
   vec4 st = texture(u_flStats, vec2(0.5));
   if (st.a <= 0.0) { fragColor = src; return; }
   ${target}

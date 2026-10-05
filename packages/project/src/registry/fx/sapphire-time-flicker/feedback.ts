@@ -1,8 +1,8 @@
 // Recursive Sapphire time effects — S_Trails, S_TrailsDiffuse, S_Feedback, S_FeedbackBubble, S_FeedbackDistort —
 // emulated deterministically. Sapphire stores each output and combines it with the next frame (state carried between
 // frames, reset on a non-consecutive frame); here the recursion is UNROLLED inside one frame: the last `Max Steps`
-// frames are fetched as time samples (≤ 8, spread over the window), and one pass per sample replays the recursion
-// oldest → newest (out_k = combine(transform(out_{k−1}), frame_k)), the last pass adding the current frame. Every
+// frames are fetched as time samples (≤ 8, spread over the window) and one pass replays the recursion oldest →
+// newest (out_k = combine(transform(out_{k−1}), frame_k)) along each output pixel's chain of read positions. Every
 // per-step operation (fade, colour, hue shift, zoom/rotate/shift, bubble/lens distortion, blur, diffusion) is raised
 // to the frame gap between consecutive samples, so a sparse window decays like `Max Steps` single steps. Frames
 // before the clip's first frame do not exist (the effect builds up from the first frame, like Sapphire after a reset).
@@ -23,7 +23,7 @@ export const COMBINE_MODE_LABELS = ['Ave', 'Max', 'Screen', 'Add', 'Over', 'Unde
 export const WRAP_MODES = ['no', 'tile', 'reflect'] as const;
 export const WRAP_MODE_LABELS = ['No', 'Tile', 'Reflect'] as const;
 
-/** Most samples (= recursion passes) a feedback effect uses. */
+/** Most samples (= recursion steps) a feedback effect uses. */
 export const FEEDBACK_MAX_SAMPLES = 8;
 
 /** The parameters every trails/feedback effect starts with (Sapphire order). */
@@ -85,27 +85,27 @@ function feedbackGlsl(o: FeedbackOptions): string {
 	const diffuse = o.diffuse
 		? /* glsl */ `
   if (u_${o.diffuse.amount} > 0.0) {
-    ivec3 k = ivec3(floor(fx_canvasPx()), int(floor(sf)));
+    ivec3 k = ivec3(floor(px * u_pxScale), int(floor(sf)));
     vec2 r = vec2(fx_hash3(k, u_seed), fx_hash3(k + ivec3(0, 0, 7919), u_seed)) * 2.0 - 1.0;
     px += r * u_${o.diffuse.amount} * 0.5 * fb_boxPx().y * sqrt(gap) * u_${o.diffuse.rel};
   }`
 		: '';
 	const blur = o.blur
 		? /* glsl */ `
-  if (u_${o.blur.amount} > 0.0) {
-    vec2 sigma = max(vec2(0.0), u_${o.blur.rel}) * u_${o.blur.amount} * ${SAPPHIRE_BLUR_UNIT.toFixed(3)} * fb_boxPx().y * sqrt(gap);
-    vec4 s = fb_read(px);
+  if (u_${o.blur.amount} > 0.0 && age > 0.0) {
+    vec2 sigma = max(vec2(0.0), u_${o.blur.rel}) * u_${o.blur.amount} * ${SAPPHIRE_BLUR_UNIT.toFixed(3)} * fb_boxPx().y * sqrt(age);
+    vec4 s = fb_tap(i, px);
     float w = 1.0;
     for (int k = 1; k < 16; k++) {
       float r = sqrt(float(k) / 15.0) * 2.0;
       float a = float(k) * 2.39996323;
       float g = exp(-0.5 * r * r);
-      s += fb_read(px + vec2(cos(a), sin(a)) * r * sigma) * g;
+      s += fb_tap(i, px + vec2(cos(a), sin(a)) * r * sigma) * g;
       w += g;
     }
-    c = s / w;
-  } else c = fb_read(px);`
-		: '  c = fb_read(px);';
+    return s / w;
+  }`
+		: '';
 	return /* glsl */ `
 vec2 fb_boxPx() { return u_box.zw / u_pxScale; }
 float fb_wrap1(float x, int m) {
@@ -113,24 +113,32 @@ float fb_wrap1(float x, int m) {
   if (m == 2) { float k = mod(x, 2.0); return k > 1.0 ? 2.0 - k : k; }
   return x;
 }
-// The previous output at a layer pixel (wrap modes at the layer box edges).
-vec4 fb_read(vec2 px) {
+// Applies the wrap modes to a layer pixel; false when it lies outside the layer box (Wrap: No).
+bool fb_wrapPx(inout vec2 px) {
   vec2 n = px / fb_boxPx();
   ${wrap}
-  if (any(lessThan(n, vec2(0.0))) || any(greaterThan(n, vec2(1.0)))) return vec4(0.0);
-  return texture(u_prev, fx_uvOfLayerNorm(n));
+  px = n * fb_boxPx();
+  return all(greaterThanEqual(n, vec2(0.0))) && all(lessThanEqual(n, vec2(1.0)));
+}
+// Time sample i at a layer pixel (wrapped; transparent outside the box).
+vec4 fb_tap(int i, vec2 px) {
+  if (!fb_wrapPx(px)) return vec4(0.0);
+  return fx_sample(i, fx_uvOfLayerNorm(px / fb_boxPx()));
+}
+// Sample i as it reaches the output: blurred by every step since it was the new frame (age = frames ago).
+vec4 fb_frame(int i, vec2 px, float age) {
+${blur}
+  return fb_tap(i, px);
 }
 ${o.helpers ?? ''}
-vec2 fb_warp(vec2 px, float gap, float sf) {
+// Where one step of \`gap\` frames (new picture at frame sf) reads the previous output, for output pixel px.
+vec2 fb_step(vec2 px, float gap, float sf) {
 ${o.warp ?? ''}
+${diffuse}
   return px;
 }
-// The previous output, transformed for one step of \`gap\` frames (sf = frame of the new picture).
-vec4 fb_prev(float gap, float sf) {
-  vec2 px = fb_warp(fx_layerPx(), gap, sf);
-  vec4 c;
-${diffuse}
-${blur}
+// Fade, colour and hue shift of the previous output for one step of \`gap\` frames.
+vec4 fb_ops(vec4 c, float gap) {
   if (u_prevHueShift != 0.0 && c.a > 0.0) {
     vec3 s = fx_hueShift(clamp(c.rgb / c.a, 0.0, 1.0), u_prevHueShift * gap / 360.0);
     c.rgb = s * c.a;
@@ -158,41 +166,51 @@ vec4 fb_combine(vec4 prev, vec4 nw, float gap) {
 `;
 }
 
-/** The passes of a feedback effect: optional pre passes, one recursion pass per sample, the final combine. */
+/**
+ * The passes of a feedback effect: optional pre passes, then ONE pass that replays the recursion per pixel. Every
+ * per-step operation except blur is a point map, so the value of the recursion at an output pixel only depends on
+ * one chain of positions: walking back from the output pixel through each step's read position (warp, diffusion,
+ * wrap) gives where every earlier frame is read; walking forward combines them (fade, colour, hue, combine mode).
+ * Blur is applied to each frame by its age (σ·√age), i.e. blur-then-combine instead of combine-then-blur.
+ */
 function feedbackPasses(o: FeedbackOptions, p: EffectParams, ctx: FxPlanContext): ShaderPass[] {
-	const steps = historyOffsets(int(p.maxSteps, 15, 1), FEEDBACK_MAX_SAMPLES).length;
-	const include = [GLSL_COLOR, GLSL_HASH, GLSL_UV, ...(o.include ?? [])];
-	const lib = feedbackGlsl(o);
-	const out: ShaderPass[] = [...(o.pre?.(p, ctx) ?? [])];
-	const stepFrag = /* glsl */ `${lib}
-void main() {
-  if (u_fbStep >= u_sampleCount) { fragColor = texture(u_prev, v_uv); return; }
-  float o = u_sampleOffsets[u_fbStep];
-  vec4 nw = fb_new(fx_sample(u_fbStep, v_uv));
-  if (u_fbStep == 0) { fragColor = nw; return; }
-  float gap = o - u_sampleOffsets[u_fbStep - 1];
-  fragColor = fb_combine(fb_prev(gap, u_frame + o), nw, gap);
-}`;
-	for (let i = 0; i < steps; i++)
-		out.push({
-			output: `fb${i}`,
-			include,
-			format: 'rgba16f',
-			frag: stepFrag,
-			uniforms: { u_fbStep: { int: i } },
-		});
-	out.push({
-		include,
-		frag: /* glsl */ `${lib}
+	return [
+		...(o.pre?.(p, ctx) ?? []),
+		{
+			include: [GLSL_COLOR, GLSL_HASH, GLSL_UV, ...(o.include ?? [])],
+			frag: /* glsl */ `${feedbackGlsl(o)}
 void main() {
   vec4 src = texture(u_source, v_uv);
-  if (u_sampleCount == 0 || !fx_inBox(v_uv)) { fragColor = src; return; }
-  float gap = -u_sampleOffsets[u_sampleCount - 1];
-  vec4 r = fb_combine(fb_prev(gap, u_frame), fb_new(src), gap);
+  int n = u_sampleCount;
+  if (n == 0 || !fx_inBox(v_uv)) { fragColor = src; return; }
+  vec2 qs[8];
+  bool ok[8];
+  vec2 q = fx_layerPx();
+  bool alive = true;
+  for (int k = 7; k >= 0; k--) {
+    if (k >= n) continue;
+    float later = k == n - 1 ? 0.0 : u_sampleOffsets[k + 1];
+    q = fb_step(q, later - u_sampleOffsets[k], u_frame + later);
+    alive = alive && fb_wrapPx(q);
+    qs[k] = q;
+    ok[k] = alive;
+  }
+  vec4 acc = vec4(0.0);
+  for (int k = 0; k < 8; k++) {
+    if (k >= n) break;
+    vec4 nw = ok[k] ? fb_new(fb_frame(k, qs[k], -u_sampleOffsets[k])) : vec4(0.0);
+    if (k == 0) acc = nw;
+    else {
+      float gap = u_sampleOffsets[k] - u_sampleOffsets[k - 1];
+      acc = fb_combine(fb_ops(acc, gap), nw, gap);
+    }
+  }
+  float gap = -u_sampleOffsets[n - 1];
+  vec4 r = fb_combine(fb_ops(acc, gap), fb_new(src), gap);
   fragColor = vec4(max(r.rgb, vec3(0.0)), clamp(r.a, 0.0, 1.0));
 }`,
-	});
-	return out;
+		},
+	];
 }
 
 function feedbackEffect(init: {
