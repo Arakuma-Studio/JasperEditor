@@ -113,6 +113,8 @@ export type IrisConfig = {
 	texture?: { scale: number; relY: number; rotate: number; intensity: number; shift: readonly [number, number] };
 	/** Custom lens picture (media param `customLens`). */
 	customLens?: boolean;
+	/** Gaussian radial profile over a circle of radius 3σ (Z Blur). */
+	gauss?: boolean;
 };
 
 /** The iris of the common params (Shape/Roundness/Rotate/Bokeh/Lens Noise…). */
@@ -145,6 +147,7 @@ function irisDefines(c: IrisConfig): string {
 	if (c.opticalVignette || c.matteBox?.some((x) => x > 0)) d.push('#define SBS_CROP 1');
 	if (c.texture && c.texture.intensity > 0) d.push('#define SBS_TEXTURE 1');
 	if (c.customLens) d.push('#define SBS_CUSTOM 1');
+	if (c.gauss) d.push('#define SBS_GAUSS_PROFILE 1');
 	return d.length ? `${d.join('\n')}\n` : '';
 }
 
@@ -192,8 +195,20 @@ float sbs_irisBoundary(float th) {
   }
   return max(b, 0.02);
 }
+// A tap of the gathered picture; with SBS_SLICE (depth layers) weighted by the slice membership at that point
+// (\`sbs_sliceW\`, defined by a chunk included before this one).
+vec4 sbs_fetch(sampler2D t, vec2 uv, int mode) {
+#ifdef SBS_SLICE
+  return sbs_tex(t, uv, mode) * sbs_sliceW(uv);
+#else
+  return sbs_tex(t, uv, mode);
+#endif
+}
 // Radial profile at normalised radius r (0 centre … 1 edge): Bokeh > 0 softens the edge, < 0 darkens the centre.
 float sbs_irisProfile(float r) {
+#ifdef SBS_GAUSS_PROFILE
+  return exp(-4.5 * r * r);
+#endif
   float bk = u_irisA.w;
   if (bk > 0.0) return 1.0 - smoothstep(1.0 - min(bk, 1.0) * u_irisB.x - 1.0e-3, 1.0001, r) * min(bk, 1.0);
   if (bk < 0.0) {
@@ -295,17 +310,17 @@ vec4 sbs_gather(sampler2D t, vec2 uv, vec2 rad, float count, int mode) {
     vec2 o = s * rad * texel;
 #ifdef SBS_PRISM
     vec3 wc = w * sbs_prismRings(rr);
-    vec4 c = sbs_tex(t, uv + o, mode);
+    vec4 c = sbs_fetch(t, uv + o, mode);
     sum += vec4(c.rgb * wc, c.a * w);
     wsum += vec4(wc, w);
 #elif defined(SBS_FRINGE)
-    vec4 cr = sbs_tex(t, uv + o * u_irisFringe.r, mode);
-    vec4 cg = sbs_tex(t, uv + o * u_irisFringe.g, mode);
-    vec4 cb = sbs_tex(t, uv + o * u_irisFringe.b, mode);
+    vec4 cr = sbs_fetch(t, uv + o * u_irisFringe.r, mode);
+    vec4 cg = sbs_fetch(t, uv + o * u_irisFringe.g, mode);
+    vec4 cb = sbs_fetch(t, uv + o * u_irisFringe.b, mode);
     sum += vec4(cr.r, cg.g, cb.b, cg.a) * w;
     wsum += vec4(w);
 #else
-    sum += sbs_tex(t, uv + o, mode) * w;
+    sum += sbs_fetch(t, uv + o, mode) * w;
     wsum += vec4(w);
 #endif
   }
@@ -348,6 +363,7 @@ export type GatherSpec = {
 	defines?: string;
 	/** Fragment body: default `fragColor = sbs_gather(...)`. Receives the texture expression. */
 	body?: (tex: string) => string;
+	/** Chunks emitted BEFORE the iris chunk (e.g. the depth chunk defining `sbs_sliceW`). */
 	include?: readonly GlslChunk[];
 	uniforms?: Record<string, FxUniformValue>;
 	/** Cap of the downscale (pyramid) level. */
@@ -368,14 +384,14 @@ export function gatherPass(plan: SbsPlan, g: GatherSpec): { output: string; scal
 	const radiusTiny = Math.max(rx, ry) < 0.35;
 	const pass: ShaderPass = {
 		output: g.output,
-		include: [definesChunk(irisDefines(g.iris) + (g.defines ?? '')), GLSL_SBS_IRIS, ...(g.include ?? [])],
+		include: [definesChunk(irisDefines(g.iris) + (g.defines ?? '')), ...(g.include ?? []), GLSL_SBS_IRIS],
 		frag: `
 void main() {
 ${
 	g.body
 		? g.body(`u_${tex}`)
 		: radiusTiny
-			? `  fragColor = sbs_tex(u_${tex}, v_uv, u_gEdge);`
+			? `  fragColor = sbs_fetch(u_${tex}, v_uv, u_gEdge);`
 			: `  fragColor = sbs_gather(u_${tex}, v_uv, u_gRadius, u_gCount, u_gEdge);`
 }
 }`,
