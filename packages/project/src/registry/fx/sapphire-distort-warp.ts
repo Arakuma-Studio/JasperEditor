@@ -459,39 +459,51 @@ export const S_PARALLAX_STRIPS = distortEffect({
 		uniforms: (p, ctx) => ({ u_psAmount: parallaxAmount(p, ctx.frame, ctx.duration) }),
 		passes: [
 			{
-				include: [GLSL_DW_RENDER, GLSL_HASH],
+				include: [GLSL_DW, GLSL_HASH],
 				frag: /* glsl */ `
-// The front-most strip covering f: its index (−1 = none), the source position and the strip depth (0 far, 1 near).
-int ps_front(vec2 f, out vec2 src, out float depth) {
+// Per-strip random numbers: a PCG chain seeded by (strip, u_seed) — cheaper than independent lattice hashes.
+float ps_next(inout uint st) { st = fx_pcg(st); return float(st >> 8u) * (1.0 / 16777216.0); }
+// The front-most strip covering f: its index (−1 = none), the source position, the strip depth (0 far, 1 near),
+// the distance from f to that strip's border (frame units) and the border's outward normal.
+int ps_front(vec2 f, out vec2 src, out float depth, out float edge, out vec2 nrm) {
   float ang = radians(u_angle);
   vec2 ax = vec2(cos(ang), sin(ang));
   vec2 nx = vec2(-ax.y, ax.x);
-  float L = 1.0 + dw_aspect();
+  // The frame's extent along and across the strips (strips are scattered over it and wrap around along it).
+  float extA = abs(ax.x) + abs(ax.y) * dw_aspect();
+  float extN = abs(nx.x) + abs(nx.y) * dw_aspect();
   vec2 all2 = vec2(dot(u_allStripsShift, ax), dot(u_allStripsShift, nx));
   vec2 g = vec2(dot(f, ax), dot(f, nx));
   int best = -1;
   depth = -1.0;
+  edge = 1.0e3;
+  nrm = ax;
   src = f;
   int n = int(clamp(floor(u_nStrips + 0.5), 1.0, 1000.0));
+  uint seedBits = fx_pcg(fx_seedBits(u_seed));
   for (int i = 0; i < 1000; i++) {
     if (i >= n) break;
-    vec3 h = fx_hash33(ivec3(i, 17, 3), u_seed);
-    float z = h.x;
+    uint st = fx_pcg(uint(i) * 2654435761u ^ seedBits);
+    float z = ps_next(st);
     if (z <= depth) continue;
+    vec3 h = vec3(z, ps_next(st), ps_next(st));
     float sc = (1.0 + u_depth * z) / (1.0 + 0.5 * u_depth);
-    vec3 v = fx_hash33(ivec3(i, 29, 5), u_seed) * 2.0 - 1.0;
+    vec3 v = vec3(ps_next(st), ps_next(st), ps_next(st)) * 2.0 - 1.0;
     float wdt = u_size * sc * max(0.0, 1.0 + u_sizeVary.x * v.x);
     float hgt = u_fullHeight ? 1.0e3 : wdt * u_relHeight * max(0.0, 1.0 + u_sizeVary.y * v.y);
     float speed = u_stripSpeed * sc * (1.0 + u_stripSpeedVary * v.z);
-    float period = L + wdt;
+    float period = extA + wdt;
     float along = (h.y - 0.5) * period + speed * u_time + all2.x;
     along = mod(along + 0.5 * period, period) - 0.5 * period;
-    float across = (h.z - 0.5) * L + all2.y;
+    float across = (h.z - 0.5) * (extN + min(hgt, extN)) + all2.y;
     vec2 q = g - vec2(along, across);
-    if (abs(q.x) <= 0.5 * wdt && abs(q.y) <= 0.5 * hgt) {
+    vec2 inside = vec2(0.5 * wdt, 0.5 * hgt) - abs(q);
+    if (inside.x >= 0.0 && inside.y >= 0.0) {
       best = i;
       depth = z;
-      vec3 r = fx_hash33(ivec3(i, 41, 7), u_seed);
+      edge = min(inside.x, inside.y);
+      nrm = inside.x < inside.y ? ax * sign(q.x + 1e-9) : nx * sign(q.y + 1e-9);
+      vec2 r = vec2(ps_next(st), ps_next(st));
       float sgn = r.x < 0.5 ? -1.0 : 1.0;
       float shift = u_shiftAmount * wdt * max(0.0, 1.0 + u_shiftVary * (2.0 * r.y - 1.0)) * u_psAmount * sgn;
       src = f + ax * shift;
@@ -500,16 +512,37 @@ int ps_front(vec2 f, out vec2 src, out float depth) {
   src *= u_zDist;
   return best;
 }
-vec2 dw_warp(vec2 f) { vec2 s; float d; ps_front(f, s, d); return s; }
-vec4 dw_shade(vec2 f, ivec2 w) {
-  vec2 s;
-  float d;
-  int i = ps_front(f, s, d);
+vec4 ps_color(int i, vec2 f, vec2 s, float d, ivec2 w) {
   if (u_show == 0) return dw_tap(s, w);
   vec4 under = u_show == 1 ? dw_tap(f * u_zDist, w) : vec4(0.0, 0.0, 0.0, 1.0);
   return i < 0 ? under : vec4(vec3(0.25 + 0.75 * d), 1.0);
 }
-void main() { fragColor = dw_render(${WRAP1}, true, 2); }`,
+void main() {
+  // Analytic antialiasing: one strip search per pixel; a second one just across the border for border pixels
+  // (a loop, so the search is compiled once).
+  vec2 f = dw_frame();
+  ivec2 w = dw_wrapAt(f, ${WRAP1});
+  float px = dw_px();
+  vec2 at = f;
+  vec4 c = vec4(0.0);
+  float cov = 1.0;
+  for (int k = 0; k < 2; k++) {
+    vec2 s, nrm;
+    float d, e;
+    int i = ps_front(at, s, d, e, nrm);
+    if (k == 0) {
+      c = ps_color(i, f, s, d, w);
+      if (i < 0 || e >= 0.5 * px) break;
+      cov = clamp(0.5 + e / px, 0.0, 1.0);
+      at = f + nrm * (e + 0.75 * px);
+    } else {
+      // The neighbour's content at this pixel's own position (its image shifts with it).
+      vec4 c2 = u_show == 0 ? dw_tap(i < 0 ? f * u_zDist : s + (f - at) * u_zDist, w) : ps_color(i, at, s, d, w);
+      c = mix(c2, c, cov);
+    }
+  }
+  fragColor = c;
+}`,
 			},
 		],
 	},
