@@ -20,7 +20,8 @@ const glow = defineShaderEffect({
 	params: [fxParam.point('center', 'Center'), fxParam.percent('amount', 'Amount', 50)],
 	gpu: { passes: [{ frag: 'void main() { fragColor = texture(u_source, v_uv); }' }] },
 });
-const registry = createEffectRegistry([...defaultEffectRegistry.list(), glow]);
+// The built-in non-GPU effects plus one test shader effect, independent of the fx catalogue's growing families.
+const registry = createEffectRegistry([...defaultEffectRegistry.list().filter((s) => !s.gpu), glow]);
 
 describe('Effects panel tree', () => {
 	it('shows an effect with a bin under Video Effects ▸ <bin>, categories otherwise', () => {
