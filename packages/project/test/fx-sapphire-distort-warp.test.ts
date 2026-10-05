@@ -272,7 +272,7 @@ describe('projective maths', () => {
 			expect(close(r[0], q[i]![0], 1e-9) && close(r[1], q[i]![1], 1e-9)).toBe(true);
 		});
 		const id = mat3Mul(m, mat3Invert(m)!);
-		id.forEach((v, i) => expect(close(v, MAT3_IDENTITY[i]!, 1e-9)).toBe(true));
+		for (const [i, v] of id.entries()) expect(close(v, MAT3_IDENTITY[i]!, 1e-9)).toBe(true);
 		expect(mat3Invert([1, 2, 3, 2, 4, 6, 0, 0, 1])).toBeNull();
 	});
 
