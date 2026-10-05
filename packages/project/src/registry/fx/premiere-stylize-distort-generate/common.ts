@@ -203,31 +203,39 @@ export function evolutionParams(group = 'Evolution Options'): ParamSpec[] {
 }
 
 /**
- * Evolving fractal noise (≈ −1..1): `psdg_evolveFbm(p, octaves, evolutionDeg, cycleOn, cycleRevs, seed)`, simplex
- * fbm in (p, evolution); `psdg_evolveTurb` = turbulence (|noise| sum, 0..1).
+ * Evolving fractal noise. `psdg_evolve(p, octaves, evolutionDeg, cycleOn, cycleRevs, seed, turbulent)`: simplex fbm
+ * (≈ −1..1) or turbulence (|noise| sum, 0..1) in (p, evolution); fractional octaves fade the last octave in (AE
+ * Complexity). One call site of the noise inside loops keeps the inlined shader small (every GLSL compiler inlines).
  */
 export const GLSL_PSDG_EVOLVE: GlslChunk = {
 	name: 'psdg/evolve',
 	deps: [GLSL_NOISE],
 	source: /* glsl */ `
-float psdg_evolveFbm(vec2 p, int octaves, float evolutionDeg, bool cycleOn, float cycleRevs, float seed) {
-  float z = evolutionDeg / 360.0;
-  if (!cycleOn) return fx_fbm3(vec3(p, z * 0.6), octaves, 2.0, 0.5, seed);
-  float c = max(floor(cycleRevs), 1.0);
-  float zc = mod(z, c);
-  float w = zc / c;
-  float a = fx_fbm3(vec3(p, zc * 0.6), octaves, 2.0, 0.5, seed);
-  float b = fx_fbm3(vec3(p, (zc - c) * 0.6), octaves, 2.0, 0.5, seed);
-  return mix(a, b, w);
+float psdg_fbmFrac(vec3 p, float octaves, float seed, bool turbulent) {
+  float sum = 0.0, amp = 0.5, norm = 0.0;
+  for (int k = 0; k < 10; k++) {
+    float w = clamp(octaves - float(k), 0.0, 1.0);
+    if (w <= 0.0) break;
+    float n = fx_simplex3(p, fract(seed + float(k) * 0.1031));
+    sum += amp * w * (turbulent ? abs(n) : n);
+    norm += amp * w;
+    p = p * 2.0 + vec3(0.0, 0.0, 0.37);
+    amp *= 0.5;
+  }
+  return norm > 0.0 ? sum / norm : 0.0;
 }
-float psdg_evolveTurb(vec2 p, int octaves, float evolutionDeg, bool cycleOn, float cycleRevs, float seed) {
+float psdg_evolve(vec2 p, float octaves, float evolutionDeg, bool cycleOn, float cycleRevs, float seed, bool turbulent) {
   float z = evolutionDeg / 360.0;
-  if (!cycleOn) return fx_turbulence(vec3(p, z * 0.6), octaves, 2.0, 0.5, seed);
   float c = max(floor(cycleRevs), 1.0);
-  float zc = mod(z, c);
-  float w = zc / c;
-  return mix(fx_turbulence(vec3(p, zc * 0.6), octaves, 2.0, 0.5, seed),
-             fx_turbulence(vec3(p, (zc - c) * 0.6), octaves, 2.0, 0.5, seed), w);
+  float zc = cycleOn ? mod(z, c) : z;
+  float w = cycleOn ? zc / c : 0.0;
+  float acc = 0.0;
+  for (int j = 0; j < 2; j++) {
+    float wj = j == 0 ? 1.0 - w : w;
+    if (wj <= 0.0) continue;
+    acc += wj * psdg_fbmFrac(vec3(p, (zc - float(j) * c) * 0.6), octaves, seed, turbulent);
+  }
+  return acc;
 }
 `,
 };

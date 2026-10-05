@@ -120,15 +120,14 @@ void main() {
   int type = u_edgeType;
   if (type == 6 || type == 7) stretch *= vec2(3.0, 0.4); // photocopy: streaky
   vec2 q = lp / (feature * stretch);
-  int oct = int(clamp(u_complexity, 1.0, 10.0));
-  float n = psdg_evolveFbm(q, oct, u_evolution, u_cycleEvolution, u_cycle, u_seed);
+  float n = psdg_evolve(q, clamp(u_complexity, 1.0, 10.0), u_evolution, u_cycleEvolution, u_cycle, u_seed, false);
   if (type == 3) n = 1.0 - 2.0 * pow(abs(n), 0.5); // spiky: sharp ridges
   n *= u_fractalInfluence;
   // The eroded edge: keep where depth beats the noise.
   float field = depth - n * 0.75 - 0.05;
   if (type == 4 || type == 5) {
     // Rusty: also holes inside the border band.
-    float holes = psdg_evolveTurb(q * 2.3 + 17.0, oct, u_evolution, u_cycleEvolution, u_cycle, u_seed);
+    float holes = psdg_evolve(q * 2.3 + 17.0, clamp(u_complexity, 1.0, 10.0), u_evolution, u_cycleEvolution, u_cycle, u_seed, true);
     field = min(field, (holes - 0.18) * 3.0 + depth * 1.2);
   }
   float soft = 0.25 / max(u_edgeSharpness, 0.02);
