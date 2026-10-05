@@ -68,12 +68,6 @@ vec4 dw_tap(vec2 f, ivec2 wrap) {
 }
 // The wrap that applies at output position f: the effect's inside the layer box, No in the padding.
 ivec2 dw_wrapAt(vec2 f, ivec2 wrap) { return dw_inBoxF(f) ? wrap : ivec2(DW_NO); }
-// Spectrum weights from Color1 (t = 0) over Color2 (t = 0.5) to Color3 (t = 1): Bernstein weights, which sum to
-// white over a uniform sweep when the colours are pure red, green and blue.
-vec3 dw_spectrum(float t, vec3 c1, vec3 c2, vec3 c3) {
-  float a = (1.0 - t) * (1.0 - t), b = 2.0 * t * (1.0 - t), c = t * t;
-  return c1 * a + c2 * b + c3 * c;
-}
 `,
 };
 
@@ -113,6 +107,43 @@ vec4 dw_render(ivec2 wrap, bool filt, int maxN) {
     }
   }
   return acc / float(n * n);
+}
+`,
+};
+
+/**
+ * Spectral sweeps (S_DistortChroma, S_WarpChroma): `n` taps at t = 0..1 (the effect defines `dw_spectralTap`),
+ * weighted by the spectrum Color1 → Color2 → Color3. Each Bernstein basis is normalised over the actual steps, so
+ * pure red/green/blue colours sum exactly to white (an unwarped area keeps its colour at any step count); White
+ * Balance additionally divides by Color1 + Color2 + Color3 so any colours sum to white.
+ */
+export const GLSL_DW_SPECTRAL: GlslChunk = {
+	name: 'sapphire-distort-warp/spectral',
+	deps: [GLSL_DW],
+	source: /* glsl */ `
+vec4 dw_spectralTap(vec2 f, float t, ivec2 w);
+vec4 dw_spectral(vec2 f, ivec2 w, int n, vec3 c1, vec3 c2, vec3 c3, bool whiteBalance) {
+  vec3 sums = vec3(0.0);
+  for (int i = 0; i < 100; i++) {
+    if (i >= n) break;
+    float t = float(i) / float(n - 1);
+    sums += vec3((1.0 - t) * (1.0 - t), 2.0 * t * (1.0 - t), t * t);
+  }
+  sums = max(sums, vec3(1e-6));
+  vec3 acc = vec3(0.0);
+  float alpha = 0.0;
+  for (int i = 0; i < 100; i++) {
+    if (i >= n) break;
+    float t = float(i) / float(n - 1);
+    vec3 b = vec3((1.0 - t) * (1.0 - t), 2.0 * t * (1.0 - t), t * t) / sums;
+    vec4 c = dw_spectralTap(f, t, w);
+    acc += c.rgb * (c1 * b.x + c2 * b.y + c3 * b.z);
+    alpha += c.a * (b.x + b.y + b.z) / 3.0;
+  }
+  vec3 total = c1 + c2 + c3;
+  if (whiteBalance) acc /= max(total, vec3(1e-4));
+  // Premultiplied; may exceed alpha with bright colours (callers clamp after their gain).
+  return vec4(acc, clamp(alpha, 0.0, 1.0));
 }
 `,
 };

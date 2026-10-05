@@ -200,7 +200,8 @@ export function boundsPadding(
 	height: number,
 ): { left: number; top: number; right: number; bottom: number } {
 	const aspect = height / Math.max(1, width);
-	const px = (v: number) => Math.max(0, Math.ceil(v * width) + 2);
+	// A couple of pixels of slack for the antialiased edge, none when the box stays inside.
+	const px = (v: number) => (v * width > 1e-3 ? Math.ceil(v * width) + 2 : 0);
 	return {
 		left: px(-0.5 - b.minX),
 		right: px(b.maxX - 0.5),

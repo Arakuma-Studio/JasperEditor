@@ -23,6 +23,7 @@ import {
 	GLSL_DW,
 	GLSL_DW_LENS,
 	GLSL_DW_RENDER,
+	GLSL_DW_SPECTRAL,
 } from './sapphire-distort-warp/glsl.ts';
 import {
 	boundsPadding,
@@ -248,29 +249,15 @@ export const S_DISTORT_CHROMA = distortEffect({
 		passes: (p, ctx) => [
 			...lensPasses(num(p.blurLens, 0.4), ctx, true),
 			{
-				include: [GLSL_DW_RENDER, GLSL_DW_LENS],
+				include: [GLSL_DW_RENDER, GLSL_DW_LENS, GLSL_DW_SPECTRAL],
 				frag: /* glsl */ `
 vec2 dc_disp(vec2 f) { return u_dispScale * (dw_rot(u_rotateWarpDir) * dw_lensGrad(f)) * u_amountRel; }
 vec2 dw_warp(vec2 f) { return f + dc_disp(f) * max(abs(u_warpRed), abs(u_warpBlue)); }
+vec4 dw_spectralTap(vec2 f, float t, ivec2 w) { return dw_tap(f + dc_disp(f) * mix(u_warpRed, u_warpBlue, t), w); }
 vec4 dw_shade(vec2 f, ivec2 w) {
-  vec2 d = dc_disp(f);
   int n = int(clamp(floor(u_steps + 0.5), 3.0, 100.0));
-  vec3 acc = vec3(0.0), wsum = vec3(0.0);
-  float aacc = 0.0, asum = 0.0;
-  for (int i = 0; i < 100; i++) {
-    if (i >= n) break;
-    float t = float(i) / float(n - 1);
-    vec3 wt = dw_spectrum(t, u_color1.rgb, u_color2.rgb, u_color3.rgb);
-    vec4 c = dw_tap(f + d * mix(u_warpRed, u_warpBlue, t), w);
-    acc += c.rgb * wt;
-    wsum += wt;
-    float wa = (wt.r + wt.g + wt.b) / 3.0;
-    aacc += c.a * wa;
-    asum += wa;
-  }
-  vec3 norm = u_whiteBalance ? max(wsum, vec3(1e-4)) : vec3(max(asum, 1e-4));
-  float a = clamp(aacc / max(asum, 1e-4), 0.0, 1.0);
-  return vec4(min(acc / norm, vec3(a)), a);
+  vec4 c = dw_spectral(f, w, n, u_color1.rgb, u_color2.rgb, u_color3.rgb, u_whiteBalance);
+  return vec4(min(c.rgb, vec3(c.a)), c.a);
 }
 void main() { fragColor = dw_render(${WRAP}, u_filter, 2); }`,
 			},
@@ -661,27 +648,14 @@ export const S_WARP_CHROMA = distortEffect({
 		timeInvariant: true,
 		passes: [
 			{
-				include: [GLSL_DW_RENDER],
+				include: [GLSL_DW_RENDER, GLSL_DW_SPECTRAL],
 				frag: /* glsl */ `${PATH_GLSL}
 vec2 dw_warp(vec2 f) { return wp_at(f, 0.0); }
+vec4 dw_spectralTap(vec2 f, float t, ivec2 w) { return dw_tap(wp_at(f, t), w); }
 vec4 dw_shade(vec2 f, ivec2 w) {
   int n = int(clamp(floor(u_steps + 0.5), 3.0, 100.0));
-  vec3 acc = vec3(0.0), wsum = vec3(0.0);
-  float aacc = 0.0, asum = 0.0;
-  for (int i = 0; i < 100; i++) {
-    if (i >= n) break;
-    float t = float(i) / float(n - 1);
-    vec3 wt = dw_spectrum(t, u_color1.rgb, u_color2.rgb, u_color3.rgb);
-    vec4 c = dw_tap(wp_at(f, t), w);
-    acc += c.rgb * wt;
-    wsum += wt;
-    float wa = (wt.r + wt.g + wt.b) / 3.0;
-    aacc += c.a * wa;
-    asum += wa;
-  }
-  vec3 norm = u_whiteBalance ? max(wsum, vec3(1e-4)) : vec3(max(asum, 1e-4));
-  float a = clamp(aacc / max(asum, 1e-4), 0.0, 1.0);
-  return vec4(acc / norm * u_brightness, a);
+  vec4 c = dw_spectral(f, w, n, u_color1.rgb, u_color2.rgb, u_color3.rgb, u_whiteBalance);
+  return vec4(min(c.rgb * u_brightness, vec3(c.a)), c.a);
 }
 void main() { fragColor = dw_render(${WRAP}, u_filter, 2); }`,
 			},
@@ -831,17 +805,18 @@ float rp_envelope(float r, float inner, float innerSoft, float outer, float oute
   float b = 1.0 - smoothstep(outer - max(outerSoft, 1e-4), outer, r);
   return a * b;
 }
-// Radial ripple displacement (frame units) at offset d from a centre.
+// Radial ripple displacement (frame units) at offset d (frame units) from a centre.
 vec2 rp_wave(vec2 d, float relH, float rotDeg, float freq, float phase, float amp,
              float inner, float innerSoft, float outer, float outerSoft) {
   vec2 e = dw_rot(-rotDeg) * d;
   e.y /= max(relH, 0.01);
-  float r = length(e);
+  float r = length(e) / dw_unit();
   if (r < 1e-7) return vec2(0.0);
-  float env = rp_envelope(r / dw_unit(), inner, innerSoft, outer, outerSoft);
+  float env = rp_envelope(r, inner, innerSoft, outer, outerSoft);
   if (env <= 0.0) return vec2(0.0);
-  vec2 dir = dw_rot(rotDeg) * vec2(e.x, e.y * max(relH, 0.01)) / r;
-  return normalize(dir) * amp * ${DW_WAVE_UNIT.toFixed(3)} / max(freq, 0.01) * sin(DW_TAU * (freq * r - phase)) * env;
+  vec2 dir = normalize(dw_rot(rotDeg) * vec2(e.x, e.y * max(relH, 0.01)));
+  // Frequency = waves per radius unit; the displacement keeps the wave's steepness independent of it.
+  return dir * amp * ${DW_WAVE_UNIT.toFixed(3)} * dw_unit() / max(freq, 0.01) * sin(DW_TAU * (freq * r - phase)) * env;
 }`;
 
 export const S_WARP_PUDDLE = distortEffect({
@@ -1026,7 +1001,7 @@ void main() {
     if (c.a <= 0.0) break;
     vec2 cf = dw_frameOfUv(c.xy);
     d += c.z * rp_wave(f - cf, u_relHeight, u_rotateRelH, u_frequency, u_phaseStart + u_phaseSpeed * u_time,
-                       u_amplitude * 0.1, u_innerRadius, u_innerSoftness, u_outerRadius, u_outerSoftness);
+                       u_amplitude * 0.3, u_innerRadius, u_innerSoftness, u_outerRadius, u_outerSoftness);
   }
   fragColor = vec4(clamp(0.5 + 4.0 * d, 0.0, 1.0), 0.5, 1.0);
 }`,
