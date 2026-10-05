@@ -238,12 +238,15 @@ export class SbsPlan {
 		return p.output ?? `pass${this.passes.length - 1}`;
 	}
 
-	/** `input` at 1/2^k of the canvas (k = 0: `input` itself). Pyramid levels are named `<input>L<k>`. */
-	level(input: string, k: number, format: SbsFormat = 'rgba16f'): string {
-		if (k <= 0) return input;
-		const built = this.pyramids.get(input) ?? 0;
+	/**
+	 * `input` at 1/2^k of the canvas (k ≤ base: `input` itself, which is at 1/2^base). Pyramid levels are named
+	 * `<input>L<k>`.
+	 */
+	level(input: string, k: number, format: SbsFormat = 'rgba16f', base = 0): string {
+		if (k <= base) return input;
+		const built = Math.max(base, this.pyramids.get(input) ?? 0);
 		for (let i = built + 1; i <= k; i++) {
-			const src = i === 1 ? input : `${input}L${i - 1}`;
+			const src = i === base + 1 ? input : `${input}L${i - 1}`;
 			this.passes.push({
 				output: `${input}L${i}`,
 				include: [GLSL_SBS_PYRAMID],
@@ -272,6 +275,8 @@ export class SbsPlan {
 		/** Per-channel sigma multipliers (rgba) for channel blurs. */
 		channels?: readonly [number, number, number, number];
 		maxLevel?: number;
+		/** The input is already at 1/2^inputLevel of the canvas. */
+		inputLevel?: number;
 	}): { output: string; scale: number } {
 		const filter = o.filter ?? 2;
 		const edge = o.edge ?? SBS_EDGE_NONE;
@@ -283,8 +288,9 @@ export class SbsPlan {
 		let k = 0;
 		const maxLevel = o.maxLevel ?? 5;
 		while (k < maxLevel && (smin / 2 ** k > 12 || smax / 2 ** k > 256)) k++;
+		k = Math.max(k, o.inputLevel ?? 0);
 		const scale = 1 / 2 ** k;
-		let tex = this.level(o.input, k, format);
+		let tex = this.level(o.input, k, format, o.inputLevel ?? 0);
 		const axes: [number, [number, number]][] = [
 			[sx * scale, [1, 0]],
 			[sy * scale, [0, 1]],
