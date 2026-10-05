@@ -14,7 +14,16 @@ import { GLSL_COLOR } from '../glsl/color.ts';
 import { GLSL_NOISE } from '../glsl/noise.ts';
 import { fxParam } from '../params.ts';
 import type { FxUniformValue, GlslChunk, ShaderPass } from '../shader.ts';
-import { choiceIndex, GLSL_SBS_COMMON, levelFor, num, type SbsPlan, sNum, sSize } from './common.ts';
+import {
+	choiceIndex,
+	definesChunk,
+	GLSL_SBS_COMMON,
+	levelFor,
+	num,
+	type SbsPlan,
+	sNum,
+	sSize,
+} from './common.ts';
 
 /** Iris radius (canvas px) per Sapphire "Defocus Width" unit: the width is the iris DIAMETER in Sapphire units. */
 export const DEFOCUS_RADIUS_PER_UNIT = 0.5;
@@ -335,7 +344,7 @@ export type GatherSpec = {
 	edge: number;
 	/** Extra downscale steps (S_AdvancedDefocus "Resolution"). */
 	extraLevels?: number;
-	/** Extra GLSL defines / helper code / main body override (Z slicing). */
+	/** Extra `#define` lines (they precede the iris chunk). */
 	defines?: string;
 	/** Fragment body: default `fragColor = sbs_gather(...)`. Receives the texture expression. */
 	body?: (tex: string) => string;
@@ -359,8 +368,8 @@ export function gatherPass(plan: SbsPlan, g: GatherSpec): { output: string; scal
 	const radiusTiny = Math.max(rx, ry) < 0.35;
 	const pass: ShaderPass = {
 		output: g.output,
-		include: [GLSL_SBS_IRIS, ...(g.include ?? [])],
-		frag: `${irisDefines(g.iris)}${g.defines ?? ''}
+		include: [definesChunk(irisDefines(g.iris) + (g.defines ?? '')), GLSL_SBS_IRIS, ...(g.include ?? [])],
+		frag: `
 void main() {
 ${
 	g.body
@@ -386,5 +395,5 @@ ${
 
 /** The iris uniforms + defines for a final pass that draws Show Shape. */
 export function shapeViewPassParts(iris: IrisConfig) {
-	return { defines: irisDefines(iris), uniforms: irisUniforms(iris) };
+	return { defines: definesChunk(irisDefines(iris)), uniforms: irisUniforms(iris) };
 }

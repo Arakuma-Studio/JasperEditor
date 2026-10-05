@@ -387,3 +387,13 @@ export function levelFor(r: number, target: number, maxLevel = 6): number {
 /** The common tail of a pass-function: Sapphire size → canvas px for this instance. */
 export const px = (ctx: FxPlanContext, sapphireSize: number, factor = 1) =>
 	Math.max(0, sapphireSize) * factor * unitPx(ctx);
+
+/**
+ * A chunk of `#define` lines that must precede the library chunks testing them (`include: [definesChunk(…), …]`).
+ * Named by content so equal define sets dedupe and programs cache per variant.
+ */
+export function definesChunk(defines: string): GlslChunk {
+	let h = 0x811c9dc5;
+	for (let i = 0; i < defines.length; i++) h = Math.imul(h ^ defines.charCodeAt(i), 0x01000193);
+	return { name: `sapphire-blur-sharpen/defines-${(h >>> 0).toString(16)}`, source: defines };
+}
