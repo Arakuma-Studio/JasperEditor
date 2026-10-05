@@ -62,7 +62,6 @@ function ImportMode() {
 			<EmptyState
 				icon="app.import"
 				message="Import mode: browse and ingest media"
-				detail="This view is provided by the project and export work package."
 				action={{ label: 'Import…', onClick: () => void runtime.run('project.import') }}
 			/>
 		</div>

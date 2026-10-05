@@ -231,11 +231,6 @@ export class EngineProjectStore implements ProjectStore {
 
 	// ------------------------------------------------------------ leases (S01:PER-040)
 
-	/** The lease this store holds for a project (if any). */
-	heldLease(projectId: string): Lease | null {
-		return this.leases.get(projectId)?.lease ?? null;
-	}
-
 	async acquireLease(
 		projectId: string,
 		sessionId: string = this.newSessionId(),

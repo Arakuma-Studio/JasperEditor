@@ -4,7 +4,7 @@
 import { useSessionOrNull } from '@jasper/session/react';
 import { useMemo } from 'react';
 import { createCommandContext } from '../commands/context.ts';
-import { getCommand, runCommand } from '../commands/registry.ts';
+import { runCommand } from '../commands/registry.ts';
 import type { CommandCtx, FocusInfo } from '../commands/types.ts';
 import { useShellRuntimeOrNull } from '../shell/context.tsx';
 import { useCapabilities, useEngine } from '../state/engine.tsx';
@@ -31,7 +31,6 @@ export function useLocalCommandCtx(focus?: FocusInfo): CommandCtx {
 
 /** Runs a UI command if it is registered; returns false when it is not (callers hide/disable the entry). */
 export async function runIfRegistered(id: string, ctx: CommandCtx, args?: unknown): Promise<boolean> {
-	if (!getCommand(id)) return false;
 	const r = await runCommand(id, ctx, args);
 	return r.ran;
 }

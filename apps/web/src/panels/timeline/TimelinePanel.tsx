@@ -45,7 +45,7 @@ import {
 	readTransitionDragPayload,
 	transitionDragId,
 } from '../effects/drag.ts';
-import { setDefaultTransition } from '../effects/transition-prefs.ts';
+import { setDefaultTransition, TRANSITION_ALIGNMENTS } from '../effects/transition-prefs.ts';
 import { insertMotionTemplate, MG_TEMPLATE_MIME, readMgTemplateDrag } from '../motionTemplates/insert.ts';
 import { projectItemOf } from '../program/layer-ops.ts';
 import type { PanelProps } from '../types.ts';
@@ -81,11 +81,6 @@ import { HEADER_MAX, HEADER_MIN, setPrefs, timelinePrefs } from './state/prefs.t
 import { type ContextMenuItem, createTimelineUiStore, type TransitionGhost } from './state/ui-store.ts';
 
 const EMPTY: readonly string[] = [];
-const ALIGNMENTS: readonly [Transition['alignment'], string][] = [
-	['center', 'Center at Cut'],
-	['start-at-cut', 'Start at Cut'],
-	['end-at-cut', 'End at Cut'],
-];
 
 function mods(e: { shiftKey: boolean; ctrlKey: boolean; altKey: boolean; metaKey: boolean }, mac: boolean) {
 	return { shift: e.shiftKey, ctrl: mac ? e.metaKey : e.ctrlKey, alt: e.altKey };
@@ -565,7 +560,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			{
 				kind: 'submenu',
 				label: 'Alignment',
-				items: ALIGNMENTS.map(([a, label]) => ({
+				items: TRANSITION_ALIGNMENTS.map(({ value: a, label }) => ({
 					kind: 'item' as const,
 					label,
 					checked: t.alignment === a,
@@ -724,7 +719,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			? target.oneSided === 'in'
 				? 'Fade in'
 				: 'Fade out'
-			: (ALIGNMENTS.find(([a]) => a === target.alignment)?.[1] ?? '');
+			: (TRANSITION_ALIGNMENTS.find(({ value }) => value === target.alignment)?.label ?? '');
 		const lines = [`${where} · ${formatDuration(f.fittedDuration, rate, dropFrame)}`];
 		if (f.fittedDuration < f.wantedDuration)
 			lines.push(`Insufficient media: the transition will be ${f.fittedDuration} frames`);

@@ -62,7 +62,7 @@ const WAVE_LOG_FLOOR_DB = -48;
  * 0 dBFS, like an NLE's logarithmic waveform scaling, so dialogue at −18 dBFS still reads at a
  * 40 px track height; `linear` is the raw amplitude.
  */
-export function waveHeight(amplitude: number, scale: 'linear' | 'log'): number {
+function waveHeight(amplitude: number, scale: 'linear' | 'log'): number {
 	const a = Math.min(1, Math.max(0, amplitude));
 	if (scale === 'linear' || a === 0) return a;
 	const db = 20 * Math.log10(a);

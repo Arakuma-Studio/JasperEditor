@@ -1,4 +1,3 @@
-// M3 MCP tools: the engine's media cache (S04:CA-019) — get_cache_usage, clean_cache. Owner: wp-m3-cachegc.
 import { CACHE_KINDS, type CacheGcReport, type CacheUsage } from '@jasper/api';
 import { z } from 'zod';
 import { DESTRUCTIVE, defineTool, jobBody, READ_ONLY, type ToolContext, waitJob } from '../context.ts';

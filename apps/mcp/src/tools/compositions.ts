@@ -1,13 +1,3 @@
-// M2 MCP tools: motion-graphics bundles as clips (S08:MGA-001/002). Owner: wp-m2-mg (ARCHITECTURE §19.9).
-//   import_mg_bundle       a Remotion 4.0.499 project folder (or built bundle folder) → mg-bundle media
-//   list_compositions      the compositions of the project's bundles with their props schemas
-//   add_composition        clip.addComposition (default duration = the composition length)
-//   set_composition_props  props overrides of a composition clip (merge or replace; validated by the schema)
-//   prerender_composition  the clip's preview or ProRes 4444 master as an engine job
-//   scaffold_mg_project    (P1) a new Remotion project from the template, imported and watched
-//   list_composition_texts (M3, wp-m3-mgtext) the texts a composition clip exposes, with style props and limits
-//   set_composition_text   (M3) edit texts (+ font/size/colour/alignment) of a composition clip in one step
-// `render_frame` (render.ts) renders composition clips through the same pre-render path (a native still).
 import type { MgPrerenderRequest, RegisteredMedia } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import {

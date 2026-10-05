@@ -2,7 +2,12 @@
 // interactive-lane job) → registry record → follow-up derivative jobs (S04:IN-011).
 import { copyFile, mkdir, readdir, readFile, realpath, rename, rm, stat } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
-import type { MediaDiscardResponse, MediaStatus, RegisteredMedia } from '@jasper/api';
+import {
+	type MediaDiscardResponse,
+	type MediaStatus,
+	type RegisteredMedia,
+	TERMINAL_JOB_STATES,
+} from '@jasper/api';
 import type { DerivativeService } from '../derivatives/service.ts';
 import type { Broadcaster } from '../events/broadcaster.ts';
 import type { JobQueue } from '../jobs/queue.ts';
@@ -275,8 +280,7 @@ export class MediaService {
 			if (r.derivedFrom) return { deleted: false, reason: 'derived' };
 			if (await referencedByProjects(opts.projectsDir, mediaKey)) return { deleted: false, reason: 'in-use' };
 			for (const j of this.deps.queue.list())
-				if (j.assetId === mediaKey && !['succeeded', 'failed', 'cancelled', 'interrupted'].includes(j.state))
-					this.deps.queue.cancel(j.id);
+				if (j.assetId === mediaKey && !TERMINAL_JOB_STATES.has(j.state)) this.deps.queue.cancel(j.id);
 			await this.deps.registry.remove(mediaKey);
 			const dir = dirname(r.storage.path);
 			if (dir === join(this.deps.mediaDir, mediaKey)) await rm(dir, { recursive: true, force: true });

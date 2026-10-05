@@ -65,7 +65,7 @@ import {
 } from './layer.ts';
 
 /** Entries unused for this long are removed by the GC pass (S11:LBK-021). */
-export const LAYER_CACHE_TTL_MS = 14 * 24 * 3600 * 1000;
+const LAYER_CACHE_TTL_MS = 14 * 24 * 3600 * 1000;
 /**
  * Version of the graded entries' recipe (bumped when graded pixels change for the same inputs). 2: graded stills
  * carry the transition fades; the Remotion-path master is a PNG frame sequence (alpha honoured).
@@ -208,7 +208,7 @@ export type LayerBakePreviewResult = {
 	height: number;
 };
 
-export type LayerBakeOptions = {
+type LayerBakeOptions = {
 	core: CoreServices;
 	log?(msg: string): void;
 	now?: () => Date;

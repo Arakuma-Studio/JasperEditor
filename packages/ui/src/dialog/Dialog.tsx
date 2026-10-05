@@ -194,10 +194,6 @@ export function registerDialog<P>(
 	};
 }
 
-export function hasDialog(kind: string): boolean {
-	return registry.has(kind);
-}
-
 /**
  * Opens a registered dialog; resolves with the value passed to `close(result)` (undefined on cancel).
  * Modal dialogs never stack except confirmations spawned from a dialog (S05:DG-004): opening a second

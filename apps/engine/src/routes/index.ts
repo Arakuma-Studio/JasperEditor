@@ -20,7 +20,7 @@ import stillsRoutes from './stills.ts';
 import trackingRoutes from './tracking.ts';
 import uploadsRoutes from './uploads.ts';
 
-export const ROUTE_PLUGINS = [
+const ROUTE_PLUGINS = [
 	capabilitiesRoutes,
 	eventsRoutes,
 	projectsRoutes,

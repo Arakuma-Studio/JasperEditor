@@ -306,7 +306,7 @@ export type TextAnimationWindows = {
 };
 
 /** Params of a side: the preset's defaults ⊕ the stored params, parsed by its schema when it accepts them. */
-export function textAnimatorParams(
+function textAnimatorParams(
 	animator: Pick<TextAnimator, 'params'>,
 	spec: TextAnimationSpec | undefined,
 ): Record<string, unknown> {

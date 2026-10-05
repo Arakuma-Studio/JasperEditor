@@ -10,6 +10,7 @@ import {
 	defaultTextStyle,
 	defaultTransform,
 } from '../../factories.ts';
+import { mediaIntrinsicSize } from '../../process/rescale.ts';
 import {
 	contentDurationFlicks,
 	defaultLabelForPlacedClip,
@@ -86,14 +87,6 @@ export function commonFields(
 
 export function visualFields(transform: Transform) {
 	return { transform, opacity: anim(100), blendMode: 'normal' as const, effects: [] };
-}
-
-/** Intrinsic box of a media asset: probed size with rotation applied (S01:KND-020, AST-002). */
-function mediaBox(asset: MediaAsset): Box | null {
-	const vs = asset.probe.streams.find((s) => s.type === 'video');
-	if (vs?.type !== 'video') return null;
-	const swap = asset.probe.rotationDegrees === 90 || asset.probe.rotationDegrees === 270;
-	return swap ? { width: vs.height, height: vs.width } : { width: vs.width, height: vs.height };
 }
 
 export function applyTransformPatch(t: Transform, p: TransformPatch | undefined): Transform {
@@ -211,7 +204,7 @@ export function placeSource(
 			);
 		const name = item?.name ?? asset.originalName;
 		const label = (kind: Clip['kind']) => defaultLabelForPlacedClip(kind, asset, item?.label);
-		const box = mediaBox(asset) ?? frameBox(seq);
+		const box = mediaIntrinsicSize(asset) ?? frameBox(seq);
 		const bounded = asset.kind === 'video' || asset.kind === 'audio';
 		const inF = o.sourceRange?.in ?? marks?.in?.flicks ?? 0;
 		if (bounded) {

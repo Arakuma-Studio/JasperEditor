@@ -20,6 +20,7 @@ import {
 	ROOT,
 	regionLuma,
 	timelineArea,
+	transact,
 } from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -45,18 +46,6 @@ test.beforeAll(async ({ browser }) => {
 test.afterAll(async () => {
 	await page?.close();
 });
-
-async function transact(commands: unknown[]): Promise<{ ok: boolean; errors?: unknown[] }> {
-	return page.evaluate(
-		(cmds) =>
-			(
-				window as unknown as {
-					jasper: { transact(tx: unknown): Promise<{ ok: boolean; errors?: unknown[] }> };
-				}
-			).jasper.transact({ protocol: 'jasper.tx/1', label: 'E2E setup', commands: cmds }),
-		commands,
-	);
-}
 
 async function transitions(): Promise<Tr[]> {
 	const t = await query<Record<string, Tr>>(page, 'doc.get', { path: ['sequences', seqId, 'transitions'] });
@@ -110,7 +99,7 @@ test('drag Cross Dissolve from the Effects panel onto the cut → drawn, Program
 	await createProject(page, 'E2E Transitions');
 	await importFiles(page, ['xfade-red.mp4', 'xfade-blue.mp4']);
 	seqId = (await query<{ sequenceId: string }>(page, 'sequence.summary')).sequenceId;
-	const a = await transact([
+	const a = await transact(page, [
 		{
 			type: 'clip.place',
 			source: { mediaId: { mediaByName: 'xfade-red.mp4' } },
@@ -120,7 +109,7 @@ test('drag Cross Dissolve from the Effects panel onto the cut → drawn, Program
 	]);
 	expect(a.ok, JSON.stringify(a.errors)).toBe(true);
 	cut = (await clips(page, ['V1']))[0]!.end;
-	const b = await transact([
+	const b = await transact(page, [
 		{
 			type: 'clip.place',
 			source: { mediaId: { mediaByName: 'xfade-blue.mp4' } },

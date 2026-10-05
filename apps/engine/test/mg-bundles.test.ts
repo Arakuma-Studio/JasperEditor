@@ -557,8 +557,6 @@ describe('mg-bundles routes (no browser)', () => {
 
 // ---------------------------------------------------------------- the real thing (MG_E2E=1)
 
-type Rgba = Uint8Array;
-
 /** Decodes frame `n` of a video (or a PNG) to raw RGBA (straight alpha) / RGB. */
 function decode(
 	file: string,
@@ -585,13 +583,19 @@ function decode(
 }
 
 /** Straight-alpha composite of `fg` over a flat colour → RGB. */
-function over(fg: Rgba, bg: [number, number, number]): Uint8Array {
+function over(fg: Uint8Array, bg: [number, number, number]): Uint8Array {
 	const out = new Uint8Array((fg.length / 4) * 3);
 	for (let i = 0, j = 0; i < fg.length; i += 4, j += 3) {
 		const a = fg[i + 3]! / 255;
 		for (let c = 0; c < 3; c++) out[j + c] = Math.round(fg[i + c]! * a + bg[c]! * (1 - a));
 	}
 	return out;
+}
+
+function matchingSampleShare(got: Uint8Array, expected: Uint8Array): number {
+	let within = 0;
+	for (let i = 0; i < expected.length; i++) if (Math.abs(got[i]! - expected[i]!) <= 3) within++;
+	return within / expected.length;
 }
 
 describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
@@ -800,19 +804,17 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 			},
 		]);
 		const props = { title: 'Export test', accent: '#22aa66', delay: 0 };
-		const { clipId } = (() => {
-			const r = d.tx([
-				{
-					type: 'clip.addComposition',
-					composition: { mediaId, id: 'Title' },
-					at: 15,
-					track: 'V1',
-					props,
-					duration: 60,
-				},
-			]);
-			return { clipId: (r.results[0] as { clipId: string }).clipId };
-		})();
+		const added = d.tx([
+			{
+				type: 'clip.addComposition',
+				composition: { mediaId, id: 'Title' },
+				at: 15,
+				track: 'V1',
+				props,
+				duration: 60,
+			},
+		]);
+		const { clipId } = added.results[0] as { clipId: string };
 		const first = await exportDoc(d);
 		expect(first.plan.path).toBe('native');
 		expect(first.children.filter((j) => j.kind === 'mg-prerender')).toHaveLength(1);
@@ -820,22 +822,21 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 		const got = decode(first.out, { frame: 45, pix: 'rgb24', ffmpeg: ff });
 		const still = await directStill(props, 30);
 		const expected = over(still, [128, 128, 128]);
-		let within = 0;
-		for (let i = 0; i < expected.length; i++) if (Math.abs(got[i]! - expected[i]!) <= 3) within++;
-		expect(within / expected.length).toBeGreaterThanOrEqual(0.99);
+		expect(matchingSampleShare(got, expected)).toBeGreaterThanOrEqual(0.99);
 		// Frame exactness: before the clip the output is the plain background; during the entrance (the panel
 		// still moving) sequence frame 25 is exactly composition frame 10, not 9 or 11.
 		const before = decode(first.out, { frame: 14, pix: 'rgb24', ffmpeg: ff });
 		expect(Math.max(...before.subarray(0, 3000).map((v) => Math.abs(v - 128)))).toBeLessThanOrEqual(3);
 		const moving = decode(first.out, { frame: 25, pix: 'rgb24', ffmpeg: ff });
-		const share = (exp: Uint8Array) => {
-			let n = 0;
-			for (let i = 0; i < exp.length; i++) if (Math.abs(moving[i]! - exp[i]!) <= 3) n++;
-			return n / exp.length;
-		};
-		expect(share(over(await directStill(props, 10), [128, 128, 128]))).toBeGreaterThanOrEqual(0.99);
-		expect(share(over(await directStill(props, 9), [128, 128, 128]))).toBeLessThan(0.99);
-		expect(share(over(await directStill(props, 11), [128, 128, 128]))).toBeLessThan(0.99);
+		expect(
+			matchingSampleShare(moving, over(await directStill(props, 10), [128, 128, 128])),
+		).toBeGreaterThanOrEqual(0.99);
+		expect(matchingSampleShare(moving, over(await directStill(props, 9), [128, 128, 128]))).toBeLessThan(
+			0.99,
+		);
+		expect(matchingSampleShare(moving, over(await directStill(props, 11), [128, 128, 128]))).toBeLessThan(
+			0.99,
+		);
 
 		// Test 6: the master over four flat colours equals the straight-alpha expectation (Chrome's own pixels).
 		const masterKey = svc.renderKeyOf(
@@ -940,23 +941,26 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 		const second = await exportDoc(d, { profile: '4444' });
 		expect(second.children.filter((j) => j.kind === 'mg-prerender')).toHaveLength(1); // new render key
 		const props = mergeProps(lt.defaultProps, next);
-		const share = (got: Uint8Array, exp: Uint8Array) => {
-			let n = 0;
-			for (let i = 0; i < exp.length; i++) if (Math.abs(got[i]! - exp[i]!) <= 3) n++;
-			return n / exp.length;
-		};
 		const grey = [128, 128, 128] as [number, number, number];
 		// Held text: sequence frame 60 = composition frame 45.
 		const held = decode(second.out, { frame: 60, pix: 'rgb24', ffmpeg: ff });
 		const heldExpected = over(await directStill(props, 45, 'LowerThird'), grey);
-		expect(share(held, heldExpected)).toBeGreaterThanOrEqual(0.99);
+		expect(matchingSampleShare(held, heldExpected)).toBeGreaterThanOrEqual(0.99);
 		// The previous text is gone (the master was re-rendered, not reused).
-		expect(share(held, over(await directStill(lt.defaultProps, 45, 'LowerThird'), grey))).toBeLessThan(0.99);
+		expect(
+			matchingSampleShare(held, over(await directStill(lt.defaultProps, 45, 'LowerThird'), grey)),
+		).toBeLessThan(0.99);
 		// Frame-exact during the entrance: sequence frame 20 = composition frame 5, not 4 or 6.
 		const moving = decode(second.out, { frame: 20, pix: 'rgb24', ffmpeg: ff });
-		expect(share(moving, over(await directStill(props, 5, 'LowerThird'), grey))).toBeGreaterThanOrEqual(0.99);
-		expect(share(moving, over(await directStill(props, 4, 'LowerThird'), grey))).toBeLessThan(0.99);
-		expect(share(moving, over(await directStill(props, 6, 'LowerThird'), grey))).toBeLessThan(0.99);
+		expect(
+			matchingSampleShare(moving, over(await directStill(props, 5, 'LowerThird'), grey)),
+		).toBeGreaterThanOrEqual(0.99);
+		expect(matchingSampleShare(moving, over(await directStill(props, 4, 'LowerThird'), grey))).toBeLessThan(
+			0.99,
+		);
+		expect(matchingSampleShare(moving, over(await directStill(props, 6, 'LowerThird'), grey))).toBeLessThan(
+			0.99,
+		);
 		// The embedded face is what the export drew: inside the name's box the export matches the Inter render and
 		// not the same props drawn with a system family.
 		const box = (exp: Uint8Array) => {

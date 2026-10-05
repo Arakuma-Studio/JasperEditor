@@ -48,7 +48,7 @@ function defaultDurationFrames(def: Pick<AnyMgTemplate, 'defaultDurationSeconds'
  * Track for a new graphic: the topmost targeted, unlocked video track; else the topmost unlocked
  * video track; else `V1` (the command creates it).
  */
-export function targetVideoTrack(seq: Sequence, view: Pick<SequenceViewState, 'targeting'> | null): string {
+function targetVideoTrack(seq: Sequence, view: Pick<SequenceViewState, 'targeting'> | null): string {
 	const tracks = seq.videoTracks.filter((t) => !t.locked);
 	const targeted = new Set(view?.targeting.video ?? []);
 	for (let i = tracks.length - 1; i >= 0; i--) if (targeted.has(tracks[i]!.id)) return tracks[i]!.id;
@@ -59,7 +59,7 @@ export function targetVideoTrack(seq: Sequence, view: Pick<SequenceViewState, 't
 type InsertPlan = { command: Command; label: string };
 
 /** Builds the `clip.addMotionGraphic` command for a template at `at` (frames). */
-export function planMotionTemplateInsert(
+function planMotionTemplateInsert(
 	doc: ProjectDocument,
 	sequenceId: string,
 	template: MgTemplateRef,

@@ -37,7 +37,7 @@ async function walk(dir: string, out: LogFile[] = []): Promise<LogFile[]> {
 	return out;
 }
 
-export type LogsUsage = { bytes: number; files: number; journalBytes: number };
+type LogsUsage = { bytes: number; files: number; journalBytes: number };
 
 export async function logsUsage(paths: AppdirPaths): Promise<LogsUsage> {
 	const files = await walk(paths.logsDir);
@@ -50,7 +50,7 @@ export async function logsUsage(paths: AppdirPaths): Promise<LogsUsage> {
 }
 
 /** Drops usage-log lines older than 400 days once the file passes 1 MB. Returns the bytes saved. */
-export async function trimUsageLog(file: string, now: number): Promise<number> {
+async function trimUsageLog(file: string, now: number): Promise<number> {
 	const st = await stat(file).catch(() => null);
 	if (!st || st.size <= USAGE_LOG_TRIM_BYTES) return 0;
 	const text = await readFile(file, 'utf8');

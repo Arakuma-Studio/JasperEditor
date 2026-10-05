@@ -167,7 +167,7 @@ const STATIC_RE =
 const DYNAMIC_RE = /(?:\bimport|\brequire)\s*\(\s*(['"])([^'"]+)\1/g;
 
 /**
- * Imports of a file: `{spec, line, typeOnly, namespace, names: [{imported, local}]}` for static imports and
+ * Imports of a file: `{spec, line, typeOnly, namespace, names: string[]}` for static imports and
  * re-exports (multi-line clauses included), dynamic `import()` and `require()`.
  */
 function parseImports(text) {
@@ -193,12 +193,11 @@ function parseImports(text) {
 			for (const part of braces[1].split(',')) {
 				const p = part.trim();
 				if (!p || /^type\s/.test(p)) continue;
-				const [imported, local] = p.split(/\s+as\s+/);
-				names.push({ imported: imported.trim(), local: (local ?? imported).trim() });
+				names.push(p.split(/\s+as\s+/)[0].trim());
 			}
 		const isImport = m[2] === 'import';
 		const def = isImport ? /^([\w$]+)\s*(?:,|$)/.exec(clause.trim()) : null;
-		if (def) names.push({ imported: 'default', local: def[1] });
+		if (def) names.push('default');
 		out.push({
 			spec: m[6],
 			line: lineAt(m.index + m[1].length),
@@ -264,9 +263,7 @@ function chainNames(code, dot) {
 function animeApiRules(rel, timelines) {
 	const inRuntime = rel.startsWith(RUNTIME_DIR);
 	const onTimeline = (code, index) =>
-		chainNames(code, index).some(
-			(n) => timelines.has(n) || TIMELINE_NAME.test(n) || n === 'createPausedTimeline',
-		);
+		chainNames(code, index).some((n) => timelines.has(n) || TIMELINE_NAME.test(n));
 	return [
 		{ id: 'animate', re: /(?<![\w$])animate\s*\(/g },
 		{ id: 'create-timer', re: /\bcreateTimer\b/g },
@@ -310,9 +307,8 @@ function hasSeed(args) {
 }
 
 /** `stagger(…)` calls whose arguments ask for randomness without a seed (`from: 'random'`, `jitter`). */
-function unseededStaggers(lines) {
+function unseededStaggers(text) {
 	const out = [];
-	const text = lines.join('\n');
 	const re = /\bstagger\s*\(/g;
 	for (let m = re.exec(text); m; m = re.exec(text)) {
 		let depth = 0;
@@ -419,7 +415,7 @@ export function findViolations(rel, text) {
 		if (spec === 'animejs' && !imp.typeOnly && inMotion && rel !== RUNTIME_INDEX)
 			report('animejs-root-import', imp);
 		if (imp.namespace && !inRuntime) report('namespace-import', imp);
-		for (const { imported } of imp.typeOnly ? [] : imp.names) {
+		for (const imported of imp.typeOnly ? [] : imp.names) {
 			if (BANNED_NAMES.has(imported)) report('banned-name', imp, imported);
 			else if (Object.hasOwn(RUNTIME_ONLY_NAMES, imported) && !inRuntime)
 				report('runtime-only-name', imp, imported);
@@ -430,7 +426,7 @@ export function findViolations(rel, text) {
 	if (inMotion || imports.some((i) => isAnime(i.spec) || isMotion(i.spec))) {
 		const code = stripComments(text);
 		out.push(...scan(text, animeApiRules(rel, timelineIdentifiers(code))));
-		for (const v of unseededStaggers(code.split('\n')))
+		for (const v of unseededStaggers(code))
 			if (!allowed(original, v.line - 1)) out.push({ ...v, rule: 'unseeded-stagger' });
 	}
 	return out.sort((a, b) => a.line - b.line || a.column - b.column);

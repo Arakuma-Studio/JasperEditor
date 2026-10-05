@@ -115,27 +115,6 @@ function PlaceholderCard({ text, height }: { text: string; height: number }) {
 	);
 }
 
-/** The fframes twin's markup for a frame (null when the definition is not an SVG template). */
-function twinMarkup(
-	def: AnyMgTemplate,
-	params: Record<string, unknown>,
-	o: {
-		frame: number;
-		fps: number;
-		canvas: { width: number; height: number };
-		durationFrames: number;
-		sourceInFrames: number;
-		idPrefix: string;
-	},
-): string | null {
-	if (!isSvgTemplate(def)) return null;
-	return def.renderSvg(params, o.frame, o.fps, o.canvas, {
-		durationFrames: o.durationFrames,
-		sourceInFrames: o.sourceInFrames,
-		idPrefix: o.idPrefix,
-	});
-}
-
 function SvgTwin({ markup }: { markup: string }) {
 	return (
 		<div
@@ -233,10 +212,7 @@ export function MotionGraphicLayer(layer: LayerProps) {
 			/>
 		);
 	else {
-		const markup = twinMarkup(def, svgParams ?? def.defaults, {
-			frame: localFrame,
-			fps,
-			canvas: mg.canvas,
+		const markup = def.renderSvg(svgParams ?? def.defaults, localFrame, fps, mg.canvas, {
 			durationFrames: clip.duration,
 			sourceInFrames,
 			idPrefix: `mg-${clip.clipId}`,
@@ -310,10 +286,7 @@ export function MgTemplatePreview(props: MgTemplatePreviewProps) {
 			/>
 		);
 	else {
-		const markup = twinMarkup(def, params, {
-			frame,
-			fps,
-			canvas,
+		const markup = def.renderSvg(params, frame, fps, canvas, {
 			durationFrames: durationInFrames,
 			sourceInFrames: 0,
 			idPrefix: `mgp-${def.id}-${def.version}`,

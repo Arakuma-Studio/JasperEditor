@@ -10,7 +10,6 @@ import {
 	mediaUsage,
 	type ProjectDocument,
 	type ProjectItem,
-	type Rational,
 	sequenceDuration,
 } from '@jasper/project';
 import type { MediaRuntime } from '@jasper/session';
@@ -115,17 +114,6 @@ export function isInside(doc: ProjectDocument, binId: string, itemId: string): b
 	return false;
 }
 
-function mediaRate(asset: MediaAsset): Rational | null {
-	const vs = videoStream(asset);
-	if (!vs || asset.kind !== 'video') return null;
-	return vs.frameRate;
-}
-
-/** Media timecodes are non-drop-frame (source files carry no drop-frame flag in the M1 probe). */
-function timecodeAt(flicks: number, rate: Rational): string {
-	return formatTimecode(flicksToFrames(flicks, rate, 'round'), rate);
-}
-
 const CHANNEL_NAMES: Record<number, string> = { 1: 'Mono', 2: 'Stereo', 6: '5.1' };
 
 function describeMedia(
@@ -134,19 +122,18 @@ function describeMedia(
 	ProjectRow,
 	'frameRate' | 'mediaStart' | 'mediaEnd' | 'duration' | 'durationFrames' | 'videoInfo' | 'audioInfo'
 > {
-	const rate = mediaRate(asset) ?? { num: 30, den: 1 };
+	const vs = videoStream(asset);
+	const rate = (asset.kind === 'video' ? vs?.frameRate : null) ?? { num: 30, den: 1 };
 	const dur = asset.probe.durationFlicks;
 	const box = displayBox(asset);
-	const vs = videoStream(asset);
 	const aud = audioStreams(asset)[0];
-	const startFrames = 0;
 	const frames = dur !== null ? flicksToFrames(dur, rate, 'round') : null;
 	const par = vs ? vs.pixelAspect.num / vs.pixelAspect.den : 1;
 	return {
 		frameRate: asset.kind === 'video' ? `${formatRate(rate)} fps` : '',
-		mediaStart: dur !== null ? formatTimecode(startFrames, rate) : '',
+		mediaStart: dur !== null ? formatTimecode(0, rate) : '',
 		mediaEnd: frames !== null ? formatTimecode(Math.max(0, frames - 1), rate) : '',
-		duration: dur !== null ? timecodeAt(dur, rate) : '',
+		duration: frames !== null ? formatTimecode(frames, rate) : '',
 		durationFrames: frames,
 		videoInfo: box ? `${box.width} x ${box.height} (${par.toFixed(1)})` : '',
 		audioInfo: aud ? `${aud.sampleRate} Hz - ${CHANNEL_NAMES[aud.channels] ?? `${aud.channels} ch`}` : '',

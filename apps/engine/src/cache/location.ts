@@ -56,7 +56,7 @@ export function physicalRoot(appdir: string, location: string | null): string {
 }
 
 /** The `location` of `engine/cache.json` (null when unset or unreadable). */
-export function readLocationSetting(appdir: string): string | null {
+function readLocationSetting(appdir: string): string | null {
 	try {
 		const v = (JSON.parse(readFileSync(settingsFile(appdir), 'utf8')) as { location?: unknown }).location;
 		return typeof v === 'string' && isAbsolute(v) ? v : null;
@@ -347,7 +347,7 @@ async function copyTree(
 	}
 }
 
-export type MoveOptions = {
+type MoveOptions = {
 	appdir: string;
 	from: string | null;
 	to: string | null;

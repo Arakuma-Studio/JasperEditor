@@ -10,6 +10,7 @@ import {
 	createEmptyProject,
 	defaultRegistries,
 	type MediaAsset,
+	mediaVersionsOf,
 } from '@jasper/project';
 import { EditorSession } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
@@ -19,7 +20,7 @@ import '../src/commands/process.ts';
 import { switchMediaVersionInteractive } from '../src/processing/actions.ts';
 import { commitProcessed, type Notice, PROCESS_TX_LABEL, processWatcher } from '../src/processing/jobs.ts';
 import { MediaVersionSection } from '../src/processing/MediaVersionSection.tsx';
-import { versionLabel, versionsOf } from '../src/processing/model.ts';
+import { versionLabel } from '../src/processing/model.ts';
 import { ProcessingPreferencesPage } from '../src/processing/PreferencesPage.tsx';
 import { ProcessDialog } from '../src/processing/ProcessDialog.tsx';
 import { REPLACE_FOOTAGE_TX_LABEL, ReplaceFootageDialog } from '../src/processing/ReplaceFootageDialog.tsx';
@@ -436,7 +437,7 @@ describe('finished process jobs (PRU-002)', () => {
 		expect(processed.locators[0]).toEqual({ type: 'engine-store', engineId: 'local', key: 'mk_processed_1' });
 		// Linked audio keeps the original (PRC-007).
 		expect((seq.clips[audioClip] as Clip & { mediaId: string }).mediaId).toBe(mediaId);
-		expect(versionsOf(doc, mediaId)).toEqual([mediaId, v.mediaId]);
+		expect(mediaVersionsOf(doc, mediaId)).toEqual([mediaId, v.mediaId]);
 		expect(notices.at(-1)).toMatchObject({ kind: 'success' });
 		expect(processWatcher.list()).toEqual([]);
 

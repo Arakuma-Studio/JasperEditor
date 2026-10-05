@@ -1,6 +1,3 @@
-// Inspection, motion-graphics and export tools: get_timeline, render_frame, get_playhead, set_playhead,
-// list_motion_templates, render_motion_graphic_preview, list_export_presets, start_export, get_job,
-// cancel_job, wait_for_job.
 import { isAbsolute } from 'node:path';
 import type { ExportSettings } from '@jasper/api';
 import { makeEnvelope, sequenceTimecode } from '@jasper/project';
@@ -25,7 +22,6 @@ import {
 import { pickSequence, timelineTable } from '../format.ts';
 import { timeArg } from './editing.ts';
 import { ProjectIdArg } from './projects.ts';
-// wp-m2-anime-templates (S11:ANA-003, ANA-005): template summaries, anime previews and render-failure hints.
 import {
 	animeTemplatePreview,
 	failedJobError,

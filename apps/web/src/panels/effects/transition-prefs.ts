@@ -11,7 +11,7 @@ export type TransitionAlignment = 'center' | 'start-at-cut' | 'end-at-cut';
 export type DurationUnit = 'frames' | 'seconds';
 export type DurationField = 'video' | 'audio' | 'still';
 
-export type TransitionDefaults = {
+type TransitionDefaults = {
 	version: 2;
 	video: string;
 	audio: string;

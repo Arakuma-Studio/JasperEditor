@@ -55,6 +55,17 @@ export function axisConstraint(dx: number, dy: number, shift: boolean): { dx: nu
 
 type TrackKindKey = 'video' | 'audio';
 
+function minimumTrackIndex(seq: Sequence, movingIds: readonly string[], kind: TrackKindKey): number {
+	let minIdx = Number.POSITIVE_INFINITY;
+	for (const id of movingIds) {
+		const c = seq.clips[id];
+		if (!c) continue;
+		const f = findTrack(seq, c.trackId);
+		if (f && f.track.kind === kind) minIdx = Math.min(minIdx, f.index);
+	}
+	return minIdx;
+}
+
 /**
  * TL-486/487: vertical offset for the grabbed side, clamped so no clip of that kind goes below index 0.
  * Moving beyond the top video / bottom audio track creates tracks on commit.
@@ -65,13 +76,7 @@ export function clampTrackOffset(
 	kind: TrackKindKey,
 	offset: number,
 ): number {
-	let minIdx = Number.POSITIVE_INFINITY;
-	for (const id of movingIds) {
-		const c = seq.clips[id];
-		if (!c) continue;
-		const f = findTrack(seq, c.trackId);
-		if (f && f.track.kind === kind) minIdx = Math.min(minIdx, f.index);
-	}
+	const minIdx = minimumTrackIndex(seq, movingIds, kind);
 	if (!Number.isFinite(minIdx)) return 0;
 	return Math.max(-minIdx, Math.min(98, offset));
 }
@@ -94,11 +99,7 @@ export function moveCommand(
 			deltaFrames: delta,
 		};
 		if (trackOffset !== 0) {
-			let minIdx = Number.POSITIVE_INFINITY;
-			for (const id of movingIds) {
-				const f = seq.clips[id] && findTrack(seq, seq.clips[id]!.trackId);
-				if (f && f.track.kind === kind) minIdx = Math.min(minIdx, f.index);
-			}
+			const minIdx = minimumTrackIndex(seq, movingIds, kind);
 			if (Number.isFinite(minIdx))
 				cmd.tracks = [`${kind === 'video' ? 'V' : 'A'}${minIdx + trackOffset + 1}`];
 		}

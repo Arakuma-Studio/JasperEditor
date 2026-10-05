@@ -143,24 +143,14 @@ function applicableKinds(r: Pick<MediaRecord, 'kind' | 'hasAudio'>): DerivativeK
 
 /** Kinds queued automatically after registration (S04:IN-011, ARCHITECTURE §9.4). */
 function autoKinds(r: Pick<MediaRecord, 'kind' | 'hasAudio' | 'browserPlayable'>): DerivativeKind[] {
-	switch (r.kind) {
-		case 'video':
-			return [
-				'keyframes',
-				'poster',
-				...(r.hasAudio ? (['peaks'] as const) : []),
-				'sprite',
-				...(r.browserPlayable === 'no' ? (['proxy-720'] as const) : []),
-			];
-		case 'animated-image':
-			return ['poster', 'sprite'];
-		case 'image':
-			return ['poster'];
-		case 'audio':
-			return ['peaks'];
-		default:
-			return [];
-	}
+	if (r.kind !== 'video') return applicableKinds(r);
+	return [
+		'keyframes',
+		'poster',
+		...(r.hasAudio ? (['peaks'] as const) : []),
+		'sprite',
+		...(r.browserPlayable === 'no' ? (['proxy-720'] as const) : []),
+	];
 }
 
 export class DerivativeService {

@@ -142,9 +142,9 @@ export function createDeshakeStep(step: Extract<ProcessStep, { op: 'stabilize' }
 
 /** rgb48le/any → the filter's working format (full-range BT.709 for YUV). */
 export function toFormat(format: FilterStep['format'], fromYuvMatrix?: string, fromRange?: string): string {
-	if (format === 'rgb48le' || format === 'gbrp16le')
-		return `scale=${fromYuvMatrix ? `in_color_matrix=${fromYuvMatrix}:in_range=${fromRange ?? 'tv'}:` : ''}out_range=pc:flags=accurate_rnd+full_chroma_int+full_chroma_inp,format=${format}`;
-	return `scale=${fromYuvMatrix ? `in_color_matrix=${fromYuvMatrix}:in_range=${fromRange ?? 'tv'}:` : ''}out_color_matrix=bt709:out_range=pc:flags=accurate_rnd+full_chroma_int+full_chroma_inp,format=${format}`;
+	const input = fromYuvMatrix ? `in_color_matrix=${fromYuvMatrix}:in_range=${fromRange ?? 'tv'}:` : '';
+	const output = format === 'rgb48le' || format === 'gbrp16le' ? '' : 'out_color_matrix=bt709:';
+	return `scale=${input}${output}out_range=pc:flags=accurate_rnd+full_chroma_int+full_chroma_inp,format=${format}`;
 }
 
 /** Working format (after `toFormat`) → rgb48le full-range BT.709 R'G'B'. */

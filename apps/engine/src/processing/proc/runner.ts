@@ -7,10 +7,10 @@
 // A frame step with an analysis pass (vid.stab) that is not first in its chain splits the chain: everything
 // before it is written to a lossless FFV1 (gbrp16le) intermediate in the scratch directory, which the step
 // then analyses and reads. A recipe of filter steps only runs in one ffmpeg process.
-import { createHash } from 'node:crypto';
-import { createReadStream, rmSync, statSync, writeFileSync } from 'node:fs';
+import { rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ProcessStep } from '@jasper/project';
+import { sha256File } from '../../tools/fs.ts';
 import {
 	children,
 	decodeFrames,
@@ -95,16 +95,6 @@ type StageInfo = { name: string; op: string; info: Record<string, unknown>; seco
 
 const fpsText = (r: Rational) => `${r.num}/${r.den}`;
 
-function sha256File(file: string): Promise<string> {
-	return new Promise((resolve, reject) => {
-		const h = createHash('sha256');
-		createReadStream(file)
-			.on('data', (c) => h.update(c))
-			.on('end', () => resolve(h.digest('hex')))
-			.on('error', reject);
-	});
-}
-
 /** Filters of the LGPL build (`ffmpeg -filters`), used to pick vid.stab native vs WASM and for guards. */
 export async function listFilters(ffmpeg: string): Promise<Set<string>> {
 	const child = spawnFfmpeg(ffmpeg, ['-filters']);
@@ -138,7 +128,7 @@ export function filterAdapter(
 	return {
 		name: step.name,
 		async open(ctx) {
-			outSize = step.outputSize?.(ctx) ?? { width: ctx.width, height: ctx.height };
+			outSize = { width: ctx.width, height: ctx.height };
 			const vf = `${toFormat(step.format)},${step.filter(ctx)},${fromFormatToRgb48(step.format)}`;
 			assertLgplFilters(vf, opts);
 			child = spawnFfmpeg(
@@ -296,7 +286,7 @@ export async function runProc(spec: ProcSpec, opts: RunOptions): Promise<RunResu
 	const fuse = (src: DecodeSpec, filtersIn: Stage[]): DecodeSpec => {
 		if (!filtersIn.length) return src;
 		const parts: string[] = src.vf ? [src.vf] : [];
-		let geom = { width: src.width, height: src.height };
+		const geom = { width: src.width, height: src.height };
 		let matrix = src.matrix;
 		let range = src.range;
 		for (const st of filtersIn) {
@@ -305,7 +295,6 @@ export async function runProc(spec: ProcSpec, opts: RunOptions): Promise<RunResu
 			const rgb = f.format === 'rgb48le' || f.format === 'gbrp16le';
 			parts.push(toFormat(f.format, matrix, range));
 			parts.push(f.filter(ctx));
-			geom = f.outputSize?.(ctx) ?? geom;
 			matrix = rgb ? undefined : 'bt709';
 			range = rgb ? undefined : 'pc';
 		}
@@ -494,21 +483,18 @@ export async function runProc(spec: ProcSpec, opts: RunOptions): Promise<RunResu
 			if (last) {
 				let vf = '';
 				let fmtFrom: 'rgb' | 'yuv' = 'rgb';
-				const tctx = { width: geom.width, height: geom.height };
 				const parts: string[] = [];
 				for (const st of tailFilters) {
 					const f = st.step as FilterStep;
-					const ctx = ctxFor(st, tctx);
+					const ctx = ctxFor(st, geom);
 					parts.push(toFormat(f.format), f.filter(ctx));
-					const og = f.outputSize?.(ctx);
-					if (og) Object.assign(tctx, og);
 					fmtFrom = f.format === 'rgb48le' || f.format === 'gbrp16le' ? 'rgb' : 'yuv';
 				}
 				parts.push(toProres(fmtFrom));
 				vf = parts.join(',');
 				assertLgplFilters(vf);
-				outW = tctx.width;
-				outH = tctx.height;
+				outW = geom.width;
+				outH = geom.height;
 				sinkPath = spec.output;
 				sinkArgs = [
 					'-f',

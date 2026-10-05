@@ -17,13 +17,7 @@ import {
 	specFromClip,
 } from '@jasper/mg-templates';
 import type { RenderVisualClip } from '@jasper/project';
-import {
-	type MgBinaryResolution,
-	type MgProbe,
-	probeMgBinary,
-	type ResolveMgOptions,
-	resolveMgBinary,
-} from './binary.ts';
+import { type MgProbe, probeMgBinary, type ResolveMgOptions, resolveMgBinary } from './binary.ts';
 import { type MgQuality, MgRenderError, renderPoster, runMgPipe } from './render.ts';
 import { isAnimeTemplateClip } from './templates.ts';
 
@@ -76,7 +70,6 @@ export function createMgService(opts: MgServiceOptions) {
 		ffmpeg: opts.tools?.ffmpeg || env[ENV.FFMPEG] || 'ffmpeg',
 		ffprobe: opts.tools?.ffprobe || env[ENV.FFPROBE] || 'ffprobe',
 	};
-	let resolution: MgBinaryResolution = { path: null, reason: 'not probed yet', tried: [] };
 	let probe: MgProbe = { status: 'unavailable', reason: 'not probed yet', binary: null };
 	const jobs = new Map<string, MgJobRecord>();
 	const byDedupe = new Map<string, MgJobRecord>();
@@ -91,8 +84,7 @@ export function createMgService(opts: MgServiceOptions) {
 
 	/** Resolves and probes the binary (startup; call again after `pnpm mg:build`). */
 	async function refresh(): Promise<MgProbe> {
-		resolution = resolveMgBinary({ env, ...opts.resolve });
-		probe = await probeMgBinary(resolution);
+		probe = await probeMgBinary(resolveMgBinary({ env, ...opts.resolve }));
 		return probe;
 	}
 
@@ -505,8 +497,6 @@ export function createMgService(opts: MgServiceOptions) {
 		clipRenderKey,
 		refresh,
 		capability,
-		probe: () => probe,
-		resolution: () => resolution,
 		templates,
 		refuseAnime,
 		validateSpec,
@@ -522,7 +512,6 @@ export function createMgService(opts: MgServiceOptions) {
 			return rec ? { ...rec.job } : null;
 		},
 		listJobs: () => [...jobs.values()].map((r) => ({ ...r.job })),
-		masterFor,
 		mgMasterProvider,
 	};
 }

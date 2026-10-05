@@ -36,7 +36,7 @@ export class ProjectError extends Error {
 
 type StoredEnvelope = Omit<ProjectEnvelope, 'document'> & { document: Record<string, unknown> };
 
-export type ProjectStoreOptions = {
+type ProjectStoreOptions = {
 	paths: AppdirPaths;
 	leases: LeaseManager;
 	appVersion: string;
@@ -58,13 +58,9 @@ export class ProjectStoreFs {
 		if (!PROJECT_ID_RE.test(projectId)) throw new ProjectError('PROJECT_NOT_FOUND', 404, 'Unknown project');
 	}
 
-	private file(projectId: string): string {
-		return this.opts.paths.projectFile(projectId);
-	}
-
 	private async readEnvelope(projectId: string): Promise<StoredEnvelope> {
 		this.check(projectId);
-		const env = await readJsonOrNull<StoredEnvelope>(this.file(projectId));
+		const env = await readJsonOrNull<StoredEnvelope>(this.opts.paths.projectFile(projectId));
 		if (env?.format !== 'jasper-project' || typeof env.revision !== 'number') {
 			throw new ProjectError('PROJECT_NOT_FOUND', 404, 'Unknown project');
 		}
@@ -82,7 +78,7 @@ export class ProjectStoreFs {
 		for (const id of ids) {
 			if (!PROJECT_ID_RE.test(id)) continue;
 			try {
-				const text = await readFile(this.file(id), 'utf8');
+				const text = await readFile(this.opts.paths.projectFile(id), 'utf8');
 				const env = JSON.parse(text) as StoredEnvelope;
 				out.push({
 					projectId: id,
@@ -112,7 +108,7 @@ export class ProjectStoreFs {
 			appVersion: this.opts.appVersion,
 		});
 		await mkdir(this.opts.paths.projectDir(doc.projectId), { recursive: true });
-		await atomicWriteJson(this.file(doc.projectId), env);
+		await atomicWriteJson(this.opts.paths.projectFile(doc.projectId), env);
 		return doc.projectId;
 	}
 
@@ -154,7 +150,7 @@ export class ProjectStoreFs {
 			const revision = Math.max(envelope.revision, current.revision + 1);
 			await this.maybeKeepVersion(projectId);
 			const next: StoredEnvelope = { ...envelope, revision, savedAt: this.now().toISOString() };
-			await atomicWriteJson(this.file(projectId), next);
+			await atomicWriteJson(this.opts.paths.projectFile(projectId), next);
 			return { revision };
 		});
 	}
@@ -191,7 +187,7 @@ export class ProjectStoreFs {
 		if (newest && this.now().getTime() - versionTime(newest) < interval) return;
 		await mkdir(dir, { recursive: true });
 		const stamp = this.now().toISOString().replace(/[:.]/g, '-');
-		await copyFile(this.file(projectId), join(dir, `${stamp}.jasper`));
+		await copyFile(this.opts.paths.projectFile(projectId), join(dir, `${stamp}.jasper`));
 		const keep = this.opts.keepVersions ?? KEEP_VERSIONS;
 		const all = await this.listVersionFiles(projectId);
 		for (const old of all.slice(0, Math.max(0, all.length - keep))) await rm(old.path, { force: true });

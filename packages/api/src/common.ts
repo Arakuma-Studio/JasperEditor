@@ -4,7 +4,6 @@ import { z } from 'zod';
 export const API_VERSION = 1;
 export const API_HEADER = 'x-jasper-api';
 export const AUTH_COOKIE = 'jasper_session';
-export const IF_MATCH_HEADER = 'if-match';
 
 /** Stable engine error codes (S04:ENG-022 plus the codes used by ARCHITECTURE §9–§11). */
 export const ENGINE_ERROR_CODES = [
@@ -73,4 +72,3 @@ export const RationalSchema = z.object({
 	num: z.number().int().positive(),
 	den: z.number().int().positive(),
 });
-export const IsoTimeSchema = z.string();

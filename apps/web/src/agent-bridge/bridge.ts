@@ -2,7 +2,7 @@
 // queries, applies agent transactions through the session (one `Agent: <label>` undo entry each), asks
 // the user for approval of destructive transactions, keeps an activity feed (the shell toasts it), and relays
 // requests/events over WS /agent so external agents reach the open editor.
-import type { Approval } from '@jasper/api';
+import { type Approval, TERMINAL_JOB_STATES } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	AgentQueryError,
@@ -86,7 +86,7 @@ export interface JasperAgentApi {
 }
 
 export type AgentBridgeOptions = {
-	/** Connect WS /agent (off for in-memory demo sessions and tests). */
+	/** Connect WS /agent (disabled in isolated tests). */
 	relay?: boolean;
 };
 
@@ -287,7 +287,7 @@ export class AgentBridge {
 			width: cap.width,
 		});
 		const until = Date.now() + 60_000;
-		while (!['succeeded', 'failed', 'cancelled', 'interrupted'].includes(job.state)) {
+		while (!TERMINAL_JOB_STATES.has(job.state)) {
 			if (Date.now() > until)
 				throw new AgentQueryError('E_NOT_IMPLEMENTED', 'Timed out waiting for the still');
 			await new Promise((r) => setTimeout(r, 250));
@@ -426,10 +426,6 @@ export class AgentBridge {
 			typeof top.origin === 'object' &&
 			top.origin.agent === entry.agent
 		);
-	}
-
-	clearActivity(): void {
-		this.store.setState({ activity: [] });
 	}
 
 	// ------------------------------------------------------------ approvals (S01:AGT-011)

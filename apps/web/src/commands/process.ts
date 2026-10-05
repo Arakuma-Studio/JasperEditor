@@ -7,7 +7,7 @@
 //                         wp-m3-inpoint, S07:PRC-018)
 //   app.preferences       Edit ▸ Preferences (dialog shell with a page registry; args {page?})
 //   process.preferences   Preferences ▸ Processing
-import type { MediaAsset } from '@jasper/project';
+import { type MediaAsset, originalMediaId } from '@jasper/project';
 import { z } from 'zod';
 import {
 	openProcessForClips,
@@ -17,7 +17,6 @@ import {
 	switchMediaVersionInteractive,
 	targetsForClips,
 } from '../processing/actions.ts';
-import { originalOf } from '../processing/model.ts';
 import { registerProcessingUi } from '../processing/register.ts';
 import { PREFERENCES_DIALOG, registerPreferencesDialog } from '../shell/preferences/index.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
@@ -45,7 +44,7 @@ function processedSelection(ctx: CommandCtx): { clipIds: string[]; original: str
 	const t = clipTargets(ctx);
 	const s = ctx.session?.getState();
 	if (!t || !s) return null;
-	const original = originalOf(s.document, t.mediaId);
+	const original = originalMediaId(s.document, t.mediaId);
 	if (!original || original === t.mediaId) return null;
 	return { clipIds: t.clipIds, original };
 }

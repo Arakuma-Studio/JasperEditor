@@ -4,7 +4,7 @@
 // - Baked run LUTs are cached by `colorRunKey` in an LRU per layer (64 entries, S06:CG-013).
 import { bakeColorRun, type ColorRunEffect, type EffectRegistry, type Lut, parseCube } from '@jasper/project';
 
-type AssetEntry = { lut: Lut | null; error: string | null; promise: Promise<Lut | null> };
+type AssetEntry = { lut: Lut | null | undefined; promise: Promise<Lut | null> };
 const assets = new Map<string, AssetEntry>();
 
 /** Cache identity of a media URL: without query/hash (render URLs carry a signature). */
@@ -19,8 +19,7 @@ export function loadLutAsset(url: string, fetchImpl: typeof fetch = fetch): Prom
 	const hit = assets.get(k);
 	if (hit) return hit.promise;
 	const entry: AssetEntry = {
-		lut: null,
-		error: null,
+		lut: undefined,
 		promise: fetchImpl(url)
 			.then(async (r) => {
 				if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -28,8 +27,8 @@ export function loadLutAsset(url: string, fetchImpl: typeof fetch = fetch): Prom
 				entry.lut = lut;
 				return lut;
 			})
-			.catch((e: unknown) => {
-				entry.error = (e as Error).message ?? String(e);
+			.catch(() => {
+				entry.lut = null;
 				return null;
 			}),
 	};
@@ -39,10 +38,7 @@ export function loadLutAsset(url: string, fetchImpl: typeof fetch = fetch): Prom
 
 /** The parsed asset if it finished loading: a Lut, null (failed), or undefined (not loaded yet). */
 export function loadedLutAsset(url: string): Lut | null | undefined {
-	const e = assets.get(lutUrlKey(url));
-	if (!e) return undefined;
-	if (e.lut) return e.lut;
-	return e.error !== null ? null : undefined;
+	return assets.get(lutUrlKey(url))?.lut;
 }
 
 const BAKES_PER_LAYER = 64;

@@ -99,7 +99,6 @@ function fitsRole(role: TextStyleRole, s: PropertySpec): boolean {
 		case 'fontWeight':
 			return s.kind === 'number' || s.kind === 'enum' || (s.kind === 'string' && s.ui.control === 'text');
 		case 'fontFamily':
-			return s.kind === 'enum' || (s.kind === 'string' && s.ui.control === 'text');
 		case 'align':
 			return s.kind === 'enum' || (s.kind === 'string' && s.ui.control === 'text');
 		case 'italic':
@@ -371,15 +370,14 @@ export function measuredTextIssues(
 	const out: TextIssue[] = [];
 	// A clipped text is reported as clipped; what is left of it is checked against the frame and the box.
 	const c = m.clippedBy;
-	const r = c
-		? (() => {
-				const x = Math.max(m.rect.x, c.x);
-				const y = Math.max(m.rect.y, c.y);
-				const right = Math.min(m.rect.x + m.rect.width, c.x + c.width);
-				const bottom = Math.min(m.rect.y + m.rect.height, c.y + c.height);
-				return { x, y, width: Math.max(0, right - x), height: Math.max(0, bottom - y) };
-			})()
-		: m.rect;
+	let r = m.rect;
+	if (c) {
+		const x = Math.max(r.x, c.x);
+		const y = Math.max(r.y, c.y);
+		const right = Math.min(r.x + r.width, c.x + c.width);
+		const bottom = Math.min(r.y + r.height, c.y + c.height);
+		r = { x, y, width: Math.max(0, right - x), height: Math.max(0, bottom - y) };
+	}
 	const tol = 1;
 	const over: string[] = [];
 	if (r.x < -tol) over.push(`left by ${Math.round(-r.x)} px`);

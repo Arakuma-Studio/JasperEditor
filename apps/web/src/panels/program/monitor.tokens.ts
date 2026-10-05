@@ -10,8 +10,6 @@ export const MONITOR_COLORS = {
 	handleFill: '#ffffff',
 	/** Dark casing under overlay strokes so they read on bright frames. */
 	casing: 'rgba(0, 0, 0, 0.6)',
-	/** Letterbox around the frame (the panel background shows through otherwise). */
-	letterbox: 'transparent',
 } as const;
 
 /** Checkerboard background (8 screen px squares) for the transparency grid. */

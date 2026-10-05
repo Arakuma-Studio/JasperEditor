@@ -134,7 +134,7 @@ function planIdOf(parts: unknown): string {
 	return `pln_${createHash('sha256').update(JSON.stringify(parts)).digest('hex').slice(0, 16)}`;
 }
 
-export type PlanInput = {
+type PlanInput = {
 	envelope: { revision: number; document: unknown };
 	sequenceId: string;
 	settings: ExportSettings;
@@ -144,7 +144,7 @@ export type PlanInput = {
 	still?: boolean;
 };
 
-export type PlanDeps = {
+type PlanDeps = {
 	registry: MediaRegistry;
 	fonts: FontCatalogService;
 	capabilities: PlanCapabilities;

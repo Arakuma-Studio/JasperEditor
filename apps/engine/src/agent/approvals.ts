@@ -6,11 +6,11 @@ import type { Approval } from '@jasper/api';
 
 export type ApprovalDecision = 'approved' | 'denied' | 'timeout';
 
-export type ApprovalRequest = Omit<Approval, 'approvalId' | 'expiresAt'>;
+type ApprovalRequest = Omit<Approval, 'approvalId' | 'expiresAt'>;
 
 type Entry = { approval: Approval; resolve(d: ApprovalDecision): void; timer: ReturnType<typeof setTimeout> };
 
-export type ApprovalGateOptions = {
+type ApprovalGateOptions = {
 	timeoutMs?: number;
 	now?(): number;
 	onRequested?(approval: Approval): void;

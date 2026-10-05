@@ -96,24 +96,14 @@ const SPEC: VersionedKey<WorkspacesState> = {
 
 export type NameCheck = { ok: true; name: string } | { ok: false; error: string };
 
-type Timers = { setTimeout(fn: () => void, ms: number): unknown; clearTimeout(h: unknown): void };
-
 export class WorkspaceStore {
 	private state: WorkspacesState;
 	private readonly listeners = new Set<() => void>();
-	private timer: unknown = null;
-	private readonly timers: Timers;
+	private timer: ReturnType<typeof setTimeout> | null = null;
 	/** Set when loading discarded corrupt/newer data (the shell shows one toast, SH-021). */
 	readonly resetReason: 'corrupt' | 'newer' | 'invalid' | null;
 
-	constructor(
-		private readonly storage: ShellStorage | null,
-		opts: { timers?: Timers } = {},
-	) {
-		this.timers = opts.timers ?? {
-			setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
-			clearTimeout: (h) => globalThis.clearTimeout(h as ReturnType<typeof setTimeout>),
-		};
+	constructor(private readonly storage: ShellStorage | null) {
 		const loaded = loadVersioned(storage, SPEC);
 		this.state = loaded.value;
 		this.resetReason = loaded.status === 'reset' ? loaded.reason : null;
@@ -137,8 +127,8 @@ export class WorkspaceStore {
 		this.set({ ...this.state, workspaces: { ...this.state.workspaces, [id]: { ...r, ...patch } } }, persist);
 	}
 	private schedule() {
-		if (this.timer !== null) this.timers.clearTimeout(this.timer);
-		this.timer = this.timers.setTimeout(() => {
+		if (this.timer !== null) clearTimeout(this.timer);
+		this.timer = setTimeout(() => {
 			this.timer = null;
 			this.flush();
 		}, SAVE_DEBOUNCE_MS);
@@ -146,7 +136,7 @@ export class WorkspaceStore {
 
 	/** Writes immediately (pagehide/beforeunload, SH-022). */
 	flush(): void {
-		if (this.timer !== null) this.timers.clearTimeout(this.timer);
+		if (this.timer !== null) clearTimeout(this.timer);
 		this.timer = null;
 		saveVersioned(this.storage, SPEC, this.state);
 	}
@@ -155,13 +145,6 @@ export class WorkspaceStore {
 		// Own keys only: ids arrive from storage and agent-exposed commands ("constructor", "toString"…).
 		return Object.hasOwn(this.state.workspaces, id) ? this.state.workspaces[id] : undefined;
 	}
-	get active(): WorkspaceRecord {
-		return (
-			this.state.workspaces[this.state.activeId] ??
-			(this.state.workspaces[DEFAULT_WORKSPACE_ID] as WorkspaceRecord)
-		);
-	}
-
 	/** Workspaces shown in the header, in list order. */
 	barList(): WorkspaceRecord[] {
 		return this.state.order

@@ -1,7 +1,3 @@
-// M2 MCP tools: clip processing (S07:PRA-001) — list_processing_models, install_processing_model, process_clip,
-// use_media_version, get_processing_settings, set_processing_settings, test_remote_executor. Owner:
-// wp-m2-process (ARCHITECTURE §19.9). M3 (wp-m3-inpoint, S07:PRA-003): source ranges — process_clip handles /
-// range, use_media_version fit, replace_footage, set_media_source_range.
 import { existsSync, statSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import type { ProcessingSettings, ProcessResult, RegisteredMedia } from '@jasper/api';
@@ -65,7 +61,6 @@ function mediaKeyOf(doc: ProjectDocument, mediaId: string): string {
 }
 
 type ClipRef = {
-	clipId: string;
 	mediaId: string;
 	seqRate: Rational;
 	clip: { sourceIn: number; duration: number; speed: { rate: number; reverse: boolean }; mediaId: string };
@@ -90,7 +85,6 @@ function clipMedia(doc: ProjectDocument, clipId: string): ClipRef {
 				'Pass a video clip id or a mediaId.',
 			);
 		return {
-			clipId,
 			mediaId: clip.mediaId,
 			seqRate: seq.settings.frameRate,
 			clip: { sourceIn: clip.sourceIn, duration: clip.duration, speed: clip.speed, mediaId: clip.mediaId },

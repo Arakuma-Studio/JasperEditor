@@ -26,11 +26,11 @@ const DELAY_RENDER_TIMEOUT_MS = 60_000;
  * M2 (S11:LBK-020): identity of a prebuilt compositions bundle, written next to it by `scripts/build-remotion.mjs`
  * (`bundleId` = content hash of the bundle files, `animejs` = the anime.js version inside it).
  */
-export const BUNDLE_STAMP_FILE = 'jasper-bundle.json';
+const BUNDLE_STAMP_FILE = 'jasper-bundle.json';
 export type BundleStamp = { bundleId: string; animejs: string; remotion: string };
 
 /** Remotion's straight-alpha ProRes 4444 master settings (S08:MGC-030, S11:LBK-003): PNG frames, muted. */
-export const ALPHA_MASTER_OPTIONS = {
+const ALPHA_MASTER_OPTIONS = {
 	codec: 'prores',
 	proResProfile: '4444',
 	pixelFormat: 'yuva444p10le',
@@ -43,7 +43,7 @@ export const ALPHA_MASTER_OPTIONS = {
  * Lossless remux that stamps BT.709 colour tags on a Remotion master (Remotion leaves them unset; the pixels are
  * 709). Arguments for `Ffmpeg.run`.
  */
-export function bt709RemuxArgs(input: string, output: string): string[] {
+function bt709RemuxArgs(input: string, output: string): string[] {
 	return [
 		'-i',
 		input,
@@ -78,7 +78,7 @@ type FfmpegRunner = {
 };
 
 /** Input of `renderAlphaMaster` (S11:LBK-003). */
-export type AlphaMasterInput = {
+type AlphaMasterInput = {
 	/** `{doc, options}` with `transparentBackground: true` (and usually a `layerFilter`). */
 	inputProps: Record<string, unknown>;
 	/** Final master file (written atomically: rendered to `scratchDir`, remuxed, then renamed). */
@@ -97,7 +97,7 @@ export type AlphaMasterInput = {
 	onProgress?(p: { renderedFrames: number; totalFrames: number; progress: number }): void;
 };
 
-export type RemotionState = 'ready' | 'needs-browser-download' | 'unavailable';
+type RemotionState = 'ready' | 'needs-browser-download' | 'unavailable';
 
 /** `chromiumOptions.gl` values Remotion 4.0.499 accepts (null = Chrome's default). */
 export type RemotionGl = 'angle' | 'swangle' | 'egl' | 'swiftshader' | 'vulkan' | 'angle-egl';
@@ -114,7 +114,7 @@ export type RemotionWebglStatus = {
 	message?: string;
 };
 
-export type RemotionRenderInput = {
+type RemotionRenderInput = {
 	inputProps: Record<string, unknown>;
 	output: string;
 	signal: AbortSignal;

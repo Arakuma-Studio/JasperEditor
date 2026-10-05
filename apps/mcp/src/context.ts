@@ -81,7 +81,7 @@ export const DESTRUCTIVE: ToolAnnotations = { readOnlyHint: false, destructiveHi
 
 // ---------------------------------------------------------------- documents
 
-export type LoadedDoc = { doc: ProjectDocument; revision: number | undefined; live: boolean };
+type LoadedDoc = { doc: ProjectDocument; revision: number | undefined; live: boolean };
 
 /** The current document: from the open editor when there is one (unsaved edits included), else stored. */
 export async function loadDoc(ctx: ToolContext, projectId: string): Promise<LoadedDoc> {

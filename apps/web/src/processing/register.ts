@@ -2,7 +2,7 @@
 // `commands/process.ts` (in COMMAND_MODULES): the Process Clip dialog, Edit ▸ Preferences (dialog shell + the
 // Processing page), the Properties ▸ Media Version section, the timeline clip and Project item context-menu
 // entries and the "processed" badge host.
-import type { MediaAsset, ProjectDocument } from '@jasper/project';
+import { type MediaAsset, mediaVersionsOf, originalMediaId, type ProjectDocument } from '@jasper/project';
 import { registerDialog, toast } from '@jasper/ui';
 import {
 	clipMenuExtensions,
@@ -21,7 +21,7 @@ import {
 } from './actions.ts';
 import { ProcessedDecorations } from './decorations.tsx';
 import { MediaVersionSection } from './MediaVersionSection.tsx';
-import { originalOf, versionLabel, versionsOf } from './model.ts';
+import { versionLabel } from './model.ts';
 import { ProcessingPreferencesPage } from './PreferencesPage.tsx';
 import { PROCESS_DIALOG, ProcessDialog } from './ProcessDialog.tsx';
 import { REPLACE_FOOTAGE_DIALOG, ReplaceFootageDialog } from './ReplaceFootageDialog.tsx';
@@ -31,9 +31,9 @@ const REPLACE_FOOTAGE_MENU_LABEL = 'Replace Footage…';
 
 /** "Media Version" submenu for a clip (Original + processed versions of the same original). */
 function versionMenu(doc: ProjectDocument, mediaId: string, run: (id: string) => void): MenuItemSpec | null {
-	const original = originalOf(doc, mediaId);
+	const original = originalMediaId(doc, mediaId);
 	if (!original) return null;
-	const versions = versionsOf(doc, original);
+	const versions = mediaVersionsOf(doc, original);
 	if (versions.length < 2) return null;
 	return {
 		kind: 'submenu',

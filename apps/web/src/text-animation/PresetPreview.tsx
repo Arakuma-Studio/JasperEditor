@@ -13,9 +13,6 @@ import { Popover } from 'radix-ui';
 import { useState } from 'react';
 import { PreviewThumb } from '../panels/motionTemplates/PreviewThumb.tsx';
 
-/** The newest version of every preset id, in catalogue order (superseded versions only render saved projects). */
-export const LATEST_TEXT_ANIMATIONS: readonly TextAnimationSpec[] = LATEST_TEXT_ANIMATION_SPECS;
-
 export function PresetPreview({
 	spec,
 	side,
@@ -72,7 +69,7 @@ export function PresetGrid({
 				<span className="aspect-video w-full rounded-pr-control bg-pr-field-deep" />
 				<span className="truncate px-0.5 text-pr-small text-pr-text">None</span>
 			</button>
-			{LATEST_TEXT_ANIMATIONS.filter((s) => s.phases.includes(side)).map((s) => (
+			{LATEST_TEXT_ANIMATION_SPECS.filter((s) => s.phases.includes(side)).map((s) => (
 				<button
 					key={s.id}
 					type="button"
@@ -112,7 +109,7 @@ export function PresetPicker({
 			? 'None'
 			: value === ''
 				? '–'
-				: (LATEST_TEXT_ANIMATIONS.find((s) => s.id === value)?.label ?? `${value} (not installed)`);
+				: (LATEST_TEXT_ANIMATION_SPECS.find((s) => s.id === value)?.label ?? `${value} (not installed)`);
 	return (
 		<Popover.Root open={open} onOpenChange={setOpen}>
 			<Popover.Trigger asChild disabled={disabled}>

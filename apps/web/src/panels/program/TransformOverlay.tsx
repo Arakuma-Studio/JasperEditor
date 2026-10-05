@@ -420,9 +420,7 @@ export function TransformOverlay({
 		);
 		const clips = moving.map((l) => clipStart(l.clip.clipId)).filter((c): c is ClipStart => !!c);
 		if (clips.length === 0) return;
-		const others = live.current.scene
-			.filter((l) => !ids.has(l.clip.clipId))
-			.map((l) => ({ clipId: l.clip.clipId, bounds: l.props.bounds }));
+		const others = live.current.scene.filter((l) => !ids.has(l.clip.clipId)).map((l) => l.props.bounds);
 		svg.setPointerCapture?.(e.pointerId);
 		gestureRef.current = {
 			kind: 'move',

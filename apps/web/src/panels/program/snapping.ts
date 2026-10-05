@@ -11,7 +11,6 @@ export type SnapTarget = {
 	role: 'min' | 'center' | 'max';
 	/** For layer targets: the target layer's extent on the other axis (indicator span). */
 	extent?: [number, number];
-	sourceId?: string;
 };
 type SnapCandidate = { value: number; role: 'min' | 'center' | 'max' };
 export type SnapHit = { delta: number; target: SnapTarget; candidate: SnapCandidate };
@@ -29,7 +28,7 @@ export function buildSnapTargets(opts: {
 	width: number;
 	height: number;
 	safeMargins?: { action: number; title: number } | null;
-	layers?: readonly { clipId: string; bounds: Rect }[];
+	layers?: readonly Rect[];
 }): SnapTargets {
 	const { width: W, height: H } = opts;
 	const x: SnapTarget[] = [
@@ -54,19 +53,18 @@ export function buildSnapTargets(opts: {
 			);
 		}
 	}
-	for (const l of opts.layers ?? []) {
-		const b = l.bounds;
+	for (const b of opts.layers ?? []) {
 		const ex: [number, number] = [b.y, b.y + b.height];
 		const ey: [number, number] = [b.x, b.x + b.width];
 		x.push(
-			{ value: b.x, kind: 'layer', role: 'min', extent: ex, sourceId: l.clipId },
-			{ value: b.x + b.width / 2, kind: 'layer', role: 'center', extent: ex, sourceId: l.clipId },
-			{ value: b.x + b.width, kind: 'layer', role: 'max', extent: ex, sourceId: l.clipId },
+			{ value: b.x, kind: 'layer', role: 'min', extent: ex },
+			{ value: b.x + b.width / 2, kind: 'layer', role: 'center', extent: ex },
+			{ value: b.x + b.width, kind: 'layer', role: 'max', extent: ex },
 		);
 		y.push(
-			{ value: b.y, kind: 'layer', role: 'min', extent: ey, sourceId: l.clipId },
-			{ value: b.y + b.height / 2, kind: 'layer', role: 'center', extent: ey, sourceId: l.clipId },
-			{ value: b.y + b.height, kind: 'layer', role: 'max', extent: ey, sourceId: l.clipId },
+			{ value: b.y, kind: 'layer', role: 'min', extent: ey },
+			{ value: b.y + b.height / 2, kind: 'layer', role: 'center', extent: ey },
+			{ value: b.y + b.height, kind: 'layer', role: 'max', extent: ey },
 		);
 	}
 	return { x, y };

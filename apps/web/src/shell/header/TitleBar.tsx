@@ -12,7 +12,7 @@ import { type MenuEnv, resolveMenu } from '../menus/resolve.ts';
 
 const NULL_STORE = { getState: (): SessionState | null => null, subscribe: () => () => {} };
 
-export type DocumentTitle = { full: string; project: string; hint: string } | null;
+type DocumentTitle = { full: string; hint: string } | null;
 
 export function activeSequenceName(s: SessionState | null): string | null {
 	if (!s?.activeSequenceId) return null;
@@ -33,7 +33,7 @@ export function useDocumentTitle(): DocumentTitle {
 	if (!t || !session) return null;
 	const [name = '', seq, dirty, ro] = t.split('\u0000');
 	const full = `${name}${seq ? ` — ${seq}` : ''}${dirty === '1' ? ' • Edited' : ''}${ro === '1' ? ' (Read-only)' : ''}`;
-	return { full, project: name, hint: `Project id: ${session.projectId}` };
+	return { full, hint: `Project id: ${session.projectId}` };
 }
 
 export function useMenubarMenus(
@@ -62,8 +62,6 @@ export function TitleBar(props: {
 	menus: readonly MenubarMenuModel[];
 	env: Omit<MenuEnv, 'ctx'>;
 	editMode: boolean;
-	/** Compact header (HD-005): the menubar collapses into a ≡ app menu. */
-	compact?: boolean;
 }) {
 	const title = useDocumentTitle();
 	const runtime = useShellRuntime();
@@ -79,13 +77,9 @@ export function TitleBar(props: {
 			>
 				J
 			</span>
-			{props.compact ? (
-				<AppMenu menus={menus} />
-			) : (
-				<div className="pr-no-drag h-full">
-					<MenuBar menus={menus} />
-				</div>
-			)}
+			<div className="pr-no-drag h-full">
+				<MenuBar menus={menus} />
+			</div>
 			<div className="pointer-events-none absolute inset-x-0 flex justify-center">
 				<span
 					className="pointer-events-auto max-w-[40%] truncate font-pr text-pr-ui text-pr-text"

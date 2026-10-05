@@ -148,7 +148,7 @@ export function appendEncoderArgs(
 	return ({ args }) => {
 		if (extra.length === 0) return args;
 		const i = args.findIndex((a, k) => a === '-c:v' && args[k + 1] === encoderName);
-		if (i < 0 || args.length < 2) return args;
+		if (i < 0) return args;
 		return [...args.slice(0, -1), ...extra, args[args.length - 1]!];
 	};
 }

@@ -1,24 +1,14 @@
 // wp-m2-anime-core (S11 acceptance 8, FIX-010): Help ▸ About lists anime.js (MIT, with its text) from the
 // engine's /api/licenses and shows the JavaScript third-party notices that the built web app ships as
 // /THIRD_PARTY_NOTICES.md.
-import { expect, type Page, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { createProject, enableAgentBridge } from './support.ts';
 
-test.describe.configure({ mode: 'serial' });
-
-let page: Page;
-
-test.beforeAll(async ({ browser }) => {
-	page = await browser.newPage();
+test('Help ▸ About lists anime.js (MIT, licence text) and opens the third-party notices', async ({
+	page,
+}) => {
 	await enableAgentBridge(page);
 	await createProject(page, 'E2E Anime Core');
-});
-
-test.afterAll(async () => {
-	await page.close();
-});
-
-test('Help ▸ About lists anime.js (MIT, licence text) and opens the third-party notices', async () => {
 	await page.getByTestId('title-bar').getByRole('menuitem', { name: 'Help', exact: true }).click();
 	await page.getByRole('menuitem', { name: /About JasperEditor/ }).click();
 	const anime = page.getByTestId('license-animejs');

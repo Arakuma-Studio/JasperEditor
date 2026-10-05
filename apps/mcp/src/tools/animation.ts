@@ -1,7 +1,3 @@
-// M2 MCP tools for text animators (S11:ANA-002/004, ARCHITECTURE §20.7): list_text_animations (the preset
-// catalogue), set_text_animation (in/out presets, durations, params; null removes; one clip.update = one
-// "Agent: <label>" History entry) and render_frames (a contact sheet of Program frames to see motion).
-// `add_text` animateIn/animateOut (editing.ts) reuse AnimateArg and textAnimationOf.
 import {
 	fpsOf,
 	LATEST_TEXT_ANIMATION_SPECS,
@@ -85,13 +81,13 @@ const SidePatchArg = z
 	])
 	.nullable();
 
-export type AnimatorArg = z.infer<typeof SidePatchArg>;
+type AnimatorArg = z.infer<typeof SidePatchArg>;
 type Sides = Partial<Record<TextAnimationSide, AnimatorArg>>;
 /** One side of clip.addText / clip.update `textAnimation`. */
-export type AnimatorCommand = { preset?: string; durationFrames?: number; params?: Record<string, unknown> };
+type AnimatorCommand = { preset?: string; durationFrames?: number; params?: Record<string, unknown> };
 
 /** A side argument as the commands take it: a bare id → {preset}, seconds → frames at `fps` (round, ≥ 1). */
-export function animatorCommand(arg: Exclude<AnimatorArg, null>, fps: number): AnimatorCommand {
+function animatorCommand(arg: Exclude<AnimatorArg, null>, fps: number): AnimatorCommand {
 	if (typeof arg === 'string') return { preset: arg };
 	const { durationSeconds, ...rest } = arg;
 	if (durationSeconds === undefined) return rest;
@@ -105,7 +101,7 @@ export function animatorCommand(arg: Exclude<AnimatorArg, null>, fps: number): A
 }
 
 /** The sequence a clip lives in (else the given / first one), as a tool error when missing. */
-export function sequenceFor(doc: ProjectDocument, opts: { sequenceId?: string; clipId?: string }): Sequence {
+function sequenceFor(doc: ProjectDocument, opts: { sequenceId?: string; clipId?: string }): Sequence {
 	const own = opts.clipId ? Object.values(doc.sequences).find((s) => s.clips[opts.clipId!]) : undefined;
 	if (own) return own;
 	try {
@@ -116,7 +112,7 @@ export function sequenceFor(doc: ProjectDocument, opts: { sequenceId?: string; c
 }
 
 /** Where a tool's transaction applies the animators: one clip, the editor selection, or a new clip. */
-export type AnimationTarget = { sequenceId?: string; clipId?: string; selection?: boolean };
+type AnimationTarget = { sequenceId?: string; clipId?: string; selection?: boolean };
 
 /**
  * The sequence whose frame rate converts durationSeconds, resolved as the transaction resolves its target:
@@ -195,7 +191,7 @@ export async function textAnimationOf(
 }
 
 /** History label, e.g. "Text Animation: in Slide Up, out none". */
-export function animationLabel(patch: Partial<Record<TextAnimationSide, AnimatorCommand | null>>): string {
+function animationLabel(patch: Partial<Record<TextAnimationSide, AnimatorCommand | null>>): string {
 	const parts = TEXT_ANIMATION_SIDES.flatMap((s) => {
 		const a = patch[s];
 		if (a === undefined) return [];
@@ -209,7 +205,7 @@ export function animationLabel(patch: Partial<Record<TextAnimationSide, Animator
  * The list_text_animations catalogue (pure): the newest version of every preset (what `set_text_animation` applies)
  * with its default length and a params summary. Superseded versions stay valid in saved projects but are not listed.
  */
-export function textAnimationCatalogue() {
+function textAnimationCatalogue() {
 	return {
 		referenceFps: TEXT_ANIMATION_REFERENCE_FPS,
 		presets: LATEST_TEXT_ANIMATION_SPECS.map((s) => ({
@@ -241,11 +237,11 @@ const HINTS: Record<string, string> = {
 
 /** At most this many frames per contact sheet, and at most this many pixels per sheet side. */
 const MAX_SHEET_FRAMES = 24;
-export const MAX_SHEET_SIZE = 2048;
+const MAX_SHEET_SIZE = 2048;
 const SHEET_GAP = 4;
 
 /** `count` frames spread evenly over [from, to) (first and last frame included, duplicates dropped). */
-export function spreadFrames(from: number, to: number, count: number): number[] {
+function spreadFrames(from: number, to: number, count: number): number[] {
 	const last = Math.max(from, to - 1);
 	if (count <= 1) return [from];
 	const out = new Set<number>();
@@ -257,7 +253,7 @@ export function spreadFrames(from: number, to: number, count: number): number[] 
  * Cell width that keeps a `columns` × `rows` sheet of `aspect` (w/h) frames within MAX_SHEET_SIZE on both
  * sides (never above `width`, never below 64).
  */
-export function sheetCellWidth(width: number, columns: number, rows: number, aspect: number): number {
+function sheetCellWidth(width: number, columns: number, rows: number, aspect: number): number {
 	const byWidth = Math.floor((MAX_SHEET_SIZE - (columns + 1) * SHEET_GAP) / columns);
 	const byHeight = Math.floor(((MAX_SHEET_SIZE - (rows + 1) * SHEET_GAP) / rows) * aspect);
 	return Math.max(64, Math.min(width, byWidth, byHeight));

@@ -18,7 +18,6 @@ export const PANEL_KINDS = [
 	'info',
 	'markers',
 	'jobs',
-	// M2 (wp-m2-color)
 	'lumetri',
 	'scopes',
 ] as const;

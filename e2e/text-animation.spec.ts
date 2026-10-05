@@ -22,6 +22,7 @@ import {
 	query,
 	ROOT,
 	serverInfo,
+	transact,
 	waitForJob,
 } from './support.ts';
 
@@ -47,18 +48,6 @@ test.beforeAll(async ({ browser }) => {
 test.afterAll(async () => {
 	await page?.close();
 });
-
-async function transact(commands: unknown[]): Promise<{ ok: boolean; errors?: unknown[] }> {
-	return page.evaluate(
-		(cmds) =>
-			(
-				window as unknown as {
-					jasper: { transact(tx: unknown): Promise<{ ok: boolean; errors?: unknown[] }> };
-				}
-			).jasper.transact({ protocol: 'jasper.tx/1', label: 'E2E setup', commands: cmds }),
-		commands,
-	);
-}
 
 async function animationOf(clipId: string): Promise<TextAnimation | undefined> {
 	return query<TextAnimation | undefined>(page, 'doc.get', {
@@ -137,7 +126,7 @@ test('Motion Templates ▸ Text Animations: Slide Up (word) as In and Fade as Ou
 	await expect.poll(async () => (await clips(page)).filter((c) => c.kind === 'text').length).toBe(1);
 	textId = (await clips(page)).find((c) => c.kind === 'text')!.id;
 	// Setup only: a three-word title, large enough to measure (the edits under test go through the UI).
-	const r = await transact([
+	const r = await transact(page, [
 		{
 			type: 'clip.update',
 			clipId: textId,
@@ -235,7 +224,7 @@ test('razor: the left part keeps In only, the right part Out only; undo/redo', a
 test('TXA-013: char units at the window boundary sit on the glyphs of the plain text (≤ 1 px)', async () => {
 	const left = (await clips(page)).filter((c) => c.kind === 'text').sort((x, y) => x.start - y.start)[0]!;
 	// Setup only: a char-unit fade (positions are exactly at rest, only opacity animates).
-	const r = await transact([
+	const r = await transact(page, [
 		{
 			type: 'clip.update',
 			clipId: left.id,
@@ -418,7 +407,7 @@ test('MCP: list_text_animations, set_text_animation and render_frames on the ope
 
 test('RTL typewriter keeps the caret and neutral punctuation on the visual left', async () => {
 	const left = (await clips(page)).filter((c) => c.kind === 'text').sort((a, b) => a.start - b.start)[0]!;
-	const changed = await transact([
+	const changed = await transact(page, [
 		{
 			type: 'clip.update',
 			clipId: left.id,

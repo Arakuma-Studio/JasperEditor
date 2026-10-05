@@ -63,7 +63,7 @@ export type StillCaptureRequest = {
 	width: number;
 };
 
-export type AgentServiceOptions = {
+type AgentServiceOptions = {
 	engineVersion: string;
 	/** Resolves the engine's project-store adapter. */
 	store: () => AgentProjectStore;

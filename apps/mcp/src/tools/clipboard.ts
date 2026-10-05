@@ -1,7 +1,3 @@
-// Clipboard tools (wp-clipboard, S01 §20): copy_clips / copy_items build a clipboard payload from the committed
-// document (the same JSON the editor writes on Copy), paste_clips / paste_items paste one through the clip.paste /
-// project.pasteItems commands (one transaction, one "Agent: …" History entry). The attribute, effect and keyframe
-// pastes are apply_commands commands (clip.pasteAttributes, clip.removeAttributes, effect.paste, keyframe.paste).
 import { buildClipsPayload, buildItemsPayload, EditModeSchema, TrackRefSchema } from '@jasper/project';
 import { z } from 'zod';
 import {

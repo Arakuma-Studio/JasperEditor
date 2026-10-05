@@ -54,7 +54,7 @@ type NativeSourceResolver = {
 	mgMaster(clipId: string): string | null;
 };
 
-export type NativeBuildOptions = {
+type NativeBuildOptions = {
 	snapshot: RenderSnapshot;
 	output: OutputSpec;
 	outputFile: string;
@@ -66,7 +66,7 @@ export type NativeBuildOptions = {
 	extensions?: { list: readonly NativeExtension[]; prepared: PreparedExtensions };
 };
 
-export type NativeGraph = {
+type NativeGraph = {
 	/** ffmpeg arguments without the global `-hide_banner … -progress` prefix. */
 	args: string[];
 	/** Filtergraph text (tests; also written to a script file when large). */
@@ -156,7 +156,7 @@ export function fadeFilters(fades: readonly RenderFade[] | undefined, f0: number
  * Audio fades of a clip chain whose first sample is sequence frame `f0`, as `afade` (sample accurate;
  * `tri` = linear, `qsin` = equal power). A fade that began before `f0` is padded like `fadeFilters`.
  */
-export function audioFadeFilters(
+function audioFadeFilters(
 	fades: readonly RenderAudioFade[] | undefined,
 	f0: number,
 	frameSec: number,
@@ -235,7 +235,7 @@ export function colorRunFilters(o: {
 	return out;
 }
 
-export type LayerSourceOptions = {
+type LayerSourceOptions = {
 	clip: RenderVisualClip;
 	/** First drawn and one-past-last sequence frame of the layer. */
 	f0: number;
@@ -252,7 +252,7 @@ export type LayerSourceOptions = {
 	addInput(args: string[]): number;
 };
 
-export type LayerSourceChain = {
+type LayerSourceChain = {
 	/** Input pad of the chain (`[k:v:0]`), or '' when the chain starts with a source filter (solids). */
 	input: string;
 	/** Filters from the decoded source to the layer after its effects (RGBA, box-sized, frames from pts 0). */

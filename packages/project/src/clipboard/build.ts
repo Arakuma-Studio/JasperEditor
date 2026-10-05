@@ -288,7 +288,7 @@ export function buildEffectsPayload(
 // ---------------------------------------------------------------- keyframes (S03:EC-023)
 
 /** Value kind of a parameter value, as keyframe pastes compare it (`enum` and `string` are both `string`). */
-export function valueKindOf(v: unknown): string {
+function valueKindOf(v: unknown): string {
 	if (typeof v === 'number') return 'number';
 	if (typeof v === 'boolean') return 'boolean';
 	if (typeof v === 'string') return 'string';
@@ -301,7 +301,7 @@ export function valueKindOf(v: unknown): string {
 }
 
 /** Every keyframed parameter of a clip with its clipboard address. */
-export function clipKeyframeTracks(clip: Clip): { address: KeyframeAddress; anim: Animatable<unknown> }[] {
+function clipKeyframeTracks(clip: Clip): { address: KeyframeAddress; anim: Animatable<unknown> }[] {
 	const out: { address: KeyframeAddress; anim: Animatable<unknown> }[] = [];
 	const isAnim = (v: unknown): v is Animatable<unknown> =>
 		!!v && typeof v === 'object' && 'value' in v && Array.isArray((v as { keyframes?: unknown }).keyframes);

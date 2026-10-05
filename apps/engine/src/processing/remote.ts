@@ -201,7 +201,7 @@ export class SshRemote {
 
 	private rsyncSshCommand(): string {
 		const words = [this.bin('ssh'), ...this.options(), '-p', String(this.settings.port)];
-		return words.map((w) => (/[\s'"\\]/.test(w) ? `'${w.replace(/'/g, `'\\''`)}'` : w)).join(' ');
+		return words.map((w) => (/[\s'"\\]/.test(w) ? shq(w) : w)).join(' ');
 	}
 
 	/**
@@ -212,7 +212,6 @@ export class SshRemote {
 		const part = `${remotePath}.part`;
 		const dir = remotePath.slice(0, remotePath.lastIndexOf('/'));
 		await this.execOk(`mkdir -p ${shq(dir)}`, 'mkdir', { signal: opts.signal });
-		await this.ensureControlDir();
 		let r: ExecResult;
 		if (await this.hasRsync()) {
 			r = await run(

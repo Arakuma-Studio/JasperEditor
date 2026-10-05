@@ -144,7 +144,6 @@ export class MgRuntime implements CompositionPreviewRuntime {
 	private readonly recentJobs = new Map<string, EngineJob>();
 	private readonly scheduled = new Map<string, { key: string; timer: ReturnType<typeof setTimeout> }>();
 	private readonly hosts = new Map<string, HostStatus>();
-	private readonly activeHosts = new Set<string>();
 	/** clipId → current request keys. */
 	private readonly clipKeys = new Map<string, { preview: string | null; master: string | null }>();
 	private readonly masterLookups = new Set<string>();
@@ -212,12 +211,10 @@ export class MgRuntime implements CompositionPreviewRuntime {
 
 	acquireHost(clipId: string): (() => void) | null {
 		if (!this.mountedHosts.includes(clipId)) this.mountedHosts.push(clipId);
-		this.activeHosts.add(clipId);
 		this.notifySoon();
 		return () => {
 			const i = this.mountedHosts.indexOf(clipId);
 			if (i >= 0) this.mountedHosts.splice(i, 1);
-			this.activeHosts.delete(clipId);
 			this.hosts.delete(clipId);
 			this.notifySoon();
 		};
@@ -239,7 +236,7 @@ export class MgRuntime implements CompositionPreviewRuntime {
 	/** The mounted clip farthest from the playhead among the first-come holders (null when a slot is free). */
 	private farthestHolder(except: string): string | null {
 		const holders = this.mountedHosts.filter((id) => id !== except).slice(0, MAX_LIVE_HOSTS);
-		if (this.mountedHosts.filter((id) => id !== except).length < MAX_LIVE_HOSTS) return null;
+		if (holders.length < MAX_LIVE_HOSTS) return null;
 		const s = this.session.store.getState();
 		const seq = s.activeSequenceId ? s.document.sequences[s.activeSequenceId] : undefined;
 		const f = this.session.transport.getState().frame;

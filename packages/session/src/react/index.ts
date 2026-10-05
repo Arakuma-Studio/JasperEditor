@@ -70,14 +70,6 @@ export function useDocument<T>(selector: (doc: ProjectDocument) => T, equality?:
 	return useSessionState((s) => selector(s.transient ?? s.document), equality);
 }
 
-/** Selects from the committed document only (panels that must not show gesture previews). */
-export function useCommittedDocument<T>(
-	selector: (doc: ProjectDocument) => T,
-	equality?: (a: T, b: T) => boolean,
-): T {
-	return useSessionState((s) => selector(s.document), equality);
-}
-
 export function useSelection(): Selection {
 	return useSessionState((s) => s.selection);
 }

@@ -4,6 +4,7 @@
 // cancel; S01:SES-006, S02:TL-052) or `session.apply` for clicks (razor). DOM-free so tests can drive it.
 import {
 	type Clip,
+	findTrack,
 	flicksPerFrame,
 	formatTimecode,
 	fpsOf,
@@ -207,9 +208,7 @@ export class TimelineController {
 	}
 
 	private isLocked(seq: Sequence, trackId: string): boolean {
-		for (const t of [...seq.videoTracks, ...seq.audioTracks, ...seq.captionTracks])
-			if (t.id === trackId) return t.locked;
-		return false;
+		return findTrack(seq, trackId)?.track.locked ?? false;
 	}
 
 	// ------------------------------------------------------------ hover (cursor, razor line)

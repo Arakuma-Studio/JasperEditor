@@ -1,5 +1,5 @@
 // Small layout primitives: Tabs, ScrollArea (S05:CT-060), EmptyState (S05:PC-031), progress
-// (S05:CT-070), the fx badge (S05:IC-005) and a keyboard-shortcut label.
+// (S05:CT-070) and a keyboard-shortcut label.
 import { ScrollArea as RScroll, Tabs as RTabs } from 'radix-ui';
 import type { ReactNode } from 'react';
 import { cx } from '../cx.ts';
@@ -162,75 +162,6 @@ export function LinearProgress({
 				style={value === null ? undefined : { width: `${Math.max(0, Math.min(1, value)) * 100}%` }}
 			/>
 		</div>
-	);
-}
-
-/** 16 px progress ring (header jobs button, clips). */
-export function CircularProgress({
-	value,
-	size = 16,
-	label,
-}: {
-	value: number | null;
-	size?: number;
-	label?: string;
-}) {
-	const r = 6.5;
-	const c = 2 * Math.PI * r;
-	return (
-		<svg
-			width={size}
-			height={size}
-			viewBox="0 0 16 16"
-			role="progressbar"
-			aria-label={label}
-			aria-valuenow={value === null ? undefined : Math.round(value * 100)}
-			className={value === null ? 'animate-spin' : undefined}
-		>
-			<circle cx="8" cy="8" r={r} fill="none" stroke="var(--pr-border)" strokeWidth="2" />
-			<circle
-				cx="8"
-				cy="8"
-				r={r}
-				fill="none"
-				stroke="var(--pr-accent)"
-				strokeWidth="2"
-				strokeLinecap="round"
-				strokeDasharray={`${(value ?? 0.3) * c} ${c}`}
-				transform="rotate(-90 8 8)"
-			/>
-		</svg>
-	);
-}
-
-// ------------------------------------------------------------------ fx badge
-
-export type FxState = 'none' | 'intrinsic' | 'effect' | 'both';
-const FX_COLORS: Record<FxState, string> = {
-	none: 'text-[var(--pr-fx-none)]',
-	intrinsic: 'text-[var(--pr-fx-intrinsic)]',
-	effect: 'text-[var(--pr-fx-effect)]',
-	both: 'text-[var(--pr-fx-both)]',
-};
-const FX_LABELS: Record<FxState, string> = {
-	none: 'No effects',
-	intrinsic: 'Intrinsic properties modified',
-	effect: 'Effects applied',
-	both: 'Intrinsic properties modified and effects applied',
-};
-
-/** The "fx" badge with its four color states (S05:IC-005); `master` draws the source-effects underline. */
-export function FxBadge({ state, master, size = 12 }: { state: FxState; master?: boolean; size?: number }) {
-	return (
-		<span
-			className={cx('inline-flex flex-col items-center', FX_COLORS[state])}
-			role="img"
-			aria-label={FX_LABELS[state]}
-			data-fx={state}
-		>
-			<Icon id="fx.badge" size={size} strokeWidth={2} />
-			{master ? <span className="h-px w-full bg-current" /> : null}
-		</span>
 	);
 }
 

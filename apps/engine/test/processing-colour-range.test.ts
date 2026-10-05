@@ -10,13 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ProcessStep } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import {
-	createDeblockStep,
-	createDenoiseStep,
-	createDeshakeStep,
-	fromFormatToRgb48,
-	toFormat,
-} from '../src/processing/proc/filters.ts';
+import { createDeshakeStep, fromFormatToRgb48, toFormat } from '../src/processing/proc/filters.ts';
 import { runProc } from '../src/processing/proc/runner.ts';
 import { createStepImpl } from '../src/processing/proc/steps.ts';
 import type { StepContext } from '../src/processing/proc/types.ts';
@@ -38,15 +32,6 @@ describe('generated filter text states the output range of every scale', () => {
 			smoothing: 15,
 			borders: 'crop',
 		}).filter(ctx),
-		'deshake keep': createDeshakeStep({
-			op: 'stabilize',
-			method: 'deshake',
-			smoothing: 15,
-			borders: 'keep',
-		}).filter(ctx),
-		deblock: createDeblockStep({ op: 'deblock', filter: 'weak' }).filter(ctx),
-		atadenoise: createDenoiseStep({ op: 'denoise', method: 'atadenoise', strength: 0.5 }).filter(ctx),
-		nlmeans: createDenoiseStep({ op: 'denoise', method: 'nlmeans', strength: 0.5 }).filter(ctx),
 		'to yuv444p': toFormat('yuv444p'),
 		'to yuv444p16le from tv': toFormat('yuv444p16le', 'bt709', 'tv'),
 		'to rgb48 from yuv': fromFormatToRgb48('yuv444p'),

@@ -70,7 +70,7 @@ export function checkAgentTxLimits(tx: AgentTxInput, byteLength?: number): Issue
 	return null;
 }
 
-export function jsonByteLength(v: unknown): number {
+function jsonByteLength(v: unknown): number {
 	const s = JSON.stringify(v) ?? '';
 	// UTF-8 length without TextEncoder allocations for ASCII-heavy payloads.
 	let n = 0;
@@ -87,7 +87,7 @@ export function jsonByteLength(v: unknown): number {
 }
 
 /** The agent origin of a transaction; non-agent origins are replaced (agents never act as the user). */
-export function agentOriginOf(origin: unknown, fallbackAgent: string): AgentOrigin {
+function agentOriginOf(origin: unknown, fallbackAgent: string): AgentOrigin {
 	if (origin && typeof origin === 'object' && typeof (origin as AgentOrigin).agent === 'string') {
 		const o = origin as AgentOrigin;
 		if (o.agent.trim())

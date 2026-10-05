@@ -1,8 +1,18 @@
 // Filesystem helpers: atomic writes (S01:PER-016), JSON read/write, disk space (S04:IN-005).
-import { randomBytes } from 'node:crypto';
-import { constants } from 'node:fs';
+import { createHash, randomBytes } from 'node:crypto';
+import { constants, createReadStream } from 'node:fs';
 import { mkdir, open, readFile, rename, rm, stat, statfs } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
+
+export function sha256File(file: string): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const hash = createHash('sha256');
+		createReadStream(file)
+			.on('data', (chunk) => hash.update(chunk))
+			.on('end', () => resolve(hash.digest('hex')))
+			.on('error', reject);
+	});
+}
 
 async function fsyncDir(dir: string): Promise<void> {
 	// Directory fsync makes the rename durable. Not supported on every platform (Windows): best effort.

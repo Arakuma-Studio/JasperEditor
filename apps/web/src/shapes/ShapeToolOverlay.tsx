@@ -19,7 +19,6 @@ type Drag = {
 	start: Vec2;
 	startScreen: Vec2;
 	last: Vec2;
-	lastScreen: Vec2;
 	moved: boolean;
 	shift: boolean;
 	alt: boolean;
@@ -92,7 +91,6 @@ function ShapeDrawSurface(props: ProgramOverlayHostProps & { type: ShapeType }) 
 			start: p,
 			startScreen: screen,
 			last: p,
-			lastScreen: screen,
 			moved: false,
 			shift: e.shiftKey,
 			alt: e.altKey,
@@ -103,7 +101,6 @@ function ShapeDrawSurface(props: ProgramOverlayHostProps & { type: ShapeType }) 
 		if (!d) return;
 		const screen = local(e);
 		d.last = toSequence(view, screen);
-		d.lastScreen = screen;
 		d.shift = e.shiftKey;
 		d.alt = e.altKey;
 		if (!d.moved && Math.hypot(screen[0] - d.startScreen[0], screen[1] - d.startScreen[1]) < DRAG_THRESHOLD)

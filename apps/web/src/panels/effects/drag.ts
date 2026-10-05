@@ -129,7 +129,7 @@ export function effectTree(
  * Contract (M2, wp-m2-transitions): dragging a transition from the Effects panel puts
  *   DataTransfer[JASPER_TRANSITION_MIME] = JSON.stringify({ type: 'jasper/transition', effectId })
  * plus a `jasper-transition:<effectId>` text/plain fallback. The timeline resolves the drop target while
- * dragging (data is unreadable during dragover, so the id is also kept in `activeTransitionDrag()`).
+ * dragging (data is unreadable during dragover, so the id is also kept in this module).
  * M3 (additive): the id is also encoded in a type name, `application/x-jasper-transition-id.<effectId>`,
  * because types (not data) are readable during dragover — a drag from another window of the app can show
  * its ghost too (`transitionDragId(dt)`).
@@ -150,11 +150,6 @@ export function writeTransitionDragPayload(dt: DataTransfer, effectId: string): 
 }
 
 const TRANSITION_ID_TYPE_PREFIX = 'application/x-jasper-transition-id.';
-
-/** The transition being dragged in this window (set on dragstart, cleared on dragend). */
-export function activeTransitionDrag(): string | null {
-	return dragging;
-}
 
 /**
  * The dragged transition's id during dragover: this window's drag, else the id encoded in the types (a drag

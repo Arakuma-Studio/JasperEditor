@@ -11,10 +11,7 @@ import { focusStore } from '../shell/focus.ts';
 import { prefsStore } from '../shell/prefs.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
-function shellOf(ctx: CommandCtx): ShellController | null {
-	return ctx.services.get('shell');
-}
-const hasShell = (ctx: CommandCtx) => !!shellOf(ctx);
+const hasShell = (ctx: CommandCtx) => !!ctx.services.get('shell');
 const NO_SHELL = 'Open a project to use the editor workspace';
 
 /** A shell-driven command: enabled only while the editor shell is mounted. */
@@ -32,7 +29,7 @@ function sc(
 		when: (ctx) => hasShell(ctx) && (extra.when ? extra.when(ctx) : true),
 		disabledReason: (ctx) => (hasShell(ctx) ? extra.disabledReason?.(ctx) : NO_SHELL),
 		run: (ctx, args) => {
-			const shell = shellOf(ctx);
+			const shell = ctx.services.get('shell');
 			if (shell) return run(shell, ctx, args);
 		},
 	};
@@ -108,7 +105,7 @@ const save: UiCommand = {
 
 const focusPanels: UiCommand[] = PANEL_KINDS.map((kind) =>
 	sc(`panel.focus.${kind}`, `Open ${PANEL_LABELS[kind]} Panel`, (shell) => shell.focusPanel(kind), {
-		checked: (ctx) => !!shellOf(ctx)?.isPanelOpen(kind),
+		checked: (ctx) => !!ctx.services.get('shell')?.isPanelOpen(kind),
 		agentExposed: true,
 	}),
 );
@@ -124,7 +121,7 @@ const maximizeFocused = sc(
 	'Maximize Panel Group',
 	(shell) => void shell.toggleMaximize('focused'),
 	{
-		checked: (ctx) => !!shellOf(ctx)?.isMaximized(),
+		checked: (ctx) => !!ctx.services.get('shell')?.isMaximized(),
 	},
 );
 const maximizePointer = sc(
@@ -132,7 +129,7 @@ const maximizePointer = sc(
 	'Maximize Panel Group Under Pointer',
 	(shell) => void shell.toggleMaximize('pointer'),
 	{
-		checked: (ctx) => !!shellOf(ctx)?.isMaximized(),
+		checked: (ctx) => !!ctx.services.get('shell')?.isMaximized(),
 	},
 );
 const closePanel = sc('panel.close', 'Close Panel', (shell) => shell.closePanel(), {
@@ -213,7 +210,7 @@ const layoutCmd = (id: string, label: string, mode: 'desktop' | 'compact' | null
 
 const modeCmd = (mode: 'import' | 'edit' | 'export', label: string) =>
 	sc(`mode.${mode}`, label, (shell) => shell.setMode(mode), {
-		checked: (ctx) => shellOf(ctx)?.getMode() === mode,
+		checked: (ctx) => ctx.services.get('shell')?.getMode() === mode,
 	});
 
 // ------------------------------------------------------------------ the list
@@ -277,7 +274,7 @@ export const appCommands: UiCommand[] = [
 	layoutCmd('view.layout.desktop', 'Desktop Layout', 'desktop'),
 	layoutCmd('view.layout.compact', 'Compact Layout', 'compact'),
 	sc('view.fullscreen', 'Full Screen', (shell) => shell.toggleFullscreen(), {
-		checked: (ctx) => !!shellOf(ctx)?.isFullscreen(),
+		checked: (ctx) => !!ctx.services.get('shell')?.isFullscreen(),
 		icon: 'app.fullscreen',
 	}),
 	modeCmd('import', 'Import Mode'),

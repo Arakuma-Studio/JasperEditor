@@ -42,7 +42,7 @@ export const CORNER_PIN_PARAMS = ['topLeft', 'topRight', 'bottomRight', 'bottomL
  * The corner-pin quad of a layer in layer pixels (TL, TR, BR, BL), or null when the layer has no enabled,
  * valid (convex) corner pin. The first enabled corner pin of the stack wins (S09:TRK-051).
  */
-export function cornerPinQuad(
+function cornerPinQuad(
 	effects: readonly ResolvedEffect[],
 	box: { width: number; height: number },
 ): Quad | null {

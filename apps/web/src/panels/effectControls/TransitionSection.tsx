@@ -14,6 +14,7 @@ import type { EditorSession } from '@jasper/session';
 import { useSessionState } from '@jasper/session/react';
 import { TimecodeField } from '@jasper/ui';
 import { type PointerEvent as ReactPointerEvent, useRef, useState } from 'react';
+import { TRANSITION_ALIGNMENTS } from '../effects/transition-prefs.ts';
 import { SelectField } from '../properties/controls/fields.tsx';
 import { useInspectorData } from '../properties/lib/hooks.ts';
 import { useInspectorOps } from '../properties/lib/ops.ts';
@@ -24,8 +25,8 @@ import {
 	transitionGeom,
 } from '../timeline/model/transitions.ts';
 
-const ALIGNMENTS: readonly Transition['alignment'][] = ['center', 'start-at-cut', 'end-at-cut'];
-const ALIGNMENT_LABELS = ['Center at Cut', 'Start at Cut', 'End at Cut'];
+const ALIGNMENTS = TRANSITION_ALIGNMENTS.map((a) => a.value);
+const ALIGNMENT_LABELS = TRANSITION_ALIGNMENTS.map((a) => a.label);
 
 /** The selected transition of the active sequence (last selected), from the drawn document. */
 function useSelectedTransition(): { seq: Sequence; geom: TransitionGeom } | null {

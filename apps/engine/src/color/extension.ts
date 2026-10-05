@@ -44,7 +44,7 @@ import { exists } from '../tools/fs.ts';
 import { readCubeFile } from './prober.ts';
 
 /** Most distinct LUTs one layer may use in an export (S06:CG-052). */
-export const MAX_LUTS_PER_LAYER = 240;
+const MAX_LUTS_PER_LAYER = 240;
 /** Added to every baked table value so `lut3d`'s truncating 8-bit store rounds to nearest (see above). */
 const EXPORT_ROUNDING_BIAS = 0.5 / 255;
 /** States remembered process-wide (state key → baked file); each costs ~200 bytes, a bake ~10–50 ms. */

@@ -27,7 +27,7 @@ import {
 } from '@jasper/motion/text';
 import type { TextContent, TextStyle } from '@jasper/project';
 import { type CSSProperties, type ReactNode, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { FALLBACK_FONT_STACK, useFontsReady } from '../fonts.ts';
+import { FALLBACK_FONT_STACK, fontFaceFor, useFontsReady } from '../fonts.ts';
 import { rgbaCss } from '../metadata.ts';
 import type { LayerProps } from '../types.ts';
 import { LayerBox } from './LayerBox.tsx';
@@ -38,24 +38,13 @@ type TextRun = NonNullable<TextContent['runs']>[number];
 type RunStyle = TextRun['style'];
 
 function textFontFamily(fontId: string, fonts: Fonts, weight?: number, italic?: boolean): string {
-	const all = fonts ?? [];
-	const face =
-		all.find(
-			(f) =>
-				f.fontId === fontId &&
-				(weight === undefined || f.weight === weight) &&
-				(italic === undefined || (f.style === 'italic') === italic),
-		) ?? all.find((f) => f.fontId === fontId);
+	const face = fontFaceFor(fonts, fontId, weight, italic);
 	return face ? `"${face.family.replace(/"/g, '')}", ${FALLBACK_FONT_STACK}` : FALLBACK_FONT_STACK;
 }
 
 /** The family a style renders with (the loaded face's family), or null for the fallback stack. */
 function faceFamily(s: Pick<TextStyle, 'fontId' | 'weight' | 'italic'>, fonts: Fonts): string | null {
-	const all = fonts ?? [];
-	const face =
-		all.find((f) => f.fontId === s.fontId && f.weight === s.weight && (f.style === 'italic') === s.italic) ??
-		all.find((f) => f.fontId === s.fontId);
-	return face?.family ?? null;
+	return fontFaceFor(fonts, s.fontId, s.weight, s.italic)?.family ?? null;
 }
 
 function strokeCss(s: Pick<TextStyle, 'strokes'>): CSSProperties {

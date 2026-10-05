@@ -44,7 +44,7 @@ export type MediaRecord = {
 
 type IndexFile = { version: 1; engineId: string; items: Record<string, MediaRecord> };
 
-export type Availability = 'online' | 'missing';
+type Availability = 'online' | 'missing';
 
 export class MediaRegistry {
 	private readonly mutex = new KeyedMutex();

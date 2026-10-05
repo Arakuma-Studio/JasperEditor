@@ -19,7 +19,7 @@ import { lstat, readdir, readFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, sep } from 'node:path';
 import type { CacheKind } from '@jasper/api';
 
-export type KindDef = {
+type KindDef = {
 	kind: CacheKind;
 	label: string;
 	description: string;
@@ -78,9 +78,11 @@ export const KIND_DEFS: readonly KindDef[] = [
 
 export const KIND_DEF: ReadonlyMap<CacheKind, KindDef> = new Map(KIND_DEFS.map((d) => [d.kind, d]));
 
-export const entryId = (kind: CacheKind, key: string) => `${kind}:${key}`;
-
 export type EntryRef = { id: string; kind: CacheKind; key: string };
+
+function entryRef(kind: CacheKind, key: string): EntryRef {
+	return { id: `${kind}:${key}`, kind, key };
+}
 
 /** A cache entry found on disk. */
 export type ScannedEntry = EntryRef & {
@@ -104,7 +106,7 @@ const JOB_ID = /^job_[0-9a-f]{16}$/;
 /** Temporary names used by the engine's writers (`x.partial`, `x.<n>.partial.mp4`, `.x.<rand>.tmp`, `.tmp-<job>`…). */
 const TEMP_NAME = /\.partial(\.|-|$)|\.tmp(\.|$)|\.part\.|^\.tmp-|^\.trash-|\.partial-\d+$/;
 
-export function isTempName(name: string): boolean {
+function isTempName(name: string): boolean {
 	return TEMP_NAME.test(name);
 }
 
@@ -156,42 +158,39 @@ function segments(appdir: string, abs: string): string[] | null {
 
 /**
  * The cache entry a path belongs to (the entry itself or any file inside it), or null when the path is not a cache
- * file (or a temporary one). Pure: does not touch the disk except for `renders/` (exports vs stills is decided by
- * the caller's `stillHint`, default: export).
+ * file (or a temporary one). Pure: exports vs stills is decided by the caller's `stillHint` (default: export).
  */
 export function entryOfPath(appdir: string, abs: string, stillHint?: boolean): EntryRef | null {
 	const s = segments(appdir, abs);
 	if (!s || s.length < 2) return null;
-	const mk = (kind: CacheKind, key: string): EntryRef => ({ id: entryId(kind, key), kind, key });
-	const [a, b, c, d] = s;
+	const [a, b, c] = s;
 	if (a === 'cache') {
 		if (b === 'luts' && c) {
 			const m = /^([0-9a-f]{64})\.cube$/.exec(c);
-			return m ? mk('luts', m[1]!) : null;
+			return m ? entryRef('luts', m[1]!) : null;
 		}
 		if (b === 'warp' && c) {
 			const m = /^([0-9a-f]{40})\.mov$/.exec(c);
-			return m ? mk('warp', m[1]!) : null;
+			return m ? entryRef('warp', m[1]!) : null;
 		}
-		if (b === 'layers' && c) return KEY40.test(c) ? mk('layers', c) : null;
-		if (b === 'jasper-proc-bundle') return mk('bundles', 'jasper-proc');
+		if (b === 'layers' && c) return KEY40.test(c) ? entryRef('layers', c) : null;
+		if (b === 'jasper-proc-bundle') return entryRef('bundles', 'jasper-proc');
 		if (b && HEX64.test(b) && c) {
 			const m = DERIVATIVE.exec(c);
 			if (!m) return null;
 			const kind: CacheKind = m[1]!.startsWith('proxy-') ? 'proxies' : 'media-cache';
-			return mk(kind, `${b}/${m[1]}-${m[2]}`);
+			return entryRef(kind, `${b}/${m[1]}-${m[2]}`);
 		}
 		return null;
 	}
 	if (a === 'mg' && b) {
-		if (b === 'posters') return c && /^[0-9a-f]{16,64}$/.test(c) ? mk('mg-posters', c) : null;
+		if (b === 'posters') return c && /^[0-9a-f]{16,64}$/.test(c) ? entryRef('mg-posters', c) : null;
 		if (!KEY40.test(b)) return null;
 		if (c && isTempName(c)) return null;
-		return mk('mg-renders', b);
+		return entryRef('mg-renders', b);
 	}
-	if (a === 'renders' && b && JOB_ID.test(b)) return mk(stillHint ? 'stills' : 'exports', b);
-	if (a === 'remotion' && b === 'bundle' && c && !isTempName(c)) return mk('bundles', `remotion/${c}`);
-	void d;
+	if (a === 'renders' && b && JOB_ID.test(b)) return entryRef(stillHint ? 'stills' : 'exports', b);
+	if (a === 'remotion' && b === 'bundle' && c && !isTempName(c)) return entryRef('bundles', `remotion/${c}`);
 	return null;
 }
 
@@ -239,7 +238,6 @@ async function orphanFrom(path: string): Promise<Orphan> {
 export async function scanAppdir(appdir: string): Promise<ScanResult> {
 	const entries: ScannedEntry[] = [];
 	const orphans: Orphan[] = [];
-	const mk = (kind: CacheKind, key: string): EntryRef => ({ id: entryId(kind, key), kind, key });
 	const cache = join(appdir, 'cache');
 
 	for (const d of await list(cache)) {
@@ -254,18 +252,18 @@ export async function scanAppdir(appdir: string): Promise<ScanResult> {
 			for (const f of await list(p)) {
 				const fp = join(p, f.name);
 				const m = re.exec(f.name);
-				if (m) entries.push(await entryFrom(mk(kind, m[1]!), [fp]));
+				if (m) entries.push(await entryFrom(entryRef(kind, m[1]!), [fp]));
 				else if (isTempName(f.name)) orphans.push(await orphanFrom(fp));
 			}
 		} else if (d.name === 'layers') {
 			for (const f of await list(p)) {
 				const fp = join(p, f.name);
 				if (KEY40.test(f.name) && f.isDirectory())
-					entries.push(await withMeta(await entryFrom(mk('layers', f.name), [fp])));
+					entries.push(await withMeta(await entryFrom(entryRef('layers', f.name), [fp])));
 				else if (isTempName(f.name)) orphans.push(await orphanFrom(fp));
 			}
 		} else if (d.name === 'jasper-proc-bundle') {
-			entries.push(await entryFrom(mk('bundles', 'jasper-proc'), [p]));
+			entries.push(await entryFrom(entryRef('bundles', 'jasper-proc'), [p]));
 		} else if (HEX64.test(d.name) && d.isDirectory()) {
 			const groups = new Map<string, { kind: CacheKind; paths: string[] }>();
 			for (const f of await list(p)) {
@@ -282,7 +280,7 @@ export async function scanAppdir(appdir: string): Promise<ScanResult> {
 				g.paths.push(fp);
 				groups.set(key, g);
 			}
-			for (const [key, g] of groups) entries.push(await entryFrom(mk(g.kind, key), g.paths));
+			for (const [key, g] of groups) entries.push(await entryFrom(entryRef(g.kind, key), g.paths));
 		}
 	}
 
@@ -297,13 +295,13 @@ export async function scanAppdir(appdir: string): Promise<ScanResult> {
 					// Temporary posters inside a bundle's directory are orphans of their own.
 					for (const g of await list(fp))
 						if (isTempName(g.name)) orphans.push(await orphanFrom(join(fp, g.name)));
-					entries.push(await entryFrom(mk('mg-posters', f.name), [fp]));
+					entries.push(await entryFrom(entryRef('mg-posters', f.name), [fp]));
 				}
 			}
 		} else if (KEY40.test(d.name) && d.isDirectory()) {
 			// fframes renders write into `<key>/.tmp-<jobId>/`; composition renders `<file>.part.webm`.
 			for (const f of await list(p)) if (isTempName(f.name)) orphans.push(await orphanFrom(join(p, f.name)));
-			entries.push(await withMeta(await entryFrom(mk('mg-renders', d.name), [p])));
+			entries.push(await withMeta(await entryFrom(entryRef('mg-renders', d.name), [p])));
 		} else if (isTempName(d.name)) orphans.push(await orphanFrom(p));
 	}
 
@@ -315,14 +313,14 @@ export async function scanAppdir(appdir: string): Promise<ScanResult> {
 		const files = (await list(p)).map((f) => f.name);
 		const still =
 			files.some((f) => f.startsWith('output.png')) && !files.some((f) => /^output\.(?!png)/.test(f));
-		entries.push(await entryFrom(mk(still ? 'stills' : 'exports', d.name), [p]));
+		entries.push(await entryFrom(entryRef(still ? 'stills' : 'exports', d.name), [p]));
 	}
 
 	const bundles = join(appdir, 'remotion', 'bundle');
 	for (const d of await list(bundles)) {
 		const p = join(bundles, d.name);
 		if (isTempName(d.name)) orphans.push(await orphanFrom(p));
-		else if (d.isDirectory()) entries.push(await entryFrom(mk('bundles', `remotion/${d.name}`), [p]));
+		else if (d.isDirectory()) entries.push(await entryFrom(entryRef('bundles', `remotion/${d.name}`), [p]));
 	}
 
 	// Job scratch directories of jobs that are gone and per-request scratch (`layer-preview-*`, `mg-schemas-*`): the

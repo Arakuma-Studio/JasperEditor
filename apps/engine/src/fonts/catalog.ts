@@ -33,7 +33,7 @@ type Metadata = {
 	subsets: string[];
 };
 
-export type ResolvedFamily = FontFamily & { id: string; dir: string };
+type ResolvedFamily = FontFamily & { id: string; dir: string };
 
 function packageDir(id: string, env: Record<string, string | undefined>): string | null {
 	const custom = env.JASPER_FONTS_DIR;

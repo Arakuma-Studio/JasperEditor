@@ -2,20 +2,19 @@
 // timecodes (S02:TL-951: frames always come with timecode), media summaries and a text timeline table.
 import {
 	type Animatable,
+	allTracks,
 	type Clip,
 	flicksToSeconds,
 	fpsOf,
 	linkedPartners,
 	type MediaAsset,
 	type ProjectDocument,
-	type Rational,
 	type Sequence,
 	type ShapeData,
 	sequenceDuration,
 	sequenceTimecode,
 	sourceOut,
 	TEXT_ANIMATION_SIDES,
-	type Track,
 	type Transition,
 	trackLabel,
 	transitionSpan,
@@ -28,10 +27,6 @@ function sequenceName(doc: ProjectDocument, seqId: string): string {
 	for (const item of Object.values(doc.items))
 		if (item.kind === 'sequence' && item.sequenceId === seqId) return item.name;
 	return seqId;
-}
-
-function tracksOf(seq: Sequence): Track[] {
-	return [...seq.videoTracks, ...seq.audioTracks, ...seq.captionTracks];
 }
 
 /** The sequence a tool addresses: explicit id, else the only/first one. */
@@ -53,9 +48,9 @@ function mediaName(doc: ProjectDocument, mediaId: string): string {
 }
 
 /** One-line description of what a clip shows or plays. */
-export function clipSourceText(doc: ProjectDocument, seq: Sequence, clip: Clip): string {
+function clipSourceText(doc: ProjectDocument, seq: Sequence, clip: Clip): string {
 	const c = clip as Clip & Record<string, unknown>;
-	const r = seq.settings.frameRate as Rational;
+	const r = seq.settings.frameRate;
 	if (typeof c.mediaId === 'string') {
 		const a = round3(flicksToSeconds(clip.sourceIn));
 		const b = round3(flicksToSeconds(sourceOut(clip, r)));
@@ -77,8 +72,6 @@ export function clipSourceText(doc: ProjectDocument, seq: Sequence, clip: Clip):
 	if (clip.kind === 'shape') return shapeText(clip.shape);
 	return clip.kind;
 }
-
-// ---------------------------------------------------------------- wp-m2-shapes
 
 /** `#rrggbb`, or `#rrggbbaa` when not opaque. */
 const hexOf = (c: readonly number[]) => {
@@ -104,7 +97,7 @@ function keyedText<T>(a: Animatable<T>, text: (v: T) => string): string {
 }
 
 /** "rect 100×100→200×200 fill #ffffff stroke 4px #000000 inside radius 12 (animated: size)". */
-export function shapeText(s: ShapeData): string {
+function shapeText(s: ShapeData): string {
 	const parts = [`${s.type} ${keyedText(s.size, (v) => `${round3(v[0])}×${round3(v[1])}`)}`];
 	parts.push(s.fill ? `fill ${keyedText(s.fill, hexOf)}` : 'no fill');
 	if (s.stroke)
@@ -126,9 +119,7 @@ export function shapeText(s: ShapeData): string {
 	return `${parts.join(' ')}${animated.length ? ` (animated: ${animated.join(', ')})` : ''}`;
 }
 
-// ---------------------------------------------------------------- end wp-m2-shapes
-
-export type ClipSummary = {
+type ClipSummary = {
 	id: string;
 	kind: string;
 	name: string;
@@ -160,14 +151,14 @@ export function clipSummary(doc: ProjectDocument, seq: Sequence, clip: Clip): Cl
 }
 
 function sortedClips(seq: Sequence): Clip[] {
-	const order = new Map(tracksOf(seq).map((t, i) => [t.id, i]));
+	const order = new Map(allTracks(seq).map((t, i) => [t.id, i]));
 	return Object.values(seq.clips).sort(
 		(a, b) => (order.get(a.trackId) ?? 0) - (order.get(b.trackId) ?? 0) || a.start - b.start,
 	);
 }
 
 function sequenceSummary(doc: ProjectDocument, seq: Sequence) {
-	const r = seq.settings.frameRate as Rational;
+	const r = seq.settings.frameRate;
 	const duration = sequenceDuration(seq);
 	return {
 		sequenceId: seq.id,
@@ -182,7 +173,7 @@ function sequenceSummary(doc: ProjectDocument, seq: Sequence) {
 			timecode: sequenceTimecode(seq, duration),
 			seconds: round3((duration * r.den) / r.num),
 		},
-		tracks: tracksOf(seq).map((t) => ({
+		tracks: allTracks(seq).map((t) => ({
 			id: t.id,
 			label: trackLabel(seq, t.id),
 			kind: t.kind,
@@ -249,8 +240,8 @@ export function transitionPlacement(
 }
 
 /** `get_timeline`: one line per transition overlapping [from, to), in track order then time. */
-export function transitionLines(seq: Sequence, from = 0, to = Number.POSITIVE_INFINITY): string[] {
-	const order = new Map(tracksOf(seq).map((t, i) => [t.id, i]));
+function transitionLines(seq: Sequence, from = 0, to = Number.POSITIVE_INFINITY): string[] {
+	const order = new Map(allTracks(seq).map((t, i) => [t.id, i]));
 	return Object.values(seq.transitions)
 		.map((t) => ({ t, p: transitionPlacement(seq, t) }))
 		.filter(
@@ -273,7 +264,7 @@ export function timelineTable(
 	seq: Sequence,
 	opts: { from?: number; to?: number; revision?: number; live?: boolean } = {},
 ): string {
-	const r = seq.settings.frameRate as Rational;
+	const r = seq.settings.frameRate;
 	const duration = sequenceDuration(seq);
 	const from = opts.from ?? 0;
 	const to = opts.to ?? Number.POSITIVE_INFINITY;
@@ -288,7 +279,7 @@ export function timelineTable(
 			`Range ${sequenceTimecode(seq, from)}–${Number.isFinite(to) ? sequenceTimecode(seq, to) : 'end'} (frames ${from}–${Number.isFinite(to) ? to : 'end'})`,
 		);
 	lines.push('track | clip id | kind | name | start–end timecode | start–end frames | source | linked');
-	for (const t of tracksOf(seq)) {
+	for (const t of allTracks(seq)) {
 		const clips = Object.values(seq.clips)
 			.filter((c) => c.trackId === t.id && c.start < to && c.start + c.duration > from)
 			.sort((a, b) => a.start - b.start);

@@ -7,7 +7,7 @@ import { atomicWriteJson, readJsonOrNull } from '../tools/fs.ts';
 import { KeyedMutex } from '../tools/mutex.ts';
 
 /** Entries an export (or preview) of a project used, replaced on the next run of the same scope. */
-export type RefSet = { projectId: string; entries: string[]; updatedAt: number };
+type RefSet = { projectId: string; entries: string[]; updatedAt: number };
 
 type IndexFile = {
 	version: 1;
@@ -18,7 +18,7 @@ type IndexFile = {
 	lastGc: CacheGcReport | null;
 };
 
-export const DEFAULT_CACHE_SETTINGS: CacheSettings = CacheSettingsSchema.parse({});
+const DEFAULT_CACHE_SETTINGS: CacheSettings = CacheSettingsSchema.parse({});
 
 export class CacheIndexStore {
 	access = new Map<string, number>();

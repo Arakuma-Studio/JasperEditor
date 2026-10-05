@@ -17,10 +17,8 @@ type StabilizeEngine = 'wasm' | 'ffmpeg' | 'deshake';
 async function stabilizeEngine(
 	step: Extract<ProcessStep, { op: 'stabilize' }>,
 	env: StepEnv,
-	wasmAvailable: () => Promise<boolean>,
 ): Promise<StabilizeEngine> {
 	if (step.method === 'deshake') return 'deshake';
-	if (step.method === 'smoothpath') throw new Error('smoothpath has its own engine');
 	const pref = env.spec.vidstabEngine ?? 'auto';
 	if (pref === 'ffmpeg') {
 		if (env.filters.has('vidstabdetect') && env.filters.has('vidstabtransform')) return 'ffmpeg';
@@ -61,7 +59,7 @@ export async function createStepImpl(step: ProcessStep, env: StepEnv): Promise<S
 				}
 				return { kind: 'frames', step: m.createSmoothPathStep(step) };
 			}
-			const engine = await stabilizeEngine(step, env, wasmAvailable);
+			const engine = await stabilizeEngine(step, env);
 			if (engine === 'deshake') return { kind: 'filter', step: createDeshakeStep(step) };
 			if (engine === 'ffmpeg') {
 				return {

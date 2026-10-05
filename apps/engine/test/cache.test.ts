@@ -974,7 +974,7 @@ describe('engine logs and the job journal do not grow forever (CA-020)', () => {
 				JSON.stringify({
 					at: new Date(now - (i % 2 ? 500 : 30) * DAY).toISOString(),
 					kind: 'media',
-					purpose: 'export' + 'x'.repeat(100),
+					purpose: `export${'x'.repeat(100)}`,
 				}),
 			);
 		writeFileSync(join(logs, USAGE_LOG), `${lines.join('\n')}\n`);

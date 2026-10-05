@@ -1,6 +1,4 @@
-// M2 animation contracts on the engine (ARCHITECTURE §20.5, S11): routes/anime.ts (licence + features.anime),
-// routes/layer-bake.ts (501 stub, registration order), LayerOverride additions, and the Remotion bundle source
-// hash covering @jasper/motion and pnpm-lock.yaml (S11:FIX-009).
+// Animation licences and capabilities, and bundle invalidation for workspace sources and dependencies.
 import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';

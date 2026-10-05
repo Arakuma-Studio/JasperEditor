@@ -1,6 +1,3 @@
-// M2 MCP tools: tracking (S09:TRA-001/002): add_tracker, track, apply_tracking, get_tracker, set_corner_pin.
-// Trackers live on the plate clip in media pixels; `track` runs the engine job and stores the samples with
-// tracker.setSamples; `apply_tracking` bakes them into keyframes of a target (corner pin or Motion).
 import type { EngineJob, TrackRequest, TrackResult } from '@jasper/api';
 import {
 	applyMat3,
@@ -35,7 +32,6 @@ import { z } from 'zod';
 import {
 	defineTool,
 	EDIT,
-	type Extra,
 	frameOf,
 	isTerminal,
 	loadDoc,
@@ -118,17 +114,6 @@ function summaryOf(tracker: ClipTracker, mediaRate: Rational | null) {
 			: {}),
 		lostFrames: lostFrames.slice(0, 200),
 	};
-}
-
-async function runTrack(
-	ctx: ToolContext,
-	req: TrackRequest,
-	wait: boolean,
-	extra: Extra,
-): Promise<{ job: EngineJob; timedOut: boolean }> {
-	const queued = (await ctx.engine((c) => c.call('trackingTrack', { body: req }))) as EngineJob;
-	if (!wait) return { job: queued, timedOut: true };
-	return waitJob(ctx, queued.id, 600_000, extra);
 }
 
 export function registerTrackingTools(ctx: ToolContext): void {
@@ -276,7 +261,11 @@ export function registerTrackingTools(ctx: ToolContext): void {
 			let job: EngineJob;
 			let timedOut: boolean;
 			if (args.jobId) ({ job, timedOut } = await waitJob(ctx, args.jobId, 600_000, extra));
-			else ({ job, timedOut } = await runTrack(ctx, body, args.wait !== false, extra));
+			else {
+				job = await ctx.engine((c) => c.call('trackingTrack', { body }));
+				timedOut = true;
+				if (args.wait !== false) ({ job, timedOut } = await waitJob(ctx, job.id, 600_000, extra));
+			}
 			if (!isTerminal(job) || timedOut) {
 				return jsonResult({
 					jobId: job.id,

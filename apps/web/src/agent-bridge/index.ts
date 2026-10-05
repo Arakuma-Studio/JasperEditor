@@ -5,12 +5,7 @@ import type { EditorSession } from '@jasper/session';
 import { useEffect, useState } from 'react';
 import { useStore } from 'zustand';
 import { useEngineClient } from '../state/engine.tsx';
-import {
-	AgentBridge,
-	type AgentBridgeOptions,
-	type AgentBridgeState,
-	type JasperAgentApi,
-} from './bridge.ts';
+import { AgentBridge, type AgentBridgeState, type JasperAgentApi } from './bridge.ts';
 
 export * from './bridge.ts';
 export * from './relay-client.ts';
@@ -25,11 +20,6 @@ declare global {
 const bridges = new WeakMap<EditorSession, AgentBridge>();
 const listeners = new Set<() => void>();
 
-/** The bridge of a session (null until the session host started it). */
-function getAgentBridge(session: EditorSession | null | undefined): AgentBridge | null {
-	return session ? (bridges.get(session) ?? null) : null;
-}
-
 /** Whether `window.jasper` is installed (ARCHITECTURE §11: dev and Electron builds). */
 function shouldExposeWindowApi(): boolean {
 	if (typeof window === 'undefined') return false;
@@ -43,19 +33,14 @@ function shouldExposeWindowApi(): boolean {
 }
 
 /** Starts the bridge for a session; returns the stop function. */
-function startAgentBridge(
-	session: EditorSession,
-	engine: EngineClient | null,
-	opts: AgentBridgeOptions & { exposeWindow?: boolean } = {},
-): () => void {
+function startAgentBridge(session: EditorSession, engine: EngineClient): () => void {
 	const existing = bridges.get(session);
 	if (existing) existing.dispose();
 	// Every session registers with the engine relay (the in-memory `demo` project too, so agents can
 	// drive it live; with no editor open its id is unknown to the engine store → 404).
-	const relay = opts.relay ?? !!engine;
-	const bridge = new AgentBridge(session, engine, { ...opts, relay }).start();
+	const bridge = new AgentBridge(session, engine, { relay: true }).start();
 	bridges.set(session, bridge);
-	const expose = opts.exposeWindow ?? shouldExposeWindowApi();
+	const expose = shouldExposeWindowApi();
 	const api = bridge.api();
 	if (expose) window.jasper = api;
 	for (const l of [...listeners]) l();
@@ -85,7 +70,7 @@ export function useAgentBridgeFor(session: EditorSession | null): AgentBridge | 
 			listeners.delete(l);
 		};
 	}, []);
-	return getAgentBridge(session);
+	return session ? (bridges.get(session) ?? null) : null;
 }
 
 const EMPTY: AgentBridgeState = { activity: [], approvals: [], relay: 'off' };

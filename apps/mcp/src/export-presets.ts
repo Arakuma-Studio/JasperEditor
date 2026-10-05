@@ -3,7 +3,7 @@
 import type { ExportSettings, VideoCodec } from '@jasper/api';
 import type { Sequence } from '@jasper/project';
 
-export type ExportPreset = {
+type ExportPreset = {
 	id: string;
 	label: string;
 	description: string;

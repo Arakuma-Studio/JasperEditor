@@ -25,7 +25,6 @@ const LAYER_BAKE_EXTENSION_ID = 'layer-bake';
 type PreparedLayer = {
 	/** Native composite (absent when prepared for the Remotion path). */
 	override?: LayerOverride;
-	bake?: BakeResult;
 	/** Graded master for the Remotion path (LBK-010). */
 	graded?: {
 		key: string;
@@ -34,7 +33,7 @@ type PreparedLayer = {
 		frames: number;
 	};
 };
-export type LayerBakePrepared = Map<string, PreparedLayer>;
+type LayerBakePrepared = Map<string, PreparedLayer>;
 
 /** Fixed cost of a render (browser page, bundle, stitch, checks) in frames, for the aggregated progress. */
 const RENDER_FIXED_COST_FRAMES = 30;
@@ -48,11 +47,9 @@ function entryOf(
 ): PreparedLayer {
 	if (grade && graded)
 		return {
-			bake,
 			graded: { key: graded.key, rect: graded.rect, startFrame: plan.startFrame, frames: grade.frames },
 		};
 	return {
-		bake,
 		override: {
 			path: bake.path,
 			space: 'sequence',

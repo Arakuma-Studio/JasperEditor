@@ -14,7 +14,7 @@ const MIN_MINOR_PX = 8;
 const PER_FRAME_TICKS_PX = 6;
 
 /** Candidate major intervals in (nominal) frames, ascending (TL-201). */
-export function majorCandidates(rate: Rational): number[] {
+function majorCandidates(rate: Rational): number[] {
 	const fps = nominalFps(rate);
 	const out = [1, 2, 5, 10];
 	if (fps % 2 === 0) out.push(fps / 2);
@@ -27,7 +27,7 @@ export function majorCandidates(rate: Rational): number[] {
 type TickPlan = { major: number; minor: number; perFrame: boolean };
 
 /** A.9: smallest major with ≥ 80 px; minor division of [10, 5, 4, 2] with ≥ 8 px; per-frame ticks ≥ 6 px/frame. */
-export function chooseTicks(pxPerFrame: number, rate: Rational): TickPlan {
+function chooseTicks(pxPerFrame: number, rate: Rational): TickPlan {
 	const cands = majorCandidates(rate);
 	const major = cands.find((c) => c * pxPerFrame >= MIN_MAJOR_PX) ?? cands[cands.length - 1]!;
 	let minor = major;
@@ -54,7 +54,7 @@ function nominalToFrame(n: number, rate: Rational, drop: boolean): number {
 }
 
 /** Short label form: drop the zero hour (and a zero minute) under one hour (TL-202). */
-export function shortLabel(tc: string, sequenceUnderHour: boolean): string {
+function shortLabel(tc: string, sequenceUnderHour: boolean): string {
 	if (!sequenceUnderHour) return tc;
 	const m = /^(-?)00([:;])(\d\d)([:;])(\d\d[:;]\d\d)$/.exec(tc);
 	if (!m) return tc;

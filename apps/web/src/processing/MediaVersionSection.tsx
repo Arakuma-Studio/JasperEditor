@@ -3,12 +3,19 @@
 // same source frames (S07:PRC-016), the source frames the current version holds and the clip's handles in it,
 // and a Process… button that opens the Process Clip dialog for them. A version that does not hold every frame
 // of the clips asks whether to trim them (S07:PRC-017).
-import { type Clip, clipHandles, type MediaAsset, type ProjectDocument } from '@jasper/project';
+import {
+	type Clip,
+	clipHandles,
+	type MediaAsset,
+	mediaVersionsOf,
+	originalMediaId,
+	type ProjectDocument,
+} from '@jasper/project';
 import { useStoreSelector } from '@jasper/session/react';
 import { Button, Select, toast } from '@jasper/ui';
 import type { ClipSectionProps } from '../extensions/index.ts';
 import { openProcessForClips, switchMediaVersionInteractive } from './actions.ts';
-import { originalOf, processedSteps, recipeLabel, versionFrames, versionLabel, versionsOf } from './model.ts';
+import { processedSteps, recipeLabel, versionFrames, versionLabel } from './model.ts';
 
 const MIXED = '__mixed__';
 
@@ -33,7 +40,7 @@ export function MediaVersionSection({ session, clips }: ClipSectionProps) {
 	const video = clips.filter(
 		(c): c is typeof c & { mediaId: string } => c.kind === 'video' && !!(c as { mediaId?: string }).mediaId,
 	);
-	const originals = new Set(video.map((c) => originalOf(doc, c.mediaId)));
+	const originals = new Set(video.map((c) => originalMediaId(doc, c.mediaId)));
 	if (!video.length) return null;
 	if (originals.size !== 1) {
 		return (
@@ -43,7 +50,7 @@ export function MediaVersionSection({ session, clips }: ClipSectionProps) {
 		);
 	}
 	const original = [...originals][0] as string;
-	const versions = versionsOf(doc, original);
+	const versions = mediaVersionsOf(doc, original);
 	const current = new Set(video.map((c) => c.mediaId));
 	const value = current.size === 1 ? ([...current][0] as string) : MIXED;
 	const currentAsset = value === MIXED ? undefined : (doc.media[value] as MediaAsset | undefined);

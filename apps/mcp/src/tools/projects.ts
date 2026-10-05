@@ -1,5 +1,3 @@
-// Engine, project and media tools: engine_status, list_projects, create_project, get_project,
-// open_project_in_editor, import_media, list_media, get_media_info.
 import { spawn } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
 import { isAbsolute } from 'node:path';

@@ -1,6 +1,3 @@
-// M2 MCP tools for transitions (S10:TUI-060, ARCHITECTURE §19.9): list_transitions, update_transition,
-// remove_transitions, apply_default_transitions. add_transition lives with the timeline helpers in
-// editing.ts. Every edit is one transaction, i.e. one "Agent: <label>" History entry.
 import {
 	type Clip,
 	CONSTANT_POWER,
@@ -47,7 +44,7 @@ const SHORT_TYPES = TRANSITION_SPECS.map((s) => s.id.replace(/^jasper\./, ''));
 const TYPE_LIST = SHORT_TYPES.join(', ');
 
 /** "cross-dissolve" or "jasper.cross-dissolve" → "jasper.cross-dissolve" (unknown ids pass through). */
-export function transitionEffectId(type: string): string {
+function transitionEffectId(type: string): string {
 	const t = type.trim();
 	return t.includes('.') ? t : `jasper.${t}`;
 }
@@ -65,7 +62,7 @@ const AlignmentArg = z
 /** Handle length for JSON: Infinity (stills, text, solids) → "unlimited". */
 const handleValue = (n: number): number | 'unlimited' => (Number.isFinite(n) ? n : 'unlimited');
 
-export type TransitionSummary = {
+type TransitionSummary = {
 	id: string;
 	effectId: string;
 	type: string;
@@ -89,7 +86,7 @@ export type TransitionSummary = {
 };
 
 /** The list_transitions entry of one transition (pure). */
-export function transitionSummary(
+function transitionSummary(
 	doc: Pick<ProjectDocument, 'media'>,
 	seq: Sequence,
 	t: Transition,
@@ -136,7 +133,7 @@ export function transitionSummary(
 }
 
 /** The transitions of a sequence overlapping [from, to), in track order then time (pure). */
-export function listTransitions(
+function listTransitions(
 	doc: Pick<ProjectDocument, 'media'>,
 	seq: Sequence,
 	range: { from?: number; to?: number } = {},
@@ -161,7 +158,7 @@ export function listTransitions(
  * The clip ids to give transition.applyDefault: the given ones plus their linked partners on tracks of a
  * requested medium (a video clip id with media ["video", "audio"] also covers its linked audio). Pure.
  */
-export function expandForMedia(
+function expandForMedia(
 	doc: Pick<ProjectDocument, 'sequences'>,
 	clipIds: readonly string[],
 	media: readonly ('video' | 'audio')[],

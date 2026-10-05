@@ -110,14 +110,12 @@ export function jsonResult(value: unknown, extra: CallToolResult['content'] = []
 	return { content: [text(value), ...extra] };
 }
 
-// ---- wp-m2-anime-templates (S11:ANA-005): render failures (stills, exports, previews) → actionable hints.
-
 /** Why a Remotion render could not run and what to do (env names as read by apps/engine/src/remotion/service.ts). */
-export const REMOTION_HINT =
+const REMOTION_HINT =
 	"Text, graphics, effects and anime motion templates render with Remotion in a headless Chrome. Install Google Chrome or Chromium (or set JASPER_BROWSER_EXECUTABLE to its executable), or let the engine download its own headless browser on the first render (needs network access). The engine also needs the Remotion compositions bundle: `pnpm build` produces it (a dev engine bundles the workspace sources itself) or set JASPER_REMOTION_BUNDLE to a built bundle folder; packaged builds also need their LGPL FFmpeg folder (JASPER_REMOTION_BIN_DIR). list_export_presets shows the engine's Remotion state.";
 const BROWSER_DOWNLOAD_NOTE =
 	'No browser is installed yet: the first Remotion render downloads a headless Chrome (needs network access and can take a minute); if that fails, install Google Chrome or set JASPER_BROWSER_EXECUTABLE.';
-export const TEMPLATE_NOT_INSTALLED_HINT =
+const TEMPLATE_NOT_INSTALLED_HINT =
 	'A clip uses a motion-graphic template this JasperEditor build lacks: update JasperEditor, or replace or delete that clip (get_timeline shows it; details.blockers name the clips).';
 const WEBGL_HINT =
 	'The render browser has no WebGL2 (colour grading on the Remotion path needs it): set JASPER_REMOTION_GL to angle, swangle, egl or swiftshader, install Google Chrome, or export with engine "native" when the sequence allows it.';
@@ -187,4 +185,3 @@ export function renderHint(
 		parts.push(BROWSER_DOWNLOAD_NOTE);
 	return parts.length ? parts.join(' ') : undefined;
 }
-// ---- end wp-m2-anime-templates

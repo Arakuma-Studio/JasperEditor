@@ -1,18 +1,12 @@
 // Colour-run fusion (M2, ARCHITECTURE §19.2): consecutive enabled colour effects of a layer (EffectSpec.color)
 // form a run that is baked into ONE 3D LUT. The preview (WebGL) and the native export (lut3d) both consume the
 // baked LUT, so they agree to the LUT's precision. Pure and shared by @jasper/compositions and the engine.
-import type { ColorFn, ColorOpContext, EffectRegistry } from '../registry/effects.ts';
+import type { ColorFn, ColorOpContext, EffectLike, EffectRegistry } from '../registry/effects.ts';
 import { effectiveParams } from '../registry/effects.ts';
 import { bakeLut, type Lut } from './lut.ts';
 
 /** Minimal effect shape (evaluated params): `ResolvedEffect` and the engine's evaluated instances fit. */
-export type ColorRunEffect = {
-	id: string;
-	effectId: string;
-	effectVersion: number;
-	enabled: boolean;
-	params: Record<string, unknown>;
-};
+export type ColorRunEffect = EffectLike;
 
 export type EffectRun<E extends ColorRunEffect = ColorRunEffect> =
 	| { kind: 'color'; effects: E[] }
@@ -45,7 +39,7 @@ export function effectRuns<E extends ColorRunEffect>(
 }
 
 /** The composed pixel function of a colour run, or null when every effect is the identity. */
-export function colorRunFn(
+function colorRunFn(
 	effects: readonly ColorRunEffect[],
 	registry: EffectRegistry,
 	ctx: ColorOpContext,

@@ -19,7 +19,6 @@ import type { WorkspaceStore } from '../workspaces/store.ts';
 export type DockEvents = {
 	/** A stored layout could not be applied and the factory layout was used instead. */
 	onLayoutFallback?(workspaceId: string): void;
-	onMaximizedChange?(maximized: boolean): void;
 };
 
 function kindOf(p: IDockviewPanel): PanelKind | null {
@@ -69,7 +68,6 @@ export class DockController {
 		this.disposers.push(
 			api.onDidMaximizedGroupChange((e) => {
 				this.host?.classList.toggle('pr-maximized', e.isMaximized);
-				this.events.onMaximizedChange?.(e.isMaximized);
 			}).dispose,
 		);
 		// A panel closed by dockview itself (tab ×, group close, layout switch) must not stay focused:
@@ -189,10 +187,6 @@ export class DockController {
 
 	isOpen(kind: PanelKind): boolean {
 		return !!this.panelOf(kind);
-	}
-
-	openKinds(): PanelKind[] {
-		return (this.api?.panels ?? []).map(kindOf).filter((k): k is PanelKind => !!k);
 	}
 
 	/** Opens a closed panel in its home group, else as a floating group near the center (DK-050). */

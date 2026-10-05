@@ -3,7 +3,7 @@
 import { crc32, deflateSync, inflateSync } from 'node:zlib';
 
 /** An 8-bit RGBA raster, rows top to bottom. */
-export type RgbaImage = { width: number; height: number; data: Uint8Array };
+type RgbaImage = { width: number; height: number; data: Uint8Array };
 
 const SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 /** Samples per pixel by colour type (greyscale, RGB, greyscale + alpha, RGBA; no palette). */

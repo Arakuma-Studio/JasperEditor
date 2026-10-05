@@ -45,7 +45,7 @@ type Entry = {
 	requeued: boolean;
 };
 
-export type JobQueueOptions = {
+type JobQueueOptions = {
 	/** jobs.jsonl path; null disables journaling (tests). */
 	journalPath: string | null;
 	/** Scratch root (`<appdir>/tmp`). */
@@ -62,13 +62,13 @@ export type JobQueueOptions = {
 
 type JournalRecord = { job: EngineJob; input: unknown; requeued?: boolean };
 
-export type JobListFilter = { active?: boolean; projectId?: string; since?: string; kind?: JobKind };
+type JobListFilter = { active?: boolean; projectId?: string; since?: string; kind?: JobKind };
 
 /**
  * Jobs scheduled outside this queue that must still appear in `/api/jobs` and be cancellable/retryable over
  * HTTP (S04 §17): WP-2G's mg-render jobs run on the motion-graphics service's own scheduler.
  */
-export type ExternalJobSource = {
+type ExternalJobSource = {
 	/** Whether `id` belongs to this source. */
 	owns(id: string): boolean;
 	list(): EngineJob[];
@@ -195,7 +195,7 @@ export class JobQueue {
 		if (spec.dedupeKey) {
 			const existing = this.dedupe.get(spec.dedupeKey);
 			const e = existing ? this.entries.get(existing) : undefined;
-			if (e && !TERMINAL_JOB_STATES.has(e.job.state)) return this.snapshot(e.job);
+			if (e && !TERMINAL_JOB_STATES.has(e.job.state)) return structuredClone(e.job);
 		}
 		const job: EngineJob = {
 			id: randomId('job', 8),
@@ -218,7 +218,7 @@ export class JobQueue {
 		this.entries.set(job.id, entry);
 		if (job.dedupeKey) this.dedupe.set(job.dedupeKey, job.id);
 		this.journal(entry);
-		this.opts.broadcaster?.publish('job.created', this.snapshot(job), job.projectId);
+		this.opts.broadcaster?.publish('job.created', structuredClone(job), job.projectId);
 		if (!this.runners.has(job.kind)) {
 			this.finish(entry, 'failed', {
 				error: {
@@ -228,12 +228,12 @@ export class JobQueue {
 				},
 			});
 		} else this.pump();
-		return this.snapshot(job);
+		return structuredClone(job);
 	}
 
 	get(id: string): EngineJob | null {
 		const e = this.entries.get(id);
-		if (e) return this.snapshot(e.job);
+		if (e) return structuredClone(e.job);
 		return this.externalFor(id)?.get(id) ?? null;
 	}
 
@@ -254,7 +254,7 @@ export class JobQueue {
 				const touched = Date.parse(j.finishedAt ?? j.startedAt ?? j.createdAt);
 				if (!Number.isNaN(t) && touched < t && TERMINAL_JOB_STATES.has(j.state)) continue;
 			}
-			out.push(own ? this.snapshot(j) : { ...j });
+			out.push(own ? structuredClone(j) : { ...j });
 		}
 		return out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
 	}
@@ -263,7 +263,7 @@ export class JobQueue {
 	wait(id: string): Promise<EngineJob> {
 		const e = this.entries.get(id);
 		if (!e) return Promise.reject(new JobError('JOB_NOT_FOUND', `Unknown job ${id}`));
-		if (TERMINAL_JOB_STATES.has(e.job.state)) return Promise.resolve(this.snapshot(e.job));
+		if (TERMINAL_JOB_STATES.has(e.job.state)) return Promise.resolve(structuredClone(e.job));
 		return new Promise((resolve) => e.waiters.push(resolve));
 	}
 
@@ -292,7 +292,7 @@ export class JobQueue {
 			}, CANCEL_DEADLINE_MS);
 			deadline.unref();
 		}
-		return this.snapshot(e.job);
+		return structuredClone(e.job);
 	}
 
 	/** Retries a failed (retryable), cancelled or interrupted job as a new job (S04:JB-010). */
@@ -434,7 +434,7 @@ export class JobQueue {
 		const send = () => {
 			e.emitTimer = null;
 			e.lastEmit = Date.now();
-			b.publish('job.updated', this.snapshot(e.job), e.job.projectId);
+			b.publish('job.updated', structuredClone(e.job), e.job.projectId);
 		};
 		if (force || t - e.lastEmit >= UPDATE_THROTTLE_MS) {
 			if (e.emitTimer) clearTimeout(e.emitTimer);
@@ -483,12 +483,12 @@ export class JobQueue {
 		e.emitTimer = null;
 		const b = this.opts.broadcaster;
 		if (b) {
-			const snap = this.snapshot(e.job);
+			const snap = structuredClone(e.job);
 			b.publish('job.updated', snap, e.job.projectId);
 			b.publish('job.finished', snap, e.job.projectId);
 		}
 		const waiters = e.waiters.splice(0);
-		for (const w of waiters) w(this.snapshot(e.job));
+		for (const w of waiters) w(structuredClone(e.job));
 		this.pump();
 	}
 
@@ -630,9 +630,5 @@ export class JobQueue {
 			...(j.parentId ? { parentId: j.parentId } : {}),
 			...(j.dedupeKey ? { dedupeKey: j.dedupeKey } : {}),
 		};
-	}
-
-	private snapshot(j: EngineJob): EngineJob {
-		return structuredClone(j);
 	}
 }

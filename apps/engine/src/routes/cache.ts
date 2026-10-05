@@ -19,10 +19,7 @@ import { coreServices } from '../tools/services.ts';
 
 export default async function cacheRoutes(app: FastifyInstance): Promise<void> {
 	const core = coreServices(app);
-	const cache = () => {
-		if (!core.cache) throw new HttpError(503, 'CACHE_UNAVAILABLE', 'The cache registry is not running');
-		return core.cache;
-	};
+	const { cache } = core;
 
 	// Every editor window (read-only ones too) keeps an agent relay connection for its project: such projects are
 	// open even when another session holds the lease (CA-014: never clean what an open project needs).
@@ -50,14 +47,14 @@ export default async function cacheRoutes(app: FastifyInstance): Promise<void> {
 
 	app.get(
 		'/api/cache',
-		guarded(async () => cache().usage()),
+		guarded(async () => cache.usage()),
 	);
 
 	app.post(
 		'/api/cache/clean',
 		guarded(async (req) => {
 			const body = parseOr400(CacheCleanRequestSchema, req.body ?? {});
-			return cache().clean(body.mode, body.kinds);
+			return cache.clean(body.mode, body.kinds);
 		}),
 	);
 
@@ -73,7 +70,7 @@ export default async function cacheRoutes(app: FastifyInstance): Promise<void> {
 		guarded(async (req) => {
 			local();
 			const body = parseOr400(CacheLocationRequestSchema, req.body ?? {});
-			return cache().checkLocation(body.path);
+			return cache.checkLocation(body.path);
 		}),
 	);
 
@@ -83,7 +80,7 @@ export default async function cacheRoutes(app: FastifyInstance): Promise<void> {
 			local();
 			const body = parseOr400(CacheMoveRequestSchema, req.body ?? {});
 			try {
-				return reply.code(202).send(await cache().startMove(body));
+				return reply.code(202).send(await cache.startMove(body));
 			} catch (e) {
 				if (e instanceof CacheLocationError)
 					throw new HttpError(422, 'CACHE_LOCATION_INVALID', e.message, { check: e.check });
@@ -94,11 +91,11 @@ export default async function cacheRoutes(app: FastifyInstance): Promise<void> {
 
 	app.get(
 		'/api/cache/settings',
-		guarded(async () => cache().settings()),
+		guarded(async () => cache.settings()),
 	);
 
 	app.put(
 		'/api/cache/settings',
-		guarded(async (req) => cache().putSettings(parseOr400(CacheSettingsSchema, req.body ?? {}))),
+		guarded(async (req) => cache.putSettings(parseOr400(CacheSettingsSchema, req.body ?? {}))),
 	);
 }

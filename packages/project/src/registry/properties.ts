@@ -1040,12 +1040,6 @@ type MgParamFields = {
 	paramKeyframes?: Record<string, Keyframe<unknown>[]>;
 };
 
-/** The Animatable view of one template param: `params[name]` + `paramKeyframes[name]` (read-only). */
-export function templateParamAnimatable(clip: Pick<Clip, 'kind'>, name: string): Animatable<unknown> {
-	const c = clip as MgParamFields;
-	return { value: c.params?.[name], keyframes: c.paramKeyframes?.[name] ?? [] };
-}
-
 /** Names of the params of a motion-graphic clip that carry at least one keyframe. */
 export function animatedTemplateParams(clip: Pick<Clip, 'kind'>): string[] {
 	const kf = (clip as MgParamFields).paramKeyframes ?? {};
@@ -1229,7 +1223,7 @@ function getAt(obj: unknown, path: readonly string[]): unknown {
 	return cur;
 }
 
-export function isAnimatableValue(v: unknown): v is Animatable<unknown> {
+function isAnimatableValue(v: unknown): v is Animatable<unknown> {
 	return (
 		!!v && typeof v === 'object' && 'value' in v && Array.isArray((v as { keyframes?: unknown }).keyframes)
 	);
@@ -1239,7 +1233,7 @@ export function isAnimatableValue(v: unknown): v is Animatable<unknown> {
  * The stored value of a property: the Animatable for animatable specs, the raw value for static ones,
  * or `undefined` when the clip does not carry it (e.g. no stroke yet, effect missing).
  */
-export function readStoredProperty(ctx: PropertyContext, s: PropertySpec): unknown {
+function readStoredProperty(ctx: PropertyContext, s: PropertySpec): unknown {
 	const [head, a, b] = s.storagePath;
 	if (head === '$synthetic') {
 		const syn = ctx.doc.synthetics[(ctx.clip as { syntheticId?: string }).syntheticId ?? ''];
@@ -1250,7 +1244,10 @@ export function readStoredProperty(ctx: PropertyContext, s: PropertySpec): unkno
 		return fx?.params[b!];
 	}
 	// wp-m2-anime-templates (S11:ATP-006): keyframable template params read as an Animatable view.
-	if (s.group === 'params' && s.animatable !== 'no') return templateParamAnimatable(ctx.clip, a!);
+	if (s.group === 'params' && s.animatable !== 'no') {
+		const clip = ctx.clip as MgParamFields;
+		return { value: clip.params?.[a!], keyframes: clip.paramKeyframes?.[a!] ?? [] };
+	}
 	return getAt(ctx.clip, s.storagePath);
 }
 

@@ -207,15 +207,8 @@ export function removeAttributeOptions(
 /** Checked rows → `clip.pasteAttributes` attributes (effects by payload instance id). */
 export function toPasteAttributes(keys: readonly string[]): PasteAttributes {
 	const set = new Set(keys);
-	const fx = keys.filter((k) => k.startsWith('fx:')).map((k) => k.slice(3));
 	return {
-		...(set.has('motion') ? { motion: true } : {}),
-		...(set.has('opacity') ? { opacity: true } : {}),
-		...(set.has('volume') ? { volume: true } : {}),
-		...(set.has('panner') ? { panner: true } : {}),
-		...(fx.length ? { effects: fx } : {}),
-		...(set.has('textAnimationIn') ? { textAnimationIn: true } : {}),
-		...(set.has('textAnimationOut') ? { textAnimationOut: true } : {}),
+		...toRemoveAttributes(keys),
 		...(set.has('textStyle') ? { textStyle: true } : {}),
 		...(set.has('shapeStyle') ? { shapeStyle: true } : {}),
 	};

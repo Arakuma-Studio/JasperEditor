@@ -2,14 +2,14 @@
 // (apps/engine/models/ in a checkout, `models/` next to the engine bundle); the others install on demand into
 // `<appdir>/models/` through a `model-download` job and are verified by sha256. Tests point
 // JASPER_MODEL_CATALOG at their own catalogue (a generated tiny model): no download is ever needed.
-import { createHash } from 'node:crypto';
-import { createReadStream, createWriteStream, existsSync, readFileSync } from 'node:fs';
+import { createWriteStream, existsSync, readFileSync } from 'node:fs';
 import { mkdir, rename, rm, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import type { ProcessingModel } from '@jasper/api';
+import { sha256File } from '../tools/fs.ts';
 import builtin from './models.json' with { type: 'json' };
 
 type CatalogEntry = {
@@ -55,16 +55,6 @@ export function loadCatalog(env: Record<string, string | undefined> = process.en
 		return { entries: json.models, bundledDir: dir };
 	}
 	return { entries: (builtin as { models: CatalogEntry[] }).models, bundledDir: bundledModelsDir(env) };
-}
-
-export function sha256File(file: string): Promise<string> {
-	return new Promise((res, rej) => {
-		const h = createHash('sha256');
-		createReadStream(file)
-			.on('data', (c) => h.update(c))
-			.on('end', () => res(h.digest('hex')))
-			.on('error', rej);
-	});
 }
 
 export class ModelError extends Error {

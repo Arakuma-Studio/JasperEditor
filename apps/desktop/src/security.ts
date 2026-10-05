@@ -59,13 +59,13 @@ export function isRevealablePath(p: unknown): p is string {
 	);
 }
 
-export type WindowAction = 'minimize' | 'toggleMaximize' | 'close' | 'focus';
+type WindowAction = 'minimize' | 'toggleMaximize' | 'close' | 'focus';
 export function isWindowAction(a: unknown): a is WindowAction {
 	return a === 'minimize' || a === 'toggleMaximize' || a === 'close' || a === 'focus';
 }
 
 /** How an MCP client launches the jasper-mcp stdio server that ships with the app. */
-export type McpLaunchInfo = { entry: string | null; command: string; env: Record<string, string> };
+type McpLaunchInfo = { entry: string | null; command: string; env: Record<string, string> };
 
 /**
  * Packaged builds have no `node`: the app binary runs the bundle as Node (ELECTRON_RUN_AS_NODE=1).
@@ -93,7 +93,7 @@ export const ELECTRON_CLIPBOARD_FORMAT = `electron application/osclipboard;forma
 /** Same cap as the payload parser (S01:CLB-009). */
 const CLIPBOARD_MAX_BYTES = 20 * 1024 * 1024;
 
-export type ClipboardWrite = { json: string; html: string; text: string };
+type ClipboardWrite = { json: string; html: string; text: string };
 
 const utf8Bytes = (s: string) => new TextEncoder().encode(s).length;
 

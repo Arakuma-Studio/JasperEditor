@@ -25,17 +25,11 @@ const OPEN = 1;
 export class AgentRelayClient {
 	private socket: WebSocket | null = null;
 	private stopped = true;
-	private backoff: number;
+	private backoff = 1000;
 	private timer: ReturnType<typeof setTimeout> | null = null;
 	private stateValue: RelayState = 'off';
 
-	constructor(private readonly opts: RelayClientOptions) {
-		this.backoff = 1000;
-	}
-
-	get state(): RelayState {
-		return this.stateValue;
-	}
+	constructor(private readonly opts: RelayClientOptions) {}
 
 	private setState(s: RelayState) {
 		if (s === this.stateValue) return;

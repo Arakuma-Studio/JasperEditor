@@ -31,7 +31,7 @@ export function tileRect(index: SpriteIndexLike, tile: SpriteTile) {
 	};
 }
 
-export type Slot = {
+type Slot = {
 	/** Clip-area x (viewport px, unrounded) and width of the slot. */
 	x: number;
 	w: number;

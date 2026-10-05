@@ -179,7 +179,7 @@ clipBadgeProviders.register({
 		return null;
 	},
 	subscribe: (cb) => {
-		// The runtime may be attached later: re-subscribe through a small poll-free bridge.
+		// The runtime may be attached after the badge subscribes.
 		let off = currentMgRuntime()?.subscribe(cb);
 		const timer = setInterval(() => {
 			if (!off && currentMgRuntime()) {

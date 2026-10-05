@@ -69,7 +69,7 @@ export function recordLiveProgress(
 }
 
 /** Drops a tracker's live buffer (job finished, failed or stopped); the strip falls back to the committed samples. */
-export function clearLiveProgress(trackerId: string): void {
+function clearLiveProgress(trackerId: string): void {
 	if (!buffers.delete(trackerId)) return;
 	schedule(trackerId);
 }
@@ -122,11 +122,6 @@ export function liveSamples(trackerId: string, committed: TrackerSamples | null)
 	};
 	b.cache = { committed, size: b.frames.size, result };
 	return result;
-}
-
-/** True while a tracker has live progress to show. */
-export function hasLiveProgress(trackerId: string): boolean {
-	return (buffers.get(trackerId)?.frames.size ?? 0) > 0;
 }
 
 // A tracker leaving `running` (finished, failed, stopped) drops its live buffer.

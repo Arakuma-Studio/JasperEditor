@@ -80,7 +80,7 @@ const JOB_ID_RE = /^job_[0-9a-f]{16}$/;
 /** Same retention as the job journal (S04:JB-030: 7 days): older jobs cannot be retried anyway. */
 const REQUEST_RETENTION_MS = 7 * 24 * 3600 * 1000;
 
-export type ExportServiceDeps = {
+type ExportServiceDeps = {
 	rendersDir: string;
 	ff: Ffmpeg;
 	/** Encoder selection (D-13); absent = libx264 (legacy/tests). */

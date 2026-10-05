@@ -6,7 +6,6 @@ import {
 	FLICKS_PER_SECOND,
 	type MediaAsset,
 	mediaFrameCount,
-	mediaVersionsOf,
 	originalMediaId,
 	type ProcessStep,
 	type ProjectDocument,
@@ -59,19 +58,6 @@ export function isProcessed(asset: Pick<MediaAsset, 'derivation'> | undefined | 
 }
 
 /**
- * The original a media asset is a version of (itself for originals; null for unknown ids): processed versions
- * and files declaring a source range of another media (S07:PRC-015…019; `originalMediaId` of the model).
- */
-export function originalOf(doc: MediaTable, mediaId: string): string | null {
-	return originalMediaId(doc, mediaId);
-}
-
-/** The original first, then every version of it (document order). */
-export function versionsOf(doc: MediaTable, mediaId: string): string[] {
-	return mediaVersionsOf(doc, mediaId);
-}
-
-/**
  * The source frames a version holds when it is not the whole original, e.g. `frames 1088–1231`; null for the
  * whole original (or when unknown).
  */
@@ -90,7 +76,7 @@ export function versionFrames(doc: MediaTable, mediaId: string): string | null {
 export function versionLabel(doc: MediaTable, mediaId: string): string {
 	const m = doc.media[mediaId] as MediaAsset | undefined;
 	if (!m) return mediaId;
-	if (originalOf(doc, mediaId) === mediaId) return 'Original';
+	if (originalMediaId(doc, mediaId) === mediaId) return 'Original';
 	const steps = processedSteps(m);
 	const frames = versionFrames(doc, mediaId);
 	const base = steps ? recipeLabel(steps) : m.originalName;

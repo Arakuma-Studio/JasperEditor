@@ -10,6 +10,7 @@ import type { Clip, EffectInstance, ProjectDocument, Sequence, TrackedBy } from 
 import type { DClip, DDoc, HandlerContext } from '../context.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { type AnimLocation, allAnimatables, clipAnimatables, finish, locate, targetOf } from './keyframe.ts';
+import { locateEffect } from './param.ts';
 import type { HandlerMap } from './util.ts';
 
 type DAnim = Draft<Animatable<unknown>>;
@@ -31,7 +32,7 @@ function describe(doc: DDoc, loc: AnimLocation, h: HandlerContext): { unit: stri
 		return { unit: spec?.unit ?? '', label: spec?.label ?? rest.join('.') };
 	}
 	if (head === 'effect') {
-		const fx = findEffect(doc, id!);
+		const fx = locateEffect(doc, id!)?.fx;
 		const spec = fx ? h.registries.effects.get(fx.effectId, fx.effectVersion) : undefined;
 		const p = spec?.params.find((x) => x.name === rest[0]);
 		return {
@@ -41,22 +42,6 @@ function describe(doc: DDoc, loc: AnimLocation, h: HandlerContext): { unit: stri
 	}
 	const spec = resolvePropertySpec(rest[0] ?? id ?? '');
 	return { unit: spec?.unit ?? '', label: loc.path.join('.') };
-}
-
-function findEffect(doc: DDoc, fxId: string): Draft<EffectInstance> | undefined {
-	for (const seq of Object.values(doc.sequences)) {
-		for (const clip of Object.values(seq.clips)) {
-			const fx = (clip as { effects?: Draft<EffectInstance>[] }).effects?.find((e) => e.id === fxId);
-			if (fx) return fx;
-		}
-		for (const t of [...seq.videoTracks, ...seq.audioTracks]) {
-			const fx = t.effects?.find((e) => e.id === fxId);
-			if (fx) return fx;
-		}
-		const fx = seq.master.effects.find((e) => e.id === fxId);
-		if (fx) return fx;
-	}
-	return undefined;
 }
 
 /** Parameters `tracker.apply` writes on a target (its `trackedBy`): the corner pin corners or Motion. */

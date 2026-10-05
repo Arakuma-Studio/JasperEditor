@@ -20,7 +20,7 @@ export type WarpFrameSpec = {
 	opacity: number;
 };
 
-export type WarpRenderJob = {
+type WarpRenderJob = {
 	/** ffmpeg arguments (inputs, filtergraph, `-map`) of the source chain, without the output part. */
 	decodeArgs: string[];
 	/** Source frame (box) size and sequence frame size. */

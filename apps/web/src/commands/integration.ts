@@ -1,17 +1,11 @@
 // Integration commands (WP-3I): ids that the menubar and the default keymap already reference but that no
 // wave-2 package registered, wired to the existing implementations (ARCHITECTURE §15 items 2 and 7).
-// Everything else that stays unregistered is listed, with the reason, in apps/web/test/wiring-audit.test.ts.
 import { addTextAt } from '../panels/program/edits.ts';
-import type { ShellController } from '../shell/context.tsx';
 import { getCommand, runCommand } from './registry.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
 /** sessionStorage flag read by Home: open the New Project dialog once (File ▸ New ▸ Project…). */
 export const HOME_NEW_PROJECT_FLAG = 'jasper:home-new-project';
-
-function shellOf(ctx: CommandCtx): ShellController | null {
-	return ctx.services.get('shell');
-}
 
 /** A command that runs another registered command (menus/keymap use canonical ids of other packages). */
 function delegate(id: string, label: string, target: string): UiCommand {
@@ -31,7 +25,7 @@ function delegate(id: string, label: string, target: string): UiCommand {
 }
 
 function goHome(ctx: CommandCtx, openNewProject: boolean): void {
-	const shell = shellOf(ctx);
+	const shell = ctx.services.get('shell');
 	if (!shell) return;
 	if (openNewProject) {
 		try {
@@ -43,7 +37,7 @@ function goHome(ctx: CommandCtx, openNewProject: boolean): void {
 	shell.goHome();
 }
 
-const hasShell = (ctx: CommandCtx) => !!shellOf(ctx);
+const hasShell = (ctx: CommandCtx) => !!ctx.services.get('shell');
 
 export const integrationCommands: UiCommand[] = [
 	{

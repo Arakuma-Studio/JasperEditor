@@ -104,7 +104,7 @@ const RECIPE_LABELS: Partial<Record<NativeRecipe['op'], string>> = {
 };
 
 /** `frames 1100–1209` (inclusive) for a source range `[startFrame, endFrame)`. */
-export function frameRangeLabel(range: { startFrame: number; endFrame: number }): string {
+function frameRangeLabel(range: { startFrame: number; endFrame: number }): string {
 	return `frames ${range.startFrame}–${range.endFrame - 1}`;
 }
 

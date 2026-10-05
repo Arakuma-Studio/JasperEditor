@@ -1,10 +1,3 @@
-// M2 MCP tools: colour grading (S06:CGA-001…003, ARCHITECTURE §19.9). Owner: wp-m2-color.
-//   import_lut  — registers a .cube file through the engine (kind `lut`) and adds it to the project.
-//   grade_clip  — edits (or adds) a `jasper.lumetri` instance with effect.add / param.set in ONE transaction.
-//   get_grade   — every colour effect of a clip with its params evaluated at a frame, plus LUT names.
-//   copy_grade  — replaces the colour effects of other clips with a copy of one clip's colour effects.
-// Everything goes through the ordinary command machinery (one "Agent: <label>" History entry per call);
-// ranges and defaults are read from the registry (`LUMETRI_PARAMS`), never hard-coded here.
 import { existsSync, statSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import {
@@ -13,7 +6,6 @@ import {
 	clipContentTime,
 	defaultEffectRegistry,
 	type EffectInstance,
-	type EffectRegistry,
 	type EffectSpec,
 	evaluate,
 	isColorEffect,
@@ -319,8 +311,8 @@ function requireEligible(clip: Clip): void {
 		);
 }
 
-function isColorInstance(fx: EffectInstance, registry: EffectRegistry = defaultEffectRegistry): boolean {
-	return isColorEffect(registry.get(fx.effectId, fx.effectVersion));
+function isColorInstance(fx: EffectInstance): boolean {
+	return isColorEffect(defaultEffectRegistry.get(fx.effectId, fx.effectVersion));
 }
 
 const round = (x: number, d = 3) => {
@@ -413,10 +405,9 @@ function planCopyGrade(
 	doc: ProjectDocument,
 	fromClipId: string,
 	toClipIds: readonly string[],
-	registry: EffectRegistry = defaultEffectRegistry,
 ): { commands: unknown[]; refs: { clipId: string; ref: string; effectId: string }[]; removed: number } {
 	const src = findClip(doc, fromClipId);
-	const grade = effectsOf(src.clip).filter((fx) => isColorInstance(fx, registry));
+	const grade = effectsOf(src.clip).filter(isColorInstance);
 	if (!grade.length)
 		throw new ToolError(
 			'E_INVALID_PARAM',
@@ -440,15 +431,15 @@ function planCopyGrade(
 		requireEligible(dst.clip);
 		const rate = dst.seq.settings.frameRate as Rational;
 		const effects = effectsOf(dst.clip);
-		const firstColor = effects.findIndex((fx) => isColorInstance(fx, registry));
+		const firstColor = effects.findIndex(isColorInstance);
 		const at = firstColor < 0 ? effects.length : firstColor;
 		for (const fx of effects)
-			if (isColorInstance(fx, registry)) {
+			if (isColorInstance(fx)) {
 				commands.push({ type: 'effect.remove', effectInstanceId: fx.id });
 				removed++;
 			}
 		grade.forEach((fx, i) => {
-			const spec = registry.get(fx.effectId, fx.effectVersion)!;
+			const spec = defaultEffectRegistry.get(fx.effectId, fx.effectVersion)!;
 			const params: Record<string, unknown> = {};
 			for (const p of spec.params) {
 				const a = fx.params[p.name] as Animatable<unknown> | undefined;
@@ -717,12 +708,11 @@ export function registerColorTools(ctx: ToolContext): void {
 				}
 			}
 			const t = contentTimeAt(clip, frame, rate);
-			const registry = defaultEffectRegistry;
 			const effects = effectsOf(clip)
 				.map((fx, stackIndex) => ({ fx, stackIndex }))
-				.filter(({ fx }) => isColorInstance(fx, registry))
+				.filter(({ fx }) => isColorInstance(fx))
 				.map(({ fx, stackIndex }) => {
-					const spec = registry.get(fx.effectId, fx.effectVersion)!;
+					const spec = defaultEffectRegistry.get(fx.effectId, fx.effectVersion)!;
 					const values = evaluateEffect(fx, spec, t.time);
 					const luts = spec.params
 						.filter((p) => p.type === 'media')

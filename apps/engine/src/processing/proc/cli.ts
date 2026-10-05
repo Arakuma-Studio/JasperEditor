@@ -15,7 +15,7 @@ import { createStepImpl } from './steps.ts';
 import { PROC_EXIT, type ProcEvent, type ProcSpec } from './types.ts';
 import { ortProviders } from './upscale.ts';
 
-export const ProcSpecSchema = z.object({
+const ProcSpecSchema = z.object({
 	input: z.string().min(1),
 	output: z.string().min(1),
 	steps: z.array(ProcessStepSchema).min(1),
@@ -38,7 +38,7 @@ function emitLine(e: ProcEvent): void {
 	process.stderr.write(`${JSON.stringify(e)}\n`);
 }
 
-export async function versionInfo(): Promise<Record<string, unknown>> {
+async function versionInfo(): Promise<Record<string, unknown>> {
 	let vidstab: Record<string, unknown> = { wasm: false };
 	try {
 		const m = await import('./vidstab/index.ts');

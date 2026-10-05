@@ -15,6 +15,7 @@ import {
 	importFiles,
 	query,
 	ROOT,
+	transact,
 } from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -41,18 +42,6 @@ test.afterAll(async () => {
 	await page?.close();
 });
 
-async function transact(commands: unknown[]): Promise<{ ok: boolean; errors?: unknown[] }> {
-	return page.evaluate(
-		(cmds) =>
-			(
-				window as unknown as {
-					jasper: { transact(tx: unknown): Promise<{ ok: boolean; errors?: unknown[] }> };
-				}
-			).jasper.transact({ protocol: 'jasper.tx/1', label: 'E2E setup', commands: cmds }),
-		commands,
-	);
-}
-
 async function videoTransitionAtCut(): Promise<Tr | undefined> {
 	const t = await query<Record<string, Tr>>(page, 'doc.get', { path: ['sequences', seqId, 'transitions'] });
 	const [b] = (await clips(page, ['V1'])).filter((c) => c.start === cut);
@@ -72,7 +61,7 @@ test('setup: project, two clips with media handles meeting at a cut', async () =
 	await createProject(page, 'E2E Transition Defaults');
 	await importFiles(page, ['xfade-red.mp4', 'xfade-blue.mp4']);
 	seqId = (await query<{ sequenceId: string }>(page, 'sequence.summary')).sequenceId;
-	const a = await transact([
+	const a = await transact(page, [
 		{
 			type: 'clip.place',
 			source: { mediaId: { mediaByName: 'xfade-red.mp4' } },
@@ -82,7 +71,7 @@ test('setup: project, two clips with media handles meeting at a cut', async () =
 	]);
 	expect(a.ok, JSON.stringify(a.errors)).toBe(true);
 	cut = (await clips(page, ['V1']))[0]!.end;
-	const b = await transact([
+	const b = await transact(page, [
 		{
 			type: 'clip.place',
 			source: { mediaId: { mediaByName: 'xfade-blue.mp4' } },

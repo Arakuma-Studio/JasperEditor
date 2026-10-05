@@ -46,18 +46,16 @@ function load(kind: MonitorKind): MonitorViewState {
 	}
 }
 
-function createMonitorStore(kind: MonitorKind, persist = true): StoreApi<MonitorViewState> {
-	const store = createStore<MonitorViewState>(() => (persist ? load(kind) : { ...DEFAULT_MONITOR_VIEW }));
-	if (persist) {
-		store.subscribe((s) => {
-			try {
-				const { pan: _pan, ...rest } = s;
-				globalThis.localStorage?.setItem(KEY(kind), JSON.stringify(rest));
-			} catch {
-				// storage full or unavailable: view state is best-effort
-			}
-		});
-	}
+function createMonitorStore(kind: MonitorKind): StoreApi<MonitorViewState> {
+	const store = createStore<MonitorViewState>(() => load(kind));
+	store.subscribe((s) => {
+		try {
+			const { pan: _pan, ...rest } = s;
+			globalThis.localStorage?.setItem(KEY(kind), JSON.stringify(rest));
+		} catch {
+			// storage full or unavailable: view state is best-effort
+		}
+	});
 	return store;
 }
 

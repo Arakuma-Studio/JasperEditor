@@ -18,7 +18,7 @@ import {
 import type { TrackRow } from './layout.ts';
 import { frameToX, type Viewport } from './viewport.ts';
 
-export type Alignment = Transition['alignment'];
+type Alignment = Transition['alignment'];
 type MediaRecord = Readonly<Record<string, MediaAsset>>;
 
 const endOf = (c: { start: number; duration: number }) => c.start + c.duration;
@@ -154,7 +154,7 @@ export function transitionBand(rowHeight: number): { top: number; height: number
 
 type TransitionRect = { x: number; w: number; top: number; height: number };
 
-export function transitionRect(g: TransitionGeom, v: Viewport, rowHeight: number): TransitionRect {
+function transitionRect(g: TransitionGeom, v: Viewport, rowHeight: number): TransitionRect {
 	const x = frameToX(v, g.start);
 	const w = (g.end - g.start) * v.pxPerFrame;
 	return { x, w, ...transitionBand(rowHeight) };

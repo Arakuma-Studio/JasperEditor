@@ -1,10 +1,3 @@
-// wp-m2-anime-templates (S11:ANA-003, ANA-005): motion-graphic template helpers for the MCP tools.
-//   set_motion_graphic_params   static params (clip.update) or keyframes of anime template params (param.set)
-//   templateSummary / paramsSummary   the list_motion_templates entries (renderer, native, compact params)
-//   animeTemplatePreview        render_motion_graphic_preview for anime templates: a one-clip document rendered
-//                               by the engine's still path (Remotion) instead of the fframes renderer
-//   renderToolError / renderErrorHint   render failures → actionable hints (capabilities fetched lazily)
-// `list_motion_templates` and `render_motion_graphic_preview` themselves stay in render.ts.
 import type { EngineJob, MgTemplateCatalogEntry, MgTemplatesResponse } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import {
@@ -97,7 +90,7 @@ function paramKind(s0: JsonSchemaNode): { kind: ParamKind; type: string } {
 	return { kind: 'json', type: typeof t === 'string' ? t : 'json' };
 }
 
-export type ParamSummary = {
+type ParamSummary = {
 	name: string;
 	type: string;
 	default: unknown;
@@ -224,7 +217,7 @@ export async function failedJobError(
 /** Even, ≥ 2 (encoders and the still path want even frame sizes). */
 const evenSize = (n: number) => Math.max(2, Math.round(n / 2) * 2);
 
-export type AnimePreviewSpec = {
+type AnimePreviewSpec = {
 	params: Record<string, unknown>;
 	width: number;
 	height: number;
@@ -461,7 +454,7 @@ function findMgClip(doc: ProjectDocument, clipId: string): { seq: Sequence; clip
 	throw new ToolError('E_NOT_FOUND', `Clip ${clipId} not found`, 'Use get_timeline for clip ids.');
 }
 
-export type ParamsPlan = { commands: unknown[]; staticParams: string[]; keyframed: string[] };
+type ParamsPlan = { commands: unknown[]; staticParams: string[]; keyframed: string[] };
 
 /**
  * The commands of set_motion_graphic_params: params that are neither keyframed nor animated go into one

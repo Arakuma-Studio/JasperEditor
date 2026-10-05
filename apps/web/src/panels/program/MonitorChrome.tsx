@@ -229,7 +229,6 @@ export function MiniRuler({
 	markers = [],
 	fps,
 	onSeek,
-	onScrubStart,
 	testId,
 }: {
 	transport: TransportStore;
@@ -240,24 +239,12 @@ export function MiniRuler({
 	markers?: RulerMarker[];
 	fps: number;
 	onSeek(frame: number): void;
-	onScrubStart?(): void;
 	testId?: string;
 }) {
-	const ref = useRef<HTMLDivElement>(null);
+	const [ref, { width }] = useElementSize<HTMLDivElement>();
 	const headRef = useRef<HTMLDivElement>(null);
-	const [width, setWidth] = useState(0);
 	const durRef = useRef(duration);
 	durRef.current = Math.max(1, duration);
-	useLayoutEffect(() => {
-		const el = ref.current;
-		if (!el) return;
-		const measure = () => setWidth(el.clientWidth);
-		measure();
-		if (typeof ResizeObserver === 'undefined') return;
-		const ro = new ResizeObserver(measure);
-		ro.observe(el);
-		return () => ro.disconnect();
-	}, []);
 	useLayoutEffect(() => {
 		const place = () => {
 			const w = ref.current?.clientWidth ?? 0;
@@ -268,7 +255,7 @@ export function MiniRuler({
 		return transport.subscribe((s, p) => {
 			if (s.frame !== p.frame) place();
 		});
-	}, [transport]);
+	}, [transport, ref]);
 	useLayoutEffect(() => {
 		const x = (transport.getState().frame / Math.max(1, duration)) * width;
 		if (headRef.current) headRef.current.style.transform = `translateX(${x}px)`;
@@ -288,7 +275,6 @@ export function MiniRuler({
 			onPointerDown={(e) => {
 				if (e.button !== 0) return;
 				(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-				onScrubStart?.();
 				onSeek(frameAt(e.clientX));
 			}}
 			onPointerMove={(e) => {

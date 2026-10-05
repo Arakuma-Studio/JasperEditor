@@ -1,7 +1,7 @@
 // Alpha-channel handling shared by the native export and the proxy generator.
 import type { MediaProbe } from '@jasper/project';
 
-export type AlphaDecoder = 'libvpx' | 'libvpx-vp9';
+type AlphaDecoder = 'libvpx' | 'libvpx-vp9';
 
 /**
  * Decoder override for an input whose alpha the default decoder would drop: VP8/VP9 keep alpha in Matroska

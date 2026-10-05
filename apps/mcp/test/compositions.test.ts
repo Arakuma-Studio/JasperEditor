@@ -11,19 +11,13 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { cleanEnv } from './helpers.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, '..', '..', '..');
 const FIXTURE_PROJECT = join(ROOT, 'fixtures', 'mg-project');
 const PORT = Number(process.env.MCP_MG_TEST_PORT ?? 48145);
 const E2E = process.env.MG_E2E === '1';
-
-function cleanEnv(extra: Record<string, string> = {}): Record<string, string> {
-	const out: Record<string, string> = {};
-	for (const [k, v] of Object.entries(process.env))
-		if (v !== undefined && !k.startsWith('JASPER_')) out[k] = v;
-	return { ...out, ...extra };
-}
 
 describe.runIf(E2E)('composition tools over stdio against a real engine (MG_E2E=1)', () => {
 	let engine: ChildProcess | null = null;

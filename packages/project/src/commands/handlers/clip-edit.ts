@@ -9,8 +9,8 @@
 
 import { current, type Draft, isDraft } from 'immer';
 import { type Box, scaleForMode } from '../../factories.ts';
+import { mediaIntrinsicSize } from '../../process/rescale.ts';
 import { contentDurationFlicks, isBoundedContent, kindCapabilities } from '../../registry/kinds.ts';
-import type { MediaAsset } from '../../schema/media.ts';
 import type { Clip, Track } from '../../schema/sequence.ts';
 import { contentSpanFlicks, FRAME_EPS, flicksPerFrame } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
@@ -508,13 +508,7 @@ function intrinsicBox(doc: DDoc, seq: DSeq, c: DClip): Box {
 	const frame = { width: seq.settings.width, height: seq.settings.height };
 	const r = c as Record<string, unknown>;
 	if (typeof r.mediaId === 'string') {
-		const asset = doc.media[r.mediaId] as MediaAsset | undefined;
-		const vs = asset?.probe.streams.find((s) => s.type === 'video');
-		if (asset && vs && vs.type === 'video') {
-			const swap = asset.probe.rotationDegrees === 90 || asset.probe.rotationDegrees === 270;
-			return swap ? { width: vs.height, height: vs.width } : { width: vs.width, height: vs.height };
-		}
-		return frame;
+		return mediaIntrinsicSize(doc.media[r.mediaId]) ?? frame;
 	}
 	if (c.kind === 'text') {
 		const box = r.box as { width: number; height: number };

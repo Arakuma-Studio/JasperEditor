@@ -22,8 +22,8 @@ const FFMPEG_VENDOR_ENV = 'JASPER_FFMPEG_VENDOR';
 /** Name of the LGPL binaries directory inside packaged resources. */
 export const RESOURCES_LGPL_DIR = 'ffmpeg-lgpl';
 
-export const BUNDLED_GPL_WARNING = 'Remotion is using its bundled GPL FFmpeg (dev only)';
-export const STRICT_MISSING_MESSAGE =
+const BUNDLED_GPL_WARNING = 'Remotion is using its bundled GPL FFmpeg (dev only)';
+const STRICT_MISSING_MESSAGE =
 	'Remotion rendering is disabled: the LGPL FFmpeg binaries directory is missing ' +
 	`(<resources>/${RESOURCES_LGPL_DIR}, or vendor/ffmpeg-lgpl/<platform> from \`pnpm ffmpeg:lgpl\`, or ` +
 	`${REMOTION_BIN_DIR_ENV}). Packaged and built engines never use Remotion's bundled GPL FFmpeg.`;

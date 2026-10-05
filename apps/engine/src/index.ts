@@ -16,7 +16,7 @@ import { type EngineConfig, isLoopbackHost } from './context.ts';
 import { createServer } from './server.ts';
 import { ENGINE_VERSION } from './version.ts';
 
-export type StartEngineOptions = {
+type StartEngineOptions = {
 	appdir: string;
 	port: number;
 	host?: string;
@@ -147,23 +147,4 @@ function removeRuntimeFile(file: string | null): void {
 	}
 }
 
-// ---------------------------------------------------------------- service interface for WP-2G / WP-2H
-// (documented in docs/wp-notes/WP-2F.md)
-export { UrlSigner } from './auth/signed-url.ts';
-export { type EngineConfig, type EngineContext, isLoopbackHost } from './context.ts';
-export { Broadcaster } from './events/broadcaster.ts';
-export type { MgMasterProvider, MgMasterRequest } from './export/service.ts';
-export { JobQueue } from './jobs/queue.ts';
-export { type JobContext, JobError, type JobRunner, type JobSubmit } from './jobs/types.ts';
-export { fingerprintFile, mediaKeyFor } from './media/fingerprint.ts';
-export { type MediaRecord, MediaRegistry } from './media/registry.ts';
-// Motion graphics (WP-2G). routes/mg.ts creates the service at startup as app.jasper.services.mg and
-// registers its capability provider and native-export master hook with WP-2F's core services.
-export { createMgService, type MgService, mgCapabilityProvider, mgMasterHook } from './mg/index.ts';
-export { LeaseManager } from './projects/leases.ts';
-export { ProjectError, ProjectStoreFs } from './projects/store.ts';
-export { createServer } from './server.ts';
-export type { CapabilityPatch, CapabilityProvider } from './tools/capabilities.ts';
-export { Ffmpeg, type FfmpegProgress, resolveBinaries } from './tools/ffmpeg.ts';
-export { runTool, spawnTool, ToolError, terminateTree } from './tools/process.ts';
-export { type CoreServices, coreServices } from './tools/services.ts';
+export { createServer };

@@ -16,9 +16,9 @@ import scopes from './scopes/index.ts';
 import source from './source/index.ts';
 import timeline from './timeline/index.ts';
 import tools from './tools/index.ts';
-import type { PanelDefinition, PanelKind } from './types.ts';
+import type { PanelDefinition } from './types.ts';
 
-export const PANEL_DEFINITIONS: readonly PanelDefinition[] = [
+const PANEL_DEFINITIONS: readonly PanelDefinition[] = [
 	project,
 	source,
 	program,
@@ -36,14 +36,6 @@ export const PANEL_DEFINITIONS: readonly PanelDefinition[] = [
 	lumetri,
 	scopes,
 ];
-
-const BY_KIND = new Map(PANEL_DEFINITIONS.map((d) => [d.kind, d]));
-
-export function getPanelDefinition(kind: PanelKind): PanelDefinition {
-	const d = BY_KIND.get(kind);
-	if (!d) throw new Error(`Unknown panel kind ${kind}`);
-	return d;
-}
 
 export function listPanels(): readonly PanelDefinition[] {
 	return PANEL_DEFINITIONS;

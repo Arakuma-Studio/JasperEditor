@@ -54,8 +54,6 @@ const MG_DELAY_RENDER_TIMEOUT_MS = 60_000;
 const KEY_RE = /^[0-9a-f]{40}$/;
 const MEDIA_KEY_RE = /^mk_[0-9a-f]{24}$/;
 
-/** Engine media key of a bundle: `mk_` + 24 hex of its content hash (ARCHITECTURE D-09). */
-export const bundleMediaKey = (bundleHash: string) => `mk_${bundleHash.slice(0, 24)}`;
 /** sha256 (40 hex, like the M1 `/mg/:key/:file` keys) of the pre-render key material (MGC-031). */
 export const prerenderKey = (
 	req: Pick<
@@ -82,7 +80,7 @@ export const prerenderKey = (
 
 type RendererModule = typeof import('@remotion/renderer');
 
-export type BundleJobInput =
+type BundleJobInput =
 	| { op: 'import-dir'; dir: string; watch: boolean; projectId?: string }
 	| { op: 'import-zip'; file: string; name: string; projectId?: string }
 	| { op: 'rebuild'; key: string; projectId?: string };
@@ -111,7 +109,7 @@ type RenderMeta = {
 	lastUsedAt: string;
 };
 
-export type MgBundlesOptions = {
+type MgBundlesOptions = {
 	core: CoreServices;
 	/** Local mode (loopback or dev): imports from engine paths and watchers are allowed (S04:SC-002). */
 	localMode: boolean;
@@ -538,7 +536,7 @@ export class MgBundleService {
 	private async registerBundle(dir: string, info: MgBundleInfo): Promise<RegisteredMedia> {
 		const index = join(dir, 'index.html');
 		const st = await stat(index);
-		const key = bundleMediaKey(info.bundleHash);
+		const key = `mk_${info.bundleHash.slice(0, 24)}`;
 		const record: MediaRecord = {
 			mediaKey: key,
 			fingerprint: `q1:${info.bundleHash}`,
@@ -601,10 +599,11 @@ export class MgBundleService {
 		if (!r) throw new MgBundleError('NOT_FOUND', `Unknown bundle ${key}`, 404);
 		const dir = r.mgBundle!.source.path;
 		if (!dir) throw new MgBundleError('MG_NOT_A_BUNDLE', 'The bundle has no project folder');
-		const watching = [...this.watches.values()].some((w) => w.dir === dir);
+		const watching = this.watches.has(dir);
 		const media = await this.importDir(ctx, dir, false);
 		if (media.mediaKey !== key) {
-			for (const w of this.watches.values()) if (w.dir === dir) w.key = media.mediaKey;
+			const watcher = this.watches.get(dir);
+			if (watcher) watcher.key = media.mediaKey;
 			if (watching) await this.saveWatches();
 			const event: MgBundleRebuiltEvent = {
 				oldKey: key,
@@ -697,16 +696,11 @@ export class MgBundleService {
 		return r ? prerenderKey(req, r.mgBundle!.bundleHash) : null;
 	}
 
-	private renderDir(renderKey: string): string {
+	/** `<appdir>/mg/<renderKey>` (M3: the cache entry exports pin). */
+	renderDirOf(renderKey: string): string {
 		return join(this.mgDir, renderKey);
 	}
 
-	/** `<appdir>/mg/<renderKey>` (M3: the cache entry exports pin). */
-	renderDirOf(renderKey: string): string {
-		return this.renderDir(renderKey);
-	}
-
-	/** Cached result of a render key (master and/or preview present), or null. */
 	// ------------------------------------------------------------------ text layout (wp-m3-mgtext, MGC-037)
 
 	private measureChain: Promise<unknown> = Promise.resolve();
@@ -745,9 +739,10 @@ export class MgBundleService {
 		return run;
 	}
 
+	/** Cached result of a render key (master and/or preview present), or null. */
 	async cached(renderKey: string): Promise<MgPrerenderResult | null> {
 		if (!KEY_RE.test(renderKey)) return null;
-		const dir = this.renderDir(renderKey);
+		const dir = this.renderDirOf(renderKey);
 		const meta = await readJsonOrNull<RenderMeta>(join(dir, 'meta.json'));
 		if (meta?.kind !== 'composition') return null;
 		const has = (f: string) => existsSync(join(dir, f));
@@ -778,14 +773,14 @@ export class MgBundleService {
 
 	/** Absolute path of a cached master (null when not rendered). Marks the render as used (GC). */
 	masterPath(renderKey: string): string | null {
-		const p = join(this.renderDir(renderKey), 'master.mov');
+		const p = join(this.renderDirOf(renderKey), 'master.mov');
 		if (!KEY_RE.test(renderKey) || !existsSync(p)) return null;
 		void this.markUsed(renderKey);
 		return p;
 	}
 
 	private async markUsed(renderKey: string): Promise<void> {
-		const file = join(this.renderDir(renderKey), 'meta.json');
+		const file = join(this.renderDirOf(renderKey), 'meta.json');
 		const meta = await readJsonOrNull<RenderMeta>(file);
 		if (!meta) return;
 		meta.lastUsedAt = this.now().toISOString();
@@ -834,7 +829,7 @@ export class MgBundleService {
 
 	private async runPrerender(ctx: JobContext): Promise<MgPrerenderResult> {
 		const { req, renderKey, concurrency } = ctx.input as PrerenderJobInput;
-		const dir = this.renderDir(renderKey);
+		const dir = this.renderDirOf(renderKey);
 		const hit = await this.cached(renderKey);
 		if (hit && (req.quality === 'preview' ? hit.previewUrl : hit.masterUrl)) {
 			void this.markUsed(renderKey);

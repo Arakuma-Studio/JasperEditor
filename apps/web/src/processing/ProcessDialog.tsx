@@ -54,10 +54,10 @@ export type ProcessDialogProps = {
 type Processing = NonNullable<M2Features['processing']>;
 
 /** Default handles of "Clip range + handles" (frames on each side). */
-export const DEFAULT_PROCESS_HANDLES = 12;
+const DEFAULT_PROCESS_HANDLES = 12;
 
 /** The frames of `mediaId` the clips show (mapped across versions) plus `handles` (S07:PRC-015). */
-export function clipProcessRange(
+function clipProcessRange(
 	doc: ProjectDocument,
 	mediaId: string,
 	clipIds: readonly string[],

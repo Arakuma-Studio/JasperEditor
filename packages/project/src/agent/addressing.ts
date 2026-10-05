@@ -67,7 +67,7 @@ export function pickSequence(
 }
 
 /** Media id by project item name (or original file name) when unique (S01:AGT-005). */
-export function mediaIdByName(doc: ProjectDocument, name: string): string {
+function mediaIdByName(doc: ProjectDocument, name: string): string {
 	const byItem = new Set<string>();
 	for (const item of Object.values(doc.items))
 		if (item.kind === 'media' && item.name === name) byItem.add(item.mediaId);

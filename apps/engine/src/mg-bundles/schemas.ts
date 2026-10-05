@@ -44,7 +44,7 @@ const MgManifestSchema = z.looseObject({
 		)
 		.optional(),
 });
-export type MgManifest = z.infer<typeof MgManifestSchema>;
+type MgManifest = z.infer<typeof MgManifestSchema>;
 
 /** Reads and validates `jasper.mg.json` in `dir` (null when absent; a warning when invalid). */
 export async function readManifest(dir: string, warnings: string[]): Promise<MgManifest | null> {
@@ -125,7 +125,7 @@ try {
 process.stdout.write(JSON.stringify(out));
 `;
 
-export type SchemaModuleResult = { schemas: Record<string, Record<string, unknown>>; warnings: string[] };
+type SchemaModuleResult = { schemas: Record<string, Record<string, unknown>>; warnings: string[] };
 
 /**
  * Bundles and evaluates the project's schema module; returns the JSON Schemas by composition id. Never throws:
@@ -136,7 +136,6 @@ export async function loadSchemaModule(
 	entry: string,
 	opts: { scratchDir: string; timeoutMs?: number; signal?: AbortSignal },
 ): Promise<SchemaModuleResult> {
-	const warnings: string[] = [];
 	const file = isAbsolute(entry) ? entry : resolve(projectDir, entry);
 	if (!existsSync(file)) return { schemas: {}, warnings: [`schema module ${entry} not found`] };
 	await mkdir(opts.scratchDir, { recursive: true });
@@ -201,7 +200,7 @@ export async function loadSchemaModule(
 	await rm(bundled, { force: true }).catch(() => undefined);
 	try {
 		const parsed = JSON.parse(res.stdout) as SchemaModuleResult;
-		return { schemas: parsed.schemas ?? {}, warnings: [...warnings, ...(parsed.warnings ?? [])] };
+		return { schemas: parsed.schemas ?? {}, warnings: parsed.warnings ?? [] };
 	} catch {
 		return {
 			schemas: {},

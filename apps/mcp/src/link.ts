@@ -78,7 +78,7 @@ export function guardedFetch(
 	}) as typeof fetch;
 }
 
-export type LinkOptions = DiscoveryOptions & {
+type LinkOptions = DiscoveryOptions & {
 	/** Fork a headless engine when none is reachable. */
 	startEngine?: boolean;
 	/** Engine bundle for `startEngine` (default: next to this server, or JASPER_ENGINE_ENTRY). */

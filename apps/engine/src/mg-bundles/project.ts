@@ -21,7 +21,7 @@ export class MgBundleError extends Error {
 	}
 }
 
-export type ProjectPackage = {
+type ProjectPackage = {
 	name: string;
 	dependencies: Record<string, string>;
 	jasper?: { schemas?: string };

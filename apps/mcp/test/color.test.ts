@@ -12,6 +12,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { FixedEngineLink } from '../src/link.ts';
 import { createJasperMcpServer } from '../src/server.ts';
+import { cleanEnv } from './helpers.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, '..', '..', '..');
@@ -31,13 +32,6 @@ function ensureFixtures(): void {
 		return;
 	const r = spawnSync(process.execPath, [join(ROOT, 'scripts', 'make-fixtures.mjs')], { stdio: 'inherit' });
 	if (r.status !== 0) throw new Error('fixture generation failed');
-}
-
-function cleanEnv(extra: Record<string, string> = {}): Record<string, string> {
-	const out: Record<string, string> = {};
-	for (const [k, v] of Object.entries(process.env))
-		if (v !== undefined && !k.startsWith('JASPER_')) out[k] = v;
-	return { ...out, ...extra };
 }
 
 /** RGB24 pixels of a PNG (decoded by ffmpeg). */

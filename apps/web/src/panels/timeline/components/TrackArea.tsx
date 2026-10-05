@@ -1,7 +1,7 @@
 // The clip area of both regions (S02:TL-150 layers): track backgrounds, virtualized clip bodies,
 // gesture overlays. Pointer input is forwarded to the TimelineController by the panel.
 import type { EngineClient } from '@jasper/engine-client';
-import { clipsInRange, type MediaAsset, outOfSyncOffsets, type Sequence, type Track } from '@jasper/project';
+import { clipsInRange, findTrack, type MediaAsset, outOfSyncOffsets, type Sequence } from '@jasper/project';
 import type { GapRef, MediaRuntime } from '@jasper/session';
 import { useMemo } from 'react';
 import { type RegionLayout, rowOf, type TrackAreaLayout, visibleRows } from '../model/layout.ts';
@@ -40,10 +40,6 @@ type TrackAreaProps = {
 	selectedTransitions?: ReadonlySet<string>;
 };
 
-function trackOf(seq: Sequence, id: string): Track | undefined {
-	return seq.videoTracks.find((t) => t.id === id) ?? seq.audioTracks.find((t) => t.id === id);
-}
-
 function Region(props: TrackAreaProps & { region: RegionLayout; offsets: Record<string, number> }) {
 	const { seq, viewport: v, region } = props;
 	const rows = visibleRows(region);
@@ -59,7 +55,7 @@ function Region(props: TrackAreaProps & { region: RegionLayout; offsets: Record<
 			data-region={region.kind}
 		>
 			{rows.map((row) => {
-				const track = trackOf(seq, row.trackId);
+				const track = findTrack(seq, row.trackId)?.track;
 				if (!track) return null;
 				const targeted = (region.kind === 'video' ? props.targeting.video : props.targeting.audio).includes(
 					track.id,

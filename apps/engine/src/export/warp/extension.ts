@@ -36,7 +36,7 @@ import { decoderArgs, renderWarpLayer, type WarpFrameSpec, WarpRenderError } fro
 
 export const WARP_EXTENSION_ID = 'warp';
 /** Bumped whenever the intermediate's pixels would change for the same inputs (kernel, encoder settings). */
-export const WARP_VERSION = 1;
+const WARP_VERSION = 1;
 
 /** Kinds whose picture the source chain can produce (composition: from an earlier extension's `layer` override). */
 const WARP_KINDS: ReadonlySet<string> = new Set(['video', 'still', 'animated-image', 'solid', 'composition']);

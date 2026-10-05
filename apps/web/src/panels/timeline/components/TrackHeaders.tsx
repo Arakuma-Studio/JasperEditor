@@ -1,6 +1,6 @@
 // Track headers (S02 §6: TL-250…268; S05:TLC-005/006). Document toggles (lock, sync lock, eye, mute,
 // solo, name) go through `track.update` transactions (undoable); targeting and heights are view state.
-import type { Sequence, Track } from '@jasper/project';
+import { type Sequence, type Track, trackList } from '@jasper/project';
 import type { EditorSession, SequenceViewState } from '@jasper/session';
 import { IconButton } from '@jasper/ui';
 import { useRef, useState } from 'react';
@@ -27,7 +27,6 @@ type TrackHeadersProps = {
 };
 
 type Kind = 'video' | 'audio';
-const listOf = (seq: Sequence, kind: Kind) => (kind === 'video' ? seq.videoTracks : seq.audioTracks);
 const labelOf = (kind: Kind, index: number) => `${kind === 'video' ? 'V' : 'A'}${index + 1}`;
 const defaultName = (kind: Kind, index: number) => `${kind === 'video' ? 'Video' : 'Audio'} ${index + 1}`;
 
@@ -62,7 +61,7 @@ function toggleFlag(
 	f: Flag,
 	e: { shiftKey: boolean; altKey: boolean },
 ) {
-	const list = listOf(p.seq, kind);
+	const list = trackList(p.seq, kind);
 	const next = !flagValue(track, f);
 	const cmd = (t: Track, v: boolean) => ({ type: 'track.update', trackId: t.id, patch: { [f]: v } });
 	let commands: unknown[];
@@ -107,7 +106,7 @@ function toggleTarget(p: TrackHeadersProps, kind: Kind, track: Track, shift: boo
 	const tg = p.view.targeting;
 	const cur = kind === 'video' ? tg.video : tg.audio;
 	const on = !cur.includes(track.id);
-	const unlocked = listOf(p.seq, kind)
+	const unlocked = trackList(p.seq, kind)
 		.filter((t) => !t.locked)
 		.map((t) => t.id);
 	const next = shift ? (on ? unlocked : []) : on ? [...cur, track.id] : cur.filter((id) => id !== track.id);
@@ -122,7 +121,7 @@ function headerMenu(
 	startRename: () => void,
 ): ContextMenuItem[] {
 	const clipCount = Object.values(p.seq.clips).filter((c) => c.trackId === track.id).length;
-	const list = listOf(p.seq, kind);
+	const list = trackList(p.seq, kind);
 	const empty = list.filter((t) => !Object.values(p.seq.clips).some((c) => c.trackId === t.id));
 	return [
 		{
@@ -354,7 +353,7 @@ export function TrackHeaders(props: TrackHeadersProps) {
 				>
 					<div className="absolute right-0 left-0" style={{ top: -region.top, height: layout.height }}>
 						{visibleRows(region).map((row) => {
-							const track = listOf(seq, row.kind)[row.index];
+							const track = trackList(seq, row.kind)[row.index];
 							return track ? <Header key={track.id} {...props} row={row} track={track} /> : null;
 						})}
 						{region.kind === 'audio' && layout.masterY !== null ? (

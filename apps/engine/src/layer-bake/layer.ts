@@ -180,7 +180,7 @@ export function variantFrames(c: RenderVisualClip, v: BakeVariant): number {
  * handles the consumer resolved (signed URLs for Remotion; URLs never enter the render key).
  */
 export function bakeDoc(
-	snapshot: Pick<RenderSnapshot, 'sequenceId' | 'settings' | 'master'>,
+	snapshot: Pick<RenderSnapshot, 'sequenceId' | 'settings'>,
 	clip: RenderVisualClip,
 	o: {
 		variant: BakeVariant;
@@ -199,8 +199,8 @@ export function bakeDoc(
 			...(o.rect ? { width: o.rect.w, height: o.rect.h } : {}),
 			backgroundColor: [0, 0, 0, 0],
 		},
-		range: { start, end: start + (o.variant.recipe === 'master' ? frames : 1) },
-		durationFrames: o.variant.recipe === 'master' ? frames : 1,
+		range: { start, end: start + frames },
+		durationFrames: frames,
 		videoTracks: [{ trackId: clip.trackId, clips: [clip] }],
 		audioClips: [],
 		media: o.media,

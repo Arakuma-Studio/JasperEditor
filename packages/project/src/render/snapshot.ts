@@ -1,8 +1,8 @@
 // Render snapshot (S01:RND-001…005, ARCHITECTURE §5.5): the self-contained JSON value handed to the
 // Remotion composition, the native planner and the Program overlay. Keyframes stay unevaluated.
 import { compositionOfClip, mergeProps } from '../composition/props.ts';
-import { shapeIntrinsicBox } from '../factories.ts';
 import { clipEngines, type EngineId, isBoundedContent, kindCapabilities } from '../registry/kinds.ts';
+import { intrinsicBoxOf } from '../registry/properties.ts';
 import type { Animatable, Keyframe, RGBA } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { FontRef, MediaAsset } from '../schema/media.ts';
@@ -224,16 +224,11 @@ export type SnapshotOptions = {
 
 const ZERO = { value: 0, keyframes: [] } as Animatable<number>;
 
-function mediaBox(asset: MediaAsset | undefined): { width: number; height: number } | null {
-	const vs = asset?.probe.streams.find((s) => s.type === 'video');
-	if (!asset || !vs || vs.type !== 'video') return null;
-	const swap = asset.probe.rotationDegrees === 90 || asset.probe.rotationDegrees === 270;
-	return swap ? { width: vs.height, height: vs.width } : { width: vs.width, height: vs.height };
-}
-
-function transitionFields(
-	x: { headHandle: number; tailHandle: number; fades: RenderFade[] } | undefined,
-): Pick<RenderVisualClip, 'headHandle' | 'tailHandle' | 'fades'> {
+function transitionFields<T>(x: { headHandle: number; tailHandle: number; fades: T[] } | undefined): {
+	headHandle?: number;
+	tailHandle?: number;
+	fades?: T[];
+} {
 	if (!x) return {};
 	return {
 		...(x.headHandle > 0 ? { headHandle: x.headHandle } : {}),
@@ -290,14 +285,13 @@ export function buildRenderSnapshot(
 			if (!caps.visual) continue;
 			const r = c as Record<string, unknown>;
 			let source: RenderVisualSource;
-			let box = frame;
+			const box = intrinsicBoxOf({ clip: c, doc, seq });
 			switch (c.kind) {
 				case 'video':
 				case 'still':
 				case 'animated-image': {
 					useMedia(c.mediaId);
 					source = { mediaId: c.mediaId };
-					box = mediaBox(doc.media[c.mediaId]) ?? frame;
 					break;
 				}
 				case 'text': {
@@ -315,7 +309,6 @@ export function buildRenderSnapshot(
 								message: `Text animation ${key} is not installed; the text is drawn without it`,
 							});
 					}
-					box = { width: c.box.width, height: c.box.height };
 					// M2 (wp-m2-text-anim, S11:TXA-010): styled runs may use other faces than the base style.
 					const base = c.content.style;
 					const faces = [base, ...(c.content.runs ?? []).map((r) => ({ ...base, ...r.style }))];
@@ -350,13 +343,12 @@ export function buildRenderSnapshot(
 					break;
 				}
 				case 'motion-graphic': {
-					const canvas = c.canvas === 'sequence' ? frame : { width: c.canvas.width, height: c.canvas.height };
 					const { renderer, ...template } = c.template;
 					source = {
 						mg: {
 							template,
 							params: c.params,
-							canvas,
+							canvas: box,
 							...(renderer === 'anime' ? { renderer } : {}),
 							// wp-m2-anime-templates (S11:ATP-006)
 							...(renderer === 'anime' && c.paramKeyframes && Object.keys(c.paramKeyframes).length > 0
@@ -364,16 +356,13 @@ export function buildRenderSnapshot(
 								: {}),
 						},
 					};
-					box = canvas;
 					break;
 				}
 				case 'shape': {
 					source = { shape: c.shape };
-					box = shapeIntrinsicBox(c.shape);
 					break;
 				}
 				case 'composition': {
-					const canvas = c.canvas === 'sequence' ? frame : { width: c.canvas.width, height: c.canvas.height };
 					const mediaId = c.composition.mediaId;
 					if (mediaId) {
 						useMedia(mediaId);
@@ -384,7 +373,7 @@ export function buildRenderSnapshot(
 							mediaId,
 							compositionId: c.composition.id,
 							props: mergeProps(found?.info.defaultProps, c.props),
-							canvas,
+							canvas: box,
 							bundle: asset?.mgBundle
 								? {
 										key: loc?.type === 'engine-store' ? loc.key : null,
@@ -405,7 +394,6 @@ export function buildRenderSnapshot(
 						if (pre) comp.prerender = pre;
 						source = { composition: comp };
 					} else source = { unsupported: c.kind };
-					box = canvas;
 					break;
 				}
 				default:
@@ -483,9 +471,7 @@ export function buildRenderSnapshot(
 				pan: c.pan,
 				effects: c.effects,
 				track: { volumeDb: t.volumeDb ?? ZERO, pan: t.pan ?? ZERO },
-				...(x && x.headHandle > 0 ? { headHandle: x.headHandle } : {}),
-				...(x && x.tailHandle > 0 ? { tailHandle: x.tailHandle } : {}),
-				...(x?.fades.length ? { fades: x.fades } : {}),
+				...transitionFields(x),
 			});
 		}
 	}

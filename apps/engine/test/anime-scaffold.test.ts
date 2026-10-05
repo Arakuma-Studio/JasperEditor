@@ -1,15 +1,17 @@
 // S11:ANM-016: the scaffolded Remotion project must compile, and its bundled anime.js timeline must produce
 // the same frames regardless of seek order.
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { scaffoldProject } from '../src/mg-bundles/scaffold.ts';
 import { TEMPLATE_FILES } from '../src/mg-bundles/template/files.ts';
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+const scratch = mkdtempSync(join(tmpdir(), 'jasper-anime-'));
+afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
 type Glyph = { y: number; opacity: number; rotate: number };
 type TimelineModule = {
@@ -19,7 +21,7 @@ type TimelineModule = {
 
 describe('scaffold anime.js example (S11:ANM-016)', { timeout: 60_000 }, () => {
 	it('the scaffolded project compiles (esbuild bundle of src/index.ts with the workspace packages)', async () => {
-		const dir = await scaffoldProject(mkdtempSync(join(tmpdir(), 'jasper-anime-bundle-')), 'titles', {
+		const dir = await scaffoldProject(scratch, 'titles', {
 			install: false,
 		});
 		const r = await build({
@@ -37,13 +39,12 @@ describe('scaffold anime.js example (S11:ANM-016)', { timeout: 60_000 }, () => {
 	});
 
 	it('the example timeline is order-independent (bundled with the pinned anime.js)', async () => {
-		const dir = mkdtempSync(join(tmpdir(), 'jasper-anime-example-'));
-		const out = join(dir, 'title-timeline.mjs');
+		const out = join(scratch, 'title-timeline.mjs');
 		await build({
 			stdin: {
 				contents: TEMPLATE_FILES['src/anime/title-timeline.ts']!,
 				loader: 'ts',
-				resolveDir: dir,
+				resolveDir: scratch,
 				sourcefile: 'title-timeline.ts',
 			},
 			bundle: true,

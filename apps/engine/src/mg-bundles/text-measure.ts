@@ -85,7 +85,7 @@ export async function serveBundleForMeasuring(dir: string): Promise<{ url: strin
 
 type RendererModule = typeof import('@remotion/renderer');
 
-export type MeasureBrowserOptions = {
+type MeasureBrowserOptions = {
 	browserExecutable?: string;
 	chromeMode: 'headless-shell' | 'chrome-for-testing';
 	chromiumOptions?: Record<string, unknown>;

@@ -49,6 +49,21 @@ export async function query<T = unknown>(
 	)) as T;
 }
 
+export async function transact(
+	page: Page,
+	commands: unknown[],
+): Promise<{ ok: boolean; errors?: unknown[] }> {
+	return page.evaluate(
+		(cmds) =>
+			(
+				window as unknown as {
+					jasper: { transact(tx: unknown): Promise<{ ok: boolean; errors?: unknown[] }> };
+				}
+			).jasper.transact({ protocol: 'jasper.tx/1', label: 'E2E setup', commands: cmds }),
+		commands,
+	);
+}
+
 export async function clips(page: Page, tracks?: string[]): Promise<ClipRow[]> {
 	const r = await query<{ clips: ClipRow[] }>(page, 'sequence.clipsInRange', {
 		from: 0,
@@ -58,13 +73,9 @@ export async function clips(page: Page, tracks?: string[]): Promise<ClipRow[]> {
 	return [...r.clips].sort((a, b) => a.track.localeCompare(b.track) || a.start - b.start);
 }
 
-async function history(page: Page): Promise<{ entries: HistoryEntry[]; position: number }> {
-	return query(page, 'history.list');
-}
-
 /** Labels of the applied (not undone) history entries. */
 export async function appliedLabels(page: Page): Promise<string[]> {
-	const h = await history(page);
+	const h = await query<{ entries: HistoryEntry[] }>(page, 'history.list');
 	return h.entries.filter((e) => e.applied).map((e) => e.label);
 }
 

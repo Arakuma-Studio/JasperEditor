@@ -61,7 +61,7 @@ import { CacheIndexStore, CacheSettingsStore } from './store.ts';
 
 const DAY_MS = 24 * 3600 * 1000;
 /** Entries written or used this recently count as in use (a producer may be about to read what it just wrote). */
-export const CACHE_GRACE_MS = 2 * 60 * 1000;
+const CACHE_GRACE_MS = 2 * 60 * 1000;
 /** Temporary files of writes are orphans once nothing has written to them for this long. */
 export const ORPHAN_AGE_MS = 60 * 60 * 1000;
 /** A pin of a job the queue does not know (pseudo job ids) expires after this long. */
@@ -74,7 +74,7 @@ const SCAN_TTL_MS = 15_000;
 /** Job kinds after which an automatic pass is scheduled (they write cache entries). */
 const RENDER_JOB_KINDS = new Set(['export', 'still', 'proxy', 'mg-prerender', 'layer-bake', 'process']);
 
-export type CacheMode = 'auto' | 'unused' | 'all';
+type CacheMode = 'auto' | 'unused' | 'all';
 
 /** A cache folder that cannot be used (HTTP 422 with the check). */
 export class CacheLocationError extends Error {
@@ -102,14 +102,14 @@ function emptyReport(t: number): CacheGcReport {
 }
 
 /** Owner hooks for a kind (e.g. the layer-bake service: its leases and its lookups that wait for a removal). */
-export type CacheKindAdapter = {
+type CacheKindAdapter = {
 	/** True while the owner uses the entry (leases, renders in flight). */
 	busy?(key: string): boolean;
 	/** Wraps the removal (the owner's lookups can wait for it); must call `remove` and return its result. */
 	remove?(key: string, remove: () => Promise<boolean>): Promise<boolean>;
 };
 
-export type CacheServiceOptions = {
+type CacheServiceOptions = {
 	appdir: string;
 	paths: AppdirPaths;
 	queue?: JobQueue | null;
@@ -150,8 +150,8 @@ type ProjectsInfo = {
 export class CacheService {
 	readonly index: CacheIndexStore;
 	readonly settingsStore: CacheSettingsStore;
-	/** entry id → holder → count. */
-	private readonly pins = new Map<string, Map<string, number>>();
+	/** Entry id → holders; releasing a holder drops all of its pins. */
+	private readonly pins = new Map<string, Set<string>>();
 	/** holder → entry ids. */
 	private readonly held = new Map<string, Set<string>>();
 	private serveSeq = 0;
@@ -170,7 +170,6 @@ export class CacheService {
 	private scanning: Promise<ScanResult> | null = null;
 	private gcChain: Promise<unknown> = Promise.resolve();
 	private autoBudget: number | null = null;
-	private freeAtStart: number | null = null;
 	private timers: NodeJS.Timeout[] = [];
 	private afterRenderTimer: NodeJS.Timeout | null = null;
 	private offEvents: (() => void) | null = null;
@@ -207,16 +206,16 @@ export class CacheService {
 			this.touch(ref);
 			return () => this.release(holder);
 		});
-		this.freeAtStart = await freeDiskBytes(physicalRoot(this.o.appdir, (await this.settings()).location));
+		const freeAtStart = await freeDiskBytes(physicalRoot(this.o.appdir, (await this.settings()).location));
 		const scan = await this.scan(true).catch(() => null);
 		const cacheBytes = scan ? scan.entries.reduce((s, e) => s + e.bytes, 0) : 0;
 		// "15 % of the free disk at start" counts the cache itself as reclaimable space.
 		this.autoBudget =
-			this.freeAtStart === null
+			freeAtStart === null
 				? AUTO_BUDGET_CAP
 				: Math.max(
 						1024 ** 3,
-						Math.min(AUTO_BUDGET_CAP, Math.floor((this.freeAtStart + cacheBytes) * AUTO_BUDGET_SHARE)),
+						Math.min(AUTO_BUDGET_CAP, Math.floor((freeAtStart + cacheBytes) * AUTO_BUDGET_SHARE)),
 					);
 		const timers =
 			this.o.autoTimers ?? (process.env.JASPER_CACHE_AUTO_GC ?? (process.env.VITEST ? '0' : '1')) !== '0';
@@ -483,10 +482,10 @@ export class CacheService {
 		if (!ref) return null;
 		let m = this.pins.get(ref.id);
 		if (!m) {
-			m = new Map();
+			m = new Set();
 			this.pins.set(ref.id, m);
 		}
-		m.set(holder, (m.get(holder) ?? 0) + 1);
+		m.add(holder);
 		let h = this.held.get(holder);
 		if (!h) this.held.set(holder, (h = new Set()));
 		h.add(ref.id);
@@ -504,11 +503,6 @@ export class CacheService {
 			if (m?.delete(holder) && m.size === 0) this.pins.delete(id);
 		}
 		this.held.delete(holder);
-	}
-
-	/** Entry ids a holder pins. */
-	holderEntries(holder: string): string[] {
-		return [...(this.held.get(holder) ?? [])];
 	}
 
 	/**
@@ -586,7 +580,7 @@ export class CacheService {
 
 	/** Records what a holder (an export/still job) pins as the scope's ref set. */
 	commitHolderRefs(holder: string, scope: string, projectId: string): void {
-		this.setRefs(scope, projectId, this.holderEntries(holder));
+		this.setRefs(scope, projectId, [...(this.held.get(holder) ?? [])]);
 	}
 
 	private async projectsInfo(): Promise<ProjectsInfo> {
@@ -799,15 +793,9 @@ export class CacheService {
 		const info = await this.projectsInfo();
 		const active = this.activeJobs();
 		const report: CacheGcReport = {
-			at: new Date(t).toISOString(),
+			...emptyReport(t),
 			mode: mode === 'orphans' ? 'auto' : mode,
-			removedEntries: 0,
-			removedBytes: 0,
 			removedOrphans: await this.sweepOrphans(scan.orphans, active.ids),
-			keptInUse: 0,
-			keptReferenced: 0,
-			failed: 0,
-			byKind: {},
 		};
 		// Ref sets of deleted projects go away (CA-012).
 		for (const [scope, set] of [...this.index.refs])

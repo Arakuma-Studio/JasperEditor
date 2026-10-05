@@ -4,7 +4,7 @@
 // - Colour runs are exactly the engine's (`effectRuns` over the stack order): one baked-LUT pass each.
 // - Non-colour effects BEFORE the last colour run must be applied before it: a CSS-`filter` effect (blur…) becomes
 //   a 2D canvas pass in the chain; crop, flips and the corner pin commute with pointwise colour and stay CSS/
-//   matrix stages; anything else stays a CSS stage (order approximation, reported in `reordered`).
+//   matrix stages; anything else stays a CSS stage (order approximation).
 // - Effects after the last colour run stay CSS/SVG stages as in M1.
 // - Without WebGL2 (preview only) the M1 colour effects fall back to their CSS/SVG preview and Lumetri is skipped
 //   ("Grade unavailable"); before/after bypass drops every colour effect of the clip.
@@ -46,8 +46,6 @@ type ColorPlan = {
 	graded: boolean;
 	/** Colour effects that cannot be drawn (no WebGL2, preview): the chip "Grade unavailable". */
 	unavailable: boolean;
-	/** Non-colour effects that had to move after the grade (no canvas realization). */
-	reordered: string[];
 };
 
 function planColorStage(
@@ -57,14 +55,13 @@ function planColorStage(
 	const registry = opts.registry ?? defaultEffectRegistry;
 	const isColor = (fx: ResolvedEffect) => fx.enabled && !!registry.get(fx.effectId, fx.effectVersion)?.color;
 	const graded = effects.some(isColor);
-	if (!graded) return { steps: [], cssEffects: [...effects], graded, unavailable: false, reordered: [] };
+	if (!graded) return { steps: [], cssEffects: [...effects], graded, unavailable: false };
 	if (opts.bypass)
 		return {
 			steps: [],
 			cssEffects: effects.filter((fx) => !isColor(fx)),
 			graded,
 			unavailable: false,
-			reordered: [],
 		};
 	if (!opts.webgl) {
 		// M1 colour effects keep their CSS/SVG approximation; effects without one (Lumetri) are skipped.
@@ -73,7 +70,7 @@ function planColorStage(
 			const spec = registry.get(fx.effectId, fx.effectVersion)!;
 			return !!(spec.preview.css || spec.preview.svgFilter);
 		});
-		return { steps: [], cssEffects: css, graded, unavailable: true, reordered: [] };
+		return { steps: [], cssEffects: css, graded, unavailable: true };
 	}
 	const runs = effectRuns(effects, registry);
 	let lastColor = -1;
@@ -82,7 +79,6 @@ function planColorStage(
 	});
 	const steps: ChainStep[] = [];
 	const cssEffects: ResolvedEffect[] = [];
-	const reordered: string[] = [];
 	runs.forEach((r, i) => {
 		if (r.kind === 'color') {
 			steps.push({ kind: 'lut', effects: r.effects });
@@ -101,7 +97,6 @@ function planColorStage(
 			return;
 		}
 		cssEffects.push(fx);
-		reordered.push(fx.id);
 	});
 	// Disabled / unknown effects keep flowing to the CSS stage builder (it skips them), in stack order.
 	const inRuns = new Set(
@@ -110,7 +105,7 @@ function planColorStage(
 	for (const fx of effects) if (!inRuns.has(fx.id)) cssEffects.push(fx);
 	const order = new Map(effects.map((fx, i) => [fx.id, i]));
 	cssEffects.sort((a, b) => order.get(a.id)! - order.get(b.id)!);
-	return { steps, cssEffects, graded, unavailable: false, reordered };
+	return { steps, cssEffects, graded, unavailable: false };
 }
 
 /** Media ids referenced by `{mediaId}` params of the given effects. */

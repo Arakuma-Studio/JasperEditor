@@ -14,7 +14,7 @@ import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 type MgClip = Extract<Clip, { kind: 'motion-graphic' }>;
 
 /** Engine label of a motion-graphic clip: the registry decides for installed templates, the stamp otherwise. */
-export function templateEngineLabel(reg: MgTemplateRegistry, clip: MgClip): string {
+function templateEngineLabel(reg: MgTemplateRegistry, clip: MgClip): string {
 	const info = reg.get(clip.template.id, clip.template.version);
 	if (!info) return 'not installed';
 	return info.renderer === 'anime' ? 'anime · Remotion' : 'fframes';

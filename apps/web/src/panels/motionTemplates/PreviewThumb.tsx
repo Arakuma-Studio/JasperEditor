@@ -33,7 +33,7 @@ type PreviewThumbProps<P extends Record<string, unknown>> = {
 };
 
 /** Delay before the hover preview starts. */
-export const HOVER_PREVIEW_DELAY_MS = 200;
+const HOVER_PREVIEW_DELAY_MS = 200;
 
 // ---------------------------------------------------------------- the shared hover Player
 

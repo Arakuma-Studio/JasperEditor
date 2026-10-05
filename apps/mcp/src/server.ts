@@ -6,7 +6,7 @@ import { loadDoc, makeContext, type ToolContext } from './context.ts';
 import { pickSequence, timelineTable } from './format.ts';
 import type { EngineConnection } from './link.ts';
 import { ANIMATION_GUIDE, registerAnimationTools } from './tools/animation.ts';
-import { CACHE_GUIDE, registerCacheTools } from './tools/cache.ts'; // wp-m3-cachegc
+import { CACHE_GUIDE, registerCacheTools } from './tools/cache.ts';
 import { CLIPBOARD_GUIDE, registerClipboardTools } from './tools/clipboard.ts';
 import { COLOR_GUIDE, registerColorTools } from './tools/color.ts';
 import { COMPOSITION_GUIDE, registerCompositionTools } from './tools/compositions.ts';
@@ -15,7 +15,7 @@ import { PROCESSING_GUIDE, registerProcessingTools } from './tools/processing.ts
 import { registerProjectTools } from './tools/projects.ts';
 import { registerRenderTools } from './tools/render.ts';
 import { registerShapeTools, SHAPES_GUIDE } from './tools/shapes.ts';
-import { registerTemplateTools, TEMPLATES_GUIDE } from './tools/templates.ts'; // wp-m2-anime-templates
+import { registerTemplateTools, TEMPLATES_GUIDE } from './tools/templates.ts';
 import { registerTrackingTools, TRACKING_GUIDE } from './tools/tracking.ts';
 import { registerTransitionTools, TRANSITION_GUIDE } from './tools/transitions.ts';
 import { MCP_SERVER_VERSION } from './version.ts';
@@ -53,7 +53,7 @@ const FULL_GUIDE = [
 	CACHE_GUIDE,
 ].join('\n\n');
 
-export type JasperMcpOptions = {
+type JasperMcpOptions = {
 	link: EngineConnection;
 	/** Name recorded in History origins; default = the MCP client's name (e.g. "claude-code"). */
 	agentName?: string;

@@ -5,7 +5,7 @@
 import type { Command } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useSessionOrNull, useTransportFrame } from '@jasper/session/react';
-import { cx, Icon } from '@jasper/ui';
+import { Icon } from '@jasper/ui';
 import { colorBypass, useColorBypass } from '../../color/actions.ts';
 import { LumetriEditor } from '../../color/LumetriEditor.tsx';
 import { firstLumetri, gradeEligible } from '../../color/model.ts';
@@ -103,7 +103,7 @@ function LumetriBody({ session }: { session: EditorSession }) {
 			{notices.element}
 			{isBypassed ? (
 				<p
-					className={cx('shrink-0 border-b border-pr-border-subtle px-2 py-1 text-pr-small text-pr-warning')}
+					className="shrink-0 border-b border-pr-border-subtle px-2 py-1 text-pr-small text-pr-warning"
 					data-testid="lumetri-bypass-note"
 				>
 					Before: the Program monitor shows this clip without its colour effects.

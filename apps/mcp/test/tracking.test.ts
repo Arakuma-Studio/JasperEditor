@@ -12,6 +12,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { cleanEnv, waitFor } from './helpers.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, '..', '..', '..');
@@ -25,27 +26,6 @@ type Truth = {
 	corners: [number, number][][];
 	occluded: number[];
 };
-
-function cleanEnv(extra: Record<string, string> = {}): Record<string, string> {
-	const out: Record<string, string> = {};
-	for (const [k, v] of Object.entries(process.env))
-		if (v !== undefined && !k.startsWith('JASPER_')) out[k] = v;
-	return { ...out, ...extra };
-}
-
-async function waitFor(check: () => Promise<boolean> | boolean, timeoutMs: number, what: string) {
-	const until = Date.now() + timeoutMs;
-	while (Date.now() < until) {
-		if (
-			await Promise.resolve()
-				.then(check)
-				.catch(() => false)
-		)
-			return;
-		await new Promise((r) => setTimeout(r, 250));
-	}
-	throw new Error(`timed out waiting for ${what}`);
-}
 
 const textOf = (r: CallToolResult) =>
 	(r.content.find((c) => c.type === 'text') as { text: string } | undefined)?.text ?? '';

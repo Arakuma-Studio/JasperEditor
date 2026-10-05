@@ -18,9 +18,9 @@ export interface AgentSocket {
 
 const OPEN = 1;
 
-export type RequestKind = 'tx' | 'query' | 'schema';
+type RequestKind = 'tx' | 'query' | 'schema';
 
-export type RelayOutcome = { result: unknown; error?: { code: string; message: string } };
+type RelayOutcome = { result: unknown; error?: { code: string; message: string } };
 
 export class RelayError extends Error {
 	constructor(
@@ -48,7 +48,7 @@ export type AgentConnection = {
 	readonly pending: Map<string, Pending>;
 };
 
-export type SessionRegistryOptions = {
+type SessionRegistryOptions = {
 	engineVersion: string;
 	/** A session forwarded an event (doc.changed, selection.changed, agent.approval.resolve…). */
 	onEvent(conn: AgentConnection, event: string, payload: unknown): void;

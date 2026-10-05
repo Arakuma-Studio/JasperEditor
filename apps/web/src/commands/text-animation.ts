@@ -5,7 +5,11 @@
 // Default targets: the selected text clips. No default key bindings. This module is imported at start-up
 // (commands/index.ts), so it also registers the package's UI extensions: the Properties ▸ Text Animation
 // section, the clip context submenu and the picker dialog.
-import { latestTextAnimationSpec, type TextAnimationSide } from '@jasper/project';
+import {
+	LATEST_TEXT_ANIMATION_SPECS,
+	latestTextAnimationSpec,
+	type TextAnimationSide,
+} from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { openDialog, registerDialog } from '@jasper/ui';
 import { createElement } from 'react';
@@ -21,7 +25,6 @@ import {
 	textClipIds,
 } from '../text-animation/actions.ts';
 import { TEXT_ANIMATION_PICKER_DIALOG, TextAnimationPickerDialog } from '../text-animation/PickerDialog.tsx';
-import { LATEST_TEXT_ANIMATIONS } from '../text-animation/PresetPreview.tsx';
 import { TextAnimationSection } from '../text-animation/TextAnimationSection.tsx';
 import type { CommandCtx, UiCommand } from './types.ts';
 
@@ -146,7 +149,7 @@ clipMenuExtensions.register({
 		if (clip.kind !== 'text') return [];
 		const ids = textClipIds(session, selection.includes(clip.id) ? selection : [clip.id]);
 		const presets = (side: AnimationSide): MenuItemSpec[] =>
-			LATEST_TEXT_ANIMATIONS.filter((s) => side === 'both' || s.phases.includes(side)).map((s) => ({
+			LATEST_TEXT_ANIMATION_SPECS.filter((s) => side === 'both' || s.phases.includes(side)).map((s) => ({
 				kind: 'item',
 				label: s.label,
 				run: () => void applyTextAnimation(session, ids, { side, preset: s.id }),

@@ -15,11 +15,17 @@ import {
 	TERMINAL_JOB_STATES,
 } from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
-import type { Command, MediaAsset, ProcessStep, ProjectDocument } from '@jasper/project';
+import {
+	type Command,
+	type MediaAsset,
+	originalMediaId,
+	type ProcessStep,
+	type ProjectDocument,
+} from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { toast as uiToast } from '@jasper/ui';
 import { buildMediaAsset, mediaKeyOf } from '../import/assets.ts';
-import { originalOf, recipeLabel } from './model.ts';
+import { recipeLabel } from './model.ts';
 
 export const PROCESS_TX_LABEL = 'Process Clip';
 
@@ -65,13 +71,13 @@ function deriveCommand(
 		if (!byKey) return { error: 'The source media is no longer in the project' };
 		fromMediaId = byKey.id;
 	}
-	const original = originalOf(doc, fromMediaId);
+	const original = originalMediaId(doc, fromMediaId);
 	const replaced: string[] = [];
 	for (const clipId of new Set(input.replaceInClips)) {
 		for (const seq of Object.values(doc.sequences)) {
 			const clip = seq.clips[clipId] as { kind: string; mediaId?: string } | undefined;
 			if (!clip) continue;
-			if (clip.kind === 'video' && clip.mediaId && originalOf(doc, clip.mediaId) === original)
+			if (clip.kind === 'video' && clip.mediaId && originalMediaId(doc, clip.mediaId) === original)
 				replaced.push(clipId);
 			break;
 		}

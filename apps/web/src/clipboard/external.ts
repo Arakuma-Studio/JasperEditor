@@ -10,7 +10,7 @@ import type { EditorSession, SequenceViewState } from '@jasper/session';
 import type { CommandCtx } from '../commands/types.ts';
 import { EngineImportService } from '../import/service.ts';
 import { activeProjectBin, getProjectPanel } from '../panels/project/instances.ts';
-import { getImportService, type ImportService, type ImportTarget } from '../state/services.ts';
+import { getImportService, type ImportTarget } from '../state/services.ts';
 import { type ExternalContent, imageExtension } from './system.ts';
 
 /** Default length of a pasted text clip (CLB-010; the default graphic duration of XF-060). */
@@ -70,10 +70,6 @@ function pastedTextCommand(seq: Sequence, track: string, at: number, text: strin
 	} as Command;
 }
 
-function importServiceFor(ctx: CommandCtx, session: EditorSession): ImportService {
-	return getImportService() ?? new EngineImportService({ engine: ctx.engine, session });
-}
-
 /** The bin non-placed imports go to: the selected bin in a focused Project panel, else its current bin. */
 function binFor(ctx: CommandCtx, session: EditorSession): string | null {
 	const doc = session.getCommitted();
@@ -85,11 +81,6 @@ function binFor(ctx: CommandCtx, session: EditorSession): string | null {
 	return activeProjectBin();
 }
 
-/** Whether pasted content is placed in the sequence: the Timeline or Program monitor has the focus. */
-function placesInSequence(ctx: CommandCtx): boolean {
-	return ctx.focus.panel === 'timeline' || ctx.focus.panel === 'program';
-}
-
 /** Runs a CLB-010 paste of foreign clipboard content. */
 export async function pasteExternal(
 	ctx: CommandCtx,
@@ -99,7 +90,7 @@ export async function pasteExternal(
 	now: Date = new Date(),
 ): Promise<void> {
 	const { session, seq } = env;
-	const place = placesInSequence(ctx) && !!seq;
+	const place = (ctx.focus.panel === 'timeline' || ctx.focus.panel === 'program') && !!seq;
 	const fileCount = content.files.length + content.paths.length + content.images.length;
 
 	if (fileCount > 0) {
@@ -126,7 +117,7 @@ export async function pasteExternal(
 				};
 		}
 		try {
-			const service = importServiceFor(ctx, session);
+			const service = getImportService() ?? new EngineImportService({ engine: ctx.engine, session });
 			const r = await service.importFiles(
 				{
 					...(files.length ? { files, names } : {}),

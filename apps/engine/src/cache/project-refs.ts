@@ -32,23 +32,19 @@ export type RenderKeyFn = (
 	bundleHash: string,
 ) => string;
 
-export function emptyRefs(): ProjectCacheRefs {
-	return { fingerprints: new Set(), mgRenderKeys: new Set(), bundleHashes: new Set() };
-}
+/** Render key of a motion-graphic (fframes) clip in a snapshot (M1 mg service `clipRenderKey`). */
+export type ClipRenderKeyFn = (clip: RenderVisualClip, fps: Rational) => string | null;
 
 /**
  * The cache references of a stored document. Tolerant: unknown shapes are skipped; a sequence whose snapshot fails
  * (older or invalid document) only loses its composition keys (media references come from the raw document).
  */
-/** Render key of a motion-graphic (fframes) clip in a snapshot (M1 mg service `clipRenderKey`). */
-export type ClipRenderKeyFn = (clip: RenderVisualClip, fps: Rational) => string | null;
-
 export function projectCacheRefs(
 	doc: unknown,
 	renderKey: RenderKeyFn | null,
 	fframesKey: ClipRenderKeyFn | null = null,
 ): ProjectCacheRefs {
-	const out = emptyRefs();
+	const out: ProjectCacheRefs = { fingerprints: new Set(), mgRenderKeys: new Set(), bundleHashes: new Set() };
 	const d = doc as Partial<ProjectDocument> | null;
 	if (!d || typeof d !== 'object') return out;
 	for (const asset of Object.values(d.media ?? {})) {

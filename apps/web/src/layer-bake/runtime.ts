@@ -30,12 +30,6 @@ export type EngineLink = {
 	subscribe(listener: (e: TypedEvent | null) => void): () => void;
 };
 
-type Status = {
-	state: 'scheduled' | 'queued' | 'rendering' | 'ready' | 'failed';
-	error?: string;
-	jobId?: string;
-};
-
 /** Clip ids seed some layers (S11:ANM-007): those keep the id in their identity. */
 function seedBearing(c: RenderVisualClip): boolean {
 	if (c.kind === 'motion-graphic') return true;
@@ -86,8 +80,8 @@ export class LayerBakeRuntime implements BakedLayerRuntime {
 	private readonly listeners = new Set<() => void>();
 	/** identity → ready preview. */
 	private readonly previews = new Map<string, BakedLayerPreview>();
-	/** identity → request status. */
-	private readonly status = new Map<string, Status>();
+	/** Identities already submitted, including failed requests (not automatically retried). */
+	private readonly requested = new Set<string>();
 	/** job id → identity. */
 	private readonly jobs = new Map<string, string>();
 	private readonly recentJobs = new Map<string, EngineJob>();
@@ -183,7 +177,7 @@ export class LayerBakeRuntime implements BakedLayerRuntime {
 			if (!hasDomColorEffects(clip)) continue;
 			seen.add(clip.clipId);
 			const id = this.identityOf(clip);
-			if (!id || this.previews.has(id) || this.status.has(id)) {
+			if (!id || this.requested.has(id)) {
 				const pending = this.scheduled.get(clip.clipId);
 				if (pending && pending.identity !== id) {
 					clearTimeout(pending.timer);
@@ -237,7 +231,7 @@ export class LayerBakeRuntime implements BakedLayerRuntime {
 			this.scanSoon(0);
 			return;
 		}
-		this.status.set(identity, { state: 'queued' });
+		this.requested.add(identity);
 		try {
 			const job = await this.engine.client.call('layerBakePreview', {
 				body: {
@@ -250,8 +244,7 @@ export class LayerBakeRuntime implements BakedLayerRuntime {
 			this.jobs.set(job.id, identity);
 			const newer = this.recentJobs.get(job.id);
 			this.onJob(newer && (newer.finishedAt || !job.finishedAt) ? newer : job);
-		} catch (e) {
-			this.status.set(identity, { state: 'failed', error: e instanceof Error ? e.message : String(e) });
+		} catch {
 			this.notify();
 		}
 	}
@@ -272,7 +265,6 @@ export class LayerBakeRuntime implements BakedLayerRuntime {
 			this.jobs.delete(job.id);
 			const r = job.result as LayerBakePreviewResult | undefined;
 			if (!r?.previewUrl) {
-				this.status.set(identity, { state: 'failed', error: 'no preview in the job result' });
 				this.notify();
 				return;
 			}
@@ -282,16 +274,13 @@ export class LayerBakeRuntime implements BakedLayerRuntime {
 				.catch(() => undefined)
 				.finally(() => {
 					this.previews.set(identity, { url: r.previewUrl, rect: r.rect });
-					this.status.set(identity, { state: 'ready', jobId: job.id });
 					this.notify();
 				});
 			return;
 		}
 		if (job.state === 'failed' || job.state === 'cancelled' || job.state === 'interrupted') {
 			this.jobs.delete(job.id);
-			this.status.set(identity, { state: 'failed', error: job.error?.message ?? job.state, jobId: job.id });
-		} else
-			this.status.set(identity, { state: job.state === 'queued' ? 'queued' : 'rendering', jobId: job.id });
+		}
 		this.notify();
 	}
 }

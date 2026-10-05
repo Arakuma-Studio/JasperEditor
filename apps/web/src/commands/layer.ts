@@ -27,7 +27,6 @@ import {
 } from '../panels/program/layer-ops.ts';
 import { getProjectPanel } from '../panels/project/instances.ts';
 import { activeTimeline } from '../panels/timeline/env.tsx';
-import type { ShellController } from '../shell/context.tsx';
 import type { CommandCtx, UiCommand } from './types.ts';
 
 type Env = { session: EditorSession; seq: Sequence; playhead: number };
@@ -239,10 +238,6 @@ function arrangeCommand(id: string, op: ArrangeOp): UiCommand {
 
 // ---------------------------------------------------------------- reveal
 
-function shellOf(ctx: CommandCtx): ShellController | null {
-	return ctx.services.get('shell');
-}
-
 const ClipArgs = z.object({ clipId: z.string().optional() });
 
 /** `args.clipId`, else the primary selected clip (the layer the menu was opened on), else the last selected. */
@@ -272,7 +267,7 @@ const revealInTimeline: UiCommand = {
 		if (!e || !clip) return;
 		if (!e.session.getState().selection.timeline.clips.includes(clip.id))
 			e.session.select('timeline', [clip.id], 'replace');
-		shellOf(ctx)?.focusPanel('timeline');
+		ctx.services.get('shell')?.focusPanel('timeline');
 		activeTimeline(ctx.services)?.controller.reveal(clip.start);
 	},
 };
@@ -301,7 +296,7 @@ const revealInProject: UiCommand = {
 		const itemId = itemFor(ctx, args);
 		if (!itemId || !ctx.session) return;
 		ctx.session.select('project', [itemId], 'replace', { primary: itemId });
-		shellOf(ctx)?.focusPanel('project');
+		ctx.services.get('shell')?.focusPanel('project');
 		// A Project panel that was closed mounts after the focus: wait for its handle.
 		for (let i = 0; i < 20; i++) {
 			const panel = getProjectPanel();

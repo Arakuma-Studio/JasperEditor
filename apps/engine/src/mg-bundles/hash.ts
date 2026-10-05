@@ -19,9 +19,8 @@ async function listBundleFiles(
 		const real = await realpath(dir);
 		if (seen.has(real)) return;
 		seen.add(real);
-		const entries = await readdir(dir, { withFileTypes: true });
-		for (const e of entries) {
-			const abs = join(dir, e.name);
+		for (const name of await readdir(dir)) {
+			const abs = join(dir, name);
 			const rel = relative(root, abs).split(sep).join('/');
 			if (opts.skip?.(rel)) continue;
 			let s: Awaited<ReturnType<typeof stat>>;

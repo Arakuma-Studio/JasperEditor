@@ -18,14 +18,14 @@ import { applyMatrix, layerMatrix } from '../render/transform.ts';
 import type { Animatable, Keyframe, Vec2 } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, EffectInstance, Sequence, Transform } from '../schema/sequence.ts';
-import { flicksPerFrame, type Rational } from '../time.ts';
+import { flicksPerFrame } from '../time.ts';
 import { type SimplifyChannel, type SimplifyValue, simplifyKeyframes } from './simplify.ts';
 
 /** Default tolerance (S09:TRK-023): 0.1 sequence px for geometry, 0.1 units otherwise. */
 export const DEFAULT_SIMPLIFY_TOLERANCE = 0.1;
 
 /** Grid (n×n over the picture) on which corner-pinned results are verified. */
-export const VERIFY_GRID = 9;
+const VERIFY_GRID = 9;
 
 const MOTION_KEYS = ['position', 'anchor', 'scale', 'scaleWidth', 'rotation'] as const;
 type MotionKey = (typeof MOTION_KEYS)[number];
@@ -87,10 +87,6 @@ export type SimplifyPlan = {
 	keys: (Keyframe<unknown>[] | null)[];
 };
 
-function pathKey(p: readonly string[]): string {
-	return p.join('\u0000');
-}
-
 /** The Motion key of a ParamPath on a clip, or null. */
 function motionKeyOf(t: SimplifyTarget): MotionKey | null {
 	if (!t.clip || t.path[0] !== 'clip') return null;
@@ -118,7 +114,7 @@ function pinIndexOf(t: SimplifyTarget): number {
 
 /** Content-time sample grid of an owner: every sequence frame of the clip (extended), or every sequence frame. */
 function gridTimes(seq: Sequence, clip: Clip | null, t0: number, t1: number): number[] {
-	const F = flicksPerFrame(seq.settings.frameRate as Rational);
+	const F = flicksPerFrame(seq.settings.frameRate);
 	const origin = clip ? clip.sourceIn : 0;
 	const step = clip ? F * clip.speed.rate : F;
 	const out: number[] = [];
@@ -196,7 +192,7 @@ export function planSimplify(
 	const geometryByClip = new Map<string, GroupSpec>();
 	const seen = new Set<string>();
 	targets.forEach((t, i) => {
-		const k = pathKey(t.path);
+		const k = t.path.join('\u0000');
 		if (seen.has(k)) return;
 		seen.add(k);
 		const p = prepare(t, i);

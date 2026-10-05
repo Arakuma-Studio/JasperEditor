@@ -340,10 +340,9 @@ export type DockHostProps = {
 	workspaceId: string;
 	providers: MenuEnv['providers'];
 	windowMenu: ShellMenuItem[];
-	onReady?(): void;
 };
 
-export function DockHost({ controller, panels, workspaceId, providers, windowMenu, onReady }: DockHostProps) {
+export function DockHost({ controller, panels, workspaceId, providers, windowMenu }: DockHostProps) {
 	const hostRef = useRef<HTMLDivElement>(null);
 	const { contrast } = useUiPrefs();
 	// Gutters are real gaps between groups: 3 px, 4 px in high contrast (DK-002, §8.2).
@@ -371,7 +370,6 @@ export function DockHost({ controller, panels, workspaceId, providers, windowMen
 	const ready = (e: DockviewReadyEvent) => {
 		controller.attach(e.api, hostRef.current);
 		controller.apply(wsRef.current);
-		onReady?.();
 	};
 
 	useEffect(() => {

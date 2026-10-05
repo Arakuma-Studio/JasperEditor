@@ -47,18 +47,6 @@ export interface PlayerLike {
 	removeEventListener(name: PlayerEvent, cb: Listener): void;
 }
 
-type Clock = {
-	now(): number;
-	requestFrame(cb: () => void): unknown;
-	cancelFrame(handle: unknown): void;
-};
-
-const browserClock: Clock = {
-	now: () => performance.now(),
-	requestFrame: (cb) => requestAnimationFrame(() => cb()),
-	cancelFrame: (h) => cancelAnimationFrame(h as number),
-};
-
 type PlaybackRange = {
 	/** Last seekable frame (the sequence end; shows black, TL-834). */
 	end: number;
@@ -86,17 +74,16 @@ export class PlaybackDriver implements PlayerController {
 	private lastReported = -1;
 	private stopAt: number | null = null;
 	private returnTo: number | null = null;
-	private stepHandle: unknown = null;
+	private stepHandle: number | null = null;
 	private stepOrigin = { t: 0, frame: 0 };
 	private lastSeekAt = Number.NEGATIVE_INFINITY;
 	private frameEvents = 0;
 	private buffering = false;
 	private watchdog: ReturnType<typeof setTimeout> | null = null;
-	private readonly clock = browserClock;
-	private readonly off: (() => void)[] = [];
+	private readonly unsubscribe: () => void;
 
 	constructor(private readonly opts: DriverOptions) {
-		this.off.push(opts.transport.subscribe((s, prev) => this.onTransport(s, prev)));
+		this.unsubscribe = opts.transport.subscribe((s, prev) => this.onTransport(s, prev));
 	}
 
 	/** Connects a mounted Player (or disconnects with null). */
@@ -117,7 +104,7 @@ export class PlaybackDriver implements PlayerController {
 		this.clearWatchdog();
 		this.stopStepping();
 		this.setPlayer(null);
-		for (const o of this.off.splice(0)) o();
+		this.unsubscribe();
 	}
 
 	// ------------------------------------------------------------ PlayerController
@@ -180,9 +167,9 @@ export class PlaybackDriver implements PlayerController {
 		this.clearWatchdog();
 		if (p.isPlaying()) p.pause();
 		this.mode = 'stepping';
-		this.stepOrigin = { t: this.clock.now(), frame: this.opts.transport.getState().frame };
+		this.stepOrigin = { t: performance.now(), frame: this.opts.transport.getState().frame };
 		this.lastSeekAt = Number.NEGATIVE_INFINITY;
-		if (this.stepHandle === null) this.stepHandle = this.clock.requestFrame(this.tick);
+		if (this.stepHandle === null) this.stepHandle = requestAnimationFrame(this.tick);
 	}
 
 	private clearWatchdog(): void {
@@ -217,7 +204,7 @@ export class PlaybackDriver implements PlayerController {
 
 	private stopStepping(): void {
 		if (this.stepHandle !== null) {
-			this.clock.cancelFrame(this.stepHandle);
+			cancelAnimationFrame(this.stepHandle);
 			this.stepHandle = null;
 		}
 	}
@@ -227,7 +214,7 @@ export class PlaybackDriver implements PlayerController {
 		this.stepHandle = null;
 		if (this.mode !== 'stepping') return;
 		const t = this.opts.transport;
-		const now = this.clock.now();
+		const now = performance.now();
 		const fps = this.opts.getFps();
 		const range = this.opts.getRange();
 		let frame = Math.round(this.stepOrigin.frame + ((now - this.stepOrigin.t) / 1000) * fps * this.rate);
@@ -260,7 +247,7 @@ export class PlaybackDriver implements PlayerController {
 			t.pause();
 			return;
 		}
-		this.stepHandle = this.clock.requestFrame(this.tick);
+		this.stepHandle = requestAnimationFrame(this.tick);
 	};
 
 	private onTransport(s: TransportState, prev: TransportState): void {
@@ -268,7 +255,7 @@ export class PlaybackDriver implements PlayerController {
 		if (s.playing && prev.playing && s.frame !== prev.frame && s.frame !== this.lastReported) {
 			this.lastReported = s.frame;
 			if (this.mode === 'native') this.player?.seekTo(s.frame);
-			else if (this.mode === 'stepping') this.stepOrigin = { t: this.clock.now(), frame: s.frame };
+			else if (this.mode === 'stepping') this.stepOrigin = { t: performance.now(), frame: s.frame };
 		}
 	}
 

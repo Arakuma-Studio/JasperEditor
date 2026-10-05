@@ -34,7 +34,7 @@ import {
 	type TrackKind,
 } from '../../schema/sequence.ts';
 import { scaleAnimationFrames } from '../../text-animations.ts';
-import { flicksPerFrame, type Rational } from '../../time.ts';
+import { flicksPerFrame, fpsOf, type Rational } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import {
 	assertKindFits,
@@ -63,7 +63,6 @@ import { type HandlerMap, idList } from './util.ts';
 export const CLIPBOARD_OWNER = 'wp-clipboard';
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(isDraft(v) ? current(v as Draft<T>) : v)) as T;
-const fps = (r: Rational) => r.num / r.den;
 
 function payloadOf(raw: unknown, h: HandlerContext, kinds: readonly ClipboardKind[]): ClipboardPayload {
 	const r = parseClipboardPayload(raw);
@@ -305,12 +304,12 @@ const timingOf = (c: Pick<Clip, 'start' | 'duration' | 'sourceIn' | 'speed'>): C
 /** Sequence-frame converter between the source and target frame rates (identity when equal). */
 function frameConverter(from: Rational, to: Rational): (n: number) => number {
 	if (from.num * to.den === to.num * from.den) return (n) => n;
-	return (n) => Math.round((n * fps(to)) / fps(from));
+	return (n) => Math.round((n * fpsOf(to)) / fpsOf(from));
 }
 
 function convertTextAnimation(c: Record<string, unknown>, from: Rational, to: Rational): void {
 	const ta = c.textAnimation as Record<string, TextAnimator | null | undefined> | undefined;
-	if (!ta || fps(from) === fps(to)) return;
+	if (!ta || fpsOf(from) === fpsOf(to)) return;
 	for (const side of ['in', 'out'] as const) {
 		const a = ta[side];
 		if (a) a.durationFrames = scaleAnimationFrames(a.durationFrames, to, from);
@@ -610,7 +609,7 @@ function applyAttributes(
 			const src = sources.find((s) => s.textAnimation?.[side]);
 			if (!flag || !src || t.kind !== 'text') continue;
 			const a = clone(src.textAnimation![side]!);
-			if (fps(src.rate) !== fps(rate))
+			if (fpsOf(src.rate) !== fpsOf(rate))
 				a.durationFrames = scaleAnimationFrames(a.durationFrames, rate, src.rate);
 			c.textAnimation = { ...((c.textAnimation as object | undefined) ?? {}), [side]: a } as never;
 			done.push(`textAnimation.${side}`);

@@ -3,13 +3,13 @@
 // category chips, search. Double-click / Enter applies the preset to the selected text clips; the card menu
 // offers Apply as In / Apply as Out; dragging a card onto a text clip in the Timeline, Program or Effect
 // Controls applies it (drop position picks the side).
-import type { TextAnimationSide, TextAnimationSpec } from '@jasper/project';
+import { LATEST_TEXT_ANIMATION_SPECS, type TextAnimationSide, type TextAnimationSpec } from '@jasper/project';
 import type { SessionState } from '@jasper/session';
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import { cx, DropdownMenu, Icon, IconButton } from '@jasper/ui';
 import { useMemo, useState } from 'react';
 import { applyMessage, applyTextAnimation, selectedTextClips, writeTextAnimationDrag } from './actions.ts';
-import { LATEST_TEXT_ANIMATIONS, PresetPreview } from './PresetPreview.tsx';
+import { PresetPreview } from './PresetPreview.tsx';
 
 type NullableStore = {
 	getState(): SessionState | null;
@@ -44,8 +44,8 @@ export function TextAnimationsTab() {
 	const [category, setCategory] = useState<string | null>(null);
 	const [side, setSide] = useState<TextAnimationSide>('in');
 	const [message, setMessage] = useState<{ kind: 'info' | 'warning' | 'error'; text: string } | null>(null);
-	const categories = useMemo(() => [...new Set(LATEST_TEXT_ANIMATIONS.map((s) => s.category))], []);
-	const visible = filterPresets(LATEST_TEXT_ANIMATIONS, { query, category, side });
+	const categories = useMemo(() => [...new Set(LATEST_TEXT_ANIMATION_SPECS.map((s) => s.category))], []);
+	const visible = filterPresets(LATEST_TEXT_ANIMATION_SPECS, { query, category, side });
 
 	const apply = (spec: TextAnimationSpec, as: TextAnimationSide) => {
 		if (!session) return;

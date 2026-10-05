@@ -15,7 +15,7 @@ export type TrackIndex = {
 const indexCache = new WeakMap<object, TrackIndex>();
 
 /** Per-track sorted clip lists, memoized by the `clips` record identity (S01:SES-010). */
-export function sequenceIndex(
+function sequenceIndex(
 	seq: Pick<Sequence, 'clips' | 'videoTracks' | 'audioTracks' | 'captionTracks'>,
 ): TrackIndex {
 	const cached = indexCache.get(seq.clips);
@@ -130,7 +130,7 @@ export function sequenceDuration(seq: Pick<Sequence, 'clips'>): number {
 export type Gap = { trackId: string; start: number; end: number };
 
 /** Maximal empty ranges between frame 0 and the last clip of a track (S02:TL-019). */
-export function gapsOnTrack(seq: Sequence, trackId: string): Gap[] {
+function gapsOnTrack(seq: Sequence, trackId: string): Gap[] {
 	const out: Gap[] = [];
 	let cursor = 0;
 	for (const c of clipsOnTrack(seq, trackId)) {

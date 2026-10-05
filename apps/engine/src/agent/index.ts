@@ -6,11 +6,9 @@ import type { FastifyInstance } from 'fastify';
 import { AgentApiError, AgentService, type StillCaptureRequest } from './service.ts';
 import type { AgentProjectStore } from './store.ts';
 
-export * from './approvals.ts';
-export * from './revisions.ts';
-export * from './service.ts';
-export * from './sessions.ts';
-export * from './store.ts';
+export type { AgentSocket } from './sessions.ts';
+export type { AgentProjectStore, SaveOutcome } from './store.ts';
+export { AgentApiError, AgentService };
 
 /** Polls an engine job through the app's own routes until it finishes. */
 async function waitForJob(

@@ -1,6 +1,3 @@
-// Editing tools: describe_commands (the jasper.tx/1 command catalog), apply_commands (a transaction),
-// undo / redo (the agent's own History entries), and thin timeline helpers over apply_commands:
-// add_clip, move_clip, trim_clip, split_at, delete_clips, add_text, add_marker, add_motion_graphic.
 import {
 	APPROVAL_COMMANDS,
 	COMMAND_CATALOG,

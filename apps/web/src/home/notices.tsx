@@ -40,17 +40,17 @@ class NoticeStore {
 
 export const notices = new NoticeStore();
 
-export function toastFromRequest(r: ToastRequest, store: NoticeStore = notices): void {
-	store.push({ kind: r.kind, message: r.message, detail: r.detail, durationMs: r.durationMs });
+export function toastFromRequest(r: ToastRequest): void {
+	notices.push({ kind: r.kind, message: r.message, detail: r.detail, durationMs: r.durationMs });
 }
 
-function NoticeView({ n, store }: { n: Notice; store: NoticeStore }) {
+function NoticeView({ n }: { n: Notice }) {
 	useEffect(() => {
 		const ms = n.durationMs === undefined ? (n.kind === 'error' ? null : 6000) : n.durationMs;
 		if (!ms) return;
-		const t = setTimeout(() => store.dismiss(n.id), ms);
+		const t = setTimeout(() => notices.dismiss(n.id), ms);
 		return () => clearTimeout(t);
-	}, [n, store]);
+	}, [n]);
 	const tone =
 		n.kind === 'error'
 			? 'border-l-pr-danger'
@@ -75,7 +75,7 @@ function NoticeView({ n, store }: { n: Notice; store: NoticeStore }) {
 								href={n.action.href}
 								download
 								className="text-pr-accent underline"
-								onClick={() => store.dismiss(n.id)}
+								onClick={() => notices.dismiss(n.id)}
 							>
 								{n.action.label}
 							</a>
@@ -84,7 +84,7 @@ function NoticeView({ n, store }: { n: Notice; store: NoticeStore }) {
 								variant="quiet"
 								onClick={() => {
 									n.action?.onClick?.();
-									store.dismiss(n.id);
+									notices.dismiss(n.id);
 								}}
 							>
 								{n.action.label}
@@ -93,14 +93,14 @@ function NoticeView({ n, store }: { n: Notice; store: NoticeStore }) {
 					</div>
 				) : null}
 			</div>
-			<IconButton icon="app.close" label="Dismiss" onClick={() => store.dismiss(n.id)} />
+			<IconButton icon="app.close" label="Dismiss" onClick={() => notices.dismiss(n.id)} />
 		</div>
 	);
 }
 
 /** Sits above the bottom action bars (Export mode footer: Cancel / Export) so sticky notices never hide them. */
-export function NoticeHost({ store = notices }: { store?: NoticeStore }) {
-	const list = useSyncExternalStore(store.subscribe, store.getAll, store.getAll);
+export function NoticeHost() {
+	const list = useSyncExternalStore(notices.subscribe, notices.getAll, notices.getAll);
 	if (!list.length) return null;
 	return (
 		<div
@@ -108,7 +108,7 @@ export function NoticeHost({ store = notices }: { store?: NoticeStore }) {
 			style={{ zIndex: Z.toast }}
 		>
 			{list.map((n) => (
-				<NoticeView key={n.id} n={n} store={store} />
+				<NoticeView key={n.id} n={n} />
 			))}
 		</div>
 	);

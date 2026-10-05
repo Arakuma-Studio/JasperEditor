@@ -129,7 +129,7 @@ function clampValue<T>(v: T, c?: { min?: number; max?: number }): T {
 }
 
 /** Index of the last keyframe with time ≤ t (binary search), or -1. */
-export function keyframeIndexAt<T>(kfs: readonly Keyframe<T>[], t: number): number {
+function keyframeIndexAt<T>(kfs: readonly Keyframe<T>[], t: number): number {
 	let lo = 0;
 	let hi = kfs.length - 1;
 	let ans = -1;

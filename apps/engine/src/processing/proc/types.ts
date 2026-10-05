@@ -88,8 +88,6 @@ export type FilterStep = {
 	filter(ctx: StepContext): string;
 	/** Pixel format the filter expects (conversion is added by the runner). */
 	format: 'yuv444p16le' | 'yuv444p' | 'gbrp16le' | 'rgb48le';
-	/** Output size when it differs from the input. */
-	outputSize?(ctx: StepContext): { width: number; height: number };
 };
 
 export type StepImpl = { kind: 'frames'; step: FrameStep } | { kind: 'filter'; step: FilterStep };

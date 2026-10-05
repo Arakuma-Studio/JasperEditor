@@ -10,11 +10,6 @@ function currentSwEnv(): SwEnv {
 	};
 }
 
-/** PROD, not desktop, and the browser supports service workers. */
-function shouldRegisterServiceWorker(env: SwEnv = currentSwEnv()): boolean {
-	return env.prod && !env.desktop && env.supported;
-}
-
 let waiting: ServiceWorker | null = null;
 let reloading = false;
 
@@ -30,7 +25,7 @@ function watch(reg: ServiceWorkerRegistration): void {
 }
 
 export function registerServiceWorker(env: SwEnv = currentSwEnv()): void {
-	if (!shouldRegisterServiceWorker(env)) return;
+	if (!env.prod || env.desktop || !env.supported) return;
 	navigator.serviceWorker.addEventListener('controllerchange', () => {
 		if (reloading || !waiting) return;
 		reloading = true;

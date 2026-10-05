@@ -325,7 +325,7 @@ function utf8Decode(b: Uint8Array): string | null {
 	return out;
 }
 
-export function toBase64(s: string): string {
+function toBase64(s: string): string {
 	const b = utf8Bytes(s);
 	let out = '';
 	let i = 0;
@@ -341,7 +341,7 @@ export function toBase64(s: string): string {
 	return out;
 }
 
-export function fromBase64(s: string): string | null {
+function fromBase64(s: string): string | null {
 	const clean = s.replace(/\s+/g, '');
 	if (clean.length % 4 !== 0 || /[^A-Za-z0-9+/=]/.test(clean)) return null;
 	const bytes = new Uint8Array((clean.length / 4) * 3);

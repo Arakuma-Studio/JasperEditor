@@ -1,7 +1,3 @@
-// M2 MCP tools for shapes (S11:SHP-008, ARCHITECTURE §20.7): add_shape (type, size, fill, stroke, radius,
-// position, at, duration, track) over clip.addShape — one transaction, one "Agent: …" History entry. Edits and
-// keyframes go through apply_commands (clip.update {shape}, param.set / keyframe.* on shape.* keys), described
-// in SHAPES_GUIDE. Owner: wp-m2-shapes.
 import { TrackRefSchema } from '@jasper/project';
 import { z } from 'zod';
 import { defineTool, EDIT, type ToolContext } from '../context.ts';

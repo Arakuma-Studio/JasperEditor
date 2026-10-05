@@ -145,16 +145,15 @@ describe('native export after keyframes.simplify (S09:TRK-023)', () => {
 				expect(report.after).toBeLessThan(report.before);
 				const after = mapsOf(document, seqId);
 				let worst = 0;
-				for (let f = 0; f < N; f++) worst = Math.max(worst, mapShift(before.maps[f]!, after.maps[f]!));
+				let fw = 0;
+				for (let f = 0; f < N; f++) {
+					const shift = mapShift(before.maps[f]!, after.maps[f]!);
+					if (shift > worst) fw = f;
+					worst = Math.max(worst, shift);
+				}
 				expect(worst).toBeLessThanOrEqual(tol * 1.02); // 17×17 grid: within the 9×9-verified bound (pins)
 				if (mode === 'motion') expect(worst).toBeLessThanOrEqual(tol + 1e-6);
 				// Pixels: warp a gradient texture (0.1 levels/px horizontally) on the frame with the largest shift.
-				let fw = 0;
-				let ws = -1;
-				for (let f = 0; f < N; f++) {
-					const s = mapShift(before.maps[f]!, after.maps[f]!);
-					if (s > ws) [ws, fw] = [s, f];
-				}
 				const sw = 1920;
 				const sh = 1080;
 				const src = new Uint8Array(sw * sh * 4);
