@@ -408,8 +408,9 @@ export const px = (ctx: FxPlanContext, sapphireSize: number, factor = 1) =>
  * A chunk of `#define` lines that must precede the library chunks testing them (`include: [definesChunk(…), …]`).
  * Named by content so equal define sets dedupe and programs cache per variant.
  */
-export function definesChunk(defines: string): GlslChunk {
+export function definesChunk(defines: string, deps: readonly GlslChunk[] = []): GlslChunk {
 	let h = 0x811c9dc5;
 	for (let i = 0; i < defines.length; i++) h = Math.imul(h ^ defines.charCodeAt(i), 0x01000193);
-	return { name: `sapphire-blur-sharpen/defines-${(h >>> 0).toString(16)}`, source: defines };
+	const name = `sapphire-blur-sharpen/defines-${(h >>> 0).toString(16)}${deps.map((d) => `+${d.name}`).join('')}`;
+	return { name, source: defines, deps };
 }

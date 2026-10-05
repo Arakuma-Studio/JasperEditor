@@ -37,7 +37,6 @@ const ctx: FxFrameContext = {
 };
 const plan = (s: EffectSpec, over: EffectParams = {}, c: FxFrameContext = ctx) =>
 	planGpuEffect(s, { id: 'fx', params: defaults(s, over) }, c, { width: c.width, height: c.height });
-const uniform = (p: ReturnType<typeof plan>, name: string) => p.uniforms.find((u) => u.name === name)?.value;
 
 const LABELS = [
 	'S_AdvancedDefocus',

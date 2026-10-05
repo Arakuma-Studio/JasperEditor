@@ -149,6 +149,14 @@ function irisDefines(c: IrisConfig): string {
 	return d.length ? `${d.join('\n')}\n` : '';
 }
 
+/**
+ * The `#define`s of an iris variant as a chunk to include before the iris chunk; it pulls in the noise library
+ * only when Lens Noise is used (smaller programs compile faster).
+ */
+function irisPrelude(c: IrisConfig, extra = ''): GlslChunk {
+	return definesChunk(irisDefines(c) + extra, (c.lensNoise ?? 0) > 0 ? [GLSL_NOISE] : []);
+}
+
 /** Uniforms of the iris functions (every pass that includes GLSL_SBS_IRIS needs them). */
 export function irisUniforms(c: IrisConfig): Record<string, FxUniformValue> {
 	const prism = c.prism ?? { sep: 0, thick: 1 };
@@ -180,7 +188,7 @@ export function irisUniforms(c: IrisConfig): Record<string, FxUniformValue> {
  */
 export const GLSL_SBS_IRIS: GlslChunk = {
 	name: 'sapphire-blur-sharpen/iris',
-	deps: [GLSL_SBS_COMMON, GLSL_NOISE, GLSL_COLOR],
+	deps: [GLSL_SBS_COMMON, GLSL_COLOR],
 	source: /* glsl */ `
 const float SBS_GOLDEN = 2.39996322972865;
 const float SBS_PI = 3.14159265358979;
@@ -392,7 +400,7 @@ export function gatherPass(plan: SbsPlan, g: GatherSpec): { output: string; scal
 	const radiusTiny = Math.max(rx, ry) < 0.35;
 	const pass: ShaderPass = {
 		output: g.output,
-		include: [definesChunk(irisDefines(g.iris) + (g.defines ?? '')), ...(g.include ?? []), GLSL_SBS_IRIS],
+		include: [irisPrelude(g.iris, g.defines), ...(g.include ?? []), GLSL_SBS_IRIS],
 		frag: `
 void main() {
 ${
@@ -419,5 +427,5 @@ ${
 
 /** The iris uniforms + defines for a final pass that draws Show Shape. */
 export function shapeViewPassParts(iris: IrisConfig) {
-	return { defines: definesChunk(irisDefines(iris)), uniforms: irisUniforms(iris) };
+	return { defines: irisPrelude(iris), uniforms: irisUniforms(iris) };
 }
