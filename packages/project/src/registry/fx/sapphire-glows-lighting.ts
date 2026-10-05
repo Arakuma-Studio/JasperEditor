@@ -19,7 +19,6 @@ import { GLSL_COLOR } from './glsl/color.ts';
 import { GLSL_HASH } from './glsl/hash.ts';
 import { GLSL_NOISE } from './glsl/noise.ts';
 import { fxParam } from './params.ts';
-import type { FxPlanContext, ShaderPass } from './shader.ts';
 import {
 	atmosphereParams,
 	COMBINE_GLOW,
@@ -33,6 +32,7 @@ import {
 	unitPx,
 } from './sapphire-glows-lighting/common.ts';
 import { GLSL_SGL_DISTANCE, jfaPasses } from './sapphire-glows-lighting/distance.ts';
+import { FLARE_LENSES, flareChunk, lensOf } from './sapphire-glows-lighting/flare.ts';
 import {
 	brightDownscale,
 	channelWeights,
@@ -45,8 +45,8 @@ import {
 	num,
 } from './sapphire-glows-lighting/glow.ts';
 import { rayPasses, rayUniforms } from './sapphire-glows-lighting/streak.ts';
-import { FLARE_LENSES, flareChunk, lensOf } from './sapphire-glows-lighting/flare.ts';
 import { trackPasses } from './sapphire-glows-lighting/track.ts';
+import type { FxPlanContext, ShaderPass } from './shader.ts';
 
 /** Every effect of the family is in Sapphire's "Sapphire Lighting" submenu (Boris FX docs, Premiere and AE). */
 const SGL_BIN = SAPPHIRE_BINS.lighting;
@@ -60,13 +60,12 @@ const GLOW_SLOPE = 0.7;
 /** Overall glow gain (Brightness 1 ≈ Sapphire's). */
 const GLOW_GAIN = 1.3;
 
-const vec3Of = (v: unknown, d: [number, number, number]): [number, number, number] =>
-	Array.isArray(v) && v.length >= 3 ? [num(v[0]), num(v[1]), num(v[2])] : d;
 const white: [number, number, number, number] = [1, 1, 1, 1];
 const black: [number, number, number, number] = [0, 0, 0, 1];
 
 /** Sigma (canvas px) of a Sapphire glow width. */
-const glowSigma = (width: unknown, ctx: FxPlanContext) => Math.max(0, num(width)) * K_GLOW * unitPx(ctx.width) * ctx.pxScale;
+const glowSigma = (width: unknown, ctx: FxPlanContext) =>
+	Math.max(0, num(width)) * K_GLOW * unitPx(ctx.width) * ctx.pxScale;
 
 /** Expand Borders (Sapphire, default off there): here default ON, since editor layers are often tighter than the
  * frame (titles, shapes) and a glow clipped at the layer box looks broken. Off = clip to the box (Edge Mode). */
@@ -84,7 +83,12 @@ function glowUniforms(
 	return { u_mode: combineMode(p.combine, labels, def), ...channelWeights(levels, slope, mult, GLOW_GAIN) };
 }
 
-const rgbMult = (p: EffectParams, r = 'widthRed', g = 'widthGreen', b = 'widthBlue'): [number, number, number] => [
+const rgbMult = (
+	p: EffectParams,
+	r = 'widthRed',
+	g = 'widthGreen',
+	b = 'widthBlue',
+): [number, number, number] => [
 	Math.max(0, num(p[r], 1)),
 	Math.max(0, num(p[g], 1)),
 	Math.max(0, num(p[b], 1)),
@@ -161,7 +165,10 @@ const thresholdParams = (def: number) => [
 	slider('threshold', 'Threshold', def, { softMax: 1 }),
 	fxParam.color('thresholdAddColor', 'Threshold Add Color', black),
 ];
-const widthXY = () => [slider('widthX', 'Width X', 1, { softMax: 4 }), slider('widthY', 'Width Y', 1, { softMax: 4 })];
+const widthXY = () => [
+	slider('widthX', 'Width X', 1, { softMax: 4 }),
+	slider('widthY', 'Width Y', 1, { softMax: 4 }),
+];
 const widthRGB = (r = 1, g = 1.2, b = 1.4) => [
 	slider('widthRed', 'Width Red', r, { softMax: 4 }),
 	slider('widthGreen', 'Width Green', g, { softMax: 4 }),
@@ -190,7 +197,13 @@ export const S_GLOW = defineShaderEffect({
 		...widthRGB(),
 		showChoice(),
 		combineChoice(COMBINE_GLOW, 'Screen'),
-		fxParam.choice('edgeMode', 'Edge Mode', ['transparent', 'reflect'], ['Transparent', 'Reflect'], 'reflect'),
+		fxParam.choice(
+			'edgeMode',
+			'Edge Mode',
+			['transparent', 'reflect'],
+			['Transparent', 'Reflect'],
+			'reflect',
+		),
 		...lightTail('Glow', { lightBackground: true }),
 		expandBorders(),
 		...atmosphereParams(),
@@ -244,7 +257,13 @@ export const S_GLOW_NOISE = defineShaderEffect({
 		fxParam.number('jitterFrames', 'Jitter Frames', 1, { min: 0, softMax: 30, step: 1 }),
 		showChoice(),
 		combineChoice(COMBINE_GLOW, 'Screen'),
-		fxParam.choice('edgeMode', 'Edge Mode', ['transparent', 'reflect'], ['Transparent', 'Reflect'], 'reflect'),
+		fxParam.choice(
+			'edgeMode',
+			'Edge Mode',
+			['transparent', 'reflect'],
+			['Transparent', 'Reflect'],
+			'reflect',
+		),
 		...lightTail('Glow', { lightBackground: true }),
 		expandBorders(),
 	],
@@ -505,11 +524,10 @@ const distReach = (len: number) => Math.max(4, len * 5);
 
 /** The distance-glow passes: threshold seeds → JFA → final (which reads `u_<field>`). */
 function distancePasses(reachPx: number, final: (field: string, down: number) => ShaderPass): ShaderPass[] {
-	const j = jfaPasses(
-		'sgl_maxc(sgl_thresholdSource(s).rgb) * 2.0',
-		reachPx,
-		[GLSL_SGL_FINISH, { name: 'sgl/thresholdSource', source: THRESHOLD_SOURCE, deps: [GLSL_SGL_FINISH] }],
-	);
+	const j = jfaPasses('sgl_maxc(sgl_thresholdSource(s).rgb) * 2.0', reachPx, [
+		GLSL_SGL_FINISH,
+		{ name: 'sgl/thresholdSource', source: THRESHOLD_SOURCE, deps: [GLSL_SGL_FINISH] },
+	]);
 	return [...j.passes, final(j.field, j.down)];
 }
 
@@ -551,9 +569,11 @@ export const S_GLOW_DIST = defineShaderEffect({
 			u_len: Math.max(1e-3, num(p.glowWidth) * unitPx(ctx.width)),
 		}),
 		passes: (p, ctx) =>
-			distancePasses(distReach(num(p.glowWidth) * unitPx(ctx.width) * Math.max(...rgbMult(p)) * ctx.pxScale), (f, down) => ({
-				include: DIST_INCLUDE,
-				frag: /* glsl */ `${THRESHOLD_SOURCE}
+			distancePasses(
+				distReach(num(p.glowWidth) * unitPx(ctx.width) * Math.max(...rgbMult(p)) * ctx.pxScale),
+				(f, down) => ({
+					include: DIST_INCLUDE,
+					frag: /* glsl */ `${THRESHOLD_SOURCE}
 void main() {
   vec4 src = texture(u_source, v_uv);
   ${SHOW_THRESHOLD}
@@ -563,7 +583,8 @@ void main() {
   vec3 light = g * seedCol * u_color.rgb * u_brightness;
   fragColor = sgl_finishLight(src, light, u_mode, u_affectAlpha, u_underSource, u_lightBackground, u_sourceOpacity, u_bgBrightness);
 }`,
-			})),
+				}),
+			),
 	},
 });
 
@@ -653,14 +674,23 @@ export const S_GLOW_RINGS = defineShaderEffect({
 	],
 	gpu: {
 		padding: (p, ctx) =>
-			1.6 * num(p.glowWidth) * unitPx(ctx.width) * Math.max(...rgbMult(p)) * Math.max(num(p.widthX, 1), num(p.widthY, 1)),
+			1.6 *
+			num(p.glowWidth) *
+			unitPx(ctx.width) *
+			Math.max(...rgbMult(p)) *
+			Math.max(num(p.widthX, 1), num(p.widthY, 1)),
 		uniforms: (p, ctx) => ({
 			u_mode: combineMode(p.combine, COMBINE_GLOW, 'Screen'),
 			u_len: Math.max(1e-3, num(p.glowWidth) * unitPx(ctx.width)),
 		}),
 		passes: (p, ctx) =>
 			distancePasses(
-				1.6 * num(p.glowWidth) * unitPx(ctx.width) * Math.max(...rgbMult(p)) * Math.max(num(p.widthX, 1), num(p.widthY, 1)) * ctx.pxScale,
+				1.6 *
+					num(p.glowWidth) *
+					unitPx(ctx.width) *
+					Math.max(...rgbMult(p)) *
+					Math.max(num(p.widthX, 1), num(p.widthY, 1)) *
+					ctx.pxScale,
 				(f, down) => ({
 					include: DIST_INCLUDE,
 					frag: /* glsl */ `${THRESHOLD_SOURCE}
@@ -771,7 +801,13 @@ export const S_ULTRA_GLOW = defineShaderEffect({
 		fxParam.toggle('edgeDetect', 'Edge Detect', false),
 		combineChoice(EDGE_COMBINE, 'Screen'),
 		slider('edgeSmooth', 'Edge Smooth', 0, { softMax: 1 }),
-		fxParam.choice('edgeMode', 'Edge Mode', ['transparent', 'reflect'], ['Transparent', 'Reflect'], 'reflect'),
+		fxParam.choice(
+			'edgeMode',
+			'Edge Mode',
+			['transparent', 'reflect'],
+			['Transparent', 'Reflect'],
+			'reflect',
+		),
 		fxParam.toggle('edgeFill', 'Edge Fill', true),
 		slider('edgeThin', 'Edge Thin', 0, { max: 1, softMax: 1 }),
 		fxParam.toggle('atmosphere', 'Atmosphere', false),
@@ -784,12 +820,20 @@ export const S_ULTRA_GLOW = defineShaderEffect({
 		slider('atmosphereSeed', 'Atmosphere Seed', 0.123, { softMax: 1 }),
 		...glowTail(),
 		fxParam.toggle('expandBorders', 'Expand Borders', true),
-	].map((ps) => (ps.name === 'combine' && ps.options?.includes('edgesonly') ? { ...ps, name: 'edgeCombine', label: 'Edge Combine' } : ps)),
+	].map((ps) =>
+		ps.name === 'combine' && ps.options?.includes('edgesonly')
+			? { ...ps, name: 'edgeCombine', label: 'Edge Combine' }
+			: ps,
+	),
 	gpu: {
 		padding: (p, ctx) =>
 			Math.max(
 				glowPadding(p, ctx, p.glowWidth),
-				3 * num(p.afterGlowWidth) * K_GLOW * unitPx(ctx.width) * (1 + 2 * Math.max(num(p.afterGlowStretchX), num(p.afterGlowStretchY))),
+				3 *
+					num(p.afterGlowWidth) *
+					K_GLOW *
+					unitPx(ctx.width) *
+					(1 + 2 * Math.max(num(p.afterGlowStretchX), num(p.afterGlowStretchY))),
 				4 * num(p.glowWidth) * K_GLOW * unitPx(ctx.width) * 2,
 			),
 		uniforms: (p) => ({
@@ -798,8 +842,6 @@ export const S_ULTRA_GLOW = defineShaderEffect({
 		}),
 		passes: (p, ctx) => {
 			const sigma = glowSigma(p.glowWidth, ctx) * Math.max(...rgbMult(p));
-			const sx = sigma * num(p.widthX, 1);
-			const sy = sigma * num(p.widthY, 1);
 			const aSig = glowSigma(p.afterGlowWidth, ctx);
 			const ax = aSig * (1 + 2 * num(p.afterGlowStretchX));
 			const ay = aSig * (1 + 2 * num(p.afterGlowStretchY));
@@ -879,7 +921,13 @@ void main() {
 });
 
 /** A long thin exponential streak along `dir` from cascade level `input` (UltraGlow trails). */
-function streakPass(output: string, input: string, dir: [number, number], len: number, down: number): ShaderPass {
+function streakPass(
+	output: string,
+	input: string,
+	dir: [number, number],
+	len: number,
+	down: number,
+): ShaderPass {
 	return {
 		output,
 		scale: 1 / down,
@@ -930,7 +978,13 @@ export const S_ZGLOW = defineShaderEffect({
 		slider('widthFar', 'Width Far', 0.4, { softMax: 2 }),
 		...thresholdParams(0.5),
 		fxParam.media('zBuffer', 'Z Buffer', ['image', 'video']),
-		fxParam.choice('zBufferType', 'Z Buffer Type', ['blackIsNear', 'whiteIsNear'], ['Black is Near', 'White is Near'], 'whiteIsNear'),
+		fxParam.choice(
+			'zBufferType',
+			'Z Buffer Type',
+			['blackIsNear', 'whiteIsNear'],
+			['Black is Near', 'White is Near'],
+			'whiteIsNear',
+		),
 		slider('zMin', 'Z Min', 0, { max: 1, softMax: 1 }),
 		slider('zMax', 'Z Max', 1, { max: 1, softMax: 1 }),
 		fxParam.number('layers', 'Layers', 5, { min: 2, max: 50, step: 1 }, { animatable: false }),
@@ -1084,11 +1138,26 @@ const RAY_ATMOSPHERE = /* glsl */ `
   light *= sgl_atmosphere(fx_layerNorm(), u_box.w / u_box.z, u_atmosphereAmp, u_atmosphereFreq, u_atmosphereDetail, 0.123, u_time * u_atmosphereSpeed);`;
 
 /** Ray passes: source (`raySrc`, at the Rays Res) → 3 radial passes (r1…r3) → optional Blur Rays (rb0). */
-function rayPipeline(p: EffectParams, ctx: FxPlanContext, sourceFrag: string, final: (rays: string) => ShaderPass): ShaderPass[] {
+function rayPipeline(
+	p: EffectParams,
+	ctx: FxPlanContext,
+	sourceFrag: string,
+	final: (rays: string) => ShaderPass,
+): ShaderPass[] {
 	const scale = resScale(p.raysRes);
 	const blur = num(p.blurRays) * unitPx(ctx.width) * ctx.pxScale * 0.5;
 	const rel = Array.isArray(p.blurRaysRel) ? p.blurRaysRel.map((x) => Math.max(0, num(x, 1))) : [1, 1];
-	const b = blur > 0.25 ? glowCascade({ input: 'r3', prefix: 'rb', sigmaX: blur * rel[0]!, sigmaY: blur * rel[1]!, levels: 1, inputDown: 1 / scale }) : null;
+	const b =
+		blur > 0.25
+			? glowCascade({
+					input: 'r3',
+					prefix: 'rb',
+					sigmaX: blur * rel[0]!,
+					sigmaY: blur * rel[1]!,
+					levels: 1,
+					inputDown: 1 / scale,
+				})
+			: null;
 	return [
 		{
 			output: 'raySrc',
@@ -1287,7 +1356,10 @@ export const S_STREAKS = defineShaderEffect({
 		padding: (p, ctx) => {
 			const s = Math.max(1 / Math.max(0.001, num(p.fromZDist, 1)), 1 / Math.max(0.001, num(p.toZDist, 0.8)));
 			const sh = (v: unknown) => (Array.isArray(v) ? Math.hypot(num(v[0]), num(v[1])) : 0) * ctx.width;
-			return Math.min(Math.max(ctx.width, ctx.height), Math.max(0, s - 1) * 0.6 * Math.max(ctx.width, ctx.height) + Math.max(sh(p.fromShift), sh(p.toShift)));
+			return Math.min(
+				Math.max(ctx.width, ctx.height),
+				Math.max(0, s - 1) * 0.6 * Math.max(ctx.width, ctx.height) + Math.max(sh(p.fromShift), sh(p.toShift)),
+			);
 		},
 		uniforms: (p, ctx) => {
 			// Similarity transforms (complex a = scale·e^{iθ}, shift b in layer px, y down) of From and To.
@@ -1425,9 +1497,16 @@ const flareLookParams = (): ParamSpec[] => [
 	// Occlusion: an optional clip (e.g. a matte of the foreground) hides the flare when it covers the hotspot.
 	fxParam.media('occlusion', 'Occlusion', ['image', 'video'], { group: 'occlusion' }),
 	slider('occlusionSoftness', 'Occlusion Softness', 0.0224, { softMax: 0.5 }, { group: 'occlusion' }),
-	fxParam.choice('occlusionFrom', 'Occlusion From', ['none', 'luma', 'alpha'], ['None', 'Luma', 'Alpha'], 'alpha', {
-		group: 'occlusion',
-	}),
+	fxParam.choice(
+		'occlusionFrom',
+		'Occlusion From',
+		['none', 'luma', 'alpha'],
+		['None', 'Luma', 'Alpha'],
+		'alpha',
+		{
+			group: 'occlusion',
+		},
+	),
 	fxParam.toggle('invertOcclusion', 'Invert Occlusion', false, { group: 'occlusion' }),
 	fxParam.toggle('useColor', 'Use Color', true, { group: 'occlusion' }),
 	slider('occlusionScaleBrightness', 'Occlusion Scale Brightness', 1, { softMax: 4 }, { group: 'occlusion' }),
@@ -1565,7 +1644,10 @@ export const S_LENS_FLARE_AUTO_TRACK = defineShaderEffect({
 			u_mode: combineMode(p.combine, FLARE_COMBINE, 'Screen'),
 			u_trackBlur: num(p.blurForAuto, 0.056) * unitPx(ctx.width) * ctx.pxScale,
 			u_shiftPx: Array.isArray(p.hotspotShift)
-				? [num(p.hotspotShift[0]) * ctx.width * ctx.pxScale, -num(p.hotspotShift[1]) * ctx.width * ctx.pxScale]
+				? [
+						num(p.hotspotShift[0]) * ctx.width * ctx.pxScale,
+						-num(p.hotspotShift[1]) * ctx.width * ctx.pxScale,
+					]
 				: [0, 0],
 		}),
 		passes: (p) => {
@@ -1695,9 +1777,45 @@ export const S_LIGHT_LEAK = defineShaderEffect({
 		slider('glowBrightness', 'Glow Brightness', 1, { softMax: 4 }),
 		slider('glowWidth', 'Glow Width', 0.4, { softMax: 2 }),
 		slider('glowThreshold', 'Glow Threshold', 0.8, { max: 1, softMax: 1 }),
-		...leakElementParams(1, { on: true, size: 2, relH: 2, bright: 0.2, center: [0, 0], outer: [1, 1, 0.15], mid: [1, 0.7, 0.3], inner: [1, 0.1, 0], amp: 2, freq: 1.5, boil: 1 }),
-		...leakElementParams(2, { on: false, size: 2, relH: 2, bright: 1, center: [-0.5, -0.5], outer: [0.25, 0.15, 0.1], mid: [0.7, 0.12, 0.22], inner: [1, 1, 1], amp: 1, freq: 3, boil: 0 }),
-		...leakElementParams(3, { on: false, size: 0.25, relH: 1, bright: 1, center: [0.5, 0.5], outer: [0.2, 0.2, 0], mid: [0.55, 0.4, 0], inner: [1, 0.7, 0], amp: 0.5, freq: 1, boil: 0 }),
+		...leakElementParams(1, {
+			on: true,
+			size: 2,
+			relH: 2,
+			bright: 0.2,
+			center: [0, 0],
+			outer: [1, 1, 0.15],
+			mid: [1, 0.7, 0.3],
+			inner: [1, 0.1, 0],
+			amp: 2,
+			freq: 1.5,
+			boil: 1,
+		}),
+		...leakElementParams(2, {
+			on: false,
+			size: 2,
+			relH: 2,
+			bright: 1,
+			center: [-0.5, -0.5],
+			outer: [0.25, 0.15, 0.1],
+			mid: [0.7, 0.12, 0.22],
+			inner: [1, 1, 1],
+			amp: 1,
+			freq: 3,
+			boil: 0,
+		}),
+		...leakElementParams(3, {
+			on: false,
+			size: 0.25,
+			relH: 1,
+			bright: 1,
+			center: [0.5, 0.5],
+			outer: [0.2, 0.2, 0],
+			mid: [0.55, 0.4, 0],
+			inner: [1, 0.7, 0],
+			amp: 0.5,
+			freq: 1,
+			boil: 0,
+		}),
 	],
 	gpu: {
 		uniforms: (p, ctx) => ({
@@ -1798,12 +1916,19 @@ const glintTail = (): ParamSpec[] => [
 function glintDirs(p: EffectParams, ctx: FxPlanContext, chanMax: number) {
 	const swap = p.swapDiagonals === true;
 	const sizes = [num(p.sizeX, 1), num(p.sizeY, 1), num(p.sizeDiag1, 0.75), num(p.sizeDiag2, 0.75)];
-	const bright = [num(p.brightnessX, 1), num(p.brightnessY, 1), num(p.brightnessDiag1, 1), num(p.brightnessDiag2, 1)];
+	const bright = [
+		num(p.brightnessX, 1),
+		num(p.brightnessY, 1),
+		num(p.brightnessDiag1, 1),
+		num(p.brightnessDiag2, 1),
+	];
 	if (swap) {
 		[sizes[2], sizes[3]] = [sizes[3]!, sizes[2]!];
 		[bright[2], bright[3]] = [bright[3]!, bright[2]!];
 	}
-	const len = sizes.map((s) => Math.max(0, s) * Math.max(0, num(p.size, 2)) * unitPx(ctx.width) * ctx.pxScale * chanMax);
+	const len = sizes.map(
+		(s) => Math.max(0, s) * Math.max(0, num(p.size, 2)) * unitPx(ctx.width) * ctx.pxScale * chanMax,
+	);
 	return { len, bright };
 }
 
@@ -1815,7 +1940,13 @@ const glintPadding = (p: EffectParams, ctx: FxPlanContext, chanMax: number) =>
  * over 1/16 of the ray (`gs0…gs3`) → one pass summing 16 coarse taps per direction and side with the ray falloff
  * (`gl`, per-channel profiles from `profile` GLSL: `vec3 rayW(float k)`, k = 0…1 along the ray) → final.
  */
-function glintPasses(p: EffectParams, ctx: FxPlanContext, chanMax: number, profile: string, final: ShaderPass): ShaderPass[] {
+function glintPasses(
+	p: EffectParams,
+	ctx: FxPlanContext,
+	chanMax: number,
+	profile: string,
+	final: ShaderPass,
+): ShaderPass[] {
 	const { len } = glintDirs(p, ctx, chanMax);
 	const blur = num(p.thresholdBlur, 0.0896) * unitPx(ctx.width) * ctx.pxScale * 0.5;
 	const perp = num(p.blurGlint) * unitPx(ctx.width) * ctx.pxScale * 0.5;
@@ -1850,7 +1981,10 @@ void main() {
 			output: `gs${i}`,
 			scale: 0.5,
 			format: 'rgba16f',
-			uniforms: { u_gd: [Math.cos(a) * span, Math.sin(a) * span], u_gp: [-Math.sin(a) * perp, Math.cos(a) * perp] },
+			uniforms: {
+				u_gd: [Math.cos(a) * span, Math.sin(a) * span],
+				u_gp: [-Math.sin(a) * perp, Math.cos(a) * perp],
+			},
 			frag: /* glsl */ `
 void main() {
   vec2 d = u_gd / u_canvasSize;
@@ -1935,7 +2069,10 @@ export const S_GLINT = defineShaderEffect({
 		uniforms: (p, ctx) => {
 			const m = rgbMult(p, 'sizeRed', 'sizeGreen', 'sizeBlue');
 			const top = Math.max(1e-3, ...m);
-			return { ...glintUniforms(p, ctx), u_chan: m.map((x) => Math.max(1e-3, x / top)) as [number, number, number] };
+			return {
+				...glintUniforms(p, ctx),
+				u_chan: m.map((x) => Math.max(1e-3, x / top)) as [number, number, number],
+			};
 		},
 		passes: (p, ctx) =>
 			glintPasses(
@@ -1960,7 +2097,9 @@ export const S_GLINT_RAINBOW = defineShaderEffect({
 	keywords: ['glint', 'rainbow', 'star', 'sparkle', 'prism', 'sapphire'],
 	expensive: true,
 	params: [
-		...glintCommon().map((ps) => (ps.name === 'hueShift' ? { ...ps, range: { softMin: -1, softMax: 1, step: 0.001 } } : ps)),
+		...glintCommon().map((ps) =>
+			ps.name === 'hueShift' ? { ...ps, range: { softMin: -1, softMax: 1, step: 0.001 } } : ps,
+		),
 		fxParam.number('shiftOut', 'Shift Out', 1, { softMin: -2, softMax: 4, step: 0.001 }),
 		fxParam.number('shiftRed', 'Shift Red', 0.3, { softMin: -2, softMax: 2, step: 0.001 }),
 		fxParam.number('shiftBlue', 'Shift Blue', -0.3, { softMin: -2, softMax: 2, step: 0.001 }),
@@ -1974,7 +2113,11 @@ export const S_GLINT_RAINBOW = defineShaderEffect({
 			const at = (s: number) => clamp(0.18 * (so + s), 0, 0.95);
 			return {
 				...glintUniforms(p, ctx),
-				u_band: [at(num(p.shiftRed, 0.3)), at((num(p.shiftRed, 0.3) + num(p.shiftBlue, -0.3)) / 2), at(num(p.shiftBlue, -0.3))],
+				u_band: [
+					at(num(p.shiftRed, 0.3)),
+					at((num(p.shiftRed, 0.3) + num(p.shiftBlue, -0.3)) / 2),
+					at(num(p.shiftBlue, -0.3)),
+				],
 			};
 		},
 		passes: (p, ctx) =>
@@ -2014,7 +2157,13 @@ export const S_GLARE = defineShaderEffect({
 	keywords: ['glare', 'rainbow', 'rays', 'halo', 'sparkle', 'sapphire'],
 	expensive: true,
 	params: [
-		fxParam.choice('style', 'Style', GLARE_STYLES.map((s) => s.replace(/_(\w)/g, (_, c: string) => c.toUpperCase())), GLARE_STYLES, 'rainbowRays'),
+		fxParam.choice(
+			'style',
+			'Style',
+			GLARE_STYLES.map((s) => s.replace(/_(\w)/g, (_, c: string) => c.toUpperCase())),
+			GLARE_STYLES,
+			'rainbowRays',
+		),
 		fxParam.toggle('convolve', 'Convolve', false),
 		slider('brightness', 'Brightness', 1, { softMax: 8 }),
 		fxParam.color('scaleColors', 'Scale Colors', white),
@@ -2034,14 +2183,27 @@ export const S_GLARE = defineShaderEffect({
 		expandBorders(),
 	],
 	gpu: {
-		padding: (p, ctx) => num(p.size, 0.8) * unitPx(ctx.width) * Math.max(1, num(p.raysLength, 1)) * Math.max(1, num(p.relHeight, 1)),
+		padding: (p, ctx) =>
+			num(p.size, 0.8) *
+			unitPx(ctx.width) *
+			Math.max(1, num(p.raysLength, 1)) *
+			Math.max(1, num(p.relHeight, 1)),
 		uniforms: (p, ctx) => ({
 			u_reach: num(p.size, 0.8) * unitPx(ctx.width) * ctx.pxScale,
 		}),
 		passes: (p, ctx) => {
 			// Hotspot grid: cells small enough that the glare reach spans ≤ 6 cells (or 3 with Convolve off and big glares).
-			const reach = num(p.size, 0.8) * unitPx(ctx.width) * ctx.pxScale * Math.max(1, num(p.raysLength, 1)) * Math.max(1, num(p.relHeight, 1));
-			const cell = clamp(2 ** Math.ceil(Math.log2(Math.max(8, reach / (p.convolve === true ? 6 : 4)))), 8, 256);
+			const reach =
+				num(p.size, 0.8) *
+				unitPx(ctx.width) *
+				ctx.pxScale *
+				Math.max(1, num(p.raysLength, 1)) *
+				Math.max(1, num(p.relHeight, 1));
+			const cell = clamp(
+				2 ** Math.ceil(Math.log2(Math.max(8, reach / (p.convolve === true ? 6 : 4)))),
+				8,
+				256,
+			);
 			const res = resScale(p.glareRes);
 			const blur = num(p.thresholdBlur, 0.0896) * unitPx(ctx.width) * ctx.pxScale * 0.5;
 			const passes: ShaderPass[] = [
@@ -2244,7 +2406,13 @@ export const S_BOKEH_LIGHTS = defineShaderEffect({
 		fxParam.vec2('shiftStart', 'Shift Start', [0, 0], { step: 0.001 }),
 		slider('useSourceColor', 'Use Source Color', 0.25, { max: 1, softMax: 1 }),
 		slider('smoothSourceColor', 'Smooth Source Color', 0.4, { max: 1, softMax: 1 }),
-		fxParam.choice('shape', 'Shape', BOKEH_SHAPES, ['Circle', '3 sides', '4 sides', '5 sides', '6 sides', '7 sides', '8 sides', '9 sides', '10 sides'], '7'),
+		fxParam.choice(
+			'shape',
+			'Shape',
+			BOKEH_SHAPES,
+			['Circle', '3 sides', '4 sides', '5 sides', '6 sides', '7 sides', '8 sides', '9 sides', '10 sides'],
+			'7',
+		),
 		fxParam.number('roundness', 'Roundness', 0.3, { softMin: -1, softMax: 2, step: 0.01 }),
 		fxParam.angle('rotate', 'Rotate', 0),
 		fxParam.number('bokeh', 'Bokeh', 0.5, { softMin: -1, softMax: 2, step: 0.01 }),
@@ -2382,7 +2550,14 @@ export const S_DROP_SHADOW = defineShaderEffect({
 		passes: (p, ctx) => {
 			const sigma = num(p.shadowBlur, 0.1) * unitPx(ctx.width) * ctx.pxScale * 0.5;
 			const dB = brightDownscale(sigma, 1);
-			const c = glowCascade({ input: 'sa', prefix: 'sh', sigmaX: sigma, sigmaY: sigma, levels: 1, inputDown: dB });
+			const c = glowCascade({
+				input: 'sa',
+				prefix: 'sh',
+				sigmaX: sigma,
+				sigmaY: sigma,
+				levels: 1,
+				inputDown: dB,
+			});
 			return [
 				{
 					output: 'sa',
@@ -2424,7 +2599,13 @@ export const S_FLASHBULBS = defineShaderEffect({
 		'Random camera flashes going off, like photographers in a crowd: glare-shaped bursts at random places and frames, held for Hold Frames and then decaying.',
 	keywords: ['flash', 'paparazzi', 'camera flash', 'strobe', 'sapphire'],
 	params: [
-		fxParam.choice('flashStyle', 'Flash Style', FLASH_STYLES, ['Star 4', 'Star 6', 'Starburst', 'Round', 'Rainbow Glare', 'Cross'], 'star4'),
+		fxParam.choice(
+			'flashStyle',
+			'Flash Style',
+			FLASH_STYLES,
+			['Star 4', 'Star 6', 'Starburst', 'Round', 'Rainbow Glare', 'Cross'],
+			'star4',
+		),
 		slider('brightness', 'Brightness', 5, { softMax: 20 }),
 		slider('varyBrightness', 'Vary Brightness', 0.2, { max: 1, softMax: 1 }),
 		fxParam.number('flashes', 'Flashes', 2, { min: 0, max: 16, step: 1 }),
@@ -2602,7 +2783,10 @@ void main() {
 const SPOT_COMBINE = ['Lights Only', 'Mult', 'Add', 'Screen', 'Overlay'] as const;
 
 /** One S_SpotLight light. */
-function spotParams(n: number, d: { on: boolean; pos: [number, number]; aim: [number, number] }): ParamSpec[] {
+function spotParams(
+	n: number,
+	d: { on: boolean; pos: [number, number]; aim: [number, number] },
+): ParamSpec[] {
 	const g = { group: `light${n}` };
 	return [
 		fxParam.toggle(`light${n}Enable`, `Light${n} Enable`, d.on, g),
@@ -2611,7 +2795,7 @@ function spotParams(n: number, d: { on: boolean; pos: [number, number]; aim: [nu
 		fxParam.point(`light${n}`, `Light${n}`, sapphirePoint(d.pos[0], d.pos[1]), g),
 		slider(`light${n}Z`, `Light${n} Z`, 0.5, { min: 0.028, softMax: 4 }, g),
 		fxParam.point(`aim${n}`, `Aim${n}`, sapphirePoint(d.aim[0], d.aim[1]), g),
-		fxParam.number(`spreadAngle${n}`, `Spread Angle${n}`, 45, { min: 0, max: 360, step: 0.1 }, { ...g, }),
+		fxParam.number(`spreadAngle${n}`, `Spread Angle${n}`, 45, { min: 0, max: 360, step: 0.1 }, { ...g }),
 		slider(`softness${n}`, `Softness${n}`, 0.3, { min: 0.01, max: 1, softMax: 1 }, g),
 		slider(`falloffPower${n}`, `Falloff Power${n}`, 0, { softMax: 4 }, g),
 	];

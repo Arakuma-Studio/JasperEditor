@@ -89,7 +89,7 @@ function paintNight(ctx: CanvasRenderingContext2D, b: Box) {
 	ctx.fillText('JASPER', x + w * 0.05, y + h * 0.93);
 	// colour bar
 	const bar = ctx.createLinearGradient(x + w * 0.62, 0, x + w * 0.98, 0);
-	['#f00', '#ff0', '#0f0', '#0ff', '#00f', '#f0f'].forEach((c, i) => bar.addColorStop(i / 5, c));
+	for (const [i, c] of ['#f00', '#ff0', '#0f0', '#0ff', '#00f', '#f0f'].entries()) bar.addColorStop(i / 5, c);
 	ctx.fillStyle = bar;
 	ctx.fillRect(x + w * 0.62, y + h * 0.88, w * 0.36, h * 0.05);
 }
@@ -146,7 +146,17 @@ function depthMap(w: number, h: number) {
 	});
 }
 
-const SCENES = { night: paintNight, logo: paintLogo, day: paintDay, black: () => {} } as const;
+/** Opaque black with one white dot at (70 %, 30 %) of the box (tracking, glow falloff). */
+function paintDot(ctx: CanvasRenderingContext2D, b: Box) {
+	ctx.fillStyle = '#000';
+	ctx.fillRect(b.x, b.y, b.w, b.h);
+	ctx.fillStyle = '#fff';
+	ctx.beginPath();
+	ctx.arc(b.x + b.w * 0.7, b.y + b.h * 0.3, Math.max(2, b.h * 0.04), 0, Math.PI * 2);
+	ctx.fill();
+}
+
+const SCENES = { night: paintNight, logo: paintLogo, day: paintDay, dot: paintDot, black: () => {} } as const;
 type Scene = keyof typeof SCENES;
 
 // ---------------------------------------------------------------- running effects
@@ -243,7 +253,13 @@ function boxImage(r: ReturnType<typeof run>, withPadding = false): HTMLCanvasEle
 	});
 }
 
-type Shot = { id: string; params?: Record<string, unknown>; opts?: RunOpts; label?: string; padded?: boolean };
+type Shot = {
+	id: string;
+	params?: Record<string, unknown>;
+	opts?: RunOpts;
+	label?: string;
+	padded?: boolean;
+};
 
 const api = {
 	ids: () => FAMILY.map((s) => ({ id: s.id, label: s.label, bin: s.bin })),

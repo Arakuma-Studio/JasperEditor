@@ -25,7 +25,14 @@ export function levelDownscale(sx: number, sy: number): number {
 }
 
 /** One separable blur pass (direction `axis`) from `input` (downscale dIn) to an output at downscale dOut. */
-function blurPass(input: string, output: string, axis: 0 | 1, sigma: number, dIn: number, dOut: number): ShaderPass {
+function blurPass(
+	input: string,
+	output: string,
+	axis: 0 | 1,
+	sigma: number,
+	dIn: number,
+	dOut: number,
+): ShaderPass {
 	const sIn = sigma / dIn; // sigma in input texels
 	const stepTexels = Math.max(1, (3 * sIn) / 48);
 	const ratio = dOut / dIn;

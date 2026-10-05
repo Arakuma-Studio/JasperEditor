@@ -76,7 +76,13 @@ void main() {
 	for (let k = 0; k < n; k++) {
 		passes.push(
 			{ output: `tB${k}`, scale: 1 / 64, format: 'rgba16f', filter: 'nearest', frag: reduceFrag('tA', k) },
-			{ output: `tC${k}`, scale: 1 / 1000, format: 'rgba16f', filter: 'nearest', frag: reduceFrag(`tB${k}`, k) },
+			{
+				output: `tC${k}`,
+				scale: 1 / 1000,
+				format: 'rgba16f',
+				filter: 'nearest',
+				frag: reduceFrag(`tB${k}`, k),
+			},
 			{
 				output: `tD${k}`,
 				scale: 1 / 1000,

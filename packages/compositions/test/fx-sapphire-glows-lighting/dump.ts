@@ -7,7 +7,15 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { openSglPage, sgl } from './browser.ts';
 
-type Shot = { id?: string; name?: string; scene?: string; sheet?: unknown[]; cols?: number; tw?: number; th?: number };
+type Shot = {
+	id?: string;
+	name?: string;
+	scene?: string;
+	sheet?: unknown[];
+	cols?: number;
+	tw?: number;
+	th?: number;
+};
 
 const [outDir = '/tmp/sgl', json = '[]'] = process.argv.slice(2);
 mkdirSync(outDir, { recursive: true });

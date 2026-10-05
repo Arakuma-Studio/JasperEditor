@@ -6,11 +6,12 @@
 // (`SAPPHIRE_UNIT`), so a look is resolution independent (Glow Width 0.4 on 1920 px ≈ a 77 px glow sigma). Sapphire
 // screen points ([0 0] = frame centre, y up, in frame widths) become fx `point` params normalised to the layer box
 // ([0,0] top-left, y down) with `sapphirePoint`, assuming a 16:9 frame for the defaults.
-import type { ParamSpec } from '../../effects.ts';
+
 import type { Vec2 } from '../../../schema/common.ts';
+import type { ParamSpec } from '../../effects.ts';
+import { GLSL_NOISE } from '../glsl/noise.ts';
 import { fxParam } from '../params.ts';
 import type { GlslChunk } from '../shader.ts';
-import { GLSL_NOISE } from '../glsl/noise.ts';
 
 /** Layer pixels per Sapphire width unit, for a layer of `width` px. */
 export const SAPPHIRE_UNIT = 0.1;
@@ -87,8 +88,7 @@ export function lightTail(
 ): ParamSpec[] {
 	const out: ParamSpec[] = [];
 	if (o.affectAlpha !== false) out.push(slider('affectAlpha', 'Affect Alpha', 1, { softMax: 2 }));
-	if (o.fromAlpha !== false)
-		out.push(slider('fromAlpha', `${what} From Alpha`, 0, { max: 1, softMax: 1 }));
+	if (o.fromAlpha !== false) out.push(slider('fromAlpha', `${what} From Alpha`, 0, { max: 1, softMax: 1 }));
 	if (o.under !== false) out.push(slider('underSource', `${what} Under Source`, 0, { max: 1, softMax: 1 }));
 	if (o.lightBackground) out.push(slider('lightBackground', 'Light Background', 0, { max: 1, softMax: 1 }));
 	if (o.opacity !== false) {
@@ -101,7 +101,13 @@ export function lightTail(
 /** Sapphire "Edge Mode" for glows: Reflect (default, glow clipped to the frame like Sapphire without Expand
  * Borders) or Transparent (the glow spills outside the layer box). `u_edgeMode` 0 = Transparent, 1 = Reflect. */
 export function glowEdgeMode(): ParamSpec {
-	return fxParam.choice('edgeMode', 'Edge Mode', ['transparent', 'reflect'], ['Transparent', 'Reflect'], 'reflect');
+	return fxParam.choice(
+		'edgeMode',
+		'Edge Mode',
+		['transparent', 'reflect'],
+		['Transparent', 'Reflect'],
+		'reflect',
+	);
 }
 
 /** Sapphire's Atmosphere set (dusty air modulating the light). */
