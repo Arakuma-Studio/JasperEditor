@@ -215,7 +215,7 @@ export function filmDamageSignals(
 		const jump = (stepNoise1(ctx.seed, 14, tt * freq) * 2 - 1) * num(p.shakeJumpiness, 1);
 		const jitter = (stepNoise1(ctx.seed, 15, f) * 2 - 1) * num(p.shakeRandom, 0.1);
 		const wander = smoothNoise1(ctx.seed, 16, tt * freq) * 0.5;
-		return on * num(p.shakeAmplitude) * 0.1 * (jump + jitter + wander);
+		return on * num(p.shakeAmplitude) * 0.1 * (jump + jitter + wander) || 0; // no −0
 	};
 	const shake = shakeAt(ctx.frame);
 	return { flicker: 1 + flick, defocus, shake, shakeVel: shake - shakeAt(ctx.frame - 1) };
