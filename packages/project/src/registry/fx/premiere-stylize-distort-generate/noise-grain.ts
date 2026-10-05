@@ -10,6 +10,7 @@ import { defineShaderEffect } from '../define.ts';
 import { GLSL_COLOR } from '../glsl/color.ts';
 import { GLSL_HASH } from '../glsl/hash.ts';
 import { fxParam } from '../params.ts';
+import { gaussianBlurPasses } from '../passes.ts';
 import type { GlslChunk } from '../shader.ts';
 import { num } from './common.ts';
 
@@ -43,6 +44,20 @@ vec4 psdg_median49(sampler2D t, vec2 uv, vec2 texel, float stride) {
 
 const medianStride = (radius: number) => Math.max(radius, 0) / 3;
 
+/**
+ * Large radii: the 7×7 taps are `stride` px apart, so the picture is prefiltered (Gaussian, σ = stride / 2, at half
+ * resolution when the stride exceeds 2 px) to keep the sparse taps from aliasing — the result is the soft,
+ * blob-like "painted" look of a large median. Small strides: a copy (σ 0).
+ */
+function medianPrefilter(stride: number) {
+	return gaussianBlurPasses({
+		input: 'source',
+		output: 'pre',
+		sigma: stride > 1 ? stride * 0.5 : 0,
+		scale: stride > 2 ? 0.5 : 1,
+	});
+}
+
 export const DUST_AND_SCRATCHES = defineShaderEffect({
 	id: 'jasper.dust-and-scratches',
 	label: 'Dust & Scratches',
@@ -59,7 +74,8 @@ export const DUST_AND_SCRATCHES = defineShaderEffect({
 	gpu: {
 		timeInvariant: true,
 		uniforms: (p, ctx) => ({ u_stride: medianStride(num(p.radius, 1) * ctx.pxScale) }),
-		passes: [
+		passes: (p, ctx) => [
+			...medianPrefilter(medianStride(num(p.radius, 1) * ctx.pxScale)),
 			{
 				include: [GLSL_PSDG_MEDIAN],
 				frag: /* glsl */ `
@@ -67,7 +83,7 @@ void main() {
   vec4 src = texture(u_source, v_uv);
   if (u_stride <= 0.0) { fragColor = src; return; }
   // The median works on straight colour (alpha separately) so semi-transparent edges keep their colour.
-  vec4 m = psdg_median49(u_source, v_uv, u_texel, u_stride);
+  vec4 m = psdg_median49(u_pre, v_uv, 1.0 / u_canvasSize, u_stride);
   vec3 sc = src.a > 0.0 ? src.rgb / src.a : vec3(0.0);
   vec3 mc = m.a > 0.0 ? m.rgb / m.a : sc;
   float t = u_threshold / 255.0;
@@ -96,14 +112,15 @@ export const MEDIAN = defineShaderEffect({
 	gpu: {
 		timeInvariant: true,
 		uniforms: (p, ctx) => ({ u_stride: medianStride(num(p.radius) * ctx.pxScale) }),
-		passes: [
+		passes: (p, ctx) => [
+			...medianPrefilter(medianStride(num(p.radius) * ctx.pxScale)),
 			{
 				include: [GLSL_PSDG_MEDIAN],
 				frag: /* glsl */ `
 void main() {
   vec4 src = texture(u_source, v_uv);
   if (u_stride <= 0.0) { fragColor = src; return; }
-  vec4 m = psdg_median49(u_source, v_uv, u_texel, u_stride);
+  vec4 m = psdg_median49(u_pre, v_uv, 1.0 / u_canvasSize, u_stride);
   vec3 mc = m.a > 0.0 ? m.rgb / m.a : (src.a > 0.0 ? src.rgb / src.a : vec3(0.0));
   float a = u_operateOnAlpha ? m.a : src.a;
   fragColor = vec4(clamp(mc, 0.0, 1.0) * a, a);
@@ -183,11 +200,35 @@ export const NOISE_ALPHA = defineShaderEffect({
 			'uniformRandom',
 		),
 		fxParam.percent('amount', 'Amount', 0),
-		fxParam.choice('originalAlpha', 'Original Alpha', ['add', 'clamp', 'scale', 'edges'], ['Add', 'Clamp', 'Scale', 'Edges'], 'clamp'),
-		fxParam.choice('overflow', 'Overflow', ['clip', 'wrapBack', 'wrap'], ['Clip', 'Wrap Back', 'Wrap'], 'clip'),
-		fxParam.number('randomSeed', 'Random Seed', 0, { min: -100000, max: 100000, softMin: -360, softMax: 360, step: 0.1 }),
+		fxParam.choice(
+			'originalAlpha',
+			'Original Alpha',
+			['add', 'clamp', 'scale', 'edges'],
+			['Add', 'Clamp', 'Scale', 'Edges'],
+			'clamp',
+		),
+		fxParam.choice(
+			'overflow',
+			'Overflow',
+			['clip', 'wrapBack', 'wrap'],
+			['Clip', 'Wrap Back', 'Wrap'],
+			'clip',
+		),
+		fxParam.number('randomSeed', 'Random Seed', 0, {
+			min: -100000,
+			max: 100000,
+			softMin: -360,
+			softMax: 360,
+			step: 0.1,
+		}),
 		fxParam.toggle('cycleNoise', 'Cycle Noise', false, { group: 'Noise Options (Animation)' }),
-		fxParam.number('cycle', 'Cycle (in Revolutions)', 1, { min: 1, max: 1000, softMax: 50, step: 1 }, { group: 'Noise Options (Animation)' }),
+		fxParam.number(
+			'cycle',
+			'Cycle (in Revolutions)',
+			1,
+			{ min: 1, max: 1000, softMax: 50, step: 1 },
+			{ group: 'Noise Options (Animation)' },
+		),
 	],
 	gpu: {
 		timeInvariant: true,
@@ -259,7 +300,13 @@ void main() {
 }`;
 
 const hlsParams = () => [
-	fxParam.choice('noise', 'Noise', ['uniform', 'squared', 'grain'], ['Uniform', 'Squared', 'Grain'], 'uniform'),
+	fxParam.choice(
+		'noise',
+		'Noise',
+		['uniform', 'squared', 'grain'],
+		['Uniform', 'Squared', 'Grain'],
+		'uniform',
+	),
 	fxParam.percent('hue', 'Hue', 0),
 	fxParam.percent('lightness', 'Lightness', 0),
 	fxParam.percent('saturation', 'Saturation', 0),
@@ -275,7 +322,13 @@ export const NOISE_HLS = defineShaderEffect({
 	keywords: ['grain', 'film', 'color noise', 'texture'],
 	params: [
 		...hlsParams(),
-		fxParam.number('noisePhase', 'Noise Phase', 0, { min: -100000, max: 100000, softMin: -360, softMax: 360, step: 0.1 }),
+		fxParam.number('noisePhase', 'Noise Phase', 0, {
+			min: -100000,
+			max: 100000,
+			softMin: -360,
+			softMax: 360,
+			step: 0.1,
+		}),
 	],
 	gpu: {
 		timeInvariant: true,
@@ -287,7 +340,8 @@ export const NOISE_HLS_AUTO = defineShaderEffect({
 	id: 'jasper.noise-hls-auto',
 	label: 'Noise HLS Auto',
 	category: 'Noise & Grain',
-	description: 'Noise HLS that animates by itself: hue, lightness and saturation noise changing at Noise Animation Speed.',
+	description:
+		'Noise HLS that animates by itself: hue, lightness and saturation noise changing at Noise Animation Speed.',
 	keywords: ['grain', 'film', 'animated noise', 'texture'],
 	params: [
 		...hlsParams(),
