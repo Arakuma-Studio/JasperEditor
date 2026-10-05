@@ -272,6 +272,7 @@ The SPA always uses **relative URLs** (`/api/...`). On startup `apps/web/src/run
   mg/<renderKey>/{master.mov, preview.webm, poster.png}
   renders/<jobId>/output.<ext>
   remotion/bundle/                           # cached Remotion serveUrl (dev); packaged builds ship a prebuilt bundle
+  presets/effect-presets.json                # user effect preset library (S03:FX-030, wp-m3-presets; /api/effect-presets)
   tmp/                                       # wiped on start
 ```
 

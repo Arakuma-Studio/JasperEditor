@@ -98,8 +98,10 @@ function referencedIds(commands: readonly unknown[], extra: readonly string[] = 
 	const walk = (v: unknown) => {
 		if (looksLikeId(v)) out.add(v);
 		else if (Array.isArray(v)) v.forEach(walk);
-		// A clipboard payload's ids belong to the copied content, not to entities the transaction touches.
-		else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) if (k !== 'payload') walk(x);
+		// A clipboard payload's ids belong to the copied content, an effect preset's to the library (S03:FX-030):
+		// neither are entities the transaction touches.
+		else if (v && typeof v === 'object')
+			for (const [k, x] of Object.entries(v)) if (k !== 'payload' && k !== 'preset') walk(x);
 	};
 	commands.forEach(walk);
 	return out;

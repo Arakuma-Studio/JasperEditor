@@ -9,6 +9,7 @@ import { effectHandlers } from './handlers/effect.ts';
 import { keyframeHandlers } from './handlers/keyframe.ts';
 import { m2Handlers } from './handlers/m2.ts';
 import { paramHandlers } from './handlers/param.ts';
+import { PRESET_OWNER, presetHandlers } from './handlers/preset.ts';
 import { processHandlers } from './handlers/process.ts';
 import { projectHandlers } from './handlers/project.ts';
 import { sequenceHandlers } from './handlers/sequence.ts';
@@ -31,7 +32,9 @@ export type CommandOwner =
 	| 'wp-m2-shapes'
 	| 'wp-m3-trackui'
 	// Clipboard (S01 §20)
-	| 'wp-clipboard';
+	| 'wp-clipboard'
+	// Effect presets (S03:FX-030)
+	| 'wp-m3-presets';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -131,6 +134,7 @@ const LABELS: Record<CommandType, string> = {
 	'effect.paste': 'Paste Effects',
 	'keyframe.paste': 'Paste Keyframes',
 	'project.pasteItems': 'Paste',
+	'effect.applyPreset': 'Apply Preset',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -148,6 +152,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[simplifyHandlers, 'wp-m3-trackui'],
 	[shapeHandlers, SHAPE_OWNER],
 	[clipboardHandlers, CLIPBOARD_OWNER],
+	[presetHandlers, PRESET_OWNER],
 	[m2Handlers, 'M2'],
 ];
 

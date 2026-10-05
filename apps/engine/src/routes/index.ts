@@ -5,6 +5,7 @@ import animeRoutes from './anime.ts';
 import cacheRoutes from './cache.ts';
 import capabilitiesRoutes from './capabilities.ts';
 import colorRoutes from './color.ts';
+import effectPresetRoutes from './effect-presets.ts';
 import eventsRoutes from './events.ts';
 import exportsRoutes from './exports.ts';
 import fontsRoutes from './fonts.ts';
@@ -35,6 +36,8 @@ const ROUTE_PLUGINS = [
 	mcpRoutes,
 	// M3 (wp-m3-cachegc): Media Cache routes over the core cache registry (after agent: its relay marks open projects).
 	cacheRoutes,
+	// M3 (wp-m3-presets, S03:FX-030): the user effect preset library.
+	effectPresetRoutes,
 	// M2 (ARCHITECTURE §19.8): one plugin per work package.
 	colorRoutes,
 	processingRoutes,

@@ -3,6 +3,7 @@ export * from './agent.ts';
 export * from './cache.ts';
 export * from './capabilities.ts';
 export * from './common.ts';
+export * from './effect-presets.ts';
 export * from './events.ts';
 export * from './exports.ts';
 export * from './fonts.ts';

@@ -5,9 +5,12 @@
 // plus a text/plain fallback. Drop targets (Timeline clips — WP-2B, Program monitor layers — WP-2C,
 // Effect Controls — WP-2D) read it with `readEffectDragPayload(dt)` and apply it with
 // `applyEffectToClips(session, effectId, clipIds, index?)`, which commits ONE transaction for N clips.
+// M3 (wp-m3-presets, S03:FX-030): an effect preset travels the same way as the effect ref `preset:<presetId>`
+// (`writePresetDragPayload`); `clipsAccepting` / `applyEffectToClips` resolve it to `effect.applyPreset`.
 import type { Command, EffectRegistry, TransactionResult } from '@jasper/project';
 import { effectBadges, isKnownClipKind, kindCapabilities } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
+import { applyPresetToClips, clipsAcceptingPreset, presetOfRef, presetRef } from './presets/apply.ts';
 
 type EffectDragPayload = { type: 'jasper/effect'; effectId: string };
 
@@ -20,6 +23,11 @@ export function writeEffectDragPayload(dt: DataTransfer, effectId: string): void
 	dt.setData(JASPER_EFFECT_MIME, JSON.stringify(payload));
 	dt.setData('text/plain', `jasper-effect:${effectId}`);
 	dt.effectAllowed = 'copy';
+}
+
+/** Dragging an effect preset from Effects ▸ Presets: the effect ref `preset:<presetId>`. */
+export function writePresetDragPayload(dt: DataTransfer, presetId: string): void {
+	writeEffectDragPayload(dt, presetRef(presetId));
 }
 
 /** True while dragging an effect (types are readable during dragover, data is not). */
@@ -49,6 +57,8 @@ export function clipsAccepting(
 	effectId: string,
 	clipIds: readonly string[],
 ): string[] {
+	const preset = presetOfRef(effectId);
+	if (preset) return clipsAcceptingPreset(session, preset, clipIds);
 	const spec = session.ctx.registries.effects.get(effectId);
 	if (!spec) return [];
 	const doc = session.getCommitted();
@@ -74,6 +84,8 @@ export function applyEffectToClips(
 	clipIds: readonly string[],
 	index?: number,
 ): TransactionResult | null {
+	const preset = presetOfRef(effectId);
+	if (preset) return applyPresetToClips(session, preset, clipIds, index);
 	const targets = clipsAccepting(session, effectId, clipIds);
 	if (targets.length === 0) return null;
 	const spec = session.ctx.registries.effects.get(effectId)!;

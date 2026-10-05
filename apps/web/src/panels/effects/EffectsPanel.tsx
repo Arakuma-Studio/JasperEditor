@@ -1,6 +1,7 @@
 // Effects panel (S05:EFX-001…003, R-PUI §12): search, "Real-time" / "Native" badge filters, a tree of
-// bins (Video Effects by category, Audio Effects), drag an effect onto a timeline clip or the Effect
+// bins (Presets, Video Effects by category, Audio Effects), drag an effect onto a timeline clip or the Effect
 // Controls panel, or double-click to apply it to the selected clips (one undo step for N clips).
+// M3 (wp-m3-presets, S03:FX-030): the Presets bin (built-in and user effect presets) is presets/PresetsBin.tsx.
 import { type EffectSpec, effectBadges, type TransitionSpec } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useSessionOrNull, useSessionState, useStoreSelector } from '@jasper/session/react';
@@ -18,6 +19,8 @@ import {
 	writeEffectDragPayload,
 	writeTransitionDragPayload,
 } from './drag.ts';
+import { usePresetLibrary } from './presets/hooks.ts';
+import { PresetsBin, presetTree } from './presets/PresetsBin.tsx';
 import { setDefaultTransition, transitionDefaults } from './transition-prefs.ts';
 import { applyTransitionToClips, transitionTree } from './transitions.ts';
 
@@ -73,6 +76,12 @@ function EffectsBody({ session }: { session: EditorSession }) {
 	);
 	// S10:TUI-020: transition bins (native-capable and real-time, so the badge filters keep them).
 	const transitionBins = useMemo(() => transitionTree(query), [query]);
+	const presetLib = usePresetLibrary();
+	const presetFilter = useMemo(() => ({ query, realtime, native }), [query, realtime, native]);
+	const presetHits = useMemo(
+		() => presetTree(presetLib, registry, presetFilter).matches,
+		[presetLib, registry, presetFilter],
+	);
 	const defaults = useStoreSelector(transitionDefaults(), (s) => s);
 	const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
 	const applyTransition = (t: TransitionSpec) => {
@@ -141,9 +150,21 @@ function EffectsBody({ session }: { session: EditorSession }) {
 				<Badge on={native} label="native (ffmpeg)" short="N" onClick={() => setNative(!native)} />
 			</div>
 			<div className="min-h-0 flex-1 overflow-y-auto" role="tree" aria-label="Effects">
-				{tree.length === 0 ? (
+				{tree.length === 0 && transitionBins.length === 0 && presetHits === 0 ? (
 					<p className="px-2 py-1 text-pr-small text-pr-muted">No effects match.</p>
 				) : null}
+				<PresetsBin
+					session={session}
+					lib={presetLib}
+					filter={presetFilter}
+					closed={closed}
+					onToggle={toggle}
+					focused={focused}
+					onFocus={setFocused}
+					onStatus={setStatus}
+					onMenu={(x, y, items) => setMenu({ x, y, items })}
+					selectedClips={selected}
+				/>
 				{tree.map((bin) => (
 					<div key={bin.medium}>
 						<TreeFolder
