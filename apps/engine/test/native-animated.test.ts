@@ -221,6 +221,10 @@ const lum = (img: Img, x: number, y: number) => {
 	return (img.rgb[o]! + img.rgb[o + 1]! + img.rgb[o + 2]!) / 3;
 };
 
+/** Share of a pixel covered by the bright side of an edge between `plate` and `white`. */
+const coverage = (v: number, plate: number, white: number) =>
+	Math.min(1, Math.max(0, (v - plate) / (white - plate)));
+
 /**
  * Sub-pixel edge crossings of the (white-framed) card against the dark plate along scanlines, one straight edge
  * of the resolved quad at a time; lines fitted through them intersect in the measured corners.
@@ -244,33 +248,18 @@ function measureCorners(img: Img, quad: readonly Vec2[], plate: number): Vec2[] 
 				const dir = cx > px ? 1 : -1;
 				const x0 = Math.round(px) - 6 * dir;
 				const white = lum(img, Math.round(px) + 6 * dir, y);
-				const mid = (plate + white) / 2;
-				for (let k = 0; k < 12; k++) {
-					const xa = x0 + k * dir;
-					const va = lum(img, xa, y);
-					const vb = lum(img, xa + dir, y);
-					if (va < mid && vb >= mid) {
-						const s = (mid - va) / (vb - va);
-						pts.push([xa + 0.5 + s * dir, y + 0.5]);
-						break;
-					}
-				}
+				// Edge = window start + the summed dark share of its pixels (exact for any ramp width and phase).
+				let dark = 0;
+				for (let k = 0; k < 12; k++) dark += 1 - coverage(lum(img, x0 + k * dir, y), plate, white);
+				pts.push([(dir > 0 ? x0 : x0 + 1) + dir * dark, y + 0.5]);
 			} else {
 				const x = Math.floor(px);
 				const dir = cy > py ? 1 : -1;
 				const y0 = Math.round(py) - 6 * dir;
 				const white = lum(img, x, Math.round(py) + 6 * dir);
-				const mid = (plate + white) / 2;
-				for (let k = 0; k < 12; k++) {
-					const ya = y0 + k * dir;
-					const va = lum(img, x, ya);
-					const vb = lum(img, x, ya + dir);
-					if (va < mid && vb >= mid) {
-						const s = (mid - va) / (vb - va);
-						pts.push([x + 0.5, ya + 0.5 + s * dir]);
-						break;
-					}
-				}
+				let dark = 0;
+				for (let k = 0; k < 12; k++) dark += 1 - coverage(lum(img, x, y0 + k * dir), plate, white);
+				pts.push([x + 0.5, (dir > 0 ? y0 : y0 + 1) + dir * dark]);
 			}
 		}
 		expect(pts.length).toBeGreaterThan(8);
@@ -296,6 +285,16 @@ function measureCorners(img: Img, quad: readonly Vec2[], plate: number): Vec2[] 
 		corners.push([l1.p[0] + t * l1.d[0], l1.p[1] + t * l1.d[1]]);
 	}
 	return corners;
+}
+
+/** Largest distance between measured and evaluated corners, over the corners inside the frame (others are extrapolated). */
+function cornerError(corners: readonly Vec2[], quad: readonly Vec2[]): number {
+	let max = 0;
+	for (const [i, q] of quad.entries()) {
+		if (q[0] < 4 || q[1] < 4 || q[0] > W - 4 || q[1] > H - 4) continue;
+		max = Math.max(max, Math.hypot(corners[i]![0] - q[0], corners[i]![1] - q[1]));
+	}
+	return max;
 }
 
 /** Max colour error over pixels whose card point is ≥ 3 px away from every card boundary. */
@@ -524,7 +523,7 @@ describe('planner: keyframed layers and levels are native', () => {
 });
 
 describe('native export of keyframed Motion and Opacity (S03:ENG-030/032)', () => {
-	it('every sampled frame matches the evaluated layer: corners ≤ 1 px, colour ≤ 4/255; LGPL filters only', async () => {
+	it('every sampled frame matches the evaluated layer: corners ≤ 0.1 px (sub-pixel), colour ≤ 8/255; LGPL filters only', async () => {
 		const { d, clip } = await cardDoc(app);
 		const settings = proresSettings(d.seqId);
 		const planned = await coreServices(app).exports.plan({
@@ -563,12 +562,12 @@ describe('native export of keyframed Motion and Opacity (S03:ENG-030/032)', () =
 			const layer = resolveSceneAt(planned.snapshot, f).find((l) => l.clip.clipId === clip)!;
 			const quad = layer.props.quad;
 			const corners = measureCorners(img, quad, PLATE[0]);
-			const err = Math.max(...corners.map((c, i) => Math.hypot(c[0] - quad[i]![0], c[1] - quad[i]![1])));
+			const err = cornerError(corners, quad);
 			const col = colourError(img, layerMapOf(layer.props), layer.props.opacity / 100);
 			worst = Math.max(worst, err);
 			worstColour = Math.max(worstColour, col.max);
 			expect(col.count).toBeGreaterThan(1000);
-			expect(err, `frame ${f} corners`).toBeLessThanOrEqual(1);
+			expect(err, `frame ${f} corners`).toBeLessThanOrEqual(0.1);
 			// ProRes 4444 is lossy: DCT ringing next to saturated edges reaches a few code values.
 			expect(col.max, `frame ${f} colour ${col.where}`).toBeLessThanOrEqual(8);
 			expect(col.mean, `frame ${f} mean colour error`).toBeLessThan(1);
@@ -578,7 +577,7 @@ describe('native export of keyframed Motion and Opacity (S03:ENG-030/032)', () =
 		);
 	}, 300_000);
 
-	it('keyframed crop edges with keyframed non-uniform scale: the visible rect follows the evaluated quad', async () => {
+	it('keyframed crop edges with keyframed non-uniform scale: the visible rect follows the evaluated quad (≤ 0.1 px)', async () => {
 		const d = new DocBuilder();
 		d.tx([
 			{ type: 'clip.addSolid', at: 0, duration: 48, track: 'V1', color: [20 / 255, 20 / 255, 20 / 255, 1] },
@@ -616,9 +615,9 @@ describe('native export of keyframed Motion and Opacity (S03:ENG-030/032)', () =
 			const layer = resolveSceneAt(planned.snapshot, f).find((l) => l.clip.clipId === s)!;
 			const quad = layer.props.quad;
 			const corners = measureCorners(img, quad, PLATE[0]);
-			const err = Math.max(...corners.map((c, i) => Math.hypot(c[0] - quad[i]![0], c[1] - quad[i]![1])));
+			const err = cornerError(corners, quad);
 			worst = Math.max(worst, err);
-			expect(err, `frame ${f} corners`).toBeLessThanOrEqual(1);
+			expect(err, `frame ${f} corners`).toBeLessThanOrEqual(0.1);
 		}
 		report(`[anim] crop + non-uniform scale: worst corner error ${worst.toFixed(3)} px`);
 	}, 300_000);
@@ -714,7 +713,7 @@ describe('sub-pixel motion (no whole-pixel stepping)', () => {
 			let sq = 0;
 			for (let k = 0; k < 60; k++) {
 				const f = p.frames[k]!;
-				drawLayer(src, p.srcW, f.cw, f.ch, dst, p.outW, p.outH, f.inv, f.opacity, f.rect);
+				drawLayer(src, p.srcW, f.cw, f.ch, f.clip, dst, p.outW, p.outH, f.inv, f.opacity, f.rect);
 				// Left edge on the frame's row 500: c − Σ coverage left of c (c well inside the layer).
 				const row = 500 - p.offsets.y[k]!;
 				const c = 160 - p.offsets.x[k]!;
@@ -929,12 +928,7 @@ describe.runIf(REMOTION)('native vs Remotion render of the keyframed fixture (RE
 			out.ssim.push(ssim(native, remotion, f));
 			out.share.push(within(a[f]!, b[f]!, 8));
 			const quad = resolveSceneAt(planned.snapshot, f).find((l) => l.clip.clipId === clip)!.props.quad;
-			const err = (img: Img) =>
-				Math.max(
-					...measureCorners(img, quad, PLATE[0]).map((c, i) =>
-						Math.hypot(c[0] - quad[i]![0], c[1] - quad[i]![1]),
-					),
-				);
+			const err = (img: Img) => cornerError(measureCorners(img, quad, PLATE[0]), quad);
 			out.native.push(err(a[f]!));
 			out.remotion.push(err(b[f]!));
 		}

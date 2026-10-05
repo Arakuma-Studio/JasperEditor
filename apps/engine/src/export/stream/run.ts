@@ -88,6 +88,7 @@ export async function streamLayer(
 						opacity: spec.opacity,
 						cw: spec.cw,
 						ch: spec.ch,
+						clip: spec.clip,
 					})
 					.then(
 						() => {

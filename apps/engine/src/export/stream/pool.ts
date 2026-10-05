@@ -15,6 +15,8 @@ export type LayerTask = {
 	/** The picture's size in the slot (top-left). */
 	cw: number;
 	ch: number;
+	/** Visible part of the picture (picture px). */
+	clip: readonly number[];
 };
 
 const WORKER_SOURCE = `
@@ -26,7 +28,7 @@ const slots = workerData.slots.map((s) => ({
 }));
 parentPort.on('message', (m) => {
 	const s = slots[m.slot];
-	drawLayer(s.src, m.sw, m.cw, m.ch, s.dst, m.dw, m.dh, m.inv, m.opacity, m.rect);
+	drawLayer(s.src, m.sw, m.cw, m.ch, m.clip, s.dst, m.dw, m.dh, m.inv, m.opacity, m.rect);
 	parentPort.postMessage(m.slot);
 });
 `;
@@ -88,6 +90,7 @@ export class LayerPool {
 				opacity: task.opacity,
 				cw: task.cw,
 				ch: task.ch,
+				clip: task.clip,
 				sw: this.size.sw,
 				dw: this.size.dw,
 				dh: this.size.dh,

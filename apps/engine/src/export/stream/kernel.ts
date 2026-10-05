@@ -1,6 +1,7 @@
 // The sub-pixel layer kernel (wave1b native-subpixel, S03:DM-012): draws one decoded RGBA picture (straight alpha)
 // through an affine map into a small RGBA frame, the way a browser composites a transformed layer box:
-// - the picture's rectangle gets anti-aliased edges from geometric coverage (signed distance of the pixel centre to
+// - the picture's visible rectangle (the picture, or its crop, S01:FX-003) gets anti-aliased edges from geometric
+//   coverage (signed distance of the pixel centre to
 //   each edge, in output pixels; ½ px ramp on each side, product at corners), so its edges move continuously at any
 //   scale (bilinear "texels outside are transparent" edges step under minification and wobble under magnification);
 // - the colour is sampled bilinearly at pixel centres with clamp-to-edge, on premultiplied colour;
@@ -12,13 +13,15 @@
 /**
  * Draws `src` (`sw` px wide rows, picture in its top-left `cw×ch`) into `dst` (`dw×dh` RGBA). `inv` maps output
  * pixel coordinates to picture coordinates (affine, row-major 2×3: u = m0·x + m1·y + m2, v = m3·x + m4·y + m5).
- * Only `rect` (`[x0, y0, x1, y1)`) is drawn; the rest of `dst` is cleared. `inv` null = a transparent frame.
+ * `clip` (`[u0, v0, u1, v1]`, picture px, fractions allowed) is the visible part. Only `rect` (`[x0, y0, x1, y1)`,
+ * output px) is drawn; the rest of `dst` is cleared. `inv` null = a transparent frame.
  */
 export function drawLayer(
 	src: Uint8Array,
 	sw: number,
 	cw: number,
 	ch: number,
+	clip: ArrayLike<number>,
 	dst: Uint8Array,
 	dw: number,
 	dh: number,
@@ -28,6 +31,16 @@ export function drawLayer(
 ): void {
 	dst.fill(0);
 	if (!inv || !rect || !(opacity > 0) || cw < 1 || ch < 1) return;
+	const cu0 = Math.max(0, clip[0]!);
+	const cv0 = Math.max(0, clip[1]!);
+	const cu1 = Math.min(cw, clip[2]!);
+	const cv1 = Math.min(ch, clip[3]!);
+	if (cu1 <= cu0 || cv1 <= cv0) return;
+	// Sample positions stay on the visible texels (clamp to edge).
+	const lu = Math.min(cu0 + 0.5, (cu0 + cu1) / 2);
+	const hu = Math.max(cu1 - 0.5, (cu0 + cu1) / 2);
+	const lv = Math.min(cv0 + 0.5, (cv0 + cv1) / 2);
+	const hv = Math.max(cv1 - 0.5, (cv0 + cv1) / 2);
 	const x0 = Math.max(0, Math.floor(rect[0]!));
 	const y0 = Math.max(0, Math.floor(rect[1]!));
 	const x1 = Math.min(dw, Math.ceil(rect[2]!));
@@ -39,7 +52,7 @@ export function drawLayer(
 	const m3 = inv[3]!;
 	const m4 = inv[4]!;
 	const m5 = inv[5]!;
-	// Output px per picture px across each picture axis: distances to the edges u = 0, cw and v = 0, ch.
+	// Output px per picture px across each picture axis: distances to the visible rectangle's edges.
 	const gu = 1 / Math.hypot(m0, m1);
 	const gv = 1 / Math.hypot(m3, m4);
 	const op = Math.min(1, opacity);
@@ -57,16 +70,16 @@ export function drawLayer(
 		let o = (y * dw + x0) * 4;
 		for (let x = x0; x < x1; x++, u += m0, v += m3, o += 4) {
 			// Coverage of the picture rectangle (½ px ramps across each edge, in output px).
-			let cu = 0.5 + Math.min(u, cw - u) * gu;
+			let cu = 0.5 + Math.min(u - cu0, cu1 - u) * gu;
 			if (cu <= 0) continue;
-			let cv = 0.5 + Math.min(v, ch - v) * gv;
+			let cv = 0.5 + Math.min(v - cv0, cv1 - v) * gv;
 			if (cv <= 0) continue;
 			if (cu > 1) cu = 1;
 			if (cv > 1) cv = 1;
 			const cover = cu * cv * op;
 			// Bilinear, clamp to edge, texel centres at i + ½.
-			let su = u - 0.5;
-			let sv = v - 0.5;
+			let su = (u < lu ? lu : u > hu ? hu : u) - 0.5;
+			let sv = (v < lv ? lv : v > hv ? hv : v) - 0.5;
 			if (su < 0) su = 0;
 			else if (su > maxU) su = maxU;
 			if (sv < 0) sv = 0;

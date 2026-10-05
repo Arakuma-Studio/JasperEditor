@@ -266,6 +266,8 @@ type LayerSourceOptions = {
 	addInput(args: string[]): number;
 	/** Label prefix for sub-graphs of the chain (unique in the filtergraph; default `src`). */
 	label?: string;
+	/** Leave the crop out: the sub-pixel layer kernel clips to it with anti-aliased edges (stream/plan.ts). */
+	skipCrop?: boolean;
 };
 
 type LayerSourceChain = {
@@ -403,6 +405,7 @@ export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 			}
 			continue;
 		}
+		if (fx.effectId === 'jasper.crop' && o.skipCrop) continue;
 		if (fx.effectId === 'jasper.crop') {
 			const applied = c.effects[index];
 			if (applied && n > 1 && CROP_EDGES.some((e) => isAnimated(applied.params[e]))) {
@@ -586,6 +589,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 					return decInputs.length - 1;
 				},
 				label,
+				skipCrop: true,
 			});
 			const plan = planStreamLayer({ clip: c, f0, f1, R0, fps, props, chain, inputs: decInputs, W, H });
 			const fd = 3 + streams.length;

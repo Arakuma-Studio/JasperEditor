@@ -16,7 +16,9 @@
 // - the output frame is the layer's bounds over the whole clip in size, placed per frame at an integer offset
 //   from a piecewise-linear fit (`overlay` x/y expressions; offsets recomputed from the fit so JS and ffmpeg agree).
 import {
+	type Animatable,
 	clipContentTime,
+	evaluate,
 	invertMat3,
 	type Mat3,
 	multiplyMat3,
@@ -53,11 +55,34 @@ export type StreamFrame = {
 	opacity: number;
 	cw: number;
 	ch: number;
+	/** Visible part of the picture (crop, S01:FX-003), picture px `[u0, v0, u1, v1]`. */
+	clip: [number, number, number, number];
 };
 
-/** Pre-scale level (octaves, ⅛ steps) of a drawn scale: the largest level whose size is still ≥ the drawn one. */
-const level = (s: number) =>
-	s >= 1 || s <= 0 ? 0 : Math.min(12, Math.floor(8 * Math.log2(1 / s) + 1e-9) / 8);
+const CROP = 'jasper.crop';
+const CROP_EDGES = ['left', 'top', 'right', 'bottom'] as const;
+
+/** The crop as fractions of the box at content time `t` (`[l, t, r, b]`), or null without an enabled crop. */
+function cropAt(c: RenderVisualClip, t: number): [number, number, number, number] | null {
+	const fx = c.effects.find((e) => e.enabled && e.effectId === CROP);
+	if (!fx) return null;
+	const v = CROP_EDGES.map((e) => {
+		const a = fx.params[e] as Animatable<number> | undefined;
+		return Math.min(100, Math.max(0, a ? Number(evaluate(a, t)) : 0)) / 100;
+	}) as [number, number, number, number];
+	// The composition crops first, then flips (S03:RND-010 stage order): an odd number of flips mirrors the crop.
+	const flips = (id: string) => c.effects.filter((e) => e.enabled && e.effectId === id).length % 2 === 1;
+	if (flips('jasper.flip-horizontal')) [v[0], v[2]] = [v[2], v[0]];
+	if (flips('jasper.flip-vertical')) [v[1], v[3]] = [v[3], v[1]];
+	return v;
+}
+
+/**
+ * Pre-scale level (octaves) of a drawn scale, like a mipmap: the largest power-of-two reduction whose size is still
+ * at least the drawn one, so the kernel minifies by less than 2× (from the full picture down to half size, as the
+ * browser samples it).
+ */
+const level = (s: number) => (s >= 0.5 || s <= 0 ? 0 : Math.min(12, Math.floor(Math.log2(1 / s) + 1e-9)));
 const isInt = (x: number) => Math.abs(x - Math.round(x)) < 1e-6;
 
 /**
@@ -79,6 +104,14 @@ export function needsSubpixel(
 		t.rotation.keyframes.length > 0
 	)
 		return true;
+	// A crop with keyframes, or with edges between pixels (the filter path rounds them).
+	const crop = c.effects.find((e) => e.enabled && e.effectId === CROP);
+	if (crop) {
+		const anims = CROP_EDGES.map((e) => crop.params[e] as Animatable<number> | undefined);
+		if (anims.some((a) => a && a.keyframes.length > 0)) return true;
+		const [l, tp, r, b] = anims.map((a) => (a ? Number(a.value) : 0) / 100);
+		if (![l! * box.bw, r! * box.bw, tp! * box.bh, b! * box.bh].every(isInt)) return true;
+	}
 	const tv = props.transform!;
 	const sx = (tv.uniformScale ? tv.scale : tv.scaleWidth) / 100;
 	const sy = tv.scale / 100;
@@ -128,10 +161,13 @@ export function planStreamLayer(o: StreamPlanOptions): StreamLayerPlan {
 	// ---- samples: layer map, mip levels, opacity
 	const maps: (Mat3 | null)[] = [];
 	const opac = new Float64Array(n);
+	const crops: ([number, number, number, number] | null)[] = [];
 	const lw = new Float64Array(n);
 	const lh = new Float64Array(n);
 	for (let k = 0; k < n; k++) {
-		const p = k === 0 ? o.props : resolveLayerProps(c, clipContentTime(c, f0 + k, fps));
+		const time = clipContentTime(c, f0 + k, fps);
+		const p = k === 0 ? o.props : resolveLayerProps(c, time);
+		crops.push(cropAt(c, time));
 		const m = p.matrix;
 		const sx = Math.hypot(m.a, m.b) * kx;
 		const sy = Math.hypot(m.c, m.d) * ky;
@@ -167,8 +203,17 @@ export function planStreamLayer(o: StreamPlanOptions): StreamLayerPlan {
 	const y0 = new Float64Array(n);
 	const x1 = new Float64Array(n);
 	const y1 = new Float64Array(n);
+	const clips: [number, number, number, number][] = [];
 	for (let k = 0; k < n; k++) {
-		const map = maps[k];
+		const cr = crops[k] ?? [0, 0, 0, 0];
+		const clipRect: [number, number, number, number] = [
+			cr[0] * pw[k]!,
+			cr[1] * ph[k]!,
+			(1 - cr[2]) * pw[k]!,
+			(1 - cr[3]) * ph[k]!,
+		];
+		clips.push(clipRect);
+		const map = clipRect[2] > clipRect[0] && clipRect[3] > clipRect[1] ? maps[k] : null;
 		if (!map) {
 			fwd.push(null);
 			x0[k] = Number.NaN;
@@ -182,10 +227,10 @@ export function planStreamLayer(o: StreamPlanOptions): StreamLayerPlan {
 		let bx = Number.NEGATIVE_INFINITY;
 		let by = Number.NEGATIVE_INFINITY;
 		for (const [u, v] of [
-			[0, 0],
-			[pw[k]!, 0],
-			[pw[k]!, ph[k]!],
-			[0, ph[k]!],
+			[clipRect[0], clipRect[1]],
+			[clipRect[2], clipRect[1]],
+			[clipRect[2], clipRect[3]],
+			[clipRect[0], clipRect[3]],
 		] as const) {
 			const x = f[0] * u + f[1] * v + f[2];
 			const y = f[3] * u + f[4] * v + f[5];
@@ -236,7 +281,7 @@ export function planStreamLayer(o: StreamPlanOptions): StreamLayerPlan {
 	for (let k = 0; k < n; k++) {
 		const f = fwd[k];
 		if (!f || !(opac[k]! > 0)) {
-			frames.push({ inv: null, rect: null, opacity: 0, cw: pw[k]!, ch: ph[k]! });
+			frames.push({ inv: null, rect: null, opacity: 0, cw: pw[k]!, ch: ph[k]!, clip: clips[k]! });
 			continue;
 		}
 		const X = ox.ints[k]!;
@@ -251,8 +296,15 @@ export function planStreamLayer(o: StreamPlanOptions): StreamLayerPlan {
 		];
 		frames.push(
 			inv && rect[2] > rect[0] && rect[3] > rect[1]
-				? { inv: Array.from(inv).slice(0, 6), rect, opacity: opac[k]!, cw: pw[k]!, ch: ph[k]! }
-				: { inv: null, rect: null, opacity: 0, cw: pw[k]!, ch: ph[k]! },
+				? {
+						inv: Array.from(inv).slice(0, 6),
+						rect,
+						opacity: opac[k]!,
+						cw: pw[k]!,
+						ch: ph[k]!,
+						clip: clips[k]!,
+					}
+				: { inv: null, rect: null, opacity: 0, cw: pw[k]!, ch: ph[k]!, clip: clips[k]! },
 		);
 	}
 	const mainT = frameIndex(fps, f0 - o.R0);
