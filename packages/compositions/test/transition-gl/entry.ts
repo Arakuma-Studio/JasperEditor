@@ -14,6 +14,7 @@ import {
 	type TrSide,
 } from '@jasper/project';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
+import { TEST_TRANSITIONS } from '../transition-examples.ts';
 
 type Px = [number, number, number, number];
 const W = 64;
@@ -136,7 +137,7 @@ void main() {
 	},
 
 	catalogue() {
-		const specs = TRANSITION_SPECS.filter((s) => s.gpu);
+		const specs = [...TRANSITION_SPECS.filter((s) => s.gpu), ...TEST_TRANSITIONS];
 		const errors: string[] = [];
 		const a = () => full(solid('#c84'));
 		const b = () => full(solid('#48c'));
@@ -166,7 +167,7 @@ void main() {
 	/** Ends of a two-sided transition: start ≈ A, end ≈ B (Start 0 % / End 100 % around the linear ramp). */
 	ends() {
 		const out: Record<string, { first: Px; last: Px }> = {};
-		for (const s of TRANSITION_SPECS.filter((x) => x.gpu)) {
+		for (const s of [...TRANSITION_SPECS.filter((x) => x.gpu), ...TEST_TRANSITIONS]) {
 			const p = defaults(s, { startPercent: 0, endPercent: 0 });
 			const q = defaults(s, { startPercent: 100, endPercent: 100 });
 			const first = run(s, p, { frame: 0, duration: 10, out: full(solid('red')), in: full(solid('blue')) });
