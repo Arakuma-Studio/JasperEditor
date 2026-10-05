@@ -623,7 +623,8 @@ export function validateGpuEffect(spec: EffectSpec): string[] {
 	const names = new Set<string>();
 	for (const p of spec.params) {
 		if (!NAME_RE.test(p.name)) at(`param "${p.name}": names are letters and digits, starting with a letter`);
-		if (RESERVED.has(`u_${p.name}`) && !isSeedParam(p)) at(`param "${p.name}": u_${p.name} is a built-in uniform`);
+		if (RESERVED.has(`u_${p.name}`) && !isSeedParam(p))
+			at(`param "${p.name}": u_${p.name} is a built-in uniform`);
 		if (names.has(p.name)) at(`param "${p.name}" is declared twice`);
 		names.add(p.name);
 		if (p.type === 'enum' && !(p.options ?? []).includes(String(p.default)))
