@@ -4,11 +4,11 @@
 import { describe, expect, it } from 'vitest';
 import { defaultEffectRegistry, type EffectSpec, FX_FAMILIES, validateGpuEffect } from '../src/index.ts';
 import { PSDG_BLEND_MODES } from '../src/registry/fx/premiere-stylize-distort-generate/common.ts';
+import { waveWarpPadding } from '../src/registry/fx/premiere-stylize-distort-generate/distort.ts';
 import {
 	lensFlarePadding,
 	lightningPadding,
 } from '../src/registry/fx/premiere-stylize-distort-generate/generate-render.ts';
-import { waveWarpPadding } from '../src/registry/fx/premiere-stylize-distort-generate/distort.ts';
 import { strobeOn } from '../src/registry/fx/premiere-stylize-distort-generate/stylize-2.ts';
 import {
 	echoIntensity,
@@ -18,8 +18,8 @@ import {
 import {
 	encodeText,
 	formatTimecode,
-	parseTimecode,
 	PSDG_TEXT_MAX,
+	parseTimecode,
 	timecodeText,
 } from '../src/registry/fx/premiere-stylize-distort-generate/video.ts';
 import { PREMIERE_STYLIZE_DISTORT_GENERATE_EFFECTS as FAMILY } from '../src/registry/fx/premiere-stylize-distort-generate.ts';
@@ -103,7 +103,9 @@ const EXPECTED: Record<string, [string, string][]> = {
 
 describe('premiere-stylize-distort-generate family', () => {
 	it('has every Premiere effect of the brief, in its bin, registered and valid', () => {
-		const all = Object.entries(EXPECTED).flatMap(([cat, list]) => list.map(([label, id]) => ({ cat, label, id })));
+		const all = Object.entries(EXPECTED).flatMap(([cat, list]) =>
+			list.map(([label, id]) => ({ cat, label, id })),
+		);
 		expect(FAMILY.map((s) => s.id).sort()).toEqual(all.map((e) => e.id).sort());
 		for (const e of all) {
 			const s = byId(e.id);
@@ -119,7 +121,14 @@ describe('premiere-stylize-distort-generate family', () => {
 	});
 
 	it('does not duplicate the existing Premiere effects', () => {
-		const existing = ['Crop', 'Gaussian Blur', 'Brightness & Contrast', 'Hue/Saturation', 'Black & White', 'Corner Pin'];
+		const existing = [
+			'Crop',
+			'Gaussian Blur',
+			'Brightness & Contrast',
+			'Hue/Saturation',
+			'Black & White',
+			'Corner Pin',
+		];
 		for (const s of FAMILY) expect(existing).not.toContain(s.label);
 	});
 
@@ -143,8 +152,17 @@ describe('premiere-stylize-distort-generate family', () => {
 			'Phase',
 			'Antialiasing (Best Quality)',
 		]);
-		expect(labels('jasper.lens-flare')).toEqual(['Flare Center', 'Flare Brightness', 'Lens Type', 'Blend With Original']);
-		expect(byId('jasper.lens-flare').params[2]!.optionLabels).toEqual(['50-300mm Zoom', '35mm Prime', '105mm Prime']);
+		expect(labels('jasper.lens-flare')).toEqual([
+			'Flare Center',
+			'Flare Brightness',
+			'Lens Type',
+			'Blend With Original',
+		]);
+		expect(byId('jasper.lens-flare').params[2]!.optionLabels).toEqual([
+			'50-300mm Zoom',
+			'35mm Prime',
+			'105mm Prime',
+		]);
 		expect(labels('jasper.ramp')).toEqual([
 			'Start of Ramp',
 			'Start Color',
@@ -204,7 +222,9 @@ describe('time effects (pure hooks)', () => {
 	const echo = defaults(byId('jasper.echo'));
 	it('Echo: offsets of k × Echo Time, intensities decay', () => {
 		expect(echoOffsets(echo, { fps: 30 })).toEqual([-1]);
-		expect(echoOffsets({ ...echo, numberOfEchoes: 4, echoTime: -0.1 }, { fps: 30 })).toEqual([-3, -6, -9, -12]);
+		expect(echoOffsets({ ...echo, numberOfEchoes: 4, echoTime: -0.1 }, { fps: 30 })).toEqual([
+			-3, -6, -9, -12,
+		]);
 		expect(echoOffsets({ ...echo, numberOfEchoes: 20 }, { fps: 30 })).toHaveLength(8);
 		expect(echoOffsets({ ...echo, numberOfEchoes: 0 }, { fps: 30 })).toEqual([]);
 		expect(echoIntensity({ ...echo, startingIntensity: 0.8, decay: 0.5 }, 2)).toBeCloseTo(0.2);
@@ -224,13 +244,24 @@ describe('time effects (pure hooks)', () => {
 	it('Strobe Light fires for Strobe Duration at every Strobe Period (and randomly with probability)', () => {
 		const p = { strobeDuration: 0.1, strobePeriod: 1, probability: 0 };
 		const on = (frame: number, extra = {}) => strobeOn({ ...p, ...extra }, { frame, fps: 30, seed: 0.3 });
-		expect([0, 1, 2, 3, 29, 30, 31, 33].map((f) => on(f))).toEqual([true, true, true, false, false, true, true, false]);
+		expect([0, 1, 2, 3, 29, 30, 31, 33].map((f) => on(f))).toEqual([
+			true,
+			true,
+			true,
+			false,
+			false,
+			true,
+			true,
+			false,
+		]);
 		expect(on(15, { probability: 100 })).toBe(true);
 		const r = Array.from({ length: 200 }, (_, f) => on(f + 300, { probability: 30, strobeDuration: 0 }));
 		const n = r.filter(Boolean).length;
 		expect(n).toBeGreaterThan(30);
 		expect(n).toBeLessThan(90);
-		expect(r).toEqual(Array.from({ length: 200 }, (_, f) => on(f + 300, { probability: 30, strobeDuration: 0 })));
+		expect(r).toEqual(
+			Array.from({ length: 200 }, (_, f) => on(f + 300, { probability: 30, strobeDuration: 0 })),
+		);
 	});
 });
 
@@ -239,7 +270,7 @@ describe('Video bin text', () => {
 		const e = encodeText('Hi!');
 		expect(e.length).toBe(3);
 		expect(e.floats).toHaveLength(PSDG_TEXT_MAX / 3);
-		expect(e.floats[0]).toBe((72 - 31) + (105 - 31) * 128 + (33 - 31) * 16384);
+		expect(e.floats[0]).toBe(72 - 31 + (105 - 31) * 128 + (33 - 31) * 16384);
 		expect(Math.fround(e.floats[0]!)).toBe(e.floats[0]);
 		expect(encodeText('x'.repeat(200)).length).toBe(PSDG_TEXT_MAX);
 		expect(encodeText('é').floats[0]).toBe(63 - 31);
@@ -265,11 +296,23 @@ describe('Video bin text', () => {
 		expect(timecodeText({ ...p, offset: 15 }, { frame: 45, fps: 30 })).toBe('00:00:02:00');
 		expect(timecodeText({ ...p, timeDisplay: '25' }, { frame: 60, fps: 30 })).toBe('00:00:02:00');
 		expect(
-			timecodeText({ ...p, timecodeSource: 'generate', startingTimecode: '01:00:00:00' }, { frame: 1, fps: 30 }),
+			timecodeText(
+				{ ...p, timecodeSource: 'generate', startingTimecode: '01:00:00:00' },
+				{ frame: 1, fps: 30 },
+			),
 		).toBe('01:00:00:01');
 		expect(timecodeText({ ...p, labelText: 'v2' }, { frame: 0, fps: 30 })).toBe('V2 00:00:00:00');
 		const u = byId('jasper.timecode').gpu!.uniforms!;
-		const ctx = { width: 1920, height: 1080, pxScale: 1, fps: 30, frame: 12, duration: 90, seed: 0.1, progress: 0 };
+		const ctx = {
+			width: 1920,
+			height: 1080,
+			pxScale: 1,
+			fps: 30,
+			frame: 12,
+			duration: 90,
+			seed: 0.1,
+			progress: 0,
+		};
 		expect(u(p, ctx)).toEqual(u(p, ctx));
 		expect(u(p, ctx)).not.toEqual(u(p, { ...ctx, frame: 13 }));
 	});
@@ -282,7 +325,8 @@ describe('paddings', () => {
 		expect(lensFlarePadding(1920, 1080)).toBe(Math.ceil(0.25 * Math.hypot(1920, 1080)));
 		expect(lightningPadding({ width: 10, amplitude: 0 }, 100, 100)).toBe(30);
 		const ctx = { width: 1920, height: 1080, pxScale: 1, fps: 30 };
-		const pad = (id: string, over = {}) => byId(id).gpu!.padding?.({ ...defaults(byId(id)), ...over }, ctx) ?? 0;
+		const pad = (id: string, over = {}) =>
+			byId(id).gpu!.padding?.({ ...defaults(byId(id)), ...over }, ctx) ?? 0;
 		expect(pad('jasper.glow')).toBe(100);
 		expect(pad('jasper.alpha-glow')).toBeGreaterThan(10);
 		expect(pad('jasper.magnify')).toBe(0);

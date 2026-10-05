@@ -76,7 +76,7 @@ vec3 ghost(vec2 p, vec2 c, float r, vec3 col, float intensity, int shape) {
   float x = dist / max(r, 1.0);
   float body = shape == 1 ? exp(-pow((x - 0.9) / 0.12, 2.0)) : (1.0 - smoothstep(0.75, 1.0, x)) * (0.55 + 0.45 * x * x);
   vec3 tint = col * (0.85 + 0.15 * spectrum(x * 0.35 + 0.6));
-  return tint * body * intensity;
+  return tint * body * intensity * 2.5;
 }
 void main() {
   vec4 src = texture(u_source, v_uv);
@@ -326,6 +326,20 @@ float matchAt(vec2 uv) {
   return d <= tol + 0.5 / 255.0 ? 1.0 : 0.0;
 }`;
 
+/**
+ * Coarse tolerance masks are conservative: a coarse texel (u_sub × u_sub canvas pixels) matches only if every pixel
+ * of its footprint matches, so walls thinner than a coarse texel still stop the fill.
+ */
+const CONSERVATIVE_MATCH = /* glsl */ `
+${PAINT_MATCH}
+void main() {
+  float m = 1.0;
+  float h = float(u_sub - 1) * 0.5;
+  for (int y = 0; y < u_sub; y++)
+    for (int x = 0; x < u_sub; x++) m = min(m, matchAt(v_uv + (vec2(float(x), float(y)) - h) / u_canvasSize));
+  fragColor = vec4(m);
+}`;
+
 /** Paint Bucket passes: masks at ⅛ and ¼, 4 + 4 propagation passes, then the full-resolution fill. */
 function paintBucketPasses(): ShaderPass[] {
 	const passes: ShaderPass[] = [
@@ -333,13 +347,15 @@ function paintBucketPasses(): ShaderPass[] {
 			output: 'tol8',
 			scale: 0.125,
 			filter: 'nearest',
-			frag: `${PAINT_MATCH}\nvoid main() { fragColor = vec4(matchAt(v_uv)); }`,
+			frag: CONSERVATIVE_MATCH,
+			uniforms: { u_sub: { int: 8 } },
 		},
 		{
 			output: 'tol4',
 			scale: 0.25,
 			filter: 'nearest',
-			frag: `${PAINT_MATCH}\nvoid main() { fragColor = vec4(matchAt(v_uv)); }`,
+			frag: CONSERVATIVE_MATCH,
+			uniforms: { u_sub: { int: 4 } },
 		},
 	];
 	const prop = (prev: string | null, tol: string, step: string) => /* glsl */ `
@@ -379,18 +395,35 @@ void main() {
 		});
 		prev = out;
 	}
+	// Full-resolution refinement: a matching pixel is filled if the coarse region covers it or is reachable within a
+	// few pixels through matching pixels (edge-aware: never across a wall).
+	passes.push({
+		output: 'fillFull',
+		filter: 'nearest',
+		uniforms: { u_steps: { int: 6 } },
+		frag: /* glsl */ `
+${PAINT_MATCH}
+void main() {
+  if (matchAt(v_uv) < 0.5) { fragColor = vec4(0.0); return; }
+  if (texture(u_fill7, v_uv).r > 0.5) { fragColor = vec4(1.0); return; }
+  for (int d = 0; d < 8; d++) {
+    float a = float(d) * 0.78539816;
+    vec2 dir = vec2(cos(a), sin(a)) / u_canvasSize;
+    for (int i = 1; i <= u_steps; i++) {
+      vec2 q = v_uv + dir * float(i);
+      if (matchAt(q) < 0.5) break;
+      if (texture(u_fill7, q).r > 0.5) { fragColor = vec4(1.0); return; }
+    }
+  }
+  fragColor = vec4(0.0);
+}`,
+	});
 	passes.push({
 		include: [GLSL_PSDG_BLEND],
 		uniforms: { u_ring: { int: 12 } },
 		frag: /* glsl */ `
 ${PAINT_MATCH}
-float filledAt(vec2 uv) {
-  // The low-resolution region (smoothed over a 4-px footprint), refined by the full-resolution tolerance test.
-  vec2 t = 2.0 / u_canvasSize;
-  float r = (texture(u_fill7, uv).r * 2.0 + texture(u_fill7, uv + vec2(t.x, 0.0)).r + texture(u_fill7, uv - vec2(t.x, 0.0)).r
-    + texture(u_fill7, uv + vec2(0.0, t.y)).r + texture(u_fill7, uv - vec2(0.0, t.y)).r) / 6.0;
-  return r > 0.2 ? matchAt(uv) : 0.0;
-}
+float filledAt(vec2 uv) { return texture(u_fillFull, uv).r; }
 float ringMax(vec2 uv, float rpx) {
   float m = filledAt(uv);
   for (int i = 0; i < u_ring; i++) {

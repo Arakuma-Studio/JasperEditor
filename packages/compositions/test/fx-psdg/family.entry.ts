@@ -93,7 +93,7 @@ const api = {
 		const ww5 = fx('jasper.wave-warp', {}, picture, { frame: 5 });
 		const td = fx('jasper.turbulent-displace', { amount: 60, size: 20 });
 		const td2 = fx('jasper.turbulent-displace', { amount: 60, size: 20 });
-		const td3 = fx('jasper.turbulent-displace', { amount: 60, size: 20, seed: 7 });
+		const td3 = fx('jasper.turbulent-displace', { amount: 60, size: 20 }, picture, { seed: 0.7 });
 		return {
 			mirrorRight: at(mirror, 56, 18),
 			mirrorLeft: at(mirror, 8, 18),
@@ -101,8 +101,8 @@ const api = {
 			ldCorner: at(ld, 0, 0),
 			ldCentre: maxDiff(ld.out, ld.input) > 0,
 			ldFillCorner: at(ldFill, 0, 0),
-			magLeft: at(mag, 30, 18),
-			magRight: at(mag, 34, 18),
+			magLeft: at(mag, 26, 18),
+			magRight: at(mag, 38, 18),
 			sphere: maxDiff(sph.out, sph.input),
 			twirl: maxDiff(tw.out, tw.input),
 			waveCanvas: [ww0.layout.width, ww0.layout.height],
@@ -127,7 +127,7 @@ const api = {
 		const ramp = fx('jasper.ramp', {}, blank);
 		const eye = fx('jasper.eyedropper-fill', { samplePoint: [0.25, 0.5], sampleRadius: 2 }, halves);
 		const cell = fx('jasper.cell-pattern', { size: 10 }, blank);
-		const cell2 = fx('jasper.cell-pattern', { size: 10, seed: 3 }, blank);
+		const cell2 = fx('jasper.cell-pattern', { size: 10 }, blank, { seed: 0.6 });
 		const ellipse = fx('jasper.ellipse', { width: 40, height: 20, thickness: 4 }, blank);
 		const flare = fx('jasper.lens-flare', { flareCenter: [0.5, 0.5] }, solid('rgb(20,20,20)'));
 		const bolt = fx(
@@ -252,7 +252,7 @@ const api = {
 			solarize: at(sol, 32, 18),
 			strobe: at(st0, 32, 18),
 			strobeTransparent: at(stT, 32, 18),
-			texturize: [at(tx, 3, 18), at(tx, 4, 18), at(tx, 2, 18)],
+			texturize: [at(tx, 3, 18), at(tx, 7, 18), at(tx, 1, 18)],
 			threshold: [at(th, 8, 18), at(th, 56, 18)],
 		};
 	},

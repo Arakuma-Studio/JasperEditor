@@ -605,25 +605,26 @@ float pinWeight(vec2 lp) {
   if (pin == 8) return l * r;
   return 1.0;
 }
-vec4 warped(vec2 lp) {
+// The displacement of the wave at a (sub-)pixel position.
+vec2 waveDisp(vec2 lp) {
   vec2 travel = psdg_compass(u_direction);
   vec2 across = vec2(-travel.y, travel.x);
   float w = max(u_waveWidth, 1.0);
   float x = dot(lp, travel) / w - u_waveSpeed * u_time + u_phase / 360.0;
   float k = floor(x);
   float v = waveShape(u_waveType, x, k);
-  vec2 disp = across * v * u_waveHeight * pinWeight(clamp(lp, vec2(0.0), warp_size()));
-  return warp_at(lp - disp);
+  return across * v * u_waveHeight * pinWeight(clamp(lp, vec2(0.0), warp_size()));
 }
 void main() {
   vec2 lp = fx_layerPx();
+  // Antialiasing supersamples the displacement (smooths the steps of square/sawtooth/noise waves); the lookup
+  // stays at the pixel so a flat wave is an exact identity.
   int n = u_antialiasing == 0 ? 1 : u_antialiasing == 1 ? 2 : 3;
   vec4 sum = vec4(0.0);
-  for (int j = 0; j < 3; j++)
-    for (int i = 0; i < 3; i++) {
-      if (i >= n || j >= n) continue;
+  for (int j = 0; j < n; j++)
+    for (int i = 0; i < n; i++) {
       vec2 o = (vec2(float(i), float(j)) + 0.5) / float(n) - 0.5;
-      sum += warped(lp + o / u_pxScale);
+      sum += warp_at(lp - waveDisp(lp + o / u_pxScale));
     }
   fragColor = sum / float(n * n);
 }`,
