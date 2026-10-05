@@ -135,7 +135,6 @@ export function LowerThirdAnim(props: AnimeTemplateProps) {
 	return (
 		<DesignStage fit={fit} label="lower-third-anim@1">
 			<div
-				data-part="bar"
 				style={{
 					position: 'absolute',
 					left: px(right ? left + panelW : left),
@@ -148,7 +147,6 @@ export function LowerThirdAnim(props: AnimeTemplateProps) {
 				}}
 			/>
 			<div
-				data-part="panel"
 				style={{
 					position: 'absolute',
 					left: px(right ? left : left + BAR_W),
@@ -160,7 +158,6 @@ export function LowerThirdAnim(props: AnimeTemplateProps) {
 				}}
 			/>
 			<div
-				data-part="text"
 				style={{
 					position: 'absolute',
 					left: px((right ? left : left + BAR_W) + padX),

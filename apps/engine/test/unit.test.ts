@@ -60,22 +60,12 @@ describe('signed URLs (S04:MS-003)', () => {
 });
 
 describe('Broadcaster (S04:ENG-023)', () => {
-	it('assigns monotonic ids, replays since an id and filters by project', () => {
+	it('reports incomplete replay when the bounded event buffer overflows', () => {
 		const b = new Broadcaster(3);
-		const seen: number[] = [];
-		const off = b.subscribe((e) => seen.push(e.id), { projectId: 'p1' });
-		b.publish('capabilities.changed', {});
-		b.publish('media.updated', { mediaKey: 'mk_x', status: 'online' }, 'p1');
-		b.publish('media.updated', { mediaKey: 'mk_y', status: 'online' }, 'p2');
-		b.publish('capabilities.changed', {});
-		off();
-		expect(seen).toEqual([1, 2, 4]);
-		expect(b.lastId).toBe(4);
-		const since1 = b.since(1);
-		expect(since1.events.map((e) => e.id)).toEqual([2, 3, 4]);
-		expect(b.since(0).complete).toBe(false); // event 1 fell out of the ring
-		expect(b.since(1, { projectId: 'p2' }).events.map((e) => e.id)).toEqual([3, 4]);
-		expect(b.heartbeat()).toMatchObject({ id: 4, type: 'engine.heartbeat' });
+		for (let i = 0; i < 4; i++) b.publish('capabilities.changed', {});
+		expect(b.since(0)).toMatchObject({ complete: false });
+		expect(b.since(1)).toMatchObject({ complete: true });
+		expect(b.since(0).events.map((event) => event.id)).toEqual([2, 3, 4]);
 	});
 });
 

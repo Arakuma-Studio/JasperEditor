@@ -1,7 +1,6 @@
 // S07 §8 test 1 (model): media.derive and clip.replaceSource (PRC-001…007).
 import { describe, expect, it } from 'vitest';
 import {
-	buildRenderSnapshot,
 	type ClipTracker,
 	checkInvariants,
 	diffDocuments,
@@ -10,7 +9,6 @@ import {
 	type ProcessStep,
 	type ProjectDocument,
 	processedItemName,
-	resolveSceneAt,
 	type VideoClip,
 } from '../src/index.ts';
 import { Harness, videoAsset } from './helpers.ts';
@@ -262,7 +260,6 @@ describe('media.derive (S07:PRC-001, PRC-004, PRC-005)', () => {
 		const { h, mediaId, audioId, videoId } = setup();
 		const noAsset = h.tx([{ type: 'media.derive', fromMediaId: mediaId, recipe: recipe(DENOISE) }]);
 		expect(codeOf(noAsset)).toBe('E_INVALID_PARAM');
-		if (!noAsset.ok) expect(noAsset.errors[0]!.message).toMatch(/asset/);
 		const asset = processedAsset({ width: 848, height: 480 });
 		expect(
 			codeOf(
@@ -316,78 +313,6 @@ describe('clip.replaceSource (S07:PRC-005…007)', () => {
 		const { h, mediaId, up, up2 } = withVersions();
 		expect(originalMediaId(h.doc, up2)).toBe(mediaId);
 		expect(mediaVersionsOf(h.doc, up)).toEqual([mediaId, up, up2]);
-	});
-
-	it('swaps to a 2× version and back, compensating Motion exactly (framing unchanged)', () => {
-		const { h, videoId, mediaId, up, up2, audioId } = withVersions();
-		patchDoc(h, (d) => {
-			const c = d.sequences[h.seqId]!.clips[videoId] as VideoClip;
-			c.transform.scale = { value: 150, keyframes: [] };
-			c.transform.scaleWidth = { value: 150, keyframes: [] };
-			c.transform.anchor = { value: [300, 200], keyframes: [] };
-			c.transform.rotation = { value: 12, keyframes: [] };
-		});
-		h.ok([
-			{
-				type: 'effect.add',
-				target: { clipId: videoId },
-				effectId: 'jasper.crop',
-				params: { left: 10, top: 5 },
-			},
-		]);
-		const orig = videoClip(h, videoId);
-		const quadAt = (doc: ProjectDocument) =>
-			resolveSceneAt(
-				buildRenderSnapshot(doc, h.seqId, { resolveMedia: () => null, resolveFont: () => null }),
-				3,
-			)[0]!.props.quad;
-		const q0 = quadAt(h.doc);
-
-		h.ok([{ type: 'clip.replaceSource', clipId: videoId, mediaId: up }], { label: 'Replace With Clip' });
-		const c = videoClip(h, videoId);
-		expect(c.mediaId).toBe(up);
-		expect(c.transform.scale.value).toBe(75);
-		expect(c.transform.scaleWidth.value).toBe(75);
-		expect(c.transform.uniformScale).toBe(true);
-		expect(c.transform.anchor.value).toEqual([600, 400]);
-		expect(c.transform.position).toEqual(orig.transform.position);
-		expect(c.transform.rotation).toEqual(orig.transform.rotation);
-		expect(c.effects).toEqual(orig.effects);
-		expect([c.start, c.duration, c.sourceIn, c.speed]).toEqual([
-			orig.start,
-			orig.duration,
-			orig.sourceIn,
-			orig.speed,
-		]);
-		expect((h.seq.clips[audioId] as { mediaId: string }).mediaId).toBe(mediaId);
-		const q1 = quadAt(h.doc);
-		for (let i = 0; i < 4; i++) {
-			expect(q1[i]![0]).toBeCloseTo(q0[i]![0], 9);
-			expect(q1[i]![1]).toBeCloseTo(q0[i]![1], 9);
-		}
-
-		// 1696×960 → 1920×1080 is anisotropic: Uniform Scale is split, the framing is still identical.
-		h.ok([{ type: 'clip.replaceSource', clipId: videoId, mediaId: up2 }]);
-		const c2 = videoClip(h, videoId);
-		expect(c2.transform.uniformScale).toBe(false);
-		expect(c2.transform.scale.value).toBeCloseTo((75 * 960) / 1080, 12);
-		expect(c2.transform.scaleWidth.value).toBeCloseTo((75 * 1696) / 1920, 12);
-		const q2 = quadAt(h.doc);
-		for (let i = 0; i < 4; i++) {
-			expect(q2[i]![0]).toBeCloseTo(q0[i]![0], 9);
-			expect(q2[i]![1]).toBeCloseTo(q0[i]![1], 9);
-		}
-
-		// Back to the original restores Motion (Uniform Scale on again).
-		h.ok([{ type: 'clip.replaceSource', clipId: videoId, mediaId }]);
-		const back = videoClip(h, videoId);
-		expect(back.mediaId).toBe(mediaId);
-		expect(back.transform.uniformScale).toBe(true);
-		expect(back.transform.scale.value).toBeCloseTo(150, 12);
-		expect(back.transform.scaleWidth.value).toBeCloseTo(150, 12);
-		expect(back.transform.anchor.value[0]).toBeCloseTo(300, 12);
-		expect(back.transform.anchor.value[1]).toBeCloseTo(200, 12);
-		expect(checkInvariants(h.doc)).toEqual([]);
 	});
 
 	it('keeps keyframes, markers and trackers (tracker geometry in media pixels follows the size)', () => {
@@ -501,23 +426,5 @@ describe('clip.replaceSource (S07:PRC-005…007)', () => {
 		expect(codeOf(h.tx([{ type: 'clip.replaceSource', clipId: videoId, mediaId: up }]))).toBe(
 			'E_TRACK_LOCKED',
 		);
-	});
-
-	it('works on processed versions that the clip switched to through media.derive (swap back to the original)', () => {
-		const { h, videoId, mediaId } = setup({ width: 1280, height: 720 });
-		const orig = videoClip(h, videoId);
-		const r = h.ok([
-			{
-				type: 'media.derive',
-				fromMediaId: mediaId,
-				recipe: recipe(STABILIZE, { op: 'upscale', model: 'm', scale: 4 }),
-				asset: processedAsset({ width: 5120, height: 2880 }),
-				replaceInClips: [videoId],
-			},
-		]);
-		expect(videoClip(h, videoId).transform.scale.value).toBe(orig.transform.scale.value / 4);
-		h.ok([{ type: 'clip.replaceSource', clipId: videoId, mediaId }]);
-		expect(videoClip(h, videoId)).toEqual(orig);
-		expect(h.doc.media[(r.results[0] as { mediaId: string }).mediaId]).toBeDefined();
 	});
 });

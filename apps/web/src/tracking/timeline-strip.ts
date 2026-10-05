@@ -85,7 +85,7 @@ type ConfidenceIndex = { n: number; levels: Float64Array[] };
 const indexCache = new WeakMap<TrackerSamples, ConfidenceIndex>();
 
 /** The (cached, per samples object) min pyramid of the confidence. */
-export function confidenceIndex(samples: TrackerSamples): ConfidenceIndex {
+function confidenceIndex(samples: TrackerSamples): ConfidenceIndex {
 	const hit = indexCache.get(samples);
 	if (hit) return hit;
 	const n = countOf(samples);
@@ -109,7 +109,7 @@ export function confidenceIndex(samples: TrackerSamples): ConfidenceIndex {
 }
 
 /** Minimum confidence of samples `[lo, hi]` (inclusive) in O(log n). */
-export function minConfidence(index: ConfidenceIndex, lo: number, hi: number): number {
+function minConfidence(index: ConfidenceIndex, lo: number, hi: number): number {
 	let a = Math.max(0, lo);
 	let b = Math.min(index.n - 1, hi);
 	let min = Number.POSITIVE_INFINITY;

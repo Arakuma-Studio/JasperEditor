@@ -20,11 +20,6 @@ import { coreServices } from '../tools/services.ts';
 
 const LAYER_BAKE_SERVICE_KEY = 'layerBake';
 
-/** The service registered by this plugin (tests and other plugins). */
-export function layerBakeService(app: FastifyInstance): LayerBakeService | null {
-	return (app.jasper.services[LAYER_BAKE_SERVICE_KEY] as LayerBakeService | undefined) ?? null;
-}
-
 const CONTENT_TYPES: Record<string, string> = {
 	'master.mov': 'video/quicktime',
 	'graded.png': 'image/png',

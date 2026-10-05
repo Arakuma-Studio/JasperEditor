@@ -2,13 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
 	applyTransaction,
-	COMMAND_TYPES,
 	createCounterIdSource,
 	createEmptyProject,
 	createStaticMgRegistry,
 	defaultRegistries,
 	exportAgentSchema,
-	requiresApproval,
 } from '../src/index.ts';
 import { Harness, makeCtx } from './helpers.ts';
 
@@ -131,7 +129,7 @@ describe('transactions (S01 §16)', () => {
 			{ label: 'l', origin: 'user', commands: [{ type: 'clip.teleport' }] },
 			makeCtx(),
 		).result;
-		expect(unknown.ok).toBe(false);
+		expect(unknown).toMatchObject({ ok: false, errors: [{ code: 'E_SCHEMA' }] });
 	});
 
 	it('resolves $selection and $selection.primary', () => {
@@ -157,82 +155,6 @@ describe('transactions (S01 §16)', () => {
 });
 
 describe('catalog (ARCHITECTURE §5.3)', () => {
-	it('registers every M1 and M2 command type', () => {
-		const expected = [
-			'project.rename',
-			'project.updateSettings',
-			'bin.create',
-			'item.rename',
-			'item.setLabel',
-			'item.move',
-			'item.delete',
-			'item.setMarks',
-			'media.register',
-			'media.relink',
-			'sequence.create',
-			'sequence.updateSettings',
-			'sequence.setInOut',
-			'sequence.setWorkArea',
-			'marker.add',
-			'marker.update',
-			'marker.remove',
-			'track.add',
-			'track.remove',
-			'track.update',
-			'clip.place',
-			'clip.addText',
-			'clip.addSolid',
-			'clip.addMotionGraphic',
-			'clip.move',
-			'clip.trim',
-			'clip.split',
-			'clip.lift',
-			'clip.extract',
-			'clip.update',
-			'param.set',
-			'param.setAnimated',
-			'clip.slip',
-			'clip.slide',
-			'clip.setSpeed',
-			'clip.duplicate',
-			'clip.link',
-			'clip.unlink',
-			'clip.fitToFrame',
-			'range.lift',
-			'range.extract',
-			'gap.close',
-			'keyframe.add',
-			'keyframe.update',
-			'keyframe.remove',
-			'keyframe.move',
-			'keyframe.setInterpolation',
-			'keyframes.prune',
-			'effect.add',
-			'effect.remove',
-			'effect.reorder',
-			'effect.setEnabled',
-			'transition.add',
-			'transition.update',
-			'transition.remove',
-			'transition.applyDefault',
-			'clip.nest',
-			'clip.addCaptions',
-			'clip.addComposition',
-			'clip.addAdjustment',
-			'clip.replaceSource',
-			'transcript.create',
-			'transcript.editText',
-			'transcript.setBreak',
-			'synthetic.create',
-			'synthetic.update',
-			'media.derive',
-			'media.removeUnused',
-			'sequence.duplicate',
-			'sequence.delete',
-		];
-		for (const t of expected) expect(COMMAND_TYPES).toContain(t);
-	});
-
 	it('stubs refuse with E_NOT_IMPLEMENTED', () => {
 		const h = new Harness();
 		const r = h.tx([{ type: 'sequence.delete', sequenceId: h.seqId }]);
@@ -240,13 +162,7 @@ describe('catalog (ARCHITECTURE §5.3)', () => {
 		if (!r.ok) expect(r.errors[0]!.code).toBe('E_NOT_IMPLEMENTED');
 	});
 
-	it('flags approval-gated commands (S01:AGT-011)', () => {
-		expect(requiresApproval([{ type: 'track.remove' }])).toBe(true);
-		expect(requiresApproval([{ type: 'item.delete', force: true }])).toBe(true);
-		expect(requiresApproval([{ type: 'clip.move' }])).toBe(false);
-	});
-
-	it('exports JSON Schemas for every command (S01:AGT-002)', () => {
+	it('exports command and template argument constraints as JSON Schema (S01:AGT-002)', () => {
 		const tpl = createStaticMgRegistry([
 			{
 				id: 'lower-third',
@@ -261,18 +177,17 @@ describe('catalog (ARCHITECTURE §5.3)', () => {
 			},
 		]);
 		const s = exportAgentSchema(defaultRegistries(tpl));
-		expect(Object.keys(s.commands)).toHaveLength(COMMAND_TYPES.length);
-		expect(s.commands['clip.place'].schema.type).toBe('object');
-		expect(s.mgTemplates[0]!.paramsSchema.type).toBe('object');
-		expect(s.effects.map((e) => e.id)).toContain('jasper.crop');
-		expect(s.errorCodes).toContain('E_SYNC_CONFLICT');
+		expect(s.commands['clip.place'].schema).toMatchObject({
+			type: 'object',
+			required: expect.arrayContaining(['type', 'source', 'at']),
+			properties: { type: { const: 'clip.place' } },
+		});
+		expect(s.mgTemplates[0]!.paramsSchema).toMatchObject({
+			type: 'object',
+			required: ['title'],
+			properties: { title: { type: 'string' } },
+		});
 		expect(JSON.parse(JSON.stringify(s)).protocol).toBe('jasper.tx/1');
-		// `implemented` reflects the handler, not the owner: wave-2 handlers are live, stubs are not.
-		expect(s.commands['clip.place'].implemented).toBe(true);
-		expect(s.commands['clip.slip'].implemented).toBe(true); // WP-2B
-		expect(s.commands['effect.add'].implemented).toBe(true); // WP-2D
-		expect(s.commands['sequence.delete'].implemented).toBe(false);
-		expect(s.commands['clip.nest'].implemented).toBe(false); // M2
 	});
 });
 
@@ -331,15 +246,15 @@ describe('project, media, markers, tracks', () => {
 		expect(h.seq.videoTracks).toHaveLength(5);
 		expect(h.seq.videoTracks[0]!.id).toBe((add.results[0] as { trackIds: string[] }).trackIds[0]);
 		const rm = h.tx([{ type: 'track.remove', trackIds: ['V3'] }]);
-		expect(rm.ok).toBe(false);
+		expect(rm).toMatchObject({ ok: false, errors: [{ code: 'E_IN_USE' }] });
 		h.ok([{ type: 'track.remove', trackIds: ['V3'], force: true }]);
 		expect(Object.keys(h.seq.clips)).toHaveLength(0);
 		h.ok([{ type: 'track.update', trackId: 'A1', patch: { mute: true, volumeDb: -6, pan: 20 } }]);
 		expect(h.seq.audioTracks[0]!.volumeDb!.value).toBe(-6);
 		const bad = h.tx([{ type: 'track.update', trackId: 'V1', patch: { mute: true } }]);
-		expect(bad.ok).toBe(false);
+		expect(bad).toMatchObject({ ok: false, errors: [{ code: 'E_INVALID_PARAM' }] });
 		const last = h.tx([{ type: 'track.remove', trackIds: h.seq.audioTracks.map((t) => t.id) }]);
-		expect(last.ok).toBe(false);
+		expect(last).toMatchObject({ ok: false, errors: [{ code: 'E_INVALID_PARAM' }] });
 	});
 
 	it('param.set validates, clamps and supports effects, tracks and master', () => {
@@ -357,7 +272,7 @@ describe('project, media, markers, tracks', () => {
 			(h.seq.clips[id] as unknown as { content: { style: { sizePx: number } } }).content.style.sizePx,
 		).toBe(64);
 		const bad = h.tx([{ type: 'param.set', target: ['clip', id, 'transform', 'position'], value: 'left' }]);
-		expect(bad.ok).toBe(false);
+		expect(bad).toMatchObject({ ok: false, errors: [{ code: 'E_INVALID_PARAM' }] });
 		h.ok([
 			{ type: 'param.set', target: ['track', 'A1', 'volumeDb'], value: -3 },
 			{ type: 'param.set', target: ['master', 'volumeDb'], value: -1 },
@@ -418,7 +333,7 @@ describe('project, media, markers, tracks', () => {
 			accent: [1, 0, 0, 1],
 		});
 		const bad = h.tx([{ type: 'clip.update', clipId: id, patch: { params: { title: '' } } }]);
-		expect(bad.ok).toBe(false);
+		expect(bad).toMatchObject({ ok: false, errors: [{ code: 'E_INVALID_PARAM' }] });
 		h.ok([{ type: 'clip.update', clipId: id, patch: { params: { title: 'Bo' }, name: 'LT' } }]);
 		expect((h.seq.clips[id] as unknown as { params: { title: string } }).params.title).toBe('Bo');
 		const unknown = h.tx([
@@ -430,7 +345,7 @@ describe('project, media, markers, tracks', () => {
 				template: { id: 'nope', version: 1 },
 			},
 		]);
-		expect(unknown.ok).toBe(false);
+		expect(unknown).toMatchObject({ ok: false, errors: [{ code: 'E_INVALID_PARAM' }] });
 	});
 
 	it('sequence.create from media adopts its settings and places it', () => {

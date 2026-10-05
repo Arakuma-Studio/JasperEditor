@@ -11,7 +11,7 @@ import type { Rgba } from '../../core.ts';
 export const ANIME_REFERENCE_FPS = 30;
 
 /**
- * Eases a template param may name (a subset of `@jasper/motion` `EASE_NAMES`; a motion test asserts it).
+ * Eases a template param may name (supported by `@jasper/motion` `EASES`).
  * `steps` is left out: it needs a step count.
  */
 export const ANIME_TEMPLATE_EASES = [

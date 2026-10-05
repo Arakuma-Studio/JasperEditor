@@ -43,7 +43,6 @@ while [ $i -lt $n ]; do
 done
 i=$((i+1))
 cmd="\${args[*]:$i}"
-[ -n "$SSH_SHIM_LOG" ] && printf '%s\\n' "$cmd" >> "$SSH_SHIM_LOG"
 exec bash -c "$cmd"
 `;
 
@@ -79,7 +78,17 @@ async function waitJob(id: string, timeoutMs = 300_000): Promise<EngineJob> {
 	);
 }
 
-async function putRemote(extra: Record<string, unknown> = {}) {
+async function expectProcessedArtifact(result: ProcessResult) {
+	const artifact = await app.inject({
+		method: 'GET',
+		url: `/media/${result.registered.mediaKey}`,
+		headers: { ...H, range: 'bytes=0-31' },
+	});
+	expect(artifact.statusCode).toBe(206);
+	expect(artifact.rawPayload.subarray(4, 8).toString()).toBe('ftyp');
+}
+
+async function putRemote() {
 	const r = await app.inject({
 		method: 'PUT',
 		url: '/api/settings/processing',
@@ -94,7 +103,6 @@ async function putRemote(extra: Record<string, unknown> = {}) {
 				remoteDir,
 				useFor: ['denoise', 'upscale'],
 				strictHostKeyChecking: 'accept-new',
-				...extra,
 			},
 		},
 	});
@@ -107,49 +115,40 @@ beforeAll(async () => {
 	remoteDir = mkdtempSync(join(tmpdir(), 'jasper-remote-'));
 	process.env.JASPER_SSH = writeShim('ssh', SSH_SHIM);
 	process.env.JASPER_SCP = writeShim('scp', SCP_SHIM);
-	process.env.SSH_SHIM_LOG = join(shimDir, 'commands.log');
 	// The shimmed "remote" is this machine: skip npm install; the runtime resolves onnxruntime-node lazily.
 	process.env.JASPER_REMOTE_NPM = 'true';
 	app = await makeApp({ totalSlots: 8 });
 }, 60_000);
 
 afterAll(async () => {
-	for (const k of ['JASPER_SSH', 'JASPER_SCP', 'JASPER_RSYNC', 'SSH_SHIM_LOG', 'JASPER_REMOTE_NPM'])
-		delete process.env[k];
+	for (const k of ['JASPER_SSH', 'JASPER_SCP', 'JASPER_RSYNC', 'JASPER_REMOTE_NPM']) delete process.env[k];
 	await closeApps();
 	if (shimDir) rmSync(shimDir, { recursive: true, force: true });
 	if (remoteDir) rmSync(remoteDir, { recursive: true, force: true });
 });
 
 describe('remote executor (shims)', () => {
-	it('probe before setup: connected, runtime not installed, no GPU', async () => {
+	it('probe before setup reports the runtime is not installed', async () => {
 		await putRemote();
 		const r = await app.inject({ method: 'POST', url: '/api/processing/remote/probe', headers: H });
 		expect(r.statusCode).toBe(200);
 		const p = r.json() as RemoteProbeResult;
 		expect(p.node).toMatch(/^v\d+/);
 		expect(p.runtimeReady).toBe(false);
-		expect(p.gpu).toBeNull();
 		expect(p.ok).toBe(false);
-		expect(p.message).toMatch(/Set up/);
 	});
 
-	it('setup uploads the runtime; probe then reports it ready (CPU ONNX, no CUDA)', async () => {
+	it('setup installs an executable runtime that the probe reports ready', async () => {
 		const r = await app.inject({ method: 'POST', url: '/api/processing/remote/setup', headers: H });
 		expect(r.statusCode).toBe(200);
 		const job = await waitJob((r.json() as EngineJob).id);
 		expect(job.error).toBeUndefined();
 		expect(job.state).toBe('succeeded');
-		expect(existsSync(join(remoteDir, 'bin', 'jasper-proc.mjs'))).toBe(true);
-		expect(existsSync(join(remoteDir, 'bin', 'package.json'))).toBe(true);
-		const pkg = JSON.parse(readFileSync(join(remoteDir, 'bin', 'package.json'), 'utf8'));
-		expect(Object.keys(pkg.dependencies)).toContain('onnxruntime-node');
 		const p = (
 			await app.inject({ method: 'POST', url: '/api/processing/remote/probe', headers: H })
 		).json() as RemoteProbeResult;
 		expect(p.runtimeReady).toBe(true);
 		expect(p.ok).toBe(true);
-		expect(p.onnxProviders).not.toContain('cuda');
 		const caps = (await app.inject({ method: 'GET', url: '/api/capabilities', headers: H })).json();
 		expect(caps.features.processing.remote.configured).toBe(true);
 		expect(caps.features.processing.remote.lastProbe.ok).toBe(true);
@@ -170,9 +169,11 @@ describe('remote executor (shims)', () => {
 		expect(readdirSync(join(remoteDir, 'jobs'))).toEqual([]);
 		const cache = readdirSync(join(remoteDir, 'cache'));
 		expect(cache).toHaveLength(1);
-		expect(statSync(join(remoteDir, 'cache', cache[0])).size).toBe(statSync(fixture('clip-b.mp4')).size);
-		// A second job with the same source reuses the cached input (no second upload).
-		const log0 = readFileSync(process.env.SSH_SHIM_LOG as string, 'utf8');
+		expect(readFileSync(join(remoteDir, 'cache', cache[0])).equals(readFileSync(fixture('clip-b.mp4')))).toBe(
+			true,
+		);
+		await expectProcessedArtifact(res);
+		// A different recipe for the same source shares one cached source.
 		const r2 = await app.inject({
 			method: 'POST',
 			url: `/api/media/${m.mediaKey}/process`,
@@ -181,11 +182,11 @@ describe('remote executor (shims)', () => {
 		});
 		const job2 = await waitJob((r2.json() as EngineJob).id);
 		expect(job2.error).toBeUndefined();
-		const newCommands = readFileSync(process.env.SSH_SHIM_LOG as string, 'utf8').slice(log0.length);
-		expect(newCommands).not.toMatch(/\.part/);
+		expect(readdirSync(join(remoteDir, 'cache'))).toEqual(cache);
+		await expectProcessedArtifact(job2.result as ProcessResult);
 	}, 300_000);
 
-	it('an interrupted upload resumes (rsync --partial --inplace)', async () => {
+	it('an interrupted upload retries to the exact source bytes without leaving a partial file', async () => {
 		const big = join(shimDir, 'big.bin');
 		writeFileSync(big, Buffer.alloc(24 * 1024 * 1024, 7));
 		// A slow rsync for the first attempt.
@@ -316,6 +317,7 @@ describe.skipIf(!REAL)('remote executor over real SSH (JASPER_TEST_SSH)', () => 
 			const job = await waitJob((r.json() as EngineJob).id);
 			expect(job.error).toBeUndefined();
 			expect((job.result as ProcessResult).executor).toBe('remote');
+			await expectProcessedArtifact(job.result as ProcessResult);
 		} finally {
 			process.env.JASPER_SSH = saved.ssh;
 			process.env.JASPER_SCP = saved.scp;

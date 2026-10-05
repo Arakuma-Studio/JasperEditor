@@ -27,7 +27,7 @@ const loaded = new Map<string, Promise<boolean>>();
 const settledFaces = new Set<string>();
 
 /** CSS `format()` hint from the URL extension, or undefined when unknown. */
-export function fontFormatFromUrl(url: string): string | undefined {
+function fontFormatFromUrl(url: string): string | undefined {
 	const ext = url.split(/[?#]/)[0]!.split('.').pop()?.toLowerCase();
 	switch (ext) {
 		case 'woff2':
@@ -97,7 +97,7 @@ export function useFontsReady(faces: readonly (string | FontFaceQuery)[]): boole
 }
 
 /** The document face a style uses: exact weight/style, else any face of the font (as TextLayer resolves it). */
-export function fontFaceFor(
+function fontFaceFor(
 	fonts: readonly FontFaceSpec[] | undefined,
 	fontId: string,
 	weight?: number,
@@ -125,7 +125,7 @@ function stringsIn(v: unknown, out: Set<string>): Set<string> {
  * Faces a layer draws with (S11:FIX-003): a text clip's style and its styled runs; an anime template's params
  * naming a document font (by font id or family). Other layers draw no text from document fonts.
  */
-export function layerFontFaces(
+function layerFontFaces(
 	clip: Pick<RenderVisualClip, 'source'>,
 	fonts: readonly FontFaceSpec[] | undefined,
 ): FontFaceQuery[] {
@@ -206,12 +206,4 @@ export function useFontsReadyState(fonts: readonly FontFaceSpec[]): FontsReadySt
 		}),
 		[fonts, version],
 	);
-}
-
-/**
- * Holds rendering until the document's fonts are loaded (or failed; failed faces fall back to
- * FALLBACK_FONT_STACK). Returns whether every face of `fonts` has settled (`useFontsReadyState(fonts).allLoaded`).
- */
-export function useDocumentFonts(fonts: readonly FontFaceSpec[]): boolean {
-	return useFontsReadyState(fonts).allLoaded;
 }

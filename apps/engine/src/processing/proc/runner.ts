@@ -106,7 +106,7 @@ function sha256File(file: string): Promise<string> {
 }
 
 /** Filters of the LGPL build (`ffmpeg -filters`), used to pick vid.stab native vs WASM and for guards. */
-export async function listFilters(ffmpeg: string): Promise<Set<string>> {
+async function listFilters(ffmpeg: string): Promise<Set<string>> {
 	const child = spawnFfmpeg(ffmpeg, ['-filters']);
 	let out = '';
 	child.stdout?.on('data', (d: Buffer) => {

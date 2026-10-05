@@ -109,7 +109,7 @@ function featherWeight(i: number, len: number, ramp: number, hasBefore: boolean,
 	return w;
 }
 
-export type SrModel = {
+type SrModel = {
 	/** Runs the model on a batch: input NCHW float32 [0,1]; returns NCHW float32 at `scale`×. */
 	run(input: Float32Array, n: number, h: number, w: number): Promise<Float32Array>;
 	scale: number;
@@ -117,7 +117,7 @@ export type SrModel = {
 	release(): Promise<void>;
 };
 
-export async function openOnnxModel(
+async function openOnnxModel(
 	path: string,
 	opts: { threads: number; device: 'cpu' | 'cuda'; scale: number },
 ): Promise<SrModel> {
@@ -166,7 +166,7 @@ export async function openOnnxModel(
  * Upscales one float RGB frame (interleaved, [0,1]) with the model, tiled. Returns interleaved float RGB at
  * `scale`× the input size.
  */
-export async function upscaleTiled(
+async function upscaleTiled(
 	model: SrModel,
 	src: Float32Array,
 	width: number,
@@ -265,11 +265,6 @@ function floatToU16(data: Float32Array): Uint16Array {
 	return out;
 }
 
-export type UpscaleOptions = {
-	/** Injected model (tests); default: the ONNX file from `ctx.models[step.model]`. */
-	model?: SrModel;
-};
-
 function outputSize(
 	step: Extract<ProcessStep, { op: 'upscale' }>,
 	width: number,
@@ -279,11 +274,8 @@ function outputSize(
 	return { width: width * step.scale, height: height * step.scale };
 }
 
-export function createUpscaleStep(
-	step: Extract<ProcessStep, { op: 'upscale' }>,
-	opts: UpscaleOptions = {},
-): FrameStep {
-	let model: SrModel | null = opts.model ?? null;
+export function createUpscaleStep(step: Extract<ProcessStep, { op: 'upscale' }>): FrameStep {
+	let model: SrModel | null = null;
 	let ctxRef: StepContext | null = null;
 	let size = { width: 0, height: 0 };
 	let seconds = 0;
@@ -351,7 +343,7 @@ export function createUpscaleStep(
 			return [];
 		},
 		async close() {
-			if (model && !opts.model) await model.release();
+			if (model) await model.release();
 		},
 	};
 }

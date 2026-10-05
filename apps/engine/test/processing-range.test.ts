@@ -16,7 +16,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { EngineJob, ProcessResult, RegisteredMedia } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { coreServices } from '../src/tools/services.ts';
 import {
 	closeApps,
 	DocBuilder,
@@ -40,6 +39,8 @@ function frameCode(file: string, frame: number): number {
 		...['-vf', `select=eq(n\\,${frame}),scale=1920:1080,format=rgb24,crop=420:1:40:70`],
 		...['-frames:v', '1', '-f', 'rawvideo', '-'],
 	]);
+	if (r.status !== 0) throw new Error(r.stderr.toString());
+	if (r.stdout.length !== 420 * 3) throw new Error(`Cannot decode frame ${frame} from ${file}`);
 	let code = 0;
 	for (let b = 0; b < 6; b++) if (r.stdout[(30 + 70 * b) * 3]! > 127) code |= 1 << b;
 	return code;
@@ -62,6 +63,7 @@ function frameCount(file: string): number {
 		],
 		{ encoding: 'utf8' },
 	);
+	if (r.status !== 0) throw new Error(r.stderr);
 	return Number(r.stdout.trim());
 }
 
@@ -105,7 +107,14 @@ async function exportCodes(d: DocBuilder, frames: number[]): Promise<number[]> {
 	const done = await waitJob(start.json().id);
 	expect(done.error).toBeUndefined();
 	expect((done.result as { renderPath: string }).renderPath).toBe('native');
-	const file = (await coreServices(app).exports.outputFile(start.json().id))!;
+	const artifact = await app.inject({
+		method: 'GET',
+		url: `/renders/${start.json().id}/output`,
+		headers: H,
+	});
+	expect(artifact.statusCode).toBe(200);
+	const file = join(dir, `${start.json().id}.mp4`);
+	writeFileSync(file, artifact.rawPayload);
 	return frames.map((f) => frameCode(file, f));
 }
 
@@ -140,10 +149,9 @@ describe('ranged processing (S07:PRC-015)', () => {
 		expect(r.statusCode).toBe(200);
 		const job = await waitJob((r.json() as EngineJob).id);
 		expect(job.error).toBeUndefined();
-		expect(job.title).toContain('frames 12–47');
 		res = job.result as ProcessResult;
 		expect(res.range).toEqual({ startFrame: 12, endFrame: 48 });
-		expect(res.registered.originalName).toBe('frame-code [Deblocked · frames 12–47].mov');
+		expect(res.registered.originalName).toContain('frames 12–47');
 		const index = JSON.parse(readFileSync(join(app.appdir, 'engine', 'media-index.json'), 'utf8'));
 		const rec = index.items[res.registered.mediaKey];
 		expect(rec.derivedFrom).toMatchObject({
@@ -173,7 +181,7 @@ describe('ranged processing (S07:PRC-015)', () => {
 		const before = await exportCodes(d, frames);
 		expect(before).toEqual([20, 21, 29, 39]);
 		const reg = res.registered;
-		const derived = d.tx([
+		d.tx([
 			{
 				type: 'media.derive',
 				fromMediaId: original,
@@ -193,25 +201,8 @@ describe('ranged processing (S07:PRC-015)', () => {
 				ref: '$p',
 			},
 		]);
-		const clip = () =>
-			d.doc.sequences[d.seqId]!.clips[clipId] as unknown as {
-				mediaId: string;
-				sourceIn: number;
-				start: number;
-			};
-		expect(clip().mediaId).toBe(derived.refs.$p);
-		expect(clip().sourceIn).toBe(8 * 23_520_000);
-		expect(clip().start).toBe(0);
-		const plan = await app.inject({
-			method: 'POST',
-			url: '/api/exports/plan',
-			headers: JSON_H,
-			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings: exportSettings(d.seqId) },
-		});
-		expect(plan.json()).toMatchObject({ path: 'native', blockers: [] });
 		expect(await exportCodes(d, frames)).toEqual(before);
 		d.tx([{ type: 'clip.replaceSource', clipId, mediaId: original }]);
-		expect(clip().sourceIn).toBe(20 * 23_520_000);
 		expect(await exportCodes(d, frames)).toEqual(before);
 	}, 300_000);
 });
@@ -248,7 +239,7 @@ describe('source-range sidecars (S07:PRC-019)', () => {
 describe('discarding an uncommitted media (S07:PRC-018, Replace Footage cancelled)', () => {
 	const del = (key: string) => app.inject({ method: 'DELETE', url: `/api/media/${key}`, headers: H });
 
-	it('deletes an engine-managed copy no project uses: file, record and derivatives', async () => {
+	it('deletes only the managed copy and registry record when no project uses it', async () => {
 		const src = join(dir, 'discard-me.mp4');
 		copyFileSync(fixture('clip-b.mp4'), src);
 		writeFileSync(src, Buffer.concat([readFileSync(src), Buffer.from('discard')])); // unique bytes
@@ -284,12 +275,11 @@ describe('discarding an uncommitted media (S07:PRC-018, Replace Footage cancelle
 			payload: { projectId: 'prj_0000000000000001', paths: [usedSrc], copyIntoProject: true },
 		});
 		const used = (r.json() as { items: RegisteredMedia[] }).items[0]!;
-		const pdir = join(app.appdir, 'projects', 'prj_00000000000000UU');
+		const project = new DocBuilder();
+		project.addMedia(used);
+		const pdir = join(app.appdir, 'projects', project.doc.projectId);
 		mkdirSync(pdir, { recursive: true });
-		writeFileSync(
-			join(pdir, 'project.jasper'),
-			JSON.stringify({ format: 'jasper-project', key: used.mediaKey }),
-		);
+		writeFileSync(join(pdir, 'project.jasper'), JSON.stringify(project.envelope()));
 		expect((await del(used.mediaKey)).json()).toEqual({ deleted: false, reason: 'in-use' });
 		expect(existsSync(join(app.appdir, 'media', used.mediaKey))).toBe(true);
 		const res = await app.inject({

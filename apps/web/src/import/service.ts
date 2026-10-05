@@ -53,10 +53,6 @@ type ImportServiceDeps = {
 	jobs?: ClientJobStore;
 	desktop?: DesktopBridge | null;
 	unloadGuard?: UnloadGuard;
-	engineId?: string;
-	/** Parallel uploads (default 3). */
-	concurrency?: number;
-	now?: () => Date;
 };
 
 type Acquired = {
@@ -133,9 +129,6 @@ export class EngineImportService implements ImportService {
 	private readonly jobs: ClientJobStore;
 	private readonly desktop: DesktopBridge | null;
 	private readonly guard: UnloadGuard;
-	private readonly engineId: string;
-	private readonly concurrency: number;
-	private readonly now: () => Date;
 
 	constructor(deps: ImportServiceDeps) {
 		this.engine = deps.engine;
@@ -144,9 +137,6 @@ export class EngineImportService implements ImportService {
 		this.jobs = deps.jobs ?? clientJobs;
 		this.desktop = deps.desktop === undefined ? getDesktopBridge() : deps.desktop;
 		this.guard = deps.unloadGuard ?? uploadUnloadGuard;
-		this.engineId = deps.engineId ?? LOCAL_ENGINE_ID;
-		this.concurrency = deps.concurrency ?? 3;
-		this.now = deps.now ?? (() => new Date());
 	}
 
 	get isDesktop(): boolean {
@@ -233,7 +223,7 @@ export class EngineImportService implements ImportService {
 			const release = this.guard.begin();
 			try {
 				const results: (Acquired | null)[] = new Array(files.length).fill(null);
-				await mapLimit(files, this.concurrency, async (file, i) => {
+				await mapLimit(files, 3, async (file, i) => {
 					const controller = new AbortController();
 					const jobId = this.jobs.add({
 						kind: 'upload',
@@ -244,14 +234,14 @@ export class EngineImportService implements ImportService {
 						loadedBytes: 0,
 						onCancel: () => controller.abort(),
 					});
-					const started = this.now().getTime();
+					const started = Date.now();
 					try {
 						const reg = await this.engine.uploadFile(file, {
 							projectId,
 							fileName: file.name,
 							signal: controller.signal,
 							onProgress: ({ loaded, total }) => {
-								const elapsed = (this.now().getTime() - started) / 1000;
+								const elapsed = (Date.now() - started) / 1000;
 								const rate = elapsed > 0.5 ? loaded / elapsed : 0;
 								this.jobs.update(jobId, {
 									progress: total > 0 ? loaded / total : 1,
@@ -305,12 +295,12 @@ export class EngineImportService implements ImportService {
 		failed: ImportFailure[],
 	): Promise<ImportResult> {
 		const doc = this.session.getCommitted();
-		const now = this.now().toISOString();
+		const now = new Date().toISOString();
 		const prepared: PreparedMedia[] = acquired.map((a) => ({
 			name: a.name,
 			asset: buildMediaAsset(a.reg, {
 				id: this.session.ctx.ids.next('med'),
-				engineId: this.engineId,
+				engineId: LOCAL_ENGINE_ID,
 				now,
 				path: a.path,
 			}),

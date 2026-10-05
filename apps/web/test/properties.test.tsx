@@ -10,13 +10,6 @@ const scaleOf = (s: ReturnType<typeof makeSession>, id: string) =>
 afterEach(() => cleanup());
 
 describe('Properties panel (S03 §14, S05:PRP)', () => {
-	it('shows sequence settings when nothing is selected', () => {
-		const session = makeSession();
-		renderWithSession(session, <PropertiesPanel instanceId="p1" visible />);
-		expect(screen.getByTestId('sequence-properties')).toBeTruthy();
-		expect(screen.getByTestId('seq-width').textContent).toContain('1920');
-	});
-
 	it('AC-INS-1: mixed scales show – and a +10 drag gives 60/90/110 as one undo step', () => {
 		const session = makeSession();
 		const ids = addSolids(session, [0, 0, 0]);

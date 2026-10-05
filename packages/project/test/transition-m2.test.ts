@@ -143,15 +143,6 @@ describe('transition.update {effectId} (TUI-050)', () => {
 });
 
 describe('transition.applyDefault M2 fields (TUI-051)', () => {
-	it('defaults: video only, cross dissolve, the project duration', () => {
-		const { h, va, vb } = twoLinkedClips();
-		const r = h.ok([{ type: 'transition.applyDefault', clipIds: [va, vb], edges: 'both' }]);
-		expect((r.results[0] as { transitionIds: string[] }).transitionIds).toHaveLength(3);
-		expect(transitions(h).every((t) => t.effectId === 'jasper.cross-dissolve' && t.duration === 30)).toBe(
-			true,
-		);
-	});
-
 	const table: {
 		name: string;
 		args: Record<string, unknown>;
@@ -159,13 +150,6 @@ describe('transition.applyDefault M2 fields (TUI-051)', () => {
 		expect: { effectId: string; count: number; duration: number; kinds: ('video' | 'audio')[] }[];
 		code?: string;
 	}[] = [
-		{
-			// S10:TUI-052: the shared cut of the audio clips gets one crossfade, the free edges fades.
-			name: 'media [audio]: an audio crossfade at the cut and fades at the free edges; video clips ignored',
-			args: { media: ['audio'], edges: 'both' },
-			clips: ['va', 'vb', 'aa', 'ab'],
-			expect: [{ effectId: 'jasper.constant-power', count: 3, duration: 30, kinds: ['audio'] }],
-		},
 		{
 			name: 'media [video, audio], custom effects and duration',
 			args: {

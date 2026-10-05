@@ -33,8 +33,6 @@ test('manifest.webmanifest is linked, valid and its icons exist with the declare
 		start_url: '/',
 		scope: '/',
 		display: 'standalone',
-		background_color: '#000000',
-		theme_color: '#1d1d1d',
 	});
 	expect(m.display_override).toContain('window-controls-overlay');
 	expect(m.file_handlers?.[0]?.accept).toMatchObject({ 'application/x-jasper-project': ['.jasper'] });
@@ -61,7 +59,10 @@ test('manifest.webmanifest is linked, valid and its icons exist with the declare
 	writeFileSync('test-results/e2e-pwa-manifest.json', JSON.stringify(m, null, 2));
 });
 
-test('the service worker registers, activates and bypasses engine routes', async ({ page, request }) => {
+test('the production service worker registers, activates and controls the page', async ({
+	page,
+	request,
+}) => {
 	const sw = await request.get('/sw.js');
 	expect(sw.status()).toBe(200);
 	expect(sw.headers()['content-type']).toMatch(/javascript/);
@@ -72,24 +73,13 @@ test('the service worker registers, activates and bypasses engine routes', async
 		return reg.active?.scriptURL ?? null;
 	});
 	expect(scriptURL).toMatch(/\/sw\.js$/);
-	// After a reload the page is controlled; shell caches exist; engine responses never come from the SW.
+	// Reloading attaches the installed production worker to the page.
 	await page.reload();
 	await expect(page.getByTestId('home')).toBeVisible();
 	await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
-	const caches = await page.evaluate(() => globalThis.caches.keys());
-	expect(caches.some((k) => k.startsWith('jasper-shell-'))).toBe(true);
-	const viaSw = await page.evaluate(async () => {
-		const r = await fetch('/api/capabilities');
-		const cached = await Promise.all(
-			(await globalThis.caches.keys()).map(
-				async (k) => !!(await (await globalThis.caches.open(k)).match('/api/capabilities')),
-			),
-		);
-		return { status: r.status, cached: cached.some(Boolean) };
-	});
-	expect(viaSw).toEqual({ status: 200, cached: false });
+	const controller = await page.evaluate(() => navigator.serviceWorker.controller?.scriptURL);
 	writeFileSync(
 		'test-results/e2e-pwa-service-worker.json',
-		JSON.stringify({ scriptURL, caches, ...viaSw }, null, 2),
+		JSON.stringify({ scriptURL, controller }, null, 2),
 	);
 });

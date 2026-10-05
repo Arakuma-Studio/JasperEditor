@@ -34,9 +34,6 @@ let clipboard: { effects: CopiedColorEffect[] } | null = null;
 
 export const gradeClipboard = {
 	get: () => clipboard,
-	clear: () => {
-		clipboard = null;
-	},
 };
 
 /** Copies every colour effect of the clip; false when it has none. */
@@ -140,7 +137,6 @@ export const colorBypass = {
 		const cur = bypass.get();
 		bypass.set(cur.includes(clipId) ? cur.filter((c) => c !== clipId) : [...cur, clipId]);
 	},
-	clear: () => bypass.set([]),
 };
 
 export function useColorBypass(): readonly string[] {

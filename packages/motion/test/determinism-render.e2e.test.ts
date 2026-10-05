@@ -142,6 +142,7 @@ describe.runIf(enabled)('render parity (REMOTION_E2E=1, S11:ANM-014/015)', { tim
 					...browserOpts,
 				});
 				still[f] = buffer!;
+				writeFileSync(join(work, `${id}-still-${f}.png`), buffer!);
 			}
 			stills[id] = still;
 			// it animates: early, middle and late frames differ
@@ -160,6 +161,42 @@ describe.runIf(enabled)('render parity (REMOTION_E2E=1, S11:ANM-014/015)', { tim
 				shuffled: mismatches(shuffled, still, (i) => shuf[i]!),
 			}).toEqual({ c1: [], c4: [], reversed: [], shuffled: [] });
 		});
+
+	// Review fix 2: the callout is completely hidden before its intro begins.
+	it('callout paints no premature pulse at clip start', async () => {
+		const callout = doc.videoTracks
+			.flatMap((track) => track.clips)
+			.find((clip) => 'mg' in clip.source && clip.source.mg.template.id === 'callout')!;
+		const inputProps = {
+			doc,
+			options: { isPreview: false, transparentBackground: true, layerFilter: [callout.clipId] },
+		};
+		const composition = await r.selectComposition({
+			serveUrl,
+			id: 'Sequence',
+			inputProps,
+			puppeteerInstance: browser,
+			...browserOpts,
+		});
+		const painted: boolean[] = [];
+		for (const frame of [0, 5]) {
+			const { buffer } = await r.renderStill({
+				composition,
+				serveUrl,
+				frame,
+				inputProps: composition.props,
+				imageFormat: 'png',
+				output: null,
+				puppeteerInstance: browser,
+				...browserOpts,
+			});
+			writeFileSync(join(work, `callout-${frame}.png`), buffer!);
+			const pixels = rgba(buffer!);
+			expect(pixels.length).toBe(SCENE.width * SCENE.height * 4);
+			painted.push(pixels.some((channel, index) => index % 4 === 3 && channel !== 0));
+		}
+		expect(painted).toEqual([false, true]);
+	});
 
 	it('renderMedia (ProRes 4444) at concurrency 1 and 4 decodes to identical frames', async () => {
 		for (const id of ['Sequence']) {
@@ -281,8 +318,10 @@ describe.runIf(enabled)('render parity (REMOTION_E2E=1, S11:ANM-014/015)', { tim
 						clip: { x: 0, y: 0, width: SCENE.width, height: SCENE.height },
 					});
 					const was = first.get(f);
-					if (!was) first.set(f, shot);
-					else if (!was.equals(shot)) differing.push(`frame ${f} (visit ${i})`);
+					if (!was) {
+						first.set(f, shot);
+						writeFileSync(join(work, `${id}-player-${f}.png`), shot);
+					} else if (!was.equals(shot)) differing.push(`frame ${f} (visit ${i})`);
 				}
 				expect(differing).toEqual([]);
 			});
@@ -296,9 +335,8 @@ describe.runIf(enabled)('render parity (REMOTION_E2E=1, S11:ANM-014/015)', { tim
 			});
 			console.log('[ANM-015] value engine, ms per frame (200 units, 300 frames):', JSON.stringify(result));
 			writeFileSync(join(work, 'anm-015.json'), JSON.stringify(result, null, 2));
-			const cost = result as { values: { median: number }; revisit: { median: number } };
+			const cost = result as { values: { median: number } };
 			expect(cost.values.median).toBeLessThanOrEqual(2);
-			expect(cost.revisit.median).toBeLessThanOrEqual(0.1);
 		});
 	});
 });

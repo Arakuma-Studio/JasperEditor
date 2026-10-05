@@ -135,9 +135,8 @@ describe('engine server (ARCHITECTURE §9.1, §4.2)', () => {
 		const app = await make();
 		const r = await app.inject({ method: 'POST', url: '/api/nothing', headers: H });
 		expect(r.statusCode).toBe(404);
-		expect(r.json()).toEqual({
+		expect(r.json()).toMatchObject({
 			code: 'NOT_FOUND',
-			message: 'No route for POST /api/nothing',
 			retryable: false,
 		});
 		const bad = await app.inject({

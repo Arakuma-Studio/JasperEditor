@@ -19,7 +19,7 @@ export type AnimeTemplateTiming = {
 };
 
 /** Frames written at `ANIME_REFERENCE_FPS` → whole frames at `fps` (same length in seconds, rounded). */
-export function animeFramesAt(referenceFrames: number, fps: number): number {
+function animeFramesAt(referenceFrames: number, fps: number): number {
 	return Math.max(0, Math.round((referenceFrames * fps) / ANIME_REFERENCE_FPS));
 }
 

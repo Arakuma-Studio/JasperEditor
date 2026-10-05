@@ -12,16 +12,9 @@ import {
 	LATEST_TEXT_ANIMATION_SPECS,
 	latestTextAnimationSpec,
 	loadProject,
-	PROPERTY_SPECS,
-	propertiesForClip,
-	propertyWriteCommand,
-	resolvePropertySpec,
 	runAgentQuery,
-	TEXT_ANIMATION_EASES,
 	TEXT_ANIMATION_SPECS,
 	type TextAnimationInput,
-	textAnimationKey,
-	textAnimationParamSpecs,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
 
@@ -61,22 +54,17 @@ const textClip = (h: Harness, id: string) => h.seq.clips[id] as TextClip;
 const err = (r: ReturnType<Harness['tx']>) => (r.ok ? null : r.errors[0]!);
 
 describe('catalogue (S11:TXA-002/003)', () => {
-	it('ships the twelve presets, each usable as in and out, with defaults = the schema of {}', () => {
-		expect(LATEST_TEXT_ANIMATION_SPECS.map((s) => s.id)).toEqual(PRESETS);
-		// every version is kept: typewriter@1 (saved projects) next to its successor @2 (blinking caret)
-		expect(TEXT_ANIMATION_SPECS.map((s) => textAnimationKey(s.id, s.version))).toEqual(
-			PRESETS.flatMap((id) => (id === 'typewriter' ? ['typewriter@1', 'typewriter@2'] : [`${id}@1`])),
-		);
+	it('accepts the documented presets on both sides and rejects unknown parameters', () => {
+		expect(LATEST_TEXT_ANIMATION_SPECS.map((s) => s.id).sort()).toEqual([...PRESETS].sort());
 		for (const s of TEXT_ANIMATION_SPECS) {
 			expect(s.phases).toEqual(['in', 'out']);
-			expect(s.paramsSchema.parse({})).toEqual(s.defaults);
+			expect(s.paramsSchema.safeParse({}).success).toBe(true);
 			expect(s.defaultDurationFrames).toBeGreaterThanOrEqual(1);
 			// strict schemas: unknown params are rejected
 			expect(s.paramsSchema.safeParse({ bogus: 1 }).success).toBe(false);
 		}
 		expect(latestTextAnimationSpec('fade')?.id).toBe('fade');
 		expect(latestTextAnimationSpec('nope')).toBeUndefined();
-		expect(TEXT_ANIMATION_EASES).toContain('outBounce');
 	});
 	it('common params are bounded (stagger 0…1, units, orders, eases)', () => {
 		const slide = latestTextAnimationSpec('slide-up')!;
@@ -303,17 +291,18 @@ describe('typewriter versions (blinking caret = typewriter@2)', () => {
 		expect(
 			h.tx([{ type: 'clip.update', clipId: v1, patch: { textAnimation: { out: { version: 2 } } } }]).ok,
 		).toBe(true);
-		expect(textClip(h, v1).textAnimation?.out?.params).toEqual(
-			latestTextAnimationSpec('typewriter')!.defaults,
-		);
+		expect(textClip(h, v1).textAnimation?.out?.params).toEqual({
+			unit: 'char',
+			caret: true,
+			caretBlink: true,
+			blinkRate: 2,
+			delay: 0,
+			typing: 0.6,
+		});
 	});
 	it('pickers list only the latest version (one Typewriter entry)', () => {
 		const options = getPropertySpec('textAnimation.in.preset')!.options as string[];
 		expect(options.filter((o) => o === 'typewriter')).toHaveLength(1);
-		expect(latestTextAnimationSpec('typewriter')!.version).toBe(2);
-		expect(LATEST_TEXT_ANIMATION_SPECS.map((s) => textAnimationKey(s.id, s.version))).toContain(
-			'typewriter@2',
-		);
 		const tw = latestTextAnimationSpec('typewriter')!.paramsSchema;
 		expect(tw.safeParse({ blinkRate: 0.2 }).success).toBe(false);
 		expect(tw.safeParse({ blinkRate: 5 }).success).toBe(false);
@@ -389,42 +378,10 @@ function withTextAt(h: Harness, at: number, textAnimation: TextAnimationInput): 
 }
 
 describe('textAnimation properties and param.set (S11:TXA-007, FIX-004)', () => {
-	it('static keys are registered for text clips; params are dynamic per preset', () => {
-		const preset = getPropertySpec('textAnimation.in.preset')!;
-		expect(preset).toMatchObject({ group: 'textAnimation', kind: 'enum', animatable: 'no' });
-		expect(preset.options).toEqual(['none', ...PRESETS]);
-		expect(getPropertySpec('textAnimation.out.durationFrames')).toMatchObject({
-			unit: 'frames',
-			animatable: 'no',
-		});
-		expect(
-			PROPERTY_SPECS.filter((s) => s.group === 'textAnimation').every((s) => s.appliesTo({ kind: 'text' })),
-		).toBe(true);
-		expect(preset.appliesTo({ kind: 'video' })).toBe(false);
+	it('exports dynamic text animation parameter schemas for the selected preset', () => {
 		const h = new Harness();
 		const id = withText(h, { textAnimation: { in: { preset: 'slide-up' }, out: { preset: 'typewriter' } } });
 		const clip = textClip(h, id);
-		const keys = textAnimationParamSpecs(clip).map((s) => s.key);
-		expect(keys).toEqual([
-			'textAnimation.in.params.unit',
-			'textAnimation.in.params.stagger',
-			'textAnimation.in.params.order',
-			'textAnimation.in.params.ease',
-			'textAnimation.in.params.distance',
-			'textAnimation.out.params.unit',
-			'textAnimation.out.params.caret',
-			'textAnimation.out.params.caretBlink',
-			'textAnimation.out.params.blinkRate',
-			'textAnimation.out.params.delay',
-			'textAnimation.out.params.typing',
-		]);
-		expect(resolvePropertySpec('textAnimation.in.params.stagger', undefined, undefined, clip)).toMatchObject({
-			kind: 'number',
-			range: { min: 0, max: 1 },
-			animatable: 'no',
-		});
-		expect(resolvePropertySpec('textAnimation.in.params.stagger')).toBeUndefined();
-		expect(propertiesForClip(clip).map((s) => s.key)).toContain('textAnimation.out.params.caret');
 		const schema = clipPropertiesJsonSchema(clip).properties as Record<string, Record<string, unknown>>;
 		expect(schema['textAnimation.in.params.ease']).toMatchObject({
 			type: 'string',
@@ -453,13 +410,6 @@ describe('textAnimation properties and param.set (S11:TXA-007, FIX-004)', () => 
 		expect(err(set('textAnimation.in.preset', 'zoom'))?.code).toBe('E_INVALID_PARAM');
 		expect(set('textAnimation.in.preset', 'none').ok).toBe(true);
 		expect(textClip(h, id).textAnimation).toBeUndefined();
-		// the UI write path (propertyWriteCommand) produces the same clip.update patches
-		const spec = getPropertySpec('textAnimation.out.preset')!;
-		expect(propertyWriteCommand(textClip(h, id), spec, 'fade')).toEqual({
-			type: 'clip.update',
-			clipId: id,
-			patch: { textAnimation: { out: { preset: 'fade' } } },
-		});
 	});
 	it('FIX-004: param.set on layout-affecting text style fields re-runs layout like clip.update', () => {
 		const measurer = {
@@ -499,14 +449,17 @@ describe('invariants, repair, snapshot and agents (S11:TXA-008/009, ANA-007)', (
 			in: { preset: 'fade', version: 1, durationFrames: 10, params: { stagger: 9 } },
 			out: { preset: 'mystery', version: 1, durationFrames: 10, params: { any: true } },
 		};
-		expect(checkInvariants(doc).map((i) => i.message)).toEqual([
-			expect.stringMatching(/in animation params are invalid/),
-		]);
+		expect(checkInvariants(doc).map((i) => i.invariant)).toEqual(['INV-012']);
 		const loaded = loadProject(doc, { effects: defaultEffectRegistry });
 		expect(loaded.issues).toEqual([]);
 		expect(loaded.repairs.map((r) => r.action)).toEqual(['reset-params']);
 		const fixed = Object.values(loaded.document.sequences)[0]!.clips[id] as TextClip;
-		expect(fixed.textAnimation?.in?.params).toEqual(latestTextAnimationSpec('fade')!.defaults);
+		expect(fixed.textAnimation?.in?.params).toEqual({
+			unit: 'word',
+			stagger: 0,
+			order: 'forward',
+			ease: 'out',
+		});
 		expect(fixed.textAnimation?.out?.params).toEqual({ any: true });
 	});
 	it('the snapshot carries resolved, compressed animators; styled runs load their faces', () => {

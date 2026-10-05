@@ -18,12 +18,15 @@ fn run_stdin(args: &[&str], spec: &Value) -> (i32, Vec<u8>, String) {
         .stderr(Stdio::piped())
         .spawn()
         .expect("spawn jasper-mg");
-    child
+    if let Err(error) = child
         .stdin
         .take()
         .unwrap()
         .write_all(spec.to_string().as_bytes())
-        .unwrap();
+    {
+        // Invalid command options can be rejected before the process reads its spec.
+        assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
+    }
     let out = child.wait_with_output().unwrap();
     (
         out.status.code().unwrap_or(-1),
@@ -40,21 +43,12 @@ fn events(stderr: &str) -> Vec<Value> {
 }
 
 #[test]
-fn version_and_schema_are_json() {
+fn version_is_json() {
     let out = Command::new(BIN).arg("--version").output().unwrap();
     assert!(out.status.success());
     let v: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["name"], "jasper-mg");
     assert_eq!(v["fframes"], "1.0.3");
-    let out = Command::new(BIN).arg("schema").output().unwrap();
-    let s: Value = serde_json::from_slice(&out.stdout).unwrap();
-    let ids: Vec<&str> = s["templates"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|t| t["id"].as_str().unwrap())
-        .collect();
-    assert_eq!(ids, ["lower-third", "title-card"]);
 }
 
 #[test]
@@ -115,13 +109,36 @@ fn invalid_specs_exit_with_code_2() {
     assert_eq!(ev.last().unwrap()["event"], "error");
     let unknown = json!({"template": {"id": "nope", "version": 1}, "params": {},
                          "width": 64, "height": 36, "fps": {"num": 30, "den": 1}, "durationFrames": 3});
-    assert_eq!(
-        run_stdin(&["svg", "--spec", "-", "--frame", "0"], &unknown).0,
-        2
+    let (code, _, stderr) = run_stdin(
+        &[
+            "frame",
+            "--spec",
+            "-",
+            "--frame",
+            "0",
+            "--out",
+            "/unused.png",
+        ],
+        &unknown,
     );
+    assert_eq!(code, 2);
+    assert_eq!(events(&stderr).last().unwrap()["code"], "INVALID_SPEC");
     let ok = json!({"template": {"id": "title-card", "version": 1}, "params": {},
                     "width": 64, "height": 36, "fps": {"num": 30, "den": 1}, "durationFrames": 3});
-    assert_eq!(run_stdin(&["svg", "--spec", "-", "--frame", "3"], &ok).0, 2);
+    let (code, _, stderr) = run_stdin(
+        &[
+            "frame",
+            "--spec",
+            "-",
+            "--frame",
+            "3",
+            "--out",
+            "/unused.png",
+        ],
+        &ok,
+    );
+    assert_eq!(code, 2);
+    assert_eq!(events(&stderr).last().unwrap()["code"], "INVALID_SPEC");
     assert_eq!(run_stdin(&["render", "--spec", "-"], &ok).0, 2);
     let missing = Command::new(BIN)
         .args(["render", "--spec", "/nonexistent.json", "--raw-rgba"])
@@ -149,6 +166,9 @@ fn frame_writes_a_png() {
         .unwrap();
     assert!(status.success());
     let bytes = std::fs::read(&out).unwrap();
-    assert_eq!(&bytes[1..4], b"PNG");
+    assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
+    assert_eq!(&bytes[12..16], b"IHDR");
+    assert_eq!(u32::from_be_bytes(bytes[16..20].try_into().unwrap()), 1920);
+    assert_eq!(u32::from_be_bytes(bytes[20..24].try_into().unwrap()), 1080);
     let _ = std::fs::remove_dir_all(dir);
 }

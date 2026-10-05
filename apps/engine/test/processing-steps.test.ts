@@ -2,7 +2,7 @@
 //   2 frame count / rate / audio bit-exact for every step on clip-b.mp4
 //   3 stabilise shaky.mp4: global inter-frame motion variance (phase correlation) drops ≥ 60 % (vid.stab WASM)
 //     and ≥ 40 % (deshake)
-//   4 de-judder judder.mp4 (detected, step CV drops ≥ 50 %); steady-pan.mp4 left unchanged in auto mode
+//   4 de-judder judder.mp4 (detected, step CV drops ≥ 50 %); exact steady passthrough in dejudder.test.ts
 //   5 denoise: noise sigma of a flat patch drops ≥ 40 % (medium); deblock: 8x8 blockiness drops ≥ 25 %
 //   6 upscale with the generated model: exactly 2×, seamless tiles, `mix` blends linearly
 import { spawnSync } from 'node:child_process';
@@ -12,12 +12,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ProcessStep } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { assertLgplFilters, GPL_FILTERS } from '../src/processing/proc/filters.ts';
-import { listFilters, runProc } from '../src/processing/proc/runner.ts';
+import { assertLgplFilters } from '../src/processing/proc/filters.ts';
+import { runProc } from '../src/processing/proc/runner.ts';
 import { createStepImpl } from '../src/processing/proc/steps.ts';
-import { writeTinySrModel } from '../src/processing/proc/tiny-onnx.ts';
-import { createUpscaleStep, openOnnxModel, upscaleTiled } from '../src/processing/proc/upscale.ts';
+import { createUpscaleStep } from '../src/processing/proc/upscale.ts';
 import { ensureFixtures, fixture, ROOT } from './helpers.ts';
+import { writeTinySrModel } from './tiny-model.ts';
 
 const LGPL = join(ROOT, 'vendor', 'ffmpeg-lgpl', `${process.platform}-${process.arch}`);
 const FFMPEG =
@@ -58,6 +58,7 @@ function probe(file: string) {
 	const r = spawnSync(FFPROBE, ['-v', 'error', '-count_packets', '-show_streams', '-of', 'json', file], {
 		encoding: 'utf8',
 	});
+	if (r.status !== 0) throw new Error(r.stderr);
 	return JSON.parse(r.stdout).streams as Array<Record<string, string | number>>;
 }
 
@@ -65,6 +66,8 @@ function audioHash(file: string): string {
 	const r = spawnSync(FFMPEG, ['-v', 'error', '-i', file, '-map', '0:a:0', '-c', 'copy', '-f', 'data', '-'], {
 		maxBuffer: 256 * 1024 * 1024,
 	});
+	if (r.status !== 0) throw new Error(r.stderr.toString());
+	if (!r.stdout.length) throw new Error(`No audio packets decoded from ${file}`);
 	return createHash('sha256').update(r.stdout).digest('hex');
 }
 
@@ -85,6 +88,7 @@ function grey(file: string, w: number, h: number, vf = ''): Uint8Array[] {
 		],
 		{ maxBuffer: 1024 * 1024 * 1024 },
 	);
+	if (r.status !== 0) throw new Error(r.stderr.toString());
 	const frames: Uint8Array[] = [];
 	for (let o = 0; o + w * h <= r.stdout.length; o += w * h)
 		frames.push(new Uint8Array(r.stdout.subarray(o, o + w * h)));
@@ -240,7 +244,7 @@ function blockiness(frames: Uint8Array[], w: number, h: number): number {
 
 beforeAll(() => {
 	ensureFixtures();
-	const need = ['shaky.mp4', 'judder.mp4', 'steady-pan.mp4', 'noisy.mkv', 'blocky.mp4'];
+	const need = ['shaky.mp4', 'judder.mp4', 'noisy.mkv', 'blocky.mp4'];
 	if (!need.every((n) => existsSync(fixture(n)))) {
 		const r = spawnSync(process.execPath, [join(ROOT, 'scripts', 'make-fixtures.mjs')], { stdio: 'inherit' });
 		if (r.status !== 0) throw new Error('fixture generation failed');
@@ -255,11 +259,7 @@ afterAll(() => {
 });
 
 describe('LGPL filters only (D-13)', () => {
-	it('none of the GPL-only filters exists in the LGPL build; generated text is guarded', async () => {
-		const filters = await listFilters(FFMPEG);
-		if (FFMPEG.includes('ffmpeg-lgpl')) for (const f of GPL_FILTERS) expect(filters.has(f), f).toBe(false);
-		for (const f of ['atadenoise', 'fftdnoiz', 'nlmeans', 'deblock', 'deshake', 'setparams'])
-			expect(filters.has(f), f).toBe(true);
+	it('rejects GPL-only filters and requires explicit approval for vidstab', () => {
 		expect(() => assertLgplFilters('scale=1:1,hqdn3d=1')).toThrow(/hqdn3d/);
 		expect(() => assertLgplFilters('format=yuv444p,vidstabtransform=input=x')).toThrow();
 		expect(() => assertLgplFilters('vidstabtransform=input=x', { allowVidstab: true })).not.toThrow();
@@ -331,29 +331,19 @@ describe('stabilise (S07 §8 test 3)', () => {
 });
 
 describe('de-judder (S07 §8 test 4)', () => {
-	it('judder.mp4 is detected and evened out; steady-pan.mp4 is left unchanged', async () => {
-		const { cadenceEvenness } = await import('../src/processing/proc/dejudder/cadence.ts');
-		const { CvPool } = await import('../src/processing/proc/dejudder/pool.ts');
-		const { measureMotion } = await import('../src/processing/proc/dejudder/cadence.ts');
-		const pool = await CvPool.create(3);
-		try {
-			const spec = (file: string) => ({
-				ffmpeg: FFMPEG,
-				inputArgs: ['-i', file],
-				frames: 60,
-				width: 640,
-				height: 360,
-				fps: { num: 30, den: 1 },
-			});
-			const j = await proc(fixture('judder.mp4'), [{ op: 'dejudder', mode: 'auto' }], 'judder');
-			const cvBefore = cadenceEvenness((await measureMotion(spec(fixture('judder.mp4')), pool)).motion).cv;
-			const cvAfter = cadenceEvenness((await measureMotion(spec(j.output), pool)).motion).cv;
-			expect(cvAfter).toBeLessThanOrEqual(cvBefore * 0.5);
-			const s = await proc(fixture('steady-pan.mp4'), [{ op: 'dejudder', mode: 'auto' }], 'steady');
-			expect(s.res.notes.join()).toMatch(/no cadence found/);
-		} finally {
-			await pool.close();
-		}
+	it('reduces uneven frame-to-frame motion by at least 50%', async () => {
+		const cv = (file: string) => {
+			const frames = grey(file, 640, 360);
+			const distances = frames
+				.slice(1)
+				.map((frame, i) => Math.hypot(...phaseShift(frames[i], frame, 640, 360)));
+			const mean = distances.reduce((sum, d) => sum + d, 0) / distances.length;
+			return Math.sqrt(distances.reduce((sum, d) => sum + (d - mean) ** 2, 0) / distances.length) / mean;
+		};
+		const before = cv(fixture('judder.mp4'));
+		expect(before).toBeGreaterThan(0.1);
+		const { output } = await proc(fixture('judder.mp4'), [{ op: 'dejudder', mode: 'auto' }], 'judder');
+		expect(cv(output)).toBeLessThanOrEqual(before * 0.5);
 	}, 600_000);
 });
 
@@ -371,7 +361,7 @@ describe('de-judder of a range reads context frames (PST-013)', () => {
 			for (let i = 0; i < a.length; i++) d += Math.abs(a[i]! - b[i]!);
 			return d / a.length;
 		};
-		let contextUsed = 0;
+		let retimedEdges = 0;
 		// Three offsets: the 3-frame cycle puts a frame that needs its outside neighbour at the edge of at least one.
 		for (const start of [20, 21, 22]) {
 			const end = start + 24;
@@ -379,14 +369,6 @@ describe('de-judder of a range reads context frames (PST-013)', () => {
 				startFrame: start,
 				endFrame: end,
 			});
-			const info = r.res.sidecarData.steps[0].info as {
-				applied: boolean;
-				edge: number;
-				contextFrames: number;
-			};
-			expect(info.applied).toBe(true);
-			expect(info.edge).toBe(0);
-			contextUsed += info.contextFrames;
 			const out = grey(r.output, W, H);
 			expect(out).toHaveLength(24);
 			for (const [i, abs] of [
@@ -397,10 +379,13 @@ describe('de-judder of a range reads context frames (PST-013)', () => {
 				const vsSource = mad(src[abs]!, ref[abs]!);
 				// Same as the whole-file output (ProRes noise only); the source frame differs where it was retimed.
 				expect(vsWhole).toBeLessThan(1);
-				if (vsSource > 2) expect(vsWhole).toBeLessThan(vsSource / 3);
+				if (vsSource > 2) {
+					retimedEdges++;
+					expect(vsWhole).toBeLessThan(vsSource / 3);
+				}
 			}
 		}
-		expect(contextUsed).toBeGreaterThanOrEqual(1);
+		expect(retimedEdges).toBeGreaterThanOrEqual(1);
 	}, 600_000);
 });
 
@@ -436,25 +421,6 @@ describe('denoise and deblock (S07 §8 test 5)', () => {
 
 describe('upscale (S07 §8 test 6)', () => {
 	it('tiles are seamless on a gradient and mix blends linearly', async () => {
-		const m = await openOnnxModel(tiny.path, { threads: 2, device: 'cpu', scale: 2 });
-		const w = 700;
-		const h = 333;
-		const src = new Float32Array(w * h * 3);
-		for (let y = 0; y < h; y++)
-			for (let x = 0; x < w; x++)
-				for (let c = 0; c < 3; c++)
-					src[(y * w + x) * 3 + c] = (x / (w - 1)) * 0.6 + (y / (h - 1)) * 0.3 + c * 0.03;
-		const out = await upscaleTiled(m, src, w, h);
-		let seam = 0;
-		for (let y = 0; y < 2 * h; y++)
-			for (let x = 0; x < 2 * w; x++)
-				for (let c = 0; c < 3; c++)
-					seam = Math.max(
-						seam,
-						Math.abs(out[(y * 2 * w + x) * 3 + c] - src[((y >> 1) * w + (x >> 1)) * 3 + c]),
-					);
-		expect(seam).toBeLessThan(1 / 255);
-		// mix: the step output is linear between the model result (mix 1) and the Lanczos upscale (mix 0).
 		const ctx = {
 			ffmpeg: FFMPEG,
 			ffprobe: FFPROBE,
@@ -465,21 +431,49 @@ describe('upscale (S07 §8 test 6)', () => {
 			height: 64,
 			frames: 1,
 			fps: { num: 25, den: 1 },
-			models: {},
+			models: { tiny },
 			note: () => {},
 			info: () => {},
 			analysisProgress: () => {},
 			signal: new AbortController().signal,
 		};
-		const frame = { index: 0, width: 96, height: 64, data: new Uint16Array(96 * 64 * 3) };
-		for (let i = 0; i < frame.data.length; i++) frame.data[i] = (i * 7919) % 65536;
-		const run = async (mix: number) => {
-			const step = createUpscaleStep({ op: 'upscale', model: 'tiny', scale: 2, mix }, { model: m });
-			await step.open(ctx);
-			const [out] = await step.push({ ...frame, data: frame.data.slice() });
-			return out.data;
+		const run = async (mix: number, width: number, height: number, data: Uint16Array) => {
+			const step = createUpscaleStep({ op: 'upscale', model: 'tiny', scale: 2, mix });
+			try {
+				await step.open({ ...ctx, width, height });
+				const [out] = await step.push({ index: 0, width, height, data });
+				return out.data;
+			} finally {
+				await step.close?.();
+			}
 		};
-		const [o1, o0, oh] = [await run(1), await run(0), await run(0.5)];
+		// Large enough for the runtime's bounded-memory tiled path; the real ONNX model
+		// specifies nearest-neighbour duplication, independently of the tile implementation.
+		const w = 1200;
+		const h = 1000;
+		const gradient = new Uint16Array(w * h * 3);
+		for (let y = 0; y < h; y++)
+			for (let x = 0; x < w; x++)
+				for (let c = 0; c < 3; c++) gradient[(y * w + x) * 3 + c] = x * 30 + y * 15 + c * 1000;
+		const tiled = await run(1, w, h, gradient);
+		let seam = 0;
+		for (let y = 0; y < 2 * h; y++)
+			for (let x = 0; x < 2 * w; x++)
+				for (let c = 0; c < 3; c++)
+					seam = Math.max(
+						seam,
+						Math.abs(
+							tiled[(y * 2 * w + x) * 3 + c] - gradient[(Math.floor(y / 2) * w + Math.floor(x / 2)) * 3 + c],
+						),
+					);
+		expect(seam).toBeLessThanOrEqual(1);
+		const data = new Uint16Array(96 * 64 * 3);
+		for (let i = 0; i < data.length; i++) data[i] = (i * 7919) % 65536;
+		const [o1, o0, oh] = [
+			await run(1, 96, 64, data),
+			await run(0, 96, 64, data),
+			await run(0.5, 96, 64, data),
+		];
 		let err = 0;
 		let diff = 0;
 		for (let i = 0; i < o1.length; i++) {
@@ -489,6 +483,5 @@ describe('upscale (S07 §8 test 6)', () => {
 		expect(diff / o1.length).toBeGreaterThan(100);
 		// Lanczos overshoot is clamped per input; allow a couple of 16-bit codes for rounding.
 		expect(err).toBeLessThanOrEqual(2);
-		await m.release();
 	}, 600_000);
 });

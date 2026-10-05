@@ -1,7 +1,7 @@
 // The stdio MCP client drives a token-protected engine through a real edit and export.
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,12 +14,13 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const PORT = Number(process.env.MCP_TEST_PORT ?? 48551);
 const AUTOSTART_PORT = Number(process.env.MCP_TEST_AUTOSTART_PORT ?? PORT + 1);
 const fixture = join(ROOT, 'fixtures', 'media', 'clip-a.mp4');
+const artifacts = join(ROOT, 'test-results', 'mcp');
 
 function cleanEnv(extra: Record<string, string> = {}): Record<string, string> {
 	const env: Record<string, string> = {};
 	for (const [key, value] of Object.entries(process.env))
 		if (value !== undefined && !key.startsWith('JASPER_')) env[key] = value;
-	return { ...env, ...extra };
+	return { ...env, JASPER_CACHE_AUTO_GC: '0', ...extra };
 }
 
 async function waitFor(check: () => Promise<boolean> | boolean, timeoutMs: number, description: string) {
@@ -81,6 +82,7 @@ beforeAll(async () => {
 		if (result.status !== 0) throw new Error('fixture generation failed');
 	}
 	appdir = mkdtempSync(join(tmpdir(), 'jasper-mcp-it-'));
+	mkdirSync(artifacts, { recursive: true });
 	token = randomBytes(16).toString('hex');
 	engine = spawn(
 		process.execPath,
@@ -140,6 +142,7 @@ describe('MCP over stdio with a token-protected engine', () => {
 			| undefined;
 		expect(image?.mimeType).toBe('image/png');
 		const png = Buffer.from(image!.data, 'base64');
+		writeFileSync(join(artifacts, 'edit-frame.png'), png);
 		expect(png.subarray(1, 4).toString('latin1')).toBe('PNG');
 		expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([320, 180]);
 
@@ -174,6 +177,7 @@ describe('MCP over stdio with a token-protected engine', () => {
 		expect(probe.status, probe.stderr).toBe(0);
 		const stream = JSON.parse(probe.stdout).streams[0];
 		expect([stream.width, stream.height, Number(stream.nb_read_frames)]).toEqual([1280, 720, 30]);
+		copyFileSync(output, join(artifacts, 'edit-export.mp4'));
 	}, 300_000);
 
 	it('keeps the engine token out of MCP responses and stderr', async () => {
@@ -304,6 +308,7 @@ describe('MCP over stdio with a token-protected engine', () => {
 		expect(json<{ cells: { frame: number }[] }>(sheet).cells.map((cell) => cell.frame)).toEqual([0, 15, 29]);
 		const image = sheet.content.find((part) => part.type === 'image') as { mimeType: string; data: string };
 		expect(image.mimeType).toBe('image/png');
+		writeFileSync(join(artifacts, 'animation-contact-sheet.png'), Buffer.from(image.data, 'base64'));
 		expect(Buffer.from(image.data, 'base64').subarray(1, 4).toString('latin1')).toBe('PNG');
 		const added = await ok<{ clips: { id: string }[] }>('add_text', {
 			projectId,

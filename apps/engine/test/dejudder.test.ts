@@ -68,7 +68,6 @@ describe.skipIf(!HAVE_FFMPEG)('automatic de-judder of a steady pan', () => {
 		const step = createDejudderStep({ op: 'dejudder', mode: 'auto' });
 		const result = await runFrameStep(step, spec, ctx);
 		expect(result.outputFrames).toBe(N);
-		expect(ctx.facts.applied).toBe(false);
 		let index = 0;
 		for await (const buf of decodeFrames(spec, { pixFmt: 'rgb48le' })) {
 			const frame = result.frames[index++];

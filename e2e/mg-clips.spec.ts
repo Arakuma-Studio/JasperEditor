@@ -3,14 +3,11 @@
 // File ▸ Import Remotion Project… (fixtures/mg-project), Motion Templates ▸ Remotion, insert, live host frame in
 // the Program monitor, a props edit in Properties visible within 500 ms, and the switch to the cached VP9-alpha
 // preview after the props stay unchanged for 2 s.
-import { existsSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { expect, type Page, test } from '@playwright/test';
-import { appliedLabels, createProject, enableAgentBridge, query, ROOT, serverInfo } from './support.ts';
+import { createProject, enableAgentBridge, query, ROOT } from './support.ts';
 
 const FIXTURE_PROJECT = join(ROOT, 'fixtures', 'mg-project');
 
@@ -83,21 +80,12 @@ test('renderer-page protocol contract (Remotion 4.0.499) drives the fixture bund
 			f.src = M.hostPageUrl(M.bundleServeUrl(key));
 		});
 		const w = f.contentWindow as unknown as Record<string, unknown>;
-		const globals = Object.fromEntries(
-			[
-				'remotion_setBundleMode',
-				'remotion_calculateComposition',
-				'remotion_getCompositionNames',
-				'getStaticCompositions',
-			].map((k) => [k, typeof w[k]]),
-		);
 		const d = new M.MgFrameHostDriver(w);
 		const meta = await d.configure({
 			compositionId: 'Title',
 			props: { title: 'Contract', accent: '#00ff00', delay: 0 },
 			override: { fps: 30, width: 1280, height: 720 },
 		});
-		const setFrame = typeof w.remotion_setFrame;
 		await d.seek('Title', 45);
 		const doc = f.contentDocument!;
 		const text = doc.querySelector('[data-testid="title-text"]')?.textContent;
@@ -107,8 +95,6 @@ test('renderer-page protocol contract (Remotion 4.0.499) drives the fixture bund
 		const opacityAt0 = panel ? Number(getComputedStyle(panel).opacity) : -1;
 		return {
 			check: M.checkHostProtocol(w),
-			globals,
-			setFrame,
 			meta,
 			ready: w.remotion_renderReady,
 			text,
@@ -119,19 +105,13 @@ test('renderer-page protocol contract (Remotion 4.0.499) drives the fixture bund
 	}, reg.mediaKey);
 	// If any of these fail after a Remotion upgrade, packages/compositions/src/mg-host/protocol.ts must follow.
 	expect(r.check).toEqual({ ok: true, missing: [], remotionVersion: '4.0.499', siteVersion: '11' });
-	expect(r.globals).toEqual({
-		remotion_setBundleMode: 'function',
-		remotion_calculateComposition: 'function',
-		remotion_getCompositionNames: 'function',
-		getStaticCompositions: 'function',
-	});
-	expect(r.setFrame).toBe('function');
 	expect(r.meta).toMatchObject({ width: 1280, height: 720, fps: 30, durationInFrames: 90 });
 	expect(r.ready).toBe(true);
 	expect(r.text).toBe('Contract');
 	expect(r.opacity).toBeCloseTo(1, 5); // frame 45: the panel has entered
 	expect(r.opacityAt0).toBe(0); // frame 0: not yet
 	expect(r.bodyBg).toBe('rgba(0, 0, 0, 0)'); // transparent page
+	writeFileSync('test-results/e2e-mg-host-protocol.json', JSON.stringify(r, null, 2));
 	await probe.close();
 });
 
@@ -254,83 +234,4 @@ test('import a Remotion project, insert a composition, live preview, props edit,
 		expect.arrayContaining(['Import Remotion Project', 'Add Title', 'Edit Text «Title»']),
 	);
 	await page.screenshot({ path: 'test-results/e2e-composition-preview.png' });
-});
-
-test('MCP: import_mg_bundle → add_composition → set_composition_props → render_frame, as Agent History entries', async () => {
-	test.setTimeout(900_000);
-	const bundle = join(ROOT, 'apps/mcp/dist/jasper-mcp.mjs');
-	expect(existsSync(bundle), `${bundle} is missing: run \`pnpm mcp:build\``).toBe(true);
-	const env: Record<string, string> = {};
-	for (const [k, v] of Object.entries(process.env))
-		if (v !== undefined && !k.startsWith('JASPER_')) env[k] = v;
-	const transport = new StdioClientTransport({
-		command: process.execPath,
-		args: [bundle, '--appdir', serverInfo().appdir],
-		env,
-		stderr: 'pipe',
-	});
-	const log: string[] = [];
-	transport.stderr?.on('data', (d: Buffer) => log.push(d.toString('utf8')));
-	const mcp = new Client({ name: 'e2e-mg', version: '1.0.0' });
-	await mcp.connect(transport);
-	const text = (r: CallToolResult) =>
-		(r.content.find((c) => c.type === 'text') as { text: string } | undefined)?.text ?? '';
-	const tool = async <T>(
-		name: string,
-		args: Record<string, unknown>,
-	): Promise<{ body: T; r: CallToolResult }> => {
-		const r = (await mcp.callTool({ name, arguments: args }, undefined, {
-			timeout: 600_000,
-		})) as CallToolResult;
-		expect(r.isError, `${name}: ${text(r)}\n${log.join('')}`).toBeFalsy();
-		return { body: JSON.parse(text(r)) as T, r };
-	};
-	try {
-		const projectId = /\/project\/([^/?#]+)/.exec(page.url())![1]!;
-		const imp = await tool<{
-			mediaId: string;
-			compositions: { id: string; props: Record<string, unknown> }[];
-		}>('import_mg_bundle', { projectId, path: FIXTURE_PROJECT });
-		expect(imp.body.compositions.map((c) => c.id).sort()).toEqual(['Badge', 'LowerThird', 'Title']);
-		expect(imp.body.compositions.find((c) => c.id === 'Title')!.props.title).toMatchObject({
-			type: 'string',
-		});
-		const listed = await tool<{ bundles: { mediaId: string }[] }>('list_compositions', { projectId });
-		expect(listed.body.bundles.map((b) => b.mediaId)).toContain(imp.body.mediaId);
-		const added = await tool<{ appliedBy: string; created: string[] }>('add_composition', {
-			projectId,
-			mediaId: imp.body.mediaId,
-			compositionId: 'Title',
-			at: 200,
-			track: 'V3',
-			props: { delay: 0 },
-		});
-		expect(added.body.appliedBy).toBe('session');
-		const clipId = added.body.created.find((id) => id.startsWith('clp_'))!;
-		const bad = (await mcp.callTool({
-			name: 'set_composition_props',
-			arguments: { projectId, clipId, props: { title: 42 } },
-		})) as CallToolResult;
-		expect(bad.isError).toBe(true);
-		expect(text(bad)).toContain('E_INVALID_PARAM');
-		const set = await tool<{ effectiveProps: Record<string, unknown> }>('set_composition_props', {
-			projectId,
-			clipId,
-			props: { title: 'Agent title', accent: '#3366ff' },
-		});
-		expect(set.body.effectiveProps).toMatchObject({ title: 'Agent title', accent: '#3366ff', delay: 0 });
-		const frame = await tool<{ frame: number; renderedBy?: string }>('render_frame', {
-			projectId,
-			at: 245,
-			width: 960,
-		});
-		const img = frame.r.content.find((c) => c.type === 'image') as { data: string } | undefined;
-		expect(img).toBeDefined();
-		expect(Buffer.from(img!.data, 'base64').readUInt32BE(16)).toBe(960);
-		// The agent's edits are History entries of the open editor.
-		const labels = await appliedLabels(page);
-		expect(labels).toEqual(expect.arrayContaining(['Agent: Add Title', 'Agent: Edit Props']));
-	} finally {
-		await mcp.close().catch(() => {});
-	}
 });

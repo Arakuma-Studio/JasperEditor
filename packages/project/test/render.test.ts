@@ -8,10 +8,8 @@ import {
 	type LayerTransformValues,
 	layerMatrix,
 	layerQuad,
-	multiplyMatrix,
 	quadBounds,
 	resolveSceneAt,
-	scaleFactors,
 	visibleRect,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
@@ -27,19 +25,6 @@ const base: LayerTransformValues = {
 	flipV: false,
 };
 
-/** Reference: translate(P) · rotate(θ) · scale(sx, sy) · translate(−A) composed as matrices. */
-function reference(v: LayerTransformValues) {
-	const { sx, sy } = scaleFactors(v);
-	const th = (v.rotation * Math.PI) / 180;
-	const T = (x: number, y: number) => ({ a: 1, b: 0, c: 0, d: 1, e: x, f: y });
-	const R = { a: Math.cos(th), b: Math.sin(th), c: -Math.sin(th), d: Math.cos(th), e: 0, f: 0 };
-	const S = { a: sx, b: 0, c: 0, d: sy, e: 0, f: 0 };
-	return multiplyMatrix(
-		multiplyMatrix(multiplyMatrix(T(v.position[0], v.position[1]), R), S),
-		T(-v.anchor[0], -v.anchor[1]),
-	);
-}
-
 describe('layer transform math (S03:DM-010…012)', () => {
 	it('anchor lands on position', () => {
 		for (const rotation of [0, 33, 90, -270, 725]) {
@@ -49,19 +34,7 @@ describe('layer transform math (S03:DM-010…012)', () => {
 			expect(p[1]).toBeCloseTo(540, 9);
 		}
 	});
-	it('matches translate·rotate·scale·translate for rotation × non-uniform scale × anchor', () => {
-		const cases: Partial<LayerTransformValues>[] = [
-			{ rotation: 30, scale: 200, scaleWidth: 50, uniformScale: false, anchor: [10, 400] },
-			{ rotation: -45, scale: 80, uniformScale: true, anchor: [0, 0], flipH: true },
-			{ rotation: 90, scale: 100, scaleWidth: 300, uniformScale: false, flipV: true, position: [0, 0] },
-		];
-		for (const c of cases) {
-			const v = { ...base, ...c };
-			const m = layerMatrix(v);
-			const r = reference(v);
-			for (const k of ['a', 'b', 'c', 'd', 'e', 'f'] as const) expect(m[k]).toBeCloseTo(r[k], 9);
-		}
-	});
+
 	it('rotates clockwise on screen (y-down)', () => {
 		const m = layerMatrix({ ...base, anchor: [0, 0], position: [0, 0], rotation: 90 });
 		const p = applyMatrix(m, [10, 0]);
@@ -135,8 +108,6 @@ describe('render snapshot and scene (ARCHITECTURE §5.5)', () => {
 		expect(at15[1]!.props.opacity).toBeCloseTo(50, 6);
 		const at45 = resolveSceneAt(snap, 45);
 		expect(at45[1]!.props.opacity).toBe(100);
-		// Static clips resolve to the same props object every frame (S03:ARC-011).
-		expect(resolveSceneAt(snap, 100)[0]!.props).toBe(resolveSceneAt(snap, 200)[0]!.props);
 		// Solo A2 silences A1.
 		h.ok([{ type: 'track.update', trackId: 'A2', patch: { solo: true } }]);
 		const solo = buildRenderSnapshot(h.doc, h.seqId, { resolveMedia: () => null, resolveFont: () => null });

@@ -55,7 +55,7 @@ const KEY_RE = /^[0-9a-f]{40}$/;
 const MEDIA_KEY_RE = /^mk_[0-9a-f]{24}$/;
 
 /** Engine media key of a bundle: `mk_` + 24 hex of its content hash (ARCHITECTURE D-09). */
-export const bundleMediaKey = (bundleHash: string) => `mk_${bundleHash.slice(0, 24)}`;
+const bundleMediaKey = (bundleHash: string) => `mk_${bundleHash.slice(0, 24)}`;
 /** sha256 (40 hex, like the M1 `/mg/:key/:file` keys) of the pre-render key material (MGC-031). */
 export const prerenderKey = (
 	req: Pick<

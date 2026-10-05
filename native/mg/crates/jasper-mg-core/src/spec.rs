@@ -29,7 +29,7 @@ pub struct TemplateRef {
     pub version: u32,
 }
 
-/// The JSON spec read by `jasper-mg render|frame|svg --spec <file|->`.
+/// The JSON spec read by `jasper-mg render|frame --spec <file|->`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MgSpec {
@@ -160,7 +160,7 @@ mod tests {
         };
         spec.source_in_frames = 10;
         let ft = spec.frame_time(20);
-        assert!((ft.t - 30.0 / (30000.0 / 1001.0)).abs() < 1e-12);
-        assert!((ft.total - 160.0 / (30000.0 / 1001.0)).abs() < 1e-12);
+        assert!((ft.t - 1.001).abs() < 1e-12);
+        assert!((ft.total - 5.338_666_666_666_667).abs() < 1e-12);
     }
 }

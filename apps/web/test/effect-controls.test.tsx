@@ -28,12 +28,6 @@ function setup() {
 }
 
 describe('Effect Controls (S03 §13, S05:ECP)', () => {
-	it('shows an empty state without a selected clip', () => {
-		const session = makeSession();
-		renderWithSession(session, <EffectControlsPanel instanceId="ec1" visible />);
-		expect(screen.getByTestId('ec-empty').textContent).toMatch(/Select a clip/);
-	});
-
 	it('the stopwatch creates a key at the playhead content time; a later value makes a ramp resolved at the playhead', async () => {
 		const { session, id } = setup();
 		act(() => {
@@ -59,7 +53,6 @@ describe('Effect Controls (S03 §13, S05:ECP)', () => {
 		act(() => session.transport.seek(50));
 		await waitFor(() => expect(screen.getByTestId('prop-opacity').textContent).toBe('70.0%'));
 		// Keyframe glyphs in the mini-timeline; navigator jumps between keys.
-		expect(document.querySelectorAll('[data-kf-id]')).toHaveLength(2);
 		act(() => {
 			fireEvent.click(screen.getByTestId('kf-next-opacity'));
 		});

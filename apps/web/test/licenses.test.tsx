@@ -56,7 +56,7 @@ describe('ThirdPartyLicenses', () => {
 
 	it('shows the bundled FFmpeg license, its text and the source and build links', async () => {
 		render(
-			<EngineProvider client={fakeEngine({ licenses: { components: [BUNDLED] } })} connectEvents={false}>
+			<EngineProvider client={fakeEngine({ licenses: { components: [BUNDLED] } })}>
 				<ThirdPartyLicenses />
 			</EngineProvider>,
 		);
@@ -75,7 +75,7 @@ describe('ThirdPartyLicenses', () => {
 	it('falls back to the static LGPL notice and shows the bundled-GPL capability warning', async () => {
 		const message = 'Remotion is using its bundled GPL FFmpeg (dev only). Run `pnpm ffmpeg:lgpl`.';
 		render(
-			<EngineProvider client={fakeEngine({ remotionMessage: message })} connectEvents={false}>
+			<EngineProvider client={fakeEngine({ remotionMessage: message })}>
 				<ThirdPartyLicenses />
 			</EngineProvider>,
 		);

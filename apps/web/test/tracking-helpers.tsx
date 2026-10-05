@@ -1,6 +1,6 @@
 // Test helpers for the tracking UI (wp-m2-track): a session with a 1920×1080 30 fps plate on V1 and a solid on V2,
-// and a fake engine client that records `trackingTrack` calls, serves jobs and emits events.
-import type { EngineJob, EventEnvelope, TrackResult } from '@jasper/api';
+// and a fake engine client that records `trackingTrack` calls and serves jobs.
+import type { EngineJob, TrackResult } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import { mgRegistry } from '@jasper/mg-templates';
 import {
@@ -15,7 +15,7 @@ import { EditorSession } from '@jasper/session';
 
 const F30 = FLICKS_PER_SECOND / 30;
 
-export function trackingSession(opts: { plateFrames?: number; solidFrames?: number } = {}) {
+export function trackingSession() {
 	const ids = createCounterIdSource(7);
 	const document = createEmptyProject({ ids, name: 'Tracking test', preset: 'hd-1080p-30' });
 	const session = new EditorSession({
@@ -24,7 +24,7 @@ export function trackingSession(opts: { plateFrames?: number; solidFrames?: numb
 		ctx: { ids, now: () => '2026-10-01T10:00:00.000Z', registries: defaultRegistries(mgRegistry) },
 		coalesceWindowMs: 0,
 	});
-	const plateFrames = opts.plateFrames ?? 60;
+	const plateFrames = 60;
 	const reg = session.apply({
 		label: 'setup',
 		origin: 'system',
@@ -81,7 +81,7 @@ export function trackingSession(opts: { plateFrames?: number; solidFrames?: numb
 			{
 				type: 'clip.addSolid',
 				at: 0,
-				duration: opts.solidFrames ?? 30,
+				duration: 30,
 				track: 'V2',
 				color: [0, 1, 0, 1],
 			} as Command,
@@ -127,15 +127,12 @@ export type FakeEngine = EngineClient & {
 	jobs: Map<string, EngineJob>;
 	/** What the next `trackingTrack` call does. */
 	next: 'queue' | 'not-implemented';
-	emit(env: Omit<EventEnvelope, 'id' | 'createdAt'>): void;
 	finish(jobId: string, result: unknown, state?: EngineJob['state']): EngineJob;
 };
 
 let jobSeq = 0;
 
 export function fakeEngine(): FakeEngine {
-	const listeners = new Set<(e: EventEnvelope) => void>();
-	let eventId = 0;
 	const jobs = new Map<string, EngineJob>();
 	const job = (id: string, state: EngineJob['state'], result?: unknown): EngineJob => ({
 		id,
@@ -183,15 +180,9 @@ export function fakeEngine(): FakeEngine {
 		async listFonts() {
 			return { families: [] };
 		},
-		openEvents(_q: unknown, h: { onEnvelope?(e: EventEnvelope): void; onStateChange?(s: string): void }) {
-			const l = (e: EventEnvelope) => h.onEnvelope?.(e);
-			listeners.add(l);
+		openEvents(_q: unknown, h: { onStateChange?(s: string): void }) {
 			h.onStateChange?.('open');
-			return { close: () => listeners.delete(l) };
-		},
-		emit(env: Omit<EventEnvelope, 'id' | 'createdAt'>) {
-			const e = { id: ++eventId, createdAt: '2026-10-01T10:00:00.000Z', ...env } as EventEnvelope;
-			for (const l of [...listeners]) l(e);
+			return { close: () => {} };
 		},
 		finish(id: string, result: unknown, state: EngineJob['state'] = 'succeeded') {
 			const j = job(id, state, result);

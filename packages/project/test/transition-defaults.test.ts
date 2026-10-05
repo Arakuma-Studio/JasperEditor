@@ -1,15 +1,6 @@
-// M3 transition defaults (S10:TUI-032…034): per-medium project default lengths
-// (`defaultTransitionFrames` / `defaultAudioTransitionFrames`), the alignment of transition.applyDefault, and the
-// session-only `preferences.get` agent query.
+// M3 transition defaults (S10:TUI-032…033): per-medium project durations and alignment.
 import { describe, expect, it } from 'vitest';
-import {
-	AgentQueryError,
-	checkInvariants,
-	defaultTransitionFrames,
-	exportAgentQuerySchemas,
-	runAgentQuery,
-	type Transition,
-} from '../src/index.ts';
+import { checkInvariants, defaultTransitionFrames, type Transition } from '../src/index.ts';
 import { Harness } from './helpers.ts';
 
 /** Two adjacent video clips with linked audio, cut at frame 100, 30+ frames of handles on each side. */
@@ -49,7 +40,7 @@ describe('defaultTransitionFrames (TUI-032)', () => {
 		expect(defaultTransitionFrames(s, 'audio')).toBe(12);
 	});
 
-	it('project.updateSettings accepts defaultAudioTransitionFrames (one undo step) and validates it', () => {
+	it('project.updateSettings persists defaultAudioTransitionFrames and rejects zero', () => {
 		const h = new Harness();
 		h.ok([
 			{
@@ -58,8 +49,10 @@ describe('defaultTransitionFrames (TUI-032)', () => {
 			},
 		]);
 		expect(h.doc.settings).toMatchObject({ defaultTransitionFrames: 20, defaultAudioTransitionFrames: 15 });
+		const before = h.doc;
 		const bad = h.tx([{ type: 'project.updateSettings', settings: { defaultAudioTransitionFrames: 0 } }]);
-		expect(bad.ok).toBe(false);
+		expect(!bad.ok && bad.errors[0]!.code).toBe('E_SCHEMA');
+		expect(h.doc).toBe(before);
 		expect(checkInvariants(h.doc)).toEqual([]);
 	});
 });
@@ -142,7 +135,7 @@ describe('transition.applyDefault alignment (TUI-033)', () => {
 	it('refuses an unknown alignment', () => {
 		const { h, va } = twoLinkedClips();
 		const r = h.tx([{ type: 'transition.applyDefault', clipIds: [va], edges: 'both', alignment: 'middle' }]);
-		expect(r.ok).toBe(false);
+		expect(!r.ok && r.errors[0]!.code).toBe('E_SCHEMA');
 	});
 
 	it('skips a cut that the chosen alignment cannot use (no handle on that side)', () => {
@@ -175,30 +168,5 @@ describe('transition.applyDefault alignment (TUI-033)', () => {
 		// end-at-cut only needs the incoming head: it fits.
 		h.ok([{ type: 'transition.applyDefault', clipIds: ids, edges: 'both', alignment: 'end-at-cut' }]);
 		expect(all(h).find((t) => t.outgoingClipId && t.incomingClipId)?.alignment).toBe('end-at-cut');
-	});
-});
-
-describe('preferences.get agent query (TUI-034)', () => {
-	it('is session-only and returns what the session provides', () => {
-		const h = new Harness();
-		const base = { doc: h.doc, revision: 1 };
-		expect(() => runAgentQuery(base, 'preferences.get')).toThrow(AgentQueryError);
-		const prefs = {
-			transitions: { video: 'jasper.dip-to-black', audio: 'jasper.constant-gain', alignment: 'end-at-cut' },
-		};
-		const env = {
-			...base,
-			session: {
-				activeSequenceId: null,
-				selection: () => ({}),
-				playhead: () => ({ frame: 0, playing: false }),
-				history: () => ({ entries: [], position: 0 }),
-				preferences: () => prefs,
-			},
-		};
-		expect(runAgentQuery(env, 'preferences.get')).toEqual({ preferences: prefs });
-		const { preferences: _p, ...noPrefs } = env.session;
-		expect(runAgentQuery({ ...base, session: noPrefs }, 'preferences.get')).toEqual({ preferences: {} });
-		expect(exportAgentQuerySchemas()['preferences.get'].sessionOnly).toBe(true);
 	});
 });

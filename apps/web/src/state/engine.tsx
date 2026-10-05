@@ -27,11 +27,7 @@ export type EngineState = {
 
 const EngineContext = createContext<EngineState | null>(null);
 
-export function EngineProvider(props: {
-	children?: ReactNode;
-	client?: EngineClient;
-	connectEvents?: boolean;
-}) {
+export function EngineProvider(props: { children?: ReactNode; client?: EngineClient }) {
 	const client = useMemo(() => props.client ?? new EngineClient({ baseUrl: '' }), [props.client]);
 	const [status, setStatus] = useState<EngineStatus>('connecting');
 	const [version, setVersion] = useState<string | null>(null);
@@ -70,7 +66,7 @@ export function EngineProvider(props: {
 	}, [client, nonce]);
 
 	useEffect(() => {
-		if (props.connectEvents === false || status !== 'connected') return;
+		if (status !== 'connected') return;
 		const stream = client.openEvents(
 			{},
 			{
@@ -84,7 +80,7 @@ export function EngineProvider(props: {
 			},
 		);
 		return () => stream.close();
-	}, [client, status, props.connectEvents]);
+	}, [client, status]);
 
 	const value = useMemo<EngineState>(
 		() => ({

@@ -191,8 +191,4 @@ export const APPROVAL_COMMANDS: readonly CommandType[] = [
 	'media.removeUnused',
 ];
 
-export function requiresApproval(commands: readonly { type: string; force?: unknown }[]): boolean {
-	return commands.some((c) => (APPROVAL_COMMANDS as readonly string[]).includes(c.type) || c.force === true);
-}
-
 export type { Command, HandlerContext };

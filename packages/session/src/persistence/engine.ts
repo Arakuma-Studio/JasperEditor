@@ -9,7 +9,6 @@ import type { Lease, ProjectSummary, VersionInfo } from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
 import {
 	createRandomIdSource,
-	type IdSource,
 	loadProject,
 	type MgTemplateRegistry,
 	makeEnvelope,
@@ -24,27 +23,11 @@ import {
 } from './types.ts';
 
 export type EngineProjectStoreOptions = {
-	ids?: IdSource;
 	/** Re-stamps template renderers that contradict the registry on load (S11:ATP-002). */
 	mgTemplates?: MgTemplateRegistry;
 	/** `savedBy.platform` written into envelopes (`web` | `desktop` | `pwa`). */
 	platform?: string;
 	appVersion?: string;
-	now?: () => Date;
-	/** Session id generator for leases taken without an explicit id. */
-	newSessionId?: () => string;
-	/** Delay used while waiting for a same-page session to release its lease (tests inject a no-op). */
-	sleep?: (ms: number) => Promise<void>;
-	/**
-	 * Page whose `pagehide` releases held leases with keepalive requests, so a reload does not find the
-	 * project locked by its own previous page (default: `window` in browsers; null disables).
-	 */
-	unloadTarget?: {
-		addEventListener(t: 'pagehide', cb: () => void): void;
-		removeEventListener(t: 'pagehide', cb: () => void): void;
-	} | null;
-	/** fetch used for the keepalive release (default: global fetch). */
-	keepaliveFetch?: typeof fetch;
 };
 
 type LeaseRecord = {
@@ -68,15 +51,12 @@ function randomSessionId(): string {
 }
 
 export class EngineProjectStore implements ProjectStore {
-	private readonly ids: IdSource;
+	private readonly ids = createRandomIdSource();
 	private readonly mgTemplates: MgTemplateRegistry | undefined;
 	private readonly platform: string;
 	private readonly appVersion: string | undefined;
-	private readonly now: () => Date;
-	private readonly newSessionId: () => string;
-	private readonly sleep: (ms: number) => Promise<void>;
 	private readonly leases = new Map<string, LeaseRecord>();
-	private readonly unloadTarget: EngineProjectStoreOptions['unloadTarget'];
+	private readonly unloadTarget: EventTarget | null;
 	private readonly keepaliveFetch: typeof fetch | undefined;
 	/** The `pagehide` listener is attached only while this store holds leases (no leak per store instance). */
 	private unloadAttached = false;
@@ -88,18 +68,11 @@ export class EngineProjectStore implements ProjectStore {
 		readonly engine: EngineClient,
 		opts: EngineProjectStoreOptions = {},
 	) {
-		this.ids = opts.ids ?? createRandomIdSource();
 		this.mgTemplates = opts.mgTemplates;
 		this.platform = opts.platform ?? 'web';
 		this.appVersion = opts.appVersion;
-		this.now = opts.now ?? (() => new Date());
-		this.newSessionId = opts.newSessionId ?? randomSessionId;
-		this.sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
-		this.unloadTarget =
-			opts.unloadTarget === undefined
-				? ((globalThis as { window?: EngineProjectStoreOptions['unloadTarget'] }).window ?? null)
-				: opts.unloadTarget;
-		this.keepaliveFetch = opts.keepaliveFetch ?? (globalThis.fetch as typeof fetch | undefined);
+		this.unloadTarget = (globalThis as { window?: EventTarget }).window ?? null;
+		this.keepaliveFetch = globalThis.fetch as typeof fetch | undefined;
 	}
 
 	/** Attaches the pagehide release while leases are held and detaches it when the last one goes. */
@@ -114,7 +87,7 @@ export class EngineProjectStore implements ProjectStore {
 	private envelope(doc: ProjectDocument, revision: number) {
 		return makeEnvelope(doc, {
 			revision,
-			savedAt: this.now().toISOString(),
+			savedAt: new Date().toISOString(),
 			platform: this.platform,
 			...(this.appVersion ? { appVersion: this.appVersion } : {}),
 		});
@@ -238,7 +211,7 @@ export class EngineProjectStore implements ProjectStore {
 
 	async acquireLease(
 		projectId: string,
-		sessionId: string = this.newSessionId(),
+		sessionId: string = randomSessionId(),
 		opts: { takeOver?: boolean; refresh?: boolean } = {},
 	): Promise<Lease> {
 		const held = this.leases.get(projectId);
@@ -248,7 +221,7 @@ export class EngineProjectStore implements ProjectStore {
 			held.sessionId === sessionId &&
 			!opts.takeOver &&
 			!opts.refresh &&
-			Date.parse(held.lease.expiresAt) > this.now().getTime()
+			Date.parse(held.lease.expiresAt) > Date.now()
 		)
 			return held.lease;
 		let lease: Lease | null = null;
@@ -267,7 +240,7 @@ export class EngineProjectStore implements ProjectStore {
 				// A session of this same page is closing (route change, React StrictMode double mount):
 				// its release is in flight, so wait for it instead of opening read-only.
 				if (!opts.takeOver && TAB_SESSIONS.has(holder) && attempt < LOCAL_RELEASE_RETRIES) {
-					await this.sleep(LOCAL_RELEASE_WAIT_MS);
+					await new Promise((resolve) => setTimeout(resolve, LOCAL_RELEASE_WAIT_MS));
 					continue;
 				}
 				throw new LeaseHeldError(projectId, holder, d.expiresAt ?? null);
@@ -319,7 +292,7 @@ export class EngineProjectStore implements ProjectStore {
 	}
 
 	/** Fire-and-forget release of every held lease that survives page unload (`keepalive`). */
-	releaseAllKeepalive(fetchImpl: typeof fetch): void {
+	private releaseAllKeepalive(fetchImpl: typeof fetch): void {
 		for (const [projectId, rec] of this.leases) {
 			const url = this.engine.url(
 				`/api/projects/${encodeURIComponent(projectId)}/lease/${encodeURIComponent(rec.lease.leaseId)}`,

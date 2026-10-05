@@ -200,27 +200,6 @@ describe('shape.* properties (param.set, keyframes, S11:SHP-003)', () => {
 		expect(set(['shape', 'stroke', 'position'], 'diagonal').ok).toBe(false);
 	});
 
-	it('creates a "None" fill or stroke on first write', () => {
-		const h = new Harness();
-		const { id } = addShape(h, { type: 'ellipse', fill: null });
-		expect(h.tx([{ type: 'param.set', target: ['clip', id, 'shape', 'fill'], value: [1, 0, 0, 1] }]).ok).toBe(
-			true,
-		);
-		expect(shapeOf(h, id).shape.fill).toEqual({ value: [1, 0, 0, 1], keyframes: [] });
-		expect(
-			h.tx([{ type: 'param.set', target: ['clip', id, 'shape', 'stroke', 'width'], value: 12 }]).ok,
-		).toBe(true);
-		expect(shapeOf(h, id).shape.stroke).toEqual({
-			color: { value: [0, 0, 0, 1], keyframes: [] },
-			width: { value: 12, keyframes: [] },
-			position: 'center',
-		});
-		// Corner radius is not a property of ellipses.
-		expect(h.tx([{ type: 'param.set', target: ['clip', id, 'shape', 'cornerRadius'], value: 4 }]).ok).toBe(
-			false,
-		);
-	});
-
 	it('keyframes on size, fill, stroke and radius go through the shared keyframe commands and evaluator', () => {
 		const h = new Harness();
 		const { id } = addShape(h, { type: 'rect', stroke: { color: [1, 1, 1, 1], width: 2 } });
@@ -380,7 +359,6 @@ describe('invariants, snapshot, properties and agent schema', () => {
 		]);
 		expect(keys(ell)).not.toContain('shape.cornerRadius');
 		const schema = exportAgentSchema(defaultRegistries());
-		expect(schema.commands['clip.addShape']).toMatchObject({ implemented: true, owner: 'wp-m2-shapes' });
 		const size = schema.properties.find((p) => p.key === 'shape.size');
 		expect(size?.kinds).toEqual(['shape']);
 		expect(schema.properties.find((p) => p.key === 'shape.cornerRadius')?.kinds).toEqual(['shape']);

@@ -29,10 +29,10 @@ import {
 type StabilizeStep = Extract<ProcessStep, { op: 'stabilize' }>;
 
 /** Defaults of the smooth-path parameters (the trailer's T01 settings, sigma 30 f, cap 112 %). */
-export const SMOOTHPATH_DEFAULTS = { sigma: 30, maxZoomPercent: 112 } as const;
+const SMOOTHPATH_DEFAULTS = { sigma: 30, maxZoomPercent: 112 } as const;
 
 /** smoothstab.py's tracking parameters (at ≤ 960 px wide). */
-export const TRACK_PARAMS: TrackParams = {
+const TRACK_PARAMS: TrackParams = {
 	maxCorners: 2000,
 	quality: 0.01,
 	minDistance: 6,
@@ -50,33 +50,7 @@ const MIN_INLIERS = 12;
  * content), across fast real motion (the T01 reframe, walking shots) never below 0.38; reframe.mp4's synthetic
  * cut 0.11.
  */
-export const CUT_MAX_INLIER_RATIO = 0.3;
-
-export type SmoothPathWarp = 'auto' | 'wasm' | 'opencv';
-
-export type SmoothPathStepOptions = {
-	/** Tracking frame at most this wide (default 960). */
-	trackMaxWidth?: number;
-	/** OpenCV worker threads (default ctx.threads, ≤ 8). */
-	threads?: number;
-	/** Warp worker threads (default ctx.threads, ≤ 8). */
-	warpThreads?: number;
-	workerUrl?: URL;
-	wasmPath?: string;
-	/**
-	 * Warp engine: `auto` (default; `JASPER_SMOOTHPATH_WARP` overrides) = the vid.stab WASM kernel when it loads,
-	 * else OpenCV.js; `wasm` / `opencv` force one.
-	 */
-	warp?: SmoothPathWarp;
-	/** Scene-cut threshold (default the de-judder's CUT_THRESHOLD). */
-	cutThreshold?: number;
-};
-
-export type SmoothPathFrameStep = FrameStep & {
-	readonly plan: SegmentedPlan | null;
-	/** Warp engine in use after open(). */
-	readonly warpEngine: 'wasm' | 'opencv' | null;
-};
+const CUT_MAX_INLIER_RATIO = 0.3;
 
 const f1 = (x: number) => x.toFixed(1);
 const f2 = (x: number) => Number(x.toFixed(2));
@@ -90,16 +64,9 @@ const isIdentity = (m: readonly number[]) =>
 	Math.abs(m[4] - 1) < 1e-12 &&
 	Math.abs(m[5]) < 1e-9;
 
-function warpPreference(opts: SmoothPathStepOptions): SmoothPathWarp {
-	if (opts.warp) return opts.warp;
-	const env = process.env.JASPER_SMOOTHPATH_WARP;
-	return env === 'wasm' || env === 'opencv' ? env : 'auto';
-}
-
 export function createSmoothPathStep(
 	step: Pick<StabilizeStep, 'smoothing' | 'borders' | 'lockVertical' | 'lockRotation' | 'maxZoom'>,
-	opts: SmoothPathStepOptions = {},
-): SmoothPathFrameStep {
+): FrameStep {
 	const sigma = Math.max(0, step.smoothing ?? SMOOTHPATH_DEFAULTS.sigma);
 	const crop = step.borders !== 'keep';
 	const maxZoomPercent = step.maxZoom ?? SMOOTHPATH_DEFAULTS.maxZoomPercent;
@@ -116,24 +83,16 @@ export function createSmoothPathStep(
 	let cvPool: CvPool | null = null;
 	const queue: Array<Promise<RgbFrame>> = [];
 
-	const threadsFor = (ctx: StepContext, n?: number) => n ?? Math.min(8, Math.max(1, ctx.threads));
+	const threadsFor = (ctx: StepContext) => Math.min(8, Math.max(1, ctx.threads));
 
 	return {
 		name: 'stabilize(smooth path)',
-		get plan() {
-			return plan;
-		},
-		get warpEngine() {
-			return engine;
-		},
-
 		async analyse(input: DecodeSpec, ctx: StepContext): Promise<void> {
 			const t0 = performance.now();
-			const det = detectionSize(input.width, input.height, opts.trackMaxWidth ?? 960);
+			const det = detectionSize(input.width, input.height, 960);
 			const sx = input.width / det.width;
 			const sy = input.height / det.height;
-			const cutThreshold = opts.cutThreshold ?? CUT_THRESHOLD;
-			const cv = await CvPool.create(threadsFor(ctx, opts.threads), opts.workerUrl ?? resolveWorkerUrl());
+			const cv = await CvPool.create(threadsFor(ctx), resolveWorkerUrl());
 			const pairs: Array<Promise<Similarity | null>> = [];
 			const inliers: number[] = [];
 			const cutAfter = new Set<number>();
@@ -157,7 +116,7 @@ export function createSmoothPathStep(
 						// Scene-cut candidate: the de-judder's cut guard (8×8-cell means). A fast pan can trip it too
 						// (crudo.mp4's operator reframe scores > 0.10), so a candidate only counts as a cut when the
 						// background cannot be tracked across it either (few RANSAC inliers among the tracked corners).
-						const candidate = cutScore(prevMeans, means) > cutThreshold;
+						const candidate = cutScore(prevMeans, means) > CUT_THRESHOLD;
 						const job = cv.track(det.width, det.height, prev, cur, TRACK_PARAMS).then((r) => {
 							// Tracking-frame pixel centres → input pixel centres.
 							const map = (p: Float32Array) => {
@@ -227,11 +186,11 @@ export function createSmoothPathStep(
 			ctxRef = ctx;
 			size = { width: ctx.width, height: ctx.height };
 			if (!plan) throw new Error('stabilize: analyse() must run before open()');
-			const pref = warpPreference(opts);
+			const pref = process.env.JASPER_SMOOTHPATH_WARP;
 			if (pref !== 'opencv') {
 				try {
-					const module = await loadVidstabModule(opts.wasmPath ?? resolveVidstabWasm());
-					wasmPool = await WarpPool.create(module, threadsFor(ctx, opts.warpThreads));
+					const module = await loadVidstabModule(resolveVidstabWasm());
+					wasmPool = await WarpPool.create(module, threadsFor(ctx));
 					transforms = plan.backward.map((m) => backwardToVsTransform(m, size.width, size.height));
 					engine = 'wasm';
 				} catch (e) {
@@ -240,7 +199,7 @@ export function createSmoothPathStep(
 				}
 			}
 			if (!engine) {
-				cvPool = await CvPool.create(threadsFor(ctx, opts.warpThreads), opts.workerUrl ?? resolveWorkerUrl());
+				cvPool = await CvPool.create(threadsFor(ctx), resolveWorkerUrl());
 				engine = 'opencv';
 			}
 			ctx.signal.addEventListener('abort', () => void cvPool?.close(), { once: true });

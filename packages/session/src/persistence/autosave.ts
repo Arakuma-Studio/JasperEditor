@@ -9,17 +9,7 @@
 import type { EditorSession } from '../session.ts';
 import type { ProjectStore } from './types.ts';
 
-export type AutosaveTimers = {
-	setTimeout(fn: () => void, ms: number): unknown;
-	clearTimeout(h: unknown): void;
-};
-
 export type AutosaveOptions = {
-	idleMs?: number;
-	maxIntervalMs?: number;
-	viewDebounceMs?: number;
-	timers?: AutosaveTimers;
-	now?: () => number;
 	onConflict?(serverRevision: number): void;
 	onError?(e: unknown): void;
 	onSaved?(revision: number): void;
@@ -51,9 +41,9 @@ export type Autosaver = {
 	overwrite(): Promise<void>;
 };
 
-const defaultTimers: AutosaveTimers = {
-	setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
-	clearTimeout: (h) => globalThis.clearTimeout(h as ReturnType<typeof setTimeout>),
+const timers = {
+	setTimeout: (fn: () => void, ms: number) => globalThis.setTimeout(fn, ms),
+	clearTimeout: (h: unknown) => globalThis.clearTimeout(h as ReturnType<typeof setTimeout>),
 };
 
 export function createAutosaver(
@@ -61,11 +51,10 @@ export function createAutosaver(
 	store: ProjectStore,
 	opts: AutosaveOptions = {},
 ): Autosaver {
-	const idleMs = opts.idleMs ?? 1500;
-	const maxIntervalMs = opts.maxIntervalMs ?? 10_000;
-	const viewMs = opts.viewDebounceMs ?? 1000;
-	const timers = opts.timers ?? defaultTimers;
-	const now = opts.now ?? (() => Date.now());
+	const idleMs = 1500;
+	const maxIntervalMs = 10_000;
+	const viewMs = 1000;
+	const now = () => Date.now();
 	let timer: unknown = null;
 	let viewTimer: unknown = null;
 	let firstDirtyAt: number | null = null;

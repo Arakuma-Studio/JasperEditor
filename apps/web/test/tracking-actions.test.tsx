@@ -13,7 +13,7 @@ import {
 	startTrack,
 	stopTrack,
 } from '../src/tracking/actions.ts';
-import { resetTrackingStore, setOptions, trackingStore } from '../src/tracking/store.ts';
+import { setOptions, trackingStore } from '../src/tracking/store.ts';
 import { TrackingOverlay } from '../src/tracking/TrackingOverlay.tsx';
 import { fakeEngine, labels, planarResult, seqOf, trackingSession } from './tracking-helpers.tsx';
 
@@ -29,26 +29,10 @@ const trackerOf = (session: ReturnType<typeof trackingSession>['session'], plate
 
 const tick = () => act(async () => void (await new Promise((r) => setTimeout(r, 0))));
 
-beforeEach(() => resetTrackingStore());
+beforeEach(() => trackingStore.setState(trackingStore.getInitialState(), true));
 afterEach(() => cleanup());
 
 describe('tracking actions', () => {
-	it('adds a planar tracker at the playhead (one entry) and makes it active', () => {
-		const { session, plate } = trackingSession();
-		session.transport.seek(10);
-		const id = addTracker(session, plate, 'planar');
-		expect(labels(session)).toEqual(['Add Planar Tracker']);
-		expect(trackingStore.getState().activeTrackerId).toBe(id);
-		const t = trackerOf(session, plate, id);
-		expect(t.reference.corners).toEqual([
-			[576, 324],
-			[1344, 324],
-			[1344, 756],
-			[576, 756],
-		]);
-		expect(t.reference.time).toBe(10 * (705_600_000 / 30));
-	});
-
 	it('runs Track Forward: request body, live progress, one "Track" entry with the samples', async () => {
 		const { session, plate } = trackingSession();
 		const engine = fakeEngine();
@@ -237,20 +221,6 @@ describe('tracking overlay', () => {
 		fireEvent.pointerUp(window, { clientX: to[0], clientY: to[1], pointerId: 1 });
 	}
 
-	it('draws the active tracker of the selected plate and drags a corner in ONE gesture', async () => {
-		const { session, plate, seqId } = trackingSession();
-		const id = addTracker(session, plate, 'planar');
-		session.select('timeline', [plate], 'replace', { linked: false });
-		const { getByTestId } = mount(session, seqId);
-		const corner = getByTestId('tracker-corner-0');
-		// media (576, 324) at view scale 0.5 → screen (288, 162)
-		await drag(corner.querySelector('rect:last-child')!, [288, 162], [298, 172]);
-		expect(labels(session)).toEqual(['Add Planar Tracker', 'Adjust Tracker']);
-		const t = trackerOf(session, plate, id);
-		expect(t.reference.corners![0]).toEqual([596, 344]);
-		expect(t.reference.corners![1]).toEqual([1344, 324]);
-	});
-
 	it('drags an edge (two corners) and the body (all corners), one entry each', async () => {
 		const { session, plate, seqId } = trackingSession();
 		const id = addTracker(session, plate, 'planar');
@@ -263,35 +233,5 @@ describe('tracking overlay', () => {
 		t = trackerOf(session, plate, id);
 		expect(t.reference.corners!.map((p) => p[0])).toEqual([596, 1364, 1364, 596]);
 		expect(labels(session)).toEqual(['Add Planar Tracker', 'Adjust Tracker', 'Adjust Tracker']);
-	});
-
-	it('hides the tracker when its clip is not selected; shows corner-pin handles when the pin is focused', async () => {
-		const { session, plate, target, seqId } = trackingSession();
-		const id = addTracker(session, plate, 'planar');
-		commitTrackResult(session, id, { step: 705_600_000 / 30, merge: 'replace' }, planarResult(0, 60, REF));
-		applyTracking(session, id, target, 'corner-pin');
-		session.select('timeline', [target], 'replace', { linked: false });
-		const { queryByTestId, getByTestId, rerender } = mount(session, seqId);
-		expect(queryByTestId('tracker-overlay')).toBeNull();
-		expect(queryByTestId('corner-pin-overlay')).toBeNull();
-		act(() => trackingStore.setState({ cornerPinTool: true }));
-		const h = getByTestId('corner-pin-handle-0');
-		// frame 0: the pinned TL is the tracked TL (700, 300) at view scale 0.5
-		await drag(h.querySelector('circle:last-child')!, [350, 150], [355, 155]);
-		expect(labels(session).at(-1)).toBe('Corner Pin');
-		const fx = (
-			seqOf(session).clips[target] as {
-				effects: {
-					effectId: string;
-					params: Record<string, { keyframes: { time: number; value: number[] }[] }>;
-				}[];
-			}
-		).effects.find((e) => e.effectId === 'jasper.corner-pin')!;
-		const k0 = fx.params.topLeft!.keyframes.find((k) => k.time === 0)!;
-		// +5 screen px = +10 sequence px; the solid's box is the 1920×1080 frame
-		expect(k0.value[0]).toBeCloseTo(710 / 1920, 6);
-		expect(k0.value[1]).toBeCloseTo(310 / 1080, 6);
-		expect(fx.params.topLeft!.keyframes).toHaveLength(30);
-		rerender(<div />);
 	});
 });

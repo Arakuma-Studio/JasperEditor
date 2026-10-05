@@ -10,7 +10,6 @@ export * from './labels.ts';
 export * from './menu/Menu.tsx';
 export * from './primitives/Button.tsx';
 export * from './primitives/ColorPicker.tsx';
-export * from './primitives/color-math.ts';
 export * from './primitives/ErrorBoundary.tsx';
 export * from './primitives/fields.tsx';
 export * from './primitives/IconButton.tsx';

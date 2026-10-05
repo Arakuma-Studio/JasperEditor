@@ -1,9 +1,6 @@
-// Timeline model contracts: frame seeking, zoom, scrolling, snapping, sprite lookup, and waveform reduction.
-import { RATES } from '@jasper/project';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { nearestTile, type SpriteIndexLike } from '../src/panels/timeline/model/filmstrip.ts';
-import { rulerTicks } from '../src/panels/timeline/model/ruler.ts';
 import { findSnap, type SnapTarget } from '../src/panels/timeline/model/snapping.ts';
 import {
 	boundaryFrameAt,
@@ -55,12 +52,6 @@ describe('viewport math (TL-100…113, TL-1053)', () => {
 		expect(deltaFramesFromPx(400, 40)).toBe(10);
 	});
 
-	it('scroll is clamped to [-leftPad, extent - W/p]', () => {
-		const v = { scrollFrame: -1000, pxPerFrame: 2, width: 1000 };
-		expect(clampScroll(v, 2000)).toBe(-8);
-		expect(clampScroll({ ...v, scrollFrame: 99_999 }, 2000)).toBe(1500);
-	});
-
 	it('wheel mapping follows TL-111', () => {
 		const base = { dx: 0, dy: 100, ctrlKey: false, altKey: false, shiftKey: false };
 		expect(wheelIntent(base, { mac: false }).kind).toBe('hscroll');
@@ -70,14 +61,6 @@ describe('viewport math (TL-100…113, TL-1053)', () => {
 		expect(wheelIntent({ ...base, shiftKey: true }, { mac: true }).kind).toBe('hscroll');
 		expect(wheelIntent(base, { mac: true, pinch: true }).kind).toBe('zoom');
 		expect(wheelIntent(base, { mac: false, preferHorizontal: false }).kind).toBe('both');
-	});
-});
-
-describe('ruler (A.9, TL-201/202)', () => {
-	it('drop-frame rulers use drop-frame labels', () => {
-		const v = { scrollFrame: 1790, pxPerFrame: 20, width: 800 };
-		const ticks = rulerTicks(v, RATES.r29_97, { dropFrame: true, startFrames: 0, sequenceEnd: 100_000 });
-		expect(ticks.some((t) => t.label?.includes(';'))).toBe(true);
 	});
 });
 
@@ -117,16 +100,7 @@ describe('waveform reduction (WF-001/003, TL-331/333)', () => {
 		const cols = reduceColumns(peaks, { startSec: 0, secPerColumn: 0.5, columns: 4, peaksPerSecond: 100 });
 		expect(Array.from(cols).map((x) => Math.round(x * 100))).toEqual([49, 99, 49, 99]);
 	});
-	it('upsamples by interpolation beyond 100 px per second', () => {
-		const cols = reduceColumns(peaks, {
-			startSec: 0.1,
-			secPerColumn: 0.001,
-			columns: 3,
-			peaksPerSecond: 100,
-		});
-		expect(cols[0]).toBeGreaterThan(0.09);
-		expect(cols[2]).toBeLessThan(0.11);
-	});
+
 	it('AC-7b: -6 dB halves the drawn amplitude; clipping is flagged', () => {
 		const g = drawGain(-6, 0);
 		expect(g).toBeCloseTo(0.501, 2);

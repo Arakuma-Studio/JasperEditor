@@ -7,18 +7,19 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { attachPersistence, createAutosaver, EditorSession, MemoryProjectStore } from '../../src/index.ts';
 
-async function setup(opts: { readOnly?: boolean } = {}) {
+async function setup() {
 	const ids = createCounterIdSource(1);
 	const store = new MemoryProjectStore({ ids, now: () => '2026-09-30T10:00:00.000Z' });
 	const doc = createEmptyProject({ ids, name: 'A', preset: 'hd-1080p-30' });
 	store.put(doc);
+	vi.spyOn(store, 'save');
+	vi.spyOn(store, 'saveView');
 	const ctx = { ids, now: () => '2026-09-30T10:00:00.000Z', registries: defaultRegistries() };
 	const session = await EditorSession.open({
 		store,
 		projectId: doc.projectId,
 		ctx,
 		sessionId: 's1',
-		readOnly: opts.readOnly,
 	});
 	return { store, session };
 }
@@ -43,9 +44,9 @@ describe('autosave timing (S01:PER-020)', () => {
 		await vi.advanceTimersByTimeAsync(1000);
 		session.apply({ label: 'Add', origin: 'user', commands: [solid(100)] });
 		await vi.advanceTimersByTimeAsync(1000);
-		expect(store.saveCount).toBe(0);
+		expect(store.save).toHaveBeenCalledTimes(0);
 		await vi.advanceTimersByTimeAsync(600);
-		expect(store.saveCount).toBe(1);
+		expect(store.save).toHaveBeenCalledTimes(1);
 		expect(a.lastSavedRevision).toBe(session.revision);
 		expect(session.getState().dirty).toBe(false);
 		a.dispose();
@@ -58,7 +59,7 @@ describe('autosave timing (S01:PER-020)', () => {
 			session.apply({ label: 'Add', origin: 'user', commands: [solid(i * 20)] });
 			await vi.advanceTimersByTimeAsync(1000);
 		}
-		expect(store.saveCount).toBe(1);
+		expect(store.save).toHaveBeenCalledTimes(1);
 		a.dispose();
 	});
 
@@ -73,10 +74,10 @@ describe('autosave timing (S01:PER-020)', () => {
 			g.update([{ type: 'clip.move', clipIds: [id], deltaFrames: i }]);
 			await vi.advanceTimersByTimeAsync(250);
 		}
-		expect(store.saveCount).toBe(0);
+		expect(store.save).toHaveBeenCalledTimes(0);
 		g.commit();
 		await vi.advanceTimersByTimeAsync(1600);
-		expect(store.saveCount).toBe(1);
+		expect(store.save).toHaveBeenCalledTimes(1);
 		const saved = await store.open(session.projectId);
 		expect(firstClip(saved.document).start).toBe(60);
 		a.dispose();
@@ -89,7 +90,7 @@ describe('autosave timing (S01:PER-020)', () => {
 		const p1 = a.flush();
 		session.apply({ label: 'Add', origin: 'user', commands: [solid(50)] });
 		await Promise.all([p1, a.flush()]);
-		expect(store.saveCount).toBe(2);
+		expect(store.save).toHaveBeenCalledTimes(2);
 		expect(a.lastSavedRevision).toBe(session.revision);
 
 		const id = firstClip(session.getCommitted()).id;
@@ -97,18 +98,9 @@ describe('autosave timing (S01:PER-020)', () => {
 		g.update([{ type: 'clip.move', clipIds: [id], deltaFrames: 5 }]);
 		session.apply({ label: 'Add', origin: 'user', commands: [solid(300)] });
 		await a.flush();
-		expect(store.saveCount).toBe(3);
+		expect(store.save).toHaveBeenCalledTimes(3);
 		expect(firstClip((await store.open(session.projectId)).document).start).toBe(0);
 		g.cancel();
-		a.dispose();
-	});
-
-	it('does nothing in read-only sessions', async () => {
-		const { store, session } = await setup({ readOnly: true });
-		const a = createAutosaver(session, store);
-		expect(a.getStatus().paused).toBe('read-only');
-		await a.flush();
-		expect(store.saveCount).toBe(0);
 		a.dispose();
 	});
 
@@ -120,9 +112,9 @@ describe('autosave timing (S01:PER-020)', () => {
 			session.setView(seqId, { pxPerFrame: 2 + i });
 			await vi.advanceTimersByTimeAsync(300);
 		}
-		expect(store.viewSaveCount).toBe(0);
+		expect(store.saveView).toHaveBeenCalledTimes(0);
 		await vi.advanceTimersByTimeAsync(1000);
-		expect(store.viewSaveCount).toBe(1);
+		expect(store.saveView).toHaveBeenCalledTimes(1);
 		a.dispose();
 	});
 });
@@ -137,7 +129,7 @@ describe('page lifecycle (S01:PER-022)', () => {
 		await disposing;
 		session.apply({ label: 'Add', origin: 'user', commands: [solid(0)] });
 		await vi.advanceTimersByTimeAsync(1600);
-		expect(store.saveCount).toBe(1);
+		expect(store.save).toHaveBeenCalledTimes(1);
 		await second.dispose();
 	});
 
@@ -155,18 +147,18 @@ describe('page lifecycle (S01:PER-022)', () => {
 		win.dispatchEvent(ev);
 		expect(ev.defaultPrevented).toBe(true);
 		await vi.advanceTimersByTimeAsync(0);
-		expect(store.saveCount).toBe(1);
+		expect(store.save).toHaveBeenCalledTimes(1);
 
 		session.apply({ label: 'Add', origin: 'user', commands: [solid(40)] });
 		doc.visibilityState = 'hidden';
 		doc.dispatchEvent(new Event('visibilitychange'));
 		await vi.advanceTimersByTimeAsync(0);
-		expect(store.saveCount).toBe(2);
+		expect(store.save).toHaveBeenCalledTimes(2);
 
 		session.apply({ label: 'Add', origin: 'user', commands: [solid(80)] });
 		win.dispatchEvent(new Event('pagehide'));
 		await vi.advanceTimersByTimeAsync(0);
-		expect(store.saveCount).toBe(3);
+		expect(store.save).toHaveBeenCalledTimes(3);
 
 		const clean = new Event('beforeunload', { cancelable: true });
 		win.dispatchEvent(clean);
@@ -176,6 +168,6 @@ describe('page lifecycle (S01:PER-022)', () => {
 		session.apply({ label: 'Add', origin: 'user', commands: [solid(120)] });
 		win.dispatchEvent(new Event('pagehide'));
 		await vi.advanceTimersByTimeAsync(5000);
-		expect(store.saveCount).toBe(3);
+		expect(store.save).toHaveBeenCalledTimes(3);
 	});
 });

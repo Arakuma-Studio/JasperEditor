@@ -32,7 +32,7 @@ export type RenderKeyFn = (
 	bundleHash: string,
 ) => string;
 
-export function emptyRefs(): ProjectCacheRefs {
+function emptyRefs(): ProjectCacheRefs {
 	return { fingerprints: new Set(), mgRenderKeys: new Set(), bundleHashes: new Set() };
 }
 

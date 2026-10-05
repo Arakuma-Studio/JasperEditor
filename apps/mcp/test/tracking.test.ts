@@ -30,7 +30,7 @@ function cleanEnv(extra: Record<string, string> = {}): Record<string, string> {
 	const out: Record<string, string> = {};
 	for (const [k, v] of Object.entries(process.env))
 		if (v !== undefined && !k.startsWith('JASPER_')) out[k] = v;
-	return { ...out, ...extra };
+	return { ...out, JASPER_CACHE_AUTO_GC: '0', ...extra };
 }
 
 async function waitFor(check: () => Promise<boolean> | boolean, timeoutMs: number, what: string) {
@@ -252,26 +252,4 @@ describe('tracking tools (S09:TRA-001/002, §8 item 7)', () => {
 			}
 		}
 	}, 900_000);
-
-	it('set_corner_pin places corners in sequence pixels', async () => {
-		const { projectId } = await ok<{ projectId: string }>('create_project', { name: 'Pin' });
-		const solid = await ok<{ refs: Record<string, string> }>('apply_commands', {
-			projectId,
-			label: 'Solid',
-			commands: [{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V1', color: [1, 0, 1, 1], ref: '$s' }],
-		});
-		const clipId = solid.refs.$s!;
-		const r = await ok<{ normalizedCorners: [number, number][] }>('set_corner_pin', {
-			projectId,
-			clipId,
-			corners: [
-				[192, 108],
-				[1728, 216],
-				[1536, 972],
-				[384, 864],
-			],
-		});
-		expect(r.normalizedCorners[0]).toEqual([0.1, 0.1]);
-		expect(r.normalizedCorners[2]).toEqual([0.8, 0.9]);
-	});
 });

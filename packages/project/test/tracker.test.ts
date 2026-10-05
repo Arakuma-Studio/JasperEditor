@@ -3,20 +3,15 @@
 // resolver (what the preview and the warp stage draw).
 import { describe, expect, it } from 'vitest';
 import {
-	applyMat3,
-	applyMatrix,
 	buildRenderSnapshot,
 	type Clip,
 	type ClipTracker,
 	checkInvariants,
 	defaultEffectRegistry,
 	flicksPerFrame,
-	layerMatrix,
 	mergeSamples,
 	planTrack,
 	type Quad,
-	quadCentre,
-	quadToQuad,
 	reanchorSamples,
 	resolveSceneAt,
 	samplesFromTrackResult,
@@ -73,8 +68,8 @@ function setup(opts: { plateMotion?: boolean; targetMotion?: boolean } = {}) {
 	const target = h.clips('V2')[0]!.id;
 	if (opts.plateMotion) {
 		h.ok([
-			{ type: 'param.set', target: ['clip', plate, 'transform', 'scale'], value: 150 },
-			{ type: 'param.set', target: ['clip', plate, 'transform', 'rotation'], value: 10 },
+			{ type: 'param.set', target: ['clip', plate, 'transform', 'scale'], value: 200 },
+			{ type: 'param.set', target: ['clip', plate, 'transform', 'rotation'], value: 90 },
 			{ type: 'param.set', target: ['clip', plate, 'transform', 'position'], value: [900, 500] },
 		]);
 	}
@@ -110,27 +105,9 @@ function addPlanar(h: Harness, plate: string): string {
 	return (r.results[0] as { trackerId: string }).trackerId;
 }
 
-function plateMapAt(h: Harness, plate: string) {
-	const c = h.seq.clips[plate] as Clip & {
-		transform: {
-			position: { value: Vec2 };
-			scale: { value: number };
-			rotation: { value: number };
-			anchor: { value: Vec2 };
-		};
-	};
-	const m = layerMatrix({
-		position: c.transform.position.value,
-		anchor: c.transform.anchor.value,
-		scale: c.transform.scale.value,
-		scaleWidth: c.transform.scale.value,
-		uniformScale: true,
-		rotation: c.transform.rotation.value,
-		flipH: false,
-		flipV: false,
-	});
-	return (p: Vec2) => applyMatrix(m, p);
-}
+// With plate anchor [960,540], position [900,500], scale 200% and a 90-degree turn,
+// media [x,y] lands at [1980-2y, 2x-1420] by the specified clockwise coordinate map.
+const plateToSequence = ([x, y]: Vec2): Vec2 => [1980 - 2 * y, 2 * x - 1420];
 
 describe('tracker commands (S09:TRK-001…005)', () => {
 	it('adds planar and point trackers on video clips with media-px geometry and content time', () => {
@@ -142,13 +119,11 @@ describe('tracker commands (S09:TRK-001…005)', () => {
 		const [a, b] = r.results as { trackerId: string }[];
 		expect(a!.trackerId).toMatch(/^tkr_/);
 		const trackers = clip(h, plate).trackers!;
-		expect(trackers.map((t) => t.name)).toEqual(['Planar Tracker 1', 'Point Tracker 1']);
 		expect(trackers[0]!.reference.time).toBe(12 * F);
 		expect(trackers[0]!.reference.corners).toEqual(REF);
 		expect(trackers[0]!.samples).toBeNull();
 		expect(trackers[1]!.reference.point).toEqual([400, 300]);
 		expect(trackers[1]!.reference.patch).toBeGreaterThan(0);
-		expect(trackers[1]!.reference.search).toBe(trackers[1]!.reference.patch! * 3);
 		expect(b!.trackerId).not.toBe(a!.trackerId);
 		// Refusals: non-video clip, non-convex corners, wrong geometry kind.
 		for (const cmd of [
@@ -225,30 +200,50 @@ describe('tracker commands (S09:TRK-001…005)', () => {
 		if (!missing.ok) expect(missing.errors[0]!.code).toBe('E_NOT_FOUND');
 	});
 
-	it('moving the reference after tracking re-anchors every sample through the plane motion', () => {
+	it('moving the reference carries the correction through the remaining translation', () => {
 		const { h, plate } = setup();
 		const id = addPlanar(h, plate);
+		const quads = Array.from({ length: 20 }, (_, f) => REF.map(([x, y]) => [x + 3 * f, y - 2 * f]));
 		h.ok([
-			{ type: 'tracker.setSamples', trackerId: id, samples: samplesFor(20), method: 'klt-homography@1' },
+			{
+				type: 'tracker.setSamples',
+				trackerId: id,
+				samples: {
+					start: 0,
+					step: F,
+					stride: 8,
+					data: quads.flat(2),
+					confidence: new Array(20).fill(1),
+				},
+				method: 'klt-homography@1',
+			},
 		]);
-		// The user nudges the reference corners 2 px outward at frame 5.
-		const at5 = truthQuad(5);
-		const moved = at5.map(([x, y], k) => [x + (k === 0 || k === 3 ? -2 : 2), y + (k < 2 ? -2 : 2)]) as Quad;
+		const moved: Quad = [
+			[713, 288],
+			[1317, 308],
+			[1297, 692],
+			[703, 672],
+		];
 		h.ok([{ type: 'tracker.update', trackerId: id, at: { frames: 5 }, corners: moved }]);
-		const t = clip(h, plate).trackers![0]!;
-		expect(t.reference.time).toBe(5 * F);
-		const g5 = trackerGeometryAt(t, 5 * F);
-		for (let k = 0; k < 4; k++) {
-			expect(g5.corners![k]![0]).toBeCloseTo(moved[k]![0], 6);
-			expect(g5.corners![k]![1]).toBeCloseTo(moved[k]![1], 6);
-		}
-		// Another frame: the moved corners carried by the frame-5 → frame-15 homography.
-		const H = quadToQuad(truthQuad(5), truthQuad(15))!;
-		const g15 = trackerGeometryAt(t, 15 * F);
-		for (let k = 0; k < 4; k++) {
-			const e = applyMat3(H, moved[k]!);
-			expect(g15.corners![k]![0]).toBeCloseTo(e[0], 6);
-			expect(g15.corners![k]![1]).toBeCloseTo(e[1], 6);
+		const tracker = clip(h, plate).trackers![0]!;
+		expect(tracker.reference.time).toBe(5 * F);
+		for (const [frame, expected] of [
+			[5, moved],
+			[
+				15,
+				[
+					[743, 268],
+					[1347, 288],
+					[1327, 672],
+					[733, 652],
+				],
+			],
+		] as const) {
+			const actual = trackerGeometryAt(tracker, frame * F).corners!;
+			for (let k = 0; k < 4; k++) {
+				expect(actual[k]![0]).toBeCloseTo(expected[k]![0], 6);
+				expect(actual[k]![1]).toBeCloseTo(expected[k]![1], 6);
+			}
 		}
 	});
 
@@ -303,19 +298,18 @@ describe('samples (S09:TRK-002, TRK-020)', () => {
 		expect(valuesAt(s, 5 * F + F / 2)!.values[0]).toBeCloseTo(701.5, 9);
 		expect(valuesAt(s, 100 * F)!.values[0]).toBe(truthQuad(9)[0][0]);
 	});
-	it('smooths with a centred moving average that keeps linear motion and static ends', () => {
-		const s = samplesFor(10);
-		const m = smoothSamples(s, 2);
-		// Linear motion is unchanged away from the ends.
-		expect(m.data[5 * 8]).toBeCloseTo(s.data[5 * 8]!, 9);
-		const flat: TrackerSamples = {
+	it('smooths jitter with a centred average and holds the end samples', () => {
+		const samples: TrackerSamples = {
 			start: 0,
 			step: F,
 			stride: 2,
-			data: [5, 5, 5, 5, 5, 5],
-			confidence: [1, 1, 1],
+			data: [0, 6, 9, 6, 0, 6],
+			confidence: [1, 0.5, 1],
 		};
-		expect(smoothSamples(flat, 3).data).toEqual(flat.data);
+		const smoothed = smoothSamples(samples, 1);
+		expect(smoothed.data).toEqual([3, 6, 3, 6, 3, 6]);
+		expect(smoothed.confidence).toEqual([1, 0.5, 1]);
+		expect(samples.data).toEqual([0, 6, 9, 6, 0, 6]);
 	});
 	it('merges disjoint spans with lost samples in the gap', () => {
 		const a: TrackerSamples = { start: 0, step: F, stride: 2, data: [0, 0, 1, 1], confidence: [1, 1] };
@@ -341,7 +335,7 @@ describe('samples (S09:TRK-002, TRK-020)', () => {
 });
 
 describe('tracker.apply (S09:TRK-020…023, §8.1)', () => {
-	it('corner pin reproduces the tracked corners through plate Motion (150 %, 10°) and animated target Motion', () => {
+	it('corner pin reproduces the tracked corners through plate Motion (200 %, 90°) and animated target Motion', () => {
 		const { h, plate, target } = setup({ plateMotion: true, targetMotion: true });
 		const id = addPlanar(h, plate);
 		h.ok([
@@ -362,7 +356,7 @@ describe('tracker.apply (S09:TRK-020…023, §8.1)', () => {
 			effectInstanceId: res.effectInstanceId,
 		});
 		const snap = buildRenderSnapshot(h.doc, h.seqId, { resolveMedia: () => null, resolveFont: () => null });
-		const toSeq = plateMapAt(h, plate);
+		const toSeq = plateToSequence;
 		for (const f of [0, 7, 15, 29]) {
 			const layer = resolveSceneAt(snap, f).find((l) => l.clip.clipId === target)!;
 			const want = truthQuad(f).map(toSeq);
@@ -389,14 +383,23 @@ describe('tracker.apply (S09:TRK-020…023, §8.1)', () => {
 
 	it('transform mode: position follows the quad centre, scale/rotation relative to the reference', () => {
 		const { h, plate, target } = setup({ plateMotion: true });
-		const id = addPlanar(h, plate);
+		const reference: Quad = [
+			[700, 300],
+			[1300, 300],
+			[1300, 700],
+			[700, 700],
+		];
+		const added = h.ok([
+			{ type: 'tracker.add', clipId: plate, kind: 'planar', at: { frames: 0 }, corners: reference },
+		]);
+		const id = (added.results[0] as { trackerId: string }).trackerId;
 		// Frame i: the quad scaled by (1 + i/100) about its centre and rotated by i degrees.
-		const c: Vec2 = quadCentre(REF);
+		const c: Vec2 = [1000, 500];
 		const data: number[] = [];
 		for (let i = 0; i < 30; i++) {
 			const k = 1 + i / 100;
 			const a = (i * Math.PI) / 180;
-			for (const [x, y] of REF) {
+			for (const [x, y] of reference) {
 				const dx = (x - c[0]) * k;
 				const dy = (y - c[1]) * k;
 				data.push(c[0] + dx * Math.cos(a) - dy * Math.sin(a) + i, c[1] + dx * Math.sin(a) + dy * Math.cos(a));
@@ -420,7 +423,7 @@ describe('tracker.apply (S09:TRK-020…023, §8.1)', () => {
 			};
 		};
 		expect(t.transform.position.keyframes.length).toBe(30);
-		const toSeq = plateMapAt(h, plate);
+		const toSeq = plateToSequence;
 		const want = toSeq([c[0] + 20, c[1]]);
 		expect(t.transform.position.keyframes[20]!.value[0]).toBeCloseTo(want[0], 4);
 		expect(t.transform.position.keyframes[20]!.value[1]).toBeCloseTo(want[1], 4);

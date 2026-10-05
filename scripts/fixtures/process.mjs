@@ -1,7 +1,6 @@
 // Clip-processing fixtures (wp-m2-process, S07 §8 tests 3-5), loaded by `pnpm fixtures`:
 //   shaky.mp4       1080p30, 90 frames: a static test chart panned by a seeded random walk of ±24 px (stabilise)
 //   judder.mp4      640x360 30 fps, 60 frames: a 50 fps pan decimated 2-2-1 to 30 fps (de-judder)
-//   steady-pan.mp4  640x360 30 fps, 60 frames: an even pan (de-judder must leave it alone)
 //   reframe.mp4     848x480 30 fps, 90 frames: a static shot with one jerky operator reframe (160 px right,
 //                   a 6 px vertical bump) and a slow drift, plus a textured "subject" crossing the frame on its
 //                   own (smooth-path stabiliser, PST-005; `reframePath()` is the ground truth)
@@ -149,23 +148,6 @@ export async function fixtures({ ffmpeg, base, h264 }) {
 							"crop=640:360:'n*6':0,select='eq(mod(n\\,5)\\,0)+eq(mod(n\\,5)\\,2)+eq(mod(n\\,5)\\,4)',setpts=N/(30*TB),format=yuv420p",
 						],
 						...['-r', '30', '-frames:v', '60', ...h264, '-an', '-f', 'mp4', '-movflags', '+faststart', out],
-					]);
-				} finally {
-					rmSync(still, { force: true });
-				}
-			},
-		},
-		{
-			name: 'steady-pan.mp4',
-			recipe: `steady-pan-v1:${h264.join(' ')}`,
-			make: async (out) => {
-				const still = `${out}.still.png`;
-				try {
-					run(['-f', 'lavfi', '-i', texture(2400, 360), '-frames:v', '1', still]);
-					run([
-						...['-loop', '1', '-framerate', '30', '-i', still],
-						...['-vf', "crop=640:360:'n*10':0,format=yuv420p"],
-						...['-frames:v', '60', ...h264, '-an', '-f', 'mp4', '-movflags', '+faststart', out],
 					]);
 				} finally {
 					rmSync(still, { force: true });

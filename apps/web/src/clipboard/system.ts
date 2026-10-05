@@ -137,7 +137,7 @@ async function writeViaAsyncApi(html: string, text: string): Promise<boolean> {
  * (all formats at once) waits this long so it lands last (wp-clipboard-2 defect fix: the two writes raced and the
  * custom format was sometimes overwritten).
  */
-export const DESKTOP_WRITE_AFTER_EVENT_MS = 150;
+const DESKTOP_WRITE_AFTER_EVENT_MS = 150;
 
 /**
  * Copies a payload: the in-memory copy at once, then the system clipboard. Desktop: the Electron clipboard writes

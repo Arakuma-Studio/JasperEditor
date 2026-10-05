@@ -48,7 +48,7 @@ export function mediaIntrinsicSize(asset: Pick<MediaAsset, 'probe'> | undefined 
 }
 
 /** True when the two sizes have exactly the same aspect ratio (a uniform scale compensates the change). */
-export function isIsotropicResize(oldSize: PixelSize, newSize: PixelSize): boolean {
+function isIsotropicResize(oldSize: PixelSize, newSize: PixelSize): boolean {
 	return oldSize.width * newSize.height === oldSize.height * newSize.width;
 }
 

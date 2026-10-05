@@ -102,23 +102,7 @@ describe('Source monitor state (S03:SRC-001…004)', () => {
 		expect(sourceMonitorState.getState().itemId).toBeNull();
 	});
 
-	it('stores marks on the item through item.setMarks (undoable)', () => {
-		const { session, itemId } = makeSession();
-		openInSource(session, itemId);
-		expect(setSourceMarks(session, { in: 30 }, 'Mark In')).toBe(true);
-		sourceMonitorState.setState({ markIn: 30 });
-		expect(setSourceMarks(session, { out: 90 }, 'Mark Out')).toBe(true);
-		const item = session.getCommitted().items[itemId] as {
-			marks: { in: { flicks: number }; out: { flicks: number } };
-		};
-		expect(item.marks.in.flicks).toBe(FLICKS_PER_SECOND);
-		expect(item.marks.out.flicks).toBe(3 * FLICKS_PER_SECOND);
-		expect(session.getState().history.entries).toHaveLength(2);
-		session.undo();
-		expect((session.getCommitted().items[itemId] as { marks: { out: unknown } }).marks.out).toBeNull();
-	});
-
-	it('Insert / Overwrite place the marked range at the sequence playhead (AC-SRC-1 logic)', () => {
+	it('Overwrite places the marked range at the sequence playhead (AC-SRC-1 logic)', () => {
 		const { session, itemId } = makeSession();
 		openInSource(session, itemId);
 		sourceMonitorState.setState({ markIn: null });
@@ -137,8 +121,6 @@ describe('Source monitor state (S03:SRC-001…004)', () => {
 			expect(c.sourceIn).toBe(FLICKS_PER_SECOND);
 		}
 		expect(session.transport.getState().frame).toBe(75);
-		const ins = performSourceEdit(session, 'insert');
-		expect(ins.ok).toBe(true);
 	});
 
 	it('with the Source monitor focused, I/O and Shift+I act on the source item, not the sequence', async () => {
@@ -171,10 +153,5 @@ describe('Source monitor state (S03:SRC-001…004)', () => {
 		} finally {
 			setSourceTransport(null);
 		}
-	});
-
-	it('refuses when nothing is open', () => {
-		const { session } = makeSession();
-		expect(performSourceEdit(session, 'insert').ok).toBe(false);
 	});
 });

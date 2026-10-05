@@ -13,7 +13,7 @@ const LGPL_ONLY_ENV = 'JASPER_FFMPEG_LGPL_ONLY';
 const HW_ENCODERS_ENV = 'JASPER_HW_ENCODERS';
 
 /** Encoders that make an FFmpeg build GPL (or nonfree). Never selected in LGPL-only mode. */
-export const GPL_ENCODERS = new Set([
+const GPL_ENCODERS = new Set([
 	'libx264',
 	'libx264rgb',
 	'libx265',
@@ -35,7 +35,7 @@ type HwEncoderSpec = {
 };
 
 /** Hardware H.264 encoders in preference order (D-13). */
-export const HW_H264: readonly HwEncoderSpec[] = [
+const HW_H264: readonly HwEncoderSpec[] = [
 	{ encoder: 'h264_videotoolbox', label: 'Apple VideoToolbox', platforms: ['darwin'], pixFmt: 'yuv420p' },
 	{ encoder: 'h264_nvenc', label: 'NVIDIA NVENC', platforms: ['linux', 'win32'], pixFmt: 'yuv420p' },
 	{ encoder: 'h264_qsv', label: 'Intel Quick Sync', platforms: ['linux', 'win32'], pixFmt: 'nv12' },

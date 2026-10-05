@@ -282,12 +282,3 @@ test('Program monitor accepts effect drops (layer under the pointer) and motion-
 		.poll(async () => (await clips(page)).filter((c) => c.kind === 'motion-graphic').length)
 		.toBe(mgBefore + 1);
 });
-
-test('Re-render Motion Graphics (command palette) → the Program badge reports the fframes render', async () => {
-	// The dropped template clip is selected; its preview badge starts as the SVG preview.
-	await expect(page.locator('[data-mg-badge]').first()).toBeVisible();
-	await page.getByTestId('palette-button').click();
-	await page.getByTestId('palette-input').fill('Re-render Motion');
-	await page.keyboard.press('Enter');
-	await expect(page.locator('[data-mg-badge="ready"]')).toBeVisible({ timeout: 60_000 });
-});

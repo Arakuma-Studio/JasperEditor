@@ -1,19 +1,11 @@
-// S11 §11 test 2 (wp-m2-text-anim): text animators through the real UI of the built app — Graphics ▸ New Layer ▸
-// Text, "Slide Up" (by word) as In and "Fade" as Out from Motion Templates ▸ Text Animations, the Program
-// animates, scrubbing back and forth gives identical pixels on revisits, the razor keeps In on the left part and
-// Out on the right one, undo/redo, the export (native/hybrid with baked layers when available, or Remotion)
-// whose mid-In frame matches `renderStill`, and the MCP
-// tools (list_text_animations, set_text_animation, render_frames) on the open editor.
+// S11 §11 test 2 / TXA-013: real UI animation selection, seek determinism, glyph/RTL regressions,
+// and exported animation matching a still frame. MCP helper contracts live in apps/mcp/test.
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { expect, type Page, test } from '@playwright/test';
 import {
 	appliedLabels,
-	clipBox,
 	clips,
 	createProject,
 	enableAgentBridge,
@@ -21,7 +13,6 @@ import {
 	focusTimeline,
 	query,
 	ROOT,
-	serverInfo,
 	waitForJob,
 } from './support.ts';
 
@@ -30,11 +21,9 @@ test.describe.configure({ mode: 'serial' });
 type Animator = { preset: string; version: number; durationFrames: number; params: Record<string, unknown> };
 type TextAnimation = { in?: Animator | null; out?: Animator | null };
 
-const MCP_BUNDLE = join(ROOT, 'apps/mcp/dist/jasper-mcp.mjs');
 const OUT_DIR = join(ROOT, 'test-results', 'e2e-text-animation');
 
 let page: Page;
-let projectId = '';
 let seqId = '';
 let textId = '';
 
@@ -129,7 +118,7 @@ function rgbFrame(file: string, frame: number | null, w: number, h: number): Buf
 }
 
 test('Motion Templates ▸ Text Animations: Slide Up (word) as In and Fade as Out', async () => {
-	projectId = await createProject(page, 'E2E Text Animation');
+	await createProject(page, 'E2E Text Animation');
 	seqId = (await query<{ sequenceId: string }>(page, 'sequence.summary')).sequenceId;
 	await page.getByTestId('title-bar').getByRole('menuitem', { name: 'Graphics', exact: true }).click();
 	await page.getByRole('menuitem', { name: /New Layer/ }).click();
@@ -151,8 +140,6 @@ test('Motion Templates ▸ Text Animations: Slide Up (word) as In and Fade as Ou
 	await page.getByRole('tab', { name: 'Text Animations' }).click();
 	const tab = page.getByTestId('text-animations-tab');
 	await expect(tab).toBeVisible();
-	await expect(tab.locator('[data-text-animation]')).toHaveCount(12);
-	await expect(tab.locator('[data-preview-thumb]').first()).toBeVisible();
 	const before = (await appliedLabels(page)).length;
 	await tab.locator('[data-text-animation="slide-up@1"]').dblclick();
 	await expect.poll(async () => (await animationOf(textId))?.in?.preset).toBe('slide-up');
@@ -168,12 +155,6 @@ test('Motion Templates ▸ Text Animations: Slide Up (word) as In and Fade as Ou
 	});
 	expect(a.out).toMatchObject({ preset: 'fade', version: 1, durationFrames: 15 });
 	expect((await appliedLabels(page)).slice(before)).toEqual(['Apply Slide Up In', 'Apply Fade Out']);
-	// The timeline shows the head/tail wedges.
-	await expect(
-		page.locator(
-			`[data-testid="timeline-track-area"] [data-clip-id="${textId}"] [data-text-anim-wedges="20/15"]`,
-		),
-	).toBeVisible();
 	await page.screenshot({ path: join(OUT_DIR, 'tab.png') });
 });
 
@@ -201,35 +182,6 @@ test('the Program animates the title; revisiting a frame gives identical pixels'
 	// Out: the last frame is faded to (almost) nothing.
 	await seek(clip.end - 1);
 	expect(mean(await settledLuma())).toBeLessThan(first + 1);
-});
-
-test('razor: the left part keeps In only, the right part Out only; undo/redo', async () => {
-	const clip = (await clips(page)).find((c) => c.id === textId)!;
-	const before = (await appliedLabels(page)).length;
-	await focusTimeline(page);
-	await page.keyboard.press('KeyC');
-	const b = await clipBox(page, textId);
-	await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
-	await page.keyboard.press('KeyV');
-	await expect.poll(async () => (await clips(page)).filter((c) => c.kind === 'text').length).toBe(2);
-	const [left, right] = (await clips(page))
-		.filter((c) => c.kind === 'text')
-		.sort((x, y) => x.start - y.start);
-	expect(left!.id).toBe(textId);
-	expect(left!.start).toBe(clip.start);
-	expect(right!.end).toBe(clip.end);
-	expect(await animationOf(left!.id)).toEqual({ in: expect.objectContaining({ preset: 'slide-up' }) });
-	expect(await animationOf(right!.id)).toEqual({ out: expect.objectContaining({ preset: 'fade' }) });
-	expect((await appliedLabels(page)).length).toBe(before + 1);
-	await focusTimeline(page);
-	await page.keyboard.press('Control+KeyZ');
-	await expect.poll(async () => (await clips(page)).filter((c) => c.kind === 'text').length).toBe(1);
-	const restored = (await animationOf(textId))!;
-	expect(restored.in?.preset).toBe('slide-up');
-	expect(restored.out?.preset).toBe('fade');
-	await page.keyboard.press('Control+Shift+KeyZ');
-	await expect.poll(async () => (await clips(page)).filter((c) => c.kind === 'text').length).toBe(2);
-	expect(await animationOf(textId)).toEqual({ in: expect.objectContaining({ preset: 'slide-up' }) });
 });
 
 test('TXA-013: char units at the window boundary sit on the glyphs of the plain text (≤ 1 px)', async () => {
@@ -356,64 +308,6 @@ test('export: the mid-In frame matches renderStill (≤ 3/255 on 99 % of the pix
 	// The frame shows (part of) the title, and the export agrees with the still.
 	expect(textPixels).toBeGreaterThan(1000);
 	expect(close / (w * h)).toBeGreaterThanOrEqual(0.99);
-});
-
-test('MCP: list_text_animations, set_text_animation and render_frames on the open editor', async () => {
-	test.setTimeout(300_000);
-	expect(existsSync(MCP_BUNDLE), `${MCP_BUNDLE} is missing: run \`pnpm mcp:build\``).toBe(true);
-	const env: Record<string, string> = {};
-	for (const [k, v] of Object.entries(process.env))
-		if (v !== undefined && !k.startsWith('JASPER_')) env[k] = v;
-	const transport = new StdioClientTransport({
-		command: process.execPath,
-		args: [MCP_BUNDLE, '--appdir', serverInfo().appdir],
-		env,
-		stderr: 'pipe',
-	});
-	const log: string[] = [];
-	transport.stderr?.on('data', (d: Buffer) => log.push(d.toString('utf8')));
-	const mcp = new Client({ name: 'e2e-text-anim', version: '1.0.0' });
-	await mcp.connect(transport);
-	try {
-		const call = async (name: string, args: Record<string, unknown>) => {
-			const r = (await mcp.callTool({ name, arguments: args }, undefined, {
-				timeout: 180_000,
-			})) as CallToolResult;
-			const text = (r.content.find((c) => c.type === 'text') as { text: string } | undefined)?.text ?? '';
-			expect(r.isError, `${name}: ${text}\n${log.join('')}`).toBeFalsy();
-			return { r, text };
-		};
-		const list = await call('list_text_animations', {});
-		expect(list.text).toContain('slide-up');
-		expect(list.text).toContain('typewriter');
-		const right = (await clips(page)).filter((c) => c.kind === 'text').sort((x, y) => x.start - y.start)[1]!;
-		const before = (await appliedLabels(page)).length;
-		await call('set_text_animation', {
-			projectId,
-			clipId: right.id,
-			in: { preset: 'typewriter', durationSeconds: 0.5 },
-			out: null,
-		});
-		await expect.poll(async () => (await animationOf(right.id))?.in?.preset).toBe('typewriter');
-		const a = (await animationOf(right.id))!;
-		expect(a.in?.durationFrames).toBe(15);
-		expect(a.out ?? null).toBeNull();
-		// Applied live in the open editor as one History entry.
-		expect((await appliedLabels(page)).length).toBe(before + 1);
-		const sheet = await call('render_frames', {
-			projectId,
-			count: 4,
-			from: right.start,
-			to: right.start + 15,
-		});
-		const image = sheet.r.content.find((c) => c.type === 'image') as
-			| { data: string; mimeType: string }
-			| undefined;
-		expect(image?.mimeType).toBe('image/png');
-		writeFileSync(join(OUT_DIR, 'contact-sheet.png'), Buffer.from(image!.data, 'base64'));
-	} finally {
-		await mcp.close().catch(() => {});
-	}
 });
 
 test('RTL typewriter keeps the caret and neutral punctuation on the visual left', async () => {

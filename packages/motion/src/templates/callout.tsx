@@ -153,7 +153,6 @@ export function Callout(props: AnimeTemplateProps) {
 	return (
 		<DesignStage fit={fit} label="callout@1">
 			<svg
-				data-part="leader"
 				width={fit.designW}
 				height={fit.designH}
 				style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible' }}
@@ -168,7 +167,6 @@ export function Callout(props: AnimeTemplateProps) {
 					strokeLinecap="round"
 				/>
 				<circle
-					data-part="ring"
 					cx={px(geo.a.x)}
 					cy={px(geo.a.y)}
 					r={px(dotR * ring!.s)}
@@ -178,7 +176,6 @@ export function Callout(props: AnimeTemplateProps) {
 					opacity={px(ring!.o)}
 				/>
 				<circle
-					data-part="dot"
 					cx={px(geo.a.x)}
 					cy={px(geo.a.y)}
 					r={px(Math.max(0, dotR * dot!.s))}
@@ -186,7 +183,6 @@ export function Callout(props: AnimeTemplateProps) {
 				/>
 			</svg>
 			<div
-				data-part="label"
 				style={{
 					position: 'absolute',
 					left: px(boxX),

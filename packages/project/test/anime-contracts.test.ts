@@ -7,9 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
 	type Clip,
-	CURRENT_SCHEMA_VERSION,
 	checkInvariants,
-	clipEngines,
 	compressAnimationWindows,
 	createStaticMgRegistry,
 	defaultEffectRegistry,
@@ -48,8 +46,7 @@ const FADE: TextAnimationSpec = {
 };
 
 describe('schema v4 (ARCHITECTURE §20.1, D-32)', () => {
-	it('v4 fixture (animated text, anime template, rect + ellipse) loads without repairs (v4 → v5)', () => {
-		expect(CURRENT_SCHEMA_VERSION).toBe(5);
+	it('saved v4 fixture (animated text, anime template, rect + ellipse) loads without repairs (v4 → v5)', () => {
 		const r = loadProject(fixtureV4(), { effects: defaultEffectRegistry });
 		expect(r.readOnly).toBe(false);
 		expect(r.migration.steps).toEqual(['v4→v5']);
@@ -170,24 +167,6 @@ describe('text animation windows (S11:TXA-002/004)', () => {
 			compressed: false,
 			unknown: [],
 		});
-	});
-});
-
-describe('clip engines and the snapshot (ARCHITECTURE §20.1)', () => {
-	it('clipEngines: kind defaults; anime templates are Remotion-rendered', () => {
-		expect(clipEngines({ kind: 'motion-graphic', template: { renderer: 'anime' } })).toEqual({
-			preview: 'remotion',
-			export: 'remotion',
-			badge: 'R',
-		});
-		expect(clipEngines({ kind: 'motion-graphic', template: {} })).toEqual({
-			preview: 'fframes',
-			export: 'fframes',
-			badge: 'F',
-		});
-		expect(clipEngines({ kind: 'shape' })?.badge).toBe('R');
-		expect(clipEngines({ kind: 'video' })).toEqual({ preview: 'native', export: 'native', badge: null });
-		expect(clipEngines({ kind: 'hologram' })).toBeNull();
 	});
 });
 

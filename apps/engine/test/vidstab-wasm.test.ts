@@ -1,6 +1,7 @@
 // The processor quality test covers stabilization; this checks the 16-bit warp's pixel contract.
 import { afterAll, expect, it } from 'vitest';
-import { loadVidstabModule, WarpPool } from '../src/processing/proc/vidstab/index.ts';
+import { WarpPool } from '../src/processing/proc/vidstab/pool.ts';
+import { loadVidstabModule } from '../src/processing/proc/vidstab/wasm.ts';
 
 const pools: WarpPool[] = [];
 afterAll(async () => {

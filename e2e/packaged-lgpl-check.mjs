@@ -41,7 +41,7 @@ const temps = [];
 let child = null;
 process.on('exit', () => {
 	if (child && child.exitCode === null) child.kill('SIGTERM');
-	for (const d of temps) rmSync(d, { recursive: true, force: true });
+	for (const d of temps) rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 const log = (m) => console.log(`[packaged-lgpl] ${m}`);
 function fail(msg) {
@@ -278,4 +278,20 @@ writeFileSync(
 );
 log('no ffmpeg/ffprobe from PATH was used');
 log('PASS');
+// The engine may write its job journal while handling SIGTERM. Wait before the exit hook removes its appdir.
+const stopped = new Promise((resolve) => {
+	if (child.exitCode !== null || child.signalCode !== null) resolve();
+	else child.once('close', resolve);
+});
+child.kill('SIGTERM');
+let shutdownTimer;
+await Promise.race([
+	stopped,
+	new Promise((resolve) => {
+		shutdownTimer = setTimeout(resolve, 3000);
+	}),
+]);
+clearTimeout(shutdownTimer);
+if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+await stopped;
 process.exit(0);

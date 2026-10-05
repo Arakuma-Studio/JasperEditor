@@ -21,10 +21,6 @@ export const inspectorFocus = {
 		state = { ...state, ...patch };
 		for (const l of [...listeners]) l();
 	},
-	reset(): void {
-		state = { source: null, clipIds: [], rowId: null, effectInstanceId: null };
-		for (const l of [...listeners]) l();
-	},
 	subscribe(l: () => void): () => void {
 		listeners.add(l);
 		return () => listeners.delete(l);

@@ -23,10 +23,6 @@ const CHECKER =
 	'repeating-conic-gradient(var(--pr-border-strong) 0% 25%, var(--pr-bg-panel-raised) 0% 50%) 50% / 8px 8px';
 
 let recent: Rgba[] = [];
-/** Session-wide recent colors (newest first, max 8). */
-export function recentColors(): readonly Rgba[] {
-	return recent;
-}
 function pushRecent(c: Rgba) {
 	recent = [c, ...recent.filter((r) => !sameColor(r, c))].slice(0, 8);
 }

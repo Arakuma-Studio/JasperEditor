@@ -7,8 +7,6 @@ import {
 	checkInvariants,
 	type MediaHandle,
 	type RenderAudioFade,
-	resolveAudioFades,
-	resolveAudioTransitions,
 	type Transition,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
@@ -56,10 +54,7 @@ function twoAudioClips(aIn = 30, bIn = 60) {
 		},
 	]);
 	const trackId = h.seq.audioTracks[0]!.id;
-	expect(h.spans('A1')).toEqual([
-		[0, 100],
-		[100, 200],
-	]);
+
 	return { h, a: r.refs.$a!, b: r.refs.$b!, trackId };
 }
 
@@ -96,17 +91,12 @@ describe('transition.add on an audio edit point (S10:TUI-052)', () => {
 			expect(r.warnings).toEqual([]);
 			expect(checkInvariants(h.doc)).toEqual([]);
 
-			const res = resolveAudioTransitions(h.doc, h.seq);
 			const fade = (type: 'in' | 'out'): RenderAudioFade => ({
 				type,
 				start: c.span[0],
 				frames: 20,
 				curve: 'equal-power',
 			});
-			expect(res.clips.get(a)).toEqual({ headHandle: 0, tailHandle: c.tail, fades: [fade('out')] });
-			expect(res.clips.get(b)).toEqual({ headHandle: c.head, tailHandle: 0, fades: [fade('in')] });
-			expect(res.skipped).toEqual([]);
-			expect(resolveAudioFades(h.seq, h.doc).get(b)).toEqual([fade('in')]);
 
 			const snap = snapshotOf(h);
 			const [sa, sb] = snap.audioClips;
@@ -165,12 +155,13 @@ describe('transition.add on an audio edit point (S10:TUI-052)', () => {
 			incomingClipId: b,
 			alignment: 'start-at-cut',
 		});
-		expect(resolveAudioTransitions(h.doc, h.seq).clips.get(b)).toEqual({
-			headHandle: 0,
-			tailHandle: 0,
-			fades: [{ type: 'in', start: 100, frames: 10, curve: 'equal-power' }],
-		});
-		expect(resolveAudioTransitions(h.doc, h.seq).clips.has(a)).toBe(false);
+		const [outgoing, incoming] = snapshotOf(h).audioClips;
+		expect(outgoing!.clipId).toBe(a);
+		expect(outgoing!.fades).toBeUndefined();
+		expect(incoming!.clipId).toBe(b);
+		expect(incoming!.headHandle).toBeUndefined();
+		expect(audioFadeGain(incoming!.fades, 100)).toBe(0);
+		expect(audioFadeGain(incoming!.fades, 110)).toBe(1);
 	});
 
 	it('degrades at render time when the clips are trimmed after the crossfade was added', () => {
@@ -186,13 +177,12 @@ describe('transition.add on an audio edit point (S10:TUI-052)', () => {
 				[h.seqId]: { ...h.seq, clips: { ...h.seq.clips, [b]: { ...bClip, sourceIn: 0 } } },
 			},
 		};
-		const res = resolveAudioTransitions(h.doc, h.seq);
-		expect(res.clips.get(a)).toEqual({
-			headHandle: 0,
-			tailHandle: 1,
-			fades: [{ type: 'out', start: 100, frames: 1, curve: 'equal-power' }],
-		});
-		expect(res.clips.get(b)!.headHandle).toBe(0);
+		const [outgoing, incoming] = snapshotOf(h).audioClips;
+		expect(outgoing!.clipId).toBe(a);
+		expect(outgoing!.tailHandle).toBe(1);
+		expect(incoming!.headHandle).toBeUndefined();
+		expect(audioFadeGain(outgoing!.fades, 100)).toBe(1);
+		expect(audioFadeGain(outgoing!.fades, 101)).toBe(0);
 		expect(t.duration).toBe(20);
 	});
 });

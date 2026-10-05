@@ -43,10 +43,10 @@ export type DiscoveryOptions = {
 	log?(line: string): void;
 };
 
-export type HealthResult = { ok: true; version: string } | { ok: false; reason: string };
+type HealthResult = { ok: true; version: string } | { ok: false; reason: string };
 
 /** GET /health with a short timeout (the route is public even in token mode). */
-export async function probeHealth(
+async function probeHealth(
 	url: string,
 	opts: { fetch?: typeof fetch; timeoutMs?: number } = {},
 ): Promise<HealthResult> {
@@ -76,7 +76,7 @@ function pidAlive(pid: number): boolean {
 }
 
 /** Appdirs whose runtime file is checked, most specific first (deduplicated). */
-export function candidateAppdirs(opts: Pick<DiscoveryOptions, 'appdir' | 'env'> = {}): string[] {
+function candidateAppdirs(opts: Pick<DiscoveryOptions, 'appdir' | 'env'> = {}): string[] {
 	const env = opts.env ?? process.env;
 	const out: string[] = [];
 	for (const dir of [opts.appdir, env[ENV.APPDIR], platformDefaultAppdir(env), desktopAppdir(env)]) {

@@ -21,4 +21,3 @@ export {
 	sourceSize,
 	webGl2Renderer,
 } from './gl.ts';
-export { loadLutAsset } from './luts.ts';

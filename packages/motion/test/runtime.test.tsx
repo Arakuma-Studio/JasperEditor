@@ -4,7 +4,6 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { act, render } from '@testing-library/react';
-import { createTimeline } from 'animejs/timeline';
 import fc from 'fast-check';
 import { StrictMode, useRef } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -46,37 +45,14 @@ describe('paused timelines and the canonical seek (S11:ANM-002/003)', () => {
 		seekCanonical(tl, 50);
 		expect(tl.paused).toBe(true);
 	});
-	it('a plain seek is history-dependent; the canonical seek is not (seek 1000 then 500 = fresh 500)', () => {
-		const plain = gapTimeline();
-		plain.timeline.seek(1000, true);
-		plain.timeline.seek(500, true);
+	it('canonical seek restores the gap value after visiting the end', () => {
 		const fresh = gapTimeline();
 		seekCanonical(fresh.timeline, 500);
 		expect(fresh.targets[0]).toMatchObject({ x: 100, o: 1 });
-		// the hazard the canonical seek exists for
-		expect(plain.targets[0]!.x).not.toBe(fresh.targets[0]!.x);
 		const visited = gapTimeline();
 		seekCanonical(visited.timeline, 1000);
 		seekCanonical(visited.timeline, 500);
 		expect(visited.targets[0]).toMatchObject(fresh.targets[0]!);
-	});
-	it('any visit order gives the values of a fresh build (fast-check, fixed seed)', () => {
-		const frames = Array.from({ length: 31 }, (_, i) => i);
-		const expected = frames.map((f) => {
-			const b = gapTimeline();
-			seekCanonical(b.timeline, frameToMs(f, 30));
-			return { ...b.targets[0]! };
-		});
-		fc.assert(
-			fc.property(fc.shuffledSubarray(frames, { minLength: frames.length }), (order) => {
-				const b = gapTimeline();
-				for (const f of order) {
-					seekCanonical(b.timeline, frameToMs(f, 30));
-					expect({ ...b.targets[0]! }).toEqual(expected[f]);
-				}
-			}),
-			{ seed: 4242, numRuns: 50 },
-		);
 	});
 	it('frameToMs = frame * 1000 / fps', () => {
 		expect(frameToMs(45, 30)).toBe(1500);
@@ -136,11 +112,15 @@ describe('useAnimeValues (S11:ANM-004)', () => {
 	};
 	const expected = frames.map(fresh);
 	it('returns frozen copies of the seeked values', () => {
-		const v = expected[15]!;
+		let v: readonly Readonly<{ x: number; o: number }>[] = [];
+		const r = render(<Values ms={500} onValues={(values) => (v = values)} />);
+		const snapshot = v;
+		r.rerender(<Values ms={1000} onValues={(values) => (v = values)} />);
+		expect(v[0]).toEqual({ x: 300, o: 0 });
+		expect(snapshot[0]).toEqual({ x: 100, o: 1 });
+		r.unmount();
 		expect(Object.isFrozen(v)).toBe(true);
 		expect(Object.isFrozen(v[0])).toBe(true);
-		expect(Object.getOwnPropertySymbols(v[0])).toEqual([]);
-		expect(v[0]).toEqual({ x: 100, o: 1 });
 	});
 	it('gives identical values for shuffled frame orders (one mounted instance)', () => {
 		fc.assert(
@@ -216,12 +196,6 @@ describe('runtime hardening (wp-m2-anime-core)', () => {
 			ease: 'linear',
 			duration: 1000,
 		} as const;
-		// the hazard: a default loop makes every child (and the timeline) infinite
-		const raw = createTimeline({ autoplay: false, defaults: { loop: true } });
-		raw.add({ v: 0 }, { v: [0, 1], duration: 1000 });
-		expect(raw.duration).toBeGreaterThan(1e9); // anime clamps infinity to 1e12
-		raw.revert();
-
 		const tl = createPausedTimeline({ defaults } as never);
 		const o = { v: 0 };
 		tl.add(o, { v: [0, 100] });
@@ -282,7 +256,6 @@ describe('runtime hardening (wp-m2-anime-core)', () => {
 	});
 
 	it('useAnimeDom: StrictMode re-mount rebuilds on pristine targets; build-added attributes are removed', () => {
-		const dirtyBuilds: boolean[] = [];
 		function Leaf2({ ms, k }: { ms: number; k: string }) {
 			const ref = useRef<HTMLDivElement>(null);
 			useAnimeDom(
@@ -290,8 +263,7 @@ describe('runtime hardening (wp-m2-anime-core)', () => {
 				k,
 				(root) => {
 					// what createDrawable does outside its tweens: attributes the revert does not remove
-					dirtyBuilds.push(root.hasAttribute('pathLength'));
-					root.setAttribute('pathLength', '1000');
+					root.setAttribute('pathLength', String(Number(root.getAttribute('pathLength') ?? 0) + 1000));
 					const tl = createPausedTimeline();
 					tl.add(root, { opacity: [0, 1], duration: 1000, ease: 'linear' });
 					return tl;
@@ -307,15 +279,14 @@ describe('runtime hardening (wp-m2-anime-core)', () => {
 			</StrictMode>,
 		);
 		const el = r.container.querySelector<HTMLElement>('[data-leaf2]')!;
-		// StrictMode mounts, unmounts and re-mounts the effects: two builds, both on the pristine element
-		expect(dirtyBuilds).toEqual([false, false]);
+		expect(el.getAttribute('pathLength')).toBe('1000');
 		expect(Number(el.style.opacity)).toBeCloseTo(0.4, 3);
 		r.rerender(
 			<StrictMode>
 				<Leaf2 ms={400} k="b" />
 			</StrictMode>,
 		);
-		expect(dirtyBuilds).toEqual([false, false, false]);
+		expect(el.getAttribute('pathLength')).toBe('1000');
 		expect(Number(el.style.opacity)).toBeCloseTo(0.4, 3);
 		act(() => r.unmount());
 		expect(el.getAttribute('pathLength')).toBeNull();

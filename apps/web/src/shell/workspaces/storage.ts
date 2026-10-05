@@ -19,19 +19,6 @@ export function browserStorage(): ShellStorage | null {
 	}
 }
 
-/** In-memory storage (tests, private mode). */
-export function memoryStorage(
-	seed: Record<string, string> = {},
-): ShellStorage & { data: Map<string, string> } {
-	const data = new Map(Object.entries(seed));
-	return {
-		data,
-		getItem: (k) => data.get(k) ?? null,
-		setItem: (k, v) => void data.set(k, v),
-		removeItem: (k) => void data.delete(k),
-	};
-}
-
 export type LoadResult<T> =
 	| { status: 'ok'; value: T }
 	| { status: 'missing'; value: T }

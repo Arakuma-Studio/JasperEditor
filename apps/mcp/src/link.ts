@@ -51,7 +51,7 @@ function causeCode(e: unknown): string | undefined {
  * Wraps `fetch` for engine calls: every request (headers and body) gets a deadline, and a request that
  * was cut off mid-flight is reported as such instead of being retried. Reads (GET) stay retryable.
  */
-export function guardedFetch(
+function guardedFetch(
 	fetchImpl: typeof fetch = globalThis.fetch,
 	timeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS,
 ): typeof fetch {
@@ -103,12 +103,12 @@ export interface EngineConnection {
 export class FixedEngineLink implements EngineConnection {
 	private readonly c: EngineClient;
 	readonly target: EngineTarget;
-	constructor(url: string, token: string | null, fetchImpl?: typeof fetch, requestTimeoutMs?: number) {
+	constructor(url: string, token: string | null) {
 		this.target = { url, token, source: 'explicit' };
 		this.c = new EngineClient({
 			baseUrl: url,
 			token: token ?? undefined,
-			fetch: guardedFetch(fetchImpl, requestTimeoutMs),
+			fetch: guardedFetch(),
 		});
 	}
 	async client(): Promise<EngineClient> {

@@ -5,12 +5,7 @@ import { EditorSession, MemoryProjectStore } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-	createCommandContext,
-	registerCommands,
-	resetCommandRegistry,
-	runCommand,
-} from '../src/commands/index.ts';
+import { createCommandContext, registerCommands, runCommand } from '../src/commands/index.ts';
 import { mgCommands } from '../src/commands/mg.ts';
 import {
 	MG_TEMPLATE_MIME,
@@ -64,7 +59,9 @@ async function openSession() {
 	});
 }
 
-afterEach(() => resetCommandRegistry());
+let unregister: (() => void) | undefined;
+
+afterEach(() => unregister?.());
 
 describe('Motion Templates gallery model', () => {
 	it('round-trips the drag payload', () => {
@@ -93,7 +90,7 @@ describe('Motion Templates panel', () => {
 		const session = await openSession();
 		session.transport.seek(12);
 		render(
-			<EngineProvider client={fakeEngine()} connectEvents={false}>
+			<EngineProvider client={fakeEngine()}>
 				<SessionProvider session={session}>
 					<MotionTemplatesPanel instanceId="mgt-1" visible />
 				</SessionProvider>
@@ -123,20 +120,11 @@ describe('Motion Templates panel', () => {
 		});
 		await session.close();
 	});
-
-	it('renders without an open project and explains why inserting is disabled', async () => {
-		render(
-			<EngineProvider client={fakeEngine()} connectEvents={false}>
-				<MotionTemplatesPanel instanceId="mgt-2" visible />
-			</EngineProvider>,
-		);
-		expect(await screen.findByText('Open a sequence to insert templates')).toBeTruthy();
-	});
 });
 
 describe('mg commands', () => {
 	it('mg.rerender sends the selected clip spec to the engine when fframes is available', async () => {
-		registerCommands(mgCommands);
+		unregister = registerCommands(mgCommands);
 		const session = await openSession();
 		const rendered = vi.fn();
 		const ctx = createCommandContext({ engine: fakeEngine(rendered), session, capabilities: ['fframes'] });

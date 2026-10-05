@@ -16,19 +16,6 @@ export type EaseName =
 	| 'inOutExpo'
 	| 'steps';
 
-export const EASE_NAMES: readonly EaseName[] = [
-	'linear',
-	'in',
-	'out',
-	'inOut',
-	'outBack',
-	'outElastic',
-	'outBounce',
-	'outExpo',
-	'inOutExpo',
-	'steps',
-];
-
 export const EASES: Readonly<Record<EaseName, string>> = Object.freeze({
 	linear: 'linear',
 	in: 'in',

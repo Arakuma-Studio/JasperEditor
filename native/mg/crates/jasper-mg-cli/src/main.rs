@@ -6,7 +6,6 @@
 //! jasper-mg render --spec <file|-> --raw-rgba [--threads N]
 //!                                                        raw straight-alpha RGBA frames on stdout, in order
 //! jasper-mg frame --spec <file|-> --frame N --out f.png  one straight-alpha PNG
-//! jasper-mg svg --spec <file|-> --frame N                the SVG markup of one frame (parity checks)
 //! ```
 //!
 //! stderr carries NDJSON progress: `{"event":"start",...}`, `{"event":"progress","done":k,"total":n}`,
@@ -65,13 +64,6 @@ enum Command {
         frame: u32,
         #[arg(long)]
         out: PathBuf,
-    },
-    /// Print the SVG markup of one frame.
-    Svg {
-        #[arg(long)]
-        spec: String,
-        #[arg(long)]
-        frame: u32,
     },
 }
 
@@ -309,7 +301,7 @@ fn run(cli: Cli) -> CliResult {
     }
     match cli.command {
         None => Err(CliError::Spec(
-            "missing command (schema | render | frame | svg); see --help".into(),
+            "missing command (schema | render | frame); see --help".into(),
         )),
         Some(Command::Schema) => {
             println!("{}", schema_json());
@@ -339,12 +331,6 @@ fn run(cli: Cli) -> CliResult {
             with_video!(&prepared, |video| render_png(
                 &video, &prepared, &media, frame, &out
             ))
-        }
-        Some(Command::Svg { spec, frame }) => {
-            let prepared = read_spec(&spec)?;
-            check_frame(&prepared, frame)?;
-            println!("{}", prepared.svg(frame));
-            Ok(())
         }
     }
 }

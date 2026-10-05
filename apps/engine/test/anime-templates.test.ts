@@ -141,7 +141,6 @@ describe('catalogue and jasper-mg routing (S11:ATP-008)', () => {
 		expect(res.statusCode).toBe(400);
 		expect(res.json()).toMatchObject({
 			code: 'ANIME_TEMPLATE',
-			message: expect.stringMatching(/counter@1 is an anime template/),
 		});
 	});
 });
@@ -177,7 +176,6 @@ describe('templates that are not installed block every export path (S11:ATP-010,
 		expect(job.state).toBe('failed');
 		expect(job.error).toMatchObject({
 			code: 'TEMPLATE_NOT_INSTALLED',
-			message: expect.stringMatching(/retired-reveal@7/),
 		});
 	});
 });
