@@ -259,11 +259,11 @@ random seeks all draw the same pixels. Therefore:
 
 ## 10. Transitions hook
 
-Wave-2 shader transitions are per-side effects on the outgoing/incoming clip. `u_progress` (0..1) and `u_side`
-(1 outgoing, 2 incoming) come from `LayerProps.transition` (`packages/compositions/src/types.ts`), which the
-transition framework fills (not set by anyone yet); without it `u_progress = u_clipProgress`, `u_side = 0`. In TS,
-`FxFrameContext.progress` is the same value. A transition effect may also declare its own `progress` param if it must
-be keyframable by users.
+GPU transitions are a separate framework (wave 2): `docs/wp-notes/fx-transition-framework.md` — one frame-space
+shader stage per transition that reads both sides (`u_from`, `u_to`). For effects ON a clip that is a side of a GPU
+transition, `LayerProps.transition` is set during the span: `u_progress` (the transition's progress, 0..1) and
+`u_side` (1 outgoing, 2 incoming); without it `u_progress = u_clipProgress`, `u_side = 0`. In TS,
+`FxFrameContext.progress` is the same value.
 
 ## 11. Export, native vs null, WebGL
 
