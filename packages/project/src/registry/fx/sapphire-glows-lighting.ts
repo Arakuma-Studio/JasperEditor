@@ -16,6 +16,7 @@
 import type { EffectParams, EffectSpec, ParamSpec } from '../effects.ts';
 import { defineShaderEffect, SAPPHIRE_BINS } from './define.ts';
 import { GLSL_COLOR } from './glsl/color.ts';
+import { GLSL_HASH } from './glsl/hash.ts';
 import { GLSL_NOISE } from './glsl/noise.ts';
 import { fxParam } from './params.ts';
 import type { FxPlanContext, ShaderPass } from './shader.ts';
@@ -26,6 +27,7 @@ import {
 	combineMode,
 	GLSL_SGL_FINISH,
 	lightTail,
+	sapphirePoint,
 	showChoice,
 	slider,
 	unitPx,
@@ -43,6 +45,8 @@ import {
 	num,
 } from './sapphire-glows-lighting/glow.ts';
 import { rayPasses, rayUniforms } from './sapphire-glows-lighting/streak.ts';
+import { FLARE_LENSES, flareChunk, lensOf } from './sapphire-glows-lighting/flare.ts';
+import { trackPasses } from './sapphire-glows-lighting/track.ts';
 
 /** Every effect of the family is in Sapphire's "Sapphire Lighting" submenu (Boris FX docs, Premiere and AE). */
 const SGL_BIN = SAPPHIRE_BINS.lighting;
@@ -1370,4 +1374,1325 @@ void main() {
 
 export const SGL_BEAM_EFFECTS: readonly EffectSpec[] = [S_RAYS, S_EDGE_RAYS, S_STREAKS];
 
-export const SAPPHIRE_GLOWS_LIGHTING_EFFECTS: readonly EffectSpec[] = [...SGL_GLOW_EFFECTS, ...SGL_BEAM_EFFECTS];
+// ================================================================ Lens flares
+
+const lensChoice = () =>
+	fxParam.choice(
+		'lens',
+		'Lens',
+		FLARE_LENSES.map((l) => l.value),
+		FLARE_LENSES.map((l) => l.label),
+		FLARE_LENSES[0]!.value,
+	);
+
+const FLARE_COMBINE = ['Screen', 'Add', 'Flare Only'] as const;
+
+/** The flare controls shared by S_LensFlare and S_LensFlareAutoTrack (Sapphire order, after the hotspot/pivot). */
+const flareLookParams = (): ParamSpec[] => [
+	slider('brightness', 'Brightness', 1, { softMax: 4 }),
+	fxParam.color('color', 'Color', white),
+	slider('gamma', 'Gamma', 1, { min: 0.1, softMax: 4 }),
+	fxParam.number('saturation', 'Saturation', 1, { min: -2, max: 8, step: 0.01 }),
+	fxParam.number('hueShift', 'Hue Shift', 0, { softMin: -1, softMax: 1, step: 0.001 }),
+	slider('hotspotBright', 'Hotspot Bright', 1, { softMax: 4 }),
+	fxParam.color('hotspotColor', 'Hotspot Color', white),
+	slider('raysBrightness', 'Rays Brightness', 1, { softMax: 4 }),
+	slider('raysNumScale', 'Rays Num Scale', 1, { min: 0.05, softMax: 4 }),
+	slider('raysLength', 'Rays Length', 1, { softMax: 4 }),
+	slider('raysThickness', 'Rays Thickness', 1, { min: 0.05, softMax: 4 }),
+	slider('otherBrightness', 'Other Brightness', 1, { softMax: 4 }),
+	fxParam.color('otherColor', 'Other Color', white),
+	slider('otherWidth', 'Other Width', 1, { softMax: 4 }),
+	...atmosphereParams(),
+	slider('flickerAmp', 'Flicker Amp', 0, { softMax: 1 }),
+	slider('flickerSpeed', 'Flicker Speed', 1, { softMax: 10 }),
+	slider('flickerRandomness', 'Flicker Randomness', 0.6, { max: 1, softMax: 1 }),
+	slider('blurFlare', 'Blur Flare', 0, { softMax: 1 }),
+	slider('bgBrightness', 'Bg Brightness', 1, { softMax: 2 }),
+	combineChoice(FLARE_COMBINE, 'Screen'),
+	slider('affectAlpha', 'Affect Alpha', 1, { softMax: 2 }),
+	// Edge Triggers: the flare grows/brightens as its hotspot nears the frame edges or the pivot.
+	slider('edgeWidth', 'Edge Width', 0.3, { max: 1, softMax: 1 }, { group: 'triggers' }),
+	slider('edgeFalloff', 'Edge Falloff', 2, { min: 0.01, softMax: 8 }, { group: 'triggers' }),
+	fxParam.number('shiftOut', 'Shift Out', 0, { softMin: -1, softMax: 1, step: 0.001 }, { group: 'triggers' }),
+	fxParam.toggle('oneWay', 'One Way', false, { group: 'triggers' }),
+	slider('edgeScaleBrightness', 'Edge Scale Brightness', 1.5, { softMax: 4 }, { group: 'triggers' }),
+	slider('edgeScaleWidths', 'Edge Scale Widths', 1.2, { softMax: 4 }, { group: 'triggers' }),
+	slider('centerRadius', 'Center Radius', 0.3, { softMax: 1 }, { group: 'triggers' }),
+	slider('centerFalloff', 'Center Falloff', 1, { min: 0.01, softMax: 8 }, { group: 'triggers' }),
+	slider('centerScaleBrightness', 'Center Scale Brightness', 1.5, { softMax: 4 }, { group: 'triggers' }),
+	slider('centerScaleWidths', 'Center Scale Widths', 1.2, { softMax: 4 }, { group: 'triggers' }),
+	// Occlusion: an optional clip (e.g. a matte of the foreground) hides the flare when it covers the hotspot.
+	fxParam.media('occlusion', 'Occlusion', ['image', 'video'], { group: 'occlusion' }),
+	slider('occlusionSoftness', 'Occlusion Softness', 0.0224, { softMax: 0.5 }, { group: 'occlusion' }),
+	fxParam.choice('occlusionFrom', 'Occlusion From', ['none', 'luma', 'alpha'], ['None', 'Luma', 'Alpha'], 'alpha', {
+		group: 'occlusion',
+	}),
+	fxParam.toggle('invertOcclusion', 'Invert Occlusion', false, { group: 'occlusion' }),
+	fxParam.toggle('useColor', 'Use Color', true, { group: 'occlusion' }),
+	slider('occlusionScaleBrightness', 'Occlusion Scale Brightness', 1, { softMax: 4 }, { group: 'occlusion' }),
+	slider('occlusionScaleWidths', 'Occlusion Scale Widths', 1, { softMax: 4 }, { group: 'occlusion' }),
+];
+
+/**
+ * GLSL of a flare final pass: `vec3 flareFrom(vec2 px, vec2 lightUv, vec2 pivotUv, vec3 tint)` = one whole flare
+ * with every look control, edge/centre triggers and occlusion applied (needs the lens chunk).
+ */
+const FLARE_GLSL = /* glsl */ `
+vec3 flareFrom(vec2 px, vec2 lightUv, vec2 pivotUv, vec3 extraTint) {
+  vec2 hn = (lightUv * u_canvasSize - u_box.xy) / u_box.zw;
+  vec2 pn = (pivotUv * u_canvasSize - u_box.xy) / u_box.zw;
+  float ar = u_box.w / u_box.z;
+  // Edge and centre triggers.
+  vec2 e2 = abs(hn * 2.0 - 1.0);
+  if (u_oneWay) e2 = max(hn * 2.0 - 1.0, 0.0);
+  float re = max(e2.x, e2.y) + u_shiftOut;
+  float ez = pow(clamp((re - (1.0 - u_edgeWidth)) / max(u_edgeWidth, 1.0e-3), 0.0, 1.0), max(u_edgeFalloff, 0.01));
+  float dc = length((hn - pn) * vec2(1.0, ar));
+  float cz = pow(clamp(1.0 - dc / max(u_centerRadius, 1.0e-3), 0.0, 1.0), max(u_centerFalloff, 0.01));
+  float bM = mix(1.0, u_edgeScaleBrightness, ez) * mix(1.0, u_centerScaleBrightness, cz);
+  float wM = mix(1.0, u_edgeScaleWidths, ez) * mix(1.0, u_centerScaleWidths, cz);
+  // Occlusion by the Occlusion clip at the hotspot (soft: 9 taps over Occlusion Softness).
+  vec3 occTint = vec3(1.0);
+  if (u_occlusion_size.x > 0.0 && u_occlusionFrom != 0) {
+    vec2 rad = vec2(1.0, 1.0 / ar) * max(u_occlusionSoftness, 1.0e-4) * 0.1;
+    float occ = 0.0;
+    vec3 oc = vec3(0.0);
+    for (int y = -1; y <= 1; y++)
+      for (int x = -1; x <= 1; x++) {
+        vec4 t = texture(u_occlusion, clamp(hn + vec2(float(x), float(y)) * rad, 0.0, 1.0));
+        float v = u_occlusionFrom == 2 ? t.a : fx_luma(t.rgb);
+        occ += v;
+        oc += t.a > 0.0 ? t.rgb / t.a : vec3(0.0);
+      }
+    occ /= 9.0;
+    if (u_invertOcclusion) occ = 1.0 - occ;
+    float vis = 1.0 - clamp(occ, 0.0, 1.0);
+    bM *= vis * mix(u_occlusionScaleBrightness, 1.0, vis);
+    wM *= mix(u_occlusionScaleWidths, 1.0, vis);
+    if (u_useColor) occTint = mix(vec3(1.0), oc / 9.0, clamp(occ, 0.0, 1.0) * (1.0 - step(0.999, occ)));
+  }
+  vec3 cls[3];
+  cls[0] = vec3(u_hotspotBright, 1.0, 0.0);
+  cls[1] = vec3(u_raysBrightness, 1.0, 0.0);
+  cls[2] = vec3(u_otherBrightness, u_otherWidth, 0.0);
+  vec3 tint[3];
+  tint[0] = u_hotspotColor.rgb;
+  tint[1] = vec3(1.0);
+  tint[2] = u_otherColor.rgb;
+  vec4 rays = vec4(u_raysNumScale, u_raysLength, u_raysThickness, radians(u_raysRotate));
+  float unit = length(u_box.zw);
+  vec3 f = sgl_flare(px, lightUv * u_canvasSize, pivotUv * u_canvasSize, unit, u_scaleWidths * wM, u_relHeights,
+                     cls, tint, rays, u_blurFlare);
+  f *= u_color.rgb * u_brightness * bM * occTint * extraTint;
+  // Flicker: a smooth wobble, more random with Flicker Randomness.
+  if (u_flickerAmp > 0.0) {
+    float t = u_time * u_flickerSpeed;
+    float fl = mix(sin(t * 6.2831853 * 1.3), fx_valueNoise(vec2(t * 4.0, 0.5), 0.71), clamp(u_flickerRandomness, 0.0, 1.0));
+    f *= max(0.0, 1.0 + u_flickerAmp * fl);
+  }
+  f *= sgl_atmosphere(fx_layerNorm(), ar, u_atmosphereAmp, u_atmosphereFreq, u_atmosphereDetail, u_atmosphereSeed, u_time * u_atmosphereSpeed);
+  // Colour: Gamma, Saturation, Hue Shift (revolutions).
+  f = pow(max(f, 0.0), vec3(1.0 / max(u_gamma, 0.1)));
+  f = fx_saturate(f, u_saturation);
+  if (u_hueShift != 0.0) f = fx_hueShift(f, u_hueShift);
+  return max(f, 0.0);
+}`;
+
+const flareFinish = (light: string) => /* glsl */ `
+  fragColor = sgl_finishLight(src, ${light}, u_mode, u_affectAlpha, 0.0, 0.0, 1.0, u_bgBrightness);`;
+
+export const S_LENS_FLARE = defineShaderEffect({
+	id: 'jasper.s.lens-flare',
+	label: 'S_LensFlare',
+	category: 'Generate',
+	bin: SGL_BIN,
+	description:
+		'A lens flare: hotspot glow, rays and a chain of ghosts, rings and hoops laid out on the line from the Hotspot through the Pivot. Built-in lenses (zoom, primes, anamorphic streaks, rays only, hexagonal irises…); edge/centre triggers and an optional occlusion clip.',
+	keywords: ['flare', 'lens flare', 'anamorphic', 'sun', 'ghosts', 'sapphire'],
+	params: [
+		lensChoice(),
+		slider('scaleWidths', 'Scale Widths', 1.15, { softMax: 4 }),
+		slider('relHeights', 'Rel Heights', 1, { min: 0.01, softMax: 4 }),
+		fxParam.angle('raysRotate', 'Rays Rotate', 0),
+		fxParam.point('hotspot', 'Hotspot', sapphirePoint(-0.444, 0.176)),
+		fxParam.point('pivot', 'Pivot', [0.5, 0.5]),
+		...flareLookParams(),
+	],
+	gpu: {
+		kind: 'generator',
+		uniforms: (p) => ({ u_mode: combineMode(p.combine, FLARE_COMBINE, 'Screen') }),
+		passes: (p) => [
+			{
+				include: [flareChunk(lensOf(p.lens)), GLSL_SGL_FINISH, GLSL_COLOR],
+				frag: /* glsl */ `${FLARE_GLSL}
+void main() {
+  vec4 src = texture(u_source, v_uv);
+  vec3 light = flareFrom(fx_canvasPx(), fx_uvOfLayerNorm(u_hotspot), fx_uvOfLayerNorm(u_pivot), vec3(1.0));
+  if (!fx_inBox(v_uv)) light = vec3(0.0);
+  ${flareFinish('light')}
+}`,
+			},
+		],
+	},
+});
+
+export const S_LENS_FLARE_AUTO_TRACK = defineShaderEffect({
+	id: 'jasper.s.lens-flare-auto-track',
+	label: 'S_LensFlareAutoTrack',
+	category: 'Generate',
+	bin: SGL_BIN,
+	description:
+		'S_LensFlare whose hotspots follow the brightest areas of the clip automatically (up to 3, found on the GPU every frame from a blurred copy of the image; deterministic, no tracking pass needed).',
+	keywords: ['flare', 'lens flare', 'auto track', 'tracking', 'sapphire'],
+	expensive: true,
+	params: [
+		lensChoice(),
+		slider('scaleWidths', 'Scale Widths', 1.15, { softMax: 4 }),
+		slider('relHeights', 'Rel Heights', 1, { min: 0.01, softMax: 4 }),
+		fxParam.angle('raysRotate', 'Rays Rotate', 0),
+		fxParam.number('maxHotspots', 'Max Hotspots', 1, { min: 1, max: 3, step: 1 }, { animatable: false }),
+		slider('hotspotThreshold', 'Hotspot Threshold', 0.6, { max: 1, softMax: 1 }),
+		fxParam.toggle('trackColor', 'Track Color', false),
+		fxParam.vec2('hotspotShift', 'Hotspot Shift', [0, 0], { step: 0.001 }),
+		fxParam.point('pivot', 'Pivot', [0.5, 0.5]),
+		slider('blurForAuto', 'Blur For Auto', 0.056, { softMax: 0.5 }),
+		...flareLookParams(),
+	],
+	gpu: {
+		kind: 'generator',
+		uniforms: (p, ctx) => ({
+			u_mode: combineMode(p.combine, FLARE_COMBINE, 'Screen'),
+			u_trackBlur: num(p.blurForAuto, 0.056) * unitPx(ctx.width) * ctx.pxScale,
+			u_shiftPx: Array.isArray(p.hotspotShift)
+				? [num(p.hotspotShift[0]) * ctx.width * ctx.pxScale, -num(p.hotspotShift[1]) * ctx.width * ctx.pxScale]
+				: [0, 0],
+		}),
+		passes: (p) => {
+			const n = Math.max(1, Math.min(3, Math.round(num(p.maxHotspots, 1))));
+			return [
+				...trackPasses(n),
+				{
+					include: [flareChunk(lensOf(p.lens)), GLSL_SGL_FINISH, GLSL_COLOR],
+					frag: /* glsl */ `${FLARE_GLSL}
+void main() {
+  vec4 src = texture(u_source, v_uv);
+  vec3 light = vec3(0.0);
+  ${Array.from(
+		{ length: n },
+		(_, k) => /* glsl */ `{
+    vec4 h = texelFetch(u_tD${k}, ivec2(0), 0);
+    if (h.z > 0.0) {
+      vec2 luv = h.xy + u_shiftPx / u_canvasSize;
+      vec3 tint = vec3(h.z);
+      if (u_trackColor) { vec4 c = texture(u_source, h.xy); vec3 cc = c.a > 0.0 ? c.rgb / c.a : vec3(1.0); tint *= cc / max(sgl_maxc(cc), 1.0e-3); }
+      light += flareFrom(fx_canvasPx(), luv, fx_uvOfLayerNorm(u_pivot), tint);
+    }
+  }`,
+	).join('\n  ')}
+  if (!fx_inBox(v_uv)) light = vec3(0.0);
+  ${flareFinish('light')}
+}`,
+				},
+			];
+		},
+	},
+});
+
+/** One S_LightLeak element's params (Sapphire "ElementN" group). */
+function leakElementParams(
+	n: number,
+	d: {
+		on: boolean;
+		size: number;
+		relH: number;
+		bright: number;
+		center: [number, number];
+		outer: [number, number, number];
+		mid: [number, number, number];
+		inner: [number, number, number];
+		amp: number;
+		freq: number;
+		boil: number;
+	},
+): ParamSpec[] {
+	const g = { group: `element${n}` };
+	const rgba = (c: [number, number, number]): [number, number, number, number] => [...c, 1];
+	return [
+		fxParam.toggle(`element${n}Enable`, `Element${n} Enable`, d.on, g),
+		slider(`size${n}`, `Size${n}`, d.size, { softMax: 8 }, g),
+		slider(`relHeight${n}`, `Rel Height${n}`, d.relH, { min: 0.01, softMax: 8 }, g),
+		slider(`brightness${n}`, `Brightness${n}`, d.bright, { softMax: 4 }, g),
+		slider(`speed${n}`, `Speed${n}`, 1, { min: -10, softMin: -4, softMax: 4 }, g),
+		fxParam.angle(`angle${n}`, `Angle${n}`, 175, g),
+		fxParam.point(`center${n}`, `Center${n}`, sapphirePoint(d.center[0], d.center[1]), g),
+		fxParam.color(`outerColor${n}`, `Outer Color${n}`, rgba(d.outer), g),
+		fxParam.color(`midColor${n}`, `Mid Color${n}`, rgba(d.mid), g),
+		fxParam.color(`centerColor${n}`, `Center Color${n}`, rgba(d.inner), g),
+		slider(`midpoint${n}`, `Midpoint${n}`, 0.5, { max: 1, softMax: 1 }, g),
+		slider(`softness${n}`, `Softness${n}`, 0.4, { max: 1, softMax: 1 }, g),
+		slider(`noiseAmp${n}`, `Noise Amp${n}`, d.amp, { softMax: 4 }, g),
+		slider(`noiseFreq${n}`, `Noise Freq${n}`, d.freq, { softMax: 10 }, g),
+		slider(`noiseFreqRelY${n}`, `Noise Freq Rel Y${n}`, 1, { min: 0.02, softMax: 4 }, g),
+		slider(`noiseDetail${n}`, `Noise Detail${n}`, 0, { max: 1, softMax: 1 }, g),
+		slider(`noiseBoilSpeed${n}`, `Noise Boil Speed${n}`, d.boil, { softMax: 4 }, g),
+	];
+}
+
+const LEAK_COMBINE = ['Screen', 'Add', 'Leaks Only'] as const;
+
+/** GLSL of leak element n (uses its params): premultiplied-free RGB light at layer-normalised point. */
+const leakElementGlsl = (n: number) => /* glsl */ `
+vec3 leak${n}(vec2 nrm, float ar, float t) {
+  if (!u_element${n}Enable) return vec3(0.0);
+  float a = radians(u_angle${n});
+  vec2 dir = vec2(cos(a), -sin(a) / ar);
+  vec2 c = u_center${n} + u_shift * vec2(1.0, 1.0 / ar) + dir * u_speed * u_speed${n} * t * 0.05;
+  c += u_randomMotion * 0.1 * vec2(fx_simplex(vec2(t * u_randomFrequency * 0.25, ${n}.5), u_seed), fx_simplex(vec2(${n}.5, t * u_randomFrequency * 0.25), u_seed)) * vec2(1.0, 1.0 / ar);
+  vec2 d = (nrm - c) * vec2(1.0, ar);
+  vec2 rad = vec2(1.0, max(u_relHeight${n}, 0.01)) * max(u_size${n}, 1.0e-3) * 0.25;
+  vec2 q = d / rad;
+  // Noise distortion of the blob (boiling with time).
+  int oct = 1 + int(u_noiseDetail${n} * 5.0);
+  vec2 f = vec2(u_noiseFreq${n}, u_noiseFreq${n} * u_noiseFreqRelY${n});
+  vec2 w = vec2(fx_fbm3(vec3(q * f * 0.5, t * u_noiseBoilSpeed${n} * 0.3), oct, 2.0, 0.5, fract(u_seed + ${n}.0 * 0.17)),
+                fx_fbm3(vec3(q * f * 0.5 + 17.3, t * u_noiseBoilSpeed${n} * 0.3), oct, 2.0, 0.5, fract(u_seed + ${n}.0 * 0.31)));
+  q += w * u_noiseAmp${n} * 0.35;
+  float r = length(q);
+  float m = clamp(u_midpoint${n}, 0.01, 0.99);
+  vec3 col = r < m ? mix(u_centerColor${n}.rgb, u_midColor${n}.rgb, r / m) : mix(u_midColor${n}.rgb, u_outerColor${n}.rgb, clamp((r - m) / (1.0 - m), 0.0, 1.0));
+  float soft = max(u_softness${n}, 0.01);
+  float k = 1.0 - smoothstep(1.0 - soft, 1.0 + soft * 0.5, r);
+  return col * k * u_brightness${n};
+}`;
+
+export const S_LIGHT_LEAK = defineShaderEffect({
+	id: 'jasper.s.light-leak',
+	label: 'S_LightLeak',
+	category: 'Generate',
+	bin: SGL_BIN,
+	description:
+		'Film light leaks: up to three soft gradient blobs of light, distorted by boiling noise, drifting across the frame (each passes its Center at the middle of the clip), with flicker and a glow on the result.',
+	keywords: ['light leak', 'film burn', 'leak', 'vintage', 'sapphire'],
+	expensive: true,
+	params: [
+		slider('scaleLights', 'Scale Lights', 1, { softMax: 4 }),
+		fxParam.number('offsetDarks', 'Offset Darks', 0, { min: -8, max: 2, step: 0.01 }),
+		fxParam.color('color', 'Color', white),
+		fxParam.number('hueShift', 'Hue Shift', 0, { softMin: -1, softMax: 1, step: 0.001 }),
+		fxParam.number('saturation', 'Saturation', 1, { min: -2, max: 8, step: 0.01 }),
+		slider('gamma', 'Gamma', 1, { min: 0.1, softMax: 4 }),
+		fxParam.number('speed', 'Speed', 1, { softMin: -4, softMax: 4, step: 0.01 }),
+		fxParam.vec2('shift', 'Shift', [0, 0], { step: 0.001 }),
+		slider('flickerAmp', 'Flicker Amp', 0.2, { softMax: 1 }),
+		slider('flickerFreq', 'Flicker Freq', 4, { softMax: 20 }),
+		slider('randomMotion', 'Random Motion', 0, { softMax: 4 }),
+		slider('randomFrequency', 'Random Frequency', 4, { softMax: 20 }),
+		slider('seed', 'Seed', 0.123, { softMax: 1 }),
+		slider('bgBrightness', 'Bg Brightness', 1, { softMax: 2 }),
+		combineChoice(LEAK_COMBINE, 'Screen'),
+		slider('affectAlpha', 'Affect Alpha', 1, { softMax: 2 }),
+		slider('glowBrightness', 'Glow Brightness', 1, { softMax: 4 }),
+		slider('glowWidth', 'Glow Width', 0.4, { softMax: 2 }),
+		slider('glowThreshold', 'Glow Threshold', 0.8, { max: 1, softMax: 1 }),
+		...leakElementParams(1, { on: true, size: 2, relH: 2, bright: 0.2, center: [0, 0], outer: [1, 1, 0.15], mid: [1, 0.7, 0.3], inner: [1, 0.1, 0], amp: 2, freq: 1.5, boil: 1 }),
+		...leakElementParams(2, { on: false, size: 2, relH: 2, bright: 1, center: [-0.5, -0.5], outer: [0.25, 0.15, 0.1], mid: [0.7, 0.12, 0.22], inner: [1, 1, 1], amp: 1, freq: 3, boil: 0 }),
+		...leakElementParams(3, { on: false, size: 0.25, relH: 1, bright: 1, center: [0.5, 0.5], outer: [0.2, 0.2, 0], mid: [0.55, 0.4, 0], inner: [1, 0.7, 0], amp: 0.5, freq: 1, boil: 0 }),
+	],
+	gpu: {
+		uniforms: (p, ctx) => ({
+			u_mode: combineMode(p.combine, LEAK_COMBINE, 'Screen'),
+			// seconds from the middle of the clip: each element passes its Center at the clip's midpoint
+			u_tMid: (ctx.frame - (ctx.duration - 1) / 2) / ctx.fps,
+			...channelWeights(4, GLOW_SLOPE, [1, 1, 1], GLOW_GAIN),
+		}),
+		passes: (p, ctx) => [
+			{
+				output: 'leak',
+				format: 'rgba16f',
+				include: [GLSL_SGL_CORE, GLSL_SGL_FINISH, GLSL_COLOR, GLSL_NOISE],
+				frag: /* glsl */ `
+${leakElementGlsl(1)}
+${leakElementGlsl(2)}
+${leakElementGlsl(3)}
+void main() {
+  vec4 src = texture(u_source, v_uv);
+  vec2 n = fx_layerNorm();
+  float ar = u_box.w / u_box.z;
+  float t = u_tMid;
+  vec3 l = leak1(n, ar, t) + leak2(n, ar, t) + leak3(n, ar, t);
+  l = max(l * u_scaleLights + u_offsetDarks * 0.05, 0.0) * u_color.rgb;
+  float fl = fx_valueNoise(vec2(u_time * u_flickerFreq, 3.7), u_seed);
+  l *= max(0.0, 1.0 + u_flickerAmp * fl);
+  l = pow(l, vec3(1.0 / max(u_gamma, 0.1)));
+  l = fx_saturate(l, u_saturation);
+  if (u_hueShift != 0.0) l = fx_hueShift(l, u_hueShift);
+  if (!fx_inBox(v_uv)) l = vec3(0.0);
+  fragColor = sgl_finishLight(src, l, u_mode, u_affectAlpha, 0.0, 0.0, 1.0, u_bgBrightness);
+}`,
+			},
+			...glowPasses(
+				/* glsl */ `
+void main() {
+  vec4 c = texture(u_leak, v_uv);
+  vec3 b = sgl_threshold(c.rgb, u_glowThreshold, vec3(0.0));
+  fragColor = vec4(b, sgl_maxc(b));
+}`,
+				glowSigma(p.glowWidth, ctx),
+				1,
+				1,
+				(levels) => ({
+					include: [GLSL_SGL_CORE, GLSL_SGL_FINISH, GLSL_COLOR],
+					frag: /* glsl */ `
+${glowSumGlsl('glowAt', levels)}
+void main() {
+  vec4 src = texture(u_source, v_uv);
+  vec4 c = texture(u_leak, v_uv);
+  vec3 light = glowAt(v_uv) * u_glowBrightness;
+  vec4 res = vec4(c.rgb + light, max(c.a, clamp(sgl_maxc(light) * u_affectAlpha, 0.0, 1.0)));
+  res.rgb = clamp(res.rgb, 0.0, 1.0);
+  res.a = clamp(max(res.a, sgl_maxc(res.rgb)), 0.0, 1.0);
+  fragColor = fx_inBox(v_uv) || u_mode == 5 ? res : src;
+}`,
+				}),
+				[],
+				[],
+				4,
+			),
+		],
+	},
+});
+
+export const SGL_FLARE_EFFECTS: readonly EffectSpec[] = [S_LENS_FLARE, S_LENS_FLARE_AUTO_TRACK, S_LIGHT_LEAK];
+
+// ================================================================ Glints and glares
+
+/** Glint directions (screen degrees, y down): X, Y, Diag1, Diag2 (Swap Diagonals exchanges the diagonals). */
+const GLINT_DIRS = [0, 90, -45, 45];
+
+const glintCommon = (): ParamSpec[] => [
+	slider('brightness', 'Brightness', 1, { softMax: 8 }),
+	fxParam.number('hueShift', 'Hue Shift', 0, { min: -1, max: 1, step: 0.001 }),
+	fxParam.color('scaleColors', 'Scale Colors', white),
+	slider('brightnessX', 'Brightness X', 1, { softMax: 4 }),
+	slider('brightnessY', 'Brightness Y', 1, { softMax: 4 }),
+	slider('brightnessDiag1', 'Brightness Diag1', 1, { softMax: 4 }),
+	slider('brightnessDiag2', 'Brightness Diag2', 1, { softMax: 4 }),
+	...thresholdParams(0.7),
+	slider('thresholdBlur', 'Threshold Blur', 0.0896, { softMax: 0.5 }),
+	slider('size', 'Size', 2, { softMax: 8 }),
+	slider('sizeX', 'Size X', 1, { softMax: 4 }),
+	slider('sizeY', 'Size Y', 1, { softMax: 4 }),
+	slider('sizeDiag1', 'Size Diag1', 0.75, { softMax: 4 }),
+	slider('sizeDiag2', 'Size Diag2', 0.75, { softMax: 4 }),
+];
+
+const glintTail = (): ParamSpec[] => [
+	slider('blurGlint', 'Blur Glint', 0, { softMax: 0.5 }),
+	...lightTail('Glint'),
+	expandBorders(),
+	fxParam.toggle('swapDiagonals', 'Swap Diagonals', false),
+];
+
+/** Per-direction ray lengths (canvas px) and brightness, after Swap Diagonals. */
+function glintDirs(p: EffectParams, ctx: FxPlanContext, chanMax: number) {
+	const swap = p.swapDiagonals === true;
+	const sizes = [num(p.sizeX, 1), num(p.sizeY, 1), num(p.sizeDiag1, 0.75), num(p.sizeDiag2, 0.75)];
+	const bright = [num(p.brightnessX, 1), num(p.brightnessY, 1), num(p.brightnessDiag1, 1), num(p.brightnessDiag2, 1)];
+	if (swap) {
+		[sizes[2], sizes[3]] = [sizes[3]!, sizes[2]!];
+		[bright[2], bright[3]] = [bright[3]!, bright[2]!];
+	}
+	const len = sizes.map((s) => Math.max(0, s) * Math.max(0, num(p.size, 2)) * unitPx(ctx.width) * ctx.pxScale * chanMax);
+	return { len, bright };
+}
+
+const glintPadding = (p: EffectParams, ctx: FxPlanContext, chanMax: number) =>
+	Math.max(...glintDirs(p, { ...ctx, pxScale: 1 }, chanMax).len) * 1.05;
+
+/**
+ * Glint passes: thresholded, blurred highlights at half resolution (`gb`) → per direction a dense two-sided smear
+ * over 1/16 of the ray (`gs0…gs3`) → one pass summing 16 coarse taps per direction and side with the ray falloff
+ * (`gl`, per-channel profiles from `profile` GLSL: `vec3 rayW(float k)`, k = 0…1 along the ray) → final.
+ */
+function glintPasses(p: EffectParams, ctx: FxPlanContext, chanMax: number, profile: string, final: ShaderPass): ShaderPass[] {
+	const { len } = glintDirs(p, ctx, chanMax);
+	const blur = num(p.thresholdBlur, 0.0896) * unitPx(ctx.width) * ctx.pxScale * 0.5;
+	const perp = num(p.blurGlint) * unitPx(ctx.width) * ctx.pxScale * 0.5;
+	const passes: ShaderPass[] = [
+		{
+			output: 'gb',
+			scale: 0.5,
+			format: 'rgba16f',
+			include: [GLSL_SGL_CORE, GLSL_SGL_FINISH, GLSL_COLOR],
+			uniforms: { u_tb: Math.max(1, blur) },
+			frag: /* glsl */ `${THRESHOLD_SOURCE}
+void main() {
+  vec2 o = u_tb / u_canvasSize;
+  vec4 acc = vec4(0.0);
+  float ws = 0.0;
+  for (int y = -2; y <= 2; y++)
+    for (int x = -2; x <= 2; x++) {
+      vec2 q = vec2(float(x), float(y)) * 0.5;
+      float w = exp(-dot(q, q) * 1.2);
+      acc += sgl_thresholdSource(sgl_boxRead(u_source, v_uv + q * o, 2.0)) * w;
+      ws += w;
+    }
+  vec3 b = acc.rgb / ws;
+  fragColor = vec4(b, sgl_maxc(b));
+}`,
+		},
+	];
+	GLINT_DIRS.forEach((deg, i) => {
+		const a = (deg * Math.PI) / 180;
+		const span = len[i]! / 16;
+		passes.push({
+			output: `gs${i}`,
+			scale: 0.5,
+			format: 'rgba16f',
+			uniforms: { u_gd: [Math.cos(a) * span, Math.sin(a) * span], u_gp: [-Math.sin(a) * perp, Math.cos(a) * perp] },
+			frag: /* glsl */ `
+void main() {
+  vec2 d = u_gd / u_canvasSize;
+  vec2 pp = u_gp / u_canvasSize;
+  vec4 acc = vec4(0.0);
+  for (int i = 0; i < 8; i++) {
+    float k = (float(i) + 0.5) / 8.0;
+    acc += texture(u_gb, v_uv + d * k) + texture(u_gb, v_uv - d * k);
+  }
+  acc /= 16.0;
+  if (dot(pp, pp) > 0.0) acc = acc * 0.5 + 0.25 * (texture(u_gb, v_uv + pp) + texture(u_gb, v_uv - pp));
+  fragColor = acc;
+}`,
+		});
+	});
+	const dirs = GLINT_DIRS.map((deg, i) => {
+		const a = (deg * Math.PI) / 180;
+		return [Math.cos(a) * len[i]!, Math.sin(a) * len[i]!] as [number, number];
+	});
+	passes.push({
+		output: 'gl',
+		scale: 0.5,
+		format: 'rgba16f',
+		uniforms: { u_g0: dirs[0]!, u_g1: dirs[1]!, u_g2: dirs[2]!, u_g3: dirs[3]! },
+		frag: /* glsl */ `${profile}
+vec3 ray(sampler2D t, vec2 dirPx, float bright) {
+  vec2 d = dirPx / u_canvasSize;
+  if (dot(dirPx, dirPx) < 1.0e-4 || bright <= 0.0) return vec3(0.0);
+  vec3 acc = vec3(0.0);
+  for (int i = 0; i < 16; i++) {
+    float k = (float(i) + 0.5) / 16.0;
+    vec3 w = rayW(k);
+    acc += (texture(t, v_uv + d * k).rgb + texture(t, v_uv - d * k).rgb) * w;
+  }
+  return acc * bright * (16.0 / 16.0);
+}
+void main() {
+  vec3 g = ray(u_gs0, u_g0, u_bX) + ray(u_gs1, u_g1, u_bY) + ray(u_gs2, u_g2, u_bD1) + ray(u_gs3, u_g3, u_bD2);
+  fragColor = vec4(g, sgl_maxc(g));
+}`,
+		include: [GLSL_SGL_FINISH],
+	});
+	passes.push(final);
+	return passes;
+}
+
+const glintUniforms = (p: EffectParams, ctx: FxPlanContext) => {
+	const { bright } = glintDirs(p, ctx, 1);
+	return { u_bX: bright[0]!, u_bY: bright[1]!, u_bD1: bright[2]!, u_bD2: bright[3]! };
+};
+
+const GLINT_FINAL: ShaderPass = {
+	include: [GLSL_SGL_CORE, GLSL_SGL_FINISH, GLSL_COLOR],
+	frag: /* glsl */ `
+void main() {
+  vec4 src = texture(u_source, v_uv);
+  vec3 light = texture(u_gl, v_uv).rgb * u_scaleColors.rgb * u_brightness * 3.0;
+  if (u_hueShift != 0.0) light = fx_hueShift(max(light, 0.0), u_hueShift);
+  if (!u_expandBorders && !fx_inBox(v_uv)) light = vec3(0.0);
+  fragColor = sgl_finishLight(src, light, 2, u_affectAlpha, u_underSource, 0.0, u_sourceOpacity, u_bgBrightness);
+}`,
+};
+
+export const S_GLINT = defineShaderEffect({
+	id: 'jasper.s.glint',
+	label: 'S_Glint',
+	category: 'Stylize',
+	bin: SGL_BIN,
+	description:
+		'Star glints on the highlights brighter than Threshold: rays in four directions (X, Y and two diagonals) with their own brightness and size; Size Red/Green/Blue give colour along the rays.',
+	keywords: ['glint', 'star', 'sparkle', 'twinkle', 'cross filter', 'sapphire'],
+	expensive: true,
+	params: [
+		...glintCommon(),
+		slider('sizeRed', 'Size Red', 0.5, { softMax: 4 }),
+		slider('sizeGreen', 'Size Green', 1, { softMax: 4 }),
+		slider('sizeBlue', 'Size Blue', 1.5, { softMax: 4 }),
+		...glintTail(),
+	],
+	gpu: {
+		padding: (p, ctx) => glintPadding(p, ctx, Math.max(...rgbMult(p, 'sizeRed', 'sizeGreen', 'sizeBlue'))),
+		uniforms: (p, ctx) => {
+			const m = rgbMult(p, 'sizeRed', 'sizeGreen', 'sizeBlue');
+			const top = Math.max(1e-3, ...m);
+			return { ...glintUniforms(p, ctx), u_chan: m.map((x) => Math.max(1e-3, x / top)) as [number, number, number] };
+		},
+		passes: (p, ctx) =>
+			glintPasses(
+				p,
+				ctx,
+				Math.max(...rgbMult(p, 'sizeRed', 'sizeGreen', 'sizeBlue')),
+				/* glsl */ `
+// Each channel's ray ends at its own length (Size Red/Green/Blue relative to the longest).
+vec3 rayW(float k) { vec3 x = clamp(1.0 - k / u_chan, 0.0, 1.0); return x * x * x; }`,
+				GLINT_FINAL,
+			),
+	},
+});
+
+export const S_GLINT_RAINBOW = defineShaderEffect({
+	id: 'jasper.s.glint-rainbow',
+	label: 'S_GlintRainbow',
+	category: 'Stylize',
+	bin: SGL_BIN,
+	description:
+		'Star glints whose rays run through a spectrum: red shifted outwards, blue inwards (Shift Red / Shift Blue), the whole spectrum pushed out by Shift Out.',
+	keywords: ['glint', 'rainbow', 'star', 'sparkle', 'prism', 'sapphire'],
+	expensive: true,
+	params: [
+		...glintCommon().map((ps) => (ps.name === 'hueShift' ? { ...ps, range: { softMin: -1, softMax: 1, step: 0.001 } } : ps)),
+		fxParam.number('shiftOut', 'Shift Out', 1, { softMin: -2, softMax: 4, step: 0.001 }),
+		fxParam.number('shiftRed', 'Shift Red', 0.3, { softMin: -2, softMax: 2, step: 0.001 }),
+		fxParam.number('shiftBlue', 'Shift Blue', -0.3, { softMin: -2, softMax: 2, step: 0.001 }),
+		...glintTail(),
+	],
+	gpu: {
+		padding: (p, ctx) => glintPadding(p, ctx, 1),
+		uniforms: (p, ctx) => {
+			// Centre of each channel's band along the ray (0…1): Shift Out moves the spectrum, Shift Red/Blue split it.
+			const so = num(p.shiftOut, 1);
+			const at = (s: number) => clamp(0.18 * (so + s), 0, 0.95);
+			return {
+				...glintUniforms(p, ctx),
+				u_band: [at(num(p.shiftRed, 0.3)), at((num(p.shiftRed, 0.3) + num(p.shiftBlue, -0.3)) / 2), at(num(p.shiftBlue, -0.3))],
+			};
+		},
+		passes: (p, ctx) =>
+			glintPasses(
+				p,
+				ctx,
+				1,
+				/* glsl */ `
+// A spectral band per channel along the ray plus a white core near the highlight.
+vec3 rayW(float k) {
+  vec3 x = (vec3(k) - u_band) / 0.16;
+  float core = pow(max(1.0 - k * 2.5, 0.0), 3.0) * 0.4;
+  return exp(-x * x) * (1.0 - k) * 1.3 + core;
+}`,
+				GLINT_FINAL,
+			),
+	},
+});
+
+const GLARE_STYLES = [
+	'rainbow_rays',
+	'rainbow_rays2',
+	'rays_60',
+	'rays_20',
+	'rainbow2_only',
+	'rainbow_double',
+	'round_coin',
+] as const;
+
+export const S_GLARE = defineShaderEffect({
+	id: 'jasper.s.glare',
+	label: 'S_Glare',
+	category: 'Stylize',
+	bin: SGL_BIN,
+	description:
+		'Glare at the highlights: rainbow halos and/or clusters of fine rays (Style), like light scattering in the eye or on a dirty lens. Convolve uses a finer hotspot grid for smoother results.',
+	keywords: ['glare', 'rainbow', 'rays', 'halo', 'sparkle', 'sapphire'],
+	expensive: true,
+	params: [
+		fxParam.choice('style', 'Style', GLARE_STYLES.map((s) => s.replace(/_(\w)/g, (_, c: string) => c.toUpperCase())), GLARE_STYLES, 'rainbowRays'),
+		fxParam.toggle('convolve', 'Convolve', false),
+		slider('brightness', 'Brightness', 1, { softMax: 8 }),
+		fxParam.color('scaleColors', 'Scale Colors', white),
+		fxParam.number('saturation', 'Saturation', 1, { min: -2, max: 8, step: 0.01 }),
+		fxParam.number('hueShift', 'Hue Shift', 0, { min: -1, max: 1, step: 0.001 }),
+		...thresholdParams(0.8),
+		slider('thresholdBlur', 'Threshold Blur', 0.0896, { softMax: 0.5 }),
+		slider('size', 'Size', 0.8, { softMax: 4 }),
+		slider('relHeight', 'Rel Height', 1, { min: 0.01, softMax: 4 }),
+		fxParam.angle('rotate', 'Rotate', 0),
+		slider('raysNumScale', 'Rays Num Scale', 1, { min: 0.05, softMax: 4 }),
+		slider('raysLength', 'Rays Length', 1, { softMax: 4 }),
+		slider('raysThickness', 'Rays Thickness', 1, { min: 0.05, softMax: 4 }),
+		slider('blurGlare', 'Blur Glare', 0, { softMax: 1 }),
+		resChoice('glareRes', 'Glare Res'),
+		...lightTail('Glare'),
+		expandBorders(),
+	],
+	gpu: {
+		padding: (p, ctx) => num(p.size, 0.8) * unitPx(ctx.width) * Math.max(1, num(p.raysLength, 1)) * Math.max(1, num(p.relHeight, 1)),
+		uniforms: (p, ctx) => ({
+			u_reach: num(p.size, 0.8) * unitPx(ctx.width) * ctx.pxScale,
+		}),
+		passes: (p, ctx) => {
+			// Hotspot grid: cells small enough that the glare reach spans ≤ 6 cells (or 3 with Convolve off and big glares).
+			const reach = num(p.size, 0.8) * unitPx(ctx.width) * ctx.pxScale * Math.max(1, num(p.raysLength, 1)) * Math.max(1, num(p.relHeight, 1));
+			const cell = clamp(2 ** Math.ceil(Math.log2(Math.max(8, reach / (p.convolve === true ? 6 : 4)))), 8, 256);
+			const res = resScale(p.glareRes);
+			const blur = num(p.thresholdBlur, 0.0896) * unitPx(ctx.width) * ctx.pxScale * 0.5;
+			const passes: ShaderPass[] = [
+				{
+					output: 'hb',
+					scale: 0.25,
+					format: 'rgba16f',
+					include: [GLSL_SGL_CORE, GLSL_SGL_FINISH, GLSL_COLOR],
+					uniforms: { u_tb: Math.max(2, blur) },
+					frag: /* glsl */ `${THRESHOLD_SOURCE}
+void main() {
+  vec2 o = u_tb / u_canvasSize;
+  vec4 acc = vec4(0.0);
+  for (int y = -1; y <= 1; y++)
+    for (int x = -1; x <= 1; x++) acc += sgl_thresholdSource(sgl_boxRead(u_source, v_uv + vec2(float(x), float(y)) * o * 0.5, 4.0));
+  vec3 b = acc.rgb / 9.0;
+  if (!fx_inBox(v_uv)) b = vec3(0.0);
+  fragColor = vec4(b, sgl_maxc(b));
+}`,
+				},
+				{
+					// Per cell: energy-weighted centroid (uv), energy; colour in a second texture.
+					output: 'hp',
+					scale: 1 / cell,
+					format: 'rgba16f',
+					filter: 'nearest',
+					include: [GLSL_COLOR],
+					frag: /* glsl */ `
+void main() {
+  ivec2 si = textureSize(u_hb, 0);
+  ivec2 o = ivec2(v_uv * u_resolution);
+  ivec2 a = o * si / ivec2(u_resolution);
+  ivec2 b = max(a + 1, (o + 1) * si / ivec2(u_resolution));
+  vec3 acc = vec3(0.0);
+  for (int y = 0; y < 64; y++) {
+    if (a.y + y >= b.y) break;
+    for (int x = 0; x < 64; x++) {
+      if (a.x + x >= b.x) break;
+      ivec2 q = a + ivec2(x, y);
+      float e = fx_luma(texelFetch(u_hb, min(q, si - 1), 0).rgb);
+      acc += vec3((vec2(q) + 0.5) / vec2(si) * e, e);
+    }
+  }
+  float n = float((b.x - a.x) * (b.y - a.y));
+  fragColor = acc.z > 1.0e-5 ? vec4(acc.xy / acc.z, acc.z / n, 1.0) : vec4(0.0);
+}`,
+				},
+				{
+					output: 'hc',
+					scale: 1 / cell,
+					format: 'rgba16f',
+					filter: 'nearest',
+					frag: /* glsl */ `
+void main() {
+  ivec2 si = textureSize(u_hb, 0);
+  ivec2 o = ivec2(v_uv * u_resolution);
+  ivec2 a = o * si / ivec2(u_resolution);
+  ivec2 b = max(a + 1, (o + 1) * si / ivec2(u_resolution));
+  vec3 acc = vec3(0.0);
+  for (int y = 0; y < 64; y++) {
+    if (a.y + y >= b.y) break;
+    for (int x = 0; x < 64; x++) {
+      if (a.x + x >= b.x) break;
+      acc += texelFetch(u_hb, min(a + ivec2(x, y), si - 1), 0).rgb;
+    }
+  }
+  float m = max(acc.r, max(acc.g, acc.b));
+  fragColor = vec4(m > 0.0 ? acc / m : vec3(0.0), 1.0);
+}`,
+				},
+				{
+					output: 'gl',
+					scale: res,
+					format: 'rgba16f',
+					include: [GLSL_SGL_CORE, GLSL_COLOR],
+					uniforms: { u_cellArea: cell * cell },
+					frag: /* glsl */ `${GLARE_KERNEL}
+void main() {
+  ivec2 gs = textureSize(u_hp, 0);
+  vec2 px = fx_canvasPx();
+  ivec2 me = ivec2(v_uv * vec2(gs));
+  vec2 cellPx = u_canvasSize / vec2(gs);
+  ivec2 rc = ivec2(ceil(u_reach * max(u_raysLength, 1.0) * max(u_relHeight, 1.0) / cellPx)) + 1;
+  rc = min(rc, ivec2(7));
+  vec3 acc = vec3(0.0);
+  for (int y = -7; y <= 7; y++) {
+    if (abs(y) > rc.y) continue;
+    for (int x = -7; x <= 7; x++) {
+      if (abs(x) > rc.x) continue;
+      ivec2 q = me + ivec2(x, y);
+      if (any(lessThan(q, ivec2(0))) || any(greaterThanEqual(q, gs))) continue;
+      vec4 h = texelFetch(u_hp, q, 0);
+      if (h.z <= 1.0e-4) continue;
+      vec3 col = texelFetch(u_hc, q, 0).rgb;
+      vec2 d = px - h.xy * u_canvasSize;
+      // Hotspot strength grows with its energy (bright texels of the cell), compressed so small lights still glare.
+      acc += glare(d, float(q.x * 7919 + q.y * 104729)) * col * sqrt(h.z * u_cellArea / 16.0) * 0.3;
+    }
+  }
+  fragColor = vec4(acc, sgl_maxc(acc));
+}`,
+				},
+				{
+					include: [GLSL_SGL_CORE, GLSL_SGL_FINISH, GLSL_COLOR],
+					frag: /* glsl */ `
+void main() {
+  vec4 src = texture(u_source, v_uv);
+  vec3 light = texture(u_gl, v_uv).rgb;
+  if (u_blurGlare > 0.0) {
+    vec2 o = u_blurGlare * 0.02 * u_box.z / u_canvasSize;
+    light = (light * 2.0 + texture(u_gl, v_uv + vec2(o.x, 0.0)).rgb + texture(u_gl, v_uv - vec2(o.x, 0.0)).rgb
+           + texture(u_gl, v_uv + vec2(0.0, o.y)).rgb + texture(u_gl, v_uv - vec2(0.0, o.y)).rgb) / 6.0;
+  }
+  light *= u_scaleColors.rgb * u_brightness;
+  light = fx_saturate(max(light, 0.0), u_saturation);
+  if (u_hueShift != 0.0) light = fx_hueShift(light, u_hueShift);
+  if (!u_expandBorders && !fx_inBox(v_uv)) light = vec3(0.0);
+  fragColor = sgl_finishLight(src, light, 2, u_affectAlpha, u_underSource, 0.0, u_sourceOpacity, u_bgBrightness);
+}`,
+				},
+			];
+			return passes;
+		},
+	},
+});
+
+/** S_Glare kernels (`vec3 glare(vec2 d, float salt)`, d in canvas px from the hotspot) per Style. */
+const GLARE_KERNEL = /* glsl */ `
+float gHash(float x) {
+  uint h = uint(int(mod(x, 65536.0))) * 747796405u + 2891336453u;
+  h = ((h >> ((h >> 28u) + 4u)) ^ h) * 277803737u;
+  return float((h >> 22u) ^ h) / 4294967295.0;
+}
+float gRays(vec2 d, float r, float n, float s) {
+  float ang = atan(d.y, d.x) - radians(u_rotate);
+  float t = ang / 6.28318530718 * n;
+  float i = floor(t + 0.5);
+  float m = (t - i) / n * 6.28318530718;
+  float len = s * u_raysLength * (0.45 + 0.55 * gHash(mod(i, n) + 17.0));
+  float th = max(0.6, s * 0.006 * u_raysThickness) * (1.0 + r / max(len, 1.0));
+  float l = clamp(1.0 - r / max(len, 1.0), 0.0, 1.0);
+  return exp(-abs(sin(m)) * r / th) * l * l * (0.6 + 0.4 * gHash(mod(i, n) + 91.0));
+}
+vec3 gBow(float r, float rad, float w) {
+  float t = (r - rad) / max(w, 1.0);
+  return sgl_spectrum(clamp(0.5 - t * 0.35, 0.0, 1.0)) * exp(-t * t * 0.5);
+}
+vec3 glare(vec2 d, float salt) {
+  d.y /= max(u_relHeight, 0.01);
+  float r = length(d);
+  float s = max(u_reach, 1.0);
+  float core = exp(-r / (s * 0.04)) * 1.5;
+  float nScale = max(u_raysNumScale, 0.05);
+  if (u_style == 0) return vec3(core + gRays(d, r, floor(24.0 * nScale), s)) + gBow(r, s * 0.45, s * 0.05) * 0.6;
+  if (u_style == 1) return vec3(core + gRays(d, r, floor(24.0 * nScale), s)) + gBow(r, s * 0.75, s * 0.08) * 0.6;
+  if (u_style == 2) return vec3(core + gRays(d, r, floor(60.0 * nScale), s));
+  if (u_style == 3) return vec3(core + gRays(d, r, floor(20.0 * nScale), s));
+  if (u_style == 4) return vec3(core * 0.6) + gBow(r, s * 0.75, s * 0.08);
+  if (u_style == 5) return vec3(core * 0.6) + gBow(r, s * 0.45, s * 0.05) + gBow(r, s * 0.8, s * 0.07) * 0.7;
+  return vec3(1.0 - smoothstep(s * 0.28, s * 0.3, r)) * 0.5 + core * 0.3;
+}`;
+
+export const SGL_GLINT_EFFECTS: readonly EffectSpec[] = [S_GLINT, S_GLINT_RAINBOW, S_GLARE];
+
+// ================================================================ Other lighting
+
+const BOKEH_SHAPES = ['circle', '3', '4', '5', '6', '7', '8', '9', '10'];
+const BOKEH_COMBINE = ['Screen', 'Add', 'Lights Only'] as const;
+
+/** Sapphire vec2 offsets are in frame widths with y up → layer-normalised offsets (x, y down). */
+const SAPPHIRE_OFFSET_GLSL = /* glsl */ `
+vec2 sOff(vec2 v) { return vec2(v.x, -v.y * u_box.z / u_box.w); }`;
+
+export const S_BOKEH_LIGHTS = defineShaderEffect({
+	id: 'jasper.s.bokeh-lights',
+	label: 'S_BokehLights',
+	category: 'Generate',
+	bin: SGL_BIN,
+	description:
+		'Out-of-focus lights: random iris-shaped bokeh discs that drift, breathe in size and flicker, optionally coloured from the image; lens dust texture and chromatic fringes.',
+	keywords: ['bokeh', 'defocus', 'lights', 'particles', 'sapphire'],
+	expensive: true,
+	params: [
+		slider('brightness', 'Brightness', 0.5, { softMax: 4 }),
+		fxParam.color('color', 'Color', [1, 1, 0.3, 1]),
+		slider('varyHue', 'Vary Hue', 0, { max: 1, softMax: 1 }),
+		slider('varySaturation', 'Vary Saturation', 0, { max: 1, softMax: 1 }),
+		slider('varyBrightness', 'Vary Brightness', 1, { max: 1, softMax: 1 }),
+		slider('size', 'Size', 0.3, { softMax: 2 }),
+		slider('relHeight', 'Rel Height', 1, { min: 0.01, softMax: 4 }),
+		slider('varySize', 'Vary Size', 0.2, { max: 1, softMax: 1 }),
+		slider('softness', 'Softness', 0.01, { min: 0.001, softMax: 1 }),
+		fxParam.number('lights', 'Lights', 30, { min: 0, max: 400, softMax: 200, step: 1 }),
+		slider('driftSpeed', 'Drift Speed', 0.2, { softMax: 4 }),
+		slider('driftDistance', 'Drift Distance', 0.5, { softMax: 4 }),
+		slider('driftSizeSpeed', 'Drift Size Speed', 0.1, { softMax: 4 }),
+		slider('driftSizeDistance', 'Drift Size Distance', 0.3, { max: 1, softMax: 1 }),
+		slider('driftSmoothness', 'Drift Smoothness', 0.65, { max: 1, softMax: 1 }),
+		fxParam.vec2('shiftSpeed', 'Shift Speed', [0, 0], { step: 0.001 }),
+		fxParam.vec2('shiftStart', 'Shift Start', [0, 0], { step: 0.001 }),
+		slider('useSourceColor', 'Use Source Color', 0.25, { max: 1, softMax: 1 }),
+		slider('smoothSourceColor', 'Smooth Source Color', 0.4, { max: 1, softMax: 1 }),
+		fxParam.choice('shape', 'Shape', BOKEH_SHAPES, ['Circle', '3 sides', '4 sides', '5 sides', '6 sides', '7 sides', '8 sides', '9 sides', '10 sides'], '7'),
+		fxParam.number('roundness', 'Roundness', 0.3, { softMin: -1, softMax: 2, step: 0.01 }),
+		fxParam.angle('rotate', 'Rotate', 0),
+		fxParam.number('bokeh', 'Bokeh', 0.5, { softMin: -1, softMax: 2, step: 0.01 }),
+		slider('lensNoise', 'Lens Noise', 0.5, { max: 1, softMax: 1 }),
+		slider('noiseFreq', 'Noise Freq', 20, { softMax: 100 }),
+		slider('noiseFreqRelX', 'Noise Freq Rel X', 1, { min: 0.02, softMax: 4 }),
+		slider('chromaDistort', 'Chroma Distort', 0.05, { softMax: 0.5 }),
+		slider('colorFringing', 'Color Fringing', 0, { softMax: 1 }),
+		slider('flickerAmp', 'Flicker Amp', 0.2, { softMax: 1 }),
+		slider('flickerSpeed', 'Flicker Speed', 0.5, { softMax: 4 }),
+		slider('flickerRandomness', 'Flicker Randomness', 0.7, { max: 1, softMax: 1 }),
+		slider('seed', 'Seed', 0.123, { softMax: 1 }),
+		combineChoice(BOKEH_COMBINE, 'Screen'),
+		slider('affectAlpha', 'Affect Alpha', 1, { softMax: 2 }),
+	],
+	gpu: {
+		kind: 'generator',
+		uniforms: (p) => ({
+			u_mode: combineMode(p.combine, BOKEH_COMBINE, 'Screen'),
+			u_sides: Math.max(0, Number(String(p.shape)) || 0),
+		}),
+		passes: [
+			{
+				output: 'bsrc',
+				scale: 1 / 16,
+				include: [GLSL_SGL_CORE],
+				frag: /* glsl */ `
+void main() { fragColor = sgl_boxRead(u_source, v_uv, 16.0); }`,
+			},
+			{
+				include: [GLSL_SGL_CORE, GLSL_SGL_FINISH, GLSL_COLOR, GLSL_NOISE, GLSL_HASH],
+				frag: /* glsl */ `${SAPPHIRE_OFFSET_GLSL}
+float bHash(int i, int k) { return fx_hash2(ivec2(i, k), u_seed); }
+// Smooth drift: noise blended between one smooth octave and a rougher sum by Drift Smoothness.
+vec2 drift(float t, int i) {
+  float fi = float(i) * 3.17;
+  vec2 a = vec2(fx_simplex(vec2(t, fi), 0.13), fx_simplex(vec2(fi, t), 0.29));
+  vec2 b = vec2(fx_simplex(vec2(t * 3.0, fi + 7.0), 0.41), fx_simplex(vec2(fi + 7.0, t * 3.0), 0.53));
+  return mix(a * 0.6 + b * 0.4, a, clamp(u_driftSmoothness, 0.0, 1.0));
+}
+float shapeDist(vec2 q) {
+  float r = length(q);
+  if (u_sides < 3.0) return r;
+  float a = atan(q.y, q.x) - radians(u_rotate);
+  float seg = 6.28318530718 / u_sides;
+  float poly = r * cos(floor(0.5 + a / seg) * seg - a) / cos(seg * 0.5);
+  return mix(poly, r, u_roundness);
+}
+// Disc profile (0..): soft edge (Softness), brighter rim with Bokeh > 0, a ring with Bokeh < 0.
+float disc(float x, float soft) {
+  float inside = 1.0 - smoothstep(1.0 - soft, 1.0 + soft * 0.25, x);
+  float rim = pow(clamp(x, 0.0, 1.0), 6.0);
+  float prof = u_bokeh >= 0.0 ? 1.0 + u_bokeh * rim * 1.5 : mix(1.0, rim * 2.0, clamp(-u_bokeh, 0.0, 1.0));
+  return inside * prof;
+}
+void main() {
+  vec4 src = texture(u_source, v_uv);
+  vec2 n = fx_layerNorm();
+  float ar = u_box.w / u_box.z;
+  float t = u_time;
+  float lensDust = 1.0 - u_lensNoise * 0.5 * fx_noise01(fx_fbm(vec2(n.x * u_noiseFreq * u_noiseFreqRelX, n.y * ar * u_noiseFreq) * 0.5, 3, 2.0, 0.5, fract(u_seed + 0.5)));
+  vec3 acc = vec3(0.0);
+  int count = int(clamp(u_lights, 0.0, 400.0));
+  vec2 shift = sOff(u_shiftStart + u_shiftSpeed * t);
+  for (int i = 0; i < 400; i++) {
+    if (i >= count) break;
+    vec2 base = vec2(bHash(i, 1), bHash(i, 2)) * 1.2 - 0.1;
+    vec2 pos = base + shift + drift(t * u_driftSpeed * 0.5 + bHash(i, 3) * 10.0, i) * u_driftDistance * 0.1 * vec2(1.0, 1.0 / ar);
+    float rad = u_size * 0.025 * (1.0 + u_varySize * (bHash(i, 4) * 2.0 - 1.0));
+    rad *= 1.0 + u_driftSizeDistance * fx_simplex(vec2(t * u_driftSizeSpeed + bHash(i, 5) * 10.0, float(i)), 0.71);
+    rad = max(rad, 1.0e-4);
+    vec2 d = (n - pos) * vec2(1.0, ar);
+    d.y /= max(u_relHeight, 0.01);
+    if (dot(d, d) > rad * rad * 2.0) continue;
+    float soft = clamp(u_softness * 2.0, 0.002, 1.0);
+    vec3 shape;
+    float cd = u_chromaDistort;
+    shape.r = disc(shapeDist(d / (rad * (1.0 + cd * 0.5))), soft);
+    shape.g = disc(shapeDist(d / rad), soft);
+    shape.b = disc(shapeDist(d / (rad * (1.0 - cd * 0.5))), soft);
+    shape += u_colorFringing * shape.g * pow(clamp(length(d) / rad, 0.0, 1.0), 4.0) * vec3(0.4, -0.1, 0.6);
+    // Colour: base colour varied per light, mixed with the (smoothed) image colour under it.
+    vec3 hsv = fx_rgb2hsv(u_color.rgb);
+    hsv.x = fract(hsv.x + u_varyHue * (bHash(i, 6) - 0.5));
+    hsv.y = clamp(hsv.y * (1.0 - u_varySaturation * bHash(i, 7)), 0.0, 1.0);
+    vec3 col = fx_hsv2rgb(hsv) * (1.0 - u_varyBrightness * 0.8 * bHash(i, 8));
+    vec4 sc = mix(texture(u_source, fx_uvOfLayerNorm(pos)), texture(u_bsrc, fx_uvOfLayerNorm(pos)), u_smoothSourceColor);
+    vec3 scol = sc.a > 0.0 ? sc.rgb / sc.a : vec3(0.0);
+    col = mix(col, scol * 1.5, clamp(u_useSourceColor, 0.0, 1.0));
+    float ft = t * u_flickerSpeed * 2.0 + bHash(i, 9) * 20.0;
+    float fl = mix(sin(ft * 3.14159), fx_simplex(vec2(ft, float(i) * 0.7), 0.97), u_flickerRandomness);
+    acc += max(shape, 0.0) * col * max(0.0, 1.0 + u_flickerAmp * fl);
+  }
+  vec3 light = acc * lensDust * u_brightness * 2.0;
+  if (!fx_inBox(v_uv)) light = vec3(0.0);
+  fragColor = sgl_finishLight(src, light, u_mode, u_affectAlpha, 0.0, 0.0, 1.0, 1.0);
+}`,
+			},
+		],
+	},
+});
+
+export const S_DROP_SHADOW = defineShaderEffect({
+	id: 'jasper.s.drop-shadow',
+	label: 'S_DropShadow',
+	category: 'Stylize',
+	bin: SGL_BIN,
+	description:
+		'A soft shadow made from the layer’s alpha, shifted and blurred, drawn under the layer (outside its box too).',
+	keywords: ['drop shadow', 'shadow', 'depth', 'sapphire'],
+	params: [
+		fxParam.color('shadowColor', 'Shadow Color', black),
+		slider('shadowOpacity', 'Shadow Opacity', 1, { max: 1, softMax: 1 }),
+		slider('shadowBlur', 'Shadow Blur', 0.1, { softMax: 1 }),
+		fxParam.vec2('shift', 'Shift', [0.042, -0.042], { step: 0.001 }),
+		slider('fgOpacity', 'Fg Opacity', 1, { max: 1, softMax: 1 }),
+		fxParam.toggle('expandBorders', 'Expand Borders', true),
+	],
+	gpu: {
+		timeInvariant: true,
+		padding: (p, ctx) => {
+			const s = Array.isArray(p.shift) ? p.shift : [0.042, -0.042];
+			const sigma = num(p.shadowBlur, 0.1) * unitPx(ctx.width) * 0.5;
+			return {
+				left: Math.max(0, -num(s[0]) * ctx.width) + 3 * sigma,
+				right: Math.max(0, num(s[0]) * ctx.width) + 3 * sigma,
+				top: Math.max(0, num(s[1]) * ctx.width) + 3 * sigma,
+				bottom: Math.max(0, -num(s[1]) * ctx.width) + 3 * sigma,
+			};
+		},
+		uniforms: (p, ctx) => {
+			const s = Array.isArray(p.shift) ? p.shift : [0.042, -0.042];
+			return { u_shiftPx: [num(s[0]) * ctx.width * ctx.pxScale, -num(s[1]) * ctx.width * ctx.pxScale] };
+		},
+		passes: (p, ctx) => {
+			const sigma = num(p.shadowBlur, 0.1) * unitPx(ctx.width) * ctx.pxScale * 0.5;
+			const dB = brightDownscale(sigma, 1);
+			const c = glowCascade({ input: 'sa', prefix: 'sh', sigmaX: sigma, sigmaY: sigma, levels: 1, inputDown: dB });
+			return [
+				{
+					output: 'sa',
+					scale: 1 / dB,
+					format: 'rgba16f',
+					include: [GLSL_SGL_CORE],
+					uniforms: { u_dB: dB },
+					frag: /* glsl */ `
+void main() {
+  float a = sgl_boxRead(u_source, v_uv - u_shiftPx / u_canvasSize, u_dB).a;
+  fragColor = vec4(a);
+}`,
+				},
+				...c.passes,
+				{
+					frag: /* glsl */ `
+void main() {
+  vec4 src = texture(u_source, v_uv) * clamp(u_fgOpacity, 0.0, 1.0);
+  float a = texture(u_sh0, v_uv).a * u_shadowOpacity * u_shadowColor.a;
+  if (!u_expandBorders && !fx_inBox(v_uv)) a = 0.0;
+  vec4 shadow = vec4(u_shadowColor.rgb * a, a);
+  fragColor = src + shadow * (1.0 - src.a);
+}`,
+				},
+			];
+		},
+	},
+});
+
+const FLASH_STYLES = ['star4', 'star6', 'starburst', 'round', 'rainbowGlare', 'cross'];
+const FLASH_COMBINE = ['Screen', 'Add', 'Flashes Only'] as const;
+
+export const S_FLASHBULBS = defineShaderEffect({
+	id: 'jasper.s.flashbulbs',
+	label: 'S_Flashbulbs',
+	category: 'Generate',
+	bin: SGL_BIN,
+	description:
+		'Random camera flashes going off, like photographers in a crowd: glare-shaped bursts at random places and frames, held for Hold Frames and then decaying.',
+	keywords: ['flash', 'paparazzi', 'camera flash', 'strobe', 'sapphire'],
+	params: [
+		fxParam.choice('flashStyle', 'Flash Style', FLASH_STYLES, ['Star 4', 'Star 6', 'Starburst', 'Round', 'Rainbow Glare', 'Cross'], 'star4'),
+		slider('brightness', 'Brightness', 5, { softMax: 20 }),
+		slider('varyBrightness', 'Vary Brightness', 0.2, { max: 1, softMax: 1 }),
+		fxParam.number('flashes', 'Flashes', 2, { min: 0, max: 16, step: 1 }),
+		slider('flashRandomness', 'Flash Randomness', 0.5, { max: 1, softMax: 1 }),
+		slider('flashSize', 'Flash Size', 1, { softMax: 4 }),
+		fxParam.vec2('flashSizeRel', 'Flash Size Rel', [1, 1], { min: 0, step: 0.01 }),
+		slider('flashGamma', 'Flash Gamma', 1, { min: 0.1, softMax: 4 }),
+		fxParam.number('holdFrames', 'Hold Frames', 1, { min: 1, max: 8, step: 1 }),
+		slider('flashDecayRate', 'Flash Decay Rate', 0.1, { max: 1, softMax: 1 }),
+		slider('bgBrightness', 'Bg Brightness', 1, { softMax: 2 }),
+		combineChoice(FLASH_COMBINE, 'Add'),
+		slider('seed', 'Seed', 0.1, { softMax: 1 }),
+		slider('affectAlpha', 'Affect Alpha', 1, { softMax: 2 }),
+		fxParam.toggle('flipVertically', 'Flip Vertically', false),
+	],
+	gpu: {
+		kind: 'generator',
+		uniforms: (p, ctx) => ({
+			u_mode: combineMode(p.combine, FLASH_COMBINE, 'Add'),
+			u_unitPx: unitPx(ctx.width) * ctx.pxScale,
+		}),
+		passes: [
+			{
+				include: [GLSL_SGL_CORE, GLSL_SGL_FINISH, GLSL_COLOR, GLSL_HASH],
+				frag: /* glsl */ `
+float fh(int f, int j, int k) { return fx_hash3(ivec3(f, j, k), u_seed); }
+float flashShape(vec2 d, float s) {
+  float r = length(d);
+  float core = exp(-r / (s * 0.06)) * 2.0 + exp(-r / (s * 0.25)) * 0.35;
+  float ang = atan(d.y, d.x);
+  if (u_flashStyle == 3) return core;
+  if (u_flashStyle == 4) {
+    float t = (r - s * 0.5) / (s * 0.06);
+    return core + exp(-t * t * 0.5) * 0.25;
+  }
+  float n = u_flashStyle == 0 ? 4.0 : u_flashStyle == 1 ? 6.0 : u_flashStyle == 5 ? 4.0 : 24.0;
+  float seg = 6.28318530718 / n;
+  float off = u_flashStyle == 5 ? 0.0 : 0.785398;
+  float m = mod(ang + off + seg * 0.5, seg) - seg * 0.5;
+  float len = u_flashStyle == 5 ? s * 1.6 : s;
+  float th = s * (u_flashStyle == 2 ? 0.006 : 0.012) * (1.0 + r / len);
+  float l = clamp(1.0 - r / len, 0.0, 1.0);
+  return core + exp(-abs(sin(m)) * r / th) * l * l;
+}
+void main() {
+  vec4 src = texture(u_source, v_uv);
+  vec2 lp = fx_layerPx() * u_pxScale;
+  vec2 boxPx = u_box.zw;
+  int frame = int(floor(u_frame + 0.5));
+  int hold = int(clamp(u_holdFrames, 1.0, 8.0));
+  vec3 acc = vec3(0.0);
+  float rate = clamp(u_flashes, 0.0, 16.0) / 16.0;
+  for (int age = 0; age < 11; age++) {
+    if (age >= hold + 3) break;
+    int f = frame - age;
+    float amp = age < hold ? 1.0 : pow(clamp(u_flashDecayRate, 0.0, 1.0), float(age - hold + 1));
+    if (amp < 0.002) continue;
+    // Per-frame rate varies with Flash Randomness.
+    float r = rate * (1.0 + u_flashRandomness * (fh(f, 99, 0) * 2.0 - 1.0));
+    for (int j = 0; j < 16; j++) {
+      if (fh(f, j, 1) >= r) continue;
+      vec2 pos = vec2(fh(f, j, 2), fh(f, j, 3)) * boxPx;
+      float s = u_flashSize * u_unitPx * 1.2 * (0.6 + 0.8 * fh(f, j, 4));
+      vec2 d = (lp - pos) / max(u_flashSizeRel, vec2(0.01));
+      if (u_flipVertically) d.y = -d.y;
+      if (length(d) > s * 2.0) continue;
+      float b = (1.0 - u_varyBrightness * fh(f, j, 5)) * amp;
+      acc += vec3(pow(max(flashShape(d, s), 0.0), u_flashGamma)) * b * mix(vec3(1.0), vec3(0.9, 0.95, 1.0), fh(f, j, 6));
+    }
+  }
+  vec3 light = acc * u_brightness * 0.2;
+  if (!fx_inBox(v_uv)) light = vec3(0.0);
+  fragColor = sgl_finishLight(src, light, u_mode, u_affectAlpha, 0.0, 0.0, 1.0, u_bgBrightness);
+}`,
+			},
+		],
+	},
+});
+
+const CHANNELS = ['red', 'green', 'blue'];
+const channelChoice = (name: string, label: string, def: string) =>
+	fxParam.choice(name, label, CHANNELS, ['Red', 'Green', 'Blue'], def);
+
+/** One S_Light3D light (Sapphire "LightN" group). */
+function light3dParams(n: number, on: boolean, dir: [number, number]): ParamSpec[] {
+	const g = { group: `light${n}` };
+	return [
+		fxParam.toggle(`light${n}Enable`, `Light${n} Enable`, on, g),
+		fxParam.vec2(`light${n}Dir`, `Light${n} Dir`, dir, { step: 0.001 }, g),
+		slider(`light${n}Z`, `Light${n} Z`, 0.5, { softMax: 4 }, g),
+		slider(`diffuseBright${n}`, `Diffuse Bright ${n}`, 0.5, { softMax: 4 }, g),
+		slider(`hilightBright${n}`, `Hilight Bright ${n}`, 1, { softMax: 4 }, g),
+		slider(`hilightSize${n}`, `Hilight Size ${n}`, 1, { min: 0.01, softMax: 4 }, g),
+		fxParam.color(`light${n}Color`, `Light${n} Color`, white, g),
+	];
+}
+
+const light3dGlsl = (n: number) => /* glsl */ `
+  if (u_light${n}Enable) {
+    vec3 L = normalize(vec3(u_light${n}Dir.x, -u_light${n}Dir.y, max(u_light${n}Z, 0.0)));
+    float nd = max(dot(nrm, L), 0.0);
+    vec3 H = normalize(L + vec3(0.0, 0.0, 1.0));
+    float sz = max(u_hilightSize * u_hilightSize${n}, 0.01);
+    float sp = pow(max(dot(nrm, H), 0.0), 12.0 / (sz * sz)) * step(0.0, nd);
+    diffuse += nd * u_diffuseBright * u_diffuseBright${n} * 2.0 * u_light${n}Color.rgb;
+    spec += sp * u_hilightBright * u_hilightBright${n} * u_light${n}Color.rgb;
+  }`;
+
+export const S_LIGHT_3D = defineShaderEffect({
+	id: 'jasper.s.light-3d',
+	label: 'S_Light3D',
+	category: 'Stylize',
+	bin: SGL_BIN,
+	description:
+		'Relights the image as a 3D surface with up to four lights (ambient + diffuse + specular highlights), using a Normals clip — or, without one, normals derived from the image’s own luminance (embossed relief).',
+	keywords: ['relight', 'normal map', '3d light', 'emboss', 'bump', 'sapphire'],
+	params: [
+		slider('brightness', 'Brightness', 1, { softMax: 4 }),
+		slider('ambientBright', 'Ambient Bright', 0.2, { softMax: 2 }),
+		slider('diffuseBright', 'Diffuse Bright', 0.5, { min: 0.1, softMax: 4 }),
+		slider('hilightBright', 'Hilight Bright', 0.8, { softMax: 4 }),
+		slider('hilightSize', 'Hilight Size', 0.5, { min: 0.1, softMax: 4 }),
+		...light3dParams(1, true, [-0.806, 0.608]),
+		...light3dParams(2, false, [0.806, 0.608]),
+		...light3dParams(3, false, [-0.806, -0.627]),
+		...light3dParams(4, false, [0.806, -0.627]),
+		fxParam.media('normals', 'Normals', ['image', 'video']),
+		fxParam.number('normalOffset', 'Normal Offset', -0.5, { softMin: -1, softMax: 1, step: 0.001 }),
+		channelChoice('normalX', 'Normal X <-', 'red'),
+		channelChoice('normalY', 'Normal Y <-', 'green'),
+		channelChoice('normalZ', 'Normal Z <-', 'blue'),
+		fxParam.toggle('invertX', 'Invert X', false),
+		fxParam.toggle('invertY', 'Invert Y', false),
+		fxParam.toggle('invertZ', 'Invert Z', false),
+	],
+	gpu: {
+		timeInvariant: true,
+		passes: [
+			{
+				include: [GLSL_COLOR],
+				frag: /* glsl */ `
+float chan(vec3 c, int i) { return i == 0 ? c.r : i == 1 ? c.g : c.b; }
+float lumAt(vec2 uv) { return fx_luma(texture(u_source, clamp(uv, vec2(0.0), vec2(1.0))).rgb); }
+void main() {
+  vec4 src = texture(u_source, v_uv);
+  vec3 nrm;
+  if (u_normals_size.x > 0.0) {
+    vec4 t = texture(u_normals, clamp(fx_layerNorm(), 0.0, 1.0));
+    vec3 c = t.a > 0.0 ? t.rgb / t.a : vec3(0.5, 0.5, 1.0);
+    nrm = vec3(chan(c, u_normalX), chan(c, u_normalY), chan(c, u_normalZ)) + u_normalOffset;
+    // Normal maps are y-up; the image is y-down.
+    nrm.y = -nrm.y;
+  } else {
+    // No Normals clip: an embossed relief from the image's luminance.
+    vec2 e = 1.5 * u_pxScale / u_canvasSize;
+    float gx = lumAt(v_uv + vec2(e.x, 0.0)) - lumAt(v_uv - vec2(e.x, 0.0));
+    float gy = lumAt(v_uv + vec2(0.0, e.y)) - lumAt(v_uv - vec2(0.0, e.y));
+    nrm = vec3(-gx * 3.0, -gy * 3.0, 0.5);
+  }
+  if (u_invertX) nrm.x = -nrm.x;
+  if (u_invertY) nrm.y = -nrm.y;
+  if (u_invertZ) nrm.z = -nrm.z;
+  nrm = normalize(nrm + vec3(0.0, 0.0, 1.0e-4));
+  vec3 diffuse = vec3(0.0), spec = vec3(0.0);
+  ${[1, 2, 3, 4].map(light3dGlsl).join('')}
+  vec3 rgb = (src.rgb * (u_ambientBright + diffuse) + spec * src.a) * u_brightness;
+  rgb = clamp(rgb, 0.0, src.a);
+  fragColor = vec4(rgb, src.a);
+}`,
+			},
+		],
+	},
+});
+
+const SPOT_COMBINE = ['Lights Only', 'Mult', 'Add', 'Screen', 'Overlay'] as const;
+
+/** One S_SpotLight light. */
+function spotParams(n: number, d: { on: boolean; pos: [number, number]; aim: [number, number] }): ParamSpec[] {
+	const g = { group: `light${n}` };
+	return [
+		fxParam.toggle(`light${n}Enable`, `Light${n} Enable`, d.on, g),
+		fxParam.number(`light${n}Bright`, `Light${n} Bright`, 0.8, { softMin: -2, softMax: 4, step: 0.001 }, g),
+		fxParam.color(`light${n}Color`, `Light${n} Color`, white, g),
+		fxParam.point(`light${n}`, `Light${n}`, sapphirePoint(d.pos[0], d.pos[1]), g),
+		slider(`light${n}Z`, `Light${n} Z`, 0.5, { min: 0.028, softMax: 4 }, g),
+		fxParam.point(`aim${n}`, `Aim${n}`, sapphirePoint(d.aim[0], d.aim[1]), g),
+		fxParam.number(`spreadAngle${n}`, `Spread Angle${n}`, 45, { min: 0, max: 360, step: 0.1 }, { ...g, }),
+		slider(`softness${n}`, `Softness${n}`, 0.3, { min: 0.01, max: 1, softMax: 1 }, g),
+		slider(`falloffPower${n}`, `Falloff Power${n}`, 0, { softMax: 4 }, g),
+	];
+}
+
+const spotGlsl = (n: number) => /* glsl */ `
+  if (u_light${n}Enable) {
+    // 3D in layer widths: the image plane is z = 0, the light hangs at Z above it, aimed at a point on the plane.
+    vec3 L = vec3((u_light${n} + sh) * vec2(1.0, ar), u_light${n}Z);
+    vec3 A = vec3((u_aim${n} + sh + ash) * vec2(1.0, ar), 0.0);
+    vec3 P = vec3(n * vec2(1.0, ar), 0.0);
+    vec3 axis = normalize(A - L);
+    vec3 v = P - L;
+    float cosT = dot(normalize(v), axis);
+    float half_ = radians(clamp(u_spreadAngle${n}, 0.0, 359.0)) * 0.5;
+    float soft = clamp(u_softness${n}, 0.01, 1.0);
+    float cone = smoothstep(cos(min(half_ * (1.0 + soft), 3.1)), cos(half_ * (1.0 - soft)), cosT);
+    float fall = pow(length(A - L) / max(length(v), 1.0e-4), u_falloffPower${n});
+    light += cone * fall * u_light${n}Bright * u_light${n}Color.rgb;
+  }`;
+
+export const S_SPOT_LIGHT = defineShaderEffect({
+	id: 'jasper.s.spot-light',
+	label: 'S_SpotLight',
+	category: 'Stylize',
+	bin: SGL_BIN,
+	description:
+		'One or two 3D spotlight cones falling on the image plane (position, height, aim, spread, soft penumbra, distance falloff) plus ambient light.',
+	keywords: ['spotlight', 'spot light', 'light cone', 'vignette', 'sapphire'],
+	params: [
+		...spotParams(1, { on: true, pos: [-0.5, 0.361], aim: [-0.167, 0] }),
+		...spotParams(2, { on: false, pos: [0.5, 0.361], aim: [0.167, 0] }),
+		slider('ambientBright', 'Ambient Bright', 0.2, { softMax: 2 }),
+		fxParam.color('ambientColor', 'Ambient Color', white),
+		slider('allLightsBright', 'All Lights Bright', 1, { softMax: 4 }),
+		fxParam.color('allLightsColor', 'All Lights Color', white),
+		fxParam.vec2('allAimsShift', 'All Aims Shift', [0, 0], { step: 0.001 }),
+		fxParam.vec2('allShift', 'All Shift', [0, 0], { step: 0.001 }),
+		combineChoice(SPOT_COMBINE, 'Mult'),
+	],
+	gpu: {
+		timeInvariant: true,
+		uniforms: (p) => ({ u_mode: combineMode(p.combine, SPOT_COMBINE, 'Mult') }),
+		passes: [
+			{
+				include: [GLSL_SGL_FINISH],
+				frag: /* glsl */ `${SAPPHIRE_OFFSET_GLSL}
+void main() {
+  vec4 src = texture(u_source, v_uv);
+  vec2 n = fx_layerNorm();
+  float ar = u_box.w / u_box.z;
+  vec2 sh = sOff(u_allShift);
+  vec2 ash = sOff(u_allAimsShift);
+  vec3 light = vec3(0.0);
+  ${spotGlsl(1)}
+  ${spotGlsl(2)}
+  light = light * u_allLightsBright * u_allLightsColor.rgb + u_ambientBright * u_ambientColor.rgb;
+  light = max(light, 0.0);
+  vec3 rgb = sgl_combineRgb(u_mode, src.rgb, light * (u_mode == 5 ? 1.0 : 1.0));
+  if (u_mode == 5) { fragColor = vec4(min(light, 1.0) * src.a, src.a); return; }
+  rgb = clamp(rgb, 0.0, 1.0);
+  float a = u_mode == 0 ? src.a : clamp(max(src.a, sgl_maxc(rgb)), 0.0, 1.0);
+  fragColor = vec4(min(rgb, vec3(a)), a);
+}`,
+			},
+		],
+	},
+});
+
+export const SGL_OTHER_EFFECTS: readonly EffectSpec[] = [
+	S_BOKEH_LIGHTS,
+	S_DROP_SHADOW,
+	S_FLASHBULBS,
+	S_LIGHT_3D,
+	S_SPOT_LIGHT,
+];
+
+export const SAPPHIRE_GLOWS_LIGHTING_EFFECTS: readonly EffectSpec[] = [
+	...SGL_GLOW_EFFECTS,
+	...SGL_BEAM_EFFECTS,
+	...SGL_FLARE_EFFECTS,
+	...SGL_GLINT_EFFECTS,
+	...SGL_OTHER_EFFECTS,
+];
