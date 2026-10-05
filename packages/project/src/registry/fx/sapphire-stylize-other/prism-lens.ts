@@ -175,7 +175,7 @@ bool pl_copy(int k, vec2 P, float unit, out vec2 c, out float sc, out float op, 
 }
 // Inside-ness of a facet (soft edge) for a local offset d in Sapphire units (rotated, not yet scaled).
 float pl_shape(vec2 d, float sc) {
-  float R = max(u_size * 0.5 * sc, 1.0e-4);
+  float R = max(u_size * sc, 1.0e-4);               // Size = facet radius (Sapphire units)
   d.x /= max(u_relWidth, 0.01);
   float f;
   if (u_geometry == 1) f = length(d) - R;

@@ -7,7 +7,7 @@
 //   Our point params are layer-normalised ([0,0] top-left, [1,1] bottom-right); `sapphirePoint` converts Sapphire's
 //   documented defaults (for a 16:9 frame).
 // - Sapphire sizes/distances/radii keep Sapphire's numbers: 1.0 = half the layer width (`sso_unit()` in GLSL).
-// - Sapphire blur widths keep Sapphire's numbers: 1.0 = a Gaussian sigma of a tenth of the layer width
+// - Sapphire blur widths keep Sapphire's numbers: 1.0 = a Gaussian sigma of 3 % of the layer width
 //   (`sapphireBlurPx`), so the documented defaults (0.088, 0.112…) give the documented look at any resolution.
 import type { EffectParams, ParamSpec } from '../../effects.ts';
 import { GLSL_BLUR } from '../glsl/blur.ts';
@@ -25,9 +25,9 @@ export function sapphirePoint(x: number, y: number, aspect = 16 / 9): [number, n
 	return [round3(0.5 + x / 2), round3(0.5 - (y * aspect) / 2)];
 }
 
-/** A Sapphire blur width → Gaussian sigma in canvas px (1.0 = a tenth of the layer width). */
+/** A Sapphire blur width → Gaussian sigma in canvas px (1.0 = 3 % of the layer width; S_Blur's default 0.4 ≈ 23 px at 1920). */
 export function sapphireBlurPx(v: unknown, ctx: Pick<FxPlanContext, 'width' | 'pxScale'>): number {
-	return Math.max(0, num(v)) * ctx.width * 0.1 * ctx.pxScale;
+	return Math.max(0, num(v)) * ctx.width * 0.03 * ctx.pxScale;
 }
 
 /** A Sapphire-style plain number (no unit): `soft*` bounds are the slider range, `min`/`max` hard limits. */

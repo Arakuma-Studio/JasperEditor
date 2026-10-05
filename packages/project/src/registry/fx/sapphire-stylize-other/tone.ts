@@ -31,7 +31,7 @@ export const S_BAND_PASS: EffectSpec = defineShaderEffect({
 	category: 'Stylize',
 	bin: BIN,
 	description:
-		'X-ray-like band-pass filter: the difference of two blurs of different widths, scaled and offset by a grey value. Blur widths: 1.0 = a sigma of a tenth of the layer width.',
+		'X-ray-like band-pass filter: the difference of two blurs of different widths, scaled and offset by a grey value. Blur widths: 1.0 = a sigma of 3 % of the layer width.',
 	keywords: ['x-ray', 'xray', 'band pass', 'difference of gaussians', 'edges', 'emboss'],
 	params: [
 		sNum('blurAmount1', 'Blur Amount1', 0.112, { min: 0, softMax: 1 }),

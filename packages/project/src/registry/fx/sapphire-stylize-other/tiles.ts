@@ -245,7 +245,7 @@ void main() {
   vec3 lp = vec3(fx_uvOfLayerNorm(u_lightPosition) * u_canvasSize - u_box.xy, u_lightZ * sso_unit());
   vec3 l = normalize(lp - vec3(px, 0.0));
   float diff = dot(n, l) - l.z;
-  vec3 lit = base * (1.0 + diff * u_lightBrightness * u_lightColor.rgb * 4.0);
+  vec3 lit = base * max(vec3(0.3), 1.0 + diff * u_lightBrightness * u_lightColor.rgb * 2.5);
   vec3 nh = normalize(l + vec3(0.0, 0.0, 1.0));
   lit += pow(max(dot(n, nh), 0.0), 40.0) * u_lightBrightness * u_lightColor.rgb * 0.35 * (1.0 - grout);
 
