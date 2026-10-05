@@ -105,16 +105,23 @@ if (sheet) {
 				}),
 			);
 			const cw = size as number;
-			const ch = Math.max(...imgs.map((i) => (i.im.height * cw) / i.im.width)) + 18;
+			const per = n as number;
+			const rows = Math.ceil(imgs.length / per);
+			const rowH = Array.from(
+				{ length: rows },
+				(_, r) =>
+					Math.max(...imgs.slice(r * per, r * per + per).map((i) => (i.im.height * cw) / i.im.width)) + 18,
+			);
 			const c = document.createElement('canvas');
-			c.width = cw * (n as number);
-			c.height = Math.ceil(imgs.length / (n as number)) * ch;
+			c.width = cw * per;
+			c.height = rowH.reduce((a, b) => a + b, 0);
 			const ctx = c.getContext('2d')!;
 			ctx.fillStyle = '#222';
 			ctx.fillRect(0, 0, c.width, c.height);
 			imgs.forEach((it, i) => {
-				const x = (i % (n as number)) * cw;
-				const y = Math.floor(i / (n as number)) * ch;
+				const r = Math.floor(i / per);
+				const x = (i % per) * cw;
+				const y = rowH.slice(0, r).reduce((a, b) => a + b, 0);
 				ctx.drawImage(it.im, x, y + 18, cw, (it.im.height * cw) / it.im.width);
 				ctx.fillStyle = '#eee';
 				ctx.font = '12px sans-serif';
