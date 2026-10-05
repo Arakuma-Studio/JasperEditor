@@ -1,7 +1,13 @@
 // Browser entry of the Sapphire Distort family GL test (bundled with esbuild, run in headless Chrome by
 // ../fx-sapphire-distort-warp-gl.test.ts): runs the family's effects through the real GPU host on a procedural test
 // picture (or a given image) and reports pixels / PNGs.
-import { defaultEffectRegistry, type EffectSpec, fxBuiltinUniforms, gpuPadding, planGpuEffect } from '@jasper/project';
+import {
+	defaultEffectRegistry,
+	type EffectSpec,
+	fxBuiltinUniforms,
+	gpuPadding,
+	planGpuEffect,
+} from '@jasper/project';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 import { fxCanvasLayout } from '../../src/fx/plan.ts';
 
@@ -18,7 +24,11 @@ function canvas(w: number, h: number, paint?: (ctx: CanvasRenderingContext2D) =>
 const images = new Map<string, HTMLImageElement>();
 
 /** Procedural test picture: colour quadrants, a grid and a white disc in the middle (all deterministic). */
-function paintTest(ctx: CanvasRenderingContext2D, b: { x: number; y: number; w: number; h: number }, kind: string) {
+function paintTest(
+	ctx: CanvasRenderingContext2D,
+	b: { x: number; y: number; w: number; h: number },
+	kind: string,
+) {
 	if (kind === 'none') return;
 	if (kind.startsWith('img:')) {
 		ctx.drawImage(images.get(kind.slice(4))!, b.x, b.y, b.w, b.h);
