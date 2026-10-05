@@ -7,8 +7,9 @@ import type { EffectSpec } from '../effects.ts';
 import { SBS_BLURS } from './sapphire-blur-sharpen/blurs.ts';
 import { SBS_DEFOCUS } from './sapphire-blur-sharpen/defocus.ts';
 import { SBS_DETAIL } from './sapphire-blur-sharpen/detail.ts';
+import { SBS_MOTION } from './sapphire-blur-sharpen/motion.ts';
 import { SBS_SMOOTH } from './sapphire-blur-sharpen/smooth.ts';
 
 const byLabel = (a: EffectSpec, b: EffectSpec) => a.label.localeCompare(b.label);
 
-export const SAPPHIRE_BLUR_SHARPEN_EFFECTS: readonly EffectSpec[] = [...SBS_BLURS, ...SBS_DEFOCUS, ...SBS_DETAIL, ...SBS_SMOOTH].sort(byLabel);
+export const SAPPHIRE_BLUR_SHARPEN_EFFECTS: readonly EffectSpec[] = [...SBS_BLURS, ...SBS_DEFOCUS, ...SBS_DETAIL, ...SBS_SMOOTH, ...SBS_MOTION].sort(byLabel);
