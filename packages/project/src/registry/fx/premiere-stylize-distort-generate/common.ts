@@ -6,6 +6,7 @@ import type { ParamValue } from '../../../schema/common.ts';
 import type { ParamSpec } from '../../effects.ts';
 import { GLSL_BLEND } from '../glsl/blend.ts';
 import { GLSL_COLOR } from '../glsl/color.ts';
+import { GLSL_NOISE } from '../glsl/noise.ts';
 import { fxParam } from '../params.ts';
 import type { GlslChunk } from '../shader.ts';
 
@@ -177,6 +178,56 @@ vec4 psdg_blend(int mode, vec4 base, vec4 top, float opacity) {
 // Blend With Original (percent 0..100).
 vec4 psdg_blendOriginal(vec4 result, vec4 original, float percent) {
   return mix(result, original, clamp(percent / 100.0, 0.0, 1.0));
+}
+`,
+};
+
+/**
+ * The AE "Evolution" controls of the fractal effects (Turbulent Displace, Roughen Edges, Cell Pattern…): params
+ * Evolution (angle), Cycle Evolution (checkbox), Cycle (in Revolutions). One revolution (360°) of Evolution moves
+ * the noise one unit along its third dimension; with Cycle Evolution the noise loops every Cycle revolutions
+ * (cross-fade between the phase and the phase one cycle earlier — seamless).
+ */
+export function evolutionParams(group = 'Evolution Options'): ParamSpec[] {
+	return [
+		fxParam.angle('evolution', 'Evolution', 0),
+		fxParam.toggle('cycleEvolution', 'Cycle Evolution', false, { group }),
+		fxParam.number(
+			'cycle',
+			'Cycle (in Revolutions)',
+			1,
+			{ min: 1, max: 1000, softMax: 30, step: 1 },
+			{ group },
+		),
+	];
+}
+
+/**
+ * Evolving fractal noise (≈ −1..1): `psdg_evolveFbm(p, octaves, evolutionDeg, cycleOn, cycleRevs, seed)`, simplex
+ * fbm in (p, evolution); `psdg_evolveTurb` = turbulence (|noise| sum, 0..1).
+ */
+export const GLSL_PSDG_EVOLVE: GlslChunk = {
+	name: 'psdg/evolve',
+	deps: [GLSL_NOISE],
+	source: /* glsl */ `
+float psdg_evolveFbm(vec2 p, int octaves, float evolutionDeg, bool cycleOn, float cycleRevs, float seed) {
+  float z = evolutionDeg / 360.0;
+  if (!cycleOn) return fx_fbm3(vec3(p, z * 0.6), octaves, 2.0, 0.5, seed);
+  float c = max(floor(cycleRevs), 1.0);
+  float zc = mod(z, c);
+  float w = zc / c;
+  float a = fx_fbm3(vec3(p, zc * 0.6), octaves, 2.0, 0.5, seed);
+  float b = fx_fbm3(vec3(p, (zc - c) * 0.6), octaves, 2.0, 0.5, seed);
+  return mix(a, b, w);
+}
+float psdg_evolveTurb(vec2 p, int octaves, float evolutionDeg, bool cycleOn, float cycleRevs, float seed) {
+  float z = evolutionDeg / 360.0;
+  if (!cycleOn) return fx_turbulence(vec3(p, z * 0.6), octaves, 2.0, 0.5, seed);
+  float c = max(floor(cycleRevs), 1.0);
+  float zc = mod(z, c);
+  float w = zc / c;
+  return mix(fx_turbulence(vec3(p, zc * 0.6), octaves, 2.0, 0.5, seed),
+             fx_turbulence(vec3(p, (zc - c) * 0.6), octaves, 2.0, 0.5, seed), w);
 }
 `,
 };
