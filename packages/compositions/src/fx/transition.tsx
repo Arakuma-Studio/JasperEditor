@@ -15,16 +15,16 @@
 // Player falls back to a dissolve with a chip on the stage; renders fail (WEBGL_UNAVAILABLE /
 // FX_TRANSITION_UNSUPPORTED) — never a silently different picture.
 import {
-	evaluate,
 	type EffectParams,
+	evaluate,
 	type MediaHandle,
 	planGpuTransition,
 	type RenderTransition,
 	type RenderVisualClip,
 	type TransitionSpec,
+	type TrSide,
 	transitionLinearProgress,
 	transitionProgress,
-	type TrSide,
 } from '@jasper/project';
 import { createContext, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import {

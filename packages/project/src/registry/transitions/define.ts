@@ -4,8 +4,9 @@
 // Border Width / Border Color, Anti-aliasing Quality and a Center point. Bins mirror Premiere's Video Transitions
 // folders (R-PUI §12); the Sapphire-style families sit in "Sapphire Transitions" with sub-bins.
 // Authoring guide: docs/wp-notes/fx-transition-framework.md.
-import type { TransitionSpec } from '../../transitions.ts';
+
 import type { RGBA, Vec2 } from '../../schema/common.ts';
+import type { TransitionSpec } from '../../transitions.ts';
 import type { ParamSpec } from '../effects.ts';
 import { fxParam } from '../fx/params.ts';
 import { TR_AA_LABELS, TR_AA_OPTIONS } from './glsl.ts';

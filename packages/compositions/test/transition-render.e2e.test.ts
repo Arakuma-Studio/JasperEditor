@@ -70,7 +70,10 @@ describe.runIf(enabled)('GPU transitions in Remotion renders (REMOTION_E2E=1)', 
 
 	async function still(commands: Command[], frame: number, name: string): Promise<Buffer> {
 		const doc = fxSnapshot(commands);
-		const inputProps = { doc, options: { isPreview: false, useProxies: false, transparentBackground: false } };
+		const inputProps = {
+			doc,
+			options: { isPreview: false, useProxies: false, transparentBackground: false },
+		};
 		const composition = await renderer.selectComposition({
 			serveUrl,
 			id: SEQUENCE_COMPOSITION_ID,
@@ -116,7 +119,11 @@ describe.runIf(enabled)('GPU transitions in Remotion renders (REMOTION_E2E=1)', 
 		const raw = await still(solidsWith('jasper.iris-round'), 30, 'iris-30');
 		expect(close(at(raw, FX_W / 2, FX_H / 2), [0, 0, 255])).toBe(true);
 		expect(close(at(raw, 4, 4), [255, 0, 0])).toBe(true);
-		const rev = await still(solidsWith('jasper.iris-round', RED, BLUE, { params: { reverse: true } }), 36, 'iris-rev');
+		const rev = await still(
+			solidsWith('jasper.iris-round', RED, BLUE, { params: { reverse: true } }),
+			36,
+			'iris-rev',
+		);
 		// Reverse: A is the shrinking disc (p = 17 / 21 → the disc has 1 − p of the radius left).
 		expect(close(at(rev, FX_W / 2, FX_H / 2), [255, 0, 0])).toBe(true);
 		expect(close(at(rev, 4, 4), [0, 0, 255])).toBe(true);
@@ -140,7 +147,11 @@ describe.runIf(enabled)('GPU transitions in Remotion renders (REMOTION_E2E=1)', 
 
 	it('S_DissolveLuma: the bright half of A switches to B first', async () => {
 		const cmds: Command[] = [
-			{ type: 'media.register', ref: '$m', asset: fxAsset(media, 'image', 'halves.png', FX_W, FX_H) } as Command,
+			{
+				type: 'media.register',
+				ref: '$m',
+				asset: fxAsset(media, 'image', 'halves.png', FX_W, FX_H),
+			} as Command,
 			{
 				type: 'clip.place',
 				source: { mediaId: '$m' },
@@ -172,7 +183,11 @@ describe.runIf(enabled)('GPU transitions in Remotion renders (REMOTION_E2E=1)', 
 
 	it('a video side goes through its chain (upright decoded frames), a shape side through HTML-in-Canvas', async () => {
 		const video: Command[] = [
-			{ type: 'media.register', ref: '$m', asset: fxAsset(media, 'video', media.video, FX_W, FX_H) } as Command,
+			{
+				type: 'media.register',
+				ref: '$m',
+				asset: fxAsset(media, 'video', media.video, FX_W, FX_H),
+			} as Command,
 			{
 				type: 'clip.place',
 				source: { mediaId: '$m' },
@@ -222,6 +237,8 @@ describe.runIf(enabled)('GPU transitions in Remotion renders (REMOTION_E2E=1)', 
 		const raw = await still(solidsWith('jasper.cross-dissolve'), 30, 'cross-dissolve-30');
 		// Opaque solids: A stays opaque, B at 11/21 over it.
 		const p = 11 / 21;
-		expect(close(at(raw, FX_W / 2, FX_H / 2), [Math.round(255 * (1 - p)), 0, Math.round(255 * p)], 6)).toBe(true);
+		expect(close(at(raw, FX_W / 2, FX_H / 2), [Math.round(255 * (1 - p)), 0, Math.round(255 * p)], 6)).toBe(
+			true,
+		);
 	});
 });

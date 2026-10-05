@@ -8,8 +8,9 @@
 // This module is pure (no DOM, no GL): progress (Start/End %, Reverse), side placement matrices, planning (complete
 // program sources, reusing the fx framework's `buildPassSource`) and validation. The compositions run the plans on
 // the fx GPU host (packages/compositions/src/fx/transition.tsx), in the Player and in renders alike.
-import type { TransitionSpec } from '../../transitions.ts';
+
 import { invertMat3, type Mat3, multiplyMat3 } from '../../render/homography.ts';
+import type { TransitionSpec } from '../../transitions.ts';
 import type { EffectParams } from '../effects.ts';
 import {
 	buildPassSource,

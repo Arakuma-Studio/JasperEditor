@@ -34,7 +34,11 @@ const solid = (color: string, w = W, h = H) =>
 		ctx.fillRect(0, 0, w, h);
 	});
 const IDENTITY = [1, 0, 0, 0, 1, 0, 0, 0, 1];
-const full = (c: HTMLCanvasElement, compToCanvas = IDENTITY, opacity = 1): { c: HTMLCanvasElement; side: TrSide } => ({
+const full = (
+	c: HTMLCanvasElement,
+	compToCanvas = IDENTITY,
+	opacity = 1,
+): { c: HTMLCanvasElement; side: TrSide } => ({
 	c,
 	side: { width: c.width, height: c.height, compToCanvas, opacity },
 });
@@ -60,7 +64,13 @@ function run(
 	const pics = { out: opts.out ?? null, in: opts.in ?? null };
 	const staged = planGpuTransition(
 		spec,
-		{ id: 'trn_test', params: params as never, frame: opts.frame, duration: opts.duration, sides: opts.sides ?? 'both' },
+		{
+			id: 'trn_test',
+			params: params as never,
+			frame: opts.frame,
+			duration: opts.duration,
+			sides: opts.sides ?? 'both',
+		},
 		{ width: W, height: H, fps: 30 },
 		{ out: pics.out?.side ?? null, in: pics.in?.side ?? null },
 	);
@@ -143,7 +153,8 @@ void main() {
 					const out = run(s, defaults(s, over), o);
 					// Fully progressed two-sided frames are not required to match exactly, but nothing may be NaN-black
 					// over an opaque frame in the middle of the transition.
-					if (name === 'mid' && px(out, W / 2, H / 2)[3] === 0) errors.push(`${s.id} ${name}: transparent centre`);
+					if (name === 'mid' && px(out, W / 2, H / 2)[3] === 0)
+						errors.push(`${s.id} ${name}: transparent centre`);
 				} catch (e) {
 					errors.push(`${s.id} ${name}: ${(e as Error).message}`);
 				}
@@ -193,7 +204,12 @@ void main() {
 			ctx.fillRect(W / 2, 0, W / 2, H);
 		});
 		const s = spec('jasper.s.dissolve-luma');
-		const out = run(s, defaults(s, { blurLuma: 0 }), { frame: 4, duration: 9, out: full(a), in: full(solid('#0f0')) });
+		const out = run(s, defaults(s, { blurLuma: 0 }), {
+			frame: 4,
+			duration: 9,
+			out: full(a),
+			in: full(solid('#0f0')),
+		});
 		return { white: px(out, 8, 18), black: px(out, 56, 18) };
 	},
 };

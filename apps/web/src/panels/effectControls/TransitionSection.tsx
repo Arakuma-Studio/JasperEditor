@@ -29,8 +29,8 @@ import { TRANSITION_ALIGNMENTS } from '../effects/transition-prefs.ts';
 import { CheckboxField, ColorField, MiniButton, SelectField } from '../properties/controls/fields.tsx';
 import { StopwatchGlyph } from '../properties/controls/glyphs.tsx';
 import { ScrubbyNumber } from '../properties/controls/ScrubbyNumber.tsx';
-import type { InspectorOps } from '../properties/lib/ops.ts';
 import { useInspectorData } from '../properties/lib/hooks.ts';
+import type { InspectorOps } from '../properties/lib/ops.ts';
 import { useInspectorOps } from '../properties/lib/ops.ts';
 import {
 	edgeDrag,
@@ -353,10 +353,14 @@ function TransitionParams(props: {
 	// Keys are stored relative to the stored span start (what the command handler uses).
 	const start = transitionStartFrame(seq, t) ?? props.span.start;
 	const local = Math.min(t.duration - 1, Math.max(0, frame - start));
-	const inside = frame >= props.span.start && frame < props.span.end;
-	const at = { sequenceFrame: Math.max(0, start + local) };
+	// Writes use the live playhead (the displayed frame is throttled), clamped into the span.
+	const liveFrame = () => props.session.transport.getState().frame;
+	const inside = () => liveFrame() >= props.span.start && liveFrame() < props.span.end;
+	const atNow = () => ({
+		sequenceFrame: Math.max(0, start + Math.min(t.duration - 1, Math.max(0, liveFrame() - start))),
+	});
 	const target = (name: string) => ['transition', t.id, name];
-	const valueOf = (p: ParamSpec): ParamValue => {
+	const paramValue = (p: ParamSpec): ParamValue => {
 		const a = t.params[p.name];
 		return a ? (evaluate(a as never, local * F) as ParamValue) : p.default;
 	};
@@ -366,7 +370,7 @@ function TransitionParams(props: {
 			type: 'param.set',
 			target: target(p.name),
 			value,
-			...(animated(p) ? { at } : {}),
+			...(animated(p) ? { at: atNow() } : {}),
 		}) as Command;
 	const commit = (p: ParamSpec, value: unknown) => ops.apply(`${spec.label}: ${p.label}`, [set(p, value)]);
 	return (
@@ -383,13 +387,13 @@ function TransitionParams(props: {
 								label={animated(p) ? `Turn off animation of ${p.label}` : `Animate ${p.label}`}
 								active={animated(p)}
 								onClick={() => {
-									if (!animated(p) && !inside) return;
+									if (!animated(p) && !inside()) return;
 									ops.apply(`${spec.label}: ${p.label}`, [
 										{
 											type: 'param.setAnimated',
 											target: target(p.name),
 											animated: !animated(p),
-											at,
+											at: atNow(),
 										} as Command,
 									]);
 								}}
@@ -405,7 +409,7 @@ function TransitionParams(props: {
 					<div className="flex min-w-0 flex-1 items-center gap-1">
 						<ParamEditor
 							p={p}
-							value={valueOf(p)}
+							value={paramValue(p)}
 							onCommit={(v) => commit(p, v)}
 							ops={ops}
 							toCommand={(v) => set(p, v)}
