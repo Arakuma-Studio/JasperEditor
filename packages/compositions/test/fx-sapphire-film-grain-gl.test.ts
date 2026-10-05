@@ -170,7 +170,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				const opts = { id, width: 64, height: 48, paint: 'grey' as const, frame: 3, all: true };
 				const a = await render(opts);
 				const b = await render(opts);
-				const c = await render({ ...opts, params: { randomSeed: 77 } });
+				const c = await render({ ...opts, params: { seed: 77 } });
 				expect(a.all, id).toEqual(b.all);
 				expect(meanAbsDiff(a.all!, c.all!), id).toBeGreaterThan(0.2);
 			}

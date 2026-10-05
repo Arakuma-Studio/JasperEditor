@@ -17,7 +17,6 @@ import {
 	mixParam,
 	num,
 	sapphireSeed,
-	seedUniforms,
 	slider,
 } from './common.ts';
 import { GLSL_FILM } from './glsl.ts';
@@ -135,7 +134,7 @@ void main() {
   vec3 o = mix(fx_unpremultiply(src).rgb, bb, u_amount);
   if (u_grainAmp > 0.0) {
     vec2 p = fx_layerPx();
-    vec3 n = sfg_grainNoise(p, u_grainSizePx, u_grainMono, sfg_frameSeed(u_fxSeed, u_grainFrame, 1.0));
+    vec3 n = sfg_grainNoise(p, u_grainSizePx, u_grainMono, sfg_frameSeed(u_seed, u_grainFrame, 1.0));
     vec3 amp = u_grainAmp * vec3(u_grainAmpRed, u_grainAmpGreen, u_grainAmpBlue)
       * sfg_grainCurve(o, u_grainAmpDarks, 1.0, u_grainAmpBrights, vec3(0.5));
     o += n * amp * 0.035;
@@ -160,12 +159,12 @@ export const S_BLEACH_BYPASS = defineShaderEffect({
 		slider('scaleLights', 'Scale Lights', 1, 0, 10, { softMax: 3 }),
 		slider('offsetDarks', 'Offset Darks', 0, -8, 2),
 		...filmGrainParams({ amp: 0, group: 'Grain Parameters' }),
-		sapphireSeed('Grain Seed', 0),
+		sapphireSeed('Grain Seed'),
 		color('scaleColors', 'Scale Colors', [1, 1, 1]),
 		mixParam(),
 	],
 	gpu: {
-		uniforms: (p, ctx) => ({ ...filmGrainUniforms(p, ctx), ...seedUniforms(p, ctx) }),
+		uniforms: (p, ctx) => filmGrainUniforms(p, ctx),
 		passes: (p, ctx) => {
 			const blur = num(p.softFocus) !== 0 || num(p.sharpen) !== 0;
 			const final: ShaderPass = { include: [GLSL_FILM], frag: BLEACH_FRAG(blur) };
@@ -239,7 +238,7 @@ void main() {
   vec4 src = texture(u_source, v_uv);
   vec3 c = fx_unpremultiply(src).rgb;
   vec2 q = fx_layerPx() / sfg_boxPx().x;
-  float fs = sfg_frameSeed(u_fxSeed, u_grainFrame, 2.0);
+  float fs = sfg_frameSeed(u_seed, u_grainFrame, 2.0);
   vec3 g = vec3(
     sgr_noise(q + vec2(0.0, 0.0), u_gFreq * u_gRgb.r, u_gOct, fs),
     sgr_noise(q + vec2(17.3, 5.1), u_gFreq * u_gRgb.g, u_gOct, fract(fs + 0.31)),
@@ -291,7 +290,6 @@ export const S_GRAIN = defineShaderEffect({
 				u_gBwFreq: g.bwFreq,
 				u_gBwOct: { int: Math.max(1, Math.min(10, g.bwOct)) },
 				u_grainFrame: jit === 0 ? 0 : Math.floor(ctx.frame / jit),
-				...seedUniforms(p, ctx),
 			};
 		},
 		passes: [{ include: [GLSL_FILM], frag: GRAIN_FRAG }],
@@ -371,7 +369,6 @@ export const S_ULTRA_GRAIN = defineShaderEffect({
 			const px = (b: unknown, d: number) => Math.max(0.5, size * hd * (1 + blur * Math.max(0, num(b, d))));
 			return {
 				u_sizePx: [px(p.grainBlurRed, 0.572), px(p.grainBlurGreen, 0.561), px(p.grainBlurBlue, 0.528)],
-				...seedUniforms(p, ctx),
 			};
 		},
 		passes: [
@@ -381,7 +378,7 @@ export const S_ULTRA_GRAIN = defineShaderEffect({
 void main() {
   vec4 src = texture(u_source, v_uv);
   vec3 c = fx_unpremultiply(src).rgb;
-  vec3 n = sfg_grainNoise(fx_layerPx(), u_sizePx, u_grainMono, sfg_frameSeed(u_fxSeed, u_frame, 3.0));
+  vec3 n = sfg_grainNoise(fx_layerPx(), u_sizePx, u_grainMono, sfg_frameSeed(u_seed, u_frame, 3.0));
   vec3 curve = sfg_grainCurve(c, u_grainAmpDarks, u_grainAmpMids, u_grainAmpBrights,
                               vec3(u_midtonePosRed, u_midtonePosGreen, u_midtonePosBlue));
   vec3 amp = u_grainAmp * vec3(u_grainAmpRed, u_grainAmpGreen, u_grainAmpBlue) * curve * 0.018;
@@ -488,7 +485,7 @@ void main() {
   vec4 src = texture(u_source, v_uv);
   vec3 c = fx_unpremultiply(src).rgb;
   // the filters see narrow bands (less cross-talk than the camera's RGB)
-  mat3 sep = mat3(1.3, -0.15, 0.0,  -0.3, 1.3, -0.3,  0.0, -0.15, 1.3);
+  mat3 sep = mat3(1.45, -0.15, 0.0,  -0.5, 1.3, -0.3,  0.0, -0.15, 1.3);
   vec3 lin = clamp(sep * fx_srgbToLinear(clamp(c, 0.0, 1.0)), 0.0, 1.0);
   float red = dot(lin, u_redFilter.rgb) / max(dot(u_redFilter.rgb, vec3(1.0)), 1.0e-4);
   float bg = dot(lin, u_bluegreenFilter.rgb) / max(dot(u_bluegreenFilter.rgb, vec3(1.0)), 1.0e-4);
@@ -586,7 +583,9 @@ float ssl_line(vec2 p, float shift) {
   vec2 r = fx_rot(-fx_deg(u_linesAngle)) * (p - box * 0.5);
   float ph = r.y / box.y * u_linesFrequency + shift;
   float l = 0.5 + 0.5 * cos(6.2831853 * ph);
-  return pow(max(l, 0.0), max(u_linesSharpness, 0.0));
+  float s = max(u_linesSharpness, 0.0);
+  // normalised to a mean of 1 (≈ 1/mean of cos^s), so the lines keep the average brightness
+  return pow(max(l, 0.0), s) * sqrt(1.0 + 3.14159 * s);
 }
 // Lines applied in light (gamma-decoded) like a CRT beam, re-encoded: line = 1 keeps the value.
 vec3 ssl_apply(vec3 v, vec3 line) {

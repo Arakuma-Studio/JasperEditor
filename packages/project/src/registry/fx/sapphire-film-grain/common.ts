@@ -4,7 +4,7 @@
 // `gpu.uniforms` hooks — pure functions of (params, frame, seed), never Math.random.
 import type { EffectParams, ParamSpec } from '../../effects.ts';
 import { GLSL_BLUR } from '../glsl/blur.ts';
-import { fxParam, mixWithOriginalParam } from '../params.ts';
+import { fxParam, mixWithOriginalParam, seedParam } from '../params.ts';
 import { type FxUniformValue, fxRandom, type ShaderPass } from '../shader.ts';
 
 export const num = (v: unknown, d = 0): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
@@ -56,26 +56,11 @@ export const color = (name: string, label: string, c: [number, number, number]) 
 export const check = (name: string, label: string, def: boolean) => fxParam.toggle(name, label, def);
 
 /**
- * The Sapphire "Seed" (any value ≥ 0, default 0.123; `label` follows the effect: "Grain Seed", "Rand Seed", …).
- * Named `randomSeed`, not `seed`: a param named `seed` would declare `uniform float u_seed` next to the built-in
- * (a GLSL redefinition, see the report). Its value is mixed with the clip/instance seed by `seedUniforms` into
- * `u_fxSeed`, which the shaders of this family use instead of `u_seed`.
+ * The Sapphire "Seed" (the framework's `seedParam`, mixed into `u_seed`); `label` follows the effect ("Grain Seed",
+ * "Rand Seed", "Random Seed"…).
  */
-export function sapphireSeed(label = 'Seed', def = 0.123): ParamSpec {
-	return {
-		name: 'randomSeed',
-		label,
-		type: 'number',
-		default: def,
-		range: { min: 0, softMax: 10, step: 0.001 },
-		animatable: false,
-	};
-}
-
-/** `u_fxSeed`: the clip + instance seed (`ctx.seed` = u_seed) mixed with the Seed param (deterministic, 0..1). */
-export function seedUniforms(p: EffectParams, ctx: { seed: number }): Record<string, FxUniformValue> {
-	const s = num(p.randomSeed, 0.123);
-	return { u_fxSeed: fxRandom(ctx.seed, Math.round(s * 100003) + 7) };
+export function sapphireSeed(label = 'Seed'): ParamSpec {
+	return { ...seedParam(), label };
 }
 
 /**
