@@ -12,6 +12,8 @@
 // (static clips resolve to the same cached object), then hands them to a memoized `LayerView` that
 // skips rendering when nothing it draws changed. Layers that draw per-frame content (motion graphics, animated
 // text, keyframed shapes) are `isFrameDependent` and re-render every frame.
+// fx framework (wave 1): layers with time-dependent GPU shader effects are frame dependent too, and a time effect's
+// source-frame remap (`gpu.time.remap`) is applied here: `<Freeze>` + remapped localFrame/contentTime, `realFrame`.
 import {
 	clipContentTime,
 	fadeFactor,
@@ -20,9 +22,10 @@ import {
 	resolveLayerProps,
 } from '@jasper/project';
 import { type ComponentType, memo, useMemo, useRef } from 'react';
-import { AbsoluteFill, Sequence, useCurrentFrame } from 'remotion';
+import { AbsoluteFill, Freeze, Sequence, useCurrentFrame } from 'remotion';
 import { ColorDocContext, type ColorDocValue } from './color/chain.ts';
 import { FontsReadyContext, useFontsReadyState, useLayerFontsReady } from './fonts.ts';
+import { fxRemapFrame, hasTimeDependentFx } from './fx/time.ts';
 import { AudioLayer, layerComponentFor } from './layers/index.ts';
 import { rgbaCss } from './metadata.ts';
 import { premountFrames } from './pipeline.ts';
@@ -44,8 +47,9 @@ const hasKeyframes = (v: { keyframes: unknown[] } | null | undefined): boolean =
  * FRAME_DEPENDENT_KINDS, text clips with animators in their source (S11:TXA-009) and shapes whose geometry or
  * paint is keyframed (evaluated by the layer, S11:SHP-003).
  */
-function isFrameDependent(clip: Pick<RenderVisualClip, 'kind' | 'source'>): boolean {
+function isFrameDependent(clip: Pick<RenderVisualClip, 'kind' | 'source' | 'effects'>): boolean {
 	if (FRAME_DEPENDENT_KINDS.has(clip.kind)) return true;
+	if (hasTimeDependentFx(clip)) return true;
 	const src = clip.source;
 	if ('text' in src) return !!src.animation && !!(src.animation.in || src.animation.out);
 	if ('shape' in src) {
@@ -105,7 +109,7 @@ function layerViewEqual(a: ViewProps, b: ViewProps): boolean {
 		a.fonts !== b.fonts
 	)
 		return false;
-	if (isFrameDependent(a.clip)) return a.localFrame === b.localFrame;
+	if (isFrameDependent(a.clip)) return a.localFrame === b.localFrame && a.realFrame === b.realFrame;
 	return true;
 }
 
@@ -140,7 +144,26 @@ const ClipLayer = memo(function ClipLayer({
 	const Component = layerComponentFor({ clip, media });
 	// S11:FIX-003: font-dependent layers mount once their faces are loaded (no fallback-font paint/measure).
 	const fontsReady = useLayerFontsReady(clip, doc.fonts);
+	// fx framework: a time effect shows the source at another frame (Motion/opacity/params stay at the real time).
+	const remapped = fxRemapFrame(clip, props.effects, localFrame, fps);
 	if (!fontsReady) return null;
+	if (remapped !== null)
+		return (
+			<Freeze frame={remapped + (clip.headHandle ?? 0)}>
+				<LayerView
+					Component={Component}
+					clip={clip}
+					props={props}
+					localFrame={remapped}
+					realFrame={localFrame}
+					contentTime={clipContentTime(clip, clip.start + remapped, doc.settings.fps)}
+					fps={fps}
+					media={media}
+					options={options}
+					fonts={doc.fonts}
+				/>
+			</Freeze>
+		);
 	return (
 		<LayerView
 			Component={Component}

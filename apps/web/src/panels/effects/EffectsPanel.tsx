@@ -1,8 +1,9 @@
-// Effects panel (S05:EFX-001…003, R-PUI §12): search, "Real-time" / "Native" badge filters, a tree of
-// bins (Presets, Video Effects by category, Audio Effects), drag an effect onto a timeline clip or the Effect
-// Controls panel, or double-click to apply it to the selected clips (one undo step for N clips).
+// Effects panel (S05:EFX-001…003, R-PUI §12): search, "Real-time" / "Native" / "GPU" badge filters, a tree of
+// bins (Presets, Video Effects by category or by an effect's `bin` — fx catalogue packs such as "Sapphire Glows" —,
+// Audio Effects), drag an effect onto a timeline clip or the Effect Controls panel, or double-click to apply it to
+// the selected clips (one undo step for N clips). "GPU" = a shader effect (Premiere's Accelerated Effects badge).
 // M3 (wp-m3-presets, S03:FX-030): the Presets bin (built-in and user effect presets) is presets/PresetsBin.tsx.
-import { type EffectSpec, effectBadges, type TransitionSpec } from '@jasper/project';
+import { type EffectSpec, effectBadges, effectIsGpu, type TransitionSpec } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useSessionOrNull, useSessionState, useStoreSelector } from '@jasper/session/react';
 import { cx } from '@jasper/ui';
@@ -65,14 +66,15 @@ function EffectsBody({ session }: { session: EditorSession }) {
 	const [query, setQuery] = useState('');
 	const [realtime, setRealtime] = useState(false);
 	const [native, setNative] = useState(false);
+	const [gpu, setGpu] = useState(false);
 	const [closed, setClosed] = useState<Record<string, boolean>>({});
 	const [status, setStatus] = useState<string | null>(null);
 	const [focused, setFocused] = useState<string | null>(null);
 	const selected = useSessionState((s) => s.selection.timeline.clips);
 	const registry = session.ctx.registries.effects;
 	const tree = useMemo(
-		() => effectTree(registry, { query, realtime, native }),
-		[registry, query, realtime, native],
+		() => effectTree(registry, { query, realtime, native, gpu }),
+		[registry, query, realtime, native, gpu],
 	);
 	// S10:TUI-020: transition bins (native-capable and real-time, so the badge filters keep them).
 	const transitionBins = useMemo(() => transitionTree(query), [query]);
@@ -148,6 +150,7 @@ function EffectsBody({ session }: { session: EditorSession }) {
 				/>
 				<Badge on={realtime} label="real-time" short="RT" onClick={() => setRealtime(!realtime)} />
 				<Badge on={native} label="native (ffmpeg)" short="N" onClick={() => setNative(!native)} />
+				<Badge on={gpu} label="GPU-accelerated" short="GPU" onClick={() => setGpu(!gpu)} />
 			</div>
 			<div className="min-h-0 flex-1 overflow-y-auto" role="tree" aria-label="Effects">
 				{tree.length === 0 && transitionBins.length === 0 && presetHits === 0 ? (
@@ -208,6 +211,15 @@ function EffectsBody({ session }: { session: EditorSession }) {
 																{badges.realtime ? (
 																	<span className="text-[10px] text-pr-muted" title="Real-time preview">
 																		RT
+																	</span>
+																) : null}
+																{effectIsGpu(e) ? (
+																	<span
+																		className="text-[10px] text-pr-accent"
+																		title="GPU-accelerated shader effect (exports through Remotion unless native)"
+																		data-badge="gpu"
+																	>
+																		GPU
 																	</span>
 																) : null}
 																{badges.native ? (

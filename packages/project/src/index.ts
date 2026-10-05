@@ -25,6 +25,7 @@ export * from './presets.ts';
 export * from './process/index.ts';
 export * from './registry/color-effects.ts';
 export * from './registry/effects.ts';
+export * from './registry/fx/index.ts';
 export * from './registry/kinds.ts';
 export * from './registry/mg.ts';
 export * from './registry/properties.ts';
