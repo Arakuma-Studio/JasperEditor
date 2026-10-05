@@ -1,6 +1,7 @@
 // One property row shared by Properties and Effect Controls (S03:EC-005, INS-005, S05:ECP-005):
 // stopwatch (Effect Controls), label, value editor(s) by registry control, keyframe navigator ◀ ◆ ▶
 // and reset ⟲. Every numeric scrub is one gesture = one undo step; discrete edits are one transaction.
+// In Effect Controls a twirl opens the row's Value / Velocity graphs (S05:ECP-005, S03:KF-022).
 import type { Command, ProjectDocument, Sequence } from '@jasper/project';
 import type { TransportStore } from '@jasper/session';
 import { useSessionOrNull } from '@jasper/session/react';
@@ -27,7 +28,7 @@ import {
 } from '../lib/model.ts';
 import type { InspectorOps } from '../lib/ops.ts';
 import { CheckboxField, ColorField, MiniButton, SelectField, TextField } from './fields.tsx';
-import { DiamondGlyph, NextGlyph, PrevGlyph, ResetGlyph, StopwatchGlyph } from './glyphs.tsx';
+import { CaretGlyph, DiamondGlyph, NextGlyph, PrevGlyph, ResetGlyph, StopwatchGlyph } from './glyphs.tsx';
 import { ScrubbyNumber, type ValueFn } from './ScrubbyNumber.tsx';
 
 export type RowContext = {
@@ -55,6 +56,8 @@ export function PropertyRow(props: {
 	editor?: ReactNode;
 	indent?: boolean;
 	className?: string;
+	/** Effect Controls: twirl for properties with graphs (S03:EC-005); absent rows keep the slot empty. */
+	twirl?: { open: boolean; onToggle(): void };
 }) {
 	const { row, ctx } = props;
 	const spec = row.spec;
@@ -269,7 +272,7 @@ export function PropertyRow(props: {
 		<div
 			className={cx(
 				'group flex min-h-[var(--pr-row-h)] items-center gap-1 pr-1',
-				props.indent ? 'pl-5' : 'pl-2',
+				props.indent ? (ctx.mode === 'effectControls' ? 'pl-[3px]' : 'pl-5') : 'pl-2',
 				spec.ui.multiline && 'items-start py-1',
 				props.className,
 			)}
@@ -285,6 +288,23 @@ export function PropertyRow(props: {
 				inspectorFocus.set({ source: ctx.mode, clipIds: row.bindings.map((b) => b.clip.id), rowId: row.id })
 			}
 		>
+			{ec && props.indent ? (
+				<span className="flex w-[13px] shrink-0 justify-center">
+					{props.twirl ? (
+						<button
+							type="button"
+							aria-label={props.twirl.open ? `Hide graphs for ${row.label}` : `Show graphs for ${row.label}`}
+							title={props.twirl.open ? 'Hide Value and Velocity graphs' : 'Show Value and Velocity graphs'}
+							aria-expanded={props.twirl.open}
+							onClick={props.twirl.onToggle}
+							className="inline-flex h-[18px] w-[13px] items-center justify-center rounded-pr-control text-pr-icon hover:bg-pr-hover hover:text-pr-icon-hover"
+							data-testid={`twirl-${row.id}`}
+						>
+							<CaretGlyph open={props.twirl.open} size={10} />
+						</button>
+					) : null}
+				</span>
+			) : null}
 			{ec ? (
 				<span className="w-[18px] shrink-0">
 					{animatable ? (
