@@ -282,7 +282,7 @@ export const S_GLOW_NOISE = defineShaderEffect({
 ${glowSumGlsl('glowAt', levels)}
 float solidNoise(vec2 q, float seed) {
   int oct = int(clamp(u_noiseOctaves, 1.0, 10.0));
-  return fx_noise01(fx_fbm(q, oct, 2.0, 0.5, fract(seed)) * 1.4);
+  return fx_noise01(sgl_fbm(q, oct, 2.0, 0.5, fract(seed)) * 1.4);
 }
 void main() {
   vec4 src = texture(u_source, v_uv);
@@ -880,7 +880,7 @@ void main() {
   light += texture(u_streakV, v_uv).rgb * u_verticalStreaks * u_color.rgb * u_brightness * 0.6;
   if (u_atmosphere) {
     vec2 n = fx_layerNorm();
-    float a = fx_fbm3(vec3(n.x * u_atmosphereFreq, n.y * u_atmosphereFreq * u_box.w / u_box.z, u_time * u_atmosphereSpeed * 0.25),
+    float a = sgl_fbm3(vec3(n.x * u_atmosphereFreq, n.y * u_atmosphereFreq * u_box.w / u_box.z, u_time * u_atmosphereSpeed * 0.25),
                       1 + int(u_atmosphereDetail * 6.0), 2.0, 0.5, fract(u_atmosphereSeed));
     float m = 1.0 + u_atmosphereAmp * (max(a, 0.0) * u_atmosphereLights * 2.0 - max(-a, 0.0) * u_atmosphereDarks * 2.0);
     light *= max(m, 0.0);
@@ -895,14 +895,16 @@ void main() {
 						output: 'after',
 						scale: 1 / aDown,
 						format: 'rgba16f',
+						include: [GLSL_SGL_CORE],
 						uniforms: { u_aSig: [ax / aDown, ay / aDown] },
 						frag: /* glsl */ `
 void main() {
   vec2 tx = 1.0 / u_resolution;
   vec4 acc = vec4(0.0);
   float ws = 0.0;
-  for (int y = -6; y <= 6; y++)
-    for (int x = -6; x <= 6; x++) {
+  int R = sgl_dyn(6);
+  for (int y = -R; y <= R; y++)
+    for (int x = -R; x <= R; x++) {
       vec2 o = vec2(float(x), float(y)) / 6.0 * 2.5 * u_aSig;
       float w = exp(-0.5 * dot(o / max(u_aSig, vec2(1.0e-3)), o / max(u_aSig, vec2(1.0e-3))));
       acc += texture(u_g3, v_uv + o * tx) * w;
@@ -932,12 +934,13 @@ function streakPass(
 		output,
 		scale: 1 / down,
 		format: 'rgba16f',
+		include: [GLSL_SGL_CORE],
 		uniforms: { u_sDir: dir, u_sLen: len },
 		frag: /* glsl */ `
 void main() {
   vec2 tx = 1.0 / u_resolution;
   vec4 acc = texture(u_${input}, v_uv) * 0.5;
-  for (int i = 1; i <= 40; i++) {
+  for (int i = 1; i <= sgl_dyn(40); i++) {
     float k = float(i) / 40.0;
     float w = exp(-4.0 * k);
     vec2 o = u_sDir * tx * u_sLen * k;
@@ -1411,7 +1414,7 @@ void main() {
   vec2 p = fx_layerPx() - c;
   vec4 acc = vec4(0.0);
   float ws = 0.0;
-  for (int i = 0; i < 64; i++) {
+  for (int i = 0; i < sgl_dyn(64); i++) {
     float t = (float(i) + 0.5) / 64.0;
     vec2 la = mix(u_fromA, u_toA, t);
     vec2 b = mix(u_fromB, u_toB, t);
@@ -1737,8 +1740,8 @@ vec3 leak${n}(vec2 nrm, float ar, float t) {
   // Noise distortion of the blob (boiling with time).
   int oct = 1 + int(u_noiseDetail${n} * 5.0);
   vec2 f = vec2(u_noiseFreq${n}, u_noiseFreq${n} * u_noiseFreqRelY${n});
-  vec2 w = vec2(fx_fbm3(vec3(q * f * 0.5, t * u_noiseBoilSpeed${n} * 0.3), oct, 2.0, 0.5, fract(u_seed + ${n}.0 * 0.17)),
-                fx_fbm3(vec3(q * f * 0.5 + 17.3, t * u_noiseBoilSpeed${n} * 0.3), oct, 2.0, 0.5, fract(u_seed + ${n}.0 * 0.31)));
+  vec2 w = vec2(sgl_fbm3(vec3(q * f * 0.5, t * u_noiseBoilSpeed${n} * 0.3), oct, 2.0, 0.5, fract(u_seed + ${n}.0 * 0.17)),
+                sgl_fbm3(vec3(q * f * 0.5 + 17.3, t * u_noiseBoilSpeed${n} * 0.3), oct, 2.0, 0.5, fract(u_seed + ${n}.0 * 0.31)));
   q += w * u_noiseAmp${n} * 0.35;
   float r = length(q);
   float m = clamp(u_midpoint${n}, 0.01, 0.99);
@@ -1981,6 +1984,7 @@ void main() {
 			output: `gs${i}`,
 			scale: 0.5,
 			format: 'rgba16f',
+			include: [GLSL_SGL_CORE],
 			uniforms: {
 				u_gd: [Math.cos(a) * span, Math.sin(a) * span],
 				u_gp: [-Math.sin(a) * perp, Math.cos(a) * perp],
@@ -1990,7 +1994,7 @@ void main() {
   vec2 d = u_gd / u_canvasSize;
   vec2 pp = u_gp / u_canvasSize;
   vec4 acc = vec4(0.0);
-  for (int i = 0; i < 8; i++) {
+  for (int i = 0; i < sgl_dyn(8); i++) {
     float k = (float(i) + 0.5) / 8.0;
     acc += texture(u_gb, v_uv + d * k) + texture(u_gb, v_uv - d * k);
   }
@@ -2014,7 +2018,7 @@ vec3 ray(sampler2D t, vec2 dirPx, float bright) {
   vec2 d = dirPx / u_canvasSize;
   if (dot(dirPx, dirPx) < 1.0e-4 || bright <= 0.0) return vec3(0.0);
   vec3 acc = vec3(0.0);
-  for (int i = 0; i < 16; i++) {
+  for (int i = 0; i < sgl_dyn(16); i++) {
     float k = (float(i) + 0.5) / 16.0;
     vec3 w = rayW(k);
     acc += (texture(t, v_uv + d * k).rgb + texture(t, v_uv - d * k).rgb) * w;
@@ -2025,7 +2029,7 @@ void main() {
   vec3 g = ray(u_gs0, u_g0, u_bX) + ray(u_gs1, u_g1, u_bY) + ray(u_gs2, u_g2, u_bD1) + ray(u_gs3, u_g3, u_bD2);
   fragColor = vec4(g, sgl_maxc(g));
 }`,
-		include: [GLSL_SGL_FINISH],
+		include: [GLSL_SGL_CORE, GLSL_SGL_FINISH],
 	});
 	passes.push(final);
 	return passes;
@@ -2238,11 +2242,10 @@ void main() {
   ivec2 a = o * si / ivec2(u_resolution);
   ivec2 b = max(a + 1, (o + 1) * si / ivec2(u_resolution));
   vec3 acc = vec3(0.0);
-  for (int y = 0; y < 64; y++) {
-    if (a.y + y >= b.y) break;
-    for (int x = 0; x < 64; x++) {
-      if (a.x + x >= b.x) break;
-      ivec2 q = a + ivec2(x, y);
+  b = min(b, a + 64);
+  for (int y = a.y; y < b.y; y++) {
+    for (int x = a.x; x < b.x; x++) {
+      ivec2 q = ivec2(x, y);
       float e = fx_luma(texelFetch(u_hb, min(q, si - 1), 0).rgb);
       acc += vec3((vec2(q) + 0.5) / vec2(si) * e, e);
     }
@@ -2263,11 +2266,10 @@ void main() {
   ivec2 a = o * si / ivec2(u_resolution);
   ivec2 b = max(a + 1, (o + 1) * si / ivec2(u_resolution));
   vec3 acc = vec3(0.0);
-  for (int y = 0; y < 64; y++) {
-    if (a.y + y >= b.y) break;
-    for (int x = 0; x < 64; x++) {
-      if (a.x + x >= b.x) break;
-      acc += texelFetch(u_hb, min(a + ivec2(x, y), si - 1), 0).rgb;
+  b = min(b, a + 64);
+  for (int y = a.y; y < b.y; y++) {
+    for (int x = a.x; x < b.x; x++) {
+      acc += texelFetch(u_hb, min(ivec2(x, y), si - 1), 0).rgb;
     }
   }
   float m = max(acc.r, max(acc.g, acc.b));
@@ -2278,7 +2280,7 @@ void main() {
 					output: 'gl',
 					scale: res,
 					format: 'rgba16f',
-					include: [GLSL_SGL_CORE, GLSL_COLOR],
+					include: [GLSL_SGL_CORE, GLSL_SGL_FINISH, GLSL_COLOR],
 					uniforms: { u_cellArea: cell * cell },
 					frag: /* glsl */ `${GLARE_KERNEL}
 void main() {
@@ -2289,10 +2291,8 @@ void main() {
   ivec2 rc = ivec2(ceil(u_reach * max(u_raysLength, 1.0) * max(u_relHeight, 1.0) / cellPx)) + 1;
   rc = min(rc, ivec2(7));
   vec3 acc = vec3(0.0);
-  for (int y = -7; y <= 7; y++) {
-    if (abs(y) > rc.y) continue;
-    for (int x = -7; x <= 7; x++) {
-      if (abs(x) > rc.x) continue;
+  for (int y = -rc.y; y <= rc.y; y++) {
+    for (int x = -rc.x; x <= rc.x; x++) {
       ivec2 q = me + ivec2(x, y);
       if (any(lessThan(q, ivec2(0))) || any(greaterThanEqual(q, gs))) continue;
       vec4 h = texelFetch(u_hp, q, 0);
@@ -2473,12 +2473,11 @@ void main() {
   vec2 n = fx_layerNorm();
   float ar = u_box.w / u_box.z;
   float t = u_time;
-  float lensDust = 1.0 - u_lensNoise * 0.5 * fx_noise01(fx_fbm(vec2(n.x * u_noiseFreq * u_noiseFreqRelX, n.y * ar * u_noiseFreq) * 0.5, 3, 2.0, 0.5, fract(u_seed + 0.5)));
+  float lensDust = 1.0 - u_lensNoise * 0.5 * fx_noise01(sgl_fbm(vec2(n.x * u_noiseFreq * u_noiseFreqRelX, n.y * ar * u_noiseFreq) * 0.5, 3, 2.0, 0.5, fract(u_seed + 0.5)));
   vec3 acc = vec3(0.0);
   int count = int(clamp(u_lights, 0.0, 400.0));
   vec2 shift = sOff(u_shiftStart + u_shiftSpeed * t);
-  for (int i = 0; i < 400; i++) {
-    if (i >= count) break;
+  for (int i = 0; i < count; i++) {
     vec2 base = vec2(bHash(i, 1), bHash(i, 2)) * 1.2 - 0.1;
     vec2 pos = base + shift + drift(t * u_driftSpeed * 0.5 + bHash(i, 3) * 10.0, i) * u_driftDistance * 0.1 * vec2(1.0, 1.0 / ar);
     float rad = u_size * 0.025 * (1.0 + u_varySize * (bHash(i, 4) * 2.0 - 1.0));
@@ -2658,14 +2657,13 @@ void main() {
   int hold = int(clamp(u_holdFrames, 1.0, 8.0));
   vec3 acc = vec3(0.0);
   float rate = clamp(u_flashes, 0.0, 16.0) / 16.0;
-  for (int age = 0; age < 11; age++) {
-    if (age >= hold + 3) break;
+  for (int age = 0; age < hold + 3; age++) {
     int f = frame - age;
     float amp = age < hold ? 1.0 : pow(clamp(u_flashDecayRate, 0.0, 1.0), float(age - hold + 1));
     if (amp < 0.002) continue;
     // Per-frame rate varies with Flash Randomness.
     float r = rate * (1.0 + u_flashRandomness * (fh(f, 99, 0) * 2.0 - 1.0));
-    for (int j = 0; j < 16; j++) {
+    for (int j = 0; j < sgl_dyn(16); j++) {
       if (fh(f, j, 1) >= r) continue;
       vec2 pos = vec2(fh(f, j, 2), fh(f, j, 3)) * boxPx;
       float s = u_flashSize * u_unitPx * 1.2 * (0.6 + 0.8 * fh(f, j, 4));

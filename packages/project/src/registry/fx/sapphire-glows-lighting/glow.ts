@@ -173,12 +173,10 @@ export const GLSL_SGL_CORE: GlslChunk = {
 vec4 sgl_blurAxis(sampler2D t, vec2 uv, vec2 step, float sig, int n, vec2 perp, int pn) {
   vec4 acc = vec4(0.0);
   float ws = 0.0;
-  for (int i = -48; i <= 48; i++) {
-    if (i < -n || i > n) continue;
+  for (int i = -n; i <= n; i++) {
     float x = float(i);
     float w = exp(-0.5 * x * x / (sig * sig));
-    for (int j = 0; j < 4; j++) {
-      if (j >= pn) break;
+    for (int j = 0; j < pn; j++) {
       vec2 o = perp * ((float(j) + 0.5) / float(pn) - 0.5);
       acc += texture(t, uv + step * x + o) * w;
       ws += w;
@@ -193,16 +191,17 @@ vec4 sgl_boxRead(sampler2D t, vec2 uv, float d) {
   vec2 tx = 1.0 / vec2(textureSize(t, 0));
   int n = int(d * 0.5 + 0.5);
   vec4 acc = vec4(0.0);
-  for (int y = 0; y < 4; y++) {
-    if (y >= n) break;
-    for (int x = 0; x < 4; x++) {
-      if (x >= n) break;
+  for (int y = 0; y < n; y++) {
+    for (int x = 0; x < n; x++) {
       vec2 o = (vec2(float(x), float(y)) * 2.0 + 1.0 - d) * tx;
       acc += texture(t, uv + o);
     }
   }
   return acc / float(n * n);
 }
+// A loop bound the compiler cannot treat as a constant (n at run time): keeps SwiftShader/ANGLE from unrolling big
+// loops, which makes compiling them very slow.
+int sgl_dyn(int n) { return n + int(min(0.0, u_resolution.x)); }
 // Reflect edge mode: a layer-normalised point mirrored into the box.
 vec2 sgl_mirrorNorm(vec2 n) { vec2 m = mod(n, 2.0); return mix(m, 2.0 - m, step(1.0, m)); }
 // The effect input at v_uv, box-filtered over d texels (downscaled bright passes); reflect = 1 mirrors the layer

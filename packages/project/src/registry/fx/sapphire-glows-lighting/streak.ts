@@ -9,6 +9,7 @@
 // Linear streaks (S_Glint, S_GlintRainbow): two-stage comb filters along a direction: stage 1 smears over a short
 // span with dense taps; stage 2 samples stage 1 at the span's spacing with a falloff, reaching span × taps.
 import type { GlslChunk, ShaderPass } from '../shader.ts';
+import { GLSL_SGL_CORE } from './glow.ts';
 
 export const RAY_TAPS = 12;
 
@@ -37,6 +38,7 @@ void main() { fragColor = sgl_rayPass(u_${src}, v_uv, u_rspan, u_rstart); }`,
 
 export const GLSL_SGL_RAYS: GlslChunk = {
 	name: 'sgl/rays',
+	deps: [GLSL_SGL_CORE],
 	source: /* glsl */ `
 // One radial comb pass: 12 taps at λ = start·λ0 + (i/12)·span·len (per channel when split), weights e^(−k·λ/len).
 vec4 sgl_rayPass(sampler2D t, vec2 uv, float span, float start) {
@@ -44,7 +46,7 @@ vec4 sgl_rayPass(sampler2D t, vec2 uv, float span, float start) {
   vec2 d = uv - c;
   vec4 acc = vec4(0.0);
   float ws = 0.0;
-  for (int i = 0; i < 12; i++) {
+  for (int i = 0; i < sgl_dyn(12); i++) {
     float f = float(i) / 12.0 * span;
     float w = exp(-u_rk * f);
     if (u_rsplit) {

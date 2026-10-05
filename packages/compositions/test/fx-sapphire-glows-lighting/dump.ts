@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { openSglPage, sgl } from './browser.ts';
 
 type Shot = {
+	timing?: boolean;
 	id?: string;
 	name?: string;
 	scene?: string;
@@ -26,6 +27,10 @@ try {
 		const name = s.name ?? `${i}-${s.id ?? s.scene ?? 'sheet'}`;
 		let url: string;
 		const t0 = Date.now();
+		if (s.timing) {
+			console.info(s.id, JSON.stringify(await sgl(page, 'timing', s.id)));
+			continue;
+		}
 		if (s.sheet) url = await sgl<string>(page, 'sheet', s.sheet, s.cols ?? 4, s.tw ?? 320, s.th ?? 180);
 		else if (s.scene && !s.id) url = await sgl<string>(page, 'scenePng', s.scene);
 		else url = await sgl<string>(page, 'png', s);

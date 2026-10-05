@@ -278,6 +278,16 @@ const api = {
 		return { count: FAMILY.length, errors };
 	},
 
+	/** Milliseconds of a first (compile + run) and a second (cached) run of one effect at 96 × 54. */
+	timing(id: string) {
+		const s = specOf(id);
+		const t0 = performance.now();
+		run(s, defaults(s), { width: 96, height: 54 });
+		const t1 = performance.now();
+		run(s, defaults(s), { width: 96, height: 54 });
+		return { first: Math.round(t1 - t0), second: Math.round(performance.now() - t1) };
+	},
+
 	/** Pixels at layer-box points (layer px) of one effect run. */
 	pixels(id: string, over: Record<string, unknown>, opts: RunOpts, points: [number, number][]) {
 		const spec = specOf(id);

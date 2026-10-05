@@ -35,11 +35,10 @@ void main() {
   ivec2 a = o * si / so;
   ivec2 b = max(a + 1, (o + 1) * si / so);
   vec4 best = vec4(-1.0, 0.5, 0.5, 1.0);
-  for (int y = 0; y < 16; y++) {
-    if (a.y + y >= b.y) break;
-    for (int x = 0; x < 16; x++) {
-      if (a.x + x >= b.x) break;
-      vec4 t = texelFetch(u_${input}, min(a + ivec2(x, y), si - 1), 0);${excludeGlsl(k)}
+  b = min(b, a + 16);
+  for (int y = a.y; y < b.y; y++) {
+    for (int x = a.x; x < b.x; x++) {
+      vec4 t = texelFetch(u_${input}, min(ivec2(x, y), si - 1), 0);${excludeGlsl(k)}
       if (t.r > best.r) best = t;
     }
   }
@@ -88,15 +87,13 @@ void main() {
 				scale: 1 / 1000,
 				format: 'rgba16f',
 				filter: 'nearest',
-				include: [GLSL_COLOR],
+				include: [GLSL_SGL_CORE, GLSL_COLOR],
 				frag: /* glsl */ `
 void main() {
   ivec2 si = textureSize(u_tC${k}, 0);
   vec4 best = vec4(-1.0, 0.5, 0.5, 1.0);
-  for (int y = 0; y < 16; y++) {
-    if (y >= si.y) break;
-    for (int x = 0; x < 16; x++) {
-      if (x >= si.x) break;
+  for (int y = 0; y < min(si.y, 16); y++) {
+    for (int x = 0; x < min(si.x, 16); x++) {
       vec4 t = texelFetch(u_tC${k}, ivec2(x, y), 0);
       if (t.r > best.r) best = t;
     }
@@ -104,8 +101,9 @@ void main() {
   // Refine: luminance⁴-weighted centroid of the source in a ±12 px window around the winner.
   vec2 cell = 2.0 / u_canvasSize;
   vec3 acc = vec3(0.0);
-  for (int y = -6; y <= 6; y++)
-    for (int x = -6; x <= 6; x++) {
+  int R = sgl_dyn(6);
+  for (int y = -R; y <= R; y++)
+    for (int x = -R; x <= R; x++) {
       vec2 q = best.gb + vec2(float(x), float(y)) * cell;
       float l = fx_inBox(q) ? fx_luma(texture(u_source, q).rgb) : 0.0;
       float w = l * l * l * l;

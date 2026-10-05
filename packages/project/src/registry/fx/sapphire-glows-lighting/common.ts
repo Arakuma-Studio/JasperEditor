@@ -126,6 +126,30 @@ export const GLSL_SGL_FINISH: GlslChunk = {
 	deps: [GLSL_NOISE],
 	source: /* glsl */ `
 float sgl_maxc(vec3 c) { return max(c.r, max(c.g, c.b)); }
+// fbm with a run-time loop bound (fx_fbm/fx_fbm3 loop to a constant 12, which ANGLE/SwiftShader unroll: slow to
+// compile when used several times in a shader). Same maths, octaves ≤ 12.
+float sgl_fbm(vec2 p, int octaves, float lacunarity, float gain, float seed) {
+  float sum = 0.0, amp = 0.5, norm = 0.0;
+  int n = min(octaves, 12) + int(min(0.0, u_resolution.x));
+  for (int k = 0; k < n; k++) {
+    sum += amp * fx_simplex(p, fract(seed + float(k) * 0.1031));
+    norm += amp;
+    p *= lacunarity;
+    amp *= gain;
+  }
+  return norm > 0.0 ? sum / norm : 0.0;
+}
+float sgl_fbm3(vec3 p, int octaves, float lacunarity, float gain, float seed) {
+  float sum = 0.0, amp = 0.5, norm = 0.0;
+  int n = min(octaves, 12) + int(min(0.0, u_resolution.x));
+  for (int k = 0; k < n; k++) {
+    sum += amp * fx_simplex3(p, fract(seed + float(k) * 0.1031));
+    norm += amp;
+    p *= lacunarity;
+    amp *= gain;
+  }
+  return norm > 0.0 ? sum / norm : 0.0;
+}
 // Sapphire threshold: per channel, values above thr (+ the Threshold Add Color) remapped to 0..1 (white stays white).
 vec3 sgl_threshold(vec3 c, float thr, vec3 addColor) {
   vec3 t = clamp(vec3(thr) + addColor, 0.0, 0.999);
@@ -170,7 +194,7 @@ vec4 sgl_finishLight(vec4 src, vec3 light, int mode, float affectAlpha, float un
 float sgl_atmosphere(vec2 n, float ar, float amp, float freq, float detail, float seed, float t) {
   if (amp <= 0.0) return 1.0;
   int oct = 1 + int(detail * 6.0);
-  float v = fx_fbm3(vec3(n.x * freq * 4.0, n.y * ar * freq * 4.0, t * 0.25), oct, 2.0, 0.5 + 0.2 * detail, fract(seed));
+  float v = sgl_fbm3(vec3(n.x * freq * 4.0, n.y * ar * freq * 4.0, t * 0.25), oct, 2.0, 0.5 + 0.2 * detail, fract(seed));
   return max(0.0, 1.0 + amp * v * 1.5);
 }
 `,

@@ -379,7 +379,7 @@ vec3 sgl_flare(vec2 px, vec2 light, vec2 pivot, float unit, float scaleW, float 
                vec4 rays, float soft) {
   vec2 axis = pivot - light;
   vec3 acc = vec3(0.0);
-  for (int k = 0; k < SGL_FLARE_N; k++) {
+  for (int k = 0; k < sgl_dyn(SGL_FLARE_N); k++) {
     int o = k * 11;
     int kind = int(SGL_FLARE[o]);
     int c = int(SGL_FLARE[o + 1]);
