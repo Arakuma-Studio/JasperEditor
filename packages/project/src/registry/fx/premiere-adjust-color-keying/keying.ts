@@ -458,7 +458,7 @@ export const LUMA_KEY = defineShaderEffect({
 	category: 'Keying',
 	description: 'Keys out the dark areas of the layer: luminance below the threshold becomes transparent.',
 	keywords: ['luminance key', 'key out black', 'brightness key'],
-	params: [fxParam.percent('threshold', 'Threshold', 100), fxParam.percent('cutoff', 'Cutoff', 0)],
+	params: [fxParam.percent('threshold', 'Threshold', 10), fxParam.percent('cutoff', 'Cutoff', 0)],
 	gpu: {
 		timeInvariant: true,
 		passes: [
@@ -468,11 +468,11 @@ export const LUMA_KEY = defineShaderEffect({
 void main() {
   vec4 src = texture(u_source, v_uv);
   float y = fx_luma(pacg_straight(src));
-  // Threshold: the range of dark values that turn transparent; Cutoff: makes the rest more transparent.
-  float t = 1.0 - u_threshold / 100.0;
-  float c = u_cutoff / 100.0;
-  float m = smoothstep(t * 0.5, t, y);
-  m *= 1.0 - c;
+  // Threshold: the range of dark values that turn transparent (with a short soft ramp above it);
+  // Cutoff: makes the remaining, non-transparent part more transparent.
+  float t = u_threshold / 100.0;
+  float m = t <= 0.0 ? 1.0 : smoothstep(t, t + 0.08, y);
+  m *= 1.0 - u_cutoff / 100.0;
   fragColor = src * m;
 }`,
 			},
