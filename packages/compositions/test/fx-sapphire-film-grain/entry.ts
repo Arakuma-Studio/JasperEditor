@@ -32,7 +32,11 @@ function canvas(w: number, h: number): HTMLCanvasElement {
 	return c;
 }
 
-function paint(ctx: CanvasRenderingContext2D, b: { x: number; y: number; w: number; h: number }, kind: Paint) {
+function paint(
+	ctx: CanvasRenderingContext2D,
+	b: { x: number; y: number; w: number; h: number },
+	kind: Paint,
+) {
 	if (kind === 'image' && image) ctx.drawImage(image, b.x, b.y, b.w, b.h);
 	else if (kind === 'grey') {
 		ctx.fillStyle = 'rgb(128, 128, 128)';
@@ -150,6 +154,50 @@ const api = {
 			.map((s) => s.id);
 	},
 	render,
+	/** Compiles the passes of an effect (default params) in a fresh WebGL2 context: ms per pass (diagnostics). */
+	compileTimes(id: string) {
+		const spec = defaultEffectRegistry.get(id)!;
+		const params = Object.fromEntries(spec.params.map((p) => [p.name, p.default]));
+		const ctx = {
+			width: 64,
+			height: 36,
+			pxScale: 1,
+			fps: 30,
+			frame: 0,
+			duration: 300,
+			seed: 0.5,
+			progress: 0,
+		};
+		const plan = planGpuEffect(spec, { id: 'fx1', params: params as never }, ctx, { width: 64, height: 36 });
+		const gl = document.createElement('canvas').getContext('webgl2')!;
+		const vs = gl.createShader(gl.VERTEX_SHADER)!;
+		gl.shaderSource(
+			vs,
+			'#version 300 es\nin vec2 a;out vec2 v_uv;void main(){v_uv=a;gl_Position=vec4(a,0.,1.);}',
+		);
+		gl.compileShader(vs);
+		return plan.passes.map((pass) => {
+			const t0 = performance.now();
+			const sh = gl.createShader(gl.FRAGMENT_SHADER)!;
+			gl.shaderSource(sh, pass.source);
+			gl.compileShader(sh);
+			const ok = gl.getShaderParameter(sh, gl.COMPILE_STATUS);
+			const t1 = performance.now();
+			const prog = gl.createProgram()!;
+			gl.attachShader(prog, vs);
+			gl.attachShader(prog, sh);
+			gl.linkProgram(prog);
+			gl.useProgram(prog);
+			gl.drawArrays(gl.TRIANGLES, 0, 3);
+			gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+			return {
+				compile: Math.round(t1 - t0),
+				linkDraw: Math.round(performance.now() - t1),
+				ok,
+				chars: pass.source.length,
+			};
+		});
+	},
 };
 
 (window as unknown as { __film: typeof api }).__film = api;

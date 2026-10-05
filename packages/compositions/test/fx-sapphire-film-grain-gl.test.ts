@@ -93,14 +93,15 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 		let page: Page;
 		const render = (o: FilmRunOptions) =>
 			page.evaluate(
-				(opts) =>
-					(window as unknown as { __film: { render(o: unknown): Result } }).__film.render(opts),
+				(opts) => (window as unknown as { __film: { render(o: unknown): Result } }).__film.render(opts),
 				o,
 			) as Promise<Result>;
 		const loadImage = (dataUrl: string | null) =>
 			page.evaluate(
 				(u) =>
-					(window as unknown as { __film: { loadImage(u: string | null): Promise<unknown> } }).__film.loadImage(u),
+					(
+						window as unknown as { __film: { loadImage(u: string | null): Promise<unknown> } }
+					).__film.loadImage(u),
 				dataUrl,
 			);
 
@@ -277,6 +278,17 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expect(meanAbsDiff(lo.all!, hi.all!)).toBeGreaterThan(20);
 		});
 
+		it.runIf(!!process.env.FX_FILM_COMPILE)('compile times (FX_FILM_COMPILE)', async () => {
+			for (const id of process.env.FX_FILM_COMPILE!.split(',')) {
+				const r = await page.evaluate(
+					(i) =>
+						(window as unknown as { __film: { compileTimes(i: string): unknown } }).__film.compileTimes(i),
+					id,
+				);
+				writeFileSync(`/tmp/fx-film-compile-${id}.json`, JSON.stringify(r));
+			}
+		});
+
 		const shots = process.env.FX_FILM_SHOTS;
 		it.runIf(!!shots)('writes PNG shots of every effect (FX_FILM_SHOTS)', async () => {
 			const dir = shots!;
@@ -292,7 +304,17 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			for (const id of FAMILY) {
 				if (only && !only.some((o) => id.endsWith(o))) continue;
 				for (const frame of frames) {
-					const r = await render({ id, frame, png: true, paint: img ? 'image' : 'gradient', params });
+					const t0 = Date.now();
+					const size = process.env.FX_FILM_SIZE?.split('x').map(Number);
+					const r = await render({
+						id,
+						frame,
+						png: true,
+						paint: img ? 'image' : 'gradient',
+						params,
+						...(size ? { width: size[0], height: size[1] } : {}),
+					});
+					writeFileSync(join(dir, `${id}-f${frame}.ms`), String(Date.now() - t0));
 					const name = `${id.replace('jasper.s.', '')}-f${frame}.png`;
 					writeFileSync(join(dir, name), Buffer.from(r.png!.split(',')[1]!, 'base64'));
 				}

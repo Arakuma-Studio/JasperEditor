@@ -31,7 +31,15 @@ function sourceBlur(output: string, sigma: number): ShaderPass[] {
 
 // ---------------------------------------------------------------- S_Vignette
 
-const VIGNETTE_COMBINE = ['composite', 'mult', 'add', 'screen', 'subtractInv', 'vignetteOnly', 'vignetteOnlyInv'] as const;
+const VIGNETTE_COMBINE = [
+	'composite',
+	'mult',
+	'add',
+	'screen',
+	'subtractInv',
+	'vignetteOnly',
+	'vignetteOnlyInv',
+] as const;
 
 const vignetteFrag = (blur: boolean) => /* glsl */ `
 void main() {
@@ -178,16 +186,80 @@ export const S_BLEACH_BYPASS = defineShaderEffect({
 /** Grain presets (the Load Preset factory looks of film stocks): base values, scaled by the sliders. */
 export const GRAIN_PRESETS: Record<
 	string,
-	{ label: string; amp: number; freq: number; oct: number; rgb: [number, number, number]; bw: number; bwFreq: number }
+	{
+		label: string;
+		amp: number;
+		freq: number;
+		oct: number;
+		rgb: [number, number, number];
+		bw: number;
+		bwFreq: number;
+	}
 > = {
 	custom: { label: 'Custom', amp: 0.1, freq: 100, oct: 1, rgb: [1, 1, 1], bw: 0, bwFreq: 100 },
-	k5245: { label: 'Kodak 5245 (EXR 50D)', amp: 0.025, freq: 620, oct: 2, rgb: [1, 1, 0.85], bw: 0.012, bwFreq: 760 },
-	k5246: { label: 'Kodak 5246 (Vision 250D)', amp: 0.04, freq: 500, oct: 2, rgb: [1, 1, 0.8], bw: 0.018, bwFreq: 620 },
-	k5274: { label: 'Kodak 5274 (Vision 200T)', amp: 0.045, freq: 480, oct: 2, rgb: [1, 0.95, 0.8], bw: 0.02, bwFreq: 600 },
-	k5279: { label: 'Kodak 5279 (Vision 500T)', amp: 0.065, freq: 400, oct: 2, rgb: [1, 0.95, 0.75], bw: 0.028, bwFreq: 500 },
-	k5289: { label: 'Kodak 5289 (Vision 800T)', amp: 0.085, freq: 340, oct: 2, rgb: [1, 0.92, 0.72], bw: 0.035, bwFreq: 430 },
-	k5218: { label: 'Kodak 5218 (Vision2 500T)', amp: 0.055, freq: 440, oct: 2, rgb: [1, 0.95, 0.78], bw: 0.024, bwFreq: 560 },
-	fuji8573: { label: 'Fuji Eterna 500T', amp: 0.06, freq: 420, oct: 2, rgb: [0.95, 1, 0.8], bw: 0.026, bwFreq: 540 },
+	k5245: {
+		label: 'Kodak 5245 (EXR 50D)',
+		amp: 0.025,
+		freq: 620,
+		oct: 2,
+		rgb: [1, 1, 0.85],
+		bw: 0.012,
+		bwFreq: 760,
+	},
+	k5246: {
+		label: 'Kodak 5246 (Vision 250D)',
+		amp: 0.04,
+		freq: 500,
+		oct: 2,
+		rgb: [1, 1, 0.8],
+		bw: 0.018,
+		bwFreq: 620,
+	},
+	k5274: {
+		label: 'Kodak 5274 (Vision 200T)',
+		amp: 0.045,
+		freq: 480,
+		oct: 2,
+		rgb: [1, 0.95, 0.8],
+		bw: 0.02,
+		bwFreq: 600,
+	},
+	k5279: {
+		label: 'Kodak 5279 (Vision 500T)',
+		amp: 0.065,
+		freq: 400,
+		oct: 2,
+		rgb: [1, 0.95, 0.75],
+		bw: 0.028,
+		bwFreq: 500,
+	},
+	k5289: {
+		label: 'Kodak 5289 (Vision 800T)',
+		amp: 0.085,
+		freq: 340,
+		oct: 2,
+		rgb: [1, 0.92, 0.72],
+		bw: 0.035,
+		bwFreq: 430,
+	},
+	k5218: {
+		label: 'Kodak 5218 (Vision2 500T)',
+		amp: 0.055,
+		freq: 440,
+		oct: 2,
+		rgb: [1, 0.95, 0.78],
+		bw: 0.024,
+		bwFreq: 560,
+	},
+	fuji8573: {
+		label: 'Fuji Eterna 500T',
+		amp: 0.06,
+		freq: 420,
+		oct: 2,
+		rgb: [0.95, 1, 0.8],
+		bw: 0.026,
+		bwFreq: 540,
+	},
 	s16mm: { label: '16mm', amp: 0.1, freq: 260, oct: 3, rgb: [1, 0.92, 0.75], bw: 0.04, bwFreq: 320 },
 	s8mm: { label: 'Super 8', amp: 0.14, freq: 170, oct: 3, rgb: [1, 0.9, 0.7], bw: 0.06, bwFreq: 210 },
 	triX: { label: 'Kodak Tri-X (B&W)', amp: 0, freq: 300, oct: 1, rgb: [1, 1, 1], bw: 0.13, bwFreq: 330 },

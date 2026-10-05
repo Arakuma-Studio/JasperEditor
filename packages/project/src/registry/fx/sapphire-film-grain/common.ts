@@ -39,7 +39,14 @@ export function slider(
 }
 
 /** An integer Sapphire slider. */
-export function intSlider(name: string, label: string, def: number, min: number, max?: number, softMax?: number) {
+export function intSlider(
+	name: string,
+	label: string,
+	def: number,
+	min: number,
+	max?: number,
+	softMax?: number,
+) {
 	return fxParam.number(name, label, def, {
 		min,
 		...(max !== undefined ? { max } : {}),
@@ -77,7 +84,15 @@ export const mixParam = (label = 'Mix with Orig') => ({ ...mixWithOriginalParam(
 
 // ---------------------------------------------------------------- grain hold (FilmEffect / FilmDamage)
 
-export const GRAIN_HOLD = ['field', 'frame', 'pulldown0', 'pulldown1', 'pulldown2', 'pulldown3', 'pulldown4'] as const;
+export const GRAIN_HOLD = [
+	'field',
+	'frame',
+	'pulldown0',
+	'pulldown1',
+	'pulldown2',
+	'pulldown3',
+	'pulldown4',
+] as const;
 
 /**
  * The frame index whose grain pattern is shown at `frame`: Field/Frame → a new pattern every frame; "3:2 at k" →
@@ -144,7 +159,15 @@ export function filmGrainParams(opts: { amp: number; midtones?: boolean; hold?: 
 						'grainHold',
 						'Grain Hold',
 						GRAIN_HOLD,
-						['Field', 'Frame', '3:2 Stutter at 0', '3:2 Stutter at 1', '3:2 Stutter at 2', '3:2 Stutter at 3', '3:2 Stutter at 4'],
+						[
+							'Field',
+							'Frame',
+							'3:2 Stutter at 0',
+							'3:2 Stutter at 1',
+							'3:2 Stutter at 2',
+							'3:2 Stutter at 3',
+							'3:2 Stutter at 4',
+						],
 						'frame',
 					),
 				]
@@ -162,7 +185,11 @@ export function filmGrainUniforms(
 	const hd = hdPx(ctx);
 	const size = (c: number) => Math.max(0.6, (1 + 2 * blur * Math.max(0, c)) * hd);
 	return {
-		u_grainSizePx: [size(num(p.grainBlurRed, 1)), size(num(p.grainBlurGreen, 0.9)), size(num(p.grainBlurBlue, 1.2))],
+		u_grainSizePx: [
+			size(num(p.grainBlurRed, 1)),
+			size(num(p.grainBlurGreen, 0.9)),
+			size(num(p.grainBlurBlue, 1.2)),
+		],
 		u_grainFrame: grainFrame(p.grainHold, ctx.frame),
 	};
 }
@@ -192,7 +219,12 @@ void main() {
   fragColor = fx_gaussian1d(${tex}, v_uv, ${dir}, texel, ${opts.sigmaUniform} * ${scale.toFixed(4)});
 }`;
 	return [
-		{ output: `${opts.output}H`, frag: frag(`u_${opts.input}`, 'vec2(1.0, 0.0)'), include: [GLSL_BLUR], scale },
+		{
+			output: `${opts.output}H`,
+			frag: frag(`u_${opts.input}`, 'vec2(1.0, 0.0)'),
+			include: [GLSL_BLUR],
+			scale,
+		},
 		{ output: opts.output, frag: frag(`u_${opts.output}H`, 'vec2(0.0, 1.0)'), include: [GLSL_BLUR], scale },
 	];
 }

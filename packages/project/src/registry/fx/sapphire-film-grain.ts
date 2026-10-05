@@ -6,6 +6,7 @@
 // file only lists them in Effects-panel order. Parameter names, order and defaults follow Boris FX's public Sapphire
 // reference; Sapphire's Mask input is replaced by "Mix with Orig". Authoring guide: docs/wp-notes/fx-shader-framework.md.
 import type { EffectSpec } from '../effects.ts';
+import { FILM_EFFECTS } from './sapphire-film-grain/film.ts';
 import { LOOKS_EFFECTS } from './sapphire-film-grain/looks.ts';
 
-export const SAPPHIRE_FILM_GRAIN_EFFECTS: readonly EffectSpec[] = [...LOOKS_EFFECTS];
+export const SAPPHIRE_FILM_GRAIN_EFFECTS: readonly EffectSpec[] = [...FILM_EFFECTS, ...LOOKS_EFFECTS];
