@@ -145,7 +145,10 @@ export const BEVEL_ALPHA = defineShaderEffect({
 		passes: (p, ctx) => {
 			const sigma = Math.max(0.5, num(p.edgeThickness, 2)) * ctx.pxScale * 0.7;
 			return [
-				{ output: 'alpha', frag: 'void main() { float a = texture(u_source, v_uv).a; fragColor = vec4(a, a, a, 1.0); }' },
+				{
+					output: 'alpha',
+					frag: 'void main() { float a = texture(u_source, v_uv).a; fragColor = vec4(a, a, a, 1.0); }',
+				},
 				...gaussianBlurPasses({ input: 'alpha', output: 'height', sigma, scale: blurScale(sigma) }),
 				{
 					include: [GLSL_PACG],
@@ -242,7 +245,7 @@ export const DROP_SHADOW = defineShaderEffect({
 	label: 'Drop Shadow',
 	category: 'Perspective',
 	description:
-		"Adds a soft shadow behind the clip, cast from its alpha channel (direction 0° = up, 135° = lower right).",
+		'Adds a soft shadow behind the clip, cast from its alpha channel (direction 0° = up, 135° = lower right).',
 	keywords: ['shadow', 'depth', 'title', 'outline'],
 	params: [
 		fxParam.color('shadowColor', 'Shadow Color', [0, 0, 0, 1]),
@@ -349,7 +352,9 @@ void main() {
 			];
 			let shadow = 'shadow';
 			if (sigma >= 0.05) {
-				passes.push(...gaussianBlurPasses({ input: 'shadow', output: 'soft', sigma, scale: blurScale(sigma) }));
+				passes.push(
+					...gaussianBlurPasses({ input: 'shadow', output: 'soft', sigma, scale: blurScale(sigma) }),
+				);
 				shadow = 'soft';
 			}
 			passes.push({

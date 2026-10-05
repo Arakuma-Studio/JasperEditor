@@ -11,63 +11,38 @@ import { fxParam } from '../params.ts';
 import type { FxPlanContext, GlslChunk, ShaderPass } from '../shader.ts';
 import { analysisThumbPass, blendWithOriginalParam, GLSL_PACG, popup, slider, statsScale } from './common.ts';
 
-/** Thumbnail statistics (loops over `u_thumb`: rgb = straight colour, a = coverage). */
+/**
+ * Thumbnail statistics (loops over `u_thumb`: rgb = straight colour, a = coverage). Flat loops with dynamic bounds
+ * (`u_statIters` bisection steps) keep the programs small: software GL (SwiftShader) unrolls constant loops.
+ */
 const GLSL_PACG_STATS: GlslChunk = {
 	name: 'pacg/stats',
 	source: /* glsl */ `
-// Fraction of covered thumbnail texels whose channels are below v (per channel).
-vec3 pacg_fracBelow(vec3 v) {
-  ivec2 sz = textureSize(u_thumb, 0);
+int pacg_thumbCount() { ivec2 s = textureSize(u_thumb, 0); return s.x * s.y; }
+vec4 pacg_thumb(int i) { int w = textureSize(u_thumb, 0).x; return texelFetch(u_thumb, ivec2(i - (i / w) * w, i / w), 0); }
+// The statistic's value of a thumbnail texel: mode 0 = per channel, 1 = luma (in every component).
+vec3 pacg_statValue(vec4 t, int mode) { return mode == 1 ? vec3(fx_luma(t.rgb)) : t.rgb; }
+// Fraction of covered texels below v (per component).
+vec3 pacg_fracBelow(vec3 v, int mode) {
+  int n = pacg_thumbCount();
   vec3 below = vec3(0.0);
-  float n = 0.0;
-  for (int y = 0; y < sz.y; y++)
-    for (int x = 0; x < sz.x; x++) {
-      vec4 t = texelFetch(u_thumb, ivec2(x, y), 0);
-      if (t.a < 0.5) continue;
-      below += vec3(lessThan(t.rgb, v));
-      n += 1.0;
-    }
-  return n > 0.0 ? below / n : vec3(0.0);
+  float cnt = 0.0;
+  for (int i = 0; i < n; i++) {
+    vec4 t = pacg_thumb(i);
+    if (t.a < 0.5) continue;
+    below += vec3(lessThan(pacg_statValue(t, mode), v));
+    cnt += 1.0;
+  }
+  return cnt > 0.0 ? below / cnt : vec3(0.0);
 }
-// Per-channel value at the given fraction (percentile) of the covered thumbnail texels, by bisection.
-vec3 pacg_percentile(float frac) {
+// Value at the fraction frac of the covered texels, by bisection: per component, or pooled over R, G and B.
+vec3 pacg_percentile(float frac, int mode, bool pooled) {
   vec3 lo = vec3(0.0), hi = vec3(1.0);
-  for (int i = 0; i < 10; i++) {
+  for (int i = 0; i < u_statIters; i++) {
     vec3 mid = (lo + hi) * 0.5;
-    vec3 f = pacg_fracBelow(mid);
+    vec3 f = pacg_fracBelow(mid, mode);
+    if (pooled) f = vec3((f.r + f.g + f.b) / 3.0);
     vec3 up = step(f, vec3(frac));
-    lo = mix(lo, mid, up);
-    hi = mix(mid, hi, up);
-  }
-  return (lo + hi) * 0.5;
-}
-// Same over the pooled channels (one value for R, G and B together).
-float pacg_percentilePooled(float frac) {
-  float lo = 0.0, hi = 1.0;
-  for (int i = 0; i < 10; i++) {
-    float mid = (lo + hi) * 0.5;
-    vec3 f = pacg_fracBelow(vec3(mid));
-    float up = step((f.r + f.g + f.b) / 3.0, frac);
-    lo = mix(lo, mid, up);
-    hi = mix(mid, hi, up);
-  }
-  return (lo + hi) * 0.5;
-}
-// Luma percentile.
-float pacg_lumaPercentile(float frac) {
-  ivec2 sz = textureSize(u_thumb, 0);
-  float lo = 0.0, hi = 1.0;
-  for (int i = 0; i < 10; i++) {
-    float mid = (lo + hi) * 0.5;
-    float below = 0.0, n = 0.0;
-    for (int y = 0; y < sz.y; y++)
-      for (int x = 0; x < sz.x; x++) {
-        vec4 t = texelFetch(u_thumb, ivec2(x, y), 0);
-        if (t.a < 0.5) continue;
-        below += fx_luma(t.rgb) < mid ? 1.0 : 0.0;
-        n += 1.0;
-      }
-    float up = step(n > 0.0 ? below / n : 0.0, frac);
     lo = mix(lo, mid, up);
     hi = mix(mid, hi, up);
   }
@@ -75,18 +50,17 @@ float pacg_lumaPercentile(float frac) {
 }
 // Mean colour of the covered texels with luma in [a, b] (fallback: vec3(fallback)).
 vec3 pacg_meanInLuma(float a, float b, float fallback) {
-  ivec2 sz = textureSize(u_thumb, 0);
+  int n = pacg_thumbCount();
   vec3 sum = vec3(0.0);
-  float n = 0.0;
-  for (int y = 0; y < sz.y; y++)
-    for (int x = 0; x < sz.x; x++) {
-      vec4 t = texelFetch(u_thumb, ivec2(x, y), 0);
-      float l = fx_luma(t.rgb);
-      if (t.a < 0.5 || l < a || l > b) continue;
-      sum += t.rgb;
-      n += 1.0;
-    }
-  return n > 0.0 ? sum / n : vec3(fallback);
+  float cnt = 0.0;
+  for (int i = 0; i < n; i++) {
+    vec4 t = pacg_thumb(i);
+    float l = fx_luma(t.rgb);
+    if (t.a < 0.5 || l < a || l > b) continue;
+    sum += t.rgb;
+    cnt += 1.0;
+  }
+  return cnt > 0.0 ? sum / cnt : vec3(fallback);
 }
 `,
 };
@@ -103,6 +77,7 @@ const statsPass = (ctx: FxPlanContext, output: string, frag: string): ShaderPass
 	format: 'rgba16f',
 	filter: 'nearest',
 	include: [GLSL_PACG, GLSL_PACG_STATS],
+	uniforms: { u_statIters: { int: 10 } },
 	frag,
 });
 
@@ -140,7 +115,7 @@ export const AUTO_COLOR = defineShaderEffect({
 				'lo',
 				/* glsl */ `
 void main() {
-  float t = pacg_lumaPercentile(u_blackClip / 100.0);
+  float t = pacg_percentile(u_blackClip / 100.0, 1, false).x;
   fragColor = vec4(pacg_meanInLuma(0.0, t + 1.0 / 255.0, 0.0), 1.0);
 }`,
 			),
@@ -149,7 +124,7 @@ void main() {
 				'hi',
 				/* glsl */ `
 void main() {
-  float t = pacg_lumaPercentile(1.0 - u_whiteClip / 100.0);
+  float t = pacg_percentile(1.0 - u_whiteClip / 100.0, 1, false).x;
   fragColor = vec4(pacg_meanInLuma(t - 1.0 / 255.0, 1.0, 1.0), 1.0);
 }`,
 			),
@@ -163,12 +138,11 @@ void main() {
     vec3 lo = texelFetch(u_lo, ivec2(0), 0).rgb;
     vec3 hi = texelFetch(u_hi, ivec2(0), 0).rgb;
     // Mean of the nearly neutral midtones after the levels mapping; per-channel gamma makes it grey.
-    ivec2 sz = textureSize(u_thumb, 0);
+    int count = pacg_thumbCount();
     vec3 sum = vec3(0.0);
     float n = 0.0;
-    for (int y = 0; y < sz.y; y++)
-      for (int x = 0; x < sz.x; x++) {
-        vec4 t = texelFetch(u_thumb, ivec2(x, y), 0);
+    for (int i = 0; i < count; i++) {
+        vec4 t = pacg_thumb(i);
         if (t.a < 0.5) continue;
         vec3 r = clamp((t.rgb - lo) / max(hi - lo, vec3(1.0 / 255.0)), 0.0, 1.0);
         float l = fx_luma(r);
@@ -206,12 +180,12 @@ export const AUTO_CONTRAST = defineShaderEffect({
 			statsPass(
 				ctx,
 				'lo',
-				'void main() { fragColor = vec4(vec3(pacg_percentilePooled(u_blackClip / 100.0)), 1.0); }',
+				'void main() { fragColor = vec4(pacg_percentile(u_blackClip / 100.0, 0, true), 1.0); }',
 			),
 			statsPass(
 				ctx,
 				'hi',
-				'void main() { fragColor = vec4(vec3(pacg_percentilePooled(1.0 - u_whiteClip / 100.0)), 1.0); }',
+				'void main() { fragColor = vec4(pacg_percentile(1.0 - u_whiteClip / 100.0, 0, true), 1.0); }',
 			),
 			{ include: [GLSL_PACG], frag: levelsFrag(false) },
 		],
@@ -230,8 +204,16 @@ export const AUTO_LEVELS = defineShaderEffect({
 		timeInvariant: true,
 		passes: (_p, ctx) => [
 			analysisThumbPass(ctx),
-			statsPass(ctx, 'lo', 'void main() { fragColor = vec4(pacg_percentile(u_blackClip / 100.0), 1.0); }'),
-			statsPass(ctx, 'hi', 'void main() { fragColor = vec4(pacg_percentile(1.0 - u_whiteClip / 100.0), 1.0); }'),
+			statsPass(
+				ctx,
+				'lo',
+				'void main() { fragColor = vec4(pacg_percentile(u_blackClip / 100.0, 0, false), 1.0); }',
+			),
+			statsPass(
+				ctx,
+				'hi',
+				'void main() { fragColor = vec4(pacg_percentile(1.0 - u_whiteClip / 100.0, 0, false), 1.0); }',
+			),
 			{ include: [GLSL_PACG], frag: levelsFrag(false) },
 		],
 	},
@@ -278,12 +260,12 @@ void main() {
   int level = me.y * int(u_resolution.x) + me.x;
   if (level > 255) { fragColor = vec4(1.0); return; }
   float v = (float(level) + 0.5) / 255.0;
-  ivec2 sz = textureSize(u_thumb, 0);
+  int count = textureSize(u_thumb, 0).x * textureSize(u_thumb, 0).y;
+  int tw = textureSize(u_thumb, 0).x;
   vec4 below = vec4(0.0);
   float n = 0.0;
-  for (int y = 0; y < sz.y; y++)
-    for (int x = 0; x < sz.x; x++) {
-      vec4 t = texelFetch(u_thumb, ivec2(x, y), 0);
+  for (int i = 0; i < count; i++) {
+      vec4 t = texelFetch(u_thumb, ivec2(i - (i / tw) * tw, i / tw), 0);
       if (t.a < 0.5) continue;
       below += vec4(lessThan(vec4(t.rgb, fx_luma(t.rgb)), vec4(v)));
       n += 1.0;

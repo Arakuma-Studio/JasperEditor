@@ -172,7 +172,7 @@ export const COMPOUND_BLUR = defineShaderEffect({
 	label: 'Compound Blur',
 	category: 'Blur & Sharpen',
 	description:
-		"Blurs the clip by an amount that varies per pixel with the luminance of a blur layer (white = Maximum Blur).",
+		'Blurs the clip by an amount that varies per pixel with the luminance of a blur layer (white = Maximum Blur).',
 	keywords: ['variable blur', 'depth of field', 'blur map', 'depth map'],
 	expensive: true,
 	params: [
@@ -265,7 +265,8 @@ export const REDUCE_INTERLACE_FLICKER = defineShaderEffect({
 	id: 'jasper.reduce-interlace-flicker',
 	label: 'Reduce Interlace Flicker',
 	category: 'Blur & Sharpen',
-	description: 'Softens thin horizontal detail (a vertical-only blur) to reduce interlaced twitter on fine lines.',
+	description:
+		'Softens thin horizontal detail (a vertical-only blur) to reduce interlaced twitter on fine lines.',
 	keywords: ['interlace', 'flicker', 'twitter', 'soften', 'vertical blur'],
 	params: [slider('softness', 'Softness', 0, 0, 100, { softMax: 10, step: 0.01 })],
 	gpu: {

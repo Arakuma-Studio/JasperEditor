@@ -310,7 +310,8 @@ export const LEAVE_COLOR = defineShaderEffect({
 	id: 'jasper.leave-color',
 	label: 'Leave Color',
 	category: 'Color Correction',
-	description: 'Removes colour from everything except the colours close to Color To Leave (selective desaturation).',
+	description:
+		'Removes colour from everything except the colours close to Color To Leave (selective desaturation).',
 	keywords: ['color pass', 'selective color', 'desaturate', 'sin city', 'isolate color'],
 	params: [
 		fxParam.percent('amountToDecolor', 'Amount to Decolor', 0),
@@ -347,7 +348,8 @@ export const TINT = defineShaderEffect({
 	id: 'jasper.tint',
 	label: 'Tint',
 	category: 'Color Correction',
-	description: 'Maps the dark pixels to one colour and the bright pixels to another (a two-colour gradient map).',
+	description:
+		'Maps the dark pixels to one colour and the bright pixels to another (a two-colour gradient map).',
 	keywords: ['duotone', 'gradient map', 'colorize', 'monochrome', 'sepia'],
 	params: [
 		fxParam.color('mapBlackTo', 'Map Black To', [0, 0, 0, 1]),
@@ -404,8 +406,9 @@ export const VIDEO_LIMITER = defineShaderEffect({
 		timeInvariant: true,
 		uniforms: (p) => ({
 			u_vlKnee:
-				VIDEO_LIMITER_COMPRESSION[String(p.compressionBeforeClip ?? '5') as keyof typeof VIDEO_LIMITER_COMPRESSION] ??
-				0.05,
+				VIDEO_LIMITER_COMPRESSION[
+					String(p.compressionBeforeClip ?? '5') as keyof typeof VIDEO_LIMITER_COMPRESSION
+				] ?? 0.05,
 		}),
 		passes: [
 			{

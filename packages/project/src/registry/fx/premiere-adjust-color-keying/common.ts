@@ -46,7 +46,13 @@ export const blendWithOriginalParam = (name = 'blendWithOriginal', label = 'Blen
 	fxParam.percent(name, label, 0);
 
 /** A popup whose option values are the kebab-free camelCase forms of their labels. */
-export function popup(name: string, label: string, options: readonly [string, string][], def?: string, group?: string) {
+export function popup(
+	name: string,
+	label: string,
+	options: readonly [string, string][],
+	def?: string,
+	group?: string,
+) {
 	return fxParam.choice(
 		name,
 		label,
@@ -132,10 +138,8 @@ void main() {
   int n = int(u_thumbTaps);
   vec4 sum = vec4(0.0);
   float cnt = 0.0;
-  for (int j = 0; j < 8; j++) {
-    if (j >= n) break;
-    for (int i = 0; i < 8; i++) {
-      if (i >= n) break;
+  for (int j = 0; j < n; j++) {
+    for (int i = 0; i < n; i++) {
       vec2 off = (vec2(float(i), float(j)) + 0.5) / float(n) - 0.5;
       vec2 uv = v_uv + off * footprint / u_canvasSize;
       cnt += 1.0;

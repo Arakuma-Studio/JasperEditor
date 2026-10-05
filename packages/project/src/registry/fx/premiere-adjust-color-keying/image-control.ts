@@ -3,8 +3,8 @@
 import type { EffectSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
 import { fxParam } from '../params.ts';
-import { GLSL_PACG, slider } from './common.ts';
 import { GLSL_PACG_MATCH } from './color-correction.ts';
+import { GLSL_PACG, slider } from './common.ts';
 
 export const COLOR_BALANCE_RGB = defineShaderEffect({
 	id: 'jasper.color-balance-rgb',
@@ -105,7 +105,8 @@ export const GAMMA_CORRECTION = defineShaderEffect({
 	id: 'jasper.gamma-correction',
 	label: 'Gamma Correction',
 	category: 'Image Control',
-	description: 'Lightens or darkens the midtones without changing black and white (gamma = value / 10; 10 = unchanged).',
+	description:
+		'Lightens or darkens the midtones without changing black and white (gamma = value / 10; 10 = unchanged).',
 	keywords: ['gamma', 'midtones', 'brightness'],
 	params: [slider('gamma', 'Gamma', 10, 1, 28, { step: 0.1 })],
 	gpu: {

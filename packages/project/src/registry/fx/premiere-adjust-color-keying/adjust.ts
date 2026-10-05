@@ -312,7 +312,8 @@ export const PROC_AMP = defineShaderEffect({
 	id: 'jasper.proc-amp',
 	label: 'ProcAmp',
 	category: 'Adjust',
-	description: 'Broadcast-style processing amplifier: brightness, contrast, hue and saturation, with a split view.',
+	description:
+		'Broadcast-style processing amplifier: brightness, contrast, hue and saturation, with a split view.',
 	keywords: ['brightness', 'contrast', 'hue', 'saturation', 'proc amp'],
 	params: [
 		slider('brightness', 'Brightness', 0, -100, 100, { step: 0.1 }),

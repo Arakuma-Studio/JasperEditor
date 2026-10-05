@@ -43,7 +43,8 @@ const withDefaults = (s: EffectSpec, over: Record<string, unknown> = {}) => ({
 export type Picture =
 	| { kind: 'image'; url: string }
 	| { kind: 'solid'; color: string }
-	| { kind: 'ramp' }
+	| { kind: 'ramp'; from?: string; to?: string }
+	| { kind: 'split'; left: string; right: string }
 	| { kind: 'bars' }
 	| { kind: 'disc'; color?: string }
 	| { kind: 'text'; text: string; color?: string };
@@ -62,10 +63,17 @@ async function painter(pic: Picture): Promise<Paint> {
 		case 'ramp':
 			return (ctx, b) => {
 				const g = ctx.createLinearGradient(b.x, 0, b.x + b.w, 0);
-				g.addColorStop(0, '#000');
-				g.addColorStop(1, '#fff');
+				g.addColorStop(0, pic.from ?? '#000');
+				g.addColorStop(1, pic.to ?? '#fff');
 				ctx.fillStyle = g;
 				ctx.fillRect(b.x, b.y, b.w, b.h);
+			};
+		case 'split':
+			return (ctx, b) => {
+				ctx.fillStyle = pic.left;
+				ctx.fillRect(b.x, b.y, b.w / 2, b.h);
+				ctx.fillStyle = pic.right;
+				ctx.fillRect(b.x + b.w / 2, b.y, b.w / 2, b.h);
 			};
 		case 'bars':
 			return (ctx, b) => {
@@ -145,9 +153,7 @@ async function run(req: RunRequest) {
 	const textures: Record<string, unknown> = {};
 	for (const t of plan.textures) {
 		const m = req.media?.[t.param];
-		textures[t.uniform] = m
-			? await textureOf(m, m.size?.[0] ?? box.width, m.size?.[1] ?? box.height)
-			: null;
+		textures[t.uniform] = m ? await textureOf(m, m.size?.[0] ?? box.width, m.size?.[1] ?? box.height) : null;
 	}
 	const t0 = performance.now();
 	runShaderPlan(
@@ -202,8 +208,7 @@ const api = {
 				const sq = 8;
 				for (let y = 0; y < hh; y += sq)
 					for (let x = 0; x < w; x += sq) {
-						ctx.fillStyle =
-							req.background === 'black' ? '#000' : ((x + y) / sq) % 2 === 0 ? '#bbb' : '#777';
+						ctx.fillStyle = req.background === 'black' ? '#000' : ((x + y) / sq) % 2 === 0 ? '#bbb' : '#777';
 						ctx.fillRect(x, y, sq, sq);
 					}
 			}

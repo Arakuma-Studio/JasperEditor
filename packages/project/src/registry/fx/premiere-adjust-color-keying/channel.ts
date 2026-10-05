@@ -153,7 +153,7 @@ export const CALCULATIONS = defineShaderEffect({
 	label: 'Calculations',
 	category: 'Channel',
 	description:
-		"Combines a channel of the clip with a channel of a second layer through a blending mode (Photoshop-style Calculations).",
+		'Combines a channel of the clip with a channel of a second layer through a blending mode (Photoshop-style Calculations).',
 	keywords: ['channel', 'blend mode', 'combine', 'composite', 'second layer'],
 	params: [
 		popup('inputChannel', 'Input Channel', CALC_CHANNELS, 'rgba', 'Input'),

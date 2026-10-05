@@ -257,7 +257,8 @@ export const ALPHA_ADJUST = defineShaderEffect({
 	id: 'jasper.alpha-adjust',
 	label: 'Alpha Adjust',
 	category: 'Keying',
-	description: "Changes the layer's opacity through its alpha channel: scale, ignore or invert alpha, or show the mask.",
+	description:
+		"Changes the layer's opacity through its alpha channel: scale, ignore or invert alpha, or show the mask.",
 	keywords: ['opacity', 'alpha', 'invert alpha', 'mask'],
 	params: [
 		slider('opacity', 'Opacity', 100, 0, 100, { unit: '%' }),
@@ -378,8 +379,12 @@ void main() { fragColor = pacg_media(u_differenceLayer, u_differenceLayer_size, 
 			let a = 'source';
 			let b = 'plate';
 			if (sigma >= 0.05) {
-				passes.push(...gaussianBlurPasses({ input: 'source', output: 'blurA', sigma, scale: sigma > 8 ? 0.5 : 1 }));
-				passes.push(...gaussianBlurPasses({ input: 'plate', output: 'blurB', sigma, scale: sigma > 8 ? 0.5 : 1 }));
+				passes.push(
+					...gaussianBlurPasses({ input: 'source', output: 'blurA', sigma, scale: sigma > 8 ? 0.5 : 1 }),
+				);
+				passes.push(
+					...gaussianBlurPasses({ input: 'plate', output: 'blurB', sigma, scale: sigma > 8 ? 0.5 : 1 }),
+				);
 				a = 'blurA';
 				b = 'blurB';
 			}
@@ -388,7 +393,8 @@ void main() { fragColor = pacg_media(u_differenceLayer, u_differenceLayer_size, 
 				frag: /* glsl */ `
 void main() {
   vec4 src = texture(u_source, v_uv);
-  if (u_view == 1 || u_differenceLayer_size.x <= 0.0) { fragColor = src; return; }
+  // (u_differenceLayer_size is only set in passes that sample the layer: a missing layer = a transparent plate.)
+  if (u_view == 1) { fragColor = src; return; }
   vec4 pa = texture(u_${a}, v_uv);
   vec4 pb = texture(u_${b}, v_uv);
   vec3 d = abs(pacg_straight(pa) - pacg_straight(pb));
@@ -430,7 +436,11 @@ export const IMAGE_MATTE_KEY = defineShaderEffect({
 	category: 'Keying',
 	description: "Keys the layer through a still image's alpha or luminance (stretched over the layer).",
 	keywords: ['matte', 'mask', 'luma matte', 'alpha matte'],
-	params: [fxParam.media('matte', 'Matte', ['image']), compositeUsingParam(), fxParam.toggle('reverse', 'Reverse', false)],
+	params: [
+		fxParam.media('matte', 'Matte', ['image']),
+		compositeUsingParam(),
+		fxParam.toggle('reverse', 'Reverse', false),
+	],
 	gpu: {
 		timeInvariant: true,
 		passes: [{ include: [GLSL_PACG], frag: matteKeyFrag('matte') }],
@@ -444,7 +454,11 @@ export const TRACK_MATTE_KEY = defineShaderEffect({
 	description:
 		"Shows the layer through a matte clip's alpha or luminance (travelling matte); the matte plays at the layer's time.",
 	keywords: ['travelling matte', 'traveling matte', 'mask', 'luma matte', 'alpha matte'],
-	params: [fxParam.media('matte', 'Matte'), compositeUsingParam(), fxParam.toggle('reverse', 'Reverse', false)],
+	params: [
+		fxParam.media('matte', 'Matte'),
+		compositeUsingParam(),
+		fxParam.toggle('reverse', 'Reverse', false),
+	],
 	gpu: {
 		passes: [{ include: [GLSL_PACG], frag: matteKeyFrag('matte') }],
 	},
@@ -486,7 +500,8 @@ export const NON_RED_KEY = defineShaderEffect({
 	id: 'jasper.non-red-key',
 	label: 'Non Red Key',
 	category: 'Keying',
-	description: 'Keys out green or blue backgrounds (anything where green or blue dominates red), with defringing.',
+	description:
+		'Keys out green or blue backgrounds (anything where green or blue dominates red), with defringing.',
 	keywords: ['green screen', 'blue screen', 'chroma key', 'defringe'],
 	params: [
 		fxParam.percent('threshold', 'Threshold', 50),

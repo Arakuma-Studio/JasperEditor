@@ -31,7 +31,8 @@ type Shot = {
 
 const dataUrl = (file: string) =>
 	`data:image/${extname(file) === '.png' ? 'png' : 'jpeg'};base64,${readFileSync(file).toString('base64')}`;
-const resolvePic = (p: Pic): Pic => (p.file ? { ...p, kind: 'image', url: dataUrl(p.file), file: undefined } : p);
+const resolvePic = (p: Pic): Pic =>
+	p.file ? { ...p, kind: 'image', url: dataUrl(p.file), file: undefined } : p;
 
 const shots = JSON.parse(readFileSync(shotsFile, 'utf8')) as Shot[];
 mkdirSync(outDir, { recursive: true });
@@ -69,7 +70,9 @@ for (const s of shots) {
 		params: s.params ?? {},
 		picture: resolvePic(s.picture),
 		box: s.box ?? { width: 480, height: 320 },
-		media: s.media ? Object.fromEntries(Object.entries(s.media).map(([k, v]) => [k, resolvePic(v)])) : undefined,
+		media: s.media
+			? Object.fromEntries(Object.entries(s.media).map(([k, v]) => [k, resolvePic(v)]))
+			: undefined,
 		background: s.background ?? 'checker',
 	};
 	try {
