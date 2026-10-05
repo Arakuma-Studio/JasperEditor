@@ -20,6 +20,7 @@ import { mgRegistry } from '@jasper/mg-templates';
 import {
 	applyTransaction,
 	buildRenderSnapshot,
+	CORNER_PIN_EFFECT_ID,
 	defaultRegistries,
 	EMPTY_PROBE,
 	LUMETRI_EFFECT_ID,
@@ -535,6 +536,14 @@ describe('exports hold and record their cache entries (CA-016, S06:CG-056)', () 
 				effectId: LUMETRI_EFFECT_ID,
 				params: { exposure: 0, temperature: -20, saturation: 130 },
 				ref: '$g',
+			},
+			// A (slight) corner pin: the warp stage renders this layer (keyframed Motion alone is animated by the
+			// builder itself since wave1 native-animated-export, without a cache entry).
+			{
+				type: 'effect.add',
+				target: { clipId: clip },
+				effectId: CORNER_PIN_EFFECT_ID,
+				params: { topLeft: [0.02, 0], topRight: [1, 0.02], bottomRight: [0.98, 1], bottomLeft: [0, 0.98] },
 			},
 		]).refs.$g!;
 		// 30 grade states (the look intensity changes every frame) that all bake to the same table: no look is set.

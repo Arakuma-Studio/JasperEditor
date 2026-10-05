@@ -6,6 +6,7 @@ import {
 	defaultEffectRegistry,
 	defineShaderEffect,
 	type EffectSpec,
+	FX_FAMILIES,
 	fxBuiltinUniforms,
 	fxParam,
 	GLSL_LIBRARY,
@@ -151,9 +152,16 @@ void main() {
 		}
 	},
 
-	/** Plans and runs every registered GPU effect (+ the test effects) with default params. */
-	catalogue() {
-		const specs = [...defaultEffectRegistry.list().filter((s) => s.gpu), ...TEST_FX];
+	/**
+	 * Plans and runs registered GPU effects with default params: one fx family (`FX_FAMILIES[].file`), or without a
+	 * family every GPU effect outside the families plus the test effects (one call per family keeps each test short).
+	 */
+	catalogue(family?: string) {
+		const familySpecs = FX_FAMILIES.find((f) => f.file === family)?.effects;
+		const inFamily = new Set(FX_FAMILIES.flatMap((f) => f.effects.map((e) => e.id)));
+		const specs = familySpecs
+			? familySpecs.filter((s) => s.gpu)
+			: [...defaultEffectRegistry.list().filter((s) => s.gpu && !inFamily.has(s.id)), ...TEST_FX];
 		const errors: string[] = [];
 		for (const spec of specs) {
 			try {
