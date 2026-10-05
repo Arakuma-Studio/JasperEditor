@@ -194,9 +194,8 @@ void main() {
   int R = hq ? 2 : 1;
   ivec2 c0 = ivec2(floor(q));
   float f1 = 9.0, f2 = 9.0, id = 0.0;
-  for (int y = -2; y <= 2; y++)
-    for (int x = -2; x <= 2; x++) {
-      if (abs(x) > R || abs(y) > R) continue;
+  for (int y = -R; y <= R; y++)
+    for (int x = -R; x <= R; x++) {
       ivec2 c = c0 + ivec2(x, y);
       float d = length(cellPoint(c) - q);
       if (d < f1) { f2 = f1; f1 = d; id = cellId(c); } else if (d < f2) f2 = d;
@@ -407,6 +406,7 @@ export const EYEDROPPER_FILL = defineShaderEffect({
 				// One tiny pass: the average of a 16×16 tap grid over the sample disk (computed once, read by every pixel).
 				output: 'avg',
 				scale: 0.001,
+				uniforms: { u_taps: { int: 16 } },
 				filter: 'nearest',
 				format: 'rgba16f',
 				include: [GLSL_PSDG_GENERATE],
@@ -417,9 +417,9 @@ void main() {
   vec4 sumP = vec4(0.0);  // premultiplied
   vec3 sumS = vec3(0.0);  // straight
   float n = 0.0, na = 0.0;
-  for (int y = 0; y < 16; y++)
-    for (int x = 0; x < 16; x++) {
-      vec2 o = (vec2(float(x), float(y)) + 0.5) / 16.0 * 2.0 - 1.0;
+  for (int y = 0; y < u_taps; y++)
+    for (int x = 0; x < u_taps; x++) {
+      vec2 o = (vec2(float(x), float(y)) + 0.5) / float(u_taps) * 2.0 - 1.0;
       if (dot(o, o) > 1.0 && r > 0.5) continue;
       vec4 s = texture(u_source, fx_uvOfLayerPx(c + o * r));
       sumP += s;

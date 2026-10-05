@@ -76,21 +76,28 @@ try {
 	await page.evaluate((u) => (window as any).__psdg.init(u), photoUrl);
 	const jobs = JSON.parse(readFileSync(jobsFile, 'utf8'));
 	const t0 = Date.now();
-	const r = (await page.evaluate(([j, s]) => (window as any).__psdg.render(j, s), [
-		jobs,
-		{ columns, cell, title: title || undefined },
-	] as const)) as {
-		results: { name: string; png?: string; error?: string; size?: [number, number] }[];
-		sheet?: string;
-	};
+	type Result = { name: string; png?: string; error?: string; size?: [number, number] };
 	const write = (file: string, dataUrl: string) =>
 		writeFileSync(join(outDir, file), Buffer.from(dataUrl.split(',')[1]!, 'base64'));
-	for (const res of r.results) {
+	// One job per call: progress and per-job timing (slow shaders show up immediately).
+	for (const job of jobs) {
+		const t = Date.now();
+		const r = (await page.evaluate(([j]) => (window as any).__psdg.render(j, null), [[job]] as const)) as {
+			results: Result[];
+		};
+		const res = r.results[0]!;
 		if (res.png) write(`${res.name.replace(/[^\w.-]+/g, '_')}.png`, res.png);
-		console.log(res.error ? `FAIL ${res.name}: ${res.error}` : `ok   ${res.name} ${res.size?.join('x')}`);
+		console.log(
+			res.error
+				? `FAIL ${res.name}: ${res.error}`
+				: `ok   ${res.name} ${res.size?.join('x')} ${Date.now() - t} ms`,
+		);
 	}
-	if (r.sheet) write('_sheet.png', r.sheet);
-	console.log(`rendered ${r.results.length} jobs in ${Date.now() - t0} ms → ${outDir}`);
+	const sheet = (await page.evaluate(([s]) => (window as any).__psdg.render([], s), [
+		{ columns, cell, title: title || undefined },
+	] as const)) as { sheet?: string };
+	if (sheet.sheet) write('_sheet.png', sheet.sheet);
+	console.log(`rendered ${jobs.length} jobs in ${Date.now() - t0} ms → ${outDir}`);
 } finally {
 	await browser.close();
 }

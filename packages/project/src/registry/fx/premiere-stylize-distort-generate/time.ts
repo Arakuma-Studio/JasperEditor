@@ -113,7 +113,7 @@ export function posterizeTimeFrame(p: EffectParams, ctx: Pick<FxTimeContext, 'fr
 	if (rate <= 0) return 0;
 	if (rate >= fps) return ctx.frame;
 	const held = Math.floor((ctx.frame / fps) * rate + 1e-6);
-	return Math.ceil((held / rate) * fps - 1e-6);
+	return Math.ceil((held / rate) * fps - 1e-6) + 0; // + 0: no −0
 }
 
 export const POSTERIZE_TIME = defineShaderEffect({

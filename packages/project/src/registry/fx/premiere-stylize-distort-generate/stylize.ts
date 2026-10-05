@@ -103,6 +103,8 @@ export const BRUSH_STROKES = defineShaderEffect({
 	],
 	gpu: {
 		timeInvariant: true,
+		// Neighbour cells searched (±2) and strokes per cell (2), as uniforms so the loops are not unrolled.
+		uniforms: () => ({ u_reach: { int: 2 }, u_layers: { int: 2 } }),
 		passes: [
 			{
 				include: [GLSL_HASH, GLSL_PSDG_COMPASS, GLSL_PSDG_BLEND],
@@ -125,10 +127,10 @@ void main() {
   float best = -1.0;
   vec4 col = vec4(0.0);
   float shade = 1.0;
-  for (int j = -2; j <= 2; j++)
-    for (int i = -2; i <= 2; i++) {
+  for (int j = -u_reach; j <= u_reach; j++)
+    for (int i = -u_reach; i <= u_reach; i++) {
       ivec2 c = c0 + ivec2(i, j);
-      for (int k = 0; k < 2; k++) {
+      for (int k = 0; k < u_layers; k++) {
         ivec3 h = ivec3(c, k);
         vec3 r = fx_hash33(h, u_seed);
         if (k == 1 && r.z > dens - 1.0) continue; // second stroke per cell only above density 1

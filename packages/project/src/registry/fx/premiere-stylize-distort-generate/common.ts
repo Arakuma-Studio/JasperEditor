@@ -205,7 +205,8 @@ export function evolutionParams(group = 'Evolution Options'): ParamSpec[] {
 /**
  * Evolving fractal noise. `psdg_evolve(p, octaves, evolutionDeg, cycleOn, cycleRevs, seed, turbulent)`: simplex fbm
  * (≈ −1..1) or turbulence (|noise| sum, 0..1) in (p, evolution); fractional octaves fade the last octave in (AE
- * Complexity). One call site of the noise inside loops keeps the inlined shader small (every GLSL compiler inlines).
+ * Complexity). Pass octaves derived from a uniform (never a literal): the loop is then not unrolled, and the one
+ * noise call site keeps the inlined shader small (SwiftShader takes minutes on fully unrolled fbm loops).
  */
 export const GLSL_PSDG_EVOLVE: GlslChunk = {
 	name: 'psdg/evolve',
@@ -213,9 +214,10 @@ export const GLSL_PSDG_EVOLVE: GlslChunk = {
 	source: /* glsl */ `
 float psdg_fbmFrac(vec3 p, float octaves, float seed, bool turbulent) {
   float sum = 0.0, amp = 0.5, norm = 0.0;
-  for (int k = 0; k < 10; k++) {
+  // The trip count comes from the (uniform) octaves: compilers cannot unroll it, which keeps compile times short.
+  int n = int(ceil(clamp(octaves, 0.0, 10.0)));
+  for (int k = 0; k < n; k++) {
     float w = clamp(octaves - float(k), 0.0, 1.0);
-    if (w <= 0.0) break;
     float n = fx_simplex3(p, fract(seed + float(k) * 0.1031));
     sum += amp * w * (turbulent ? abs(n) : n);
     norm += amp * w;
@@ -230,7 +232,8 @@ float psdg_evolve(vec2 p, float octaves, float evolutionDeg, bool cycleOn, float
   float zc = cycleOn ? mod(z, c) : z;
   float w = cycleOn ? zc / c : 0.0;
   float acc = 0.0;
-  for (int j = 0; j < 2; j++) {
+  int m = cycleOn ? 2 : 1;
+  for (int j = 0; j < m; j++) {
     float wj = j == 0 ? 1.0 - w : w;
     if (wj <= 0.0) continue;
     acc += wj * psdg_fbmFrac(vec3(p, (zc - float(j) * c) * 0.6), octaves, seed, turbulent);

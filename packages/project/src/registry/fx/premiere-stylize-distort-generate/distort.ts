@@ -377,8 +377,7 @@ vec2 displacementAt(vec2 lp) {
   int count = gradientType ? 3 : (type == 0 || type == 3) ? 2 : 1;
   float e = 0.05;
   float n[3] = float[3](0.0, 0.0, 0.0);
-  for (int k = 0; k < 3; k++) {
-    if (k >= count) break;
+  for (int k = 0; k < count; k++) {
     vec2 qk = gradientType ? q + (k == 1 ? vec2(e, 0.0) : k == 2 ? vec2(0.0, e) : vec2(0.0)) : q + float(k) * 31.7;
     float sk = gradientType ? 0.0 : float(k) * 0.173;
     n[k] = psdg_evolve(qk, oct, u_evolution, u_cycleEvolution, u_cycle, fract(u_seed + sk), false);

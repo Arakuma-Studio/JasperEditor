@@ -208,8 +208,7 @@ float boltOffset(float s, float n, int chan) {
   float amp = 1.0;
   float freq = n;
   int levels = int(clamp(u_detailLevel, 0.0, 5.0));
-  for (int l = 0; l < 5; l++) {
-    if (l >= levels) break;
+  for (int l = 0; l < levels; l++) {
     freq *= 2.0;
     amp *= clamp(u_detailAmplitude, 0.0, 1.0);
     v += jag(s, freq, chan + 10 * (l + 1)) * amp;
@@ -224,8 +223,7 @@ vec2 boltDistance(vec2 p, vec2 a, vec2 b, float n, float ampPx, int chan, bool p
   vec2 pull = vec2(cos(radians(u_pullDirection)), sin(radians(u_pullDirection))) * u_pullForce / 100.0 * len;
   float best = 1.0e9, bs = 0.0;
   vec2 prev = a;
-  for (int i = 1; i <= 96; i++) {
-    if (i > samples) break;
+  for (int i = 1; i <= samples; i++) {
     float s = float(i) / float(samples);
     float taper = pinnedEnd ? sin(s * 3.14159265) : sin(min(s, 0.5) * 3.14159265);
     vec2 q = a + dir * s + nrm * boltOffset(s, n, chan) * ampPx * taper + pull * s * s;
@@ -245,39 +243,52 @@ void main() {
   float len = max(length(b - a), 1.0);
   float n = max(floor(u_segments), 1.0);
   float ampPx = u_amplitude / 100.0 * len;
-  vec2 m = boltDistance(p, a, b, n, ampPx, 0, u_fixedEndpoint, 96);
-  float w = max(u_width, 0.5) * (1.0 + (jag(m.y, n * 3.0, 99) * u_widthVariation));
-  float glow = exp(-pow(m.x / (w * 0.9), 2.0)) + 0.35 * exp(-m.x / (w * 2.2));
-  float core = 1.0 - smoothstep(w * u_coreWidth * 0.35, w * u_coreWidth * 0.5 + 0.75, m.x);
-  // Branches: from seeded points along the main bolt, at ±Branch Angle.
+  // One loop over every bolt (0 = main, 1..nb = branches, nb+1..2nb = their sub-branches) with a single
+  // boltDistance call site; trip counts come from uniforms, so compilers do not unroll the heavy bodies.
   int nb = int(floor(clamp(u_branching, 0.0, 1.0) * 8.0 + 0.5));
   vec2 dirMain = (b - a) / len;
   vec2 nrm = vec2(-dirMain.y, dirMain.x);
-  for (int k = 0; k < 8; k++) {
-    if (k >= nb) break;
-    float s0 = 0.12 + 0.7 * fx_hash1(k * 7 + 3, u_seed);
-    float taper0 = sin(s0 * 3.14159265);
-    vec2 o = a + (b - a) * s0 + nrm * boltOffset(s0, n, 0) * ampPx * taper0;
-    float side = fx_hash1(k * 7 + 5, u_seed) < 0.5 ? -1.0 : 1.0;
-    float ang = radians(u_branchAngle) * side * (0.7 + 0.6 * fx_hash1(k * 7 + 6, u_seed));
-    vec2 bd = vec2(cos(ang) * dirMain.x - sin(ang) * dirMain.y, sin(ang) * dirMain.x + cos(ang) * dirMain.y);
-    float bl = len * clamp(u_branchSegLength, 0.0, 1.0) * (1.0 - s0) * (0.6 + 0.5 * fx_hash1(k * 7 + 8, u_seed));
-    if (bl < 2.0) continue;
-    vec2 be = o + bd * bl;
-    vec2 bm = boltDistance(p, o, be, max(floor(u_branchSegments), 1.0), ampPx * 0.6 * bl / len * 2.0, 20 + k, false, 32);
-    float bw = w * clamp(u_branchWidth, 0.05, 1.0) * (1.0 - bm.y * 0.7);
-    glow = max(glow, exp(-pow(bm.x / (bw * 0.9), 2.0)) + 0.35 * exp(-bm.x / (bw * 2.2)) * 0.7);
-    core = max(core, 1.0 - smoothstep(bw * u_coreWidth * 0.35, bw * u_coreWidth * 0.5 + 0.75, bm.x));
-    // Rebranching: one sub-branch from the middle of the branch.
-    if (fx_hash1(k * 7 + 9, u_seed) < u_rebranching) {
-      vec2 o2 = mix(o, be, 0.5);
-      vec2 bd2 = vec2(cos(-ang) * bd.x - sin(-ang) * bd.y, sin(-ang) * bd.x + cos(-ang) * bd.y);
-      vec2 be2 = o2 + bd2 * bl * 0.5;
-      vec2 sm = boltDistance(p, o2, be2, max(floor(u_branchSegments), 1.0), ampPx * 0.3, 40 + k, false, 16);
-      float sw = bw * 0.6;
-      glow = max(glow, exp(-pow(sm.x / (sw * 0.9), 2.0)));
-      core = max(core, 1.0 - smoothstep(sw * u_coreWidth * 0.35, sw * u_coreWidth * 0.5 + 0.75, sm.x));
+  float glow = 0.0, core = 0.0, w = max(u_width, 0.5);
+  for (int k = 0; k <= 2 * nb; k++) {
+    vec2 ba = a, bb = b;
+    float bn = n, bamp = ampPx, bwScale = 1.0;
+    int chan = 0, samples = 96;
+    bool pinned = u_fixedEndpoint;
+    if (k > 0) {
+      int j = (k - 1) % max(nb, 1);
+      bool sub = k > nb;
+      if (sub && fx_hash1(j * 7 + 9, u_seed) >= u_rebranching) continue;
+      float s0 = 0.12 + 0.7 * fx_hash1(j * 7 + 3, u_seed);
+      vec2 o = a + (b - a) * s0 + nrm * boltOffset(s0, n, 0) * ampPx * sin(s0 * 3.14159265);
+      float side = fx_hash1(j * 7 + 5, u_seed) < 0.5 ? -1.0 : 1.0;
+      float ang = radians(u_branchAngle) * side * (0.7 + 0.6 * fx_hash1(j * 7 + 6, u_seed));
+      vec2 bd = vec2(cos(ang) * dirMain.x - sin(ang) * dirMain.y, sin(ang) * dirMain.x + cos(ang) * dirMain.y);
+      float bl = len * clamp(u_branchSegLength, 0.0, 1.0) * (1.0 - s0) * (0.6 + 0.5 * fx_hash1(j * 7 + 8, u_seed));
+      if (bl < 2.0) continue;
+      ba = o;
+      bb = o + bd * bl;
+      bn = max(floor(u_branchSegments), 1.0);
+      bamp = ampPx * 1.2 * bl / len;
+      bwScale = clamp(u_branchWidth, 0.05, 1.0);
+      chan = 20 + j;
+      samples = 32;
+      pinned = false;
+      if (sub) {
+        // Rebranching: a sub-branch from the middle of the branch, turning back the other way.
+        vec2 bd2 = vec2(cos(-ang) * bd.x - sin(-ang) * bd.y, sin(-ang) * bd.x + cos(-ang) * bd.y);
+        ba = mix(o, bb, 0.5);
+        bb = ba + bd2 * bl * 0.5;
+        bamp = ampPx * 0.3;
+        bwScale *= 0.6;
+        chan = 40 + j;
+        samples = 16;
+      }
     }
+    vec2 m = boltDistance(p, ba, bb, bn, bamp, chan, pinned, samples);
+    float bw = k == 0 ? w * (1.0 + jag(m.y, n * 3.0, 99) * u_widthVariation) : w * bwScale * (1.0 - m.y * 0.7);
+    bw = max(bw, 0.3);
+    glow = max(glow, exp(-pow(m.x / (bw * 0.9), 2.0)) + 0.35 * exp(-m.x / (bw * 2.2)) * (k == 0 ? 1.0 : 0.7));
+    core = max(core, 1.0 - smoothstep(bw * u_coreWidth * 0.35, bw * u_coreWidth * 0.5 + 0.75, m.x));
   }
   glow = clamp(glow, 0.0, 1.0);
   vec3 col = mix(u_outsideColor.rgb, u_insideColor.rgb, core);
@@ -339,7 +350,7 @@ void main() {
   for (int d = 0; d < 8; d++) {
     float a = float(d) * 0.78539816;
     vec2 dir = vec2(cos(a), sin(a)) * ${step};
-    for (int i = 1; i <= 20; i++) {
+    for (int i = 1; i <= u_steps; i++) {
       vec2 q = v_uv + dir * float(i);
       if (texture(${tol}, q).r < 0.5) break;
       if (all(lessThan(abs(q - fp), ${step} * 0.75))${prev ? ` || texture(${prev}, q).r > 0.5` : ''}) { fragColor = vec4(1.0); return; }
@@ -360,11 +371,14 @@ void main() {
 				coarse ? 'u_tol8' : 'u_tol4',
 				coarse ? '(8.0 / u_canvasSize)' : '(4.0 / u_canvasSize)',
 			),
+			// Uniform trip counts (not literals): the march loops stay loops instead of being unrolled.
+			uniforms: { u_steps: { int: 20 } },
 		});
 		prev = out;
 	}
 	passes.push({
 		include: [GLSL_PSDG_BLEND],
+		uniforms: { u_ring: { int: 12 } },
 		frag: /* glsl */ `
 ${PAINT_MATCH}
 float filledAt(vec2 uv) {
@@ -376,7 +390,7 @@ float filledAt(vec2 uv) {
 }
 float ringMax(vec2 uv, float rpx) {
   float m = filledAt(uv);
-  for (int i = 0; i < 12; i++) {
+  for (int i = 0; i < u_ring; i++) {
     float a = float(i) * 0.5235988;
     m = max(m, filledAt(uv + vec2(cos(a), sin(a)) * rpx / u_canvasSize));
   }
@@ -384,7 +398,7 @@ float ringMax(vec2 uv, float rpx) {
 }
 float ringMin(vec2 uv, float rpx) {
   float m = filledAt(uv);
-  for (int i = 0; i < 12; i++) {
+  for (int i = 0; i < u_ring; i++) {
     float a = float(i) * 0.5235988;
     m = min(m, filledAt(uv + vec2(cos(a), sin(a)) * rpx / u_canvasSize));
   }
@@ -392,7 +406,7 @@ float ringMin(vec2 uv, float rpx) {
 }
 float ringAvg(vec2 uv, float rpx) {
   float m = filledAt(uv);
-  for (int i = 0; i < 12; i++) {
+  for (int i = 0; i < u_ring; i++) {
     float a = float(i) * 0.5235988;
     m += filledAt(uv + vec2(cos(a), sin(a)) * rpx / u_canvasSize) + filledAt(uv + vec2(cos(a + 0.26), sin(a + 0.26)) * rpx * 0.5 / u_canvasSize);
   }

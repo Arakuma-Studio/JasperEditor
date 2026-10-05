@@ -18,6 +18,8 @@ export type PreviewJob = {
 };
 
 let photo: HTMLImageElement | null = null;
+const allOuts: (HTMLCanvasElement | null)[] = [];
+const allJobs: PreviewJob[] = [];
 
 async function loadPhoto(url: string) {
 	const img = new Image();
@@ -101,8 +103,10 @@ const api = {
 	/** Renders jobs; returns {name, png | error} and an optional contact sheet. */
 	render(jobs: PreviewJob[], sheet: { columns: number; cell: [number, number]; title?: string } | null) {
 		const results: { name: string; png?: string; error?: string; size?: [number, number] }[] = [];
-		const outs: (HTMLCanvasElement | null)[] = [];
+		// Jobs and outputs accumulate over calls (the CLI renders one job per call, then asks for the sheet).
+		const outs = allOuts;
 		for (const job of jobs) {
+			allJobs.push(job);
 			try {
 				const out = render(job);
 				const framed = canvas(out.width, out.height, (ctx) => {
@@ -117,6 +121,7 @@ const api = {
 			}
 		}
 		let sheetPng: string | undefined;
+		jobs = allJobs;
 		if (sheet) {
 			const [cw, ch] = sheet.cell;
 			const label = 18;
