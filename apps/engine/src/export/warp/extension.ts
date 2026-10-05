@@ -1,5 +1,6 @@
-// The `warp` native extension (S09:TRK-032…034, ARCHITECTURE D-28, §19.5, §19.6): corner-pinned layers and
-// layers with keyframed Motion or animated opacity stay on the native path. `prepare` renders each claimed layer
+// The `warp` native extension (S09:TRK-032…034, ARCHITECTURE D-28, §19.5, §19.6): corner-pinned layers (and
+// animated images with keyframed Motion or opacity) stay on the native path; keyframed Motion / Opacity of the other
+// kinds is animated by the builder itself (S03:ENG-032, `../keyframed.ts`). `prepare` renders each claimed layer
 // into a sequence-space, straight-alpha ProRes 4444 intermediate (cached under `<appdir>/cache/warp/<key>.mov`);
 // `override` hands it to the builder as a `sequence` override (the builder applies transition fades and overlays
 // it at 0,0). FFmpeg's `perspective` filter is GPL-only (D-13), so the warp runs in our worker threads.
@@ -67,13 +68,18 @@ function motionAnimated(c: RenderVisualClip): boolean {
 	);
 }
 
-/** Layers the warp stage renders: an enabled corner pin, keyframed Motion or animated opacity. */
+/**
+ * Kinds whose keyframed Motion / opacity the warp stage renders. The builder animates Motion and Opacity of the
+ * kinds it places itself (S03:ENG-032, `keyframed.ts`); animated images are not native there, so they keep the warp.
+ */
+const WARP_MOTION_KINDS: ReadonlySet<string> = new Set(['animated-image']);
+
+/** Layers the warp stage renders: an enabled corner pin; keyframed Motion or opacity of an animated image. */
 function warpClaims(c: RenderVisualClip): boolean {
 	if (!WARP_KINDS.has(c.kind) || !c.transform) return false;
 	return (
 		c.effects.some((fx) => fx.enabled && fx.effectId === CORNER_PIN_EFFECT_ID) ||
-		motionAnimated(c) ||
-		isAnimated(c.opacity)
+		(WARP_MOTION_KINDS.has(c.kind) && (motionAnimated(c) || isAnimated(c.opacity)))
 	);
 }
 
@@ -152,11 +158,9 @@ export function createWarpExtension(deps: WarpDeps): NativeExtension {
 		const exts = others();
 		for (const fx of c.effects) {
 			if (!fx.enabled || fx.effectId === CORNER_PIN_EFFECT_ID) continue;
+			// Built-in effects render in the source chain, keyframed crop edges included (`layerSourceChain`).
+			if (BUILTIN_NATIVE_EFFECTS.has(fx.effectId)) continue;
 			const animated = Object.values(fx.params).some((p) => isAnimated(p));
-			if (BUILTIN_NATIVE_EFFECTS.has(fx.effectId)) {
-				if (animated) out.push(`${label} has an animated ${fx.effectId}`);
-				continue;
-			}
 			const spec = effects.get(fx.effectId, fx.effectVersion);
 			let support: false | 'static' | 'animated' = false;
 			for (const ext of exts) {
