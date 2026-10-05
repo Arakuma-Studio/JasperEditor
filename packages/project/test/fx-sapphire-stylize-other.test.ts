@@ -198,7 +198,9 @@ describe('Sapphire other-stylize family', () => {
 			expect(len).toBeGreaterThanOrEqual(4); // 15 × (1 − 0.7), rounded
 			expect(len).toBeLessThanOrEqual(26); // 15 × (1 + 0.7), rounded
 		}
-		holds.forEach((h, f) => expect(h).toBeLessThanOrEqual(f));
+		holds.forEach((h, f) => {
+			expect(h).toBeLessThanOrEqual(f);
+		});
 		expect(new Set(starts.slice(1).map((s, i) => s - starts[i]!)).size).toBeGreaterThan(1); // varied
 		const other = Array.from({ length: 300 }, (_, f) => pixelMoshHoldFrame(auto, f, 0.9));
 		expect(other).not.toEqual(holds);

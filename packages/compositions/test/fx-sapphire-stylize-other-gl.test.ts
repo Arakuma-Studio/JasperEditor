@@ -183,7 +183,9 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 					scene: { kind: 'quad' },
 					probes: QUAD_PROBES,
 				});
-				r.probes.forEach((p, i) => expect([id, i, near(p, QUAD[i]!, 3)]).toEqual([id, i, true]));
+				r.probes.forEach((p, i) => {
+					expect([id, i, near(p, QUAD[i]!, 3)]).toEqual([id, i, true]);
+				});
 			}
 			const d = await render({
 				id: 'jasper.s.dog-vision',
@@ -193,7 +195,9 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				scene: { kind: 'quad' },
 				probes: QUAD_PROBES,
 			});
-			d.probes.forEach((p, i) => expect(near(p, QUAD[i]!, 3)).toBe(true));
+			d.probes.forEach((p, i) => {
+				expect(near(p, QUAD[i]!, 3)).toBe(true);
+			});
 		});
 
 		it('S_BandPass: a flat picture becomes the Offset Darks grey; edges stand out', async () => {
@@ -276,7 +280,9 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				probes: QUAD_PROBES,
 			});
 			expect(moshed.offsets).toEqual([-1, -12]);
-			moshed.probes.forEach((p, i) => expect(near(p, QUAD[i]!, 3)).toBe(true)); // no motion: the held quad
+			moshed.probes.forEach((p, i) => {
+				expect(near(p, QUAD[i]!, 3)).toBe(true);
+			}); // no motion: the held quad
 			const start = await render({
 				id: 'jasper.s.pixel-mosh',
 				params,
@@ -439,7 +445,9 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				scene: { kind: 'quad' },
 				probes: QUAD_PROBES,
 			});
-			start.probes.forEach((p, i) => expect(near(p, QUAD[i]!, 3)).toBe(true));
+			start.probes.forEach((p, i) => {
+				expect(near(p, QUAD[i]!, 3)).toBe(true);
+			});
 			const end = await render({
 				id: 'jasper.s.strip-slide',
 				params: { amount: 1 },
