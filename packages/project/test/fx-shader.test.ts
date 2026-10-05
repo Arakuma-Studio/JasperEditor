@@ -26,6 +26,7 @@ import {
 	paramUniforms,
 	planGpuEffect,
 	resolveIncludes,
+	seedParam,
 	showParam,
 	toUniform,
 	validateGpuEffect,
@@ -217,6 +218,12 @@ describe('seeds and randomness (S11 §2 determinism)', () => {
 		expect(fxSeed('clip_A', 'fx_2')).not.toBe(s);
 		expect(fxSeed('clip_A', 'fx_1', { seed: 3 })).not.toBe(s);
 		expect(fxSeed('clip_A', 'fx_1', { seed: 0 })).toBe(s);
+	});
+
+	it('a seedParam feeds u_seed instead of declaring its own (colliding) uniform', () => {
+		const withSeed = spec({ params: [seedParam(), fxParam.percent('amount', 'Amount', 50)] });
+		expect(paramUniforms(withSeed, { seed: 7, amount: 50 }).map((u) => u.name)).toEqual(['u_amount']);
+		expect(validateGpuEffect(withSeed)).toEqual([]);
 	});
 
 	it('fxRandom is deterministic and spread over 0..1', () => {
