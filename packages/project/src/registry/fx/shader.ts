@@ -234,7 +234,10 @@ const finite = (x: unknown, d = 0) => (typeof x === 'number' && Number.isFinite(
 /** The Sapphire-style "Seed" param (`seedParam`): numeric and named `seed`, read through `u_seed`. */
 const isSeedParam = (p: ParamSpec) => p.name === 'seed' && p.type === 'number';
 
-export function paramUniforms(spec: Pick<EffectSpec, 'params'>, params: EffectParams): FxUniform[] {
+export function paramUniforms(
+	spec: { readonly params: readonly ParamSpec[] },
+	params: EffectParams,
+): FxUniform[] {
 	const out: FxUniform[] = [];
 	for (const p of spec.params) {
 		// A numeric `seed` param (`seedParam`) is not its own uniform: `fxSeed` mixes it into the built-in `u_seed`.

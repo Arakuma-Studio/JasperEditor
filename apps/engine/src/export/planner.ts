@@ -19,6 +19,7 @@ import {
 	type RenderSnapshot,
 	type RenderVisualClip,
 	rationalEquals,
+	transitionSpec,
 } from '@jasper/project';
 import type { FontCatalogService } from '../fonts/catalog.ts';
 import { alphaDecoder } from '../media/alpha.ts';
@@ -236,6 +237,17 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 				reason: `${c.kind} clip "${c.name}" has an alpha channel that needs the ${dec} decoder, which this ffmpeg build lacks`,
 			});
 	}
+	// Transition framework (wave 2): GPU transitions are shader stages of the compositions; the native builder only
+	// renders the built-in ramps (cross dissolve, dip to black). An export that contains one goes through Remotion.
+	for (const track of snapshot.videoTracks)
+		for (const t of track.transitions ?? []) {
+			const spec = transitionSpec(t.effectId);
+			blockers.push({
+				itemId: t.id,
+				path: 'native',
+				reason: `transition "${spec?.label ?? t.effectId}" is a GPU transition (rendered by the Remotion path)`,
+			});
+		}
 	for (const a of snapshot.audioClips) {
 		const why: string[] = [];
 		// Keyframed clip / track / master volume is native (per-frame gain, keyframed.ts). Pan is not: the composition

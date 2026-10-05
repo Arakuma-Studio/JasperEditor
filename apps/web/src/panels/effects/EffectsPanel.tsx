@@ -3,7 +3,13 @@
 // Audio Effects), drag an effect onto a timeline clip or the Effect Controls panel, or double-click to apply it to
 // the selected clips (one undo step for N clips). "GPU" = a shader effect (Premiere's Accelerated Effects badge).
 // M3 (wp-m3-presets, S03:FX-030): the Presets bin (built-in and user effect presets) is presets/PresetsBin.tsx.
-import { type EffectSpec, effectBadges, effectIsGpu, type TransitionSpec } from '@jasper/project';
+import {
+	type EffectSpec,
+	effectBadges,
+	effectIsGpu,
+	TRANSITION_SPECS,
+	type TransitionSpec,
+} from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useSessionOrNull, useSessionState, useStoreSelector } from '@jasper/session/react';
 import { cx } from '@jasper/ui';
@@ -76,8 +82,16 @@ function EffectsBody({ session }: { session: EditorSession }) {
 		() => effectTree(registry, { query, realtime, native, gpu }),
 		[registry, query, realtime, native, gpu],
 	);
-	// S10:TUI-020: transition bins (native-capable and real-time, so the badge filters keep them).
-	const transitionBins = useMemo(() => transitionTree(query), [query]);
+	// S10:TUI-020: transition bins. The built-ins are native-capable and real-time; GPU transitions (transition
+	// framework) carry the GPU badge — the N / GPU filters apply to them like to effects.
+	const transitionBins = useMemo(
+		() =>
+			transitionTree(
+				query,
+				TRANSITION_SPECS.filter((s) => (!gpu || !!s.gpu) && (!native || !s.gpu)),
+			),
+		[query, gpu, native],
+	);
 	const presetLib = usePresetLibrary();
 	const presetFilter = useMemo(() => ({ query, realtime, native }), [query, realtime, native]);
 	const presetHits = useMemo(
@@ -129,6 +143,54 @@ function EffectsBody({ session }: { session: EditorSession }) {
 		);
 	};
 	const toggle = (id: string) => setClosed({ ...closed, [id]: !closed[id] });
+	/** One transition row (S10:TUI-020): drag onto an edit point, double-click applies to the selection. */
+	const transitionItem = (t: TransitionSpec, depth: number) => {
+		const isDefault = defaults[t.appliesTo] === t.id;
+		const gpuBadge = !!t.gpu;
+		return (
+			<div
+				key={t.id}
+				role="treeitem"
+				tabIndex={0}
+				aria-selected={focused === t.id}
+				draggable
+				title={`${t.description}\nDrag onto an edit point or clip edge in the Timeline.${isDefault ? `\nDefault ${t.appliesTo} transition.` : ''}`}
+				className={cx(
+					'flex h-[var(--pr-row-h)] cursor-grab items-center gap-1 pr-2 text-pr-ui',
+					focused === t.id ? 'bg-pr-selected' : 'hover:bg-pr-hover',
+				)}
+				style={{ paddingLeft: 6 + depth * 16 }}
+				onClick={() => setFocused(t.id)}
+				onDoubleClick={() => applyTransition(t)}
+				onKeyDown={(ev) => ev.key === 'Enter' && applyTransition(t)}
+				onContextMenu={(ev) => {
+					ev.preventDefault();
+					setFocused(t.id);
+					setMenu({ x: ev.clientX, y: ev.clientY, items: transitionMenu(t) });
+				}}
+				onDragStart={(ev) => writeTransitionDragPayload(ev.dataTransfer, t.id)}
+				onDragEnd={endTransitionDrag}
+				data-transition-effect-id={t.id}
+				data-default={isDefault || undefined}
+			>
+				<TransitionGlyph audio={t.appliesTo === 'audio'} isDefault={isDefault} />
+				<span className="min-w-0 flex-1 truncate">{t.label}</span>
+				{gpuBadge ? (
+					<span
+						className="text-[10px] text-pr-accent"
+						title="GPU-accelerated transition (exports through Remotion)"
+						data-badge="gpu"
+					>
+						GPU
+					</span>
+				) : (
+					<span className="text-[10px] text-pr-engine-native" title="Renders on the native (ffmpeg) path">
+						N
+					</span>
+				)}
+			</div>
+		);
+	};
 
 	return (
 		<>
@@ -253,47 +315,27 @@ function EffectsBody({ session }: { session: EditorSession }) {
 									const id = `${bin.medium}/${cat.category}`;
 									const open = !closed[id] || !!query;
 									return (
-										<div key={id}>
+										<div key={id} data-transition-bin={cat.category}>
 											<TreeFolder label={cat.category} open={open} depth={1} onToggle={() => toggle(id)} />
 											{open
-												? cat.transitions.map((t) => {
-														const isDefault = defaults[t.appliesTo] === t.id;
-														return (
-															<div
-																key={t.id}
-																role="treeitem"
-																tabIndex={0}
-																aria-selected={focused === t.id}
-																draggable
-																title={`${t.description}\nDrag onto an edit point or clip edge in the Timeline.${isDefault ? `\nDefault ${t.appliesTo} transition.` : ''}`}
-																className={cx(
-																	'flex h-[var(--pr-row-h)] cursor-grab items-center gap-1 pr-2 pl-[38px] text-pr-ui',
-																	focused === t.id ? 'bg-pr-selected' : 'hover:bg-pr-hover',
-																)}
-																onClick={() => setFocused(t.id)}
-																onDoubleClick={() => applyTransition(t)}
-																onKeyDown={(ev) => ev.key === 'Enter' && applyTransition(t)}
-																onContextMenu={(ev) => {
-																	ev.preventDefault();
-																	setFocused(t.id);
-																	setMenu({ x: ev.clientX, y: ev.clientY, items: transitionMenu(t) });
-																}}
-																onDragStart={(ev) => writeTransitionDragPayload(ev.dataTransfer, t.id)}
-																onDragEnd={endTransitionDrag}
-																data-transition-effect-id={t.id}
-																data-default={isDefault || undefined}
-															>
-																<TransitionGlyph audio={t.appliesTo === 'audio'} isDefault={isDefault} />
-																<span className="min-w-0 flex-1 truncate">{t.label}</span>
-																<span
-																	className="text-[10px] text-pr-engine-native"
-																	title="Renders on the native (ffmpeg) path"
-																>
-																	N
-																</span>
-															</div>
-														);
-													})
+												? [
+														...cat.transitions.map((t) => transitionItem(t, 2)),
+														...cat.groups.map((g) => {
+															const gid = `${id}/${g.group}`;
+															const gopen = !closed[gid] || !!query;
+															return (
+																<div key={gid} data-transition-bin={`${cat.category}/${g.group}`}>
+																	<TreeFolder
+																		label={g.group}
+																		open={gopen}
+																		depth={2}
+																		onToggle={() => toggle(gid)}
+																	/>
+																	{gopen ? g.transitions.map((t) => transitionItem(t, 3)) : null}
+																</div>
+															);
+														}),
+													]
 												: null}
 										</div>
 									);

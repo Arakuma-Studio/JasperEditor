@@ -44,8 +44,10 @@ export function LayerBox({
 	overlay?: ReactNode;
 }) {
 	const { props, clip } = layer;
+	// Transition framework: a side of a GPU transition whose component did not capture it already (cards, proxies,
+	// any DOM content) is captured here through HTML-in-Canvas.
 	const domFx = useLayerFx(layer, {
-		enabled: effects === undefined && DOM_FX_KINDS.has(clip.kind),
+		enabled: effects === undefined && (DOM_FX_KINDS.has(clip.kind) || !!layer.transition?.tap),
 		canRun: canUseHtmlInCanvas(),
 	});
 	const cssEffects = domFx.mode === 'active' ? domFx.cssEffects : (effects ?? props.effects);

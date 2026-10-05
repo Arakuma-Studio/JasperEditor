@@ -24,6 +24,7 @@ import {
 	type RenderAudioFade,
 	type RenderFade,
 	type RenderMatte,
+	type RenderTransition,
 	resolveAudioTransitions,
 	resolveVideoTransitions,
 } from '../transitions.ts';
@@ -197,9 +198,15 @@ export type RenderSnapshot = {
 	durationFrames: number;
 	/**
 	 * V1 (bottom) → top; output-disabled tracks omitted; clips sorted by start. `mattes` are full-frame
-	 * colours drawn under the track's clips (the black of a dip to black).
+	 * colours drawn under the track's clips (the black of a dip to black). `transitions` (wave-2 transition framework)
+	 * are the GPU transition stages drawn over the track's clips (each replaces its A/B clips for its span).
 	 */
-	videoTracks: { trackId: string; clips: RenderVisualClip[]; mattes?: RenderMatte[] }[];
+	videoTracks: {
+		trackId: string;
+		clips: RenderVisualClip[];
+		mattes?: RenderMatte[];
+		transitions?: RenderTransition[];
+	}[];
 	/** After mute/solo resolution. */
 	audioClips: RenderAudioClip[];
 	/** null = offline. */
@@ -435,7 +442,15 @@ export function buildRenderSnapshot(
 		const mattes = (transitions.mattes.get(t.id) ?? []).filter(
 			(m) => m.start < range.end && m.start + m.duration > range.start,
 		);
-		videoTracks.push({ trackId: t.id, clips, ...(mattes.length ? { mattes } : {}) });
+		const stages = (transitions.stages.get(t.id) ?? []).filter(
+			(x) => x.start < range.end && x.start + x.duration > range.start,
+		);
+		videoTracks.push({
+			trackId: t.id,
+			clips,
+			...(mattes.length ? { mattes } : {}),
+			...(stages.length ? { transitions: stages } : {}),
+		});
 	}
 	for (const s of transitions.skipped)
 		warnings.push({ clipId: s.transitionId, code: 'TRANSITION_SKIPPED', message: s.reason });

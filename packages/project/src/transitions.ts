@@ -3,9 +3,16 @@
 // and after the out-point), per-clip opacity ramps, and per-track mattes (the black of a dip to black).
 // Pure and shared by the command handlers, the render snapshot, the Remotion composition and the native
 // export, so the three agree frame for frame.
+// Wave-2 transition framework (docs/wp-notes/fx-transition-framework.md): `TRANSITION_SPECS` = the four built-ins
+// (opacity ramps / mattes / audio gain, native ffmpeg export) + the GPU transition catalogue
+// (`registry/transitions/*`, `FX_TRANSITIONS`). A GPU transition resolves to a `RenderTransition` of its track (the
+// frame-space shader stage of the compositions) instead of ramps; both clips get the handles the span needs.
 import { clipEnd, clipsOnTrack } from './derive/index.ts';
+import type { ParamSpec } from './registry/effects.ts';
 import { contentDurationFlicks, isBoundedContent } from './registry/kinds.ts';
-import type { RGBA } from './schema/common.ts';
+import { FX_TRANSITIONS } from './registry/transitions/index.ts';
+import type { GpuTransition } from './registry/transitions/shader.ts';
+import type { Animatable, ParamValue, RGBA } from './schema/common.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import type { Clip, Sequence, Transition } from './schema/sequence.ts';
 import { FRAME_EPS, flicksPerFrame, type Rational } from './time.ts';
@@ -15,16 +22,41 @@ export const DIP_TO_BLACK = 'jasper.dip-to-black';
 export const CONSTANT_GAIN = 'jasper.constant-gain';
 export const CONSTANT_POWER = 'jasper.constant-power';
 
+/**
+ * A transition type (the transition registry, S01:TRN-001 `effectId`). Built-ins render as opacity ramps, mattes
+ * and audio gain (native ffmpeg export); GPU transitions (`gpu`, `defineShaderTransition`) as a frame-space shader
+ * stage over both clips (Remotion export).
+ */
 export type TransitionSpec = {
 	id: string;
 	version: number;
 	label: string;
 	appliesTo: 'video' | 'audio';
 	description: string;
+	/**
+	 * Effects-panel folder under Video / Audio Transitions: Premiere's bins (3D Motion, Dissolve, Iris, Page Peel,
+	 * Slide, Wipe, Zoom; Crossfade for audio) or "Sapphire Transitions" (`TRANSITION_BINS`).
+	 */
+	bin: string;
+	/** Sub-folder inside `bin` (Sapphire: Dissolves / Wipes / Other). */
+	subBin?: string;
+	keywords?: readonly string[];
+	/**
+	 * Parameters (Effect Controls' Transition section, `transition.add/update {params}`, `param.set` on
+	 * `["transition", id, name]`). Animatable ones take keyframes whose time is flicks from the span's first frame.
+	 */
+	params: readonly ParamSpec[];
+	/** GPU realization (absent: a built-in rendered by the composition's ramps and the native builder). */
+	gpu?: GpuTransition;
+	capabilities: { preview: 'css' | 'webgl'; export: readonly ('native' | 'remotion')[] };
+	/** Params of an older `effectVersion` → this version's (as `EffectSpec.migrate`). */
+	migrate?(fromVersion: number, params: Record<string, unknown>): Record<string, unknown>;
 };
 
-/** Transitions this build renders (unknown ids in a document are preserved and not rendered, S01:FX-022). */
-export const TRANSITION_SPECS: readonly TransitionSpec[] = [
+const BUILTIN = { preview: 'css', export: ['native', 'remotion'] } as const;
+
+/** The built-in transitions (native ffmpeg path; their rendering is unchanged since M2). */
+export const BUILTIN_TRANSITION_SPECS: readonly TransitionSpec[] = [
 	{
 		id: CROSS_DISSOLVE,
 		version: 1,
@@ -32,6 +64,10 @@ export const TRANSITION_SPECS: readonly TransitionSpec[] = [
 		appliesTo: 'video',
 		description:
 			'The incoming clip fades in over the outgoing one; at a single clip edge it is a fade from/to transparent.',
+		bin: 'Dissolve',
+		keywords: ['fade', 'mix', 'dissolve'],
+		params: [],
+		capabilities: BUILTIN,
 	},
 	{
 		id: DIP_TO_BLACK,
@@ -40,6 +76,10 @@ export const TRANSITION_SPECS: readonly TransitionSpec[] = [
 		appliesTo: 'video',
 		description:
 			'The outgoing clip fades to black, then the incoming clip fades in from black; at a single clip edge it is a fade from/to black.',
+		bin: 'Dissolve',
+		keywords: ['fade', 'black', 'dip'],
+		params: [],
+		capabilities: BUILTIN,
 	},
 	{
 		id: CONSTANT_GAIN,
@@ -48,6 +88,9 @@ export const TRANSITION_SPECS: readonly TransitionSpec[] = [
 		appliesTo: 'audio',
 		description:
 			'Linear audio crossfade between two clips (the amplitudes sum to 1); at a single clip edge a linear fade in or out.',
+		bin: 'Crossfade',
+		params: [],
+		capabilities: BUILTIN,
 	},
 	{
 		id: CONSTANT_POWER,
@@ -56,11 +99,34 @@ export const TRANSITION_SPECS: readonly TransitionSpec[] = [
 		appliesTo: 'audio',
 		description:
 			'Equal-power (quarter sine) audio crossfade between two clips (no level dip or bump); at a single clip edge an equal-power fade.',
+		bin: 'Crossfade',
+		params: [],
+		capabilities: BUILTIN,
 	},
 ];
 
+/** Transitions this build renders (unknown ids in a document are preserved and not rendered, S01:FX-022). */
+export const TRANSITION_SPECS: readonly TransitionSpec[] = [...BUILTIN_TRANSITION_SPECS, ...FX_TRANSITIONS];
+
+const BY_ID = new Map(TRANSITION_SPECS.map((s) => [s.id, s]));
+
 export function transitionSpec(effectId: string): TransitionSpec | null {
-	return TRANSITION_SPECS.find((s) => s.id === effectId) ?? null;
+	return BY_ID.get(effectId) ?? null;
+}
+
+/** The transition renders as a GPU shader stage (Remotion path) rather than ramps (native-capable). */
+export function isGpuTransition(spec: Pick<TransitionSpec, 'gpu'> | null | undefined): boolean {
+	return !!spec?.gpu;
+}
+
+/** A transition's params with every declared param present (stored value or default), unknown names dropped. */
+export function transitionParamsOf(
+	spec: Pick<TransitionSpec, 'params'>,
+	params: Readonly<Record<string, Animatable<ParamValue>>>,
+): Record<string, Animatable<ParamValue>> {
+	const out: Record<string, Animatable<ParamValue>> = {};
+	for (const p of spec.params) out[p.name] = params[p.name] ?? { value: p.default, keyframes: [] };
+	return out;
 }
 
 /**
@@ -112,6 +178,22 @@ export function transitionSpan(
 	const start =
 		alignment === 'start-at-cut' ? cut : alignment === 'end-at-cut' ? cut - duration : cut - (duration >> 1);
 	return { start, end: start + duration };
+}
+
+/**
+ * First sequence frame of a transition's span as stored (before render-time clamping to the handles), or null when
+ * its clips are missing. Two-sided: `transitionSpan(cut, duration, alignment)`; a fade: inside its clip.
+ */
+export function transitionStartFrame(
+	seq: Pick<Sequence, 'clips'>,
+	t: Pick<Transition, 'outgoingClipId' | 'incomingClipId' | 'duration' | 'alignment'>,
+): number | null {
+	const out = t.outgoingClipId ? seq.clips[t.outgoingClipId] : undefined;
+	const inc = t.incomingClipId ? seq.clips[t.incomingClipId] : undefined;
+	if (inc && out) return transitionSpan(inc.start, t.duration, t.alignment).start;
+	if (inc) return inc.start;
+	if (out) return clipEnd(out) - Math.min(t.duration, out.duration);
+	return null;
 }
 
 /**
@@ -188,11 +270,33 @@ function isOpaque(doc: Pick<ProjectDocument, 'media' | 'synthetics'>, c: Clip): 
 	return false;
 }
 
+/**
+ * A GPU transition of a track as the compositions draw it (wave-2 transition framework): the frame-space shader stage
+ * over `[start, start + duration)` that replaces the outgoing ("A") and incoming ("B") clip on their track. Both
+ * clips are drawn with the handles the span needs (no ramps); the stage composites them.
+ */
+export type RenderTransition = {
+	id: string;
+	effectId: string;
+	effectVersion: number;
+	/** First sequence frame of the span and its length in frames. */
+	start: number;
+	duration: number;
+	/** Two-sided, or a fade at the head of B (`in`) / the tail of A (`out`). */
+	sides: 'both' | 'in' | 'out';
+	outgoingClipId: string | null;
+	incomingClipId: string | null;
+	/** Every declared param (stored or default); keyframe times are flicks from `start`. */
+	params: Record<string, Animatable<ParamValue>>;
+};
+
 export type ResolvedTransitions = {
 	/** clipId → handles and ramps (only clips touched by a rendered transition). */
 	clips: Map<string, ClipTransitionRender>;
 	/** trackId → mattes. */
 	mattes: Map<string, RenderMatte[]>;
+	/** trackId → GPU transition stages (sorted by start). */
+	stages: Map<string, RenderTransition[]>;
 	/** Transitions that are not rendered, with the reason (unknown effect, no room). */
 	skipped: { transitionId: string; reason: string }[];
 };
@@ -208,6 +312,7 @@ export function resolveVideoTransitions(
 ): ResolvedTransitions {
 	const clips = new Map<string, ClipTransitionRender>();
 	const mattes = new Map<string, RenderMatte[]>();
+	const stages = new Map<string, RenderTransition[]>();
 	const skipped: ResolvedTransitions['skipped'] = [];
 	const entry = (id: string) => {
 		let e = clips.get(id);
@@ -216,6 +321,28 @@ export function resolveVideoTransitions(
 			clips.set(id, e);
 		}
 		return e;
+	};
+	const stage = (
+		t: Transition,
+		spec: TransitionSpec,
+		start: number,
+		duration: number,
+		sides: RenderTransition['sides'],
+	) => {
+		if (duration <= 0) return;
+		const list = stages.get(t.trackId) ?? [];
+		list.push({
+			id: t.id,
+			effectId: t.effectId,
+			effectVersion: t.effectVersion,
+			start,
+			duration,
+			sides,
+			outgoingClipId: sides === 'in' ? null : t.outgoingClipId,
+			incomingClipId: sides === 'out' ? null : t.incomingClipId,
+			params: transitionParamsOf(spec, t.params as Record<string, Animatable<ParamValue>>),
+		});
+		stages.set(t.trackId, list);
 	};
 	const matte = (t: Transition, start: number, duration: number) => {
 		if (duration <= 0) return;
@@ -239,6 +366,7 @@ export function resolveVideoTransitions(
 		if ((!out && !inc) || (t.outgoingClipId && !out) || (t.incomingClipId && !inc)) continue;
 		if ((out && !out.enabled) || (inc && !inc.enabled)) continue;
 		const dip = t.effectId === DIP_TO_BLACK;
+		const gpu = isGpuTransition(spec);
 		if (out && inc) {
 			if (clipEnd(out) !== inc.start) continue; // not adjacent (INV-010); cleanup removes these
 			const cut = inc.start;
@@ -256,7 +384,12 @@ export function resolveVideoTransitions(
 			const { start, end } = transitionSpan(cut, d, t.alignment);
 			const a = entry(out.id);
 			const b = entry(inc.id);
-			if (dip) {
+			if (gpu) {
+				// Both clips are drawn over the whole span (handles); the shader stage composites them.
+				a.tailHandle = Math.max(a.tailHandle, end - cut);
+				b.headHandle = Math.max(b.headHandle, cut - start);
+				stage(t, spec, start, d, 'both');
+			} else if (dip) {
 				// First half: the outgoing clip fades to black (black on its last frame); second half: the
 				// incoming clip fades in. The matte hides the tracks below for the whole span.
 				const mid = start + Math.ceil(d / 2);
@@ -275,6 +408,12 @@ export function resolveVideoTransitions(
 				if (!(isOpaque(doc, out) && isOpaque(doc, inc)))
 					a.fades.push({ type: 'out', start: start - 1, frames: d + 1 });
 			}
+		} else if (inc && gpu) {
+			// A GPU transition at a free head: from transparent to B, over B's own first frames.
+			stage(t, spec, inc.start, Math.min(t.duration, inc.duration), 'in');
+		} else if (out && gpu) {
+			const d = Math.min(t.duration, out.duration);
+			stage(t, spec, clipEnd(out) - d, d, 'out');
 		} else if (inc) {
 			// Fade in at the clip's head: transparent (or black) on its first frame.
 			const d = Math.min(t.duration, inc.duration);
@@ -288,7 +427,8 @@ export function resolveVideoTransitions(
 			if (dip) matte(t, end - d, d);
 		}
 	}
-	return { clips, mattes, skipped };
+	for (const list of stages.values()) list.sort((x, y) => x.start - y.start || x.id.localeCompare(y.id));
+	return { clips, mattes, stages, skipped };
 }
 
 /** Gain ramp of an audio clip edge: `in` at the head, `out` at the tail (S01:TRN-004). */

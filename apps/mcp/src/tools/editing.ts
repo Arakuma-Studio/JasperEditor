@@ -6,6 +6,7 @@ import {
 	resolveFrameInput,
 	TimeInputSchema,
 	TrackRefSchema,
+	transitionSpec,
 } from '@jasper/project';
 import { z } from 'zod';
 import {
@@ -24,6 +25,7 @@ import { COMMAND_EXAMPLES, TRANSACTION_EXAMPLE } from '../examples.ts';
 import { clipSummary } from '../format.ts';
 import { AnimateArg, textAnimationOf } from './animation.ts';
 import { ProjectIdArg } from './projects.ts';
+import { transitionEffectId } from './transitions.ts';
 
 const COMMAND_TYPES = Object.keys(COMMAND_CATALOG) as [string, ...string[]];
 
@@ -507,12 +509,19 @@ export function registerEditingTools(ctx: ToolContext): void {
 		{
 			title: 'Add transition',
 			description:
-				'Adds a transition at an edit point or a fade at a clip edge (transition.add). Address it by clipId + edge ("in" = head, "out" = tail) or by track + at (the frame where one clip ends and the next begins). Video: cross-dissolve (the incoming clip fades in over the outgoing one; needs media beyond the cut, "handles") or dip-to-black; at a free clip edge they are fades from/to transparent or black. Audio tracks: constant-gain or constant-power fades at a clip edge (clipId + edge), or crossfades between two audio clips at an edit point (track + at). The duration is shortened (with a warning) to what the clips and their handles allow.',
+				'Adds a transition at an edit point or a fade at a clip edge (transition.add). Address it by clipId + edge ("in" = head, "out" = tail) or by track + at (the frame where one clip ends and the next begins). Video: cross-dissolve (the incoming clip fades in over the outgoing one; needs media beyond the cut, "handles") or dip-to-black; at a free clip edge they are fades from/to transparent or black; or any GPU transition of list_transition_types (push, iris-round, cross-zoom, s.dissolve-luma, …; params e.g. {"direction": "eastToWest"}; a GPU transition at a free clip edge transitions from/to transparency). Audio tracks: constant-gain or constant-power fades at a clip edge (clipId + edge), or crossfades between two audio clips at an edit point (track + at). The duration is shortened (with a warning) to what the clips and their handles allow.',
 			input: {
 				projectId: ProjectIdArg,
 				type: z
-					.enum(['cross-dissolve', 'dip-to-black', 'constant-gain', 'constant-power'])
-					.describe('Transition type'),
+					.string()
+					.min(1)
+					.describe(
+						'Transition type: cross-dissolve, dip-to-black, constant-gain, constant-power, or any type of list_transition_types (short name, effect id or label)',
+					),
+				params: z
+					.record(z.string(), z.unknown())
+					.optional()
+					.describe('Param values {name: value} of the type (list_transition_types lists them)'),
 				durationFrames: z.number().int().min(1).max(600).describe('Length in frames'),
 				clipId: z.string().min(1).optional().describe('Clip id ("clp_…"), with edge'),
 				edge: z.enum(['in', 'out']).optional().describe('in = the clip head, out = the clip tail'),
@@ -535,19 +544,18 @@ export function registerEditingTools(ctx: ToolContext): void {
 					'Give clipId + edge, or track + at',
 					'get_timeline lists clip ids and their start/end frames.',
 				);
+			const effectId = transitionEffectId(a.type);
+			const spec = transitionSpec(effectId);
 			return applyHelper(
 				ctx,
 				a.projectId,
-				a.type === 'dip-to-black'
-					? 'Dip to Black'
-					: a.type === 'cross-dissolve'
-						? 'Cross Dissolve'
-						: 'Audio Fade',
+				spec ? (spec.appliesTo === 'audio' ? 'Audio Fade' : spec.label) : 'Add Transition',
 				[
 					{
 						type: 'transition.add',
-						effectId: `jasper.${a.type}`,
+						effectId,
 						duration: a.durationFrames,
+						...(a.params ? { params: a.params } : {}),
 						...(a.clipId ? { clipId: a.clipId, edge: a.edge } : { trackId: a.track, at: a.at }),
 						...(a.alignment ? { alignment: a.alignment } : {}),
 						...(a.sequenceId ? { sequenceId: a.sequenceId } : {}),

@@ -96,6 +96,10 @@ export function allAnimatables(doc: DDoc): AnimLocation[] {
 		for (const fx of seq.master.effects)
 			for (const [name, a] of Object.entries(fx.params))
 				if (isAnim(a)) out.push({ anim: a, path: ['effect', fx.id, name], seq, clip: null });
+		// Transition params (wave-2 transition framework; times = flicks from the span's start).
+		for (const t of Object.values(seq.transitions))
+			for (const [name, a] of Object.entries(t.params))
+				if (isAnim(a)) out.push({ anim: a as DAnim, path: ['transition', t.id, name], seq, clip: null });
 	}
 	return out;
 }

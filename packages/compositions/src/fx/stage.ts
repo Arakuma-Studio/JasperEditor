@@ -20,12 +20,13 @@ import {
 	PREVIEW_LUT_SIZE,
 	planGpuEffect,
 	type ResolvedEffect,
+	sideCompToCanvas,
 } from '@jasper/project';
 import { useContext, useMemo } from 'react';
 import { cancelRender, Internals } from 'remotion';
 import { ColorDocContext, referencedMedia, useLutAssets } from '../color/chain.ts';
 import { bakedRunLut, loadedLutAsset, lutUrlKey } from '../color/luts.ts';
-import type { LayerProps } from '../types.ts';
+import type { LayerProps, TransitionTap } from '../types.ts';
 import { type FxBypass, type FxCanvasLayout, fxCanvasLayout, type LayerFxPlan, planLayerFx } from './plan.ts';
 import { fxEffectRegistry } from './registry.ts';
 import { fxStatus, useFxStatus } from './status.ts';
@@ -37,7 +38,14 @@ export type FxPreparedStep =
 	| { kind: 'lut'; key: string; lut: Lut | null }
 	| { kind: 'css'; key: string; filter: string }
 	| { kind: 'crop'; key: string; insets: [number, number, number, number] }
-	| { kind: 'flip'; key: string; horizontal: boolean };
+	| { kind: 'flip'; key: string; horizontal: boolean }
+	/** Transition framework: hand the picture to the GPU transition stage (always the last step). */
+	| {
+			kind: 'tap';
+			key: string;
+			tap: TransitionTap;
+			meta: { compToCanvas: readonly number[] | null; opacity: number };
+	  };
 
 /** A media param input of the layer's shader effects. */
 export type FxMediaInput = { mediaId: string; url: string; kind: 'image' | 'video' };
@@ -79,7 +87,15 @@ function chipText(bypassed: readonly FxBypass[], gpu: string): string | null {
  * The fx stage of a layer. `opts.canRun = false` declares that this layer cannot draw shader effects here (a DOM
  * layer without HTML-in-Canvas): the preview bypasses them with a chip; a render cancels.
  */
-export function useLayerFx(layer: LayerProps, opts: { canRun?: boolean; enabled?: boolean } = {}): LayerFx {
+export function useLayerFx(
+	layer: LayerProps,
+	opts: {
+		canRun?: boolean;
+		enabled?: boolean;
+		/** The effects to plan (default: the layer's); e.g. none for a picture that already has them baked. */
+		effects?: readonly ResolvedEffect[];
+	} = {},
+): LayerFx {
 	const doc = useContext(ColorDocContext);
 	const gpu = useFxStatus();
 	// Null outside a composition (layers rendered standalone, e.g. template thumbnails/tests).
@@ -87,8 +103,11 @@ export function useLayerFx(layer: LayerProps, opts: { canRun?: boolean; enabled?
 	const compW = config?.width ?? 0;
 	const compH = config?.height ?? 0;
 	const { clip, props, fps } = layer;
-	const effects = props.effects;
+	const effects = opts.effects ?? props.effects;
 	const box = props.box;
+	// Transition framework: a side of a GPU transition captures its picture for the stage.
+	const tap = layer.transition?.tap ?? null;
+	const capture = !!tap;
 	const colorBypass = doc.isPreview && doc.bypass.has(clip.clipId);
 	const canRun = opts.canRun ?? true;
 	const enabled = opts.enabled ?? true;
@@ -104,8 +123,21 @@ export function useLayerFx(layer: LayerProps, opts: { canRun?: boolean; enabled?
 						failed: (id) => doc.isPreview && fxStatus.failure(id) !== undefined,
 						colorBypass,
 						ctx: { width: box.width, height: box.height, pxScale: 1, fps },
+						capture,
 					}),
-		[enabled, effects, gpu, canRun, colorBypass, box.width, box.height, fps, doc.isPreview, failures],
+		[
+			enabled,
+			effects,
+			gpu,
+			canRun,
+			colorBypass,
+			box.width,
+			box.height,
+			fps,
+			doc.isPreview,
+			failures,
+			capture,
+		],
 	);
 	if (plan && !doc.isPreview && (!plan.active || plan.bypassed.length > 0))
 		cancelRender(
@@ -205,6 +237,16 @@ export function useLayerFx(layer: LayerProps, opts: { canRun?: boolean; enabled?
 					return { kind: 'flip', key: `flip${i}`, horizontal: s.horizontal };
 			}
 		});
+		if (tap) {
+			const opacity = Math.min(1, Math.max(0, props.opacity / 100));
+			const compToCanvas = sideCompToCanvas(map, layout);
+			steps.push({
+				kind: 'tap',
+				key: `tap:${tap.side}:${opacity}:${compToCanvas?.join(',') ?? 'none'}`,
+				tap,
+				meta: { compToCanvas, opacity },
+			});
+		}
 		const builtins = fxBuiltinUniforms({
 			canvas,
 			box: layout.box,
@@ -240,6 +282,8 @@ export function useLayerFx(layer: LayerProps, opts: { canRun?: boolean; enabled?
 		lutVersion,
 		clip.clipId,
 		duration,
+		tap,
+		props.opacity,
 	]);
 
 	if (!plan) return NONE;
