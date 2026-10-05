@@ -233,7 +233,12 @@ function kernelUniforms(p: EffectParams): Record<string, FxUniformValue> {
 	const c1 = vec2(p.kernelCrop1, [-0.997, -0.747]);
 	const c2 = vec2(p.kernelCrop2, [0.997, 0.747]);
 	return {
-		u_kCrop: [Math.min(c1[0], c2[0]), Math.min(c1[1], c2[1]), Math.max(c1[0], c2[0]) + 1e-4, Math.max(c1[1], c2[1]) + 1e-4],
+		u_kCrop: [
+			Math.min(c1[0], c2[0]),
+			Math.min(c1[1], c2[1]),
+			Math.max(c1[0], c2[0]) + 1e-4,
+			Math.max(c1[1], c2[1]) + 1e-4,
+		],
 	};
 }
 
@@ -241,7 +246,10 @@ function kernelUniforms(p: EffectParams): Record<string, FxUniformValue> {
 const edgeXYOf = (p: EffectParams): [number, number] =>
 	bool(p.softBorders)
 		? [3, 3]
-		: [choiceIndex(p.edgeModeX, SBS_EDGE_MODES, 'transparent'), choiceIndex(p.edgeModeY, SBS_EDGE_MODES, 'transparent')];
+		: [
+				choiceIndex(p.edgeModeX, SBS_EDGE_MODES, 'transparent'),
+				choiceIndex(p.edgeModeY, SBS_EDGE_MODES, 'transparent'),
+			];
 
 /** Kernel grid + stats passes; returns their output names. */
 function kernelPasses(plan: SbsPlan, ctx: FxPlanContext) {
@@ -277,7 +285,11 @@ function kernelMaxLevel(p: EffectParams, ctx: FxPlanContext, sizeMul: number): n
 /** `vec4 sbs_kSrc(int level, vec2 uv)` over the pyramid of `input` (levels 0…k). */
 function kSrcGlsl(names: string[]): string {
 	const branches = names
-		.map((n, i) => (i === names.length - 1 ? `  return sbs_texXY(u_${n}, uv, ivec2(u_kEdge));` : `  if (lvl <= ${i}) return sbs_texXY(u_${n}, uv, ivec2(u_kEdge));`))
+		.map((n, i) =>
+			i === names.length - 1
+				? `  return sbs_texXY(u_${n}, uv, ivec2(u_kEdge));`
+				: `  if (lvl <= ${i}) return sbs_texXY(u_${n}, uv, ivec2(u_kEdge));`,
+		)
 		.join('\n');
 	return `vec4 sbs_kSrc(int lvl, vec2 uv) {\n${branches}\n}\n`;
 }
@@ -299,7 +311,11 @@ function kernelGatherPass(
 			definesChunk(o.slice ? '#define SBS_SLICE 1\n' : ''),
 			...(o.slice ? [GLSL_SBS_DEPTH] : []),
 			GLSL_SBS_KERNEL,
-			{ name: `sapphire-blur-sharpen/ksrc-${o.src.join('-')}`, source: kSrcGlsl(o.src), deps: [GLSL_SBS_KERNEL] },
+			{
+				name: `sapphire-blur-sharpen/ksrc-${o.src.join('-')}`,
+				source: kSrcGlsl(o.src),
+				deps: [GLSL_SBS_KERNEL],
+			},
 			GLSL_SBS_KERNEL_GATHER,
 		],
 		format: 'rgba16f',
@@ -382,7 +398,10 @@ export const S_CONVOLVE = defineShaderEffect({
 		timeInvariant: true,
 		padding: (p, ctx) =>
 			bool(p.softBorders)
-				? Math.min(1, Math.abs(num(p.kernelSize, 1))) * unitLayerPx(ctx) * Math.max(num(p.kernelRelWidth, 1), num(p.kernelRelHeight, 1)) * 0.5
+				? Math.min(1, Math.abs(num(p.kernelSize, 1))) *
+					unitLayerPx(ctx) *
+					Math.max(num(p.kernelRelWidth, 1), num(p.kernelRelHeight, 1)) *
+					0.5
 				: 0,
 		uniforms: (p) => {
 			const e = edgeXYOf(p);
@@ -448,7 +467,13 @@ export const S_CONVOLVE_COMP = defineShaderEffect({
 		sNum('hilightThreshold', 'Hilight Threshold', 0.9, { min: 0, softMax: 1, step: 0.01 }),
 		fxParam.toggle('compPremult', 'Comp Premult', true),
 		sNum('frontBrightness', 'Front Brightness', 1, { min: 0, softMax: 4, step: 0.01 }),
-		fxParam.number('frontOpacity', 'Front Opacity', 1, { min: 0, max: 1, step: 0.01 }, { ui: { control: 'slider' } }),
+		fxParam.number(
+			'frontOpacity',
+			'Front Opacity',
+			1,
+			{ min: 0, max: 1, step: 0.01 },
+			{ ui: { control: 'slider' } },
+		),
 		sNum('frontThreshold', 'Front Threshold', 0, { min: 0, softMax: 1, step: 0.01 }),
 		sColor('thresholdAddColor', 'Threshold Add Color', [0, 0, 0]),
 		sNum('backBrightness', 'Back Brightness', 1, { min: 0, softMax: 4, step: 0.01 }),
@@ -463,7 +488,12 @@ export const S_CONVOLVE_COMP = defineShaderEffect({
 		timeInvariant: true,
 		uniforms: (p) => {
 			const e = edgeXYOf(p);
-			return { ...kernelUniforms(p), u_kEdge: e, u_cHiThr: num(p.hilightThreshold, 0.9), u_sbsEdge: { int: e[0] } };
+			return {
+				...kernelUniforms(p),
+				u_kEdge: e,
+				u_cHiThr: num(p.hilightThreshold, 0.9),
+				u_sbsEdge: { int: e[0] },
+			};
 		},
 		passes: (p, ctx) => {
 			const plan = new SbsPlan(ctx);
@@ -507,10 +537,19 @@ void main() {
   fragColor = vec4(sbs_gammaIn(sbs_boost(s.rgb, u_boostHighlights, u_cHiThr), u_useGamma) * s.a, s.a);
 }`,
 			});
-			const fgSrc = pyramidNames(plan, 'fg', kernelMaxLevel(p, ctx, sf * Math.max(rx, ry)));
+			// Texture budget (3 media + 6 fixed outputs): at most 3 pyramid levels shared by front and back.
+			const fgK = Math.min(kernelMaxLevel(p, ctx, sf * Math.max(rx, ry)), sb > 0 ? 2 : 3);
+			const fgSrc = pyramidNames(plan, 'fg', fgK);
 			kernelGatherPass(plan, { output: 'fgc', src: fgSrc, kscale: [sf * rx, sf * ry] });
-			const bgSrc = pyramidNames(plan, 'bg', kernelMaxLevel(p, ctx, sb * Math.max(rx, ry)));
-			kernelGatherPass(plan, { output: 'bgc', src: bgSrc, kscale: [sb * rx, sb * ry] });
+			let bgc = 'bg';
+			if (sb > 0) {
+				const bgSrc = pyramidNames(
+					plan,
+					'bg',
+					Math.min(kernelMaxLevel(p, ctx, sb * Math.max(rx, ry)), 3 - fgK),
+				);
+				bgc = kernelGatherPass(plan, { output: 'bgc', src: bgSrc, kscale: [sb * rx, sb * ry] });
+			}
 			plan.pass({
 				include: [GLSL_SBS_KERNEL, GLSL_COMPOSITE],
 				uniforms: { u_kScale: [sf * rx, sf * ry] },
@@ -519,7 +558,7 @@ void main() {
   vec4 f = sbs_convOut(texture(u_fgc, v_uv), u_frontBrightness);
   vec4 fs = fx_unpremultiply(texture(u_fg, v_uv));
   vec4 fSharp = vec4(sbs_gammaOut(fs.rgb, u_useGamma) * fs.a, fs.a);
-  vec4 b = sbs_convOut(texture(u_bgc, v_uv), u_backBrightness);
+  vec4 b = sbs_convOut(texture(u_${bgc}, v_uv), u_backBrightness);
   f *= u_frontOpacity;
   vec4 r;
   if (u_combine == 0) r = f + b * (1.0 - f.a);
@@ -591,8 +630,13 @@ export const S_Z_CONVOLVE = defineShaderEffect({
 			kernelPasses(plan, ctx);
 			plan.pass(convPrep('prep', 'sbs_texXY(u_source, v_uv, ivec2(u_kEdge))'));
 			const src = pyramidNames(plan, 'prep', kernelMaxLevel(p, ctx, Math.max(...ks)));
-			const layered = zLayers(p, 'prep', ({ output, scale01, slice }) =>
-				kernelGatherPass(plan, { output, src, kscale: [ks[0] * scale01, ks[1] * scale01], slice }),
+			// Budget: 2 media + kern + kstat + the prep pyramid; the rest for the layers.
+			const layered = zLayers(
+				p,
+				'prep',
+				({ output, scale01, slice }) =>
+					kernelGatherPass(plan, { output, src, kscale: [ks[0] * scale01, ks[1] * scale01], slice }),
+				12 - 2 - 2 - src.length,
 			);
 			plan.pass({
 				include: [GLSL_SBS_DEPTH, GLSL_SBS_KERNEL, GLSL_COMPOSITE],

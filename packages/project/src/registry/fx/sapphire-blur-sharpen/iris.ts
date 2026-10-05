@@ -34,20 +34,12 @@ const MAX_TAPS = 400;
 // ---------------------------------------------------------------- params
 
 /** Shape popup of RackDefocus/DefocusPrism/ZDefocus/RackDfComp: Circle, 3…12 sides. */
-export const IRIS_SHAPES = [
-	'circle',
-	'3',
-	'4',
-	'5',
-	'6',
-	'7',
-	'8',
-	'9',
-	'10',
-	'11',
-	'12',
-] as const;
-export const irisShapeParam = (name = 'shape', label = 'Shape', def: (typeof IRIS_SHAPES)[number] = 'circle') =>
+export const IRIS_SHAPES = ['circle', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'] as const;
+export const irisShapeParam = (
+	name = 'shape',
+	label = 'Shape',
+	def: (typeof IRIS_SHAPES)[number] = 'circle',
+) =>
 	fxParam.choice(
 		name,
 		label,
@@ -110,7 +102,13 @@ export type IrisConfig = {
 	vignetteSize?: number;
 	matteBox?: readonly [number, number, number, number];
 	/** Lens texture (media param `lensTexture`): scale, rel Y, rotate (deg), intensity, shift. */
-	texture?: { scale: number; relY: number; rotate: number; intensity: number; shift: readonly [number, number] };
+	texture?: {
+		scale: number;
+		relY: number;
+		rotate: number;
+		intensity: number;
+		shift: readonly [number, number];
+	};
 	/** Custom lens picture (media param `customLens`). */
 	customLens?: boolean;
 	/** Gaussian radial profile over a circle of radius 3σ (Z Blur). */
@@ -163,7 +161,12 @@ export function irisUniforms(c: IrisConfig): Record<string, FxUniformValue> {
 		u_irisPrism: [prism.sep, Math.max(0.01, prism.thick)],
 		u_irisCrop: [c.opticalVignette ?? 0, Math.max(1, c.vignetteSize ?? 1)],
 		u_irisBox: (c.matteBox ?? [0, 0, 0, 0]) as [number, number, number, number],
-		u_irisTex: [Math.max(0.1, tex.scale), Math.max(0.01, tex.relY), (tex.rotate * Math.PI) / 180, tex.intensity],
+		u_irisTex: [
+			Math.max(0.1, tex.scale),
+			Math.max(0.01, tex.relY),
+			(tex.rotate * Math.PI) / 180,
+			tex.intensity,
+		],
 		u_irisTexShift: [tex.shift[0], tex.shift[1]],
 	};
 }
@@ -368,15 +371,20 @@ export type GatherSpec = {
 	uniforms?: Record<string, FxUniformValue>;
 	/** Cap of the downscale (pyramid) level. */
 	maxLevel?: number;
+	/** The input is already at 1/2^inputLevel (no pyramid below it). */
+	inputLevel?: number;
 };
 
 /** Plans one iris gather (pyramid level by radius, tap count by area). Returns the output and its scale. */
 export function gatherPass(plan: SbsPlan, g: GatherSpec): { output: string; scale: number; level: number } {
 	const fr = g.iris.fringe ? Math.max(...g.iris.fringe) : 1;
 	const r = Math.max(g.radiusX, g.radiusY) * fr;
-	const k = Math.min(g.maxLevel ?? 6, levelFor(r, GATHER_TARGET) + (g.extraLevels ?? 0));
+	const k = Math.max(
+		g.inputLevel ?? 0,
+		Math.min(g.maxLevel ?? 6, levelFor(r, GATHER_TARGET) + (g.extraLevels ?? 0)),
+	);
 	const scale = 1 / 2 ** k;
-	const tex = plan.level(g.input, k);
+	const tex = plan.level(g.input, k, 'rgba16f', g.inputLevel ?? 0);
 	const rx = g.radiusX * scale;
 	const ry = g.radiusY * scale;
 	const area = Math.PI * Math.max(rx, 0.5) * Math.max(ry, 0.5) * fr * fr;

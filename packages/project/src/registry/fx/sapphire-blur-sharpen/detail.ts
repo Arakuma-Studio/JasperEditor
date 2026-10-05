@@ -9,16 +9,7 @@ import { defineShaderEffect, SAPPHIRE_BINS } from '../define.ts';
 import { GLSL_HASH } from '../glsl/hash.ts';
 import { fxParam } from '../params.ts';
 import type { FxUniformValue } from '../shader.ts';
-import {
-	bool,
-	GLSL_SBS_COMMON,
-	num,
-	px,
-	SBS_EDGE_REPEAT,
-	SbsPlan,
-	sNum,
-	sSize,
-} from './common.ts';
+import { bool, GLSL_SBS_COMMON, num, px, SBS_EDGE_REPEAT, SbsPlan, sNum, sSize } from './common.ts';
 
 const YIQ_PREP = /* glsl */ `
 void main() {
@@ -60,7 +51,7 @@ export const S_SHARPEN = defineShaderEffect({
 			const plan = new SbsPlan(ctx);
 			plan.pass({ output: 'yiq', include: [GLSL_SBS_COMMON], format: 'rgba16f', frag: YIQ_PREP });
 			const blur = (out: string, s: number) =>
-				plan.blur2d({ input: 'yiq', output: out, sigmaX: s, sigmaY: s, edge: SBS_EDGE_REPEAT, maxLevel: 0 });
+				plan.blur2d({ input: 'yiq', output: out, sigmaX: s, sigmaY: s, edge: SBS_EDGE_REPEAT });
 			const tail = /* glsl */ `
 vec4 sharpTail(vec3 srcYiq, vec3 dYiq, float a) {
   dYiq *= vec3(u_sharpenLuma, u_sharpenChroma, u_sharpenChroma);
@@ -176,8 +167,18 @@ export const S_MEDIAN = defineShaderEffect({
 			const perCh = p.effect === 'medianChannels';
 			const rel = (c: string, axis: 'X' | 'Y') => (perCh ? num(p[`${c}RelSize${axis}`], 1) : 1);
 			const chans = ['red', 'green', 'blue', 'alpha'];
-			const rx = chans.map((c) => Math.min(40, size * num(p.sizeRelX, 1) * rel(c, 'X'))) as [number, number, number, number];
-			const ry = chans.map((c) => Math.min(40, size * num(p.sizeRelY, 1) * rel(c, 'Y'))) as [number, number, number, number];
+			const rx = chans.map((c) => Math.min(40, size * num(p.sizeRelX, 1) * rel(c, 'X'))) as [
+				number,
+				number,
+				number,
+				number,
+			];
+			const ry = chans.map((c) => Math.min(40, size * num(p.sizeRelY, 1) * rel(c, 'Y'))) as [
+				number,
+				number,
+				number,
+				number,
+			];
 			const u: Record<string, FxUniformValue> = { u_mSub: bool(p.subpixel) };
 			return [
 				{
@@ -224,7 +225,16 @@ export const S_DEBAND = defineShaderEffect({
 			const plan = new SbsPlan(ctx);
 			let src = 'source';
 			const pre = num(p.preBlur) * ctx.pxScale;
-			if (pre > 0) src = plan.blur2d({ input: 'source', output: 'pre', sigmaX: pre, sigmaY: pre, edge: SBS_EDGE_REPEAT, format: 'rgba16f', maxLevel: 0 }).output;
+			if (pre > 0)
+				src = plan.blur2d({
+					input: 'source',
+					output: 'pre',
+					sigmaX: pre,
+					sigmaY: pre,
+					edge: SBS_EDGE_REPEAT,
+					format: 'rgba16f',
+					maxLevel: 0,
+				}).output;
 			// Edges: a neighbour differs by more than the threshold (8-bit steps).
 			plan.pass({
 				output: 'edges',
@@ -296,7 +306,15 @@ void main() {
 			const post = num(p.postBlur, 0.5) * ctx.pxScale;
 			const blurred =
 				post > 0
-					? plan.blur2d({ input: 'diffuse', output: 'post', sigmaX: post, sigmaY: post, edge: SBS_EDGE_REPEAT, format: 'rgba16f', maxLevel: 0 }).output
+					? plan.blur2d({
+							input: 'diffuse',
+							output: 'post',
+							sigmaX: post,
+							sigmaY: post,
+							edge: SBS_EDGE_REPEAT,
+							format: 'rgba16f',
+							maxLevel: 0,
+						}).output
 					: 'diffuse';
 			plan.pass({
 				include: [GLSL_SBS_COMMON],
@@ -352,7 +370,14 @@ export const S_GRAIN_REMOVE = defineShaderEffect({
 				maxLevel: 0,
 			});
 			const se = Math.max(0.5, px(ctx, num(p.edgesWidth, 0.0224), 1 / 16));
-			plan.blur2d({ input: 'yiq', output: 'edgeBlur', sigmaX: se, sigmaY: se, edge: SBS_EDGE_REPEAT, maxLevel: 0 });
+			plan.blur2d({
+				input: 'yiq',
+				output: 'edgeBlur',
+				sigmaX: se,
+				sigmaY: se,
+				edge: SBS_EDGE_REPEAT,
+				maxLevel: 0,
+			});
 			plan.pass({
 				include: [GLSL_SBS_COMMON],
 				uniforms: { u_edgeStep: se },

@@ -16,4 +16,14 @@ import { SBS_Z } from './sapphire-blur-sharpen/z.ts';
 
 const byLabel = (a: EffectSpec, b: EffectSpec) => a.label.localeCompare(b.label);
 
-export const SAPPHIRE_BLUR_SHARPEN_EFFECTS: readonly EffectSpec[] = [...SBS_BLURS, ...SBS_DEFOCUS, ...SBS_DETAIL, ...SBS_SMOOTH, ...SBS_MOTION, ...SBS_Z, ...SBS_CONVOLVE, ...SBS_COMP, ...SBS_FREELENS].sort(byLabel);
+export const SAPPHIRE_BLUR_SHARPEN_EFFECTS: readonly EffectSpec[] = [
+	...SBS_BLURS,
+	...SBS_DEFOCUS,
+	...SBS_DETAIL,
+	...SBS_SMOOTH,
+	...SBS_MOTION,
+	...SBS_Z,
+	...SBS_CONVOLVE,
+	...SBS_COMP,
+	...SBS_FREELENS,
+].sort(byLabel);

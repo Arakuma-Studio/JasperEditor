@@ -10,6 +10,7 @@ import {
 	bool,
 	edgeOf,
 	GLSL_SBS_COMMON,
+	levelFor,
 	num,
 	px,
 	SbsPlan,
@@ -34,26 +35,51 @@ import {
 } from './iris.ts';
 
 const MATTE_USE = ['luma', 'alpha'] as const;
-const hasMedia = (v: unknown) => typeof (v as { mediaId?: unknown })?.mediaId === 'string' && !!(v as { mediaId: string }).mediaId;
+const hasMedia = (v: unknown) =>
+	typeof (v as { mediaId?: unknown })?.mediaId === 'string' && !!(v as { mediaId: string }).mediaId;
 
-/** A plate prepared for the gather: straight colour × matte (premultiplied), boost + gamma, matte gamma on alpha. */
-function platePrep(output: string, read: string, matte: string, color = 'fx_unpremultiply(s).rgb'): ShaderPass {
+/**
+ * A plate prepared for the gather: straight colour × matte (premultiplied), boost + gamma, matte gamma on alpha —
+ * rendered directly at the gather's pyramid level (`level`) with a 4×4 supersampled footprint, so three plates need
+ * no pyramids (texture budget: 3 media + 2 textures per plate).
+ */
+function platePrep(
+	output: string,
+	read: string,
+	matte: string,
+	level: number,
+	color = 'fx_unpremultiply(s).rgb',
+): ShaderPass {
 	return {
 		output,
 		include: [GLSL_SBS_COMMON],
 		format: 'rgba16f',
+		scale: 1 / 2 ** level,
 		frag: /* glsl */ `
-void main() {
-  vec2 n = sbs_layerNorm(v_uv);
+vec4 plate(vec2 uv) {
+  vec2 n = sbs_layerNorm(uv);
   vec4 s = ${read};
   float m = ${matte};
   vec3 c = ${color};
   c = sbs_gammaIn(sbs_boost(c, u_dBoost, u_dThreshold), u_dGamma);
   float a = pow(clamp(m, 0.0, 1.0), u_matteGamma);
-  fragColor = vec4(c * a, a);
+  return vec4(c * a, a);
+}
+void main() {
+${
+	level === 0
+		? '  fragColor = plate(v_uv);'
+		: `  vec4 sum = vec4(0.0);
+  for (int j = 0; j < 4; j++)
+    for (int i = 0; i < 4; i++) sum += plate(v_uv + (vec2(float(i), float(j)) - 1.5) * 0.25 * u_texel);
+  fragColor = sum / 16.0;`
+}
 }`,
 	};
 }
+
+/** Pyramid level of a plate's gather (same rule as `gatherPass`). */
+const plateLevel = (radius: number, rel: number) => levelFor(radius * Math.max(1, rel), 10, 6);
 
 export const S_RACK_DF_COMP = defineShaderEffect({
 	id: 'jasper.s.rack-df-comp',
@@ -111,28 +137,45 @@ export const S_RACK_DF_COMP = defineShaderEffect({
 			const iris = irisFromParams(p, irisSides(p.shape));
 			const rel = Math.max(0.01, num(p.relHeight, 1));
 			const plateMatte = /* glsl */ `u_matte_size.x > 0.0 ? (u_matteUse == 1 ? texture(u_matte, clamp(n, 0.0, 1.0)).a : fx_luma(fx_unpremultiply(texture(u_matte, clamp(n, 0.0, 1.0))).rgb) * texture(u_matte, clamp(n, 0.0, 1.0)).a) : (u_matteUse == 1 ? s.a : fx_luma(fx_unpremultiply(s).rgb) * s.a)`;
+			const plates: { name: string; radius: number; level: number }[] = [];
+			const addPlate = (name: string, radius: number) => {
+				const level = plateLevel(radius, rel);
+				plates.push({ name, radius, level });
+				return level;
+			};
 			// Foreground: the clip with its matte.
+			const fgR = px(ctx, num(p.defocusForeground, 0.088), DEFOCUS_RADIUS_PER_UNIT);
 			plan.pass(
 				platePrep(
 					'fg',
-					'sbs_tex(u_source, v_uv, u_sbsEdge)',
+					'sbs_tex(u_source, uv, u_sbsEdge)',
 					`u_invertMatte ? 1.0 - (${plateMatte}) : (${plateMatte})`,
+					addPlate('fg', fgR),
 					// Comp Premult: with a separate Matte the clip's colour is premultiplied by it (divide it out).
 					'u_compPremult && u_matte_size.x > 0.0 ? clamp(s.rgb / max(m, 1.0e-4), 0.0, 64.0) : fx_unpremultiply(s).rgb',
 				),
 			);
-			const plates: { name: string; radius: number }[] = [
-				{ name: 'fg', radius: px(ctx, num(p.defocusForeground, 0.088), DEFOCUS_RADIUS_PER_UNIT) },
-			];
 			if (hasMedia(p.middle)) {
-				plan.pass(platePrep('mid', 'u_middle_size.x > 0.0 ? texture(u_middle, clamp(n, 0.0, 1.0)) : vec4(0.0)', 's.a'));
-				plates.push({ name: 'mid', radius: px(ctx, num(p.defocusMiddle), DEFOCUS_RADIUS_PER_UNIT) });
+				const r = px(ctx, num(p.defocusMiddle), DEFOCUS_RADIUS_PER_UNIT);
+				plan.pass(
+					platePrep(
+						'mid',
+						'u_middle_size.x > 0.0 ? texture(u_middle, clamp(n, 0.0, 1.0)) : vec4(0.0)',
+						's.a',
+						addPlate('mid', r),
+					),
+				);
 			}
 			if (hasMedia(p.background)) {
+				const r = px(ctx, num(p.defocusBackground), DEFOCUS_RADIUS_PER_UNIT);
 				plan.pass(
-					platePrep('bg', 'u_background_size.x > 0.0 ? texture(u_background, clamp(n, 0.0, 1.0)) : vec4(0.0)', 's.a'),
+					platePrep(
+						'bg',
+						'u_background_size.x > 0.0 ? texture(u_background, clamp(n, 0.0, 1.0)) : vec4(0.0)',
+						's.a',
+						addPlate('bg', r),
+					),
 				);
-				plates.push({ name: 'bg', radius: px(ctx, num(p.defocusBackground), DEFOCUS_RADIUS_PER_UNIT) });
 			}
 			const outs = plates.map(
 				(pl) =>
@@ -143,12 +186,16 @@ export const S_RACK_DF_COMP = defineShaderEffect({
 						radiusY: pl.radius * rel,
 						iris,
 						edge: edgeOf(p),
+						inputLevel: pl.level,
 					}).output,
 			);
 			const shape = bool(p.showShape) ? shapeViewPassParts(iris) : null;
 			const over = outs
 				.slice(1)
-				.map((o) => `  { vec4 b = sbs_defocusTone(texture(u_${o}, v_uv)); acc += vec4(b.rgb * b.a, b.a) * (1.0 - acc.a); }`)
+				.map(
+					(o) =>
+						`  { vec4 b = sbs_defocusTone(texture(u_${o}, v_uv)); acc += vec4(b.rgb * b.a, b.a) * (1.0 - acc.a); }`,
+				)
 				.join('\n');
 			plan.pass({
 				include: shape ? [shape.defines, GLSL_SBS_IRIS] : [GLSL_SBS_COMMON],

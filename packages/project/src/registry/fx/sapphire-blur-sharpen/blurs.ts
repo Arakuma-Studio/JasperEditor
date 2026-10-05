@@ -262,7 +262,13 @@ export const S_SOFT_FOCUS = defineShaderEffect({
 	params: [
 		sSize('softWidth', 'Soft Width', 0.224, 4),
 		fxParam.vec2('widthRel', 'Width Rel', [1, 1], { min: 0, softMax: 4, step: 0.01 }),
-		fxParam.number('mixWithBlurred', 'Mix With Blurred', 0, { min: 0, max: 1, step: 0.01 }, { ui: { control: 'slider' } }),
+		fxParam.number(
+			'mixWithBlurred',
+			'Mix With Blurred',
+			0,
+			{ min: 0, max: 1, step: 0.01 },
+			{ ui: { control: 'slider' } },
+		),
 		sMix(),
 		sNum('brightness', 'Brightness', 1, { min: 0, softMax: 4 }),
 		sNum('offsetDarks', 'Offset Darks', 0, { min: -8, max: 2 }),

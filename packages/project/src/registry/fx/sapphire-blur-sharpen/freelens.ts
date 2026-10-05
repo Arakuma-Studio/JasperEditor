@@ -43,7 +43,15 @@ import {
 const FL_SHOW = ['result', 'depthMap', 'shape'] as const;
 const SHAKE_MODES = ['normal', 'twitchy', 'jumpy'] as const;
 const BLUR_RES = ['full', 'half', 'quarter'] as const;
-const VIG_COMBINE = ['composite', 'mult', 'add', 'screen', 'subtractInv', 'vignetteOnly', 'vignetteOnlyInv'] as const;
+const VIG_COMBINE = [
+	'composite',
+	'mult',
+	'add',
+	'screen',
+	'subtractInv',
+	'vignetteOnly',
+	'vignetteOnlyInv',
+] as const;
 const LEVELS = 4;
 
 // ---------------------------------------------------------------- shake (pure TS, deterministic)
@@ -211,7 +219,12 @@ export const S_FREE_LENS = defineShaderEffect({
 		sWrap('wrapY', 'Wrap Y', 'reflect'),
 		fxParam.toggle('filter', 'Filter', true),
 		sSize('defocusWidth', 'Defocus Width', 0.104, 1),
-		fxParam.vec2('focalPointOffset', 'Focal Point Offset', [0, 0], { max: 2, softMin: -2, softMax: 2, step: 0.001 }),
+		fxParam.vec2('focalPointOffset', 'Focal Point Offset', [0, 0], {
+			max: 2,
+			softMin: -2,
+			softMax: 2,
+			step: 0.001,
+		}),
 		sNum('chromaDistort', 'Chroma Distort', 0, { softMin: -2, softMax: 2, step: 0.01 }),
 		sNum('relHeight', 'Rel Height', 1, { min: 0.01, softMax: 4, step: 0.01 }),
 		fxParam.choice('show', 'Show', FL_SHOW, ['Result', 'DepthMap', 'Shape'], 'result'),
@@ -230,7 +243,11 @@ export const S_FREE_LENS = defineShaderEffect({
 		sNum('leakRelHeight', 'Leak Rel Height', 2, { min: 0, softMax: 4, step: 0.01 }),
 		sSize('leakSize', 'Leak Size', 0.35, 2),
 		sNum('varySize', 'Vary Size', 1, { min: 0, softMax: 2, step: 0.01 }),
-		fxParam.vec2('lightLeakHotspot', 'Light Leak Hotspot', [-0.5, 0.25], { softMin: -2, softMax: 2, step: 0.001 }),
+		fxParam.vec2('lightLeakHotspot', 'Light Leak Hotspot', [-0.5, 0.25], {
+			softMin: -2,
+			softMax: 2,
+			step: 0.001,
+		}),
 		fxParam.vec2('lightLeakPivot', 'Light Leak Pivot', [0, 0.25], { softMin: -2, softMax: 2, step: 0.001 }),
 		sNum('leakRoundness', 'Leak Roundness', 0.7, { min: -1, max: 1, step: 0.01 }),
 		sNum('sides', 'Sides', 4, { min: 3, max: 16, step: 1, int: true }),
@@ -258,7 +275,14 @@ export const S_FREE_LENS = defineShaderEffect({
 		fxParam.choice('blurRes', 'Blur Res', BLUR_RES, ['Full', 'Half', 'Quarter'], 'full'),
 		{ ...sNum('seed', 'Seed', 0, { min: 0, softMax: 1000, step: 1 }), animatable: false },
 		...(['x', 'y', 'tiltX', 'tiltY', 'distance', 'leakInt'] as const).flatMap((k) => {
-			const label = { x: 'X', y: 'Y', tiltX: 'Tilt X', tiltY: 'Tilt Y', distance: 'Distance', leakInt: 'Leak Int' }[k];
+			const label = {
+				x: 'X',
+				y: 'Y',
+				tiltX: 'Tilt X',
+				tiltY: 'Tilt Y',
+				distance: 'Distance',
+				leakInt: 'Leak Int',
+			}[k];
 			return [
 				sNum(`${k}RandAmp`, `${label} Rand Amp`, 0, { min: 0, softMax: 4, step: 0.01 }),
 				sNum(`${k}RandFreq`, `${label} Rand Freq`, 1, { min: 0, softMax: 10, step: 0.01 }),
@@ -298,7 +322,9 @@ export const S_FREE_LENS = defineShaderEffect({
 			const b = freeLensPose(p, ctx.seed, sec + dt);
 			const u = unitPx(ctx);
 			const vigI =
-				num(p.vigIntensity, 0.2) * (bool(p.linkVigToLens, true) ? 1 + 2 * pose.tiltMag : 1) * (bool(p.vignette, true) ? 1 : 0);
+				num(p.vigIntensity, 0.2) *
+				(bool(p.linkVigToLens, true) ? 1 + 2 * pose.tiltMag : 1) *
+				(bool(p.vignette, true) ? 1 : 0);
 			return {
 				u_flShift: pose.shift,
 				u_flPose: [
@@ -366,26 +392,23 @@ void main() {
 						radiusY: ((r * i) / (LEVELS - 1)) * rel,
 						iris,
 						edge: 3,
+						maxLevel: 6,
 					}).output,
 				);
-			// 3. Glow of the bright parts (quarter resolution).
+			// 3. Glow: a blur of the (boosted) picture on the gathers' own pyramid; Glow Threshold keeps its bright part
+			//    in the final pass (no extra threshold texture: the effect stays within the texture budget).
 			const glowSigma = num(p.glowWidth, 0.4) * unitPx(ctx) * 0.125;
 			const glow = num(p.glowBrightness, 1) > 0 && glowSigma > 0.2;
-			if (glow) {
-				plan.pass({
-					output: 'gsrc',
-					include: [GLSL_SBS_COMMON],
-					format: 'rgba16f',
-					scale: 0.25,
-					frag: /* glsl */ `
-void main() {
-  vec4 s = fx_unpremultiply(texture(u_prep, v_uv));
-  float l = fx_luma(s.rgb);
-  fragColor = vec4(s.rgb * s.a * clamp((l - u_glowThreshold) / max(1.0 - u_glowThreshold, 0.05), 0.0, 1.0), 1.0);
-}`,
+			if (glow)
+				plan.blur2d({
+					input: 'prep',
+					output: 'glow',
+					sigmaX: glowSigma,
+					sigmaY: glowSigma,
+					edge: 3,
+					maxLevel: 6,
+					comb: false,
 				});
-				plan.blur2d({ input: 'gsrc', output: 'glow', sigmaX: glowSigma, sigmaY: glowSigma, inputLevel: 2, edge: 3 });
-			}
 			const shape = choiceIndex(p.show, FL_SHOW, 'result') === 2 ? shapeViewPassParts(iris) : null;
 			const mixLevels = levels
 				.slice(1)
@@ -451,7 +474,7 @@ ${shape ? '  fragColor = sbs_shapeView(u_shapeRel, 0.8); return;' : ''}
   vec4 d = fx_unpremultiply(fl_levels(v_uv, t));
   vec3 c = d.rgb;
   if (u_flLeak != 0.0) { vec3 l = clamp(fl_leak(q) * u_flLeak, 0.0, 1.0); c = c + l - clamp(c, 0.0, 1.0) * l; }
-${glow ? '  c += fx_unpremultiply(texture(u_glow, v_uv)).rgb * u_glowBrightness * 0.5;' : ''}
+${glow ? '  { vec3 g = fx_unpremultiply(texture(u_glow, v_uv)).rgb; c += max(g - u_glowThreshold, 0.0) / max(1.0 - u_glowThreshold, 0.05) * u_glowBrightness * 0.5; }' : ''}
   c = clamp(c, 0.0, 1.0) * u_vigSourceBrightness;
   float vi = clamp(vig * u_flVig, 0.0, 1.0);
   vec3 vc = u_vigColor.rgb;

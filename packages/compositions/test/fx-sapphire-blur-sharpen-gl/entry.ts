@@ -235,9 +235,10 @@ async function run(o: RunOptions) {
 		}
 		const src = m.startsWith('url:')
 			? await loadImage(m.slice(4))
-			: MEDIA[m]?.(o.width, o.height) ?? (() => {
+			: (MEDIA[m]?.(o.width, o.height) ??
+				(() => {
 					throw new Error(`unknown media ${m}`);
-				})();
+				})());
 		textures[`u_${p.name}`] = { source: src, width: src.width, height: src.height, version: m.slice(0, 64) };
 		(params as Record<string, unknown>)[p.name] = { mediaId: `m-${p.name}` };
 	}

@@ -75,8 +75,14 @@ function zPasses(
 	);
 	const shape = o.showShape ? shapeViewPassParts(o.iris) : null;
 	plan.pass({
-		include: shape ? [shape.defines, GLSL_SBS_DEPTH, GLSL_SBS_IRIS, GLSL_COMPOSITE] : [GLSL_SBS_DEPTH, GLSL_COMPOSITE],
-		uniforms: { ...layered.uniforms, ...(shape?.uniforms ?? {}), u_shapeRel: o.radiusY / Math.max(1e-6, o.radiusX) },
+		include: shape
+			? [shape.defines, GLSL_SBS_DEPTH, GLSL_SBS_IRIS, GLSL_COMPOSITE]
+			: [GLSL_SBS_DEPTH, GLSL_COMPOSITE],
+		uniforms: {
+			...layered.uniforms,
+			...(shape?.uniforms ?? {}),
+			u_shapeRel: o.radiusY / Math.max(1e-6, o.radiusX),
+		},
 		frag: /* glsl */ `${DEFOCUS_TONE}
 // Fog by depth.
 vec3 sbs_fog(vec3 c, float z) { return mix(c, u_fogColor.rgb, clamp(mix(u_fogNear, u_fogFar, z), 0.0, 1.0)); }
@@ -135,7 +141,11 @@ export const S_Z_DEFOCUS = defineShaderEffect({
 		timeInvariant: true,
 		padding: (p, ctx) =>
 			bool(p.softBorders)
-				? num(p.defocusWidth, 0.35) * zMaxAmount(p) * DEFOCUS_RADIUS_PER_UNIT * unitLayerPx(ctx) * Math.max(1, num(p.relHeight, 1))
+				? num(p.defocusWidth, 0.35) *
+					zMaxAmount(p) *
+					DEFOCUS_RADIUS_PER_UNIT *
+					unitLayerPx(ctx) *
+					Math.max(1, num(p.relHeight, 1))
 				: 0,
 		uniforms: (p) =>
 			defocusToneUniforms({

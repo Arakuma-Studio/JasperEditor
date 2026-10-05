@@ -117,7 +117,13 @@ export const S_EDGE_AWARE_BLUR = defineShaderEffect({
 		sNum('edgeThreshold', 'Edge Threshold', 0.1, { min: 0, softMax: 1, step: 0.001 }),
 		sSize('edgeSmooth', 'Edge Smooth', 0, 1),
 		fxParam.toggle('useAlphaEdges', 'Use Alpha Edges', false),
-		fxParam.choice('blurType', 'Blur Type', BLUR_TYPES, ['Sharp Edges', 'Soft Edges', 'Softer Edges'], 'sharpEdges'),
+		fxParam.choice(
+			'blurType',
+			'Blur Type',
+			BLUR_TYPES,
+			['Sharp Edges', 'Soft Edges', 'Softer Edges'],
+			'sharpEdges',
+		),
 		fxParam.choice('filter', 'Filter', EAB_FILTERS, ['Box', 'Triangle', 'Gauss', 'Smooth'], 'gauss'),
 	],
 	gpu: {
@@ -136,7 +142,13 @@ void main() {
 			let guide = 'guide0';
 			const es = px(ctx, num(p.edgeSmooth), 1 / 24);
 			if (es > 0.15)
-				guide = plan.blur2d({ input: 'guide0', output: 'guide', sigmaX: es, sigmaY: es, edge: SBS_EDGE_REPEAT }).output;
+				guide = plan.blur2d({
+					input: 'guide0',
+					output: 'guide',
+					sigmaX: es,
+					sigmaY: es,
+					edge: SBS_EDGE_REPEAT,
+				}).output;
 			const rel = vec2(p.blurRel, [1, 1]);
 			const s = px(ctx, num(p.blurAmount, 0.4), 1 / 24);
 			const type = choiceIndex(p.blurType, BLUR_TYPES, 'sharpEdges');
@@ -226,7 +238,10 @@ export const S_BEAUTY = defineShaderEffect({
 		timeInvariant: true,
 		uniforms: (p, ctx) => ({
 			// Face ellipse radius in layer-normalised units (Sapphire units are half the layer width).
-			u_faceR: [num(p.faceRadius, 0.4) * 0.5, num(p.faceRadius, 0.4) * 0.5 * num(p.faceRelHeight, 1.33) * (ctx.width / Math.max(1, ctx.height))],
+			u_faceR: [
+				num(p.faceRadius, 0.4) * 0.5,
+				num(p.faceRadius, 0.4) * 0.5 * num(p.faceRelHeight, 1.33) * (ctx.width / Math.max(1, ctx.height)),
+			],
 			u_faceSoft: Math.max(1e-3, num(p.faceSoftness, 0.1) * 0.5),
 		}),
 		passes: (p, ctx) => {
@@ -262,15 +277,13 @@ void main() {
   fragColor = vec4(skin * garbage, skin, garbage, 1.0);
 }`,
 			});
-			let mask = 'mask';
+			// Post Blur of the mask and the pore-sized blur are small 2D gaussians in the final pass (texture budget).
 			const pb = px(ctx, num(p.postBlur), 1 / 4);
-			if (pb > 0.15) mask = plan.blur2d({ input: 'mask', output: 'maskB', sigmaX: pb, sigmaY: pb, edge: SBS_EDGE_REPEAT, maxLevel: 0 }).output;
 			const pore = Math.max(0.3, px(ctx, num(p.poreSize, 0.01), 1 / 4));
-			plan.blur2d({ input: 'source', output: 'base', sigmaX: pore, sigmaY: pore, edge: SBS_EDGE_REPEAT, maxLevel: 0 });
 			const sb = px(ctx, num(p.blurAmount, 0.02), 1 / 2);
 			bilateral2d(plan, {
-				input: 'base',
-				guide: 'base',
+				input: 'source',
+				guide: 'source',
 				output: 'smooth',
 				sigmaX: sb,
 				sigmaY: sb,
@@ -280,23 +293,58 @@ void main() {
 			});
 			const gw = px(ctx, num(p.glowWidth, 0.1), 1 / 4);
 			const glow = gw > 0.15 && num(p.glowBrightness, 0.1) > 0;
-			if (glow) plan.blur2d({ input: 'source', output: 'glow', sigmaX: gw, sigmaY: gw, edge: SBS_EDGE_REPEAT, maxLevel: 3 });
+			if (glow)
+				plan.blur2d({
+					input: 'source',
+					output: 'glow',
+					sigmaX: gw,
+					sigmaY: gw,
+					edge: SBS_EDGE_REPEAT,
+					maxLevel: 3,
+					comb: false,
+				});
 			const sf = px(ctx, num(p.softFocus), 1 / 4);
 			const soft = sf > 0.15;
-			if (soft) plan.blur2d({ input: 'source', output: 'soft', sigmaX: sf, sigmaY: sf, edge: SBS_EDGE_REPEAT, maxLevel: 3 });
+			if (soft)
+				plan.blur2d({
+					input: 'source',
+					output: 'soft',
+					sigmaX: sf,
+					sigmaY: sf,
+					edge: SBS_EDGE_REPEAT,
+					maxLevel: 3,
+					comb: false,
+				});
 			plan.pass({
 				include: [GLSL_SBS_COMMON, GLSL_COMPOSITE],
+				uniforms: { u_bPore: pore, u_bPost: pb },
 				frag: /* glsl */ `
+// Small 2D gaussian (9×9 taps, strided beyond σ ≈ 1.3 px).
+vec4 gauss2d(sampler2D t, vec2 uv, float sigma) {
+  if (sigma < 0.15) return texture(t, uv);
+  vec2 tx = 1.0 / vec2(textureSize(t, 0));
+  float stride = max(1.0, sigma * 3.0 / 4.0);
+  vec4 s = vec4(0.0);
+  float ws = 0.0;
+  for (int j = -4; j <= 4; j++)
+    for (int i = -4; i <= 4; i++) {
+      vec2 o = vec2(float(i), float(j)) * stride;
+      float w = exp(-0.5 * dot(o, o) / (sigma * sigma));
+      s += sbs_tex(t, uv + o * tx, SBS_EDGE_REPEAT) * w;
+      ws += w;
+    }
+  return s / ws;
+}
 void main() {
   vec4 srcP = texture(u_source, v_uv);
   vec4 src = fx_unpremultiply(srcP);
-  vec4 m = texture(u_${mask}, v_uv);
+  vec4 m = gauss2d(u_mask, v_uv, u_bPost);
   float mask = m.r;
   if (u_show == 1) { fragColor = vec4(vec3(m.g), 1.0); return; }
   if (u_show == 2) { fragColor = vec4(vec3(mask), 1.0); return; }
   if (u_show == 3) { fragColor = vec4(src.rgb * m.g * src.a, src.a); return; }
   if (u_show == 4) { fragColor = vec4(src.rgb * mask * src.a, src.a); return; }
-  vec3 base = fx_unpremultiply(texture(u_base, v_uv)).rgb;
+  vec3 base = fx_unpremultiply(gauss2d(u_source, v_uv, u_bPore)).rgb;
   vec3 sm = fx_unpremultiply(texture(u_smooth, v_uv)).rgb;
   // Smoothed skin + the pore-sized detail of the source.
   vec3 c = sm + (src.rgb - base);

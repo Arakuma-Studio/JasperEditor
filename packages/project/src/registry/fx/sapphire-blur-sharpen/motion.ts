@@ -103,16 +103,21 @@ export const S_BLUR_DIRECTIONAL = defineShaderEffect({
 			if (!bool(p.softBorders)) return 0;
 			const m = Math.max(num(p.blurRed, 1), num(p.blurGreen, 1), num(p.blurBlue, 1));
 			const sh = Math.max(Math.abs(num(p.shiftRed)), Math.abs(num(p.shiftGreen)), Math.abs(num(p.shiftBlue)));
-			return (num(p.blurAmount, 0.4) * m * 1.8 + Math.abs(num(p.shift)) + sh) * DIR_PER_UNIT * unitLayerPx(ctx);
+			return (
+				(num(p.blurAmount, 0.4) * m * 1.8 + Math.abs(num(p.shift)) + sh) * DIR_PER_UNIT * unitLayerPx(ctx)
+			);
 		},
 		uniforms: (p, ctx) => {
 			const u = unitPx(ctx) * DIR_PER_UNIT;
 			const a = (num(p.angle, 45) * Math.PI) / 180;
 			const amt = Math.max(0, num(p.blurAmount, 0.4));
-			const len = [num(p.blurRed, 1), num(p.blurGreen, 1), num(p.blurBlue, 1)].map((x) => Math.max(0, x) * amt * u);
+			const len = [num(p.blurRed, 1), num(p.blurGreen, 1), num(p.blurBlue, 1)].map(
+				(x) => Math.max(0, x) * amt * u,
+			);
 			const sh = num(p.shift);
 			const shifts = [num(p.shiftRed), num(p.shiftGreen), num(p.shiftBlue)].map((x) => (x + sh) * u);
-			const per = len[0] !== len[1] || len[1] !== len[2] || shifts[0] !== shifts[1] || shifts[1] !== shifts[2];
+			const per =
+				len[0] !== len[1] || len[1] !== len[2] || shifts[0] !== shifts[1] || shifts[1] !== shifts[2];
 			return {
 				u_sbsEdge: { int: edgeOf(p) },
 				u_dDir: [Math.cos(a), Math.sin(a)],
@@ -221,19 +226,32 @@ const toVec = (t: MoTransform, ctx: FxPlanContext): [number, number, number, num
 };
 
 /** Longest displacement (layer px) of the box corners and centre between From and To (sample count). */
-export function moPathLength(from: MoTransform, to: MoTransform, center: readonly [number, number], ctx: FxPlanContext): number {
+export function moPathLength(
+	from: MoTransform,
+	to: MoTransform,
+	center: readonly [number, number],
+	ctx: FxPlanContext,
+): number {
 	const c: [number, number] = [center[0] * ctx.width, center[1] * ctx.height];
 	const inv = (t: MoTransform, y: [number, number]): [number, number] => {
 		const [lz, r, sx, sy] = toVec(t, ctx);
 		const dx = y[0] - c[0] - sx;
 		const dy = y[1] - c[1] - sy;
 		const z = Math.exp(lz);
-		return [c[0] + z * (Math.cos(-r) * dx - Math.sin(-r) * dy), c[1] + z * (Math.sin(-r) * dx + Math.cos(-r) * dy)];
+		return [
+			c[0] + z * (Math.cos(-r) * dx - Math.sin(-r) * dy),
+			c[1] + z * (Math.sin(-r) * dx + Math.cos(-r) * dy),
+		];
 	};
 	const lerp = (s: number): MoTransform => ({
-		zDist: Math.exp((1 - s) * Math.log(Math.max(0.001, from.zDist)) + s * Math.log(Math.max(0.001, to.zDist))),
+		zDist: Math.exp(
+			(1 - s) * Math.log(Math.max(0.001, from.zDist)) + s * Math.log(Math.max(0.001, to.zDist)),
+		),
 		rotate: from.rotate + (to.rotate - from.rotate) * s,
-		shift: [from.shift[0] + (to.shift[0] - from.shift[0]) * s, from.shift[1] + (to.shift[1] - from.shift[1]) * s],
+		shift: [
+			from.shift[0] + (to.shift[0] - from.shift[0]) * s,
+			from.shift[1] + (to.shift[1] - from.shift[1]) * s,
+		],
 	});
 	let best = 0;
 	const pts: [number, number][] = [
@@ -299,7 +317,7 @@ function moUniforms(
 ): Record<string, FxUniformValue> {
 	const center = vec2(p.center, [0.5, 0.5]);
 	const k = choiceIndex(p.blurRes, BLUR_RES, 'full');
-	const len = moPathLength(from, to, center, ctx) * ctx.pxScale / 2 ** k;
+	const len = (moPathLength(from, to, center, ctx) * ctx.pxScale) / 2 ** k;
 	return {
 		u_moCenter: [center[0] * ctx.width, center[1] * ctx.height],
 		u_moFrom: toVec(from, ctx),
@@ -319,7 +337,13 @@ const transformOf = (p: EffectParams, prefix: string, zDef: number): MoTransform
 });
 
 const commonTail = [
-	fxParam.number('exposureBias', 'Exposure Bias', 0.5, { min: 0, max: 1, step: 0.01 }, { ui: { control: 'slider' } }),
+	fxParam.number(
+		'exposureBias',
+		'Exposure Bias',
+		0.5,
+		{ min: 0, max: 1, step: 0.01 },
+		{ ui: { control: 'slider' } },
+	),
 	sNum('brightness', 'Brightness', 1, { min: 0, softMax: 4 }),
 	sWrap('wrapX', 'Wrap X', 'no'),
 	sWrap('wrapY', 'Wrap Y', 'no'),

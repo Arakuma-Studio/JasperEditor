@@ -68,8 +68,11 @@ export const sColor = (name: string, label: string, rgb: readonly [number, numbe
 
 export const SBS_EDGE_MODES = ['transparent', 'repeat', 'reflect'] as const;
 /** Sapphire "Edge Mode" (Transparent, Repeat = extend the last pixel, Reflect). */
-export const sEdgeMode = (def: (typeof SBS_EDGE_MODES)[number] = 'reflect', name = 'edgeMode', label = 'Edge Mode') =>
-	fxParam.choice(name, label, SBS_EDGE_MODES, ['Transparent', 'Repeat', 'Reflect'], def);
+export const sEdgeMode = (
+	def: (typeof SBS_EDGE_MODES)[number] = 'reflect',
+	name = 'edgeMode',
+	label = 'Edge Mode',
+) => fxParam.choice(name, label, SBS_EDGE_MODES, ['Transparent', 'Repeat', 'Reflect'], def);
 /** Sapphire "Soft Borders": transparent borders are added, the result may extend past the layer box. */
 export const sSoftBorders = () => fxParam.toggle('softBorders', 'Soft Borders', false);
 
@@ -277,6 +280,8 @@ export class SbsPlan {
 		maxLevel?: number;
 		/** The input is already at 1/2^inputLevel of the canvas. */
 		inputLevel?: number;
+		/** false: one (strided) pass per axis even for long blurs (saves intermediates; fine on prefiltered levels). */
+		comb?: boolean;
 	}): { output: string; scale: number } {
 		const filter = o.filter ?? 2;
 		const edge = o.edge ?? SBS_EDGE_NONE;
@@ -299,8 +304,9 @@ export class SbsPlan {
 		let a = 0;
 		for (const [sigma, dir] of axes) {
 			const last = a === 1;
-			for (const [i, step] of combSteps(sigma).entries()) {
-				const isFinal = last && i === combSteps(sigma).length - 1;
+			const steps = o.comb === false ? [{ sigma, prefilter: false }] : combSteps(sigma);
+			for (const [i, step] of steps.entries()) {
+				const isFinal = last && i === steps.length - 1;
 				const out = isFinal ? o.output : this.name(`${o.output}b`);
 				this.passes.push(blurPass(tex, out, dir, step, filter, edge, scale, format, ch));
 				tex = out;
@@ -343,7 +349,11 @@ function blurPass(
 	channels?: readonly [number, number, number, number],
 ): ShaderPass {
 	const filt = step.prefilter ? 2 : filter;
-	const uniforms: Record<string, FxUniformValue> = { u_bDir: dir, u_bFilt: { int: filt }, u_bEdge: { int: edge } };
+	const uniforms: Record<string, FxUniformValue> = {
+		u_bDir: dir,
+		u_bFilt: { int: filt },
+		u_bEdge: { int: edge },
+	};
 	if (channels) {
 		uniforms.u_bSigma4 = channels.map((c) => c * step.sigma) as [number, number, number, number];
 		if (step.prefilter) uniforms.u_bSigma4 = [step.sigma, step.sigma, step.sigma, step.sigma];

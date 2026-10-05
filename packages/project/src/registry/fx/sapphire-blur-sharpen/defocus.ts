@@ -129,10 +129,18 @@ export function uniformDefocusPasses(ctx: FxPlanContext, o: DefocusOptions): Sha
 	let tex = g.output;
 	if (o.gaussBlur > 0) {
 		const s = o.gaussBlur * GAUSS_SIGMA_PER_UNIT * (ctx.width * ctx.pxScale) * 0.5;
-		tex = plan.blur2d({ input: g.output, output: 'gauss', sigmaX: s, sigmaY: s, edge: 3, maxLevel: 6 }).output;
+		tex = plan.blur2d({
+			input: g.output,
+			output: 'gauss',
+			sigmaX: s,
+			sigmaY: s,
+			edge: 3,
+			maxLevel: 6,
+		}).output;
 	}
 	const shape = o.show > 0 ? shapeViewPassParts(o.iris) : null;
-	const zoom = o.show === 2 ? Math.max(0.01, (2 * Math.max(o.radiusX, o.radiusY)) / (ctx.height * ctx.pxScale)) : 0.8;
+	const zoom =
+		o.show === 2 ? Math.max(0.01, (2 * Math.max(o.radiusX, o.radiusY)) / (ctx.height * ctx.pxScale)) : 0.8;
 	const relY = o.radiusY / Math.max(1e-6, o.radiusX);
 	plan.pass({
 		include: shape
@@ -355,7 +363,13 @@ export const S_ADVANCED_DEFOCUS = defineShaderEffect({
 		sUnit('notchDepth', 'Notch Depth', 0),
 		sUnit('notchAngle', 'Notch Angle', 0.05),
 		sNum('colorFringing', 'Color Fringing', 0, { softMin: -2, softMax: 2, step: 0.01 }),
-		fxParam.choice('colorFringingStyle', 'Color Fringing Style', FRINGE_STYLES, ['Red/Blue', 'Green/Magenta'], 'redBlue'),
+		fxParam.choice(
+			'colorFringingStyle',
+			'Color Fringing Style',
+			FRINGE_STYLES,
+			['Red/Blue', 'Green/Magenta'],
+			'redBlue',
+		),
 		...lensNoiseParams(),
 		sNum('opticalVignette', 'Optical Vignette', 0, { min: -1, max: 1, step: 0.01 }),
 		sNum('vignetteSize', 'Vignette Size', 1, { min: 1, softMax: 4, step: 0.01 }),
@@ -394,7 +408,13 @@ export const S_ADVANCED_DEFOCUS = defineShaderEffect({
 		padding: (p, ctx) => {
 			const rel = vec2(p.defocusRel, [1, 1]);
 			const f = fringeOf(num(p.colorFringing), p.colorFringingStyle === 'greenMagenta');
-			return softPadding(p, ctx, num(p.defocusWidth, 0.088), Math.max(rel[0], rel[1]), Math.max(...(f ?? [1])));
+			return softPadding(
+				p,
+				ctx,
+				num(p.defocusWidth, 0.088),
+				Math.max(rel[0], rel[1]),
+				Math.max(...(f ?? [1])),
+			);
 		},
 		uniforms: (p) => ({
 			...defocusToneUniforms({
@@ -408,7 +428,12 @@ export const S_ADVANCED_DEFOCUS = defineShaderEffect({
 				offsetDarks: num(p.offsetDarks),
 			}),
 			u_grainA: [num(p.grainAmp), num(p.grainAmpDarks, 0.37), num(p.grainAmpMids, 1), num(p.grainAmpBrights)],
-			u_grainB: [num(p.grainSize, 1), num(p.grainBlur, 0.00567), bool(p.grainMono) ? 1 : 0, num(p.grainSeed, 0.123)],
+			u_grainB: [
+				num(p.grainSize, 1),
+				num(p.grainBlur, 0.00567),
+				bool(p.grainMono) ? 1 : 0,
+				num(p.grainSeed, 0.123),
+			],
 		}),
 		passes: (p, ctx) => {
 			const rel = vec2(p.defocusRel, [1, 1]);

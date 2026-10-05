@@ -20,7 +20,13 @@ const ZB_USE = ['luma', 'alpha'] as const;
 export const zBufferParam = () => fxParam.media('zBuffer', 'ZBuffer', ['image', 'video']);
 export const zFocusParams = (): ParamSpec[] => [
 	sNum('focalDepth', 'Focal Depth', 0, { softMin: 0, softMax: 1, step: 0.001 }),
-	fxParam.number('depthOfField', 'Depth Of Field', 0.1, { min: 0, max: 1, step: 0.001 }, { ui: { control: 'slider' } }),
+	fxParam.number(
+		'depthOfField',
+		'Depth Of Field',
+		0.1,
+		{ min: 0, max: 1, step: 0.001 },
+		{ ui: { control: 'slider' } },
+	),
 ];
 export const zTypeParam = () =>
 	fxParam.choice('zbufferType', 'Zbuffer Type', ZB_TYPES, ['Black is Near', 'White is Near'], 'whiteIsNear');
@@ -82,25 +88,29 @@ vec4 sbs_focusZone(vec4 srcPremul, float amount) {
 };
 
 /** A layer's gather: `scale01` of the maximum radius; `slice` = (centre z, half width) in Comp mode. */
-export type ZGather = (o: {
-	output: string;
-	scale01: number;
-	slice: [number, number] | null;
-}) => void;
+export type ZGather = (o: { output: string; scale01: number; slice: [number, number] | null }) => void;
 
 /**
  * Plans the layer gathers and returns a GLSL function `vec4 sbs_zLayered(vec2 uv)` that reconstructs the layered
  * (still gamma-space, premultiplied) result from them and the prepared picture `prep`.
  */
-export function zLayers(p: EffectParams, prep: string, gather: ZGather): { glsl: string; uniforms: Record<string, FxUniformValue> } {
-	const k = zLayerCount(p);
+export function zLayers(
+	p: EffectParams,
+	prep: string,
+	gather: ZGather,
+	/** Most layer textures the caller can afford (texture budget). */
+	maxOutputs = Z_MAX_LAYERS,
+): { glsl: string; uniforms: Record<string, FxUniformValue> } {
+	const k = Math.max(2, Math.min(zLayerCount(p), zIsComp(p) ? maxOutputs : maxOutputs + 1));
 	const amax = zMaxAmount(p);
 	if (zIsComp(p)) {
 		const names: string[] = [];
 		for (let i = 0; i < k; i++) {
 			const z = i / (k - 1);
 			const d = z - clamp(num(p.focalDepth), 0, 1);
-			const a = Math.max(0, Math.abs(d) - num(p.depthOfField, 0.1) / 2) * (d < 0 ? num(p.widthRelNear, 1) : num(p.widthRelFar, 1));
+			const a =
+				Math.max(0, Math.abs(d) - num(p.depthOfField, 0.1) / 2) *
+				(d < 0 ? num(p.widthRelNear, 1) : num(p.widthRelFar, 1));
 			const name = `zs${i}`;
 			gather({ output: name, scale01: amax > 0 ? a / amax : 0, slice: [z, 1 / (k - 1)] });
 			names.push(name);
@@ -108,7 +118,11 @@ export function zLayers(p: EffectParams, prep: string, gather: ZGather): { glsl:
 		const lines = names
 			.slice()
 			.reverse()
-			.map((n, j) => (j === 0 ? `  vec4 acc = texture(u_${n}, uv);` : `  { vec4 s = texture(u_${n}, uv); acc = s + acc * (1.0 - s.a); }`));
+			.map((n, j) =>
+				j === 0
+					? `  vec4 acc = texture(u_${n}, uv);`
+					: `  { vec4 s = texture(u_${n}, uv); acc = s + acc * (1.0 - s.a); }`,
+			);
 		return {
 			glsl: /* glsl */ `
 vec4 sbs_zLayered(vec2 uv) {
@@ -127,7 +141,10 @@ ${lines.join('\n')}
 	}
 	const branches = names
 		.slice(1)
-		.map((n, j) => `  if (t <= ${(j + 1).toFixed(1)}) return mix(texture(u_${names[j]}, uv), texture(u_${n}, uv), t - ${j.toFixed(1)});`)
+		.map(
+			(n, j) =>
+				`  if (t <= ${(j + 1).toFixed(1)}) return mix(texture(u_${names[j]}, uv), texture(u_${n}, uv), t - ${j.toFixed(1)});`,
+		)
 		.join('\n');
 	return {
 		glsl: /* glsl */ `
