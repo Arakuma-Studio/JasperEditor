@@ -1,57 +1,86 @@
-// Family-private directional-light helpers of the Sapphire Glows + Lighting family: long thin light streaks
-// (glints, streaks) and radial rays, built as two-stage comb filters so long rays stay continuous (no beads) at a
-// fixed tap count: stage 1 smears the source over a short span with dense taps; stage 2 (usually inside the final
-// pass) samples stage 1 at the span's spacing with an exponential falloff, reaching span × taps.
-import type { GlslChunk } from '../shader.ts';
+// Family-private light-beam helpers of the Sapphire Glows + Lighting family.
+//
+// Radial rays (S_Rays, S_EdgeRays): every pixel averages the ray source along the line towards the rays' Center —
+// sample positions c + (p − c)·e^λ, λ from λ0 (Reverse Rays) to Λ = ln(1 − Rays Length). Three passes of 12 taps
+// compose (radial scalings about one centre multiply, so their logs add) into 12³ evenly spread samples: long,
+// continuous rays at a fixed cost. Weights e^(−k·λ/Λ) (Bias Outer Bright) compose the same way. Per-channel lengths
+// (Length Red/Green/Blue) sample each channel at its own λ.
+//
+// Linear streaks (S_Glint, S_GlintRainbow): two-stage comb filters along a direction: stage 1 smears over a short
+// span with dense taps; stage 2 samples stage 1 at the span's spacing with a falloff, reaching span × taps.
+import type { GlslChunk, ShaderPass } from '../shader.ts';
 
-/** Taps per side of the dense first stage (its span = TAPS × the second stage's spacing / TAPS). */
-export const STREAK_TAPS = 16;
+export const RAY_TAPS = 12;
 
-export const GLSL_SGL_STREAK: GlslChunk = {
-	name: 'sgl/streak',
+/**
+ * The three radial passes from `input` (outputs `<prefix>1…3`, the last is the ray picture), at `scale`. Uniforms
+ * the shader reads (effect-level, see `rayUniforms`): u_center (the effect's Center point param), u_rl0 (vec3 λ0 per channel),
+ * u_rlen (vec3 Λ − λ0 per channel), u_rk (falloff), u_rsplit (bool: per-channel lengths differ).
+ */
+export function rayPasses(input: string, prefix: string, scale: number): ShaderPass[] {
+	const n = RAY_TAPS;
+	return [1, 2, 3].map((j) => {
+		const src = j === 1 ? input : `${prefix}${j - 1}`;
+		// pass 1 spans 1/n² of the range (and starts at λ0), pass 2 1/n, pass 3 all of it.
+		const span = 1 / n ** (3 - j);
+		return {
+			output: `${prefix}${j}`,
+			scale,
+			format: 'rgba16f' as const,
+			include: [GLSL_SGL_RAYS],
+			uniforms: { u_rspan: span, u_rstart: j === 1 ? 1 : 0 },
+			frag: /* glsl */ `
+void main() { fragColor = sgl_rayPass(u_${src}, v_uv, u_rspan, u_rstart); }`,
+		};
+	});
+}
+
+export const GLSL_SGL_RAYS: GlslChunk = {
+	name: 'sgl/rays',
 	source: /* glsl */ `
-// Stage 1: mean of t over [0, span] (one-sided, dir) or [-span, span] (two-sided), in uv; 16 taps per side.
-vec4 sgl_streak1(sampler2D t, vec2 uv, vec2 dirUv, float twoSided) {
-  vec4 acc = vec4(0.0);
-  float n = 0.0;
-  for (int i = 0; i < 16; i++) {
-    float k = (float(i) + 0.5) / 16.0;
-    acc += texture(t, uv - dirUv * k);
-    n += 1.0;
-    if (twoSided > 0.5) { acc += texture(t, uv + dirUv * k); n += 1.0; }
-  }
-  return acc / n;
-}
-// Stage 2: exponential-falloff sum of stage-1 texture t along dirUv (= the full ray length in uv), 16 taps per
-// side; falloff = how many e-foldings over the ray (≈ 3–6); spectral = 1 tints each tap by its distance (rainbow).
-vec3 sgl_spectrumAt(float t);
-vec4 sgl_streak2(sampler2D t, vec2 uv, vec2 dirUv, float twoSided, float falloff, float spectral) {
-  vec4 acc = vec4(0.0);
-  for (int i = 0; i < 16; i++) {
-    float k = (float(i) + 0.5) / 16.0;
-    float w = exp(-falloff * k);
-    vec4 tint = spectral > 0.5 ? vec4(sgl_spectrumAt(k), 1.0) : vec4(1.0);
-    acc += texture(t, uv - dirUv * k) * w * tint;
-    if (twoSided > 0.5) acc += texture(t, uv + dirUv * k) * w * tint;
-  }
-  return acc / 16.0;
-}
-// Radial (zoom) smear towards centre c (uv): samples between uv and mix(uv, c, len), decaying with distance.
-vec4 sgl_radial(sampler2D t, vec2 uv, vec2 c, float len, float decay, int taps) {
+// One radial comb pass: 12 taps at λ = start·λ0 + (i/12)·span·len (per channel when split), weights e^(−k·λ/len).
+vec4 sgl_rayPass(sampler2D t, vec2 uv, float span, float start) {
+  vec2 c = fx_uvOfLayerNorm(u_center);
+  vec2 d = uv - c;
   vec4 acc = vec4(0.0);
   float ws = 0.0;
-  for (int i = 0; i < 32; i++) {
-    if (i >= taps) break;
-    float k = float(i) / float(taps);
-    float w = exp(-decay * k);
-    acc += texture(t, mix(uv, c, k * len)) * w;
+  for (int i = 0; i < 12; i++) {
+    float f = float(i) / 12.0 * span;
+    float w = exp(-u_rk * f);
+    if (u_rsplit) {
+      vec3 lam = start * u_rl0 + f * u_rlen;
+      vec4 r = texture(t, c + d * exp(lam.r));
+      vec4 g = texture(t, c + d * exp(lam.g));
+      vec4 b = texture(t, c + d * exp(lam.b));
+      acc += vec4(r.r, g.g, b.b, max(r.a, max(g.a, b.a))) * w;
+    } else {
+      acc += texture(t, c + d * exp(start * u_rl0.g + f * u_rlen.g)) * w;
+    }
     ws += w;
   }
-  return acc / max(ws, 1.0e-6);
-}
-vec3 sgl_spectrumAt(float t) {
-  t = clamp(t, 0.0, 1.0);
-  return clamp(vec3(abs(t * 6.0 - 3.0) - 1.0, 2.0 - abs(t * 6.0 - 2.0), 2.0 - abs(t * 6.0 - 4.0)), 0.0, 1.0) * 1.6;
+  return acc / ws;
 }
 `,
 };
+
+/**
+ * Uniforms of the radial passes. `length` = Sapphire Rays Length (1 = infinite, < 0 inwards), `rgb` = Length
+ * Red/Green/Blue, `reverse` = Reverse Rays, `bias` = Bias Outer Bright (0 fade out, 0.5 even, 1 brightest at the end).
+ */
+export function rayUniforms(
+	length: number,
+	rgb: readonly [number, number, number],
+	reverse: number,
+	bias: number,
+) {
+	const lam = (l: number) => Math.log(Math.max(0.02, 1 - Math.min(0.98, l)));
+	const ends = rgb.map((m) => lam(length * m));
+	const starts = rgb.map((m) => -lam(Math.max(0, reverse) * length * m));
+	const split = rgb[0] !== rgb[1] || rgb[1] !== rgb[2];
+	return {
+		u_rl0: starts as [number, number, number],
+		u_rlen: ends.map((e, i) => e - starts[i]!) as [number, number, number],
+		u_rk: (0.5 - Math.min(1, Math.max(0, bias))) * 8,
+		u_rsplit: split,
+	};
+}

@@ -13,7 +13,7 @@
 //   common.ts    Sapphire units/points, the shared light-effect tail params and their finishing GLSL
 // Sapphire places every one of these in its "Sapphire Lighting" submenu (Premiere and AE); `SGL_BIN` below.
 // Sapphire units: widths/sizes are fractions of the layer width ×10 (`unitPx`); points are layer-normalised.
-import type { EffectParams, EffectSpec } from '../effects.ts';
+import type { EffectParams, EffectSpec, ParamSpec } from '../effects.ts';
 import { defineShaderEffect, SAPPHIRE_BINS } from './define.ts';
 import { GLSL_COLOR } from './glsl/color.ts';
 import { GLSL_NOISE } from './glsl/noise.ts';
@@ -42,6 +42,7 @@ import {
 	levelWeights,
 	num,
 } from './sapphire-glows-lighting/glow.ts';
+import { rayPasses, rayUniforms } from './sapphire-glows-lighting/streak.ts';
 
 /** Every effect of the family is in Sapphire's "Sapphire Lighting" submenu (Boris FX docs, Premiere and AE). */
 const SGL_BIN = SAPPHIRE_BINS.lighting;
@@ -1028,4 +1029,345 @@ export const SGL_GLOW_EFFECTS: readonly EffectSpec[] = [
 	S_ZGLOW,
 ];
 
-export const SAPPHIRE_GLOWS_LIGHTING_EFFECTS: readonly EffectSpec[] = [...SGL_GLOW_EFFECTS];
+// ================================================================ Light beams
+
+const RES_OPTIONS = ['full', 'half', 'quarter'];
+const resChoice = (name: string, label: string) =>
+	fxParam.choice(name, label, RES_OPTIONS, ['Full', 'Half', 'Quarter'], 'full');
+const resScale = (v: unknown) => [1, 0.5, 0.25][Math.max(0, RES_OPTIONS.indexOf(String(v)))] ?? 1;
+
+/** How far rays reach outside the layer (layer px): a pixel at radius r extends to r / (1 − length). */
+function rayPadding(p: EffectParams, ctx: FxPlanContext): number {
+	const len = num(p.raysLength, 0.25) * Math.max(...rgbMult(p, 'lengthRed', 'lengthGreen', 'lengthBlue'));
+	const c = Array.isArray(p.center) ? p.center.map((x) => num(x, 0.5)) : [0.5, 0.5];
+	const r = Math.hypot(Math.max(c[0]!, 1 - c[0]!) * ctx.width, Math.max(c[1]!, 1 - c[1]!) * ctx.height);
+	const reach = len > 0 ? (r * Math.min(len, 0.98)) / (1 - Math.min(len, 0.98)) : 0;
+	return Math.min(reach, Math.max(ctx.width, ctx.height) * 0.5) + num(p.blurRays) * unitPx(ctx.width) * 3;
+}
+
+const rayParams = (brightness: number): ParamSpec[] => [
+	fxParam.point('center', 'Center', [0.5, 0.5]),
+	fxParam.number('raysLength', 'Rays Length', 0.25, { min: -5, max: 3, step: 0.001 }),
+	slider('lengthRed', 'Length Red', 1, { softMax: 2 }),
+	slider('lengthGreen', 'Length Green', 1, { softMax: 2 }),
+	slider('lengthBlue', 'Length Blue', 1, { softMax: 2 }),
+	slider('reverseRays', 'Reverse Rays', 0, { softMax: 1 }),
+	slider('raysBrightness', 'Rays Brightness', brightness, { softMax: 10 }),
+];
+
+const shimmerParams = (): ParamSpec[] => [
+	slider('shimmerAmp', 'Shimmer Amp', 0.5, { softMax: 2 }),
+	slider('shimmerFreq', 'Shimmer Freq', 40, { softMax: 200 }),
+	slider('shimmerSeed', 'Shimmer Seed', 0.123, { softMax: 1 }),
+	fxParam.vec2('shimmerShift', 'Shimmer Shift', [0, 0], { step: 0.001 }),
+	fxParam.vec2('shimmerSpeed', 'Shimmer Speed', [0, 0], { step: 0.001 }),
+	slider('atmosphereAmp', 'Atmosphere Amp', 0, { softMax: 2 }),
+	slider('atmosphereFreq', 'Atmosphere Freq', 1, { min: 0.1, max: 20, softMax: 20 }),
+	slider('atmosphereDetail', 'Atmosphere Detail', 0.6, { max: 1, softMax: 1 }),
+	fxParam.number('atmosphereSpeed', 'Atmosphere Speed', 1, { softMin: -2, softMax: 2, step: 0.01 }),
+];
+
+/** Shimmer: noise modulating the ray source (smeared into streaky beams by the radial passes). */
+const SHIMMER_GLSL = /* glsl */ `
+float shimmer() {
+  vec2 n = fx_layerNorm();
+  vec2 q = vec2(n.x, n.y * u_box.w / u_box.z) * u_shimmerFreq * 0.5 + u_shimmerShift * u_shimmerFreq + u_shimmerSpeed * u_shimmerFreq * u_time;
+  float sh = fx_noise01(fx_simplex(q, fract(u_shimmerSeed)) * 1.3);
+  return max(0.0, 1.0 + u_shimmerAmp * (sh * 2.0 - 1.0));
+}`;
+
+const RAY_ATMOSPHERE = /* glsl */ `
+  light *= sgl_atmosphere(fx_layerNorm(), u_box.w / u_box.z, u_atmosphereAmp, u_atmosphereFreq, u_atmosphereDetail, 0.123, u_time * u_atmosphereSpeed);`;
+
+/** Ray passes: source (`raySrc`, at the Rays Res) → 3 radial passes (r1…r3) → optional Blur Rays (rb0). */
+function rayPipeline(p: EffectParams, ctx: FxPlanContext, sourceFrag: string, final: (rays: string) => ShaderPass): ShaderPass[] {
+	const scale = resScale(p.raysRes);
+	const blur = num(p.blurRays) * unitPx(ctx.width) * ctx.pxScale * 0.5;
+	const rel = Array.isArray(p.blurRaysRel) ? p.blurRaysRel.map((x) => Math.max(0, num(x, 1))) : [1, 1];
+	const b = blur > 0.25 ? glowCascade({ input: 'r3', prefix: 'rb', sigmaX: blur * rel[0]!, sigmaY: blur * rel[1]!, levels: 1, inputDown: 1 / scale }) : null;
+	return [
+		{
+			output: 'raySrc',
+			scale,
+			format: 'rgba16f',
+			include: [GLSL_SGL_CORE, GLSL_SGL_FINISH, GLSL_COLOR, GLSL_NOISE],
+			uniforms: { u_rd: 1 / scale },
+			frag: sourceFrag,
+		},
+		...rayPasses('raySrc', 'r', scale),
+		...(b?.passes ?? []),
+		final(b ? 'rb0' : 'r3'),
+	];
+}
+
+const rayUniformsOf = (p: EffectParams) =>
+	rayUniforms(
+		num(p.raysLength, 0.25),
+		rgbMult(p, 'lengthRed', 'lengthGreen', 'lengthBlue'),
+		num(p.reverseRays),
+		num(p.biasOuterBright),
+	);
+
+export const S_RAYS = defineShaderEffect({
+	id: 'jasper.s.rays',
+	label: 'S_Rays',
+	category: 'Stylize',
+	bin: SGL_BIN,
+	description:
+		'Light beams cast radially from Center out of the pixels brighter than Threshold (god rays). Rays Length 1 = endless rays; negative lengths beam inwards. Dark Rays mode casts shadows instead.',
+	keywords: ['god rays', 'light rays', 'volumetric', 'beams', 'sapphire'],
+	expensive: true,
+	params: [
+		fxParam.choice('mode', 'Mode', ['lightRays', 'darkRays'], ['Light Rays', 'Dark Rays'], 'lightRays'),
+		...rayParams(3),
+		slider('raysDarkness', 'Rays Darkness', 3, { softMax: 10 }),
+		slider('blurRays', 'Blur Rays', 0, { softMax: 1 }),
+		fxParam.vec2('blurRaysRel', 'Blur Rays Rel', [1, 1], { min: 0, step: 0.01 }),
+		fxParam.color('raysColor', 'Rays Color', white),
+		fxParam.color('darkRaysColor', 'Dark Rays Color', black),
+		slider('biasOuterBright', 'Bias Outer Bright', 0, { max: 1, softMax: 1 }),
+		resChoice('raysRes', 'Rays Res'),
+		...thresholdParams(0.5),
+		...shimmerParams(),
+		...lightTail('Rays'),
+		slider('useSourceChroma', 'Use Source Chroma', 1, { max: 1, softMax: 1 }),
+	],
+	gpu: {
+		padding: rayPadding,
+		uniforms: (p) => rayUniformsOf(p),
+		passes: (p, ctx) =>
+			rayPipeline(
+				p,
+				ctx,
+				/* glsl */ `${THRESHOLD_SOURCE}
+${SHIMMER_GLSL}
+void main() {
+  vec4 s = sgl_boxRead(u_source, v_uv, u_rd);
+  vec3 b;
+  if (u_mode == 1) {
+    vec3 c = s.a > 0.0 ? s.rgb / s.a : vec3(0.0);
+    b = sgl_threshold(1.0 - mix(c, vec3(1.0), clamp(u_fromAlpha, 0.0, 1.0)), 1.0 - u_threshold, u_thresholdAddColor.rgb) * s.a;
+  } else {
+    b = sgl_thresholdSource(s).rgb;
+  }
+  b = mix(vec3(fx_luma(b)), b, clamp(u_useSourceChroma, 0.0, 1.0)) * shimmer();
+  fragColor = vec4(b, sgl_maxc(b));
+}`,
+				(rays) => ({
+					include: [GLSL_SGL_CORE, GLSL_SGL_FINISH, GLSL_COLOR],
+					frag: /* glsl */ `
+void main() {
+  vec4 src = texture(u_source, v_uv);
+  vec4 r = texture(u_${rays}, v_uv);
+  if (u_mode == 1) {
+    float dk = 1.0 - exp(-sgl_maxc(r.rgb) * u_raysDarkness * 0.6);
+    vec4 base = src * clamp(u_sourceOpacity, 0.0, 1.0);
+    base.rgb *= u_bgBrightness;
+    vec4 res = vec4(mix(base.rgb, u_darkRaysColor.rgb * base.a, dk), base.a);
+    fragColor = mix(res, src, clamp(u_underSource, 0.0, 1.0) * step(0.5, src.a));
+    return;
+  }
+  vec3 light = r.rgb * u_raysColor.rgb * u_raysBrightness;
+  ${RAY_ATMOSPHERE}
+  fragColor = sgl_finishLight(src, light, 2, u_affectAlpha, u_underSource, 0.0, u_sourceOpacity, u_bgBrightness);
+}`,
+				}),
+			),
+	},
+});
+
+export const S_EDGE_RAYS = defineShaderEffect({
+	id: 'jasper.s.edge-rays',
+	label: 'S_EdgeRays',
+	category: 'Stylize',
+	bin: SGL_BIN,
+	description:
+		'Light beams cast radially from Center out of the extracted edges of the image (no threshold): outlines and text throw rays.',
+	keywords: ['edge rays', 'god rays', 'beams', 'outline', 'sapphire'],
+	expensive: true,
+	params: [
+		...rayParams(2),
+		slider('blurRays', 'Blur Rays', 0, { softMax: 1 }),
+		fxParam.vec2('blurRaysRel', 'Blur Rays Rel', [1, 1], { min: 0, step: 0.01 }),
+		fxParam.color('raysColor', 'Rays Color', white),
+		fxParam.toggle('enableDarkRays', 'Enable Dark Rays', false),
+		slider('biasOuterBright', 'Bias Outer Bright', 0, { max: 1, softMax: 1 }),
+		resChoice('raysRes', 'Rays Res'),
+		showChoice(['Result', 'Edges', 'Rays']),
+		slider('edgeThickness', 'Edge Thickness', 0.022, { softMax: 0.2 }),
+		slider('edgeBrightness', 'Edge Brightness', 1, { softMax: 4 }),
+		...shimmerParams(),
+		...lightTail('Rays'),
+	],
+	gpu: {
+		padding: rayPadding,
+		uniforms: (p, ctx) => ({
+			...rayUniformsOf(p),
+			u_edgeR: Math.max(0.5, num(p.edgeThickness, 0.022) * unitPx(ctx.width) * 0.5) * ctx.pxScale,
+		}),
+		passes: (p, ctx) =>
+			rayPipeline(
+				p,
+				ctx,
+				/* glsl */ `${EDGE_RAY_GLSL}
+${SHIMMER_GLSL}
+void main() {
+  vec3 e = edgeLight(v_uv, max(u_edgeR, u_rd * 0.5));
+  e *= shimmer();
+  fragColor = vec4(e, sgl_maxc(e));
+}`,
+				(rays) => ({
+					include: [GLSL_SGL_CORE, GLSL_SGL_FINISH, GLSL_COLOR],
+					frag: /* glsl */ `${EDGE_RAY_GLSL}
+void main() {
+  vec4 src = texture(u_source, v_uv);
+  if (u_show == 1) { fragColor = vec4(min(edgeLight(v_uv, u_edgeR), 1.0), 1.0); return; }
+  vec4 r = texture(u_${rays}, v_uv);
+  vec3 light = r.rgb * u_raysColor.rgb * u_raysBrightness;
+  ${RAY_ATMOSPHERE}
+  if (u_show == 2) { fragColor = vec4(min(light, 1.0), 1.0); return; }
+  if (u_enableDarkRays) src.rgb *= 1.0 - clamp(fx_luma(r.rgb) * u_raysBrightness * 0.5, 0.0, 0.8);
+  fragColor = sgl_finishLight(src, light, 2, u_affectAlpha, u_underSource, 0.0, u_sourceOpacity, u_bgBrightness);
+}`,
+				}),
+			),
+	},
+});
+
+/** Edges (Sobel of luminance + alpha at radius r canvas px, mirrored at the layer box) × the source colour. */
+const EDGE_RAY_GLSL = /* glsl */ `
+vec4 sgl_layerRead(vec2 uv) {
+  vec2 n = sgl_mirrorNorm((uv * u_canvasSize - u_box.xy) / u_box.zw);
+  return texture(u_source, fx_uvOfLayerNorm(n));
+}
+float eL(vec2 uv) { vec4 s = sgl_layerRead(uv); return fx_luma(s.rgb) * 0.7 + s.a * 0.3; }
+vec3 edgeLight(vec2 uv, float r) {
+  vec2 o = r / u_canvasSize;
+  float gx = eL(uv + vec2(o.x, 0.0)) - eL(uv - vec2(o.x, 0.0));
+  float gy = eL(uv + vec2(0.0, o.y)) - eL(uv - vec2(0.0, o.y));
+  float e = clamp(length(vec2(gx, gy)) * 2.0, 0.0, 1.0);
+  vec4 s = sgl_layerRead(uv);
+  vec3 c = s.a > 0.0 ? s.rgb / s.a : vec3(1.0);
+  return e * mix(vec3(1.0), c, 0.6) * u_edgeBrightness;
+}`;
+
+export const S_STREAKS = defineShaderEffect({
+	id: 'jasper.s.streaks',
+	label: 'S_Streaks',
+	category: 'Stylize',
+	bin: SGL_BIN,
+	description:
+		'Smears the bright parts into streaks between two transforms (From and To: zoom by Z Dist, rotate and shift about Center) — zoom, spin and motion streaks, not time based.',
+	keywords: ['streaks', 'zoom streaks', 'motion', 'light trails', 'sapphire'],
+	expensive: true,
+	params: [
+		fxParam.point('center', 'Center', [0.5, 0.5]),
+		slider('fromZDist', 'From Z Dist', 1, { min: 0.001, softMax: 4 }),
+		fxParam.angle('fromRotate', 'From Rotate', 0),
+		fxParam.vec2('fromShift', 'From Shift', [0, 0], { step: 0.001 }),
+		slider('toZDist', 'To Z Dist', 0.8, { min: 0.001, softMax: 4 }),
+		fxParam.angle('toRotate', 'To Rotate', 0),
+		fxParam.vec2('toShift', 'To Shift', [0, 0], { step: 0.001 }),
+		slider('exposureBias', 'Exposure Bias', 0, { max: 1, softMax: 1 }),
+		slider('streaksBrightness', 'Streaks Brightness', 1, { softMax: 8 }),
+		...thresholdParams(0.5),
+		slider('mixSourceDarks', 'Mix Source Darks', 1, { max: 1, softMax: 1 }),
+		slider('mixSourceBrights', 'Mix Source Brights', 0, { max: 1, softMax: 1 }),
+		slider('resultBrightness', 'Result Brightness', 1, { softMax: 4 }),
+		combineChoice(['Add', 'Screen'], 'Add'),
+		fxParam.choice('wrap', 'Wrap', ['no', 'tile', 'reflect'], ['No', 'Tile', 'Reflect'], 'no'),
+		resChoice('streaksRes', 'Streaks Res'),
+		slider('affectAlpha', 'Affect Alpha', 1, { softMax: 2 }),
+	],
+	gpu: {
+		padding: (p, ctx) => {
+			const s = Math.max(1 / Math.max(0.001, num(p.fromZDist, 1)), 1 / Math.max(0.001, num(p.toZDist, 0.8)));
+			const sh = (v: unknown) => (Array.isArray(v) ? Math.hypot(num(v[0]), num(v[1])) : 0) * ctx.width;
+			return Math.min(Math.max(ctx.width, ctx.height), Math.max(0, s - 1) * 0.6 * Math.max(ctx.width, ctx.height) + Math.max(sh(p.fromShift), sh(p.toShift)));
+		},
+		uniforms: (p, ctx) => {
+			// Similarity transforms (complex a = scale·e^{iθ}, shift b in layer px, y down) of From and To.
+			const ln = (z: unknown, d: number) => Math.log(1 / Math.max(0.001, num(z, d)));
+			const sh = (v: unknown): [number, number] =>
+				Array.isArray(v) ? [num(v[0]) * ctx.width, -num(v[1]) * ctx.width] : [0, 0];
+			return {
+				u_mode: combineMode(p.combine, ['Add', 'Screen'], 'Add'),
+				u_fromA: [ln(p.fromZDist, 1), (num(p.fromRotate) * Math.PI) / 180],
+				u_toA: [ln(p.toZDist, 0.8), (num(p.toRotate) * Math.PI) / 180],
+				u_fromB: sh(p.fromShift),
+				u_toB: sh(p.toShift),
+				u_ek: (0.5 - clamp(num(p.exposureBias), 0, 1)) * 6,
+			};
+		},
+		passes: (p) => {
+			const scale = resScale(p.streaksRes);
+			return [
+				{
+					output: 'sb',
+					scale,
+					format: 'rgba16f',
+					include: [GLSL_SGL_CORE, GLSL_SGL_FINISH],
+					uniforms: { u_rd: 1 / scale },
+					frag: /* glsl */ `
+void main() {
+  vec4 s = sgl_boxRead(u_source, v_uv, u_rd);
+  vec3 b = sgl_threshold(s.rgb, u_threshold, u_thresholdAddColor.rgb);
+  fragColor = vec4(b, sgl_maxc(b));
+}`,
+				},
+				{
+					output: 'st',
+					scale,
+					format: 'rgba16f',
+					include: [GLSL_SGL_CORE],
+					frag: /* glsl */ `
+vec2 cmul(vec2 a, vec2 b) { return vec2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x); }
+vec2 cexpLog(vec2 l) { return exp(l.x) * vec2(cos(l.y), sin(l.y)); }
+vec4 readB(vec2 lpx) {
+  vec2 n = lpx / (u_box.zw / u_pxScale);
+  if (u_wrap == 1) n = fract(n);
+  else if (u_wrap == 2) n = sgl_mirrorNorm(n);
+  else if (any(lessThan(n, vec2(-0.02))) || any(greaterThan(n, vec2(1.02)))) return vec4(0.0);
+  return texture(u_sb, fx_uvOfLayerNorm(n));
+}
+void main() {
+  vec2 c = u_center * u_box.zw / u_pxScale;
+  vec2 p = fx_layerPx() - c;
+  vec4 acc = vec4(0.0);
+  float ws = 0.0;
+  for (int i = 0; i < 64; i++) {
+    float t = (float(i) + 0.5) / 64.0;
+    vec2 la = mix(u_fromA, u_toA, t);
+    vec2 b = mix(u_fromB, u_toB, t);
+    // inverse similarity: q = (p − b) / a
+    vec2 a = cexpLog(la);
+    vec2 q = cmul(p - b, vec2(a.x, -a.y)) / max(dot(a, a), 1.0e-8);
+    float w = exp(-u_ek * t);
+    acc += readB(q + c) * w;
+    ws += w;
+  }
+  fragColor = acc / ws;
+}`,
+				},
+				{
+					include: [GLSL_SGL_CORE, GLSL_SGL_FINISH, GLSL_COLOR],
+					frag: /* glsl */ `
+void main() {
+  vec4 src = texture(u_source, v_uv);
+  vec3 st = texture(u_st, v_uv).rgb * u_streaksBrightness * 2.0;
+  float bright = clamp(sgl_maxc(sgl_threshold(src.rgb, u_threshold, u_thresholdAddColor.rgb)) * 2.0, 0.0, 1.0);
+  vec4 base = src * mix(u_mixSourceDarks, u_mixSourceBrights, bright);
+  vec3 rgb = sgl_combineRgb(u_mode, base.rgb, st) * u_resultBrightness;
+  float a = max(base.a, clamp(sgl_maxc(st) * u_affectAlpha, 0.0, 1.0));
+  rgb = clamp(rgb, 0.0, 1.0);
+  fragColor = vec4(rgb, clamp(max(a, sgl_maxc(rgb)), 0.0, 1.0));
+}`,
+				},
+			];
+		},
+	},
+});
+
+export const SGL_BEAM_EFFECTS: readonly EffectSpec[] = [S_RAYS, S_EDGE_RAYS, S_STREAKS];
+
+export const SAPPHIRE_GLOWS_LIGHTING_EFFECTS: readonly EffectSpec[] = [...SGL_GLOW_EFFECTS, ...SGL_BEAM_EFFECTS];
