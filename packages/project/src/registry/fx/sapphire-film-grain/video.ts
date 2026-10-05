@@ -49,7 +49,7 @@ float stv_fbm1(float x, float t, int oct, uint s) {
   float sum = 0.0, a = 0.5, f = 1.0;
   for (int k = 0; k < 10; k++) {
     if (k >= oct) break;
-    sum += a * sfd_noise2(vec2(x * f, t), s ^ fx_u(k * 977));
+    sum += a * sfd_noise2(vec2(x * f, t), s ^ sfd_uu(k * 977));
     f *= 2.0; a *= 0.5;
   }
   return sum;
@@ -490,7 +490,7 @@ void main() {
     float bsh = k == 0 ? u_streaksBandShift : u_sparklesBandShift;
     float bshv = k == 0 ? u_streaksBandShiftVary : u_sparklesBandShiftVary;
     float roll = k == 0 ? u_streaksBandRollSpeed : u_sparklesBandRollSpeed;
-    uint sk = s ^ fx_u(k * 7717 + 3);
+    uint sk = s ^ sfd_uu(k * 7717 + 3);
     float ph = n.y * (bf + bfv * 0.3 * sfd_noise1(t * 0.5, sk)) + t * roll + bsh + bshv * sfd_noise1(t * 0.9 + 3.0, sk);
     float band = 1.0 - smoothstep(bsz * 0.8, bsz, abs(fract(ph) - 0.5) * 2.0);
     if (band <= 0.0) continue;

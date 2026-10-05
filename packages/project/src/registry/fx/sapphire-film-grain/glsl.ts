@@ -22,7 +22,7 @@ float sfg_frameSeed(float seed, float frame, float k) {
 // (Irwin–Hall). One hash per lattice point keeps the shaders small (SwiftShader compiles them in software).
 uint sfg_seedU(float seed) { return fx_pcg(fx_seedBits(seed)); }
 float sfg_gaussU(ivec2 p, uint s) {
-  uint h = fx_pcg(fx_pcg(fx_u(p.x) ^ s) ^ (fx_u(p.y) * 1664525u));
+  uint h = fx_pcg(fx_pcg(uint(p.x + 1073741824) ^ s) ^ (uint(p.y + 1073741824) * 1664525u));
   vec4 b = vec4(float(h & 255u), float((h >> 8u) & 255u), float((h >> 16u) & 255u), float(h >> 24u)) * (1.0 / 255.0);
   return (b.x + b.y + b.z + b.w - 2.0) * 1.7320508;
 }
@@ -54,15 +54,18 @@ vec3 sfg_grainNoise(vec2 p, vec3 sizePx, bool mono, float seed) {
 }
 // Cheap hashes for the dirt layers (one PCG round per call; SwiftShader compiles these shaders in software, so
 // fewer hash rounds = much faster first frames). h → 0..1 floats: 16-bit pairs or 8-bit quads.
-uint sfd_h(ivec3 p, uint s) { return fx_pcg((fx_u(p.x) * 73856093u) ^ (fx_u(p.y) * 19349663u) ^ (fx_u(p.z) * 83492791u) ^ s); }
+// Branch-free int → uint for |x| < 2^30 (cells, frames, indices): fx_u's sign branch, inlined dozens of times,
+// makes SwiftShader's compiler crawl.
+uint sfd_uu(int x) { return uint(x + 1073741824); }
+uint sfd_h(ivec3 p, uint s) { return fx_pcg((sfd_uu(p.x) * 73856093u) ^ (sfd_uu(p.y) * 19349663u) ^ (sfd_uu(p.z) * 83492791u) ^ s); }
 vec2 sfd_u16(uint h) { return vec2(float(h & 65535u), float(h >> 16u)) * (1.0 / 65535.0); }
 vec4 sfd_u8(uint h) { return vec4(float(h & 255u), float((h >> 8u) & 255u), float((h >> 16u) & 255u), float(h >> 24u)) * (1.0 / 255.0); }
 // 1D value noise (−1..1) along x for a stream id.
 float sfd_noise1(float x, uint id) {
   float i = floor(x);
   float f = fract(x);
-  float a = float(fx_pcg(fx_u(int(i)) ^ id) >> 8u) * (1.0 / 16777216.0);
-  float b = float(fx_pcg(fx_u(int(i) + 1) ^ id) >> 8u) * (1.0 / 16777216.0);
+  float a = float(fx_pcg(sfd_uu(int(i)) ^ id) >> 8u) * (1.0 / 16777216.0);
+  float b = float(fx_pcg(sfd_uu(int(i) + 1) ^ id) >> 8u) * (1.0 / 16777216.0);
   return mix(a, b, f * f * (3.0 - 2.0 * f)) * 2.0 - 1.0;
 }
 // 2D value noise (−1..1).
@@ -181,7 +184,7 @@ float sfd_bezierDist(vec2 p, vec2 a, vec2 b, vec2 c) {
 float sfd_hair(int i, vec2 p, vec2 box, float count, float persistence, float wiggleAmp, float wiggleFreq,
                float len, float width, float vary, float frame, float fps, uint s) {
   float life = max(persistence, 0.1);
-  uint h0 = fx_pcg(fx_u(i * 13 + 5) ^ s);
+  uint h0 = fx_pcg(sfd_uu(i * 13 + 5) ^ s);
   float ph = float(h0 >> 8u) * (1.0 / 16777216.0) * life;
   int epoch = int(floor((frame + ph) / life));
   uint h1 = sfd_h(ivec3(i, epoch, 1), s);
@@ -218,7 +221,7 @@ float sfd_hairs(vec2 p, vec2 box, float count, float persistence, float wiggleAm
 float sfd_scratch(int i, vec2 p, vec2 box, float pOn, float life, float width, float varyW, float taper,
                   float rough, float roughFreq, float gaps, float gapsFreq, float areaC, float areaW,
                   float weave, float weaveFreq, float frame, uint s) {
-  uint h0 = fx_pcg(fx_u(i * 7 + 3) ^ s);
+  uint h0 = fx_pcg(sfd_uu(i * 7 + 3) ^ s);
   float ph = float(h0 >> 8u) * (1.0 / 16777216.0) * life;
   float ef = floor((frame + ph) / life);
   float age = fract((frame + ph) / life);
@@ -239,7 +242,7 @@ float sfd_scratch(int i, vec2 p, vec2 box, float pOn, float life, float width, f
   w *= mix(1.0, smoothstep(0.0, 0.25, min(along, 1.0 - along)), clamp(taper, 0.0, 1.0));
   float c = 1.0 - smoothstep(w * 0.5, w * 0.5 + 0.8, abs(p.x - x));
   if (gaps > 0.0) c *= step(gaps, (sfd_noise1(yn * gapsFreq * 0.25, h2 ^ 0x27d4eb2du) * 0.5 + 0.5) * 1.15);
-  float fl = float(fx_pcg(h1 ^ fx_u(int(floor(frame)))) >> 24u) * (1.0 / 255.0);   // a little flicker
+  float fl = float(fx_pcg(h1 ^ sfd_uu(int(floor(frame)))) >> 24u) * (1.0 / 255.0);   // a little flicker
   return c * (0.75 + 0.25 * fl) * (smoothstep(0.0, 0.08, age) * 0.4 + 0.6);
 }
 // Vertical scratches of one kind: about 'count' visible per frame (≤ 8 slots), each living lifeFrames frames,

@@ -6,7 +6,7 @@ import { defaultEffectRegistry, fxBuiltinUniforms, fxSeed, planGpuEffect } from 
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 import { fxCanvasLayout } from '../../src/fx/plan.ts';
 
-type Paint = 'image' | 'grey' | 'gradient' | 'clear' | 'half' | 'black' | 'white';
+type Paint = 'image' | 'grey' | 'gradient' | 'clear' | 'half' | 'black' | 'white' | 'orange' | 'blue';
 
 export type FilmRunOptions = {
 	id: string;
@@ -43,6 +43,9 @@ function paint(
 		ctx.fillRect(b.x, b.y, b.w, b.h);
 	} else if (kind === 'black') {
 		ctx.fillStyle = '#000';
+		ctx.fillRect(b.x, b.y, b.w, b.h);
+	} else if (kind === 'orange' || kind === 'blue') {
+		ctx.fillStyle = kind === 'orange' ? 'rgb(220, 120, 40)' : 'rgb(20, 40, 230)';
 		ctx.fillRect(b.x, b.y, b.w, b.h);
 	} else if (kind === 'white') {
 		ctx.fillStyle = '#fff';
@@ -155,9 +158,9 @@ const api = {
 	},
 	render,
 	/** Compiles the passes of an effect (default params) in a fresh WebGL2 context: ms per pass (diagnostics). */
-	compileTimes(id: string) {
+	compileTimes(id: string, over: Record<string, unknown> = {}) {
 		const spec = defaultEffectRegistry.get(id)!;
-		const params = Object.fromEntries(spec.params.map((p) => [p.name, p.default]));
+		const params = { ...Object.fromEntries(spec.params.map((p) => [p.name, p.default])), ...over };
 		const ctx = {
 			width: 64,
 			height: 36,

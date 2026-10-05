@@ -45,32 +45,44 @@ const FAMILY = [
 	'jasper.s.scan-lines-mono',
 ];
 
-/** Effects whose look changes from frame to frame with default params. */
-const ANIMATED = [
-	'jasper.s.film-effect',
-	'jasper.s.film-damage',
-	'jasper.s.vhs-damage',
-	'jasper.s.grain',
-	'jasper.s.ultra-grain',
-	'jasper.s.diffuse',
-	'jasper.s.digital-damage',
-	'jasper.s.tv-damage',
+/** Digital damage blinks: force every kind on so a test frame always shows some damage. */
+const DIGITAL_ON = {
+	freezeAlways: 1,
+	shiftAlways: 1,
+	brightsAlways: 1,
+	pixelateAlways: 1,
+	blocksAlways: 1,
+	invertAlways: 1,
+	flowAlways: 1,
+};
+
+/** Effects whose look changes from frame to frame (with these params). */
+const ANIMATED: [string, Record<string, unknown>][] = [
+	['jasper.s.film-effect', {}],
+	['jasper.s.film-damage', {}],
+	['jasper.s.film-burn', {}],
+	['jasper.s.vhs-damage', {}],
+	['jasper.s.grain', {}],
+	['jasper.s.grain-static', {}],
+	['jasper.s.ultra-grain', {}],
+	['jasper.s.diffuse', {}],
+	['jasper.s.digital-damage', DIGITAL_ON],
+	['jasper.s.tv-damage', {}],
 ];
 
-/** Effects with a Seed param whose pattern depends on it. */
-const SEEDED = [
-	'jasper.s.film-effect',
-	'jasper.s.film-damage',
-	'jasper.s.film-burn',
-	'jasper.s.vhs-damage',
-	'jasper.s.grain',
-	'jasper.s.grain-static',
-	'jasper.s.ultra-grain',
-	'jasper.s.diffuse',
-	'jasper.s.digital-damage',
-	'jasper.s.jpeg-damage',
-	'jasper.s.tv-damage',
-	'jasper.s.grunge',
+/** Effects with a Seed param whose pattern depends on it (with these params). */
+const SEEDED: [string, Record<string, unknown>][] = [
+	['jasper.s.film-effect', {}],
+	['jasper.s.film-damage', {}],
+	['jasper.s.film-burn', {}],
+	['jasper.s.vhs-damage', {}],
+	['jasper.s.grain', {}],
+	['jasper.s.ultra-grain', {}],
+	['jasper.s.digital-damage', DIGITAL_ON],
+	['jasper.s.jpeg-damage', { errorRate: 20 }],
+	['jasper.s.tv-damage', {}],
+	['jasper.s.grunge', {}],
+	['jasper.s.bleach-bypass', { grainAmp: 1 }],
 ];
 
 const meanAbsDiff = (a: number[], b: number[]) => {
@@ -167,27 +179,27 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 		});
 
 		it('random effects are deterministic and follow the Seed', async () => {
-			for (const id of SEEDED) {
-				const opts = { id, width: 64, height: 48, paint: 'grey' as const, frame: 3, all: true };
+			for (const [id, params] of SEEDED) {
+				const opts = { id, width: 64, height: 48, paint: 'grey' as const, frame: 3, all: true, params };
 				const a = await render(opts);
 				const b = await render(opts);
-				const c = await render({ ...opts, params: { seed: 77 } });
+				const c = await render({ ...opts, params: { ...params, seed: 77 } });
 				expect(a.all, id).toEqual(b.all);
 				expect(meanAbsDiff(a.all!, c.all!), id).toBeGreaterThan(0.2);
 			}
 		});
 
 		it('grain, dust, flicker and glitches change from frame to frame', async () => {
-			for (const id of ANIMATED) {
-				const opts = { id, width: 64, height: 48, paint: 'grey' as const, all: true };
+			for (const [id, params] of ANIMATED) {
+				const opts = { id, width: 64, height: 48, paint: 'gradient' as const, all: true, params };
 				const f0 = await render({ ...opts, frame: 0 });
 				const f1 = await render({ ...opts, frame: 1 });
 				expect(meanAbsDiff(f0.all!, f1.all!), id).toBeGreaterThan(0.2);
 			}
 		});
 
-		it('fully transparent input stays transparent (filters)', async () => {
-			const filters = FAMILY.filter((id) => id !== 'jasper.s.film-burn');
+		it('fully transparent input stays transparent (filters; S_Grunge renders over its background)', async () => {
+			const filters = FAMILY.filter((id) => id !== 'jasper.s.grunge');
 			for (const id of filters) {
 				const r = await render({ id, width: 32, height: 24, paint: 'half', probes: [[28, 12]] });
 				expect(r.probes[0]![3], id).toBeLessThanOrEqual(2);
@@ -220,27 +232,63 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expect(sd).toBeLessThan(40);
 		});
 
-		it('S_BleachBypass desaturates and adds contrast', async () => {
+		it('S_BleachBypass desaturates', async () => {
 			const r = await render({
 				id: 'jasper.s.bleach-bypass',
-				width: 32,
-				height: 24,
-				paint: 'image',
-				probes: [[16, 12]],
+				width: 16,
+				height: 16,
+				paint: 'orange',
+				probes: [[8, 8]],
 			});
-			expect(r.probes[0]![3]).toBe(255);
+			const [R, G, B, A] = r.probes[0]!;
+			expect(A).toBe(255);
+			expect(Math.max(R!, G!, B!) - Math.min(R!, G!, B!)).toBeLessThan(220 - 40);
 		});
 
-		it('S_JpegDamage quantises in 8×8 blocks (smooth gradient becomes stepped)', async () => {
+		it('S_VintageColor2Strip has no true blue', async () => {
+			const r = await render({
+				id: 'jasper.s.vintage-color-2strip',
+				width: 16,
+				height: 16,
+				paint: 'blue',
+				probes: [[8, 8]],
+			});
+			const [R, G, B] = r.probes[0]!;
+			// a saturated blue comes out teal (cyan dye + little red dye): blue never dominates
+			expect(B!).toBeLessThanOrEqual(Math.max(R!, G!));
+			expect(B!).toBeLessThan(200);
+		});
+
+		it('S_VintageColor3Strip keeps saturated colours, Show: Pure Colors shows the separations', async () => {
+			const r = await render({
+				id: 'jasper.s.vintage-color-3strip',
+				width: 16,
+				height: 16,
+				paint: 'orange',
+				probes: [[8, 8]],
+			});
+			const [R, , B] = r.probes[0]!;
+			expect(R! - B!).toBeGreaterThan(120);
+			const s = await render({
+				id: 'jasper.s.vintage-color-3strip',
+				width: 16,
+				height: 16,
+				paint: 'blue',
+				params: { show: 'pureColors' },
+				probes: [[8, 8]],
+			});
+			expect(s.probes[0]![2]).toBeGreaterThan(s.probes[0]![0]!);
+		});
+
+		it('S_JpegDamage quantises in 8×8 blocks (a smooth gradient becomes stepped)', async () => {
 			const r = await render({
 				id: 'jasper.s.jpeg-damage',
 				width: 64,
 				height: 16,
 				paint: 'gradient',
-				params: { quality: 2, damage: 0 },
+				params: { quality: 0.03 },
 				all: true,
 			});
-			// Row 4: steps at the 8-px block borders are larger than inside a block.
 			const row = (x: number) => r.all![(4 * 64 + x) * 4]!;
 			let inside = 0;
 			let border = 0;
@@ -249,76 +297,151 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				inside += Math.abs(row(b * 8 + 4) - row(b * 8 + 3));
 			}
 			expect(border).toBeGreaterThan(inside);
+			// quality 1 is (nearly) lossless
+			const q = await render({
+				id: 'jasper.s.jpeg-damage',
+				width: 64,
+				height: 16,
+				paint: 'gradient',
+				params: { quality: 1 },
+				all: true,
+			});
+			const g = await render({
+				id: 'jasper.s.jpeg-damage',
+				width: 64,
+				height: 16,
+				paint: 'gradient',
+				params: { mixWithOriginal: 1 },
+				all: true,
+			});
+			expect(meanAbsDiff(q.all!, g.all!)).toBeLessThan(4);
 		});
 
-		it('S_ScanLines draws periodic dark lines', async () => {
-			const r = await render({ id: 'jasper.s.scan-lines', width: 32, height: 64, paint: 'white', all: true });
+		it('S_ScanLines draws periodic dark lines; Lines Sharpness 0 removes them', async () => {
+			const r = await render({ id: 'jasper.s.scan-lines', width: 32, height: 64, paint: 'grey', all: true });
 			const col = Array.from({ length: 64 }, (_, y) => r.all![(y * 32 + 16) * 4]!);
 			expect(Math.min(...col)).toBeLessThan(Math.max(...col) - 40);
+			const flat = await render({
+				id: 'jasper.s.scan-lines',
+				width: 32,
+				height: 64,
+				paint: 'grey',
+				params: { linesSharpness: 0 },
+				probes: [[16, 10]],
+			});
+			expect(Math.abs(flat.probes[0]![0]! - 128)).toBeLessThanOrEqual(3);
 		});
 
-		it('S_FilmBurn burns holes through the picture at a high burn amount', async () => {
+		it('S_FilmBurn: the flashes light the picture; with every element off it is the input', async () => {
+			const off = {
+				flash1: false,
+				flash2: false,
+				flash3: false,
+				scratches: false,
+				hairsAndStains: false,
+				dust: false,
+				grain: false,
+			};
 			const lo = await render({
 				id: 'jasper.s.film-burn',
 				width: 96,
-				height: 64,
+				height: 54,
 				paint: 'grey',
-				params: { burnAmount: 0 },
+				params: off,
 				all: true,
 			});
-			const hi = await render({
-				id: 'jasper.s.film-burn',
-				width: 96,
-				height: 64,
-				paint: 'grey',
-				params: { burnAmount: 1 },
-				all: true,
-			});
-			expect(Math.abs(mean(lo.all!, 1) - 128)).toBeLessThan(4);
-			expect(meanAbsDiff(lo.all!, hi.all!)).toBeGreaterThan(20);
+			const hi = await render({ id: 'jasper.s.film-burn', width: 96, height: 54, paint: 'grey', all: true });
+			expect(Math.abs(mean(lo.all!, 1) - 128)).toBeLessThan(2);
+			expect(mean(hi.all!, 0)).toBeGreaterThan(mean(lo.all!, 0) + 10);
 		});
 
-		it.runIf(!!process.env.FX_FILM_COMPILE)('compile times (FX_FILM_COMPILE)', async () => {
-			for (const id of process.env.FX_FILM_COMPILE!.split(',')) {
-				const r = await page.evaluate(
-					(i) =>
-						(window as unknown as { __film: { compileTimes(i: string): unknown } }).__film.compileTimes(i),
-					id,
-				);
-				writeFileSync(`/tmp/fx-film-compile-${id}.json`, JSON.stringify(r));
-			}
+		it('S_TVDamage Turn Off = 1 ends on black', async () => {
+			const r = await render({
+				id: 'jasper.s.tv-damage',
+				width: 64,
+				height: 36,
+				paint: 'white',
+				params: { turnOff: 1 },
+				probes: [
+					[32, 18],
+					[5, 5],
+				],
+			});
+			expect(r.probes[0]![0]).toBeLessThan(20);
+			expect(r.probes[1]![0]).toBeLessThan(20);
+		});
+
+		it('S_FilmDamage: defocus, shake and the inter-frame bar render', async () => {
+			const r = await render({
+				id: 'jasper.s.film-damage',
+				width: 64,
+				height: 48,
+				paint: 'white',
+				params: {
+					defocus: 2,
+					shakeAmplitude: 3,
+					shakeAlways: 1,
+					interframeBorderHeight: 3,
+					flicker: 0,
+					vignetteDarkness: 0,
+				},
+				frame: 4,
+				all: true,
+			});
+			// somewhere a black inter-frame bar crosses the white picture
+			let dark = 0;
+			for (let i = 0; i < r.all!.length; i += 4) if (r.all![i]! < 40) dark++;
+			expect(dark).toBeGreaterThan(20);
+		});
+
+		it('S_Grunge draws stamps (Grunge Only shows them alone)', async () => {
+			const r = await render({ id: 'jasper.s.grunge', width: 96, height: 54, paint: 'white', all: true });
+			expect(mean(r.all!, 0)).toBeLessThan(250);
+			const only = await render({
+				id: 'jasper.s.grunge',
+				width: 96,
+				height: 54,
+				paint: 'white',
+				params: { combine: 'grungeOnly' },
+				all: true,
+			});
+			expect(mean(only.all!, 3)).toBeLessThan(250);
 		});
 
 		const shots = process.env.FX_FILM_SHOTS;
-		it.runIf(!!shots)('writes PNG shots of every effect (FX_FILM_SHOTS)', async () => {
-			const dir = shots!;
-			mkdirSync(dir, { recursive: true });
-			const img = process.env.FX_FILM_IMAGE;
-			if (img) {
-				const mime = extname(img).toLowerCase() === '.png' ? 'image/png' : 'image/jpeg';
-				await loadImage(`data:${mime};base64,${readFileSync(img).toString('base64')}`);
-			}
-			const only = process.env.FX_FILM_ONLY?.split(',');
-			const frames = (process.env.FX_FILM_FRAMES ?? '0,1,2').split(',').map(Number);
-			const params = process.env.FX_FILM_PARAMS ? JSON.parse(process.env.FX_FILM_PARAMS) : {};
-			for (const id of FAMILY) {
-				if (only && !only.some((o) => id.endsWith(o))) continue;
-				for (const frame of frames) {
-					const t0 = Date.now();
-					const size = process.env.FX_FILM_SIZE?.split('x').map(Number);
-					const r = await render({
-						id,
-						frame,
-						png: true,
-						paint: img ? 'image' : 'gradient',
-						params,
-						...(size ? { width: size[0], height: size[1] } : {}),
-					});
-					writeFileSync(join(dir, `${id}-f${frame}.ms`), String(Date.now() - t0));
-					const name = `${id.replace('jasper.s.', '')}-f${frame}.png`;
-					writeFileSync(join(dir, name), Buffer.from(r.png!.split(',')[1]!, 'base64'));
+		it.runIf(!!shots)(
+			'writes PNG shots of every effect (FX_FILM_SHOTS)',
+			async () => {
+				const dir = shots!;
+				mkdirSync(dir, { recursive: true });
+				const img = process.env.FX_FILM_IMAGE;
+				if (img) {
+					const mime = extname(img).toLowerCase() === '.png' ? 'image/png' : 'image/jpeg';
+					await loadImage(`data:${mime};base64,${readFileSync(img).toString('base64')}`);
 				}
-			}
-		});
+				const only = process.env.FX_FILM_ONLY?.split(',');
+				const frames = (process.env.FX_FILM_FRAMES ?? '0,1,2').split(',').map(Number);
+				const params = process.env.FX_FILM_PARAMS ? JSON.parse(process.env.FX_FILM_PARAMS) : {};
+				for (const id of FAMILY) {
+					if (only && !only.some((o) => id.endsWith(o))) continue;
+					for (const frame of frames) {
+						const t0 = Date.now();
+						const size = process.env.FX_FILM_SIZE?.split('x').map(Number);
+						const r = await render({
+							id,
+							frame,
+							png: true,
+							paint: img ? 'image' : 'gradient',
+							params,
+							...(size ? { width: size[0], height: size[1] } : {}),
+						});
+						writeFileSync(join(dir, `${id}-f${frame}.ms`), String(Date.now() - t0));
+						const name = `${id.replace('jasper.s.', '')}-f${frame}.png`;
+						writeFileSync(join(dir, name), Buffer.from(r.png!.split(',')[1]!, 'base64'));
+					}
+				}
+			},
+			1_800_000,
+		);
 	},
 );

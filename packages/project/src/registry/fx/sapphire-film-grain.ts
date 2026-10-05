@@ -8,7 +8,8 @@
 import type { EffectSpec } from '../effects.ts';
 import { DIGITAL_EFFECTS } from './sapphire-film-grain/digital.ts';
 import { FILM_EFFECTS } from './sapphire-film-grain/film.ts';
+import { GRUNGE_EFFECTS } from './sapphire-film-grain/grunge.ts';
 import { LOOKS_EFFECTS } from './sapphire-film-grain/looks.ts';
 import { VIDEO_EFFECTS } from './sapphire-film-grain/video.ts';
 
-export const SAPPHIRE_FILM_GRAIN_EFFECTS: readonly EffectSpec[] = [...FILM_EFFECTS, ...LOOKS_EFFECTS, ...VIDEO_EFFECTS, ...DIGITAL_EFFECTS];
+export const SAPPHIRE_FILM_GRAIN_EFFECTS: readonly EffectSpec[] = [...FILM_EFFECTS, ...LOOKS_EFFECTS, ...VIDEO_EFFECTS, ...DIGITAL_EFFECTS, ...GRUNGE_EFFECTS];

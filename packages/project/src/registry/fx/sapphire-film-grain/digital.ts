@@ -90,7 +90,7 @@ void main() {
   // decode errors: damaged blocks (clustered by Error Coherence) get wrong coefficients
   if (u_errorP > 0.0) {
     ivec2 blk = ivec2(c.x - u, by) / 8;
-    uint s = sfg_seedU(u_seed) ^ fx_u(int(u_errFrame));
+    uint s = sfg_seedU(u_seed) ^ sfd_uu(int(u_errFrame));
     float coh = max(u_errorCoherence, 0.0);
     float field = coh > 0.0 ? sfd_noise2(vec2(blk) / (1.0 + 3.0 * coh), s) * 0.5 + 0.5 : 0.5;
     vec4 r = sfd_u8(sfd_h(ivec3(blk, 1), s));
@@ -226,7 +226,7 @@ export function freezeOffset(p: EffectParams, frame: number): number {
 const DIGITAL_FRAG = /* glsl */ `
 // coherent damage regions over the block grid: true where the damage of a kind applies
 float sdd_region(vec2 blk, float threshold, float epoch, float k, float scale) {
-  uint s = sfg_seedU(u_seed) ^ fx_u(int(epoch) * 31 + int(k) * 7919);
+  uint s = sfg_seedU(u_seed) ^ sfd_uu(int(epoch) * 31 + int(k) * 7919);
   float n = sfd_noise2(blk / scale, s) * 0.5 + 0.5;
   n = n * 0.75 + 0.25 * sfd_u8(sfd_h(ivec3(ivec2(blk), int(k)), s)).x;
   return step(0.5 + threshold * 0.5, n * u_intensity);
@@ -251,7 +251,7 @@ void main() {
     vec2 fb = floor(p / (bsz * u_flowBlockFreq * 0.5 + 1.0));
     float fl = sdd_region(fb, u_flowThreshold, u_epoch_flow, 7.0, 2.0);
     if (fl > 0.5) {
-      vec4 r = sfd_u8(sfd_h(ivec3(ivec2(fb), 77), sfg_seedU(u_seed) ^ fx_u(int(u_epoch_flow))));
+      vec4 r = sfd_u8(sfd_h(ivec3(ivec2(fb), 77), sfg_seedU(u_seed) ^ sfd_uu(int(u_epoch_flow))));
       vec2 dir = (r.xy - 0.5) * 2.0;
       n -= dir * u_flowSpeed * u_flowDamageAmount * 0.02 * (u_frameInHold + 1.0) * vec2(1.0, box.x / box.y);
       frozen = true;
@@ -260,7 +260,7 @@ void main() {
   // shift: rows of blocks slide sideways
   if (u_shift && u_on_shift > 0.5) {
     float sh = sdd_region(vec2(0.0, blk.y), u_shiftThreshold, u_epoch_shift, 2.0, 1.5);
-    float r = sfd_u8(sfd_h(ivec3(0, int(blk.y), 2), sfg_seedU(u_seed) ^ fx_u(int(u_epoch_shift)))).x;
+    float r = sfd_u8(sfd_h(ivec3(0, int(blk.y), 2), sfg_seedU(u_seed) ^ sfd_uu(int(u_epoch_shift)))).x;
     n.x += sh * (r - 0.5) * 2.0 * u_shiftAmount * u_intensity;
   }
   // pixelate: coarse pixels in damaged regions (Hold keeps the regions longer)
@@ -281,12 +281,12 @@ void main() {
     float levels = 3.0 + u_freezeQuality * 60.0;
     c = floor(c * levels + 0.5) / levels;
     c = mix(vec3(fx_luma(c)), c, u_freezeSaturation);
-    vec4 r = sfd_u8(sfd_h(ivec3(ivec2(blk), 5), sfg_seedU(u_seed) ^ fx_u(int(u_epoch_freeze))));
+    vec4 r = sfd_u8(sfd_h(ivec3(ivec2(blk), 5), sfg_seedU(u_seed) ^ sfd_uu(int(u_epoch_freeze))));
     if (r.x < u_freezeErrs) c = r.yzw;
   }
   // brights noise: noisy horizontal bands in the bright areas
   if (u_brightsNoise && u_on_brights > 0.5) {
-    float band = sfd_noise1(n.y * u_brightsBandFreq * 4.0, sfg_seedU(u_seed) ^ fx_u(int(u_epoch_brights))) * 0.5 + 0.5;
+    float band = sfd_noise1(n.y * u_brightsBandFreq * 4.0, sfg_seedU(u_seed) ^ sfd_uu(int(u_epoch_brights))) * 0.5 + 0.5;
     if (band > u_brightsBandThreshold && fx_luma(c) > u_brightsThreshold) {
       vec4 r = sfd_u8(sfd_h(ivec3(ivec2(floor(p / max(1.0, bsz.x * 0.125))), int(u_frame)), sfg_seedU(u_seed)));
       c = mix(c, r.xyz, 0.7 * u_intensity);
