@@ -5,6 +5,8 @@
 // Authoring guide: docs/wp-notes/fx-shader-framework.md.
 import type { EffectSpec } from '../effects.ts';
 import { SBS_BLURS } from './sapphire-blur-sharpen/blurs.ts';
+import { SBS_COMP } from './sapphire-blur-sharpen/comp.ts';
+import { SBS_CONVOLVE } from './sapphire-blur-sharpen/convolve.ts';
 import { SBS_DEFOCUS } from './sapphire-blur-sharpen/defocus.ts';
 import { SBS_DETAIL } from './sapphire-blur-sharpen/detail.ts';
 import { SBS_MOTION } from './sapphire-blur-sharpen/motion.ts';
@@ -13,4 +15,4 @@ import { SBS_Z } from './sapphire-blur-sharpen/z.ts';
 
 const byLabel = (a: EffectSpec, b: EffectSpec) => a.label.localeCompare(b.label);
 
-export const SAPPHIRE_BLUR_SHARPEN_EFFECTS: readonly EffectSpec[] = [...SBS_BLURS, ...SBS_DEFOCUS, ...SBS_DETAIL, ...SBS_SMOOTH, ...SBS_MOTION, ...SBS_Z].sort(byLabel);
+export const SAPPHIRE_BLUR_SHARPEN_EFFECTS: readonly EffectSpec[] = [...SBS_BLURS, ...SBS_DEFOCUS, ...SBS_DETAIL, ...SBS_SMOOTH, ...SBS_MOTION, ...SBS_Z, ...SBS_CONVOLVE, ...SBS_COMP].sort(byLabel);

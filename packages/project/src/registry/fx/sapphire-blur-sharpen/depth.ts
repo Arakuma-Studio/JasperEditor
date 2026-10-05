@@ -71,8 +71,6 @@ float sbs_zAmount(float z) {
 #ifdef SBS_SLICE
 float sbs_sliceW(vec2 uv) { return max(0.0, 1.0 - abs(sbs_depth(uv) - u_slice.x) / u_slice.y); }
 #endif
-// Fog by depth.
-vec3 sbs_fog(vec3 c, float z) { return mix(c, u_fogColor.rgb, clamp(mix(u_fogNear, u_fogFar, z), 0.0, 1.0)); }
 // Show: In Focus Zone — in-focus pixels keep their colour, the rest is darkened and tinted.
 vec4 sbs_focusZone(vec4 srcPremul, float amount) {
   vec4 s = fx_unpremultiply(srcPremul);
