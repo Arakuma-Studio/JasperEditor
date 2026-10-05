@@ -67,6 +67,7 @@ import {
 	snapDelta,
 } from './lib.ts';
 import { KeyLane, Ruler, SummaryLane, usePlayheadLine } from './MiniTimeline.tsx';
+import { SpatialInterpolationSubmenu } from './SpatialMenu.tsx';
 import { TransitionSection } from './TransitionSection.tsx';
 
 function usePersisted<T>(key: string, initial: T): [T, (v: T) => void] {
@@ -812,6 +813,15 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 							{m.label}
 						</button>
 					))}
+					{/* S03:KF-021 (spatial-motion-path): Spatial Interpolation ▸ for keys of point properties. */}
+					<SpatialInterpolationSubmenu
+						groups={groups}
+						ids={menu.ids}
+						onApply={(label, commands) => {
+							ops.apply(label, commands);
+							setMenu(null);
+						}}
+					/>
 					{shell ? (
 						// S03:EC-024 / wp-clipboard: Copy keys (pasted at the playhead with Ctrl/Cmd+V).
 						<button

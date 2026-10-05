@@ -14,6 +14,7 @@ import { projectHandlers } from './handlers/project.ts';
 import { sequenceHandlers } from './handlers/sequence.ts';
 import { keepShapesCentred, SHAPE_BOX_COMMANDS, SHAPE_OWNER, shapeHandlers } from './handlers/shape.ts';
 import { simplifyHandlers } from './handlers/simplify.ts';
+import { spatialHandlers } from './handlers/spatial.ts';
 import { trackerHandlers } from './handlers/tracker.ts';
 import { transitionHandlers } from './handlers/transition.ts';
 import type { Handler, HandlerMap } from './handlers/util.ts';
@@ -110,6 +111,8 @@ const LABELS: Record<CommandType, string> = {
 	'keyframe.move': 'Move Keyframes',
 	'keyframe.setInterpolation': 'Keyframe Interpolation',
 	'keyframes.prune': 'Prune Keyframes',
+	'keyframe.setSpatialInterpolation': 'Spatial Interpolation',
+	'keyframe.setTangents': 'Edit Motion Path',
 	'effect.add': 'Apply Effect',
 	'effect.remove': 'Remove Effect',
 	'effect.reorder': 'Reorder Effects',
@@ -140,6 +143,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[paramHandlers, 'WP-00'],
 	[clipEditHandlers, 'WP-2B'],
 	[keyframeHandlers, 'WP-2D'],
+	[spatialHandlers, 'WP-2D'],
 	[effectHandlers, 'WP-2D'],
 	[transitionHandlers, 'WP-TR'],
 	[processHandlers, 'wp-m2-process'],

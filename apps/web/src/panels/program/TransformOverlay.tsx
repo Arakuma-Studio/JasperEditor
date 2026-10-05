@@ -3,6 +3,8 @@
 // the rendered layers under rotation and non-uniform scale. Every drag is one session gesture
 // (`beginGesture` → `update` per animation frame → `commit`), i.e. exactly one undo step (XF-053).
 // While playing, handles are hidden and only selected outlines are drawn by direct DOM writes.
+// The motion path of the selected clip (S03:OVL-020) is drawn here too; its key squares and tangent handles are
+// hit-tested before the transform handles and dragged as one gesture each.
 import type { RenderDoc } from '@jasper/compositions';
 import {
 	applyMatrix,
@@ -40,8 +42,16 @@ import {
 import { applyEffectToClips, isEffectDrag, readEffectDragPayload } from '../effects/drag.ts';
 import { insertMotionTemplate, MG_TEMPLATE_MIME, readMgTemplateDrag } from '../motionTemplates/insert.ts';
 import { activeSequence, addTextAt, transformAt, transformCommands } from './edits.ts';
+import { MotionPathLayer } from './MotionPathLayer.tsx';
 import { MONITOR_COLORS } from './monitor.tokens.ts';
 import type { MonitorViewState } from './monitor-store.ts';
+import {
+	buildMotionPath,
+	hitMotionPath,
+	type MotionPathDrag,
+	motionPathDragCommands,
+	startMotionPathDrag,
+} from './motion-path.ts';
 import { buildSnapTargets, type SnapHit, type SnapTargets, snapMove, snapThreshold } from './snapping.ts';
 import {
 	ANCHOR_HIT,
@@ -123,7 +133,9 @@ type GestureState =
 			start: Vec2;
 			startScreen: Vec2;
 			moved: boolean;
-	  };
+	  }
+	/** S03:OVL-020: a motion-path key square or tangent handle. */
+	| { kind: 'path'; g: Gesture; drag: MotionPathDrag; startScreen: Vec2; moved: boolean };
 
 type Readout = { at: Vec2; text: string } | null;
 
@@ -202,6 +214,38 @@ export function TransformOverlay({
 		() => scene.filter((l) => selectedSet.has(l.clip.clipId) && l.props.transform),
 		[scene, selectedSet],
 	);
+	// S03:OVL-020: the motion path of the one selected clip; rebuilt only when its position animation or timing
+	// changes (the snapshot shares the document's Animatables), never per playhead frame (ARC-010).
+	const pathClip = useMemo(() => {
+		if (selected.length !== 1) return null;
+		for (const t of doc.videoTracks)
+			for (const c of t.clips) if (c.clipId === selected[0] && c.transform) return c;
+		return null;
+	}, [doc, selected]);
+	const pathKey = pathClip
+		? [
+				pathClip.clipId,
+				pathClip.trackId,
+				pathClip.start,
+				pathClip.duration,
+				pathClip.sourceIn,
+				pathClip.speed.rate,
+				pathClip.speed.reverse,
+				doc.settings.fps.num,
+				doc.settings.fps.den,
+			].join('|')
+		: '';
+	const pathAnim = pathClip?.transform?.position;
+	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the animation and timing, not the clip object
+	const motionPath = useMemo(
+		() => (pathClip ? buildMotionPath(pathClip, doc.settings.fps) : null),
+		[pathKey, pathAnim],
+	);
+	const keySel = useStoreSelector(session.store, (s) => s.selection.keyframes);
+	const selectedKeys = useMemo(
+		() => new Set(motionPath && keySel?.clipOrTrackId === motionPath.clipId ? keySel.keyframeIds : []),
+		[motionPath, keySel],
+	);
 	const [hover, setHover] = useState<string | null>(null);
 	const [snapHits, setSnapHits] = useState<{ x: SnapHit | null; y: SnapHit | null } | null>(null);
 	const [readout, setReadout] = useState<Readout>(null);
@@ -210,8 +254,8 @@ export function TransformOverlay({
 	const pendingRef = useRef<{ cmds: Parameters<Gesture['update']>[0] } | null>(null);
 	const rafRef = useRef<number | null>(null);
 	const svgRef = useRef<SVGSVGElement>(null);
-	const live = useRef({ scene, view, selLayers, frame, monitor });
-	live.current = { scene, view, selLayers, frame, monitor };
+	const live = useRef({ scene, view, selLayers, frame, monitor, motionPath });
+	live.current = { scene, view, selLayers, frame, monitor, motionPath };
 
 	const toSeq = (e: { clientX: number; clientY: number }): { seq: Vec2; screen: Vec2 } => {
 		const r = svgRef.current!.getBoundingClientRect();
@@ -312,6 +356,34 @@ export function TransformOverlay({
 			return;
 		}
 		const sel = live.current.selLayers;
+		// Motion path key squares and tangent handles (OVL-020), before the transform handles. The anchor crosshair
+		// keeps priority over the square of the key under the playhead (same point).
+		const pathHit = pathHitAt(screen);
+		if (pathHit) {
+			const mp = live.current.motionPath!;
+			const drag = startMotionPathDrag(mp, pathHit, p);
+			if (drag) {
+				const cur = selectedKeys.has(pathHit.keyId) ? [...selectedKeys] : [];
+				const ids =
+					e.shiftKey && pathHit.kind === 'key'
+						? cur.includes(pathHit.keyId)
+							? cur.filter((x) => x !== pathHit.keyId)
+							: [...cur, pathHit.keyId]
+						: cur.includes(pathHit.keyId)
+							? cur
+							: [pathHit.keyId];
+				session.selectKeyframes(ids.length ? { clipOrTrackId: mp.clipId, keyframeIds: ids } : null);
+				svg.setPointerCapture?.(e.pointerId);
+				gestureRef.current = {
+					kind: 'path',
+					g: session.beginGesture(pathHit.kind === 'key' ? 'Move Keyframe' : 'Edit Motion Path'),
+					drag,
+					startScreen: screen,
+					moved: false,
+				};
+				return;
+			}
+		}
 		// Handles / anchor / rotation of the current selection (XF-010…012, XF-037).
 		if (sel.length === 1) {
 			const l = sel[0]!;
@@ -439,6 +511,20 @@ export function TransformOverlay({
 		};
 	};
 
+	/** Motion-path target under a screen point (unlocked clip; not the anchor crosshair's spot). */
+	const pathHitAt = (screen: Vec2) => {
+		const mp = live.current.motionPath;
+		if (!mp || locked.has(mp.trackId)) return null;
+		const hit = hitMotionPath(mp, live.current.view, screen);
+		if (hit?.kind !== 'key') return hit;
+		const l = live.current.selLayers.find((x) => x.clip.clipId === mp.clipId);
+		if (l?.props.transform) {
+			const a = toScreen(live.current.view, applyMatrix(l.props.matrix, l.props.transform.anchor));
+			if (Math.hypot(screen[0] - a[0], screen[1] - a[1]) <= ANCHOR_HIT) return null;
+		}
+		return hit;
+	};
+
 	const handleUnder = (l: ResolvedLayer, rect: Rect, screen: Vec2): HandleId | null => {
 		const quad = layerScreenQuad(l);
 		const small = Math.min(dist(quad[0], quad[1]), dist(quad[1], quad[2])) < SMALL_QUAD;
@@ -475,6 +561,12 @@ export function TransformOverlay({
 		const f = live.current.frame;
 		const seqId = doc.sequenceId;
 		const snapOn = live.current.monitor.snapInMonitor !== (e.ctrlKey || e.metaKey); // Ctrl inverts (SNP-001)
+		if (g.kind === 'path') {
+			const r = motionPathDragCommands(g.drag, p, { alt: e.altKey, shift: e.shiftKey });
+			setReadout({ at: screen, text: r.readout });
+			scheduleUpdate(r.commands);
+			return;
+		}
 		if (g.kind === 'move') {
 			let dx = p[0] - g.start[0];
 			let dy = p[1] - g.start[1];
@@ -588,6 +680,7 @@ export function TransformOverlay({
 		let c = 'default';
 		if (tool === 'type') c = 'text';
 		else if (tool === 'hand') c = 'grab';
+		else if (pathHitAt(screen)) c = 'pointer';
 		else if (sel.length === 1) {
 			const l = sel[0]!;
 			const h = handleUnder(l, visibleRect(l.props.box, l.props.crop ?? undefined), screen);
@@ -755,6 +848,7 @@ export function TransformOverlay({
 					{snapHits ? <SnapLines hits={snapHits} view={view} viewport={viewport} /> : null}
 				</>
 			)}
+			{motionPath ? <MotionPathLayer path={motionPath} view={view} selected={selectedKeys} /> : null}
 			{readout ? (
 				<g pointerEvents="none">
 					<rect

@@ -8,6 +8,7 @@ import { type IdPrefix, type IdSource, idPrefixOf, isValidId } from './ids.ts';
 import type { EffectRegistry } from './registry/effects.ts';
 import { contentDurationFlicks, isBoundedContent, trackKindFor } from './registry/kinds.ts';
 import type { MgTemplateRegistry } from './registry/mg.ts';
+import { SPATIAL_INTERPOLATIONS } from './schema/common.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import type { Clip, EffectInstance, Sequence, Track } from './schema/sequence.ts';
 import { isKnownClipKind } from './schema/sequence.ts';
@@ -28,7 +29,24 @@ const inv = (invariant: string, message: string, path?: string[]): Issue => ({
 	...(path ? { path } : {}),
 });
 
-type AnimLike = { value: unknown; keyframes: { id: string; time: number; value: unknown }[] };
+type AnimLike = {
+	value: unknown;
+	keyframes: { id: string; time: number; value: unknown; spatial?: unknown }[];
+};
+
+/** INV-011 (spatial-motion-path, S03:KF-030): spatial data only on vec2 keys, with finite tangents. */
+function badSpatial(k: { value: unknown; spatial?: unknown }): boolean {
+	if (k.spatial === undefined) return false;
+	const s = k.spatial as { mode?: unknown; inTangent?: unknown; outTangent?: unknown } | null;
+	const vec = (v: unknown) => Array.isArray(v) && v.length === 2 && v.every((x) => Number.isFinite(x));
+	return (
+		!s ||
+		!SPATIAL_INTERPOLATIONS.includes(s.mode as never) ||
+		!vec(s.inTangent) ||
+		!vec(s.outTangent) ||
+		!vec(k.value)
+	);
+}
 function isAnimLike(v: unknown): v is AnimLike {
 	return !!v && typeof v === 'object' && Array.isArray((v as AnimLike).keyframes) && 'value' in (v as object);
 }
@@ -161,6 +179,8 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 				last = k.time;
 				if (valueShape(k.value) !== shape)
 					issues.push(inv('INV-011', 'Keyframe value type does not match the parameter', path));
+				if (badSpatial(k))
+					issues.push(inv('INV-011', 'Spatial interpolation needs a vec2 key and finite tangents', path));
 			}
 		});
 	};

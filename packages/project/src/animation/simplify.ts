@@ -527,7 +527,13 @@ function composeKey(
 	keepLinear: boolean,
 ): Key {
 	const easeIn = inEase === 'linear' || inEase === 'none' ? { ...LINEAR } : { ...inEase };
-	const base = { id: orig.id, time: orig.time, value: orig.value };
+	// Spatial paths stay on the kept keys; the real-evaluator verification rejects a result they would bend.
+	const base = {
+		id: orig.id,
+		time: orig.time,
+		value: orig.value,
+		...(orig.spatial ? { spatial: JSON.parse(JSON.stringify(orig.spatial)) as typeof orig.spatial } : {}),
+	};
 	if (out !== 'none' && out.kind === 'hold')
 		return { ...base, interpolation: 'hold', easeIn, easeOut: { ...orig.easeOut } };
 	const inLinear = inEase === 'linear' || inEase === 'none' || isLinearEase(inEase);

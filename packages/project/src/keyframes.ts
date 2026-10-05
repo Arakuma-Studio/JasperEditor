@@ -1,5 +1,7 @@
 // Keyframe evaluation (S01:KF-003, KF-004, KF-007). The single evaluator shared by the Player, the
-// overlay, Effect Controls and the native planner (S01:KF-009).
+// overlay, Effect Controls and the native planner (S01:KF-009). vec2 point keys with a curved spatial
+// path (S03:KF-030/031) are evaluated along the path by `keyframes-spatial.ts`.
+import { isVec2Value, pathPointAt, spatialSegment, spatialSegmentLength } from './keyframes-spatial.ts';
 import type { Animatable, Ease, Keyframe } from './schema/common.ts';
 
 const LINEAR_EASE: Ease = { influence: 1 / 3, slope: 1 };
@@ -70,11 +72,19 @@ export function autoSlope<T>(kfs: readonly Keyframe<T>[], i: number, side: 'in' 
 	const next = kfs[i + 1];
 	if (!prev || !next) return 0; // first/last keyframe: 0 on the inner side
 	if (isLocalExtremum(prev.value, k.value, next.value)) return 0;
-	const across = distance(prev.value, next.value) / (next.time - prev.time);
-	const seg =
+	let across = distance(prev.value, next.value) / (next.time - prev.time);
+	let seg =
 		side === 'out'
 			? distance(k.value, next.value) / (next.time - k.time)
 			: distance(prev.value, k.value) / (k.time - prev.time);
+	// Curved spatial paths (S03 §12.2 step 5: Δ is the arc length): speeds are measured along the path.
+	const ks = kfs as readonly Keyframe<unknown>[];
+	if (isVec2Value(k.value) && (spatialSegment(ks, i - 1) || spatialSegment(ks, i))) {
+		const lin = spatialSegmentLength(ks, i - 1);
+		const lout = spatialSegmentLength(ks, i);
+		across = (lin + lout) / (next.time - prev.time);
+		seg = side === 'out' ? lout / (next.time - k.time) : lin / (k.time - prev.time);
+	}
 	if (seg === 0 || !Number.isFinite(across / seg)) return 0;
 	return Math.min(3, Math.max(0, across / seg));
 }
@@ -160,7 +170,9 @@ export function evaluate<T>(anim: Animatable<T>, t: number, opts?: EvaluateOptio
 	const u = (t - a.time) / (b.time - a.time);
 	const p =
 		a.interpolation === 'linear' ? u : bezierProgress(u, outgoingEase(kfs, i), incomingEase(kfs, i + 1));
-	return clampValue(lerpValue(a.value, b.value, p), opts?.clamp);
+	// S03:KF-031: along a curved spatial path the progress is an arc-length fraction.
+	const path = spatialSegment(kfs as readonly Keyframe<unknown>[], i);
+	return clampValue(path ? (pathPointAt(path, p) as T) : lerpValue(a.value, b.value, p), opts?.clamp);
 }
 
 /** True when the property has at least one keyframe (stopwatch on). */

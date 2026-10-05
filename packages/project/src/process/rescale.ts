@@ -59,8 +59,25 @@ function assertSize(s: PixelSize, name: string): void {
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
+/** Maps values with a linear per-axis map `f`; spatial tangents (offsets, S03:KF-030) are mapped the same way. */
 function mapAnim<T>(a: Animatable<T>, f: (v: T) => T): Animatable<T> {
-	return { ...a, value: f(a.value), keyframes: a.keyframes.map((k) => ({ ...k, value: f(k.value) })) };
+	return {
+		...a,
+		value: f(a.value),
+		keyframes: a.keyframes.map((k) => ({
+			...k,
+			value: f(k.value),
+			...(k.spatial
+				? {
+						spatial: {
+							...k.spatial,
+							inTangent: f(k.spatial.inTangent as T) as Vec2,
+							outTangent: f(k.spatial.outTangent as T) as Vec2,
+						},
+					}
+				: {}),
+		})),
+	};
 }
 
 /** `auto-bezier` keyframes of a vector property → `bezier` with the eases auto-bezier computed. */
