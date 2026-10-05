@@ -6,7 +6,6 @@
 // compass angle (90° = waves travel to the right), as in Premiere.
 import type { EffectSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
-import { GLSL_HASH } from '../glsl/hash.ts';
 import { GLSL_SAMPLE } from '../glsl/sample.ts';
 import { fxParam } from '../params.ts';
 import type { GlslChunk } from '../shader.ts';
@@ -21,6 +20,7 @@ import {
 	randomSeedParam,
 	str,
 } from './common.ts';
+import { GLSL_PSDG_HASH } from './noise-glsl.ts';
 import { GLSL_PSDG_COMPASS } from './stylize.ts';
 
 /** Layer-box helpers of the warps: layer size in layer px, sampling at a layer-px position (transparent outside). */
@@ -160,7 +160,7 @@ export const MAGNIFY = defineShaderEffect({
 		},
 		passes: [
 			{
-				include: [GLSL_PSDG_WARP, GLSL_PSDG_BLEND, GLSL_HASH],
+				include: [GLSL_PSDG_WARP, GLSL_PSDG_BLEND, GLSL_PSDG_HASH],
 				frag: /* glsl */ `
 void main() {
   vec4 src = texture(u_source, v_uv);
@@ -182,7 +182,7 @@ void main() {
     mag = (warp_at(s + vec2(-r, -r) / m) + warp_at(s + vec2(r, -r) / m) + warp_at(s + vec2(-r, r) / m) + warp_at(s + vec2(r, r) / m)) * 0.25;
   } else if (u_scaling == 2) {
     // Scatter: each output pixel picks a random point of its magnified source pixel.
-    vec2 j = fx_hash22(ivec2(floor(lp)), 0.37) - 0.5;
+    vec2 j = psdg_hash22(ivec2(floor(lp)), 0.37) - 0.5;
     mag = warp_at(s + j * 1.0);
   } else {
     mag = warp_at(s);
@@ -570,7 +570,7 @@ export const WAVE_WARP = defineShaderEffect({
 		padding: (p) => waveWarpPadding(num(p.waveHeight, 10), str(p.pinning, 'none')),
 		passes: [
 			{
-				include: [GLSL_PSDG_WARP, GLSL_PSDG_COMPASS, GLSL_HASH],
+				include: [GLSL_PSDG_WARP, GLSL_PSDG_COMPASS, GLSL_PSDG_HASH],
 				frag: /* glsl */ `
 // Wave shapes over one period x ∈ [0, 1), values −1..1.
 float waveShape(int type, float x, float k) {
@@ -583,8 +583,8 @@ float waveShape(int type, float x, float k) {
   if (type == 5) { float u = x * 2.0 - 1.0; return sqrt(max(0.0, 1.0 - u * u)) * 2.0 - 1.0; }
   if (type == 6) { float u = x * 2.0 - 1.0; return 1.0 - sqrt(max(0.0, 1.0 - u * u)) * 2.0; }
   // Noise: a random level per half wave; Smooth Noise: interpolated.
-  float h0 = fx_hash1(int(k), 0.618) * 2.0 - 1.0;
-  float h1 = fx_hash1(int(k) + 1, 0.618) * 2.0 - 1.0;
+  float h0 = psdg_hash1(int(k), 0.618) * 2.0 - 1.0;
+  float h1 = psdg_hash1(int(k) + 1, 0.618) * 2.0 - 1.0;
   if (type == 7) return h0;
   float t = x;
   return mix(h0, h1, t * t * (3.0 - 2.0 * t));

@@ -5,7 +5,6 @@
 import type { EffectSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
 import { GLSL_COLOR } from '../glsl/color.ts';
-import { GLSL_HASH } from '../glsl/hash.ts';
 import { fxParam } from '../params.ts';
 import {
 	blendWithOriginalParam,
@@ -15,6 +14,7 @@ import {
 	randomSeedParam,
 } from './common.ts';
 import { GLSL_PSDG_GENERATE } from './generate-glsl.ts';
+import { GLSL_PSDG_HASH } from './noise-glsl.ts';
 
 // ---------------------------------------------------------------- 4-Color Gradient
 
@@ -49,7 +49,7 @@ export const FOUR_COLOR_GRADIENT = defineShaderEffect({
 		timeInvariant: true,
 		passes: [
 			{
-				include: [GLSL_PSDG_GENERATE, GLSL_HASH],
+				include: [GLSL_PSDG_GENERATE, GLSL_PSDG_HASH],
 				frag: /* glsl */ `
 void main() {
   vec4 src = texture(u_source, v_uv);
@@ -69,7 +69,7 @@ void main() {
     wsum += w;
   }
   vec3 c = sum / wsum;
-  c += (fx_hash2(ivec2(floor(lp)), u_seed) - 0.5) * u_jitter / 100.0 * 0.25;
+  c += (psdg_hash2(ivec2(floor(lp)), u_seed) - 0.5) * u_jitter / 100.0 * 0.25;
   fragColor = gen_finish(u_blendingMode, src, vec4(clamp(c, 0.0, 1.0), 1.0), u_opacity);
 }`,
 			},
@@ -157,7 +157,7 @@ export const CELL_PATTERN = defineShaderEffect({
 		timeInvariant: true,
 		passes: [
 			{
-				include: [GLSL_PSDG_GENERATE, GLSL_HASH],
+				include: [GLSL_PSDG_GENERATE, GLSL_PSDG_HASH],
 				frag: /* glsl */ `
 // Feature point of a cell: jittered by Disperse, circling with Evolution (each cell its own radius/phase; the
 // motion repeats every revolution, so Cycle Evolution loops seamlessly at any whole number of revolutions).
@@ -167,8 +167,8 @@ vec2 cellPoint(ivec2 c) {
     ivec2 n = ivec2(max(floor(u_cellsHorizontal), 1.0), max(floor(u_cellsVertical), 1.0));
     k = ivec2(((c.x % n.x) + n.x) % n.x, ((c.y % n.y) + n.y) % n.y);
   }
-  vec2 h = fx_hash22(k, u_seed);
-  float ph = fx_hash2(k + ivec2(17, 3), u_seed) * 6.28318;
+  vec2 h = psdg_hash22(k, u_seed);
+  float ph = psdg_hash2(k + ivec2(17, 3), u_seed) * 6.28318;
   float a = radians(u_evolution) + ph;
   vec2 base = vec2(c) + 0.5 + (h - 0.5) * clamp(u_disperse, 0.0, 1.5) * 0.8;
   return base + vec2(cos(a), sin(a)) * 0.22 * clamp(u_disperse, 0.0, 1.5);
@@ -179,7 +179,7 @@ float cellId(ivec2 c) {
     ivec2 n = ivec2(max(floor(u_cellsHorizontal), 1.0), max(floor(u_cellsVertical), 1.0));
     k = ivec2(((c.x % n.x) + n.x) % n.x, ((c.y % n.y) + n.y) % n.y);
   }
-  return fx_hash2(k + ivec2(101, 7), u_seed);
+  return psdg_hash2(k + ivec2(101, 7), u_seed);
 }
 void main() {
   vec4 src = texture(u_source, v_uv);
@@ -519,7 +519,7 @@ export const RAMP = defineShaderEffect({
 		timeInvariant: true,
 		passes: [
 			{
-				include: [GLSL_PSDG_GENERATE, GLSL_HASH, GLSL_COLOR],
+				include: [GLSL_PSDG_GENERATE, GLSL_PSDG_HASH, GLSL_COLOR],
 				frag: /* glsl */ `
 void main() {
   vec4 src = texture(u_source, v_uv);
@@ -532,7 +532,7 @@ void main() {
     ? dot(lp - s, d) / max(dot(d, d), 1.0e-6)
     : length(lp - s) / max(length(d), 1.0e-6);
   // Ramp Scatter: dithering noise (in 8-bit levels) that hides banding.
-  t += (fx_hash2(ivec2(floor(lp)), u_seed) - 0.5) * u_rampScatter / 255.0 * 2.0;
+  t += (psdg_hash2(ivec2(floor(lp)), u_seed) - 0.5) * u_rampScatter / 255.0 * 2.0;
   t = clamp(t, 0.0, 1.0);
   vec4 c = mix(u_startColor, u_endColor, t);
   fragColor = psdg_blendOriginal(fx_premultiply(c), src, u_blendWithOriginal);

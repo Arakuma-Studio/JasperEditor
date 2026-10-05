@@ -6,11 +6,11 @@ import type { EffectSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
 import { GLSL_BLEND } from '../glsl/blend.ts';
 import { GLSL_COLOR } from '../glsl/color.ts';
-import { GLSL_HASH } from '../glsl/hash.ts';
 import { fxParam } from '../params.ts';
 import { gaussianBlurPasses } from '../passes.ts';
 import type { GlslChunk } from '../shader.ts';
 import { blendWithOriginalParam, GLSL_PSDG_BLEND, num } from './common.ts';
+import { GLSL_PSDG_HASH } from './noise-glsl.ts';
 
 /** Compass direction (0° = up, clockwise) as a screen vector (y down). */
 export const GLSL_PSDG_COMPASS: GlslChunk = {
@@ -107,7 +107,7 @@ export const BRUSH_STROKES = defineShaderEffect({
 		uniforms: () => ({ u_reach: { int: 2 }, u_layers: { int: 2 } }),
 		passes: [
 			{
-				include: [GLSL_HASH, GLSL_PSDG_COMPASS, GLSL_PSDG_BLEND],
+				include: [GLSL_PSDG_HASH, GLSL_PSDG_COMPASS, GLSL_PSDG_BLEND],
 				frag: /* glsl */ `
 // Strokes live on a grid aligned with the stroke direction; each cell owns a few strokes (density) with a jittered
 // centre, angle, length and width. A pixel takes the colour of the topmost stroke covering it.
@@ -132,12 +132,12 @@ void main() {
       ivec2 c = c0 + ivec2(i, j);
       for (int k = 0; k < u_layers; k++) {
         ivec3 h = ivec3(c, k);
-        vec3 r = fx_hash33(h, u_seed);
+        vec3 r = psdg_hash33(h, u_seed);
         if (k == 1 && r.z > dens - 1.0) continue; // second stroke per cell only above density 1
         if (k == 0 && r.z > dens * 1.5) continue; // sparse strokes at low density
         vec2 centre = (vec2(c) + 0.5 + (r.xy - 0.5) * 0.9) * cell;
-        float ang = (fx_hash3(h + ivec3(11, 0, 0), u_seed) - 0.5) * 0.6 * rnd;
-        float l = len * (1.0 + (fx_hash3(h + ivec3(0, 13, 0), u_seed) - 0.5) * 0.8 * rnd) * 0.5;
+        float ang = (psdg_hash3(h + ivec3(11, 0, 0), u_seed) - 0.5) * 0.6 * rnd;
+        float l = len * (1.0 + (psdg_hash3(h + ivec3(0, 13, 0), u_seed) - 0.5) * 0.8 * rnd) * 0.5;
         vec2 d = q - centre;
         float ca = cos(ang), sa = sin(ang);
         d = vec2(ca * d.x + sa * d.y, -sa * d.x + ca * d.y);
@@ -145,14 +145,14 @@ void main() {
         vec2 e = vec2(max(abs(d.x) - l, 0.0), d.y);
         float dist = length(e) - width * 0.5;
         if (dist > 0.5) continue;
-        float pri = fx_hash3(h + ivec3(5, 5, 5), u_seed);
+        float pri = psdg_hash3(h + ivec3(5, 5, 5), u_seed);
         if (pri <= best) continue;
         best = pri;
         // The stroke's paint: the picture at the stroke centre (in layer px → canvas uv).
         vec2 cl = centre.x * dir + centre.y * nrm;
         col = texture(u_source, fx_uvOfLayerPx(cl));
         // Bristle shading across the stroke and a soft edge.
-        shade = (0.88 + 0.12 * cos(d.y / max(width * 0.5, 0.1) * 1.5708)) * (0.94 + 0.06 * fx_hash3(ivec3(floor(d.y * 2.0), c), u_seed));
+        shade = (0.88 + 0.12 * cos(d.y / max(width * 0.5, 0.1) * 1.5708)) * (0.94 + 0.06 * psdg_hash3(ivec3(floor(d.y * 2.0), c), u_seed));
         col.rgb *= shade;
         col *= clamp(0.5 - dist, 0.0, 1.0);
       }

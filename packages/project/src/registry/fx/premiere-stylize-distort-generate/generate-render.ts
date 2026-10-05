@@ -15,7 +15,6 @@ import type { EffectSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
 import { GLSL_BLEND } from '../glsl/blend.ts';
 import { GLSL_COLOR } from '../glsl/color.ts';
-import { GLSL_HASH } from '../glsl/hash.ts';
 import { fxParam } from '../params.ts';
 import type { ShaderPass } from '../shader.ts';
 import {
@@ -25,6 +24,7 @@ import {
 	psdgBlendModeParam,
 	randomSeedParam,
 } from './common.ts';
+import { GLSL_PSDG_HASH } from './noise-glsl.ts';
 
 // ---------------------------------------------------------------- Lens Flare
 
@@ -180,9 +180,11 @@ export const LIGHTNING = defineShaderEffect({
 	gpu: {
 		kind: 'generator',
 		padding: (p, ctx) => lightningPadding(p, ctx.width, ctx.height),
+		// A uniform trip count (3) keeps the key loop a loop (compile time in software GL).
+		uniforms: () => ({ u_three: { int: 3 } }),
 		passes: [
 			{
-				include: [GLSL_HASH, GLSL_PSDG_BLEND],
+				include: [GLSL_PSDG_HASH, GLSL_PSDG_BLEND],
 				frag: /* glsl */ `
 // Jagged 1D noise: piecewise-linear value noise (a polyline with n segments), octaves = detail levels, evolving in
 // time keys (Speed) with Stability keeping part of the shape fixed.
@@ -190,8 +192,8 @@ float jag1(float s, float n, int key, int chan) {
   float x = s * n;
   int i = int(floor(x));
   float f = x - float(i);
-  float a = fx_hash3(ivec3(i, key, chan), u_seed) * 2.0 - 1.0;
-  float b = fx_hash3(ivec3(i + 1, key, chan), u_seed) * 2.0 - 1.0;
+  float a = psdg_hash3(ivec3(i, key, chan), u_seed) * 2.0 - 1.0;
+  float b = psdg_hash3(ivec3(i + 1, key, chan), u_seed) * 2.0 - 1.0;
   return mix(a, b, f);
 }
 float jag(float s, float n, int chan) {
@@ -199,19 +201,20 @@ float jag(float s, float n, int chan) {
   int k = int(floor(t));
   float w = t - float(k);
   w = w * w * (3.0 - 2.0 * w);
-  float moving = mix(jag1(s, n, k, chan), jag1(s, n, k + 1, chan), w);
-  float still = jag1(s, n, -7, chan);
-  return mix(moving, still, clamp(u_stability, 0.0, 1.0));
+  // Keys k, k + 1 (moving) and a fixed key (Stability), one jag1 call site.
+  float v[3] = float[3](0.0, 0.0, 0.0);
+  for (int j = 0; j < u_three; j++) v[j] = jag1(s, n, j == 2 ? -7 : k + j, chan);
+  return mix(mix(v[0], v[1], w), v[2], clamp(u_stability, 0.0, 1.0));
 }
 float boltOffset(float s, float n, int chan) {
-  float v = jag(s, n, chan);
+  float v = 0.0;
   float amp = 1.0;
   float freq = n;
   int levels = int(clamp(u_detailLevel, 0.0, 5.0));
-  for (int l = 0; l < levels; l++) {
+  for (int l = 0; l <= levels; l++) {
+    v += jag(s, freq, chan + 10 * l) * amp;
     freq *= 2.0;
     amp *= clamp(u_detailAmplitude, 0.0, 1.0);
-    v += jag(s, freq, chan + 10 * (l + 1)) * amp;
   }
   return v;
 }
@@ -257,13 +260,13 @@ void main() {
     if (k > 0) {
       int j = (k - 1) % max(nb, 1);
       bool sub = k > nb;
-      if (sub && fx_hash1(j * 7 + 9, u_seed) >= u_rebranching) continue;
-      float s0 = 0.12 + 0.7 * fx_hash1(j * 7 + 3, u_seed);
+      if (sub && psdg_hash1(j * 7 + 9, u_seed) >= u_rebranching) continue;
+      float s0 = 0.12 + 0.7 * psdg_hash1(j * 7 + 3, u_seed);
       vec2 o = a + (b - a) * s0 + nrm * boltOffset(s0, n, 0) * ampPx * sin(s0 * 3.14159265);
-      float side = fx_hash1(j * 7 + 5, u_seed) < 0.5 ? -1.0 : 1.0;
-      float ang = radians(u_branchAngle) * side * (0.7 + 0.6 * fx_hash1(j * 7 + 6, u_seed));
+      float side = psdg_hash1(j * 7 + 5, u_seed) < 0.5 ? -1.0 : 1.0;
+      float ang = radians(u_branchAngle) * side * (0.7 + 0.6 * psdg_hash1(j * 7 + 6, u_seed));
       vec2 bd = vec2(cos(ang) * dirMain.x - sin(ang) * dirMain.y, sin(ang) * dirMain.x + cos(ang) * dirMain.y);
-      float bl = len * clamp(u_branchSegLength, 0.0, 1.0) * (1.0 - s0) * (0.6 + 0.5 * fx_hash1(j * 7 + 8, u_seed));
+      float bl = len * clamp(u_branchSegLength, 0.0, 1.0) * (1.0 - s0) * (0.6 + 0.5 * psdg_hash1(j * 7 + 8, u_seed));
       if (bl < 2.0) continue;
       ba = o;
       bb = o + bd * bl;

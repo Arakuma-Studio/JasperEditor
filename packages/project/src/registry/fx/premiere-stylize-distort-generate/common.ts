@@ -6,7 +6,6 @@ import type { ParamValue } from '../../../schema/common.ts';
 import type { ParamSpec } from '../../effects.ts';
 import { GLSL_BLEND } from '../glsl/blend.ts';
 import { GLSL_COLOR } from '../glsl/color.ts';
-import { GLSL_NOISE } from '../glsl/noise.ts';
 import { fxParam } from '../params.ts';
 import type { GlslChunk } from '../shader.ts';
 
@@ -202,43 +201,5 @@ export function evolutionParams(group = 'Evolution Options'): ParamSpec[] {
 	];
 }
 
-/**
- * Evolving fractal noise. `psdg_evolve(p, octaves, evolutionDeg, cycleOn, cycleRevs, seed, turbulent)`: simplex fbm
- * (≈ −1..1) or turbulence (|noise| sum, 0..1) in (p, evolution); fractional octaves fade the last octave in (AE
- * Complexity). Pass octaves derived from a uniform (never a literal): the loop is then not unrolled, and the one
- * noise call site keeps the inlined shader small (SwiftShader takes minutes on fully unrolled fbm loops).
- */
-export const GLSL_PSDG_EVOLVE: GlslChunk = {
-	name: 'psdg/evolve',
-	deps: [GLSL_NOISE],
-	source: /* glsl */ `
-float psdg_fbmFrac(vec3 p, float octaves, float seed, bool turbulent) {
-  float sum = 0.0, amp = 0.5, norm = 0.0;
-  // The trip count comes from the (uniform) octaves: compilers cannot unroll it, which keeps compile times short.
-  int n = int(ceil(clamp(octaves, 0.0, 10.0)));
-  for (int k = 0; k < n; k++) {
-    float w = clamp(octaves - float(k), 0.0, 1.0);
-    float n = fx_simplex3(p, fract(seed + float(k) * 0.1031));
-    sum += amp * w * (turbulent ? abs(n) : n);
-    norm += amp * w;
-    p = p * 2.0 + vec3(0.0, 0.0, 0.37);
-    amp *= 0.5;
-  }
-  return norm > 0.0 ? sum / norm : 0.0;
-}
-float psdg_evolve(vec2 p, float octaves, float evolutionDeg, bool cycleOn, float cycleRevs, float seed, bool turbulent) {
-  float z = evolutionDeg / 360.0;
-  float c = max(floor(cycleRevs), 1.0);
-  float zc = cycleOn ? mod(z, c) : z;
-  float w = cycleOn ? zc / c : 0.0;
-  float acc = 0.0;
-  int m = cycleOn ? 2 : 1;
-  for (int j = 0; j < m; j++) {
-    float wj = j == 0 ? 1.0 - w : w;
-    if (wj <= 0.0) continue;
-    acc += wj * psdg_fbmFrac(vec3(p, (zc - float(j) * c) * 0.6), octaves, seed, turbulent);
-  }
-  return acc;
-}
-`,
-};
+// The evolving fractal noise GLSL lives in noise-glsl.ts (lean hashes, see there).
+export { GLSL_PSDG_EVOLVE, GLSL_PSDG_HASH } from './noise-glsl.ts';

@@ -8,11 +8,11 @@
 import type { EffectSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
 import { GLSL_COLOR } from '../glsl/color.ts';
-import { GLSL_HASH } from '../glsl/hash.ts';
 import { fxParam } from '../params.ts';
 import { gaussianBlurPasses } from '../passes.ts';
 import type { GlslChunk } from '../shader.ts';
 import { num } from './common.ts';
+import { GLSL_PSDG_HASH } from './noise-glsl.ts';
 
 /** Median of a 7×7 grid of taps `stride` texels apart around uv: per channel, 10 bisection steps. */
 export const GLSL_PSDG_MEDIAN: GlslChunk = {
@@ -144,7 +144,7 @@ export const NOISE = defineShaderEffect({
 	gpu: {
 		passes: [
 			{
-				include: [GLSL_HASH],
+				include: [GLSL_PSDG_HASH],
 				frag: /* glsl */ `
 void main() {
   vec4 src = texture(u_source, v_uv);
@@ -152,8 +152,8 @@ void main() {
   if (amt <= 0.0 || src.a <= 0.0) { fragColor = src; return; }
   ivec3 p = ivec3(floor(fx_layerPx()), int(u_frame));
   vec3 n = u_colorNoise
-    ? vec3(fx_hash3(p, u_seed), fx_hash3(p + ivec3(0, 0, 7919), u_seed), fx_hash3(p + ivec3(0, 0, 15881), u_seed))
-    : vec3(fx_hash3(p, u_seed));
+    ? vec3(psdg_hash3(p, u_seed), psdg_hash3(p + ivec3(0, 0, 7919), u_seed), psdg_hash3(p + ivec3(0, 0, 15881), u_seed))
+    : vec3(psdg_hash3(p, u_seed));
   vec3 c = src.rgb / src.a + (n - 0.5) * 2.0 * amt;
   c = u_clip ? clamp(c, 0.0, 1.0) : fract(c);
   fragColor = vec4(c * src.a, src.a);
@@ -166,7 +166,7 @@ void main() {
 /** Smooth seeded noise along a phase axis: value at lattice point floor(phase) blended to the next (0..1). */
 const GLSL_PSDG_PHASE_NOISE: GlslChunk = {
 	name: 'psdg/phase-noise',
-	deps: [GLSL_HASH],
+	deps: [GLSL_PSDG_HASH],
 	source: /* glsl */ `
 // Per-pixel 0..1 noise for a phase; integer phases are independent patterns, fractions morph smoothly.
 // cycle > 0: the phase wraps every cycle units (loops seamlessly).
@@ -177,8 +177,8 @@ float psdg_phaseNoise(ivec2 p, float phase, float cycle, float seed, int channel
   float b = f + 1.0;
   if (cycle > 0.0) { a = mod(a, cycle); b = mod(b, cycle); }
   ivec3 q = ivec3(p, channel * 104729);
-  float va = fx_hash3(q + ivec3(0, 0, int(a) * 7), seed);
-  float vb = fx_hash3(q + ivec3(0, 0, int(b) * 7), seed);
+  float va = psdg_hash3(q + ivec3(0, 0, int(a) * 7), seed);
+  float vb = psdg_hash3(q + ivec3(0, 0, int(b) * 7), seed);
   return mix(va, vb, t * t * (3.0 - 2.0 * t));
 }
 `,

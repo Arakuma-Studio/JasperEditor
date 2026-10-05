@@ -6,9 +6,9 @@
 import type { EffectSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
 import { GLSL_COLOR } from '../glsl/color.ts';
-import { GLSL_HASH } from '../glsl/hash.ts';
 import { fxParam } from '../params.ts';
 import { transitionCompletionParam } from './common.ts';
+import { GLSL_PSDG_HASH } from './noise-glsl.ts';
 import { GLSL_PSDG_COMPASS } from './stylize.ts';
 
 export const BLOCK_DISSOLVE = defineShaderEffect({
@@ -40,11 +40,11 @@ export const BLOCK_DISSOLVE = defineShaderEffect({
 		timeInvariant: true,
 		passes: [
 			{
-				include: [GLSL_HASH],
+				include: [GLSL_PSDG_HASH],
 				frag: /* glsl */ `
 float visibleAt(vec2 lp, float c) {
   vec2 bs = max(vec2(u_blockWidth, u_blockHeight), vec2(1.0));
-  float r = fx_hash2(ivec2(floor(lp / bs)), u_seed);
+  float r = psdg_hash2(ivec2(floor(lp / bs)), u_seed);
   return r >= c ? 1.0 : 0.0;
 }
 void main() {
