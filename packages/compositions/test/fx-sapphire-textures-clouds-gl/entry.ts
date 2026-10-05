@@ -6,7 +6,8 @@ import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 import { fxCanvasLayout } from '../../src/fx/plan.ts';
 
 type Px = [number, number, number, number];
-const SAPPHIRE_TEXTURES_CLOUDS_EFFECTS = FX_FAMILIES.find((f) => f.file === 'sapphire-textures-clouds')?.effects ?? [];
+const SAPPHIRE_TEXTURES_CLOUDS_EFFECTS =
+	FX_FAMILIES.find((f) => f.file === 'sapphire-textures-clouds')?.effects ?? [];
 type Opts = {
 	width?: number;
 	height?: number;
@@ -140,8 +141,10 @@ const api = {
 	stats: (id: string, over: Record<string, unknown> = {}, o: Opts = {}) => stats(run(id, over, o)),
 	diff: (id: string, a: [Record<string, unknown>, Opts], b: [Record<string, unknown>, Opts]) =>
 		diff(run(id, a[0], a[1]), run(id, b[0], b[1])),
-	pixel: (id: string, over: Record<string, unknown>, o: Opts, x: number, y: number) => px(run(id, over, o), x, y),
-	png: (id: string, over: Record<string, unknown> = {}, o: Opts = {}) => run(id, over, o).toDataURL('image/png'),
+	pixel: (id: string, over: Record<string, unknown>, o: Opts, x: number, y: number) =>
+		px(run(id, over, o), x, y),
+	png: (id: string, over: Record<string, unknown> = {}, o: Opts = {}) =>
+		run(id, over, o).toDataURL('image/png'),
 };
 
 (window as unknown as { __stc: typeof api }).__stc = api;

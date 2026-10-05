@@ -70,7 +70,9 @@ export const STC_OUTPUT_OPACITY = ['allOpaque', 'copyFromInput'] as const;
  * The tail every entry shares: Bg Brightness, Combine (first option "Texture Only", "Clouds Only" or "Noise Only";
  * `modes` limits the list, S_TextureRidges offers four), Output Opacity, then Show and Mix with Orig.
  */
-export function finishParams(opts: { only?: 'Texture' | 'Clouds' | 'Noise'; modes?: number } = {}): ParamSpec[] {
+export function finishParams(
+	opts: { only?: 'Texture' | 'Clouds' | 'Noise'; modes?: number } = {},
+): ParamSpec[] {
 	const only = opts.only ?? 'Texture';
 	const n = Math.max(2, Math.min(STC_COMBINE.length, opts.modes ?? STC_COMBINE.length));
 	const values = STC_COMBINE.slice(0, n).map((v, i) => (i === 0 ? `${only.toLowerCase()}Only` : v));

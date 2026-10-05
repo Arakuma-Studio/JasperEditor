@@ -36,7 +36,9 @@ const single = (frag: string, timeInvariant = false): GpuEffect => ({
 	kind: 'generator',
 	...(timeInvariant ? { timeInvariant: true } : {}),
 	// The ramp chunk reads the Color0/Color1 uniforms: only effects that use it declare them.
-	passes: [{ include: frag.includes('stc_ramp') ? [STC_CORE, STC_RAMP, STC_FINISH] : [STC_CORE, STC_FINISH], frag }],
+	passes: [
+		{ include: frag.includes('stc_ramp') ? [STC_CORE, STC_RAMP, STC_FINISH] : [STC_CORE, STC_FINISH], frag },
+	],
 });
 
 function texture(init: {
@@ -65,13 +67,17 @@ const boilParams = () => [
 	sRange('boilDetails', 'Boil Details', 0.55, 0, 1),
 	sAny('boilSpeed', 'Boil Speed', 1),
 ];
-const shiftParams = () => [sVec('shiftStart', 'Shift Start', [0, 0]), sVec('shiftSpeed', 'Shift Speed', [0.5, 0])];
+const shiftParams = () => [
+	sVec('shiftStart', 'Shift Start', [0, 0]),
+	sVec('shiftSpeed', 'Shift Speed', [0.5, 0]),
+];
 
 /** GLSL: `vec2 q` (texture space minus the animated shift) and `vec2 fq` (frequency vector). */
 const CLOUDS_COORDS = /* glsl */ `
   vec2 q = stc_screen() - stc_yUp(u_shiftStart + u_shiftSpeed * u_time);
   vec2 fq = vec2(u_frequency * u_frequencyRelX, u_frequency);`;
-const CLOUDS_NOISE = 'stc_clouds(q * fq, u_octaves, u_boilingMode, u_boilDetails, u_boilSpeed * u_time, u_seed)';
+const CLOUDS_NOISE =
+	'stc_clouds(q * fq, u_octaves, u_boilingMode, u_boilDetails, u_boilSpeed * u_time, u_seed)';
 
 export const S_CLOUDS = texture({
 	id: 'jasper.s.clouds',
@@ -625,7 +631,11 @@ void main() {
 });
 
 /** Glow tail shared by S_TexturePlasma and S_TextureNeurons (Brightness, Color, Glow Brightness/Color/Widths). */
-const glowParams = (glowBright: number, glowColor: [number, number, number], rgbWidths: [number, number, number]) => [
+const glowParams = (
+	glowBright: number,
+	glowColor: [number, number, number],
+	rgbWidths: [number, number, number],
+) => [
 	sPos('brightness', 'Brightness', 1),
 	sColor('color', 'Color', [1, 1, 1]),
 	sPos('glowBrightness', 'Glow Brightness', glowBright, 10),

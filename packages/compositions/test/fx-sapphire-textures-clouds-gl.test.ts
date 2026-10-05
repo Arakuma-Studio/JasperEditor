@@ -29,7 +29,12 @@ const S = (name: string) => `jasper.s.${name}`;
 /** Effects without automatic animation by default (no speed param, or speeds that default to 0). */
 /** Small layers for the sweeps over all 21 effects (SwiftShader is slow). */
 const SMALL = { width: 96, height: 54 };
-const STILL = new Set([S('texture-chroma-spiral'), S('texture-noise-emboss'), S('texture-noise-paint'), S('texture-weave')]);
+const STILL = new Set([
+	S('texture-chroma-spiral'),
+	S('texture-noise-emboss'),
+	S('texture-noise-paint'),
+	S('texture-weave'),
+]);
 
 describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 	'sapphire-textures-clouds in WebGL2 (headless Chrome)',
@@ -110,7 +115,8 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				}
 				if (!(step > 0)) problems.push(`${id}: no change between frames`);
 				if (!(step < 30)) problems.push(`${id}: pops between frames (${step.toFixed(1)})`);
-				if (!(far > step)) problems.push(`${id}: no evolution over time (${far.toFixed(1)} ≤ ${step.toFixed(1)})`);
+				if (!(far > step))
+					problems.push(`${id}: no evolution over time (${far.toFixed(1)} ≤ ${step.toFixed(1)})`);
 			}
 			expect(problems).toEqual([]);
 		});
@@ -170,7 +176,15 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 
 		it('moire: the rings are centred on A Center (bright crest at phase 0)', async () => {
 			const id = S('texture-moire');
-			const p = { frequency: 2, phaseSpeed: 0, moireSpeed: 0, bBrightness: 0, aBrightness: 2, phaseRed: 0, phaseGreen: 0 };
+			const p = {
+				frequency: 2,
+				phaseSpeed: 0,
+				moireSpeed: 0,
+				bBrightness: 0,
+				aBrightness: 2,
+				phaseRed: 0,
+				phaseGreen: 0,
+			};
 			const c = await pixel(id, { ...p, aCenter: [0.5, 0.5] }, {}, 80, 45);
 			expect(c[0]).toBeGreaterThan(240);
 		});
@@ -194,8 +208,12 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 
 		it('noise paint: Jitter Frames re-randomises the strokes only every N frames', async () => {
 			const id = S('texture-noise-paint');
-			expect(await diff(id, [{ jitterFrames: 4 }, { frame: 4 }], [{ jitterFrames: 4 }, { frame: 7 }])).toBe(0);
-			expect(await diff(id, [{ jitterFrames: 4 }, { frame: 7 }], [{ jitterFrames: 4 }, { frame: 8 }])).toBeGreaterThan(1);
+			expect(await diff(id, [{ jitterFrames: 4 }, { frame: 4 }], [{ jitterFrames: 4 }, { frame: 7 }])).toBe(
+				0,
+			);
+			expect(
+				await diff(id, [{ jitterFrames: 4 }, { frame: 7 }], [{ jitterFrames: 4 }, { frame: 8 }]),
+			).toBeGreaterThan(1);
 			expect(await diff(id, [{}, { frame: 3 }], [{}, { frame: 40 }])).toBe(0);
 		});
 	},
