@@ -3,7 +3,8 @@
 // and Audio groups with intrinsic and applied effects (fx bypass, reset, reorder by drag, delete),
 // property rows with stopwatch / navigator / reset, and a mini-timeline with keyframe selection,
 // marquee, drag-to-move with snapping, and a right-click interpolation menu. Values are resolved at
-// the playhead (EC-006).
+// the playhead (EC-006). Twirling a numeric / vec2 property open shows its Value and Velocity graphs
+// (S03:KF-022, GraphEditor.tsx).
 import type { Command } from '@jasper/project';
 import { formatTimecode } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
@@ -17,6 +18,7 @@ import { cx, TimecodeText } from '@jasper/ui';
 import {
 	type DragEvent,
 	type KeyboardEvent as ReactKeyboardEvent,
+	type MouseEvent as ReactMouseEvent,
 	type ReactNode,
 	type PointerEvent as ReactPointerEvent,
 	type RefObject,
@@ -53,6 +55,8 @@ import { useInspectorData } from '../properties/lib/hooks.ts';
 import { exactFrameOf, planReset, type Row } from '../properties/lib/model.ts';
 import { useInspectorOps } from '../properties/lib/ops.ts';
 import type { PanelProps } from '../types.ts';
+import { GRAPH_HEIGHT, PropertyGraphs } from './GraphEditor.tsx';
+import { graphKindOf } from './graph.ts';
 import { buildGroups, type FxSection, type RowFilter, rowVisible, shownClips } from './items.ts';
 import {
 	clipRange,
@@ -132,6 +136,8 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	const [showTimeline, setShowTimeline] = usePersisted(`jasper.ec.${instanceId}.timeline`, true);
 	const [leftPct, setLeftPct] = usePersisted(`jasper.ec.${instanceId}.split`, 55);
 	const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+	/** Twirled-open graph rows (`clipId:rowId` → graph height in px, S03:KF-022). */
+	const [graphs, setGraphs] = usePersisted<Record<string, number>>(`jasper.ec.${instanceId}.graphs`, {});
 	const [filter, setFilter] = useState<RowFilter>('all');
 	const [selectedFx, setSelectedFx] = useState<string | null>(null);
 	const [menu, setMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null);
@@ -262,6 +268,24 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 		return out;
 	};
 
+	/** Snap targets for key drags (S03:EC-023): playhead, clip edges and the clip's other keys. */
+	const snapCandidates = (clipId: string, exclude: ReadonlySet<string>): number[] => {
+		const clip = clips.find((c) => c.id === clipId);
+		if (!clip) return [];
+		return [
+			session.transport.getState().frame,
+			clip.start,
+			clip.start + clip.duration - 1,
+			...keyFramesOfClip(clipId, exclude),
+		];
+	};
+	const openKeyMenu = (e: ReactMouseEvent, clipId: string, id: string) => {
+		e.preventDefault();
+		const ids = selectedKeys.has(id) ? [...selectedKeys] : [id];
+		if (!selectedKeys.has(id)) selectKeys(clipId, ids);
+		setMenu({ x: e.clientX, y: e.clientY, ids });
+	};
+
 	const onKeyPointerDown = (
 		e: ReactPointerEvent<HTMLElement>,
 		info: { clipId: string; keyframeId: string; frame: number },
@@ -290,13 +314,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 			active: false,
 		};
 		keyDrag.current = drag;
-		const clip = clips.find((c) => c.id === info.clipId)!;
-		const candidates = [
-			session.transport.getState().frame,
-			clip.start,
-			clip.start + clip.duration - 1,
-			...keyFramesOfClip(info.clipId, new Set(ids)),
-		];
+		const candidates = snapCandidates(info.clipId, new Set(ids));
 		const framesPerPx = (range.end - range.start) / drag.laneWidth;
 		const move = (ev: PointerEvent) => {
 			const dx = ev.clientX - drag.x0;
@@ -330,7 +348,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 		window.addEventListener('keydown', key, true);
 	};
 
-	const onLanePointerDown = (e: ReactPointerEvent<HTMLElement>) => {
+	const onLanePointerDown = (e: ReactPointerEvent<Element>) => {
 		if (e.button !== 0 || !contentRef.current) return;
 		const box = contentRef.current.getBoundingClientRect();
 		const origin = { x: e.clientX, y: e.clientY };
@@ -363,10 +381,8 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 					return cx0 >= l && cx0 <= r && cy0 >= t && cy0 <= b && el.dataset.kfClip === primary.id;
 				},
 			);
-			selectKeys(
-				primary.id,
-				hits.map((el) => el.dataset.kfId!),
-			);
+			// Graph keys carry the same ids as their lane glyphs: de-duplicate.
+			selectKeys(primary.id, [...new Set(hits.map((el) => el.dataset.kfId!))]);
 		};
 		window.addEventListener('pointermove', move);
 		window.addEventListener('pointerup', up);
@@ -651,30 +667,68 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 											</div>
 										) : null}
 										{open
-											? rows.map((r) => (
-													<div key={r.id} className="flex items-stretch">
-														<div style={left} className="min-w-0 shrink-0">
-															<PropertyRow row={r} ctx={ctx} indent />
+											? rows.map((r) => {
+													const graphKey = `${r.bindings[0]!.clip.id}:${r.id}`;
+													const hasGraph = graphKindOf(r.spec) !== null;
+													const graphHeight = hasGraph ? graphs[graphKey] : undefined;
+													return (
+														<div key={r.id}>
+															<div className="flex items-stretch">
+																<div style={left} className="min-w-0 shrink-0">
+																	<PropertyRow
+																		row={r}
+																		ctx={ctx}
+																		indent
+																		twirl={
+																			hasGraph
+																				? {
+																						open: graphHeight !== undefined,
+																						onToggle: () => {
+																							const next = { ...graphs };
+																							if (graphHeight !== undefined) delete next[graphKey];
+																							else next[graphKey] = GRAPH_HEIGHT.initial;
+																							setGraphs(next);
+																						},
+																					}
+																				: undefined
+																		}
+																	/>
+																</div>
+																{lane(
+																	<KeyLane
+																		row={r}
+																		seq={seq}
+																		range={range}
+																		selected={selectedKeys}
+																		onKeyPointerDown={onKeyPointerDown}
+																		onKeyDoubleClick={(f) => session.transport.seek(f)}
+																		onKeyContextMenu={openKeyMenu}
+																		onLanePointerDown={onLanePointerDown}
+																	/>,
+																)}
+															</div>
+															{graphHeight !== undefined ? (
+																<PropertyGraphs
+																	row={r}
+																	seq={seq}
+																	range={range}
+																	height={graphHeight}
+																	onResize={(h) => setGraphs({ ...graphs, [graphKey]: h })}
+																	leftStyle={left}
+																	showTimeline={showTimeline}
+																	ops={ops}
+																	selected={selectedKeys}
+																	keySel={keySel}
+																	selectKeys={selectKeys}
+																	onKeyContextMenu={openKeyMenu}
+																	onBackgroundPointerDown={onLanePointerDown}
+																	snapCandidates={snapCandidates}
+																	setTip={setDragTip}
+																/>
+															) : null}
 														</div>
-														{lane(
-															<KeyLane
-																row={r}
-																seq={seq}
-																range={range}
-																selected={selectedKeys}
-																onKeyPointerDown={onKeyPointerDown}
-																onKeyDoubleClick={(f) => session.transport.seek(f)}
-																onKeyContextMenu={(e, clipId, id) => {
-																	e.preventDefault();
-																	const ids = selectedKeys.has(id) ? [...selectedKeys] : [id];
-																	if (!selectedKeys.has(id)) selectKeys(clipId, ids);
-																	setMenu({ x: e.clientX, y: e.clientY, ids });
-																}}
-																onLanePointerDown={onLanePointerDown}
-															/>,
-														)}
-													</div>
-												))
+													);
+												})
 											: null}
 									</div>
 								);

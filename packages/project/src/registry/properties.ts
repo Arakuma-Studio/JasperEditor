@@ -12,7 +12,7 @@ import {
 } from '../composition/json-schema.ts';
 import { contentTimeAt } from '../derive/index.ts';
 import { DEFAULT_SHAPE_SIZE, shapeIntrinsicBox } from '../factories.ts';
-import { evaluate } from '../keyframes.ts';
+import { type EvaluateOptions, evaluate } from '../keyframes.ts';
 import type { Animatable, Keyframe, RGBA } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { MgCompositionInfo } from '../schema/media.ts';
@@ -1290,16 +1290,26 @@ export type ResolvedProperty = {
 	outside: boolean;
 };
 
+/**
+ * Options `evaluate()` uses for a property (hold-only types step; numbers clamp to their range). Shared
+ * by the resolver and every consumer that samples the curve itself (Effect Controls graphs, S03:KF-022).
+ */
+export function propertyEvaluateOptions(
+	s: Pick<PropertySpec, 'kind' | 'range' | 'animatable'>,
+): EvaluateOptions {
+	const clamp =
+		s.kind === 'number' && s.range && (s.range.min !== undefined || s.range.max !== undefined)
+			? { min: s.range.min, max: s.range.max }
+			: undefined;
+	return { holdOnly: s.animatable === 'hold-only', clamp };
+}
+
 /** Value of a property at a sequence frame (S03:PRP-010). */
 export function resolvePropertyAt(ctx: PropertyContext, s: PropertySpec, frame: number): ResolvedProperty {
 	const { time, outside } = clipContentTimeAtFrame(ctx.clip, frame, ctx.seq.settings.frameRate);
 	const stored = readStoredProperty(ctx, s);
 	if (isAnimatableValue(stored)) {
-		const clampRange =
-			s.kind === 'number' && s.range && (s.range.min !== undefined || s.range.max !== undefined)
-				? { min: s.range.min, max: s.range.max }
-				: undefined;
-		const value = evaluate(stored, time, { holdOnly: s.animatable === 'hold-only', clamp: clampRange });
+		const value = evaluate(stored, time, propertyEvaluateOptions(s));
 		return { value, animated: stored.keyframes.length > 0, anim: stored, time, outside };
 	}
 	if (stored === undefined && s.defaultValue !== undefined)

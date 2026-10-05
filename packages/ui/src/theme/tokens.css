@@ -315,6 +315,17 @@
 	--pr-label-yellow-tint: #f5ed9f;
 }
 
+/* Effect Controls Value / Velocity graphs (S03:KF-022, S05:ECP-006). */
+:root {
+	--pr-graph-bg: var(--pr-bg-field);
+	--pr-graph-grid: rgba(255, 255, 255, 0.08);
+	--pr-graph-zero: rgba(255, 255, 255, 0.22);
+	--pr-graph-curve: #d8d8d8;
+	--pr-graph-x: #f0524f;
+	--pr-graph-y: #3fcf5a;
+	--pr-graph-handle: var(--pr-accent);
+}
+
 /* wp-m2-color: Lumetri Color panel (sliders, curves, wheels) and Lumetri Scopes (S06 §6–§7). */
 :root {
 	--pr-slider-track: #3a3a3a;
