@@ -28,6 +28,7 @@ import {
 import type { InspectorOps } from '../lib/ops.ts';
 import { CheckboxField, ColorField, MiniButton, SelectField, TextField } from './fields.tsx';
 import { DiamondGlyph, NextGlyph, PrevGlyph, ResetGlyph, StopwatchGlyph } from './glyphs.tsx';
+import { MediaParamPicker } from './MediaParamPicker.tsx';
 import { ScrubbyNumber, type ValueFn } from './ScrubbyNumber.tsx';
 
 export type RowContext = {
@@ -159,6 +160,18 @@ export function PropertyRow(props: {
 				);
 			}
 			case 'media':
+				// fx framework: picture inputs (image/video kinds) get the generic picker; LUT params keep LutPicker.
+				if (spec.mediaKinds && !spec.mediaKinds.includes('lut'))
+					return (
+						<MediaParamPicker
+							doc={ctx.doc}
+							value={mixed ? null : value}
+							kinds={spec.mediaKinds}
+							label={row.label}
+							onChange={(mediaId) => commitFn(() => ({ mediaId }))}
+							data-testid={`prop-${row.id}`}
+						/>
+					);
 				return (
 					<LutPicker
 						doc={ctx.doc}

@@ -119,6 +119,8 @@ export type PropertySpec = {
 	description?: string;
 	/** M2 (S08): JSON Schema of the value (`json` kind and every spec built from a JSON Schema). */
 	valueSchema?: JsonSchemaObject;
+	/** `media` values (fx framework): the asset kinds the picker offers (absent = LUTs, the M2 colour pickers). */
+	mediaKinds?: readonly string[];
 };
 
 const hasTransform = (c: Pick<Clip, 'kind'>) => !!kindCapabilities(c.kind)?.hasTransform;
@@ -1130,8 +1132,10 @@ export function effectPropertySpecs(fx: Pick<EffectInstance, 'id'>, effect: Effe
 
 export function effectParamPropertySpec(fxId: string, effect: EffectSpec, p: ParamSpec): PropertySpec {
 	const kind: ValueKind = p.type;
+	// fx framework: `point` params are vec2 fields in the inspector (the Program monitor adds the on-canvas handle).
+	const hint = p.ui?.control === 'point' ? 'vec2' : p.ui?.control;
 	const control: PropertySpec['ui']['control'] =
-		p.ui?.control ??
+		hint ??
 		(kind === 'curve'
 			? 'curve'
 			: kind === 'media'
@@ -1166,6 +1170,7 @@ export function effectParamPropertySpec(fxId: string, effect: EffectSpec, p: Par
 			precision: step === undefined ? 1 : step >= 1 ? 0 : step >= 0.1 ? 1 : 2,
 		},
 		defaultValue: p.default,
+		...(p.mediaKinds ? { mediaKinds: p.mediaKinds } : {}),
 	};
 }
 

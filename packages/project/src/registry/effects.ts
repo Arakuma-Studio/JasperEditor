@@ -3,6 +3,8 @@
 // horizontal and vertical flip. Each entry carries its canonical parameter math (S03:FX-040) and both
 // realizations: a browser preview (CSS style fragment or inline SVG filter) and an ffmpeg filter string
 // for the native export path. Unknown ids are preserved and bypassed by the renderers (S01:FX-022).
+// Wave 1 (fx framework): `gpu` = GLSL shader passes run on the GPU in the preview and the Remotion path, `bin` =
+// Effects-panel folder; the fx catalogue (`./fx/`, one file per effect family) is part of the default registry.
 import type { Lut, Rgb } from '../color/lut.ts';
 import type { ParamValue } from '../schema/common.ts';
 import type { MediaKind } from '../schema/media.ts';
@@ -15,6 +17,8 @@ import {
 	HUE_SATURATION_OP,
 	hueSaturationValues,
 } from './color-effects.ts';
+import { FX_EFFECTS } from './fx/index.ts';
+import type { GpuEffect } from './fx/shader.ts';
 
 // The M1 colour maths moved next to the colour ops (S06:CG-026); re-exported for existing importers.
 export { blackWhiteAmount, brightnessContrastLinear, hueSaturationValues };
@@ -48,9 +52,22 @@ export type ParamSpec = {
 	options?: readonly string[];
 	/** Human labels for `options` (same order). */
 	optionLabels?: readonly string[];
-	/** UI hint for the inspector rows (defaults derive from `type`). `wheel` = a colour wheel over a vec2 (M2). */
+	/**
+	 * UI hint for the inspector rows (defaults derive from `type`). `wheel` = a colour wheel over a vec2 (M2).
+	 * `point` (fx framework) = a vec2 normalised to the layer box, edited as x/y fields and dragged on the canvas.
+	 */
 	ui?: {
-		control?: 'scrub' | 'slider' | 'angle' | 'select' | 'toggle' | 'color' | 'wheel' | 'curve' | 'media';
+		control?:
+			| 'scrub'
+			| 'slider'
+			| 'angle'
+			| 'select'
+			| 'toggle'
+			| 'color'
+			| 'wheel'
+			| 'curve'
+			| 'media'
+			| 'point';
 		bipolar?: boolean;
 	};
 	/** `media` params: asset kinds the picker offers (e.g. `['lut']`). */
@@ -91,6 +108,11 @@ export type EffectSpec = {
 	version: number;
 	label: string;
 	category: EffectCategory;
+	/**
+	 * Effects-panel folder under Video Effects (e.g. 'Sapphire Glows'); absent = the category folder. Third-party
+	 * style packs show up this way in Premiere (R-PUI §12).
+	 */
+	bin?: string;
 	appliesTo: 'video' | 'audio';
 	params: ParamSpec[];
 	/**
@@ -110,6 +132,12 @@ export type EffectSpec = {
 	native: { filter(p: EffectParams, ctx: NativeFilterContext): string } | null;
 	/** Pointwise colour operation (M2); when present the preview and native paths use the fused LUT. */
 	color?: ColorOp;
+	/**
+	 * GPU realization (fx framework, wave 1): GLSL ES 3.00 fragment passes run through Remotion's canvas effect chain
+	 * in the Player and on the Remotion export path (`native: null` routes clips there). See registry/fx/shader.ts
+	 * and docs/wp-notes/fx-shader-framework.md.
+	 */
+	gpu?: GpuEffect;
 	/** Engine capability flags driving badges, render bar and planner (S01:FX-021). */
 	capabilities: { preview: 'css' | 'webgl' | 'webaudio' | 'none'; export: ('remotion' | 'native')[] };
 	expensive?: boolean;
@@ -159,6 +187,11 @@ export function effectBadges(spec: EffectSpec): { realtime: boolean; native: boo
 		realtime: spec.capabilities.preview !== 'none',
 		native: (spec.native !== null || spec.color !== undefined) && spec.capabilities.export.includes('native'),
 	};
+}
+
+/** The "GPU" badge (fx framework): a shader effect — Premiere's "Accelerated Effects" badge (R-PUI §12). */
+export function effectIsGpu(spec: EffectSpec): boolean {
+	return spec.gpu !== undefined;
 }
 
 // ---------------------------------------------------------------- canonical parameter math (S03:FX-040)
@@ -484,7 +517,12 @@ export const M1_EFFECTS: readonly EffectSpec[] = [
 /** M2 additions registered by default (the colour effects come from `registry/color-effects.ts`). */
 export const M2_EFFECTS: readonly EffectSpec[] = [...COLOR_EFFECTS, CORNER_PIN_EFFECT];
 
-export const defaultEffectRegistry: EffectRegistry = createEffectRegistry([...M1_EFFECTS, ...M2_EFFECTS]);
+export const defaultEffectRegistry: EffectRegistry = createEffectRegistry([
+	...M1_EFFECTS,
+	...M2_EFFECTS,
+	// Wave 1/2 fx catalogue (registry/fx/*, one file per effect family).
+	...FX_EFFECTS,
+]);
 
 // ---------------------------------------------------------------- realization helpers (shared by engines)
 

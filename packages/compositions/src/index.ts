@@ -2,6 +2,8 @@
 export * from './AssetComposition.tsx';
 export * from './color/index.ts';
 export * from './fonts.ts';
+// Wave 1: GPU shader-effect framework runtime.
+export * from './fx/index.ts';
 export * from './layers/index.ts';
 export * from './metadata.ts';
 export * from './mg-host/protocol.ts';

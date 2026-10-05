@@ -33,6 +33,10 @@ export type AgentSchema = {
 		appliesTo: string;
 		params: unknown[];
 		capabilities: unknown;
+		/** fx framework: Effects-panel bin, one-line description, GPU shader effect (Remotion path unless native). */
+		bin?: string;
+		description?: string;
+		gpu?: boolean;
 	}[];
 	mgTemplates: {
 		id: string;
@@ -108,6 +112,9 @@ export function exportAgentSchema(registries: Registries): AgentSchema {
 			appliesTo: e.appliesTo,
 			params: e.params,
 			capabilities: e.capabilities,
+			...(e.bin ? { bin: e.bin } : {}),
+			...(e.description ? { description: e.description } : {}),
+			...(e.gpu ? { gpu: true } : {}),
 		})),
 		mgTemplates: registries.mgTemplates.list().map((t) => ({
 			id: t.id,

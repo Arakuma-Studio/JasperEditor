@@ -37,6 +37,16 @@ export type LayerProps = {
 	options: RenderOptions;
 	/** Font faces of the document (text layers resolve their family from `style.fontId`). */
 	fonts?: RenderDoc['fonts'];
+	/**
+	 * fx framework (time remap): the real clip-local frame when `localFrame`/`contentTime` were remapped by a time
+	 * effect (`gpu.time.remap`); absent = `localFrame` is the real frame.
+	 */
+	realFrame?: number;
+	/**
+	 * fx framework hook for the transition framework (wave 2, not set yet): the transition driving this layer, fed to
+	 * GPU effects as `u_progress` (0..1) and `u_side` (1 = outgoing, 2 = incoming).
+	 */
+	transition?: { progress: number; side: 'out' | 'in' };
 };
 
 /** Props of the Source monitor composition (ARCHITECTURE §8). */

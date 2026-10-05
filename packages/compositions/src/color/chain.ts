@@ -109,7 +109,7 @@ function planColorStage(
 }
 
 /** Media ids referenced by `{mediaId}` params of the given effects. */
-function referencedMedia(effects: readonly ResolvedEffect[]): string[] {
+export function referencedMedia(effects: readonly ResolvedEffect[]): string[] {
 	const out = new Set<string>();
 	for (const fx of effects)
 		for (const v of Object.values(fx.params)) {
@@ -144,7 +144,8 @@ export type ColorStage = {
 	pending: boolean;
 };
 
-function useLutAssets(urls: readonly string[], isPreview: boolean): number {
+/** Loads LUT assets (renders hold a delayRender until they arrive); returns a version that bumps on arrival. */
+export function useLutAssets(urls: readonly string[], isPreview: boolean): number {
 	const [version, setVersion] = useState(0);
 	const missing = urls.filter((u) => loadedLutAsset(u) === undefined);
 	const missingKey = missing.join('\n');

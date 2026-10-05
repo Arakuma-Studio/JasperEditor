@@ -6,6 +6,7 @@ import {
 	contentTimeAt,
 	defaultEffectRegistry,
 	type EffectRegistry,
+	gpuIsTimeDependent,
 	layerMapOf,
 	type RenderSnapshot,
 	type RenderVisualClip,
@@ -95,8 +96,11 @@ export function isStaticLayer(
 	if (hasKeyframesDeep(c.transform) || hasKeyframesDeep(c.opacity)) return false;
 	for (const fx of c.effects) {
 		if (!fx.enabled) continue;
-		if (!registry.get(fx.effectId, fx.effectVersion)) return false;
+		const spec = registry.get(fx.effectId, fx.effectVersion);
+		if (!spec) return false;
 		if (hasKeyframesDeep(fx.params)) return false;
+		// Wave 1 (fx framework): a GPU shader effect that draws differently every frame (noise, flicker, time hooks).
+		if (gpuIsTimeDependent(spec)) return false;
 	}
 	return !hasKeyframesDeep(c.source);
 }

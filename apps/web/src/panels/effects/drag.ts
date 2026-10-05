@@ -6,7 +6,7 @@
 // Effect Controls — WP-2D) read it with `readEffectDragPayload(dt)` and apply it with
 // `applyEffectToClips(session, effectId, clipIds, index?)`, which commits ONE transaction for N clips.
 import type { Command, EffectRegistry, TransactionResult } from '@jasper/project';
-import { effectBadges, isKnownClipKind, kindCapabilities } from '@jasper/project';
+import { effectBadges, effectIsGpu, isKnownClipKind, kindCapabilities } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 
 type EffectDragPayload = { type: 'jasper/effect'; effectId: string };
@@ -92,22 +92,27 @@ export function applyEffectToClips(
 	});
 }
 
-/** Effects grouped for the Effects panel tree (S05:EFX-001): medium → category → effects. */
+/**
+ * Effects grouped for the Effects panel tree (S05:EFX-001): medium → folder → effects. The folder is the effect's
+ * `bin` (fx catalogue packs, e.g. "Sapphire Glows", like third-party packs in Premiere) or its category.
+ */
 export function effectTree(
 	registry: EffectRegistry,
-	filter: { query: string; realtime: boolean; native: boolean },
+	filter: { query: string; realtime: boolean; native: boolean; gpu?: boolean },
 ) {
 	const q = filter.query.trim().toLowerCase();
 	const groups = new Map<string, Map<string, ReturnType<EffectRegistry['list']>>>();
 	for (const e of registry.list()) {
-		const hay = [e.label, e.id, e.category, ...(e.keywords ?? [])].join(' ').toLowerCase();
+		const hay = [e.label, e.id, e.category, e.bin ?? '', ...(e.keywords ?? [])].join(' ').toLowerCase();
 		if (q && !hay.includes(q)) continue;
 		if (filter.realtime && e.capabilities.preview === 'none') continue;
 		// Colour effects are native through the fused LUT (S06), not a filter string: use the shared badge rule.
 		if (filter.native && !effectBadges(e).native) continue;
+		if (filter.gpu && !effectIsGpu(e)) continue;
 		const medium = e.appliesTo === 'video' ? 'Video Effects' : 'Audio Effects';
+		const folder = e.bin ?? e.category;
 		const byCat = groups.get(medium) ?? new Map();
-		byCat.set(e.category, [...(byCat.get(e.category) ?? []), e]);
+		byCat.set(folder, [...(byCat.get(folder) ?? []), e]);
 		groups.set(medium, byCat);
 	}
 	return [...groups.entries()]

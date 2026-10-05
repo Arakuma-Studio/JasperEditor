@@ -6,6 +6,9 @@
 // frame through the renderer-page protocol (mg-host/protocol.ts). Effects, Motion, opacity and blend apply
 // through LayerBox like for any layer; colour effects need pixels, so they wait for the preview WebM
 // ("Grade pending", MGC-025).
+// fx framework (wave 1): GPU shader effects run on the master (renders) and on the preview WebM (`FxPicture`, fed by
+// the same media elements); the live host (an iframe) cannot be captured, so they wait for the preview like colour
+// effects do ("Grade pending").
 
 import {
 	defaultEffectRegistry,
@@ -16,10 +19,13 @@ import {
 import { Video } from '@remotion/media';
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
 import { OffthreadVideo, Sequence } from 'remotion';
+import { FxPicture } from '../fx/FxPicture.tsx';
+import { FxVideoSources } from '../fx/sources.tsx';
+import { useLayerFx } from '../fx/stage.ts';
 import { bundleServeUrl, type HostWindow, hostPageUrl, MgFrameHostDriver } from '../mg-host/protocol.ts';
 import { type CompositionPreviewRuntime, useCompositionPreviewRuntime } from '../mg-host/runtime.ts';
 import type { LayerProps } from '../types.ts';
-import { LayerBox } from './LayerBox.tsx';
+import { GradeChip, LayerBox } from './LayerBox.tsx';
 
 const FILL: CSSProperties = { width: '100%', height: '100%', display: 'block' };
 
@@ -39,8 +45,10 @@ export function compositionFramesAt(info: { fps: number; durationInFrames: numbe
 export function hasPixelEffects(clip: RenderVisualClip): boolean {
 	return clip.effects.some((fx) => {
 		if (!fx.enabled) return false;
-		const spec = defaultEffectRegistry.get(fx.effectId, fx.effectVersion) as { color?: unknown } | undefined;
-		return !!spec?.color;
+		const spec = defaultEffectRegistry.get(fx.effectId, fx.effectVersion) as
+			| { color?: unknown; gpu?: unknown }
+			| undefined;
+		return !!spec?.color || !!spec?.gpu;
 	});
 }
 
@@ -57,10 +65,29 @@ export function CompositionLayer(layer: LayerProps) {
 /** Engine renders: the master (frame 0 = sequence frame `prerender.startFrame`). */
 function MasterLayer({ layer, src }: { layer: LayerProps; src: RenderCompositionSource }) {
 	const { clip } = layer;
+	const fx = useLayerFx(layer);
 	const url = src.prerender?.masterUrl;
 	if (!url) return <CompositionCard layer={layer} title="Composition master not rendered" />;
 	const layerStart = clip.start - (clip.headHandle ?? 0);
 	const offset = (src.prerender?.startFrame ?? layerStart) - layerStart;
+	if (fx.mode === 'active')
+		return (
+			<LayerBox layer={layer} effects={fx.cssEffects}>
+				<FxPicture stage={fx.stage}>
+					<Sequence from={offset} layout="none" name="Composition master">
+						<FxVideoSources
+							layer={layer}
+							stage={fx.stage}
+							src={url}
+							trimBefore={0}
+							playbackRate={1}
+							freezeBase={-offset}
+							offthread={{ transparent: true }}
+						/>
+					</Sequence>
+				</FxPicture>
+			</LayerBox>
+		);
 	return (
 		<LayerBox layer={layer}>
 			<Sequence from={offset} layout="none" name="Composition master">
@@ -75,10 +102,32 @@ function PreviewLayer({ layer, src }: { layer: LayerProps; src: RenderCompositio
 	const runtime = useCompositionPreviewRuntime();
 	const preview = runtime?.previewFor(clip, src, fps) ?? null;
 	const pixelFx = hasPixelEffects(clip);
+	const fx = useLayerFx(layer);
 	// The preview covers composition frames `startFrame…`; the clip's Sequence starts at the frame shown at
 	// `start − headHandle`.
 	const first = compositionFrameOf(clip.sourceIn, fps) - (clip.headHandle ?? 0);
 	const trim = preview ? first - preview.startFrame : 0;
+	if (preview && fx.mode === 'active')
+		return (
+			<LayerBox
+				layer={layer}
+				effects={fx.cssEffects}
+				overlay={fx.chip ? <GradeChip layer={layer} text={fx.chip} /> : null}
+			>
+				<FxPicture stage={fx.stage}>
+					<Sequence key="preview" from={trim < 0 ? -trim : 0} layout="none" name="Composition preview">
+						<FxVideoSources
+							layer={layer}
+							stage={fx.stage}
+							src={preview.url}
+							trimBefore={Math.max(0, trim)}
+							playbackRate={1}
+							freezeBase={trim < 0 ? trim : 0}
+						/>
+					</Sequence>
+				</FxPicture>
+			</LayerBox>
+		);
 	// One LayerBox for both: while the preview plays, the live host stays loaded (hidden, idle) so a props edit
 	// switches back to it without reloading the page (MGC-022: edits show within 300 ms).
 	return (
