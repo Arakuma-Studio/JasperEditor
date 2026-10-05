@@ -26,7 +26,7 @@ import {
 	transitionLinearProgress,
 	transitionProgress,
 } from '@jasper/project';
-import { createContext, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { createContext, useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 import {
 	AbsoluteFill,
 	cancelRender,
@@ -292,7 +292,13 @@ export function TransitionStage(props: {
 		});
 	}, [draw, rendering, t.id]);
 
-	useEffect(() => hub.subscribe(schedule), [hub, schedule]);
+	// Subscribed in the layout phase: a side may deliver in the very next animation frame (solids, cached stills),
+	// before passive effects run — a later subscription would miss it and leave the stage on an empty draw.
+	useLayoutEffect(() => {
+		const off = hub.subscribe(schedule);
+		schedule();
+		return off;
+	}, [hub, schedule]);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: redraw when the frame or the param values change
 	useLayoutEffect(() => {
 		schedule();
