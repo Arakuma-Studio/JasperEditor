@@ -65,6 +65,12 @@ export type PlanLayerFxOptions = {
 	colorBypass?: boolean;
 	/** Plan context for the padding hooks (layer box, scale, fps). */
 	ctx: FxPlanContext;
+	/**
+	 * Transition framework: the layer is a side of a GPU transition (its picture is captured for the transition
+	 * stage). The layer takes the chain even without shader effects, and the chain covers the whole stack (every
+	 * effect that can run on a canvas does; SVG-filter effects are `reordered` and not part of the capture).
+	 */
+	capture?: boolean;
 };
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
@@ -90,7 +96,7 @@ export function planLayerFx(
 		...effects.filter((e) => e.effectId === CROP),
 		...effects.filter((e) => e.effectId !== CROP),
 	].filter((fx) => fx.enabled && !!specOf(fx));
-	if (!ordered.some((fx) => !!specOf(fx)!.gpu)) return null;
+	if (!opts.capture && !ordered.some((fx) => !!specOf(fx)!.gpu)) return null;
 	const bypassed: FxBypass[] = [];
 	if (opts.gpu !== 'ok') {
 		for (const fx of ordered)
@@ -119,7 +125,8 @@ export function planLayerFx(
 		const spec = specOf(fx)!;
 		if (spec.gpu || spec.color) last = i;
 	});
-	if (last < 0 || !runnable.slice(0, last + 1).some((fx) => specOf(fx)!.gpu))
+	if (opts.capture) last = runnable.length - 1;
+	else if (last < 0 || !runnable.slice(0, last + 1).some((fx) => specOf(fx)!.gpu))
 		// Every shader effect failed: plain M1/M2 drawing (the colour stage handles any grade).
 		return {
 			active: false,

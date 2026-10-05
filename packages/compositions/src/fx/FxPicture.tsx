@@ -33,7 +33,7 @@ import {
 } from 'remotion';
 import { colorLutCpu, cssFilter } from '../color/effects.ts';
 import { colorStageBackend } from '../color/gl.ts';
-import { fxCrop, fxFlip, fxLut, fxShader } from './effects.ts';
+import { fxCrop, fxFlip, fxLut, fxShader, fxTap } from './effects.ts';
 import type { FxRunInputs } from './host.ts';
 import type { FxMediaInput, FxStage } from './stage.ts';
 
@@ -201,6 +201,9 @@ export function fxDescriptors(stage: FxStage, inputs: DescriptorInputs): EffectD
 				break;
 			case 'flip':
 				out.push(fxFlip({ key: s.key, box, horizontal: s.horizontal }));
+				break;
+			case 'tap':
+				out.push(fxTap({ key: s.key, tap: s.tap, meta: s.meta }));
 				break;
 		}
 	}

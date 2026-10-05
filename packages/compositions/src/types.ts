@@ -43,10 +43,22 @@ export type LayerProps = {
 	 */
 	realFrame?: number;
 	/**
-	 * fx framework hook for the transition framework (wave 2, not set yet): the transition driving this layer, fed to
-	 * GPU effects as `u_progress` (0..1) and `u_side` (1 = outgoing, 2 = incoming).
+	 * Transition framework (wave 2): the GPU transition this layer is a side of at this frame, fed to its GPU effects
+	 * as `u_progress` (0..1) and `u_side` (1 = outgoing, 2 = incoming). `tap` (set when the transition runs on the
+	 * GPU): the layer's picture goes to the transition stage instead of the screen (fx/transition.tsx).
 	 */
-	transition?: { progress: number; side: 'out' | 'in' };
+	transition?: { progress: number; side: 'out' | 'in'; tap?: TransitionTap };
+};
+
+/** Where a side of a GPU transition delivers its picture (the layer's fx canvas) and its placement. */
+export type TransitionTap = {
+	readonly side: 'out' | 'in';
+	deliver(
+		picture: CanvasImageSource,
+		width: number,
+		height: number,
+		meta: { compToCanvas: readonly number[] | null; opacity: number },
+	): void;
 };
 
 /** Props of the Source monitor composition (ARCHITECTURE §8). */
