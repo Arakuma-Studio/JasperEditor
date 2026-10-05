@@ -5,7 +5,6 @@ import { z } from 'zod';
 import {
 	ANIME_CATALOG,
 	type AnyMgTemplate,
-	animeFramesAt,
 	animeTemplateTiming,
 	createMgRegistry,
 	formatCounterValue,
@@ -64,14 +63,20 @@ describe('responsive time (S11:ATP-004)', () => {
 		expect(t).toMatchObject({ contentFrame: 12, totalFrames: 72, timeMs: 400, totalMs: 2400 });
 	});
 	it('converts reference frames to whole frames at other rates (frame-exact)', () => {
-		expect(animeFramesAt(15, 25)).toBe(13);
-		expect(animeFramesAt(36, 30000 / 1001)).toBe(36);
+		for (const [introFrames, fps, expected] of [
+			[15, 25, 13],
+			[36, 30000 / 1001, 36],
+		] as const) {
+			expect(
+				animeTemplateTiming({ introFrames, outroFrames: 0 }, { fps, localFrame: 0, durationFrames: 100 })
+					.introFrames,
+			).toBe(expected);
+		}
 	});
 	it('compresses intro and outro proportionally when they exceed the content', () => {
 		const t = animeTemplateTiming(def, { fps: 30, localFrame: 0, durationFrames: 30 });
 		expect(t.introFrames + t.outroFrames).toBe(30);
 		expect(t.introFrames).toBe(20);
-		expect(animeTemplateTiming(def, { fps: 30, localFrame: 0, durationFrames: 1 }).totalFrames).toBe(1);
 	});
 });
 

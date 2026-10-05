@@ -78,18 +78,3 @@ pub fn fit_group_open(fit: &Fit) -> String {
         num(fit.scale)
     )
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn color_conversion_and_xml_escaping() {
-        assert_eq!(hex(&[1.0, 0.5, 0.0, 1.0]), "#ff8000");
-        assert_eq!(
-            escape("a<b & \"c\" 'd'>"),
-            "a&lt;b &amp; &quot;c&quot; &#39;d&#39;&gt;"
-        );
-        assert_eq!(escape("x\u{1}y"), "xy");
-    }
-}

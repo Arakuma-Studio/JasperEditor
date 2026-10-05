@@ -5,10 +5,10 @@
 import { getTextAnimationSpec } from '@jasper/project';
 import { Player, type PlayerRef } from '@remotion/player';
 import { type ComponentType, createRef } from 'react';
+import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { SequenceComposition } from '../../../compositions/src/SequenceComposition.tsx';
-import { valuesAt } from '../../src/runtime/hooks.ts';
-import { frameToMs, hash32 } from '../../src/runtime/index.ts';
+import { frameToMs, hash32, useAnimeValues } from '../../src/runtime/index.ts';
 import { TEXT_ANIMATION_IMPLS } from '../../src/text/index.ts';
 import { PARITY_SCENE } from './doc.ts';
 
@@ -25,7 +25,7 @@ const stats = (xs: number[]): Stats => {
 };
 
 /** Per-frame cost of the value engine for `units` units over a `frames`-frame window (every frame a first visit). */
-function bench(units: number, frames: number): { values: Stats; revisit: Stats } {
+function bench(units: number, frames: number): { values: Stats } {
 	const impl = TEXT_ANIMATION_IMPLS['blur@1']!;
 	const spec = getTextAnimationSpec('blur', 1)!;
 	const ctx = {
@@ -37,20 +37,20 @@ function bench(units: number, frames: number): { values: Stats; revisit: Stats }
 		box: { width: 1920, height: 400 },
 	};
 	const values: number[] = [];
-	const revisit: number[] = [];
-	const built = impl.build(ctx);
-	for (let f = 0; f < frames; f++) {
-		const ms = frameToMs(f, 30);
-		const t0 = performance.now();
-		valuesAt(built, ms);
-		values.push(performance.now() - t0);
+	function Compute({ ms }: { ms: number }) {
+		const started = performance.now();
+		useAnimeValues('benchmark', () => impl.build(ctx), ms);
+		values.push(performance.now() - started);
+		return null;
 	}
-	for (let f = 0; f < frames; f++) {
-		const t0 = performance.now();
-		valuesAt(built, frameToMs(f, 30));
-		revisit.push(performance.now() - t0);
-	}
-	return { values: stats(values), revisit: stats(revisit) };
+	const root = createRoot(document.createElement('div'));
+	// Build separately so the measured frames contain the specified value computation cost.
+	flushSync(() => root.render(<Compute ms={-1} />));
+	values.length = 0;
+	for (let frame = 0; frame < frames; frame++)
+		flushSync(() => root.render(<Compute ms={frameToMs(frame, 30)} />));
+	flushSync(() => root.unmount());
+	return { values: stats(values) };
 }
 
 const player = createRef<PlayerRef>();

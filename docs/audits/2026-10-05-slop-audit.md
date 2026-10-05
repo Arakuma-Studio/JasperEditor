@@ -55,4 +55,39 @@ The first aggregate Vitest run with the default fork pool emitted no test result
 - Opt-in rendering passed all 41 tests across nine suites with `REMOTION_E2E=1 MG_E2E=1`, covering the 29 rendering cases skipped in the aggregate run. Together with the two native parity cases, only the unavailable real-SSH case remained unverified.
 - Independent review checked cache pin lifetime, processing dimensions/hash behavior, LUT pending/failure states, font fallback, intrinsic geometry, and SVG dispatch without finding a regression.
 
-Remote commit `63efec9` arrived after this validation. Its integration is being reviewed separately because it changes production internals and prunes tests across the repository. No real SSH host or other operating-system environment was supplied. Historical records, compatibility guards, rendering thresholds, and meaningful regression assertions were retained.
+## Remote integration: `63efec9`
+
+The remote commit arrived after the checks above. Parallel reviewers examined its 262 changed files by subsystem, including the reasons in its [audit ledgers](test-cleanup-summary-round2.md). Its useful source simplifications and test reductions are retained. The following corrections supersede the corresponding removal decisions in those historical ledgers.
+
+| Integration correction | Why it earns its place | Risk and verification |
+| --- | --- | --- |
+| Merge overlapping cleanup | Both branches removed some identical exports/helpers; other edits were complementary. | Preserve our cache sets, shared hashing/test helpers, transition catalog, and LUT tri-state while taking remote unused-injection cleanup. Combined typechecks and behavioral suites verify consumers. |
+| Saved-composition cache regression | Fframes motion graphics do not cover composition preview/master ranges or bundle posters. | A saved project protects real cache files; literal converted ranges, props edits, and project deletion independently check preservation/release. The first aggregate exposed a fixture race: await the initial cache scan before seeding files so cleanup does not join a scan predating them; assertions and production code remain unchanged. |
+| Layer-bake invalidation and composition warp input | Pure cache-key tests do not prove exports use the correct cached artifact; frame count alone does not identify a warp source. | Retain move/re-export/text-edit integration and supplied-master verification. |
+| Project editing and agent contracts | Evaluating auto-bezier recomputes slopes and can hide stale persisted ease; translation-only tracking cannot detect perspective drift. Availability metadata controls what agents may invoke. | Retain auto-to-bezier curve continuity, independent nontranslation corner expectations, and live-command/stub availability checks. |
+| Web integration seams | Direct command tests bypass toolbar wiring, Effect Controls extensions, preset filtering, alias resolution, and default panel-instance selection. | Retain focused UI/document/history assertions and named filter outcomes, without catalogue or copy inventories. |
+| Timeline rendering contract | Virtualization and playhead updates without React commits are explicit architecture/performance requirements. | Preserve large-sequence scrolling and playhead integration coverage. |
+| MCP argument mapping | Project-level command tests cannot catch an adapter dropping destination time, track, bin, corner parameters, or caller export overrides. | Real SDK/document readback covers clipboard and corner pin; one compact override-precedence case remains. |
+| Session identity and registry forwarding | Deep equality loses the documented snapshot-reference contract and adds repeated deep comparisons. Direct project loading bypasses store registry forwarding. | Restore identity assertions and one configured-store loading case. |
+| Rendering compatibility and lifecycle | Our text consumer needs `fontFaceFor`; documented `EASE_NAMES`/`useDocumentFonts` remain APIs. Font weights and pending unmounts have distinct lifecycle risks. | Preserve required exports, derive ease names from the canonical map, and retain focused readiness/render-handle checks. |
+| Native SVG and forced-WebGL parity | Native/TS renderers and GLSL/CPU interpolation are independent implementations. Removing their comparisons leaves geometry, timing, and shader drift unchecked. | Retain native SVG differential coverage and only the forced-WebGL browser case; redundant auto-backend coverage remains removed. |
+| Remaining remote scaffolding | Timer injection was removed but forwarding timer objects remained; several test descriptions claimed deleted behavior. | Use typed direct timers, update stale descriptions, and gate the independent ELF check on its external `readelf` prerequisite. |
+
+## Combined-tree verification
+
+The integrated tree removes approximately 6,700 net code/test lines relative to `87ebec9`, excluding audit documents. The remote historical ledgers remain as provenance, with the corrections above explicitly superseding selected test/API removals.
+
+- Workspace and browser-test typechecks passed.
+- Full lint passed (Biome, design-token checks, animation import checks).
+- Workspace, native release, and Remotion bundle builds passed; the merged Remotion bundle is `79e1b000bb145586`.
+- All eight Rust tests and workspace Rust formatting passed.
+- Electron startup passed in development and packaged-like modes; all four desktop clipboard cases passed.
+- Native MG readiness and forced Remotion fallback export passed.
+- A fresh Linux desktop package built from the merged artifacts passed the isolated packaged-app check: ten LGPL FFmpeg artifacts, 30-frame H.264 Remotion export via OpenH264, and no FFmpeg/ffprobe from host PATH.
+- All 88 browser scenarios passed across the aggregate run and isolated retries. The aggregate passed 75, with two file-chooser timeouts leaving 11 dependent cases unrun. All three cache cases passed on retry; its following smoke setup encountered Chromium `ERR_NETWORK_CHANGED` while loading JS/CSS (captured trace). A fresh isolated smoke run passed all 11 cases unchanged. No repository timeouts or assertions were weakened.
+
+- Aggregate Vitest ran all locally available opt-ins (`REMOTION_E2E=1 MG_E2E=1 MG_PARITY=1`) with the default fork pool and one worker: 1,293 passed, two failed, one skipped across 161 files. The new cache fixture startup race was corrected and all 16 cache tests passed. The unchanged 21-test project color suite passed in isolation, with the LUT CPU gate at 27.07 ms against the original 30 ms ceiling (31.92 ms in the aggregate). All 1,295 locally runnable cases were therefore verified across the aggregate and targeted retries.
+- The only aggregate skip was the unconfigured real-SSH case. Native SVG/TypeScript parity, rendering opt-ins, MCP integration, restored UI/identity contracts, and script checks all ran.
+- Final diff/format checks passed; merge conflicts were resolved without unresolved markers. The one post-aggregate source-file edit is the test fixture's startup await, verified by the full cache suite and scoped lint.
+
+No real SSH host or other operating-system environment was supplied. Historical records and numerical tolerances remain intact. The original cleanup is commit `96ef593`; the final merge integrates and audits remote `63efec9`.

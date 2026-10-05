@@ -9,17 +9,7 @@
 import type { EditorSession } from '../session.ts';
 import type { ProjectStore } from './types.ts';
 
-export type AutosaveTimers = {
-	setTimeout(fn: () => void, ms: number): unknown;
-	clearTimeout(h: unknown): void;
-};
-
 export type AutosaveOptions = {
-	idleMs?: number;
-	maxIntervalMs?: number;
-	viewDebounceMs?: number;
-	timers?: AutosaveTimers;
-	now?: () => number;
 	onConflict?(serverRevision: number): void;
 	onError?(e: unknown): void;
 	onSaved?(revision: number): void;
@@ -51,23 +41,16 @@ export type Autosaver = {
 	overwrite(): Promise<void>;
 };
 
-const defaultTimers: AutosaveTimers = {
-	setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
-	clearTimeout: (h) => globalThis.clearTimeout(h as ReturnType<typeof setTimeout>),
-};
-
 export function createAutosaver(
 	session: EditorSession,
 	store: ProjectStore,
 	opts: AutosaveOptions = {},
 ): Autosaver {
-	const idleMs = opts.idleMs ?? 1500;
-	const maxIntervalMs = opts.maxIntervalMs ?? 10_000;
-	const viewMs = opts.viewDebounceMs ?? 1000;
-	const timers = opts.timers ?? defaultTimers;
-	const now = opts.now ?? (() => Date.now());
-	let timer: unknown = null;
-	let viewTimer: unknown = null;
+	const idleMs = 1500;
+	const maxIntervalMs = 10_000;
+	const viewMs = 1000;
+	let timer: ReturnType<typeof setTimeout> | null = null;
+	let viewTimer: ReturnType<typeof setTimeout> | null = null;
 	let firstDirtyAt: number | null = null;
 	let inFlight: Promise<void> | null = null;
 	let disposed = false;
@@ -103,15 +86,15 @@ export function createAutosaver(
 	const unsaved = () => session.store.getState().revision !== status.lastSavedRevision;
 
 	const cancelTimer = () => {
-		if (timer !== null) timers.clearTimeout(timer);
+		if (timer !== null) globalThis.clearTimeout(timer);
 		timer = null;
 	};
 	const schedule = () => {
 		if (disposed || syncPause() || !unsaved()) return;
-		firstDirtyAt ??= now();
+		firstDirtyAt ??= Date.now();
 		cancelTimer();
-		const wait = Math.max(0, Math.min(idleMs, firstDirtyAt + maxIntervalMs - now()));
-		timer = timers.setTimeout(() => {
+		const wait = Math.max(0, Math.min(idleMs, firstDirtyAt + maxIntervalMs - Date.now()));
+		timer = globalThis.setTimeout(() => {
 			timer = null;
 			// Never save mid-gesture (AC-13): the gesture's end reschedules.
 			if (session.gestureActive || session.store.getState().gesture) return;
@@ -137,7 +120,7 @@ export function createAutosaver(
 					session.markSaved(revision);
 					setStatus({
 						lastSavedRevision: revision,
-						lastSavedAt: now(),
+						lastSavedAt: Date.now(),
 						error: null,
 						saves: status.saves + 1,
 					});
@@ -158,7 +141,7 @@ export function createAutosaver(
 			if (!status.error) schedule();
 			else if (!disposed && !syncPause()) {
 				cancelTimer();
-				timer = timers.setTimeout(() => {
+				timer = globalThis.setTimeout(() => {
 					timer = null;
 					void save();
 				}, maxIntervalMs);
@@ -179,8 +162,8 @@ export function createAutosaver(
 		if (st.views === prev.views && st.tabs === prev.tabs && st.activeSequenceId === prev.activeSequenceId)
 			return;
 		if (st.readOnly) return;
-		if (viewTimer !== null) timers.clearTimeout(viewTimer);
-		viewTimer = timers.setTimeout(() => {
+		if (viewTimer !== null) globalThis.clearTimeout(viewTimer);
+		viewTimer = globalThis.setTimeout(() => {
 			viewTimer = null;
 			void store.saveView(session.projectId, session.viewRecord()).catch((e) => opts.onError?.(e));
 		}, viewMs);
@@ -198,7 +181,7 @@ export function createAutosaver(
 			offGesture();
 			offStore();
 			cancelTimer();
-			if (viewTimer !== null) timers.clearTimeout(viewTimer);
+			if (viewTimer !== null) globalThis.clearTimeout(viewTimer);
 			listeners.clear();
 		},
 		get saving() {

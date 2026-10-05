@@ -17,19 +17,6 @@ export type EventHandlers = {
 	onStateChange?(state: EventStreamState, info: { attempt: number; delayMs?: number; error?: unknown }): void;
 };
 
-export type Timers = {
-	setTimeout(fn: () => void, ms: number): unknown;
-	clearTimeout(handle: unknown): void;
-};
-
-export type EventStreamOptions = {
-	/** Reconnect when nothing (not even a heartbeat) arrives for this long. Default 2.5 × 15 s. */
-	heartbeatTimeoutMs?: number;
-	minBackoffMs?: number;
-	maxBackoffMs?: number;
-	timers?: Timers;
-};
-
 export type EventStream = {
 	close(): void;
 	readonly lastEventId: number | null;
@@ -40,37 +27,36 @@ export function openEventStream(
 	fetchImpl: typeof fetch,
 	buildUrl: (since: number | null) => string,
 	handlers: EventHandlers,
-	opts: EventStreamOptions & { since?: number | null; headers?: Record<string, string> } = {},
+	opts: { since?: number | null; headers?: Record<string, string> } = {},
 ): EventStream {
-	const timers: Timers = opts.timers ?? {
-		setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
-		clearTimeout: (h) => globalThis.clearTimeout(h as ReturnType<typeof setTimeout>),
-	};
-	const heartbeatTimeout = opts.heartbeatTimeoutMs ?? Math.round(HEARTBEAT_INTERVAL_MS * 2.5);
-	const minBackoff = opts.minBackoffMs ?? 1000;
-	const maxBackoff = opts.maxBackoffMs ?? 30_000;
+	const heartbeatTimeout = Math.round(HEARTBEAT_INTERVAL_MS * 2.5);
+	const minBackoff = 1000;
+	const maxBackoff = 30_000;
 	let lastEventId: number | null = opts.since ?? null;
 	let state: EventStreamState = 'connecting';
 	let closed = false;
 	let attempt = 0;
 	let controller: AbortController | null = null;
-	let watchdog: unknown = null;
-	let retryTimer: unknown = null;
+	let watchdog: ReturnType<typeof setTimeout> | null = null;
+	let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const setState = (s: EventStreamState, info: { attempt: number; delayMs?: number; error?: unknown }) => {
 		state = s;
 		handlers.onStateChange?.(s, info);
 	};
 	const armWatchdog = () => {
-		if (watchdog !== null) timers.clearTimeout(watchdog);
-		watchdog = timers.setTimeout(() => controller?.abort(new Error('heartbeat timeout')), heartbeatTimeout);
+		if (watchdog !== null) globalThis.clearTimeout(watchdog);
+		watchdog = globalThis.setTimeout(
+			() => controller?.abort(new Error('heartbeat timeout')),
+			heartbeatTimeout,
+		);
 	};
 	const scheduleReconnect = (error?: unknown) => {
 		if (closed) return;
 		const delayMs = Math.min(maxBackoff, minBackoff * 2 ** attempt);
 		attempt++;
 		setState('reconnecting', { attempt, delayMs, error });
-		retryTimer = timers.setTimeout(() => {
+		retryTimer = globalThis.setTimeout(() => {
 			retryTimer = null;
 			void connect();
 		}, delayMs);
@@ -126,7 +112,7 @@ export function openEventStream(
 			if (buf) handleLine(buf);
 			throw new Error('events: stream ended');
 		} catch (error) {
-			if (watchdog !== null) timers.clearTimeout(watchdog);
+			if (watchdog !== null) globalThis.clearTimeout(watchdog);
 			watchdog = null;
 			if (closed) return;
 			scheduleReconnect(error);
@@ -137,8 +123,8 @@ export function openEventStream(
 	return {
 		close() {
 			closed = true;
-			if (watchdog !== null) timers.clearTimeout(watchdog);
-			if (retryTimer !== null) timers.clearTimeout(retryTimer);
+			if (watchdog !== null) globalThis.clearTimeout(watchdog);
+			if (retryTimer !== null) globalThis.clearTimeout(retryTimer);
 			controller?.abort();
 			setState('closed', { attempt });
 		},

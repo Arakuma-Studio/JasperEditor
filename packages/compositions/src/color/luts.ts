@@ -14,13 +14,13 @@ export function lutUrlKey(url: string): string {
 }
 
 /** Loads and parses a `.cube` asset (once per URL); resolves null on failure (the grade skips it, CG-004). */
-export function loadLutAsset(url: string, fetchImpl: typeof fetch = fetch): Promise<Lut | null> {
+export function loadLutAsset(url: string): Promise<Lut | null> {
 	const k = lutUrlKey(url);
 	const hit = assets.get(k);
 	if (hit) return hit.promise;
 	const entry: AssetEntry = {
 		lut: undefined,
-		promise: fetchImpl(url)
+		promise: fetch(url)
 			.then(async (r) => {
 				if (!r.ok) throw new Error(`HTTP ${r.status}`);
 				const lut = parseCube(await r.text());

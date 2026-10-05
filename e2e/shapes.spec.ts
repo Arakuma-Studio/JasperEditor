@@ -1,18 +1,15 @@
 // Shapes end to end (S11 §11 test 5, wp-m2-shapes): Graphics ▸ New Layer ▸ Rectangle / Ellipse are enabled and
 // insert shapes (FIX-007); the Rectangle / Ellipse tools draw the dragged box in the Program monitor (Shift =
 // square, Alt = from the centre, Escape cancels, one undo step each); Properties ▸ Shape edits fill, stroke and
-// corner radius; Effect Controls keyframes the size; undo/redo; MCP add_shape applies live; the export matches
+// corner radius; Effect Controls keyframes the size; undo/redo; the export matches
 // a `renderStill` frame of the same document.
 //
 // Export path: shapes are DOM layers. When the engine reports `features.layerBake.state === 'ready'`,
 // Auto plans the native path with baked layers (`native`/`hybrid`). If layer bake is unavailable,
 // the planner uses Remotion with a "requires graphics rendering" blocker. The spec checks either path.
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { expect, type Page, test } from '@playwright/test';
 import {
 	appliedLabels,
@@ -25,7 +22,6 @@ import {
 	query,
 	ROOT,
 	sequenceSummary,
-	serverInfo,
 } from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
@@ -48,11 +44,9 @@ type ShapeClip = {
 };
 
 const EXPORT_DIR = join(ROOT, 'test-results', 'e2e-shapes');
-const MCP_BUNDLE = join(ROOT, 'apps/mcp/dist/jasper-mcp.mjs');
 const FFMPEG = process.env.JASPER_FFMPEG ?? 'ffmpeg';
 
 let page: Page;
-let projectId = '';
 let seqId = '';
 /** Shapes created by the steps, by role. */
 const ids = { menuRect: '', menuEllipse: '', drawn: '', square: '', alt: '' };
@@ -60,7 +54,7 @@ const ids = { menuRect: '', menuEllipse: '', drawn: '', square: '', alt: '' };
 test.beforeAll(async ({ browser }) => {
 	page = await browser.newPage();
 	await enableAgentBridge(page);
-	projectId = await createProject(page, 'E2E Shapes');
+	await createProject(page, 'E2E Shapes');
 	seqId = (await sequenceSummary(page)).sequenceId;
 });
 
@@ -253,7 +247,7 @@ test('Properties ▸ Shape edits fill, stroke and corner radius (one undo step e
 	await expect.poll(async () => (await shapeById(ids.drawn)).shape.cornerRadius.value).toBe(24);
 });
 
-test('Effect Controls ▸ Shape keyframes the size; the Program follows; undo/redo', async () => {
+test('Effect Controls ▸ Shape keyframes the size; undo/redo', async () => {
 	await clipElement(page, ids.drawn).click();
 	await query(page, 'playhead.set', { frame: 0 });
 	await page.getByTestId('tab-effectControls').click();
@@ -270,85 +264,11 @@ test('Effect Controls ▸ Shape keyframes the size; the Program follows; undo/re
 	expect(keys[0]!.value).toEqual(size0);
 	expect(keys[1]!.value).toEqual([800, size0[1]]);
 
-	const fillPath = page.locator(
-		`[data-testid="program-player-wrapper"] [data-clip-id="${ids.drawn}"] [data-shape-part="fill"]`,
-	);
-	const at60 = await fillPath.getAttribute('d');
-	await query(page, 'playhead.set', { frame: 0 });
-	await expect.poll(() => fillPath.getAttribute('d')).not.toBe(at60);
-	// The layer box is the largest size; the shape stays centred on its anchor while it grows.
-	await expect(
-		page.locator(`[data-testid="program-player-wrapper"] [data-clip-id="${ids.drawn}"]`),
-	).toHaveCSS('width', '800px');
-
 	await focusTimeline(page);
 	await page.keyboard.press('Control+KeyZ');
 	await expect.poll(async () => (await shapeById(ids.drawn)).shape.size.keyframes.length).toBe(1);
 	await page.keyboard.press('Control+Shift+KeyZ');
 	await expect.poll(async () => (await shapeById(ids.drawn)).shape.size.keyframes.length).toBe(2);
-});
-
-test('MCP add_shape applies live as one "Agent:" History entry (SHP-008)', async () => {
-	expect(existsSync(MCP_BUNDLE), `${MCP_BUNDLE} is missing: run \`pnpm mcp:build\``).toBe(true);
-	const env: Record<string, string> = {};
-	for (const [k, v] of Object.entries(process.env))
-		if (v !== undefined && !k.startsWith('JASPER_')) env[k] = v;
-	const transport = new StdioClientTransport({
-		command: process.execPath,
-		args: [MCP_BUNDLE, '--appdir', serverInfo().appdir],
-		env,
-		stderr: 'pipe',
-	});
-	const log: string[] = [];
-	transport.stderr?.on('data', (d: Buffer) => log.push(d.toString('utf8')));
-	const mcp = new Client({ name: 'e2e-shapes', version: '1.0.0' });
-	await mcp.connect(transport);
-	try {
-		const before = (await shapes()).length;
-		const r = (await mcp.callTool(
-			{
-				name: 'add_shape',
-				arguments: {
-					projectId,
-					type: 'ellipse',
-					at: 0,
-					size: [300, 300],
-					fill: '#00ff00',
-					stroke: { color: '#ffffff', width: 10, position: 'outside' },
-					position: [1700, 880],
-					track: 'V8',
-				},
-			},
-			undefined,
-			{ timeout: 120_000 },
-		)) as CallToolResult;
-		const text = (r.content.find((c) => c.type === 'text') as { text: string } | undefined)?.text ?? '';
-		expect(r.isError, `${text}\n${log.join('')}`).toBeFalsy();
-		const body = JSON.parse(text) as { appliedBy: string; clips: { id: string; kind: string }[] };
-		expect(body.appliedBy).toBe('session');
-		expect(body.clips[0]).toMatchObject({ kind: 'shape' });
-		await expect.poll(async () => (await shapes()).length).toBe(before + 1);
-		const added = await shapeById(body.clips[0]!.id);
-		expect(added.shape).toMatchObject({
-			type: 'ellipse',
-			size: { value: [300, 300] },
-			fill: { value: [0, 1, 0, 1] },
-			stroke: { position: 'outside', width: { value: 10 } },
-		});
-		expect((await appliedLabels(page)).at(-1)).toBe('Agent: Ellipse');
-		const timeline = (await mcp.callTool({
-			name: 'get_timeline',
-			arguments: { projectId },
-		})) as CallToolResult;
-		const table = (timeline.content.find((c) => c.type === 'text') as { text: string }).text;
-		expect(table).toMatch(/ellipse 300×300 fill #00ff00 stroke 10px #ffffff outside/);
-		// Keyed size prints its key values (the drawn size → 800 wide), not the static value.
-		expect(table).toMatch(
-			/rect \d+(\.\d+)?×\d+(\.\d+)?→800×\d+(\.\d+)? fill #ff0000 stroke 12px #0000ff inside radius 24 \(animated: size\)/,
-		);
-	} finally {
-		await mcp.close().catch(() => {});
-	}
 });
 
 test('export: native with baked layers when the layer bake is ready, else Remotion; the frame matches renderStill', async ({

@@ -40,7 +40,7 @@ export function quadToScreen(layerMap: Mat3, view: View, q: readonly Vec2[]): Qu
 export type QuadPart = { kind: 'corner'; index: number } | { kind: 'edge'; index: number } | { kind: 'body' };
 
 /** New corners after dragging `part` by `delta` (same space as the corners): corner = one, edge = two, body = all. */
-export function dragQuad(start: Quad, part: QuadPart, delta: Vec2): Quad {
+function dragQuad(start: Quad, part: QuadPart, delta: Vec2): Quad {
 	return start.map((p, i) =>
 		partMoves(part, i) ? [p[0] + delta[0], p[1] + delta[1]] : [p[0], p[1]],
 	) as Quad;

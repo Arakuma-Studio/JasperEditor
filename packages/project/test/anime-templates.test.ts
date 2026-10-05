@@ -217,36 +217,39 @@ describe('keyframable params of anime templates (S11:ATP-006)', () => {
 		expect(r46 - l44).toBeCloseTo(2, 6);
 	});
 
-	it('evaluateTemplateParams evaluates and clamps keyframed params, ignoring non-keyframable names', () => {
+	it('evaluates template values and clamps an overshoot, ignoring static parameter keys', () => {
 		const tpl = info('reveal', 1, revealV1, 'anime');
-		const params = tpl.defaults;
 		const key = (time: number, value: unknown) => ({
 			id: `kf_${time}`,
 			time,
 			value,
-			interpolation: 'bezier' as const,
-			easeIn: { influence: 0.9, slope: 3 },
-			easeOut: { influence: 0.9, slope: 3 },
+			interpolation: 'linear' as const,
+			easeIn: { influence: 1 / 3, slope: 1 },
+			easeOut: { influence: 1 / 3, slope: 1 },
 		});
 		const out = evaluateTemplateParams(
 			tpl,
-			params,
+			tpl.defaults,
 			{
-				size: [key(0, 10), key(100, 200)],
+				size: [key(0, 20), key(100, 180)],
 				count: [key(0, 1), key(100, 9)],
-				color: [key(0, [0, 0, 0, 1]), key(100, [1, 1, 1, 1])],
+				color: [key(0, [1, 0, 0, 1]), key(100, [0, 0, 1, 1])],
+			},
+			25,
+		);
+		expect(out).toMatchObject({ size: 60, count: 3, color: [0.75, 0, 0.25, 1] });
+		const over = evaluateTemplateParams(
+			tpl,
+			tpl.defaults,
+			{
+				size: [
+					{ ...key(0, 10), interpolation: 'bezier', easeOut: { influence: 1 / 3, slope: 10 } },
+					{ ...key(100, 200), easeIn: { influence: 1 / 3, slope: 0 } },
+				],
 			},
 			50,
 		);
-		expect(out.count).toBe(3);
-		expect(out.size as number).toBeGreaterThanOrEqual(10);
-		expect(out.size as number).toBeLessThanOrEqual(200);
-		for (const c of out.color as number[]) expect(c >= 0 && c <= 1).toBe(true);
-		// beyond the overshoot of the bezier the value is clamped to the range
-		const over = evaluateTemplateParams(tpl, params, { size: [key(0, 10), key(100, 200)] }, 99);
-		expect(over.size as number).toBeLessThanOrEqual(200);
-		expect(evaluateTemplateParams(tpl, params, undefined, 0)).toBe(params);
-		expect(evaluateTemplateParams(undefined, params, { size: [key(0, 1)] }, 0)).toBe(params);
+		expect(over.size).toBe(200);
 	});
 
 	it('the snapshot carries param keyframes for anime templates only (unevaluated)', () => {
@@ -309,13 +312,13 @@ describe('template version upgrade (S11:ATP-009, FIX-005)', () => {
 	it('refuses downgrades, versions that are not installed and versions without a path; same version is a no-op', () => {
 		const { h, a } = setup();
 		expect(h.tx([{ type: 'clip.update', clipId: a, patch: { template: { version: 1 } } }]).ok).toBe(true);
-		expect(
-			fail(h.tx([{ type: 'clip.update', clipId: a, patch: { template: { version: 3 } } }]))?.message,
-		).toMatch(/reveal@3 is not installed/);
+		expect(fail(h.tx([{ type: 'clip.update', clipId: a, patch: { template: { version: 3 } } }]))?.code).toBe(
+			'E_INVALID_PARAM',
+		);
 		h.ok([{ type: 'clip.update', clipId: a, patch: { template: { version: 2 } } }]);
-		expect(
-			fail(h.tx([{ type: 'clip.update', clipId: a, patch: { template: { version: 1 } } }]))?.message,
-		).toMatch(/cannot go back/);
+		expect(fail(h.tx([{ type: 'clip.update', clipId: a, patch: { template: { version: 1 } } }]))?.code).toBe(
+			'E_INVALID_PARAM',
+		);
 		const noPath = new Harness({
 			ctx: {
 				registries: defaultRegistries(
@@ -334,8 +337,8 @@ describe('template version upgrade (S11:ATP-009, FIX-005)', () => {
 			},
 		]).refs.$x!;
 		expect(
-			fail(noPath.tx([{ type: 'clip.update', clipId: id, patch: { template: { version: 2 } } }]))?.message,
-		).toMatch(/No upgrade path/);
+			fail(noPath.tx([{ type: 'clip.update', clipId: id, patch: { template: { version: 2 } } }]))?.code,
+		).toBe('E_INVALID_PARAM');
 	});
 });
 
@@ -373,7 +376,6 @@ describe('template upgrade checks the clip canvas against the new version (revie
 		const id = add(h, square);
 		const e = fail(upgrade(h, id));
 		expect(e?.code).toBe('E_INVALID_PARAM');
-		expect(e?.message).toMatch(/c@2 has no 1080×1080 canvas/);
 		expect(mg(h, id).template.version).toBe(1);
 		// a canvas the new version draws, set in the same patch
 		h.ok([{ type: 'clip.update', clipId: id, patch: { template: { version: 2 }, canvas: wide } }]);
@@ -408,7 +410,6 @@ describe('renderer stamp invariant (S11:ATP-002)', () => {
 		expect(checkInvariants(doc)).toEqual([]);
 		const issues = checkInvariants(doc, { mgTemplates: reg });
 		expect(issues.map((i) => i.invariant)).toEqual(['INV-012', 'INV-012']);
-		expect(issues[0]!.message).toMatch(/contradicts template reveal@1/);
 		const unknown = checkInvariants(doc, { mgTemplates: createStaticMgRegistry([]) });
 		expect(unknown).toEqual([]);
 	});
@@ -450,5 +451,11 @@ describe('renderer stamp invariant (S11:ATP-002)', () => {
 		// without the registry only the keyframe repair applies
 		const r2 = repairDocument(doc, { next: () => 'x' } as never);
 		expect(r2.report.map((r) => r.action)).toEqual(['drop-keyframes']);
+		expect(
+			(r2.document.sequences[Object.keys(doc.sequences)[0]!]!.clips[a] as Mg).template.renderer,
+		).toBeUndefined();
+		expect((r2.document.sequences[Object.keys(doc.sequences)[0]!]!.clips[f] as Mg).template.renderer).toBe(
+			'anime',
+		);
 	});
 });

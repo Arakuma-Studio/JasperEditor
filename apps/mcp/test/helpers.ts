@@ -2,7 +2,7 @@ export function cleanEnv(extra: Record<string, string> = {}): Record<string, str
 	const env: Record<string, string> = {};
 	for (const [key, value] of Object.entries(process.env))
 		if (value !== undefined && !key.startsWith('JASPER_')) env[key] = value;
-	return { ...env, ...extra };
+	return { ...env, JASPER_CACHE_AUTO_GC: '0', ...extra };
 }
 
 export async function waitFor(

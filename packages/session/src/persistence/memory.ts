@@ -31,9 +31,6 @@ export class MemoryProjectStore implements ProjectStore {
 	readonly ids: IdSource;
 	private readonly mgTemplates: MgTemplateRegistry | undefined;
 	private readonly now: () => string;
-	/** Number of successful `save` calls (useful in tests of autosave). */
-	saveCount = 0;
-	viewSaveCount = 0;
 
 	/** `mgTemplates` re-stamps template renderers that contradict the registry on load (S11:ATP-002). */
 	constructor(opts: { ids?: IdSource; now?: () => string; mgTemplates?: MgTemplateRegistry } = {}) {
@@ -109,12 +106,10 @@ export class MemoryProjectStore implements ProjectStore {
 		});
 		if (e.versions.length > 20) e.versions.shift();
 		e.envelope = makeEnvelope(doc, { revision: meta.revision, savedAt: this.now(), platform: 'memory' });
-		this.saveCount++;
 		return { ok: true, revision: meta.revision };
 	}
 	async saveView(projectId: string, view: ProjectViewState): Promise<void> {
 		this.entry(projectId).view = view;
-		this.viewSaveCount++;
 	}
 	async listVersions(projectId: string): Promise<VersionInfo[]> {
 		return this.entry(projectId).versions.map((v) => v.info);

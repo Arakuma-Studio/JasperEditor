@@ -3,7 +3,6 @@
 import { describe, expect, it } from 'vitest';
 import { readbackSize } from '../src/color/scopes/capture.ts';
 import {
-	computeScope,
 	histogram,
 	skinToneDirection,
 	vectorscope,
@@ -31,9 +30,7 @@ describe('waveform', () => {
 		const grey = frame(8, 4, () => [128, 128, 128]);
 		const [p] = waveform(grey, 8, 4, 8, 101, 'luma');
 		const hits = nonZero(p!.counts);
-		expect(new Set(hits.map((i) => Math.floor(i / 8)))).toEqual(
-			new Set([100 - Math.round((128 / 255) * 100)]),
-		);
+		expect(new Set(hits.map((i) => Math.floor(i / 8)))).toEqual(new Set([50]));
 		expect(hits).toHaveLength(8);
 		expect(p!.counts[hits[0]!]).toBe(4);
 
@@ -45,9 +42,9 @@ describe('waveform', () => {
 	it('the RGB parade separates channels', () => {
 		const red = frame(4, 4, () => [255, 0, 0]);
 		const [r, g, b] = waveform(red, 4, 4, 4, 11, 'parade');
-		expect(nonZero(r!.counts).every((i) => Math.floor(i / 4) === 0)).toBe(true);
-		expect(nonZero(g!.counts).every((i) => Math.floor(i / 4) === 10)).toBe(true);
-		expect(nonZero(b!.counts).every((i) => Math.floor(i / 4) === 10)).toBe(true);
+		expect(nonZero(r!.counts)).toEqual([0, 1, 2, 3]);
+		expect(nonZero(g!.counts)).toEqual([40, 41, 42, 43]);
+		expect(nonZero(b!.counts)).toEqual([40, 41, 42, 43]);
 	});
 
 	it('transparent pixels are ignored', () => {
@@ -110,36 +107,8 @@ describe('histogram and rendering', () => {
 		expect(h.r[255]).toBe(1);
 		expect(h.r[10]).toBe(1);
 		expect(h.g[0]).toBe(2);
-		expect(h.y[Math.round(0.2126 * 255)]).toBe(1);
+		expect(h.y[54]).toBe(1);
 		expect([...h.b].reduce((a, b) => a + b, 0)).toBe(3);
-	});
-
-	it('computeScope produces a trace image of the requested size for every mode', () => {
-		const d = frame(16, 9, (x, y) => [x * 16, y * 28, 128]);
-		const colors = {
-			trace: [0, 255, 0] as const,
-			luma: [255, 255, 255] as const,
-			red: [255, 0, 0] as const,
-			green: [0, 255, 0] as const,
-			blue: [0, 0, 255] as const,
-		};
-		const base = { id: 1, data: d, width: 16, height: 9, outW: 120, outH: 64, colors };
-		const wf = computeScope({ ...base, mode: 'waveform' });
-		expect([wf.width, wf.height, wf.image.length]).toEqual([120, 64, 120 * 64 * 4]);
-		const pa = computeScope({ ...base, mode: 'parade' });
-		expect([pa.width, pa.height]).toEqual([120, 64]);
-		// Parade bands: red band only has red trace pixels.
-		let redOnly = true;
-		for (let y = 0; y < 64; y++)
-			for (let x = 0; x < 40; x++) {
-				const o = (y * 120 + x) * 4;
-				if (pa.image[o + 3]! > 0 && (pa.image[o + 1] !== 0 || pa.image[o + 2] !== 0)) redOnly = false;
-			}
-		expect(redOnly).toBe(true);
-		const vs = computeScope({ ...base, mode: 'vectorscope' });
-		expect([vs.width, vs.height]).toEqual([64, 64]);
-		const hi = computeScope({ ...base, mode: 'histogram' });
-		expect(hi.histogram?.r.length).toBe(256);
 	});
 
 	it('reads back at most 256 px wide, keeping the aspect', () => {

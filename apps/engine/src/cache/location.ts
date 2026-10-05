@@ -27,15 +27,15 @@ import {
 	unlinkSync,
 	writeFileSync,
 } from 'node:fs';
-import { access, copyFile, lstat, mkdir, readdir, readlink, rename, rm, stat } from 'node:fs/promises';
+import { access, copyFile, lstat, mkdir, readdir, rename, rm, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { CacheLocationCheck } from '@jasper/api';
 import { freeDiskBytes } from '../tools/fs.ts';
 
 /** Folders that make up the cache (moved together). */
-export const MOVED_DIRS = ['cache', 'mg', 'renders', 'tmp'] as const;
+const MOVED_DIRS = ['cache', 'mg', 'renders', 'tmp'] as const;
 /** Sub-folder created in a chosen location (never clobbers the folder's other contents). */
-export const CACHE_SUBDIR = 'JasperEditor Media Cache';
+const CACHE_SUBDIR = 'JasperEditor Media Cache';
 const OLD_PREFIX = '.cache-old-';
 
 type Journal = {
@@ -435,11 +435,4 @@ export async function moveCache(o: MoveOptions): Promise<{ movedBytes: number }>
 	o.onProgress(0.98, 'Removing the old files');
 	await finishCleanup(o.appdir);
 	return { movedBytes: moved };
-}
-
-/** The folder `<appdir>/<d>` links to, or null when it is a real folder. */
-export async function linkTarget(appdir: string, d: string): Promise<string | null> {
-	const st = await lstat(join(appdir, d)).catch(() => null);
-	if (!st?.isSymbolicLink()) return null;
-	return resolve(await readlink(join(appdir, d)));
 }

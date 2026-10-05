@@ -1,31 +1,26 @@
 // Text probe of the live frame host (M3, wp-m3-mgtext, S08:MGC-037/039): matching a prop value in the page
 // (copy split into spans and rows, markup and case ignored), hiding/restoring it, bundle font sources. Layout
 // (boxes, lines, clipping) needs a real browser: e2e/mg-texts.spec.ts.
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { hostBootstrapScript, locateTexts, TEXT_PROBE_SCRIPT, textProbeOf } from '../src/mg-host/protocol.ts';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { locateTexts, TEXT_PROBE_SCRIPT, textProbeOf } from '../src/mg-host/protocol.ts';
 
 type Win = Window & { __jasperTexts?: unknown; FontFace?: unknown };
 
 describe('text probe (S08:MGC-037/039)', () => {
-	let recorded: unknown[];
 	beforeEach(() => {
-		recorded = [];
 		const w = window as Win;
 		delete w.__jasperTexts;
 		// A stand-in for the browser's FontFace (happy-dom has none).
-		w.FontFace = function FontFace(this: unknown, family: string, source: unknown) {
-			recorded.push([family, source]);
+		vi.stubGlobal('FontFace', function FontFace(family: string) {
 			return { family, status: 'unloaded' };
-		};
+		});
 		document.body.innerHTML = '';
 		new Function(TEXT_PROBE_SCRIPT)();
 	});
 	afterEach(() => {
 		document.body.innerHTML = '';
-	});
-
-	it('is part of the host bootstrap', () => {
-		expect(hostBootstrapScript()).toContain('__jasperTexts');
+		delete (window as Win).__jasperTexts;
+		vi.unstubAllGlobals();
 	});
 
 	it('finds copy split into spans and rows, ignoring whitespace, case and *markup*', () => {
@@ -51,10 +46,11 @@ describe('text probe (S08:MGC-037/039)', () => {
 			'<div><span id="a">Un solo panel.</span><span id="b" style="visibility: visible">Todo tu negocio.</span><span id="c">Keep</span></div>';
 		const api = textProbeOf(window)!;
 		expect(api.hide('Un solo panel. Todo tu negocio.')).toBe(true);
-		const vis = (id: string) => (document.getElementById(id) as HTMLElement).style.visibility;
-		expect([vis('a'), vis('b'), vis('c')]).toEqual(['hidden', 'hidden', '']);
+		const visible = (id: string) =>
+			!['hidden', 'collapse'].includes(getComputedStyle(document.getElementById(id)!).visibility);
+		expect([visible('a'), visible('b'), visible('c')]).toEqual([false, false, true]);
 		api.restore();
-		expect([vis('a'), vis('b'), vis('c')]).toEqual(['', 'visible', '']);
+		expect([visible('a'), visible('b'), visible('c')]).toEqual([true, true, true]);
 		expect(api.hide('nowhere')).toBe(false);
 	});
 
@@ -63,7 +59,6 @@ describe('text probe (S08:MGC-037/039)', () => {
 		new FF('Brand Sans', 'url(public/fonts/brand.woff2) format("woff2")', { weight: '800' });
 		new FF('Data Face', new ArrayBuffer(4));
 		const fonts = textProbeOf(window)!.fonts();
-		expect(recorded).toHaveLength(2);
 		expect(fonts[0]).toMatchObject({ family: 'Brand Sans', weight: '800', style: 'normal' });
 		expect(fonts[0]!.source).toMatch(/^url\("http.*\/public\/fonts\/brand\.woff2"\) format\("woff2"\)$/);
 		expect(fonts[1]).toMatchObject({ family: 'Data Face' });

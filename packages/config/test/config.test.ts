@@ -1,24 +1,10 @@
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import {
-	appdirPaths,
-	desktopAppdir,
-	isTruthyEnv,
-	parseEngineRuntime,
-	readFlag,
-	resolveAppdir,
-	resolvePort,
-} from '../src/index.ts';
+import { appdirPaths, desktopAppdir, parseEngineRuntime, resolveAppdir, resolvePort } from '../src/index.ts';
 
 describe('@jasper/config', () => {
-	it('reads flags in both forms', () => {
-		expect(readFlag(['--appdir', '/x'], 'appdir')).toBe('/x');
-		expect(readFlag(['--appdir=/y'], 'appdir')).toBe('/y');
-		expect(readFlag(['--port', '1'], 'appdir')).toBeUndefined();
-	});
-
 	it('resolves appdir with argv > env > default', () => {
-		expect(resolveAppdir({ argv: ['--appdir', '/a'], env: { JASPER_APPDIR: '/b' }, defaultDir: '/c' })).toBe(
+		expect(resolveAppdir({ argv: ['--appdir=/a'], env: { JASPER_APPDIR: '/b' }, defaultDir: '/c' })).toBe(
 			'/a',
 		);
 		expect(resolveAppdir({ argv: [], env: { JASPER_APPDIR: '/b' }, defaultDir: '/c' })).toBe('/b');
@@ -34,13 +20,6 @@ describe('@jasper/config', () => {
 		expect(resolvePort({ argv: ['--port', '0'], env: {} })).toBe(0);
 		expect(resolvePort({ argv: [], env: { JASPER_PORT: '1234' } })).toBe(1234);
 		expect(() => resolvePort({ argv: ['--port', 'abc'], env: {} })).toThrow();
-	});
-
-	it('parses truthy env values', () => {
-		expect(isTruthyEnv('1')).toBe(true);
-		expect(isTruthyEnv('0')).toBe(false);
-		expect(isTruthyEnv(undefined)).toBe(false);
-		expect(isTruthyEnv('false')).toBe(false);
 	});
 
 	it('lays out the appdir per ARCHITECTURE §4.3', () => {

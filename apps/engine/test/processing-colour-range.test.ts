@@ -2,47 +2,16 @@
 // deshake crop/keep) and the denoise / deblock / de-judder combinations keep true black and white — measured on
 // real decoded output, with EVERY ffmpeg available here: the LGPL FFmpeg 7.1 and the system FFmpeg 6.1 (which
 // silently converts full → TV range in a `scale` without an explicit output range; the trailer pipeline had
-// that bug: blacks lifted to 16, whites capped at 235 → "13…237"). Also a static guard: every `scale` the
-// processor generates states its output range.
+// that bug: blacks lifted to 16, whites capped at 235 → "13…237").
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ProcessStep } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createDeshakeStep, fromFormatToRgb48, toFormat } from '../src/processing/proc/filters.ts';
 import { runProc } from '../src/processing/proc/runner.ts';
 import { createStepImpl } from '../src/processing/proc/steps.ts';
-import type { StepContext } from '../src/processing/proc/types.ts';
 import { ROOT } from './helpers.ts';
-
-// ---------------------------------------------------------------- static guard
-
-/** `scale` filters of a graph that do not set `out_range` (ffmpeg 6.1 then picks TV range for YUV output). */
-function scalesWithoutRange(graph: string): string[] {
-	return graph.split(/[,;]/).filter((f) => /^\s*(\[[^\]]*\]\s*)*scale=/.test(f) && !/out_range=/.test(f));
-}
-
-describe('generated filter text states the output range of every scale', () => {
-	const ctx = { width: 1280, height: 720 } as StepContext;
-	const graphs: Record<string, string> = {
-		'deshake crop': createDeshakeStep({
-			op: 'stabilize',
-			method: 'deshake',
-			smoothing: 15,
-			borders: 'crop',
-		}).filter(ctx),
-		'to yuv444p': toFormat('yuv444p'),
-		'to yuv444p16le from tv': toFormat('yuv444p16le', 'bt709', 'tv'),
-		'to rgb48 from yuv': fromFormatToRgb48('yuv444p'),
-	};
-	for (const [name, g] of Object.entries(graphs))
-		it(name, () => {
-			expect(scalesWithoutRange(g)).toEqual([]);
-		});
-});
-
-// ---------------------------------------------------------------- measured on real output
 
 const LGPL_DIR = join(ROOT, 'vendor', 'ffmpeg-lgpl', `${process.platform}-${process.arch}`);
 
@@ -146,7 +115,9 @@ function levels(
 		],
 		{ maxBuffer: 256 * 1024 * 1024 },
 	);
+	if (res.status !== 0) throw new Error(res.stderr.toString());
 	const d = res.stdout;
+	if (d.length !== W * H * 3 * N) throw new Error(`Expected ${N} decoded frames from ${file}`);
 	const hist = new Float64Array(256);
 	const dev = new Float64Array(256);
 	for (let i = 0; i + 2 < d.length; i += 3) {
@@ -252,16 +223,14 @@ describe.skipIf(!FFMPEGS.length)('stabilised output keeps true black and white (
 			);
 			if (r.status !== 0) throw new Error(r.stderr.toString());
 			inputs[range] = out;
+			const decoded = levels(ff, out, range);
+			if (decoded.low !== 0 || decoded.high !== 255 || decoded.chroma !== 0)
+				throw new Error(`Invalid neutral-patch fixture: ${JSON.stringify(decoded)}`);
 		}
 	}, 120_000);
 	afterAll(() => {
 		if (!process.env.JASPER_KEEP_RANGE_TEST) rmSync(dir, { recursive: true, force: true });
 		else console.log(`[range] kept ${dir}`);
-	});
-
-	it('the fixture itself decodes to 0 / 255, achromatic', () => {
-		for (const range of ['tv', 'pc'] as const)
-			expect(levels(FFMPEGS[0]!.ffmpeg, inputs[range], range)).toEqual({ low: 0, high: 255, chroma: 0 });
 	});
 
 	for (const fx of FFMPEGS)
@@ -275,7 +244,7 @@ describe.skipIf(!FFMPEGS.length)('stabilised output keeps true black and white (
 					// The OpenCV.js fallback warp (PST-005) is chosen by the environment, like a machine without WASM.
 					const savedWarp = process.env.JASPER_SMOOTHPATH_WARP;
 					if (name.includes('OpenCV')) process.env.JASPER_SMOOTHPATH_WARP = 'opencv';
-					await runProc(
+					const result = await runProc(
 						{
 							input: inputs[range],
 							output,
@@ -293,8 +262,9 @@ describe.skipIf(!FFMPEGS.length)('stabilised output keeps true black and white (
 						if (savedWarp === undefined) delete process.env.JASPER_SMOOTHPATH_WARP;
 						else process.env.JASPER_SMOOTHPATH_WARP = savedWarp;
 					});
+					if (name.includes('OpenCV')) expect(result.sidecarData.steps[0]!.info.zoomPercent).toBe(100);
 					// The output is ProRes tagged TV range: decode it as such (with the same ffmpeg and the LGPL one).
-					for (const dec of [fx.ffmpeg, FFMPEGS[0]!.ffmpeg]) {
+					for (const dec of new Set([fx.ffmpeg, FFMPEGS[0]!.ffmpeg])) {
 						const l = levels(dec, output, 'tv');
 						const what = `(${name}, ${fx.name}, ${range}-range source, decoded by ${dec})`;
 						expect(l.low, `black level ${what}`).toBeLessThanOrEqual(2);

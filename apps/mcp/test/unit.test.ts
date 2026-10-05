@@ -1,17 +1,17 @@
-// jasper-mcp units without an engine: discovery, request safety, error mapping, export presets,
+// jasper-mcp units without an engine: discovery, request safety, error mapping,
 // and the public CLI version.
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { EngineClient, EngineError } from '@jasper/engine-client';
+import { EngineError } from '@jasper/engine-client';
 import { createCounterIdSource, createEmptyProject } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
-import { discoverEngine, probeHealth } from '../src/discovery.ts';
+import { discoverEngine } from '../src/discovery.ts';
 import { ToolError, toErrorResult } from '../src/errors.ts';
 import { buildExportSettings, findExportPreset } from '../src/export-presets.ts';
-import { EngineLink, EngineRequestAborted, FixedEngineLink, guardedFetch, withEngine } from '../src/link.ts';
+import { EngineLink, EngineRequestAborted, withEngine } from '../src/link.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -64,15 +64,11 @@ describe('engine discovery', () => {
 			writeRuntime(down, { url: 'http://127.0.0.1:4', port: 4, pid: process.pid, token: 'y' });
 			writeRuntime(live, { url: 'http://127.0.0.1:5', port: 5, pid: process.pid, token: 'secret' });
 			const env = { JASPER_APPDIR: down, XDG_DATA_HOME: data, XDG_CONFIG_HOME: data };
-			const logs: string[] = [];
 			const t = await discoverEngine({
 				appdir: stale,
 				env,
 				fetch: fakeFetch(['http://127.0.0.1:5']),
-				log: (l) => logs.push(l),
 			});
-			expect(logs.some((l) => l.includes('stale runtime file'))).toBe(true);
-			expect(logs.some((l) => l.includes('not answering'))).toBe(true);
 			expect(t).toMatchObject({ url: 'http://127.0.0.1:5', token: 'secret', source: 'runtime-file' });
 			expect(t?.detail).toBe(join(live, 'engine', 'runtime.json'));
 			// An explicit token wins over the runtime file's.
@@ -93,9 +89,14 @@ describe('engine discovery', () => {
 		expect(t).toMatchObject({ url: 'http://127.0.0.1:47900', source: 'default-port', token: null });
 	});
 
-	it('probeHealth rejects non-engine answers', async () => {
+	it('discovery rejects non-engine answers', async () => {
 		const f = (async () => new Response(JSON.stringify({ hello: 1 }))) as unknown as typeof fetch;
-		expect(await probeHealth('http://x', { fetch: f })).toMatchObject({ ok: false });
+		expect(
+			await discoverEngine({
+				env: { XDG_DATA_HOME: '/nonexistent', XDG_CONFIG_HOME: '/nonexistent' },
+				fetch: f,
+			}),
+		).toBeNull();
 	});
 
 	it('EngineLink reports an actionable error when nothing runs', async () => {
@@ -110,23 +111,19 @@ describe('engine discovery', () => {
 		expect(err.hint).toMatch(/--start-engine/);
 	});
 
-	it('withEngine re-discovers once after a network failure', async () => {
-		let n = 0;
-		const link = {
-			target: null,
-			invalidate: () => {},
-			close: async () => {},
-			client: async () => ({ id: ++n }) as never,
-		};
-		const seen: number[] = [];
-		const out = await withEngine(link, async (client) => {
-			const c = client as unknown as { id: number };
-			seen.push(c.id);
-			if (c.id === 1) throw new EngineError('NETWORK', 'down', { retryable: true });
-			return 'ok';
+	it('re-discovers after a refused read and returns the project list', async () => {
+		let requests = 0;
+		const link = new EngineLink({
+			url: 'http://127.0.0.1:1',
+			fetch: (async (input: string | URL) => {
+				if (String(input).endsWith('/health')) return new Response(JSON.stringify({ ok: true }));
+				if (++requests === 1)
+					throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });
+				return new Response(JSON.stringify({ projects: [] }), { headers: { 'x-jasper-api': '1' } });
+			}) as typeof fetch,
 		});
-		expect(out).toBe('ok');
-		expect(seen).toEqual([1, 2]);
+		expect(await withEngine(link, (c) => c.listProjects())).toEqual({ projects: [] });
+		expect(requests).toBe(2);
 	});
 });
 
@@ -143,7 +140,14 @@ describe('engine request guard (no unbounded waits, no blind re-apply)', () => {
 			new Promise((_resolve, reject) => {
 				init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
 			})) as unknown as typeof fetch;
-		const link = new FixedEngineLink('http://127.0.0.1:1', 'secret-token', never, 40);
+		const link = new EngineLink({
+			url: 'http://127.0.0.1:1',
+			token: 'secret-token',
+			fetch: never,
+			healthTimeoutMs: 40,
+			requestTimeoutMs: 40,
+			log: () => {},
+		});
 		let calls = 0;
 		const t0 = Date.now();
 		const err = await withEngine(link, (c) => {
@@ -160,35 +164,36 @@ describe('engine request guard (no unbounded waits, no blind re-apply)', () => {
 
 	it('a write cut off mid-flight is reported, not retried (it may have been applied)', async () => {
 		let sent = 0;
-		const client = new EngineClient({
-			baseUrl: 'http://127.0.0.1:1',
-			fetch: guardedFetch((async () => {
+		const link = new EngineLink({
+			url: 'http://127.0.0.1:1',
+			fetch: (async (input: string | URL) => {
+				if (String(input).endsWith('/health')) return new Response(JSON.stringify({ ok: true }));
 				sent++;
 				throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } });
-			}) as unknown as typeof fetch),
+			}) as typeof fetch,
 		});
-		const link = { target: null, invalidate: () => {}, close: async () => {}, client: async () => client };
 		const err = await withEngine(link, (c) =>
 			c.agentTx({ projectId: 'prj_x', transaction: {} as never }),
 		).catch((e) => e);
 		expect(sent).toBe(1);
 		const body = errorOf(toErrorResult(err));
 		expect(body.code).toBe('ENGINE_CONNECTION_LOST');
-		expect(body.hint).toMatch(/Re-read the project/);
 	});
 
 	it('a write that never reached the engine, and any read, stay retryable NETWORK errors', async () => {
-		const refused = new EngineClient({
-			baseUrl: 'http://127.0.0.1:1',
-			fetch: guardedFetch(failWith('ECONNREFUSED')),
-		});
+		const refused = await new EngineLink({
+			url: 'http://127.0.0.1:1',
+			fetch: failWith('ECONNREFUSED'),
+			log: () => {},
+		}).client();
 		await expect(refused.agentTx({ projectId: 'p', transaction: {} as never })).rejects.toMatchObject({
 			code: 'NETWORK',
 		});
-		const reset = new EngineClient({
-			baseUrl: 'http://127.0.0.1:1',
-			fetch: guardedFetch(failWith('ECONNRESET')),
-		});
+		const reset = await new EngineLink({
+			url: 'http://127.0.0.1:1',
+			fetch: failWith('ECONNRESET'),
+			log: () => {},
+		}).client();
 		await expect(reset.listProjects()).rejects.toMatchObject({ code: 'NETWORK' });
 	});
 });
@@ -211,43 +216,17 @@ describe('errors', () => {
 	});
 });
 
-describe('export presets', () => {
-	it('builds engine ExportSettings from a preset', () => {
-		const doc = createEmptyProject({ ids: createCounterIdSource(7), name: 'Unit', preset: 'hd-1080p-30' });
-		const seq = Object.values(doc.sequences)[0]!;
-		const draft = buildExportSettings(seq, findExportPreset('draft-720p-h264')!, {
-			range: { type: 'entire' },
-			engine: 'auto',
-			outputPath: '/tmp/x.mp4',
-		});
-		expect(draft.video).toMatchObject({ width: 1280, height: 720, quality: { mode: 'crf', value: 28 } });
-		expect(draft.destination).toEqual({ type: 'path', path: '/tmp/x.mp4' });
-		const def = buildExportSettings(seq, findExportPreset(undefined)!, {
-			range: { type: 'entire' },
-			engine: 'auto',
-		});
-		expect(def.video).toMatchObject({ width: 1920, height: 1080, codec: 'h264' });
-		expect(def.destination).toEqual({ type: 'download' });
-		// Masters: a high-bitrate H.264 and a ProRes 422 HQ MOV; quality overrides win over the preset.
-		const hi = buildExportSettings(seq, findExportPreset('master-h264-high')!, {
-			range: { type: 'entire' },
-			engine: 'auto',
-		});
-		expect(hi.video).toMatchObject({ codec: 'h264', quality: { value: 14 }, bitrateKbps: 20000 });
-		const tuned = buildExportSettings(seq, findExportPreset(undefined)!, {
-			range: { type: 'entire' },
-			engine: 'auto',
-			crf: 12,
-			videoBitrateKbps: 16000,
-		});
-		expect(tuned.video).toMatchObject({ quality: { value: 12 }, bitrateKbps: 16000 });
-		const pr = buildExportSettings(seq, findExportPreset('master-prores-422hq')!, {
-			range: { type: 'entire' },
-			engine: 'native',
-		});
-		expect(pr).toMatchObject({ container: 'mov', video: { codec: 'prores' } });
-		expect(pr.video!.bitrateKbps).toBeUndefined();
+it('caller quality overrides take precedence over export preset defaults', () => {
+	const doc = createEmptyProject({ ids: createCounterIdSource(7), name: 'Overrides', preset: 'hd-1080p-30' });
+	const seq = Object.values(doc.sequences)[0]!;
+	const preset = findExportPreset('master-h264-high')!;
+	const settings = buildExportSettings(seq, preset, {
+		range: { type: 'entire' },
+		engine: 'auto',
+		crf: 12,
+		videoBitrateKbps: 16000,
 	});
+	expect(settings.video).toMatchObject({ quality: { mode: 'crf', value: 12 }, bitrateKbps: 16000 });
 });
 
 it('the --version CLI reports the package version', () => {

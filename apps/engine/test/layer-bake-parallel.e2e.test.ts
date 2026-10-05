@@ -9,7 +9,6 @@ import type { ProjectDocument } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type RunningEngine, startEngine } from '../src/index.ts';
 import type { BakeParallelism, LayerBakeService } from '../src/layer-bake/service.ts';
-import { layerBakeService } from '../src/routes/layer-bake.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { DocBuilder, JSON_H, tempAppdir, until } from './helpers.ts';
 
@@ -175,7 +174,7 @@ describe.runIf(enabled)('parallel bakes end to end (REMOTION_E2E=1, S11:LBK-022)
 					: {}),
 			},
 		});
-		svc = layerBakeService(engine.app)!;
+		svc = engine.app.jasper.services.layerBake as LayerBakeService;
 	}, 600_000);
 	afterAll(async () => {
 		await engine?.stop();

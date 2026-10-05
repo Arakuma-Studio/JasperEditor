@@ -1,4 +1,5 @@
 // LGPL guard contracts for the tree, packaged app and ELF RPATH rewrite.
+import { execFileSync, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -147,15 +148,21 @@ describe('manifest', () => {
 });
 
 const vendorFfmpeg = join(VENDOR_DIR, platformKey(), 'ffmpeg');
-describe.runIf(process.platform === 'linux' && existsSync(vendorFfmpeg))('rewriteElfRpath', () => {
+describe.runIf(
+	process.platform === 'linux' &&
+		existsSync(vendorFfmpeg) &&
+		spawnSync('readelf', ['--version'], { stdio: 'ignore' }).status === 0,
+)('rewriteElfRpath (requires readelf and vendored FFmpeg)', () => {
 	it('rewrites the RPATH of the vendored ffmpeg in place', () => {
 		const copy = join(mkdtempSync(join(tmpdir(), 'rpath-')), 'ffmpeg');
 		copyFileSync(vendorFfmpeg, copy);
-		expect(rewriteElfRpath(copy, '$ORIGIN')).toBe('$ORIGIN');
-		expect(() => rewriteElfRpath(copy, '$ORIGIN/../lib')).toThrow(/longer/);
-		expect(rewriteElfRpath(copy, 'lib')).toBe('$ORIGIN');
-		// The string is NUL-terminated after "lib" now: its capacity shrank.
-		expect(() => rewriteElfRpath(copy, '$ORIGIN')).toThrow(/longer/);
-		expect(readFileSync(copy).length).toBe(readFileSync(vendorFfmpeg).length);
+		rewriteElfRpath(copy, 'lib');
+		// An independent ELF reader must see the changed artifact, not just a return value.
+		expect(execFileSync('readelf', ['-d', copy], { encoding: 'utf8' })).toMatch(
+			/\((?:RUNPATH|RPATH)\).*\[lib\]/,
+		);
+		const patched = readFileSync(copy);
+		expect(() => rewriteElfRpath(copy, '$ORIGIN/../lib')).toThrow();
+		expect(readFileSync(copy)).toEqual(patched);
 	});
 });

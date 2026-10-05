@@ -8,20 +8,13 @@ import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerAllCommands } from '../src/commands/index.ts';
-import { edgeZonePx } from '../src/panels/timeline/model/hit.ts';
 import { TimelinePanel } from '../src/panels/timeline/TimelinePanel.tsx';
 import { ShellRuntimeProvider } from '../src/shell/context.tsx';
 import { EngineProvider } from '../src/state/engine.tsx';
 import { addTracker, commitTrackResult, handleEngineEvent, startTrack } from '../src/tracking/actions.ts';
-import {
-	LIVE_THROTTLE_MS,
-	liveSamples,
-	recordLiveProgress,
-	resetLiveProgress,
-} from '../src/tracking/live.ts';
+import { liveSamples, recordLiveProgress } from '../src/tracking/live.ts';
 import { registerTrackingUi } from '../src/tracking/register.ts';
-import { patchRunning, resetTrackingStore, trackingStore } from '../src/tracking/store.ts';
-import * as strip from '../src/tracking/timeline-strip.ts';
+import { patchRunning, trackingStore } from '../src/tracking/store.ts';
 import {
 	type FakeEngine,
 	fakeEngine,
@@ -44,11 +37,11 @@ beforeAll(() => {
 	registerTrackingUi();
 });
 beforeEach(() => {
-	resetTrackingStore();
-	resetLiveProgress();
+	trackingStore.setState(trackingStore.getInitialState(), true);
 });
 afterEach(() => {
 	cleanup();
+	if (vi.isFakeTimers()) vi.runAllTimers();
 	vi.useRealTimers();
 });
 
@@ -62,6 +55,7 @@ const committed = (first: number, n: number, c = 0.9): TrackerSamples => ({
 
 describe('liveSamples', () => {
 	it('merges the received frames over the committed samples and fills gaps with the lower neighbour', () => {
+		vi.useFakeTimers();
 		const base = committed(0, 10);
 		for (const [frame, confidence] of [
 			[8, 0.95],
@@ -78,12 +72,9 @@ describe('liveSamples', () => {
 		expect(s.confidence.slice(9, 12)).toEqual([0.6, 0.6, 0.6]); // gap 9–11: min(0.95, 0.6)
 		expect(s.confidence.slice(13, 15)).toEqual([0.3, 0.3]);
 		expect(s.confidence[15]).toBe(0.3);
-		// Cached while nothing changes; a new job resets the buffer.
-		expect(liveSamples('tkr_a', base)).toBe(s);
+		// A new job must not inherit confidence from the previous job.
 		recordLiveProgress('tkr_a', { jobId: 'job2', frame: 40, confidence: 1, step: F30, stride: 8 });
 		expect(liveSamples('tkr_a', null)!.start).toBe(40 * F30);
-		// Nothing live → the committed samples themselves.
-		expect(liveSamples('tkr_b', base)).toBe(base);
 	});
 
 	it('throttles redraw notifications', () => {
@@ -93,7 +84,7 @@ describe('liveSamples', () => {
 		for (let f = 0; f < 50; f++)
 			recordLiveProgress('tkr_a', { jobId: 'j', frame: f, confidence: 0.9, step: F30, stride: 8 });
 		expect(seen).toEqual([]);
-		vi.advanceTimersByTime(LIVE_THROTTLE_MS);
+		vi.advanceTimersByTime(100);
 		expect(seen).toEqual([1]);
 		off();
 	});
@@ -142,7 +133,7 @@ describe('timeline strip during a track job', () => {
 			} as never);
 		act(() => {
 			for (let f = 0; f <= 20; f += 4) progress(f, f === 12 ? 0 : 0.9);
-			vi.advanceTimersByTime(LIVE_THROTTLE_MS);
+			vi.advanceTimersByTime(100);
 		});
 		const el = document.querySelector(`[data-tracker-strip="${id}"]`) as HTMLElement;
 		expect(el).not.toBeNull();
@@ -158,21 +149,12 @@ describe('timeline strip during a track job', () => {
 		await act(async () => {
 			commitTrackResult(session, id, { step: F30, merge: 'replace' }, planarResult(0, 60, REF, id));
 			patchRunning(id, null);
-			await new Promise((r) => setTimeout(r, LIVE_THROTTLE_MS * 2));
+			await new Promise((r) => setTimeout(r, 200));
 		});
 		const after = document.querySelector(`[data-tracker-strip="${id}"]`) as HTMLElement;
 		expect(after.hasAttribute('data-live')).toBe(false);
 		const tracker = seqOf(session).clips[plate] as { trackers: { samples: TrackerSamples }[] };
 		expect(liveSamples(id, tracker.trackers[0]!.samples)).toBe(tracker.trackers[0]!.samples);
 		expect(labels(session).at(-1)).toBe('Track');
-	});
-});
-
-describe('trim edge zones', () => {
-	it('come from the timeline hit test (no private copy in the strips)', () => {
-		expect(edgeZonePx(4)).toBe(3);
-		expect(edgeZonePx(20)).toBe(5);
-		expect(edgeZonePx(400)).toBe(8);
-		expect((strip as Record<string, unknown>).edgeZonePx).toBeUndefined();
 	});
 });

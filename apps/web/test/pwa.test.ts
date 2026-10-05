@@ -5,7 +5,10 @@ import { runInNewContext } from 'node:vm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { registerServiceWorker } from '../src/pwa/register.ts';
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+	vi.unstubAllGlobals();
+	vi.unstubAllEnvs();
+});
 
 const ORIGIN = 'http://127.0.0.1:47900';
 
@@ -65,11 +68,17 @@ describe('registration gating (S05:PWA-004)', () => {
 		const register = vi.fn().mockResolvedValue({ waiting: null, addEventListener: vi.fn() });
 		vi.stubGlobal('navigator', { serviceWorker: { addEventListener: vi.fn(), register } });
 		vi.stubGlobal('document', { readyState: 'complete' });
-		registerServiceWorker({ prod: false, desktop: false, supported: true });
-		registerServiceWorker({ prod: true, desktop: true, supported: true });
-		registerServiceWorker({ prod: true, desktop: false, supported: false });
+		vi.stubEnv('PROD', false);
+		registerServiceWorker();
+		vi.stubEnv('PROD', true);
+		vi.stubGlobal('window', { jasperDesktop: {} });
+		registerServiceWorker();
+		vi.stubGlobal('window', {});
+		vi.stubGlobal('navigator', {});
+		registerServiceWorker();
 		expect(register).not.toHaveBeenCalled();
-		registerServiceWorker({ prod: true, desktop: false, supported: true });
+		vi.stubGlobal('navigator', { serviceWorker: { addEventListener: vi.fn(), register } });
+		registerServiceWorker();
 		expect(register).toHaveBeenCalledExactlyOnceWith('/sw.js');
 	});
 });

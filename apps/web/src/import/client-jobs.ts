@@ -12,7 +12,6 @@ export class ClientJobStore {
 	private readonly listeners = new Set<Listener>();
 	private seq = 0;
 	private readonly cancelers = new Map<string, () => void>();
-	constructor(private readonly now: () => Date = () => new Date()) {}
 
 	getAll = (): ClientJob[] => this.jobs;
 	subscribe = (l: Listener): (() => void) => {
@@ -31,8 +30,8 @@ export class ClientJobStore {
 			origin: { type: 'user' },
 			state: 'running',
 			progress: 0,
-			createdAt: this.now().toISOString(),
-			startedAt: this.now().toISOString(),
+			createdAt: new Date().toISOString(),
+			startedAt: new Date().toISOString(),
 			priority: 'interactive',
 			cpuSlots: 0,
 			...rest,
@@ -50,7 +49,7 @@ export class ClientJobStore {
 			if (j.id !== id) return j;
 			changed = true;
 			const next = { ...j, ...patch };
-			if (TERMINAL_JOB_STATES.has(next.state) && !next.finishedAt) next.finishedAt = this.now().toISOString();
+			if (TERMINAL_JOB_STATES.has(next.state) && !next.finishedAt) next.finishedAt = new Date().toISOString();
 			return next;
 		});
 		if (TERMINAL_JOB_STATES.has(patch.state ?? 'running')) this.cancelers.delete(id);

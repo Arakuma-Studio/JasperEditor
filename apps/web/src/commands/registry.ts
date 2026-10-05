@@ -81,9 +81,3 @@ export async function runCommand(id: string, ctx: CommandCtx, args?: unknown): P
 		return { ran: false, reason: 'error', error };
 	}
 }
-
-/** Test helper: removes every registered command. */
-export function resetCommandRegistry(): void {
-	commands.clear();
-	notify();
-}

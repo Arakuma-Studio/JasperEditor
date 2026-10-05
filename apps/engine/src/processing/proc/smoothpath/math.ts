@@ -1,4 +1,4 @@
-// Pure math of the smooth-path stabiliser (S07:PST-005), unit-testable without OpenCV or WASM. Port of the
+// Pure math of the smooth-path stabiliser (S07:PST-005). Port of the
 // trailer project's `grade/tools/smoothstab.py` (our own pipeline code):
 //
 //  1. frame-to-frame similarity (tx, ty, rotation, scale) from tracked corners, fitted with RANSAC so moving
@@ -11,18 +11,18 @@
 //
 // Coordinates: pixel centres at integer positions (OpenCV convention). Matrices are 3×3 row-major arrays.
 
-export type Mat3 = [number, number, number, number, number, number, number, number, number];
+type Mat3 = [number, number, number, number, number, number, number, number, number];
 
 /** A similarity x' = a·x − b·y + tx, y' = b·x + a·y + ty (scale √(a²+b²), angle atan2(b, a)). */
 export type Similarity = { a: number; b: number; tx: number; ty: number };
 
 export const IDENTITY_SIM: Similarity = { a: 1, b: 0, tx: 0, ty: 0 };
 
-export function simToMat(s: Similarity): Mat3 {
+function simToMat(s: Similarity): Mat3 {
 	return [s.a, -s.b, s.tx, s.b, s.a, s.ty, 0, 0, 1];
 }
 
-export function mul(m: Mat3, n: Mat3): Mat3 {
+function mul(m: Mat3, n: Mat3): Mat3 {
 	return [
 		m[0] * n[0] + m[1] * n[3] + m[2] * n[6],
 		m[0] * n[1] + m[1] * n[4] + m[2] * n[7],
@@ -37,7 +37,7 @@ export function mul(m: Mat3, n: Mat3): Mat3 {
 }
 
 /** Inverse of an affine 3×3 (last row 0 0 1). */
-export function invAffine(m: Mat3): Mat3 {
+function invAffine(m: Mat3): Mat3 {
 	const det = m[0] * m[4] - m[1] * m[3];
 	const a = m[4] / det;
 	const b = -m[1] / det;
@@ -49,7 +49,7 @@ export function invAffine(m: Mat3): Mat3 {
 const translate = (x: number, y: number): Mat3 => [1, 0, x, 0, 1, y, 0, 0, 1];
 
 /** Similarity from parameters (translation, angle in rad, scale), as smoothstab.py `sim`. */
-export function simMat(tx: number, ty: number, angle: number, scale: number): Mat3 {
+function simMat(tx: number, ty: number, angle: number, scale: number): Mat3 {
 	const c = Math.cos(angle) * scale;
 	const s = Math.sin(angle) * scale;
 	return [c, -s, tx, s, c, ty, 0, 0, 1];
@@ -61,7 +61,7 @@ export function simMat(tx: number, ty: number, angle: number, scale: number): Ma
  * Least-squares similarity mapping `src[i] → dst[i]` over the points selected by `use` (all when absent):
  * closed form on centred coordinates. Points are interleaved x,y. Null when fewer than 2 points or degenerate.
  */
-export function fitSimilarity(
+function fitSimilarity(
 	src: ArrayLike<number>,
 	dst: ArrayLike<number>,
 	use?: ArrayLike<number> | null,
@@ -115,7 +115,7 @@ function rng(seed: number): () => number {
 	};
 }
 
-export type RansacOptions = {
+type RansacOptions = {
 	/** Inlier distance in pixels (smoothstab.py: 1.5 px at the source size). */
 	threshold?: number;
 	maxIters?: number;
@@ -123,7 +123,7 @@ export type RansacOptions = {
 	seed?: number;
 };
 
-export type RansacResult = { sim: Similarity; inliers: number; mask: Uint8Array };
+type RansacResult = { sim: Similarity; inliers: number; mask: Uint8Array };
 
 function countInliers(
 	s: Similarity,
@@ -235,7 +235,7 @@ export function ransacSimilarity(
 // ------------------------------------------------------------------ path smoothing
 
 /** Gaussian smoothing (sigma in samples, kernel radius ⌊3σ⌋, edge values held), as smoothstab.py `gauss`. */
-export function gaussSmooth(a: ArrayLike<number>, sigma: number): Float64Array {
+function gaussSmooth(a: ArrayLike<number>, sigma: number): Float64Array {
 	const n = a.length;
 	const out = Float64Array.from(a as ArrayLike<number>);
 	if (!(sigma > 0) || n === 0) return out;
@@ -259,7 +259,7 @@ export function gaussSmooth(a: ArrayLike<number>, sigma: number): Float64Array {
 }
 
 /** Least-squares straight line through `a` over its index (smoothstab.py `line`). */
-export function lineFit(a: ArrayLike<number>): Float64Array {
+function lineFit(a: ArrayLike<number>): Float64Array {
 	const n = a.length;
 	const out = new Float64Array(n);
 	if (n === 0) return out;
@@ -287,7 +287,7 @@ export function lineFit(a: ArrayLike<number>): Float64Array {
 }
 
 /** Camera parameters per frame relative to frame 0, about the frame centre. */
-export type CameraPath = {
+type CameraPath = {
 	tx: Float64Array;
 	ty: Float64Array;
 	angle: Float64Array;
@@ -300,7 +300,7 @@ export type CameraPath = {
  * Accumulates the frame-to-frame similarities (`pairs[i]` maps frame i → frame i+1, in pixel coordinates)
  * into the camera path: P_0 = I, P_i = M_{i−1} · P_{i−1}; Q_i = C⁻¹ P_i C with C the translation to the centre.
  */
-export function cameraPath(pairs: readonly Similarity[], width: number, height: number): CameraPath {
+function cameraPath(pairs: readonly Similarity[], width: number, height: number): CameraPath {
 	const n = pairs.length + 1;
 	const C = translate(width / 2, height / 2);
 	const Ci = translate(-width / 2, -height / 2);
@@ -327,11 +327,11 @@ export function cameraPath(pairs: readonly Similarity[], width: number, height: 
 	return { tx, ty, angle, scale, q };
 }
 
-export type SmoothOptions = { sigma: number; lockVertical: boolean; lockRotation: boolean };
+type SmoothOptions = { sigma: number; lockVertical: boolean; lockRotation: boolean };
 
-export type SmoothedPath = { tx: Float64Array; ty: Float64Array; angle: Float64Array; scale: Float64Array };
+type SmoothedPath = { tx: Float64Array; ty: Float64Array; angle: Float64Array; scale: Float64Array };
 
-export function smoothCameraPath(p: CameraPath, o: SmoothOptions): SmoothedPath {
+function smoothCameraPath(p: CameraPath, o: SmoothOptions): SmoothedPath {
 	return {
 		tx: gaussSmooth(p.tx, o.sigma),
 		ty: o.lockVertical ? lineFit(p.ty) : gaussSmooth(p.ty, o.sigma),
@@ -341,7 +341,7 @@ export function smoothCameraPath(p: CameraPath, o: SmoothOptions): SmoothedPath 
 }
 
 /** Centred corrections K_i = S_i · Q_i⁻¹ (actual camera → smoothed camera). */
-export function corrections(p: CameraPath, s: SmoothedPath): Mat3[] {
+function corrections(p: CameraPath, s: SmoothedPath): Mat3[] {
 	return p.q.map((Q, i) => mul(simMat(s.tx[i], s.ty[i], s.angle[i], s.scale[i]), invAffine(Q)));
 }
 
@@ -349,7 +349,7 @@ export function corrections(p: CameraPath, s: SmoothedPath): Mat3[] {
  * Whether a static zoom `z` (about the centre) hides every border: the output frame's corners, brought back
  * through each correction, stay inside the source frame (half a pixel of margin), as smoothstab.py `ok`.
  */
-export function bordersHidden(corr: readonly Mat3[], z: number, width: number, height: number): boolean {
+function bordersHidden(corr: readonly Mat3[], z: number, width: number, height: number): boolean {
 	const hw = width / 2 / z;
 	const hh = height / 2 / z;
 	const lx = width / 2 - 0.5;
@@ -371,13 +371,13 @@ export function bordersHidden(corr: readonly Mat3[], z: number, width: number, h
 }
 
 /** Margin on the found zoom (smoothstab.py: ×1.002) so bicubic taps never reach the replicated edge. */
-export const ZOOM_MARGIN = 1.002;
+const ZOOM_MARGIN = 1.002;
 
 /**
  * The smallest static zoom ≤ `cap` that hides the borders (bisection, 30 steps), with the margin; null when
  * even `cap` is not enough. `needed` (no cap, up to 4×) is reported for the explanation.
  */
-export function minimalZoom(
+function minimalZoom(
 	corr: readonly Mat3[],
 	width: number,
 	height: number,
@@ -407,7 +407,7 @@ export function minimalZoom(
 
 // ------------------------------------------------------------------ plan
 
-export type SmoothPathOptions = {
+type SmoothPathOptions = {
 	/** Gaussian sigma of the camera path, frames. */
 	sigma: number;
 	lockVertical: boolean;
@@ -418,7 +418,7 @@ export type SmoothPathOptions = {
 	borders: 'crop' | 'keep';
 };
 
-export type SmoothPathPlan = {
+type SmoothPathPlan = {
 	/** Per output frame: the backward map (output pixel → source pixel) as a 2×3 affine [a, b, c, d, e, f]. */
 	backward: number[][];
 	zoom: number;
@@ -464,7 +464,7 @@ function speeds(tx: ArrayLike<number>, ty: ArrayLike<number>, k: number): { spee
  * the locks (bisection on sigma), then without them. Without locks a smoothing of 0 is the identity (zoom 1),
  * so a plan always exists.
  */
-export function planSmoothPath(
+function planSmoothPath(
 	pairs: readonly Similarity[],
 	width: number,
 	height: number,

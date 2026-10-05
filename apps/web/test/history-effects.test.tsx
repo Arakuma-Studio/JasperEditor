@@ -7,12 +7,10 @@ import {
 } from '../src/panels/effects/drag.ts';
 import { EffectsPanel } from '../src/panels/effects/EffectsPanel.tsx';
 import { HistoryPanel } from '../src/panels/history/HistoryPanel.tsx';
-import { inspectorFocus } from '../src/panels/properties/lib/focus.ts';
 import { addSolids, clipOf, makeSession, renderWithSession } from './inspector-helpers.tsx';
 
 afterEach(() => {
 	cleanup();
-	inspectorFocus.reset();
 });
 
 const effectIds = (s: ReturnType<typeof makeSession>, id: string) =>

@@ -1,13 +1,10 @@
-// Rust ↔ TS parity. Always: checked-in JSON Schemas agree with the TS catalog.
-// With MG_PARITY=1 and a built binary: `jasper-mg schema` equals the TS catalog and
-// `jasper-mg svg` equals the TS twins' markup (numbers within ±0.002 for libm last-ulp noise).
+// Shipped schemas and the native CLI share a parameter protocol; SVG twins also preserve geometry and timing.
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { schemaFiles } from '../scripts/generate-schemas.ts';
-import { canonicalJson, FFRAMES_CATALOG, mgRegistry } from '../src/index.ts';
+import { FFRAMES_CATALOG, mgRegistry } from '../src/index.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, '..', '..', '..');
@@ -29,12 +26,16 @@ if (!parityEnabled)
 
 describe('checked-in schemas', () => {
 	it('schemas/ matches the TS catalog (run `pnpm --filter @jasper/mg-templates schemas`)', () => {
-		const files = schemaFiles();
+		const catalog = mgRegistry.catalogJson().filter((entry) => entry.renderer !== 'anime');
+		const files = Object.fromEntries(
+			catalog.map((entry) => [`${entry.id}@${entry.version}.json`, entry.paramsSchema]),
+		);
+		files['catalog.json'] = { templates: catalog };
 		const onDisk = readdirSync(join(here, '..', 'schemas')).filter((f) => f.endsWith('.json'));
 		expect(onDisk.sort()).toEqual(Object.keys(files).sort());
 		for (const [name, json] of Object.entries(files)) {
 			const disk = JSON.parse(readFileSync(join(here, '..', 'schemas', name), 'utf8'));
-			expect(canonicalJson(disk), name).toBe(canonicalJson(json));
+			expect(disk, name).toEqual(json);
 		}
 	});
 
@@ -81,11 +82,11 @@ describe.skipIf(!parityEnabled)('native parity (MG_PARITY=1)', () => {
 			templates: Record<string, unknown>[];
 		};
 		const ts = mgRegistry.catalogJson().filter((t) => t.renderer !== 'anime');
-		expect(native.templates.map((t) => `${t.id}@${t.version}`)).toEqual(
-			ts.map((t) => `${t.id}@${t.version}`),
+		expect(native.templates.map((t) => `${t.id}@${t.version}`).sort()).toEqual(
+			ts.map((t) => `${t.id}@${t.version}`).sort(),
 		);
-		for (const [i, t] of ts.entries()) {
-			const n = native.templates[i]!;
+		for (const t of ts) {
+			const n = native.templates.find((entry) => entry.id === t.id && entry.version === t.version)!;
 			for (const key of [
 				'name',
 				'category',
@@ -96,7 +97,7 @@ describe.skipIf(!parityEnabled)('native parity (MG_PARITY=1)', () => {
 				'defaultDurationSeconds',
 				'canvases',
 			] as const) {
-				expect(canonicalJson(n[key]), `${t.id} ${key}`).toBe(canonicalJson(t[key]));
+				expect(n[key], `${t.id} ${key}`).toEqual(t[key]);
 			}
 		}
 	});

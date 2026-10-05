@@ -53,7 +53,7 @@ function edgeSlope(h0: number, h1: number, d0: number, d1: number): number {
 }
 
 /** Hermite slopes at each control point (Fritsch–Carlson with the weighted harmonic mean). */
-export function pchipSlopes(xs: readonly number[], ys: readonly number[]): number[] {
+function pchipSlopes(xs: readonly number[], ys: readonly number[]): number[] {
 	const n = xs.length;
 	const h: number[] = [];
 	const d: number[] = [];

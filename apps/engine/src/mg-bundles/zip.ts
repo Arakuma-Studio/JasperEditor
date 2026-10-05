@@ -104,7 +104,7 @@ async function readEntries(fh: Awaited<ReturnType<typeof open>>, size: number): 
 }
 
 /** Safe destination of an entry name under `dest`, or null for names that must be skipped. */
-export function safeEntryPath(dest: string, name: string): string | null {
+function safeEntryPath(dest: string, name: string): string | null {
 	const n = name.replace(/\\/g, '/');
 	if (n.startsWith('/') || /^[A-Za-z]:/.test(n) || n.split('/').includes('..')) return null;
 	if (n.startsWith('__MACOSX/') || n.split('/').some((s) => s === '.DS_Store')) return null;

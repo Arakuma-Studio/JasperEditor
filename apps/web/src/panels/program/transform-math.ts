@@ -73,7 +73,7 @@ export function oppositeHandle(h: HandleId): HandleId {
 	return OPPOSITE[h];
 }
 
-export function isCorner(h: HandleId): boolean {
+function isCorner(h: HandleId): boolean {
 	return h.length === 2;
 }
 

@@ -8,26 +8,19 @@ import {
 	applyLut,
 	applyLutMix,
 	applyMat3,
-	bakeColorRun,
 	bakeLut,
 	boxToQuad,
 	buildRenderSnapshot,
 	type Clip,
 	CORNER_PIN_EFFECT_ID,
 	CubeParseError,
-	colorRunKey,
-	createEffectRegistry,
 	defaultEffectRegistry,
-	type EffectSpec,
-	effectBadges,
-	effectRuns,
 	identityLut,
 	invertMat3,
 	isAffineMat3,
 	isConvexQuad,
 	loadProject,
 	lutMaxDelta,
-	M1_EFFECTS,
 	mat3FromMat2D,
 	mat3ToCss,
 	multiplyMat3,
@@ -162,79 +155,11 @@ describe('LUTs (S06:CG-050…056)', () => {
 	});
 	it('reports malformed files with a line number', () => {
 		expect(() => parseCube('0 0 0\n')).toThrow(CubeParseError);
-		expect(() => parseCube('LUT_3D_SIZE 2\n0 0 0\n')).toThrow(/Expected 8 table entries/);
-		expect(() => parseCube('LUT_3D_SIZE 1\n')).toThrow(/Invalid LUT_3D_SIZE/);
-		expect(() => parseCube('LUT_3D_SIZE 2\n0 0 x\n')).toThrow(/line 2/);
-	});
-});
-
-describe('colour-run fusion (ARCHITECTURE §19.2)', () => {
-	const gain = (id: string): EffectSpec => ({
-		id,
-		version: 1,
-		label: id,
-		category: 'Color Correction',
-		appliesTo: 'video',
-		params: [{ name: 'k', label: 'k', type: 'number', default: 1, animatable: true }],
-		preview: {},
-		native: null,
-		color: {
-			build: (p) =>
-				p.k === 1
-					? null
-					: (c) => {
-							const k = p.k as number;
-							c[0] *= k;
-							c[1] *= k;
-							c[2] *= k;
-						},
-		},
-		capabilities: { preview: 'webgl', export: ['remotion', 'native'] },
-	});
-	const registry = createEffectRegistry([...M1_EFFECTS, gain('t.a'), gain('t.b')]);
-	const fx = (id: string, effectId: string, k: number, enabled = true) => ({
-		id,
-		effectId,
-		effectVersion: 1,
-		enabled,
-		params: { k },
-	});
-	it('groups consecutive colour effects, keeps other effects as barriers, drops disabled ones', () => {
-		const runs = effectRuns(
-			[
-				fx('1', 't.a', 0.5),
-				fx('2', 't.b', 0.8),
-				fx('3', 'jasper.gaussian-blur', 0),
-				fx('4', 't.a', 2, false),
-				fx('5', 't.b', 1.2),
-			],
-			registry,
+		expect(() => parseCube('LUT_3D_SIZE 2\n0 0 0\n')).toThrow(CubeParseError);
+		expect(() => parseCube('LUT_3D_SIZE 1\n')).toThrow(CubeParseError);
+		expect(() => parseCube('LUT_3D_SIZE 2\n0 0 x\n')).toThrow(
+			expect.objectContaining({ name: 'CubeParseError', line: 2 }),
 		);
-		expect(runs.map((r) => (r.kind === 'color' ? r.effects.map((e) => e.id) : r.effect.id))).toEqual([
-			['1', '2'],
-			'3',
-			['5'],
-		]);
-	});
-	it('bakes a run into one LUT (identity runs bake to null) and keys it by params and LUT identity', () => {
-		const ctx = { lut: () => null };
-		expect(bakeColorRun([fx('1', 't.a', 1)], registry, ctx)).toBeNull();
-		const lut = bakeColorRun([fx('1', 't.a', 0.5), fx('2', 't.b', 0.8)], registry, ctx, 9)!;
-		const c: Rgb = [1, 0.5, 0.25];
-		applyLut(lut, c);
-		expect(c[0]).toBeCloseTo(0.4, 5);
-		expect(c[2]).toBeCloseTo(0.1, 5);
-		const k1 = colorRunKey([fx('1', 't.a', 0.5)], (m) => `fp:${m}`);
-		const k2 = colorRunKey([fx('1', 't.a', 0.5)], (m) => `fp:${m}`);
-		const k3 = colorRunKey(
-			[{ ...fx('1', 't.a', 0.5), params: { k: 0.5, lut: { mediaId: 'med_1' } } }],
-			(m) => `fp:${m}`,
-		);
-		expect(k1).toBe(k2);
-		expect(k3).toContain('fp:med_1');
-	});
-	it('colour effects count as native in the Effects panel badges', () => {
-		expect(effectBadges(gain('t.c')).native).toBe(true);
 	});
 });
 

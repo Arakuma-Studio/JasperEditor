@@ -23,7 +23,7 @@ import { errorText } from './engine-jobs.ts';
 import { planReplaceFootage, replaceFootageCommand } from './replace-footage.ts';
 
 export const REPLACE_FOOTAGE_DIALOG = 'media.replaceFootage';
-export const REPLACE_FOOTAGE_TX_LABEL = 'Replace Footage';
+const REPLACE_FOOTAGE_TX_LABEL = 'Replace Footage';
 
 export type ReplaceFootageDialogProps = { session: EditorSession; mediaId: string };
 

@@ -23,7 +23,7 @@ import { Internals, useCurrentFrame, useRemotionEnvironment } from 'remotion';
  * Makes Chrome paint `el` and its subtree from scratch at the next paint (see the file comment). The inline
  * `display` of `el` (value and priority, or its absence) is restored exactly.
  */
-export function repaintFromScratch(el: HTMLElement): void {
+function repaintFromScratch(el: HTMLElement): void {
 	const { style } = el;
 	const display = style.getPropertyValue('display');
 	const priority = style.getPropertyPriority('display');
@@ -35,7 +35,7 @@ export function repaintFromScratch(el: HTMLElement): void {
 }
 
 /** Whether a frame is repainted from scratch: every rendered frame; in the Player only while paused. */
-export function wantsFullRepaint(env: { rendering: boolean; playing: boolean }): boolean {
+function wantsFullRepaint(env: { rendering: boolean; playing: boolean }): boolean {
 	return env.rendering || !env.playing;
 }
 

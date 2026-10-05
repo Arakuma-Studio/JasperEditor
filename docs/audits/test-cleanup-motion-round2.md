@@ -1,0 +1,87 @@
+# Motion cleanup, second audit
+
+Pre-edit inventory: `packages/motion/test/**` at `87ebec9`, refreshed after the remote merge. Read the runtime, text, template owners, S11, ARCHITECTURE §20.2, the original motion cleanup report, and the core/text/template work-package regressions. No repository AGENTS.md applies inside this package; host instructions apply. Commands: `pnpm --filter @jasper/motion test`, `pnpm --filter @jasper/motion typecheck`, `pnpm exec biome check packages/motion`; browser contracts: `REMOTION_E2E=1 pnpm exec vitest run packages/motion/test/determinism-render.e2e.test.ts`.
+
+This is the recorded decision before editing. Each row lists the exact existing title (a dynamic key expands to every registered key). The six numbered entries in the applicable bar class are the justification for every KEEP/REWRITE. The failure column identifies the distinct failure protected, not merely code exercised. No threshold/count gate affects disposition.
+
+## Six-bar classes and ownership
+
+* R: (1) S11 ANM-002/003/005/007/011/021 and the core regression notes specify the runtime API; (2) wrong seek/time/seed or stale DOM changes preview/export or remount output; (3) fixed numeric/Unicode examples and fresh-frame equivalence are independent oracles; (4) exported runtime functions/hooks are the stable seam; (5) internals, cache layout and React build counts can change; (6) runtime owns these contracts below presets/components, and no remaining higher-level test exercises every malformed option, seed byte or lifecycle.
+* U: (1) ANM-010/021 and TXA-010/011 require preserved graphemes/whitespace, shaping fallback and line indices from layout boxes; (2) broken segmentation corrupts text or animation grouping; (3) literal strings and independently positioned nested DOM boxes determine expected groups; (4) public segmentation/groupLines API; (5) no algorithm or DOM topology assertion; (6) this is the lowest exported owner of these calculations. GroupLines is a data grouping contract explicitly requiring offsets, not a width/appearance snapshot.
+* D: (1) ANM-008/009/013 defines public TextAnimationImpl.build frame independence and rest; (2) time/order-dependent values or corrupt units show the wrong text; (3) independent visits/fresh builds, literal identity-transform rest values and finite outputs are oracles; (4) documented build and caretVisible outputs; (5) no private cache, tween property, call count, or exact target-key inventory; (6) build is the lowest stable owner across every preset/parameter variant. Browser tests separately own cross-renderer pixels; runtime tests separately own the hook.
+* C: (1) TXA-002/003/008 and typewriter@2 versioned behavior in `wp-m2-text-anim.md` specify offered preset lookup and blink timing; (2) selected presets fail or cursors blink/delete at the wrong frame; (3) project catalogue and literal expected cursor states are independent of runtime code; (4) package textAnimationImpl/build/caretVisible API; (5) registries, DOM structure and animation implementation may change; (6) this owns the catalogue/runtime boundary and cursor calculation, with the duplicate composition test removed by its audit owner.
+* G: (1) template review fix 8 documents quantized 25-million counters; (2) displayed values jump in increments of 25 or fail endpoints; (3) exact endpoint numbers and nonmultiples of 25 are independently chosen; (4) the component's displayed text; (5) no data-part/element-shape/style assertion remains; (6) component text is the lowest stable owner of the unrounded count plus formatting; template metadata tests do not render the count.
+* E: (1) ANM-014 and the recorded Chrome partial-raster regression require still/media/Player parity; (2) actual exported or preview pixels differ; (3) independent rendering paths and repeated frame visits are the oracle, with different-frame sensitivity controls; (4) real SequenceComposition through public rendering APIs; (5) animation/DOM/cache internals can change freely; (6) only the browser boundary owns renderer/concurrency parity. MOV and JSON artifacts are emitted.
+* V: (1) template review fix 2 records an early visible callout ring; (2) painted pixels at clip start reproduce that defect; (3) zero alpha at frame 0 is independently specified, with a later painted control; (4) public SequenceComposition still rendering with a layer filter; (5) SVG/DOM/opacity mechanism may change; (6) pixels are the lowest stable visibility seam and parity cannot detect the same wrong ring on both paths.
+* P: (1) ANM-015 specifies 200 units in at most 2ms in Chrome; (2) value computation too slow degrades preview; (3) the externally specified 2ms limit; (4) public useAnimeValues hook; (5) no private valuesAt access or cache-hit timing constraint; (6) hook computation is the lowest stable owner; the benchmark records JSON in the E2E artifact directory.
+
+## Runtime decisions
+
+All paths in this table are `packages/motion/test/runtime.test.tsx`. Validation R/U: package test + typecheck + Biome. Non-test callers: TextLayer/MotionGraphicLayer and shipped template components use these runtime APIs; timeline/ease/seed helpers are also used by preset builders. Risk is low for deleted checks (same public regression remains); retained numeric APIs have direct callers and no stronger owner for malformed-option/Unicode/lifecycle cases.
+
+| Existing test title | Disposition and actual failure / stronger owner | Bar |
+| --- | --- | --- |
+| pins anime.js 4.5.0 exactly | KEEP: required package pin/render-key identity changes; config read is an explicit version contract. | R |
+| never autoplays when the caller requests autoplay | KEEP: caller option accidentally starts the timeline. | R |
+| a plain seek is history-dependent; the canonical seek is not (seek 1000 then 500 = fresh 500) | REWRITE: keep actual gap-seek regression; remove assertion requiring third-party plain seek to remain broken. | R |
+| any visit order gives the values of a fresh build (fast-check, fixed seed) | DELETE: duplicated by retained gap regression, mounted hook shuffled-order test and every-preset determinism. Removes duplicated synthetic gap traversal, not independent product behavior. | — |
+| frameToMs = frame * 1000 / fps | KEEP: wrong fractional frame-rate conversion. | R |
+| hash32 is FNV-1a over UTF-8 (parts joined with U+001F) | KEEP: seed byte/hash compatibility breaks, including UTF-8 and part delimiter. | R |
+| seededRandom is deterministic per seed and in [0, 1) | KEEP: unstable/out-of-range/constant seeded random values. | R |
+| resolves steps and falls back for an unknown ease | KEEP: wrong public step function/fallback resolution. | R |
+| returns frozen copies of the seeked values | REWRITE: verify snapshots survive a later seek and stay immutable; remove symbol inventory, a private target implementation detail. | R |
+| gives identical values for shuffled frame orders (one mounted instance) | KEEP: hook cache/lifecycle returns stale seek outputs; no per-preset hook replay remains. | R |
+| builds once ready, seeks per ms before paint and reverts on unmount | KEEP: builds before ready, wrong rendered opacity, or stale inline style after cleanup. | R |
+| createPausedTimeline drops loop / frameRate / alternate (seek-only driving) | KEEP: unsafe options cause indefinite duration, stalled values, wrong clamping/nonfinite seek. | R |
+| createPausedTimeline drops the unsafe keys from defaults too (children inherit them) | REWRITE: keep finite usable inherited behavior and caller integrity; remove third-party raw-loop demonstration. | R |
+| resolveEase steps: non-finite counts fall back to 8 | KEEP: malformed public option produces wrong stepped result. | R |
+| useAnimeValues: StrictMode double renders and a buildKey change give the values of a fresh build | KEEP: key change retains old animation values. | R |
+| useAnimeDom: StrictMode re-mount rebuilds on pristine targets; build-added attributes are removed | REWRITE: replace exact build-count arrays with caller-visible restored attribute/output on key change and cleanup. | R |
+| segmentText keeps grapheme clusters: combining marks, ZWJ emoji, flags, CRLF, NBSP | KEEP: Unicode clusters/whitespace split or indices are corrupted. | U |
+| segmentText words: CJK/Thai dictionary words, emoji-only words, tabs; text always round-trips | KEEP: words/text lost or whitespace assigned animated indices. | U |
+| segmentText without Intl.Segmenter approximates clusters | KEEP: fallback corrupts combining, skin tone, flag or punctuation text. | U |
+| needsShaping: RTL (incl. newer RTL scripts and bidi controls), complex scripts and joiners | KEEP: shaping fallback breaks complex/RTL glyphs or wrongly groups Latin/emoji. | U |
+| groupLines measures through offset parents (positioned wrappers) in the container space | KEEP: nested positioned wrappers put all words in the same animation line. The stub supplies native layout input, not the grouping algorithm. | U |
+
+## Other decisions
+
+| Path | Existing title | Disposition, failure / remaining stronger owner, callers and risk | Bar / validation |
+| --- | --- | --- | --- |
+| packages/motion/test/text.test.ts | every offered preset resolves and an unknown version does not | KEEP: catalogue preset unavailable or unknown version silently mapped. TextLayer is non-test caller; low risk. | C / package gates |
+| packages/motion/test/text.test.ts | every offered ease has a runtime implementation | DELETE: compares two declarations and never invokes an easing. Real preset build cases and resolveEase tests own usable behavior. EASE_NAMES has no production caller; remove unused duplicate list/export. | — / package gates |
+| packages/motion/test/templates-review.test.tsx | callout pulse is hidden at the clip start and on the head handle | REWRITE/move to determinism-render.e2e.test.ts: raw SVG attribute is not visibility, but the recorded defect is real. Render callout alone on transparent background; frame 0 must contain no painted alpha and frame 5 is a painted control. PNGs are artifacts. | V / browser gate |
+| packages/motion/test/templates-review.test.tsx | a large counter advances at frame precision and reaches both endpoints | REWRITE: query displayed numeric text with label disabled instead of data-part. Counter is shipped via template registry; low risk. | G / package gates |
+| packages/motion/test/determinism.test.tsx | ${key} is order-independent, rests outside its window and keeps the build contract | REWRITE for each key: fade@1, slide-up@1, slide-down@1, slide-left@1, slide-right@1, pop@1, blur@1, typewriter@1, typewriter@2, tracking@1, mask-reveal@1, rotate-in@1, drop@1. Keep output/rest/order and cross-build value isolation at public build API; delete duplicate hook traversal, private imports, exact target-key inventory and wall-clock call interception; cross-build interference is checked by changed values, not target object identity. TextLayer and template runtime call builders; explicit lint owns banned clock calls. | D / package gates |
+| packages/motion/test/determinism-render.e2e.test.ts | ${id}: renderStill per frame = renderFrames c1 = c4 = reversed = shuffled (byte-identical PNGs) | KEEP (id=Sequence): separate renderer history/concurrency drift. SequenceComposition production renderer, no stronger owner; high-value browser contract. | E / browser gate |
+| packages/motion/test/determinism-render.e2e.test.ts | renderMedia (ProRes 4444) at concurrency 1 and 4 decodes to identical frames | KEEP: media codec/concurrency output mismatch; still comparison cannot detect this. | E / browser gate |
+| packages/motion/test/determinism-render.e2e.test.ts | ${id}: the Player frame matches renderStill (≤ 3/255 on ≥ 99.5 % of the pixels) | KEEP (id=Sequence): preview/export mismatch across independent rendering paths. | E / browser gate |
+| packages/motion/test/determinism-render.e2e.test.ts | ${id}: a paused Player revisiting frames in any order shows byte-identical pixels | KEEP (id=Sequence): documented incremental raster history bug beyond build values. | E / browser gate |
+| packages/motion/test/determinism-render.e2e.test.ts | ANM-015: a 200-unit title computes its values in ≤ 2 ms per frame (median, first visits) | REWRITE: measure public hook computation, remove private valuesAt export and unsupported 0.1ms cache-revisit threshold. Hook has real production callers; measurement stays in Chrome. | P / browser gate |
+| packages/compositions/test/text-animation.test.tsx → packages/motion/test/text.test.ts | typewriter@2 caret blinks as a function of the frame: solid while typing, blinking when idle, never at rest | REWRITE/move actual versioned cursor timing to public TextAnimationImpl caretVisible output with literal frame/state table, avoiding private DOM caret selectors; rest/window DOM checks are disposed by compositions owner. | C / package gates |
+
+The isolated runtime can fail by wrong pause/seek/time conversion, unstable seed bytes/random output, malformed easing behavior, stale/mutable hook snapshots, dirty rebuild cleanup, Unicode loss or incorrect line grouping. Retained tests correspond to these distinct failures. The preset API can fail by unavailable versions, order-dependent/invalid/rest values or wrong versioned caret timing. No private declaration/shape assertion is retained to cover those failures.
+
+Planned dead support removal: old general-purpose determinism harness reporters/clock spies and hook replay; private `valuesAt` export; unused `EASE_NAMES` declaration/export; no-longer-used template `data-part` test selectors (keep title while E2E uses it). `roundValue` remains needed by the production counter. Other documented package APIs remain intact.
+
+
+## Completed implementation and validation
+
+Cleanup is implemented, not merely audited. Rewrites removed the general-purpose report/diff/clock-spy harness, its repeated mounted-hook traversal, implementation-derived rest values and exact target key inventory. The retained compact harness checks fixed rest values, finite public values, seek order and cross-build output isolation. Removed `EASE_NAMES` and the test-only `valuesAt` export. Removed unused template `data-part` attributes; the title selector remains because the existing E2E workflow uses it. Production numerical/rendering behavior is unchanged.
+
+The ring regression moved to actual transparent PNG alpha, preserving its credible failure mode. First-frame stills and Player revisit PNGs are now saved alongside existing media/JSON reports so each rendering workflow leaves verifiable artifacts. The browser performance test uses `useAnimeValues`; its unrequired 0.1ms private cache threshold is gone.
+
+Validation evidence so far:
+
+* Baseline `pnpm --filter @jasper/motion test`: 38 passed, 5 optional browser tests skipped.
+* `pnpm --filter @jasper/motion typecheck`: passed, exit 0.
+* `pnpm exec biome check packages/motion`: passed, 29 files.
+* Updated unit pass: 35 tests passed, one failed only the runner's 5000ms timeout during host load around 173; no behavioral mismatch. A targeted runtime run with a temporary runner budget passed all 20 tests. The timeout source change was reverted; repository validation uses a CLI timeout under root coordination. No production fix or test deletion was used to hide the timeout.
+* `git diff --check -- packages/motion docs/audits/test-cleanup-motion-round2.md`: passed. Final diff reviewed for private seam references and unintended behavior changes.
+* Final unit/repository gates: coordinated by root, with the duplicate local run cancelled to reduce contention.
+* Chrome full run `REMOTION_E2E=1 pnpm --filter @jasper/motion exec vitest run test/determinism-render.e2e.test.ts`: all five existing still/media/Player/performance contracts passed. The new ring rewrite initially rendered the unfiltered Sequence because Remotion uses resolved `composition.props`; corrected the test setup to resolve layer-filter/transparent props through `selectComposition` (no product changes). The corrected targeted command `REMOTION_E2E=1 pnpm --filter @jasper/motion exec vitest run test/determinism-render.e2e.test.ts -t 'callout paints no premature pulse'` passed 1/1, with the five unrelated tests skipped. All six retained browser contracts have passing evidence.
+* Parity/media/Player/performance artifacts: `/var/lib/orquester/tmp/jasper-anm014-PD4Kxw` (40 stills, 40 Player PNGs, both ProRes MOVs, `player-Sequence.json`, `anm-015.json`). Measured public-hook median: 0.5ms against the unchanged 2ms limit.
+* Corrected ring regression artifacts: `/var/lib/orquester/tmp/jasper-anm014-N34yot/callout-0.png` and `callout-5.png`; first frame has zero alpha, control frame paints. Disregard the older ring PNGs in the initial full-run directory, which intentionally exposed the fixture setup error.
+
+Final motion code/test delta: 172 lines added, 359 removed (net −187), excluding this audit. No retained behavioral failure required a production fix. Final repository gates, commit and push are owned by the root agent.
+
+Final pre-edit support sweep: `PARITY_DOC_FRAMES` in `test/determinism-render/doc.ts` has only same-module uses; both external consumers import `parityDoc` / `PARITY_SCENE`. Remove its unused export while preserving the fixture's 40-frame value. Risk: none to fixture behavior; caller search and existing parity validation cover the unchanged fixture.

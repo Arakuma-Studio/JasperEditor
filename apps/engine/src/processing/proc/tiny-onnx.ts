@@ -1,8 +1,6 @@
 // A tiny ONNX super-resolution model (S07:PST-034, tests; also the runtime self-test of ortProviders): a 1×1 convolution (3 → 12 channels) followed by
-// DepthToSpace(2, CRD) = a 2× nearest-neighbour upscale (with an optional gain). Written as raw protobuf so
+// DepthToSpace(2, CRD) = a 2× nearest-neighbour upscale. Written as raw protobuf so
 // tests need no Python and no downloads. A few hundred bytes.
-import { createHash } from 'node:crypto';
-import { writeFileSync } from 'node:fs';
 
 function varint(n: number | bigint): number[] {
 	let v = BigInt(n);
@@ -32,10 +30,10 @@ function valueInfo(name: string, shape: Array<number | string>): number[] {
 	return [...str(1, name), ...bytes(2, typeProto)];
 }
 
-/** Builds the model bytes. `gain` multiplies the output (lets tests tell models apart). */
-export function tinySrModel(gain = 1): Uint8Array {
+/** Builds the model bytes. The runtime uses it to probe execution providers. */
+export function tinySrModel(): Uint8Array {
 	const weights = new Float32Array(12 * 3);
-	for (let c = 0; c < 3; c++) for (let s = 0; s < 4; s++) weights[(c * 4 + s) * 3 + c] = gain;
+	for (let c = 0; c < 3; c++) for (let s = 0; s < 4; s++) weights[(c * 4 + s) * 3 + c] = 1;
 	const raw = new Uint8Array(weights.buffer);
 	const initializer = [
 		...vint(1, 12),
@@ -72,11 +70,4 @@ export function tinySrModel(gain = 1): Uint8Array {
 		...bytes(8, [...str(1, ''), ...vint(2, 17)]),
 	];
 	return Uint8Array.from(model);
-}
-
-/** Writes the model to `file`; returns its sha256. */
-export function writeTinySrModel(file: string, gain = 1): string {
-	const b = tinySrModel(gain);
-	writeFileSync(file, b);
-	return createHash('sha256').update(b).digest('hex');
 }

@@ -1,10 +1,3 @@
-// keyframes.simplify on documents (S09:TRK-023, S01:KF-010): corner pins and Motion baked by tracker.apply from
-// the trailer's real tracks (MatsSmileTrailer/mg/public/tracks/*.json, read-only) and from property-based synthetic
-// tracks are simplified, and the drawn layer (resolveSceneAt — what the Player and the warp stage draw) must stay
-// within the tolerance in sequence pixels at every frame; selection spans, locked tracks, undo-ability (one
-// transaction), dry runs and `tracker.apply {simplify}` are covered too.
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -21,13 +14,9 @@ import {
 import { Harness, videoAsset } from './helpers.ts';
 
 const F = flicksPerFrame({ num: 30, den: 1 });
-const TRACKS =
-	process.env.JASPER_TRAILER_TRACKS ??
-	'/var/lib/orquester/workspaces/jaspersito/MatsSmileTrailer/mg/public/tracks';
 
 type Kf = { id: string; time: number; value: unknown; interpolation: string };
 type Anim = { value: unknown; keyframes: Kf[] };
-type FxDoc = { id: string; effectId: string; params: Record<string, Anim> };
 
 /** Plate (1920×1080 video, V1) and a 1280×720 replacement (V2) with its own Motion (scale 150 %, rotation 4°). */
 function setup(frames: number) {
@@ -100,14 +89,6 @@ function maxShift(a: Vec2[] | Quad, b: Vec2[] | Quad): number {
 	return m;
 }
 
-function keyCount(h: Harness, clipId: string): number {
-	const c = h.seq.clips[clipId] as unknown as { transform: Record<string, Anim | boolean>; effects: FxDoc[] };
-	let n = 0;
-	for (const v of Object.values(c.transform)) if (typeof v === 'object') n += v.keyframes.length;
-	for (const fx of c.effects) for (const a of Object.values(fx.params)) n += a.keyframes.length;
-	return n;
-}
-
 /** Applies a dense planar track to the target as a corner pin (tracker.add/setSamples/apply). */
 function bakeCornerPin(h: Harness, plate: string, target: string, quads: Quad[]) {
 	const data: number[] = [];
@@ -160,59 +141,6 @@ function simplify(h: Harness, cmd: Record<string, unknown>): SimplifyReport {
 	const r = h.ok([{ type: 'keyframes.simplify', ...cmd }]);
 	return r.results[0] as SimplifyReport;
 }
-
-const quadOf = (c: { tl: Vec2; tr: Vec2; br: Vec2; bl: Vec2 }): Quad => [c.tl, c.tr, c.br, c.bl];
-
-describe.skipIf(!existsSync(TRACKS))('real trailer tracks (MatsSmileTrailer/mg/public/tracks)', () => {
-	const files = existsSync(TRACKS) ? readdirSync(TRACKS).filter((f) => f.endsWith('.json')) : [];
-	const rows: string[] = [];
-	for (const file of files) {
-		const json = JSON.parse(readFileSync(join(TRACKS, file), 'utf8')) as {
-			corners?: { tl: Vec2; tr: Vec2; br: Vec2; bl: Vec2 }[];
-			keyframes?: { x: number; y: number; scale?: number; rotation?: number }[];
-		};
-		const n = json.corners?.length ?? json.keyframes?.length ?? 0;
-		if (n < 3) continue;
-		for (const tol of [0.1, 0.5]) {
-			it(`${file} (${n} frames, ${json.corners ? 'corner pin' : 'Motion'}) stays within ${tol} px`, () => {
-				const { h, plate, target } = setup(n);
-				if (json.corners) bakeCornerPin(h, plate, target, json.corners.map(quadOf));
-				else bakeMotion(h, target, json.keyframes!);
-				const before = drawn(h, target, n);
-				const fine = drawn(h, target, n, 32);
-				const kBefore = keyCount(h, target);
-				const report = simplify(h, { clipIds: [target], tolerance: tol });
-				const after = drawn(h, target, n);
-				const fineAfter = drawn(h, target, n, 32);
-				let worst = 0;
-				let worstGrid = 0;
-				let worstFine = 0;
-				for (let f = 0; f < n; f++) {
-					worst = Math.max(worst, maxShift(after[f]!.quad, before[f]!.quad));
-					worstGrid = Math.max(worstGrid, maxShift(after[f]!.grid, before[f]!.grid));
-					worstFine = Math.max(worstFine, maxShift(fineAfter[f]!.grid, fine[f]!.grid));
-				}
-				// The drawn corners and the 9×9 grid over the picture (corner pins are verified on it) stay within.
-				expect(worst).toBeLessThanOrEqual(tol + 1e-9);
-				expect(worstGrid).toBeLessThanOrEqual(tol + 1e-9);
-				expect(report.maxError).toBeLessThanOrEqual(tol);
-				expect(report.after).toBeLessThanOrEqual(report.before);
-				expect(keyCount(h, target)).toBe(kBefore - report.removed);
-				// Motion is affine: every point of the picture is bounded by the corners; a pin between grid points
-				// can only exceed it by a second-order amount (measured on 33×33).
-				if (!json.corners) expect(worstFine).toBeLessThanOrEqual(tol + 1e-9);
-				else expect(worstFine).toBeLessThanOrEqual(tol * 1.02);
-				rows.push(
-					`${file} tol ${tol}px: ${report.before} → ${report.after} keys (${Math.round((100 * report.after) / report.before)} %), corners ${worst.toFixed(4)} px, 9×9 ${worstGrid.toFixed(4)} px, 33×33 ${worstFine.toFixed(4)} px`,
-				);
-			});
-		}
-	}
-	it('reports', () => {
-		// Printed for the wp-notes (vitest shows console output with --reporter verbose).
-		console.log(rows.join('\n'));
-	});
-});
 
 describe('keyframes.simplify (document)', () => {
 	it('property: random dense corner-pin and Motion tracks stay within the tolerance at every frame', () => {
@@ -267,8 +195,10 @@ describe('keyframes.simplify (document)', () => {
 					const before = drawn(h, target, n);
 					const report = simplify(h, { clipIds: [target], tolerance: tol });
 					const after = drawn(h, target, n);
-					for (let f = 0; f < n; f++)
+					for (let f = 0; f < n; f++) {
 						expect(maxShift(after[f]!.quad, before[f]!.quad)).toBeLessThanOrEqual(tol + 1e-9);
+						expect(maxShift(after[f]!.grid, before[f]!.grid)).toBeLessThanOrEqual(tol + 1e-9);
+					}
 					expect(report.maxError).toBeLessThanOrEqual(tol);
 				},
 			),
@@ -317,7 +247,7 @@ describe('keyframes.simplify (document)', () => {
 		).toBe(n);
 	});
 
-	it('simplifies value parameters in their own units and skips hold-only ones', () => {
+	it('simplifies opacity within the requested tolerance in percentage units', () => {
 		const { h, target } = setup(40);
 		const cmds: unknown[] = [
 			{ type: 'param.setAnimated', target: ['clip', target, 'opacity'], animated: true, at: { frames: 0 } },
@@ -333,7 +263,13 @@ describe('keyframes.simplify (document)', () => {
 		const report = simplify(h, { targets: [['clip', target, 'opacity']], tolerance: 0.5 });
 		expect(report.groups[0]!.kind).toBe('value');
 		expect(report.groups[0]!.unit).toBe('%');
-		expect(report.after).toBeLessThan(15);
+		expect(report.after).toBeLessThan(report.before);
+		const snap = buildRenderSnapshot(h.doc, h.seqId, { resolveMedia: () => null, resolveFont: () => null });
+		for (let frame = 0; frame < 40; frame++) {
+			const opacity = resolveSceneAt(snap, frame).find((layer) => layer.clip.clipId === target)!.props
+				.opacity;
+			expect(Math.abs(opacity - (50 + 40 * Math.sin(frame / 8)))).toBeLessThanOrEqual(0.5);
+		}
 		expect(report.maxError).toBeLessThanOrEqual(0.5);
 	});
 
@@ -384,13 +320,17 @@ describe('keyframes.simplify (document)', () => {
 			target,
 			Array.from({ length: 10 }, (_, i) => ({ x: i, y: i })),
 		);
+		const before = h.doc;
 		const bad = h.tx([
 			{ type: 'keyframes.simplify', clipIds: [target], targets: [['clip', target, 'opacity']], tolerance: 1 },
 		]);
-		expect(bad.ok).toBe(false);
+		expect(bad.ok ? null : bad.errors[0]!.code).toBe('E_INVALID_PARAM');
+		expect(h.doc).toBe(before);
 		const v2 = (h.seq.clips[target] as Clip).trackId;
 		h.ok([{ type: 'track.update', trackId: v2, patch: { locked: true } }]);
+		const lockedBefore = h.doc;
 		const locked = h.tx([{ type: 'keyframes.simplify', clipIds: [target], tolerance: 1 }]);
-		expect(locked.ok).toBe(false);
+		expect(locked.ok ? null : locked.errors[0]!.code).toBe('E_TRACK_LOCKED');
+		expect(h.doc).toBe(lockedBefore);
 	});
 });

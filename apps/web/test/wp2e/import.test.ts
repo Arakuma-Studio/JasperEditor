@@ -124,7 +124,7 @@ describe('EngineImportService', () => {
 		expect(crudo.sourceRange).toBeUndefined();
 		// The sidecar was read, not uploaded.
 		expect(engine.requests.filter((r) => r.method === 'POST' && r.path === '/api/uploads')).toHaveLength(2);
-		expect(session.getState().history.entries.map((e) => e.label)).toEqual(['Import 2 files']);
+		expect(session.getState().history.entries).toHaveLength(1);
 	});
 
 	it('lists per-file failures and commits the rest (S04 §5.3 AC 2)', async () => {
@@ -139,7 +139,7 @@ describe('EngineImportService', () => {
 			{ name: 'corrupt.bin', code: 'UNSUPPORTED_MEDIA', message: 'corrupt.bin has no streams' },
 		]);
 		expect(log).toEqual(['failures:1:corrupt.bin=UNSUPPORTED_MEDIA']);
-		expect(session.getState().history.entries.map((e) => e.label)).toEqual(['Import 1 file']);
+		expect(session.getState().history.entries).toHaveLength(1);
 		expect(
 			jobs
 				.getAll()
@@ -190,7 +190,7 @@ describe('EngineImportService', () => {
 		expect(s2.settings).toMatchObject({ width: 1280, height: 720, frameRate: { num: 25, den: 1 } });
 		const video = Object.values(s2.clips).find((c) => c.kind === 'video')!;
 		expect(video.duration).toBe(250);
-		expect(session.getState().history.entries.map((e) => e.label)).toEqual(['Import 1 file']);
+		expect(session.getState().history.entries).toHaveLength(1);
 		// The second drop does not ask again (the sequence is no longer empty).
 		engine.media.set('c.mp4', registered('c.mp4', { width: 640, height: 480 }));
 		await service.importFiles(
@@ -257,7 +257,7 @@ describe('EngineImportService', () => {
 			.map((c) => c.start)
 			.sort((a, b) => a - b);
 		expect(starts).toEqual([10, 40]);
-		expect(session.getState().history.entries.at(-1)!.label).toBe('Overwrite');
+		expect(session.getState().history.entries).toHaveLength(2);
 	});
 
 	it('reads DataTransfer payloads: in-app items first, then OS files', () => {

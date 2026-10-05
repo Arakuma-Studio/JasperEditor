@@ -181,14 +181,20 @@ describe.runIf(enabled && !!LGPL_DIR)('Remotion with the LGPL binaries directory
 	}, 300_000);
 
 	it('renders a still through the LGPL compositor', async () => {
+		const stillDoc = new DocBuilder('hd-720p-30');
+		stillDoc.tx([
+			{ type: 'clip.addText', at: 0, duration: 24, track: 'V1', content: { text: 'LGPL still' }, ref: '$t' },
+		]);
+		stillDoc.tx([{ type: 'clip.update', clipIds: stillDoc.clipIds(), patch: { blendMode: 'screen' } }]);
 		const r = await engine.app.inject({
 			method: 'POST',
 			url: '/api/stills',
 			headers: { ...host(), 'content-type': 'application/json' },
-			payload: { envelope: d.envelope(), sequenceId: d.seqId, frame: 10 },
+			payload: { envelope: stillDoc.envelope(), sequenceId: stillDoc.seqId, frame: 10 },
 		});
 		const job = await coreServices(engine.app).queue.wait(r.json().id);
 		expect(job.state).toBe('succeeded');
+		expect(job.result).toMatchObject({ renderPath: 'remotion' });
 		const png = await engine.app.inject({
 			method: 'GET',
 			url: (job.result as { url: string }).url,

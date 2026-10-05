@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { ProjectDocument } from '@jasper/project';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
@@ -132,6 +133,43 @@ afterAll(async () => {
 }, 30_000);
 
 describe('tracking tools (S09:TRA-001/002, §8 item 7)', () => {
+	it('set_corner_pin stores the requested sequence-pixel corners on the clip', async () => {
+		const { projectId } = await ok<{ projectId: string }>('create_project', { name: 'Manual pin' });
+		const solid = await ok<{ refs: Record<string, string> }>('apply_commands', {
+			projectId,
+			label: 'Solid',
+			commands: [{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V1', color: [1, 0, 1, 1], ref: '$s' }],
+		});
+		const clipId = solid.refs.$s!;
+		await ok('set_corner_pin', {
+			projectId,
+			clipId,
+			corners: [
+				[192, 108],
+				[1728, 216],
+				[1536, 972],
+				[384, 864],
+			],
+		});
+		const resource = await client.readResource({ uri: `jasper://projects/${projectId}/document` });
+		const doc = JSON.parse((resource.contents[0] as { text: string }).text) as ProjectDocument;
+		const clip = Object.values(doc.sequences)[0]!.clips[clipId]!;
+		if (clip.kind !== 'solid') throw new Error('Pinned solid missing');
+		const pin = clip.effects.find((effect) => effect.effectId === 'jasper.corner-pin')!;
+		for (const [name, expected] of Object.entries({
+			topLeft: [0.1, 0.1],
+			topRight: [0.9, 0.2],
+			bottomRight: [0.8, 0.9],
+			bottomLeft: [0.2, 0.8],
+		})) {
+			const param = pin.params[name]!;
+			expect(param.keyframes).toEqual([]);
+			const value = param.value as number[];
+			expect(value[0]).toBeCloseTo(expected[0]!);
+			expect(value[1]).toBeCloseTo(expected[1]!);
+		}
+	});
+
 	it('add_tracker + track + apply_tracking + render_frame pins the overlay within 3 px of the ground truth', async () => {
 		const truth = JSON.parse(readFileSync(TRUTH, 'utf8')) as Truth;
 		const { projectId } = await ok<{ projectId: string }>('create_project', { name: 'Tracking' });
@@ -232,26 +270,4 @@ describe('tracking tools (S09:TRA-001/002, §8 item 7)', () => {
 			}
 		}
 	}, 900_000);
-
-	it('set_corner_pin places corners in sequence pixels', async () => {
-		const { projectId } = await ok<{ projectId: string }>('create_project', { name: 'Pin' });
-		const solid = await ok<{ refs: Record<string, string> }>('apply_commands', {
-			projectId,
-			label: 'Solid',
-			commands: [{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V1', color: [1, 0, 1, 1], ref: '$s' }],
-		});
-		const clipId = solid.refs.$s!;
-		const r = await ok<{ normalizedCorners: [number, number][] }>('set_corner_pin', {
-			projectId,
-			clipId,
-			corners: [
-				[192, 108],
-				[1728, 216],
-				[1536, 972],
-				[384, 864],
-			],
-		});
-		expect(r.normalizedCorners[0]).toEqual([0.1, 0.1]);
-		expect(r.normalizedCorners[2]).toEqual([0.8, 0.9]);
-	});
 });

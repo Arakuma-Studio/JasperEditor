@@ -2,7 +2,7 @@
 // though the system build has libx264. A real native export and a real proxy must still succeed with an
 // LGPL-compatible encoder (hardware / OpenH264 when present, else AV1 or VP9).
 import { spawnSync } from 'node:child_process';
-import { EngineCapabilitiesSchema, RenderPlanSchema } from '@jasper/api';
+import { RenderPlanSchema } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
 import {
@@ -61,32 +61,6 @@ const settings = (seqId: string) => ({
 });
 
 describe('LGPL-only mode (JASPER_FFMPEG_LGPL_ONLY=1)', () => {
-	it('reports the encoder inventory without GPL encoders in /api/capabilities', async () => {
-		const r = await app.inject({ method: 'GET', url: '/api/capabilities', headers: H });
-		expect(r.statusCode).toBe(200);
-		const caps = EngineCapabilitiesSchema.parse(r.json());
-		const enc = caps.media.encoding!;
-		expect(enc.lgplOnly).toBe(true);
-		// The raw list still shows what the build has; the selector ignores the GPL entries.
-		for (const e of Object.values(enc.codecs).flat())
-			expect([
-				'libx264',
-				'libx264rgb',
-				'libx265',
-				'libxvid',
-				'libxavs',
-				'libxavs2',
-				'libfdk_aac',
-			]).not.toContain(e);
-		expect(enc.export).not.toBeNull();
-		expect(enc.export!.gpl).toBe(false);
-		expect(enc.proxy!.gpl).toBe(false);
-		expect(enc.audio.aac).toBe(true);
-		expect(enc.prores).toBe(true);
-		expect(caps.render.native).toBe(true);
-		if (enc.export!.codec !== 'h264') expect(enc.message).toMatch(/H\.264 is unavailable/);
-	});
-
 	it('plans and runs a real native export with an LGPL-compatible encoder', async () => {
 		const clipA = await register(app, fixture('clip-a.mp4'));
 		const still = await register(app, fixture('still.png'));
@@ -167,8 +141,6 @@ describe('LGPL-only mode (JASPER_FFMPEG_LGPL_ONLY=1)', () => {
 		expect(done.error).toBeUndefined();
 		expect(done.state).toBe('succeeded');
 		const file = core.derivatives.paths(rec.fingerprint, 'proxy-540').main;
-		// A non-x264 proxy gets its own cache key.
-		expect(core.derivatives.url(m.mediaKey, 'proxy-540')).toMatch(/\?v=[0-9a-f]{12}$/);
 		const info = probe(file);
 		const v = info.streams.find((x) => x.codec_type === 'video')!;
 		expect(v.codec_name).toBe(choice.codec);

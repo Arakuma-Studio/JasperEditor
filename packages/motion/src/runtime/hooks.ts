@@ -35,10 +35,7 @@ const VALUE_CACHE_SIZE = 600;
  * Frozen copies of the targets of `built` seeked canonically to `ms`. Cached per (build, ms): revisits (scrubbing,
  * StrictMode double renders, Player re-renders of the same frame) return the same frozen array without seeking.
  */
-export function valuesAt<T extends Record<string, number>>(
-	built: Built<T>,
-	ms: number,
-): readonly Readonly<T>[] {
+function valuesAt<T extends Record<string, number>>(built: Built<T>, ms: number): readonly Readonly<T>[] {
 	const t = Number.isFinite(ms) ? ms : 0;
 	let cache = valueCache.get(built);
 	if (!cache) valueCache.set(built, (cache = new Map()));

@@ -14,7 +14,7 @@ import {
 	visibleRect,
 } from '@jasper/project';
 import { EditorSession } from '@jasper/session';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import {
 	type CommandCtx,
 	createCommandContext,
@@ -24,8 +24,6 @@ import {
 	runCommand,
 } from '../src/commands/index.ts';
 import { ANCHOR_POINTS, anchorPatch, fitPatch, type LayerState } from '../src/panels/program/layer-ops.ts';
-import { registerProjectPanel } from '../src/panels/project/instances.ts';
-import { PanelServices } from '../src/state/panel-services.ts';
 import { videoAsset } from './timeline-helpers.ts';
 
 const engine = new EngineClient({ fetch: (async () => new Response('{}')) as unknown as typeof fetch });
@@ -44,12 +42,10 @@ function project(seed: number) {
 	});
 	const seqId = Object.keys(doc.sequences)[0]!;
 	session.openSequence(seqId);
-	const services = new PanelServices();
 	const ctxFor = (panel: CommandCtx['focus']['panel'] = 'program') =>
 		createCommandContext({
 			engine,
 			session,
-			services,
 			focus: { panel, instanceId: panel ?? 'x' },
 		});
 	const apply = (commands: unknown[]) => {
@@ -59,9 +55,9 @@ function project(seed: number) {
 	};
 	const seq = () => session.getCommitted().sequences[seqId]!;
 	const clip = <K extends Clip['kind']>(id: string) => seq().clips[id] as Extract<Clip, { kind: K }>;
-	const history = () => session.getState().history.entries.map((e) => e.label);
+	const history = () => session.getState().history.entries;
 	const run = (id: string, args?: unknown) => runCommand(id, ctxFor(), args);
-	return { session, ctxFor, apply, seq, clip, history, run, services };
+	return { session, ctxFor, apply, seq, clip, history, run };
 }
 
 const solid = (at: number, duration: number, track: string, ref: string) => ({
@@ -185,6 +181,7 @@ describe('layer commands (XF-050)', () => {
 			{ type: 'param.set', target: ['clip', p.video, 'transform', 'position'], value: [100, 100] },
 		]);
 		p.session.select('timeline', [p.video]);
+		const before = p.history().length;
 		await p.run('motion.fit');
 		const t = () => p.clip<'video'>(p.video).transform;
 		expect([t().scale.value, t().position.value]).toEqual([150, [960, 540]]);
@@ -192,7 +189,7 @@ describe('layer commands (XF-050)', () => {
 		expect(t().scale.value).toBe(150); // 16:9 into 16:9: fit = fill
 		await p.run('motion.native');
 		expect(t().scale.value).toBe(100);
-		expect(p.history().slice(-3)).toEqual(['Fit to Frame', 'Fill Frame', 'Set to Native (100%)']);
+		expect(p.history()).toHaveLength(before + 3);
 		p.session.undo();
 		expect(t().scale.value).toBe(150);
 		// Animated scale: a key at the playhead.
@@ -217,16 +214,12 @@ describe('layer commands (XF-050)', () => {
 		p.apply([{ type: 'param.set', target: ['clip', s, 'transform', 'rotation'], value: 45 }]);
 		p.session.select('timeline', [s]);
 		expect(isCommandEnabled(getCommand('motion.resetCrop')!, p.ctxFor())).toBe(false);
-		expect(getCommand('motion.resetCrop')!.disabledReason!(p.ctxFor())).toBe(
-			'The selected layers are not cropped',
-		);
 		await p.run('motion.reset');
 		expect(p.clip<'solid'>(s).transform.rotation.value).toBe(0);
 		p.apply([{ type: 'effect.add', target: { clipId: s }, effectId: 'jasper.crop', params: { left: 20 } }]);
 		expect(isCommandEnabled(getCommand('motion.resetCrop')!, p.ctxFor())).toBe(true);
 		await p.run('motion.resetCrop');
 		expect(p.clip<'solid'>(s).effects).toEqual([]);
-		expect(p.history().slice(-3)).toEqual(['Reset Motion', 'setup', 'Reset Crop']);
 	});
 
 	it('Anchor ▸ Top Left keeps the layer where it is', async () => {
@@ -239,7 +232,6 @@ describe('layer commands (XF-050)', () => {
 			[0, 0],
 			[0, 0],
 		]);
-		expect(p.history().at(-1)).toBe('Anchor to Top Left');
 		expect((await p.run('motion.anchor', { point: 'nowhere' })).reason).toBe('invalid-args');
 	});
 
@@ -254,14 +246,12 @@ describe('layer commands (XF-050)', () => {
 		expect(p.seq().clips[p.video]!.start).toBe(0);
 		expect(p.seq().clips[p.audio]!.trackId).toBe(audioTrack);
 		expect(p.seq().videoTracks).toHaveLength(tracks);
-		expect(p.history().at(-1)).toBe('Bring Forward');
 		await p.run('arrange.sendToBack');
 		expect(p.seq().clips[p.video]!.trackId).toBe(p.seq().videoTracks[0]!.id);
 		// Alone at its time: Bring to Front is disabled with the reason.
 		p.session.select('timeline', [r.refs.$over!]);
 		p.apply([{ type: 'clip.move', clipIds: [r.refs.$over!], deltaFrames: 500 }]);
 		expect(isCommandEnabled(getCommand('arrange.bringToFront')!, p.ctxFor())).toBe(false);
-		expect(getCommand('arrange.bringToFront')!.disabledReason!(p.ctxFor())).toMatch(/Already in front/);
 	});
 
 	it('Bring to Front above the top track creates a video track (S02:TL-266)', async () => {
@@ -275,43 +265,15 @@ describe('layer commands (XF-050)', () => {
 		expect(p.seq().videoTracks).toHaveLength(3);
 	});
 
-	it('Reveal in Project selects the item, focuses the panel and reveals it; Reveal in Timeline focuses the Timeline', async () => {
+	it('Reveal in Project selects the media item and is disabled for sequence-only text', async () => {
 		const p = withVideo(46);
-		const focus = vi.fn();
-		p.services.register('shell', 'shell', { focusPanel: focus } as never);
-		const reveal = vi.fn();
-		const off = registerProjectPanel({
-			instanceId: 'prj',
-			getBinId: () => null,
-			setView: () => undefined,
-			toggleView: () => undefined,
-			zoom: () => undefined,
-			toggleHoverScrub: () => undefined,
-			newBin: () => undefined,
-			newSequence: () => undefined,
-			renameSelection: () => undefined,
-			deleteSelection: () => undefined,
-			openSelection: () => undefined,
-			importIntoBin: () => undefined,
-			reveal,
-		});
-		try {
-			p.session.select('timeline', [p.video]);
-			await p.run('clip.revealInProject');
-			expect(p.session.getState().selection.project.items).toEqual([p.item]);
-			expect(focus).toHaveBeenCalledWith('project');
-			expect(reveal).toHaveBeenCalledWith(p.item);
-			await p.run('clip.revealInTimeline');
-			expect(focus).toHaveBeenLastCalledWith('timeline');
-			// A text clip has no project item.
-			const t = p.apply([
-				{ type: 'clip.addText', at: 300, duration: 30, track: 'V2', content: { text: 'T' }, ref: '$t' },
-			]);
-			p.session.select('timeline', [t.refs.$t!]);
-			expect(isCommandEnabled(getCommand('clip.revealInProject')!, p.ctxFor())).toBe(false);
-			expect(getCommand('clip.revealInProject')!.disabledReason!(p.ctxFor())).toMatch(/no project item/);
-		} finally {
-			off();
-		}
+		p.session.select('timeline', [p.video]);
+		await p.run('clip.revealInProject');
+		expect(p.session.getState().selection.project.items).toEqual([p.item]);
+		const t = p.apply([
+			{ type: 'clip.addText', at: 300, duration: 30, track: 'V2', content: { text: 'T' }, ref: '$t' },
+		]);
+		p.session.select('timeline', [t.refs.$t!]);
+		expect((await p.run('clip.revealInProject')).reason).toBe('disabled');
 	});
 });

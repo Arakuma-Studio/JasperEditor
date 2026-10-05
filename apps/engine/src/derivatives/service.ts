@@ -186,7 +186,7 @@ export class DerivativeService {
 	 * True when the proxies of this media are VP9 WebM with alpha instead of the regular MP4: a video with
 	 * an alpha channel, on a build that has libvpx-vp9.
 	 */
-	alphaProxy(r: AlphaSource | null | undefined): boolean {
+	private alphaProxy(r: AlphaSource | null | undefined): boolean {
 		return (
 			!!r && r.kind === 'video' && r.probe.hasAlpha && (this.deps.encoders?.has(ALPHA_PROXY_ENCODER) ?? false)
 		);

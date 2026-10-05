@@ -13,7 +13,7 @@ mkdirSync(dir);
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
 describe('bundle server for text measuring', () => {
-	it('serves the host page with the probe, the bundle files under its prefix, nothing else', async () => {
+	it('serves bundle files under its loopback prefix and refuses existing files outside it', async () => {
 		writeFileSync(join(dir, 'index.html'), '<html><head><title>b</title></head><body></body></html>');
 		writeFileSync(join(dir, 'bundle.js'), 'window.x = 1;');
 		mkdirSync(join(dir, 'public', 'fonts'), { recursive: true });
@@ -21,10 +21,8 @@ describe('bundle server for text measuring', () => {
 		writeFileSync(join(root, 'secret.txt'), 'no');
 		const s = await serveBundleForMeasuring(dir);
 		try {
-			expect(s.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/[0-9a-f]{32}\/index\.html$/);
-			const html = await (await fetch(s.url)).text();
-			expect(html).toContain('__jasperTexts');
-			expect(html.indexOf('__jasperTexts')).toBeLessThan(html.indexOf('<title>'));
+			expect(new URL(s.url).hostname).toBe('127.0.0.1');
+			expect((await fetch(s.url)).status).toBe(200);
 			const base = s.url.replace(/index\.html$/, '');
 			const js = await fetch(`${base}bundle.js`);
 			expect(js.headers.get('content-type')).toMatch(/javascript/);

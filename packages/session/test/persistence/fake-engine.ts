@@ -6,7 +6,13 @@ import { createCounterIdSource, createEmptyProject, makeEnvelope } from '@jasper
 type Stored = { envelope: Record<string, unknown>; view: unknown; revision: number };
 type LeaseRec = { leaseId: string; sessionId: string; expiresAt: number };
 
-export type FakeRequest = { method: string; path: string; headers: Record<string, string>; body: unknown };
+export type FakeRequest = {
+	method: string;
+	path: string;
+	headers: Record<string, string>;
+	body: unknown;
+	keepalive?: boolean;
+};
 
 export class FakeEngine {
 	projects = new Map<string, Stored>();
@@ -41,7 +47,7 @@ export class FakeEngine {
 		const path = url.split('?')[0]!;
 		const headers = (init.headers ?? {}) as Record<string, string>;
 		const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined;
-		this.requests.push({ method, path, headers, body });
+		this.requests.push({ method, path, headers, body, keepalive: init.keepalive });
 		const fi = this.failures.findIndex((f) => f.match.test(`${method} ${path}`));
 		if (fi >= 0) {
 			const f = this.failures.splice(fi, 1)[0]!;
@@ -63,19 +69,6 @@ export class FakeEngine {
 
 	private route(method: string, path: string, headers: Record<string, string>, body: any): Response {
 		let m: RegExpMatchArray | null;
-		if (method === 'GET' && path === '/api/projects') {
-			return this.json({
-				projects: [...this.projects.entries()].map(([id, p]) => ({
-					projectId: id,
-					name: (p.envelope.document as { name: string }).name,
-					modifiedAt: p.envelope.savedAt,
-					thumbnail: null,
-					schemaVersion: 1,
-					sizeBytes: 10,
-					revision: p.revision,
-				})),
-			});
-		}
 		if (method === 'POST' && path === '/api/projects') {
 			const doc = createEmptyProject({ ids: this.ids, name: body.name, preset: body.preset });
 			this.projects.set(doc.projectId, {
@@ -90,10 +83,6 @@ export class FakeEngine {
 			const p = this.projects.get(id);
 			if (!p) return this.err(404, 'PROJECT_NOT_FOUND');
 			if (method === 'GET') return this.json({ envelope: p.envelope, view: p.view, revision: p.revision });
-			if (method === 'DELETE') {
-				this.projects.delete(id);
-				return this.json({ ok: true });
-			}
 			if (method === 'PUT') {
 				const base = Number(headers['if-match']);
 				if (base !== p.revision) return this.err(409, 'REVISION_CONFLICT', { revision: p.revision });
@@ -102,13 +91,7 @@ export class FakeEngine {
 				return this.json({ revision: p.revision });
 			}
 		}
-		if ((m = path.match(/^\/api\/projects\/([^/]+)\/view$/)) && method === 'PUT') {
-			this.projects.get(decodeURIComponent(m[1]!))!.view = body;
-			return this.json({ ok: true });
-		}
-		if ((m = path.match(/^\/api\/projects\/([^/]+)\/versions$/))) {
-			return this.json({ versions: [] });
-		}
+
 		if ((m = path.match(/^\/api\/projects\/([^/]+)\/lease$/)) && method === 'POST') {
 			const id = decodeURIComponent(m[1]!);
 			const cur = this.leases.get(id);

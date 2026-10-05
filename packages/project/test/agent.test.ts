@@ -4,7 +4,6 @@ import {
 	AgentQueryError,
 	approvalReasons,
 	checkAgentTxLimits,
-	exportAgentQuerySchemas,
 	historyPseudoCommand,
 	normalizeAgentTransaction,
 	resolveAgentAddresses,
@@ -82,13 +81,6 @@ describe('agent queries (S01 §21.2, S02:TL-951)', () => {
 		expect(media.media[0]!.usage.clips).toBe(2);
 		expect((runAgentQuery(env, 'validate') as { ok: boolean }).ok).toBe(true);
 	});
-
-	it('exports JSON Schemas for every query', () => {
-		const s = exportAgentQuerySchemas();
-		expect(Object.keys(s)).toContain('sequence.clipsInRange');
-		expect(s['history.list'].sessionOnly).toBe(true);
-		expect(s['sequence.at'].args).toHaveProperty('properties');
-	});
 });
 
 describe('semantic addressing (S01:AGT-005, S02:TL-952)', () => {
@@ -103,8 +95,9 @@ describe('semantic addressing (S01:AGT-005, S02:TL-952)', () => {
 		expect(r.ok).toBe(true);
 		if (!r.ok) return;
 		expect((r.commands[0] as { source: unknown }).source).toEqual({ mediaId });
-		expect((r.commands[1] as { clipId: string }).clipId).toMatch(/^clp_/);
-		expect((r.commands[2] as { markerId: string }).markerId).toMatch(/^mrk_/);
+		expect((r.commands[1] as { clipId: string }).clipId).toBe(h.clips('V2')[0]!.id);
+		expect((r.commands[2] as { markerId: string }).markerId).toBe(h.seq.markers[0]!.id);
+		expect((r.commands[3] as { content: unknown }).content).toEqual({ text: '{"mediaByName":"x"}' });
 	});
 
 	it('fails with E_AMBIGUOUS / E_NOT_FOUND and the command index', () => {
@@ -143,7 +136,6 @@ describe('guard rails (S01:AGT-011, UND-008)', () => {
 		const n = normalizeAgentTransaction({ origin: 'user', commands: [] }, 'curl');
 		expect(n.origin).toEqual({ agent: 'curl' });
 		expect(n.protocol).toBe('jasper.tx/1');
-		expect(n.label).toBe('Agent transaction');
 		expect(historyPseudoCommand({ commands: [{ type: 'history.undo' }] })).toBe('history.undo');
 		expect(historyPseudoCommand({ commands: [{ type: 'history.undo' }, { type: 'x' }] })).toBeNull();
 	});

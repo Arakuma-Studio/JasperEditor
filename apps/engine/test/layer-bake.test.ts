@@ -13,9 +13,8 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { PlanCapabilities, PlannedExport } from '../src/export/planner.ts';
 import type { BakeEnvironment } from '../src/layer-bake/key.ts';
-import { bakeClip, effectRunsOrderWarning, isDomLayer, isStaticLayer } from '../src/layer-bake/layer.ts';
+import { bakeClip, effectRunsOrderWarning, isStaticLayer } from '../src/layer-bake/layer.ts';
 import type { LayerBakeService } from '../src/layer-bake/service.ts';
-import { layerBakeService } from '../src/routes/layer-bake.ts';
 import { coreServices } from '../src/tools/services.ts';
 import {
 	closeApps,
@@ -118,21 +117,6 @@ function smallTitle(d: DocBuilder, text: string, o: { at: number; track: string;
 }
 
 describe('DOM layers and static detection (LBK-001, LBK-004)', () => {
-	it('claims text, shapes and anime templates but leaves fframes templates alone', () => {
-		const d = new DocBuilder('hd-720p-30');
-		const t = smallTitle(d, 'Hi', { at: 0, track: 'V1' });
-		inject(d, ANIME_CLIP, { id: 'clp_ANIME00000000001', track: 'V2', start: 0 });
-		inject(d, SHAPE_CLIP, { id: 'clp_SHAPE00000000001', track: 'V3', start: 0 });
-		const ff = { ...ANIME_CLIP, template: { id: 'lower-third', version: 1 } };
-		d.tx([{ type: 'track.add', kind: 'video' }]);
-		inject(d, ff, { id: 'clp_FFRAMES00000001', track: 'V4', start: 0 });
-		const s = snapOf(d);
-		expect(isDomLayer(clipOf(s, t))).toBe(true);
-		expect(isDomLayer(clipOf(s, 'clp_ANIME00000000001'))).toBe(true);
-		expect(isDomLayer(clipOf(s, 'clp_SHAPE00000000001'))).toBe(true);
-		expect(isDomLayer(clipOf(s, 'clp_FFRAMES00000001'))).toBe(false);
-	});
-
 	it('static = no animator, no keyframes anywhere, no anime template, no unknown effect', () => {
 		const d = new DocBuilder('hd-720p-30');
 		const t = smallTitle(d, 'Still', { at: 0, track: 'V1' });
@@ -220,7 +204,7 @@ describe('render keys (LBK-020)', () => {
 	let svc: LayerBakeService;
 	beforeAll(async () => {
 		app = await makeApp();
-		svc = layerBakeService(app)!;
+		svc = app.jasper.services.layerBake as LayerBakeService;
 	});
 	afterAll(closeApps);
 
@@ -371,24 +355,22 @@ describe('planner (LBK-002, LBK-024)', () => {
 	it('a forced native plan rejects a graphics layer when Remotion is unavailable', async () => {
 		const d = new DocBuilder('hd-720p-30');
 		smallTitle(d, 'Title', { at: 0, track: 'V1' });
-		const svc = layerBakeService(app)!;
-		const orig = svc.unavailableReason.bind(svc);
-		svc.unavailableReason = () => 'no browser';
-		try {
-			const r = await app.inject({
-				method: 'POST',
-				url: '/api/exports/plan',
-				headers: JSON_H,
-				payload: {
-					envelope: d.envelope(),
-					sequenceId: d.seqId,
-					settings: settings(d.seqId, { engine: 'native' }),
-				},
-			});
-			expect(r.statusCode).toBe(409);
-		} finally {
-			svc.unavailableReason = orig;
-		}
+		const unavailable = await makeApp({
+			dev: false,
+			env: { JASPER_REMOTION_BIN_DIR: '/nonexistent/remotion-binaries' },
+		});
+		const r = await unavailable.inject({
+			method: 'POST',
+			url: '/api/exports/plan',
+			headers: JSON_H,
+			payload: {
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				settings: settings(d.seqId, { engine: 'native' }),
+			},
+		});
+		expect(r.statusCode).toBe(409);
+		expect(r.json().code).toBe('PATH_NOT_ELIGIBLE');
 	});
 
 	it('`needs-browser-download` is not a blocker (warning BROWSER_DOWNLOAD)', async () => {
@@ -427,7 +409,7 @@ describe('cache, capability and preview route (LBK-021, LBK-030)', () => {
 	let svc: LayerBakeService;
 	beforeAll(async () => {
 		app = await makeApp();
-		svc = layerBakeService(app)!;
+		svc = app.jasper.services.layerBake as LayerBakeService;
 	});
 	afterAll(closeApps);
 

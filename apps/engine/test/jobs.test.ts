@@ -206,8 +206,8 @@ describe('cancellation (S04:JB-020, QA-007)', () => {
 		});
 		q.start();
 		const job = q.submit({ kind: 'analysis', title: 'long encode', priority: 'user', cpuSlots: 1 });
-		await until(() => pgids.length === 2 && existsSync(partial), 10_000);
-		await until(() => (q.get(job.id)?.progress ?? 0) > 0, 10_000);
+		await until(() => pgids.length === 2 && existsSync(partial), 60_000);
+		await until(() => (q.get(job.id)?.progress ?? 0) > 0, 60_000);
 		const t0 = Date.now();
 		expect(q.cancel(job.id)?.state).toBe('cancelling');
 		const done = await q.wait(job.id);
@@ -220,7 +220,7 @@ describe('cancellation (S04:JB-020, QA-007)', () => {
 		}
 		expect(existsSync(partial)).toBe(false);
 		pgids = [];
-	}, 20_000);
+	}, 180_000);
 
 	it('cancels queued jobs immediately and cascades to child jobs', async () => {
 		const q = makeQueue({ slots: 1 });

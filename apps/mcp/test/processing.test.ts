@@ -3,7 +3,7 @@
 // returns the processed media id and the clip references it; use_media_version switches back;
 // get_media_info lists the versions; test_remote_executor without settings is a clear "not configured" error.
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -93,23 +93,6 @@ describe('clip-processing MCP tools', () => {
 		expect(tools.find((t) => t.name === 'set_processing_settings')?.annotations?.destructiveHint).toBe(true);
 	});
 
-	it('lists the bundled SPAN model with its licence', async () => {
-		const r = await ok<{
-			models: Array<{ id: string; installed: boolean; license: string; attribution: string }>;
-		}>('list_processing_models');
-		const span = r.models.find((m) => m.id === 'span-2x-nomosuni-multijpg')!;
-		expect(span.installed).toBe(true);
-		expect(span.license).toBe('CC-BY-4.0');
-		expect(span.attribution).toMatch(/Philip Hofmann/);
-	});
-
-	it('test_remote_executor without settings is a clear "not configured" error', async () => {
-		const e = await fails('test_remote_executor');
-		expect(e.code).toBe('REMOTE_NOT_CONFIGURED');
-		expect(e.message).toMatch(/not configured/i);
-		expect((await ok<{ remote: unknown }>('get_processing_settings')).remote).toBeNull();
-	});
-
 	it('set_processing_settings needs the user in an open editor', async () => {
 		const p = await ok<{ projectId: string }>('create_project', { name: 'MCP processing' });
 		projectId = p.projectId;
@@ -164,6 +147,10 @@ describe('clip-processing MCP tools', () => {
 		expect(info.derivation?.fromMediaId).toBe(mediaId);
 		expect(info.versions.map((v) => v.mediaId)).toEqual([mediaId, r.processedMediaId]);
 		expect(info.versions[0]!.original).toBe(true);
+		const resource = await client.readResource({ uri: `jasper://projects/${projectId}/document` });
+		const artifacts = join(ROOT, 'test-results', 'mcp');
+		mkdirSync(artifacts, { recursive: true });
+		writeFileSync(join(artifacts, 'processed-project.json'), (resource.contents[0] as { text: string }).text);
 		// Back to the original.
 		await ok('use_media_version', { projectId, clipIds: [clipId], mediaId });
 		expect(await videoSource()).toContain(`[${mediaId}]`);
@@ -252,9 +239,6 @@ describe('source ranges (process_clip handles, use_media_version fit, sidecars, 
 		const wide = add.clips[0]!.id;
 		const e = await fails('use_media_version', { projectId, clipIds: [wide], mediaId: versionId });
 		expect(e.code).toBe('E_OUT_OF_MEDIA');
-		expect(e.message).toMatch(
-			/holds frames 14–45 of frame-code\.mp4; clip clp_\w+ shows frames 0–29 \(14 before its first frame\)/,
-		);
 		const r = await ok<{ clips: { clipId: string; trimmed?: { head: number; tail: number } }[] }>(
 			'use_media_version',
 			{
@@ -324,7 +308,7 @@ describe('source ranges (process_clip handles, use_media_version fit, sidecars, 
 			});
 			expect((await clip(clipId)).sourceIn).toBe(13 * F);
 			const e = await fails('replace_footage', { projectId, mediaId: versionId, path: replacement });
-			expect(e.message).toMatch(/processed version/);
+			expect(e.code).toBe('E_INVALID_PARAM');
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

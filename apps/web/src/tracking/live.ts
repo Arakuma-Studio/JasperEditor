@@ -8,7 +8,7 @@ import type { TrackerSamples } from '@jasper/project';
 import { trackingStore } from './store.ts';
 
 /** Minimum interval between strip redraws caused by progress events. */
-export const LIVE_THROTTLE_MS = 100;
+const LIVE_THROTTLE_MS = 100;
 
 type LiveBuffer = {
 	jobId: string | null;
@@ -72,14 +72,6 @@ export function recordLiveProgress(
 function clearLiveProgress(trackerId: string): void {
 	if (!buffers.delete(trackerId)) return;
 	schedule(trackerId);
-}
-
-/** Test hook: forget every buffer and pending redraw. */
-export function resetLiveProgress(): void {
-	buffers.clear();
-	pending.clear();
-	if (bumpTimer !== null) clearTimeout(bumpTimer);
-	bumpTimer = null;
 }
 
 /**

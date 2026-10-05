@@ -595,8 +595,14 @@ export class ProcessingService {
 	/** A directory with the jasper-proc bundle (dist, or built on demand from the checkout). */
 	private async bundleDir(ctx: JobContext): Promise<string> {
 		const existing = procBundle(this.env);
-		if (existing && existsSync(join(dirname(existing), 'jasper-proc.package.json'))) return dirname(existing);
 		const script = join(dirname(new URL(import.meta.url).pathname), '..', '..', 'scripts', 'build-proc.mjs');
+		// Like the local CLI, a checkout must use current source: dist may predate a recipe/runtime bump.
+		if (
+			existing &&
+			existsSync(join(dirname(existing), 'jasper-proc.package.json')) &&
+			(this.env.JASPER_PROC || !existsSync(script))
+		)
+			return dirname(existing);
 		if (!existsSync(script))
 			throw new JobError(
 				'PROC_BUNDLE_MISSING',

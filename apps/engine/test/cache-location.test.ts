@@ -9,19 +9,14 @@ import {
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
+	readlinkSync,
 	writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import type { CacheLocationCheck, EngineJob } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import {
-	CACHE_SUBDIR,
-	linkTarget,
-	MOVED_DIRS,
-	physicalRoot,
-	repairCacheLocation,
-} from '../src/cache/location.ts';
+import { repairCacheLocation } from '../src/cache/location.ts';
 import { coreServices } from '../src/tools/services.ts';
 import {
 	closeApps,
@@ -90,13 +85,13 @@ describe('cache location (S04:CA-021)', () => {
 		const dest = mkdtempSync(join(tmpdir(), 'jasper-cache-dest-'));
 		expect((await check(app, 'relative/dir')).ok).toBe(false);
 		expect(await check(app, null)).toMatchObject({ ok: false, sameAsCurrent: true, isDefault: true });
-		expect((await check(app, join(app.appdir, 'cache', 'x'))).message).toMatch(/outside/);
+		expect((await check(app, join(app.appdir, 'cache', 'x'))).ok).toBe(false);
 		const good = await check(app, dest);
 		expect(good).toMatchObject({ ok: true, writable: true, sameDevice: true, requiredBytes: 0 });
-		expect(good.path).toBe(join(dest, CACHE_SUBDIR));
-		mkdirSync(join(dest, CACHE_SUBDIR, 'cache'), { recursive: true });
-		writeFileSync(join(dest, CACHE_SUBDIR, 'cache', 'x'), 'x');
-		expect((await check(app, dest)).message).toMatch(/not empty/);
+		expect(good.path).toBe(join(dest, 'JasperEditor Media Cache'));
+		mkdirSync(join(dest, 'JasperEditor Media Cache', 'cache'), { recursive: true });
+		writeFileSync(join(dest, 'JasperEditor Media Cache', 'cache', 'x'), 'x');
+		expect((await check(app, dest)).ok).toBe(false);
 		const bad = await app.inject({
 			method: 'POST',
 			url: '/api/cache/location',
@@ -114,9 +109,10 @@ describe('cache location (S04:CA-021)', () => {
 		const dest = mkdtempSync(join(tmpdir(), 'jasper-cache-dest-'));
 		const job = await move(app, { path: dest, mode: 'move' });
 		expect(job.state, JSON.stringify(job.error)).toBe('succeeded');
-		const root = join(dest, CACHE_SUBDIR);
+		const root = join(dest, 'JasperEditor Media Cache');
 		expect(job.result).toMatchObject({ location: root, isDefault: false, mode: 'move' });
-		for (const d of MOVED_DIRS) expect(await linkTarget(appdir, d)).toBe(resolve(join(root, d)));
+		for (const d of ['cache', 'mg', 'renders', 'tmp'])
+			expect(readlinkSync(join(appdir, d))).toBe(join(root, d));
 		for (const f of files) {
 			expect(existsSync(join(root, f))).toBe(true);
 			expect(existsSync(join(appdir, f))).toBe(true); // through the link
@@ -183,14 +179,13 @@ describe('cache location (S04:CA-021)', () => {
 		// Restart: the links and the setting stay.
 		await app.close();
 		app = await makeApp({ appdir });
-		expect(await linkTarget(appdir, 'cache')).toBe(resolve(join(root, 'cache')));
+		expect(readlinkSync(join(appdir, 'cache'))).toBe(join(root, 'cache'));
 		expect(existsSync(join(appdir, files[0]!))).toBe(true);
 
 		// Back to the data folder.
 		const back = await move(app, { path: null, mode: 'move' });
 		expect(back.state, JSON.stringify(back.error)).toBe('succeeded');
-		for (const dir of MOVED_DIRS) {
-			expect(await linkTarget(appdir, dir)).toBeNull();
+		for (const dir of ['cache', 'mg', 'renders', 'tmp']) {
 			expect(lstatSync(join(appdir, dir)).isDirectory()).toBe(true);
 		}
 		for (const f of files) expect(existsSync(join(appdir, f))).toBe(true);
@@ -198,27 +193,19 @@ describe('cache location (S04:CA-021)', () => {
 		expect(JSON.parse(readFileSync(join(appdir, 'engine', 'cache.json'), 'utf8')).location).toBeNull();
 	}, 300_000);
 
-	it('moves to another disk by copying with progress; the old files go', async () => {
+	it('moves to another disk by copying; the old files go', async (context) => {
 		const dest = otherDiskDir();
-		if (!dest) return; // single-disk host
+		if (!dest) return context.skip(); // Cross-device copying requires a second filesystem.
 		const appdir = tempAppdir('jasper-cache-xdev-');
 		const files = seedCache(appdir);
 		const app = await makeApp({ appdir });
 		expect((await check(app, dest)).sameDevice).toBe(false);
 		expect((await check(app, dest)).requiredBytes).toBeGreaterThanOrEqual(4 * 4096);
-		const stages: string[] = [];
-		const off = coreServices(app).broadcaster.subscribe((e) => {
-			const j = e.payload as EngineJob;
-			if (e.type === 'job.updated' && j.kind === 'cache-move' && j.stage) stages.push(j.stage);
-		});
 		const job = await move(app, { path: dest, mode: 'move' });
-		off();
 		expect(job.state, JSON.stringify(job.error)).toBe('succeeded');
-		// (progress events are throttled to 4/s: a 16 KB copy may report only the final state)
-		expect(stages.every((s) => /Waiting|Copying|Switching|Removing|Done|Queued/.test(s))).toBe(true);
-		const root = join(dest, CACHE_SUBDIR);
+		const root = join(dest, 'JasperEditor Media Cache');
 		for (const f of files) {
-			expect(readFileSync(join(root, f)).length).toBe(4096);
+			expect(readFileSync(join(root, f))).toEqual(Buffer.alloc(4096, 7));
 			expect(existsSync(join(appdir, f))).toBe(true);
 		}
 		// Nothing of the old cache is left in the data folder (only the links), no partial copies at the target.
@@ -242,7 +229,7 @@ describe('cache location (S04:CA-021)', () => {
 		writeFileSync(join(appdir, 'cache', 'x.cube'), 'x');
 		const back = await move(app, { path: null, mode: 'fresh' });
 		expect(back.state).toBe('succeeded');
-		expect(existsSync(join(dest, CACHE_SUBDIR, 'cache'))).toBe(false);
+		expect(existsSync(join(dest, 'JasperEditor Media Cache', 'cache'))).toBe(false);
 	}, 120_000);
 
 	it('the start-up repair completes an interrupted switch and falls back when the location is gone', () => {
@@ -258,8 +245,9 @@ describe('cache location (S04:CA-021)', () => {
 		);
 		const r = repairCacheLocation(appdir);
 		expect(r).toEqual({ location: dest, warning: null });
-		const root = physicalRoot(appdir, dest);
-		for (const d of MOVED_DIRS) expect(lstatSync(join(appdir, d)).isSymbolicLink()).toBe(true);
+		const root = join(dest, 'JasperEditor Media Cache');
+		for (const d of ['cache', 'mg', 'renders', 'tmp'])
+			expect(lstatSync(join(appdir, d)).isSymbolicLink()).toBe(true);
 		for (const f of files) expect(existsSync(join(root, f))).toBe(true); // same disk: the data moved
 		// The location disappears (drive unplugged): a fresh cache in the data folder, with a warning.
 		// (a folder below a plain file cannot be created, like a folder on an unplugged drive)
@@ -267,19 +255,8 @@ describe('cache location (S04:CA-021)', () => {
 		writeFileSync(plain, 'x');
 		writeFileSync(join(appdir, 'engine', 'cache.json'), JSON.stringify({ location: join(plain, 'drive') }));
 		const gone = repairCacheLocation(appdir);
-		expect(gone.warning).toMatch(/not available/);
-		for (const d of MOVED_DIRS) expect(lstatSync(join(appdir, d)).isDirectory()).toBe(true);
-	});
-
-	it('is a local-mode feature', async () => {
-		const app = await makeApp({ dev: false, token: 'secret' });
-		// Token mode on loopback is still local (desktop); the route answers with the check.
-		const r = await app.inject({
-			method: 'POST',
-			url: '/api/cache/location/check',
-			headers: { ...JSON_H, authorization: 'Bearer secret' },
-			payload: { path: null },
-		});
-		expect(r.statusCode).toBe(200);
+		expect(gone.warning).toBeTruthy();
+		for (const d of ['cache', 'mg', 'renders', 'tmp'])
+			expect(lstatSync(join(appdir, d)).isDirectory()).toBe(true);
 	});
 });

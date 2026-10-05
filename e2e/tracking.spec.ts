@@ -38,6 +38,7 @@ test.beforeAll(async ({ browser }) => {
 });
 
 test.afterAll(async () => {
+	if (page && !page.isClosed()) await page.screenshot({ path: 'test-results/e2e-tracking-final.png' });
 	await page?.close();
 });
 

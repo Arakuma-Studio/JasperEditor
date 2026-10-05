@@ -1,12 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-	type Animatable,
-	autoSlope,
-	bezierProgress,
-	EASE_PRESETS,
-	evaluate,
-	type Keyframe,
-} from '../src/index.ts';
+import { type Animatable, bezierProgress, EASE_PRESETS, evaluate, type Keyframe } from '../src/index.ts';
 
 const kf = <T>(
 	id: string,
@@ -45,16 +38,7 @@ describe('keyframe evaluation (S01:KF-003/004, AC-08)', () => {
 		);
 		expect(c).toEqual([0.5, 0, 0.5, 1]);
 	});
-	it("easy ease gives p(0.5) = 0.5 and p'(0) = 0", () => {
-		const e = EASE_PRESETS.easy;
-		expect(bezierProgress(0.5, e, e)).toBeCloseTo(0.5, 6);
-		const h = 1e-4;
-		expect(bezierProgress(h, e, e) / h).toBeLessThan(0.05);
-		const a = anim(0, [kf('kf_1', 0, 0, 'bezier', e), kf('kf_2', 100, 100, 'bezier', e)]);
-		expect(evaluate(a, 50)).toBeCloseTo(50, 4);
-		expect(evaluate(a, 10)).toBeLessThan(10);
-		expect(evaluate(a, 90)).toBeGreaterThan(90);
-	});
+
 	it('linear preset equals p = u', () => {
 		for (const u of [0, 0.1, 0.33, 0.5, 0.77, 1])
 			expect(bezierProgress(u, EASE_PRESETS.linear, EASE_PRESETS.linear)).toBeCloseTo(u, 6);
@@ -76,7 +60,6 @@ describe('keyframe evaluation (S01:KF-003/004, AC-08)', () => {
 			kf('kf_2', 100, 100, 'auto-bezier'),
 			kf('kf_3', 200, 0, 'auto-bezier'),
 		]);
-		expect(autoSlope(a.keyframes, 1, 'out')).toBe(0);
 		let max = Number.NEGATIVE_INFINITY;
 		for (let t = 0; t <= 200; t++) max = Math.max(max, evaluate(a, t));
 		expect(max).toBeLessThanOrEqual(100 + 1e-9);
@@ -87,7 +70,6 @@ describe('keyframe evaluation (S01:KF-003/004, AC-08)', () => {
 			kf('kf_2', 100, 50, 'auto-bezier'),
 			kf('kf_3', 200, 100, 'auto-bezier'),
 		]);
-		expect(autoSlope(a.keyframes, 1, 'out')).toBeCloseTo(1, 6);
 		let prev = -1;
 		for (let t = 0; t <= 200; t += 5) {
 			const v = evaluate(a, t);

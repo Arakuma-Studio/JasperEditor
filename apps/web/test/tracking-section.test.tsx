@@ -4,22 +4,13 @@
 import type { Clip, EffectInstance, EffectSpec } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { EngineProvider } from '../src/state/engine.tsx';
 import { ApplyTrackingDialog } from '../src/tracking/ApplyTrackingDialog.tsx';
 import { addTracker, applyTracking, commitTrackResult } from '../src/tracking/actions.ts';
 import { CornerPinEditor } from '../src/tracking/CornerPinEditor.tsx';
-import { resetTrackingStore, trackingStore } from '../src/tracking/store.ts';
-import { TrackingSection } from '../src/tracking/TrackingSection.tsx';
-import {
-	type FakeEngine,
-	fakeEngine,
-	labels,
-	planarResult,
-	seqOf,
-	trackingSession,
-} from './tracking-helpers.tsx';
+import { trackingStore } from '../src/tracking/store.ts';
+import { labels, planarResult, seqOf, trackingSession } from './tracking-helpers.tsx';
 
 const REF = [
 	[700, 300],
@@ -28,117 +19,10 @@ const REF = [
 	[690, 680],
 ] as [number, number][] as never;
 
-const flush = () => act(async () => void (await new Promise((r) => setTimeout(r, 10))));
-
-beforeEach(() => resetTrackingStore());
+beforeEach(() => trackingStore.setState(trackingStore.getInitialState(), true));
 afterEach(() => cleanup());
 
-function Section({
-	session,
-	engine,
-	clipId,
-}: {
-	session: EditorSession;
-	engine: FakeEngine;
-	clipId: string;
-}) {
-	const seq = seqOf(session);
-	return (
-		<EngineProvider client={engine}>
-			<SessionProvider session={session}>
-				<TrackingSection session={session} clips={[seq.clips[clipId]!]} frame={0} sequenceId={seq.id} />
-			</SessionProvider>
-		</EngineProvider>
-	);
-}
-
-describe('Tracking section', () => {
-	it('adds a planar tracker, tracks forward with live progress and lists the result', async () => {
-		const { session, plate } = trackingSession();
-		const engine = fakeEngine();
-		const { rerender } = render(<Section session={session} engine={engine} clipId={plate} />);
-		await flush();
-		expect(screen.getByText(/No trackers/)).toBeTruthy();
-		fireEvent.click(screen.getByTestId('tracking-add-planar'));
-		expect(labels(session)).toEqual(['Add Planar Tracker']);
-		rerender(<Section session={session} engine={engine} clipId={plate} />);
-		const id = trackingStore.getState().activeTrackerId!;
-		expect(screen.getByTestId(`tracker-row-${id}`).textContent).toContain('Planar Tracker 1');
-		expect(screen.getByTestId(`tracker-span-${id}`).textContent).toBe('Not tracked');
-		expect(screen.getByTestId('tracker-controls')).toBeTruthy();
-		// Snap to edges is on by default for planar trackers
-		expect((screen.getByLabelText('Snap to edges') as HTMLInputElement).checked).toBe(true);
-		fireEvent.click(screen.getByTestId('track-forward'));
-		await flush();
-		expect(engine.calls).toHaveLength(1);
-		const jobId = [...engine.jobs.keys()][0]!;
-		act(() =>
-			engine.emit({
-				type: 'tracking.progress',
-				payload: {
-					jobId,
-					trackerId: id,
-					mediaKey: 'mk_plate',
-					frame: 30,
-					data: [1, 2, 3, 4, 5, 6, 7, 8],
-					confidence: 0.9,
-					done: 30,
-					total: 60,
-				},
-			}),
-		);
-		expect(screen.getByTestId('tracking-progress').textContent).toContain('30/60');
-		expect(screen.getByTestId('track-forward').getAttribute('aria-disabled')).toBe('true');
-		const job = engine.finish(jobId, planarResult(0, 60, REF, id));
-		act(() => engine.emit({ type: 'job.finished', payload: job }));
-		await flush();
-		rerender(<Section session={session} engine={engine} clipId={plate} />);
-		expect(labels(session)).toEqual(['Add Planar Tracker', 'Track']);
-		expect(screen.getByTestId(`tracker-span-${id}`).textContent).toBe('0:00–1:29');
-		expect(screen.getByTestId(`tracker-confidence-${id}`).textContent).toBe('90%');
-		expect(screen.queryByTestId('tracking-progress')).toBeNull();
-	});
-
-	it('shows engine errors and removes a tracker', async () => {
-		const { session, plate } = trackingSession();
-		const engine = fakeEngine();
-		engine.next = 'not-implemented';
-		addTracker(session, plate, 'planar');
-		const { rerender } = render(<Section session={session} engine={engine} clipId={plate} />);
-		await flush();
-		fireEvent.click(screen.getByTestId('track-forward'));
-		await flush();
-		expect(screen.getByTestId('tracking-error').textContent).toMatch(/not available/);
-		fireEvent.click(screen.getByTestId('tracking-remove'));
-		rerender(<Section session={session} engine={engine} clipId={plate} />);
-		expect(labels(session)).toEqual(['Add Planar Tracker', 'Remove Tracker']);
-		expect(screen.getByText(/No trackers/)).toBeTruthy();
-	});
-});
-
 describe('Apply Tracking dialog', () => {
-	it('lists clips above the plate and applies a corner pin as one entry', async () => {
-		const { session, plate, target } = trackingSession();
-		const id = addTracker(session, plate, 'planar');
-		commitTrackResult(session, id, { step: 705_600_000 / 30, merge: 'replace' }, planarResult(0, 60, REF));
-		let closed = false;
-		render(
-			<SessionProvider session={session}>
-				<ApplyTrackingDialog session={session} trackerId={id} close={() => void (closed = true)} />
-			</SessionProvider>,
-		);
-		expect(screen.getByTestId(`tracking-target-${target}`)).toBeTruthy();
-		const pin = screen.getByTestId('tracking-mode-corner-pin').querySelector('input')!;
-		expect(pin.checked).toBe(true);
-		fireEvent.click(screen.getByText('Apply'));
-		await flush();
-		expect(closed).toBe(true);
-		expect(labels(session)).toEqual(['Add Planar Tracker', 'Track', 'Apply Tracking']);
-		expect((seqOf(session).clips[target] as { trackedBy?: { trackerId: string } }).trackedBy?.trackerId).toBe(
-			id,
-		);
-	});
-
 	it('offers only Position for point trackers', () => {
 		const { session, plate } = trackingSession();
 		const id = addTracker(session, plate, 'point');

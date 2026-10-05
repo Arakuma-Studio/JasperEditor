@@ -67,10 +67,6 @@ const initial = (): TrackingState => ({
 
 export const trackingStore = createStore<TrackingState>(() => initial());
 
-export function resetTrackingStore(): void {
-	trackingStore.setState(initial(), true);
-}
-
 export function useTracking<T>(selector: (s: TrackingState) => T): T {
 	return useSyncExternalStore(
 		trackingStore.subscribe,

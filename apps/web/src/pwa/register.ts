@@ -1,15 +1,5 @@
 // Register the service worker only in production web builds. If another tab activates a waiting
 // update, reload once it controls this page.
-export type SwEnv = { prod: boolean; desktop: boolean; supported: boolean };
-
-function currentSwEnv(): SwEnv {
-	return {
-		prod: !!import.meta.env?.PROD,
-		desktop: typeof window !== 'undefined' && !!(window as { jasperDesktop?: unknown }).jasperDesktop,
-		supported: typeof navigator !== 'undefined' && 'serviceWorker' in navigator,
-	};
-}
-
 let waiting: ServiceWorker | null = null;
 let reloading = false;
 
@@ -24,8 +14,14 @@ function watch(reg: ServiceWorkerRegistration): void {
 	});
 }
 
-export function registerServiceWorker(env: SwEnv = currentSwEnv()): void {
-	if (!env.prod || env.desktop || !env.supported) return;
+export function registerServiceWorker(): void {
+	if (
+		!import.meta.env?.PROD ||
+		(typeof window !== 'undefined' && !!(window as { jasperDesktop?: unknown }).jasperDesktop) ||
+		typeof navigator === 'undefined' ||
+		!('serviceWorker' in navigator)
+	)
+		return;
 	navigator.serviceWorker.addEventListener('controllerchange', () => {
 		if (reloading || !waiting) return;
 		reloading = true;

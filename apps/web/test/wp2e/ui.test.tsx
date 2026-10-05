@@ -29,7 +29,7 @@ afterEach(() => {
 
 function wrap(engine: ScriptedEngine, session: EditorSession | null, children: ReactNode) {
 	return (
-		<EngineProvider client={engine.client()} connectEvents={false}>
+		<EngineProvider client={engine.client()}>
 			<MemoryRouter initialEntries={['/']}>
 				<SessionProvider session={session}>{children}</SessionProvider>
 			</MemoryRouter>

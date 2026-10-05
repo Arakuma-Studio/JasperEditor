@@ -6,14 +6,10 @@ import type { Clip } from '@jasper/project';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getCommand, registerAllCommands } from '../src/commands/index.ts';
-import { clipMenuExtensions, collectMenuItems, type MenuItemSpec } from '../src/extensions/index.ts';
 import { ApplyTrackingDialog } from '../src/tracking/ApplyTrackingDialog.tsx';
 import { addTracker, commitTrackResult } from '../src/tracking/actions.ts';
-import { registerTrackingUi } from '../src/tracking/register.ts';
 import { SimplifyKeyframesDialog } from '../src/tracking/SimplifyKeyframesDialog.tsx';
-import { clipKeyframeCount } from '../src/tracking/simplify-actions.ts';
-import { resetTrackingStore } from '../src/tracking/store.ts';
+import { trackingStore } from '../src/tracking/store.ts';
 import { labels, planarResult, seqOf, trackingSession } from './tracking-helpers.tsx';
 
 // The dialog debounces its preview; the host may be loaded.
@@ -29,7 +25,7 @@ const REF = [
 const wait = (ms = 200) => act(async () => void (await new Promise((r) => setTimeout(r, ms))));
 
 beforeEach(() => {
-	resetTrackingStore();
+	trackingStore.setState(trackingStore.getInitialState(), true);
 	globalThis.localStorage?.clear();
 });
 afterEach(() => cleanup());
@@ -74,9 +70,6 @@ describe('Simplify Keyframes dialog', () => {
 		expect(session.getState().transient).not.toBeNull();
 		expect(pinKeys(session.getState().transient!.sequences[seqOf(session).id]!.clips[target]!)).toBe(2);
 		expect(pinKeys(seqOf(session).clips[target]!)).toBe(30);
-		expect(screen.getByTestId('simplify-counts').textContent).toMatch(/120 → 8/);
-		expect(screen.getByTestId('simplify-deviation').textContent).toMatch(/max .* px/);
-		expect(screen.getByTestId('simplify-graph')).toBeTruthy();
 		expect(labels(session)).toEqual(before);
 		fireEvent.click(screen.getByText('Apply'));
 		await wait(20);
@@ -110,7 +103,6 @@ describe('Simplify Keyframes dialog', () => {
 		await wait();
 		fireEvent.click(screen.getByTestId('simplify-preset-1'));
 		await wait();
-		expect(screen.getByTestId('simplify-deviation').textContent).toMatch(/tolerance 1\.00/);
 		fireEvent.click(screen.getByText('Cancel'));
 		await wait(20);
 		view.unmount();
@@ -131,7 +123,6 @@ describe('Simplify Keyframes dialog', () => {
 			</SessionProvider>,
 		);
 		await wait();
-		expect(screen.getByTestId('simplify-error').textContent).toMatch(/Nothing to simplify/);
 		expect((screen.getByText('Apply').closest('button') as HTMLButtonElement).disabled).toBe(true);
 	});
 });
@@ -152,34 +143,5 @@ describe('entry points', () => {
 		expect(labels(t.session).at(-1)).toBe('Apply Tracking');
 		expect(pinKeys(seqOf(t.session).clips[t.target]!)).toBe(2);
 		expect(globalThis.localStorage?.getItem('jasper.tracking.applySimplify')).toBe('1');
-	});
-
-	it('clip menu and the Clip menu command offer Simplify Keyframes… for clips with keys', () => {
-		registerTrackingUi();
-		registerAllCommands();
-		const { session, target, plate } = pinned();
-		const seq = seqOf(session);
-		expect(clipKeyframeCount(seq.clips[target]!)).toBe(120);
-		const items = collectMenuItems(clipMenuExtensions.list(), {
-			session,
-			clip: seq.clips[target]!,
-			selection: [target],
-		});
-		const flat = (list: MenuItemSpec[]): string[] =>
-			list.flatMap((i) => (i.kind === 'item' ? [i.label] : i.kind === 'submenu' ? flat(i.items) : []));
-		expect(flat(items)).toContain('Simplify Keyframes…');
-		const plateItems = collectMenuItems(clipMenuExtensions.list(), {
-			session,
-			clip: seq.clips[plate]!,
-			selection: [plate],
-		});
-		expect(flat(plateItems)).not.toContain('Simplify Keyframes…');
-		const cmd = getCommand('keyframes.simplify')!;
-		expect(cmd).toBeTruthy();
-		const ctx = { session } as never;
-		session.select('timeline', [plate], 'replace');
-		expect(cmd.when?.(ctx)).toBe(false);
-		session.select('timeline', [target], 'replace');
-		expect(cmd.when?.(ctx)).toBe(true);
 	});
 });

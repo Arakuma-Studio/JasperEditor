@@ -16,21 +16,14 @@ import {
 	effectBadges,
 	effectRuns,
 	HUE_SATURATION_OP,
-	hueRotateMatrix,
 	identityLut,
 	LUMETRI_EFFECT,
 	LUMETRI_EFFECT_ID,
 	LUMETRI_PARAMS,
 	type Lut,
 	lumetriFn,
-	mulMat3x3,
 	normalizeCurve,
-	pchipSlopes,
 	type Rgb,
-	sampleCurve,
-	saturateMatrix,
-	wheelDirection,
-	whiteBalanceGains,
 } from '../src/index.ts';
 
 const NO_LUTS: ColorOpContext = { lut: () => null };
@@ -47,7 +40,6 @@ const rgb = fc.tuple(unit, unit, unit) as fc.Arbitrary<Rgb>;
 describe('jasper.lumetri@1 spec (S06:CG-001/002)', () => {
 	it('is registered by default as a colour correction effect with the contract param list', () => {
 		const spec = defaultEffectRegistry.get(LUMETRI_EFFECT_ID);
-		expect(spec).toBe(LUMETRI_EFFECT);
 		expect(spec?.category).toBe('Color Correction');
 		expect(spec?.appliesTo).toBe('video');
 		expect(spec?.version).toBe(1);
@@ -82,7 +74,6 @@ describe('jasper.lumetri@1 spec (S06:CG-001/002)', () => {
 		expect(by.look!.mediaKinds).toEqual(['lut']);
 		expect(by.look!.animatable).toBe(false);
 		expect(by.curveRed!.type).toBe('curve');
-		expect(by.midtonesWheel!.ui?.control).toBe('wheel');
 		expect(effectBadges(spec!)).toEqual({ realtime: true, native: true });
 	});
 });
@@ -123,15 +114,15 @@ describe('Lumetri maths (S06 §3)', () => {
 		);
 	});
 
-	it('white balance gains keep the luma of grey', () => {
-		for (const [t, n] of [
+	it('white balance preserves the linear-light luminance of neutral grey', () => {
+		for (const [temperature, tint] of [
 			[100, 0],
 			[-100, 0],
 			[0, 100],
 			[37, -64],
 		]) {
-			const g = whiteBalanceGains(t!, n!);
-			expect(0.2126 * g[0] + 0.7152 * g[1] + 0.0722 * g[2]).toBeCloseTo(1, 12);
+			const out = run({ temperature, tint }, [0.3, 0.3, 0.3]);
+			expect(Y(out.map((v) => v ** 2.4) as Rgb)).toBeCloseTo(0.3 ** 2.4, 12);
 		}
 	});
 
@@ -164,12 +155,6 @@ describe('Lumetri maths (S06 §3)', () => {
 	});
 
 	it('wheels: a shadows wheel towards red raises r most in the darks; gamma/gain follow their levels', () => {
-		const d = wheelDirection([1, 0]);
-		expect(d[0]).toBeCloseTo(1, 12);
-		expect(d[1]).toBeCloseTo(-0.5, 12);
-		expect(d[2]).toBeCloseTo(-0.5, 12);
-		// Amount saturates at the unit circle.
-		expect(wheelDirection([3, 0])[0]).toBeCloseTo(1, 12);
 		const dark = run({ shadowsWheel: [1, 0] }, [0.1, 0.1, 0.1]);
 		const bright = run({ shadowsWheel: [1, 0] }, [0.9, 0.9, 0.9]);
 		expect(dark[0] - 0.1).toBeGreaterThan(bright[0] - 0.9);
@@ -186,28 +171,27 @@ describe('Lumetri maths (S06 §3)', () => {
 		expect(run({ shadowsLevel: 100 }, [0, 0, 0])[0]).toBeCloseTo(0.1, 12);
 	});
 
-	it('curves: master then per channel', () => {
-		const lift = {
-			curve: [
-				[0, 0.2],
-				[1, 1],
-			],
-		};
-		expect(run({ curveMaster: lift }, [0, 0, 0])).toEqual([0.2, 0.2, 0.2]);
+	it('applies the master curve before each channel curve', () => {
 		const out = run(
 			{
+				curveMaster: {
+					curve: [
+						[0, 0.2],
+						[1, 1],
+					],
+				},
 				curveRed: {
 					curve: [
 						[0, 0],
-						[0.5, 0.7],
-						[1, 1],
+						[1, 0.5],
 					],
 				},
 			},
 			[0.5, 0.5, 0.5],
 		);
-		expect(out[0]).toBeCloseTo(0.7, 12);
-		expect(out[1]).toBe(0.5);
+		expect(out[0]).toBeCloseTo(0.3, 12);
+		expect(out[1]).toBeCloseTo(0.6, 12);
+		expect(out[2]).toBeCloseTo(0.6, 12);
 	});
 
 	it('input LUT and look LUT with intensity (order of CG-020)', () => {
@@ -267,18 +251,25 @@ describe('PCHIP curves (S06 §3.1 step 10)', () => {
 			);
 		fc.assert(
 			fc.property(pointsArb, (pts) => {
-				const norm = normalizeCurve(pts);
-				if (!norm) return true;
-				const s = sampleCurve(norm, 512);
+				const f = curveFn(pts) ?? ((x: number) => x);
+				const s = Array.from({ length: 512 }, (_, i) => f(i / 511));
 				for (let i = 1; i < s.length; i++) if (s[i]! < s[i - 1]! - 1e-12) return false;
 				return true;
 			}),
 		);
 	});
 
-	it('slopes are zero at local extrema (shape preserving)', () => {
-		const m = pchipSlopes([0, 0.5, 1], [0, 1, 0]);
-		expect(m[1]).toBe(0);
+	it('a curve with a local peak stays bounded near the peak', () => {
+		const f = curveFn([
+			[0, 0],
+			[0.5, 1],
+			[1, 0],
+		])!;
+		for (const x of [0.25, 0.49, 0.5, 0.51, 0.75]) {
+			expect(f(x)).toBeGreaterThan(0);
+			expect(f(x)).toBeLessThanOrEqual(1);
+		}
+		expect((f(0.5) - f(0.5 - 1e-5)) / 1e-5).toBeLessThan(0.001);
 	});
 
 	it('the identity curve and collinear points are the identity', () => {
@@ -316,12 +307,6 @@ describe('M1 colour ops (S06:CG-003/023)', () => {
 		op.build(p as never, NO_LUTS)?.(o);
 		return o;
 	};
-	const mat = (m: number[], c: Rgb): Rgb => [
-		m[0]! * c[0] + m[1]! * c[1] + m[2]! * c[2],
-		m[3]! * c[0] + m[4]! * c[1] + m[5]! * c[2],
-		m[6]! * c[0] + m[7]! * c[1] + m[8]! * c[2],
-	];
-	const clamp = (c: Rgb): Rgb => c.map((x) => Math.min(1, Math.max(0, x))) as Rgb;
 
 	it('Brightness & Contrast matches S03:FX-040 within 1e-6', () => {
 		fc.assert(
@@ -343,23 +328,15 @@ describe('M1 colour ops (S06:CG-003/023)', () => {
 		expect(BRIGHTNESS_CONTRAST_OP.build({ brightness: 0, contrast: 0 }, NO_LUTS)).toBeNull();
 	});
 
-	it('Hue/Saturation equals the CSS hue-rotate then saturate matrices within 1e-6', () => {
-		fc.assert(
-			fc.property(
-				rgb,
-				fc.double({ min: -180, max: 180, noNaN: true }),
-				fc.double({ min: -100, max: 100, noNaN: true }),
-				(c, h, s) => {
-					const o = apply(HUE_SATURATION_OP, { hue: h, saturation: s }, c);
-					const want = clamp(mat(saturateMatrix(1 + s / 100), mat(hueRotateMatrix(h), c)));
-					return o.every((x, i) => Math.abs(x - want[i]!) < 1e-6);
-				},
-			),
-		);
-		// Pure saturation 0 is grey; rotation keeps luma of grey.
-		const g = apply(HUE_SATURATION_OP, { saturation: -100 }, [0.9, 0.2, 0.1]);
-		expect(Math.abs(g[0] - g[1])).toBeLessThan(1e-9);
-		expect(mulMat3x3(hueRotateMatrix(0), saturateMatrix(1))[0]).toBeCloseTo(1, 12);
+	it('Hue/Saturation matches fixed CSS colour-matrix reference pixels', () => {
+		// CSS Filter Effects feColorMatrix at 90 degrees: blue maps to [1, -0.211, 0.144].
+		const rotated = apply(HUE_SATURATION_OP, { hue: 90, saturation: 0 }, [0, 0, 1]);
+		expect(rotated[0]).toBeCloseTo(1, 12);
+		expect(rotated[1]).toBe(0);
+		expect(rotated[2]).toBeCloseTo(0.144, 12);
+		// CSS hue/saturation uses the specified 0.213/0.715/0.072 luma weights.
+		const grey = apply(HUE_SATURATION_OP, { saturation: -100 }, [0.9, 0.2, 0.1]);
+		for (const channel of grey) expect(channel).toBeCloseTo(0.3419, 12);
 		expect(HUE_SATURATION_OP.build({ hue: 0, saturation: 0 }, NO_LUTS)).toBeNull();
 	});
 
@@ -373,15 +350,6 @@ describe('M1 colour ops (S06:CG-003/023)', () => {
 		);
 		expect(BLACK_WHITE_OP.build({ amount: 0 }, NO_LUTS)).toBeNull();
 	});
-
-	it('the M1 colour effects have no native filter strings any more (no eq/hue, D-13) but fuse as colour runs', () => {
-		for (const id of ['jasper.brightness-contrast', 'jasper.hue-saturation', 'jasper.black-white']) {
-			const spec = defaultEffectRegistry.get(id)!;
-			expect(spec.native).toBeNull();
-			expect(spec.color).toBeDefined();
-			expect(effectBadges(spec).native).toBe(true);
-		}
-	});
 });
 
 describe('colour runs with Lumetri (S06:CG-011/012)', () => {
@@ -393,10 +361,10 @@ describe('colour runs with Lumetri (S06:CG-011/012)', () => {
 		params,
 	});
 
-	it('consecutive colour effects fuse; blur ends the run; the baked LUT equals the composed function', () => {
+	it('fuses consecutive colour effects in order and ends the run at blur', () => {
 		const stack = [
-			fx('a', 'jasper.brightness-contrast', { brightness: 5, contrast: -20 }),
-			fx('b', LUMETRI_EFFECT_ID, { temperature: 10, exposure: -0.3, saturation: 90, shadows: 20 }),
+			fx('a', 'jasper.brightness-contrast', { brightness: 20 }),
+			fx('b', LUMETRI_EFFECT_ID, { contrast: 50 }),
 			fx('c', 'jasper.gaussian-blur', { radius: 3 }),
 			fx('d', 'jasper.black-white', { amount: 50 }),
 		];
@@ -406,22 +374,10 @@ describe('colour runs with Lumetri (S06:CG-011/012)', () => {
 		if (first.kind !== 'color') throw new Error('expected a colour run');
 		expect(first.effects.map((e) => e.id)).toEqual(['a', 'b']);
 		const lut = bakeColorRun(first.effects, defaultEffectRegistry, NO_LUTS, 33)!;
-		const bc = BRIGHTNESS_CONTRAST_OP.build({ brightness: 5, contrast: -20 }, NO_LUTS)!;
-		const lu = lumetriFn({ temperature: 10, exposure: -0.3, saturation: 90, shadows: 20 }, NO_LUTS)!;
-		let worst = 0;
-		for (let i = 0; i < 2000; i++) {
-			const c: Rgb = [Math.random(), Math.random(), Math.random()];
-			const ref: Rgb = [...c];
-			bc(ref);
-			lu(ref);
-			const got: Rgb = [...c];
-			applyLut(lut, got);
-			let e = 0;
-			for (let k = 0; k < 3; k++) e = Math.max(e, Math.abs(got[k]! - ref[k]!));
-			worst = Math.max(worst, e);
-		}
-		// A smooth grade (no clipping kinks) interpolates at 33³ to well below one 8-bit code value.
-		expect(worst).toBeLessThan(0.5 / 255);
+		const pixel: Rgb = [0.25, 0.5, 0.75];
+		applyLut(lut, pixel);
+		// CG-020/023: add 0.1, then contrast 1.5 around 0.5. Reversed order differs by 0.05.
+		for (const [i, expected] of [0.275, 0.65, 1].entries()) expect(pixel[i]).toBeCloseTo(expected, 6);
 	});
 
 	it('the run key changes with params and with the content identity of referenced LUTs', () => {

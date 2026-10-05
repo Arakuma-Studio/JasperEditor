@@ -94,7 +94,7 @@ function readLumetriParams(p: EffectParams): LumetriParams {
  * White-balance gains in linear light (S06 §3.1 step 2): `(1 + 0.30T + 0.15N, 1 − 0.30N, 1 − 0.30T + 0.15N)`
  * normalised so that their luma is 1 (a neutral grey keeps its brightness).
  */
-export function whiteBalanceGains(temperature: number, tint: number): Rgb {
+function whiteBalanceGains(temperature: number, tint: number): Rgb {
 	const T = temperature / 100;
 	const N = tint / 100;
 	const r = 1 + 0.3 * T + 0.15 * N;
@@ -108,7 +108,7 @@ export function whiteBalanceGains(temperature: number, tint: number): Rgb {
  * RGB direction of a colour wheel (S06 §3.1 step 11): hue `θ = atan2(y, x)`, amount `m = min(1, |(x, y)|)`,
  * `d_k = m·cos(θ − φ_k)` with `φ = (0°, 120°, 240°)`.
  */
-export function wheelDirection(wheel: readonly [number, number]): Rgb {
+function wheelDirection(wheel: readonly [number, number]): Rgb {
 	const [x, y] = wheel;
 	const m = Math.min(1, Math.hypot(x, y));
 	if (m === 0) return [0, 0, 0];

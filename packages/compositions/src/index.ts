@@ -9,7 +9,7 @@ export * from './mg-host/runtime.ts';
 export * from './pipeline.ts';
 export { RemotionRoot } from './Root.tsx';
 export { renderPagesInOwnWindows } from './render-host.ts';
-export { FrameRepaint, repaintFromScratch, wantsFullRepaint } from './repaint.tsx';
+export { FrameRepaint } from './repaint.tsx';
 export { SequenceComposition } from './SequenceComposition.tsx';
 export * from './stabilize.ts';
 // M2 (wp-m2-text-anim, S11:TXA-020)

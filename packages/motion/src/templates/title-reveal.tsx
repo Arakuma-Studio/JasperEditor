@@ -137,7 +137,6 @@ export function TitleReveal(props: AnimeTemplateProps) {
 				</div>
 				{p.underline ? (
 					<svg
-						data-part="underline"
 						width={textW}
 						height={12}
 						style={{ display: 'block', overflow: 'visible', margin: `${px(size * 0.12)}px 0` }}
@@ -160,7 +159,6 @@ export function TitleReveal(props: AnimeTemplateProps) {
 				)}
 				{p.subtitle ? (
 					<div
-						data-part="subtitle"
 						style={{
 							fontSize: subSize,
 							fontWeight: 400,

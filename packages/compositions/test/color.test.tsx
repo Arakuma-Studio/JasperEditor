@@ -6,8 +6,11 @@ import {
 	LUMETRI_EFFECT_ID,
 	serializeCube,
 } from '@jasper/project';
-import { describe, expect, it, vi } from 'vitest';
-import { applyLutRgba8, loadLutAsset } from '../src/index.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { loadLutAsset } from '../src/color/luts.ts';
+import { applyLutRgba8 } from '../src/index.ts';
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe('LUT assets (S06:LUT-003)', () => {
 	it('reuses an imported LUT when a render URL is re-signed', async () => {
@@ -17,8 +20,9 @@ describe('LUT assets (S06:LUT-003)', () => {
 			}),
 		);
 		const fetchImpl = vi.fn(async () => new Response(cube)) as unknown as typeof fetch;
-		const first = await loadLutAsset('/media/lut-cache-case?sig=a', fetchImpl);
-		const second = await loadLutAsset('/media/lut-cache-case?sig=b', fetchImpl);
+		vi.stubGlobal('fetch', fetchImpl);
+		const first = await loadLutAsset('/media/lut-cache-case?sig=a');
+		const second = await loadLutAsset('/media/lut-cache-case?sig=b');
 		expect(first?.size).toBe(3);
 		expect(second?.size).toBe(3);
 		expect(fetchImpl).toHaveBeenCalledTimes(1);
@@ -26,7 +30,8 @@ describe('LUT assets (S06:LUT-003)', () => {
 
 	it('a malformed LUT settles as unavailable instead of blocking the render', async () => {
 		const fetchImpl = vi.fn(async () => new Response('LUT_3D_SIZE 2\n0 0 0\n')) as unknown as typeof fetch;
-		expect(await loadLutAsset('/media/lut-invalid-case', fetchImpl)).toBeNull();
+		vi.stubGlobal('fetch', fetchImpl);
+		expect(await loadLutAsset('/media/lut-invalid-case')).toBeNull();
 	});
 });
 
@@ -52,6 +57,7 @@ describe('CPU colour pass (S06:CG-043)', () => {
 		const source = Uint8ClampedArray.from(pixels);
 		applyLutRgba8(lut, pixels);
 		let maxDifference = 0;
+		let maxAlphaDifference = 0;
 		const color: [number, number, number] = [0, 0, 0];
 		for (let p = 0; p < pixels.length; p += 4) {
 			color[0] = source[p]! / 255;
@@ -60,8 +66,9 @@ describe('CPU colour pass (S06:CG-043)', () => {
 			applyLut(lut, color);
 			for (let k = 0; k < 3; k++)
 				maxDifference = Math.max(maxDifference, Math.abs(pixels[p + k]! - Math.round(color[k]! * 255)));
-			expect(pixels[p + 3]).toBe(source[p + 3]);
+			maxAlphaDifference = Math.max(maxAlphaDifference, Math.abs(pixels[p + 3]! - source[p + 3]!));
 		}
 		expect(maxDifference).toBeLessThanOrEqual(1);
+		expect(maxAlphaDifference).toBe(0);
 	});
 });

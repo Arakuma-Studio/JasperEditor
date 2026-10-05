@@ -148,10 +148,7 @@ describe.runIf(process.env.REMOTION_E2E === '1')('Remotion path renders graded (
 		console.info(
 			`[S06 §9.6] WebGL2 probe: ${JSON.stringify(webgl)}; still: ${done.state} ${done.error?.code ?? ''} ${done.error?.message ?? ''}`,
 		);
-		if (webgl.state !== 'ok') {
-			expect(done.error?.code).toBe('WEBGL_UNAVAILABLE');
-			return;
-		}
+		expect(webgl.state).toBe('ok');
 		expect(done.error).toBeUndefined();
 		expect((done.result as { renderPath: string }).renderPath).toBe('remotion');
 		const png = await app.inject({ method: 'GET', url: `/renders/${r.json().id}/output`, headers: hostH });

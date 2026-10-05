@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path';
 import type { LicenseComponent, LicensesResponse } from '@jasper/api';
 import { openCvLicense } from '../tracking/license.ts';
 
-export const FFMPEG_SOURCE_FALLBACK = 'https://ffmpeg.org/download.html';
+const FFMPEG_SOURCE_FALLBACK = 'https://ffmpeg.org/download.html';
 
 type BuildInfo = {
 	ffmpeg?: {

@@ -46,7 +46,7 @@ export type DiscoveryOptions = {
 type HealthResult = { ok: true; version: string } | { ok: false; reason: string };
 
 /** GET /health with a short timeout (the route is public even in token mode). */
-export async function probeHealth(
+async function probeHealth(
 	url: string,
 	opts: { fetch?: typeof fetch; timeoutMs?: number } = {},
 ): Promise<HealthResult> {

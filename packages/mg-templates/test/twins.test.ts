@@ -1,3 +1,4 @@
+import { Window } from 'happy-dom';
 import { describe, expect, it } from 'vitest';
 import { lowerThird, mgRegistry, mgRenderKeyMaterial, specFromClip } from '../src/index.ts';
 
@@ -13,13 +14,19 @@ describe('fframes SVG preview', () => {
 			{ width: 1920, height: 1080 },
 			{ durationFrames: 150 },
 		);
-		expect(svg).toContain('Ana &lt;script&gt;alert(1)&lt;/script&gt; &amp; Bo');
-		expect(svg).not.toContain('<script>');
+		const window = new Window();
+		try {
+			const document = new window.DOMParser().parseFromString(svg, 'image/svg+xml');
+			expect(document.querySelector('script')).toBeNull();
+			expect(document.documentElement.textContent).toContain('Ana <script>alert(1)</script> & Bo');
+		} finally {
+			void window.happyDOM.close();
+		}
 	});
 });
 
 describe('render spec and cache material', () => {
-	it('normalizes template defaults and converts source-in to content frames', () => {
+	it('converts source-in from flicks to content frames', () => {
 		const spec = specFromClip(
 			{
 				source: {
@@ -36,7 +43,6 @@ describe('render spec and cache material', () => {
 			mgRegistry,
 		)!;
 		expect(spec.sourceInFrames).toBe(30);
-		expect(spec.params).toEqual({ ...lowerThird.defaults, name: 'Ana' });
 	});
 
 	it('reuses cache material for equivalent params and changes it for each render input', () => {

@@ -63,7 +63,7 @@ const DAY_MS = 24 * 3600 * 1000;
 /** Entries written or used this recently count as in use (a producer may be about to read what it just wrote). */
 const CACHE_GRACE_MS = 2 * 60 * 1000;
 /** Temporary files of writes are orphans once nothing has written to them for this long. */
-export const ORPHAN_AGE_MS = 60 * 60 * 1000;
+const ORPHAN_AGE_MS = 60 * 60 * 1000;
 /** A pin of a job the queue does not know (pseudo job ids) expires after this long. */
 const UNKNOWN_HOLDER_TTL_MS = 10 * 60 * 1000;
 /** CA-003: automatic budget = min(25 GB, 15 % of the free disk at start). */
@@ -120,14 +120,8 @@ type CacheServiceOptions = {
 	renderKey?: RenderKeyFn | null;
 	/** Show the cache location in usage answers (local mode). */
 	exposePaths?: boolean;
-	/** Automatic passes (start-up, hourly, after renders). Default on, off under vitest unless set. */
+	/** Automatic passes (start-up, hourly, after renders). Default on; configurable through JASPER_CACHE_AUTO_GC. */
 	autoTimers?: boolean;
-	startupDelayMs?: number;
-	intervalMs?: number;
-	afterRenderDelayMs?: number;
-	graceMs?: number;
-	orphanAgeMs?: number;
-	now?: () => number;
 	log?(msg: string): void;
 };
 
@@ -148,8 +142,8 @@ type ProjectsInfo = {
 };
 
 export class CacheService {
-	readonly index: CacheIndexStore;
-	readonly settingsStore: CacheSettingsStore;
+	private readonly index: CacheIndexStore;
+	private readonly settingsStore: CacheSettingsStore;
 	/** Entry id → holders; releasing a holder drops all of its pins. */
 	private readonly pins = new Map<string, Set<string>>();
 	/** holder → entry ids. */
@@ -174,16 +168,10 @@ export class CacheService {
 	private afterRenderTimer: NodeJS.Timeout | null = null;
 	private offEvents: (() => void) | null = null;
 	private started: Promise<void> | null = null;
-	private readonly now: () => number;
 
 	constructor(private readonly o: CacheServiceOptions) {
 		this.index = new CacheIndexStore(join(o.paths.engineDir, 'cache-index.json'));
 		this.settingsStore = new CacheSettingsStore(join(o.paths.engineDir, 'cache.json'));
-		this.now = o.now ?? (() => Date.now());
-	}
-
-	private get grace(): number {
-		return this.o.graceMs ?? CACHE_GRACE_MS;
 	}
 
 	// ------------------------------------------------------------------ lifecycle
@@ -217,11 +205,10 @@ export class CacheService {
 						1024 ** 3,
 						Math.min(AUTO_BUDGET_CAP, Math.floor((freeAtStart + cacheBytes) * AUTO_BUDGET_SHARE)),
 					);
-		const timers =
-			this.o.autoTimers ?? (process.env.JASPER_CACHE_AUTO_GC ?? (process.env.VITEST ? '0' : '1')) !== '0';
+		const timers = this.o.autoTimers ?? process.env.JASPER_CACHE_AUTO_GC !== '0';
 		if (timers) {
-			const t0 = setTimeout(() => void this.autoPass('start-up'), this.o.startupDelayMs ?? 20_000);
-			const t1 = setInterval(() => void this.autoPass('hourly'), this.o.intervalMs ?? 3600_000);
+			const t0 = setTimeout(() => void this.autoPass('start-up'), 20_000);
+			const t1 = setInterval(() => void this.autoPass('hourly'), 3600_000);
 			t0.unref?.();
 			t1.unref?.();
 			this.timers.push(t0, t1);
@@ -252,7 +239,7 @@ export class CacheService {
 		this.afterRenderTimer = setTimeout(() => {
 			this.afterRenderTimer = null;
 			void this.autoPass('after render');
-		}, this.o.afterRenderDelayMs ?? 60_000);
+		}, 60_000);
 		this.afterRenderTimer.unref?.();
 	}
 
@@ -278,7 +265,7 @@ export class CacheService {
 		s?: CacheSettings,
 	): Promise<{ removedFiles: number; removedBytes: number; prunedJobs: number }> {
 		const settings = s ?? (await this.settings());
-		const r = await maintainLogs(this.o.paths, settings.logs, this.now()).catch(() => ({
+		const r = await maintainLogs(this.o.paths, settings.logs, Date.now()).catch(() => ({
 			removedFiles: 0,
 			removedBytes: 0,
 		}));
@@ -370,7 +357,7 @@ export class CacheService {
 			});
 		this.gcChain = run;
 		const result = await run;
-		this.o.broadcaster?.publish('cache.cleaned', { ...(this.index.lastGc ?? emptyReport(this.now())) });
+		this.o.broadcaster?.publish('cache.cleaned', { ...(this.index.lastGc ?? emptyReport(Date.now())) });
 		return result;
 	}
 
@@ -472,7 +459,7 @@ export class CacheService {
 	touch(pathOrRef: string | EntryRef): void {
 		const ref = typeof pathOrRef === 'string' ? this.ref(pathOrRef) : pathOrRef;
 		if (!ref) return;
-		this.index.access.set(ref.id, this.now());
+		this.index.access.set(ref.id, Date.now());
 		this.index.changed();
 	}
 
@@ -489,7 +476,7 @@ export class CacheService {
 		let h = this.held.get(holder);
 		if (!h) this.held.set(holder, (h = new Set()));
 		h.add(ref.id);
-		if (!this.holderSince.has(holder)) this.holderSince.set(holder, this.now());
+		if (!this.holderSince.has(holder)) this.holderSince.set(holder, Date.now());
 		this.hookJobRelease(holder);
 		return ref;
 	}
@@ -544,7 +531,7 @@ export class CacheService {
 	/** Drops pins of holders that are gone (finished jobs; unknown jobs after a while). */
 	private validateHolders(): void {
 		const q = this.o.queue;
-		const t = this.now();
+		const t = Date.now();
 		for (const [holder, since] of [...this.holderSince]) {
 			if (holder.startsWith('serve:')) {
 				// A response whose close event never came (should not happen): the pin expires.
@@ -574,7 +561,7 @@ export class CacheService {
 				if (ref) ids.add(ref.id);
 			}
 		}
-		this.index.refs.set(scope, { projectId, entries: [...ids].sort(), updatedAt: this.now() });
+		this.index.refs.set(scope, { projectId, entries: [...ids].sort(), updatedAt: Date.now() });
 		this.index.changed();
 	}
 
@@ -658,7 +645,7 @@ export class CacheService {
 
 	/** A fresh (or recent) scan of the appdir. */
 	async scan(force = false): Promise<ScanResult> {
-		if (!force && this.lastScan && this.now() - this.lastScan.scannedAt < SCAN_TTL_MS) return this.lastScan;
+		if (!force && this.lastScan && Date.now() - this.lastScan.scannedAt < SCAN_TTL_MS) return this.lastScan;
 		// A walk in flight answers this call too (a pass only removes what it found; ENOENT is fine).
 		this.scanning ??= scanAppdir(this.o.appdir)
 			.then((r) => {
@@ -715,7 +702,7 @@ export class CacheService {
 		if (e.kind === 'exports' || e.kind === 'stills' ? active.ids.has(e.key) : false) return 'job';
 		if (active.dedupe.some((k) => k.includes(token))) return 'rendering';
 		if (e.kind === 'bundles' && this.isCurrentBundle(e)) return 'current';
-		if (!ignoreRecent && this.now() - lastAccess < this.grace) return 'recent';
+		if (!ignoreRecent && Date.now() - lastAccess < CACHE_GRACE_MS) return 'recent';
 		for (const pid of projects) if (info.open.has(pid)) return 'open project';
 		return null;
 	}
@@ -787,7 +774,7 @@ export class CacheService {
 	}
 
 	private async runPass(mode: CacheMode | 'orphans', kinds?: readonly CacheKind[]): Promise<CacheGcReport> {
-		const t = this.now();
+		const t = Date.now();
 		const settings = await this.settings();
 		const scan = await this.scan(true);
 		const info = await this.projectsInfo();
@@ -845,7 +832,7 @@ export class CacheService {
 		s: CacheSettings,
 		report: CacheGcReport,
 	): Classified[] {
-		const t = this.now();
+		const t = Date.now();
 		const inScope = (c: Classified) => !only || only.has(c.entry.kind);
 		const candidates: Classified[] = [];
 		for (const c of all) {
@@ -934,7 +921,7 @@ export class CacheService {
 		opts: { waitMs?: number } = {},
 	): Promise<{ removed: number; removedBytes: number; kept: number }> {
 		if (!/^[0-9a-f]{64}$/.test(fingerprintHex)) throw new Error(`Invalid fingerprint ${fingerprintHex}`);
-		const deadline = this.now() + (opts.waitMs ?? 10_000);
+		const deadline = Date.now() + (opts.waitMs ?? 10_000);
 		let removed = 0;
 		let removedBytes = 0;
 		for (;;) {
@@ -952,7 +939,7 @@ export class CacheService {
 					removedBytes += c.entry.bytes;
 				} else kept++;
 			}
-			if (kept === 0 || this.now() >= deadline) {
+			if (kept === 0 || Date.now() >= deadline) {
 				this.lastScan = null;
 				this.index.changed();
 				// The fingerprint folder itself once it is empty (temporary files of a cancelled job are its own).
@@ -1006,8 +993,8 @@ export class CacheService {
 
 	/** Removes stale temporary files (crashed writes), trash and scratch of jobs that are gone (CA-017). */
 	private async sweepOrphans(orphans: readonly Orphan[], activeJobs: ReadonlySet<string>): Promise<number> {
-		const t = this.now();
-		const maxAge = this.o.orphanAgeMs ?? ORPHAN_AGE_MS;
+		const t = Date.now();
+		const maxAge = ORPHAN_AGE_MS;
 		let n = 0;
 		for (const o of orphans) {
 			const name = basename(o.path);

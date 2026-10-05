@@ -258,7 +258,27 @@ async function chartDoc(
 
 describe('native export of graded clips (S06:CG-050…054, §9 test 5)', () => {
 	it('plans graded clips natively without GPL-only filters', async () => {
-		const { d } = await chartDoc(GRADE);
+		const { d, clip } = await chartDoc(GRADE);
+		d.tx([
+			{
+				type: 'effect.add',
+				target: { clipId: clip },
+				effectId: 'jasper.brightness-contrast',
+				params: { brightness: 10 },
+			},
+			{
+				type: 'effect.add',
+				target: { clipId: clip },
+				effectId: 'jasper.hue-saturation',
+				params: { hue: 20 },
+			},
+			{
+				type: 'effect.add',
+				target: { clipId: clip },
+				effectId: 'jasper.black-white',
+				params: { amount: 30 },
+			},
+		]);
 		const planned = await coreServices(app).exports.plan({
 			envelope: d.envelope(),
 			sequenceId: d.seqId,
@@ -282,51 +302,8 @@ describe('native export of graded clips (S06:CG-050…054, §9 test 5)', () => {
 			threads: 2,
 			extensions: { list: exts, prepared },
 		});
+		expect(g.filter).toMatch(/(?:^|[,;\]\s])lut3d=/);
 		expect(g.filter).not.toMatch(GPL_FILTER);
-		// Older colour effects must also stay native and use only LGPL filters.
-		const { d: d2, clip } = await chartDoc(GRADE);
-		d2.tx([
-			{
-				type: 'effect.add',
-				target: { clipId: clip },
-				effectId: 'jasper.brightness-contrast',
-				params: { brightness: 10 },
-			},
-			{
-				type: 'effect.add',
-				target: { clipId: clip },
-				effectId: 'jasper.hue-saturation',
-				params: { hue: 20 },
-			},
-			{
-				type: 'effect.add',
-				target: { clipId: clip },
-				effectId: 'jasper.black-white',
-				params: { amount: 30 },
-			},
-		]);
-		const p2 = await coreServices(app).exports.plan({
-			envelope: d2.envelope(),
-			sequenceId: d2.seqId,
-			settings: settings(d2.seqId) as never,
-		});
-		expect(p2.plan.path).toBe('native');
-		const prep2 = await prepareExtensions(exts, p2, {
-			signal: new AbortController().signal,
-			stage: () => {},
-			scratchDir: async () => tmpdir(),
-			log: () => {},
-			jobId: 'job_test',
-		});
-		const g2 = buildNativeGraph({
-			snapshot: p2.snapshot,
-			output: p2.output,
-			outputFile: '/tmp/x.mp4',
-			sources: { media: (id) => p2.media[id] ?? null, mgMaster: () => null },
-			threads: 2,
-			extensions: { list: exts, prepared: prep2 },
-		});
-		expect(g2.filter).not.toMatch(GPL_FILTER);
 	}, 60_000);
 
 	it('keyframed export frames match the start and end grades', async () => {

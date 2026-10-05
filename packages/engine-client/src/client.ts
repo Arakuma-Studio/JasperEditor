@@ -27,7 +27,7 @@ import {
 } from '@jasper/api';
 import type { z } from 'zod';
 import { EngineError } from './errors.ts';
-import { type EventHandlers, type EventStream, type EventStreamOptions, openEventStream } from './events.ts';
+import { type EventHandlers, type EventStream, openEventStream } from './events.ts';
 
 export type EngineClientOptions = {
 	/** '' = same origin (the SPA always uses relative URLs, ARCHITECTURE §4.1). */
@@ -342,17 +342,12 @@ export class EngineClient {
 	// ------------------------------------------------------------ streams and uploads
 
 	/** Opens the NDJSON event stream; reconnects with 1 s → 30 s backoff and resumes with `since`. */
-	openEvents(
-		opts: { since?: number | null; projectId?: string },
-		handlers: EventHandlers,
-		streamOpts: EventStreamOptions = {},
-	): EventStream {
+	openEvents(opts: { since?: number | null; projectId?: string }, handlers: EventHandlers): EventStream {
 		return openEventStream(
 			this.fetchImpl,
 			(since) => this.eventsUrl({ since, projectId: opts.projectId }),
 			handlers,
 			{
-				...streamOpts,
 				since: opts.since ?? null,
 				headers: this.authorizationHeaders(),
 			},

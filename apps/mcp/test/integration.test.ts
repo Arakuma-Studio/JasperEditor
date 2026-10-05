@@ -1,10 +1,11 @@
 // The stdio MCP client drives a token-protected engine through a real edit and export.
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { ProjectDocument } from '@jasper/project';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
@@ -15,6 +16,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const PORT = Number(process.env.MCP_TEST_PORT ?? 48551);
 const AUTOSTART_PORT = Number(process.env.MCP_TEST_AUTOSTART_PORT ?? PORT + 1);
 const fixture = join(ROOT, 'fixtures', 'media', 'clip-a.mp4');
+const artifacts = join(ROOT, 'test-results', 'mcp');
 
 function connect(args: string[], env: Record<string, string> = {}) {
 	const transport = new StdioClientTransport({
@@ -61,6 +63,7 @@ beforeAll(async () => {
 		if (result.status !== 0) throw new Error('fixture generation failed');
 	}
 	appdir = mkdtempSync(join(tmpdir(), 'jasper-mcp-it-'));
+	mkdirSync(artifacts, { recursive: true });
 	token = randomBytes(16).toString('hex');
 	engine = spawn(
 		process.execPath,
@@ -120,6 +123,7 @@ describe('MCP over stdio with a token-protected engine', () => {
 			| undefined;
 		expect(image?.mimeType).toBe('image/png');
 		const png = Buffer.from(image!.data, 'base64');
+		writeFileSync(join(artifacts, 'edit-frame.png'), png);
 		expect(png.subarray(1, 4).toString('latin1')).toBe('PNG');
 		expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([320, 180]);
 
@@ -154,7 +158,90 @@ describe('MCP over stdio with a token-protected engine', () => {
 		expect(probe.status, probe.stderr).toBe(0);
 		const stream = JSON.parse(probe.stdout).streams[0];
 		expect([stream.width, stream.height, Number(stream.nb_read_frames)]).toEqual([1280, 720, 30]);
+		copyFileSync(output, join(artifacts, 'edit-export.mp4'));
 	}, 300_000);
+
+	it('clipboard tools preserve destination time, track, insertion mode and bin', async () => {
+		const source = await ok<{ projectId: string }>('create_project', { name: 'Clipboard source' });
+		const target = await ok<{ projectId: string }>('create_project', { name: 'Clipboard destination' });
+		const added = await ok<{ refs: Record<string, string> }>('apply_commands', {
+			projectId: source.projectId,
+			label: 'Source title',
+			commands: [
+				{
+					type: 'clip.addText',
+					at: 10,
+					duration: 20,
+					track: 'V1',
+					content: { text: 'Copied title' },
+					ref: '$title',
+				},
+			],
+		});
+		const destination = await ok<{ refs: Record<string, string> }>('apply_commands', {
+			projectId: target.projectId,
+			label: 'Paste destinations',
+			commands: [
+				{
+					type: 'clip.addText',
+					at: 30,
+					duration: 10,
+					track: 'V2',
+					content: { text: 'Later title' },
+					ref: '$later',
+				},
+				{ type: 'bin.create', name: 'Copied sequences', ref: '$bin' },
+			],
+		});
+		const copied = await ok<{ payload: unknown }>('copy_clips', {
+			projectId: source.projectId,
+			clipIds: [added.refs.$title],
+		});
+		await ok('paste_clips', {
+			projectId: target.projectId,
+			payload: copied.payload,
+			at: { seconds: 1 },
+			videoTrack: 'V2',
+			mode: 'insert',
+		});
+		const readDocument = async (id: string): Promise<ProjectDocument> => {
+			const resource = await session.client.readResource({ uri: `jasper://projects/${id}/document` });
+			return JSON.parse((resource.contents[0] as { text: string }).text) as ProjectDocument;
+		};
+		const pasted = Object.values((await readDocument(target.projectId)).sequences)[0]!;
+		const copiedTitle = Object.values(pasted.clips).find(
+			(clip) => clip.kind === 'text' && clip.content.text === 'Copied title',
+		)!;
+		expect(copiedTitle).toMatchObject({ start: 30, duration: 20, trackId: pasted.videoTracks[1]!.id });
+		expect(copiedTitle.id).not.toBe(added.refs.$title);
+		expect(pasted.clips[destination.refs.$later!]!.start).toBe(50);
+
+		const sourceDoc = await readDocument(source.projectId);
+		const sourceItem = Object.values(sourceDoc.items).find((item) => item.kind === 'sequence')!;
+		const items = await ok<{ payload: unknown }>('copy_items', {
+			projectId: source.projectId,
+			itemIds: [sourceItem.id],
+		});
+		await ok('paste_items', {
+			projectId: target.projectId,
+			payload: items.payload,
+			binId: destination.refs.$bin,
+		});
+		const result = await readDocument(target.projectId);
+		const bin = result.items[destination.refs.$bin!]!;
+		if (bin.kind !== 'bin') throw new Error('Destination bin missing');
+		expect(bin.children).toHaveLength(1);
+		const sequenceItem = result.items[bin.children[0]!]!;
+		if (sequenceItem.kind !== 'sequence') throw new Error('Pasted sequence missing');
+		expect(sequenceItem.id).not.toBe(sourceItem.id);
+		expect(Object.values(result.sequences[sequenceItem.sequenceId]!.clips)).toEqual([
+			expect.objectContaining({
+				kind: 'text',
+				start: 10,
+				content: expect.objectContaining({ text: 'Copied title' }),
+			}),
+		]);
+	});
 
 	it('keeps the engine token out of MCP responses and stderr', async () => {
 		for (const response of [
@@ -284,6 +371,7 @@ describe('MCP over stdio with a token-protected engine', () => {
 		expect(json<{ cells: { frame: number }[] }>(sheet).cells.map((cell) => cell.frame)).toEqual([0, 15, 29]);
 		const image = sheet.content.find((part) => part.type === 'image') as { mimeType: string; data: string };
 		expect(image.mimeType).toBe('image/png');
+		writeFileSync(join(artifacts, 'animation-contact-sheet.png'), Buffer.from(image.data, 'base64'));
 		expect(Buffer.from(image.data, 'base64').subarray(1, 4).toString('latin1')).toBe('PNG');
 		const added = await ok<{ clips: { id: string }[] }>('add_text', {
 			projectId,

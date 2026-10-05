@@ -7,7 +7,7 @@ import type { FilterStep, StepContext } from './types.ts';
  * Filters that exist only in GPL builds and must never appear in generated filter text (D-13 M2 note). Checked
  * against the LGPL FFmpeg 7.1 build: none of these is present there (apps/engine/test/processing-steps.test.ts).
  */
-export const GPL_FILTERS = [
+const GPL_FILTERS = [
 	'eq',
 	'hqdn3d',
 	'perspective',

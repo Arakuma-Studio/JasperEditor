@@ -184,7 +184,7 @@ describe('uploadFile (S04:IN-005)', () => {
 		const c = new EngineClient({ fetch: m.fetch });
 		await expect(
 			c.uploadFile(new Blob([new Uint8Array(10)]), { projectId: 'p', signal: ctrl.signal }),
-		).rejects.toBeTruthy();
+		).rejects.toMatchObject({ name: 'AbortError' });
 		expect(m.calls.some((x) => x.init.method === 'DELETE' && x.url === '/api/uploads/up2')).toBe(true);
 	});
 });
@@ -275,9 +275,8 @@ describe('openEvents (NDJSON, S04:ENG-023)', () => {
 		const s = c.openEvents(
 			{},
 			{ onStateChange: (st, info) => st === 'reconnecting' && delays.push(info.delayMs!) },
-			{ heartbeatTimeoutMs: 5000 },
 		);
-		await vi.advanceTimersByTimeAsync(5000);
+		await vi.advanceTimersByTimeAsync(37_500);
 		expect(delays).toEqual([1000]);
 		for (let i = 0; i < 8; i++) await vi.advanceTimersByTimeAsync(30_000);
 		expect(delays.slice(0, 7)).toEqual([1000, 2000, 4000, 8000, 16000, 30000, 30000]);

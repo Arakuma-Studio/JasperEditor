@@ -38,13 +38,13 @@ export function blackWhiteAmount(p: EffectParams): number {
 }
 
 /** Row-major 3×3 colour matrix. */
-export type Mat3x3 = [number, number, number, number, number, number, number, number, number];
+type Mat3x3 = [number, number, number, number, number, number, number, number, number];
 
 /**
  * The CSS / SVG `hueRotate` matrix (Filter Effects §feColorMatrix): a rotation of the chroma plane around the
  * luma axis with the 0.213/0.715/0.072 weights. This is exactly what the M1 preview (`hue-rotate()`) drew.
  */
-export function hueRotateMatrix(deg: number): Mat3x3 {
+function hueRotateMatrix(deg: number): Mat3x3 {
 	const a = (deg * Math.PI) / 180;
 	const c = Math.cos(a);
 	const s = Math.sin(a);
@@ -62,7 +62,7 @@ export function hueRotateMatrix(deg: number): Mat3x3 {
 }
 
 /** The CSS / SVG `saturate` matrix (Filter Effects §feColorMatrix): scaling around luma. */
-export function saturateMatrix(s: number): Mat3x3 {
+function saturateMatrix(s: number): Mat3x3 {
 	return [
 		0.213 + 0.787 * s,
 		0.715 - 0.715 * s,
@@ -77,7 +77,7 @@ export function saturateMatrix(s: number): Mat3x3 {
 }
 
 /** `a · b` (apply `b` first, then `a`). */
-export function mulMat3x3(a: Mat3x3, b: Mat3x3): Mat3x3 {
+function mulMat3x3(a: Mat3x3, b: Mat3x3): Mat3x3 {
 	const o = new Array<number>(9) as Mat3x3;
 	for (let r = 0; r < 3; r++)
 		for (let c = 0; c < 3; c++)

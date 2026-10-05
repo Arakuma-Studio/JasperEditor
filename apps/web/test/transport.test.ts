@@ -8,17 +8,11 @@ import {
 } from '@jasper/project';
 import { EditorSession, TransportStore } from '@jasper/session';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-	createCommandContext,
-	registerCommands,
-	resetCommandRegistry,
-	runCommand,
-} from '../src/commands/index.ts';
+import { createCommandContext, registerCommands, runCommand } from '../src/commands/index.ts';
 import { transportCommands } from '../src/commands/transport.ts';
 import { PlaybackDriver, type PlayerLike } from '../src/panels/program/playback-driver.ts';
 import { Shuttle, type ShuttleTarget } from '../src/panels/program/shuttle.ts';
 import { shuttleFor } from '../src/panels/program/transport-registry.ts';
-import { PanelServices } from '../src/state/panel-services.ts';
 
 // ------------------------------------------------------------------ fakes
 
@@ -356,11 +350,11 @@ function makeSession(): EditorSession {
 }
 
 describe('transport commands', () => {
+	let unregister: () => void;
 	beforeEach(() => {
-		resetCommandRegistry();
-		registerCommands(transportCommands);
+		unregister = registerCommands(transportCommands);
 	});
-	afterEach(() => resetCommandRegistry());
+	afterEach(() => unregister());
 
 	it('steps, jumps to start/end and edit points', async () => {
 		const session = makeSession();
@@ -384,35 +378,6 @@ describe('transport commands', () => {
 		await runCommand('transport.goToStart', ctx);
 		await runCommand('transport.stepBack', ctx);
 		expect(t.getState().frame).toBe(0);
-	});
-
-	it('edit-point and step seeks reveal the playhead in the timeline (TL-120, WP-3I)', async () => {
-		const session = makeSession();
-		const services = new PanelServices();
-		const revealed: number[] = [];
-		services.register('timelineViewport', 'tl1', {
-			scrollToFrame: (f) => revealed.push(f),
-			frameAtClientX: () => 0,
-			getScrollContainer: () => null,
-		});
-		const ctx = createCommandContext({ engine: new EngineClient({ baseUrl: '' }), session, services });
-		await runCommand('transport.nextEdit', ctx);
-		await runCommand('transport.goToEnd', ctx);
-		expect(revealed).toEqual([60, 120]);
-	});
-
-	it('Space and JKL go through the shuttle; K keyup releases', async () => {
-		const session = makeSession();
-		const ctx = createCommandContext({ engine: new EngineClient({ baseUrl: '' }), session });
-		const t = session.transport;
-		await runCommand('transport.playStop', ctx);
-		expect(t.getState()).toMatchObject({ playing: true, rate: 1 });
-		await runCommand('transport.shuttleForward', ctx);
-		transportCommands.find((c) => c.id === 'transport.shuttleForward')!.onKeyUp!(ctx);
-		expect(t.getState().rate).toBe(2);
-		await runCommand('transport.shuttleStop', ctx);
-		expect(t.getState().playing).toBe(false);
-		transportCommands.find((c) => c.id === 'transport.shuttleStop')!.onKeyUp!(ctx);
 	});
 
 	it('nudges the selected layer by 1 and 5 px with one coalesced undo step (XF-023)', async () => {

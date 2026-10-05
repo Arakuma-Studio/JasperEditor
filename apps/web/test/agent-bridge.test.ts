@@ -55,24 +55,16 @@ describe('window.jasper transact (S01:AGT-003, UND-007)', () => {
 	});
 });
 
-describe('history ownership and concurrency (S01:UND-008, AGT-010)', () => {
-	it('agents undo only their own top entry', async () => {
+describe('history ownership (S01:UND-008)', () => {
+	it('refuses to undo another agent’s top entry', async () => {
 		const { api, session } = makeBridge();
 		await api.transact(agentTx([{ type: 'marker.add', frame: 1 }]));
-		const own = await api.transact({
-			label: 'Undo',
-			origin: { agent: 'bot' },
-			commands: [{ type: 'history.undo' }],
-		});
-		expect(own.ok).toBe(true);
-		expect(session.getState().history.index).toBe(0);
-		await api.transact({ label: 'redo', origin: { agent: 'bot' }, commands: [{ type: 'history.redo' }] });
-		const other = await api.transact({
+		const result = await api.transact({
 			label: 'Undo',
 			origin: { agent: 'intruder' },
 			commands: [{ type: 'history.undo' }],
 		});
-		expect(other).toMatchObject({ ok: false, errors: [{ code: 'E_NOT_OWNER' }] });
+		expect(result).toMatchObject({ ok: false, errors: [{ code: 'E_NOT_OWNER' }] });
 		expect(session.getState().history.index).toBe(1);
 	});
 });

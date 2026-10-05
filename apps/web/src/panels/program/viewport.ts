@@ -12,7 +12,7 @@ const MIN_ZOOM = 10;
 const MAX_ZOOM = 800;
 export const WHEEL_ZOOM_STEP = 1.1;
 
-export function fitScale(viewport: Size, frame: Size, pad = FIT_PAD): number {
+function fitScale(viewport: Size, frame: Size, pad = FIT_PAD): number {
 	if (frame.width <= 0 || frame.height <= 0) return 1;
 	const s = Math.min((viewport.width - 2 * pad) / frame.width, (viewport.height - 2 * pad) / frame.height);
 	return Math.max(0.001, s);

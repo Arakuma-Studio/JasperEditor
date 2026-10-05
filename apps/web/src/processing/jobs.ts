@@ -27,7 +27,7 @@ import { toast as uiToast } from '@jasper/ui';
 import { buildMediaAsset, mediaKeyOf } from '../import/assets.ts';
 import { recipeLabel } from './model.ts';
 
-export const PROCESS_TX_LABEL = 'Process Clip';
+const PROCESS_TX_LABEL = 'Process Clip';
 
 type ProcessWatch = {
 	jobId: string;
@@ -184,13 +184,12 @@ export async function startProcessing(input: StartInput): Promise<EngineJob> {
 // ------------------------------------------------------------------ watcher
 
 /** A user notice (toast) with up to two actions. */
-export type Notice = {
+type Notice = {
 	kind: 'info' | 'success' | 'warning' | 'error';
 	message: string;
 	detail?: string;
 	actions?: { label: string; run(): void }[];
 };
-type Notify = (t: Notice) => void;
 
 const RETRY_MEMORY_MS = 60 * 60 * 1000;
 
@@ -222,15 +221,6 @@ class ProcessWatcher {
 	private failed = new Map<string, { watch: ProcessWatch; at: number }>();
 	private timer: ReturnType<typeof setInterval> | null = null;
 	private busy = false;
-	private opts: { pollMs: number; notify: Notify; now(): number } = {
-		pollMs: 1000,
-		notify: defaultNotify,
-		now: () => Date.now(),
-	};
-
-	configure(patch: Partial<{ pollMs: number; notify: Notify; now(): number }>): void {
-		this.opts = { ...this.opts, ...patch };
-	}
 
 	watch(w: ProcessWatch): void {
 		const prev = this.pending.get(w.jobId);
@@ -242,23 +232,10 @@ class ProcessWatcher {
 		this.schedule();
 	}
 
-	/** Jobs being followed. */
-	list(): ProcessWatch[] {
-		return [...this.pending.values()];
-	}
-
-	/** Test helper. */
-	reset(): void {
-		this.pending.clear();
-		this.failed.clear();
-		if (this.timer) clearInterval(this.timer);
-		this.timer = null;
-	}
-
 	private schedule(): void {
 		const active = this.pending.size > 0 || this.failed.size > 0;
 		if (active && !this.timer) {
-			this.timer = setInterval(() => void this.tick(), this.opts.pollMs);
+			this.timer = setInterval(() => void this.tick(), 1000);
 			(this.timer as { unref?: () => void }).unref?.();
 		} else if (!active && this.timer) {
 			clearInterval(this.timer);
@@ -295,7 +272,7 @@ class ProcessWatcher {
 	}
 
 	private async reattach(): Promise<void> {
-		const now = this.opts.now();
+		const now = Date.now();
 		for (const [k, f] of this.failed) if (now - f.at > RETRY_MEMORY_MS) this.failed.delete(k);
 		if (!this.failed.size) return;
 		const byProject = new Map<string, ProcessWatch>();
@@ -321,7 +298,7 @@ class ProcessWatcher {
 		const parsed = ProcessResultSchema.safeParse(job.result);
 		if (!parsed.success) {
 			const issue = parsed.error.issues[0];
-			this.opts.notify({
+			defaultNotify({
 				kind: 'error',
 				message: 'Processing finished without a usable result',
 				detail: issue ? `${issue.path.join('.')}: ${issue.message}` : undefined,
@@ -336,7 +313,7 @@ class ProcessWatcher {
 		});
 		const label = recipeLabel(w.steps);
 		if (!res.ok) {
-			this.opts.notify({
+			defaultNotify({
 				kind: 'warning',
 				message: 'The processed version could not be added',
 				detail: `${res.message}. Processing again reuses the finished file.`,
@@ -347,7 +324,7 @@ class ProcessWatcher {
 			? `\n${res.skipped.length} clip${res.skipped.length > 1 ? 's were' : ' was'} left on ${res.skipped.length > 1 ? 'their' : 'its'} media: the processed frames do not cover ${res.skipped.length > 1 ? 'them' : 'it'} any more`
 			: '';
 		const notes = `${parsed.data.notes.length ? `\n${parsed.data.notes.join('\n')}` : ''}${skipped}`;
-		this.opts.notify({
+		defaultNotify({
 			kind: 'success',
 			message: res.replaced.length
 				? `Clip${res.replaced.length > 1 ? 's' : ''} now use${res.replaced.length > 1 ? '' : 's'} the processed version`
@@ -361,7 +338,7 @@ class ProcessWatcher {
 		const message = job.error?.message ?? 'The process job failed';
 		const hint = errorHint(code);
 		const retryable = job.error?.retryable !== false;
-		if (w.dedupeKey && retryable) this.failed.set(w.dedupeKey, { watch: w, at: this.opts.now() });
+		if (w.dedupeKey && retryable) this.failed.set(w.dedupeKey, { watch: w, at: Date.now() });
 		const actions: NonNullable<Notice['actions']> = [];
 		if (retryable) actions.push({ label: 'Retry', run: () => void this.retry(w) });
 		if (isRemoteFailure(w, job))
@@ -377,14 +354,14 @@ class ProcessWatcher {
 						replaceInClips: w.replaceInClips,
 						...(w.range ? { range: w.range } : {}),
 					}).catch((e) =>
-						this.opts.notify({
+						defaultNotify({
 							kind: 'error',
 							message: 'Processing failed',
 							detail: String((e as Error).message),
 						}),
 					),
 			});
-		this.opts.notify({
+		defaultNotify({
 			kind: 'error',
 			message: 'Processing failed',
 			detail: `${code}: ${message}${hint ? `\n${hint}` : ''}`,
@@ -400,7 +377,7 @@ class ProcessWatcher {
 			if (w.dedupeKey) this.failed.delete(w.dedupeKey);
 			this.watch({ ...w, jobId: job.id, ...(job.dedupeKey ? { dedupeKey: job.dedupeKey } : {}) });
 		} catch (e) {
-			this.opts.notify({ kind: 'error', message: 'Retry failed', detail: (e as Error).message });
+			defaultNotify({ kind: 'error', message: 'Retry failed', detail: (e as Error).message });
 		}
 	}
 }

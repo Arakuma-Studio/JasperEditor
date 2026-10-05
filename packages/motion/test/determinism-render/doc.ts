@@ -19,7 +19,7 @@ import {
 	TEXT_ANIMATION_SPECS,
 } from '@jasper/project';
 
-export const PARITY_DOC_FRAMES = 40;
+const PARITY_DOC_FRAMES = 40;
 export const PARITY_SCENE = {
 	width: 1280,
 	height: 720,

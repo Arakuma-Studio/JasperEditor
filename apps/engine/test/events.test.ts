@@ -97,7 +97,6 @@ describe('capabilities and fonts', () => {
 			(await app.inject({ method: 'GET', url: '/api/capabilities', headers: H })).json(),
 		);
 		expect(caps.engine).toMatchObject({
-			version: '0.1.0',
 			apiVersion: 1,
 			mode: 'dev',
 			pathRegistration: true,
@@ -120,8 +119,13 @@ describe('capabilities and fonts', () => {
 		const opencv = lic.components.find((c) => c.id === 'opencv-js');
 		expect(opencv).toMatchObject({ id: 'opencv-js', license: 'Apache-2.0', bundled: true });
 		expect(opencv!.texts[0]!.text).toMatch(/Apache License/);
-		expect(lic.components[0]).toMatchObject({ id: 'ffmpeg', bundled: caps.media.ffmpegSource === 'vendor' });
-		expect(lic.components[0]!.texts.length > 0).toBe(caps.media.ffmpegSource === 'vendor');
+		expect(lic.components.find((component) => component.id === 'ffmpeg')).toMatchObject({
+			id: 'ffmpeg',
+			bundled: caps.media.ffmpegSource === 'vendor',
+		});
+		expect(lic.components.find((component) => component.id === 'ffmpeg')!.texts.length > 0).toBe(
+			caps.media.ffmpegSource === 'vendor',
+		);
 		expect(caps.render.native).toBe(true);
 		expect(['ready', 'needs-browser-download']).toContain(caps.render.remotionLocal);
 		expect(caps.render.fframes).toBe('unavailable');

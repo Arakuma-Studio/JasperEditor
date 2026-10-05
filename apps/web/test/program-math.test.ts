@@ -1,14 +1,11 @@
-import { applyMatrix, type LayerTransformValues, layerMatrix, visibleRect } from '@jasper/project';
+import { applyMatrix, type LayerTransformValues, layerMatrix } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { buildSnapTargets, snapAxis, snapMove, snapThreshold } from '../src/panels/program/snapping.ts';
 import {
 	angleDelta,
-	HANDLE_IDS,
-	handlePoint,
+	type HandleId,
 	hitTest,
-	isCorner,
 	moveAnchor,
-	oppositeHandle,
 	pointInQuad,
 	RotationTracker,
 	rotate,
@@ -19,7 +16,6 @@ import {
 import {
 	clampPan,
 	computeView,
-	fitScale,
 	toScreen,
 	toSequence,
 	zoomAround,
@@ -29,16 +25,6 @@ import {
 const FRAME = { width: 1920, height: 1080 };
 
 describe('viewport (S03:PGM-010…014)', () => {
-	it('fits with 16 px padding and centers the frame', () => {
-		const vp = { width: 1000, height: 600 };
-		const s = fitScale(vp, FRAME);
-		expect(s).toBeCloseTo(Math.min(968 / 1920, 568 / 1080), 9);
-		const v = computeView(vp, FRAME, 'fit', [50, 50]);
-		expect(v.x).toBeCloseTo((1000 - 1920 * s) / 2, 9);
-		expect(v.y).toBeCloseTo((600 - 1080 * s) / 2, 9);
-		expect(toSequence(v, toScreen(v, [123, 456]))).toEqual([123, 456].map((n) => expect.closeTo(n, 9)));
-	});
-
 	it('zooms around the cursor keeping the sequence point fixed within 1 px (AC-PGM-3)', () => {
 		const vp = { width: 1200, height: 800 };
 		let state: { zoom: 'fit' | number; pan: Vec2 } = { zoom: 'fit', pan: [0, 0] };
@@ -74,8 +60,18 @@ const V: LayerTransformValues = {
 	flipH: false,
 	flipV: false,
 };
-const BOX = { width: 640, height: 360 };
-const RECT = visibleRect(BOX, { left: 20, top: 0, right: 0, bottom: 0 });
+const RECT = { x: 128, y: 0, width: 512, height: 360 };
+// The eight points and their opposites in the specified cropped fixture (AC-XF-1 / XF-031).
+const HANDLES: readonly [HandleId, Vec2, Vec2][] = [
+	['nw', [128, 0], [640, 360]],
+	['n', [384, 0], [384, 360]],
+	['ne', [640, 0], [128, 360]],
+	['e', [640, 180], [128, 180]],
+	['se', [640, 360], [128, 0]],
+	['s', [384, 360], [384, 0]],
+	['sw', [128, 360], [640, 0]],
+	['w', [128, 180], [640, 180]],
+];
 
 function screenOf(v: LayerTransformValues, q: Vec2, scale: number): Vec2 {
 	const p = applyMatrix(layerMatrix(v), q);
@@ -105,14 +101,13 @@ describe('on-canvas transform math (S03 §9)', () => {
 
 	it('moves every handle onto the cursor with ≤ 1 screen px error at 25/100/400 % (AC-XF-1)', () => {
 		for (const zoom of [0.25, 1, 4]) {
-			for (const h of HANDLE_IDS) {
+			for (const [h, qh] of HANDLES) {
 				// Target: the handle position after a free scale to 120 % × 60 % (edges: their axis only).
 				const target: LayerTransformValues = {
 					...V,
 					scaleWidth: h === 'n' || h === 's' ? V.scaleWidth : 120,
 					scale: h === 'e' || h === 'w' ? V.scale : 60,
 				};
-				const qh = handlePoint(RECT, h);
 				const wanted = applyMatrix(layerMatrix(target), qh) as Vec2;
 				const r = scaleFromHandle({ values: V, rect: RECT, handle: h, pointer: wanted });
 				const next = {
@@ -133,13 +128,9 @@ describe('on-canvas transform math (S03 §9)', () => {
 	});
 
 	it('keeps the opposite handle fixed with Alt and writes position (XF-031)', () => {
-		for (const h of HANDLE_IDS) {
-			const opp = handlePoint(RECT, oppositeHandle(h));
+		for (const [h, qh, opp] of HANDLES) {
 			const before = applyMatrix(layerMatrix(V), opp);
-			const pointer = applyMatrix(
-				layerMatrix({ ...V, scaleWidth: 200, scale: 100 }),
-				handlePoint(RECT, h),
-			) as Vec2;
+			const pointer = applyMatrix(layerMatrix({ ...V, scaleWidth: 200, scale: 100 }), qh) as Vec2;
 			const r = scaleFromHandle({ values: V, rect: RECT, handle: h, pointer, aboutOpposite: true });
 			const after = applyMatrix(
 				layerMatrix({ ...V, scale: r.scale, scaleWidth: r.scaleWidth, position: r.position }),
@@ -152,7 +143,7 @@ describe('on-canvas transform math (S03 §9)', () => {
 
 	it('scales uniformly by projection on corners and clamps instead of flipping (XF-030/032)', () => {
 		const u: LayerTransformValues = { ...V, uniformScale: true, scale: 100, scaleWidth: 100 };
-		const corner = handlePoint(RECT, 'se');
+		const corner: Vec2 = [640, 360];
 		const doubled = applyMatrix(layerMatrix({ ...u, scale: 200, scaleWidth: 200 }), corner) as Vec2;
 		const r = scaleFromHandle({
 			values: u,
@@ -171,7 +162,6 @@ describe('on-canvas transform math (S03 §9)', () => {
 			scaleFromHandle({ values: u, rect: RECT, handle: 'se', pointer: doubled, invertUniform: true })
 				.uniformScale,
 		).toBe(false);
-		expect(isCorner('se')).toBe(true);
 	});
 
 	it('rotates with unwrapping, Shift 15° steps and the 90° snap (XF-035)', () => {

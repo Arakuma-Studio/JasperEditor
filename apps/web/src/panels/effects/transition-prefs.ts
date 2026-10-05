@@ -31,7 +31,7 @@ export const TRANSITION_ALIGNMENTS: readonly { value: TransitionAlignment; label
 const KEY = 'jasper.transitions.defaults.v1';
 
 /** Premiere's defaults: video length in frames, audio and stills in seconds; dissolve / power, centred. */
-export function builtInTransitionDefaults(): TransitionDefaults {
+function builtInTransitionDefaults(): TransitionDefaults {
 	return {
 		version: 2,
 		video: CROSS_DISSOLVE,

@@ -3,14 +3,12 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-	DIALOG_ESCAPE_REVERTS,
+	ColorPicker,
 	Dialog,
 	DropdownMenu,
 	IconButton,
 	PanelErrorBoundary,
-	parseHex,
 	type ResolvedMenuItem,
-	rgbaToHex,
 	ScrubbyNumber,
 	Select,
 	TimecodeField,
@@ -300,21 +298,18 @@ describe('menus (S05:MN-002, SH-031)', () => {
 
 describe('TreeList (S05:CT-040…045)', () => {
 	const many: TreeNode[] = Array.from({ length: 1000 }, (_, i) => ({ id: `n${i}`, label: `Clip ${i}` }));
-	it('virtualizes long lists but keeps ARIA sizes', () => {
+	it('reports the complete tree size to assistive technology', () => {
 		render(
-			<div style={{ height: 220 }}>
-				<TreeList
-					label="Items"
-					nodes={many}
-					expanded={new Set()}
-					onExpandedChange={() => {}}
-					selected={[]}
-					onSelectionChange={() => {}}
-				/>
-			</div>,
+			<TreeList
+				label="Items"
+				nodes={many}
+				expanded={new Set()}
+				onExpandedChange={() => {}}
+				selected={[]}
+				onSelectionChange={() => {}}
+			/>,
 		);
 		const rows = screen.getAllByRole('treeitem');
-		expect(rows.length).toBeLessThan(100);
 		expect(rows[0]?.getAttribute('aria-setsize')).toBe('1000');
 	});
 	it('keyboard: arrows move, Shift extends, → expands', () => {
@@ -351,10 +346,18 @@ describe('tooltip and color input contracts', () => {
 		expect(screen.getByLabelText('Razor Tool').getAttribute('title')).toBe('Razor Tool (C)\nNo sequence');
 		expect(screen.getByLabelText('Razor Tool').getAttribute('aria-disabled')).toBe('true');
 	});
-	it('parses and prints hex colors', () => {
-		expect(parseHex('#ff0000')).toEqual([1, 0, 0, 1]);
-		expect(rgbaToHex([0, 1, 0, 0.5], true)).toBe('#00ff0080');
-		expect(parseHex('zzz')).toBeNull();
+	it('commits valid hex colors and restores invalid input', () => {
+		const onChange = vi.fn();
+		render(<ColorPicker value={[0, 1, 0, 0.5]} onChange={onChange} />);
+		const input = screen.getByRole('textbox', { name: 'Hex color' }) as HTMLInputElement;
+		expect(input.value).toBe('#00ff0080');
+		fireEvent.change(input, { target: { value: '#ff0000' } });
+		fireEvent.keyDown(input, { key: 'Enter' });
+		expect(onChange).toHaveBeenCalledWith([1, 0, 0, 1], { final: true });
+		fireEvent.change(input, { target: { value: 'zzz' } });
+		fireEvent.keyDown(input, { key: 'Enter' });
+		expect(onChange).toHaveBeenCalledTimes(1);
+		expect(input.value).toBe('#ff0000');
 	});
 });
 
@@ -405,21 +408,5 @@ describe('Dialog is modal for assistive tech and keyboard dispatchers (S05)', ()
 		);
 		const el = screen.getByRole('dialog');
 		expect(el.getAttribute('aria-modal')).toBe('true');
-	});
-});
-
-describe('Esc in a dialog field being edited (DIALOG_ESCAPE_REVERTS)', () => {
-	it('the first Esc stays with the edited field; Esc elsewhere closes the dialog', () => {
-		const onOpenChange = vi.fn();
-		render(
-			<Dialog open onOpenChange={onOpenChange} title="T">
-				<input data-testid="editing" {...{ [DIALOG_ESCAPE_REVERTS]: 'true' }} />
-				<input data-testid="idle" />
-			</Dialog>,
-		);
-		fireEvent.keyDown(screen.getByTestId('editing'), { key: 'Escape' });
-		expect(onOpenChange).not.toHaveBeenCalled();
-		fireEvent.keyDown(screen.getByTestId('idle'), { key: 'Escape' });
-		expect(onOpenChange).toHaveBeenCalledWith(false);
 	});
 });

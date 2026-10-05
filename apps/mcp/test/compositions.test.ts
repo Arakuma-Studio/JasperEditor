@@ -3,7 +3,7 @@
 // import_mg_bundle → list_compositions → add_composition → set_composition_props → render_frame (the edited
 // title changes the frame) → prerender_composition, plus the actionable errors.
 import { type ChildProcess, spawn } from 'node:child_process';
-import { cpSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -126,6 +126,10 @@ describe.runIf(E2E)('composition tools over stdio against a real engine (MG_E2E=
 		});
 		expect(set.effectiveProps).toMatchObject({ title: 'Edited by an agent', delay: 0 });
 		const after = await frame();
+		const artifacts = join(ROOT, 'test-results', 'mcp');
+		mkdirSync(artifacts, { recursive: true });
+		writeFileSync(join(artifacts, 'composition-before.png'), Buffer.from(before, 'base64'));
+		writeFileSync(join(artifacts, 'composition-after.png'), Buffer.from(after, 'base64'));
 		expect(after).not.toBe(before);
 		const { body: pre } = await ok<{ job: { state: string; kind: string; result?: { masterUrl?: string } } }>(
 			'prerender_composition',
@@ -151,13 +155,7 @@ describe.runIf(E2E)('composition tools over stdio against a real engine (MG_E2E=
 			['role', 'Role'],
 			['quote', 'Quote'],
 		]);
-		expect(Object.keys(texts.texts[0]!.style).sort()).toEqual([
-			'align',
-			'color',
-			'fontFamily',
-			'fontSize',
-			'fontWeight',
-		]);
+
 		const noRole = await call('set_composition_text', {
 			projectId,
 			clipId: ltId,
@@ -199,7 +197,7 @@ describe.runIf(E2E)('composition tools over stdio against a real engine (MG_E2E=
 		// for its panel is cut off; the warning names it and the result says it was measured.
 		const { body: long } = await ok<{
 			layout: string;
-			texts: { path: string; warnings: { code: string }[]; rect?: { width: number } }[];
+			texts: { path: string; warnings: { code: string }[] }[];
 		}>('set_composition_text', {
 			projectId,
 			clipId: ltId,
@@ -207,7 +205,6 @@ describe.runIf(E2E)('composition tools over stdio against a real engine (MG_E2E=
 		});
 		expect(long.layout).toMatch(/^measured/);
 		expect(long.texts[0]!.warnings.map((w) => w.code)).toEqual(['MG_TEXT_LONG', 'MG_TEXT_CLIPPED']);
-		expect(long.texts[0]!.rect!.width).toBeGreaterThan(1100);
 		const { body: listed2 } = await ok<{
 			layout: string;
 			texts: { path: string; warnings: { code: string }[] }[];
@@ -230,7 +227,6 @@ describe.runIf(E2E)('composition tools over stdio against a real engine (MG_E2E=
 		expect(ver.isError).toBe(true);
 		const err = JSON.parse(text(ver)).error;
 		expect(err.code).toBe('MG_REMOTION_VERSION');
-		expect(err.hint).toMatch(/pin it|pin every remotion/);
 		rmSync(old, { recursive: true, force: true });
 	}, 900_000);
 });

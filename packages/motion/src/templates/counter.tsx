@@ -100,7 +100,6 @@ export function Counter(props: AnimeTemplateProps) {
 				}}
 			>
 				<div
-					data-part="number"
 					style={{
 						fontSize: p.size,
 						fontWeight: 700,
@@ -117,7 +116,6 @@ export function Counter(props: AnimeTemplateProps) {
 				</div>
 				{p.label ? (
 					<div
-						data-part="label"
 						style={{
 							fontSize: labelSize,
 							fontWeight: 500,

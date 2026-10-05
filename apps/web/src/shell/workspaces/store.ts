@@ -127,8 +127,8 @@ export class WorkspaceStore {
 		this.set({ ...this.state, workspaces: { ...this.state.workspaces, [id]: { ...r, ...patch } } }, persist);
 	}
 	private schedule() {
-		if (this.timer !== null) clearTimeout(this.timer);
-		this.timer = setTimeout(() => {
+		if (this.timer !== null) globalThis.clearTimeout(this.timer);
+		this.timer = globalThis.setTimeout(() => {
 			this.timer = null;
 			this.flush();
 		}, SAVE_DEBOUNCE_MS);
@@ -136,7 +136,7 @@ export class WorkspaceStore {
 
 	/** Writes immediately (pagehide/beforeunload, SH-022). */
 	flush(): void {
-		if (this.timer !== null) clearTimeout(this.timer);
+		if (this.timer !== null) globalThis.clearTimeout(this.timer);
 		this.timer = null;
 		saveVersioned(this.storage, SPEC, this.state);
 	}

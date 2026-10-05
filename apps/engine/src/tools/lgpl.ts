@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 
 export const REMOTION_BIN_DIR_ENV = 'JASPER_REMOTION_BIN_DIR';
 /** Older name (wp-3l); still honoured. */
-export const REMOTION_BIN_DIR_ENV_LEGACY = 'JASPER_REMOTION_BINARIES_DIR';
+const REMOTION_BIN_DIR_ENV_LEGACY = 'JASPER_REMOTION_BINARIES_DIR';
 /** `0` disables the dev vendor directory lookup (use PATH ffmpeg and Remotion's bundled one). */
 const FFMPEG_VENDOR_ENV = 'JASPER_FFMPEG_VENDOR';
 /** Name of the LGPL binaries directory inside packaged resources. */
@@ -29,10 +29,9 @@ const STRICT_MISSING_MESSAGE =
 	`${REMOTION_BIN_DIR_ENV}). Packaged and built engines never use Remotion's bundled GPL FFmpeg.`;
 
 type Env = Record<string, string | undefined>;
-type Exists = (p: string) => boolean;
 
 /** `linux-x64`, `darwin-arm64`, `win32-x64` … (musl Linux: `linux-x64-musl`). */
-export function platformKey(
+function platformKey(
 	platform: NodeJS.Platform = process.platform,
 	arch: string = process.arch,
 	musl = isMusl(platform),
@@ -56,30 +55,25 @@ export function binaryNames(platform: NodeJS.Platform = process.platform): {
 }
 
 /** A directory Remotion accepts as `binariesDirectory`: compositor + ffmpeg + ffprobe. */
-export function isBinariesDir(
-	dir: string,
-	platform: NodeJS.Platform = process.platform,
-	exists: Exists = existsSync,
-): boolean {
+function isBinariesDir(dir: string, platform: NodeJS.Platform = process.platform): boolean {
 	const n = binaryNames(platform);
-	return exists(join(dir, n.compositor)) && exists(join(dir, n.ffmpeg)) && exists(join(dir, n.ffprobe));
+	return (
+		existsSync(join(dir, n.compositor)) && existsSync(join(dir, n.ffmpeg)) && existsSync(join(dir, n.ffprobe))
+	);
 }
 
 /**
  * The dev vendor directory: walks up from `from` (default: this module) looking for
  * `vendor/ffmpeg-lgpl/<platformKey>` with a BUILDINFO.json (written by `pnpm ffmpeg:lgpl` after its checks).
  */
-export function findVendorDir(
-	opts: { from?: string; key?: string; env?: Env; exists?: Exists; maxDepth?: number } = {},
-): string | null {
+export function findVendorDir(opts: { from?: string; key?: string; env?: Env } = {}): string | null {
 	const env = opts.env ?? process.env;
 	if (env[FFMPEG_VENDOR_ENV] === '0') return null;
-	const exists = opts.exists ?? existsSync;
 	const key = opts.key ?? platformKey();
 	let dir = opts.from ?? dirname(fileURLToPath(import.meta.url));
-	for (let i = 0; i < (opts.maxDepth ?? 8); i++) {
+	for (let i = 0; i < 8; i++) {
 		const cand = join(dir, 'vendor', 'ffmpeg-lgpl', key);
-		if (exists(join(cand, 'BUILDINFO.json'))) return cand;
+		if (existsSync(join(cand, 'BUILDINFO.json'))) return cand;
 		const up = dirname(dir);
 		if (up === dir) break;
 		dir = up;
@@ -111,12 +105,10 @@ export function resolveRemotionBinaries(opts: {
 	vendorDir?: string | null;
 	strict: boolean;
 	platform?: NodeJS.Platform;
-	exists?: Exists;
 }): RemotionBinaries {
 	const env = opts.env ?? process.env;
-	const exists = opts.exists ?? existsSync;
 	const platform = opts.platform ?? process.platform;
-	const valid = (d: string) => isBinariesDir(d, platform, exists);
+	const valid = (d: string) => isBinariesDir(d, platform);
 	const refuse = (message: string): RemotionBinaries =>
 		opts.strict
 			? { dir: null, source: 'missing', lgpl: false, allowed: false, message }

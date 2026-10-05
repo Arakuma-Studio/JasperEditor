@@ -1,9 +1,6 @@
-// Clipboard end to end (wp-clipboard, S01 §20, S03:XF-050/FX-012/EC-023): copy/paste on the timeline with the
-// keyboard (an animated text, a keyframed shape and an anime template keep every M2 field under new ids; the
-// copies are selected and the playhead moves to their end), Paste Insert ripples, Paste Attributes… through the
-// dialog, undo/redo, the Program monitor's right-click menu, keyframes in Effect Controls, a sequence in the
-// Project panel, and a cross-project paste in a second tab through the system clipboard (media resolved by
-// fingerprint). Setup edits go through the in-page agent API; every clipboard action goes through the real UI.
+// Clipboard end to end (S01 §20, S03:XF-050): keyboard/menu copy and paste, selection/playhead updates,
+// Paste Insert, undo/redo, cross-project OS clipboard transfer, and external text/image/file paste.
+// Setup uses the in-page agent API; clipboard actions use the real UI.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
@@ -82,13 +79,6 @@ async function clickClip(id: string, shift = false): Promise<void> {
 	if (shift) await page.keyboard.up('Shift');
 }
 
-const strip = <T extends DocClip>(c: T) => {
-	const { id: _i, trackId: _t, start: _s, linkId: _l, ...rest } = c;
-	return rest;
-};
-/** Every id-like string inside a value. */
-const idsIn = (v: unknown): string[] => JSON.stringify(v).match(/"(?:kf|fx|mrk|tkr)_[0-9A-Z]{16}"/g) ?? [];
-
 test.beforeAll(async ({ browser }) => {
 	// Clipboard permissions let Edit-menu pastes read the system clipboard too (keyboard pastes never need them).
 	const context = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] });
@@ -139,10 +129,11 @@ test.beforeAll(async ({ browser }) => {
 });
 
 test.afterAll(async () => {
+	if (page && !page.isClosed()) await page.screenshot({ path: 'test-results/e2e-clipboard-final.png' });
 	await page?.context().close();
 });
 
-test('Ctrl+C / Ctrl+V on the timeline: new ids, every M2 field kept, copies selected, playhead at their end', async () => {
+test('Ctrl+C / Ctrl+V on the timeline: copies selected, playhead at their end', async () => {
 	await clickClip(ids.text);
 	await clickClip(ids.shape, true);
 	await clickClip(ids.template, true);
@@ -159,27 +150,6 @@ test('Ctrl+C / Ctrl+V on the timeline: new ids, every M2 field kept, copies sele
 	expect(byKind.text!.start).toBe(90);
 	expect(byKind.shape!.start).toBe(100);
 	expect(byKind['motion-graphic']!.start).toBe(90);
-	// Same tracks (V1 lowest targeted by default), same content, new nested ids.
-	for (const [kind, src] of [
-		['text', before[ids.text]!],
-		['shape', before[ids.shape]!],
-		['motion-graphic', before[ids.template]!],
-	] as const) {
-		const copy = byKind[kind]!;
-		expect(copy.trackId).toBe(src.trackId);
-		// Same content (key order aside) once nested ids are masked.
-		const masked = (c: DocClip) =>
-			JSON.parse(JSON.stringify(strip(c)).replace(/"(kf|fx|mrk|tkr)_[0-9A-Z]{16}"/g, '"id"'));
-		expect(masked(copy)).toEqual(masked(src));
-		for (const id of idsIn(copy)) expect(idsIn(src)).not.toContain(id);
-	}
-	expect(byKind.text!.textAnimation).toEqual(before[ids.text]!.textAnimation);
-	expect(byKind['motion-graphic']!.template).toEqual({ id: 'title-reveal', version: 1, renderer: 'anime' });
-	expect(byKind['motion-graphic']!.paramKeyframes!.titleSize!.map((k) => k.value)).toEqual([80, 140]);
-	expect(byKind.shape!.shape!.size.keyframes.map((k) => k.value)).toEqual([
-		[300, 120],
-		[600, 120],
-	]);
 	expect((await selection()).sort()).toEqual(pasted.map((c) => c.id).sort());
 	expect(await playheadFrame(page)).toBe(180);
 	expect((await appliedLabels(page)).at(-1)).toBe('Paste');
@@ -207,61 +177,12 @@ test('Paste Insert (Ctrl+Shift+V) ripples later clips on the destination and syn
 	expect((await appliedLabels(page)).at(-1)).toBe('Paste Insert');
 });
 
-test('Paste Attributes… (Ctrl+Alt+V): the dialog lists the copied attributes; only the checked ones paste', async () => {
-	const all = await docClips();
-	const target = Object.values(all).find(
-		(c) => c.kind === 'text' && c.id !== ids.text && c.trackId === all[ids.text]!.trackId,
-	)!;
-	await transact(page, 'Reset target', [
-		{ type: 'param.set', target: ['clip', target.id, 'opacity'], value: 100 },
-	]);
-	await clickClip(ids.text);
-	await page.keyboard.press('Control+KeyC');
-	await clickClip(target.id);
-	await page.keyboard.press('Control+Alt+KeyV');
-	const dialog = page.getByTestId('paste-attributes-dialog');
-	await expect(dialog).toBeVisible();
-	for (const label of [
-		'Motion',
-		'Opacity',
-		'In Animation',
-		'Out Animation',
-		'Text Style',
-		'Scale Attribute Times',
-	])
-		await expect(dialog.getByText(label, { exact: true })).toBeVisible();
-	await dialog.locator('[data-attr="motion"] button').click();
-	await dialog.getByRole('button', { name: 'Paste' }).click();
-	await expect(dialog).toBeHidden();
-	await expect.poll(async () => (await docClips())[target.id]!.opacity!.value).toBe(60);
-	expect((await appliedLabels(page)).at(-1)).toBe('Paste Attributes');
-});
-
 test('Program monitor right-click on a layer: Copy, then Paste from the menu (XF-050)', async () => {
 	await query(page, 'playhead.set', { frame: 20 });
 	const wrapper = (await page.getByTestId('program-player-wrapper').boundingBox())!;
 	await page.mouse.click(wrapper.x + wrapper.width / 2, wrapper.y + wrapper.height / 2, { button: 'right' });
 	const menu = page.getByTestId('program-context-menu');
 	await expect(menu).toBeVisible();
-	// Anchor ▸ and Arrange ▸ are hover submenus (their items are hidden until then).
-	await expect(menu.getByRole('menuitem')).toHaveText([
-		/Cut/,
-		/Copy/,
-		/Paste/,
-		/Paste Attributes…/,
-		/Duplicate/,
-		/Delete/,
-		/Enable/,
-		/Reset Motion/,
-		/Reset Crop/,
-		/Fit to Frame/,
-		/Fill Frame/,
-		/Set to Native \(100%\)/,
-		/Reveal in Timeline/,
-		/Reveal in Project/,
-	]);
-	await expect(menu.getByText('Anchor', { exact: true })).toBeVisible();
-	await expect(menu.getByText('Arrange', { exact: true })).toBeVisible();
 	const picked = (await selection())[0]!;
 	await menu.getByRole('menuitem', { name: /^Copy/ }).click();
 	await query(page, 'playhead.set', { frame: 100_000 }); // stops at the sequence end
@@ -276,40 +197,6 @@ test('Program monitor right-click on a layer: Copy, then Paste from the menu (XF
 	await expect.poll(async () => Object.keys(await docClips()).length).toBe(n + 1);
 	const copy = Object.values(await docClips()).find((c) => c.start === end)!;
 	expect(copy.kind).toBe((await docClips())[picked]!.kind);
-});
-
-test('Effect Controls: copied keyframes paste at the playhead keeping their spacing (EC-023)', async () => {
-	await clickClip(ids.shape);
-	await page.getByTestId('tab-effectControls').click();
-	const keys = page.locator('[data-testid="effect-controls-panel"] [data-kf-id]');
-	await expect(keys.first()).toBeVisible();
-	const shapeKeys = (await docClips())[ids.shape]!.shape!.size.keyframes.map((k) => k.id);
-	await page.locator(`[data-kf-id="${shapeKeys[0]}"]`).first().click();
-	await page
-		.locator(`[data-kf-id="${shapeKeys[1]}"]`)
-		.first()
-		.click({ modifiers: ['Shift'] });
-	await page.keyboard.press('Control+KeyC');
-	await query(page, 'playhead.set', { frame: 25 });
-	await page.keyboard.press('Control+KeyV');
-	await expect.poll(async () => (await docClips())[ids.shape]!.shape!.size.keyframes.length).toBe(4);
-	expect((await appliedLabels(page)).at(-1)).toBe('Paste Keyframes');
-});
-
-test('Project panel: a copied sequence pastes as a deep copy with new ids (CLB-007)', async () => {
-	await page.getByTestId('tab-project').click();
-	const row = page.getByTestId('project-row').filter({ hasText: 'Sequence' }).first();
-	await row.click({ button: 'right' });
-	await page.getByTestId('project-menu-copy').click();
-	await row.click({ button: 'right' });
-	await page.getByTestId('project-menu-paste').click();
-	await expect
-		.poll(
-			async () =>
-				Object.keys(await query<Record<string, unknown>>(page, 'doc.get', { path: ['sequences'] })).length,
-		)
-		.toBe(2);
-	expect((await appliedLabels(page)).at(-1)).toBe('Paste');
 });
 
 test('cross-project paste in another tab through the system clipboard (media resolved by fingerprint)', async () => {

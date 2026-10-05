@@ -1,4 +1,4 @@
-// Regression cases from docs/wp-notes/wp-m2-anime-templates.md, Review fixes 2 and 8.
+// Regression cases from docs/wp-notes/wp-m2-anime-templates.md, Review fix 8.
 import { ANIME_CATALOG, animeTemplateTiming } from '@jasper/mg-templates';
 import { act, render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
@@ -21,20 +21,15 @@ function renderTemplate(id: string, frame: number, params?: Record<string, unkno
 }
 
 describe('anime template regressions', () => {
-	it('callout pulse is hidden at the clip start and on the head handle', () => {
-		const { view, seek } = renderTemplate('callout', 0);
-		const ring = () => view.container.querySelector('[data-part="ring"]')!.getAttribute('opacity');
-		expect(ring()).toBe('0');
-		seek(-2);
-		expect(ring()).toBe('0');
-		view.unmount();
-	});
-
 	it('a large counter advances at frame precision and reaches both endpoints', () => {
 		const def = ANIME_CATALOG.find((d) => d.id === 'counter')!;
-		const { view, seek } = renderTemplate('counter', 0, { ...def.defaults, from: 0, to: 25_000_000 });
-		const shown = () =>
-			Number(view.container.querySelector('[data-part="number"]')!.textContent!.replace(/,/g, ''));
+		const { view, seek } = renderTemplate('counter', 0, {
+			...def.defaults,
+			label: '',
+			from: 0,
+			to: 25_000_000,
+		});
+		const shown = () => Number(view.container.textContent!.replace(/,/g, ''));
 		expect(shown()).toBe(0);
 		const counting: number[] = [];
 		for (let frame = 1; frame <= 75; frame++) {

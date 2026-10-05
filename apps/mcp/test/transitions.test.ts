@@ -193,14 +193,11 @@ describe('apply_default_transitions defaults (S10:TUI-034)', () => {
 		]);
 	});
 
-	it('falls back to the built-ins without an editor and for invalid editor values', async () => {
+	it('falls back to the built-ins for invalid editor values', async () => {
 		const builtIn = [
 			['A1', 'jasper.constant-power', 'center'],
 			['V1', 'jasper.cross-dissolve', 'center'],
 		];
-		const headless = await applyDefaults(null);
-		expect(headless.defaults.source).toBe('built-in');
-		expect(headless.atCut).toEqual(builtIn);
 		// Wrong medium, unknown id, unknown alignment: ignored.
 		const invalid = await applyDefaults({ video: 'jasper.constant-power', audio: 'x', alignment: 'middle' });
 		expect(invalid.defaults.source).toBe('built-in');

@@ -213,7 +213,7 @@ const NATIVE_PASTE_WAIT_MS = 120;
  * Lets the default action of a paste chord happen and runs `run` with the data of the paste event it fires
  * (captured and stopped here), or with `null` when the browser fires none.
  */
-export function awaitNativePaste(win: Window, run: (data: ClipboardData | null) => void): void {
+function awaitNativePaste(win: Window, run: (data: ClipboardData | null) => void): void {
 	let done = false;
 	const finish = (data: ClipboardData | null) => {
 		if (done) return;
