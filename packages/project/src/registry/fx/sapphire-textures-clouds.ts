@@ -437,9 +437,9 @@ export const S_TEXTURE_FOLDED = texture({
 	],
 	gpu: single(/* glsl */ `
 void main() {${SHIFTED}
-  vec2 fp = p * u_foldFreq + stc_yUp(u_foldStart + u_foldSpeed * u_time);
+  vec2 fp = (p + stc_yUp(u_foldStart + u_foldSpeed * u_time)) * u_foldFreq;
   // The fold field turns a displacement direction by up to ±Fold Amp; neighbouring regions fold over each other.
-  float th = fx_deg(u_foldAmp) * 2.5 * stc_fbm(fp, u_foldOctaves, 0.5, stc_seed(u_seed, 7.0));
+  float th = fx_deg(u_foldAmp) * 1.5 * stc_fbm(fp, u_foldOctaves, 0.5, stc_seed(u_seed, 7.0));
   vec2 off = 1.2 * vec2(cos(th), sin(th));
   float n = stc_fbm(p + off, u_octaves, 0.5, u_seed);
   fragColor = stc_finish(stc_ramp1(stc_unit(n)));

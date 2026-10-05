@@ -1,7 +1,7 @@
 // Browser entry of the sapphire-textures-clouds GL test (bundled with esbuild, run in headless Chrome by
 // ../fx-sapphire-textures-clouds-gl.test.ts): runs the family's generators through the real GPU host
 // (src/fx/host.ts) at a given frame and seed, and reports pixel statistics / PNGs.
-import { type EffectSpec, FX_FAMILIES, fxBuiltinUniforms, planGpuEffect } from '@jasper/project';
+import { type EffectSpec, FX_FAMILIES, fxBuiltinUniforms, fxSeed, planGpuEffect } from '@jasper/project';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 import { fxCanvasLayout } from '../../src/fx/plan.ts';
 
@@ -11,7 +11,8 @@ type Opts = {
 	width?: number;
 	height?: number;
 	frame?: number;
-	seed?: number;
+	/** Clip id behind `u_seed` (`fxSeed(clip, 'fx1', params)`, as in the compositions; default 'clip1'). */
+	clip?: string;
 	/** Input picture: an opaque colour (CSS), 'transparent', or 'half' (left half opaque grey, right transparent). */
 	input?: string;
 };
@@ -40,11 +41,12 @@ function run(id: string, over: Record<string, unknown>, o: Opts = {}): HTMLCanva
 	const params = defaults(s, over);
 	const box = { width: o.width ?? 160, height: o.height ?? 90 };
 	const frame = o.frame ?? 0;
+	const seed = fxSeed(o.clip ?? 'clip1', 'fx1', params as never);
 	const layout = fxCanvasLayout(box, { left: 0, top: 0, right: 0, bottom: 0 }, 8192);
 	const plan = planGpuEffect(
 		s,
 		{ id: 'fx1', params: params as never },
-		{ ...box, pxScale: layout.pxScale, fps: 30, frame, duration: 300, seed: o.seed ?? 0.25, progress: 0 },
+		{ ...box, pxScale: layout.pxScale, fps: 30, frame, duration: 300, seed, progress: 0 },
 		{ width: layout.width, height: layout.height },
 	);
 	const input = canvas(layout.width, layout.height);
@@ -73,7 +75,7 @@ function run(id: string, over: Record<string, unknown>, o: Opts = {}): HTMLCanva
 					duration: 300,
 					compSize: { width: 1920, height: 1080 },
 				}),
-				{ name: 'u_seed', type: 'float', value: [o.seed ?? 0.25] },
+				{ name: 'u_seed', type: 'float', value: [seed] },
 			],
 			textures: {},
 			samples: { sources: [], offsets: [] },
