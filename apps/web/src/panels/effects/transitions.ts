@@ -1,32 +1,34 @@
 // Transition bins of the Effects panel (S10:TUI-020) and "apply to the selected clips" (double-click,
 // context menu): generated from TRANSITION_SPECS, one transaction per invocation.
-import {
-	CONSTANT_GAIN,
-	CONSTANT_POWER,
-	CROSS_DISSOLVE,
-	DIP_TO_BLACK,
-	TRANSITION_SPECS,
-	type TransitionSpec,
-	transitionSpec,
-} from '@jasper/project';
+import { TRANSITION_SPECS, type TransitionSpec, transitionSpec } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { transitionDefaults } from './transition-prefs.ts';
 
-/** Sub-folder of each built-in transition (unknown future ids land in "Other"). */
-const CATEGORY: Record<string, string> = {
-	[CROSS_DISSOLVE]: 'Dissolve',
-	[DIP_TO_BLACK]: 'Dissolve',
-	[CONSTANT_GAIN]: 'Crossfade',
-	[CONSTANT_POWER]: 'Crossfade',
-};
+/** Effects-panel folder of a transition: its spec's `bin` (Premiere bins, "Sapphire Transitions", "Crossfade"). */
+const binOf = (s: TransitionSpec) => s.bin || 'Other';
+/** Third-party packs (Sapphire) are listed after Premiere's own bins, as Premiere lists plug-in folders. */
+const binRank = (bin: string) => (bin.startsWith('Sapphire') ? 1 : 0);
+/** Sub-folders sorted by name, "Other" last. */
+const groupOrder = (a: string, b: string) =>
+	Number(a === 'Other') - Number(b === 'Other') || a.localeCompare(b);
 
 type TransitionBin = {
 	medium: 'Video Transitions' | 'Audio Transitions';
 	appliesTo: 'video' | 'audio';
-	categories: { category: string; transitions: TransitionSpec[] }[];
+	/**
+	 * Folders (`spec.bin`); `transitions` are the folder's direct items, `groups` its sub-folders (`spec.subBin`,
+	 * e.g. Sapphire Transitions > Dissolves).
+	 */
+	categories: {
+		category: string;
+		transitions: TransitionSpec[];
+		groups: { group: string; transitions: TransitionSpec[] }[];
+	}[];
 };
 
-/** "Video Transitions ▸ Dissolve", "Audio Transitions ▸ Crossfade", filtered by the search query. */
+const byLabel = (x: TransitionSpec, y: TransitionSpec) => x.label.localeCompare(y.label);
+
+/** "Video Transitions ▸ Iris ▸ Iris Round", "… ▸ Sapphire Transitions ▸ Dissolves ▸ S_DissolveLuma", filtered. */
 export function transitionTree(
 	query: string,
 	specs: readonly TransitionSpec[] = TRANSITION_SPECS,
@@ -37,8 +39,18 @@ export function transitionTree(
 		const cats = new Map<string, TransitionSpec[]>();
 		for (const s of specs) {
 			if (s.appliesTo !== appliesTo) continue;
-			const category = CATEGORY[s.id] ?? 'Other';
-			const hay = [s.label, s.id, category, 'transition', s.description].join(' ').toLowerCase();
+			const category = binOf(s);
+			const hay = [
+				s.label,
+				s.id,
+				category,
+				s.subBin ?? '',
+				'transition',
+				s.description,
+				...(s.keywords ?? []),
+			]
+				.join(' ')
+				.toLowerCase();
 			if (q && !hay.includes(q)) continue;
 			cats.set(category, [...(cats.get(category) ?? []), s]);
 		}
@@ -47,11 +59,18 @@ export function transitionTree(
 			medium: appliesTo === 'video' ? 'Video Transitions' : 'Audio Transitions',
 			appliesTo,
 			categories: [...cats.entries()]
-				.sort(([a], [b]) => a.localeCompare(b))
-				.map(([category, transitions]) => ({
-					category,
-					transitions: [...transitions].sort((x, y) => x.label.localeCompare(y.label)),
-				})),
+				.sort(([a], [b]) => binRank(a) - binRank(b) || a.localeCompare(b))
+				.map(([category, list]) => {
+					const groups = new Map<string, TransitionSpec[]>();
+					for (const s of list) if (s.subBin) groups.set(s.subBin, [...(groups.get(s.subBin) ?? []), s]);
+					return {
+						category,
+						transitions: list.filter((s) => !s.subBin).sort(byLabel),
+						groups: [...groups.entries()]
+							.sort(([a], [b]) => groupOrder(a, b))
+							.map(([group, g]) => ({ group, transitions: g.sort(byLabel) })),
+					};
+				}),
 		});
 	}
 	return out;
