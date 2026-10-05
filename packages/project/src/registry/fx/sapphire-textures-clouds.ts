@@ -547,10 +547,11 @@ export const S_TEXTURE_MICRO = texture({
 float turb3(vec3 p, float octaves, float gain, float seed) {
   float n = clamp(octaves, 1.0, 12.0);
   float sum = 0.0, amp = 1.0, norm = 0.0;
-  for (int k = 0; k < 12; k++) {
+  // Dynamic loop bound: constant bounds get unrolled (and every octave's noise inlined) by
+  // software GL compilers, which makes the shaders very slow to compile in SwiftShader.
+  for (int k = 0; k < int(ceil(n)); k++) {
     float w = clamp(n - float(k), 0.0, 1.0);
-    if (w <= 0.0) break;
-    sum += w * amp * abs(fx_simplex3(p, stc_octSeed(seed, k)));
+    sum += w * amp * abs(stc_noise3(p, stc_octSeed(seed, k)));
     norm += w * amp;
     p = vec3(STC_OCT * p.xy, p.z * 2.0);
     amp *= gain;
@@ -562,7 +563,7 @@ void main() {
   vec2 p = q * vec2(u_frequency * u_frequencyRelX, u_frequency) * 6.0;
   float t = turb3(vec3(p, u_boilSpeed * u_time * 0.35), u_octaves, 0.35 + 0.6 * clamp(u_details, 0.0, 1.0), u_seed);
   // Creases (|noise| ≈ 0) are the dark grooves between rounded grains; Threshold cuts the low values to black.
-  float g = 1.0 - pow(max(1.0 - t * 2.2, 0.0), 2.0);
+  float g = clamp(t * 2.2, 0.0, 1.0);
   float v = max(g - u_threshold, 0.0) / max(1.0 - u_threshold, 0.05);
   fragColor = stc_finish(stc_ramp1(v));
 }`),
@@ -962,9 +963,10 @@ void main() {
   float n = clamp(u_ridgedFractalOctaves, 1.0, 8.0);
   // Ridged multifractal: each pass is weighted by the previous one, so finer swirls grow along the bright ridges.
   float acc = 0.0, ws = 0.0, amp = 1.0, weight = 1.0;
-  for (int k = 0; k < 8; k++) {
+  // Dynamic loop bound: constant bounds get unrolled (and every octave's noise inlined) by
+  // software GL compilers, which makes the shaders very slow to compile in SwiftShader.
+  for (int k = 0; k < int(ceil(n)); k++) {
     float w = clamp(n - float(k), 0.0, 1.0);
-    if (w <= 0.0) break;
     float s = stc_fbm3(pp, u_noiseOctaves, clamp(u_noiseDetails, 0.0, 2.0), stc_seed(u_seed, float(k)));
     float u = clamp(0.5 + 0.5 * s, 0.0, 1.0);
     float ridge = 1.0 - min(abs(s) * 1.4, 1.0);

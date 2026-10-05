@@ -36,9 +36,10 @@ float stc_seed(float seed, float k) { return fract(seed + k * 0.618034); }
 float stc_fbm(vec2 p, float octaves, float gain, float seed) {
   float n = clamp(octaves, 1.0, 12.0);
   float sum = 0.0, amp = 1.0, norm = 0.0;
-  for (int k = 0; k < 12; k++) {
+  // Dynamic loop bound: constant bounds get unrolled (and every octave's noise inlined) by
+  // software GL compilers, which makes the shaders very slow to compile in SwiftShader.
+  for (int k = 0; k < int(ceil(n)); k++) {
     float w = clamp(n - float(k), 0.0, 1.0);
-    if (w <= 0.0) break;
     sum += w * amp * fx_simplex(p, stc_octSeed(seed, k));
     norm += w * amp * amp;
     p = STC_OCT * p;
@@ -46,14 +47,27 @@ float stc_fbm(vec2 p, float octaves, float gain, float seed) {
   }
   return sum / sqrt(max(norm, 1.0e-6));
 }
-// Same in 3D (z = time for "boiling" textures; every octave boils at its own rate).
+// Evolving 2D noise (z = time), ≈ −1..1: a cross-fade of two decorrelated 2D simplex slices at the integer z
+// around p.z, smoothstepped and variance-preserving (no contrast dip between slices). Far cheaper than 3D simplex
+// — and an octave loop of fx_simplex3 takes tens of seconds to compile in SwiftShader (software renders).
+float stc_noise3(vec3 p, float seed) {
+  float zi = floor(p.z);
+  float f = p.z - zi;
+  f = f * f * (3.0 - 2.0 * f);
+  vec2 o0 = fx_hash22(ivec2(int(zi), 7), seed) * 211.0;
+  vec2 o1 = fx_hash22(ivec2(int(zi) + 1, 7), seed) * 211.0;
+  float a = fx_simplex(p.xy + o0, seed), b = fx_simplex(p.xy + o1, seed);
+  return (a * (1.0 - f) + b * f) / sqrt((1.0 - f) * (1.0 - f) + f * f);
+}
+// fBm of stc_noise3 (z = time for "boiling" textures; every octave boils at its own rate).
 float stc_fbm3(vec3 p, float octaves, float gain, float seed) {
   float n = clamp(octaves, 1.0, 12.0);
   float sum = 0.0, amp = 1.0, norm = 0.0;
-  for (int k = 0; k < 12; k++) {
+  // Dynamic loop bound: constant bounds get unrolled (and every octave's noise inlined) by
+  // software GL compilers, which makes the shaders very slow to compile in SwiftShader.
+  for (int k = 0; k < int(ceil(n)); k++) {
     float w = clamp(n - float(k), 0.0, 1.0);
-    if (w <= 0.0) break;
-    sum += w * amp * fx_simplex3(p, stc_octSeed(seed, k));
+    sum += w * amp * stc_noise3(p, stc_octSeed(seed, k));
     norm += w * amp * amp;
     p = vec3(STC_OCT * p.xy, p.z * 2.0);
     amp *= gain;
