@@ -51,22 +51,6 @@ export function sNum(
 	return fxParam.number(name, label, def, { step: 0.001, ...range }, extra);
 }
 
-/**
- * Sapphire "Seed" (a float; Sapphire defaults are 0 or 0.123). Named `randomSeed` because a param named `seed` maps
- * to `u_seed`, which is a built-in uniform (the framework's `seedParam` collides with it). Shaders combine it with
- * the per-clip `u_seed` through `pke_seed(u_randomSeed)`.
- */
-export function seedParam(def = 0): ParamSpec {
-	return {
-		name: 'randomSeed',
-		label: 'Seed',
-		type: 'number',
-		default: def,
-		range: { min: 0, softMax: 10, step: 0.001 },
-		animatable: false,
-	};
-}
-
 /** Sapphire "Wrap" popup: No (transparent), Tile, Reflect → int 0, 1, 2 (`pke_wrap`). */
 export function wrapParam(name = 'wrap', label = 'Wrap', def: 'none' | 'tile' | 'reflect' = 'reflect'): ParamSpec {
 	return fxParam.choice(name, label, ['none', 'tile', 'reflect'], ['No', 'Tile', 'Reflect'], def);
@@ -99,8 +83,11 @@ float pke_unit() { return u_box.z * 0.01; }
 // Position inside the layer box in canvas px (0,0 = top-left of the box).
 vec2 pke_boxPx() { return v_uv * u_canvasSize - u_box.xy; }
 vec2 pke_uvOfBoxPx(vec2 p) { return (p + u_box.xy) / u_canvasSize; }
-// The per-clip seed combined with a Sapphire Seed value (0..1).
-float pke_seed(float s) { return fract(u_seed + fx_hash1(int(floor(s * 1000.0 + 0.5)), 0.6180339)); }
+// u_seed (per clip + instance + Seed param) re-randomised every jitter frames (Sapphire "Jitter Frames"; 0 = never).
+float pke_seed(float jitter) {
+  if (jitter < 0.5) return u_seed;
+  return fract(u_seed + fx_hash1(int(floor(u_frame / floor(jitter + 0.5))), 0.6180339));
+}
 // Wrap one layer-normalised coordinate: 0 = none, 1 = tile, 2 = reflect.
 float pke_wrap1(float x, int m) {
   if (m == 1) return fract(x);

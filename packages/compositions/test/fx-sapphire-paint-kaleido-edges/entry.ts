@@ -1,7 +1,7 @@
 // Browser entry of the "sapphire-paint-kaleido-edges" GL test (bundled with esbuild, run in headless Chrome by
 // ../fx-sapphire-paint-kaleido-edges-gl.test.ts): runs the family's registered effects through the real GPU host on
 // synthetic pictures (or a loaded image) and reports pixels / PNGs.
-import { defaultEffectRegistry, type EffectSpec, fxBuiltinUniforms, planGpuEffect } from '@jasper/project';
+import { defaultEffectRegistry, type EffectSpec, fxBuiltinUniforms, fxSeed, planGpuEffect } from '@jasper/project';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 import { fxCanvasLayout } from '../../src/fx/plan.ts';
 
@@ -89,8 +89,8 @@ export type RunOptions = {
 	height?: number;
 	pattern?: Pattern;
 	frame?: number;
-	/** u_seed (per clip + instance in the app). */
-	seed?: number;
+	/** Clip id behind u_seed (with the effect instance and the Seed param, as in the app). */
+	clipId?: string;
 };
 
 function run(id: string, over: Record<string, unknown>, o: RunOptions = {}) {
@@ -106,7 +106,7 @@ function run(id: string, over: Record<string, unknown>, o: RunOptions = {}) {
 			: { left: 0, top: 0, right: 0, bottom: 0, ...pad };
 	const layout = fxCanvasLayout(box, padding, 8192);
 	const frame = o.frame ?? 0;
-	const seed = o.seed ?? 0.25;
+	const seed = fxSeed(o.clipId ?? 'clip1', 'fx1', params as never);
 	const plan = planGpuEffect(
 		s,
 		{ id: 'fx1', params: params as never },
