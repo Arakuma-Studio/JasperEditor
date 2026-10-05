@@ -6,9 +6,9 @@ import type { ChildProcess } from 'node:child_process';
 import type { Writable } from 'node:stream';
 import type { Ffmpeg } from '../../tools/ffmpeg.ts';
 import { terminateTree } from '../../tools/process.ts';
-import { WarpPool, type WarpSlot } from '../warp/pool.ts';
 import { decoderArgs } from '../warp/render.ts';
 import type { StreamLayerPlan } from './plan.ts';
+import { LayerPool, type LayerSlot } from './pool.ts';
 
 export class StreamLayerError extends Error {
 	constructor(
@@ -36,8 +36,8 @@ export async function streamLayer(
 	const total = plan.frames.length;
 	const frameBytes = plan.srcW * plan.srcH * 4;
 	const workers = Math.max(1, Math.min(opts.workers, total));
-	const pool = new WarpPool(
-		{ sw: plan.srcW, sh: plan.srcH, dw: plan.outW, dh: plan.outH, format: 'rgba' },
+	const pool = new LayerPool(
+		{ sw: plan.srcW, sh: plan.srcH, dw: plan.outW, dh: plan.outH },
 		{ workers, slots: Math.min(total, workers + 3) },
 	);
 	let dec: ChildProcess | null = null;
@@ -66,22 +66,29 @@ export async function streamLayer(
 			});
 			d.on('error', (e) => fail(new StreamLayerError('TOOL_FAILED', `layer decoder: ${e.message}`)));
 
-			const free: WarpSlot[] = [...pool.slots].reverse();
-			const ready = new Map<number, WarpSlot>();
+			const free: LayerSlot[] = [...pool.slots].reverse();
+			const ready = new Map<number, LayerSlot>();
 			let dispatched = 0;
 			let nextWrite = 0;
 			let accepted = 0;
-			let cur: WarpSlot | null = null;
+			let cur: LayerSlot | null = null;
 			let curOff = 0;
 			let stash: Buffer | null = null;
 			let decodeDone = false;
 			let decClosed = false;
 
-			const dispatch = (slot: WarpSlot, pad: boolean) => {
+			const dispatch = (slot: LayerSlot, pad: boolean) => {
 				const i = dispatched++;
 				const spec = plan.frames[i]!;
 				pool
-					.run({ slot, inv: pad ? null : spec.inv, rect: pad ? null : spec.rect, opacity: spec.opacity })
+					.run({
+						slot,
+						inv: pad ? null : spec.inv,
+						rect: pad ? null : spec.rect,
+						opacity: spec.opacity,
+						cw: spec.cw,
+						ch: spec.ch,
+					})
 					.then(
 						() => {
 							ready.set(i, slot);

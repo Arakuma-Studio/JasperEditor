@@ -7,10 +7,12 @@
 //
 // Per layer:
 // - a decoder ffmpeg runs the layer's source chain (`layerSourceChain`: seek, speed, box scale, effects incl.
-//   keyframed crop masks), downscaled by powers of two where the layer is drawn at less than half size (mip levels:
-//   bilinear never minifies more than 2×; levels change rarely, so the scaler is rarely re-created);
+//   keyframed crop masks), pre-scaled where the layer is drawn smaller than its box, to the next ⅛-octave level at
+//   or above the drawn size (the kernel then minifies by < 9 %: no aliasing; levels change rarely during a zoom, so
+//   the scaler is rarely re-created);
 // - every frame: `resolveLayerProps` (shared evaluator, KF-010) → layer map → the inverse map from the output frame
-//   to the decoded picture, the drawn rectangle and the opacity;
+//   to the decoded picture, the drawn rectangle and the opacity; the kernel (kernel.ts) anti-aliases the picture's
+//   edges by coverage, like a browser draws a transformed layer box;
 // - the output frame is the layer's bounds over the whole clip in size, placed per frame at an integer offset
 //   from a piecewise-linear fit (`overlay` x/y expressions; offsets recomputed from the fit so JS and ffmpeg agree).
 import {
@@ -24,7 +26,6 @@ import {
 	resolveLayerProps,
 } from '@jasper/project';
 import { FIT_TOLERANCE, fitPieces, frameIndex, pieceValue, piecewiseExpr, roundC } from '../keyframed.ts';
-import type { WarpFrameSpec } from '../warp/render.ts';
 
 /** A layer drawn by the warp kernel and streamed to the composite. */
 export type StreamLayerPlan = {
@@ -38,14 +39,25 @@ export type StreamLayerPlan = {
 	outH: number;
 	fps: Rational;
 	/** One per layer frame (`inv`: output px → decoded px). */
-	frames: WarpFrameSpec[];
-	/** `overlay` offset expressions (export time). */
+	frames: StreamFrame[];
+	/** `overlay` offset expressions (export time) and their per-frame values. */
 	x: string;
 	y: string;
+	offsets: { x: number[]; y: number[] };
 };
 
-/** Mip level per axis (power-of-two downscale of the decoded picture) for a drawn scale. */
-const level = (s: number) => (s >= 0.5 || s <= 0 ? 0 : Math.min(12, Math.floor(Math.log2(1 / s))));
+/** One output frame: output px → picture px (affine 2×3, null = transparent), drawn rect, opacity, picture size. */
+export type StreamFrame = {
+	inv: number[] | null;
+	rect: [number, number, number, number] | null;
+	opacity: number;
+	cw: number;
+	ch: number;
+};
+
+/** Pre-scale level (octaves, ⅛ steps) of a drawn scale: the largest level whose size is still ≥ the drawn one. */
+const level = (s: number) =>
+	s >= 1 || s <= 0 ? 0 : Math.min(12, Math.floor(8 * Math.log2(1 / s) + 1e-9) / 8);
 const isInt = (x: number) => Math.abs(x - Math.round(x)) < 1e-6;
 
 /**
@@ -116,8 +128,8 @@ export function planStreamLayer(o: StreamPlanOptions): StreamLayerPlan {
 	// ---- samples: layer map, mip levels, opacity
 	const maps: (Mat3 | null)[] = [];
 	const opac = new Float64Array(n);
-	const lw = new Int32Array(n);
-	const lh = new Int32Array(n);
+	const lw = new Float64Array(n);
+	const lh = new Float64Array(n);
 	for (let k = 0; k < n; k++) {
 		const p = k === 0 ? o.props : resolveLayerProps(c, clipContentTime(c, f0 + k, fps));
 		const m = p.matrix;
@@ -220,11 +232,11 @@ export function planStreamLayer(o: StreamPlanOptions): StreamLayerPlan {
 	}
 
 	// ---- per-frame warp specs (output px → decoded px)
-	const frames: WarpFrameSpec[] = [];
+	const frames: StreamFrame[] = [];
 	for (let k = 0; k < n; k++) {
 		const f = fwd[k];
 		if (!f || !(opac[k]! > 0)) {
-			frames.push({ inv: null, rect: null, opacity: 0 });
+			frames.push({ inv: null, rect: null, opacity: 0, cw: pw[k]!, ch: ph[k]! });
 			continue;
 		}
 		const X = ox.ints[k]!;
@@ -239,8 +251,8 @@ export function planStreamLayer(o: StreamPlanOptions): StreamLayerPlan {
 		];
 		frames.push(
 			inv && rect[2] > rect[0] && rect[3] > rect[1]
-				? { inv: Array.from(inv), rect, opacity: opac[k]! }
-				: { inv: null, rect: null, opacity: 0 },
+				? { inv: Array.from(inv).slice(0, 6), rect, opacity: opac[k]!, cw: pw[k]!, ch: ph[k]! }
+				: { inv: null, rect: null, opacity: 0, cw: pw[k]!, ch: ph[k]! },
 		);
 	}
 	const mainT = frameIndex(fps, f0 - o.R0);
@@ -257,5 +269,6 @@ export function planStreamLayer(o: StreamPlanOptions): StreamLayerPlan {
 		frames,
 		x: pos(ox),
 		y: pos(oy),
+		offsets: { x: ox.ints, y: oy.ints },
 	};
 }

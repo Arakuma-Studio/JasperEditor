@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { fitPieces, pieceValue, piecewiseExpr } from '../src/export/keyframed.ts';
 import { buildNativeGraph } from '../src/export/native.ts';
 import { nativeBlockers } from '../src/export/planner.ts';
+import { drawLayer } from '../src/export/stream/kernel.ts';
 import { type RunningEngine, startEngine } from '../src/index.ts';
 import { coreServices } from '../src/tools/services.ts';
 import {
@@ -313,7 +314,8 @@ function colourError(img: Img, map: Mat3, opacity: number) {
 			for (let k = 0; k < 3; k++) {
 				const want = c[k]! * opacity + PLATE[k]! * (1 - opacity);
 				const e = Math.abs(img.rgb[o + k]! - want);
-				if (e > max) where = `(${x},${y}) u ${u.toFixed(1)} v ${v.toFixed(1)} ch ${k} got ${img.rgb[o + k]} want ${want}`;
+				if (e > max)
+					where = `(${x},${y}) u ${u.toFixed(1)} v ${v.toFixed(1)} ch ${k} got ${img.rgb[o + k]} want ${want}`;
 				max = Math.max(max, e);
 				sum += e;
 			}
@@ -620,6 +622,166 @@ describe('native export of keyframed Motion and Opacity (S03:ENG-030/032)', () =
 		}
 		report(`[anim] crop + non-uniform scale: worst corner error ${worst.toFixed(3)} px`);
 	}, 300_000);
+});
+
+/** Frames of a region of a file as RGB (`w×h` each). */
+function decodeRegion(file: string, x: number, y: number, w: number, h: number): Img[] {
+	const r = spawnSync(
+		'ffmpeg',
+		[
+			'-v',
+			'error',
+			'-i',
+			file,
+			'-vf',
+			`crop=${w}:${h}:${x}:${y}`,
+			'-pix_fmt',
+			'rgb24',
+			'-f',
+			'rawvideo',
+			'pipe:1',
+		],
+		{ maxBuffer: 1 << 30 },
+	);
+	if (r.status !== 0) throw new Error(`decode failed: ${r.stderr}`);
+	const size = w * h * 3;
+	return Array.from({ length: r.stdout.length / size }, (_, i) => ({
+		rgb: r.stdout.subarray(i * size, (i + 1) * size),
+		w,
+		h,
+	}));
+}
+
+/** Intensity-weighted centroid (pixel centres) of what is brighter than the plate. */
+function centroid(img: Img, plate: number): [number, number] {
+	let s = 0;
+	let sx = 0;
+	let sy = 0;
+	for (let y = 0; y < img.h; y++)
+		for (let x = 0; x < img.w; x++) {
+			const v = Math.max(0, lum(img, x, y) - plate);
+			s += v;
+			sx += v * (x + 0.5);
+			sy += v * (y + 0.5);
+		}
+	return [sx / s, sy / s];
+}
+
+describe('sub-pixel motion (no whole-pixel stepping)', () => {
+	it('the layer kernel moves edges continuously at any scale (drawn frames, no ffmpeg): ≤ 0.01 px RMS', async () => {
+		for (const scale of [20, 37, 50, 63, 80, 95, 100, 130]) {
+			const d = new DocBuilder();
+			d.tx([{ type: 'clip.addSolid', at: 0, duration: 60, track: 'V1', color: [0.08, 0.08, 0.08, 1] }]);
+			const s = d.tx([
+				{ type: 'clip.addSolid', at: 0, duration: 60, track: 'V2', color: [1, 1, 1, 1], ref: '$s' },
+			]).refs.$s!;
+			const t = (p: string) => ['clip', s, 'transform', p];
+			// The left edge sits 100.3 px from the frame's edge and moves 2.95 px in 60 frames.
+			d.tx([
+				{ type: 'param.set', target: t('scale'), value: scale },
+				{
+					type: 'keyframe.add',
+					target: t('position'),
+					at: { sequenceFrame: 0 },
+					value: [9.6 * scale + 100.3, 500.6],
+				},
+				{
+					type: 'keyframe.add',
+					target: t('position'),
+					at: { sequenceFrame: 59 },
+					value: [9.6 * scale + 103.25, 500.6],
+				},
+			]);
+			const planned = await coreServices(app).exports.plan({
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				settings: {
+					...h264Settings(d.seqId),
+					range: { type: 'custom', startFrame: 0, endFrame: 60 },
+				} as never,
+			});
+			const g = buildNativeGraph({
+				snapshot: planned.snapshot,
+				output: planned.output,
+				outputFile: '/tmp/x.mp4',
+				sources: { media: () => null, mgMaster: () => null },
+				threads: 2,
+			});
+			expect(g.streams).toHaveLength(1);
+			const p = g.streams[0]!.plan;
+			const src = new Uint8Array(p.srcW * p.srcH * 4).fill(255);
+			const dst = new Uint8Array(p.outW * p.outH * 4);
+			let sq = 0;
+			for (let k = 0; k < 60; k++) {
+				const f = p.frames[k]!;
+				drawLayer(src, p.srcW, f.cw, f.ch, dst, p.outW, p.outH, f.inv, f.opacity, f.rect);
+				// Left edge on the frame's row 500: c − Σ coverage left of c (c well inside the layer).
+				const row = 500 - p.offsets.y[k]!;
+				const c = 160 - p.offsets.x[k]!;
+				let cov = 0;
+				for (let x = 0; x < c; x++) cov += dst[(row * p.outW + x) * 4 + 3]! / 255;
+				sq += (c - cov + p.offsets.x[k]! - (100.3 + (k * 2.95) / 59)) ** 2;
+			}
+			const rms = Math.sqrt(sq / 60);
+			expect(rms, `scale ${scale} %`).toBeLessThanOrEqual(0.01);
+		}
+	}, 600_000);
+
+	it('a 0.05 px/frame pan over 300 frames moves smoothly: per-frame centroid ≤ 0.05 px RMS from the evaluated motion, monotonic, no jumps', async () => {
+		const d = new DocBuilder();
+		d.tx([
+			{ type: 'clip.addSolid', at: 0, duration: 300, track: 'V1', color: [20 / 255, 20 / 255, 20 / 255, 1] },
+		]);
+		const s = d.tx([
+			{ type: 'clip.addSolid', at: 0, duration: 300, track: 'V2', color: [1, 1, 1, 1], ref: '$s' },
+		]).refs.$s!;
+		const at = (f: number) => ({ sequenceFrame: f });
+		const t = (p: string) => ['clip', s, 'transform', p];
+		// A 384×216 white card (20 % of the 1080p solid), panned 15 px right over 300 frames, on a fractional y.
+		d.tx([
+			{ type: 'param.set', target: t('scale'), value: 20 },
+			{ type: 'keyframe.add', target: t('position'), at: at(0), value: [800.3, 500.6] },
+			{ type: 'keyframe.add', target: t('position'), at: at(299), value: [815.25, 500.6] },
+		]);
+		const settings = { ...proresSettings(d.seqId), range: { type: 'custom', startFrame: 0, endFrame: 300 } };
+		const planned = await coreServices(app).exports.plan({
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			settings: settings as never,
+		});
+		expect(planned.plan.path).toBe('native');
+		const { out } = await runExport(d, settings);
+		const R = { x: 560, y: 360, w: 520, h: 280 };
+		const frames = decodeRegion(out, R.x, R.y, R.w, R.h);
+		expect(frames).toHaveLength(300);
+		const got = frames.map((img) => centroid(img, PLATE[0]).map((v, i) => v + (i ? R.y : R.x)));
+		const want = Array.from({ length: 300 }, (_, f) => {
+			const q = resolveSceneAt(planned.snapshot, f).find((l) => l.clip.clipId === s)!.props.quad;
+			return [(q[0][0] + q[2][0]) / 2, (q[0][1] + q[2][1]) / 2];
+		});
+		let sq = 0;
+		let worstStep = 0;
+		let minStep = Number.POSITIVE_INFINITY;
+		let worstY = 0;
+		for (let f = 0; f < 300; f++) {
+			sq += (got[f]![0]! - want[f]![0]!) ** 2;
+			worstY = Math.max(worstY, Math.abs(got[f]![1]! - want[f]![1]!));
+			if (f > 0) {
+				const step = got[f]![0]! - got[f - 1]![0]!;
+				const wantStep = want[f]![0]! - want[f - 1]![0]!;
+				worstStep = Math.max(worstStep, Math.abs(step - wantStep));
+				minStep = Math.min(minStep, step);
+			}
+		}
+		const rms = Math.sqrt(sq / 300);
+		report(
+			`[subpixel] 0.05 px/frame pan, 300 frames: x RMS ${rms.toFixed(4)} px, worst step error ${worstStep.toFixed(4)} px, smallest step ${minStep.toFixed(4)} px, worst y error ${worstY.toFixed(4)} px`,
+		);
+		expect(rms).toBeLessThanOrEqual(0.05);
+		expect(minStep).toBeGreaterThan(0); // monotonic
+		expect(worstStep).toBeLessThan(0.05); // no whole-pixel (or half-pixel) jumps
+		expect(worstY).toBeLessThanOrEqual(0.05);
+	}, 600_000);
 });
 
 describe('native export of keyframed audio levels (S01:FX-010)', () => {
