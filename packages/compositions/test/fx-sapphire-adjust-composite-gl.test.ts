@@ -119,7 +119,9 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 		});
 
 		it('S_Layer: blend modes, opacity, swap, matte, result controls', async () => {
-			const r = await call<Record<string, Px> & { fgBlurPasses: number }>('layer');
+			const r = await call<Record<string, Px> & { fgBlurPasses: number; dissolveRedFraction: number }>(
+				'layer',
+			);
 			expectRgb(r.normal, [255, 0, 0]);
 			expectRgb(r.multiply, [128, 64, 0]);
 			expectRgb(r.screen, [128, 128, 128]);
@@ -132,6 +134,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expectRgb(r.matteLeft, [255, 0, 0]);
 			expectRgb(r.matteRight, [128, 128, 128]);
 			expect(r.fgBlurPasses).toBe(4);
+			expect(Math.abs(r.dissolveRedFraction - 0.5)).toBeLessThan(0.1); // Dissolve: opacity = probability
 		});
 
 		it('S_MathOps: per-channel operations, alpha as a channel unless All Opaque', async () => {

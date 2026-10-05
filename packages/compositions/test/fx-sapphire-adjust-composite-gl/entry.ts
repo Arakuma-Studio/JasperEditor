@@ -238,6 +238,15 @@ const api = {
 			resultSat: r({ resultSaturation: 0 }, 'rgb(255, 0, 0)'),
 			matteLeft: withMatte.at(2, 4),
 			matteRight: withMatte.at(13, 4),
+			dissolveRedFraction: (() => {
+				const d = run('jasper.s.layer', { effect: 'dissolve', fgOpacity: 0.5 }, [32, 32], 'rgb(255, 0, 0)', {
+					background: picture(32, 32, 'rgb(0, 0, 255)'),
+				}).out;
+				const px = allPixels(d);
+				let red = 0;
+				for (let i = 0; i < px.length; i += 4) if (px[i]! > 200) red++;
+				return red / (px.length / 4);
+			})(),
 			fgBlurPasses: run('jasper.s.layer', { fgBlur: 0.2 }, [8, 8], 'rgb(255, 0, 0)', { background: bg }).plan
 				.passes.length,
 		};
