@@ -142,8 +142,12 @@ function walk(doc: ProjectDocument, v: unknown, parentKey: string | null, sequen
 	let changed = false;
 	const out: Record<string, unknown> = {};
 	for (const [k, x] of Object.entries(o)) {
-		// Text content is user data, a clipboard payload is another document's data: never rewrite inside them.
-		const next = k === 'content' || k === 'comment' || k === 'payload' ? x : walk(doc, x, k, sequenceId);
+		// Text content is user data, a clipboard payload is another document's data, an effect preset (S03:FX-030)
+		// is library data: never rewrite inside them.
+		const next =
+			k === 'content' || k === 'comment' || k === 'payload' || k === 'preset'
+				? x
+				: walk(doc, x, k, sequenceId);
 		if (next !== x) changed = true;
 		out[k] = next;
 	}

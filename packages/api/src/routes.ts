@@ -1,5 +1,6 @@
 // Engine route contracts: method, path template, request schemas and response kind.
 // Shared by engine validation and typed calls in @jasper/engine-client.
+import { EffectPresetFolderSchema, EffectPresetSchema } from '@jasper/project';
 import { z } from 'zod';
 import {
 	AgentMcpInfoSchema,
@@ -21,6 +22,16 @@ import {
 	CacheUsageSchema,
 } from './cache.ts';
 import { EngineCapabilitiesSchema, HealthSchema, LicensesResponseSchema } from './capabilities.ts';
+import {
+	EffectPresetCreateRequestSchema,
+	EffectPresetDeleteResponseSchema,
+	EffectPresetFolderCreateRequestSchema,
+	EffectPresetFolderUpdateRequestSchema,
+	EffectPresetImportRequestSchema,
+	EffectPresetImportResponseSchema,
+	EffectPresetLibraryResponseSchema,
+	EffectPresetUpdateRequestSchema,
+} from './effect-presets.ts';
 import {
 	ExportPlanRequestSchema,
 	ExportStartRequestSchema,
@@ -85,7 +96,8 @@ export type RouteOwner =
 	// M2 animation (ARCHITECTURE §20, S11 §10)
 	| 'wp-m2-layer-bake'
 	// M3
-	| 'wp-m3-cachegc';
+	| 'wp-m3-cachegc'
+	| 'wp-m3-presets';
 
 export type RouteDef = {
 	method: HttpMethod;
@@ -524,6 +536,62 @@ export const ROUTES = {
 		body: CacheSettingsSchema,
 		response: CacheSettingsSchema,
 		owner: 'wp-m3-cachegc',
+	},
+	// ---- M3 effect presets (S03:FX-030, AGT-020): the user library (built-ins ship in @jasper/project)
+	effectPresetsList: {
+		method: 'GET',
+		path: '/api/effect-presets',
+		response: EffectPresetLibraryResponseSchema,
+		owner: 'wp-m3-presets',
+	},
+	/** Save Preset…: assigns the id and timestamps, answers the stored preset. */
+	effectPresetCreate: {
+		method: 'POST',
+		path: '/api/effect-presets',
+		body: EffectPresetCreateRequestSchema,
+		response: EffectPresetSchema,
+		owner: 'wp-m3-presets',
+	},
+	effectPresetUpdate: {
+		method: 'PUT',
+		path: '/api/effect-presets/:presetId',
+		body: EffectPresetUpdateRequestSchema,
+		response: EffectPresetSchema,
+		owner: 'wp-m3-presets',
+	},
+	effectPresetDelete: {
+		method: 'DELETE',
+		path: '/api/effect-presets/:presetId',
+		response: EffectPresetDeleteResponseSchema,
+		owner: 'wp-m3-presets',
+	},
+	effectPresetFolderCreate: {
+		method: 'POST',
+		path: '/api/effect-presets/folders',
+		body: EffectPresetFolderCreateRequestSchema,
+		response: EffectPresetFolderSchema,
+		owner: 'wp-m3-presets',
+	},
+	effectPresetFolderUpdate: {
+		method: 'PUT',
+		path: '/api/effect-presets/folders/:folderId',
+		body: EffectPresetFolderUpdateRequestSchema,
+		response: EffectPresetFolderSchema,
+		owner: 'wp-m3-presets',
+	},
+	/** Deletes a bin with everything inside it. */
+	effectPresetFolderDelete: {
+		method: 'DELETE',
+		path: '/api/effect-presets/folders/:folderId',
+		response: EffectPresetDeleteResponseSchema,
+		owner: 'wp-m3-presets',
+	},
+	effectPresetsImport: {
+		method: 'POST',
+		path: '/api/effect-presets/import',
+		body: EffectPresetImportRequestSchema,
+		response: EffectPresetImportResponseSchema,
+		owner: 'wp-m3-presets',
 	},
 } as const satisfies Record<string, RouteDef>;
 

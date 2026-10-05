@@ -59,6 +59,8 @@ export const EVENT_PAYLOADS = {
 	'mgBundle.rebuilt': MgBundleRebuiltEventSchema,
 	/** M3 (wp-m3-cachegc, S04:CA-014): a cleaning pass removed cache entries (Preferences ▸ Media Cache refreshes). */
 	'cache.cleaned': CacheGcReportSchema,
+	/** M3 (wp-m3-presets, S03:FX-030): the user effect preset library changed (Effects ▸ Presets refreshes). */
+	'effectPresets.changed': z.object({ revision: z.number().int() }),
 } as const;
 export type EngineEventType = keyof typeof EVENT_PAYLOADS;
 export const ENGINE_EVENT_TYPES = Object.keys(EVENT_PAYLOADS) as EngineEventType[];

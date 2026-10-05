@@ -5,6 +5,9 @@
 // marquee, drag-to-move with snapping, and a right-click interpolation menu. Values are resolved at
 // the playhead (EC-006). Twirling a numeric / vec2 property open shows its Value and Velocity graphs
 // (S03:KF-022, GraphEditor.tsx).
+// M3 (wp-m3-presets, S03:EC-004/FX-030): effect headers (intrinsic ones too) select with click / Ctrl/Shift-click
+// and have a context menu with Save Preset… (presets.ts), Reset and Remove; presets dropped here apply to the shown
+// clips.
 import type { Command } from '@jasper/project';
 import { formatTimecode } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
@@ -46,6 +49,9 @@ import {
 	JASPER_EFFECT_INSTANCE_MIME,
 	readEffectDragPayload,
 } from '../effects/drag.ts';
+import { openSavePreset } from '../effects/presets/actions.ts';
+import { isPresetRef } from '../effects/presets/apply.ts';
+import { usePresetLibrary } from '../effects/presets/hooks.ts';
 import { MiniButton, SelectField } from '../properties/controls/fields.tsx';
 import { CaretGlyph, FxGlyph, GripGlyph, ResetGlyph, TrashGlyph } from '../properties/controls/glyphs.tsx';
 import { useNotices } from '../properties/controls/Notices.tsx';
@@ -54,6 +60,8 @@ import { inspectorFocus } from '../properties/lib/focus.ts';
 import { useInspectorData } from '../properties/lib/hooks.ts';
 import { exactFrameOf, planReset, type Row } from '../properties/lib/model.ts';
 import { useInspectorOps } from '../properties/lib/ops.ts';
+import { ContextMenu } from '../timeline/components/Chrome.tsx';
+import type { ContextMenuItem } from '../timeline/state/ui-store.ts';
 import type { PanelProps } from '../types.ts';
 import { GRAPH_HEIGHT, PropertyGraphs } from './GraphEditor.tsx';
 import { graphKindOf } from './graph.ts';
@@ -67,6 +75,7 @@ import {
 	snapDelta,
 } from './lib.ts';
 import { KeyLane, Ruler, SummaryLane, usePlayheadLine } from './MiniTimeline.tsx';
+import { presetSelection } from './presets.ts';
 import { SpatialInterpolationSubmenu } from './SpatialMenu.tsx';
 import { TransitionSection } from './TransitionSection.tsx';
 
@@ -142,6 +151,12 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	const [filter, setFilter] = useState<RowFilter>('all');
 	const [selectedFx, setSelectedFx] = useState<string | null>(null);
 	const [menu, setMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null);
+	// Selected effect headers (section ids) for Save Preset… and the header menu.
+	const [headerSel, setHeaderSel] = useState<string[]>([]);
+	const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(
+		null,
+	);
+	const presetLib = usePresetLibrary();
 	const [dropSlot, setDropSlot] = useState<number | 'end' | null>(null);
 	const [dragTip, setDragTip] = useState<string | null>(null);
 	const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
@@ -168,6 +183,9 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	usePlayheadLine(lineRef, session.transport, range);
 
 	const clips = useMemo(() => (seq && primary ? shownClips(seq, primary) : []), [seq, primary]);
+	const primaryId = primary?.id ?? null;
+	// biome-ignore lint/correctness/useExhaustiveDependencies: another clip starts with no selected headers
+	useEffect(() => setHeaderSel([]), [primaryId]);
 	const groups = useMemo(
 		() => (seq ? buildGroups(data.doc, seq, clips, frame, registries) : []),
 		[data.doc, seq, clips, frame, registries],
@@ -445,6 +463,22 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 		const payload = readEffectDragPayload(e.dataTransfer);
 		if (!payload) return;
 		e.preventDefault();
+		// M3 (wp-m3-presets, S03:FX-030): a preset applies to the shown clips it has something for.
+		if (isPresetRef(payload.effectId)) {
+			const r = applyEffectToClips(
+				session,
+				payload.effectId,
+				clips.map((c) => c.id),
+				slot === 'end' ? undefined : slot,
+			);
+			if (!r?.ok)
+				notices.hint(
+					r?.ok === false
+						? (r.errors[0]?.message ?? '')
+						: 'This preset cannot be applied to the selected clip.',
+				);
+			return;
+		}
 		const target = clips.find((c) => {
 			const spec = registries.effects.get(payload.effectId);
 			return spec && (spec.appliesTo === 'audio') === (c.kind === 'audio' || c.kind === 'nest-audio');
@@ -457,6 +491,50 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	const resetSection = (s: FxSection) => {
 		const cmds = s.rows.flatMap((r: Row) => planReset(r, data.doc, seq, frame).commands);
 		ops.apply(`Reset ${s.title}`, cmds);
+	};
+	// S03:EC-004 header menu: Save Preset… (the selected headers of one clip), Reset, Remove.
+	const openHeaderMenu = (e: ReactMouseEvent, s: FxSection) => {
+		e.preventDefault();
+		const ids = headerSel.includes(s.id) ? headerSel : [s.id];
+		if (!headerSel.includes(s.id)) setHeaderSel([s.id]);
+		const chosen = groups.flatMap((g) => g.sections).filter((x) => ids.includes(x.id));
+		const pick = presetSelection(chosen);
+		const online = presetLib.status === 'ready';
+		const items: ContextMenuItem[] = [
+			{
+				kind: 'item',
+				label: pick.ok && !online ? 'Save Preset… (needs the engine)' : 'Save Preset…',
+				disabled: !pick.ok || !online,
+				run: () => {
+					if (!pick.ok) return;
+					void openSavePreset(session, pick.clipId, pick.sections, pick.subject, pick.defaultName).then(
+						(p) => {
+							if (p) notices.hint(`Saved preset “${p.name}” to Effects ▸ Presets.`);
+						},
+					);
+				},
+			},
+			{ kind: 'separator' },
+			{
+				kind: 'item',
+				label: `Reset ${s.title}`,
+				disabled: !!s.missing || !s.rows.some((r) => r.bindings.some((b) => b.path)),
+				run: () => resetSection(s),
+			},
+			...(s.fx && (!s.intrinsic || s.id.endsWith(':crop'))
+				? [
+						{
+							kind: 'item' as const,
+							label: `Remove ${s.title}`,
+							run: () =>
+								ops.apply('Remove Effect', [
+									{ type: 'effect.remove', effectInstanceId: s.fx!.id } as Command,
+								]),
+						},
+					]
+				: []),
+		];
+		setHeaderMenu({ x: e.clientX, y: e.clientY, items });
 	};
 
 	const onPanelKeyDown = (e: ReactKeyboardEvent) => {
@@ -557,20 +635,34 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 										<div
 											className={cx(
 												'flex h-[var(--pr-row-h)] items-center',
-												selectedFx && s.fx?.id === selectedFx && 'bg-pr-selected',
+												((selectedFx && s.fx?.id === selectedFx) || headerSel.includes(s.id)) &&
+													'bg-pr-selected',
 												fxIndex !== undefined && dropSlot === fxIndex && 'border-t-2 border-pr-accent',
 											)}
 											data-fx-index={fxIndex}
+											data-ec-header={s.id}
 											draggable={fxIndex !== undefined}
 											onDragStart={(e) => onHeaderDragStart(e, s)}
+											onContextMenu={(e) => openHeaderMenu(e, s)}
 										>
 											{/* biome-ignore lint/a11y/noStaticElementInteractions: row selection mirrors the timeline; keyboard via Delete */}
 											{/* biome-ignore lint/a11y/useKeyWithClickEvents: see above */}
 											<div
 												style={left}
 												className="flex min-w-0 shrink-0 items-center gap-1 pr-1 pl-1"
-												onClick={() => {
-													if (!s.fx) return;
+												onClick={(ev) => {
+													const add = ev.ctrlKey || ev.metaKey || ev.shiftKey;
+													setHeaderSel((cur) =>
+														add
+															? cur.includes(s.id)
+																? cur.filter((x) => x !== s.id)
+																: [...cur, s.id]
+															: [s.id],
+													);
+													if (!s.fx) {
+														if (!add) setSelectedFx(null);
+														return;
+													}
 													setSelectedFx(s.fx.id);
 													inspectorFocus.set({
 														source: 'effectControls',
@@ -788,6 +880,15 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 					<ResetGlyph size={12} />
 				</MiniButton>
 			</footer>
+			{headerMenu ? (
+				<ContextMenu
+					x={headerMenu.x}
+					y={headerMenu.y}
+					items={headerMenu.items}
+					onClose={() => setHeaderMenu(null)}
+					testId="ec-header-menu"
+				/>
+			) : null}
 			{menu ? (
 				<div
 					role="menu"
