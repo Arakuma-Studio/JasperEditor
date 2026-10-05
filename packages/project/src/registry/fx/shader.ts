@@ -234,7 +234,10 @@ const finite = (x: unknown, d = 0) => (typeof x === 'number' && Number.isFinite(
 /** The Sapphire-style "Seed" param (`seedParam`): numeric and named `seed`, read through `u_seed`. */
 const isSeedParam = (p: ParamSpec) => p.name === 'seed' && p.type === 'number';
 
-export function paramUniforms(spec: Pick<EffectSpec, 'params'>, params: EffectParams): FxUniform[] {
+export function paramUniforms(
+	spec: { readonly params: readonly ParamSpec[] },
+	params: EffectParams,
+): FxUniform[] {
 	const out: FxUniform[] = [];
 	for (const p of spec.params) {
 		// A numeric `seed` param (`seedParam`) is not its own uniform: `fxSeed` mixes it into the built-in `u_seed`.
@@ -623,7 +626,8 @@ export function validateGpuEffect(spec: EffectSpec): string[] {
 	const names = new Set<string>();
 	for (const p of spec.params) {
 		if (!NAME_RE.test(p.name)) at(`param "${p.name}": names are letters and digits, starting with a letter`);
-		if (RESERVED.has(`u_${p.name}`) && !isSeedParam(p)) at(`param "${p.name}": u_${p.name} is a built-in uniform`);
+		if (RESERVED.has(`u_${p.name}`) && !isSeedParam(p))
+			at(`param "${p.name}": u_${p.name} is a built-in uniform`);
 		if (names.has(p.name)) at(`param "${p.name}" is declared twice`);
 		names.add(p.name);
 		if (p.type === 'enum' && !(p.options ?? []).includes(String(p.default)))

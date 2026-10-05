@@ -151,4 +151,10 @@ vec3 tr_card(vec2 uv, float angle, int axis, float dist, float scale) {
 };
 
 /** Every transition chunk (the GL test compiles them all together). */
-export const GLSL_TR_LIBRARY = [GLSL_TRANSITION, GLSL_TR_EASE, GLSL_TR_WIPE, GLSL_TR_BLOCKS, GLSL_TR_3D] as const;
+export const GLSL_TR_LIBRARY = [
+	GLSL_TRANSITION,
+	GLSL_TR_EASE,
+	GLSL_TR_WIPE,
+	GLSL_TR_BLOCKS,
+	GLSL_TR_3D,
+] as const;

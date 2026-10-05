@@ -6,7 +6,9 @@ import { newKeySpatial, refreshAutoTangents } from '../../keyframes-spatial.ts';
 import type { ParamSpec } from '../../registry/effects.ts';
 import { type PropertySpec, resolvePropertySpec } from '../../registry/properties.ts';
 import type { Animatable, Keyframe, SpatialInterpolation } from '../../schema/common.ts';
-import type { Clip, EffectInstance, Track } from '../../schema/sequence.ts';
+import type { Clip, EffectInstance, Sequence, Track } from '../../schema/sequence.ts';
+import { flicksPerFrame, type Rational } from '../../time.ts';
+import { transitionSpec, transitionStartFrame } from '../../transitions.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
 import { ClipPatchSchema } from '../schemas/clip.ts';
@@ -220,6 +222,28 @@ export function resolveTarget(
 		const time = (at: ParamAt | undefined) =>
 			clip ? h.clipContentTime(found.seq, clip, at) : h.sequenceContentTime(found.seq, at);
 		return { type: 'anim', anim, rule: ruleFromParam(p), time, label: `${found.fx.effectId}.${p.name}` };
+	}
+	// Wave-2 transition framework: `["transition", trnId, param]`; keyframe times are flicks from the span's start.
+	if (head === 'transition' && a && rest.length === 1) {
+		let seq: DSeq | undefined;
+		for (const s of Object.values(doc.sequences)) if (s.transitions[a]) seq = s;
+		const t = seq?.transitions[a];
+		if (!seq || !t) return h.fail('E_NOT_FOUND', `Transition not found: ${a}`);
+		const spec = transitionSpec(t.effectId);
+		if (!spec) return h.fail('E_UNKNOWN_EFFECT', `Unknown transition ${t.effectId} (not editable)`);
+		const p = spec.params.find((x) => x.name === rest[0]);
+		if (!p) return bad();
+		assertUnlocked(findTrackIn(seq, t.trackId)!.track, h);
+		t.params[p.name] ??= { value: p.default, keyframes: [] } as never;
+		const anim = t.params[p.name] as Draft<Animatable<unknown>>;
+		const s = seq;
+		const time = (at: ParamAt | undefined) => {
+			const F = flicksPerFrame(s.settings.frameRate as Rational);
+			const start = transitionStartFrame(s as Sequence, t) ?? 0;
+			const f = h.sequenceContentTime(s, at) / F;
+			return Math.round(Math.min(t.duration - 1, Math.max(0, f - start))) * F;
+		};
+		return { type: 'anim', anim, rule: ruleFromParam(p), time, label: `${spec.label}.${p.name}` };
 	}
 	if (head === 'track' && a && rest.length === 1 && (rest[0] === 'volumeDb' || rest[0] === 'pan')) {
 		const seq = h.sequence(doc, cmd.sequenceId);

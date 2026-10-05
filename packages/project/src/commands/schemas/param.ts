@@ -121,6 +121,8 @@ export const TransitionAddCmd = cmd('transition.add', {
 	duration: z.number().int().min(1).optional(),
 	alignment: z.enum(['center', 'start-at-cut', 'end-at-cut']).optional(),
 	handles: z.enum(['shorten', 'freeze']).optional(),
+	/** Wave-2 transition framework: initial param values (static; keyframes via param.set / keyframe.add). */
+	params: z.record(z.string(), z.unknown()).optional(),
 	ref: RefDeclSchema.optional(),
 });
 export const TransitionUpdateCmd = cmd('transition.update', {
@@ -129,6 +131,10 @@ export const TransitionUpdateCmd = cmd('transition.update', {
 	effectId: z.string().min(1).optional(),
 	duration: z.number().int().min(1).optional(),
 	alignment: z.enum(['center', 'start-at-cut', 'end-at-cut']).optional(),
+	/**
+	 * Wave-2 transition framework: static param values (`TransitionSpec.params`; a param with keyframes is refused —
+	 * use param.set with target ["transition", id, name]).
+	 */
 	params: z.record(z.string(), z.unknown()).optional(),
 });
 export const TransitionRemoveCmd = cmd('transition.remove', { transitionIds: z.array(IdRefSchema).min(1) });

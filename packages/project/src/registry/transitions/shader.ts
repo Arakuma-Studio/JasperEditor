@@ -104,7 +104,8 @@ export type TrStagePlan = {
 
 /** Uniforms the transition framework declares in addition to the fx built-ins (normative list, see the guide). */
 export const TR_BUILTIN_UNIFORMS = {
-	u_from: 'sampler2D — side A (outgoing clip) placed in the sequence frame, premultiplied; transparent when absent',
+	u_from:
+		'sampler2D — side A (outgoing clip) placed in the sequence frame, premultiplied; transparent when absent',
 	u_to: 'sampler2D — side B (incoming clip) placed in the sequence frame, premultiplied; transparent when absent',
 	u_hasFrom: 'bool — side A exists (false: a fade at the head of B)',
 	u_hasTo: 'bool — side B exists (false: a fade at the tail of A)',
@@ -220,7 +221,9 @@ export function transitionPasses(
 }
 
 function declaration(u: FxUniform): string {
-	return u.type === 'float[]' ? `uniform float ${u.name}[${u.value.length}];` : `uniform ${u.type} ${u.name};`;
+	return u.type === 'float[]'
+		? `uniform float ${u.name}[${u.value.length}];`
+		: `uniform ${u.type} ${u.name};`;
 }
 
 /**
@@ -369,7 +372,9 @@ export function validateGpuTransition(spec: TransitionSpec): string[] {
 	const names = new Set<string>();
 	for (const p of spec.params) {
 		if (!NAME_RE.test(p.name)) at(`param "${p.name}": names are letters and digits, starting with a letter`);
-		if (RESERVED.has(`u_${p.name}`)) at(`param "${p.name}": u_${p.name} is a built-in uniform`);
+		// A numeric `seed` param (`seedParam`) feeds the built-in u_seed (transitionSeed), it is no uniform of its own.
+		const seed = p.name === 'seed' && p.type === 'number';
+		if (RESERVED.has(`u_${p.name}`) && !seed) at(`param "${p.name}": u_${p.name} is a built-in uniform`);
 		if (names.has(p.name)) at(`param "${p.name}" is declared twice`);
 		names.add(p.name);
 		if (p.type === 'enum' && !(p.options ?? []).includes(String(p.default)))
@@ -404,7 +409,8 @@ export function validateGpuTransition(spec: TransitionSpec): string[] {
 		if (!/\bvoid\s+main\s*\(/.test(pass.frag)) at(`pass ${i}: no void main()`);
 		if (!/\bfragColor\b/.test(pass.frag)) at(`pass ${i}: never writes fragColor`);
 		for (const [re, msg] of FORBIDDEN_GLSL) if (re.test(pass.frag)) at(`pass ${i}: ${msg}`);
-		if (pass.scale !== undefined && !(pass.scale > 0 && pass.scale <= 1)) at(`pass ${i}: scale must be in (0, 1]`);
+		if (pass.scale !== undefined && !(pass.scale > 0 && pass.scale <= 1))
+			at(`pass ${i}: scale must be in (0, 1]`);
 		if (!last) {
 			const o = pass.output ?? `pass${i + 2}`;
 			if (!NAME_RE.test(o)) at(`pass ${i}: output "${o}" must be letters and digits`);
