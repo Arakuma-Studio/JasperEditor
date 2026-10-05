@@ -366,9 +366,10 @@ describe('planner with the warp stage (S09 §8.5)', () => {
 			{ type: 'keyframe.add', target: ['effect', fx.refs.$fx, 'left'], at: { sequenceFrame: 0 }, value: 0 },
 			{ type: 'keyframe.add', target: ['effect', fx.refs.$fx, 'left'], at: { sequenceFrame: 20 }, value: 30 },
 		]);
+		// wave1 native-animated-export: keyframed crop edges render in the source chain (per-frame mask), so the
+		// warp stage takes a corner-pinned layer with an animated crop too.
 		p = await plan(k.d);
-		expect(p.path).toBe('remotion');
-		expect(p.blockers.map((b) => b.itemId)).toContain(k.clip);
+		expect(p).toMatchObject({ path: 'native', blockers: [] });
 
 		const t = new DocBuilder();
 		const tr = t.tx([
@@ -603,8 +604,10 @@ describe('warp sources and cancellation', () => {
 		const v = new DocBuilder();
 		const a = v.addMedia(await register(app, fixture('clip-a.mp4')));
 		const r = v.tx([{ type: 'clip.place', source: { mediaId: a }, at: 0, ref: '$v' }]);
+		// A corner pin: the warp stage claims it (keyframed Motion alone is animated by the builder itself).
 		const t = ['clip', r.refs.$v, 'transform', 'rotation'];
 		v.tx([
+			{ type: 'effect.add', target: { clipId: r.refs.$v }, effectId: CORNER_PIN_EFFECT_ID, params: PIN },
 			{ type: 'keyframe.add', target: t, at: { sequenceFrame: 0 }, value: 0 },
 			{ type: 'keyframe.add', target: t, at: { sequenceFrame: 200 }, value: 20 },
 		]);
