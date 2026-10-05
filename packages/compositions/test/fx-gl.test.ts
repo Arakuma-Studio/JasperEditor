@@ -9,6 +9,7 @@ import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { FX_FAMILIES } from '@jasper/project';
 import { type Browser, chromium, type Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -30,10 +31,10 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 	() => {
 		let browser: Browser;
 		let page: Page;
-		const call = <T>(name: string): Promise<T> =>
+		const call = <T>(name: string, arg?: string): Promise<T> =>
 			page.evaluate(
-				(n) => (window as unknown as { __fx: Record<string, () => unknown> }).__fx[n]!(),
-				name,
+				([n, a]) => (window as unknown as { __fx: Record<string, (a?: string) => unknown> }).__fx[n]!(a),
+				[name, arg] as const,
 			) as Promise<T>;
 
 		beforeAll(async () => {
@@ -77,11 +78,18 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expect(await call<{ ok: boolean; error?: string }>('library')).toEqual({ ok: true });
 		});
 
-		it('compiles and runs every registered GPU effect and the test effects', async () => {
+		it('compiles and runs every registered GPU effect outside the families and the test effects', async () => {
 			const r = await call<{ count: number; errors: string[] }>('catalogue');
 			expect(r.errors).toEqual([]);
 			expect(r.count).toBeGreaterThanOrEqual(5);
 		});
+
+		// One test per fx family: SwiftShader compiles slowly, so the whole catalogue does not fit one timeout.
+		for (const family of FX_FAMILIES.map((f) => f.file))
+			it(`compiles and runs every GPU effect of ${family}`, { timeout: 240_000 }, async () => {
+				const r = await call<{ count: number; errors: string[] }>('catalogue', family);
+				expect(r.errors).toEqual([]);
+			});
 
 		it('keeps the picture upright and premultiplied alpha intact', async () => {
 			const o = await call<{ top: Px; bottom: Px }>('orientation');
