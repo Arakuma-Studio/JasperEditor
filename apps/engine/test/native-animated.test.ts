@@ -5,7 +5,7 @@
 // fixture is also rendered by Remotion and compared frame by frame (S03:FX-040 / ENG-033: SSIM ≥ 0.98); with
 // NATIVE_ANIM_BENCH=1 a 10 s 1080p fixture is timed on the native and the Remotion path.
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { appendFileSync, copyFileSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { applyMat3, invertMat3, layerMapOf, type Mat3, resolveSceneAt, type Vec2 } from '@jasper/project';
@@ -914,6 +914,11 @@ describe.runIf(REMOTION)('native vs Remotion render of the keyframed fixture (RE
 		});
 		const native = await exportWith(d, 'native');
 		const remotion = await exportWith(d, 'remotion');
+		// NATIVE_ANIM_KEEP=<dir>: keep both renders for inspection.
+		if (process.env.NATIVE_ANIM_KEEP) {
+			copyFileSync(native, join(process.env.NATIVE_ANIM_KEEP, `native-${frames}-${Date.now()}.mov`));
+			copyFileSync(remotion, join(process.env.NATIVE_ANIM_KEEP, `remotion-${frames}-${Date.now()}.mov`));
+		}
 		const a = decodeAll(native);
 		const b = decodeAll(remotion);
 		expect(a).toHaveLength(frames);
@@ -940,6 +945,59 @@ describe.runIf(REMOTION)('native vs Remotion render of the keyframed fixture (RE
 			line: `SSIM min ${min(out.ssim)} mean ${mean(out.ssim)}; share within 8/255 min ${min(out.share)} mean ${mean(out.share)}; corner error vs evaluated quad: native max ${max(out.native)} px, Remotion max ${max(out.remotion)} px`,
 		};
 	}
+
+	it('lossless stills of the keyframed card (native PNG vs Remotion renderStill PNG): SSIM, corners', async () => {
+		// The export comparison below also measures Remotion's ProRes 422 HQ intermediate (ringing next to saturated
+		// edges); stills compare the two renderers alone.
+		const { d, clip } = await cardDoc(engine.app, hostH());
+		const svc = coreServices(engine.app);
+		const ssims: number[] = [];
+		const native: number[] = [];
+		const remotion: number[] = [];
+		for (const f of [0, 6, 12, 18, 24, 30, 36, 42, 47]) {
+			const r = await engine.app.inject({
+				method: 'POST',
+				url: '/api/stills',
+				headers: { ...JSON_H, ...hostH() },
+				payload: { envelope: d.envelope(), sequenceId: d.seqId, frame: f },
+			});
+			const queue = svc.queue;
+			await until(() => ['succeeded', 'failed'].includes(queue.get(r.json().id)?.state ?? ''), 600_000, 100);
+			const done = queue.get(r.json().id)!;
+			expect(done.state, JSON.stringify(done.error)).toBe('succeeded');
+			expect(done.result, JSON.stringify(done.result)).toMatchObject({ renderPath: 'native' });
+			const mine = join(svc.config.paths.rendersDir, done.id, 'output.png');
+			const planned = await svc.exports.plan({
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				settings: {
+					...proresSettings(d.seqId),
+					range: { type: 'custom', startFrame: f, endFrame: f + 1 },
+				} as never,
+			});
+			const ref = join(tempAppdir('jasper-anim-ref-'), 'ref.png');
+			await svc.remotion.renderStill({
+				inputProps: (
+					svc.exports as unknown as { remotionProps(p: unknown): Record<string, unknown> }
+				).remotionProps(planned),
+				output: ref,
+				frame: 0,
+				signal: new AbortController().signal,
+			});
+			ssims.push(ssim(mine, ref, 0));
+			if (process.env.NATIVE_ANIM_KEEP) {
+				copyFileSync(mine, join(process.env.NATIVE_ANIM_KEEP, `still-native-${f}.png`));
+				copyFileSync(ref, join(process.env.NATIVE_ANIM_KEEP, `still-remotion-${f}.png`));
+			}
+			const quad = resolveSceneAt(planned.snapshot, f).find((l) => l.clip.clipId === clip)!.props.quad;
+			native.push(cornerError(measureCorners(decodeAll(mine)[0]!, quad, PLATE[0]), quad));
+			remotion.push(cornerError(measureCorners(decodeAll(ref)[0]!, quad, PLATE[0]), quad));
+		}
+		report(
+			`[anim parity stills] SSIM min ${Math.min(...ssims).toFixed(4)} mean ${(ssims.reduce((a, b) => a + b, 0) / ssims.length).toFixed(4)}; corner error vs evaluated quad: native max ${Math.max(...native).toFixed(3)} px, Remotion max ${Math.max(...remotion).toFixed(3)} px`,
+		);
+		for (const v of ssims) expect(v).toBeGreaterThanOrEqual(0.98);
+	}, 1_800_000);
 
 	it('every frame of the keyframed card: SSIM ≥ 0.98 (FX-040), like a static layer of the M1 native path', async () => {
 		const { d, clip } = await cardDoc(engine.app, hostH());
