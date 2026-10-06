@@ -1,8 +1,8 @@
 // Transition family "premiere-transitions" (transition framework, wave 3): Premiere's standard video transitions —
 // 3D Motion, Dissolve, Iris, Page Peel, Slide, Wipe, Zoom bins (TRANSITION_BINS). Ids `jasper.<kebab>`. The built-in
 // Cross Dissolve and Dip to Black (native ffmpeg path) live in ../../transitions.ts and are not duplicated here.
-// Owner: the wave-3 agent of this family; this is the ONLY file it edits (plus its tests). Entries are built with
-// `defineShaderTransition` (./define.ts). Authoring guide: docs/wp-notes/fx-transition-framework.md. The transition
+// Owner: the wave-3 agent of this family; this file plus its private helpers in ./premiere/ (one module per bin)
+// and its tests. Entries are built with `defineShaderTransition` (./define.ts). Authoring guide: docs/wp-notes/fx-transition-framework.md. The transition
 // catalogue test checks every entry (validateGpuTransition) and the GL test compiles and runs each one.
 // Import rule (no cycles): values only from ./define.ts, ./glsl.ts, ./shader.ts and ../fx/*; types from
 // ../../transitions.ts and ../effects.ts (`import type`).
@@ -11,6 +11,20 @@ import type { EffectParams } from '../effects.ts';
 import { fxParam } from '../fx/params.ts';
 import { defineShaderTransition, TRANSITION_BINS } from './define.ts';
 import { GLSL_TR_EASE, GLSL_TR_WIPE } from './glsl.ts';
+import { PREMIERE_DISSOLVES } from './premiere/dissolve.ts';
+import { PREMIERE_IRISES } from './premiere/iris.ts';
+import { MODERN_ANIMATION } from './premiere/modern-animation.ts';
+import { MODERN_DISSOLVES } from './premiere/modern-dissolve.ts';
+import { MODERN_GRUNGE } from './premiere/modern-grunge.ts';
+import { MODERN_LIGHTS } from './premiere/modern-lights.ts';
+import { MODERN_SLIDES } from './premiere/modern-slide.ts';
+import { MODERN_TRANSFORMERS } from './premiere/modern-transformers.ts';
+import { MODERN_WIPES } from './premiere/modern-wipe.ts';
+import { PREMIERE_3D_MOTION } from './premiere/motion3d.ts';
+import { PREMIERE_PAGE_PEELS } from './premiere/page.ts';
+import { PREMIERE_SLIDES } from './premiere/slide.ts';
+import { PREMIERE_VR } from './premiere/vr.ts';
+import { PREMIERE_WIPES } from './premiere/wipe.ts';
 
 /** Premiere's edge selectors of the slide family (the direction the incoming clip travels). */
 const PUSH_DIRECTIONS = ['westToEast', 'eastToWest', 'northToSouth', 'southToNorth'] as const;
@@ -128,4 +142,35 @@ void main() {
 	},
 });
 
-export const PREMIERE_TRANSITIONS: readonly TransitionSpec[] = [PUSH, CROSS_ZOOM, IRIS_ROUND];
+/**
+ * Premiere's video transitions, bin by bin (TRANSITION_BINS order), alphabetical inside a bin: the classic standard
+ * transitions (./premiere/{motion3d,dissolve,iris,page,slide,wipe}.ts and Push / Cross Zoom / Iris Round above) and
+ * the modern ones Premiere 25.5 / 26 added from Film Impact (./premiere/modern-*.ts) and the Immersive Video (VR)
+ * ones (./premiere/vr.ts). Folders the framework has no bin for yet sit in MODERN_BINS (see there).
+ */
+export const PREMIERE_TRANSITIONS: readonly TransitionSpec[] = byBinAndLabel([
+	PUSH,
+	CROSS_ZOOM,
+	IRIS_ROUND,
+	...PREMIERE_3D_MOTION,
+	...PREMIERE_DISSOLVES,
+	...PREMIERE_IRISES,
+	...PREMIERE_PAGE_PEELS,
+	...PREMIERE_SLIDES,
+	...PREMIERE_WIPES,
+	...MODERN_DISSOLVES,
+	...MODERN_SLIDES,
+	...MODERN_WIPES,
+	...MODERN_ANIMATION,
+	...MODERN_GRUNGE,
+	...MODERN_LIGHTS,
+	...MODERN_TRANSFORMERS,
+	...PREMIERE_VR,
+]);
+
+function byBinAndLabel(list: readonly TransitionSpec[]): TransitionSpec[] {
+	const order: string[] = Object.values(TRANSITION_BINS);
+	return [...list].sort(
+		(a, b) => order.indexOf(a.bin) - order.indexOf(b.bin) || a.label.localeCompare(b.label, 'en'),
+	);
+}
