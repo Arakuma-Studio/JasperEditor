@@ -10,3 +10,6 @@ export * from './core/smooth.ts';
 export * from './core/stft.ts';
 export * from './core/util.ts';
 export * from './registry.ts';
+export * from './core/pan.ts';
+export * from './chain/clip-chain.ts';
+export * from './chain/effect-chain.ts';
