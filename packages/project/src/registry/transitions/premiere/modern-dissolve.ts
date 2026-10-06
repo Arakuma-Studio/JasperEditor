@@ -134,7 +134,7 @@ void main() {
   vec4 sharp = p < 0.5 ? tr_from(v_uv) : tr_to(v_uv);
   vec4 blurred = pm_blurLevels(sharp, texture(u_btBlur1, v_uv), texture(u_btBlur2, v_uv), texture(u_btBlur3, v_uv), pm_bump(p));
   // The colour covers the cut: 0 at the ends, full around the middle.
-  float c = smoothstep(0.0, 1.0, clamp(pm_bump(p) * 1.6 - 0.45, 0.0, 1.0));
+  float c = smoothstep(0.55, 0.95, pm_bump(p));
   fragColor = mix(blurred, tr_premul(u_color), c);
 }`,
 			},

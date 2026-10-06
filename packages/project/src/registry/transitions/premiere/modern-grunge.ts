@@ -372,7 +372,7 @@ void main() {
   float t = isB ? 2.0 * (1.0 - p) : 2.0 * p;   // 0 = full picture, 1 = off
   float sy = t < 0.6 ? mix(1.0, 0.004, tr_easeIn(t / 0.6)) : 0.004;
   float sx = t < 0.6 ? 1.0 : mix(1.0, 0.0, tr_easeIn((t - 0.6) / 0.4));
-  float bright = 1.0 + 1.5 * smoothstep(0.3, 0.6, t);
+  float bright = 1.0 + 0.8 * smoothstep(0.35, 0.6, t);
   vec2 s = max(vec2(sx, sy), vec2(1e-4));
   vec2 uv = (v_uv - 0.5) / s + 0.5;
   vec4 pic = vec4(0.0);
