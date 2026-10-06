@@ -33,6 +33,7 @@ export * from './registry/transitions/index.ts';
 export * from './render/index.ts';
 export * from './schema/index.ts';
 export * from './text-animations.ts';
+export * from './text-animators/index.ts';
 export * from './time.ts';
 export * from './timecode.ts';
 export * from './tracking/index.ts';
