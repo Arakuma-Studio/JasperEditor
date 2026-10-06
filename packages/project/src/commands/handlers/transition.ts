@@ -225,7 +225,7 @@ function addTransition(doc: DDoc, a: AddArgs, h: HandlerContext) {
 		alignment,
 		outgoingClipId: outgoing?.id ?? null,
 		incomingClipId: incoming?.id ?? null,
-		freezeHandles: freeze,
+		...(freeze ? { freezeHandles: true } : {}),
 	};
 }
 
@@ -341,7 +341,7 @@ export const transitionHandlers: HandlerMap = {
 		t.alignment = alignment;
 		t.duration = duration;
 		if (cmd.params && Object.keys(cmd.params).length > 0) writeParams(t, specOf(effectId, h), cmd.params, h);
-		return { transitionId: t.id, effectId, duration, alignment, freezeHandles: freeze };
+		return { transitionId: t.id, effectId, duration, alignment, ...(freeze ? { freezeHandles: true } : {}) };
 	},
 
 	'transition.remove': (doc, cmd, h) => {

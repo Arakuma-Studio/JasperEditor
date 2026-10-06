@@ -157,9 +157,9 @@ describe('transactions (S01 §16)', () => {
 describe('catalog (ARCHITECTURE §5.3)', () => {
 	it('stubs refuse with E_NOT_IMPLEMENTED', () => {
 		const h = new Harness();
-		const r = h.tx([{ type: 'sequence.delete', sequenceId: h.seqId }]);
+		const r = h.tx([{ type: 'transcript.setBreak', transcriptId: 'trs_x', wordIndex: 0, breakBefore: 'line' }]);
 		expect(r.ok).toBe(false);
-		if (!r.ok) expect(r.errors[0]!.code).toBe('E_NOT_IMPLEMENTED');
+		if (!r.ok) expect(r.errors.map((e) => e.code)).toContain('E_NOT_IMPLEMENTED');
 	});
 
 	it('exports command and template argument constraints as JSON Schema (S01:AGT-002)', () => {
@@ -178,7 +178,8 @@ describe('catalog (ARCHITECTURE §5.3)', () => {
 		]);
 		const s = exportAgentSchema(defaultRegistries(tpl));
 		expect(s.commands['clip.place'].implemented).toBe(true);
-		expect(s.commands['sequence.delete'].implemented).toBe(false);
+		expect(s.commands['sequence.delete'].implemented).toBe(true);
+		expect(s.commands['transcript.setBreak'].implemented).toBe(false);
 		expect(s.commands['clip.place'].schema).toMatchObject({
 			type: 'object',
 			required: expect.arrayContaining(['type', 'source', 'at']),
