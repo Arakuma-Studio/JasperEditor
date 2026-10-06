@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import { CAPTION_COMMANDS } from './captions.ts';
 import { CLIP_COMMANDS } from './clip.ts';
 import { CLIPBOARD_COMMANDS } from './clipboard.ts';
 import { PARAM_COMMANDS } from './param.ts';
@@ -8,6 +9,7 @@ import { SEQUENCE_COMMANDS } from './sequence.ts';
 import { SIMPLIFY_COMMANDS } from './simplify.ts';
 import { TRACKER_COMMANDS } from './tracker.ts';
 
+export * from './captions.ts';
 export * from './clip.ts';
 export * from './clipboard.ts';
 export * from './common.ts';
@@ -31,6 +33,8 @@ export const ALL_COMMAND_SCHEMAS = [
 	...CLIPBOARD_COMMANDS,
 	// Effect presets (S03:FX-030)
 	...PRESET_COMMANDS,
+	// wp captions
+	...CAPTION_COMMANDS,
 ] as const;
 
 export type Command = z.infer<(typeof ALL_COMMAND_SCHEMAS)[number]>;

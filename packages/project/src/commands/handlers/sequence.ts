@@ -308,7 +308,15 @@ export const sequenceHandlers: HandlerMap = {
 		const list = tracksOfKind(seq, cmd.kind);
 		const index = Math.min(cmd.index ?? list.length, list.length);
 		const created: Track[] = [];
-		for (let i = 0; i < (cmd.count ?? 1); i++) created.push(createTrack(h.ids, cmd.kind, cmd.name ?? null));
+		if ((cmd.language !== undefined || cmd.captionStandard !== undefined) && cmd.kind !== 'caption')
+			h.fail('E_INVALID_PARAM', 'language and captionStandard apply to caption tracks only');
+		for (let i = 0; i < (cmd.count ?? 1); i++) {
+			const t = createTrack(h.ids, cmd.kind, cmd.name ?? null);
+			// wp captions
+			if (cmd.language !== undefined) t.language = cmd.language;
+			if (cmd.captionStandard !== undefined) t.captionStandard = cmd.captionStandard;
+			created.push(t);
+		}
 		list.splice(index, 0, ...(created as Draft<Track>[]));
 		h.defineRef(cmd.ref, created[0]!.id);
 		return { trackIds: created.map((t) => t.id) };
@@ -383,7 +391,18 @@ export const sequenceHandlers: HandlerMap = {
 		}
 		if (p.styleDefaults !== undefined) {
 			only('caption', 'styleDefaults');
+			if (!doc.fonts[p.styleDefaults.fontId])
+				h.fail('E_NOT_FOUND', `Font not found: ${p.styleDefaults.fontId}`);
 			track.styleDefaults = p.styleDefaults;
+		}
+		// wp captions
+		if (p.language !== undefined) {
+			only('caption', 'language');
+			track.language = p.language;
+		}
+		if (p.captionStandard !== undefined) {
+			only('caption', 'captionStandard');
+			track.captionStandard = p.captionStandard;
 		}
 	},
 };

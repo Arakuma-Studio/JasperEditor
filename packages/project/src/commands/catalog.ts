@@ -1,6 +1,7 @@
 // The single registration point for document commands: type → schema, handler, label, owner.
 import type { z } from 'zod';
 import type { HandlerContext } from './context.ts';
+import { CAPTIONS_OWNER, captionHandlers } from './handlers/captions.ts';
 import { clipCoreHandlers } from './handlers/clip-core.ts';
 import { clipEditHandlers } from './handlers/clip-edit.ts';
 import { CLIPBOARD_OWNER, clipboardHandlers } from './handlers/clipboard.ts';
@@ -35,7 +36,9 @@ export type CommandOwner =
 	// Clipboard (S01 §20)
 	| 'wp-clipboard'
 	// Effect presets (S03:FX-030)
-	| 'wp-m3-presets';
+	| 'wp-m3-presets'
+	// Captions, transcripts and text-based editing
+	| 'wp-captions';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -138,6 +141,30 @@ const LABELS: Record<CommandType, string> = {
 	'keyframe.paste': 'Paste Keyframes',
 	'project.pasteItems': 'Paste',
 	'effect.applyPreset': 'Apply Preset',
+	// wp captions
+	'caption.addTrack': 'Add Caption Track',
+	'caption.setActiveTrack': 'Active Caption Track',
+	'caption.add': 'Add Caption',
+	'caption.import': 'Import Captions',
+	'caption.setText': 'Edit Caption',
+	'caption.split': 'Split Caption',
+	'caption.merge': 'Merge Captions',
+	'caption.setTimes': 'Caption Timing',
+	'caption.setStyle': 'Caption Style',
+	'caption.applyPreset': 'Apply Caption Style',
+	'caption.savePreset': 'Save Caption Style',
+	'caption.deletePreset': 'Delete Caption Style',
+	'transcript.import': 'Import Transcript',
+	'transcript.delete': 'Delete Transcript',
+	'transcript.renameSpeaker': 'Rename Speaker',
+	'transcript.setSpeaker': 'Set Speaker',
+	'transcript.select': 'Mark Text Selection',
+	'transcript.extract': 'Extract Text',
+	'transcript.lift': 'Lift Text',
+	'transcript.insertInto': 'Insert Text Selection',
+	'transcript.removeFillers': 'Remove Filler Words',
+	'transcript.removePauses': 'Remove Pauses',
+	'transcript.createCaptions': 'Create Captions',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -157,6 +184,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[shapeHandlers, SHAPE_OWNER],
 	[clipboardHandlers, CLIPBOARD_OWNER],
 	[presetHandlers, PRESET_OWNER],
+	[captionHandlers, CAPTIONS_OWNER],
 	[m2Handlers, 'M2'],
 ];
 
@@ -177,7 +205,10 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 			owner,
 			milestone: owner.startsWith('wp-m3-')
 				? 'M3'
-				: owner === 'M2' || owner.startsWith('wp-m2-') || owner === CLIPBOARD_OWNER
+				: owner === 'M2' ||
+						owner.startsWith('wp-m2-') ||
+						owner === CLIPBOARD_OWNER ||
+						owner === CAPTIONS_OWNER
 					? 'M2'
 					: 'M1',
 		};

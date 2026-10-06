@@ -36,12 +36,12 @@ function lcsPairs(a: readonly string[], b: readonly string[]): Array<[number, nu
  */
 export function retimeText(
 	old: readonly TranscriptWord[],
-	text: string,
+	text: string | readonly Tok[],
 	span: { start: number; end: number },
 	firstBreak: WordBreak = 'none',
 	speaker: string | null = null,
 ): TranscriptWord[] {
-	const toks: Tok[] = tokenizeText(text);
+	const toks: Tok[] = typeof text === 'string' ? tokenizeText(text) : text.map((t) => ({ ...t }));
 	if (!toks.length) return [];
 	toks[0]!.breakBefore = firstBreak;
 	if (!old.length) return spreadTokens(toks, span.start, span.end, { speaker });
@@ -97,4 +97,31 @@ export function retimeText(
 		if (out[i + 1]!.end < out[i + 1]!.start) out[i + 1]!.end = out[i + 1]!.start;
 	}
 	return out;
+}
+
+/**
+ * Tokens of caption text as the Captions panel edits it: a new line is a line break, a blank line starts a new
+ * page (`breakBefore: 'segment'`).
+ */
+export function tokenizeCaptionText(text: string): Tok[] {
+	const out: Tok[] = [];
+	const pages = text.replace(/\r\n?/g, '\n').split(/\n[ \t]*\n+/);
+	for (const page of pages) {
+		const toks = tokenizeText(page);
+		if (!toks.length) continue;
+		if (out.length) toks[0]!.breakBefore = 'segment';
+		out.push(...toks);
+	}
+	return out;
+}
+
+/** `retimeText` for caption text (pages at blank lines). */
+export function retimeCaptionText(
+	old: readonly TranscriptWord[],
+	text: string,
+	span: { start: number; end: number },
+	firstBreak: WordBreak = 'none',
+	speaker: string | null = null,
+): TranscriptWord[] {
+	return retimeText(old, tokenizeCaptionText(text), span, firstBreak, speaker);
 }
