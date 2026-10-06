@@ -13,7 +13,12 @@ uint fx_pcg(uint v) {
 }
 uint fx_seedBits(float seed) { return uint(clamp(seed, 0.0, 1.0) * 4294967040.0); }
 // int → uint without relying on the conversion of negative ints (portable across GLSL back ends).
-uint fx_u(int x) { return x >= 0 ? uint(x) : (uint(-x) * 2654435761u) ^ 0x9e3779b9u; }
+// Branch-free (same values as \`x >= 0 ? uint(x) : (uint(-x) * 2654435761u) ^ 0x9e3779b9u\`): a select inlined many
+// times makes SwiftShader's shader compiler stall for minutes in software-GL renders.
+uint fx_u(int x) {
+  uint neg = uint(x < 0);
+  return uint(max(x, 0)) * (1u - neg) + ((uint(max(-x, 0)) * 2654435761u) ^ 0x9e3779b9u) * neg;
+}
 // Hashes of integer lattice points → 0..1 (24-bit resolution).
 float fx_hashU(uint h) { return float(fx_pcg(h) >> 8u) * (1.0 / 16777216.0); }
 float fx_hash1(int x, float seed) { return fx_hashU(fx_u(x) ^ fx_pcg(fx_seedBits(seed))); }
