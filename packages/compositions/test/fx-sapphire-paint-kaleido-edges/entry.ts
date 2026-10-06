@@ -1,7 +1,13 @@
 // Browser entry of the "sapphire-paint-kaleido-edges" GL test (bundled with esbuild, run in headless Chrome by
 // ../fx-sapphire-paint-kaleido-edges-gl.test.ts): runs the family's registered effects through the real GPU host on
 // synthetic pictures (or a loaded image) and reports pixels / PNGs.
-import { defaultEffectRegistry, type EffectSpec, fxBuiltinUniforms, fxSeed, planGpuEffect } from '@jasper/project';
+import {
+	defaultEffectRegistry,
+	type EffectSpec,
+	fxBuiltinUniforms,
+	fxSeed,
+	planGpuEffect,
+} from '@jasper/project';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 import { fxCanvasLayout } from '../../src/fx/plan.ts';
 

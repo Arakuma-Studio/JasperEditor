@@ -13,48 +13,49 @@ import {
 	SAPPHIRE_BINS,
 	validateGpuEffect,
 } from '../src/index.ts';
-import { SAPPHIRE_PAINT_KALEIDO_EDGES_EFFECTS as FAMILY } from '../src/registry/fx/sapphire-paint-kaleido-edges.ts';
 import { blurPasses, sUnitsPx } from '../src/registry/fx/sapphire-paint-kaleido-edges/common.ts';
 import { edgeGain, edgeSmoothSigma } from '../src/registry/fx/sapphire-paint-kaleido-edges/edges.ts';
 import { brushSizePx, strokeCellPx } from '../src/registry/fx/sapphire-paint-kaleido-edges/paint.ts';
+import { SAPPHIRE_PAINT_KALEIDO_EDGES_EFFECTS as FAMILY } from '../src/registry/fx/sapphire-paint-kaleido-edges.ts';
 
 const EXPECTED: Record<string, string> = {
-	'S_AutoPaint': 'jasper.s.auto-paint',
-	'S_Sketch': 'jasper.s.sketch',
-	'S_Etching': 'jasper.s.etching',
+	S_AutoPaint: 'jasper.s.auto-paint',
+	S_Sketch: 'jasper.s.sketch',
+	S_Etching: 'jasper.s.etching',
 	'S_Brush:Oil': 'jasper.s.brush-oil',
 	'S_Brush:Chalk': 'jasper.s.brush-chalk',
-	'S_Crosshatch': 'jasper.s.crosshatch',
-	'S_Cartoon': 'jasper.s.cartoon',
-	'S_CartoonPaint': 'jasper.s.cartoon-paint',
-	'S_Posterize': 'jasper.s.posterize',
-	'S_HalfTone': 'jasper.s.half-tone',
-	'S_HalfToneColor': 'jasper.s.half-tone-color',
-	'S_HalfToneRings': 'jasper.s.half-tone-rings',
+	S_Crosshatch: 'jasper.s.crosshatch',
+	S_Cartoon: 'jasper.s.cartoon',
+	S_CartoonPaint: 'jasper.s.cartoon-paint',
+	S_Posterize: 'jasper.s.posterize',
+	S_HalfTone: 'jasper.s.half-tone',
+	S_HalfToneColor: 'jasper.s.half-tone-color',
+	S_HalfToneRings: 'jasper.s.half-tone-rings',
 	'S_Kaleido:Triangles': 'jasper.s.kaleido-triangles',
 	'S_Kaleido:Squares': 'jasper.s.kaleido-squares',
 	'S_Kaleido:Diamonds': 'jasper.s.kaleido-diamonds',
 	'S_Kaleido:Oct': 'jasper.s.kaleido-oct',
-	'S_KaleidoPolar': 'jasper.s.kaleido-polar',
-	'S_KaleidoRadial': 'jasper.s.kaleido-radial',
-	'S_FlysEyeCircles': 'jasper.s.flys-eye-circles',
-	'S_FlysEyeHex': 'jasper.s.flys-eye-hex',
-	'S_FlysEyeRect': 'jasper.s.flys-eye-rect',
-	'S_TileScramble': 'jasper.s.tile-scramble',
-	'S_EdgeDetect': 'jasper.s.edge-detect',
-	'S_EdgeDetectDouble': 'jasper.s.edge-detect-double',
-	'S_EdgesInDirection': 'jasper.s.edges-in-direction',
-	'S_EdgeColorize': 'jasper.s.edge-colorize',
-	'S_Emboss': 'jasper.s.emboss',
-	'S_EmbossShiny': 'jasper.s.emboss-shiny',
-	'S_EmbossDistort': 'jasper.s.emboss-distort',
-	'S_EmbossGlass': 'jasper.s.emboss-glass',
+	S_KaleidoPolar: 'jasper.s.kaleido-polar',
+	S_KaleidoRadial: 'jasper.s.kaleido-radial',
+	S_FlysEyeCircles: 'jasper.s.flys-eye-circles',
+	S_FlysEyeHex: 'jasper.s.flys-eye-hex',
+	S_FlysEyeRect: 'jasper.s.flys-eye-rect',
+	S_TileScramble: 'jasper.s.tile-scramble',
+	S_EdgeDetect: 'jasper.s.edge-detect',
+	S_EdgeDetectDouble: 'jasper.s.edge-detect-double',
+	S_EdgesInDirection: 'jasper.s.edges-in-direction',
+	S_EdgeColorize: 'jasper.s.edge-colorize',
+	S_Emboss: 'jasper.s.emboss',
+	S_EmbossShiny: 'jasper.s.emboss-shiny',
+	S_EmbossDistort: 'jasper.s.emboss-distort',
+	S_EmbossGlass: 'jasper.s.emboss-glass',
 };
 
 const byLabel = (label: string): EffectSpec => FAMILY.find((s) => s.label === label)!;
 const defaults = (s: EffectSpec, over: Record<string, unknown> = {}) =>
 	({ ...Object.fromEntries(s.params.map((p) => [p.name, p.default])), ...over }) as never;
-const paramDefault = (label: string, name: string) => byLabel(label).params.find((p) => p.name === name)?.default;
+const paramDefault = (label: string, name: string) =>
+	byLabel(label).params.find((p) => p.name === name)?.default;
 const CTX: FxFrameContext = {
 	width: 1920,
 	height: 1080,
@@ -213,7 +214,14 @@ describe('sapphire-paint-kaleido-edges family', () => {
 
 	it('marks the heavy effects expensive', () => {
 		const heavy = FAMILY.filter((s) => s.expensive).map((s) => s.label);
-		for (const l of ['S_AutoPaint', 'S_Sketch', 'S_Brush:Oil', 'S_Brush:Chalk', 'S_CartoonPaint', 'S_EmbossGlass'])
+		for (const l of [
+			'S_AutoPaint',
+			'S_Sketch',
+			'S_Brush:Oil',
+			'S_Brush:Chalk',
+			'S_CartoonPaint',
+			'S_EmbossGlass',
+		])
 			expect(heavy).toContain(l);
 	});
 });

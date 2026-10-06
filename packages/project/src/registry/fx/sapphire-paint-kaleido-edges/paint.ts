@@ -617,6 +617,8 @@ vec4 layerPaint(vec2 p, int k, float S, int shape, float seed) {
       COVERAGE
       if (cov <= 0.002) continue;
       vec4 sc = fx_unpremultiply(pnt_color(ctr));
+      cov *= sc.a;                                   // no paint where the source is transparent
+      if (cov <= 0.002) continue;
       vec3 col = mix(u_paintColor.rgb, sc.rgb, u_useSourceColor);
       TINT
       col = clamp(col, 0.0, 1.0);

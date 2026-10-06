@@ -4,8 +4,8 @@
 import type { EffectSpec, ParamSpec } from '../../effects.ts';
 import { defineShaderEffect, SAPPHIRE_BINS } from '../define.ts';
 import { GLSL_COMPOSITE } from '../glsl/composite.ts';
-import type { GlslChunk } from '../shader.ts';
 import { fxParam, mixWithOriginalParam } from '../params.ts';
+import type { GlslChunk } from '../shader.ts';
 import { blurPasses, PKE_COMMON, rgbParam, sNum, sUnitsPx, xyParam } from './common.ts';
 
 const bin = SAPPHIRE_BINS.stylize;
@@ -30,8 +30,13 @@ float ht_spot(vec2 q) { return 0.5 + 0.25 * (cos(6.28318530718 * q.x) + cos(6.28
 float ht_width(float sharpness, float spot) {
   return max(0.25 / max(sharpness + 1.0, 0.01), 0.75 * fwidth(spot));
 }
-// 1 where the level (luma + lighten) is above the spot value, soft over ±width.
-float ht_cover(float level, float spot, float w) { return clamp(0.5 + (level - spot) / (2.0 * w), 0.0, 1.0); }
+// 1 where the level (luma + lighten) is above the spot value, soft over ±width. The spot is kept within [w, 1 − w]
+// so pure black and pure white stay solid.
+float ht_cover(float level, float spot, float w) {
+  w = min(w, 0.45);
+  float s = w + (1.0 - 2.0 * w) * spot;
+  return clamp(0.5 + (level - s) / (2.0 * w), 0.0, 1.0);
+}
 `,
 };
 
