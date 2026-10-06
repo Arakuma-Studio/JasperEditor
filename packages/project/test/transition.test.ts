@@ -268,7 +268,7 @@ describe('transition.add / update / remove', () => {
 		]);
 		expect(wrong.ok === false && wrong.errors[0]!.code).toBe('E_TRACK_KIND');
 		const unknown = h.tx([
-			{ type: 'transition.add', clipId: videoClip, edge: 'in', effectId: 'jasper.page-peel' },
+			{ type: 'transition.add', clipId: videoClip, edge: 'in', effectId: 'jasper.not-a-transition' },
 		]);
 		expect(unknown.ok === false && unknown.errors[0]!.code).toBe('E_UNKNOWN_EFFECT');
 		const nowhere = h.tx([

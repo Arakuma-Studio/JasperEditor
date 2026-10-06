@@ -15,10 +15,15 @@ import type { GpuTransition } from './shader.ts';
 /** Effects-panel folders under Video Transitions (Premiere's bins, then the Sapphire-style pack). */
 export const TRANSITION_BINS = {
 	motion3d: '3D Motion',
+	animation: 'Animation',
 	dissolve: 'Dissolve',
+	grungeDistort: 'Grunge & Distort',
+	immersive: 'Immersive Video',
 	iris: 'Iris',
+	lightsBlurs: 'Lights & Blurs',
 	pagePeel: 'Page Peel',
 	slide: 'Slide',
+	transformers: 'Transformers',
 	wipe: 'Wipe',
 	zoom: 'Zoom',
 	sapphire: 'Sapphire Transitions',

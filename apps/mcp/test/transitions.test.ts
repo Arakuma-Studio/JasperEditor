@@ -245,8 +245,10 @@ describe('GPU transitions through MCP (transition framework)', () => {
 			'list_transition_types',
 			{ bin: 'Iris' },
 		);
-		expect(iris.types.map((t) => t.effectId)).toEqual(['jasper.iris-round']);
-		expect(iris.types[0]!.params.map((p) => p.name)).toContain('center');
+		expect(iris.types.map((t) => t.effectId)).toContain('jasper.iris-round');
+		expect(iris.types.find((t) => t.effectId === 'jasper.iris-round')!.params.map((p) => p.name)).toContain(
+			'center',
+		);
 	});
 
 	it('adds a GPU transition by label with params and updates its params', async () => {

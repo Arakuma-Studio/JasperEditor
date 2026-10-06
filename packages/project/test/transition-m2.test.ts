@@ -61,7 +61,12 @@ describe('transition.update {effectId} (TUI-050)', () => {
 			to: 'jasper.constant-power',
 			audio: true,
 		},
-		{ name: 'unknown id', from: 'jasper.cross-dissolve', to: 'jasper.page-peel', code: 'E_UNKNOWN_EFFECT' },
+		{
+			name: 'unknown id',
+			from: 'jasper.cross-dissolve',
+			to: 'jasper.not-a-transition',
+			code: 'E_UNKNOWN_EFFECT',
+		},
 	];
 	for (const c of cases) {
 		it(c.name, () => {
@@ -174,7 +179,7 @@ describe('transition.applyDefault M2 fields (TUI-051)', () => {
 		},
 		{
 			name: 'unknown video default',
-			args: { edges: 'both', videoEffectId: 'jasper.wipe' },
+			args: { edges: 'both', videoEffectId: 'jasper.not-a-transition' },
 			clips: ['va'],
 			expect: [],
 			code: 'E_UNKNOWN_EFFECT',

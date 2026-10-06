@@ -8,20 +8,14 @@ import type { GlslChunk, ShaderPass } from '../../fx/shader.ts';
 import { TRANSITION_BINS } from '../define.ts';
 import { GLSL_TR_EASE, GLSL_TRANSITION } from '../glsl.ts';
 
-/**
- * Premiere 26's transition folders. Animation, Grunge & Distort, Lights & Blurs, Transformers and Immersive Video
- * have no `TRANSITION_BINS` entry yet (the framework's list), so they sit in the nearest existing folder until it
- * gets them: Animation → Slide (moves), Grunge & Distort → Dissolve, Lights & Blurs → Zoom (Premiere 26 moved Cross
- * Zoom there), Transformers → 3D Motion, Immersive Video → Zoom (mostly lights and zooms). Change these lines when
- * the bins exist.
- */
+/** Premiere 26's transition folders (Animation, Grunge & Distort, Lights & Blurs, Transformers, Immersive Video). */
 export const MODERN_BINS = {
-	animation: TRANSITION_BINS.slide,
-	grungeDistort: TRANSITION_BINS.dissolve,
-	lightsBlurs: TRANSITION_BINS.zoom,
-	transformers: TRANSITION_BINS.motion3d,
+	animation: TRANSITION_BINS.animation,
+	grungeDistort: TRANSITION_BINS.grungeDistort,
+	lightsBlurs: TRANSITION_BINS.lightsBlurs,
+	transformers: TRANSITION_BINS.transformers,
 	/** Immersive Video (the VR transitions, ./vr.ts). */
-	immersive: TRANSITION_BINS.zoom,
+	immersive: TRANSITION_BINS.immersive,
 } as const;
 
 /** Keywords naming Premiere 26's folder of a modern transition (search finds them by folder name). */
