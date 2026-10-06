@@ -1,6 +1,8 @@
-# wave1/native-animated-export — keyframed Motion, Opacity, crop and volume in the native filtergraph
+# wave1/native-animated-export — keyframed Motion, Opacity, crop and volume on the native path
 
-Branch `wave1/native-animated-export` (from `b56f7d4`). Spec: S03 §3.2 (DM-010/012), §4.2 (RND-010), §12.2
+Branches `wave1/native-animated-export` (from `b56f7d4`) and **`wave1b/native-subpixel`** (from `feat/effects-system`
+`749c7a2`: sub-pixel layers, see "wave1b" below — it replaces the whole-pixel Motion placement of wave1 for every
+layer whose geometry is not whole pixels). Spec: S03 §3.2 (DM-010/012), §4.2 (RND-010), §12.2
 (KF-010), §15 (FX-040, AC-FX-1), §21.2 (ENG-030/032/033); S04 §11 (RP-001/008), §12.2 (RN-020/021/022).
 Decision: ARCHITECTURE **D-34** (narrows D-28).
 
@@ -91,6 +93,99 @@ the nearest clip frame — the same sampling as the composition's `audioGainAt`.
 would make the export differ from the preview; and S01:FX-010's −3 dB-centre law would also change every unpanned
 mix.
 
+## wave1b — sub-pixel layers (`wave1b/native-subpixel`)
+
+The wave1 filtergraph placed and sized layers in whole pixels: a 0.05 px/frame pan stepped by 1 px every 20 frames.
+That was rejected. Now a layer whose Motion has keyframes, or whose static geometry (scaled size, position, rotation,
+crop edges) is not whole pixels, is **drawn by our own kernel and streamed into the composite**; layers with
+whole-pixel geometry (the common full-frame clip) keep the filter path (`motionStage`, exact there).
+
+### Approaches measured (LGPL FFmpeg 7.1, this host)
+
+| Approach | Result |
+|---|---|
+| Pure filters: `overlay`/`pad`/`crop` take integers, `scale` makes integer sizes, `zoompan` crops at integers, `rotate` maps centre to centre only | no per-frame fractional translation or fractional scale without `perspective` (GPL) |
+| `geq` with bilinear `p(X−dx, Y−dy)` | 150 ms CPU per 0.75 Mpx frame with a constant shift, 350 ms with a per-frame expression; translation only. Rejected |
+| `sendcmd`-driven `convolution` / `colorchannelmixer` | commands can land one frame early (see wave1); rejected |
+| swscale on a padded source (fractional placement via pad + scale ratios) | needs per-frame pad/crop sizes, which `pad`/`crop` cannot take from `t`; rejected |
+| `libplacebo` (float `pos_x/pos_y`) | needs a Vulkan device (lavapipe here; not on every user machine, no MoltenVK in our macOS build); rejected |
+| Supersampled compositing | not needed |
+| **Warp kernel, but layer-sized and streamed** (chosen) | exact affine, any scale/rotation, one resample, no intermediate file; fastest of all measured paths (below) |
+
+### How it works (`apps/engine/src/export/stream/`)
+
+- **Plan** (`plan.ts`, in `buildNativeGraph`): every frame is evaluated with `resolveLayerProps` (shared evaluator);
+  the layer map, opacity and crop give the inverse map output px → picture px, the drawn rectangle and the visible
+  part. The streamed frame is as large as the layer's bounds over the clip (clamped to the sequence ± 2 px); its
+  per-frame integer offset is `round(fit(left − 2))` from a piecewise-linear fit (`overlay` x/y expressions, the same
+  values JS uses; ties nudged away so ffmpeg and JS round alike). The fraction lives in the drawn pixels.
+- **Decoder** (one ffmpeg per layer): the layer's source chain (`layerSourceChain`: seek, speed, box scale, effects;
+  crop left out) as raw RGBA on stdout. Layers drawn below half size are pre-scaled like a mipmap (largest
+  power-of-two reduction still ≥ the drawn size, folded into the source's own scale; levels change rarely, so the
+  scaler is rarely re-created) — the kernel then minifies by < 2×, as the browser samples a layer.
+- **Kernel** (`kernel.ts`, worker threads, `pool.ts`): the browser's way of drawing a transformed layer box — the
+  visible rectangle (picture or crop) gets anti-aliased edges from geometric **coverage** (signed distance of the
+  pixel centre to each edge, in output px; product at corners), the colour is bilinear with clamp-to-edge on
+  premultiplied colour, alpha × coverage × opacity. Coverage edges move continuously at any scale; the warp stage's
+  "texels outside are transparent" bilinear edges step under minification (measured below).
+- **Composite**: the frames go to the composite ffmpeg on extra pipes (`spawnTool({pipes})`, `-f rawvideo -i
+  pipe:3…`), then fades and `overlay` at the per-frame integer offset. Producers run while the composite runs
+  (`ExportService.runNative`); a failed producer stops the composite and is the reported error; frame count is
+  verified as before.
+- **Crop** is no longer a mask in the decoder for these layers: the kernel clips to the per-frame crop rectangle
+  (mirrored by an odd number of flip effects, crop first like the composition), with the same coverage edges.
+- **Rotation, non-uniform scale, flips, anchor**: all in the affine map (no `rotate` filter, no centre/parity issues).
+
+### wave1b measurements
+
+Shared 12-core host (other agents running; load noted per run).
+
+**Smoothness** — `native-animated.test.ts` "a 0.05 px/frame pan over 300 frames": a 384×216 white card (20 % of a 1080p
+solid) panned 14.95 px in 300 frames on a fractional y, exported (ProRes 4444), per-frame intensity-weighted centroid
+vs the evaluated layer centre:
+
+| Path | x RMS | worst step error | smallest step | worst y error |
+|---|---|---|---|---|
+| **Sub-pixel (this branch)** | **0.0010 px** | **0.0032 px** | **0.0468 px** (monotonic) | **0.0000 px** |
+| Whole-pixel filtergraph (wave1) | 0.289 px | 0.95 px (1 px jumps) | 0 (stalls) | 0.40 px |
+| Warp stage (`b56f7d4`) | 0.235 px | 0.20 px | 0 (stalls) | 0.40 px |
+
+(The warp stage minifies 5× with plain bilinear and transparent-texel edges, so its 20 % layer also steps.) Kernel-only
+check (no ffmpeg) at 20, 37, 50, 63, 80, 95, 100, 130 % scale: edge position RMS ≤ 0.0023 px (test asserts ≤ 0.01).
+
+**Geometry** (every frame of the 48-frame keyframed card, coverage-integral edge fits, corners inside the frame):
+worst corner error **0.050 px**, colour ≤ 5/255 (ProRes ringing; mean < 1); keyframed crop + keyframed non-uniform scale
+on a rotated solid: **0.014 px**.
+
+**Parity with Remotion** (`REMOTION_E2E=1`):
+
+| Path | Lossless stills (native PNG vs `renderStill` PNG, 9 frames): SSIM min / mean, corner error max | Exports (ProRes 4444 vs Remotion export, 48 frames): SSIM min / mean, corner error max |
+|---|---|---|
+| **Sub-pixel (this branch)** | **0.99999 / 1.0000, 0.051 px** | 0.9935 / 0.9955, **0.050 px** |
+| Warp stage (`b56f7d4`) | 0.9999 / 0.9999, 0.084 px | 0.9936 / 0.9955, 0.084 px |
+| Whole-pixel filtergraph (wave1) | 0.9980 / 0.9988, 0.645 px | 0.9917 / 0.9951, 0.717 px |
+| Remotion itself vs the evaluated quad | 0.147 px | 0.190 px |
+| Static layer (same props, frame 26): sub-pixel / warp-era static / wave1 static | — | 0.9959 / 0.9939 / 0.9952 SSIM; 0.008 / 1.72 / 0.51 px |
+
+The export comparison is limited by codec noise, not by the renderers: Remotion's export goes through a ProRes 422 HQ
+intermediate (chroma subsampled, DCT ringing next to the saturated cells — visible as 8…29 code values around a
+20-gray plate where the native frame is flat), so its worst frames (38–43, large card) score U/V ≈ 0.9915 for every
+native path. The lossless still comparison isolates the renderers: the sub-pixel kernel matches Chrome to
+SSIM 0.99999 (mean |Δ| 0.001 code values on flat areas, ~2 on edges). Against the old warp path the export SSIM
+minimum differs by 0.0001 (0.9935 vs 0.9936) — within that codec noise; on lossless stills the sub-pixel path is closer.
+
+**Speed** (`NATIVE_ANIM_BENCH=1`, 300 frames 1080p30 → H.264 (OpenH264), fresh engine per run, full job time;
+interleaved runs, load average 15–25 except the first sub-pixel run at ~3):
+
+| Fixture | Remotion | Warp stage (first / cached re-export) | Whole-pixel filtergraph | **Sub-pixel streamed** |
+|---|---|---|---|---|
+| Plate + keyframed 1080p PiP | 145.6 s | 23.7 / 9.8 s; 25.7 / 13.3 s | 21.2 s; 16.6 s | **12.7 s (load 3); 10.6 s; 10.3 s** |
+| Plate + 3 keyframed 640×360 cards | 93.0 s | 35.9 / 15.8 s; 37.8 / 17.4 s | 44.8 s; 19.4 s | **9.1 s (load 3); 9.3 s; 21.5 s¹** |
+
+¹ load spike. The sub-pixel path is the fastest first export (≈2× the warp stage, 1.6× the whole-pixel filtergraph on
+the PiP; up to 4× on small layers) and 9–14× faster than Remotion. It has no cache (no intermediate): the warp
+stage's cached re-export of the full-screen PiP (9.8–13.3 s) is about as fast as a sub-pixel first export.
+
 ## Now native vs still blocked
 
 | Native now | Still blocked (precise blocker) |
@@ -163,7 +258,8 @@ and `unpremultiply` cost ~20 ms CPU per 1080p frame each (hence skipping `premul
 ```bash
 pnpm fixtures
 pnpm vitest run apps/engine/test/native-animated.test.ts apps/engine/test/warp.test.ts apps/engine/test/export.test.ts
-REMOTION_E2E=1 pnpm vitest run apps/engine/test/native-animated.test.ts -t "Remotion"     # parity, ~4 min
+REMOTION_E2E=1 pnpm vitest run apps/engine/test/native-animated.test.ts -t "Remotion"     # parity (stills + exports)
+NATIVE_ANIM_KEEP=/tmp/keep REMOTION_E2E=1 …                                               # keep the renders
 NATIVE_ANIM_BENCH=1 NATIVE_ANIM_BENCH_REMOTION=1 pnpm vitest run apps/engine/test/native-animated.test.ts -t "export speed"
 ```
 
@@ -171,11 +267,13 @@ Measurements are appended to `$TMPDIR/native-animated.txt`.
 
 ## Open issues
 
-- **Sub-pixel positioning.** Positions (and sizes) are whole pixels; slow moves step by 1 px where Chrome and the
-  warp stage move smoothly. LGPL FFmpeg has no filter that translates by a fraction of a pixel per frame without
-  `perspective` (GPL) or per-pixel `geq` (far too slow); a bilinear `convolution` per fractional offset would need
-  `sendcmd` or one filter instance per offset. If this matters for a project, the warp stage could take such layers
-  again (it is still the corner-pin path).
+- **Sub-pixel positioning** — done in wave1b (streamed kernel layers). The whole-pixel numbers in the wave1 sections
+  above describe the filter path, which now only draws layers with whole-pixel geometry.
+- **Extra pipes on Windows:** the streamed layers use inherited fds 3, 4, … (`pipe:N`). Verified on Linux; Windows
+  (libuv passes extra stdio to the child's CRT) is not tested here — a localhost TCP input would be the fallback.
+- **No cache for streamed layers:** re-exports redraw (the warp stage cached its intermediates).
+- **`motionStage`'s per-frame geometry branches** (per-frame `scale`, `rotate` expressions) are no longer reached by
+  keyframed geometry (it streams); they remain for completeness of the filter path.
 - **Gaussian blur** is not native at all (static or keyframed), see above.
 - **Pan** is rendered by no engine yet.
 - **ENG-032's `sendcmd` fallback** is not implemented (not needed: no expression limit is hit; see "Why not

@@ -3,8 +3,9 @@
 // scale → rotate (premultiplied, transparent, grown bounds) → alpha multiply → overlay at the offset derived from
 // the @jasper/project layer matrix; bottom → top over a `color` background; audio
 // atrim/atempo/aresample/volume/adelay + amix normalize=0 + pad/trim;
-// keyframed Motion, Opacity, crop edges and volumes are sampled per frame into per-frame expressions
-// (S03:ENG-032, `keyframed.ts`);
+// keyframed Opacity, crop edges and volumes are sampled per frame into per-frame expressions (S03:ENG-032,
+// `keyframed.ts`); layers whose geometry is not whole pixels (keyframed Motion, fractional position/scale/rotation/crop)
+// are drawn sub-pixel by our kernel and streamed in on pipes (`stream/`, `NativeGraph.streams`);
 // the selected video encoder (D-13: hardware H.264 / OpenH264 / libx264 in dev / AV1 / VP9) with bt709 tags +
 // AAC (MP4, faststart) or Opus (WebM). Inputs are referenced by index only (S04:SC-004).
 // Transitions (S01 §13) are built in: a clip's layer also covers its handles, the transition ramps become
