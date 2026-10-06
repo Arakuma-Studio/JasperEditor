@@ -23,9 +23,22 @@ import { type Sequence, SequenceSchema } from './sequence.ts';
  * later M3 additions may share v5 (older builds open v5 files read-only). */
 export const CURRENT_SCHEMA_VERSION = 5;
 
+const markSchema = z.looseObject({ flicks: nonNegInt() });
 export const SourceMarksSchema = z.looseObject({
-	in: z.looseObject({ flicks: nonNegInt() }).nullable(),
-	out: z.looseObject({ flicks: nonNegInt() }).nullable(),
+	in: markSchema.nullable(),
+	out: markSchema.nullable(),
+	/**
+	 * edit-ux (Premiere Mark Split): separate video/audio In/Out marks for split edits (J/L cuts from the source).
+	 * Absent / null fields fall back to `in`/`out`.
+	 */
+	split: z
+		.looseObject({
+			videoIn: markSchema.nullable().optional(),
+			videoOut: markSchema.nullable().optional(),
+			audioIn: markSchema.nullable().optional(),
+			audioOut: markSchema.nullable().optional(),
+		})
+		.optional(),
 });
 export type SourceMarks = DeepStrip<z.infer<typeof SourceMarksSchema>>;
 

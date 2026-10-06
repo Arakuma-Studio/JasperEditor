@@ -5,6 +5,7 @@ import { clipCoreHandlers } from './handlers/clip-core.ts';
 import { clipEditHandlers } from './handlers/clip-edit.ts';
 import { CLIPBOARD_OWNER, clipboardHandlers } from './handlers/clipboard.ts';
 import { compositionHandlers } from './handlers/composition.ts';
+import { editUxHandlers } from './handlers/edit-ux.ts';
 import { effectHandlers } from './handlers/effect.ts';
 import { keyframeHandlers } from './handlers/keyframe.ts';
 import { m2Handlers } from './handlers/m2.ts';
@@ -35,7 +36,9 @@ export type CommandOwner =
 	// Clipboard (S01 §20)
 	| 'wp-clipboard'
 	// Effect presets (S03:FX-030)
-	| 'wp-m3-presets';
+	| 'wp-m3-presets'
+	// Editorial UX: 3/4-point editing, trim mode, subclips
+	| 'edit-ux';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -138,6 +141,10 @@ const LABELS: Record<CommandType, string> = {
 	'keyframe.paste': 'Paste Keyframes',
 	'project.pasteItems': 'Paste',
 	'effect.applyPreset': 'Apply Preset',
+	'clip.sourceEdit': 'Overwrite',
+	'clip.trimEdits': 'Trim',
+	'item.makeSubclip': 'Make Subclip',
+	'item.updateSubclip': 'Edit Subclip',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -157,6 +164,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[shapeHandlers, SHAPE_OWNER],
 	[clipboardHandlers, CLIPBOARD_OWNER],
 	[presetHandlers, PRESET_OWNER],
+	[editUxHandlers, 'edit-ux'],
 	[m2Handlers, 'M2'],
 ];
 
@@ -175,11 +183,12 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 			handler: SHAPE_BOX_COMMANDS.has(type) ? keepShapesCentred(handler) : handler,
 			label: LABELS[type],
 			owner,
-			milestone: owner.startsWith('wp-m3-')
-				? 'M3'
-				: owner === 'M2' || owner.startsWith('wp-m2-') || owner === CLIPBOARD_OWNER
-					? 'M2'
-					: 'M1',
+			milestone:
+				owner.startsWith('wp-m3-') || owner === 'edit-ux'
+					? 'M3'
+					: owner === 'M2' || owner.startsWith('wp-m2-') || owner === CLIPBOARD_OWNER
+						? 'M2'
+						: 'M1',
 		};
 	}
 	return out;

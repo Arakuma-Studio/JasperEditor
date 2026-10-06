@@ -36,7 +36,15 @@ import {
  * subclip's range (FilmCraft `media_start`/`media_duration` for `ItemKind::Subclip { restrict_trims: true }`).
  */
 export function contentWindow(doc: DDoc, c: DClip | Clip): { start: number; end: number | null } {
-	const dur = contentDurationFlicks(doc, c as Clip);
+	let dur = contentDurationFlicks(doc, c as Clip);
+	// edit-ux: a nested sequence is bounded by its content (last clip end).
+	const nested = (c as { sequenceId?: string }).sequenceId;
+	if ((c.kind === 'nest-video' || c.kind === 'nest-audio') && nested && doc.sequences[nested]) {
+		const ns = doc.sequences[nested]!;
+		let frames = 0;
+		for (const x of Object.values(ns.clips)) frames = Math.max(frames, x.start + x.duration);
+		dur = frames * flicksPerFrame(ns.settings.frameRate);
+	}
 	let start = 0;
 	let stop = isBoundedContent(c as Clip) && dur !== null ? dur : null;
 	const subId = (c as { subclipId?: string }).subclipId;

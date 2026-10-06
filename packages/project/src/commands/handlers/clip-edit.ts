@@ -140,6 +140,20 @@ function planRoll(doc: DDoc, seq: DSeq, m: DClip, edge: 'in' | 'out'): RollPlan 
 	return { out, inc, edit, range };
 }
 
+/** edit-ux: the delta range a roll at `clip`'s `edge` allows (with coincident link partners unless `linked` is false). */
+export function rollRange(
+	doc: DDoc,
+	seq: DSeq,
+	clip: DClip,
+	edge: 'in' | 'out',
+	linked: boolean,
+): { lo: number; hi: number } {
+	const pick = (c: DClip) => (edge === 'in' ? c.start : end(c));
+	const members = [clip, ...(linked ? coincidentPartners(seq, clip, pick) : [])];
+	const ranges = members.map((m) => planRoll(doc, seq, m, edge).range);
+	return { lo: Math.max(...ranges.map((r) => r.lo)), hi: Math.min(...ranges.map((r) => r.hi)) };
+}
+
 /** `clip.trim` with `mode: 'roll'` (S02:TL-545). Called by the core `clip.trim` handler. */
 export function rollTrim(doc: DDoc, cmd: CommandOf<'clip.trim'>, h: HandlerContext): unknown {
 	const { seq, clip } = h.clip(doc, cmd.clipId);

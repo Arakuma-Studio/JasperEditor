@@ -38,6 +38,19 @@ export const ItemSetMarksCmd = cmd('item.setMarks', {
 	itemId: IdRefSchema,
 	in: ContentTimeInputSchema.nullable(),
 	out: ContentTimeInputSchema.nullable(),
+	/**
+	 * edit-ux (Mark Split): separate video/audio marks. Absent = keep the current split marks; a field set to null
+	 * clears it; `split: null` clears all four.
+	 */
+	split: z
+		.strictObject({
+			videoIn: ContentTimeInputSchema.nullable().optional(),
+			videoOut: ContentTimeInputSchema.nullable().optional(),
+			audioIn: ContentTimeInputSchema.nullable().optional(),
+			audioOut: ContentTimeInputSchema.nullable().optional(),
+		})
+		.nullable()
+		.optional(),
 });
 
 /** `media.register`: `asset.id` may be omitted (generated) or be a temp ref. */

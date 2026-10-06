@@ -136,7 +136,8 @@ type PlaceOptions = {
 	at: number;
 	mode: 'overwrite' | 'insert';
 	videoTrack?: string;
-	audioTracks?: string[];
+	/** Destination per audio channel clip; `null` leaves that channel out (edit-ux source patching). */
+	audioTracks?: (string | null)[];
 	video?: boolean;
 	audio?: boolean;
 	audioMapping?: 'stereo' | 'mono-per-channel' | 'per-stream';
@@ -145,6 +146,16 @@ type PlaceOptions = {
 	createTracks?: boolean;
 	rippleMarkers?: boolean;
 	ref?: string;
+	/**
+	 * edit-ux (3/4-point editing, split edits, fit to fill): the resolved placement. `rate` is the clip speed;
+	 * each channel (visual kinds use `video`, audio clips `audio`) starts `offset` frames after `at` with its own
+	 * content In and length. A missing channel is not placed.
+	 */
+	fitted?: {
+		rate: number;
+		video?: { in: number; offset: number; frames: number };
+		audio?: { in: number; offset: number; frames: number };
+	};
 };
 
 /** Premiere Insert/Overwrite from a source (S01 `clip.place`, KND-003, FX-004, S02:TL-493). */
@@ -162,14 +173,20 @@ export function placeSource(
 	if (o.source.projectItemId) {
 		item = doc.items[o.source.projectItemId] as ProjectItem | undefined;
 		if (!item) h.fail('E_NOT_FOUND', `Project item not found: ${o.source.projectItemId}`);
-		if (item.kind === 'media') mediaId = item.mediaId;
+		if (item.kind === 'media' || item.kind === 'subclip') mediaId = item.mediaId;
 		else if (item.kind === 'synthetic') syntheticId = item.syntheticId;
 		else if (item.kind === 'sequence')
 			h.fail('E_NOT_IMPLEMENTED', 'Placing sequences (nesting) arrives in M2');
 		else h.fail('E_INVALID_PARAM', `Cannot place a ${item.kind} item`);
 	}
 	if (o.source.sequenceId) h.fail('E_NOT_IMPLEMENTED', 'Placing sequences (nesting) arrives in M2');
-	const marks = item && (item.kind === 'media' || item.kind === 'synthetic') ? item.marks : null;
+	const marks =
+		item && (item.kind === 'media' || item.kind === 'synthetic' || item.kind === 'subclip')
+			? item.marks
+			: null;
+	// edit-ux: a subclip's range is its default source range (its own marks narrow it).
+	const subclip = item?.kind === 'subclip' ? item : null;
+	const defaultIn = subclip ? subclip.range.in : 0;
 	if (o.at < 0) h.fail('E_INVALID_PARAM', 'Placement frame must be >= 0');
 	const scaling = o.scaling ?? doc.settings.defaultScaling;
 	const stillFrames = Math.max(
@@ -200,11 +217,11 @@ export function placeSource(
 		const label = (kind: Clip['kind']) => defaultLabelForPlacedClip(kind, asset, item?.label);
 		const box = mediaIntrinsicSize(asset) ?? frameBox(seq);
 		const bounded = asset.kind === 'video' || asset.kind === 'audio';
-		const inF = o.sourceRange?.in ?? marks?.in?.flicks ?? 0;
+		const inF = o.sourceRange?.in ?? marks?.in?.flicks ?? defaultIn;
 		if (bounded) {
 			const dur = asset.probe.durationFlicks;
 			if (dur === null) h.fail('E_INVALID_PARAM', 'Media has no duration');
-			const outF = o.sourceRange?.out ?? marks?.out?.flicks ?? dur;
+			const outF = o.sourceRange?.out ?? marks?.out?.flicks ?? subclip?.range.out ?? dur;
 			if (outF <= inF) h.fail('E_INVALID_PARAM', 'Source out must be after source in');
 			if (inF < 0 || outF > dur + F) h.fail('E_OUT_OF_MEDIA', 'Source range is outside the media');
 			frames = Math.max(1, Math.floor(Math.min(outF, dur) / F - inF / F + FRAME_EPS));
@@ -302,6 +319,7 @@ export function placeSource(
 				return m ? Number(m[1]) - 1 : 0;
 			})();
 			channelSets.forEach((channels, i) => {
+				if (o.audioTracks?.[i] === null) return;
 				const trackRef =
 					o.audioTracks?.[i] ??
 					(o.audioTracks && o.audioTracks.length > 0 ? `A${i + 1}` : `A${videoIndex + i + 1}`);
@@ -359,15 +377,39 @@ export function placeSource(
 		return h.fail('E_INVALID_PARAM', 'clip.place needs a source');
 	}
 
+	// Where each planned clip goes: one range for all, or per channel (edit-ux `fitted`).
+	type Slot = { plan: Plan; start: number; frames: number; sourceIn: number };
+	const slots: Slot[] = [];
+	for (const p of plans) {
+		if (!o.fitted) {
+			slots.push({ plan: p, start: o.at, frames: frames!, sourceIn: sourceIn! });
+			continue;
+		}
+		const ch = p.kind === 'audio' ? o.fitted.audio : o.fitted.video;
+		if (ch && ch.frames >= 1)
+			slots.push({ plan: p, start: o.at + ch.offset, frames: ch.frames, sourceIn: ch.in });
+	}
+	if (slots.length === 0) h.fail('E_INVALID_PARAM', 'Nothing to place from this source');
 	const create = o.createTracks !== false;
-	const dest = plans.map((p) => prepareTrack(seq, p.trackRef, p.kind, h, create));
+	const dest = slots.map((sl) => prepareTrack(seq, sl.plan.trackRef, sl.plan.kind, h, create));
 	if (new Set(dest.map((t) => t.id)).size !== dest.length)
 		h.fail('E_INVALID_PARAM', 'Two placed clips target the same track');
-	makeRoom(seq, h, dest, o.at, frames!, o.mode, o.rippleMarkers);
+	if (o.mode === 'insert' || slots.every((sl) => sl.start === o.at && sl.frames === slots[0]!.frames)) {
+		const a = Math.min(...slots.map((sl) => sl.start));
+		const b = Math.max(...slots.map((sl) => sl.start + sl.frames));
+		makeRoom(seq, h, dest, a, b - a, o.mode, o.rippleMarkers);
+	} else
+		slots.forEach((sl, i) => {
+			makeRoom(seq, h, [dest[i]!], sl.start, sl.frames, 'overwrite');
+		});
 	const clipIds: string[] = [];
-	plans.forEach((p, i) => {
+	slots.forEach((sl, i) => {
 		const id = h.ids.next('clp');
-		seq.clips[id] = p.build(id, dest[i]!.id, o.at, frames!, sourceIn!) as DClip;
+		const clip = sl.plan.build(id, dest[i]!.id, sl.start, sl.frames, sl.sourceIn) as DClip;
+		if (o.fitted && o.fitted.rate !== 1 && kindCapabilities(clip.kind)?.supportsSpeed)
+			clip.speed.rate = o.fitted.rate;
+		if (subclip) clip.subclipId = subclip.id;
+		seq.clips[id] = clip;
 		clipIds.push(id);
 	});
 	let linkId: string | null = null;
