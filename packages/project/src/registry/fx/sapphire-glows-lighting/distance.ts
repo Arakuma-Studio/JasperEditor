@@ -42,7 +42,6 @@ void main() {
 		},
 	];
 	steps.slice(0, 10).forEach((step, i) => {
-		const input = `jf${i}`;
 		passes.push({
 			output: `jf${i + 1}`,
 			scale: 1 / down,
@@ -51,13 +50,13 @@ void main() {
 			uniforms: { u_jstep: step },
 			frag: /* glsl */ `
 void main() {
-  vec2 tx = 1.0 / vec2(textureSize(u_${input}, 0));
+  vec2 tx = 1.0 / vec2(textureSize(u_prev, 0));
   vec2 asp = u_canvasSize;
   vec4 best = vec4(0.0);
   float bd = 1.0e20;
   for (int y = -1; y <= 1; y++)
     for (int x = -1; x <= 1; x++) {
-      vec4 t = texture(u_${input}, v_uv + vec2(float(x), float(y)) * u_jstep * tx);
+      vec4 t = texture(u_prev, v_uv + vec2(float(x), float(y)) * u_jstep * tx);
       if (t.z < 0.5) continue;
       vec2 d = (t.xy - v_uv) * asp;
       float dd = dot(d, d);

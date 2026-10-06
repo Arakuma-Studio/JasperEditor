@@ -24,9 +24,11 @@ export function levelDownscale(sx: number, sy: number): number {
 	return d;
 }
 
-/** One separable blur pass (direction `axis`) from `input` (downscale dIn) to an output at downscale dOut. */
+/**
+ * One separable blur pass (direction `axis`) of the previous pass (`u_prev`, downscale dIn) to an output at
+ * downscale dOut. Reading `u_prev` keeps the source identical for every cascade pass: one GL program for all.
+ */
 function blurPass(
-	input: string,
 	output: string,
 	axis: 0 | 1,
 	sigma: number,
@@ -57,8 +59,8 @@ function blurPass(
 		},
 		frag: /* glsl */ `
 void main() {
-  vec2 tx = 1.0 / vec2(textureSize(u_${input}, 0));
-  fragColor = sgl_blurAxis(u_${input}, v_uv, u_bDir * tx * u_bStep, u_bSig, u_bN, u_bDir.yx * tx * u_bPerp, u_bPn);
+  vec2 tx = 1.0 / vec2(textureSize(u_prev, 0));
+  fragColor = sgl_blurAxis(u_prev, v_uv, u_bDir * tx * u_bStep, u_bSig, u_bN, u_bDir.yx * tx * u_bPerp, u_bPn);
 }`,
 	};
 }
@@ -66,7 +68,7 @@ void main() {
 export type GlowCascade = { passes: ShaderPass[]; levels: string[] };
 
 /**
- * Blur `input` (a pass output, or `source`) into `levels` (≤ 5) levels named `<prefix>0…`: level k has sigma
+ * Blur `input` (the output of the pass right before the cascade, or `source` when it is first) into `levels` (≤ 5) levels named `<prefix>0…`: level k has sigma
  * (sx, sy) · 2^(k − levels + 1) (canvas px), so the last level has the full sigma. `inputDown` = downscale of the
  * input texture (its pass scale = 1/inputDown).
  */
@@ -86,7 +88,6 @@ export function glowCascade(opts: {
 	let prevX = 0;
 	let prevY = 0;
 	let dPrev = opts.inputDown ?? 1;
-	let input = opts.input;
 	for (let k = 0; k < L; k++) {
 		const f = 2 ** (k - L + 1);
 		const tx = sx * f;
@@ -95,13 +96,12 @@ export function glowCascade(opts: {
 		const iy = Math.sqrt(Math.max(0, ty * ty - prevY * prevY));
 		const d = Math.max(levelDownscale(tx, ty), k === 0 ? 1 : dPrev);
 		const name = `${opts.prefix}${k}`;
-		passes.push(blurPass(input, `${name}h`, 0, ix, dPrev, d));
-		passes.push(blurPass(`${name}h`, name, 1, iy, d, d));
+		passes.push(blurPass(`${name}h`, 0, ix, dPrev, d));
+		passes.push(blurPass(name, 1, iy, d, d));
 		levels.push(name);
 		prevX = tx;
 		prevY = ty;
 		dPrev = d;
-		input = name;
 	}
 	return { passes, levels };
 }

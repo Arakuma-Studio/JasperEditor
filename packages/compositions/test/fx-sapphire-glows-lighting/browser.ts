@@ -16,23 +16,33 @@ export const CHROME = [
 	'/usr/bin/chromium-browser',
 ].find((p): p is string => !!p && existsSync(p));
 
-/** Bundles the entry and launches Chrome; `page()` opens a fresh page with the bundle (a new GL context). */
+let bundled: Promise<string> | null = null;
+
+/** The entry bundled once per process (esbuild from tsx). */
+function bundle(): Promise<string> {
+	bundled ??= (async () => {
+		const req = createRequire(createRequire(import.meta.url).resolve('tsx/package.json'));
+		const esbuild = req('esbuild') as {
+			build(o: Record<string, unknown>): Promise<{ outputFiles: { text: string }[] }>;
+		};
+		const out = await esbuild.build({
+			entryPoints: [join(here, 'entry.ts')],
+			bundle: true,
+			write: false,
+			format: 'iife',
+			platform: 'browser',
+			target: 'es2022',
+			define: { 'process.env.NODE_ENV': '"production"' },
+			logLevel: 'silent',
+		});
+		return out.outputFiles[0]!.text;
+	})();
+	return bundled;
+}
+
+/** Launches Chrome (SwiftShader WebGL2); `page()` opens a fresh page with the bundle (a new GL context). */
 export async function openSglBrowser(): Promise<{ browser: Browser; page(): Promise<Page> }> {
-	const req = createRequire(createRequire(import.meta.url).resolve('tsx/package.json'));
-	const esbuild = req('esbuild') as {
-		build(o: Record<string, unknown>): Promise<{ outputFiles: { text: string }[] }>;
-	};
-	const out = await esbuild.build({
-		entryPoints: [join(here, 'entry.ts')],
-		bundle: true,
-		write: false,
-		format: 'iife',
-		platform: 'browser',
-		target: 'es2022',
-		define: { 'process.env.NODE_ENV': '"production"' },
-		logLevel: 'silent',
-	});
-	const code = out.outputFiles[0]!.text;
+	const code = await bundle();
 	const browser = await chromium.launch({
 		executablePath: CHROME,
 		// No GPU watchdog / crash limit: on a loaded machine a long SwiftShader draw would otherwise get the GPU

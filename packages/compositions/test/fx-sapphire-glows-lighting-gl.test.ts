@@ -6,7 +6,7 @@
 
 import { FX_FAMILIES } from '@jasper/project';
 import type { Browser, Page } from '@playwright/test';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CHROME, openSglBrowser, sgl } from './fx-sapphire-glows-lighting/browser.ts';
 
 type Px = [number, number, number, number];
@@ -39,7 +39,8 @@ const DOT: [number, number] = [112, 27];
 
 describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 	'Sapphire Glows + Lighting in WebGL2',
-	{ timeout: 300_000 },
+	// SwiftShader on a loaded machine: generous per-test timeouts (each test is ≈ 1–5 s when idle).
+	{ timeout: 600_000 },
 	() => {
 		let browser: Browser;
 		let page: Page;
@@ -48,24 +49,15 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 		const checksum = (id: string, params: Record<string, unknown>, opts: Opts = {}) =>
 			sgl<number>(page, 'checksum', id, params, { ...S, ...opts });
 
-		let newPage: () => Promise<Page>;
-
-		beforeAll(async () => {
+		// A fresh browser per test: SwiftShader's GPU process grows by many MB per compiled program (gigabytes over a
+		// whole family), and swapping makes a long-lived page crawl on a loaded machine.
+		beforeEach(async () => {
 			const b = await openSglBrowser();
 			browser = b.browser;
-			newPage = b.page;
-		}, 120_000);
-
-		// A fresh page (GL context) per test: SwiftShader slows down as one context accumulates hundreds of programs.
-		beforeEach(async () => {
-			page = await newPage();
-		}, 60_000);
+			page = await b.page();
+		}, 300_000);
 
 		afterEach(async () => {
-			await page?.close();
-		});
-
-		afterAll(async () => {
 			await browser?.close();
 		});
 
