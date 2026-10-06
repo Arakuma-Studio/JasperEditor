@@ -3,8 +3,9 @@
 // scale → rotate (premultiplied, transparent, grown bounds) → alpha multiply → overlay at the offset derived from
 // the @jasper/project layer matrix; bottom → top over a `color` background; audio
 // atrim/atempo/aresample/volume/adelay + amix normalize=0 + pad/trim;
-// keyframed Motion, Opacity, crop edges and volumes are sampled per frame into per-frame expressions
-// (S03:ENG-032, `keyframed.ts`);
+// keyframed Opacity, crop edges and volumes are sampled per frame into per-frame expressions (S03:ENG-032,
+// `keyframed.ts`); layers whose geometry is not whole pixels (keyframed Motion, fractional position/scale/rotation/crop)
+// are drawn sub-pixel by our kernel and streamed in on pipes (`stream/`, `NativeGraph.streams`);
 // the selected video encoder (D-13: hardware H.264 / OpenH264 / libx264 in dev / AV1 / VP9) with bt709 tags +
 // AAC (MP4, faststart) or Opus (WebM). Inputs are referenced by index only (S04:SC-004).
 // Transitions (S01 §13) are built in: a clip's layer also covers its handles, the transition ramps become
@@ -44,6 +45,7 @@ import {
 	type PreparedExtensions,
 } from './native-ext.ts';
 import type { LocalMedia, OutputSpec } from './planner.ts';
+import { needsSubpixel, planStreamLayer, type StreamLayerPlan } from './stream/plan.ts';
 
 const SAMPLE_RATE = 48000;
 /**
@@ -86,6 +88,11 @@ type NativeGraph = {
 	inputs: string[][];
 	outputFrames: number;
 	durationSec: number;
+	/**
+	 * Sub-pixel layers (stream/plan.ts): raw RGBA frames the caller writes to the composite's pipe `fd`
+	 * (`streamLayer`, spawn the composite with `pipes: streams.length`, fds 3, 4, …).
+	 */
+	streams: { fd: number; plan: StreamLayerPlan }[];
 };
 
 const fmt = (n: number) => {
@@ -260,6 +267,8 @@ type LayerSourceOptions = {
 	addInput(args: string[]): number;
 	/** Label prefix for sub-graphs of the chain (unique in the filtergraph; default `src`). */
 	label?: string;
+	/** Leave the crop out: the sub-pixel layer kernel clips to it with anti-aliased edges (stream/plan.ts). */
+	skipCrop?: boolean;
 };
 
 type LayerSourceChain = {
@@ -397,6 +406,7 @@ export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 			}
 			continue;
 		}
+		if (fx.effectId === 'jasper.crop' && o.skipCrop) continue;
 		if (fx.effectId === 'jasper.crop') {
 			const applied = c.effects[index];
 			if (applied && n > 1 && CROP_EDGES.some((e) => isAnimated(applied.params[e]))) {
@@ -460,6 +470,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 				...(output.proresProfile ? { proresProfile: output.proresProfile } : {}),
 			});
 	const inputs: string[][] = [];
+	const streams: NativeGraph['streams'] = [];
 	const chains: string[] = [];
 	const addInput = (args: string[]) => {
 		inputs.push(args);
@@ -552,6 +563,48 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			const next = `o${label}`;
 			chains.push(
 				`[${last}][${label}]overlay=x=${rect?.x ?? 0}:y=${rect?.y ?? 0}:format=rgb:eof_action=pass:${enable}[${next}]`,
+			);
+			last = next;
+			continue;
+		}
+
+		// Sub-pixel layers (keyframed Motion, or a static one between pixels): the warp kernel draws them into a small
+		// frame streamed on a pipe, overlaid at a whole-pixel offset (stream/plan.ts).
+		const box = {
+			bw: Math.max(1, Math.round(c.intrinsicBox.width)),
+			bh: Math.max(1, Math.round(c.intrinsicBox.height)),
+		};
+		if (needsSubpixel(c, props, box)) {
+			const decInputs: string[][] = [];
+			const chain = layerSourceChain({
+				clip: c,
+				f0,
+				f1,
+				fps,
+				props,
+				sources: o.sources,
+				override,
+				...(exts ? { extensions: exts } : {}),
+				addInput: (args) => {
+					decInputs.push(args);
+					return decInputs.length - 1;
+				},
+				label,
+				skipCrop: true,
+			});
+			const plan = planStreamLayer({ clip: c, f0, f1, R0, fps, props, chain, inputs: decInputs, W, H });
+			const fd = 3 + streams.length;
+			streams.push({ fd, plan });
+			const k = addInput([
+				...['-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${plan.outW}x${plan.outH}`],
+				...['-framerate', rate(fps), '-i', `pipe:${fd}`],
+			]);
+			chains.push(
+				`[${k}:v:0]${['setpts=PTS-STARTPTS', ...fadeFilters(c.fades, f0), shift].join(',')}[${label}]`,
+			);
+			const next = `o${label}`;
+			chains.push(
+				`[${last}][${label}]overlay=x=${plan.x}:y=${plan.y}:format=rgb:eof_action=pass:${enable}[${next}]`,
 			);
 			last = next;
 			continue;
@@ -718,7 +771,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			o.outputFile,
 		);
 	}
-	return { args, filter, inputs, outputFrames: output.frames, durationSec: output.durationSec };
+	return { args, filter, inputs, outputFrames: output.frames, durationSec: output.durationSec, streams };
 }
 
 /** Content time in seconds of an audio clip at sequence frame `f` (S01:CLP-004; before `start` = head handle). */
