@@ -68,7 +68,8 @@ void main() {
   float mid = mix(0.25, 1.55, u_midpoint / 100.0);
   float f = max(u_feather / 100.0, 0.002) * 1.1;
   float t = smoothstep(mid - f, mid + f, d);
-  float k = clamp(abs(u_amount) / 5.0, 0.0, 1.0) * t;
+  // Strength rises quickly then saturates (Lumetri-like: −3 is already a strong vignette, ±5 the maximum).
+  float k = clamp((1.0 - exp(-0.65 * abs(u_amount))) / (1.0 - exp(-3.25)), 0.0, 1.0) * t;
   c = u_amount < 0.0 ? c * (1.0 - k) : c + (1.0 - c) * k;
   fragColor = vec4(clamp(c, 0.0, 1.0) * src.a, src.a);
 }`,
