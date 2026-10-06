@@ -198,8 +198,9 @@ void main() {
   vec2 f = fl.b > 1e-3 ? fl.rg / fl.b : vec2(0.0);
   f *= clamp(fl.b * 2.0, 0.0, 1.0);
   // At time p the pixel came from A at x − p·f and goes to B at x + (1 − p)·f.
-  vec4 a = tr_from(v_uv - p * f);
-  vec4 b = tr_to(v_uv + (1.0 - p) * f);
+  // Edge-clamped reads: a warp near the frame edge repeats the edge instead of pulling in transparency.
+  vec4 a = texture(u_from, clamp(v_uv - p * f, 0.0, 1.0));
+  vec4 b = texture(u_to, clamp(v_uv + (1.0 - p) * f, 0.0, 1.0));
   fragColor = mix(a, b, tr_smoother(p));
 }`,
 			},

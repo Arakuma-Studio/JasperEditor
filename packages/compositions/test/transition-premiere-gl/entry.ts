@@ -147,6 +147,21 @@ const api = {
 		const s = stats(c);
 		return [t1 - t0, t2 - t1, performance.now() - t2, d, s];
 	},
+	/** ASCII map (B = incoming, A = outgoing, x = other) of a frame (probe scripts): "id|progress|{params}". */
+	map(arg: string) {
+		const [id, pc, json] = arg.split('|');
+		const c = run(id!, { at: Number(pc), params: json ? JSON.parse(json) : {} });
+		const rows: string[] = [];
+		for (let y = 1; y < H; y += 3) {
+			let r = '';
+			for (let x = 1; x < W; x += 2) {
+				const v = px(c, x, y);
+				r += v[2] > 200 && v[0] < 60 ? 'B' : v[0] > 200 && v[2] < 60 ? 'A' : v[3] < 20 ? '.' : 'x';
+			}
+			rows.push(r);
+		}
+		return rows.join('\n');
+	},
 	/** Ids of the family (probe scripts). */
 	ids() {
 		return TRANSITION_SPECS.filter((x) => x.gpu && !x.id.startsWith('jasper.s.')).map((x) => x.id);

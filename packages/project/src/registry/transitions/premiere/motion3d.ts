@@ -18,7 +18,7 @@ const layout = (dir: [number, number]) => ({
 	u_flip: dir[0] + dir[1] < 0,
 });
 
-const GLSL_PR_3D: GlslChunk = {
+export const GLSL_PR_3D: GlslChunk = {
 	name: 'premiere/3d',
 	deps: [GLSL_TRANSITION, GLSL_TR_WIPE],
 	source: /* glsl */ `

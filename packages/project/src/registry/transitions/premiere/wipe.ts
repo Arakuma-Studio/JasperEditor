@@ -386,7 +386,7 @@ float psSplat(vec2 g, vec2 cell, vec2 aspect) {
   ivec2 ic = ivec2(cell);
   vec4 h = vec4(fx_hash22(ic, u_seed), fx_hash22(ic + ivec2(31, 17), u_seed));
   vec2 ctr = cell + 0.15 + 0.7 * h.xy;
-  float t0 = 0.04 + 0.5 * h.z;
+  float t0 = 0.04 + 0.56 * h.z;
   vec2 q = (g - ctr) * aspect;
   float r = length(q);
   float a = atan(q.y, q.x);
@@ -394,7 +394,9 @@ float psSplat(vec2 g, vec2 cell, vec2 aspect) {
   // Lobes plus sharp spikes; the rim never drops below 0.6 so every point of the cell is reached by t = 1.
   float rim = 1.0 + 0.2 * sin(3.0 * a + ph) + 0.12 * sin(5.0 * a + 2.7 * ph) + 0.08 * sin(9.0 * a + 4.1 * ph)
     + 0.45 * pow(max(sin(7.0 * a + 1.3 * ph), 0.0), 12.0);
-  float t = t0 + (1.0 - t0) * r / (PS_RMAX * rim);
+  // The area of a splat grows linearly in time (its radius like a square root): splotches land, then spread.
+  float rr = r / (PS_RMAX * rim);
+  float t = t0 + (1.0 - t0) * rr * rr;
   // Droplets thrown around the splat: small discs that land shortly after it.
   for (int k = 0; k < 3; k++) {
     vec2 d = fx_hash22(ic * 3 + ivec2(k, 101), u_seed);
@@ -417,8 +419,11 @@ void main() {
   for (int j = 0; j <= 1; j++)
     for (int i = 0; i <= 1; i++) t = min(t, psSplat(g, base + vec2(float(i), float(j)), aspect));
   // Time → px (roughly the speed a rim moves at) for the anti-aliased edge.
-  // The splats land early and spread: an eased clock keeps the covered area roughly proportional to the progress.
-  float d = (pow(tr_progress(), 1.35) - t) * PS_RMAX * cellPx.y;
+  // Most of the frame is covered by t ≈ 0.5; the clock runs at that pace (covered area ~ progress) and catches up
+  // with the real time at the end so the last gaps close by progress 1.
+  float p = tr_progress();
+  float q = mix(0.5 * p, p, smoothstep(0.7, 1.0, p));
+  float d = (q - t) * PS_RMAX * cellPx.y;
   fragColor = mix(tr_from(v_uv), tr_to(v_uv), tr_edge(d, 0.0, tr_aaWidth(u_antiAliasing)));
 }`,
 			},
