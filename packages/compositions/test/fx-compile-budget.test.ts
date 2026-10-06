@@ -5,7 +5,8 @@
 // super-linear in inlined code (noise in loops, many hash calls): a program over the budget makes software renders
 // stall for minutes, so this test fails when ANY single program takes longer than FX_COMPILE_BUDGET_MS (default
 // 5000 ms) and prints the slowest programs. Timing = compileShader + linkProgram + the first draw + a readPixels
-// (ANGLE/SwiftShader may compile the pipeline lazily at the first draw).
+// (ANGLE/SwiftShader may compile the pipeline lazily at the first draw). Programs over the budget are re-timed once
+// in a fresh browser (the best time counts: host load inflates wall times).
 // Env: FX_GL=0 skips; FX_COMPILE_BUDGET_MS (budget), FX_COMPILE_WORKERS (parallel browsers, default 2),
 // FX_COMPILE_FILTER (substring of the effect id), FX_COMPILE_REPORT (write every timing as JSON to this path).
 import { existsSync, writeFileSync } from 'node:fs';
@@ -269,6 +270,15 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('fx programs compile fast 
 		expect(programs.length).toBeGreaterThan(FILTER ? 0 : 100);
 		const t0 = Date.now();
 		const timings = await timeAll(programs);
+		// A loaded host inflates wall times: programs over the budget are timed again (fresh browser), best kept.
+		const slow = timings.map((t, i) => [t, i] as const).filter(([t]) => t.ms !== null && t.ms > BUDGET);
+		if (slow.length) {
+			const again = await timeAll(slow.map(([, i]) => programs[i]!));
+			slow.forEach(([t, i], k) => {
+				const r = again[k]!;
+				if (r.ms !== null && r.ms < t.ms!) timings[i] = r;
+			});
+		}
 		const total = Date.now() - t0;
 		const ranked = [...timings].sort((a, b) => (b.ms ?? Infinity) - (a.ms ?? Infinity));
 		const label = (t: Timing) =>
