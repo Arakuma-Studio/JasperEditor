@@ -20,7 +20,13 @@ ported code recorded in `licenses/ported/`; export never silently drops a featur
 3. The wp-note of the area you touch (`docs/wp-notes/`), the spec it cites, and the package's tests.
    Effects and transitions: [`docs/wp-notes/fx-transition-framework.md`](docs/wp-notes/fx-transition-framework.md).
    Project files, migrations, recovery: [`docs/project-files.md`](docs/project-files.md).
-4. Then work autonomously. Make the decisions you can make yourself (see "Ask a human only about…"),
+4. **Fidelity to Premiere and After Effects comes from research, not measurement.** There is no capture harness
+   and no requirement to compare against Adobe software. Read Adobe's documented behaviour (helpx.adobe.com
+   guides, effect and parameter references, shortcut lists, release notes), published formulas and the
+   EffectCraft/FilmCraft notes; match names, ranges, defaults, units and visible behaviour, or do better where
+   Adobe is clearly worse; cite the sources in your wp-note, and say so where behaviour is undocumented and you
+   chose the most plausible one.
+5. Then work autonomously. Make the decisions you can make yourself (see "Ask a human only about…"),
    and record them in your wp-note.
 
 ## The gate
