@@ -18,6 +18,7 @@ import { layerCommands } from './layer.ts';
 import { mgCommands } from './mg.ts';
 import { processCommands } from './process.ts';
 import { projectCommands } from './project.ts';
+import { projectFileCommands } from './project-files.ts';
 import { registerCommands } from './registry.ts';
 import { shapeCommands } from './shapes.ts';
 import { textAnimationCommands } from './text-animation.ts';
@@ -53,6 +54,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	clipboardCommands,
 	layerCommands,
 	cacheCommands,
+	projectFileCommands,
 ];
 
 let registered = false;
