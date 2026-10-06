@@ -202,6 +202,8 @@ export const KNOWN_CLIP_KINDS = [
 	'adjustment',
 	// M2 (S11:SHP-001, schema v4)
 	'shape',
+	// edit-structure: the sound of a synthetic source (Bars and Tone's tone, the counting leader's blips).
+	'synthetic-audio',
 ] as const;
 export type KnownClipKind = (typeof KNOWN_CLIP_KINDS)[number];
 
@@ -218,6 +220,13 @@ const commonShape = {
 	linkId: z.string().nullable(),
 	groupId: z.string().nullable(),
 	markers: z.array(ClipMarkerSchema),
+	/**
+	 * edit-structure (Premiere Frame Hold, docs/wp-notes/edit-structure.md): the clip shows one frame of its content —
+	 * the content time `flicks` — for its whole duration. `holdFilters`: effects, Motion and Opacity keyframes are
+	 * evaluated at the held time too (Premiere "Hold Filters"); otherwise they keep animating. Absent = no hold.
+	 * Visual clips only (not adjustment layers or captions).
+	 */
+	frameHold: z.looseObject({ flicks: nonNegInt(), holdFilters: z.boolean().optional() }).optional(),
 };
 // ---------------------------------------------------------------- tracking (M2, ARCHITECTURE §19.5, S09)
 
@@ -406,6 +415,20 @@ export const AdjustmentClipSchema = z.looseObject({
 	effects: z.array(EffectInstanceSchema),
 });
 
+/**
+ * edit-structure: the audio half of a synthetic source with sound (`bars-and-tone`: a sine tone; `counting-leader`:
+ * its cue blips). Placed linked to the source's `solid` video clip, like a media file's audio clip. Stereo.
+ */
+export const SyntheticAudioClipSchema = z.looseObject({
+	...commonShape,
+	kind: z.literal('synthetic-audio'),
+	syntheticId: z.string(),
+	gainDb: z.number(),
+	volumeDb: AnimNumberSchema,
+	pan: AnimNumberSchema,
+	effects: z.array(EffectInstanceSchema),
+});
+
 // ---------------------------------------------------------------- shapes (M2, S11:SHP-001, schema v4)
 
 export const SHAPE_TYPES = ['rect', 'ellipse'] as const;
@@ -453,6 +476,7 @@ export const KnownClipSchema = z.discriminatedUnion('kind', [
 	NestAudioClipSchema,
 	AdjustmentClipSchema,
 	ShapeClipSchema,
+	SyntheticAudioClipSchema,
 ]);
 
 export type VideoClip = DeepStrip<z.infer<typeof VideoClipSchema>>;
@@ -468,6 +492,7 @@ export type NestVideoClip = DeepStrip<z.infer<typeof NestVideoClipSchema>>;
 export type NestAudioClip = DeepStrip<z.infer<typeof NestAudioClipSchema>>;
 export type AdjustmentClip = DeepStrip<z.infer<typeof AdjustmentClipSchema>>;
 export type ShapeClip = DeepStrip<z.infer<typeof ShapeClipSchema>>;
+export type SyntheticAudioClip = DeepStrip<z.infer<typeof SyntheticAudioClipSchema>>;
 export type KnownClip = DeepStrip<z.infer<typeof KnownClipSchema>>;
 
 const ClipCommonSchema = z.looseObject(commonShape);
@@ -520,6 +545,12 @@ export const TransitionSchema = z.looseObject({
 	duration: z.number().int().min(1),
 	alignment: z.enum(['center', 'start-at-cut', 'end-at-cut']),
 	params: z.record(z.string(), AnimParamSchema),
+	/**
+	 * edit-structure (S01:TRN-003 `handles: 'freeze'`): the transition keeps its duration where the media has too few
+	 * frames beyond the cut; the missing handle frames repeat the clip's first / last frame (Premiere's freeze-frame
+	 * handles, drawn with a warning stripe). Absent = handles come from the media only.
+	 */
+	freezeHandles: z.boolean().optional(),
 });
 export type Transition = DeepStrip<z.infer<typeof TransitionSchema>>;
 

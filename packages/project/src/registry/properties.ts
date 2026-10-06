@@ -68,7 +68,7 @@ export type PropertyGroup =
 
 /** Everything a default or a patch may need to know about the clip. */
 export type PropertyContext = {
-	doc: Pick<ProjectDocument, 'media' | 'synthetics'>;
+	doc: Pick<ProjectDocument, 'media' | 'synthetics'> & Partial<Pick<ProjectDocument, 'sequences'>>;
 	seq: Pick<Sequence, 'settings'>;
 	clip: Clip;
 };
@@ -162,6 +162,11 @@ export function intrinsicBoxOf(ctx: PropertyContext): { width: number; height: n
 	}
 	// M2 (S11:SHP-001): size plus the stroke drawn outside the geometry.
 	if (clip.kind === 'shape') return shapeIntrinsicBox(clip.shape);
+	// edit-structure (S01:KND-020): a nest clip's box is the nested sequence's frame.
+	if (clip.kind === 'nest-video') {
+		const nested = doc.sequences?.[r.sequenceId as string];
+		if (nested) return { width: nested.settings.width, height: nested.settings.height };
+	}
 	return frame;
 }
 
