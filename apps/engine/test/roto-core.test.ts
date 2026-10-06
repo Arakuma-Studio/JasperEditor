@@ -57,7 +57,9 @@ describe('maxflow (Boykov–Kolmogorov)', () => {
 				if (i !== j) e.push([i, j, rnd(15), rnd(15)]);
 			}
 			const g = new Graph(n, e.length);
-			t.forEach(([a, b], i) => g.addTWeights(i, a, b));
+			t.forEach(([a, b], i) => {
+				g.addTWeights(i, a, b);
+			});
 			for (const [i, j, a, b] of e) g.addEdge(i, j, a, b);
 			const f = g.maxflow();
 			expect(f).toBe(brute(n, t, e));
