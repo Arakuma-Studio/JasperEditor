@@ -101,7 +101,11 @@ const VR_GRADIENT_LABELS = [
 	'Incoming Clip Luminance',
 ] as const;
 
-/** Immersive Video ▸ VR Gradient Wipe: B appears following a gradient laid on the sphere (dark first). */
+/**
+ * Immersive Video ▸ VR Gradient Wipe: B appears following a gradient laid on the sphere (dark first). Custom Gradient
+ * takes a project image as an equirectangular gradient (stretched over each eye's frame); with no image the built-in
+ * gradient choice applies.
+ */
 export const VR_GRADIENT_WIPE = defineShaderTransition({
 	id: 'jasper.vr-gradient-wipe',
 	label: 'VR Gradient Wipe',
@@ -111,6 +115,7 @@ export const VR_GRADIENT_WIPE = defineShaderTransition({
 	keywords: kw('gradient', 'luma', 'wipe', 'soft'),
 	params: [
 		fxParam.choice('gradient', 'Gradient', VR_GRADIENTS, VR_GRADIENT_LABELS, 'topToBottom'),
+		fxParam.media('gradientImage', 'Custom Gradient', ['image']),
 		fxParam.percent('softness', 'Softness', 10),
 		fxParam.toggle('invert', 'Invert Gradient', false),
 		...targetParams(),
@@ -125,7 +130,12 @@ void main() {
   vec3 e = vr_eye(v_uv);
   vec3 d = vr_dir(e.xy);
   float g;
-  if (u_gradient == 0) g = e.y;
+  if (u_gradientImage_size.x > 0.0) {
+    // Custom Gradient: an equirectangular image laid on the sphere (each eye of a stereo layout gets all of it).
+    vec4 gi = fx_unpremultiply(texture(u_gradientImage, e.xy));
+    g = clamp(fx_luma(gi.rgb) * gi.a, 0.0, 1.0);
+  }
+  else if (u_gradient == 0) g = e.y;
   else if (u_gradient == 1) g = fract(e.x - u_pan / 360.0);
   else if (u_gradient == 2) g = vr_angle(d, vr_target(u_pan, u_tilt)) / VR_PI;
   else {

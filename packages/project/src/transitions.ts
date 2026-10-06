@@ -11,7 +11,7 @@ import { clipEnd, clipsOnTrack } from './derive/index.ts';
 import type { ParamSpec } from './registry/effects.ts';
 import { contentDurationFlicks, isBoundedContent } from './registry/kinds.ts';
 import { FX_TRANSITIONS } from './registry/transitions/index.ts';
-import type { GpuTransition } from './registry/transitions/shader.ts';
+import type { GpuTransition, TrSideTrack } from './registry/transitions/shader.ts';
 import type { Animatable, ParamValue, RGBA } from './schema/common.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import type { Clip, Sequence, Transition } from './schema/sequence.ts';
@@ -293,6 +293,11 @@ export type RenderTransition = {
 	incomingClipId: string | null;
 	/** Every declared param (stored or default); keyframe times are flicks from `start`. */
 	params: Record<string, Animatable<ParamValue>>;
+	/**
+	 * The sides' trackers over the span (one geometry per span frame, sequence px; see `transitionSideTrack`), set by
+	 * the render snapshot for sides whose clip has a tracker (S_MochaWhip follows the incoming clip's). Absent = none.
+	 */
+	tracks?: { out?: TrSideTrack; in?: TrSideTrack };
 };
 
 export type ResolvedTransitions = {

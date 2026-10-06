@@ -355,6 +355,7 @@ export function SequenceComposition({ doc, options }: SequenceCompositionProps) 
 											flicksPerFrame={fpf}
 											isPreview={options.isPreview}
 											blendMode={st.blendMode}
+											media={doc.media}
 										/>
 									</Sequence>
 								))}

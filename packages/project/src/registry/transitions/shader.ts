@@ -44,6 +44,29 @@ export type TrPlanContext = {
 	duration: number;
 };
 
+/**
+ * One side's tracker geometry at one frame of the span, in SEQUENCE pixels (through the side's layer map at that frame:
+ * Motion and corner pin, as the side's picture is placed): a planar track's corners (TL, TR, BR, BL) or a point track's
+ * point. `point` is the tracked centre in both cases (the planar quad's diagonal intersection).
+ */
+export type TrTrackFrame = {
+	kind: 'planar' | 'point';
+	corners: readonly [number, number][] | null;
+	point: [number, number];
+	/** Tracker confidence at that frame (0 = lost), 1 for an untracked reference. */
+	confidence: number;
+	/** From the samples (true) or the tracker's reference geometry (false: not tracked yet). */
+	tracked: boolean;
+};
+
+/** A side's tracker over the transition span (`RenderTransition.tracks`): one frame per span frame. */
+export type TrSideTrack = {
+	trackerId: string;
+	name: string;
+	kind: 'planar' | 'point';
+	frames: TrTrackFrame[];
+};
+
 /** Per-frame context of `GpuTransition.uniforms` (also the values behind the built-in uniforms). */
 export type TrFrameContext = TrPlanContext & {
 	/** Frame inside the transition span, 0 … duration − 1. */
@@ -59,6 +82,11 @@ export type TrFrameContext = TrPlanContext & {
 	/** `u_hasFrom` / `u_hasTo`: the side exists (false at a single clip edge: that side is transparent). */
 	hasFrom: boolean;
 	hasTo: boolean;
+	/**
+	 * The tracker of each side at this frame (after a Reverse swap: `from` is the side shown as u_from), null when the
+	 * side's clip has no tracker. Absent outside a composition (catalogue checks, unit tests): treat as none.
+	 */
+	tracks?: { from: TrTrackFrame | null; to: TrTrackFrame | null };
 };
 
 /**
@@ -144,9 +172,19 @@ export function transitionLinearProgress(frame: number, duration: number, sides:
 }
 
 /**
+ * The timing of the span at a frame: the linear progress, or — with the Completion curve on (`useCompletion`, the
+ * standard "Custom Completion" option) — the keyframable Transition Completion (`completion`, 0…100 %) evaluated at
+ * that frame, which replaces the linear ramp (Sapphire's Dissolve Percent / a keyframed transition completion).
+ */
+export function transitionTiming(params: EffectParams, linear: number): number {
+	if (params.useCompletion === true) return clamp01(finite(params.completion, 0) / 100);
+	return clamp01(linear);
+}
+
+/**
  * `u_progress` from the linear progress and the standard options (Premiere's Start / End sliders and Reverse):
- * `p = start + (end − start) · linear`; with Reverse and `reverse: 'swap'` the sides are swapped and the
- * progress is `1 − p`.
+ * `p = start + (end − start) · timing` (timing = the linear progress, or the Completion curve when it is on, see
+ * `transitionTiming`); with Reverse and `reverse: 'swap'` the sides are swapped and the progress is `1 − p`.
  */
 export function transitionProgress(
 	gpu: Pick<GpuTransition, 'reverse'> | undefined,
@@ -155,7 +193,7 @@ export function transitionProgress(
 ): { progress: number; swapped: boolean; reversed: boolean } {
 	const s = clamp01(finite(params.startPercent, 0) / 100);
 	const e = clamp01(finite(params.endPercent, 100) / 100);
-	const p = s + (e - s) * clamp01(linear);
+	const p = s + (e - s) * transitionTiming(params, linear);
 	const reversed = params.reverse === true;
 	if (reversed && (gpu?.reverse ?? 'swap') === 'swap') return { progress: 1 - p, swapped: true, reversed };
 	return { progress: p, swapped: false, reversed };
@@ -241,6 +279,8 @@ export function planGpuTransition(
 		frame: number;
 		duration: number;
 		sides: TransitionSides;
+		/** The sides' trackers over the span (`RenderTransition.tracks`); absent = none. */
+		tracks?: { out?: TrSideTrack | null; in?: TrSideTrack | null } | null;
 	},
 	comp: { width: number; height: number; fps: number },
 	pictures: { out: TrSide | null; in: TrSide | null },
@@ -258,6 +298,11 @@ export function planGpuTransition(
 	const from = pick(fromSide);
 	const to = pick(toSide);
 	const seed = transitionSeed(inst.id, p);
+	const trackAt = (s: 'out' | 'in' | null): TrTrackFrame | null => {
+		const tr = s ? inst.tracks?.[s] : null;
+		if (!tr || tr.frames.length === 0) return null;
+		return tr.frames[Math.min(tr.frames.length - 1, Math.max(0, Math.round(inst.frame)))] ?? null;
+	};
 	const ctx: TrFrameContext = {
 		width: comp.width,
 		height: comp.height,
@@ -270,6 +315,7 @@ export function planGpuTransition(
 		reversed,
 		hasFrom: !!from,
 		hasTo: !!to,
+		tracks: { from: from ? trackAt(fromSide) : null, to: to ? trackAt(toSide) : null },
 	};
 	const uniforms = paramUniforms(spec, p);
 	const custom = gpu.uniforms?.(p, ctx) ?? {};
@@ -281,6 +327,9 @@ export function planGpuTransition(
 	const textures = [
 		{ param: 'trFrom', uniform: 'u_trFrom', mediaId: '' },
 		{ param: 'trTo', uniform: 'u_trTo', mediaId: '' },
+		// Image params (Gradient Wipe's custom gradient…): `uniform sampler2D u_<name>` + `vec2 u_<name>_size`, (0, 0)
+		// when no image is bound — the same binding as effects' media params.
+		...transitionMediaTextures(spec, p),
 	];
 	const authored = transitionPasses(gpu, p, ctx);
 	if (authored.length === 0) throw new Error(`transition ${spec.id}: no passes`);
@@ -321,6 +370,26 @@ export function planGpuTransition(
 	return { plan, ctx, fromSide, toSide, builtins };
 }
 
+/**
+ * The `media` params of a transition as plan textures (`u_<name>`), with the bound media id ('' = none). Transitions
+ * take still images only (`mediaKinds: ['image']`).
+ */
+export function transitionMediaTextures(
+	spec: Pick<TransitionSpec, 'params'>,
+	params: EffectParams,
+): { param: string; uniform: string; mediaId: string }[] {
+	return spec.params
+		.filter((ps) => ps.type === 'media')
+		.map((ps) => {
+			const v = params[ps.name] as { mediaId?: unknown } | undefined;
+			return {
+				param: ps.name,
+				uniform: `u_${ps.name}`,
+				mediaId: typeof v?.mediaId === 'string' ? v.mediaId : '',
+			};
+		});
+}
+
 // ---------------------------------------------------------------- validation
 
 const RESERVED = new Set([...Object.keys(FX_BUILTIN_UNIFORMS), ...Object.keys(TR_BUILTIN_UNIFORMS)]);
@@ -357,8 +426,11 @@ export function validateGpuTransition(spec: TransitionSpec): string[] {
 		names.add(p.name);
 		if (p.type === 'enum' && !(p.options ?? []).includes(String(p.default)))
 			at(`param "${p.name}": default is not one of its options`);
-		if (p.type === 'media' || p.type === 'curve' || p.type === 'string')
+		if (p.type === 'curve' || p.type === 'string')
 			at(`param "${p.name}": ${p.type} params are not supported by transitions`);
+		if (p.type === 'media' && !(p.mediaKinds?.length && p.mediaKinds.every((k) => k === 'image')))
+			at(`param "${p.name}": media params of transitions take images only (mediaKinds: ['image'])`);
+		if (p.type === 'media' && p.animatable) at(`param "${p.name}": media params are hold-only`);
 	}
 	const ctx: TrFrameContext = {
 		width: 1920,
@@ -402,8 +474,10 @@ export function validateGpuTransition(spec: TransitionSpec): string[] {
 		for (const c of resolveIncludes(pass.include))
 			if (typeof c.source !== 'string' || !c.name) at(`pass ${i}: malformed include`);
 	});
-	// Two placement outputs + two side pictures are the framework's.
-	if (outputs.size + 4 > FX_MAX_TEXTURES) at(`more than ${FX_MAX_TEXTURES - 4} named outputs`);
+	// Two placement outputs + two side pictures are the framework's; image params take a texture unit each.
+	const media = spec.params.filter((p) => p.type === 'media').length;
+	if (outputs.size + media + 4 > FX_MAX_TEXTURES)
+		at(`more than ${FX_MAX_TEXTURES - 4} named outputs + image params`);
 	let globals: string[] = [];
 	try {
 		globals = Object.keys(gpu.uniforms?.(defaults, ctx) ?? {});
