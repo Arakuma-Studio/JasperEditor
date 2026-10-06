@@ -77,7 +77,12 @@ export type SrtOp = keyof typeof SRT_OP;
 export type CombineOption = { value: string; label: string; op: SrtOp };
 
 /** A Sapphire "Combine" popup; the shader reads the generic operation from `u_<name>Op` (see `combineUniforms`). */
-export function combineParam(options: readonly CombineOption[], def: string, name = 'combine', label = 'Combine') {
+export function combineParam(
+	options: readonly CombineOption[],
+	def: string,
+	name = 'combine',
+	label = 'Combine',
+) {
 	return fxParam.choice(
 		name,
 		label,
@@ -88,7 +93,12 @@ export function combineParam(options: readonly CombineOption[], def: string, nam
 }
 
 /** `{u_<name>Op: {int}}`: the generic SRT_OP of the selected Combine option. */
-export function combineUniforms(p: EffectParams, options: readonly CombineOption[], def: string, name = 'combine') {
+export function combineUniforms(
+	p: EffectParams,
+	options: readonly CombineOption[],
+	def: string,
+	name = 'combine',
+) {
 	const v = typeof p[name] === 'string' ? (p[name] as string) : def;
 	const o = options.find((x) => x.value === v) ?? options.find((x) => x.value === def)!;
 	return { [`u_${name}Op`]: { int: SRT_OP[o.op] } };
@@ -440,7 +450,8 @@ export function splinePoints(
 		return [v[0] * ctx.width, v[1] * ctx.height];
 	};
 	const pts: [number, number][] = [at(names.start)];
-	for (const [enable, point] of names.points) if (flag(p[enable], enableDefaults[enable])) pts.push(at(point));
+	for (const [enable, point] of names.points)
+		if (flag(p[enable], enableDefaults[enable])) pts.push(at(point));
 	pts.push(at(names.end));
 	return pts;
 }
@@ -492,12 +503,12 @@ float srt_vnoise2(vec2 p, uint s) {
   float a = srt_h2(i, s), b = srt_h2(i + ivec2(1, 0), s), c = srt_h2(i + ivec2(0, 1), s), d = srt_h2(i + ivec2(1, 1), s);
   return mix(mix(a, b, f.x), mix(c, d, f.x), f.y) * 2.0 - 1.0;
 }
-// Gradient (Perlin) noise 3D (≈ −1..1): one hash per corner picks one of 12 edge gradients.
+// Gradient (Perlin) noise 3D (≈ −1..1): one hash per corner, its bits give the gradient (branch-free: branches
+// and integer modulo here made SwiftShader's JIT crawl).
 float srt_grad(ivec3 c, vec3 f, uint s) {
-  uint h = fx_pcg(srt_u(c.x) * 0x8da6b343u ^ srt_u(c.y) * 0xd8163841u ^ srt_u(c.z) * 0xcb1ab31fu ^ s) % 12u;
-  float u = h < 8u ? f.x : f.y;
-  float v = h < 4u ? f.y : (h == 12u || h == 14u ? f.x : f.z);
-  return ((h & 1u) == 0u ? u : -u) + ((h & 2u) == 0u ? v : -v);
+  uint h = fx_pcg(srt_u(c.x) * 0x8da6b343u ^ srt_u(c.y) * 0xd8163841u ^ srt_u(c.z) * 0xcb1ab31fu ^ s);
+  vec3 g = vec3(uvec3(h, h >> 10u, h >> 20u) & uvec3(1023u)) * (2.0 / 1023.0) - 1.0;
+  return dot(g, f) * 1.4;
 }
 float srt_gnoise3(vec3 p, uint s) {
   ivec3 i = ivec3(floor(p));

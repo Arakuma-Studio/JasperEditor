@@ -155,7 +155,10 @@ const SPLINE_NAMES = {
 	],
 } as const;
 
-const controlPointParams = (pts: Record<string, readonly [number, number]>, enables: Record<string, boolean>) => [
+const controlPointParams = (
+	pts: Record<string, readonly [number, number]>,
+	enables: Record<string, boolean>,
+) => [
 	fxParam.toggle('point1Enable', 'Point 1 Enable', enables.point1Enable!),
 	fxParam.point('controlPoint1', 'Control Point 1', [...pts.controlPoint1!] as [number, number]),
 	fxParam.toggle('point2Enable', 'Point 2 Enable', enables.point2Enable!),
@@ -245,7 +248,13 @@ const ULTRA_POINTS = {
 } as const;
 const ULTRA_NAMES = { ...SPLINE_NAMES, start: 'startPoint', end: 'endPoint' } as const;
 const ZAP_DIRECTIONS = ['allSame', 'allReverse', 'evenReverse', 'oddReverse', 'randomReverse'] as const;
-const ZAP_DIRECTION_LABELS = ['all same', 'all reverse', 'even reverse', 'odd reverse', 'random reverse'] as const;
+const ZAP_DIRECTION_LABELS = [
+	'all same',
+	'all reverse',
+	'even reverse',
+	'odd reverse',
+	'random reverse',
+] as const;
 
 export const S_ULTRA_ZAP = defineShaderEffect({
 	id: 'jasper.s.ultra-zap',
@@ -318,7 +327,10 @@ export const S_ULTRA_ZAP = defineShaderEffect({
 		n('afterGlowWidth', 'After Glow Width', 0.6, 0, undefined, { softMax: 3, step: 0.01 }),
 		rgb('afterGlowColor', 'After Glow Color', [1, 1, 1]),
 		fxParam.toggle('glowHighlights', 'Glow Highlights', false),
-		n('glowHighlightsFrequency', 'Glow Highlights Frequency', 1.2, 0.01, undefined, { softMax: 10, step: 0.01 }),
+		n('glowHighlightsFrequency', 'Glow Highlights Frequency', 1.2, 0.01, undefined, {
+			softMax: 10,
+			step: 0.01,
+		}),
 		n('glowHighlightsSpeed', 'Glow Highlights Speed', 1, undefined, undefined, {
 			softMin: -5,
 			softMax: 5,

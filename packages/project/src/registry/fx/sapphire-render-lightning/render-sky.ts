@@ -38,7 +38,14 @@ export function julianDay(year: number, month: number, day: number, hourUT: numb
 	}
 	const a = Math.floor(y / 100);
 	const b = 2 - a + Math.floor(a / 4);
-	return Math.floor(365.25 * (y + 4716)) + Math.floor(30.6001 * (m + 1)) + Math.round(day) + b - 1524.5 + hourUT / 24;
+	return (
+		Math.floor(365.25 * (y + 4716)) +
+		Math.floor(30.6001 * (m + 1)) +
+		Math.round(day) +
+		b -
+		1524.5 +
+		hourUT / 24
+	);
 }
 
 const dateJD = (p: EffectParams, def: { year: number; month: number; day: number; hour: number }) =>
@@ -72,13 +79,18 @@ export const S_LUNA = defineShaderEffect({
 	category: 'Generate',
 	bin: SAPPHIRE_BINS.render,
 	description:
-		"Renders the Moon with an adjustable (or date-computed) phase, crater bumpiness, colour, glow and a rainbow halo in a hazy atmosphere. Mode ▸ LunaDate computes the phase from the date and time.",
+		'Renders the Moon with an adjustable (or date-computed) phase, crater bumpiness, colour, glow and a rainbow halo in a hazy atmosphere. Mode ▸ LunaDate computes the phase from the date and time.',
 	keywords: ['moon', 'luna', 'night', 'sky', 'phase', 'halo', 'full moon'],
 	params: [
 		fxParam.choice('mode', 'Mode', ['luna', 'lunaDate'], ['Luna', 'LunaDate'], 'luna'),
 		fxParam.point('center', 'Center', [0.28, 0.349]),
 		n('size', 'Size', 0.3, 0, undefined, { softMax: 2, step: 0.001 }),
-		n('lunarPhase', 'Lunar Phase', 65, undefined, undefined, { softMin: 0, softMax: 360, step: 0.1, unit: 'deg' }),
+		n('lunarPhase', 'Lunar Phase', 65, undefined, undefined, {
+			softMin: 0,
+			softMax: 360,
+			step: 0.1,
+			unit: 'deg',
+		}),
 		int('year', 'Year', 2020, 1900, 2295),
 		int('month', 'Month', 3, 1, 12),
 		int('day', 'Day', 16, 1, 31),
@@ -106,7 +118,11 @@ export const S_LUNA = defineShaderEffect({
 		n('atmosphereAmp', 'Atmosphere Amp', 0.3, 0, undefined, { softMax: 2, step: 0.01 }),
 		n('atmosphereFreq', 'Atmosphere Freq', 2, 0.1, undefined, { softMax: 20, step: 0.01 }),
 		n('atmosphereTurbulence', 'Atmosphere Turbulence', 0.6, 0, 1, { step: 0.01 }),
-		n('atmosphereSpeed', 'Atmosphere Speed', 1, undefined, undefined, { softMin: -5, softMax: 5, step: 0.01 }),
+		n('atmosphereSpeed', 'Atmosphere Speed', 1, undefined, undefined, {
+			softMin: -5,
+			softMax: 5,
+			step: 0.01,
+		}),
 		combineParam(LUNA_COMBINE, 'overlay'),
 		n('bgBrightness', 'Bg Brightness', 1, 0, undefined, { softMax: 2, step: 0.01 }),
 		n('affectAlpha', 'Affect Alpha', 1, 0, undefined, { softMax: 2, step: 0.01 }),
@@ -123,7 +139,10 @@ export const S_LUNA = defineShaderEffect({
 		}),
 		padding: (p, ctx) => {
 			const r = num(p.size, 0.3) * 0.25 * ctx.width;
-			return Math.min(1024, r * Math.max(num(p.glowSize, 0.75) * 1.5, num(p.haloRelSize, 1.5) + num(p.outerSoftness, 0.3) * 3));
+			return Math.min(
+				1024,
+				r * Math.max(num(p.glowSize, 0.75) * 1.5, num(p.haloRelSize, 1.5) + num(p.outerSoftness, 0.3) * 3),
+			);
 		},
 		passes: (p, ctx) => [
 			{
@@ -204,7 +223,7 @@ void main() {
   float U = srt_unit();
   float R = max(u_size * U * 0.5, 1.0);
   float d = distance(srt_here(), srt_pt(u_center)) / R;
-  vec3 glow = (texture(u_glowA, v_uv).rgb * 0.6 + texture(u_glowB, v_uv).rgb * 0.4) * u_glowBrightness * 2.0;
+  vec3 glow = (texture(u_glowA, v_uv).rgb * 0.6 + texture(u_glowB, v_uv).rgb * 0.4) * u_glowBrightness * 4.0;
   vec3 halo = vec3(0.0);
   if (u_haloBrightness > 0.0) {
     float rh = u_haloRelSize;
@@ -266,8 +285,13 @@ export function nightSkyMatrix(p: EffectParams): number[] {
 	const T = [0, 1, 2].map((r) => [0, 1, 2].map((k) => Mh[r]!.reduce((acc, v, j) => acc + v * Rz[j]![k]!, 0)));
 	const F = [Math.cos(alt) * Math.cos(az), Math.cos(alt) * Math.sin(az), Math.sin(alt)];
 	const Rt = [-Math.sin(az), Math.cos(az), 0];
-	const Up = [F[1]! * Rt[2]! - F[2]! * Rt[1]!, F[2]! * Rt[0]! - F[0]! * Rt[2]!, F[0]! * Rt[1]! - F[1]! * Rt[0]!];
-	const toEq = (v: number[]) => [0, 1, 2].map((k) => T[0]![k]! * v[0]! + T[1]![k]! * v[1]! + T[2]![k]! * v[2]!);
+	const Up = [
+		F[1]! * Rt[2]! - F[2]! * Rt[1]!,
+		F[2]! * Rt[0]! - F[0]! * Rt[2]!,
+		F[0]! * Rt[1]! - F[1]! * Rt[0]!,
+	];
+	const toEq = (v: number[]) =>
+		[0, 1, 2].map((k) => T[0]![k]! * v[0]! + T[1]![k]! * v[1]! + T[2]![k]! * v[2]!);
 	return [...toEq(Rt), ...toEq(Up), ...toEq(F)];
 }
 
@@ -285,8 +309,18 @@ export const S_NIGHT_SKY = defineShaderEffect({
 		n('gmtOffset', 'GMT Offset', -5, -12, 12, { step: 0.5 }),
 		n('starSize', 'Star Size', 0.05, 0, undefined, { softMax: 1, step: 0.001 }),
 		n('starBrightness', 'Star Brightness', 1, 0, undefined, { softMax: 5, step: 0.01 }),
-		n('altitude', 'Altitude', 30, undefined, undefined, { softMin: -90, softMax: 90, step: 0.1, unit: 'deg' }),
-		n('azimuth', 'Azimuth', -12, undefined, undefined, { softMin: -180, softMax: 360, step: 0.1, unit: 'deg' }),
+		n('altitude', 'Altitude', 30, undefined, undefined, {
+			softMin: -90,
+			softMax: 90,
+			step: 0.1,
+			unit: 'deg',
+		}),
+		n('azimuth', 'Azimuth', -12, undefined, undefined, {
+			softMin: -180,
+			softMax: 360,
+			step: 0.1,
+			unit: 'deg',
+		}),
 		n('fieldOfView', 'Field Of View', 90, 0.5, 179, { step: 0.1, unit: 'deg' }),
 		int('year', 'Year', 2020, 1900, 2295),
 		int('month', 'Month', 12, 1, 12),
@@ -360,7 +394,7 @@ void main() {
       if (mag > u_magnitudeLimit) continue;
       float dpx = length(sd - dir) * pxPerRad;
       float flux = pow(10.0, -0.4 * (mag - 1.0));
-      float sig = (0.55 + u_starSize * 6.0 * pow(flux, 0.5 * u_varySizeByMag)) * max(pxScale, 0.35);
+      float sig = max(0.6, (0.55 + u_starSize * 6.0 * pow(flux, 0.5 * u_varySizeByMag)) * pxScale);
       float tw = 1.0;
       float id = float(b * 977) + h.x * 1000.0;
       if (fract(h4 * 17.3) < u_twinkleAlways)
@@ -391,7 +425,7 @@ void main() {
           float lk = len * mix(0.3 + 0.7 * srt_h3(ivec3(int(mod(kk, nS)), cell.x, cell.y + cell.z * 7), sb), 1.0, u_streakSymmetry);
           float along = length(sv);
           float across = along * abs(sin(da));
-          acc += col * I * u_streakBrightness * 4.0 * exp(-along / lk) * exp(-across * across / 0.8);
+          acc += col * I * u_streakBrightness * 2.5 * exp(-along / lk) * exp(-across * across / 0.8);
         }
       }
     }
@@ -446,58 +480,68 @@ export const S_CAUSTICS = defineShaderEffect({
 				format: 'rgba16f',
 				include: [GLSL_SRT_COMMON, GLSL_SRT_NOISE],
 				frag: /* glsl */ `
-float ca_h(vec2 x, float t, int oct, float gain, uint s) {
-  if (u_bumps_size.x > 0.0) {
-    vec2 n = x / (u_frequency * 0.5) * srt_unit() / u_box.zw;
-    float r = u_blurBumpImage * 0.25;
-    vec3 w = vec3(0.2126, 0.7152, 0.0722);
-    float hb = dot(texture(u_bumps, n).rgb, w) * 2.0;
-    if (r > 0.0) {
-      hb += dot(texture(u_bumps, n + vec2(r, 0.0)).rgb + texture(u_bumps, n - vec2(r, 0.0)).rgb
-        + texture(u_bumps, n + vec2(0.0, r)).rgb + texture(u_bumps, n - vec2(0.0, r)).rgb, w) * 2.0;
-      hb /= 5.0;
-    }
-    return hb * 0.35;
+// Caustic network: light focused by a wavy surface concentrates on the borders of cells (the fold lines of the
+// refracted ray map). Modelled as the edges (F2 − F1) of an animated, domain-warped Voronoi pattern — a finer second
+// layer with Complexity — sharpened by Ray Focus and supersampled by Ray Density. A Bumps clip warps the domain by
+// its luminance gradient (refraction through that height map).
+vec2 ca_cells(vec2 x, float t, uint s) {
+  ivec2 c = ivec2(floor(x));
+  vec2 f = fract(x);
+  float f1 = 9.0, f2 = 9.0;
+  for (int k = 0; k < 9; k++) {
+    ivec2 o = ivec2(k % 3 - 1, k / 3 - 1);
+    vec2 h = srt_h22(c + o, s);
+    vec2 pt = vec2(o) + 0.5 + 0.42 * vec2(sin(t * (0.6 + h.x) + h.y * 6.2832), cos(t * (0.5 + h.y) + h.x * 6.2832));
+    float d = length(pt - f);
+    if (d < f1) { f2 = f1; f1 = d; } else if (d < f2) { f2 = d; }
   }
-  return srt_fbm3(vec3(x, t), oct, gain, s) * 0.5;
+  return vec2(f1, f2);
+}
+vec2 ca_bumpWarp(vec2 base) {
+  if (u_bumps_size.x <= 0.0) return vec2(0.0);
+  vec2 n = base * srt_unit() / u_box.zw;
+  vec2 e = vec2(max(u_blurBumpImage * 0.05, 1.5 / u_box.z), 0.0);
+  vec3 w = vec3(0.2126, 0.7152, 0.0722);
+  float hx = dot(texture(u_bumps, n + e.xy).rgb - texture(u_bumps, n - e.xy).rgb, w);
+  float hy = dot(texture(u_bumps, n + e.yx).rgb - texture(u_bumps, n - e.yx).rgb, w);
+  return vec2(hx, hy) / (2.0 * e.x) * 0.02;
 }
 void main() {
   float U = srt_unit();
-  vec2 base = (srt_here() - u_box.xy) / U - vec2(u_shift.x, -u_shift.y);
-  float f = u_frequency * 0.5;
-  vec2 x0 = base * f;
-  float t = u_time * u_speed * 0.35;
-  int oct = int(clamp(1.0 + ceil(u_complexity), 1.0, 5.0));
-  float gain = clamp(0.25 + 0.1 * u_complexity, 0.2, 0.75);
+  vec2 base = (srt_here() - u_box.xy) / U;
+  vec2 bw = ca_bumpWarp(base);
+  vec2 sh = vec2(u_shift.x, -u_shift.y);
+  float f = u_frequency * 0.75;
+  float t = u_time * u_speed * 1.2;
   uint s = srt_seed(u_seed);
   int dens = int(clamp(u_rayDensity, 1.0, 5.0));
   float tx = f / U * 2.0;
-  float e = 0.06 / pow(1.6, float(oct - 1));
-  float k = u_rayFocus * 0.0045 / (1.0 + 0.6 * float(oct - 1));
+  float cx = clamp(u_complexity / 5.0, 0.0, 1.0);
+  float sharp = 4.0 + u_rayFocus * 0.9;
   float I = 0.0;
   for (int j = 0; j < 5; j++) {
     if (j >= dens) break;
     for (int i = 0; i < 5; i++) {
       if (i >= dens) break;
-      vec2 x = x0 + tx * ((vec2(float(i), float(j)) + 0.5) / float(dens) - 0.5);
-      float hs[9];
-      for (int q = 0; q < 9; q++) hs[q] = ca_h(x + vec2(float(q % 3 - 1), float(q / 3 - 1)) * e, t, oct, gain, s);
-      float hxx = (hs[5] - 2.0 * hs[4] + hs[3]) / (e * e);
-      float hyy = (hs[7] - 2.0 * hs[4] + hs[1]) / (e * e);
-      float hxy = (hs[8] - hs[6] - hs[2] + hs[0]) / (4.0 * e * e);
-      float det = (1.0 + k * hxx) * (1.0 + k * hyy) - k * k * hxy * hxy;
-      I += 1.0 / max(abs(det), 0.06);
+      vec2 x = (base - sh + bw) * f + tx * ((vec2(float(i), float(j)) + 0.5) / float(dens) - 0.5);
+      vec2 warp = vec2(srt_gnoise3(vec3(x * 0.45, t * 0.15), s), srt_gnoise3(vec3(x * 0.45 + 7.7, t * 0.15), s)) * (0.25 + 0.6 * cx);
+      vec2 a = ca_cells(x + warp, t, s);
+      float e1 = a.y - a.x;
+      float v = exp(-e1 * sharp);
+      vec2 b = ca_cells((x + warp * 1.3) * 2.1 + 3.7, t * 1.3, s ^ 0x9e3779b9u);
+      v += cx * 0.8 * exp(-(b.y - b.x) * sharp * 1.2);
+      I += v;
     }
   }
   I /= float(dens * dens);
-  fragColor = vec4(vec3(I * 0.125), 1.0);
+  fragColor = vec4(vec3(I * 0.25), 1.0);
 }`,
 			},
 			...blurXYPasses({
 				input: 'caus',
 				output: 'cb',
-				sigmaX: num(p.rayBlur, 0.02) * unitPx(ctx) * 0.5 + 0.75,
-				sigmaY: num(p.rayBlur, 0.02) * unitPx(ctx) * 0.5 + 0.75,
+				sigmaX: num(p.rayBlur, 0.02) * unitPx(ctx) * 0.25 + 0.5,
+				sigmaY: num(p.rayBlur, 0.02) * unitPx(ctx) * 0.25 + 0.5,
 				scale: 0.5,
 			}),
 			{
@@ -505,8 +549,8 @@ void main() {
 				frag: /* glsl */ `
 void main() {
   vec4 src = texture(u_source, v_uv);
-  float I = texture(u_cb, v_uv).r * 8.0;
-  vec3 pic = max(u_color0.rgb + u_offset0 + u_color1.rgb * u_brightness1 * I * 0.5, vec3(0.0));
+  float I = texture(u_cb, v_uv).r * 4.0;
+  vec3 pic = max(u_color0.rgb + u_offset0 + u_color1.rgb * u_brightness1 * I * 2.0, vec3(0.0));
   vec4 res = srt_picture(u_bgCombineOp, src, pic, 1.0, u_bgBrightness, u_outputOpacity == 0);
   fragColor = fx_finish(res, src, clamp(I * 0.25, 0.0, 1.0), u_mixWithOriginal, u_show);
 }`,
@@ -549,7 +593,11 @@ export const S_DUST = defineShaderEffect({
 		n('driftZ', 'Drift Z', 0, undefined, undefined, { softMin: -200, softMax: 200, step: 0.1 }),
 		n('varyDriftZ', 'Vary Drift Z', 0, undefined, undefined, { softMin: 0, softMax: 100, step: 0.1 }),
 		n('scaleTurbulence', 'Scale Turbulence', 10, 0, undefined, { softMax: 50, step: 0.01 }),
-		n('turbulenceSpeed', 'Turbulence Speed', 0.2, undefined, undefined, { softMin: -2, softMax: 2, step: 0.001 }),
+		n('turbulenceSpeed', 'Turbulence Speed', 0.2, undefined, undefined, {
+			softMin: -2,
+			softMax: 2,
+			step: 0.001,
+		}),
 		n('turbulenceX', 'Turbulence X', 25, 0, undefined, { softMax: 100, step: 0.1 }),
 		n('varyTurbulenceX', 'Vary Turbulence X', 15, 0, undefined, { softMax: 100, step: 0.1 }),
 		n('turbulenceY', 'Turbulence Y', 25, 0, undefined, { softMax: 100, step: 0.1 }),

@@ -136,9 +136,10 @@ void main() {
     vec2 sv = srt_splineNearest(q);
     float width = max(u_strokeSize * U * 0.5 * (0.6 + 0.25 * fl), 1.0);
     float band = exp(-(sv.y * sv.y) / (width * width));
-    float rays = 0.5 + 0.5 * srt_gnoise3(vec3(sv.x / U * u_swirlFrequency * u_frequencyRelY * 0.5 + u_time * u_swirlSpeedX * 3.0,
+    // curtain rays: vertical streaks (screen x), drifting with the swirl
+    float rays = 0.5 + 0.5 * srt_gnoise3(vec3(q.x / U * u_swirlFrequency * u_frequencyRelY * 0.6 + u_time * u_swirlSpeedX * 3.0,
       fl * 5.3, u_time * 0.15), sl ^ 0x5bd1e995u);
-    rays = rays * rays * 1.8;
+    rays = rays * rays * rays * 3.0;
     float tc = clamp(sv.x / L, 0.0, 1.0);
     float tcol = 0.5 - 0.5 * cos(SRT_PI * (tc + u_colorPhase));
     acc += mix(u_startColor.rgb, u_endColor.rgb, tcol) * band * rays / (1.0 + fl * 0.6);
@@ -153,11 +154,11 @@ void main() {
 void main() {
   vec4 src = texture(u_source, v_uv);
   float U = srt_unit();
-  vec3 a = texture(u_soft, v_uv).rgb * 0.75 + texture(u_aur, v_uv).rgb * 0.25;
+  vec3 a = texture(u_soft, v_uv).rgb * 0.6 + texture(u_aur, v_uv).rgb * 0.4;
   float dl = distance(srt_here(), srt_pt(u_lightPos)) / U;
   float fall = 1.0 - smoothstep(u_lightRadius, u_lightRadius + max(u_lightSoftness, 1.0e-3), dl);
   vec3 illum = mix(vec3(u_ambientLight), u_lightColor.rgb * u_lightBrightness, fall);
-  vec3 light = a * u_brightness * illum * 4.0;
+  vec3 light = a * u_brightness * illum * 6.0;
   vec4 res = srt_light(u_combineOp, src, light, u_bgBrightness, u_affectAlpha);
   fragColor = fx_finish(res, src, clamp(srt_max3(light), 0.0, 1.0), u_mixWithOriginal, u_show);
 }`,
@@ -203,7 +204,13 @@ export const S_LASER_BEAM = defineShaderEffect({
 		n('fadeFront', 'Fade Front', 0, 0, undefined, { softMax: 1, step: 0.01 }),
 		n('startTime', 'Start Time', 0, 0, undefined, { softMax: 300, step: 1, unit: 'frames' }),
 		n('flightDuration', 'Duration', 10, 0, 500, { step: 1, unit: 'frames' }),
-		fxParam.choice('laserShape', 'Laser Shape', LASER_SHAPES, ['Smooth', 'Spear', 'Forward', 'Backward'], 'forward'),
+		fxParam.choice(
+			'laserShape',
+			'Laser Shape',
+			LASER_SHAPES,
+			['Smooth', 'Spear', 'Forward', 'Backward'],
+			'forward',
+		),
 		n('perspective', 'Perspective', 0, -1, 1, { step: 0.01 }),
 		fxParam.toggle('useTime', 'Use Time', false),
 		n('breakup', 'Breakup', 0.05, 0, 1, { step: 0.001 }),
@@ -367,7 +374,10 @@ export const S_MUZZLE_FLASH = defineShaderEffect({
 		},
 		uniforms: (p, ctx) => {
 			const t = muzzleTiming(p, ctx.frame);
-			const gun = GUN_SHAPE[(GUNS as readonly string[]).includes(p.gun as string) ? (p.gun as (typeof GUNS)[number]) : 'm16'];
+			const gun =
+				GUN_SHAPE[
+					(GUNS as readonly string[]).includes(p.gun as string) ? (p.gun as (typeof GUNS)[number]) : 'm16'
+				];
 			const variant = (VARIANTS as readonly string[]).indexOf(String(p.variant));
 			let k = variant < 0 ? 1 : variant;
 			if (variant === 3) k = 3 + t.index;
@@ -394,8 +404,8 @@ float mf_lobe(vec2 q, vec3 dir, float len, float width, float puff, float detail
   float a = dot(q, dd), b = dot(q, vec2(-dd.y, dd.x));
   float sN = a / Lp;
   float sc = clamp(sN, 0.0, 1.0);
-  float wN = max(width, 1.0e-4) * (0.35 + 1.9 * sc * exp(-2.2 * sc)) * (1.0 + (1.0 - fl) * 2.5);
-  float env = smoothstep(-0.15, 0.05, sN) * (1.0 - smoothstep(0.5, 1.0, sN));
+  float wN = max(width, 1.0e-4) * (0.2 + 2.6 * sc * (1.0 - sc)) * (1.0 + (1.0 - fl) * 2.5);
+  float env = smoothstep(-0.1, 0.08, sN) * (1.0 - smoothstep(0.65, 1.0, sN));
   float k = 0.6 + detail * 1.4;
   float nz = srt_fbm3(vec3(a / max(width, 1.0e-4) * k * 0.5, b / max(width, 1.0e-4) * k, float(id) * 7.1), int(clamp(u_octaves, 1.0, 5.0)), 0.55, s + uint(id) * 977u);
   return exp(-(b * b) / (wN * wN)) * env * max(0.0, 1.0 + puff * nz * 1.3);
@@ -403,15 +413,15 @@ float mf_lobe(vec2 q, vec3 dir, float len, float width, float puff, float detail
 void main() {
   float U = srt_unit();
   uint s = srt_seed(u_mseed);
-  float sc = u_radius / 0.2;
+  float sc = u_radius / 0.2 * 1.6;
   float rot = radians(u_rotation), el = radians(u_elevation);
   vec3 A = vec3(cos(el) * cos(rot), cos(el) * sin(rot), sin(el));
   vec2 o = srt_pt(u_location) + A.xy * u_shiftOut * U;
   vec2 q = (srt_here() - o) / U;
   float soft = 1.0 + u_blur * 400.0;
-  float rb = 0.05 * sc * u_gunShape.w;
+  float rb = 0.028 * sc * u_gunShape.w;
   float nb = srt_fbm3(vec3(q / max(rb, 1.0e-4) * 1.2, 3.3), int(clamp(u_octaves, 1.0, 5.0)), 0.5, s);
-  float D = exp(-dot(q, q) / (rb * rb * soft)) * max(0.0, 1.0 + 0.6 * nb);
+  float D = 0.9 * exp(-dot(q, q) / (rb * rb * soft)) * max(0.0, 1.0 + 0.6 * nb);
   D += mf_lobe(q, A, u_primaryLength * sc * u_gunShape.x, u_primaryWidth * sc * u_gunShape.y * soft, u_primaryPuff,
     u_primaryDetail, s, 0) * u_primaryBrightness / 0.6;
   vec3 B1 = abs(A.z) < 0.99 ? normalize(cross(A, vec3(0.0, 0.0, 1.0))) : vec3(1.0, 0.0, 0.0);
@@ -423,13 +433,13 @@ void main() {
     float th = SRT_TAU * (float(k) + 0.5) / float(ns) + 0.3;
     vec3 dir = cos(al) * A + sin(al) * (cos(th) * B1 + sin(th) * B2);
     float jitter = 0.75 + 0.5 * srt_h1(k, s);
-    D += mf_lobe(q, dir, u_secondaryLength * sc * jitter, u_secondaryWidth * sc * soft, u_secondaryPuff,
+    D += mf_lobe(q - A.xy * 0.02 * sc, dir, u_secondaryLength * sc * jitter * 1.6, u_secondaryWidth * sc * soft, u_secondaryPuff,
       u_secondaryDetail, s, k + 1) * u_secondaryBrightness / 0.6;
   }
-  D = clamp(D, 0.0, 2.0);
+  D = 1.0 - exp(-D * 0.8);
   float m = clamp(u_midDensity, 0.01, 0.99);
-  vec3 col = D < m ? u_midColor.rgb * pow(D / m, 1.5) * 0.85 : mix(u_midColor.rgb * 0.85, vec3(1.25, 1.2, 1.1), clamp((D - m) / (1.0 - m), 0.0, 1.0));
-  vec3 light = col * u_brightness * u_vis * smoothstep(0.0, 0.08, D);
+  vec3 col = D < m ? u_midColor.rgb * pow(D / m, 1.6) * 0.8 : mix(u_midColor.rgb * 0.8, vec3(1.2, 1.15, 1.05), pow(clamp((D - m) / (1.0 - m), 0.0, 1.0), 1.5));
+  vec3 light = col * u_brightness * u_vis * smoothstep(0.0, 0.05, D);
   fragColor = vec4(light, clamp(srt_max3(light), 0.0, 1.0));
 }`,
 			},
@@ -448,7 +458,7 @@ void main() {
 void main() {
   vec4 src = texture(u_source, v_uv);
   vec3 g = texture(u_glowA, v_uv).rgb * 0.6 + texture(u_glowB, v_uv).rgb * 0.4;
-  vec3 light = texture(u_core, v_uv).rgb + g * u_glowColor.rgb * u_glowBright;
+  vec3 light = texture(u_core, v_uv).rgb + g * u_glowColor.rgb * u_glowBright * 0.4;
   vec4 res = srt_light(u_combineOp, src, light, 1.0, u_affectAlpha);
   fragColor = fx_finish(res, src, clamp(srt_max3(light), 0.0, 1.0), u_mixWithOriginal, u_show);
 }`,

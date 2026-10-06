@@ -126,7 +126,12 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 		});
 
 		it('S_ZapFrom: bolts leave the edges of the layer into the padding', async () => {
-			const o: RunOpts = { id: 'jasper.s.zap-from', width: 80, height: 80, paint: { kind: 'solid', color: '#fff' } };
+			const o: RunOpts = {
+				id: 'jasper.s.zap-from',
+				width: 80,
+				height: 80,
+				paint: { kind: 'solid', color: '#fff' },
+			};
 			const s = await stats(o);
 			expect(s.canvas[0]).toBeGreaterThan(80);
 			const r = await pixels(o, [[40, 40]]);
@@ -148,7 +153,8 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			const dir = process.env.FX_DUMP!;
 			mkdirSync(dir, { recursive: true });
 			const img = process.env.FX_DUMP_IMAGE;
-			if (img) await call('loadImage', ['photo', `data:image/jpeg;base64,${readFileSync(img).toString('base64')}`]);
+			if (img)
+				await call('loadImage', ['photo', `data:image/jpeg;base64,${readFileSync(img).toString('base64')}`]);
 			const only = process.env.FX_DUMP_IDS?.split(',');
 			const ids = (await call<string[]>('ids')).filter((id) => !only || only.includes(id));
 			const frames = (process.env.FX_DUMP_FRAMES ?? '0,15').split(',').map(Number);
@@ -171,7 +177,10 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 						],
 					);
 					const { url, ms } = r as { url: string; ms: number };
-					writeFileSync(join(dir, `${id.replace('jasper.s.', '')}-f${frame}.png`), Buffer.from(url.split(',')[1]!, 'base64'));
+					writeFileSync(
+						join(dir, `${id.replace('jasper.s.', '')}-f${frame}.png`),
+						Buffer.from(url.split(',')[1]!, 'base64'),
+					);
 					console.info(`[dump] ${id} f${frame} ${ms.toFixed(0)} ms`);
 				}
 		});

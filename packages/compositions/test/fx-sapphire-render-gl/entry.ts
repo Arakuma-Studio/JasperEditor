@@ -158,12 +158,27 @@ const api = {
 		return planGpuEffect(
 			s,
 			{ id: 'fx1', params },
-			{ width: o.width, height: o.height, pxScale: 1, fps: 30, frame: 0, duration: 150, seed: 0.25, progress: 0 },
+			{
+				width: o.width,
+				height: o.height,
+				pxScale: 1,
+				fps: 30,
+				frame: 0,
+				duration: 150,
+				seed: 0.25,
+				progress: 0,
+			},
 			{ width: o.width, height: o.height },
 		);
 	},
 	/** Draws one (possibly edited) pass source of a plan as the result and times it (diagnostics). */
-	timePass(a: { plan: { passes: { source: string }[] }; index: number; source: string; w: number; h: number }) {
+	timePass(a: {
+		plan: { passes: { source: string }[] };
+		index: number;
+		source: string;
+		w: number;
+		h: number;
+	}) {
 		const h = fxHost()!;
 		const pass = { ...a.plan.passes[a.index]!, source: a.source, output: null, width: a.w, height: a.h };
 		const input = canvas(a.w, a.h);
