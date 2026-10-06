@@ -1,0 +1,19 @@
+{
+  "name": "@jasper/testkit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Test-only helpers shared by every package: golden frames, fingerprints, fuzzing, ffmpeg/ffprobe oracles, headless WebGL browser.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./golden": "./src/golden.ts",
+    "./png": "./src/png.ts",
+    "./fuzz": "./src/fuzz.ts",
+    "./oracle": "./src/oracle.ts",
+    "./browser": "./src/browser.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  }
+}

@@ -417,6 +417,8 @@ importers:
         specifier: ^19.2.0
         version: 19.3.0(react@19.3.0)
 
+  packages/testkit: {}
+
   packages/ui:
     dependencies:
       '@fontsource/source-sans-3':
