@@ -148,7 +148,7 @@ export const GLSL_PR_NOISE: GlslChunk = {
 float pm_fbm(vec2 p, float seed) {
   float s = 0.0, a = 0.5;
   for (int k = 0; k < 4; k++) {
-    s += a * fx_valueNoise(p, fract(seed + float(k) * 0.1031));
+    s += a * (0.5 + 0.5 * fx_valueNoise(p, fract(seed + float(k) * 0.1031)));
     p = p * 2.03 + vec2(17.1, 9.7);
     a *= 0.5;
   }

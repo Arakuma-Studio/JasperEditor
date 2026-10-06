@@ -124,7 +124,16 @@ const api = {
 	},
 	async dbg2() {
 		const r: unknown[] = [];
-		for (const id of ['jasper.random-blocks', 'jasper.paint-splatter', 'jasper.random-wipe']) {
+		for (const id of [
+			'jasper.random-blocks',
+			'jasper.paint-splatter',
+			'jasper.random-wipe',
+			'jasper.burn-alpha',
+			'jasper.burn-chroma',
+			'jasper.grunge-transition',
+			'jasper.chaos',
+			'jasper.block-motion',
+		]) {
 			for (const inst of ['trn_premiere', 'trn_premiere', 'trn_other']) {
 				console.log('run', id, inst);
 				await new Promise((res) => setTimeout(res, 0));
@@ -312,10 +321,106 @@ const api = {
 		return r;
 	},
 
+	/** Characteristic pixels of Premiere 26's modern transitions. */
+	modernPixels() {
+		const r: Record<string, Px> = {};
+		r.blurDissolve = at('jasper.blur-dissolve', { at: 50 }, 32, 18);
+		r.dipToColor = at('jasper.dip-to-color', { at: 50, params: { color: [0, 1, 0, 1] } }, 32, 18);
+		r.dipToColorHold = at('jasper.dip-to-color', { at: 35, params: { color: [0, 1, 0, 1], hold: 40 } }, 32, 18);
+		const wb = halves('#fff', '#000');
+		r.lumaBright = at('jasper.luma-fade', { at: 50, a: wb, params: { softness: 0 } }, 8, 18);
+		r.lumaDark = at('jasper.luma-fade', { at: 50, a: wb, params: { softness: 0 } }, 56, 18);
+		const mosaic = run('jasper.mosaic-transition', { at: 30, a: halves('#0f0', '#f00') });
+		r.mosaicL = px(mosaic, 8, 18);
+		r.mosaicR = px(mosaic, 56, 18);
+		r.roll3dLeft = at('jasper.3d-roll', { at: 50, params: { blur: 0 } }, 8, 18);
+		r.roll3dRight = at('jasper.3d-roll', { at: 50, params: { blur: 0 } }, 56, 18);
+		r.filmRollLine = at('jasper.film-roll', { at: 50, params: { blur: 0 } }, 32, 18);
+		r.filmRollTop = at('jasper.film-roll', { at: 50, params: { blur: 0 } }, 32, 6);
+		r.rollLeft = at('jasper.roll', { at: 50, params: { blur: 0 } }, 8, 18);
+		r.rollRight = at('jasper.roll', { at: 50, params: { blur: 0 } }, 56, 18);
+		r.stretchLeft = at('jasper.stretch-transition', { at: 50, params: { blur: 0 } }, 8, 18);
+		r.stretchRight = at('jasper.stretch-transition', { at: 50, params: { blur: 0 } }, 56, 18);
+		r.linearLeft = at('jasper.linear-wipe-transition', { at: 50, params: { feather: 2 } }, 8, 18);
+		r.linearRight = at('jasper.linear-wipe-transition', { at: 50, params: { feather: 2 } }, 56, 18);
+		r.neonLine = at('jasper.neon-wipe', { at: 50 }, 32, 18);
+		r.panelTop = at('jasper.panel-wipe', { at: 50 }, 32, 2);
+		r.panelBottom = at('jasper.panel-wipe', { at: 50 }, 32, 34);
+		r.plateauMid = at('jasper.plateau-wipe', { at: 50 }, 32, 18);
+		r.softMid = at('jasper.soft-wipe', { at: 50 }, 32, 18);
+		r.starCenter = at('jasper.star-wipe', { at: 50 }, 32, 18);
+		r.starCorner = at('jasper.star-wipe', { at: 30 }, 1, 1);
+		r.stretchWipeLeft = at('jasper.stretch-wipe', { at: 50 }, 8, 18);
+		r.stretchWipeRight = at('jasper.stretch-wipe', { at: 50 }, 56, 18);
+		r.flipMotionEarly = at('jasper.flip-motion', { at: 25 }, 32, 18);
+		r.flipMotionLate = at('jasper.flip-motion', { at: 75 }, 32, 18);
+		r.foldLeft = at('jasper.fold-motion', { at: 50 }, 8, 18);
+		r.foldRight = at('jasper.fold-motion', { at: 50 }, 56, 18);
+		r.popEarlyCenter = at('jasper.pop-motion', { at: 40 }, 32, 18);
+		r.popEarlyCorner = at('jasper.pop-motion', { at: 40 }, 1, 1);
+		r.popLateCenter = at('jasper.pop-motion', { at: 60 }, 32, 18);
+		r.popLateCorner = at('jasper.pop-motion', { at: 60 }, 1, 1);
+		r.pullLeft = at('jasper.pull-motion', { at: 50, params: { blur: 0 } }, 8, 18);
+		r.pullRight = at('jasper.pull-motion', { at: 50, params: { blur: 0 } }, 56, 18);
+		r.spinEarly = at('jasper.spin-motion', { at: 25 }, 32, 18);
+		r.spinLate = at('jasper.spin-motion', { at: 75 }, 32, 18);
+		r.spinCorner = at('jasper.spin-motion', { at: 50 }, 1, 1);
+		r.springOvershoot = at('jasper.spring-motion', { at: 30 }, 4, 18);
+		r.springB = at('jasper.spring-motion', { at: 30 }, 32, 18);
+		r.travelLeft = at('jasper.travel-motion', { at: 50, params: { blur: 0 } }, 8, 18);
+		r.travelRight = at('jasper.travel-motion', { at: 50, params: { blur: 0 } }, 56, 18);
+		r.tvOff = at('jasper.tv-power', { at: 50 }, 32, 9);
+		r.flash = at('jasper.flash-transition', { at: 50 }, 32, 18);
+		r.sweep = at('jasper.light-sweep', { at: 50 }, 32, 18);
+		r.stripeMid = at('jasper.stripe', { at: 50 }, 32, 18);
+		r.spin3dEarly = at('jasper.3d-spin', { at: 15, params: { blur: 0 } }, 32, 18);
+		r.spin3dLate = at('jasper.3d-spin', { at: 85, params: { blur: 0 } }, 32, 18);
+		r.frameB = at('jasper.frame-transition', { at: 50 }, 60, 18);
+		r.frameA = at('jasper.frame-transition', { at: 50 }, 4, 18);
+		r.louverTop = at('jasper.louver', { at: 50 }, 32, 1);
+		r.louverBottom = at('jasper.louver', { at: 50 }, 32, 34);
+		r.mirrorFlip = at('jasper.mirror-transition', { at: 30, a: halves('#0f0', '#f00') }, 8, 18);
+		r.waveBehind = at('jasper.wave-transition', { at: 50 }, 8, 18);
+		r.waveAhead = at('jasper.wave-transition', { at: 50 }, 56, 18);
+		return r;
+	},
+
+	/** Mean |difference| (0..255) of each transition at 50 % from a linear-light cross-fade, over patterned clips. */
+	differs(ids: string) {
+		const a = () => halves('#0f0', '#f00');
+		const b = () =>
+			canvas(W, H, (ctx) => {
+				ctx.fillStyle = '#00f';
+				ctx.fillRect(0, 0, W, H);
+				ctx.fillStyle = '#ff0';
+				ctx.fillRect(0, 0, W, H / 2);
+			});
+		const data = (c: HTMLCanvasElement) => c.getContext('2d')!.getImageData(0, 0, W, H).data;
+		const fade = data(run('jasper.film-dissolve', { at: 50, a: a(), b: b() }));
+		const out: Record<string, number> = {};
+		for (const id of ids.split(',')) {
+			const d = data(run(id, { at: 50, a: a(), b: b() }));
+			let sum = 0;
+			for (let i = 0; i < d.length; i += 4)
+				sum += Math.abs(d[i]! - fade[i]!) + Math.abs(d[i + 1]! - fade[i + 1]!) + Math.abs(d[i + 2]! - fade[i + 2]!);
+			out[id] = sum / (d.length / 4) / 3;
+		}
+		return out;
+	},
+
 	/** Random transitions: same seed → same picture, other instance → other picture; coverage near the progress. */
 	random() {
 		const out: Record<string, { blue: number; same: boolean; differs: boolean }> = {};
-		for (const id of ['jasper.random-blocks', 'jasper.paint-splatter', 'jasper.random-wipe']) {
+		for (const id of [
+			'jasper.random-blocks',
+			'jasper.paint-splatter',
+			'jasper.random-wipe',
+			'jasper.burn-alpha',
+			'jasper.burn-chroma',
+			'jasper.grunge-transition',
+			'jasper.chaos',
+			'jasper.block-motion',
+		]) {
 			console.log('a', id);
 			const a = stats(run(id, { at: 50 }));
 			console.log('b', id);

@@ -139,19 +139,21 @@ export const ROLL = defineShaderTransition({
 				frag: /* glsl */ `${SPEED}
 const float RL_HUB = 1.6;
 vec2 rlRot(vec2 v, float a) { float c = cos(a), s = sin(a); return vec2(c * v.x + s * v.y, -s * v.x + c * v.y); }
+// The clips sit side by side on the rim (one picture width apart at the frame centre's radius).
+float rlStep() { return 2.0 * atan(0.5 * tr_aspect() / RL_HUB); }
 vec4 rlWheel(float a, float sgn) {
   vec2 asp = vec2(tr_aspect(), 1.0);
   vec2 hub = vec2(0.5, 0.5 + RL_HUB);
   vec2 v = (v_uv - hub) * asp;
   vec4 A = tr_from(rlRot(v, a) / asp + hub);
-  vec4 B = tr_to(rlRot(v, a - sgn * 0.5 * PM_PI) / asp + hub);
+  vec4 B = tr_to(rlRot(v, a - sgn * rlStep()) / asp + hub);
   return tr_over(A, B);
 }
 void main() {
   float p = tr_progress();
   float sgn = u_rotation == 0 ? 1.0 : -1.0;
-  float a = sgn * tr_easeInOut(p) * 0.5 * PM_PI;
-  float L = (u_blur / 100.0) * pmSpeed(p) * 0.5 * PM_PI * 1.5;
+  float a = sgn * tr_easeInOut(p) * rlStep();
+  float L = (u_blur / 100.0) * pmSpeed(p) * rlStep() * 1.5;
   vec4 c = vec4(0.0);
   for (int i = 0; i < 12; i++) c += rlWheel(a + sgn * L * ((float(i) + 0.5) / 12.0 - 0.5), sgn);
   fragColor = c / 12.0;

@@ -123,7 +123,8 @@ export const BURN_ALPHA = defineShaderTransition({
 				frag: /* glsl */ `
 void main() {
   float p = tr_progress();
-  float n = clamp(pm_fbm(v_uv * vec2(tr_aspect(), 1.0) * u_scale, u_seed), 0.0, 1.0);
+  // fbm clusters around 0.5: stretch it so the burn advances evenly over the transition.
+  float n = clamp(0.5 + 1.8 * (pm_fbm(v_uv * vec2(tr_aspect(), 1.0) * u_scale, u_seed) - 0.5), 0.0, 1.0);
   float w = max(u_burnWidth / 100.0, 0.005);
   float T = mix(-w, 1.0 + w, p);
   vec4 col;
@@ -164,9 +165,9 @@ void main() {
   float p = tr_progress();
   float s = max(1.0, u_tileSize * pm_bump(p));
   vec2 px = tr_px();
-  // Tiles centred on the frame centre (symmetric pattern).
+  // A tile is centred on the frame centre (symmetric pattern).
   vec2 c = 0.5 * u_compSize;
-  vec2 cell = (floor((px - c) / s) + 0.5) * s + c;
+  vec2 cell = floor((px - c) / s + 0.5) * s + c;
   vec2 uv = s <= 1.0 ? v_uv : clamp(cell / u_compSize, 0.0, 1.0);
   fragColor = mix(tr_from(uv), tr_to(uv), pm_switch(p, 0.12));
 }`,

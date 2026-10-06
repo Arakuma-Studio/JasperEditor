@@ -183,6 +183,113 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expect(bad).toEqual([]);
 		});
 
+		it("draws the characteristic pixels of Premiere 26's modern transitions", async () => {
+			const r = await call<Record<string, Px>>('modernPixels');
+			const GREEN: Px = [0, 255, 0, 255];
+			const WHITE: Px = [255, 255, 255, 255];
+			const blueish = (p: Px) => p[2] > 150 && p[0] < 40;
+			const redish = (p: Px) => p[0] > 150 && p[2] < 40;
+			const expectations: Record<string, Px | ((p: Px) => boolean)> = {
+				blurDissolve: (p) => p[0] > 90 && p[2] > 90,
+				dipToColor: GREEN,
+				dipToColorHold: GREEN,
+				lumaBright: BLUE,
+				lumaDark: [0, 0, 0, 255],
+				// One big tile: both halves read the same colour.
+				mosaicL: (p) => near(p, r.mosaicR!, 2),
+				roll3dLeft: blueish,
+				roll3dRight: redish,
+				filmRollLine: (p) => p[0] < 30 && p[1] < 30 && p[2] < 30 && p[3] === 255,
+				filmRollTop: RED,
+				rollLeft: BLUE,
+				rollRight: RED,
+				stretchLeft: BLUE,
+				stretchRight: RED,
+				linearLeft: BLUE,
+				linearRight: RED,
+				neonLine: (p) => p[1] > 200,
+				panelTop: BLUE,
+				panelBottom: RED,
+				plateauMid: [0, 0, 0, 255],
+				softMid: (p) => p[0] > 90 && p[2] > 90,
+				starCenter: BLUE,
+				starCorner: RED,
+				stretchWipeLeft: BLUE,
+				stretchWipeRight: RED,
+				flipMotionEarly: redish,
+				flipMotionLate: blueish,
+				foldLeft: BLUE,
+				foldRight: (p) => p[0] > 120 && p[2] < 30,
+				popEarlyCenter: RED,
+				popEarlyCorner: [0, 0, 0, 0],
+				popLateCenter: BLUE,
+				popLateCorner: [0, 0, 0, 0],
+				pullLeft: BLUE,
+				pullRight: RED,
+				spinEarly: RED,
+				spinLate: BLUE,
+				spinCorner: (p) => p[3] === 255,
+				springOvershoot: RED,
+				springB: BLUE,
+				travelLeft: BLUE,
+				travelRight: RED,
+				tvOff: (p) => p[0] < 60 && p[2] < 60 && p[3] === 255,
+				flash: WHITE,
+				sweep: (p) => p[0] > 230 && p[1] > 230 && p[2] > 230,
+				stripeMid: (p) => p[1] > 200,
+				spin3dEarly: redish,
+				spin3dLate: blueish,
+				frameB: BLUE,
+				frameA: RED,
+				louverTop: BLUE,
+				louverBottom: RED,
+				// Mirrored reflections: the left of the frame shows A's right half (red), not its left half (green).
+				mirrorFlip: RED,
+				waveBehind: BLUE,
+				waveAhead: RED,
+			};
+			const bad = Object.entries(expectations)
+				.filter(([k, e]) => {
+					const v = r[k];
+					if (!v) return true;
+					return typeof e === 'function' ? !e(v) : !near(v, e, 10);
+				})
+				.map(([k]) => `${k}: ${r[k]?.join(',')}`);
+			expect(bad).toEqual([]);
+		});
+
+		it('distorts / lights the picture mid-way (differs from a plain dissolve)', async () => {
+			const ids = [
+				'jasper.earthquake',
+				'jasper.flicker-transition',
+				'jasper.glass-transition',
+				'jasper.glitch-transition',
+				'jasper.kaleidoscope-transition',
+				'jasper.liquid-distortion',
+				'jasper.vhs-damage',
+				'jasper.chroma-leak',
+				'jasper.directional-blur-transition',
+				'jasper.flare',
+				'jasper.glow-transition',
+				'jasper.lens-blur-transition',
+				'jasper.light-leak',
+				'jasper.phosphor',
+				'jasper.radial-blur-transition',
+				'jasper.ray',
+				'jasper.solarize-transition',
+				'jasper.zoom-blur-transition',
+				'jasper.slice-transition',
+				'jasper.shape-dissolve',
+				'jasper.morph-cut',
+			];
+			const r = await page.evaluate(
+				(a) => (window as unknown as { __pr: { differs(s: string): Record<string, number> } }).__pr.differs(a),
+				ids.join(','),
+			);
+			const flat = ids.filter((id) => !(r[id]! > 8));
+			expect(flat).toEqual([]);
+		});
+
 		it('keeps the random transitions deterministic per instance', async () => {
 			const r = await call<Record<string, { blue: number; same: boolean; differs: boolean }>>('random');
 			for (const [id, v] of Object.entries(r)) {

@@ -99,7 +99,7 @@ export const EARTHQUAKE = defineShaderTransition({
 vec3 eqShake(float t) {
   float f = max(u_frequency, 0.1) * t;
   vec3 n = vec3(fx_valueNoise(vec2(f, 1.3), u_seed), fx_valueNoise(vec2(f, 7.9), u_seed), fx_valueNoise(vec2(f, 4.2), u_seed));
-  return (n - 0.5) * 2.0 * vec3(u_amplitude, u_amplitude, radians(u_rotation));
+  return n * vec3(u_amplitude, u_amplitude, radians(u_rotation));
 }
 vec4 eqAt(vec3 s, float k, float zoom) {
   vec2 asp = vec2(tr_aspect(), 1.0);
@@ -262,7 +262,7 @@ export const GRUNGE_TRANSITION = defineShaderTransition({
 void main() {
   float p = tr_progress();
   vec2 q = v_uv * vec2(tr_aspect(), 1.0) * u_scale;
-  float n = clamp(0.75 * pm_fbm(q, u_seed) + 0.25 * fx_valueNoise(q * 14.0, u_seed), 0.0, 1.0);
+  float n = clamp(0.75 * pm_fbm(q, u_seed) + 0.25 * (0.5 + 0.5 * fx_valueNoise(q * 14.0, u_seed)), 0.0, 1.0);
   float w = 0.1;
   float T = mix(-w, 1.0 + w, p);
   vec4 col;

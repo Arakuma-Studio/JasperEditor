@@ -43,7 +43,8 @@ export const BURN_CHROMA = defineShaderTransition({
 				frag: /* glsl */ `
 void main() {
   float p = tr_progress();
-  float n = clamp(pm_fbm(v_uv * vec2(tr_aspect(), 1.0) * u_scale, u_seed), 0.0, 1.0);
+  // fbm clusters around 0.5: stretch it so the burn advances evenly over the transition.
+  float n = clamp(0.5 + 1.8 * (pm_fbm(v_uv * vec2(tr_aspect(), 1.0) * u_scale, u_seed) - 0.5), 0.0, 1.0);
   float w = max(u_burnWidth / 100.0, 0.005);
   float T = mix(-w, 1.0 + w, p);
   float I = u_intensity / 100.0;
