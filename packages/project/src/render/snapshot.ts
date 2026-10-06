@@ -1,6 +1,7 @@
 // Render snapshot (S01:RND-001…005, ARCHITECTURE §5.5): the self-contained JSON value handed to the
 // Remotion composition, the native planner and the Program overlay. Keyframes stay unevaluated.
 import { compositionOfClip, mergeProps } from '../composition/props.ts';
+import { expandMulticam } from '../multicam/resolve.ts';
 import { clipEngines, type EngineId, isBoundedContent, kindCapabilities } from '../registry/kinds.ts';
 import { intrinsicBoxOf } from '../registry/properties.ts';
 import type { Animatable, Keyframe, RGBA } from '../schema/common.ts';
@@ -170,6 +171,11 @@ export type RenderVisualClip = {
 	 * that have effects; absent otherwise.
 	 */
 	sourceInfo?: { itemName: string; fileName: string; startTimecode: string | null };
+	/**
+	 * wp-multicam: this layer shows (a piece of) the multi-camera clip `clipId` — its angle's clip with the composed
+	 * Motion, opacity and effects (`expandMulticam`). Absent for ordinary clips.
+	 */
+	multicamOf?: { clipId: string; sequenceId: string; angle: string | null };
 };
 
 export type RenderAudioClip = {
@@ -257,8 +263,11 @@ export function buildRenderSnapshot(
 	sequenceId: string,
 	opts: SnapshotOptions,
 ): RenderSnapshot {
-	const seq = doc.sequences[sequenceId];
-	if (!seq) throw new Error(`Sequence not found: ${sequenceId}`);
+	const docSeq = doc.sequences[sequenceId];
+	if (!docSeq) throw new Error(`Sequence not found: ${sequenceId}`);
+	// wp-multicam: enabled multi-camera clips render as the clips of their angle (same ids for the first piece).
+	const multicam = expandMulticam(doc, docSeq);
+	const seq = multicam.seq;
 	const frame = { width: seq.settings.width, height: seq.settings.height };
 	let end = 0;
 	// Group once rather than scanning and allocating the entire clip list for every track.
@@ -287,7 +296,7 @@ export function buildRenderSnapshot(
 		const asset = doc.media[id];
 		media[id] = asset ? opts.resolveMedia(asset) : null;
 	};
-	const warnings: RenderSnapshot['warnings'] = [];
+	const warnings: RenderSnapshot['warnings'] = [...multicam.warnings];
 	const fontKeys = new Map<string, RenderSnapshot['fonts'][number]>();
 	let itemNames: Map<string, string> | null = null;
 	const sourceInfoOf = (mediaId: string): RenderVisualClip['sourceInfo'] => {
@@ -471,6 +480,7 @@ export function buildRenderSnapshot(
 				...('mediaId' in source && ((r.effects as EffectInstance[] | undefined) ?? []).length > 0
 					? { sourceInfo: sourceInfoOf(source.mediaId) }
 					: {}),
+				...(multicam.origin.has(c.id) ? { multicamOf: multicam.origin.get(c.id)! } : {}),
 			});
 		}
 		clips.sort((a, b) => a.start - b.start);

@@ -62,11 +62,13 @@ const markerFields = {
 	comment: z.string().optional(),
 	url: z.string().optional(),
 };
-/** Sequence scope (`frame`) or clip scope (`clipId` + `flicks`) (S01:SEQ-008, CMD-014). */
+/** Sequence scope (`frame`), clip scope (`clipId` + `flicks`) (S01:SEQ-008, CMD-014) or source clip scope (`itemId`). */
 export const MarkerAddCmd = cmd('marker.add', {
 	sequenceId: IdRefSchema.optional(),
 	frame: TimeInputSchema.optional(),
 	clipId: IdRefSchema.optional(),
+	/** wp-multicam: a source clip marker on a media project item (Source monitor), at `flicks` of its media. */
+	itemId: IdRefSchema.optional(),
 	flicks: ContentTimeInputSchema.optional(),
 	...markerFields,
 	ref: RefDeclSchema.optional(),

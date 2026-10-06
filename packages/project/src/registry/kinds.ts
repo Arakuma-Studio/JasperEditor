@@ -294,7 +294,21 @@ export function contentDurationFlicks(
 	clip: Clip | { kind: string; mediaId?: string; composition?: { id: string; mediaId?: string } },
 ): number | null {
 	const media = doc.media as Record<string, MediaAsset | undefined>;
-	const c = clip as { kind: string; mediaId?: string; composition?: { id: string; mediaId?: string } };
+	const c = clip as {
+		kind: string;
+		mediaId?: string;
+		composition?: { id: string; mediaId?: string };
+		sequenceId?: string;
+	};
+	// Nests (and multi-camera clips) are bounded by the nested sequence's length (S01:KND-011).
+	if ((c.kind === 'nest-video' || c.kind === 'nest-audio') && c.sequenceId) {
+		const nested = (doc as { sequences?: Record<string, NestedLength | undefined> }).sequences?.[c.sequenceId];
+		if (!nested) return null;
+		let end = 0;
+		for (const x of Object.values(nested.clips)) end = Math.max(end, x.start + x.duration);
+		const r = nested.settings.frameRate;
+		return Math.round((end * FLICKS_PER_SECOND * r.den) / r.num);
+	}
 	if (c.kind === 'composition') {
 		const asset = c.composition?.mediaId ? media[c.composition.mediaId] : undefined;
 		const info = asset?.mgBundle?.compositions.find((x) => x.id === c.composition!.id);
@@ -303,6 +317,11 @@ export function contentDurationFlicks(
 	if (!c.mediaId) return null;
 	return media[c.mediaId]?.probe.durationFlicks ?? null;
 }
+
+type NestedLength = {
+	clips: Record<string, { start: number; duration: number }>;
+	settings: { frameRate: { num: number; den: number } };
+};
 
 /** Content-time bounded clips (S01:CLP-005). */
 export function isBoundedContent(clip: Clip): boolean {

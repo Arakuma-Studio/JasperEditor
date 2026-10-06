@@ -162,6 +162,12 @@ export function intrinsicBoxOf(ctx: PropertyContext): { width: number; height: n
 	}
 	// M2 (S11:SHP-001): size plus the stroke drawn outside the geometry.
 	if (clip.kind === 'shape') return shapeIntrinsicBox(clip.shape);
+	// S01:KND-020: a nest's box is the nested sequence's frame (wp-multicam: multi-camera clips).
+	if (clip.kind === 'nest-video') {
+		const nested = (doc as { sequences?: Record<string, { settings: { width: number; height: number } }> })
+			.sequences?.[clip.sequenceId];
+		if (nested) return { width: nested.settings.width, height: nested.settings.height };
+	}
 	return frame;
 }
 

@@ -21,6 +21,7 @@ export * from './invariants.ts';
 export * from './keyframes.ts';
 export * from './keyframes-spatial.ts';
 export * from './migrations.ts';
+export * from './multicam/index.ts';
 export * from './presets.ts';
 export * from './process/index.ts';
 export * from './registry/color-effects.ts';

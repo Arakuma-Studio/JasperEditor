@@ -53,6 +53,7 @@ import type { CommandOf } from '../schemas/index.ts';
 import { rollTrim } from './clip-edit.ts';
 import { applyCompositionPatch } from './composition.ts';
 import { applyTemplatePatch } from './mg-template.ts';
+import { placeSequenceSource } from './multicam.ts';
 import { applyShapePatch } from './shape.ts';
 import { applyInitialTextAnimation, applyTextAnimationPatch } from './text-animation.ts';
 import { type HandlerMap, idList } from './util.ts';
@@ -170,11 +171,31 @@ export function placeSource(
 		if (!item) h.fail('E_NOT_FOUND', `Project item not found: ${o.source.projectItemId}`);
 		if (item.kind === 'media') mediaId = item.mediaId;
 		else if (item.kind === 'synthetic') syntheticId = item.syntheticId;
-		else if (item.kind === 'sequence')
-			h.fail('E_NOT_IMPLEMENTED', 'Placing sequences (nesting) arrives in M2');
-		else h.fail('E_INVALID_PARAM', `Cannot place a ${item.kind} item`);
+		else if (item.kind !== 'sequence') h.fail('E_INVALID_PARAM', `Cannot place a ${item.kind} item`);
 	}
-	if (o.source.sequenceId) h.fail('E_NOT_IMPLEMENTED', 'Placing sequences (nesting) arrives in M2');
+	// wp-multicam: multi-camera source sequences place as multi-camera clips, merged clips as the clips they hold.
+	const placedSeqId = o.source.sequenceId ?? (item?.kind === 'sequence' ? item.sequenceId : undefined);
+	if (placedSeqId) {
+		if (o.at < 0) h.fail('E_INVALID_PARAM', 'Placement frame must be >= 0');
+		const seqItem =
+			item ?? Object.values(doc.items).find((x) => x.kind === 'sequence' && x.sequenceId === placedSeqId);
+		const create = o.createTracks !== false;
+		const placed = placeSequenceSource(doc, seq, h, placedSeqId, seqItem as ProjectItem | undefined, {
+			at: o.at,
+			mode: o.mode,
+			...(o.videoTrack ? { videoTrack: o.videoTrack } : {}),
+			...(o.audioTracks ? { audioTracks: o.audioTracks } : {}),
+			...(o.video !== undefined ? { video: o.video } : {}),
+			...(o.audio !== undefined ? { audio: o.audio } : {}),
+			...(o.scaling ? { scaling: o.scaling } : {}),
+			...(o.sourceRange ? { sourceRange: o.sourceRange } : {}),
+			prepareTrack: (ref, kind) => prepareTrack(seq, ref, kind, h, create),
+			makeRoom: (dest, n) => makeRoom(seq, h, dest, o.at, n, o.mode, o.rippleMarkers),
+		});
+		if (!placed) h.fail('E_NOT_IMPLEMENTED', 'Placing sequences (nesting) arrives in M2');
+		h.defineRef(o.ref, placed.clipIds[0]!);
+		return placed;
+	}
 	const marks = item && (item.kind === 'media' || item.kind === 'synthetic') ? item.marks : null;
 	if (o.at < 0) h.fail('E_INVALID_PARAM', 'Placement frame must be >= 0');
 	const scaling = o.scaling ?? doc.settings.defaultScaling;

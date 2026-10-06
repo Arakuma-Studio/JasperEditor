@@ -8,6 +8,7 @@ import { compositionHandlers } from './handlers/composition.ts';
 import { effectHandlers } from './handlers/effect.ts';
 import { keyframeHandlers } from './handlers/keyframe.ts';
 import { m2Handlers } from './handlers/m2.ts';
+import { multicamHandlers } from './handlers/multicam.ts';
 import { paramHandlers } from './handlers/param.ts';
 import { PRESET_OWNER, presetHandlers } from './handlers/preset.ts';
 import { processHandlers } from './handlers/process.ts';
@@ -35,7 +36,9 @@ export type CommandOwner =
 	// Clipboard (S01 §20)
 	| 'wp-clipboard'
 	// Effect presets (S03:FX-030)
-	| 'wp-m3-presets';
+	| 'wp-m3-presets'
+	// Synchronize, Merge Clips, multi-camera (docs/wp-notes/multicam.md)
+	| 'wp-multicam';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -138,6 +141,14 @@ const LABELS: Record<CommandType, string> = {
 	'keyframe.paste': 'Paste Keyframes',
 	'project.pasteItems': 'Paste',
 	'effect.applyPreset': 'Apply Preset',
+	'clip.synchronize': 'Synchronize',
+	'item.mergeClips': 'Merge Clips',
+	'multicam.create': 'Create Multi-Camera Source Sequence',
+	'multicam.switchAngle': 'Switch Multi-Camera Angle',
+	'multicam.record': 'Record Multi-Camera',
+	'multicam.setEnabled': 'Multi-Camera Enable',
+	'multicam.flatten': 'Flatten Multi-Camera',
+	'multicam.editAngles': 'Edit Cameras',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -157,6 +168,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[shapeHandlers, SHAPE_OWNER],
 	[clipboardHandlers, CLIPBOARD_OWNER],
 	[presetHandlers, PRESET_OWNER],
+	[multicamHandlers, 'wp-multicam'],
 	[m2Handlers, 'M2'],
 ];
 
@@ -175,7 +187,7 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 			handler: SHAPE_BOX_COMMANDS.has(type) ? keepShapesCentred(handler) : handler,
 			label: LABELS[type],
 			owner,
-			milestone: owner.startsWith('wp-m3-')
+			milestone: owner.startsWith('wp-m3-') || owner === 'wp-multicam'
 				? 'M3'
 				: owner === 'M2' || owner.startsWith('wp-m2-') || owner === CLIPBOARD_OWNER
 					? 'M2'
