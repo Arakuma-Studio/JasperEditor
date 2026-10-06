@@ -399,10 +399,11 @@ describe('Path Options, More Options, Source Text', () => {
 		);
 		const warn = h.ok([{ type: 'clip.update', clipIds: [id], patch: { content: { text: 'base' } } }]);
 		expect(warn.warnings.map((w) => w.code)).toContain('W_SOURCE_TEXT_ANIMATED');
-		const snap = buildRenderSnapshot(h.doc, h.seqId, {
+		const opts = {
 			resolveMedia: () => null,
-			resolveFont: (f, w, i) => `font://${f.family}/${w}/${i}`,
-		} as never);
+			resolveFont: (f: { family: string }, w: number, i: boolean) => `font://${f.family}/${w}/${i}`,
+		};
+		const snap = buildRenderSnapshot(h.doc, h.seqId, opts as never);
 		const layer = snap.videoTracks.flatMap((t) => t.clips).find((c) => c.clipId === id)!;
 		expect('sourceTextKeyframes' in layer.source && layer.source.sourceTextKeyframes).toHaveLength(2);
 		expect(snap.fonts.some((f) => f.style === 'italic')).toBe(true);
