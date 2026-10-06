@@ -23,8 +23,10 @@ import {
 	type MediaHandle,
 	mediaDecodeHints,
 	type RenderSnapshot,
+	type RenderTransition,
 	type RenderVisualClip,
 	resolveLayerProps,
+	transitionSpec,
 } from '@jasper/project';
 import { quoteFilterPath } from '../color/extension.ts';
 import { colorRunFilters, fadeFilters, SWS_FLAGS } from '../export/native.ts';
@@ -120,6 +122,11 @@ export type BakePlan = {
 	/** The clip has colour effects that ffmpeg applies (LBK-010). */
 	colorRuns: boolean;
 	material: KeyMaterial;
+	/**
+	 * wave1c: the bake of a GPU transition's span (`clipId` = the transition id): the render draws the track's sides
+	 * and the transition stage (no layer filter).
+	 */
+	span?: boolean;
 };
 
 /** A graded entry (Remotion path / preview, LBK-010): bake + colour runs. */
@@ -614,6 +621,101 @@ export class LayerBakeService {
 	}
 
 	/**
+	 * wave1c — plans the bake of a GPU transition's span: the sides A and B of track `trackId` (whole clips, handles,
+	 * every enabled effect) and the transition stage, over `[t.start, t.start + t.duration)` on a transparent
+	 * background — what the composition draws for that track there. Times are shifted so the span starts at frame 0
+	 * (moving the cut keeps the render); `frame` = one sequence frame (stills).
+	 */
+	async planSpan(
+		planned: Pick<PlannedExport, 'document' | 'media' | 'snapshot'>,
+		trackId: string,
+		t: RenderTransition,
+		o: { env: BakeEnvironment; frame?: number | null },
+	): Promise<BakePlan> {
+		const snap = planned.snapshot;
+		const seq = snap.settings;
+		const track = snap.videoTracks.find((x) => x.trackId === trackId);
+		if (!track)
+			throw new JobError('LAYER_BAKE_FAILED', `Track ${trackId} of transition ${t.id} not found`, false);
+		const sideIds = new Set([t.outgoingClipId, t.incomingClipId].filter((x): x is string => !!x));
+		const shift = t.start;
+		const sides = track.clips
+			.filter((c) => sideIds.has(c.clipId))
+			.map((c): RenderVisualClip => {
+				const effects = c.effects.filter((fx) => fx.enabled);
+				return {
+					...c,
+					effects,
+					start: c.start - shift,
+					...(c.fades?.length ? { fades: c.fades.map((f) => ({ ...f, start: f.start - shift })) } : {}),
+				};
+			});
+		const shifted: RenderTransition = { ...t, start: 0 };
+		const single = o.frame !== undefined && o.frame !== null;
+		const variant: BakeVariant = single
+			? { recipe: 'frame', frame: o.frame! - t.start }
+			: { recipe: 'master' };
+		const frames = single ? 1 : t.duration;
+		const start = single ? o.frame! - t.start : 0;
+		const fonts = sides.flatMap((c) => clipFonts(c, snap.fonts));
+		const uniqueFonts = [...new Set(fonts)];
+		const mediaIds = referencedMediaIds([sides.map((c) => [c.source, c.effects]), t.params]);
+		const media: RenderSnapshot['media'] = {};
+		for (const id of mediaIds) media[id] = this.signedHandle(planned, id);
+		const signedFonts = uniqueFonts.map((f) => ({
+			...f,
+			url: f.url.startsWith('/') ? this.core.signer.signUrl(this.core.origin(), f.url) : f.url,
+		}));
+		const material: KeyMaterial = {
+			v: LAYER_BAKE_VERSION,
+			recipe: variant.recipe,
+			...(single ? { frame: start } : {}),
+			clip: { span: { transition: shifted, sides: sides.map(({ name: _n, ...c }) => c) } },
+			span: frames,
+			width: seq.width,
+			height: seq.height,
+			fps: { num: seq.fps.num, den: seq.fps.den },
+			fonts: await this.keyFonts(uniqueFonts),
+			media: this.keyMedia(planned, mediaIds),
+			bundleId: o.env.bundleId,
+			animejs: o.env.animejs,
+			remotion: o.env.remotion,
+			browser: o.env.browser,
+			gl: o.env.gl,
+			still: single,
+			rect: null,
+			graded: false,
+		};
+		const doc: RenderSnapshot = {
+			version: 1,
+			sequenceId: snap.sequenceId,
+			settings: { ...seq, backgroundColor: [0, 0, 0, 0] },
+			range: { start, end: start + frames },
+			durationFrames: frames,
+			videoTracks: [{ trackId, clips: sides, transitions: [shifted] }],
+			audioClips: [],
+			media,
+			fonts: signedFonts,
+			master: { volumeDb: { value: 0, keyframes: [] } },
+			warnings: [],
+		};
+		return {
+			clipId: t.id,
+			clipName: `${transitionSpec(t.effectId)?.label ?? t.effectId} transition`,
+			key: keyOf(material),
+			variant,
+			rect: null,
+			doc,
+			fullDoc: null,
+			frames,
+			startFrame: single ? o.frame! : t.start,
+			colorRuns: false,
+			material,
+			span: true,
+		};
+	}
+
+	/**
 	 * Plans the graded entry of a bake (LBK-010): the clip's colour runs as ffmpeg filters over the bake's frames,
 	 * produced by the extensions that realise colour effects (the colour extension's `prepare` + `effectFilter`,
 	 * run on a one-clip export of the bake's frames).
@@ -984,10 +1086,16 @@ export class LayerBakeService {
 		}
 	}
 
-	private inputProps(doc: RenderSnapshot, clipId: string): Record<string, unknown> {
+	private inputProps(doc: RenderSnapshot, plan: BakePlan): Record<string, unknown> {
 		return {
 			doc,
-			options: { isPreview: false, useProxies: false, transparentBackground: true, layerFilter: [clipId] },
+			options: {
+				isPreview: false,
+				useProxies: false,
+				transparentBackground: true,
+				// A span bake draws the whole (two-clip) track with its transition stage.
+				...(plan.span ? {} : { layerFilter: [plan.clipId] }),
+			},
 		};
 	}
 
@@ -1018,7 +1126,7 @@ export class LayerBakeService {
 			if (still) {
 				ctx.progress(0, { stage: 'Rendering 0/1 frames' });
 				await this.core.remotion.renderStill({
-					inputProps: this.inputProps(doc, plan.clipId),
+					inputProps: this.inputProps(doc, plan),
 					output: tmp,
 					frame: 0,
 					signal: ctx.signal,
@@ -1028,7 +1136,7 @@ export class LayerBakeService {
 				ctx.progress(weight * 0.9, { stage: 'Rendering 1/1 frames' });
 			} else {
 				await this.core.remotion.renderAlphaMaster({
-					inputProps: this.inputProps(doc, plan.clipId),
+					inputProps: this.inputProps(doc, plan),
 					output: tmp,
 					scratchDir: scratch,
 					signal: ctx.signal,

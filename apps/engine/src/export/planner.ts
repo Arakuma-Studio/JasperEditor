@@ -237,15 +237,24 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 				reason: `${c.kind} clip "${c.name}" has an alpha channel that needs the ${dec} decoder, which this ffmpeg build lacks`,
 			});
 	}
-	// Transition framework (wave 2): GPU transitions are shader stages of the compositions; the native builder only
-	// renders the built-in ramps (cross dissolve, dip to black). An export that contains one goes through Remotion.
+	// Transition framework: GPU transitions are shader stages of the compositions; the native builder renders only the
+	// built-in ramps (cross dissolve, dip to black). wave1c: an extension that pre-renders the span (A + B + stage,
+	// layer-bake) keeps the export native (`hybrid`): only the span is rendered by Remotion. Without one, the export
+	// goes through Remotion.
 	for (const track of snapshot.videoTracks)
 		for (const t of track.transitions ?? []) {
+			const engine = (deps.extensions ?? [])
+				.map((e) => e.bakesTransition?.(t, track.trackId) ?? null)
+				.find((x) => x !== null);
+			if (engine) {
+				baked.push({ clipId: t.id, engine, frames: t.duration });
+				continue;
+			}
 			const spec = transitionSpec(t.effectId);
 			blockers.push({
 				itemId: t.id,
 				path: 'native',
-				reason: `transition "${spec?.label ?? t.effectId}" is a GPU transition (rendered by the Remotion path)`,
+				reason: `transition "${spec?.label ?? t.effectId}" is a GPU transition and no span renderer is available (rendered by the Remotion path)`,
 			});
 		}
 	for (const a of snapshot.audioClips) {
