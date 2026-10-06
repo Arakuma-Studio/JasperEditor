@@ -114,13 +114,26 @@ void main() {
   float e = pow(pm_bump(p), 1.5);
   float k = pm_switch(p, 0.04);
   float t = u_time;
-  vec3 s0 = eqShake(t) * e;
-  vec3 s1 = eqShake(t - 1.0 / max(u_fps, 1.0)) * e;
+  float dt = 1.0 / max(u_fps, 1.0);
   // Slight zoom so the shaken frame mostly stays filled (mirrored beyond).
   float zoom = 1.0 + 1.5 * u_amplitude * e / u_compSize.y;
+  // Motion blur over the frame's shutter (the frame interval before the frame): the shake's real path (evaluated at
+  // every tap), as many taps as its length on screen needs (measured over 4 segments: offset + roll at the corners).
+  float len = 0.0;
+  vec3 prev = eqShake(t - dt) * e;
+  for (int m = 1; m <= 4; m++) {
+    vec3 cur = eqShake(t - dt + dt * float(m) / 4.0) * e;
+    len += length(cur.xy - prev.xy) + abs(cur.z - prev.z) * tr_halfDiagonal();
+    prev = cur;
+  }
+  int n = len > 0.0 ? max(8, fx_mbTapCount(len, 64)) : 1;
+  float j = n > 8 ? fx_mbJitterFor(len, n) : 0.5;
   vec4 c = vec4(0.0);
-  for (int i = 0; i < 8; i++) c += eqAt(mix(s1, s0, (float(i) + 0.5) / 8.0), k, zoom);
-  fragColor = c / 8.0;
+  for (int i = 0; i < fx_mbDyn(64); i++) {
+    if (i >= n) break;
+    c += eqAt(eqShake(t - dt + dt * fx_mbTapAt(i, n, j)) * e, k, zoom);
+  }
+  fragColor = c / float(n);
 }`,
 			},
 		],

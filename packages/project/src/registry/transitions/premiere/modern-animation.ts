@@ -1,5 +1,6 @@
 // Premiere 26 ▸ Video Transitions ▸ Animation (from Film Impact): Block, Flip, Fold, Pop, Pull, Spin, Spring and
-// Travel Motion — clips moving with designed eases (back, spring, smooth) and motion blur. Part of the
+// Travel Motion — clips moving with designed eases (back, spring, smooth) and motion blur (wave 5: taps along the
+// real move over the shutter, `pm_shutter`, as many as the on-screen travel needs). Part of the
 // premiere-transitions family; the folder sits in MODERN_BINS.animation until the framework has an Animation bin.
 import type { TransitionSpec } from '../../../transitions.ts';
 import type { EffectParams } from '../../effects.ts';
@@ -20,11 +21,6 @@ const layout3d = (p: EffectParams) => {
 	return { u_swap: d[1] !== 0, u_flip: d[0] + d[1] < 0 };
 };
 
-const SPEED = /* glsl */ `
-float pmSpeed(float p) {
-  float a = max(p - 0.01, 0.0), b = min(p + 0.01, 1.0);
-  return (tr_easeInOut(b) - tr_easeInOut(a)) / max(b - a, 1e-4) / max(u_duration, 2.0);
-}`;
 
 /** Animation ▸ Block Motion: the frame breaks into blocks; each one pushes B in, in a wave across the frame. */
 export const BLOCK_MOTION = defineShaderTransition({
@@ -209,7 +205,7 @@ export const PULL_MOTION = defineShaderTransition({
 		passes: [
 			{
 				include: [GLSL_PR_MODERN],
-				frag: /* glsl */ `${SPEED}
+				frag: /* glsl */ `
 const float PL_GAP = 0.06;
 vec4 plAt(vec2 c) {
   if (c.y < 0.0 || c.y > 1.0) return vec4(0.0);
@@ -220,13 +216,21 @@ vec4 plAt(vec2 c) {
 void main() {
   float p = tr_progress();
   vec2 q = pm_toAxes(v_uv, u_dir);
-  float z = 1.0 - clamp(u_zoom / 100.0, 0.0, 0.9) * pm_bump(p);
-  float pan = tr_easeInOut(p) * (1.0 + PL_GAP);
-  vec2 c = (q - 0.5) / z + 0.5 - vec2(pan, 0.0);
-  float L = (u_blur / 100.0) * pmSpeed(p) * (1.0 + PL_GAP) * 1.5;
+  // The camera's real move over the shutter (pan and pull-back at each tap).
+  float h = pm_shutter(p, u_blur, 1.5);
+  float zm = 1.0 - clamp(u_zoom / 100.0, 0.0, 0.9);
+  float ext = (abs(tr_easeInOut(p + h) - tr_easeInOut(p - h)) * (1.0 + PL_GAP) + abs(pm_bump(p + h) - pm_bump(p - h)) / zm)
+    * pm_axesSize(u_dir).x;
+  int n = fx_mbTapCount(ext, 64);
+  float j = fx_mbJitterFor(ext, n);
   vec4 col = vec4(0.0);
-  for (int i = 0; i < 12; i++) col += plAt(c + vec2(L * ((float(i) + 0.5) / 12.0 - 0.5), 0.0));
-  fragColor = col / 12.0;
+  for (int i = 0; i < fx_mbDyn(64); i++) {
+    if (i >= n) break;
+    float qq = mix(p - h, p + h, fx_mbTapAt(i, n, j));
+    float z = 1.0 - clamp(u_zoom / 100.0, 0.0, 0.9) * pm_bump(qq);
+    col += plAt((q - 0.5) / z + 0.5 - vec2(tr_easeInOut(qq) * (1.0 + PL_GAP), 0.0));
+  }
+  fragColor = col / float(n);
 }`,
 			},
 		],
@@ -245,7 +249,7 @@ export const SPIN_MOTION = defineShaderTransition({
 		passes: [
 			{
 				include: [GLSL_PR_MODERN],
-				frag: /* glsl */ `${SPEED}
+				frag: /* glsl */ `
 vec4 spAt(int side, float a, float s) {
   vec2 asp = vec2(tr_aspect(), 1.0);
   vec2 v = (v_uv - 0.5) * asp / s;
@@ -256,17 +260,24 @@ vec4 spAt(int side, float a, float s) {
 void main() {
   float p = tr_progress();
   float total = radians(u_rotation);
-  float a = total * tr_easeInOut(p);
-  float s = 1.0 + (u_zoom / 100.0) * pm_bump(p);
-  float L = (u_blur / 100.0) * pmSpeed(p) * abs(total) * 1.5;
   float k = pm_switch(p, 0.04);
+  // The real spin (and zoom) over the shutter: the frame corners turn on a half-diagonal radius.
+  float h = pm_shutter(p, u_blur, 1.5);
+  float smax = 1.0 + u_zoom / 100.0;
+  float ext = (abs(total) * abs(tr_easeInOut(p + h) - tr_easeInOut(p - h)) * smax + abs(pm_bump(p + h) - pm_bump(p - h)) * u_zoom / 100.0)
+    * tr_halfDiagonal();
+  int n = fx_mbTapCount(ext, 64);
+  float j = fx_mbJitterFor(ext, n);
   vec4 A = vec4(0.0), B = vec4(0.0);
-  for (int i = 0; i < 12; i++) {
-    float o = L * ((float(i) + 0.5) / 12.0 - 0.5) * sign(total);
-    if (k < 1.0) A += spAt(0, a + o, s);
-    if (k > 0.0) B += spAt(1, a + o - total, s);
+  for (int i = 0; i < fx_mbDyn(64); i++) {
+    if (i >= n) break;
+    float qq = mix(p - h, p + h, fx_mbTapAt(i, n, j));
+    float a = total * tr_easeInOut(qq);
+    float s = 1.0 + (u_zoom / 100.0) * pm_bump(qq);
+    if (k < 1.0) A += spAt(0, a, s);
+    if (k > 0.0) B += spAt(1, a - total, s);
   }
-  fragColor = mix(A, B, k) / 12.0;
+  fragColor = mix(A, B, k) / float(n);
 }`,
 			},
 		],
@@ -323,7 +334,7 @@ export const TRAVEL_MOTION = defineShaderTransition({
 		passes: [
 			{
 				include: [GLSL_PR_MODERN],
-				frag: /* glsl */ `${SPEED}
+				frag: /* glsl */ `
 const float TV_GAP = 0.04;
 vec4 tvAt(vec2 c) {
   if (c.y < 0.0 || c.y > 1.0) return vec4(0.0);
@@ -334,13 +345,21 @@ vec4 tvAt(vec2 c) {
 void main() {
   float p = tr_progress();
   vec2 q = pm_toAxes(v_uv, u_dir);
-  float s = 1.0 - (1.0 - clamp(u_scale / 100.0, 0.1, 1.0)) * pm_bump(p);
-  float tr = tr_easeInOut(p) * (1.0 + TV_GAP);
-  vec2 c = (q - 0.5) / s + 0.5 - vec2(tr, 0.0);
-  float L = (u_blur / 100.0) * pmSpeed(p) * (1.0 + TV_GAP) * 1.5;
+  // The real move over the shutter (travel and scale at each tap).
+  float h = pm_shutter(p, u_blur, 1.5);
+  float shrink = 1.0 - clamp(u_scale / 100.0, 0.1, 1.0);
+  float ext = (abs(tr_easeInOut(p + h) - tr_easeInOut(p - h)) * (1.0 + TV_GAP) + abs(pm_bump(p + h) - pm_bump(p - h)) * shrink)
+    * pm_axesSize(u_dir).x;
+  int n = fx_mbTapCount(ext, 64);
+  float j = fx_mbJitterFor(ext, n);
   vec4 col = vec4(0.0);
-  for (int i = 0; i < 12; i++) col += tvAt(c + vec2(L * ((float(i) + 0.5) / 12.0 - 0.5), 0.0));
-  fragColor = col / 12.0;
+  for (int i = 0; i < fx_mbDyn(64); i++) {
+    if (i >= n) break;
+    float qq = mix(p - h, p + h, fx_mbTapAt(i, n, j));
+    float s = 1.0 - shrink * pm_bump(qq);
+    col += tvAt((q - 0.5) / s + 0.5 - vec2(tr_easeInOut(qq) * (1.0 + TV_GAP), 0.0));
+  }
+  fragColor = col / float(n);
 }`,
 			},
 		],

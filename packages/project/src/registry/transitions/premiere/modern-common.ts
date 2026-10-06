@@ -2,6 +2,7 @@
 // Impact — Animation, Grunge & Distort, Lights & Blurs, Transformers and the new Dissolve / Slide / Wipe entries).
 // Family-private helpers of premiere-transitions.ts.
 import { GLSL_HASH } from '../../fx/glsl/hash.ts';
+import { GLSL_MB } from '../../fx/glsl/motion-blur.ts';
 import { GLSL_NOISE } from '../../fx/glsl/noise.ts';
 import { gaussianBlurPasses } from '../../fx/passes.ts';
 import type { GlslChunk, ShaderPass } from '../../fx/shader.ts';
@@ -27,12 +28,14 @@ export const FOLDER_KEYWORDS = {
 } as const;
 
 /**
- * `premiere/modern`: bumps, switches, 2D transforms of a side and directional blurs. A "side" is 0 = A (u_from),
- * 1 = B (u_to).
+ * `premiere/modern`: bumps, switches, 2D transforms of a side, directional / zoom / spin blurs and the motion-blur
+ * shutter of the moving transitions. A "side" is 0 = A (u_from), 1 = B (u_to). The blurs take the framework's
+ * adaptive tap counts (`GLSL_MB`, wave 5): at least their wave-3 count (same taps, so short blurs are unchanged), up
+ * to 64 taps ≤ 1 px apart for long ones, jittered per pixel beyond.
  */
 export const GLSL_PR_MODERN: GlslChunk = {
 	name: 'premiere/modern',
-	deps: [GLSL_TRANSITION, GLSL_TR_EASE, GLSL_HASH],
+	deps: [GLSL_TRANSITION, GLSL_TR_EASE, GLSL_HASH, GLSL_MB],
 	source: /* glsl */ `
 const float PM_PI = 3.14159265358979;
 // 0 at both ends, 1 in the middle.
@@ -74,40 +77,69 @@ vec2 pm_inverse(vec2 uv, vec2 c, float s, float a, vec2 t) {
   q = vec2(co * q.x + si * q.y, -si * q.x + co * q.y) / max(s, 1e-4);
   return q / asp + c;
 }
+// Taps of a blur whose longest path is extentPx: the wave-3 count minN, more (≤ 1 px apart, ≤ 64) when longer.
+int pm_taps(float extentPx, int minN) { return max(minN, fx_mbTapCount(extentPx, 64)); }
 // A side read along a straight motion blur: taps from uv − delta/2 to uv + delta/2 (uv units).
 vec4 pm_streak(int side, vec2 uv, vec2 delta) {
   if (dot(delta, delta) < 1e-10) return pm_side(side, uv);
+  float ext = length(delta * u_compSize);
+  int n = pm_taps(ext, 16);
+  float j = n > 16 ? fx_mbJitterFor(ext, n) : 0.5;
   vec4 s = vec4(0.0);
-  for (int i = 0; i < 16; i++) s += pm_side(side, uv + delta * ((float(i) + 0.5) / 16.0 - 0.5));
-  return s / 16.0;
+  for (int i = 0; i < fx_mbDyn(64); i++) {
+    if (i >= n) break;
+    s += pm_side(side, uv + delta * (fx_mbTapAt(i, n, j) - 0.5));
+  }
+  return s / float(n);
 }
-// A long straight blur (32 taps, jittered per pixel against banding).
+// A long straight blur (32+ taps, jittered per pixel against banding).
 vec4 pm_streakLong(int side, vec2 uv, vec2 delta) {
   if (dot(delta, delta) < 1e-10) return pm_side(side, uv);
-  float j = fx_hash2(ivec2(floor(v_uv * u_compSize)), 0.37) - 0.5;
+  float ext = length(delta * u_compSize);
+  int n = pm_taps(ext, 32);
+  float j = n > 32 ? fx_mbJitter() : fx_hash2(ivec2(floor(v_uv * u_compSize)), 0.37);
   vec4 s = vec4(0.0);
-  for (int i = 0; i < 32; i++) s += pm_sideClamped(side, uv + delta * ((float(i) + 0.5 + j) / 32.0 - 0.5));
-  return s / 32.0;
+  for (int i = 0; i < fx_mbDyn(64); i++) {
+    if (i >= n) break;
+    s += pm_sideClamped(side, uv + delta * ((float(i) + j) / float(n) - 0.5));
+  }
+  return s / float(n);
 }
 // Zoom blur of a side towards c: taps from uv to c + (uv − c)(1 − amount).
 vec4 pm_zoomBlur(int side, vec2 uv, vec2 c, float amount) {
   if (amount < 1e-4) return pm_side(side, uv);
+  float ext = amount * length((uv - c) * u_compSize);
+  int n = pm_taps(ext, 16);
+  float j = n > 16 ? fx_mbJitterFor(ext, n) : 0.0;
+  float last = n > 16 ? float(n) : float(n - 1);
   vec4 s = vec4(0.0);
-  for (int i = 0; i < 16; i++) s += pm_side(side, c + (uv - c) * (1.0 - amount * float(i) / 15.0));
-  return s / 16.0;
+  for (int i = 0; i < fx_mbDyn(64); i++) {
+    if (i >= n) break;
+    s += pm_side(side, c + (uv - c) * (1.0 - amount * (float(i) + j) / last));
+  }
+  return s / float(n);
 }
 // Spin blur of a side around c over ang radians.
 vec4 pm_spinBlur(int side, vec2 uv, vec2 c, float ang) {
   if (abs(ang) < 1e-4) return pm_side(side, uv);
   vec2 asp = vec2(tr_aspect(), 1.0);
   vec2 q = (uv - c) * asp;
+  float ext = abs(ang) * length(q) * u_compSize.y;
+  int n = pm_taps(ext, 16);
+  float j = n > 16 ? fx_mbJitterFor(ext, n) : 0.5;
   vec4 s = vec4(0.0);
-  for (int i = 0; i < 16; i++) {
-    float a = ang * ((float(i) + 0.5) / 16.0 - 0.5);
+  for (int i = 0; i < fx_mbDyn(64); i++) {
+    if (i >= n) break;
+    float a = ang * (fx_mbTapAt(i, n, j) - 0.5);
     float co = cos(a), si = sin(a);
     s += pm_side(side, vec2(co * q.x - si * q.y, si * q.x + co * q.y) / asp + c);
   }
-  return s / 16.0;
+  return s / float(n);
+}
+// The motion-blur shutter of the moving transitions: half width (progress) of a shutter of blur% × frames, one frame
+// being 1 / max(duration, 2) of progress (the wave-3 scale), shrunk at the ends (exactly A at 0, B at 1).
+float pm_shutter(float p, float blurPercent, float frames) {
+  return fx_mbShutter(p, (blurPercent / 100.0) * frames, 1.0 / max(u_duration, 2.0));
 }
 // Screen blend of a light (straight colour) onto a premultiplied picture; light alone where the picture is empty.
 vec4 pm_addLight(vec4 base, vec3 light) {

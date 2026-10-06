@@ -50,15 +50,20 @@ vec4 s3Card(vec2 q, vec2 h, float th, float z) {
 void main() {
   float p = tr_progress();
   float total = PM_PI * (1.0 + 2.0 * floor(max(u_spins, 0.0) + 0.5));
-  float e = tr_easeInOut(p);
   vec2 q = pr3Screen(u_swap, false);
   vec2 h = pr3Half(u_swap);
-  float z = 3.0 * (u_zoom / 100.0) * pm_bump(p);
-  float speed = (tr_easeInOut(min(p + 0.01, 1.0)) - tr_easeInOut(max(p - 0.01, 0.0))) / 0.02 / max(u_duration, 2.0);
-  float L = (u_blur / 100.0) * speed * total;
+  // The real spin over the shutter (Motion Blur % of a frame): the card's edges sweep up to ~its half width per radian.
+  float hs = pm_shutter(p, u_blur, 1.0);
+  float ext = total * abs(tr_easeInOut(p + hs) - tr_easeInOut(p - hs)) * 0.75 * max(u_compSize.x, u_compSize.y);
+  int n = fx_mbTapCount(ext, 64);
+  float j = fx_mbJitterFor(ext, n);
   vec4 c = vec4(0.0);
-  for (int i = 0; i < 8; i++) c += s3Card(q, h, total * e + L * ((float(i) + 0.5) / 8.0 - 0.5), z);
-  fragColor = c / 8.0;
+  for (int i = 0; i < fx_mbDyn(64); i++) {
+    if (i >= n) break;
+    float qq = mix(p - hs, p + hs, fx_mbTapAt(i, n, j));
+    c += s3Card(q, h, total * tr_easeInOut(qq), 3.0 * (u_zoom / 100.0) * pm_bump(qq));
+  }
+  fragColor = c / float(n);
 }`,
 			},
 		],
@@ -110,12 +115,18 @@ void main() {
   vec2 q = pr3Screen(u_swap, false);
   vec2 h = pr3Half(u_swap);
   bool isB = p >= 0.5;
-  float th = sbAngle(p);
-  float dp = 0.5 / max(u_duration, 2.0);
-  float L = (u_blur / 100.0) * (sbAngle(min(p + dp, isB ? 1.0 : 0.4999)) - sbAngle(max(p - dp, isB ? 0.5 : 0.0)));
+  // The real (eased, overshooting) turn over the shutter, kept within the card's half of the transition.
+  float hs = pm_shutter(p, u_blur, 1.0);
+  float lo = max(p - hs, isB ? 0.5 : 0.0), hi = min(p + hs, isB ? 1.0 : 0.4999);
+  float ext = (abs(sbAngle(hi) - sbAngle(p)) + abs(sbAngle(p) - sbAngle(lo))) * 0.75 * max(u_compSize.x, u_compSize.y);
+  int n = fx_mbTapCount(ext, 64);
+  float j = fx_mbJitterFor(ext, n);
   vec4 c = vec4(0.0);
-  for (int i = 0; i < 8; i++) c += sbCard(q, h, th + L * ((float(i) + 0.5) / 8.0 - 0.5), isB);
-  fragColor = c / 8.0;
+  for (int i = 0; i < fx_mbDyn(64); i++) {
+    if (i >= n) break;
+    c += sbCard(q, h, n > 1 ? sbAngle(mix(lo, hi, fx_mbTapAt(i, n, j))) : sbAngle(p), isB);
+  }
+  fragColor = c / float(n);
 }`,
 			},
 		],
