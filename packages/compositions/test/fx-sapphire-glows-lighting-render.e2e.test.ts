@@ -1,6 +1,6 @@
 // @vitest-environment node
 // Sapphire Glows + Lighting on the Remotion render path: bundles the PRODUCTION entry (the family is in the default
-// registry), renders stills of every effect of the family on a still image (red square on black: every effect must
+// registry), renders stills of every effect of the family on a still image (a generated test card: every effect must
 // change it) and of the main ones on a decoded video frame (ffmpeg testsrc2, 640×360), deterministically; plus a padded drop shadow on a still drawn outside its
 // box and a time-dependent effect (S_Flashbulbs) differing between frames. Stills are kept in the temp dir printed
 // at start (visual review). Gated by REMOTION_E2E=1 (bundling ≈ 30 s, each still ≈ 1–5 s); needs ffmpeg on PATH.
@@ -8,10 +8,11 @@ import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { Command } from '@jasper/project';
 import { FX_FAMILIES } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SEQUENCE_COMPOSITION_ID } from '../src/types.ts';
-import { FX_H, FX_W, type FxMedia, fxCmd, fxSnapshot, startFxMedia } from './fx-media.ts';
+import { FX_H, FX_W, type FxMedia, fxAsset, fxCmd, fxSnapshot, startFxMedia } from './fx-media.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const enabled = process.env.REMOTION_E2E === '1';
@@ -36,6 +37,21 @@ describe.runIf(enabled)(
 			const { bundle } = await import('@remotion/bundler');
 			serveUrl = await bundle({ entryPoint: join(here, '..', 'src', 'remotion-entry.ts') });
 			renderer = await import('@remotion/renderer');
+			// A test card: dark blue background, a white "light", a mid-grey and a red box (lights, darks, edges).
+			execFileSync('ffmpeg', [
+				'-v',
+				'error',
+				'-y',
+				'-f',
+				'lavfi',
+				'-i',
+				'color=c=0x182040:s=320x180',
+				'-vf',
+				'drawbox=x=40:y=40:w=40:h=40:color=white:t=fill,drawbox=x=130:y=60:w=60:h=80:color=0x808080:t=fill,drawbox=x=230:y=30:w=50:h=50:color=red:t=fill',
+				'-frames:v',
+				'1',
+				join(media.dir, 'card.png'),
+			]);
 			console.info(`[fx-sgl-render] stills in ${media.dir}`);
 		}, 600_000);
 
@@ -76,29 +92,50 @@ describe.runIf(enabled)(
 			const i = (Math.round(y) * FX_W + Math.round(x)) * 3;
 			return [raw[i]!, raw[i + 1]!, raw[i + 2]!];
 		};
+		/** The test card as a full-frame-ish image clip. */
+		const card = (): Command[] => [
+			{
+				type: 'media.register',
+				ref: '$m',
+				asset: fxAsset(media, 'image', 'card.png', 320, 180),
+			} as unknown as Command,
+			{
+				type: 'clip.place',
+				source: { mediaId: '$m' },
+				at: 0,
+				tracks: { video: 'V1' },
+				ref: '$c',
+			} as unknown as Command,
+		];
+		/** Largest channel difference over a sampled grid. */
+		const maxDiff = (a: Buffer, b: Buffer) => {
+			let d = 0;
+			for (let i = 0; i < a.length; i += 5) d = Math.max(d, Math.abs(a[i]! - b[i]!));
+			return d;
+		};
 		const diff = (a: Buffer, b: Buffer) => {
 			let d = 0;
 			for (let i = 0; i < a.length; i += 7) d += Math.abs(a[i]! - b[i]!);
 			return d / (a.length / 7);
 		};
 
-		it('every effect of the family renders on a still image (red square on black) and changes it', async () => {
-			const plain = await still(fxSnapshot(fxCmd.still(media)), 0, 'still-plain');
+		it('every effect of the family renders on a still image (test card) and changes it', async () => {
+			const plain = await still(fxSnapshot(card()), 0, 'card-plain');
 			const unchanged: string[] = [];
 			for (const spec of FAMILY) {
-				// Random generators get enough events; the auto-track threshold sits below the red square's luminance.
+				// Random generators get enough events; the drop shadow gets a colour that shows on the dark frame.
 				const params: Record<string, unknown> =
 					spec.id === 'jasper.s.flashbulbs'
 						? { flashes: 12 }
-						: spec.id === 'jasper.s.lens-flare-auto-track'
-							? { hotspotThreshold: 0.1 }
+						: spec.id === 'jasper.s.drop-shadow'
+							? { shadowColor: [0, 1, 0, 1] }
 							: {};
 				const raw = await still(
-					fxSnapshot([...fxCmd.still(media), fxCmd.effect(spec.id, params)]),
+					fxSnapshot([...card(), fxCmd.effect(spec.id, params)]),
 					0,
-					spec.id.replace('jasper.s.', 'still-'),
+					spec.id.replace('jasper.s.', 'card-'),
 				);
-				if (diff(raw, plain) < 0.2) unchanged.push(spec.id);
+				if (maxDiff(raw, plain) < 24) unchanged.push(spec.id);
 			}
 			expect(unchanged).toEqual([]);
 		});
