@@ -300,7 +300,7 @@ void main() {
   vec4 t = at(v_uv - vec2(0.0, h.y)), b = at(v_uv + vec2(0.0, h.y));
   vec4 gx = r - l, gy = b - t;
   vec4 e = sqrt(gx * gx + gy * gy);
-  vec3 src = mix(e.rgb, vec3(e.a), u_raysFromAlpha) * u_edgeBrightness * 2.5;
+  vec3 src = mix(e.rgb, vec3(e.a), u_raysFromAlpha) * u_edgeBrightness * 1.5;
   fragColor = vec4(src * shimmer(), 1.0);
 }`,
 				},
