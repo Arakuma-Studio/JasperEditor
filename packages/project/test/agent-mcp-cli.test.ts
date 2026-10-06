@@ -117,7 +117,7 @@ describe('clip.properties / param.get (value and evaluated)', () => {
 			[30, 0],
 			[60, 100],
 		]);
-		expect(op.keyframes?.[1]!.timecode).toBe('00:00:02:00');
+		expect(op.keyframes?.[1]?.timecode).toBe('00:00:02:00');
 		expect(op.target).toEqual(['clip', clipId, 'opacity']);
 		const blur = r.properties.find((p) => p.key === `effects.${fxId}.radius`)!;
 		expect(blur).toMatchObject({ value: 6, evaluated: 6, target: ['effect', fxId, 'radius'] });

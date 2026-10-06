@@ -93,7 +93,8 @@ export function findUnknownKeys(
 		}
 		case 'array':
 			if (Array.isArray(value))
-				value.forEach((v, i) => findUnknownKeys(def.element as AnySchema, v, [...path, i], out, depth + 1));
+				for (const [i, v] of value.entries())
+					findUnknownKeys(def.element as AnySchema, v, [...path, i], out, depth + 1);
 			return out;
 		case 'tuple':
 			if (Array.isArray(value)) {

@@ -129,7 +129,7 @@ describe('tool catalogue conventions', () => {
 			)
 				loose.push(`${tool}${path}`);
 			for (const [k, v] of Object.entries(o)) {
-				if (Array.isArray(v)) v.forEach((x, i) => walk(x, `${path}.${k}[${i}]`, tool));
+				if (Array.isArray(v)) for (const [i, x] of v.entries()) walk(x, `${path}.${k}[${i}]`, tool);
 				else if (v && typeof v === 'object') walk(v, `${path}.${k}`, tool);
 			}
 		};
