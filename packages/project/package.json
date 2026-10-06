@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./agent/schema-export": "./src/agent/schema-export.ts"
+    "./agent/schema-export": "./src/agent/schema-export.ts",
+    "./audio": "./src/audio.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",

@@ -78,7 +78,7 @@ export type PropertySpec = {
 	label: string;
 	group: PropertyGroup;
 	kind: ValueKind;
-	unit?: 'px' | '%' | 'deg' | 'dB' | 'frames' | 's';
+	unit?: ParamSpec['unit'];
 	range?: { min?: number; max?: number; softMin?: number; softMax?: number; step?: number };
 	/** `continuous` = interpolated keyframes; `hold-only` = step keyframes (S01:KF-007); `no` = static field. */
 	animatable: 'continuous' | 'hold-only' | 'no';
@@ -1165,7 +1165,7 @@ export function effectParamPropertySpec(fxId: string, effect: EffectSpec, p: Par
 		label: p.label,
 		group: effect.id === 'jasper.crop' ? 'crop' : 'effect',
 		kind,
-		unit: p.unit === 'Hz' ? undefined : p.unit,
+		unit: p.unit,
 		range: p.range,
 		animatable: p.animatable ? 'continuous' : 'hold-only',
 		...(p.type === 'vec2' && p.animatable && p.spatial ? { spatial: p.spatial } : {}),

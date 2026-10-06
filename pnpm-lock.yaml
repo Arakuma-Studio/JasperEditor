@@ -289,6 +289,12 @@ importers:
         specifier: ^4.1.0
         version: 4.6.5
 
+  packages/audio-fx:
+    dependencies:
+      '@jasper/project':
+        specifier: workspace:*
+        version: link:../project
+
   packages/compositions:
     dependencies:
       '@jasper/mg-templates':
