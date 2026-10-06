@@ -419,7 +419,7 @@ export function scheduleCea608(doc: CaptionDocument): Map<number, [number, numbe
 			while (!runFree(x)) x++;
 			b = x;
 		}
-		load.forEach((p, k) => occ.set(b! + k, p));
+		for (let k = 0; k < load.length; k++) occ.set(b + k, load[k]!);
 		let d = Math.max(s, b + n);
 		while (occ.has(d)) d++;
 		occ.set(d, eoc);

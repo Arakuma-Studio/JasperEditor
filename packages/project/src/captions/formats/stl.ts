@@ -391,6 +391,6 @@ export function writeStl(doc: CaptionDocument, seqRate?: Rational | null): Uint8
 	put(gsi, 273, 1, '1');
 	const out = new Uint8Array(GSI + ttis.length * TTI);
 	out.set(gsi, 0);
-	ttis.forEach((t, i) => out.set(t, GSI + i * TTI));
+	for (let i = 0; i < ttis.length; i++) out.set(ttis[i]!, GSI + i * TTI);
 	return out;
 }
