@@ -23,6 +23,9 @@ export const ID_PREFIXES = {
 	font: 'fnt',
 	/** M2 (S09): trackers placed on a clip. */
 	tracker: 'tkr',
+	/** text-animators workstream: text animators and their selectors. */
+	textAnimator: 'tan',
+	textSelector: 'tsl',
 } as const;
 export type IdPrefix = (typeof ID_PREFIXES)[keyof typeof ID_PREFIXES];
 export const ALL_ID_PREFIXES: readonly IdPrefix[] = Object.values(ID_PREFIXES);

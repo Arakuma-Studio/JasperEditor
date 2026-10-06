@@ -84,8 +84,42 @@ export function mul4(a: Mat4, b: Mat4): Mat4 {
 	return o;
 }
 
-export const translate4 = (x: number, y: number, z: number): Mat4 => [1, 0, 0, x, 0, 1, 0, y, 0, 0, 1, z, 0, 0, 0, 1];
-export const scale4 = (x: number, y: number, z: number): Mat4 => [x, 0, 0, 0, 0, y, 0, 0, 0, 0, z, 0, 0, 0, 0, 1];
+export const translate4 = (x: number, y: number, z: number): Mat4 => [
+	1,
+	0,
+	0,
+	x,
+	0,
+	1,
+	0,
+	y,
+	0,
+	0,
+	1,
+	z,
+	0,
+	0,
+	0,
+	1,
+];
+export const scale4 = (x: number, y: number, z: number): Mat4 => [
+	x,
+	0,
+	0,
+	0,
+	0,
+	y,
+	0,
+	0,
+	0,
+	0,
+	z,
+	0,
+	0,
+	0,
+	0,
+	1,
+];
 const rad = (d: number) => (d * Math.PI) / 180;
 export function rotateX4(deg: number): Mat4 {
 	const s = Math.sin(rad(deg));
@@ -130,8 +164,14 @@ export function cssMatrix3d(m: Mat4): string {
 /** The character's own matrix (pivot at the origin): rotations, skew, scale, anchor. */
 export function charMatrix(x: CharXf): Mat4 {
 	return mul4(
-		mul4(mul4(mul4(rotateZ4(x.rotation), rotateY4(x.rotationY)), rotateX4(x.rotationX)), skew4(-x.skew, x.skewAxis)),
-		mul4(scale4(x.scale[0] / 100, x.scale[1] / 100, x.scale[2] / 100), translate4(-x.anchor[0], -x.anchor[1], -x.anchor[2])),
+		mul4(
+			mul4(mul4(rotateZ4(x.rotation), rotateY4(x.rotationY)), rotateX4(x.rotationX)),
+			skew4(-x.skew, x.skewAxis),
+		),
+		mul4(
+			scale4(x.scale[0] / 100, x.scale[1] / 100, x.scale[2] / 100),
+			translate4(-x.anchor[0], -x.anchor[1], -x.anchor[2]),
+		),
 	);
 }
 
@@ -139,7 +179,11 @@ export function charMatrix(x: CharXf): Mat4 {
  * Places every non-space character. `xfs[i]` is the animation state of `glyphs[i]`. Characters whose opacity is
  * not positive are still returned (callers skip drawing them) so indices stay aligned with what was evaluated.
  */
-export function placeGlyphs(glyphs: readonly LaidGlyph[], xfsIn: readonly CharXf[], o: PlaceOptions): PlacedGlyph[] {
+export function placeGlyphs(
+	glyphs: readonly LaidGlyph[],
+	xfsIn: readonly CharXf[],
+	o: PlaceOptions,
+): PlacedGlyph[] {
 	const n = glyphs.length;
 	const xfs = xfsIn;
 	const vadv = (gi: number) => o.variableAdvance?.[gi] ?? 0;
@@ -235,7 +279,12 @@ export function placeGlyphs(glyphs: readonly LaidGlyph[], xfsIn: readonly CharXf
 	for (let gi = 0; gi < n; gi++) {
 		const g = glyphs[gi]!;
 		if (g.isSpace) continue;
-		const x: CharXf = { ...xfs[gi]!, offset: [...xfs[gi]!.offset], anchor: [...xfs[gi]!.anchor], scale: [...xfs[gi]!.scale] };
+		const x: CharXf = {
+			...xfs[gi]!,
+			offset: [...xfs[gi]!.offset],
+			anchor: [...xfs[gi]!.anchor],
+			scale: [...xfs[gi]!.scale],
+		};
 		if (!o.threeD) {
 			x.offset[2] = 0;
 			x.anchor[2] = 0;
@@ -248,7 +297,10 @@ export function placeGlyphs(glyphs: readonly LaidGlyph[], xfsIn: readonly CharXf
 		const key = groupKey(g);
 		const e = key === null ? undefined : extents.get(key);
 		const pivot: [number, number] = e
-			? [(e[0] + e[2]) / 2 + (galign[0] / 100) * (e[2] - e[0]), (e[1] + e[3]) / 2 + (galign[1] / 100) * g.size]
+			? [
+					(e[0] + e[2]) / 2 + (galign[0] / 100) * (e[2] - e[0]),
+					(e[1] + e[3]) / 2 + (galign[1] / 100) * g.size,
+				]
 			: [p[0] + adv / 2 + (galign[0] / 100) * adv, p[1] + (galign[1] / 100) * g.size];
 		const local: [number, number] = [p[0] - pivot[0], p[1] - pivot[1]];
 		const cm = charMatrix(x);
@@ -257,7 +309,12 @@ export function placeGlyphs(glyphs: readonly LaidGlyph[], xfsIn: readonly CharXf
 			// Position X slides along the path, Y moves off it.
 			const centre = p[0] + adv / 2;
 			const s = arc[gi]! + (pivot[0] - centre) + x.offset[0];
-			const placed = placeOnPath(o.path.measure, s, pivot[1] - firstBaseline + x.offset[1], o.path.perpendicular);
+			const placed = placeOnPath(
+				o.path.measure,
+				s,
+				pivot[1] - firstBaseline + x.offset[1],
+				o.path.perpendicular,
+			);
 			m = mul4(mul4(translate4(placed.point[0], placed.point[1], x.offset[2]), rotateZ4(placed.angle)), cm);
 		} else {
 			m = mul4(translate4(pivot[0] + x.offset[0], pivot[1] + x.offset[1], x.offset[2]), cm);

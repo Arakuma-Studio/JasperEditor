@@ -95,7 +95,9 @@ const IN_PRESETS: TextAnimatorPreset[] = [
 			{
 				name: 'Fade',
 				properties: { opacity: 0 },
-				selectors: [{ kind: 'range', set: { basedOn: 'words' }, keys: { amount: sweep(100, 0, 0.5) }, ease: true }],
+				selectors: [
+					{ kind: 'range', set: { basedOn: 'words' }, keys: { amount: sweep(100, 0, 0.5) }, ease: true },
+				],
 			},
 		],
 	},
@@ -145,7 +147,12 @@ const IN_PRESETS: TextAnimatorPreset[] = [
 					{
 						kind: 'range',
 						set: { basedOn: 'characters', shape: 'triangle', end: 30 },
-						keys: { offset: [[0.1, -30], [0.8, 100]] },
+						keys: {
+							offset: [
+								[0.1, -30],
+								[0.8, 100],
+							],
+						},
 					},
 				],
 			},
@@ -179,7 +186,18 @@ const IN_PRESETS: TextAnimatorPreset[] = [
 			{
 				name: 'Typewriter',
 				properties: { opacity: 0 },
-				selectors: [{ kind: 'range', set: { smoothness: 0 }, keys: { start: [[0, 0, 'linear'], [2, 100, 'linear']] } }],
+				selectors: [
+					{
+						kind: 'range',
+						set: { smoothness: 0 },
+						keys: {
+							start: [
+								[0, 0, 'linear'],
+								[2, 100, 'linear'],
+							],
+						},
+					},
+				],
 			},
 		],
 	},
@@ -264,7 +282,12 @@ const IN_PRESETS: TextAnimatorPreset[] = [
 					{
 						kind: 'range',
 						set: { basedOn: 'characters', shape: 'triangle', end: 25 },
-						keys: { offset: [[0.15, -25], [1, 100]] },
+						keys: {
+							offset: [
+								[0.15, -25],
+								[1, 100],
+							],
+						},
 					},
 				],
 			},
@@ -297,7 +320,17 @@ const IN_PRESETS: TextAnimatorPreset[] = [
 			{
 				name: 'Fade In',
 				properties: { opacity: 0 },
-				selectors: [{ kind: 'range', keys: { start: [[0, 0, 'linear'], [1.5, 100, 'linear']] } }],
+				selectors: [
+					{
+						kind: 'range',
+						keys: {
+							start: [
+								[0, 0, 'linear'],
+								[1.5, 100, 'linear'],
+							],
+						},
+					},
+				],
 			},
 		],
 	},
@@ -312,7 +345,18 @@ const IN_PRESETS: TextAnimatorPreset[] = [
 			{
 				name: 'Fade In',
 				properties: { opacity: 0 },
-				selectors: [{ kind: 'range', set: { basedOn: 'words' }, keys: { start: [[0, 0, 'linear'], [1.5, 100, 'linear']] } }],
+				selectors: [
+					{
+						kind: 'range',
+						set: { basedOn: 'words' },
+						keys: {
+							start: [
+								[0, 0, 'linear'],
+								[1.5, 100, 'linear'],
+							],
+						},
+					},
+				],
 			},
 		],
 	},
@@ -331,7 +375,12 @@ const IN_PRESETS: TextAnimatorPreset[] = [
 					{
 						kind: 'range',
 						set: { randomize: true, smoothness: 100 },
-						keys: { start: [[0, 0, 'linear'], [1.5, 100, 'linear']] },
+						keys: {
+							start: [
+								[0, 0, 'linear'],
+								[1.5, 100, 'linear'],
+							],
+						},
 					},
 				],
 			},
@@ -357,7 +406,12 @@ const IN_PRESETS: TextAnimatorPreset[] = [
 					{
 						kind: 'range',
 						set: { basedOn: 'words', shape: 'triangle', end: 35 },
-						keys: { offset: [[0.15, -35], [1.5, 100]] },
+						keys: {
+							offset: [
+								[0.15, -35],
+								[1.5, 100],
+							],
+						},
 					},
 				],
 			},
@@ -461,7 +515,16 @@ const IN_PRESETS: TextAnimatorPreset[] = [
 				name: 'Scramble',
 				properties: { characterOffset: 12 },
 				selectors: [
-					{ kind: 'range', set: { randomize: true, smoothness: 0 }, keys: { start: [[0, 0, 'linear'], [2, 100, 'linear']] } },
+					{
+						kind: 'range',
+						set: { randomize: true, smoothness: 0 },
+						keys: {
+							start: [
+								[0, 0, 'linear'],
+								[2, 100, 'linear'],
+							],
+						},
+					},
 					{ kind: 'wiggly', set: { wigglesPerSecond: 8, correlation: 0 } },
 				],
 			},
@@ -479,14 +542,34 @@ const IN_PRESETS: TextAnimatorPreset[] = [
 				name: 'Decode',
 				properties: { characterOffset: 20 },
 				selectors: [
-					{ kind: 'range', set: { smoothness: 0 }, keys: { start: [[0, 0, 'linear'], [2, 100, 'linear']] } },
+					{
+						kind: 'range',
+						set: { smoothness: 0 },
+						keys: {
+							start: [
+								[0, 0, 'linear'],
+								[2, 100, 'linear'],
+							],
+						},
+					},
 					{ kind: 'wiggly', set: { wigglesPerSecond: 12, correlation: 0 } },
 				],
 			},
 			{
 				name: 'Reveal',
 				properties: { opacity: 0 },
-				selectors: [{ kind: 'range', set: { smoothness: 0 }, keys: { start: [[0, 0, 'linear'], [1.4, 100, 'linear']] } }],
+				selectors: [
+					{
+						kind: 'range',
+						set: { smoothness: 0 },
+						keys: {
+							start: [
+								[0, 0, 'linear'],
+								[1.4, 100, 'linear'],
+							],
+						},
+					},
+				],
 			},
 		],
 	},
@@ -551,7 +634,18 @@ const LOOP_PRESETS: TextAnimatorPreset[] = [
 			{
 				name: 'Wave',
 				properties: { position: [0, -30] },
-				selectors: [{ kind: 'range', set: { shape: 'smooth', end: 40 }, keys: { offset: [[0, -40], [1.5, 100]] } }],
+				selectors: [
+					{
+						kind: 'range',
+						set: { shape: 'smooth', end: 40 },
+						keys: {
+							offset: [
+								[0, -40],
+								[1.5, 100],
+							],
+						},
+					},
+				],
 			},
 		],
 	},
@@ -581,7 +675,18 @@ const LOOP_PRESETS: TextAnimatorPreset[] = [
 			{
 				name: 'Hue Sweep',
 				properties: { fillHue: 180, fillSaturation: 60 },
-				selectors: [{ kind: 'range', set: { shape: 'triangle', end: 50 }, keys: { offset: [[0, -50], [2, 100]] } }],
+				selectors: [
+					{
+						kind: 'range',
+						set: { shape: 'triangle', end: 50 },
+						keys: {
+							offset: [
+								[0, -50],
+								[2, 100],
+							],
+						},
+					},
+				],
 			},
 		],
 	},
@@ -597,7 +702,16 @@ const LOOP_PRESETS: TextAnimatorPreset[] = [
 				name: 'Pulse',
 				properties: { scale: [130, 130] },
 				selectors: [
-					{ kind: 'range', set: { basedOn: 'words', shape: 'smooth', end: 30 }, keys: { offset: [[0, -30], [2, 100]] } },
+					{
+						kind: 'range',
+						set: { basedOn: 'words', shape: 'smooth', end: 30 },
+						keys: {
+							offset: [
+								[0, -30],
+								[2, 100],
+							],
+						},
+					},
 				],
 			},
 		],
@@ -630,7 +744,11 @@ const OUT_PRESETS: TextAnimatorPreset[] = IN_PRESETS.map((p) => ({
 }));
 
 /** The whole library: In presets, their Out twins, loops. */
-export const TEXT_ANIMATOR_PRESETS: readonly TextAnimatorPreset[] = [...IN_PRESETS, ...OUT_PRESETS, ...LOOP_PRESETS];
+export const TEXT_ANIMATOR_PRESETS: readonly TextAnimatorPreset[] = [
+	...IN_PRESETS,
+	...OUT_PRESETS,
+	...LOOP_PRESETS,
+];
 
 export function getTextAnimatorPreset(id: string): TextAnimatorPreset | undefined {
 	const k = id.trim().toLowerCase();
@@ -656,7 +774,12 @@ export type PresetBuildContext = {
 const EASY: Ease = EASE_PRESETS.easy;
 const LINEAR: Ease = EASE_PRESETS.linear;
 
-function toKeyframe(id: string, time: number, value: unknown, how: 'linear' | 'ease' | 'hold'): Keyframe<unknown> {
+function toKeyframe(
+	id: string,
+	time: number,
+	value: unknown,
+	how: 'linear' | 'ease' | 'hold',
+): Keyframe<unknown> {
 	const eased = how === 'ease';
 	const interpolation: Interpolation = how === 'hold' ? 'hold' : eased ? 'bezier' : 'linear';
 	return { id, time, value, interpolation, easeIn: eased ? EASY : LINEAR, easeOut: eased ? EASY : LINEAR };
@@ -684,19 +807,26 @@ function keysOf(
 ): Keyframe<unknown>[] {
 	const out: Keyframe<unknown>[] = [];
 	const sorted = [...defs].sort((a, b) => a[0] - b[0]);
-	const cycles = cycle && ctx.loopUntil !== undefined ? Math.max(1, Math.ceil((ctx.loopUntil - ctx.start) / (cycle * ctx.flicksPerSecond))) : 1;
+	const cycles =
+		cycle && ctx.loopUntil !== undefined
+			? Math.max(1, Math.ceil(Math.abs((ctx.loopUntil - ctx.start) / (cycle * ctx.flicksPerSecond))))
+			: 1;
 	for (let c = 0; c < cycles; c++) {
 		sorted.forEach((k, i) => {
 			const last = i === sorted.length - 1;
 			// A loop's last key holds until the next cycle's first key (the wrap is invisible: both ends select nothing).
 			const how = k[2] ?? (cycles > 1 && last ? 'hold' : ease ? 'ease' : 'linear');
-			let time = ctx.snap(ctx.start + (c * (cycle ?? 0) + k[0]) * ctx.flicksPerSecond);
-			const prev = out[out.length - 1];
-			if (prev && time <= prev.time) time = prev.time + 1;
+			const time = ctx.snap(ctx.start + (c * (cycle ?? 0) + k[0]) * ctx.flicksPerSecond);
 			out.push(toKeyframe(ctx.newId('kf'), time, shaped(k[1], like), how));
 		});
 	}
-	return out;
+	return normalizeKeys(out);
+}
+
+/** Keys sorted by time; keys that snapped onto the same frame keep the later one. */
+export function normalizeKeys<T>(keys: Keyframe<T>[]): Keyframe<T>[] {
+	const sorted = [...keys].sort((a, b) => a.time - b.time);
+	return sorted.filter((k, i) => i === sorted.length - 1 || sorted[i + 1]!.time !== k.time);
 }
 
 function setField(target: Record<string, unknown>, field: string, v: Value): void {
@@ -708,7 +838,10 @@ function setField(target: Record<string, unknown>, field: string, v: Value): voi
 }
 
 /** Builds the animators of a preset (new ids), keys placed by `ctx`. */
-export function buildPresetAnimators(preset: TextAnimatorPreset, ctx: PresetBuildContext): TextAnimatorGroup[] {
+export function buildPresetAnimators(
+	preset: TextAnimatorPreset,
+	ctx: PresetBuildContext,
+): TextAnimatorGroup[] {
 	const cycle = preset.phase === 'loop' ? preset.duration : null;
 	return preset.animators.map((a) => {
 		const properties: Record<string, unknown> = {};
@@ -722,11 +855,14 @@ export function buildPresetAnimators(preset: TextAnimatorPreset, ctx: PresetBuil
 			properties[key] = defaultAnimatorPropertyValue(key as never);
 			setField(properties, key, v);
 			// AE companions of a property the preset sets.
-			if (key === 'skew' && properties.skewAxis === undefined) properties.skewAxis = defaultAnimatorPropertyValue('skewAxis');
-			if (key === 'tracking' && properties.trackingType === undefined) properties.trackingType = 'beforeAndAfter';
+			if (key === 'skew' && properties.skewAxis === undefined)
+				properties.skewAxis = defaultAnimatorPropertyValue('skewAxis');
+			if (key === 'tracking' && properties.trackingType === undefined)
+				properties.trackingType = 'beforeAndAfter';
 			if ((key === 'characterOffset' || key === 'characterValue') && properties.characterRange === undefined)
 				properties.characterRange = 'preserveCaseAndDigits';
-			if (key === 'characterOffset' && properties.characterAlignment === undefined) properties.characterAlignment = 'center';
+			if (key === 'characterOffset' && properties.characterAlignment === undefined)
+				properties.characterAlignment = 'center';
 		}
 		for (const [key, defs] of Object.entries(a.keys ?? {})) {
 			const p = properties[key] as Animatable<unknown> | undefined;

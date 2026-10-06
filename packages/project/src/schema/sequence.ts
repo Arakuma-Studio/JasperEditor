@@ -2,11 +2,6 @@
 import { z } from 'zod';
 import type { DeepStrip } from './common.ts';
 import {
-	TextAnimatorGroupSchema,
-	TextMoreOptionsSchema,
-	TextPathOptionsSchema,
-} from './text-animators.ts';
-import {
 	AnimNumberSchema,
 	AnimParamSchema,
 	AnimRGBASchema,
@@ -19,6 +14,7 @@ import {
 	RGBASchema,
 	Vec2Schema,
 } from './common.ts';
+import { TextAnimatorGroupSchema, TextMoreOptionsSchema, TextPathOptionsSchema } from './text-animators.ts';
 
 // ---------------------------------------------------------------- effects
 
@@ -123,9 +119,7 @@ export const TextContentSchema = z.looseObject({
 	 * text-animators workstream: per-paragraph overrides of the paragraph settings (`align`, `justifyLast`, indents,
 	 * spacing, `direction`) by paragraph index (paragraphs are separated by line breaks). Absent = base style.
 	 */
-	paragraphs: z
-		.array(z.looseObject({ index: nonNegInt(), style: TextStyleSchema.partial() }))
-		.optional(),
+	paragraphs: z.array(z.looseObject({ index: nonNegInt(), style: TextStyleSchema.partial() })).optional(),
 });
 export type TextContent = DeepStrip<z.infer<typeof TextContentSchema>>;
 

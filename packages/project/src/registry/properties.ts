@@ -34,6 +34,12 @@ import { flicksPerFrame, type Rational } from '../time.ts';
 import type { EffectRegistry, EffectSpec, ParamSpec } from './effects.ts';
 import { kindCapabilities } from './kinds.ts';
 import type { MgTemplateInfo } from './mg.ts';
+import {
+	isTextAnimatorKey,
+	resolveTextAnimatorSpec,
+	SOURCE_TEXT_SPEC,
+	textAnimatorPropertySpecs,
+} from './text-animator-properties.ts';
 
 /**
  * `curve` and `media` are M2 (effect params only: tone curves, LUT asset refs). `json` (M2, S08) = any JSON
@@ -64,7 +70,9 @@ export type PropertyGroup =
 	| 'crop'
 	| 'box'
 	/** M2 (S11:SHP-005, wp-m2-shapes): shape geometry and paint (`shape.*`). */
-	| 'shape';
+	| 'shape'
+	/** text-animators workstream: animators, selectors, Path Options, More Options (`textAnimators.*`, …). */
+	| 'textAnimator';
 
 /** Everything a default or a patch may need to know about the clip. */
 export type PropertyContext = {
@@ -1190,7 +1198,14 @@ export function propertiesForClip(
 	composition?: Pick<MgCompositionInfo, 'propsSchema' | 'defaultProps' | 'ui'>,
 ): PropertySpec[] {
 	const base = PROPERTY_SPECS.filter((s) => s.appliesTo(clip));
-	if (clip.kind === 'text') return [...base, ...textAnimationParamSpecs(clip as TextAnimated)];
+	if (clip.kind === 'text')
+		return [
+			...base,
+			...textAnimationParamSpecs(clip as TextAnimated),
+			// text-animators workstream: animators, selectors, Path / More Options, Source Text.
+			SOURCE_TEXT_SPEC,
+			...textAnimatorPropertySpecs(clip as Parameters<typeof textAnimatorPropertySpecs>[0]),
+		];
 	if (template && clip.kind === 'motion-graphic') return [...base, ...paramsPropertySpecs(template)];
 	if (composition && clip.kind === 'composition')
 		return [...base, ...compositionPropsPropertySpecs(composition)];
@@ -1209,6 +1224,9 @@ export function resolvePropertySpec(
 	composition?: Pick<MgCompositionInfo, 'propsSchema' | 'defaultProps' | 'ui'> | null,
 	clip?: TextAnimated,
 ): PropertySpec | undefined {
+	// text-animators workstream: dynamic animator / selector / path / more-options keys (need the clip).
+	if (isTextAnimatorKey(key))
+		return resolveTextAnimatorSpec(key, clip as Parameters<typeof resolveTextAnimatorSpec>[1]);
 	if (/^textAnimation\.(in|out)\.params\./.test(key))
 		return clip ? textAnimationParamSpecs(clip).find((s) => s.key === key) : undefined;
 	if (key.startsWith('params.'))
@@ -1256,6 +1274,11 @@ function readStoredProperty(ctx: PropertyContext, s: PropertySpec): unknown {
 	if (head === '$effect') {
 		const fx = ((ctx.clip as { effects?: EffectInstance[] }).effects ?? []).find((e) => e.id === a);
 		return fx?.params[b!];
+	}
+	// text-animators workstream: Source Text as an Animatable view (`content` + hold keys).
+	if (head === '$sourceText') {
+		const t = ctx.clip as { content?: unknown; sourceTextKeyframes?: Keyframe<unknown>[] };
+		return { value: t.content, keyframes: t.sourceTextKeyframes ?? [] };
 	}
 	// wp-m2-anime-templates (S11:ATP-006): keyframable template params read as an Animatable view.
 	if (s.group === 'params' && s.animatable !== 'no') {

@@ -79,12 +79,16 @@ describe('text selectors match the reference implementation', () => {
 		expect(oracle.range.length).toBeGreaterThan(100);
 		for (const c of oracle.range) {
 			const got = Array.from({ length: c.n }, (_, i) => rangeValue(c, i, c.n));
-			got.forEach((v, i) => expect(v).toBeCloseTo(c.values[i]!, 12));
+			got.forEach((v, i) => {
+				expect(v).toBeCloseTo(c.values[i]!, 12);
+			});
 		}
 	});
 	it('ease high / low', () => {
 		for (const c of oracle.ease)
-			c.values.forEach((v, i) => expect(selectorEase(i / 10, c.high, c.low)).toBeCloseTo(v, 12));
+			c.values.forEach((v, i) => {
+				expect(selectorEase(i / 10, c.high, c.low)).toBeCloseTo(v, 12);
+			});
 	});
 	it('SplitMix64, Randomize Order permutations, value noise and wiggly are bit-exact', () => {
 		for (const c of oracle.splitmix) expect(splitmix(BigInt(c.x)).toString()).toBe(c.out);
@@ -105,9 +109,21 @@ describe('text selectors match the reference implementation', () => {
 		const line = {
 			closed: false,
 			vertices: [
-				{ point: [0, 0] as [number, number], inTangent: [0, 0] as [number, number], outTangent: [0, 0] as [number, number] },
-				{ point: [100, 0] as [number, number], inTangent: [0, 0] as [number, number], outTangent: [0, 0] as [number, number] },
-				{ point: [100, 50] as [number, number], inTangent: [0, 0] as [number, number], outTangent: [0, 0] as [number, number] },
+				{
+					point: [0, 0] as [number, number],
+					inTangent: [0, 0] as [number, number],
+					outTangent: [0, 0] as [number, number],
+				},
+				{
+					point: [100, 0] as [number, number],
+					inTangent: [0, 0] as [number, number],
+					outTangent: [0, 0] as [number, number],
+				},
+				{
+					point: [100, 50] as [number, number],
+					inTangent: [0, 0] as [number, number],
+					outTangent: [0, 0] as [number, number],
+				},
 			],
 		};
 		const m = new PathMeasure(line, false);
@@ -197,7 +213,10 @@ describe('text selector behaviour (property tests)', () => {
 });
 
 describe('character substitution and colour', () => {
-	const xf = (charOffset: number, charRange: 'preserveCaseAndDigits' | 'fullUnicode' = 'preserveCaseAndDigits') => ({
+	const xf = (
+		charOffset: number,
+		charRange: 'preserveCaseAndDigits' | 'fullUnicode' = 'preserveCaseAndDigits',
+	) => ({
 		charOffset,
 		charValue: null,
 		charRange,
@@ -214,11 +233,17 @@ describe('character substitution and colour', () => {
 	it('Full Unicode moves through code points; Character Value blends towards a code point', () => {
 		expect(substituteCharacter('a', xf(1, 'fullUnicode'))).toBe('b');
 		expect(substituteCharacter('z', xf(1, 'fullUnicode'))).toBe('{');
-		expect(substituteCharacter('a', { charOffset: 0, charValue: [0x41, 1], charRange: 'fullUnicode' })).toBe('A');
+		expect(substituteCharacter('a', { charOffset: 0, charValue: [0x41, 1], charRange: 'fullUnicode' })).toBe(
+			'A',
+		);
 		// Half way from 'a' (97) to 'k' (107) = 102 'f'.
-		expect(substituteCharacter('a', { charOffset: 0, charValue: [107, 0.5], charRange: 'fullUnicode' })).toBe('f');
+		expect(substituteCharacter('a', { charOffset: 0, charValue: [107, 0.5], charRange: 'fullUnicode' })).toBe(
+			'f',
+		);
 		// Surrogate code points are not characters.
-		expect(substituteCharacter('a', { charOffset: 0, charValue: [0xd800, 1], charRange: 'fullUnicode' })).toBeNull();
+		expect(
+			substituteCharacter('a', { charOffset: 0, charValue: [0xd800, 1], charRange: 'fullUnicode' }),
+		).toBeNull();
 	});
 	it('rounds half away from zero like Rust', () => {
 		expect(roundHalfAway(2.5)).toBe(3);
@@ -233,7 +258,9 @@ describe('character substitution and colour', () => {
 			[0, 0, 0],
 		] as [number, number, number][]) {
 			const [h, s, v] = rgbToHsv(...c);
-			hsvToRgb(h, s, v).forEach((x, i) => expect(x).toBeCloseTo(c[i]!, 9));
+			hsvToRgb(h, s, v).forEach((x, i) => {
+				expect(x).toBeCloseTo(c[i]!, 9);
+			});
 		}
 		// Hue +120° turns red into green.
 		const g = adjustColor([1, 0, 0, 1], null, 0, [120, 0, 0], 100);

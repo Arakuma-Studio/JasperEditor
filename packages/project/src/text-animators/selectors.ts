@@ -12,11 +12,7 @@
 // - Wiggly: smooth seeded noise in time (Wiggles/Second, Temporal Phase) and across units (Correlation, Spatial
 //   Phase), mapped to Min…Max Amount, per dimension unless Lock Dimensions.
 // - Modes combine each selector with the selectors above it.
-import type {
-	TextRangeShape,
-	TextSelectorBasedOn,
-	TextSelectorMode,
-} from '../schema/text-animators.ts';
+import type { TextRangeShape, TextSelectorBasedOn, TextSelectorMode } from '../schema/text-animators.ts';
 
 const MASK64 = (1n << 64n) - 1n;
 

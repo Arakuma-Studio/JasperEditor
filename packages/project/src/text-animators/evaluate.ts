@@ -269,7 +269,13 @@ export function animatorSelection(
 				v = values(i, cnt, prev);
 				memo.set(key, v);
 			}
-			acc[gi] = replace ? v : [modeCombine(mode, prev[0], v[0]), modeCombine(mode, prev[1], v[1]), modeCombine(mode, prev[2], v[2])];
+			acc[gi] = replace
+				? v
+				: [
+						modeCombine(mode, prev[0], v[0]),
+						modeCombine(mode, prev[1], v[1]),
+						modeCombine(mode, prev[2], v[2]),
+					];
 		});
 	});
 	return acc;
@@ -443,7 +449,10 @@ const mod = (a: number, n: number) => ((a % n) + n) % n;
  * Preserve Case & Digits cycles letters within a–z / A–Z and digits within 0–9; Full Unicode moves through code
  * points.
  */
-export function substituteCharacter(ch: string, x: Pick<CharXf, 'charValue' | 'charOffset' | 'charRange'>): string | null {
+export function substituteCharacter(
+	ch: string,
+	x: Pick<CharXf, 'charValue' | 'charOffset' | 'charRange'>,
+): string | null {
 	if (WHITE_SPACE.test(ch)) return null;
 	let code = ch.codePointAt(0) ?? 0;
 	if (x.charValue) code += (x.charValue[0] - code) * x.charValue[1];

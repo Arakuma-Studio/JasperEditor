@@ -648,6 +648,9 @@ export const clipCoreHandlers: HandlerMap = {
 			text: cmd.content.text,
 			style,
 			...(cmd.content.runs ? { runs: cmd.content.runs as TextContent['runs'] } : {}),
+			...(cmd.content.paragraphs?.length
+				? { paragraphs: cmd.content.paragraphs as TextContent['paragraphs'] }
+				: {}),
 		};
 		const { seq, track, at, duration, id } = newGeneratorClip(doc, cmd, h, 'text');
 		const est = estimateTextBox(content, seq.settings.width);
@@ -861,6 +864,17 @@ export function applyClipPatch(doc: DDoc, seq: DSeq, clip: DClip, p: ClipPatch, 
 		if (p.content?.text !== undefined) t.content.text = p.content.text;
 		if (p.content?.style) Object.assign(t.content.style, p.content.style);
 		if (p.content?.runs !== undefined) t.content.runs = p.content.runs as never;
+		if (p.content?.paragraphs !== undefined) {
+			if (p.content.paragraphs.length) t.content.paragraphs = p.content.paragraphs as never;
+			else delete t.content.paragraphs;
+		}
+		// text-animators workstream: with Source Text keyframes the keys draw the text (content is their base).
+		if (p.content && (t as { sourceTextKeyframes?: unknown[] }).sourceTextKeyframes?.length)
+			h.warn(
+				'W_SOURCE_TEXT_ANIMATED',
+				`${clip.id} has Source Text keyframes; they draw the text. Set text.sourceText at a time to change it there`,
+				['content'],
+			);
 		if (!doc.fonts[t.content.style.fontId])
 			h.fail('E_NOT_FOUND', `Font not found: ${t.content.style.fontId}`);
 		if (p.box) Object.assign(t.box, p.box);

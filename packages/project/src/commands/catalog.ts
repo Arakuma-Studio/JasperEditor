@@ -16,6 +16,7 @@ import { sequenceHandlers } from './handlers/sequence.ts';
 import { keepShapesCentred, SHAPE_BOX_COMMANDS, SHAPE_OWNER, shapeHandlers } from './handlers/shape.ts';
 import { simplifyHandlers } from './handlers/simplify.ts';
 import { spatialHandlers } from './handlers/spatial.ts';
+import { TEXT_ANIMATOR_OWNER, textAnimatorHandlers } from './handlers/text-animators.ts';
 import { trackerHandlers } from './handlers/tracker.ts';
 import { transitionHandlers } from './handlers/transition.ts';
 import type { Handler, HandlerMap } from './handlers/util.ts';
@@ -35,7 +36,9 @@ export type CommandOwner =
 	// Clipboard (S01 §20)
 	| 'wp-clipboard'
 	// Effect presets (S03:FX-030)
-	| 'wp-m3-presets';
+	| 'wp-m3-presets'
+	// AE text animators (parity program)
+	| 'text-animators';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -138,6 +141,19 @@ const LABELS: Record<CommandType, string> = {
 	'keyframe.paste': 'Paste Keyframes',
 	'project.pasteItems': 'Paste',
 	'effect.applyPreset': 'Apply Preset',
+	'textAnimator.add': 'Add Text Animator',
+	'textAnimator.remove': 'Remove Text Animator',
+	'textAnimator.update': 'Edit Text Animator',
+	'textAnimator.duplicate': 'Duplicate Text Animator',
+	'textAnimator.addProperty': 'Add Text Animator Property',
+	'textAnimator.removeProperty': 'Remove Text Animator Property',
+	'textSelector.add': 'Add Text Selector',
+	'textSelector.remove': 'Remove Text Selector',
+	'textSelector.update': 'Edit Text Selector',
+	'textAnimator.applyPreset': 'Apply Text Animator Preset',
+	'textAnimator.convertLegacy': 'Convert Text Animation to Animators',
+	'text.setPath': 'Text Path Options',
+	'text.setPerCharacter3d': 'Per-character 3D',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -157,6 +173,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[shapeHandlers, SHAPE_OWNER],
 	[clipboardHandlers, CLIPBOARD_OWNER],
 	[presetHandlers, PRESET_OWNER],
+	[textAnimatorHandlers, TEXT_ANIMATOR_OWNER],
 	[m2Handlers, 'M2'],
 ];
 
@@ -175,11 +192,12 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 			handler: SHAPE_BOX_COMMANDS.has(type) ? keepShapesCentred(handler) : handler,
 			label: LABELS[type],
 			owner,
-			milestone: owner.startsWith('wp-m3-')
-				? 'M3'
-				: owner === 'M2' || owner.startsWith('wp-m2-') || owner === CLIPBOARD_OWNER
-					? 'M2'
-					: 'M1',
+			milestone:
+				owner.startsWith('wp-m3-') || owner === TEXT_ANIMATOR_OWNER
+					? 'M3'
+					: owner === 'M2' || owner.startsWith('wp-m2-') || owner === CLIPBOARD_OWNER
+						? 'M2'
+						: 'M1',
 		};
 	}
 	return out;

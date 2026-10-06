@@ -160,7 +160,11 @@ export const TextPathOptionsSchema = z.looseObject({
 export type TextPathOptions = DeepStrip<z.infer<typeof TextPathOptionsSchema>>;
 
 export const TEXT_ANCHOR_GROUPINGS = ['character', 'word', 'line', 'all'] as const;
-export const TEXT_FILL_AND_STROKE = ['perCharacter', 'allFillsOverAllStrokes', 'allStrokesOverAllFills'] as const;
+export const TEXT_FILL_AND_STROKE = [
+	'perCharacter',
+	'allFillsOverAllStrokes',
+	'allStrokesOverAllFills',
+] as const;
 /** Inter-Character Blending (the CSS blend modes the browser composites characters with). */
 export const TEXT_INTER_CHARACTER_BLENDING = [
 	'normal',
