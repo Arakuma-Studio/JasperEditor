@@ -106,7 +106,16 @@ export function planChoiceSummary(plan: RenderPlan, engine: ExportEngineChoice):
 	const name = planPathName(plan.path);
 	if (engine !== 'auto') return name;
 	const reasons = [...new Set(plan.blockers.map((b) => b.reason))];
-	return reasons.length ? `Auto → ${name}: ${reasons.slice(0, 2).join('; ')}` : `Auto → ${name}`;
+	if (reasons.length) return `Auto → ${name}: ${reasons.slice(0, 2).join('; ')}`;
+	// Hybrid (wave1c): graphics layers, GPU-effect layers and GPU transition spans are pre-rendered by Remotion; the
+	// rest of the export stays native.
+	const baked = plan.segments
+		.flatMap((s) => s.graphicsGroups)
+		.filter((g) => g.engine === 'remotion')
+		.reduce((n, g) => n + g.itemIds.length, 0);
+	return plan.path === 'hybrid' && baked > 0
+		? `Auto → ${name}: ${baked} ${baked === 1 ? 'layer or transition' : 'layers or transitions'} pre-rendered by Remotion, the rest native`
+		: `Auto → ${name}`;
 }
 
 function formatBytes(bytes: number): string {

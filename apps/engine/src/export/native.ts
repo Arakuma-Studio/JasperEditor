@@ -148,7 +148,9 @@ function inColor(m: LocalMedia | null): string {
 type LayerPlan =
 	| { clip: RenderVisualClip; f0: number; f1: number }
 	/** Full-frame colour under a track's clips (the black of a dip to black). */
-	| { matte: { color: readonly number[] }; f0: number; f1: number };
+	| { matte: { color: readonly number[] }; f0: number; f1: number }
+	/** wave1c: the pre-rendered span of a GPU transition (sides + stage, a `sequence` override). */
+	| { span: LayerOverride; f0: number; f1: number };
 
 /**
  * Transition ramps of a layer whose first frame is sequence frame `f0`, as ffmpeg `fade` filters on the
@@ -491,11 +493,39 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			const f1 = Math.min(m.start + m.duration, R1);
 			if (f1 > f0) layers.push({ matte: m, f0, f1 });
 		}
+		// wave1c: GPU transitions an extension pre-rendered: their spans replace the sides (drawn above the track's
+		// clips, like the composition's stage); the side clips are drawn only outside them.
+		const spans: { t: { start: number; duration: number }; ov: LayerOverride; sides: Set<string> }[] = [];
+		for (const t of track.transitions ?? []) {
+			const ov = exts
+				? (exts.list.map((e) => e.transitionOverride?.(t, exts.prepared.get(e.id)) ?? null).find((x) => x) ??
+					null)
+				: null;
+			if (ov)
+				spans.push({
+					t,
+					ov,
+					sides: new Set([t.outgoingClipId, t.incomingClipId].filter((x): x is string => !!x)),
+				});
+		}
 		for (const c of track.clips) {
 			// With transitions a clip is drawn from its head handle to the end of its tail handle (S01:TRN-003).
-			const f0 = Math.max(c.start - (c.headHandle ?? 0), R0);
-			const f1 = Math.min(c.start + c.duration + (c.tailHandle ?? 0), R1);
+			let f0 = Math.max(c.start - (c.headHandle ?? 0), R0);
+			let f1 = Math.min(c.start + c.duration + (c.tailHandle ?? 0), R1);
+			for (const sp of spans) {
+				if (!sp.sides.has(c.clipId)) continue;
+				const a = sp.t.start;
+				const b = sp.t.start + sp.t.duration;
+				// The span sits at one end of the clip (it is a side): cut that end off.
+				if (a <= f0) f0 = Math.max(f0, b);
+				else f1 = Math.min(f1, a);
+			}
 			if (f1 > f0) layers.push({ clip: c, f0, f1 });
+		}
+		for (const sp of spans) {
+			const f0 = Math.max(sp.t.start, R0);
+			const f1 = Math.min(sp.t.start + sp.t.duration, R1);
+			if (f1 > f0) layers.push({ span: sp.ov, f0, f1 });
 		}
 	}
 
@@ -511,6 +541,36 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			chains.push(
 				`color=c=${colorHex(layer.matte.color)}:s=${W}x${H}:r=${rate(fps)}:d=${fmt(n * frameSec + frameSec)},format=rgba,trim=end_frame=${n},${shift}[${label}]`,
 				`[${last}][${label}]overlay=x=0:y=0:format=rgb:eof_action=pass:${enable}[o${label}]`,
+			);
+			last = `o${label}`;
+			continue;
+		}
+		if ('span' in layer) {
+			const ov = layer.span;
+			const label = `l${li++}`;
+			const rect = ov.rect ?? null;
+			const k = addInput([
+				...(ov.decoder ? ['-c:v', ov.decoder] : []),
+				...(ov.still
+					? ['-loop', '1', '-framerate', rate(fps)]
+					: ['-ss', sec((f0 - ov.startFrame) * frameSec)]),
+				'-t',
+				sec(n * frameSec + 2 * frameSec),
+				'-i',
+				ov.path,
+			]);
+			const g = [
+				'setpts=PTS-STARTPTS',
+				`fps=${rate(fps)}`,
+				`trim=end_frame=${n}`,
+				`scale=${rect ? `${rect.w}:${rect.h}` : `${W}:${H}`}:${SWS_FLAGS}`,
+				'setsar=1',
+				'format=rgba',
+				shift,
+			];
+			chains.push(
+				`[${k}:v:0]${g.join(',')}[${label}]`,
+				`[${last}][${label}]overlay=x=${rect?.x ?? 0}:y=${rect?.y ?? 0}:format=rgb:eof_action=pass:${enable}[o${label}]`,
 			);
 			last = `o${label}`;
 			continue;

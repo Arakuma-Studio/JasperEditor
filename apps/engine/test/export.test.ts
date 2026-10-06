@@ -398,7 +398,7 @@ describe('frame accuracy of the native path', () => {
 });
 
 describe('GPU transitions in the planner (transition framework)', () => {
-	it('keeps the built-in transitions native and routes an export with a GPU transition to Remotion', async () => {
+	it('keeps the built-in transitions native and bakes only the span of a GPU transition (hybrid, D-35)', async () => {
 		const plan = async (effectId: string) => {
 			const d = new DocBuilder();
 			d.tx([
@@ -418,12 +418,10 @@ describe('GPU transitions in the planner (transition framework)', () => {
 		const native = await plan('jasper.cross-dissolve');
 		expect(native.path).toBe('native');
 		const gpu = await plan('jasper.iris-round');
-		expect(gpu.path).toBe('remotion');
-		expect(gpu.blockers).toEqual([
-			expect.objectContaining({
-				path: 'native',
-				reason: 'transition "Iris Round" is a GPU transition (rendered by the Remotion path)',
-			}),
+		expect(gpu.path).toBe('hybrid');
+		expect(gpu.blockers).toEqual([]);
+		expect(gpu.segments[0]!.graphicsGroups).toEqual([
+			expect.objectContaining({ engine: 'remotion', itemIds: [expect.stringMatching(/^trn_/)] }),
 		]);
 	});
 });

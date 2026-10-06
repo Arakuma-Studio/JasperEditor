@@ -313,16 +313,14 @@ real footage add your ids to `transition-gallery.e2e.test.ts` locally and run it
 | media sides (video, still, solid, composition master) | yes — the layer's `FxPicture` chain with the tap | yes |
 | DOM sides (text, shapes, motion graphics), offline / pending cards | via HTML-in-Canvas (Electron, Chrome ≥ 148 with the flag); otherwise **fallback**: B dissolves in (A stays), chip "… needs HTML-in-Canvas" on the stage | yes (Remotion's render browser always has it) |
 | no WebGL2 / lost context | fallback dissolve + chip | fails `WEBGL_UNAVAILABLE` |
-| a side with a pre-rendered (`baked`) picture | fallback + chip | fails `FX_TRANSITION_UNSUPPORTED` |
+| a side with a pre-rendered (`baked`) picture | fallback + chip | fails `FX_TRANSITION_UNSUPPORTED` on the Remotion path; native/hybrid exports bake the span from the sides' sources (no `baked` field), so it works there |
 | a shader that does not compile | the stage stays empty, error logged once | fails `FX_SHADER_ERROR` |
-| export path | — | the planner routes any export containing a GPU transition to the **Remotion** path (native blocker "transition … is a GPU transition"); exports with only the built-ins stay native |
+| export path | — | wave1c (ARCHITECTURE D-35): the export stays native (`hybrid`): the layer-bake extension renders only the transition's span (sides A + B + stage, straight-alpha master, cached by content) with Remotion and the builder overlays it in the track's place; the sides are drawn natively outside the span. Without the layer-bake renderer the planner still routes the export to Remotion ("… is a GPU transition and no span renderer is available") |
 
 ## 11. Limitations (wave 2)
 
-- **Export granularity.** A GPU transition sends the whole export through Remotion (`path: 'remotion'`), not only its
-  span: the native builder has no per-range segments yet (`RenderPlan.segments` is one segment). The built-in Cross
-  Dissolve / Dip to Black and audio transitions keep the native path. Range-wise hybrid export (bake the span as a
-  sequence-space alpha master, cut the sides around it) is future work in the planner/native builder.
+- **Export granularity.** Done in wave1c (`docs/wp-notes/native-animated-export.md`, D-35): only the span is rendered
+  by Remotion (a span master per transition); everything else stays native.
 - SVG-filter-only effects on a side (effects with neither a shader, a colour op nor a single CSS filter) are not part
   of its captured picture during the span (they are drawn after the fx chain normally).
 - Composition clips whose live host iframe is shown in the preview (no cached preview yet) cannot be captured

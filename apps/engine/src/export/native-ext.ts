@@ -9,7 +9,14 @@
 //
 // Extensions are registered at engine start by their route plugin (`core.registerNativeExtension(ext)`),
 // like the M1 motion-graphic master provider. Order of registration = order of consultation.
-import type { EffectSpec, Rational, RenderSnapshot, RenderVisualClip, ResolvedEffect } from '@jasper/project';
+import type {
+	EffectSpec,
+	Rational,
+	RenderSnapshot,
+	RenderTransition,
+	RenderVisualClip,
+	ResolvedEffect,
+} from '@jasper/project';
 import type { PlannedExport } from './planner.ts';
 
 /**
@@ -127,6 +134,16 @@ export type NativeExtension = {
 	prepare?(planned: PlannedExport, ctx: NativePrepareContext): Promise<unknown>;
 	/** The layer's pre-rendered picture, or null. First extension returning non-null wins. */
 	override?(clip: RenderVisualClip, prepared: unknown): LayerOverride | null;
+	/**
+	 * wave1c (GPU spans): this extension pre-renders the span of a GPU transition of track `trackId` (its sides A + B
+	 * and the transition stage, straight alpha): the planner stops blocking it and lists it as a graphics group.
+	 */
+	bakesTransition?(t: RenderTransition, trackId: string): 'remotion' | null;
+	/**
+	 * The pre-rendered span of a transition: a `sequence` override shown over `[t.start, t.start + t.duration)` in the
+	 * track's place of the stack; the builder draws its side clips only outside the span.
+	 */
+	transitionOverride?(t: RenderTransition, prepared: unknown): LayerOverride | null;
 	/**
 	 * Filter text for one enabled effect: `undefined` = not mine (ask the next extension), `''` = nothing to add
 	 * (e.g. already fused into the filter of the first effect of a colour run), otherwise ffmpeg filter text

@@ -1,17 +1,26 @@
 // The `layer-bake` native extension (M2, S11:LBK-001…025, ARCHITECTURE D-31, §19.6, §20.5): every DOM layer
-// (all text clips — option A —, shapes, anime templates) stays on the native path. `prepare` bakes each claimed
+// (all text clips — option A —, shapes, anime templates) stays on the native path. wave1c (D-35): so do media layers
+// with browser-only effects (GPU shader effects, SVG/CSS effects: the whole layer is baked) and GPU transitions
+// (the span — sides A + B and the stage — is baked; the builder draws the sides only outside it). `prepare` bakes each claimed
 // layer through Remotion into a cached straight-alpha master (or one PNG for static layers) as child jobs of the
 // export/still — side by side within the export's Remotion page budget (`remotion/page-pool.ts`, S11:LBK-022) —;
 // `override` hands it to the builder as a `sequence` override (`still`, `rect`, `colorRuns`).
 // Colour effects of DOM layers (FIX-002) are applied by ffmpeg to the bake (native), or baked into a graded master
 // (PNG frame sequence) that the composition plays on the Remotion path (`prepareForRemotion` + `adaptRemotionDoc`).
 import { availableParallelism } from 'node:os';
-import type { RenderSnapshot, RenderVisualClip } from '@jasper/project';
+import type { RenderSnapshot, RenderTransition, RenderVisualClip } from '@jasper/project';
 import type { LayerOverride, NativeExtension, NativePrepareContext } from '../export/native-ext.ts';
 import type { PlannedExport } from '../export/planner.ts';
 import { JobError } from '../jobs/types.ts';
 import { MAX_RENDERS_IN_FLIGHT, type PageGrant, pageShares, runPagePool } from '../remotion/page-pool.ts';
-import { effectRunsOrderWarning, hasColorEffects, isColorEffect, isDomLayer, type Rect } from './layer.ts';
+import {
+	effectRunsOrderWarning,
+	hasColorEffects,
+	isColorEffect,
+	isDomLayer,
+	needsBake,
+	type Rect,
+} from './layer.ts';
 import {
 	type BakePlan,
 	type BakeResult,
@@ -34,6 +43,9 @@ type PreparedLayer = {
 	};
 };
 type LayerBakePrepared = Map<string, PreparedLayer>;
+/** Span bakes of GPU transitions (wave1c), by transition id: the `sequence` override of the span. */
+const SPANS = Symbol('spans');
+type Prepared = LayerBakePrepared & { [SPANS]?: Map<string, LayerOverride> };
 
 /** Fixed cost of a render (browser page, bundle, stitch, checks) in frames, for the aggregated progress. */
 const RENDER_FIXED_COST_FRAMES = 30;
@@ -67,10 +79,13 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 	return {
 		id: LAYER_BAKE_EXTENSION_ID,
 		kinds: new Set(['text', 'shape']),
-		claimsLayer: (c) => isDomLayer(c),
-		bakes: (c) => (isDomLayer(c) ? 'remotion' : null),
+		claimsLayer: (c) => needsBake(c),
+		bakes: (c) => (needsBake(c) ? 'remotion' : null),
+		bakesTransition: () => (svc.unavailableReason() ? null : 'remotion'),
+		transitionOverride: (t: RenderTransition, prepared) =>
+			(prepared as Prepared | undefined)?.[SPANS]?.get(t.id) ?? null,
 		blockers(c) {
-			if (!isDomLayer(c)) return [];
+			if (!needsBake(c)) return [];
 			const reason = svc.unavailableReason();
 			return reason ? [`graphics layers need the Remotion renderer to bake (${reason})`] : [];
 		},
@@ -80,12 +95,21 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 			return w ? [{ code: 'DOM_GRADE_ORDER', message: w }] : [];
 		},
 		async prepare(planned: PlannedExport, ctx: NativePrepareContext): Promise<LayerBakePrepared> {
-			const out: LayerBakePrepared = new Map();
+			const out: Prepared = new Map();
 			const remotion = ctx.purpose === 'remotion';
+			// On the Remotion path only DOM layers with colour effects need graded masters (LBK-010).
 			const clips = planned.snapshot.videoTracks
 				.flatMap((t) => t.clips)
-				.filter((c) => isDomLayer(c) && (!remotion || hasColorEffects(c)));
-			if (clips.length === 0) return out;
+				.filter((c) => (remotion ? isDomLayer(c) && hasColorEffects(c) : needsBake(c)));
+			// wave1c: GPU transition spans drawn in the export range (native composite only).
+			const spans = remotion
+				? []
+				: planned.snapshot.videoTracks.flatMap((track) =>
+						(track.transitions ?? [])
+							.filter((t) => t.start < planned.range.end && t.start + t.duration > planned.range.start)
+							.map((t) => ({ trackId: track.trackId, t })),
+					);
+			if (clips.length === 0 && spans.length === 0) return out;
 			const reason = svc.unavailableReason();
 			if (reason)
 				throw new JobError(
@@ -100,7 +124,15 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 			const par = svc.parallelism;
 			const maxInFlight = Math.max(1, par.maxInFlight ?? Math.min(budget, MAX_RENDERS_IN_FLIGHT));
 			// Plans first (keys, documents, grades: cheap, in clip order), then the renders side by side.
-			const items: { clip: RenderVisualClip; plan: BakePlan; grade: GradePlan | null }[] = [];
+			const items: { clip: RenderVisualClip | null; plan: BakePlan; grade: GradePlan | null }[] = [];
+			for (const { trackId, t } of spans) {
+				if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+				let plan = await svc.planSpan(planned, trackId, t, { env });
+				// A still inside the span: its cached master, else one frame.
+				if (single !== null && !(await svc.lookup(plan.key)))
+					plan = await svc.planSpan(planned, trackId, t, { env, frame: single });
+				items.push({ clip: null, plan, grade: null });
+			}
 			for (const clip of clips) {
 				if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
 				const plan = await svc.planBake(planned, clip, { env, frame: single });
@@ -152,7 +184,14 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 								};
 								const bake = await svc.ensureBake(plan, meta);
 								const graded = grade ? await svc.ensureGraded(plan, grade, meta) : null;
-								for (const it of group) out.set(it.clip.clipId, entryOf(it.plan, bake, it.grade, graded));
+								for (const it of group) {
+									const entry = entryOf(it.plan, bake, it.grade, graded);
+									if (it.clip) out.set(it.clip.clipId, entry);
+									else if (entry.override) {
+										out[SPANS] ??= new Map();
+										out[SPANS].set(it.plan.clipId, entry.override);
+									}
+								}
 							},
 						};
 					}),
@@ -170,10 +209,11 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 				await release?.();
 			}
 			// Clip order of the snapshot (the composite does not depend on it; logs and tests read it).
-			const ordered: LayerBakePrepared = new Map();
+			const ordered: Prepared = new Map();
 			for (const clip of clips) ordered.set(clip.clipId, out.get(clip.clipId)!);
+			if (out[SPANS]) ordered[SPANS] = out[SPANS];
 			ctx.log(
-				`layer-bake: ${ordered.size} layer(s) ready (${groups.size} render(s), budget ${budget} pages, ≤ ${maxInFlight} at once${release ? ', shared browser' : ''}; engine totals ${svc.stats.rendered} rendered, ${svc.stats.reused} reused, ${svc.stats.joined} joined)`,
+				`layer-bake: ${ordered.size} layer(s) and ${out[SPANS]?.size ?? 0} transition span(s) ready (${groups.size} render(s), budget ${budget} pages, ≤ ${maxInFlight} at once${release ? ', shared browser' : ''}; engine totals ${svc.stats.rendered} rendered, ${svc.stats.reused} reused, ${svc.stats.joined} joined)`,
 			);
 			return ordered;
 		},

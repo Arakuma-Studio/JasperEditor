@@ -27,6 +27,45 @@ export function isDomLayer(c: Pick<RenderVisualClip, 'kind' | 'engine'>): boolea
 	return DOM_KINDS.has(c.kind) && c.engine === 'remotion';
 }
 
+/** Effects the native builder draws itself (crop, flips) or hands to the warp stage (corner pin). */
+const BUILDER_EFFECTS: ReadonlySet<string> = new Set([
+	'jasper.crop',
+	'jasper.flip-horizontal',
+	'jasper.flip-vertical',
+	'jasper.corner-pin',
+]);
+
+/** Media kinds whose layers the bake renders like DOM layers when they carry browser-only effects (wave1c). */
+const MEDIA_BAKE_KINDS: ReadonlySet<string> = new Set(['video', 'still', 'solid', 'animated-image']);
+
+/**
+ * wave1c: an enabled effect only the composition can draw (GPU shader effects, SVG/CSS-only effects such as the
+ * Gaussian blur): not a colour op (ffmpeg LUTs), not crop/flips/corner pin; unknown effects do not count (they are
+ * bypassed by every renderer, S01:FX-022).
+ */
+export function hasBrowserEffect(
+	c: Pick<RenderVisualClip, 'effects'>,
+	registry: EffectRegistry = defaultEffectRegistry,
+): boolean {
+	return c.effects.some((fx) => {
+		if (!fx.enabled || BUILDER_EFFECTS.has(fx.effectId)) return false;
+		const spec = registry.get(fx.effectId, fx.effectVersion);
+		return !!spec && spec.appliesTo === 'video' && !spec.color;
+	});
+}
+
+/**
+ * The layers the bake renders (S11:LBK-001, wave1c): every DOM layer, and media layers (video, still, solid, animated
+ * image) with a browser-only effect — their whole layer (source, effects, Motion, opacity) becomes a straight-alpha
+ * master overlaid natively, so a GPU effect no longer sends the whole export to Remotion.
+ */
+export function needsBake(
+	c: Pick<RenderVisualClip, 'kind' | 'engine' | 'effects'>,
+	registry?: EffectRegistry,
+): boolean {
+	return isDomLayer(c) || (MEDIA_BAKE_KINDS.has(c.kind) && hasBrowserEffect(c, registry));
+}
+
 /** True when the effect has a colour op (D-21): applied natively to DOM layers (S11:LBK-010). */
 export function isColorEffect(
 	fx: { effectId: string; effectVersion: number },
@@ -91,6 +130,8 @@ export function isStaticLayer(
 	registry: EffectRegistry = defaultEffectRegistry,
 ): boolean {
 	if (c.kind === 'motion-graphic') return false;
+	// Moving pictures (wave1c media bakes) are never one frame.
+	if (c.kind === 'video' || c.kind === 'animated-image') return false;
 	const src = c.source as { animation?: { in?: unknown; out?: unknown } };
 	if (src.animation && (src.animation.in || src.animation.out)) return false;
 	if (hasKeyframesDeep(c.transform) || hasKeyframesDeep(c.opacity)) return false;

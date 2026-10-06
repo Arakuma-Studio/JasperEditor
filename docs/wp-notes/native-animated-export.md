@@ -1,4 +1,4 @@
-# wave1/native-animated-export — keyframed Motion, Opacity, crop and volume on the native path
+# wave1/native-animated-export — keyframed Motion, Opacity, crop and volume on the native path (+ wave1b sub-pixel, wave1c GPU spans)
 
 Branches `wave1/native-animated-export` (from `b56f7d4`) and **`wave1b/native-subpixel`** (from `feat/effects-system`
 `749c7a2`: sub-pixel layers, see "wave1b" below — it replaces the whole-pixel Motion placement of wave1 for every
@@ -185,6 +185,76 @@ interleaved runs, load average 15–25 except the first sub-pixel run at ~3):
 ¹ load spike. The sub-pixel path is the fastest first export (≈2× the warp stage, 1.6× the whole-pixel filtergraph on
 the PiP; up to 4× on small layers) and 9–14× faster than Remotion. It has no cache (no intermediate): the warp
 stage's cached re-export of the full-screen PiP (9.8–13.3 s) is about as fast as a sub-pixel first export.
+
+## wave1c — GPU effects and GPU transitions (`wave1c/native-gpu-spans`, D-35)
+
+### What happened before (measured on `feat/effects-system` `29f9b7c`, plan of a 1080p sequence)
+
+| Content | Plan |
+|---|---|
+| video + `jasper.s.flicker` (time-dependent GPU) | **remotion** — blocker "video clip … uses effect jasper.s.flicker, which the native path cannot render" |
+| video + `jasper.bevel-edges` (time-invariant GPU) | **remotion** (same blocker) |
+| solid + GPU effect | **remotion** (same blocker) |
+| text + GPU effect | hybrid — DOM layers were already baked (per-frame masters for time-dependent GPU effects) |
+| two solids + Push (GPU transition) | **remotion** — blocker "transition "Push" is a GPU transition" |
+
+So the shader framework's per-frame bakes covered DOM layers only; any GPU effect on media, and any GPU transition,
+sent the whole export through Remotion.
+
+### Approach
+
+All in the `layer-bake` extension (it already renders one-clip documents through Remotion into cached straight-alpha
+masters with child jobs, page budget, shared browser, GC and pins) plus two `NativeExtension` hooks:
+
+- **GPU-effect media layers**: `needsBake(c)` = DOM layer, or a video / still / solid / animated-image layer with a
+  browser-only effect (`hasBrowserEffect`: enabled, known, video, not a colour op, not crop/flips/corner pin). The
+  whole layer is baked like a DOM layer (source, effects in stack order, Motion, opacity; colour runs still applied by
+  ffmpeg, LBK-010); videos are always masters, stills/solids with time-invariant effects one PNG. The key keeps the clip
+  id (GPU effects seed by it).
+- **GPU transition spans**: `planSpan` builds the render document of one span — the track's sides A and B (whole
+  clips with handles and every enabled effect) and the transition stage, shifted so the span starts at frame 0,
+  transparent background, no layer filter — and its content key (sides, transition incl. keyframed params, media
+  fingerprints, fonts, environment). The master is rendered by the same child-job machinery; a still inside the span
+  uses the cached master or bakes one frame.
+- **Planner**: `bakesTransition` → the span is a graphics group (`engine: 'remotion'`, item = transition id), path
+  `hybrid`; without the extension (or without the Remotion renderer) the blocker stays, now saying "no span renderer
+  is available".
+- **Builder**: per track, a baked span cuts its sides (A drawn up to the span, B from its end) and is overlaid as a
+  `sequence` override over the span, above the track's clips — where the composition draws the stage. Range exports
+  seek into the master.
+- **Export UI**: the plan summary of a hybrid export says how many layers or transitions Remotion pre-renders.
+  (The timeline render bar is about live preview, where GPU effects and transitions play in real time: unchanged.)
+
+### Measurements
+
+**Parity** (`gpu-spans.e2e.test.ts`, REMOTION_E2E=1, 720p30, 90 frames): a PNG card → blue solid with Iris Round
+(keyframed border width 0 → 24 px, yellow border) and a small solid with two stacked GPU effects (Bevel Edges +
+S_Flicker, time-dependent) on V2. Hybrid ProRes 4444 export vs Remotion `renderStill` of the whole sequence at frames
+5, 20, 35, 40, 45, 50, 54, 55, 70, 89 (before, inside and after the span): **100.00 % of samples within 3/255 on every
+frame** (the LBK parity bar is ≥ 99 %). Plan: `hybrid`, no blockers, exactly two bakes (span + layer); the re-export
+renders **no bake** and is identical.
+
+**Speed** (`GPU_SPANS_BENCH=1`, 59.5 s 1080p30 → H.264 OpenH264: 7 video clips, 3 GPU transitions of 20 frames —
+Iris Round, Push, Cross Zoom —, Color Emboss on one 8.5 s clip, a 5 s lower third with Bevel Edges + S_Flicker; fresh
+engine; shared host, load 20–50):
+
+| Export | Wall time |
+|---|---|
+| Full Remotion | 881.6 s |
+| **Hybrid (5 bakes: 3 spans, 2 layers)** | **351.8 s (2.5×)** |
+| Hybrid re-export (masters reused, 0 bakes) | 95.8 s (9.2×) |
+
+Most of the hybrid time is the bakes (≈ 540 of 1785 frames rendered by Remotion, the 8.5 s video with Color Emboss
+the largest); exports with GPU transitions only bake 20 frames per transition.
+
+### Limits
+
+- A GPU-effect layer is baked whole (its source too): a long video clip with a GPU effect costs Remotion time for its
+  whole length (still far less than the whole export).
+- Composition clips (mg bundles) with GPU effects are not baked by this rule (their pictures come from the mg masters);
+  they still route to Remotion.
+- DOM sides with colour effects inside a span render ungraded in the master, as on the Remotion path (which fails
+  them with `FX_TRANSITION_UNSUPPORTED`).
 
 ## Now native vs still blocked
 
