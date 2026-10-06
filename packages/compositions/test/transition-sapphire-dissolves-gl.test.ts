@@ -74,7 +74,9 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 
 		it.runIf(process.env.SD_GL_TIMINGS === '1')('times every dissolve', { timeout: 1_800_000 }, async () => {
 			const only = (process.env.SD_GL_IDS ?? '').split(',').filter(Boolean);
-			const ids = (await call<string[]>('ids')).filter((id) => only.length === 0 || only.some((o) => id.endsWith(o)));
+			const ids = (await call<string[]>('ids')).filter(
+				(id) => only.length === 0 || only.some((o) => id.endsWith(o)),
+			);
 			const t: Record<string, [number, number]> = {};
 			for (const id of ids) {
 				const t0 = Date.now();

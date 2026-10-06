@@ -34,7 +34,7 @@ import {
 } from './common.ts';
 
 /** Light gain of the glows (Sapphire's brightness numbers → this family's two-scale glow). */
-const GLOW_GAIN = 0.1;
+export const GLOW_GAIN = 0.1;
 
 /** Glow σ (frame px, x / y) of the wide component for a Sapphire glow width, mixed between the two sides' widths. */
 export function glowSigma(p: EffectParams, width: number, mix: number, widthName = 'glowWidth', def = 0.4) {
@@ -48,7 +48,7 @@ export function glowSigma(p: EffectParams, width: number, mix: number, widthName
 
 // ---------------------------------------------------------------- S_DissolveGlow
 
-const relSideParams = (side: 'From' | 'To', what = 'Width') =>
+export const relSideParams = (side: 'From' | 'To', what = 'Width') =>
 	grp(`Rel ${side}`, [
 		slider(`rel${side}Brightness`, `Rel ${side} Brightness`, 1, { min: 0, softMax: 4 }),
 		slider(`rel${side}${what}`, `Rel ${side} ${what}`, 1, { min: 0, softMax: 4 }),
@@ -60,7 +60,7 @@ const relSideParams = (side: 'From' | 'To', what = 'Width') =>
 	]);
 
 /** The thresholded light of both sides, each weighted by its share of the dissolve (½ resolution, rgba16f). */
-const brightPass = (thresholdExpr: string): ShaderPass => ({
+export const brightPass = (thresholdExpr: string): ShaderPass => ({
 	output: 'bright',
 	scale: 0.5,
 	format: 'rgba16f',
