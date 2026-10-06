@@ -757,7 +757,7 @@ const motionBlurParams = () => [
 
 /**
  * The params at the key times of the keyframed-warp shutter (`mbKeyTimes`: FX_MB_KEYS over Mo Blur Length centred on
- * the frame, + one beyond each end), or null when there is no blur: Motion Blur off, a zero length, no `paramsAt`
+ * the frame), or null when there is no blur: Motion Blur off, a zero length, no `paramsAt`
  * (the host cannot evaluate other times) or `key` (the values that move the warp) identical at every key.
  */
 export function warpShutterParams(
@@ -769,8 +769,8 @@ export function warpShutterParams(
 	if (!bool(p.motionBlur) || !(len > 0) || !ctx.paramsAt || ctx.frame === undefined) return null;
 	const at = ctx.paramsAt;
 	const qs = mbKeyTimes(ctx.frame, centredShutter(len)).map((f) => at(f));
-	const k0 = key(qs[1]!);
-	return qs.slice(1, -1).every((q) => key(q) === k0) ? null : qs;
+	const k0 = key(qs[0]!);
+	return qs.every((q) => key(q) === k0) ? null : qs;
 }
 
 /**
@@ -857,7 +857,7 @@ export const S_WARP_CORNER_PIN = distortEffect({
 			const aspect = ctx.height / Math.max(1, ctx.width);
 			const inv = cornerPinInverse(cornerPoints(p), aspect);
 			// Motion blur: the inverse pins at the shutter's key times (3 vec4: column-major mat3 normalised so that
-			// h.z = 1 at the quad's centre — consistent scales for the spline — and a valid flag); taps from the travel
+			// h.z = 1 at the quad's centre — consistent scales to interpolate — and a valid flag); taps from the travel
 			// of the pinned corners and centre (canvas px).
 			const px = ctx.pxScale;
 			const plan = warpShutterPlan(
@@ -939,8 +939,8 @@ void main() {
   ivec2 w = ivec2(u_wrapX, u_wrapY);
   int n = u_filter ? int(clamp(ceil(dw_footprint(f) - 0.25), 1.0, 4.0)) : 1;
   if (fx_mbOn()) {
-    // Motion Blur: the pinned picture along the keyframed corners' path over the shutter (adaptive taps through the
-    // spline of the key pins), each keeping the supersampling of minified areas with fewer samples per axis as the
+    // Motion Blur: the pinned picture along the keyframed corners' path over the shutter (adaptive taps between the
+    // key pins), each keeping the supersampling of minified areas with fewer samples per axis as the
     // taps multiply (they average along the motion already).
     int taps = fx_mbTaps();
     float j = fx_mbPlanJitter();
@@ -1416,8 +1416,7 @@ vec4 dw_shade(vec2 f, ivec2 w) {
 }
 void main() {
   if (fx_mbOn()) {
-    // Motion Blur: the plane along the keyframed pose's path over the shutter (adaptive taps through the spline of
-    // the key poses). Each tap keeps the adaptive supersampling of minified areas, with fewer samples per axis as the
+    // Motion Blur: the plane along the keyframed pose's path over the shutter (adaptive taps between the key poses). Each tap keeps the adaptive supersampling of minified areas, with fewer samples per axis as the
     // taps multiply (they average along the motion already).
     int taps = fx_mbTaps();
     float j = fx_mbPlanJitter();
@@ -1768,8 +1767,8 @@ const shakeCs = (q: ShakePose) => {
 /**
  * The shake uniforms of one frame: `u_shakeNow` = the pose of the frame per channel (3 vec4: dx, dy, cos θ / zoom,
  * sin θ / zoom), `u_shakeRgb` (the channels differ) and, with Motion Blur, the adaptive shutter of the framework
- * (`planMotionBlur`): 16 key poses per channel at exact sub-frame times over Mo Blur Length (centred), packed as
- * (dx, dy, θ radians, zoom), and a tap count from the travel of the layer box corners and centre (rotation and zoom
+ * (`planMotionBlur`): 32 key poses per channel at exact sub-frame times over Mo Blur Length (centred), packed like
+ * `u_shakeNow` (linear interpolation: the rotation per key segment is tiny), and a tap count from the travel of the layer box corners and centre (rotation and zoom
  * included) in canvas px. `ctx.width/height/pxScale` default to a 1920×1080 layer at full resolution.
  */
 export function shakeUniforms(
@@ -1828,7 +1827,7 @@ export function shakeUniforms(
 						(q.dy + (s * x + c * y) / zDist) * pxW,
 					]);
 				}),
-			pack: (qs) => qs.flatMap((q) => [q.dx, q.dy, (q.tilt * Math.PI) / 180, q.zoom]),
+			pack: (qs) => qs.flatMap(shakeCs),
 			stride: 3,
 			quality: p.mbQuality,
 		});
@@ -1840,16 +1839,18 @@ export function shakeUniforms(
  * GLSL of the shake (S_Shake, S_DissolveShake): the caller defines `vec4 sh_src(vec2 f, vec4 q, ivec2 w)` (the
  * picture at output f under pose q = (dx, dy, cos θ / zoom, sin θ / zoom)); this adds `vec4 sh_render(vec2 f,
  * ivec2 w)`: the pose of the frame (unchanged single-tap path without blur), or the adaptive shutter taps through the
- * key-pose spline. Include GLSL_MB_POSES.
+ * key poses. Include GLSL_MB_POSES.
  */
 export const SHAKE_RENDER_GLSL = /* glsl */ `
-vec4 sh_cs(vec4 k) { return vec4(k.xy, cos(k.z) / k.w, sin(k.z) / k.w); }
 vec4 sh_rgb(vec2 f, vec4 qr, vec4 qg, vec4 qb, ivec2 w) {
   vec4 r = sh_src(f, qr, w), g = sh_src(f, qg, w), b = sh_src(f, qb, w);
   return vec4(r.r, g.g, b.b, max(r.a, max(g.a, b.a)));
 }
 vec4 sh_render(vec2 f, ivec2 w) {
-  if (!fx_mbOn()) return u_shakeRgb ? sh_rgb(f, u_shakeNow[0], u_shakeNow[1], u_shakeNow[2], w) : sh_src(f, u_shakeNow[1], w);
+  if (!fx_mbOn()) {
+    if (u_shakeRgb) return sh_rgb(f, u_shakeNow[0], u_shakeNow[1], u_shakeNow[2], w);
+    return sh_src(f, u_shakeNow[1], w);
+  }
   int n = fx_mbTaps();
   float j = fx_mbPlanJitter();
   vec4 acc = vec4(0.0);
@@ -1857,10 +1858,9 @@ vec4 sh_render(vec2 f, ivec2 w) {
   for (int i = 0; i < fx_mbDyn(FX_MB_TAP_LIMIT); i++) {
     if (i >= n) break;
     vec2 t = fx_mbTap(i, n, j);
-    vec4 c = u_shakeRgb
-      ? sh_rgb(f, sh_cs(fx_mbPose(0, t.x)), sh_cs(fx_mbPose(1, t.x)), sh_cs(fx_mbPose(2, t.x)), w)
-      : sh_src(f, sh_cs(fx_mbPose(1, t.x)), w);
-    acc += c * t.y;
+    // if / else, not ?: — software GL evaluates both arms of a select.
+    if (u_shakeRgb) acc += sh_rgb(f, fx_mbPose(0, t.x), fx_mbPose(1, t.x), fx_mbPose(2, t.x), w) * t.y;
+    else acc += sh_src(f, fx_mbPose(1, t.x), w) * t.y;
     wsum += t.y;
   }
   return acc / max(wsum, 1e-6);
@@ -1881,6 +1881,8 @@ function shakeReach(p: EffectParams): number {
 export const S_SHAKE = distortEffect({
 	id: 'jasper.s.shake',
 	label: 'S_Shake',
+	// Motion Blur takes up to 64 taps (× 3 with RGB offsets) per pixel on fast shakes.
+	expensive: true,
 	description:
 		'Random, repeatable camera shake (move, zoom, rotate) with Normal, Twitchy and Jumpy styles, motion blur and per-channel RGB offsets.',
 	keywords: ['camera shake', 'wiggle', 'jitter', 'handheld', 'earthquake', 'impact'],

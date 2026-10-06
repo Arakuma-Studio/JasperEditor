@@ -2,8 +2,8 @@
 // (Crop, Horizontal/Vertical Flip already exist.) Transform's "Use Composition's Shutter Angle" / "Shutter Angle":
 // real motion blur of the keyframed transform with the framework's adaptive shutter (wave 5, `planMotionBlur`): the
 // params at exact sub-frame times over the shutter interval (`ctx.paramsAt`, Shutter Angle / 360 frames centred on
-// the frame) give 16 key transforms, the shader takes ~1 tap per pixel of travel of the layer box corners (rotation
-// and scale included; up to 64, jittered beyond) along their spline. Sequences have no shutter angle of their own,
+// the frame) give 32 key transforms, the shader takes ~1 tap per pixel of travel of the layer box corners (rotation
+// and scale included; up to 64, jittered beyond) between them. Sequences have no shutter angle of their own,
 // so with "Use Composition's Shutter Angle" on (the default, as in Premiere) the angle is 0: no blur, the exact
 // single-transform output.
 import type { EffectParams, EffectSpec } from '../../effects.ts';
@@ -193,7 +193,7 @@ vec4 tf_at(vec4 A, vec2 T, vec2 q) {
 void main() {
   if (fx_mbOn()) {
     // Shutter Angle motion blur: the transformed picture along the keyframed path over the shutter (adaptive taps
-    // through the spline of the key transforms), opacity included.
+    // between the key transforms), opacity included.
     vec2 q = fx_layerPx();
     int n = fx_mbTaps();
     float j = fx_mbPlanJitter();

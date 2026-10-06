@@ -7,7 +7,7 @@
 // - Light Leak: a row of soft polygonal elements from the Hotspot towards the Pivot (screened), linked to the tilt;
 // - Glow of the bright parts; Shake (Normal / Twitchy / Jumpy random lens motion, deterministic per Seed) with
 //   motion blur of the shake: the framework's adaptive shutter (wave 5) — the lens pose (shift, tilt keystone,
-//   distortion) at exact sub-frame times over Mo Blur Length, ~1 tap per pixel of travel along their spline, so
+//   distortion) at exact sub-frame times over Mo Blur Length, ~1 tap per pixel of travel between them, so
 //   curved and rotating shakes blur along their real path; Vignette (shape, softness, colour, combine modes, blur).
 // Units: Sapphire screen units (U = half the layer width, y down) for Shift, offsets, Hotspot/Pivot, sizes and radii.
 import type { EffectParams, EffectSpec } from '../../effects.ts';

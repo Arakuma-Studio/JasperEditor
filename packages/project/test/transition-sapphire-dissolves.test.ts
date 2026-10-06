@@ -348,10 +348,12 @@ describe('Sapphire dissolves: per-dissolve maths', () => {
 	it('shake poses are the identity at the ends and move at the peak', () => {
 		const p = defaultsOf('S_DissolveShake');
 		const ctx = { frame: 7, fps: 30, seed: 0.2 };
-		const still = dissolveShakeUniforms(p, { ...ctx, progress: 0 }).u_shake.floats;
-		expect(still.slice(0, 4)).toEqual([0, 0, 1, 0]);
-		const moving = dissolveShakeUniforms(p, { ...ctx, progress: 0.5 }).u_shake.floats;
-		expect(Math.hypot(moving[0]!, moving[1]!)).toBeGreaterThan(0);
+		const still = dissolveShakeUniforms(p, { ...ctx, progress: 0 });
+		expect(still.u_shakeNow.vec4s.slice(0, 4)).toEqual([0, 0, 1, 0]);
+		expect(still.u_mbPlan.ivec4[0]).toBe(1); // nothing moves: one tap
+		const moving = dissolveShakeUniforms(p, { ...ctx, progress: 0.5 });
+		expect(Math.hypot(moving.u_shakeNow.vec4s[0]!, moving.u_shakeNow.vec4s[1]!)).toBeGreaterThan(0);
+		expect(moving.u_mbPlan.ivec4[0]).toBeGreaterThan(1); // Motion Blur (on by default) over the shutter
 	});
 
 	it('auto paint fades the painting in and out; the brush peaks mid-way', () => {

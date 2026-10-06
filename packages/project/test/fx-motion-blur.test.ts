@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	angleShutter,
+	defaultEffectRegistry,
 	centredShutter,
 	FX_MB_KEYS,
 	FX_MB_MAX_TAPS,
@@ -23,6 +24,7 @@ import {
 	toUniform,
 	unwrapAngles,
 } from '../src/index.ts';
+import { perspectiveHit, perspectiveProject } from '../src/registry/fx/sapphire-distort-warp.ts';
 
 type Pose = { x: number; y: number; rot: number; zoom: number };
 /** Box corners + centre of a 100×50 box moved by a pose (translate, rotate about the centre, zoom). */
@@ -63,12 +65,12 @@ describe('shutter windows', () => {
 		expect(angleShutter(180, 0)).toEqual({ start: 0, end: 0.5 });
 		expect(angleShutter(0)).toEqual({ start: 0, end: 0 });
 	});
-	it('key times: FX_MB_KEYS over the interval plus one beyond each end', () => {
+	it('key times: FX_MB_KEYS evenly over the interval, both ends included', () => {
 		const t = mbKeyTimes(10, centredShutter(1));
-		expect(t).toHaveLength(FX_MB_KEYS + 2);
-		expect(t[1]).toBeCloseTo(9.5);
-		expect(t[FX_MB_KEYS]).toBeCloseTo(10.5);
-		expect(t[0]).toBeCloseTo(9.5 - 1 / (FX_MB_KEYS - 1));
+		expect(t).toHaveLength(FX_MB_KEYS);
+		expect(t[0]).toBeCloseTo(9.5);
+		expect(t[FX_MB_KEYS - 1]).toBeCloseTo(10.5);
+		expect(t[1]! - t[0]!).toBeCloseTo(1 / (FX_MB_KEYS - 1));
 	});
 });
 
@@ -99,10 +101,10 @@ describe('planMotionBlur', () => {
 	it('nothing moves → 1 tap and zero-filled arrays of the fixed size', () => {
 		const p = plan(still);
 		expect(p).toEqual(mbStaticPlan(1));
-		expect(p.packed).toHaveLength((FX_MB_KEYS + 2) * 4);
+		expect(p.packed).toHaveLength(FX_MB_KEYS * 4);
 		const u = mbUniforms(p);
 		expect(toUniform('u_mbPlan', u.u_mbPlan!).value).toEqual([1, 0, 1, 0]);
-		expect(toUniform('u_mbKeys', u.u_mbKeys!).value).toHaveLength((FX_MB_KEYS + 2) * 4);
+		expect(toUniform('u_mbKeys', u.u_mbKeys!).value).toHaveLength(FX_MB_KEYS * 4);
 		expect(toUniform('u_mbWarp', u.u_mbWarp!).value).toHaveLength(FX_MB_WARP_SIZE);
 	});
 	it('an empty shutter → 1 tap even when moving', () => {
@@ -142,7 +144,7 @@ describe('planMotionBlur', () => {
 		expect(p.extentPx).toBeGreaterThan(110);
 		expect(p.extentPx).toBeLessThanOrEqual(120 + 1e-6);
 	});
-	it('packs the key poses at exact sub-frame times (stride vec4s each, + the two outside keys)', () => {
+	it('packs the key poses at exact sub-frame times (stride vec4s each)', () => {
 		const seen: number[] = [];
 		const p = planMotionBlur({
 			frame: 10,
@@ -156,10 +158,10 @@ describe('planMotionBlur', () => {
 			stride: 2,
 		});
 		expect(seen).toEqual(mbKeyTimes(10, centredShutter(1)));
-		expect(p.packed).toHaveLength((FX_MB_KEYS + 2) * 8);
-		expect(p.packed[8]).toBeCloseTo(9.5);
-		expect(p.packed[12]).toBeCloseTo(-9.5);
-		expect(p.packed[(FX_MB_KEYS + 1) * 8]).toBeCloseTo(10.5 + 1 / (FX_MB_KEYS - 1));
+		expect(p.packed).toHaveLength(FX_MB_KEYS * 8);
+		expect(p.packed[0]).toBeCloseTo(9.5);
+		expect(p.packed[4]).toBeCloseTo(-9.5);
+		expect(p.packed[(FX_MB_KEYS - 1) * 8]).toBeCloseTo(10.5);
 		expect(() =>
 			planMotionBlur({
 				frame: 0,
@@ -220,5 +222,69 @@ describe('time warp and helpers', () => {
 		expect(GLSL_MB.source).toContain('3242174889u');
 		expect(GLSL_MB_POSES.deps).toContain(GLSL_MB);
 		expect(GLSL_MB_POSES.source).toContain('u_mbKeys');
+	});
+});
+
+describe('migrated effects: pose packing and stable uniform shapes', () => {
+	const reg = (id: string) => defaultEffectRegistry.get(id)!;
+	const defaults = (id: string): Record<string, unknown> =>
+		Object.fromEntries(reg(id).params.map((p) => [p.name, p.default]));
+	const ctx = { width: 320, height: 180, pxScale: 1, fps: 30, frame: 5, duration: 60, seed: 0.3, progress: 0 };
+	const uniformsOf = (id: string, p: Record<string, unknown>, c: Record<string, unknown> = {}) =>
+		reg(id).gpu!.uniforms!(p as never, { ...ctx, ...c } as never) as Record<string, unknown>;
+	const sizes = (u: Record<string, unknown>) =>
+		['u_mbPlan', 'u_mbKeys', 'u_mbWarp'].map((k) => toUniform(k, u[k] as never).value.length);
+	const plan = (u: Record<string, unknown>) => toUniform('u_mbPlan', u.u_mbPlan as never).value;
+
+	it('S_WarpPerspective: the plane hit and its projection are inverses', () => {
+		const pose = [12, 1.2, 35, 3, 20, 0.1, -0.2, 0];
+		for (const [x, y] of [
+			[0, 0],
+			[0.3, 0.2],
+			[-0.45, 0.25],
+		] as const) {
+			const u = perspectiveHit(pose, x, y)!;
+			const f = perspectiveProject(pose, u[0], u[1])!;
+			expect(f[0]).toBeCloseTo(x, 9);
+			expect(f[1]).toBeCloseTo(y, 9);
+		}
+		expect(perspectiveHit([0, 1, 35, 3, 0, 0, 0, 0], 0, -2)).toBeNull(); // above the horizon (no hit)
+	});
+
+	it('keyframed warps and Transform: the same uniform sizes with and without blur', () => {
+		const cases: [string, Record<string, unknown>, (f: number) => Record<string, unknown>, number][] = [
+			['jasper.s.warp-corner-pin', { motionBlur: true }, (f) => ({ topLeft: [0.1 + f * 0.05, 0.38] }), 3],
+			['jasper.s.warp-perspective', { motionBlur: true }, (f) => ({ swing: f * 5 }), 2],
+			['jasper.transform', { useCompShutterAngle: false, shutterAngle: 180 }, (f) => ({ rotation: f * 10 }), 2],
+		];
+		for (const [id, over, keys, stride] of cases) {
+			const p = { ...defaults(id), ...over };
+			const at = (f: number) => ({ ...p, ...keys(f) });
+			const off = uniformsOf(id, p);
+			const on = uniformsOf(id, at(5), { paramsAt: at });
+			expect(sizes(on), id).toEqual(sizes(off));
+			expect(plan(off)[0], id).toBe(1);
+			expect(plan(on)[0], id).toBeGreaterThan(1);
+			expect(plan(on)[2], id).toBe(stride);
+		}
+	});
+
+	it('S_FreeLens: blur only with a shake that moves; same sizes', () => {
+		const fl = defaults('jasper.s.free-lens');
+		const still = uniformsOf('jasper.s.free-lens', fl);
+		expect(plan(still)[0]).toBe(1); // default Rand Amps are 0: no motion, no blur
+		const shaking = uniformsOf('jasper.s.free-lens', { ...fl, xRandAmp: 3, amplitude: 4, frequency: 30 }, { frame: 9 });
+		expect(plan(shaking)[0]).toBeGreaterThan(1);
+		expect(sizes(shaking)).toEqual(sizes(still));
+	});
+
+	it('S_BlurMoCurves: an eased curve gets spline keys; a constant one does not', () => {
+		const p = defaults('jasper.s.blur-mo-curves');
+		const eased = (f: number) => ({ ...p, shift: [0.002 * f * f * f, 0] });
+		const u = uniformsOf('jasper.s.blur-mo-curves', eased(5), { paramsAt: eased });
+		expect(u.u_moSpline).toBe(true);
+		expect(toUniform('u_moKeys', u.u_moKeys as never).value).toHaveLength(FX_MB_KEYS * 4);
+		const flat = uniformsOf('jasper.s.blur-mo-curves', p, { paramsAt: () => p });
+		expect(flat.u_moSpline).toBe(false);
 	});
 });

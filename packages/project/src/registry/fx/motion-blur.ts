@@ -2,12 +2,13 @@
 // transitions (GLSL half: ./glsl/motion-blur.ts; guide: docs/wp-notes/fx-shader-framework.md §19). Pure: no DOM, no GL.
 //
 // The model (Premiere / Sapphire): a box shutter over an interval of the frame (Shutter Angle / 360 or Mo Blur Length
-// frames, centred, optionally shifted). `planMotionBlur` evaluates the effect's pose at exact sub-frame times (16 key
-// poses + one just outside each end, from `ctx.paramsAt` or the effect's own pose function), measures how far the
+// frames, centred, optionally shifted). `planMotionBlur` evaluates the effect's pose at exact sub-frame times (32 key
+// poses over the shutter, from `ctx.paramsAt` or the effect's own pose function), measures how far the
 // layer box corners and centre travel along that path in pass pixels (so rotation and zoom count, and the preview
 // scale reduces the taps proportionally), and plans the taps: one every ~1 px up to a cap, stratified with a
-// deterministic per-pixel jitter when capped. The shader reads the key poses through a Catmull-Rom spline
-// (`fx_mbPose`) and takes its taps through a time warp (`fx_mbTap`) that spreads them over time AND path length, so a
+// deterministic per-pixel jitter when capped. The shader interpolates the key poses linearly (`fx_mbPose`: 31
+// segments per shutter keep curved and rotating paths well under a pixel from the true path, at half the cost of a
+// spline on SwiftShader) and takes its taps through a time warp (`fx_mbTap`) that spreads them over time AND path length, so a
 // fast burst inside the shutter (a Jumpy shake jump, a keyframe ease) stays a continuous smear; the per-tap weights
 // bring the exposure back to a box shutter.
 import type { ParamSpec } from '../effects.ts';
@@ -15,8 +16,8 @@ import { FX_MB_MAX_TAPS, FX_MB_SPACING, FX_MB_TAP_LIMIT, FX_MB_WARP_SIZE } from 
 import { fxParam } from './params.ts';
 import type { FxUniformValue } from './shader.ts';
 
-/** Key poses inside the shutter (the spline knots; the uniform holds two more, just outside it). */
-export const FX_MB_KEYS = 16;
+/** Key poses over the shutter (first = shutter open, last = shutter close), linearly interpolated by the shader. */
+export const FX_MB_KEYS = 32;
 /** Share of the tap placement that follows time (the rest follows the path length). */
 export const FX_MB_TIME_SHARE = 0.25;
 
@@ -151,11 +152,11 @@ export type MbPlan = {
 	extentPx: number;
 	/** Jitter the strata (the taps are sparser than the spacing). */
 	jitter: boolean;
-	/** `u_mbKeys`: (FX_MB_KEYS + 2) × stride vec4s. */
+	/** `u_mbKeys`: FX_MB_KEYS × stride vec4s. */
 	packed: number[];
 	/** `u_mbWarp` values (FX_MB_WARP_SIZE), or null = identity. */
 	warp: number[] | null;
-	/** Shutter times (clip-local frames) of the FX_MB_KEYS + 2 key poses (empty without blur). */
+	/** Shutter times (clip-local frames) of the FX_MB_KEYS key poses (empty without blur). */
 	times: number[];
 };
 
@@ -167,16 +168,16 @@ export function mbStaticPlan(stride: number): MbPlan {
 		stride,
 		extentPx: 0,
 		jitter: false,
-		packed: new Array<number>((FX_MB_KEYS + 2) * stride * 4).fill(0),
+		packed: new Array<number>(FX_MB_KEYS * stride * 4).fill(0),
 		warp: null,
 		times: [],
 	};
 }
 
-/** Clip-local frames of the key poses of a shutter: FX_MB_KEYS over the interval, plus one beyond each end. */
+/** Clip-local frames of the key poses of a shutter: FX_MB_KEYS evenly over the interval, both ends included. */
 export function mbKeyTimes(frame: number, w: ShutterWindow, keys = FX_MB_KEYS): number[] {
 	const dt = (w.end - w.start) / (keys - 1);
-	return Array.from({ length: keys + 2 }, (_, i) => frame + w.start + (i - 1) * dt);
+	return Array.from({ length: keys }, (_, i) => frame + w.start + i * dt);
 }
 
 /**
@@ -195,9 +196,8 @@ export function planMotionBlur<P>(o: MbPlanOptions<P>): MbPlan {
 		if (v.length !== stride * 4) throw new Error(`motion blur: a pose packs ${v.length} numbers, not ${stride * 4}`);
 		return v;
 	});
-	const inner = packs.slice(1, -1);
-	if (inner.every((v) => v.every((x, i) => x === inner[0]![i]))) return mbStaticPlan(stride);
-	const { segments, total } = poseTrackLengths(poses.slice(1, -1).map((q) => o.points(q)));
+	if (packs.every((v) => v.every((x, i) => x === packs[0]![i]))) return mbStaticPlan(stride);
+	const { segments, total } = poseTrackLengths(poses.map((q) => o.points(q)));
 	if (!(total > 1e-3)) return mbStaticPlan(stride);
 	const q = mbQuality(o.quality);
 	const taps = mbTapCount(total, q);

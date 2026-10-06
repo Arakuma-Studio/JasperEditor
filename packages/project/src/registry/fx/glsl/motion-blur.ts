@@ -7,7 +7,7 @@
 //   (`fx_mbTapAt`), the opaque loop bound (`fx_mbDyn`) that keeps SwiftShader from unrolling the tap loops, and the
 //   progress-space shutter of transitions (`fx_mbShutter`).
 // - `GLSL_MB_POSES` (fx/mb-poses): reads the shutter planned in TypeScript by `planMotionBlur` (../motion-blur.ts):
-//   `u_mbPlan` (taps, keys, stride, flags), `u_mbKeys` (the key poses at exact sub-frame times, Catmull-Rom
+//   `u_mbPlan` (taps, keys, stride, flags), `u_mbKeys` (the key poses at exact sub-frame times, linearly
 //   interpolated here) and `u_mbWarp` (the time warp that spreads the taps over both time and path length).
 //   Spread `mbUniforms(plan)` into `gpu.uniforms` to declare them.
 import type { GlslChunk } from '../shader.ts';
@@ -76,20 +76,15 @@ vec2 fx_mbTap(int i, int n, float j) {
   float t1 = u_mbWarp[m1 >> 2][m1 & 3];
   return vec2(mix(t0, t1, x - float(m)), max(t1 - t0, 0.0) * ${(FX_MB_WARP_SIZE - 1).toFixed(1)});
 }
-// Part 'part' (0 .. stride−1) of the pose at shutter time s: Catmull-Rom through the key poses (keys at exact
-// sub-frame times; entries 0 and keys + 1 lie just outside the shutter and give the end tangents).
+// Part 'part' (0 .. stride−1) of the pose at shutter time s: linear between the key poses at exact sub-frame times
+// (32 keys = 31 segments per shutter: well under a pixel from curved / rotating paths, and half the cost of a spline
+// in software GL).
 vec4 fx_mbPose(int part, float s) {
   int K = max(u_mbPlan.y, 2);
   int S = max(u_mbPlan.z, 1);
   float u = clamp(s, 0.0, 1.0) * float(K - 1);
-  int k = clamp(int(floor(u)), 0, K - 2);
-  float t = u - float(k);
-  vec4 p0 = u_mbKeys[k * S + part];
-  vec4 p1 = u_mbKeys[(k + 1) * S + part];
-  vec4 p2 = u_mbKeys[(k + 2) * S + part];
-  vec4 p3 = u_mbKeys[(k + 3) * S + part];
-  float t2 = t * t, t3 = t2 * t;
-  return 0.5 * (2.0 * p1 + (p2 - p0) * t + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2 + (3.0 * (p1 - p2) + p3 - p0) * t3);
+  int k = min(int(u), K - 2);
+  return mix(u_mbKeys[k * S + part], u_mbKeys[(k + 1) * S + part], u - float(k));
 }
 `,
 };

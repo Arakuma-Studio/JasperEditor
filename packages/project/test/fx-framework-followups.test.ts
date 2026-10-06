@@ -359,7 +359,7 @@ describe('clip context: Clip Name and Timecode', () => {
 
 describe('motion blur from params at sub-frame times', () => {
 	const box = { width: 100, height: 100 };
-	it('Transform: no blur by default (composition shutter 0), 16 samples with a Shutter Angle', () => {
+	it('Transform: no blur by default (composition shutter 0), adaptive taps with a Shutter Angle', () => {
 		const defaults = Object.fromEntries(TRANSFORM.params.map((p) => [p.name, p.default]));
 		const moving = fxParamsAtFn(
 			{ params: { position: animated([0, [0.2, 0.5]], [10, [0.8, 0.5]]) } },
@@ -367,15 +367,19 @@ describe('motion blur from params at sub-frame times', () => {
 			30,
 		);
 		const ctx = { ...box, frame: 5, paramsAt: (f: number) => ({ ...defaults, ...moving(f) }) };
-		expect(transformShutterSamples(defaults, ctx).n).toBe(1);
+		expect(transformShutterSamples(defaults, ctx).taps).toBe(1);
 		const p = { ...defaults, useCompShutterAngle: false, shutterAngle: 180 };
 		const mb = transformShutterSamples(p, ctx);
-		expect(mb.n).toBe(16);
-		// Sample 0 at frame 5 − 0.25 + 1/64·0.5: the translation term moves with the position.
-		expect(mb.packed[4]).not.toBe(mb.packed[15 * 8 + 4]);
-		expect(transformShutterSamples(p, { ...box, frame: 5 }).n).toBe(1); // no paramsAt → no blur
+		// 0.6 × 100 px over 10 frames, a 180° shutter: 3 px of travel → 3 taps (≤ 1 px apart).
+		expect(mb.extentPx).toBeCloseTo(3, 6);
+		expect(mb.taps).toBe(3);
+		// Key 0 at frame 5 − 0.25, the last key at 5 + 0.25: the translation term moves with the position.
+		expect(mb.packed[4]).not.toBe(mb.packed[31 * 8 + 4]);
+		const fast = transformShutterSamples({ ...p, shutterAngle: 360 }, { ...ctx, width: 1000, height: 1000 });
+		expect(fast.taps).toBe(60);
+		expect(transformShutterSamples(p, { ...box, frame: 5 }).taps).toBe(1); // no paramsAt → no blur
 		const still = { ...box, frame: 5, paramsAt: () => p };
-		expect(transformShutterSamples(p, still).n).toBe(1); // nothing moves → no blur
+		expect(transformShutterSamples(p, still).taps).toBe(1); // nothing moves → no blur
 	});
 
 	it('S_WarpCornerPin / S_WarpPerspective: shutter params only when keyframed and Motion Blur is on', () => {
@@ -384,7 +388,7 @@ describe('motion blur from params at sub-frame times', () => {
 		expect(warpShutterParams({ motionBlur: false }, { frame: 5, paramsAt: at }, key)).toBeNull();
 		expect(
 			warpShutterParams({ motionBlur: true, moBlurLength: 1 }, { frame: 5, paramsAt: at }, key),
-		).toHaveLength(8);
+		).toHaveLength(32); // FX_MB_KEYS key times over the shutter
 		expect(
 			warpShutterParams({ motionBlur: true, moBlurLength: 1 }, { frame: 20, paramsAt: at }, key),
 		).toBeNull();
