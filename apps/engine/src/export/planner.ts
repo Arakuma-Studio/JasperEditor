@@ -19,6 +19,7 @@ import {
 	type RenderSnapshot,
 	type RenderVisualClip,
 	rationalEquals,
+	transitionSpec,
 } from '@jasper/project';
 import type { FontCatalogService } from '../fonts/catalog.ts';
 import { alphaDecoder } from '../media/alpha.ts';
@@ -236,23 +237,38 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 				reason: `${c.kind} clip "${c.name}" has an alpha channel that needs the ${dec} decoder, which this ffmpeg build lacks`,
 			});
 	}
+	// Transition framework: GPU transitions are shader stages of the compositions; the native builder renders only the
+	// built-in ramps (cross dissolve, dip to black). wave1c: an extension that pre-renders the span (A + B + stage,
+	// layer-bake) keeps the export native (`hybrid`): only the span is rendered by Remotion. Without one, the export
+	// goes through Remotion.
+	for (const track of snapshot.videoTracks)
+		for (const t of track.transitions ?? []) {
+			const engine = (deps.extensions ?? [])
+				.map((e) => e.bakesTransition?.(t, track.trackId) ?? null)
+				.find((x) => x !== null);
+			if (engine) {
+				baked.push({ clipId: t.id, engine, frames: t.duration });
+				continue;
+			}
+			const spec = transitionSpec(t.effectId);
+			blockers.push({
+				itemId: t.id,
+				path: 'native',
+				reason: `transition "${spec?.label ?? t.effectId}" is a GPU transition and no span renderer is available (rendered by the Remotion path)`,
+			});
+		}
 	for (const a of snapshot.audioClips) {
 		const why: string[] = [];
-		if (
-			isAnimated(a.volumeDb) ||
-			isAnimated(a.pan) ||
-			isAnimated(a.track.volumeDb) ||
-			isAnimated(a.track.pan)
-		)
-			why.push('animated audio levels are not supported by the native path in M1');
-		if (a.pan.value !== 0 || a.track.pan.value !== 0)
+		// Keyframed clip / track / master volume is native (per-frame gain, keyframed.ts). Pan is not: the composition
+		// does not pan either (S03:KND-012 is P1), so a native pan would make the export differ from the preview.
+		if (isAnimated(a.pan) || isAnimated(a.track.pan))
+			why.push('animated audio pan is not supported by the native path');
+		else if (a.pan.value !== 0 || a.track.pan.value !== 0)
 			why.push('audio pan is not supported by the native path in M1');
 		if (a.effects.some((fx) => fx.enabled)) why.push('audio effects require the Remotion path in M1');
 		if (a.speed.reverse) why.push('reversed audio is not supported by the native path');
 		for (const reason of why) blockers.push({ itemId: a.clipId, path: 'native', reason });
 	}
-	if (isAnimated(snapshot.master.volumeDb))
-		blockers.push({ path: 'native', reason: 'animated master volume' });
 	const video0 = settings.video;
 	const encoder = deps.selectEncoder
 		? deps.selectEncoder({
@@ -522,26 +538,14 @@ export function nativeBlockers(
 	// The fframes master holds exactly the clip's frames: no content for transition handles.
 	if (c.kind === 'motion-graphic' && ((c.headHandle ?? 0) > 0 || (c.tailHandle ?? 0) > 0))
 		out.push(`motion graphic "${c.name}" is part of a transition that needs handles`);
-	const t = c.transform;
-	if (
-		t &&
-		(isAnimated(t.position) ||
-			isAnimated(t.anchor) ||
-			isAnimated(t.scale) ||
-			isAnimated(t.scaleWidth) ||
-			isAnimated(t.rotation))
-	)
-		out.push(`${label} has animated Motion (keyframes), not native in M1`);
-	if (isAnimated(c.opacity)) out.push(`${label} has animated opacity, not native in M1`);
+	// Keyframed Motion and Opacity are native: the builder samples them per frame (S03:ENG-032, keyframed.ts).
 	if (c.blendMode !== 'normal') out.push(`${label} uses blend mode "${c.blendMode}"`);
 	if (c.speed.reverse) out.push(`${label} plays in reverse`);
 	for (const fx of c.effects) {
 		if (!fx.enabled) continue;
+		// Built-in effects (crop, flips) render with keyframes too (crop edges per frame, `layerSourceChain`).
+		if (BUILTIN_NATIVE_EFFECTS.has(fx.effectId)) continue;
 		const animated = Object.values(fx.params).some((p) => isAnimated(p));
-		if (BUILTIN_NATIVE_EFFECTS.has(fx.effectId)) {
-			if (animated) out.push(`${label} has an animated ${fx.effectId}`);
-			continue;
-		}
 		const spec = effects.get(fx.effectId, fx.effectVersion);
 		let support: false | 'static' | 'animated' = false;
 		for (const ext of exts) {

@@ -10,6 +10,7 @@
 //   fx/sample     fx_sampleEdge(t, uv, mode), fx_sampleTransparent, fx_sampleLayer, fx_mirrorUv, FX_EDGE_*
 //   fx/uv         fx_rot, fx_rotateAround, fx_scaleAround, fx_toPolar/fx_fromPolar, fx_deg, fx_dir, FX_PI/FX_TAU
 //   fx/blur       fx_gaussian1d, fx_box1d, fx_blur9, fx_zoomBlur, fx_gaussianWeight
+//   fx/lut        fx_lut3d, fx_lutMix (3D LUTs of `lut` media params)
 //   fx/composite  fx_finish, fx_mixOriginal, fx_matteView, fx_lumaMatte, fx_colorDistanceMatte, fx_applyMatte,
 //                 fx_setAlpha
 // Always available without an include (the prelude): fx_canvasPx, fx_layerPx, fx_layerNorm, fx_uvOfCanvasPx,
@@ -19,6 +20,7 @@ import { GLSL_BLUR } from './blur.ts';
 import { GLSL_COLOR } from './color.ts';
 import { GLSL_COMPOSITE } from './composite.ts';
 import { GLSL_HASH } from './hash.ts';
+import { GLSL_LUT } from './lut.ts';
 import { GLSL_NOISE } from './noise.ts';
 import { GLSL_SAMPLE, GLSL_UV } from './sample.ts';
 
@@ -27,6 +29,7 @@ export { FX_BLUR_MAX_TAPS, GLSL_BLUR } from './blur.ts';
 export { GLSL_COLOR } from './color.ts';
 export { GLSL_COMPOSITE } from './composite.ts';
 export { GLSL_HASH } from './hash.ts';
+export { GLSL_LUT } from './lut.ts';
 export { GLSL_NOISE } from './noise.ts';
 export { FX_EDGE_MODE_LABELS, FX_EDGE_MODES, GLSL_SAMPLE, GLSL_UV } from './sample.ts';
 
@@ -40,4 +43,5 @@ export const GLSL_LIBRARY = [
 	GLSL_UV,
 	GLSL_BLUR,
 	GLSL_COMPOSITE,
+	GLSL_LUT,
 ] as const;

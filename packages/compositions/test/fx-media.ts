@@ -221,6 +221,33 @@ export const fxCmd = {
 	solid(color: [number, number, number, number]): Command[] {
 		return [{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V1', color, ref: '$c' } as Command];
 	},
+	/**
+	 * Transform on the clip with a keyframed Position (layer-normalised x from 0 to 1 over frames 0…10: the picture
+	 * moves 1/10 of its width per frame) and a 360° Shutter Angle (or the composition's, i.e. none).
+	 */
+	movingTransform(useCompShutterAngle: boolean): Command[] {
+		return [
+			{
+				type: 'effect.add',
+				target: { clipId: '$c' },
+				effectId: 'jasper.transform',
+				params: { useCompShutterAngle, shutterAngle: 360 },
+				ref: '$t',
+			} as unknown as Command,
+			{
+				type: 'keyframe.add',
+				target: ['effect', '$t', 'position'],
+				at: { frames: 0 },
+				value: [0, 0.5],
+			} as Command,
+			{
+				type: 'keyframe.add',
+				target: ['effect', '$t', 'position'],
+				at: { frames: 10 },
+				value: [1, 0.5],
+			} as Command,
+		];
+	},
 	effect(effectId: string, params?: Record<string, unknown>): Command {
 		return {
 			type: 'effect.add',

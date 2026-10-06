@@ -70,11 +70,13 @@ describe('Effects panel (S05:EFX-001…003)', () => {
 		act(() => {
 			fireEvent.change(screen.getByTestId('effects-search'), { target: { value: 'gray' } });
 		});
-		const rows = document.querySelectorAll<HTMLElement>('[data-effect-id]');
-		expect([...rows].map((r) => r.dataset.effectId)).toEqual(['jasper.black-white']);
+		// The fx catalogue grows (other effects may also match "gray"); the search must find Black & White.
+		const rows = [...document.querySelectorAll<HTMLElement>('[data-effect-id]')];
+		expect(rows.map((r) => r.dataset.effectId)).toContain('jasper.black-white');
+		expect(rows.map((r) => r.dataset.effectId)).not.toContain('jasper.gaussian-blur');
 		const entries = session.getState().history.entries.length;
 		act(() => {
-			fireEvent.doubleClick(rows[0]!);
+			fireEvent.doubleClick(rows.find((r) => r.dataset.effectId === 'jasper.black-white')!);
 		});
 		expect(ids.map((id) => effectIds(session, id))).toEqual([['jasper.black-white'], ['jasper.black-white']]);
 		expect(session.getState().history.entries.length).toBe(entries + 1);

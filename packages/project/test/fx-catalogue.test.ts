@@ -24,11 +24,12 @@ const FAMILY_FILES = [
 	'sapphire-blur-sharpen',
 	'sapphire-distort-warp',
 	'sapphire-render-textures',
+	'sapphire-textures-clouds',
 	'sapphire-time-flicker',
 ];
 
 describe('fx catalogue', () => {
-	it('has the eleven family files, in Effects-panel order', () => {
+	it('has the family files, in Effects-panel order', () => {
 		expect(FX_FAMILIES.map((f) => f.file)).toEqual(FAMILY_FILES);
 		expect(FX_EFFECTS).toEqual(FX_FAMILIES.flatMap((f) => f.effects));
 	});

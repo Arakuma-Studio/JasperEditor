@@ -3,50 +3,83 @@
 // for colour runs, time samples, media inputs and the built-in uniforms — everything `FxPicture` (media layers) and
 // `FxDomPicture` (DOM layers) need to build the canvas effect chain. Renders that need the GPU and cannot have it
 // fail with WEBGL_UNAVAILABLE (never silently unprocessed, as S06:CG-042 for grades).
+// Follow-ups: every hook gets `paramsAt` (the instance's params at other frames, from the clip's keyframes) and
+// `clip` (names, source in-point/timecode); time samples and remaps of the whole stack compose (`fxStackTime`):
+// `samples` are absolute clip-local source frames; LUT media params are bound as 3D textures; the preview may draw
+// the canvases at a reduced resolution (`RenderOptions.fxPreviewScale`).
 import {
 	colorRunKey,
 	type EffectSpec,
 	FX_MAX_CANVAS,
+	type FxClipInfo,
 	type FxEffectPlan,
 	type FxFrameContext,
+	type FxParamsAt,
+	type FxStepTime,
+	type FxTimeStep,
 	type FxUniform,
 	fxBuiltinUniforms,
 	fxClipProgress,
+	fxParamsAtFn,
 	fxSeed,
-	fxTimeSamples,
+	fxStackTime,
+	isLutMediaParam,
 	type Lut,
 	layerMapOf,
 	type MediaHandle,
 	PREVIEW_LUT_SIZE,
 	planGpuEffect,
 	type ResolvedEffect,
+	sideCompToCanvas,
 } from '@jasper/project';
 import { useContext, useMemo } from 'react';
 import { cancelRender, Internals } from 'remotion';
 import { ColorDocContext, referencedMedia, useLutAssets } from '../color/chain.ts';
 import { bakedRunLut, loadedLutAsset, lutUrlKey } from '../color/luts.ts';
-import type { LayerProps } from '../types.ts';
+import type { LayerProps, TransitionTap } from '../types.ts';
 import { type FxBypass, type FxCanvasLayout, fxCanvasLayout, type LayerFxPlan, planLayerFx } from './plan.ts';
 import { fxEffectRegistry } from './registry.ts';
 import { fxStatus, useFxStatus } from './status.ts';
+import { fxClipInfoOf } from './time.ts';
 
 export type FxLayout = FxCanvasLayout;
 
 export type FxPreparedStep =
-	| { kind: 'gpu'; key: string; plan: FxEffectPlan; seed: number; sampleOffsets: number[] }
+	| {
+			kind: 'gpu';
+			key: string;
+			plan: FxEffectPlan;
+			seed: number;
+			/** Requested offsets (`u_sampleOffsets`), request order. */
+			sampleOffsets: number[];
+			/** Source frame of each sample (absolute clip-local frame; null = transparent). */
+			sampleFrames: (number | null)[];
+			/** `u_sampleValid`. */
+			sampleValid: number;
+	  }
 	| { kind: 'lut'; key: string; lut: Lut | null }
 	| { kind: 'css'; key: string; filter: string }
 	| { kind: 'crop'; key: string; insets: [number, number, number, number] }
-	| { kind: 'flip'; key: string; horizontal: boolean };
+	| { kind: 'flip'; key: string; horizontal: boolean }
+	/** Transition framework: hand the picture to the GPU transition stage (always the last step). */
+	| {
+			kind: 'tap';
+			key: string;
+			tap: TransitionTap;
+			meta: { compToCanvas: readonly number[] | null; opacity: number };
+	  };
 
-/** A media param input of the layer's shader effects. */
-export type FxMediaInput = { mediaId: string; url: string; kind: 'image' | 'video' };
+/** A media param input of the layer's shader effects (`lut`: a .cube asset bound as a 3D texture). */
+export type FxMediaInput = { mediaId: string; url: string; kind: 'image' | 'video' | 'lut' };
 
 export type FxStage = {
 	plan: LayerFxPlan;
 	layout: FxLayout;
 	steps: FxPreparedStep[];
-	/** Union of the time-sample offsets of every shader effect (the extra source pictures to fetch). */
+	/**
+	 * Union of the time-sample SOURCE FRAMES (absolute clip-local frames, in the drawn span) of every shader effect:
+	 * the extra source pictures to fetch (slots `sample@<frame>`).
+	 */
 	samples: number[];
 	media: FxMediaInput[];
 	/** Built-in uniforms of the layer at this frame (u_seed is per step). */
@@ -79,7 +112,15 @@ function chipText(bypassed: readonly FxBypass[], gpu: string): string | null {
  * The fx stage of a layer. `opts.canRun = false` declares that this layer cannot draw shader effects here (a DOM
  * layer without HTML-in-Canvas): the preview bypasses them with a chip; a render cancels.
  */
-export function useLayerFx(layer: LayerProps, opts: { canRun?: boolean; enabled?: boolean } = {}): LayerFx {
+export function useLayerFx(
+	layer: LayerProps,
+	opts: {
+		canRun?: boolean;
+		enabled?: boolean;
+		/** The effects to plan (default: the layer's); e.g. none for a picture that already has them baked. */
+		effects?: readonly ResolvedEffect[];
+	} = {},
+): LayerFx {
 	const doc = useContext(ColorDocContext);
 	const gpu = useFxStatus();
 	// Null outside a composition (layers rendered standalone, e.g. template thumbnails/tests).
@@ -87,12 +128,34 @@ export function useLayerFx(layer: LayerProps, opts: { canRun?: boolean; enabled?
 	const compW = config?.width ?? 0;
 	const compH = config?.height ?? 0;
 	const { clip, props, fps } = layer;
-	const effects = props.effects;
+	const effects = opts.effects ?? props.effects;
 	const box = props.box;
+	// Transition framework: a side of a GPU transition captures its picture for the stage.
+	const tap = layer.transition?.tap ?? null;
+	const capture = !!tap;
 	const colorBypass = doc.isPreview && doc.bypass.has(clip.clipId);
 	const canRun = opts.canRun ?? true;
 	const enabled = opts.enabled ?? true;
 	const failures = fxStatus.version();
+	const realFrame = layer.realFrame ?? layer.localFrame;
+	const sourceFrame = layer.localFrame;
+	const duration = clip.duration;
+	// Params at other frames (sub-frame shutters, write-on paths, …) from the clip's keyframes, per effect instance.
+	const paramsAtOf = useMemo(() => {
+		const cache = new Map<string, FxParamsAt>();
+		const byId = new Map(clip.effects.map((e) => [e.id, e]));
+		return (fx: ResolvedEffect): FxParamsAt | undefined => {
+			const hit = cache.get(fx.id);
+			if (hit) return hit;
+			const inst = byId.get(fx.id);
+			if (!inst) return undefined;
+			const f = fxParamsAtFn(inst, clip, fps, { frame: realFrame, params: fx.params });
+			cache.set(fx.id, f);
+			return f;
+		};
+	}, [clip, fps, realFrame]);
+	const clipInfo = useMemo((): FxClipInfo => fxClipInfoOf(clip), [clip]);
+	const mediaKind = useMemo(() => (id: string) => doc.media[id]?.kind, [doc.media]);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `failures` re-plans when a shader fails
 	const plan = useMemo(
 		() =>
@@ -103,9 +166,28 @@ export function useLayerFx(layer: LayerProps, opts: { canRun?: boolean; enabled?
 						gpu: canRun ? gpu : 'unavailable',
 						failed: (id) => doc.isPreview && fxStatus.failure(id) !== undefined,
 						colorBypass,
-						ctx: { width: box.width, height: box.height, pxScale: 1, fps },
+						ctx: { width: box.width, height: box.height, pxScale: 1, fps, frame: realFrame },
+						paramsAt: paramsAtOf,
+						mediaKind,
+						clip: clipInfo,
+						capture,
 					}),
-		[enabled, effects, gpu, canRun, colorBypass, box.width, box.height, fps, doc.isPreview, failures],
+		[
+			enabled,
+			effects,
+			gpu,
+			canRun,
+			colorBypass,
+			box.width,
+			box.height,
+			fps,
+			doc.isPreview,
+			failures,
+			capture,
+			paramsAtOf,
+			mediaKind,
+			clipInfo,
+		],
 	);
 	if (plan && !doc.isPreview && (!plan.active || plan.bypassed.length > 0))
 		cancelRender(
@@ -116,9 +198,11 @@ export function useLayerFx(layer: LayerProps, opts: { canRun?: boolean; enabled?
 			),
 		);
 
+	// Reduced preview resolution (Program monitor 1/2, 1/4…): the canvas is drawn smaller, px params follow pxScale.
+	const previewScale = doc.isPreview ? (layer.options.fxPreviewScale ?? 1) : 1;
 	const layout = useMemo(
-		() => (plan?.active ? fxCanvasLayout(box, plan.padding, FX_MAX_CANVAS) : null),
-		[plan, box],
+		() => (plan?.active ? fxCanvasLayout(box, plan.padding, FX_MAX_CANVAS, previewScale) : null),
+		[plan, box, previewScale],
 	);
 
 	// Colour runs inside the chain: LUT assets (renders wait) and baked LUTs (cached by run key, like the colour stage).
@@ -126,18 +210,57 @@ export function useLayerFx(layer: LayerProps, opts: { canRun?: boolean; enabled?
 		() => plan?.steps.flatMap((s) => (s.kind === 'lut' ? s.effects : [])) ?? [],
 		[plan],
 	);
-	const lutUrls = referencedMedia(lutEffects)
+	// `lut` media params of shader effects (3D textures): their .cube assets load the same way.
+	const fxLutIds = useMemo(
+		() =>
+			plan?.steps.flatMap((s) =>
+				s.kind === 'gpu'
+					? s.spec.params
+							.filter((ps) => isLutMediaParam(ps))
+							.map((ps) => (s.fx.params[ps.name] as { mediaId?: unknown } | undefined)?.mediaId)
+							.filter((id): id is string => typeof id === 'string' && !!id)
+					: [],
+			) ?? [],
+		[plan],
+	);
+	const lutUrls = [...referencedMedia(lutEffects), ...fxLutIds]
 		.map((id) => doc.media[id]?.url)
 		.filter((u): u is string => !!u);
 	const lutVersion = useLutAssets(lutUrls, doc.isPreview);
 	const pending = lutUrls.some((u) => loadedLutAsset(u) === undefined);
 
-	const realFrame = layer.realFrame ?? layer.localFrame;
-	const sourceFrame = layer.localFrame;
-	const duration = clip.duration;
 	const progress = layer.transition?.progress ?? fxClipProgress(realFrame, duration);
 	const side = layer.transition ? (layer.transition.side === 'out' ? 1 : 2) : 0;
 	const map = layerMapOf(props);
+
+	// Time of the whole stack: every enabled effect with time hooks, in stack order (samples compose with remaps).
+	const stackTime = useMemo(() => {
+		const registry = fxEffectRegistry();
+		const steps: (FxTimeStep & { id: string })[] = [];
+		for (const fx of props.effects) {
+			if (!fx.enabled) continue;
+			const spec = registry.get(fx.effectId, fx.effectVersion);
+			if (!spec?.gpu?.time?.remap && !spec?.gpu?.time?.samples) continue;
+			const paramsAt = paramsAtOf(fx);
+			steps.push({
+				id: fx.id,
+				spec,
+				params: fx.params,
+				seed: fxSeed(clip.clipId, fx.id, fx.params),
+				clip: clipInfo,
+				...(paramsAt ? { paramsAt } : {}),
+			});
+		}
+		if (steps.length === 0) return new Map<string, FxStepTime>();
+		const r = fxStackTime(steps, {
+			frame: realFrame,
+			fps,
+			duration,
+			headHandle: clip.headHandle ?? 0,
+			tailHandle: clip.tailHandle ?? 0,
+		});
+		return new Map(steps.map((s, i) => [s.id, r.steps[i]!]));
+	}, [props.effects, paramsAtOf, clipInfo, clip, realFrame, fps, duration]);
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the values that change the output
 	const stage = useMemo((): FxStage | null => {
@@ -157,6 +280,7 @@ export function useLayerFx(layer: LayerProps, opts: { canRun?: boolean; enabled?
 			switch (s.kind) {
 				case 'gpu': {
 					const seed = fxSeed(clip.clipId, s.fx.id, s.fx.params);
+					const paramsAt = paramsAtOf(s.fx);
 					const ctx: FxFrameContext = {
 						width: box.width,
 						height: box.height,
@@ -166,28 +290,30 @@ export function useLayerFx(layer: LayerProps, opts: { canRun?: boolean; enabled?
 						duration,
 						seed,
 						progress,
+						clip: clipInfo,
+						...(paramsAt ? { paramsAt } : {}),
 					};
 					const gp = planGpuEffect(s.spec as EffectSpec, { id: s.fx.id, params: s.fx.params }, ctx, canvas);
-					const offsets = fxTimeSamples(s.spec as EffectSpec, s.fx.params, {
-						frame: realFrame,
-						fps,
-						duration,
-						headHandle: clip.headHandle ?? 0,
-						tailHandle: clip.tailHandle ?? 0,
-						seed,
-					});
-					for (const o of offsets) if (!samples.includes(o)) samples.push(o);
+					const st = stackTime.get(s.fx.id);
+					const offsets = st?.offsets ?? [];
+					const frames = st?.frames ?? [];
+					for (const f of frames) if (f !== null && !samples.includes(f)) samples.push(f);
 					for (const t of gp.textures) {
 						const h: MediaHandle | null | undefined = t.mediaId ? doc.media[t.mediaId] : null;
-						if (h && (h.kind === 'image' || h.kind === 'video'))
+						if (!h) continue;
+						if (t.kind === 'lut') {
+							if (h.kind === 'lut') media.set(t.mediaId, { mediaId: t.mediaId, url: h.url, kind: 'lut' });
+						} else if (h.kind === 'image' || h.kind === 'video')
 							media.set(t.mediaId, { mediaId: t.mediaId, url: h.url, kind: h.kind });
 					}
 					return {
 						kind: 'gpu',
-						key: `${gp.key}|${JSON.stringify(gp.uniforms)}|${seed}`,
+						key: `${gp.key}|${JSON.stringify(gp.uniforms)}|${seed}|${frames.join(',')}/${st?.valid ?? 0}`,
 						plan: gp,
 						seed,
 						sampleOffsets: offsets,
+						sampleFrames: frames,
+						sampleValid: st?.valid ?? 0,
 					};
 				}
 				case 'lut': {
@@ -205,6 +331,16 @@ export function useLayerFx(layer: LayerProps, opts: { canRun?: boolean; enabled?
 					return { kind: 'flip', key: `flip${i}`, horizontal: s.horizontal };
 			}
 		});
+		if (tap) {
+			const opacity = Math.min(1, Math.max(0, props.opacity / 100));
+			const compToCanvas = sideCompToCanvas(map, layout);
+			steps.push({
+				kind: 'tap',
+				key: `tap:${tap.side}:${opacity}:${compToCanvas?.join(',') ?? 'none'}`,
+				tap,
+				meta: { compToCanvas, opacity },
+			});
+		}
 		const builtins = fxBuiltinUniforms({
 			canvas,
 			box: layout.box,
@@ -240,6 +376,11 @@ export function useLayerFx(layer: LayerProps, opts: { canRun?: boolean; enabled?
 		lutVersion,
 		clip.clipId,
 		duration,
+		tap,
+		props.opacity,
+		stackTime,
+		paramsAtOf,
+		clipInfo,
 	]);
 
 	if (!plan) return NONE;

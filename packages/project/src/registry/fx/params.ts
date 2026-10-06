@@ -165,6 +165,26 @@ export const fxParam = {
 	},
 };
 
+/**
+ * A `.cube` LUT input (`media` param with `mediaKinds: ['lut']`): bound as `uniform highp sampler3D u_<name>` +
+ * `vec2 u_<name>_size` = (N, 1), (0, 0) when none — sample with `fx_lut3d(u_<name>, u_<name>_size, rgb)`
+ * (`GLSL_LUT`). The inspector shows the project's LUT assets.
+ */
+export function lutParam(name: string, label: string, extra?: Extra): ParamSpec {
+	return merge(
+		{
+			name,
+			label,
+			type: 'media',
+			default: { mediaId: '' } as ParamValue,
+			mediaKinds: ['lut'],
+			animatable: false,
+			ui: { control: 'media' },
+		},
+		extra,
+	);
+}
+
 // ---------------------------------------------------------------- Sapphire-style common params
 
 /** "Mix with Orig" 0..1 (`u_mixWithOriginal`; use `fx_finish` / `fx_mixOriginal`). */

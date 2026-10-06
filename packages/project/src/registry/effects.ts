@@ -34,10 +34,16 @@ export type EffectCategory =
 	| 'Time'
 	| 'Transform'
 	| 'Utility'
+	| 'Channel'
+	| 'Image Control'
+	| 'Perspective'
 	| 'Amplitude'
 	| 'Filter'
 	| 'Noise Reduction'
-	| 'Time and Pitch';
+	| 'Time and Pitch'
+	| 'Noise & Grain'
+	| 'Transition'
+	| 'Video';
 
 export type ParamSpec = {
 	name: string;

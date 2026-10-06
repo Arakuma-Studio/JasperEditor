@@ -204,3 +204,72 @@ describe('apply_default_transitions defaults (S10:TUI-034)', () => {
 		expect(invalid.atCut).toEqual(builtIn);
 	});
 });
+
+describe('GPU transitions through MCP (transition framework)', () => {
+	async function connect() {
+		const engine = fakeEngine(null);
+		const { server } = createJasperMcpServer({ link: engine.link, agentName: 'transitions-test' });
+		const [a, b] = InMemoryTransport.createLinkedPair();
+		await server.connect(a);
+		const client = new Client({ name: 'transitions-test', version: '1' });
+		await client.connect(b);
+		open.push(client);
+		const call = async <T>(name: string, args: Record<string, unknown>) => {
+			const r = (await client.callTool({ name, arguments: args })) as CallToolResult;
+			const text = (r.content.find((c) => c.type === 'text') as { text: string } | undefined)?.text ?? '';
+			expect(r.isError, text).toBeFalsy();
+			return JSON.parse(text) as T;
+		};
+		return { call };
+	}
+
+	it('lists the catalogue with bins and params', async () => {
+		const { call } = await connect();
+		const all = await call<{ types: { effectId: string; bin: string; gpu: boolean }[] }>(
+			'list_transition_types',
+			{},
+		);
+		expect(all.types.map((t) => t.effectId)).toEqual(
+			expect.arrayContaining([
+				'jasper.cross-dissolve',
+				'jasper.push',
+				'jasper.iris-round',
+				'jasper.s.dissolve-luma',
+			]),
+		);
+		expect(all.types.find((t) => t.effectId === 'jasper.s.dissolve-luma')).toMatchObject({
+			bin: 'Sapphire Transitions/Dissolves',
+			gpu: true,
+		});
+		const iris = await call<{ types: { effectId: string; params: { name: string }[] }[] }>(
+			'list_transition_types',
+			{ bin: 'Iris' },
+		);
+		expect(iris.types.map((t) => t.effectId)).toContain('jasper.iris-round');
+		expect(iris.types.find((t) => t.effectId === 'jasper.iris-round')!.params.map((p) => p.name)).toContain(
+			'center',
+		);
+	});
+
+	it('adds a GPU transition by label with params and updates its params', async () => {
+		const { call } = await connect();
+		await call('add_transition', {
+			projectId: 'prj_test',
+			type: 'Push',
+			durationFrames: 10,
+			track: 'V1',
+			at: 100,
+			params: { direction: 'eastToWest' },
+		});
+		type Listed = { id: string; effectId: string; gpu?: boolean; params?: Record<string, unknown> };
+		const list = await call<{ transitions: Listed[] }>('list_transitions', { projectId: 'prj_test' });
+		const push = list.transitions.find((t) => t.effectId === 'jasper.push')!;
+		expect(push).toMatchObject({ gpu: true, params: { direction: 'eastToWest' } });
+		const up = await call<{ transition: Listed }>('update_transition', {
+			projectId: 'prj_test',
+			transitionId: push.id,
+			params: { borderWidth: 3 },
+		});
+		expect(up.transition.params).toEqual({ direction: 'eastToWest', borderWidth: 3 });
+	});
+});

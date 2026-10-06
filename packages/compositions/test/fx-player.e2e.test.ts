@@ -64,6 +64,7 @@ describe.runIf(enabled && !!CHROME)(
 				]),
 				frozen: fxSnapshot([...fxCmd.video(media, 2), fxCmd.effect('test.s.freeze-frame', { at: 5 })]),
 				still: fxSnapshot([...fxCmd.still(media), fxCmd.effect('test.drop-shadow', shadow([0, 1, 0, 1]))]),
+				mblur: fxSnapshot([...fxCmd.still(media), ...fxCmd.movingTransform(false)]),
 				shape: fxSnapshot([
 					...fxCmd.shape(),
 					fxCmd.effect('test.drop-shadow', { ...shadow([0, 1, 0, 1]), direction: 90, distance: 30 }),
@@ -83,7 +84,7 @@ describe.runIf(enabled && !!CHROME)(
 					'--enable-unsafe-swiftshader',
 				],
 			});
-			page = await browser.newPage({ viewport: { width: FX_W, height: FX_H * 6 } });
+			page = await browser.newPage({ viewport: { width: FX_W, height: FX_H * 7 } });
 			await page.goto(`${media.base}/index.html`);
 		}, 180_000);
 
@@ -183,6 +184,13 @@ describe.runIf(enabled && !!CHROME)(
 			expect(close(at(raw, 440, FX_H / 2), [0, 0, 255], 12)).toBe(true);
 		});
 
+		it('Transform Shutter Angle motion blur from the keyframes, as in renders', async () => {
+			await seek('mblur', 5);
+			const raw = await until('mblur', (r) => Math.abs(at(r, 222, FX_H / 2)[0] - 153) < 30);
+			expect(Math.abs(at(raw, 222, FX_H / 2)[0] - 153)).toBeLessThan(30);
+			expect(at(raw, FX_W / 2, FX_H / 2)[0]).toBeGreaterThan(235);
+		});
+
 		it('a shape (DOM layer) runs its shader effects through HTML-in-Canvas', async () => {
 			const raw = await until('shape', (r) => close(at(r, FX_W / 2, 245), [0, 255, 0], 16));
 			expect(close(at(raw, FX_W / 2, FX_H / 2), [255, 255, 255], 12)).toBe(true);
@@ -195,7 +203,7 @@ describe.runIf(enabled && !!CHROME)(
 				args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
 			});
 			try {
-				const p = await plainChrome.newPage({ viewport: { width: FX_W, height: FX_H * 6 } });
+				const p = await plainChrome.newPage({ viewport: { width: FX_W, height: FX_H * 7 } });
 				await p.goto(`${media.base}/index.html`);
 				await p.waitForSelector('#shape [data-grade-chip]', { timeout: 15_000 });
 				const chip = await p.evaluate(() =>
