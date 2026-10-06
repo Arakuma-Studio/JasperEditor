@@ -1263,7 +1263,9 @@ export const S_WARP_PERSPECTIVE = distortEffect({
 			// (swing, shift x, shift y, 0)).
 			const qs = warpShutterParams(p, ctx, perspectiveKey);
 			const packed = new Array<number>(DW_MB_SAMPLES * 8).fill(0);
-			qs?.forEach((q, i) => packed.splice(i * 8, 8, ...perspectivePose(q)));
+			qs?.forEach((q, i) => {
+				packed.splice(i * 8, 8, ...perspectivePose(q));
+			});
 			return { u_wpN: { int: qs ? qs.length : 1 }, u_wpM: { vec4s: packed } };
 		},
 		passes: [

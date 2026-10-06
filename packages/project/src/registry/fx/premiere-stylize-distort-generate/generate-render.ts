@@ -11,7 +11,7 @@
 // - Write-on: the framework gives effects their params at the current frame only, so the accumulated stroke of the
 //   animated Brush Position (the real effect paints every position up to now) cannot be drawn; this draws the brush
 //   dab at the current position (see the family report: a `paramAt(frame)` context would allow the full stroke).
-import type { EffectSpec } from '../../effects.ts';
+import type { EffectParams, EffectSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
 import { GLSL_BLEND } from '../glsl/blend.ts';
 import { GLSL_COLOR } from '../glsl/color.ts';
@@ -23,6 +23,7 @@ import {
 	num,
 	psdgBlendModeParam,
 	randomSeedParam,
+	str,
 } from './common.ts';
 import { GLSL_PSDG_HASH } from './noise-glsl.ts';
 
@@ -510,12 +511,81 @@ export const PAINT_BUCKET = defineShaderEffect({
 
 // ---------------------------------------------------------------- Write-on
 
+/** Most brush positions of the accumulated Write-on stroke (sampled evenly in time; consecutive ones joined). */
+export const WRITE_ON_POINTS = 64;
+
+const wNum = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+const wPt = (v: unknown): [number, number] =>
+	Array.isArray(v) && v.length === 2 ? [wNum(v[0], 0.5), wNum(v[1], 0.5)] : [0.5, 0.5];
+const wColor = (v: unknown): number[] =>
+	Array.isArray(v) && v.length === 4 ? v.map((x, i) => wNum(x, i === 3 ? 1 : 0)) : [1, 1, 1, 1];
+
+/**
+ * The accumulated Write-on stroke at a frame: the brush path from the clip start (or the last Stroke Length
+ * seconds) to now, sampled every Brush Spacing (at most WRITE_ON_POINTS, newest first) from the params at those
+ * times (`ctx.paramsAt`); Paint/Brush Time Properties take colour/opacity and size/hardness from each sample's time,
+ * else from now. `connect` = samples closer than a frame are joined into a continuous stroke. n = 1 (the brush at
+ * its current position only, the original drawing) without `paramsAt`, at the first frame or for a still brush.
+ */
+export function writeOnStroke(
+	p: EffectParams,
+	ctx: { frame: number; fps: number; width: number; height: number; paramsAt?: (f: number) => EffectParams },
+): { n: number; connect: boolean; pos: number[]; color: number[]; opacity: number[] } {
+	const N = WRITE_ON_POINTS;
+	const out = {
+		n: 1,
+		connect: true,
+		pos: new Array<number>(N * 4).fill(0),
+		color: new Array<number>(N * 4).fill(0),
+		opacity: new Array<number>(N).fill(0),
+	};
+	const fps = ctx.fps > 0 ? ctx.fps : 30;
+	if (!ctx.paramsAt || !(ctx.frame > 0)) return out;
+	const lenFrames = Math.max(0, wNum(p.strokeLength)) * fps;
+	const start = lenFrames > 0 ? Math.max(0, ctx.frame - lenFrames) : 0;
+	const span = ctx.frame - start;
+	const spacing = Math.max(0.001, wNum(p.brushSpacing, 0.001)) * fps;
+	const step = Math.max(spacing, span / (N - 1));
+	const count = Math.min(N, Math.floor(span / step + 1e-9) + 1);
+	const paintTime = str(p.paintTimeProperties, 'none');
+	const brushTime = str(p.brushTimeProperties, 'none');
+	const rows: number[][] = [];
+	for (let k = 0; k < count; k++) {
+		const q = k === 0 ? p : ctx.paramsAt(ctx.frame - k * step);
+		const [x, y] = wPt(q.brushPosition);
+		const sizeQ = brushTime === 'size' || brushTime === 'sizeHardness' ? q : p;
+		const hardQ = brushTime === 'hardness' || brushTime === 'sizeHardness' ? q : p;
+		const c = wColor((paintTime === 'color' ? q : p).color);
+		const op = wNum((paintTime === 'opacity' ? q : p).brushOpacity, 100) / 100;
+		rows.push([
+			x * ctx.width,
+			y * ctx.height,
+			Math.max(0, wNum(sizeQ.brushSize, 10)) * 0.5,
+			Math.min(1, Math.max(0, wNum(hardQ.brushHardness, 75) / 100)),
+			c[0]! * c[3]!,
+			c[1]! * c[3]!,
+			c[2]! * c[3]!,
+			c[3]!,
+			op,
+		]);
+	}
+	if (rows.every((r) => r.every((v, i) => v === rows[0]![i]))) return out;
+	rows.forEach((r, k) => {
+		for (let i = 0; i < 4; i++) {
+			out.pos[k * 4 + i] = r[i]!;
+			out.color[k * 4 + i] = r[4 + i]!;
+		}
+		out.opacity[k] = r[8]!;
+	});
+	return { ...out, n: rows.length, connect: step < 1 + 1e-9 || spacing < 1 };
+}
+
 export const WRITE_ON = defineShaderEffect({
 	id: 'jasper.write-on',
 	label: 'Write-on',
 	category: 'Generate',
 	description:
-		'Paints with a brush at Brush Position (animate it to write). Draws the brush at its current position (see notes: no accumulated stroke).',
+		'Paints with a brush at Brush Position: animate it to write — the stroke accumulates along the brush path since the clip start (or the last Stroke Length seconds).',
 	keywords: ['handwriting', 'paint', 'brush', 'reveal', 'signature', 'draw on'],
 	params: [
 		fxParam.point('brushPosition', 'Brush Position', [0.5, 0.5]),
@@ -561,13 +631,62 @@ export const WRITE_ON = defineShaderEffect({
 	],
 	gpu: {
 		timeInvariant: true,
+		uniforms: (p, ctx) => {
+			const st = writeOnStroke(p, ctx);
+			return {
+				u_woN: { int: st.n },
+				u_woConnect: st.connect,
+				u_woP: { vec4s: st.pos },
+				u_woC: { vec4s: st.color },
+				u_woO: { vec4s: st.opacity },
+			};
+		},
 		passes: [
 			{
 				include: [GLSL_BLEND],
 				frag: /* glsl */ `
+float wo_dab(float d, float r, float hard) {
+  float aa = 0.5 / u_pxScale;
+  return r <= 0.0 ? 0.0 : 1.0 - smoothstep(r * hard - aa, r + aa, d);
+}
+float wo_op(int k) { return u_woO[k / 4][k - (k / 4) * 4]; }
 void main() {
   vec4 src = texture(u_source, v_uv);
   if (!fx_inBox(v_uv)) { fragColor = src; return; }
+  if (u_woN > 1) {
+    // The accumulated stroke: the strongest dab (or joined segment) of the brush path covers each pixel.
+    vec2 q = fx_layerPx();
+    float best = 0.0, bestMask = 0.0;
+    vec4 col = vec4(0.0);
+    for (int k = 0; k < ${WRITE_ON_POINTS}; k++) {
+      if (k >= u_woN) break;
+      vec4 a = u_woP[k];
+      vec4 ca = u_woC[k];
+      float oa = wo_op(k);
+      float dab;
+      vec4 c;
+      float o;
+      if (u_woConnect && k + 1 < u_woN) {
+        vec4 b = u_woP[k + 1];
+        vec2 pa = q - a.xy, ba = b.xy - a.xy;
+        float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+        dab = wo_dab(length(pa - ba * h), mix(a.z, b.z, h), mix(a.w, b.w, h));
+        c = mix(ca, u_woC[k + 1], h);
+        o = mix(oa, wo_op(k + 1), h);
+      } else {
+        dab = wo_dab(length(q - a.xy), a.z, a.w);
+        c = ca;
+        o = oa;
+      }
+      float m = dab * o;
+      if (m * c.a > best) { best = m * c.a; col = c * m; }
+      bestMask = max(bestMask, m);
+    }
+    if (u_paintStyle == 0) fragColor = fx_over(col, src);
+    else if (u_paintStyle == 1) fragColor = col;
+    else fragColor = src * bestMask;
+    return;
+  }
   vec2 c = u_brushPosition * u_box.zw / u_pxScale;
   float r = max(u_brushSize, 0.0) * 0.5;
   float d = length(fx_layerPx() - c);

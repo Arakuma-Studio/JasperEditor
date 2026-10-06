@@ -388,10 +388,9 @@ export const S_BLUR_MOTION = defineShaderEffect({
 const MOC_EFFECT = ['transformAndBlur', 'blurOnly'] as const;
 
 /**
- * Params of the instance at another clip-local frame, when the host provides them. The wave-1 framework passes only
- * the params of the current frame to `uniforms`; a future `FxFrameContext.paramsAt(frame)` (requested from the
- * integrator) lets S_BlurMoCurves read its animation curves. Without it the path collapses to the current
- * transform (no blur, the transform is still applied).
+ * Params of the instance at another clip-local frame: `FxFrameContext.paramsAt(frame)` (the framework evaluates the
+ * clip's keyframes at fractional frames) lets S_BlurMoCurves read its animation curves over the shutter. Without it
+ * (tests, catalogue checks) the path collapses to the current transform (no blur, the transform is still applied).
  */
 type ParamsAtContext = FxFrameContext & { paramsAt?: (frame: number) => EffectParams };
 

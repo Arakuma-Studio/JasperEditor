@@ -7,8 +7,9 @@
 import type { EffectParams, EffectSpec } from '../../effects.ts';
 import { defineShaderEffect, SAPPHIRE_BINS } from '../define.ts';
 import { GLSL_COLOR } from '../glsl/color.ts';
+import { GLSL_LUT } from '../glsl/lut.ts';
 import { GLSL_UV } from '../glsl/sample.ts';
-import { fxParam } from '../params.ts';
+import { fxParam, lutParam } from '../params.ts';
 import { gaussianBlurPasses } from '../passes.ts';
 import type { FxUniformValue, ShaderPass } from '../shader.ts';
 import {
@@ -454,8 +455,9 @@ void main() {
   vec3 c = svh_rgb(vec3(y, iq));
   // colour style
   if (u_colorStyle) {
-    c = mix(c, svh_lut(u_lut1, c), clamp(u_lut1Strength, 0.0, 1.0));
-    c = mix(c, svh_lut(u_lut2, c), clamp(u_lut2Strength, 0.0, 1.0));
+    // A .cube file replaces the slot's built-in VHS look.
+    c = mix(c, u_lut1File_size.x > 0.0 ? fx_lut3d(u_lut1File, u_lut1File_size, c) : svh_lut(u_lut1, c), clamp(u_lut1Strength, 0.0, 1.0));
+    c = mix(c, u_lut2File_size.x > 0.0 ? fx_lut3d(u_lut2File, u_lut2File_size, c) : svh_lut(u_lut2, c), clamp(u_lut2Strength, 0.0, 1.0));
     c += vec3(0.5, -1.0, 0.5) * u_tint * 0.08;
   }
   // colour bloom: saturated chroma bleeding (a 3-strip-like boost of the colour)
@@ -552,8 +554,10 @@ export const S_VHS_DAMAGE = defineShaderEffect({
 		...grp('Color Style', [
 			check('colorStyle', 'Color Style', true),
 			fxParam.choice('lut1', 'Lut1', VHS_LUTS, VHS_LUT_LABELS, 'vhs1'),
+			lutParam('lut1File', 'Lut1 File (.cube)'),
 			slider('lut1Strength', 'Lut1 Strength', 0.45, 0, 1),
 			fxParam.choice('lut2', 'Lut2', VHS_LUTS, VHS_LUT_LABELS, 'vhs2'),
+			lutParam('lut2File', 'Lut2 File (.cube)'),
 			slider('lut2Strength', 'Lut2 Strength', 1, 0, 1),
 			slider('tint', 'Tint', 0, -1, 1),
 		]),
@@ -642,7 +646,7 @@ export const S_VHS_DAMAGE = defineShaderEffect({
 		passes: [
 			{ output: 'tape', include: [GLSL_FILM], frag: VHS_TAPE },
 			{ output: 'yiq', include: [GLSL_FILM], frag: VHS_CHROMA, format: 'rgba16f' },
-			{ include: [GLSL_FILM], frag: VHS_FINAL },
+			{ include: [GLSL_FILM, GLSL_LUT], frag: VHS_FINAL },
 		],
 	},
 });
