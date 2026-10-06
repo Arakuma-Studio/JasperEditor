@@ -2,6 +2,8 @@
 // overlay, Effect Controls and the native planner (S01:KF-009). vec2 point keys with a curved spatial
 // path (S03:KF-030/031) are evaluated along the path by `keyframes-spatial.ts`.
 import { isVec2Value, pathPointAt, spatialSegment, spatialSegmentLength } from './keyframes-spatial.ts';
+import { lerpPathValues, pathValueDistance } from './path/interp.ts';
+import { type BezierPath, isBezierPath } from './path/model.ts';
 import type { Animatable, Ease, Keyframe } from './schema/common.ts';
 
 const LINEAR_EASE: Ease = { influence: 1 / 3, slope: 1 };
@@ -47,6 +49,8 @@ export function bezierProgress(u: number, out: Ease, inn: Ease): number {
 /** Magnitude of a value difference: absolute for numbers, Euclidean for vectors (S01:KF-004). */
 function distance(a: unknown, b: unknown): number {
 	if (typeof a === 'number' && typeof b === 'number') return Math.abs(b - a);
+	// wp masks: Bézier path values (Mask Path) — RMS vertex displacement.
+	if (isBezierPath(a) && isBezierPath(b)) return pathValueDistance(a, b);
 	if (Array.isArray(a) && Array.isArray(b)) {
 		let s = 0;
 		for (let i = 0; i < a.length; i++) {
@@ -109,12 +113,15 @@ export function incomingEase<T>(kfs: readonly Keyframe<T>[], i: number): Ease {
 /** True for value types that only step (booleans, strings, enums, font ids, media refs; S01:KF-007). */
 export function isHoldOnlyValue(v: unknown): boolean {
 	if (typeof v === 'number') return false;
+	// wp masks: Bézier path values interpolate (vertex-wise / smart vertex matching, path/interp.ts).
+	if (isBezierPath(v)) return false;
 	if (Array.isArray(v)) return !v.every((x) => typeof x === 'number');
 	return true;
 }
 
 function lerpValue<T>(a: T, b: T, p: number): T {
 	if (typeof a === 'number' && typeof b === 'number') return (a + p * (b - a)) as T;
+	if (isBezierPath(a) && isBezierPath(b)) return lerpPathValues(a as BezierPath, b as BezierPath, p) as T;
 	if (Array.isArray(a) && Array.isArray(b)) {
 		// Per component; colors interpolate in straight sRGB in v1.
 		return a.map((x: number, i) => x + p * ((b[i] as number) - x)) as T;
