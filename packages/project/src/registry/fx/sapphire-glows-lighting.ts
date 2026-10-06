@@ -2040,7 +2040,8 @@ vec3 ray(sampler2D t, vec2 dirPx, float bright) {
     vec3 w = rayW(k);
     acc += (texture(t, v_uv + d * k).rgb + texture(t, v_uv - d * k).rgb) * w;
   }
-  return acc * bright * (16.0 / 16.0);
+  // A point highlight lights each coarse tap of its ray once; broad highlights hit many taps (sum, scaled down).
+  return acc * bright * 0.3;
 }
 void main() {
   vec3 g = ray(u_gs0, u_g0, u_bX) + ray(u_gs1, u_g1, u_bY) + ray(u_gs2, u_g2, u_bD1) + ray(u_gs3, u_g3, u_bD2);
@@ -2062,7 +2063,7 @@ const GLINT_FINAL: ShaderPass = {
 	frag: /* glsl */ `
 void main() {
   vec4 src = texture(u_source, v_uv);
-  vec3 light = texture(u_gl, v_uv).rgb * u_scaleColors.rgb * u_brightness * 3.0;
+  vec3 light = texture(u_gl, v_uv).rgb * u_scaleColors.rgb * u_brightness;
   if (u_hueShift != 0.0) light = fx_hueShift(max(light, 0.0), u_hueShift);
   if (!u_expandBorders && !fx_inBox(v_uv)) light = vec3(0.0);
   fragColor = sgl_finishLight(src, light, 2, u_affectAlpha, u_underSource, 0.0, u_sourceOpacity, u_bgBrightness);
@@ -2131,7 +2132,7 @@ export const S_GLINT_RAINBOW = defineShaderEffect({
 		uniforms: (p, ctx) => {
 			// Centre of each channel's band along the ray (0…1): Shift Out moves the spectrum, Shift Red/Blue split it.
 			const so = num(p.shiftOut, 1);
-			const at = (s: number) => clamp(0.18 * (so + s), 0, 0.95);
+			const at = (s: number) => clamp(0.25 * (so + 2 * s), 0, 0.95);
 			return {
 				...glintUniforms(p, ctx),
 				u_band: [
@@ -2149,9 +2150,9 @@ export const S_GLINT_RAINBOW = defineShaderEffect({
 				/* glsl */ `
 // A spectral band per channel along the ray plus a white core near the highlight.
 vec3 rayW(float k) {
-  vec3 x = (vec3(k) - u_band) / 0.16;
-  float core = pow(max(1.0 - k * 2.5, 0.0), 3.0) * 0.4;
-  return exp(-x * x) * (1.0 - k) * 1.3 + core;
+  vec3 x = (vec3(k) - u_band) / 0.12;
+  float core = pow(max(1.0 - k * 2.5, 0.0), 3.0) * 0.25;
+  return exp(-x * x) * (1.0 - k) * 0.8 + core;
 }`,
 				GLINT_FINAL,
 			),
@@ -2489,7 +2490,7 @@ void main() {
   int count = min(int(max(u_lights, 0.0)), sgl_dyn(400));
   vec2 shift = sOff(u_shiftStart + u_shiftSpeed * t);
   // Cheap cull radius: the largest a light can get plus how far it can drift.
-  float maxRad = u_size * 0.025 * (1.0 + abs(u_varySize)) * (1.0 + abs(u_driftSizeDistance)) * max(1.0, u_relHeight);
+  float maxRad = u_size * 0.1 * (1.0 + abs(u_varySize)) * (1.0 + abs(u_driftSizeDistance)) * max(1.0, u_relHeight);
   float reach = maxRad * 1.5 + abs(u_driftDistance) * 0.1 * 1.6;
   float soft = clamp(u_softness * 2.0, 0.002, 1.0);
   for (int i = 0; i < count; i++) {
@@ -2509,7 +2510,7 @@ void main() {
     }
     vec2 dr = mix(vec2(nz[0], nz[1]) * 0.6 + vec2(nz[2], nz[3]) * 0.4, vec2(nz[0], nz[1]), clamp(u_driftSmoothness, 0.0, 1.0));
     vec2 pos = base + dr * u_driftDistance * 0.1 * vec2(1.0, 1.0 / ar);
-    float rad = u_size * 0.025 * (1.0 + u_varySize * (bHash(i, 4) * 2.0 - 1.0));
+    float rad = u_size * 0.1 * (1.0 + u_varySize * (bHash(i, 4) * 2.0 - 1.0));
     rad = max(rad * (1.0 + u_driftSizeDistance * nz[4]), 1.0e-4);
     vec2 d = (n - pos) * vec2(1.0, ar);
     d.y /= max(u_relHeight, 0.01);
