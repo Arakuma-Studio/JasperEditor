@@ -213,6 +213,8 @@ export const sequenceHandlers: HandlerMap = {
 		else if (p.frameRate) seq.settings.dropFrame = next.dropFrame;
 		if (p.startTimecodeFrames !== undefined) seq.settings.startTimecodeFrames = p.startTimecodeFrames;
 		if (p.backgroundColor) seq.settings.backgroundColor = [...p.backgroundColor];
+		if (p.audioSampleRate !== undefined) seq.settings.audioSampleRate = p.audioSampleRate;
+		if (p.masterLayout !== undefined) seq.settings.masterLayout = p.masterLayout;
 	},
 	'sequence.setInOut': (doc, cmd, h: HandlerContext) => {
 		const seq = h.sequence(doc, cmd.sequenceId);

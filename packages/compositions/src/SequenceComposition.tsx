@@ -25,8 +25,10 @@ import {
 	resolveCachedLayerProps,
 	transitionSpec,
 } from '@jasper/project';
-import { type ComponentType, memo, useContext, useMemo, useRef } from 'react';
-import { AbsoluteFill, Freeze, Sequence, useCurrentFrame } from 'remotion';
+import { type ComponentType, memo, useContext, useEffect, useMemo, useRef } from 'react';
+import { AbsoluteFill, Freeze, Internals, Sequence, useCurrentFrame } from 'remotion';
+import { MixGraphContext } from './audio/context.ts';
+import { type MixGraph, mixGraphFor } from './audio/graph.ts';
 import { ColorDocContext, type ColorDocValue } from './color/chain.ts';
 import { FontsReadyContext, useFontsReadyState, useLayerFontsReady } from './fonts.ts';
 import { useFxStatus } from './fx/status.ts';
@@ -199,7 +201,32 @@ const ClipLayer = memo(function ClipLayer({
 	);
 });
 
+/**
+ * audio-mix: drives the preview mix graph at the composition's frame (lane values, live overrides) — every rendered
+ * frame during playback, and on every document change while paused.
+ */
+function MixGraphDriver({ graph, doc, offset }: { graph: MixGraph; doc: SequenceCompositionProps['doc']; offset: number }) {
+	const frame = useCurrentFrame();
+	useEffect(() => {
+		if (!doc.audioMix) return;
+		const t = (frame + offset) * flicksPerFrame(doc.settings.fps);
+		graph.update(doc.audioMix, doc.audioClips, t, doc.settings.fps);
+	}, [graph, doc, frame, offset]);
+	return null;
+}
+
 export function SequenceComposition({ doc, options }: SequenceCompositionProps) {
+	// audio-mix: the Program preview routes audio through our mix graph (renders take the export mixer's audio).
+	const sharedAudio = useContext(Internals.SharedAudioContext);
+	const audioCtx = sharedAudio?.audioContext ?? null;
+	const audioOut = sharedAudio?.gainNode ?? null;
+	const graph = useMemo(
+		() =>
+			options.isPreview && doc.audioMix && audioCtx && audioOut && typeof AudioWorkletNode !== 'undefined'
+				? mixGraphFor(audioCtx, audioOut)
+				: null,
+		[options.isPreview, !!doc.audioMix, audioCtx, audioOut],
+	);
 	const root = useRef<HTMLDivElement>(null);
 	const fontsReady = useFontsReadyState(doc.fonts);
 	const fps = doc.settings.fps.num / doc.settings.fps.den;
@@ -274,6 +301,7 @@ export function SequenceComposition({ doc, options }: SequenceCompositionProps) 
 		[doc.media, options.colorBypassClipIds, options.isPreview],
 	);
 	return (
+		<MixGraphContext.Provider value={graph}>
 		<FontsReadyContext.Provider value={fontsReady}>
 			<ColorDocContext.Provider value={color}>
 				<AbsoluteFill
@@ -334,7 +362,9 @@ export function SequenceComposition({ doc, options }: SequenceCompositionProps) 
 							</AbsoluteFill>
 						</TransitionSidesContext.Provider>
 					))}
-					{doc.audioClips.map((clip) => {
+					{graph ? <MixGraphDriver graph={graph} doc={doc} offset={offset} /> : null}
+					{/* Renders take their audio from the export mixer (every path muxes it), so they play no audio. */}
+					{(options.isPreview ? doc.audioClips : []).map((clip) => {
 						// An audio crossfade plays the clip's handles (S10:TUI-052).
 						const head = clip.headHandle ?? 0;
 						const from = clip.start - head - offset;
@@ -363,5 +393,6 @@ export function SequenceComposition({ doc, options }: SequenceCompositionProps) 
 				</AbsoluteFill>
 			</ColorDocContext.Provider>
 		</FontsReadyContext.Provider>
+		</MixGraphContext.Provider>
 	);
 }

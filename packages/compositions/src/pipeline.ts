@@ -99,7 +99,8 @@ export const MAX_PREVIEW_GAIN = 16;
 /**
  * Linear gain of an audio clip at clip-local frame `f` (S01:FX-010 subset, S03:KND-011/020):
  * `gainDb + volumeDb(t) + track volumeDb(T) + master volumeDb(T)`. Mute/solo are already resolved in
- * the snapshot (muted tracks are absent). Pan is not previewed in M1.
+ * the snapshot (muted tracks are absent). With the audio-mix preview graph (`includeBus` false) only the clip's own
+ * gain, volume and fades are applied here; the graph does pan, the track fader, buses and the Mix.
  */
 export function audioGainAt(
 	clip: Pick<
@@ -109,6 +110,8 @@ export function audioGainAt(
 	f: number,
 	fps: Rational,
 	master?: { volumeDb: RenderAudioClip['volumeDb'] },
+	/** audio-mix: false when the preview mix graph applies the track fader and the Mix (default true). */
+	includeBus = true,
 ): number {
 	const F = flicksPerFrame(fps);
 	const i = Math.max(0, Math.min(clip.duration - 1, f));
@@ -120,8 +123,7 @@ export function audioGainAt(
 	const db =
 		clip.gainDb +
 		evaluate(clip.volumeDb, content) +
-		evaluate(clip.track.volumeDb, seqT) +
-		(master ? evaluate(master.volumeDb, seqT) : 0);
+		(includeBus ? evaluate(clip.track.volumeDb, seqT) + (master ? evaluate(master.volumeDb, seqT) : 0) : 0);
 	// Audio fades at the clip's edges (one-sided audio transitions, S01:TRN-004).
 	return Math.min(MAX_PREVIEW_GAIN, dbToGain(db)) * audioFadeGain(clip.fades, clip.start + i);
 }

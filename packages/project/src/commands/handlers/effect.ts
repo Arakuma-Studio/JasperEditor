@@ -6,6 +6,7 @@ import type { Draft } from 'immer';
 import { EASE_PRESETS } from '../../keyframes.ts';
 import { refreshAutoTangents } from '../../keyframes-spatial.ts';
 import type { EffectSpec } from '../../registry/effects.ts';
+import { resolveStripRef } from '../../audio/strip.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
 import {
 	type Animatable,
@@ -141,7 +142,10 @@ export const effectHandlers: HandlerMap = {
 			list = c.effects;
 		} else {
 			const seq = h.sequence(doc, cmd.target.sequenceId ?? cmd.sequenceId);
-			const track = h.track(seq, cmd.target.trackId);
+			// audio-mix: submix tracks (`S1`… or their id) take track effects too.
+			const submixId = resolveStripRef(seq as never, cmd.target.trackId);
+			const submix = (seq.submixTracks ?? []).find((t) => t.id === submixId);
+			const track = submix ?? h.track(seq, cmd.target.trackId);
 			assertUnlocked(track, h);
 			if (track.kind !== spec.appliesTo)
 				h.fail('E_INVALID_PARAM', `${spec.label} cannot go on a ${track.kind} track`, { path: [track.id] });

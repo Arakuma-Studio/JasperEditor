@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AudioChannelFormatSchema, SequenceSampleRateSchema } from '../../schema/audio.ts';
 import { AnimNumberSchema, LabelColorSchema, RationalSchema, RGBASchema } from '../../schema/common.ts';
 import { CaptionStyleSchema, MarkerTypeSchema, TrackKindSchema } from '../../schema/sequence.ts';
 import {
@@ -17,6 +18,10 @@ const SettingsPatch = z.strictObject({
 	dropFrame: z.boolean().optional(),
 	startTimecodeFrames: z.number().int().min(0).optional(),
 	backgroundColor: RGBASchema.optional(),
+	/** audio-mix: sequence audio sample rate. */
+	audioSampleRate: SequenceSampleRateSchema.optional(),
+	/** audio-mix: channel format of the Mix. */
+	masterLayout: AudioChannelFormatSchema.optional(),
 });
 
 export const SequenceCreateCmd = cmd('sequence.create', {
@@ -107,7 +112,7 @@ export const TrackUpdateCmd = cmd('track.update', {
 		/** A number sets the static value (stopwatch off); an Animatable replaces the property. */
 		volumeDb: z.union([z.number(), AnimNumberSchema]).optional(),
 		pan: z.union([z.number(), AnimNumberSchema]).optional(),
-		channelFormat: z.enum(['mono', 'stereo']).optional(),
+		channelFormat: AudioChannelFormatSchema.optional(),
 		visible: z.boolean().optional(),
 		styleDefaults: CaptionStyleSchema.optional(),
 	}),

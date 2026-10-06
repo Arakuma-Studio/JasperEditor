@@ -1,6 +1,7 @@
 // Document invariants INV-001…INV-015 (S01 §16.3, with the ARCHITECTURE §2.3 locked-track change:
 // locked tracks never shift, so there is no invariant about them) and conservative load-time repairs
 // (S01:PER-004).
+import { audioMixIssues, repairAudioMix } from './audio/invariants.ts';
 import type { Issue } from './commands/types.ts';
 import { clipEnd } from './derive/index.ts';
 import { createTrack } from './factories.ts';
@@ -295,6 +296,15 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 		}
 		effects(seq.master.effects, [...where, 'master', 'effects']);
 		anims(seq.master, [...where, 'master']);
+		// audio-mix: submix tracks (ids, effects, keyframes), sends, routing (INV-MIX).
+		for (const t of seq.submixTracks ?? []) {
+			claim(t.id, 'trk', [...where, 'submixTracks', t.id]);
+			effects(t.effects, [...where, 'submixTracks', t.id, 'effects']);
+			anims(t, [...where, 'submixTracks', t.id]);
+		}
+		for (const t of [...seq.audioTracks, ...(seq.submixTracks ?? [])])
+			for (const x of t.mixer?.sends ?? []) claim(x.id, 'snd', [...where, 'tracks', t.id, 'sends', x.id]);
+		for (const m of audioMixIssues(seq as Sequence, where)) issues.push(inv('INV-MIX', m.message, m.path));
 		for (const m of seq.markers) claim(m.id, 'mrk', [...where, 'markers', m.id]);
 
 		const rate = s.frameRate as Rational;
@@ -673,6 +683,7 @@ export function repairDocument(
 			seq.audioTracks.push(createTrack(ids, 'audio'));
 			note('add-track', seq.id, 'added missing audio track');
 		}
+		repairAudioMix(seq, note);
 		const trackIds = new Set([...seq.videoTracks, ...seq.audioTracks, ...seq.captionTracks].map((t) => t.id));
 		for (const c of Object.values(seq.clips)) {
 			const r = c as Record<string, unknown>;

@@ -289,8 +289,13 @@ importers:
         specifier: ^4.1.0
         version: 4.6.5
 
+  packages/audio-dsp: {}
+
   packages/compositions:
     dependencies:
+      '@jasper/audio-dsp':
+        specifier: workspace:*
+        version: link:../audio-dsp
       '@jasper/mg-templates':
         specifier: workspace:*
         version: link:../mg-templates
@@ -385,6 +390,9 @@ importers:
 
   packages/project:
     dependencies:
+      '@jasper/audio-dsp':
+        specifier: workspace:*
+        version: link:../audio-dsp
       immer:
         specifier: ^11.1.0
         version: 11.1.18

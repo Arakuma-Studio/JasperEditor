@@ -1,5 +1,6 @@
 // Render snapshot (S01:RND-001…005, ARCHITECTURE §5.5): the self-contained JSON value handed to the
 // Remotion composition, the native planner and the Program overlay. Keyframes stay unevaluated.
+import { buildAudioMix, playedTracks, type RenderAudioMix } from '../audio/plan.ts';
 import { compositionOfClip, mergeProps } from '../composition/props.ts';
 import { clipEngines, type EngineId, isBoundedContent, kindCapabilities } from '../registry/kinds.ts';
 import { intrinsicBoxOf } from '../registry/properties.ts';
@@ -187,6 +188,8 @@ export type RenderAudioClip = {
 	effects: EffectInstance[];
 	/** Track fader and pan (sequence time in flicks). */
 	track: { volumeDb: Animatable<number>; pan: Animatable<number> };
+	/** audio-mix: channel count of the clip's audio stream (probe), when known. */
+	streamChannels?: number;
 	/**
 	 * Audio transitions (S01:TRN-004, S10:TUI-052): frames of content played before `start` and after
 	 * `start + duration` (the handles of a crossfade), and the gain ramps over the clip's edges and handles
@@ -200,7 +203,8 @@ export type RenderAudioClip = {
 export type RenderSnapshot = {
 	version: 1;
 	sequenceId: string;
-	settings: { width: number; height: number; fps: Rational; backgroundColor: RGBA; sampleRate: 48000 };
+	/** `sampleRate`: the sequence audio rate (audio-mix: 44.1 / 48 / 96 kHz). */
+	settings: { width: number; height: number; fps: Rational; backgroundColor: RGBA; sampleRate: number };
 	/** Frames; export range or whole sequence. */
 	range: { start: number; end: number };
 	durationFrames: number;
@@ -215,8 +219,13 @@ export type RenderSnapshot = {
 		mattes?: RenderMatte[];
 		transitions?: RenderTransition[];
 	}[];
-	/** After mute/solo resolution. */
+	/**
+	 * Clips of the tracks the mix plays (audio-mix: mute/solo are resolved by the mixer — `audioMix` — so a muted
+	 * track with a pre-fader send still plays its clips; silent and muted-throughout tracks are omitted).
+	 */
 	audioClips: RenderAudioClip[];
+	/** audio-mix: the mixer topology (strips, routes, sends, automation, solo, loudness). Absent in old snapshots. */
+	audioMix?: RenderAudioMix;
 	/** null = offline. */
 	media: Record<string, MediaHandle | null>;
 	fonts: { fontId: string; family: string; weight: number; style: 'normal' | 'italic'; url: string }[];
@@ -238,6 +247,12 @@ export type SnapshotOptions = {
 };
 
 const ZERO = { value: 0, keyframes: [] } as Animatable<number>;
+
+function streamChannelsOf(asset: MediaAsset | undefined, index: number): { streamChannels?: number } {
+	const streams = asset?.probe.streams ?? [];
+	const s = streams.find((x) => x.type === 'audio' && x.index === index) ?? streams.find((x) => x.type === 'audio');
+	return s && s.type === 'audio' ? { streamChannels: s.channels } : {};
+}
 
 function transitionFields<T>(x: { headHandle: number; tailHandle: number; fades: T[] } | undefined): {
 	headHandle?: number;
@@ -512,8 +527,9 @@ export function buildRenderSnapshot(
 	for (const s of transitions.skipped)
 		warnings.push({ clipId: s.transitionId, code: 'TRANSITION_SKIPPED', message: s.reason });
 
-	const anySolo = seq.audioTracks.some((t) => t.solo);
-	const audible = seq.audioTracks.filter((t) => !t.mute && (!anySolo || t.solo));
+	const audioMix = buildAudioMix(seq);
+	const played = playedTracks(audioMix);
+	const audible = seq.audioTracks.filter((t) => played.has(t.id));
 	const audioClips: RenderAudioClip[] = [];
 	// A crossfade plays the clips' handles: a clip whose handle reaches into the range is included.
 	const audioInRange = (c: Clip) => {
@@ -543,6 +559,7 @@ export function buildRenderSnapshot(
 				pan: c.pan,
 				effects: c.effects,
 				track: { volumeDb: t.volumeDb ?? ZERO, pan: t.pan ?? ZERO },
+				...streamChannelsOf(doc.media[c.mediaId], c.channels.streamIndex),
 				...transitionFields(x),
 			});
 		}
@@ -558,7 +575,7 @@ export function buildRenderSnapshot(
 			...frame,
 			fps: seq.settings.frameRate,
 			backgroundColor: seq.settings.backgroundColor,
-			sampleRate: 48000,
+			sampleRate: audioMix.sampleRate,
 		},
 		range,
 		durationFrames: Math.max(0, range.end - range.start),
@@ -567,6 +584,7 @@ export function buildRenderSnapshot(
 		media,
 		fonts: [...fontKeys.values()],
 		master: { volumeDb: seq.master.volumeDb },
+		audioMix,
 		warnings,
 	};
 }

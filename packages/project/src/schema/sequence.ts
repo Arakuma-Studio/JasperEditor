@@ -1,5 +1,12 @@
 // Sequences, tracks, clips, effects, transitions, markers (S01 §7–§13).
 import { z } from 'zod';
+import {
+	AudioChannelFormatSchema,
+	LoudnessNormalizeSchema,
+	MasterMixerSchema,
+	MixerStripSchema,
+	SequenceSampleRateSchema,
+} from './audio.ts';
 import type { DeepStrip } from './common.ts';
 import {
 	AnimNumberSchema,
@@ -23,6 +30,8 @@ export const EffectInstanceSchema = z.looseObject({
 	effectVersion: int(),
 	enabled: z.boolean(),
 	params: z.record(z.string(), AnimParamSchema),
+	/** audio-mix: a track / submix / Mix insert placed after the fader (absent = pre-fader). */
+	postFader: z.boolean().optional(),
 });
 export type EffectInstance = DeepStrip<z.infer<typeof EffectInstanceSchema>>;
 
@@ -121,8 +130,11 @@ export const TrackSchema = z.looseObject({
 	solo: z.boolean().optional(),
 	volumeDb: AnimNumberSchema.optional(),
 	pan: AnimNumberSchema.optional(),
-	channelFormat: z.enum(['mono', 'stereo']).optional(),
+	/** audio-mix: `5.1` added (L, R, C, LFE, Ls, Rs). Absent = stereo. */
+	channelFormat: AudioChannelFormatSchema.optional(),
 	effects: z.array(EffectInstanceSchema).optional(),
+	/** audio-mix: Audio Track Mixer state (automation mode, output, sends, record-arm, lanes). */
+	mixer: MixerStripSchema.optional(),
 	captionFormat: z.literal('open').optional(),
 	visible: z.boolean().optional(),
 	styleDefaults: CaptionStyleSchema.optional(),
@@ -537,8 +549,10 @@ export const SequenceSettingsSchema = z.looseObject({
 	pixelAspect: z.looseObject({ num: z.literal(1), den: z.literal(1) }),
 	dropFrame: z.boolean(),
 	startTimecodeFrames: nonNegInt(),
-	audioSampleRate: z.literal(48000),
-	masterLayout: z.literal('stereo'),
+	/** audio-mix: 44.1 / 48 / 96 kHz (the mix and exports run at this rate). */
+	audioSampleRate: SequenceSampleRateSchema,
+	/** audio-mix: channel format of the Mix (stereo, mono or 5.1). */
+	masterLayout: AudioChannelFormatSchema,
 	backgroundColor: RGBASchema,
 	workingColorSpace: z.literal('rec709'),
 });
@@ -550,7 +564,16 @@ export const SequenceSchema = z.looseObject({
 	videoTracks: z.array(TrackSchema),
 	audioTracks: z.array(TrackSchema),
 	captionTracks: z.array(TrackSchema),
-	master: z.looseObject({ volumeDb: AnimNumberSchema, effects: z.array(EffectInstanceSchema) }),
+	master: z.looseObject({
+		volumeDb: AnimNumberSchema,
+		effects: z.array(EffectInstanceSchema),
+		/** audio-mix: the Mix's automation mode. */
+		mixer: MasterMixerSchema.optional(),
+		/** audio-mix: loudness normalisation of the Mix (preview and export). */
+		loudness: LoudnessNormalizeSchema.optional(),
+	}),
+	/** audio-mix: submix tracks (buses without clips), mixer order S1, S2 … */
+	submixTracks: z.array(TrackSchema).optional(),
 	clips: z.record(z.string(), ClipSchema),
 	transitions: z.record(z.string(), TransitionSchema),
 	links: z.record(z.string(), LinkGroupSchema),

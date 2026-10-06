@@ -84,7 +84,7 @@ export function locateEffect(doc: DDoc, fxId: string): EffectLocation | null {
 			const index = list?.findIndex((e) => e.id === fxId) ?? -1;
 			if (list && index >= 0) return { seq, list, index, fx: list[index]!, clip, track: null };
 		}
-		for (const t of [...seq.videoTracks, ...seq.audioTracks]) {
+		for (const t of [...seq.videoTracks, ...seq.audioTracks, ...(seq.submixTracks ?? [])]) {
 			const index = t.effects?.findIndex((e) => e.id === fxId) ?? -1;
 			if (t.effects && index >= 0)
 				return { seq, list: t.effects, index, fx: t.effects[index]!, clip: null, track: t };

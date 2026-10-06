@@ -1,6 +1,7 @@
 // The single registration point for document commands: type → schema, handler, label, owner.
 import type { z } from 'zod';
 import type { HandlerContext } from './context.ts';
+import { AUDIO_MIX_OWNER, audioHandlers } from './handlers/audio.ts';
 import { clipCoreHandlers } from './handlers/clip-core.ts';
 import { clipEditHandlers } from './handlers/clip-edit.ts';
 import { CLIPBOARD_OWNER, clipboardHandlers } from './handlers/clipboard.ts';
@@ -35,7 +36,9 @@ export type CommandOwner =
 	// Clipboard (S01 §20)
 	| 'wp-clipboard'
 	// Effect presets (S03:FX-030)
-	| 'wp-m3-presets';
+	| 'wp-m3-presets'
+	// Audio buses (parity workstream audio-mix)
+	| 'audio-mix';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -138,6 +141,22 @@ const LABELS: Record<CommandType, string> = {
 	'keyframe.paste': 'Paste Keyframes',
 	'project.pasteItems': 'Paste',
 	'effect.applyPreset': 'Apply Preset',
+	// audio-mix
+	'mixer.updateStrip': 'Audio Track Mixer',
+	'mixer.addSubmix': 'Add Submix Track',
+	'mixer.removeSubmix': 'Delete Submix Track',
+	'mixer.addSend': 'Add Send',
+	'mixer.updateSend': 'Edit Send',
+	'mixer.removeSend': 'Remove Send',
+	'mixer.setInsertPosition': 'Move Track Effect',
+	'mixer.setLane': 'Audio Track Mixer',
+	'mixer.clearLane': 'Delete Automation',
+	'mixer.writeAutomation': 'Write Automation',
+	'clipMixer.write': 'Write Clip Automation',
+	'clipMixer.set': 'Audio Clip Mixer',
+	'audio.setGain': 'Audio Gain',
+	'audio.autoDuck': 'Auto Duck',
+	'mixer.setLoudness': 'Loudness Normalization',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -157,6 +176,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[shapeHandlers, SHAPE_OWNER],
 	[clipboardHandlers, CLIPBOARD_OWNER],
 	[presetHandlers, PRESET_OWNER],
+	[audioHandlers, AUDIO_MIX_OWNER],
 	[m2Handlers, 'M2'],
 ];
 
@@ -175,7 +195,7 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 			handler: SHAPE_BOX_COMMANDS.has(type) ? keepShapesCentred(handler) : handler,
 			label: LABELS[type],
 			owner,
-			milestone: owner.startsWith('wp-m3-')
+			milestone: owner.startsWith('wp-m3-') || owner === AUDIO_MIX_OWNER
 				? 'M3'
 				: owner === 'M2' || owner.startsWith('wp-m2-') || owner === CLIPBOARD_OWNER
 					? 'M2'
