@@ -257,7 +257,7 @@ describe("Premiere's options and defaults", () => {
 describe('Premiere transition uniforms (pure TS maths)', () => {
 	it('maps the edge selectors to vectors', () => {
 		expect(uniforms('Wipe').u_dir).toEqual([1, 0]);
-		const diag = uniforms('Wipe', { direction: 'southEastToNorthWest' }).u_dir as number[];
+		const diag = uniforms('Wipe', { direction: 'southEastToNorthWest' }).u_dir as readonly number[];
 		expect(diag[0]).toBeCloseTo(-Math.SQRT1_2);
 		expect(diag[1]).toBeCloseTo(-Math.SQRT1_2);
 		// Slide's diagonals come from the corner: both axes travel a full frame.
@@ -289,7 +289,7 @@ describe('Premiere transition uniforms (pure TS maths)', () => {
 	});
 
 	it('turns angle params into unit directions', () => {
-		const d = uniforms('Linear Wipe', { angle: 90 }).u_dir as number[];
+		const d = uniforms('Linear Wipe', { angle: 90 }).u_dir as readonly number[];
 		expect(d[0]).toBeCloseTo(0);
 		expect(d[1]).toBeCloseTo(1);
 	});

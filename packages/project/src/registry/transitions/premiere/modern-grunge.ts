@@ -380,9 +380,11 @@ void main() {
     pic = isB ? tr_to(uv) : tr_from(uv);
     pic.rgb = min(pic.rgb * bright, vec3(pic.a));
   }
-  // Glow around the collapsing picture (line, then dot).
+  // Glow around the collapsing picture (line, then dot): a halo outside it, and the picture itself washes out only
+  // once it is nearly a line.
   vec2 d = max(abs(v_uv - 0.5) * u_compSize - 0.5 * s * u_compSize, 0.0);
-  float glow = exp(-length(d) / (6.0 + 30.0 * t)) * smoothstep(0.0, 0.3, t) * (sx > 1e-3 ? 1.0 : 0.0);
+  float halo = length(d) > 0.0 ? exp(-length(d) / (4.0 + 20.0 * t)) : smoothstep(0.45, 0.6, t);
+  float glow = halo * smoothstep(0.2, 0.5, t) * (sx > 1e-3 ? 1.0 : 0.0);
   vec4 col = pm_addLight(pic, u_glowColor.rgb * glow);
   // The screen goes black behind (faded in and out at the ends so the first / last frames are A / B).
   float bg = smoothstep(0.0, 0.08, p) * (1.0 - smoothstep(0.92, 1.0, p));
