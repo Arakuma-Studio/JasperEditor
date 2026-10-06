@@ -59,7 +59,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 
 		afterEach(async () => {
 			await browser?.close();
-		});
+		}, 120_000);
 
 		it('ships the 25 effects of the family', () => {
 			expect(FAMILY_IDS).toHaveLength(25);
