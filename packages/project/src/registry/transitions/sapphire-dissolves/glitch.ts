@@ -351,8 +351,9 @@ void main() {
       qa -= flowAt(qa) * u_flowWarpScale * u_moshA / 6.0;
       qb += flowAt(qb) * u_flowWarpScale * u_moshB / 6.0;
     }
-    a = tr_from(qa / u_compSize);
-    b = tr_to(qb / u_compSize);
+    // Clamped to the frame: a smear pulls the edge pixels in rather than transparency.
+    a = tr_from(clamp(qa, vec2(0.5), u_compSize - 0.5) / u_compSize);
+    b = tr_to(clamp(qb, vec2(0.5), u_compSize - 0.5) / u_compSize);
   }
   fragColor = mix(mix(a, b, u_sdMix), sd_dissolve(), u_mixWithDissolve);
 }`,

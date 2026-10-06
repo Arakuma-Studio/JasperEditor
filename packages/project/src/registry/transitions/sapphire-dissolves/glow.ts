@@ -548,7 +548,7 @@ void main() {
     leak += col * (1.0 - smoothstep(1.0 - s, 1.0 + s, r)) * bright;
   }
   float flick = 1.0 + u_flickerAmp * sd_vnoise(vec2(u_time * u_flickerFreq, 0.5), u_seed);
-  leak *= u_leakColor.rgb * u_transitionBrightness * 0.35 * max(flick, 0.0);
+  leak *= u_leakColor.rgb * u_transitionBrightness * 0.25 * max(flick, 0.0);
   leak = pow(max(leak, 0.0), vec3(1.0 / max(u_gamma, 0.1)));
   float l = fx_luma(leak);
   leak = fx_hueShift(clamp(leak, 0.0, 64.0), u_hueShift);

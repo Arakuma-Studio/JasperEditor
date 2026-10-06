@@ -210,7 +210,7 @@ void main() {
   vec3 gs = sd_bicubic(u_glint, v_uv).rgb;
   // Soft compression: broad bright areas do not flood the frame, small highlights keep thin, bright rays.
   gs = gs / (1.0 + 0.12 * gs);
-  vec3 light = (gs * 0.22 + sd_bicubic(u_bright, v_uv).rgb * 0.3)
+  vec3 light = (gs * 0.15 + sd_bicubic(u_bright, v_uv).rgb * 0.3)
              * u_glintScaleColors.rgb * u_glintBrightness * u_sdEnv;
   fragColor = mix(sd_lightOver(base, light, u_affectAlpha, false), sd_dissolve(), u_mixWithDissolve);
 }`,
@@ -376,7 +376,7 @@ void main() {
   float l = fx_luma(g);
   g = max(mix(vec3(l), g, u_saturation), 0.0);
   if (u_hueShift != 0.0) g = fx_hueShift(min(g, vec3(64.0)), u_hueShift);
-  vec3 light = g * u_brightness * 0.25 * u_sdEnv;
+  vec3 light = g * u_brightness * 0.12 * u_sdEnv;
   fragColor = mix(sd_lightOver(base, light, u_affectAlpha, false), sd_dissolve(), u_mixWithDissolve);
 }`,
 				},
