@@ -218,6 +218,8 @@ const commonShape = {
 	linkId: z.string().nullable(),
 	groupId: z.string().nullable(),
 	markers: z.array(ClipMarkerSchema),
+	/** edit-ux: placed from this subclip project item; its range bounds trims when it restricts them. */
+	subclipId: z.string().optional(),
 };
 // ---------------------------------------------------------------- tracking (M2, ARCHITECTURE §19.5, S09)
 
