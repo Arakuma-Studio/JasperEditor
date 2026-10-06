@@ -20,7 +20,7 @@ import { ensureShapeStorage } from './shape.ts';
 import type { HandlerMap } from './util.ts';
 
 type ValueRule = {
-	kind: 'number' | 'vec2' | 'color' | 'enum' | 'boolean' | 'string' | 'media' | 'curve' | 'json';
+	kind: 'number' | 'vec2' | 'vec3' | 'color' | 'enum' | 'boolean' | 'string' | 'media' | 'curve' | 'json';
 	range?: { min?: number; max?: number };
 	options?: readonly string[];
 	holdOnly: boolean;
@@ -300,6 +300,11 @@ export function validateValue(
 			// Per-component range (wp-m2-shapes: `shape.size` ≥ 0); specs without min/max are unchanged.
 			const c = [clampN(v[0]), clampN(v[1])];
 			return { value: c, clamped: c[0] !== v[0] || c[1] !== v[1] };
+		}
+		case 'vec3': {
+			if (!Array.isArray(v) || v.length !== 3 || !v.every(isNum)) return fail();
+			const c = [clampN(v[0]), clampN(v[1]), clampN(v[2])];
+			return { value: c, clamped: c.some((x, i) => x !== v[i]) };
 		}
 		case 'color': {
 			if (!Array.isArray(v) || v.length !== 4 || !v.every(isNum)) return fail();

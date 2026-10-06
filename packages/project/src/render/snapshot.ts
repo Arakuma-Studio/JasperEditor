@@ -1,6 +1,8 @@
 // Render snapshot (S01:RND-001…005, ARCHITECTURE §5.5): the self-contained JSON value handed to the
 // Remotion composition, the native planner and the Program overlay. Keyframes stay unevaluated.
 import { compositionOfClip, mergeProps } from '../composition/props.ts';
+import { bindExpressions, type ExpressionWorldData, expressionWorldData } from '../expressions.ts';
+import { defaultEffectRegistry } from '../registry/effects.ts';
 import { clipEngines, type EngineId, isBoundedContent, kindCapabilities } from '../registry/kinds.ts';
 import { intrinsicBoxOf } from '../registry/properties.ts';
 import type { Animatable, Keyframe, RGBA } from '../schema/common.ts';
@@ -223,6 +225,12 @@ export type RenderSnapshot = {
 	master: { volumeDb: Animatable<number> };
 	/** Clips excluded from rendering (unknown kinds, S01:KND-030). */
 	warnings: { clipId: string; code: string; message: string }[];
+	/**
+	 * Wave expressions: what expressions read besides the snapshot (every sequence, names, layer boxes), present when
+	 * the document has active expressions. Consumers bind with `@jasper/expressions` `bindSnapshotExpressions`
+	 * (in-process snapshots built from a bound document already carry bound Animatables).
+	 */
+	expressions?: ExpressionWorldData;
 };
 
 export type SnapshotOptions = {
@@ -253,10 +261,13 @@ function transitionFields<T>(x: { headHandle: number; tailHandle: number; fades:
 }
 
 export function buildRenderSnapshot(
-	doc: ProjectDocument,
+	rawDoc: ProjectDocument,
 	sequenceId: string,
 	opts: SnapshotOptions,
 ): RenderSnapshot {
+	// Wave expressions: Animatables with active expressions evaluate through their bound evaluators.
+	const doc = bindExpressions(rawDoc);
+	const world = expressionWorldData(rawDoc);
 	const seq = doc.sequences[sequenceId];
 	if (!seq) throw new Error(`Sequence not found: ${sequenceId}`);
 	const frame = { width: seq.settings.width, height: seq.settings.height };
@@ -462,7 +473,7 @@ export function buildRenderSnapshot(
 				transform: (r.transform as Transform | undefined) ?? null,
 				opacity: (r.opacity as Animatable<number> | undefined) ?? { value: 100, keyframes: [] },
 				blendMode: (r.blendMode as BlendMode | undefined) ?? 'normal',
-				effects: (r.effects as EffectInstance[] | undefined) ?? [],
+				effects: visibleEffects(r.effects as EffectInstance[] | undefined),
 				intrinsicBox: box,
 				engine: clipEngines(c)?.export ?? caps.engines.export,
 				...(c.kind === 'animated-image' ? { loop: c.loop } : {}),
@@ -568,5 +579,16 @@ export function buildRenderSnapshot(
 		fonts: [...fontKeys.values()],
 		master: { volumeDb: seq.master.volumeDb },
 		warnings,
+		...(world ? { expressions: world } : {}),
 	};
+}
+
+/**
+ * The effects renderers see: Expression Controls and other `passthrough` effects draw nothing and are left out
+ * (expressions read them from the document). Returns the stored array when nothing is dropped.
+ */
+function visibleEffects(effects: EffectInstance[] | undefined): EffectInstance[] {
+	if (!effects?.length) return [];
+	if (!effects.some((fx) => defaultEffectRegistry.get(fx.effectId)?.passthrough)) return effects;
+	return effects.filter((fx) => !defaultEffectRegistry.get(fx.effectId)?.passthrough);
 }

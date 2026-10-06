@@ -2,7 +2,7 @@
 // layer matrices. Static clips resolve to the same `props` object on every frame.
 
 import { contentTimeAt } from '../derive/index.ts';
-import { evaluate } from '../keyframes.ts';
+import { evaluate, isAnimated } from '../keyframes.ts';
 import type { ParamValue, Vec2 } from '../schema/common.ts';
 import {
 	applyMat3,
@@ -90,17 +90,18 @@ export type ResolvedLayer = {
 
 function isStaticClip(c: RenderVisualClip): boolean {
 	const t = c.transform;
-	if (c.opacity.keyframes.length) return false;
+	// Keyframes or an active expression (a function of time) make a property animated.
+	if (isAnimated(c.opacity)) return false;
 	if (
 		t &&
-		(t.position.keyframes.length ||
-			t.anchor.keyframes.length ||
-			t.scale.keyframes.length ||
-			t.scaleWidth.keyframes.length ||
-			t.rotation.keyframes.length)
+		(isAnimated(t.position) ||
+			isAnimated(t.anchor) ||
+			isAnimated(t.scale) ||
+			isAnimated(t.scaleWidth) ||
+			isAnimated(t.rotation))
 	)
 		return false;
-	return c.effects.every((fx) => Object.values(fx.params).every((p) => p.keyframes.length === 0));
+	return c.effects.every((fx) => Object.values(fx.params).every((p) => !isAnimated(p)));
 }
 
 export { contentTimeAt as clipContentTime };

@@ -6,6 +6,7 @@ import {
 	AnimParamSchema,
 	AnimRGBASchema,
 	AnimVec2Schema,
+	ExpressionSchema,
 	int,
 	keyframeSchema,
 	LabelColorSchema,
@@ -23,6 +24,11 @@ export const EffectInstanceSchema = z.looseObject({
 	effectVersion: int(),
 	enabled: z.boolean(),
 	params: z.record(z.string(), AnimParamSchema),
+	/**
+	 * Wave expressions (optional): the instance's own name (Effect Controls ▸ Rename, AE's renamed "Slider Control"
+	 * → "Speed"); absent = the effect's label. Expressions find effects by this name.
+	 */
+	name: z.string().optional(),
 });
 export type EffectInstance = DeepStrip<z.infer<typeof EffectInstanceSchema>>;
 
@@ -65,6 +71,8 @@ export const TextContentSchema = z.looseObject({
 	runs: z
 		.array(z.looseObject({ from: nonNegInt(), to: nonNegInt(), style: TextStyleSchema.partial() }))
 		.optional(),
+	/** Wave expressions (optional): a Source Text expression; its result (a string) replaces `text` per frame. */
+	expression: ExpressionSchema.optional(),
 });
 export type TextContent = DeepStrip<z.infer<typeof TextContentSchema>>;
 

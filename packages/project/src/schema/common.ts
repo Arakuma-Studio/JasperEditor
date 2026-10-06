@@ -33,6 +33,10 @@ export type RGBA = [number, number, number, number];
 export const Vec2Schema = z.tuple([z.number(), z.number()]);
 export type Vec2 = [number, number];
 
+/** Wave expressions: 3D Point Control values (`[x, y, z]`). */
+export const Vec3Schema = z.tuple([z.number(), z.number(), z.number()]);
+export type Vec3 = [number, number, number];
+
 export const LABEL_COLORS = [
 	'violet',
 	'iris',
@@ -95,7 +99,15 @@ export type Keyframe<T> = {
 	/** vec2 point properties only (S03:KF-030); absent = linear spatial. */
 	spatial?: Spatial;
 };
-export type Animatable<T> = { value: T; keyframes: Keyframe<T>[] };
+/**
+ * An After Effects-style expression on an animatable property (wave expressions, docs/wp-notes/expressions.md):
+ * JavaScript evaluated per frame by `@jasper/expressions` with `value` = the keyframed value. `enabled: false`
+ * keeps the text but renders the keyframed value (AE's "Enable Expression" switch). Absent = no expression.
+ */
+export const ExpressionSchema = z.looseObject({ text: z.string(), enabled: z.boolean() });
+export type Expression = { text: string; enabled: boolean };
+
+export type Animatable<T> = { value: T; keyframes: Keyframe<T>[]; expression?: Expression };
 
 export function keyframeSchema<T extends z.ZodType>(value: T) {
 	return z.looseObject({
@@ -111,7 +123,12 @@ export function keyframeSchema<T extends z.ZodType>(value: T) {
 
 /** `Animatable<T> = {value, keyframes}` (S01:KF-001). */
 export function animatable<T extends z.ZodType>(value: T) {
-	return z.looseObject({ value, keyframes: z.array(keyframeSchema(value)) });
+	return z.looseObject({
+		value,
+		keyframes: z.array(keyframeSchema(value)),
+		/** Optional (wave expressions; additive, no schema bump). */
+		expression: ExpressionSchema.optional(),
+	});
 }
 
 export const AnimNumberSchema = animatable(z.number());
@@ -132,9 +149,11 @@ export const ParamValueSchema = z.union([
 	z.boolean(),
 	z.string(),
 	Vec2Schema,
+	// Wave expressions (additive): 3D Point Control.
+	Vec3Schema,
 	RGBASchema,
 	z.looseObject({ mediaId: z.string() }),
 	CurveValueSchema,
 ]);
-export type ParamValue = number | boolean | string | Vec2 | RGBA | { mediaId: string } | CurveValue;
+export type ParamValue = number | boolean | string | Vec2 | Vec3 | RGBA | { mediaId: string } | CurveValue;
 export const AnimParamSchema = animatable(ParamValueSchema);

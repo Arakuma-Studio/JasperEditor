@@ -15,6 +15,7 @@ export * from './commands/index.ts';
 export * from './composition/index.ts';
 export * from './derive/index.ts';
 export * from './effect-presets/index.ts';
+export * from './expressions.ts';
 export * from './factories.ts';
 export * from './ids.ts';
 export * from './invariants.ts';

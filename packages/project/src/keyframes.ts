@@ -153,8 +153,46 @@ function keyframeIndexAt<T>(kfs: readonly Keyframe<T>[], t: number): number {
 	return ans;
 }
 
-/** Evaluates an animatable property at content time `t` (flicks) per S01:KF-003. */
+/**
+ * Expressions (wave expressions): an Animatable whose enabled expression has been *bound* to its place in a
+ * document (`@jasper/expressions` `bindDocumentExpressions` / `bindSnapshotExpressions`) carries its evaluator
+ * under this symbol (non-enumerable: JSON, structuredClone and Immer never see it). `evaluate()` delegates to it,
+ * so every consumer of the shared evaluator (preview, overlays, native sampling, graphs, agents) renders the
+ * post-expression value. Unbound Animatables (command handlers, the raw document) evaluate their keyframes.
+ */
+export const EXPRESSION_BINDING: unique symbol = Symbol.for('jasper.expressionBinding');
+
+export type ExpressionBinding = {
+	/** Post-expression value at content time `t` (falls back to the keyframed value on errors). */
+	evaluate(t: number, opts?: EvaluateOptions): unknown;
+	/** As `evaluate`, with the error message of a failed evaluation (`null` = the expression ran). */
+	evaluateWithStatus(t: number, opts?: EvaluateOptions): { value: unknown; error: string | null };
+};
+
+/** The binding of an Animatable, if any. */
+export function expressionBindingOf(anim: unknown): ExpressionBinding | undefined {
+	return anim && typeof anim === 'object'
+		? ((anim as { [EXPRESSION_BINDING]?: ExpressionBinding })[EXPRESSION_BINDING] ?? undefined)
+		: undefined;
+}
+
+/** True when the property has an expression that renders (non-empty text, enabled). */
+export function hasActiveExpression(anim: { expression?: { text: string; enabled: boolean } } | null | undefined): boolean {
+	return !!anim?.expression?.enabled && anim.expression.text.trim().length > 0;
+}
+
+/**
+ * Evaluates an animatable property at content time `t` (flicks) per S01:KF-003. A bound expression (see
+ * `EXPRESSION_BINDING`) replaces the keyframed value with the expression's result.
+ */
 export function evaluate<T>(anim: Animatable<T>, t: number, opts?: EvaluateOptions): T {
+	const bound = (anim as { [EXPRESSION_BINDING]?: ExpressionBinding })[EXPRESSION_BINDING];
+	if (bound) return bound.evaluate(t, opts) as T;
+	return evaluateKeyframes(anim, t, opts);
+}
+
+/** The keyframed (pre-expression) value of an animatable property at content time `t` (S01:KF-003). */
+export function evaluateKeyframes<T>(anim: Animatable<T>, t: number, opts?: EvaluateOptions): T {
 	const kfs = anim.keyframes;
 	if (kfs.length === 0) return clampValue(anim.value, opts?.clamp);
 	const first = kfs[0]!;
@@ -175,8 +213,18 @@ export function evaluate<T>(anim: Animatable<T>, t: number, opts?: EvaluateOptio
 	return clampValue(path ? (pathPointAt(path, p) as T) : lerpValue(a.value, b.value, p), opts?.clamp);
 }
 
-/** True when the property has at least one keyframe (stopwatch on). */
-export function isAnimated(anim: { keyframes: readonly unknown[] } | undefined | null): boolean {
+/**
+ * True when the property may change over time: it has keyframes (stopwatch on) or an active expression (which is
+ * a function of time; renderers sample it per frame like keyframes).
+ */
+export function isAnimated(
+	anim: { keyframes: readonly unknown[]; expression?: { text: string; enabled: boolean } } | undefined | null,
+): boolean {
+	return !!anim && (anim.keyframes.length > 0 || hasActiveExpression(anim));
+}
+
+/** True when the property has at least one keyframe (the stopwatch state; expressions ignored). */
+export function hasKeyframes(anim: { keyframes: readonly unknown[] } | undefined | null): boolean {
 	return !!anim && anim.keyframes.length > 0;
 }
 

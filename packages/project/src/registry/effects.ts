@@ -17,6 +17,7 @@ import {
 	HUE_SATURATION_OP,
 	hueSaturationValues,
 } from './color-effects.ts';
+import { EXPRESSION_CONTROL_EFFECTS } from './expression-controls.ts';
 import { FX_EFFECTS } from './fx/index.ts';
 import type { GpuEffect } from './fx/shader.ts';
 
@@ -43,13 +44,14 @@ export type EffectCategory =
 	| 'Time and Pitch'
 	| 'Noise & Grain'
 	| 'Transition'
-	| 'Video';
+	| 'Video'
+	| 'Expression Controls';
 
 export type ParamSpec = {
 	name: string;
 	label: string;
 	/** `curve` = `{curve: [x, y][]}` tone curve (M2); `media` = `{mediaId}` (LUT assets: `mediaKinds: ['lut']`). */
-	type: 'number' | 'boolean' | 'enum' | 'string' | 'vec2' | 'color' | 'media' | 'curve';
+	type: 'number' | 'boolean' | 'enum' | 'string' | 'vec2' | 'vec3' | 'color' | 'media' | 'curve';
 	default: ParamValue;
 	range?: { min?: number; max?: number; softMin?: number; softMax?: number; step?: number };
 	unit?: 'px' | '%' | 'deg' | 'dB' | 'frames' | 's' | 'Hz';
@@ -78,7 +80,11 @@ export type ParamSpec = {
 			| 'wheel'
 			| 'curve'
 			| 'media'
-			| 'point';
+			| 'point'
+			/** Wave expressions: Layer Control (a clip of the sequence; the value is its id, '' = none). */
+			| 'layer'
+			/** Wave expressions: Dropdown Menu Control (1-based index into the instance's `items` param lines). */
+			| 'menu';
 		bipolar?: boolean;
 	};
 	/** `media` params: asset kinds the picker offers (e.g. `['lut']`). */
@@ -152,6 +158,16 @@ export type EffectSpec = {
 	/** Engine capability flags driving badges, render bar and planner (S01:FX-021). */
 	capabilities: { preview: 'css' | 'webgl' | 'webaudio' | 'none'; export: ('remotion' | 'native')[] };
 	expensive?: boolean;
+	/**
+	 * Wave expressions: the effect draws nothing (Expression Controls hold values for expressions). Render snapshots
+	 * leave it out, so no renderer or export path sees it; expressions still read its params from the document.
+	 */
+	passthrough?: boolean;
+	/**
+	 * Wave expressions: defaults that depend on the clip the effect is applied to (Point Control starts at the
+	 * clip's centre). Applied by `effect.add` on clips for params the command does not set.
+	 */
+	instanceDefaults?(ctx: { box: { width: number; height: number } }): Record<string, ParamValue>;
 	/** One line for the Effects panel tooltip and the agent catalogue. */
 	description?: string;
 	/** Extra search terms for the Effects panel. */
@@ -535,6 +551,8 @@ export const defaultEffectRegistry: EffectRegistry = createEffectRegistry([
 	...M2_EFFECTS,
 	// Wave 1/2 fx catalogue (registry/fx/*, one file per effect family).
 	...FX_EFFECTS,
+	// Wave expressions: Expression Controls (no visual output).
+	...EXPRESSION_CONTROL_EFFECTS,
 ]);
 
 // ---------------------------------------------------------------- realization helpers (shared by engines)

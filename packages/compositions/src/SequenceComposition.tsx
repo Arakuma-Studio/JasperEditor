@@ -21,6 +21,8 @@ import {
 	clipContentTime,
 	fadeFactor,
 	flicksPerFrame,
+	hasActiveExpression,
+	isAnimated,
 	type RenderVisualClip,
 	resolveCachedLayerProps,
 	transitionSpec,
@@ -46,6 +48,7 @@ import { rgbaCss } from './metadata.ts';
 import { blendModeCss, premountFrames } from './pipeline.ts';
 import { FrameRepaint } from './repaint.tsx';
 import type { LayerProps, RenderDoc, RenderOptions, SequenceCompositionProps } from './types.ts';
+import { useExpressionSnapshot } from './expressions.ts';
 
 /** Kinds whose layer output depends on the frame beyond what `ResolvedLayerProps` captures. */
 const FRAME_DEPENDENT_KINDS: ReadonlySet<string> = new Set([
@@ -54,8 +57,9 @@ const FRAME_DEPENDENT_KINDS: ReadonlySet<string> = new Set([
 	'composition',
 ]);
 
-const hasKeyframes = (v: { keyframes: unknown[] } | null | undefined): boolean =>
-	(v?.keyframes.length ?? 0) > 0;
+/** Keyframed or driven by an active expression (wave expressions). */
+const hasKeyframes = (v: { keyframes: unknown[]; expression?: { text: string; enabled: boolean } } | null | undefined): boolean =>
+	isAnimated(v);
 
 /**
  * Layers whose output depends on the frame beyond `ResolvedLayerProps` (ARCHITECTURE §20.4): the
@@ -70,7 +74,9 @@ function isFrameDependent(
 	// A shader effect that changes over time (incl. a media param bound to a video that plays).
 	if (hasTimeDependentFx(clip, undefined, media ? (id) => media[id]?.kind : undefined)) return true;
 	const src = clip.source;
-	if ('text' in src) return !!src.animation && !!(src.animation.in || src.animation.out);
+	// A Source Text expression (wave expressions) changes the text per frame.
+	if ('text' in src)
+		return (!!src.animation && !!(src.animation.in || src.animation.out)) || hasActiveExpression(src.text);
 	if ('shape' in src) {
 		const s = src.shape;
 		return (
@@ -199,7 +205,16 @@ const ClipLayer = memo(function ClipLayer({
 	);
 });
 
+/**
+ * Wave expressions: binds the snapshot's expressions (`doc.expressions`) once the QuickJS engine is loaded; renders
+ * wait for it (`delayRender`), so every rendered frame shows post-expression values.
+ */
 export function SequenceComposition({ doc, options }: SequenceCompositionProps) {
+	const bound = useExpressionSnapshot(doc);
+	return <SequenceCompositionBody doc={bound} options={options} />;
+}
+
+function SequenceCompositionBody({ doc, options }: SequenceCompositionProps) {
 	const root = useRef<HTMLDivElement>(null);
 	const fontsReady = useFontsReadyState(doc.fonts);
 	const fps = doc.settings.fps.num / doc.settings.fps.den;

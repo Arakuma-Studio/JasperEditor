@@ -6,6 +6,7 @@ import { clipEditHandlers } from './handlers/clip-edit.ts';
 import { CLIPBOARD_OWNER, clipboardHandlers } from './handlers/clipboard.ts';
 import { compositionHandlers } from './handlers/composition.ts';
 import { effectHandlers } from './handlers/effect.ts';
+import { EXPRESSION_OWNER, expressionHandlers } from './handlers/expression.ts';
 import { keyframeHandlers } from './handlers/keyframe.ts';
 import { m2Handlers } from './handlers/m2.ts';
 import { paramHandlers } from './handlers/param.ts';
@@ -35,7 +36,9 @@ export type CommandOwner =
 	// Clipboard (S01 §20)
 	| 'wp-clipboard'
 	// Effect presets (S03:FX-030)
-	| 'wp-m3-presets';
+	| 'wp-m3-presets'
+	// Expressions (docs/wp-notes/expressions.md)
+	| 'wp-m3-expressions';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -138,6 +141,10 @@ const LABELS: Record<CommandType, string> = {
 	'keyframe.paste': 'Paste Keyframes',
 	'project.pasteItems': 'Paste',
 	'effect.applyPreset': 'Apply Preset',
+	'expression.set': 'Set Expression',
+	'expression.clear': 'Clear Expression',
+	'expression.setEnabled': 'Enable Expression',
+	'effect.rename': 'Rename Effect',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -157,6 +164,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[shapeHandlers, SHAPE_OWNER],
 	[clipboardHandlers, CLIPBOARD_OWNER],
 	[presetHandlers, PRESET_OWNER],
+	[expressionHandlers, EXPRESSION_OWNER],
 	[m2Handlers, 'M2'],
 ];
 

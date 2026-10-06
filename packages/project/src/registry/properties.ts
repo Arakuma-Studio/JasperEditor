@@ -42,6 +42,8 @@ import type { MgTemplateInfo } from './mg.ts';
 export type ValueKind =
 	| 'number'
 	| 'vec2'
+	/** Wave expressions: 3D Point Control. */
+	| 'vec3'
 	| 'color'
 	| 'enum'
 	| 'boolean'
@@ -109,7 +111,13 @@ export type PropertySpec = {
 			| 'curve'
 			| 'media'
 			/** M2 (S08): a JSON editor (arrays, free-form objects). */
-			| 'json';
+			| 'json'
+			/** Wave expressions: x, y, z fields (3D Point Control). */
+			| 'vec3'
+			/** Wave expressions: a clip picker (Layer Control; value = clip id, '' = none). */
+			| 'layer'
+			/** Wave expressions: Dropdown Menu Control (1-based index into the effect's `items`). */
+			| 'menu';
 		bipolar?: boolean;
 		/** Digits after the decimal point in the UI (derived from `range.step` when absent). */
 		precision?: number;
@@ -1158,7 +1166,9 @@ export function effectParamPropertySpec(fxId: string, effect: EffectSpec, p: Par
 								? 'color'
 								: kind === 'vec2'
 									? 'vec2'
-									: 'text');
+									: kind === 'vec3'
+										? 'vec3'
+										: 'text');
 	const step = p.range?.step;
 	return {
 		key: `effects.${fxId}.${p.name}`,
@@ -1377,6 +1387,8 @@ export function propertyJsonSchema(s: PropertySpec): JsonSchemaObject {
 			};
 		case 'vec2':
 			return { ...base, type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2 };
+		case 'vec3':
+			return { ...base, type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 };
 		case 'color':
 			return {
 				...base,
