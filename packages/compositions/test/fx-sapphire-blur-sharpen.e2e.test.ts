@@ -24,6 +24,8 @@ const CASES: {
 	params?: Record<string, unknown>;
 	media?: Record<string, string>;
 	frame?: number;
+	/** Smallest mean change expected on the synthetic scene (default 0.3). */
+	minDiff?: number;
 }[] = [
 	{
 		id: 'jasper.s.advanced-defocus',
@@ -49,12 +51,14 @@ const CASES: {
 		params: { sizeFront: 0, sizeBack: 2, matteUse: 'luma' },
 		media: { kernel: 'disc.png', background: 'scene.png', matte: 'depth.png' },
 	},
-	{ id: 'jasper.s.deband', label: 'S_Deband', params: { edgeThreshold: 6 } },
+	// The synthetic scene is smooth, flat-shaded and grain-free, so Deband, EdgeAwareBlur and GrainRemove rightly change
+	// little here (their characteristic checks are in fx-sapphire-blur-sharpen-gl.test.ts).
+	{ id: 'jasper.s.deband', label: 'S_Deband', params: { edgeThreshold: 6 }, minDiff: 0.005 },
 	{ id: 'jasper.s.defocus-prism', label: 'S_DefocusPrism', params: { useGamma: 1.5, boostHighlights: 2 } },
-	{ id: 'jasper.s.edge-aware-blur', label: 'S_EdgeAwareBlur', params: { blurAmount: 0.8 } },
+	{ id: 'jasper.s.edge-aware-blur', label: 'S_EdgeAwareBlur', params: { blurAmount: 0.8 }, minDiff: 0.02 },
 	{ id: 'jasper.s.edge-blur', label: 'S_EdgeBlur', params: { blurWidth: 0.3, edgeWidth: 0.3 } },
 	{ id: 'jasper.s.free-lens', label: 'S_FreeLens', params: { tiltX: 25, leakIntensity: 0.5 } },
-	{ id: 'jasper.s.grain-remove', label: 'S_GrainRemove' },
+	{ id: 'jasper.s.grain-remove', label: 'S_GrainRemove', minDiff: 0.1 },
 	{ id: 'jasper.s.median', label: 'S_Median', params: { size: 3 } },
 	{
 		id: 'jasper.s.rack-defocus',
@@ -240,7 +244,7 @@ describe.runIf(enabled)(
 			for (const c of CASES) {
 				const s = await still(c, c.label);
 				expect(s.raw.length, c.id).toBe(FX_W * FX_H * 3);
-				expect(meanDiff(s.raw, plain.raw), c.id).toBeGreaterThan(0.3);
+				expect(meanDiff(s.raw, plain.raw), c.id).toBeGreaterThan(c.minDiff ?? 0.3);
 				pngs.push([c.label, s.png]);
 			}
 			if (process.env.SBS_SHEET) {
