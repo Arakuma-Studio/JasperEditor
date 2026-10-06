@@ -185,7 +185,7 @@ void main() {
                            : vec2(cell.x * 1.37, (q.y - u_vSpeedY * u_time) / L);
   float along = sw_noise01(fx_fbm(alongP, int(u_octaves), 2.0, 0.5, fract(u_seed + (horizontal ? 0.25 : 0.75))), 1.6);
   float profile = abs(2.0 * (horizontal ? fract(q.y) : fract(q.x)) - 1.0);
-  float v = 0.5 * base + 0.25 * along + 0.25 * profile;
+  float v = 0.35 * base + 0.4 * along + 0.25 * profile;
   if (u_strands == 1) v = 1.0 - v;
   vec3 g = sw_grad(v, u_gradAdd, u_gradAngle);
   fragColor = sw_composite(tr_from(v_uv), tr_to(v_uv), sw_fieldWipe(g.x, g.y, g.z, u_swMargin));
