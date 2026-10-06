@@ -224,20 +224,29 @@ JasperEditor/
 
 ### 3.1 Dependency rules (enforced by `scripts/check-layers.mjs` in `pnpm lint`, D-37)
 
+`LAYERS` in `scripts/check-layers.mjs` is this table in code; change both together and record why in §2.1.
+
 ```
-project        → zod, immer                      (no DOM, no Node built-ins, no React)
-mg-templates   → zod, (type-only) project
+project        → zod, immer                      (no DOM, no Node built-ins, no React/UI, no Remotion, no anime.js)
+mg-templates   → zod, project (types)
 api            → zod, project
 engine-client  → api                             (fetch + ReadableStream; runs in browser and Node 20)
-session        → project, api, engine-client, zustand; react only in ./react subpath
-ui             → react, radix-ui, lucide-react, dockview-react (theme only); type-only project imports allowed
+session        → project, api, engine-client, zustand; react only in src/react (the ./react subpath)
+ui             → react, radix-ui, lucide-react, @fontsource; project (labels, timecode helpers)
 motion         → animejs, remotion, project, mg-templates; react as peer   (only compositions imports it)
-compositions   → remotion, @remotion/*, project, mg-templates, motion   (NO session, ui, tailwind)
+compositions   → remotion, @remotion/*, project, mg-templates, motion   (NO session, ui, engine-client, tailwind)
 config         → node built-ins
-web            → everything above except config
-engine         → project, api, config, mg-templates, compositions (bundled via @remotion/bundler), fastify…
+web            → api, compositions, engine-client, mg-templates, project, session, ui (NOT config, motion, apps/*;
+                 no Node built-ins except the `node` script src/pwa/generate-icons.mjs)
+engine         → project, api, config, mg-templates, compositions (bundled via @remotion/bundler), mcp (serves /mcp,
+                 D-18), fastify…; tests also use engine-client and session
+mcp            → api, config, engine-client, project
 desktop        → electron, config (paths only)
 ```
+
+Everywhere: `packages/*` never import `apps/*`; relative imports never leave the package root (use the target's
+public `@jasper/*` export, which must be declared in package.json and listed in the target's `exports`); only
+`motion` imports anime.js. `// layers-allow: <reason>` on (or above) a line excuses that import.
 
 Each TS package: `"type": "module"`, `"exports": {".": "./src/index.ts"}` (plus subpaths like `"./react"`), `"scripts": {"typecheck": "tsc -p tsconfig.json --noEmit", "test": "vitest run"}`, `tsconfig.json` extending the base. Dependencies between workspace packages use `"workspace:*"`.
 
