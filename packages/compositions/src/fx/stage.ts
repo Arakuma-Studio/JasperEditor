@@ -37,15 +37,26 @@ import { cancelRender, Internals } from 'remotion';
 import { ColorDocContext, referencedMedia, useLutAssets } from '../color/chain.ts';
 import { bakedRunLut, loadedLutAsset, lutUrlKey } from '../color/luts.ts';
 import type { LayerProps, TransitionTap } from '../types.ts';
-import { type FxBypass, type FxCanvasLayout, fxCanvasLayout, type LayerFxPlan, planLayerFx } from './plan.ts';
+import { type FxMaskGeometry, maskGeometryKey } from './mask.ts';
+import {
+	type FxBypass,
+	type FxCanvasLayout,
+	type FxStep,
+	fxCanvasLayout,
+	type LayerFxPlan,
+	planLayerFx,
+} from './plan.ts';
 import { fxEffectRegistry } from './registry.ts';
 import { fxStatus, useFxStatus } from './status.ts';
 import { fxClipInfoOf } from './time.ts';
 
 export type FxLayout = FxCanvasLayout;
 
+/** wp masks: masks of a step (the effect applies inside them), in the chain canvas. */
+type PreparedMasks = { masks?: FxMaskGeometry };
+
 export type FxPreparedStep =
-	| {
+	| ({
 			kind: 'gpu';
 			key: string;
 			plan: FxEffectPlan;
@@ -56,11 +67,13 @@ export type FxPreparedStep =
 			sampleFrames: (number | null)[];
 			/** `u_sampleValid`. */
 			sampleValid: number;
-	  }
-	| { kind: 'lut'; key: string; lut: Lut | null }
-	| { kind: 'css'; key: string; filter: string }
-	| { kind: 'crop'; key: string; insets: [number, number, number, number] }
-	| { kind: 'flip'; key: string; horizontal: boolean }
+	  } & PreparedMasks)
+	| ({ kind: 'lut'; key: string; lut: Lut | null } & PreparedMasks)
+	| ({ kind: 'css'; key: string; filter: string } & PreparedMasks)
+	| ({ kind: 'crop'; key: string; insets: [number, number, number, number] } & PreparedMasks)
+	| ({ kind: 'flip'; key: string; horizontal: boolean } & PreparedMasks)
+	/** wp masks: the layer's Opacity masks. */
+	| { kind: 'mask'; key: string; geometry: FxMaskGeometry }
 	/** Transition framework: hand the picture to the GPU transition stage (always the last step). */
 	| {
 			kind: 'tap';
@@ -171,6 +184,7 @@ export function useLayerFx(
 						mediaKind,
 						clip: clipInfo,
 						capture,
+						masks: props.masks,
 					}),
 		[
 			enabled,
@@ -187,6 +201,7 @@ export function useLayerFx(
 			paramsAtOf,
 			mediaKind,
 			clipInfo,
+			props.masks,
 		],
 	);
 	if (plan && !doc.isPreview && (!plan.active || plan.bypassed.length > 0))
@@ -265,6 +280,7 @@ export function useLayerFx(
 	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the values that change the output
 	const stage = useMemo((): FxStage | null => {
 		if (!plan?.active || !layout) return null;
+		const L = layout;
 		const canvas = { width: layout.width, height: layout.height };
 		const lutKey = (id: string) => {
 			const u = doc.media[id]?.url;
@@ -276,7 +292,29 @@ export function useLayerFx(
 		};
 		const samples: number[] = [];
 		const media = new Map<string, FxMediaInput>();
+		const geometryOf = (masks: FxMaskGeometry['masks']): FxMaskGeometry => ({
+			masks,
+			box: layout.box,
+			pxScale: layout.pxScale,
+		});
+		// A masked step's key includes its mask geometry (the coverage changes the output).
+		const withMasks = (st: FxPreparedStep, masks: FxMaskGeometry['masks'] | undefined): FxPreparedStep => {
+			if (!masks?.length || st.kind === 'mask' || st.kind === 'tap') return st;
+			const g = geometryOf(masks);
+			return { ...st, masks: g, key: `${st.key}|masks:${maskGeometryKey(g, canvas.width, canvas.height)}` };
+		};
 		const steps: FxPreparedStep[] = plan.steps.map((s, i): FxPreparedStep => {
+			if (s.kind === 'mask') {
+				const g = geometryOf(s.masks);
+				return {
+					kind: 'mask',
+					key: `mask${i}:${maskGeometryKey(g, canvas.width, canvas.height)}`,
+					geometry: g,
+				};
+			}
+			return withMasks(prepareStep(s, i), s.masks);
+		});
+		function prepareStep(s: Exclude<FxStep, { kind: 'mask' }>, i: number): FxPreparedStep {
 			switch (s.kind) {
 				case 'gpu': {
 					const seed = fxSeed(clip.clipId, s.fx.id, s.fx.params);
@@ -284,7 +322,7 @@ export function useLayerFx(
 					const ctx: FxFrameContext = {
 						width: box.width,
 						height: box.height,
-						pxScale: layout.pxScale,
+						pxScale: L.pxScale,
 						fps,
 						frame: realFrame,
 						duration,
@@ -330,7 +368,7 @@ export function useLayerFx(
 				default:
 					return { kind: 'flip', key: `flip${i}`, horizontal: s.horizontal };
 			}
-		});
+		}
 		if (tap) {
 			const opacity = Math.min(1, Math.max(0, props.opacity / 100));
 			const compToCanvas = sideCompToCanvas(map, layout);

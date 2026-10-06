@@ -36,6 +36,7 @@ import { colorStageBackend } from '../color/gl.ts';
 import { loadedLutAsset } from '../color/luts.ts';
 import { fxCrop, fxFlip, fxLut, fxShader, fxTap } from './effects.ts';
 import type { FxRunInputs, FxTextureInput } from './host.ts';
+import { fxMaskApply, fxMasked } from './mask.ts';
 import type { FxMediaInput, FxStage } from './stage.ts';
 
 export type FxFeed = {
@@ -166,6 +167,8 @@ export function fxDescriptors(stage: FxStage, inputs: DescriptorInputs): EffectD
 	const cpu = colorStageBackend() === 'cpu';
 	const box = stage.layout.box;
 	for (const s of stage.steps) {
+		// wp masks: a masked step's effect applies inside its masks only (mix with its input by coverage).
+		const at = out.length;
 		switch (s.kind) {
 			case 'gpu': {
 				const textures: FxRunInputs['textures'] = {};
@@ -219,7 +222,12 @@ export function fxDescriptors(stage: FxStage, inputs: DescriptorInputs): EffectD
 			case 'tap':
 				out.push(fxTap({ key: s.key, tap: s.tap, meta: s.meta }));
 				break;
+			case 'mask':
+				out.push(fxMaskApply({ key: s.key, geometry: s.geometry }));
+				break;
 		}
+		if (s.kind !== 'mask' && s.kind !== 'tap' && s.masks && out.length === at + 1)
+			out[at] = fxMasked({ key: s.key, geometry: s.masks, inner: out[at]! });
 	}
 	return out;
 }
