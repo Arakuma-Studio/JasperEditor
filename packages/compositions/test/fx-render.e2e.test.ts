@@ -141,6 +141,45 @@ describe.runIf(enabled)(
 			expect(d).toBeLessThan(16);
 		});
 
+		it('time samples compose with remaps: an echo below a freeze shows the frozen picture', async () => {
+			const frame5 = await still(fxSnapshot(fxCmd.video(media, 2)), 5, 'video-5b');
+			const frame2 = await still(fxSnapshot(fxCmd.video(media, 2)), 2, 'video-2');
+			const echoOfFrozen = await still(
+				fxSnapshot([
+					...fxCmd.video(media, 2),
+					fxCmd.effect('test.s.freeze-frame', { at: 5 }),
+					fxCmd.effect('test.s.echo-only', { offset: -3 }),
+				]),
+				25,
+				'video-freeze-echo',
+			);
+			const diff = (a: Buffer, b: Buffer) => {
+				let d = 0;
+				for (let i = 0; i < a.length; i += 97) d = Math.max(d, Math.abs(a[i]! - b[i]!));
+				return d;
+			};
+			expect(diff(frame2, frame5)).toBeGreaterThan(40);
+			expect(diff(echoOfFrozen, frame5)).toBeLessThan(16);
+		});
+
+		it('params at sub-frame times: Transform Shutter Angle motion-blurs keyframed motion', async () => {
+			// The 200×200 red still sits at x 220…420; at frame 5 the Transform has it centred, moving 20 px/frame.
+			const sharp = await still(
+				fxSnapshot([...fxCmd.still(media), ...fxCmd.movingTransform(true)]),
+				5,
+				'tf-sharp',
+			);
+			const blurred = await still(
+				fxSnapshot([...fxCmd.still(media), ...fxCmd.movingTransform(false)]),
+				5,
+				'tf-blurred',
+			);
+			expect(at(sharp, 222, FX_H / 2)[0]).toBeGreaterThan(235);
+			// 360° shutter = ±10 px around x: at 2 px inside the edge ≈ 60 % coverage.
+			expect(Math.abs(at(blurred, 222, FX_H / 2)[0] - 153)).toBeLessThan(30);
+			expect(at(blurred, FX_W / 2, FX_H / 2)[0]).toBeGreaterThan(235);
+		});
+
 		it('shape (DOM layer, HTML-in-Canvas) + drop shadow', async () => {
 			const shadow = { shadowColor: [0, 1, 0, 1], opacity: 100, direction: 90, distance: 30, softness: 0 };
 			const raw = await still(
