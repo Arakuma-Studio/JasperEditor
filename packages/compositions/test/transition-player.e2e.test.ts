@@ -24,10 +24,17 @@ type Rgb = [number, number, number];
 const close = (a: Rgb, b: Rgb, tol = 16) => a.every((v, i) => Math.abs(v - b[i]!) <= tol);
 const BLUE: [number, number, number, number] = [0, 0, 1, 1];
 
-const cut = (a: Command[], effectId: string): Command[] => [
+const cut = (a: Command[], effectId: string, params?: Record<string, unknown>): Command[] => [
 	...a,
 	{ type: 'clip.addSolid', at: 30, duration: 30, track: 'V1', color: BLUE, ref: '$b' } as Command,
-	{ type: 'transition.add', trackId: 'V1', at: 30, effectId, duration: 20 } as Command,
+	{
+		type: 'transition.add',
+		trackId: 'V1',
+		at: 30,
+		effectId,
+		duration: 20,
+		...(params ? { params } : {}),
+	} as Command,
 ];
 
 describe.runIf(enabled && !!CHROME)(
@@ -117,6 +124,8 @@ describe.runIf(enabled && !!CHROME)(
 							} as unknown as Command,
 						],
 						'jasper.s.dissolve-luma',
+						// S_DissolveLuma v2 defaults to Sapphire's "Difference"; this check is about A's own luma.
+						{ useLumaOf: 'foreground', invertPattern: true },
 					),
 				),
 				shape: fxSnapshot(
