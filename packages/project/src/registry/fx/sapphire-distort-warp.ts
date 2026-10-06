@@ -736,6 +736,37 @@ void main() { fragColor = dw_render(${WRAP}, u_filter, 2); }`,
 	},
 });
 
+// ---------------------------------------------------------------- motion blur of keyframed warps
+
+/** Shutter samples of the keyframed-warp motion blur (S_WarpCornerPin, S_WarpPerspective). */
+export const DW_MB_SAMPLES = 8;
+
+/** Motion Blur + Mo Blur Length (frames of shutter, centred on the frame) of the keyframed warps. */
+const motionBlurParams = () => [
+	fxParam.toggle('motionBlur', 'Motion Blur', false),
+	fxParam.number('moBlurLength', 'Mo Blur Length', 1, { min: 0, softMax: 2, step: 0.01 }),
+];
+
+/**
+ * The params at the shutter samples of a keyframed warp (`frame + ((i + 0.5) / n − 0.5) · length`, n =
+ * DW_MB_SAMPLES), or null when there is no blur: Motion Blur off, a zero length, no `paramsAt` (the host cannot
+ * evaluate other times) or `key` (the values that move the warp) identical at every sample.
+ */
+export function warpShutterParams(
+	p: EffectParams,
+	ctx: { frame?: number; paramsAt?: (f: number) => EffectParams },
+	key: (q: EffectParams) => string,
+): EffectParams[] | null {
+	const len = Math.max(0, num(p.moBlurLength, 1));
+	if (!bool(p.motionBlur) || !(len > 0) || !ctx.paramsAt || ctx.frame === undefined) return null;
+	const n = DW_MB_SAMPLES;
+	const frame = ctx.frame;
+	const at = ctx.paramsAt;
+	const qs = Array.from({ length: n }, (_, i) => at(frame + ((i + 0.5) / n - 0.5) * len));
+	const k0 = key(qs[0]!);
+	return qs.every((q) => key(q) === k0) ? null : qs;
+}
+
 // ---------------------------------------------------------------- S_WarpCornerPin
 
 const cornerPoints = (p: EffectParams) => ({
@@ -744,12 +775,29 @@ const cornerPoints = (p: EffectParams) => ({
 	bl: vec2(p.bottomLeft, [0.22, 0.89]),
 	br: vec2(p.bottomRight, [0.81, 0.93]),
 });
+const cornerKey = (q: EffectParams) => JSON.stringify(cornerPoints(q));
+
+/** Padding of the pinned quad (+ bulge) in layer px. */
+function cornerPinPadding(p: EffectParams, ctx: { width: number; height: number }) {
+	const c = cornerPoints(p);
+	const xs = [c.tl[0], c.tr[0], c.bl[0], c.br[0]];
+	const ys = [c.tl[1], c.tr[1], c.bl[1], c.br[1]];
+	const b = vec2(p.bulge, [0, 0]);
+	const bx = 0.25 * Math.abs(b[0]) * (Math.max(...xs) - Math.min(...xs));
+	const by = 0.25 * Math.abs(b[1]) * (Math.max(...ys) - Math.min(...ys));
+	return {
+		left: Math.ceil(Math.max(0, -Math.min(...xs) + bx) * ctx.width),
+		right: Math.ceil(Math.max(0, Math.max(...xs) - 1 + bx) * ctx.width),
+		top: Math.ceil(Math.max(0, -Math.min(...ys) + by) * ctx.height),
+		bottom: Math.ceil(Math.max(0, Math.max(...ys) - 1 + by) * ctx.height),
+	};
+}
 
 export const S_WARP_CORNER_PIN = distortEffect({
 	id: 'jasper.s.warp-corner-pin',
 	label: 'S_WarpCornerPin',
 	description:
-		"A perspective warp that places the clip's four corners on four points (screens, billboards), with an optional bulge.",
+		"A perspective warp that places the clip's four corners on four points (screens, billboards), with an optional bulge and motion blur of keyframed corners.",
 	keywords: ['corner pin', 'perspective', 'four point', 'screen replacement', 'billboard'],
 	params: [
 		fxParam.point('topLeft', 'Top Left', [0.1, 0.38]),
@@ -759,34 +807,46 @@ export const S_WARP_CORNER_PIN = distortEffect({
 		filterParam(),
 		fxParam.vec2('bulge', 'Bulge', [0, 0], { min: -1, max: 1, step: 0.01 }),
 		...wrapParams('no'),
+		...motionBlurParams(),
 	],
 	gpu: {
 		timeInvariant: true,
 		padding: (p, ctx) => {
-			const c = cornerPoints(p);
-			const xs = [c.tl[0], c.tr[0], c.bl[0], c.br[0]];
-			const ys = [c.tl[1], c.tr[1], c.bl[1], c.br[1]];
-			const b = vec2(p.bulge, [0, 0]);
-			const bx = 0.25 * Math.abs(b[0]) * (Math.max(...xs) - Math.min(...xs));
-			const by = 0.25 * Math.abs(b[1]) * (Math.max(...ys) - Math.min(...ys));
+			// With motion blur: the union of the pinned quads over the shutter.
+			const pads = (warpShutterParams(p, ctx, cornerKey) ?? [p]).map((q) => cornerPinPadding(q, ctx));
 			return {
-				left: Math.ceil(Math.max(0, -Math.min(...xs) + bx) * ctx.width),
-				right: Math.ceil(Math.max(0, Math.max(...xs) - 1 + bx) * ctx.width),
-				top: Math.ceil(Math.max(0, -Math.min(...ys) + by) * ctx.height),
-				bottom: Math.ceil(Math.max(0, Math.max(...ys) - 1 + by) * ctx.height),
+				left: Math.max(...pads.map((x) => x.left)),
+				right: Math.max(...pads.map((x) => x.right)),
+				top: Math.max(...pads.map((x) => x.top)),
+				bottom: Math.max(...pads.map((x) => x.bottom)),
 			};
 		},
 		uniforms: (p, ctx) => {
-			const inv = cornerPinInverse(cornerPoints(p), ctx.height / Math.max(1, ctx.width));
-			return { u_cpInv: { mat3: mat3ToGlsl(inv ?? MAT3_IDENTITY) }, u_cpValid: inv !== null };
+			const aspect = ctx.height / Math.max(1, ctx.width);
+			const inv = cornerPinInverse(cornerPoints(p), aspect);
+			// Motion blur: the inverse pins of the shutter samples, 3 vec4 each (column-major mat3, valid flag).
+			const qs = warpShutterParams(p, ctx, cornerKey);
+			const packed = new Array<number>(DW_MB_SAMPLES * 12).fill(0);
+			qs?.forEach((q, i) => {
+				const m = cornerPinInverse(cornerPoints(q), aspect);
+				const g = mat3ToGlsl(m ?? MAT3_IDENTITY);
+				for (let k = 0; k < 9; k++) packed[i * 12 + k] = g[k]!;
+				packed[i * 12 + 9] = m ? 1 : 0;
+			});
+			return {
+				u_cpInv: { mat3: mat3ToGlsl(inv ?? MAT3_IDENTITY) },
+				u_cpValid: inv !== null,
+				u_cpN: { int: qs ? qs.length : 1 },
+				u_cpM: { vec4s: packed },
+			};
 		},
 		passes: [
 			{
 				include: [GLSL_DW_RENDER],
 				frag: /* glsl */ `
-// Normalised source position (0..1 over the layer) of output f; z < 0 = behind the pinned plane.
-vec3 cp_uv(vec2 f) {
-  vec3 h = u_cpInv * vec3(f, 1.0);
+// Normalised source position (0..1 over the layer) of output f under inverse pin M; z < 0 = behind the plane.
+vec3 cp_uvM(mat3 M, vec2 f) {
+  vec3 h = M * vec3(f, 1.0);
   if (h.z <= 1e-6) return vec3(0.0, 0.0, -1.0);
   vec2 uv = h.xy / h.z;
   // Bulge: bows the edges outward (positive) or inward along each axis.
@@ -794,6 +854,7 @@ vec3 cp_uv(vec2 f) {
   uv.y = 0.5 + (uv.y - 0.5) / max(0.05, 1.0 + u_bulge.y * 2.0 * clamp(uv.x, 0.0, 1.0) * (1.0 - clamp(uv.x, 0.0, 1.0)));
   return vec3(uv, 1.0);
 }
+vec3 cp_uv(vec2 f) { return cp_uvM(u_cpInv, f); }
 vec2 dw_warp(vec2 f) { vec3 s = cp_uv(f); return dw_frameOfNorm(s.xy); }
 vec4 dw_shade(vec2 f, ivec2 w) {
   vec3 s = cp_uv(f);
@@ -801,19 +862,16 @@ vec4 dw_shade(vec2 f, ivec2 w) {
   // The pinned picture is the layer box only (not the padding of earlier effects).
   return dw_tap(dw_frameOfNorm(s.xy), w == ivec2(DW_NO) ? ivec2(DW_NO, DW_NO) : w);
 }
-void main() {
-  // No → the quad only (transparent around it); Tile/Reflect repeat the picture over the whole canvas.
-  vec2 f = dw_frame();
-  ivec2 w = ivec2(u_wrapX, u_wrapY);
-  int n = u_filter ? int(clamp(ceil(dw_footprint(f) - 0.25), 1.0, 4.0)) : 1;
+// The pinned picture at output f under inverse pin M (n × n supersampling).
+vec4 cp_pinned(mat3 M, bool ok, vec2 f, ivec2 w, int n) {
   vec4 acc = vec4(0.0);
   for (int j = 0; j < 4; j++) {
     if (j >= n) break;
     for (int i = 0; i < 4; i++) {
       if (i >= n) break;
       vec2 o = ((vec2(float(i), float(j)) + 0.5) / float(n) - 0.5) * dw_px();
-      vec3 s = cp_uv(f + o);
-      if (!u_cpValid || s.z < 0.0) continue;
+      vec3 s = cp_uvM(M, f + o);
+      if (!ok || s.z < 0.0) continue;
       vec2 uv = s.xy;
       float cov = 1.0;
       if (w.x == DW_NO) cov *= dw_cov1(uv.x, u_box.z); else uv.x = dw_wrap1(uv.x, w.x);
@@ -822,7 +880,25 @@ void main() {
       if (cov > 0.0) acc += texture(u_source, fx_uvOfLayerNorm(clamp(uv, lim, 1.0 - lim))) * cov;
     }
   }
-  fragColor = acc / float(n * n);
+  return acc / float(n * n);
+}
+void main() {
+  // No → the quad only (transparent around it); Tile/Reflect repeat the picture over the whole canvas.
+  vec2 f = dw_frame();
+  ivec2 w = ivec2(u_wrapX, u_wrapY);
+  int n = u_filter ? int(clamp(ceil(dw_footprint(f) - 0.25), 1.0, 4.0)) : 1;
+  if (u_cpN > 1) {
+    // Motion Blur: the pinned pictures of the keyframed corners over the shutter, averaged.
+    vec4 sum = vec4(0.0);
+    for (int k = 0; k < ${DW_MB_SAMPLES}; k++) {
+      if (k >= u_cpN) break;
+      vec4 a = u_cpM[3 * k], b = u_cpM[3 * k + 1], c = u_cpM[3 * k + 2];
+      sum += cp_pinned(mat3(a.x, a.y, a.z, a.w, b.x, b.y, b.z, b.w, c.x), c.y > 0.5, f, w, n);
+    }
+    fragColor = sum / float(u_cpN);
+    return;
+  }
+  fragColor = cp_pinned(u_cpInv, u_cpValid, f, w, n);
 }`,
 			},
 		],
@@ -1140,6 +1216,22 @@ vec2 dw_warp(vec2 f) {
 
 // ---------------------------------------------------------------- S_WarpPerspective
 
+/** The plane pose of S_WarpPerspective's params, packed as its motion-blur samples (2 vec4). */
+function perspectivePose(q: EffectParams): number[] {
+	const sh = vec2(q.shiftOrig, [0, 0]);
+	return [
+		num(q.roll),
+		num(q.teleLensWidth, 1),
+		num(q.latitude, 35),
+		num(q.zDist, 3),
+		num(q.swing),
+		sh[0],
+		sh[1],
+		0,
+	];
+}
+const perspectiveKey = (q: EffectParams) => perspectivePose(q).join(',');
+
 export const S_WARP_PERSPECTIVE = distortEffect({
 	id: 'jasper.s.warp-perspective',
 	label: 'S_WarpPerspective',
@@ -1162,20 +1254,34 @@ export const S_WARP_PERSPECTIVE = distortEffect({
 		...wrapParams('tile'),
 		fxParam.toggle('wrapAboveHorizon', 'Wrap Above Horizon', false),
 		filterParam(),
+		...motionBlurParams(),
 	],
 	gpu: {
 		timeInvariant: true,
+		uniforms: (p, ctx) => {
+			// Motion blur: the plane pose at the shutter samples, 2 vec4 each ((roll, lens, latitude, zDist),
+			// (swing, shift x, shift y, 0)).
+			const qs = warpShutterParams(p, ctx, perspectiveKey);
+			const packed = new Array<number>(DW_MB_SAMPLES * 8).fill(0);
+			qs?.forEach((q, i) => packed.splice(i * 8, 8, ...perspectivePose(q)));
+			return { u_wpN: { int: qs ? qs.length : 1 }, u_wpM: { vec4s: packed } };
+		},
 		passes: [
 			{
 				include: [GLSL_DW_RENDER],
 				frag: /* glsl */ `
+// The pose of shutter sample g_wpK (motion blur), or the params (g_wpK < 0).
+int g_wpK = -1;
+vec4 wp_a() { return g_wpK < 0 ? vec4(u_roll, u_teleLensWidth, u_latitude, u_zDist) : u_wpM[2 * g_wpK]; }
+vec4 wp_b() { return g_wpK < 0 ? vec4(u_swing, u_shiftOrig, 0.0) : u_wpM[2 * g_wpK + 1]; }
 // Ray from the eye through output f onto the plane; x = source frame position, z = 0 when the ray misses.
 vec3 wp_hit(vec2 f) {
-  vec2 g = dw_rot(-u_roll) * f;
-  float F = u_teleLensWidth;
-  float L = radians(clamp(u_latitude, -89.0, 89.0));
+  vec4 A = wp_a(), B = wp_b();
+  vec2 g = dw_rot(-A.x) * f;
+  float F = A.y;
+  float L = radians(clamp(A.z, -89.0, 89.0));
   vec3 d = vec3(g, F);
-  vec3 C = vec3(0.0, 0.0, u_zDist * F);
+  vec3 C = vec3(0.0, 0.0, A.w * F);
   vec3 n = vec3(0.0, sin(L), cos(L));
   vec3 v = vec3(0.0, cos(L), -sin(L));
   float den = dot(d, n);
@@ -1187,14 +1293,27 @@ vec3 wp_hit(vec2 f) {
   }
   vec3 P = t * d - C;
   vec2 local = vec2(P.x, dot(P, v));
-  return vec3(dw_rot(-u_swing) * local - u_shiftOrig, hit);
+  return vec3(dw_rot(-B.x) * local - B.yz, hit);
 }
 vec2 dw_warp(vec2 f) { vec3 h = wp_hit(f); return h.z > 0.0 ? h.xy : f * 1.0e4; }
 vec4 dw_shade(vec2 f, ivec2 w) {
   vec3 h = wp_hit(f);
   return h.z > 0.0 ? dw_tap(h.xy, w) : vec4(0.0);
 }
-void main() { fragColor = dw_render(${WRAP}, u_filter, 4); }`,
+void main() {
+  if (u_wpN > 1) {
+    // Motion Blur: the plane at the shutter samples of the keyframed pose, averaged.
+    vec4 sum = vec4(0.0);
+    for (int k = 0; k < ${DW_MB_SAMPLES}; k++) {
+      if (k >= u_wpN) break;
+      g_wpK = k;
+      sum += dw_render(${WRAP}, u_filter, 4);
+    }
+    fragColor = sum / float(u_wpN);
+    return;
+  }
+  fragColor = dw_render(${WRAP}, u_filter, 4);
+}`,
 			},
 		],
 	},

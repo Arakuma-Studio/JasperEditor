@@ -5,42 +5,54 @@ import { GLSL_BLUR } from './glsl/blur.ts';
 import type { ShaderPass } from './shader.ts';
 
 /**
+ * A blur sigma: CANVAS pixels known when planning, or `{uniform: 'u_x'}` — a GLSL float expression (usually a
+ * uniform of `gpu.uniforms`, e.g. `'u_blurPx'` or `'u_sigmas.y'`) evaluated per frame: animated radii then reuse
+ * the same programs and plans instead of re-planning on every value.
+ */
+export type FxBlurSigma = number | { uniform: string };
+
+/**
  * Two passes (horizontal, then vertical) blurring the texture `input` (`'source'`, `'prev'` or a pass output) with a
- * Gaussian of `sigma` CANVAS pixels; the result is the output named `output`. `scale` < 1 blurs at a reduced
- * resolution (cheap large radii; the sigma is converted). `sigma` 0 still yields the passes (a copy).
+ * Gaussian of `sigma` CANVAS pixels (`sigmaY` for the vertical pass, default `sigma`); the result is the output
+ * named `output`. `scale` < 1 blurs at a reduced resolution (cheap large radii; the sigma is converted). `sigma` 0
+ * still yields the passes (a copy).
  */
 export function gaussianBlurPasses(opts: {
 	input: string;
 	output: string;
-	sigma: number;
+	sigma: FxBlurSigma;
+	sigmaY?: FxBlurSigma;
 	scale?: number;
 	format?: 'rgba8' | 'rgba16f';
 }): ShaderPass[] {
 	const scale = Math.min(1, Math.max(1e-3, opts.scale ?? 1));
-	const sigma = Math.max(0, opts.sigma) * scale;
 	const tex = (name: string) => `u_${name}`;
-	const frag = (inputTex: string) => `
+	const frag = (inputTex: string, sigmaExpr = 'u_blurSigma') => `
 void main() {
   vec2 texel = 1.0 / vec2(textureSize(${inputTex}, 0));
-  fragColor = fx_gaussian1d(${inputTex}, v_uv, u_blurDir, texel, u_blurSigma * (vec2(textureSize(${inputTex}, 0)).x / u_resolution.x));
+  fragColor = fx_gaussian1d(${inputTex}, v_uv, u_blurDir, texel, ${sigmaExpr} * (vec2(textureSize(${inputTex}, 0)).x / u_resolution.x));
 }`;
+	const pass = (inputTex: string, output: string, dir: [number, number], s: FxBlurSigma): ShaderPass =>
+		typeof s === 'number'
+			? {
+					output,
+					frag: frag(inputTex),
+					include: [GLSL_BLUR],
+					scale,
+					format: opts.format,
+					uniforms: { u_blurDir: dir, u_blurSigma: Math.max(0, s) * scale },
+				}
+			: {
+					output,
+					frag: frag(inputTex, `max(0.0, ${s.uniform}) * ${scale.toFixed(6)}`),
+					include: [GLSL_BLUR],
+					scale,
+					format: opts.format,
+					uniforms: { u_blurDir: dir },
+				};
 	return [
-		{
-			output: `${opts.output}H`,
-			frag: frag(tex(opts.input)),
-			include: [GLSL_BLUR],
-			scale,
-			format: opts.format,
-			uniforms: { u_blurDir: [1, 0], u_blurSigma: sigma },
-		},
-		{
-			output: opts.output,
-			frag: frag(tex(`${opts.output}H`)),
-			include: [GLSL_BLUR],
-			scale,
-			format: opts.format,
-			uniforms: { u_blurDir: [0, 1], u_blurSigma: sigma },
-		},
+		pass(tex(opts.input), `${opts.output}H`, [1, 0], opts.sigma),
+		pass(tex(`${opts.output}H`), opts.output, [0, 1], opts.sigmaY ?? opts.sigma),
 	];
 }
 

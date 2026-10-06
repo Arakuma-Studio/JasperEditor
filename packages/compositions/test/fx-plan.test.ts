@@ -50,13 +50,22 @@ describe('planLayerFx', () => {
 		expect(p.padding).toEqual({ left: 25, top: 25, right: 25, bottom: 25 }); // 3×5 + (4 + 3×2)
 	});
 
-	it('moves effects that cannot run on a canvas (SVG filters) after the chain and reports them', () => {
+	it('runs SVG-filter built-ins before a shader effect as GPU stand-ins, in stack order', () => {
 		const svgBlur = fx('jasper.gaussian-blur', { radius: 2, dimensions: 'vertical' });
 		const glow = fx('test.s.glow');
 		const p = planLayerFx([svgBlur, glow], opts)!;
-		expect(kinds(p)).toEqual(['gpu']);
-		expect(p.reordered).toEqual([svgBlur.id]);
-		expect(p.cssEffects.map((e) => e.id)).toEqual([svgBlur.id]);
+		expect(kinds(p)).toEqual(['gpu', 'gpu']);
+		const first = p.steps[0]!;
+		expect(first.kind === 'gpu' && first.fx.id === svgBlur.id && first.spec.id).toBe('jasper.gaussian-blur');
+		expect(p.reordered).toEqual([]);
+		expect(p.cssEffects).toEqual([]);
+		// Repeat Edge Pixels keeps the picture in the box (no padding); without it the blur pads by 3σ.
+		expect(first.kind === 'gpu' && first.padding.top).toBe(6);
+		const edge = planLayerFx([fx('jasper.gaussian-blur', { radius: 2, repeatEdge: true }), glow], opts)!;
+		expect(edge.steps[0]!.kind === 'gpu' && edge.steps[0]!.padding.top).toBe(0);
+		// Equal sigmas stay the exact 2D canvas blur().
+		const plain = planLayerFx([fx('jasper.gaussian-blur', { radius: 2 }), glow], opts)!;
+		expect(kinds(plain)).toEqual(['css', 'gpu']);
 	});
 
 	it('keeps colour after the last shader effect in the chain (exact grade), CSS after the last colour run', () => {

@@ -13,7 +13,6 @@ import { invertMat3, type Mat3, multiplyMat3 } from '../../render/homography.ts'
 import type { TransitionSpec } from '../../transitions.ts';
 import type { EffectParams } from '../effects.ts';
 import {
-	buildPassSource,
 	FX_BUILTIN_UNIFORMS,
 	FX_MAX_TEXTURES,
 	type FxEffectPlan,
@@ -23,9 +22,12 @@ import {
 	fxBuiltinUniforms,
 	hashString,
 	paramUniforms,
+	planPasses,
+	planPassesKey,
 	resolveIncludes,
 	type ShaderPass,
 	toUniform,
+	uniformDeclaration,
 } from '../fx/shader.ts';
 import { GLSL_TRANSITION } from './glsl.ts';
 
@@ -221,11 +223,7 @@ export function transitionPasses(
 	return typeof gpu.passes === 'function' ? gpu.passes(p, ctx) : gpu.passes;
 }
 
-function declaration(u: FxUniform): string {
-	return u.type === 'float[]'
-		? `uniform float ${u.name}[${u.value.length}];`
-		: `uniform ${u.type} ${u.name};`;
-}
+const declaration = uniformDeclaration;
 
 /**
  * Plans one frame of a GPU transition: progress (Start/End %, Reverse), the two placement passes (`from`, `to`) and
@@ -290,36 +288,14 @@ export function planGpuTransition(
 		placementPass('To', to),
 		...authored.map((pass) => ({ ...pass, include: [GLSL_TRANSITION, ...(pass.include ?? [])] })),
 	];
-	const paramDecls = uniforms.map(declaration);
-	const outputs: string[] = [];
-	const planned: FxPassPlan[] = [];
-	passes.forEach((pass, index) => {
-		const last = index === passes.length - 1;
-		const scale = last ? 1 : Math.min(1, Math.max(1e-3, finite(pass.scale, 1)));
-		const passUniforms = Object.entries(pass.uniforms ?? {}).map(([k, v]) => toUniform(k, v));
-		const source = buildPassSource(pass, {
-			params: paramDecls,
-			textures: textures.map((t) => t.uniform),
-			outputs: [...outputs],
-			uniforms: passUniforms.map(declaration),
-		});
-		const output = last ? null : (pass.output ?? `pass${index}`);
-		planned.push({
-			index,
-			output,
-			width: Math.max(1, Math.ceil(comp.width * scale)),
-			height: Math.max(1, Math.ceil(comp.height * scale)),
-			format: pass.format ?? 'rgba8',
-			filter: pass.filter ?? 'linear',
-			source,
-			uniforms: passUniforms,
-		});
-		if (output) outputs.push(output);
-	});
 	const canvas = { width: comp.width, height: comp.height };
-	const key = `${spec.id}@${spec.version}:${canvas.width}x${canvas.height}:${planned
-		.map((pp) => `${pp.width}x${pp.height}/${pp.format}/${hashString(pp.source)}`)
-		.join(',')}`;
+	// Same pass planning as effects (absolute sizes, ping-pong `update` outputs, mipmaps, unused declarations dropped).
+	const planned: FxPassPlan[] = planPasses(passes, {
+		paramDecls: uniforms.map(declaration),
+		textures: textures.map((t) => t.uniform),
+		canvas,
+	});
+	const key = `${spec.id}@${spec.version}:${canvas.width}x${canvas.height}:${planPassesKey(planned)}`;
 	const plan: FxEffectPlan = {
 		fxId: inst.id,
 		effectId: spec.id,

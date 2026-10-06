@@ -33,6 +33,8 @@ import {
 } from '../src/index.ts';
 
 const FRAG = 'void main() { fragColor = texture(u_source, v_uv); }';
+const USES_ALL =
+	'void main() { fragColor = texture(u_source, v_uv) * u_radius * u_double + texture(u_map, v_uv) * u_map_size.x; }';
 const CTX: FxFrameContext = {
 	width: 100,
 	height: 50,
@@ -109,8 +111,13 @@ describe('pass planning', () => {
 		gpu: {
 			uniforms: (p) => ({ u_double: (p.radius as number) * 2 }),
 			passes: [
-				{ output: 'bright', frag: FRAG, include: [GLSL_COMPOSITE] },
-				{ frag: FRAG, scale: 0.5, format: 'rgba16f', uniforms: { u_dir: [1, 0] } },
+				{ output: 'bright', frag: USES_ALL, include: [GLSL_COMPOSITE] },
+				{
+					frag: `${USES_ALL.replace('u_source', 'u_bright')} // u_dir`,
+					scale: 0.5,
+					format: 'rgba16f',
+					uniforms: { u_dir: [1, 0] },
+				},
 				{ frag: 'void main() { fragColor = texture(u_pass1, v_uv) + texture(u_bright, v_uv); }' },
 			],
 		},
@@ -135,11 +142,13 @@ describe('pass planning', () => {
 		expect(p1!.source).toMatch(/uniform sampler2D u_bright;/);
 		expect(p1!.source).not.toMatch(/uniform sampler2D u_pass1;/);
 		expect(p2!.source).toMatch(/uniform sampler2D u_pass1;/);
-		for (const p of plan.passes) {
+		for (const p of plan.passes.slice(0, 2)) {
 			expect(p.source).toMatch(/uniform float u_radius;/);
 			expect(p.source).toMatch(/uniform float u_double;/);
 			expect(p.source).toMatch(/uniform sampler2D u_map;\nuniform vec2 u_map_size;/);
 		}
+		// Declarations a pass never mentions are left out (identical bodies share one program).
+		expect(p2!.source).not.toMatch(/u_radius|u_double|u_map/);
 		expect(p1!.source).toMatch(/uniform vec2 u_dir;/);
 		expect(p0!.source).not.toMatch(/u_dir/);
 		expect(plan.uniforms).toContainEqual({ name: 'u_double', type: 'float', value: [12] });
@@ -241,15 +250,26 @@ describe('time hooks', () => {
 	const back = spec({ gpu: { passes: [{ frag: FRAG }], time: { remap: (_p, c) => c.frame - 10 } } });
 	const tctx = { frame: 3, fps: 30, duration: 20, headHandle: 2, tailHandle: 0 };
 
-	it('remaps compose in stack order, floor, and clamp to the drawn span', () => {
+	it('remaps nest (the last effect remaps the real frame first), floor, and clamp to the drawn span', () => {
 		expect(fxSourceFrame([], tctx)).toBeNull();
 		expect(fxSourceFrame([{ spec: freeze, params: {}, seed: 0 }], tctx)).toBe(5);
 		expect(fxSourceFrame([{ spec: back, params: {}, seed: 0 }], tctx)).toBe(-2); // head handle
+		// [Freeze, Back]: Back asks the frozen input for frame 5 → the frozen picture.
 		expect(
 			fxSourceFrame(
 				[
 					{ spec: freeze, params: {}, seed: 0 },
 					{ spec: back, params: {}, seed: 0 },
+				],
+				{ ...tctx, frame: 15 },
+			),
+		).toBe(5);
+		// [Back, Freeze]: the freeze holds Back's output at 5.7 → source 5 − 10 → clamped to the head handle.
+		expect(
+			fxSourceFrame(
+				[
+					{ spec: back, params: {}, seed: 0 },
+					{ spec: freeze, params: {}, seed: 0 },
 				],
 				{ ...tctx, frame: 15 },
 			),

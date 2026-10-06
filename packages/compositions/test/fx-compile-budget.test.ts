@@ -94,7 +94,14 @@ function collectPrograms(): Program[] {
 				label: name,
 				category: 'Utility',
 				params: [fxParam.number('n', 'N', 6, { min: 0, max: 12 })],
-				gpu: { passes: [{ include: GLSL_LIBRARY, frag: `void main() {\n  vec2 p = fx_layerPx() * 0.05;\n  float acc = 0.0;\n${body}\n  fragColor = vec4(vec3(acc), 1.0);\n}` }] },
+				gpu: {
+					passes: [
+						{
+							include: GLSL_LIBRARY,
+							frag: `void main() {\n  vec2 p = fx_layerPx() * 0.05;\n  float acc = 0.0;\n${body}\n  fragColor = vec4(vec3(acc), 1.0);\n}`,
+						},
+					],
+				},
 			});
 			const plan = planGpuEffect(
 				spec,
@@ -111,26 +118,51 @@ function collectPrograms(): Program[] {
 const LIBRARY_STRESS: [string, string][] = [
 	['hash2-loop', '  for (int i = 0; i < 16; i++) acc += fx_hash2(ivec2(p) + ivec2(i, -i), u_seed);'],
 	['hash3-loop', '  for (int i = 0; i < 16; i++) acc += fx_hash3(ivec3(ivec2(p), i - 8), u_seed);'],
-	['random-loop', '  for (int i = 0; i < 16; i++) acc += fx_random(p + float(i), u_frame - float(i), u_seed);'],
+	[
+		'random-loop',
+		'  for (int i = 0; i < 16; i++) acc += fx_random(p + float(i), u_frame - float(i), u_seed);',
+	],
 	['valueNoise-loop', '  for (int i = 0; i < 8; i++) acc += fx_valueNoise(p * float(i + 1), u_seed);'],
-	['valueNoise3-loop', '  for (int i = 0; i < 8; i++) acc += fx_valueNoise3(vec3(p, u_time) * float(i + 1), u_seed);'],
+	[
+		'valueNoise3-loop',
+		'  for (int i = 0; i < 8; i++) acc += fx_valueNoise3(vec3(p, u_time) * float(i + 1), u_seed);',
+	],
 	['gradientNoise-loop', '  for (int i = 0; i < 8; i++) acc += fx_gradientNoise(p * float(i + 1), u_seed);'],
 	['simplex-loop', '  for (int i = 0; i < 8; i++) acc += fx_simplex(p * float(i + 1), u_seed);'],
-	['simplex3-loop', '  for (int i = 0; i < 8; i++) acc += fx_simplex3(vec3(p, u_time) * float(i + 1), u_seed);'],
-	['simplex3-dyn', '  for (int i = 0; i < int(u_n); i++) acc += fx_simplex3(vec3(p, u_time) * float(i + 1), u_seed);'],
+	[
+		'simplex3-loop',
+		'  for (int i = 0; i < 8; i++) acc += fx_simplex3(vec3(p, u_time) * float(i + 1), u_seed);',
+	],
+	[
+		'simplex3-dyn',
+		'  for (int i = 0; i < int(u_n); i++) acc += fx_simplex3(vec3(p, u_time) * float(i + 1), u_seed);',
+	],
 	['fbm', '  acc = fx_fbm(p, 8, 2.0, 0.5, u_seed);'],
 	['fbm-loop', '  for (int i = 0; i < 4; i++) acc += fx_fbm(p + float(i), 6, 2.0, 0.5, u_seed);'],
 	['fbm3', '  acc = fx_fbm3(vec3(p, u_time), 8, 2.0, 0.5, u_seed);'],
-	['fbm3-loop', '  for (int i = 0; i < 4; i++) acc += fx_fbm3(vec3(p + float(i), u_time), 6, 2.0, 0.5, u_seed);'],
-	['turbulence-ridged', '  acc = fx_turbulence(vec3(p, u_time), 8, 2.0, 0.5, u_seed) + fx_ridged(vec3(p, u_time), 8, 2.0, 0.5, u_seed);'],
+	[
+		'fbm3-loop',
+		'  for (int i = 0; i < 4; i++) acc += fx_fbm3(vec3(p + float(i), u_time), 6, 2.0, 0.5, u_seed);',
+	],
+	[
+		'turbulence-ridged',
+		'  acc = fx_turbulence(vec3(p, u_time), 8, 2.0, 0.5, u_seed) + fx_ridged(vec3(p, u_time), 8, 2.0, 0.5, u_seed);',
+	],
 	['cellular-loop', '  for (int i = 0; i < 8; i++) acc += fx_cellular(p * float(i + 1), 1.0, u_seed).x;'],
 	['cellId-loop', '  for (int i = 0; i < 8; i++) acc += fx_cellId(p * float(i + 1), 1.0, u_seed);'],
-	['hash22-33-loop', '  for (int i = 0; i < 8; i++) { acc += fx_hash22(ivec2(p) + i, u_seed).x + fx_hash33(ivec3(ivec2(p), i), u_seed).y; }'],
+	[
+		'hash22-33-loop',
+		'  for (int i = 0; i < 8; i++) { acc += fx_hash22(ivec2(p) + i, u_seed).x + fx_hash33(ivec3(ivec2(p), i), u_seed).y; }',
+	],
 ];
 
 /** Page side: compiles, links and draws one program into a 4×4 target; returns the wall time in ms. */
 function compileInPage(source: string): number | string {
-	const w = window as unknown as { __gl?: WebGL2RenderingContext; __vs?: WebGLShader; __fbo?: WebGLFramebuffer };
+	const w = window as unknown as {
+		__gl?: WebGL2RenderingContext;
+		__vs?: WebGLShader;
+		__fbo?: WebGLFramebuffer;
+	};
 	if (!w.__gl) {
 		const c = document.createElement('canvas');
 		c.width = 4;

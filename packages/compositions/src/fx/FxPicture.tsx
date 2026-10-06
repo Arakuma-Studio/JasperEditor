@@ -2,7 +2,7 @@
 // `FxPicture` owns the layer's output canvas — the layer box grown by the effects' padding (S03:FX-041), placed at
 // (−left, −top) in the box so glows/shadows/rays draw outside it — and runs the canvas effect chain (Remotion
 // `Internals.runEffectChain`, as the colour stage's ColorCanvas) on the source picture. Feeders (children) deliver
-// pictures into slots: the layer source (`source`), time samples (`sample:<offset>`) and media inputs
+// pictures into slots: the layer source (`source`), time samples (`sample@<source frame>`) and media inputs
 // (`media:<mediaId>`); every delivery and every stage change redraws.
 // Renders: each draw holds a delayRender while it runs (the chain is synchronous: 2D effects on the shared GPU
 // host); a video feeder invalidates its slot when the frame it shows changes, so a frame is never drawn from another
@@ -33,12 +33,13 @@ import {
 } from 'remotion';
 import { colorLutCpu, cssFilter } from '../color/effects.ts';
 import { colorStageBackend } from '../color/gl.ts';
+import { loadedLutAsset } from '../color/luts.ts';
 import { fxCrop, fxFlip, fxLut, fxShader, fxTap } from './effects.ts';
-import type { FxRunInputs } from './host.ts';
+import type { FxRunInputs, FxTextureInput } from './host.ts';
 import type { FxMediaInput, FxStage } from './stage.ts';
 
 export type FxFeed = {
-	/** Copies a picture into a slot (`source`, `sample:<offset>`, `media:<mediaId>`) and redraws. */
+	/** Copies a picture into a slot (`source`, `sample@<frame>`, `media:<mediaId>`) and redraws. */
 	feed(slot: string, image: CanvasImageSource): void;
 	/** Renders: the slot has no picture for the frame being rendered (until its next delivery). */
 	invalidate(slot: string): void;
@@ -147,10 +148,14 @@ function useFxImages(urls: readonly string[], rendering: boolean): Map<string, H
 // ---------------------------------------------------------------- descriptors
 
 type DescriptorInputs = {
-	/** Placed time samples by offset (canvas-sized). */
+	/** Placed time samples by source frame (canvas-sized). */
 	samples: ReadonlyMap<number, HTMLCanvasElement>;
-	/** Media pictures by media id. */
-	media: ReadonlyMap<string, { source: TexImageSource; width: number; height: number; version: string }>;
+	/** Identity of each placed sample picture (slot version), for the host's once-per-frame upload. */
+	sampleKeys?: ReadonlyMap<number, string>;
+	/** A transparent canvas-sized picture (samples outside the clip, `sampleEdge: 'transparent'`). */
+	blank?: HTMLCanvasElement;
+	/** Media pictures (or LUTs of `lut` params) by media id. */
+	media: ReadonlyMap<string, FxTextureInput>;
 	preview: boolean;
 };
 
@@ -169,20 +174,28 @@ export function fxDescriptors(stage: FxStage, inputs: DescriptorInputs): EffectD
 					(textures as Record<string, unknown>)[t.uniform] = m ?? null;
 					versions.push(m?.version ?? '-');
 				}
-				const sources = s.sampleOffsets
-					.map((o) => inputs.samples.get(o))
+				// Every sample picture, or none while one is not delivered yet (u_sampleCount 0, as in wave 1).
+				const sources = s.sampleFrames
+					.map((f) => (f === null ? inputs.blank : inputs.samples.get(f)))
 					.filter((c): c is HTMLCanvasElement => !!c);
+				const complete = sources.length === s.sampleFrames.length && sources.length > 0;
+				const sampleKey =
+					complete && inputs.sampleKeys
+						? s.sampleFrames.map((f) => (f === null ? 'blank' : inputs.sampleKeys!.get(f))).join(',')
+						: undefined;
 				out.push(
 					fxShader({
-						key: `${s.key}|${versions.join(',')}`,
+						key: `${s.key}|${versions.join(',')}|${sampleKey ?? (complete ? 'samples' : 'none')}`,
 						plan: s.plan,
 						preview: inputs.preview,
 						inputs: {
 							builtins: [...stage.builtins, { name: 'u_seed', type: 'float', value: [s.seed] }],
 							textures,
 							samples: {
-								sources: sources.length === s.sampleOffsets.length ? sources : [],
+								sources: complete ? sources : [],
 								offsets: s.sampleOffsets,
+								valid: complete ? s.sampleValid : 0,
+								...(sampleKey !== undefined ? { key: sampleKey } : {}),
 							},
 						},
 					}),
@@ -228,6 +241,8 @@ function canvasStyle(stage: FxStage): CSSProperties {
 
 // ---------------------------------------------------------------- FxPicture (media layers)
 
+let pictureSerial = 0;
+
 export function FxPicture({ stage, children }: { stage: FxStage; children?: ReactNode }) {
 	const canvasRef = useRef<HTMLCanvasElement | null>(null);
 	const chain = Internals.useEffectChainState();
@@ -236,6 +251,8 @@ export function FxPicture({ stage, children }: { stage: FxStage; children?: Reac
 	stageRef.current = stage;
 	const slots = useRef(new Map<string, Slot>());
 	const placed = useRef(new Map<string, HTMLCanvasElement>());
+	// Distinguishes this picture's sample uploads from other layers' in the shared GPU host.
+	const [pictureId] = useState(() => `p${++pictureSerial}`);
 	const raf = useRef<number | null>(null);
 	const imageUrls = stage.media.filter((m) => m.kind === 'image').map((m) => m.url);
 	const images = useFxImages(imageUrls, rendering);
@@ -269,12 +286,25 @@ export function FxPicture({ stage, children }: { stage: FxStage; children?: Reac
 		try {
 			const source = placeSlot('source', W, H);
 			const samples = new Map<number, HTMLCanvasElement>();
-			for (const o of s.samples) samples.set(o, placeSlot(`sample:${o}`, W, H));
-			const media = new Map<
-				string,
-				{ source: TexImageSource; width: number; height: number; version: string }
-			>();
+			const sampleKeys = new Map<number, string>();
+			const b = s.layout.box;
+			for (const f of s.samples) {
+				const name = `sample@${f}`;
+				samples.set(f, placeSlot(name, W, H));
+				const slot = slots.current.get(name);
+				if (slot?.has)
+					sampleKeys.set(f, `${pictureId}:${f}:${slot.version}:${W}x${H}:${b.x},${b.y},${b.w},${b.h}`);
+			}
+			const blank = s.steps.some((st) => st.kind === 'gpu' && st.sampleFrames.includes(null))
+				? placeSlot('sample@blank', W, H)
+				: undefined;
+			const media = new Map<string, FxTextureInput>();
 			for (const m of s.media) {
+				if (m.kind === 'lut') {
+					const lut = loadedLutAsset(m.url);
+					if (lut) media.set(m.mediaId, { lut, version: m.url });
+					continue;
+				}
 				if (m.kind === 'image') {
 					const img = imagesRef.current.get(m.url);
 					if (img)
@@ -295,7 +325,7 @@ export function FxPicture({ stage, children }: { stage: FxStage; children?: Reac
 						version: String(slot.version),
 					});
 			}
-			const effects = memoized(fxDescriptors(s, { samples, media, preview: !rendering }));
+			const effects = memoized(fxDescriptors(s, { samples, sampleKeys, blank, media, preview: !rendering }));
 			const state = chain.get(W, H);
 			if (!state) return;
 			await Internals.runEffectChain({ state, source, effects, output: out, width: W, height: H });
@@ -305,7 +335,7 @@ export function FxPicture({ stage, children }: { stage: FxStage; children?: Reac
 		} finally {
 			if (handle !== null) continueRender(handle);
 		}
-	}, [chain, rendering, placeSlot]);
+	}, [chain, rendering, placeSlot, pictureId]);
 
 	const feed = useMemo<FxFeed>(
 		() => ({
@@ -389,11 +419,13 @@ export function FxDomPicture({ stage, children }: { stage: FxStage; children?: R
 	const images = useFxImages(imageUrls, rendering);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the stage and the loaded images
 	const effects = useMemo(() => {
-		const media = new Map<
-			string,
-			{ source: TexImageSource; width: number; height: number; version: string }
-		>();
+		const media = new Map<string, FxTextureInput>();
 		for (const m of stage.media) {
+			if (m.kind === 'lut') {
+				const lut = loadedLutAsset(m.url);
+				if (lut) media.set(m.mediaId, { lut, version: m.url });
+				continue;
+			}
 			const img = m.kind === 'image' ? images.get(m.url) : undefined;
 			if (img)
 				media.set(m.mediaId, {

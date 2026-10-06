@@ -19,6 +19,12 @@ export type RenderOptions = {
 	 * toggle). Ignored in renders.
 	 */
 	colorBypassClipIds?: readonly string[];
+	/**
+	 * fx framework (preview only): resolution of GPU shader-effect canvases relative to full size, (0, 1] — the
+	 * Program monitor's playback resolution (1/2 → 0.5, 1/4 → 0.25). px-based params scale with it (`u_pxScale`).
+	 * Ignored in renders. Absent = 1.
+	 */
+	fxPreviewScale?: number;
 };
 
 export type SequenceCompositionProps = { doc: RenderDoc; options: RenderOptions };
