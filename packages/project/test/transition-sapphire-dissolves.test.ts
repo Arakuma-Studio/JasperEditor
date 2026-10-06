@@ -275,7 +275,7 @@ describe('Sapphire dissolves: per-dissolve maths', () => {
 			env: 1,
 			seed: 0.1,
 		});
-		const data = (u.u_leakData as { floats: number[] }).floats;
+		const data = (u.u_leakData as { vec4s: number[] }).vec4s;
 		expect(data).toHaveLength(72);
 		expect(data[4]).toBe(2.4); // element 1 brightness
 		expect(data[24 + 4]).toBe(1); // element 2
@@ -294,8 +294,8 @@ describe('Sapphire dissolves: per-dissolve maths', () => {
 		]);
 		const packed = packRays(peak);
 		expect(packed.u_rayCount).toBe(4);
-		expect(packed.u_rays.floats).toHaveLength(64);
-		expect(packed.u_rays.floats[4 + 1]).toBeCloseTo(1); // Y ray: (0, 1)
+		expect(packed.u_rays.vec4s).toHaveLength(64);
+		expect(packed.u_rays.vec4s[4 + 1]).toBeCloseTo(1); // Y ray: (0, 1)
 		expect(glareRays(defaultsOf('S_DissolveGlare'), 1920, 1).rays).toHaveLength(2);
 		expect(glareRays({ ...defaultsOf('S_DissolveGlare'), style: 'star8' }, 1920, 1).rays).toHaveLength(4);
 		const f = defaultsOf('S_DissolveLensFlare');
@@ -309,12 +309,12 @@ describe('Sapphire dissolves: per-dissolve maths', () => {
 		const p = defaultsOf('S_DissolveFlashbulbs');
 		const at = (progress: number, frame = 10) =>
 			flashFrames(p, { frame, duration: 30, seed: 0.3, progressAt: () => progress });
-		expect(at(0).u_flashFrames.floats[1]).toBe(0);
-		const mid = at(0.5).u_flashFrames.floats;
-		expect(mid).toHaveLength(6); // Hold Frames 1: this frame and the previous one
+		expect(at(0).u_flashFrames.vec4s[1]).toBe(0);
+		const mid = at(0.5).u_flashFrames.vec4s;
+		expect(mid).toHaveLength(8); // Hold Frames 1: this frame and the previous one (vec4 each)
 		expect(mid[1]!).toBeGreaterThan(20 * 0.79);
-		expect(mid[5]!).toBeCloseTo(0.1); // decay of the held frame
-		expect(at(0.5, 0).u_flashFrames.floats[4]).toBe(0); // no frame before the span
+		expect(mid[6]!).toBeCloseTo(0.1); // decay of the held frame
+		expect(at(0.5, 0).u_flashFrames.vec4s[5]).toBe(0); // no frame before the span
 		const z = defaultsOf('S_DissolveZap');
 		expect(zapUniforms(z, { width: 1920, height: 1080, env: 0, mix: 0 }).u_boltCount).toBe(0);
 		expect(zapUniforms(z, { width: 1920, height: 1080, env: 1, mix: 0.5 }).u_boltCount).toBe(35);

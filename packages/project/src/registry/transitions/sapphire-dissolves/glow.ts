@@ -456,7 +456,7 @@ export function leakUniforms(
 			0,
 		);
 	}
-	return { u_leakData: { floats: data }, u_leakCount: 3 };
+	return { u_leakData: { vec4s: data }, u_leakCount: 3 };
 }
 
 /** Floats per element in `u_leakData`. */
@@ -526,7 +526,7 @@ export const S_DISSOLVE_LIGHT_LEAK: TransitionSpec = defineDissolve({
 					format: 'rgba16f',
 					include: [GLSL_SD, GLSL_SD_NOISE],
 					frag: /* glsl */ `
-float ld(int i, int k) { return u_leakData[i * ${LEAK_STRIDE} + k]; }
+float ld(int i, int k) { return u_leakData[i * ${LEAK_STRIDE / 4} + k / 4][k % 4]; }
 vec3 ld3(int i, int k) { return vec3(ld(i, k), ld(i, k + 1), ld(i, k + 2)); }
 void main() {
   vec2 px = tr_px();

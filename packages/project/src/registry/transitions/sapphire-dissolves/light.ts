@@ -46,7 +46,7 @@ const GLINT_UNIT = 0.1;
  * not depend on its length; taps are jittered per pixel.
  */
 const STREAK_GLSL = /* glsl */ `
-float rd(int i, int k) { return u_rays[i * 4 + k]; }
+float rd(int i, int k) { return u_rays[i][k]; }
 vec3 streaks(sampler2D t, float thickness) {
   vec2 res = vec2(textureSize(t, 0));
   float jit = sd_h2(ivec2(v_uv * res), 977u);
@@ -82,7 +82,7 @@ export function packRays(rays: readonly { angle: number; length: number; brightn
 	}
 	if (floats.length === 0) floats.push(1, 0, 0, 0);
 	while (floats.length < 64) floats.push(0, 0, 0, 0);
-	return { u_rays: { floats }, u_rayCount: Math.min(16, rays.length) };
+	return { u_rays: { vec4s: floats }, u_rayCount: Math.min(16, rays.length) };
 }
 
 // ---------------------------------------------------------------- S_DissolveGlint / S_DissolveGlintRainbow
@@ -410,9 +410,9 @@ export function flashFrames(
 		const f = ctx.frame - h;
 		const env = f < 0 ? 0 : dissolveTiming(p, ctx.progressAt(f)).env;
 		const r = hashFrame(ctx.seed, f);
-		floats.push(f, maxN * env * (1 - rnd * r), h === 0 ? 1 : decay ** h);
+		floats.push(f, maxN * env * (1 - rnd * r), h === 0 ? 1 : decay ** h, 0);
 	}
-	return { u_flashFrames: { floats }, u_flashHold: hold + 1 };
+	return { u_flashFrames: { vec4s: floats }, u_flashHold: hold + 1 };
 }
 
 /** A deterministic 0..1 random of (seed, frame) (TS side). */
@@ -468,7 +468,7 @@ export const S_DISSOLVE_FLASHBULBS: TransitionSpec = defineDissolve({
 				format: 'rgba16f',
 				include: [GLSL_SD, GLSL_SD_NOISE],
 				frag: /* glsl */ `
-float ff(int h, int k) { return u_flashFrames[h * 3 + k]; }
+float ff(int h, int k) { return u_flashFrames[h][k]; }
 // One flash at offset d (px) of size R (px): a hot core, a halo, and rays by style.
 float flashShape(vec2 d, float R) {
   if (u_flipVertically) d.y = -d.y;
@@ -601,15 +601,15 @@ export function lensFlareUniforms(
 	const fade = clamp(num(p.flareFade, 1), 0, 1);
 	const bright = Math.max(0, num(p.flareBrightness, 8)) * (1 - fade + fade * ctx.env);
 	const ghosts: number[] = [];
-	for (const g of LENS_GHOSTS[lens]) ghosts.push(...g);
-	while (ghosts.length < 8 * 6) ghosts.push(0, 0, 0, 0, 0, 0);
+	for (const g of LENS_GHOSTS[lens]) ghosts.push(...g, 0, 0);
+	while (ghosts.length < 8 * 8) ghosts.push(0, 0, 0, 0, 0, 0, 0, 0);
 	const h = LENS_HOTSPOT[lens];
 	return {
 		u_hot: hot,
 		u_pivotPx: [pv[0] * ctx.width, pv[1] * ctx.height] as [number, number],
 		u_flareWidthPx: width,
 		u_flareBright: bright,
-		u_ghosts: { floats: ghosts },
+		u_ghosts: { vec4s: ghosts },
 		u_ghostCount: LENS_GHOSTS[lens].length,
 		u_hotRays: h.rays,
 		u_hotStreak: h.streak,
@@ -669,7 +669,7 @@ export const S_DISSOLVE_LENS_FLARE: TransitionSpec = defineDissolve({
 				format: 'rgba16f',
 				include: [GLSL_SD, GLSL_SD_NOISE],
 				frag: /* glsl */ `
-float gh(int i, int k) { return u_ghosts[i * 6 + k]; }
+float gh(int i, int k) { return u_ghosts[i * 2 + k / 4][k % 4]; }
 float hexDist(vec2 p) { p = abs(p); return max(dot(p, vec2(0.8660254, 0.5)), p.y); }
 void main() {
   vec2 px = tr_px();
