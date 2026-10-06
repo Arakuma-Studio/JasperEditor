@@ -72,6 +72,7 @@ describe('transition catalogue', () => {
 			'premiere-transitions',
 			'sapphire-dissolves',
 			'sapphire-wipes-other',
+			'sapphire-swish-other',
 		]);
 		expect(TRANSITION_SPECS).toEqual([...BUILTIN_TRANSITION_SPECS, ...FX_TRANSITIONS]);
 		const ids = TRANSITION_SPECS.map((s) => s.id);
