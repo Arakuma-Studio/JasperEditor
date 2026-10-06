@@ -54,6 +54,11 @@ Hand-made `.jasper` projects (schema history, loader and migration tests; see [d
 | `packages/project/test/fixtures/v3/basic.jasper` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
 | `packages/project/test/fixtures/v4/basic.jasper` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
 | `packages/project/test/fixtures/v5/basic.jasper` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/project/test/fixtures/schema-v1.jasper` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/project/test/fixtures/schema-v2.jasper` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/project/test/fixtures/schema-v3.jasper` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/project/test/fixtures/schema-v4.jasper` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
+| `packages/project/test/fixtures/schema-v5.jasper` | JasperEditor contributors | original work | LicenseRef-JasperEditor |
 
 ## Screenshots
 
