@@ -9,6 +9,7 @@ import type { FontRef, MediaAsset } from '../schema/media.ts';
 import {
 	type BlendMode,
 	type Clip,
+	type ClipTracker,
 	type EffectInstance,
 	isKnownClipKind,
 	type MgRenderer,
@@ -20,6 +21,7 @@ import {
 } from '../schema/sequence.ts';
 import { type ResolvedTextAnimator, resolveTextAnimationWindows } from '../text-animations.ts';
 import type { Rational } from '../time.ts';
+import { transitionSideTrack, transitionTrackerOf } from '../tracking/transition.ts';
 import {
 	type RenderAudioFade,
 	type RenderFade,
@@ -470,11 +472,33 @@ export function buildRenderSnapshot(
 		const stages = (transitions.stages.get(t.id) ?? []).filter(
 			(x) => x.start < range.end && x.start + x.duration > range.start,
 		);
+		// Trackers of the sides (S_MochaWhip's Mocha mode): each side clip's tracker over the span, in sequence px.
+		const withTracks = stages.map((st): RenderTransition => {
+			const tracks: NonNullable<RenderTransition['tracks']> = {};
+			for (const [side, id] of [
+				['out', st.outgoingClipId],
+				['in', st.incomingClipId],
+			] as const) {
+				const sideClip = id ? (seq.clips[id] as { trackers?: ClipTracker[] } | undefined) : undefined;
+				const tracker = transitionTrackerOf(sideClip?.trackers);
+				const layer = tracker ? clips.find((c) => c.clipId === id) : undefined;
+				if (tracker && layer)
+					tracks[side] = transitionSideTrack(layer, tracker, st, seq.settings.frameRate as Rational);
+			}
+			return tracks.out || tracks.in ? { ...st, tracks } : st;
+		});
+		// Image params of GPU transitions (Gradient Wipe's custom gradient…) get media handles like effect params.
+		for (const st of stages)
+			for (const p of Object.values(st.params))
+				for (const v of [p.value, ...p.keyframes.map((k) => k.value)]) {
+					const id = (v as { mediaId?: unknown } | null)?.mediaId;
+					if (typeof id === 'string' && id && doc.media[id]) useMedia(id);
+				}
 		videoTracks.push({
 			trackId: t.id,
 			clips,
 			...(mattes.length ? { mattes } : {}),
-			...(stages.length ? { transitions: stages } : {}),
+			...(stages.length ? { transitions: withTracks } : {}),
 		});
 	}
 	for (const s of transitions.skipped)

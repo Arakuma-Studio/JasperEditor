@@ -210,6 +210,7 @@ void main() {
 
 export const S_DISSOLVE_DEFOCUS: TransitionSpec = defineDissolve({
 	id: 'jasper.s.dissolve-defocus',
+	expensive: true,
 	label: 'S_DissolveDefocus',
 	description:
 		'The outgoing clip is defocused and faded out while the incoming clip comes into focus: a lens defocus with iris shapes (circle or polygons), roundness, bokeh rings and boosted highlights.',

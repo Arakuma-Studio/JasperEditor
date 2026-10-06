@@ -456,8 +456,8 @@ const GRADIENT_LABELS = [
 
 /**
  * Wipe ▸ Gradient Wipe: B appears following the brightness of a grayscale gradient (dark first) with a softness.
- * Premiere loads any image as the gradient; transitions cannot take media params yet (framework), so the gradient
- * is one of a set of built-in ramps or the luminance of either clip.
+ * As Premiere's "Custom…" gradient, Custom Gradient takes any project image (stretched to the frame, its luminance ×
+ * alpha); with no image the gradient is one of the built-in ramps or the luminance of either clip.
  */
 export const GRADIENT_WIPE = defineShaderTransition({
 	id: 'jasper.gradient-wipe',
@@ -468,6 +468,7 @@ export const GRADIENT_WIPE = defineShaderTransition({
 	keywords: ['gradient', 'luma', 'matte', 'soft', 'ramp'],
 	params: [
 		fxParam.choice('gradient', 'Gradient', GRADIENTS, GRADIENT_LABELS, 'leftToRight'),
+		fxParam.media('gradientImage', 'Custom Gradient', ['image']),
 		fxParam.percent('softness', 'Softness', 10),
 		fxParam.toggle('invert', 'Invert Gradient', false),
 	],
@@ -479,6 +480,11 @@ export const GRADIENT_WIPE = defineShaderTransition({
 float gwGradient() {
   vec2 uv = v_uv;
   float asp = tr_aspect();
+  // Custom Gradient image (stretched to the frame): its luminance; the built-in choice when none is bound.
+  if (u_gradientImage_size.x > 0.0) {
+    vec4 gi = fx_unpremultiply(texture(u_gradientImage, uv));
+    return clamp(fx_luma(gi.rgb) * gi.a, 0.0, 1.0);
+  }
   if (u_gradient == 0) return uv.x;
   if (u_gradient == 1) return uv.y;
   if (u_gradient == 2) return 0.5 * (uv.x + uv.y);

@@ -112,8 +112,9 @@ export function loadFxImage(url: string): Promise<HTMLImageElement | null> {
 	return entry.promise;
 }
 
-/** The loaded images of `urls` (renders wait for them with a delayRender); re-renders on arrival. */
-function useFxImages(urls: readonly string[], rendering: boolean): Map<string, HTMLImageElement> {
+/** The loaded images of `urls` (renders wait for them with a delayRender); re-renders on arrival. Also used by the
+ * transition stage for image params. */
+export function useFxImages(urls: readonly string[], rendering: boolean): Map<string, HTMLImageElement> {
 	const key = urls.join('\n');
 	const missing = urls.filter((u) => !imageCache.get(u)?.img);
 	const [initial] = useState(() =>

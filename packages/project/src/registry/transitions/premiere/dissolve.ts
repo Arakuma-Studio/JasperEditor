@@ -119,6 +119,7 @@ void main() {
  */
 export const MORPH_CUT = defineShaderTransition({
 	id: 'jasper.morph-cut',
+	expensive: true,
 	label: 'Morph Cut',
 	bin,
 	description:

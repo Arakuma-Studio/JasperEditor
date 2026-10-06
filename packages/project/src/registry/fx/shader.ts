@@ -977,6 +977,55 @@ export function fxSourceSeconds(clip: FxClipInfo, frame: number, fps: number): n
 
 // ---------------------------------------------------------------- validation
 
+/**
+ * Uniform names a spec's params declare (`u_<name>`; media params also `u_<name>_size`; a numeric `seed` param feeds
+ * the built-in u_seed and declares nothing), with the param each one comes from.
+ */
+export function paramUniformNames(params: readonly ParamSpec[]): Map<string, string> {
+	const out = new Map<string, string>();
+	for (const p of params) {
+		if (isSeedParam(p) || paramUniformType(p) === null) continue;
+		out.set(`u_${p.name}`, p.name);
+		if (p.type === 'media') out.set(`u_${p.name}_size`, p.name);
+	}
+	return out;
+}
+
+/**
+ * Extra uniforms (`GpuEffect.uniforms` / `GpuTransition.uniforms` keys and `ShaderPass.uniforms` keys) that collide
+ * with a name the framework already declares: a built-in (`reserved`), a param uniform (`u_<param>`,
+ * `u_<media>_size`), a pass output (`u_<output>`), or — for a pass uniform — one of the extra uniforms of every pass
+ * (both would be declared). Without this check such a spec only fails when a shader mentioning the name compiles.
+ */
+export function uniformCollisions(input: {
+	reserved: ReadonlySet<string>;
+	params: readonly ParamSpec[];
+	outputs: Iterable<string>;
+	/** Keys of the spec's `uniforms()` (every pass). */
+	globals: readonly string[];
+	/** Keys of each pass's own `uniforms`. */
+	passes: readonly (readonly string[])[];
+}): string[] {
+	const out: string[] = [];
+	const params = paramUniformNames(input.params);
+	const outputs = new Set([...input.outputs].map((o) => `u_${o}`));
+	const check = (k: string, where: string) => {
+		if (input.reserved.has(k)) out.push(`${where}uniform "${k}" is a built-in`);
+		else if (params.has(k))
+			out.push(`${where}uniform "${k}" collides with the uniform of param "${params.get(k)}"`);
+		else if (outputs.has(k)) out.push(`${where}uniform "${k}" collides with the pass output "${k.slice(2)}"`);
+	};
+	const globals = new Set(input.globals);
+	for (const k of input.globals) check(k, '');
+	input.passes.forEach((keys, i) => {
+		for (const k of keys) {
+			check(k, `pass ${i}: `);
+			if (globals.has(k)) out.push(`pass ${i}: uniform "${k}" is also returned by uniforms()`);
+		}
+	});
+	return out;
+}
+
 const RESERVED = new Set(Object.keys(FX_BUILTIN_UNIFORMS));
 const FORBIDDEN_GLSL: [RegExp, string][] = [
 	[/#version/, 'must not contain #version (the framework adds it)'],
@@ -1051,20 +1100,25 @@ export function validateGpuEffect(spec: EffectSpec): string[] {
 				if (!ok(pass.size.width) || !ok(pass.size.height)) at(`pass ${i}: size must be integers 1…8192`);
 			}
 		} else if (pass.update) at(`pass ${i}: the last pass cannot update an output`);
-		for (const k of Object.keys(pass.uniforms ?? {})) {
+		for (const k of Object.keys(pass.uniforms ?? {}))
 			if (!/^u_[A-Za-z][A-Za-z0-9_]*$/.test(k)) at(`pass ${i}: uniform "${k}" must be named u_<name>`);
-			if (RESERVED.has(k)) at(`pass ${i}: uniform "${k}" is a built-in`);
-		}
 		for (const c of resolveIncludes(pass.include))
 			if (typeof c.source !== 'string' || !c.name) at(`pass ${i}: malformed include`);
 	});
 	if (outputs.size + textures > FX_MAX_TEXTURES)
 		at(`more than ${FX_MAX_TEXTURES} textures (outputs + media params)`);
 	try {
-		for (const k of Object.keys(gpu.uniforms?.(defaults, ctx) ?? {})) {
+		const globals = Object.keys(gpu.uniforms?.(defaults, ctx) ?? {});
+		for (const k of globals)
 			if (!/^u_[A-Za-z][A-Za-z0-9_]*$/.test(k)) at(`uniform "${k}" must be named u_<name>`);
-			if (RESERVED.has(k)) at(`uniform "${k}" is a built-in`);
-		}
+		for (const m of uniformCollisions({
+			reserved: RESERVED,
+			params: spec.params,
+			outputs,
+			globals,
+			passes: passes.map((pass) => Object.keys(pass.uniforms ?? {})),
+		}))
+			at(m);
 		const pad = gpu.padding?.(defaults, ctx);
 		if (pad !== undefined) {
 			const vals = typeof pad === 'number' ? [pad] : Object.values(pad);

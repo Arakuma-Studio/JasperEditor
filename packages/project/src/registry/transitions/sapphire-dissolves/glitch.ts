@@ -126,6 +126,7 @@ export function digitalDamageUniforms(
 
 export const S_DISSOLVE_DIGITAL_DAMAGE: TransitionSpec = defineDissolve({
 	id: 'jasper.s.dissolve-digital-damage',
+	expensive: true,
 	label: 'S_DissolveDigitalDamage',
 	description:
 		'Dissolves through bad digital transmission: frozen and flowing blocks, shifted rows, noise in the brights, pixelation, satellite block noise and inverted bands flare up around the cut, each kind blinking on and off.',
@@ -233,6 +234,7 @@ const MOSH_RANGE = 48; // encoded motion range (± frame px per unit of the fiel
 
 export const S_DISSOLVE_PIXEL_MOSH: TransitionSpec = defineDissolve({
 	id: 'jasper.s.dissolve-pixel-mosh',
+	expensive: true,
 	label: 'S_DissolvePixelMosh',
 	description:
 		'A datamosh transition: the macroblocks of the outgoing clip are dragged by the motion that maps them onto the incoming clip (its shapes appear made of the old pixels), then a quick cut leaves the new clip settling out of the smear.',
@@ -523,6 +525,7 @@ void main() {
 
 export const S_DISSOLVE_PIXEL_SORT: TransitionSpec = defineDissolve({
 	id: 'jasper.s.dissolve-pixel-sort',
+	expensive: true,
 	label: 'S_DissolvePixelSort',
 	description:
 		'Sorts the pixels of the dissolve along lines (Linear), rays from a centre (Radial) or circles (Circular): more and more pixels above (or below) a moving threshold are sorted towards the peak, then the sort unwinds onto the incoming clip.',

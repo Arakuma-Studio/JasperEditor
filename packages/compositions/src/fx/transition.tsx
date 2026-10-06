@@ -24,6 +24,7 @@ import {
 	type TransitionSpec,
 	type TrSide,
 	transitionLinearProgress,
+	transitionMediaTextures,
 	transitionProgress,
 } from '@jasper/project';
 import { createContext, useCallback, useLayoutEffect, useMemo, useRef } from 'react';
@@ -36,8 +37,8 @@ import {
 	useCurrentFrame,
 } from 'remotion';
 import type { TransitionTap } from '../types.ts';
-import { canUseHtmlInCanvas } from './FxPicture.tsx';
-import { FxShaderError, fxHost, runShaderPlan } from './host.ts';
+import { canUseHtmlInCanvas, useFxImages } from './FxPicture.tsx';
+import { FxShaderError, type FxTextureInput, fxHost, runShaderPlan } from './host.ts';
 import { type FxGpuState, fxStatus } from './status.ts';
 
 // ---------------------------------------------------------------- hub
@@ -220,6 +221,8 @@ export function TransitionStage(props: {
 	flicksPerFrame: number;
 	isPreview: boolean;
 	blendMode?: string;
+	/** The snapshot's media handles (image params of the transition: Gradient Wipe's custom gradient…). */
+	media?: Readonly<Record<string, MediaHandle | null>>;
 }) {
 	const { t, spec, hub, mode, comp } = props;
 	const local = Math.min(t.duration - 1, Math.max(0, useCurrentFrame()));
@@ -231,8 +234,25 @@ export function TransitionStage(props: {
 		[t, local, props.flicksPerFrame],
 	);
 	const paramsKey = JSON.stringify(params);
-	const stateRef = useRef({ params, local });
-	stateRef.current = { params, local };
+	// Image params: the bound pictures (renders wait for them with a delayRender; the Player redraws on arrival).
+	const mediaUrls = useMemo(() => {
+		const out = new Map<string, string>();
+		for (const m of transitionMediaTextures(spec, params)) {
+			const h = m.mediaId ? props.media?.[m.mediaId] : null;
+			if (h?.url && h.kind === 'image') out.set(m.mediaId, h.url);
+		}
+		return out;
+	}, [spec, params, props.media]);
+	const images = useFxImages([...new Set(mediaUrls.values())], rendering);
+	const imagesKey = [...mediaUrls.entries()].map(([id, u]) => `${id}=${images.has(u) ? 1 : 0}`).join(',');
+	const stateRef = useRef({ params, local, images, mediaUrls });
+	stateRef.current = { params, local, images, mediaUrls };
+	// Renders: hold the frame until a draw ran with every bound image (the loader's own delayRender ends on arrival,
+	// before the stage has redrawn with it).
+	const imagesHold = useRef<number | null>(null);
+	const imagesMissing = [...mediaUrls.values()].some((u) => !images.has(u));
+	if (rendering && imagesMissing && imagesHold.current === null)
+		imagesHold.current = delayRender(`Transition ${t.id}: loading images`);
 	if (mode.mode === 'fallback' && !props.isPreview)
 		cancelRender(
 			new Error(
@@ -249,11 +269,11 @@ export function TransitionStage(props: {
 		if (!h) throw new Error('WEBGL_UNAVAILABLE: GPU transitions need WebGL2');
 		if (out.width !== comp.width) out.width = comp.width;
 		if (out.height !== comp.height) out.height = comp.height;
-		const { params: p, local: f } = stateRef.current;
+		const { params: p, local: f, images: imgs, mediaUrls: urls } = stateRef.current;
 		const pics = hub.pictures;
 		const staged = planGpuTransition(
 			spec,
-			{ id: t.id, params: p, frame: f, duration: t.duration, sides: t.sides },
+			{ id: t.id, params: p, frame: f, duration: t.duration, sides: t.sides, tracks: t.tracks },
 			comp,
 			{ out: pics.out?.side ?? null, in: pics.in?.side ?? null },
 		);
@@ -263,13 +283,26 @@ export function TransitionStage(props: {
 				? { source: pic.canvas, width: pic.side.width, height: pic.side.height, version: String(pic.version) }
 				: null;
 		};
+		const textures: Record<string, FxTextureInput | null> = {
+			u_trFrom: tex(staged.fromSide),
+			u_trTo: tex(staged.toSide),
+		};
+		for (const m of staged.plan.textures) {
+			if (m.uniform === 'u_trFrom' || m.uniform === 'u_trTo') continue;
+			const url = m.mediaId ? urls.get(m.mediaId) : undefined;
+			const img = url ? imgs.get(url) : undefined;
+			// No image (none bound, missing or still loading in the Player): size (0, 0) → the built-in fallback.
+			textures[m.uniform] = img
+				? { source: img, width: img.naturalWidth, height: img.naturalHeight, version: url! }
+				: null;
+		}
 		runShaderPlan(
 			h,
 			staged.plan,
 			blank(),
 			{
 				builtins: staged.builtins,
-				textures: { u_trFrom: tex(staged.fromSide), u_trTo: tex(staged.toSide) },
+				textures,
 				samples: { sources: [], offsets: [] },
 			},
 			out.getContext('2d')!,
@@ -293,6 +326,11 @@ export function TransitionStage(props: {
 					else console.error('[transition]', e);
 				}
 			} finally {
+				const st = stateRef.current;
+				if (imagesHold.current !== null && [...st.mediaUrls.values()].every((u) => st.images.has(u))) {
+					continueRender(imagesHold.current);
+					imagesHold.current = null;
+				}
 				if (job.handle !== null) continueRender(job.handle);
 			}
 		});
@@ -310,7 +348,7 @@ export function TransitionStage(props: {
 	// biome-ignore lint/correctness/useExhaustiveDependencies: redraw when the frame or the param values change
 	useLayoutEffect(() => {
 		schedule();
-	}, [schedule, local, paramsKey]);
+	}, [schedule, local, paramsKey, imagesKey]);
 
 	if (mode.mode === 'fallback') return props.isPreview ? <StageChip text={mode.reason} /> : null;
 	return (

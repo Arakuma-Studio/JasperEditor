@@ -8,6 +8,7 @@ import {
 	GLSL_TR_LIBRARY,
 	planGpuTransition,
 	TRANSITION_BINS,
+	TRANSITION_FAMILIES,
 	TRANSITION_SPECS,
 	type TransitionSides,
 	type TransitionSpec,
@@ -58,6 +59,9 @@ function run(
 		sides?: TransitionSides;
 		out?: { c: HTMLCanvasElement; side: TrSide } | null;
 		in?: { c: HTMLCanvasElement; side: TrSide } | null;
+		/** Pictures of image params by media id (as TransitionStage binds them). */
+		media?: Record<string, HTMLCanvasElement>;
+		tracks?: Parameters<typeof planGpuTransition>[1]['tracks'];
 	},
 ) {
 	const h = fxHost();
@@ -71,6 +75,7 @@ function run(
 			frame: opts.frame,
 			duration: opts.duration,
 			sides: opts.sides ?? 'both',
+			tracks: opts.tracks,
 		},
 		{ width: W, height: H, fps: 30 },
 		{ out: pics.out?.side ?? null, in: pics.in?.side ?? null },
@@ -80,13 +85,22 @@ function run(
 		return p ? { source: p.c, width: p.c.width, height: p.c.height, version: `${s}${p.c.width}` } : null;
 	};
 	const out = canvas(W, H);
+	const textures: Record<
+		string,
+		{ source: HTMLCanvasElement; width: number; height: number; version: string } | null
+	> = { u_trFrom: tex(staged.fromSide), u_trTo: tex(staged.toSide) };
+	for (const m of staged.plan.textures) {
+		if (m.uniform === 'u_trFrom' || m.uniform === 'u_trTo') continue;
+		const c = m.mediaId ? opts.media?.[m.mediaId] : undefined;
+		textures[m.uniform] = c ? { source: c, width: c.width, height: c.height, version: m.mediaId } : null;
+	}
 	runShaderPlan(
 		h,
 		staged.plan,
 		canvas(1, 1),
 		{
 			builtins: staged.builtins,
-			textures: { u_trFrom: tex(staged.fromSide), u_trTo: tex(staged.toSide) },
+			textures,
 			samples: { sources: [], offsets: [] },
 		},
 		out.getContext('2d')!,
@@ -95,6 +109,18 @@ function run(
 }
 
 const spec = (id: string) => TRANSITION_SPECS.find((s) => s.id === id)!;
+
+/**
+ * The GPU transitions of one family (`TRANSITION_FAMILIES[].file`), or without a family every GPU transition outside
+ * the families plus the test transitions (one call per family keeps each test inside its timeout).
+ */
+function specsOf(family?: string): TransitionSpec[] {
+	const fam = TRANSITION_FAMILIES.find((f) => f.file === family);
+	if (family && !fam) throw new Error(`unknown transition family ${family}`);
+	if (fam) return fam.transitions.filter((s) => s.gpu);
+	const inFamily = new Set(TRANSITION_FAMILIES.flatMap((f) => f.transitions.map((s) => s.id)));
+	return [...TRANSITION_SPECS.filter((s) => s.gpu && !inFamily.has(s.id)), ...TEST_TRANSITIONS];
+}
 
 const api = {
 	info() {
@@ -136,8 +162,8 @@ void main() {
 		}
 	},
 
-	catalogue() {
-		const specs = [...TRANSITION_SPECS.filter((s) => s.gpu), ...TEST_TRANSITIONS];
+	catalogue(family?: string) {
+		const specs = specsOf(family);
 		const errors: string[] = [];
 		const a = () => full(solid('#c84'));
 		const b = () => full(solid('#48c'));
@@ -165,9 +191,9 @@ void main() {
 	},
 
 	/** Ends of a two-sided transition: start ≈ A, end ≈ B (Start 0 % / End 100 % around the linear ramp). */
-	ends() {
+	ends(family?: string) {
 		const out: Record<string, { first: Px; last: Px }> = {};
-		for (const s of [...TRANSITION_SPECS.filter((x) => x.gpu), ...TEST_TRANSITIONS]) {
+		for (const s of specsOf(family)) {
 			const p = defaults(s, { startPercent: 0, endPercent: 0 });
 			const q = defaults(s, { startPercent: 100, endPercent: 100 });
 			const first = run(s, p, { frame: 0, duration: 10, out: full(solid('red')), in: full(solid('blue')) });
@@ -215,4 +241,98 @@ void main() {
 	},
 };
 
-(window as unknown as { __tr: typeof api }).__tr = api;
+/** Wave-4 framework features: image params, Push's border at the ends, side tracks, Custom Completion. */
+const polish = {
+	/** Gradient Wipe at p ≈ 0.5: built-in Left to Right vs a Custom Gradient (white left half, black right half). */
+	gradientImage() {
+		const s = spec('jasper.gradient-wipe');
+		const halves = canvas(W, H, (ctx) => {
+			ctx.fillStyle = '#fff';
+			ctx.fillRect(0, 0, W / 2, H);
+			ctx.fillStyle = '#000';
+			ctx.fillRect(W / 2, 0, W / 2, H);
+		});
+		const o = {
+			frame: 4,
+			duration: 9,
+			out: full(solid('red')),
+			in: full(solid('blue')),
+			media: { med_g: halves },
+		};
+		const plain = run(s, defaults(s), o);
+		const custom = run(s, defaults(s, { gradientImage: { mediaId: 'med_g' } }), o);
+		// Bound to a media id that has no picture (missing / loading): the built-in gradient.
+		const missing = run(s, defaults(s, { gradientImage: { mediaId: 'med_missing' } }), o);
+		const vr = spec('jasper.vr-gradient-wipe');
+		const vrCustom = run(vr, defaults(vr, { gradientImage: { mediaId: 'med_g' } }), o);
+		return {
+			plain: [px(plain, 8, 18), px(plain, 56, 18)],
+			custom: [px(custom, 8, 18), px(custom, 56, 18)],
+			missing: [px(missing, 8, 18), px(missing, 56, 18)],
+			vrCustom: [px(vrCustom, 8, 18), px(vrCustom, 56, 18)],
+		};
+	},
+
+	/** Push North to South with a 4 px white border at progress 0 / 1: only A / only B, no band at either edge. */
+	pushBorder() {
+		const s = spec('jasper.push');
+		const p = { direction: 'northToSouth', borderWidth: 4, borderColor: [1, 1, 1, 1] };
+		const o = { frame: 0, duration: 10, out: full(solid('red')), in: full(solid('blue')) };
+		const first = run(s, defaults(s, { ...p, startPercent: 0, endPercent: 0 }), o);
+		const last = run(s, defaults(s, { ...p, startPercent: 100, endPercent: 100 }), o);
+		const mid = run(s, defaults(s, { ...p, startPercent: 50, endPercent: 50 }), o);
+		const col = (c: HTMLCanvasElement) => Array.from({ length: H }, (_, y) => px(c, W / 2, y));
+		return { first: col(first), last: col(last), mid: col(mid) };
+	},
+
+	/** S_MochaWhip at p = 0.9 with a planar track of B (a quad around the centre) vs no track / Track Mode Off. */
+	mochaTrack() {
+		const s = spec('jasper.s.mocha-whip');
+		const quad: [number, number][] = [
+			[24, 12],
+			[40, 12],
+			[40, 24],
+			[24, 24],
+		];
+		const frame = {
+			kind: 'planar' as const,
+			corners: quad,
+			point: [32, 18] as [number, number],
+			confidence: 1,
+			tracked: true,
+		};
+		const tracks = { in: { trackerId: 'tkr_1', name: 'T', kind: 'planar' as const, frames: [frame, frame] } };
+		const green = canvas(W, H, (ctx) => {
+			ctx.fillStyle = '#00f';
+			ctx.fillRect(0, 0, W, H);
+			ctx.fillStyle = '#0f0';
+			ctx.fillRect(24, 12, 16, 12);
+		});
+		const o = { frame: 0, duration: 2, out: full(solid('red')), in: full(green) };
+		const at = { startPercent: 70, endPercent: 70 };
+		const none = run(s, defaults(s, at), o);
+		const tracked = run(s, defaults(s, at), { ...o, tracks });
+		const off = run(s, defaults(s, { ...at, trackMode: 'off' }), { ...o, tracks });
+		const all = (c: HTMLCanvasElement) => Array.from(c.getContext('2d')!.getImageData(0, 0, W, H).data);
+		const a = all(none);
+		const diff = all(tracked).reduce((n, v, i) => n + (Math.abs(v - a[i]!) > 8 ? 1 : 0), 0);
+		const diffOff = all(off).reduce((n, v, i) => n + (Math.abs(v - a[i]!) > 8 ? 1 : 0), 0);
+		const end = run(s, defaults(s, { startPercent: 100, endPercent: 100 }), { ...o, tracks });
+		return { diff, diffOff, endCentre: px(end, 32, 18), endCorner: px(end, 2, 2) };
+	},
+
+	/** Push with Custom Completion at the middle frame: 0 % = A, 100 % = B; off = the linear ramp. */
+	completion() {
+		const s = spec('jasper.push');
+		const o = { frame: 4, duration: 9, out: full(solid('red')), in: full(solid('blue')) };
+		const at = (c: Record<string, unknown>) => px(run(s, defaults(s, c), o), W / 2, H / 2);
+		return {
+			zero: at({ useCompletion: true, completion: 0 }),
+			full: at({ useCompletion: true, completion: 100 }),
+			offLeft: px(run(s, defaults(s, { completion: 0 }), o), 8, 18),
+			offRight: px(run(s, defaults(s, { completion: 0 }), o), 56, 18),
+		};
+	},
+};
+
+(window as unknown as { __tr: typeof api & typeof polish }).__tr = { ...api, ...polish };
