@@ -21,6 +21,7 @@ import {
 	clipContentTime,
 	fadeFactor,
 	flicksPerFrame,
+	matteTrackIds,
 	type RenderVisualClip,
 	resolveCachedLayerProps,
 	transitionSpec,
@@ -29,6 +30,7 @@ import { type ComponentType, memo, useContext, useMemo, useRef } from 'react';
 import { AbsoluteFill, Freeze, Sequence, useCurrentFrame } from 'remotion';
 import { ColorDocContext, type ColorDocValue } from './color/chain.ts';
 import { FontsReadyContext, useFontsReadyState, useLayerFontsReady } from './fonts.ts';
+import { TrackMatteContext, TrackMatteHub } from './fx/matte.ts';
 import { useFxStatus } from './fx/status.ts';
 import { fxRemapFrame, hasTimeDependentFx } from './fx/time.ts';
 import {
@@ -99,7 +101,8 @@ function layerViewEqual(a: ViewProps, b: ViewProps): boolean {
 		a.options !== b.options ||
 		a.fps !== b.fps ||
 		a.fonts !== b.fonts ||
-		a.transition !== b.transition
+		a.transition !== b.transition ||
+		a.matte !== b.matte
 	)
 		return false;
 	if (a.frameDependent || b.frameDependent)
@@ -125,10 +128,15 @@ const ClipLayer = memo(function ClipLayer({
 	clip,
 	doc,
 	options,
+	matteHub,
+	matteOnly,
 }: {
 	clip: RenderVisualClip;
 	doc: RenderDoc;
 	options: RenderOptions;
+	/** wp masks: the hub of this clip's track when a Track Matte Key reads it. */
+	matteHub?: TrackMatteHub;
+	matteOnly?: boolean;
 }) {
 	// Inside the Sequence the current frame counts from its start, also when `from` is negative (a render
 	// range starting mid-clip): Remotion subtracts the absolute `from`. The Sequence starts `headHandle`
@@ -147,6 +155,11 @@ const ClipLayer = memo(function ClipLayer({
 		: 0;
 	const tap = gpuSide ? gpuSide.hub.tap(gpuSide.side) : null;
 	const transition = useMemo(() => (tap ? { progress, side: tap.side, tap } : undefined), [tap, progress]);
+	const matteTap = matteHub?.tap(clip.clipId);
+	const matte = useMemo(
+		() => (matteTap ? { tap: matteTap, hide: !!matteOnly, seqFrame: frame } : undefined),
+		[matteTap, matteOnly, frame],
+	);
 	// Transition ramps multiply the opacity; outside a ramp the (cached) props object is passed through.
 	const fade =
 		fadeFactor(clip.fades, frame) *
@@ -179,6 +192,7 @@ const ClipLayer = memo(function ClipLayer({
 					options={options}
 					fonts={doc.fonts}
 					transition={transition}
+					matte={matte}
 				/>
 			</Freeze>
 		);
@@ -195,6 +209,7 @@ const ClipLayer = memo(function ClipLayer({
 			options={options}
 			fonts={doc.fonts}
 			transition={transition}
+			matte={matte}
 		/>
 	);
 });
@@ -218,6 +233,34 @@ export function SequenceComposition({ doc, options }: SequenceCompositionProps) 
 		}
 		return h;
 	};
+	// wp masks: one matte hub per track a Track Matte Key reads (keyed by the frame size of the document).
+	const matteHubs = useRef(new Map<string, TrackMatteHub>());
+	const matteHubOf = (trackId: string) => {
+		const key = `${trackId}@${doc.settings.width}x${doc.settings.height}`;
+		let h = matteHubs.current.get(key);
+		if (!h) {
+			h = new TrackMatteHub(trackId, { width: doc.settings.width, height: doc.settings.height });
+			matteHubs.current.set(key, h);
+		}
+		return h;
+	};
+	// biome-ignore lint/correctness/useExhaustiveDependencies: matteHubOf reads a ref
+	const matteContext = useMemo(() => {
+		const ids = matteTrackIds({ videoTracks: [...doc.videoTracks, ...(doc.matteTracks ?? [])] });
+		const out = new Map<string, TrackMatteHub>();
+		for (const id of ids) out.set(id, matteHubOf(id));
+		return out;
+	}, [doc.videoTracks, doc.matteTracks, doc.settings.width, doc.settings.height]);
+	// Hidden tracks read as mattes: their clips feed the hub only (no transitions, no visible output).
+	const hiddenMattes = useMemo(
+		() =>
+			(doc.matteTracks ?? []).map((t) => {
+				const hub = matteContext.get(t.trackId);
+				hub?.setClips(t.clips, doc.media);
+				return { trackId: t.trackId, clips: t.clips, hub };
+			}),
+		[doc.matteTracks, doc.media, matteContext],
+	);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: hubOf reads a ref
 	const tracks = useMemo(
 		() =>
@@ -249,15 +292,18 @@ export function SequenceComposition({ doc, options }: SequenceCompositionProps) 
 					const blend = modes.size === 1 ? blendModeCss([...modes][0]!) : undefined;
 					stages.push({ t: tr, spec, side: 'in', mode, hub, ...(blend ? { blendMode: blend } : {}) });
 				}
+				const matteHub = matteContext.get(t.trackId);
+				matteHub?.setClips(clips, doc.media);
 				return {
 					trackId: t.trackId,
 					clips,
 					mattes: options.layerFilter ? [] : (t.mattes ?? []),
 					sides,
 					stages,
+					matteHub,
 				};
 			}),
-		[doc.videoTracks, doc.media, options.layerFilter, gpu, htmlInCanvas],
+		[doc.videoTracks, doc.media, options.layerFilter, gpu, htmlInCanvas, matteContext],
 	);
 	const comp = useMemo(
 		() => ({ width: doc.settings.width, height: doc.settings.height, fps }),
@@ -275,93 +321,113 @@ export function SequenceComposition({ doc, options }: SequenceCompositionProps) 
 	);
 	return (
 		<FontsReadyContext.Provider value={fontsReady}>
-			<ColorDocContext.Provider value={color}>
-				<AbsoluteFill
-					ref={root}
-					style={{ backgroundColor: background, overflow: 'hidden', isolation: 'isolate' }}
-				>
-					{tracks.map((track) => (
-						<TransitionSidesContext.Provider key={track.trackId} value={track.sides}>
-							<AbsoluteFill data-track-id={track.trackId}>
-								{track.mattes.map((m) => (
-									<Sequence
-										key={`matte-${m.id}`}
-										from={m.start - offset}
-										durationInFrames={m.duration}
-										name="Transition matte"
-									>
-										<AbsoluteFill
-											data-transition-matte={m.id}
-											style={{ backgroundColor: rgbaCss(m.color) }}
-										/>
-									</Sequence>
-								))}
+			<TrackMatteContext.Provider value={matteContext}>
+				<ColorDocContext.Provider value={color}>
+					<AbsoluteFill
+						ref={root}
+						style={{ backgroundColor: background, overflow: 'hidden', isolation: 'isolate' }}
+					>
+						{hiddenMattes.map((track) => (
+							<AbsoluteFill key={`matte-${track.trackId}`} data-matte-track-id={track.trackId}>
 								{track.clips.map((clip) => {
 									const head = clip.headHandle ?? 0;
-									const from = clip.start - head - offset;
 									return (
 										<Sequence
 											key={clip.clipId}
-											from={from}
+											from={clip.start - head - offset}
 											durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
-											name={clip.name}
+											name={`${clip.name} (matte)`}
 											premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
 										>
-											<ClipLayer clip={clip} doc={doc} options={options} />
+											<ClipLayer clip={clip} doc={doc} options={options} matteHub={track.hub} matteOnly />
 										</Sequence>
 									);
 								})}
-								{track.stages.map((st) => (
-									<Sequence
-										key={`transition-${st.t.id}`}
-										from={st.t.start - offset}
-										durationInFrames={st.t.duration}
-										name={st.spec.label}
-									>
-										<TransitionStage
-											t={st.t}
-											spec={st.spec}
-											hub={st.hub}
-											mode={st.mode}
-											comp={comp}
-											flicksPerFrame={fpf}
-											isPreview={options.isPreview}
-											blendMode={st.blendMode}
-											media={doc.media}
-										/>
-									</Sequence>
-								))}
 							</AbsoluteFill>
-						</TransitionSidesContext.Provider>
-					))}
-					{doc.audioClips.map((clip) => {
-						// An audio crossfade plays the clip's handles (S10:TUI-052).
-						const head = clip.headHandle ?? 0;
-						const from = clip.start - head - offset;
-						return (
-							<Sequence
-								key={clip.clipId}
-								from={from}
-								durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
-								name={clip.clipId}
-								layout="none"
-							>
-								<AudioLayer
-									clip={clip}
-									media={doc.media[clip.mediaId] ?? null}
-									fps={fps}
-									fpsRational={doc.settings.fps}
-									options={options}
-									master={doc.master}
-									sequenceFrom={from}
-								/>
-							</Sequence>
-						);
-					})}
-					{/* Last child: every frame is captured as a fresh paint of the settled DOM (repaint.tsx). */}
-					<FrameRepaint target={root} deps={[doc, options]} />
-				</AbsoluteFill>
-			</ColorDocContext.Provider>
+						))}
+						{tracks.map((track) => (
+							<TransitionSidesContext.Provider key={track.trackId} value={track.sides}>
+								<AbsoluteFill data-track-id={track.trackId}>
+									{track.mattes.map((m) => (
+										<Sequence
+											key={`matte-${m.id}`}
+											from={m.start - offset}
+											durationInFrames={m.duration}
+											name="Transition matte"
+										>
+											<AbsoluteFill
+												data-transition-matte={m.id}
+												style={{ backgroundColor: rgbaCss(m.color) }}
+											/>
+										</Sequence>
+									))}
+									{track.clips.map((clip) => {
+										const head = clip.headHandle ?? 0;
+										const from = clip.start - head - offset;
+										return (
+											<Sequence
+												key={clip.clipId}
+												from={from}
+												durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
+												name={clip.name}
+												premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
+											>
+												<ClipLayer clip={clip} doc={doc} options={options} matteHub={track.matteHub} />
+											</Sequence>
+										);
+									})}
+									{track.stages.map((st) => (
+										<Sequence
+											key={`transition-${st.t.id}`}
+											from={st.t.start - offset}
+											durationInFrames={st.t.duration}
+											name={st.spec.label}
+										>
+											<TransitionStage
+												t={st.t}
+												spec={st.spec}
+												hub={st.hub}
+												mode={st.mode}
+												comp={comp}
+												flicksPerFrame={fpf}
+												isPreview={options.isPreview}
+												blendMode={st.blendMode}
+												media={doc.media}
+											/>
+										</Sequence>
+									))}
+								</AbsoluteFill>
+							</TransitionSidesContext.Provider>
+						))}
+						{doc.audioClips.map((clip) => {
+							// An audio crossfade plays the clip's handles (S10:TUI-052).
+							const head = clip.headHandle ?? 0;
+							const from = clip.start - head - offset;
+							return (
+								<Sequence
+									key={clip.clipId}
+									from={from}
+									durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
+									name={clip.clipId}
+									layout="none"
+								>
+									<AudioLayer
+										clip={clip}
+										media={doc.media[clip.mediaId] ?? null}
+										fps={fps}
+										fpsRational={doc.settings.fps}
+										options={options}
+										master={doc.master}
+										sequenceFrom={from}
+									/>
+								</Sequence>
+							);
+						})}
+						{/* Last child: every frame is captured as a fresh paint of the settled DOM (repaint.tsx). */}
+						<FrameRepaint target={root} deps={[doc, options]} />
+					</AbsoluteFill>
+				</ColorDocContext.Provider>
+			</TrackMatteContext.Provider>
 		</FontsReadyContext.Provider>
 	);
 }

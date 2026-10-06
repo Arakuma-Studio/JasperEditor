@@ -6,6 +6,7 @@ import { clipEnd } from './derive/index.ts';
 import { createTrack } from './factories.ts';
 import { type IdPrefix, type IdSource, idPrefixOf, isValidId } from './ids.ts';
 import { MASK_EXPANSION_RANGE, MASK_FEATHER_RANGE, MASK_OPACITY_RANGE } from './masks/model.ts';
+import { TRACK_MATTE_EFFECT_ID, trackMatteTracksOf } from './masks/track-matte.ts';
 import { type BezierPath, isBezierPath, segmentCount } from './path/model.ts';
 import type { EffectRegistry } from './registry/effects.ts';
 import { contentDurationFlicks, isBoundedContent, trackKindFor } from './registry/kinds.ts';
@@ -475,6 +476,40 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 					}
 				}
 			}
+		}
+		// wp masks: Track Matte Key tracks exist, are other video tracks, and mattes form no cycle.
+		{
+			const videoIds = new Set(seq.videoTracks.map((t) => t.id));
+			const edges = new Map<string, Set<string>>();
+			for (const c of Object.values(seq.clips)) {
+				const fx = (c as { effects?: EffectInstance[] }).effects;
+				if (!fx) continue;
+				for (const t of trackMatteTracksOf({ effects: fx as never })) {
+					const cw = [...where, 'clips', c.id];
+					if (!videoIds.has(t)) issues.push(inv('INV-006', `Clip ${c.id} uses missing matte track ${t}`, cw));
+					else if (t === c.trackId)
+						issues.push(inv('INV-012', `Clip ${c.id} cannot use its own track as a track matte`, cw));
+					else {
+						const set = edges.get(c.trackId) ?? new Set<string>();
+						set.add(t);
+						edges.set(c.trackId, set);
+					}
+				}
+			}
+			const state = new Map<string, 1 | 2>();
+			const cyclic = (n: string): boolean => {
+				if (state.get(n) === 1) return true;
+				if (state.get(n) === 2) return false;
+				state.set(n, 1);
+				for (const m of edges.get(n) ?? []) if (cyclic(m)) return true;
+				state.set(n, 2);
+				return false;
+			};
+			for (const n of edges.keys())
+				if (cyclic(n)) {
+					issues.push(inv('INV-012', `Track mattes form a cycle through track ${n}`, where));
+					break;
+				}
 		}
 		// INV-003 overlaps
 		for (const [trackId, list] of byTrack) {

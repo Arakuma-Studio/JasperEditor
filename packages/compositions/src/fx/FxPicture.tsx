@@ -37,6 +37,7 @@ import { loadedLutAsset } from '../color/luts.ts';
 import { fxCrop, fxFlip, fxLut, fxShader, fxTap } from './effects.ts';
 import type { FxRunInputs, FxTextureInput } from './host.ts';
 import { fxMaskApply, fxMasked } from './mask.ts';
+import { fxMatteTap, useTrackMattes } from './matte.ts';
 import type { FxMediaInput, FxStage } from './stage.ts';
 
 export type FxFeed = {
@@ -225,8 +226,11 @@ export function fxDescriptors(stage: FxStage, inputs: DescriptorInputs): EffectD
 			case 'mask':
 				out.push(fxMaskApply({ key: s.key, geometry: s.geometry }));
 				break;
+			case 'matteTap':
+				out.push(fxMatteTap({ key: s.key, tap: s.tap, meta: s.meta, hide: s.hide }));
+				break;
 		}
-		if (s.kind !== 'mask' && s.kind !== 'tap' && s.masks && out.length === at + 1)
+		if (s.kind !== 'mask' && s.kind !== 'tap' && s.kind !== 'matteTap' && s.masks && out.length === at + 1)
 			out[at] = fxMasked({ key: s.key, geometry: s.masks, inner: out[at]! });
 	}
 	return out;
@@ -267,6 +271,10 @@ export function FxPicture({ stage, children }: { stage: FxStage; children?: Reac
 	const images = useFxImages(imageUrls, rendering);
 	const imagesRef = useRef(images);
 	imagesRef.current = images;
+	// wp masks: composites of the tracks the stack's Track Matte Keys read.
+	const mattes = useTrackMattes(stage.trackMattes, stage.seqFrame);
+	const mattesRef = useRef(mattes.media);
+	mattesRef.current = mattes.media;
 
 	const placeSlot = useCallback((name: string, w: number, h: number) => {
 		let c = placed.current.get(name);
@@ -307,7 +315,7 @@ export function FxPicture({ stage, children }: { stage: FxStage; children?: Reac
 			const blank = s.steps.some((st) => st.kind === 'gpu' && st.sampleFrames.includes(null))
 				? placeSlot('sample@blank', W, H)
 				: undefined;
-			const media = new Map<string, FxTextureInput>();
+			const media = new Map<string, FxTextureInput>(mattesRef.current);
 			for (const m of s.media) {
 				if (m.kind === 'lut') {
 					const lut = loadedLutAsset(m.url);
@@ -393,7 +401,7 @@ export function FxPicture({ stage, children }: { stage: FxStage; children?: Reac
 			raf.current = null;
 			void draw();
 		});
-	}, [stage.key, images.size, draw]);
+	}, [stage.key, images.size, mattes.key, draw]);
 	useEffect(
 		() => () => {
 			if (raf.current !== null) cancelAnimationFrame(raf.current);
@@ -426,9 +434,10 @@ export function FxDomPicture({ stage, children }: { stage: FxStage; children?: R
 	const rendering = getRemotionEnvironment().isRendering;
 	const imageUrls = stage.media.filter((m) => m.kind === 'image').map((m) => m.url);
 	const images = useFxImages(imageUrls, rendering);
-	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the stage and the loaded images
+	const mattes = useTrackMattes(stage.trackMattes, stage.seqFrame);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the stage, the loaded images and the mattes
 	const effects = useMemo(() => {
-		const media = new Map<string, FxTextureInput>();
+		const media = new Map<string, FxTextureInput>(mattes.media);
 		for (const m of stage.media) {
 			if (m.kind === 'lut') {
 				const lut = loadedLutAsset(m.url);
@@ -445,7 +454,7 @@ export function FxDomPicture({ stage, children }: { stage: FxStage; children?: R
 				});
 		}
 		return fxDescriptors(stage, { samples: new Map(), media, preview: !rendering });
-	}, [stage.key, images.size, rendering]);
+	}, [stage.key, images.size, rendering, mattes.key]);
 	const L = stage.layout;
 	return (
 		<HtmlInCanvas

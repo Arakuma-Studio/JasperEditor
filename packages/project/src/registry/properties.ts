@@ -109,7 +109,9 @@ export type PropertySpec = {
 			| 'curve'
 			| 'media'
 			/** M2 (S08): a JSON editor (arrays, free-form objects). */
-			| 'json';
+			| 'json'
+			/** wp masks: a video-track picker (value = track id, '' = none). */
+			| 'track';
 		bipolar?: boolean;
 		/** Digits after the decimal point in the UI (derived from `range.step` when absent). */
 		precision?: number;

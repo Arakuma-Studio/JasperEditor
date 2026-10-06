@@ -51,7 +51,8 @@ export function LayerBox({
 	// Transition framework: a side of a GPU transition whose component did not capture it already (cards, proxies,
 	// any DOM content) is captured here through HTML-in-Canvas.
 	const domFx = useLayerFx(layer, {
-		enabled: effects === undefined && (DOM_FX_KINDS.has(clip.kind) || !!layer.transition?.tap),
+		enabled:
+			effects === undefined && (DOM_FX_KINDS.has(clip.kind) || !!layer.transition?.tap || !!layer.matte),
 		canRun: canUseHtmlInCanvas(),
 	});
 	const cssEffects = domFx.mode === 'active' ? domFx.cssEffects : (effects ?? props.effects);
@@ -67,6 +68,8 @@ export function LayerBox({
 	// wp masks: where the chain could not run (preview without WebGL2 / HTML-in-Canvas), the Opacity masks are a CSS
 	// mask image of the CPU coverage (same definition), applied after the effects (Premiere's Opacity order).
 	const cpuMask = useCpuMaskStyle(props.masks, props.box, !masksInChain && domFx.mode !== 'active');
+	// wp masks: a clip of a hidden matte track draws nothing itself (its chain, when it runs, feeds the matte).
+	const hidden = !!layer.matte?.hide && !masksInChain && domFx.mode !== 'active';
 	for (const stage of stages) {
 		content = (
 			<div data-effect={stage.effectId} style={{ ...FILL, ...stage.style }}>
@@ -84,6 +87,7 @@ export function LayerBox({
 			</div>
 		);
 	}
+	if (hidden) return null;
 	return (
 		<div
 			data-clip-id={clip.clipId}
