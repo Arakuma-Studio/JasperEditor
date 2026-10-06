@@ -367,6 +367,71 @@ export class EditorSession {
 		return next;
 	}
 
+	/**
+	 * Replaces the committed document with `doc` as one undoable History step (File ▸ Recover Unsaved Changes,
+	 * S01:PER-021). `doc` must belong to this project and have been through the load pipeline (migrated,
+	 * validated, repaired). The session becomes dirty, so autosave writes it; Undo returns to the document before.
+	 */
+	replaceDocument(doc: ProjectDocument, label: string): TransactionResult {
+		const before = this.store.getState();
+		const fail = (code: string, message: string): TransactionResult => ({
+			ok: false,
+			revision: before.revision,
+			errors: [{ commandIndex: -1, code, message }],
+		});
+		if (this.closed) return fail('E_NO_SESSION', 'Session closed');
+		if (before.readOnly) return READ_ONLY_RESULT(before.revision);
+		if (this.gestureState) return fail('E_QUEUED', 'A gesture is in progress');
+		if (doc.projectId !== this.projectId)
+			return fail('E_INVALID_PARAM', 'The document belongs to another project');
+		if (doc === before.document) return fail('E_INVALID_PARAM', 'Nothing to replace');
+		const revision = before.revision + 1;
+		const selection = filterSelection(before.selection, doc);
+		const origin: Origin = 'user';
+		// Any entity may differ: agents holding an older revision must not fast-forward over it (AGT-010).
+		for (const d of [before.document, doc])
+			for (const id of entityIds(d)) this.entityRevisions.set(id, revision);
+		this.history.push(
+			{
+				label,
+				origin,
+				time: this.clock(),
+				revisionBefore: before.revision,
+				revisionAfter: revision,
+				before: before.document,
+				after: doc,
+				selectionBefore: before.selection,
+				selectionAfter: selection,
+				created: [],
+				changed: [],
+				deleted: [],
+			},
+			this.clock(),
+			0,
+		);
+		this.store.setState({
+			document: doc,
+			revision,
+			selection,
+			views: this.syncViews(doc, before.views),
+			history: this.history.view(),
+			dirty: true,
+		});
+		this.transport.setMaxFrame(Number.POSITIVE_INFINITY);
+		this.emit('doc.changed', {
+			revision,
+			label,
+			origin,
+			created: [],
+			changed: [],
+			deleted: [],
+			isUndo: false,
+			isRedo: false,
+		});
+		if (selection !== before.selection) this.emit('selection.changed', { selection });
+		return { ok: true, revision, refs: {}, created: [], changed: [], deleted: [], warnings: [], results: [] };
+	}
+
 	// ------------------------------------------------------------ gestures (S01:SES-006)
 
 	beginGesture(label: string): Gesture {
@@ -643,6 +708,16 @@ export class EditorSession {
 		this.emit('closed', {});
 		this.listeners.clear();
 	}
+}
+
+/** Ids of the document's items, media, sequences and everything a sequence holds (replaceDocument). */
+function entityIds(doc: ProjectDocument): string[] {
+	const ids = [...Object.keys(doc.items), ...Object.keys(doc.media), ...Object.keys(doc.sequences)];
+	for (const seq of Object.values(doc.sequences)) {
+		ids.push(...Object.keys(seq.clips), ...Object.keys(seq.transitions ?? {}));
+		for (const t of [...seq.videoTracks, ...seq.audioTracks]) ids.push(t.id);
+	}
+	return ids;
 }
 
 function isClipIn(doc: ProjectDocument, clipId: string): boolean {

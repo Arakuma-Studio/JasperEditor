@@ -3,7 +3,9 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { appdirPaths } from '@jasper/config';
-import { CURRENT_SCHEMA_VERSION, migrate } from '@jasper/project';
+import { EngineClient } from '@jasper/engine-client';
+import { CURRENT_SCHEMA_VERSION, createRandomIdSource, defaultRegistries, migrate } from '@jasper/project';
+import { attachPersistence, EditorSession, EngineProjectStore, reopenSession } from '@jasper/session';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { LeaseManager } from '../src/projects/leases.ts';
 import { RecoveryJournal } from '../src/projects/recovery.ts';
@@ -218,6 +220,89 @@ describe('crash-recovery journal over HTTP (S01:PER-021, AC-18)', () => {
 		await app.inject({ method: 'DELETE', url: `/api/projects/${id}/lease/${l.leaseId}`, headers: H });
 		expect((await get(`/api/projects/${id}/recovery`)).json().candidates).toEqual([]);
 		expect(existsSync(join(app.appdir, 'projects', id, 'recovery', 'ses_c'))).toBe(false);
+	});
+});
+
+describe('session journal and versions through EngineProjectStore (real routes)', () => {
+	let app: TestApp;
+	beforeAll(async () => {
+		app = await makeApp();
+	});
+	afterAll(closeApps);
+
+	function store() {
+		const client = new EngineClient({
+			baseUrl: 'http://engine.test',
+			fetch: (async (input: string | URL | Request, init?: RequestInit) => {
+				const url = new URL(String(input));
+				const r = await app.inject({
+					method: (init?.method ?? 'GET') as 'GET',
+					url: url.pathname + url.search,
+					headers: { ...H, ...((init?.headers as Record<string, string>) ?? {}) },
+					...(init?.body !== undefined ? { payload: init.body as string } : {}),
+				});
+				return new Response(r.statusCode === 204 ? null : new Uint8Array(r.rawPayload), {
+					status: r.statusCode,
+					headers: r.headers as Record<string, string>,
+				});
+			}) as typeof fetch,
+		});
+		return new EngineProjectStore(client);
+	}
+	const ctx = {
+		ids: createRandomIdSource(),
+		now: () => new Date().toISOString(),
+		registries: defaultRegistries(),
+	};
+	const solid = (at: number) => ({
+		type: 'clip.addSolid' as const,
+		at,
+		duration: 10,
+		track: 'V1',
+		color: [1, 0, 0, 1] as [number, number, number, number],
+	});
+
+	it('journals unsaved edits, offers them after the editor dies, and restores saved versions', async () => {
+		const st = store();
+		const projectId = await st.create({ name: 'Journal', preset: 'hd-1080p-30' });
+		const s1 = await EditorSession.open({ store: st, projectId, ctx, sessionId: 'ses_one' });
+		const p1 = attachPersistence(s1, {
+			window: null,
+			document: null,
+			recovery: { idleMs: 10, maxIntervalMs: 50 },
+		});
+		s1.apply({ label: 'Add Solid', origin: 'user', commands: [solid(0)] });
+		await p1.journal!.flush();
+		expect(p1.journal!.getStatus()).toMatchObject({ written: true, error: null });
+		// the editor dies before autosave ran: stop its timers, drop its lease
+		p1.autosaver.dispose();
+		p1.journal!.dispose();
+		const lease = s1.getState().lease.leaseId!;
+		await app.inject({ method: 'DELETE', url: `/api/projects/${projectId}/lease/${lease}`, headers: H });
+
+		const s2 = await EditorSession.open({ store: st, projectId, ctx, sessionId: 'ses_two' });
+		const p2 = attachPersistence(s2, { window: null, document: null });
+		const [c] = await st.listRecovery(projectId);
+		expect(c).toMatchObject({ sessionId: 'ses_one', changes: ['Add Solid'], projectName: 'Journal' });
+		const snap = await st.readRecovery(projectId, 'ses_one');
+		expect(s2.replaceDocument(snap.document, 'Recover Unsaved Changes').ok).toBe(true);
+		await p2.flush();
+		await st.discardRecovery(projectId, 'ses_one');
+		expect(await st.listRecovery(projectId)).toEqual([]);
+		expect((await st.open(projectId)).revision).toBe(1);
+
+		// restore the first version in place from the open editor, then reopen it
+		const versions = await st.listVersions(projectId);
+		expect(versions[0]).toMatchObject({ kind: 'auto', revision: 0 });
+		await p2.flush();
+		const rev = await st.revertToVersion(projectId, versions[0]!.versionId, s2.getState().lease.leaseId!);
+		expect(rev).toBe(2);
+		const s3 = await reopenSession(s2);
+		expect(Object.keys(Object.values(s3.getCommitted().sequences)[0]!.clips)).toEqual([]);
+		// and as a copy (S01:PER-001 restoreVersion)
+		const copyId = await st.restoreVersion(projectId, versions[0]!.versionId);
+		expect((await st.list()).some((p) => p.projectId === copyId)).toBe(true);
+		await s3.close();
 	});
 });
 
