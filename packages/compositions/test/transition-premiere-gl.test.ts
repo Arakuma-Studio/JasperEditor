@@ -114,6 +114,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				spiralFirst: BLUE,
 				spiralCenter: RED,
 				spiralSecondRing: BLUE,
+				spiralInnerLate: RED,
 				zigFirst: BLUE,
 				zigLast: RED,
 				zigRow2End: BLUE,

@@ -4,7 +4,6 @@
 import type { TransitionSpec } from '../../../transitions.ts';
 import { GLSL_COLOR } from '../../fx/glsl/color.ts';
 import { GLSL_HASH } from '../../fx/glsl/hash.ts';
-import { GLSL_NOISE } from '../../fx/glsl/noise.ts';
 import { fxParam } from '../../fx/params.ts';
 import { defineShaderTransition, TRANSITION_BINS } from '../define.ts';
 import { GLSL_TR_BLOCKS, GLSL_TR_WIPE } from '../glsl.ts';
@@ -378,29 +377,30 @@ export const PAINT_SPLATTER = defineShaderTransition({
 	gpu: {
 		passes: [
 			{
-				include: [GLSL_TR_WIPE, GLSL_TR_BLOCKS, GLSL_NOISE, GLSL_HASH],
+				include: [GLSL_TR_WIPE, GLSL_TR_BLOCKS, GLSL_HASH],
 				frag: /* glsl */ `
 const float PS_RMAX = 2.1;
-// Time (0..1) at which a splat (and its droplets) of a jittered grid cell reaches the point g (cell units).
+// Time (0..1) at which a splat (and its droplets) of a jittered grid cell reaches the point g (cell units). Cheap on
+// purpose (software GL compiles every call inline): the rim is a few random harmonics, not noise.
 float psSplat(vec2 g, vec2 cell, vec2 aspect) {
   ivec2 ic = ivec2(cell);
-  vec2 ctr = cell + 0.15 + 0.7 * fx_hash22(ic, u_seed);
-  float t0 = 0.04 + 0.5 * fx_hash2(ic + ivec2(31, 17), u_seed);
+  vec4 h = vec4(fx_hash22(ic, u_seed), fx_hash22(ic + ivec2(31, 17), u_seed));
+  vec2 ctr = cell + 0.15 + 0.7 * h.xy;
+  float t0 = 0.04 + 0.5 * h.z;
   vec2 q = (g - ctr) * aspect;
   float r = length(q);
-  vec2 dir = r > 1e-5 ? q / r : vec2(1.0, 0.0);
-  // Irregular rim: low-frequency lobes plus a few sharp spikes.
-  vec2 o = vec2(fx_hash2(ic + ivec2(5, 9), u_seed), fx_hash2(ic + ivec2(9, 5), u_seed)) * 40.0;
-  float lobes = fx_valueNoise(dir * 1.8 + o, u_seed) - 0.5;
-  float spikes = pow(fx_valueNoise(dir * 6.0 + o.yx, u_seed), 6.0);
-  float rim = 1.0 + 0.55 * lobes + 0.6 * spikes;
+  float a = atan(q.y, q.x);
+  float ph = 6.2831853 * h.w;
+  // Lobes plus sharp spikes; the rim never drops below 0.6 so every point of the cell is reached by t = 1.
+  float rim = 1.0 + 0.2 * sin(3.0 * a + ph) + 0.12 * sin(5.0 * a + 2.7 * ph) + 0.08 * sin(9.0 * a + 4.1 * ph)
+    + 0.45 * pow(max(sin(7.0 * a + 1.3 * ph), 0.0), 12.0);
   float t = t0 + (1.0 - t0) * r / (PS_RMAX * rim);
   // Droplets thrown around the splat: small discs that land shortly after it.
-  for (int k = 0; k < 4; k++) {
-    vec2 h = fx_hash22(ic * 4 + ivec2(k, 101), u_seed);
-    float ang = 6.2831853 * h.x;
-    vec2 dc = ctr + vec2(cos(ang), sin(ang)) * (0.45 + 0.5 * h.y) / aspect;
-    float rad = 0.04 + 0.07 * fx_hash2(ic * 4 + ivec2(k, 211), u_seed);
+  for (int k = 0; k < 3; k++) {
+    vec2 d = fx_hash22(ic * 3 + ivec2(k, 101), u_seed);
+    float ang = 6.2831853 * d.x;
+    vec2 dc = ctr + vec2(cos(ang), sin(ang)) * (0.5 + 0.45 * d.y) / aspect;
+    float rad = 0.05 + 0.06 * fract(d.y * 7.31);
     float dd = length((g - dc) * aspect);
     if (dd < rad) t = min(t, t0 + 0.06 + 0.12 * dd / rad);
   }
@@ -411,12 +411,14 @@ void main() {
   vec2 cellPx = u_compSize / grid;
   vec2 aspect = cellPx / cellPx.y;
   vec2 g = v_uv * grid;
-  vec2 base = floor(g);
+  // The four cells around the nearest cell corner (the point's own cell is always one of them).
+  vec2 base = floor(g - 0.5);
   float t = 1.0;
-  for (int j = -1; j <= 1; j++)
-    for (int i = -1; i <= 1; i++) t = min(t, psSplat(g, base + vec2(float(i), float(j)), aspect));
+  for (int j = 0; j <= 1; j++)
+    for (int i = 0; i <= 1; i++) t = min(t, psSplat(g, base + vec2(float(i), float(j)), aspect));
   // Time → px (roughly the speed a rim moves at) for the anti-aliased edge.
-  float d = (tr_progress() - t) * PS_RMAX * cellPx.y;
+  // The splats land early and spread: an eased clock keeps the covered area roughly proportional to the progress.
+  float d = (pow(tr_progress(), 1.35) - t) * PS_RMAX * cellPx.y;
   fragColor = mix(tr_from(v_uv), tr_to(v_uv), tr_edge(d, 0.0, tr_aaWidth(u_antiAliasing)));
 }`,
 			},

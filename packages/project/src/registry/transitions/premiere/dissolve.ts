@@ -103,7 +103,8 @@ void main() {
   float lb = fx_luma(b.rgb);
   // A soft choice (a few luma levels) so the switch has no hard, aliased contours.
   float k = smoothstep(-0.03, 0.03, lb - la);
-  fragColor = mix(a, b, k);
+  // Colour of the brighter side, coverage of both (a fading opaque clip darkens, it does not turn transparent).
+  fragColor = vec4(mix(a.rgb, b.rgb, k), max(a.a, b.a));
 }`,
 			},
 		],
@@ -176,8 +177,12 @@ void main() {
       float c = mcCost(v_uv, f, tx) + 0.004 * length(f);
       if (c < best) { best = c; bf = f; }
     }
-  // Confidence: the match explains the change (low residual) and beats standing still.
-  float conf = clamp(1.0 - best * 8.0, 0.0, 1.0) * clamp((zero - best) * 40.0 + 0.5, 0.0, 1.0);
+  // Confidence: the patch has structure (flat areas say nothing about motion) and the match explains the change.
+  float contrast = 0.0;
+  float c0 = texture(u_mcLuma, v_uv).r;
+  for (int j = -1; j <= 1; j++)
+    for (int i = -1; i <= 1; i++) contrast += abs(texture(u_mcLuma, v_uv + vec2(float(i), float(j)) * 1.5 * tx).r - c0);
+  float conf = clamp(contrast / 9.0 * 12.0, 0.0, 1.0) * clamp(1.0 - best * 6.0, 0.0, 1.0);
   // Flow in frame uv units, weighted by confidence (the blur then averages vectors by confidence).
   vec2 fu = bf * tx;
   fragColor = vec4(fu * conf, conf, 1.0);

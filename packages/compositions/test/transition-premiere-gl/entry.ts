@@ -102,6 +102,61 @@ function stats(c: HTMLCanvasElement) {
 }
 
 const api = {
+	seq(ids: string) {
+		const r: unknown[] = [];
+		for (const spec of ids.split(',')) {
+			const [id, inst] = spec.split('@');
+			const t0 = performance.now();
+			run(id!, { at: 50, ...(inst ? { id: inst } : {}) });
+			r.push(id, Math.round(performance.now() - t0));
+		}
+		return r;
+	},
+	dbg3(mode: string) {
+		const r: unknown[] = [];
+		for (const id of ['jasper.wipe', 'jasper.inset', 'jasper.barn-doors']) {
+			const c = run(id, { at: 50 });
+			if (mode === 'full') r.push(c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data.length);
+			if (mode === 'one') r.push(px(c, 3, 3));
+			if (mode === 'stats') r.push(stats(c));
+		}
+		return r;
+	},
+	async dbg2() {
+		const r: unknown[] = [];
+		for (const id of ['jasper.random-blocks', 'jasper.paint-splatter', 'jasper.random-wipe']) {
+			for (const inst of ['trn_premiere', 'trn_premiere', 'trn_other']) {
+				console.log('run', id, inst);
+				await new Promise((res) => setTimeout(res, 0));
+				const t0 = performance.now();
+				const c = run(id, { at: 50, id: inst });
+				console.log('ran', id, inst, performance.now() - t0);
+				await new Promise((res) => setTimeout(res, 0));
+				r.push(id, performance.now() - t0, stats(c));
+				console.log('stats', id, inst);
+			}
+		}
+		return r;
+	},
+	dbg1() {
+		const t0 = performance.now();
+		const c = run('jasper.random-blocks', { at: 50 });
+		const t1 = performance.now();
+		const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data.length;
+		const t2 = performance.now();
+		const s = stats(c);
+		return [t1 - t0, t2 - t1, performance.now() - t2, d, s];
+	},
+	/** Ids of the family (probe scripts). */
+	ids() {
+		return TRANSITION_SPECS.filter((x) => x.gpu && !x.id.startsWith('jasper.s.')).map((x) => x.id);
+	},
+	/** One transition at a progress (probe scripts). */
+	one(id: string, p = 50, inst?: string) {
+		const t0 = performance.now();
+		run(id, { at: p, ...(inst ? { id: inst } : {}) });
+		return Math.round(performance.now() - t0);
+	},
 	/** Run time (ms) of each Premiere-family transition for a few frames (compile included on the first). */
 	timings() {
 		const out: Record<string, number> = {};
@@ -173,7 +228,8 @@ const api = {
 		// Spiral Boxes / Zig-Zag Blocks at 10 %: the first cells (top left) only
 		r.spiralFirst = at('jasper.spiral-boxes', { at: 10 }, 4, 3);
 		r.spiralCenter = at('jasper.spiral-boxes', { at: 10 }, 32, 18);
-		r.spiralSecondRing = at('jasper.spiral-boxes', { at: 80 }, 32, 18);
+		r.spiralSecondRing = at('jasper.spiral-boxes', { at: 90 }, 12, 9);
+		r.spiralInnerLate = at('jasper.spiral-boxes', { at: 90 }, 32, 18);
 		r.zigFirst = at('jasper.zig-zag-blocks', { at: 10 }, 4, 3);
 		r.zigLast = at('jasper.zig-zag-blocks', { at: 10 }, 60, 33);
 		r.zigRow2End = at('jasper.zig-zag-blocks', { at: 22 }, 60, 9);
@@ -217,7 +273,7 @@ const api = {
 		// Slide family at 50 % (B = green | blue halves: a sliding B shows its right half first)
 		r.slideB = at('jasper.slide', { at: 50, b: greenBlue() }, 8, 18);
 		r.slideA = at('jasper.slide', { at: 50, b: greenBlue() }, 56, 18);
-		r.slideBorder = at('jasper.slide', { at: 50, params: { borderWidth: 4, borderColor: [1, 1, 1, 1] } }, 33, 18);
+		r.slideBorder = at('jasper.slide', { at: 50, params: { borderWidth: 4, borderColor: [1, 1, 1, 1] } }, 31, 18);
 		const bs = { at: 50, params: { bands: 2 } };
 		r.bandSlideTopW = at('jasper.band-slide', bs, 8, 9);
 		r.bandSlideTopE = at('jasper.band-slide', bs, 56, 9);
@@ -245,8 +301,11 @@ const api = {
 	random() {
 		const out: Record<string, { blue: number; same: boolean; differs: boolean }> = {};
 		for (const id of ['jasper.random-blocks', 'jasper.paint-splatter', 'jasper.random-wipe']) {
+			console.log('a', id);
 			const a = stats(run(id, { at: 50 }));
+			console.log('b', id);
 			const b = stats(run(id, { at: 50 }));
+			console.log('c', id);
 			const c = stats(run(id, { at: 50, id: 'trn_other' }));
 			out[id] = { blue: a.blue, same: a.hash === b.hash, differs: a.hash !== c.hash };
 		}
@@ -271,8 +330,8 @@ const api = {
 			return {
 				// A's square only (dissolve: 50 % grey; morph: dark — the square moved on)
 				aOnly: px(m, 99, 72),
-				// B's square only (dissolve: 50 % grey; morph: bright — the square has arrived half-way)
-				bOnly: px(m, 154, 72),
+				// B's square only, inside the half-way square (dissolve: 50 % grey; morph: bright)
+				bOnly: px(m, 148, 72),
 				both: px(m, 128, 72),
 			};
 		} finally {
