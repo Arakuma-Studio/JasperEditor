@@ -906,6 +906,28 @@ function copySequence(
 
 function pasteItems(doc: DDoc, cmd: CommandOf<'project.pasteItems'>, h: HandlerContext): unknown {
 	const p = payloadOf(cmd.payload, h, ['project-items']);
+	return insertProjectItems(doc, p, cmd.binId, cmd.index, h);
+}
+
+/**
+ * Adds a validated `project-items` payload to the project (CLB-007): bins, items, deep-copied sequences and every
+ * referenced entity, all with new ids. Shared by Paste and the interchange import (`project.importTimeline`).
+ */
+export function insertProjectItems(
+	doc: DDoc,
+	p: ClipboardPayload,
+	targetBin: string | null | undefined,
+	targetIndex: number | undefined,
+	h: HandlerContext,
+): {
+	itemIds: string[];
+	map: Record<string, string>;
+	sequenceIds: string[];
+	sequenceMap: Record<string, string>;
+	createdMedia: string[];
+	reusedMedia: string[];
+} {
+	const cmd = { binId: targetBin, index: targetIndex };
 	const sec = p.items!;
 	assertBin(doc, cmd.binId, h);
 	const binId = cmd.binId ?? null;
@@ -982,6 +1004,7 @@ function pasteItems(doc: DDoc, cmd: CommandOf<'project.pasteItems'>, h: HandlerC
 		itemIds: roots,
 		map: itemMap,
 		sequenceIds,
+		sequenceMap: Object.fromEntries(nestMap),
 		createdMedia: resolver.createdMedia,
 		reusedMedia: [...new Set(resolver.reusedMedia)],
 	};

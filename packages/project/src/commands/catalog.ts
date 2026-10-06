@@ -6,6 +6,7 @@ import { clipEditHandlers } from './handlers/clip-edit.ts';
 import { CLIPBOARD_OWNER, clipboardHandlers } from './handlers/clipboard.ts';
 import { compositionHandlers } from './handlers/composition.ts';
 import { effectHandlers } from './handlers/effect.ts';
+import { INTERCHANGE_OWNER, interchangeHandlers } from './handlers/interchange.ts';
 import { keyframeHandlers } from './handlers/keyframe.ts';
 import { m2Handlers } from './handlers/m2.ts';
 import { paramHandlers } from './handlers/param.ts';
@@ -35,7 +36,9 @@ export type CommandOwner =
 	// Clipboard (S01 §20)
 	| 'wp-clipboard'
 	// Effect presets (S03:FX-030)
-	| 'wp-m3-presets';
+	| 'wp-m3-presets'
+	// Timeline interchange
+	| 'wp-interchange';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -138,6 +141,7 @@ const LABELS: Record<CommandType, string> = {
 	'keyframe.paste': 'Paste Keyframes',
 	'project.pasteItems': 'Paste',
 	'effect.applyPreset': 'Apply Preset',
+	'project.importTimeline': 'Import Timeline',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -157,6 +161,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[shapeHandlers, SHAPE_OWNER],
 	[clipboardHandlers, CLIPBOARD_OWNER],
 	[presetHandlers, PRESET_OWNER],
+	[interchangeHandlers, INTERCHANGE_OWNER],
 	[m2Handlers, 'M2'],
 ];
 
@@ -175,11 +180,12 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 			handler: SHAPE_BOX_COMMANDS.has(type) ? keepShapesCentred(handler) : handler,
 			label: LABELS[type],
 			owner,
-			milestone: owner.startsWith('wp-m3-')
-				? 'M3'
-				: owner === 'M2' || owner.startsWith('wp-m2-') || owner === CLIPBOARD_OWNER
-					? 'M2'
-					: 'M1',
+			milestone:
+				owner.startsWith('wp-m3-') || owner === INTERCHANGE_OWNER
+					? 'M3'
+					: owner === 'M2' || owner.startsWith('wp-m2-') || owner === CLIPBOARD_OWNER
+						? 'M2'
+						: 'M1',
 		};
 	}
 	return out;

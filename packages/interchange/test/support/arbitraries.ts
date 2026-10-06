@@ -2,6 +2,7 @@
 // for comparing a project with its export → import round trip. Formats pick the features they carry.
 import type { Animatable, Keyframe, LabelColor } from '@jasper/project';
 import fc from 'fast-check';
+import { sourceOut } from '../../src/build.ts';
 import type {
 	IClip,
 	IMarker,
@@ -245,15 +246,17 @@ function build(f: Features, g: Gen): IProject {
 		startTimecode: 0,
 		video: [],
 		audio: [],
-		markers: g.markers.map(
-			(m): IMarker => ({
-				start: m.at * F,
-				duration: m.len * F,
-				name: m.name,
-				comment: m.comment,
-				color: m.color,
-			}),
-		),
+		markers: [...g.markers]
+			.sort((a, b) => a.at - b.at)
+			.map(
+				(m): IMarker => ({
+					start: m.at * F,
+					duration: m.len * F,
+					name: m.name,
+					comment: m.comment,
+					color: m.color,
+				}),
+			),
 	};
 	g.tracks.forEach((list, ti) => {
 		const video = ti < f.videoTracks;
@@ -402,6 +405,15 @@ function build(f: Features, g: Gen): IProject {
 		});
 	}
 	for (const id of Object.keys(gens)) p.root.push({ type: 'media', id });
+	// Media cover every use (readers grow durations the same way).
+	for (const s of Object.values(p.sequences))
+		for (const t of [...s.video, ...s.audio])
+			for (const c of t.clips) {
+				if (c.source.type !== 'media') continue;
+				const m = p.media[c.source.mediaId]!;
+				if (m.kind === 'generator' || m.duration === null) continue;
+				m.duration = Math.max(m.duration, sourceOut(c), (c.hold ?? c.sourceIn) + 1);
+			}
 	return p;
 }
 
