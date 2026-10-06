@@ -8,8 +8,10 @@
 import type { Draft } from 'immer';
 import { autoSlope, EASE_PRESETS, evaluate, isHoldOnlyValue } from '../../keyframes.ts';
 import { newKeySpatial, refreshAutoTangents, setSpatialMode } from '../../keyframes-spatial.ts';
+import { MASK_PROPS } from '../../masks/model.ts';
 import { PROPERTY_SPECS } from '../../registry/properties.ts';
 import type { Animatable, Ease, Interpolation, Keyframe } from '../../schema/common.ts';
+import type { Mask } from '../../schema/mask.ts';
 import { type EffectInstance, isKnownClipKind, type Track } from '../../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
@@ -56,6 +58,17 @@ export function clipAnimatables(seq: DSeq, clip: DClip): AnimLocation[] {
 			if (isAnim(a)) out.push({ anim: a, path: ['effect', fx.id, name], seq, clip });
 		}
 	}
+	// wp masks: Opacity masks and effect masks (`["mask", id, prop]`).
+	const maskLists = [
+		(clip as { masks?: Draft<Mask>[] }).masks ?? [],
+		...((clip as { effects?: Draft<EffectInstance>[] }).effects ?? []).map((fx) => (fx.masks ?? []) as Draft<Mask>[]),
+	];
+	for (const list of maskLists)
+		for (const m of list)
+			for (const prop of MASK_PROPS) {
+				const a = m[prop];
+				if (isAnim(a)) out.push({ anim: a as DAnim, path: ['mask', m.id, prop], seq, clip });
+			}
 	// S11:ATP-006: keyframed params of anime templates (dynamic `params.<name>` keys; edits validate through
 	// param.ts target resolution, which needs the template to be installed).
 	if (clip.kind === 'motion-graphic') {

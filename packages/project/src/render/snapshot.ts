@@ -5,6 +5,7 @@ import { clipEngines, type EngineId, isBoundedContent, kindCapabilities } from '
 import { intrinsicBoxOf } from '../registry/properties.ts';
 import type { Animatable, Keyframe, RGBA } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
+import type { Mask } from '../schema/mask.ts';
 import type { FontRef, MediaAsset } from '../schema/media.ts';
 import {
 	type BlendMode,
@@ -139,6 +140,8 @@ export type RenderVisualClip = {
 	blendMode: BlendMode;
 	effects: EffectInstance[];
 	intrinsicBox: { width: number; height: number };
+	/** wp masks: the layer's Opacity masks (absent = none; effect masks travel in `effects[].masks`). */
+	masks?: Mask[];
 	engine: EngineId;
 	loop?: boolean;
 	/** Bounded media content (needs trimBefore/playbackRate handling). */
@@ -464,6 +467,7 @@ export function buildRenderSnapshot(
 				blendMode: (r.blendMode as BlendMode | undefined) ?? 'normal',
 				effects: (r.effects as EffectInstance[] | undefined) ?? [],
 				intrinsicBox: box,
+				...((r.masks as Mask[] | undefined)?.length ? { masks: r.masks as Mask[] } : {}),
 				engine: clipEngines(c)?.export ?? caps.engines.export,
 				...(c.kind === 'animated-image' ? { loop: c.loop } : {}),
 				bounded: isBoundedContent(c),

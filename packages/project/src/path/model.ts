@@ -442,6 +442,13 @@ export function insertVertexAt(p: BezierPath, segment: number, t: number): { pat
 	return { path: out, index: segment + 1 };
 }
 
+/** Appends a vertex at the end of an (open) path (the pen tool's next click). */
+export function appendVertexTo(p: BezierPath, q: PathPoint, inH: PathPoint = [0, 0], outH: PathPoint = [0, 0]): BezierPath {
+	const out = clonePath(p);
+	out.vertices.push({ p: [q[0], q[1]], in: [inH[0], inH[1]], out: [outH[0], outH[1]] });
+	return out;
+}
+
 /** Removes vertices (indices into `p.vertices`); feather points on removed segments are dropped. */
 export function removeVertices(p: BezierPath, indices: readonly number[]): BezierPath {
 	const drop = new Set(indices);
