@@ -223,7 +223,8 @@ as inline styles, so the Player, `renderStill` and parallel `renderMedia` agree 
   `REMOTION_E2E=1 pnpm exec vitest run packages/motion/test/determinism-render.e2e.test.ts`
   (Chrome at `/usr/bin/google-chrome` or `JASPER_BROWSER_EXECUTABLE`).
 - `pnpm notices` regenerates `THIRD_PARTY_NOTICES.md` (the JavaScript packages shipped in the web app and the
-  Remotion bundle, with their licence texts); `pnpm notices --check` fails when it is stale (a test runs it).
+  Remotion bundle, with their licence texts, and every ported-source record in `licenses/ported/`); `pnpm notices
+  --check` fails when it is stale (a test runs it).
   The web build ships it as `/THIRD_PARTY_NOTICES.md`, linked from Help ▸ About. Build tools whose output
   ships (Tailwind's CSS, Vite's and webpack's runtimes, Remotion's bundle entry) are an explicit list in
   `scripts/third-party-notices.mjs`; after `pnpm --filter @jasper/web build` and
