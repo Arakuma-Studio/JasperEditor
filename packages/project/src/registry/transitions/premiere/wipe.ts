@@ -419,11 +419,11 @@ void main() {
   float t = 1.0;
   for (int j = 0; j <= 1; j++)
     for (int i = 0; i <= 1; i++) t = min(t, psSplat(g, base + vec2(float(i), float(j)), aspect));
-  // Time → px (roughly the speed a rim moves at) for the anti-aliased edge.
-  // Most of the frame is covered by t ≈ 0.5; the clock runs at that pace (covered area ~ progress) and catches up
-  // with the real time at the end so the last gaps close by progress 1.
+  // Most of the frame is covered by t ≈ 0.5 and the covered area grows like an S-curve in t; this clock (early splats
+  // sooner, the middle slower) keeps the covered area close to the progress, and catches up with the real time at the
+  // end so the last gaps close by progress 1. Time → px (roughly the speed a rim moves at) for the anti-aliased edge.
   float p = tr_progress();
-  float q = mix(0.5 * p, p, smoothstep(0.7, 1.0, p));
+  float q = mix(0.4 * p + 0.07 * sin(3.14159265 * p), p, smoothstep(0.75, 1.0, p));
   float d = (q - t) * PS_RMAX * cellPx.y;
   fragColor = mix(tr_from(v_uv), tr_to(v_uv), tr_edge(d, 0.0, tr_aaWidth(u_antiAliasing)));
 }`,

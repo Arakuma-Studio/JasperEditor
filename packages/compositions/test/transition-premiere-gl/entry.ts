@@ -107,86 +107,6 @@ function stats(c: HTMLCanvasElement) {
 }
 
 const api = {
-	seq(ids: string) {
-		const r: unknown[] = [];
-		for (const spec of ids.split(',')) {
-			const [id, inst] = spec.split('@');
-			const t0 = performance.now();
-			run(id!, { at: 50, ...(inst ? { id: inst } : {}) });
-			r.push(id, Math.round(performance.now() - t0));
-		}
-		return r;
-	},
-	dbg3(mode: string) {
-		const r: unknown[] = [];
-		for (const id of ['jasper.wipe', 'jasper.inset', 'jasper.barn-doors']) {
-			const c = run(id, { at: 50 });
-			if (mode === 'full') r.push(c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data.length);
-			if (mode === 'one') r.push(px(c, 3, 3));
-			if (mode === 'stats') r.push(stats(c));
-		}
-		return r;
-	},
-	async dbg2() {
-		const r: unknown[] = [];
-		for (const id of [
-			'jasper.random-blocks',
-			'jasper.paint-splatter',
-			'jasper.random-wipe',
-			'jasper.burn-alpha',
-			'jasper.burn-chroma',
-			'jasper.grunge-transition',
-			'jasper.chaos',
-			'jasper.block-motion',
-			'jasper.vr-random-blocks',
-		]) {
-			for (const inst of ['trn_premiere', 'trn_premiere', 'trn_other']) {
-				console.log('run', id, inst);
-				await new Promise((res) => setTimeout(res, 0));
-				const t0 = performance.now();
-				const c = run(id, { at: 50, id: inst });
-				console.log('ran', id, inst, performance.now() - t0);
-				await new Promise((res) => setTimeout(res, 0));
-				r.push(id, performance.now() - t0, stats(c));
-				console.log('stats', id, inst);
-			}
-		}
-		return r;
-	},
-	dbg1() {
-		const t0 = performance.now();
-		const c = run('jasper.random-blocks', { at: 50 });
-		const t1 = performance.now();
-		const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data.length;
-		const t2 = performance.now();
-		const s = stats(c);
-		return [t1 - t0, t2 - t1, performance.now() - t2, d, s];
-	},
-	/** ASCII map (B = incoming, A = outgoing, x = other) of a frame (probe scripts): "id|progress|{params}". */
-	map(arg: string) {
-		const [id, pc, json] = arg.split('|');
-		const c = run(id!, { at: Number(pc), params: json ? JSON.parse(json) : {} });
-		const rows: string[] = [];
-		for (let y = 1; y < H; y += 3) {
-			let r = '';
-			for (let x = 1; x < W; x += 2) {
-				const v = px(c, x, y);
-				r += v[2] > 200 && v[0] < 60 ? 'B' : v[0] > 200 && v[2] < 60 ? 'A' : v[3] < 20 ? '.' : 'x';
-			}
-			rows.push(r);
-		}
-		return rows.join('\n');
-	},
-	/** Ids of the family (probe scripts). */
-	ids() {
-		return TRANSITION_SPECS.filter((x) => x.gpu && !x.id.startsWith('jasper.s.')).map((x) => x.id);
-	},
-	/** One transition at a progress (probe scripts). */
-	one(id: string, p = 50, inst?: string) {
-		const t0 = performance.now();
-		run(id, { at: p, ...(inst ? { id: inst } : {}) });
-		return Math.round(performance.now() - t0);
-	},
 	/** Run time (ms) of each Premiere-family transition for a few frames (compile included on the first). */
 	timings() {
 		const out: Record<string, number> = {};
@@ -476,11 +396,8 @@ const api = {
 			'jasper.block-motion',
 			'jasper.vr-random-blocks',
 		]) {
-			console.log('a', id);
 			const a = stats(run(id, { at: 50 }));
-			console.log('b', id);
 			const b = stats(run(id, { at: 50 }));
-			console.log('c', id);
 			const c = stats(run(id, { at: 50, id: 'trn_other' }));
 			out[id] = { blue: a.blue, same: a.hash === b.hash, differs: a.hash !== c.hash };
 		}
