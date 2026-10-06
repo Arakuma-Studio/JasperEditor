@@ -4,9 +4,9 @@
 import { describe, expect, it } from 'vitest';
 import {
 	defaultEffectRegistry,
-	FX_MB_KEYS,
 	type EffectParams,
 	type EffectSpec,
+	FX_MB_KEYS,
 	gpuPadding,
 	gpuPasses,
 	paramUniforms,
@@ -417,7 +417,10 @@ describe('S_Shake model', () => {
 		const fast = shakeUniforms(defaults(spec, { motionBlur: true, amplitude: 4 }), ctx).u_mbPlan.ivec4[0];
 		const slow = shakeUniforms(defaults(spec, { motionBlur: true, amplitude: 0.5 }), ctx).u_mbPlan.ivec4[0];
 		expect(fast).toBeGreaterThan(slow);
-		const half = shakeUniforms(defaults(spec, { motionBlur: true, amplitude: 0.5 }), { ...ctx, pxScale: 0.5 });
+		const half = shakeUniforms(defaults(spec, { motionBlur: true, amplitude: 0.5 }), {
+			...ctx,
+			pxScale: 0.5,
+		});
 		expect(half.u_mbPlan.ivec4[0]).toBeLessThanOrEqual(Math.ceil(slow / 2) + 1);
 		expect(shakeUniforms(defaults(spec, { motionBlur: true, amplitude: 0 }), ctx).u_mbPlan.ivec4[0]).toBe(1);
 		expect(shakeUniforms(defaults(spec, { bluePhase: 0.5 }), { frame: 0, fps: 30, seed: 0 }).u_shakeRgb).toBe(

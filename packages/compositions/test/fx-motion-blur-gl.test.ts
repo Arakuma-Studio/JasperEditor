@@ -56,9 +56,18 @@ const STATIC_EFFECTS: [string, Partial<EffectArgs>][] = [
 	['shake-default', { id: 'jasper.s.shake', frame: 12, seed: 0.3 }],
 	['shake-default-grid', { id: 'jasper.s.shake', frame: 5, paint: 'grid' }],
 	['shake-twitchy-off', { id: 'jasper.s.shake', frame: 9, params: { style: 'twitchy', amplitude: 4 } }],
-	['shake-rgb-off', { id: 'jasper.s.shake', frame: 7, paint: 'grid', params: { redPhase: 0.4, rgbRandomness: 0.5 } }],
-	['shake-blur-static', { id: 'jasper.s.shake', frame: 7, paint: 'grid', params: { motionBlur: true, amplitude: 0 } }],
-	['shake-blur-zero', { id: 'jasper.s.shake', frame: 7, params: { motionBlur: true, moBlurLength: 0, amplitude: 3 } }],
+	[
+		'shake-rgb-off',
+		{ id: 'jasper.s.shake', frame: 7, paint: 'grid', params: { redPhase: 0.4, rgbRandomness: 0.5 } },
+	],
+	[
+		'shake-blur-static',
+		{ id: 'jasper.s.shake', frame: 7, paint: 'grid', params: { motionBlur: true, amplitude: 0 } },
+	],
+	[
+		'shake-blur-zero',
+		{ id: 'jasper.s.shake', frame: 7, params: { motionBlur: true, moBlurLength: 0, amplitude: 3 } },
+	],
 	['corner-pin-default', { id: 'jasper.s.warp-corner-pin', paint: 'grid' }],
 	['corner-pin-blur-static', { id: 'jasper.s.warp-corner-pin', paint: 'grid', params: { motionBlur: true } }],
 	[
@@ -68,13 +77,22 @@ const STATIC_EFFECTS: [string, Partial<EffectArgs>][] = [
 			paint: 'grid',
 			frame: 5,
 			keys: [
-				{ frame: 0, params: { topLeft: [0, 0], topRight: [0.5, 0], bottomLeft: [0, 0.5], bottomRight: [0.5, 0.5] } },
-				{ frame: 10, params: { topLeft: [0.5, 0.5], topRight: [1, 0.5], bottomLeft: [0.5, 1], bottomRight: [1, 1] } },
+				{
+					frame: 0,
+					params: { topLeft: [0, 0], topRight: [0.5, 0], bottomLeft: [0, 0.5], bottomRight: [0.5, 0.5] },
+				},
+				{
+					frame: 10,
+					params: { topLeft: [0.5, 0.5], topRight: [1, 0.5], bottomLeft: [0.5, 1], bottomRight: [1, 1] },
+				},
 			],
 		},
 	],
 	['perspective-default', { id: 'jasper.s.warp-perspective', paint: 'grid' }],
-	['perspective-blur-static', { id: 'jasper.s.warp-perspective', paint: 'grid', params: { motionBlur: true } }],
+	[
+		'perspective-blur-static',
+		{ id: 'jasper.s.warp-perspective', paint: 'grid', params: { motionBlur: true } },
+	],
 	[
 		'perspective-moving-off',
 		{
@@ -90,7 +108,11 @@ const STATIC_EFFECTS: [string, Partial<EffectArgs>][] = [
 	['transform-default', { id: 'jasper.transform', paint: 'grid' }],
 	[
 		'transform-shutter-static',
-		{ id: 'jasper.transform', paint: 'grid', params: { useCompShutterAngle: false, shutterAngle: 180, rotation: 20 } },
+		{
+			id: 'jasper.transform',
+			paint: 'grid',
+			params: { useCompShutterAngle: false, shutterAngle: 180, rotation: 20 },
+		},
 	],
 	[
 		'transform-moving-comp-shutter',
@@ -105,7 +127,10 @@ const STATIC_EFFECTS: [string, Partial<EffectArgs>][] = [
 		},
 	],
 	['freelens-default', { id: 'jasper.s.free-lens', paint: 'grid', frame: 4 }],
-	['freelens-shake-off', { id: 'jasper.s.free-lens', paint: 'grid', frame: 4, params: { xRandAmp: 2, motionBlur: false } }],
+	[
+		'freelens-shake-off',
+		{ id: 'jasper.s.free-lens', paint: 'grid', frame: 4, params: { xRandAmp: 2, motionBlur: false } },
+	],
 	['strip-slide-noblur', { id: 'jasper.s.strip-slide', paint: 'grid', params: { motionBlur: 0 } }],
 	['blur-mo-curves-static', { id: 'jasper.s.blur-mo-curves', paint: 'grid', params: { rotate: 10 } }],
 	['film-damage-default', { id: 'jasper.s.film-damage', paint: 'grid', frame: 3 }],
@@ -129,20 +154,71 @@ const STATIC_TRANSITIONS: [string, Omit<TransitionArgs, 'width' | 'height'>][] =
 		`${id}-blur0`,
 		{ id, frame: 4, duration: 10, from: 'grid', to: 'vline', params: { blur: 0 } },
 	]),
-	['earthquake-still', { id: 'jasper.earthquake', frame: 4, duration: 10, from: 'grid', to: 'vline', params: { amplitude: 0, rotation: 0 } }],
+	[
+		'earthquake-still',
+		{
+			id: 'jasper.earthquake',
+			frame: 4,
+			duration: 10,
+			from: 'grid',
+			to: 'vline',
+			params: { amplitude: 0, rotation: 0 },
+		},
+	],
 	[
 		'directional-blur-ends',
-		{ id: 'jasper.directional-blur-transition', frame: 0, duration: 10, from: 'grid', to: 'vline', params: { endPercent: 0 } },
+		{
+			id: 'jasper.directional-blur-transition',
+			frame: 0,
+			duration: 10,
+			from: 'grid',
+			to: 'vline',
+			params: { endPercent: 0 },
+		},
 	],
-	['strip-slide-transition-noblur', { id: 'jasper.s.strip-slide-transition', frame: 4, duration: 10, from: 'grid', to: 'vline', params: { motionBlur: 0 } }],
-	['swish-pan-noblur', { id: 'jasper.s.swish-pan', frame: 4, duration: 10, from: 'grid', to: 'vline', params: { blurAmount: 0 } }],
+	[
+		'strip-slide-transition-noblur',
+		{
+			id: 'jasper.s.strip-slide-transition',
+			frame: 4,
+			duration: 10,
+			from: 'grid',
+			to: 'vline',
+			params: { motionBlur: 0 },
+		},
+	],
+	[
+		'swish-pan-noblur',
+		{
+			id: 'jasper.s.swish-pan',
+			frame: 4,
+			duration: 10,
+			from: 'grid',
+			to: 'vline',
+			params: { blurAmount: 0 },
+		},
+	],
 	[
 		'dissolve-shake-off',
-		{ id: 'jasper.s.dissolve-shake', frame: 4, duration: 10, from: 'grid', to: 'vline', params: { motionBlur: false } },
+		{
+			id: 'jasper.s.dissolve-shake',
+			frame: 4,
+			duration: 10,
+			from: 'grid',
+			to: 'vline',
+			params: { motionBlur: false },
+		},
 	],
 	[
 		'dissolve-shake-still',
-		{ id: 'jasper.s.dissolve-shake', frame: 4, duration: 10, from: 'grid', to: 'vline', params: { amplitude: 0 } },
+		{
+			id: 'jasper.s.dissolve-shake',
+			frame: 4,
+			duration: 10,
+			from: 'grid',
+			to: 'vline',
+			params: { amplitude: 0 },
+		},
 	],
 ];
 
@@ -158,7 +234,9 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				(args) => (window as unknown as { __mb: { runEffect(a: unknown): unknown } }).__mb.runEffect(args),
 				{ width: W, height: H, ...a },
 			) as Promise<Out>;
-		const transition = (a: Omit<TransitionArgs, 'width' | 'height'> & Partial<TransitionArgs>): Promise<Out> =>
+		const transition = (
+			a: Omit<TransitionArgs, 'width' | 'height'> & Partial<TransitionArgs>,
+		): Promise<Out> =>
 			page.evaluate(
 				(args) =>
 					(window as unknown as { __mb: { runTransition(a: unknown): unknown } }).__mb.runTransition(args),
@@ -216,7 +294,10 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				const s = smearStats(o.row ?? o.column ?? []);
 				results[name] = { ...s, ...(o.uniforms?.u_mbPlan ? { taps: o.uniforms.u_mbPlan[0] } : {}) };
 				if (process.env.MB_PNG_DIR && o.png)
-					writeFileSync(join(process.env.MB_PNG_DIR, `${name}.png`), Buffer.from(o.png.split(',')[1]!, 'base64'));
+					writeFileSync(
+						join(process.env.MB_PNG_DIR, `${name}.png`),
+						Buffer.from(o.png.split(',')[1]!, 'base64'),
+					);
 				if (process.env.MB_NO_ASSERT) continue;
 				expect(s.length, `${name} smear length`).toBeGreaterThanOrEqual(limits.minLength);
 				expect(s.notches, `${name} notches`).toBe(0);
@@ -271,10 +352,50 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			const cases: [string, Partial<EffectArgs> & { id: string }][] = [
 				['shake-off', { ...shake, params: { amplitude: 1 } }],
 				['shake-typical (Normal, amp 1, blur on)', { ...shake, params: { amplitude: 1, motionBlur: true } }],
-				['shake-twitchy-amp5 (worst, blur on)', { ...shake, params: { motionBlur: true, style: 'twitchy', amplitude: 5, frequency: 12, stillness: 0 } }],
-				['shake-twitchy-amp5 1/2 preview', { ...shake, scale: 0.5, params: { motionBlur: true, style: 'twitchy', amplitude: 5, frequency: 12, stillness: 0 } }],
-				['shake-twitchy-amp5 draft', { ...shake, params: { motionBlur: true, style: 'twitchy', amplitude: 5, frequency: 12, stillness: 0, mbQuality: 'draft' } }],
-				['shake-rgb-amp5 (3 channels, blur on)', { ...shake, params: { motionBlur: true, style: 'twitchy', amplitude: 5, frequency: 12, stillness: 0, redPhase: 0.3, bluePhase: -0.3 } }],
+				[
+					'shake-twitchy-amp5 (worst, blur on)',
+					{
+						...shake,
+						params: { motionBlur: true, style: 'twitchy', amplitude: 5, frequency: 12, stillness: 0 },
+					},
+				],
+				[
+					'shake-twitchy-amp5 1/2 preview',
+					{
+						...shake,
+						scale: 0.5,
+						params: { motionBlur: true, style: 'twitchy', amplitude: 5, frequency: 12, stillness: 0 },
+					},
+				],
+				[
+					'shake-twitchy-amp5 draft',
+					{
+						...shake,
+						params: {
+							motionBlur: true,
+							style: 'twitchy',
+							amplitude: 5,
+							frequency: 12,
+							stillness: 0,
+							mbQuality: 'draft',
+						},
+					},
+				],
+				[
+					'shake-rgb-amp5 (3 channels, blur on)',
+					{
+						...shake,
+						params: {
+							motionBlur: true,
+							style: 'twitchy',
+							amplitude: 5,
+							frequency: 12,
+							stillness: 0,
+							redPhase: 0.3,
+							bluePhase: -0.3,
+						},
+					},
+				],
 			];
 			const out: Record<string, { ms: number; taps: number }> = {};
 			for (const [name, a] of cases) {
@@ -321,7 +442,15 @@ const SMEARS: [string, 'effect' | 'transition', EffectArgs | TransitionArgs, Lim
 			frame: 29,
 			row,
 			png,
-			params: { motionBlur: true, style: 'twitchy', amplitude: 5, frequency: 12, stillness: 0, xRandAmp: 1, yRandAmp: 0 },
+			params: {
+				motionBlur: true,
+				style: 'twitchy',
+				amplitude: 5,
+				frequency: 12,
+				stillness: 0,
+				xRandAmp: 1,
+				yRandAmp: 0,
+			},
 		},
 		{ minLength: 12 },
 	],
@@ -335,7 +464,15 @@ const SMEARS: [string, 'effect' | 'transition', EffectArgs | TransitionArgs, Lim
 			frame: 25,
 			row,
 			png,
-			params: { motionBlur: true, style: 'jumpy', amplitude: 3, frequency: 24, xRandAmp: 1, yRandAmp: 0, drift: 1 },
+			params: {
+				motionBlur: true,
+				style: 'jumpy',
+				amplitude: 3,
+				frequency: 24,
+				xRandAmp: 1,
+				yRandAmp: 0,
+				drift: 1,
+			},
 		},
 		{ minLength: 4, allowHoles: true },
 	],
@@ -352,8 +489,24 @@ const SMEARS: [string, 'effect' | 'transition', EffectArgs | TransitionArgs, Lim
 			png,
 			params: { motionBlur: true, moBlurLength: 1 },
 			keys: [
-				{ frame: 0, params: { topLeft: [-0.3, 0.25], topRight: [0.2, 0.25], bottomLeft: [-0.3, 0.75], bottomRight: [0.2, 0.75] } },
-				{ frame: 4, params: { topLeft: [0.6, 0.25], topRight: [1.1, 0.25], bottomLeft: [0.6, 0.75], bottomRight: [1.1, 0.75] } },
+				{
+					frame: 0,
+					params: {
+						topLeft: [-0.3, 0.25],
+						topRight: [0.2, 0.25],
+						bottomLeft: [-0.3, 0.75],
+						bottomRight: [0.2, 0.75],
+					},
+				},
+				{
+					frame: 4,
+					params: {
+						topLeft: [0.6, 0.25],
+						topRight: [1.1, 0.25],
+						bottomLeft: [0.6, 0.75],
+						bottomRight: [1.1, 0.75],
+					},
+				},
 			],
 		},
 		{ minLength: 60, maxRatio: 1.6 },
@@ -405,32 +558,81 @@ const SMEARS: [string, 'effect' | 'transition', EffectArgs | TransitionArgs, Lim
 			frame: 9,
 			row,
 			png,
-			params: { xRandAmp: 3, amplitude: 4, frequency: 30, xRandFreq: 2, tiltX: 0, lightLeak: false, vignette: false, glowBrightness: 0 },
+			params: {
+				xRandAmp: 3,
+				amplitude: 4,
+				frequency: 30,
+				xRandFreq: 2,
+				tiltX: 0,
+				lightLeak: false,
+				vignette: false,
+				glowBrightness: 0,
+			},
 		},
 		{ minLength: 6 },
 	],
 	[
 		'travel-motion',
 		'transition',
-		{ id: 'jasper.travel-motion', width: W, height: H, frame: 4, duration: 10, row, png, to: 'none', params: { blur: 100 } },
+		{
+			id: 'jasper.travel-motion',
+			width: W,
+			height: H,
+			frame: 4,
+			duration: 10,
+			row,
+			png,
+			to: 'none',
+			params: { blur: 100 },
+		},
 		{ minLength: 40 },
 	],
 	[
 		'roll-3d',
 		'transition',
-		{ id: 'jasper.3d-roll', width: W, height: H, frame: 4, duration: 10, row, png, to: 'none', params: { blur: 100, bend: 0 } },
+		{
+			id: 'jasper.3d-roll',
+			width: W,
+			height: H,
+			frame: 4,
+			duration: 10,
+			row,
+			png,
+			to: 'none',
+			params: { blur: 100, bend: 0 },
+		},
 		{ minLength: 40 },
 	],
 	[
 		'whip',
 		'transition',
-		{ id: 'jasper.whip', width: W, height: H, frame: 4, duration: 10, row, png, to: 'none', params: { blur: 100 } },
+		{
+			id: 'jasper.whip',
+			width: W,
+			height: H,
+			frame: 4,
+			duration: 10,
+			row,
+			png,
+			to: 'none',
+			params: { blur: 100 },
+		},
 		{ minLength: 40 },
 	],
 	[
 		'swish-pan',
 		'transition',
-		{ id: 'jasper.s.swish-pan', width: W, height: H, frame: 3, duration: 10, row, png, to: 'none', params: { direction: 'right' } },
+		{
+			id: 'jasper.s.swish-pan',
+			width: W,
+			height: H,
+			frame: 3,
+			duration: 10,
+			row,
+			png,
+			to: 'none',
+			params: { direction: 'right' },
+		},
 		{ minLength: 40 },
 	],
 	[
@@ -456,13 +658,34 @@ const SMEARS: [string, 'effect' | 'transition', EffectArgs | TransitionArgs, Lim
 	[
 		'strip-slide-transition',
 		'transition',
-		{ id: 'jasper.s.strip-slide-transition', width: W, height: H, frame: 4, duration: 10, column: W / 2, png, from: 'hline', to: 'none', params: { motionBlur: 2, stripAngle: 90, stripSize: 2 } },
+		{
+			id: 'jasper.s.strip-slide-transition',
+			width: W,
+			height: H,
+			frame: 4,
+			duration: 10,
+			column: W / 2,
+			png,
+			from: 'hline',
+			to: 'none',
+			params: { motionBlur: 2, stripAngle: 90, stripSize: 2 },
+		},
 		{ minLength: 20 },
 	],
 	[
 		'earthquake',
 		'transition',
-		{ id: 'jasper.earthquake', width: W, height: H, frame: 9, duration: 20, row, png, to: 'none', params: { rotation: 0, amplitude: 200 } },
+		{
+			id: 'jasper.earthquake',
+			width: W,
+			height: H,
+			frame: 9,
+			duration: 20,
+			row,
+			png,
+			to: 'none',
+			params: { rotation: 0, amplitude: 200 },
+		},
 		{ minLength: 4 },
 	],
 ];

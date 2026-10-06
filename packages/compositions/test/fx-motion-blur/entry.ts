@@ -35,7 +35,11 @@ function canvas(w: number, h: number, paint?: (ctx: CanvasRenderingContext2D) =>
  * Test pictures: 'vline' (black, a 2-px white vertical line in the middle — smears horizontally), 'hline' (the same,
  * horizontal), 'grid' (colour quadrants + black grid + white disc), 'dot' (a white dot on black), 'none'.
  */
-function paint(ctx: CanvasRenderingContext2D, b: { x: number; y: number; w: number; h: number }, kind: string) {
+function paint(
+	ctx: CanvasRenderingContext2D,
+	b: { x: number; y: number; w: number; h: number },
+	kind: string,
+) {
 	if (kind === 'none') return;
 	if (kind === 'vline' || kind === 'hline' || kind === 'dot') {
 		ctx.fillStyle = '#000';
@@ -152,7 +156,8 @@ function report(out: HTMLCanvasElement, box: { x: number; y: number; w: number; 
 	for (let i = 0; i < all.length; i += 1) sum = (sum * 31 + all[i]!) >>> 0;
 	const s = box.w / Math.max(1, a.width);
 	const probes = (a.probes ?? []).map(
-		([x, y]) => Array.from(ctx.getImageData(Math.floor(box.x + x * s), Math.floor(box.y + y * s), 1, 1).data) as Px,
+		([x, y]) =>
+			Array.from(ctx.getImageData(Math.floor(box.x + x * s), Math.floor(box.y + y * s), 1, 1).data) as Px,
 	);
 	const r: Partial<Out> = { probes, checksum: sum };
 	if (a.row !== undefined) {
@@ -310,7 +315,13 @@ function runTransition(a: TransitionArgs): Out {
 }
 
 /** Micro-benchmark of a custom single-pass shader (dev aid): mean ms over `repeat` draws at width × height. */
-function bench(a: { frag: string; uniforms: Record<string, unknown>; width: number; height: number; repeat: number }) {
+function bench(a: {
+	frag: string;
+	uniforms: Record<string, unknown>;
+	width: number;
+	height: number;
+	repeat: number;
+}) {
 	const h = fxHost();
 	if (!h) throw new Error('no WebGL2');
 	const spec = defineShaderEffect({

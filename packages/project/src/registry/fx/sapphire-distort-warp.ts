@@ -1289,7 +1289,6 @@ function perspectivePose(q: EffectParams): number[] {
 		0,
 	];
 }
-const perspectiveKey = (q: EffectParams) => perspectivePose(q).join(',');
 
 /** The plane point (source frame units) seen at output f under a pose (`wp_hit` of the shader), null on a miss. */
 export function perspectiveHit(pose: readonly number[], fx: number, fy: number): [number, number] | null {

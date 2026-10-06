@@ -11,7 +11,6 @@ import { GLSL_PR_MODERN } from './modern-common.ts';
 const bin = TRANSITION_BINS.slide;
 const blurParam = (def = 50) => fxParam.percent('blur', 'Motion Blur', def);
 
-
 /** Slide ▸ 3D Roll: the clips scroll past as if wrapped around a turning drum, bending in perspective mid-way. */
 export const ROLL_3D = defineShaderTransition({
 	id: 'jasper.3d-roll',

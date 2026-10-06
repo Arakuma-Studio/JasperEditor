@@ -14,7 +14,6 @@
 import type { ParamSpec } from '../effects.ts';
 import { FX_MB_MAX_TAPS, FX_MB_SPACING, FX_MB_TAP_LIMIT, FX_MB_WARP_SIZE } from './glsl/motion-blur.ts';
 import { fxParam } from './params.ts';
-import type { FxUniformValue } from './shader.ts';
 
 /** Key poses over the shutter (first = shutter open, last = shutter close), linearly interpolated by the shader. */
 export const FX_MB_KEYS = 32;
@@ -193,7 +192,8 @@ export function planMotionBlur<P>(o: MbPlanOptions<P>): MbPlan {
 	const poses = times.map((t) => o.poseAt(t));
 	const packs = poses.map((q) => {
 		const v = o.pack(q);
-		if (v.length !== stride * 4) throw new Error(`motion blur: a pose packs ${v.length} numbers, not ${stride * 4}`);
+		if (v.length !== stride * 4)
+			throw new Error(`motion blur: a pose packs ${v.length} numbers, not ${stride * 4}`);
 		return v;
 	});
 	if (packs.every((v) => v.every((x, i) => x === packs[0]![i]))) return mbStaticPlan(stride);
@@ -216,7 +216,11 @@ export function planMotionBlur<P>(o: MbPlanOptions<P>): MbPlan {
 }
 
 /** The uniforms of a plan for `GLSL_MB_POSES`: `u_mbPlan` (ivec4), `u_mbKeys`, `u_mbWarp` (fixed sizes). */
-export function mbUniforms(plan: MbPlan): Record<string, FxUniformValue> {
+export function mbUniforms(plan: MbPlan): {
+	u_mbPlan: { ivec4: [number, number, number, number] };
+	u_mbKeys: { vec4s: number[] };
+	u_mbWarp: { vec4s: number[] };
+} {
 	const warp = plan.warp ?? Array.from({ length: FX_MB_WARP_SIZE }, (_, m) => m / (FX_MB_WARP_SIZE - 1));
 	return {
 		u_mbPlan: {

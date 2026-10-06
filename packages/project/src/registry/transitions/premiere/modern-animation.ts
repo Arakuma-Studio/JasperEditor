@@ -21,7 +21,6 @@ const layout3d = (p: EffectParams) => {
 	return { u_swap: d[1] !== 0, u_flip: d[0] + d[1] < 0 };
 };
 
-
 /** Animation ▸ Block Motion: the frame breaks into blocks; each one pushes B in, in a wave across the frame. */
 export const BLOCK_MOTION = defineShaderTransition({
 	id: 'jasper.block-motion',

@@ -154,9 +154,13 @@ describe.runIf(enabled)(
 			const output = join(media.dir, `${name}.png`);
 			await renderer.renderStill({ composition, serveUrl, inputProps, frame, output, ...browser });
 			if (keep) copyFileSync(output, join(keep, `${name}.png`));
-			return execFileSync('ffmpeg', ['-v', 'error', '-i', output, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], {
-				maxBuffer: 1 << 26,
-			});
+			return execFileSync(
+				'ffmpeg',
+				['-v', 'error', '-i', output, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'],
+				{
+					maxBuffer: 1 << 26,
+				},
+			);
 		}
 		const diff = (a: Buffer, b: Buffer) => {
 			let d = 0;
@@ -165,7 +169,10 @@ describe.runIf(enabled)(
 		};
 
 		const SHAKE = { style: 'twitchy', amplitude: 5, frequency: 12, stillness: 0, xRandAmp: 1, yRandAmp: 0.5 };
-		const shake = (blur: boolean) => [...picture(), effect('jasper.s.shake', '$s', { ...SHAKE, motionBlur: blur })];
+		const shake = (blur: boolean) => [
+			...picture(),
+			effect('jasper.s.shake', '$s', { ...SHAKE, motionBlur: blur }),
+		];
 		const pin = (blur: boolean) => [
 			...picture(),
 			effect('jasper.s.warp-corner-pin', '$p', { motionBlur: blur, moBlurLength: 1 }),

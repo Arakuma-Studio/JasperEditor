@@ -336,7 +336,9 @@ function moUniforms(
 	const len = (path * ctx.pxScale) / 2 ** k;
 	return {
 		u_moSpline: !!(keys && moving),
-		u_moKeys: { vec4s: keys && moving ? keys.flatMap((t) => toVec(t, ctx)) : new Array<number>(FX_MB_KEYS * 4).fill(0) },
+		u_moKeys: {
+			vec4s: keys && moving ? keys.flatMap((t) => toVec(t, ctx)) : new Array<number>(FX_MB_KEYS * 4).fill(0),
+		},
 		u_moCenter: [center[0] * ctx.width, center[1] * ctx.height],
 		u_moFrom: toVec(from, ctx),
 		u_moTo: toVec(to, ctx),
@@ -439,7 +441,8 @@ export const S_BLUR_MO_CURVES = defineShaderEffect({
 			const at = (f: number): MoTransform => (c.paramsAt ? transformOf(c.paramsAt(f), '', 1) : now);
 			const blurOnly = p.effect === 'blurOnly';
 			// The animation curves at exact sub-frame times over the shutter (32 keys).
-			const keys = dur > 0 ? mbKeyTimes(ctx.frame, centredShutter(dur, num(p.shutterShift))).map(at) : undefined;
+			const keys =
+				dur > 0 ? mbKeyTimes(ctx.frame, centredShutter(dur, num(p.shutterShift))).map(at) : undefined;
 			return {
 				...moUniforms(p, ctx, at(mid - dur / 2), at(mid + dur / 2), now, blurOnly, keys),
 				u_mixWithOriginal: 0,

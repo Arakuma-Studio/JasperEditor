@@ -4,8 +4,8 @@
 import { describe, expect, it } from 'vitest';
 import {
 	angleShutter,
-	defaultEffectRegistry,
 	centredShutter,
+	defaultEffectRegistry,
 	FX_MB_KEYS,
 	FX_MB_MAX_TAPS,
 	FX_MB_TAP_LIMIT,
@@ -42,7 +42,10 @@ const corners = (q: Pose, scale = 1): [number, number][] =>
 		const s = Math.sin(q.rot);
 		return [(q.x + q.zoom * (c * x - s * y)) * scale, (q.y + q.zoom * (s * x + c * y)) * scale];
 	});
-const plan = (poseAt: (f: number) => Pose, extra: { scale?: number; quality?: string; length?: number } = {}) =>
+const plan = (
+	poseAt: (f: number) => Pose,
+	extra: { scale?: number; quality?: string; length?: number } = {},
+) =>
 	planMotionBlur({
 		frame: 10,
 		window: centredShutter(extra.length ?? 1),
@@ -229,7 +232,16 @@ describe('migrated effects: pose packing and stable uniform shapes', () => {
 	const reg = (id: string) => defaultEffectRegistry.get(id)!;
 	const defaults = (id: string): Record<string, unknown> =>
 		Object.fromEntries(reg(id).params.map((p) => [p.name, p.default]));
-	const ctx = { width: 320, height: 180, pxScale: 1, fps: 30, frame: 5, duration: 60, seed: 0.3, progress: 0 };
+	const ctx = {
+		width: 320,
+		height: 180,
+		pxScale: 1,
+		fps: 30,
+		frame: 5,
+		duration: 60,
+		seed: 0.3,
+		progress: 0,
+	};
 	const uniformsOf = (id: string, p: Record<string, unknown>, c: Record<string, unknown> = {}) =>
 		reg(id).gpu!.uniforms!(p as never, { ...ctx, ...c } as never) as Record<string, unknown>;
 	const sizes = (u: Record<string, unknown>) =>
@@ -255,7 +267,12 @@ describe('migrated effects: pose packing and stable uniform shapes', () => {
 		const cases: [string, Record<string, unknown>, (f: number) => Record<string, unknown>, number][] = [
 			['jasper.s.warp-corner-pin', { motionBlur: true }, (f) => ({ topLeft: [0.1 + f * 0.05, 0.38] }), 3],
 			['jasper.s.warp-perspective', { motionBlur: true }, (f) => ({ swing: f * 5 }), 2],
-			['jasper.transform', { useCompShutterAngle: false, shutterAngle: 180 }, (f) => ({ rotation: f * 10 }), 2],
+			[
+				'jasper.transform',
+				{ useCompShutterAngle: false, shutterAngle: 180 },
+				(f) => ({ rotation: f * 10 }),
+				2,
+			],
 		];
 		for (const [id, over, keys, stride] of cases) {
 			const p = { ...defaults(id), ...over };
@@ -273,7 +290,11 @@ describe('migrated effects: pose packing and stable uniform shapes', () => {
 		const fl = defaults('jasper.s.free-lens');
 		const still = uniformsOf('jasper.s.free-lens', fl);
 		expect(plan(still)[0]).toBe(1); // default Rand Amps are 0: no motion, no blur
-		const shaking = uniformsOf('jasper.s.free-lens', { ...fl, xRandAmp: 3, amplitude: 4, frequency: 30 }, { frame: 9 });
+		const shaking = uniformsOf(
+			'jasper.s.free-lens',
+			{ ...fl, xRandAmp: 3, amplitude: 4, frequency: 30 },
+			{ frame: 9 },
+		);
 		expect(plan(shaking)[0]).toBeGreaterThan(1);
 		expect(sizes(shaking)).toEqual(sizes(still));
 	});

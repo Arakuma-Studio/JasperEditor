@@ -10,9 +10,9 @@
 import type { TransitionSpec } from '../../../transitions.ts';
 import type { EffectParams } from '../../effects.ts';
 import { GLSL_HASH } from '../../fx/glsl/hash.ts';
+import { GLSL_MB_POSES } from '../../fx/glsl/motion-blur.ts';
 import { GLSL_NOISE } from '../../fx/glsl/noise.ts';
 import { fxParam } from '../../fx/params.ts';
-import { GLSL_MB_POSES } from '../../fx/glsl/motion-blur.ts';
 import { DW_WAVE_UNIT, SHAKE_RENDER_GLSL, shakeUniforms } from '../../fx/sapphire-distort-warp.ts';
 import type { GlslChunk, ShaderPass } from '../../fx/shader.ts';
 import {

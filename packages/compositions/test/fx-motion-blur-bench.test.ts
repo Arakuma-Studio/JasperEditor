@@ -94,36 +94,40 @@ const VARIANTS: [string, string, Record<string, unknown>][] = [
 	],
 ];
 
-describe.runIf(!!CHROME && process.env.MB_BENCH === '1')('motion-blur tap-loop bench', { timeout: 900_000 }, () => {
-	it('variants', async () => {
-		const req = createRequire(createRequire(import.meta.url).resolve('tsx/package.json'));
-		const esbuild = req('esbuild') as {
-			build(o: Record<string, unknown>): Promise<{ outputFiles: { text: string }[] }>;
-		};
-		const out = await esbuild.build({
-			entryPoints: [join(here, 'fx-motion-blur', 'entry.ts')],
-			bundle: true,
-			write: false,
-			format: 'iife',
-			platform: 'browser',
-			target: 'es2022',
-			define: { 'process.env.NODE_ENV': '"production"' },
-			logLevel: 'silent',
+describe.runIf(!!CHROME && process.env.MB_BENCH === '1')(
+	'motion-blur tap-loop bench',
+	{ timeout: 900_000 },
+	() => {
+		it('variants', async () => {
+			const req = createRequire(createRequire(import.meta.url).resolve('tsx/package.json'));
+			const esbuild = req('esbuild') as {
+				build(o: Record<string, unknown>): Promise<{ outputFiles: { text: string }[] }>;
+			};
+			const out = await esbuild.build({
+				entryPoints: [join(here, 'fx-motion-blur', 'entry.ts')],
+				bundle: true,
+				write: false,
+				format: 'iife',
+				platform: 'browser',
+				target: 'es2022',
+				define: { 'process.env.NODE_ENV': '"production"' },
+				logLevel: 'silent',
+			});
+			const browser = await chromium.launch({
+				executablePath: CHROME,
+				args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+			});
+			const page = await browser.newPage();
+			await page.setContent('<!doctype html><html><body></body></html>');
+			await page.addScriptTag({ content: out.outputFiles[0]!.text });
+			for (const [name, frag, uniforms] of VARIANTS) {
+				const ms = await page.evaluate(
+					(a) => (window as unknown as { __mb: { bench(a: unknown): number } }).__mb.bench(a),
+					{ frag, uniforms, width: 960, height: 540, repeat: 3 },
+				);
+				appendFileSync('/tmp/mb-bench.txt', `${name}: ${ms.toFixed(0)} ms\n`);
+			}
+			await browser.close();
 		});
-		const browser = await chromium.launch({
-			executablePath: CHROME,
-			args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
-		});
-		const page = await browser.newPage();
-		await page.setContent('<!doctype html><html><body></body></html>');
-		await page.addScriptTag({ content: out.outputFiles[0]!.text });
-		for (const [name, frag, uniforms] of VARIANTS) {
-			const ms = await page.evaluate(
-				(a) => (window as unknown as { __mb: { bench(a: unknown): number } }).__mb.bench(a),
-				{ frag, uniforms, width: 960, height: 540, repeat: 3 },
-			);
-			appendFileSync('/tmp/mb-bench.txt', `${name}: ${ms.toFixed(0)} ms\n`);
-		}
-		await browser.close();
-	});
-});
+	},
+);
