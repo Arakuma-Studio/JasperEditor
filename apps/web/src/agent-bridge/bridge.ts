@@ -21,6 +21,7 @@ import {
 	summarizeTransaction,
 	type TransactionResult,
 	type TxInput,
+	unknownCommandKeyIssues,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { createStore, type StoreApi } from 'zustand/vanilla';
@@ -244,6 +245,7 @@ export class AgentBridge {
 			doc: s.getCommitted(),
 			revision: st.revision,
 			effects: s.ctx.registries.effects,
+			mgTemplates: s.ctx.registries.mgTemplates,
 			dryRun: (tx: Record<string, unknown>) => this.dryRun(tx),
 			session: {
 				activeSequenceId: st.activeSequenceId,
@@ -329,6 +331,9 @@ export class AgentBridge {
 		const revision = this.session.revision;
 		const limit = checkAgentTxLimits(tx);
 		if (limit) return this.record(tx, via, { ok: false, revision, errors: [limit] });
+		// Unknown keys anywhere in a command are errors, never silently stripped (mcp-cli §1).
+		const unknownKeys = unknownCommandKeyIssues(tx.commands);
+		if (unknownKeys.length) return this.record(tx, via, { ok: false, revision, errors: unknownKeys });
 
 		const pseudo = historyPseudoCommand(tx);
 		if (pseudo) return this.record(tx, via, this.historyStep(pseudo, tx.origin.agent));

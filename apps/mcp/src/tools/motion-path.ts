@@ -18,7 +18,7 @@ import {
 	type Vec2,
 } from '@jasper/project';
 import { z } from 'zod';
-import { defineTool, EDIT, loadDoc, READ_ONLY, type ToolContext } from '../context.ts';
+import { defineTool, EDIT_IDEMPOTENT, loadDoc, READ_ONLY, type ToolContext } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { applyHelper } from './editing.ts';
 import { ProjectIdArg } from './projects.ts';
@@ -121,7 +121,7 @@ export function registerMotionPathTools(ctx: ToolContext): void {
 				clipId: z.string().min(1).optional().describe('Every position key of this clip'),
 				keyframeIds: z.array(z.string().min(1)).min(1).optional().describe('These keys'),
 			},
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, mode, clipId, keyframeIds }, extra) => {
 			if (!!clipId === !!keyframeIds)

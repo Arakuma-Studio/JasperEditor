@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { loadDoc, makeContext, type ToolContext } from './context.ts';
 import { pickSequence, timelineTable } from './format.ts';
 import type { EngineConnection } from './link.ts';
+import { installStrictValidation } from './strict.ts';
 import { ANIMATION_GUIDE, registerAnimationTools } from './tools/animation.ts';
 import { CACHE_GUIDE, registerCacheTools } from './tools/cache.ts';
 import { CLIPBOARD_GUIDE, registerClipboardTools } from './tools/clipboard.ts';
@@ -71,6 +72,8 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 			capabilities: { tools: {}, resources: {}, prompts: {}, logging: {} },
 		},
 	);
+	// Strict arguments for every tool on this server (strict.ts): unknown keys are errors, never dropped.
+	installStrictValidation(server);
 	const ctx = makeContext(server, opts.link, opts.agentName);
 	registerProjectTools(ctx);
 	registerEditingTools(ctx);

@@ -3,7 +3,12 @@ import type { ExportSettings } from '@jasper/api';
 import { makeEnvelope, sequenceTimecode } from '@jasper/project';
 import { z } from 'zod';
 import {
+	cancelIfAborted,
+	captureStill,
+	DESTRUCTIVE_IDEMPOTENT,
 	defineTool,
+	EDIT,
+	EDIT_IDEMPOTENT,
 	frameOf,
 	isTerminal,
 	jobBody,
@@ -95,21 +100,17 @@ export function registerRenderTools(ctx: ToolContext): void {
 			},
 			annotations: READ_ONLY,
 		},
-		async ({ projectId, at, width, sequenceId }) => {
-			const q = await ctx
-				.engine((c) =>
-					c.agentQuery({
-						projectId,
-						query: 'frame.capture',
-						args: { frame: at, width: width ?? 640, ...(sequenceId ? { sequenceId } : {}) },
-					}),
-				)
-				.catch((e) => renderToolError(ctx, e)); // wp-m2-anime-templates (S11:ANA-005): actionable hints
-			const r = q.result as { url?: string; frame?: number; sequenceId?: string; renderPath?: string };
-			if (!r?.url) throw new ToolError('INTERNAL', 'The engine returned no image');
-			const { bytes, contentType } = await ctx.engine((c) => c.fetchBytes(r.url!));
-			const { doc } = await loadDoc(ctx, projectId).catch(() => ({ doc: null }));
-			const seq = doc && r.sequenceId ? doc.sequences[r.sequenceId] : undefined;
+		async ({ projectId, at, width, sequenceId }, extra) => {
+			const loaded = await loadDoc(ctx, projectId);
+			// wp-m2-anime-templates (S11:ANA-005): actionable hints; a cancelled request cancels the still job.
+			const r = await captureStill(
+				ctx,
+				{ projectId, frame: at, width: width ?? 640, ...(sequenceId ? { sequenceId } : {}) },
+				extra,
+				loaded,
+				(job) => failedJobError(ctx, job, 'Check get_timeline; engine_status shows the render setup.'),
+			).catch((e) => renderToolError(ctx, e));
+			const seq = loaded.doc.sequences[r.sequenceId];
 			return {
 				content: [
 					{
@@ -117,15 +118,15 @@ export function registerRenderTools(ctx: ToolContext): void {
 						text: JSON.stringify({
 							sequenceId: r.sequenceId,
 							frame: r.frame,
-							...(seq && typeof r.frame === 'number' ? { timecode: sequenceTimecode(seq, r.frame) } : {}),
-							width: width ?? 640,
+							...(seq ? { timecode: sequenceTimecode(seq, r.frame) } : {}),
+							width: r.width,
 							...(r.renderPath ? { renderedBy: r.renderPath } : {}),
 						}),
 					},
 					{
 						type: 'image',
-						data: Buffer.from(bytes).toString('base64'),
-						mimeType: contentType.startsWith('image/') ? contentType : 'image/png',
+						data: Buffer.from(r.bytes).toString('base64'),
+						mimeType: r.contentType.startsWith('image/') ? r.contentType : 'image/png',
 					},
 				],
 			};
@@ -156,7 +157,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 			description:
 				'Moves the playhead of the open editor (pauses playback) so the user sees that frame in the Program monitor. A view change, not an edit (no History entry). Needs an open editor.',
 			input: { projectId: ProjectIdArg, at: timeArg('Where to put the playhead') },
-			annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, at }) => {
 			const q = await ctx.engine((c) =>
@@ -319,7 +320,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 		{
 			title: 'Start export',
 			description:
-				'Starts rendering a sequence to a video file and returns a job id at once; follow it with wait_for_job (or get_job). The engine picks the fastest path that can render everything (native ffmpeg for footage-only cuts, Remotion when there are text/effects). Uses the live editor state when the project is open. With outputPath the file is written there (existing files are never overwritten: the engine then writes "name (2).mp4" and the job result gives the real path); otherwise it is downloadable from the job result URL.',
+				'Starts rendering a sequence to a video file and returns a job id at once; follow it with wait_for_job (or get_job), or pass wait: true to block until it is written. Cancelling the MCP request (notifications/cancelled) during wait cancels the export and deletes the partial file. The engine picks the fastest path that can render everything (native ffmpeg for footage-only cuts, Remotion when there are text/effects). Uses the live editor state when the project is open. With outputPath the file is written there (existing files are never overwritten: the engine then writes "name (2).mp4" and the job result gives the real path); otherwise it is downloadable from the job result URL.',
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -360,10 +361,37 @@ export function registerRenderTools(ctx: ToolContext): void {
 					.describe(
 						"Absolute path of the output file; the extension is replaced by the container's (.mp4 / .webm / .mov). Never overwrites: see result.path",
 					),
+				wait: z
+					.boolean()
+					.optional()
+					.describe(
+						'Block until the export finishes (progress notifications with a progressToken; cancelling the request cancels the export and deletes the partial file). Default false: return the job id at once',
+					),
+				timeoutSeconds: z
+					.number()
+					.int()
+					.min(1)
+					.max(3600)
+					.optional()
+					.describe('With wait: how long to block before returning timedOut: true (default 900)'),
 			},
-			annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+			annotations: EDIT,
 		},
-		async ({ projectId, sequenceId, preset, range, engine, outputPath, crf, videoBitrateKbps }) => {
+		async (
+			{
+				projectId,
+				sequenceId,
+				preset,
+				range,
+				engine,
+				outputPath,
+				crf,
+				videoBitrateKbps,
+				wait,
+				timeoutSeconds,
+			},
+			extra,
+		) => {
 			const p = findExportPreset(preset);
 			if (!p)
 				throw new ToolError(
@@ -420,24 +448,39 @@ export function registerRenderTools(ctx: ToolContext): void {
 					}),
 				)
 				.catch((e) => renderToolError(ctx, e));
+			await cancelIfAborted(ctx, extra, job.id);
 			const remotionWarnings = plan.warnings.filter(
 				(w) => w.code === 'REMOTION_UNAVAILABLE' || w.code.startsWith('BROWSER_'),
 			);
 			const hint = remotionWarnings.length
 				? await renderErrorHint(ctx, remotionWarnings[0]!.code, remotionWarnings[0]!.message)
 				: undefined;
+			const planBody = {
+				path: plan.path,
+				...(plan.blockers.length
+					? { why: [...new Set(plan.blockers.map((b) => b.reason))].slice(0, 5) }
+					: {}),
+				...(plan.encoder ? { encoder: plan.encoder.label } : {}),
+				...(plan.warnings.length ? { warnings: plan.warnings.slice(0, 5).map((w) => w.message) } : {}),
+			};
+			if (wait) {
+				const { job: done, timedOut } = await waitJob(ctx, job.id, (timeoutSeconds ?? 900) * 1000, extra);
+				const body = jobBody(done, ctx.link.target?.url ?? '');
+				if (isTerminal(done) && done.state !== 'succeeded')
+					throw await failedJobError(ctx, done, 'Check the job error; engine_status may help.', body);
+				return jsonResult({
+					...body,
+					preset: p.id,
+					plan: planBody,
+					...(hint ? { hint } : {}),
+					...(timedOut ? { timedOut: true, next: 'Call wait_for_job with this jobId.' } : {}),
+				});
+			}
 			return jsonResult({
 				jobId: job.id,
 				state: job.state,
 				preset: p.id,
-				plan: {
-					path: plan.path,
-					...(plan.blockers.length
-						? { why: [...new Set(plan.blockers.map((b) => b.reason))].slice(0, 5) }
-						: {}),
-					...(plan.encoder ? { encoder: plan.encoder.label } : {}),
-					...(plan.warnings.length ? { warnings: plan.warnings.slice(0, 5).map((w) => w.message) } : {}),
-				},
+				plan: planBody,
 				...(hint ? { hint } : {}),
 				next: 'Call wait_for_job with this jobId.',
 			});
@@ -467,7 +510,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 			title: 'Cancel job',
 			description: 'Cancels a queued or running engine job (e.g. an export); partial output is deleted.',
 			input: { jobId: JobIdArg },
-			annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
 		async ({ jobId }) => {
 			const job = await ctx.engine((c) => c.cancelJob(jobId));
@@ -481,7 +524,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 		{
 			title: 'Wait for job',
 			description:
-				'Waits until a job finishes (or timeoutSeconds passes, default 120, max 900) and returns its final state and result: for exports the output file path (when outputPath was given), download URL, frame count and duration. Sends progress notifications while waiting. On timeout returns the current state with timedOut: true; call it again to keep waiting.',
+				'Waits until a job finishes (or timeoutSeconds passes, default 120, max 900) and returns its final state and result: for exports the output file path (when outputPath was given), download URL, frame count and duration. Sends progress notifications (at most one every 100 ms) while waiting. On timeout returns the current state with timedOut: true; call it again to keep waiting. Cancelling this request (notifications/cancelled) cancels the job itself and the engine deletes its partial output.',
 			input: {
 				jobId: JobIdArg,
 				timeoutSeconds: z

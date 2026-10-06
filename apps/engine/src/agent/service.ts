@@ -33,6 +33,7 @@ import {
 	SESSION_ONLY_QUERIES,
 	summarizeTransaction,
 	type TransactionResult,
+	unknownCommandKeyIssues,
 } from '@jasper/project';
 import { KeyedMutex } from '../tools/mutex.ts';
 import { type ApprovalDecision, ApprovalGate } from './approvals.ts';
@@ -247,6 +248,7 @@ export class AgentService {
 					doc,
 					revision,
 					effects: this.opts.registries.effects,
+					mgTemplates: this.opts.registries.mgTemplates,
 					dryRun: (tx) => this.dryRun(doc, revision, req.projectId, tx),
 				},
 				req.query,
@@ -326,6 +328,9 @@ export class AgentService {
 		const appliedBy = holder ? 'session' : 'headless';
 		const limit = checkAgentTxLimits(tx, opts.byteLength);
 		if (limit) return { result: { ok: false, revision: -1, errors: [limit] }, appliedBy };
+		// Unknown keys anywhere in a command are errors, never silently stripped (mcp-cli §1).
+		const unknownKeys = unknownCommandKeyIssues(tx.commands);
+		if (unknownKeys.length) return { result: { ok: false, revision: -1, errors: unknownKeys }, appliedBy };
 
 		const reasons = approvalReasons(tx);
 		let approved = false;
