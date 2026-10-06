@@ -6,42 +6,85 @@ import type { Animatable, Ease, Keyframe } from './schema/common.ts';
 
 const LINEAR_EASE: Ease = { influence: 1 / 3, slope: 1 };
 const AUTO_INFLUENCE = 1 / 3;
-const TOLERANCE = 1e-6;
+/** Newton stops when its step in the curve parameter is below this (a parameter criterion, not an x residual). */
+const STEP_TOLERANCE = 1e-15;
 
-/** Cubic Bézier progress p(u) through (0,0), (a1, a1·s1), (1−a2, 1−a2·s2), (1,1) (S01:KF-003 step 5). */
+/**
+ * Solves x(t) = u for the time curve of an ease, x(t) = 3(1−t)²t·x1 + 3(1−t)t²·x2 + t³ with x1, x2 ∈ [0, 1] (monotone,
+ * so the root is unique). Influences are NOT normalised when they overlap (x1 > x2): After Effects keeps both
+ * (effectcraft docs/fidelity: normalising was off by up to 12.46° against live AE samples).
+ * - x1 = 1, x2 = 0 (100 % / 100 %): x = ½ + 4(t − ½)³ exactly, whose flat midpoint (dx/dt = 0) defeats Newton on a
+ *   residual criterion — the closed-form inverse t = ½ + ∛((u − ½) / 4) is used (effectcraft `solve_u`).
+ * - otherwise Newton safeguarded by a bisection bracket: a step leaving the bracket (or a flat derivative) is replaced
+ *   by a bisection step; it stops when the step in t is below 1e-15 or the bracket collapsed.
+ */
+function solveEaseTime(u: number, x1: number, x2: number): number {
+	if (x1 === 1 && x2 === 0) return 0.5 + Math.cbrt((u - 0.5) / 4);
+	// x(½ + w) − u = d0 + w·(c1 + w·(c2 + c3·w)), expanded about the midpoint where dx/dt is smallest. d0 = x(½) − u is
+	// a cancellation; it is kept in double-double so a nearly flat curve (influences near 100 % / 100 %) still has an
+	// accurate root (the time curve's root moves like ∛(error) there).
+	const [s, se] = twoSum(x1, x2);
+	const [p, pe] = twoProd(0.375, s);
+	const [q, qe] = twoSum(p, 0.125);
+	const [d, de] = twoSum(q, -u);
+	const d0 = d;
+	const d0lo = de + qe + pe + 0.375 * se;
+	const c1 = 0.75 * (1 - x1 + x2);
+	const c2 = 1.5 * (1 - x1 - x2);
+	const c3 = 3 * x1 - 3 * x2 + 1;
+	const f = (w: number) => d0 + w * (c1 + w * (c2 + c3 * w)) + d0lo;
+	const df = (w: number) => c1 + w * (2 * c2 + 3 * c3 * w);
+	let lo = -0.5;
+	let hi = 0.5;
+	let w = u - 0.5;
+	for (let i = 0; i < 200; i++) {
+		const fw = f(w);
+		if (fw === 0) return 0.5 + w;
+		if (fw > 0) hi = w;
+		else lo = w;
+		const dw = df(w);
+		let next = dw > 0 ? w - fw / dw : Number.NaN;
+		if (!(next > lo && next < hi)) next = (lo + hi) / 2;
+		if (Math.abs(next - w) <= STEP_TOLERANCE || hi - lo <= STEP_TOLERANCE) return 0.5 + next;
+		w = next;
+	}
+	return 0.5 + w;
+}
+
+/** Error-free sum (Knuth TwoSum): a + b = s + e exactly. */
+function twoSum(a: number, b: number): [number, number] {
+	const s = a + b;
+	const bb = s - a;
+	return [s, a - (s - bb) + (b - bb)];
+}
+
+const SPLIT = 134217729; // 2^27 + 1 (Dekker)
+/** Error-free product (Dekker TwoProduct): a · b = p + e exactly (no FMA in JS). */
+function twoProd(a: number, b: number): [number, number] {
+	const p = a * b;
+	const ca = SPLIT * a;
+	const ah = ca - (ca - a);
+	const al = a - ah;
+	const cb = SPLIT * b;
+	const bh = cb - (cb - b);
+	const bl = b - bh;
+	return [p, ah * bh - p + ah * bl + al * bh + al * bl];
+}
+
+/**
+ * Cubic Bézier progress p(u) through (0,0), (a1, a1·s1), (1−a2, 1−a2·s2), (1,1) (S01:KF-003 step 5). Slopes may be
+ * negative or steep (overshoot): only the time curve has to be monotone, which influences in (0, 1] guarantee.
+ */
 export function bezierProgress(u: number, out: Ease, inn: Ease): number {
 	if (u <= 0) return 0;
 	if (u >= 1) return 1;
-	const x1 = out.influence;
-	const y1 = out.influence * out.slope;
-	const x2 = 1 - inn.influence;
-	const y2 = 1 - inn.influence * inn.slope;
-	const bx = (t: number) => 3 * (1 - t) * (1 - t) * t * x1 + 3 * (1 - t) * t * t * x2 + t * t * t;
-	const by = (t: number) => 3 * (1 - t) * (1 - t) * t * y1 + 3 * (1 - t) * t * t * y2 + t * t * t;
-	const dbx = (t: number) => 3 * (1 - t) * (1 - t) * x1 + 6 * (1 - t) * t * (x2 - x1) + 3 * t * t * (1 - x2);
-	// Newton iterations with bisection fallback.
-	let t = u;
-	let lo = 0;
-	let hi = 1;
-	for (let i = 0; i < 12; i++) {
-		const x = bx(t) - u;
-		if (Math.abs(x) < TOLERANCE) return by(t);
-		if (x > 0) hi = t;
-		else lo = t;
-		const d = dbx(t);
-		if (Math.abs(d) < 1e-9) break;
-		const next = t - x / d;
-		if (next <= lo || next >= hi) break;
-		t = next;
-	}
-	for (let i = 0; i < 60; i++) {
-		t = (lo + hi) / 2;
-		const x = bx(t) - u;
-		if (Math.abs(x) < TOLERANCE) break;
-		if (x > 0) hi = t;
-		else lo = t;
-	}
-	return by(t);
+	const x1 = Math.min(1, Math.max(0, out.influence));
+	const x2 = 1 - Math.min(1, Math.max(0, inn.influence));
+	const y1 = x1 * out.slope;
+	const y2 = 1 - (1 - x2) * inn.slope;
+	const t = solveEaseTime(u, x1, x2);
+	const s = 1 - t;
+	return 3 * s * s * t * y1 + 3 * s * t * t * y2 + t * t * t;
 }
 
 /** Magnitude of a value difference: absolute for numbers, Euclidean for vectors (S01:KF-004). */
