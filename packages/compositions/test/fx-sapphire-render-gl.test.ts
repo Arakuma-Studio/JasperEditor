@@ -213,17 +213,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expect(r.px[0]![3]).toBe(255);
 		});
 
-		it.runIf(!!process.env.FX_COMPILE)('compile times (FX_COMPILE=id,id)', async () => {
-			for (const id of process.env.FX_COMPILE!.split(','))
-				writeFileSync(
-					`/tmp/fx-compile-${id}.json`,
-					JSON.stringify({
-						compile: await call('compileTimes', { id, width: 160, height: 90, paint: solid }),
-						run: await call('passTimes', { id, width: 160, height: 90, paint: solid }),
-					}),
-				);
-		});
-
 		it.runIf(!!process.env.FX_DUMP)('dumps PNG stills (FX_DUMP)', async () => {
 			const dir = process.env.FX_DUMP!;
 			mkdirSync(dir, { recursive: true });
