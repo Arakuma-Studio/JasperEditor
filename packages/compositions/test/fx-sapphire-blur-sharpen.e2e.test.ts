@@ -40,7 +40,7 @@ const CASES: {
 	{
 		id: 'jasper.s.convolve',
 		label: 'S_Convolve',
-		params: { combine: 'screen', threshold: 0.5, brightness: 3 },
+		params: { combine: 'screen', threshold: 0.85, brightness: 2 },
 		media: { kernel: 'star.png' },
 	},
 	{
@@ -211,6 +211,8 @@ describe.runIf(enabled)(
 				inputProps,
 				frame: c?.frame ?? 0,
 				output,
+				// Software GL (SwiftShader) on a loaded CI host: the depth-layered convolutions need more than 30 s.
+				timeoutInMilliseconds: 240_000,
 				...browser,
 			});
 			const raw = execFileSync(
