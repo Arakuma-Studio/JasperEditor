@@ -322,7 +322,7 @@ vec4 grads(vec2 f) {
   vec4 gy = texture(u_lumasBlur, uv + vec2(0.0, h.y)) - texture(u_lumasBlur, uv - vec2(0.0, h.y));
   return vec4(gx.r, gy.r, gx.g, gy.g) * 0.5;
 }
-const float DISTORT_UNIT = 0.3;
+const float DISTORT_UNIT = 0.5;
 vec2 warpA(vec2 f) {
   vec4 g = grads(f);
   return f + sdw_rot(u_rotateWarpDir) * g.zw * u_amplitude * u_relAmpFrom * DISTORT_UNIT * u_rampA;

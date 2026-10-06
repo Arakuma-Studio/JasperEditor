@@ -39,6 +39,15 @@ function picture(kind: string, w: number, h: number): HTMLCanvasElement {
 			ctx.fillRect(0, 0, w, h);
 			ctx.fillStyle = 'rgb(240, 220, 40)';
 			ctx.fillRect(0, (h * 3) / 4, w, h / 8);
+		} else if (kind === 'stripes' || kind === 'stripes2') {
+			// Vertical colour stripes (period 12 px); 'stripes2' is the same picture moved 4 px to the right.
+			const off = kind === 'stripes2' ? 4 : 0;
+			for (let x = -12; x < w + 12; x += 12) {
+				ctx.fillStyle = 'rgb(230, 200, 40)';
+				ctx.fillRect(x + off, 0, 6, h);
+				ctx.fillStyle = 'rgb(30, 60, 140)';
+				ctx.fillRect(x + off + 6, 0, 6, h);
+			}
 		} else if (kind === 'halves') {
 			ctx.fillStyle = '#fff';
 			ctx.fillRect(0, 0, w / 2, h);
@@ -65,7 +74,7 @@ export type RunArgs = {
 	probes?: [number, number][];
 };
 
-function run(args: RunArgs) {
+function render(args: RunArgs): { data: Uint8ClampedArray; W: number; H: number } {
 	const spec = SPECS.find((s) => s.id === args.id || s.label === args.id);
 	if (!spec) throw new Error(`unknown ${args.id}`);
 	const W = args.width ?? 96;
@@ -110,7 +119,11 @@ function run(args: RunArgs) {
 		},
 		out.getContext('2d')!,
 	);
-	const data = out.getContext('2d')!.getImageData(0, 0, W, H).data;
+	return { data: out.getContext('2d')!.getImageData(0, 0, W, H).data, W, H };
+}
+
+function run(args: RunArgs) {
+	const { data, W, H } = render(args);
 	let checksum = 0;
 	for (let i = 0; i < data.length; i += 7) checksum = (checksum * 31 + data[i]!) % 1000000007;
 	const probes = (args.probes ?? [[W / 2, H / 2]]).map(
@@ -128,6 +141,14 @@ function run(args: RunArgs) {
 const api = {
 	ids: () => SPECS.map((s) => s.id),
 	run,
+	/** Mean absolute difference (0..255, all channels) between two renders. */
+	compare(a: RunArgs, b: RunArgs) {
+		const x = render(a).data;
+		const y = render(b).data;
+		let d = 0;
+		for (let i = 0; i < x.length; i++) d += Math.abs(x[i]! - y[i]!);
+		return d / x.length;
+	},
 	/** Compile + first frame and a second frame time (ms) of every dissolve. */
 	timings() {
 		const out: Record<string, [number, number]> = {};
