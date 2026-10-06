@@ -6,19 +6,22 @@ import { GLSL_NOISE } from '../../fx/glsl/noise.ts';
 import { gaussianBlurPasses } from '../../fx/passes.ts';
 import type { GlslChunk, ShaderPass } from '../../fx/shader.ts';
 import { TRANSITION_BINS } from '../define.ts';
-import { GLSL_TRANSITION, GLSL_TR_EASE } from '../glsl.ts';
+import { GLSL_TR_EASE, GLSL_TRANSITION } from '../glsl.ts';
 
 /**
- * Premiere 26's transition folders. Animation, Grunge & Distort, Lights & Blurs and Transformers have no
- * `TRANSITION_BINS` entry yet (the framework's list), so they sit in the nearest existing folder until it gets them:
- * Animation → Slide (moves), Grunge & Distort → Dissolve, Lights & Blurs → Zoom (Premiere 26 moved Cross Zoom
- * there), Transformers → 3D Motion. Change these four lines when the bins exist.
+ * Premiere 26's transition folders. Animation, Grunge & Distort, Lights & Blurs, Transformers and Immersive Video
+ * have no `TRANSITION_BINS` entry yet (the framework's list), so they sit in the nearest existing folder until it
+ * gets them: Animation → Slide (moves), Grunge & Distort → Dissolve, Lights & Blurs → Zoom (Premiere 26 moved Cross
+ * Zoom there), Transformers → 3D Motion, Immersive Video → Zoom (mostly lights and zooms). Change these lines when
+ * the bins exist.
  */
 export const MODERN_BINS = {
 	animation: TRANSITION_BINS.slide,
 	grungeDistort: TRANSITION_BINS.dissolve,
 	lightsBlurs: TRANSITION_BINS.zoom,
 	transformers: TRANSITION_BINS.motion3d,
+	/** Immersive Video (the VR transitions, ./vr.ts). */
+	immersive: TRANSITION_BINS.zoom,
 } as const;
 
 /** Keywords naming Premiere 26's folder of a modern transition (search finds them by folder name). */
@@ -135,8 +138,20 @@ export function blurLevelPasses(
 	const s = Math.max(0.5, sigma);
 	return [
 		...gaussianBlurPasses({ input, output: `${prefix}1`, sigma: s, scale: 0.5, format }),
-		...gaussianBlurPasses({ input: `${prefix}1`, output: `${prefix}2`, sigma: s * Math.sqrt(3), scale: 0.25, format }),
-		...gaussianBlurPasses({ input: `${prefix}2`, output: `${prefix}3`, sigma: s * Math.sqrt(12), scale: 0.125, format }),
+		...gaussianBlurPasses({
+			input: `${prefix}1`,
+			output: `${prefix}2`,
+			sigma: s * Math.sqrt(3),
+			scale: 0.25,
+			format,
+		}),
+		...gaussianBlurPasses({
+			input: `${prefix}2`,
+			output: `${prefix}3`,
+			sigma: s * Math.sqrt(12),
+			scale: 0.125,
+			format,
+		}),
 	];
 }
 

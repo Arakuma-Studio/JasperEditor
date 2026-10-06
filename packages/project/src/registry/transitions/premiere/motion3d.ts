@@ -7,7 +7,7 @@ import type { EffectParams } from '../../effects.ts';
 import { fxParam } from '../../fx/params.ts';
 import type { GlslChunk } from '../../fx/shader.ts';
 import { defineShaderTransition, TRANSITION_BINS } from '../define.ts';
-import { GLSL_TRANSITION, GLSL_TR_WIPE } from '../glsl.ts';
+import { GLSL_TR_WIPE, GLSL_TRANSITION } from '../glsl.ts';
 import { countParam, DIR4, ORIENT, selectorParam, selectorVec } from './common.ts';
 
 const bin = TRANSITION_BINS.motion3d;
@@ -64,7 +64,8 @@ export const CUBE_SPIN = defineShaderTransition({
 	id: 'jasper.cube-spin',
 	label: 'Cube Spin',
 	bin,
-	description: 'The outgoing and incoming clips are two sides of a cube that spins to bring the incoming clip to the front.',
+	description:
+		'The outgoing and incoming clips are two sides of a cube that spins to bring the incoming clip to the front.',
 	keywords: ['cube', 'spin', '3d', 'rotate', 'box'],
 	params: [selectorParam(DIR4, 'westToEast')],
 	options: { border: true, antiAliasing: true },

@@ -2,7 +2,12 @@
 // ../transition-premiere-gl.test.ts): drives the real fx GPU host with planned transition stages (planGpuTransition
 // + runShaderPlan, as test/transition-gl/entry.ts does) and reports characteristic pixels of each Premiere transition
 // at a fixed progress (Start = End = the progress), Reverse, borders, one-sided use and determinism.
-import { planGpuTransition, TRANSITION_SPECS, type TransitionSides, type TransitionSpec } from '@jasper/project';
+import {
+	planGpuTransition,
+	TRANSITION_SPECS,
+	type TransitionSides,
+	type TransitionSpec,
+} from '@jasper/project';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 
 type Px = [number, number, number, number];
@@ -133,6 +138,7 @@ const api = {
 			'jasper.grunge-transition',
 			'jasper.chaos',
 			'jasper.block-motion',
+			'jasper.vr-random-blocks',
 		]) {
 			for (const inst of ['trn_premiere', 'trn_premiere', 'trn_other']) {
 				console.log('run', id, inst);
@@ -202,7 +208,12 @@ const api = {
 		r.wipeRight = at('jasper.wipe', { at: 50 }, 56, 18);
 		r.wipeDiagNW = at('jasper.wipe', { at: 50, params: { direction: 'northWestToSouthEast' } }, 4, 4);
 		r.wipeDiagSE = at('jasper.wipe', { at: 50, params: { direction: 'northWestToSouthEast' } }, 60, 32);
-		r.wipeBorder = at('jasper.wipe', { at: 50, params: { borderWidth: 6, borderColor: [1, 1, 1, 1] } }, 29, 18);
+		r.wipeBorder = at(
+			'jasper.wipe',
+			{ at: 50, params: { borderWidth: 6, borderColor: [1, 1, 1, 1] } },
+			29,
+			18,
+		);
 		r.wipeReverseRight = at('jasper.wipe', { at: 25, params: { reverse: true } }, 60, 18);
 		r.wipeReverseLeft = at('jasper.wipe', { at: 25, params: { reverse: true } }, 8, 18);
 		r.wipeInLeft = at('jasper.wipe', { at: 50, sides: 'in' }, 8, 18);
@@ -266,8 +277,18 @@ const api = {
 		r.gradRight = at('jasper.gradient-wipe', { at: 50, params: { softness: 0 } }, 56, 18);
 		r.gradInvert = at('jasper.gradient-wipe', { at: 50, params: { softness: 0, invert: true } }, 8, 18);
 		const bw = halves('#fff', '#000');
-		r.gradLumaDark = at('jasper.gradient-wipe', { at: 50, a: bw, params: { gradient: 'outgoingLuma' } }, 56, 18);
-		r.gradLumaBright = at('jasper.gradient-wipe', { at: 50, a: bw, params: { gradient: 'outgoingLuma' } }, 8, 18);
+		r.gradLumaDark = at(
+			'jasper.gradient-wipe',
+			{ at: 50, a: bw, params: { gradient: 'outgoingLuma' } },
+			56,
+			18,
+		);
+		r.gradLumaBright = at(
+			'jasper.gradient-wipe',
+			{ at: 50, a: bw, params: { gradient: 'outgoingLuma' } },
+			8,
+			18,
+		);
 		// Irises at 40 %
 		r.boxIn = at('jasper.iris-box', { at: 40 }, 42, 23);
 		r.boxOut = at('jasper.iris-box', { at: 40 }, 32, 27);
@@ -293,11 +314,21 @@ const api = {
 		r.turnCorner = at('jasper.page-turn', { at: 30 }, 2, 2);
 		r.turnFar = at('jasper.page-turn', { at: 30 }, 62, 34);
 		r.turnFlap = at('jasper.page-turn', { at: 30 }, 20, 12);
-		r.turnFlapColor = at('jasper.page-turn', { at: 30, params: { back: 'color', backColor: [0, 1, 0, 1] } }, 20, 12);
+		r.turnFlapColor = at(
+			'jasper.page-turn',
+			{ at: 30, params: { back: 'color', backColor: [0, 1, 0, 1] } },
+			20,
+			12,
+		);
 		// Slide family at 50 % (B = green | blue halves: a sliding B shows its right half first)
 		r.slideB = at('jasper.slide', { at: 50, b: greenBlue() }, 8, 18);
 		r.slideA = at('jasper.slide', { at: 50, b: greenBlue() }, 56, 18);
-		r.slideBorder = at('jasper.slide', { at: 50, params: { borderWidth: 4, borderColor: [1, 1, 1, 1] } }, 31, 18);
+		r.slideBorder = at(
+			'jasper.slide',
+			{ at: 50, params: { borderWidth: 4, borderColor: [1, 1, 1, 1] } },
+			31,
+			18,
+		);
 		const bs = { at: 50, params: { bands: 2 } };
 		r.bandSlideTopW = at('jasper.band-slide', bs, 8, 9);
 		r.bandSlideTopE = at('jasper.band-slide', bs, 56, 9);
@@ -317,7 +348,12 @@ const api = {
 		r.dipWhiteQuarter = at('jasper.dip-to-white', { at: 25 }, 32, 18);
 		r.film = at('jasper.film-dissolve', { at: 50 }, 32, 18);
 		r.nonAdditive = at('jasper.non-additive-dissolve', { at: 25, b: solid('#0f0') }, 32, 18);
-		r.nonAdditiveDark = at('jasper.non-additive-dissolve', { at: 75, a: solid('#0f0'), b: solid('#00f') }, 32, 18);
+		r.nonAdditiveDark = at(
+			'jasper.non-additive-dissolve',
+			{ at: 75, a: solid('#0f0'), b: solid('#00f') },
+			32,
+			18,
+		);
 		return r;
 	},
 
@@ -326,7 +362,12 @@ const api = {
 		const r: Record<string, Px> = {};
 		r.blurDissolve = at('jasper.blur-dissolve', { at: 50 }, 32, 18);
 		r.dipToColor = at('jasper.dip-to-color', { at: 50, params: { color: [0, 1, 0, 1] } }, 32, 18);
-		r.dipToColorHold = at('jasper.dip-to-color', { at: 35, params: { color: [0, 1, 0, 1], hold: 40 } }, 32, 18);
+		r.dipToColorHold = at(
+			'jasper.dip-to-color',
+			{ at: 35, params: { color: [0, 1, 0, 1], hold: 40 } },
+			32,
+			18,
+		);
 		const wb = halves('#fff', '#000');
 		r.lumaBright = at('jasper.luma-fade', { at: 50, a: wb, params: { softness: 0 } }, 8, 18);
 		r.lumaDark = at('jasper.luma-fade', { at: 50, a: wb, params: { softness: 0 } }, 56, 18);
@@ -382,6 +423,13 @@ const api = {
 		r.mirrorFlip = at('jasper.mirror-transition', { at: 30, a: halves('#0f0', '#f00') }, 8, 18);
 		r.waveBehind = at('jasper.wave-transition', { at: 50 }, 8, 18);
 		r.waveAhead = at('jasper.wave-transition', { at: 50 }, 56, 18);
+		// VR: shapes on the sphere, per eye in stereo layouts.
+		r.vrIrisCenter = at('jasper.vr-iris-wipe', { at: 50 }, 32, 18);
+		r.vrIrisBehind = at('jasper.vr-iris-wipe', { at: 50 }, 1, 18);
+		r.vrIrisMonoUpper = at('jasper.vr-iris-wipe', { at: 20 }, 32, 9);
+		r.vrIrisStereoUpper = at('jasper.vr-iris-wipe', { at: 20, params: { layout: 'overUnder' } }, 32, 9);
+		r.vrGradTop = at('jasper.vr-gradient-wipe', { at: 50, params: { softness: 0 } }, 32, 4);
+		r.vrGradBottom = at('jasper.vr-gradient-wipe', { at: 50, params: { softness: 0 } }, 32, 32);
 		return r;
 	},
 
@@ -402,7 +450,10 @@ const api = {
 			const d = data(run(id, { at: 50, a: a(), b: b() }));
 			let sum = 0;
 			for (let i = 0; i < d.length; i += 4)
-				sum += Math.abs(d[i]! - fade[i]!) + Math.abs(d[i + 1]! - fade[i + 1]!) + Math.abs(d[i + 2]! - fade[i + 2]!);
+				sum +=
+					Math.abs(d[i]! - fade[i]!) +
+					Math.abs(d[i + 1]! - fade[i + 1]!) +
+					Math.abs(d[i + 2]! - fade[i + 2]!);
 			out[id] = sum / (d.length / 4) / 3;
 		}
 		return out;
@@ -420,6 +471,7 @@ const api = {
 			'jasper.grunge-transition',
 			'jasper.chaos',
 			'jasper.block-motion',
+			'jasper.vr-random-blocks',
 		]) {
 			console.log('a', id);
 			const a = stats(run(id, { at: 50 }));

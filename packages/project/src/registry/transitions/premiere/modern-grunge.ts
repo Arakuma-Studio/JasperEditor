@@ -83,7 +83,8 @@ export const EARTHQUAKE = defineShaderTransition({
 	id: 'jasper.earthquake',
 	label: 'Earthquake',
 	bin,
-	description: 'The picture shakes violently, with motion blur, building up to the cut and settling on the incoming clip.',
+	description:
+		'The picture shakes violently, with motion blur, building up to the cut and settling on the incoming clip.',
 	keywords: kw('earthquake', 'shake', 'camera shake', 'tremor', 'rumble'),
 	params: [
 		fxParam.pixels('amplitude', 'Amplitude', 40, 400),
@@ -290,7 +291,8 @@ export const KALEIDOSCOPE_TRANSITION = defineShaderTransition({
 	id: 'jasper.kaleidoscope-transition',
 	label: 'Kaleidoscope',
 	bin,
-	description: 'The picture folds into a turning kaleidoscope of mirrored segments, changes to the incoming clip and unfolds.',
+	description:
+		'The picture folds into a turning kaleidoscope of mirrored segments, changes to the incoming clip and unfolds.',
 	keywords: kw('kaleidoscope', 'mirror', 'symmetry', 'segments', 'mandala'),
 	params: [countParam('segments', 'Segments', 6, 32), fxParam.angle('rotation', 'Rotation', 90)],
 	gpu: {

@@ -129,7 +129,13 @@ export const ROLL = defineShaderTransition({
 		'The clips ride a big wheel turning under the frame: the outgoing clip rolls out of the frame as the incoming clip rolls in.',
 	keywords: ['roll', 'rotate', 'wheel', 'spin', 'film impact'],
 	params: [
-		fxParam.choice('rotation', 'Direction', ['clockwise', 'counterclockwise'], ['Clockwise', 'Counterclockwise'], 'clockwise'),
+		fxParam.choice(
+			'rotation',
+			'Direction',
+			['clockwise', 'counterclockwise'],
+			['Clockwise', 'Counterclockwise'],
+			'clockwise',
+		),
 		blurParam(),
 	],
 	gpu: {

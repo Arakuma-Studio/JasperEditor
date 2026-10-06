@@ -59,7 +59,8 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			page = await browser.newPage();
 			const errors: string[] = [];
 			page.on('pageerror', (e) => errors.push(e.message));
-			if (process.env.PREMIERE_TIMINGS === '1') page.on('console', (m) => process.stdout.write(`${m.text()}\n`));
+			if (process.env.PREMIERE_TIMINGS === '1')
+				page.on('console', (m) => process.stdout.write(`${m.text()}\n`));
 			await page.setContent('<!doctype html><html><body></body></html>');
 			await page.addScriptTag({ content: out.outputFiles[0]!.text });
 			if (errors.length) throw new Error(errors.join('\n'));
@@ -247,6 +248,13 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				mirrorFlip: RED,
 				waveBehind: BLUE,
 				waveAhead: RED,
+				vrIrisCenter: BLUE,
+				vrIrisBehind: RED,
+				// 45° up is outside the 36° iris on a mono frame, but the centre of the upper eye in over/under.
+				vrIrisMonoUpper: RED,
+				vrIrisStereoUpper: BLUE,
+				vrGradTop: BLUE,
+				vrGradBottom: RED,
 			};
 			const bad = Object.entries(expectations)
 				.filter(([k, e]) => {
@@ -281,9 +289,15 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				'jasper.slice-transition',
 				'jasper.shape-dissolve',
 				'jasper.morph-cut',
+				'jasper.vr-spherical-blur',
+				'jasper.vr-mobius-zoom',
+				'jasper.vr-light-leaks',
+				'jasper.vr-chroma-leaks',
+				'jasper.vr-light-rays',
 			];
 			const r = await page.evaluate(
-				(a) => (window as unknown as { __pr: { differs(s: string): Record<string, number> } }).__pr.differs(a),
+				(a) =>
+					(window as unknown as { __pr: { differs(s: string): Record<string, number> } }).__pr.differs(a),
 				ids.join(','),
 			);
 			const flat = ids.filter((id) => !(r[id]! > 8));

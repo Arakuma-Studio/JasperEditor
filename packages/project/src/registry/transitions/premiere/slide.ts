@@ -57,7 +57,8 @@ export const BAND_SLIDE = defineShaderTransition({
 	id: 'jasper.band-slide',
 	label: 'Band Slide',
 	bin,
-	description: 'The incoming clip slides in as bands that alternately enter from opposite sides of the frame.',
+	description:
+		'The incoming clip slides in as bands that alternately enter from opposite sides of the frame.',
 	keywords: ['bands', 'slide', 'stripes', 'interlaced'],
 	params: [selectorParam(DIR4, 'westToEast'), countParam('bands', 'Bands', 7)],
 	options: OPTIONS,
@@ -119,7 +120,8 @@ export const CENTER_SPLIT = defineShaderTransition({
 	id: 'jasper.center-split',
 	label: 'Center Split',
 	bin,
-	description: 'The outgoing clip splits into four quarters that slide out to the corners, revealing the incoming clip.',
+	description:
+		'The outgoing clip splits into four quarters that slide out to the corners, revealing the incoming clip.',
 	keywords: ['split', 'quarters', 'corners', 'open'],
 	options: OPTIONS,
 	gpu: { passes: [splitPass('vec2(1.0)')] },
@@ -130,7 +132,8 @@ export const SPLIT = defineShaderTransition({
 	id: 'jasper.split',
 	label: 'Split',
 	bin,
-	description: 'The outgoing clip splits down the middle and both halves slide apart, revealing the incoming clip.',
+	description:
+		'The outgoing clip splits down the middle and both halves slide apart, revealing the incoming clip.',
 	keywords: ['split', 'halves', 'doors', 'open'],
 	params: [selectorParam(ORIENT, 'horizontal')],
 	options: OPTIONS,
@@ -145,7 +148,8 @@ export const WHIP = defineShaderTransition({
 	id: 'jasper.whip',
 	label: 'Whip',
 	bin,
-	description: 'A fast whip pan: both clips race across the frame with motion blur, the incoming one landing in place.',
+	description:
+		'A fast whip pan: both clips race across the frame with motion blur, the incoming one landing in place.',
 	keywords: ['whip', 'pan', 'swish', 'motion blur', 'fast'],
 	params: [selectorParam(DIR4, 'westToEast'), fxParam.percent('blur', 'Motion Blur', 75)],
 	gpu: {

@@ -87,7 +87,7 @@ export const NON_ADDITIVE_DISSOLVE = defineShaderTransition({
 	label: 'Non-Additive Dissolve',
 	bin,
 	description:
-		"A non-additive mix: wherever the incoming clip is brighter it shows, based on luminance, so its highlights appear first and the frame never brightens.",
+		'A non-additive mix: wherever the incoming clip is brighter it shows, based on luminance, so its highlights appear first and the frame never brightens.',
 	keywords: ['non-additive', 'nam', 'luminance', 'dissolve', 'lighten'],
 	gpu: {
 		passes: [
@@ -188,7 +188,13 @@ void main() {
   fragColor = vec4(fu * conf, conf, 1.0);
 }`,
 			},
-			...gaussianBlurPasses({ input: 'mcFlow', output: 'mcSmooth', sigma: 24, scale: 0.125, format: 'rgba16f' }),
+			...gaussianBlurPasses({
+				input: 'mcFlow',
+				output: 'mcSmooth',
+				sigma: 24,
+				scale: 0.125,
+				format: 'rgba16f',
+			}),
 			{
 				include: [GLSL_TR_EASE],
 				frag: /* glsl */ `

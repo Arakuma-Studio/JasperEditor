@@ -63,7 +63,11 @@ describe.runIf(enabled)(
 		/** Clip k (0-based) of the sequence: alternately A and B, 30 frames each, with 15-frame handles. */
 		const doc = (): Command[] => {
 			const cmds: Command[] = [
-				{ type: 'media.register', ref: '$a', asset: fxAsset(media, 'video', media.video, FX_W, FX_H) } as Command,
+				{
+					type: 'media.register',
+					ref: '$a',
+					asset: fxAsset(media, 'video', media.video, FX_W, FX_H),
+				} as Command,
 				{ type: 'media.register', ref: '$b', asset: fxAsset(media, 'video', 'b.mp4', FX_W, FX_H) } as Command,
 			];
 			for (let k = 0; k <= IDS.length; k++)
@@ -74,7 +78,7 @@ describe.runIf(enabled)(
 					sourceRange: { in: { seconds: 0.5 }, out: { seconds: 1.5 } },
 					tracks: { video: 'V1' },
 				} as unknown as Command);
-			IDS.forEach((effectId, k) =>
+			for (const [k, effectId] of IDS.entries())
 				cmds.push({
 					type: 'transition.add',
 					trackId: 'V1',
@@ -85,8 +89,7 @@ describe.runIf(enabled)(
 					...(TRANSITION_SPECS.find((s) => s.id === effectId)?.params.some((p) => p.name === 'borderWidth')
 						? { params: { borderWidth: 4, borderColor: [1, 1, 1, 1] } }
 						: {}),
-				} as Command),
-			);
+				} as Command);
 			return cmds;
 		};
 
@@ -119,7 +122,14 @@ describe.runIf(enabled)(
 					['75', cut + 5],
 				] as const) {
 					const file = join(out!, `${id.replace(/^jasper\./, '')}-${tag}.png`);
-					await renderer.renderStill({ composition, serveUrl, inputProps, frame: f, output: file, ...browser });
+					await renderer.renderStill({
+						composition,
+						serveUrl,
+						inputProps,
+						frame: f,
+						output: file,
+						...browser,
+					});
 					frames.push(raw(file));
 				}
 				if (!(diff(frames[0]!, frames[1]!) > 0 && diff(frames[1]!, frames[2]!) > 0)) flat.push(id);

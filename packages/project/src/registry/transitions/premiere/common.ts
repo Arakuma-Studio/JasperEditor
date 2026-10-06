@@ -8,7 +8,7 @@ import type { EffectParams, ParamSpec } from '../../effects.ts';
 import { fxParam } from '../../fx/params.ts';
 import type { FxUniformValue, GlslChunk } from '../../fx/shader.ts';
 import { defineShaderTransition, type ShaderTransitionInit } from '../define.ts';
-import { GLSL_TRANSITION, GLSL_TR_WIPE } from '../glsl.ts';
+import { GLSL_TR_WIPE, GLSL_TRANSITION } from '../glsl.ts';
 import type { TrFrameContext } from '../shader.ts';
 
 export const num = (v: unknown, d = 0): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
@@ -29,7 +29,13 @@ export const DIR4: Selector = {
 
 /** The eight edge selectors (4 edges + 4 corners), unit vectors. */
 export const DIR8: Selector = {
-	values: [...DIR4.values, 'northWestToSouthEast', 'northEastToSouthWest', 'southWestToNorthEast', 'southEastToNorthWest'],
+	values: [
+		...DIR4.values,
+		'northWestToSouthEast',
+		'northEastToSouthWest',
+		'southWestToNorthEast',
+		'southEastToNorthWest',
+	],
 	labels: [
 		...DIR4.labels,
 		'North West to South East',
@@ -68,7 +74,12 @@ export const START4: Selector = {
 };
 
 /** An edge-selector param (`u_<name>` int) with Premiere's labels. */
-export function selectorParam(sel: Selector, def: string, name = 'direction', label = 'Direction'): ParamSpec {
+export function selectorParam(
+	sel: Selector,
+	def: string,
+	name = 'direction',
+	label = 'Direction',
+): ParamSpec {
 	return fxParam.choice(name, label, sel.values, sel.labels, def);
 }
 

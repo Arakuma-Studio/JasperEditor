@@ -12,6 +12,7 @@ import { fxParam } from '../fx/params.ts';
 import { defineShaderTransition, TRANSITION_BINS } from './define.ts';
 import { GLSL_TR_EASE, GLSL_TR_WIPE } from './glsl.ts';
 import { PREMIERE_DISSOLVES } from './premiere/dissolve.ts';
+import { PREMIERE_IRISES } from './premiere/iris.ts';
 import { MODERN_ANIMATION } from './premiere/modern-animation.ts';
 import { MODERN_DISSOLVES } from './premiere/modern-dissolve.ts';
 import { MODERN_GRUNGE } from './premiere/modern-grunge.ts';
@@ -19,10 +20,10 @@ import { MODERN_LIGHTS } from './premiere/modern-lights.ts';
 import { MODERN_SLIDES } from './premiere/modern-slide.ts';
 import { MODERN_TRANSFORMERS } from './premiere/modern-transformers.ts';
 import { MODERN_WIPES } from './premiere/modern-wipe.ts';
-import { PREMIERE_IRISES } from './premiere/iris.ts';
 import { PREMIERE_3D_MOTION } from './premiere/motion3d.ts';
 import { PREMIERE_PAGE_PEELS } from './premiere/page.ts';
 import { PREMIERE_SLIDES } from './premiere/slide.ts';
+import { PREMIERE_VR } from './premiere/vr.ts';
 import { PREMIERE_WIPES } from './premiere/wipe.ts';
 
 /** Premiere's edge selectors of the slide family (the direction the incoming clip travels). */
@@ -144,8 +145,8 @@ void main() {
 /**
  * Premiere's video transitions, bin by bin (TRANSITION_BINS order), alphabetical inside a bin: the classic standard
  * transitions (./premiere/{motion3d,dissolve,iris,page,slide,wipe}.ts and Push / Cross Zoom / Iris Round above) and
- * the modern ones Premiere 25.5 / 26 added from Film Impact (./premiere/modern-*.ts; their Animation, Grunge &
- * Distort, Lights & Blurs and Transformers folders sit in MODERN_BINS until the framework has those bins).
+ * the modern ones Premiere 25.5 / 26 added from Film Impact (./premiere/modern-*.ts) and the Immersive Video (VR)
+ * ones (./premiere/vr.ts). Folders the framework has no bin for yet sit in MODERN_BINS (see there).
  */
 export const PREMIERE_TRANSITIONS: readonly TransitionSpec[] = byBinAndLabel([
 	PUSH,
@@ -164,6 +165,7 @@ export const PREMIERE_TRANSITIONS: readonly TransitionSpec[] = byBinAndLabel([
 	...MODERN_GRUNGE,
 	...MODERN_LIGHTS,
 	...MODERN_TRANSFORMERS,
+	...PREMIERE_VR,
 ]);
 
 function byBinAndLabel(list: readonly TransitionSpec[]): TransitionSpec[] {

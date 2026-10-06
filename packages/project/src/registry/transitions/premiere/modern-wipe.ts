@@ -83,9 +83,14 @@ export const PANEL_WIPE = defineShaderTransition({
 	id: 'jasper.panel-wipe',
 	label: 'Panel Wipe',
 	bin,
-	description: 'Panels carrying the incoming clip slide across the frame one after another, each casting a soft shadow.',
+	description:
+		'Panels carrying the incoming clip slide across the frame one after another, each casting a soft shadow.',
 	keywords: kw('panel', 'panels', 'slide', 'sliding doors', 'wipe'),
-	params: [selectorParam(DIR4, 'westToEast'), countParam('panels', 'Panels', 4, 32), fxParam.percent('stagger', 'Stagger', 50)],
+	params: [
+		selectorParam(DIR4, 'westToEast'),
+		countParam('panels', 'Panels', 4, 32),
+		fxParam.percent('stagger', 'Stagger', 50),
+	],
 	gpu: {
 		uniforms: (p) => ({ u_dir: selectorVec(DIR4, p) }),
 		passes: [
@@ -169,7 +174,8 @@ export const SOFT_WIPE = defineShaderTransition({
 	id: 'jasper.soft-wipe',
 	label: 'Soft Wipe',
 	bin,
-	description: 'A broad, out-of-focus wipe: the region around the moving edge is defocused like a lens as the clips trade places.',
+	description:
+		'A broad, out-of-focus wipe: the region around the moving edge is defocused like a lens as the clips trade places.',
 	keywords: kw('soft', 'wipe', 'defocus', 'blur', 'feather'),
 	params: [
 		fxParam.angle('angle', 'Angle', 0),
@@ -213,7 +219,8 @@ export const STAR_WIPE = defineEdgeWipe({
 	id: 'jasper.star-wipe',
 	label: 'Star Wipe',
 	bin,
-	description: 'The incoming clip is revealed (or the outgoing one concealed, reversed) through a growing star shape.',
+	description:
+		'The incoming clip is revealed (or the outgoing one concealed, reversed) through a growing star shape.',
 	keywords: kw('star', 'iris', 'shape', 'wipe'),
 	params: [
 		countParam('points', 'Points', 5, 24),
@@ -254,7 +261,8 @@ export const STRETCH_WIPE = defineShaderTransition({
 	id: 'jasper.stretch-wipe',
 	label: 'Stretch Wipe',
 	bin,
-	description: 'An elastic wipe: near the moving edge both clips are stretched and smeared towards it, like pulled rubber.',
+	description:
+		'An elastic wipe: near the moving edge both clips are stretched and smeared towards it, like pulled rubber.',
 	keywords: kw('stretch', 'elastic', 'smear', 'wipe', 'pull'),
 	params: [fxParam.angle('angle', 'Angle', 0), fxParam.pixels('stretch', 'Stretch', 200, 2000)],
 	gpu: {

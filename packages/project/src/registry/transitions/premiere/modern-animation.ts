@@ -165,7 +165,8 @@ export const POP_MOTION = defineShaderTransition({
 	id: 'jasper.pop-motion',
 	label: 'Pop Motion',
 	bin,
-	description: 'The outgoing clip pops away — a little anticipation, then gone — and the incoming clip pops in with an overshoot.',
+	description:
+		'The outgoing clip pops away — a little anticipation, then gone — and the incoming clip pops in with an overshoot.',
 	keywords: kw('pop', 'scale', 'bounce', 'snap'),
 	params: [fxParam.percent('overshoot', 'Overshoot', 40)],
 	gpu: {
@@ -239,11 +240,7 @@ export const SPIN_MOTION = defineShaderTransition({
 	bin,
 	description: 'The outgoing clip spins up with a spin blur and the incoming clip spins down into place.',
 	keywords: kw('spin', 'rotate', 'twirl', 'swirl'),
-	params: [
-		fxParam.angle('rotation', 'Rotation', 360),
-		fxParam.percent('zoom', 'Zoom', 20),
-		blurParam(60),
-	],
+	params: [fxParam.angle('rotation', 'Rotation', 360), fxParam.percent('zoom', 'Zoom', 20), blurParam(60)],
 	gpu: {
 		passes: [
 			{
@@ -281,7 +278,8 @@ export const SPRING_MOTION = defineShaderTransition({
 	id: 'jasper.spring-motion',
 	label: 'Spring Motion',
 	bin,
-	description: 'The incoming clip springs in over the outgoing clip, overshoots and bounces before it settles.',
+	description:
+		'The incoming clip springs in over the outgoing clip, overshoots and bounces before it settles.',
 	keywords: kw('spring', 'bounce', 'elastic', 'slide'),
 	params: [
 		selectorParam(DIR4, 'westToEast'),

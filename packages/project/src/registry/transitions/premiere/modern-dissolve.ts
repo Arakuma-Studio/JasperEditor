@@ -9,12 +9,7 @@ import type { ShaderPass } from '../../fx/shader.ts';
 import { defineShaderTransition, TRANSITION_BINS } from '../define.ts';
 import { GLSL_TR_EASE } from '../glsl.ts';
 import { num } from './common.ts';
-import {
-	blurLevelPasses,
-	GLSL_PR_BLUR_LEVELS,
-	GLSL_PR_MODERN,
-	GLSL_PR_NOISE,
-} from './modern-common.ts';
+import { blurLevelPasses, GLSL_PR_BLUR_LEVELS, GLSL_PR_MODERN, GLSL_PR_NOISE } from './modern-common.ts';
 
 const bin = TRANSITION_BINS.dissolve;
 
@@ -23,7 +18,8 @@ export const BLUR_DISSOLVE = defineShaderTransition({
 	id: 'jasper.blur-dissolve',
 	label: 'Blur Dissolve',
 	bin,
-	description: 'Dissolves through a blur: the outgoing clip goes soft, the clips cross, the incoming clip sharpens.',
+	description:
+		'Dissolves through a blur: the outgoing clip goes soft, the clips cross, the incoming clip sharpens.',
 	keywords: ['blur', 'dissolve', 'defocus', 'soft', 'film impact'],
 	params: [fxParam.pixels('blur', 'Blur', 80, 400)],
 	gpu: {
@@ -53,7 +49,8 @@ export const DIP_TO_COLOR = defineShaderTransition({
 	id: 'jasper.dip-to-color',
 	label: 'Dip to Color',
 	bin,
-	description: 'The outgoing clip fades to a color of your choice, optionally holds it, then the incoming clip fades in.',
+	description:
+		'The outgoing clip fades to a color of your choice, optionally holds it, then the incoming clip fades in.',
 	keywords: ['dip', 'color', 'fade', 'flash', 'film impact'],
 	params: [fxParam.color('color', 'Color', [0, 0, 0, 1]), fxParam.percent('hold', 'Hold', 0)],
 	gpu: {
@@ -80,10 +77,17 @@ export const LUMA_FADE = defineShaderTransition({
 	id: 'jasper.luma-fade',
 	label: 'Luma Fade',
 	bin,
-	description: 'Fades by brightness: the brightest areas of the chosen clip change first (or the darkest, inverted).',
+	description:
+		'Fades by brightness: the brightest areas of the chosen clip change first (or the darkest, inverted).',
 	keywords: ['luma', 'luminance', 'fade', 'brightness', 'film impact'],
 	params: [
-		fxParam.choice('lumaFrom', 'Luma From', ['outgoing', 'incoming'], ['Outgoing Clip', 'Incoming Clip'], 'outgoing'),
+		fxParam.choice(
+			'lumaFrom',
+			'Luma From',
+			['outgoing', 'incoming'],
+			['Outgoing Clip', 'Incoming Clip'],
+			'outgoing',
+		),
 		fxParam.percent('softness', 'Softness', 25),
 		fxParam.toggle('invert', 'Dark First', false),
 	],
@@ -109,7 +113,8 @@ export const BURN_ALPHA = defineShaderTransition({
 	id: 'jasper.burn-alpha',
 	label: 'Burn Alpha',
 	bin,
-	description: 'Holes burn through the outgoing clip with glowing, scorched edges to reveal the incoming clip.',
+	description:
+		'Holes burn through the outgoing clip with glowing, scorched edges to reveal the incoming clip.',
 	keywords: ['burn', 'fire', 'film burn', 'holes', 'scorch', 'film impact'],
 	params: [
 		fxParam.number('scale', 'Scale', 4, { min: 0.5, max: 30, softMax: 12, step: 0.1 }),
@@ -153,7 +158,8 @@ export const MOSAIC_TRANSITION = defineShaderTransition({
 	id: 'jasper.mosaic-transition',
 	label: 'Mosaic',
 	bin,
-	description: 'The outgoing clip breaks into ever larger tiles, the clips switch, and the incoming clip resolves from them.',
+	description:
+		'The outgoing clip breaks into ever larger tiles, the clips switch, and the incoming clip resolves from them.',
 	keywords: ['mosaic', 'pixelate', 'tiles', 'blocks', 'film impact'],
 	params: [fxParam.pixels('tileSize', 'Tile Size', 80, 400)],
 	gpu: {

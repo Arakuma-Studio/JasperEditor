@@ -12,7 +12,9 @@ import { GLSL_PR_3D } from './motion3d.ts';
 
 const bin = MODERN_BINS.transformers;
 const kw = (...k: string[]) => [...k, ...FOLDER_KEYWORDS.transformers, 'film impact'];
-const orientLayout = (p: EffectParams, name = 'direction') => ({ u_swap: selectorVec(ORIENT, p, name)[1] !== 0 });
+const orientLayout = (p: EffectParams, name = 'direction') => ({
+	u_swap: selectorVec(ORIENT, p, name)[1] !== 0,
+});
 
 /** Transformers ▸ 3D Spin: the frame spins around in 3D, pulling back, and lands as B. */
 export const SPIN_3D = defineShaderTransition({
@@ -122,7 +124,8 @@ export const LOUVER = defineShaderTransition({
 	id: 'jasper.louver',
 	label: 'Louver',
 	bin,
-	description: 'The frame is cut into slats that turn over one after another, like louvers, showing the incoming clip on their backs.',
+	description:
+		'The frame is cut into slats that turn over one after another, like louvers, showing the incoming clip on their backs.',
 	keywords: kw('louver', 'blinds', 'slats', 'shutters', '3d'),
 	params: [
 		fxParam.choice('slatAxis', 'Slats', ['horizontal', 'vertical'], ['Horizontal', 'Vertical'], 'horizontal'),
@@ -176,11 +179,18 @@ export const MIRROR_TRANSITION = defineShaderTransition({
 	id: 'jasper.mirror-transition',
 	label: 'Mirror',
 	bin,
-	description: 'The picture multiplies into mirrored reflections of itself, changes to the incoming clip and folds back to one image.',
+	description:
+		'The picture multiplies into mirrored reflections of itself, changes to the incoming clip and folds back to one image.',
 	keywords: kw('mirror', 'reflection', 'tile', 'symmetry', 'repeat'),
 	params: [
 		fxParam.number('tiles', 'Reflections', 3, { min: 1, max: 12, step: 0.1 }),
-		fxParam.choice('mode', 'Mode', ['both', 'horizontal', 'vertical'], ['Both', 'Horizontal', 'Vertical'], 'both'),
+		fxParam.choice(
+			'mode',
+			'Mode',
+			['both', 'horizontal', 'vertical'],
+			['Both', 'Horizontal', 'Vertical'],
+			'both',
+		),
 	],
 	gpu: {
 		passes: [
@@ -247,7 +257,8 @@ export const WAVE_TRANSITION = defineShaderTransition({
 	id: 'jasper.wave-transition',
 	label: 'Wave',
 	bin,
-	description: 'A wave runs across the frame, rippling the picture as it passes; behind it the incoming clip has taken over.',
+	description:
+		'A wave runs across the frame, rippling the picture as it passes; behind it the incoming clip has taken over.',
 	keywords: kw('wave', 'ripple', 'water', 'distort', 'wobble'),
 	params: [
 		selectorParam(DIR4, 'westToEast'),

@@ -11,8 +11,8 @@ import {
 	type TrFrameContext,
 	transitionPasses,
 } from '../src/index.ts';
-import { PREMIERE_TRANSITIONS } from '../src/registry/transitions/premiere-transitions.ts';
 import { MODERN_BINS } from '../src/registry/transitions/premiere/modern-common.ts';
+import { PREMIERE_TRANSITIONS } from '../src/registry/transitions/premiere-transitions.ts';
 
 const byLabel = (label: string) => {
 	const s = PREMIERE_TRANSITIONS.find((t) => t.label === label);
@@ -45,7 +45,13 @@ const uniforms = (label: string, over: Record<string, unknown> = {}) => {
 /** Premiere's standard video transitions (classic), by bin. */
 const CLASSIC: Record<string, string[]> = {
 	[TRANSITION_BINS.motion3d]: ['Cube Spin', 'Flip Over'],
-	[TRANSITION_BINS.dissolve]: ['Additive Dissolve', 'Dip to White', 'Film Dissolve', 'Morph Cut', 'Non-Additive Dissolve'],
+	[TRANSITION_BINS.dissolve]: [
+		'Additive Dissolve',
+		'Dip to White',
+		'Film Dissolve',
+		'Morph Cut',
+		'Non-Additive Dissolve',
+	],
 	[TRANSITION_BINS.iris]: ['Iris Box', 'Iris Cross', 'Iris Diamond', 'Iris Round'],
 	[TRANSITION_BINS.pagePeel]: ['Page Peel', 'Page Turn'],
 	[TRANSITION_BINS.slide]: ['Band Slide', 'Center Split', 'Push', 'Slide', 'Split', 'Whip'],
@@ -116,6 +122,16 @@ const MODERN: Record<string, string[]> = {
 		'Zoom Blur',
 	],
 	Transformers: ['3D Spin', 'Frame', 'Louver', 'Mirror', 'Slice', 'Wave'],
+	'Immersive Video': [
+		'VR Chroma Leaks',
+		'VR Gradient Wipe',
+		'VR Iris Wipe',
+		'VR Light Leaks',
+		'VR Light Rays',
+		'VR Mobius Zoom',
+		'VR Random Blocks',
+		'VR Spherical Blur',
+	],
 };
 const MODERN_BIN: Record<string, string> = {
 	Dissolve: TRANSITION_BINS.dissolve,
@@ -125,6 +141,7 @@ const MODERN_BIN: Record<string, string> = {
 	'Grunge & Distort': MODERN_BINS.grungeDistort,
 	'Lights & Blurs': MODERN_BINS.lightsBlurs,
 	Transformers: MODERN_BINS.transformers,
+	'Immersive Video': MODERN_BINS.immersive,
 };
 
 describe('Premiere transition catalogue', () => {
@@ -132,7 +149,9 @@ describe('Premiere transition catalogue', () => {
 		for (const [bin, labels] of Object.entries(CLASSIC))
 			for (const l of labels) expect(byLabel(l).bin, l).toBe(bin);
 		// Cross Dissolve / Dip to Black stay the native built-ins.
-		expect(PREMIERE_TRANSITIONS.some((t) => t.label === 'Cross Dissolve' || t.label === 'Dip to Black')).toBe(false);
+		expect(PREMIERE_TRANSITIONS.some((t) => t.label === 'Cross Dissolve' || t.label === 'Dip to Black')).toBe(
+			false,
+		);
 	});
 
 	it("has Premiere 26's modern transitions, their folders mapped onto the existing bins", () => {
@@ -162,20 +181,41 @@ describe('Premiere transition catalogue', () => {
 			const a = PREMIERE_TRANSITIONS[i - 1]!;
 			const b = PREMIERE_TRANSITIONS[i]!;
 			const d = order.indexOf(a.bin) - order.indexOf(b.bin);
-			expect(d < 0 || (d === 0 && a.label.localeCompare(b.label, 'en') <= 0), `${a.label} before ${b.label}`).toBe(
-				true,
-			);
+			expect(
+				d < 0 || (d === 0 && a.label.localeCompare(b.label, 'en') <= 0),
+				`${a.label} before ${b.label}`,
+			).toBe(true);
 		}
 	});
 });
 
 describe("Premiere's options and defaults", () => {
 	it('gives wipes, irises and slides Border, Anti-aliasing and Reverse; centred ones a Center', () => {
-		for (const l of ['Wipe', 'Band Wipe', 'Barn Doors', 'Clock Wipe', 'Iris Box', 'Iris Cross', 'Slide', 'Band Slide', 'Cube Spin']) {
+		for (const l of [
+			'Wipe',
+			'Band Wipe',
+			'Barn Doors',
+			'Clock Wipe',
+			'Iris Box',
+			'Iris Cross',
+			'Slide',
+			'Band Slide',
+			'Cube Spin',
+		]) {
 			const s = byLabel(l);
-			for (const n of ['borderWidth', 'borderColor', 'reverse', 'antiAliasing']) expect(param(s, n), `${l} ${n}`).toBeTruthy();
+			for (const n of ['borderWidth', 'borderColor', 'reverse', 'antiAliasing'])
+				expect(param(s, n), `${l} ${n}`).toBeTruthy();
 		}
-		for (const l of ['Clock Wipe', 'Wedge Wipe', 'Pinwheel', 'Iris Box', 'Iris Cross', 'Iris Diamond', 'Iris Round', 'Star Wipe'])
+		for (const l of [
+			'Clock Wipe',
+			'Wedge Wipe',
+			'Pinwheel',
+			'Iris Box',
+			'Iris Cross',
+			'Iris Diamond',
+			'Iris Round',
+			'Star Wipe',
+		])
 			expect(param(byLabel(l), 'center'), l).toBeTruthy();
 		// Morph Cut has only duration / alignment in Premiere: no Reverse.
 		expect(param(byLabel('Morph Cut'), 'reverse')).toBeUndefined();
@@ -221,7 +261,10 @@ describe('Premiere transition uniforms (pure TS maths)', () => {
 	});
 
 	it('places the corners and start angles', () => {
-		expect(uniforms('Radial Wipe', { direction: 'southEast' })).toEqual({ u_corner: [1, 1], u_startAngle: 180 });
+		expect(uniforms('Radial Wipe', { direction: 'southEast' })).toEqual({
+			u_corner: [1, 1],
+			u_startAngle: 180,
+		});
 		expect(uniforms('Inset', { direction: 'northEast' }).u_corner).toEqual([1, 0]);
 		expect(uniforms('Page Peel', { direction: 'southWest' }).u_corner).toEqual([0, 1]);
 		expect(uniforms('Spiral Boxes', { direction: 'southWest' }).u_corner).toEqual({ int: 3 });
@@ -263,7 +306,13 @@ describe('Premiere transition planning', () => {
 		const s = byLabel('Spiral Boxes');
 		const staged = planGpuTransition(
 			s,
-			{ id: 'trn_1', params: defaults(s, { direction: 'northEast' }) as never, frame: 4, duration: 10, sides: 'both' },
+			{
+				id: 'trn_1',
+				params: defaults(s, { direction: 'northEast' }) as never,
+				frame: 4,
+				duration: 10,
+				sides: 'both',
+			},
 			{ width: 640, height: 360, fps: 30 },
 			{
 				out: { width: 640, height: 360, compToCanvas: [1, 0, 0, 0, 1, 0, 0, 0, 1], opacity: 1 },
@@ -273,6 +322,9 @@ describe('Premiere transition planning', () => {
 		const last = staged.plan.passes.at(-1)!;
 		expect(last.source).toContain('pr_spiral');
 		expect(last.source).toContain('float pr_grow');
-		expect(staged.plan.uniforms.find((u) => u.name === 'u_corner')).toMatchObject({ type: 'int', value: [1] });
+		expect(staged.plan.uniforms.find((u) => u.name === 'u_corner')).toMatchObject({
+			type: 'int',
+			value: [1],
+		});
 	});
 });

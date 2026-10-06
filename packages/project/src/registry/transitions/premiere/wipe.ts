@@ -343,7 +343,8 @@ export const RANDOM_WIPE = defineShaderTransition({
 	id: 'jasper.random-wipe',
 	label: 'Random Wipe',
 	bin,
-	description: 'The incoming clip appears in small random blocks that sweep across the frame in one direction.',
+	description:
+		'The incoming clip appears in small random blocks that sweep across the frame in one direction.',
 	keywords: ['random', 'blocks', 'wipe', 'scatter'],
 	params: [selectorParam(DIR4, 'northToSouth')],
 	gpu: {

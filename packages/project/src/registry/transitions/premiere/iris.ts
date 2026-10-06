@@ -19,7 +19,8 @@ export const IRIS_BOX = defineEdgeWipe({
 	id: 'jasper.iris-box',
 	label: 'Iris Box',
 	bin,
-	description: 'The incoming clip is revealed through a box of the frame’s proportions that opens from the center point.',
+	description:
+		'The incoming clip is revealed through a box of the frame’s proportions that opens from the center point.',
 	keywords: ['iris', 'box', 'square', 'rectangle', 'reveal'],
 	center: true,
 	body: `${PRE}
@@ -50,7 +51,8 @@ export const IRIS_CROSS = defineEdgeWipe({
 	id: 'jasper.iris-cross',
 	label: 'Iris Cross',
 	bin,
-	description: 'The incoming clip is revealed through a cross that opens from the center point: the arms reach out, then widen.',
+	description:
+		'The incoming clip is revealed through a cross that opens from the center point: the arms reach out, then widen.',
 	keywords: ['iris', 'cross', 'plus', 'reveal'],
 	center: true,
 	body: `${PRE}

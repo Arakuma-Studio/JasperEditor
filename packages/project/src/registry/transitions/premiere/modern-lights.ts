@@ -111,7 +111,8 @@ export const DIRECTIONAL_BLUR_TRANSITION = defineShaderTransition({
 	id: 'jasper.directional-blur-transition',
 	label: 'Directional Blur',
 	bin,
-	description: 'The outgoing clip smears along a direction, the clips cross under the blur and the incoming clip sharpens.',
+	description:
+		'The outgoing clip smears along a direction, the clips cross under the blur and the incoming clip sharpens.',
 	keywords: kw('directional blur', 'motion blur', 'smear', 'streak'),
 	params: [fxParam.angle('angle', 'Direction', 0), fxParam.pixels('length', 'Blur Length', 200, 1000)],
 	gpu: {
@@ -187,7 +188,8 @@ export const FLASH_TRANSITION = defineShaderTransition({
 	id: 'jasper.flash-transition',
 	label: 'Flash',
 	bin,
-	description: 'A bright flash — the picture overexposes into the flash color — hides the cut to the incoming clip.',
+	description:
+		'A bright flash — the picture overexposes into the flash color — hides the cut to the incoming clip.',
 	keywords: kw('flash', 'exposure', 'white', 'bright', 'strobe'),
 	params: [
 		fxParam.color('color', 'Color', [1, 1, 1, 1]),
@@ -217,7 +219,8 @@ export const GLOW_TRANSITION = defineShaderTransition({
 	id: 'jasper.glow-transition',
 	label: 'Glow',
 	bin,
-	description: 'The bright areas bloom into a glow that intensifies towards the cut and fades out on the incoming clip.',
+	description:
+		'The bright areas bloom into a glow that intensifies towards the cut and fades out on the incoming clip.',
 	keywords: kw('glow', 'bloom', 'bright', 'dreamy', 'soft'),
 	params: [
 		fxParam.pixels('radius', 'Radius', 60, 400),
@@ -300,7 +303,8 @@ export const LIGHT_LEAK = defineShaderTransition({
 	id: 'jasper.light-leak',
 	label: 'Light Leak',
 	bin,
-	description: 'Organic film light leaks and burns flare in from the edge of the frame and wash over the cut.',
+	description:
+		'Organic film light leaks and burns flare in from the edge of the frame and wash over the cut.',
 	keywords: kw('light leak', 'film burn', 'leak', 'warm', 'vintage'),
 	params: [fxParam.choice('palette', 'Palette', PALETTES, PALETTE_LABELS, 'warm'), intensity()],
 	gpu: {
@@ -335,7 +339,8 @@ export const LIGHT_SWEEP = defineShaderTransition({
 	id: 'jasper.light-sweep',
 	label: 'Light Sweep',
 	bin,
-	description: 'A beam of light sweeps across the frame; behind it the incoming clip has replaced the outgoing one.',
+	description:
+		'A beam of light sweeps across the frame; behind it the incoming clip has replaced the outgoing one.',
 	keywords: kw('light sweep', 'beam', 'shine', 'glint', 'wipe'),
 	params: [
 		fxParam.angle('angle', 'Angle', 20),
@@ -373,7 +378,11 @@ export const PHOSPHOR = defineShaderTransition({
 	description:
 		"A phosphorescent fade: the outgoing clip's highlights linger as a tinted afterglow while the incoming clip fades in.",
 	keywords: kw('phosphor', 'afterglow', 'trail', 'glow', 'crt'),
-	params: [fxParam.color('color', 'Glow Color', [0.45, 1, 0.75, 1]), intensity(), fxParam.pixels('radius', 'Spread', 20, 200)],
+	params: [
+		fxParam.color('color', 'Glow Color', [0.45, 1, 0.75, 1]),
+		intensity(),
+		fxParam.pixels('radius', 'Spread', 20, 200),
+	],
 	gpu: {
 		passes: (p): ShaderPass[] => [
 			{
@@ -410,7 +419,8 @@ export const RADIAL_BLUR_TRANSITION = defineShaderTransition({
 	id: 'jasper.radial-blur-transition',
 	label: 'Radial Blur',
 	bin,
-	description: 'The picture spins into a radial blur around the center, the clips cross, and the incoming clip spins out sharp.',
+	description:
+		'The picture spins into a radial blur around the center, the clips cross, and the incoming clip spins out sharp.',
 	keywords: kw('radial blur', 'spin blur', 'rotate', 'twist'),
 	params: [fxParam.angle('angle', 'Angle', 30)],
 	options: { center: true },
@@ -437,7 +447,8 @@ export const RAY = defineShaderTransition({
 	id: 'jasper.ray',
 	label: 'Ray',
 	bin,
-	description: 'Shafts of light burst from a point in the picture, flood the frame at the cut and fade on the incoming clip.',
+	description:
+		'Shafts of light burst from a point in the picture, flood the frame at the cut and fade on the incoming clip.',
 	keywords: kw('ray', 'god rays', 'light rays', 'beams', 'volumetric'),
 	params: [intensity(), fxParam.percent('length', 'Ray Length', 60)],
 	options: { center: [0.5, 0.35] },
@@ -502,7 +513,8 @@ export const STRIPE = defineShaderTransition({
 	id: 'jasper.stripe',
 	label: 'Stripe',
 	bin,
-	description: 'A set of light stripes sweeps across the frame; the incoming clip appears behind the middle stripe.',
+	description:
+		'A set of light stripes sweeps across the frame; the incoming clip appears behind the middle stripe.',
 	keywords: kw('stripe', 'stripes', 'bands', 'light', 'sweep'),
 	params: [
 		fxParam.number('stripes', 'Stripes', 5, { min: 1, max: 20, step: 1 }),
@@ -546,7 +558,8 @@ export const ZOOM_BLUR_TRANSITION = defineShaderTransition({
 	id: 'jasper.zoom-blur-transition',
 	label: 'Zoom Blur',
 	bin,
-	description: 'The outgoing clip rushes forward into a zoom blur and the incoming clip arrives out of it, like warp speed.',
+	description:
+		'The outgoing clip rushes forward into a zoom blur and the incoming clip arrives out of it, like warp speed.',
 	keywords: kw('zoom blur', 'warp', 'rush', 'radial', 'speed'),
 	params: [fxParam.percent('amount', 'Amount', 60), fxParam.percent('zoom', 'Zoom', 30)],
 	options: { center: true },
