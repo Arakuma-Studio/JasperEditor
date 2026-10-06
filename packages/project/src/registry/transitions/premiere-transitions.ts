@@ -1,8 +1,8 @@
 // Transition family "premiere-transitions" (transition framework, wave 3): Premiere's standard video transitions —
 // 3D Motion, Dissolve, Iris, Page Peel, Slide, Wipe, Zoom bins (TRANSITION_BINS). Ids `jasper.<kebab>`. The built-in
 // Cross Dissolve and Dip to Black (native ffmpeg path) live in ../../transitions.ts and are not duplicated here.
-// Owner: the wave-3 agent of this family; this is the ONLY file it edits (plus its tests). Entries are built with
-// `defineShaderTransition` (./define.ts). Authoring guide: docs/wp-notes/fx-transition-framework.md. The transition
+// Owner: the wave-3 agent of this family; this file plus its private helpers in ./premiere/ (one module per bin)
+// and its tests. Entries are built with `defineShaderTransition` (./define.ts). Authoring guide: docs/wp-notes/fx-transition-framework.md. The transition
 // catalogue test checks every entry (validateGpuTransition) and the GL test compiles and runs each one.
 // Import rule (no cycles): values only from ./define.ts, ./glsl.ts, ./shader.ts and ../fx/*; types from
 // ../../transitions.ts and ../effects.ts (`import type`).
@@ -11,6 +11,12 @@ import type { EffectParams } from '../effects.ts';
 import { fxParam } from '../fx/params.ts';
 import { defineShaderTransition, TRANSITION_BINS } from './define.ts';
 import { GLSL_TR_EASE, GLSL_TR_WIPE } from './glsl.ts';
+import { PREMIERE_DISSOLVES } from './premiere/dissolve.ts';
+import { PREMIERE_IRISES } from './premiere/iris.ts';
+import { PREMIERE_3D_MOTION } from './premiere/motion3d.ts';
+import { PREMIERE_PAGE_PEELS } from './premiere/page.ts';
+import { PREMIERE_SLIDES } from './premiere/slide.ts';
+import { PREMIERE_WIPES } from './premiere/wipe.ts';
 
 /** Premiere's edge selectors of the slide family (the direction the incoming clip travels). */
 const PUSH_DIRECTIONS = ['westToEast', 'eastToWest', 'northToSouth', 'southToNorth'] as const;
@@ -128,4 +134,17 @@ void main() {
 	},
 });
 
-export const PREMIERE_TRANSITIONS: readonly TransitionSpec[] = [PUSH, CROSS_ZOOM, IRIS_ROUND];
+/** Premiere's standard video transitions, bin by bin (TRANSITION_BINS order), alphabetical inside a bin. */
+export const PREMIERE_TRANSITIONS: readonly TransitionSpec[] = [
+	...PREMIERE_3D_MOTION,
+	...PREMIERE_DISSOLVES,
+	...sortByLabel([IRIS_ROUND, ...PREMIERE_IRISES]),
+	...PREMIERE_PAGE_PEELS,
+	...sortByLabel([PUSH, ...PREMIERE_SLIDES]),
+	...PREMIERE_WIPES,
+	CROSS_ZOOM,
+];
+
+function sortByLabel(list: readonly TransitionSpec[]): TransitionSpec[] {
+	return [...list].sort((a, b) => a.label.localeCompare(b.label));
+}
