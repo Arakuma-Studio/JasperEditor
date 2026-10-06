@@ -1,6 +1,7 @@
 // Shared pieces of Premiere's "modern" transitions (Premiere 25.5 / 26: the GPU transitions that came from Film
 // Impact — Animation, Grunge & Distort, Lights & Blurs, Transformers and the new Dissolve / Slide / Wipe entries).
 // Family-private helpers of premiere-transitions.ts.
+import { GLSL_HASH } from '../../fx/glsl/hash.ts';
 import { GLSL_NOISE } from '../../fx/glsl/noise.ts';
 import { gaussianBlurPasses } from '../../fx/passes.ts';
 import type { GlslChunk, ShaderPass } from '../../fx/shader.ts';
@@ -34,7 +35,7 @@ export const FOLDER_KEYWORDS = {
  */
 export const GLSL_PR_MODERN: GlslChunk = {
 	name: 'premiere/modern',
-	deps: [GLSL_TRANSITION, GLSL_TR_EASE],
+	deps: [GLSL_TRANSITION, GLSL_TR_EASE, GLSL_HASH],
 	source: /* glsl */ `
 const float PM_PI = 3.14159265358979;
 // 0 at both ends, 1 in the middle.
@@ -83,6 +84,14 @@ vec4 pm_streak(int side, vec2 uv, vec2 delta) {
   for (int i = 0; i < 16; i++) s += pm_side(side, uv + delta * ((float(i) + 0.5) / 16.0 - 0.5));
   return s / 16.0;
 }
+// A long straight blur (32 taps, jittered per pixel against banding).
+vec4 pm_streakLong(int side, vec2 uv, vec2 delta) {
+  if (dot(delta, delta) < 1e-10) return pm_side(side, uv);
+  float j = fx_hash2(ivec2(floor(v_uv * u_compSize)), 0.37) - 0.5;
+  vec4 s = vec4(0.0);
+  for (int i = 0; i < 32; i++) s += pm_sideClamped(side, uv + delta * ((float(i) + 0.5 + j) / 32.0 - 0.5));
+  return s / 32.0;
+}
 // Zoom blur of a side towards c: taps from uv to c + (uv − c)(1 − amount).
 vec4 pm_zoomBlur(int side, vec2 uv, vec2 c, float amount) {
   if (amount < 1e-4) return pm_side(side, uv);
@@ -117,12 +126,17 @@ vec4 pm_addLight(vec4 base, vec3 light) {
  * size) as outputs `<prefix>1..3`; `pm_blurLevels(sharp, b1, b2, b3, amount)` (GLSL, in the returned chunk) reads a
  * blur of 0..1 × 4·sigma by blending them.
  */
-export function blurLevelPasses(input: string, prefix: string, sigma: number): ShaderPass[] {
+export function blurLevelPasses(
+	input: string,
+	prefix: string,
+	sigma: number,
+	format?: 'rgba8' | 'rgba16f',
+): ShaderPass[] {
 	const s = Math.max(0.5, sigma);
 	return [
-		...gaussianBlurPasses({ input, output: `${prefix}1`, sigma: s, scale: 0.5 }),
-		...gaussianBlurPasses({ input: `${prefix}1`, output: `${prefix}2`, sigma: s * Math.sqrt(3), scale: 0.25 }),
-		...gaussianBlurPasses({ input: `${prefix}2`, output: `${prefix}3`, sigma: s * Math.sqrt(12), scale: 0.125 }),
+		...gaussianBlurPasses({ input, output: `${prefix}1`, sigma: s, scale: 0.5, format }),
+		...gaussianBlurPasses({ input: `${prefix}1`, output: `${prefix}2`, sigma: s * Math.sqrt(3), scale: 0.25, format }),
+		...gaussianBlurPasses({ input: `${prefix}2`, output: `${prefix}3`, sigma: s * Math.sqrt(12), scale: 0.125, format }),
 	];
 }
 

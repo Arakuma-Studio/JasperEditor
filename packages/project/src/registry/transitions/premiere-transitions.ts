@@ -12,6 +12,13 @@ import { fxParam } from '../fx/params.ts';
 import { defineShaderTransition, TRANSITION_BINS } from './define.ts';
 import { GLSL_TR_EASE, GLSL_TR_WIPE } from './glsl.ts';
 import { PREMIERE_DISSOLVES } from './premiere/dissolve.ts';
+import { MODERN_ANIMATION } from './premiere/modern-animation.ts';
+import { MODERN_DISSOLVES } from './premiere/modern-dissolve.ts';
+import { MODERN_GRUNGE } from './premiere/modern-grunge.ts';
+import { MODERN_LIGHTS } from './premiere/modern-lights.ts';
+import { MODERN_SLIDES } from './premiere/modern-slide.ts';
+import { MODERN_TRANSFORMERS } from './premiere/modern-transformers.ts';
+import { MODERN_WIPES } from './premiere/modern-wipe.ts';
 import { PREMIERE_IRISES } from './premiere/iris.ts';
 import { PREMIERE_3D_MOTION } from './premiere/motion3d.ts';
 import { PREMIERE_PAGE_PEELS } from './premiere/page.ts';
@@ -134,17 +141,34 @@ void main() {
 	},
 });
 
-/** Premiere's standard video transitions, bin by bin (TRANSITION_BINS order), alphabetical inside a bin. */
-export const PREMIERE_TRANSITIONS: readonly TransitionSpec[] = [
+/**
+ * Premiere's video transitions, bin by bin (TRANSITION_BINS order), alphabetical inside a bin: the classic standard
+ * transitions (./premiere/{motion3d,dissolve,iris,page,slide,wipe}.ts and Push / Cross Zoom / Iris Round above) and
+ * the modern ones Premiere 25.5 / 26 added from Film Impact (./premiere/modern-*.ts; their Animation, Grunge &
+ * Distort, Lights & Blurs and Transformers folders sit in MODERN_BINS until the framework has those bins).
+ */
+export const PREMIERE_TRANSITIONS: readonly TransitionSpec[] = byBinAndLabel([
+	PUSH,
+	CROSS_ZOOM,
+	IRIS_ROUND,
 	...PREMIERE_3D_MOTION,
 	...PREMIERE_DISSOLVES,
-	...sortByLabel([IRIS_ROUND, ...PREMIERE_IRISES]),
+	...PREMIERE_IRISES,
 	...PREMIERE_PAGE_PEELS,
-	...sortByLabel([PUSH, ...PREMIERE_SLIDES]),
+	...PREMIERE_SLIDES,
 	...PREMIERE_WIPES,
-	CROSS_ZOOM,
-];
+	...MODERN_DISSOLVES,
+	...MODERN_SLIDES,
+	...MODERN_WIPES,
+	...MODERN_ANIMATION,
+	...MODERN_GRUNGE,
+	...MODERN_LIGHTS,
+	...MODERN_TRANSFORMERS,
+]);
 
-function sortByLabel(list: readonly TransitionSpec[]): TransitionSpec[] {
-	return [...list].sort((a, b) => a.label.localeCompare(b.label));
+function byBinAndLabel(list: readonly TransitionSpec[]): TransitionSpec[] {
+	const order: string[] = Object.values(TRANSITION_BINS);
+	return [...list].sort(
+		(a, b) => order.indexOf(a.bin) - order.indexOf(b.bin) || a.label.localeCompare(b.label, 'en'),
+	);
 }
