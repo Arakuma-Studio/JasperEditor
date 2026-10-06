@@ -634,7 +634,7 @@ export class RemotionService {
 
 	/**
 	 * S06:CG-042: a document with colour effects needs WebGL2 in the render browser; without it the render
-	 * fails with `WEBGL_UNAVAILABLE` (never silently ungraded).
+	 * fails with `WEBGL_UNAVAILABLE` (never silently ungraded). Wave 1 (fx framework): GPU shader effects too.
 	 */
 	private async assertWebglFor(inputProps: Record<string, unknown>): Promise<void> {
 		if (!docHasColorEffects(inputProps.doc)) return;
@@ -642,7 +642,7 @@ export class RemotionService {
 		if (s.state === 'unavailable')
 			throw new JobError(
 				'WEBGL_UNAVAILABLE',
-				`Colour grading on the Remotion path needs WebGL2 in the render browser, which is unavailable here${s.message ? ` (${s.message})` : ''}`,
+				`Colour grading and GPU effects on the Remotion path need WebGL2 in the render browser, which is unavailable here${s.message ? ` (${s.message})` : ''}`,
 				false,
 			);
 	}
@@ -924,7 +924,11 @@ function docHasColorEffects(doc: unknown): boolean {
 	for (const t of tracks)
 		for (const c of t.clips ?? [])
 			for (const fx of c.effects ?? [])
-				if (fx.enabled && defaultEffectRegistry.get(fx.effectId)?.color) return true;
+				if (
+					fx.enabled &&
+					(defaultEffectRegistry.get(fx.effectId)?.color || defaultEffectRegistry.get(fx.effectId)?.gpu)
+				)
+					return true;
 	return false;
 }
 
@@ -934,6 +938,9 @@ function mapRenderError(e: unknown, signal: AbortSignal): Error {
 	const msg = (e as Error)?.message ?? String(e);
 	// The compositions' colour stage cancels the render with this code when WebGL2 is missing (S06:CG-042).
 	if (/WEBGL_UNAVAILABLE/.test(msg)) return new JobError('WEBGL_UNAVAILABLE', msg.slice(0, 1500), false);
+	// Wave 1 (fx framework): a GPU effect whose shader does not compile, or that a layer kind cannot run.
+	const fx = /\b(FX_SHADER_ERROR|FX_LAYER_UNSUPPORTED)\b/.exec(msg)?.[1];
+	if (fx) return new JobError(fx, msg.slice(0, 1500), false);
 	const frame = /frame[^\d]{0,12}(\d+)/i.exec(msg)?.[1];
 	if (/delayRender|timeout|timed out/i.test(msg)) {
 		return new JobError(

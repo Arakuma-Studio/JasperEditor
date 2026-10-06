@@ -9,6 +9,7 @@ import type { FontRef, MediaAsset } from '../schema/media.ts';
 import {
 	type BlendMode,
 	type Clip,
+	type ClipTracker,
 	type EffectInstance,
 	isKnownClipKind,
 	type MgRenderer,
@@ -20,10 +21,12 @@ import {
 } from '../schema/sequence.ts';
 import { type ResolvedTextAnimator, resolveTextAnimationWindows } from '../text-animations.ts';
 import type { Rational } from '../time.ts';
+import { transitionSideTrack, transitionTrackerOf } from '../tracking/transition.ts';
 import {
 	type RenderAudioFade,
 	type RenderFade,
 	type RenderMatte,
+	type RenderTransition,
 	resolveAudioTransitions,
 	resolveVideoTransitions,
 } from '../transitions.ts';
@@ -161,6 +164,12 @@ export type RenderVisualClip = {
 		frames: number;
 		rect?: { x: number; y: number; w: number; h: number };
 	};
+	/**
+	 * fx framework (clip context, additive): what effects may show about the clip's media — the project item name
+	 * (Premiere "Project Item Name"), the file name and the media's embedded start timecode. Set for media clips
+	 * that have effects; absent otherwise.
+	 */
+	sourceInfo?: { itemName: string; fileName: string; startTimecode: string | null };
 };
 
 export type RenderAudioClip = {
@@ -197,9 +206,15 @@ export type RenderSnapshot = {
 	durationFrames: number;
 	/**
 	 * V1 (bottom) → top; output-disabled tracks omitted; clips sorted by start. `mattes` are full-frame
-	 * colours drawn under the track's clips (the black of a dip to black).
+	 * colours drawn under the track's clips (the black of a dip to black). `transitions` (wave-2 transition framework)
+	 * are the GPU transition stages drawn over the track's clips (each replaces its A/B clips for its span).
 	 */
-	videoTracks: { trackId: string; clips: RenderVisualClip[]; mattes?: RenderMatte[] }[];
+	videoTracks: {
+		trackId: string;
+		clips: RenderVisualClip[];
+		mattes?: RenderMatte[];
+		transitions?: RenderTransition[];
+	}[];
 	/** After mute/solo resolution. */
 	audioClips: RenderAudioClip[];
 	/** null = offline. */
@@ -274,6 +289,22 @@ export function buildRenderSnapshot(
 	};
 	const warnings: RenderSnapshot['warnings'] = [];
 	const fontKeys = new Map<string, RenderSnapshot['fonts'][number]>();
+	let itemNames: Map<string, string> | null = null;
+	const sourceInfoOf = (mediaId: string): RenderVisualClip['sourceInfo'] => {
+		if (!itemNames) {
+			itemNames = new Map();
+			for (const it of Object.values(doc.items ?? {}))
+				if (it.kind === 'media' && !itemNames.has(it.mediaId)) itemNames.set(it.mediaId, it.name);
+		}
+		const asset = doc.media[mediaId];
+		const path = asset?.locators.find((l) => l.type === 'path') as { path?: string } | undefined;
+		const fileName = path?.path ? (path.path.split(/[\\/]/).pop() ?? '') : (asset?.originalName ?? '');
+		return {
+			itemName: itemNames.get(mediaId) ?? asset?.originalName ?? '',
+			fileName,
+			startTimecode: asset?.probe.startTimecode ?? null,
+		};
+	};
 
 	const videoTracks: RenderSnapshot['videoTracks'] = [];
 	for (const t of seq.videoTracks) {
@@ -437,13 +468,46 @@ export function buildRenderSnapshot(
 				...(c.kind === 'animated-image' ? { loop: c.loop } : {}),
 				bounded: isBoundedContent(c),
 				...transitionFields(transitions.clips.get(c.id)),
+				...('mediaId' in source && ((r.effects as EffectInstance[] | undefined) ?? []).length > 0
+					? { sourceInfo: sourceInfoOf(source.mediaId) }
+					: {}),
 			});
 		}
 		clips.sort((a, b) => a.start - b.start);
 		const mattes = (transitions.mattes.get(t.id) ?? []).filter(
 			(m) => m.start < range.end && m.start + m.duration > range.start,
 		);
-		videoTracks.push({ trackId: t.id, clips, ...(mattes.length ? { mattes } : {}) });
+		const stages = (transitions.stages.get(t.id) ?? []).filter(
+			(x) => x.start < range.end && x.start + x.duration > range.start,
+		);
+		// Trackers of the sides (S_MochaWhip's Mocha mode): each side clip's tracker over the span, in sequence px.
+		const withTracks = stages.map((st): RenderTransition => {
+			const tracks: NonNullable<RenderTransition['tracks']> = {};
+			for (const [side, id] of [
+				['out', st.outgoingClipId],
+				['in', st.incomingClipId],
+			] as const) {
+				const sideClip = id ? (seq.clips[id] as { trackers?: ClipTracker[] } | undefined) : undefined;
+				const tracker = transitionTrackerOf(sideClip?.trackers);
+				const layer = tracker ? clips.find((c) => c.clipId === id) : undefined;
+				if (tracker && layer)
+					tracks[side] = transitionSideTrack(layer, tracker, st, seq.settings.frameRate as Rational);
+			}
+			return tracks.out || tracks.in ? { ...st, tracks } : st;
+		});
+		// Image params of GPU transitions (Gradient Wipe's custom gradient…) get media handles like effect params.
+		for (const st of stages)
+			for (const p of Object.values(st.params))
+				for (const v of [p.value, ...p.keyframes.map((k) => k.value)]) {
+					const id = (v as { mediaId?: unknown } | null)?.mediaId;
+					if (typeof id === 'string' && id && doc.media[id]) useMedia(id);
+				}
+		videoTracks.push({
+			trackId: t.id,
+			clips,
+			...(mattes.length ? { mattes } : {}),
+			...(stages.length ? { transitions: withTracks } : {}),
+		});
 	}
 	for (const s of transitions.skipped)
 		warnings.push({ clipId: s.transitionId, code: 'TRANSITION_SKIPPED', message: s.reason });

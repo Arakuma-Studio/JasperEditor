@@ -60,14 +60,17 @@ import { type RunningTrack, useTracking } from './store.ts';
 
 const pts = (q: readonly Vec2[]) => q.map((p) => `${p[0]},${p[1]}`).join(' ');
 
-type DragSpec = {
+export type DragSpec = {
 	label: string;
 	/** Commands for the pointer at `screen` (px relative to the overlay), or null to keep the last update. */
 	commandsAt(screen: Vec2): Command[] | null;
 };
 
-/** One gesture per drag (beginGesture → update per animation frame → commit), Esc cancels. */
-function useGestureDrag(session: EditorSession, transport: TransportStore) {
+/**
+ * One gesture per drag (beginGesture → update per animation frame → commit), Esc cancels. Also used by the fx
+ * framework's point handles (apps/web/src/fx/PointOverlay.tsx).
+ */
+export function useGestureDrag(session: EditorSession, transport: TransportStore) {
 	const svgRef = useRef<SVGSVGElement>(null);
 	const [dragging, setDragging] = useState(false);
 	const start = (e: ReactPointerEvent, spec: DragSpec) => {
@@ -139,7 +142,7 @@ function useGestureDrag(session: EditorSession, transport: TransportStore) {
 	return { svgRef, start, dragging };
 }
 
-function useFocusedEffect(): string | null {
+export function useFocusedEffect(): string | null {
 	return useSyncExternalStore(
 		inspectorFocus.subscribe,
 		() => inspectorFocus.get().effectInstanceId,

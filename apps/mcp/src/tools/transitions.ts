@@ -11,6 +11,7 @@ import {
 	TimeInputSchema,
 	TRANSITION_SPECS,
 	type Transition,
+	type TransitionSpec,
 	trackLabel,
 	transitionSpec,
 } from '@jasper/project';
@@ -37,16 +38,62 @@ export const TRANSITION_GUIDE = `Transitions:
 - add_transition adds one at an edit point (track + at) or a fade at a clip edge (clipId + edge). apply_default_transitions puts the default transitions on every edge of the given clips in one step (the editor user's default types and alignment from Preferences ▸ Timeline when the editor is open, else cross-dissolve / constant-power, center; the project's default length per medium); pass media: ["video", "audio"] to include the linked audio.
 - set_transition_defaults changes the project's default lengths (video and audio transitions, stills); the default types and alignment are the user's preferences in the editor and can only be overridden per call.
 - list_transitions shows each transition's id, type, track, cut, span and the media handles of its clips; get_timeline lists them per track too. update_transition changes the length, alignment or type (within video or within audio); remove_transitions deletes them.
-- A transition between two clips needs media beyond the cut ("handles"): center needs both, start-at-cut only the outgoing clip's tail handle, end-at-cut only the incoming clip's head handle. Durations are shortened to what fits (warning W_TRANSITION_SHORTENED); E_OUT_OF_MEDIA means nothing fits: try another alignment or trim the clips.`;
+- A transition between two clips needs media beyond the cut ("handles"): center needs both, start-at-cut only the outgoing clip's tail handle, end-at-cut only the incoming clip's head handle. Durations are shortened to what fits (warning W_TRANSITION_SHORTENED); E_OUT_OF_MEDIA means nothing fits: try another alignment or trim the clips.
+- list_transition_types is the catalogue: the built-ins (cross-dissolve, dip-to-black, constant-gain, constant-power; native export) and the GPU transitions (Premiere bins 3D Motion, Dissolve, Iris, Page Peel, Slide, Wipe, Zoom and "Sapphire Transitions"; Remotion export) with their params. add_transition / update_transition take a type (short name, effect id or label) and params ({name: value}, e.g. {"direction": "eastToWest", "borderWidth": 4}); keyframes: apply_commands with param.set {target: ["transition", id, name], at}.`;
 
 /** Short type names (as in add_transition's `type`) → effect ids. */
-const SHORT_TYPES = TRANSITION_SPECS.map((s) => s.id.replace(/^jasper\./, ''));
-const TYPE_LIST = SHORT_TYPES.join(', ');
+const shortType = (id: string) => id.replace(/^jasper\./, '');
+const TYPE_LIST = `${TRANSITION_SPECS.filter((s) => !s.gpu)
+	.map((s) => shortType(s.id))
+	.join(', ')}, or any GPU transition of list_transition_types`;
 
-/** "cross-dissolve" or "jasper.cross-dissolve" → "jasper.cross-dissolve" (unknown ids pass through). */
-function transitionEffectId(type: string): string {
+/**
+ * A transition type → its effect id: the id ("jasper.iris-round"), the short name ("iris-round",
+ * "s.dissolve-luma") or the label ("Iris Round", "S_DissolveLuma"), case-insensitive. Unknown types pass through as
+ * `jasper.<type>` (the command reports E_UNKNOWN_EFFECT).
+ */
+export function transitionEffectId(type: string): string {
 	const t = type.trim();
-	return t.includes('.') ? t : `jasper.${t}`;
+	if (transitionSpec(t)) return t;
+	if (transitionSpec(`jasper.${t}`)) return `jasper.${t}`;
+	const lower = t.toLowerCase();
+	const byLabel = TRANSITION_SPECS.find((s) => s.label.toLowerCase() === lower);
+	if (byLabel) return byLabel.id;
+	return t.startsWith('jasper.') ? t : `jasper.${t}`;
+}
+
+/** list_transition_types entry (pure). */
+export function transitionTypeSummary(s: TransitionSpec) {
+	return {
+		effectId: s.id,
+		type: shortType(s.id),
+		label: s.label,
+		medium: s.appliesTo,
+		bin: s.subBin ? `${s.bin}/${s.subBin}` : s.bin,
+		gpu: !!s.gpu,
+		export: s.gpu ? 'remotion' : 'native',
+		...(s.expensive ? { expensive: true } : {}),
+		description: s.description,
+		...(s.keywords ? { keywords: s.keywords } : {}),
+		params: s.params.map((p) => ({
+			name: p.name,
+			label: p.label,
+			type: p.type,
+			default: p.default,
+			...(p.range ? { range: p.range } : {}),
+			...(p.unit ? { unit: p.unit } : {}),
+			...(p.options ? { options: p.options } : {}),
+			...(p.mediaKinds ? { mediaKinds: p.mediaKinds } : {}),
+			animatable: p.animatable,
+		})),
+	};
+}
+
+/** Static values of a transition's params (keyframed ones: "keyframed"), for list_transitions. */
+function paramValues(t: Transition): Record<string, unknown> {
+	const out: Record<string, unknown> = {};
+	for (const [k, a] of Object.entries(t.params)) out[k] = a.keyframes.length ? 'keyframed' : a.value;
+	return out;
 }
 
 const SequenceIdArg = z
@@ -82,6 +129,10 @@ type TransitionSummary = {
 	handles: { outgoingTail?: number | 'unlimited'; incomingHead?: number | 'unlimited' };
 	/** What the current span uses of those handles. */
 	uses?: { outgoingTail: number; incomingHead: number };
+	/** GPU transition (exports through Remotion). */
+	gpu?: true;
+	/** Param values set on the transition (others are at their defaults; list_transition_types lists them). */
+	params?: Record<string, unknown>;
 	supported?: false;
 };
 
@@ -128,6 +179,8 @@ function transitionSummary(
 		...(p && !oneSided
 			? { uses: { outgoingTail: Math.max(0, p.end - p.cut), incomingHead: Math.max(0, p.cut - p.start) } }
 			: {}),
+		...(spec?.gpu ? { gpu: true as const } : {}),
+		...(Object.keys(t.params).length ? { params: paramValues(t) } : {}),
 		...(spec ? {} : { supported: false as const }),
 	};
 }
@@ -235,7 +288,7 @@ async function editorTransitionDefaults(
 
 /** Transition-specific hints for the codes whose generic hint is about something else. */
 const HINTS: Record<string, string> = {
-	E_UNKNOWN_EFFECT: `Transition types: ${TYPE_LIST} (video: cross-dissolve, dip-to-black; audio: constant-gain, constant-power).`,
+	E_UNKNOWN_EFFECT: `Transition types: ${TYPE_LIST} (video: cross-dissolve, dip-to-black; audio: constant-gain, constant-power). list_transition_types lists every type with its params.`,
 	E_TRACK_KIND:
 		'Video transitions (cross-dissolve, dip-to-black) go on V tracks, audio ones (constant-gain, constant-power) on A tracks; a type change stays within the same medium.',
 	E_OUT_OF_MEDIA:
@@ -275,6 +328,35 @@ async function summariesOf(ctx: ToolContext, projectId: string, ids: readonly st
 }
 
 export function registerTransitionTools(ctx: ToolContext): void {
+	defineTool(
+		ctx,
+		'list_transition_types',
+		{
+			title: 'List transition types',
+			description:
+				'The transition catalogue: every type with its effect id, short type name, label, medium (video/audio), Effects-panel bin (Premiere bins: 3D Motion, Dissolve, Iris, Page Peel, Slide, Wipe, Zoom; "Sapphire Transitions/<sub-bin>"; Crossfade), gpu (a shader transition, exported through Remotion) or native, expensive (heavy in the preview), description and params (name, type, default, range, options, animatable). Filter by medium, bin or a search text.',
+			input: {
+				medium: z.enum(['video', 'audio']).optional().describe('Only video or audio transitions'),
+				bin: z
+					.string()
+					.optional()
+					.describe('Only this bin (prefix match, e.g. "Iris" or "Sapphire Transitions")'),
+				search: z.string().optional().describe('Text in the label, id, description or keywords'),
+			},
+			annotations: READ_ONLY,
+		},
+		async ({ medium, bin, search }) => {
+			const q = search?.trim().toLowerCase();
+			const types = TRANSITION_SPECS.filter(
+				(s) =>
+					(!medium || s.appliesTo === medium) &&
+					(!bin || `${s.bin}/${s.subBin ?? ''}`.toLowerCase().startsWith(bin.toLowerCase())) &&
+					(!q || [s.id, s.label, s.description, ...(s.keywords ?? [])].join(' ').toLowerCase().includes(q)),
+			).map(transitionTypeSummary);
+			return jsonResult({ count: types.length, types });
+		},
+	);
+
 	defineTool(
 		ctx,
 		'list_transitions',
@@ -335,15 +417,21 @@ export function registerTransitionTools(ctx: ToolContext): void {
 					.min(1)
 					.optional()
 					.describe(`New type: ${TYPE_LIST}, or the full effect id ("jasper.dip-to-black")`),
+				params: z
+					.record(z.string(), z.unknown())
+					.optional()
+					.describe(
+						"Param values {name: value} (list_transition_types lists each type's params; a type change resets them first)",
+					),
 			},
 			annotations: EDIT,
 		},
-		async ({ projectId, transitionId, duration, alignment, effectId }, extra) => {
-			if (duration === undefined && alignment === undefined && effectId === undefined)
+		async ({ projectId, transitionId, duration, alignment, effectId, params }, extra) => {
+			if (duration === undefined && alignment === undefined && effectId === undefined && !params)
 				throw new ToolError(
 					'E_INVALID_PARAM',
 					'Nothing to change',
-					'Pass duration, alignment and/or effectId.',
+					'Pass duration, alignment, effectId and/or params.',
 				);
 			const id = effectId !== undefined ? transitionEffectId(effectId) : undefined;
 			const spec = id ? transitionSpec(id) : null;
@@ -358,6 +446,7 @@ export function registerTransitionTools(ctx: ToolContext): void {
 						...(id ? { effectId: id } : {}),
 						...(duration !== undefined ? { duration } : {}),
 						...(alignment ? { alignment } : {}),
+						...(params ? { params } : {}),
 					},
 				],
 				extra,

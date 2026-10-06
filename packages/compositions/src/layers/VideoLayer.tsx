@@ -8,11 +8,16 @@
 // M2 colour (S06:CG-040/041): the layer's colour runs are canvas effect passes on the decoded frame —
 // `<Video effects>` (the frame canvas of @remotion/media, preview and renders) or, for <OffthreadVideo>, the
 // `ColorCanvas` fed from `onVideoFrame` while the element stays mounted (invisible) for Remotion's scheduling.
+// fx framework (wave 1): with GPU shader effects the picture is drawn by `FxPicture` (padded canvas, shader passes,
+// colour runs, time samples) fed by a headless <Video> / an invisible <OffthreadVideo>; see fx/.
 import { Video } from '@remotion/media';
 import { useCallback, useRef } from 'react';
 import { OffthreadVideo } from 'remotion';
 import { ColorCanvas, type ColorCanvasHandle } from '../color/ColorCanvas.tsx';
 import { useColorStage } from '../color/chain.ts';
+import { FxPicture } from '../fx/FxPicture.tsx';
+import { FxVideoSources } from '../fx/sources.tsx';
+import { useLayerFx } from '../fx/stage.ts';
 import { videoSource, videoTrimBefore } from '../pipeline.ts';
 import type { LayerProps } from '../types.ts';
 import { GradeChip, LayerBox } from './LayerBox.tsx';
@@ -23,15 +28,40 @@ const OFFTHREAD_STYLE = { ...MEDIA_STYLE, objectFit: 'fill' } as const;
 export function VideoLayer(layer: LayerProps) {
 	const { clip, media, options, fps } = layer;
 	const color = useColorStage(clip.clipId, layer.props.effects);
+	const fx = useLayerFx(layer);
 	if (!media) return null;
 	const source = videoSource(media, options);
 	if (source.via === 'pending-proxy') return <ProxyPendingCard {...layer} />;
 	const trimBefore = videoTrimBefore(clip, fps);
+	if (fx.mode === 'active')
+		return (
+			<LayerBox
+				layer={layer}
+				effects={fx.cssEffects}
+				overlay={fx.chip ? <GradeChip layer={layer} text={fx.chip} /> : null}
+			>
+				<FxPicture stage={fx.stage}>
+					<FxVideoSources
+						layer={layer}
+						stage={fx.stage}
+						src={source.src}
+						trimBefore={trimBefore}
+						offthread={source.via === 'offthread' ? { transparent: source.transparent } : undefined}
+					/>
+				</FxPicture>
+			</LayerBox>
+		);
 	return (
 		<LayerBox
 			layer={layer}
 			effects={color.cssEffects}
-			overlay={color.unavailable ? <GradeChip layer={layer} /> : null}
+			overlay={
+				fx.mode === 'bypass' ? (
+					<GradeChip layer={layer} text={fx.chip} />
+				) : color.unavailable ? (
+					<GradeChip layer={layer} />
+				) : null
+			}
 		>
 			{source.via === 'offthread' ? (
 				color.effects.length > 0 ? (

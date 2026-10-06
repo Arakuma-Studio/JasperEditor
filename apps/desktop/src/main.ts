@@ -290,6 +290,10 @@ async function boot(): Promise<void> {
 	});
 }
 
+// fx framework (wave 1): Chrome's HTML-in-Canvas lets the Program monitor run GPU shader effects on DOM layers
+// (text, shapes, motion graphics) — Remotion's render browser always enables it; must be set before `ready`.
+app.commandLine.appendSwitch('enable-features', 'CanvasDrawElement');
+
 // One instance per user profile: a second launch focuses the first window.
 if (!app.requestSingleInstanceLock()) {
 	app.quit();

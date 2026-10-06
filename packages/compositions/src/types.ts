@@ -19,6 +19,12 @@ export type RenderOptions = {
 	 * toggle). Ignored in renders.
 	 */
 	colorBypassClipIds?: readonly string[];
+	/**
+	 * fx framework (preview only): resolution of GPU shader-effect canvases relative to full size, (0, 1] — the
+	 * Program monitor's playback resolution (1/2 → 0.5, 1/4 → 0.25). px-based params scale with it (`u_pxScale`).
+	 * Ignored in renders. Absent = 1.
+	 */
+	fxPreviewScale?: number;
 };
 
 export type SequenceCompositionProps = { doc: RenderDoc; options: RenderOptions };
@@ -37,6 +43,28 @@ export type LayerProps = {
 	options: RenderOptions;
 	/** Font faces of the document (text layers resolve their family from `style.fontId`). */
 	fonts?: RenderDoc['fonts'];
+	/**
+	 * fx framework (time remap): the real clip-local frame when `localFrame`/`contentTime` were remapped by a time
+	 * effect (`gpu.time.remap`); absent = `localFrame` is the real frame.
+	 */
+	realFrame?: number;
+	/**
+	 * Transition framework (wave 2): the GPU transition this layer is a side of at this frame, fed to its GPU effects
+	 * as `u_progress` (0..1) and `u_side` (1 = outgoing, 2 = incoming). `tap` (set when the transition runs on the
+	 * GPU): the layer's picture goes to the transition stage instead of the screen (fx/transition.tsx).
+	 */
+	transition?: { progress: number; side: 'out' | 'in'; tap?: TransitionTap };
+};
+
+/** Where a side of a GPU transition delivers its picture (the layer's fx canvas) and its placement. */
+export type TransitionTap = {
+	readonly side: 'out' | 'in';
+	deliver(
+		picture: CanvasImageSource,
+		width: number,
+		height: number,
+		meta: { compToCanvas: readonly number[] | null; opacity: number },
+	): void;
 };
 
 /** Props of the Source monitor composition (ARCHITECTURE §8). */

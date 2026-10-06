@@ -397,6 +397,35 @@ describe('frame accuracy of the native path', () => {
 	}, 120_000);
 });
 
+describe('GPU transitions in the planner (transition framework)', () => {
+	it('keeps the built-in transitions native and bakes only the span of a GPU transition (hybrid, D-35)', async () => {
+		const plan = async (effectId: string) => {
+			const d = new DocBuilder();
+			d.tx([
+				{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V1', color: [1, 0, 0, 1] },
+				{ type: 'clip.addSolid', at: 30, duration: 30, track: 'V1', color: [0, 0, 1, 1] },
+				{ type: 'transition.add', trackId: 'V1', at: 30, effectId, duration: 10 },
+			]);
+			const r = await app.inject({
+				method: 'POST',
+				url: '/api/exports/plan',
+				headers: JSON_H,
+				payload: { envelope: d.envelope(), sequenceId: d.seqId, settings: settings(d.seqId) },
+			});
+			expect(r.statusCode).toBe(200);
+			return RenderPlanSchema.parse(r.json());
+		};
+		const native = await plan('jasper.cross-dissolve');
+		expect(native.path).toBe('native');
+		const gpu = await plan('jasper.iris-round');
+		expect(gpu.path).toBe('hybrid');
+		expect(gpu.blockers).toEqual([]);
+		expect(gpu.segments[0]!.graphicsGroups).toEqual([
+			expect.objectContaining({ engine: 'remotion', itemIds: [expect.stringMatching(/^trn_/)] }),
+		]);
+	});
+});
+
 describe('transitions on the native path (S01 §13)', () => {
 	/**
 	 * frame-code.mp4 twice on V1, cut at frame 20: A shows source frames 32…51 (bit 5 of the code is white),

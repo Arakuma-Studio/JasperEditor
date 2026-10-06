@@ -2,9 +2,11 @@
 // `renderMedia`; outputs in `<appdir>/renders/<jobId>/`; frame-count verification (FRAME_COUNT_MISMATCH);
 // progress mapping (S04:RN-030); `export.finished` event. Motion-graphic masters come from a provider that
 // WP-2G registers (`registerMgMasterProvider`).
+import type { ChildProcess } from 'node:child_process';
 import { copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path';
+import type { Writable } from 'node:stream';
 import type { EngineJob, ExportSettings, ExportStartRequest, StillRequest } from '@jasper/api';
 import {
 	buildRenderSnapshot,
@@ -24,6 +26,7 @@ import type { RemotionService } from '../remotion/service.ts';
 import { audioEncodeArgs, type EncoderService, videoEncodeArgs } from '../tools/encoders.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { exists, randomId } from '../tools/fs.ts';
+import { terminateTree } from '../tools/process.ts';
 import { BT709_FRAME_TAGS, buildNativeGraph, SWS_FLAGS } from './native.ts';
 import {
 	layerOverride,
@@ -39,6 +42,7 @@ import {
 	type PlannedExport,
 	planExport,
 } from './planner.ts';
+import { streamLayer } from './stream/run.ts';
 
 /**
  * A native extension's `prepare` failed (S11:LBK-023): an `auto` export or still falls back to the Remotion path
@@ -386,20 +390,59 @@ export class ExportService {
 		ctx.log(`ffmpeg ${args.join(' ')}`);
 		const total = graph.durationSec;
 		const started = Date.now();
-		await this.deps.ff.run(args, {
-			signal: ctx.signal,
-			onSpawn: ctx.trackChild,
-			onProgress: (p) => {
-				if (still || total <= 0) return;
-				const done = Math.min(total, p.outTimeUs / 1e6);
-				const elapsed = (Date.now() - started) / 1000;
-				const speed = p.speed ?? (elapsed > 0 ? done / elapsed : undefined);
-				ctx.progress((done / total) * 0.98, {
-					stage: 'Encoding (native)',
-					...(speed ? { speed, etaSec: (total - done) / speed } : {}),
-				});
-			},
-		});
+		// Sub-pixel layers stream into the composite's pipes while it runs (stream/run.ts). A failed stream stops the
+		// composite and is the reported error.
+		const streamAbort = new AbortController();
+		const onJobAbort = () => streamAbort.abort();
+		ctx.signal.addEventListener('abort', onJobAbort, { once: true });
+		const producers: Promise<void>[] = [];
+		let streamError: Error | null = null;
+		const workers = Math.max(2, Math.floor(Math.max(1, ctx.slots) / Math.max(1, graph.streams.length)));
+		const runStreams = (child: ChildProcess) => {
+			for (const s of graph.streams) {
+				const sink = child.stdio[s.fd] as Writable;
+				producers.push(
+					streamLayer(this.deps.ff, s.plan, sink, {
+						workers,
+						signal: streamAbort.signal,
+						onSpawn: ctx.trackChild,
+					}).catch((e: Error) => {
+						if (streamAbort.signal.aborted) return;
+						streamError ??= e;
+						void terminateTree(child, 500);
+					}),
+				);
+			}
+		};
+		try {
+			await this.deps.ff.run(args, {
+				signal: ctx.signal,
+				...(graph.streams.length > 0 ? { pipes: graph.streams.length } : {}),
+				onSpawn: (child) => {
+					ctx.trackChild(child);
+					if (graph.streams.length > 0) runStreams(child);
+				},
+				onProgress: (p) => {
+					if (still || total <= 0) return;
+					const done = Math.min(total, p.outTimeUs / 1e6);
+					const elapsed = (Date.now() - started) / 1000;
+					const speed = p.speed ?? (elapsed > 0 ? done / elapsed : undefined);
+					ctx.progress((done / total) * 0.98, {
+						stage: 'Encoding (native)',
+						...(speed ? { speed, etaSec: (total - done) / speed } : {}),
+					});
+				},
+			});
+		} catch (e) {
+			streamAbort.abort();
+			await Promise.all(producers);
+			throw streamError ?? e;
+		} finally {
+			ctx.signal.removeEventListener('abort', onJobAbort);
+		}
+		// The composite succeeded (and the frame count is checked below): a stream it stopped reading ends here.
+		streamAbort.abort();
+		await Promise.all(producers);
 		if (still) return 1;
 		const count = await this.deps.ff.countVideoFrames(output, { signal: ctx.signal });
 		if (count !== graph.outputFrames) {

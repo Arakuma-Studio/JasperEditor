@@ -11,6 +11,8 @@ import { CLIPBOARD_GUIDE, registerClipboardTools } from './tools/clipboard.ts';
 import { COLOR_GUIDE, registerColorTools } from './tools/color.ts';
 import { COMPOSITION_GUIDE, registerCompositionTools } from './tools/compositions.ts';
 import { registerEditingTools } from './tools/editing.ts';
+import { MOTION_PATH_GUIDE, registerMotionPathTools } from './tools/motion-path.ts';
+import { PRESETS_GUIDE, registerPresetTools } from './tools/presets.ts';
 import { PROCESSING_GUIDE, registerProcessingTools } from './tools/processing.ts';
 import { registerProjectTools } from './tools/projects.ts';
 import { registerRenderTools } from './tools/render.ts';
@@ -47,9 +49,11 @@ const FULL_GUIDE = [
 	TRACKING_GUIDE,
 	TRANSITION_GUIDE,
 	ANIMATION_GUIDE,
+	MOTION_PATH_GUIDE,
 	SHAPES_GUIDE,
 	TEMPLATES_GUIDE,
 	CLIPBOARD_GUIDE,
+	PRESETS_GUIDE,
 	CACHE_GUIDE,
 ].join('\n\n');
 
@@ -77,9 +81,11 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerTrackingTools(ctx);
 	registerTransitionTools(ctx);
 	registerAnimationTools(ctx);
+	registerMotionPathTools(ctx);
 	registerShapeTools(ctx);
 	registerTemplateTools(ctx);
 	registerClipboardTools(ctx);
+	registerPresetTools(ctx);
 	registerCacheTools(ctx);
 	registerResources(ctx);
 	registerPrompts(ctx);

@@ -4,9 +4,17 @@
 // bypassed; only adding an unknown effect id is refused (S01:FX-022).
 import type { Draft } from 'immer';
 import { EASE_PRESETS } from '../../keyframes.ts';
+import { refreshAutoTangents } from '../../keyframes-spatial.ts';
 import type { EffectSpec } from '../../registry/effects.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
-import { type Animatable, EaseSchema, InterpolationSchema, type ParamValue } from '../../schema/common.ts';
+import {
+	type Animatable,
+	EaseSchema,
+	InterpolationSchema,
+	type Keyframe,
+	type ParamValue,
+	SpatialSchema,
+} from '../../schema/common.ts';
 import { type EffectInstance, isKnownClipKind } from '../../schema/sequence.ts';
 import type { DDoc, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
@@ -66,6 +74,17 @@ export function buildParams(
 					return { influence: r.data.influence, slope: r.data.slope };
 				};
 				const v = validateValue(k.value, rule, h, label).value as ParamValue;
+				// Spatial paths (S03:KF-030) are kept on point params only.
+				const rawSpatial = (k as { spatial?: unknown }).spatial;
+				const sp = rawSpatial === undefined || !rule.spatial ? null : SpatialSchema.safeParse(rawSpatial);
+				if (sp && !sp.success) h.fail('E_INVALID_PARAM', `${where}: invalid spatial interpolation`);
+				const spatial = sp?.data
+					? {
+							mode: sp.data.mode,
+							inTangent: [sp.data.inTangent[0], sp.data.inTangent[1]] as [number, number],
+							outTangent: [sp.data.outTangent[0], sp.data.outTangent[1]] as [number, number],
+						}
+					: undefined;
 				return {
 					id: h.ids.next('kf'),
 					time: time as number,
@@ -73,6 +92,7 @@ export function buildParams(
 					interpolation: rule.holdOnly ? ('hold' as const) : interp.data!,
 					easeIn: ease((k as { easeIn?: unknown }).easeIn),
 					easeOut: ease((k as { easeOut?: unknown }).easeOut),
+					...(spatial ? { spatial } : {}),
 				};
 			});
 			keyframes.sort((x, y) => x.time - y.time);
@@ -80,6 +100,7 @@ export function buildParams(
 				if (keyframes[i]!.time === keyframes[i - 1]!.time)
 					h.fail('E_INVALID_PARAM', `${label}: two keyframes at the same time`);
 			const anim = { value, keyframes } as Animatable<ParamValue>;
+			refreshAutoTangents(anim.keyframes as Keyframe<unknown>[]);
 			refreshAutoBezier(anim as never);
 			out[p.name] = anim;
 			continue;

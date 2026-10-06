@@ -1,7 +1,11 @@
 // Native export builder (S03:ENG-030, S04:RN-021/022, ARCHITECTURE §9.5): one input per clip with input
-// seeking; per layer setpts (speed) → fps → crop → format=rgba → scale → flips → rotate (transparent, grown
-// bounds) → alpha multiply → overlay at the offset derived from the @jasper/project layer matrix; bottom → top
-// over a `color` background; audio atrim/atempo/aresample/volume/adelay + amix normalize=0 + pad/trim;
+// seeking; per layer setpts (speed) → fps → scale to the box → format=rgba → effects (crop…) → Motion: flips →
+// scale → rotate (premultiplied, transparent, grown bounds) → alpha multiply → overlay at the offset derived from
+// the @jasper/project layer matrix; bottom → top over a `color` background; audio
+// atrim/atempo/aresample/volume/adelay + amix normalize=0 + pad/trim;
+// keyframed Opacity, crop edges and volumes are sampled per frame into per-frame expressions (S03:ENG-032,
+// `keyframed.ts`); layers whose geometry is not whole pixels (keyframed Motion, fractional position/scale/rotation/crop)
+// are drawn sub-pixel by our kernel and streamed in on pipes (`stream/`, `NativeGraph.streams`);
 // the selected video encoder (D-13: hardware H.264 / OpenH264 / libx264 in dev / AV1 / VP9) with bt709 tags +
 // AAC (MP4, faststart) or Opus (WebM). Inputs are referenced by index only (S04:SC-004).
 // Transitions (S01 §13) are built in: a clip's layer also covers its handles, the transition ramps become
@@ -13,6 +17,7 @@ import {
 	type EffectRegistry,
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
+	isAnimated,
 	type Rational,
 	type RenderAudioClip,
 	type RenderAudioFade,
@@ -26,12 +31,21 @@ import { alphaDecoder } from '../media/alpha.ts';
 import { audioEncodeArgs, LEGACY_X264_CHOICE, videoEncodeArgs } from '../tools/encoders.ts';
 import { sec } from '../tools/ffmpeg.ts';
 import {
+	audioVolumeFilters,
+	CROP_EDGES,
+	cropMaskFilter,
+	mergeResize,
+	motionFilters,
+	motionStage,
+} from './keyframed.ts';
+import {
 	BUILTIN_NATIVE_EFFECTS,
 	type LayerOverride,
 	type NativeExtension,
 	type PreparedExtensions,
 } from './native-ext.ts';
 import type { LocalMedia, OutputSpec } from './planner.ts';
+import { needsSubpixel, planStreamLayer, type StreamLayerPlan } from './stream/plan.ts';
 
 const SAMPLE_RATE = 48000;
 /**
@@ -74,6 +88,11 @@ type NativeGraph = {
 	inputs: string[][];
 	outputFrames: number;
 	durationSec: number;
+	/**
+	 * Sub-pixel layers (stream/plan.ts): raw RGBA frames the caller writes to the composite's pipe `fd`
+	 * (`streamLayer`, spawn the composite with `pipes: streams.length`, fds 3, 4, …).
+	 */
+	streams: { fd: number; plan: StreamLayerPlan }[];
 };
 
 const fmt = (n: number) => {
@@ -91,10 +110,6 @@ function colorHex([r, g, b, a]: readonly number[]): string {
 
 function rate(r: Rational): string {
 	return `${r.num}/${r.den}`;
-}
-
-function evenCeil(x: number): number {
-	return Math.max(1, Math.ceil(x - 1e-6));
 }
 
 /** atempo chain for a constant speed (each instance limited to 0.5…100). */
@@ -133,7 +148,9 @@ function inColor(m: LocalMedia | null): string {
 type LayerPlan =
 	| { clip: RenderVisualClip; f0: number; f1: number }
 	/** Full-frame colour under a track's clips (the black of a dip to black). */
-	| { matte: { color: readonly number[] }; f0: number; f1: number };
+	| { matte: { color: readonly number[] }; f0: number; f1: number }
+	/** wave1c: the pre-rendered span of a GPU transition (sides + stage, a `sequence` override). */
+	| { span: LayerOverride; f0: number; f1: number };
 
 /**
  * Transition ramps of a layer whose first frame is sequence frame `f0`, as ffmpeg `fade` filters on the
@@ -250,6 +267,10 @@ type LayerSourceOptions = {
 	extensions?: { list: readonly NativeExtension[]; prepared: PreparedExtensions };
 	/** Adds an ffmpeg input (argument list before and including `-i <path>`); returns its index. */
 	addInput(args: string[]): number;
+	/** Label prefix for sub-graphs of the chain (unique in the filtergraph; default `src`). */
+	label?: string;
+	/** Leave the crop out: the sub-pixel layer kernel clips to it with anti-aliased edges (stream/plan.ts). */
+	skipCrop?: boolean;
 };
 
 type LayerSourceChain = {
@@ -260,6 +281,13 @@ type LayerSourceChain = {
 	/** Frame size of the chain's output (the rounded intrinsic box). */
 	width: number;
 	height: number;
+	/**
+	 * The chain's scale to the box (`filters[index]` = `scale=<w>:<h><options>`) when only `setsar`/`format` follow
+	 * it (no effects): Motion may scale there directly (one resample, `mergeResize`). Null otherwise.
+	 */
+	resize: { index: number; options: string } | null;
+	/** Opaque pixels or transparent black only (no partial alpha over colour, see `MotionStageOptions.opaque`). */
+	opaque: boolean;
 };
 
 /**
@@ -270,6 +298,7 @@ type LayerSourceChain = {
  */
 export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 	const { clip: c, f0, f1, fps } = o;
+	const label = o.label ?? 'src';
 	const exts = o.extensions;
 	const props = o.props ?? resolveLayerProps(c, clipContentTime(c, f0, fps));
 	const override = o.override?.space === 'layer' ? o.override : null;
@@ -281,6 +310,13 @@ export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 	const f: string[] = [];
 	let src: string;
 	const margin = 2 * frameSec;
+	let resize: LayerSourceChain['resize'] = null;
+	let opaque = false;
+	/** The scale to the box (+ `setsar`, `rgba`); `options` follow the size (colour matrix, swscale flags). */
+	const resizeAt = (options: string) => {
+		resize = { index: f.length, options };
+		f.push(`scale=${bw}:${bh}${options}`, 'setsar=1', 'format=rgba');
+	};
 
 	const local = 'mediaId' in c.source ? o.sources.media(c.source.mediaId) : null;
 	const mg = c.kind === 'motion-graphic' ? o.sources.mgMaster(c.clipId) : null;
@@ -295,14 +331,8 @@ export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 			override.path,
 		]);
 		src = `[${k}:v:0]`;
-		f.push(
-			'setpts=PTS-STARTPTS',
-			`fps=${rate(fps)}`,
-			`trim=end_frame=${n}`,
-			`scale=${bw}:${bh}:${SWS_FLAGS}`,
-			'setsar=1',
-			'format=rgba',
-		);
+		f.push('setpts=PTS-STARTPTS', `fps=${rate(fps)}`, `trim=end_frame=${n}`);
+		resizeAt(`:${SWS_FLAGS}`);
 	} else if ((c.kind === 'video' || c.kind === 'animated-image') && local) {
 		const startSec = clipContentTime(c, f0, fps) / FLICKS_PER_SECOND;
 		const srcDur = n * frameSec * c.speed.rate + margin;
@@ -321,7 +351,8 @@ export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 		src = `[${k}:v:0]`;
 		if (decodeFromStart) f.push(`trim=start=${fmt(startSec)}`);
 		f.push(`setpts=(PTS-STARTPTS)/${fmt(c.speed.rate)}`, `fps=${rate(fps)}`, `trim=end_frame=${n}`);
-		f.push(`scale=${bw}:${bh}${inColor(local)}:${SWS_FLAGS}`, 'setsar=1', 'format=rgba');
+		resizeAt(`${inColor(local)}:${SWS_FLAGS}`);
+		opaque = !local.record.probe.hasAlpha;
 	} else if (c.kind === 'still' && local) {
 		const k = addInput([
 			'-loop',
@@ -335,22 +366,18 @@ export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 		]);
 		src = `[${k}:v:0]`;
 		f.push('setpts=PTS-STARTPTS', `fps=${rate(fps)}`, `trim=end_frame=${n}`);
-		f.push(`scale=${bw}:${bh}${inColor(local)}:${SWS_FLAGS}`, 'setsar=1', 'format=rgba');
+		resizeAt(`${inColor(local)}:${SWS_FLAGS}`);
+		opaque = !local.record.probe.hasAlpha;
 	} else if (c.kind === 'motion-graphic' && mg) {
 		const startSec = (f0 - c.start) * frameSec;
 		const k = addInput(['-ss', sec(startSec), '-t', sec(n * frameSec + margin), '-i', mg]);
 		src = `[${k}:v:0]`;
-		f.push(
-			'setpts=PTS-STARTPTS',
-			`fps=${rate(fps)}`,
-			`trim=end_frame=${n}`,
-			`scale=${bw}:${bh}`,
-			'setsar=1',
-			'format=rgba',
-		);
+		f.push('setpts=PTS-STARTPTS', `fps=${rate(fps)}`, `trim=end_frame=${n}`);
+		resizeAt('');
 	} else {
 		// Solids, and offline media as the "Media Offline" colour card (S04:AS-010).
 		const rgba = 'color' in c.source ? c.source.color : OFFLINE_RGBA;
+		opaque = (rgba[3] ?? 1) >= 1;
 		src = '';
 		f.push(
 			`color=c=${colorHex(rgba)}:s=${bw}x${bh}:r=${rate(fps)}:d=${fmt(n * frameSec + frameSec)}`,
@@ -381,7 +408,16 @@ export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 			}
 			continue;
 		}
+		if (fx.effectId === 'jasper.crop' && o.skipCrop) continue;
 		if (fx.effectId === 'jasper.crop') {
+			const applied = c.effects[index];
+			if (applied && n > 1 && CROP_EDGES.some((e) => isAnimated(applied.params[e]))) {
+				// Keyframed edges: the alpha is multiplied with a per-frame rectangle mask (keyframed.ts).
+				f.push(
+					cropMaskFilter({ clip: c, effect: applied, f0, f1, fps, bw, bh, label: `${label}cr${index}` }),
+				);
+				continue;
+			}
 			const l = Math.round((Number(fx.params.left ?? 0) / 100) * bw);
 			const r = Math.round((Number(fx.params.right ?? 0) / 100) * bw);
 			const t = Math.round((Number(fx.params.top ?? 0) / 100) * bh);
@@ -392,7 +428,22 @@ export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 		} else if (fx.effectId === 'jasper.flip-horizontal') f.push('hflip');
 		else if (fx.effectId === 'jasper.flip-vertical') f.push('vflip');
 	}
-	return { input: src, filters: f, width: bw, height: bh };
+	// Effects after the box scale: Motion scales separately; only colour ops, flips and a static crop (transparent
+	// black) keep the pixels opaque-or-clear.
+	const afterResize = resize ? (resize as { index: number }).index + 3 : -1;
+	if (f.length !== afterResize) resize = null;
+	for (const fx of props.effects) {
+		if (!fx.enabled || fx.effectId === 'jasper.flip-horizontal' || fx.effectId === 'jasper.flip-vertical')
+			continue;
+		if (
+			fx.effectId === 'jasper.crop' &&
+			!CROP_EDGES.some((e) => isAnimated(c.effects.find((x) => x.id === fx.id)?.params[e]))
+		)
+			continue;
+		if (defaultEffectRegistry.get(fx.effectId, fx.effectVersion)?.color) continue;
+		opaque = false;
+	}
+	return { input: src, filters: f, width: bw, height: bh, resize, opaque: opaque && !override };
 }
 
 export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
@@ -421,6 +472,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 				...(output.proresProfile ? { proresProfile: output.proresProfile } : {}),
 			});
 	const inputs: string[][] = [];
+	const streams: NativeGraph['streams'] = [];
 	const chains: string[] = [];
 	const addInput = (args: string[]) => {
 		inputs.push(args);
@@ -441,11 +493,39 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			const f1 = Math.min(m.start + m.duration, R1);
 			if (f1 > f0) layers.push({ matte: m, f0, f1 });
 		}
+		// wave1c: GPU transitions an extension pre-rendered: their spans replace the sides (drawn above the track's
+		// clips, like the composition's stage); the side clips are drawn only outside them.
+		const spans: { t: { start: number; duration: number }; ov: LayerOverride; sides: Set<string> }[] = [];
+		for (const t of track.transitions ?? []) {
+			const ov = exts
+				? (exts.list.map((e) => e.transitionOverride?.(t, exts.prepared.get(e.id)) ?? null).find((x) => x) ??
+					null)
+				: null;
+			if (ov)
+				spans.push({
+					t,
+					ov,
+					sides: new Set([t.outgoingClipId, t.incomingClipId].filter((x): x is string => !!x)),
+				});
+		}
 		for (const c of track.clips) {
 			// With transitions a clip is drawn from its head handle to the end of its tail handle (S01:TRN-003).
-			const f0 = Math.max(c.start - (c.headHandle ?? 0), R0);
-			const f1 = Math.min(c.start + c.duration + (c.tailHandle ?? 0), R1);
+			let f0 = Math.max(c.start - (c.headHandle ?? 0), R0);
+			let f1 = Math.min(c.start + c.duration + (c.tailHandle ?? 0), R1);
+			for (const sp of spans) {
+				if (!sp.sides.has(c.clipId)) continue;
+				const a = sp.t.start;
+				const b = sp.t.start + sp.t.duration;
+				// The span sits at one end of the clip (it is a side): cut that end off.
+				if (a <= f0) f0 = Math.max(f0, b);
+				else f1 = Math.min(f1, a);
+			}
 			if (f1 > f0) layers.push({ clip: c, f0, f1 });
+		}
+		for (const sp of spans) {
+			const f0 = Math.max(sp.t.start, R0);
+			const f1 = Math.min(sp.t.start + sp.t.duration, R1);
+			if (f1 > f0) layers.push({ span: sp.ov, f0, f1 });
 		}
 	}
 
@@ -465,10 +545,38 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			last = `o${label}`;
 			continue;
 		}
+		if ('span' in layer) {
+			const ov = layer.span;
+			const label = `l${li++}`;
+			const rect = ov.rect ?? null;
+			const k = addInput([
+				...(ov.decoder ? ['-c:v', ov.decoder] : []),
+				...(ov.still
+					? ['-loop', '1', '-framerate', rate(fps)]
+					: ['-ss', sec((f0 - ov.startFrame) * frameSec)]),
+				'-t',
+				sec(n * frameSec + 2 * frameSec),
+				'-i',
+				ov.path,
+			]);
+			const g = [
+				'setpts=PTS-STARTPTS',
+				`fps=${rate(fps)}`,
+				`trim=end_frame=${n}`,
+				`scale=${rect ? `${rect.w}:${rect.h}` : `${W}:${H}`}:${SWS_FLAGS}`,
+				'setsar=1',
+				'format=rgba',
+				shift,
+			];
+			chains.push(
+				`[${k}:v:0]${g.join(',')}[${label}]`,
+				`[${last}][${label}]overlay=x=${rect?.x ?? 0}:y=${rect?.y ?? 0}:format=rgb:eof_action=pass:${enable}[o${label}]`,
+			);
+			last = `o${label}`;
+			continue;
+		}
 		const c = layer.clip;
 		const props = resolveLayerProps(c, clipContentTime(c, f0, fps));
-		const bw = Math.max(1, Math.round(c.intrinsicBox.width));
-		const bh = Math.max(1, Math.round(c.intrinsicBox.height));
 		const label = `l${li++}`;
 		const margin = 2 * frameSec;
 
@@ -520,6 +628,48 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			continue;
 		}
 
+		// Sub-pixel layers (keyframed Motion, or a static one between pixels): the warp kernel draws them into a small
+		// frame streamed on a pipe, overlaid at a whole-pixel offset (stream/plan.ts).
+		const box = {
+			bw: Math.max(1, Math.round(c.intrinsicBox.width)),
+			bh: Math.max(1, Math.round(c.intrinsicBox.height)),
+		};
+		if (needsSubpixel(c, props, box)) {
+			const decInputs: string[][] = [];
+			const chain = layerSourceChain({
+				clip: c,
+				f0,
+				f1,
+				fps,
+				props,
+				sources: o.sources,
+				override,
+				...(exts ? { extensions: exts } : {}),
+				addInput: (args) => {
+					decInputs.push(args);
+					return decInputs.length - 1;
+				},
+				label,
+				skipCrop: true,
+			});
+			const plan = planStreamLayer({ clip: c, f0, f1, R0, fps, props, chain, inputs: decInputs, W, H });
+			const fd = 3 + streams.length;
+			streams.push({ fd, plan });
+			const k = addInput([
+				...['-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${plan.outW}x${plan.outH}`],
+				...['-framerate', rate(fps), '-i', `pipe:${fd}`],
+			]);
+			chains.push(
+				`[${k}:v:0]${['setpts=PTS-STARTPTS', ...fadeFilters(c.fades, f0), shift].join(',')}[${label}]`,
+			);
+			const next = `o${label}`;
+			chains.push(
+				`[${last}][${label}]overlay=x=${plan.x}:y=${plan.y}:format=rgb:eof_action=pass:${enable}[${next}]`,
+			);
+			last = next;
+			continue;
+		}
+
 		// Source decode, source chain and effects (shared with the warp stage), then Motion.
 		const source = layerSourceChain({
 			clip: c,
@@ -531,56 +681,37 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			override,
 			...(exts ? { extensions: exts } : {}),
 			addInput,
+			label,
 		});
 		const src = source.input;
 		const f = source.filters;
 
-		// Motion: M = P + R·S·(q − A) (S03:DM-010). Scale → flips → rotation about the center.
-		const tv = props.transform;
-		let outW = bw;
-		let outH = bh;
-		let cx = W / 2;
-		let cy = H / 2;
-		if (tv) {
-			const sxs = ((tv.uniformScale ? tv.scale : tv.scaleWidth) / 100) * (tv.flipH ? -1 : 1);
-			const sys = (tv.scale / 100) * (tv.flipV ? -1 : 1);
-			const sw = Math.max(1, Math.round(Math.abs(sxs) * bw));
-			const sh = Math.max(1, Math.round(Math.abs(sys) * bh));
-			if (sw !== bw || sh !== bh) f.push(`scale=${sw}:${sh}:flags=bicubic`);
-			if (sxs < 0) f.push('hflip');
-			if (sys < 0) f.push('vflip');
-			outW = sw;
-			outH = sh;
-			const deg = ((((tv.rotation % 360) + 540) % 360) - 180) as number; // (-180, 180]
-			const a = (deg * Math.PI) / 180;
-			if (Math.abs(deg) < 1e-9) {
-				// none
-			} else if (Math.abs(deg - 90) < 1e-9) {
-				f.push('transpose=clock');
-				[outW, outH] = [sh, sw];
-			} else if (Math.abs(deg + 90) < 1e-9) {
-				f.push('transpose=cclock');
-				[outW, outH] = [sh, sw];
-			} else if (Math.abs(Math.abs(deg) - 180) < 1e-9) {
-				f.push('hflip', 'vflip');
-			} else {
-				outW = evenCeil(Math.abs(sw * Math.cos(a)) + Math.abs(sh * Math.sin(a)));
-				outH = evenCeil(Math.abs(sw * Math.sin(a)) + Math.abs(sh * Math.cos(a)));
-				f.push(`rotate=a=${fmt(a)}:ow=${outW}:oh=${outH}:c=black@0`);
-			}
-			const m = props.matrix;
-			cx = m.a * (bw / 2) + m.c * (bh / 2) + m.e;
-			cy = m.b * (bw / 2) + m.d * (bh / 2) + m.f;
-		}
-		if (props.opacity < 100) f.push(`colorchannelmixer=aa=${fmt(props.opacity / 100)}`);
+		// Motion → Opacity: M = P + R·S·(q − A) (S03:DM-010), flips → scale → rotation about the centre → alpha;
+		// keyframed Motion / Opacity sampled per frame into per-frame expressions (S03:ENG-032, keyframed.ts). The
+		// Motion scale folds into the source's scale to the box when no effect sits between them (one resample).
+		const motion = motionStage({
+			clip: c,
+			f0,
+			f1,
+			R0,
+			fps,
+			props,
+			bw: source.width,
+			bh: source.height,
+			W,
+			H,
+			label,
+			opaque: source.opaque,
+			threads: o.threads,
+		});
+		if (!(source.resize && mergeResize(f, source.resize, motion))) f.push(...motionFilters(motion));
 		f.push(...fadeFilters(c.fades, f0));
 		// Shift the layer to its place on the timeline in whole frames. `setpts` truncates its result, so an
 		// offset written in decimal seconds (3.333333 s for frame 100 at 30 fps) landed one frame early.
 		f.push(shift);
 		chains.push(`${src}${f.join(',')}[${label}]`);
 
-		const x = Math.round(cx - outW / 2);
-		const y = Math.round(cy - outH / 2);
+		const { x, y } = motion;
 		const next = `o${label}`;
 		chains.push(`[${last}][${label}]overlay=x=${x}:y=${y}:format=rgb:eof_action=pass:${enable}[${next}]`);
 		last = next;
@@ -634,7 +765,6 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			const n = f1 - f0;
 			const startSec = Math.max(0, audioContentSec(a, f0, F));
 			const k = addInput(['-ss', sec(startSec), '-t', sec(n * frameSec * a.speed.rate + 0.1), '-i', m.path]);
-			const db = a.gainDb + a.volumeDb.value + a.track.volumeDb.value + snap.master.volumeDb.value;
 			const samples = Math.round(n * frameSec * SAMPLE_RATE);
 			const delay = Math.round((f0 - R0) * frameSec * SAMPLE_RATE);
 			const chain = [
@@ -642,7 +772,8 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 				...atempoChain(a.speed.rate),
 				`aresample=${SAMPLE_RATE}`,
 				`aformat=sample_fmts=fltp:channel_layouts=${output.audioChannels === 1 ? 'mono' : 'stereo'}`,
-				`volume=${fmt(db)}dB`,
+				// Clip, track and master volume (keyframed: per-frame gain, keyframed.ts).
+				...audioVolumeFilters(a, snap.master, f0, f1, fps),
 				`atrim=end_sample=${samples}`,
 				'asetpts=PTS-STARTPTS',
 				...audioFadeFilters(a.fades, f0, frameSec),
@@ -700,7 +831,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			o.outputFile,
 		);
 	}
-	return { args, filter, inputs, outputFrames: output.frames, durationSec: output.durationSec };
+	return { args, filter, inputs, outputFrames: output.frames, durationSec: output.durationSec, streams };
 }
 
 /** Content time in seconds of an audio clip at sequence frame `f` (S01:CLP-004; before `start` = head handle). */

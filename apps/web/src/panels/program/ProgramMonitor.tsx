@@ -109,6 +109,14 @@ function useFontCatalog(engine: EngineClient | null): FontCatalog | null {
 	return catalog;
 }
 
+/** Resolution of GPU shader-effect canvases per playback resolution (RenderOptions.fxPreviewScale). */
+const FX_PREVIEW_SCALE: Record<PlaybackResolution, number> = {
+	full: 1,
+	'1/2': 0.5,
+	'1/4': 0.25,
+	'1/8': 0.125,
+};
+
 function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; instanceId: string }) {
 	const engine = useEngineOrNull()?.client ?? null;
 	const transport = session.transport;
@@ -134,6 +142,8 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 	const transparent = (seq?.settings.backgroundColor[3] ?? 1) === 0;
 	// Before/after (S06:CGU-005, wp-m2-color): clips whose colour effects the preview bypasses.
 	const colorBypass = useColorBypass();
+	// GPU shader effects follow the playback resolution (1/2 → canvases at half size), keeping heavy stacks interactive.
+	const fxPreviewScale = FX_PREVIEW_SCALE[monitor.playbackResolution];
 	const options = useMemo<RenderOptions>(
 		() => ({
 			...DEFAULT_RENDER_OPTIONS,
@@ -141,8 +151,9 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 			useProxies,
 			transparentBackground: transparent,
 			...(colorBypass.length ? { colorBypassClipIds: colorBypass } : {}),
+			...(fxPreviewScale < 1 ? { fxPreviewScale } : {}),
 		}),
-		[useProxies, transparent, colorBypass],
+		[useProxies, transparent, colorBypass, fxPreviewScale],
 	);
 	const inputProps = useMemo(() => (doc ? { doc, options } : null), [doc, options]);
 	const duration = seqId ? playerDurationFrames(drawn, seqId) : 1;

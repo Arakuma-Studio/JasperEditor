@@ -114,6 +114,9 @@ export function appdirPaths(appdir: string) {
 		rendersDir: join(appdir, 'renders'),
 		renderDir: (jobId: string) => join(appdir, 'renders', jobId),
 		remotionBundleDir: join(appdir, 'remotion', 'bundle'),
+		/** User libraries shared by every project and by agents (S03:FX-030 effect presets). */
+		presetsDir: join(appdir, 'presets'),
+		effectPresetsFile: join(appdir, 'presets', 'effect-presets.json'),
 		tmpDir: join(appdir, 'tmp'),
 	};
 }

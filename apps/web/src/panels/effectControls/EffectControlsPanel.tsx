@@ -3,7 +3,11 @@
 // and Audio groups with intrinsic and applied effects (fx bypass, reset, reorder by drag, delete),
 // property rows with stopwatch / navigator / reset, and a mini-timeline with keyframe selection,
 // marquee, drag-to-move with snapping, and a right-click interpolation menu. Values are resolved at
-// the playhead (EC-006).
+// the playhead (EC-006). Twirling a numeric / vec2 property open shows its Value and Velocity graphs
+// (S03:KF-022, GraphEditor.tsx).
+// M3 (wp-m3-presets, S03:EC-004/FX-030): effect headers (intrinsic ones too) select with click / Ctrl/Shift-click
+// and have a context menu with Save Preset… (presets.ts), Reset and Remove; presets dropped here apply to the shown
+// clips.
 import type { Command } from '@jasper/project';
 import { formatTimecode } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
@@ -17,6 +21,7 @@ import { cx, TimecodeText } from '@jasper/ui';
 import {
 	type DragEvent,
 	type KeyboardEvent as ReactKeyboardEvent,
+	type MouseEvent as ReactMouseEvent,
 	type ReactNode,
 	type PointerEvent as ReactPointerEvent,
 	type RefObject,
@@ -44,6 +49,9 @@ import {
 	JASPER_EFFECT_INSTANCE_MIME,
 	readEffectDragPayload,
 } from '../effects/drag.ts';
+import { openSavePreset } from '../effects/presets/actions.ts';
+import { isPresetRef } from '../effects/presets/apply.ts';
+import { usePresetLibrary } from '../effects/presets/hooks.ts';
 import { MiniButton, SelectField } from '../properties/controls/fields.tsx';
 import { CaretGlyph, FxGlyph, GripGlyph, ResetGlyph, TrashGlyph } from '../properties/controls/glyphs.tsx';
 import { useNotices } from '../properties/controls/Notices.tsx';
@@ -52,7 +60,11 @@ import { inspectorFocus } from '../properties/lib/focus.ts';
 import { useInspectorData } from '../properties/lib/hooks.ts';
 import { exactFrameOf, planReset, type Row } from '../properties/lib/model.ts';
 import { useInspectorOps } from '../properties/lib/ops.ts';
+import { ContextMenu } from '../timeline/components/Chrome.tsx';
+import type { ContextMenuItem } from '../timeline/state/ui-store.ts';
 import type { PanelProps } from '../types.ts';
+import { GRAPH_HEIGHT, PropertyGraphs } from './GraphEditor.tsx';
+import { graphKindOf } from './graph.ts';
 import { buildGroups, type FxSection, type RowFilter, rowVisible, shownClips } from './items.ts';
 import {
 	clipRange,
@@ -63,6 +75,8 @@ import {
 	snapDelta,
 } from './lib.ts';
 import { KeyLane, Ruler, SummaryLane, usePlayheadLine } from './MiniTimeline.tsx';
+import { presetSelection } from './presets.ts';
+import { SpatialInterpolationSubmenu } from './SpatialMenu.tsx';
 import { TransitionSection } from './TransitionSection.tsx';
 
 function usePersisted<T>(key: string, initial: T): [T, (v: T) => void] {
@@ -132,9 +146,17 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	const [showTimeline, setShowTimeline] = usePersisted(`jasper.ec.${instanceId}.timeline`, true);
 	const [leftPct, setLeftPct] = usePersisted(`jasper.ec.${instanceId}.split`, 55);
 	const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+	/** Twirled-open graph rows (`clipId:rowId` → graph height in px, S03:KF-022). */
+	const [graphs, setGraphs] = usePersisted<Record<string, number>>(`jasper.ec.${instanceId}.graphs`, {});
 	const [filter, setFilter] = useState<RowFilter>('all');
 	const [selectedFx, setSelectedFx] = useState<string | null>(null);
 	const [menu, setMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null);
+	// Selected effect headers (section ids) for Save Preset… and the header menu.
+	const [headerSel, setHeaderSel] = useState<string[]>([]);
+	const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(
+		null,
+	);
+	const presetLib = usePresetLibrary();
 	const [dropSlot, setDropSlot] = useState<number | 'end' | null>(null);
 	const [dragTip, setDragTip] = useState<string | null>(null);
 	const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
@@ -161,6 +183,9 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	usePlayheadLine(lineRef, session.transport, range);
 
 	const clips = useMemo(() => (seq && primary ? shownClips(seq, primary) : []), [seq, primary]);
+	const primaryId = primary?.id ?? null;
+	// biome-ignore lint/correctness/useExhaustiveDependencies: another clip starts with no selected headers
+	useEffect(() => setHeaderSel([]), [primaryId]);
 	const groups = useMemo(
 		() => (seq ? buildGroups(data.doc, seq, clips, frame, registries) : []),
 		[data.doc, seq, clips, frame, registries],
@@ -262,6 +287,24 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 		return out;
 	};
 
+	/** Snap targets for key drags (S03:EC-023): playhead, clip edges and the clip's other keys. */
+	const snapCandidates = (clipId: string, exclude: ReadonlySet<string>): number[] => {
+		const clip = clips.find((c) => c.id === clipId);
+		if (!clip) return [];
+		return [
+			session.transport.getState().frame,
+			clip.start,
+			clip.start + clip.duration - 1,
+			...keyFramesOfClip(clipId, exclude),
+		];
+	};
+	const openKeyMenu = (e: ReactMouseEvent, clipId: string, id: string) => {
+		e.preventDefault();
+		const ids = selectedKeys.has(id) ? [...selectedKeys] : [id];
+		if (!selectedKeys.has(id)) selectKeys(clipId, ids);
+		setMenu({ x: e.clientX, y: e.clientY, ids });
+	};
+
 	const onKeyPointerDown = (
 		e: ReactPointerEvent<HTMLElement>,
 		info: { clipId: string; keyframeId: string; frame: number },
@@ -290,13 +333,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 			active: false,
 		};
 		keyDrag.current = drag;
-		const clip = clips.find((c) => c.id === info.clipId)!;
-		const candidates = [
-			session.transport.getState().frame,
-			clip.start,
-			clip.start + clip.duration - 1,
-			...keyFramesOfClip(info.clipId, new Set(ids)),
-		];
+		const candidates = snapCandidates(info.clipId, new Set(ids));
 		const framesPerPx = (range.end - range.start) / drag.laneWidth;
 		const move = (ev: PointerEvent) => {
 			const dx = ev.clientX - drag.x0;
@@ -330,7 +367,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 		window.addEventListener('keydown', key, true);
 	};
 
-	const onLanePointerDown = (e: ReactPointerEvent<HTMLElement>) => {
+	const onLanePointerDown = (e: ReactPointerEvent<Element>) => {
 		if (e.button !== 0 || !contentRef.current) return;
 		const box = contentRef.current.getBoundingClientRect();
 		const origin = { x: e.clientX, y: e.clientY };
@@ -363,10 +400,8 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 					return cx0 >= l && cx0 <= r && cy0 >= t && cy0 <= b && el.dataset.kfClip === primary.id;
 				},
 			);
-			selectKeys(
-				primary.id,
-				hits.map((el) => el.dataset.kfId!),
-			);
+			// Graph keys carry the same ids as their lane glyphs: de-duplicate.
+			selectKeys(primary.id, [...new Set(hits.map((el) => el.dataset.kfId!))]);
 		};
 		window.addEventListener('pointermove', move);
 		window.addEventListener('pointerup', up);
@@ -428,6 +463,22 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 		const payload = readEffectDragPayload(e.dataTransfer);
 		if (!payload) return;
 		e.preventDefault();
+		// M3 (wp-m3-presets, S03:FX-030): a preset applies to the shown clips it has something for.
+		if (isPresetRef(payload.effectId)) {
+			const r = applyEffectToClips(
+				session,
+				payload.effectId,
+				clips.map((c) => c.id),
+				slot === 'end' ? undefined : slot,
+			);
+			if (!r?.ok)
+				notices.hint(
+					r?.ok === false
+						? (r.errors[0]?.message ?? '')
+						: 'This preset cannot be applied to the selected clip.',
+				);
+			return;
+		}
 		const target = clips.find((c) => {
 			const spec = registries.effects.get(payload.effectId);
 			return spec && (spec.appliesTo === 'audio') === (c.kind === 'audio' || c.kind === 'nest-audio');
@@ -440,6 +491,50 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	const resetSection = (s: FxSection) => {
 		const cmds = s.rows.flatMap((r: Row) => planReset(r, data.doc, seq, frame).commands);
 		ops.apply(`Reset ${s.title}`, cmds);
+	};
+	// S03:EC-004 header menu: Save Preset… (the selected headers of one clip), Reset, Remove.
+	const openHeaderMenu = (e: ReactMouseEvent, s: FxSection) => {
+		e.preventDefault();
+		const ids = headerSel.includes(s.id) ? headerSel : [s.id];
+		if (!headerSel.includes(s.id)) setHeaderSel([s.id]);
+		const chosen = groups.flatMap((g) => g.sections).filter((x) => ids.includes(x.id));
+		const pick = presetSelection(chosen);
+		const online = presetLib.status === 'ready';
+		const items: ContextMenuItem[] = [
+			{
+				kind: 'item',
+				label: pick.ok && !online ? 'Save Preset… (needs the engine)' : 'Save Preset…',
+				disabled: !pick.ok || !online,
+				run: () => {
+					if (!pick.ok) return;
+					void openSavePreset(session, pick.clipId, pick.sections, pick.subject, pick.defaultName).then(
+						(p) => {
+							if (p) notices.hint(`Saved preset “${p.name}” to Effects ▸ Presets.`);
+						},
+					);
+				},
+			},
+			{ kind: 'separator' },
+			{
+				kind: 'item',
+				label: `Reset ${s.title}`,
+				disabled: !!s.missing || !s.rows.some((r) => r.bindings.some((b) => b.path)),
+				run: () => resetSection(s),
+			},
+			...(s.fx && (!s.intrinsic || s.id.endsWith(':crop'))
+				? [
+						{
+							kind: 'item' as const,
+							label: `Remove ${s.title}`,
+							run: () =>
+								ops.apply('Remove Effect', [
+									{ type: 'effect.remove', effectInstanceId: s.fx!.id } as Command,
+								]),
+						},
+					]
+				: []),
+		];
+		setHeaderMenu({ x: e.clientX, y: e.clientY, items });
 	};
 
 	const onPanelKeyDown = (e: ReactKeyboardEvent) => {
@@ -540,20 +635,34 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 										<div
 											className={cx(
 												'flex h-[var(--pr-row-h)] items-center',
-												selectedFx && s.fx?.id === selectedFx && 'bg-pr-selected',
+												((selectedFx && s.fx?.id === selectedFx) || headerSel.includes(s.id)) &&
+													'bg-pr-selected',
 												fxIndex !== undefined && dropSlot === fxIndex && 'border-t-2 border-pr-accent',
 											)}
 											data-fx-index={fxIndex}
+											data-ec-header={s.id}
 											draggable={fxIndex !== undefined}
 											onDragStart={(e) => onHeaderDragStart(e, s)}
+											onContextMenu={(e) => openHeaderMenu(e, s)}
 										>
 											{/* biome-ignore lint/a11y/noStaticElementInteractions: row selection mirrors the timeline; keyboard via Delete */}
 											{/* biome-ignore lint/a11y/useKeyWithClickEvents: see above */}
 											<div
 												style={left}
 												className="flex min-w-0 shrink-0 items-center gap-1 pr-1 pl-1"
-												onClick={() => {
-													if (!s.fx) return;
+												onClick={(ev) => {
+													const add = ev.ctrlKey || ev.metaKey || ev.shiftKey;
+													setHeaderSel((cur) =>
+														add
+															? cur.includes(s.id)
+																? cur.filter((x) => x !== s.id)
+																: [...cur, s.id]
+															: [s.id],
+													);
+													if (!s.fx) {
+														if (!add) setSelectedFx(null);
+														return;
+													}
 													setSelectedFx(s.fx.id);
 													inspectorFocus.set({
 														source: 'effectControls',
@@ -651,30 +760,68 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 											</div>
 										) : null}
 										{open
-											? rows.map((r) => (
-													<div key={r.id} className="flex items-stretch">
-														<div style={left} className="min-w-0 shrink-0">
-															<PropertyRow row={r} ctx={ctx} indent />
+											? rows.map((r) => {
+													const graphKey = `${r.bindings[0]!.clip.id}:${r.id}`;
+													const hasGraph = graphKindOf(r.spec) !== null;
+													const graphHeight = hasGraph ? graphs[graphKey] : undefined;
+													return (
+														<div key={r.id}>
+															<div className="flex items-stretch">
+																<div style={left} className="min-w-0 shrink-0">
+																	<PropertyRow
+																		row={r}
+																		ctx={ctx}
+																		indent
+																		twirl={
+																			hasGraph
+																				? {
+																						open: graphHeight !== undefined,
+																						onToggle: () => {
+																							const next = { ...graphs };
+																							if (graphHeight !== undefined) delete next[graphKey];
+																							else next[graphKey] = GRAPH_HEIGHT.initial;
+																							setGraphs(next);
+																						},
+																					}
+																				: undefined
+																		}
+																	/>
+																</div>
+																{lane(
+																	<KeyLane
+																		row={r}
+																		seq={seq}
+																		range={range}
+																		selected={selectedKeys}
+																		onKeyPointerDown={onKeyPointerDown}
+																		onKeyDoubleClick={(f) => session.transport.seek(f)}
+																		onKeyContextMenu={openKeyMenu}
+																		onLanePointerDown={onLanePointerDown}
+																	/>,
+																)}
+															</div>
+															{graphHeight !== undefined ? (
+																<PropertyGraphs
+																	row={r}
+																	seq={seq}
+																	range={range}
+																	height={graphHeight}
+																	onResize={(h) => setGraphs({ ...graphs, [graphKey]: h })}
+																	leftStyle={left}
+																	showTimeline={showTimeline}
+																	ops={ops}
+																	selected={selectedKeys}
+																	keySel={keySel}
+																	selectKeys={selectKeys}
+																	onKeyContextMenu={openKeyMenu}
+																	onBackgroundPointerDown={onLanePointerDown}
+																	snapCandidates={snapCandidates}
+																	setTip={setDragTip}
+																/>
+															) : null}
 														</div>
-														{lane(
-															<KeyLane
-																row={r}
-																seq={seq}
-																range={range}
-																selected={selectedKeys}
-																onKeyPointerDown={onKeyPointerDown}
-																onKeyDoubleClick={(f) => session.transport.seek(f)}
-																onKeyContextMenu={(e, clipId, id) => {
-																	e.preventDefault();
-																	const ids = selectedKeys.has(id) ? [...selectedKeys] : [id];
-																	if (!selectedKeys.has(id)) selectKeys(clipId, ids);
-																	setMenu({ x: e.clientX, y: e.clientY, ids });
-																}}
-																onLanePointerDown={onLanePointerDown}
-															/>,
-														)}
-													</div>
-												))
+													);
+												})
 											: null}
 									</div>
 								);
@@ -733,6 +880,15 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 					<ResetGlyph size={12} />
 				</MiniButton>
 			</footer>
+			{headerMenu ? (
+				<ContextMenu
+					x={headerMenu.x}
+					y={headerMenu.y}
+					items={headerMenu.items}
+					onClose={() => setHeaderMenu(null)}
+					testId="ec-header-menu"
+				/>
+			) : null}
 			{menu ? (
 				<div
 					role="menu"
@@ -758,6 +914,15 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 							{m.label}
 						</button>
 					))}
+					{/* S03:KF-021 (spatial-motion-path): Spatial Interpolation ▸ for keys of point properties. */}
+					<SpatialInterpolationSubmenu
+						groups={groups}
+						ids={menu.ids}
+						onApply={(label, commands) => {
+							ops.apply(label, commands);
+							setMenu(null);
+						}}
+					/>
 					{shell ? (
 						// S03:EC-024 / wp-clipboard: Copy keys (pasted at the playhead with Ctrl/Cmd+V).
 						<button

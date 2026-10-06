@@ -571,12 +571,10 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			{
 				kind: 'submenu',
 				label: 'Replace With',
-				items: TRANSITION_SPECS.filter((s) => s.appliesTo === medium).map((s) => ({
-					kind: 'item' as const,
-					label: s.label,
-					checked: t.effectId === s.id,
-					run: () => updateTransition('Replace Transition', t, { effectId: s.id }),
-				})),
+				// Transition framework: grouped by Effects-panel bin (Premiere bins, Sapphire Transitions ▸ sub-bin).
+				items: replaceWithItems(medium, t.effectId, (effectId) =>
+					updateTransition('Replace Transition', t, { effectId }),
+				),
 			},
 			{ kind: 'separator' },
 			{
@@ -1257,4 +1255,27 @@ function PlayheadOverlay(props: {
 
 function formatDuration(frames: number, rate: Rational, dropFrame: boolean): string {
 	return `${formatTimecode(frames, rate, { dropFrame })} (${frames})`;
+}
+
+/** "Replace With" submenu (S10:TUI-045): the transitions of a medium, one submenu per bin (flat when one bin). */
+function replaceWithItems(
+	medium: 'video' | 'audio',
+	current: string,
+	replace: (effectId: string) => void,
+): ContextMenuItem[] {
+	const bins = new Map<string, ContextMenuItem[]>();
+	for (const s of TRANSITION_SPECS) {
+		if (s.appliesTo !== medium) continue;
+		const bin = s.subBin ? `${s.bin} ▸ ${s.subBin}` : s.bin;
+		bins.set(bin, [
+			...(bins.get(bin) ?? []),
+			{ kind: 'item', label: s.label, checked: current === s.id, run: () => replace(s.id) },
+		]);
+	}
+	if (bins.size === 1) return [...bins.values()][0]!;
+	return [...bins.entries()]
+		.sort(
+			([a], [b]) => Number(a.startsWith('Sapphire')) - Number(b.startsWith('Sapphire')) || a.localeCompare(b),
+		)
+		.map(([label, items]) => ({ kind: 'submenu', label, items }));
 }

@@ -5,7 +5,12 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { isAnimeTemplate, mgRegistry } from '@jasper/mg-templates';
-import { canonicalJson, type RenderVisualClip } from '@jasper/project';
+import {
+	canonicalJson,
+	defaultEffectRegistry,
+	type EffectRegistry,
+	type RenderVisualClip,
+} from '@jasper/project';
 import type { BakeVariant, Rect } from './layer.ts';
 
 /** Bumped whenever a bake's pixels would change for the same inputs (recipe, encoder settings, normalisation). */
@@ -29,9 +34,11 @@ export type KeyMedia = {
 	mtime: number | null;
 };
 
-/** Kinds whose layers use `hash32(clipId, …)` seeds (S11:ANM-007): their clip id stays in the key. */
-function seedBearing(c: RenderVisualClip): boolean {
+/** Layers seeded by their clip id (S11:ANM-007 `hash32(clipId, …)`, fx `u_seed`): their clip id stays in the key. */
+function seedBearing(c: RenderVisualClip, registry: EffectRegistry): boolean {
 	if (c.kind === 'motion-graphic') return true;
+	// Wave 1 (fx framework): GPU shader effects seed their randomness with the clip id (`u_seed`, fxSeed).
+	if (c.effects.some((fx) => fx.enabled && !!registry.get(fx.effectId, fx.effectVersion)?.gpu)) return true;
 	const src = c.source as { animation?: { in?: unknown; out?: unknown } };
 	return !!src.animation && !!(src.animation.in || src.animation.out);
 }
@@ -42,9 +49,12 @@ function seedBearing(c: RenderVisualClip): boolean {
  * orders, template seeds: the same content under another id may draw differently), and without fields that do
  * not change pixels (name, track).
  */
-export function normalisedClip(c: RenderVisualClip): Record<string, unknown> {
+export function normalisedClip(
+	c: RenderVisualClip,
+	registry: EffectRegistry = defaultEffectRegistry,
+): Record<string, unknown> {
 	const { clipId, name: _name, trackId: _track, ...rest } = c;
-	return { ...rest, clipId: seedBearing(c) ? clipId : 'clip' };
+	return { ...rest, clipId: seedBearing(c, registry) ? clipId : 'clip' };
 }
 
 export type KeyMaterial = {

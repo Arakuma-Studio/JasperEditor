@@ -3,20 +3,36 @@
 // the incoming clip "B" with their available handles, the cut line and the span — drawn from the drawn
 // document so it follows edits live. The span's edges drag with the timeline's semantics (TUI-012), one
 // history entry per drag.
+// Transition framework (wave 2): the transition's params (`TransitionSpec.params`: Start / End, the transition's
+// own options, Border, Reverse, Anti-aliasing, Center) as rows below the diagram — value editors by type, a
+// stopwatch on animatable ones (keys at the playhead, inside the span: `param.set` / `param.setAnimated` on
+// ["transition", id, name]), one history entry per edit and one per scrub.
 import {
 	type Command,
+	evaluate,
+	flicksPerFrame,
 	formatTimecode,
+	type ParamSpec,
+	type ParamValue,
+	type ProjectDocument,
+	type RGBA,
 	type Sequence,
 	TRANSITION_SPECS,
 	type Transition,
+	type TransitionSpec,
+	transitionStartFrame,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
-import { useSessionState } from '@jasper/session/react';
+import { useSessionState, useTransportFrame } from '@jasper/session/react';
 import { TimecodeField } from '@jasper/ui';
 import { type PointerEvent as ReactPointerEvent, useRef, useState } from 'react';
 import { TRANSITION_ALIGNMENTS } from '../effects/transition-prefs.ts';
-import { SelectField } from '../properties/controls/fields.tsx';
+import { CheckboxField, ColorField, MiniButton, SelectField } from '../properties/controls/fields.tsx';
+import { StopwatchGlyph } from '../properties/controls/glyphs.tsx';
+import { MediaParamPicker } from '../properties/controls/MediaParamPicker.tsx';
+import { ScrubbyNumber } from '../properties/controls/ScrubbyNumber.tsx';
 import { useInspectorData } from '../properties/lib/hooks.ts';
+import type { InspectorOps } from '../properties/lib/ops.ts';
 import { useInspectorOps } from '../properties/lib/ops.ts';
 import {
 	edgeDrag,
@@ -52,7 +68,13 @@ export function TransitionSection(props: { session: EditorSession; host: 'effect
 	const rate = seq.settings.frameRate;
 	const dropFrame = seq.settings.dropFrame;
 	const medium = geom.spec?.appliesTo ?? 'video';
-	const specs = TRANSITION_SPECS.filter((s) => s.appliesTo === medium);
+	// Same medium; Premiere's bins first (sorted by bin, then name), third-party packs after.
+	const specs = TRANSITION_SPECS.filter((s) => s.appliesTo === medium).sort(
+		(a, b) =>
+			Number(a.bin.startsWith('Sapphire')) - Number(b.bin.startsWith('Sapphire')) ||
+			a.bin.localeCompare(b.bin) ||
+			a.label.localeCompare(b.label),
+	);
 	const update = (label: string, patch: Record<string, unknown>) =>
 		ops.apply(label, [{ type: 'transition.update', transitionId: t.id, ...patch } as Command]);
 	const n = geom.duration || t.duration;
@@ -66,12 +88,22 @@ export function TransitionSection(props: { session: EditorSession; host: 'effect
 			<header className="flex h-[28px] items-center gap-1 px-2 font-semibold text-pr-strong">
 				<span className="truncate">Transition</span>
 				<span className="truncate font-normal text-pr-muted">· {geom.spec?.label ?? t.effectId}</span>
+				{geom.spec?.expensive ? (
+					// Same marker as an expensive effect's section header (EffectControlsPanel).
+					<span
+						className="text-pr-small text-pr-muted"
+						title="Expensive in preview"
+						data-testid="transition-expensive"
+					>
+						●
+					</span>
+				) : null}
 			</header>
 			<Row label="Type">
 				<SelectField<string>
 					value={t.effectId}
 					options={specs.map((s) => s.id)}
-					labels={specs.map((s) => s.label)}
+					labels={specs.map((s) => (s.gpu ? `${s.label} (${s.subBin ?? s.bin})` : s.label))}
 					label="Transition type"
 					onChange={(effectId) => update('Replace Transition', { effectId })}
 					data-testid="transition-type"
@@ -109,6 +141,9 @@ export function TransitionSection(props: { session: EditorSession; host: 'effect
 				/>
 			</Row>
 			<AbDiagram session={props.session} geom={geom} seq={seq} />
+			{geom.spec && geom.spec.params.length > 0 ? (
+				<TransitionParams session={props.session} spec={geom.spec} t={t} seq={seq} span={geom} ops={ops} />
+			) : null}
 		</section>
 	);
 }
@@ -309,4 +344,209 @@ function Bar(props: {
 			{props.label}
 		</div>
 	);
+}
+
+// ---------------------------------------------------------------- params (transition framework)
+
+const asNumber = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+
+/** Param rows of a transition: values at the playhead (keys are relative to the span's first frame). */
+function TransitionParams(props: {
+	session: EditorSession;
+	spec: TransitionSpec;
+	t: Transition;
+	seq: Sequence;
+	span: { start: number; end: number };
+	ops: InspectorOps;
+}) {
+	const { spec, t, seq, ops } = props;
+	const data = useInspectorData();
+	const frame = useTransportFrame(100).frame;
+	const F = flicksPerFrame(seq.settings.frameRate);
+	// Keys are stored relative to the stored span start (what the command handler uses).
+	const start = transitionStartFrame(seq, t) ?? props.span.start;
+	const local = Math.min(t.duration - 1, Math.max(0, frame - start));
+	// Writes use the live playhead (the displayed frame is throttled), clamped into the span.
+	const liveFrame = () => props.session.transport.getState().frame;
+	const inside = () => liveFrame() >= props.span.start && liveFrame() < props.span.end;
+	const atNow = () => ({
+		sequenceFrame: Math.max(0, start + Math.min(t.duration - 1, Math.max(0, liveFrame() - start))),
+	});
+	const target = (name: string) => ['transition', t.id, name];
+	const paramValue = (p: ParamSpec): ParamValue => {
+		const a = t.params[p.name];
+		return a ? (evaluate(a as never, local * F) as ParamValue) : p.default;
+	};
+	const animated = (p: ParamSpec) => (t.params[p.name]?.keyframes.length ?? 0) > 0;
+	const set = (p: ParamSpec, value: unknown): Command =>
+		({
+			type: 'param.set',
+			target: target(p.name),
+			value,
+			...(animated(p) ? { at: atNow() } : {}),
+		}) as Command;
+	const completion = spec.params.find((x) => x.name === 'completion');
+	const commit = (p: ParamSpec, value: unknown) => {
+		// Turning Custom Completion on with an unanimated Transition Completion seeds the curve with the linear timing
+		// at the span's ends (0 % on the first frame, 100 % on the last) so the user starts from a ramp to shape.
+		if (p.name === 'useCompletion' && value === true && completion && !animated(completion)) {
+			const key = (frame: number, v: number) =>
+				({
+					type: 'keyframe.add',
+					target: target(completion.name),
+					at: { sequenceFrame: Math.max(0, frame) },
+					value: v,
+				}) as Command;
+			return ops.apply(`${spec.label}: ${p.label}`, [
+				set(p, value),
+				key(start, 0),
+				key(start + Math.max(0, t.duration - 1), 100),
+			]);
+		}
+		return ops.apply(`${spec.label}: ${p.label}`, [set(p, value)]);
+	};
+	return (
+		<div className="pt-1" data-testid="transition-params">
+			{spec.params.map((p) => (
+				<div
+					key={p.name}
+					className="flex h-[var(--pr-row-h)] items-center gap-1 pr-2 pl-1"
+					data-transition-param={p.name}
+				>
+					<span className="flex w-[18px] shrink-0 justify-center">
+						{p.animatable ? (
+							<MiniButton
+								label={animated(p) ? `Turn off animation of ${p.label}` : `Animate ${p.label}`}
+								active={animated(p)}
+								onClick={() => {
+									if (!animated(p) && !inside()) return;
+									ops.apply(`${spec.label}: ${p.label}`, [
+										{
+											type: 'param.setAnimated',
+											target: target(p.name),
+											animated: !animated(p),
+											at: atNow(),
+										} as Command,
+									]);
+								}}
+								data-testid={`transition-param-stopwatch-${p.name}`}
+							>
+								<StopwatchGlyph size={12} />
+							</MiniButton>
+						) : null}
+					</span>
+					<span className="w-[118px] shrink-0 truncate text-pr-muted" title={p.label}>
+						{p.label}
+					</span>
+					<div className="flex min-w-0 flex-1 items-center gap-1">
+						<ParamEditor
+							doc={data.doc}
+							p={p}
+							value={paramValue(p)}
+							onCommit={(v) => commit(p, v)}
+							ops={ops}
+							toCommand={(v) => set(p, v)}
+							label={`${spec.label}: ${p.label}`}
+						/>
+					</div>
+				</div>
+			))}
+		</div>
+	);
+}
+
+function ParamEditor(props: {
+	doc: ProjectDocument;
+	p: ParamSpec;
+	value: ParamValue;
+	label: string;
+	ops: InspectorOps;
+	onCommit(v: unknown): void;
+	toCommand(v: unknown): Command;
+}) {
+	const { p, value, ops } = props;
+	const base = useRef<unknown>(null);
+	const scrubbable = (get: () => number, put: (n: number) => unknown, testId: string, axis = '') => (
+		<ScrubbyNumber
+			key={testId}
+			value={get()}
+			label={`${p.label}${axis}`}
+			step={p.range?.step ?? 1}
+			unit={p.unit === 'deg' ? '°' : p.unit === '%' ? '%' : p.unit ? ` ${p.unit}` : undefined}
+			min={p.range?.min}
+			max={p.range?.max}
+			onScrubStart={() => {
+				base.current = get();
+				ops.scrub.start(props.label);
+			}}
+			onScrub={(delta) => ops.scrub.update([props.toCommand(put(asNumber(base.current) + delta))])}
+			onScrubEnd={(cancelled) => ops.scrub.end(cancelled)}
+			onCommit={(fn) => props.onCommit(put(fn(get())))}
+			data-testid={testId}
+		/>
+	);
+	switch (p.type) {
+		case 'number':
+			return scrubbable(
+				() => asNumber(value),
+				(n) => n,
+				`transition-param-${p.name}`,
+			);
+		case 'vec2': {
+			const v = Array.isArray(value) ? (value as number[]) : [0, 0];
+			return (
+				<>
+					{scrubbable(
+						() => v[0]!,
+						(n) => [n, v[1]],
+						`transition-param-${p.name}-x`,
+						' X',
+					)}
+					{scrubbable(
+						() => v[1]!,
+						(n) => [v[0], n],
+						`transition-param-${p.name}-y`,
+						' Y',
+					)}
+				</>
+			);
+		}
+		case 'boolean':
+			return <CheckboxField value={value === true} label={p.label} onChange={(b) => props.onCommit(b)} />;
+		case 'enum':
+			return (
+				<SelectField<string>
+					value={String(value)}
+					options={p.options ?? []}
+					labels={p.optionLabels ?? p.options}
+					label={p.label}
+					onChange={(o) => props.onCommit(o)}
+					data-testid={`transition-param-${p.name}`}
+				/>
+			);
+		case 'color':
+			return (
+				<ColorField
+					value={Array.isArray(value) ? (value as RGBA) : null}
+					label={p.label}
+					alpha
+					onChange={(c) => props.onCommit(c)}
+					data-testid={`transition-param-${p.name}`}
+				/>
+			);
+		case 'media':
+			// Image params (Gradient Wipe's custom gradient…): the effects' picture picker; "None" = the built-in fallback.
+			return (
+				<MediaParamPicker
+					doc={props.doc}
+					value={value}
+					kinds={p.mediaKinds ?? ['image']}
+					label={p.label}
+					onChange={(mediaId) => props.onCommit({ mediaId })}
+					data-testid={`transition-param-${p.name}`}
+				/>
+			);
+		default:
+			return <span className="text-pr-small text-pr-muted">—</span>;
+	}
 }

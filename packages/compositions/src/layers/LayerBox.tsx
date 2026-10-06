@@ -1,7 +1,12 @@
 import { mat3ToCss, matrixToCss, type ResolvedEffect } from '@jasper/project';
 import { type CSSProperties, type ReactNode, useMemo } from 'react';
+import { canUseHtmlInCanvas, FxDomPicture } from '../fx/FxPicture.tsx';
+import { useLayerFx } from '../fx/stage.ts';
 import { blendModeCss, effectStages } from '../pipeline.ts';
 import type { LayerProps } from '../types.ts';
+
+/** DOM layers (S11 §0) whose GPU shader effects LayerBox runs itself through HTML-in-Canvas (fx framework). */
+const DOM_FX_KINDS: ReadonlySet<string> = new Set(['text', 'shape', 'motion-graphic']);
 
 const FILL: CSSProperties = { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%' };
 
@@ -16,6 +21,10 @@ const FILL: CSSProperties = { position: 'absolute', left: 0, top: 0, width: '100
  *    projective map `props.projective` written as `matrix3d`;
  * 4. opacity on the outer element;
  * 5. blend with `mix-blend-mode` against the layers below (the stack root is `isolation: isolate`).
+ * fx framework (wave 1): media layers run GPU shader effects in their source component (`FxPicture`) and pass the
+ * remaining effects here; DOM layers (text, shapes, motion graphics) that leave `effects` unset get them here — the
+ * content is drawn through `<HtmlInCanvas>` (`FxDomPicture`) when the browser has HTML-in-Canvas, else the shader
+ * effects are bypassed with a chip (preview; renders always have it).
  * Inline styles only (ARCHITECTURE D-14).
  */
 export function LayerBox({
@@ -35,13 +44,22 @@ export function LayerBox({
 	overlay?: ReactNode;
 }) {
 	const { props, clip } = layer;
-	const cssEffects = effects ?? props.effects;
+	// Transition framework: a side of a GPU transition whose component did not capture it already (cards, proxies,
+	// any DOM content) is captured here through HTML-in-Canvas.
+	const domFx = useLayerFx(layer, {
+		enabled: effects === undefined && (DOM_FX_KINDS.has(clip.kind) || !!layer.transition?.tap),
+		canRun: canUseHtmlInCanvas(),
+	});
+	const cssEffects = domFx.mode === 'active' ? domFx.cssEffects : (effects ?? props.effects);
 	const stages = useMemo(() => effectStages(cssEffects, `fx-${clip.clipId}`), [cssEffects, clip.clipId]);
 	let content: ReactNode = (
 		<div data-layer-source="" style={{ ...FILL, ...style }}>
 			{children}
 		</div>
 	);
+	if (domFx.mode === 'active') content = <FxDomPicture stage={domFx.stage}>{content}</FxDomPicture>;
+	const chip = domFx.mode === 'none' ? null : domFx.chip;
+	const shownOverlay = chip ? <GradeChip layer={layer} text={chip} /> : overlay;
 	for (const stage of stages) {
 		content = (
 			<div data-effect={stage.effectId} style={{ ...FILL, ...stage.style }}>
@@ -76,7 +94,7 @@ export function LayerBox({
 			}}
 		>
 			{content}
-			{overlay}
+			{shownOverlay}
 		</div>
 	);
 }

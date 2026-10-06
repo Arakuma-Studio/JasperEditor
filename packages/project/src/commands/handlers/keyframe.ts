@@ -7,6 +7,7 @@
 // document and re-use param.ts target resolution for validation, lock checks and time conversion.
 import type { Draft } from 'immer';
 import { autoSlope, EASE_PRESETS, evaluate, isHoldOnlyValue } from '../../keyframes.ts';
+import { newKeySpatial, refreshAutoTangents, setSpatialMode } from '../../keyframes-spatial.ts';
 import { PROPERTY_SPECS } from '../../registry/properties.ts';
 import type { Animatable, Ease, Interpolation, Keyframe } from '../../schema/common.ts';
 import { type EffectInstance, isKnownClipKind, type Track } from '../../schema/sequence.ts';
@@ -95,6 +96,10 @@ export function allAnimatables(doc: DDoc): AnimLocation[] {
 		for (const fx of seq.master.effects)
 			for (const [name, a] of Object.entries(fx.params))
 				if (isAnim(a)) out.push({ anim: a, path: ['effect', fx.id, name], seq, clip: null });
+		// Transition params (wave-2 transition framework; times = flicks from the span's start).
+		for (const t of Object.values(seq.transitions))
+			for (const [name, a] of Object.entries(t.params))
+				if (isAnim(a)) out.push({ anim: a as DAnim, path: ['transition', t.id, name], seq, clip: null });
 	}
 	return out;
 }
@@ -118,6 +123,12 @@ export function targetOf(doc: DDoc, loc: AnimLocation, h: HandlerContext): Extra
 	const t = resolveTarget(doc, { target: [...loc.path], sequenceId: loc.seq.id }, h);
 	if (t.type !== 'anim') return h.fail('E_INVALID_PARAM', `${t.label} is not animatable`);
 	return t;
+}
+
+/** Refuses spatial data on parameters that are not points (S03:KF-021 "vec2 position and anchor"). */
+export function assertSpatialTarget(target: Target, h: HandlerContext): void {
+	if (!target.rule.spatial)
+		h.fail('E_INVALID_PARAM', `${target.label} is not a point property; it has no spatial interpolation`);
 }
 
 // ---------------------------------------------------------------- curve maintenance
@@ -177,6 +188,8 @@ function matchContinuous(anim: DAnim, i: number, edited: 'in' | 'out'): void {
 export function finish(anims: Iterable<DAnim>): void {
 	for (const a of anims) {
 		a.keyframes.sort((x, y) => x.time - y.time);
+		// Spatial auto tangents first: auto-bezier temporal slopes measure curved paths (S03:KF-030).
+		refreshAutoTangents(a.keyframes as Keyframe<unknown>[]);
 		refreshAutoBezier(a);
 		// Template param views drop an emptied keyframe list (S11:ATP-006).
 		(a as { [PRUNE_EMPTY_KEYFRAMES]?: () => void })[PRUNE_EMPTY_KEYFRAMES]?.();
@@ -240,6 +253,7 @@ export const keyframeHandlers: HandlerMap = {
 			if (v.clamped) h.warn('W_VALUE_CLAMPED', `${target.label} clamped to ${JSON.stringify(v.value)}`);
 			value = v.value;
 		} else value = clone(evaluate(anim as Animatable<unknown>, time, { holdOnly: hold }));
+		if (cmd.spatial) assertSpatialTarget(target, h);
 		let key = anim.keyframes.find((k) => k.time === time) as DKey | undefined;
 		if (key) {
 			key.value = value as never; // KF-002: same time → replace the value, keep id and interpolation
@@ -247,17 +261,26 @@ export const keyframeHandlers: HandlerMap = {
 			if (cmd.easeIn) setEase(key, 'in', cmd.easeIn);
 			if (cmd.easeOut) setEase(key, 'out', cmd.easeOut);
 		} else {
+			const steps = hold || isHoldOnlyValue(value);
+			// S03:KF-021: new keys of point properties get the property's spatial default (Auto Bezier for position).
+			const spatial = steps ? undefined : newKeySpatial(target.rule.spatial, value);
 			key = {
 				id: h.ids.next('kf'),
 				time,
 				value: value as never,
-				interpolation: cmd.interpolation ?? (hold || isHoldOnlyValue(value) ? 'hold' : 'linear'),
+				interpolation: cmd.interpolation ?? (steps ? 'hold' : 'linear'),
 				easeIn: { ...(cmd.easeIn ?? LINEAR) },
 				easeOut: { ...(cmd.easeOut ?? LINEAR) },
+				...(spatial ? { spatial } : {}),
 			} as DKey;
 			anim.keyframes.push(key);
 		}
 		const id = key.id;
+		if (cmd.spatial) {
+			anim.keyframes.sort((x, y) => x.time - y.time);
+			const kfs = anim.keyframes as Keyframe<unknown>[];
+			setSpatialMode(kfs, kfs.indexOf(key as Keyframe<unknown>), cmd.spatial);
+		}
 		finish([anim]);
 		h.defineRef(cmd.ref, id);
 		return { keyframeId: id, time, value };
@@ -275,6 +298,11 @@ export const keyframeHandlers: HandlerMap = {
 		const interpolation = cmd.interpolation ?? key.interpolation;
 		if (cmd.interpolation !== undefined || cmd.easeIn || cmd.easeOut)
 			applyInterpolation(loc!.anim, key, interpolation, cmd.easeIn, cmd.easeOut);
+		if (cmd.spatial) {
+			assertSpatialTarget(target, h);
+			const kfs = loc!.anim.keyframes as Keyframe<unknown>[];
+			setSpatialMode(kfs, kfs.indexOf(key as Keyframe<unknown>), cmd.spatial);
+		}
 		finish([loc!.anim]);
 		return { keyframeId: key.id };
 	},

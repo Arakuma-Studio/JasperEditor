@@ -12,8 +12,8 @@ import {
 } from '../composition/json-schema.ts';
 import { contentTimeAt } from '../derive/index.ts';
 import { DEFAULT_SHAPE_SIZE, shapeIntrinsicBox } from '../factories.ts';
-import { evaluate } from '../keyframes.ts';
-import type { Animatable, Keyframe, RGBA } from '../schema/common.ts';
+import { type EvaluateOptions, evaluate } from '../keyframes.ts';
+import type { Animatable, Keyframe, RGBA, SpatialInterpolation } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { MgCompositionInfo } from '../schema/media.ts';
 import {
@@ -82,6 +82,11 @@ export type PropertySpec = {
 	range?: { min?: number; max?: number; softMin?: number; softMax?: number; step?: number };
 	/** `continuous` = interpolated keyframes; `hold-only` = step keyframes (S01:KF-007); `no` = static field. */
 	animatable: 'continuous' | 'hold-only' | 'no';
+	/**
+	 * vec2 point properties with a spatial path (S03:KF-021): the spatial interpolation new keys get. Absent = not
+	 * spatial (the keys never carry `spatial`; e.g. scale-like vectors, shape size, colour wheels).
+	 */
+	spatial?: SpatialInterpolation;
 	options?: readonly string[];
 	optionLabels?: readonly string[];
 	/**
@@ -119,6 +124,8 @@ export type PropertySpec = {
 	description?: string;
 	/** M2 (S08): JSON Schema of the value (`json` kind and every spec built from a JSON Schema). */
 	valueSchema?: JsonSchemaObject;
+	/** `media` values (fx framework): the asset kinds the picker offers (absent = LUTs, the M2 colour pickers). */
+	mediaKinds?: readonly string[];
 };
 
 const hasTransform = (c: Pick<Clip, 'kind'>) => !!kindCapabilities(c.kind)?.hasTransform;
@@ -355,6 +362,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		range: { step: 0.1 },
 		animatable: 'continuous',
 		storagePath: ['transform', 'position'],
+		// S03:KF-021: new position keys are Auto Bezier spatial with Linear temporal (Premiere's default feel).
+		spatial: 'auto-bezier',
 		appliesTo: hasTransform,
 		ui: { control: 'vec2', precision: 1 },
 		defaultValue: ({ seq }: PropertyContext) => [seq.settings.width / 2, seq.settings.height / 2],
@@ -369,6 +378,7 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		range: { step: 0.1 },
 		animatable: 'continuous',
 		storagePath: ['transform', 'anchor'],
+		spatial: 'auto-bezier',
 		appliesTo: hasTransform,
 		ui: { control: 'vec2', precision: 1 },
 		defaultValue: (ctx: PropertyContext) => {
@@ -1130,8 +1140,10 @@ export function effectPropertySpecs(fx: Pick<EffectInstance, 'id'>, effect: Effe
 
 export function effectParamPropertySpec(fxId: string, effect: EffectSpec, p: ParamSpec): PropertySpec {
 	const kind: ValueKind = p.type;
+	// fx framework: `point` params are vec2 fields in the inspector (the Program monitor adds the on-canvas handle).
+	const hint = p.ui?.control === 'point' ? 'vec2' : p.ui?.control;
 	const control: PropertySpec['ui']['control'] =
-		p.ui?.control ??
+		hint ??
 		(kind === 'curve'
 			? 'curve'
 			: kind === 'media'
@@ -1156,6 +1168,7 @@ export function effectParamPropertySpec(fxId: string, effect: EffectSpec, p: Par
 		unit: p.unit === 'Hz' ? undefined : p.unit,
 		range: p.range,
 		animatable: p.animatable ? 'continuous' : 'hold-only',
+		...(p.type === 'vec2' && p.animatable && p.spatial ? { spatial: p.spatial } : {}),
 		options: p.options,
 		optionLabels: p.optionLabels,
 		storagePath: ['$effect', fxId, p.name],
@@ -1166,6 +1179,7 @@ export function effectParamPropertySpec(fxId: string, effect: EffectSpec, p: Par
 			precision: step === undefined ? 1 : step >= 1 ? 0 : step >= 0.1 ? 1 : 2,
 		},
 		defaultValue: p.default,
+		...(p.mediaKinds ? { mediaKinds: p.mediaKinds } : {}),
 	};
 }
 
@@ -1290,16 +1304,26 @@ export type ResolvedProperty = {
 	outside: boolean;
 };
 
+/**
+ * Options `evaluate()` uses for a property (hold-only types step; numbers clamp to their range). Shared
+ * by the resolver and every consumer that samples the curve itself (Effect Controls graphs, S03:KF-022).
+ */
+export function propertyEvaluateOptions(
+	s: Pick<PropertySpec, 'kind' | 'range' | 'animatable'>,
+): EvaluateOptions {
+	const clamp =
+		s.kind === 'number' && s.range && (s.range.min !== undefined || s.range.max !== undefined)
+			? { min: s.range.min, max: s.range.max }
+			: undefined;
+	return { holdOnly: s.animatable === 'hold-only', clamp };
+}
+
 /** Value of a property at a sequence frame (S03:PRP-010). */
 export function resolvePropertyAt(ctx: PropertyContext, s: PropertySpec, frame: number): ResolvedProperty {
 	const { time, outside } = clipContentTimeAtFrame(ctx.clip, frame, ctx.seq.settings.frameRate);
 	const stored = readStoredProperty(ctx, s);
 	if (isAnimatableValue(stored)) {
-		const clampRange =
-			s.kind === 'number' && s.range && (s.range.min !== undefined || s.range.max !== undefined)
-				? { min: s.range.min, max: s.range.max }
-				: undefined;
-		const value = evaluate(stored, time, { holdOnly: s.animatable === 'hold-only', clamp: clampRange });
+		const value = evaluate(stored, time, propertyEvaluateOptions(s));
 		return { value, animated: stored.keyframes.length > 0, anim: stored, time, outside };
 	}
 	if (stored === undefined && s.defaultValue !== undefined)

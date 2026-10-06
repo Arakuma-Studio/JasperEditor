@@ -9,6 +9,7 @@ import { ERROR_CODES, type Registries, TX_PROTOCOL, WARNING_CODES } from '../com
 import { PROPERTY_SPECS } from '../registry/properties.ts';
 import { KNOWN_CLIP_KINDS } from '../schema/sequence.ts';
 import { LATEST_TEXT_ANIMATION_SPECS, TEXT_ANIMATION_SPECS } from '../text-animations.ts';
+import { TRANSITION_SPECS } from '../transitions.ts';
 
 export type JsonSchema = Record<string, unknown>;
 
@@ -33,6 +34,29 @@ export type AgentSchema = {
 		appliesTo: string;
 		params: unknown[];
 		capabilities: unknown;
+		/** fx framework: Effects-panel bin, one-line description, GPU shader effect (Remotion path unless native). */
+		bin?: string;
+		description?: string;
+		gpu?: boolean;
+	}[];
+	/**
+	 * Wave-2 transition framework: every transition type (`transition.add {effectId, params}`): Effects-panel bin,
+	 * params (ParamSpecs; `param.set` target ["transition", id, name]), GPU shader stage (Remotion path) or built-in.
+	 */
+	transitions: {
+		id: string;
+		version: number;
+		label: string;
+		appliesTo: 'video' | 'audio';
+		bin: string;
+		subBin?: string;
+		description: string;
+		keywords?: readonly string[];
+		params: unknown[];
+		capabilities: unknown;
+		gpu?: boolean;
+		/** Heavy in the preview (`TransitionSpec.expensive`). */
+		expensive?: boolean;
 	}[];
 	mgTemplates: {
 		id: string;
@@ -71,6 +95,8 @@ export type AgentSchema = {
 		unit?: string;
 		range?: unknown;
 		animatable: string;
+		/** vec2 points (spatial-motion-path, S03:KF-021): the spatial interpolation of new keys. */
+		spatial?: string;
 		/** M2 (S11:ANA-001): clip kinds the property applies to. */
 		kinds: string[];
 	}[];
@@ -108,6 +134,23 @@ export function exportAgentSchema(registries: Registries): AgentSchema {
 			appliesTo: e.appliesTo,
 			params: e.params,
 			capabilities: e.capabilities,
+			...(e.bin ? { bin: e.bin } : {}),
+			...(e.description ? { description: e.description } : {}),
+			...(e.gpu ? { gpu: true } : {}),
+		})),
+		transitions: TRANSITION_SPECS.map((t) => ({
+			id: t.id,
+			version: t.version,
+			label: t.label,
+			appliesTo: t.appliesTo,
+			bin: t.bin,
+			...(t.subBin ? { subBin: t.subBin } : {}),
+			description: t.description,
+			...(t.keywords ? { keywords: t.keywords } : {}),
+			params: [...t.params],
+			capabilities: t.capabilities,
+			...(t.gpu ? { gpu: true } : {}),
+			...(t.expensive ? { expensive: true } : {}),
 		})),
 		mgTemplates: registries.mgTemplates.list().map((t) => ({
 			id: t.id,
@@ -143,6 +186,7 @@ export function exportAgentSchema(registries: Registries): AgentSchema {
 			unit: p.unit,
 			range: p.range,
 			animatable: p.animatable,
+			...(p.spatial ? { spatial: p.spatial } : {}),
 			kinds: KNOWN_CLIP_KINDS.filter((kind) => p.appliesTo({ kind })),
 		})),
 		errorCodes: ERROR_CODES,

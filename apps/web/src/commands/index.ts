@@ -2,6 +2,8 @@
 
 // Register the Program overlay that attaches the layer-bake runtime.
 import '../layer-bake/commands.ts';
+// Register the fx framework's on-canvas point handles (wave 1).
+import '../fx/register.ts';
 import { appCommands } from './app.ts';
 import { cacheCommands } from './cache.ts';
 import { clipboardCommands } from './clipboard.ts';

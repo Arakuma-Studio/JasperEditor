@@ -12,14 +12,38 @@
 // (static clips resolve to the same cached object), then hands them to a memoized `LayerView` that
 // skips rendering when nothing it draws changed. Layers that draw per-frame content (motion graphics, animated
 // text, keyframed shapes) are `isFrameDependent` and re-render every frame.
-import { clipContentTime, fadeFactor, type RenderVisualClip, resolveCachedLayerProps } from '@jasper/project';
-import { type ComponentType, memo, useMemo, useRef } from 'react';
-import { AbsoluteFill, Sequence, useCurrentFrame } from 'remotion';
+// fx framework (wave 1): layers with time-dependent GPU shader effects are frame dependent too, and a time effect's
+// source-frame remap (`gpu.time.remap`) is applied here: `<Freeze>` + remapped localFrame/contentTime, `realFrame`.
+// Transition framework (wave 2): a track's GPU transitions (`transitions`) are shader stages drawn above its clips
+// over their spans (fx/transition.tsx); the clips that are their sides get `transition` (progress, side and the tap
+// that captures their picture), or the preview's dissolve fallback ramp when the GPU cannot run them.
+import {
+	clipContentTime,
+	fadeFactor,
+	flicksPerFrame,
+	type RenderVisualClip,
+	resolveCachedLayerProps,
+	transitionSpec,
+} from '@jasper/project';
+import { type ComponentType, memo, useContext, useMemo, useRef } from 'react';
+import { AbsoluteFill, Freeze, Sequence, useCurrentFrame } from 'remotion';
 import { ColorDocContext, type ColorDocValue } from './color/chain.ts';
 import { FontsReadyContext, useFontsReadyState, useLayerFontsReady } from './fonts.ts';
+import { useFxStatus } from './fx/status.ts';
+import { fxRemapFrame, hasTimeDependentFx } from './fx/time.ts';
+import {
+	htmlInCanvasAvailable,
+	TransitionHub,
+	type TransitionSideEntry,
+	TransitionSidesContext,
+	TransitionStage,
+	transitionFallbackFactor,
+	transitionProgressAt,
+	transitionRunMode,
+} from './fx/transition.tsx';
 import { AudioLayer, layerComponentFor } from './layers/index.ts';
 import { rgbaCss } from './metadata.ts';
-import { premountFrames } from './pipeline.ts';
+import { blendModeCss, premountFrames } from './pipeline.ts';
 import { FrameRepaint } from './repaint.tsx';
 import type { LayerProps, RenderDoc, RenderOptions, SequenceCompositionProps } from './types.ts';
 
@@ -38,8 +62,13 @@ const hasKeyframes = (v: { keyframes: unknown[] } | null | undefined): boolean =
  * FRAME_DEPENDENT_KINDS, text clips with animators in their source (S11:TXA-009) and shapes whose geometry or
  * paint is keyframed (evaluated by the layer, S11:SHP-003).
  */
-function isFrameDependent(clip: Pick<RenderVisualClip, 'kind' | 'source'>): boolean {
+function isFrameDependent(
+	clip: Pick<RenderVisualClip, 'kind' | 'source' | 'effects'>,
+	media?: RenderDoc['media'],
+): boolean {
 	if (FRAME_DEPENDENT_KINDS.has(clip.kind)) return true;
+	// A shader effect that changes over time (incl. a media param bound to a video that plays).
+	if (hasTimeDependentFx(clip, undefined, media ? (id) => media[id]?.kind : undefined)) return true;
 	const src = clip.source;
 	if ('text' in src) return !!src.animation && !!(src.animation.in || src.animation.out);
 	if ('shape' in src) {
@@ -58,7 +87,7 @@ function isFrameDependent(clip: Pick<RenderVisualClip, 'kind' | 'source'>): bool
 /** Media kinds get a 2 s premount so decoders warm up before the cut (S03:RND-020). */
 const PREMOUNT_KINDS: ReadonlySet<string> = new Set(['video', 'still', 'animated-image']);
 
-type ViewProps = LayerProps & { Component: ComponentType<LayerProps> };
+type ViewProps = LayerProps & { Component: ComponentType<LayerProps>; frameDependent: boolean };
 
 /** Equality for LayerView: frame-independent layers ignore localFrame/contentTime. */
 function layerViewEqual(a: ViewProps, b: ViewProps): boolean {
@@ -69,14 +98,26 @@ function layerViewEqual(a: ViewProps, b: ViewProps): boolean {
 		a.media !== b.media ||
 		a.options !== b.options ||
 		a.fps !== b.fps ||
-		a.fonts !== b.fonts
+		a.fonts !== b.fonts ||
+		a.transition !== b.transition
 	)
 		return false;
-	if (isFrameDependent(a.clip)) return a.localFrame === b.localFrame;
+	if (a.frameDependent || b.frameDependent)
+		return a.localFrame === b.localFrame && a.realFrame === b.realFrame;
 	return true;
 }
 
-const LayerView = memo(function LayerView({ Component, ...layer }: ViewProps) {
+/** Frame dependence of a clip in a document (cached per clip object and media table). */
+const frameDependence = new WeakMap<RenderVisualClip, { media: RenderDoc['media']; value: boolean }>();
+function frameDependentIn(clip: RenderVisualClip, media: RenderDoc['media']): boolean {
+	const hit = frameDependence.get(clip);
+	if (hit && hit.media === media) return hit.value;
+	const value = isFrameDependent(clip, media);
+	frameDependence.set(clip, { media, value });
+	return value;
+}
+
+const LayerView = memo(function LayerView({ Component, frameDependent: _fd, ...layer }: ViewProps) {
 	return <Component {...layer} />;
 }, layerViewEqual);
 
@@ -97,8 +138,19 @@ const ClipLayer = memo(function ClipLayer({
 	const fps = doc.settings.fps.num / doc.settings.fps.den;
 	const contentTime = clipContentTime(clip, frame, doc.settings.fps);
 	const resolved = resolveCachedLayerProps(clip, contentTime);
+	// Transition framework: the GPU transition this clip is a side of at this frame (if any).
+	const sides = useContext(TransitionSidesContext).get(clip.clipId);
+	const entry = sides?.find((e) => frame >= e.t.start && frame < e.t.start + e.t.duration);
+	const gpuSide = entry?.mode.mode === 'gpu' ? entry : null;
+	const progress = gpuSide
+		? transitionProgressAt(gpuSide.t, gpuSide.spec, frame, flicksPerFrame(doc.settings.fps))
+		: 0;
+	const tap = gpuSide ? gpuSide.hub.tap(gpuSide.side) : null;
+	const transition = useMemo(() => (tap ? { progress, side: tap.side, tap } : undefined), [tap, progress]);
 	// Transition ramps multiply the opacity; outside a ramp the (cached) props object is passed through.
-	const fade = fadeFactor(clip.fades, frame);
+	const fade =
+		fadeFactor(clip.fades, frame) *
+		(entry && !gpuSide ? transitionFallbackFactor(entry.t, entry.side, frame) : 1);
 	const props = useMemo(
 		() => (fade === 1 ? resolved : { ...resolved, opacity: resolved.opacity * fade }),
 		[resolved, fade],
@@ -107,10 +159,33 @@ const ClipLayer = memo(function ClipLayer({
 	const Component = layerComponentFor({ clip, media });
 	// S11:FIX-003: font-dependent layers mount once their faces are loaded (no fallback-font paint/measure).
 	const fontsReady = useLayerFontsReady(clip, doc.fonts);
+	// fx framework: a time effect shows the source at another frame (Motion/opacity/params stay at the real time).
+	const remapped = fxRemapFrame(clip, props.effects, localFrame, fps);
+	const frameDependent = frameDependentIn(clip, doc.media);
 	if (!fontsReady) return null;
+	if (remapped !== null)
+		return (
+			<Freeze frame={remapped + (clip.headHandle ?? 0)}>
+				<LayerView
+					Component={Component}
+					frameDependent={frameDependent}
+					clip={clip}
+					props={props}
+					localFrame={remapped}
+					realFrame={localFrame}
+					contentTime={clipContentTime(clip, clip.start + remapped, doc.settings.fps)}
+					fps={fps}
+					media={media}
+					options={options}
+					fonts={doc.fonts}
+					transition={transition}
+				/>
+			</Freeze>
+		);
 	return (
 		<LayerView
 			Component={Component}
+			frameDependent={frameDependent}
 			clip={clip}
 			props={props}
 			localFrame={localFrame}
@@ -119,6 +194,7 @@ const ClipLayer = memo(function ClipLayer({
 			media={media}
 			options={options}
 			fonts={doc.fonts}
+			transition={transition}
 		/>
 	);
 });
@@ -130,15 +206,64 @@ export function SequenceComposition({ doc, options }: SequenceCompositionProps) 
 	const offset = doc.range.start;
 	const background = options.transparentBackground ? 'transparent' : rgbaCss(doc.settings.backgroundColor);
 	const premount = premountFrames(fps);
+	const gpu = useFxStatus();
+	const htmlInCanvas = htmlInCanvasAvailable();
+	// One hub per transition id for the life of the composition (the sides' taps and the stage meet there).
+	const hubs = useRef(new Map<string, TransitionHub>());
+	const hubOf = (id: string) => {
+		let h = hubs.current.get(id);
+		if (!h) {
+			h = new TransitionHub();
+			hubs.current.set(id, h);
+		}
+		return h;
+	};
+	// biome-ignore lint/correctness/useExhaustiveDependencies: hubOf reads a ref
 	const tracks = useMemo(
 		() =>
-			doc.videoTracks.map((t) => ({
-				trackId: t.trackId,
-				clips: options.layerFilter ? t.clips.filter((c) => options.layerFilter!.includes(c.clipId)) : t.clips,
-				mattes: options.layerFilter ? [] : (t.mattes ?? []),
-			})),
-		[doc.videoTracks, options.layerFilter],
+			doc.videoTracks.map((t) => {
+				const clips = options.layerFilter
+					? t.clips.filter((c) => options.layerFilter!.includes(c.clipId))
+					: t.clips;
+				// Layer renders (bakes of single clips) draw no stages, as no mattes.
+				const byId = new Map(clips.map((c) => [c.clipId, c]));
+				const sides = new Map<string, TransitionSideEntry[]>();
+				const stages: (TransitionSideEntry & { blendMode?: string })[] = [];
+				for (const tr of options.layerFilter ? [] : (t.transitions ?? [])) {
+					const spec = transitionSpec(tr.effectId);
+					if (!spec) continue;
+					const mode = transitionRunMode(tr, spec, byId, doc.media, { gpu, htmlInCanvas });
+					const hub = hubOf(tr.id);
+					const sideClips = (['out', 'in'] as const)
+						.map((side) => ({
+							side,
+							clip: byId.get((side === 'out' ? tr.outgoingClipId : tr.incomingClipId) ?? ''),
+						}))
+						.filter((x): x is { side: 'out' | 'in'; clip: RenderVisualClip } => !!x.clip);
+					for (const { side, clip } of sideClips) {
+						const list = sides.get(clip.clipId) ?? [];
+						list.push({ t: tr, spec, side, mode, hub });
+						sides.set(clip.clipId, list);
+					}
+					const modes = new Set(sideClips.map((x) => x.clip.blendMode));
+					const blend = modes.size === 1 ? blendModeCss([...modes][0]!) : undefined;
+					stages.push({ t: tr, spec, side: 'in', mode, hub, ...(blend ? { blendMode: blend } : {}) });
+				}
+				return {
+					trackId: t.trackId,
+					clips,
+					mattes: options.layerFilter ? [] : (t.mattes ?? []),
+					sides,
+					stages,
+				};
+			}),
+		[doc.videoTracks, doc.media, options.layerFilter, gpu, htmlInCanvas],
 	);
+	const comp = useMemo(
+		() => ({ width: doc.settings.width, height: doc.settings.height, fps }),
+		[doc.settings.width, doc.settings.height, fps],
+	);
+	const fpf = flicksPerFrame(doc.settings.fps);
 	// M2 colour stage (S06): LUT assets referenced by effect params and the preview before/after bypass.
 	const color = useMemo<ColorDocValue>(
 		() => ({
@@ -156,33 +281,58 @@ export function SequenceComposition({ doc, options }: SequenceCompositionProps) 
 					style={{ backgroundColor: background, overflow: 'hidden', isolation: 'isolate' }}
 				>
 					{tracks.map((track) => (
-						<AbsoluteFill key={track.trackId} data-track-id={track.trackId}>
-							{track.mattes.map((m) => (
-								<Sequence
-									key={`matte-${m.id}`}
-									from={m.start - offset}
-									durationInFrames={m.duration}
-									name="Transition matte"
-								>
-									<AbsoluteFill data-transition-matte={m.id} style={{ backgroundColor: rgbaCss(m.color) }} />
-								</Sequence>
-							))}
-							{track.clips.map((clip) => {
-								const head = clip.headHandle ?? 0;
-								const from = clip.start - head - offset;
-								return (
+						<TransitionSidesContext.Provider key={track.trackId} value={track.sides}>
+							<AbsoluteFill data-track-id={track.trackId}>
+								{track.mattes.map((m) => (
 									<Sequence
-										key={clip.clipId}
-										from={from}
-										durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
-										name={clip.name}
-										premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
+										key={`matte-${m.id}`}
+										from={m.start - offset}
+										durationInFrames={m.duration}
+										name="Transition matte"
 									>
-										<ClipLayer clip={clip} doc={doc} options={options} />
+										<AbsoluteFill
+											data-transition-matte={m.id}
+											style={{ backgroundColor: rgbaCss(m.color) }}
+										/>
 									</Sequence>
-								);
-							})}
-						</AbsoluteFill>
+								))}
+								{track.clips.map((clip) => {
+									const head = clip.headHandle ?? 0;
+									const from = clip.start - head - offset;
+									return (
+										<Sequence
+											key={clip.clipId}
+											from={from}
+											durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
+											name={clip.name}
+											premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
+										>
+											<ClipLayer clip={clip} doc={doc} options={options} />
+										</Sequence>
+									);
+								})}
+								{track.stages.map((st) => (
+									<Sequence
+										key={`transition-${st.t.id}`}
+										from={st.t.start - offset}
+										durationInFrames={st.t.duration}
+										name={st.spec.label}
+									>
+										<TransitionStage
+											t={st.t}
+											spec={st.spec}
+											hub={st.hub}
+											mode={st.mode}
+											comp={comp}
+											flicksPerFrame={fpf}
+											isPreview={options.isPreview}
+											blendMode={st.blendMode}
+											media={doc.media}
+										/>
+									</Sequence>
+								))}
+							</AbsoluteFill>
+						</TransitionSidesContext.Provider>
 					))}
 					{doc.audioClips.map((clip) => {
 						// An audio crossfade plays the clip's handles (S10:TUI-052).

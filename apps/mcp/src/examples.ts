@@ -146,6 +146,25 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		target: ['clip', '$clip', 'opacity'],
 		value: 0.5,
 	},
+	// spatial-motion-path (S03:KF-021/030): a curved position key and its tangents (sequence px offsets).
+	'keyframe.add': {
+		type: 'keyframe.add',
+		target: ['clip', '$clip', 'transform', 'position'],
+		at: { sequenceFrame: 30 },
+		value: [1400, 300],
+		spatial: { mode: 'auto-bezier' },
+		ref: '$key',
+	},
+	'keyframe.setSpatialInterpolation': {
+		type: 'keyframe.setSpatialInterpolation',
+		keyframeIds: ['$key'],
+		mode: 'continuous-bezier',
+	},
+	'keyframe.setTangents': {
+		type: 'keyframe.setTangents',
+		keyframeId: '$key',
+		outTangent: [200, -120],
+	},
 	'transition.add': {
 		type: 'transition.add',
 		clipId: { clipAt: { track: 'V1', at: 0 } },
@@ -211,6 +230,28 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		},
 		clipId: { clipAt: { track: 'V1', at: 0 } },
 		at: { frames: 0 },
+	},
+	// wp-m3-presets (S03:FX-030): a fade-in preset authored inline (list_effect_presets / get_effect_preset give real ones).
+	'effect.applyPreset': {
+		type: 'effect.applyPreset',
+		preset: {
+			format: 'jasper-effect-preset',
+			version: 1,
+			id: 'fxp_example',
+			name: 'Fade In (1 s)',
+			type: 'anchor-in',
+			source: { duration: 150, frameRate: { num: 30, den: 1 } },
+			intrinsic: {
+				opacity: {
+					value: 0,
+					keyframes: [
+						{ time: 0, value: 0 },
+						{ time: 705_600_000, value: 100 },
+					],
+				},
+			},
+		},
+		clipIds: [{ clipAt: { track: 'V1', at: 0 } }],
 	},
 	'project.pasteItems': {
 		type: 'project.pasteItems',

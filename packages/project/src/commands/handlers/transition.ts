@@ -23,9 +23,42 @@ import {
 } from '../../transitions.ts';
 import type { DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, end, findTrackIn } from '../placement.ts';
+import { ruleFromParam, validateValue } from './param.ts';
 import type { HandlerMap } from './util.ts';
 
 type DTransition = Draft<Transition>;
+
+/**
+ * Writes static param values (validated and clamped against the spec's ParamSpecs) into a transition. Unknown names
+ * fail with the list of the transition's params; a keyframed param is refused (param.set edits keys).
+ */
+function writeParams(
+	t: DTransition,
+	spec: TransitionSpec,
+	values: Record<string, unknown>,
+	h: HandlerContext,
+) {
+	for (const [name, v] of Object.entries(values)) {
+		const p = spec.params.find((x) => x.name === name);
+		if (!p)
+			h.fail(
+				'E_INVALID_PARAM',
+				spec.params.length
+					? `${spec.label} has no parameter "${name}". Parameters: ${spec.params.map((x) => x.name).join(', ')}`
+					: `Transition ${spec.id} has no parameters`,
+			);
+		const label = `${spec.label}.${name}`;
+		const { value, clamped } = validateValue(v, ruleFromParam(p!), h, label);
+		if (clamped) h.warn('W_VALUE_CLAMPED', `${label} clamped to ${JSON.stringify(value)}`);
+		const cur = t.params[name];
+		if (cur && cur.keyframes.length > 0)
+			h.fail(
+				'E_INVALID_PARAM',
+				`${label} has keyframes; edit it with param.set {target: ["transition", "${t.id}", "${name}"], at}`,
+			);
+		t.params[name] = { value: value as never, keyframes: [] };
+	}
+}
 
 function specOf(effectId: string, h: HandlerContext): TransitionSpec {
 	const spec = transitionSpec(effectId);
@@ -94,6 +127,7 @@ type AddArgs = {
 	duration?: number;
 	alignment?: Transition['alignment'];
 	handles?: 'shorten' | 'freeze';
+	params?: Record<string, unknown>;
 	ref?: string;
 };
 
@@ -145,6 +179,7 @@ function addTransition(doc: DDoc, a: AddArgs, h: HandlerContext) {
 		alignment,
 		params: {},
 	};
+	if (a.params) writeParams(seq.transitions[id]!, spec, a.params, h);
 	return {
 		transitionId: id,
 		duration,
@@ -177,6 +212,7 @@ export const transitionHandlers: HandlerMap = {
 						effectId: cmd.effectId,
 						duration: cmd.duration,
 						handles: cmd.handles,
+						params: cmd.params,
 						ref: cmd.ref,
 					},
 					h,
@@ -203,6 +239,7 @@ export const transitionHandlers: HandlerMap = {
 				duration: cmd.duration,
 				alignment: cmd.alignment,
 				handles: cmd.handles,
+				params: cmd.params,
 				ref: cmd.ref,
 			},
 			h,
@@ -224,8 +261,6 @@ export const transitionHandlers: HandlerMap = {
 				);
 			effectId = spec.id;
 		}
-		if (cmd.params && Object.keys(cmd.params).length > 0)
-			h.fail('E_INVALID_PARAM', `Transition ${effectId} has no parameters`);
 		const outgoing = t.outgoingClipId ? ((seq.clips[t.outgoingClipId] as Clip | undefined) ?? null) : null;
 		const incoming = t.incomingClipId ? ((seq.clips[t.incomingClipId] as Clip | undefined) ?? null) : null;
 		const two = !!outgoing && !!incoming;
@@ -247,6 +282,7 @@ export const transitionHandlers: HandlerMap = {
 		}
 		t.alignment = alignment;
 		t.duration = duration;
+		if (cmd.params && Object.keys(cmd.params).length > 0) writeParams(t, specOf(effectId, h), cmd.params, h);
 		return { transitionId: t.id, effectId, duration, alignment };
 	},
 
