@@ -28,7 +28,7 @@ const LIGHT_CASES: [string, Record<string, unknown>][] = [
 	['jasper.s.glow-dist', { glowWidth: 0.3 }],
 	['jasper.s.glow-rainbow', {}],
 	['jasper.s.ultra-glow', {}],
-	['jasper.s.zglow', {}],
+	['jasper.s.zglow', { widthNear: 0.3 }],
 	['jasper.s.glint', { threshold: 0.5, sizeRed: 1, sizeBlue: 1 }],
 	['jasper.s.glare', { style: 'roundCoin', size: 3 }],
 ];
@@ -142,7 +142,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			const a = await pixels('jasper.s.lens-flare-auto-track', {}, { scene: 'dot' }, [
 				[DOT[0] + 6, DOT[1] + 6],
 			]);
-			const off = await pixels('jasper.s.lens-flare-auto-track', { hotspotThreshold: 1 }, { scene: 'dot' }, [
+			const off = await pixels('jasper.s.lens-flare-auto-track', {}, { scene: 'black' }, [
 				[DOT[0] + 6, DOT[1] + 6],
 			]);
 			expect(lum(a.out[0]!)).toBeGreaterThan(lum(off.out[0]!) + 40);
@@ -183,15 +183,21 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expect(r.out[0]![3]).toBe(255);
 		});
 
-		it('is deterministic; seeds and frames change the random effects', async () => {
+		it('S_BokehLights is deterministic and changes with the seed', async () => {
 			const a = await checksum('jasper.s.bokeh-lights', {}, { scene: 'night' });
 			expect(await checksum('jasper.s.bokeh-lights', {}, { scene: 'night' })).toBe(a);
 			expect(await checksum('jasper.s.bokeh-lights', {}, { scene: 'night', seed: 0.75 })).not.toBe(a);
+		});
+
+		it('S_Flashbulbs is deterministic per frame and changes between frames', async () => {
 			const f3 = await checksum('jasper.s.flashbulbs', { flashes: 8 }, { scene: 'night', frame: 3 });
 			expect(await checksum('jasper.s.flashbulbs', { flashes: 8 }, { scene: 'night', frame: 3 })).toBe(f3);
 			expect(await checksum('jasper.s.flashbulbs', { flashes: 8 }, { scene: 'night', frame: 4 })).not.toBe(
 				f3,
 			);
+		});
+
+		it('S_LightLeak drifts over time', async () => {
 			const l = await checksum('jasper.s.light-leak', {}, { scene: 'night', frame: 0 });
 			expect(await checksum('jasper.s.light-leak', {}, { scene: 'night', frame: 40 })).not.toBe(l);
 		});

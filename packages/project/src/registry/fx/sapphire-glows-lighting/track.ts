@@ -6,7 +6,7 @@
 //     tBk (1/64), tCk (smallest grid): max-reductions — the brightest child wins (ties: the first in scan order),
 //                    blocks within EXCLUDE of an earlier hotspot are skipped;
 //     tDk (smallest grid): every texel holds the winner, refined to the luminance⁴-weighted centroid of the source
-//                    around it (sub-block accuracy), and its strength vs Hotspot Threshold.
+//                    around it (sub-block accuracy), and its strength (peak luminance there vs Hotspot Threshold).
 // A flare pass reads `texelFetch(u_tDk, ivec2(0), 0)` = (x uv, y uv, strength, 1). rgba16f keeps positions to
 // ~1/2000 of the canvas (the rgba8 fallback is coarser; the refinement still lands on the blob).
 import { GLSL_COLOR } from '../glsl/color.ts';
@@ -101,6 +101,7 @@ void main() {
   // Refine: luminance⁴-weighted centroid of the source in a ±12 px window around the winner.
   vec2 cell = 2.0 / u_canvasSize;
   vec3 acc = vec3(0.0);
+  float peak = 0.0;
   int R = sgl_dyn(6);
   for (int y = -R; y <= R; y++)
     for (int x = -R; x <= R; x++) {
@@ -108,10 +109,13 @@ void main() {
       float l = fx_inBox(q) ? fx_luma(texture(u_source, q).rgb) : 0.0;
       float w = l * l * l * l;
       acc += vec3(q * w, w);
+      peak = max(peak, l);
     }
   vec2 pos = acc.z > 1.0e-6 ? acc.xy / acc.z : best.gb;
   float thr = clamp(u_hotspotThreshold, 0.0, 0.999);
-  float strength = clamp((best.r - thr) / (1.0 - thr) * 2.0, 0.0, 1.0);
+  // The blurred average picks the spot (blob-size aware); its strength is the spot's own peak brightness, so small
+  // lights (lamps, glints) trigger a flare too.
+  float strength = best.r < 0.0 ? 0.0 : clamp((peak - thr) / (1.0 - thr) * 2.0, 0.0, 1.0);
   fragColor = vec4(pos, strength, 1.0);
 }`,
 			},
