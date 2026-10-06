@@ -151,11 +151,11 @@ function flashParams(i: number, d: Flash): ParamSpec[] {
 
 /**
  * Per-frame flash state (TS): the drift of flash i in Sapphire units over the transition (Motion Amount along Motion
- * Angle after Motion Delay, ~1.5 units per unit of amount over the span) and its flicker gain.
+ * Angle after Motion Delay, 3 units per unit of amount over the span) and its flicker gain.
  */
 export function flashState(p: EffectParams, i: number, e: number, t: number, seed: number) {
 	const k = Math.max(0, e - num(p[`motionDelay${i}`])) / Math.max(1e-3, 1 - num(p[`motionDelay${i}`]));
-	const amt = num(p[`motionAmount${i}`], 1) * 1.5 * k;
+	const amt = num(p[`motionAmount${i}`], 1) * 3 * k;
 	const a = (num(p[`motionAngle${i}`]) * Math.PI) / 180;
 	// Editor angles are clockwise on screen (y down); Sapphire units are y up.
 	const move: [number, number] = [amt * Math.cos(a), -amt * Math.sin(a)];
@@ -330,7 +330,7 @@ void main() {
   if (u_flash3) light += le * u_brightness3 * u_flicker3 * fb_flash(s, fb_s(u_center3 * u_compSize) + u_move3, u_size3, u_stretch3, u_rotation3,
     u_outerColor3.rgb, u_innerColor3.rgb, u_midpoint3, u_softness3, u_shape3, u_numSides3, u_noiseAmp3, t, fract(u_seed + 0.6));
   // The cut hides in a burst of light at the switch.
-  light += vec3(1.0, 0.85, 0.6) * 0.6 * exp(-pow((e - 0.5) * max(u_dissolveSpeed, 1.0) * 0.25, 2.0)) * le;
+  light += vec3(1.0, 0.8, 0.55) * 0.4 * exp(-pow((e - 0.5) * max(u_dissolveSpeed, 1.0) * 0.25, 2.0)) * le;
   if (u_flashesCombine == 0) c = mix(c, light, clamp(max(light.r, max(light.g, light.b)), 0.0, 1.0));
   else if (u_flashesCombine == 1) c = c + light;
   else if (u_flashesCombine == 2) c = 1.0 - (1.0 - clamp(c, 0.0, 1.0)) * (1.0 - clamp(light, 0.0, 1.0));

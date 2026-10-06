@@ -282,7 +282,7 @@ void main() {
     rgb = vec3(dash * 0.1 * u_borderData);
   }
   // Black border on the left edge while the hold slips.
-  if (v_uv.x < u_borderWidth * r * abs(tear) * 4.0) rgb = vec3(0.0);
+  if (v_uv.x < u_borderWidth * r * clamp(0.6 + 1.5 * tear, 0.0, 2.0)) rgb = vec3(0.0);
   float a = max(c.a, (blank || dead || sAmt > 0.0) ? 1.0 : 0.0);
   fragColor = vec4(clamp(rgb, 0.0, 1.0) * a, a);
 }`,

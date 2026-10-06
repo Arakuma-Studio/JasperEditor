@@ -31,7 +31,7 @@ const GALLERY: [string, string, Record<string, unknown>?][] = [
 	['card-flip-shuffle', 'jasper.s.card-flip', { revolutions: 0, shift: 1.2 }],
 	['film-burn-transition', 'jasper.s.film-burn-transition', { edges: true }],
 	['film-roll', 'jasper.s.film-roll'],
-	['flutter-cut', 'jasper.s.flutter-cut', { color1Frames: 1 }],
+	['flutter-cut', 'jasper.s.flutter-cut', { color1Frames: 1, fromStartFrames: 4 }],
 	['hyper-pull', 'jasper.s.hyper-pull'],
 	['hyper-push', 'jasper.s.hyper-push', { cameraShake: true }],
 	[

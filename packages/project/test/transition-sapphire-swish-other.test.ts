@@ -294,7 +294,7 @@ describe('sapphire-swish-other maths', () => {
 		expect(Math.hypot(...flashState(fb, 1, 0, 0, 0.1).move)).toBe(0);
 		const m = flashState(fb, 1, 1, 0, 0.1).move;
 		expect(m[0]).toBeCloseTo(0, 9);
-		expect(m[1]).toBeCloseTo(1.5, 9); // Motion Angle −90° (clockwise = up on screen) → +y in Sapphire units
+		expect(m[1]).toBeCloseTo(3, 9); // Motion Angle −90° (clockwise = up on screen) → +y in Sapphire units
 		const hp = defaults('jasper.s.hyper-push');
 		expect(hyperShake(hp, { frame: 3, fps: 30, seed: 0.2, progress: 0.5 })).toEqual([0, 0]);
 		const on = hyperShake({ ...hp, cameraShake: true }, { frame: 3, fps: 30, seed: 0.2, progress: 0.5 });

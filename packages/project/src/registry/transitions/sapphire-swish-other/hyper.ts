@@ -177,7 +177,7 @@ void main() {
   vec4 c = texture(u_res, v_uv);
   vec3 rgb = c.a > 0.0 ? c.rgb / c.a : vec3(0.0);
   float l = max(rgb.r, max(rgb.g, rgb.b));
-  float m = smoothstep(u_glowThreshold, u_glowThreshold + 0.25, l);
+  float m = smoothstep(u_glowThreshold, u_glowThreshold + 0.6, l) * clamp(l - u_glowThreshold, 0.0, 1.0);
   fragColor = vec4(rgb * m * c.a, m * c.a);
 }`,
 					},
@@ -189,7 +189,7 @@ void main() {
 void main() {
   vec4 c = texture(u_res, v_uv);
   float bell = sw_bell(sw_slow(tr_progress(), u_slowIn, u_slowOut));
-  vec3 g = texture(u_glow, v_uv).rgb * u_glowBrightness * 0.35 * bell * bell;
+  vec3 g = texture(u_glow, v_uv).rgb * u_glowBrightness * 0.2 * bell * bell;
   float a = max(c.a, clamp(max(g.r, max(g.g, g.b)), 0.0, 1.0));
   fragColor = vec4(c.rgb + g, a);
 }`,
