@@ -7,6 +7,7 @@
 import type { EffectParams, EffectSpec } from '../../effects.ts';
 import { defineShaderEffect, SAPPHIRE_BINS } from '../define.ts';
 import { GLSL_COMPOSITE } from '../glsl/composite.ts';
+import { centredShutter, FX_MB_KEYS, mbKeyTimes } from '../motion-blur.ts';
 import { fxParam } from '../params.ts';
 import type { FxFrameContext, FxPlanContext, FxUniformValue, GlslChunk } from '../shader.ts';
 import {
@@ -199,6 +200,17 @@ vec4 sbs_moSample(sampler2D t, vec2 layerPx) {
   if (ox || oy) return vec4(0.0);
   return texture(t, sbs_uvOfNorm(n));
 }
+// S_BlurMoCurves: the transform at shutter time s (0..1) through the key transforms of its animation curves at exact
+// sub-frame times (u_moKeys: ${FX_MB_KEYS} keys + one beyond each end; Catmull-Rom), so eases and curved paths blur
+// along their real path.
+vec4 sbs_moKey(float s) {
+  float u = clamp(s, 0.0, 1.0) * ${(FX_MB_KEYS - 1).toFixed(1)};
+  int k = clamp(int(floor(u)), 0, ${FX_MB_KEYS - 2});
+  float t = u - float(k);
+  vec4 p0 = u_moKeys[k], p1 = u_moKeys[k + 1], p2 = u_moKeys[k + 2], p3 = u_moKeys[k + 3];
+  float t2 = t * t, t3 = t2 * t;
+  return 0.5 * (2.0 * p1 + (p2 - p0) * t + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2 + (3.0 * (p1 - p2) + p3 - p0) * t3);
+}
 // Exposure-weighted average of the source along the path From → To (n samples), optionally re-applying the
 // current transform (Blur Only keeps the picture in place).
 vec4 sbs_moPath(sampler2D t, vec2 y) {
@@ -208,7 +220,7 @@ vec4 sbs_moPath(sampler2D t, vec2 y) {
   for (int i = 0; i < 128; i++) {
     if (i >= n) break;
     float s = n == 1 ? 0.5 : float(i) / float(n - 1);
-    vec4 p = mix(u_moFrom, u_moTo, s);
+    vec4 p = u_moSpline ? sbs_moKey(s) : mix(u_moFrom, u_moTo, s);
     vec2 x = sbs_moInverse(p, y);
     if (u_moBlurOnly) x = sbs_moForward(u_moNow, x);
     float w = max(0.0, 1.0 + (u_moBias - 0.5) * 2.0 * (2.0 * s - 1.0));
@@ -314,11 +326,21 @@ function moUniforms(
 	to: MoTransform,
 	now: MoTransform,
 	blurOnly: boolean,
+	/** Key transforms at `mbKeyTimes` (S_BlurMoCurves' animation over the shutter), or none: From → To linearly. */
+	keys?: readonly MoTransform[],
 ): Record<string, FxUniformValue> {
 	const center = vec2(p.center, [0.5, 0.5]);
 	const k = choiceIndex(p.blurRes, BLUR_RES, 'full');
-	const len = (moPathLength(from, to, center, ctx) * ctx.pxScale) / 2 ** k;
+	const moving = keys?.slice(1, -1).some((t) => JSON.stringify(t) !== JSON.stringify(keys[1]));
+	let path = moPathLength(from, to, center, ctx);
+	if (keys && moving) {
+		path = 0;
+		for (let i = 1; i + 2 < keys.length; i++) path += moPathLength(keys[i]!, keys[i + 1]!, center, ctx);
+	}
+	const len = (path * ctx.pxScale) / 2 ** k;
 	return {
+		u_moSpline: !!(keys && moving),
+		u_moKeys: { vec4s: keys && moving ? keys.flatMap((t) => toVec(t, ctx)) : new Array<number>((FX_MB_KEYS + 2) * 4).fill(0) },
 		u_moCenter: [center[0] * ctx.width, center[1] * ctx.height],
 		u_moFrom: toVec(from, ctx),
 		u_moTo: toVec(to, ctx),
@@ -420,8 +442,10 @@ export const S_BLUR_MO_CURVES = defineShaderEffect({
 			const mid = ctx.frame + num(p.shutterShift);
 			const at = (f: number): MoTransform => (c.paramsAt ? transformOf(c.paramsAt(f), '', 1) : now);
 			const blurOnly = p.effect === 'blurOnly';
+			// The animation curves at exact sub-frame times over the shutter (16 keys + one beyond each end).
+			const keys = dur > 0 ? mbKeyTimes(ctx.frame, centredShutter(dur, num(p.shutterShift))).map(at) : undefined;
 			return {
-				...moUniforms(p, ctx, at(mid - dur / 2), at(mid + dur / 2), now, blurOnly),
+				...moUniforms(p, ctx, at(mid - dur / 2), at(mid + dur / 2), now, blurOnly, keys),
 				u_mixWithOriginal: 0,
 			};
 		},

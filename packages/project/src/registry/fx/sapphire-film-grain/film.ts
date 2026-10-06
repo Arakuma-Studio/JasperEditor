@@ -6,6 +6,7 @@
 // deterministic signals of common.ts (TS uniforms) — never Math.random.
 import type { EffectParams, EffectSpec, ParamSpec } from '../../effects.ts';
 import { defineShaderEffect, SAPPHIRE_BINS } from '../define.ts';
+import { GLSL_MB } from '../glsl/motion-blur.ts';
 import { GLSL_UV } from '../glsl/sample.ts';
 import { fxParam } from '../params.ts';
 import { bloomPyramidPasses } from '../passes.ts';
@@ -264,8 +265,15 @@ void main() {
   float period = 1.0 + max(u_interframeBorderHeight, 0.0) * 0.1;
   vec4 s = vec4(0.0);
   float wsum = 0.0;
-  for (int i = 0; i < 5; i++) {
-    float k = (float(i) / 4.0 - 0.5) * u_shakeVel * u_shakeMotionBlur * 4.0;
+  // Shake Motion Blur: a smear along the slip, 5 taps (wave 3) or ≤ 1 px apart when longer (adaptive, ≤ 64).
+  float span = u_shakeVel * u_shakeMotionBlur * 4.0;
+  float ext = abs(span) * box.y * u_pxScale;
+  int mbN = max(5, fx_mbTapCount(ext, 64));
+  float mbJ = mbN > 5 ? fx_mbJitterFor(ext, mbN) : 0.0;
+  float last = mbN > 5 ? float(mbN) : 4.0;
+  for (int i = 0; i < fx_mbDyn(64); i++) {
+    if (i >= mbN) break;
+    float k = ((float(i) + mbJ) / last - 0.5) * span;
     float y = mod(n.y + u_shakeY + k, period);
     vec4 t = y > 1.0 ? vec4(0.0, 0.0, 0.0, src.a) : sfdm_sample(vec2(n.x, y));
     s += t;
@@ -444,7 +452,7 @@ export const S_FILM_DAMAGE = defineShaderEffect({
 				{ output: 'dirtA', include: [GLSL_DIRT], frag: FILM_DAMAGE_DIRT_A, filter: 'nearest' },
 				{ output: 'dirtB', include: [GLSL_DIRT], frag: FILM_DAMAGE_DIRT_B, filter: 'nearest' },
 			];
-			const final: ShaderPass = { include: [GLSL_FILM], frag: filmDamageFrag(defocus) };
+			const final: ShaderPass = { include: [GLSL_FILM, GLSL_MB], frag: filmDamageFrag(defocus) };
 			return [
 				...(defocus
 					? uniformBlurPasses({ input: 'source', output: 'dfc', sigmaUniform: 'u_defocusSigma' })

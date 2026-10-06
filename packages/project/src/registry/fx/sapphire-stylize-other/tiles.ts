@@ -7,6 +7,7 @@ import { GLSL_BLEND } from '../glsl/blend.ts';
 import { GLSL_BLUR } from '../glsl/blur.ts';
 import { GLSL_COMPOSITE } from '../glsl/composite.ts';
 import { GLSL_HASH } from '../glsl/hash.ts';
+import { GLSL_MB } from '../glsl/motion-blur.ts';
 import { GLSL_NOISE } from '../glsl/noise.ts';
 import { GLSL_UV } from '../glsl/sample.ts';
 import { fxParam, sapphireCommonParams } from '../params.ts';
@@ -304,7 +305,7 @@ export const S_STRIP_SLIDE: EffectSpec = defineShaderEffect({
 	gpu: {
 		passes: [
 			{
-				include: [GLSL_SSO_COMMON, GLSL_HASH, GLSL_UV, GLSL_BLEND, GLSL_COMPOSITE],
+				include: [GLSL_SSO_COMMON, GLSL_HASH, GLSL_UV, GLSL_BLEND, GLSL_COMPOSITE, GLSL_MB],
 				frag: /* glsl */ `
 // Strip k spans [ss_edge(k), ss_edge(k + 1)) across the slide direction (strip units, jittered by Randomize Size).
 float ss_edge(int k) { return float(k) + (fx_hash1(k, u_seed) - 0.5) * min(u_randomizeSize, 0.9); }
@@ -337,14 +338,18 @@ void main() {
   else if (u_order == 3) rank = dist;
   else if (u_order == 4) rank = 1.0 - dist;
   float travel = 2.0 * extU + 2.0;
+  float a0 = u_amount - 0.04 * u_motionBlur;
   float d1 = ss_progress(u_amount, rank) * travel;
-  float d0 = ss_progress(u_amount - 0.04 * u_motionBlur, rank) * travel;
+  float d0 = ss_progress(a0, rank) * travel;
   vec4 strip = vec4(0.0);
-  const int N = 12;
-  int n = abs(d1 - d0) > 0.5 ? N : 1;
-  for (int i = 0; i < N; i++) {
+  // Motion blur: taps along the strip's real (eased) slide over the blur window — 12 (wave 3) or ≤ 1 px apart when
+  // longer (adaptive, ≤ 64, jittered per pixel beyond).
+  float ext = abs(d1 - d0);
+  int n = ext > 0.5 ? max(12, fx_mbTapCount(ext, 64)) : 1;
+  float j = n > 12 ? fx_mbJitterFor(ext, n) : 0.5;
+  for (int i = 0; i < fx_mbDyn(64); i++) {
     if (i >= n) break;
-    float d = n == 1 ? d1 : mix(d0, d1, (float(i) + 0.5) / float(n));
+    float d = n == 1 ? d1 : ss_progress(mix(a0, u_amount, fx_mbTapAt(i, n, j)), rank) * travel;
     vec2 q = p - along * d;
     vec4 s = vec4(0.0);
     if (abs(dot(q, along)) <= extU && fx_inBox(sso_uvOfBoxPx(q + half_))) s = texture(u_source, sso_uvOfBoxPx(q + half_));

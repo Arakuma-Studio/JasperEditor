@@ -213,22 +213,85 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			const results: Record<string, ReturnType<typeof smearStats> & { taps?: number }> = {};
 			for (const [name, kind, a, limits] of SMEARS) {
 				const o = kind === 'effect' ? await effect(a as EffectArgs) : await transition(a as TransitionArgs);
-				const s = smearStats(o.row ?? []);
+				const s = smearStats(o.row ?? o.column ?? []);
 				results[name] = { ...s, ...(o.uniforms?.u_mbPlan ? { taps: o.uniforms.u_mbPlan[0] } : {}) };
 				if (process.env.MB_PNG_DIR && o.png)
 					writeFileSync(join(process.env.MB_PNG_DIR, `${name}.png`), Buffer.from(o.png.split(',')[1]!, 'base64'));
 				if (process.env.MB_NO_ASSERT) continue;
 				expect(s.length, `${name} smear length`).toBeGreaterThanOrEqual(limits.minLength);
 				expect(s.notches, `${name} notches`).toBe(0);
-				expect(s.holes, `${name} holes`).toBe(0);
+				if (!limits.allowHoles) expect(s.holes, `${name} holes`).toBe(0);
 				if (limits.maxRatio) expect(s.ratio, `${name} max/min`).toBeLessThan(limits.maxRatio);
 			}
 			report.smears = results;
 		});
+
+		it('deterministic: same pixels on re-render and in any frame order (no frame-random jitter)', async () => {
+			const twitchy = SMEARS.find(([n]) => n === 'shake-twitchy')![2] as EffectArgs;
+			const pin = SMEARS.find(([n]) => n === 'corner-pin-fast')![2] as EffectArgs;
+			const travel = SMEARS.find(([n]) => n === 'travel-motion')![2] as TransitionArgs;
+			const a = await effect({ ...twitchy, png: false });
+			const p1 = await effect({ ...pin, png: false });
+			const t1 = await transition({ ...travel, png: false });
+			await effect({ ...twitchy, frame: 11, png: false });
+			await effect({ ...pin, frame: 3, png: false });
+			await transition({ ...travel, frame: 7, png: false });
+			expect((await effect({ ...twitchy, png: false })).checksum).toBe(a.checksum);
+			expect((await effect({ ...pin, png: false })).checksum).toBe(p1.checksum);
+			expect((await transition({ ...travel, png: false })).checksum).toBe(t1.checksum);
+			// The jitter is per pixel + seed, not per frame: another seed changes the grain of a capped smear.
+			const fast = { ...twitchy, png: false, params: { ...twitchy.params, amplitude: 10 } };
+			expect((await effect({ ...fast, seed: 0.7 })).checksum).not.toBe((await effect(fast)).checksum);
+		});
+
+		it('the preview scale reduces the taps proportionally; Draft / High quality presets', async () => {
+			const wave = SMEARS.find(([n]) => n === 'shake-wave')![2] as EffectArgs;
+			const full = await effect({ ...wave, png: false });
+			const half = await effect({ ...wave, png: false, scale: 0.5 });
+			const quarter = await effect({ ...wave, png: false, scale: 0.25 });
+			const taps = (o: Out) => o.uniforms!.u_mbPlan![0]!;
+			expect(taps(full)).toBe(40);
+			expect(taps(half)).toBe(20);
+			expect(taps(quarter)).toBe(10);
+			const s = smearStats(half.row ?? []);
+			expect(s.holes).toBe(0);
+			expect(s.notches).toBe(0);
+			const draft = await effect({ ...wave, png: false, params: { ...wave.params, mbQuality: 'draft' } });
+			expect(taps(draft)).toBe(16);
+			const fast = { ...wave, png: false, params: { ...wave.params, amplitude: 12 } };
+			expect(taps(await effect(fast))).toBe(64);
+			expect(taps(await effect({ ...fast, params: { ...fast.params, mbQuality: 'high' } }))).toBe(96);
+			report.taps = { full: taps(full), half: taps(half), quarter: taps(quarter), draft: taps(draft) };
+		});
+
+		it.runIf(process.env.MB_PERF === '1')('1080p frame times (MB_PERF=1)', { timeout: 900_000 }, async () => {
+			const at = (a: Partial<EffectArgs> & { id: string }) =>
+				effect({ width: 1920, height: 1080, paint: 'grid', repeat: 3, ...a });
+			const shake = { id: 'jasper.s.shake', frame: 29 };
+			const cases: [string, Partial<EffectArgs> & { id: string }][] = [
+				['shake-off', { ...shake, params: { amplitude: 1 } }],
+				['shake-typical (Normal, amp 1, blur on)', { ...shake, params: { amplitude: 1, motionBlur: true } }],
+				['shake-twitchy-amp5 (worst, blur on)', { ...shake, params: { motionBlur: true, style: 'twitchy', amplitude: 5, frequency: 12, stillness: 0 } }],
+				['shake-twitchy-amp5 1/2 preview', { ...shake, scale: 0.5, params: { motionBlur: true, style: 'twitchy', amplitude: 5, frequency: 12, stillness: 0 } }],
+				['shake-twitchy-amp5 draft', { ...shake, params: { motionBlur: true, style: 'twitchy', amplitude: 5, frequency: 12, stillness: 0, mbQuality: 'draft' } }],
+				['shake-rgb-amp5 (3 channels, blur on)', { ...shake, params: { motionBlur: true, style: 'twitchy', amplitude: 5, frequency: 12, stillness: 0, redPhase: 0.3, bluePhase: -0.3 } }],
+			];
+			const out: Record<string, { ms: number; taps: number }> = {};
+			for (const [name, a] of cases) {
+				const o = await at(a);
+				out[name] = { ms: Math.round(o.ms! * 10) / 10, taps: o.uniforms?.u_mbPlan?.[0] ?? 1 };
+			}
+			report.perf1080 = out;
+			console.info(JSON.stringify(out, null, 2));
+		});
 	},
 );
 
-type Limits = { minLength: number; maxRatio?: number };
+/**
+ * `allowHoles`: Jumpy's jumps are instantaneous in the shake model (held random targets), so a jump inside the shutter
+ * is two exposures joined by a streak of 1/15 of the exposure time (box shutter): fainter than one luma level.
+ */
+type Limits = { minLength: number; maxRatio?: number; allowHoles?: boolean };
 const row = H / 2;
 const png = !!process.env.MB_PNG_DIR;
 /** Moving cases: [name, kind, args, limits]. Rows are layer px (effects) / frame px (transitions). */
@@ -274,7 +337,7 @@ const SMEARS: [string, 'effect' | 'transition', EffectArgs | TransitionArgs, Lim
 			png,
 			params: { motionBlur: true, style: 'jumpy', amplitude: 3, frequency: 24, xRandAmp: 1, yRandAmp: 0, drift: 1 },
 		},
-		{ minLength: 4 },
+		{ minLength: 4, allowHoles: true },
 	],
 	[
 		// The pinned quad (half the layer) races 72 px per frame to the right.
@@ -369,6 +432,32 @@ const SMEARS: [string, 'effect' | 'transition', EffectArgs | TransitionArgs, Lim
 		'transition',
 		{ id: 'jasper.s.swish-pan', width: W, height: H, frame: 3, duration: 10, row, png, to: 'none', params: { direction: 'right' } },
 		{ minLength: 40 },
+	],
+	[
+		// An eased (ease-in) keyframed shift: the blur follows the curve, not the straight line between the ends.
+		'blur-mo-curves',
+		'effect',
+		{
+			id: 'jasper.s.blur-mo-curves',
+			width: W,
+			height: H,
+			frame: 3,
+			row,
+			png,
+			params: { shutterDuration: 1 },
+			keys: [
+				{ frame: 0, params: { shift: [0, 0] } },
+				{ frame: 2, params: { shift: [0.1, 0] } },
+				{ frame: 4, params: { shift: [0.5, 0] } },
+			],
+		},
+		{ minLength: 25, maxRatio: 2.5 },
+	],
+	[
+		'strip-slide-transition',
+		'transition',
+		{ id: 'jasper.s.strip-slide-transition', width: W, height: H, frame: 4, duration: 10, column: W / 2, png, from: 'hline', to: 'none', params: { motionBlur: 2, stripAngle: 90, stripSize: 2 } },
+		{ minLength: 20 },
 	],
 	[
 		'earthquake',
