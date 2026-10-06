@@ -6,12 +6,13 @@ import { clipEnd } from './derive/index.ts';
 import { createTrack } from './factories.ts';
 import { type IdPrefix, type IdSource, idPrefixOf, isValidId } from './ids.ts';
 import type { EffectRegistry } from './registry/effects.ts';
-import { contentDurationFlicks, isBoundedContent, trackKindFor } from './registry/kinds.ts';
+import { contentDurationFlicks, isBoundedContent, kindCapabilities, trackKindFor } from './registry/kinds.ts';
 import type { MgTemplateRegistry } from './registry/mg.ts';
 import { SPATIAL_INTERPOLATIONS } from './schema/common.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import type { Clip, EffectInstance, Sequence, Track } from './schema/sequence.ts';
 import { isKnownClipKind } from './schema/sequence.ts';
+import { isNestClip } from './structure/nest.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
 import {
 	contentSpanFlicks,
@@ -327,7 +328,11 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 				usedMedia.add(r.mediaId);
 				const asset = doc.media[r.mediaId];
 				if (!asset) issues.push(inv('INV-006', `Clip ${c.id} references missing media ${r.mediaId}`, cw));
-				else if (isBoundedContent(c) && asset.probe.durationFlicks !== null) {
+				else if (c.frameHold && isBoundedContent(c) && asset.probe.durationFlicks !== null) {
+					// edit-structure: a held clip shows one frame; only that frame must exist.
+					if (c.frameHold.flicks >= asset.probe.durationFlicks + flicksPerFrame(rate) + 1)
+						issues.push(inv('INV-005', `Clip ${c.id} holds a frame outside its media`, cw));
+				} else if (isBoundedContent(c) && asset.probe.durationFlicks !== null) {
 					// INV-005 media bounds with one frame of tolerance
 					const span = contentSpanFlicks(c.duration, rate, c.speed.rate);
 					const tol = flicksPerFrame(rate) * c.speed.rate + 1;
@@ -364,8 +369,18 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 			}
 			if (typeof r.syntheticId === 'string') {
 				usedSyn.add(r.syntheticId);
-				if (!doc.synthetics[r.syntheticId])
-					issues.push(inv('INV-006', `Clip ${c.id} references missing synthetic`, cw));
+				const syn = doc.synthetics[r.syntheticId];
+				if (!syn) issues.push(inv('INV-006', `Clip ${c.id} references missing synthetic`, cw));
+				else if (!syntheticFitsClip(c.kind, syn.kind))
+					issues.push(inv('INV-006', `A ${c.kind} clip cannot show a ${syn.kind} source`, cw));
+			}
+			// edit-structure: frame holds are for clips with a picture (not adjustment layers, captions or sound).
+			if (c.frameHold !== undefined) {
+				const caps = kindCapabilities(c.kind);
+				if (!caps || caps.trackKind !== 'video' || c.kind === 'adjustment')
+					issues.push(inv('INV-012', `Clip ${c.id} cannot have a frame hold`, cw));
+				else if (!Number.isInteger(c.frameHold.flicks) || c.frameHold.flicks < 0)
+					issues.push(inv('INV-012', `Clip ${c.id} has an invalid frame hold time`, cw));
 			}
 			if (typeof r.transcriptId === 'string') {
 				usedTrs.add(r.transcriptId);
@@ -375,6 +390,16 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 			if (typeof r.sequenceId === 'string' && isKnownClipKind(c.kind)) {
 				if (!doc.sequences[r.sequenceId])
 					issues.push(inv('INV-006', `Clip ${c.id} references missing sequence`, cw));
+				else {
+					// INV-005 for nests: inside the nested sequence's duration (KND-011).
+					const dur = contentDurationFlicks(doc, c);
+					const span = contentSpanFlicks(c.duration, rate, c.speed.rate);
+					const tol = flicksPerFrame(rate) * c.speed.rate + 1;
+					if (dur !== null && !c.frameHold && c.sourceIn + span > dur + tol)
+						issues.push(
+							inv('INV-005', `Clip ${c.id} exceeds its nested sequence (${c.sourceIn + span} > ${dur})`, cw),
+						);
+				}
 				const set = nestEdges.get(seq.id) ?? new Set<string>();
 				set.add(r.sequenceId);
 				nestEdges.set(seq.id, set);
@@ -680,7 +705,8 @@ export function repairDocument(
 				!trackIds.has(c.trackId) ||
 				(typeof r.mediaId === 'string' && !doc.media[r.mediaId]) ||
 				(typeof r.syntheticId === 'string' && !doc.synthetics[r.syntheticId]) ||
-				(typeof r.transcriptId === 'string' && !doc.transcripts[r.transcriptId]);
+				(typeof r.transcriptId === 'string' && !doc.transcripts[r.transcriptId]) ||
+				(isNestClip(c) && (typeof r.sequenceId !== 'string' || !doc.sequences[r.sequenceId]));
 			if (missing) {
 				delete seq.clips[c.id];
 				note('drop-clip', c.id, 'clip referenced a missing track or source');
@@ -750,6 +776,42 @@ export function repairDocument(
 			}
 		}
 	}
+	// edit-structure (INV-009): nest clips that close a nesting cycle are removed (the first found, until acyclic).
+	for (;;) {
+		const cycle = findNestCycleClip(doc);
+		if (!cycle) break;
+		delete doc.sequences[cycle.seqId]!.clips[cycle.clipId];
+		note('drop-clip', cycle.clipId, 'nest clip formed a nesting cycle');
+		for (const t of Object.values(doc.sequences[cycle.seqId]!.transitions))
+			if (t.outgoingClipId === cycle.clipId || t.incomingClipId === cycle.clipId)
+				delete doc.sequences[cycle.seqId]!.transitions[t.id];
+		const seq = doc.sequences[cycle.seqId]!;
+		for (const kind of ['links', 'groups'] as const) {
+			const field = kind === 'links' ? 'linkId' : 'groupId';
+			for (const g of Object.values(seq[kind])) {
+				g.members = g.members.filter((m) => m !== cycle.clipId && seq.clips[m]);
+				if (g.members.length >= 2) continue;
+				for (const m of g.members) (seq.clips[m] as Record<string, unknown>)[field] = null;
+				delete seq[kind][g.id];
+			}
+		}
+	}
+	// edit-structure: frame holds on clips that cannot have one are removed.
+	for (const seq of Object.values(doc.sequences))
+		for (const c of Object.values(seq.clips)) {
+			if (c.frameHold === undefined) continue;
+			const caps = kindCapabilities(c.kind);
+			const ok =
+				!!caps &&
+				caps.trackKind === 'video' &&
+				c.kind !== 'adjustment' &&
+				Number.isInteger(c.frameHold.flicks) &&
+				c.frameHold.flicks >= 0;
+			if (!ok) {
+				delete c.frameHold;
+				note('drop-frame-hold', c.id, 'invalid frame hold removed');
+			}
+		}
 	// Leaked media/synthetics get a project item so nothing silently disappears (INV-014).
 	const usedMedia = new Set<string>();
 	const usedSyn = new Set<string>();
@@ -803,4 +865,36 @@ export function repairDocument(
 		}
 	}
 	return { document: doc, report };
+}
+
+/** edit-structure: which synthetic sources a clip kind can show (AST-010). */
+export function syntheticFitsClip(clipKind: string, synKind: string): boolean {
+	if (clipKind === 'adjustment') return synKind === 'adjustment';
+	if (clipKind === 'solid') return synKind !== 'adjustment';
+	if (clipKind === 'synthetic-audio') return synKind === 'bars-and-tone' || synKind === 'counting-leader';
+	return true;
+}
+
+/** A nest clip on a nesting cycle (INV-009), or null. */
+function findNestCycleClip(doc: ProjectDocument): { seqId: string; clipId: string } | null {
+	const state = new Map<string, 1 | 2>();
+	let hit: { seqId: string; clipId: string } | null = null;
+	const visit = (s: string): boolean => {
+		state.set(s, 1);
+		const seq = doc.sequences[s];
+		for (const c of Object.values(seq?.clips ?? {})) {
+			if (!isNestClip(c)) continue;
+			const n = (c as { sequenceId: string }).sequenceId;
+			if (!doc.sequences[n]) continue;
+			if (state.get(n) === 1) {
+				hit = { seqId: s, clipId: c.id };
+				return true;
+			}
+			if (!state.has(n) && visit(n)) return true;
+		}
+		state.set(s, 2);
+		return false;
+	};
+	for (const s of Object.keys(doc.sequences)) if (!state.has(s) && visit(s)) return hit;
+	return null;
 }

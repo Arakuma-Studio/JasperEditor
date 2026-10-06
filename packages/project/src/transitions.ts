@@ -162,7 +162,9 @@ export function clipHandles(
 	seq: Pick<Sequence, 'settings'>,
 	c: Clip,
 ): { head: number; tail: number } {
-	if (STATIC_KINDS.has(c.kind)) return { head: Number.POSITIVE_INFINITY, tail: Number.POSITIVE_INFINITY };
+	// edit-structure: a held clip shows one frame whatever the content time.
+	if (STATIC_KINDS.has(c.kind) || c.frameHold)
+		return { head: Number.POSITIVE_INFINITY, tail: Number.POSITIVE_INFINITY };
 	const step = flicksPerFrame(seq.settings.frameRate as Rational) * c.speed.rate;
 	// Media duration, or the composition length for composition clips (S08:MGC-004).
 	const dur = contentDurationFlicks(doc, c);
