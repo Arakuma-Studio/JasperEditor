@@ -404,6 +404,9 @@ function lutTexture(h: FxHost, lut: Lut): { tex: WebGLTexture; size: number } {
 		[gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE],
 	] as const)
 		gl.texParameteri(gl.TEXTURE_3D, k, v);
+	// Typed-array uploads of 3D textures must not flip/premultiply (INVALID_OPERATION otherwise).
+	gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+	gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
 	gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
 	gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGB16F, l3.size, l3.size, l3.size, 0, gl.RGB, gl.FLOAT, l3.data);
 	gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);

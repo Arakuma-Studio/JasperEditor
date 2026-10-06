@@ -792,7 +792,7 @@ export type FxTimeStep = {
 type SpanCtx = Omit<FxTimeContext, 'seed' | 'paramsAt' | 'clip'>;
 
 const clampToSpan = (f: number, ctx: SpanCtx) =>
-	Math.max(-ctx.headHandle, Math.min(ctx.duration + ctx.tailHandle - 1, f));
+	Math.max(0 - ctx.headHandle, Math.min(ctx.duration + ctx.tailHandle - 1, f)) + 0;
 
 /** One remap: floored and clamped to the drawn span. */
 function applyRemap(s: FxTimeStep, at: number, ctx: SpanCtx): number {
