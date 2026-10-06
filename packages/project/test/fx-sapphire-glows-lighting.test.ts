@@ -174,7 +174,7 @@ describe('family helpers', () => {
 	});
 
 	it('ray passes compose three radial combs; Rays Length maps to log scale ranges', () => {
-		const r = rayPasses('src', 'r', 0.5);
+		const r = rayPasses('r', 0.5);
 		expect(r.map((p) => p.output)).toEqual(['r1', 'r2', 'r3']);
 		expect(r.map((p) => p.uniforms!.u_rspan)).toEqual([1 / 144, 1 / 12, 1]);
 		const u = rayUniforms(0.25, [1, 1, 1], 0, 0);

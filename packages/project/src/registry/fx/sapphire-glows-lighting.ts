@@ -1170,7 +1170,7 @@ function rayPipeline(
 			uniforms: { u_rd: 1 / scale },
 			frag: sourceFrag,
 		},
-		...rayPasses('raySrc', 'r', scale),
+		...rayPasses('r', scale),
 		...(b?.passes ?? []),
 		final(b ? 'rb0' : 'r3'),
 	];
@@ -1726,29 +1726,47 @@ function leakElementParams(
 
 const LEAK_COMBINE = ['Screen', 'Add', 'Leaks Only'] as const;
 
-/** GLSL of leak element n (uses its params): premultiplied-free RGB light at layer-normalised point. */
-const leakElementGlsl = (n: number) => /* glsl */ `
-vec3 leak${n}(vec2 nrm, float ar, float t) {
-  if (!u_element${n}Enable) return vec3(0.0);
-  float a = radians(u_angle${n});
+/** S_LightLeak element k (0…2) as one GLSL function (its params picked by index): a single copy of the noise code. */
+/** `u_<name>1|2|3` picked by the element index `k` (GLSL). */
+const pick = (name: string) => `(k == 0 ? u_${name}1 : k == 1 ? u_${name}2 : u_${name}3)`;
+
+const LEAK_ELEMENT_GLSL = /* glsl */ `
+vec3 leakElement(int k, vec2 nrm, float ar, float t) {
+  bool on = k == 0 ? u_element1Enable : k == 1 ? u_element2Enable : u_element3Enable;
+  if (!on) return vec3(0.0);
+  float a = radians(${pick('angle')});
   vec2 dir = vec2(cos(a), -sin(a) / ar);
-  vec2 c = u_center${n} + u_shift * vec2(1.0, 1.0 / ar) + dir * u_speed * u_speed${n} * t * 0.05;
-  c += u_randomMotion * 0.1 * vec2(fx_simplex(vec2(t * u_randomFrequency * 0.25, ${n}.5), u_seed), fx_simplex(vec2(${n}.5, t * u_randomFrequency * 0.25), u_seed)) * vec2(1.0, 1.0 / ar);
-  vec2 d = (nrm - c) * vec2(1.0, ar);
-  vec2 rad = vec2(1.0, max(u_relHeight${n}, 0.01)) * max(u_size${n}, 1.0e-3) * 0.25;
-  vec2 q = d / rad;
-  // Noise distortion of the blob (boiling with time).
-  int oct = 1 + int(u_noiseDetail${n} * 5.0);
-  vec2 f = vec2(u_noiseFreq${n}, u_noiseFreq${n} * u_noiseFreqRelY${n});
-  vec2 w = vec2(sgl_fbm3(vec3(q * f * 0.5, t * u_noiseBoilSpeed${n} * 0.3), oct, 2.0, 0.5, fract(u_seed + ${n}.0 * 0.17)),
-                sgl_fbm3(vec3(q * f * 0.5 + 17.3, t * u_noiseBoilSpeed${n} * 0.3), oct, 2.0, 0.5, fract(u_seed + ${n}.0 * 0.31)));
-  q += w * u_noiseAmp${n} * 0.35;
+  float fk = float(k) + 1.0;
+  float sz = max(${pick('size')}, 1.0e-3) * 0.25;
+  vec2 rad = vec2(1.0, max(${pick('relHeight')}, 0.01)) * sz;
+  vec2 f = vec2(${pick('noiseFreq')}, ${pick('noiseFreq')} * ${pick('noiseFreqRelY')});
+  float boil = t * ${pick('noiseBoilSpeed')} * 0.3;
+  int oct = 1 + int(${pick('noiseDetail')} * 5.0);
+  vec2 c = ${pick('center')} + u_shift * vec2(1.0, 1.0 / ar) + dir * u_speed * ${pick('speed')} * t * 0.05;
+  vec2 q0 = (nrm - c) * vec2(1.0, ar);
+  // Noise: [0, 1] random motion of the centre, [2, 3] the fbm distortion of the blob (one loop, one noise body).
+  float nz[4];
+  for (int j = 0; j < sgl_dyn(4); j++) {
+    vec3 p = j == 0 ? vec3(t * u_randomFrequency * 0.25, fk + 0.5, 0.0) : j == 1 ? vec3(fk + 0.5, t * u_randomFrequency * 0.25, 0.0)
+           : vec3((q0 - (j == 2 ? vec2(0.0) : vec2(-17.3))) / rad * f * 0.5, boil);
+    int no = j < 2 ? 1 : oct;
+    float sum = 0.0, amp = 0.5, norm = 0.0;
+    for (int o = 0; o < no; o++) {
+      sum += amp * fx_simplex3(p, fract(u_seed + fk * 0.17 + float(j) * 0.29 + float(o) * 0.1031));
+      norm += amp;
+      p *= 2.0;
+      amp *= 0.5;
+    }
+    nz[j] = sum / norm;
+  }
+  c += u_randomMotion * 0.1 * vec2(nz[0], nz[1]) * vec2(1.0, 1.0 / ar);
+  vec2 q = (nrm - c) * vec2(1.0, ar) / rad + vec2(nz[2], nz[3]) * ${pick('noiseAmp')} * 0.35;
   float r = length(q);
-  float m = clamp(u_midpoint${n}, 0.01, 0.99);
-  vec3 col = r < m ? mix(u_centerColor${n}.rgb, u_midColor${n}.rgb, r / m) : mix(u_midColor${n}.rgb, u_outerColor${n}.rgb, clamp((r - m) / (1.0 - m), 0.0, 1.0));
-  float soft = max(u_softness${n}, 0.01);
-  float k = 1.0 - smoothstep(1.0 - soft, 1.0 + soft * 0.5, r);
-  return col * k * u_brightness${n};
+  float m = clamp(${pick('midpoint')}, 0.01, 0.99);
+  vec3 cc = ${pick('centerColor')}.rgb, mc = ${pick('midColor')}.rgb, oc = ${pick('outerColor')}.rgb;
+  vec3 col = r < m ? mix(cc, mc, r / m) : mix(mc, oc, clamp((r - m) / (1.0 - m), 0.0, 1.0));
+  float soft = max(${pick('softness')}, 0.01);
+  return col * (1.0 - smoothstep(1.0 - soft, 1.0 + soft * 0.5, r)) * ${pick('brightness')};
 }`;
 
 export const S_LIGHT_LEAK = defineShaderEffect({
@@ -1833,15 +1851,14 @@ export const S_LIGHT_LEAK = defineShaderEffect({
 				format: 'rgba16f',
 				include: [GLSL_SGL_CORE, GLSL_SGL_FINISH, GLSL_COLOR, GLSL_NOISE],
 				frag: /* glsl */ `
-${leakElementGlsl(1)}
-${leakElementGlsl(2)}
-${leakElementGlsl(3)}
+${LEAK_ELEMENT_GLSL}
 void main() {
   vec4 src = texture(u_source, v_uv);
   vec2 n = fx_layerNorm();
   float ar = u_box.w / u_box.z;
   float t = u_tMid;
-  vec3 l = leak1(n, ar, t) + leak2(n, ar, t) + leak3(n, ar, t);
+  vec3 l = vec3(0.0);
+  for (int k = 0; k < sgl_dyn(3); k++) l += leakElement(k, n, ar, t);
   l = max(l * u_scaleLights + u_offsetDarks * 0.05, 0.0) * u_color.rgb;
   float fl = fx_valueNoise(vec2(u_time * u_flickerFreq, 3.7), u_seed);
   l *= max(0.0, 1.0 + u_flickerAmp * fl);
@@ -2234,7 +2251,7 @@ void main() {
 					scale: 1 / cell,
 					format: 'rgba16f',
 					filter: 'nearest',
-					include: [GLSL_COLOR],
+					include: [GLSL_SGL_CORE, GLSL_COLOR],
 					frag: /* glsl */ `
 void main() {
   ivec2 si = textureSize(u_hb, 0);
@@ -2242,7 +2259,7 @@ void main() {
   ivec2 a = o * si / ivec2(u_resolution);
   ivec2 b = max(a + 1, (o + 1) * si / ivec2(u_resolution));
   vec3 acc = vec3(0.0);
-  b = min(b, a + 64);
+  b = min(b, a + sgl_dyn(64));
   for (int y = a.y; y < b.y; y++) {
     for (int x = a.x; x < b.x; x++) {
       ivec2 q = ivec2(x, y);
@@ -2259,6 +2276,7 @@ void main() {
 					scale: 1 / cell,
 					format: 'rgba16f',
 					filter: 'nearest',
+					include: [GLSL_SGL_CORE],
 					frag: /* glsl */ `
 void main() {
   ivec2 si = textureSize(u_hb, 0);
@@ -2266,7 +2284,7 @@ void main() {
   ivec2 a = o * si / ivec2(u_resolution);
   ivec2 b = max(a + 1, (o + 1) * si / ivec2(u_resolution));
   vec3 acc = vec3(0.0);
-  b = min(b, a + 64);
+  b = min(b, a + sgl_dyn(64));
   for (int y = a.y; y < b.y; y++) {
     for (int x = a.x; x < b.x; x++) {
       acc += texelFetch(u_hb, min(ivec2(x, y), si - 1), 0).rgb;
@@ -2289,7 +2307,7 @@ void main() {
   ivec2 me = ivec2(v_uv * vec2(gs));
   vec2 cellPx = u_canvasSize / vec2(gs);
   ivec2 rc = ivec2(ceil(u_reach * max(u_raysLength, 1.0) * max(u_relHeight, 1.0) / cellPx)) + 1;
-  rc = min(rc, ivec2(7));
+  rc = min(rc, ivec2(sgl_dyn(7)));
   vec3 acc = vec3(0.0);
   for (int y = -rc.y; y <= rc.y; y++) {
     for (int x = -rc.x; x <= rc.x; x++) {
@@ -2446,13 +2464,6 @@ void main() { fragColor = sgl_boxRead(u_source, v_uv, 16.0); }`,
 				include: [GLSL_SGL_CORE, GLSL_SGL_FINISH, GLSL_COLOR, GLSL_NOISE, GLSL_HASH],
 				frag: /* glsl */ `${SAPPHIRE_OFFSET_GLSL}
 float bHash(int i, int k) { return fx_hash2(ivec2(i, k), u_seed); }
-// Smooth drift: noise blended between one smooth octave and a rougher sum by Drift Smoothness.
-vec2 drift(float t, int i) {
-  float fi = float(i) * 3.17;
-  vec2 a = vec2(fx_simplex(vec2(t, fi), 0.13), fx_simplex(vec2(fi, t), 0.29));
-  vec2 b = vec2(fx_simplex(vec2(t * 3.0, fi + 7.0), 0.41), fx_simplex(vec2(fi + 7.0, t * 3.0), 0.53));
-  return mix(a * 0.6 + b * 0.4, a, clamp(u_driftSmoothness, 0.0, 1.0));
-}
 float shapeDist(vec2 q) {
   float r = length(q);
   if (u_sides < 3.0) return r;
@@ -2475,18 +2486,34 @@ void main() {
   float t = u_time;
   float lensDust = 1.0 - u_lensNoise * 0.5 * fx_noise01(sgl_fbm(vec2(n.x * u_noiseFreq * u_noiseFreqRelX, n.y * ar * u_noiseFreq) * 0.5, 3, 2.0, 0.5, fract(u_seed + 0.5)));
   vec3 acc = vec3(0.0);
-  int count = int(clamp(u_lights, 0.0, 400.0));
+  int count = min(int(max(u_lights, 0.0)), sgl_dyn(400));
   vec2 shift = sOff(u_shiftStart + u_shiftSpeed * t);
+  // Cheap cull radius: the largest a light can get plus how far it can drift.
+  float maxRad = u_size * 0.025 * (1.0 + abs(u_varySize)) * (1.0 + abs(u_driftSizeDistance)) * max(1.0, u_relHeight);
+  float reach = maxRad * 1.5 + abs(u_driftDistance) * 0.1 * 1.6;
+  float soft = clamp(u_softness * 2.0, 0.002, 1.0);
   for (int i = 0; i < count; i++) {
-    vec2 base = vec2(bHash(i, 1), bHash(i, 2)) * 1.2 - 0.1;
-    vec2 pos = base + shift + drift(t * u_driftSpeed * 0.5 + bHash(i, 3) * 10.0, i) * u_driftDistance * 0.1 * vec2(1.0, 1.0 / ar);
+    vec2 base = vec2(bHash(i, 1), bHash(i, 2)) * 1.2 - 0.1 + shift;
+    if (length((n - base) * vec2(1.0, ar)) > reach) continue;
+    // The light's six noise values (drift x/y fine + coarse, size breathing, flicker) in one run-time loop: a single
+    // copy of the noise code (big inlined shaders compile very slowly in SwiftShader).
+    float fi = float(i) * 3.17;
+    float td = t * u_driftSpeed * 0.5 + bHash(i, 3) * 10.0;
+    float ts = t * u_driftSizeSpeed + bHash(i, 5) * 10.0;
+    float ft = t * u_flickerSpeed * 2.0 + bHash(i, 9) * 20.0;
+    float nz[6];
+    for (int q = 0; q < sgl_dyn(6); q++) {
+      vec2 arg = q == 0 ? vec2(td, fi) : q == 1 ? vec2(fi, td) : q == 2 ? vec2(td * 3.0, fi + 7.0)
+               : q == 3 ? vec2(fi + 7.0, td * 3.0) : q == 4 ? vec2(ts, float(i)) : vec2(ft, float(i) * 0.7);
+      nz[q] = fx_simplex(arg, 0.13 + float(q) * 0.137);
+    }
+    vec2 dr = mix(vec2(nz[0], nz[1]) * 0.6 + vec2(nz[2], nz[3]) * 0.4, vec2(nz[0], nz[1]), clamp(u_driftSmoothness, 0.0, 1.0));
+    vec2 pos = base + dr * u_driftDistance * 0.1 * vec2(1.0, 1.0 / ar);
     float rad = u_size * 0.025 * (1.0 + u_varySize * (bHash(i, 4) * 2.0 - 1.0));
-    rad *= 1.0 + u_driftSizeDistance * fx_simplex(vec2(t * u_driftSizeSpeed + bHash(i, 5) * 10.0, float(i)), 0.71);
-    rad = max(rad, 1.0e-4);
+    rad = max(rad * (1.0 + u_driftSizeDistance * nz[4]), 1.0e-4);
     vec2 d = (n - pos) * vec2(1.0, ar);
     d.y /= max(u_relHeight, 0.01);
     if (dot(d, d) > rad * rad * 2.0) continue;
-    float soft = clamp(u_softness * 2.0, 0.002, 1.0);
     vec3 shape;
     float cd = u_chromaDistort;
     shape.r = disc(shapeDist(d / (rad * (1.0 + cd * 0.5))), soft);
@@ -2501,8 +2528,7 @@ void main() {
     vec4 sc = mix(texture(u_source, fx_uvOfLayerNorm(pos)), texture(u_bsrc, fx_uvOfLayerNorm(pos)), u_smoothSourceColor);
     vec3 scol = sc.a > 0.0 ? sc.rgb / sc.a : vec3(0.0);
     col = mix(col, scol * 1.5, clamp(u_useSourceColor, 0.0, 1.0));
-    float ft = t * u_flickerSpeed * 2.0 + bHash(i, 9) * 20.0;
-    float fl = mix(sin(ft * 3.14159), fx_simplex(vec2(ft, float(i) * 0.7), 0.97), u_flickerRandomness);
+    float fl = mix(sin(ft * 3.14159), nz[5], u_flickerRandomness);
     acc += max(shape, 0.0) * col * max(0.0, 1.0 + u_flickerAmp * fl);
   }
   vec3 light = acc * lensDust * u_brightness * 2.0;
@@ -2654,7 +2680,7 @@ void main() {
   vec2 lp = fx_layerPx() * u_pxScale;
   vec2 boxPx = u_box.zw;
   int frame = int(floor(u_frame + 0.5));
-  int hold = int(clamp(u_holdFrames, 1.0, 8.0));
+  int hold = min(int(max(u_holdFrames, 1.0)), sgl_dyn(8));
   vec3 acc = vec3(0.0);
   float rate = clamp(u_flashes, 0.0, 16.0) / 16.0;
   for (int age = 0; age < hold + 3; age++) {

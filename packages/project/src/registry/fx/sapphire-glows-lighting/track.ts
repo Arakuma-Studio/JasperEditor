@@ -35,7 +35,7 @@ void main() {
   ivec2 a = o * si / so;
   ivec2 b = max(a + 1, (o + 1) * si / so);
   vec4 best = vec4(-1.0, 0.5, 0.5, 1.0);
-  b = min(b, a + 16);
+  b = min(b, a + sgl_dyn(16));
   for (int y = a.y; y < b.y; y++) {
     for (int x = a.x; x < b.x; x++) {
       vec4 t = texelFetch(u_${input}, min(ivec2(x, y), si - 1), 0);${excludeGlsl(k)}
@@ -74,12 +74,20 @@ void main() {
 	];
 	for (let k = 0; k < n; k++) {
 		passes.push(
-			{ output: `tB${k}`, scale: 1 / 64, format: 'rgba16f', filter: 'nearest', frag: reduceFrag('tA', k) },
+			{
+				output: `tB${k}`,
+				scale: 1 / 64,
+				format: 'rgba16f',
+				filter: 'nearest',
+				include: [GLSL_SGL_CORE],
+				frag: reduceFrag('tA', k),
+			},
 			{
 				output: `tC${k}`,
 				scale: 1 / 1000,
 				format: 'rgba16f',
 				filter: 'nearest',
+				include: [GLSL_SGL_CORE],
 				frag: reduceFrag(`tB${k}`, k),
 			},
 			{
@@ -92,8 +100,8 @@ void main() {
 void main() {
   ivec2 si = textureSize(u_tC${k}, 0);
   vec4 best = vec4(-1.0, 0.5, 0.5, 1.0);
-  for (int y = 0; y < min(si.y, 16); y++) {
-    for (int x = 0; x < min(si.x, 16); x++) {
+  for (int y = 0; y < min(si.y, sgl_dyn(16)); y++) {
+    for (int x = 0; x < min(si.x, sgl_dyn(16)); x++) {
       vec4 t = texelFetch(u_tC${k}, ivec2(x, y), 0);
       if (t.r > best.r) best = t;
     }

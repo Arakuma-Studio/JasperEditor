@@ -28,13 +28,7 @@ export function levelDownscale(sx: number, sy: number): number {
  * One separable blur pass (direction `axis`) of the previous pass (`u_prev`, downscale dIn) to an output at
  * downscale dOut. Reading `u_prev` keeps the source identical for every cascade pass: one GL program for all.
  */
-function blurPass(
-	output: string,
-	axis: 0 | 1,
-	sigma: number,
-	dIn: number,
-	dOut: number,
-): ShaderPass {
+function blurPass(output: string, axis: 0 | 1, sigma: number, dIn: number, dOut: number): ShaderPass {
 	const sIn = sigma / dIn; // sigma in input texels
 	const stepTexels = Math.max(1, (3 * sIn) / 48);
 	const ratio = dOut / dIn;

@@ -14,12 +14,11 @@ import { GLSL_SGL_CORE } from './glow.ts';
 export const RAY_TAPS = 12;
 
 /**
- * The three radial passes from `input` (which must be the pass right before them: they read `u_prev`, so all
- * three share one program) (outputs `<prefix>1…3`, the last is the ray picture), at `scale`. Uniforms
+ * The three radial passes of the pass right before them (they read `u_prev`, so all three share one program) (outputs `<prefix>1…3`, the last is the ray picture), at `scale`. Uniforms
  * the shader reads (effect-level, see `rayUniforms`): u_center (the effect's Center point param), u_rl0 (vec3 λ0 per channel),
  * u_rlen (vec3 Λ − λ0 per channel), u_rk (falloff), u_rsplit (bool: per-channel lengths differ).
  */
-export function rayPasses(input: string, prefix: string, scale: number): ShaderPass[] {
+export function rayPasses(prefix: string, scale: number): ShaderPass[] {
 	const n = RAY_TAPS;
 	return [1, 2, 3].map((j) => {
 		// pass 1 spans 1/n² of the range (and starts at λ0), pass 2 1/n, pass 3 all of it.
