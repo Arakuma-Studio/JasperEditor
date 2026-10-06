@@ -344,14 +344,32 @@ export const S_MOCHA_WHIP = defineShaderTransition({
 		'A whip pan in which a cut-out region of the incoming clip whips around in front and settles at its place. The region is a keyframable rectangle/ellipse mask; with no mask it is a plain whip pan.',
 	keywords: ['whip', 'mocha', 'cutout', 'whip pan', 'swish', 'motion blur'],
 	params: [
-		choice('cutoutMask', 'Cutout Mask', ['none', 'rectangle', 'ellipse'], ['None (Bypass)', 'Rectangle', 'Ellipse'], 'none'),
+		choice(
+			'cutoutMask',
+			'Cutout Mask',
+			['none', 'rectangle', 'ellipse'],
+			['None (Bypass)', 'Rectangle', 'Ellipse'],
+			'none',
+		),
 		fxParam.point('maskCenter', 'Mask Center', [0.5, 0.5], { group: 'Mask' }),
 		fxParam.vec2('maskSize', 'Mask Size', [0.4, 0.5], { min: 0, softMax: 1, step: 0.001 }, { group: 'Mask' }),
 		fxParam.angle('maskRotation', 'Mask Rotation', 0, { group: 'Mask' }),
 		fxParam.pixels('blurMocha', 'Blur Mocha', 0, 200, { group: 'Mask' }),
 		check('invertMocha', 'Invert Mocha', false, 'Mask'),
-		fxParam.vec2('cutoutOffsetStart', 'Cutout Offset Start', [0, 0], { min: -3, max: 3, step: 0.01 }, { group: 'Cutout' }),
-		fxParam.vec2('cutoutShift', 'Cutout Shift', [2, 0], { softMin: -10, softMax: 10, step: 0.01 }, { group: 'Cutout' }),
+		fxParam.vec2(
+			'cutoutOffsetStart',
+			'Cutout Offset Start',
+			[0, 0],
+			{ min: -3, max: 3, step: 0.01 },
+			{ group: 'Cutout' },
+		),
+		fxParam.vec2(
+			'cutoutShift',
+			'Cutout Shift',
+			[2, 0],
+			{ softMin: -10, softMax: 10, step: 0.01 },
+			{ group: 'Cutout' },
+		),
 		sNum('cutoutFadeinTime', 'Cutout Fadein Time', 0.5, { min: 0, max: 1 }, 'Cutout'),
 		fxParam.point('cutoutCenter', 'Cutout Center', [0.5, 0.5], { group: 'Cutout' }),
 		fxParam.angle('cutoutRotate', 'Cutout Rotate', 0, { group: 'Cutout' }),
@@ -359,11 +377,24 @@ export const S_MOCHA_WHIP = defineShaderTransition({
 		sNum('cutoutScale', 'Cutout Scale', 1.2, { min: 1, max: 100, softMax: 4 }, 'Cutout'),
 		whipParam('cutoutWhipOut', 'Cutout Whip Out'),
 		sNum('cutoutBrightness', 'Cutout Brightness', 1, { min: 0, softMax: 4 }, 'Cutout'),
-		choice('bgWhipSide', 'Background Whip Side', ['both', 'from', 'to'], ['Both', 'From', 'To'], 'both', 'Background'),
+		choice(
+			'bgWhipSide',
+			'Background Whip Side',
+			['both', 'from', 'to'],
+			['Both', 'From', 'To'],
+			'both',
+			'Background',
+		),
 		fxParam.point('bgCenter', 'Background Center', [0.5, 0.5], { group: 'Background' }),
 		sNum('bgMotionBlur', 'Background Motion Blur', 1, { min: 0, softMax: 4 }, 'Background'),
 		fxParam.angle('bgRotate', 'Background Rotate', 0, { group: 'Background' }),
-		fxParam.vec2('bgShift', 'Background Shift', [-2, 0], { softMin: -10, softMax: 10, step: 0.01 }, { group: 'Background' }),
+		fxParam.vec2(
+			'bgShift',
+			'Background Shift',
+			[-2, 0],
+			{ softMin: -10, softMax: 10, step: 0.01 },
+			{ group: 'Background' },
+		),
 		sNum('bgScale', 'Background Scale', 1, { min: 0.01, max: 2 }, 'Background'),
 		whipParam('bgWhipOut', 'Background Whip Out'),
 		...rgbSplitParams('bg', 'Background ').map((p) => ({ ...p, group: 'Background' })),
@@ -432,4 +463,9 @@ void main() {
 	},
 });
 
-export const SWISH_TRANSITIONS: readonly TransitionSpec[] = [S_SWISH_PAN, S_SWISH_3D, S_WHIP_LASH, S_MOCHA_WHIP];
+export const SWISH_TRANSITIONS: readonly TransitionSpec[] = [
+	S_SWISH_PAN,
+	S_SWISH_3D,
+	S_WHIP_LASH,
+	S_MOCHA_WHIP,
+];

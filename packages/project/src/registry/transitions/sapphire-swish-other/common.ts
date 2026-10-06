@@ -112,7 +112,8 @@ export const whipParam = (name: string, label: string) =>
 export const DIRECTION_OPTIONS = ['left', 'right', 'up', 'down'] as const;
 export const DIRECTION_LABELS = ['Left', 'Right', 'Up', 'Down'] as const;
 const DIRS: Record<string, [number, number]> = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] };
-export const directionVector = (v: unknown, def = 'left'): [number, number] => DIRS[str(v, def)] ?? DIRS[def]!;
+export const directionVector = (v: unknown, def = 'left'): [number, number] =>
+	DIRS[str(v, def)] ?? DIRS[def]!;
 
 // ---------------------------------------------------------------- pure maths (mirrored by the GLSL)
 
@@ -150,7 +151,10 @@ export function whipCurve(e: number, style: string): number {
  * Progress change per frame of the span (the shutter unit of the motion blurs): the framework's linear ramp step —
  * `1 / (d + 1)` two-sided, `1 / d` at a single clip edge — scaled by Start/End %.
  */
-export function frameStep(p: EffectParams, ctx: Pick<TrFrameContext, 'duration' | 'hasFrom' | 'hasTo'>): number {
+export function frameStep(
+	p: EffectParams,
+	ctx: Pick<TrFrameContext, 'duration' | 'hasFrom' | 'hasTo'>,
+): number {
 	const d = Math.max(1, ctx.duration);
 	const linear = ctx.hasFrom && ctx.hasTo ? 1 / (d + 1) : 1 / d;
 	const span = Math.abs(clamp(num(p.endPercent, 100), 0, 100) - clamp(num(p.startPercent, 0), 0, 100)) / 100;

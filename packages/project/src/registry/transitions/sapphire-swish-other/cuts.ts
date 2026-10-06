@@ -60,7 +60,10 @@ export function flutterPattern(p: EffectParams, duration: number): FlutterFrame[
 	};
 	const colorsAt = (where: string) => {
 		for (const c of colors)
-			if (c.frames > 0 && (c.pos === where || (c.pos === 'afterBoth' && (where === 'afterFrom' || where === 'afterTo'))))
+			if (
+				c.frames > 0 &&
+				(c.pos === where || (c.pos === 'afterBoth' && (where === 'afterFrom' || where === 'afterTo')))
+			)
 				push(c.show, c.frames);
 	};
 	while (out.length < d) {
@@ -102,11 +105,29 @@ export const S_FLUTTER_CUT = defineShaderTransition({
 		sNum('toAcceleration', 'To Acceleration', 1, { min: 1, softMax: 5 }),
 		rgbParam('color1', 'Color1', [0, 0, 0]),
 		sInt('color1Frames', 'Color1 Frames', 0, 0, 100, 6),
-		choice('color1Position', 'Color1 Position', COLOR_POSITIONS, ['Before From', 'After From', 'After To', 'After Both'], 'afterFrom'),
+		choice(
+			'color1Position',
+			'Color1 Position',
+			COLOR_POSITIONS,
+			['Before From', 'After From', 'After To', 'After Both'],
+			'afterFrom',
+		),
 		rgbParam('color2', 'Color2', [1, 1, 1]),
 		sInt('color2Frames', 'Color2 Frames', 0, 0, 100, 6),
-		choice('color2Position', 'Color2 Position', COLOR_POSITIONS, ['Before From', 'After From', 'After To', 'After Both'], 'afterTo'),
-		choice('invert', 'Invert', INVERT_OPTIONS, ['None', 'From Clip', 'To Clip', 'Both Clips', 'Custom Pattern'], 'none'),
+		choice(
+			'color2Position',
+			'Color2 Position',
+			COLOR_POSITIONS,
+			['Before From', 'After From', 'After To', 'After Both'],
+			'afterTo',
+		),
+		choice(
+			'invert',
+			'Invert',
+			INVERT_OPTIONS,
+			['None', 'From Clip', 'To Clip', 'Both Clips', 'Custom Pattern'],
+			'none',
+		),
 		sInt('invertLength', 'Invert Length', 1, 0, 100, 10),
 		sInt('normalBefore', 'Normal Before', 1, 0, 100, 10),
 		sInt('normalAfter', 'Normal After', 0, 0, 100, 10),
@@ -149,7 +170,13 @@ export const S_TV_CHANNEL_CHANGE = defineShaderTransition({
 	keywords: ['tv', 'channel', 'static', 'noise', 'analog', 'vhs', 'interference', 'glitch'],
 	params: [
 		sNum('reception', 'Reception', 1.6, { min: 0, softMax: 4 }),
-		choice('deadTimeStyle', 'Dead Time Style', ['black', 'staticOverBlack', 'staticOverDissolve'], ['Black', 'Static Over Black', 'Static Over Dissolve'], 'staticOverBlack'),
+		choice(
+			'deadTimeStyle',
+			'Dead Time Style',
+			['black', 'staticOverBlack', 'staticOverDissolve'],
+			['Black', 'Static Over Black', 'Static Over Dissolve'],
+			'staticOverBlack',
+		),
 		sNum('deadTimeDuration', 'Dead Time Duration', 0.2, { min: 0, max: 1 }),
 		sNum('deadTimeStart', 'Dead Time Start', 0, { min: 0, max: 1 }),
 		sNum('interferenceAmplitude', 'Interference Amplitude', 0.6, { min: 0, softMax: 3 }),

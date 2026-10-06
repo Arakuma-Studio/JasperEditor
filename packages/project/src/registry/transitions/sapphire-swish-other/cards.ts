@@ -100,10 +100,14 @@ void main() {
   float th = u_cfSign * SW_PI * u_cfTurns * e;
   float thB = th - u_cfSign * SW_PI * u_cfTurns;
   float dist = 2.0 / clamp(u_perspective, 0.25, 4.0);
-  float sc = 1.0 - 0.06 * bell * min(u_shift, 1.0);
+  // Depth while apart: the card behind recedes a little (A goes back after the middle, B comes forward).
+  float sep = bell * min(u_shift, 1.0);
+  float swap = smoothstep(0.35, 0.65, e);
+  float scA = 1.0 - sep * (0.04 + 0.08 * swap);
+  float scB = 1.0 - sep * (0.04 + 0.08 * (1.0 - swap));
   vec2 off = u_cfShiftDir * u_shift * 0.5 * bell;               // frame extents
-  vec3 ca = tr_card(v_uv - off, th, u_cfAxis, dist, sc);
-  vec3 cb = tr_card(v_uv + off, thB, u_cfAxis, dist, sc);
+  vec3 ca = tr_card(v_uv - off, th, u_cfAxis, dist, scA);
+  vec3 cb = tr_card(v_uv + off, thB, u_cfAxis, dist, scB);
   // Antialiasing widths from the card uv derivatives (uniform control flow).
   vec2 wa = fwidth(ca.xy), wb = fwidth(cb.xy);
   float covA = cf_cov(ca.xy, wa), covB = cf_cov(cb.xy, wb);
@@ -111,6 +115,10 @@ void main() {
   vec4 b = tr_to(clamp(cb.xy, 0.0, 1.0)) * covB * cf_light(thB, cb.z);
   a.a = covA * tr_from(clamp(ca.xy, 0.0, 1.0)).a;
   b.a = covB * tr_to(clamp(cb.xy, 0.0, 1.0)).a;
+  // Stacked cards (no Shift) are glued back to back: a back face is only seen once the cards have slid apart.
+  float apart = smoothstep(0.0, 0.05, u_shift * bell);
+  if (ca.z < 0.0) a *= apart;
+  if (cb.z < 0.0) b *= apart;
   // Which card is in front: a card facing the camera beats one seen from behind (the stacked cards of a flip);
   // otherwise A until the middle, B after (the shuffle).
   bool aFront = ca.z > 0.0 && cb.z < 0.0 ? true : (cb.z > 0.0 && ca.z < 0.0 ? false : e < 0.5);
@@ -118,9 +126,12 @@ void main() {
   vec4 back = aFront ? b : a;
   // Drop shadow of the front card on the back card: its silhouette shifted and softened.
   vec2 sOff = sw_sapph(u_shadowShift) / vec2(tr_aspect(), 1.0) + vec2(0.02, 0.03) * u_shift * bell;
-  vec3 cs = aFront ? tr_card(v_uv - off - sOff, th, u_cfAxis, dist, sc) : tr_card(v_uv + off - sOff, thB, u_cfAxis, dist, sc);
-  float soft = max(u_shadowBlur * 0.5, 1e-3);
-  float shadow = cf_cov(cs.xy, vec2(soft)) * clamp(u_shadowOpacity * 0.35, 0.0, 1.0) * bell;
+  vec3 cs = aFront ? tr_card(v_uv - off - sOff, th, u_cfAxis, dist, scA) : tr_card(v_uv + off - sOff, thB, u_cfAxis, dist, scB);
+  // Shadow Blur (fraction of the card width) spreads the silhouette outwards with a soft falloff.
+  float soft = max(u_shadowBlur, 1e-3);
+  vec2 ins = min(cs.xy, 1.0 - cs.xy) / soft + 1.0;
+  float sil = clamp(min(ins.x, ins.y), 0.0, 1.0);
+  float shadow = sil * sil * (3.0 - 2.0 * sil) * clamp(u_shadowOpacity * 0.35, 0.0, 1.0) * bell;
   back.rgb = mix(back.rgb, u_shadowColor.rgb * back.a, shadow);
   fragColor = tr_over(front, back);
 }`,
@@ -153,7 +164,13 @@ export const S_STRIP_SLIDE_TRANSITION = defineShaderTransition({
 		'Breaks the picture into strips that slide off one at a time to reveal the incoming clip (or slide the incoming strips on, or side by side), with motion blur.',
 	keywords: ['strips', 'slats', 'slide', 'blinds', 'push', 'motion blur'],
 	params: [
-		choice('style', 'Style', ['slideOff', 'slideOn', 'sideBySide'], ['Slide Off', 'Slide On', 'Side by Side'], 'slideOff'),
+		choice(
+			'style',
+			'Style',
+			['slideOff', 'slideOn', 'sideBySide'],
+			['Slide Off', 'Slide On', 'Side by Side'],
+			'slideOff',
+		),
 		sNum('motionBlur', 'Motion Blur', 0.3, { min: 0, softMax: 3 }),
 		sNum('stripSize', 'Strip Size', 0.1, { min: 0.01, softMax: 1 }),
 		sNum('randomizeSize', 'Randomize Size', 0, { min: 0, softMax: 1 }),
@@ -161,7 +178,13 @@ export const S_STRIP_SLIDE_TRANSITION = defineShaderTransition({
 		sNum('stripShift', 'Strip Shift', 0, { softMin: -1, softMax: 1 }),
 		sNum('speed', 'Speed', 10, { min: 1, softMax: 50 }),
 		sNum('slowStart', 'Slow Start', 1, { min: 0, max: 1 }),
-		choice('order', 'Order', STRIP_ORDERS, ['Top Down', 'Bottom Up', 'Random', 'Center Out', 'Edges In'], 'topDown'),
+		choice(
+			'order',
+			'Order',
+			STRIP_ORDERS,
+			['Top Down', 'Bottom Up', 'Random', 'Center Out', 'Edges In'],
+			'topDown',
+		),
 		sapphireSeed(),
 	],
 	gpu: {
@@ -211,7 +234,7 @@ void main() {
     if (u_style == 1) {
       // Slide On: B's strip slides in over A.
       vec4 bs = tr_to(tr_uvOfPx(p + half_ + along * (1.0 - t) * travel));
-      c = tr_over(bs, tr_from(v_uv));
+      c = t >= 1.0 ? bs : tr_over(bs, tr_from(v_uv));   // a landed strip is B alone (transparent B stays so)
     } else if (u_style == 2) {
       // Side by Side: A's strip slides off and B's follows right behind it.
       vec4 as = tr_from(tr_uvOfPx(p + half_ - along * t * travel));
@@ -219,7 +242,7 @@ void main() {
       c = tr_over(as, bs);
     } else {
       vec4 as = tr_from(tr_uvOfPx(p + half_ - along * t * travel));
-      c = tr_over(as, tr_to(v_uv));
+      c = t <= 0.0 ? as : tr_over(as, tr_to(v_uv));      // an unmoved strip is A alone
     }
     acc += c;
   }
@@ -246,7 +269,13 @@ export const S_PARALLAX_STRIPS_TRANSITION = defineShaderTransition({
 		'Refracting 3D glass strips grow over the picture, shift the image inside them and move, while the clips dissolve underneath; then they shrink away.',
 	keywords: ['parallax', 'strips', 'glass', 'refraction', 'slices', 'glitch'],
 	params: [
-		choice('effect', 'Effect', ['rectangular', 'linear'], ['Rectangular Strips', 'Linear Strips'], 'rectangular'),
+		choice(
+			'effect',
+			'Effect',
+			['rectangular', 'linear'],
+			['Rectangular Strips', 'Linear Strips'],
+			'rectangular',
+		),
 		sInt('nStrips', 'N Strips', 50, 1, 1000, 200),
 		sNum('size', 'Size', 0.35, { min: 0, softMax: 2, step: 0.001 }),
 		sNum('relHeight', 'Rel Height', 0.3, { min: 0.001, softMax: 2, step: 0.001 }),
@@ -259,7 +288,13 @@ export const S_PARALLAX_STRIPS_TRANSITION = defineShaderTransition({
 		sNum('shiftVary', 'Shift Vary', 0, { min: 0, softMax: 2 }),
 		fxParam.vec2('allStripsShift', 'All Strips Shift', [0, 0], { softMin: -1, softMax: 1, step: 0.001 }),
 		sNum('zDist', 'Z Dist', 1, { min: 0.001, softMax: 4 }),
-		choice('show', 'Show', ['result', 'stripsOverSource', 'stripsOverBlack'], ['Result', 'Strips Over Source', 'Strips Over Black'], 'result'),
+		choice(
+			'show',
+			'Show',
+			['result', 'stripsOverSource', 'stripsOverBlack'],
+			['Result', 'Strips Over Source', 'Strips Over Black'],
+			'result',
+		),
 		sNum('slowFade', 'Slow Fade', 0.9, { min: 0, max: 2 }),
 		sNum('slowGrow', 'Slow Grow', 0.9, { min: 0, max: 2 }),
 		wrapParam('wrap', 'Wrap'),

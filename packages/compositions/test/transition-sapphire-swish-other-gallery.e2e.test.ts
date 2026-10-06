@@ -22,7 +22,11 @@ const only = process.env.TRANSITION_SSO_ONLY?.split(',');
 const GALLERY: [string, string, Record<string, unknown>?][] = [
 	['swish-pan', 'jasper.s.swish-pan'],
 	['swish-3d', 'jasper.s.swish-3d'],
-	['swish-3d-swivel-chroma', 'jasper.s.swish-3d', { effect: 'chromaWarp', swivel: 60, rotate: 30, zDist: 0.7 }],
+	[
+		'swish-3d-swivel-chroma',
+		'jasper.s.swish-3d',
+		{ effect: 'chromaWarp', swivel: 60, rotate: 30, zDist: 0.7 },
+	],
 	['card-flip', 'jasper.s.card-flip'],
 	['card-flip-shuffle', 'jasper.s.card-flip', { revolutions: 0, shift: 1.2 }],
 	['film-burn-transition', 'jasper.s.film-burn-transition', { edges: true }],
@@ -30,7 +34,11 @@ const GALLERY: [string, string, Record<string, unknown>?][] = [
 	['flutter-cut', 'jasper.s.flutter-cut', { color1Frames: 1 }],
 	['hyper-pull', 'jasper.s.hyper-pull'],
 	['hyper-push', 'jasper.s.hyper-push', { cameraShake: true }],
-	['mocha-whip', 'jasper.s.mocha-whip', { cutoutMask: 'ellipse', maskCenter: [0.5, 0.5], maskSize: [0.45, 0.6] }],
+	[
+		'mocha-whip',
+		'jasper.s.mocha-whip',
+		{ cutoutMask: 'ellipse', maskCenter: [0.5, 0.5], maskSize: [0.45, 0.6] },
+	],
 	['parallax-strips-transition', 'jasper.s.parallax-strips-transition'],
 	['strip-slide-transition', 'jasper.s.strip-slide-transition'],
 	['tv-channel-change', 'jasper.s.tv-channel-change'],
@@ -155,7 +163,14 @@ describe.runIf(enabled)(
 						...browser,
 					});
 					const file = join(media.dir, `${name}-${f}.png`);
-					await renderer.renderStill({ composition, serveUrl, inputProps, frame: f, output: file, ...browser });
+					await renderer.renderStill({
+						composition,
+						serveUrl,
+						inputProps,
+						frame: f,
+						output: file,
+						...browser,
+					});
 					if (FRAMES.includes(f)) copyFileSync(file, join(out!, `${name}-${f}.png`));
 					frames.push(
 						execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-']),

@@ -11,7 +11,10 @@ import { defineShaderTransition, SAPPHIRE_TRANSITION_SUBBINS, TRANSITION_BINS } 
 import { bool, check, GLSL_SW, num, shakeOffset, sInt, slowParams, sNum, wrapParam } from './common.ts';
 
 /** Camera shake of the Hyper transitions at a frame (frame heights), scaled by the bell of the transition. */
-export function hyperShake(p: EffectParams, ctx: { frame: number; fps: number; seed: number; progress: number }) {
+export function hyperShake(
+	p: EffectParams,
+	ctx: { frame: number; fps: number; seed: number; progress: number },
+) {
 	if (!bool(p.cameraShake, false)) return [0, 0] as [number, number];
 	const [x, y] = shakeOffset(ctx.seed, ctx.frame / Math.max(1, ctx.fps), {
 		amplitude: num(p.amplitude, 2),
@@ -127,7 +130,13 @@ function hyperSpec(kind: 'pull' | 'push'): TransitionSpec {
 			sNum('glowBrightness', 'Glow Brightness', 3, { min: 0, softMax: 10 }, 'Glow'),
 			sNum('glowThreshold', 'Glow Threshold', 0.2, { min: 0, softMax: 1 }, 'Glow'),
 			sNum('glowWidth', 'Glow Width', 0, { min: 0, softMax: 1, step: 0.001 }, 'Glow'),
-			fxParam.vec2('glowWidthXY', 'Width X / Y', [1, 1], { min: 0, softMax: 4, step: 0.01 }, { group: 'Glow' }),
+			fxParam.vec2(
+				'glowWidthXY',
+				'Width X / Y',
+				[1, 1],
+				{ min: 0, softMax: 4, step: 0.01 },
+				{ group: 'Glow' },
+			),
 			check('warpChroma', 'Warp Chroma', true),
 			sNum('warpAmount', 'Warp Amount', 0.6, { min: 0, softMax: 2 }, 'Warp Chroma'),
 			sInt('steps', 'Steps', 10, 3, 100, 32, 'Warp Chroma'),

@@ -66,9 +66,63 @@ type Flash = {
  * to the editor's clockwise convention: Sapphire's Rotation −59° CCW = 59° CW, Motion Angle 90° (up) = −90°).
  */
 const FLASHES: Flash[] = [
-	{ size: 1.4, stretch: 2.23, rotation: 59, brightness: 0.4, center: [-0.371, -2.97], outer: [1, 0.259, 0], inner: [0.741, 0.298, 0.349], midpoint: 0.4, softness: 1, shape: 'circle', sides: 6, noiseAmp: 0, flickerAmp: 2.9, flickerFreq: 5, motionAmount: 1, motionAngle: -90, motionDelay: 0 },
-	{ size: 2, stretch: 0.5, rotation: 0, brightness: 1, center: [3.03, -1.1], outer: [0.271, 0.271, 0.431], inner: [0.922, 0.0275, 0.902], midpoint: 0.8, softness: 1, shape: 'circle', sides: 5, noiseAmp: 1, flickerAmp: 0, flickerFreq: 0, motionAmount: 1.7, motionAngle: -145, motionDelay: 0 },
-	{ size: 1.4, stretch: 1, rotation: 0, brightness: 0.9, center: [0, -3.53], outer: [0.969, 0.969, 0.969], inner: [0.992, 0.208, 1], midpoint: 0.9, softness: 0.7, shape: 'polygon', sides: 4, noiseAmp: 1, flickerAmp: 1, flickerFreq: 5, motionAmount: 2, motionAngle: -90, motionDelay: 0.4 },
+	{
+		size: 1.4,
+		stretch: 2.23,
+		rotation: 59,
+		brightness: 0.4,
+		center: [-0.371, -2.97],
+		outer: [1, 0.259, 0],
+		inner: [0.741, 0.298, 0.349],
+		midpoint: 0.4,
+		softness: 1,
+		shape: 'circle',
+		sides: 6,
+		noiseAmp: 0,
+		flickerAmp: 2.9,
+		flickerFreq: 5,
+		motionAmount: 1,
+		motionAngle: -90,
+		motionDelay: 0,
+	},
+	{
+		size: 2,
+		stretch: 0.5,
+		rotation: 0,
+		brightness: 1,
+		center: [3.03, -1.1],
+		outer: [0.271, 0.271, 0.431],
+		inner: [0.922, 0.0275, 0.902],
+		midpoint: 0.8,
+		softness: 1,
+		shape: 'circle',
+		sides: 5,
+		noiseAmp: 1,
+		flickerAmp: 0,
+		flickerFreq: 0,
+		motionAmount: 1.7,
+		motionAngle: -145,
+		motionDelay: 0,
+	},
+	{
+		size: 1.4,
+		stretch: 1,
+		rotation: 0,
+		brightness: 0.9,
+		center: [0, -3.53],
+		outer: [0.969, 0.969, 0.969],
+		inner: [0.992, 0.208, 1],
+		midpoint: 0.9,
+		softness: 0.7,
+		shape: 'polygon',
+		sides: 4,
+		noiseAmp: 1,
+		flickerAmp: 1,
+		flickerFreq: 5,
+		motionAmount: 2,
+		motionAngle: -90,
+		motionDelay: 0.4,
+	},
 ];
 
 function flashParams(i: number, d: Flash): ParamSpec[] {
@@ -208,7 +262,13 @@ export const S_FILM_BURN_TRANSITION = defineShaderTransition({
 		check('dust', 'Dust', true),
 		check('grain', 'Grain', true),
 		...FLASHES.flatMap((d, i) => flashParams(i + 1, d)),
-		choice('flashesCombine', 'Flashes Combine', ['normal', 'add', 'screen', 'mult', 'overlay'], ['Normal', 'Add', 'Screen', 'Mult', 'Overlay'], 'add'),
+		choice(
+			'flashesCombine',
+			'Flashes Combine',
+			['normal', 'add', 'screen', 'mult', 'overlay'],
+			['Normal', 'Add', 'Screen', 'Mult', 'Overlay'],
+			'add',
+		),
 		sNum('edgesSize', 'Edges Size', 1.13, { min: 0, softMax: 3 }, 'Edges'),
 		rgbParam('edgesOutlineColor', 'Edges Outline Color', [1, 1, 1], 'Edges'),
 		rgbParam('edgesCenterColor', 'Edges Center Color', [0, 0, 0], 'Edges'),
@@ -325,7 +385,8 @@ export function filmRollSignals(p: EffectParams, ctx: { frame: number; fps: numb
 	const now = at(ctx.frame);
 	const prev = at(ctx.frame - 1);
 	const flicker =
-		num(p.flicker, 1) * (0.6 * smoothNoise(ctx.seed, 51, (ctx.frame / fps) * 10) + 0.4 * (2 * hash01(ctx.seed, ctx.frame) - 1));
+		num(p.flicker, 1) *
+		(0.6 * smoothNoise(ctx.seed, 51, (ctx.frame / fps) * 10) + 0.4 * (2 * hash01(ctx.seed, ctx.frame) - 1));
 	const defocus = num(p.defocus, 0.5) * (0.5 + 0.5 * smoothNoise(ctx.seed, 61, (ctx.frame / fps) * 10));
 	return { shake: now, shakeVel: [now[0] - prev[0], now[1] - prev[1]] as [number, number], flicker, defocus };
 }

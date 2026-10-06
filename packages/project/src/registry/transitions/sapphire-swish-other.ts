@@ -8,7 +8,11 @@
 // Import rule (no cycles): values only from ./define.ts, ./glsl.ts, ./shader.ts and ../fx/*; types from
 // ../../transitions.ts and ../effects.ts (`import type`).
 import type { TransitionSpec } from '../../transitions.ts';
-import { S_CARD_FLIP, S_PARALLAX_STRIPS_TRANSITION, S_STRIP_SLIDE_TRANSITION } from './sapphire-swish-other/cards.ts';
+import {
+	S_CARD_FLIP,
+	S_PARALLAX_STRIPS_TRANSITION,
+	S_STRIP_SLIDE_TRANSITION,
+} from './sapphire-swish-other/cards.ts';
 import { S_FLUTTER_CUT, S_TV_CHANNEL_CHANGE } from './sapphire-swish-other/cuts.ts';
 import { S_FILM_BURN_TRANSITION, S_FILM_ROLL } from './sapphire-swish-other/film.ts';
 import { S_HYPER_PULL, S_HYPER_PUSH } from './sapphire-swish-other/hyper.ts';
