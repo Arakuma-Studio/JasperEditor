@@ -57,7 +57,7 @@ void main() {
   vec2 q = (tr_px() - 0.5 * u_compSize) / max(u_compSize.x, 1.0) * u_frequency;
   q.x *= u_freqRelX;
   q += u_shiftStart + u_shiftSpeed * u_time;
-  float v = sw_noise01(fx_fbm(q, int(u_octaves), 2.0, 0.5, u_seed), 1.5);
+  float v = sw_noise01(fx_fbm(q, int(u_octaves), 2.0, 0.5, u_seed), 2.2);
   vec3 g = sw_grad(v, u_gradAdd, u_gradAngle);
   const float w = ${CLOUDS_BAND};
   float t = mix(g.y - w, g.z + w, tr_progress());
@@ -99,9 +99,9 @@ void main() {
   float tt = u_morphSpeed * u_time;
   vec3 pw = vec3(q / (4.0 * max(u_bubbleSmooth, 0.008)) + vec2(u_morph.x * tt, 0.0), u_morph.y * tt);
   vec2 w = vec2(fx_simplex3(pw, u_seed), fx_simplex3(pw + vec3(17.3, -9.1, 4.7), fract(u_seed + 0.37)));
-  vec2 qq = q + 0.35 * u_bubbleAmount * (fx_rot(fx_deg(u_rotateWarpDir)) * w);
+  vec2 qq = q + 0.18 * u_bubbleAmount * (fx_rot(fx_deg(u_rotateWarpDir)) * w);
   vec2 f = fx_cellular(qq, 0.9, u_seed);
-  float v = f.x / max(f.x + 0.5 * (f.y - f.x), 1e-5);
+  float v = sw_growShrink(f.x / max(f.x + 0.5 * (f.y - f.x), 1e-5), false);
   if (u_octaves > 1.5) v = clamp(v + 0.25 * fx_fbm(qq * 2.0, int(u_octaves) - 1, 2.0, 0.5, fract(u_seed + 0.71)), 0.0, 1.0);
   vec3 g = sw_grad(v, u_gradAdd, u_gradAngle);
   fragColor = sw_composite(tr_from(v_uv), tr_to(v_uv), sw_fieldWipe(g.x, g.y, g.z, u_swMargin));
@@ -175,13 +175,17 @@ void main() {
   vec2 q = sw_patternUv(tr_px(), u_frequency, 1.0, 0.0, 1.0, u_shift);
   float L = max(u_relLength, 0.1);
   vec2 cell = floor(q);
-  float nh = fx_fbm(vec2((q.x - u_hSpeedX * u_time) / L, cell.y * 1.37), int(u_octaves), 2.0, 0.5, u_seed);
-  float nv = fx_fbm(vec2(cell.x * 1.37, (q.y - u_vSpeedY * u_time) / L), int(u_octaves), 2.0, 0.5, fract(u_seed + 0.5));
-  // Over / under: which strand is on top alternates at every crossing.
+  // Over / under: which strand is on top alternates at every crossing (cell).
   bool horizontal = mod(cell.x + cell.y, 2.0) < 0.5;
-  float across = horizontal ? fract(q.y) : fract(q.x);
-  float profile = abs(2.0 * across - 1.0);
-  float v = clamp(0.7 * sw_noise01(horizontal ? nh : nv, 1.6) + 0.3 * profile, 0.0, 1.0);
+  // The visible strand: its own switching time, a slow noise along it (flowing at H / V Speed) and its profile
+  // (opens from its centre line).
+  int strand = horizontal ? int(cell.y) : int(cell.x);
+  float base = fx_hash1(strand, horizontal ? u_seed : fract(u_seed + 0.5));
+  vec2 alongP = horizontal ? vec2((q.x - u_hSpeedX * u_time) / L, cell.y * 1.37)
+                           : vec2(cell.x * 1.37, (q.y - u_vSpeedY * u_time) / L);
+  float along = sw_noise01(fx_fbm(alongP, int(u_octaves), 2.0, 0.5, fract(u_seed + (horizontal ? 0.25 : 0.75))), 1.6);
+  float profile = abs(2.0 * (horizontal ? fract(q.y) : fract(q.x)) - 1.0);
+  float v = 0.5 * base + 0.25 * along + 0.25 * profile;
   if (u_strands == 1) v = 1.0 - v;
   vec3 g = sw_grad(v, u_gradAdd, u_gradAngle);
   fragColor = sw_composite(tr_from(v_uv), tr_to(v_uv), sw_fieldWipe(g.x, g.y, g.z, u_swMargin));

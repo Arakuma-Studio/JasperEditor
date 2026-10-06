@@ -160,7 +160,12 @@ const WEDGE_DIRECTION = swParam.choice(
 	['wedgeIn', 'wedgeOut'],
 	['Wedge In', 'Wedge Out'],
 );
-const POINTINESS = fxParam.number('pointiness', 'Pointiness', 2, { min: 0, max: 50, softMax: 10, step: 0.01 });
+const POINTINESS = fxParam.number('pointiness', 'Pointiness', 2, {
+	min: 0,
+	max: 50,
+	softMax: 10,
+	step: 0.01,
+});
 
 /**
  * S_WipeWedge: a wedge (a triangle with its point leading) enters from one side and travels along Angle, widening

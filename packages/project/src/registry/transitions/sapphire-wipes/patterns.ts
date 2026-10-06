@@ -44,7 +44,7 @@ void main() {
   vec2 f = fx_cellular(q, 1.0, u_seed);
   // 0 at the cell's seed point, 1 on its walls (F2 − F1 ≈ twice the distance to the nearest wall).
   float v = f.x / max(f.x + 0.5 * (f.y - f.x), 1e-5);
-  if (u_cells == 1) v = 1.0 - v;
+  v = sw_growShrink(v, u_cells == 1);
   vec3 g = sw_grad(v, u_gradAdd, u_gradAngle);
   fragColor = sw_composite(tr_from(v_uv), tr_to(v_uv), sw_fieldWipe(g.x, g.y, g.z, u_swMargin));
 }`,
@@ -105,7 +105,7 @@ export const S_WIPE_DOTS = sapphireWipe({
 void main() {
   vec2 q = ${LATTICE_UV};
   float v = clamp(length(fract(q) - 0.5) / 0.70710678, 0.0, 1.0);
-  if (u_dots == 1) v = 1.0 - v;
+  v = sw_growShrink(v, u_dots == 1);
   vec3 g = sw_grad(v, u_gradAdd, u_gradAngle);
   fragColor = sw_composite(tr_from(v_uv), tr_to(v_uv), sw_fieldWipe(g.x, g.y, g.z, u_swMargin));
 }`,
@@ -262,7 +262,7 @@ void main() {
     }
   }
   float v = clamp(swShapeG(s, l * flip) / max(norm * 1.01, 1e-4), 0.0, 1.0);
-  if (u_shapesDir == 1) v = 1.0 - v;
+  v = sw_growShrink(v, u_shapesDir == 1);
   vec3 g = sw_grad(v, u_gradAdd, u_gradAngle);
   fragColor = sw_composite(tr_from(v_uv), tr_to(v_uv), sw_fieldWipe(g.x, g.y, g.z, u_swMargin));
 }`,

@@ -2,10 +2,11 @@
 // Width (a fraction of the frame along Angle) travels across the frame; inside it the pixels are warped (bubble),
 // scattered (diffuse) or switched block by block / brush stroke by brush stroke in a semi-random order. These have
 // no border controls in Sapphire.
-import type { GlslChunk } from '../../fx/shader.ts';
+
 import { GLSL_NOISE } from '../../fx/glsl/noise.ts';
 import { GLSL_SAMPLE } from '../../fx/glsl/sample.ts';
 import { fxParam } from '../../fx/params.ts';
+import type { GlslChunk } from '../../fx/shader.ts';
 import { GLSL_SW_CORE, sapphireWipe, swParam } from './common.ts';
 
 /** The travelling band: 0 = still A, 1 = already B, at a frame position. */
@@ -31,7 +32,8 @@ vec4 sw_wrapTo(vec2 uv, int wrap) { return fx_sampleEdge(u_to, uv, wrap == 0 ? F
 export const S_WIPE_BUBBLE = sapphireWipe({
 	name: 'wipe-bubble',
 	label: 'S_WipeBubble',
-	description: 'A bubble wipe: a bubble-warp distorts both clips inside the transition area as it crosses the frame.',
+	description:
+		'A bubble wipe: a bubble-warp distorts both clips inside the transition area as it crosses the frame.',
 	keywords: ['bubble', 'warp', 'distort', 'liquid'],
 	params: [
 		swParam.edgeWidth(1.4),
@@ -185,22 +187,31 @@ void main() {
   ivec2 base = ivec2(floor(q));
   float L = 1.0 + abs(u_strokeLength);
   float d1 = 1e9, d2 = 1e9;
-  float t1 = 0.0, t2 = 0.0;
+  ivec2 c1 = base, c2 = base;
+  vec2 p1 = vec2(0.0), p2 = vec2(0.0);
+  // Long strokes reach two cells away; regular polygons (|Stroke Length| < 0.5) only one.
+  int reach = L > 1.5 ? 2 : 1;
+  float al = clamp(u_strokeAlign, 0.0, 1.0);
   for (int j = -2; j <= 2; j++)
     for (int i = -2; i <= 2; i++) {
+      if (abs(i) > reach || abs(j) > reach) continue;
       ivec2 c = base + ivec2(i, j);
       vec2 pt = vec2(c) + fx_hash22(c, u_seed);
-      // Stroke direction: random per stroke, pulled towards a smooth flow field by Stroke Align.
-      float ra = fx_hash2(c, fract(u_seed + 0.63)) * FX_TAU;
-      float fa = fx_valueNoise(pt * 0.15, fract(u_seed + 0.85)) * FX_PI;
-      float al = clamp(u_strokeAlign, 0.0, 1.0);
-      vec2 dir = normalize(mix(vec2(cos(ra), sin(ra)), vec2(cos(fa), sin(fa)), al) + vec2(1e-4, 0.0));
-      if (u_strokeLength < 0.0) dir = vec2(-dir.y, dir.x);
       vec2 o = q - pt;
-      float d = length(vec2(dot(o, dir) / L, dot(o, vec2(-dir.y, dir.x))));
-      if (d < d1) { d2 = d1; t2 = t1; d1 = d; t1 = swStrokeTime(c, pt, cellPx); }
-      else if (d < d2) { d2 = d; t2 = swStrokeTime(c, pt, cellPx); }
+      float d = length(o);
+      if (L > 1.0) {
+        // Stroke direction: random per stroke, pulled towards a smooth flow field by Stroke Align.
+        float ra = fx_hash2(c, fract(u_seed + 0.63)) * FX_TAU;
+        float fa = fx_valueNoise(pt * 0.15, fract(u_seed + 0.85)) * FX_PI;
+        vec2 dir = normalize(mix(vec2(cos(ra), sin(ra)), vec2(cos(fa), sin(fa)), al) + vec2(1e-4, 0.0));
+        if (u_strokeLength < 0.0) dir = vec2(-dir.y, dir.x);
+        d = length(vec2(dot(o, dir) / L, dot(o, vec2(-dir.y, dir.x))));
+      }
+      if (d < d1) { d2 = d1; c2 = c1; p2 = p1; d1 = d; c1 = c; p1 = pt; }
+      else if (d < d2) { d2 = d; c2 = c; p2 = pt; }
     }
+  float t1 = swStrokeTime(c1, p1, cellPx);
+  float t2 = swStrokeTime(c2, p2, cellPx);
   float p = tr_progress();
   float m1 = p > t1 ? 1.0 : 0.0;
   float m2 = p > t2 ? 1.0 : 0.0;
@@ -211,4 +222,9 @@ void main() {
 }`,
 });
 
-export const SAPPHIRE_BAND_WIPES = [S_WIPE_BUBBLE, S_WIPE_DIFFUSE, S_WIPE_PIXELATE, S_WIPE_POINTALIZE] as const;
+export const SAPPHIRE_BAND_WIPES = [
+	S_WIPE_BUBBLE,
+	S_WIPE_DIFFUSE,
+	S_WIPE_PIXELATE,
+	S_WIPE_POINTALIZE,
+] as const;

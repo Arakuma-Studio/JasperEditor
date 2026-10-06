@@ -93,9 +93,21 @@ export const swParam = {
 		return [
 			trParam.borderWidth(0),
 			trParam.borderColor(SAPPHIRE_BORDER_COLOR),
-			fxParam.number('borderOpacity', 'Border Opacity', 1, { min: 0, max: 1, step: 0.01 }, { ui: { control: 'slider' } }),
+			fxParam.number(
+				'borderOpacity',
+				'Border Opacity',
+				1,
+				{ min: 0, max: 1, step: 0.01 },
+				{ ui: { control: 'slider' } },
+			),
 			fxParam.pixels('borderSoftness', 'Border Softness', 0, 100),
-			fxParam.number('borderShift', 'Border Shift', 0, { softMin: -100, softMax: 100, step: 0.1 }, { unit: 'px' }),
+			fxParam.number(
+				'borderShift',
+				'Border Shift',
+				0,
+				{ softMin: -100, softMax: 100, step: 0.1 },
+				{ unit: 'px' },
+			),
 			fxParam.number('borderGlow', 'Border Glow', 0, { min: 0, max: 20, softMax: 4, step: 0.01 }),
 			fxParam.pixels('glowWidth', 'Glow Width', 40, 400),
 			factor('widthRed', 'Width Red', 1),
@@ -159,6 +171,9 @@ vec2 sw_patternUv(vec2 px, float freq, float relW, float angle, float relPre, ve
 }
 // Noise (≈ −1..1) → 0..1 with a contrast (spreads the switching times of fbm noise over the transition).
 float sw_noise01(float n, float contrast) { return clamp(0.5 + 0.5 * n * contrast, 0.0, 1.0); }
+// Grow / Shrink order of shapes growing from their centres (v: 0 at the centre, 1 on the outline, like a radius):
+// squared so the revealed area grows about linearly with progress; Shrink grows B from the outlines inwards.
+float sw_growShrink(float v, bool shrink) { float a = v * v; return shrink ? 1.0 - a : a; }
 // Triangle wave: 0 at the middle of each unit stripe, 1 at its boundaries.
 float sw_tri(float x) { return abs(2.0 * fract(x) - 1.0); }
 `,
