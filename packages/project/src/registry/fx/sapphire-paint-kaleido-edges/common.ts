@@ -4,14 +4,13 @@
 //
 // Units (normative for this family). Sapphire parameters are resolution independent; the family maps them as:
 // - widths, smoothing amounts and sizes: 1 unit = 1 % of the LAYER WIDTH ("Edge Smooth 0.0224" on a 1920 px layer is a
-//   0.43 px blur, "Max Size 1.5" is a 29 px brush) — `sUnitsPx` / `pke_unit()`;
+//   0.43 px blur) — `sUnitsPx` / `pke_unit()`; brushes (S_Brush "Max Size") are 2 % of the layer width per unit;
 // - frequencies: repeats across the layer width (`Dots Frequency 50` = 50 dots across);
 // - pattern shifts (X & Y): fractions of the layer width;
 // - Sapphire direction vectors (Light Dir, Direction) are y-UP like in Sapphire (`[-0.5, 0.361]` = light from the
 //   upper left); centres are `point` params normalised to the layer box (the framework's on-canvas handle).
 import type { ParamSpec } from '../../effects.ts';
 import { GLSL_COLOR } from '../glsl/color.ts';
-import { GLSL_HASH } from '../glsl/hash.ts';
 import { fxParam } from '../params.ts';
 import { gaussianBlurPasses } from '../passes.ts';
 import type { FxPlanContext, GlslChunk, ShaderPass } from '../shader.ts';
@@ -52,7 +51,11 @@ export function sNum(
 }
 
 /** Sapphire "Wrap" popup: No (transparent), Tile, Reflect → int 0, 1, 2 (`pke_wrap`). */
-export function wrapParam(name = 'wrap', label = 'Wrap', def: 'none' | 'tile' | 'reflect' = 'reflect'): ParamSpec {
+export function wrapParam(
+	name = 'wrap',
+	label = 'Wrap',
+	def: 'none' | 'tile' | 'reflect' = 'reflect',
+): ParamSpec {
 	return fxParam.choice(name, label, ['none', 'tile', 'reflect'], ['No', 'Tile', 'Reflect'], def);
 }
 
@@ -73,10 +76,56 @@ export function xyParam(name: string, label: string, def: [number, number], step
 
 // ---------------------------------------------------------------- GLSL
 
+/**
+ * Branch-free integer hashes and value noise (same PCG maths as fx/hash). The library's `fx_u` has a sign branch
+ * that, inlined dozens of times in the stroke loops, makes SwiftShader's shader compiler stall for minutes; here
+ * lattice coordinates are offset by 2^30 instead (exact for |x| < 2^30, far beyond any canvas).
+ */
+export const PKE_HASH: GlslChunk = {
+	name: 'sapphire-paint-kaleido-edges/hash',
+	source: /* glsl */ `
+uint pke_pcg(uint v) {
+  uint state = v * 747796405u + 2891336453u;
+  uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+  return (word >> 22u) ^ word;
+}
+uint pke_u(int x) { return uint(x + 1073741824); }
+float pke_hash2(ivec2 p, float seed) {
+  uint h = pke_pcg(pke_u(p.x) ^ pke_pcg(uint(clamp(seed, 0.0, 1.0) * 4294967040.0)));
+  h = pke_pcg(h ^ (pke_u(p.y) * 1664525u));
+  return float(h >> 8u) * (1.0 / 16777216.0);
+}
+vec2 pke_hash22(ivec2 p, float seed) { return vec2(pke_hash2(p, seed), pke_hash2(p + ivec2(7919, 104729), seed)); }
+// Value noise, −1..1 (quintic fade).
+float pke_noise(vec2 p, float seed) {
+  ivec2 i = ivec2(floor(p));
+  vec2 f = fract(p);
+  f = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  float a = pke_hash2(i, seed), b = pke_hash2(i + ivec2(1, 0), seed);
+  float c = pke_hash2(i + ivec2(0, 1), seed), d = pke_hash2(i + ivec2(1, 1), seed);
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y) * 2.0 - 1.0;
+}
+// Cellular (Worley) F1, F2 in cell units, jitter 1.
+vec2 pke_cellular(vec2 p, float seed) {
+  ivec2 c = ivec2(floor(p));
+  vec2 f = fract(p);
+  float f1 = 8.0, f2 = 8.0;
+  for (int y = -1; y <= 1; y++)
+    for (int x = -1; x <= 1; x++) {
+      ivec2 o = ivec2(x, y);
+      float d = length(vec2(o) + pke_hash22(c + o, seed) - f);
+      f2 = min(f2, max(f1, d));
+      f1 = min(f1, d);
+    }
+  return vec2(f1, f2);
+}
+`,
+};
+
 /** Family basics: units, seeds, wrap sampling, frame coordinates. */
 export const PKE_COMMON: GlslChunk = {
 	name: 'sapphire-paint-kaleido-edges/common',
-	deps: [GLSL_COLOR, GLSL_HASH],
+	deps: [GLSL_COLOR, PKE_HASH],
 	source: /* glsl */ `
 // One Sapphire size unit (1 % of the layer width) in canvas px.
 float pke_unit() { return u_box.z * 0.01; }
@@ -86,7 +135,7 @@ vec2 pke_uvOfBoxPx(vec2 p) { return (p + u_box.xy) / u_canvasSize; }
 // u_seed (per clip + instance + Seed param) re-randomised every jitter frames (Sapphire "Jitter Frames"; 0 = never).
 float pke_seed(float jitter) {
   if (jitter < 0.5) return u_seed;
-  return fract(u_seed + fx_hash1(int(floor(u_frame / floor(jitter + 0.5))), 0.6180339));
+  return fract(u_seed + pke_hash2(ivec2(int(floor(u_frame / floor(jitter + 0.5))), 0), 0.6180339));
 }
 // Wrap one layer-normalised coordinate: 0 = none, 1 = tile, 2 = reflect.
 float pke_wrap1(float x, int m) {

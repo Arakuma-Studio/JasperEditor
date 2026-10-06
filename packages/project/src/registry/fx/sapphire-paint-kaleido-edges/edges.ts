@@ -8,7 +8,11 @@ import type { FxPlanContext } from '../shader.ts';
 import { blurPasses, PKE_COMMON, PKE_SOBEL, rgbParam, sNum, sUnitsPx, xyParam } from './common.ts';
 
 /** Pre-smoothing sigma in canvas px (Subpixel Smooth off → whole pixels, like Sapphire). */
-export function edgeSmoothSigma(p: EffectParams, name: string, ctx: Pick<FxPlanContext, 'width' | 'pxScale'>) {
+export function edgeSmoothSigma(
+	p: EffectParams,
+	name: string,
+	ctx: Pick<FxPlanContext, 'width' | 'pxScale'>,
+) {
 	const s = sUnitsPx(p[name], ctx);
 	return p.subpixelSmooth === false ? Math.round(s) : s;
 }

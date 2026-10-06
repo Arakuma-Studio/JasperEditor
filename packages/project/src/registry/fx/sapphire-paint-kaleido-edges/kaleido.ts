@@ -8,7 +8,6 @@
 import type { EffectSpec, ParamSpec } from '../../effects.ts';
 import { defineShaderEffect, SAPPHIRE_BINS } from '../define.ts';
 import { GLSL_COMPOSITE } from '../glsl/composite.ts';
-import { GLSL_HASH } from '../glsl/hash.ts';
 import { fxParam, mixWithOriginalParam, seedParam } from '../params.ts';
 import type { GlslChunk } from '../shader.ts';
 import { filterParam, PKE_COMMON, sNum, wrapParam, xyParam } from './common.ts';
@@ -84,7 +83,13 @@ vec2 kal_foldTriangles(vec2 k) {
 
 const insideShiftFrame = (name: string) => `vec2(${name}.x * pke_aspect(), -${name}.y)`;
 
-function mirrorKaleido(o: { id: string; label: string; fold: string; description: string; keywords: string[] }) {
+function mirrorKaleido(o: {
+	id: string;
+	label: string;
+	fold: string;
+	description: string;
+	keywords: string[];
+}) {
 	return defineShaderEffect({
 		id: o.id,
 		label: o.label,
@@ -463,7 +468,7 @@ export const S_TILE_SCRAMBLE = defineShaderEffect({
 		timeInvariant: true,
 		passes: [
 			{
-				include: [PKE_COMMON, GLSL_HASH, GLSL_COMPOSITE],
+				include: [PKE_COMMON, GLSL_COMPOSITE],
 				frag: /* glsl */ `
 vec4 at(vec2 p) {
   float t = u_box.z / max(u_tiles, 1.0);
@@ -471,7 +476,7 @@ vec4 at(vec2 p) {
   vec2 sh = vec2(u_tileShift.x, -u_tileShift.y) * u_box.z;
   vec2 cell = floor((p - sh) / sz);
   vec2 tc = (cell + 0.5) * sz + sh;
-  vec2 rnd = fx_hash22(ivec2(cell), u_seed) * 2.0 - 1.0;
+  vec2 rnd = pke_hash22(ivec2(cell), u_seed) * 2.0 - 1.0;
   vec2 off = pke_rot(u_rotateWarpDir) * (rnd * vec2(u_scrambleRelX, u_scrambleRelY)) * u_scrambleSpeed * u_box.z;
   vec2 q = tc + (p - tc) * u_zDist + off;
   return pke_sampleWrap(u_source, q / u_box.zw, ivec2(u_wrap));

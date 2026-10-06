@@ -224,7 +224,9 @@ export const S_EMBOSS_GLASS = defineShaderEffect({
 		mixWithOriginalParam(),
 	],
 	gpu: {
-		uniforms: (p) => ({ u_stepCount: { int: Math.round(Math.min(GLASS_MAX_STEPS, Math.max(3, num(p.steps, 5)))) } }),
+		uniforms: (p) => ({
+			u_stepCount: { int: Math.round(Math.min(GLASS_MAX_STEPS, Math.max(3, num(p.steps, 5)))) },
+		}),
 		passes: (p, ctx) => [
 			...heightPasses(p, ctx),
 			{
@@ -259,4 +261,9 @@ void main() {
 	},
 });
 
-export const EMBOSS_EFFECTS: readonly EffectSpec[] = [S_EMBOSS, S_EMBOSS_SHINY, S_EMBOSS_DISTORT, S_EMBOSS_GLASS];
+export const EMBOSS_EFFECTS: readonly EffectSpec[] = [
+	S_EMBOSS,
+	S_EMBOSS_SHINY,
+	S_EMBOSS_DISTORT,
+	S_EMBOSS_GLASS,
+];
