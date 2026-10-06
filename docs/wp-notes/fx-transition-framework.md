@@ -132,7 +132,7 @@ A from A to transparency. Want black instead (e.g. a "dip")? Draw it: the stage 
 
 | Field | Meaning |
 |---|---|
-| `passes` | `ShaderPass[]`, or `(params, ctx: TrPlanContext) => ShaderPass[]` when passes depend on params (blur radius, iterations). `ctx = {width, height (sequence px), fps, duration (span frames)}`. Same `ShaderPass` fields as effects: `frag`, `output`, `include`, `scale`, `format`, `filter`, `uniforms`. |
+| `passes` | `ShaderPass[]`, or `(params, ctx: TrPlanContext) => ShaderPass[]` when passes depend on params (blur radius, iterations). `ctx = {width, height (sequence px), fps, duration (span frames)}`. Same `ShaderPass` fields as effects: `frag`, `output`, `include`, `scale`, `format`, `filter`, `uniforms`, and the follow-ups `size` (absolute px), `update` (ping-pong outputs), `mipmaps` (fx guide §17.4). |
 | `uniforms(params, ctx: TrFrameContext)` | Derived uniforms of every pass (`u_<name>`; types from values as for effects). `ctx` adds `frame` (0…d−1), `linear`, `progress`, `seed`, `reversed`, `hasFrom`, `hasTo`. |
 | `reverse` | `'swap'` (default) or `'custom'` (§3). |
 

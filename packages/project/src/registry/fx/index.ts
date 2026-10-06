@@ -15,6 +15,7 @@ import { SAPPHIRE_GLOWS_LIGHTING_EFFECTS } from './sapphire-glows-lighting.ts';
 import { SAPPHIRE_PAINT_KALEIDO_EDGES_EFFECTS } from './sapphire-paint-kaleido-edges.ts';
 import { SAPPHIRE_RENDER_TEXTURES_EFFECTS } from './sapphire-render-textures.ts';
 import { SAPPHIRE_STYLIZE_OTHER_EFFECTS } from './sapphire-stylize-other.ts';
+import { SAPPHIRE_TEXTURES_CLOUDS_EFFECTS } from './sapphire-textures-clouds.ts';
 import { SAPPHIRE_TIME_FLICKER_EFFECTS } from './sapphire-time-flicker.ts';
 
 export * from './define.ts';
@@ -47,6 +48,7 @@ export const FX_FAMILIES: readonly { file: string; idPrefix: string; effects: re
 	{ file: 'sapphire-blur-sharpen', idPrefix: 'jasper.s.', effects: SAPPHIRE_BLUR_SHARPEN_EFFECTS },
 	{ file: 'sapphire-distort-warp', idPrefix: 'jasper.s.', effects: SAPPHIRE_DISTORT_WARP_EFFECTS },
 	{ file: 'sapphire-render-textures', idPrefix: 'jasper.s.', effects: SAPPHIRE_RENDER_TEXTURES_EFFECTS },
+	{ file: 'sapphire-textures-clouds', idPrefix: 'jasper.s.', effects: SAPPHIRE_TEXTURES_CLOUDS_EFFECTS },
 	{ file: 'sapphire-time-flicker', idPrefix: 'jasper.s.', effects: SAPPHIRE_TIME_FLICKER_EFFECTS },
 ];
 

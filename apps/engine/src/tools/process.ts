@@ -50,6 +50,8 @@ export type SpawnOptions = {
 	nice?: number;
 	/** Called with every spawned child (job contexts track them for cancellation). */
 	onSpawn?(child: ChildProcess): void;
+	/** Extra pipes into the child as fds 3, 4, … (`child.stdio[3…]`; ffmpeg reads them as `pipe:3`…). */
+	pipes?: number;
 };
 
 /**
@@ -60,7 +62,7 @@ export function spawnTool(bin: string, args: readonly string[], opts: SpawnOptio
 	const child = spawn(bin, [...args], {
 		cwd: opts.cwd,
 		env: opts.env ?? process.env,
-		stdio: [opts.stdin ?? 'ignore', 'pipe', 'pipe'],
+		stdio: [opts.stdin ?? 'ignore', 'pipe', 'pipe', ...Array<'pipe'>(opts.pipes ?? 0).fill('pipe')],
 		detached: process.platform !== 'win32',
 		windowsHide: true,
 	});

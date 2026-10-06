@@ -5,22 +5,27 @@
 // - the chain covers the stack up to the LAST effect that needs pixels (a shader effect or a colour run); in it:
 //   shader effects → `gpu` steps, consecutive colour effects → one baked-LUT `lut` step (S06 runs), CSS-filter
 //   effects → 2D `css` steps, crop → `crop`, flips → `flip`; the corner pin stays the layer matrix (it commutes);
-//   anything else there (SVG filters, other style fragments) cannot run on a canvas and is drawn after the chain as
-//   a CSS/SVG stage — listed in `reordered` (an order approximation, as for the M2 colour stage);
+//   built-ins whose preview needs an SVG filter at their params (one-direction Gaussian Blur, Repeat Edge Pixels)
+//   run as GPU stand-ins (fx/builtins.ts) in stack order; anything else there (other style fragments) cannot run on
+//   a canvas and is drawn after the chain as a CSS/SVG stage — listed in `reordered` (an order approximation);
 // - effects after the chain stay CSS/SVG stages, in order.
 // Layers without an enabled, known shader effect are not planned here (null): they keep the M1/M2 paths unchanged.
 import {
 	addPadding,
 	CORNER_PIN_EFFECT_ID,
+	type EffectParams,
 	type EffectRegistry,
 	type EffectSpec,
+	type FxClipInfo,
 	type FxPadding,
+	type FxParamsAt,
 	type FxPlanContext,
 	gpuIsTimeDependent,
 	gpuPadding,
 	type ResolvedEffect,
 	ZERO_PADDING,
 } from '@jasper/project';
+import { chainGpuStandIn } from './builtins.ts';
 
 const CROP = 'jasper.crop';
 const FLIP_H = 'jasper.flip-horizontal';
@@ -63,8 +68,13 @@ export type PlanLayerFxOptions = {
 	failed?: (effectId: string) => boolean;
 	/** Preview before/after: colour effects of the layer are bypassed (S06:CGU-005). */
 	colorBypass?: boolean;
-	/** Plan context for the padding hooks (layer box, scale, fps). */
+	/** Plan context for the padding hooks (layer box, scale, fps; frame and clip when known). */
 	ctx: FxPlanContext;
+	/** Params of an effect instance at other frames (`FxPlanContext.paramsAt` of its padding hook). */
+	paramsAt?: (fx: ResolvedEffect) => FxParamsAt | undefined;
+	/** Kind of a project media (a `media` param bound to a video makes its effect time dependent). */
+	mediaKind?: (mediaId: string) => string | null | undefined;
+	clip?: FxClipInfo;
 	/**
 	 * Transition framework: the layer is a side of a GPU transition (its picture is captured for the transition
 	 * stage). The layer takes the chain even without shader effects, and the chain covers the whole stack (every
@@ -148,11 +158,22 @@ export function planLayerFx(
 			cssEffects.push(fx);
 			return;
 		}
-		if (spec.gpu) {
-			const pad = gpuPadding(spec, fx.params, opts.ctx);
+		// Built-ins whose preview would be an SVG filter run as GPU stand-ins, in stack order.
+		const gpuSpec = spec.gpu
+			? spec
+			: (i < last || opts.capture) && !opts.failed?.(fx.effectId)
+				? chainGpuStandIn(spec, fx.params as EffectParams)
+				: null;
+		if (gpuSpec) {
+			const paramsAt = opts.paramsAt?.(fx);
+			const pad = gpuPadding(gpuSpec, fx.params, {
+				...opts.ctx,
+				...(paramsAt ? { paramsAt } : {}),
+				...(opts.clip ? { clip: opts.clip } : {}),
+			});
 			padding = addPadding(padding, pad);
-			timeDependent ||= gpuIsTimeDependent(spec);
-			steps.push({ kind: 'gpu', fx, spec, padding: pad });
+			timeDependent ||= gpuIsTimeDependent(gpuSpec, fx.params, opts.mediaKind);
+			steps.push({ kind: 'gpu', fx, spec: gpuSpec, padding: pad });
 			return;
 		}
 		if (spec.color) {
@@ -207,14 +228,20 @@ export type FxCanvasLayout = {
 	box: { x: number; y: number; w: number; h: number };
 };
 
+/**
+ * `scale` (0, 1]: reduced preview resolution (the Program monitor's 1/2, 1/4… playback resolution): the canvas is
+ * drawn at `scale` × its size and stretched by CSS; px-based params follow through `u_pxScale` / `ctx.pxScale`.
+ */
 export function fxCanvasLayout(
 	box: { width: number; height: number },
 	padding: FxPadding,
 	maxSide: number,
+	scale = 1,
 ): FxCanvasLayout {
 	const cssWidth = Math.max(1, Math.ceil(box.width + padding.left + padding.right));
 	const cssHeight = Math.max(1, Math.ceil(box.height + padding.top + padding.bottom));
-	const pxScale = Math.min(1, maxSide / Math.max(cssWidth, cssHeight));
+	const s = Number.isFinite(scale) && scale > 0 ? Math.min(1, scale) : 1;
+	const pxScale = Math.min(1, maxSide / Math.max(cssWidth, cssHeight)) * s;
 	return {
 		width: Math.max(1, Math.ceil(cssWidth * pxScale)),
 		height: Math.max(1, Math.ceil(cssHeight * pxScale)),

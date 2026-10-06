@@ -1,4 +1,11 @@
-# fx shader framework — authoring guide (wave 1, `wave1/shader-framework`)
+# fx shader framework — authoring guide (wave 1, `wave1/shader-framework`; follow-ups `wave2b/fx-framework-followups`)
+
+> **New since wave 1** (details in §17, pitfalls in §18): `ctx.paramsAt(frame)` (params at other / sub-frame times)
+> and `ctx.clip` (clip/item/file name, source in-point, source timecode) in every hook; time samples and remaps that
+> compose across the stack, `time.sampleEdge`, `u_sampleValid`; ping-pong outputs (`update`), absolute pass sizes
+> (`size`), mipmaps (`mipmaps`, `gpu.sourceMipmaps`); `ivec2/3/4` and `vec4[]` uniforms; `.cube` LUT params
+> (`lutParam`, `sampler3D`, `GLSL_LUT`); unused declarations dropped; `gaussianBlurPasses` X/Y and uniform sigmas;
+> SVG-only built-ins run in stack order; reduced preview resolution; a SwiftShader compile-time budget test.
 
 Audience: the wave-2 agents that add effects to the fx catalogue (Premiere standard effects, Sapphire-style
 families). You only edit **your family file** (`packages/project/src/registry/fx/<family>.ts`) and add tests. You do
@@ -12,11 +19,11 @@ your entries up automatically. Specs: S03 §4.2, §15 (FX-001/002/040/041), S11 
 |---|---|
 | Your family file (one `readonly EffectSpec[]`) | `packages/project/src/registry/fx/<family>.ts` (11 files, see §13) |
 | `defineShaderEffect`, `SAPPHIRE_BINS` | `registry/fx/define.ts` |
-| Param builders (`fxParam.*`, `sapphireCommonParams`, `blendModeParam`, `edgeModeParam`, …) | `registry/fx/params.ts` |
+| Param builders (`fxParam.*`, `lutParam`, `sapphireCommonParams`, `blendModeParam`, `edgeModeParam`, …) | `registry/fx/params.ts` |
 | Pass builders (`gaussianBlurPasses`, `bloomPyramidPasses`) | `registry/fx/passes.ts` |
-| Types, planning, uniforms, padding, seeds, time hooks, `validateGpuEffect` | `registry/fx/shader.ts` |
-| GLSL library (`GLSL_HASH`, `GLSL_NOISE`, `GLSL_COLOR`, `GLSL_BLEND`, `GLSL_SAMPLE`, `GLSL_UV`, `GLSL_BLUR`, `GLSL_COMPOSITE`) | `registry/fx/glsl/*.ts` |
-| Runtime (GPU host, chain, layers) — read only | `packages/compositions/src/fx/*` |
+| Types, planning (`planGpuEffect`, `planPasses`), uniforms, padding, seeds, time hooks (`fxStackTime`, `fxParamsAtFn`), `validateGpuEffect` | `registry/fx/shader.ts` |
+| GLSL library (`GLSL_HASH`, `GLSL_NOISE`, `GLSL_COLOR`, `GLSL_BLEND`, `GLSL_SAMPLE`, `GLSL_UV`, `GLSL_BLUR`, `GLSL_COMPOSITE`, `GLSL_LUT`) | `registry/fx/glsl/*.ts` |
+| Runtime (GPU host, chain, layers, SVG built-in stand-ins `builtins.ts`) — read only | `packages/compositions/src/fx/*` |
 | Worked examples (test-only effects) | `packages/compositions/test/fx-examples.ts` |
 
 Everything is exported from `@jasper/project` (framework) and `@jasper/compositions` (runtime).
@@ -116,12 +123,14 @@ More examples in `fx-examples.ts`: a generator (`TEST_GRADIENT`), a padded drop 
 
 | Field | Meaning |
 |---|---|
-| `passes` | `ShaderPass[]`, or `(params, ctx: FxPlanContext) => ShaderPass[]` when the number/settings of passes depend on params (pyramids, iterations). `ctx = {width, height (layer box px), pxScale, fps}`. |
+| `passes` | `ShaderPass[]`, or `(params, ctx: FxPlanContext) => ShaderPass[]` when the number/settings of passes depend on params (pyramids, iterations). `ctx = {width, height (layer box px), pxScale, fps}` + optional `frame`, `paramsAt`, `clip` (§17.1, §17.2). |
 | `kind` | `'filter'` (default) or `'generator'` (draws its own picture; `u_source` is still the input to composite over). Metadata. |
 | `padding(params, ctx)` | Extra layer pixels the effect may draw outside its input's bounds: a number (all sides) or `{left, top, right, bottom}`. Clamped to 0…2048. |
-| `uniforms(params, ctx: FxFrameContext)` | Derived uniforms for every pass, e.g. `{u_offsetPx: [dx, dy]}` (types from values, §5). `ctx` adds `frame`, `duration`, `seed`, `progress`. |
+| `uniforms(params, ctx: FxFrameContext)` | Derived uniforms for every pass, e.g. `{u_offsetPx: [dx, dy]}` (types from values, §5). `ctx` adds `frame`, `duration`, `seed`, `progress`, and (when the host has them) `paramsAt`, `clip`. |
+| `sourceMipmaps` | `true`: `u_source` has a mip chain in every pass of the effect (`textureLod`/`textureGrad` for strongly shrinking warps, §17.4). |
 | `time.remap(params, ctx)` | Source-frame remap (§9). |
 | `time.samples(params, ctx)` | Extra source pictures at frame offsets (§9). |
+| `time.sampleEdge` | Samples outside the clip's drawn span: `'drop'` (default: none that frame), `'transparent'`, `'clamp'` (§17.3). |
 | `timeInvariant` | `true` if the output depends only on params + input (no `u_frame`/`u_time`/`u_progress`/`u_seed`-per-frame, no time hooks). Lets still layers skip per-frame redraws. Default false. |
 
 `ShaderPass`:
@@ -135,9 +144,12 @@ More examples in `fx-examples.ts`: a generator (`TEST_GRADIENT`), a padded drop 
 | `format` | `'rgba8'` (default) or `'rgba16f'` (HDR intermediates > 1.0; falls back to rgba8 without `EXT_color_buffer_float`). |
 | `filter` | How later passes sample this output: `'linear'` (default) or `'nearest'`. |
 | `uniforms` | Uniforms of this pass only (e.g. `{u_dir: [1, 0]}` to reuse one blur shader twice). |
+| `size` | Absolute output size `{width, height}` in px (1…8192) instead of `scale`: lookup / statistics passes (e.g. 64×1). Ignored on the last pass. |
+| `update` | Ping-pong: write an output name an earlier pass already wrote; this pass reads the old contents as `u_<output>`, later passes the new ones (§17.4). |
+| `mipmaps` | Build a mip chain of this output after drawing (trilinear minification for later passes). |
 
-Limits: ≤ 12 named outputs + media params per effect; ≤ 8 time samples; canvas side ≤ 8192 px (bigger layers are
-drawn downscaled, `u_pxScale` < 1).
+Limits: ≤ 12 distinct output names + media params per effect (ping-pong `update` passes reuse a name); ≤ 8 time
+samples; canvas side ≤ 8192 px (bigger layers are drawn downscaled, `u_pxScale` < 1).
 
 ## 4. Params → uniforms (naming `u_<paramName>`)
 
@@ -149,6 +161,7 @@ drawn downscaled, `u_pxScale` < 1).
 | `vec2` | `uniform vec2 u_x` | as stored |
 | `color` | `uniform vec4 u_x` | straight RGBA 0..1 (premultiply yourself: `fx_premultiply`) |
 | `media` | `uniform sampler2D u_x` + `uniform vec2 u_x_size` | the picture (premultiplied); size in px, `(0,0)` when none/offline |
+| `media` with `mediaKinds: ['lut']` (`lutParam`) | `uniform highp sampler3D u_x` + `uniform vec2 u_x_size` | the `.cube` LUT, N³ RGB half float, trilinear; `(N, 1)`, `(0,0)` when none — `fx_lut3d(u_x, u_x_size, rgb)` |
 | `string`, `curve` | not mapped | |
 
 Conventions of `fxParam.*` (normative):
@@ -171,11 +184,15 @@ Conventions of `fxParam.*` (normative):
 
 Custom uniforms (`gpu.uniforms`, `pass.uniforms`) must be named `u_<name>`; types come from the value: number →
 `float`, boolean → `bool`, `[a,b]`/`[a,b,c]`/`[a,b,c,d]` → `vec2/3/4`, `{int: n}` → `int`, `{floats: [...]}` →
-`float u_x[n]`, `{mat3: [9 numbers, column-major]}` → `mat3`. Keep a uniform's type stable across frames.
+`float u_x[n]`, `{mat3: [9 numbers, column-major]}` → `mat3`, `{ivec2: [a, b]}` / `{ivec3}` / `{ivec4}` → `ivec2/3/4`
+(truncated), `{vec4s: [4·n numbers]}` → `vec4 u_x[n]` (packed point lists). Keep a uniform's type AND array length
+stable across frames (pad arrays to a fixed size, pass the count separately).
 
 ## 5. Built-ins, coordinates, alpha
 
-Declared in every pass (unused ones cost nothing):
+Declared in every pass (unused ones cost nothing). Declarations of YOUR outputs, media textures and param/custom
+uniforms are emitted only in the passes that mention them (body or includes), so identical pass bodies share one
+compiled program across effects and positions:
 
 | Uniform | Meaning |
 |---|---|
@@ -190,7 +207,7 @@ Declared in every pass (unused ones cost nothing):
 | `float u_progress`, `int u_side` | Transition progress (0..1) and side (1 outgoing, 2 incoming) when a transition drives the layer; else `u_clipProgress` / 0 (§10). |
 | `float u_seed` | Deterministic 0..1 per clip + effect instance (+ `seed` param) (§8). |
 | `mat3 u_layerToComp`, `vec2 u_compSize` | Layer px → sequence px (Motion, corner pin), sequence size. |
-| `sampler2DArray u_samples`, `int u_sampleCount`, `float u_sampleOffsets[8]` | Time samples (§9); use `fx_sample(i, uv)`. |
+| `sampler2DArray u_samples`, `int u_sampleCount`, `float u_sampleOffsets[8]`, `int u_sampleValid` | Time samples (§9, §17.3); use `fx_sample(i, uv)`. Count, offsets, validity and every `u_<media>_size` are set in EVERY pass, also passes that do not sample. |
 
 Prelude helpers (always available): `fx_canvasPx()`, `fx_layerPx()`, `fx_layerNorm()`, `fx_uvOfCanvasPx(p)`,
 `fx_uvOfLayerPx(p)`, `fx_uvOfLayerNorm(n)`, `fx_inBox(uv)`, `fx_premultiply(c)`, `fx_unpremultiply(c)`,
@@ -241,15 +258,19 @@ random seeks all draw the same pixels. Therefore:
   random edits). The composition wraps the layer in `<Freeze frame>` and passes the remapped `localFrame`/
   `contentTime` to the layer component, so video, composition clips and DOM layers all show the source at that frame;
   Motion, opacity and every effect param stay at the real time; `u_frame` is the real frame. Result is floored and
-  clamped to the drawn span `[−headHandle, duration + tailHandle − 1]`; several remaps compose in stack order
-  (remap is a layer-level operation: it changes the source of the whole stack). `ctx = {frame, fps, duration,
-  headHandle, tailHandle, seed}`.
+  clamped to the drawn span `[−headHandle, duration + tailHandle − 1]`. Several remaps NEST like image effects
+  (After Effects' model, `fxSourceFrame`): the last effect is asked for the real frame and asks the effects above it
+  for its remapped frame — [Freeze, Speed ×2] stays frozen, [Speed ×2, Freeze at 10] shows source frame 20.
+  `ctx = {frame, fps, duration, headHandle, tailHandle, seed, paramsAt?, clip?}`.
 - **`time.samples(params, ctx)`** → up to 8 integer frame offsets relative to the (remapped) source frame, e.g.
   `[-1, -2, -3]` for trails/echo/time average. Read them with `fx_sample(i, uv)` (i in request order, `u_sampleOffsets[i]`
-  is the offset; `u_sampleCount` how many are valid). Samples are the **raw layer source** (before any effect) in the
-  canvas layout (same `v_uv` as `u_source`); put time effects first in a stack. Each sample is decoded for its own
-  frame (a `<Freeze>`d decoder per offset), so samples are deterministic under random seek and in parallel renders.
-  Out-of-span samples are transparent. `timeInvariant` is ignored with time hooks.
+  is the offset; `u_sampleCount` how many are bound). Samples are the **raw layer source** (before any effect) in the
+  canvas layout (same `v_uv` as `u_source`), at the frame the effect's input has after the OTHER effects' remaps
+  (`fxStackTime`, §17.3): an echo below a freeze echoes the frozen picture, an echo above it shows the frozen frame
+  ± offsets. Put sampling effects first in a stack (later image effects are not applied to samples). Each sample is
+  decoded for its own source frame (a `<Freeze>`d decoder per frame), so samples are deterministic under random seek
+  and in parallel renders. Outside the drawn span: `time.sampleEdge` (default `'drop'`: no samples that frame,
+  `u_sampleCount == 0` — never a stale picture). `timeInvariant` is ignored with time hooks.
 - Verified: freeze remap and an earlier-frame sample are exact in renders (`fx-render.e2e.test.ts`) and in the Player
   when paused (`fx-player.e2e.test.ts`).
 - Limits: during **playback** in the Player each sample/remapped decoder seeks per frame — exact when paused or
@@ -294,10 +315,11 @@ transition, `LayerProps.transition` is set during the span: `u_progress` (the tr
 
 Stack order (S03 §4.2, FX-002): crop first, then the stack in order. The canvas chain covers the stack up to the last
 shader or colour effect: shader effects, colour runs (one baked LUT per run, same shader as the colour stage),
-CSS-filter effects (2D canvas filter), crop and flips run in exact order. Effects after the chain stay CSS/SVG wrapper
-stages. **Approximation:** an SVG-filter effect (e.g. one-direction Gaussian Blur) placed *before* a shader effect is
-drawn after the chain (reported in the plan's `reordered`). The corner pin is the layer matrix (always last).
-Layers without shader effects keep the exact M1/M2 behaviour.
+CSS-filter effects (2D canvas filter), crop and flips run in exact order. Built-ins whose preview needs an SVG filter
+at their params (Gaussian Blur with one direction or Repeat Edge Pixels) run as GPU stand-ins in the chain
+(`compositions/src/fx/builtins.ts`), so their order is exact too; `reordered` now only lists effects with other
+style fragments (none of the built-ins). Effects after the chain stay CSS/SVG wrapper stages. The corner pin is the
+layer matrix (always last). Layers without shader effects keep the exact M1/M2 behaviour.
 
 ## 13. Families, ids, bins, badges
 
@@ -357,9 +379,13 @@ Commands: `pnpm typecheck`, `pnpm lint`, `pnpm vitest run <paths>`, full `pnpm t
 | `GLSL_UV` (fx/uv) | `fx_rot`, `fx_rotateAround`, `fx_scaleAround`, `fx_toPolar`/`fx_fromPolar`, `fx_deg`, `fx_dir`, `FX_PI`, `FX_TAU` |
 | `GLSL_BLUR` (fx/blur) | `fx_gaussian1d(t, uv, dir, texel, sigma)`, `fx_box1d`, `fx_blur9`, `fx_zoomBlur`, `fx_gaussianWeight` |
 | `GLSL_COMPOSITE` (fx/composite) | `fx_finish`, `fx_mixOriginal`, `fx_matteView`, `fx_lumaMatte`, `fx_colorDistanceMatte`, `fx_applyMatte`, `fx_setAlpha`, `FX_SHOW_*` |
+| `GLSL_LUT` (fx/lut) | `fx_lut3d(highp sampler3D t, vec2 size, vec3 rgb)` (identity when size.x < 2), `fx_lutMix(t, size, rgb, amount)` |
 
-Pass builders: `gaussianBlurPasses({input, output, sigma (canvas px), scale?, format?})` (H + V passes; outputs
-`<output>H`, `<output>`), `bloomPyramidPasses({input, prefix, levels})` (½, ¼, … downsamples `u_<prefix>0…`).
+Pass builders: `gaussianBlurPasses({input, output, sigma, sigmaY?, scale?, format?})` (H + V passes; outputs
+`<output>H`, `<output>`; a sigma is canvas px, or `{uniform: 'u_x'}` — any float GLSL expression of your
+`gpu.uniforms`, e.g. `'u_sig.y'`, evaluated per frame so animated radii keep their programs and plans; numeric
+sigmas produce exactly the wave-1 programs), `bloomPyramidPasses({input, prefix, levels})` (½, ¼, … downsamples
+`u_<prefix>0…`).
 Shared GLSL you need in several of your own effects: keep it as a `GlslChunk` in your family file (name it
 `<family>/<name>`); propose additions to the library to the integrator instead of editing `glsl/*`.
 
@@ -368,13 +394,139 @@ Shared GLSL you need in several of your own effects: keep it as a `GlslChunk` in
 - One WebGL2 context per page runs all shader effects (and the LUT passes of fx layers), programs compiled once per
   page and cached by source; the effects are Remotion `2d` canvas effects that blit the GL result. Intermediates are
   pooled by size (LRU 48).
-- Preview resolution = the layer's intrinsic size (4K footage → a 4K canvas): heavy multi-pass effects on 4K layers
-  are not real-time on weak GPUs; there is no preview-resolution scale yet (`u_pxScale` is ready for it).
+- Preview resolution = the layer's intrinsic size × the Program monitor's playback resolution (Full, 1/2, 1/4, 1/8 →
+  `RenderOptions.fxPreviewScale`; renders always full): at 1/2 the canvases are drawn at half size and stretched, and
+  `u_pxScale` / `ctx.pxScale` halve, so px-based params keep their on-screen size (§18 units).
 - Composition clips run shader effects only on the cached preview/master, not on the live host iframe.
 - DOM layers need HTML-in-Canvas in the preview (see §12); no time samples there. HTML-in-Canvas requires the element
   to be in the viewport in renders (a DOM layer entirely outside the frame with a padded effect reaching into it is
   not captured).
-- `curve` and `string` params are not mapped to uniforms.
+- `curve` and `string` params are not mapped to uniforms (use `paramsAt` / `ctx.clip` in TS hooks and pass numbers).
 - The on-canvas handles cover `point` params only (no angle/radius gizmos).
 - Engine-level REMOTION_E2E tests cannot use test-only effects (the engine bundles the production registry); the
   render path is verified with `@remotion/renderer` directly and the same browser options.
+
+## 17. Follow-ups (wave 2b, `wave2b/fx-framework-followups`)
+
+All additive: an effect that does not use a new field draws exactly what it drew before (same values; only program
+source TEXT changed, because unused declarations are now dropped).
+
+### 17.1 Params at other times — `ctx.paramsAt(frame)`
+
+`FxFrameContext`, `FxPlanContext` (padding, function passes) and `FxTimeContext` (time hooks) carry
+`paramsAt?: (frame: number) => EffectParams`: the params of THIS instance at another clip-local frame of the real
+time, fractional frames allowed, evaluated from the clip's keyframes by the shared `evaluate()` (content time, clip
+in-point, speed, reverse — `fxClipContentTime`). `paramsAt(ctx.frame)` returns the very `p` object the hook got.
+It is a pure function of the document: Player, stills and parallel renders agree. Absent in unit tests and the
+catalogue checks: always write `ctx.paramsAt?.(f) ?? p` or skip the feature without it.
+
+```ts
+uniforms: (p, ctx) => {
+  const shutter = 0.5;                               // frames, centred on the frame
+  const poses = Array.from({ length: 8 }, (_, i) =>
+    poseOf(ctx.paramsAt?.(ctx.frame + ((i + 0.5) / 8 - 0.5) * shutter) ?? p));
+  return { u_n: { int: 8 }, u_poses: { vec4s: poses.flat() } };
+}
+```
+
+Helpers: `fxParamsAtFn(instance, clip, fps, current?)` (what the host uses), `fxClipContentTime`. Users: Premiere
+Transform (Shutter Angle), S_BlurMoCurves, S_WarpCornerPin / S_WarpPerspective (Motion Blur), Write-on (stroke).
+Keep sample counts bounded (≤ 16) and collapse to the single-sample path when nothing moves (exact old output).
+
+### 17.2 Clip context — `ctx.clip`
+
+`ctx.clip?: FxClipInfo` = `{clipName, itemName (project item), fileName, sourceInSeconds (in-point), sourceStartTimecode
+(the media's embedded `HH:MM:SS:FF` or null), speed, reverse, duration}` in every hook. `fxSourceSeconds(clip,
+frame, fps)` = media seconds shown at a clip-local frame. The snapshot carries the media part as
+`RenderVisualClip.sourceInfo` (media clips with effects). Users: Clip Name (Display: Sequence Clip Name / Project Item
+Name / File Name / Custom; instances without a Display value keep their Name), Timecode (Media = source timecode).
+
+### 17.3 Stack time — remaps and samples compose
+
+`fxStackTime(steps, ctx)` (the host calls it with every enabled effect that has time hooks, in stack order) gives the
+layer source frame (`fxSourceFrame`: nested remaps, §9) and, per effect, the source frame of each sample: the frame
+the effect is asked for (the real frame mapped by the remaps of the effects AFTER it in the stack) through its own
+remap, + the offset, then mapped through the remaps of the effects BEFORE it. `time.sampleEdge` decides samples outside the drawn span: `'drop'` (default; `u_sampleCount == 0`
+for the frame, as in wave 1 but never stale), `'transparent'` (positional, transparent picture), `'clamp'` (nearest
+frame of the span). `u_sampleValid` (int bitmask): bit i set when sample i shows its own frame. Samples of a layer
+are fetched once per distinct source frame (slots `sample@<frame>`) and uploaded once per frame (keyed upload).
+
+### 17.4 Passes: ping-pong, absolute sizes, mipmaps
+
+- `update: true` + an existing `output` name = ping-pong: the host alternates two textures per name (`FxPassPlan
+  .target` = `<first>` / `<first>~`), the pass reads the previous contents as `u_<name>`. A 66-pass bitonic sort,
+  a jump flood or an accumulation loop uses ONE name (the 12-texture rule counts names). Generate the steps in a
+  `passes` function; the GLSL of every step should be the same text with the step in pass `uniforms` (one program).
+- `size: {width: 64, height: 1}`: absolute output size (histograms, LUT rows, global statistics). Read it with
+  `texture(u_<name>, uv)` / `texelFetch(u_<name>, ivec2(i, 0), 0)`.
+- `mipmaps: true` on a pass: its output gets a mip chain after drawing; `gpu.sourceMipmaps: true`: `u_source` has one
+  in every pass of the effect. Sample with `textureLod(t, uv, lod)` (lod = log2 of the footprint in texels) or
+  `textureGrad`. Only opt in where you need it: with mipmaps, plain `texture()` in minifying mappings filters.
+
+### 17.5 Uniform types
+
+`{ivec2: [a, b]}` / `{ivec3}` / `{ivec4}` → integer vectors; `{vec4s: [...]}` → `vec4 u_x[n]` (4·n numbers). Prefer
+`vec4s` over `{floats}` for long lists: every `float` array element takes a whole vec4 register on many drivers
+(WebGL2 guarantees only 224 fragment uniform vectors in total).
+
+### 17.6 LUT assets — `lutParam`
+
+`lutParam(name, label)` = a `media` param with `mediaKinds: ['lut']` (the inspector lists the project's `.cube`
+assets). Bound as `uniform highp sampler3D u_<name>` + `vec2 u_<name>_size` = (N, 1), (0, 0) when none/offline. 1D
+LUTs and custom DOMAIN_MIN/MAX are baked to 33³ first, so `fx_lut3d(u_x, u_x_size, rgb)` (`GLSL_LUT`, identity when
+none) is all a shader needs. Renders wait for the asset like colour-run LUTs. Users: S_ColorFuse (`lut1File`…
+`lut3File` override the image/look of each slot), S_VHS (`lut1File`, `lut2File`).
+
+### 17.7 Time dependence
+
+`gpuIsTimeDependent(spec, params?, mediaKind?)`: a `media` param bound to a VIDEO makes a `timeInvariant` effect
+time dependent (the picture plays). The composition (re-render per frame), the stage and the layer-bake planner
+(no still bake) use it.
+
+### 17.8 SVG-only built-ins, preview resolution
+
+- One-direction Gaussian Blur / Repeat Edge Pixels inside an fx chain run as a GPU stand-in in stack order
+  (`chainGpuStandIn`, per-axis σ, Repeat Edge = clamped sampling in the box, otherwise padded by 3σ).
+- `RenderOptions.fxPreviewScale` (the Program monitor's playback resolution) scales the canvases; `u_pxScale`
+  follows. Renders ignore it.
+
+### 17.9 SwiftShader compile budget
+
+`packages/compositions/test/fx-compile-budget.test.ts` compiles, links and draws EVERY distinct program of every
+registered effect and transition (default params) plus the library noise/hash helpers inside loops on SwiftShader,
+and fails when one takes longer than `FX_COMPILE_BUDGET_MS` (default 5000 ms); it prints the slowest programs
+(`FX_COMPILE_REPORT=path.json` writes them all; `FX_COMPILE_FILTER=<id part>`; `FX_COMPILE_WORKERS`). Run it after
+adding noise-heavy effects:
+
+```bash
+pnpm vitest run packages/compositions/test/fx-compile-budget.test.ts
+```
+
+## 18. Pitfalls
+
+- **`filter` is a reserved word in GLSL ES 3.00** (so are e.g. `sample`, `input`, `output`, `common`, `partition`,
+  `active`, `patch`, `resource`, `class`, `union`, `enum`, `typedef`, `template`, `this`, `goto`, `inline`, `public`,
+  `static`, `extern`, `external`, `interface`, `long`, `short`, `double`, `half`, `fixed`, `unsigned`, `cast`,
+  `namespace`, `using`, `sizeof`, `asm`, `volatile`, `superp`): a param named `filter` becomes `u_filter` (fine), but a
+  local variable, function or parameter named `filter` / `sample` / `input` does not compile. Name them `filt`,
+  `smp`, `inp`.
+- **Noise in loops on SwiftShader.** Software GL inlines every call and unrolls constant loops; code with many
+  selects (`?:`, data-dependent `if` on scalars) per call explodes its compile time super-linearly. The library
+  helpers are branch-free (`fx_u`), so `fx_simplex3`, `fx_fbm*`, `fx_cellular`, `fx_valueNoise3` in loops compile
+  in < 0.5 s (they took 20–60 s and more before). Still: prefer dynamic loop bounds (`for (k < 12) if (k >= n)
+  break;` or `k < int(u_n)`) over large constant ones, hoist seed hashing out of loops, and check new effects with the
+  budget test (§17.9).
+- **Sampler budget.** WebGL2 guarantees 16 texture units per pass: the framework uses `u_source`, `u_prev`,
+  `u_samples` (+ a dummy array) — keep ≤ 12 of your outputs + media/LUT params *mentioned in one pass* (the
+  12-distinct-names rule; ping-pong updates do not add names). 3D LUT params count like pictures.
+- **Uniform budget.** ≤ 224 vec4 per fragment shader: pack lists in `vec4s`, bound sample counts (16 shutter
+  samples × 2 vec4 is fine, 256 floats is not).
+- **Units.** Layer px params × `u_pxScale` (or `ctx.pxScale`) = canvas px — the preview scale and huge-layer downscale
+  both go through it, never assume 1. Points are layer-normalised (0..1 over the box), angles degrees clockwise,
+  percentages 0..100, Sapphire "units" a fraction of the layer width/height as each family documents, time in
+  clip-local frames (`u_frame`, `paramsAt`) or seconds (`u_time`), shutter lengths in frames centred on the frame.
+- **Exactness when adding features to an effect.** Keep the old code path for the old parameter values (e.g.
+  `if (u_n > 1) { new path } else { old body unchanged }`) and new params' defaults neutral: existing documents and
+  pixel tests must not change.
+- **Determinism.** No state between frames: accumulate from `paramsAt` (Write-on draws the whole path every frame)
+  or from time samples, never from the previous output.
