@@ -40,7 +40,10 @@ export type EffectCategory =
 	| 'Amplitude'
 	| 'Filter'
 	| 'Noise Reduction'
-	| 'Time and Pitch';
+	| 'Time and Pitch'
+	| 'Noise & Grain'
+	| 'Transition'
+	| 'Video';
 
 export type ParamSpec = {
 	name: string;
