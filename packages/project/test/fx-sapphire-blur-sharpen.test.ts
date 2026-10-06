@@ -286,8 +286,8 @@ describe('motion', () => {
 			paramsAt: (f: number) => ({ ...p, rotate: f * 2 }),
 		} as FxFrameContext);
 		// Rotation from frame 11 to 13 (shutter 2 around frame 12).
-		expect((withCurves.u_moFrom as number[])[1]).toBeCloseTo((22 * Math.PI) / 180, 6);
-		expect((withCurves.u_moTo as number[])[1]).toBeCloseTo((26 * Math.PI) / 180, 6);
+		expect((withCurves.u_moFrom as readonly number[])[1]).toBeCloseTo((22 * Math.PI) / 180, 6);
+		expect((withCurves.u_moTo as readonly number[])[1]).toBeCloseTo((26 * Math.PI) / 180, 6);
 	});
 });
 
