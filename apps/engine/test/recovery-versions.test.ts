@@ -149,7 +149,7 @@ describe('crash-recovery journal over HTTP (S01:PER-021, AC-18)', () => {
 				method: 'PUT',
 				url: `/api/projects/${id}/recovery/${sessionId}`,
 				headers: JSON_H,
-				payload: body,
+				payload: body as object,
 			});
 		const body = {
 			leaseId: l.leaseId,
