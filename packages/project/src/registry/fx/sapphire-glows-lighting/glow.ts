@@ -196,8 +196,13 @@ vec4 sgl_boxRead(sampler2D t, vec2 uv, float d) {
 // A loop bound the compiler cannot treat as a constant (n at run time): keeps SwiftShader/ANGLE from unrolling big
 // loops, which makes compiling them very slow.
 int sgl_dyn(int n) { return n + int(min(0.0, u_resolution.x)); }
-// Reflect edge mode: a layer-normalised point mirrored into the box.
-vec2 sgl_mirrorNorm(vec2 n) { vec2 m = mod(n, 2.0); return mix(m, 2.0 - m, step(1.0, m)); }
+// Reflect edge mode: a layer-normalised point mirrored into the box, kept half a texel inside it (a bilinear read at
+// the very edge would mix in the transparent padding: a false edge / darker rim).
+vec2 sgl_mirrorNorm(vec2 n) {
+  vec2 m = mod(n, 2.0);
+  vec2 h = 0.5 / u_box.zw;
+  return clamp(mix(m, 2.0 - m, step(1.0, m)), h, 1.0 - h);
+}
 // The effect input at v_uv, box-filtered over d texels (downscaled bright passes); reflect = 1 mirrors the layer
 // into the padding (Edge Mode: Reflect) so light near the frame edge does not fade.
 vec4 sgl_srcRead(float d, int reflect) {
