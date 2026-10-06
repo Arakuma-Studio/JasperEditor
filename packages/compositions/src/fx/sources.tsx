@@ -132,6 +132,7 @@ export function FxVideoSources(props: {
 	const head = layer.clip.headHandle ?? 0;
 	const tail = layer.clip.tailHandle ?? 0;
 	const f = layer.localFrame;
+	// (time samples are absolute frames, `f` is the layer's own source frame)
 	const rate = props.playbackRate ?? layer.clip.speed.rate;
 	const base = props.freezeBase ?? 0;
 	return (
@@ -144,13 +145,13 @@ export function FxVideoSources(props: {
 				frame={f}
 				offthread={props.offthread}
 			/>
-			{stage.samples.map((o) => {
-				const at = f + o;
-				if (at < -head || at > layer.clip.duration + tail - 1) return null; // outside the drawn span: transparent
+			{stage.samples.map((at) => {
+				// Absolute source frames (fxStackTime: composed with the stack's remaps, inside the drawn span).
+				if (at < -head || at > layer.clip.duration + tail - 1) return null;
 				return (
-					<Freeze key={o} frame={at + head + base}>
+					<Freeze key={at} frame={at + head + base}>
 						<FxVideoFeed
-							slot={`sample:${o}`}
+							slot={`sample@${at}`}
 							src={props.src}
 							trimBefore={props.trimBefore}
 							playbackRate={rate}

@@ -2,13 +2,15 @@
 // Timecode, Simple Text. Text is drawn in GLSL from a 1-bit bitmap font (video-font.ts, bilinear + soft threshold so
 // it scales cleanly); the string is composed in TypeScript (`gpu.uniforms`, per frame for Timecode) and passed as
 // `u_text` (3 characters per float, 7 bits each — exact in float32) with `u_textLen`.
-// Limitations (framework): the effect context carries no clip/media names nor the clip's source in-point, so Clip
-// Name shows the Name typed in its own field, and Timecode's "Media" source counts from the clip start like "Clip".
+// Clip context (`ctx.clip`): Clip Name's Display shows the sequence clip name, the project item name or the file
+// name (instances made before Display existed have no `display` value and keep showing their Name field, as does
+// every choice when the host gives no clip context); Timecode's "Media" source is the source timecode — the
+// media's embedded start timecode + the source position (in-point, speed, reverse) at the frame.
 // Timecode's Field Symbol (an interlace indicator) is kept for parity but draws nothing (progressive only).
 import type { EffectParams, EffectSpec, ParamSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
 import { fxParam } from '../params.ts';
-import type { FxFrameContext, GlslChunk } from '../shader.ts';
+import { type FxFrameContext, fxSourceSeconds, type GlslChunk } from '../shader.ts';
 import { num, str } from './common.ts';
 import { GLSL_PSDG_FONT, PSDG_FONT_CELL } from './video-font.ts';
 
@@ -133,6 +135,28 @@ void main() {
 
 // ---------------------------------------------------------------- Clip Name
 
+const CLIP_NAME_DISPLAYS = ['sequenceClipName', 'projectItemName', 'fileName', 'custom'] as const;
+
+/**
+ * The text Clip Name shows: Display = Sequence Clip Name / Project Item Name / File Name from the clip context, or
+ * the Name field (Display "Custom", instances without a Display value, no clip context, an empty name).
+ */
+export function clipNameText(p: EffectParams, ctx: Pick<FxFrameContext, 'clip'>): string {
+	const typed = str(p.name, 'Clip Name');
+	const display = typeof p.display === 'string' ? p.display : 'custom';
+	const c = ctx.clip;
+	if (!c) return typed;
+	const v =
+		display === 'sequenceClipName'
+			? c.clipName
+			: display === 'projectItemName'
+				? c.itemName
+				: display === 'fileName'
+					? c.fileName
+					: '';
+	return v || typed;
+}
+
 export const CLIP_NAME = defineShaderEffect({
 	id: 'jasper.clip-name',
 	label: 'Clip Name',
@@ -142,11 +166,18 @@ export const CLIP_NAME = defineShaderEffect({
 	keywords: ['burn-in', 'name', 'label', 'overlay', 'review', 'text'],
 	params: [
 		...textLayoutParams({ position: [0.5, 0.85], size: 8, opacity: 50, align: true }),
+		fxParam.choice(
+			'display',
+			'Display',
+			CLIP_NAME_DISPLAYS,
+			['Sequence Clip Name', 'Project Item Name', 'File Name', 'Custom (Name)'],
+			'sequenceClipName',
+		),
 		stringParam('name', 'Name', 'Clip Name'),
 	],
 	gpu: {
 		timeInvariant: true,
-		uniforms: (p, ctx) => layoutUniforms(p, ctx, str(p.name, 'Clip Name'), str(p.alignment, 'center')),
+		uniforms: (p, ctx) => layoutUniforms(p, ctx, clipNameText(p, ctx), str(p.alignment, 'center')),
 		passes: [{ include: [GLSL_PSDG_TEXT], frag: textFrag }],
 	},
 });
@@ -190,14 +221,29 @@ export function parseTimecode(s: string, display: string): number {
 	return ((Number(m[1]) * 60 + Number(m[2])) * 60 + Number(m[3])) * base + Number(m[4]);
 }
 
-/** The text the Timecode effect shows at a clip-local frame (pure). */
-export function timecodeText(p: EffectParams, ctx: Pick<FxFrameContext, 'frame' | 'fps'>): string {
+/**
+ * The text the Timecode effect shows at a clip-local frame (pure). Source "Media" with a clip context: the source
+ * timecode (the media's start timecode + the source position at the frame); without one it counts like "Clip".
+ */
+export function timecodeText(p: EffectParams, ctx: Pick<FxFrameContext, 'frame' | 'fps' | 'clip'>): string {
 	const display = str(p.timeDisplay, '30');
 	const base = Number.parseInt(display, 10) || 30;
 	const fps = ctx.fps > 0 ? ctx.fps : 30;
-	const local = Math.floor(((ctx.frame + num(p.offset)) / fps) * base + 1e-6);
-	const start =
-		str(p.timecodeSource, 'clip') === 'generate' ? parseTimecode(str(p.startingTimecode, ''), display) : 0;
+	const source = str(p.timecodeSource, 'clip');
+	const offset = num(p.offset);
+	if (source === 'media' && ctx.clip) {
+		const secs = fxSourceSeconds(ctx.clip, ctx.frame, fps) + offset / fps;
+		const startTc = ctx.clip.sourceStartTimecode ? parseTimecode(ctx.clip.sourceStartTimecode, display) : 0;
+		const tc = formatTimecode(
+			Math.max(0, Math.floor(secs * base + 1e-6) + startTc),
+			display,
+			str(p.format, 'smpte'),
+		);
+		const label = str(p.labelText, 'none');
+		return `${label === 'none' || label === 'auto' ? '' : `${label.toUpperCase()} `}${tc}`;
+	}
+	const local = Math.floor(((ctx.frame + offset) / fps) * base + 1e-6);
+	const start = source === 'generate' ? parseTimecode(str(p.startingTimecode, ''), display) : 0;
 	const tc = formatTimecode(Math.max(0, local + start), display, str(p.format, 'smpte'));
 	const label = str(p.labelText, 'none');
 	const prefix = label === 'none' || label === 'auto' ? '' : `${label.toUpperCase()} `;

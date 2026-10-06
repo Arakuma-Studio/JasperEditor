@@ -1,14 +1,14 @@
 // "Sapphire other stylize" family — S_ColorFuse: up to three LUTs combined (in order, each mixed by its strength),
 // applied in a LUT colour space converted from the host colour space and back.
 //
-// Approximation (framework): shader effects cannot bind `.cube` LUT assets (media params of GPU effects are images
-// and videos only), so each LUT slot is EITHER a built-in look (procedural "LUTs") OR a 2D LUT image of the project:
-// a horizontal strip (N² × N, blue = tile) or a square Hald CLUT (L³ × L³, cube size L²) — the two common PNG
-// LUT exports. An image overrides the slot's built-in look. Transfer curves of the log spaces are approximate.
+// Each LUT slot is a `.cube` LUT asset of the project (a 3D texture, `lutParam`), OR a 2D LUT image — a horizontal
+// strip (N² × N, blue = tile) or a square Hald CLUT (L³ × L³, cube size L²), the two common PNG LUT exports — OR a
+// built-in look (procedural "LUTs"), in that order of precedence. Transfer curves of the log spaces are approximate.
 import type { EffectSpec } from '../../effects.ts';
 import { defineShaderEffect, SAPPHIRE_BINS } from '../define.ts';
 import { GLSL_BLEND } from '../glsl/blend.ts';
-import { fxParam, sapphireCommonParams } from '../params.ts';
+import { GLSL_LUT } from '../glsl/lut.ts';
+import { fxParam, lutParam, sapphireCommonParams } from '../params.ts';
 import type { GlslChunk } from '../shader.ts';
 import { GLSL_SSO_COMMON, GLSL_SSO_MASK, maskParams, sNum } from './common.ts';
 
@@ -54,7 +54,7 @@ const LOOK_LABELS = [
 
 const GLSL_COLOR_FUSE: GlslChunk = {
 	name: 'sapphire-stylize-other/color-fuse',
-	deps: [GLSL_SSO_COMMON, GLSL_BLEND],
+	deps: [GLSL_SSO_COMMON, GLSL_BLEND, GLSL_LUT],
 	source: /* glsl */ `
 // ---- transfer curves (encoded 0..1 <-> scene/display linear)
 vec3 cf_decode(int s, vec3 v) {
@@ -169,6 +169,7 @@ function slot(i: 1 | 2 | 3, look: (typeof COLOR_FUSE_LOOKS)[number], strength: n
 	return [
 		fxParam.choice(`lut${i}`, `Lut${i}`, COLOR_FUSE_LOOKS, LOOK_LABELS, look),
 		fxParam.media(`lut${i}Image`, `Lut${i} Image (strip or Hald)`, ['image']),
+		lutParam(`lut${i}File`, `Lut${i} File (.cube)`),
 		sNum(`lut${i}Strength`, `Lut${i} Strength`, strength, { min: 0, max: 1 }),
 	];
 }
@@ -179,7 +180,7 @@ export const S_COLOR_FUSE: EffectSpec = defineShaderEffect({
 	category: 'Stylize',
 	bin: SAPPHIRE_BINS.stylize,
 	description:
-		'Combines up to three LUTs (built-in looks or 2D LUT images: N²×N strips or Hald CLUTs) for stylised looks, each mixed by its strength, in a LUT colour space converted from the host colour space.',
+		'Combines up to three LUTs (.cube files, 2D LUT images — N²×N strips or Hald CLUTs — or built-in looks) for stylised looks, each mixed by its strength, in a LUT colour space converted from the host colour space.',
 	keywords: ['lut', 'look', 'grade', 'teal orange', 'film look', 'color grading', 'colour grading'],
 	params: [
 		fxParam.choice('hostColorspace', 'Host Colorspace', COLOR_FUSE_SPACES, SPACE_LABELS, 'srgb'),
@@ -196,17 +197,17 @@ export const S_COLOR_FUSE: EffectSpec = defineShaderEffect({
 			{
 				include: [GLSL_COLOR_FUSE, GLSL_SSO_MASK],
 				frag: /* glsl */ `
-vec3 cf_apply(vec3 c, int look, sampler2D img, vec2 imgSize, float strength) {
-  vec3 l = imgSize.x > 0.0 ? cf_lutImage(img, imgSize, c) : cf_look(look, c);
+vec3 cf_apply(vec3 c, int look, sampler2D img, vec2 imgSize, highp sampler3D cube, vec2 cubeSize, float strength) {
+  vec3 l = cubeSize.x > 0.0 ? fx_lut3d(cube, cubeSize, c) : imgSize.x > 0.0 ? cf_lutImage(img, imgSize, c) : cf_look(look, c);
   return mix(c, l, clamp(strength, 0.0, 1.0));
 }
 void main() {
   vec4 src = texture(u_source, v_uv);
   vec3 c = fx_unpremultiply(src).rgb;
   c = cf_toSpace(u_lutColorspace, cf_fromSpace(u_hostColorspace, c));
-  c = cf_apply(c, u_lut1, u_lut1Image, u_lut1Image_size, u_lut1Strength);
-  c = cf_apply(c, u_lut2, u_lut2Image, u_lut2Image_size, u_lut2Strength);
-  c = cf_apply(c, u_lut3, u_lut3Image, u_lut3Image_size, u_lut3Strength);
+  c = cf_apply(c, u_lut1, u_lut1Image, u_lut1Image_size, u_lut1File, u_lut1File_size, u_lut1Strength);
+  c = cf_apply(c, u_lut2, u_lut2Image, u_lut2Image_size, u_lut2File, u_lut2File_size, u_lut2Strength);
+  c = cf_apply(c, u_lut3, u_lut3Image, u_lut3Image_size, u_lut3File, u_lut3File_size, u_lut3Strength);
   c = cf_toSpace(u_hostColorspace, cf_fromSpace(u_lutColorspace, c));
   fragColor = sso_finish(vec4(clamp(c, 0.0, 1.0) * src.a, src.a), src, -1.0);
 }`,

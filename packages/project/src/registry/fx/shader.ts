@@ -5,6 +5,9 @@
 // and the time hooks, and validates specs. The compositions' GL host (`packages/compositions/src/fx/`) compiles and
 // runs the plans inside Remotion's canvas effect chain, in the Player and in renders alike.
 // Authoring guide (normative for effect authors): docs/wp-notes/fx-shader-framework.md.
+import { evaluate } from '../../keyframes.ts';
+import type { Animatable, ParamValue } from '../../schema/common.ts';
+import { FLICKS_PER_SECOND } from '../../time.ts';
 import type { EffectParams, EffectSpec, ParamSpec } from '../effects.ts';
 
 // ---------------------------------------------------------------- types
@@ -29,14 +32,65 @@ export type FxUniformValue =
 	| readonly [number, number, number, number]
 	| { readonly int: number }
 	| { readonly floats: readonly number[] }
-	| { readonly mat3: readonly number[] };
+	| { readonly mat3: readonly number[] }
+	/** `ivec2` / `ivec3` / `ivec4` (components truncated to integers). */
+	| { readonly ivec2: readonly [number, number] }
+	| { readonly ivec3: readonly [number, number, number] }
+	| { readonly ivec4: readonly [number, number, number, number] }
+	/** `vec4 u_x[n]`: 4·n numbers (packed point lists: 2 points or 1 point + 2 attributes per element). */
+	| { readonly vec4s: readonly number[] };
 
-export type FxUniformType = 'float' | 'int' | 'bool' | 'vec2' | 'vec3' | 'vec4' | 'mat3' | 'float[]';
-/** A uniform as the GL host sets it: flattened numbers (`bool` = 0/1, `float[]` = `length` floats). */
+export type FxUniformType =
+	| 'float'
+	| 'int'
+	| 'bool'
+	| 'vec2'
+	| 'vec3'
+	| 'vec4'
+	| 'mat3'
+	| 'float[]'
+	| 'ivec2'
+	| 'ivec3'
+	| 'ivec4'
+	| 'vec4[]';
+/**
+ * A uniform as the GL host sets it: flattened numbers (`bool` = 0/1, `float[]` = `length` floats, `vec4[]` =
+ * 4 × `length / 4` floats).
+ */
 export type FxUniform = { name: string; type: FxUniformType; value: readonly number[] };
 
 /** Extra pixels an effect draws around the layer box, per side, in layer pixels (S03:FX-041). */
 export type FxPadding = { left: number; top: number; right: number; bottom: number };
+
+/**
+ * The clip an effect instance sits on (Premiere's Clip Name / Timecode burn-ins, source-time effects). Absent outside
+ * a composition (unit tests, the catalogue checks): hooks must fall back to their own params.
+ */
+export type FxClipInfo = {
+	/** Sequence clip name (Premiere "Sequence Clip Name"). */
+	clipName: string;
+	/** Name of the clip's project item ("Project Item Name"); '' for clips without media (text, solids…). */
+	itemName: string;
+	/** File name of the clip's media ("File Name", e.g. `A001_C003.mov`); '' without media. */
+	fileName: string;
+	/** Source in-point: seconds into the media at the clip's first frame (S01:CLP-004). */
+	sourceInSeconds: number;
+	/** Embedded start timecode of the media (`HH:MM:SS:FF`, from the probe), or null when it has none. */
+	sourceStartTimecode: string | null;
+	/** Clip speed (S01 `speed`): media seconds per clip second, and reverse playback. */
+	speed: number;
+	reverse: boolean;
+	/** Clip duration in frames. */
+	duration: number;
+};
+
+/**
+ * Params of the same effect instance at another CLIP-LOCAL frame of the real time (fractional frames allowed: sub-frame
+ * shutter samples), evaluated from the clip's keyframes by the shared `evaluate()` — exactly the values the effect
+ * gets at that frame (same object for the current frame). Absent when the host cannot provide them (tests, the
+ * catalogue checks): treat as "the params do not change" (`ctx.paramsAt?.(f) ?? p`).
+ */
+export type FxParamsAt = (frame: number) => EffectParams;
 
 /** What pass planning and padding know: the layer box and the canvas resolution. */
 export type FxPlanContext = {
@@ -46,6 +100,12 @@ export type FxPlanContext = {
 	/** Canvas pixels per layer pixel (1 = full resolution; < 1 when a huge layer is drawn downscaled). */
 	pxScale: number;
 	fps: number;
+	/** Clip-local frame (real time) being planned, when known. */
+	frame?: number;
+	/** Params of this instance at other frames (see `FxParamsAt`). */
+	paramsAt?: FxParamsAt;
+	/** The clip (names, source in-point, source timecode); see `FxClipInfo`. */
+	clip?: FxClipInfo;
 };
 
 /** Per-frame context of `GpuEffect.uniforms` (also the values behind the built-in uniforms). */
@@ -71,6 +131,9 @@ export type FxTimeContext = {
 	tailHandle: number;
 	/** Same value as `u_seed` (use `fxRandom(seed, n)` for deterministic per-frame randomness). */
 	seed: number;
+	/** Params of this instance at other frames (see `FxParamsAt`). */
+	paramsAt?: FxParamsAt;
+	clip?: FxClipInfo;
 };
 
 export type ShaderPass = {
@@ -97,6 +160,23 @@ export type ShaderPass = {
 	filter?: 'linear' | 'nearest';
 	/** Uniforms of this pass only (e.g. a blur direction), declared by the framework from their values. */
 	uniforms?: Readonly<Record<string, FxUniformValue>>;
+	/**
+	 * Absolute output size in pixels (e.g. `{width: 64, height: 1}` for a lookup/statistics pass), instead of `scale`.
+	 * Integers 1…8192. Ignored on the last pass (always the canvas size).
+	 */
+	size?: { width: number; height: number };
+	/**
+	 * Ping-pong: this pass writes an output NAME already written by an earlier pass (`output` required). It may read
+	 * the previous contents as `u_<output>` (the host alternates two textures); later passes see the new contents.
+	 * Iterative algorithms (sorting networks, flood fills, jump floods, accumulations) thereby use one name for any
+	 * number of steps — the ≤ 12 limit counts distinct names. Without `update`, reusing a name is an error.
+	 */
+	update?: boolean;
+	/**
+	 * Build a mip chain of this pass's output (trilinear minification) so later passes can sample it with
+	 * `textureLod` / `textureGrad` / implicit-LOD `texture()` for strongly shrinking warps and cheap wide averages.
+	 */
+	mipmaps?: boolean;
 };
 
 /**
@@ -115,6 +195,12 @@ export type GpuEffect = {
 	padding?(p: EffectParams, ctx: FxPlanContext): number | Partial<FxPadding>;
 	/** Derived uniforms of every pass (e.g. a direction vector from an angle), declared from their values. */
 	uniforms?(p: EffectParams, ctx: FxFrameContext): Readonly<Record<string, FxUniformValue>>;
+	/**
+	 * `u_source` gets a mip chain in every pass of this effect (trilinear minification): `textureLod(u_source, uv,
+	 * lod)` / `textureGrad` / implicit LOD in strongly shrinking warps (no aliasing). Off by default: with it,
+	 * plain `texture(u_source, uv)` in minifying mappings returns filtered (different) values.
+	 */
+	sourceMipmaps?: boolean;
 	/** Source-time hooks (time effects). Deterministic functions of params and the frame: no state, no clocks. */
 	time?: {
 		/**
@@ -128,6 +214,15 @@ export type GpuEffect = {
 		 * trails. At most `FX_MAX_TIME_SAMPLES`; read with `u_samples` / `fx_sample(i, uv)`.
 		 */
 		samples?(p: EffectParams, ctx: FxTimeContext): readonly number[];
+		/**
+		 * Samples outside the clip's drawn span `[−headHandle, duration + tailHandle − 1]`:
+		 * - `'drop'` (default, the wave-1 behaviour): when any sample is outside, the effect gets none
+		 *   (`u_sampleCount == 0`) for that frame;
+		 * - `'transparent'`: every sample is bound in request order, outside ones transparent;
+		 * - `'clamp'`: outside samples show the nearest frame of the span.
+		 * In every mode bit i of `u_sampleValid` is set when sample i shows its own frame.
+		 */
+		sampleEdge?: 'drop' | 'transparent' | 'clamp';
 	};
 	/**
 	 * True when the output depends only on the params and the input picture (no `u_frame`/`u_time`/`u_progress`,
@@ -149,6 +244,13 @@ export type FxPassPlan = {
 	source: string;
 	/** Pass-level uniforms. */
 	uniforms: FxUniform[];
+	/**
+	 * Physical texture of the output inside the plan: the pass index, or for ping-pong (`update`) passes the pair
+	 * `<first index>` / `<first index>~`. Absent = the pass index.
+	 */
+	target?: string;
+	/** Generate mipmaps of the output after drawing. */
+	mipmaps?: boolean;
 };
 
 /** A planned effect instance: what the GL host runs for one effect at one frame. */
@@ -159,8 +261,13 @@ export type FxEffectPlan = {
 	passes: FxPassPlan[];
 	/** Param uniforms + `GpuEffect.uniforms`, for every pass. */
 	uniforms: FxUniform[];
-	/** `media` params bound as textures: `uniform sampler2D u_<param>` + `uniform vec2 u_<param>_size`. */
-	textures: { param: string; uniform: string; mediaId: string }[];
+	/**
+	 * `media` params bound as textures: `uniform sampler2D u_<param>` + `uniform vec2 u_<param>_size` (pictures), or
+	 * for `lut`-only params `uniform highp sampler3D u_<param>` + `vec2 u_<param>_size` = (N, 1) for an N³ LUT.
+	 */
+	textures: { param: string; uniform: string; mediaId: string; kind?: '2d' | 'lut' }[];
+	/** `u_source` has mipmaps in every pass (`GpuEffect.sourceMipmaps`). */
+	sourceMipmaps?: boolean;
 	/** Identity of programs and sizes (not of uniform values): changes force no re-plan, only a re-key. */
 	key: string;
 };
@@ -198,12 +305,19 @@ export const FX_BUILTIN_UNIFORMS = {
 	u_samples: 'sampler2DArray — time samples (raw layer source at other frames, canvas layout), see fx_sample',
 	u_sampleCount: 'int — number of valid layers in u_samples',
 	u_sampleOffsets: 'float[8] — frame offset of each sample',
+	u_sampleValid:
+		'int — bit i set: sample i shows its own frame (not outside the clip span: transparent/clamped)',
 } as const;
 
 const NAME_RE = /^[A-Za-z][A-Za-z0-9]*$/;
 
+/** A `media` param that takes `.cube` LUT assets only: bound as a 3D texture (`sampler3D`). */
+export function isLutMediaParam(p: Pick<ParamSpec, 'type' | 'mediaKinds'>): boolean {
+	return p.type === 'media' && !!p.mediaKinds?.length && p.mediaKinds.every((k) => k === 'lut');
+}
+
 /** GLSL type of a parameter's uniform (null = not mapped: strings and curves; media params become textures). */
-export function paramUniformType(p: ParamSpec): FxUniformType | 'sampler2D' | null {
+export function paramUniformType(p: ParamSpec): FxUniformType | 'sampler2D' | 'sampler3D' | null {
 	switch (p.type) {
 		case 'number':
 			return 'float';
@@ -216,7 +330,7 @@ export function paramUniformType(p: ParamSpec): FxUniformType | 'sampler2D' | nu
 		case 'color':
 			return 'vec4';
 		case 'media':
-			return 'sampler2D';
+			return isLutMediaParam(p) ? 'sampler3D' : 'sampler2D';
 		default:
 			return null;
 	}
@@ -285,8 +399,31 @@ export function toUniform(name: string, v: FxUniformValue): FxUniform {
 		if (!t) throw new Error(`fx uniform ${name}: vectors have 2, 3 or 4 components`);
 		return { name, type: t, value: v.map((x) => finite(x)) };
 	}
-	const o = v as { int?: number; floats?: readonly number[]; mat3?: readonly number[] };
+	const o = v as {
+		int?: number;
+		floats?: readonly number[];
+		mat3?: readonly number[];
+		ivec2?: readonly number[];
+		ivec3?: readonly number[];
+		ivec4?: readonly number[];
+		vec4s?: readonly number[];
+	};
 	if (o.int !== undefined) return { name, type: 'int', value: [Math.trunc(finite(o.int))] };
+	for (const [k, n] of [
+		['ivec2', 2],
+		['ivec3', 3],
+		['ivec4', 4],
+	] as const) {
+		const a = o[k];
+		if (a === undefined) continue;
+		if (a.length !== n) throw new Error(`fx uniform ${name}: ${k} has ${n} components`);
+		return { name, type: k, value: a.map((x) => Math.trunc(finite(x))) };
+	}
+	if (o.vec4s) {
+		if (o.vec4s.length === 0 || o.vec4s.length % 4 !== 0)
+			throw new Error(`fx uniform ${name}: vec4s needs a non-empty multiple of 4 numbers`);
+		return { name, type: 'vec4[]', value: o.vec4s.map((x) => finite(x)) };
+	}
 	if (o.floats) {
 		if (o.floats.length === 0) throw new Error(`fx uniform ${name}: empty float array`);
 		return { name, type: 'float[]', value: o.floats.map((x) => finite(x)) };
@@ -295,11 +432,13 @@ export function toUniform(name: string, v: FxUniformValue): FxUniform {
 	throw new Error(`fx uniform ${name}: unsupported value`);
 }
 
-function declaration(u: FxUniform): string {
-	return u.type === 'float[]'
-		? `uniform float ${u.name}[${u.value.length}];`
-		: `uniform ${u.type} ${u.name};`;
+/** The GLSL declaration of a custom/param uniform. */
+export function uniformDeclaration(u: FxUniform): string {
+	if (u.type === 'float[]') return `uniform float ${u.name}[${u.value.length}];`;
+	if (u.type === 'vec4[]') return `uniform vec4 ${u.name}[${u.value.length / 4}];`;
+	return `uniform ${u.type} ${u.name};`;
 }
+const declaration = uniformDeclaration;
 
 // ---------------------------------------------------------------- program sources
 
@@ -330,6 +469,7 @@ uniform vec2 u_compSize;
 uniform sampler2DArray u_samples;
 uniform int u_sampleCount;
 uniform float u_sampleOffsets[8];
+uniform int u_sampleValid;
 // Coordinates: uv 0..1 over the canvas, (0,0) = top-left; canvas px = uv * u_canvasSize (y down);
 // layer px = position inside the layer box in layer pixels; layer norm = 0..1 over the layer box.
 vec2 fx_canvasPx() { return v_uv * u_canvasSize; }
@@ -367,7 +507,14 @@ export function fragLineOffset(source: string, frag: string): number {
 	return i < 0 ? 0 : source.slice(0, i).split('\n').length - 1;
 }
 
-/** The complete fragment shader of a pass. */
+const declaredName = (decl: string) => /\b(u_[A-Za-z0-9_]+)\s*(?:\[\d+\])?\s*;\s*$/.exec(decl)?.[1] ?? '';
+
+/**
+ * The complete fragment shader of a pass. Declarations of outputs, media textures and uniforms the pass never
+ * mentions (in its body or its includes) are left out, so identical pass bodies of different effects (or of
+ * different positions in one effect) compile to ONE program. Textures are `sampler2D` unless listed in `lut`
+ * (`highp sampler3D`).
+ */
 export function buildPassSource(
 	pass: ShaderPass,
 	decls: {
@@ -375,17 +522,30 @@ export function buildPassSource(
 		textures: readonly string[];
 		outputs: readonly string[];
 		uniforms: readonly string[];
+		/** Texture uniforms bound as 3D LUTs. */
+		lut?: readonly string[];
 	},
 ): string {
-	const parts = ['#version 300 es', FX_PRELUDE];
+	const includes = resolveIncludes(pass.include);
+	const text = `${includes.map((c) => c.source).join('\n')}\n${pass.frag}`;
+	const mentions = new Set(text.match(/\bu_[A-Za-z0-9_]+/g) ?? []);
+	const lut = new Set(decls.lut ?? []);
 	const d = [
-		...decls.outputs.map((o) => `uniform sampler2D u_${o};`),
-		...decls.textures.flatMap((t) => [`uniform sampler2D ${t};`, `uniform vec2 ${t}_size;`]),
-		...decls.params,
-		...decls.uniforms,
+		...[...new Set(decls.outputs)]
+			.filter((o) => mentions.has(`u_${o}`))
+			.map((o) => `uniform sampler2D u_${o};`),
+		...decls.textures
+			.filter((t) => mentions.has(t) || mentions.has(`${t}_size`))
+			.flatMap((t) => [
+				lut.has(t) ? `uniform highp sampler3D ${t};` : `uniform sampler2D ${t};`,
+				`uniform vec2 ${t}_size;`,
+			]),
+		...decls.params.filter((x) => mentions.has(declaredName(x))),
+		...decls.uniforms.filter((x) => mentions.has(declaredName(x))),
 	];
+	const parts = ['#version 300 es', FX_PRELUDE];
 	if (d.length) parts.push(`${d.join('\n')}\n`);
-	for (const c of resolveIncludes(pass.include)) parts.push(`// ---- ${c.name}\n${c.source.trim()}\n`);
+	for (const c of includes) parts.push(`// ---- ${c.name}\n${c.source.trim()}\n`);
 	parts.push(pass.frag.trim(), '');
 	return parts.join('\n');
 }
@@ -444,37 +604,97 @@ export function planGpuEffect(
 				param: ps.name,
 				uniform: `u_${ps.name}`,
 				mediaId: typeof v?.mediaId === 'string' ? v.mediaId : '',
+				...(isLutMediaParam(ps) ? { kind: 'lut' as const } : {}),
 			};
 		});
-	const paramDecls = uniforms.map(declaration);
+	const planned = planPasses(passes, {
+		paramDecls: uniforms.map(declaration),
+		textures: textures.map((t) => t.uniform),
+		lut: textures.filter((t) => t.kind === 'lut').map((t) => t.uniform),
+		canvas,
+	});
+	const key = `${spec.id}@${spec.version}:${canvas.width}x${canvas.height}:${planPassesKey(planned)}${gpu.sourceMipmaps ? ':srcmip' : ''}`;
+	return {
+		fxId: fx.id,
+		effectId: spec.id,
+		canvas,
+		passes: planned,
+		uniforms,
+		textures,
+		key,
+		...(gpu.sourceMipmaps ? { sourceMipmaps: true } : {}),
+	};
+}
+
+/** Identity of planned passes (sizes, formats, programs, targets) for plan keys. */
+export function planPassesKey(planned: readonly FxPassPlan[]): string {
+	return planned
+		.map(
+			(pp) =>
+				`${pp.width}x${pp.height}/${pp.format}/${hashString(pp.source)}${pp.target !== undefined ? `@${pp.target}` : ''}${pp.mipmaps ? '/mip' : ''}`,
+		)
+		.join(',');
+}
+
+/** Largest absolute pass size (`ShaderPass.size`) per side. */
+const MAX_PASS_SIDE = 8192;
+
+/**
+ * Sizes, physical targets and sources of a pass list (shared by effects and transitions): `scale` or absolute
+ * `size`, named outputs (ping-pong `update` passes alternate two targets per name), mipmaps; the last pass is the
+ * canvas.
+ */
+export function planPasses(
+	passes: readonly ShaderPass[],
+	opts: {
+		paramDecls: readonly string[];
+		textures: readonly string[];
+		lut?: readonly string[];
+		canvas: { width: number; height: number };
+	},
+): FxPassPlan[] {
 	const outputs: string[] = [];
+	/** Output name → [first pass index, writes so far]. */
+	const writes = new Map<string, [number, number]>();
 	const planned: FxPassPlan[] = [];
+	const { canvas } = opts;
 	passes.forEach((pass, index) => {
 		const last = index === passes.length - 1;
 		const scale = last ? 1 : Math.min(1, Math.max(1e-3, finite(pass.scale, 1)));
 		const passUniforms = Object.entries(pass.uniforms ?? {}).map(([k, v]) => toUniform(k, v));
 		const source = buildPassSource(pass, {
-			params: paramDecls,
-			textures: textures.map((t) => t.uniform),
+			params: opts.paramDecls,
+			textures: opts.textures,
+			lut: opts.lut,
 			outputs: [...outputs],
 			uniforms: passUniforms.map(declaration),
 		});
+		const name = last ? null : (pass.output ?? `pass${index}`);
+		let target: string | undefined;
+		if (name !== null) {
+			const w = writes.get(name);
+			if (w && pass.update) {
+				w[1]++;
+				target = w[1] % 2 === 1 ? `${w[0]}~` : String(w[0]);
+			} else writes.set(name, [index, 0]);
+		}
+		const abs = !last && pass.size;
+		const side = (v: number) => Math.min(MAX_PASS_SIDE, Math.max(1, Math.round(finite(v, 1))));
 		planned.push({
 			index,
-			output: last ? null : (pass.output ?? `pass${index}`),
-			width: Math.max(1, Math.ceil(canvas.width * scale)),
-			height: Math.max(1, Math.ceil(canvas.height * scale)),
+			output: name,
+			width: abs ? side(abs.width) : Math.max(1, Math.ceil(canvas.width * scale)),
+			height: abs ? side(abs.height) : Math.max(1, Math.ceil(canvas.height * scale)),
 			format: pass.format ?? 'rgba8',
 			filter: pass.filter ?? 'linear',
 			source,
 			uniforms: passUniforms,
+			...(target !== undefined ? { target } : {}),
+			...(!last && pass.mipmaps ? { mipmaps: true } : {}),
 		});
-		if (!last) outputs.push(pass.output ?? `pass${index}`);
+		if (name !== null && !outputs.includes(name)) outputs.push(name);
 	});
-	const key = `${spec.id}@${spec.version}:${canvas.width}x${canvas.height}:${planned
-		.map((pp) => `${pp.width}x${pp.height}/${pp.format}/${hashString(pp.source)}`)
-		.join(',')}`;
-	return { fxId: fx.id, effectId: spec.id, canvas, passes: planned, uniforms, textures, key };
+	return planned;
 }
 
 // ---------------------------------------------------------------- built-in uniforms
@@ -560,24 +780,120 @@ export function fxRandom(seed: number, n: number): number {
 
 // ---------------------------------------------------------------- time hooks
 
+/** A time-hook effect of a stack (stack order) with what its hooks get. */
+export type FxTimeStep = {
+	spec: EffectSpec;
+	params: EffectParams;
+	seed: number;
+	paramsAt?: FxParamsAt;
+	clip?: FxClipInfo;
+};
+
+type SpanCtx = Omit<FxTimeContext, 'seed' | 'paramsAt' | 'clip'>;
+
+const clampToSpan = (f: number, ctx: SpanCtx) =>
+	Math.max(0 - ctx.headHandle, Math.min(ctx.duration + ctx.tailHandle - 1, f)) + 0;
+
+/** One remap: floored and clamped to the drawn span. */
+function applyRemap(s: FxTimeStep, at: number, ctx: SpanCtx): number {
+	const r = s.spec.gpu!.time!.remap!(s.params, {
+		...ctx,
+		frame: at,
+		seed: s.seed,
+		...(s.paramsAt ? { paramsAt: s.paramsAt } : {}),
+		...(s.clip ? { clip: s.clip } : {}),
+	});
+	return clampToSpan(Number.isFinite(r) ? Math.floor(r) : at, ctx);
+}
+
+const remaps = (s: FxTimeStep) => !!s.spec.gpu?.time?.remap;
+
 /**
- * The clip-local source frame for `frame` after the remapping effects of a stack (stack order), or null when no
- * enabled effect remaps time. Rounded down and clamped to the drawn span `[−head, duration + tail − 1]`.
+ * The clip-local source frame for `frame` after the remapping effects of a stack, or null when no enabled effect
+ * remaps time. Remaps NEST like image effects (After Effects' model): the last effect of the stack is asked for the
+ * real frame and asks its input (the effects above it) for its remapped frame, and so on up to the source — so
+ * [Freeze, Speed ×2] shows the frozen picture and [Speed ×2, Freeze at 10] shows source frame 20. Each remap is
+ * rounded down and clamped to the drawn span `[−head, duration + tail − 1]`.
  */
-export function fxSourceFrame(
-	steps: readonly { spec: EffectSpec; params: EffectParams; seed: number }[],
-	ctx: Omit<FxTimeContext, 'seed'>,
-): number | null {
-	let f: number | null = null;
-	for (const s of steps) {
-		const remap = s.spec.gpu?.time?.remap;
-		if (!remap) continue;
-		const at = f ?? ctx.frame;
-		const r = remap(s.params, { ...ctx, frame: at, seed: s.seed });
-		f = Number.isFinite(r) ? Math.floor(r) : at;
-		f = Math.max(-ctx.headHandle, Math.min(ctx.duration + ctx.tailHandle - 1, f));
+export function fxSourceFrame(steps: readonly FxTimeStep[], ctx: SpanCtx): number | null {
+	let f = ctx.frame;
+	let any = false;
+	for (let k = steps.length - 1; k >= 0; k--)
+		if (remaps(steps[k]!)) {
+			f = applyRemap(steps[k]!, f, ctx);
+			any = true;
+		}
+	return any ? f : null;
+}
+
+/** The time samples of one step of a stack, resolved to source frames (`fxStackTime`). */
+export type FxStepTime = {
+	/** Frame the step's output is requested at (= the real frame unless a later effect remaps). */
+	frame: number;
+	/** Frame of the step's input picture (its own remap applied): sample offsets are relative to it. */
+	input: number;
+	/** Requested offsets (integers, ≤ FX_MAX_TIME_SAMPLES) — `u_sampleOffsets`. Empty when dropped. */
+	offsets: number[];
+	/**
+	 * Source frame (clip-local, in the drawn span) each sample shows, in request order; null = transparent.
+	 * Earlier effects' remaps are applied (a sample of an effect below a freeze is the frozen picture).
+	 */
+	frames: (number | null)[];
+	/** `u_sampleValid`: bit i set when sample i shows its own frame. */
+	valid: number;
+};
+
+/**
+ * Time of every effect of a stack (stack order; pass the enabled effects with time hooks — the relative order is
+ * what matters): the layer's source frame and each effect's time samples composed with the other effects' remaps
+ * (nested model of `fxSourceFrame`). Samples outside the drawn span follow `time.sampleEdge`.
+ */
+export function fxStackTime(
+	steps: readonly FxTimeStep[],
+	ctx: SpanCtx,
+): { source: number | null; steps: FxStepTime[] } {
+	const n = steps.length;
+	const outT: number[] = new Array(n);
+	const inT: number[] = new Array(n);
+	let tau = ctx.frame;
+	let any = false;
+	for (let k = n - 1; k >= 0; k--) {
+		outT[k] = tau;
+		if (remaps(steps[k]!)) {
+			tau = applyRemap(steps[k]!, tau, ctx);
+			any = true;
+		}
+		inT[k] = tau;
 	}
-	return f;
+	const span = (f: number) => f >= -ctx.headHandle && f <= ctx.duration + ctx.tailHandle - 1;
+	const out = steps.map((s, k): FxStepTime => {
+		const offsets = fxTimeSamples(s.spec, s.params, {
+			...ctx,
+			frame: outT[k]!,
+			seed: s.seed,
+			...(s.paramsAt ? { paramsAt: s.paramsAt } : {}),
+			...(s.clip ? { clip: s.clip } : {}),
+		});
+		const earlier = steps.slice(0, k).some(remaps);
+		const edge = s.spec.gpu?.time?.sampleEdge ?? 'drop';
+		const frames: (number | null)[] = [];
+		let valid = 0;
+		offsets.forEach((o, i) => {
+			let f = inT[k]! + o;
+			if (earlier) {
+				for (let j = k - 1; j >= 0; j--) if (remaps(steps[j]!)) f = applyRemap(steps[j]!, f, ctx);
+				valid |= 1 << i;
+				frames.push(f);
+			} else if (span(f)) {
+				valid |= 1 << i;
+				frames.push(f);
+			} else frames.push(edge === 'clamp' ? clampToSpan(f, ctx) : null);
+		});
+		if (edge === 'drop' && frames.some((f) => f === null))
+			return { frame: outT[k]!, input: inT[k]!, offsets: [], frames: [], valid: 0 };
+		return { frame: outT[k]!, input: inT[k]!, offsets, frames, valid };
+	});
+	return { source: any ? tau : null, steps: out };
 }
 
 /** Time-sample offsets of one effect (integers, at most FX_MAX_TIME_SAMPLES; non-finite entries dropped). */
@@ -589,11 +905,74 @@ export function fxTimeSamples(spec: EffectSpec, params: EffectParams, ctx: FxTim
 		.slice(0, FX_MAX_TIME_SAMPLES);
 }
 
-/** The effect redraws every frame (time-dependent output). */
-export function gpuIsTimeDependent(spec: Pick<EffectSpec, 'gpu'>): boolean {
+/**
+ * The effect redraws every frame (time-dependent output). With `params`, a `media` param bound to a VIDEO is time
+ * dependent too (the picture plays): `mediaKind(id)` resolves the bound media; without a resolver a bound media
+ * param that accepts videos counts as time dependent (conservative).
+ */
+export function gpuIsTimeDependent(
+	spec: Pick<EffectSpec, 'gpu' | 'params'> | Pick<EffectSpec, 'gpu'>,
+	params?: EffectParams,
+	mediaKind?: (mediaId: string) => string | null | undefined,
+): boolean {
 	const g = spec.gpu;
 	if (!g) return false;
-	return !g.timeInvariant || !!g.time?.remap || !!g.time?.samples;
+	if (!g.timeInvariant || g.time?.remap || g.time?.samples) return true;
+	if (!params || !('params' in spec)) return false;
+	for (const ps of spec.params) {
+		if (ps.type !== 'media' || isLutMediaParam(ps)) continue;
+		const id = (params[ps.name] as { mediaId?: unknown } | undefined)?.mediaId;
+		if (typeof id !== 'string' || !id) continue;
+		const kind = mediaKind ? mediaKind(id) : undefined;
+		if (kind === 'video') return true;
+		if (!mediaKind && (ps.mediaKinds ?? ['image', 'video']).includes('video')) return true;
+	}
+	return false;
+}
+
+// ---------------------------------------------------------------- params at other times, clip context
+
+/** Content time (flicks) of a fractional clip-local frame (`contentTimeAt` of derive/, with a numeric fps). */
+export function fxClipContentTime(
+	clip: { duration: number; sourceIn: number; speed: { rate: number; reverse?: boolean } },
+	frame: number,
+	fps: number,
+): number {
+	const F = FLICKS_PER_SECOND / (fps > 0 ? fps : 30);
+	const i = clip.speed.reverse ? clip.duration - 1 - frame : frame;
+	return clip.sourceIn + i * F * clip.speed.rate;
+}
+
+/**
+ * `FxParamsAt` of an effect instance: its animatable params evaluated (shared `evaluate()`, keyframes in content time)
+ * at a fractional clip-local frame. `current` (the frame being drawn and its already-evaluated params) is returned
+ * as is for that frame, so `paramsAt(ctx.frame)` is exactly `p`. Results are cached per frame.
+ */
+export function fxParamsAtFn(
+	instance: { readonly params: Readonly<Record<string, Animatable<ParamValue>>> },
+	clip: { duration: number; sourceIn: number; speed: { rate: number; reverse?: boolean } },
+	fps: number,
+	current?: { frame: number; params: EffectParams },
+): FxParamsAt {
+	const cache = new Map<number, EffectParams>();
+	return (frame: number) => {
+		if (current && frame === current.frame) return current.params;
+		const f = Number.isFinite(frame) ? frame : 0;
+		const hit = cache.get(f);
+		if (hit) return hit;
+		const t = fxClipContentTime(clip, f, fps);
+		const out: Record<string, ParamValue> = {};
+		for (const [k, a] of Object.entries(instance.params)) out[k] = evaluate(a, t);
+		if (cache.size > 256) cache.clear();
+		cache.set(f, out);
+		return out;
+	};
+}
+
+/** Seconds into the clip's media shown at a clip-local frame (speed and reverse applied). */
+export function fxSourceSeconds(clip: FxClipInfo, frame: number, fps: number): number {
+	const i = clip.reverse ? clip.duration - 1 - frame : frame;
+	return clip.sourceInSeconds + (i / (fps > 0 ? fps : 30)) * clip.speed;
 }
 
 // ---------------------------------------------------------------- validation
@@ -663,10 +1042,15 @@ export function validateGpuEffect(spec: EffectSpec): string[] {
 		if (!last) {
 			const o = pass.output ?? `pass${i}`;
 			if (!NAME_RE.test(o)) at(`pass ${i}: output "${o}" must be letters and digits`);
-			if (outputs.has(o)) at(`pass ${i}: output "${o}" is used twice`);
+			if (pass.update && !outputs.has(o)) at(`pass ${i}: update writes "${o}", which no earlier pass wrote`);
+			if (!pass.update && outputs.has(o)) at(`pass ${i}: output "${o}" is used twice (ping-pong: update)`);
 			if (RESERVED.has(`u_${o}`) || names.has(o)) at(`pass ${i}: output "${o}" collides with a uniform`);
 			outputs.add(o);
-		}
+			if (pass.size) {
+				const ok = (v: number) => Number.isInteger(v) && v >= 1 && v <= 8192;
+				if (!ok(pass.size.width) || !ok(pass.size.height)) at(`pass ${i}: size must be integers 1…8192`);
+			}
+		} else if (pass.update) at(`pass ${i}: the last pass cannot update an output`);
 		for (const k of Object.keys(pass.uniforms ?? {})) {
 			if (!/^u_[A-Za-z][A-Za-z0-9_]*$/.test(k)) at(`pass ${i}: uniform "${k}" must be named u_<name>`);
 			if (RESERVED.has(k)) at(`pass ${i}: uniform "${k}" is a built-in`);

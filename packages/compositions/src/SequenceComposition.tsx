@@ -63,9 +63,13 @@ const hasKeyframes = (v: { keyframes: unknown[] } | null | undefined): boolean =
  * FRAME_DEPENDENT_KINDS, text clips with animators in their source (S11:TXA-009) and shapes whose geometry or
  * paint is keyframed (evaluated by the layer, S11:SHP-003).
  */
-function isFrameDependent(clip: Pick<RenderVisualClip, 'kind' | 'source' | 'effects'>): boolean {
+function isFrameDependent(
+	clip: Pick<RenderVisualClip, 'kind' | 'source' | 'effects'>,
+	media?: RenderDoc['media'],
+): boolean {
 	if (FRAME_DEPENDENT_KINDS.has(clip.kind)) return true;
-	if (hasTimeDependentFx(clip)) return true;
+	// A shader effect that changes over time (incl. a media param bound to a video that plays).
+	if (hasTimeDependentFx(clip, undefined, media ? (id) => media[id]?.kind : undefined)) return true;
 	const src = clip.source;
 	if ('text' in src) return !!src.animation && !!(src.animation.in || src.animation.out);
 	if ('shape' in src) {
@@ -111,7 +115,7 @@ function layerPropsAt(clip: RenderVisualClip, frame: number, doc: Pick<RenderDoc
 	return { props, contentTime };
 }
 
-type ViewProps = LayerProps & { Component: ComponentType<LayerProps> };
+type ViewProps = LayerProps & { Component: ComponentType<LayerProps>; frameDependent: boolean };
 
 /** Equality for LayerView: frame-independent layers ignore localFrame/contentTime. */
 function layerViewEqual(a: ViewProps, b: ViewProps): boolean {
@@ -126,11 +130,22 @@ function layerViewEqual(a: ViewProps, b: ViewProps): boolean {
 		a.transition !== b.transition
 	)
 		return false;
-	if (isFrameDependent(a.clip)) return a.localFrame === b.localFrame && a.realFrame === b.realFrame;
+	if (a.frameDependent || b.frameDependent)
+		return a.localFrame === b.localFrame && a.realFrame === b.realFrame;
 	return true;
 }
 
-const LayerView = memo(function LayerView({ Component, ...layer }: ViewProps) {
+/** Frame dependence of a clip in a document (cached per clip object and media table). */
+const frameDependence = new WeakMap<RenderVisualClip, { media: RenderDoc['media']; value: boolean }>();
+function frameDependentIn(clip: RenderVisualClip, media: RenderDoc['media']): boolean {
+	const hit = frameDependence.get(clip);
+	if (hit && hit.media === media) return hit.value;
+	const value = isFrameDependent(clip, media);
+	frameDependence.set(clip, { media, value });
+	return value;
+}
+
+const LayerView = memo(function LayerView({ Component, frameDependent: _fd, ...layer }: ViewProps) {
 	return <Component {...layer} />;
 }, layerViewEqual);
 
@@ -174,12 +189,14 @@ const ClipLayer = memo(function ClipLayer({
 	const fontsReady = useLayerFontsReady(clip, doc.fonts);
 	// fx framework: a time effect shows the source at another frame (Motion/opacity/params stay at the real time).
 	const remapped = fxRemapFrame(clip, props.effects, localFrame, fps);
+	const frameDependent = frameDependentIn(clip, doc.media);
 	if (!fontsReady) return null;
 	if (remapped !== null)
 		return (
 			<Freeze frame={remapped + (clip.headHandle ?? 0)}>
 				<LayerView
 					Component={Component}
+					frameDependent={frameDependent}
 					clip={clip}
 					props={props}
 					localFrame={remapped}
@@ -196,6 +213,7 @@ const ClipLayer = memo(function ClipLayer({
 	return (
 		<LayerView
 			Component={Component}
+			frameDependent={frameDependent}
 			clip={clip}
 			props={props}
 			localFrame={localFrame}

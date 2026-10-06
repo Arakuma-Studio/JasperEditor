@@ -21,16 +21,23 @@ uint fx_u(int x) {
 }
 // Hashes of integer lattice points → 0..1 (24-bit resolution).
 float fx_hashU(uint h) { return float(fx_pcg(h) >> 8u) * (1.0 / 16777216.0); }
-float fx_hash1(int x, float seed) { return fx_hashU(fx_u(x) ^ fx_pcg(fx_seedBits(seed))); }
-float fx_hash2(ivec2 p, float seed) { return fx_hashU(fx_pcg(fx_u(p.x) ^ fx_pcg(fx_seedBits(seed))) ^ fx_u(p.y) * 1664525u); }
-float fx_hash3(ivec3 p, float seed) {
-  uint h = fx_pcg(fx_u(p.x) ^ fx_pcg(fx_seedBits(seed)));
+// The hashed seed of fx_hash1/2/3 (fx_hashSeed(seed) = fx_pcg(fx_seedBits(seed))): code that hashes many lattice
+// points with one seed computes it once and calls the *s variants (identical values, less code to compile).
+uint fx_hashSeed(float seed) { return fx_pcg(fx_seedBits(seed)); }
+float fx_hash2s(ivec2 p, uint s) { return fx_hashU(fx_pcg(fx_u(p.x) ^ s) ^ fx_u(p.y) * 1664525u); }
+float fx_hash3s(ivec3 p, uint s) {
+  uint h = fx_pcg(fx_u(p.x) ^ s);
   h = fx_pcg(h ^ fx_u(p.y) * 1664525u);
   return fx_hashU(h ^ fx_u(p.z) * 22695477u);
 }
-vec2 fx_hash22(ivec2 p, float seed) { return vec2(fx_hash2(p, seed), fx_hash2(p + ivec2(7919, 104729), seed)); }
+float fx_hash1(int x, float seed) { return fx_hashU(fx_u(x) ^ fx_hashSeed(seed)); }
+float fx_hash2(ivec2 p, float seed) { return fx_hash2s(p, fx_hashSeed(seed)); }
+float fx_hash3(ivec3 p, float seed) { return fx_hash3s(p, fx_hashSeed(seed)); }
+vec2 fx_hash22s(ivec2 p, uint s) { return vec2(fx_hash2s(p, s), fx_hash2s(p + ivec2(7919, 104729), s)); }
+vec2 fx_hash22(ivec2 p, float seed) { return fx_hash22s(p, fx_hashSeed(seed)); }
 vec3 fx_hash33(ivec3 p, float seed) {
-  return vec3(fx_hash3(p, seed), fx_hash3(p + ivec3(7919, 0, 0), seed), fx_hash3(p + ivec3(0, 104729, 0), seed));
+  uint s = fx_hashSeed(seed);
+  return vec3(fx_hash3s(p, s), fx_hash3s(p + ivec3(7919, 0, 0), s), fx_hash3s(p + ivec3(0, 104729, 0), s));
 }
 // Per-pixel white noise for a frame: fx_random(fx_canvasPx(), u_frame, u_seed).
 float fx_random(vec2 px, float frame, float seed) { return fx_hash3(ivec3(floor(px), int(floor(frame))), seed); }

@@ -162,6 +162,12 @@ export type RenderVisualClip = {
 		frames: number;
 		rect?: { x: number; y: number; w: number; h: number };
 	};
+	/**
+	 * fx framework (clip context, additive): what effects may show about the clip's media — the project item name
+	 * (Premiere "Project Item Name"), the file name and the media's embedded start timecode. Set for media clips
+	 * that have effects; absent otherwise.
+	 */
+	sourceInfo?: { itemName: string; fileName: string; startTimecode: string | null };
 };
 
 export type RenderAudioClip = {
@@ -273,6 +279,22 @@ export function buildRenderSnapshot(
 	};
 	const warnings: RenderSnapshot['warnings'] = [];
 	const fontKeys = new Map<string, RenderSnapshot['fonts'][number]>();
+	let itemNames: Map<string, string> | null = null;
+	const sourceInfoOf = (mediaId: string): RenderVisualClip['sourceInfo'] => {
+		if (!itemNames) {
+			itemNames = new Map();
+			for (const it of Object.values(doc.items ?? {}))
+				if (it.kind === 'media' && !itemNames.has(it.mediaId)) itemNames.set(it.mediaId, it.name);
+		}
+		const asset = doc.media[mediaId];
+		const path = asset?.locators.find((l) => l.type === 'path') as { path?: string } | undefined;
+		const fileName = path?.path ? (path.path.split(/[\\/]/).pop() ?? '') : (asset?.originalName ?? '');
+		return {
+			itemName: itemNames.get(mediaId) ?? asset?.originalName ?? '',
+			fileName,
+			startTimecode: asset?.probe.startTimecode ?? null,
+		};
+	};
 
 	const videoTracks: RenderSnapshot['videoTracks'] = [];
 	for (const t of seq.videoTracks) {
@@ -436,6 +458,9 @@ export function buildRenderSnapshot(
 				...(c.kind === 'animated-image' ? { loop: c.loop } : {}),
 				bounded: isBoundedContent(c),
 				...transitionFields(transitions.clips.get(c.id)),
+				...('mediaId' in source && ((r.effects as EffectInstance[] | undefined) ?? []).length > 0
+					? { sourceInfo: sourceInfoOf(source.mediaId) }
+					: {}),
 			});
 		}
 		clips.sort((a, b) => a.start - b.start);

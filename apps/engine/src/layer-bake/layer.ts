@@ -99,8 +99,10 @@ export function isStaticLayer(
 		const spec = registry.get(fx.effectId, fx.effectVersion);
 		if (!spec) return false;
 		if (hasKeyframesDeep(fx.params)) return false;
-		// Wave 1 (fx framework): a GPU shader effect that draws differently every frame (noise, flicker, time hooks).
-		if (gpuIsTimeDependent(spec)) return false;
+		// Wave 1 (fx framework): a GPU shader effect that draws differently every frame (noise, flicker, time hooks,
+		// a media param bound to a video — conservative here: any bound media param that accepts videos).
+		const held = Object.fromEntries(Object.entries(fx.params).map(([k, a]) => [k, a.value]));
+		if (gpuIsTimeDependent(spec, held)) return false;
 	}
 	return !hasKeyframesDeep(c.source);
 }
