@@ -463,7 +463,7 @@ describe('planner: keyframed layers and levels are native', () => {
 			.find((e) => e.id === 'warp')!;
 		expect(warp.claimsLayer!(c)).toBe(false);
 
-		// Still blocked: a keyframed effect without a native realization, and audio pan.
+		// A keyframed blur is now baked (D-35); audio pan stays blocked.
 		const b = await cardDoc(app);
 		const blur = b.d.tx([
 			{
@@ -488,9 +488,9 @@ describe('planner: keyframed layers and levels are native', () => {
 				value: 9,
 			},
 		]);
+		// D-35: a layer with an effect only the composition draws (here the blur) is baked whole by the layer bake.
 		const pb = await plan(b.d, h264Settings(b.d.seqId));
-		expect(pb.path).toBe('remotion');
-		expect(pb.blockers.map((x) => x.reason).join('\n')).toMatch(/jasper\.gaussian-blur/);
+		expect(pb).toMatchObject({ path: 'hybrid', blockers: [] });
 
 		const a = new DocBuilder();
 		const tone = a.addMedia(await register(app, fixture('tone.wav')));
