@@ -184,6 +184,7 @@ void main() {
 /** Immersive Video ▸ VR Spherical Blur: the sphere blurs (and brightens) through the cut. */
 export const VR_SPHERICAL_BLUR = defineShaderTransition({
 	id: 'jasper.vr-spherical-blur',
+	expensive: true,
 	label: 'VR Spherical Blur',
 	bin,
 	description:

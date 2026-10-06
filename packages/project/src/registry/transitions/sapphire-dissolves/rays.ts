@@ -181,6 +181,7 @@ function rayUniforms(p: EffectParams, ctx: { width: number; height: number; prog
 
 export const S_DISSOLVE_RAYS: TransitionSpec = defineDissolve({
 	id: 'jasper.s.dissolve-rays',
+	expensive: true,
 	label: 'S_DissolveRays',
 	description:
 		'Dissolves through beams of light streaming out of the bright areas (or beams of darkness out of the dark areas) from a centre that drifts across the frame; the rays peak mid-way.',

@@ -262,6 +262,7 @@ export function parallaxGrowth(e: number, slowGrow: number): number {
 
 export const S_PARALLAX_STRIPS_TRANSITION = defineShaderTransition({
 	id: 'jasper.s.parallax-strips-transition',
+	expensive: true,
 	label: 'S_ParallaxStripsTransition',
 	bin: BIN,
 	subBin: OTHER,

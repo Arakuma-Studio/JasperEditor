@@ -27,6 +27,7 @@ import {
 	resolveIncludes,
 	type ShaderPass,
 	toUniform,
+	uniformCollisions,
 	uniformDeclaration,
 } from '../fx/shader.ts';
 import { GLSL_TRANSITION } from './glsl.ts';
@@ -396,22 +397,29 @@ export function validateGpuTransition(spec: TransitionSpec): string[] {
 			if (RESERVED.has(`u_${o}`) || names.has(o)) at(`pass ${i}: output "${o}" collides with a uniform`);
 			outputs.add(o);
 		}
-		for (const k of Object.keys(pass.uniforms ?? {})) {
+		for (const k of Object.keys(pass.uniforms ?? {}))
 			if (!UNIFORM_RE.test(k)) at(`pass ${i}: uniform "${k}" must be named u_<name>`);
-			if (RESERVED.has(k)) at(`pass ${i}: uniform "${k}" is a built-in`);
-		}
 		for (const c of resolveIncludes(pass.include))
 			if (typeof c.source !== 'string' || !c.name) at(`pass ${i}: malformed include`);
 	});
 	// Two placement outputs + two side pictures are the framework's.
 	if (outputs.size + 4 > FX_MAX_TEXTURES) at(`more than ${FX_MAX_TEXTURES - 4} named outputs`);
+	let globals: string[] = [];
 	try {
-		for (const k of Object.keys(gpu.uniforms?.(defaults, ctx) ?? {})) {
-			if (!UNIFORM_RE.test(k)) at(`uniform "${k}" must be named u_<name>`);
-			if (RESERVED.has(k)) at(`uniform "${k}" is a built-in`);
-		}
+		globals = Object.keys(gpu.uniforms?.(defaults, ctx) ?? {});
+		for (const k of globals) if (!UNIFORM_RE.test(k)) at(`uniform "${k}" must be named u_<name>`);
 	} catch (e) {
 		at(`uniforms threw with default params: ${(e as Error).message}`);
 	}
+	// Extra uniforms must not redeclare a built-in, a param uniform or a pass output (the framework's placement
+	// outputs `from` / `to` included: u_from / u_to are built-ins).
+	for (const m of uniformCollisions({
+		reserved: RESERVED,
+		params: spec.params,
+		outputs,
+		globals,
+		passes: passes.map((pass) => Object.keys(pass.uniforms ?? {})),
+	}))
+		at(m);
 	return out;
 }

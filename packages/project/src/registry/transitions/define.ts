@@ -99,6 +99,8 @@ export type ShaderTransitionInit = {
 	 */
 	options?: { border?: boolean; reverse?: boolean; antiAliasing?: boolean; center?: boolean | Vec2 };
 	gpu: GpuTransition;
+	/** Heavy in the preview (`TransitionSpec.expensive`): marked in Effect Controls like expensive effects. */
+	expensive?: boolean;
 	version?: number;
 	migrate?: TransitionSpec['migrate'];
 };
@@ -130,6 +132,7 @@ export function defineShaderTransition(init: ShaderTransitionInit): TransitionSp
 		params: shaderTransitionParams(init),
 		gpu: init.gpu,
 		capabilities: { preview: 'webgl', export: ['remotion'] },
+		...(init.expensive ? { expensive: true } : {}),
 		...(init.migrate ? { migrate: init.migrate } : {}),
 	};
 }

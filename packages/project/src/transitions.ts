@@ -49,6 +49,11 @@ export type TransitionSpec = {
 	/** GPU realization (absent: a built-in rendered by the composition's ramps and the native builder). */
 	gpu?: GpuTransition;
 	capabilities: { preview: 'css' | 'webgl'; export: readonly ('native' | 'remotion')[] };
+	/**
+	 * Heavy in the preview (many taps per pixel, multi-pass blurs, iterative passes), as `EffectSpec.expensive`: Effect
+	 * Controls marks the Transition section with the same dot as expensive effects; the agent schema exports it.
+	 */
+	expensive?: boolean;
 	/** Params of an older `effectVersion` → this version's (as `EffectSpec.migrate`). */
 	migrate?(fromVersion: number, params: Record<string, unknown>): Record<string, unknown>;
 };

@@ -84,6 +84,7 @@ void main() {
  */
 export const S_SWISH_3D = defineShaderTransition({
 	id: 'jasper.s.swish-3d',
+	expensive: true,
 	label: 'S_Swish3D',
 	bin: BIN,
 	subBin: SAPPHIRE_TRANSITION_SUBBINS.wipes,

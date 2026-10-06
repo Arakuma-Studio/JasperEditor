@@ -47,6 +47,7 @@ export function brushPx(p: EffectParams, env: number, width: number): number {
 
 export const S_DISSOLVE_AUTO_PAINT: TransitionSpec = defineDissolve({
 	id: 'jasper.s.dissolve-auto-paint',
+	expensive: true,
 	label: 'S_DissolveAutoPaint',
 	description:
 		'Dissolves through a painting: a brush-stroke version of the outgoing clip fades in and simplifies to a few big strokes at the peak, then the painting of the incoming clip refines and fades into the clip (Van Gogh, Hairy Paint or Pointalize strokes).',

@@ -393,6 +393,7 @@ export function filmRollSignals(p: EffectParams, ctx: { frame: number; fps: numb
 
 export const S_FILM_ROLL = defineShaderTransition({
 	id: 'jasper.s.film-roll',
+	expensive: true,
 	label: 'S_FilmRoll',
 	bin: BIN,
 	subBin: OTHER,

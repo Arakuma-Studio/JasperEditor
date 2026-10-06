@@ -86,6 +86,16 @@ export function TransitionSection(props: { session: EditorSession; host: 'effect
 			<header className="flex h-[28px] items-center gap-1 px-2 font-semibold text-pr-strong">
 				<span className="truncate">Transition</span>
 				<span className="truncate font-normal text-pr-muted">· {geom.spec?.label ?? t.effectId}</span>
+				{geom.spec?.expensive ? (
+					// Same marker as an expensive effect's section header (EffectControlsPanel).
+					<span
+						className="text-pr-small text-pr-muted"
+						title="Expensive in preview"
+						data-testid="transition-expensive"
+					>
+						●
+					</span>
+				) : null}
 			</header>
 			<Row label="Type">
 				<SelectField<string>
