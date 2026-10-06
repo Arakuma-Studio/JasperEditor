@@ -34,6 +34,7 @@ export * from './render/index.ts';
 export * from './schema/index.ts';
 export * from './text-animations.ts';
 export * from './time.ts';
+export * from './time-remap/index.ts';
 export * from './timecode.ts';
 export * from './tracking/index.ts';
 export * from './transitions.ts';
