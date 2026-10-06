@@ -10,8 +10,12 @@ Read `docs/ARCHITECTURE.md` first; functional specs live in `docs/specs/`, resea
 The M1 acceptance run (every ARCHITECTURE §15 item, with evidence) is in `docs/M1-STATUS.md`; per-package
 notes and known gaps are in `docs/wp-notes/`.
 
-**Clean-room rule:** never open, read, grep or copy anything from `.reference/` or `editor-starter.zip`
-(ARCHITECTURE §0). All code here is original.
+**Rules first:** [`AGENTS.md`](AGENTS.md) holds the rules every contributor and agent must follow, and
+[`CLAUDE.md`](CLAUDE.md) the working instructions (gate, running the app headlessly, Definition of Done). Never
+open, read, grep or copy anything from `.reference/` or `editor-starter.zip` (a paid licence; ARCHITECTURE §0,
+D-36). Code ported from permissively licensed projects is welcome, recorded in [`licenses/ported/`](licenses/ported/)
+and shipped in `THIRD_PARTY_NOTICES.md`. Where JasperEditor stands against Premiere Pro: [`docs/gaps.md`](docs/gaps.md)
+and [`docs/parity.md`](docs/parity.md). Project files, migrations and crash recovery: [`docs/project-files.md`](docs/project-files.md).
 
 ## Requirements
 
@@ -410,8 +414,11 @@ stdio server there.
 The packaged desktop app ships the server as `resources/mcp/jasper-mcp.mjs`. It has no `node`: Help ▸ Connect
 an AI Agent… gives the command that runs the bundle with the app's own binary (`ELECTRON_RUN_AS_NODE=1`).
 
-No repo-root `.mcp.json` is committed on purpose: it would switch the server on for everyone who opens this
-checkout in an MCP client, and it would point at a bundle that may not be built yet.
+**Developing JasperEditor itself:** this checkout's root [`.mcp.json`](.mcp.json) registers `jasper` for agents
+working *on* the editor. It runs the server from source (`node --import tsx apps/mcp/src/cli.ts`, no build needed)
+with `--start-engine --appdir .stage`: it uses the `pnpm dev` engine when one is running, and otherwise starts a
+headless engine on the same dev appdir (that needs `pnpm --filter @jasper/engine build` once). Claude Code asks
+once before enabling a project-scoped server; start it from the repository root so the relative paths resolve.
 
 ### HTTP API underneath
 
@@ -690,7 +697,7 @@ All 30 production Playwright checks in `smoke`, `editing`, `transitions`, `media
 | `pnpm typecheck` | `tsc --noEmit` in every package |
 | `pnpm test` | Vitest (all packages and apps as projects); `FUZZ=1 pnpm test` runs the long property sweeps |
 | `pnpm perf` | Sequential snapshot, scene, selection, timeline-transition, and cache-reference microbenchmarks |
-| `pnpm lint` | Biome + design-token and anime.js checks (`scripts/check-tokens.mjs`, `scripts/check-anime.mjs`) |
+| `pnpm lint` | Biome + design-token, anime.js, dependency-layer and asset-attribution checks (`scripts/check-tokens.mjs`, `scripts/check-anime.mjs`, `scripts/check-layers.mjs`, `scripts/check-assets.mjs`) |
 | `pnpm format` | Biome formatter |
 | `pnpm build` | web (`vite build`), engine (`dist/engine.mjs`), desktop (`dist-electron/`), MCP server (`apps/mcp/dist/jasper-mcp.mjs`) |
 | `pnpm mcp:build` | only the MCP server: esbuild bundle `apps/mcp/dist/jasper-mcp.mjs` (one executable file) |
