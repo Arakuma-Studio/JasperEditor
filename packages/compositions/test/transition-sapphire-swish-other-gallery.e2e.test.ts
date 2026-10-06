@@ -102,8 +102,8 @@ describe.runIf(enabled)(
 			const files = rows.flatMap((n) => FRAMES.map((f) => join(out!, `${n}-${f}.png`)));
 			if (!files.every((f) => existsSync(f)) || files.length === 0) return;
 			const inputs = files.flatMap((f) => ['-i', f]);
-			const tiles = files.map((_, i) => `[${i}]scale=256:144[t${i}]`).join(';');
-			const layout = files.map((_, i) => `${(i % 3) * 256}_${Math.floor(i / 3) * 144}`).join('|');
+			const tiles = files.map((_, i) => `[${i}]scale=224:126[t${i}]`).join(';');
+			const layout = files.map((_, i) => `${(i % 3) * 224}_${Math.floor(i / 3) * 126}`).join('|');
 			try {
 				execFileSync('ffmpeg', [
 					'-v',

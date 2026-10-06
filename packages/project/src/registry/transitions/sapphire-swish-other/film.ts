@@ -193,7 +193,7 @@ vec2 fb_edges(vec2 px, float size) {
   vec2 s = fb_s(px) / max(size, 1e-3);
   float h = u_compSize.y / u_compSize.x * 2.0 / max(size, 1e-3);
   float pitch = h / 10.0;
-  float x = abs(s.x) - 0.93;
+  float x = abs(s.x) - 0.82;                      // near both sides at the default Edges Size 1.13
   float y = mod(s.y + 0.5 * h, pitch) - 0.5 * pitch;
   vec2 q = abs(vec2(x, y)) - vec2(0.035, pitch * 0.32) + 0.012;
   float sd = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - 0.012;
