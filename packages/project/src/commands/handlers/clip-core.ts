@@ -22,7 +22,9 @@ import type { Animatable, LabelColor, Vec2 } from '../../schema/common.ts';
 import type { DefaultScaling, ProjectItem } from '../../schema/document.ts';
 import type { MediaAsset, SyntheticSource } from '../../schema/media.ts';
 import type { Clip, TextBox, TextContent, TextStyle, Track, Transform } from '../../schema/sequence.ts';
-import { FRAME_EPS, flicksPerFrame, supportsDropFrame } from '../../time.ts';
+import { FRAME_EPS, flicksPerFrame, type Rational, supportsDropFrame } from '../../time.ts';
+import { remapRoom } from '../../time-remap/bounds.ts';
+import { isRemapped } from '../../time-remap/model.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import {
 	allTracksIn,
@@ -487,6 +489,8 @@ function trimLimits(
 	const dur = contentDurationFlicks(doc, c);
 	const bounded = isBoundedContent(c as Clip) && dur !== null;
 	const others = trackClips(seq, c.trackId).filter((x) => x.id !== c.id && !members.has(x.id));
+	// Time-remapped clips (workstream `time`): the media bounds come from the remapped media times of the handles.
+	const remapped = isRemapped(c as Clip) ? remapRoom(c as Clip, seq.settings.frameRate as Rational, dur) : null;
 	if (edge === 'in') {
 		max = Math.min(max, c.duration - 1);
 		if (!ripple) {
@@ -494,8 +498,11 @@ function trimLimits(
 			const prevEnd = Math.max(0, ...others.filter((x) => end(x) <= c.start).map(end));
 			min = Math.max(min, prevEnd - c.start);
 		}
-		if (!c.speed.reverse) min = Math.max(min, -Math.floor(c.sourceIn / step + FRAME_EPS));
+		if (remapped) min = Math.max(min, -remapped.head);
+		else if (!c.speed.reverse) min = Math.max(min, -Math.floor(c.sourceIn / step + FRAME_EPS));
 		else if (bounded) min = Math.max(min, -(Math.floor((dur! - c.sourceIn) / step + FRAME_EPS) - c.duration));
+		// Content time (the keyframe axis) never goes below 0.
+		if (remapped) min = Math.max(min, -Math.floor(c.sourceIn / step + FRAME_EPS));
 	} else {
 		min = Math.max(min, 1 - c.duration);
 		if (!ripple) {
@@ -505,7 +512,8 @@ function trimLimits(
 			);
 			max = Math.min(max, nextStart - end(c));
 		}
-		if (!c.speed.reverse && bounded)
+		if (remapped) max = Math.min(max, remapped.tail);
+		else if (!c.speed.reverse && bounded)
 			max = Math.min(max, Math.floor((dur! - c.sourceIn) / step + FRAME_EPS) - c.duration);
 		else if (c.speed.reverse) max = Math.min(max, Math.floor(c.sourceIn / step + FRAME_EPS));
 	}

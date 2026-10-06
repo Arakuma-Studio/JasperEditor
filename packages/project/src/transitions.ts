@@ -10,6 +10,8 @@
 import { clipEnd, clipsOnTrack } from './derive/index.ts';
 import type { ParamSpec } from './registry/effects.ts';
 import { contentDurationFlicks, isBoundedContent } from './registry/kinds.ts';
+import { remapRoom } from './time-remap/bounds.ts';
+import { isRemapped } from './time-remap/model.ts';
 import { FX_TRANSITIONS } from './registry/transitions/index.ts';
 import type { GpuTransition, TrSideTrack } from './registry/transitions/shader.ts';
 import type { Animatable, ParamValue, RGBA } from './schema/common.ts';
@@ -166,6 +168,11 @@ export function clipHandles(
 	const step = flicksPerFrame(seq.settings.frameRate as Rational) * c.speed.rate;
 	// Media duration, or the composition length for composition clips (S08:MGC-004).
 	const dur = contentDurationFlicks(doc, c);
+	// Time-remapped clips (workstream `time`): handles whose remapped media times are inside the media.
+	if (isRemapped(c)) {
+		const room = remapRoom(c, seq.settings.frameRate as Rational, dur);
+		return { head: Math.min(room.head, Math.floor(c.sourceIn / step + EPS)), tail: room.tail };
+	}
 	const before = Math.max(0, Math.floor(c.sourceIn / step + EPS));
 	const after =
 		isBoundedContent(c) && dur !== null

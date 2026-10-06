@@ -212,7 +212,8 @@ describe('edits', () => {
 	it('adding a keyframe never changes the picture', () => {
 		const base = remap([key(30 * F, 30 * F)], { speedAfter: 0.5 });
 		const e = addKeyframe(base, 50 * F, newId);
-		for (let c = 0; c < 90 * F; c += F) expect(remapSourceAt(e.remap, c)).toBeCloseTo(remapSourceAt(base, c), 4);
+		for (let c = 0; c < 90 * F; c += F)
+			expect(remapSourceAt(e.remap, c)).toBeCloseTo(remapSourceAt(base, c), 4);
 		expect(() => addKeyframe(setRamp(base, base.keyframes[0]!.id, 5 * F).remap, 32 * F, newId)).toThrow(
 			/transition/,
 		);
@@ -259,7 +260,10 @@ describe('edits', () => {
 		const e = removeKeyframes(base, [base.keyframes[1]!.id]);
 		expect(e.remap.keyframes).toHaveLength(2);
 		expect(remapSourceAt(e.remap, 30 * F)).toBeCloseTo(22.5 * F, 3);
-		const all = removeKeyframes(base, base.keyframes.map((k) => k.id));
+		const all = removeKeyframes(
+			base,
+			base.keyframes.map((k) => k.id),
+		);
 		expect(remapSourceAt(all.remap, 77)).toBe(77);
 	});
 });

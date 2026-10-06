@@ -292,7 +292,8 @@ export function insertReverse(
 	slope: number,
 	newId: () => string,
 ): RemapEdit {
-	if (!(length > 0) || !(slope > 0)) throw new RemapEditError('A reverse segment needs a duration and a speed');
+	if (!(length > 0) || !(slope > 0))
+		throw new RemapEditError('A reverse segment needs a duration and a speed');
 	const a = addKeyframe(remap, c, newId);
 	const out = clone(a.remap);
 	const keys = out.keyframes;

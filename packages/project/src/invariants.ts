@@ -13,6 +13,8 @@ import type { ProjectDocument } from './schema/document.ts';
 import type { Clip, EffectInstance, Sequence, Track } from './schema/sequence.ts';
 import { isKnownClipKind } from './schema/sequence.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
+import { remapIssues, repairRemap } from './time-remap/invariants.ts';
+import { isRemapped } from './time-remap/model.ts';
 import {
 	contentSpanFlicks,
 	flicksPerFrame,
@@ -321,13 +323,18 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 				issues.push(inv('INV-004', `Clip ${c.id} has invalid sourceIn`, cw));
 			if (!(c.speed.rate >= 0.01 && c.speed.rate <= 100))
 				issues.push(inv('INV-004', `Clip ${c.id} speed out of range`, cw));
+			// Workstream `time`: Time Remapping / Time Interpolation (INV-005/011/012).
+			for (const k of (c as { timeRemap?: { keyframes: { id: string }[] } }).timeRemap?.keyframes ?? [])
+				claim(k.id, 'kf', [...cw, 'timeRemap', k.id]);
+			for (const x of remapIssues(c, rate, contentDurationFlicks(doc, c)))
+				issues.push(inv(x.code, x.message, [...cw, 'timeRemap']));
 			const r = c as Record<string, unknown>;
 			// INV-006 references
 			if (typeof r.mediaId === 'string') {
 				usedMedia.add(r.mediaId);
 				const asset = doc.media[r.mediaId];
 				if (!asset) issues.push(inv('INV-006', `Clip ${c.id} references missing media ${r.mediaId}`, cw));
-				else if (isBoundedContent(c) && asset.probe.durationFlicks !== null) {
+				else if (isBoundedContent(c) && asset.probe.durationFlicks !== null && !isRemapped(c)) {
 					// INV-005 media bounds with one frame of tolerance
 					const span = contentSpanFlicks(c.duration, rate, c.speed.rate);
 					const tol = flicksPerFrame(rate) * c.speed.rate + 1;
@@ -725,6 +732,10 @@ export function repairDocument(
 				}
 			}
 		}
+		// Workstream `time`: malformed or out-of-media time remaps.
+		for (const c of Object.values(seq.clips))
+			for (const detail of repairRemap(c, seq.settings.frameRate as Rational, contentDurationFlicks(doc, c)))
+				note('repair-time-remap', c.id, detail);
 		// M2 (wp-m2-text-anim, S11:TXA-008): animator params a known preset rejects are reset to its defaults.
 		for (const c of Object.values(seq.clips)) {
 			if (c.kind !== 'text' || !c.textAnimation) continue;

@@ -50,7 +50,11 @@ function bisect(ok: (k: number) => boolean, good: number, bad: number): number {
  * Handles of a remapped clip in sequence frames: how far the in edge can extend to the left (`head`) and the out edge
  * to the right (`tail`) while every frame still shows media.
  */
-export function remapRoom(clip: TimedClip, rate: Rational, dur: number | null): { head: number; tail: number } {
+export function remapRoom(
+	clip: TimedClip,
+	rate: Rational,
+	dur: number | null,
+): { head: number; tail: number } {
 	const first = clip.start;
 	const last = clip.start + clip.duration - 1;
 	const head = largestOk((k) => remapFramesInMedia(clip, first - k, first - 1, rate, dur));
@@ -62,8 +66,14 @@ export function remapRoom(clip: TimedClip, rate: Rational, dur: number | null): 
  * The longest duration ≤ `wanted` (≥ 1) whose frames all show media, for a clip starting at `clip.start`
  * (Premiere pushes the frames a slowed-down clip cannot show into its tail).
  */
-export function remapFitDuration(clip: TimedClip, wanted: number, rate: Rational, dur: number | null): number {
-	const ok = (d: number) => remapFramesInMedia({ ...clip, duration: d }, clip.start, clip.start + d - 1, rate, dur);
+export function remapFitDuration(
+	clip: TimedClip,
+	wanted: number,
+	rate: Rational,
+	dur: number | null,
+): number {
+	const ok = (d: number) =>
+		remapFramesInMedia({ ...clip, duration: d }, clip.start, clip.start + d - 1, rate, dur);
 	if (ok(wanted)) return wanted;
 	if (!ok(1)) return 1;
 	return bisect(ok, 1, wanted);

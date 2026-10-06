@@ -17,7 +17,9 @@ export const FRAME_TIME_EPS = 2e-6;
 export const INTERP_EPS = 1e-3;
 
 /** Media frame timestamps: explicit (seconds, ascending) or constant rate (`i·den/num`) with a frame count. */
-export type FrameTimes = { kind: 'cfr'; rate: Rational; count: number } | { kind: 'list'; times: ArrayLike<number> };
+export type FrameTimes =
+	| { kind: 'cfr'; rate: Rational; count: number }
+	| { kind: 'list'; times: ArrayLike<number> };
 
 export function frameCount(t: FrameTimes): number {
 	return t.kind === 'cfr' ? t.count : t.times.length;

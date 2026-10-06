@@ -43,7 +43,7 @@ export type TimedClip = {
 /** The remap that applies to a clip, or null (absent, disabled, or not a video clip). */
 export function activeRemap(clip: Pick<TimedClip, 'timeRemap' | 'kind'>): TimeRemap | null {
 	const r = clip.timeRemap;
-	if (!r || !r.enabled) return null;
+	if (!r?.enabled) return null;
 	if (clip.kind !== undefined && clip.kind !== 'video') return null;
 	return r;
 }
@@ -116,7 +116,11 @@ function keyIndexAt(keys: readonly RemapKeyframe[], c: number): number {
 
 type Eval = { m: number; slope: number };
 
-function evalRemap(remap: Pick<TimeRemap, 'keyframes' | 'speedBefore' | 'speedAfter'>, c: number, s: number[]): Eval {
+function evalRemap(
+	remap: Pick<TimeRemap, 'keyframes' | 'speedBefore' | 'speedAfter'>,
+	c: number,
+	s: number[],
+): Eval {
 	const keys = remap.keyframes;
 	if (keys.length === 0) return { m: c, slope: 1 };
 	const k = keyIndexAt(keys, c);
@@ -145,12 +149,18 @@ function evalRemap(remap: Pick<TimeRemap, 'keyframes' | 'speedBefore' | 'speedAf
 }
 
 /** Media time (flicks) of content time `c`. */
-export function remapSourceAt(remap: Pick<TimeRemap, 'keyframes' | 'speedBefore' | 'speedAfter'>, c: number): number {
+export function remapSourceAt(
+	remap: Pick<TimeRemap, 'keyframes' | 'speedBefore' | 'speedAfter'>,
+	c: number,
+): number {
 	return evalRemap(remap, c, remapSlopes(remap)).m;
 }
 
 /** dm/dc at content time `c` (media flicks per content flick). */
-export function remapSlopeAt(remap: Pick<TimeRemap, 'keyframes' | 'speedBefore' | 'speedAfter'>, c: number): number {
+export function remapSlopeAt(
+	remap: Pick<TimeRemap, 'keyframes' | 'speedBefore' | 'speedAfter'>,
+	c: number,
+): number {
 	return evalRemap(remap, c, remapSlopes(remap)).slope;
 }
 
@@ -197,7 +207,11 @@ export function clipSpeedAt(clip: TimedClip, frame: number, rate: Rational): num
 }
 
 /** Sequence frame (fractional) at which a content time is shown (the inverse of `contentTimeAt`). */
-export function frameAtContent(clip: Pick<TimedClip, 'start' | 'duration' | 'sourceIn' | 'speed'>, c: number, rate: Rational): number {
+export function frameAtContent(
+	clip: Pick<TimedClip, 'start' | 'duration' | 'sourceIn' | 'speed'>,
+	c: number,
+	rate: Rational,
+): number {
 	const step = flicksPerFrame(rate) * clip.speed.rate;
 	const i = (c - clip.sourceIn) / step;
 	return clip.speed.reverse ? clip.start + clip.duration - 1 - i : clip.start + i;
@@ -323,7 +337,8 @@ export type RemapKeyView = {
 	visible: boolean;
 };
 
-const kindOfSlope = (s: number): RemapSegmentKind => (Math.abs(s) < 1e-12 ? 'hold' : s < 0 ? 'reverse' : 'forward');
+const kindOfSlope = (s: number): RemapSegmentKind =>
+	Math.abs(s) < 1e-12 ? 'hold' : s < 0 ? 'reverse' : 'forward';
 
 /** Keyframes of a clip's remap in sequence frames. */
 export function remapKeyViews(clip: TimedClip, rate: Rational): RemapKeyView[] {

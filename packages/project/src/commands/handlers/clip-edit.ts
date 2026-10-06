@@ -12,7 +12,9 @@ import { type Box, scaleForMode } from '../../factories.ts';
 import { mediaIntrinsicSize } from '../../process/rescale.ts';
 import { contentDurationFlicks, isBoundedContent, kindCapabilities } from '../../registry/kinds.ts';
 import type { Clip, Track } from '../../schema/sequence.ts';
-import { contentSpanFlicks, FRAME_EPS, flicksPerFrame } from '../../time.ts';
+import { contentSpanFlicks, FRAME_EPS, flicksPerFrame, type Rational } from '../../time.ts';
+import { remapRoom } from '../../time-remap/bounds.ts';
+import { isRemapped } from '../../time-remap/model.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import {
 	allTracksIn,
@@ -56,6 +58,8 @@ function trackOf(seq: DSeq, clip: DClip, h: HandlerContext): DTrack {
 function contentRoom(doc: DDoc, seq: DSeq, c: DClip): { head: number; tail: number } {
 	const step = flicksPerFrame(seq.settings.frameRate) * c.speed.rate;
 	const dur = contentDurationFlicks(doc, c);
+	// Time-remapped clips: the handles are the frames whose remapped media time is inside the media.
+	if (isRemapped(c as Clip)) return remapRoom(c as Clip, seq.settings.frameRate as Rational, dur);
 	const bounded = isBoundedContent(c as Clip) && dur !== null;
 	const before = Math.max(0, Math.floor(c.sourceIn / step + FRAME_EPS));
 	const after = bounded
@@ -83,7 +87,7 @@ function prevEnd(seq: DSeq, trackId: string, frame: number, except: ReadonlySet<
 }
 
 /** Start of the first clip that starts at or after `frame` (Infinity when none). */
-function nextStart(seq: DSeq, trackId: string, frame: number, except: ReadonlySet<string>): number {
+export function nextStart(seq: DSeq, trackId: string, frame: number, except: ReadonlySet<string>): number {
 	let best = Number.POSITIVE_INFINITY;
 	for (const c of trackClips(seq, trackId))
 		if (!except.has(c.id) && c.start >= frame) best = Math.min(best, c.start);
@@ -259,7 +263,7 @@ function slideHandler(doc: DDoc, cmd: CommandOf<'clip.slide'>, h: HandlerContext
  * clip's track shift, and sync-locked unlocked tracks outside `edited` get the same insert/removal once
  * per (frame, delta) event (S01:TRK-006, S02:TL-543).
  */
-function rippleAfterEnd(
+export function rippleAfterEnd(
 	seq: DSeq,
 	h: HandlerContext,
 	clip: DClip,
@@ -306,6 +310,12 @@ function setSpeedHandler(doc: DDoc, cmd: CommandOf<'clip.setSpeed'>, h: HandlerC
 		const caps = kindCapabilities(c.kind);
 		const speedable = !!caps?.supportsSpeed;
 		if (cmd.maintainPitch !== undefined) c.speed.maintainPitch = cmd.maintainPitch;
+		if (cmd.reverse === true && !c.speed.reverse && isRemapped(c as Clip))
+			h.fail(
+				'E_INVALID_PARAM',
+				`Clip ${c.id} is time-remapped: add a reverse speed segment (timeRemap.addReverse) instead of Reverse Speed`,
+				{ blocking: [c.id] },
+			);
 		if (cmd.reverse !== undefined) {
 			if (speedable)
 				c.speed.reverse = cmd.reverse; // flips the mapping only (S01:CLP-008)
