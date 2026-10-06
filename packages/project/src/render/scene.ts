@@ -172,6 +172,19 @@ export function layerMapOf(props: Pick<ResolvedLayerProps, 'projective' | 'matri
 
 const staticCache = new WeakMap<RenderVisualClip, ResolvedLayerProps>();
 
+/**
+ * Evaluated props for an immutable render clip. Static clips reuse their props across frames and callers;
+ * checking the cache first also avoids rescanning every effect parameter on each playback frame.
+ * Edited clips must have a new object identity, as with the render snapshot's existing static-props cache.
+ */
+export function resolveCachedLayerProps(clip: RenderVisualClip, contentTime: number): ResolvedLayerProps {
+	const cached = staticCache.get(clip);
+	if (cached) return cached;
+	const props = resolveLayerProps(clip, contentTime);
+	if (isStaticClip(clip)) staticCache.set(clip, props);
+	return props;
+}
+
 /** Binary search for the clip covering `frame` in a start-sorted, non-overlapping list. */
 function clipCovering(clips: readonly RenderVisualClip[], frame: number): RenderVisualClip | undefined {
 	let lo = 0;
@@ -193,11 +206,7 @@ export function resolveSceneAt(snapshot: RenderSnapshot, frame: number): Resolve
 		const c = clipCovering(track.clips, frame);
 		if (!c) return;
 		const t = contentTimeAt(c, frame, snapshot.settings.fps);
-		let props: ResolvedLayerProps;
-		if (isStaticClip(c)) {
-			props = staticCache.get(c) ?? resolveLayerProps(c, t);
-			staticCache.set(c, props);
-		} else props = resolveLayerProps(c, t);
+		const props = resolveCachedLayerProps(c, t);
 		out.push({ clip: c, trackIndex, localFrame: frame - c.start, contentTime: t, props });
 	});
 	return out;

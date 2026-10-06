@@ -57,6 +57,7 @@ import {
 	projectCacheRefs,
 	type RenderKeyFn,
 } from './project-refs.ts';
+import { indexProjectCacheRefs } from './reference-index.ts';
 import { CacheIndexStore, CacheSettingsStore } from './store.ts';
 
 const DAY_MS = 24 * 3600 * 1000;
@@ -625,19 +626,7 @@ export class CacheService {
 				s.add(set.projectId);
 			}
 		}
-		const refsOf = (e: EntryRef): Set<string> => {
-			const out = new Set(recorded.get(e.id) ?? []);
-			for (const [pid, r] of computed) {
-				if (e.kind === 'media-cache' || e.kind === 'proxies') {
-					if (r.fingerprints.has(e.key.slice(0, 64))) out.add(pid);
-				} else if (e.kind === 'mg-renders') {
-					if (r.mgRenderKeys.has(e.key)) out.add(pid);
-				} else if (e.kind === 'mg-posters') {
-					if (r.bundleHashes.has(e.key)) out.add(pid);
-				}
-			}
-			return out;
-		};
+		const refsOf = indexProjectCacheRefs(computed, recorded);
 		return { refsOf, open, existing };
 	}
 

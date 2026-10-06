@@ -1,0 +1,148 @@
+{
+  "baselineRevision": "b56f7d4",
+  "node": "v20.20.2",
+  "date": "2026-10-06",
+  "scope": "filterSelection called by EditorSession.commit and restore; function microbenchmark, not end-to-end editor latency",
+  "reproduce": [
+    "git show b56f7d4:packages/session/src/selection.ts > /tmp/session-selection-before.ts",
+    "pnpm exec tsx packages/session/bench/selection.ts /tmp/session-selection-before.ts"
+  ],
+  "method": "Both implementations run in one process, alternating order per batch. 20 warmups per implementation/scenario, 7 batches of 100 calls; median per-call wall time and process.cpuUsage user+system time. Every result must preserve selection identity. CPU time included because concurrent agents caused substantial wall-clock scheduling noise. Dense selections across 100 sequences show parity, not a claimed improvement.",
+  "results": [
+    {
+      "clips": 1000,
+      "sequences": 1,
+      "selection": "empty",
+      "baseline": {
+        "medianWallMs": 1.7884145100000024,
+        "medianCpuMs": 0.33562,
+        "cpuSamplesMs": [0.25698, 0.28142, 0.28566, 0.33562, 0.48036, 0.49685, 1.02076]
+      },
+      "current": {
+        "medianWallMs": 0.006317959999996674,
+        "medianCpuMs": 0.00736,
+        "cpuSamplesMs": [0.00428, 0.00442, 0.00637, 0.00736, 0.01114, 0.02404, 0.02758]
+      }
+    },
+    {
+      "clips": 1000,
+      "sequences": 1,
+      "selection": "one clip",
+      "baseline": {
+        "medianWallMs": 1.1815920300000016,
+        "medianCpuMs": 0.36959,
+        "cpuSamplesMs": [0.21741, 0.30185, 0.3198, 0.36959, 0.41038, 0.47712, 0.68907]
+      },
+      "current": {
+        "medianWallMs": 0.00774623999999676,
+        "medianCpuMs": 0.01742,
+        "cpuSamplesMs": [0.00522, 0.00596, 0.00614, 0.01742, 0.02225, 0.03405, 0.046]
+      }
+    },
+    {
+      "clips": 1000,
+      "sequences": 1,
+      "selection": "all clips",
+      "baseline": {
+        "medianWallMs": 1.3812387300000046,
+        "medianCpuMs": 0.34405,
+        "cpuSamplesMs": [0.24081, 0.31671, 0.32253, 0.34405, 0.39448, 0.59892, 0.83716]
+      },
+      "current": {
+        "medianWallMs": 0.4079600400000163,
+        "medianCpuMs": 0.09285,
+        "cpuSamplesMs": [0.06717, 0.07354, 0.08484, 0.09285, 0.09924, 0.13389, 0.18361]
+      }
+    },
+    {
+      "clips": 10000,
+      "sequences": 1,
+      "selection": "empty",
+      "baseline": {
+        "medianWallMs": 11.154766380000002,
+        "medianCpuMs": 5.06991,
+        "cpuSamplesMs": [3.33257, 3.4101, 4.21376, 5.06991, 5.07053, 5.34092, 5.49004]
+      },
+      "current": {
+        "medianWallMs": 0.003909280000007129,
+        "medianCpuMs": 0.00394,
+        "cpuSamplesMs": [0.00379, 0.0038, 0.00388, 0.00394, 0.00447, 0.00572, 0.00634]
+      }
+    },
+    {
+      "clips": 10000,
+      "sequences": 1,
+      "selection": "one clip",
+      "baseline": {
+        "medianWallMs": 9.76588706999999,
+        "medianCpuMs": 3.5249,
+        "cpuSamplesMs": [2.54298, 2.64374, 2.75016, 3.5249, 4.28837, 4.66829, 5.57157]
+      },
+      "current": {
+        "medianWallMs": 0.027706429999998363,
+        "medianCpuMs": 0.00987,
+        "cpuSamplesMs": [0.00303, 0.00512, 0.00772, 0.00987, 0.01614, 0.0361, 0.11131]
+      }
+    },
+    {
+      "clips": 10000,
+      "sequences": 1,
+      "selection": "all clips",
+      "baseline": {
+        "medianWallMs": 8.99176352999999,
+        "medianCpuMs": 2.8526,
+        "cpuSamplesMs": [2.63233, 2.6694, 2.73076, 2.8526, 2.90206, 3.04036, 3.154]
+      },
+      "current": {
+        "medianWallMs": 2.2095324099999925,
+        "medianCpuMs": 0.56652,
+        "cpuSamplesMs": [0.4842, 0.49348, 0.56303, 0.56652, 0.58719, 0.59243, 0.67133]
+      }
+    },
+    {
+      "clips": 10000,
+      "sequences": 100,
+      "selection": "empty",
+      "baseline": {
+        "medianWallMs": 7.433624009999985,
+        "medianCpuMs": 2.58827,
+        "cpuSamplesMs": [2.08808, 2.42044, 2.50949, 2.58827, 2.73276, 2.8069, 2.81289]
+      },
+      "current": {
+        "medianWallMs": 0.027406669999982113,
+        "medianCpuMs": 0.0266,
+        "cpuSamplesMs": [0.0194, 0.02319, 0.02402, 0.0266, 0.02859, 0.02939, 0.03003]
+      }
+    },
+    {
+      "clips": 10000,
+      "sequences": 100,
+      "selection": "one clip",
+      "baseline": {
+        "medianWallMs": 8.805491669999974,
+        "medianCpuMs": 2.61115,
+        "cpuSamplesMs": [2.29509, 2.43094, 2.46099, 2.61115, 2.73183, 2.77877, 3.05948]
+      },
+      "current": {
+        "medianWallMs": 0.1427652100000705,
+        "medianCpuMs": 0.02986,
+        "cpuSamplesMs": [0.02456, 0.02475, 0.027, 0.02986, 0.03735, 0.04001, 0.10701]
+      }
+    },
+    {
+      "clips": 10000,
+      "sequences": 100,
+      "selection": "all clips",
+      "baseline": {
+        "medianWallMs": 13.44033997999999,
+        "medianCpuMs": 2.94219,
+        "cpuSamplesMs": [2.74329, 2.90544, 2.93622, 2.94219, 3.077, 3.09359, 3.15153]
+      },
+      "current": {
+        "medianWallMs": 12.30725013999996,
+        "medianCpuMs": 2.88382,
+        "cpuSamplesMs": [2.46753, 2.7955, 2.81457, 2.88382, 2.92213, 3.04874, 3.28027]
+      }
+    }
+  ]
+}

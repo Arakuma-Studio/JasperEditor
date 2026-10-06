@@ -1,0 +1,129 @@
+{
+  "baselineRevision": "b56f7d4",
+  "command": "pnpm exec tsx packages/project/bench/scene-props.ts",
+  "node": "v20.20.2",
+  "method": "Actual resolveSceneAt: 300 ms warmup, median of 7 samples of at least 150 ms, batches of 300 sequential playback frames. Fixtures use shipped Lumetri defaults. Construction and deep equality checks are untimed. Primary metric is process CPU time because parallel agents cause variable scheduling delays; wall time is retained for transparency. This isolates scene resolution and does not measure end-to-end playback or export.",
+  "correctness": "All six sampled frame scenes match uncached resolveLayerProps; SHA256 output hashes match before/after for all fixtures.",
+  "results": [
+    {
+      "before": {
+        "layers": 8,
+        "grades": 0,
+        "animated": false,
+        "medianCpuMsPerFrame": 0.001013921568627451,
+        "medianMsPerFrame": 0.0058179781560283705,
+        "minMsPerFrame": 0.0035338987229437155,
+        "maxMsPerFrame": 0.0066886003409090886,
+        "sha256": "3fa675be0d3a4163e60922da79a05c2eb0b310fc54b9cd10bdcdd9cef030de56"
+      },
+      "after": {
+        "layers": 8,
+        "grades": 0,
+        "animated": false,
+        "medianCpuMsPerFrame": 0.0003175846422338569,
+        "medianMsPerFrame": 0.0005555731222222204,
+        "minMsPerFrame": 0.0004387853310002922,
+        "maxMsPerFrame": 0.0012505238500000056,
+        "sha256": "3fa675be0d3a4163e60922da79a05c2eb0b310fc54b9cd10bdcdd9cef030de56"
+      }
+    },
+    {
+      "before": {
+        "layers": 8,
+        "grades": 1,
+        "animated": false,
+        "medianCpuMsPerFrame": 0.004150243902439024,
+        "medianMsPerFrame": 0.01121057992907797,
+        "minMsPerFrame": 0.0071441420370370505,
+        "maxMsPerFrame": 0.02219678159999991,
+        "sha256": "f666e1ae2151af2141ef3896dbcea1be7ceff85b74192388de554260f6225756"
+      },
+      "after": {
+        "layers": 8,
+        "grades": 1,
+        "animated": false,
+        "medianCpuMsPerFrame": 0.0003517132867132867,
+        "medianMsPerFrame": 0.0014086217652582176,
+        "minMsPerFrame": 0.00043720254370629204,
+        "maxMsPerFrame": 0.00201181957232705,
+        "sha256": "f666e1ae2151af2141ef3896dbcea1be7ceff85b74192388de554260f6225756"
+      }
+    },
+    {
+      "before": {
+        "layers": 32,
+        "grades": 1,
+        "animated": false,
+        "medianCpuMsPerFrame": 0.010577333333333333,
+        "medianMsPerFrame": 0.022508024057971088,
+        "minMsPerFrame": 0.010797783819444426,
+        "maxMsPerFrame": 0.06845460833333315,
+        "sha256": "9eca5d1c0f253ecd98fe041ad413384550753773a406f44acc39ac3f3c3750f7"
+      },
+      "after": {
+        "layers": 32,
+        "grades": 1,
+        "animated": false,
+        "medianCpuMsPerFrame": 0.0014312962962962964,
+        "medianMsPerFrame": 0.007458741079812205,
+        "minMsPerFrame": 0.0022535535435435593,
+        "maxMsPerFrame": 0.015722200202020243,
+        "sha256": "9eca5d1c0f253ecd98fe041ad413384550753773a406f44acc39ac3f3c3750f7"
+      }
+    },
+    {
+      "before": {
+        "layers": 128,
+        "grades": 3,
+        "animated": false,
+        "medianCpuMsPerFrame": 0.11763833333333333,
+        "medianMsPerFrame": 0.17756480666666702,
+        "minMsPerFrame": 0.08422958142857169,
+        "maxMsPerFrame": 0.6514079666666658,
+        "sha256": "7b6550cf923a3c457e0d4a85d77044df2fae6ab37f84963fbf29138617cbb50b"
+      },
+      "after": {
+        "layers": 128,
+        "grades": 3,
+        "animated": false,
+        "medianCpuMsPerFrame": 0.007226666666666667,
+        "medianMsPerFrame": 0.028867980185185067,
+        "minMsPerFrame": 0.007196504476190447,
+        "maxMsPerFrame": 0.08239647190476154,
+        "sha256": "7b6550cf923a3c457e0d4a85d77044df2fae6ab37f84963fbf29138617cbb50b"
+      }
+    },
+    {
+      "before": {
+        "layers": 32,
+        "grades": 1,
+        "animated": true,
+        "medianCpuMsPerFrame": 0.3320266666666667,
+        "medianMsPerFrame": 0.60977204666667,
+        "minMsPerFrame": 0.3933221983333321,
+        "maxMsPerFrame": 1.445796990000005,
+        "sha256": "6b6d364b6566414304b3aa8f1ffe98cca124dec8205133e457b8de19a155be69"
+      },
+      "after": {
+        "layers": 32,
+        "grades": 1,
+        "animated": true,
+        "medianCpuMsPerFrame": 0.22651333333333334,
+        "medianMsPerFrame": 0.872470423333331,
+        "minMsPerFrame": 0.5255958733333379,
+        "maxMsPerFrame": 1.3616591833333345,
+        "sha256": "6b6d364b6566414304b3aa8f1ffe98cca124dec8205133e457b8de19a155be69"
+      }
+    }
+  ],
+  "reproduction": {
+    "workingDirectory": "repository root",
+    "commands": [
+      "git show b56f7d4:packages/project/src/render/scene.ts > packages/project/src/render/scene.perf-baseline.ts",
+      "pnpm exec tsx packages/project/bench/scene-props.ts packages/project/src/render/scene.perf-baseline.ts > /tmp/scene-props-before.json",
+      "pnpm exec tsx packages/project/bench/scene-props.ts > /tmp/scene-props-after.json",
+      "rm packages/project/src/render/scene.perf-baseline.ts"
+    ],
+    "scope": "Optional module argument selects only the baseline scene implementation. Its temporary sibling location preserves relative imports. Current shared dependencies, fixtures, timing and uncached output equality checks are identical for both runs. No tracked source file is replaced."
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "baseline_commit": "b56f7d4",
+  "command": "pnpm exec tsx apps/web/bench/timeline-transitions.ts",
+  "method": "Synthetic timeline containing independent fades on one track. Hot query medians from 9 batches of 2000 operations after 1000 warmup calls; query positions vary deterministically. Same checksum before/after. Timings are wall-clock on a shared loaded host, not application FPS. Recorded hot values came from separate before/after runs before cold-build timing was added. The current harness keeps the same hot-query batches and optionally runs both implementations in one process; its output is new evidence, not a replacement for these historical measurements.",
+  "checksum": 10220620105,
+  "unit": "microseconds per operation",
+  "hot_queries": [
+    {
+      "transitions": 100,
+      "viewport_before": 1.148,
+      "viewport_after": 0.166,
+      "hit_before": 9.33,
+      "hit_after": 2.476
+    },
+    {
+      "transitions": 1000,
+      "viewport_before": 2.017,
+      "viewport_after": 0.365,
+      "hit_before": 92.682,
+      "hit_after": 0.549
+    },
+    {
+      "transitions": 10000,
+      "viewport_before": 144.455,
+      "viewport_after": 0.409,
+      "hit_before": 1816.544,
+      "hit_after": 0.474
+    }
+  ],
+  "build_method": "Baseline module restored from baseline_commit in a temporary sibling module. Alternating baseline/current order in the same process. 10 warmups then median of 30 independent rebuilds; fresh transition record copied before each timer. Uses the upper-middle sorted sample (index 15), matching the shipped optional-baseline harness. Without a baseline argument the harness measures current builds only, using the same 10 warmups and 30 samples.",
+  "index_build": [
+    {
+      "transitions": 100,
+      "before": 188.962,
+      "after": 200.695
+    },
+    {
+      "transitions": 1000,
+      "before": 401.037,
+      "after": 420.323
+    },
+    {
+      "transitions": 10000,
+      "before": 35087.308,
+      "after": 52462.663
+    }
+  ],
+  "cost": "Additional 8 bytes per transition for prefix maximum ends. Build has additional linear work and weak-map metadata; overlap-heavy queries can still scan many candidates. The 10000-item cold-build increase is visible and amortized over subsequent pointer/window queries.",
+  "reproduce_paired_commands": [
+    "git show b56f7d4:apps/web/src/panels/timeline/model/transitions.ts > apps/web/src/panels/timeline/model/transitions.baseline.perf.ts",
+    "pnpm exec tsx apps/web/bench/timeline-transitions.ts apps/web/src/panels/timeline/model/transitions.baseline.perf.ts",
+    "rm apps/web/src/panels/timeline/model/transitions.baseline.perf.ts"
+  ],
+  "reproduce_notes": "Run from repository root. The temporary baseline module stays next to the current module so its relative imports resolve. The paired command alternates cold-build ordering and reports baseline/current hot-query medians plus independent checksums; it throws if those checksums differ. Historical cold timings were collected in a dedicated build-only run using the same alternating method; hot-query work between sizes in the combined harness may affect JIT/GC state."
+}

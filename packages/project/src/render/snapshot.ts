@@ -246,7 +246,15 @@ export function buildRenderSnapshot(
 	if (!seq) throw new Error(`Sequence not found: ${sequenceId}`);
 	const frame = { width: seq.settings.width, height: seq.settings.height };
 	let end = 0;
-	for (const c of Object.values(seq.clips)) end = Math.max(end, c.start + c.duration);
+	// Group once rather than scanning and allocating the entire clip list for every track.
+	// Preserve document order within each track, including the stable sort's equal-start ties.
+	const clipsByTrack = new Map<string, Clip[]>();
+	for (const c of Object.values(seq.clips)) {
+		end = Math.max(end, c.start + c.duration);
+		const list = clipsByTrack.get(c.trackId);
+		if (list) list.push(c);
+		else clipsByTrack.set(c.trackId, [c]);
+	}
 	const range = opts.range ?? { start: 0, end };
 	const transitions = resolveVideoTransitions(doc, seq);
 	const audioTransitions = resolveAudioTransitions(doc, seq);
@@ -271,8 +279,8 @@ export function buildRenderSnapshot(
 	for (const t of seq.videoTracks) {
 		if (t.output === false) continue;
 		const clips: RenderVisualClip[] = [];
-		for (const c of Object.values(seq.clips)) {
-			if (c.trackId !== t.id || !inRange(c)) continue;
+		for (const c of clipsByTrack.get(t.id) ?? []) {
+			if (!inRange(c)) continue;
 			if (!isKnownClipKind(c.kind)) {
 				warnings.push({
 					clipId: c.id,
@@ -453,8 +461,8 @@ export function buildRenderSnapshot(
 		);
 	};
 	for (const t of audible) {
-		for (const c of Object.values(seq.clips)) {
-			if (c.trackId !== t.id || !audioInRange(c) || c.kind !== 'audio') continue;
+		for (const c of clipsByTrack.get(t.id) ?? []) {
+			if (!audioInRange(c) || c.kind !== 'audio') continue;
 			useMedia(c.mediaId);
 			const x = audioTransitions.clips.get(c.id);
 			audioClips.push({

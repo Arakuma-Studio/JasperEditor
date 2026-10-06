@@ -132,4 +132,55 @@ describe('render snapshot and scene (ARCHITECTURE §5.5)', () => {
 		expect(snap.videoTracks[0]!.clips).toHaveLength(1);
 		expect(snap.durationFrames).toBe(100);
 	});
+	it('preserves track order, clip sorting and full duration for interleaved document clips', () => {
+		const h = new Harness();
+		const mediaId = h.registerVideo();
+		h.ok([
+			{ type: 'clip.place', source: { mediaId }, at: 0 },
+			{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V2', color: [1, 1, 1, 1] },
+		]);
+		const doc = structuredClone(h.doc);
+		const seq = doc.sequences[h.seqId]!;
+		const video = Object.values(seq.clips).find((c) => c.kind === 'video')!;
+		const audio = Object.values(seq.clips).find((c) => c.kind === 'audio')!;
+		const solid = Object.values(seq.clips).find((c) => c.kind === 'solid')!;
+		const copy = (c: Clip, id: string, start: number, trackId = c.trackId): Clip => ({
+			...c,
+			id,
+			start,
+			trackId,
+			duration: 30,
+		});
+		seq.clips = {
+			v2late: copy(solid, 'v2late', 60),
+			a1late: copy(audio, 'a1late', 60),
+			v1late: copy(video, 'v1late', 60),
+			disabled: { ...copy(video, 'disabled', 120), enabled: false },
+			v2early: copy(solid, 'v2early', 0),
+			a2early: copy(audio, 'a2early', 0, seq.audioTracks[1]!.id),
+			v1early: copy(video, 'v1early', 0),
+			a1early: copy(audio, 'a1early', 0),
+			orphan: copy(video, 'orphan', 300, 'missing-track'),
+		};
+		let mediaCalls = 0;
+		const snap = buildRenderSnapshot(doc, seq.id, {
+			resolveMedia: () => {
+				mediaCalls++;
+				return null;
+			},
+			resolveFont: () => null,
+		});
+		expect(snap.videoTracks.map((t) => t.trackId)).toEqual(seq.videoTracks.map((t) => t.id));
+		expect(snap.videoTracks.map((t) => t.clips.map((c) => c.clipId))).toEqual([
+			['v1early', 'v1late'],
+			['v2early', 'v2late'],
+			[],
+		]);
+		const earlyAudio = [seq.clips.a1early!, seq.clips.a2early!]
+			.sort((a, b) => a.trackId.localeCompare(b.trackId))
+			.map((c) => c.id);
+		expect(snap.audioClips.map((c) => c.clipId)).toEqual([...earlyAudio, 'a1late']);
+		expect(snap.durationFrames).toBe(330);
+		expect(mediaCalls).toBe(1);
+	});
 });

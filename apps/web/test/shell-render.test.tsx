@@ -12,6 +12,9 @@ import { prefsStore } from '../src/shell/prefs.ts';
 import { WORKSPACES_KEY, WorkspaceStore } from '../src/shell/workspaces/store.ts';
 import { EngineProvider } from '../src/state/engine.tsx';
 import { memoryStorage } from './shell-storage.ts';
+// Keep Vite's module transformation outside UI waitFor timeouts. Production lazy loading is covered
+// by e2e/bundle-loading.spec.ts; this suite exercises the rendered workspace after its code is loaded.
+import '../src/shell/EditorShell.tsx';
 
 let workspace: WorkspaceStore;
 vi.mock('../src/shell/workspaces/instance.ts', () => ({ getWorkspaceStore: () => workspace }));

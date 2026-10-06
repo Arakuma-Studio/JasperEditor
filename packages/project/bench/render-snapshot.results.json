@@ -1,0 +1,157 @@
+{
+  "node": "v20.20.2",
+  "results": [
+    {
+      "variant": "baseline",
+      "tracks": 4,
+      "clips": 40,
+      "range": "full",
+      "medianMs": 1.0197251029411762,
+      "medianCpuMs": 0.30777606177606176,
+      "minMs": 0.6691107700000005,
+      "maxMs": 5.720465971428556,
+      "sha256": "ed27a3a48add72b76827b7cf3d71e7e17ba61cb96d126f82ca15a51535d5160a",
+      "checksum": 29760
+    },
+    {
+      "variant": "current",
+      "tracks": 4,
+      "clips": 40,
+      "range": "full",
+      "medianMs": 0.5460309466666707,
+      "medianCpuMs": 0.1613515283842795,
+      "minMs": 0.3380787347972961,
+      "maxMs": 2.7255274594594625,
+      "sha256": "ed27a3a48add72b76827b7cf3d71e7e17ba61cb96d126f82ca15a51535d5160a",
+      "checksum": 58660
+    },
+    {
+      "variant": "baseline",
+      "tracks": 4,
+      "clips": 40,
+      "range": "60-120",
+      "medianMs": 0.49064050728155106,
+      "medianCpuMs": 0.12957992565055762,
+      "minMs": 0.23141429296424446,
+      "maxMs": 0.8334465714285687,
+      "sha256": "41a0b03a23b5a52b0ce8e896dda84b203e60cbb3220c98be7fe7978632f71cc8",
+      "checksum": 17028
+    },
+    {
+      "variant": "current",
+      "tracks": 4,
+      "clips": 40,
+      "range": "60-120",
+      "medianMs": 0.1936056707211132,
+      "medianCpuMs": 0.07182364864864865,
+      "minMs": 0.09852106034889144,
+      "maxMs": 0.5124167186700769,
+      "sha256": "41a0b03a23b5a52b0ce8e896dda84b203e60cbb3220c98be7fe7978632f71cc8",
+      "checksum": 40896
+    },
+    {
+      "variant": "baseline",
+      "tracks": 16,
+      "clips": 1600,
+      "range": "full",
+      "medianMs": 114.94183749999866,
+      "medianCpuMs": 33.935,
+      "minMs": 42.674949399999605,
+      "maxMs": 193.27000550000048,
+      "sha256": "04790c69222e0be045d09dbcc9ba2516932ab91c5a3420ccbb7cdb5bf082750a",
+      "checksum": 20800
+    },
+    {
+      "variant": "current",
+      "tracks": 16,
+      "clips": 1600,
+      "range": "full",
+      "medianMs": 22.524082888889097,
+      "medianCpuMs": 10.102444444444444,
+      "minMs": 12.260706529411811,
+      "maxMs": 78.54358733333356,
+      "sha256": "04790c69222e0be045d09dbcc9ba2516932ab91c5a3420ccbb7cdb5bf082750a",
+      "checksum": 69600
+    },
+    {
+      "variant": "baseline",
+      "tracks": 16,
+      "clips": 1600,
+      "range": "60-120",
+      "medianMs": 74.90642899999996,
+      "medianCpuMs": 16.223666666666666,
+      "minMs": 20.973549899999853,
+      "maxMs": 115.62327066666694,
+      "sha256": "7577c56b2ea4e5d4d6b743bb608ef6921d235b5cd49386756f55876853530cc4",
+      "checksum": 704
+    },
+    {
+      "variant": "current",
+      "tracks": 16,
+      "clips": 1600,
+      "range": "60-120",
+      "medianMs": 6.21969251515155,
+      "medianCpuMs": 1.5342564102564102,
+      "minMs": 1.6688245772357488,
+      "maxMs": 19.405742,
+      "sha256": "7577c56b2ea4e5d4d6b743bb608ef6921d235b5cd49386756f55876853530cc4",
+      "checksum": 6496
+    },
+    {
+      "variant": "baseline",
+      "tracks": 48,
+      "clips": 4800,
+      "range": "full",
+      "medianMs": 828.6977140000017,
+      "medianCpuMs": 107.557,
+      "minMs": 432.4691270000003,
+      "maxMs": 1347.1438689999995,
+      "sha256": "2e49939e0d6e691d9f8356a244150d90568261647b7b1bf8f89e735fc1cc0e7d",
+      "checksum": 21600
+    },
+    {
+      "variant": "current",
+      "tracks": 48,
+      "clips": 4800,
+      "range": "full",
+      "medianMs": 54.32175599999937,
+      "medianCpuMs": 9.26175,
+      "minMs": 35.662291999999674,
+      "maxMs": 78.44328700000067,
+      "sha256": "2e49939e0d6e691d9f8356a244150d90568261647b7b1bf8f89e735fc1cc0e7d",
+      "checksum": 93600
+    },
+    {
+      "variant": "baseline",
+      "tracks": 48,
+      "clips": 4800,
+      "range": "60-120",
+      "medianMs": 442.8295240000007,
+      "medianCpuMs": 101.203,
+      "minMs": 199.47268849999818,
+      "maxMs": 1039.479981000004,
+      "sha256": "269cfea7abdc2cf3480f02b747eb768c84d9f784467b9117c6182fc88623a0d2",
+      "checksum": 480
+    },
+    {
+      "variant": "current",
+      "tracks": 48,
+      "clips": 4800,
+      "range": "60-120",
+      "medianMs": 19.87187190909092,
+      "medianCpuMs": 2.9615454545454543,
+      "minMs": 11.255659444444367,
+      "maxMs": 31.826430714285898,
+      "sha256": "269cfea7abdc2cf3480f02b747eb768c84d9f784467b9117c6182fc88623a0d2",
+      "checksum": 5184
+    }
+  ],
+  "baselineRevision": "b56f7d48ea0c2f6bfde224191a25c46d2977d173",
+  "method": "Nine alternating baseline/current samples per workload in one Node process; each sample >=200 ms wall time after 300 ms warmup per variant. CPU time is process.cpuUsage user+system, normalized per snapshot. Fixture creation and deep equality/hash validation excluded. Shared host was CPU-contended; wall timings are illustrative, CPU medians are primary.",
+  "command": "pnpm exec tsx packages/project/bench/render-snapshot.ts ../src/render/snapshot.baseline.ts",
+  "reproduce": [
+    "git show b56f7d48ea0c2f6bfde224191a25c46d2977d173:packages/project/src/render/snapshot.ts > packages/project/src/render/snapshot.baseline.ts",
+    "pnpm exec tsx packages/project/bench/render-snapshot.ts ../src/render/snapshot.baseline.ts",
+    "rm packages/project/src/render/snapshot.baseline.ts"
+  ]
+}

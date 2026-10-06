@@ -640,6 +640,45 @@ Playwright specs:
 - `e2e/mg-clips.spec.ts` — Remotion page-protocol contract (4.0.499), File ▸ Import Remotion Project… →
   Remotion tab → live host → props edit within 500 ms → preview WebM, and the MCP composition tools.
 
+## Performance measurements
+
+`pnpm perf` runs the synthetic hot-path benchmarks sequentially. Each benchmark also runs directly with
+`pnpm exec tsx <path>`; its adjacent JSON records the original revision, workload, before/after results,
+and methodology. Run `node scripts/measure-web-bundle.mjs [dist-directory]` after a production web build
+to measure initial and total JavaScript bytes, including gzip sizes.
+
+The October 2026 audit ranked these five opportunities by expected impact and implementation risk:
+
+| Rank | Critical path and wasted work | Implemented change and measured evidence |
+|---|---|---|
+| 1 | Preview/export snapshot creation scanned all clips separately for each track | Group clips once per snapshot; 4,800 clips / 48 tracks: 107.557 → 9.262 ms CPU per full snapshot ([results](packages/project/bench/render-snapshot.results.json)) |
+| 2 | Every edit and undo enumerated the whole document to validate a small selection | Probe selected IDs; retain bulk indexing for dense selections. One selected clip out of 10,000: 3.525 → 0.00987 ms CPU ([results](packages/session/bench/selection-results.json)) |
+| 3 | Timeline viewport and pointer queries scanned every transition on a track | Indexed interval candidates; 10,000 transitions: viewport query 144.455 → 0.409 µs wall time ([results](apps/web/bench/timeline-transitions.measurements.json)) |
+| 4 | Cache usage/cleanup classification checked every project for every cache entry | Build reference indexes once per scan; 30 projects / 3,000 entries: 76.732 → 3.160 ms CPU, including construction ([results](apps/engine/bench/cache-references.results.json)) |
+| 5 | Home downloaded the docking workspace before any project opened | Load the editor alongside its project session; initial JavaScript 878,226 → 757,117 gzip bytes (13.79% reduction), measured with `scripts/measure-web-bundle.mjs` |
+
+An additional playback improvement shares the existing immutable clip-props cache between scene resolution
+and the compositor, avoiding repeated effect-parameter scans. The 32-layer fixture with one Lumetri grade
+per layer measured 10.577 → 1.431 µs CPU per scene frame
+([results](packages/project/bench/scene-props.results.json)). Snapshot outputs were compared with the
+original implementation; scene props were compared with uncached evaluation.
+
+These are isolated function/build measurements on Node 20.20.2, not whole-editor FPS or export throughput
+claims. The shared host was busy, so process CPU medians accompany wall timings where available.
+Dense selections across 100 sequences remained at parity. Transition indexing adds 8 bytes per transition
+and some build work (the 10,000-transition cold build measured 35.087 → 52.463 ms wall time); the extra work
+is amortized by repeated viewport/pointer queries. Cache reference indexes are temporary per scan.
+
+The editor split defers its first download until a project opens. A previously visited editor still reloads
+offline through the service worker; opening the editor offline after caching only Home now needs an initial
+online visit. Failed editor downloads provide a reload action. Production browser tests cover both paths.
+
+Audit validation: lint, workspace and E2E typechecks, all application builds plus the Remotion bundle,
+and `pnpm perf` passed. The full Vitest run verified 1,283 tests with 33 skips after four default
+five-second timeouts passed on targeted reruns using `--testTimeout=120000 --hookTimeout=120000`.
+All 30 production Playwright checks in `smoke`, `editing`, `transitions`, `media-cache`, `pwa`, and
+`bundle-loading` passed, including native/Remotion exports and offline reload.
+
 ## Scripts
 
 | Script | Does |
@@ -650,6 +689,7 @@ Playwright specs:
 | `pnpm dev:desktop` | builds the Electron main/preload and launches it against `JASPER_DESKTOP_DEV_URL` (default 5173) |
 | `pnpm typecheck` | `tsc --noEmit` in every package |
 | `pnpm test` | Vitest (all packages and apps as projects); `FUZZ=1 pnpm test` runs the long property sweeps |
+| `pnpm perf` | Sequential snapshot, scene, selection, timeline-transition, and cache-reference microbenchmarks |
 | `pnpm lint` | Biome + design-token and anime.js checks (`scripts/check-tokens.mjs`, `scripts/check-anime.mjs`) |
 | `pnpm format` | Biome formatter |
 | `pnpm build` | web (`vite build`), engine (`dist/engine.mjs`), desktop (`dist-electron/`), MCP server (`apps/mcp/dist/jasper-mcp.mjs`) |

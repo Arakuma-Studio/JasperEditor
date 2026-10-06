@@ -1,0 +1,69 @@
+{
+  "baselineRevision": "b56f7d4",
+  "runtime": {
+    "node": "v20.20.2",
+    "platform": "linux",
+    "arch": "x64"
+  },
+  "commands": {
+    "before": "pnpm exec tsx apps/engine/bench/cache-references.ts --baseline",
+    "after": "pnpm exec tsx apps/engine/bench/cache-references.ts"
+  },
+  "method": "Two warm-up iterations followed by seven measured iterations; median wall and process CPU time. Both timings include lookup construction and classification of every entry. 100 unique media fingerprints and cache entries per project. Baseline is the original b56f7d4 lookup, preserved in the benchmark. The benchmark asserts identical reference counts; regression tests cover all cache kinds, union order, shared refs, result mutation independence and rebuilds.",
+  "scope": "Synchronous cache-reference classification only, not complete cache HTTP latency or filesystem scan time.",
+  "caveats": "Shared host was heavily loaded by independent Chromium rendering/test jobs. Wall times are noisy; process CPU time is the stronger comparison. Inverted indexes allocate temporary maps and sets proportional to project references for each scan.",
+  "before": [
+    {
+      "implementation": "baseline",
+      "projectCount": 30,
+      "entries": 3000,
+      "medianMs": 318.9774400000001,
+      "medianCpuMs": 76.732,
+      "samplesMs": [
+        61.709033999999974, 119.22768099999985, 153.1313540000001, 318.9774400000001, 367.0115929999997,
+        446.80077600000004, 477.2834350000003
+      ]
+    },
+    {
+      "implementation": "baseline",
+      "projectCount": 300,
+      "entries": 30000,
+      "medianMs": 33259.901289,
+      "medianCpuMs": 8437.45,
+      "samplesMs": [
+        24905.490576999997, 28385.205787999992, 29689.84558400001, 33259.901289, 35054.712795,
+        36243.374230999994, 68676.63268099996
+      ]
+    }
+  ],
+  "after": [
+    {
+      "implementation": "indexed",
+      "projectCount": 30,
+      "entries": 3000,
+      "medianMs": 36.0253359999997,
+      "medianCpuMs": 3.16,
+      "samplesMs": [
+        2.053305999999793, 3.9121290000002773, 9.195894999999837, 36.0253359999997, 37.84010900000021,
+        39.21354700000029, 97.29509300000018
+      ]
+    },
+    {
+      "implementation": "indexed",
+      "projectCount": 300,
+      "entries": 30000,
+      "medianMs": 424.2882440000003,
+      "medianCpuMs": 57.122,
+      "samplesMs": [
+        52.19840199999999, 349.01748099999986, 386.01036999999997, 424.2882440000003, 438.0493460000007,
+        470.680738, 802.3760130000001
+      ]
+    }
+  ],
+  "medianCpuSpeedup": [24.282278481012657, 147.70928889044504],
+  "validation": {
+    "tests": "pnpm exec vitest run apps/engine/test/cache-reference-index.test.ts apps/engine/test/cache.test.ts: 2 files, 19 tests passed",
+    "typecheck": "pnpm --filter @jasper/engine typecheck: passed",
+    "biome": "All changed engine source/test/benchmark files passed biome check."
+  }
+}

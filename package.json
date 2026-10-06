@@ -13,6 +13,7 @@
     "dev:desktop": "pnpm --filter @jasper/desktop dev",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest run",
+    "perf": "node scripts/performance.mjs",
     "lint": "biome check . && node scripts/check-tokens.mjs && node scripts/check-anime.mjs",
     "format": "biome format --write .",
     "build": "pnpm -r --if-present build",

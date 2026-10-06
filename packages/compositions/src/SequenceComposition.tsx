@@ -12,13 +12,7 @@
 // (static clips resolve to the same cached object), then hands them to a memoized `LayerView` that
 // skips rendering when nothing it draws changed. Layers that draw per-frame content (motion graphics, animated
 // text, keyframed shapes) are `isFrameDependent` and re-render every frame.
-import {
-	clipContentTime,
-	fadeFactor,
-	type RenderVisualClip,
-	type ResolvedLayerProps,
-	resolveLayerProps,
-} from '@jasper/project';
+import { clipContentTime, fadeFactor, type RenderVisualClip, resolveCachedLayerProps } from '@jasper/project';
 import { type ComponentType, memo, useMemo, useRef } from 'react';
 import { AbsoluteFill, Sequence, useCurrentFrame } from 'remotion';
 import { ColorDocContext, type ColorDocValue } from './color/chain.ts';
@@ -64,33 +58,6 @@ function isFrameDependent(clip: Pick<RenderVisualClip, 'kind' | 'source'>): bool
 /** Media kinds get a 2 s premount so decoders warm up before the cut (S03:RND-020). */
 const PREMOUNT_KINDS: ReadonlySet<string> = new Set(['video', 'still', 'animated-image']);
 
-const staticProps = new WeakMap<RenderVisualClip, ResolvedLayerProps>();
-
-function isStaticClip(c: RenderVisualClip): boolean {
-	const t = c.transform;
-	return (
-		c.opacity.keyframes.length === 0 &&
-		(!t ||
-			[t.position, t.anchor, t.scale, t.scaleWidth, t.rotation].every((a) => a.keyframes.length === 0)) &&
-		c.effects.every((fx) => Object.values(fx.params).every((p) => p.keyframes.length === 0))
-	);
-}
-
-/**
- * Evaluated props of a clip at a sequence frame. Static clips return the same object for every frame
- * (S03:ARC-011) so memoized layers do not re-render.
- */
-function layerPropsAt(clip: RenderVisualClip, frame: number, doc: Pick<RenderDoc, 'settings'>) {
-	const contentTime = clipContentTime(clip, frame, doc.settings.fps);
-	if (!isStaticClip(clip)) return { props: resolveLayerProps(clip, contentTime), contentTime };
-	let props = staticProps.get(clip);
-	if (!props) {
-		props = resolveLayerProps(clip, contentTime);
-		staticProps.set(clip, props);
-	}
-	return { props, contentTime };
-}
-
 type ViewProps = LayerProps & { Component: ComponentType<LayerProps> };
 
 /** Equality for LayerView: frame-independent layers ignore localFrame/contentTime. */
@@ -128,13 +95,13 @@ const ClipLayer = memo(function ClipLayer({
 	const localFrame = useCurrentFrame() - (clip.headHandle ?? 0);
 	const frame = clip.start + localFrame;
 	const fps = doc.settings.fps.num / doc.settings.fps.den;
-	const resolved = layerPropsAt(clip, frame, doc);
-	const { contentTime } = resolved;
+	const contentTime = clipContentTime(clip, frame, doc.settings.fps);
+	const resolved = resolveCachedLayerProps(clip, contentTime);
 	// Transition ramps multiply the opacity; outside a ramp the (cached) props object is passed through.
 	const fade = fadeFactor(clip.fades, frame);
 	const props = useMemo(
-		() => (fade === 1 ? resolved.props : { ...resolved.props, opacity: resolved.props.opacity * fade }),
-		[resolved.props, fade],
+		() => (fade === 1 ? resolved : { ...resolved, opacity: resolved.opacity * fade }),
+		[resolved, fade],
 	);
 	const media = 'mediaId' in clip.source ? (doc.media[clip.source.mediaId] ?? null) : null;
 	const Component = layerComponentFor({ clip, media });

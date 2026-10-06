@@ -105,6 +105,31 @@ export function transitionGeom(seq: Sequence, media: MediaRecord, t: Transition)
 }
 
 const cache = new WeakMap<object, { clips: object; media: object; index: TransitionIndex }>();
+// Prefix maxima retain transitions that start much earlier but overlap the query. Metadata belongs
+// to the immutable sorted list, so unrelated edits reuse it and replaced indexes can be collected.
+const maxEnds = new WeakMap<readonly TransitionGeom[], Float64Array>();
+
+/** Conservative inclusive candidate bounds; exact geometry checks remain with each caller. */
+function candidateBounds(list: readonly TransitionGeom[], start: number, end: number): [number, number] {
+	const ends = maxEnds.get(list);
+	// Preserve the public API for caller-supplied maps, whose lists need not be indexed or sorted.
+	if (!ends || !Number.isFinite(start) || !Number.isFinite(end)) return [0, list.length];
+	let lo = 0;
+	let hi = list.length;
+	while (lo < hi) {
+		const mid = (lo + hi) >>> 1;
+		if (ends[mid]! < start) lo = mid + 1;
+		else hi = mid;
+	}
+	const first = lo;
+	hi = list.length;
+	while (lo < hi) {
+		const mid = (lo + hi) >>> 1;
+		if (list[mid]!.start <= end) lo = mid + 1;
+		else hi = mid;
+	}
+	return [first, lo];
+}
 
 /**
  * Per-track transitions sorted by start (TUI-004), cached on the identity of the sequence's transitions
@@ -122,7 +147,16 @@ export function transitionIndex(seq: Sequence, media: MediaRecord): TransitionIn
 		list.push(g);
 		index.set(g.trackId, list);
 	}
-	for (const list of index.values()) list.sort((a, b) => a.start - b.start || a.end - b.end);
+	for (const list of index.values()) {
+		list.sort((a, b) => a.start - b.start || a.end - b.end);
+		const ends = new Float64Array(list.length);
+		let max = Number.NEGATIVE_INFINITY;
+		for (let i = 0; i < list.length; i++) {
+			max = Math.max(max, list[i]!.end);
+			ends[i] = max;
+		}
+		maxEnds.set(list, ends);
+	}
 	cache.set(seq.transitions, { clips: seq.clips, media, index });
 	return index;
 }
@@ -134,7 +168,15 @@ export function transitionsInRange(
 	f0: number,
 	f1: number,
 ): TransitionGeom[] {
-	return (index.get(trackId) ?? []).filter((g) => g.end > f0 && g.start < f1);
+	const list = index.get(trackId);
+	if (!list) return [];
+	const [first, last] = candidateBounds(list, f0, f1);
+	const out: TransitionGeom[] = [];
+	for (let i = first; i < last; i++) {
+		const g = list[i]!;
+		if (g.end > f0 && g.start < f1) out.push(g);
+	}
+	return out;
 }
 
 // ---------------------------------------------------------------- px geometry and hit-testing
@@ -189,7 +231,13 @@ export function hitTransition(
 	if (yInRow < band.top || yInRow >= band.top + band.height) return null;
 	let best: TransitionHit | null = null;
 	let bestDist = Number.POSITIVE_INFINITY;
-	for (const g of list) {
+	// Edges extend 2 px; tiny bodies extend at most MIN_HIT_PX / 2. The extra pixel
+	// keeps candidate bounds conservative at floating-point frame/pixel boundaries.
+	const frame = v.scrollFrame + x / v.pxPerFrame;
+	const reach = (Math.max(2, MIN_HIT_PX / 2) + 1) / v.pxPerFrame;
+	const [first, last] = candidateBounds(list, frame - reach, frame + reach);
+	for (let i = first; i < last; i++) {
+		const g = list[i]!;
 		const r = transitionRect(g, v, row.height);
 		const pad = Math.max(0, (MIN_HIT_PX - r.w) / 2);
 		const edgesOk = resizableEdges(g);

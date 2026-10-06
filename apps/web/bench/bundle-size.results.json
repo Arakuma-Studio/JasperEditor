@@ -1,0 +1,157 @@
+{
+  "method": "Production Vite build; sum uncompressed bytes and Node gzipSync default-compression bytes for the HTML scripts and recursive modulepreload links. Total includes all emitted JavaScript assets, including workers. Source maps, fonts and CSS excluded. This measures initial download/parse volume, not elapsed load time.",
+  "command": "pnpm --filter @jasper/web build && node scripts/measure-web-bundle.mjs [saved-dist-directory]",
+  "baseline": "Saved pre-change production output in /tmp/jasper-web-baseline-dist",
+  "before": {
+    "initial": {
+      "files": 11,
+      "bytes": 2922144,
+      "gzipBytes": 878226,
+      "chunks": [
+        {
+          "file": "assets/app-project-t0YUvbfR.js",
+          "bytes": 348286,
+          "gzipBytes": 114211
+        },
+        {
+          "file": "assets/index-D0y2x6qQ.js",
+          "bytes": 830499,
+          "gzipBytes": 269784
+        },
+        {
+          "file": "assets/vendor-CK8H9jE9.js",
+          "bytes": 378673,
+          "gzipBytes": 99578
+        },
+        {
+          "file": "assets/vendor-anime-DIzOGkyz.js",
+          "bytes": 41007,
+          "gzipBytes": 15982
+        },
+        {
+          "file": "assets/vendor-dockview-BMaw_Adp.js",
+          "bytes": 400964,
+          "gzipBytes": 92800
+        },
+        {
+          "file": "assets/vendor-icons-BsvPMDaV.js",
+          "bytes": 29265,
+          "gzipBytes": 9495
+        },
+        {
+          "file": "assets/vendor-radix-BkW8uyEl.js",
+          "bytes": 139855,
+          "gzipBytes": 43233
+        },
+        {
+          "file": "assets/vendor-react-BiNLa1z3.js",
+          "bytes": 260262,
+          "gzipBytes": 82780
+        },
+        {
+          "file": "assets/vendor-remotion-BpojrPoC.js",
+          "bytes": 383283,
+          "gzipBytes": 117987
+        },
+        {
+          "file": "assets/vendor-state-DRc7zAXX.js",
+          "bytes": 109396,
+          "gzipBytes": 32019
+        },
+        {
+          "file": "theme-boot.js",
+          "bytes": 654,
+          "gzipBytes": 357
+        }
+      ]
+    },
+    "all": {
+      "files": 32,
+      "bytes": 3179599,
+      "gzipBytes": 972155
+    }
+  },
+  "after": {
+    "initial": {
+      "files": 10,
+      "bytes": 2433155,
+      "gzipBytes": 757117,
+      "chunks": [
+        {
+          "file": "assets/app-project-B4ySIP1D.js",
+          "bytes": 348357,
+          "gzipBytes": 114250
+        },
+        {
+          "file": "assets/index-BfizE0iP.js",
+          "bytes": 742407,
+          "gzipBytes": 241442
+        },
+        {
+          "file": "assets/vendor-Cp_7W0YR.js",
+          "bytes": 378673,
+          "gzipBytes": 99578
+        },
+        {
+          "file": "assets/vendor-anime-DIzOGkyz.js",
+          "bytes": 41007,
+          "gzipBytes": 15982
+        },
+        {
+          "file": "assets/vendor-icons-DhQ_9_Ov.js",
+          "bytes": 29265,
+          "gzipBytes": 9493
+        },
+        {
+          "file": "assets/vendor-radix-CyRfyh92.js",
+          "bytes": 139855,
+          "gzipBytes": 43232
+        },
+        {
+          "file": "assets/vendor-react-B2uI9NOv.js",
+          "bytes": 260258,
+          "gzipBytes": 82775
+        },
+        {
+          "file": "assets/vendor-remotion-CeNx58Ms.js",
+          "bytes": 383283,
+          "gzipBytes": 117989
+        },
+        {
+          "file": "assets/vendor-state-DDFydFns.js",
+          "bytes": 109396,
+          "gzipBytes": 32019
+        },
+        {
+          "file": "theme-boot.js",
+          "bytes": 654,
+          "gzipBytes": 357
+        }
+      ]
+    },
+    "all": {
+      "files": 33,
+      "bytes": 3182153,
+      "gzipBytes": 974009
+    }
+  },
+  "reduction": {
+    "initialBytes": 488989,
+    "initialGzipBytes": 121109,
+    "initialPercent": 16.73391181269643,
+    "initialGzipPercent": 13.790186125211505
+  },
+  "tradeoff": "EditorShell and dockview download on first project navigation (preloaded concurrently with session opening). Home-only visits do not cache the unvisited editor for a first offline demo open. Previously visited editors retain service-worker offline reload; rejected editor downloads show Reload editor. Total JavaScript grows slightly from the split/error recovery and concurrent performance changes.",
+  "baselineRevision": "b56f7d48ea0c2f6bfde224191a25c46d2977d173",
+  "environment": {
+    "node": "v20.20.2",
+    "vite": "7.3.6",
+    "platform": "linux",
+    "arch": "x64",
+    "target": "es2022",
+    "mode": "production",
+    "sourcemap": true,
+    "gzip": "Node zlib.gzipSync default compression",
+    "buildConfiguration": "apps/web/vite.config.ts (vendorChunk manualChunks unchanged)"
+  }
+}
