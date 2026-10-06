@@ -615,9 +615,45 @@ export function buildRenderSnapshot(
 		const mattes = (transitions.mattes.get(t.id) ?? []).filter(
 			(m) => m.start < range.end && m.start + m.duration > range.start,
 		);
-		const stages = (transitions.stages.get(t.id) ?? []).filter(
+		const allStages = (transitions.stages.get(t.id) ?? []).filter(
 			(x) => x.start < range.end && x.start + x.duration > range.start,
 		);
+		// edit-structure: adjustment clips have no transition handles (an adjustment applies only inside its range);
+		// a transition on one is drawn as the adjustment fading in / out over the span (GPU stages included).
+		const adjustments = new Map(clips.filter((c) => c.kind === 'adjustment').map((c) => [c.clipId, c]));
+		const stages = allStages.filter((st) => {
+			const sides = [st.outgoingClipId, st.incomingClipId].filter((x): x is string => !!x);
+			if (!sides.some((id) => adjustments.has(id))) return true;
+			const outAdj = st.outgoingClipId ? adjustments.get(st.outgoingClipId) : undefined;
+			const inAdj = st.incomingClipId ? adjustments.get(st.incomingClipId) : undefined;
+			const two = st.sides === 'both';
+			if (outAdj)
+				outAdj.fades = [
+					...(outAdj.fades ?? []),
+					two
+						? { type: 'out', start: st.start - 1, frames: st.duration + 1 }
+						: { type: 'out', start: st.start - 1, frames: st.duration },
+				];
+			if (inAdj)
+				inAdj.fades = [
+					...(inAdj.fades ?? []),
+					two
+						? { type: 'in', start: st.start - 1, frames: st.duration + 1 }
+						: { type: 'in', start: st.start, frames: st.duration },
+				];
+			warnings.push({
+				clipId: st.id,
+				code: 'ADJUSTMENT_TRANSITION',
+				message: 'A transition on an adjustment layer is drawn as the adjustment fading in/out',
+			});
+			return false;
+		});
+		for (const c of adjustments.values()) {
+			delete c.headHandle;
+			delete c.tailHandle;
+			delete c.freezeHead;
+			delete c.freezeTail;
+		}
 		// Trackers of the sides (S_MochaWhip's Mocha mode): each side clip's tracker over the span, in sequence px.
 		const withTracks = stages.map((st): RenderTransition => {
 			const tracks: NonNullable<RenderTransition['tracks']> = {};

@@ -179,3 +179,84 @@ export const fxTap = createEffect<FxTapParams, null>({
 	},
 	cleanup: () => {},
 });
+
+// ---------------------------------------------------------------- edit-structure: adjustment layers
+
+export type FxStashParams = { key: string; holder: { canvas: HTMLCanvasElement | null } };
+
+/** Keeps a copy of the picture (the composite below an adjustment layer) and passes it through. */
+export const fxStash = createEffect<FxStashParams, null>({
+	type: 'jasper.fx-adjustment-stash',
+	label: 'Adjustment layer (original)',
+	documentationLink: null,
+	backend: '2d',
+	calculateKey: (p) => p.key,
+	schema: {},
+	validateParams: (p) => {
+		if (!p?.holder) throw new Error('fxStash needs {key, holder}');
+	},
+	setup: () => null,
+	apply({ source, target, params, width, height }) {
+		let c = params.holder.canvas;
+		if (!c) {
+			c = document.createElement('canvas');
+			params.holder.canvas = c;
+		}
+		if (c.width !== width) c.width = width;
+		if (c.height !== height) c.height = height;
+		const sc = ctx2d(c);
+		sc.globalCompositeOperation = 'copy';
+		sc.drawImage(source, 0, 0, width, height);
+		sc.globalCompositeOperation = 'source-over';
+		const out = ctx2d(target);
+		out.globalCompositeOperation = 'copy';
+		out.drawImage(source, 0, 0, width, height);
+		out.globalCompositeOperation = 'source-over';
+	},
+	cleanup: () => {},
+});
+
+export type FxMixParams = {
+	key: string;
+	holder: { canvas: HTMLCanvasElement | null };
+	opacity: number;
+	blend: GlobalCompositeOperation;
+	region: { x: number; y: number; w: number; h: number } | null;
+};
+
+/**
+ * The adjusted picture over the stashed original (KND-012): `opacity` and `blend` as the layer's, limited to `region`
+ * (the adjustment layer's crop), the original everywhere else.
+ */
+export const fxAdjustmentMix = createEffect<FxMixParams, null>({
+	type: 'jasper.fx-adjustment-mix',
+	label: 'Adjustment layer (mix)',
+	documentationLink: null,
+	backend: '2d',
+	calculateKey: (p) => p.key,
+	schema: {},
+	validateParams: (p) => {
+		if (!p?.holder) throw new Error('fxAdjustmentMix needs {key, holder, opacity, blend, region}');
+	},
+	setup: () => null,
+	apply({ source, target, params, width, height }) {
+		const out = ctx2d(target);
+		const orig = params.holder.canvas;
+		out.globalCompositeOperation = 'copy';
+		if (orig) out.drawImage(orig, 0, 0, width, height);
+		else out.clearRect(0, 0, width, height);
+		out.globalCompositeOperation = params.blend;
+		out.globalAlpha = Math.min(1, Math.max(0, params.opacity));
+		out.save();
+		if (params.region) {
+			out.beginPath();
+			out.rect(params.region.x, params.region.y, params.region.w, params.region.h);
+			out.clip();
+		}
+		if (params.opacity > 0) out.drawImage(source, 0, 0, width, height);
+		out.restore();
+		out.globalAlpha = 1;
+		out.globalCompositeOperation = 'source-over';
+	},
+	cleanup: () => {},
+});

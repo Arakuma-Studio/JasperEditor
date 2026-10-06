@@ -1,4 +1,4 @@
-import { mat3ToCss, matrixToCss, type ResolvedEffect } from '@jasper/project';
+import { defaultEffectRegistry, mat3ToCss, matrixToCss, type ResolvedEffect } from '@jasper/project';
 import { type CSSProperties, type ReactNode, useMemo } from 'react';
 import { canUseHtmlInCanvas, FxDomPicture } from '../fx/FxPicture.tsx';
 import { useLayerFx } from '../fx/stage.ts';
@@ -6,7 +6,7 @@ import { blendModeCss, effectStages } from '../pipeline.ts';
 import type { LayerProps } from '../types.ts';
 
 /** DOM layers (S11 §0) whose GPU shader effects LayerBox runs itself through HTML-in-Canvas (fx framework). */
-const DOM_FX_KINDS: ReadonlySet<string> = new Set(['text', 'shape', 'motion-graphic']);
+const DOM_FX_KINDS: ReadonlySet<string> = new Set(['text', 'shape', 'motion-graphic', 'nest-video']);
 
 const FILL: CSSProperties = { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%' };
 
@@ -46,9 +46,14 @@ export function LayerBox({
 	const { props, clip } = layer;
 	// Transition framework: a side of a GPU transition whose component did not capture it already (cards, proxies,
 	// any DOM content) is captured here through HTML-in-Canvas.
+	// edit-structure: a nested sequence's colour effects run in the canvas chain too (no colour stage for DOM).
+	const chain =
+		clip.kind === 'nest-video' &&
+		props.effects.some((fx) => fx.enabled && !!defaultEffectRegistry.get(fx.effectId, fx.effectVersion)?.color);
 	const domFx = useLayerFx(layer, {
 		enabled: effects === undefined && (DOM_FX_KINDS.has(clip.kind) || !!layer.transition?.tap),
 		canRun: canUseHtmlInCanvas(),
+		chain,
 	});
 	const cssEffects = domFx.mode === 'active' ? domFx.cssEffects : (effects ?? props.effects);
 	const stages = useMemo(() => effectStages(cssEffects, `fx-${clip.clipId}`), [cssEffects, clip.clipId]);

@@ -35,6 +35,7 @@ import {
 import { useContext, useMemo } from 'react';
 import { cancelRender, Internals } from 'remotion';
 import { ColorDocContext, referencedMedia, useLutAssets } from '../color/chain.ts';
+import { NestCompSizeContext } from '../layers/nest-context.ts';
 import { bakedRunLut, loadedLutAsset, lutUrlKey } from '../color/luts.ts';
 import type { LayerProps, TransitionTap } from '../types.ts';
 import { type FxBypass, type FxCanvasLayout, fxCanvasLayout, type LayerFxPlan, planLayerFx } from './plan.ts';
@@ -67,7 +68,25 @@ export type FxPreparedStep =
 			key: string;
 			tap: TransitionTap;
 			meta: { compToCanvas: readonly number[] | null; opacity: number };
+	  }
+	/** edit-structure (adjustment layers): keep a copy of the picture before the effects (`holder`). */
+	| { kind: 'stash'; key: string; holder: AdjustmentHolder }
+	/**
+	 * edit-structure (adjustment layers): the adjusted picture over the stashed original, with opacity, blend mode
+	 * and the crop region (canvas px) the effects are limited to (Premiere: cropping an adjustment layer limits it).
+	 */
+	| {
+			kind: 'mix';
+			key: string;
+			holder: AdjustmentHolder;
+			opacity: number;
+			blend: GlobalCompositeOperation;
+			/** Crop insets (left, top, right, bottom) as fractions of the layer box; null = the whole box. */
+			insets: readonly [number, number, number, number] | null;
 	  };
+
+/** The original picture of an adjustment scope, kept by its `stash` step for its `mix` step. */
+export type AdjustmentHolder = { canvas: HTMLCanvasElement | null };
 
 /** A media param input of the layer's shader effects (`lut`: a .cube asset bound as a 3D texture). */
 export type FxMediaInput = { mediaId: string; url: string; kind: 'image' | 'video' | 'lut' };
@@ -119,20 +138,29 @@ export function useLayerFx(
 		enabled?: boolean;
 		/** The effects to plan (default: the layer's); e.g. none for a picture that already has them baked. */
 		effects?: readonly ResolvedEffect[];
+		/**
+		 * edit-structure: run the whole stack in the canvas chain even without shader effects (colour runs, CSS filters,
+		 * crop, flips) — nest pictures with colour effects and adjustment scopes.
+		 */
+		chain?: boolean;
+		/** edit-structure: steps appended after the stack (adjustment scope stash/mix), prepended when `first`. */
+		extraSteps?: { first: FxPreparedStep[]; last: FxPreparedStep[] };
 	} = {},
 ): LayerFx {
 	const doc = useContext(ColorDocContext);
 	const gpu = useFxStatus();
 	// Null outside a composition (layers rendered standalone, e.g. template thumbnails/tests).
 	const config = Internals.useUnsafeVideoConfig();
-	const compW = config?.width ?? 0;
-	const compH = config?.height ?? 0;
+	// edit-structure: inside a nested sequence the "composition" is the nested frame.
+	const nestComp = useContext(NestCompSizeContext);
+	const compW = nestComp?.width ?? config?.width ?? 0;
+	const compH = nestComp?.height ?? config?.height ?? 0;
 	const { clip, props, fps } = layer;
 	const effects = opts.effects ?? props.effects;
 	const box = props.box;
 	// Transition framework: a side of a GPU transition captures its picture for the stage.
 	const tap = layer.transition?.tap ?? null;
-	const capture = !!tap;
+	const capture = !!tap || !!opts.chain;
 	const colorBypass = doc.isPreview && doc.bypass.has(clip.clipId);
 	const canRun = opts.canRun ?? true;
 	const enabled = opts.enabled ?? true;
@@ -331,6 +359,10 @@ export function useLayerFx(
 					return { kind: 'flip', key: `flip${i}`, horizontal: s.horizontal };
 			}
 		});
+		if (opts.extraSteps) {
+			steps.unshift(...opts.extraSteps.first);
+			steps.push(...opts.extraSteps.last);
+		}
 		if (tap) {
 			const opacity = Math.min(1, Math.max(0, props.opacity / 100));
 			const compToCanvas = sideCompToCanvas(map, layout);
@@ -381,6 +413,7 @@ export function useLayerFx(
 		stackTime,
 		paramsAtOf,
 		clipInfo,
+		opts.extraSteps,
 	]);
 
 	if (!plan) return NONE;

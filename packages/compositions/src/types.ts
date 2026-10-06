@@ -36,8 +36,13 @@ export type LayerProps = {
 	props: ResolvedLayerProps;
 	/** Frame inside the clip (0-based). */
 	localFrame: number;
-	/** Content time in flicks (S01:CLP-004). */
+	/** Content time in flicks (S01:CLP-004) at which properties are evaluated. */
 	contentTime: number;
+	/**
+	 * edit-structure: content time of the picture shown (differs from `contentTime` under a frame hold without Hold
+	 * Filters). Absent = `contentTime`.
+	 */
+	pictureTime?: number;
 	fps: number;
 	media: MediaHandle | null;
 	options: RenderOptions;

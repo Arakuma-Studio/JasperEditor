@@ -34,7 +34,7 @@ import {
 import { colorLutCpu, cssFilter } from '../color/effects.ts';
 import { colorStageBackend } from '../color/gl.ts';
 import { loadedLutAsset } from '../color/luts.ts';
-import { fxCrop, fxFlip, fxLut, fxShader, fxTap } from './effects.ts';
+import { fxAdjustmentMix, fxCrop, fxFlip, fxLut, fxShader, fxStash, fxTap } from './effects.ts';
 import type { FxRunInputs, FxTextureInput } from './host.ts';
 import type { FxMediaInput, FxStage } from './stage.ts';
 
@@ -218,6 +218,27 @@ export function fxDescriptors(stage: FxStage, inputs: DescriptorInputs): EffectD
 				break;
 			case 'tap':
 				out.push(fxTap({ key: s.key, tap: s.tap, meta: s.meta }));
+				break;
+			case 'stash':
+				out.push(fxStash({ key: s.key, holder: s.holder }));
+				break;
+			case 'mix':
+				out.push(
+					fxAdjustmentMix({
+						key: s.key,
+						holder: s.holder,
+						opacity: s.opacity,
+						blend: s.blend,
+						region: s.insets
+							? {
+									x: box.x + s.insets[0] * box.w,
+									y: box.y + s.insets[1] * box.h,
+									w: Math.max(0, box.w * (1 - s.insets[0] - s.insets[2])),
+									h: Math.max(0, box.h * (1 - s.insets[1] - s.insets[3])),
+								}
+							: null,
+					}),
+				);
 				break;
 		}
 	}
@@ -415,29 +436,7 @@ export function FxPicture({ stage, children }: { stage: FxStage; children?: Reac
  * and runs the same descriptors. No time samples here (the DOM exists at one time only): `u_sampleCount` is 0.
  */
 export function FxDomPicture({ stage, children }: { stage: FxStage; children?: ReactNode }) {
-	const rendering = getRemotionEnvironment().isRendering;
-	const imageUrls = stage.media.filter((m) => m.kind === 'image').map((m) => m.url);
-	const images = useFxImages(imageUrls, rendering);
-	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the stage and the loaded images
-	const effects = useMemo(() => {
-		const media = new Map<string, FxTextureInput>();
-		for (const m of stage.media) {
-			if (m.kind === 'lut') {
-				const lut = loadedLutAsset(m.url);
-				if (lut) media.set(m.mediaId, { lut, version: m.url });
-				continue;
-			}
-			const img = m.kind === 'image' ? images.get(m.url) : undefined;
-			if (img)
-				media.set(m.mediaId, {
-					source: img,
-					width: img.naturalWidth,
-					height: img.naturalHeight,
-					version: m.url,
-				});
-		}
-		return fxDescriptors(stage, { samples: new Map(), media, preview: !rendering });
-	}, [stage.key, images.size, rendering]);
+	const effects = useDomFxDescriptors(stage);
 	const L = stage.layout;
 	return (
 		<HtmlInCanvas
@@ -462,6 +461,37 @@ export function FxDomPicture({ stage, children }: { stage: FxStage; children?: R
 			</div>
 		</HtmlInCanvas>
 	);
+}
+
+/**
+ * The canvas effect chain of a DOM picture's stage (`HtmlInCanvas effects`): loads the stage's image inputs (renders
+ * wait), LUT assets as loaded. No time samples (the DOM exists at one time only). `null` stage → no effects.
+ */
+export function useDomFxDescriptors(stage: FxStage | null): EffectDescriptor[] {
+	const rendering = getRemotionEnvironment().isRendering;
+	const imageUrls = stage ? stage.media.filter((m) => m.kind === 'image').map((m) => m.url) : [];
+	const images = useFxImages(imageUrls, rendering);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the stage and the loaded images
+	return useMemo(() => {
+		if (!stage) return [];
+		const media = new Map<string, FxTextureInput>();
+		for (const m of stage.media) {
+			if (m.kind === 'lut') {
+				const lut = loadedLutAsset(m.url);
+				if (lut) media.set(m.mediaId, { lut, version: m.url });
+				continue;
+			}
+			const img = m.kind === 'image' ? images.get(m.url) : undefined;
+			if (img)
+				media.set(m.mediaId, {
+					source: img,
+					width: img.naturalWidth,
+					height: img.naturalHeight,
+					version: m.url,
+				});
+		}
+		return fxDescriptors(stage, { samples: new Map(), media, preview: !rendering });
+	}, [stage?.key, images.size, rendering]);
 }
 
 /** HTML-in-Canvas is available here (Chrome ≥ 148 with the feature; always in Remotion renders). */
