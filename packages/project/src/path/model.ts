@@ -264,7 +264,11 @@ export function pathCentroid(p: Pick<BezierPath, 'vertices'>): PathPoint {
 export function clonePath(p: BezierPath): BezierPath {
 	return {
 		closed: p.closed,
-		vertices: p.vertices.map((v) => ({ p: [v.p[0], v.p[1]], in: [v.in[0], v.in[1]], out: [v.out[0], v.out[1]] })),
+		vertices: p.vertices.map((v) => ({
+			p: [v.p[0], v.p[1]],
+			in: [v.in[0], v.in[1]],
+			out: [v.out[0], v.out[1]],
+		})),
 		...(p.feather?.length ? { feather: p.feather.map((f) => ({ ...f })) } : {}),
 	};
 }
@@ -315,14 +319,23 @@ export function similarityAffine(
 	const b = sin * s[0]!;
 	const c = -sin * s[1]!;
 	const d = cos * s[1]!;
-	return [a, b, c, d, origin[0] - a * origin[0] - c * origin[1] + tx, origin[1] - b * origin[0] - d * origin[1] + ty];
+	return [
+		a,
+		b,
+		c,
+		d,
+		origin[0] - a * origin[0] - c * origin[1] + tx,
+		origin[1] - b * origin[0] - d * origin[1] + ty,
+	];
 }
 
 /** The same outline traversed the other way (closed paths keep vertex 0 first). Feather points are remapped. */
 export function reversePath(p: BezierPath): BezierPath {
 	const n = p.vertices.length;
 	if (n === 0) return clonePath(p);
-	const idx = p.closed ? Array.from({ length: n }, (_, i) => (n - i) % n) : Array.from({ length: n }, (_, i) => n - 1 - i);
+	const idx = p.closed
+		? Array.from({ length: n }, (_, i) => (n - i) % n)
+		: Array.from({ length: n }, (_, i) => n - 1 - i);
 	const m = segmentCount(p);
 	return {
 		closed: p.closed,
@@ -348,7 +361,9 @@ export function rotatePathStart(p: BezierPath, k: number): BezierPath {
 	return {
 		closed: true,
 		vertices: Array.from({ length: n }, (_, i) => c.vertices[(i + s) % n]!),
-		...(c.feather?.length ? { feather: c.feather.map((f) => ({ ...f, segment: (f.segment - s + n) % n })) } : {}),
+		...(c.feather?.length
+			? { feather: c.feather.map((f) => ({ ...f, segment: (f.segment - s + n) % n })) }
+			: {}),
 	};
 }
 
@@ -417,7 +432,11 @@ export function nearestOnPath(
  * Inserts a vertex on segment `segment` at parameter `t` (de Casteljau: the outline is unchanged). Returns the new
  * path and the new vertex index. Feather points on the split segment move to the matching half.
  */
-export function insertVertexAt(p: BezierPath, segment: number, t: number): { path: BezierPath; index: number } {
+export function insertVertexAt(
+	p: BezierPath,
+	segment: number,
+	t: number,
+): { path: BezierPath; index: number } {
 	const n = p.vertices.length;
 	const m = segmentCount(p);
 	if (segment < 0 || segment >= m) return { path: clonePath(p), index: -1 };
@@ -443,7 +462,12 @@ export function insertVertexAt(p: BezierPath, segment: number, t: number): { pat
 }
 
 /** Appends a vertex at the end of an (open) path (the pen tool's next click). */
-export function appendVertexTo(p: BezierPath, q: PathPoint, inH: PathPoint = [0, 0], outH: PathPoint = [0, 0]): BezierPath {
+export function appendVertexTo(
+	p: BezierPath,
+	q: PathPoint,
+	inH: PathPoint = [0, 0],
+	outH: PathPoint = [0, 0],
+): BezierPath {
 	const out = clonePath(p);
 	out.vertices.push({ p: [q[0], q[1]], in: [inH[0], inH[1]], out: [outH[0], outH[1]] });
 	return out;
@@ -475,7 +499,11 @@ export function removeVertices(p: BezierPath, indices: readonly number[]): Bezie
  * Converts vertices between smooth and corner (Premiere's Convert Vertex tool / Alt-click). `smooth` gives the
  * vertex mirrored handles along the neighbours' direction, a sixth of the distance between them (Catmull–Rom).
  */
-export function convertVertices(p: BezierPath, indices: readonly number[], to: 'smooth' | 'corner'): BezierPath {
+export function convertVertices(
+	p: BezierPath,
+	indices: readonly number[],
+	to: 'smooth' | 'corner',
+): BezierPath {
 	const out = clonePath(p);
 	const n = out.vertices.length;
 	for (const i of indices) {
@@ -496,7 +524,10 @@ export function convertVertices(p: BezierPath, indices: readonly number[], to: '
 }
 
 /** SVG path data (`M … C … Z`) of a path, through an optional point map (e.g. layer → screen). */
-export function pathToSvg(p: Pick<BezierPath, 'closed' | 'vertices'>, map: (q: PathPoint) => PathPoint = (q) => q): string {
+export function pathToSvg(
+	p: Pick<BezierPath, 'closed' | 'vertices'>,
+	map: (q: PathPoint) => PathPoint = (q) => q,
+): string {
 	const n = p.vertices.length;
 	if (n === 0) return '';
 	const f = (q: PathPoint) => {
@@ -515,7 +546,12 @@ export function isBezierPath(v: unknown): v is BezierPath {
 	const o = v as { closed?: unknown; vertices?: unknown };
 	if (typeof o.closed !== 'boolean' || !Array.isArray(o.vertices)) return false;
 	const pt = (q: unknown) =>
-		Array.isArray(q) && q.length === 2 && typeof q[0] === 'number' && typeof q[1] === 'number' && Number.isFinite(q[0]) && Number.isFinite(q[1]);
+		Array.isArray(q) &&
+		q.length === 2 &&
+		typeof q[0] === 'number' &&
+		typeof q[1] === 'number' &&
+		Number.isFinite(q[0]) &&
+		Number.isFinite(q[1]);
 	return o.vertices.every((x) => {
 		const vv = x as Partial<PathVertex> | null;
 		return !!vv && pt(vv.p) && pt(vv.in) && pt(vv.out);

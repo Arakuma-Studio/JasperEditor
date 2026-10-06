@@ -19,7 +19,15 @@ export const BezierPathSchema = z.looseObject({
 });
 
 /** After Effects' mask modes (Premiere masks always add; the modes combine a layer's masks top to bottom). */
-export const MASK_MODES = ['none', 'add', 'subtract', 'intersect', 'lighten', 'darken', 'difference'] as const;
+export const MASK_MODES = [
+	'none',
+	'add',
+	'subtract',
+	'intersect',
+	'lighten',
+	'darken',
+	'difference',
+] as const;
 export const MaskModeSchema = z.enum(MASK_MODES);
 export type MaskMode = (typeof MASK_MODES)[number];
 
@@ -29,7 +37,12 @@ export const MaskShapeSchema = z.enum(MASK_SHAPES);
 export type MaskShape = (typeof MASK_SHAPES)[number];
 
 /** Premiere's mask tracking methods (+ Perspective: a homography of the mask region). */
-export const MASK_TRACK_METHODS = ['position', 'position-rotation', 'position-scale-rotation', 'perspective'] as const;
+export const MASK_TRACK_METHODS = [
+	'position',
+	'position-rotation',
+	'position-scale-rotation',
+	'perspective',
+] as const;
 export const MaskTrackMethodSchema = z.enum(MASK_TRACK_METHODS);
 export type MaskTrackMethod = (typeof MASK_TRACK_METHODS)[number];
 

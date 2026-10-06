@@ -25,7 +25,12 @@ export type TraceOptions = {
 	cornerRoundness: number;
 };
 
-export const DEFAULT_TRACE_OPTIONS: TraceOptions = { threshold: 0.5, tolerance: 1, minArea: 10, cornerRoundness: 0.5 };
+export const DEFAULT_TRACE_OPTIONS: TraceOptions = {
+	threshold: 0.5,
+	tolerance: 1,
+	minArea: 10,
+	cornerRoundness: 0.5,
+};
 
 export type TracedPath = {
 	/** Closed path in pixel coordinates of the field (x right, y down; pixel (x, y) covers [x, x+1)×[y, y+1)). */
@@ -76,7 +81,9 @@ function contours(field: ArrayLike<number>, w: number, h: number, thr: number): 
 	const gw = w + 2;
 	const gh = h + 2;
 	const val = (i: number, j: number): number =>
-		i === 0 || j === 0 || i > w || j > h ? Number.NEGATIVE_INFINITY : (field[(j - 1) * w + (i - 1)] as number);
+		i === 0 || j === 0 || i > w || j > h
+			? Number.NEGATIVE_INFINITY
+			: (field[(j - 1) * w + (i - 1)] as number);
 	const inside = (i: number, j: number) => val(i, j) >= thr;
 	const pos = (i: number, j: number): PathPoint => [i - 0.5, j - 0.5];
 	const cross = (a: [number, number], b: [number, number]): PathPoint => {
@@ -405,7 +412,8 @@ function fitLoop(raw: readonly PathPoint[], simp: readonly PathPoint[], round: n
 			unit([outChord[0] * (1 - round) + smooth[0] * round, outChord[1] * (1 - round) + smooth[1] * round]) ??
 			outChord;
 		const arrive =
-			unit([inChord[0] * (1 - round) + smooth[0] * round, inChord[1] * (1 - round) + smooth[1] * round]) ?? inChord;
+			unit([inChord[0] * (1 - round) + smooth[0] * round, inChord[1] * (1 - round) + smooth[1] * round]) ??
+			inChord;
 		return { leave, arrive };
 	});
 	const path = polygonPath(simp, true);

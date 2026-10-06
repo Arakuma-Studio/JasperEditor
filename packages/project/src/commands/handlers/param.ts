@@ -1,6 +1,8 @@
 // param.set / param.setAnimated with Effect Controls stopwatch semantics (S01:KF-005, CMD-010, CMD-013).
 import type { Draft } from 'immer';
 import { compositionOfClip } from '../../composition/props.ts';
+import { evaluate, isHoldOnlyValue } from '../../keyframes.ts';
+import { newKeySpatial, refreshAutoTangents } from '../../keyframes-spatial.ts';
 import {
 	MASK_EXPANSION_RANGE,
 	MASK_FEATHER_RANGE,
@@ -9,8 +11,6 @@ import {
 	MASK_PROPS,
 	type MaskProp,
 } from '../../masks/model.ts';
-import { evaluate, isHoldOnlyValue } from '../../keyframes.ts';
-import { newKeySpatial, refreshAutoTangents } from '../../keyframes-spatial.ts';
 import type { ParamSpec } from '../../registry/effects.ts';
 import { type PropertySpec, resolvePropertySpec } from '../../registry/properties.ts';
 import type { Animatable, Keyframe, SpatialInterpolation } from '../../schema/common.ts';
@@ -23,8 +23,8 @@ import { ClipPatchSchema } from '../schemas/clip.ts';
 import type { CommandOf, ParamAt } from '../schemas/index.ts';
 import { applyClipPatch } from './clip-core.ts';
 import { setCompositionProp } from './composition.ts';
-import { templateParamDraftAnim, templateParamsValidator } from './mg-template.ts';
 import { locateMask, validateMaskPath } from './mask.ts';
+import { templateParamDraftAnim, templateParamsValidator } from './mg-template.ts';
 import { ensureShapeStorage } from './shape.ts';
 import type { HandlerMap } from './util.ts';
 
@@ -240,7 +240,11 @@ export function resolveTarget(
 		if (!loc) return h.fail('E_NOT_FOUND', `Mask not found: ${a}`);
 		assertUnlocked(findTrackIn(loc.seq, loc.clip.trackId)!.track, h);
 		const range =
-			prop === 'feather' ? MASK_FEATHER_RANGE : prop === 'opacity' ? MASK_OPACITY_RANGE : MASK_EXPANSION_RANGE;
+			prop === 'feather'
+				? MASK_FEATHER_RANGE
+				: prop === 'opacity'
+					? MASK_OPACITY_RANGE
+					: MASK_EXPANSION_RANGE;
 		const rule: ValueRule =
 			prop === 'path' ? { kind: 'maskPath', holdOnly: false } : { kind: 'number', range, holdOnly: false };
 		return {

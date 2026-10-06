@@ -11,6 +11,23 @@
 // threads (pool.ts), so tests and production share one implementation.
 
 /**
+ * wp masks: multiplies the alpha of the picture in `src` (`sw` px rows, picture `cw×ch` top-left) by `cov` (same
+ * layout, 0..1) — the layer's Opacity masks, before the warp (premultiplied colour × coverage = straight alpha ×
+ * coverage). Self-contained (runs in the workers).
+ */
+export function applyCoverage(src: Uint8Array, sw: number, cw: number, ch: number, cov: Float32Array): void {
+	for (let y = 0; y < ch; y++) {
+		let o = y * sw;
+		for (let x = 0; x < cw; x++, o++) {
+			const k = cov[o]!;
+			if (k >= 1) continue;
+			const i = 4 * o + 3;
+			src[i] = src[i]! * k + 0.5;
+		}
+	}
+}
+
+/**
  * Draws `src` (`sw` px wide rows, picture in its top-left `cw×ch`) into `dst` (`dw×dh` RGBA). `inv` maps output
  * pixel coordinates to picture coordinates (affine, row-major 2×3: u = m0·x + m1·y + m2, v = m3·x + m4·y + m5).
  * `clip` (`[u0, v0, u1, v1]`, picture px, fractions allowed) is the visible part. Only `rect` (`[x0, y0, x1, y1)`,

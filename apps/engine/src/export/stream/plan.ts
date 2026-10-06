@@ -17,6 +17,7 @@
 //   from a piecewise-linear fit (`overlay` x/y expressions; offsets recomputed from the fit so JS and ffmpeg agree).
 import {
 	type Animatable,
+	activeMasks,
 	clipContentTime,
 	evaluate,
 	invertMat3,
@@ -25,6 +26,7 @@ import {
 	type Rational,
 	type RenderVisualClip,
 	type ResolvedLayerProps,
+	type ResolvedMask,
 	resolveLayerProps,
 } from '@jasper/project';
 import { FIT_TOLERANCE, fitPieces, frameIndex, pieceValue, piecewiseExpr, roundC } from '../keyframed.ts';
@@ -57,6 +59,12 @@ export type StreamFrame = {
 	ch: number;
 	/** Visible part of the picture (crop, S01:FX-003), picture px `[u0, v0, u1, v1]`. */
 	clip: [number, number, number, number];
+	/**
+	 * wp masks: the layer's Opacity masks at this frame — the kernel multiplies the decoded picture by their coverage
+	 * (rasterised at the picture's `cw×ch` size, `pxScale` picture px per layer px) before the warp, as the
+	 * composition multiplies the layer canvas before its transform. `key` identifies the coverage (cache).
+	 */
+	mask?: { key: string; masks: ResolvedMask[]; pxScale: number } | null;
 };
 
 const CROP = 'jasper.crop';
@@ -162,12 +170,14 @@ export function planStreamLayer(o: StreamPlanOptions): StreamLayerPlan {
 	const maps: (Mat3 | null)[] = [];
 	const opac = new Float64Array(n);
 	const crops: ([number, number, number, number] | null)[] = [];
+	const masksAt: ResolvedMask[][] = [];
 	const lw = new Float64Array(n);
 	const lh = new Float64Array(n);
 	for (let k = 0; k < n; k++) {
 		const time = clipContentTime(c, f0 + k, fps);
 		const p = k === 0 ? o.props : resolveLayerProps(c, time);
 		crops.push(cropAt(c, time));
+		masksAt.push(activeMasks(p.masks));
 		const m = p.matrix;
 		const sx = Math.hypot(m.a, m.b) * kx;
 		const sy = Math.hypot(m.c, m.d) * ky;
@@ -278,6 +288,17 @@ export function planStreamLayer(o: StreamPlanOptions): StreamLayerPlan {
 
 	// ---- per-frame warp specs (output px → decoded px)
 	const frames: StreamFrame[] = [];
+	let lastMask: StreamFrame['mask'] = null;
+	const maskOf = (k: number): StreamFrame['mask'] => {
+		const ms = masksAt[k]!;
+		if (ms.length === 0) return null;
+		const pxScale = pw[k]! / Math.max(1e-9, c.intrinsicBox.width);
+		const key = `${pw[k]}x${ph[k]}|${pxScale}|${JSON.stringify(ms)}`;
+		// Equal geometry across frames shares one object (one rasterisation, see run.ts).
+		if (lastMask?.key === key) return lastMask;
+		lastMask = { key, masks: ms, pxScale };
+		return lastMask;
+	};
 	for (let k = 0; k < n; k++) {
 		const f = fwd[k];
 		if (!f || !(opac[k]! > 0)) {
@@ -303,6 +324,7 @@ export function planStreamLayer(o: StreamPlanOptions): StreamLayerPlan {
 						cw: pw[k]!,
 						ch: ph[k]!,
 						clip: clips[k]!,
+						mask: maskOf(k),
 					}
 				: { inv: null, rect: null, opacity: 0, cw: pw[k]!, ch: ph[k]!, clip: clips[k]! },
 		);

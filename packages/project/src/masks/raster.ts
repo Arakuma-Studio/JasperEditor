@@ -26,9 +26,10 @@
 // in its list that cross the row left of the tile (those edges are ≥ band away, so the decision has a margin). A
 // pixel's winding = that row value + the signed crossings of its tile's listed edges left of the pixel; its
 // distance = the minimum over the listed edges. Everything is packed into one RGBA32F texture (`MaskPack`).
+
+import { flattenPath, type PathPoint } from '../path/model.ts';
 import type { MaskFeatherFalloff, MaskMode } from '../schema/mask.ts';
 import { activeMasks, combineMaskMode, MASK_MODE_INDEX, maskModeStart, type ResolvedMask } from './model.ts';
-import { flattenPath, type PathPoint } from '../path/model.ts';
 
 /** Flattening tolerance, canvas px. */
 export const MASK_FLATTEN_TOLERANCE = 0.05;
@@ -78,7 +79,11 @@ export function prepareMasks(
 				const p = toCanvas(v.p);
 				const hi = toCanvas([v.p[0] + v.in[0], v.p[1] + v.in[1]]);
 				const ho = toCanvas([v.p[0] + v.out[0], v.p[1] + v.out[1]]);
-				return { p, in: [hi[0] - p[0], hi[1] - p[1]] as PathPoint, out: [ho[0] - p[0], ho[1] - p[1]] as PathPoint };
+				return {
+					p,
+					in: [hi[0] - p[0], hi[1] - p[1]] as PathPoint,
+					out: [ho[0] - p[0], ho[1] - p[1]] as PathPoint,
+				};
 			}),
 		};
 		const flat = flattenPath(mapped, MASK_FLATTEN_TOLERANCE);
@@ -573,6 +578,11 @@ export function rasterizeMasks(
 }
 
 /** Normalised layer coordinates → canvas px for a layer box at (x, y, w, h) in the canvas. */
-export function boxToCanvas(box: { x: number; y: number; w: number; h: number }): (q: PathPoint) => PathPoint {
+export function boxToCanvas(box: {
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+}): (q: PathPoint) => PathPoint {
 	return (q) => [box.x + q[0] * box.w, box.y + q[1] * box.h];
 }

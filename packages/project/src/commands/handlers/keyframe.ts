@@ -61,7 +61,9 @@ export function clipAnimatables(seq: DSeq, clip: DClip): AnimLocation[] {
 	// wp masks: Opacity masks and effect masks (`["mask", id, prop]`).
 	const maskLists = [
 		(clip as { masks?: Draft<Mask>[] }).masks ?? [],
-		...((clip as { effects?: Draft<EffectInstance>[] }).effects ?? []).map((fx) => (fx.masks ?? []) as Draft<Mask>[]),
+		...((clip as { effects?: Draft<EffectInstance>[] }).effects ?? []).map(
+			(fx) => (fx.masks ?? []) as Draft<Mask>[],
+		),
 	];
 	for (const list of maskLists)
 		for (const m of list)

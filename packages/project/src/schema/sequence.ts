@@ -1,7 +1,6 @@
 // Sequences, tracks, clips, effects, transitions, markers (S01 §7–§13).
 import { z } from 'zod';
 import type { DeepStrip } from './common.ts';
-import { MaskSchema } from './mask.ts';
 import {
 	AnimNumberSchema,
 	AnimParamSchema,
@@ -15,6 +14,7 @@ import {
 	RGBASchema,
 	Vec2Schema,
 } from './common.ts';
+import { MaskSchema } from './mask.ts';
 
 // ---------------------------------------------------------------- effects
 

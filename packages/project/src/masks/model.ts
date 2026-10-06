@@ -120,7 +120,9 @@ export function newMask(init: {
 		feather: anim(init.feather ?? MASK_DEFAULT_FEATHER),
 		opacity: anim(init.opacity ?? 100),
 		expansion: anim(init.expansion ?? 0),
-		...(init.featherFalloff && init.featherFalloff !== 'smooth' ? { featherFalloff: init.featherFalloff } : {}),
+		...(init.featherFalloff && init.featherFalloff !== 'smooth'
+			? { featherFalloff: init.featherFalloff }
+			: {}),
 		...(init.trackMethod ? { trackMethod: init.trackMethod } : {}),
 	};
 }
@@ -196,4 +198,48 @@ export function hasActiveMasks(masks: readonly Mask[] | undefined): boolean {
 			m.mode !== 'none' &&
 			[m.path.value, ...m.path.keyframes.map((k) => k.value)].some((p) => p.closed && p.vertices.length >= 2),
 	);
+}
+
+/** The clip has an enabled effect with an active mask (Premiere's per-effect masks). */
+export function hasEffectMasks(c: { effects: readonly { enabled: boolean; masks?: Mask[] }[] }): boolean {
+	return c.effects.some((fx) => fx.enabled && hasActiveMasks(fx.masks));
+}
+
+/** The clip's masks change its picture (an active Opacity mask or an enabled effect with an active mask). */
+export function clipHasMasks(c: {
+	masks?: Mask[];
+	effects: readonly { enabled: boolean; masks?: Mask[] }[];
+}): boolean {
+	return hasActiveMasks(c.masks) || hasEffectMasks(c);
+}
+
+/** Effect id of the corner pin (also in render/scene.ts; repeated to keep this module free of render imports). */
+const CORNER_PIN = 'jasper.corner-pin';
+/** Kinds whose Opacity masks the native export kernel rasterises (stream/plan.ts). */
+const MASK_STREAM_KINDS: ReadonlySet<string> = new Set([
+	'video',
+	'still',
+	'solid',
+	'composition',
+	'motion-graphic',
+]);
+
+/**
+ * How the native export realises a clip's masks (wp masks; the planner never drops them):
+ * - `none`: no active mask;
+ * - `stream`: Opacity masks only, on a kind the sub-pixel kernel draws — the coverage (same definition as the
+ *   preview's GL rasteriser) multiplies the decoded picture before the warp;
+ * - `bake`: effect masks (an effect limited to its masks mixes pixels inside the stack), a corner-pinned layer,
+ *   an animated image or a DOM layer — the whole layer is rendered by the composition (layer bake, `hybrid`), which
+ *   runs the GL rasteriser itself.
+ */
+export function maskExportRoute(c: {
+	kind: string;
+	masks?: Mask[];
+	effects: readonly { enabled: boolean; effectId: string; masks?: Mask[] }[];
+}): 'none' | 'stream' | 'bake' {
+	if (!clipHasMasks(c)) return 'none';
+	if (hasEffectMasks(c)) return 'bake';
+	if (c.effects.some((fx) => fx.enabled && fx.effectId === CORNER_PIN)) return 'bake';
+	return MASK_STREAM_KINDS.has(c.kind) ? 'stream' : 'bake';
 }

@@ -18,6 +18,7 @@ import {
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
 	isAnimated,
+	maskExportRoute,
 	type Rational,
 	type RenderAudioClip,
 	type RenderAudioFade,
@@ -634,7 +635,8 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			bw: Math.max(1, Math.round(c.intrinsicBox.width)),
 			bh: Math.max(1, Math.round(c.intrinsicBox.height)),
 		};
-		if (needsSubpixel(c, props, box)) {
+		// wp masks: Opacity masks are drawn by the kernel too (coverage × picture before the warp, stream/run.ts).
+		if (needsSubpixel(c, props, box) || maskExportRoute(c) === 'stream') {
 			const decInputs: string[][] = [];
 			const chain = layerSourceChain({
 				clip: c,

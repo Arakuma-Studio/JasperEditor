@@ -99,7 +99,10 @@ describe('mask coverage', () => {
 					k === 0
 						? ellipsePath([20 + rnd() * 40, 15 + rnd() * 30], [8 + rnd() * 20, 6 + rnd() * 15])
 						: polygonPath(
-								Array.from({ length: 3 + Math.floor(rnd() * 5) }, () => [rnd() * 70, rnd() * 50] as [number, number]),
+								Array.from(
+									{ length: 3 + Math.floor(rnd() * 5) },
+									() => [rnd() * 70, rnd() * 50] as [number, number],
+								),
 							);
 				masks.push(
 					rm(shape, {
@@ -154,7 +157,11 @@ describe('mask coverage', () => {
 	});
 
 	it('px scale converts feather and expansion', () => {
-		const half = prepareMasks([rm(rectPath(0, 0, 1, 1), { feather: 10, expansion: 4 })], (q) => [q[0] * 50, q[1] * 50], 0.5);
+		const half = prepareMasks(
+			[rm(rectPath(0, 0, 1, 1), { feather: 10, expansion: 4 })],
+			(q) => [q[0] * 50, q[1] * 50],
+			0.5,
+		);
 		expect(half[0]!.feather).toBe(5);
 		expect(half[0]!.expansion).toBe(2);
 	});

@@ -20,14 +20,22 @@ const F = flicksPerFrame({ num: 30, den: 1 });
 function setup() {
 	const h = new Harness();
 	const m = h.registerVideo({ seconds: 4, audio: false, width: 1920, height: 1080 });
-	h.ok([{ type: 'clip.place', source: { mediaId: m }, at: 0, sourceRange: { in: { flicks: 0 }, out: { flicks: 60 * F } } }]);
+	h.ok([
+		{
+			type: 'clip.place',
+			source: { mediaId: m },
+			at: 0,
+			sourceRange: { in: { flicks: 0 }, out: { flicks: 60 * F } },
+		},
+	]);
 	const clipId = h.clips('V1')[0]!.id;
 	h.ok([{ type: 'effect.add', target: { clipId }, effectId: 'jasper.gaussian-blur', ref: '$fx' }]);
 	const fxId = (h.seq.clips[clipId] as { effects: { id: string }[] }).effects[0]!.id;
 	return { h, clipId, fxId };
 }
 
-const masksOf = (h: Harness, clipId: string) => ((h.seq.clips[clipId] as { masks?: Mask[] }).masks ?? []) as Mask[];
+const masksOf = (h: Harness, clipId: string) =>
+	((h.seq.clips[clipId] as { masks?: Mask[] }).masks ?? []) as Mask[];
 const fxMasksOf = (h: Harness, clipId: string) =>
 	((h.seq.clips[clipId] as { effects: { masks?: Mask[] }[] }).effects[0]!.masks ?? []) as Mask[];
 
@@ -41,7 +49,10 @@ describe('mask commands', () => {
 				type: 'mask.add',
 				effectId: fxId,
 				shape: 'bezier',
-				path: { closed: true, vertices: [0.1, 0.5, 0.9].map((x, i) => ({ p: [x, i === 1 ? 0.1 : 0.9], in: [0, 0], out: [0, 0] })) },
+				path: {
+					closed: true,
+					vertices: [0.1, 0.5, 0.9].map((x, i) => ({ p: [x, i === 1 ? 0.1 : 0.9], in: [0, 0], out: [0, 0] })),
+				},
 			},
 		]);
 		expect((r.results[0] as { name: string }).name).toBe('Mask (1)');
@@ -70,9 +81,25 @@ describe('mask commands', () => {
 			{ type: 'mask.add', clipId, shape: 'polygon', ref: '$b' },
 		]);
 		const [a, b] = masksOf(h, clipId).map((m) => m.id);
-		h.ok([{ type: 'mask.update', maskId: a, mode: 'subtract', inverted: true, name: 'Hole', featherFalloff: 'linear', locked: true }]);
+		h.ok([
+			{
+				type: 'mask.update',
+				maskId: a,
+				mode: 'subtract',
+				inverted: true,
+				name: 'Hole',
+				featherFalloff: 'linear',
+				locked: true,
+			},
+		]);
 		const m = masksOf(h, clipId)[0]!;
-		expect([m.mode, m.inverted, m.name, m.featherFalloff, m.locked]).toEqual(['subtract', true, 'Hole', 'linear', true]);
+		expect([m.mode, m.inverted, m.name, m.featherFalloff, m.locked]).toEqual([
+			'subtract',
+			true,
+			'Hole',
+			'linear',
+			true,
+		]);
 		h.ok([{ type: 'mask.reorder', maskId: b, index: 0 }]);
 		expect(masksOf(h, clipId).map((x) => x.id)).toEqual([b, a]);
 		const d = h.ok([{ type: 'mask.duplicate', maskIds: [a] }]);
@@ -96,20 +123,29 @@ describe('mask commands', () => {
 		expect(r.ok && r.warnings.some((w) => w.code === 'W_VALUE_CLAMPED')).toBe(true);
 		h.ok([
 			{ type: 'param.setAnimated', target: ['mask', id, 'path'], animated: true, at: { frames: 0 } },
-			{ type: 'mask.editPath', maskId: id, at: { frames: 30 }, ops: [{ op: 'moveVertices', vertices: [0, 1, 2, 3], delta: [0.1, 0] }] },
+			{
+				type: 'mask.editPath',
+				maskId: id,
+				at: { frames: 30 },
+				ops: [{ op: 'moveVertices', vertices: [0, 1, 2, 3], delta: [0.1, 0] }],
+			},
 		]);
 		const mk = masksOf(h, clipId)[0]!;
 		expect(mk.path.keyframes).toHaveLength(2);
 		const mid = resolveMask(mk, 15 * F);
 		expect(mid.path.vertices[0]!.p[0]).toBeCloseTo(mk.path.keyframes[0]!.value.vertices[0]!.p[0] + 0.05, 9);
 		// keyframe.* commands find mask keys (they are animatables of the clip).
-		h.ok([{ type: 'keyframe.setInterpolation', keyframeIds: [mk.path.keyframes[0]!.id], interpolation: 'hold' }]);
+		h.ok([
+			{ type: 'keyframe.setInterpolation', keyframeIds: [mk.path.keyframes[0]!.id], interpolation: 'hold' },
+		]);
 		expect(resolveMask(masksOf(h, clipId)[0]!, 15 * F).path.vertices[0]!.p[0]).toBeCloseTo(
 			mk.path.keyframes[0]!.value.vertices[0]!.p[0],
 			9,
 		);
 		// Invalid path values are refused.
-		expect(h.tx([{ type: 'param.set', target: ['mask', id, 'path'], value: { closed: true, vertices: 'x' } }]).ok).toBe(false);
+		expect(
+			h.tx([{ type: 'param.set', target: ['mask', id, 'path'], value: { closed: true, vertices: 'x' } }]).ok,
+		).toBe(false);
 		expect(checkInvariants(h.doc, { effects: defaultEffectRegistry })).toEqual([]);
 	});
 
@@ -148,8 +184,17 @@ describe('mask commands', () => {
 		expect(mk.path.keyframes.map((k) => k.value.vertices.length)).toEqual([4, 4]);
 		expect(pathLength(mk.path.keyframes[1]!.value)).toBeLessThan(pathLength(mk.path.keyframes[0]!.value));
 		// Removing to fewer than 3 vertices of a closed mask is refused.
-		expect(h.tx([{ type: 'mask.editPath', maskId: id, ops: [{ op: 'removeVertices', vertices: [0, 1] }] }]).ok).toBe(false);
-		h.ok([{ type: 'mask.editPath', maskId: id, at: { frames: 0 }, ops: [{ op: 'convert', vertices: [0], to: 'smooth' }] }]);
+		expect(
+			h.tx([{ type: 'mask.editPath', maskId: id, ops: [{ op: 'removeVertices', vertices: [0, 1] }] }]).ok,
+		).toBe(false);
+		h.ok([
+			{
+				type: 'mask.editPath',
+				maskId: id,
+				at: { frames: 0 },
+				ops: [{ op: 'convert', vertices: [0], to: 'smooth' }],
+			},
+		]);
 		p = masksOf(h, clipId)[0]!.path.keyframes[0]!.value;
 		expect(Math.hypot(...p.vertices[0]!.out)).toBeGreaterThan(0);
 		// Rotation is on screen: rotating a square 90° about its centre maps it onto itself (pixel space).
@@ -162,10 +207,16 @@ describe('mask commands', () => {
 		expect(after[0]![1]).toBeCloseTo(before[1]![1], 9);
 		// Variable feather points.
 		h.ok([
-			{ type: 'mask.editPath', maskId: sq.id, ops: [{ op: 'addFeatherPoint', point: { segment: 0, t: 0.5, radius: 20, tension: 0 } }] },
+			{
+				type: 'mask.editPath',
+				maskId: sq.id,
+				ops: [{ op: 'addFeatherPoint', point: { segment: 0, t: 0.5, radius: 20, tension: 0 } }],
+			},
 			{ type: 'mask.editPath', maskId: sq.id, ops: [{ op: 'setFeatherPoint', index: 0, radius: -10 }] },
 		]);
-		expect(masksOf(h, clipId)[1]!.path.value.feather).toEqual([{ segment: 0, t: 0.5, radius: -10, tension: 0 }]);
+		expect(masksOf(h, clipId)[1]!.path.value.feather).toEqual([
+			{ segment: 0, t: 0.5, radius: -10, tension: 0 },
+		]);
 		expect(checkInvariants(h.doc, { effects: defaultEffectRegistry })).toEqual([]);
 	});
 

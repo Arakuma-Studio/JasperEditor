@@ -5,14 +5,14 @@ import type { Issue } from './commands/types.ts';
 import { clipEnd } from './derive/index.ts';
 import { createTrack } from './factories.ts';
 import { type IdPrefix, type IdSource, idPrefixOf, isValidId } from './ids.ts';
-import type { EffectRegistry } from './registry/effects.ts';
-import { contentDurationFlicks, isBoundedContent, trackKindFor } from './registry/kinds.ts';
 import { MASK_EXPANSION_RANGE, MASK_FEATHER_RANGE, MASK_OPACITY_RANGE } from './masks/model.ts';
 import { type BezierPath, isBezierPath, segmentCount } from './path/model.ts';
+import type { EffectRegistry } from './registry/effects.ts';
+import { contentDurationFlicks, isBoundedContent, trackKindFor } from './registry/kinds.ts';
 import type { MgTemplateRegistry } from './registry/mg.ts';
 import { type Animatable, SPATIAL_INTERPOLATIONS } from './schema/common.ts';
-import { MASK_MODES, type Mask } from './schema/mask.ts';
 import type { ProjectDocument } from './schema/document.ts';
+import { MASK_MODES, type Mask } from './schema/mask.ts';
 import type { Clip, EffectInstance, Sequence, Track } from './schema/sequence.ts';
 import { isKnownClipKind } from './schema/sequence.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
@@ -624,7 +624,8 @@ export function maskProblem(m: Mask): string | null {
 	];
 	for (const [a, r, name] of nums)
 		for (const v of [a.value, ...a.keyframes.map((k) => k.value)])
-			if (typeof v !== 'number' || !Number.isFinite(v) || v < r.min || v > r.max) return `${name} out of range`;
+			if (typeof v !== 'number' || !Number.isFinite(v) || v < r.min || v > r.max)
+				return `${name} out of range`;
 	if (!MASK_MODES.includes(m.mode)) return `unknown mode ${m.mode}`;
 	return null;
 }
@@ -792,7 +793,10 @@ export function repairDocument(
 				if (fx.masks && fx.masks.length === 0) delete fx.masks;
 			}
 		}
-		for (const fx of [...[...seq.videoTracks, ...seq.audioTracks].flatMap((t) => t.effects ?? []), ...seq.master.effects])
+		for (const fx of [
+			...[...seq.videoTracks, ...seq.audioTracks].flatMap((t) => t.effects ?? []),
+			...seq.master.effects,
+		])
 			if (fx.masks) {
 				delete fx.masks;
 				note('drop-mask', fx.id, 'masks on a track or master effect removed');

@@ -122,7 +122,10 @@ export function pathWithVertexCount(p: BezierPath, total: number): BezierPath {
 	if (m === 0 || total <= base) return clonePath(p);
 	const segs = Array.from({ length: m }, (_, i) => segmentAt(p, i));
 	const lens = segs.map((c) => cubicLength(c));
-	const sum = Math.max(1e-12, lens.reduce((a, b) => a + b, 0));
+	const sum = Math.max(
+		1e-12,
+		lens.reduce((a, b) => a + b, 0),
+	);
 	const pieces = total - base + m;
 	const extra = pieces - m;
 	const want = lens.map((l) => (l / sum) * extra);
@@ -145,7 +148,11 @@ export function pathWithVertexCount(p: BezierPath, total: number): BezierPath {
 /** The outline as a polyline of `total` vertices at equal arc-length spacing, starting at vertex 0. */
 export function pathAsPolyline(p: BezierPath, total: number): BezierPath {
 	const m = segmentCount(p);
-	if (m === 0 || total < 2) return polygonPath(p.vertices.map((v) => v.p), p.closed);
+	if (m === 0 || total < 2)
+		return polygonPath(
+			p.vertices.map((v) => v.p),
+			p.closed,
+		);
 	const pts: PathPoint[] = [p.vertices[0]!.p];
 	for (let i = 0; i < m; i++) {
 		const c = segmentAt(p, i);
@@ -260,7 +267,8 @@ export function correspondPaths(
 ): [BezierPath, BezierPath] {
 	if (a.vertices.length === 0 || b.vertices.length === 0) return [clonePath(a), clonePath(b)];
 	const closed = a.closed && b.closed;
-	const curves = o.matching === 'curve' ? true : o.matching === 'polyline' ? false : hasCurves(a) || hasCurves(b);
+	const curves =
+		o.matching === 'curve' ? true : o.matching === 'polyline' ? false : hasCurves(a) || hasCurves(b);
 	let ra: BezierPath;
 	let rb: BezierPath;
 	if (o.oneToOne && a.vertices.length === b.vertices.length) {
@@ -323,7 +331,11 @@ export function correspondPaths(
 	return [ra, rb];
 }
 
-function lerpFeather(a: FeatherPoint[] | undefined, b: FeatherPoint[] | undefined, u: number): FeatherPoint[] | undefined {
+function lerpFeather(
+	a: FeatherPoint[] | undefined,
+	b: FeatherPoint[] | undefined,
+	u: number,
+): FeatherPoint[] | undefined {
 	if (!a?.length) return u < 1 || !b?.length ? undefined : b.map((f) => ({ ...f }));
 	if (!b?.length || a.length !== b.length) return (u < 1 ? a : b)?.map((f) => ({ ...f }));
 	return a.map((f, i) => {
@@ -407,7 +419,8 @@ export function interpolatePaths(
 /** Number of crossing pairs of the straight vertex paths a[i] → b[i] (a sanity measure of a correspondence). */
 export function vertexPathsCross(a: BezierPath, b: BezierPath): number {
 	const n = Math.min(a.vertices.length, b.vertices.length);
-	const d = (p: PathPoint, q: PathPoint, r: PathPoint) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+	const d = (p: PathPoint, q: PathPoint, r: PathPoint) =>
+		(q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
 	let c = 0;
 	for (let i = 0; i < n; i++)
 		for (let j = i + 1; j < n; j++) {

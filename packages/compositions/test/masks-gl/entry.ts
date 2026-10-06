@@ -1,7 +1,7 @@
 // Browser entry of the mask GL test (bundled with esbuild, run in headless Chrome by ../masks-gl.test.ts): the GL
 // mask rasteriser (src/fx/mask.ts on the fx GPU host) against the CPU rasteriser, and the masked-effect /
 // Opacity-mask descriptors inside Remotion's effect chain (as FxPicture runs them).
-import { type ResolvedMask, packMasks, prepareMasks, rasterizeMaskPack, boxToCanvas } from '@jasper/project';
+import { boxToCanvas, packMasks, prepareMasks, type ResolvedMask, rasterizeMaskPack } from '@jasper/project';
 import { Internals } from 'remotion';
 import { cssFilter } from '../../src/color/effects.ts';
 import { fxHost } from '../../src/fx/host.ts';
@@ -39,9 +39,18 @@ const api = {
 		const { pack, key } = packedMasks({ masks: j.masks, box: j.box, pxScale: j.pxScale }, j.width, j.height);
 		const out = canvas(j.width, j.height);
 		const t0 = performance.now();
-		runMaskPass(h, { pack, packKey: key, mode: 'coverage', src: null, width: j.width, height: j.height }, out.getContext('2d')!);
+		runMaskPass(
+			h,
+			{ pack, packKey: key, mode: 'coverage', src: null, width: j.width, height: j.height },
+			out.getContext('2d')!,
+		);
 		const ms = performance.now() - t0;
-		const gl = Array.from(out.getContext('2d')!.getImageData(0, 0, j.width, j.height).data.filter((_, i) => i % 4 === 3));
+		const gl = Array.from(
+			out
+				.getContext('2d')!
+				.getImageData(0, 0, j.width, j.height)
+				.data.filter((_, i) => i % 4 === 3),
+		);
 		const cpu = Array.from(
 			rasterizeMaskPack(packMasks(prepareMasks(j.masks, boxToCanvas(j.box), j.pxScale), j.width, j.height)!),
 		);
@@ -63,12 +72,21 @@ const api = {
 		const run = async (effects: unknown[]) => {
 			const state = Internals.createEffectChainState(W, H);
 			const out = canvas(W, H);
-			await Internals.runEffectChain({ state, source: src, effects: effects as never, output: out, width: W, height: H });
+			await Internals.runEffectChain({
+				state,
+				source: src,
+				effects: effects as never,
+				output: out,
+				width: W,
+				height: H,
+			});
 			return Array.from(out.getContext('2d')!.getImageData(0, 0, W, H).data);
 		};
 		const applied = await run([fxMaskApply({ key: 'm', geometry })]);
 		// A masked "invert" CSS filter: inverted inside the masks only.
-		const masked = await run([fxMasked({ key: 'x', geometry, inner: cssFilter({ key: 'inv', filter: 'invert(1)' }) })]);
+		const masked = await run([
+			fxMasked({ key: 'x', geometry, inner: cssFilter({ key: 'inv', filter: 'invert(1)' }) }),
+		]);
 		return { applied, masked };
 	},
 };

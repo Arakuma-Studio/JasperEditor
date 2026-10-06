@@ -19,8 +19,8 @@ import {
 	convertVertices,
 	insertVertexAt,
 	isBezierPath,
-	pathCentroid,
 	type PathPoint,
+	pathCentroid,
 	removeVertices,
 	segmentCount,
 	similarityAffine,
@@ -86,7 +86,8 @@ function ownerList(
 	target: { clipId?: string; effectId?: string },
 	h: HandlerContext,
 ): { seq: DSeq; clip: DClip; fx: Draft<EffectInstance> | null; list: DMask[] } {
-	if (!!target.clipId === !!target.effectId) h.fail('E_INVALID_PARAM', 'Give exactly one of clipId or effectId');
+	if (!!target.clipId === !!target.effectId)
+		h.fail('E_INVALID_PARAM', 'Give exactly one of clipId or effectId');
 	if (target.clipId) {
 		const { seq, clip } = h.clip(doc, target.clipId);
 		if (!('opacity' in clip) || !('effects' in clip))
@@ -98,7 +99,8 @@ function ownerList(
 	}
 	const found = locateEffect(doc, target.effectId!);
 	if (!found) return h.fail('E_NOT_FOUND', `Effect instance not found: ${target.effectId}`);
-	if (!found.clip) return h.fail('E_INVALID_PARAM', 'Masks apply to effects of clips (not track or master effects)');
+	if (!found.clip)
+		return h.fail('E_INVALID_PARAM', 'Masks apply to effects of clips (not track or master effects)');
 	const spec = h.registries.effects.get(found.fx.effectId, found.fx.effectVersion);
 	if (spec && spec.appliesTo !== 'video') h.fail('E_INVALID_PARAM', 'Masks apply to video effects');
 	if (found.fx.effectId === CORNER_PIN_EFFECT_ID)
@@ -114,8 +116,10 @@ export function validateMaskPath(v: unknown, h: HandlerContext, label = 'Mask Pa
 	if (!isBezierPath(v)) return h.fail('E_INVALID_PARAM', `Invalid value for ${label}: not a path`);
 	if (v.vertices.length > MASK_MAX_VERTICES)
 		h.fail('E_LIMIT', `${label}: at most ${MASK_MAX_VERTICES} vertices (got ${v.vertices.length})`);
-	const inRange = (q: readonly number[]) => q.every((x) => x >= MASK_PATH_RANGE.min && x <= MASK_PATH_RANGE.max);
-	const handleOk = (q: readonly number[]) => q.every((x) => Math.abs(x) <= MASK_PATH_RANGE.max - MASK_PATH_RANGE.min);
+	const inRange = (q: readonly number[]) =>
+		q.every((x) => x >= MASK_PATH_RANGE.min && x <= MASK_PATH_RANGE.max);
+	const handleOk = (q: readonly number[]) =>
+		q.every((x) => Math.abs(x) <= MASK_PATH_RANGE.max - MASK_PATH_RANGE.min);
 	for (const vx of v.vertices)
 		if (!inRange(vx.p) || !handleOk(vx.in) || !handleOk(vx.out))
 			h.fail('E_INVALID_PARAM', `${label}: coordinates out of range (normalised layer units)`);
@@ -222,13 +226,20 @@ function applyShapeOp(
 				...(op.translate ? { translate: toPx(op.translate) } : {}),
 			});
 			const px = transformPath(
-				{ closed: p.closed, vertices: p.vertices.map((v) => ({ p: toPx(v.p), in: toPx(v.in), out: toPx(v.out) })) },
+				{
+					closed: p.closed,
+					vertices: p.vertices.map((v) => ({ p: toPx(v.p), in: toPx(v.in), out: toPx(v.out) })),
+				},
 				m,
 			);
 			const out = clonePath(p);
 			px.vertices.forEach((v, i) => {
 				if (!sel.has(i)) return;
-				out.vertices[i] = { p: [v.p[0] / W, v.p[1] / H], in: [v.in[0] / W, v.in[1] / H], out: [v.out[0] / W, v.out[1] / H] };
+				out.vertices[i] = {
+					p: [v.p[0] / W, v.p[1] / H],
+					in: [v.in[0] / W, v.in[1] / H],
+					out: [v.out[0] / W, v.out[1] / H],
+				};
 			});
 			return validateMaskPath(out, h);
 		}
@@ -238,7 +249,10 @@ function applyShapeOp(
 			const W = box.width || 1;
 			const H = box.height || 1;
 			const px = convertVertices(
-				{ closed: p.closed, vertices: p.vertices.map((v) => ({ p: [v.p[0] * W, v.p[1] * H], in: v.in, out: v.out })) },
+				{
+					closed: p.closed,
+					vertices: p.vertices.map((v) => ({ p: [v.p[0] * W, v.p[1] * H], in: v.in, out: v.out })),
+				},
 				op.vertices,
 				op.to,
 			);
@@ -284,7 +298,8 @@ function applyTopologyOp(p: BezierPath, op: MaskPathOp, h: HandlerContext): Bezi
 		}
 		case 'removeVertices': {
 			const n = p.vertices.length;
-			for (const i of op.vertices) if (i >= n) h.fail('E_INVALID_PARAM', `No vertex ${i} (the path has ${n})`);
+			for (const i of op.vertices)
+				if (i >= n) h.fail('E_INVALID_PARAM', `No vertex ${i} (the path has ${n})`);
 			const left = n - new Set(op.vertices).size;
 			if (p.closed && left < 3) h.fail('E_INVALID_PARAM', 'A closed mask keeps at least 3 vertices');
 			if (left < 1) h.fail('E_INVALID_PARAM', 'A mask keeps at least one vertex');
@@ -295,7 +310,8 @@ function applyTopologyOp(p: BezierPath, op: MaskPathOp, h: HandlerContext): Bezi
 			return appendVertexTo(p, op.p, op.in ?? [0, 0], op.out ?? [0, 0]);
 		}
 		case 'setClosed': {
-			if (op.closed && p.vertices.length < 3) h.fail('E_INVALID_PARAM', 'A closed mask needs at least 3 vertices');
+			if (op.closed && p.vertices.length < 3)
+				h.fail('E_INVALID_PARAM', 'A closed mask needs at least 3 vertices');
 			const out = clonePath(p);
 			out.closed = op.closed;
 			// Feather points on the closing segment disappear when the path opens.
@@ -341,7 +357,8 @@ export const maskHandlers: HandlerMap = {
 		else if (cmd.shape === 'bezier')
 			return h.fail('E_INVALID_PARAM', 'A pen (bezier) mask needs `path` (its vertices)');
 		else path = defaultMaskPath(cmd.shape, box.height > 0 ? box.width / box.height : 1);
-		if (path.closed && path.vertices.length < 3) h.fail('E_INVALID_PARAM', 'A closed mask needs at least 3 vertices');
+		if (path.closed && path.vertices.length < 3)
+			h.fail('E_INVALID_PARAM', 'A closed mask needs at least 3 vertices');
 		if (path.vertices.length < 1) h.fail('E_INVALID_PARAM', 'A mask needs at least one vertex');
 		const id = h.ids.next('msk');
 		const mask = newMask({
@@ -360,7 +377,12 @@ export const maskHandlers: HandlerMap = {
 		const at = Math.min(cmd.index ?? owner.list.length, owner.list.length);
 		owner.list.splice(at, 0, mask as DMask);
 		h.defineRef(cmd.ref, id);
-		return { maskId: id, name: mask.name, index: at, owner: owner.fx ? { effectId: owner.fx.id } : { clipId: owner.clip.id } };
+		return {
+			maskId: id,
+			name: mask.name,
+			index: at,
+			owner: owner.fx ? { effectId: owner.fx.id } : { clipId: owner.clip.id },
+		};
 	},
 
 	'mask.remove': (doc, cmd: CommandOf<'mask.remove'>, h) => {
@@ -408,12 +430,19 @@ export const maskHandlers: HandlerMap = {
 
 	'mask.duplicate': (doc, cmd: CommandOf<'mask.duplicate'>, h) => {
 		const created: string[] = [];
-		const target = cmd.toClipId || cmd.toEffectId ? ownerList(doc, { clipId: cmd.toClipId, effectId: cmd.toEffectId }, h) : null;
+		const target =
+			cmd.toClipId || cmd.toEffectId
+				? ownerList(doc, { clipId: cmd.toClipId, effectId: cmd.toEffectId }, h)
+				: null;
 		for (const id of [...new Set(cmd.maskIds)]) {
 			const loc = mustLocate(doc, id, h);
 			const copy = copyMaskWithIds(clone(loc.mask) as Mask, h);
 			const list = target ? target.list : loc.list;
-			copy.name = target ? (list.some((m) => m.name === copy.name) ? nextMaskName(list) : copy.name) : nextMaskName(list);
+			copy.name = target
+				? list.some((m) => m.name === copy.name)
+					? nextMaskName(list)
+					: copy.name
+				: nextMaskName(list);
 			if (target) {
 				// Pasting onto another clip keeps the shape in normalised units and retimes nothing: the keys are content
 				// times of the source clip, which a different clip may not cover — keep the value at the source's first

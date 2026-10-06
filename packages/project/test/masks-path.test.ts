@@ -149,7 +149,10 @@ describe('smart path interpolation (port of effectcraft interp.rs)', () => {
 		expect(len).toBeCloseTo(100, 6);
 		const lin = interpolatePaths(a, b, 0.5, { linear: true, bendingResistance: 0 });
 		expect(
-			Math.hypot(lin.vertices[1]!.p[0] - lin.vertices[0]!.p[0], lin.vertices[1]!.p[1] - lin.vertices[0]!.p[1]),
+			Math.hypot(
+				lin.vertices[1]!.p[0] - lin.vertices[0]!.p[0],
+				lin.vertices[1]!.p[1] - lin.vertices[0]!.p[1],
+			),
 		).toBeLessThan(80);
 	});
 

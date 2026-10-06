@@ -99,7 +99,11 @@ const MaskPathOpSchema = z.discriminatedUnion('op', [
 	/** Corner ↔ smooth (Premiere's Convert Vertex: Alt-click). */
 	z.strictObject({ op: z.literal('convert'), vertices: VertexIndices, to: z.enum(['smooth', 'corner']) }),
 	/** Insert a vertex on segment `segment` at Bézier parameter `t` (all keyframes; the outline is unchanged). */
-	z.strictObject({ op: z.literal('insertVertex'), segment: z.number().int().min(0), t: z.number().gt(0).lt(1) }),
+	z.strictObject({
+		op: z.literal('insertVertex'),
+		segment: z.number().int().min(0),
+		t: z.number().gt(0).lt(1),
+	}),
 	/** Delete vertices (all keyframes; a closed mask keeps at least 3). */
 	z.strictObject({ op: z.literal('removeVertices'), vertices: VertexIndices }),
 	/** Append a vertex at the end of an open pen path (all keyframes), with optional handles. */
