@@ -267,9 +267,11 @@ transition, `LayerProps.transition` is set during the span: `u_progress` (the tr
 
 ## 11. Export, native vs null, WebGL
 
-- `native` stays unset (null). The planner routes a clip with any effect the native builder cannot render to the
-  Remotion path (`uses effect <id>, which the native path cannot render`), where the compositions run your shader in
-  headless Chrome (WebGL2 via ANGLE/SwiftShader). Today's native builder renders only crop, flips and the
+- `native` stays unset (null). wave1c (ARCHITECTURE D-35): a video / still / solid / animated-image layer with such an
+  effect is baked by the layer-bake extension (a Remotion render of that layer alone, straight-alpha master or one PNG
+  when nothing changes per frame, cached by content) and overlaid natively — the rest of the export stays native
+  (`hybrid`). Exports forced to Remotion, or engines without the bake, run your shader in headless Chrome (WebGL2 via
+  ANGLE/SwiftShader) for the whole render. Today's native builder renders only crop, flips and the
   extensions' effects (colour LUTs) — an `EffectSpec.native` filter is NOT consumed, so do not add one (it would also
   show a misleading N badge).
 - Renders without WebGL2 fail with `WEBGL_UNAVAILABLE` (the engine checks documents with GPU or colour effects
