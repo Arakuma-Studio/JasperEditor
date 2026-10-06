@@ -20,8 +20,8 @@ import {
 	type Transform,
 } from '../schema/sequence.ts';
 import { type ResolvedTextAnimator, resolveTextAnimationWindows } from '../text-animations.ts';
-import { transitionSideTrack, transitionTrackerOf } from '../tracking/transition.ts';
 import type { Rational } from '../time.ts';
+import { transitionSideTrack, transitionTrackerOf } from '../tracking/transition.ts';
 import {
 	type RenderAudioFade,
 	type RenderFade,

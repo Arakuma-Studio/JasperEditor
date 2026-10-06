@@ -113,6 +113,8 @@ describe('Transition section params', () => {
 		).toEqual([
 			'startPercent',
 			'endPercent',
+			'useCompletion',
+			'completion',
 			'borderWidth',
 			'borderColor',
 			'reverse',
