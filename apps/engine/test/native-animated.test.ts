@@ -5,7 +5,7 @@
 // fixture is also rendered by Remotion and compared frame by frame (S03:FX-040 / ENG-033: SSIM ≥ 0.98); with
 // NATIVE_ANIM_BENCH=1 a 10 s 1080p fixture is timed on the native and the Remotion path.
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { appendFileSync, copyFileSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { applyMat3, invertMat3, layerMapOf, type Mat3, resolveSceneAt, type Vec2 } from '@jasper/project';
@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { fitPieces, pieceValue, piecewiseExpr } from '../src/export/keyframed.ts';
 import { buildNativeGraph } from '../src/export/native.ts';
 import { nativeBlockers } from '../src/export/planner.ts';
+import { drawLayer } from '../src/export/stream/kernel.ts';
 import { type RunningEngine, startEngine } from '../src/index.ts';
 import { coreServices } from '../src/tools/services.ts';
 import {
@@ -56,18 +57,22 @@ const CELL_COLORS: [number, number, number][] = [
 const CARD = { w: 640, h: 360, border: 40, cols: 7, rows: 4 };
 const PLATE: [number, number, number] = [20, 20, 20];
 
-/** Card colour at a card point, or null within 3 px of a boundary (edge-excluded) or outside. */
+/**
+ * Card colour at a card point, or null within `EDGE` card px of a boundary (edge-excluded: bilinear fringe plus the
+ * ProRes 4444 export's DCT ringing next to saturated edges) or outside.
+ */
+const EDGE = 7;
 function cardColorAt(u: number, v: number): [number, number, number] | null {
 	const { w, h, border, cols, rows } = CARD;
-	if (u < 3 || v < 3 || u > w - 3 || v > h - 3) return null;
-	const near = (x: number, lines: number[]) => lines.some((l) => Math.abs(x - l) < 3);
+	if (u < EDGE || v < EDGE || u > w - EDGE || v > h - EDGE) return null;
+	const near = (x: number, lines: number[]) => lines.some((l) => Math.abs(x - l) < EDGE);
 	if (near(u, [border, w - border]) || near(v, [border, h - border])) return null;
 	if (u < border || v < border || u > w - border || v > h - border) return [255, 255, 255];
 	const cw = (w - 2 * border) / cols;
 	const ch = (h - 2 * border) / rows;
 	const cu = (u - border) / cw;
 	const cv = (v - border) / ch;
-	if (Math.abs(cu - Math.round(cu)) * cw < 3 || Math.abs(cv - Math.round(cv)) * ch < 3) return null;
+	if (Math.abs(cu - Math.round(cu)) * cw < EDGE || Math.abs(cv - Math.round(cv)) * ch < EDGE) return null;
 	return CELL_COLORS[(Math.floor(cu) + 3 * Math.floor(cv)) % CELL_COLORS.length]!;
 }
 
@@ -216,6 +221,10 @@ const lum = (img: Img, x: number, y: number) => {
 	return (img.rgb[o]! + img.rgb[o + 1]! + img.rgb[o + 2]!) / 3;
 };
 
+/** Share of a pixel covered by the bright side of an edge between `plate` and `white`. */
+const coverage = (v: number, plate: number, white: number) =>
+	Math.min(1, Math.max(0, (v - plate) / (white - plate)));
+
 /**
  * Sub-pixel edge crossings of the (white-framed) card against the dark plate along scanlines, one straight edge
  * of the resolved quad at a time; lines fitted through them intersect in the measured corners.
@@ -239,33 +248,18 @@ function measureCorners(img: Img, quad: readonly Vec2[], plate: number): Vec2[] 
 				const dir = cx > px ? 1 : -1;
 				const x0 = Math.round(px) - 6 * dir;
 				const white = lum(img, Math.round(px) + 6 * dir, y);
-				const mid = (plate + white) / 2;
-				for (let k = 0; k < 12; k++) {
-					const xa = x0 + k * dir;
-					const va = lum(img, xa, y);
-					const vb = lum(img, xa + dir, y);
-					if (va < mid && vb >= mid) {
-						const s = (mid - va) / (vb - va);
-						pts.push([xa + 0.5 + s * dir, y + 0.5]);
-						break;
-					}
-				}
+				// Edge = window start + the summed dark share of its pixels (exact for any ramp width and phase).
+				let dark = 0;
+				for (let k = 0; k < 12; k++) dark += 1 - coverage(lum(img, x0 + k * dir, y), plate, white);
+				pts.push([(dir > 0 ? x0 : x0 + 1) + dir * dark, y + 0.5]);
 			} else {
 				const x = Math.floor(px);
 				const dir = cy > py ? 1 : -1;
 				const y0 = Math.round(py) - 6 * dir;
 				const white = lum(img, x, Math.round(py) + 6 * dir);
-				const mid = (plate + white) / 2;
-				for (let k = 0; k < 12; k++) {
-					const ya = y0 + k * dir;
-					const va = lum(img, x, ya);
-					const vb = lum(img, x, ya + dir);
-					if (va < mid && vb >= mid) {
-						const s = (mid - va) / (vb - va);
-						pts.push([x + 0.5, ya + 0.5 + s * dir]);
-						break;
-					}
-				}
+				let dark = 0;
+				for (let k = 0; k < 12; k++) dark += 1 - coverage(lum(img, x, y0 + k * dir), plate, white);
+				pts.push([x + 0.5, (dir > 0 ? y0 : y0 + 1) + dir * dark]);
 			}
 		}
 		expect(pts.length).toBeGreaterThan(8);
@@ -293,11 +287,23 @@ function measureCorners(img: Img, quad: readonly Vec2[], plate: number): Vec2[] 
 	return corners;
 }
 
+/** Largest distance between measured and evaluated corners, over the corners inside the frame (others are extrapolated). */
+function cornerError(corners: readonly Vec2[], quad: readonly Vec2[]): number {
+	let max = 0;
+	for (const [i, q] of quad.entries()) {
+		if (q[0] < 4 || q[1] < 4 || q[0] > W - 4 || q[1] > H - 4) continue;
+		max = Math.max(max, Math.hypot(corners[i]![0] - q[0], corners[i]![1] - q[1]));
+	}
+	return max;
+}
+
 /** Max colour error over pixels whose card point is ≥ 3 px away from every card boundary. */
 function colourError(img: Img, map: Mat3, opacity: number) {
 	const inv = invertMat3(map)!;
 	let max = 0;
 	let count = 0;
+	let sum = 0;
+	let where = '';
 	for (let y = 0; y < img.h; y += 3)
 		for (let x = 0; x < img.w; x += 3) {
 			const [u, v] = applyMat3(inv, [x + 0.5, y + 0.5]);
@@ -306,11 +312,15 @@ function colourError(img: Img, map: Mat3, opacity: number) {
 			const o = (y * img.w + x) * 3;
 			for (let k = 0; k < 3; k++) {
 				const want = c[k]! * opacity + PLATE[k]! * (1 - opacity);
-				max = Math.max(max, Math.abs(img.rgb[o + k]! - want));
+				const e = Math.abs(img.rgb[o + k]! - want);
+				if (e > max)
+					where = `(${x},${y}) u ${u.toFixed(1)} v ${v.toFixed(1)} ch ${k} got ${img.rgb[o + k]} want ${want}`;
+				max = Math.max(max, e);
+				sum += e;
 			}
 			count++;
 		}
-	return { max, count };
+	return { max, count, where, mean: sum / Math.max(1, 3 * count) };
 }
 
 /** Mean SSIM (all planes, ffmpeg `ssim`) of frame `frame` of two files. */
@@ -513,7 +523,7 @@ describe('planner: keyframed layers and levels are native', () => {
 });
 
 describe('native export of keyframed Motion and Opacity (S03:ENG-030/032)', () => {
-	it('every sampled frame matches the evaluated layer: corners ≤ 1 px, colour ≤ 4/255; LGPL filters only', async () => {
+	it('every sampled frame matches the evaluated layer: corners ≤ 0.1 px (sub-pixel), colour ≤ 8/255; LGPL filters only', async () => {
 		const { d, clip } = await cardDoc(app);
 		const settings = proresSettings(d.seqId);
 		const planned = await coreServices(app).exports.plan({
@@ -531,7 +541,13 @@ describe('native export of keyframed Motion and Opacity (S03:ENG-030/032)', () =
 		});
 		for (const name of GPL_FILTERS)
 			expect(g.filter, name).not.toMatch(new RegExp(`(^|[\\[\\],;\\s])${name}(=|[,;\\[\\s]|$)`, 'm'));
-		expect(g.filter).toContain('eval=frame');
+		// Keyframed Motion: the layer is drawn sub-pixel and streamed on a pipe (stream/plan.ts).
+		expect(g.streams).toHaveLength(1);
+		expect(g.args.join(' ')).toContain('pipe:3');
+		for (const name of GPL_FILTERS)
+			expect(g.streams[0]!.plan.filter, name).not.toMatch(
+				new RegExp(`(^|[\\[\\],;\\s])${name}(=|[,;\\[\\s]|$)`, 'm'),
+			);
 
 		const started = Date.now();
 		const { done, out } = await runExport(d, settings);
@@ -546,20 +562,22 @@ describe('native export of keyframed Motion and Opacity (S03:ENG-030/032)', () =
 			const layer = resolveSceneAt(planned.snapshot, f).find((l) => l.clip.clipId === clip)!;
 			const quad = layer.props.quad;
 			const corners = measureCorners(img, quad, PLATE[0]);
-			const err = Math.max(...corners.map((c, i) => Math.hypot(c[0] - quad[i]![0], c[1] - quad[i]![1])));
+			const err = cornerError(corners, quad);
 			const col = colourError(img, layerMapOf(layer.props), layer.props.opacity / 100);
 			worst = Math.max(worst, err);
 			worstColour = Math.max(worstColour, col.max);
 			expect(col.count).toBeGreaterThan(1000);
-			expect(err, `frame ${f} corners`).toBeLessThanOrEqual(1);
-			expect(col.max, `frame ${f} colour`).toBeLessThanOrEqual(4);
+			expect(err, `frame ${f} corners`).toBeLessThanOrEqual(0.1);
+			// ProRes 4444 is lossy: DCT ringing next to saturated edges reaches a few code values.
+			expect(col.max, `frame ${f} colour ${col.where}`).toBeLessThanOrEqual(8);
+			expect(col.mean, `frame ${f} mean colour error`).toBeLessThan(1);
 		}
 		report(
 			`[anim] geometry: worst corner error ${worst.toFixed(3)} px, worst colour error ${worstColour}/255`,
 		);
 	}, 300_000);
 
-	it('keyframed crop edges with keyframed non-uniform scale: the visible rect follows the evaluated quad', async () => {
+	it('keyframed crop edges with keyframed non-uniform scale: the visible rect follows the evaluated quad (≤ 0.1 px)', async () => {
 		const d = new DocBuilder();
 		d.tx([
 			{ type: 'clip.addSolid', at: 0, duration: 48, track: 'V1', color: [20 / 255, 20 / 255, 20 / 255, 1] },
@@ -597,12 +615,172 @@ describe('native export of keyframed Motion and Opacity (S03:ENG-030/032)', () =
 			const layer = resolveSceneAt(planned.snapshot, f).find((l) => l.clip.clipId === s)!;
 			const quad = layer.props.quad;
 			const corners = measureCorners(img, quad, PLATE[0]);
-			const err = Math.max(...corners.map((c, i) => Math.hypot(c[0] - quad[i]![0], c[1] - quad[i]![1])));
+			const err = cornerError(corners, quad);
 			worst = Math.max(worst, err);
-			expect(err, `frame ${f} corners`).toBeLessThanOrEqual(1);
+			expect(err, `frame ${f} corners`).toBeLessThanOrEqual(0.1);
 		}
 		report(`[anim] crop + non-uniform scale: worst corner error ${worst.toFixed(3)} px`);
 	}, 300_000);
+});
+
+/** Frames of a region of a file as RGB (`w×h` each). */
+function decodeRegion(file: string, x: number, y: number, w: number, h: number): Img[] {
+	const r = spawnSync(
+		'ffmpeg',
+		[
+			'-v',
+			'error',
+			'-i',
+			file,
+			'-vf',
+			`crop=${w}:${h}:${x}:${y}`,
+			'-pix_fmt',
+			'rgb24',
+			'-f',
+			'rawvideo',
+			'pipe:1',
+		],
+		{ maxBuffer: 1 << 30 },
+	);
+	if (r.status !== 0) throw new Error(`decode failed: ${r.stderr}`);
+	const size = w * h * 3;
+	return Array.from({ length: r.stdout.length / size }, (_, i) => ({
+		rgb: r.stdout.subarray(i * size, (i + 1) * size),
+		w,
+		h,
+	}));
+}
+
+/** Intensity-weighted centroid (pixel centres) of what is brighter than the plate. */
+function centroid(img: Img, plate: number): [number, number] {
+	let s = 0;
+	let sx = 0;
+	let sy = 0;
+	for (let y = 0; y < img.h; y++)
+		for (let x = 0; x < img.w; x++) {
+			const v = Math.max(0, lum(img, x, y) - plate);
+			s += v;
+			sx += v * (x + 0.5);
+			sy += v * (y + 0.5);
+		}
+	return [sx / s, sy / s];
+}
+
+describe('sub-pixel motion (no whole-pixel stepping)', () => {
+	it('the layer kernel moves edges continuously at any scale (drawn frames, no ffmpeg): ≤ 0.01 px RMS', async () => {
+		for (const scale of [20, 37, 50, 63, 80, 95, 100, 130]) {
+			const d = new DocBuilder();
+			d.tx([{ type: 'clip.addSolid', at: 0, duration: 60, track: 'V1', color: [0.08, 0.08, 0.08, 1] }]);
+			const s = d.tx([
+				{ type: 'clip.addSolid', at: 0, duration: 60, track: 'V2', color: [1, 1, 1, 1], ref: '$s' },
+			]).refs.$s!;
+			const t = (p: string) => ['clip', s, 'transform', p];
+			// The left edge sits 100.3 px from the frame's edge and moves 2.95 px in 60 frames.
+			d.tx([
+				{ type: 'param.set', target: t('scale'), value: scale },
+				{
+					type: 'keyframe.add',
+					target: t('position'),
+					at: { sequenceFrame: 0 },
+					value: [9.6 * scale + 100.3, 500.6],
+				},
+				{
+					type: 'keyframe.add',
+					target: t('position'),
+					at: { sequenceFrame: 59 },
+					value: [9.6 * scale + 103.25, 500.6],
+				},
+			]);
+			const planned = await coreServices(app).exports.plan({
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				settings: {
+					...h264Settings(d.seqId),
+					range: { type: 'custom', startFrame: 0, endFrame: 60 },
+				} as never,
+			});
+			const g = buildNativeGraph({
+				snapshot: planned.snapshot,
+				output: planned.output,
+				outputFile: '/tmp/x.mp4',
+				sources: { media: () => null, mgMaster: () => null },
+				threads: 2,
+			});
+			expect(g.streams).toHaveLength(1);
+			const p = g.streams[0]!.plan;
+			const src = new Uint8Array(p.srcW * p.srcH * 4).fill(255);
+			const dst = new Uint8Array(p.outW * p.outH * 4);
+			let sq = 0;
+			for (let k = 0; k < 60; k++) {
+				const f = p.frames[k]!;
+				drawLayer(src, p.srcW, f.cw, f.ch, f.clip, dst, p.outW, p.outH, f.inv, f.opacity, f.rect);
+				// Left edge on the frame's row 500: c − Σ coverage left of c (c well inside the layer).
+				const row = 500 - p.offsets.y[k]!;
+				const c = 160 - p.offsets.x[k]!;
+				let cov = 0;
+				for (let x = 0; x < c; x++) cov += dst[(row * p.outW + x) * 4 + 3]! / 255;
+				sq += (c - cov + p.offsets.x[k]! - (100.3 + (k * 2.95) / 59)) ** 2;
+			}
+			const rms = Math.sqrt(sq / 60);
+			expect(rms, `scale ${scale} %`).toBeLessThanOrEqual(0.01);
+		}
+	}, 600_000);
+
+	it('a 0.05 px/frame pan over 300 frames moves smoothly: per-frame centroid ≤ 0.05 px RMS from the evaluated motion, monotonic, no jumps', async () => {
+		const d = new DocBuilder();
+		d.tx([
+			{ type: 'clip.addSolid', at: 0, duration: 300, track: 'V1', color: [20 / 255, 20 / 255, 20 / 255, 1] },
+		]);
+		const s = d.tx([
+			{ type: 'clip.addSolid', at: 0, duration: 300, track: 'V2', color: [1, 1, 1, 1], ref: '$s' },
+		]).refs.$s!;
+		const at = (f: number) => ({ sequenceFrame: f });
+		const t = (p: string) => ['clip', s, 'transform', p];
+		// A 384×216 white card (20 % of the 1080p solid), panned 15 px right over 300 frames, on a fractional y.
+		d.tx([
+			{ type: 'param.set', target: t('scale'), value: 20 },
+			{ type: 'keyframe.add', target: t('position'), at: at(0), value: [800.3, 500.6] },
+			{ type: 'keyframe.add', target: t('position'), at: at(299), value: [815.25, 500.6] },
+		]);
+		const settings = { ...proresSettings(d.seqId), range: { type: 'custom', startFrame: 0, endFrame: 300 } };
+		const planned = await coreServices(app).exports.plan({
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			settings: settings as never,
+		});
+		expect(planned.plan.path).toBe('native');
+		const { out } = await runExport(d, settings);
+		const R = { x: 560, y: 360, w: 520, h: 280 };
+		const frames = decodeRegion(out, R.x, R.y, R.w, R.h);
+		expect(frames).toHaveLength(300);
+		const got = frames.map((img) => centroid(img, PLATE[0]).map((v, i) => v + (i ? R.y : R.x)));
+		const want = Array.from({ length: 300 }, (_, f) => {
+			const q = resolveSceneAt(planned.snapshot, f).find((l) => l.clip.clipId === s)!.props.quad;
+			return [(q[0][0] + q[2][0]) / 2, (q[0][1] + q[2][1]) / 2];
+		});
+		let sq = 0;
+		let worstStep = 0;
+		let minStep = Number.POSITIVE_INFINITY;
+		let worstY = 0;
+		for (let f = 0; f < 300; f++) {
+			sq += (got[f]![0]! - want[f]![0]!) ** 2;
+			worstY = Math.max(worstY, Math.abs(got[f]![1]! - want[f]![1]!));
+			if (f > 0) {
+				const step = got[f]![0]! - got[f - 1]![0]!;
+				const wantStep = want[f]![0]! - want[f - 1]![0]!;
+				worstStep = Math.max(worstStep, Math.abs(step - wantStep));
+				minStep = Math.min(minStep, step);
+			}
+		}
+		const rms = Math.sqrt(sq / 300);
+		report(
+			`[subpixel] 0.05 px/frame pan, 300 frames: x RMS ${rms.toFixed(4)} px, worst step error ${worstStep.toFixed(4)} px, smallest step ${minStep.toFixed(4)} px, worst y error ${worstY.toFixed(4)} px`,
+		);
+		expect(rms).toBeLessThanOrEqual(0.05);
+		expect(minStep).toBeGreaterThan(0); // monotonic
+		expect(worstStep).toBeLessThan(0.05); // no whole-pixel (or half-pixel) jumps
+		expect(worstY).toBeLessThanOrEqual(0.05);
+	}, 600_000);
 });
 
 describe('native export of keyframed audio levels (S01:FX-010)', () => {
@@ -736,6 +914,11 @@ describe.runIf(REMOTION)('native vs Remotion render of the keyframed fixture (RE
 		});
 		const native = await exportWith(d, 'native');
 		const remotion = await exportWith(d, 'remotion');
+		// NATIVE_ANIM_KEEP=<dir>: keep both renders for inspection.
+		if (process.env.NATIVE_ANIM_KEEP) {
+			copyFileSync(native, join(process.env.NATIVE_ANIM_KEEP, `native-${frames}-${Date.now()}.mov`));
+			copyFileSync(remotion, join(process.env.NATIVE_ANIM_KEEP, `remotion-${frames}-${Date.now()}.mov`));
+		}
 		const a = decodeAll(native);
 		const b = decodeAll(remotion);
 		expect(a).toHaveLength(frames);
@@ -750,12 +933,7 @@ describe.runIf(REMOTION)('native vs Remotion render of the keyframed fixture (RE
 			out.ssim.push(ssim(native, remotion, f));
 			out.share.push(within(a[f]!, b[f]!, 8));
 			const quad = resolveSceneAt(planned.snapshot, f).find((l) => l.clip.clipId === clip)!.props.quad;
-			const err = (img: Img) =>
-				Math.max(
-					...measureCorners(img, quad, PLATE[0]).map((c, i) =>
-						Math.hypot(c[0] - quad[i]![0], c[1] - quad[i]![1]),
-					),
-				);
+			const err = (img: Img) => cornerError(measureCorners(img, quad, PLATE[0]), quad);
 			out.native.push(err(a[f]!));
 			out.remotion.push(err(b[f]!));
 		}
@@ -767,6 +945,59 @@ describe.runIf(REMOTION)('native vs Remotion render of the keyframed fixture (RE
 			line: `SSIM min ${min(out.ssim)} mean ${mean(out.ssim)}; share within 8/255 min ${min(out.share)} mean ${mean(out.share)}; corner error vs evaluated quad: native max ${max(out.native)} px, Remotion max ${max(out.remotion)} px`,
 		};
 	}
+
+	it('lossless stills of the keyframed card (native PNG vs Remotion renderStill PNG): SSIM, corners', async () => {
+		// The export comparison below also measures Remotion's ProRes 422 HQ intermediate (ringing next to saturated
+		// edges); stills compare the two renderers alone.
+		const { d, clip } = await cardDoc(engine.app, hostH());
+		const svc = coreServices(engine.app);
+		const ssims: number[] = [];
+		const native: number[] = [];
+		const remotion: number[] = [];
+		for (const f of [0, 6, 12, 18, 24, 30, 36, 42, 47]) {
+			const r = await engine.app.inject({
+				method: 'POST',
+				url: '/api/stills',
+				headers: { ...JSON_H, ...hostH() },
+				payload: { envelope: d.envelope(), sequenceId: d.seqId, frame: f },
+			});
+			const queue = svc.queue;
+			await until(() => ['succeeded', 'failed'].includes(queue.get(r.json().id)?.state ?? ''), 600_000, 100);
+			const done = queue.get(r.json().id)!;
+			expect(done.state, JSON.stringify(done.error)).toBe('succeeded');
+			expect(done.result, JSON.stringify(done.result)).toMatchObject({ renderPath: 'native' });
+			const mine = join(svc.config.paths.rendersDir, done.id, 'output.png');
+			const planned = await svc.exports.plan({
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				settings: {
+					...proresSettings(d.seqId),
+					range: { type: 'custom', startFrame: f, endFrame: f + 1 },
+				} as never,
+			});
+			const ref = join(tempAppdir('jasper-anim-ref-'), 'ref.png');
+			await svc.remotion.renderStill({
+				inputProps: (
+					svc.exports as unknown as { remotionProps(p: unknown): Record<string, unknown> }
+				).remotionProps(planned),
+				output: ref,
+				frame: 0,
+				signal: new AbortController().signal,
+			});
+			ssims.push(ssim(mine, ref, 0));
+			if (process.env.NATIVE_ANIM_KEEP) {
+				copyFileSync(mine, join(process.env.NATIVE_ANIM_KEEP, `still-native-${f}.png`));
+				copyFileSync(ref, join(process.env.NATIVE_ANIM_KEEP, `still-remotion-${f}.png`));
+			}
+			const quad = resolveSceneAt(planned.snapshot, f).find((l) => l.clip.clipId === clip)!.props.quad;
+			native.push(cornerError(measureCorners(decodeAll(mine)[0]!, quad, PLATE[0]), quad));
+			remotion.push(cornerError(measureCorners(decodeAll(ref)[0]!, quad, PLATE[0]), quad));
+		}
+		report(
+			`[anim parity stills] SSIM min ${Math.min(...ssims).toFixed(4)} mean ${(ssims.reduce((a, b) => a + b, 0) / ssims.length).toFixed(4)}; corner error vs evaluated quad: native max ${Math.max(...native).toFixed(3)} px, Remotion max ${Math.max(...remotion).toFixed(3)} px`,
+		);
+		for (const v of ssims) expect(v).toBeGreaterThanOrEqual(0.98);
+	}, 1_800_000);
 
 	it('every frame of the keyframed card: SSIM ≥ 0.98 (FX-040), like a static layer of the M1 native path', async () => {
 		const { d, clip } = await cardDoc(engine.app, hostH());

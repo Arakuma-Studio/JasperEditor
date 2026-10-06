@@ -8,6 +8,7 @@
 import type { TransitionSpec } from '../../transitions.ts';
 import { PREMIERE_TRANSITIONS } from './premiere-transitions.ts';
 import { SAPPHIRE_DISSOLVE_TRANSITIONS } from './sapphire-dissolves.ts';
+import { SAPPHIRE_SWISH_OTHER_TRANSITIONS } from './sapphire-swish-other.ts';
 import { SAPPHIRE_WIPES_OTHER_TRANSITIONS } from './sapphire-wipes-other.ts';
 
 export * from './define.ts';
@@ -23,6 +24,7 @@ export const TRANSITION_FAMILIES: readonly {
 	{ file: 'premiere-transitions', idPrefix: 'jasper.', transitions: PREMIERE_TRANSITIONS },
 	{ file: 'sapphire-dissolves', idPrefix: 'jasper.s.', transitions: SAPPHIRE_DISSOLVE_TRANSITIONS },
 	{ file: 'sapphire-wipes-other', idPrefix: 'jasper.s.', transitions: SAPPHIRE_WIPES_OTHER_TRANSITIONS },
+	{ file: 'sapphire-swish-other', idPrefix: 'jasper.s.', transitions: SAPPHIRE_SWISH_OTHER_TRANSITIONS },
 ];
 
 /** Every GPU transition of the catalogue (registered by default). */
