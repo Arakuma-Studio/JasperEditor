@@ -1,4 +1,5 @@
 // Derived data (S01:SES-010): computed from the document, memoized by reference, never stored.
+import { isDraft } from 'immer';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, Sequence, Track } from '../schema/sequence.ts';
 import { contentSpanFlicks, flicksPerFrame, type Rational } from '../time.ts';
@@ -14,11 +15,16 @@ export type TrackIndex = {
 
 const indexCache = new WeakMap<object, TrackIndex>();
 
-/** Per-track sorted clip lists, memoized by the `clips` record identity (S01:SES-010). */
+/**
+ * Per-track sorted clip lists, memoized by the `clips` record identity (S01:SES-010). Never memoized for an Immer
+ * draft: a transaction mutates its draft `clips` record in place (same proxy identity), so a cached index would go
+ * stale between the commands of one transaction (a clip added by one command was invisible to the next).
+ */
 function sequenceIndex(
 	seq: Pick<Sequence, 'clips' | 'videoTracks' | 'audioTracks' | 'captionTracks'>,
 ): TrackIndex {
-	const cached = indexCache.get(seq.clips);
+	const draft = isDraft(seq.clips);
+	const cached = draft ? undefined : indexCache.get(seq.clips);
 	if (cached) return cached;
 	const byTrack = new Map<string, Clip[]>();
 	for (const t of allTracks(seq)) byTrack.set(t.id, []);
@@ -32,7 +38,7 @@ function sequenceIndex(
 	}
 	for (const list of byTrack.values()) list.sort((a, b) => a.start - b.start || a.id.localeCompare(b.id));
 	const idx = { byTrack };
-	indexCache.set(seq.clips, idx);
+	if (!draft) indexCache.set(seq.clips, idx);
 	return idx;
 }
 
@@ -117,13 +123,14 @@ export function resolveTrackRef(seq: Sequence, ref: string): string | null {
 
 const durationCache = new WeakMap<object, number>();
 
-/** Sequence duration = max clip end, or 0 (S01:TIME-007). */
+/** Sequence duration = max clip end, or 0 (S01:TIME-007). Not memoized for Immer drafts (see `sequenceIndex`). */
 export function sequenceDuration(seq: Pick<Sequence, 'clips'>): number {
-	const cached = durationCache.get(seq.clips);
+	const draft = isDraft(seq.clips);
+	const cached = draft ? undefined : durationCache.get(seq.clips);
 	if (cached !== undefined) return cached;
 	let end = 0;
 	for (const c of Object.values(seq.clips)) end = Math.max(end, clipEnd(c));
-	durationCache.set(seq.clips, end);
+	if (!draft) durationCache.set(seq.clips, end);
 	return end;
 }
 
