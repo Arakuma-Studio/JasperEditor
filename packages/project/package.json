@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "immer": "^11.1.0",
+    "path-bool": "1.0.4",
     "zod": "^4.1.0"
   }
 }
