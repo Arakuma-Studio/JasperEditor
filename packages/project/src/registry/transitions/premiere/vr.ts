@@ -66,14 +66,14 @@ vec4 vr_side(int side, vec2 frameUv) { return side == 0 ? texture(u_from, frameU
 `,
 };
 
-/** Immersive Video ▸ VR Iris Wipe: B opens as a circle on the sphere around a target direction. */
+/** Immersive Video ▸ VR Iris Wipe: B opens as a round iris on the sphere around a target direction. */
 export const VR_IRIS_WIPE = defineShaderTransition({
 	id: 'jasper.vr-iris-wipe',
 	label: 'VR Iris Wipe',
 	bin,
 	description:
-		'For 360° video: the incoming clip opens as a circle on the sphere around a target direction, with a feathered edge.',
-	keywords: kw('iris', 'circle', 'wipe'),
+		'For 360° video: the incoming clip opens as a round iris on the sphere around a target direction, with a feathered edge.',
+	keywords: kw('iris', 'round', 'wipe'),
 	params: [...targetParams(), fxParam.angle('feather', 'Feather', 4), layoutParam()],
 	gpu: {
 		passes: [

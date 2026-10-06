@@ -226,7 +226,7 @@ export const SHAPE_DISSOLVE = defineShaderTransition({
 	bin,
 	description:
 		'A patterned dissolve: a grid of shapes grows across the frame in a direction, revealing the incoming clip.',
-	keywords: ['shape', 'pattern', 'dissolve', 'circles', 'dots', 'halftone'],
+	keywords: ['shape', 'pattern', 'dissolve', 'dots', 'halftone', 'stars'],
 	params: [
 		fxParam.choice('shape', 'Shape', SHAPES, SHAPE_LABELS, 'circle'),
 		fxParam.pixels('size', 'Size', 80, 400),
