@@ -54,10 +54,28 @@ export type LayerProps = {
 	 * GPU): the layer's picture goes to the transition stage instead of the screen (fx/transition.tsx).
 	 */
 	transition?: { progress: number; side: 'out' | 'in'; tap?: TransitionTap };
+	/**
+	 * keyframes-blend: the layer is part of the GL compositor's group at this frame (a blend mode CSS cannot draw
+	 * exactly sits on or above it): its picture goes to the compositor stage (fx/composite.tsx) instead of the
+	 * screen, like a transition side's.
+	 */
+	composite?: { tap: LayerTap };
+};
+
+/** Where a captured layer delivers its picture (the layer's fx canvas) and its placement. */
+export type LayerTap = {
+	/** Identity of the capture (`out` / `in` for transition sides, the clip id for the compositor). */
+	readonly side: string;
+	deliver(
+		picture: CanvasImageSource,
+		width: number,
+		height: number,
+		meta: { compToCanvas: readonly number[] | null; opacity: number },
+	): void;
 };
 
 /** Where a side of a GPU transition delivers its picture (the layer's fx canvas) and its placement. */
-export type TransitionTap = {
+export type TransitionTap = LayerTap & {
 	readonly side: 'out' | 'in';
 	deliver(
 		picture: CanvasImageSource,

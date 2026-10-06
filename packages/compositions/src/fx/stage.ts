@@ -36,7 +36,7 @@ import { useContext, useMemo } from 'react';
 import { cancelRender, Internals } from 'remotion';
 import { ColorDocContext, referencedMedia, useLutAssets } from '../color/chain.ts';
 import { bakedRunLut, loadedLutAsset, lutUrlKey } from '../color/luts.ts';
-import type { LayerProps, TransitionTap } from '../types.ts';
+import type { LayerProps, LayerTap } from '../types.ts';
 import { type FxBypass, type FxCanvasLayout, fxCanvasLayout, type LayerFxPlan, planLayerFx } from './plan.ts';
 import { fxEffectRegistry } from './registry.ts';
 import { fxStatus, useFxStatus } from './status.ts';
@@ -65,7 +65,7 @@ export type FxPreparedStep =
 	| {
 			kind: 'tap';
 			key: string;
-			tap: TransitionTap;
+			tap: LayerTap;
 			meta: { compToCanvas: readonly number[] | null; opacity: number };
 	  };
 
@@ -131,7 +131,8 @@ export function useLayerFx(
 	const effects = opts.effects ?? props.effects;
 	const box = props.box;
 	// Transition framework: a side of a GPU transition captures its picture for the stage.
-	const tap = layer.transition?.tap ?? null;
+	// keyframes-blend: a layer of the GL compositor's group captures its picture the same way.
+	const tap: LayerTap | null = layer.transition?.tap ?? layer.composite?.tap ?? null;
 	const capture = !!tap;
 	const colorBypass = doc.isPreview && doc.bypass.has(clip.clipId);
 	const canRun = opts.canRun ?? true;

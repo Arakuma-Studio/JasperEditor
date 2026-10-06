@@ -21,14 +21,26 @@ import {
 	clipContentTime,
 	fadeFactor,
 	flicksPerFrame,
+	isCssBlend,
 	type RenderVisualClip,
 	resolveCachedLayerProps,
 	transitionSpec,
 } from '@jasper/project';
 import { type ComponentType, memo, useContext, useMemo, useRef } from 'react';
-import { AbsoluteFill, Freeze, Sequence, useCurrentFrame } from 'remotion';
+import { AbsoluteFill, cancelRender, Freeze, Sequence, useCurrentFrame } from 'remotion';
 import { ColorDocContext, type ColorDocValue } from './color/chain.ts';
 import { FontsReadyContext, useFontsReadyState, useLayerFontsReady } from './fonts.ts';
+import {
+	CompositeChip,
+	CompositeContext,
+	type CompositeContextValue,
+	CompositeHub,
+	CompositeStage,
+	compositeRunMode,
+	makeGroupCache,
+	useCompositeTap,
+} from './fx/composite.tsx';
+import { type CompositeTrackInput, hasGlBlend } from './fx/composite-plan.ts';
 import { useFxStatus } from './fx/status.ts';
 import { fxRemapFrame, hasTimeDependentFx } from './fx/time.ts';
 import {
@@ -99,7 +111,8 @@ function layerViewEqual(a: ViewProps, b: ViewProps): boolean {
 		a.options !== b.options ||
 		a.fps !== b.fps ||
 		a.fonts !== b.fonts ||
-		a.transition !== b.transition
+		a.transition !== b.transition ||
+		a.composite !== b.composite
 	)
 		return false;
 	if (a.frameDependent || b.frameDependent)
@@ -147,6 +160,12 @@ const ClipLayer = memo(function ClipLayer({
 		: 0;
 	const tap = gpuSide ? gpuSide.hub.tap(gpuSide.side) : null;
 	const transition = useMemo(() => (tap ? { progress, side: tap.side, tap } : undefined), [tap, progress]);
+	// keyframes-blend: a member of the GL compositor's group at this frame hands its picture to the compositor.
+	const compositeTap = useCompositeTap(clip.clipId, frame);
+	const composite = useMemo(
+		() => (compositeTap && !gpuSide ? { tap: compositeTap } : undefined),
+		[compositeTap, gpuSide],
+	);
 	// Transition ramps multiply the opacity; outside a ramp the (cached) props object is passed through.
 	const fade =
 		fadeFactor(clip.fades, frame) *
@@ -179,6 +198,7 @@ const ClipLayer = memo(function ClipLayer({
 					options={options}
 					fonts={doc.fonts}
 					transition={transition}
+					composite={composite}
 				/>
 			</Freeze>
 		);
@@ -195,9 +215,52 @@ const ClipLayer = memo(function ClipLayer({
 			options={options}
 			fonts={doc.fonts}
 			transition={transition}
+			composite={composite}
 		/>
 	);
 });
+
+/** A track's transition matte (the black of a dip to black); captured by the compositor inside its group. */
+function MatteLayer({ id, color, start }: { id: string; color: string; start: number }) {
+	const frame = start + useCurrentFrame();
+	const captured = useCompositeTap(`matte:${id}`, frame);
+	return (
+		<AbsoluteFill data-transition-matte={id} style={captured ? undefined : { backgroundColor: color }} />
+	);
+}
+
+/**
+ * The compositor's slot in a track: draws the stage at the frames where this track is the group's top (or, in the
+ * Player's fallback, the chip; renders cancel there).
+ */
+function CompositeSlot({
+	trackIndex,
+	offset,
+	comp,
+	isPreview,
+}: {
+	trackIndex: number;
+	offset: number;
+	comp: { width: number; height: number };
+	isPreview: boolean;
+}) {
+	const ctx = useContext(CompositeContext);
+	const frame = useCurrentFrame() + offset;
+	const group = ctx?.groupAt(frame) ?? null;
+	if (!ctx || !group || group.trackIndex !== trackIndex) return null;
+	if (ctx.mode.mode === 'fallback') {
+		if (!isPreview)
+			cancelRender(
+				new Error(
+					ctx.mode.reason.includes('WebGL2') || ctx.mode.reason.includes('context lost')
+						? `WEBGL_UNAVAILABLE: ${ctx.mode.reason}`
+						: `BLEND_UNSUPPORTED: ${ctx.mode.reason}`,
+				),
+			);
+		return <CompositeChip text={`${ctx.mode.reason} — previewed as Normal`} />;
+	}
+	return <CompositeStage group={group} frame={frame} comp={comp} />;
+}
 
 export function SequenceComposition({ doc, options }: SequenceCompositionProps) {
 	const root = useRef<HTMLDivElement>(null);
@@ -228,7 +291,7 @@ export function SequenceComposition({ doc, options }: SequenceCompositionProps) 
 				// Layer renders (bakes of single clips) draw no stages, as no mattes.
 				const byId = new Map(clips.map((c) => [c.clipId, c]));
 				const sides = new Map<string, TransitionSideEntry[]>();
-				const stages: (TransitionSideEntry & { blendMode?: string })[] = [];
+				const stages: (TransitionSideEntry & { blendMode?: string; blendModeId: string })[] = [];
 				for (const tr of options.layerFilter ? [] : (t.transitions ?? [])) {
 					const spec = transitionSpec(tr.effectId);
 					if (!spec) continue;
@@ -246,8 +309,17 @@ export function SequenceComposition({ doc, options }: SequenceCompositionProps) 
 						sides.set(clip.clipId, list);
 					}
 					const modes = new Set(sideClips.map((x) => x.clip.blendMode));
-					const blend = modes.size === 1 ? blendModeCss([...modes][0]!) : undefined;
-					stages.push({ t: tr, spec, side: 'in', mode, hub, ...(blend ? { blendMode: blend } : {}) });
+					const blendModeId = modes.size === 1 ? [...modes][0]! : 'normal';
+					const blend = blendModeCss(blendModeId);
+					stages.push({
+						t: tr,
+						spec,
+						side: 'in',
+						mode,
+						hub,
+						blendModeId: mode.mode === 'gpu' ? blendModeId : 'normal',
+						...(blend ? { blendMode: blend } : {}),
+					});
 				}
 				return {
 					trackId: t.trackId,
@@ -264,6 +336,64 @@ export function SequenceComposition({ doc, options }: SequenceCompositionProps) 
 		[doc.settings.width, doc.settings.height, fps],
 	);
 	const fpf = flicksPerFrame(doc.settings.fps);
+	// keyframes-blend: the GL compositor for the blend modes CSS cannot draw exactly (fx/composite.tsx). Layer renders
+	// (bakes of single clips) composite nothing: their blend mode is applied where the bake is composited.
+	const compositeHub = useRef<CompositeHub | null>(null);
+	const composite = useMemo((): CompositeContextValue | null => {
+		if (options.layerFilter) return null;
+		const inputs: CompositeTrackInput[] = tracks.map((t) => ({
+			trackId: t.trackId,
+			mattes: t.mattes.map((m) => ({ id: m.id, start: m.start, duration: m.duration, color: m.color })),
+			clips: t.clips.map((c) => ({
+				clipId: c.clipId,
+				start: c.start,
+				duration: c.duration,
+				headHandle: c.headHandle ?? 0,
+				tailHandle: c.tailHandle ?? 0,
+				blendMode: c.blendMode,
+			})),
+			stages: t.stages.map((st) => ({
+				id: st.t.id,
+				start: st.t.start,
+				duration: st.t.duration,
+				blendMode: st.blendModeId,
+			})),
+		}));
+		if (!hasGlBlend(inputs)) return null;
+		compositeHub.current ??= new CompositeHub();
+		const isGpuSide = (clipId: string, f: number) => {
+			for (const t of tracks) {
+				const e = t.sides.get(clipId);
+				if (e?.some((x) => x.mode.mode === 'gpu' && f >= x.t.start && f < x.t.start + x.t.duration))
+					return true;
+			}
+			return false;
+		};
+		const glModes = inputs.flatMap((t) => [
+			...t.clips.map((c) => c.blendMode),
+			...t.stages.map((st) => st.blendMode),
+		]);
+		const mode = compositeRunMode(
+			tracks.flatMap((t) => t.clips),
+			doc.media,
+			{ gpu, htmlInCanvas, isPreview: options.isPreview },
+			glModes.filter((m) => !blendModeCss(m) && m !== 'normal'),
+		);
+		const groupTops = new Set(
+			inputs.flatMap((t, i) =>
+				t.clips.some((c) => !isCssBlend(c.blendMode)) || t.stages.some((st) => !isCssBlend(st.blendMode))
+					? [i]
+					: [],
+			),
+		);
+		return {
+			hub: compositeHub.current,
+			mode,
+			tracks: inputs,
+			groupTops,
+			groupAt: makeGroupCache(inputs, isGpuSide),
+		};
+	}, [tracks, doc.media, gpu, htmlInCanvas, options.isPreview, options.layerFilter]);
 	// M2 colour stage (S06): LUT assets referenced by effect params and the preview before/after bypass.
 	const color = useMemo<ColorDocValue>(
 		() => ({
@@ -276,91 +406,99 @@ export function SequenceComposition({ doc, options }: SequenceCompositionProps) 
 	return (
 		<FontsReadyContext.Provider value={fontsReady}>
 			<ColorDocContext.Provider value={color}>
-				<AbsoluteFill
-					ref={root}
-					style={{ backgroundColor: background, overflow: 'hidden', isolation: 'isolate' }}
-				>
-					{tracks.map((track) => (
-						<TransitionSidesContext.Provider key={track.trackId} value={track.sides}>
-							<AbsoluteFill data-track-id={track.trackId}>
-								{track.mattes.map((m) => (
-									<Sequence
-										key={`matte-${m.id}`}
-										from={m.start - offset}
-										durationInFrames={m.duration}
-										name="Transition matte"
-									>
-										<AbsoluteFill
-											data-transition-matte={m.id}
-											style={{ backgroundColor: rgbaCss(m.color) }}
-										/>
-									</Sequence>
-								))}
-								{track.clips.map((clip) => {
-									const head = clip.headHandle ?? 0;
-									const from = clip.start - head - offset;
-									return (
-										<Sequence
-											key={clip.clipId}
-											from={from}
-											durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
-											name={clip.name}
-											premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
-										>
-											<ClipLayer clip={clip} doc={doc} options={options} />
-										</Sequence>
-									);
-								})}
-								{track.stages.map((st) => (
-									<Sequence
-										key={`transition-${st.t.id}`}
-										from={st.t.start - offset}
-										durationInFrames={st.t.duration}
-										name={st.spec.label}
-									>
-										<TransitionStage
-											t={st.t}
-											spec={st.spec}
-											hub={st.hub}
-											mode={st.mode}
-											comp={comp}
-											flicksPerFrame={fpf}
-											isPreview={options.isPreview}
-											blendMode={st.blendMode}
-											media={doc.media}
-										/>
-									</Sequence>
-								))}
-							</AbsoluteFill>
-						</TransitionSidesContext.Provider>
-					))}
-					{doc.audioClips.map((clip) => {
-						// An audio crossfade plays the clip's handles (S10:TUI-052).
-						const head = clip.headHandle ?? 0;
-						const from = clip.start - head - offset;
-						return (
-							<Sequence
-								key={clip.clipId}
-								from={from}
-								durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
-								name={clip.clipId}
-								layout="none"
-							>
-								<AudioLayer
-									clip={clip}
-									media={doc.media[clip.mediaId] ?? null}
-									fps={fps}
-									fpsRational={doc.settings.fps}
-									options={options}
-									master={doc.master}
-									sequenceFrom={from}
-								/>
-							</Sequence>
-						);
-					})}
-					{/* Last child: every frame is captured as a fresh paint of the settled DOM (repaint.tsx). */}
-					<FrameRepaint target={root} deps={[doc, options]} />
-				</AbsoluteFill>
+				<CompositeContext.Provider value={composite}>
+					<AbsoluteFill ref={root} style={{ backgroundColor: background, overflow: 'hidden' }}>
+						{/* keyframes-blend: layers blend in their own group, onto transparency (a blend mode over nothing shows the
+					    layer as it is, as in Premiere / After Effects); the background colour is drawn behind the group. */}
+						<AbsoluteFill data-layer-stack="" style={{ isolation: 'isolate' }}>
+							{tracks.map((track, trackIndex) => (
+								<TransitionSidesContext.Provider key={track.trackId} value={track.sides}>
+									<AbsoluteFill data-track-id={track.trackId}>
+										{track.mattes.map((m) => (
+											<Sequence
+												key={`matte-${m.id}`}
+												from={m.start - offset}
+												durationInFrames={m.duration}
+												name="Transition matte"
+											>
+												<MatteLayer id={m.id} color={rgbaCss(m.color)} start={m.start} />
+											</Sequence>
+										))}
+										{track.clips.map((clip) => {
+											const head = clip.headHandle ?? 0;
+											const from = clip.start - head - offset;
+											return (
+												<Sequence
+													key={clip.clipId}
+													from={from}
+													durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
+													name={clip.name}
+													premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
+												>
+													<ClipLayer clip={clip} doc={doc} options={options} />
+												</Sequence>
+											);
+										})}
+										{track.stages.map((st) => (
+											<Sequence
+												key={`transition-${st.t.id}`}
+												from={st.t.start - offset}
+												durationInFrames={st.t.duration}
+												name={st.spec.label}
+											>
+												<TransitionStage
+													t={st.t}
+													spec={st.spec}
+													hub={st.hub}
+													mode={st.mode}
+													comp={comp}
+													flicksPerFrame={fpf}
+													isPreview={options.isPreview}
+													blendMode={st.blendMode}
+													media={doc.media}
+												/>
+											</Sequence>
+										))}
+										{composite?.groupTops.has(trackIndex) ? (
+											<CompositeSlot
+												trackIndex={trackIndex}
+												offset={offset}
+												comp={comp}
+												isPreview={options.isPreview}
+											/>
+										) : null}
+									</AbsoluteFill>
+								</TransitionSidesContext.Provider>
+							))}
+						</AbsoluteFill>
+						{doc.audioClips.map((clip) => {
+							// An audio crossfade plays the clip's handles (S10:TUI-052).
+							const head = clip.headHandle ?? 0;
+							const from = clip.start - head - offset;
+							return (
+								<Sequence
+									key={clip.clipId}
+									from={from}
+									durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
+									name={clip.clipId}
+									layout="none"
+								>
+									<AudioLayer
+										clip={clip}
+										media={doc.media[clip.mediaId] ?? null}
+										fps={fps}
+										fpsRational={doc.settings.fps}
+										options={options}
+										master={doc.master}
+										sequenceFrom={from}
+									/>
+								</Sequence>
+							);
+						})}
+						{/* Last child: every frame is captured as a fresh paint of the settled DOM (repaint.tsx). */}
+						<FrameRepaint target={root} deps={[doc, options]} />
+					</AbsoluteFill>
+				</CompositeContext.Provider>
 			</ColorDocContext.Provider>
 		</FontsReadyContext.Provider>
 	);

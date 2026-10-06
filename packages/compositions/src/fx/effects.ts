@@ -5,7 +5,7 @@
 // (DOM layers). Crop and flips are 2D passes here because inside the chain they must happen in stack order.
 import type { FxEffectPlan, Lut } from '@jasper/project';
 import { createEffect } from 'remotion';
-import type { TransitionTap } from '../types.ts';
+import type { LayerTap } from '../types.ts';
 import { type FxRunInputs, FxShaderError, fxHost, runLutPass, runShaderPlan } from './host.ts';
 import { fxStatus } from './status.ts';
 
@@ -153,7 +153,7 @@ export const fxFlip = createEffect<FxBoxParams & { horizontal: boolean }, null>(
 
 export type FxTapParams = {
 	key: string;
-	tap: TransitionTap;
+	tap: LayerTap;
 	meta: { compToCanvas: readonly number[] | null; opacity: number };
 };
 
