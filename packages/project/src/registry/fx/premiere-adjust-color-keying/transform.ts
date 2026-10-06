@@ -1,11 +1,22 @@
 // Premiere Pro "Transform" video effects (fx family premiere-adjust-color-keying): Edge Feather, Transform.
 // (Crop, Horizontal/Vertical Flip already exist.) Transform's "Use Composition's Shutter Angle" / "Shutter Angle":
-// real motion blur of the keyframed transform — the effect's params at sub-frame times over the shutter interval
-// (`ctx.paramsAt`, centred on the frame) give up to 16 transforms whose pictures are averaged. Sequences have no
-// shutter angle of their own, so with "Use Composition's Shutter Angle" on (the default, as in Premiere) the angle
-// is 0: no blur, the exact single-transform output.
+// real motion blur of the keyframed transform with the framework's adaptive shutter (wave 5, `planMotionBlur`): the
+// params at exact sub-frame times over the shutter interval (`ctx.paramsAt`, Shutter Angle / 360 frames centred on
+// the frame) give 32 key transforms, the shader takes ~1 tap per pixel of travel of the layer box corners (rotation
+// and scale included; up to 64, jittered beyond) between them. Sequences have no shutter angle of their own,
+// so with "Use Composition's Shutter Angle" on (the default, as in Premiere) the angle is 0: no blur, the exact
+// single-transform output.
 import type { EffectParams, EffectSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
+import { GLSL_MB_POSES } from '../glsl/motion-blur.ts';
+import {
+	centredShutter,
+	type MbPlan,
+	mbQualityParam,
+	mbStaticPlan,
+	mbUniforms,
+	planMotionBlur,
+} from '../motion-blur.ts';
 import { fxParam } from '../params.ts';
 import type { FxFrameContext } from '../shader.ts';
 import { bool, num, slider } from './common.ts';
@@ -77,9 +88,6 @@ export function transformInverse(p: EffectParams, size: { width: number; height:
 	return [I[0]!, I[2]!, I[1]!, I[3]!, tx, ty];
 }
 
-/** Most shutter samples of Transform's motion blur. */
-export const TRANSFORM_SHUTTER_SAMPLES = 16;
-
 /** Shutter length in frames: (Shutter Angle / 360) unless "Use Composition's Shutter Angle" (sequences: 0). */
 export function transformShutterFrames(p: EffectParams): number {
 	if (bool(p.useCompShutterAngle, true)) return 0;
@@ -87,33 +95,51 @@ export function transformShutterFrames(p: EffectParams): number {
 }
 
 /**
- * Motion-blur samples of Transform at a frame: the inverse maps and opacities of the params at
- * `frame + ((i + 0.5) / n − 0.5) · shutter` (n = 16), packed as 2 vec4 per sample ((a, b, c, d), (tx, ty, opacity,
- * valid)); n = 1 (no blur) when the shutter is 0, `paramsAt` is unavailable or the transform does not change.
+ * Motion blur of Transform at a frame (the framework's adaptive shutter): the inverse maps and opacities of the params
+ * at the shutter's key times, packed as 2 vec4 per key ((a, b, c, d), (tx, ty, opacity, valid)), and the tap count
+ * from the travel of the transformed layer box corners and centre in canvas px. `taps: 1` (no blur) when the shutter
+ * is 0, `paramsAt` is unavailable or the transform does not change.
  */
 export function transformShutterSamples(
 	p: EffectParams,
-	ctx: Pick<FxFrameContext, 'frame' | 'width' | 'height' | 'paramsAt'>,
-): { n: number; packed: number[] } {
-	const n = TRANSFORM_SHUTTER_SAMPLES;
-	const packed = new Array<number>(n * 8).fill(0);
+	ctx: Pick<FxFrameContext, 'frame' | 'width' | 'height' | 'paramsAt'> & { pxScale?: number },
+): MbPlan {
 	const shutter = transformShutterFrames(p);
-	if (!(shutter > 0) || !ctx.paramsAt) return { n: 1, packed };
-	const rows: number[][] = [];
-	for (let i = 0; i < n; i++) {
-		const q = ctx.paramsAt(ctx.frame + ((i + 0.5) / n - 0.5) * shutter);
-		const inv = transformInverse(q, ctx);
-		rows.push(
-			inv
-				? [inv[0]!, inv[1]!, inv[2]!, inv[3]!, inv[4]!, inv[5]!, num(q.opacity, 100), 1]
-				: [1, 0, 0, 1, 0, 0, 0, 0],
-		);
-	}
-	if (rows.every((r) => r.every((v, k) => v === rows[0]![k]))) return { n: 1, packed };
-	rows.forEach((r, i) => {
-		for (let k = 0; k < 8; k++) packed[i * 8 + k] = r[k]!;
+	const at = ctx.paramsAt;
+	if (!(shutter > 0) || !at) return mbStaticPlan(2);
+	const px = ctx.pxScale ?? 1;
+	const W = ctx.width;
+	const H = ctx.height;
+	const box: [number, number][] = [
+		[0, 0],
+		[W, 0],
+		[W, H],
+		[0, H],
+		[W / 2, H / 2],
+	];
+	return planMotionBlur({
+		frame: ctx.frame,
+		window: centredShutter(shutter),
+		poseAt: (f) => {
+			const q = at(f);
+			return { inv: transformInverse(q, ctx), opacity: num(q.opacity, 100) };
+		},
+		points: ({ inv }) => {
+			if (!inv) return box.map(() => [Number.NaN, Number.NaN] as [number, number]);
+			// out = A⁻¹ · (src − T), A = [[a, c], [b, d]].
+			const [a, b, c, d, tx, ty] = inv as [number, number, number, number, number, number];
+			const det = a * d - b * c;
+			return box.map(([x, y]): [number, number] => {
+				const u = x - tx;
+				const v = y - ty;
+				return [((d * u - c * v) / det) * px, ((-b * u + a * v) / det) * px];
+			});
+		},
+		pack: ({ inv, opacity }) =>
+			inv ? [inv[0]!, inv[1]!, inv[2]!, inv[3]!, inv[4]!, inv[5]!, opacity, 1] : [1, 0, 0, 1, 0, 0, 0, 0],
+		stride: 2,
+		quality: p.mbQuality,
 	});
-	return { n, packed };
 }
 
 export const TRANSFORM = defineShaderEffect({
@@ -141,6 +167,7 @@ export const TRANSFORM = defineShaderEffect({
 			{ min: 0, max: 360, step: 0.1 },
 			{ unit: 'deg', animatable: true },
 		),
+		mbQualityParam(),
 	],
 	gpu: {
 		timeInvariant: true,
@@ -151,12 +178,12 @@ export const TRANSFORM = defineShaderEffect({
 				...(inv
 					? { u_tfA: [inv[0]!, inv[1]!, inv[2]!, inv[3]!], u_tfT: [inv[4]!, inv[5]!], u_tfValid: true }
 					: { u_tfA: [1, 0, 0, 1], u_tfT: [0, 0], u_tfValid: false }),
-				u_tfN: { int: mb.n },
-				u_tfM: { vec4s: mb.packed },
+				...mbUniforms(mb),
 			};
 		},
 		passes: [
 			{
+				include: [GLSL_MB_POSES],
 				frag: /* glsl */ `
 vec4 tf_at(vec4 A, vec2 T, vec2 q) {
   vec2 s = vec2(A.x * q.x + A.z * q.y, A.y * q.x + A.w * q.y) + T;
@@ -164,16 +191,22 @@ vec4 tf_at(vec4 A, vec2 T, vec2 q) {
   return all(greaterThanEqual(n, vec2(0.0))) && all(lessThanEqual(n, vec2(1.0))) ? texture(u_source, fx_uvOfLayerNorm(n)) : vec4(0.0);
 }
 void main() {
-  if (u_tfN > 1) {
-    // Shutter Angle motion blur: the average of the transformed pictures over the shutter interval.
+  if (fx_mbOn()) {
+    // Shutter Angle motion blur: the transformed picture along the keyframed path over the shutter (adaptive taps
+    // between the key transforms), opacity included.
     vec2 q = fx_layerPx();
+    int n = fx_mbTaps();
+    float j = fx_mbPlanJitter();
     vec4 sum = vec4(0.0);
-    for (int i = 0; i < ${TRANSFORM_SHUTTER_SAMPLES}; i++) {
-      if (i >= u_tfN) break;
-      vec4 a = u_tfM[2 * i], b = u_tfM[2 * i + 1];
-      if (b.w > 0.5) sum += tf_at(a, b.xy, q) * clamp(b.z / 100.0, 0.0, 1.0);
+    float wsum = 0.0;
+    for (int i = 0; i < fx_mbDyn(FX_MB_TAP_LIMIT); i++) {
+      if (i >= n) break;
+      vec2 t = fx_mbTap(i, n, j);
+      vec4 a = fx_mbPose(0, t.x), b = fx_mbPose(1, t.x);
+      if (b.w > 0.5) sum += tf_at(a, b.xy, q) * clamp(b.z / 100.0, 0.0, 1.0) * t.y;
+      wsum += t.y;
     }
-    fragColor = sum / float(u_tfN);
+    fragColor = sum / max(wsum, 1e-6);
     return;
   }
   if (!u_tfValid) { fragColor = vec4(0.0); return; }

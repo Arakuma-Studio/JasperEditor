@@ -11,6 +11,9 @@
 //   fx/uv         fx_rot, fx_rotateAround, fx_scaleAround, fx_toPolar/fx_fromPolar, fx_deg, fx_dir, FX_PI/FX_TAU
 //   fx/blur       fx_gaussian1d, fx_box1d, fx_blur9, fx_zoomBlur, fx_gaussianWeight
 //   fx/lut        fx_lut3d, fx_lutMix (3D LUTs of `lut` media params)
+//   fx/mb         fx_mbTapCount, fx_mbJitter, fx_mbTapAt, fx_mbJitterFor, fx_mbDyn, fx_mbShutter (adaptive motion blur)
+//   fx/mb-poses   fx_mbTaps, fx_mbOn, fx_mbTap, fx_mbPose, fx_mbPlanJitter (planned shutters, needs mbUniforms;
+//                 not in GLSL_LIBRARY because it reads the planner's uniforms)
 //   fx/composite  fx_finish, fx_mixOriginal, fx_matteView, fx_lumaMatte, fx_colorDistanceMatte, fx_applyMatte,
 //                 fx_setAlpha
 // Always available without an include (the prelude): fx_canvasPx, fx_layerPx, fx_layerNorm, fx_uvOfCanvasPx,
@@ -21,6 +24,7 @@ import { GLSL_COLOR } from './color.ts';
 import { GLSL_COMPOSITE } from './composite.ts';
 import { GLSL_HASH } from './hash.ts';
 import { GLSL_LUT } from './lut.ts';
+import { GLSL_MB } from './motion-blur.ts';
 import { GLSL_NOISE } from './noise.ts';
 import { GLSL_SAMPLE, GLSL_UV } from './sample.ts';
 
@@ -30,6 +34,14 @@ export { GLSL_COLOR } from './color.ts';
 export { GLSL_COMPOSITE } from './composite.ts';
 export { GLSL_HASH } from './hash.ts';
 export { GLSL_LUT } from './lut.ts';
+export {
+	FX_MB_MAX_TAPS,
+	FX_MB_SPACING,
+	FX_MB_TAP_LIMIT,
+	FX_MB_WARP_SIZE,
+	GLSL_MB,
+	GLSL_MB_POSES,
+} from './motion-blur.ts';
 export { GLSL_NOISE } from './noise.ts';
 export { FX_EDGE_MODE_LABELS, FX_EDGE_MODES, GLSL_SAMPLE, GLSL_UV } from './sample.ts';
 
@@ -44,4 +56,5 @@ export const GLSL_LIBRARY = [
 	GLSL_BLUR,
 	GLSL_COMPOSITE,
 	GLSL_LUT,
+	GLSL_MB,
 ] as const;

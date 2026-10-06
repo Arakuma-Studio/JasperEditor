@@ -6,6 +6,7 @@ import {
 	defaultEffectRegistry,
 	type EffectParams,
 	type EffectSpec,
+	FX_MB_KEYS,
 	gpuPadding,
 	gpuPasses,
 	paramUniforms,
@@ -32,7 +33,6 @@ import {
 	lensPasses,
 	parallaxAmount,
 	SAPPHIRE_DISTORT_WARP_EFFECTS,
-	SHAKE_SAMPLES,
 	shakeParamsOf,
 	shakeUniforms,
 } from '../src/registry/fx/sapphire-distort-warp.ts';
@@ -398,15 +398,31 @@ describe('S_Shake model', () => {
 		expect(shakePose(rgb, 0.2, 1, 0).dx).toBeCloseTo(2 * shakePose(rgb, 0.2, 1, 1).dx, 12);
 	});
 
-	it('uniforms: 8 samples × 3 channels × 4 floats; motion blur spreads the shutter', () => {
+	it('uniforms: the pose of the frame per channel; motion blur plans an adaptive shutter', () => {
 		const spec = byLabel('S_Shake');
-		const u = shakeUniforms(defaults(spec), { frame: 12, fps: 30, seed: 0.4 });
-		expect(u.u_shake.floats).toHaveLength(SHAKE_SAMPLES * 12);
-		expect(u.u_shakeN).toBe(1);
+		const ctx = { frame: 12, fps: 30, seed: 0.4, width: 1920, height: 1080, pxScale: 1 };
+		const u = shakeUniforms(defaults(spec), ctx);
+		expect(u.u_shakeNow.vec4s).toHaveLength(12);
+		expect(u.u_mbPlan.ivec4[0]).toBe(1); // blur off: one tap, the unchanged single-pose path
+		expect(u.u_mbKeys.vec4s).toHaveLength(FX_MB_KEYS * 3 * 4);
 		expect(u.u_shakeRgb).toBe(false);
-		const mb = shakeUniforms(defaults(spec, { motionBlur: true }), { frame: 12, fps: 30, seed: 0.4 });
-		expect(mb.u_shakeN).toBe(SHAKE_SAMPLES);
-		expect(mb.u_shake.floats[0]).not.toBe(mb.u_shake.floats[12 * 7]);
+		const mb = shakeUniforms(defaults(spec, { motionBlur: true }), ctx);
+		expect(mb.u_mbPlan.ivec4[0]).toBeGreaterThan(1);
+		expect(mb.u_mbPlan.ivec4[2]).toBe(3); // 3 channels per key pose
+		expect(mb.u_mbKeys.vec4s).toHaveLength(FX_MB_KEYS * 3 * 4);
+		expect(mb.u_mbKeys.vec4s[4]).not.toBe(mb.u_mbKeys.vec4s[12 * (FX_MB_KEYS - 1) + 4]);
+		// The pose of the frame is unchanged by the blur; the key arrays keep their size without blur.
+		expect(mb.u_shakeNow).toEqual(u.u_shakeNow);
+		// Faster shakes take more taps; the preview scale takes proportionally fewer.
+		const fast = shakeUniforms(defaults(spec, { motionBlur: true, amplitude: 4 }), ctx).u_mbPlan.ivec4[0];
+		const slow = shakeUniforms(defaults(spec, { motionBlur: true, amplitude: 0.5 }), ctx).u_mbPlan.ivec4[0];
+		expect(fast).toBeGreaterThan(slow);
+		const half = shakeUniforms(defaults(spec, { motionBlur: true, amplitude: 0.5 }), {
+			...ctx,
+			pxScale: 0.5,
+		});
+		expect(half.u_mbPlan.ivec4[0]).toBeLessThanOrEqual(Math.ceil(slow / 2) + 1);
+		expect(shakeUniforms(defaults(spec, { motionBlur: true, amplitude: 0 }), ctx).u_mbPlan.ivec4[0]).toBe(1);
 		expect(shakeUniforms(defaults(spec, { bluePhase: 0.5 }), { frame: 0, fps: 30, seed: 0 }).u_shakeRgb).toBe(
 			true,
 		);

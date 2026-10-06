@@ -14,7 +14,17 @@
 import type { EffectParams, EffectSpec, ParamSpec } from '../effects.ts';
 import { defineShaderEffect, SAPPHIRE_BINS, type ShaderEffectInit } from './define.ts';
 import { GLSL_HASH } from './glsl/hash.ts';
+import { GLSL_MB_POSES } from './glsl/motion-blur.ts';
 import { GLSL_NOISE } from './glsl/noise.ts';
+import {
+	centredShutter,
+	type MbPlan,
+	mbKeyTimes,
+	mbQualityParam,
+	mbStaticPlan,
+	mbUniforms,
+	planMotionBlur,
+} from './motion-blur.ts';
 import { fxParam, seedParam } from './params.ts';
 import { gaussianBlurPasses } from './passes.ts';
 import {
@@ -31,10 +41,11 @@ import {
 	MAT3_IDENTITY,
 	mat3Invert,
 	mat3ToGlsl,
+	normToFrame,
 	type ShakeParams,
+	type ShakePose,
 	type ShakeStyle,
 	shakePose,
-	shutterTimes,
 	transformedBounds,
 	warpTransformForward,
 } from './sapphire-distort-warp/math.ts';
@@ -738,9 +749,6 @@ void main() { fragColor = dw_render(${WRAP}, u_filter, 2); }`,
 
 // ---------------------------------------------------------------- motion blur of keyframed warps
 
-/** Shutter samples of the keyframed-warp motion blur (S_WarpCornerPin, S_WarpPerspective). */
-export const DW_MB_SAMPLES = 8;
-
 /** Motion Blur + Mo Blur Length (frames of shutter, centred on the frame) of the keyframed warps. */
 const motionBlurParams = () => [
 	fxParam.toggle('motionBlur', 'Motion Blur', false),
@@ -748,9 +756,9 @@ const motionBlurParams = () => [
 ];
 
 /**
- * The params at the shutter samples of a keyframed warp (`frame + ((i + 0.5) / n − 0.5) · length`, n =
- * DW_MB_SAMPLES), or null when there is no blur: Motion Blur off, a zero length, no `paramsAt` (the host cannot
- * evaluate other times) or `key` (the values that move the warp) identical at every sample.
+ * The params at the key times of the keyframed-warp shutter (`mbKeyTimes`: FX_MB_KEYS over Mo Blur Length centred on
+ * the frame), or null when there is no blur: Motion Blur off, a zero length, no `paramsAt`
+ * (the host cannot evaluate other times) or `key` (the values that move the warp) identical at every key.
  */
 export function warpShutterParams(
 	p: EffectParams,
@@ -759,12 +767,35 @@ export function warpShutterParams(
 ): EffectParams[] | null {
 	const len = Math.max(0, num(p.moBlurLength, 1));
 	if (!bool(p.motionBlur) || !(len > 0) || !ctx.paramsAt || ctx.frame === undefined) return null;
-	const n = DW_MB_SAMPLES;
-	const frame = ctx.frame;
 	const at = ctx.paramsAt;
-	const qs = Array.from({ length: n }, (_, i) => at(frame + ((i + 0.5) / n - 0.5) * len));
+	const qs = mbKeyTimes(ctx.frame, centredShutter(len)).map((f) => at(f));
 	const k0 = key(qs[0]!);
 	return qs.every((q) => key(q) === k0) ? null : qs;
+}
+
+/**
+ * The adaptive shutter of a keyframed warp (S_WarpCornerPin, S_WarpPerspective): `planMotionBlur` over the params at
+ * exact sub-frame times, with the warp's tracked points (canvas px) and pose packing.
+ */
+function warpShutterPlan(
+	p: EffectParams,
+	ctx: { frame?: number; paramsAt?: (f: number) => EffectParams },
+	points: (q: EffectParams) => [number, number][],
+	pack: (q: EffectParams) => number[],
+	stride: number,
+): MbPlan {
+	const len = Math.max(0, num(p.moBlurLength, 1));
+	const at = ctx.paramsAt;
+	if (!bool(p.motionBlur) || !(len > 0) || !at || ctx.frame === undefined) return mbStaticPlan(stride);
+	return planMotionBlur({
+		frame: ctx.frame,
+		window: centredShutter(len),
+		poseAt: at,
+		points,
+		pack,
+		stride,
+		quality: p.mbQuality,
+	});
 }
 
 // ---------------------------------------------------------------- S_WarpCornerPin
@@ -808,6 +839,7 @@ export const S_WARP_CORNER_PIN = distortEffect({
 		fxParam.vec2('bulge', 'Bulge', [0, 0], { min: -1, max: 1, step: 0.01 }),
 		...wrapParams('no'),
 		...motionBlurParams(),
+		mbQualityParam(),
 	],
 	gpu: {
 		timeInvariant: true,
@@ -824,25 +856,44 @@ export const S_WARP_CORNER_PIN = distortEffect({
 		uniforms: (p, ctx) => {
 			const aspect = ctx.height / Math.max(1, ctx.width);
 			const inv = cornerPinInverse(cornerPoints(p), aspect);
-			// Motion blur: the inverse pins of the shutter samples, 3 vec4 each (column-major mat3, valid flag).
-			const qs = warpShutterParams(p, ctx, cornerKey);
-			const packed = new Array<number>(DW_MB_SAMPLES * 12).fill(0);
-			qs?.forEach((q, i) => {
-				const m = cornerPinInverse(cornerPoints(q), aspect);
-				const g = mat3ToGlsl(m ?? MAT3_IDENTITY);
-				for (let k = 0; k < 9; k++) packed[i * 12 + k] = g[k]!;
-				packed[i * 12 + 9] = m ? 1 : 0;
-			});
+			// Motion blur: the inverse pins at the shutter's key times (3 vec4: column-major mat3 normalised so that
+			// h.z = 1 at the quad's centre — consistent scales to interpolate — and a valid flag); taps from the travel
+			// of the pinned corners and centre (canvas px).
+			const px = ctx.pxScale;
+			const plan = warpShutterPlan(
+				p,
+				ctx,
+				(q) => {
+					const c = cornerPoints(q);
+					const pts = [c.tl, c.tr, c.br, c.bl];
+					const m: [number, number] = [
+						pts.reduce((sum, v) => sum + v[0], 0) / 4,
+						pts.reduce((sum, v) => sum + v[1], 0) / 4,
+					];
+					return [...pts, m].map(([x, y]): [number, number] => [x * ctx.width * px, y * ctx.height * px]);
+				},
+				(q) => {
+					const c = cornerPoints(q);
+					const m = cornerPinInverse(c, aspect);
+					if (!m) return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0];
+					const fc = [c.tl, c.tr, c.br, c.bl].map((v) => normToFrame(v, aspect));
+					const cx = fc.reduce((sum, v) => sum + v[0], 0) / 4;
+					const cy = fc.reduce((sum, v) => sum + v[1], 0) / 4;
+					const w = m[6] * cx + m[7] * cy + m[8];
+					const k = Math.abs(w) > 1e-9 ? 1 / w : 1;
+					return [...mat3ToGlsl(m).map((v) => v * k), 1, 0, 0];
+				},
+				3,
+			);
 			return {
 				u_cpInv: { mat3: mat3ToGlsl(inv ?? MAT3_IDENTITY) },
 				u_cpValid: inv !== null,
-				u_cpN: { int: qs ? qs.length : 1 },
-				u_cpM: { vec4s: packed },
+				...mbUniforms(plan),
 			};
 		},
 		passes: [
 			{
-				include: [GLSL_DW_RENDER],
+				include: [GLSL_DW_RENDER, GLSL_MB_POSES],
 				frag: /* glsl */ `
 // Normalised source position (0..1 over the layer) of output f under inverse pin M; z < 0 = behind the plane.
 vec3 cp_uvM(mat3 M, vec2 f) {
@@ -887,15 +938,23 @@ void main() {
   vec2 f = dw_frame();
   ivec2 w = ivec2(u_wrapX, u_wrapY);
   int n = u_filter ? int(clamp(ceil(dw_footprint(f) - 0.25), 1.0, 4.0)) : 1;
-  if (u_cpN > 1) {
-    // Motion Blur: the pinned pictures of the keyframed corners over the shutter, averaged.
+  if (fx_mbOn()) {
+    // Motion Blur: the pinned picture along the keyframed corners' path over the shutter (adaptive taps between the
+    // key pins), each keeping the supersampling of minified areas with fewer samples per axis as the
+    // taps multiply (they average along the motion already).
+    int taps = fx_mbTaps();
+    float j = fx_mbPlanJitter();
+    int ss = min(n, taps >= 32 ? 2 : (taps >= 8 ? 3 : 4));
     vec4 sum = vec4(0.0);
-    for (int k = 0; k < ${DW_MB_SAMPLES}; k++) {
-      if (k >= u_cpN) break;
-      vec4 a = u_cpM[3 * k], b = u_cpM[3 * k + 1], c = u_cpM[3 * k + 2];
-      sum += cp_pinned(mat3(a.x, a.y, a.z, a.w, b.x, b.y, b.z, b.w, c.x), c.y > 0.5, f, w, n);
+    float wsum = 0.0;
+    for (int k = 0; k < fx_mbDyn(FX_MB_TAP_LIMIT); k++) {
+      if (k >= taps) break;
+      vec2 t = fx_mbTap(k, taps, j);
+      vec4 a = fx_mbPose(0, t.x), b = fx_mbPose(1, t.x), c = fx_mbPose(2, t.x);
+      sum += cp_pinned(mat3(a.x, a.y, a.z, a.w, b.x, b.y, b.z, b.w, c.x), c.y > 0.5, f, w, ss) * t.y;
+      wsum += t.y;
     }
-    fragColor = sum / float(u_cpN);
+    fragColor = sum / max(wsum, 1e-6);
     return;
   }
   fragColor = cp_pinned(u_cpInv, u_cpValid, f, w, n);
@@ -1230,7 +1289,41 @@ function perspectivePose(q: EffectParams): number[] {
 		0,
 	];
 }
-const perspectiveKey = (q: EffectParams) => perspectivePose(q).join(',');
+
+/** The plane point (source frame units) seen at output f under a pose (`wp_hit` of the shader), null on a miss. */
+export function perspectiveHit(pose: readonly number[], fx: number, fy: number): [number, number] | null {
+	const [roll, F, lat, zd, swing, sx, sy] = pose as [number, number, number, number, number, number, number];
+	const r = (roll * Math.PI) / 180;
+	const gx = Math.cos(r) * fx + Math.sin(r) * fy;
+	const gy = -Math.sin(r) * fx + Math.cos(r) * fy;
+	const L = (Math.min(89, Math.max(-89, lat)) * Math.PI) / 180;
+	const n = [0, Math.sin(L), Math.cos(L)];
+	const den = gy * n[1]! + F * n[2]!;
+	const Cz = zd * F;
+	const t = Math.abs(den) > 1e-9 ? (Cz * n[2]!) / den : -1;
+	if (!(t > 0)) return null;
+	const P = [t * gx, t * gy, t * F - Cz];
+	const lx = P[0]!;
+	const ly = P[1]! * Math.cos(L) - P[2]! * Math.sin(L);
+	const w = (swing * Math.PI) / 180;
+	return [Math.cos(w) * lx + Math.sin(w) * ly - sx, -Math.sin(w) * lx + Math.cos(w) * ly - sy];
+}
+
+/** Where a plane point (source frame units) appears on the output under a pose (inverse of `perspectiveHit`). */
+export function perspectiveProject(pose: readonly number[], ux: number, uy: number): [number, number] | null {
+	const [roll, F, lat, zd, swing, sx, sy] = pose as [number, number, number, number, number, number, number];
+	const w = (swing * Math.PI) / 180;
+	const lx = Math.cos(w) * (ux + sx) - Math.sin(w) * (uy + sy);
+	const ly = Math.sin(w) * (ux + sx) + Math.cos(w) * (uy + sy);
+	const L = (Math.min(89, Math.max(-89, lat)) * Math.PI) / 180;
+	// P = lx·(1, 0, 0) + ly·v with v = (0, cos L, −sin L); the ray point P + C = t·(g, F).
+	const Q = [lx, ly * Math.cos(L), -ly * Math.sin(L) + zd * F];
+	if (!(Q[2]! > 1e-9)) return null;
+	const gx = (Q[0]! * F) / Q[2]!;
+	const gy = (Q[1]! * F) / Q[2]!;
+	const r = (roll * Math.PI) / 180;
+	return [Math.cos(r) * gx - Math.sin(r) * gy, Math.sin(r) * gx + Math.cos(r) * gy];
+}
 
 export const S_WARP_PERSPECTIVE = distortEffect({
 	id: 'jasper.s.warp-perspective',
@@ -1255,27 +1348,45 @@ export const S_WARP_PERSPECTIVE = distortEffect({
 		fxParam.toggle('wrapAboveHorizon', 'Wrap Above Horizon', false),
 		filterParam(),
 		...motionBlurParams(),
+		mbQualityParam(),
 	],
 	gpu: {
 		timeInvariant: true,
 		uniforms: (p, ctx) => {
-			// Motion blur: the plane pose at the shutter samples, 2 vec4 each ((roll, lens, latitude, zDist),
-			// (swing, shift x, shift y, 0)).
-			const qs = warpShutterParams(p, ctx, perspectiveKey);
-			const packed = new Array<number>(DW_MB_SAMPLES * 8).fill(0);
-			qs?.forEach((q, i) => {
-				packed.splice(i * 8, 8, ...perspectivePose(q));
-			});
-			return { u_wpN: { int: qs ? qs.length : 1 }, u_wpM: { vec4s: packed } };
+			// Motion blur: the plane pose at the shutter's key times, 2 vec4 each ((roll, lens, latitude, zDist),
+			// (swing, shift x, shift y, 0)); taps from the screen travel of the plane points seen at the layer box
+			// corners and centre at the frame.
+			const pxW = ctx.width * ctx.pxScale;
+			const aspect = ctx.height / Math.max(1, ctx.width);
+			const anchors: ([number, number] | null)[] = [
+				[-0.5, -aspect / 2],
+				[0.5, -aspect / 2],
+				[0.5, aspect / 2],
+				[-0.5, aspect / 2],
+				[0, 0],
+			].map(([x, y]) => perspectiveHit(perspectivePose(p), x!, y!));
+			const plan = warpShutterPlan(
+				p,
+				ctx,
+				(q) =>
+					anchors.map((a): [number, number] => {
+						const f = a ? perspectiveProject(perspectivePose(q), a[0], a[1]) : null;
+						return f ? [f[0] * pxW, f[1] * pxW] : [Number.NaN, Number.NaN];
+					}),
+				perspectivePose,
+				2,
+			);
+			return mbUniforms(plan);
 		},
 		passes: [
 			{
-				include: [GLSL_DW_RENDER],
+				include: [GLSL_DW_RENDER, GLSL_MB_POSES],
 				frag: /* glsl */ `
-// The pose of shutter sample g_wpK (motion blur), or the params (g_wpK < 0).
-int g_wpK = -1;
-vec4 wp_a() { return g_wpK < 0 ? vec4(u_roll, u_teleLensWidth, u_latitude, u_zDist) : u_wpM[2 * g_wpK]; }
-vec4 wp_b() { return g_wpK < 0 ? vec4(u_swing, u_shiftOrig, 0.0) : u_wpM[2 * g_wpK + 1]; }
+// The pose of the current motion-blur tap (g_wpMb), or the params.
+bool g_wpMb = false;
+vec4 g_wpA = vec4(0.0), g_wpB = vec4(0.0);
+vec4 wp_a() { return g_wpMb ? g_wpA : vec4(u_roll, u_teleLensWidth, u_latitude, u_zDist); }
+vec4 wp_b() { return g_wpMb ? g_wpB : vec4(u_swing, u_shiftOrig, 0.0); }
 // Ray from the eye through output f onto the plane; x = source frame position, z = 0 when the ray misses.
 vec3 wp_hit(vec2 f) {
   vec4 A = wp_a(), B = wp_b();
@@ -1303,15 +1414,24 @@ vec4 dw_shade(vec2 f, ivec2 w) {
   return h.z > 0.0 ? dw_tap(h.xy, w) : vec4(0.0);
 }
 void main() {
-  if (u_wpN > 1) {
-    // Motion Blur: the plane at the shutter samples of the keyframed pose, averaged.
+  if (fx_mbOn()) {
+    // Motion Blur: the plane along the keyframed pose's path over the shutter (adaptive taps between the key poses). Each tap keeps the adaptive supersampling of minified areas, with fewer samples per axis as the
+    // taps multiply (they average along the motion already).
+    int taps = fx_mbTaps();
+    float j = fx_mbPlanJitter();
+    int maxN = taps >= 32 ? 2 : (taps >= 8 ? 3 : 4);
+    g_wpMb = true;
     vec4 sum = vec4(0.0);
-    for (int k = 0; k < ${DW_MB_SAMPLES}; k++) {
-      if (k >= u_wpN) break;
-      g_wpK = k;
-      sum += dw_render(${WRAP}, u_filter, 4);
+    float wsum = 0.0;
+    for (int k = 0; k < fx_mbDyn(FX_MB_TAP_LIMIT); k++) {
+      if (k >= taps) break;
+      vec2 t = fx_mbTap(k, taps, j);
+      g_wpA = fx_mbPose(0, t.x);
+      g_wpB = fx_mbPose(1, t.x);
+      sum += dw_render(${WRAP}, u_filter, maxN) * t.y;
+      wsum += t.y;
     }
-    fragColor = sum / float(u_wpN);
+    fragColor = sum / max(wsum, 1e-6);
     return;
   }
   fragColor = dw_render(${WRAP}, u_filter, 4);
@@ -1575,9 +1695,6 @@ vec2 dw_warp(vec2 f) {
 
 // ---------------------------------------------------------------- S_Shake
 
-/** Shutter samples of S_Shake's motion blur. */
-export const SHAKE_SAMPLES = 8;
-
 const shakeAxisParams = (axis: 'x' | 'y' | 'z' | 'tilt', label: string, randAmp: number): ParamSpec[] => {
 	const group = `${label} Shake`;
 	return [
@@ -1640,36 +1757,114 @@ export function shakeParamsOf(p: EffectParams): ShakeParams {
 	};
 }
 
+/** A shake pose as the shaders read it: (dx, dy, cos θ / zoom, sin θ / zoom), frame units. */
+const shakeCs = (q: ShakePose) => {
+	const a = (q.tilt * Math.PI) / 180;
+	return [q.dx, q.dy, Math.cos(a) / q.zoom, Math.sin(a) / q.zoom];
+};
+
 /**
- * The shake uniforms of one frame: `u_shake` = SHAKE_SAMPLES × 3 channels × (dx, dy, cos θ / zoom, sin θ / zoom),
- * the number of shutter samples and whether the channels differ.
+ * The shake uniforms of one frame: `u_shakeNow` = the pose of the frame per channel (3 vec4: dx, dy, cos θ / zoom,
+ * sin θ / zoom), `u_shakeRgb` (the channels differ) and, with Motion Blur, the adaptive shutter of the framework
+ * (`planMotionBlur`): 32 key poses per channel at exact sub-frame times over Mo Blur Length (centred), packed like
+ * `u_shakeNow` (linear interpolation: the rotation per key segment is tiny), and a tap count from the travel of the layer box corners and centre (rotation and zoom
+ * included) in canvas px. `ctx.width/height/pxScale` default to a 1920×1080 layer at full resolution.
  */
-export function shakeUniforms(p: EffectParams, ctx: { frame: number; fps: number; seed: number }) {
+export function shakeUniforms(
+	p: EffectParams,
+	ctx: { frame: number; fps: number; seed: number; width?: number; height?: number; pxScale?: number },
+) {
 	const sp = shakeParamsOf(p);
-	const blur = bool(p.motionBlur) && num(p.moBlurLength, 1) > 0;
-	const times = shutterTimes(
-		ctx.frame / Math.max(1, ctx.fps),
-		ctx.fps,
-		blur ? num(p.moBlurLength, 1) : 0,
-		blur ? SHAKE_SAMPLES : 1,
-	);
+	const fps = Math.max(1, ctx.fps);
 	const rgb =
 		sp.rgbRandomness > 0 ||
 		sp.channelAmp[0] !== sp.channelAmp[1] ||
 		sp.channelAmp[1] !== sp.channelAmp[2] ||
 		sp.channelPhase[0] !== sp.channelPhase[1] ||
 		sp.channelPhase[1] !== sp.channelPhase[2];
-	const floats: number[] = [];
-	for (let i = 0; i < SHAKE_SAMPLES; i++) {
-		const t = times[Math.min(i, times.length - 1)]!;
-		for (const ch of [0, 1, 2] as const) {
-			const pose = shakePose(sp, ctx.seed, t, ch);
-			const a = (pose.tilt * Math.PI) / 180;
-			floats.push(pose.dx, pose.dy, Math.cos(a) / pose.zoom, Math.sin(a) / pose.zoom);
-		}
+	const poseAt = (f: number) => ([0, 1, 2] as const).map((ch) => shakePose(sp, ctx.seed, f / fps, ch));
+	const now = poseAt(ctx.frame);
+	const len = num(p.moBlurLength, 1);
+	let plan = mbStaticPlan(3);
+	if (bool(p.motionBlur) && len > 0) {
+		const width = Math.max(1, ctx.width ?? 1920);
+		const aspect = Math.max(1, ctx.height ?? 1080) / width;
+		const pxW = width * (ctx.pxScale ?? 1);
+		const zDist = Math.max(1e-3, num(p.zDist, 1));
+		const chans = rgb ? ([0, 1, 2] as const) : ([1] as const);
+		// The picture points shown at the layer box corners and centre at the frame, tracked over the shutter.
+		const outs: [number, number][] = [
+			[-0.5, -aspect / 2],
+			[0.5, -aspect / 2],
+			[0.5, aspect / 2],
+			[-0.5, aspect / 2],
+			[0, 0],
+		];
+		const src = chans.map((ch) => {
+			const q = now[ch]!;
+			const a = (q.tilt * Math.PI) / 180;
+			const c = Math.cos(a) / q.zoom;
+			const s = Math.sin(a) / q.zoom;
+			return outs.map(([fx, fy]): [number, number] => {
+				const dx = fx - q.dx;
+				const dy = fy - q.dy;
+				return [(c * dx + s * dy) * zDist, (-s * dx + c * dy) * zDist];
+			});
+		});
+		plan = planMotionBlur({
+			frame: ctx.frame,
+			window: centredShutter(len),
+			poseAt,
+			points: (qs) =>
+				chans.flatMap((ch, i) => {
+					const q = qs[ch]!;
+					const a = (q.tilt * Math.PI) / 180;
+					const c = Math.cos(a) * q.zoom;
+					const s = Math.sin(a) * q.zoom;
+					return src[i]!.map(([x, y]): [number, number] => [
+						(q.dx + (c * x - s * y) / zDist) * pxW,
+						(q.dy + (s * x + c * y) / zDist) * pxW,
+					]);
+				}),
+			pack: (qs) => qs.flatMap(shakeCs),
+			stride: 3,
+			quality: p.mbQuality,
+		});
 	}
-	return { u_shake: { floats }, u_shakeN: times.length, u_shakeRgb: rgb };
+	return { u_shakeNow: { vec4s: now.flatMap(shakeCs) }, u_shakeRgb: rgb, ...mbUniforms(plan) };
 }
+
+/**
+ * GLSL of the shake (S_Shake, S_DissolveShake): the caller defines `vec4 sh_src(vec2 f, vec4 q, ivec2 w)` (the
+ * picture at output f under pose q = (dx, dy, cos θ / zoom, sin θ / zoom)); this adds `vec4 sh_render(vec2 f,
+ * ivec2 w)`: the pose of the frame (unchanged single-tap path without blur), or the adaptive shutter taps through the
+ * key poses. Include GLSL_MB_POSES.
+ */
+export const SHAKE_RENDER_GLSL = /* glsl */ `
+vec4 sh_rgb(vec2 f, vec4 qr, vec4 qg, vec4 qb, ivec2 w) {
+  vec4 r = sh_src(f, qr, w), g = sh_src(f, qg, w), b = sh_src(f, qb, w);
+  return vec4(r.r, g.g, b.b, max(r.a, max(g.a, b.a)));
+}
+vec4 sh_render(vec2 f, ivec2 w) {
+  if (!fx_mbOn()) {
+    if (u_shakeRgb) return sh_rgb(f, u_shakeNow[0], u_shakeNow[1], u_shakeNow[2], w);
+    return sh_src(f, u_shakeNow[1], w);
+  }
+  int n = fx_mbTaps();
+  float j = fx_mbPlanJitter();
+  vec4 acc = vec4(0.0);
+  float wsum = 0.0;
+  for (int i = 0; i < fx_mbDyn(FX_MB_TAP_LIMIT); i++) {
+    if (i >= n) break;
+    vec2 t = fx_mbTap(i, n, j);
+    // if / else, not ?: — software GL evaluates both arms of a select.
+    if (u_shakeRgb) acc += sh_rgb(f, fx_mbPose(0, t.x), fx_mbPose(1, t.x), fx_mbPose(2, t.x), w) * t.y;
+    else acc += sh_src(f, fx_mbPose(1, t.x), w) * t.y;
+    wsum += t.y;
+  }
+  return acc / max(wsum, 1e-6);
+}
+`;
 
 /** Largest shake offset (frame widths) for the padding: every axis at its bound, × the largest channel amp. */
 function shakeReach(p: EffectParams): number {
@@ -1685,6 +1880,8 @@ function shakeReach(p: EffectParams): number {
 export const S_SHAKE = distortEffect({
 	id: 'jasper.s.shake',
 	label: 'S_Shake',
+	// Motion Blur takes up to 64 taps (× 3 with RGB offsets) per pixel on fast shakes.
+	expensive: true,
 	description:
 		'Random, repeatable camera shake (move, zoom, rotate) with Normal, Twitchy and Jumpy styles, motion blur and per-channel RGB offsets.',
 	keywords: ['camera shake', 'wiggle', 'jitter', 'handheld', 'earthquake', 'impact'],
@@ -1738,37 +1935,26 @@ export const S_SHAKE = distortEffect({
 			{ group: 'RGB' },
 		),
 		fxParam.number('rgbFrequency', 'RGB Frequency', 2, { min: 0, softMax: 10, step: 0.01 }, { group: 'RGB' }),
+		mbQualityParam(),
 	],
 	gpu: {
 		padding: (p, ctx) => Math.ceil(shakeReach(p) * ctx.width * Math.max(1, num(p.zDist, 1))),
 		uniforms: (p, ctx) => shakeUniforms(p, ctx),
 		passes: [
 			{
-				include: [GLSL_DW],
+				include: [GLSL_DW, GLSL_MB_POSES],
 				frag: /* glsl */ `
-vec4 sh_tap(vec2 f, int i, int ch, ivec2 w) {
-  int b = (i * 3 + ch) * 4;
-  vec2 d = f - vec2(u_shake[b], u_shake[b + 1]);
-  float c = u_shake[b + 2], s = u_shake[b + 3];
-  // Inverse of (rotate θ, zoom): rotate by −θ and divide by the zoom (c, s already hold cos θ / zoom, sin θ / zoom).
-  vec2 src = vec2(c * d.x + s * d.y, -s * d.x + c * d.y);
+// The picture at output f under shake pose q = (dx, dy, cos θ / zoom, sin θ / zoom): the inverse of (rotate θ, zoom)
+// rotates by −θ and divides by the zoom.
+vec4 sh_src(vec2 f, vec4 q, ivec2 w) {
+  vec2 d = f - q.xy;
+  vec2 src = vec2(q.z * d.x + q.w * d.y, -q.w * d.x + q.z * d.y);
   return dw_tap(src * u_zDist, w);
 }
+${SHAKE_RENDER_GLSL}
 void main() {
   vec2 f = dw_frame();
-  ivec2 w = dw_wrapAt(f, ${WRAP});
-  int n = int(u_shakeN);
-  vec4 acc = vec4(0.0);
-  for (int i = 0; i < ${SHAKE_SAMPLES}; i++) {
-    if (i >= n) break;
-    if (u_shakeRgb) {
-      vec4 r = sh_tap(f, i, 0, w), g = sh_tap(f, i, 1, w), b = sh_tap(f, i, 2, w);
-      acc += vec4(r.r, g.g, b.b, max(r.a, max(g.a, b.a)));
-    } else {
-      acc += sh_tap(f, i, 1, w);
-    }
-  }
-  fragColor = acc / float(max(n, 1));
+  fragColor = sh_render(f, dw_wrapAt(f, ${WRAP}));
 }`,
 			},
 		],

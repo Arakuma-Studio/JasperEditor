@@ -10,9 +10,10 @@
 import type { TransitionSpec } from '../../../transitions.ts';
 import type { EffectParams } from '../../effects.ts';
 import { GLSL_HASH } from '../../fx/glsl/hash.ts';
+import { GLSL_MB_POSES } from '../../fx/glsl/motion-blur.ts';
 import { GLSL_NOISE } from '../../fx/glsl/noise.ts';
 import { fxParam } from '../../fx/params.ts';
-import { DW_WAVE_UNIT, SHAKE_SAMPLES, shakeUniforms } from '../../fx/sapphire-distort-warp.ts';
+import { DW_WAVE_UNIT, SHAKE_RENDER_GLSL, shakeUniforms } from '../../fx/sapphire-distort-warp.ts';
 import type { GlslChunk, ShaderPass } from '../../fx/shader.ts';
 import {
 	blurPasses,
@@ -389,7 +390,7 @@ const shakeAxis = (axis: 'x' | 'y' | 'z' | 'tilt', label: string, randAmp: numbe
  */
 export function dissolveShakeUniforms(
 	p: EffectParams,
-	ctx: { frame: number; fps: number; seed: number; progress: number },
+	ctx: { frame: number; fps: number; seed: number; progress: number; width?: number; height?: number },
 ) {
 	const env = dissolveTiming(p, ctx.progress).env;
 	return shakeUniforms({ ...p, style: 'normal', amplitude: Math.max(0, num(p.amplitude, 3)) * env }, ctx);
@@ -428,32 +429,19 @@ export const S_DISSOLVE_SHAKE: TransitionSpec = defineDissolve({
 		uniforms: (p, ctx) => dissolveShakeUniforms(p, ctx),
 		passes: [
 			{
-				include: [GLSL_SDW],
+				include: [GLSL_SDW, GLSL_MB_POSES],
 				frag: /* glsl */ `
-// u_shake: ${SHAKE_SAMPLES} shutter samples × 3 channels × (dx, dy, cos θ / zoom, sin θ / zoom), frame units.
-vec4 sh_tap(vec2 f, int i, int ch, ivec2 w) {
-  int b = (i * 3 + ch) * 4;
-  vec2 d = f - vec2(u_shake[b], u_shake[b + 1]);
-  float c = u_shake[b + 2], s = u_shake[b + 3];
-  vec2 src = vec2(c * d.x + s * d.y, -s * d.x + c * d.y);
+// The picture at output f (frame units) under shake pose q = (dx, dy, cos θ / zoom, sin θ / zoom).
+vec4 sh_src(vec2 f, vec4 q, ivec2 w) {
+  vec2 d = f - q.xy;
+  vec2 src = vec2(q.z * d.x + q.w * d.y, -q.w * d.x + q.z * d.y);
   vec2 uv = sdw_uvOfFrame(src);
   return mix(sd_fromW(uv, w), sd_toW(uv, w), u_sdMix);
 }
+${SHAKE_RENDER_GLSL}
 void main() {
   vec2 f = sdw_frameOfPx(tr_px());
-  ivec2 w = ivec2(u_wrapX, u_wrapY);
-  int n = int(u_shakeN);
-  vec4 acc = vec4(0.0);
-  for (int i = 0; i < ${SHAKE_SAMPLES}; i++) {
-    if (i >= n) break;
-    if (u_shakeRgb) {
-      vec4 r = sh_tap(f, i, 0, w), g = sh_tap(f, i, 1, w), b = sh_tap(f, i, 2, w);
-      acc += vec4(r.r, g.g, b.b, max(r.a, max(g.a, b.a)));
-    } else {
-      acc += sh_tap(f, i, 1, w);
-    }
-  }
-  fragColor = mix(acc / float(max(n, 1)), sd_dissolve(), u_mixWithDissolve);
+  fragColor = mix(sh_render(f, ivec2(u_wrapX, u_wrapY)), sd_dissolve(), u_mixWithDissolve);
 }`,
 			},
 		],

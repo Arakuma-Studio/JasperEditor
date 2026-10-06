@@ -6,6 +6,8 @@
 > (`size`), mipmaps (`mipmaps`, `gpu.sourceMipmaps`); `ivec2/3/4` and `vec4[]` uniforms; `.cube` LUT params
 > (`lutParam`, `sampler3D`, `GLSL_LUT`); unused declarations dropped; `gaussianBlurPasses` X/Y and uniform sigmas;
 > SVG-only built-ins run in stack order; reduced preview resolution; a SwiftShader compile-time budget test.
+> **Wave 5** (§19): the adaptive shutter motion blur (`planMotionBlur`, `GLSL_MB`, `GLSL_MB_POSES`) for every moving
+> effect and transition.
 
 Audience: the wave-2 agents that add effects to the fx catalogue (Premiere standard effects, Sapphire-style
 families). You only edit **your family file** (`packages/project/src/registry/fx/<family>.ts`) and add tests. You do
@@ -21,6 +23,7 @@ your entries up automatically. Specs: S03 §4.2, §15 (FX-001/002/040/041), S11 
 | `defineShaderEffect`, `SAPPHIRE_BINS` | `registry/fx/define.ts` |
 | Param builders (`fxParam.*`, `lutParam`, `sapphireCommonParams`, `blendModeParam`, `edgeModeParam`, …) | `registry/fx/params.ts` |
 | Pass builders (`gaussianBlurPasses`, `bloomPyramidPasses`) | `registry/fx/passes.ts` |
+| Adaptive shutter motion blur (`planMotionBlur`, `centredShutter`, `mbUniforms`, `mbQualityParam`, §19) | `registry/fx/motion-blur.ts` + `registry/fx/glsl/motion-blur.ts` |
 | Types, planning (`planGpuEffect`, `planPasses`), uniforms, padding, seeds, time hooks (`fxStackTime`, `fxParamsAtFn`), `validateGpuEffect` | `registry/fx/shader.ts` |
 | GLSL library (`GLSL_HASH`, `GLSL_NOISE`, `GLSL_COLOR`, `GLSL_BLEND`, `GLSL_SAMPLE`, `GLSL_UV`, `GLSL_BLUR`, `GLSL_COMPOSITE`, `GLSL_LUT`) | `registry/fx/glsl/*.ts` |
 | Runtime (GPU host, chain, layers, SVG built-in stand-ins `builtins.ts`) — read only | `packages/compositions/src/fx/*` |
@@ -28,8 +31,8 @@ your entries up automatically. Specs: S03 §4.2, §15 (FX-001/002/040/041), S11 
 
 Everything is exported from `@jasper/project` (framework) and `@jasper/compositions` (runtime).
 
-**Import rule.** A family file imports values only from `./define.ts`, `./params.ts`, `./passes.ts`, `./shader.ts`
-and `./glsl/*`, and only **types** from `../effects.ts` (`import type`). `effects.ts` imports the catalogue, so a value
+**Import rule.** A family file imports values only from `./define.ts`, `./params.ts`, `./passes.ts`, `./shader.ts`,
+`./motion-blur.ts` and `./glsl/*`, and only **types** from `../effects.ts` (`import type`). `effects.ts` imports the catalogue, so a value
 import from it is a module cycle (top-level use → `ReferenceError` at load; the catalogue test would catch it).
 
 ## 2. Worked example (complete)
@@ -433,7 +436,9 @@ uniforms: (p, ctx) => {
 
 Helpers: `fxParamsAtFn(instance, clip, fps, current?)` (what the host uses), `fxClipContentTime`. Users: Premiere
 Transform (Shutter Angle), S_BlurMoCurves, S_WarpCornerPin / S_WarpPerspective (Motion Blur), Write-on (stroke).
-Keep sample counts bounded (≤ 16) and collapse to the single-sample path when nothing moves (exact old output).
+For motion blur do not hand-roll shutter samples like this sketch: use `planMotionBlur` (§19), which bounds the
+uniforms, adapts the tap count to the travel and collapses to the single-sample path when nothing moves (exact old
+output).
 
 ### 17.2 Clip context — `ctx.clip`
 
@@ -532,3 +537,140 @@ pnpm vitest run packages/compositions/test/fx-compile-budget.test.ts
   pixel tests must not change.
 - **Determinism.** No state between frames: accumulate from `paramsAt` (Write-on draws the whole path every frame)
   or from time samples, never from the previous output.
+- **Motion blur.** Do not average a fixed handful of shutter samples (8 ghost copies of a fast move): use the
+  adaptive shutter of §19.
+
+## 19. Adaptive shutter motion blur (wave 5, `wave5/adaptive-motion-blur`)
+
+Every moving effect or transition blurs with the same helper, so a fast move is one continuous smear (no ghost copies,
+no periodic peaks) and a slow one stays cheap. TypeScript: `registry/fx/motion-blur.ts`; GLSL:
+`registry/fx/glsl/motion-blur.ts` (`GLSL_MB`, `GLSL_MB_POSES`). Both are exported from `@jasper/project`; family
+files may import `./motion-blur.ts` like `./params.ts`.
+
+### 19.1 The model
+
+- **Shutter**: a box shutter over an interval relative to the frame, in frames. `centredShutter(length, shift = 0)` =
+  Sapphire's Mo Blur Length (centred; S_BlurMoCurves' Shutter Shift moves it), `angleShutter(angle, phase =
+  −angle/2)` = Shutter Angle / 360 (Premiere's Transform: centred; After Effects' phase when an original has one).
+  No tent / smooth weighting: none of the originals exposes one.
+- **Poses at exact sub-frame times**: `planMotionBlur` evaluates the effect's pose function (usually
+  `ctx.paramsAt(f)` + the effect's maths, or a procedural pose such as S_Shake's) at `FX_MB_KEYS` = 32 key times over
+  the shutter, both ends included (`mbKeyTimes`), passed as `u_mbKeys` (32 × stride vec4). The shader interpolates
+  them linearly (`fx_mbPose`): 31 segments per shutter stay well under a pixel from curved, rotating and eased paths
+  (a 90° turn at 500 px radius: 0.15 px), at half the per-tap cost of a Catmull-Rom spline in SwiftShader (measured:
+  64 taps at 960×540, 245 ms linear vs 450–540 ms spline vs 130–165 ms for a bare tap loop).
+- **Tap count**: the longest path (summed over the key segments) of the tracked points — the layer box corners and
+  centre as they move on the output, so rotation and zoom count — in PASS pixels: `taps = clamp(ceil(path /
+  spacing), 1, max)`. Auto: 1 px spacing (a partition of unity for bilinear taps: a flat smear profile), ≤ 64 taps;
+  Draft: 2.5 px, ≤ 16; High: 1 px, ≤ 96 (`FX_MB_TAP_LIMIT`, the shaders' loop bound). Because the points are in canvas
+  px (`ctx.pxScale`), a ½ preview resolution takes half the taps.
+- **Time warp**: taps are placed by the measure 0.25 · time + 0.75 · path length (`mbTimeWarp`, a 32-entry table
+  `u_mbWarp`), each weighted by the time its stratum lasts (`fx_mbTap` returns (s, weight)). A burst inside the
+  shutter (an ease, a Twitchy shake) gets taps where it moves; the weights keep the exposure of a box shutter. Constant
+  speed → identity warp, all weights 1.
+- **Jitter**: stratified, one offset per pixel (`fx_mbJitter`: the R2 low-discrepancy lattice over the pass pixels +
+  `u_seed`, integer maths — blue-noise-like grain, identical on every GPU, independent of the frame, so renders are
+  reproducible in any frame order). Only used when the taps are sparser than the spacing (capped or warped).
+- **No motion → identical output**: blur off, an empty shutter, identical packed poses or a travel < 1/1000 px give
+  `taps = 1` (`mbStaticPlan`) and the shader runs the unblurred code path unchanged (exact old pixels: checked against
+  checksums of the pre-wave-5 code in `fx-motion-blur-gl.test.ts`).
+- **Software GL**: write the per-tap choice of a uniform branch with `if / else`, not `?:` — SwiftShader evaluates
+  both arms of a select (S_Shake's RGB / mono taps).
+
+### 19.2 Using it in an effect
+
+```ts
+import { GLSL_MB_POSES } from './glsl/motion-blur.ts';
+import { centredShutter, mbQualityParam, mbStaticPlan, mbUniforms, planMotionBlur } from './motion-blur.ts';
+
+params: [..., fxParam.toggle('motionBlur', 'Motion Blur', false),
+         fxParam.number('moBlurLength', 'Mo Blur Length', 1, { min: 0, softMax: 2, step: 0.01 }),
+         mbQualityParam()],                       // advanced "Mo Blur Quality": Auto (default) / Draft / High
+gpu: {
+  uniforms: (p, ctx) => {
+    const at = ctx.paramsAt;                      // absent in unit tests: no blur
+    const plan = bool(p.motionBlur) && at
+      ? planMotionBlur({
+          frame: ctx.frame,
+          window: centredShutter(num(p.moBlurLength, 1)),
+          poseAt: (f) => poseOf(at(f)),           // exact pose at a sub-frame time
+          points: (q) => boxCornersAndCentre(q).map(([x, y]) => [x * ctx.pxScale, y * ctx.pxScale]), // canvas px
+          pack: (q) => [q.x, q.y, q.angle, q.scale], // stride × 4 numbers (interpolated component-wise)
+          stride: 1,
+          quality: p.mbQuality,
+        })
+      : mbStaticPlan(1);                          // same uniform sizes every frame
+    return { ...myUniforms(p), ...mbUniforms(plan) }; // u_mbPlan (ivec4), u_mbKeys, u_mbWarp
+  },
+  passes: [{ include: [GLSL_MB_POSES], frag: /* glsl */ `
+void main() {
+  if (!fx_mbOn()) { fragColor = shade(u_x, u_y, u_angle, u_scale); return; }   // unchanged path
+  int n = fx_mbTaps();
+  float j = fx_mbPlanJitter();
+  vec4 acc = vec4(0.0);
+  float wsum = 0.0;
+  for (int i = 0; i < fx_mbDyn(FX_MB_TAP_LIMIT); i++) {   // opaque bound: SwiftShader does not unroll
+    if (i >= n) break;
+    vec2 t = fx_mbTap(i, n, j);                  // (shutter time 0..1, weight)
+    vec4 q = fx_mbPose(0, t.x);                  // part 0 of the pose at that time
+    acc += shade(q.x, q.y, q.z, q.w) * t.y;
+    wsum += t.y;
+  }
+  fragColor = acc / max(wsum, 1e-6);
+}` }],
+}
+```
+
+Pose packing rules: interpolate quantities that vary smoothly (positions, angles in radians — unwrap with
+`unwrapAngles` if they come from atan2 —, log or plain zoom, matrix entries normalised to a fixed scale: S_WarpCornerPin
+divides each inverse homography by its w at the quad centre; S_Shake packs (dx, dy, cos θ / zoom, sin θ / zoom) so a
+tap needs no trigonometry). Keep `stride` fixed (the uniform's length must not
+change). Pick tracked points whose screen motion bounds what the user sees: forward-mapped box corners + centre;
+for inverse-only warps project fixed source points forward (S_WarpPerspective's `perspectiveHit` /
+`perspectiveProject`). Effects that supersample (minifying warps) keep a reduced supersampling per tap (2–3 per axis
+once there are 8–32 taps).
+
+### 19.3 Transitions and GLSL-only motion
+
+Transitions (and effects whose motion is a GLSL function of progress or time) use `GLSL_MB` directly:
+
+```glsl
+float h = fx_mbShutter(p, blurFrames, frameStep);         // half width in progress, shrunk at the ends (exact A / B)
+float ext = abs(travel(p + h) - travel(p - h)) * sizePx;  // on-screen path length (sum segments if not monotonic)
+int n = fx_mbTapCount(ext, 64);
+float j = fx_mbJitterFor(ext, n);
+for (int i = 0; i < fx_mbDyn(64); i++) {
+  if (i >= n) break;
+  acc += pictureAt(mix(p - h, p + h, fx_mbTapAt(i, n, j)));   // the REAL pose at the tap (eases, scale, rotation)
+}
+fragColor = acc / float(n);
+```
+
+Premiere's modern transitions wrap it as `pm_shutter(p, blur%, frames)` (`premiere/modern`); the Sapphire swish
+family's `sw_taps` / `sw_shutter` are the same model (1.5 px spacing, white-noise jitter). Blur helpers that are not
+shutters (directional / zoom / spin blurs) take `max(wave-3 count, fx_mbTapCount(extent, 64))` so short blurs keep
+their exact taps and long ones stop banding (`pm_taps`).
+
+### 19.4 Migrated (wave 5)
+
+| Effect / transition | Before | Now |
+|---|---|---|
+| S_Shake, S_DissolveShake | 8 box samples of the pose | 32 key poses × 3 channels, ≤ 64 taps by travel (+ Mo Blur Quality) |
+| S_WarpCornerPin, S_WarpPerspective | 8 samples (`DW_MB_SAMPLES`) | key pins / plane poses, ≤ 64 taps (+ Mo Blur Quality) |
+| Premiere Transform (Shutter Angle) | 16 samples | key transforms, ≤ 64 taps by box-corner travel (+ Mo Blur Quality) |
+| S_FreeLens (shake blur) | linear smear of the shift between ±dt, 8 taps | true shutter poses (shift, keystone, distortion), ≤ 64 taps (+ Mo Blur Quality) |
+| S_BlurMoCurves | From → To straight interpolation (adaptive count) | the curves' 32 key transforms over the shutter |
+| Premiere 3D Roll, Film Roll, Roll, Stretch, Pull / Spin / Travel Motion, 3D Spin, 3D Spinback, Whip | 8–32 straight taps around the current pose | real eased path, ≤ 64 taps by on-screen travel |
+| Premiere Earthquake | 8 taps between two poses | shake evaluated at every tap, ≥ 8, ≤ 64 by path length |
+| Directional / Radial / Zoom Blur transitions (`pm_*`) | 16 / 32 fixed taps | ≥ the old count, ≤ 64 by extent |
+| S_StripSlide, S_StripSlideTransition | 12 / ≤ 32 straight taps | real eased slide, ≤ 64 taps |
+| S_Retime (Motion Blur), S_FilmDamage (Shake Motion Blur) | 7 / 5 taps | ≥ the old count, ≤ 64 by extent |
+
+Unchanged (already the reference): S_SwishPan, S_Swish3D, S_WhipLash, S_MochaWhip, S_HyperPush/Pull, S_FilmRoll
+(adaptive `sw_taps`; S_FilmRoll's gate shake stays a linear smear of its per-frame jump — the shake model is
+piecewise constant).
+
+Known limits: Jumpy shakes jump instantaneously in the model (held random targets), so a jump inside the shutter is
+two exposures linked by a faint streak (correct for a box shutter, not a smear); 32 keys resolve shakes up to ~10
+cycles per shutter; the tap count is global per frame (worst tracked point), so slow parts of a rotating layer take
+the taps of its corners.

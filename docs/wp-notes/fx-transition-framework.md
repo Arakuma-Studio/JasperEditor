@@ -287,6 +287,10 @@ nearer; a film burn builds a noise mask (`fx_fbm` with `u_seed`) that crosses fr
 swish pan offsets both sides along a direction with `fx_zoomBlur`-like directional taps; strips/bands use `tr_cell`
 on one axis with `tr_stagger`.
 
+Motion blur of a move (wave 5): taps along the REAL path in progress space, as many as the on-screen travel needs —
+`fx_mbShutter` / `fx_mbTapCount` / `fx_mbJitterFor` / `fx_mbTapAt` / `fx_mbDyn` of `GLSL_MB` (fx guide §19.3); never a
+fixed handful of straight taps around the current pose.
+
 ## 9. Tests to write (per family)
 
 Free for every entry (no plumbing):

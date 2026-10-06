@@ -6,11 +6,15 @@
 //   on 4 interpolated levels (the depth map of the current lens pose);
 // - Light Leak: a row of soft polygonal elements from the Hotspot towards the Pivot (screened), linked to the tilt;
 // - Glow of the bright parts; Shake (Normal / Twitchy / Jumpy random lens motion, deterministic per Seed) with
-//   motion blur of the shake; Vignette (shape, softness, colour, combine modes, blur).
+//   motion blur of the shake: the framework's adaptive shutter (wave 5) — the lens pose (shift, tilt keystone,
+//   distortion) at exact sub-frame times over Mo Blur Length, ~1 tap per pixel of travel between them, so
+//   curved and rotating shakes blur along their real path; Vignette (shape, softness, colour, combine modes, blur).
 // Units: Sapphire screen units (U = half the layer width, y down) for Shift, offsets, Hotspot/Pivot, sizes and radii.
 import type { EffectParams, EffectSpec } from '../../effects.ts';
 import { defineShaderEffect, SAPPHIRE_BINS } from '../define.ts';
 import { GLSL_HASH } from '../glsl/hash.ts';
+import { GLSL_MB_POSES } from '../glsl/motion-blur.ts';
+import { centredShutter, mbQualityParam, mbStaticPlan, mbUniforms, planMotionBlur } from '../motion-blur.ts';
 import { fxParam } from '../params.ts';
 import { type FxFrameContext, type FxPlanContext, fxRandom } from '../shader.ts';
 import {
@@ -180,16 +184,18 @@ vec4 fl_sample(vec2 q) {
   if (ox || oy) return vec4(0.0);
   return texture(u_source, sbs_uvOfNorm(n));
 }
-// Where the output point q reads the source: lens shift (picture moves the other way), keystone, distortion.
-vec2 fl_warp(vec2 q) {
-  vec2 s = q + u_flShift;
+// Where the output point q reads the source under a lens pose: lens shift (picture moves the other way), keystone
+// (tilt = sines of Tilt X / Y), distortion.
+vec2 fl_warpP(vec2 q, vec2 shift, vec2 tilt, float distortion) {
+  vec2 s = q + shift;
   if (u_distortion) {
     vec2 d = s * vec2(u_scaleWidth, u_scaleHeight);
-    s = s * (1.0 + u_flPose.z * dot(d, d));
+    s = s * (1.0 + distortion * dot(d, d));
   }
-  s *= 1.0 + u_perspectiveAmount * 0.1 * dot(q, u_flPose.xy);
+  s *= 1.0 + u_perspectiveAmount * 0.1 * dot(q, tilt);
   return s;
 }
+vec2 fl_warp(vec2 q) { return fl_warpP(q, u_flShift, u_flPose.xy, u_flPose.z); }
 // Defocus amount at q: distance from the focal line along the tilt, plus Distance.
 float fl_amount(vec2 q) {
   return abs(dot(q - u_focalPointOffset, u_flPose.xy)) * sqrt(max(u_perspectiveAmount, 0.25)) * 2.0 + abs(u_flPose.w) * 3.0;
@@ -310,17 +316,61 @@ export const S_FREE_LENS = defineShaderEffect({
 			['Composite', 'Mult', 'Add', 'Screen', 'Subtract Inv', 'Vignette Only', 'Vignette Only Inv'],
 			'mult',
 		),
+		mbQualityParam(),
 	],
 	gpu: {
 		uniforms: (p, ctx: FxFrameContext) => {
 			const sec = ctx.frame / Math.max(1, ctx.fps);
 			const pose = freeLensPose(p, ctx.seed, sec);
-			// Shake motion blur: the image-shift velocity over the shutter (canvas px).
+			// Shake motion blur: the lens pose at the shutter's key times (2 vec4: shift, tilt sines; distortion), taps
+			// from the travel of the source points read at the layer box corners and centre (prep-pass px).
 			const len = bool(p.motionBlur, true) ? Math.max(0, num(p.moBlurLength, 1)) : 0;
-			const dt = len / Math.max(1, ctx.fps) / 2;
-			const a = freeLensPose(p, ctx.seed, sec - dt);
-			const b = freeLensPose(p, ctx.seed, sec + dt);
-			const u = unitPx(ctx);
+			const fps = Math.max(1, ctx.fps);
+			const keyPose = (f: number) => {
+				const q = freeLensPose(p, ctx.seed, f / fps);
+				const r = Math.PI / 180;
+				return [q.shift[0], q.shift[1], Math.sin(q.tiltX * r), Math.sin(q.tiltY * r), q.distortion, 0, 0, 0];
+			};
+			const blurScale = 1 / 2 ** choiceIndex(p.blurRes, BLUR_RES, 'full');
+			const unit = unitPx(ctx) * blurScale;
+			const hy = ctx.height / Math.max(1, ctx.width);
+			const persp = num(p.perspectiveAmount, 1);
+			const distortOn = bool(p.distortion, true);
+			const sc = [num(p.scaleWidth, 1), num(p.scaleHeight, 1)];
+			const warp = (k: number[], x: number, y: number): [number, number] => {
+				let sx = x + k[0]!;
+				let sy = y + k[1]!;
+				if (distortOn) {
+					const dx = sx * sc[0]!;
+					const dy = sy * sc[1]!;
+					const g = 1 + k[4]! * (dx * dx + dy * dy);
+					sx *= g;
+					sy *= g;
+				}
+				const kk = 1 + persp * 0.1 * (x * k[2]! + y * k[3]!);
+				return [sx * kk * unit, sy * kk * unit];
+			};
+			const mb =
+				len > 0 && bool(p.shake, true)
+					? planMotionBlur({
+							frame: ctx.frame,
+							window: centredShutter(len),
+							poseAt: keyPose,
+							points: (k) =>
+								(
+									[
+										[-1, -hy],
+										[1, -hy],
+										[1, hy],
+										[-1, hy],
+										[0, 0],
+									] as const
+								).map(([x, y]) => warp(k, x, y)),
+							pack: (k) => k,
+							stride: 2,
+							quality: p.mbQuality,
+						})
+					: mbStaticPlan(2);
 			const vigI =
 				num(p.vigIntensity, 0.2) *
 				(bool(p.linkVigToLens, true) ? 1 + 2 * pose.tiltMag : 1) *
@@ -333,12 +383,12 @@ export const S_FREE_LENS = defineShaderEffect({
 					pose.distortion,
 					pose.distance,
 				],
-				u_flBlurVel: [(b.shift[0] - a.shift[0]) * u, (b.shift[1] - a.shift[1]) * u],
 				u_flWrap: [choiceIndex(p.wrapX, SBS_WRAPS, 'reflect'), choiceIndex(p.wrapY, SBS_WRAPS, 'reflect')],
 				u_flAmax: amountBound(p, ctx),
 				u_flLeak: bool(p.lightLeak, true) ? pose.leak : 0,
 				u_flVig: vigI,
 				u_flVigShift: bool(p.linkVigToLens, true) ? pose.shift : [0, 0],
+				...mbUniforms(mb),
 			};
 		},
 		passes: (p, ctx) => {
@@ -347,7 +397,7 @@ export const S_FREE_LENS = defineShaderEffect({
 			// 1. Warped source (shift, keystone, distortion, shake motion blur, chroma distort), boosted highlights.
 			plan.pass({
 				output: 'prep',
-				include: [GLSL_FREELENS, GLSL_SBS_COMMON],
+				include: [GLSL_FREELENS, GLSL_SBS_COMMON, GLSL_MB_POSES],
 				format: 'rgba16f',
 				scale: 1 / 2 ** blurK,
 				frag: /* glsl */ `
@@ -358,16 +408,30 @@ vec4 fl_read(vec2 q) {
   vec4 g = fl_sample(s);
   return vec4(fl_sample(s * (1.0 - k)).r, g.g, fl_sample(s * (1.0 + k)).b, g.a);
 }
+vec4 fl_readP(vec2 q, vec4 a, vec4 b) {
+  vec2 s = fl_warpP(q, a.xy, a.zw, b.x);
+  if (abs(u_chromaDistort) < 1.0e-4) return fl_sample(s);
+  float k = u_chromaDistort * 0.02;
+  vec4 g = fl_sample(s);
+  return vec4(fl_sample(s * (1.0 - k)).r, g.g, fl_sample(s * (1.0 + k)).b, g.a);
+}
 void main() {
   vec2 q = fl_q(fx_layerPx());
   vec4 c = vec4(0.0);
-  float n = length(u_flBlurVel) > 0.5 ? 8.0 : 1.0;
-  for (int i = 0; i < 8; i++) {
-    if (float(i) >= n) break;
-    float t = n > 1.0 ? float(i) / (n - 1.0) - 0.5 : 0.0;
-    c += fl_read(q + t * u_flBlurVel / (0.5 * u_box.z));
+  if (!fx_mbOn()) c = fl_read(q);
+  else {
+    // Shake motion blur: the lens poses along their real path over the shutter (adaptive taps).
+    int n = fx_mbTaps();
+    float j = fx_mbPlanJitter();
+    float wsum = 0.0;
+    for (int i = 0; i < fx_mbDyn(FX_MB_TAP_LIMIT); i++) {
+      if (i >= n) break;
+      vec2 t = fx_mbTap(i, n, j);
+      c += fl_readP(q, fx_mbPose(0, t.x), fx_mbPose(1, t.x)) * t.y;
+      wsum += t.y;
+    }
+    c /= max(wsum, 1e-6);
   }
-  c /= n;
   vec4 s = fx_unpremultiply(c);
   fragColor = vec4(sbs_boost(s.rgb, u_boostHighlights, u_highlightThreshold) * s.a, s.a);
 }`,

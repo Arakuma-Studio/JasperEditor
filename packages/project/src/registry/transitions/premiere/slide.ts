@@ -3,6 +3,7 @@
 // on the B side of a moving piece of A) and the travel is extended by the border + anti-aliasing width, so nothing of
 // it is left in the frame at either end of the transition.
 import type { TransitionSpec } from '../../../transitions.ts';
+import { GLSL_MB } from '../../fx/glsl/motion-blur.ts';
 import { fxParam } from '../../fx/params.ts';
 import { defineShaderTransition, TRANSITION_BINS } from '../define.ts';
 import { GLSL_TR_EASE } from '../glsl.ts';
@@ -156,9 +157,8 @@ export const WHIP = defineShaderTransition({
 		uniforms: (p) => ({ u_dir: selectorVec(DIR4, p) }),
 		passes: [
 			{
-				include: [GLSL_TR_EASE],
+				include: [GLSL_TR_EASE, GLSL_MB],
 				frag: /* glsl */ `
-const int WH_TAPS = 32;
 // The pushed pair (A ahead, B following one frame behind) at travel q.
 vec4 whPair(vec2 uv, float q) {
   vec2 d = u_dir;
@@ -168,16 +168,18 @@ vec4 whPair(vec2 uv, float q) {
 }
 void main() {
   float p = tr_progress();
-  float q = tr_easeInOut(p);
-  // Speed of the pan (frame widths per frame) sets the blur length (a 180° shutter at Motion Blur 100 %).
-  float speed = (tr_easeInOut(min(p + 0.01, 1.0)) - tr_easeInOut(max(p - 0.01, 0.0))) / (min(p + 0.01, 1.0) - max(p - 0.01, 0.0));
-  float len = (u_blur / 100.0) * speed / max(u_duration, 2.0) * 1.5;
+  // Motion blur: the pan's real (eased) path over a shutter of Motion Blur % × 1.5 frames, ≤ 1 px between taps
+  // (adaptive, up to 64, jittered per pixel beyond).
+  float h = fx_mbShutter(p, (u_blur / 100.0) * 1.5, 1.0 / max(u_duration, 2.0));
+  float ext = abs(tr_easeInOut(p + h) - tr_easeInOut(p - h)) * abs(dot(u_compSize, u_dir));
+  int n = fx_mbTapCount(ext, 64);
+  float j = fx_mbJitterFor(ext, n);
   vec4 s = vec4(0.0);
-  for (int i = 0; i < WH_TAPS; i++) {
-    float t = (float(i) + 0.5) / float(WH_TAPS) - 0.5;
-    s += whPair(v_uv, q + t * len);
+  for (int i = 0; i < fx_mbDyn(64); i++) {
+    if (i >= n) break;
+    s += whPair(v_uv, tr_easeInOut(mix(p - h, p + h, fx_mbTapAt(i, n, j))));
   }
-  fragColor = s / float(WH_TAPS);
+  fragColor = s / float(n);
 }`,
 			},
 		],

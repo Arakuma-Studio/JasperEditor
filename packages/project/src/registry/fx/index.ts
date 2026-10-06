@@ -3,7 +3,7 @@
 // `defaultEffectRegistry` (registry/effects.ts), hence of the Effects panel, Effect Controls, the agent schema export
 // (MCP) and the engine. Adding an effect = adding an entry to its family file; nothing else changes.
 // Import rule (no cycles): family files import from `./define.ts`, `./params.ts`, `./passes.ts`, `./shader.ts`,
-// `./glsl/*` and only TYPES from `../effects.ts`.
+// `./motion-blur.ts`, `./glsl/*` and only TYPES from `../effects.ts`.
 import type { EffectSpec } from '../effects.ts';
 import { PREMIERE_ADJUST_COLOR_KEYING_EFFECTS } from './premiere-adjust-color-keying.ts';
 import { PREMIERE_STYLIZE_DISTORT_GENERATE_EFFECTS } from './premiere-stylize-distort-generate.ts';
@@ -20,6 +20,7 @@ import { SAPPHIRE_TIME_FLICKER_EFFECTS } from './sapphire-time-flicker.ts';
 
 export * from './define.ts';
 export * from './glsl/index.ts';
+export * from './motion-blur.ts';
 export * from './params.ts';
 export * from './passes.ts';
 export * from './shader.ts';

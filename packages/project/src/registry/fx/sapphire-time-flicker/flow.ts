@@ -6,6 +6,7 @@
 // cross-fade. Flow is stored as 0.5 + px/256 so it survives 8-bit intermediates.
 import { GLSL_BLUR } from '../glsl/blur.ts';
 import { GLSL_COLOR } from '../glsl/color.ts';
+import { GLSL_MB } from '../glsl/motion-blur.ts';
 import { GLSL_UV } from '../glsl/sample.ts';
 import type { GlslChunk, ShaderPass } from '../shader.ts';
 
@@ -144,7 +145,7 @@ void main() {
  */
 export const GLSL_FLOW_FINAL: GlslChunk = {
 	name: 'sapphire-time-flicker/flow-final',
-	deps: [GLSL_FLOW_CODEC, GLSL_COLOR, GLSL_UV],
+	deps: [GLSL_FLOW_CODEC, GLSL_COLOR, GLSL_UV, GLSL_MB],
 	source: /* glsl */ `
 vec2 fl_flowUv(vec2 uv) { return fl_dec(texture(u_flFlow, uv).rg) / u_canvasSize; }
 vec4 fl_vectors(vec2 uv, float scale) {
@@ -160,11 +161,17 @@ export const FLOW_INTERP_GLSL = /* glsl */ `
 vec4 fl_interp(vec2 uv, float t, float blur) {
   vec2 v = fl_flowUv(uv);
   if (blur <= 0.0) return mix(flowA(uv - t * v), flowB(uv + (1.0 - t) * v), t);
+  // Motion blur along the flow vector: 7 taps (wave 3) or ≤ 1 px apart for long vectors (adaptive, ≤ 64).
+  float ext = blur * length(v * u_canvasSize);
+  int n = max(7, fx_mbTapCount(ext, 64));
+  float j = n > 7 ? fx_mbJitterFor(ext, n) : 0.0;
+  float last = n > 7 ? float(n) : 6.0;
   vec4 s = vec4(0.0);
-  for (int k = 0; k < 7; k++) {
-    float o = (float(k) / 6.0 - 0.5) * blur;
+  for (int k = 0; k < fx_mbDyn(64); k++) {
+    if (k >= n) break;
+    float o = ((float(k) + j) / last - 0.5) * blur;
     s += mix(flowA(uv - (t + o) * v), flowB(uv + (1.0 - t - o) * v), t);
   }
-  return s / 7.0;
+  return s / float(n);
 }
 `;

@@ -3,6 +3,7 @@
 // strips that grow, carry the dissolve and shrink away).
 import type { TransitionSpec } from '../../../transitions.ts';
 import { GLSL_HASH } from '../../fx/glsl/hash.ts';
+import { GLSL_MB } from '../../fx/glsl/motion-blur.ts';
 import { fxParam } from '../../fx/params.ts';
 import { defineShaderTransition, SAPPHIRE_TRANSITION_SUBBINS, TRANSITION_BINS } from '../define.ts';
 import { GLSL_TR_3D } from '../glsl.ts';
@@ -190,7 +191,7 @@ export const S_STRIP_SLIDE_TRANSITION = defineShaderTransition({
 	gpu: {
 		passes: [
 			{
-				include: [GLSL_SW, GLSL_HASH],
+				include: [GLSL_SW, GLSL_HASH, GLSL_MB],
 				frag: /* glsl */ `
 float ss_edge(int k) { return float(k) + (fx_hash1(k, u_seed) - 0.5) * min(u_randomizeSize, 0.9); }
 float ss_progress(float amount, float rank) {
@@ -221,15 +222,17 @@ void main() {
   else if (u_order == 3) rank = dist;
   else if (u_order == 4) rank = 1.0 - dist;
   float travel = 2.0 * extU + 2.0;
+  float a0 = amount >= 1.0 ? amount : amount - 0.04 * u_motionBlur;
   float t1 = ss_progress(amount, rank);
-  float t0 = ss_progress(amount - 0.04 * u_motionBlur, rank);
-  if (amount >= 1.0) t0 = t1;
-  int n = abs(t1 - t0) * travel > 1.5 ? int(clamp(abs(t1 - t0) * travel / 1.5, 2.0, 32.0)) : 1;
-  float j = abs(t1 - t0) * travel / float(n) > 1.5 ? sw_jitter() : 0.5;
+  float t0 = ss_progress(a0, rank);
+  // Motion blur: taps along the strip's real (eased) slide, ≤ 1 px apart (adaptive, ≤ 64, jittered beyond).
+  float ext = abs(t1 - t0) * travel;
+  int n = ext > 1.5 ? max(2, fx_mbTapCount(ext, 64)) : 1;
+  float j = fx_mbJitterFor(ext, n);
   vec4 acc = vec4(0.0);
-  for (int i = 0; i < 32; i++) {
+  for (int i = 0; i < fx_mbDyn(64); i++) {
     if (i >= n) break;
-    float t = n == 1 ? t1 : mix(t0, t1, (float(i) + j) / float(n));
+    float t = n == 1 ? t1 : ss_progress(mix(a0, amount, fx_mbTapAt(i, n, j)), rank);
     vec4 c;
     if (u_style == 1) {
       // Slide On: B's strip slides in over A.
