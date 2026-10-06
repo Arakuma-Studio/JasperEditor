@@ -343,8 +343,8 @@ function RecoveryDialog(
 					</p>
 				) : null}
 				<p className="text-pr-small text-pr-muted">
-					Recover applies them as one step you can undo. Not Now keeps them for File ▸ Recover Unsaved
-					Changes….
+					Recover applies them as one step you can undo. Not Now keeps them: File ▸ Recover Unsaved Changes…
+					offers them again.
 					{candidates.length > 1 ? ` ${candidates.length - 1} more after this one.` : ''}
 				</p>
 				{error ? (
