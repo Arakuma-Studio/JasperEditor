@@ -20,6 +20,7 @@ import { registerShapeTools, SHAPES_GUIDE } from './tools/shapes.ts';
 import { registerTemplateTools, TEMPLATES_GUIDE } from './tools/templates.ts';
 import { registerTrackingTools, TRACKING_GUIDE } from './tools/tracking.ts';
 import { registerTransitionTools, TRANSITION_GUIDE } from './tools/transitions.ts';
+import { registerVersionTools, VERSIONS_GUIDE } from './tools/versions.ts';
 import { MCP_SERVER_VERSION } from './version.ts';
 
 const MCP_SERVER_NAME = 'jasper-editor';
@@ -55,6 +56,7 @@ const FULL_GUIDE = [
 	CLIPBOARD_GUIDE,
 	PRESETS_GUIDE,
 	CACHE_GUIDE,
+	VERSIONS_GUIDE,
 ].join('\n\n');
 
 type JasperMcpOptions = {
@@ -87,6 +89,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerClipboardTools(ctx);
 	registerPresetTools(ctx);
 	registerCacheTools(ctx);
+	registerVersionTools(ctx);
 	registerResources(ctx);
 	registerPrompts(ctx);
 	return { server };
