@@ -12,6 +12,7 @@ import { paramHandlers } from './handlers/param.ts';
 import { PRESET_OWNER, presetHandlers } from './handlers/preset.ts';
 import { processHandlers } from './handlers/process.ts';
 import { projectHandlers } from './handlers/project.ts';
+import { ROTO_OWNER, rotoHandlers } from './handlers/roto.ts';
 import { sequenceHandlers } from './handlers/sequence.ts';
 import { keepShapesCentred, SHAPE_BOX_COMMANDS, SHAPE_OWNER, shapeHandlers } from './handlers/shape.ts';
 import { simplifyHandlers } from './handlers/simplify.ts';
@@ -35,7 +36,9 @@ export type CommandOwner =
 	// Clipboard (S01 §20)
 	| 'wp-clipboard'
 	// Effect presets (S03:FX-030)
-	| 'wp-m3-presets';
+	| 'wp-m3-presets'
+	// parity: roto / object mattes
+	| 'parity-roto';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -138,6 +141,15 @@ const LABELS: Record<CommandType, string> = {
 	'keyframe.paste': 'Paste Keyframes',
 	'project.pasteItems': 'Paste',
 	'effect.applyPreset': 'Apply Preset',
+	'roto.add': 'Roto Brush',
+	'roto.update': 'Roto Settings',
+	'roto.addStrokes': 'Roto Brush Stroke',
+	'roto.removeStrokes': 'Remove Roto Strokes',
+	'roto.setBox': 'Roto Box',
+	'roto.setResult': 'Propagate Roto',
+	'roto.freeze': 'Freeze Roto',
+	'roto.remove': 'Remove Roto',
+	'roto.apply': 'Apply Object Matte',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -157,6 +169,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[shapeHandlers, SHAPE_OWNER],
 	[clipboardHandlers, CLIPBOARD_OWNER],
 	[presetHandlers, PRESET_OWNER],
+	[rotoHandlers, ROTO_OWNER],
 	[m2Handlers, 'M2'],
 ];
 
@@ -175,7 +188,7 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 			handler: SHAPE_BOX_COMMANDS.has(type) ? keepShapesCentred(handler) : handler,
 			label: LABELS[type],
 			owner,
-			milestone: owner.startsWith('wp-m3-')
+			milestone: owner.startsWith('wp-m3-') || owner === ROTO_OWNER
 				? 'M3'
 				: owner === 'M2' || owner.startsWith('wp-m2-') || owner === CLIPBOARD_OWNER
 					? 'M2'

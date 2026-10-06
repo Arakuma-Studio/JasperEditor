@@ -21,6 +21,7 @@ import { flicksPerFrame, type Rational } from '../../time.ts';
 import type { DClip, DDoc, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
+import { dropForeignRotoRefs } from '../../roto/index.ts';
 import { buildParams } from './effect.ts';
 import { refreshAutoBezier } from './keyframe.ts';
 import { ruleFromParam, validateValue } from './param.ts';
@@ -249,6 +250,7 @@ function applyPreset(doc: DDoc, cmd: CommandOf<'effect.applyPreset'>, h: Handler
 					enabled: fx.enabled ?? true,
 					params: paramsFor(spec, fx.params as Record<string, PresetAnim<unknown>>),
 				};
+				dropForeignRotoRefs(c as { rotos?: { id: string }[] }, instance as never);
 				list.splice(at++, 0, instance as Draft<EffectInstance>);
 				created.push(instance.id);
 				done.push(`effect:${spec.id}`);

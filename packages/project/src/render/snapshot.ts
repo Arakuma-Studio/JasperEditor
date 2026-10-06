@@ -9,6 +9,7 @@ import type { FontRef, MediaAsset } from '../schema/media.ts';
 import {
 	type BlendMode,
 	type Clip,
+	type ClipRoto,
 	type ClipTracker,
 	type EffectInstance,
 	isKnownClipKind,
@@ -19,6 +20,7 @@ import {
 	type TextContent,
 	type Transform,
 } from '../schema/sequence.ts';
+import { type RenderRotoMatte, rotoIsStale, rotoStorePath } from '../roto/index.ts';
 import { type ResolvedTextAnimator, resolveTextAnimationWindows } from '../text-animations.ts';
 import type { Rational } from '../time.ts';
 import { transitionSideTrack, transitionTrackerOf } from '../tracking/transition.ts';
@@ -170,6 +172,11 @@ export type RenderVisualClip = {
 	 * that have effects; absent otherwise.
 	 */
 	sourceInfo?: { itemName: string; fileName: string; startTimecode: string | null };
+	/**
+	 * parity (roto): the computed mattes of the clip's roto objects, by roto id (objects without a result are
+	 * absent). Effects with roto-object params sample them at the layer's media frame.
+	 */
+	rotos?: Record<string, RenderRotoMatte>;
 };
 
 export type RenderAudioClip = {
@@ -229,6 +236,11 @@ export type SnapshotOptions = {
 	range?: { start: number; end: number };
 	resolveMedia(asset: MediaAsset): MediaHandle | null;
 	resolveFont(font: FontRef, weight: number, italic: boolean): string | null;
+	/**
+	 * parity (roto, additive): URL of a matte store for the headless browser (engine renders sign
+	 * `rotoStorePath(key)`); default the unsigned same-origin path.
+	 */
+	resolveRoto?(key: string): string;
 	/** M2 (S08, additive): pre-render URLs of a composition clip known to the consumer. */
 	resolveComposition?(clip: {
 		clipId: string;
@@ -238,6 +250,29 @@ export type SnapshotOptions = {
 };
 
 const ZERO = { value: 0, keyframes: [] } as Animatable<number>;
+
+/** parity (roto): render references of a clip's computed roto mattes. */
+function rotosOf(
+	rotos: readonly ClipRoto[] | undefined,
+	opts: Pick<SnapshotOptions, 'resolveRoto'>,
+): { rotos?: Record<string, RenderRotoMatte> } {
+	const out: Record<string, RenderRotoMatte> = {};
+	for (const r of rotos ?? []) {
+		const res = r.result;
+		if (!res) continue;
+		out[r.id] = {
+			key: res.key,
+			url: opts.resolveRoto?.(res.key) ?? rotoStorePath(res.key),
+			start: res.start,
+			end: res.end,
+			rate: { num: r.rate.num, den: r.rate.den },
+			width: res.width,
+			height: res.height,
+			stale: rotoIsStale(r),
+		};
+	}
+	return Object.keys(out).length ? { rotos: out } : {};
+}
 
 function transitionFields<T>(x: { headHandle: number; tailHandle: number; fades: T[] } | undefined): {
 	headHandle?: number;
@@ -471,6 +506,7 @@ export function buildRenderSnapshot(
 				...('mediaId' in source && ((r.effects as EffectInstance[] | undefined) ?? []).length > 0
 					? { sourceInfo: sourceInfoOf(source.mediaId) }
 					: {}),
+				...rotosOf(r.rotos as ClipRoto[] | undefined, opts),
 			});
 		}
 		clips.sort((a, b) => a.start - b.start);

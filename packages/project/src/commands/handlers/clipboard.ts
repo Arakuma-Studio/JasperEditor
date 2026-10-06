@@ -54,6 +54,7 @@ import {
 } from '../placement.ts';
 import type { CommandOf, PasteAttributes } from '../schemas/index.ts';
 import { applyClipPatch } from './clip-core.ts';
+import { dropForeignRotoRefs } from '../../roto/index.ts';
 import { buildParams } from './effect.ts';
 import { refreshAutoBezier } from './keyframe.ts';
 import { PRUNE_EMPTY_KEYFRAMES } from './mg-template.ts';
@@ -603,6 +604,7 @@ function applyAttributes(
 							params: buildParams(spec, copy.params, h),
 						}
 					: { ...copy, id: h.ids.next('fx') };
+				dropForeignRotoRefs(c as { rotos?: { id: string }[] }, instance as never);
 				list.splice(at++, 0, instance as Draft<EffectInstance>);
 				done.push(`effect:${fx.id}`);
 			}

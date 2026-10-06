@@ -4,6 +4,7 @@ import { CLIPBOARD_COMMANDS } from './clipboard.ts';
 import { PARAM_COMMANDS } from './param.ts';
 import { PRESET_COMMANDS } from './preset.ts';
 import { PROJECT_COMMANDS } from './project.ts';
+import { ROTO_COMMANDS } from './roto.ts';
 import { SEQUENCE_COMMANDS } from './sequence.ts';
 import { SIMPLIFY_COMMANDS } from './simplify.ts';
 import { TRACKER_COMMANDS } from './tracker.ts';
@@ -14,6 +15,7 @@ export * from './common.ts';
 export * from './param.ts';
 export * from './preset.ts';
 export * from './project.ts';
+export * from './roto.ts';
 export * from './sequence.ts';
 export * from './simplify.ts';
 export * from './tracker.ts';
@@ -31,6 +33,8 @@ export const ALL_COMMAND_SCHEMAS = [
 	...CLIPBOARD_COMMANDS,
 	// Effect presets (S03:FX-030)
 	...PRESET_COMMANDS,
+	// parity: roto / object mattes
+	...ROTO_COMMANDS,
 ] as const;
 
 export type Command = z.infer<(typeof ALL_COMMAND_SCHEMAS)[number]>;

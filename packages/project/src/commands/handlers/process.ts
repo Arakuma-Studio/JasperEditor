@@ -15,6 +15,7 @@
 //   does not hold every frame the clip shows is refused (E_OUT_OF_MEDIA), or with `fit` the clip is trimmed to
 //   the covered frames (`trim`) or left alone with a warning (`skip`). `keepDuration` is accepted and has no
 //   effect: the duration is always kept.
+import { retargetRotos, rotoRateOf } from '../../roto/index.ts';
 import { current, isDraft } from 'immer';
 import {
 	clipFileFrames,
@@ -256,6 +257,15 @@ function swapClipSource(
 			? rescaleClipForSource(plain(vclip), oldSize, newSize, { newKeyframeId: () => h.ids.next('kf') })
 			: null;
 		const d = clip as unknown as VideoClip;
+		// parity (roto): roto objects follow the new media (frames at its rate, strokes scaled); mattes dropped.
+		retargetRotos(d.rotos as never, {
+			to: {
+				mediaId: target.id,
+				rate: rotoRateOf(target, seq.settings.frameRate as Rational),
+				scaleX: oldSize ? newSize.width / oldSize.width : 1,
+				scaleY: oldSize ? newSize.height / oldSize.height : 1,
+			},
+		});
 		d.mediaId = target.id;
 		d.videoStreamIndex = stream.index;
 		if (next) {

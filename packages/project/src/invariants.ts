@@ -12,6 +12,8 @@ import { SPATIAL_INTERPOLATIONS } from './schema/common.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import type { Clip, EffectInstance, Sequence, Track } from './schema/sequence.ts';
 import { isKnownClipKind } from './schema/sequence.ts';
+import { ROTO_OBJECT_PARAMS } from './roto/index.ts';
+import type { ClipRoto } from './schema/sequence.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
 import {
 	contentSpanFlicks,
@@ -445,6 +447,27 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 			if (c.groupId && !seq.groups[c.groupId]?.members.includes(c.id))
 				issues.push(inv('INV-006', `Clip ${c.id} has a dangling groupId`, cw));
 			for (const m of c.markers) claim(m.id, 'mrk', [...cw, 'markers', m.id]);
+			// parity (roto): roto objects and the effect params that name them.
+			const rotoIds = new Set<string>();
+			for (const ro of (r.rotos as ClipRoto[] | undefined) ?? []) {
+				const rw = [...cw, 'rotos', ro.id];
+				claim(ro.id, 'rto', rw);
+				rotoIds.add(ro.id);
+				if (ro.mediaId !== r.mediaId)
+					issues.push(inv('INV-006', `Roto ${ro.id} belongs to media ${ro.mediaId}, not to its clip's`, rw));
+				if (ro.span[1] < ro.span[0]) issues.push(inv('INV-012', `Roto ${ro.id} has an empty span`, rw));
+				if (ro.base !== null && (ro.base < ro.span[0] || ro.base > ro.span[1]))
+					issues.push(inv('INV-012', `Roto ${ro.id} base frame lies outside its span`, rw));
+				if (ro.result && ro.result.end < ro.result.start)
+					issues.push(inv('INV-012', `Roto ${ro.id} result has end < start`, rw));
+			}
+			for (const fx of (r.effects as EffectInstance[] | undefined) ?? []) {
+				for (const name of ROTO_OBJECT_PARAMS[fx.effectId] ?? []) {
+					const v = fx.params[name]?.value;
+					if (typeof v === 'string' && v !== '' && !rotoIds.has(v))
+						issues.push(inv('INV-006', `${fx.effectId}.${name} names a missing roto ${v}`, [...cw, 'effects', fx.id]));
+				}
+			}
 			if (isKnownClipKind(c.kind)) {
 				effects(r.effects as EffectInstance[] | undefined, [...cw, 'effects']);
 				anims({ ...r, content: undefined, params: undefined }, cw);
@@ -724,6 +747,41 @@ export function repairDocument(
 					note('drop-reference', c.id, `dangling ${field}`);
 				}
 			}
+		}
+		// parity (roto): roto objects follow their clip's media (else their mattes are dropped), spans and bases
+		// are made valid, and effect params naming a missing roto are reset to "none".
+		for (const c of Object.values(seq.clips)) {
+			const r = c as Record<string, unknown>;
+			const rotos = r.rotos as ClipRoto[] | undefined;
+			for (const ro of rotos ?? []) {
+				if (ro.mediaId !== r.mediaId && typeof r.mediaId === 'string') {
+					ro.mediaId = r.mediaId;
+					ro.result = null;
+					note('reset-roto', ro.id, 'roto belonged to another media: mattes dropped');
+				}
+				if (ro.span[1] < ro.span[0]) {
+					ro.span = [ro.span[1], ro.span[0]];
+					note('fix-roto', ro.id, 'span swapped');
+				}
+				if (ro.base !== null && (ro.base < ro.span[0] || ro.base > ro.span[1])) {
+					ro.base = Math.min(ro.span[1], Math.max(ro.span[0], ro.base));
+					note('fix-roto', ro.id, 'base frame clamped into the span');
+				}
+				if (ro.result && ro.result.end < ro.result.start) {
+					ro.result = null;
+					note('fix-roto', ro.id, 'invalid result dropped');
+				}
+			}
+			const ids = new Set((rotos ?? []).map((x) => x.id));
+			for (const fx of (r.effects as EffectInstance[] | undefined) ?? [])
+				for (const name of ROTO_OBJECT_PARAMS[fx.effectId] ?? []) {
+					const a = fx.params[name];
+					if (a && typeof a.value === 'string' && a.value !== '' && !ids.has(a.value)) {
+						a.value = '';
+						a.keyframes = [];
+						note('drop-reference', fx.id, `${name} named a missing roto`);
+					}
+				}
 		}
 		// M2 (wp-m2-text-anim, S11:TXA-008): animator params a known preset rejects are reset to its defaults.
 		for (const c of Object.values(seq.clips)) {

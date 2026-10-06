@@ -275,6 +275,93 @@ export const TrackedBySchema = z.looseObject({
 });
 export type TrackedBy = DeepStrip<z.infer<typeof TrackedBySchema>>;
 
+// ---------------------------------------------------------------- roto / object mattes (parity: roto)
+
+/**
+ * A Roto Brush stroke on one source frame: a polyline swept by a disc, in **media pixels** of the clip's source
+ * (display orientation). `fg` / `bg` select / exclude (hard constraints of the graph cut), `refine` / `refineErase`
+ * paint / erase the Refine Edge band (edge matting).
+ */
+export const RotoStrokeSchema = z.looseObject({
+	kind: z.enum(['fg', 'bg', 'refine', 'refineErase']),
+	/** Media frame (index at `ClipRoto.rate`). */
+	frame: nonNegInt(),
+	radius: z.number().positive().max(10_000),
+	points: z.array(Vec2Schema).min(1),
+});
+export type RotoStroke = DeepStrip<z.infer<typeof RotoStrokeSchema>>;
+
+/** A box prompt on one source frame ([x0, y0, x1, y1] media px): outside is background (GrabCut's rectangle). */
+export const RotoBoxSchema = z.looseObject({
+	frame: nonNegInt(),
+	rect: z.tuple([z.number(), z.number(), z.number(), z.number()]),
+});
+export type RotoBox = DeepStrip<z.infer<typeof RotoBoxSchema>>;
+
+/** Segmentation / tracking settings (absent = the defaults of `rotoSettingsOf`). */
+export const RotoSettingsSchema = z.looseObject({
+	/** `model`: SAM 2.1 (when installed) as a prior of the graph cut; `classic`: colour models only. */
+	engine: z.enum(['model', 'classic']).optional(),
+	/** Model id of the processing-model catalogue (segmentation models). */
+	model: z.string().min(1).optional(),
+	quality: z.enum(['standard', 'best']).optional(),
+	/** Propagation: Search Radius (media px), Motion Threshold / Motion Damping (%). */
+	searchRadius: z.number().min(0).max(200).optional(),
+	motionThreshold: z.number().min(0).max(100).optional(),
+	motionDamping: z.number().min(0).max(100).optional(),
+	/** Edge refinement baked into the matte: off, guided filter, or guided + closed-form matting. */
+	edgeMode: z.enum(['off', 'guided', 'closed-form']).optional(),
+	/** Width (media px) of the automatic edge band; 0 = only Refine Edge strokes. */
+	edgeRadius: z.number().min(0).max(100).optional(),
+	edgeSmooth: z.number().min(0).max(100).optional(),
+	/** Faces: detection confidence 0..1, outline growth (%), shape. */
+	faceThreshold: z.number().min(0.05).max(0.99).optional(),
+	faceExpand: z.number().min(-50).max(200).optional(),
+	faceShape: z.enum(['outline', 'ellipse']).optional(),
+});
+export type RotoSettings = DeepStrip<z.infer<typeof RotoSettingsSchema>>;
+
+/**
+ * Where the computed mattes are: an engine matte store `key` holding one 8-bit matte per media frame of
+ * [`start`, `end`] at `width × height`; `inputs` = `rotoInputsHash` of the roto they were computed from (stale when it
+ * differs); `model` = the model id used (null: classic engine).
+ */
+export const RotoResultSchema = z.looseObject({
+	key: z.string().min(1),
+	start: nonNegInt(),
+	end: nonNegInt(),
+	width: z.number().int().positive(),
+	height: z.number().int().positive(),
+	inputs: z.string(),
+	model: z.string().nullable(),
+});
+export type RotoResult = DeepStrip<z.infer<typeof RotoResultSchema>>;
+
+/**
+ * A segmented object on a video or still clip (After Effects' Roto Brush span, or the faces found by face
+ * tracking). Frames are media frames at `rate` (the source's frame rate); geometry is media pixels. Effects
+ * reference it by id (`object` param of `jasper.object-matte` / `jasper.object-blur` / mask inputs).
+ */
+export const ClipRotoSchema = z.looseObject({
+	id: z.string(),
+	name: z.string(),
+	kind: z.enum(['brush', 'faces']),
+	/** The media the strokes and mattes belong to (the clip's media when drawn). */
+	mediaId: z.string(),
+	rate: RationalSchema,
+	/** Base frame: where segmentation starts (the first frame with a selecting stroke / box); null = none yet. */
+	base: nonNegInt().nullable(),
+	/** Segmentation span (inclusive media frames). */
+	span: z.tuple([nonNegInt(), nonNegInt()]),
+	strokes: z.array(RotoStrokeSchema),
+	boxes: z.array(RotoBoxSchema).optional(),
+	settings: RotoSettingsSchema,
+	result: RotoResultSchema.nullable(),
+	/** Freeze: the computed mattes are kept permanently and the roto cannot be edited until unfrozen. */
+	frozen: z.boolean().optional(),
+});
+export type ClipRoto = DeepStrip<z.infer<typeof ClipRotoSchema>>;
+
 const visualShape = {
 	transform: TransformSchema,
 	opacity: AnimNumberSchema,
@@ -298,6 +385,8 @@ export const VideoClipSchema = z.looseObject({
 	...visualShape,
 	/** M2 (S09): trackers placed on this clip's picture. */
 	trackers: z.array(ClipTrackerSchema).optional(),
+	/** parity (roto): segmented objects (Roto Brush, faces) of this clip's picture. */
+	rotos: z.array(ClipRotoSchema).optional(),
 });
 export const AudioClipSchema = z.looseObject({
 	...commonShape,
@@ -314,6 +403,8 @@ export const StillClipSchema = z.looseObject({
 	kind: z.literal('still'),
 	mediaId: z.string(),
 	...visualShape,
+	/** parity (roto): segmented objects of the still (one frame). */
+	rotos: z.array(ClipRotoSchema).optional(),
 });
 export const AnimatedImageClipSchema = z.looseObject({
 	...commonShape,

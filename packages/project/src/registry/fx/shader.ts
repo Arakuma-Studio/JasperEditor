@@ -229,7 +229,19 @@ export type GpuEffect = {
 	 * no time hooks): a still layer then is not redrawn on every frame. Default false (redraw every frame).
 	 */
 	timeInvariant?: boolean;
+	/**
+	 * parity (roto): object mattes of the clip's roto objects as inputs. Each entry binds `uniform sampler2D
+	 * u_<name>` to the 8-bit matte (in the red channel, 1 = object) of the roto named by the string param `param`
+	 * (a `roto-object` param) at the layer's media frame + `offset` (neighbouring frames for temporal filters),
+	 * with `vec2 u_<name>_size` (matte px, (0, 0) without a picture) and `float u_<name>_state`: 0 = no object / not
+	 * computed (pass the input through), 1 = inside the computed span (the matte is bound), 2 = outside it (After
+	 * Effects: transparent). The matte covers the layer box: sample it with `fx_layerNorm()` / layer-normalised uv.
+	 */
+	mattes?: readonly FxMatteInput[];
 };
+
+/** One object-matte input of a GPU effect (`GpuEffect.mattes`). */
+export type FxMatteInput = { name: string; param: string; offset?: number };
 
 /** One pass of a planned effect instance, ready for the GL host. */
 export type FxPassPlan = {
@@ -265,7 +277,14 @@ export type FxEffectPlan = {
 	 * `media` params bound as textures: `uniform sampler2D u_<param>` + `uniform vec2 u_<param>_size` (pictures), or
 	 * for `lut`-only params `uniform highp sampler3D u_<param>` + `vec2 u_<param>_size` = (N, 1) for an N³ LUT.
 	 */
-	textures: { param: string; uniform: string; mediaId: string; kind?: '2d' | 'lut' }[];
+	textures: {
+		param: string;
+		uniform: string;
+		mediaId: string;
+		kind?: '2d' | 'lut';
+		/** parity (roto): an object matte (`GpuEffect.mattes`); the host resolves `mediaId` and `u_<name>_state`. */
+		matte?: { object: string; offset: number };
+	}[];
 	/** `u_source` has mipmaps in every pass (`GpuEffect.sourceMipmaps`). */
 	sourceMipmaps?: boolean;
 	/** Identity of programs and sizes (not of uniform values): changes force no re-plan, only a re-key. */
@@ -596,7 +615,7 @@ export function planGpuEffect(
 	const uniforms = paramUniforms(spec, p);
 	const custom = gpu.uniforms?.(p, ctx) ?? {};
 	for (const [k, v] of Object.entries(custom)) uniforms.push(toUniform(k, v));
-	const textures = spec.params
+	const textures: FxEffectPlan['textures'] = spec.params
 		.filter((ps) => ps.type === 'media')
 		.map((ps) => {
 			const v = p[ps.name] as { mediaId?: unknown } | undefined;
@@ -607,6 +626,17 @@ export function planGpuEffect(
 				...(isLutMediaParam(ps) ? { kind: 'lut' as const } : {}),
 			};
 		});
+	// parity (roto): object mattes (state 0 until the host resolves them).
+	for (const m of gpu.mattes ?? []) {
+		const v = p[m.param];
+		textures.push({
+			param: m.param,
+			uniform: `u_${m.name}`,
+			mediaId: '',
+			matte: { object: typeof v === 'string' ? v : '', offset: Math.round(m.offset ?? 0) },
+		});
+		uniforms.push({ name: `u_${m.name}_state`, type: 'float', value: [0] });
+	}
 	const planned = planPasses(passes, {
 		paramDecls: uniforms.map(declaration),
 		textures: textures.map((t) => t.uniform),
@@ -1080,7 +1110,15 @@ export function validateGpuEffect(spec: EffectSpec): string[] {
 	}
 	if (passes.length === 0) at('no passes');
 	const outputs = new Set<string>();
-	const textures = spec.params.filter((p) => p.type === 'media').length;
+	const textures = spec.params.filter((p) => p.type === 'media').length + (gpu.mattes?.length ?? 0);
+	for (const m of gpu.mattes ?? []) {
+		if (!NAME_RE.test(m.name)) at(`matte "${m.name}": names are letters and digits, starting with a letter`);
+		if (names.has(m.name) || RESERVED.has(`u_${m.name}`)) at(`matte "${m.name}" collides with a param or built-in`);
+		const src = spec.params.find((p) => p.name === m.param);
+		if (!src || src.type !== 'string') at(`matte "${m.name}": param "${m.param}" must be a string param`);
+		if (m.offset !== undefined && !(Number.isInteger(m.offset) && Math.abs(m.offset) <= 8))
+			at(`matte "${m.name}": offset must be an integer in −8…8`);
+	}
 	passes.forEach((pass, i) => {
 		const last = i === passes.length - 1;
 		if (!/\bvoid\s+main\s*\(/.test(pass.frag)) at(`pass ${i}: no void main()`);

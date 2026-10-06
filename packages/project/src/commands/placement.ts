@@ -6,6 +6,7 @@ import { createTrack } from '../factories.ts';
 import { trackKindFor } from '../registry/kinds.ts';
 import type { Animatable } from '../schema/common.ts';
 import type { Clip, Sequence, Track, TrackKind } from '../schema/sequence.ts';
+import { ROTO_OBJECT_PARAMS } from '../roto/index.ts';
 import { contentSpanFlicks } from '../time.ts';
 import type { HandlerContext } from './context.ts';
 import { splitTextAnimation } from './handlers/text-animation.ts';
@@ -126,6 +127,19 @@ export function reidentifyClipChildren(clip: Clip, h: HandlerContext): void {
 		trackedBy?: { effectInstanceId?: string };
 	};
 	for (const t of c.trackers ?? []) t.id = h.ids.next('tkr');
+	// parity (roto): roto objects too; effect params naming them follow (ROTO_OBJECT_PARAMS).
+	const rotoMap = new Map<string, string>();
+	for (const ro of (clip as { rotos?: { id: string }[] }).rotos ?? []) {
+		const id = h.ids.next('rto');
+		rotoMap.set(ro.id, id);
+		ro.id = id;
+	}
+	if (rotoMap.size)
+		for (const fx of (c.effects ?? []) as unknown as { effectId: string; params: Record<string, { value: unknown }> }[])
+			for (const name of ROTO_OBJECT_PARAMS[fx.effectId] ?? []) {
+				const a = fx.params[name];
+				if (a && typeof a.value === 'string' && rotoMap.has(a.value)) a.value = rotoMap.get(a.value)!;
+			}
 	const fxIndex = c.trackedBy?.effectInstanceId
 		? (c.effects ?? []).findIndex((fx) => fx.id === c.trackedBy!.effectInstanceId)
 		: -1;

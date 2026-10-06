@@ -13,6 +13,7 @@
 // same shift: `sourceIn`, every keyframe (Motion, opacity, effect parameters), clip markers and tracker samples
 // (S01:KF-002 — content time sticks to the picture). Handles (TRN-003) follow from the new `sourceIn` and the
 // new file's duration, so transitions and trim limits see what the new file really holds.
+import { retargetRotos } from '../roto/index.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { MediaAsset, MediaProbe, SourceRange } from '../schema/media.ts';
 import { flicksPerFrame, type Rational, rationalEquals, roundSym } from '../time.ts';
@@ -217,7 +218,7 @@ function shiftAnimatables(node: unknown, shift: number): void {
 		return;
 	}
 	for (const [k, v] of Object.entries(node)) {
-		if (k === 'trackers' || k === 'markers') continue;
+		if (k === 'trackers' || k === 'markers' || k === 'rotos') continue;
 		shiftAnimatables(v, shift);
 	}
 }
@@ -255,6 +256,8 @@ export function shiftClipContentTime(clip: ShiftableClip, shift: number): Conten
 		for (const m of kept) m.flicks += shift;
 		if (report.droppedMarkers) clip.markers.splice(0, clip.markers.length, ...kept);
 	}
+	// parity (roto): roto frames move with the content time; their computed mattes are dropped.
+	retargetRotos((clip as { rotos?: never }).rotos, { shiftFlicks: shift });
 	for (const tr of clip.trackers ?? []) {
 		tr.reference.time = Math.max(0, tr.reference.time + shift);
 		const s = tr.samples;
