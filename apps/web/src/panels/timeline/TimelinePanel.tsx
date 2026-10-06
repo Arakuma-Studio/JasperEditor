@@ -17,12 +17,14 @@ import {
 	sequenceDuration,
 	TRANSITION_SPECS,
 	type Transition,
+	trackLabel,
 	transitionSpec,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useSessionOrNull, useSessionState, useStoreSelector } from '@jasper/session/react';
 import { LABEL_DISPLAY_NAMES } from '@jasper/ui';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { registerUiLocator } from '../../agent-bridge/ui-automation.ts';
 import { dropLutItems } from '../../color/actions.ts';
 import { createCommandContext } from '../../commands/context.ts';
 import { runCommand } from '../../commands/registry.ts';
@@ -299,6 +301,92 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		ro.observe(el);
 		return () => ro.disconnect();
 	}, [ui]);
+
+	// mcp-cli (live-UI automation): time ↔ x and track ↔ y for agents (ui_locate / ui_hit, ui_click {timeline}).
+	const seqRef = useRef(seq);
+	seqRef.current = seq;
+	useEffect(() => {
+		const area = () => areaRef.current;
+		const rowOf = (track: string) => {
+			const s = seqRef.current;
+			const t = [...s.videoTracks, ...s.audioTracks].find(
+				(x) => x.id === track || trackLabel(s, x.id) === track,
+			);
+			if (!t) throw new Error(`No track "${track}" in this sequence`);
+			const g = geomRef.current.layout;
+			const row = [...g.video.rows, ...g.audio.rows].find((r) => r.trackId === t.id);
+			if (!row) throw new Error(`Track ${track} is not laid out`);
+			return { row, label: trackLabel(s, t.id) ?? track };
+		};
+		const tc = (f: number) => {
+			const st = seqRef.current.settings;
+			return formatTimecode(f, st.frameRate as Rational, {
+				dropFrame: st.dropFrame,
+				startFrames: st.startTimecodeFrames,
+			});
+		};
+		return registerUiLocator(props.instanceId, {
+			kind: 'timeline',
+			element: () => areaRef.current?.closest('[data-panel-body]') ?? areaRef.current,
+			impl: {
+				sequenceId: () => seqRef.current.id,
+				view: () => {
+					const r = area()?.getBoundingClientRect();
+					const v = geomRef.current.viewport;
+					return {
+						scrollFrame: v.scrollFrame,
+						pxPerFrame: v.pxPerFrame,
+						area: { x: r?.left ?? 0, y: r?.top ?? 0, width: r?.width ?? 0, height: r?.height ?? 0 },
+						visibleFrames: [Math.floor(v.scrollFrame), Math.ceil(v.scrollFrame + v.width / v.pxPerFrame)],
+					};
+				},
+				locate: (a) => {
+					const r = area()?.getBoundingClientRect();
+					if (!r) throw new Error('The timeline is not laid out');
+					const v = geomRef.current.viewport;
+					const xOf = (f: number) => r.left + (f - v.scrollFrame) * v.pxPerFrame;
+					if (a.clipId) {
+						const c = seqRef.current.clips[a.clipId];
+						if (!c) throw new Error(`No clip ${a.clipId} in this sequence`);
+						const { row, label } = rowOf(c.trackId);
+						const inset = Math.min(4, (c.duration * v.pxPerFrame) / 4);
+						const x =
+							a.edge === 'in'
+								? xOf(c.start) + inset / 2
+								: a.edge === 'out'
+									? xOf(c.start + c.duration) - inset / 2
+									: xOf(c.start + c.duration / 2);
+						return { x, y: r.top + row.y + row.height / 2, frame: c.start, track: label };
+					}
+					const frame = a.frame ?? Math.round(v.scrollFrame + v.width / v.pxPerFrame / 2);
+					// A frame's cell centre, so a click there lands on that frame.
+					const x = xOf(frame + 0.5);
+					if (!a.track) return { x, y: r.top + 4, frame };
+					const { row, label } = rowOf(a.track);
+					return { x, y: r.top + row.y + row.height / 2, frame, track: label };
+				},
+				hit: (x, y) => {
+					const r = area()?.getBoundingClientRect();
+					if (!r || x < r.left || x > r.right || y < r.top || y > r.bottom) return null;
+					const { viewport: v, layout } = geomRef.current;
+					const s = seqRef.current;
+					const h = hitTest(s, layout, v, x - r.left, y - r.top);
+					const exact = v.scrollFrame + (x - r.left) / v.pxPerFrame;
+					const frame = Math.max(0, Math.floor(exact));
+					const row = 'row' in h ? h.row : null;
+					return {
+						frame,
+						exactFrame: Math.round(exact * 100) / 100,
+						timecode: tc(frame),
+						track: row ? trackLabel(s, row.trackId) : null,
+						trackId: row?.trackId ?? null,
+						clipId: h.kind === 'clip' ? h.clip.id : null,
+						...(h.kind === 'clip' ? { zone: h.zone } : {}),
+					};
+				},
+			},
+		});
+	}, [props.instanceId]);
 
 	// ------------------------------------------------------------ pointer input (coalesced per frame, TL-156)
 	const pending = useRef<PointerInfo | null>(null);

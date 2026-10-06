@@ -27,6 +27,7 @@ import type { EditorSession } from '@jasper/session';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { transitionPreferences } from '../panels/effects/transition-prefs.ts';
 import { AgentRelayClient, type RelayState } from './relay-client.ts';
+import { runUiAction, UiAutomationError } from './ui-automation.ts';
 
 const APPROVAL_TIMEOUT_MS = 60_000;
 const PLAYHEAD_EVENT_INTERVAL_MS = 100; // ≤ 10 Hz (S01:AGT-004)
@@ -507,11 +508,16 @@ export class AgentBridge {
 	}
 
 	private async onRelayRequest(
-		kind: 'tx' | 'query' | 'schema',
+		kind: 'tx' | 'query' | 'schema' | 'ui',
 		payload: unknown,
 	): Promise<{ result?: unknown; error?: { code: string; message: string } }> {
 		try {
 			if (kind === 'schema') return { result: this.schema() };
+			// mcp-cli: live-UI automation of this window (ui-automation.ts).
+			if (kind === 'ui') {
+				const p = (payload ?? {}) as { action?: string; args?: Record<string, unknown> };
+				return { result: await runUiAction(String(p.action), p.args ?? {}) };
+			}
 			if (kind === 'query') {
 				const p = (payload ?? {}) as { query?: string; args?: Record<string, unknown> };
 				const result = await this.query(String(p.query), p.args ?? {});
@@ -521,7 +527,8 @@ export class AgentBridge {
 			const result = await this.transact(p.transaction ?? {}, { via: 'relay', approved: !!p.approved });
 			return { result };
 		} catch (e) {
-			if (e instanceof AgentQueryError) return { error: { code: e.code, message: e.message } };
+			if (e instanceof AgentQueryError || e instanceof UiAutomationError)
+				return { error: { code: e.code, message: e.message } };
 			return { error: { code: 'E_INTERNAL', message: e instanceof Error ? e.message : String(e) } };
 		}
 	}

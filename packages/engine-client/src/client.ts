@@ -3,6 +3,7 @@ import {
 	type AgentOpenProjectRequest,
 	type AgentQueryRequest,
 	type AgentTxRequest,
+	type AgentUiRequest,
 	API_HEADER,
 	API_VERSION,
 	buildPath,
@@ -273,6 +274,10 @@ export class EngineClient {
 	}
 	agentOpenProject(req: AgentOpenProjectRequest) {
 		return this.call('agentOpenProject', { body: req });
+	}
+	/** mcp-cli: live-UI automation of an open editor window. */
+	agentUi(req: AgentUiRequest, signal?: AbortSignal) {
+		return this.call('agentUi', { body: req, signal });
 	}
 	agentMcpInfo() {
 		return this.call('agentMcpInfo');

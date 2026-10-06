@@ -28,6 +28,7 @@ import {
 	CLIPBOARD_FILE_LIST_TYPE,
 	clipboardReadResult,
 	ELECTRON_CLIPBOARD_FORMAT,
+	isCaptureRect,
 	isClipboardWrite,
 	isExternalUrlAllowed,
 	isRevealablePath,
@@ -165,6 +166,21 @@ function registerIpc(): void {
 			exists: existsSync(mcpEntry),
 			execPath: process.execPath,
 		});
+	});
+	// mcp-cli (live-UI automation, ui_screenshot): the window's own pixels (WebGL included), cropped and scaled.
+	ipcMain.handle('jasper:capture-page', async (e, rect: unknown, maxWidth: unknown) => {
+		if (!fromApp(e) || !isCaptureRect(rect)) return null;
+		const image = await e.sender.capturePage({
+			x: Math.round(rect.x),
+			y: Math.round(rect.y),
+			width: Math.round(rect.width),
+			height: Math.round(rect.height),
+		});
+		const size = image.getSize();
+		const limit = typeof maxWidth === 'number' && maxWidth >= 64 ? Math.min(4096, maxWidth) : 1600;
+		const out = size.width > limit ? image.resize({ width: limit, quality: 'best' }) : image;
+		const s = out.getSize();
+		return { png: out.toPNG().toString('base64'), width: s.width, height: s.height };
 	});
 	// wp-clipboard (S01:CLB-002): the JasperEditor payload as the custom application/x-jasper-clipboard format,
 	// written atomically with its text/html and text/plain forms; reads return only that format's JSON.

@@ -18,6 +18,14 @@ export interface JasperDesktopBridge {
 	clipboard?: DesktopClipboard;
 	/** wp-clipboard-2 (S01:CLB-010): the absolute path of a pasted/dropped File ('' when it is not a file). */
 	filePath?(file: File): string;
+	/**
+	 * mcp-cli (live-UI automation): a PNG of the window's content area, or of `rect` (CSS px), scaled down to at
+	 * most `maxWidth` px wide; `png` is base64.
+	 */
+	capturePage?(
+		rect: { x: number; y: number; width: number; height: number },
+		maxWidth: number,
+	): Promise<{ png: string; width: number; height: number }>;
 }
 
 /** The Electron clipboard as the preload exposes it (validated and size-capped in the main process). */

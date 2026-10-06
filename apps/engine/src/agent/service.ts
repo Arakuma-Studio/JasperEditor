@@ -5,6 +5,8 @@
 import {
 	type AgentQueryRequest,
 	type AgentTxResponse,
+	type AgentUiRequest,
+	type AgentUiResponse,
 	ENGINE_ERROR_CODES,
 	TransactionResultSchema,
 } from '@jasper/api';
@@ -525,4 +527,49 @@ export class AgentService {
 	isLive(projectId: string): boolean {
 		return this.sessions.holder(projectId) !== null;
 	}
+
+	// ------------------------------------------------------------ live-UI automation (mcp-cli)
+
+	/**
+	 * Relays a UI automation request (elements, input, screenshot, coordinate mapping, UI commands) to an open
+	 * editor window and returns its answer and which window answered.
+	 */
+	async ui(req: AgentUiRequest): Promise<AgentUiResponse> {
+		const conn = this.sessions.uiTarget(req.projectId);
+		if (!conn?.projectId || !conn.sessionId)
+			throw new AgentApiError(
+				409,
+				'NO_SESSION',
+				req.projectId
+					? `No editor window has project ${req.projectId} open`
+					: 'No editor window is open (open a project in the web app or the desktop app first)',
+				{ code: 'E_NO_SESSION' },
+			);
+		let out: { result: unknown; error?: { code: string; message: string } };
+		try {
+			out = await this.sessions.request(
+				conn,
+				'ui',
+				{ action: req.action, args: req.args ?? {} },
+				Math.max(this.relayTimeoutMs, UI_TIMEOUT_MS),
+			);
+		} catch (e) {
+			if (e instanceof RelayError)
+				throw new AgentApiError(e.code === 'E_TIMEOUT' ? 504 : 409, e.code === 'E_TIMEOUT' ? 'TIMEOUT' : 'NO_SESSION', e.message, {
+					code: e.code,
+				});
+			throw e;
+		}
+		if (out.error)
+			throw new AgentApiError(
+				out.error.code === 'E_NOT_FOUND' ? 404 : 400,
+				out.error.code === 'E_NOT_FOUND' ? 'NOT_FOUND' : 'VALIDATION_FAILED',
+				out.error.message,
+				{ code: out.error.code },
+			);
+		return { result: out.result, window: { projectId: conn.projectId, sessionId: conn.sessionId } };
+	}
 }
+
+/** UI requests may wait for a few frames, a lazy panel or a screenshot of a large window. */
+const UI_TIMEOUT_MS = 60_000;
