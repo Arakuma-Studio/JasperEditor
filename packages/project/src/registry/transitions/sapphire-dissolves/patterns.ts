@@ -2,12 +2,13 @@
 // dissolve), S_DissolveLuma (luminance pattern of either or both clips), S_DissolveSpeckle (noise pattern) and
 // S_DissolveStatic (random pixel static). Parameters follow Boris FX's public Sapphire documentation; clean-room
 // implementations.
-import type { ShaderPass } from '../../fx/shader.ts';
+
 import { GLSL_COLOR } from '../../fx/glsl/color.ts';
 import { GLSL_HASH } from '../../fx/glsl/hash.ts';
 import { GLSL_NOISE } from '../../fx/glsl/noise.ts';
 import { fxParam } from '../../fx/params.ts';
 import { gaussianBlurPasses } from '../../fx/passes.ts';
+import type { ShaderPass } from '../../fx/shader.ts';
 import { blurPx, defineDissolve, GLSL_SD, intSlider, seed, slider } from './common.ts';
 
 /** S_Dissolve: a cross fade, with Dissolve Speed (a quicker cut around the peak) and Slow In / Slow Out. */

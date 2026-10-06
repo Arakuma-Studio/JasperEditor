@@ -98,7 +98,15 @@ void main() {
 // ---------------------------------------------------------------- S_DissolveDefocus
 
 export const DEFOCUS_SHAPES = ['circle', '3', '4', '5', '6', '7', '8'] as const;
-const DEFOCUS_SHAPE_LABELS = ['Circle', '3 sides', '4 sides', '5 sides', '6 sides', '7 sides', '8 sides'] as const;
+const DEFOCUS_SHAPE_LABELS = [
+	'Circle',
+	'3 sides',
+	'4 sides',
+	'5 sides',
+	'6 sides',
+	'7 sides',
+	'8 sides',
+] as const;
 export const DEFOCUS_EDGE_MODES = ['transparent', 'repeat', 'reflect'] as const;
 
 /** Defocus radius (frame px) of a Defocus Width of 1.0, as a fraction of the frame width. */
@@ -111,10 +119,10 @@ export function defocusRadii(p: EffectParams, t: number, width: number) {
 	return {
 		from: base * tt * Math.max(0, num(p.defocusRelFrom, 1)),
 		to: base * (1 - tt) * Math.max(0, num(p.defocusRelTo, 1)),
-		max: base * Math.max(0, num(p.defocusRelFrom, 1), num(p.defocusRelTo, 1)) * Math.max(1, num(p.relHeight, 1)),
+		max:
+			base * Math.max(0, num(p.defocusRelFrom, 1), num(p.defocusRelTo, 1)) * Math.max(1, num(p.relHeight, 1)),
 	};
 }
-
 
 const DEFOCUS_GLSL = /* glsl */ `
 // Iris radius (fraction of the full radius) in direction ang (radians): circle, or a polygon with Roundness.
@@ -225,7 +233,13 @@ export const S_DISSOLVE_DEFOCUS: TransitionSpec = defineDissolve({
 		slider('boostHighlights', 'Boost Highlights', 0, { min: 0, softMax: 4 }),
 		slider('hilightThreshold', 'Hilight Threshold', 0.9, { min: 0, softMax: 1 }),
 		slider('brightness', 'Brightness', 1, { min: 0, softMax: 4 }),
-		fxParam.choice('edgeMode', 'Edge Mode', DEFOCUS_EDGE_MODES, ['Transparent', 'Repeat', 'Reflect'], 'reflect'),
+		fxParam.choice(
+			'edgeMode',
+			'Edge Mode',
+			DEFOCUS_EDGE_MODES,
+			['Transparent', 'Repeat', 'Reflect'],
+			'reflect',
+		),
 	],
 	gpu: {
 		uniforms: (p, ctx) => {

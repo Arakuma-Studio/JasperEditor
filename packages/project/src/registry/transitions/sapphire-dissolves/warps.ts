@@ -12,15 +12,15 @@ import type { EffectParams } from '../../effects.ts';
 import { GLSL_HASH } from '../../fx/glsl/hash.ts';
 import { GLSL_NOISE } from '../../fx/glsl/noise.ts';
 import { fxParam } from '../../fx/params.ts';
+import { DW_WAVE_UNIT, SHAKE_SAMPLES, shakeUniforms } from '../../fx/sapphire-distort-warp.ts';
 import type { GlslChunk, ShaderPass } from '../../fx/shader.ts';
-import { DW_WAVE_UNIT } from '../../fx/sapphire-distort-warp.ts';
-import { SHAKE_SAMPLES, shakeUniforms } from '../../fx/sapphire-distort-warp.ts';
 import {
 	blurPasses,
 	check,
 	defineDissolve,
 	dissolveTiming,
 	GLSL_SD,
+	GLSL_SD_NOISE,
 	grp,
 	intSlider,
 	num,
@@ -52,27 +52,42 @@ mat2 sdw_rot(float deg) { float a = radians(deg); float c = cos(a), s = sin(a); 
  */
 function warpMain(body: string): string {
 	return `${body}
-vec4 sdw_shade(vec2 f, ivec2 w) {
-  vec4 a = u_sdMix >= 1.0 ? vec4(0.0) : sd_fromW(sdw_uvOfFrame(warpA(f)), w);
-  vec4 b = u_sdMix <= 0.0 ? vec4(0.0) : sd_toW(sdw_uvOfFrame(warpB(f)), w);
+vec4 sdw_mixAt(vec2 fa, vec2 fb, ivec2 w) {
+  vec4 a = u_sdMix >= 1.0 ? vec4(0.0) : sd_fromW(sdw_uvOfFrame(fa), w);
+  vec4 b = u_sdMix <= 0.0 ? vec4(0.0) : sd_toW(sdw_uvOfFrame(fb), w);
   return mix(a, b, u_sdMix);
 }
 void main() {
   vec2 f = sdw_frameOfPx(tr_px());
   ivec2 w = ivec2(u_wrapX, u_wrapY);
-  vec4 c = sdw_shade(f, w);
-  if (u_filter) {
-    // Footprint of one output pixel in the sources (both warps): supersample 2×2 where it minifies.
-    float px = 1.0 / u_compSize.x;
-    vec2 wa = warpA(f), wb = warpB(f);
-    float fp = max(max(length(warpA(f + vec2(px, 0.0)) - wa), length(warpA(f + vec2(0.0, px)) - wa)),
-                   max(length(warpB(f + vec2(px, 0.0)) - wb), length(warpB(f + vec2(0.0, px)) - wb))) / px;
-    if (fp > 1.5) {
-      c = 0.25 * (sdw_shade(f + vec2(-0.25, -0.25) * px, w) + sdw_shade(f + vec2(0.25, -0.25) * px, w)
-                + sdw_shade(f + vec2(-0.25, 0.25) * px, w) + sdw_shade(f + vec2(0.25, 0.25) * px, w));
-    }
+  float px = 1.0 / u_compSize.x;
+  // The warps are evaluated in loops with uniform-driven trip counts, so each has two call sites only (software GL
+  // compiles every inlined copy). First the warps at f, f + 1 px in x and in y (the footprint, Filter only).
+  vec2 wa[3] = vec2[3](f, f, f);
+  vec2 wb[3] = vec2[3](f, f, f);
+  int nf = u_filter ? 3 : 1;
+  for (int i = 0; i < nf; i++) {
+    vec2 g = f + (i == 1 ? vec2(px, 0.0) : i == 2 ? vec2(0.0, px) : vec2(0.0));
+    wa[i] = warpA(g);
+    wb[i] = warpB(g);
   }
-  fragColor = mix(c, sd_dissolve(), u_mixWithDissolve);
+  // Filter: supersample 2×2 where one output pixel covers more than 1.5 source pixels.
+  int n = 1;
+  if (u_filter) {
+    float fp = max(max(length(wa[1] - wa[0]), length(wa[2] - wa[0])), max(length(wb[1] - wb[0]), length(wb[2] - wb[0])));
+    if (fp > 1.5 * px) n = 4;
+  }
+  vec4 acc = vec4(0.0);
+  for (int i = 0; i < n; i++) {
+    vec2 a = wa[0], b = wb[0];
+    if (n > 1) {
+      vec2 g = f + (vec2(float(i % 2), float(i / 2)) - 0.5) * 0.5 * px;
+      a = warpA(g);
+      b = warpB(g);
+    }
+    acc += sdw_mixAt(a, b, w);
+  }
+  fragColor = mix(acc / float(n), sd_dissolve(), u_mixWithDissolve);
 }`;
 }
 
@@ -108,13 +123,13 @@ export const S_DISSOLVE_BUBBLE: TransitionSpec = defineDissolve({
 		uniforms: (p, ctx) => rampUniforms(p, ctx.progress),
 		passes: [
 			{
-				include: [GLSL_SDW, GLSL_NOISE],
+				include: [GLSL_SDW, GLSL_SD_NOISE],
 				frag: warpMain(/* glsl */ `
 // Bubble noise: two fbm fields → a displacement of about ±amp / freq frame widths.
 vec2 bubble(vec2 f) {
   vec2 q = f * u_frequency * vec2(1.0, u_frequencyRelY);
   int o = int(clamp(floor(u_octaves + 0.5), 1.0, 10.0));
-  return vec2(fx_fbm(q, o, 2.0, 0.5, u_seed), fx_fbm(q + vec2(37.3, 11.9), o, 2.0, 0.5, fract(u_seed + 0.5)))
+  return vec2(sd_fbm(q, o, 0.5, u_seed), sd_fbm(q + vec2(37.3, 11.9), o, 0.5, fract(u_seed + 0.5))) * 1.4
        / max(u_frequency, 0.01);
 }
 vec2 warpA(vec2 f) { return f + bubble(f) * u_amplitude * u_rampA; }
@@ -372,7 +387,10 @@ const shakeAxis = (axis: 'x' | 'y' | 'z' | 'tilt', label: string, randAmp: numbe
  * The shake poses of a frame (the S_Shake model of the distort family, `shakeUniforms`), with the amplitude scaled
  * by the envelope so the shake builds up to the peak and settles at both ends.
  */
-export function dissolveShakeUniforms(p: EffectParams, ctx: { frame: number; fps: number; seed: number; progress: number }) {
+export function dissolveShakeUniforms(
+	p: EffectParams,
+	ctx: { frame: number; fps: number; seed: number; progress: number },
+) {
 	const env = dissolveTiming(p, ctx.progress).env;
 	return shakeUniforms({ ...p, style: 'normal', amplitude: Math.max(0, num(p.amplitude, 3)) * env }, ctx);
 }

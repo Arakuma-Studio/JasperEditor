@@ -22,6 +22,7 @@ import type { RGBA } from '../../../schema/common.ts';
 import type { TransitionSpec } from '../../../transitions.ts';
 import type { EffectParams, ParamSpec } from '../../effects.ts';
 import { GLSL_COLOR } from '../../fx/glsl/color.ts';
+import { GLSL_HASH } from '../../fx/glsl/hash.ts';
 import { fxParam } from '../../fx/params.ts';
 import type { FxUniformValue, GlslChunk, ShaderPass } from '../../fx/shader.ts';
 import {
@@ -76,7 +77,14 @@ export function slider(
 }
 
 /** An integer slider. */
-export function intSlider(name: string, label: string, def: number, min: number, max?: number, group?: string) {
+export function intSlider(
+	name: string,
+	label: string,
+	def: number,
+	min: number,
+	max?: number,
+	group?: string,
+) {
 	return slider(name, label, def, { min, ...(max !== undefined ? { max } : {}), step: 1 }, group);
 }
 
@@ -127,7 +135,9 @@ const TIMING = 'Dissolve';
 export function timingParams(o: TimingOptions): ParamSpec[] {
 	const out: ParamSpec[] = [];
 	if (o.speed !== undefined)
-		out.push(slider('dissolveSpeed', 'Dissolve Speed', o.speed, { min: 1, max: 100, softMax: 20, step: 0.1 }));
+		out.push(
+			slider('dissolveSpeed', 'Dissolve Speed', o.speed, { min: 1, max: 100, softMax: 20, step: 0.1 }),
+		);
 	if (o.slow) {
 		out.push(slider('slowIn', 'Slow In', o.slow[0], { min: 0, max: 1 }));
 		out.push(slider('slowOut', 'Slow Out', o.slow[1], { min: 0, max: 1 }));
@@ -355,6 +365,67 @@ export function glowPasses(o: { input: string; prefix: string; sigma: string; rg
 		}),
 	];
 }
+
+/**
+ * Cheap seeded value noise and fractal sums with a DYNAMIC octave loop (`sd_*`). SwiftShader (the software GL of
+ * renders and tests) compiles every inlined copy of an unrolled noise loop, so the family avoids the library's
+ * constant-bound 12-octave loops in big shaders: one call site, a uniform-driven loop, 4 / 8 hashes per octave.
+ */
+export const GLSL_SD_NOISE: GlslChunk = {
+	name: 'sapphire-dissolves/noise',
+	deps: [GLSL_HASH],
+	source: /* glsl */ `
+// Branch-free lattice hashes (one PCG round; |coordinates| < 2^30): the library's sign-branching int → uint
+// conversion, inlined dozens of times, makes SwiftShader's compiler crawl.
+uint sd_seedU(float seed) { return fx_pcg(uint(clamp(seed, 0.0, 1.0) * 4294967040.0)); }
+float sd_h3(ivec3 p, uint s) {
+  uint h = fx_pcg((uint(p.x + 1073741824) * 73856093u) ^ (uint(p.y + 1073741824) * 19349663u) ^ (uint(p.z + 1073741824) * 83492791u) ^ s);
+  return float(h >> 8u) * (1.0 / 16777216.0);
+}
+float sd_h2(ivec2 p, uint s) { return sd_h3(ivec3(p, 0), s); }
+float sd_vnoise(vec2 p, float seed) {
+  uint s = sd_seedU(seed);
+  ivec2 i = ivec2(floor(p));
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = sd_h2(i, s), b = sd_h2(i + ivec2(1, 0), s);
+  float c = sd_h2(i + ivec2(0, 1), s), d = sd_h2(i + ivec2(1, 1), s);
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y) * 2.0 - 1.0;
+}
+float sd_vnoise3(vec3 p, float seed) {
+  uint s = sd_seedU(seed);
+  ivec3 i = ivec3(floor(p));
+  vec3 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float n0 = mix(mix(sd_h3(i, s), sd_h3(i + ivec3(1, 0, 0), s), f.x),
+                 mix(sd_h3(i + ivec3(0, 1, 0), s), sd_h3(i + ivec3(1, 1, 0), s), f.x), f.y);
+  float n1 = mix(mix(sd_h3(i + ivec3(0, 0, 1), s), sd_h3(i + ivec3(1, 0, 1), s), f.x),
+                 mix(sd_h3(i + ivec3(0, 1, 1), s), sd_h3(i + ivec3(1, 1, 1), s), f.x), f.y);
+  return mix(n0, n1, f.z) * 2.0 - 1.0;
+}
+// Fractal sums (≈ −1..1), octaves ≥ 1 (dynamic loop: not unrolled).
+float sd_fbm(vec2 p, int octaves, float gain, float seed) {
+  float sum = 0.0, amp = 1.0, norm = 0.0;
+  for (int k = 0; k < octaves; k++) {
+    sum += amp * sd_vnoise(p, fract(seed + float(k) * 0.1031));
+    norm += amp;
+    p = p * 2.03 + vec2(17.1, 3.7);
+    amp *= gain;
+  }
+  return sum / max(norm, 1e-4);
+}
+float sd_fbm3(vec3 p, int octaves, float gain, float seed) {
+  float sum = 0.0, amp = 1.0, norm = 0.0;
+  for (int k = 0; k < octaves; k++) {
+    sum += amp * sd_vnoise3(p, fract(seed + float(k) * 0.1031));
+    norm += amp;
+    p = p * 2.03 + vec3(17.1, 3.7, 9.3);
+    amp *= gain;
+  }
+  return sum / max(norm, 1e-4);
+}
+`,
+};
 
 /** Combines a near and a far glow texture (falloff −1…1: more near … more far). */
 export const GLSL_SD_GLOW: GlslChunk = {
