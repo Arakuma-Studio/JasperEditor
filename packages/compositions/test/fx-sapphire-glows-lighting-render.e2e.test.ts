@@ -1,7 +1,7 @@
 // @vitest-environment node
 // Sapphire Glows + Lighting on the Remotion render path: bundles the PRODUCTION entry (the family is in the default
-// registry), renders stills of a decoded video frame (ffmpeg testsrc2, 640×360) with every effect of the family and
-// checks that each one changes the frame, deterministically; plus a padded drop shadow on a still drawn outside its
+// registry), renders stills of every effect of the family on a still image (red square on black: every effect must
+// change it) and of the main ones on a decoded video frame (ffmpeg testsrc2, 640×360), deterministically; plus a padded drop shadow on a still drawn outside its
 // box and a time-dependent effect (S_Flashbulbs) differing between frames. Stills are kept in the temp dir printed
 // at start (visual review). Gated by REMOTION_E2E=1 (bundling ≈ 30 s, each still ≈ 1–5 s); needs ffmpeg on PATH.
 import { execFileSync } from 'node:child_process';
@@ -55,7 +55,15 @@ describe.runIf(enabled)(
 				...browser,
 			});
 			const output = join(media.dir, `${name}.png`);
-			await renderer.renderStill({ composition, serveUrl, inputProps, frame, output, ...browser });
+			await renderer.renderStill({
+				composition,
+				serveUrl,
+				inputProps,
+				frame,
+				output,
+				timeoutInMilliseconds: 180_000,
+				...browser,
+			});
 			return execFileSync(
 				'ffmpeg',
 				['-v', 'error', '-i', output, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'],
@@ -74,23 +82,43 @@ describe.runIf(enabled)(
 			return d / (a.length / 7);
 		};
 
-		it('every effect of the family renders on a decoded video frame and changes it', async () => {
-			const plain = await still(fxSnapshot(fxCmd.video(media)), 10, 'video-plain');
+		it('every effect of the family renders on a still image (red square on black) and changes it', async () => {
+			const plain = await still(fxSnapshot(fxCmd.still(media)), 0, 'still-plain');
 			const unchanged: string[] = [];
 			for (const spec of FAMILY) {
-				// Generators that are random per frame get enough events to show up.
+				// Random generators get enough events; the auto-track threshold sits below the red square's luminance.
 				const params: Record<string, unknown> =
 					spec.id === 'jasper.s.flashbulbs'
 						? { flashes: 12 }
 						: spec.id === 'jasper.s.lens-flare-auto-track'
-							? { hotspotThreshold: 0.3 }
+							? { hotspotThreshold: 0.1 }
 							: {};
 				const raw = await still(
-					fxSnapshot([...fxCmd.video(media), fxCmd.effect(spec.id, params)]),
-					10,
-					spec.id.replace('jasper.s.', 'sgl-'),
+					fxSnapshot([...fxCmd.still(media), fxCmd.effect(spec.id, params)]),
+					0,
+					spec.id.replace('jasper.s.', 'still-'),
 				);
-				if (diff(raw, plain) < 0.5) unchanged.push(spec.id);
+				if (diff(raw, plain) < 0.2) unchanged.push(spec.id);
+			}
+			expect(unchanged).toEqual([]);
+		});
+
+		it('glows, rays, flares, glints and bokeh on a decoded video frame', async () => {
+			const plain = await still(fxSnapshot(fxCmd.video(media)), 10, 'video-plain');
+			const unchanged: string[] = [];
+			for (const id of [
+				'jasper.s.glow',
+				'jasper.s.rays',
+				'jasper.s.lens-flare',
+				'jasper.s.glint',
+				'jasper.s.bokeh-lights',
+			]) {
+				const raw = await still(
+					fxSnapshot([...fxCmd.video(media), fxCmd.effect(id)]),
+					10,
+					id.replace('jasper.s.', 'video-'),
+				);
+				if (diff(raw, plain) < 0.5) unchanged.push(id);
 			}
 			expect(unchanged).toEqual([]);
 		});

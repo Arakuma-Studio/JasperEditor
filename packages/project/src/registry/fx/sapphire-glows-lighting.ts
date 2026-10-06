@@ -539,6 +539,8 @@ const DIST_PROLOGUE = (field: string, down: number) => /* glsl */ `
   float own = sgl_maxc(sgl_thresholdSource(src).rgb);
   float d = max(0.0, length(dv) - ${(down * 0.5).toFixed(2)}) / u_pxScale;
   if (own > 0.25) d = 0.0;
+  // The glow goes into the darker side of each edge: none inside the bright areas themselves.
+  float outside = 1.0 - smoothstep(0.1, 0.5, own);
   vec2 dir = length(dv) > 1.0e-3 ? normalize(dv) : vec2(1.0, 0.0);
   vec4 sc = texture(u_source, ns.xy);
   vec3 seedCol = sgl_thresholdSource(sc).rgb;
@@ -580,7 +582,7 @@ void main() {
   ${DIST_PROLOGUE(f, down)}
   vec3 len = u_len * max(vec3(u_widthRed, u_widthGreen, u_widthBlue), vec3(1.0e-3));
   vec3 g = exp(-d / len);
-  vec3 light = g * seedCol * u_color.rgb * u_brightness;
+  vec3 light = g * seedCol * u_color.rgb * u_brightness * outside;
   fragColor = sgl_finishLight(src, light, u_mode, u_affectAlpha, u_underSource, u_lightBackground, u_sourceOpacity, u_bgBrightness);
 }`,
 				}),
@@ -644,7 +646,7 @@ void main() {
   float g = exp(-d / u_len);
   vec3 col = cycleColor(-d / u_unit * u_frequency * 0.5);
   col = fx_saturate(col, u_glowSaturation);
-  vec3 light = g * col * u_color.rgb * u_brightness * 1.5;
+  vec3 light = g * col * u_color.rgb * u_brightness * 1.5 * outside;
   fragColor = sgl_finishLight(src, light, u_mode, u_affectAlpha, u_underSource, u_lightBackground, u_sourceOpacity, u_bgBrightness);
 }`,
 			})),
