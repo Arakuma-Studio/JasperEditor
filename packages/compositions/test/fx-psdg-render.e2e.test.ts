@@ -83,8 +83,12 @@ export const PSDG_SHOWCASE: [string, string, Record<string, unknown>, number?][]
 	['Glow', 'jasper.glow', { threshold: 50, radius: 50, intensity: 1.5 }],
 ];
 
-/** Effects that leave this picture unchanged with the showcase settings (Texturize needs a texture). */
-const UNCHANGED = new Set(['jasper.texturize', 'jasper.posterize-time']);
+/**
+ * Effects that leave this picture unchanged with the showcase settings: Texturize needs a texture; Posterize Time and
+ * Echo only show on moving pictures; Alpha Glow glows around the alpha edge, which a full-frame opaque layer has only
+ * at the frame border (its glow lies outside the frame).
+ */
+const UNCHANGED = new Set(['jasper.texturize', 'jasper.posterize-time', 'jasper.echo', 'jasper.alpha-glow']);
 
 describe.runIf(enabled)(
 	'Premiere stylize/distort/generate in Remotion renders (REMOTION_E2E=1)',
