@@ -292,12 +292,24 @@ export type BlurPassOptions = {
  * `gaussianBlurPasses`, whose σ is baked at plan time): the σ of dissolves ramps with the progress.
  */
 export function blurPasses(o: BlurPassOptions): ShaderPass[] {
+	// σ is converted to texels of the texture read. The horizontal pass reads a (usually bigger) input: it also
+	// averages the rows the output pixel covers, so a downscaled blur does not alias vertically.
 	const pass = (inputTex: string, dir: 'x' | 'y'): string => /* glsl */ `
 void main() {
-  vec2 sc = u_resolution / u_compSize;
-  vec2 sg = (${o.sigma}) * sc;
-  vec2 texel = 1.0 / vec2(textureSize(${inputTex}, 0));
-  fragColor = sd_blur1(${inputTex}, v_uv, vec2(${dir === 'x' ? 'texel.x, 0.0' : '0.0, texel.y'}), sg.${dir} * (${o.rgb ?? 'vec3(1.0)'}), ${o.kernel ?? '2'});
+  vec2 isz = vec2(textureSize(${inputTex}, 0));
+  vec2 sg = (${o.sigma}) * isz / u_compSize;
+  vec2 texel = 1.0 / isz;
+  vec3 s3 = sg.${dir} * (${o.rgb ?? 'vec3(1.0)'});
+  ${dir === 'x' ? 's3 = max(s3, vec3(0.45 * (isz.x / u_resolution.x - 1.0)));' : ''}
+  vec2 stp = vec2(${dir === 'x' ? 'texel.x, 0.0' : '0.0, texel.y'});
+  int n = ${dir === 'x' ? 'int(clamp(ceil(isz.y / u_resolution.y - 0.01), 1.0, 8.0))' : '1'};
+  vec4 acc = vec4(0.0);
+  for (int j = 0; j < 8; j++) {
+    if (j >= n) break;
+    float oy = ((float(j) + 0.5) / float(n) - 0.5) / u_resolution.y;
+    acc += sd_blur1(${inputTex}, v_uv + vec2(0.0, oy), stp, s3, ${o.kernel ?? '2'});
+  }
+  fragColor = acc / float(n);
 }`;
 	return [
 		{
