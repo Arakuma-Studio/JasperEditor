@@ -12,6 +12,7 @@ import {
 	fxParam,
 	GLSL_LIBRARY,
 	GLSL_LUT,
+	GLSL_NOISE,
 	lutParam,
 	planGpuEffect,
 } from '@jasper/project';
@@ -20,6 +21,7 @@ import { chainGpuStandIn } from '../../src/fx/builtins.ts';
 import { FxShaderError, fxHost, runLutPass, runShaderPlan } from '../../src/fx/host.ts';
 import { fxCanvasLayout } from '../../src/fx/plan.ts';
 import { TEST_FX } from '../fx-examples.ts';
+import { REF_NOISE } from './glsl-reference.ts';
 
 type Px = [number, number, number, number];
 
@@ -378,6 +380,60 @@ void main() {
 
 /** The framework follow-ups in real WebGL2 (ping-pong, absolute sizes, mipmaps, ivec2, LUT textures, bindings…). */
 const followups = {
+	/**
+	 * The library hash/noise helpers return bit-identical values to their wave-1 sources (REF_NOISE): one bit per
+	 * function (r: hashes, g: 2D noises, b: 3D noises + fractal sums + cellular), over a grid of negative and positive
+	 * lattice positions, several scales and seeds. Returns the number of pixels where any function differs.
+	 */
+	libraryIdentical() {
+		const spec = defineShaderEffect({
+			id: 'test.library-identical',
+			label: 'Library identical',
+			category: 'Utility',
+			params: [fxParam.number('oct', 'Octaves', 5, { min: 0, max: 12 })],
+			gpu: {
+				passes: [
+					{
+						include: [GLSL_NOISE, REF_NOISE],
+						frag: /* glsl */ `
+bool eq(float a, float b) { return a == b; }
+bool eq2(vec2 a, vec2 b) { return all(equal(a, b)); }
+bool eq3(vec3 a, vec3 b) { return all(equal(a, b)); }
+void main() {
+  vec2 px = fx_canvasPx() - vec2(37.0, 21.0);
+  bool h = true, n2 = true, n3 = true;
+  for (int k = 0; k < 4; k++) {
+    float seed = fract(u_seed + float(k) * 0.37);
+    float sc = 0.07 + float(k) * 0.61;
+    vec2 p = px * sc + vec2(float(k) * -13.7, float(k) * 5.3);
+    vec3 q = vec3(p, float(k) * 2.9 - 4.1 + px.y * 0.013);
+    ivec2 ip = ivec2(floor(p));
+    ivec3 iq = ivec3(floor(q));
+    int o = int(u_oct) + k;
+    h = h && eq(fx_hash1(ip.x, seed), ref_hash1(ip.x, seed)) && eq(fx_hash2(ip, seed), ref_hash2(ip, seed))
+          && eq(fx_hash3(iq, seed), ref_hash3(iq, seed)) && eq2(fx_hash22(ip, seed), ref_hash22(ip, seed))
+          && eq3(fx_hash33(iq, seed), ref_hash33(iq, seed)) && eq(fx_random(p, float(k) - 2.0, seed), ref_random(p, float(k) - 2.0, seed));
+    n2 = n2 && eq(fx_valueNoise(p, seed), ref_valueNoise(p, seed)) && eq(fx_gradientNoise(p, seed), ref_gradientNoise(p, seed))
+            && eq(fx_simplex(p, seed), ref_simplex(p, seed)) && eq(fx_fbm(p, o, 2.0, 0.5, seed), ref_fbm(p, o, 2.0, 0.5, seed))
+            && eq(fx_fbm(p, 3, 1.9, 0.55, seed), ref_fbm(p, 3, 1.9, 0.55, seed))
+            && eq2(fx_cellular(p, 0.8, seed), ref_cellular(p, 0.8, seed)) && eq(fx_cellId(p, 1.0, seed), ref_cellId(p, 1.0, seed));
+    n3 = n3 && eq(fx_valueNoise3(q, seed), ref_valueNoise3(q, seed)) && eq(fx_simplex3(q, seed), ref_simplex3(q, seed))
+            && eq(fx_fbm3(q, o, 2.0, 0.5, seed), ref_fbm3(q, o, 2.0, 0.5, seed))
+            && eq(fx_turbulence(q, o, 2.0, 0.5, seed), ref_turbulence(q, o, 2.0, 0.5, seed))
+            && eq(fx_ridged(q, o, 2.0, 0.5, seed), ref_ridged(q, o, 2.0, 0.5, seed));
+  }
+  fragColor = vec4(h ? 1.0 : 0.0, n2 ? 1.0 : 0.0, n3 ? 1.0 : 0.0, 1.0);
+}`,
+					},
+				],
+			},
+		});
+		const { out } = run(spec, { oct: 5 }, { width: 64, height: 64 }, () => {});
+		const d = out.getContext('2d')!.getImageData(0, 0, 64, 64).data;
+		const bad = [0, 0, 0];
+		for (let i = 0; i < d.length; i += 4) for (let c = 0; c < 3; c++) if (d[i + c]! < 255) bad[c]!++;
+		return { hashes: bad[0], noise2d: bad[1], noise3d: bad[2] };
+	},
 	pingPong() {
 		const iter = {
 			output: 'acc',

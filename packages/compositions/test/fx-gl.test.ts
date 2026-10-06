@@ -161,6 +161,14 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 		});
 
 		describe('framework follow-ups', () => {
+			it('the faster library helpers return bit-identical values to the wave-1 sources', async () => {
+				expect(await call<Record<string, number>>('libraryIdentical')).toEqual({
+					hashes: 0,
+					noise2d: 0,
+					noise3d: 0,
+				});
+			});
+
 			it('ping-pong outputs: update passes read the previous contents under the same name', async () => {
 				const p = await call<Px>('pingPong');
 				expect(near(p, [255, 255, 255, 102], 3)).toBe(true); // premultiplied 0.1 + 3 × 0.1, read back straight
