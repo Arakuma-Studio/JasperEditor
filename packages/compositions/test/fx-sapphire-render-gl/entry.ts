@@ -6,6 +6,7 @@ import {
 	type EffectSpec,
 	FX_FAMILIES,
 	fxBuiltinUniforms,
+	fxSeed,
 	gpuPadding,
 	planGpuEffect,
 } from '@jasper/project';
@@ -51,7 +52,8 @@ function run(o: RunOpts) {
 	const padding = gpuPadding(s, params, { ...box, pxScale: 1, fps: 30 });
 	const layout = fxCanvasLayout(box, padding, 8192);
 	const frame = o.frame ?? 0;
-	const seed = o.seed ?? 0.25;
+	// as the host: u_seed = hash(clip, effect instance, Seed param)
+	const seed = o.seed ?? fxSeed('clip1', 'fx1', params);
 	const plan = planGpuEffect(
 		s,
 		{ id: 'fx1', params },
@@ -147,68 +149,6 @@ const api = {
 			}
 		}
 		return { hash: h >>> 0, luma: luma / n, alpha: alpha / n, canvas: [out.width, out.height] };
-	},
-	/** Planned passes of an effect (diagnostics: `FX_PROFILE`). */
-	sources(o: RunOpts) {
-		const s = spec(o.id);
-		const params = {
-			...Object.fromEntries(s.params.map((p) => [p.name, p.default])),
-			...(o.params ?? {}),
-		} as never;
-		return planGpuEffect(
-			s,
-			{ id: 'fx1', params },
-			{
-				width: o.width,
-				height: o.height,
-				pxScale: 1,
-				fps: 30,
-				frame: 0,
-				duration: 150,
-				seed: 0.25,
-				progress: 0,
-			},
-			{ width: o.width, height: o.height },
-		);
-	},
-	/** Draws one (possibly edited) pass source of a plan as the result and times it (diagnostics). */
-	timePass(a: {
-		plan: { passes: { source: string }[] };
-		index: number;
-		source: string;
-		w: number;
-		h: number;
-	}) {
-		const h = fxHost()!;
-		const pass = { ...a.plan.passes[a.index]!, source: a.source, output: null, width: a.w, height: a.h };
-		const input = canvas(a.w, a.h);
-		const out = canvas(a.w, a.h);
-		const t0 = performance.now();
-		runShaderPlan(
-			h,
-			{ ...a.plan, passes: [pass] } as never,
-			input,
-			{
-				builtins: [
-					...fxBuiltinUniforms({
-						canvas: { width: a.w, height: a.h },
-						box: { x: 0, y: 0, w: a.w, h: a.h },
-						pxScale: 1,
-						frame: 0,
-						fps: 30,
-						duration: 150,
-						compSize: { width: 1920, height: 1080 },
-					}),
-					{ name: 'u_seed', type: 'float', value: [0.25] },
-				],
-				textures: {} as never,
-				samples: { sources: [], offsets: [] },
-			},
-			out.getContext('2d')!,
-		);
-		h.gl.finish();
-		out.getContext('2d')!.getImageData(0, 0, 1, 1);
-		return Math.round(performance.now() - t0);
 	},
 	ids() {
 		return FX_FAMILIES.find((f) => f.file === 'sapphire-render-textures')!.effects.map((s) => s.id);
