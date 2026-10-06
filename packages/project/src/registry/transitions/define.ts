@@ -40,6 +40,8 @@ export const SAPPHIRE_TRANSITION_SUBBINS = {
 export const STANDARD_TRANSITION_PARAMS = [
 	'startPercent',
 	'endPercent',
+	'useCompletion',
+	'completion',
 	'reverse',
 	'borderWidth',
 	'borderColor',
@@ -56,6 +58,20 @@ export const trParam = {
 	/** End (%): the progress the transition ends at (Premiere's B slider). Hold-only. */
 	end(def = 100): ParamSpec {
 		return fxParam.percent('endPercent', 'End', def, { animatable: false });
+	},
+	/**
+	 * Custom Completion: when on, the keyframable Transition Completion replaces the linear timing of the span
+	 * (`transitionTiming`). Off by default, so an untouched transition keeps its linear ramp exactly. Hold-only.
+	 */
+	useCompletion(def = false): ParamSpec {
+		return fxParam.toggle('useCompletion', 'Custom Completion', def);
+	},
+	/**
+	 * Transition Completion (%): how far the transition is at a frame while Custom Completion is on — keyframe it to
+	 * shape the timing curve (0 % = A, 100 % = B; Start / End and Reverse apply on top). Animatable.
+	 */
+	completion(def = 50): ParamSpec {
+		return fxParam.percent('completion', 'Transition Completion', def);
 	},
 	/** Reverse: plays the transition backwards (see `GpuTransition.reverse`). `u_reverse` (bool). */
 	reverse(def = false): ParamSpec {
@@ -95,10 +111,20 @@ export type ShaderTransitionInit = {
 	/**
 	 * Premiere's optional standard options, appended after the own params in Premiere's order: Border Width + Border
 	 * Color (`border`), Reverse (on by default), Anti-aliasing Quality (`antiAliasing`), Center (`center`: true or the
-	 * default point). Start / End are always there (first).
+	 * default point). Start / End are always there (first), followed by Custom Completion / Transition Completion (the
+	 * keyframable timing curve; `completion: false` leaves them out).
 	 */
-	options?: { border?: boolean; reverse?: boolean; antiAliasing?: boolean; center?: boolean | Vec2 };
+	options?: {
+		border?: boolean;
+		reverse?: boolean;
+		antiAliasing?: boolean;
+		center?: boolean | Vec2;
+		/** Custom Completion + Transition Completion after Start / End (on unless `completion: false`). */
+		completion?: boolean;
+	};
 	gpu: GpuTransition;
+	/** Heavy in the preview (`TransitionSpec.expensive`): marked in Effect Controls like expensive effects. */
+	expensive?: boolean;
 	version?: number;
 	migrate?: TransitionSpec['migrate'];
 };
@@ -109,6 +135,7 @@ export function shaderTransitionParams(init: Pick<ShaderTransitionInit, 'params'
 	return [
 		trParam.start(),
 		trParam.end(),
+		...(o.completion === false ? [] : [trParam.useCompletion(), trParam.completion()]),
 		...(init.params ?? []),
 		...(o.border ? [trParam.borderWidth(), trParam.borderColor()] : []),
 		...(o.reverse === false ? [] : [trParam.reverse()]),
@@ -130,6 +157,7 @@ export function defineShaderTransition(init: ShaderTransitionInit): TransitionSp
 		params: shaderTransitionParams(init),
 		gpu: init.gpu,
 		capabilities: { preview: 'webgl', export: ['remotion'] },
+		...(init.expensive ? { expensive: true } : {}),
 		...(init.migrate ? { migrate: init.migrate } : {}),
 	};
 }

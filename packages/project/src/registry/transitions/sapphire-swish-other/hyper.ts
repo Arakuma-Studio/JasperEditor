@@ -100,6 +100,7 @@ function hyperSpec(kind: 'pull' | 'push'): TransitionSpec {
 	const pull = kind === 'pull';
 	return defineShaderTransition({
 		id: pull ? 'jasper.s.hyper-pull' : 'jasper.s.hyper-push',
+		expensive: true,
 		label: pull ? 'S_HyperPull' : 'S_HyperPush',
 		bin: TRANSITION_BINS.sapphire,
 		subBin: SAPPHIRE_TRANSITION_SUBBINS.other,

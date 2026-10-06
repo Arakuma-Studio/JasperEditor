@@ -55,6 +55,8 @@ export type AgentSchema = {
 		params: unknown[];
 		capabilities: unknown;
 		gpu?: boolean;
+		/** Heavy in the preview (`TransitionSpec.expensive`). */
+		expensive?: boolean;
 	}[];
 	mgTemplates: {
 		id: string;
@@ -148,6 +150,7 @@ export function exportAgentSchema(registries: Registries): AgentSchema {
 			params: [...t.params],
 			capabilities: t.capabilities,
 			...(t.gpu ? { gpu: true } : {}),
+			...(t.expensive ? { expensive: true } : {}),
 		})),
 		mgTemplates: registries.mgTemplates.list().map((t) => ({
 			id: t.id,

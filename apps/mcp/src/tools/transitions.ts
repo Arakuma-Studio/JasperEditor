@@ -72,6 +72,7 @@ export function transitionTypeSummary(s: TransitionSpec) {
 		bin: s.subBin ? `${s.bin}/${s.subBin}` : s.bin,
 		gpu: !!s.gpu,
 		export: s.gpu ? 'remotion' : 'native',
+		...(s.expensive ? { expensive: true } : {}),
 		description: s.description,
 		...(s.keywords ? { keywords: s.keywords } : {}),
 		params: s.params.map((p) => ({
@@ -82,6 +83,7 @@ export function transitionTypeSummary(s: TransitionSpec) {
 			...(p.range ? { range: p.range } : {}),
 			...(p.unit ? { unit: p.unit } : {}),
 			...(p.options ? { options: p.options } : {}),
+			...(p.mediaKinds ? { mediaKinds: p.mediaKinds } : {}),
 			animatable: p.animatable,
 		})),
 	};
@@ -332,7 +334,7 @@ export function registerTransitionTools(ctx: ToolContext): void {
 		{
 			title: 'List transition types',
 			description:
-				'The transition catalogue: every type with its effect id, short type name, label, medium (video/audio), Effects-panel bin (Premiere bins: 3D Motion, Dissolve, Iris, Page Peel, Slide, Wipe, Zoom; "Sapphire Transitions/<sub-bin>"; Crossfade), gpu (a shader transition, exported through Remotion) or native, description and params (name, type, default, range, options, animatable). Filter by medium, bin or a search text.',
+				'The transition catalogue: every type with its effect id, short type name, label, medium (video/audio), Effects-panel bin (Premiere bins: 3D Motion, Dissolve, Iris, Page Peel, Slide, Wipe, Zoom; "Sapphire Transitions/<sub-bin>"; Crossfade), gpu (a shader transition, exported through Remotion) or native, expensive (heavy in the preview), description and params (name, type, default, range, options, animatable). Filter by medium, bin or a search text.',
 			input: {
 				medium: z.enum(['video', 'audio']).optional().describe('Only video or audio transitions'),
 				bin: z

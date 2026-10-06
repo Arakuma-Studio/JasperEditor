@@ -56,14 +56,18 @@ export const PUSH = defineShaderTransition({
 void main() {
   float p = tr_progress();
   vec2 d = u_pushDir;
-  // Both pictures move along d by p frames; B follows one frame behind A.
-  vec4 a = tr_from(v_uv - d * p);
-  vec4 b = tr_to(v_uv - d * (p - 1.0));
-  // Signed distance (px) from the seam into B, along the motion (B occupies t < p).
-  float t = dot(v_uv - 0.5, d) + 0.5;
   float ext = abs(dot(u_compSize, d));
+  // The border travels between the clips: A, the border band, then B move together by 1 frame + the border, so at
+  // p = 0 the band is just outside the near edge and at p = 1 just outside the far edge (A exactly at p = 0, B
+  // exactly at p = 1). Without a border this is the plain push (both move by p frames, B one frame behind A).
+  float wb = max(u_borderWidth, 0.0) / max(ext, 1.0);
+  float s = p * (1.0 + wb);
+  vec4 a = tr_from(v_uv - d * s);
+  vec4 b = tr_to(v_uv - d * (s - 1.0 - wb));
+  // Signed distance (px) from A's trailing edge into the border / B, along the motion (A occupies t > s).
+  float t = dot(v_uv - 0.5, d) + 0.5;
   float aa = tr_aaWidth(u_antiAliasing);
-  fragColor = tr_wipeMix(a, b, (p - t) * ext, 0.0, aa, u_borderWidth, u_borderColor);
+  fragColor = tr_wipeMix(a, b, (s - t) * ext, 0.0, aa, u_borderWidth, u_borderColor);
 }`,
 			},
 		],

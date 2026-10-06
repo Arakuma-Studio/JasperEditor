@@ -120,6 +120,8 @@ describe('transition catalogue', () => {
 		expect((push.params as { name: string }[]).map((p) => p.name)).toEqual([
 			'startPercent',
 			'endPercent',
+			'useCompletion',
+			'completion',
 			'direction',
 			'borderWidth',
 			'borderColor',

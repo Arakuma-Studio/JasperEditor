@@ -80,6 +80,7 @@ void main() {
 
 export const S_DISSOLVE_GLOW: TransitionSpec = defineDissolve({
 	id: 'jasper.s.dissolve-glow',
+	expensive: true,
 	label: 'S_DissolveGlow',
 	description:
 		'Dissolves through a bright glowing flash: both clips glow (threshold, width, per-channel widths, colours) more and more towards the peak while they cross-fade.',
@@ -130,6 +131,7 @@ void main() {
 
 export const S_DISSOLVE_ULTRA_GLOW: TransitionSpec = defineDissolve({
 	id: 'jasper.s.dissolve-ultra-glow',
+	expensive: true,
 	label: 'S_DissolveUltraGlow',
 	description:
 		'Dissolves through glowing flashes with Sapphire UltraGlow controls: glow falloff and bias, a stretched after-glow, horizontal / vertical streaks, optional edge detection and atmospheric noise.',
@@ -464,6 +466,7 @@ export const LEAK_STRIDE = 24;
 
 export const S_DISSOLVE_LIGHT_LEAK: TransitionSpec = defineDissolve({
 	id: 'jasper.s.dissolve-light-leak',
+	expensive: true,
 	label: 'S_DissolveLightLeak',
 	description:
 		'Dissolves under drifting, flickering light leaks: up to three noisy coloured blobs (centre / mid / outer colours) that grow over the transition, screened over the cut, plus a glow.',

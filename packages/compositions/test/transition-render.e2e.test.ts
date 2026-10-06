@@ -101,7 +101,8 @@ describe.runIf(enabled)('GPU transitions in Remotion renders (REMOTION_E2E=1)', 
 		const early = await still(solidsWith('jasper.push'), 21, 'push-21'); // p = 2 / 21
 		expect(close(at(early, 30, FX_H / 2), [0, 0, 255])).toBe(true);
 		expect(close(at(early, 200, FX_H / 2), [255, 0, 0])).toBe(true);
-		// Direction + border (12 px white on B's side of the seam).
+		// Direction + border (12 px white between the clips: A, the band and B move together by a frame + 12 px, so
+		// A's trailing edge is at p · (H + 12) and the band just above it).
 		const ns = await still(
 			solidsWith('jasper.push', RED, BLUE, {
 				params: { direction: 'northToSouth', borderWidth: 12, borderColor: [1, 1, 1, 1] },
@@ -111,8 +112,51 @@ describe.runIf(enabled)('GPU transitions in Remotion renders (REMOTION_E2E=1)', 
 		);
 		expect(close(at(ns, FX_W / 2, 60), [0, 0, 255])).toBe(true);
 		expect(close(at(ns, FX_W / 2, 330), [255, 0, 0])).toBe(true);
-		const seam = Math.round((11 / 21) * FX_H);
+		const seam = Math.round((11 / 21) * (FX_H + 12));
 		expect(close(at(ns, FX_W / 2, seam - 6), [255, 255, 255], 30)).toBe(true);
+		expect(close(at(ns, FX_W / 2, seam + 3), [255, 0, 0])).toBe(true);
+		expect(close(at(ns, FX_W / 2, seam - 15), [0, 0, 255])).toBe(true);
+	});
+
+	it('Push: at progress 1 (the last frame of a fade at a tail) the border has left the far edge', async () => {
+		// A alone, Push at its tail (span 10…30): the last frame is p = 1 → only the background (black) is left; the
+		// border used to stay visible along the far (bottom) edge.
+		const cmds: Command[] = [
+			{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V1', color: RED, ref: '$a' } as Command,
+			{
+				type: 'transition.add',
+				clipId: '$a',
+				edge: 'out',
+				effectId: 'jasper.push',
+				duration: 20,
+				params: { direction: 'northToSouth', borderWidth: 12, borderColor: [1, 1, 1, 1] },
+			} as Command,
+		];
+		const last = await still(cmds, 29, 'push-border-last');
+		for (const y of [FX_H - 1, FX_H - 6, FX_H - 11, FX_H / 2, 2])
+			expect(close(at(last, FX_W / 2, y), [0, 0, 0]), `y = ${y}`).toBe(true);
+		// The first frame of the span (p = 1 / 20) still shows the band right behind A's trailing edge.
+		const first = await still(cmds, 10, 'push-border-first');
+		expect(close(at(first, FX_W / 2, FX_H / 2), [255, 0, 0])).toBe(true);
+	});
+
+	it('Gradient Wipe: a Custom Gradient image replaces the built-in ramp (dark areas first)', async () => {
+		const withImage: Command[] = [
+			{
+				type: 'media.register',
+				ref: '$g',
+				asset: fxAsset(media, 'image', 'halves.png', FX_W, FX_H),
+			} as Command,
+			...solidsWith('jasper.gradient-wipe', RED, BLUE, { params: { gradientImage: { mediaId: '$g' } } }),
+		];
+		// Frame 30: p = 11 / 21. Built-in Left to Right: the left half has switched. Custom (white | black): the
+		// black right half switches first, the white left half is still A.
+		const plain = await still(solidsWith('jasper.gradient-wipe'), 30, 'gradient-wipe-plain');
+		expect(close(at(plain, 40, FX_H / 2), [0, 0, 255])).toBe(true);
+		expect(close(at(plain, FX_W - 40, FX_H / 2), [255, 0, 0])).toBe(true);
+		const custom = await still(withImage, 30, 'gradient-wipe-custom');
+		expect(close(at(custom, 40, FX_H / 2), [255, 0, 0])).toBe(true);
+		expect(close(at(custom, FX_W - 40, FX_H / 2), [0, 0, 255])).toBe(true);
 	});
 
 	it('Iris Round: B inside a growing circle; Reverse closes A instead', async () => {

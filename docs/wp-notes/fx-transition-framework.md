@@ -1,4 +1,4 @@
-# GPU transition framework — authoring guide (wave 2, `wave2/transition-framework`)
+# GPU transition framework — authoring guide (wave 2, `wave2/transition-framework`; wave-4 polish §13)
 
 Audience: the wave-3 agents that add transitions (≈35 Premiere standard video transitions, ≈70 Sapphire-style
 transitions). You only edit **your family file** (`packages/project/src/registry/transitions/<family>.ts`) and add
@@ -102,7 +102,9 @@ A from A to transparency. Want black instead (e.g. a "dip")? Draw it: the stage 
 
 - linear progress of frame `i` of a `d`-frame span: two-sided `(i + 1) / (d + 1)` (exactly the built-in Cross
   Dissolve's ramp), fade at a head `i / d` (first frame = A side), fade at a tail `(i + 1) / d` (last frame = B side);
-- Start / End (Premiere's sliders, params `startPercent` / `endPercent`): `p = start + (end − start) · linear`;
+- Custom Completion (wave 4, params `useCompletion` / `completion`, §13.5): when on, the keyframable Transition
+  Completion (0…100 %) at the frame replaces `linear` (call it `timing`; off — the default — `timing = linear`);
+- Start / End (Premiere's sliders, params `startPercent` / `endPercent`): `p = start + (end − start) · timing`;
 - Reverse (param `reverse`): with the default `gpu.reverse: 'swap'` the framework swaps the sides and uses `1 − p`,
   i.e. the transition plays from B to A backwards: an iris that opens on B closes on A, a push to the right becomes
   a push to the left. With `reverse: 'custom'` nothing is swapped and your shader reads `u_reverse` itself (use it
@@ -123,8 +125,9 @@ A from A to transparency. Want black instead (e.g. a "dip")? Draw it: the stage 
 | `bin` | `TRANSITION_BINS.motion3d` ('3D Motion'), `.dissolve`, `.iris`, `.pagePeel`, `.slide`, `.wipe`, `.zoom`; Sapphire families: `TRANSITION_BINS.sapphire` ('Sapphire Transitions'). Required. |
 | `subBin` | Sapphire families: `SAPPHIRE_TRANSITION_SUBBINS.dissolves` / `.wipes` / `.other` (required there, checked). Premiere: omit. |
 | `description` | Required (tooltip, agent catalogue). `keywords`: extra search words. |
-| `params` | Your own `ParamSpec`s (`fxParam.*`), shown after Start / End. Names: letters and digits. No `media`, `curve`, `string` params. |
-| `options` | `{border?, antiAliasing?, center?, reverse?}` — Premiere's standard options (§5). Reverse is on unless `reverse: false`. |
+| `params` | Your own `ParamSpec`s (`fxParam.*`), shown after Start / End. Names: letters and digits. No `curve`, `string` params; `media` params take still images only (`fxParam.media(name, label, ['image'])`, hold-only, §13.2). |
+| `options` | `{border?, antiAliasing?, center?, reverse?, completion?}` — Premiere's standard options (§5). Reverse and Custom Completion are on unless `reverse: false` / `completion: false`. |
+| `expensive` | Heavy in the preview (many taps per pixel, multi-pass blurs, iterative passes) — `TransitionSpec.expensive`, §13.1. |
 | `gpu` | `GpuTransition` (below). |
 | `version`, `migrate` | Bump `version` + `migrate(fromVersion, params)` when params change meaning. |
 
@@ -165,6 +168,7 @@ Params → uniforms exactly as for effects: `u_<name>` — number → `float`, b
 | Param | Uniform | Notes |
 |---|---|---|
 | Start `startPercent` (0…100, default 0), End `endPercent` (default 100) | `u_startPercent`, `u_endPercent` | Applied by the framework to `u_progress`; you never need them. Hold-only. |
+| Custom Completion `useCompletion` (default off), Transition Completion `completion` (%, default 50, animatable) — on unless `options.completion: false` | `u_useCompletion`, `u_completion` | Applied by the framework (`transitionTiming`, §13.5); you never need them. |
 | *your params* | | |
 | Border Width `borderWidth` (sequence px, default 0), Border Color `borderColor` (default black) — `options.border` | `u_borderWidth`, `u_borderColor` | Draw the border on B's side of the edge: `tr_wipeMix(..., u_borderWidth, u_borderColor)`. |
 | Reverse `reverse` (default false) — on unless `options.reverse: false` | `u_reverse` | Handled by the framework with `reverse: 'swap'`. |
@@ -182,6 +186,9 @@ Animatable params (numbers, vec2, colours — not choices or toggles) take keyfr
 transition's first frame; the stage evaluates them per frame.
 
 ## 6. GLSL rules and helpers
+
+The validator (`validateGpuTransition`, run by the catalogue test) also rejects extra uniforms that redeclare a
+built-in, a param uniform or a pass output (§13.4).
 
 All rules of the shader-effect guide hold: GLSL ES 3.00 bodies (`void main()` writing `fragColor`), no `#version`,
 precision, `in`/`out` or uniform declarations of built-ins/params/outputs (all generated), `texture()` not
@@ -288,7 +295,8 @@ Free for every entry (no plumbing):
   present, `validateGpuTransition`, registry + agent schema wiring;
 - `packages/compositions/test/transition-gl.test.ts` — **compiles and runs every registered GPU transition** in real
   WebGL2 (headless Chrome, SwiftShader): two-sided at the start and middle, one-sided in/out, reversed; and checks the
-  §3 contract (A at progress 0, B at 1).
+  §3 contract (A at progress 0, B at 1). One test per family of `TRANSITION_FAMILIES` (240 s each, as
+  `fx-gl.test.ts` does for effects) plus one for the test transitions — a new family file gets its own test for free.
 
 ```bash
 pnpm vitest run packages/project/test/transition-framework.test.ts packages/compositions/test/transition-gl.test.ts
@@ -328,7 +336,7 @@ real footage add your ids to `transition-gallery.e2e.test.ts` locally and run it
 - Keyframe times are relative to the stored span start; if the media handles shorten the span at render time the
   keys stay where they were (relative to the stored start).
 - The A/B thumbnails of Premiere's Effect Controls ("Show Actual Sources") are not implemented (the section shows the
-  A/B handle diagram); the Center param is edited as x/y fields (no on-canvas handle for transitions).
+  A/B handle diagram). Point params (Center…) have on-canvas handles since wave 4 (§13.8).
 - The preview draws the stage at the sequence resolution (no preview-resolution scale).
 
 ## 12. Families, ids, bins
@@ -341,3 +349,99 @@ real footage add your ids to `transition-gallery.e2e.test.ts` locally and run it
 
 The Effects panel lists Video Transitions ▸ bin (▸ sub-bin) ▸ transition, Premiere's bins first, Sapphire Transitions
 last, each item with the GPU badge (built-ins: N).
+
+## 13. Wave-4 additions (`wave4/transition-polish`)
+
+### 13.1 `expensive`
+
+`defineShaderTransition({…, expensive: true})` → `TransitionSpec.expensive`, exactly like `EffectSpec.expensive`:
+Effect Controls' Transition section header shows the same "●" ("Expensive in preview") an expensive effect's
+section shows; the agent schema (`transitions[].expensive`) and MCP `list_transition_types` export it. The Effects
+panel does not badge expensive effects, so it does not badge transitions either; no planner or preview code reads
+`expensive` for effects today (S03 PGM-031 "fx reduced" playback is not implemented), so transitions do not change
+rendering either — it is a flag for panels and agents. Marked: S_Swish3D, S_HyperPush, S_HyperPull, S_FilmRoll,
+S_ParallaxStripsTransition, S_DissolveDefocus, S_DissolvePixelSort, S_DissolvePixelMosh, S_DissolveZap,
+S_DissolveAutoPaint, S_DissolveGlow / S_DissolveUltraGlow / S_DissolveLightLeak (the glow dissolves),
+S_DissolveRays, S_DissolveDigitalDamage, Morph Cut, VR Spherical Blur (2 × 25 spherical taps per pixel).
+
+### 13.2 Image (`media`) params
+
+`fxParam.media('gradientImage', 'Custom Gradient', ['image'])` (hold-only; `mediaKinds` must be `['image']` — the
+validator rejects video and LUT kinds). Binding and semantics are the effects': `uniform sampler2D u_<name>` +
+`uniform vec2 u_<name>_size` (px, **(0, 0) when none, missing, offline or still loading in the Player**), the picture
+premultiplied, uv (0,0) = top-left; `planGpuTransition` lists them in `plan.textures` (`transitionMediaTextures`).
+Each image param takes one of the 12 texture units (with the named outputs; 4 are the framework's). The render
+snapshot gives bound images media handles (as effect params), `TransitionStage` loads them (`useFxImages`; renders
+hold a delayRender until a draw ran with every bound image), Effect Controls edits them with the effects' picker,
+MCP lists `mediaKinds`. Hybrid export: the span bake's key already hashes `referencedMediaIds(t.params)` with their
+fingerprints (`keyMedia`), so a replaced image re-bakes (covered by `apps/engine/test/gpu-spans.test.ts`).
+
+Used by Premiere **Gradient Wipe** and **VR Gradient Wipe** (Premiere's "Custom…" gradient): with an image its
+luminance × alpha is the gradient (stretched to the frame; VR: an equirectangular gradient over each eye); without
+one the built-in Gradient choice applies, so existing documents render as before.
+
+### 13.3 Trackers of the sides
+
+`RenderTransition.tracks?: {out?, in?}: TrSideTrack` — set by `buildRenderSnapshot` for a side whose clip has a
+tracker (`transitionTrackerOf`: the first planar tracker with samples, else the first tracker with samples, else the
+first tracker's reference). `transitionSideTrack` evaluates it for every span frame (`trackerGeometryAt` at the
+side's content time, smoothing included) and maps it through the side's layer map at that frame (Motion + corner pin,
+as its picture is placed) into **sequence px**. Trackers otherwise reach effects only as baked keyframes
+(`tracker.apply` → corner pin / Motion); transitions get the live geometry instead.
+
+Authors read it in `gpu.uniforms(p, ctx)`: `ctx.tracks?.from` / `ctx.tracks?.to` (after a Reverse swap: the side
+shown as `u_from` / `u_to`) = `TrTrackFrame {kind, corners (TL, TR, BR, BL) | null, point (the centre), confidence,
+tracked}` or null. Because the tracks are part of the `RenderTransition`, the span bake key covers them.
+
+**S_MochaWhip** (Track Mode = Follow Clip Track, default): with a track on the incoming clip the cut-out follows it
+frame by frame — a planar track's quad is the cut-out region (Blur Mocha feathers it, Invert Mocha inverts it); a
+point track centres the mask (Mask Size / Rotation, an ellipse when Cutout Mask is None) on the tracked point; the
+cut-out pivots and lands around the tracked centre. Without a track (or Track Mode Off) it is the wave-3 behaviour:
+the Cutout Mask shape, or a plain whip with Cutout Mask = None.
+
+### 13.4 Validator: uniform collisions
+
+`validateGpuTransition` and `validateGpuEffect` (shared `uniformCollisions`) reject extra uniforms — keys of
+`gpu.uniforms()` and of `ShaderPass.uniforms` — that collide with a built-in (fx + transition built-ins: `u_from`,
+`u_hasTo`…), a param uniform (`u_<param>`, `u_<media>_size`), a pass output (`u_<output>`), and a pass uniform that
+`uniforms()` also returns. Before, these failed only when a shader mentioning the name compiled.
+
+### 13.5 Custom Completion (keyframable timing curve)
+
+Every GPU transition gets, after Start / End, **Custom Completion** (`useCompletion`, hold-only, default off) and
+**Transition Completion** (`completion`, %, animatable, default 50). Semantics (`transitionTiming`):
+
+- off (default, every existing document): the linear ramp of §3, unchanged — identical output;
+- on: `timing = completion / 100` at the frame (keyframes are flicks from the span start, as every transition param),
+  replacing the linear ramp; Start / End map it (`p = start + (end − start) · timing`) and Reverse applies on top.
+  The sides' GPU effects see the same `u_progress`.
+
+The progress contract is kept in its documented form: at `p = 0` the stage is A, at `p = 1` B. The linear two-sided
+ramp never reaches 0 / 1 inside the span (Cross Dissolve's `(i + 1) / (d + 1)`); a curve can — keyed 0 % on the first
+frame and 100 % on the last, the first frame is exactly A and the last exactly B. Turning Custom Completion on in
+Effect Controls with an unanimated Completion seeds exactly that curve (two keys, one history entry); a static value
+holds the transition at that percentage (Sapphire's Dissolve Percent). `options.completion: false` leaves the pair
+out of a transition.
+
+### 13.6 Push border
+
+Push moved both pictures by `p` frames and drew the border on B's side of the seam, so at `p = 1` the band stayed along
+the far edge. Now A, the band and B travel together by one frame + the border (`s = p · (1 + border / extent)`): at
+`p = 0` the band is just outside the near edge, at `p = 1` just outside the far edge (exactly A / exactly B). Without a
+border the output is unchanged. `transition-render.e2e` encoded the old seam (`p · H`); it now checks `p · (H + 12)`
+and the last frame of a tail fade (`p = 1`: no band at the far edge).
+
+### 13.7 GL test per family
+
+`transition-gl.test.ts` runs the catalogue and the A/B contract per `TRANSITION_FAMILIES` entry (`catalogue(family)`
+/ `ends(family)` of `test/transition-gl/entry.ts`), plus GL checks of image params, the Push border at the ends,
+S_MochaWhip's track and Custom Completion.
+
+### 13.8 On-canvas point handles
+
+While a transition is selected in the Timeline (= shown in Effect Controls' Transition section), the Program monitor
+draws the effects' crosshair for every point param of its type (`vec2` with `ui.control: 'point'`: Center, Swish /
+WhipLash centres, MochaWhip's mask / cut-out centres…), `apps/web/src/fx/TransitionPointOverlay.tsx`. Transition
+points are frame-normalised (no layer map). A drag is one gesture writing `param.set` on `["transition", id, name]`;
+an animated param gets a key at the playhead clamped into the span, as the section's rows do.
+

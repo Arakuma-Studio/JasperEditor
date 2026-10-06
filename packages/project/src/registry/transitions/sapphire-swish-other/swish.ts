@@ -2,8 +2,10 @@
 // S_MochaWhip (Other). All of them motion-blur along the actual path of the move (shutter taps in progress space,
 // see common.ts), so blur follows speed curves, overshoots and rotations.
 import type { TransitionSpec } from '../../../transitions.ts';
+import type { EffectParams } from '../../effects.ts';
 import { fxParam } from '../../fx/params.ts';
 import { defineShaderTransition, SAPPHIRE_TRANSITION_SUBBINS, TRANSITION_BINS } from '../define.ts';
+import type { TrFrameContext } from '../shader.ts';
 import {
 	check,
 	choice,
@@ -84,6 +86,7 @@ void main() {
  */
 export const S_SWISH_3D = defineShaderTransition({
 	id: 'jasper.s.swish-3d',
+	expensive: true,
 	label: 'S_Swish3D',
 	bin: BIN,
 	subBin: SAPPHIRE_TRANSITION_SUBBINS.wipes,
@@ -330,10 +333,29 @@ void main() {
 });
 
 /**
+ * The tracker uniforms of S_MochaWhip (Mocha mode): the incoming side's track at this frame (`ctx.tracks.to`, sequence
+ * px). `u_mwTrack` 0 = none / Track Mode Off, 1 = planar (`u_mwQuad` = TL, TR, BR, BL), 2 = point; `u_mwTrackAt` =
+ * the tracked centre.
+ */
+export function mochaTrackUniforms(p: EffectParams, ctx: TrFrameContext) {
+	const tr = p.trackMode === 'off' ? null : (ctx.tracks?.to ?? null);
+	const quad = tr?.corners?.length === 4 ? tr.corners : null;
+	const at = tr?.point ?? [0, 0];
+	return {
+		u_mwTrack: { int: !tr ? 0 : quad ? 1 : 2 },
+		u_mwQuad: { vec4s: quad ? quad.flat() : [0, 0, 0, 0, 0, 0, 0, 0] },
+		u_mwTrackAt: [at[0], at[1]] as [number, number],
+	};
+}
+
+/**
  * S_MochaWhip: a WhipLash-style background whip with a cut-out of the incoming clip whipping in front and landing
- * at its place in the incoming clip. Sapphire defines the cut-out with Mocha inside the effect; here the region is
- * the Cutout Mask (rectangle or ellipse, keyframable centre/size). With Cutout Mask = None (default) the cut-out is
- * bypassed and the transition is a plain whip pan (Sapphire's Bypass Mocha).
+ * at its place in the incoming clip. Sapphire defines the cut-out with a Mocha track; here, when the incoming clip has
+ * a tracker (Track Mode = Follow Clip Track, the default), the cut-out follows it frame by frame: a planar track's
+ * quad is the cut-out region, a point track centres the mask (Mask Size / Rotation; an ellipse when Cutout Mask is
+ * None) on the tracked point, and the cut-out lands around the tracked centre. Without a track the region is the
+ * Cutout Mask (rectangle or ellipse, keyframable centre/size); with Cutout Mask = None (default) and no track the
+ * cut-out is bypassed and the transition is a plain whip pan (Sapphire's Bypass Mocha).
  */
 export const S_MOCHA_WHIP = defineShaderTransition({
 	id: 'jasper.s.mocha-whip',
@@ -350,6 +372,13 @@ export const S_MOCHA_WHIP = defineShaderTransition({
 			['none', 'rectangle', 'ellipse'],
 			['None (Bypass)', 'Rectangle', 'Ellipse'],
 			'none',
+		),
+		choice(
+			'trackMode',
+			'Track Mode',
+			['auto', 'off'],
+			['Follow Clip Track (when present)', 'Off (Cutout Mask only)'],
+			'auto',
 		),
 		fxParam.point('maskCenter', 'Mask Center', [0.5, 0.5], { group: 'Mask' }),
 		fxParam.vec2('maskSize', 'Mask Size', [0.4, 0.5], { min: 0, softMax: 1, step: 0.001 }, { group: 'Mask' }),
@@ -404,27 +433,49 @@ export const S_MOCHA_WHIP = defineShaderTransition({
 		edgeModeParam('bgEdgeMode', 'Background Edge Mode'),
 	],
 	gpu: {
-		uniforms: shutterUniforms,
+		uniforms: (p, ctx) => ({ ...shutterUniforms(p, ctx), ...mochaTrackUniforms(p, ctx) }),
 		passes: [
 			{
 				include: [GLSL_SW_SHUTTER],
 				frag: /* glsl */ `${whipGlsl((s) => (s ? `u_bg${s[0]!.toUpperCase()}${s.slice(1)}` : 'Bg'))}${WHIP_FINISH}
+// The cut-out is on: a Cutout Mask shape, or a track of the incoming clip.
+bool mw_active() { return u_cutoutMask != 0 || u_mwTrack != 0; }
+// Signed distance (px, < 0 inside) to the tracked quad (convex; either winding).
+float mw_quadDist(vec2 q) {
+  vec2 v[4];
+  v[0] = u_mwQuad[0].xy; v[1] = u_mwQuad[0].zw; v[2] = u_mwQuad[1].xy; v[3] = u_mwQuad[1].zw;
+  float area = 0.0;
+  for (int i = 0; i < 4; i++) { vec2 a = v[i], b = v[(i + 1) % 4]; area += a.x * b.y - b.x * a.y; }
+  float o = area >= 0.0 ? 1.0 : -1.0;
+  float inside = 1e9;
+  for (int i = 0; i < 4; i++) {
+    vec2 a = v[i], e = v[(i + 1) % 4] - a;
+    float len = max(length(e), 1e-3);
+    inside = min(inside, o * (e.x * (q.y - a.y) - e.y * (q.x - a.x)) / len);
+  }
+  return -inside;
+}
 // Coverage of the cut-out mask at a uv of the incoming clip.
 float mw_mask(vec2 uv) {
-  if (u_cutoutMask == 0) return 0.0;
-  vec2 c = u_maskCenter * u_compSize;
+  if (!mw_active()) return 0.0;
+  float soft = max(u_blurMocha, 1.0);
+  if (u_mwTrack == 1) {
+    float m = 1.0 - smoothstep(-0.5 * soft, 0.5 * soft, mw_quadDist(uv * u_compSize));
+    return u_invertMocha ? 1.0 - m : m;
+  }
+  vec2 c = u_mwTrack == 2 ? u_mwTrackAt : u_maskCenter * u_compSize;
   vec2 hs = max(u_maskSize * u_compSize * 0.5, vec2(1.0));
   vec2 d = sw_rot(-u_maskRotation) * (uv * u_compSize - c);
-  float soft = max(u_blurMocha, 1.0);
   float sd;
-  if (u_cutoutMask == 2) sd = (length(d / hs) - 1.0) * min(hs.x, hs.y);
+  if (u_cutoutMask == 2 || u_cutoutMask == 0) sd = (length(d / hs) - 1.0) * min(hs.x, hs.y);
   else { vec2 q = abs(d) - hs; sd = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0); }
   float m = 1.0 - smoothstep(-0.5 * soft, 0.5 * soft, sd);
   return u_invertMocha ? 1.0 - m : m;
 }
 // The cut-out position k (0 = start, 1 = landed): offset, shift, rotation and scale fade out as it lands.
 vec2 mw_map(vec2 f, float k) {
-  vec2 c = sw_f(u_cutoutCenter);
+  // Tracked: the cut-out pivots (and lands) around the tracked centre.
+  vec2 c = u_mwTrack != 0 ? sw_f(u_mwTrackAt / u_compSize) : sw_f(u_cutoutCenter);
   vec2 off = sw_sapph(u_cutoutOffsetStart + u_cutoutShift) * (1.0 - k);
   float sc = mix(max(u_cutoutScale, 0.01), 1.0, clamp(k, 0.0, 1.5));
   vec2 g = sw_rot(-u_cutoutRotate * (1.0 - k)) * (f - c - off) / max(sc, 0.01);
@@ -443,7 +494,7 @@ void main() {
   vec2 f = sw_f(v_uv);
   vec4 bg = wl_renderBg(f, p, u_bgMotionBlur, u_bgWhipOut, u_bgWhipSide, u_bgEdgeMode);
   bg = wl_finish(bg, sw_bell(p), u_bgBrightness, u_bgOffsetDarks);
-  if (u_cutoutMask == 0) { fragColor = bg; return; }
+  if (!mw_active()) { fragColor = bg; return; }
   float h = sw_shutter(p, u_cutoutMotionBlur * 3.0);
   float lo = p - h, hi = p + h;
   float extent = length((mw_map(f, sw_whip(hi, u_cutoutWhipOut)) - mw_map(f, sw_whip(lo, u_cutoutWhipOut))) * u_compSize);

@@ -14,6 +14,7 @@ import {
 	formatTimecode,
 	type ParamSpec,
 	type ParamValue,
+	type ProjectDocument,
 	type RGBA,
 	type Sequence,
 	TRANSITION_SPECS,
@@ -28,6 +29,7 @@ import { type PointerEvent as ReactPointerEvent, useRef, useState } from 'react'
 import { TRANSITION_ALIGNMENTS } from '../effects/transition-prefs.ts';
 import { CheckboxField, ColorField, MiniButton, SelectField } from '../properties/controls/fields.tsx';
 import { StopwatchGlyph } from '../properties/controls/glyphs.tsx';
+import { MediaParamPicker } from '../properties/controls/MediaParamPicker.tsx';
 import { ScrubbyNumber } from '../properties/controls/ScrubbyNumber.tsx';
 import { useInspectorData } from '../properties/lib/hooks.ts';
 import type { InspectorOps } from '../properties/lib/ops.ts';
@@ -86,6 +88,16 @@ export function TransitionSection(props: { session: EditorSession; host: 'effect
 			<header className="flex h-[28px] items-center gap-1 px-2 font-semibold text-pr-strong">
 				<span className="truncate">Transition</span>
 				<span className="truncate font-normal text-pr-muted">· {geom.spec?.label ?? t.effectId}</span>
+				{geom.spec?.expensive ? (
+					// Same marker as an expensive effect's section header (EffectControlsPanel).
+					<span
+						className="text-pr-small text-pr-muted"
+						title="Expensive in preview"
+						data-testid="transition-expensive"
+					>
+						●
+					</span>
+				) : null}
 			</header>
 			<Row label="Type">
 				<SelectField<string>
@@ -348,6 +360,7 @@ function TransitionParams(props: {
 	ops: InspectorOps;
 }) {
 	const { spec, t, seq, ops } = props;
+	const data = useInspectorData();
 	const frame = useTransportFrame(100).frame;
 	const F = flicksPerFrame(seq.settings.frameRate);
 	// Keys are stored relative to the stored span start (what the command handler uses).
@@ -372,7 +385,26 @@ function TransitionParams(props: {
 			value,
 			...(animated(p) ? { at: atNow() } : {}),
 		}) as Command;
-	const commit = (p: ParamSpec, value: unknown) => ops.apply(`${spec.label}: ${p.label}`, [set(p, value)]);
+	const completion = spec.params.find((x) => x.name === 'completion');
+	const commit = (p: ParamSpec, value: unknown) => {
+		// Turning Custom Completion on with an unanimated Transition Completion seeds the curve with the linear timing
+		// at the span's ends (0 % on the first frame, 100 % on the last) so the user starts from a ramp to shape.
+		if (p.name === 'useCompletion' && value === true && completion && !animated(completion)) {
+			const key = (frame: number, v: number) =>
+				({
+					type: 'keyframe.add',
+					target: target(completion.name),
+					at: { sequenceFrame: Math.max(0, frame) },
+					value: v,
+				}) as Command;
+			return ops.apply(`${spec.label}: ${p.label}`, [
+				set(p, value),
+				key(start, 0),
+				key(start + Math.max(0, t.duration - 1), 100),
+			]);
+		}
+		return ops.apply(`${spec.label}: ${p.label}`, [set(p, value)]);
+	};
 	return (
 		<div className="pt-1" data-testid="transition-params">
 			{spec.params.map((p) => (
@@ -408,6 +440,7 @@ function TransitionParams(props: {
 					</span>
 					<div className="flex min-w-0 flex-1 items-center gap-1">
 						<ParamEditor
+							doc={data.doc}
 							p={p}
 							value={paramValue(p)}
 							onCommit={(v) => commit(p, v)}
@@ -423,6 +456,7 @@ function TransitionParams(props: {
 }
 
 function ParamEditor(props: {
+	doc: ProjectDocument;
 	p: ParamSpec;
 	value: ParamValue;
 	label: string;
@@ -497,6 +531,18 @@ function ParamEditor(props: {
 					label={p.label}
 					alpha
 					onChange={(c) => props.onCommit(c)}
+					data-testid={`transition-param-${p.name}`}
+				/>
+			);
+		case 'media':
+			// Image params (Gradient Wipe's custom gradient…): the effects' picture picker; "None" = the built-in fallback.
+			return (
+				<MediaParamPicker
+					doc={props.doc}
+					value={value}
+					kinds={p.mediaKinds ?? ['image']}
+					label={p.label}
+					onChange={(mediaId) => props.onCommit({ mediaId })}
 					data-testid={`transition-param-${p.name}`}
 				/>
 			);

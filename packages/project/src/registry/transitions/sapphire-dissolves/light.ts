@@ -760,6 +760,7 @@ export function zapUniforms(
 
 export const S_DISSOLVE_ZAP: TransitionSpec = defineDissolve({
 	id: 'jasper.s.dissolve-zap',
+	expensive: true,
 	label: 'S_DissolveZap',
 	description:
 		'Lightning bolts crackle from a start point to random end points while the clips dissolve; the bolts multiply and the background glows towards the peak.',
