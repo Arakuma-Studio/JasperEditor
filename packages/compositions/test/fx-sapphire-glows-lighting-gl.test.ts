@@ -3,9 +3,11 @@
 // with default params on two scenes (opaque night street, transparent logo), plus the characteristic pixel of each
 // effect, padding (light drawn outside the layer box), alpha, Show views, and seeded/time determinism.
 // FX_GL=0 skips it; needs a Chrome (JASPER_BROWSER_EXECUTABLE or the usual paths). Visual review: ./dump.ts.
+
+import { FX_FAMILIES } from '@jasper/project';
 import type { Browser, Page } from '@playwright/test';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { CHROME, openSglPage, sgl } from './fx-sapphire-glows-lighting/browser.ts';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { CHROME, openSglBrowser, sgl } from './fx-sapphire-glows-lighting/browser.ts';
 
 type Px = [number, number, number, number];
 type Pixels = { canvas: number[]; box: number[]; out: Px[]; src: Px[] };
@@ -18,6 +20,18 @@ type Opts = {
 	seed?: number;
 };
 
+const FAMILY_IDS = FX_FAMILIES.find((f) => f.file === 'sapphire-glows-lighting')!.effects.map((s) => s.id);
+const LIGHT_CASES: [string, Record<string, unknown>][] = [
+	['jasper.s.glow', {}],
+	['jasper.s.glow-noise', { noiseAmplitude: 0 }],
+	['jasper.s.glow-edges', {}],
+	['jasper.s.glow-dist', { glowWidth: 0.3 }],
+	['jasper.s.glow-rainbow', {}],
+	['jasper.s.ultra-glow', {}],
+	['jasper.s.zglow', {}],
+	['jasper.s.glint', { threshold: 0.5, sizeRed: 1, sizeBlue: 1 }],
+	['jasper.s.glare', { style: 'roundCoin', size: 3 }],
+];
 const lum = (p: Px) => 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2];
 const S = { width: 160, height: 90 };
 /** Points of the dot scene (white dot at 70 % / 30 % of the 160 × 90 box). */
@@ -34,39 +48,47 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 		const checksum = (id: string, params: Record<string, unknown>, opts: Opts = {}) =>
 			sgl<number>(page, 'checksum', id, params, { ...S, ...opts });
 
+		let newPage: () => Promise<Page>;
+
 		beforeAll(async () => {
-			({ browser, page } = await openSglPage());
+			const b = await openSglBrowser();
+			browser = b.browser;
+			newPage = b.page;
 		}, 120_000);
+
+		// A fresh page (GL context) per test: SwiftShader slows down as one context accumulates hundreds of programs.
+		beforeEach(async () => {
+			page = await newPage();
+		}, 60_000);
+
+		afterEach(async () => {
+			await page?.close();
+		});
 
 		afterAll(async () => {
 			await browser?.close();
 		});
 
-		it('compiles and runs every effect of the family with default params (opaque and transparent input)', async () => {
-			const r = await sgl<{ count: number; errors: string[] }>(page, 'allDefaults');
-			expect(r.errors).toEqual([]);
-			expect(r.count).toBe(25);
+		it('ships the 25 effects of the family', () => {
+			expect(FAMILY_IDS).toHaveLength(25);
 		});
 
-		it('light effects add light next to a bright source and leave far black alone', async () => {
-			const near: [number, number] = [DOT[0] - 9, DOT[1]];
-			const cases: [string, Record<string, unknown>][] = [
-				['jasper.s.glow', {}],
-				['jasper.s.glow-noise', { noiseAmplitude: 0 }],
-				['jasper.s.glow-edges', {}],
-				['jasper.s.glow-dist', { glowWidth: 0.3 }],
-				['jasper.s.glow-rainbow', {}],
-				['jasper.s.ultra-glow', {}],
-				['jasper.s.zglow', {}],
-				['jasper.s.glint', { threshold: 0.5, sizeRed: 1, sizeBlue: 1 }],
-				['jasper.s.glare', { style: 'roundCoin', size: 3 }],
-			];
-			for (const [id, params] of cases) {
+		it.each(FAMILY_IDS)(
+			'compiles and runs %s with default params (opaque and transparent input)',
+			async (id) => {
+				expect(await sgl<string | null>(page, 'runDefaults', id)).toBeNull();
+			},
+		);
+
+		it.each(LIGHT_CASES)(
+			'%s adds light next to a bright source and leaves far black alone',
+			async (id, params) => {
+				const near: [number, number] = [DOT[0] - 9, DOT[1]];
 				const r = await pixels(id, params, { scene: 'dot' }, [near, [5, 85]]);
 				expect(lum(r.out[0]!), `${id} near the dot`).toBeGreaterThan(lum(r.src[0]!) + 8);
 				expect(lum(r.out[1]!), `${id} far corner`).toBeLessThan(6);
-			}
-		});
+			},
+		);
 
 		it('S_Glow: Width X stretches the glow horizontally; Show Threshold shows the threshold image', async () => {
 			const h = await pixels('jasper.s.glow', { widthY: 0.05 }, { scene: 'dot' }, [

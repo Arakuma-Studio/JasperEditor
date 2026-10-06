@@ -288,6 +288,18 @@ const api = {
 		return { first: Math.round(t1 - t0), second: Math.round(performance.now() - t1) };
 	},
 
+	/** One effect with default params on the night scene and the transparent logo (later frame): error or null. */
+	runDefaults(id: string) {
+		try {
+			const s = specOf(id);
+			run(s, defaults(s), { width: 96, height: 54 });
+			run(s, defaults(s), { width: 96, height: 54, scene: 'logo', frame: 17 });
+			return null;
+		} catch (e) {
+			return (e as Error).message;
+		}
+	},
+
 	/** Pixels at layer-box points (layer px) of one effect run. */
 	pixels(id: string, over: Record<string, unknown>, opts: RunOpts, points: [number, number][]) {
 		const spec = specOf(id);

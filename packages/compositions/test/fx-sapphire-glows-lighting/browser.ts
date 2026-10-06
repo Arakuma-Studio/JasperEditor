@@ -16,7 +16,8 @@ export const CHROME = [
 	'/usr/bin/chromium-browser',
 ].find((p): p is string => !!p && existsSync(p));
 
-export async function openSglPage(): Promise<{ browser: Browser; page: Page }> {
+/** Bundles the entry and launches Chrome; `page()` opens a fresh page with the bundle (a new GL context). */
+export async function openSglBrowser(): Promise<{ browser: Browser; page(): Promise<Page> }> {
 	const req = createRequire(createRequire(import.meta.url).resolve('tsx/package.json'));
 	const esbuild = req('esbuild') as {
 		build(o: Record<string, unknown>): Promise<{ outputFiles: { text: string }[] }>;
@@ -28,22 +29,39 @@ export async function openSglPage(): Promise<{ browser: Browser; page: Page }> {
 		format: 'iife',
 		platform: 'browser',
 		target: 'es2022',
-		define: {
-			'process.env.NODE_ENV': '"production"',
-		},
+		define: { 'process.env.NODE_ENV': '"production"' },
 		logLevel: 'silent',
 	});
+	const code = out.outputFiles[0]!.text;
 	const browser = await chromium.launch({
 		executablePath: CHROME,
-		args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+		// No GPU watchdog / crash limit: on a loaded machine a long SwiftShader draw would otherwise get the GPU
+		// process killed and, after a few crashes, WebGL disabled for the rest of the run.
+		args: [
+			'--use-angle=swiftshader',
+			'--enable-unsafe-swiftshader',
+			'--ignore-gpu-blocklist',
+			'--disable-gpu-watchdog',
+			'--disable-gpu-process-crash-limit',
+		],
 	});
-	const page = await browser.newPage();
-	const errors: string[] = [];
-	page.on('pageerror', (e) => errors.push(e.message));
-	await page.setContent('<!doctype html><html><body></body></html>');
-	await page.addScriptTag({ content: out.outputFiles[0]!.text });
-	if (errors.length) throw new Error(errors.join('\n'));
-	return { browser, page };
+	return {
+		browser,
+		async page() {
+			const page = await browser.newPage();
+			const errors: string[] = [];
+			page.on('pageerror', (e) => errors.push(e.message));
+			await page.setContent('<!doctype html><html><body></body></html>');
+			await page.addScriptTag({ content: code });
+			if (errors.length) throw new Error(errors.join('\n'));
+			return page;
+		},
+	};
+}
+
+export async function openSglPage(): Promise<{ browser: Browser; page: Page }> {
+	const b = await openSglBrowser();
+	return { browser: b.browser, page: await b.page() };
 }
 
 /** Calls `window.__sgl[name](...args)` in the page. */
