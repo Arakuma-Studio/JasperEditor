@@ -71,6 +71,8 @@ export type ModelPrompt = {
 	box: Box | null;
 	/** A soft prior mask (w·h), used by models that take one; the rest ignore it. */
 	mask: Float32Array | null;
+	/** Identity of the picture (cache key for the model's image embeddings). */
+	imageKey?: string;
 };
 
 const HARD_FG = 1;
@@ -834,10 +836,12 @@ export async function segmentWith(
 	opts: SegOpts,
 	refineRadius: number,
 	model: MaskModel | null,
+	imageKey?: string,
 ): Promise<{ seg: FrameSeg; usedModel: boolean }> {
 	if (!model || w === 0 || h === 0)
 		return { seg: segment(img, w, h, strokes, box, prior, opts, refineRadius), usedModel: false };
 	const prompt = strokePrompt(strokes, box);
+	if (imageKey) prompt.imageKey = imageKey;
 	if (prior) addPriorPrompt(prompt, prior.soft, w, h);
 	if (!prompt.points.some((p) => p.fg) && !prompt.box)
 		return { seg: segment(img, w, h, strokes, box, prior, opts, refineRadius), usedModel: false };
@@ -873,6 +877,7 @@ export async function propagateWith(
 	opts: SegOpts,
 	refineRadius: number,
 	model: MaskModel | null,
+	imageKey?: string,
 ): Promise<{ seg: FrameSeg; usedModel: boolean }> {
 	const prior = warpPrior(prev, flow, w, h, opts);
 	const classical = () => ({
@@ -881,6 +886,7 @@ export async function propagateWith(
 	});
 	if (!model || w === 0 || h === 0) return classical();
 	const prompt = strokePrompt(strokes, null);
+	if (imageKey) prompt.imageKey = imageKey;
 	if (!addPriorPrompt(prompt, prior.soft, w, h)) return classical();
 	let soft: Float32Array | null = null;
 	try {
