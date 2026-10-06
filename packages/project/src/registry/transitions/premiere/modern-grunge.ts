@@ -214,7 +214,8 @@ export const GLITCH_TRANSITION = defineShaderTransition({
 void main() {
   float p = tr_progress();
   float amt = clamp(u_amount / 100.0, 0.0, 2.0);
-  float e = pm_bump(p) * amt;
+  // Concentrated around the cut: mild at the ends of the transition, violent in the middle.
+  float e = pow(pm_bump(p), 3.0) * amt;
   int f = int(u_frame);
   vec2 px = tr_px();
   // Torn slices: random-height rows shifted sideways.
@@ -227,7 +228,7 @@ void main() {
   ivec2 blk = ivec2(floor(px / bs));
   float hb = fx_hash3(ivec3(blk, f), u_seed);
   int side = p < 0.5 ? 0 : 1;
-  if (hb < 0.35 * e) side = 1 - side;
+  if (hb < 0.3 * e) side = 1 - side;
   vec2 uv = v_uv + vec2(shift, 0.0);
   vec2 split = vec2(u_rgbSplit * e / u_compSize.x, 0.0);
   vec4 cr = pm_sideMirrored(side, uv + split);
@@ -314,7 +315,7 @@ void main() {
   vec2 uvK = r * vec2(cos(m), sin(m)) / asp + 0.5;
   vec4 plain = mix(tr_from(v_uv), tr_to(v_uv), k);
   vec4 kal = mix(pm_sideMirrored(0, uvK), pm_sideMirrored(1, uvK), k);
-  fragColor = mix(plain, kal, smoothstep(0.0, 0.6, e));
+  fragColor = mix(plain, kal, smoothstep(0.0, 1.0, e));
 }`,
 			},
 		],
@@ -371,7 +372,7 @@ void main() {
   float t = isB ? 2.0 * (1.0 - p) : 2.0 * p;   // 0 = full picture, 1 = off
   float sy = t < 0.6 ? mix(1.0, 0.004, tr_easeIn(t / 0.6)) : 0.004;
   float sx = t < 0.6 ? 1.0 : mix(1.0, 0.0, tr_easeIn((t - 0.6) / 0.4));
-  float bright = 1.0 + 2.5 * smoothstep(0.0, 0.6, t);
+  float bright = 1.0 + 1.5 * smoothstep(0.3, 0.6, t);
   vec2 s = max(vec2(sx, sy), vec2(1e-4));
   vec2 uv = (v_uv - 0.5) / s + 0.5;
   vec4 pic = vec4(0.0);

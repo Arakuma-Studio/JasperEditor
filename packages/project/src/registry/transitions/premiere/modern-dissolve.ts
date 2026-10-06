@@ -108,6 +108,40 @@ void main() {
 	},
 });
 
+/** Dissolve ▸ Blur to Color: A blurs into a solid colour, which then fades into a blurred B that sharpens. */
+export const BLUR_TO_COLOR = defineShaderTransition({
+	id: 'jasper.blur-to-color',
+	label: 'Blur to Color',
+	bin,
+	description:
+		'The outgoing clip blurs into a solid color, then the color gives way to the incoming clip coming back into focus.',
+	keywords: ['blur', 'color', 'dip', 'fade', 'defocus', 'film impact'],
+	params: [fxParam.color('color', 'Color', [1, 1, 1, 1]), fxParam.pixels('blur', 'Blur', 80, 400)],
+	gpu: {
+		passes: (p): ShaderPass[] => [
+			{
+				output: 'btMix',
+				include: [GLSL_PR_MODERN],
+				frag: /* glsl */ `
+void main() { fragColor = tr_progress() < 0.5 ? tr_from(v_uv) : tr_to(v_uv); }`,
+			},
+			...blurLevelPasses('btMix', 'btBlur', num(p.blur, 80) / 4),
+			{
+				include: [GLSL_PR_MODERN, GLSL_PR_BLUR_LEVELS],
+				frag: /* glsl */ `
+void main() {
+  float p = tr_progress();
+  vec4 sharp = p < 0.5 ? tr_from(v_uv) : tr_to(v_uv);
+  vec4 blurred = pm_blurLevels(sharp, texture(u_btBlur1, v_uv), texture(u_btBlur2, v_uv), texture(u_btBlur3, v_uv), pm_bump(p));
+  // The colour covers the cut: 0 at the ends, full around the middle.
+  float c = smoothstep(0.0, 1.0, clamp(pm_bump(p) * 1.6 - 0.45, 0.0, 1.0));
+  fragColor = mix(blurred, tr_premul(u_color), c);
+}`,
+			},
+		],
+	},
+});
+
 /** Dissolve ▸ Burn Alpha: holes burn through A with glowing edges, B behind. */
 export const BURN_ALPHA = defineShaderTransition({
 	id: 'jasper.burn-alpha',
@@ -256,6 +290,7 @@ void main() {
 
 export const MODERN_DISSOLVES: readonly TransitionSpec[] = [
 	BLUR_DISSOLVE,
+	BLUR_TO_COLOR,
 	BURN_ALPHA,
 	DIP_TO_COLOR,
 	LUMA_FADE,

@@ -192,6 +192,9 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			const redish = (p: Px) => p[0] > 150 && p[2] < 40;
 			const expectations: Record<string, Px | ((p: Px) => boolean)> = {
 				blurDissolve: (p) => p[0] > 90 && p[2] > 90,
+				blurToColor: WHITE,
+				spinbackEarly: redish,
+				spinbackLate: blueish,
 				dipToColor: GREEN,
 				dipToColorHold: GREEN,
 				lumaBright: BLUE,

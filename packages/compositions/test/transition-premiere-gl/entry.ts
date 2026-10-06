@@ -361,6 +361,9 @@ const api = {
 	modernPixels() {
 		const r: Record<string, Px> = {};
 		r.blurDissolve = at('jasper.blur-dissolve', { at: 50 }, 32, 18);
+		r.blurToColor = at('jasper.blur-to-color', { at: 50 }, 32, 18);
+		r.spinbackEarly = at('jasper.3d-spinback', { at: 20, params: { blur: 0 } }, 32, 18);
+		r.spinbackLate = at('jasper.3d-spinback', { at: 85, params: { blur: 0 } }, 32, 18);
 		r.dipToColor = at('jasper.dip-to-color', { at: 50, params: { color: [0, 1, 0, 1] } }, 32, 18);
 		r.dipToColorHold = at(
 			'jasper.dip-to-color',

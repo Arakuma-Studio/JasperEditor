@@ -11,7 +11,7 @@ import { GLSL_NOISE } from '../../fx/glsl/noise.ts';
 import { fxParam } from '../../fx/params.ts';
 import type { GlslChunk } from '../../fx/shader.ts';
 import { defineShaderTransition } from '../define.ts';
-import { GLSL_TRANSITION, GLSL_TR_EASE } from '../glsl.ts';
+import { GLSL_TR_EASE, GLSL_TRANSITION } from '../glsl.ts';
 import { GLSL_PR_MODERN, MODERN_BINS } from './modern-common.ts';
 
 const bin = MODERN_BINS.immersive;
@@ -189,7 +189,11 @@ export const VR_SPHERICAL_BLUR = defineShaderTransition({
 	description:
 		'For 360° video: the picture blurs on the sphere (wider towards the poles, seamless at the seam) and brightens through the change of clip.',
 	keywords: kw('blur', 'spherical', 'defocus', 'exposure'),
-	params: [fxParam.angle('blur', 'Blur Intensity', 8), fxParam.percent('exposure', 'Exposure', 30), layoutParam()],
+	params: [
+		fxParam.angle('blur', 'Blur Intensity', 8),
+		fxParam.percent('exposure', 'Exposure', 30),
+		layoutParam(),
+	],
 	gpu: {
 		passes: [
 			{
@@ -237,7 +241,11 @@ export const VR_MOBIUS_ZOOM = defineShaderTransition({
 	description:
 		'For 360° video: a Möbius zoom on the sphere — the view rushes into a target direction and the incoming clip unfolds out of it.',
 	keywords: kw('mobius', 'zoom', 'warp', 'spherical'),
-	params: [...targetParams(), fxParam.number('zoom', 'Zoom Level', 6, { min: 1, max: 50, softMax: 20, step: 0.1 }), layoutParam()],
+	params: [
+		...targetParams(),
+		fxParam.number('zoom', 'Zoom Level', 6, { min: 1, max: 50, softMax: 20, step: 0.1 }),
+		layoutParam(),
+	],
 	gpu: {
 		passes: [
 			{
@@ -291,9 +299,14 @@ export const VR_LIGHT_LEAKS = defineShaderTransition({
 	id: 'jasper.vr-light-leaks',
 	label: 'VR Light Leaks',
 	bin,
-	description: 'For 360° video: warm, organic light leaks drift over the whole sphere and wash over the change of clip.',
+	description:
+		'For 360° video: warm, organic light leaks drift over the whole sphere and wash over the change of clip.',
 	keywords: kw('light leak', 'leak', 'film burn', 'warm'),
-	params: [fxParam.percent('intensity', 'Intensity', 100), fxParam.angle('hue', 'Color Shift', 0), layoutParam()],
+	params: [
+		fxParam.percent('intensity', 'Intensity', 100),
+		fxParam.angle('hue', 'Color Shift', 0),
+		layoutParam(),
+	],
 	gpu: {
 		passes: [
 			{
@@ -322,9 +335,14 @@ export const VR_CHROMA_LEAKS = defineShaderTransition({
 	id: 'jasper.vr-chroma-leaks',
 	label: 'VR Chroma Leaks',
 	bin,
-	description: 'For 360° video: saturated, multicolored light blobs drift around the sphere and wash over the change of clip.',
+	description:
+		'For 360° video: saturated, multicolored light blobs drift around the sphere and wash over the change of clip.',
 	keywords: kw('chroma', 'leak', 'color', 'light'),
-	params: [fxParam.percent('intensity', 'Intensity', 100), fxParam.angle('hue', 'Color Shift', 0), layoutParam()],
+	params: [
+		fxParam.percent('intensity', 'Intensity', 100),
+		fxParam.angle('hue', 'Color Shift', 0),
+		layoutParam(),
+	],
 	gpu: {
 		passes: [
 			{
@@ -359,7 +377,8 @@ export const VR_LIGHT_RAYS = defineShaderTransition({
 	id: 'jasper.vr-light-rays',
 	label: 'VR Light Rays',
 	bin,
-	description: 'For 360° video: rays of light burst out of a target direction, flood the sphere at the cut and fade on the incoming clip.',
+	description:
+		'For 360° video: rays of light burst out of a target direction, flood the sphere at the cut and fade on the incoming clip.',
 	keywords: kw('rays', 'light rays', 'god rays', 'beams'),
 	params: [
 		...targetParams(),

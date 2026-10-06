@@ -264,7 +264,7 @@ export const STRETCH_WIPE = defineShaderTransition({
 	description:
 		'An elastic wipe: near the moving edge both clips are stretched and smeared towards it, like pulled rubber.',
 	keywords: kw('stretch', 'elastic', 'smear', 'wipe', 'pull'),
-	params: [fxParam.angle('angle', 'Angle', 0), fxParam.pixels('stretch', 'Stretch', 200, 2000)],
+	params: [fxParam.angle('angle', 'Angle', 0), fxParam.pixels('stretch', 'Stretch', 100, 2000)],
 	gpu: {
 		uniforms: angleDir,
 		passes: [

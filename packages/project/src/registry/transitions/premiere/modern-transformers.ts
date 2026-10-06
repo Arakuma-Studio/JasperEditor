@@ -65,6 +65,63 @@ void main() {
 	},
 });
 
+/** Transformers ▸ 3D Spinback: A whips round edge-on in 3D; B spins back in from the other side and settles. */
+export const SPINBACK_3D = defineShaderTransition({
+	id: 'jasper.3d-spinback',
+	label: '3D Spinback',
+	bin,
+	description:
+		'A stylized 3D spin: the outgoing clip whips round until it is edge-on, then the incoming clip spins back in from the other side with motion blur and settles, with an optional overshoot.',
+	keywords: kw('3d', 'spin', 'spinback', 'rotate', 'whip'),
+	params: [
+		selectorParam(ORIENT, 'horizontal'),
+		fxParam.choice('easing', 'Easing', ['smooth', 'overshoot'], ['Smooth', 'Overshoot'], 'overshoot'),
+		fxParam.percent('blur', 'Motion Blur', 60),
+	],
+	gpu: {
+		uniforms: (p) => orientLayout(p),
+		passes: [
+			{
+				include: [GLSL_PR_MODERN, GLSL_PR_3D],
+				frag: /* glsl */ `
+// Card angle at progress p: A turns 0 → 90° (accelerating), B turns −90° → 0 (decelerating, optionally overshooting).
+float sbAngle(float p) {
+  if (p < 0.5) return 0.5 * PM_PI * tr_easeIn(2.0 * p);
+  float t = 2.0 * p - 1.0;
+  float e = 1.0 - pow(1.0 - t, 3.0);
+  if (u_easing == 1) {
+    float c1 = 1.4, c3 = c1 + 1.0;
+    float u = t - 1.0;
+    e = 1.0 + c3 * u * u * u + c1 * u * u;
+  }
+  return -0.5 * PM_PI * (1.0 - e);
+}
+vec4 sbCard(vec2 q, vec2 h, float th, bool isB) {
+  float co = cos(th), si = sin(th);
+  vec4 hit = pr3Face(q, vec3(0.0), vec3(si, 0.0, -co), vec3(co, 0.0, si), vec3(0.0, 1.0, 0.0), h);
+  if (hit.z <= 0.0 || hit.w <= 0.0 || any(lessThan(hit.xy, vec2(0.0))) || any(greaterThan(hit.xy, vec2(1.0)))) return vec4(0.0);
+  vec2 uv = pr3Uv(hit.xy, u_swap, false);
+  vec4 c = isB ? tr_to(uv) : tr_from(uv);
+  c.rgb *= mix(1.0, 0.65, abs(si));
+  return c;
+}
+void main() {
+  float p = tr_progress();
+  vec2 q = pr3Screen(u_swap, false);
+  vec2 h = pr3Half(u_swap);
+  bool isB = p >= 0.5;
+  float th = sbAngle(p);
+  float dp = 0.5 / max(u_duration, 2.0);
+  float L = (u_blur / 100.0) * (sbAngle(min(p + dp, isB ? 1.0 : 0.4999)) - sbAngle(max(p - dp, isB ? 0.5 : 0.0)));
+  vec4 c = vec4(0.0);
+  for (int i = 0; i < 8; i++) c += sbCard(q, h, th + L * ((float(i) + 0.5) / 8.0 - 0.5), isB);
+  fragColor = c / 8.0;
+}`,
+			},
+		],
+	},
+});
+
 /** Transformers ▸ Frame: A shrinks into a framed picture that slides away; B slides in framed and grows. */
 export const FRAME_TRANSITION = defineShaderTransition({
 	id: 'jasper.frame-transition',
@@ -293,6 +350,7 @@ void main() {
 
 export const MODERN_TRANSFORMERS: readonly TransitionSpec[] = [
 	SPIN_3D,
+	SPINBACK_3D,
 	FRAME_TRANSITION,
 	LOUVER,
 	MIRROR_TRANSITION,

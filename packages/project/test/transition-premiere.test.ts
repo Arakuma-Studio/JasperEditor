@@ -79,7 +79,15 @@ const CLASSIC: Record<string, string[]> = {
 
 /** Premiere 25.5 / 26 transitions from Film Impact (Premiere folder → labels). */
 const MODERN: Record<string, string[]> = {
-	Dissolve: ['Blur Dissolve', 'Burn Alpha', 'Dip to Color', 'Luma Fade', 'Mosaic', 'Shape Dissolve'],
+	Dissolve: [
+		'Blur Dissolve',
+		'Blur to Color',
+		'Burn Alpha',
+		'Dip to Color',
+		'Luma Fade',
+		'Mosaic',
+		'Shape Dissolve',
+	],
 	Slide: ['3D Roll', 'Film Roll', 'Roll', 'Stretch'],
 	Wipe: ['Linear Wipe', 'Neon Wipe', 'Panel Wipe', 'Plateau Wipe', 'Soft Wipe', 'Star Wipe', 'Stretch Wipe'],
 	Animation: [
@@ -121,7 +129,7 @@ const MODERN: Record<string, string[]> = {
 		'Stripe',
 		'Zoom Blur',
 	],
-	Transformers: ['3D Spin', 'Frame', 'Louver', 'Mirror', 'Slice', 'Wave'],
+	Transformers: ['3D Spin', '3D Spinback', 'Frame', 'Louver', 'Mirror', 'Slice', 'Wave'],
 	'Immersive Video': [
 		'VR Chroma Leaks',
 		'VR Gradient Wipe',
