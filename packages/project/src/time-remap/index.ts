@@ -4,3 +4,4 @@ export * from './flow.ts';
 export * from './model.ts';
 export * from './ops.ts';
 export * from './sampling.ts';
+export * from './scenes.ts';
