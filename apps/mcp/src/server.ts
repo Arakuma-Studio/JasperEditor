@@ -31,6 +31,7 @@ import { registerShapeTools, SHAPES_GUIDE } from './tools/shapes.ts';
 import { registerSpeechTools, SPEECH_GUIDE } from './tools/speech.ts';
 import { registerStructureTools, STRUCTURE_GUIDE } from './tools/structure.ts';
 import { registerTemplateTools, TEMPLATES_GUIDE } from './tools/templates.ts';
+import { registerTextAnimatorTools, TEXT_ANIMATORS_GUIDE } from './tools/text-animators.ts';
 import { registerTimeTools, TIME_GUIDE } from './tools/time.ts';
 import { registerTrackingTools, TRACKING_GUIDE } from './tools/tracking.ts';
 import { registerTransitionTools, TRANSITION_GUIDE } from './tools/transitions.ts';
@@ -69,6 +70,7 @@ const FULL_GUIDE = [
 	TRACKING_GUIDE,
 	TRANSITION_GUIDE,
 	ANIMATION_GUIDE,
+	TEXT_ANIMATORS_GUIDE,
 	MOTION_PATH_GUIDE,
 	KEYFRAMES_BLEND_GUIDE,
 	MASKS_GUIDE,
@@ -117,6 +119,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerTrackingTools(ctx);
 	registerTransitionTools(ctx);
 	registerAnimationTools(ctx);
+	registerTextAnimatorTools(ctx);
 	registerMotionPathTools(ctx);
 	registerKeyframesBlendTools(ctx);
 	registerMaskTools(ctx);

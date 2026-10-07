@@ -36,6 +36,7 @@ import {
 	matteTrackIds,
 	type RenderVisualClip,
 	resolveCachedLayerProps,
+	textSourceFrameDependent,
 	transitionSpec,
 } from '@jasper/project';
 import {
@@ -52,7 +53,7 @@ import { AbsoluteFill, Freeze, Internals, Sequence, useCurrentFrame } from 'remo
 import { MixGraphContext } from './audio/context.ts';
 import { type MixGraph, mixGraphFor } from './audio/graph.ts';
 import { ColorDocContext, type ColorDocValue } from './color/chain.ts';
-import { useExpressionSnapshot } from './expressions.ts';
+import { useExpressionSnapshot, useTextExpressionHosts } from './expressions.ts';
 import { FontsReadyContext, useFontsReadyState, useLayerFontsReady } from './fonts.ts';
 import {
 	BlendFallback,
@@ -81,6 +82,7 @@ import {
 import { AdjustmentScope } from './layers/AdjustmentScope.tsx';
 import { AudioLayer, layerComponentFor } from './layers/index.ts';
 import { NestTracksContext } from './layers/nest-context.ts';
+import { TextExpressionContext } from './layers/text/expression-context.ts';
 import { rgbaCss } from './metadata.ts';
 import { blendModeCss, premountFrames } from './pipeline.ts';
 import { FrameRepaint } from './repaint.tsx';
@@ -121,7 +123,12 @@ function isFrameDependent(
 	if ('generator' in src) return src.generator.kind === 'counting-leader';
 	// A Source Text expression (wave expressions) changes the text per frame.
 	if ('text' in src)
-		return (!!src.animation && !!(src.animation.in || src.animation.out)) || hasActiveExpression(src.text);
+		return (
+			(!!src.animation && !!(src.animation.in || src.animation.out)) ||
+			hasActiveExpression(src.text) ||
+			// text-animators: animators, Source Text keys and text paths are evaluated per frame by the layer.
+			textSourceFrameDependent(src)
+		);
 	if ('shape' in src) {
 		const s = src.shape;
 		return (
@@ -692,6 +699,8 @@ function MixGraphDriver({
  */
 export function SequenceComposition({ doc: raw, options }: SequenceCompositionProps) {
 	const doc = useExpressionSnapshot(raw);
+	// text-animators: text Expression Selectors evaluate in the snapshot's expression world.
+	const textExpressions = useTextExpressionHosts(doc);
 	// audio-mix: the Program preview routes audio through our mix graph (renders take the export mixer's audio).
 	const sharedAudio = useContext(Internals.SharedAudioContext);
 	const audioCtx = sharedAudio?.audioContext ?? null;
@@ -718,44 +727,46 @@ export function SequenceComposition({ doc: raw, options }: SequenceCompositionPr
 		[doc.media, options.colorBypassClipIds, options.isPreview],
 	);
 	return (
-		<MixGraphContext.Provider value={graph}>
-			<FontsReadyContext.Provider value={fontsReady}>
-				<ColorDocContext.Provider value={color}>
-					<NestTracksContext.Provider value={VideoTracks}>
-						<AbsoluteFill ref={root} style={{ overflow: 'hidden', isolation: 'isolate' }}>
-							<VideoTracks doc={doc} options={options} offset={offset} />
-							{graph ? <MixGraphDriver graph={graph} doc={doc} offset={offset} /> : null}
-							{/* Renders take their audio from the export mixer (every path muxes it): they play no audio. */}
-							{(options.isPreview ? doc.audioClips : []).map((clip) => {
-								// An audio crossfade plays the clip's handles (S10:TUI-052).
-								const head = clip.headHandle ?? 0;
-								const from = clip.start - head - offset;
-								return (
-									<Sequence
-										key={clip.clipId}
-										from={from}
-										durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
-										name={clip.clipId}
-										layout="none"
-									>
-										<AudioLayer
-											clip={clip}
-											media={doc.media[clip.mediaId] ?? null}
-											fps={fps}
-											fpsRational={doc.settings.fps}
-											options={options}
-											master={doc.master}
-											sequenceFrom={from}
-										/>
-									</Sequence>
-								);
-							})}
-							{/* Last child: every frame is captured as a fresh paint of the settled DOM (repaint.tsx). */}
-							<FrameRepaint target={root} deps={[doc, options]} />
-						</AbsoluteFill>
-					</NestTracksContext.Provider>
-				</ColorDocContext.Provider>
-			</FontsReadyContext.Provider>
-		</MixGraphContext.Provider>
+		<TextExpressionContext.Provider value={textExpressions}>
+			<MixGraphContext.Provider value={graph}>
+				<FontsReadyContext.Provider value={fontsReady}>
+					<ColorDocContext.Provider value={color}>
+						<NestTracksContext.Provider value={VideoTracks}>
+							<AbsoluteFill ref={root} style={{ overflow: 'hidden', isolation: 'isolate' }}>
+								<VideoTracks doc={doc} options={options} offset={offset} />
+								{graph ? <MixGraphDriver graph={graph} doc={doc} offset={offset} /> : null}
+								{/* Renders take their audio from the export mixer (every path muxes it): they play no audio. */}
+								{(options.isPreview ? doc.audioClips : []).map((clip) => {
+									// An audio crossfade plays the clip's handles (S10:TUI-052).
+									const head = clip.headHandle ?? 0;
+									const from = clip.start - head - offset;
+									return (
+										<Sequence
+											key={clip.clipId}
+											from={from}
+											durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
+											name={clip.clipId}
+											layout="none"
+										>
+											<AudioLayer
+												clip={clip}
+												media={doc.media[clip.mediaId] ?? null}
+												fps={fps}
+												fpsRational={doc.settings.fps}
+												options={options}
+												master={doc.master}
+												sequenceFrom={from}
+											/>
+										</Sequence>
+									);
+								})}
+								{/* Last child: every frame is captured as a fresh paint of the settled DOM (repaint.tsx). */}
+								<FrameRepaint target={root} deps={[doc, options]} />
+							</AbsoluteFill>
+						</NestTracksContext.Provider>
+					</ColorDocContext.Provider>
+				</FontsReadyContext.Provider>
+			</MixGraphContext.Provider>
+		</TextExpressionContext.Provider>
 	);
 }

@@ -12,6 +12,7 @@ import {
 	hasActiveExpression,
 	type RenderSnapshot,
 	type RenderVisualClip,
+	textAnimatorsSeeded,
 } from '@jasper/project';
 import type { BakeVariant, Rect } from './layer.ts';
 
@@ -43,6 +44,8 @@ function seedBearing(c: RenderVisualClip, registry: EffectRegistry): boolean {
 	if (c.effects.some((fx) => fx.enabled && !!registry.get(fx.effectId, fx.effectVersion)?.gpu)) return true;
 	// Wave expressions: random()/wiggle() are seeded by the clip id.
 	if (clipHasExpressions(c)) return true;
+	// text-animators: Randomize Order, Wiggly and Expression selectors are seeded by the clip id.
+	if (c.kind === 'text' && textAnimatorsSeeded(c.source as never)) return true;
 	const src = c.source as { animation?: { in?: unknown; out?: unknown } };
 	return !!src.animation && !!(src.animation.in || src.animation.out);
 }

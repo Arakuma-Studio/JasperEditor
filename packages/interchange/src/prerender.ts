@@ -84,7 +84,8 @@ export function prerenderReason(doc: ProjectDocument, seq: Sequence, c: Clip, fo
 	if (!isKnownClipKind(c.kind)) return null;
 	switch (c.kind) {
 		case 'text':
-			return 'text clip';
+			// text-animators: animators and text paths are drawn by the composition, so the pre-render carries them.
+			return (c as { animators?: unknown[] }).animators?.length ? 'text clip with animators' : 'text clip';
 		case 'shape':
 			return 'shape clip';
 		case 'motion-graphic':

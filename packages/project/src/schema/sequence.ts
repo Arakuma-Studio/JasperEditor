@@ -23,6 +23,7 @@ import {
 	Vec2Schema,
 } from './common.ts';
 import { MaskSchema } from './mask.ts';
+import { TextAnimatorGroupSchema, TextMoreOptionsSchema, TextPathOptionsSchema } from './text-animators.ts';
 
 // ---------------------------------------------------------------- effects
 
@@ -50,6 +51,29 @@ export const EffectInstanceSchema = z.looseObject({
 export type EffectInstance = DeepStrip<z.infer<typeof EffectInstanceSchema>>;
 
 // ---------------------------------------------------------------- text
+
+// text-animators workstream: typography value schemas.
+export const TEXT_SCRIPTS = ['normal', 'superscript', 'subscript'] as const;
+export const TEXT_JUSTIFY_LAST = ['left', 'center', 'right', 'justify'] as const;
+export const TEXT_FIGURE_STYLES = ['default', 'lining', 'oldStyle'] as const;
+export const TEXT_FIGURE_WIDTHS = ['default', 'proportional', 'tabular'] as const;
+export const TextKerningSchema = z.union([z.enum(['metrics', 'optical']), z.number().min(-1000).max(10000)]);
+/** OpenType features beyond kerning / ligatures / small caps / scripts (AE Character panel ▸ OpenType). */
+export const TextOpenTypeSchema = z.looseObject({
+	discretionaryLigatures: z.boolean().optional(),
+	contextualAlternates: z.boolean().optional(),
+	stylisticAlternates: z.boolean().optional(),
+	/** Stylistic sets on (1…20 → `ss01`…`ss20`). */
+	stylisticSets: z.array(z.number().int().min(1).max(20)).optional(),
+	swash: z.boolean().optional(),
+	titling: z.boolean().optional(),
+	ordinals: z.boolean().optional(),
+	fractions: z.boolean().optional(),
+	allSmallCaps: z.boolean().optional(),
+	figureStyle: z.enum(TEXT_FIGURE_STYLES).optional(),
+	figureWidth: z.enum(TEXT_FIGURE_WIDTHS).optional(),
+});
+export type TextOpenType = DeepStrip<z.infer<typeof TextOpenTypeSchema>>;
 
 export const TextStrokeSchema = z.looseObject({
 	color: RGBASchema,
@@ -79,6 +103,32 @@ export const TextStyleSchema = z.looseObject({
 		})
 		.nullable(),
 	allCaps: z.boolean(),
+	// ---- text-animators workstream: typography (all optional; absent = the default noted, read-time defaults in
+	// `typography.ts`). Character settings apply per styled run; paragraph settings per paragraph (`paragraphs`).
+	/** `metrics` (font kerning, default), `optical` (from the outlines) or manual 1/1000 em before each character. */
+	kerning: TextKerningSchema.optional(),
+	/** Pixels, positive = up (default 0). */
+	baselineShiftPx: z.number().optional(),
+	/** Percent (0…100) of the space around each character removed (default 0). */
+	tsume: z.number().min(0).max(100).optional(),
+	fauxBold: z.boolean().optional(),
+	fauxItalic: z.boolean().optional(),
+	smallCaps: z.boolean().optional(),
+	/** Superscript / subscript (58.3 % size, ±33.3 % of the size; default normal). */
+	script: z.enum(TEXT_SCRIPTS).optional(),
+	/** Standard ligatures (`liga`, `clig`; default on). */
+	ligatures: z.boolean().optional(),
+	openType: TextOpenTypeSchema.optional(),
+	/** Variable font axis values by 4-letter tag (e.g. `{wght: 650}`), user units. */
+	fontVariations: z.record(z.string().regex(/^[\x20-\x7e]{4}$/), z.number()).optional(),
+	/** Alignment of the last line when `align` is `justify` (default left). */
+	justifyLast: z.enum(TEXT_JUSTIFY_LAST).optional(),
+	indentLeftPx: z.number().optional(),
+	indentRightPx: z.number().optional(),
+	indentFirstLinePx: z.number().optional(),
+	spaceBeforePx: z.number().optional(),
+	spaceAfterPx: z.number().optional(),
+	// ---- end text-animators
 });
 export type TextStyle = DeepStrip<z.infer<typeof TextStyleSchema>>;
 
@@ -88,6 +138,11 @@ export const TextContentSchema = z.looseObject({
 	runs: z
 		.array(z.looseObject({ from: nonNegInt(), to: nonNegInt(), style: TextStyleSchema.partial() }))
 		.optional(),
+	/**
+	 * text-animators workstream: per-paragraph overrides of the paragraph settings (`align`, `justifyLast`, indents,
+	 * spacing, `direction`) by paragraph index (paragraphs are separated by line breaks). Absent = base style.
+	 */
+	paragraphs: z.array(z.looseObject({ index: nonNegInt(), style: TextStyleSchema.partial() })).optional(),
 	/** Wave expressions (optional): a Source Text expression; its result (a string) replaces `text` per frame. */
 	expression: ExpressionSchema.optional(),
 });
@@ -488,6 +543,14 @@ export const TextClipSchema = z.looseObject({
 	...visualShape,
 	/** M2 (S11:TXA-001): in/out animators (schema v4). */
 	textAnimation: TextAnimationSchema.optional(),
+	// ---- text-animators workstream (all optional, no version bump): AE-style animators, Path Options, More Options,
+	// per-character 3D and Source Text keyframes (hold; `content` is the value when there are none).
+	animators: z.array(TextAnimatorGroupSchema).optional(),
+	pathOptions: TextPathOptionsSchema.optional(),
+	moreOptions: TextMoreOptionsSchema.optional(),
+	perCharacter3d: z.boolean().optional(),
+	sourceTextKeyframes: z.array(keyframeSchema(TextContentSchema)).optional(),
+	// ---- end text-animators
 });
 export const SolidClipSchema = z.looseObject({
 	...commonShape,

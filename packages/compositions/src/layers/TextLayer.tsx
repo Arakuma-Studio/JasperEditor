@@ -31,6 +31,8 @@ import { FALLBACK_FONT_STACK, fontFaceFor, useFontsReady } from '../fonts.ts';
 import { rgbaCss } from '../metadata.ts';
 import type { LayerProps } from '../types.ts';
 import { LayerBox } from './LayerBox.tsx';
+import { type TypesetSourceProps, TypesetText } from './text/TypesetText.tsx';
+import { needsTypeset } from './text/typography.ts';
 
 type TextSource = Extract<LayerProps['clip']['source'], { text: unknown }>;
 type Fonts = LayerProps['fonts'];
@@ -670,19 +672,27 @@ export function TextLayer(layer: LayerProps) {
 }
 
 function TextBody({ layer, source }: { layer: LayerProps; source: TextSource }) {
-	const { style, runs } = source.text;
+	const keyed = (source as TypesetSourceProps).sourceTextKeyframes;
 	const families = useMemo(
 		() =>
 			[
 				...new Set(
-					[style, ...(runs ?? []).map((r) => ({ ...style, ...r.style }))]
+					[source.text, ...(keyed ?? []).map((k) => k.value)]
+						.flatMap((c) => [c.style, ...(c.runs ?? []).map((r) => ({ ...c.style, ...r.style }))])
 						.map((s) => faceFamily(s, layer.fonts))
 						.filter((f): f is string => !!f),
 				),
 			].sort(),
-		[style, runs, layer.fonts],
+		[source.text, keyed, layer.fonts],
 	);
 	const fontsReady = useFontsReady(families);
+	// text-animators workstream: animators, Path Options, Source Text keys or extended typography → typeset renderer.
+	if (needsTypeset(source as TypesetSourceProps) || keyed?.length)
+		return fontsReady ? (
+			<TypesetText layer={layer} source={source as TypesetSourceProps} hidden={false} />
+		) : (
+			<RestText source={source} fonts={layer.fonts} hidden />
+		);
 	const active = activeTextAnimation(source.animation, layer.localFrame, layer.clip.duration, layer.fps);
 	const impl = active ? textAnimationImpl(active.animator) : undefined;
 	if (!fontsReady || !active || !impl)

@@ -33,6 +33,7 @@ import {
 	type EffectInstance,
 	type Sequence,
 	type TextAnimation,
+	type TextStyle,
 } from '../schema/sequence.ts';
 import {
 	getTextAnimationSpec,
@@ -45,6 +46,12 @@ import { flicksPerFrame, type Rational } from '../time.ts';
 import type { EffectRegistry, EffectSpec, ParamSpec } from './effects.ts';
 import { kindCapabilities } from './kinds.ts';
 import type { MgTemplateInfo } from './mg.ts';
+import {
+	isTextAnimatorKey,
+	resolveTextAnimatorSpec,
+	SOURCE_TEXT_SPEC,
+	textAnimatorPropertySpecs,
+} from './text-animator-properties.ts';
 
 /**
  * `curve` and `media` are M2 (effect params only: tone curves, LUT asset refs). `json` (M2, S08) = any JSON
@@ -78,6 +85,8 @@ export type PropertyGroup =
 	| 'box'
 	/** M2 (S11:SHP-005, wp-m2-shapes): shape geometry and paint (`shape.*`). */
 	| 'shape'
+	/** text-animators workstream: animators, selectors, Path Options, More Options (`textAnimators.*`, …). */
+	| 'textAnimator'
 	/** wp masks: Opacity / effect mask properties (`masks.<maskId>.<prop>`). */
 	| 'mask';
 
@@ -382,6 +391,252 @@ const SHAPE_PROPERTY_SPECS: readonly PropertySpec[] = [
 ];
 
 // ---------------------------------------------------------------- end wp-m2-shapes
+
+// ---------------------------------------------------------------- text-animators: typography
+type TypoStyle = Partial<TextStyle> & Record<string, unknown>;
+/** Readers of the typography specs (`['$typo', key]` storage: values with read-time defaults). */
+const TYPO_GETTERS = new Map<string, (s: TypoStyle) => unknown>();
+const styleOfClip = (c: Clip) => (c.kind === 'text' ? (c.content.style as TypoStyle) : ({} as TypoStyle));
+const typo = (
+	key: string,
+	label: string,
+	kind: PropertySpec['kind'],
+	get: (s: TypoStyle) => unknown,
+	patch: (v: unknown, s: TypoStyle) => Record<string, unknown>,
+	extra: Partial<PropertySpec> & { defaultValue: unknown },
+): PropertySpec => {
+	TYPO_GETTERS.set(key, get);
+	return {
+		key: `text.${key}`,
+		label,
+		group: 'text',
+		kind,
+		animatable: 'no',
+		storagePath: ['$typo', key],
+		appliesTo: isText,
+		ui: {
+			control:
+				kind === 'boolean' ? 'toggle' : kind === 'enum' ? 'select' : kind === 'string' ? 'text' : 'scrub',
+		},
+		write: { via: 'clip.update', patch: (v, clip) => ({ content: { style: patch(v, styleOfClip(clip)) } }) },
+		...extra,
+		description: extra.description ?? `${label} (Character / Paragraph settings)`,
+	};
+};
+const field = (f: string) => (v: unknown) => ({ [f]: v });
+const ot = (f: string) => (v: unknown, s: TypoStyle) => ({
+	openType: { ...((s.openType as object) ?? {}), [f]: v },
+});
+const otGet = (f: string, d: unknown) => (s: TypoStyle) =>
+	(s.openType as Record<string, unknown> | undefined)?.[f] ?? d;
+/** `"wght 650, wdth 80"` ↔ `{wght: 650, wdth: 80}`. */
+export function parseFontVariations(v: unknown): Record<string, number> {
+	const out: Record<string, number> = {};
+	for (const part of String(v ?? '').split(',')) {
+		const m = /^\s*['"]?([\x20-\x7e]{4})['"]?\s+(-?\d+(?:\.\d+)?)\s*$/.exec(part);
+		if (m) out[m[1]!] = Number(m[2]);
+	}
+	return out;
+}
+export const TYPOGRAPHY_SPECS: readonly PropertySpec[] = [
+	typo(
+		'kerning',
+		'Kerning',
+		'enum',
+		(s) => s.kerning ?? 'metrics',
+		(v, s) => ({ kerning: v === 'manual' ? (typeof s.kerning === 'number' ? s.kerning : 0) : v }),
+		{
+			options: ['metrics', 'optical', 'manual'],
+			optionLabels: ['Metrics', 'Optical', 'Manual'],
+			defaultValue: 'metrics',
+			description:
+				"Kerning: the font's pairs (Metrics), from the glyph outlines (Optical) or Manual (1/1000 em before each character).",
+		},
+	),
+	typo(
+		'kerningAmount',
+		'Kerning Amount',
+		'number',
+		(s) => (typeof s.kerning === 'number' ? s.kerning : 0),
+		field('kerning'),
+		{
+			range: { min: -1000, max: 10000, step: 1 },
+			defaultValue: 0,
+			description: 'Manual kerning in 1/1000 em before each character (sets Kerning to Manual).',
+		},
+	),
+	typo(
+		'baselineShiftPx',
+		'Baseline Shift',
+		'number',
+		(s) => s.baselineShiftPx ?? 0,
+		field('baselineShiftPx'),
+		{
+			unit: 'px',
+			range: { min: -1000, max: 1000, step: 0.1 },
+			defaultValue: 0,
+		},
+	),
+	typo('tsume', 'Tsume', 'number', (s) => s.tsume ?? 0, field('tsume'), {
+		unit: '%',
+		range: { min: 0, max: 100, step: 1 },
+		defaultValue: 0,
+	}),
+	typo('fauxBold', 'Faux Bold', 'boolean', (s) => !!s.fauxBold, field('fauxBold'), { defaultValue: false }),
+	typo('fauxItalic', 'Faux Italic', 'boolean', (s) => !!s.fauxItalic, field('fauxItalic'), {
+		defaultValue: false,
+	}),
+	typo('smallCaps', 'Small Caps', 'boolean', (s) => !!s.smallCaps, field('smallCaps'), {
+		defaultValue: false,
+	}),
+	typo('script', 'Superscript / Subscript', 'enum', (s) => s.script ?? 'normal', field('script'), {
+		options: ['normal', 'superscript', 'subscript'],
+		optionLabels: ['Normal', 'Superscript', 'Subscript'],
+		defaultValue: 'normal',
+	}),
+	typo('ligatures', 'Ligatures', 'boolean', (s) => s.ligatures !== false, field('ligatures'), {
+		defaultValue: true,
+	}),
+	typo(
+		'discretionaryLigatures',
+		'Discretionary Ligatures',
+		'boolean',
+		otGet('discretionaryLigatures', false),
+		ot('discretionaryLigatures'),
+		{
+			defaultValue: false,
+		},
+	),
+	typo(
+		'contextualAlternates',
+		'Contextual Alternates',
+		'boolean',
+		otGet('contextualAlternates', true),
+		ot('contextualAlternates'),
+		{
+			defaultValue: true,
+		},
+	),
+	typo(
+		'stylisticAlternates',
+		'Stylistic Alternates',
+		'boolean',
+		otGet('stylisticAlternates', false),
+		ot('stylisticAlternates'),
+		{
+			defaultValue: false,
+		},
+	),
+	typo('swash', 'Swash', 'boolean', otGet('swash', false), ot('swash'), {
+		defaultValue: false,
+	}),
+	typo('titling', 'Titling Alternates', 'boolean', otGet('titling', false), ot('titling'), {
+		defaultValue: false,
+	}),
+	typo('ordinals', 'Ordinals', 'boolean', otGet('ordinals', false), ot('ordinals'), {
+		defaultValue: false,
+	}),
+	typo('fractions', 'Fractions', 'boolean', otGet('fractions', false), ot('fractions'), {
+		defaultValue: false,
+	}),
+	typo('allSmallCaps', 'All Small Caps', 'boolean', otGet('allSmallCaps', false), ot('allSmallCaps'), {
+		defaultValue: false,
+	}),
+	typo('figureStyle', 'Figure Style', 'enum', otGet('figureStyle', 'default'), ot('figureStyle'), {
+		options: ['default', 'lining', 'oldStyle'],
+		optionLabels: ['Default', 'Lining', 'Oldstyle'],
+		defaultValue: 'default',
+	}),
+	typo('figureWidth', 'Figure Width', 'enum', otGet('figureWidth', 'default'), ot('figureWidth'), {
+		options: ['default', 'proportional', 'tabular'],
+		optionLabels: ['Default', 'Proportional', 'Tabular'],
+		defaultValue: 'default',
+	}),
+	typo(
+		'stylisticSets',
+		'Stylistic Sets',
+		'string',
+		(s) => ((s.openType as { stylisticSets?: number[] } | undefined)?.stylisticSets ?? []).join(', '),
+		(v, s) => ({
+			openType: {
+				...((s.openType as object) ?? {}),
+				stylisticSets: [
+					...new Set(
+						String(v)
+							.split(/[\s,]+/)
+							.map(Number),
+					),
+				].filter((n) => Number.isInteger(n) && n >= 1 && n <= 20),
+			},
+		}),
+		{ defaultValue: '', description: 'Stylistic sets on, e.g. "1, 3" (ss01, ss03).' },
+	),
+	typo(
+		'fontVariations',
+		'Variable Font Axes',
+		'string',
+		(s) =>
+			Object.entries((s.fontVariations as Record<string, number> | undefined) ?? {})
+				.map(([t, v]) => `${t} ${v}`)
+				.join(', '),
+		(v) => ({ fontVariations: parseFontVariations(v) }),
+		{
+			defaultValue: '',
+			description: 'Variable font axis values, e.g. "wght 650, wdth 80" (the font must be variable).',
+		},
+	),
+	typo('justifyLast', 'Justify Last Line', 'enum', (s) => s.justifyLast ?? 'left', field('justifyLast'), {
+		options: ['left', 'center', 'right', 'justify'],
+		optionLabels: ['Left', 'Center', 'Right', 'Justify All'],
+		defaultValue: 'left',
+	}),
+	typo('indentLeftPx', 'Indent Left Margin', 'number', (s) => s.indentLeftPx ?? 0, field('indentLeftPx'), {
+		unit: 'px',
+		range: { min: -2000, max: 2000, step: 1 },
+		defaultValue: 0,
+	}),
+	typo(
+		'indentRightPx',
+		'Indent Right Margin',
+		'number',
+		(s) => s.indentRightPx ?? 0,
+		field('indentRightPx'),
+		{
+			unit: 'px',
+			range: { min: -2000, max: 2000, step: 1 },
+			defaultValue: 0,
+		},
+	),
+	typo(
+		'indentFirstLinePx',
+		'Indent First Line',
+		'number',
+		(s) => s.indentFirstLinePx ?? 0,
+		field('indentFirstLinePx'),
+		{
+			unit: 'px',
+			range: { min: -2000, max: 2000, step: 1 },
+			defaultValue: 0,
+		},
+	),
+	typo(
+		'spaceBeforePx',
+		'Space Before Paragraph',
+		'number',
+		(s) => s.spaceBeforePx ?? 0,
+		field('spaceBeforePx'),
+		{
+			unit: 'px',
+			range: { min: -2000, max: 2000, step: 1 },
+			defaultValue: 0,
+		},
+	),
+	typo('spaceAfterPx', 'Space After Paragraph', 'number', (s) => s.spaceAfterPx ?? 0, field('spaceAfterPx'), {
+		unit: 'px',
+		range: { min: -2000, max: 2000, step: 1 },
+		defaultValue: 0,
+	}),
+];
 
 export const PROPERTY_SPECS: readonly PropertySpec[] = [
 	{
@@ -844,6 +1099,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		defaultValue: false,
 		write: styleWrite('allCaps'),
 	},
+	// text-animators workstream: Character and Paragraph settings (AE Character / Paragraph panels).
+	...TYPOGRAPHY_SPECS,
 	{
 		key: 'solid.color',
 		label: 'Color',
@@ -1225,7 +1482,14 @@ export function propertiesForClip(
 	composition?: Pick<MgCompositionInfo, 'propsSchema' | 'defaultProps' | 'ui'>,
 ): PropertySpec[] {
 	const base = PROPERTY_SPECS.filter((s) => s.appliesTo(clip));
-	if (clip.kind === 'text') return [...base, ...textAnimationParamSpecs(clip as TextAnimated)];
+	if (clip.kind === 'text')
+		return [
+			...base,
+			...textAnimationParamSpecs(clip as TextAnimated),
+			// text-animators workstream: animators, selectors, Path / More Options, Source Text.
+			SOURCE_TEXT_SPEC,
+			...textAnimatorPropertySpecs(clip as Parameters<typeof textAnimatorPropertySpecs>[0]),
+		];
 	if (template && clip.kind === 'motion-graphic') return [...base, ...paramsPropertySpecs(template)];
 	if (composition && clip.kind === 'composition')
 		return [...base, ...compositionPropsPropertySpecs(composition)];
@@ -1244,6 +1508,9 @@ export function resolvePropertySpec(
 	composition?: Pick<MgCompositionInfo, 'propsSchema' | 'defaultProps' | 'ui'> | null,
 	clip?: TextAnimated,
 ): PropertySpec | undefined {
+	// text-animators workstream: dynamic animator / selector / path / more-options keys (need the clip).
+	if (isTextAnimatorKey(key))
+		return resolveTextAnimatorSpec(key, clip as Parameters<typeof resolveTextAnimatorSpec>[1]);
 	if (/^textAnimation\.(in|out)\.params\./.test(key))
 		return clip ? textAnimationParamSpecs(clip).find((s) => s.key === key) : undefined;
 	if (key.startsWith('params.'))
@@ -1291,6 +1558,16 @@ function readStoredProperty(ctx: PropertyContext, s: PropertySpec): unknown {
 	if (head === '$effect') {
 		const fx = ((ctx.clip as { effects?: EffectInstance[] }).effects ?? []).find((e) => e.id === a);
 		return fx?.params[b!];
+	}
+	// text-animators workstream: typography values with read-time defaults.
+	if (head === '$typo') {
+		const st = ctx.clip.kind === 'text' ? (ctx.clip.content.style as TypoStyle) : ({} as TypoStyle);
+		return TYPO_GETTERS.get(a!)?.(st);
+	}
+	// text-animators workstream: Source Text as an Animatable view (`content` + hold keys).
+	if (head === '$sourceText') {
+		const t = ctx.clip as { content?: unknown; sourceTextKeyframes?: Keyframe<unknown>[] };
+		return { value: t.content, keyframes: t.sourceTextKeyframes ?? [] };
 	}
 	// wp masks: `['$mask', maskId, prop]` — an Opacity mask or a mask of one of the clip's effects.
 	if (head === '$mask') {

@@ -2,7 +2,7 @@
 // (TL-112, TLC-030), context menu and gesture tooltip.
 import type { EditorSession } from '@jasper/session';
 import { useSessionState } from '@jasper/session/react';
-import { IconButton, labelColor, Z } from '@jasper/ui';
+import { cx, IconButton, labelColor, Z } from '@jasper/ui';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { frameToX, type Viewport, wheelZoomFactor } from '../model/viewport.ts';
 import type { TimelineController } from '../state/controller.ts';
@@ -265,6 +265,8 @@ export function ContextMenu(props: {
 }
 
 function MenuItems(props: { items: ContextMenuItem[]; onClose(): void }) {
+	// One open submenu per level, opened on hover (CSS group-hover would open every nested level at once).
+	const [openSub, setOpenSub] = useState<string | null>(null);
 	return (
 		<>
 			{props.items.map((it, i) => {
@@ -273,20 +275,29 @@ function MenuItems(props: { items: ContextMenuItem[]; onClose(): void }) {
 					return <div key={`sep-${i}`} className="my-1 h-px bg-pr-border" />;
 				if (it.kind === 'submenu')
 					return (
-						<div key={it.label} className="group relative">
-							<div className="flex h-[22px] items-center px-3 hover:bg-pr-hover">
+						// biome-ignore lint/a11y/noStaticElementInteractions: hover opens the submenu (pointer menus)
+						<div key={it.label} className="relative" onMouseEnter={() => setOpenSub(it.label)}>
+							<div
+								className={cx(
+									'flex h-[22px] items-center px-3 hover:bg-pr-hover',
+									openSub === it.label && 'bg-pr-hover',
+								)}
+							>
 								<span className="flex-1">{it.label}</span>
 								<span className="text-pr-muted">▸</span>
 							</div>
-							<div className="absolute top-0 left-full hidden min-w-[180px] rounded-pr-menu border border-pr-menu-border bg-pr-menu py-1 shadow-pr-overlay group-hover:block">
-								<MenuItems items={it.items} onClose={props.onClose} />
-							</div>
+							{openSub === it.label ? (
+								<div className="absolute top-0 left-full min-w-[180px] rounded-pr-menu border border-pr-menu-border bg-pr-menu py-1 shadow-pr-overlay">
+									<MenuItems items={it.items} onClose={props.onClose} />
+								</div>
+							) : null}
 						</div>
 					);
 				return (
 					<button
 						key={it.label}
 						type="button"
+						onMouseEnter={() => setOpenSub(null)}
 						role="menuitem"
 						disabled={it.disabled}
 						className="flex h-[22px] w-full items-center gap-2 px-3 text-left hover:bg-pr-hover disabled:text-pr-dim"
