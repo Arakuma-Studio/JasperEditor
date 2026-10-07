@@ -555,3 +555,55 @@ describe('HSL Secondary eyedroppers', () => {
 		expect(removeColorFromKey(DEFAULT_SECONDARY_KEY, blue)).not.toEqual(DEFAULT_SECONDARY_KEY);
 	});
 });
+
+describe('hostile params (AGENTS.md §0.2)', () => {
+	const junk = fc.oneof(
+		fc.constant(null),
+		fc.constant(undefined),
+		fc.double(),
+		fc.string(),
+		fc.boolean(),
+		fc.array(fc.oneof(fc.double(), fc.string(), fc.constant(null)), { maxLength: 4 }),
+		fc.record({
+			curve: fc.array(fc.array(fc.oneof(fc.double(), fc.constant(null)), { maxLength: 3 }), {
+				maxLength: 70,
+			}),
+		}),
+		fc.record({ mediaId: fc.oneof(fc.string(), fc.double()) }),
+	);
+	const names = LUMETRI_PARAMS.map((p) => p.name);
+	it('any values of any params: the colour fn and the spatial settings never throw and stay finite', () => {
+		fc.assert(
+			fc.property(
+				fc.dictionary(fc.constantFrom(...names), junk, { maxKeys: 30 }),
+				unit,
+				unit,
+				unit,
+				(params, r, g, b) => {
+					const fn = lumetriFn(params as never, NO_LUTS);
+					const c: Rgb = [r, g, b];
+					fn?.(c);
+					if (!c.every((v) => Number.isFinite(v) && v >= 0 && v <= 1)) return false;
+					const s = lumetriSpatialSettings(params as never);
+					const px = lumetriSpatialPixel(s, [r, g, b], 0.3, 0.7, 16 / 9);
+					return px.every((v) => Number.isFinite(v));
+				},
+			),
+			{ numRuns: 300 },
+		);
+	});
+	it('snapshot expansion tolerates malformed animatables', () => {
+		fc.assert(
+			fc.property(fc.dictionary(fc.constantFrom(...names), junk, { maxKeys: 10 }), (raw) => {
+				const params = Object.fromEntries(
+					Object.entries(raw).map(([k, v]) => [k, { value: v, keyframes: [] }]),
+				) as never;
+				const list = expandLumetriSpatial([
+					{ id: 'fx', effectId: LUMETRI_EFFECT_ID, effectVersion: 1, enabled: true, params },
+				]);
+				return list.length >= 1 && list.length <= 2;
+			}),
+			{ numRuns: 200 },
+		);
+	});
+});
