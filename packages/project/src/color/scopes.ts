@@ -64,6 +64,7 @@ export const PARADE_TYPE_LABELS: Record<ParadeType, string> = {
 	rgb: 'RGB',
 	yuv: 'YUV',
 	rgbWhite: 'RGB-White',
+	yuvWhite: 'YUV-White',
 };
 export const SCOPE_MATRICES: readonly ScopeMatrix[] = ['bt601', 'bt709', 'bt2020'];
 export const SCOPE_MATRIX_LABELS: Record<ScopeMatrix, string> = {

@@ -45,7 +45,13 @@ const CAPTURE_WIDTH = 480;
 const SETTINGS_KEY = 'jasper.scopes.settings.v2';
 
 /** Layout presets (Premiere's Lumetri Scopes presets: one scope, pairs, the four-scope layouts). */
-export const SCOPE_LAYOUTS: readonly { id: string; label: string; slots: readonly ScopeKind[] }[] = [
+export const SCOPE_LAYOUTS: readonly {
+	id: string;
+	label: string;
+	slots: readonly ScopeKind[];
+	/** Types a preset sets when chosen (Premiere's "All Scopes RGB" / "All Scopes YUV/YC"). */
+	types?: { waveformType: WaveformType; paradeType: ParadeType };
+}[] = [
 	{ id: 'waveform', label: 'Waveform', slots: ['waveform'] },
 	{ id: 'parade', label: 'Parade', slots: ['parade'] },
 	{ id: 'vectorscopeYuv', label: 'Vectorscope YUV', slots: ['vectorscopeYuv'] },
@@ -54,10 +60,21 @@ export const SCOPE_LAYOUTS: readonly { id: string; label: string; slots: readonl
 	{ id: 'vector-waveform', label: 'Vectorscope + Waveform', slots: ['vectorscopeYuv', 'waveform'] },
 	{ id: 'parade-vector', label: 'Parade + Vectorscope', slots: ['parade', 'vectorscopeYuv'] },
 	{ id: 'waveform-histogram', label: 'Waveform + Histogram', slots: ['waveform', 'histogram'] },
-	{ id: 'four-up', label: 'Four Scopes (YUV)', slots: ['vectorscopeYuv', 'histogram', 'parade', 'waveform'] },
+	{
+		id: 'four-up',
+		label: 'All Scopes RGB',
+		slots: ['vectorscopeYuv', 'histogram', 'parade', 'waveform'],
+		types: { waveformType: 'rgb', paradeType: 'rgb' },
+	},
+	{
+		id: 'four-up-yuv',
+		label: 'All Scopes YUV/YC',
+		slots: ['vectorscopeYuv', 'histogram', 'parade', 'waveform'],
+		types: { waveformType: 'yc', paradeType: 'yuv' },
+	},
 	{
 		id: 'four-up-hls',
-		label: 'Four Scopes (HLS)',
+		label: 'All Scopes HLS',
 		slots: ['vectorscopeHls', 'histogram', 'parade', 'waveform'],
 	},
 ];
@@ -336,7 +353,10 @@ function ScopesBody({ session, visible }: { session: EditorSession; visible: boo
 					aria-label="Scopes layout"
 					className={SELECT}
 					value={layout.id}
-					onChange={(e) => setSettings({ layout: e.target.value })}
+					onChange={(e) => {
+						const preset = SCOPE_LAYOUTS.find((l) => l.id === e.target.value);
+						setSettings({ layout: e.target.value, ...(preset?.types ?? {}) });
+					}}
 					data-testid="scopes-layout"
 				>
 					{SCOPE_LAYOUTS.map((l) => (

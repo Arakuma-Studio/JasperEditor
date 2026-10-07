@@ -200,7 +200,7 @@ test.describe('Lumetri completion and scopes', () => {
 	});
 
 	test('Lumetri Scopes: four-scope layout draws traces', async () => {
-		await page.getByTestId('scopes-layout').selectOption('four-up');
+		await page.getByTestId('scopes-layout').selectOption('four-up-yuv');
 		await expect(page.getByTestId('scopes-canvas')).toHaveAttribute('data-has-trace', 'true', {
 			timeout: 30_000,
 		});
