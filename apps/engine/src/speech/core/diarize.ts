@@ -12,8 +12,8 @@
 //    scaled by that coefficient's spread over all voiced frames of the file (within 40 dB of the file's peak).
 // 3. Average-linkage agglomerative clustering with RMS distance merges the closest clusters until the closest pair
 //    is farther apart than `threshold` and at most `maxSpeakers` remain — or, with `speakerCount`, until exactly
-//    that many remain. Clusters holding less than 5 % of the voiced frames are folded into their nearest
-//    neighbour (never below `speakerCount`).
+//    that many remain. Clusters holding less than 5 % of the voiced frames, or less than 1.5 s of voiced speech,
+//    are folded into their nearest neighbour (never below `speakerCount`).
 // 4. Speakers are numbered in order of first appearance.
 //
 // Works for interviews and dialogue with distinct voices and clean turns; overlapping speech, very similar voices
@@ -40,6 +40,13 @@ export const DEFAULT_DIARIZE: DiarizeParams = {
 	threshold: 0.4,
 	maxSpeakers: 6,
 };
+
+/**
+ * JasperEditor addition: a cluster with less than 1.5 s of voiced speech (150 frames) is folded too, whatever its
+ * share — on short recordings 5 % is a fraction of a second, and one stressed word of a single reader otherwise
+ * becomes a "speaker" (measured on a 17 s German LibriVox reading: 3 speakers → 1; FilmCraft found 2).
+ */
+export const MIN_SPEAKER_FRAMES = 150;
 
 const N_MELS = 40;
 const N_MFCC = 20;
@@ -199,7 +206,10 @@ export function diarize(
 	for (;;) {
 		if (clusters.length <= 1) break;
 		if (exact !== null && clusters.length <= exact) break;
-		const si = clusters.findIndex((c) => c.reduce((s, i) => s + weight[i], 0) < 0.05 * total);
+		const si = clusters.findIndex((c) => {
+			const w = c.reduce((s, i) => s + weight[i], 0);
+			return w < 0.05 * total || w < MIN_SPEAKER_FRAMES;
+		});
 		if (si < 0) break;
 		const s = clusters.splice(si, 1)[0];
 		let near = 0;

@@ -491,19 +491,24 @@ export class WhisperModel {
 		seed: number,
 		beamSize = 1,
 	): Promise<DecodeResult> {
-		let result: DecodeResult | null = null;
+		const tried: DecodeResult[] = [];
 		for (const t of fallback ? TEMPERATURES : [0]) {
-			result =
+			const result =
 				t === 0 && beamSize > 1
 					? await this.decodeBeam(xa, sotSeq, prompt, beamSize)
 					: await this.decodeOnce(xa, sotSeq, prompt, t, seed);
+			tried.push(result);
 			let needsFallback =
 				result.compressionRatio > COMPRESSION_RATIO_THRESHOLD || result.avgLogprob < LOGPROB_THRESHOLD;
 			if (result.noSpeechProb > NO_SPEECH_THRESHOLD && result.avgLogprob < LOGPROB_THRESHOLD)
 				needsFallback = false;
-			if (!needsFallback) break;
+			if (!needsFallback) return result;
 		}
-		return result as DecodeResult;
+		// Every temperature failed the quality checks. OpenAI keeps the last (temperature 1.0) sample, which is often
+		// noise; like faster-whisper, keep the most likely result among those that are not loops (else the most likely).
+		const notLoops = tried.filter((r) => r.compressionRatio <= COMPRESSION_RATIO_THRESHOLD);
+		const pool = notLoops.length ? notLoops : tried;
+		return pool.reduce((best, r) => (r.avgLogprob > best.avgLogprob ? r : best));
 	}
 
 	/** Word timing for the text tokens of one window (seconds from the window start). */
