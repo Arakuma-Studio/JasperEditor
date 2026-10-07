@@ -88,6 +88,8 @@ for (const f of [
 	'jasper-proc.package.json',
 	// wp speech: the speech-to-text worker (onnxruntime-node is staged below)
 	'jasper-speech.mjs',
+	// parity roto: the Roto Brush / face tracking worker (onnxruntime-node and OpenCV.js are staged below)
+	'jasper-roto.mjs',
 	'dejudder-worker.mjs',
 	'vidstab.wasm',
 	'VIDSTAB-WASM.json',

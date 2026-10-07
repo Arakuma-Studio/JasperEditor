@@ -25,8 +25,10 @@ import {
 	type Rational,
 	type RenderSnapshot,
 	type RenderVisualClip,
+	ROTO_OBJECT_PARAMS,
 	rationalEquals,
 	resolveLayerProps,
+	rotoExportIssues,
 	type SnapshotOptions,
 	transitionSpec,
 } from '@jasper/project';
@@ -191,6 +193,8 @@ type PlanDeps = {
 	extensions?: readonly NativeExtension[];
 	/** Effect registry for extension effect lookups (default: the built-in registry). */
 	effects?: EffectRegistry;
+	/** parity (roto): frames a matte set holds on this engine (null = gone, e.g. cleaned from the cache). */
+	rotoSet?: (key: string) => Promise<{ start: number; end: number } | null>;
 };
 
 export async function planExport(input: PlanInput, deps: PlanDeps): Promise<PlannedExport> {
@@ -255,6 +259,37 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	// ---- classification
 	const blockers: RenderPlan['blockers'] = [];
 	const warnings: RenderPlan['warnings'] = [];
+	// ---- parity (roto): object mattes render on every path from computed matte sets; frames without one would come
+	// out unmatted, so they block every path (never silently dropped). Stale mattes are a warning.
+	{
+		const issues = rotoExportIssues(snapshot);
+		const missing = issues.filter((i) => i.kind === 'not-computed');
+		if (missing.length)
+			throw new PlanError('ROTO_NOT_COMPUTED', 409, missing.map((i) => i.message).join('; '), {
+				rotos: missing.map(({ clipId, rotoId, frames }) => ({ clipId, rotoId, frames })),
+			});
+		for (const i of issues) warnings.push({ code: 'ROTO_STALE', message: i.message, itemIds: [i.clipId] });
+		if (deps.rotoSet)
+			for (const c of allVisualClips(snapshot))
+				for (const [id, m] of Object.entries(c.rotos ?? {})) {
+					if (!m.key) continue;
+					if (
+						!c.effects.some(
+							(fx) =>
+								fx.enabled && (ROTO_OBJECT_PARAMS[fx.effectId] ?? []).some((n) => fx.params[n]?.value === id),
+						)
+					)
+						continue;
+					const have = await deps.rotoSet(m.key);
+					if (!have || have.start > m.start || have.end < m.end)
+						throw new PlanError(
+							'ROTO_MATTES_MISSING',
+							409,
+							`The computed mattes of roto "${m.name}" (clip "${c.name}") are no longer on this engine (cleaned from the media cache or computed elsewhere): propagate it again`,
+							{ clipId: c.clipId, rotoId: id },
+						);
+				}
+	}
 	// edit-structure: the clips of nested sequences are drawn natively too (in the same graph): they are classified
 	// with the sequence's own clips.
 	const visual = allVisualClips(snapshot);

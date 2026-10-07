@@ -35,6 +35,8 @@ export const ID_PREFIXES = {
 	/** sim-warp: Puppet meshes and pins. */
 	puppetMesh: 'pms',
 	puppetPin: 'ppn',
+	/** parity (roto): segmented objects (Roto Brush / faces) on a clip. */
+	roto: 'rto',
 } as const;
 export type IdPrefix = (typeof ID_PREFIXES)[keyof typeof ID_PREFIXES];
 export const ALL_ID_PREFIXES: readonly IdPrefix[] = Object.values(ID_PREFIXES);

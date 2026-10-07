@@ -105,5 +105,18 @@ export async function processingLicenses(svc: ProcessingService): Promise<Licens
 			texts: [],
 		});
 	}
+	// parity (roto): segmentation and face model weights (Apache-2.0)
+	for (const m of await svc.visionModels.list()) {
+		out.push({
+			id: `model:${m.id}`,
+			name: `${m.name} — ${m.task === 'face' ? 'face tracking' : 'segmentation'} model weights${m.installed ? '' : ' (not installed)'}`,
+			version: m.revision.slice(0, 12),
+			license: m.license,
+			bundled: false,
+			sourceUrl: m.sourceUrl,
+			notice: `Attribution: ${m.attribution}. Licence: ${m.licenseUrl}`,
+			texts: [],
+		});
+	}
 	return out;
 }

@@ -5,6 +5,8 @@
 // Import rule (no cycles): family files import from `./define.ts`, `./params.ts`, `./passes.ts`, `./shader.ts`,
 // `./motion-blur.ts`, `./glsl/*` and only TYPES from `../effects.ts`.
 import type { EffectSpec } from '../effects.ts';
+import { KEYING_MATTE_EFFECTS } from './keying-matte.ts';
+import { OBJECT_MATTE_EFFECTS } from './object-matte.ts';
 import { PREMIERE_ADJUST_COLOR_KEYING_EFFECTS } from './premiere-adjust-color-keying.ts';
 import { PREMIERE_STYLIZE_DISTORT_GENERATE_EFFECTS } from './premiere-stylize-distort-generate.ts';
 import { SAPPHIRE_ADJUST_COMPOSITE_EFFECTS } from './sapphire-adjust-composite.ts';
@@ -53,6 +55,10 @@ export const FX_FAMILIES: readonly { file: string; idPrefix: string; effects: re
 	{ file: 'sapphire-render-textures', idPrefix: 'jasper.s.', effects: SAPPHIRE_RENDER_TEXTURES_EFFECTS },
 	{ file: 'sapphire-textures-clouds', idPrefix: 'jasper.s.', effects: SAPPHIRE_TEXTURES_CLOUDS_EFFECTS },
 	{ file: 'sapphire-time-flicker', idPrefix: 'jasper.s.', effects: SAPPHIRE_TIME_FLICKER_EFFECTS },
+	// parity (roto): object mattes of Roto Brush / face tracking
+	{ file: 'object-matte', idPrefix: 'jasper.', effects: OBJECT_MATTE_EFFECTS },
+	// parity (roto): screen keyer, matte refinement, key cleaner, spill suppression
+	{ file: 'keying-matte', idPrefix: 'jasper.', effects: KEYING_MATTE_EFFECTS },
 	{ file: 'simulation-warp', idPrefix: 'jasper.', effects: SIMULATION_WARP_EFFECTS },
 ];
 

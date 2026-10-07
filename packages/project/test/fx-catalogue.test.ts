@@ -26,6 +26,8 @@ const FAMILY_FILES = [
 	'sapphire-render-textures',
 	'sapphire-textures-clouds',
 	'sapphire-time-flicker',
+	'object-matte',
+	'keying-matte',
 	'simulation-warp',
 ];
 

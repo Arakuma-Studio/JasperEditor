@@ -30,6 +30,7 @@ import { processCommands } from './process.ts';
 import { projectCommands } from './project.ts';
 import { projectFileCommands } from './project-files.ts';
 import { registerCommands } from './registry.ts';
+import { rotoCommands } from './roto.ts';
 import { shapeCommands } from './shapes.ts';
 import { speechCommands } from './speech.ts';
 import { structureCommands } from './structure.ts';
@@ -73,6 +74,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	maskCommands,
 	captionCommands,
 	speechCommands,
+	rotoCommands,
 	multicamCommands,
 	interchangeCommands,
 	// edit-ux (registered after timeline/transport: trim mode, match frame, subclips, dialogs)

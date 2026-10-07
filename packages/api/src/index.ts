@@ -20,6 +20,7 @@ export * from './mg.ts';
 export * from './mg-bundles.ts';
 export * from './processing.ts';
 export * from './projects.ts';
+export * from './roto.ts';
 export * from './routes.ts';
 export * from './speech.ts';
 export * from './sync.ts';

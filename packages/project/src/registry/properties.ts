@@ -147,6 +147,8 @@ export type PropertySpec = {
 			| 'layer'
 			/** Wave expressions: Dropdown Menu Control (1-based index into the effect's `items`). */
 			| 'menu'
+			/** parity (roto): picker of the clip's roto objects (string param holding a roto id). */
+			| 'roto-object'
 			/** sim-warp: a distortion mesh row (stopwatch and keyframe navigation; edited on the Program monitor). */
 			| 'mesh';
 		bipolar?: boolean;

@@ -16,6 +16,7 @@ import { multicamView } from '../multicam/model.ts';
 import { defaultEffectRegistry } from '../registry/effects.ts';
 import { clipEngines, type EngineId, isBoundedContent, kindCapabilities } from '../registry/kinds.ts';
 import { intrinsicBoxOf } from '../registry/properties.ts';
+import { type RenderRotoMatte, rotoIsStale, rotoStorePath } from '../roto/index.ts';
 import type { Animatable, Keyframe, RGBA } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Mask } from '../schema/mask.ts';
@@ -23,6 +24,7 @@ import type { FontRef, MediaAsset } from '../schema/media.ts';
 import {
 	type BlendMode,
 	type Clip,
+	type ClipRoto,
 	type ClipTracker,
 	type EffectInstance,
 	isKnownClipKind,
@@ -262,6 +264,11 @@ export type RenderVisualClip = {
 	 * that have effects; absent otherwise.
 	 */
 	sourceInfo?: { itemName: string; fileName: string; startTimecode: string | null };
+	/**
+	 * parity (roto): the computed mattes of the clip's roto objects, by roto id (objects without a result are
+	 * absent). Effects with roto-object params sample them at the layer's media frame.
+	 */
+	rotos?: Record<string, RenderRotoMatte>;
 };
 
 export type RenderAudioClip = {
@@ -355,6 +362,11 @@ export type SnapshotOptions = {
 	range?: { start: number; end: number };
 	resolveMedia(asset: MediaAsset): MediaHandle | null;
 	resolveFont(font: FontRef, weight: number, italic: boolean): string | null;
+	/**
+	 * parity (roto, additive): URL of a matte store for the headless browser (engine renders sign
+	 * `rotoStorePath(key)`); default the unsigned same-origin path.
+	 */
+	resolveRoto?(key: string): string;
 	/** M2 (S08, additive): pre-render URLs of a composition clip known to the consumer. */
 	resolveComposition?(clip: {
 		clipId: string;
@@ -388,6 +400,30 @@ export function nestGainDbAt(runs: RenderAudioClip['nestGain'], frame: number): 
 }
 
 const ZERO = { value: 0, keyframes: [] } as Animatable<number>;
+
+/** parity (roto): render references of a clip's roto objects. */
+function rotosOf(
+	rotos: readonly ClipRoto[] | undefined,
+	opts: Pick<SnapshotOptions, 'resolveRoto'>,
+): { rotos?: Record<string, RenderRotoMatte> } {
+	const out: Record<string, RenderRotoMatte> = {};
+	for (const r of rotos ?? []) {
+		const res = r.result;
+		out[r.id] = {
+			span: [r.span[0], r.span[1]],
+			key: res?.key ?? null,
+			url: res ? (opts.resolveRoto?.(res.key) ?? rotoStorePath(res.key)) : null,
+			start: res?.start ?? 0,
+			end: res ? res.end : -1,
+			rate: { num: r.rate.num, den: r.rate.den },
+			width: res?.width ?? 0,
+			height: res?.height ?? 0,
+			stale: rotoIsStale(r),
+			name: r.name,
+		};
+	}
+	return Object.keys(out).length ? { rotos: out } : {};
+}
 
 function streamChannelsOf(asset: MediaAsset | undefined, index: number): { streamChannels?: number } {
 	const streams = asset?.probe.streams ?? [];
@@ -738,6 +774,7 @@ export function buildRenderSnapshot(
 				...('mediaId' in source && ((r.effects as EffectInstance[] | undefined) ?? []).length > 0
 					? { sourceInfo: sourceInfoOf(source.mediaId) }
 					: {}),
+				...rotosOf(r.rotos as ClipRoto[] | undefined, opts),
 			});
 		}
 		clips.sort((a, b) => a.start - b.start);

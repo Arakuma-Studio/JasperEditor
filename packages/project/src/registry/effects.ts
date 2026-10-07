@@ -122,7 +122,9 @@ export type ParamSpec = {
 			/** Wave expressions: Layer Control (a clip of the sequence; the value is its id, '' = none). */
 			| 'layer'
 			/** Wave expressions: Dropdown Menu Control (1-based index into the instance's `items` param lines). */
-			| 'menu';
+			| 'menu'
+			// parity (roto): a string param naming a roto object of the clip (picker of the clip's objects).
+			| 'roto-object';
 		bipolar?: boolean;
 		/** audio-fx: a logarithmic control (frequencies, times, Q). */
 		scale?: 'log';

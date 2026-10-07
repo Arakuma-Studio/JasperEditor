@@ -273,6 +273,23 @@ export function PropertyRow(props: {
 					/>
 				);
 			}
+			// parity (roto): a roto object of the clip ('' = None) — Object Matte / Object Blur / Screen Keyer masks.
+			case 'roto-object': {
+				const clip = row.bindings[0]?.clip as
+					| { rotos?: { id: string; name: string; kind: string }[] }
+					| undefined;
+				const rotos = clip?.rotos ?? [];
+				return (
+					<SelectField
+						value={mixed ? null : String(value ?? '')}
+						options={['', ...rotos.map((r) => r.id)]}
+						labels={['None', ...rotos.map((r) => (r.kind === 'faces' ? `${r.name} (faces)` : r.name))]}
+						label={row.label}
+						onChange={(v) => commitFn(() => v)}
+						data-testid={`prop-${row.id}`}
+					/>
+				);
+			}
 			// Wave expressions: Layer Control — a clip of the sequence ('' = None), listed in layer order.
 			case 'layer': {
 				const clips = Object.values(ctx.seq.clips).sort((a, b) => a.start - b.start);

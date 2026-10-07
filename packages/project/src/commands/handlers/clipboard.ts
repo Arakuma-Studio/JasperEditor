@@ -24,6 +24,7 @@ import { isHoldOnlyValue, retimeRoving, reversedKeyTiming } from '../../keyframe
 import { isVec2Value, refreshAutoTangents, reversedSpatial } from '../../keyframes-spatial.ts';
 import { defaultLabelForMedia, kindCapabilities, trackKindFor } from '../../registry/kinds.ts';
 import { intrinsicBoxOf } from '../../registry/properties.ts';
+import { dropForeignRotoRefs } from '../../roto/index.ts';
 import type { Keyframe } from '../../schema/common.ts';
 import type { ProjectItem } from '../../schema/document.ts';
 import type { FontRef, MediaAsset } from '../../schema/media.ts';
@@ -616,6 +617,7 @@ function applyAttributes(
 							params: buildParams(spec, copy.params, h),
 						}
 					: { ...copy, id: h.ids.next('fx') };
+				dropForeignRotoRefs(c as { rotos?: { id: string }[] }, instance as never);
 				list.splice(at++, 0, instance as Draft<EffectInstance>);
 				done.push(`effect:${fx.id}`);
 			}

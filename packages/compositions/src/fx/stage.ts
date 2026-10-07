@@ -31,10 +31,13 @@ import {
 	type Lut,
 	layerMapOf,
 	type MediaHandle,
+	mediaFrameAt,
 	PREVIEW_LUT_SIZE,
 	planGpuEffect,
 	type ResolvedEffect,
 	type ResolvedMask,
+	rotoFrameState,
+	rotoFrameUrl,
 	sideCompToCanvas,
 	TRACK_MATTE_EFFECT_ID,
 } from '@jasper/project';
@@ -116,7 +119,20 @@ export type FxPreparedStep =
 export type AdjustmentHolder = { canvas: HTMLCanvasElement | null };
 
 /** A media param input of the layer's shader effects (`lut`: a .cube asset bound as a 3D texture). */
-export type FxMediaInput = { mediaId: string; url: string; kind: 'image' | 'video' | 'lut' };
+export type FxMediaInput = {
+	mediaId: string;
+	url: string;
+	kind: 'image' | 'video' | 'lut';
+	/**
+	 * parity (roto): an object-matte frame — renders fail when it cannot be loaded (never a silently missing matte);
+	 * `group` = its matte store (the preview keeps showing the store's last loaded frame while the next one loads);
+	 * `prefetch` = following frames the preview loads ahead.
+	 */
+	matte?: { group: string; prefetch: string[] };
+};
+
+/** Media frames the preview loads ahead of a playing roto matte. */
+const MATTE_PREFETCH = 4;
 
 export type FxStage = {
 	plan: LayerFxPlan;
@@ -200,6 +216,7 @@ export function useLayerFx(
 	const enabled = opts.enabled ?? true;
 	const failures = fxStatus.version();
 	const realFrame = layer.realFrame ?? layer.localFrame;
+	const contentTime = layer.contentTime;
 	const sourceFrame = layer.localFrame;
 	const duration = clip.duration;
 	// Params at other frames (sub-frame shutters, write-on paths, …) from the clip's keyframes, per effect instance.
@@ -462,6 +479,40 @@ export function useLayerFx(
 					const frames = st?.frames ?? [];
 					for (const f of frames) if (f !== null && !samples.includes(f)) samples.push(f);
 					for (const t of gp.textures) {
+						if (t.matte) {
+							// parity (roto): the object's matte at the layer's media frame (+ offset).
+							const ref = t.matte.object ? clip.rotos?.[t.matte.object] : undefined;
+							let state = 0;
+							if (ref) {
+								const still = clip.kind === 'still';
+								const f = still ? 0 : mediaFrameAt(contentTime, ref.rate) + t.matte.offset;
+								const at = rotoFrameState(ref, f);
+								if (at === 'missing' && !doc.isPreview && t.matte.offset === 0)
+									cancelRender(
+										new Error(
+											`ROTO_NOT_COMPUTED: roto "${ref.name}" has no matte for media frame ${f}: propagate it first`,
+										),
+									);
+								if (at === 'matte') {
+									state = 1;
+									const id = `roto:${ref.key}:${f}`;
+									t.mediaId = id;
+									const prefetch: string[] = [];
+									if (doc.isPreview && !still && t.matte.offset === 0)
+										for (let k = 1; k <= MATTE_PREFETCH && f + k <= ref.end; k++)
+											prefetch.push(rotoFrameUrl(ref, f + k));
+									media.set(id, {
+										mediaId: id,
+										url: rotoFrameUrl(ref, f),
+										kind: 'image',
+										matte: { group: `${ref.key}:${t.matte.offset}`, prefetch },
+									});
+								} else if (at === 'outside') state = 2;
+							}
+							const u = gp.uniforms.find((x) => x.name === `${t.uniform}_state`);
+							if (u) u.value = [state];
+							continue;
+						}
 						const h: MediaHandle | null | undefined = t.mediaId ? doc.media[t.mediaId] : null;
 						if (!h) continue;
 						if (t.kind === 'lut') {
@@ -571,6 +622,7 @@ export function useLayerFx(
 		stackTime,
 		paramsAtOf,
 		clipInfo,
+		contentTime,
 		opts.extraSteps,
 		instanceKeyOf,
 		pixelsVersion,

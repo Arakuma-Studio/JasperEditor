@@ -13,6 +13,7 @@ import { MULTICAM_COMMANDS } from './multicam.ts';
 import { PARAM_COMMANDS } from './param.ts';
 import { PRESET_COMMANDS } from './preset.ts';
 import { PROJECT_COMMANDS } from './project.ts';
+import { ROTO_COMMANDS } from './roto.ts';
 import { SEQUENCE_COMMANDS } from './sequence.ts';
 import { SHAPE_COMMANDS } from './shape.ts';
 import { SIMPLIFY_COMMANDS } from './simplify.ts';
@@ -36,6 +37,7 @@ export * from './multicam.ts';
 export * from './param.ts';
 export * from './preset.ts';
 export * from './project.ts';
+export * from './roto.ts';
 export * from './sequence.ts';
 export * from './shape.ts';
 export * from './simplify.ts';
@@ -81,6 +83,8 @@ export const ALL_COMMAND_SCHEMAS = [
 	...EXPRESSION_COMMANDS,
 	// Essential Sound and Remix (audio-fx)
 	...ESSENTIAL_COMMANDS,
+	// parity: roto / object mattes
+	...ROTO_COMMANDS,
 	// edit-ux: 3/4-point editing, multi-edit trims, subclips
 	...EDIT_UX_COMMANDS,
 ] as const;

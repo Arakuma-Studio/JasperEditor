@@ -14,6 +14,8 @@
 //   exports      renders/<jobId>/       (output.mp4|webm|mov…)               <jobId>
 //   stills       renders/<jobId>/       (output.png)                         <jobId>
 //   bundles      remotion/bundle/<hash>/, cache/jasper-proc-bundle/           remotion/<hash> | jasper-proc
+//   roto         cache/roto/sets/<key32>/ (computed object mattes),           <key32> | pool
+//                cache/roto/pool/ (reusable segmentations and frames)
 import type { Dirent } from 'node:fs';
 import { lstat, readdir, readFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, sep } from 'node:path';
@@ -70,6 +72,12 @@ export const KIND_DEFS: readonly KindDef[] = [
 		defaultMaxAgeDays: 1,
 	},
 	{
+		kind: 'roto',
+		label: 'Object mattes',
+		description:
+			'Roto Brush and face-tracking mattes computed by propagation (projects keep the mattes of their roto objects)',
+	},
+	{
 		kind: 'bundles',
 		label: 'Build caches',
 		description: 'Remotion composition bundles and the jasper-proc bundle (the current one is kept)',
@@ -103,6 +111,7 @@ const HEX64 = /^[0-9a-f]{64}$/;
 const KEY40 = /^[0-9a-f]{40}$/;
 const DERIVATIVE = /^(keyframes|poster|sprite|peaks|proxy-720|proxy-540)-([0-9a-f]{6,64})(\.[a-z0-9]+)?$/;
 const JOB_ID = /^job_[0-9a-f]{16}$/;
+const ROTO_KEY = /^[0-9a-f]{32}$/;
 /** Temporary names used by the engine's writers (`x.partial`, `x.<n>.partial.mp4`, `.x.<rand>.tmp`, `.tmp-<job>`…). */
 const TEMP_NAME = /\.partial(\.|-|$)|\.tmp(\.|$)|\.part\.|^\.tmp-|^\.trash-|\.partial-\d+$/;
 
@@ -175,6 +184,11 @@ export function entryOfPath(appdir: string, abs: string, stillHint?: boolean): E
 		}
 		if (b === 'layers' && c) return KEY40.test(c) ? entryRef('layers', c) : null;
 		if (b === 'jasper-proc-bundle') return entryRef('bundles', 'jasper-proc');
+		if (b === 'roto' && c) {
+			if (c === 'pool') return entryRef('roto', 'pool');
+			const d = s[3];
+			return c === 'sets' && d && ROTO_KEY.test(d) ? entryRef('roto', d) : null;
+		}
 		if (b && HEX64.test(b) && c) {
 			const m = DERIVATIVE.exec(c);
 			if (!m) return null;
@@ -262,6 +276,19 @@ export async function scanAppdir(appdir: string): Promise<ScanResult> {
 					entries.push(await withMeta(await entryFrom(entryRef('layers', f.name), [fp])));
 				else if (isTempName(f.name)) orphans.push(await orphanFrom(fp));
 			}
+		} else if (d.name === 'roto' && d.isDirectory()) {
+			// parity (roto): one entry per computed set, and the frame pool as one entry.
+			for (const f of await list(join(p, 'sets'))) {
+				const fp = join(p, 'sets', f.name);
+				if (ROTO_KEY.test(f.name) && f.isDirectory())
+					entries.push(await entryFrom(entryRef('roto', f.name), [fp]));
+				else if (isTempName(f.name)) orphans.push(await orphanFrom(fp));
+			}
+			const pool = join(p, 'pool');
+			for (const sub of ['seg', 'png'])
+				for (const f of await list(join(pool, sub)))
+					if (isTempName(f.name)) orphans.push(await orphanFrom(join(pool, sub, f.name)));
+			if ((await list(pool)).length) entries.push(await entryFrom(entryRef('roto', 'pool'), [pool]));
 		} else if (d.name === 'jasper-proc-bundle') {
 			entries.push(await entryFrom(entryRef('bundles', 'jasper-proc'), [p]));
 		} else if (HEX64.test(d.name) && d.isDirectory()) {

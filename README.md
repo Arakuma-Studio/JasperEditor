@@ -401,7 +401,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (230; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (244; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -414,6 +414,9 @@ Tools (230; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
 - Remotion projects: `import_mg_bundle` `list_compositions` `add_composition` `set_composition_props`
   `prerender_composition` `scaffold_mg_project` `list_composition_texts` `set_composition_text`.
 - Tracking: `add_tracker` `track` `apply_tracking` `get_tracker` `set_corner_pin` `simplify_keyframes`.
+- Roto Brush, object mattes and faces: `list_roto_models` `install_roto_model` `remove_roto_model` `create_roto`
+  `add_roto_strokes` `propagate_roto` `get_roto` `apply_object_matte` `convert_roto_to_masks` `freeze_roto`
+  `remove_roto` `track_faces` `blur_faces` `face_to_keyframes`.
 - Masks and track mattes: `list_masks` `add_mask` `edit_mask` `remove_masks` `track_mask` `auto_trace_mask`
   `set_track_matte`.
 - Transitions: `list_transitions` `list_transition_types` `update_transition` `remove_transitions` `apply_default_transitions`

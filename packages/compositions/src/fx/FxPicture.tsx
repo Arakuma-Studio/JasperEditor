@@ -86,15 +86,45 @@ const canvasEl = (w: number, h: number) => {
 
 // ---------------------------------------------------------------- media images
 
-type LoadedImage = { img: HTMLImageElement | null; promise: Promise<HTMLImageElement | null> };
+type LoadedImage = {
+	img: HTMLImageElement | null;
+	failed: boolean;
+	promise: Promise<HTMLImageElement | null>;
+};
 const imageCache = new Map<string, LoadedImage>();
+/**
+ * parity (roto): per-frame pictures (object-matte frames) are transient: at most this many are kept (least recently
+ * used first out), so long mattes do not hold every decoded frame. Effect media (textures, maps) stay cached.
+ */
+const TRANSIENT_IMAGES = 96;
+const transient = new Set<string>();
+/** URLs whose last load failed (renders turn a failed object-matte frame into an error). */
+const failedImages = new Set<string>();
+
+/** parity (roto): the matte frame at `url` failed to load. */
+export function fxImageFailed(url: string): boolean {
+	return failedImages.has(url) && !imageCache.get(url)?.img;
+}
+
+function touch(url: string, entry: LoadedImage): void {
+	if (!transient.has(url)) return;
+	imageCache.delete(url);
+	imageCache.set(url, entry);
+}
 
 /** Loads an image for WebGL (`crossOrigin = anonymous`: render pages read the engine's signed URLs cross-origin). */
-export function loadFxImage(url: string): Promise<HTMLImageElement | null> {
+export function loadFxImage(
+	url: string,
+	opts: { transient?: boolean } = {},
+): Promise<HTMLImageElement | null> {
 	const hit = imageCache.get(url);
-	if (hit) return hit.promise;
+	if (hit) {
+		touch(url, hit);
+		return hit.promise;
+	}
 	const entry: LoadedImage = {
 		img: null,
+		failed: false,
 		promise: new Promise((resolve) => {
 			const img = new Image();
 			img.crossOrigin = 'anonymous';
@@ -106,17 +136,46 @@ export function loadFxImage(url: string): Promise<HTMLImageElement | null> {
 						resolve(img);
 					});
 			};
-			img.onerror = () => resolve(null);
+			img.onerror = () => {
+				entry.failed = true;
+				failedImages.add(url);
+				if (failedImages.size > 1024) failedImages.delete(failedImages.values().next().value!);
+				// A failed transient frame may be computed later (a running propagation): do not cache the failure.
+				if (transient.has(url)) {
+					imageCache.delete(url);
+					transient.delete(url);
+				}
+				resolve(null);
+			};
 			img.src = url;
 		}),
 	};
 	imageCache.set(url, entry);
+	if (opts.transient) {
+		transient.add(url);
+		if (transient.size > TRANSIENT_IMAGES)
+			for (const u of imageCache.keys()) {
+				if (transient.size <= TRANSIENT_IMAGES) break;
+				if (!transient.has(u) || u === url) continue;
+				imageCache.delete(u);
+				transient.delete(u);
+			}
+	}
 	return entry.promise;
+}
+
+/** The loaded image of `url` (null while loading or after a failure). */
+function loadedFxImage(url: string): HTMLImageElement | null {
+	return imageCache.get(url)?.img ?? null;
 }
 
 /** The loaded images of `urls` (renders wait for them with a delayRender); re-renders on arrival. Also used by the
  * transition stage for image params. */
-export function useFxImages(urls: readonly string[], rendering: boolean): Map<string, HTMLImageElement> {
+export function useFxImages(
+	urls: readonly string[],
+	rendering: boolean,
+	transientUrls?: ReadonlySet<string>,
+): Map<string, HTMLImageElement> {
 	const key = urls.join('\n');
 	const missing = urls.filter((u) => !imageCache.get(u)?.img);
 	const [initial] = useState(() =>
@@ -132,7 +191,7 @@ export function useFxImages(urls: readonly string[], rendering: boolean): Map<st
 		}
 		let alive = true;
 		const handle = rendering && initial === null ? delayRender(`Loading fx image ${need[0]}`) : initial;
-		Promise.all(need.map(loadFxImage)).then(() => {
+		Promise.all(need.map((u) => loadFxImage(u, { transient: transientUrls?.has(u) }))).then(() => {
 			if (alive) setVersion((v) => v + 1);
 			if (handle !== null) continueRender(handle);
 		});
@@ -303,9 +362,21 @@ export function FxPicture({ stage, children }: { stage: FxStage; children?: Reac
 	const [pictureId] = useState(() => `p${++pictureSerial}`);
 	const raf = useRef<number | null>(null);
 	const imageUrls = stage.media.filter((m) => m.kind === 'image').map((m) => m.url);
-	const images = useFxImages(imageUrls, rendering);
+	const matteUrls = useMemo(
+		() => new Set(stage.media.filter((m) => m.matte).map((m) => m.url)),
+		[stage.media],
+	);
+	const images = useFxImages(imageUrls, rendering, matteUrls);
 	const imagesRef = useRef(images);
 	imagesRef.current = images;
+	/** parity (roto): last drawn frame of each matte store (preview: shown while the next frame loads). */
+	const lastMatte = useRef(new Map<string, HTMLImageElement>());
+	// Preview: load the next frames of playing mattes ahead.
+	useEffect(() => {
+		if (rendering) return;
+		for (const m of stage.media)
+			for (const u of m.matte?.prefetch ?? []) void loadFxImage(u, { transient: true });
+	}, [stage.media, rendering]);
 	// wp masks: composites of the tracks the stack's Track Matte Keys read.
 	const mattes = useTrackMattes(stage.trackMattes, stage.seqFrame);
 	const mattesRef = useRef(mattes.media);
@@ -358,13 +429,19 @@ export function FxPicture({ stage, children }: { stage: FxStage; children?: Reac
 					continue;
 				}
 				if (m.kind === 'image') {
-					const img = imagesRef.current.get(m.url);
+					let img = imagesRef.current.get(m.url) ?? (m.matte ? loadedFxImage(m.url) : null);
+					if (m.matte) {
+						if (img) lastMatte.current.set(m.matte.group, img);
+						else if (rendering && fxImageFailed(m.url))
+							throw new Error(`ROTO_MATTE_MISSING: the object matte frame ${m.url} could not be loaded`);
+						else if (!rendering) img = lastMatte.current.get(m.matte.group) ?? null;
+					}
 					if (img)
 						media.set(m.mediaId, {
 							source: img,
 							width: img.naturalWidth,
 							height: img.naturalHeight,
-							version: m.url,
+							version: img.src,
 						});
 					continue;
 				}
