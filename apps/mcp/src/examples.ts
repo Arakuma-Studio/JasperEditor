@@ -182,6 +182,8 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		keyframeId: '$key',
 		outTangent: [200, -120],
 	},
+	// keyframes-blend: Rove Across Time on the middle keys of a path (the first and last keys stay fixed).
+	'keyframe.setRoving': { type: 'keyframe.setRoving', keyframeIds: ['$key'], roving: true },
 	'transition.add': {
 		type: 'transition.add',
 		clipId: { clipAt: { track: 'V1', at: 0 } },

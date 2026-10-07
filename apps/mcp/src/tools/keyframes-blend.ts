@@ -66,4 +66,28 @@ export function registerKeyframesBlendTools(ctx: ToolContext): void {
 			);
 		},
 	);
+
+	defineTool(
+		ctx,
+		'set_roving',
+		{
+			title: 'Rove across time',
+			description:
+				"Turns After Effects' Rove Across Time on or off for keyframes (one undoable edit). Roving keys lose their own time: the run between two fixed keys moves as one segment (constant speed with linear ends; the ends' eases shape the whole run) and the roving keys' times follow. The first and last keys of a property and hold keys cannot rove (skipped with a warning). Turning it off keeps the key where it is, with Continuous Bezier eases carrying the speed. Moving a roving key in time also turns roving off.",
+			input: {
+				projectId: ProjectIdArg,
+				keyframeIds: z.array(z.string().min(1)).min(1).describe('Keyframe ids ("kf_…")'),
+				roving: z.boolean().describe('true = rove across time, false = fixed time'),
+			},
+			annotations: EDIT,
+		},
+		async ({ projectId, keyframeIds, roving }, extra) =>
+			applyHelper(
+				ctx,
+				projectId,
+				'Rove Across Time',
+				[{ type: 'keyframe.setRoving', keyframeIds, roving }],
+				extra,
+			),
+	);
 }
