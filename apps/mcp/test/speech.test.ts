@@ -239,7 +239,10 @@ async function connect() {
 	const call = async (name: string, args: Record<string, unknown>) => {
 		const r = (await client.callTool({
 			name,
-			arguments: { projectId: 'prj_test', ...args },
+			arguments:
+				name.endsWith('_speech_model') || name === 'list_speech_models'
+					? args
+					: { projectId: 'prj_test', ...args },
 		})) as CallToolResult;
 		const text = (r.content.find((c) => c.type === 'text') as { text: string } | undefined)?.text ?? '';
 		let body: unknown = text;
