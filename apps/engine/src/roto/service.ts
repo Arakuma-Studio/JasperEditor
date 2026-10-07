@@ -15,7 +15,10 @@ import {
 	type RotoProgress,
 	type RotoSegmentRequest,
 	type RotoSegmentResult,
+	type RotoTraceRequest,
+	type RotoTraceResponse,
 } from '@jasper/api';
+import { tracePaths } from '@jasper/project';
 import { type JobContext, JobError } from '../jobs/types.ts';
 import type { MediaRecord } from '../media/registry.ts';
 import type { ProcessingService } from '../processing/service.ts';
@@ -273,6 +276,46 @@ export class RotoService {
 		} finally {
 			this.running.delete(ctx.job.id);
 		}
+	}
+
+	/** Auto-traces frames of a matte set into paths normalised to the picture (Convert to Masks). */
+	async trace(req: RotoTraceRequest): Promise<RotoTraceResponse> {
+		const set = await this.store.readSet(req.key);
+		if (!set) throw new HttpError(404, 'NOT_FOUND', 'No such matte set');
+		const { decodeGreyPng } = await import('./core/codec.ts');
+		const out: RotoTraceResponse['frames'] = [];
+		for (const f of req.frames) {
+			const path = await this.store.framePath(req.key, f);
+			if (!path)
+				throw new HttpError(404, 'NOT_FOUND', `Frame ${f} is not in the matte set (${set.start}–${set.end})`);
+			const { data, width, height } = decodeGreyPng(await readFile(path));
+			const field = new Float32Array(data.length);
+			for (let i = 0; i < data.length; i++) field[i] = data[i]! / 255;
+			const traced = tracePaths(field, width, height, {
+				threshold: req.threshold,
+				tolerance: req.tolerance,
+				minArea: req.minArea,
+				cornerRoundness: req.cornerRoundness,
+			})
+				.sort((a, b) => a.depth - b.depth || Math.abs(b.area) - Math.abs(a.area))
+				.slice(0, req.maxPaths);
+			out.push({
+				frame: f,
+				paths: traced.map((t) => ({
+					path: {
+						closed: t.path.closed,
+						vertices: t.path.vertices.map((v) => ({
+							p: [v.p[0] / width, v.p[1] / height] as [number, number],
+							in: [v.in[0] / width, v.in[1] / height] as [number, number],
+							out: [v.out[0] / width, v.out[1] / height] as [number, number],
+						})),
+					},
+					depth: t.depth,
+					area: t.area / (width * height),
+				})),
+			});
+		}
+		return { frames: out };
 	}
 
 	private async areaOfFile(path: string): Promise<number> {

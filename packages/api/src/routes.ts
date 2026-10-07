@@ -105,6 +105,13 @@ import {
 	VersionRestoreResponseSchema,
 } from './projects.ts';
 import {
+	RotoSegmentRequestSchema,
+	RotoStoreInfoSchema,
+	RotoTraceRequestSchema,
+	RotoTraceResponseSchema,
+	VisionModelsResponseSchema,
+} from './roto.ts';
+import {
 	SpeechModelDeleteResponseSchema,
 	SpeechModelsResponseSchema,
 	TranscribeMediaRequestSchema,
@@ -144,7 +151,9 @@ export type RouteOwner =
 	// parity program: local speech-to-text (Whisper), VAD, diarization
 	| 'speech'
 	// parity program: timeline interchange and Link Media
-	| 'wp-interchange';
+	| 'wp-interchange'
+	// parity program: roto / object mattes, face tracking
+	| 'roto';
 
 export type RouteDef = {
 	method: HttpMethod;
@@ -674,6 +683,56 @@ export const ROUTES = {
 		body: TranscribeSequenceRequestSchema,
 		response: EngineJobSchema,
 		owner: 'speech',
+	},
+	// ---- roto: Roto Brush / face tracking models (processing catalogue `vision`), jobs and matte sets
+	rotoModels: {
+		method: 'GET',
+		path: '/api/roto/models',
+		response: VisionModelsResponseSchema,
+		owner: 'roto',
+	},
+	/** Downloads and verifies a segmentation / face model: the processing catalogue's `model-download` job. */
+	rotoModelInstall: {
+		method: 'POST',
+		path: '/api/roto/models/:modelId/install',
+		response: EngineJobSchema,
+		owner: 'roto',
+	},
+	rotoModelDelete: {
+		method: 'DELETE',
+		path: '/api/roto/models/:modelId',
+		response: z.object({ modelId: z.string(), freedBytes: z.number() }),
+		owner: 'roto',
+	},
+	/** A `roto` job: segmentation + propagation of a roto object, or face tracking (result: `RotoSegmentResult`). */
+	rotoSegment: {
+		method: 'POST',
+		path: '/api/roto/segment',
+		body: RotoSegmentRequestSchema,
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
+		owner: 'roto',
+	},
+	rotoSet: {
+		method: 'GET',
+		path: '/api/roto/sets/:key',
+		response: RotoStoreInfoSchema,
+		owner: 'roto',
+	},
+	/** Auto-traces frames of a matte set into normalised mask paths (Convert to Masks). */
+	rotoTrace: {
+		method: 'POST',
+		path: '/api/roto/trace',
+		body: RotoTraceRequestSchema,
+		response: RotoTraceResponseSchema,
+		owner: 'roto',
+	},
+	/** Frame `n` of a matte set (8-bit grey PNG); signable for renders. */
+	rotoMatteFrame: {
+		method: 'GET',
+		path: '/mg/roto/:key',
+		response: 'binary',
+		owner: 'roto',
 	},
 	// ---- M3 media cache (S04 §7.5 CA-010…CA-019)
 	/** Usage per cache kind, budgets, last cleaning (Preferences ▸ Media Cache, MCP get_cache_usage). */

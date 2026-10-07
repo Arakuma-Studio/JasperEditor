@@ -335,3 +335,79 @@ export function faceSquare(cx: number, cy: number, size: number, angle: number):
 		] as const
 	).map(([u, v]) => [cx + u * c - v * s, cy + u * s + v * c] as [number, number]);
 }
+export * from './masks.ts';
+
+/** The engine request (`POST /api/roto/segment`, minus `projectId`) that computes a roto object's mattes. */
+export function rotoSegmentBody(
+	doc: ProjectDocument,
+	rotoId: string,
+	direction: 'both' | 'forward' | 'backward' | 'frame' = 'both',
+	frame?: number,
+): {
+	mediaKey: string;
+	rotoId: string;
+	inputs: string;
+	roto: {
+		kind: 'brush' | 'faces';
+		rate: Rational;
+		base: number | null;
+		span: [number, number];
+		strokes: { kind: ClipRoto['strokes'][number]['kind']; frame: number; radius: number; points: [number, number][] }[];
+		boxes: { frame: number; rect: [number, number, number, number] }[];
+		settings: ResolvedRotoSettings;
+	};
+	direction: 'both' | 'forward' | 'backward' | 'frame';
+	frame?: number;
+} {
+	const loc = findRoto(doc, rotoId);
+	if (!loc) throw new Error(`Roto object not found: ${rotoId}`);
+	const r = loc.roto;
+	const asset = doc.media[r.mediaId];
+	const loc2 = asset?.locators.find((l) => l.type === 'engine-store');
+	const mediaKey = loc2 && loc2.type === 'engine-store' ? loc2.key : null;
+	if (!mediaKey) throw new Error('The roto’s media is not on the engine (import it first)');
+	return {
+		mediaKey,
+		rotoId,
+		inputs: rotoInputsHash(r),
+		roto: {
+			kind: r.kind,
+			rate: { num: r.rate.num, den: r.rate.den },
+			base: r.base,
+			span: [r.span[0], r.span[1]],
+			strokes: r.strokes.map((s) => ({
+				kind: s.kind,
+				frame: s.frame,
+				radius: s.radius,
+				points: s.points.map((p) => [p[0], p[1]] as [number, number]),
+			})),
+			boxes: (r.boxes ?? []).map((b) => ({ frame: b.frame, rect: [b.rect[0], b.rect[1], b.rect[2], b.rect[3]] })),
+			settings: rotoSettingsOf(r),
+		},
+		direction,
+		...(frame !== undefined ? { frame } : {}),
+	};
+}
+
+/** The `roto.setResult` value of an engine result (faces kept for face trackers). */
+export function rotoResultOf(res: {
+	key: string;
+	start: number;
+	end: number;
+	width: number;
+	height: number;
+	inputs: string;
+	model: string | null;
+	faces?: { id: number; startFrame: number; poses: number[]; present: number[] }[];
+}): NonNullable<ClipRoto['result']> {
+	return {
+		key: res.key,
+		start: res.start,
+		end: res.end,
+		width: res.width,
+		height: res.height,
+		inputs: res.inputs,
+		model: res.model,
+		...(res.faces ? { faces: res.faces } : {}),
+	};
+}

@@ -142,3 +142,34 @@ export const RotoStoreInfoSchema = z.object({
 	frames: z.number().int(),
 });
 export type RotoStoreInfo = z.infer<typeof RotoStoreInfoSchema>;
+
+/** `POST /api/roto/trace`: auto-traces frames of a matte set into mask paths (Convert to Masks). */
+export const RotoTraceRequestSchema = z.object({
+	key: z.string().regex(/^[0-9a-f]{32}$/),
+	frames: z.array(z.number().int().min(0)).min(1).max(5000),
+	threshold: z.number().min(0).max(1).default(0.5),
+	/** Douglas–Peucker tolerance (matte px). */
+	tolerance: z.number().min(0.01).max(100).default(1.5),
+	minArea: z.number().min(0).default(40),
+	cornerRoundness: z.number().min(0).max(1).default(0.6),
+	maxPaths: z.number().int().min(1).max(100).default(20),
+});
+export type RotoTraceRequest = z.infer<typeof RotoTraceRequestSchema>;
+
+const P = z.tuple([z.number(), z.number()]);
+export const RotoTraceResponseSchema = z.object({
+	frames: z.array(
+		z.object({
+			frame: z.number().int(),
+			/** Paths normalised to the picture (0..1, = the clip's layer box); depth odd = a hole. */
+			paths: z.array(
+				z.object({
+					path: z.object({ closed: z.boolean(), vertices: z.array(z.object({ p: P, in: P, out: P })) }),
+					depth: z.number().int().min(0),
+					area: z.number(),
+				}),
+			),
+		}),
+	),
+});
+export type RotoTraceResponse = z.infer<typeof RotoTraceResponseSchema>;

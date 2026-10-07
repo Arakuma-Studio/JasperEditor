@@ -553,7 +553,8 @@ async function runFaces(
 					const db = [d.x0, d.y0, d.x1, d.y1];
 					const match = live.find((t) => t.last && iou4(boxOfPoints(t.last.points), db) > 0.3);
 					// A detection mostly inside a tracked face is a part of it (an eye, a cheek), not a new face.
-					if (!match && live.some((t) => t.last && containment(db, boxOfPoints(t.last.points)) > 0.5)) continue;
+					if (!match && live.some((t) => t.last && containment(db, boxOfPoints(t.last.points)) > 0.5))
+						continue;
 					if (match) {
 						if (match.lost > 0) match.roi = roiOfDetection(d);
 						continue;

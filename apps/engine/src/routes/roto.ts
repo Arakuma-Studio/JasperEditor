@@ -3,10 +3,11 @@
 //   POST   /api/roto/models/:modelId/install   → `model-download` job (the processing catalogue's installer)
 //   DELETE /api/roto/models/:modelId           removes a downloaded model
 //   POST   /api/roto/segment                   RotoSegmentRequest → `roto` job (`?wait=1` → the finished job)
+//   POST   /api/roto/trace                     auto-traces matte frames into mask paths (Convert to Masks)
 //   GET    /api/roto/sets/:key                 what a matte set holds (RotoStoreInfo)
 //   GET    /mg/roto/:key?n=<frame>             frame n of a matte set (8-bit grey PNG; signable for headless renders)
 // Also registers the `roto` job runner, its cache adapter and the `features.roto` capability block.
-import { RotoSegmentRequestSchema } from '@jasper/api';
+import { RotoSegmentRequestSchema, RotoTraceRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
 import type { ProcessingService } from '../processing/service.ts';
 import { RotoService } from '../roto/service.ts';
@@ -82,6 +83,11 @@ export default async function rotoRoutes(app: FastifyInstance): Promise<void> {
 				});
 			return done;
 		}),
+	);
+
+	app.post(
+		'/api/roto/trace',
+		guarded(async (req) => svc.trace(parseOr400(RotoTraceRequestSchema, req.body))),
 	);
 
 	app.get<SetParams>(
