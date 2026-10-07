@@ -490,7 +490,7 @@ export function MaskOverlay(props: ProgramOverlayHostProps) {
 								strokeWidth={1}
 								pointerEvents={ui.pen && !(i === 0 && verts.length >= 3) ? 'none' : 'all'}
 								style={{ cursor: 'move' }}
-								onPointerDown={(e) => (ui.pen ? undefined : onVertexDown(e, m, i))}
+								onPointerDown={(e) => (ui.pen ? onPenDown(e) : onVertexDown(e, m, i))}
 								data-testid={`mask-vertex-${i}`}
 								data-x={p[0]}
 								data-y={p[1]}
