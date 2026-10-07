@@ -217,13 +217,19 @@ export const fxMaskApply = createEffect<FxMaskApplyParams, null>({
 	cleanup: () => {},
 });
 
-export type FxMaskedParams = { key: string; geometry: FxMaskGeometry; inner: EffectDescriptor };
+export type FxMaskedParams = {
+	key: string;
+	geometry: FxMaskGeometry;
+	inner: EffectDescriptor;
+	/** color-grade: descriptors applied after `inner` (on its output) before the one mask mix. */
+	then?: EffectDescriptor[];
+};
 
 const scratch = new Map<string, HTMLCanvasElement>();
 const innerStates = new WeakMap<object, WeakMap<HTMLCanvasElement, unknown>>();
 
-function scratchCanvas(w: number, h: number): HTMLCanvasElement {
-	const k = `${w}x${h}`;
+function scratchCanvas(w: number, h: number, slot = 0): HTMLCanvasElement {
+	const k = `${w}x${h}#${slot}`;
 	let c = scratch.get(k);
 	if (!c) {
 		c = document.createElement('canvas');
@@ -241,7 +247,8 @@ export const fxMasked = createEffect<FxMaskedParams, null>({
 	label: 'Masked effect',
 	documentationLink: null,
 	backend: '2d',
-	calculateKey: (p) => `${p.key}|${p.inner.effectKey}`,
+	calculateKey: (p) =>
+		`${p.key}|${p.inner.effectKey}${(p.then ?? []).map((d) => `|${d.effectKey}`).join('')}`,
 	schema: {},
 	validateParams: (p) => {
 		if (!p?.geometry || !p.inner) throw new Error('fxMasked needs {key, geometry, inner}');
@@ -251,27 +258,34 @@ export const fxMasked = createEffect<FxMaskedParams, null>({
 		const h = fxHost();
 		if (!h) throw unavailable();
 		const { pack, key } = packedMasks(params.geometry, width, height);
-		const def = params.inner.definition as {
-			setup(t: HTMLCanvasElement): unknown;
-			apply(a: Record<string, unknown>): void;
+		const runInner = (d: EffectDescriptor, src: CanvasImageSource, slot: number): HTMLCanvasElement => {
+			const def = d.definition as {
+				setup(t: HTMLCanvasElement): unknown;
+				apply(a: Record<string, unknown>): void;
+			};
+			const target = scratchCanvas(width, height, slot);
+			let states = innerStates.get(def);
+			if (!states) {
+				states = new WeakMap();
+				innerStates.set(def, states);
+			}
+			if (!states.has(target)) states.set(target, def.setup(target));
+			ctx2d(target).clearRect(0, 0, width, height);
+			def.apply({
+				source: src,
+				target,
+				state: states.get(target),
+				params: d.params,
+				width,
+				height,
+				gpuDevice,
+				flipSourceY,
+			});
+			return target;
 		};
-		const fx = scratchCanvas(width, height);
-		let states = innerStates.get(def);
-		if (!states) {
-			states = new WeakMap();
-			innerStates.set(def, states);
-		}
-		if (!states.has(fx)) states.set(fx, def.setup(fx));
-		ctx2d(fx).clearRect(0, 0, width, height);
-		def.apply({
-			source,
-			target: fx,
-			state: states.get(fx),
-			params: params.inner.params,
-			width,
-			height,
-			gpuDevice,
-			flipSourceY,
+		let fx = runInner(params.inner, source as CanvasImageSource, 0);
+		(params.then ?? []).forEach((d, i) => {
+			fx = runInner(d, fx, (i + 1) % 2 === 1 ? 1 : 0);
 		});
 		runMaskPass(
 			h,

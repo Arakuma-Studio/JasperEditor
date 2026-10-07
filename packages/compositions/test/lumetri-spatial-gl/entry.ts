@@ -159,7 +159,14 @@ async function run(o: RunOptions) {
 					const d = Math.abs(Math.round(c[k]! * 255) - got[i + k]!);
 					if (d > maxDiff) {
 						maxDiff = d;
-						worst = { x, y, k, want: Math.round(c[k]! * 255), got: got[i + k], src: [src[i], src[i + 1], src[i + 2]] };
+						worst = {
+							x,
+							y,
+							k,
+							want: Math.round(c[k]! * 255),
+							got: got[i + k],
+							src: [src[i], src[i + 1], src[i + 2]],
+						};
 					}
 				}
 			}

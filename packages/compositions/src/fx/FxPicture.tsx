@@ -226,6 +226,8 @@ export function fxDescriptors(stage: FxStage, inputs: DescriptorInputs): EffectD
 	const out: EffectDescriptor[] = [];
 	const cpu = colorStageBackend() === 'cpu';
 	const box = stage.layout.box;
+	// color-grade: a `maskJoin` step waits for the next step; both run inside one mask mix.
+	let joined: { at: number } | null = null;
 	for (const s of stage.steps) {
 		// wp masks: a masked step's effect applies inside its masks only (mix with its input by coverage).
 		const at = out.length;
@@ -324,8 +326,25 @@ export function fxDescriptors(stage: FxStage, inputs: DescriptorInputs): EffectD
 			s.kind !== 'mix' &&
 			s.masks &&
 			out.length === at + 1
-		)
-			out[at] = fxMasked({ key: s.key, geometry: s.masks, inner: out[at]! });
+		) {
+			if (joined && joined.at === at - 1) {
+				const first = out[joined.at]!;
+				out.splice(joined.at, 2, fxMasked({ key: s.key, geometry: s.masks, inner: first, then: [out[at]!] }));
+				joined = null;
+			} else if ('maskJoin' in s && s.maskJoin) joined = { at };
+			else out[at] = fxMasked({ key: s.key, geometry: s.masks, inner: out[at]! });
+		} else if (joined) {
+			// The partner did not produce a masked descriptor: mask the waiting step alone.
+			const prev = stage.steps[stage.steps.indexOf(s) - 1];
+			if (prev && 'masks' in prev && prev.masks)
+				out[joined.at] = fxMasked({ key: prev.key, geometry: prev.masks, inner: out[joined.at]! });
+			joined = null;
+		}
+	}
+	if (joined) {
+		const last = stage.steps[stage.steps.length - 1];
+		if (last && 'masks' in last && last.masks)
+			out[joined.at] = fxMasked({ key: last.key, geometry: last.masks, inner: out[joined.at]! });
 	}
 	return out;
 }

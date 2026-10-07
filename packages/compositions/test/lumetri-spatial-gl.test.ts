@@ -75,7 +75,14 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 		it('HSL Secondary key + correction equals the CPU reference on every pixel', async () => {
 			for (const params of [
 				{ secHueCenter: 0, secHueRange: 20, secHueSoft: 25, secSaturation: 0 },
-				{ secHueCenter: 120, secHueRange: 30, secHueSoft: 10, secTemperature: 60, secTint: -30, secContrast: 40 },
+				{
+					secHueCenter: 120,
+					secHueRange: 30,
+					secHueSoft: 10,
+					secTemperature: 60,
+					secTint: -30,
+					secContrast: 40,
+				},
 				{ secLumaLow: 40, secLumaHigh: 70, secLumaSoft: 15, secWheel: [0.5, 0.3], secWheelLevel: 20 },
 				{
 					secSatLow: 30,
@@ -90,7 +97,9 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			]) {
 				const r = await run({ width: 120, height: 24, scene: 'hues', params, reference: true });
 				expect(r.passes.length, JSON.stringify(params)).toBe(1);
-				expect(r.maxDiff, `${JSON.stringify(params)} worst ${JSON.stringify(r.worst)}`).toBeLessThanOrEqual(1);
+				expect(r.maxDiff, `${JSON.stringify(params)} worst ${JSON.stringify(r.worst)}`).toBeLessThanOrEqual(
+					1,
+				);
 			}
 		});
 
@@ -115,7 +124,9 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				{ vignetteAmount: -2, vignetteRoundness: -100, vignetteMidpoint: 70 },
 			]) {
 				const r = await run({ width: 160, height: 90, scene: 'grey', params, reference: true });
-				expect(r.maxDiff, `${JSON.stringify(params)} worst ${JSON.stringify(r.worst)}`).toBeLessThanOrEqual(1);
+				expect(r.maxDiff, `${JSON.stringify(params)} worst ${JSON.stringify(r.worst)}`).toBeLessThanOrEqual(
+					1,
+				);
 				expect(r.probes).toEqual([]);
 			}
 			const r = await run({

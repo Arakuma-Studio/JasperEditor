@@ -23,6 +23,7 @@ import {
 	type FxPlanContext,
 	gpuIsTimeDependent,
 	gpuPadding,
+	lumetriSpatialInstanceId,
 	type ResolvedEffect,
 	type ResolvedMask,
 	ZERO_PADDING,
@@ -33,8 +34,12 @@ const CROP = 'jasper.crop';
 const FLIP_H = 'jasper.flip-horizontal';
 const FLIP_V = 'jasper.flip-vertical';
 
-/** wp masks: the effect of a step applies inside these masks only (mix(original, effected, coverage)). */
-type StepMasks = { masks?: ResolvedMask[] };
+/**
+ * wp masks: the effect of a step applies inside these masks only (mix(original, effected, coverage)).
+ * color-grade: `maskJoin` = this masked step and the next one (same masks) form ONE masked unit — a Lumetri
+ * instance's LUT step and its spatial GPU stage mix with the input once, so feathered masks stay exact.
+ */
+type StepMasks = { masks?: ResolvedMask[]; maskJoin?: boolean };
 
 export type FxStep =
 	| ({ kind: 'gpu'; fx: ResolvedEffect; spec: EffectSpec; padding: FxPadding } & StepMasks)
@@ -254,6 +259,19 @@ export function planLayerFx(
 	// CSS stages keep stack order (reordered ones first: they were before the post-chain effects).
 	const order = new Map(effects.map((fx, i) => [fx.id, i]));
 	cssEffects.sort((a, b) => order.get(a.id)! - order.get(b.id)!);
+	// color-grade: a masked Lumetri LUT step followed by its spatial stage is masked as one unit.
+	for (let i = 0; i + 1 < steps.length; i++) {
+		const a = steps[i]!;
+		const b = steps[i + 1]!;
+		if (
+			a.kind === 'lut' &&
+			a.masks?.length &&
+			b.kind === 'gpu' &&
+			b.masks?.length &&
+			b.fx.id === lumetriSpatialInstanceId(a.effects[a.effects.length - 1]!.id)
+		)
+			a.maskJoin = true;
+	}
 	if (opacityMasks.length) steps.push({ kind: 'mask', masks: opacityMasks });
 	return { active: true, steps, cssEffects, reordered, bypassed, padding, timeDependent };
 }

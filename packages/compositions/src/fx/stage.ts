@@ -67,7 +67,7 @@ import { fxClipInfoOf } from './time.ts';
 export type FxLayout = FxCanvasLayout;
 
 /** wp masks: masks of a step (the effect applies inside them), in the chain canvas. */
-type PreparedMasks = { masks?: FxMaskGeometry };
+type PreparedMasks = { masks?: FxMaskGeometry; maskJoin?: boolean };
 
 export type FxPreparedStep =
 	| ({
@@ -442,7 +442,9 @@ export function useLayerFx(
 					geometry: g,
 				};
 			}
-			return withMasks(prepareStep(s, i), s.masks);
+			const st = withMasks(prepareStep(s, i), s.masks);
+			// color-grade: masked as one unit with the next step (fx/plan.ts `maskJoin`).
+			return s.maskJoin && 'masks' in st && st.masks ? { ...st, maskJoin: true } : st;
 		});
 		function prepareStep(s: Exclude<FxStep, { kind: 'mask' }>, i: number): FxPreparedStep {
 			switch (s.kind) {
