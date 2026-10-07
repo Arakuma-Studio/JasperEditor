@@ -48,7 +48,7 @@ describe('OTIO', () => {
 				// bins survive too
 				expect(back.root.map((e) => e.type)).toEqual(p.root.map((e) => e.type));
 			}),
-			{ numRuns: 150 },
+			{ numRuns: Number(process.env.FC_RUNS ?? 150) },
 		);
 	});
 

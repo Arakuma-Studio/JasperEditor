@@ -320,7 +320,7 @@ function build(f: Features, g: Gen): IProject {
 			if (!video && f.pan) clip.pan = anim(c.pan);
 			// Transitions: 1 = cut dissolve with the previous adjacent clip, 2 = fade in, 3 = fade out.
 			if (f.transitions && c.trans) {
-				const d = Math.min(8, c.len, prev?.duration ?? 8) * F;
+				const d = Math.min(8, c.len, prev ? prev.duration / F : 8) * F;
 				if (c.trans === 1 && prev && prev.start + prev.duration === clip.start && d >= F * 2) {
 					const half = Math.floor(d / F / 2) * F;
 					track.transitions.push(transition(`t${n}`, video, prev.id, clip.id, clip.start - half, half * 2));
