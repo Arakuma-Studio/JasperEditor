@@ -33,6 +33,7 @@ import {
 	hasActiveExpression,
 	invertMat3,
 	isAnimated,
+	type Keyframe,
 	kindCapabilities,
 	layerMapOf,
 	maskPropertySpec,
@@ -43,12 +44,15 @@ import {
 	type RenderVisualClip,
 	resolveLayerProps,
 	resolvePropertySpec,
+	resolveTextAnimatorSpec,
 	type Sequence,
 	type ShapeItem,
 	sequenceDuration,
 	shapeItemSpecs,
+	type TextAnimatorGroup,
 	type TextContent,
 	type Track,
+	textAnimatorPropertySpecs,
 	transitionSpec,
 	transitionStartFrame,
 } from '@jasper/project';
@@ -419,8 +423,98 @@ export class World {
 			if (info.kind !== 'master') out.push(leaf('pan', 'Pan', 'pan', 'balance'));
 			return out;
 		}
-		if (group === 'text' && info.kind === 'clip')
-			return [leaf('text.content', 'Source Text', 'sourceText', 'text')];
+		if (group === 'text' && info.kind === 'clip') {
+			const out = [leaf('text.content', 'Source Text', 'sourceText', 'text')];
+			// text-animators: text.animator("Animator 1").property.position, ….selector("Range Selector 1").start
+			const animators = (info.clip as { animators?: TextAnimatorGroup[] }).animators ?? [];
+			if (animators.length)
+				out.push({
+					path: 'textAnimators',
+					group: true,
+					name: 'Animators',
+					matchName: 'animator',
+					aliases: ['animators', 'Animators'],
+				});
+			const c = info.clip as { pathOptions?: unknown; moreOptions?: unknown };
+			if (c.pathOptions)
+				out.push({
+					path: 'textPath',
+					group: true,
+					name: 'Path Options',
+					matchName: 'pathOption',
+					aliases: ['pathOptions'],
+				});
+			if (c.moreOptions)
+				out.push({
+					path: 'textMore',
+					group: true,
+					name: 'More Options',
+					matchName: 'moreOption',
+					aliases: ['moreOptions'],
+				});
+			return out;
+		}
+		if ((group === 'textPath' || group === 'textMore') && info.kind === 'clip') {
+			const owner = group === 'textPath' ? 'pathOptions' : 'moreOptions';
+			const g = (info.clip as unknown as Record<string, Record<string, unknown> | undefined>)[owner] ?? {};
+			return textAnimatorPropertySpecs(info.clip as never)
+				.filter(
+					(sp) =>
+						sp.key.startsWith(`${group}.`) && sp.animatable !== 'no' && g[sp.key.slice(group.length + 1)],
+				)
+				.map((sp) => leaf(sp.key, sp.label, sp.key.slice(group.length + 1)));
+		}
+		if (group.startsWith('textAnimators') && info.kind === 'clip') {
+			const animators = (info.clip as { animators?: TextAnimatorGroup[] }).animators ?? [];
+			const parts = group.split('.');
+			if (parts.length === 1)
+				return animators.map((a) => ({
+					path: `textAnimators.${a.id}`,
+					group: true,
+					name: a.name,
+					matchName: 'ADBE Text Animator',
+					aliases: [a.id],
+					enabled: a.enabled,
+				}));
+			const a = animators.find((x) => x.id === parts[1]);
+			if (!a) return [];
+			if (parts.length === 2)
+				return [
+					{
+						path: `${group}.properties`,
+						group: true,
+						name: 'Properties',
+						matchName: 'property',
+						aliases: ['properties'],
+					},
+					{
+						path: `${group}.selectors`,
+						group: true,
+						name: 'Selectors',
+						matchName: 'selector',
+						aliases: ['selectors'],
+					},
+				];
+			const specs = textAnimatorPropertySpecs(info.clip as never).filter(
+				(sp) => sp.key.startsWith(`${group}.`) && sp.animatable !== 'no',
+			);
+			if (parts[2] === 'properties' && parts.length === 3)
+				return specs.map((sp) =>
+					leaf(sp.key, sp.label, sp.key.slice(group.length + 1).replace(/^axes\./, '')),
+				);
+			if (parts[2] === 'selectors' && parts.length === 3)
+				return a.selectors.map((sel) => ({
+					path: `${group}.${sel.id}`,
+					group: true,
+					name: sel.name,
+					matchName: `ADBE Text Selector`,
+					aliases: [sel.id],
+					enabled: sel.enabled,
+				}));
+			if (parts[2] === 'selectors' && parts.length === 4)
+				return specs.map((sp) => leaf(sp.key, sp.label, sp.key.slice(group.length + 1)));
+			return [];
+		}
 		if (group === 'params' && info.kind === 'clip') {
 			const params = (info.clip as { params?: Record<string, unknown> }).params ?? {};
 			return Object.keys(params).map((n) => leaf(`params.${n}`, n, n));
@@ -539,13 +633,18 @@ export class World {
 		if (ref.path === 'text.content') {
 			const content = clip.content as TextContent | undefined;
 			if (!content) return null;
+			// text-animators: Source Text hold keys give the keyframed (pre-expression) text.
+			const keys = ((clip.sourceTextKeyframes as Keyframe<TextContent>[] | undefined) ?? []).map((k) => ({
+				...k,
+				value: k.value.text,
+			}));
 			return {
 				...base,
 				name: 'Source Text',
 				matchName: 'sourceText',
 				kind: 'string',
-				opts: {},
-				anim: { value: content.text, keyframes: [], expression: content.expression },
+				opts: { holdOnly: true },
+				anim: { value: content.text, keyframes: keys, expression: content.expression },
 				expression: content.expression,
 				propertyIndex: 1,
 			};
@@ -584,23 +683,29 @@ export class World {
 				propertyIndex: indexIn('params'),
 			};
 		}
-		// wp shapes: dynamic `shape.items.<id>.<field>` keys resolve against the clip.
+		// wp shapes: dynamic `shape.items.<id>.<field>` keys resolve against the clip; text-animators: dynamic
+		// animator / selector / path / more-options keys too.
 		const spec = ref.path.startsWith('shape.items.')
 			? resolvePropertySpec(ref.path, undefined, undefined, info.clip as never)
-			: getPropertySpec(ref.path);
+			: (getPropertySpec(ref.path) ?? resolveTextAnimatorSpec(ref.path, info.clip as never));
 		if (!spec || spec.animatable === 'no' || !spec.appliesTo(info.clip)) return null;
 		let anim: unknown = clip;
 		for (const k of spec.storagePath) anim = (anim as Record<string, unknown> | null | undefined)?.[k];
 		if (!anim || typeof anim !== 'object' || !Array.isArray((anim as Animatable<unknown>).keyframes))
 			return null;
 		const a = anim as Animatable<unknown>;
+		const textGroup = /^(textAnimators\.[^.]+\.(properties|selectors\.[^.]+)|textPath|textMore)\./.exec(
+			ref.path,
+		);
 		const group = ref.path.startsWith('shape.items.')
 			? vectorLeafGroup(info.clip, ref.path)
 			: ref.path.startsWith('transform.') || ref.path === 'opacity'
 				? 'transform'
 				: ref.path.startsWith('shape.')
 					? 'shape'
-					: 'audio';
+					: textGroup
+						? ref.path.slice(0, ref.path.lastIndexOf(ref.path.includes('.axes.') ? '.axes.' : '.'))
+						: 'audio';
 		return {
 			...base,
 			name: spec.label,

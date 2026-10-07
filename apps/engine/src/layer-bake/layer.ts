@@ -19,6 +19,7 @@ import {
 	type Transform,
 	vectorShapeBounds,
 	vectorShapeIsTimeDependent,
+	textAnimatorsTimeVarying,
 } from '@jasper/project';
 
 /** Clip kinds whose pixels come from React/DOM in the composition (S11 §0 "DOM layer"). */
@@ -158,6 +159,8 @@ export function isStaticLayer(
 	if (c.kind === 'video' || c.kind === 'animated-image') return false;
 	const src = c.source as { animation?: { in?: unknown; out?: unknown } };
 	if (src.animation && (src.animation.in || src.animation.out)) return false;
+	// text-animators: Wiggly / Expression selectors vary with time without keyframes.
+	if (c.kind === 'text' && textAnimatorsTimeVarying(c.source as never)) return false;
 	if (hasKeyframesDeep(c.transform) || hasKeyframesDeep(c.opacity)) return false;
 	// wp masks: keyframed Opacity or effect masks.
 	if (hasKeyframesDeep(c.masks) || c.effects.some((fx) => fx.enabled && hasKeyframesDeep(fx.masks)))

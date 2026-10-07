@@ -26,6 +26,7 @@ import { setCompositionProp } from './composition.ts';
 import { locateMask, validateMaskPath } from './mask.ts';
 import { templateParamDraftAnim, templateParamsValidator } from './mg-template.ts';
 import { ensureShapeStorage } from './shape.ts';
+import { ensureMoreOptions, parseSourceText, sourceTextDraftAnim } from './text-animators.ts';
 import type { HandlerMap } from './util.ts';
 
 type ValueRule = {
@@ -48,6 +49,8 @@ type ValueRule = {
 	spatial?: SpatialInterpolation;
 	/** wp shapes: structural check of the value (vector shape paths and gradients). */
 	check?: (v: unknown) => boolean;
+	/** `json` values with a schema (text-animators: Source Text): returns the parsed value or throws a message. */
+	parse?: (v: unknown) => unknown;
 };
 
 /** A resolved parameter target: either an Animatable (keyframable) or a static setter. */
@@ -187,6 +190,16 @@ export function resolveTarget(
 			};
 		}
 		const time = (at: ParamAt | undefined) => h.clipContentTime(seq, clip, at);
+		// text-animators workstream: Source Text (hold keys over `content`) and More Options created on first write.
+		if (spec.storagePath[0] === '$sourceText')
+			return {
+				type: 'anim',
+				anim: sourceTextDraftAnim(clip, h),
+				rule: { ...ruleFromProperty(spec), parse: parseSourceText },
+				time,
+				label: key,
+			};
+		if (spec.storagePath[0] === 'moreOptions' && clip.kind === 'text') ensureMoreOptions(clip);
 		// ---- wp-m2-anime-templates (S11:ATP-006): keyframable params of anime templates
 		if (spec.group === 'params' && spec.animatable !== 'no' && template) {
 			const anim = templateParamDraftAnim(
@@ -380,6 +393,13 @@ export function validateValue(
 				return fail();
 			}
 			if (copy === undefined) return fail();
+			if (rule.parse) {
+				try {
+					copy = rule.parse(copy);
+				} catch (e) {
+					return h.fail('E_INVALID_PARAM', `Invalid value for ${label}: ${(e as Error).message}`);
+				}
+			}
 			return { value: copy, clamped: false };
 		}
 		case 'maskPath':

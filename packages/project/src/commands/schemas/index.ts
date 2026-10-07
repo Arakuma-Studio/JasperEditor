@@ -16,6 +16,7 @@ import { SHAPE_COMMANDS } from './shape.ts';
 import { SIMPLIFY_COMMANDS } from './simplify.ts';
 import { SPEECH_COMMANDS } from './speech.ts';
 import { STRUCTURE_COMMANDS } from './structure.ts';
+import { TEXT_ANIMATOR_COMMANDS } from './text-animators.ts';
 import { TRACKER_COMMANDS } from './tracker.ts';
 
 export * from './audio.ts';
@@ -36,6 +37,7 @@ export * from './shape.ts';
 export * from './simplify.ts';
 export * from './speech.ts';
 export * from './structure.ts';
+export * from './text-animators.ts';
 export * from './tracker.ts';
 
 /** Every document command schema (M1 + M2), keyed by nothing: see `catalog.ts` for registration. */
@@ -53,6 +55,8 @@ export const ALL_COMMAND_SCHEMAS = [
 	...PRESET_COMMANDS,
 	// wp shapes: vector shape items
 	...SHAPE_COMMANDS,
+	// text-animators workstream (AE text animators)
+	...TEXT_ANIMATOR_COMMANDS,
 	// Timeline interchange (wp interchange)
 	...INTERCHANGE_COMMANDS,
 	// Synchronize, Merge Clips, multi-camera (wp-multicam)

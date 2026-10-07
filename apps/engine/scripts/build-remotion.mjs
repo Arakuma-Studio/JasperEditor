@@ -110,4 +110,17 @@ for (const id of FONT_IDS) {
 		filter: (src) => !src.endsWith('.woff') && (/-(latin|latin-ext)-/.test(src) || !src.includes('.woff')),
 	});
 }
+// text-animators: variable families (`<id>-variable`, the "standard" axes files).
+for (const id of ['inter']) {
+	const pkgDir = dirname(require.resolve(`@fontsource-variable/${id}/metadata.json`));
+	const dest = join(fontsOut, `${id}-variable`);
+	mkdirSync(join(dest, 'files'), { recursive: true });
+	cpSync(join(pkgDir, 'metadata.json'), join(dest, 'metadata.json'));
+	if (existsSync(join(pkgDir, 'LICENSE'))) cpSync(join(pkgDir, 'LICENSE'), join(dest, 'LICENSE'));
+	cpSync(join(pkgDir, 'files'), join(dest, 'files'), {
+		recursive: true,
+		filter: (src) =>
+			!src.endsWith('.woff') && (/-(latin|latin-ext)-standard-/.test(src) || !src.includes('.woff')),
+	});
+}
 console.log(`[build:remotion] fonts copied to ${fontsOut}`);

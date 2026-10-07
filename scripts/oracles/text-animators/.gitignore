@@ -1,0 +1,4 @@
+target/
+src/selectors.rs
+src/path_text.rs
+Cargo.lock

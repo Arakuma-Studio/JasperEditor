@@ -19,6 +19,10 @@ import {
 	type Sequence,
 	shapeItemSpecs,
 	walkItems,
+	selectorFields,
+	type TextAnimatorGroup,
+	type TextSelector,
+	textAnimatorPropertySpecs,
 } from '@jasper/project';
 import { shapePropertyKeys } from '../../shapes/keys.ts';
 import {
@@ -49,7 +53,86 @@ export type FxSection = {
 	missing?: boolean;
 	/** wp masks: the section's masks (Opacity masks, or the effect's own masks) and their property rows. */
 	masks?: MaskList;
+	/** text-animators: the Text section's animators, selectors, Path Options and More Options. */
+	textAnimators?: TextAnimatorListModel;
 };
+
+/** text-animators: one selector block. */
+export type SelectorBlock = { selector: TextSelector; rows: Row[]; advanced: Row[] };
+/** text-animators: one animator block (property rows, selector blocks). */
+export type AnimatorBlock = { animator: TextAnimatorGroup; rows: Row[]; selectors: SelectorBlock[] };
+/** text-animators: what the Text section shows below Source Text. */
+export type TextAnimatorListModel = {
+	clipId: string;
+	/** Source Text hold keys (AE Source Text stopwatch). */
+	sourceText: Row | null;
+	perCharacter3d: boolean;
+	hasLegacyAnimation: boolean;
+	path: { maskId: string | null; masks: { id: string; name: string }[]; rows: Row[] };
+	more: Row[];
+	animators: AnimatorBlock[];
+};
+
+function textAnimatorList(
+	doc: ProjectDocument,
+	seq: Sequence,
+	clip: Clip,
+	frame: number,
+): TextAnimatorListModel {
+	const bind = (key: string) => makeRow(key, [bindProperty(doc, seq, clip, key, frame)]);
+	const ok = (r: Row | null): r is Row => r !== null;
+	const c = clip as Clip & {
+		animators?: TextAnimatorGroup[];
+		pathOptions?: { maskId: string };
+		perCharacter3d?: boolean;
+		masks?: Mask[];
+		textAnimation?: { in?: unknown; out?: unknown };
+	};
+	const specs = textAnimatorPropertySpecs(c as never);
+	return {
+		clipId: clip.id,
+		sourceText: bind('text.sourceText'),
+		perCharacter3d: !!c.perCharacter3d,
+		hasLegacyAnimation: !!(c.textAnimation?.in || c.textAnimation?.out),
+		path: {
+			maskId: c.pathOptions?.maskId ?? null,
+			masks: (c.masks ?? []).map((m) => ({ id: m.id, name: m.name })),
+			rows: specs
+				.filter((sp) => sp.key.startsWith('textPath.'))
+				.map((sp) => bind(sp.key))
+				.filter(ok),
+		},
+		more: specs
+			.filter((sp) => sp.key.startsWith('textMore.'))
+			.map((sp) => bind(sp.key))
+			.filter(ok),
+		animators: (c.animators ?? []).map((a) => {
+			const prefix = `textAnimators.${a.id}.`;
+			return {
+				animator: a,
+				rows: specs
+					.filter((sp) => sp.key.startsWith(`${prefix}properties.`))
+					.map((sp) => bind(sp.key))
+					.filter(ok),
+				selectors: a.selectors.map((sel) => {
+					const fields = selectorFields(sel.kind);
+					const rowOf = (key: string) => bind(`${prefix}selectors.${sel.id}.${key}`);
+					return {
+						selector: sel,
+						rows: fields
+							.filter((f) => !f.advanced)
+							.map((f) => rowOf(f.key))
+							.filter(ok),
+						advanced: fields
+							.filter((f) => f.advanced)
+							.map((f) => rowOf(f.key))
+							.filter(ok),
+					};
+				}),
+			};
+		}),
+	};
+}
 
 /** wp masks: a section's mask tools and masks (Premiere: under Opacity and every video effect). */
 export type MaskList = {
@@ -148,6 +231,8 @@ export function buildGroups(
 					clip,
 					intrinsic: true,
 					rows: rows(['text.content']),
+					// text-animators: Source Text keys, Path Options, More Options, animators (AE's Text group).
+					textAnimators: textAnimatorList(doc, seq, clip, frame),
 				});
 			// M2 (wp-m2-text-anim, S11:TXA-022): the Text Animation section (body drawn by TextAnimationSection).
 			if (clip.kind === 'text')

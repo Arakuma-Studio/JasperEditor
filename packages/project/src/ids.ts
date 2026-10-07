@@ -25,6 +25,9 @@ export const ID_PREFIXES = {
 	tracker: 'tkr',
 	/** wp shapes: items of a vector shape (unique within their clip). */
 	shapeItem: 'shp',
+	/** text-animators workstream: text animators and their selectors. */
+	textAnimator: 'tan',
+	textSelector: 'tsl',
 	/** audio-mix: Audio Track Mixer sends. */
 	send: 'snd',
 	/** wp masks: Opacity / effect masks. */

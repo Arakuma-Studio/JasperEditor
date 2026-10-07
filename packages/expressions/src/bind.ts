@@ -64,6 +64,8 @@ export function bindWorld(data: ExpressionWorldData): Bound {
 	for (const [seqId, seq] of Object.entries(data.sequences)) {
 		let s = seq;
 		for (const loc of sequenceAnimatables(seqId, seq)) {
+			// text-animators: Expression Selector amounts run per character (installTextSelectorExpressions).
+			if (loc.kind === 'selector') continue;
 			if (!hasActiveExpression(loc.target as { expression?: { text: string; enabled: boolean } })) continue;
 			s = setIn(s, loc.at, withBinding(loc.target as object, binding(world, loc.ref)));
 		}
@@ -136,9 +138,13 @@ export function bindSnapshotExpressions(snap: RenderSnapshot): RenderSnapshot {
 	const { sequences } = bindWorld(data);
 	const seq = sequences[snap.sequenceId];
 	const locs = new Map<string, AnimLocation>();
+	const textLocs = new Map<string, AnimLocation[]>();
 	if (seq)
-		for (const loc of sequenceAnimatables(snap.sequenceId, seq))
+		for (const loc of sequenceAnimatables(snap.sequenceId, seq)) {
 			locs.set(`${loc.ref.owner}|${loc.ref.path}`, loc);
+			if (loc.kind === 'anim' && /^(textAnimators|textPath|textMore)\./.test(loc.ref.path))
+				textLocs.set(loc.ref.owner, [...(textLocs.get(loc.ref.owner) ?? []), loc]);
+		}
 	const bind = <T>(anim: T, owner: string, path: string): T => {
 		if (!anim || typeof anim !== 'object' || expressionBindingOf(anim)) return anim;
 		if (!hasActiveExpression(anim as { expression?: { text: string; enabled: boolean } })) return anim;
@@ -238,6 +244,16 @@ export function bindSnapshotExpressions(snap: RenderSnapshot): RenderSnapshot {
 			if (src.text) {
 				const b = bind(src.text, o, 'text.content');
 				if (b !== src.text) out = { ...out, source: { ...(out.source as object), text: b } as never };
+				// text-animators: animator properties, selector fields, Path / More Options (same layout as the clip).
+				let s2 = out.source as unknown as Record<string, unknown>;
+				for (const loc of textLocs.get(o) ?? []) {
+					const rel = loc.at.slice(2);
+					let cur: unknown = s2;
+					for (const k of rel) cur = (cur as Record<string | number, unknown> | undefined)?.[k];
+					const bb = bind(cur, o, loc.ref.path);
+					if (bb !== cur) s2 = setIn(s2, rel, bb);
+				}
+				if (s2 !== out.source) out = { ...out, source: s2 as never };
 			}
 			return out;
 		}),
