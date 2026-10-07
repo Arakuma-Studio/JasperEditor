@@ -45,6 +45,7 @@ import { PlaybackDriver } from '../program/playback-driver.ts';
 import { buildProgramDoc, resolveMediaHandle } from '../program/render-doc.ts';
 import { registerDriver, setSourceTransport } from '../program/transport-registry.ts';
 import { computeView, ZOOM_PRESETS } from '../program/viewport.ts';
+import { markerVar } from '../timeline/components/ClipView.tsx';
 import type { PanelProps } from '../types.ts';
 import {
 	assetFps,
@@ -87,6 +88,9 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 	const monitor = useStoreSelector(monitorStores.source, (s) => s);
 	const item = sourceItem(doc, src.itemId);
 	const asset = sourceAsset(doc, item);
+	// wp-multicam: source clip markers of a media item (sync points of Merge Clips / multi-camera).
+	const itemMarkerList = (item as { markers?: { id: string; flicks: number; color: string }[] } | null)
+		?.markers;
 	const handle = useMemo(() => (asset ? resolveMediaHandle(asset, media[asset.id]) : null), [asset, media]);
 	// edit-structure: sequences and synthetic sources are drawn by the sequence composition.
 	const activeSettings = useStoreSelector(session.store, (s) => {
@@ -143,6 +147,15 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 	// Mirror marks (document, flicks) → source frames for the transport commands.
 	const seqItem = item?.kind === 'sequence' ? doc.sequences[item.sequenceId] : undefined;
 	const marks = item && item.kind !== 'sequence' ? item.marks : null;
+	const sourceMarkers = useMemo(
+		() =>
+			(itemMarkerList ?? []).map((m) => ({
+				id: m.id,
+				frame: flicksToSourceFrames(m.flicks, fps),
+				color: `var(--pr-marker-${markerVar(m.color as never)})`,
+			})),
+		[itemMarkerList, fps],
+	);
 	const markIn = seqItem ? seqItem.inPoint : marks?.in ? flicksToSourceFrames(marks.in.flicks, fps) : null;
 	const markOut = seqItem
 		? seqItem.outPoint
@@ -396,6 +409,7 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 				duration={duration}
 				markIn={markIn}
 				markOut={markOut}
+				markers={sourceMarkers}
 				fps={fps}
 				onSeek={seek}
 				testId="source-ruler"

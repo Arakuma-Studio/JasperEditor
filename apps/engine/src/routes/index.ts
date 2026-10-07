@@ -22,6 +22,7 @@ import processingRoutes from './processing.ts';
 import projectsRoutes from './projects.ts';
 import speechRoutes from './speech.ts';
 import stillsRoutes from './stills.ts';
+import syncRoutes from './sync.ts';
 import trackingRoutes from './tracking.ts';
 import uploadsRoutes from './uploads.ts';
 
@@ -50,6 +51,8 @@ const ROUTE_PLUGINS = [
 	layerBakeRoutes,
 	trackingRoutes,
 	animeRoutes,
+	// wp-multicam: audio sync for Synchronize / Merge Clips / multi-camera.
+	syncRoutes,
 	// wp masks: auto-trace (mask tracking runs as `track` jobs of kind `mask`).
 	maskRoutes,
 	// audio-mix: audio analysis (loudness, peaks, ducking activity) and loudness-normalised media versions.

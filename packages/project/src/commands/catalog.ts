@@ -8,10 +8,11 @@ import { clipEditHandlers } from './handlers/clip-edit.ts';
 import { CLIPBOARD_OWNER, clipboardHandlers } from './handlers/clipboard.ts';
 import { compositionHandlers } from './handlers/composition.ts';
 import { effectHandlers } from './handlers/effect.ts';
-import { INTERCHANGE_OWNER, interchangeHandlers } from './handlers/interchange.ts';
 import { EXPRESSION_OWNER, expressionHandlers } from './handlers/expression.ts';
+import { INTERCHANGE_OWNER, interchangeHandlers } from './handlers/interchange.ts';
 import { keyframeHandlers } from './handlers/keyframe.ts';
 import { maskHandlers } from './handlers/mask.ts';
+import { multicamHandlers } from './handlers/multicam.ts';
 import { paramHandlers } from './handlers/param.ts';
 import { PRESET_OWNER, presetHandlers } from './handlers/preset.ts';
 import { processHandlers } from './handlers/process.ts';
@@ -45,6 +46,8 @@ export type CommandOwner =
 	| 'wp-m3-presets'
 	// Timeline interchange
 	| 'wp-interchange'
+	// Synchronize, Merge Clips, multi-camera (docs/wp-notes/multicam.md)
+	| 'wp-multicam'
 	// Nests, adjustment layers, groups, synthetics, frame holds, through edits (docs/wp-notes/edit-structure.md)
 	| 'edit-structure'
 	// Masks (S03 §17)
@@ -170,6 +173,14 @@ const LABELS: Record<CommandType, string> = {
 	'project.pasteItems': 'Paste',
 	'effect.applyPreset': 'Apply Preset',
 	'project.importTimeline': 'Import Timeline',
+	'clip.synchronize': 'Synchronize',
+	'item.mergeClips': 'Merge Clips',
+	'multicam.create': 'Create Multi-Camera Source Sequence',
+	'multicam.switchAngle': 'Switch Multi-Camera Angle',
+	'multicam.record': 'Record Multi-Camera',
+	'multicam.setEnabled': 'Multi-Camera Enable',
+	'multicam.flatten': 'Flatten Multi-Camera',
+	'multicam.editAngles': 'Edit Cameras',
 	// audio-mix
 	'mixer.updateStrip': 'Audio Track Mixer',
 	'mixer.addSubmix': 'Add Submix Track',
@@ -245,6 +256,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[clipboardHandlers, CLIPBOARD_OWNER],
 	[presetHandlers, PRESET_OWNER],
 	[interchangeHandlers, INTERCHANGE_OWNER],
+	[multicamHandlers, 'wp-multicam'],
 	[audioHandlers, AUDIO_MIX_OWNER],
 	[structureHandlers, STRUCTURE_OWNER],
 	[maskHandlers, 'wp-m3-masks'],
@@ -274,7 +286,8 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === STRUCTURE_OWNER ||
 				owner === AUDIO_MIX_OWNER ||
 				owner === 'keyframes-blend' ||
-				owner === SPEECH_OWNER
+				owner === SPEECH_OWNER ||
+				owner === 'wp-multicam'
 					? 'M3'
 					: owner === 'M2' ||
 							owner.startsWith('wp-m2-') ||

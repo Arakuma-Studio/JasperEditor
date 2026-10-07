@@ -46,7 +46,7 @@ const TIME_NOTES = [
 	'Times on the timeline are sequence frames; every time argument also accepts {"seconds": x} or a timecode string "HH:MM:SS:FF".',
 	'Tracks are addressed by label: "V1" is the lowest video track, "A1" the first audio track (or by track id).',
 	'Creating commands may declare "ref": "$name"; later commands in the same transaction can use "$name" as an id.',
-	'Instead of ids you can write {"mediaByName": "file.mp4"}, {"clipAt": {"track": "V1", "at": "00:00:01:00"}} or {"markerByName": "Intro"}.',
+	'Instead of ids you can write {"mediaByName": "file.mp4"}, {"clipAt": {"track": "V1", "at": "00:00:01:00"}}, {"markerByName": "Intro"} or {"itemByName": "Cam A.mp4"} (a project item).',
 	'A transaction is atomic: all commands apply or none. Use dryRun: true to validate first.',
 	`Transactions containing ${APPROVAL_COMMANDS.join(', ')} or any "force": true need the user's approval in an open editor (60 s timeout); without an editor they are rejected.`,
 ];

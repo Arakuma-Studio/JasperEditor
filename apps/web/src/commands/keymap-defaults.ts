@@ -225,6 +225,13 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('app.cycleRegions', 'F6', G),
 	b('app.shortcutReference', 'Ctrl+Alt+Slash', G),
 
+	// ---------------------------------------------------------------- multi-camera (wp-multicam; Premiere defaults)
+	...[1, 2, 3, 4, 5, 6, 7, 8, 9].flatMap((n) => [
+		b(`multicam.selectCamera${n}`, `Digit${n}`, E),
+		b(`multicam.cutToCamera${n}`, `Ctrl+Digit${n}`, E),
+	]),
+	b('program.toggleMulticamView', 'Shift+Digit0', E),
+
 	// ---------------------------------------------------------------- panel-scoped (R-PUI §16.7)
 	b('monitor.fit', 'Ctrl+Digit0', 'program'),
 	// wp masks: the selected mask's vertices / the mask itself; Escape leaves the pen or deselects.
@@ -251,6 +258,8 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('program.nudgeDownMany', 'Ctrl+Shift+ArrowDown', 'program', R),
 	b('monitor.toggleLoop', 'Ctrl+KeyL', 'program'),
 	b('monitor.toggleLoop', 'Ctrl+KeyL', 'source'),
+	// wp-multicam: source clip markers (sync points).
+	b('source.addMarker', 'KeyM', 'source'),
 	b('project.newBin', 'Ctrl+KeyB', 'project'),
 	b('project.listView', 'Ctrl+PageUp', 'project'),
 	b('project.iconView', 'Ctrl+PageDown', 'project'),

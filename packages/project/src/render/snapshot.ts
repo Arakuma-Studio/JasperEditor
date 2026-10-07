@@ -12,6 +12,7 @@ import { contentTimeAt } from '../derive/index.ts';
 import { bindExpressions, type ExpressionWorldData, expressionWorldData } from '../expressions.ts';
 import { evaluate } from '../keyframes.ts';
 import { trackMatteTracksOf } from '../masks/track-matte.ts';
+import { multicamView } from '../multicam/model.ts';
 import { defaultEffectRegistry } from '../registry/effects.ts';
 import { clipEngines, type EngineId, isBoundedContent, kindCapabilities } from '../registry/kinds.ts';
 import { intrinsicBoxOf } from '../registry/properties.ts';
@@ -478,8 +479,10 @@ export function buildRenderSnapshot(
 		kind: 'video' | 'audio',
 		extent: { head: number; tail: number },
 	): { snap: RenderSnapshot; nestedFps: Rational } | { error: string } => {
-		const nested = doc.sequences[c.sequenceId];
-		if (!nested) return { error: `Nested sequence ${c.sequenceId} is missing` };
+		const whole = doc.sequences[c.sequenceId];
+		if (!whole) return { error: `Nested sequence ${c.sequenceId} is missing` };
+		// wp-multicam: an enabled multi-camera clip sees only its angle (video) / its audible tracks (audio).
+		const nested = multicamView(whole, c);
 		if (stack.includes(c.sequenceId) || stack.length > MAX_NEST_DEPTH)
 			return { error: `Nested sequence ${c.sequenceId} contains itself (nesting cycle)` };
 		const f0 = Math.max(c.start - extent.head, range.start);
@@ -498,7 +501,7 @@ export function buildRenderSnapshot(
 			? nested
 			: conformSequenceRate(nested, seq.settings.frameRate as Rational);
 		const sub = buildRenderSnapshot(
-			conformed === nested ? doc : { ...doc, sequences: { ...doc.sequences, [nested.id]: conformed } },
+			conformed === whole ? doc : { ...doc, sequences: { ...doc.sequences, [nested.id]: conformed } },
 			nested.id,
 			{ ...opts, range: { start: n0, end: n1 }, nestStack: stack, captions: 'none' },
 		);
@@ -608,7 +611,7 @@ export function buildRenderSnapshot(
 								sequenceId: c.sequenceId,
 								snapshot: r.snap,
 								nestedFps: r.nestedFps,
-								contentKey: nestContentKey(doc, c.sequenceId),
+								contentKey: multicamContentKey(doc, c),
 							},
 						};
 					}
@@ -1059,6 +1062,14 @@ export function flattenNestAudio(
 
 function isAnimatedOrNonZero(a: Animatable<number>): boolean {
 	return a.keyframes.length > 0 || a.value !== 0;
+}
+
+/** wp-multicam: the content key of what a nest clip shows (the angle's view for multi-camera clips). */
+function multicamContentKey(doc: ProjectDocument, c: Clip & { sequenceId: string }): string {
+	const whole = doc.sequences[c.sequenceId];
+	const view = whole ? multicamView(whole, c) : undefined;
+	if (!whole || view === whole) return nestContentKey(doc, c.sequenceId);
+	return nestContentKey({ ...doc, sequences: { ...doc.sequences, [c.sequenceId]: view! } }, c.sequenceId);
 }
 
 /** A nested snapshot draws a Remotion-rendered layer (recursively). */

@@ -19,6 +19,7 @@ import { integrationCommands } from './integration.ts';
 import { layerCommands } from './layer.ts';
 import { maskCommands } from './masks.ts';
 import { mgCommands } from './mg.ts';
+import { multicamCommands } from './multicam.ts';
 import { processCommands } from './process.ts';
 import { projectCommands } from './project.ts';
 import { projectFileCommands } from './project-files.ts';
@@ -65,6 +66,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	maskCommands,
 	captionCommands,
 	speechCommands,
+	multicamCommands,
 ];
 
 let registered = false;

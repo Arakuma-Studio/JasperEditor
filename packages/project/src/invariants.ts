@@ -15,6 +15,13 @@ import { type IdPrefix, type IdSource, idPrefixOf, isValidId } from './ids.ts';
 import { isRovingKey, retimeRoving } from './keyframes.ts';
 import { MASK_EXPANSION_RANGE, MASK_FEATHER_RANGE, MASK_OPACITY_RANGE } from './masks/model.ts';
 import { TRACK_MATTE_EFFECT_ID, trackMatteTracksOf } from './masks/track-matte.ts';
+import {
+	angleById,
+	fixMulticamSelections,
+	multicamSourceIssues,
+	multicamSourceOf,
+	pruneMulticamAngles,
+} from './multicam/model.ts';
 import { type BezierPath, isBezierPath, segmentCount } from './path/model.ts';
 import type { EffectRegistry } from './registry/effects.ts';
 import { defaultEffectRegistry } from './registry/effects.ts';
@@ -129,6 +136,14 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 		}
 	};
 	table(doc.items, 'items', ['itm', 'bin']);
+	// wp-multicam: source clip markers of media items.
+	for (const it of Object.values(doc.items)) {
+		for (const m of (it as { markers?: { id: string; flicks: number }[] }).markers ?? []) {
+			claim(m.id, 'mrk', ['items', it.id, 'markers', m.id]);
+			if (!Number.isInteger(m.flicks) || m.flicks < 0)
+				issues.push(inv('INV-004', `Marker ${m.id} has an invalid time`, ['items', it.id, 'markers', m.id]));
+		}
+	}
 	for (const it of Object.values(doc.items)) {
 		if ((it.kind === 'bin') !== (idPrefixOf(it.id) === 'bin'))
 			issues.push(inv('INV-001', `Item ${it.id} prefix does not match its kind`, ['items', it.id]));
@@ -360,6 +375,11 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 			for (const x of t.mixer?.sends ?? []) claim(x.id, 'snd', [...where, 'tracks', t.id, 'sends', x.id]);
 		for (const m of audioMixIssues(seq as Sequence, where)) issues.push(inv('INV-MIX', m.message, m.path));
 		for (const m of seq.markers) claim(m.id, 'mrk', [...where, 'markers', m.id]);
+		// wp-multicam: a multi-camera source's angles reference its own tracks.
+		const mcSource = (seq as Sequence).multicam;
+		if (mcSource)
+			for (const problem of multicamSourceIssues(seq, mcSource))
+				issues.push(inv('INV-006', `Multi-camera source ${problem}`, [...where, 'multicam']));
 
 		const rate = s.frameRate as Rational;
 		const byTrack = new Map<string, Clip[]>();
@@ -461,6 +481,27 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 				const fid = (r.style as { fontId?: string } | undefined)?.fontId;
 				if (fid && !doc.fonts[fid])
 					issues.push(inv('INV-006', `Caption ${c.id} references missing font ${fid}`, cw));
+			}
+			// wp-multicam: a multi-camera selection names an angle of a multi-camera source.
+			if (r.multicam !== undefined) {
+				const sel = r.multicam as { enabled?: unknown; angle?: unknown };
+				const mc = typeof r.sequenceId === 'string' ? multicamSourceOf(doc.sequences[r.sequenceId]) : null;
+				if (c.kind !== 'nest-video' && c.kind !== 'nest-audio')
+					issues.push(inv('INV-012', `Clip ${c.id}: only nest clips can be multi-camera clips`, cw));
+				else if (!mc)
+					issues.push(
+						inv(
+							'INV-006',
+							`Clip ${c.id} is a multi-camera clip of a sequence that is not a multi-camera source`,
+							cw,
+						),
+					);
+				else {
+					const a = typeof sel.angle === 'string' ? angleById(mc, sel.angle) : null;
+					if (!a) issues.push(inv('INV-006', `Clip ${c.id} shows a missing angle ${String(sel.angle)}`, cw));
+					else if (c.kind === 'nest-video' && a.videoTrackId === null)
+						issues.push(inv('INV-012', `Clip ${c.id} shows angle ${a.id}, which has no video`, cw));
+				}
 			}
 			if (typeof r.sequenceId === 'string' && isKnownClipKind(c.kind)) {
 				if (!doc.sequences[r.sequenceId])
@@ -1033,6 +1074,36 @@ export function repairDocument(
 			}
 		}
 	}
+	// wp-multicam: angles keep only existing tracks; selections fall back to an existing angle.
+	for (const seq of Object.values(doc.sequences) as Sequence[]) {
+		if (!seq.multicam) continue;
+		const ids0 = new Set<string>();
+		seq.multicam.angles = seq.multicam.angles.filter((a) => {
+			if (ids0.has(a.id)) {
+				note('drop-angle', seq.id, `duplicate angle id ${a.id} removed`);
+				return false;
+			}
+			ids0.add(a.id);
+			return true;
+		});
+		const seenVideo = new Set<string>();
+		for (const a of seq.multicam.angles) {
+			if (a.videoTrackId && seenVideo.has(a.videoTrackId)) a.videoTrackId = null;
+			if (a.videoTrackId) seenVideo.add(a.videoTrackId);
+		}
+		for (const id of pruneMulticamAngles(seq)) note('drop-angle', seq.id, `angle ${id} had no tracks left`);
+	}
+	for (const id of fixMulticamSelections(doc))
+		note('fix-multicam', id, 'multi-camera selection pointed at a missing angle or source');
+	for (const seq of Object.values(doc.sequences) as Sequence[])
+		for (const c of Object.values(seq.clips)) {
+			const r = c as Record<string, unknown>;
+			if (r.multicam !== undefined && c.kind !== 'nest-video' && c.kind !== 'nest-audio') {
+				delete r.multicam;
+				note('fix-multicam', c.id, 'multi-camera selection on a clip that is not a nest');
+			}
+		}
+
 	// edit-structure (INV-009): nest clips that close a nesting cycle are removed (the first found, until acyclic).
 	for (;;) {
 		const cycle = findNestCycleClip(doc);

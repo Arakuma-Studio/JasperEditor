@@ -1090,6 +1090,21 @@ function ContextMenu(props: {
 			>
 				Duplicate
 			</MenuEntry>
+			{/* wp-multicam: Premiere's Project panel context menu entries. */}
+			<MenuEntry
+				disabled={props.readOnly || mediaCount(doc, props.itemIds) < 2}
+				onClick={() => props.onCommand('clip.mergeClips')}
+				testId="project-menu-merge-clips"
+			>
+				Merge Clips…
+			</MenuEntry>
+			<MenuEntry
+				disabled={props.readOnly || mediaCount(doc, props.itemIds) < 1}
+				onClick={() => props.onCommand('clip.createMulticam')}
+				testId="project-menu-create-multicam"
+			>
+				Create Multi-Camera Source Sequence…
+			</MenuEntry>
 			{editableSynthetic ? (
 				<MenuEntry
 					disabled={props.readOnly}
@@ -1118,6 +1133,15 @@ function ContextMenu(props: {
 			/>
 		</Menu>
 	);
+}
+
+/** wp-multicam: audio/video media items among `ids`. */
+function mediaCount(doc: ReturnType<EditorSession['getCommitted']>, ids: readonly string[]): number {
+	return ids.filter((id) => {
+		const it = doc.items[id];
+		const k = it?.kind === 'media' ? doc.media[it.mediaId]?.kind : undefined;
+		return k === 'video' || k === 'audio';
+	}).length;
 }
 
 function extensionItems(

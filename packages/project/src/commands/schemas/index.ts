@@ -3,9 +3,10 @@ import { AUDIO_COMMANDS } from './audio.ts';
 import { CAPTION_COMMANDS } from './captions.ts';
 import { CLIP_COMMANDS } from './clip.ts';
 import { CLIPBOARD_COMMANDS } from './clipboard.ts';
-import { INTERCHANGE_COMMANDS } from './interchange.ts';
 import { EXPRESSION_COMMANDS } from './expression.ts';
+import { INTERCHANGE_COMMANDS } from './interchange.ts';
 import { MASK_COMMANDS } from './mask.ts';
+import { MULTICAM_COMMANDS } from './multicam.ts';
 import { PARAM_COMMANDS } from './param.ts';
 import { PRESET_COMMANDS } from './preset.ts';
 import { PROJECT_COMMANDS } from './project.ts';
@@ -20,9 +21,10 @@ export * from './captions.ts';
 export * from './clip.ts';
 export * from './clipboard.ts';
 export * from './common.ts';
-export * from './interchange.ts';
 export * from './expression.ts';
+export * from './interchange.ts';
 export * from './mask.ts';
+export * from './multicam.ts';
 export * from './param.ts';
 export * from './preset.ts';
 export * from './project.ts';
@@ -47,6 +49,8 @@ export const ALL_COMMAND_SCHEMAS = [
 	...PRESET_COMMANDS,
 	// Timeline interchange (wp interchange)
 	...INTERCHANGE_COMMANDS,
+	// Synchronize, Merge Clips, multi-camera (wp-multicam)
+	...MULTICAM_COMMANDS,
 	// Audio buses (audio-mix)
 	...AUDIO_COMMANDS,
 	// edit-structure (nests, frame holds, through edits, subsequences)

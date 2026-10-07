@@ -10,6 +10,7 @@ import {
 	gapNavigation,
 	isNestClip,
 	kindCapabilities,
+	multicamView,
 	type ProjectDocument,
 	type Rational,
 	type Sequence,
@@ -120,10 +121,19 @@ export function resolveMatchFrame(
 		if (!c) continue;
 		const time = clipPictureTime(c as never, frame, rate);
 		if (isNestClip(c)) {
-			const nested = doc.sequences[(c as { sequenceId: string }).sequenceId];
-			if (!nested) continue;
+			const whole = doc.sequences[(c as { sequenceId: string }).sequenceId];
+			if (!whole) continue;
+			// wp-multicam: an enabled multi-camera clip matches its active angle only (Premiere).
+			const nested = multicamView(whole as Sequence, c);
+			const only =
+				nested === whole
+					? undefined
+					: [
+							...nested.videoTracks.filter((t) => t.output !== false).map((t) => t.id),
+							...nested.audioTracks.filter((t) => !t.mute).map((t) => t.id),
+						];
 			const nf = Math.floor(time / flicksPerFrame(nested.settings.frameRate as Rational) + 1e-6);
-			const hit = resolveMatchFrame(doc, nested as Sequence, nf, undefined, depth + 1);
+			const hit = resolveMatchFrame(doc, nested as Sequence, nf, only, depth + 1);
 			if (hit) return hit;
 			continue;
 		}
