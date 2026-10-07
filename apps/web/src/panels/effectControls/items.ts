@@ -138,6 +138,15 @@ export function buildGroups(
 				rows: rows(['opacity', 'blendMode']),
 				masks: maskList(doc, seq, clip, (clip as { masks?: Mask[] }).masks, null, frame),
 			});
+			// Wave expressions: Source Text, where an expression can drive the text (AE's Text ▸ Source Text).
+			if (clip.kind === 'text')
+				sections.push({
+					id: `${clip.id}:sourceText`,
+					title: 'Text',
+					clip,
+					intrinsic: true,
+					rows: rows(['text.content']),
+				});
 			// M2 (wp-m2-text-anim, S11:TXA-022): the Text Animation section (body drawn by TextAnimationSection).
 			if (clip.kind === 'text')
 				sections.push({

@@ -379,6 +379,10 @@ export function PropertyRow(props: {
 			toggleExpression();
 			return;
 		}
+		if (!animatable) {
+			ctx.hint(`${row.label} has no keyframes. Alt-click the stopwatch to add an expression.`);
+			return;
+		}
 		if (anim === 'none') {
 			const plan = planStopwatch(row, live(), true);
 			ctx.ops.apply(`Toggle Animation: ${row.label}`, plan.commands);
@@ -437,7 +441,7 @@ export function PropertyRow(props: {
 			) : null}
 			{ec ? (
 				<span className="w-[18px] shrink-0">
-					{animatable ? (
+					{animatable || (rx && spec.key === 'text.content') ? (
 						<MiniButton
 							label={`Toggle animation for ${row.label}${rx ? ' (Alt-click: expression)' : ''}`}
 							active={anim !== 'none'}
