@@ -166,7 +166,11 @@ export class EngineImportService implements ImportService {
 			const all = input.files ?? [];
 			const docs: File[] = [];
 			const rest: File[] = [];
-			for (const f of all) (isTimelineFileName(f.name) || (await isTimelineXmlFile(f)) ? docs : rest).push(f);
+			// (Only awaits for `.xml` files: the unload guard below must otherwise start synchronously.)
+			for (const f of all) {
+				const doc = isTimelineFileName(f.name) || (/\.xml$/i.test(f.name) && (await isTimelineXmlFile(f)));
+				(doc ? docs : rest).push(f);
+			}
 			const docPaths = (input.paths ?? []).filter((p) => isTimelineFileName(p) || /\.xml$/i.test(p));
 			if ((docs.length || docPaths.length) && !this.session.getState().readOnly) {
 				const binId = target.kind === 'bin' ? (target.binId ?? null) : null;
