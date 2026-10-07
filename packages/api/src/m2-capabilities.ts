@@ -78,5 +78,15 @@ export const M2FeaturesSchema = z.object({
 			cacheBytes: z.number().int().min(0),
 		})
 		.optional(),
+	/** wp-multicam: `POST /api/sync/audio` (Synchronize / Merge Clips / multi-camera by audio). */
+	audioSync: z
+		.object({
+			state: z.enum(['ready', 'unavailable']),
+			/** Two-pass GCC-PHAT (8 kHz coarse, 48 kHz refinement). */
+			method: z.string(),
+			/** Longest stretch of each recording analysed (seconds). */
+			maxSeconds: z.number(),
+		})
+		.optional(),
 });
 export type M2Features = z.infer<typeof M2FeaturesSchema>;

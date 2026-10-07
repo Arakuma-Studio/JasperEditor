@@ -18,6 +18,7 @@ import mgBundleRoutes from './mg-bundles.ts';
 import processingRoutes from './processing.ts';
 import projectsRoutes from './projects.ts';
 import stillsRoutes from './stills.ts';
+import syncRoutes from './sync.ts';
 import trackingRoutes from './tracking.ts';
 import uploadsRoutes from './uploads.ts';
 
@@ -46,6 +47,8 @@ const ROUTE_PLUGINS = [
 	layerBakeRoutes,
 	trackingRoutes,
 	animeRoutes,
+	// wp-multicam: audio sync for Synchronize / Merge Clips / multi-camera.
+	syncRoutes,
 ] as const;
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
