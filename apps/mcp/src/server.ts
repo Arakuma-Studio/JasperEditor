@@ -25,6 +25,7 @@ import { PROCESSING_GUIDE, registerProcessingTools } from './tools/processing.ts
 import { registerProjectTools } from './tools/projects.ts';
 import { registerRenderTools } from './tools/render.ts';
 import { registerShapeTools, SHAPES_GUIDE } from './tools/shapes.ts';
+import { registerSpeechTools, SPEECH_GUIDE } from './tools/speech.ts';
 import { registerStructureTools, STRUCTURE_GUIDE } from './tools/structure.ts';
 import { registerTemplateTools, TEMPLATES_GUIDE } from './tools/templates.ts';
 import { registerTrackingTools, TRACKING_GUIDE } from './tools/tracking.ts';
@@ -76,6 +77,7 @@ const FULL_GUIDE = [
 	VERSIONS_GUIDE,
 	AUDIO_GUIDE,
 	CAPTIONS_GUIDE,
+	SPEECH_GUIDE,
 	INSPECT_GUIDE,
 	UI_GUIDE,
 	EXPRESSIONS_GUIDE,
@@ -119,6 +121,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerVersionTools(ctx);
 	registerAudioTools(ctx);
 	registerCaptionTools(ctx);
+	registerSpeechTools(ctx);
 	registerInspectTools(ctx);
 	registerUiTools(ctx);
 	registerExpressionTools(ctx);

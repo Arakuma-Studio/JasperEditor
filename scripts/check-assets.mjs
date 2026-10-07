@@ -92,6 +92,8 @@ export const REQUIRED_KEYS = [
 /** Licences an asset may carry (AGENTS.md §3.2): SPDX ids, plus the project's own licence for original work. */
 export const ALLOWED_LICENSES = [
 	'LicenseRef-JasperEditor',
+	// works in the public domain (AGENTS.md §3.2 "public domain / CC0"); the sidecar's source and notes say why
+	'LicenseRef-PublicDomain',
 	'CC0-1.0',
 	'CC-BY-3.0',
 	'CC-BY-4.0',

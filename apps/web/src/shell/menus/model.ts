@@ -115,6 +115,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				// wp-m3-transdefaults (S10:TUI-031): default transitions and durations.
 				c('app.preferences', 'Timeline…', { page: 'timeline' }),
 				c('cache.preferences', 'Media Cache…'),
+				// wp speech (Premiere: Preferences ▸ Transcription)
+				c('speech.preferences', 'Transcription…'),
 				sub('Appearance', [
 					c('view.theme.darkest', 'Darkest'),
 					c('view.theme.dark', 'Dark'),
@@ -172,6 +174,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			sub('Motion Graphic', [c('mg.editParameters', 'Edit Parameters…'), c('mg.rerender', 'Re-render')]),
 			c('project.createProxies', 'Create Proxies'),
 			c('process.processClip', 'Process Clip…'),
+			// wp speech: the selected clips' media
+			c('transcript.generateForClips', 'Generate Transcript…'),
 			// wp-m3-inpoint (S07:PRC-018): Replace Footage… for the selected Project item / clip's media.
 			c('media.replaceFootage', 'Replace Footage…'),
 		],
@@ -225,6 +229,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('captions.hideAll', 'Hide All Caption Tracks'),
 				sep,
 				c('transcript.openPanel', 'Transcript'),
+				// wp speech
+				c('transcript.generate', 'Generate Transcript…'),
 				c('transcript.createCaptions', 'Create Captions from Transcript…'),
 				c('transcript.removeFillers', 'Remove Filler Words…'),
 				c('transcript.removePauses', 'Remove Pauses…'),

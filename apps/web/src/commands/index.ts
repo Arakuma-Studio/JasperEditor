@@ -24,6 +24,7 @@ import { projectCommands } from './project.ts';
 import { projectFileCommands } from './project-files.ts';
 import { registerCommands } from './registry.ts';
 import { shapeCommands } from './shapes.ts';
+import { speechCommands } from './speech.ts';
 import { structureCommands } from './structure.ts';
 import { textAnimationCommands } from './text-animation.ts';
 import { timelineCommands } from './timeline.ts';
@@ -63,6 +64,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	projectFileCommands,
 	maskCommands,
 	captionCommands,
+	speechCommands,
 ];
 
 let registered = false;

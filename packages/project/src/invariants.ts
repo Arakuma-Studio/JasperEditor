@@ -5,6 +5,7 @@
 import type { Draft } from 'immer';
 import { audioMixIssues, repairAudioMix } from './audio/invariants.ts';
 import { normalizeCaptionOwnership } from './captions/model.ts';
+import { mergeRanges } from './captions/sequence-transcript.ts';
 import { normalizeWords, wordsWellFormed } from './captions/words.ts';
 import type { Issue } from './commands/types.ts';
 import { clipEnd } from './derive/index.ts';
@@ -285,6 +286,9 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 		// wp captions (S01:AST-030): words sorted by start, non-overlapping, integer flicks
 		const bad = wordsWellFormed(t.words);
 		if (bad) issues.push(inv('INV-012', `Transcript ${t.id}: ${bad}`, ['transcripts', t.id]));
+		// wp speech: coverage ranges sorted, disjoint, non-empty
+		const cov = coverageProblem(t.coverage);
+		if (cov) issues.push(inv('INV-012', `Transcript ${t.id}: ${cov}`, ['transcripts', t.id, 'coverage']));
 	}
 	const captionTrsUsers = new Map<string, number>();
 
@@ -822,6 +826,15 @@ export function repairDocument(
 			t.words = normalizeWords(t.words);
 			note('normalize-words', t.id, 'transcript words sorted and overlaps cut');
 		}
+		// wp speech: coverage ranges sorted and merged (empty or malformed ranges dropped)
+		if (t.coverage !== undefined && coverageProblem(t.coverage)) {
+			const ok = (Array.isArray(t.coverage) ? t.coverage : []).filter(
+				(r): r is [number, number] =>
+					Array.isArray(r) && Number.isInteger(r[0]) && Number.isInteger(r[1]) && r[0] >= 0 && r[1] > r[0],
+			);
+			t.coverage = mergeRanges(ok);
+			note('normalize-coverage', t.id, 'transcript coverage ranges sorted and merged');
+		}
 	}
 	for (const seq of Object.values(doc.sequences) as Sequence[]) {
 		const s = seq as Sequence & { activeCaptionTrackId?: string | null };
@@ -1140,6 +1153,21 @@ function findNestCycleClip(doc: ProjectDocument): { seqId: string; clipId: strin
 		return false;
 	};
 	for (const s of Object.keys(doc.sequences)) if (!state.has(s) && visit(s)) return hit;
+	return null;
+}
+
+/** wp speech: why a transcript's `coverage` is malformed, or null (absent = the whole media). */
+export function coverageProblem(coverage: unknown): string | null {
+	if (coverage === undefined) return null;
+	if (!Array.isArray(coverage)) return 'coverage is not a list of ranges';
+	let prev = -1;
+	for (const r of coverage) {
+		if (!Array.isArray(r) || r.length !== 2 || !Number.isInteger(r[0]) || !Number.isInteger(r[1]))
+			return 'coverage ranges must be [start, end] integer flicks';
+		if (r[0] < 0 || r[1] <= r[0]) return 'a coverage range is empty or negative';
+		if (r[0] <= prev) return 'coverage ranges are not sorted and disjoint';
+		prev = r[1];
+	}
 	return null;
 }
 

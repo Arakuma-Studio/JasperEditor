@@ -40,6 +40,7 @@ export * from './registry/properties.ts';
 export * from './registry/transitions/index.ts';
 export * from './render/index.ts';
 export * from './schema/index.ts';
+export * from './speech/index.ts';
 export * from './structure/index.ts';
 export * from './text-animations.ts';
 export * from './time.ts';
