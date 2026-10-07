@@ -171,8 +171,10 @@ test('Group (Ctrl+G) and Add Frame Hold from the clip menu', async () => {
 			},
 		),
 	);
-	await page.mouse.click(a.x + 10, a.y + a.height / 2, { button: 'right' });
-	await page.getByRole('menuitem', { name: 'Add Frame Hold' }).click();
+	await page.mouse.click(a.x + 10, a.y + a.height / 2);
+	await page.getByTestId('title-bar').getByRole('menuitem', { name: 'Clip', exact: true }).click();
+	await page.getByRole('menuitem', { name: /^Video Options/ }).hover();
+	await page.getByRole('menuitem', { name: /^Add Frame Hold/ }).click();
 	await expect
 		.poll(async () => Object.values((await doc()).sequences[mainSeq]!.clips).some((c) => c.frameHold))
 		.toBe(true);
