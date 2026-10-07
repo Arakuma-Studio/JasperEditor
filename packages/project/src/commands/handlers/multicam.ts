@@ -916,6 +916,11 @@ function flatten(doc: DDoc, cmd: CommandOf<'multicam.flatten'>, h: HandlerContex
 	const linkGroups = new Map<string, string[]>();
 	for (const c of enabled) {
 		const outer = plain(c) as Clip;
+		if (outer.frameHold) {
+			// A held multi-camera clip shows one frame of its angle: flatten it to that clip with the hold re-timed.
+			h.warn('W_CLIP_SKIPPED', `Clip ${c.id} has a frame hold; remove it (Frame Hold Options) to flatten`);
+			continue;
+		}
 		const r = resolveMulticamClip(doc as never, rate, outer);
 		if (!r) {
 			h.warn('W_CLIP_SKIPPED', `Clip ${c.id} has no multi-camera source; it was not flattened`);

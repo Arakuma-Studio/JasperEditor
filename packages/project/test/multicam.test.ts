@@ -608,6 +608,29 @@ describe('Flatten', () => {
 		for (const f of [30, 45, 60, 90, 120, 200]) expectSameFrame(flatLayers(before, f), flatLayers(after, f));
 	});
 
+	it('flattens reversed and 2× clips exactly; refuses frame holds', () => {
+		const { h, cams } = setup();
+		const { sequenceId } = createMc(h, cams.map((c) => c.itemId));
+		const { video, audio } = placeMc(h, sequenceId, 0);
+		h.ok([
+			{ type: 'clip.unlink', clipIds: [video] },
+			{ type: 'clip.trim', clipId: video, edge: 'in', deltaFrames: 20 },
+			{ type: 'clip.setSpeed', clipIds: [video], rate: 2, reverse: true, ripple: false },
+			{ type: 'multicam.switchAngle', clipIds: [video], angle: 2 },
+		]);
+		const before = snap(h.doc, h.seqId);
+		const v = h.seq.clips[video]!;
+		h.ok([{ type: 'multicam.flatten', clipIds: [video] }]);
+		const after = snap(h.doc, h.seqId);
+		for (let f = v.start; f < v.start + v.duration; f += 9) expectSameFrame(flatLayers(before, f), flatLayers(after, f));
+		void audio;
+		const again = placeMc(h, sequenceId, 400);
+		h.ok([{ type: 'clip.addFrameHold', at: 420, clipIds: [again.video] }]);
+		const held = h.clips('V1').find((c) => c.start === 420)!;
+		const r = h.ok([{ type: 'multicam.flatten', clipIds: [held.id] }]);
+		expect(r.warnings.some((w) => /frame hold/.test(w.message))).toBe(true);
+	});
+
 	it('composes an animated angle Motion by sampling (rotation + non-uniform outer scale warns about skew)', () => {
 		const { h, cams } = setup();
 		const { sequenceId } = createMc(
