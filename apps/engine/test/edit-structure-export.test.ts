@@ -3,6 +3,9 @@
 // composite with opacity and crop), frame holds, freeze-frame transition handles, Bars and Tone (picture and the
 // −20 dBFS tone) and the counting leader — checked frame by frame on the exported files (real ffmpeg).
 import { spawnSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
 import {
@@ -10,6 +13,7 @@ import {
 	DocBuilder,
 	ensureFixtures,
 	fixture,
+	H,
 	JSON_H,
 	makeApp,
 	register,
@@ -256,4 +260,38 @@ describe('synthetic sources (native)', () => {
 		expect(near(maxVolume(file, 9, 9.034), -20, 1.5)).toBe(true);
 		expect(maxVolume(file, 8.5, 8.95)).toBeLessThan(-60);
 	}, 600_000);
+});
+
+describe('stills (render_frame) of nests and held frames', () => {
+	it('renders a still of a nested frame natively', async () => {
+		const coded = await register(app, fixture('frame-code.mp4'));
+		const d = new DocBuilder();
+		const m = d.addMedia(coded);
+		const inner = d.tx([{ type: 'sequence.create', name: 'Inner', ref: '$s' }]).refs.$s!;
+		d.tx([
+			{
+				type: 'clip.place',
+				sequenceId: inner,
+				source: { mediaId: m },
+				at: 0,
+				sourceRange: { in: { sourceFrames: 0 }, out: { sourceFrames: 60 } },
+				matchSequence: 'keep',
+			},
+		]);
+		d.tx([{ type: 'clip.place', source: { sequenceId: inner }, at: 0, video: true, audio: false }]);
+		const r = await app.inject({
+			method: 'POST',
+			url: '/api/stills',
+			headers: JSON_H,
+			payload: { envelope: d.envelope(), sequenceId: d.seqId, frame: 37 },
+		});
+		expect(r.statusCode).toBe(202);
+		const done = await coreServices(app).queue.wait(r.json().id);
+		expect(done.state, JSON.stringify(done.error ?? null)).toBe('succeeded');
+		expect(done.result).toMatchObject({ renderPath: 'native' });
+		const png = await app.inject({ method: 'GET', url: `/renders/${r.json().id}/output`, headers: H });
+		const f = join(mkdtempSync(join(tmpdir(), 'jasper-es-')), 'f.png');
+		writeFileSync(f, png.rawPayload);
+		expect(frameCode(f, 0)).toBe(37);
+	}, 120_000);
 });
