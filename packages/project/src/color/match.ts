@@ -113,6 +113,65 @@ export function shrinkMatchImage(img: MatchImage, maxW = 96): MatchImage {
 	return cur;
 }
 
+/**
+ * Crops black letterbox / pillarbox bars (rows and columns whose every pixel is near black, from each edge): the
+ * Program frame of a clip that does not fill the sequence (or the reference of another aspect) would otherwise count
+ * its bars as shadows and as zero chroma. At least a quarter of each dimension is kept; a black frame is returned
+ * as is.
+ */
+export function cropLetterbox(img: MatchImage, threshold = 0.04): MatchImage {
+	const { w, h } = img;
+	if (w < 4 || h < 4) return img;
+	const dark = (i: number) =>
+		(img.alpha ? img.alpha[i]! <= 1e-3 : false) ||
+		(img.rgb[i * 3]! < threshold && img.rgb[i * 3 + 1]! < threshold && img.rgb[i * 3 + 2]! < threshold);
+	const rowDark = (y: number, x0: number, x1: number) => {
+		for (let x = x0; x < x1; x++) if (!dark(y * w + x)) return false;
+		return true;
+	};
+	const colDark = (x: number, y0: number, y1: number) => {
+		for (let y = y0; y < y1; y++) if (!dark(y * w + x)) return false;
+		return true;
+	};
+	let top = 0;
+	let bottom = h;
+	while (top < h && rowDark(top, 0, w)) top++;
+	if (top >= h) return img;
+	while (bottom > top && rowDark(bottom - 1, 0, w)) bottom--;
+	let left = 0;
+	let right = w;
+	while (left < w && colDark(left, top, bottom)) left++;
+	while (right > left && colDark(right - 1, top, bottom)) right--;
+	if (bottom - top < h / 4 || right - left < w / 4) return img;
+	if (top === 0 && left === 0 && bottom === h && right === w) return img;
+	const cw = right - left;
+	const ch = bottom - top;
+	const rgb = new Float32Array(cw * ch * 3);
+	const alpha = img.alpha ? new Float32Array(cw * ch) : undefined;
+	for (let y = 0; y < ch; y++) {
+		rgb.set(img.rgb.subarray(((top + y) * w + left) * 3, ((top + y) * w + right) * 3), y * cw * 3);
+		if (alpha) alpha.set(img.alpha!.subarray((top + y) * w + left, (top + y) * w + right), y * cw);
+	}
+	const out: MatchImage = { w: cw, h: ch, rgb, ...(alpha ? { alpha } : {}) };
+	cropOrigins.set(out, { left, top, w, h });
+	return out;
+}
+
+/** Where a cropped image sits in its source frame (cropLetterbox). */
+const cropOrigins = new WeakMap<MatchImage, { left: number; top: number; w: number; h: number }>();
+
+/** Face boxes of `src` (normalised) in the coordinates of its crop `cropped` (unchanged when not cropped). */
+function remapFaces(faces: readonly FaceBox[], src: MatchImage, cropped: MatchImage): FaceBox[] {
+	const o = cropOrigins.get(cropped);
+	if (!o || cropped === src) return [...faces];
+	return faces.map((f) => ({
+		x: (f.x * o.w - o.left) / cropped.w,
+		y: (f.y * o.h - o.top) / cropped.h,
+		w: (f.w * o.w) / cropped.w,
+		h: (f.h * o.h) / cropped.h,
+	}));
+}
+
 const insideFaces = (faces: readonly FaceBox[] | undefined, x: number, y: number) =>
 	!faces || faces.some((f) => x >= f.x && x <= f.x + f.w && y >= f.y && y <= f.y + f.h);
 
@@ -287,8 +346,18 @@ export function solveColorMatch(
 	opts: ColorMatchOptions = {},
 ): ColorMatchResult {
 	const skinProtect = opts.skinProtect ?? true;
-	const cur = shrinkMatchImage(current, 96);
-	const ref = matchStats(shrinkMatchImage(reference, 96), skinProtect, opts.referenceFaces);
+	// Letterbox bars out; face boxes follow the crop.
+	const curCrop = cropLetterbox(current);
+	const refCrop = cropLetterbox(reference);
+	const currentFaces = opts.currentFaces && remapFaces(opts.currentFaces, current, curCrop);
+	const referenceFaces = opts.referenceFaces && remapFaces(opts.referenceFaces, reference, refCrop);
+	opts = {
+		...opts,
+		...(currentFaces ? { currentFaces } : {}),
+		...(referenceFaces ? { referenceFaces } : {}),
+	};
+	const cur = shrinkMatchImage(curCrop, 96);
+	const ref = matchStats(shrinkMatchImage(refCrop, 96), skinProtect, opts.referenceFaces);
 	const graded = (x: readonly number[]) =>
 		matchStats(gradeMatchImage(cur, matchParams(base, x)), skinProtect, opts.currentFaces);
 	const N = 10;

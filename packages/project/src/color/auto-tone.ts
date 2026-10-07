@@ -7,7 +7,7 @@
 // left alone (raising it on a deliberately muted frame would fight the grade).
 import type { EffectParams } from '../registry/effects.ts';
 import { luma709 } from './grade-math.ts';
-import { gradeMatchImage, type MatchImage, shrinkMatchImage } from './match.ts';
+import { cropLetterbox, gradeMatchImage, type MatchImage, shrinkMatchImage } from './match.ts';
 
 export type AutoToneResult = {
 	exposure: number;
@@ -64,7 +64,7 @@ function toneParams(base: EffectParams, x: readonly number[], saturation: number
  * params (everything else is kept; the tone sliders start from 0 like Premiere's Auto).
  */
 export function autoTone(image: MatchImage, base: EffectParams = {}): AutoToneResult {
-	const img = shrinkMatchImage(image, 128);
+	const img = shrinkMatchImage(cropLetterbox(image), 128);
 	const N = 6;
 	const lambda = 0.05;
 	let x = new Array<number>(N).fill(0);

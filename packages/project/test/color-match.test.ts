@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	autoTone,
 	type ColorMatchResult,
+	cropLetterbox,
 	gradeMatchImage,
 	type MatchImage,
 	matchParams,
@@ -131,6 +132,19 @@ describe('Colour Match (Oklab statistics, Levenberg–Marquardt into Lumetri)', 
 		);
 		expect(on.skinShare).toBeGreaterThan(0.05);
 		expect(on.skinHueShift!).toBeLessThanOrEqual(8.5);
+	});
+
+	it('letterbox bars do not count (a pillarboxed copy of the frame matches the frame)', () => {
+		const f = frame(false);
+		const W = f.w + 80;
+		const rgb = new Float32Array(W * f.h * 3);
+		for (let y = 0; y < f.h; y++) rgb.set(f.rgb.subarray(y * f.w * 3, (y + 1) * f.w * 3), (y * W + 40) * 3);
+		const boxed: MatchImage = { w: W, h: f.h, rgb };
+		const crop = cropLetterbox(boxed);
+		expect([crop.w, crop.h]).toEqual([f.w, f.h]);
+		const m = solveColorMatch(f, boxed, {}, { skinProtect: false });
+		expect(m.before).toBeLessThan(0.01);
+		expect(Math.abs(m.saturation - 100)).toBeLessThan(3);
 	});
 
 	it('keeps the instance’s other settings (base params)', () => {
