@@ -31,9 +31,19 @@ export type PreparedMedia = {
 export type DuplicateChoice = 'use-existing' | 'import-again';
 
 /** Media already in the project with the same fingerprint (ignores `pending:` fingerprints). */
-export function findExistingMedia(doc: Pick<ProjectDocument, 'media'>, fingerprint: string): string | null {
+export function findExistingMedia(
+	doc: Pick<ProjectDocument, 'media'>,
+	fingerprint: string,
+	/** imports: the PDF page (pages of one file are different media). */
+	page = 1,
+): string | null {
 	for (const m of Object.values(doc.media)) {
-		if (m.fingerprint === fingerprint && !m.fingerprint.startsWith('pending:')) return m.id;
+		if (
+			m.fingerprint === fingerprint &&
+			!m.fingerprint.startsWith('pending:') &&
+			(m.vector?.page ?? 1) === page
+		)
+			return m.id;
 	}
 	return null;
 }

@@ -103,6 +103,11 @@ export type MediaRuntime = {
 	peaks: DerivativeStatus;
 	derived: DerivativeStatus | null;
 	ingest: { phase: 'copying' | 'uploading' | 'fingerprinting' | 'probing'; progress: number } | null;
+	/**
+	 * imports workstream: the engine's interpreted picture the asset is shown from (`<kind>:<variant>`: a still's
+	 * display PNG, a video's interpreted proxy). Absent = none needed.
+	 */
+	variant?: { key: string; state: 'queued' | 'running' | 'ready' | 'failed'; url?: string; error?: string };
 };
 
 export type LeaseState = {

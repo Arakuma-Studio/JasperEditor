@@ -14,8 +14,10 @@ import {
 	type SourceSidecarInfo,
 	sidecarCandidates,
 	type TransactionResult,
+	type TxInput,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
+import { acquireImageSequences, expandImports } from '../imports/import-flow.ts';
 import { showImportReports } from '../interchange/dialogs.tsx';
 import { isTimelineFileName, isTimelineXmlFile } from '../interchange/formats.ts';
 import { importTimelineFiles } from '../interchange/import.ts';
@@ -210,6 +212,27 @@ export class EngineImportService implements ImportService {
 				}
 			}
 		}
+		// imports workstream: numbered stills → image sequences (one clip each), when the user says so.
+		const sequences: Acquired[] = [];
+		if (
+			!this.session.getState().readOnly &&
+			((input.files?.length ?? 0) > 1 || (input.paths?.length ?? 0) > 0)
+		) {
+			const r = await acquireImageSequences(
+				{ engine: this.engine, session: this.session, prompts: this.prompts },
+				{ files: input.files ?? [], paths: input.paths ?? [] },
+			);
+			failed.push(...r.failed);
+			sequences.push(...r.acquired.map((a) => ({ ...a, hint: null })));
+			input = { ...input, files: r.files, paths: r.paths };
+			if (!r.files.length && !r.paths.length) {
+				if (!sequences.length) {
+					if (failed.length) this.prompts.failures({ failed, committed: 0 });
+					return { mediaIds: [], clipIds: [], failed, registered: [] };
+				}
+				return this.commit(sequences, target, failed);
+			}
+		}
 		if (this.session.getState().readOnly) {
 			// Nothing can be committed: do not upload bytes for nothing.
 			const names = [...(input.files ?? []).map((f) => f.name), ...(input.paths ?? []).map(baseName)];
@@ -336,6 +359,7 @@ export class EngineImportService implements ImportService {
 			}
 		}
 
+		acquired.push(...sequences);
 		if (!acquired.length) {
 			if (failed.length) this.prompts.failures({ failed, committed: 0 });
 			return { mediaIds: [], clipIds: [], failed, registered: [] };
@@ -344,10 +368,36 @@ export class EngineImportService implements ImportService {
 	}
 
 	private async commit(
-		acquired: Acquired[],
+		acquiredIn: Acquired[],
 		target: ImportTarget,
 		failed: ImportFailure[],
 	): Promise<ImportResult> {
+		// imports workstream: PDF pages and layered documents (their prompts), before the one transaction.
+		const expanded = await expandImports(
+			{ engine: this.engine, session: this.session, prompts: this.prompts },
+			acquiredIn,
+			target.kind === 'bin' ? (target.binId ?? null) : null,
+		);
+		failed.push(...expanded.failed);
+		const acquired: Acquired[] = expanded.acquired.map((a) => ({
+			...a,
+			hint: (a as Acquired).hint ?? null,
+		}));
+		if (!acquired.length && expanded.commands.length) {
+			const r = this.session.apply({
+				label: 'Import layers',
+				origin: 'user',
+				commands: expanded.commands,
+			});
+			if (!r.ok)
+				failed.push({
+					name: 'layers',
+					code: r.errors[0]?.code ?? 'E_REJECTED',
+					message: r.errors[0]?.message ?? 'Rejected',
+				});
+			if (failed.length) this.prompts.failures({ failed, committed: r.ok ? 1 : 0 });
+			return { mediaIds: [], clipIds: [], failed, registered: acquiredIn.map((a) => a.reg) };
+		}
 		const doc = this.session.getCommitted();
 		const now = new Date().toISOString();
 		const prepared: PreparedMedia[] = acquired.map((a) => ({
@@ -358,7 +408,7 @@ export class EngineImportService implements ImportService {
 				now,
 				path: a.path,
 			}),
-			existingMediaId: findExistingMedia(doc, a.reg.fingerprint),
+			existingMediaId: findExistingMedia(doc, a.reg.fingerprint, a.reg.vector?.page ?? 1),
 			...(a.hint ? { sourceHint: a.hint } : {}),
 		}));
 
@@ -390,6 +440,11 @@ export class EngineImportService implements ImportService {
 		});
 		const mediaIds: string[] = [];
 		const clipIds: string[] = [];
+		// imports workstream: the layers of layered documents join the same transaction (one undo step).
+		if (expanded.commands.length) {
+			if (built.tx) built.tx = { ...built.tx, commands: [...built.tx.commands, ...expanded.commands] };
+			else built.tx = { label: 'Import layers', origin: 'user', commands: expanded.commands } as TxInput;
+		}
 		if (built.tx) {
 			const result = this.session.apply(built.tx);
 			if (!result.ok) {

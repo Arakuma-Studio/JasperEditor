@@ -27,7 +27,7 @@ import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { cancelRender, continueRender, delayRender, getRemotionEnvironment, Internals } from 'remotion';
 import { MixGraphContext } from '../audio/context.ts';
 import { clipHasEffects } from '../audio/graph.ts';
-import { reversedAudioUrl } from '../audio/reversed.ts';
+import { mappedAudioUrl, reversedAudioUrl } from '../audio/reversed.ts';
 import { audioGainAt, dbToGain, mediaSrc, videoTrimBefore, volumeFrameToClipFrame } from '../pipeline.ts';
 import type { RenderOptions } from '../types.ts';
 
@@ -105,13 +105,20 @@ export function AudioLayer({
 	const mediaUrl =
 		!generated && media && (media.hasAudio || media.kind === 'audio') ? mediaSrc(media, options) : null;
 	// Workstream `time`: a reversed clip plays its range reversed in the page (Remotion's <Audio> plays forwards only).
-	const reversed = useReversedAudio(clip, clip.speed.reverse ? mediaUrl : null, { num, den });
-	const src = generated ?? (clip.speed.reverse ? reversed : mediaUrl);
+	// imports: interpreted media (assumed frame rate, loop) plays a WAV of its interpreted range made in the page.
+	const mapped = !!clip.mediaTime;
+	const reversed = useReversedAudio(clip, clip.speed.reverse && !mapped ? mediaUrl : null, { num, den });
+	const mappedUrl = useMappedAudio(clip, mapped ? mediaUrl : null, { num, den });
+	const src = generated ?? (mapped ? mappedUrl : clip.speed.reverse ? reversed : mediaUrl);
 	if (!src) return null;
 	const audio = (
 		<Audio
 			src={src}
-			trimBefore={reversed && src === reversed ? 0 : videoTrimBefore(clip, { num, den })}
+			trimBefore={
+				(reversed && src === reversed) || (mappedUrl && src === mappedUrl)
+					? 0
+					: videoTrimBefore(clip, { num, den })
+			}
 			playbackRate={clip.speed.rate}
 			volume={volume}
 			showInTimeline={false}
@@ -159,6 +166,50 @@ function useReversedAudio(clip: RenderAudioClip, src: string | null, fps: Ration
 			alive = false;
 		};
 	}, [src, lo, hi, rendering]);
+	return src ? url : null;
+}
+
+// ---------------------------------------------------------------- imports: interpreted media
+
+/**
+ * The WAV of a clip of interpreted media (Interpret Footage ▸ assumed frame rate / loop): its content range with the
+ * handles, in interpreted time (`mappedAudioUrl`); WAV time 0 is the content shown at the first frame of the clip's
+ * <Sequence>, so it plays with `trimBefore` 0 at the clip's speed (reversed clips: reversed). Renders wait for it.
+ */
+function useMappedAudio(clip: RenderAudioClip, src: string | null, fps: Rational): string | null {
+	const [url, setUrl] = useState<string | null>(null);
+	const F = (FLICKS_PER_SECOND * fps.den) / fps.num;
+	const step = F * clip.speed.rate;
+	const reverse = clip.speed.reverse;
+	const head = clip.headHandle ?? 0;
+	const tail = clip.tailHandle ?? 0;
+	const lo = Math.max(0, clip.sourceIn - (reverse ? tail : head) * step);
+	const hi = clip.sourceIn + (clip.duration + (reverse ? head : tail)) * step;
+	const map = clip.mediaTime;
+	const rendering = getRemotionEnvironment().isRendering;
+	const mapKey = map ? `${map.scale}|${map.period ?? 0}` : '';
+	// biome-ignore lint/correctness/useExhaustiveDependencies: the map is keyed by its values
+	useEffect(() => {
+		if (!src || !map) {
+			setUrl(null);
+			return;
+		}
+		let alive = true;
+		const handle = rendering ? delayRender(`Interpreted audio of ${src}`) : null;
+		void mappedAudioUrl(src, map, lo, hi, reverse)
+			.then((u) => {
+				if (alive) setUrl(u);
+			})
+			.catch((e: unknown) => {
+				if (rendering) cancelRender(e instanceof Error ? e : new Error(String(e)));
+			})
+			.finally(() => {
+				if (handle !== null) continueRender(handle);
+			});
+		return () => {
+			alive = false;
+		};
+	}, [src, mapKey, lo, hi, reverse, rendering]);
 	return src ? url : null;
 }
 

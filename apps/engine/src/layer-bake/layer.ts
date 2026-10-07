@@ -32,6 +32,8 @@ const DOM_KINDS: ReadonlySet<string> = new Set(['text', 'shape', 'motion-graphic
  * change here.
  */
 export function isDomLayer(c: Pick<RenderVisualClip, 'kind' | 'engine'>): boolean {
+	// imports: Lottie animations and vector stills (SVG, PDF) are drawn by the composition (snapshot engine `remotion`).
+	if ((c.kind === 'still' || c.kind === 'animated-image') && c.engine === 'remotion') return true;
 	return DOM_KINDS.has(c.kind) && c.engine === 'remotion';
 }
 

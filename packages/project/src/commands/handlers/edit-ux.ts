@@ -10,7 +10,9 @@
 // Split edits (Mark Split ▸ Video/Audio In/Out) give the picture and the sound different source ranges: each
 // channel lands offset by the difference of its In from the earliest In (FilmCraft `split_source_ranges` /
 // `edit_at_source`, MIT OR Apache-2.0, Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors).
+
 import type { Draft } from 'immer';
+import { mediaDurationFlicks } from '../../interpret/model.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
 import type { ProjectDocument, ProjectItem, SourceMarks, SubclipItem } from '../../schema/document.ts';
 import type { MediaAsset } from '../../schema/media.ts';
@@ -66,8 +68,8 @@ function resolveSource(doc: DDoc, s: CommandOf<'clip.sourceEdit'>['source'], h: 
 	if (mediaId) {
 		const asset = doc.media[mediaId] as MediaAsset | undefined;
 		if (!asset) return h.fail('E_NOT_FOUND', `Media not found: ${mediaId}`);
-		const bounded = asset.kind === 'video' || asset.kind === 'audio';
-		const dur = asset.probe.durationFlicks;
+		const bounded = asset.kind === 'video' || asset.kind === 'audio' || !!asset.lottie;
+		const dur = mediaDurationFlicks(asset);
 		const window = {
 			start: subclip ? subclip.range.in : 0,
 			end: subclip ? subclip.range.out : bounded && dur !== null ? dur : null,
@@ -505,7 +507,7 @@ function subclipSource(doc: DDoc, itemId: string, h: HandlerContext) {
 	if (!asset) return h.fail('E_NOT_FOUND', `Media not found: ${it.mediaId}`);
 	if (asset.kind !== 'video' && asset.kind !== 'audio' && asset.kind !== 'animated-image')
 		h.fail('E_INVALID_PARAM', `A ${asset.kind} has no time range to subclip`);
-	const dur = asset.probe.durationFlicks;
+	const dur = mediaDurationFlicks(asset);
 	const bounds =
 		it.kind === 'subclip'
 			? { in: it.range.in, out: it.range.out }
@@ -563,7 +565,7 @@ export const editUxHandlers: HandlerMap = {
 		if (!asset) return h.fail('E_NOT_FOUND', `Media not found: ${it.mediaId}`);
 		const inF = cmd.in ? h.flicks(cmd.in, asset, FALLBACK_RATE) : it.range.in;
 		const outF = cmd.out ? h.flicks(cmd.out, asset, FALLBACK_RATE) : it.range.out;
-		checkRange(inF, outF, { in: 0, out: asset.probe.durationFlicks ?? Number.POSITIVE_INFINITY }, h);
+		checkRange(inF, outF, { in: 0, out: mediaDurationFlicks(asset) ?? Number.POSITIVE_INFINITY }, h);
 		it.range = { in: inF, out: outF };
 		if (cmd.restrictTrims !== undefined) it.restrictTrims = cmd.restrictTrims;
 		// Marks outside the new range are dropped.

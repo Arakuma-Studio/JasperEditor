@@ -35,6 +35,8 @@ export type KeyMedia = {
 	fingerprint: string | null;
 	size: number | null;
 	mtime: number | null;
+	/** imports: the asset's interpretation / vector page (absent when it has none). */
+	interp?: string;
 };
 
 /** Layers seeded by their clip id (S11:ANM-007 `hash32(clipId, …)`, fx `u_seed`): their clip id stays in the key. */

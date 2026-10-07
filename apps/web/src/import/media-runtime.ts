@@ -9,8 +9,9 @@ import type {
 	TypedEvent,
 } from '@jasper/api';
 import { TERMINAL_JOB_STATES } from '@jasper/api';
+import { lottieThumbnail, pdfThumbnail } from '@jasper/compositions';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
-import type { MediaAsset } from '@jasper/project';
+import { browserPictureNeed, type MediaAsset, mediaLoaderPath } from '@jasper/project';
 import type { DerivativeStatus, EditorSession, MediaRuntime } from '@jasper/session';
 import { mediaKeyOf } from './assets.ts';
 
@@ -164,6 +165,122 @@ export function createMediaRuntimeSync(
 		}
 	};
 
+	// ---- imports: interpreted pictures (display PNG of stills a browser cannot show / with a pixel interpretation,
+	// interpreted proxy of videos with one). Keyed per asset: two assets of one file may be interpreted differently.
+	const variantKeyOf = (m: MediaAsset): string | null => {
+		const need = browserPictureNeed(m);
+		return need.picture ? `${need.picture}:${need.variant}` : null;
+	};
+	const requested = new Map<string, string>();
+	const timers = new Set<ReturnType<typeof setTimeout>>();
+	const isReady = (id: string, vk: string) => {
+		const v = session.getState().media[id]?.variant;
+		return v?.key === vk && v.state === 'ready';
+	};
+	/**
+	 * Asks the engine for an interpreted picture; until it is ready the request is repeated (idempotent on the engine)
+	 * with a growing delay, so a `media.variant.ready` event that raced the answer or was missed cannot leave the
+	 * picture pending. A ready state is never downgraded by a late answer.
+	 */
+	const askVariant = (
+		id: string,
+		key: string,
+		vk: string,
+		kind: 'display' | 'proxy',
+		variant: string,
+		attempt: number,
+	) => {
+		engine
+			.requestMediaVariant(key, { kind, variant })
+			.then((st) => {
+				if (disposed || requested.get(id) !== vk || isReady(id, vk)) return;
+				session.setMediaRuntime(id, {
+					variant: {
+						key: vk,
+						state: st.state,
+						...(st.url ? { url: st.url } : {}),
+						...(st.error ? { error: st.error } : {}),
+					},
+					...(st.state === 'ready' && st.url && kind === 'display' ? { posterUrl: st.url } : {}),
+				});
+				if ((st.state === 'queued' || st.state === 'running') && attempt < 60) {
+					const t = setTimeout(
+						() => {
+							timers.delete(t);
+							if (!disposed && requested.get(id) === vk && !isReady(id, vk))
+								askVariant(id, key, vk, kind, variant, attempt + 1);
+						},
+						Math.min(15_000, 1000 * 1.5 ** attempt),
+					);
+					timers.add(t);
+				}
+			})
+			.catch((e: unknown) => {
+				if (disposed || requested.get(id) !== vk || isReady(id, vk)) return;
+				session.setMediaRuntime(id, {
+					variant: { key: vk, state: 'failed', error: e instanceof Error ? e.message : String(e) },
+				});
+			});
+	};
+	const syncVariants = (ids?: readonly string[]) => {
+		if (disposed) return;
+		const media = session.getCommitted().media as Record<string, MediaAsset>;
+		for (const m of ids
+			? ids.map((id) => media[id]).filter((x): x is MediaAsset => !!x)
+			: Object.values(media)) {
+			const key = mediaKeyOf(m);
+			const vk = variantKeyOf(m);
+			if (!key || !vk) {
+				if (requested.has(m.id)) {
+					requested.delete(m.id);
+					session.setMediaRuntime(m.id, { variant: undefined });
+				}
+				continue;
+			}
+			if (requested.get(m.id) === vk) continue;
+			requested.set(m.id, vk);
+			const [kind, variant] = [vk.slice(0, vk.indexOf(':')), vk.slice(vk.indexOf(':') + 1)] as [
+				'display' | 'proxy',
+				string,
+			];
+			session.setMediaRuntime(m.id, { variant: { key: vk, state: 'queued' } });
+			askVariant(m.id, key, vk, kind, variant, 0);
+		}
+	};
+	const onVariantReady = (p: { mediaKey: string; kind: string; variant: string; url: string }) => {
+		const vk = `${p.kind}:${p.variant}`;
+		for (const id of byKey.get(p.mediaKey) ?? [])
+			if (requested.get(id) === vk)
+				session.setMediaRuntime(id, {
+					variant: { key: vk, state: 'ready', url: p.url },
+					// A still's display picture is its poster too (the engine's ffmpeg poster may not read the format).
+					...(p.kind === 'display' ? { posterUrl: p.url } : {}),
+				});
+	};
+	// imports: posters of media the engine does not decode — SVG is its own poster, PDF pages and Lottie animations are
+	// drawn in the page (pdf.js, the Lottie player).
+	const posters = new Map<string, string>();
+	const syncPosters = () => {
+		if (disposed) return;
+		const media = session.getCommitted().media as Record<string, MediaAsset>;
+		const base = engine.mediaUrl('k').replace(/\/media\/.*$/, '');
+		for (const m of Object.values(media)) {
+			const path = mediaLoaderPath(m);
+			if (!path) continue;
+			const key = `${path}|${m.vector?.page ?? ''}`;
+			if (posters.get(m.id) === key) continue;
+			posters.set(m.id, key);
+			const url = `${base}${path}`;
+			const done = (posterUrl: string) => {
+				if (!disposed && posters.get(m.id) === key) session.setMediaRuntime(m.id, { posterUrl });
+			};
+			if (m.vector?.format === 'svg') done(url);
+			else if (m.vector?.format === 'pdf')
+				void pdfThumbnail(url, m.vector.page ?? 1).then(done, () => undefined);
+			else if (m.lottie) void lottieThumbnail(url).then(done, () => undefined);
+		}
+	};
+
 	const jobTargets = (job: EngineJob): string[] => {
 		const keys: string[] = [];
 		if (job.assetId && byKey.has(job.assetId)) keys.push(job.assetId);
@@ -182,6 +299,9 @@ export function createMediaRuntimeSync(
 		switch (e.type) {
 			case 'derivative.ready':
 				applyDerivative(e.payload.mediaKey, e.payload.kind, { state: 'ready', progress: 1 }, e.payload.url);
+				break;
+			case 'media.variant.ready':
+				onVariantReady(e.payload);
 				break;
 			case 'media.updated':
 				applyStatus({
@@ -218,16 +338,26 @@ export function createMediaRuntimeSync(
 	};
 
 	syncNew();
+	syncVariants();
+	syncPosters();
 	const offDoc = session.on('doc.changed', (ev) => {
 		if (ev.created.some((id) => id.startsWith('med_')) || ev.deleted.some((id) => id.startsWith('med_')))
 			syncNew();
 		else if (ev.isUndo || ev.isRedo) syncNew();
+		// imports: Interpret Footage changed a media (or it was just added): its interpreted picture.
+		const touched = [...ev.created, ...ev.changed].filter((id) => id.startsWith('med_'));
+		if (touched.length || ev.isUndo || ev.isRedo) {
+			syncVariants(ev.isUndo || ev.isRedo ? undefined : touched);
+			syncPosters();
+		}
 	});
 	const offEvents = subscribe ? subscribe(onEvent) : () => undefined;
 
 	return {
 		dispose() {
 			disposed = true;
+			for (const t of timers) clearTimeout(t);
+			timers.clear();
 			offDoc();
 			offEvents();
 		},

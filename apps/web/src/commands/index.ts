@@ -20,6 +20,7 @@ import { editCommands } from './edit.ts';
 import { editUxCommands } from './edit-ux.ts';
 import { exportCommands } from './export.ts';
 import { helpCommands } from './help.ts';
+import { importsCommands } from './imports.ts';
 import { inspectorCommands } from './inspector.ts';
 import { integrationCommands } from './integration.ts';
 import { interchangeCommands } from './interchange.ts';
@@ -84,6 +85,8 @@ const COMMAND_MODULES: UiCommand[][] = [
 	timeCommands,
 	// edit-ux (registered after timeline/transport: trim mode, match frame, subclips, dialogs)
 	editUxCommands,
+	// imports workstream: Interpret Footage, Lottie export, SVG as shape layer
+	importsCommands,
 	monitorViewCommands,
 ];
 

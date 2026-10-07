@@ -2,6 +2,7 @@
 import { z } from 'zod';
 import { ApprovalSchema } from './agent.ts';
 import { CacheGcReportSchema } from './cache.ts';
+import { MediaVariantReadyEventSchema } from './imports.ts';
 import { EngineJobSchema } from './jobs.ts';
 import { DerivativeKindSchema, DerivativeStatusSchema } from './media.ts';
 import { MgBundleRebuiltEventSchema } from './mg-bundles.ts';
@@ -30,6 +31,8 @@ export const EVENT_PAYLOADS = {
 		derivatives: z.record(DerivativeKindSchema, DerivativeStatusSchema).optional(),
 	}),
 	'derivative.ready': z.object({ mediaKey: z.string(), kind: DerivativeKindSchema, url: z.string() }),
+	/** imports: an interpreted picture (display / proxy / master of a pixel variant) is ready. */
+	'media.variant.ready': MediaVariantReadyEventSchema,
 	'export.finished': z.object({
 		jobId: z.string(),
 		downloadUrl: z.string().optional(),

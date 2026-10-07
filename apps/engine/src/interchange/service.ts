@@ -51,6 +51,7 @@ import { mgRegistry } from '@jasper/mg-templates';
 import {
 	type Clip,
 	flicksPerFrame,
+	importedDescriptors,
 	loadProject,
 	type MediaAsset,
 	type MediaLocator,
@@ -97,6 +98,7 @@ export function assetFromRegistered(reg: RegisteredMedia, id: string, now: strin
 		derivation: null,
 		importedAt: now,
 		...(reg.lut ? { lut: JSON.parse(JSON.stringify(reg.lut)) } : {}),
+		...importedDescriptors(reg),
 	} as MediaAsset;
 }
 

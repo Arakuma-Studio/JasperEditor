@@ -22,7 +22,7 @@ type Session = {
 	fileName: string;
 	byteSize: number;
 	/** M2 (wp-m2-mg): `mg-bundle` uploads are completed by the bundle import, not the media registry. */
-	purpose?: 'media' | 'mg-bundle';
+	purpose?: 'media' | 'mg-bundle' | 'sequence-frame';
 	touchedAt: string;
 };
 
@@ -183,6 +183,12 @@ export class UploadService {
 					409,
 					'This upload is a Remotion bundle: complete it with POST /api/mg-bundles/import {uploadId}',
 				);
+			if (s.purpose === 'sequence-frame')
+				throw new UploadError(
+					'BAD_REQUEST',
+					409,
+					'This upload is a frame of an image sequence: complete it with POST /api/imports/image-sequence {uploadIds}',
+				);
 			const media = await this.deps.media.registerUploaded(this.dataFile(uploadId), s.fileName, {
 				projectId: s.projectId,
 			});
@@ -197,7 +203,7 @@ export class UploadService {
 	 */
 	take(
 		uploadId: string,
-		purpose: 'mg-bundle',
+		purpose: 'mg-bundle' | 'sequence-frame',
 	): Promise<{ file: string; fileName: string; projectId: string; release(): Promise<void> }> {
 		return this.mutex.run(uploadId, async () => {
 			const s = await this.load(uploadId);

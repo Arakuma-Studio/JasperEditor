@@ -1,5 +1,6 @@
 // Core clip handlers (ARCHITECTURE §5.3, WP-00): place, addText/addSolid/addMotionGraphic, move,
 // trim (regular + ripple), split, lift, extract, update. S01 §9–§10, S02 §10–§13, Appendix A.
+
 import type { Draft } from 'immer';
 import {
 	anim,
@@ -10,6 +11,7 @@ import {
 	defaultTextStyle,
 	defaultTransform,
 } from '../../factories.ts';
+import { mediaDurationFlicks } from '../../interpret/model.ts';
 import { mediaIntrinsicSize } from '../../process/rescale.ts';
 import { defaultLabelForPlacedClip, kindCapabilities } from '../../registry/kinds.ts';
 import type { MgTemplateInfo } from '../../registry/mg.ts';
@@ -251,10 +253,12 @@ export function placeSource(
 		const name = item?.name ?? asset.originalName;
 		const label = (kind: Clip['kind']) => defaultLabelForPlacedClip(kind, asset, item?.label);
 		const box = mediaIntrinsicSize(asset) ?? frameBox(seq);
-		const bounded = asset.kind === 'video' || asset.kind === 'audio';
+		// imports: a Lottie animation is placed with its length (and plays once), like a video.
+		const bounded = asset.kind === 'video' || asset.kind === 'audio' || !!asset.lottie;
 		const inF = o.sourceRange?.in ?? marks?.in?.flicks ?? defaultIn;
 		if (bounded) {
-			const dur = asset.probe.durationFlicks;
+			// imports: the interpreted duration (Interpret Footage ▸ assumed frame rate, loop count).
+			const dur = mediaDurationFlicks(asset);
 			if (dur === null) h.fail('E_INVALID_PARAM', 'Media has no duration');
 			const outF = o.sourceRange?.out ?? marks?.out?.flicks ?? subclip?.range.out ?? dur;
 			if (outF <= inF) h.fail('E_INVALID_PARAM', 'Source out must be after source in');
@@ -326,7 +330,7 @@ export function placeSource(
 						),
 						kind: asset.kind === 'image' ? 'still' : 'animated-image',
 						mediaId: asset.id,
-						...(asset.kind === 'animated-image' ? { loop: true } : {}),
+						...(asset.kind === 'animated-image' ? { loop: !asset.lottie } : {}),
 						...visualFields(defaultTransform(box, frameBox(seq), scaling)),
 					}) as Clip,
 			});

@@ -13,6 +13,7 @@ import { effectHandlers } from './handlers/effect.ts';
 import { ESSENTIAL_OWNER, essentialHandlers } from './handlers/essential.ts';
 import { EXPRESSION_OWNER, expressionHandlers } from './handlers/expression.ts';
 import { INTERCHANGE_OWNER, interchangeHandlers } from './handlers/interchange.ts';
+import { INTERPRET_OWNER, interpretHandlers } from './handlers/interpret.ts';
 import { keyframeHandlers } from './handlers/keyframe.ts';
 import { maskHandlers } from './handlers/mask.ts';
 import { multicamHandlers } from './handlers/multicam.ts';
@@ -83,7 +84,9 @@ export type CommandOwner =
 	// Liquify, Mesh Warp, Puppet (docs/wp-notes/sim-warp.md)
 	| 'sim-warp'
 	// Colour management, HDR, LUT formats (docs/wp-notes/color-mgmt.md)
-	| 'color-mgmt';
+	| 'color-mgmt'
+	// Interpret Footage, vector / Lottie / layered / sequence imports (docs/wp-notes/imports.md)
+	| 'imports';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -327,6 +330,7 @@ const LABELS: Record<CommandType, string> = {
 	'item.updateSubclip': 'Edit Subclip',
 	'media.interpretColor': 'Interpret Footage (Colour)',
 	'clip.setColorInterpretation': 'Clip Colour Space',
+	'media.interpret': 'Interpret Footage',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -362,6 +366,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[editUxHandlers, 'edit-ux'],
 	[simWarpHandlers, SIM_WARP_OWNER],
 	[colorMgmtHandlers, 'color-mgmt'],
+	[interpretHandlers, INTERPRET_OWNER],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
@@ -392,7 +397,8 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === 'wp-time' ||
 				owner === ROTO_OWNER ||
 				owner === 'edit-ux' ||
-				owner === 'color-mgmt'
+				owner === 'color-mgmt' ||
+				owner === INTERPRET_OWNER
 					? 'M3'
 					: owner === 'M2' ||
 							owner.startsWith('wp-m2-') ||

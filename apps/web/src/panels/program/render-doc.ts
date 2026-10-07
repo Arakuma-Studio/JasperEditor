@@ -3,11 +3,13 @@
 // proxy when proxies are on and ready, S04:PX-004) → structural sharing with the previous doc.
 import { type RenderDoc, type RenderOptions, stabilizeRenderDoc } from '@jasper/compositions';
 import {
+	browserPictureNeed,
 	buildRenderSnapshot,
 	type FontRef,
 	type MediaAsset,
 	type MediaHandle,
 	mediaDecodeHints,
+	mediaLoaderPath,
 	type ProjectDocument,
 	sequenceDuration,
 } from '@jasper/project';
@@ -52,9 +54,19 @@ export function resolveMediaHandle(
 	const swap = rotation === 90 || rotation === 270;
 	const w = vs?.type === 'video' ? vs.width : null;
 	const h = vs?.type === 'video' ? vs.height : null;
+	// imports: Lottie / vector documents, and the engine's interpreted picture (display / interpreted proxy) when the
+	// asset needs one (the snapshot marks it `browserDecodable: false`, so the original is never shown).
+	const need = browserPictureNeed(asset);
+	const loader = mediaLoaderPath(asset);
+	const variantKey = need.picture ? `${need.picture}:${need.variant}` : null;
+	const variantUrl =
+		variantKey && runtime?.variant?.key === variantKey && runtime.variant.state === 'ready'
+			? (runtime.variant.url ?? null)
+			: null;
 	return {
+		...(loader && key ? { loaderUrl: `${mediaUrl(key).replace(/\/media\/.*$/, '')}${loader}` } : {}),
 		url,
-		proxyUrl,
+		proxyUrl: variantKey ? variantUrl : proxyUrl,
 		kind: asset.kind,
 		width: swap ? h : w,
 		height: swap ? w : h,

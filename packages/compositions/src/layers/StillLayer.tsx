@@ -13,6 +13,7 @@ import { useLayerFx } from '../fx/stage.ts';
 import { mediaSrc } from '../pipeline.ts';
 import type { LayerProps } from '../types.ts';
 import { GradeChip, LayerBox } from './LayerBox.tsx';
+import { ProxyPendingCard } from './VideoLayer.tsx';
 
 const MEDIA_STYLE = { width: '100%', height: '100%', display: 'block', objectFit: 'fill' } as const;
 
@@ -21,6 +22,9 @@ export function StillLayer(layer: LayerProps) {
 	const color = useColorStage(layer.clip.clipId, layer.props.effects);
 	const fx = useLayerFx(layer);
 	if (!media) return null;
+	// imports: a still the browser cannot decode (TIFF, EXR, PSD…) or with a pixel interpretation shows the engine's
+	// display picture (`proxyUrl`); while it is being made the preview shows a label.
+	if (media.browserDecodable === false && !media.proxyUrl) return <ProxyPendingCard {...layer} />;
 	const src = mediaSrc(media, options);
 	if (fx.mode === 'active')
 		return (

@@ -1,6 +1,8 @@
 // sequence.*, marker.*, track.* (S01 §7, §8, SEQ-006/007/008).
+
 import type { Draft } from 'immer';
 import { anim, createSequence, createTrack } from '../../factories.ts';
+import { mediaDurationFlicks } from '../../interpret/model.ts';
 import { fixMulticamSelections, pruneMulticamAngles } from '../../multicam/model.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
 import type { Animatable, Vec2 } from '../../schema/common.ts';
@@ -280,7 +282,7 @@ export const sequenceHandlers: HandlerMap = {
 			const fallback = { num: 30, den: 1 };
 			const flicks = cmd.flicks ? h.flicks(cmd.flicks, asset, fallback) : (it.marks.in?.flicks ?? 0);
 			if (flicks < 0) h.fail('E_INVALID_PARAM', 'Marker time must be >= 0');
-			const dur = asset?.probe.durationFlicks;
+			const dur = asset ? mediaDurationFlicks(asset) : undefined;
 			if (dur !== null && dur !== undefined && flicks > dur)
 				h.fail('E_OUT_OF_MEDIA', 'Marker is after the end of the media');
 			const list = ((it as { markers?: ClipMarker[] }).markers ??= []) as Draft<ClipMarker>[];

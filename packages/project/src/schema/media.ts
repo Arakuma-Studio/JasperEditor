@@ -48,6 +48,11 @@ export const VideoStreamSchema = z.looseObject({
 			maxFall: z.number().optional(),
 		})
 		.optional(),
+	/**
+	 * imports (additive): the file's field order as ffprobe reports it (`tt`/`tb` = top field first, `bb`/`bt` =
+	 * bottom field first). Absent = progressive / unknown.
+	 */
+	fieldOrder: z.enum(['progressive', 'tt', 'bb', 'tb', 'bt', 'unknown']).optional(),
 });
 export const AudioStreamSchema = z.looseObject({
 	index: nonNegInt(),
@@ -323,6 +328,121 @@ export const MgBundleInfoSchema = z.looseObject({
 });
 export type MgBundleInfo = DeepStrip<z.infer<typeof MgBundleInfoSchema>>;
 
+// ---------------------------------------------------------------- imports workstream (docs/wp-notes/imports.md)
+
+/**
+ * Interpret Footage (Premiere's Modify ▸ Interpret Footage, After Effects' Interpret Footage): how the file is read.
+ * Every section is optional; absent = the file's own value. A section added later (colour management) is just another
+ * optional field. Helpers in `interpret/model.ts` give the interpreted values.
+ */
+export const MediaInterpretationSchema = z.looseObject({
+	/** Frame Rate ▸ Assume this frame rate (video, animated images, Lottie, image sequences). */
+	frameRate: RationalSchema.optional(),
+	/** Pixel Aspect Ratio ▸ Conform to. */
+	pixelAspect: RationalSchema.optional(),
+	/** Field Order ▸ Conform to: interlaced pictures are deinterlaced into progressive frames on every path. */
+	fieldOrder: z.enum(['progressive', 'upper', 'lower']).optional(),
+	/**
+	 * Alpha Channel: `straight` (unmatted), `premultiplied` (matted with `matte`, default black), `ignore` (opaque);
+	 * `invert` inverts the alpha (after the mode).
+	 */
+	alpha: z
+		.looseObject({
+			mode: z.enum(['straight', 'premultiplied', 'ignore']),
+			matte: RGBASchema.optional(),
+			invert: z.boolean().optional(),
+		})
+		.optional(),
+	/** After Effects' Loop: the media plays this many times (1 = once). */
+	loop: z.number().int().min(1).max(1000).optional(),
+	/**
+	 * color-mgmt: Colour — the colour space override, OCIO space, range, tone mapping, PQ peak and input LUT
+	 * (`ColorInterpretationSchema`, read with `effectiveColorInterpretation`).
+	 */
+	color: ColorInterpretationSchema.optional(),
+});
+export type MediaInterpretation = DeepStrip<z.infer<typeof MediaInterpretationSchema>>;
+
+/**
+ * A vector still (SVG, PDF, PDF-compatible Illustrator): drawn at whatever scale it is shown at (preview and every
+ * export path render the vector, never a fixed bitmap). `width`/`height` = its size at 100 % in pixels (CSS px for
+ * SVG, PDF points at 72 dpi), `page` = the 1-based PDF page this asset shows.
+ */
+export const VectorInfoSchema = z.looseObject({
+	format: z.enum(['svg', 'pdf']),
+	width: z.number().positive(),
+	height: z.number().positive(),
+	page: z.number().int().min(1).optional(),
+	pageCount: z.number().int().min(1).optional(),
+	/** The file type the user imported (`ai` for Illustrator files read as PDF). */
+	source: z.enum(['svg', 'pdf', 'ai']).optional(),
+});
+export type VectorInfo = DeepStrip<z.infer<typeof VectorInfoSchema>>;
+
+/** A Lottie animation (`.json` / `.lottie`): drawn frame-exactly by the Lottie player on every path. */
+export const LottieInfoSchema = z.looseObject({
+	/** Lottie `fr`. */
+	fps: z.number().positive(),
+	/** Lottie `ip` / `op` (frames). */
+	inFrame: z.number(),
+	outFrame: z.number(),
+	width: z.number().int().positive(),
+	height: z.number().int().positive(),
+	/** Lottie `v` (Bodymovin version). */
+	version: z.string().optional(),
+	name: z.string().optional(),
+	layers: z.number().int().min(0).optional(),
+	/** Imported from a dotLottie archive (the animation id inside it). */
+	dotLottie: z.looseObject({ animationId: z.string(), animations: z.number().int().min(1) }).optional(),
+	/** What the player may draw differently from After Effects (expressions, missing fonts…). */
+	warnings: z.array(z.string()).optional(),
+});
+export type LottieInfo = DeepStrip<z.infer<typeof LottieInfoSchema>>;
+
+/**
+ * Numbered stills imported as one clip (Premiere's Image Sequence). The engine conforms them into a lossless
+ * intermediate (the asset's file); this records where they came from. `missing` = numbers absent inside the range
+ * (their place holds the previous frame).
+ */
+export const ImageSequenceInfoSchema = z.looseObject({
+	/** Display pattern, e.g. `shot_####.exr`. */
+	pattern: z.string(),
+	directory: z.string().nullable(),
+	first: z.number().int().min(0),
+	last: z.number().int().min(0),
+	/** Frames in the clip (last − first + 1). */
+	frames: z.number().int().min(1),
+	missing: z.array(z.number().int().min(0)).max(100_000),
+	/** Codec of the stills (`png`, `exr`, `dpx`…). */
+	format: z.string(),
+	/** Rate the sequence was imported at (Interpret Footage can assume another). */
+	frameRate: RationalSchema,
+});
+export type ImageSequenceInfo = DeepStrip<z.infer<typeof ImageSequenceInfoSchema>>;
+
+/** A layered document (Photoshop `.psd` / `.psb`); the asset itself is the flattened picture. */
+export const LayeredInfoSchema = z.looseObject({
+	format: z.enum(['psd', 'psb']),
+	width: z.number().int().positive(),
+	height: z.number().int().positive(),
+	layerCount: z.number().int().min(0),
+	colorMode: z.string().optional(),
+	bitDepth: z.number().int().positive().optional(),
+});
+export type LayeredInfo = DeepStrip<z.infer<typeof LayeredInfoSchema>>;
+
+/** One layer of a layered document imported on its own (the asset is the layer's picture). */
+export const LayerSourceSchema = z.looseObject({
+	/** The document's file name. */
+	document: z.string(),
+	/** Layer name and path of group names (outermost first). */
+	name: z.string(),
+	groups: z.array(z.string()).optional(),
+	/** The layer's index in the document (bottom = 0). */
+	index: z.number().int().min(0),
+});
+export type LayerSource = DeepStrip<z.infer<typeof LayerSourceSchema>>;
+
 export const MediaAssetSchema = z.looseObject({
 	id: z.string(),
 	kind: MediaKindSchema,
@@ -342,11 +462,20 @@ export const MediaAssetSchema = z.looseObject({
 	sourceRange: SourceRangeSchema.optional(),
 	/** color-mgmt: kind `color-config` (a custom OCIO config). */
 	colorConfig: ColorConfigInfoSchema.optional(),
-	/**
-	 * Interpret Footage. color-mgmt adds the Colour section (`color`); the other sections (frame rate, pixel aspect,
-	 * fields, alpha, loop) belong to the imports workstream and are separate fields of the same object.
-	 */
-	interpretation: z.looseObject({ color: ColorInterpretationSchema.optional() }).optional(),
+	// ---- imports workstream (all optional, no version bump)
+	/** Interpret Footage. */
+	interpretation: MediaInterpretationSchema.optional(),
+	/** SVG / PDF / Illustrator vector still. */
+	vector: VectorInfoSchema.optional(),
+	/** Lottie animation. */
+	lottie: LottieInfoSchema.optional(),
+	/** Image sequence the file was conformed from. */
+	imageSequence: ImageSequenceInfoSchema.optional(),
+	/** Layered document (PSD) imported flattened. */
+	layered: LayeredInfoSchema.optional(),
+	/** One layer of a layered document. */
+	layerSource: LayerSourceSchema.optional(),
+	// ---- end imports
 });
 export type MediaAsset = DeepStrip<z.infer<typeof MediaAssetSchema>>;
 

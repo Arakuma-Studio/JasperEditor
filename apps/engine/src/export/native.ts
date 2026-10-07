@@ -31,6 +31,8 @@ import {
 	resolveLayerProps,
 } from '@jasper/project';
 import { resamplerArgs } from '../audio/decode.ts';
+import { decoderArgs, sourceFilters } from '../imports/decode.ts';
+import { variantHasAlpha } from '../imports/variants.ts';
 import { alphaDecoder } from '../media/alpha.ts';
 import { audioEncodeArgs, LEGACY_X264_CHOICE, videoEncodeArgs } from '../tools/encoders.ts';
 import { sec } from '../tools/ffmpeg.ts';
@@ -477,6 +479,8 @@ export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 		const startSec = pictureSec(f0);
 		const srcDur = c.frameHold ? margin : n * frameSec * c.speed.rate + margin;
 		const dec = alphaDecoder(local.record.probe);
+		// imports (Interpret Footage): decode transfer, deinterlace and alpha interpretation right after decoding.
+		const interp = sourceFilters(local.record, local.pixel);
 		// WebM alpha is a second VP8/VP9 stream whose keyframes need not line up with the colour stream's:
 		// after an input seek to a colour keyframe libvpx may get a non-key alpha frame first and reject
 		// every packet ("Bitstream not supported", seen with VP8). Such inputs are decoded from their start
@@ -484,18 +488,23 @@ export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 		const decodeFromStart = dec !== null && startSec > 0;
 		const k = addInput([
 			...(dec ? ['-c:v', dec] : []),
+			...decoderArgs(local.record),
 			...(decodeFromStart ? ['-t', sec(startSec + srcDur)] : ['-ss', sec(startSec), '-t', sec(srcDur)]),
 			'-i',
 			local.path,
 		]);
 		src = `[${k}:v:0]`;
+		f.push(...interp);
 		if (decodeFromStart) f.push(`trim=start=${fmt(startSec)}`);
 		if (c.frameHold) f.push(...holdFilters());
 		else f.push(`setpts=(PTS-STARTPTS)/${fmt(c.speed.rate)}`, `fps=${rate(fps)}`, `trim=end_frame=${n}`);
 		resizeAt(`${inColor(local)}:${SWS_FLAGS}`);
-		opaque = !local.record.probe.hasAlpha;
+		opaque = !variantHasAlpha(local.record, local.pixel ?? null);
 	} else if (c.kind === 'still' && local) {
+		// imports: a prepared display picture (Photoshop composite) has its interpretation applied already.
+		const file = local.display ?? local.path;
 		const k = addInput([
+			...(local.display ? [] : decoderArgs(local.record)),
 			'-loop',
 			'1',
 			'-framerate',
@@ -503,12 +512,13 @@ export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 			'-t',
 			sec(n * frameSec + margin),
 			'-i',
-			local.path,
+			file,
 		]);
 		src = `[${k}:v:0]`;
+		if (!local.display) f.push(...sourceFilters(local.record, local.pixel));
 		f.push('setpts=PTS-STARTPTS', `fps=${rate(fps)}`, `trim=end_frame=${n}`);
-		resizeAt(`${inColor(local)}:${SWS_FLAGS}`);
-		opaque = !local.record.probe.hasAlpha;
+		resizeAt(`${local.display ? '' : inColor(local)}:${SWS_FLAGS}`);
+		opaque = !variantHasAlpha(local.record, local.pixel ?? null);
 	} else if (c.kind === 'motion-graphic' && mg) {
 		const shown = c.frameHold ? c.start + heldLocalFrame(c, fps) : f0;
 		const startSec = (shown - c.start) * frameSec;

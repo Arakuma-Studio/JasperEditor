@@ -33,6 +33,10 @@ export const JOB_KINDS = [
 	'scene-detect',
 	// parity (roto): Roto Brush segmentation / propagation and face tracking
 	'roto',
+	// imports: interpreted variants, image sequences, layered documents
+	'interpret',
+	'image-sequence',
+	'layers',
 ] as const;
 export const JobKindSchema = z.enum(JOB_KINDS);
 export type JobKind = z.infer<typeof JobKindSchema>;

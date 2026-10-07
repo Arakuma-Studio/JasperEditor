@@ -51,7 +51,7 @@ function normalizePastedText(raw: string): { text: string; truncated: boolean } 
 }
 
 /** Lowest targeted unlocked track of a kind (CLB-003); the lowest unlocked one when none is targeted. */
-function lowestTargetedTrack(
+export function lowestTargetedTrack(
 	seq: Sequence,
 	view: SequenceViewState | undefined,
 	kind: 'video' | 'audio',
