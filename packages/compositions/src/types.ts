@@ -27,6 +27,11 @@ export type RenderOptions = {
 	 */
 	fxPreviewScale?: number;
 	/**
+	 * color-mgmt (preview only): show the working signal through the display transform (Rec. 2020 / P3 → Rec. 709
+	 * primaries, HDR tone mapped). Absent = true in previews; renders never apply it.
+	 */
+	displayColor?: boolean;
+	/**
 	 * three-d (preview only): the Program monitor's 3D view (Front, Top, Custom View 1…) — the camera 3D layers are
 	 * drawn through instead of the sequence's active camera. Ignored in renders and in nested sequences.
 	 */

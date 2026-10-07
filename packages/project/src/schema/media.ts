@@ -1,9 +1,11 @@
 // Media assets, locators, derivations, synthetic sources, transcripts and fonts (S01 §6).
 import { z } from 'zod';
+import { ColorInterpretationSchema } from '../color/model.ts';
 import type { DeepStrip } from './common.ts';
 import { int, nonNegInt, RationalSchema, RGBASchema } from './common.ts';
 
 /** `mg-bundle` (M2, ARCHITECTURE §19.3): an imported Remotion bundle whose compositions become clips. */
+/** color-mgmt: `color-config` = a custom OpenColorIO configuration (`.ocio`), bundled with the files it references. */
 // three-d: 'model' = a glTF (.glb / .gltf) or OBJ 3D model (Advanced 3D model layers).
 export const MEDIA_KINDS = [
 	'video',
@@ -13,6 +15,7 @@ export const MEDIA_KINDS = [
 	'font',
 	'lut',
 	'mg-bundle',
+	'color-config',
 	'model',
 ] as const;
 export const MediaKindSchema = z.enum(MEDIA_KINDS);
@@ -35,6 +38,18 @@ export const VideoStreamSchema = z.looseObject({
 		range: z.enum(['tv', 'pc']),
 	}),
 	browserDecodable: z.boolean().nullable(),
+	/**
+	 * color-mgmt: HDR static metadata of the stream (SMPTE ST 2086 mastering display luminance, CTA-861.3 MaxCLL /
+	 * MaxFALL, cd/m²) from `mdcv`/`clli` or Matroska MasteringMetadata. Absent = none signalled.
+	 */
+	hdr: z
+		.looseObject({
+			masteringMaxNits: z.number().optional(),
+			masteringMinNits: z.number().optional(),
+			maxCll: z.number().optional(),
+			maxFall: z.number().optional(),
+		})
+		.optional(),
 	/**
 	 * imports (additive): the file's field order as ffprobe reports it (`tt`/`tb` = top field first, `bb`/`bt` =
 	 * bottom field first). Absent = progressive / unknown.
@@ -213,14 +228,35 @@ export type SourceRange = DeepStrip<z.infer<typeof SourceRangeSchema>>;
 
 /** Parsed header of a LUT asset (M2, S06:CG-050). The table itself stays in the file (`/media/<key>`). */
 export const LutInfoSchema = z.looseObject({
-	format: z.literal('cube'),
+	/** color-mgmt: `.3dl`, `.spi1d`, `.spi3d`, `.csp` besides `.cube`. */
+	format: z.enum(['cube', '3dl', 'spi1d', 'spi3d', 'csp']),
 	dimensions: z.union([z.literal(1), z.literal(3)]),
 	size: z.number().int().min(2).max(256),
 	title: z.string().nullable(),
 	domainMin: z.tuple([z.number(), z.number(), z.number()]),
 	domainMax: z.tuple([z.number(), z.number(), z.number()]),
+	/** color-mgmt: entries of the 1D shaper applied before the cube (Resolve 1D + 3D `.cube`, `.csp`, non-uniform `.3dl`). */
+	shaperSize: z.number().int().min(2).max(65536).optional(),
 });
 export type LutInfo = DeepStrip<z.infer<typeof LutInfoSchema>>;
+
+/** color-mgmt: header of a custom OCIO config asset (the bundle itself stays in the file, `/media/<key>`). */
+export const ColorConfigInfoSchema = z.looseObject({
+	format: z.literal('ocio'),
+	name: z.string(),
+	/** `ocio_profile_version`. */
+	version: z.number(),
+	spaces: z.array(
+		z.looseObject({ name: z.string(), family: z.string(), reference: z.enum(['scene', 'display']) }),
+	),
+	roles: z.array(z.tuple([z.string(), z.string()])),
+	displays: z.array(z.looseObject({ name: z.string(), views: z.array(z.string()) })),
+	/** Transforms this build cannot apply (spaces using them are refused). */
+	unsupported: z.array(z.string()),
+	/** FileTransform sources that were not found when the config was imported. */
+	missing: z.array(z.string()),
+});
+export type ColorConfigInfo = DeepStrip<z.infer<typeof ColorConfigInfoSchema>>;
 
 /**
  * A text layer a composition declares (M3, wp-m3-mgtext, S08:MGC-036): manifest `texts.<prop.path>` or the
@@ -321,6 +357,11 @@ export const MediaInterpretationSchema = z.looseObject({
 		.optional(),
 	/** After Effects' Loop: the media plays this many times (1 = once). */
 	loop: z.number().int().min(1).max(1000).optional(),
+	/**
+	 * color-mgmt: Colour — the colour space override, OCIO space, range, tone mapping, PQ peak and input LUT
+	 * (`ColorInterpretationSchema`, read with `effectiveColorInterpretation`).
+	 */
+	color: ColorInterpretationSchema.optional(),
 });
 export type MediaInterpretation = DeepStrip<z.infer<typeof MediaInterpretationSchema>>;
 
@@ -421,6 +462,8 @@ export const MediaAssetSchema = z.looseObject({
 	mgBundle: MgBundleInfoSchema.optional(),
 	/** M3 (S07:PRC-015, schema v5): the source frames this file holds (processed versions, sidecars). */
 	sourceRange: SourceRangeSchema.optional(),
+	/** color-mgmt: kind `color-config` (a custom OCIO config). */
+	colorConfig: ColorConfigInfoSchema.optional(),
 	// ---- imports workstream (all optional, no version bump)
 	/** Interpret Footage. */
 	interpretation: MediaInterpretationSchema.optional(),

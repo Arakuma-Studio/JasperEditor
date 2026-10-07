@@ -9,10 +9,12 @@ import {
 	LUMETRI_EFFECT,
 	type ProjectDocument,
 	type Sequence,
+	sequenceColorInfo,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { cx } from '@jasper/ui';
 import { type ReactNode, useState } from 'react';
+import { isHdrWorking } from '../color-mgmt/model.ts';
 import { MiniButton } from '../panels/properties/controls/fields.tsx';
 import { ResetGlyph } from '../panels/properties/controls/glyphs.tsx';
 import { PropertyRow, type RowContext } from '../panels/properties/controls/PropertyRow.tsx';
@@ -130,8 +132,11 @@ export function LumetriEditor(props: LumetriEditorProps) {
 		<div className="px-2 pt-2 pb-[2px] text-pr-small font-semibold text-pr-muted uppercase">{text}</div>
 	);
 
+	// color-mgmt: HDR White / HDR Specular show in HDR working spaces (Premiere shows them for HDR sequences).
+	const hdr = isHdrWorking(sequenceColorInfo(seq?.settings));
 	const BASIC = [
 		'inputLut',
+		...(hdr ? ['hdrWhite', 'hdrSpecular'] : []),
 		'temperature',
 		'tint',
 		'exposure',
@@ -154,6 +159,7 @@ export function LumetriEditor(props: LumetriEditorProps) {
 						actions={resetAction('Basic Correction', BASIC)}
 					>
 						{lutRow('inputLut')}
+						{hdr ? sliderRow('hdrWhite') : null}
 						{sub('White Balance')}
 						{sliderRow('temperature')}
 						{sliderRow('tint')}
@@ -164,6 +170,7 @@ export function LumetriEditor(props: LumetriEditorProps) {
 						{sliderRow('shadows')}
 						{sliderRow('whites')}
 						{sliderRow('blacks')}
+						{hdr ? sliderRow('hdrSpecular') : null}
 						<div className="h-1" />
 						{sliderRow('saturation')}
 					</Section>

@@ -54,9 +54,9 @@ import {
 	createEffect,
 	delayRender,
 	getRemotionEnvironment,
-	HtmlInCanvas,
 	useCurrentFrame,
 } from 'remotion';
+import { ScopedHtmlInCanvas } from '../fx/canvas-scope.tsx';
 import { CompositeChip } from '../fx/composite.tsx';
 import { fxHost } from '../fx/host.ts';
 import type { FxGpuState } from '../fx/status.ts';
@@ -630,7 +630,8 @@ export function Scene3DScope({
 			</div>
 		);
 	return (
-		<HtmlInCanvas
+		<ScopedHtmlInCanvas
+			scope="3D layers"
 			width={comp.width}
 			height={comp.height}
 			effects={effects}
@@ -644,7 +645,7 @@ export function Scene3DScope({
 			>
 				{children}
 			</div>
-		</HtmlInCanvas>
+		</ScopedHtmlInCanvas>
 	);
 }
 

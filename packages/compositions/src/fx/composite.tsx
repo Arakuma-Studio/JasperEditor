@@ -28,15 +28,17 @@ import {
 	createEffect,
 	delayRender,
 	getRemotionEnvironment,
-	HtmlInCanvas,
 	useCurrentFrame,
 } from 'remotion';
 import type { LayerTap } from '../types.ts';
+import { ScopedHtmlInCanvas } from './canvas-scope.tsx';
 import {
 	type CompositeItem,
 	type CompositePicture,
 	type CompositeTrackInput,
 	compositeItemsAt,
+	type LinearBlendCurve,
+	linearGroupItemsAt,
 	planComposite,
 } from './composite-plan.ts';
 import { canUseHtmlInCanvas } from './FxPicture.tsx';
@@ -104,6 +106,9 @@ export class CompositeHub {
 	}
 }
 
+/** color-mgmt: the pseudo mode naming linear blending in chips and render errors. */
+export const LINEAR_MARK = '@linear';
+
 /** How a scope runs here: on the GPU (layers captured) or as the Player's CSS fallback. */
 export type CompositeMode = { mode: 'gpu' } | { mode: 'fallback'; reason: string };
 
@@ -112,7 +117,11 @@ export function compositeRunMode(
 	env: { gpu: FxGpuState; htmlInCanvas: boolean },
 	glModes: readonly string[],
 ): CompositeMode {
-	const names = [...new Set(glModes.map((m) => blendModeInfo(m)?.label ?? m))].join(', ');
+	const names = [
+		...new Set(
+			glModes.map((m) => (m === LINEAR_MARK ? 'Blend using 1.0 gamma' : (blendModeInfo(m)?.label ?? m))),
+		),
+	].join(', ');
 	if (env.gpu !== 'ok')
 		return {
 			mode: 'fallback',
@@ -134,6 +143,8 @@ export function compositeRunMode(
 export type BlendTrackValue = {
 	hub: CompositeHub;
 	mode: CompositeMode;
+	/** color-mgmt: Blend using 1.0 gamma — the working curve layers are blended in (null = encoded values). */
+	linear: LinearBlendCurve | null;
 	/** The layers the scope composites at an absolute sequence frame, or null (cached). */
 	itemsAt(frame: number): CompositeItem[] | null;
 };
@@ -156,14 +167,42 @@ export function makeBlendTrack(
 	isGpuSide: (clipId: string, f: number) => boolean,
 	mode: CompositeMode,
 	hub: CompositeHub,
+	linear: LinearBlendCurve | null = null,
 ): BlendTrackValue {
 	const cache = new Map<number, CompositeItem[] | null>();
 	return {
 		hub,
 		mode,
+		linear,
 		itemsAt: (frame) => {
 			if (cache.has(frame)) return cache.get(frame)!;
-			const items = compositeItemsAt(t, frame, isGpuSide);
+			const items = compositeItemsAt(t, frame, isGpuSide, !!linear);
+			if (cache.size > 512) cache.clear();
+			cache.set(frame, items);
+			return items;
+		},
+	};
+}
+
+/**
+ * color-mgmt: the context value shared by a run of tracks blending in linear light (one scope under the lowest of
+ * them, `linearGroupItemsAt`).
+ */
+export function makeLinearBlendGroup(
+	members: Parameters<typeof linearGroupItemsAt>[0],
+	isGpuSide: (clipId: string, f: number) => boolean,
+	mode: CompositeMode,
+	hub: CompositeHub,
+	linear: LinearBlendCurve,
+): BlendTrackValue {
+	const cache = new Map<number, CompositeItem[] | null>();
+	return {
+		hub,
+		mode,
+		linear,
+		itemsAt: (frame) => {
+			if (cache.has(frame)) return cache.get(frame)!;
+			const items = linearGroupItemsAt(members, frame, isGpuSide);
 			if (cache.size > 512) cache.clear();
 			cache.set(frame, items);
 			return items;
@@ -178,6 +217,7 @@ type FxBlendParams = {
 	items: readonly CompositeItem[];
 	pictures: ReadonlyMap<string, HubPicture>;
 	preview: boolean;
+	linear: LinearBlendCurve | null;
 };
 
 /** Composites the track's layers onto the captured backdrop (the chain's source) on the fx GPU host. */
@@ -200,7 +240,12 @@ export const fxBlendComposite = createEffect<FxBlendParams, null>({
 			const p = it.kind === 'matte' ? undefined : params.pictures.get(it.key);
 			if (p) pics.set(it.key, p.pic);
 		}
-		const { plan, textures, builtins } = planComposite(params.items, pics, { width, height });
+		const { plan, textures, builtins } = planComposite(
+			params.items,
+			pics,
+			{ width, height },
+			params.linear ? { linear: params.linear } : {},
+		);
 		const textureInputs: Record<string, FxTextureInput | null> = {};
 		for (const t of textures) {
 			const p = params.pictures.get(t.key)!;
@@ -271,8 +316,8 @@ export function BlendScope({
 	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the frame's items and delivered pictures
 	const effects = useMemo(() => {
 		if (!items || (rendering && !complete)) return [];
-		const key = `${frame}|${items.map((it) => ('mode' in it ? `${it.key}:${it.mode}:${it.seed}` : it.key)).join('|')}|${pictureKey}`;
-		return [fxBlendComposite({ key, items, pictures, preview: isPreview })];
+		const key = `${frame}|${track.linear ?? ''}|${items.map((it) => ('mode' in it ? `${it.key}:${it.mode}:${it.seed}` : it.key)).join('|')}|${pictureKey}`;
+		return [fxBlendComposite({ key, items, pictures, preview: isPreview, linear: track.linear })];
 	}, [frame, items, pictureKey, complete, rendering, isPreview, version]);
 	// Renders: hold the frame until every layer of it delivered (the chain then draws before the release).
 	const hold = useRef<number | null>(null);
@@ -297,7 +342,8 @@ export function BlendScope({
 			</div>
 		);
 	return (
-		<HtmlInCanvas
+		<ScopedHtmlInCanvas
+			scope={track.linear ? 'Linear-light blending' : 'Blend modes'}
 			width={comp.width}
 			height={comp.height}
 			effects={effects}
@@ -310,7 +356,7 @@ export function BlendScope({
 			>
 				{children}
 			</div>
-		</HtmlInCanvas>
+		</ScopedHtmlInCanvas>
 	);
 }
 
@@ -342,7 +388,15 @@ export function BlendFallback({
 					: `BLEND_UNSUPPORTED: ${reason}`,
 			),
 		);
-	return <CompositeChip text={`${reason} — previewed as Normal`} />;
+	return (
+		<CompositeChip
+			text={
+				modes.includes(LINEAR_MARK)
+					? `${reason} — previewed with encoded blending`
+					: `${reason} — previewed as Normal`
+			}
+		/>
+	);
 }
 
 /** Status of the fx GPU host for scopes (re-exported for the composition). */

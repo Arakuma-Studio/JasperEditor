@@ -9,6 +9,8 @@
 // frame's picture (parallel/random-order renders stay deterministic); its own delayRender lasts until it delivered.
 // Player: draws on delivery and coalesces stage-driven redraws to one per animation frame (smooth paused scrubbing).
 // `FxDomPicture` is the DOM-layer variant: the layer's DOM content inside Remotion's `<HtmlInCanvas>`.
+
+import type { Lut } from '@jasper/project';
 import {
 	type CSSProperties,
 	createContext,
@@ -33,12 +35,14 @@ import {
 } from 'remotion';
 import { colorLutCpu, cssFilter } from '../color/effects.ts';
 import { colorStageBackend } from '../color/gl.ts';
-import { loadedLutAsset } from '../color/luts.ts';
+import { loadedLutAsset, ocioConversionLut } from '../color/luts.ts';
+import { ScopedHtmlInCanvas } from './canvas-scope.tsx';
 import { fxAdjustmentMix, fxCrop, fxFlip, fxLut, fxShader, fxStash, fxTap } from './effects.ts';
 import type { FxRunInputs, FxTextureInput } from './host.ts';
 import { fxMaskApply, fxMasked } from './mask.ts';
 import { fxMatteTap, useTrackMattes } from './matte.ts';
 import type { FxMediaInput, FxStage } from './stage.ts';
+import { fxStatus } from './status.ts';
 
 export type FxFeed = {
 	/** Copies a picture into a slot (`source`, `sample@<frame>`, `media:<mediaId>`) and redraws. */
@@ -424,8 +428,8 @@ export function FxPicture({ stage, children }: { stage: FxStage; children?: Reac
 			const media = new Map<string, FxTextureInput>(mattesRef.current);
 			for (const m of s.media) {
 				if (m.kind === 'lut') {
-					const lut = loadedLutAsset(m.url);
-					if (lut) media.set(m.mediaId, { lut, version: m.url });
+					const lut = colorLutOf(m, rendering);
+					if (lut) media.set(m.mediaId, { lut, version: m.mediaId });
 					continue;
 				}
 				if (m.kind === 'image') {
@@ -546,7 +550,8 @@ export function FxDomPicture({ stage, children }: { stage: FxStage; children?: R
 	const effects = useDomFxDescriptors(stage);
 	const L = stage.layout;
 	return (
-		<HtmlInCanvas
+		<ScopedHtmlInCanvas
+			scope="A layer's effects"
 			width={L.cssWidth}
 			height={L.cssHeight}
 			pixelDensity={L.pxScale}
@@ -566,7 +571,7 @@ export function FxDomPicture({ stage, children }: { stage: FxStage; children?: R
 			>
 				{children}
 			</div>
-		</HtmlInCanvas>
+		</ScopedHtmlInCanvas>
 	);
 }
 
@@ -588,8 +593,8 @@ export function useDomFxDescriptors(stage: FxStage | null): EffectDescriptor[] {
 		const media = new Map<string, FxTextureInput>(mattes.media);
 		for (const m of stage.media) {
 			if (m.kind === 'lut') {
-				const lut = loadedLutAsset(m.url);
-				if (lut) media.set(m.mediaId, { lut, version: m.url });
+				const lut = colorLutOf(m, rendering);
+				if (lut) media.set(m.mediaId, { lut, version: m.mediaId });
 				continue;
 			}
 			const img = m.kind === 'image' ? images.get(m.url) : undefined;
@@ -606,6 +611,23 @@ export function useDomFxDescriptors(stage: FxStage | null): EffectDescriptor[] {
 }
 
 /** HTML-in-Canvas is available here (Chrome ≥ 148 with the feature; always in Remotion renders). */
+/**
+ * A `lut` media input: a LUT asset, or (color-mgmt) the conversion LUT of a custom OCIO config. A conversion the config
+ * cannot apply fails renders and shows its message in the preview (never drawn as the identity silently).
+ */
+function colorLutOf(m: FxMediaInput, rendering: boolean): Lut | null {
+	if (!m.ocio) return loadedLutAsset(m.url) ?? null;
+	const r = ocioConversionLut(m.url, m.ocio.from, m.ocio.to);
+	if (!r) return null;
+	if ('error' in r) {
+		const msg = `S_OCIOTransform: ${r.error}`;
+		if (rendering) throw new Error(`OCIO_UNSUPPORTED: ${msg}`);
+		fxStatus.shaderFailed('jasper.s.ocio-transform', msg);
+		return null;
+	}
+	return r;
+}
+
 export function canUseHtmlInCanvas(): boolean {
 	try {
 		return HtmlInCanvas.isSupported();

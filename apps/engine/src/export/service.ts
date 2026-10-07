@@ -2,6 +2,7 @@
 // `renderMedia`; outputs in `<appdir>/renders/<jobId>/`; frame-count verification (FRAME_COUNT_MISMATCH);
 // progress mapping (S04:RN-030); `export.finished` event. Motion-graphic masters come from a provider that
 // WP-2G registers (`registerMgMasterProvider`).
+
 import type { ChildProcess } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import {
@@ -32,6 +33,16 @@ import { hasSoxr, resamplerArgs } from '../audio/decode.ts';
 import { layoutOf, type MixdownResult, renderMixdown } from '../audio/mixdown.ts';
 import type { UrlSigner } from '../auth/signed-url.ts';
 import type { CacheService } from '../cache/service.ts';
+import { writeHdrBoxes } from '../color/hdr-boxes.ts';
+import {
+	colorTagArgs,
+	displayLutFilter,
+	isPlainRec709Output,
+	MASTERING_PRIMARIES,
+	outputFilters,
+	outputLutFilter,
+	svtHdrParams,
+} from '../color/output.ts';
 import type { Broadcaster } from '../events/broadcaster.ts';
 import type { FontCatalogService } from '../fonts/catalog.ts';
 import type { JobQueue } from '../jobs/queue.ts';
@@ -706,7 +717,14 @@ export class ExportService {
 			}
 		};
 		await pinNested(planned, '');
+		// color-mgmt: the output conversion (exports) or the display rendition (stills), baked once per job.
+		const colorLut = still
+			? await displayLutFilter(planned.snapshot.settings.color, await ctx.scratchDir())
+			: planned.output.color
+				? await outputLutFilter(planned.output.color, await ctx.scratchDir())
+				: null;
 		const graph = buildNativeGraph({
+			colorLut,
 			snapshot: planned.snapshot,
 			output: planned.output,
 			outputFile: output,
@@ -912,6 +930,26 @@ export class ExportService {
 		await this.deps.ff.run(args, { signal: ctx.signal, onSpawn: ctx.trackChild });
 	}
 
+	/** color-mgmt: writes the mastering display / content light boxes of PQ and HLG exports into MP4 and MOV files. */
+	private async writeHdrMetadata(planned: PlannedExport, output: string, ctx: JobContext): Promise<void> {
+		const c = planned.output.color;
+		const container = planned.output.encoder?.container;
+		if (!c?.hdr || (container !== 'mp4' && container !== 'mov')) return;
+		const md = c.hdr.masteringDisplay;
+		const p = MASTERING_PRIMARIES[md.primaries];
+		await writeHdrBoxes(
+			output,
+			{ r: p.r, g: p.g, b: p.b, white: [0.3127, 0.329], maxNits: md.maxNits, minNits: md.minNits },
+			c.hdr.maxCll !== undefined || c.hdr.maxFall !== undefined
+				? {
+						...(c.hdr.maxCll !== undefined ? { maxCll: c.hdr.maxCll } : {}),
+						...(c.hdr.maxFall !== undefined ? { maxFall: c.hdr.maxFall } : {}),
+					}
+				: null,
+		);
+		ctx.log(`[color] HDR metadata written: mastering ${md.primaries} ${md.maxNits}/${md.minNits} cd/m²`);
+	}
+
 	/** Encodes Remotion's ProRes/PCM intermediate with the selected encoder (D-13). */
 	private async encodeIntermediate(
 		planned: PlannedExport,
@@ -934,11 +972,16 @@ export class ExportService {
 			...(o.bitrateKbps ? { bitrateKbps: o.bitrateKbps } : {}),
 			...(o.proresProfile ? { proresProfile: o.proresProfile } : {}),
 			...(o.gop ? { gop: o.gop } : {}),
+			...(o.color
+				? { bitDepth: o.color.bitDepth, colorCodes: o.color.codes, svtHdr: svtHdrParams(o.color) }
+				: {}),
 		});
+		// color-mgmt: the intermediate holds the working signal (BT.709 matrix); convert to the output space.
+		const lut = o.color ? await outputLutFilter(o.color, await ctx.scratchDir()) : null;
 		const vf = [
-			`scale=out_color_matrix=bt709:out_range=tv:${SWS_FLAGS}`,
-			'setsar=1',
-			BT709_FRAME_TAGS,
+			...(o.color
+				? outputFilters(o.color, lut, SWS_FLAGS)
+				: [`scale=out_color_matrix=bt709:out_range=tv:${SWS_FLAGS}`, 'setsar=1', BT709_FRAME_TAGS]),
 			...enc.filters,
 		];
 		const soxr = await hasSoxr(this.deps.ff);
@@ -956,14 +999,9 @@ export class ExportService {
 				? ['-af', `aresample=${o.audioSampleRate}:${resamplerArgs(soxr)}`]
 				: []),
 			...enc.video,
-			'-colorspace',
-			'bt709',
-			'-color_primaries',
-			'bt709',
-			'-color_trc',
-			'bt709',
-			'-color_range',
-			'tv',
+			...(o.color
+				? colorTagArgs(o.color)
+				: ['-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv']),
 			'-frames:v',
 			String(frames),
 			...(o.videoOnly
@@ -1295,6 +1333,7 @@ export class ExportService {
 				crf: planned.output.crf,
 				speed: planned.output.speed,
 				fps: planned.output.fps,
+				plainRec709: isPlainRec709Output(planned.output.color),
 			});
 			if (rp.mode === 'unavailable') throw new JobError(rp.code, rp.reason, false);
 			ctx.log(`remotion export: ${rp.mode} (${rp.reason})`);
@@ -1379,6 +1418,8 @@ export class ExportService {
 	): Promise<unknown> {
 		const { frames, path, remotionOutput, warnings, audio } = r;
 		const encoder = planned.output.encoder;
+		// color-mgmt: HDR static metadata boxes (`mdcv` / `clli`) in MP4 / MOV outputs.
+		await this.writeHdrMetadata(planned, output, ctx);
 		// wp captions: embedded caption streams (remux) and sidecar files.
 		const captionResult = await this.writeCaptionOutputs(planned, output, dir, ctx);
 		const byteSize = (await stat(output)).size;
@@ -1510,6 +1551,16 @@ export class ExportService {
 				...(req.width && req.width !== seqW ? { scale: req.width / seqW } : {}),
 				signal: ctx.signal,
 			});
+			// color-mgmt: the display rendition of the working space, as the native still path draws it.
+			const lut = await displayLutFilter(planned.snapshot.settings.color, await ctx.scratchDir());
+			if (lut) {
+				const tmp = join(await ctx.scratchDir(), 'display.png');
+				await this.deps.ff.run(['-y', '-i', output, '-vf', `format=rgba,${lut}`, '-frames:v', '1', tmp], {
+					signal: ctx.signal,
+					onSpawn: ctx.trackChild,
+				});
+				await rename(tmp, output);
+			}
 		}
 		this.commitRefs(ctx, planned, 'still');
 		await rm((ctx.input as { request: string }).request, { force: true });

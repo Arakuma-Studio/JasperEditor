@@ -17,12 +17,14 @@ import {
 	type MediaHandle,
 	PREVIEW_LUT_SIZE,
 	type ResolvedEffect,
+	type SequenceColorInfo,
+	workingKey,
 } from '@jasper/project';
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { cancelRender, continueRender, delayRender, type EffectDescriptor } from 'remotion';
 import { colorLut, colorLutCpu, cssFilter } from './effects.ts';
 import { canUseWebGl2, colorStageBackend } from './gl.ts';
-import { bakedRunLut, loadedLutAsset, loadLutAsset, lutUrlKey } from './luts.ts';
+import { bakedRunLut, loadedColorConfig, loadedLutAsset, loadLutAsset, lutUrlKey } from './luts.ts';
 import { useColorStageStatus } from './status.ts';
 
 /** Effects that commute with pointwise colour ops (geometry only). */
@@ -56,13 +58,14 @@ function planColorStage(
 	const isColor = (fx: ResolvedEffect) => fx.enabled && !!registry.get(fx.effectId, fx.effectVersion)?.color;
 	const graded = effects.some(isColor);
 	if (!graded) return { steps: [], cssEffects: [...effects], graded, unavailable: false };
-	if (opts.bypass)
-		return {
-			steps: [],
-			cssEffects: effects.filter((fx) => !isColor(fx)),
-			graded,
-			unavailable: false,
-		};
+	if (opts.bypass) {
+		// color-mgmt: the before/after bypass shows the source colour-managed (the input transform stays).
+		const kept = effects.filter(
+			(fx) => !isColor(fx) || !!registry.get(fx.effectId, fx.effectVersion)?.internal,
+		);
+		if (!kept.some(isColor)) return { steps: [], cssEffects: kept, graded, unavailable: false };
+		return planColorStage(kept, { ...opts, bypass: false });
+	}
 	if (!opts.webgl) {
 		// M1 colour effects keep their CSS/SVG approximation; effects without one (Lumetri) are skipped.
 		const css = effects.filter((fx) => {
@@ -127,7 +130,23 @@ export type ColorDocValue = {
 	/** Preview before/after: clips whose colour effects are bypassed (S06:CGU-005). */
 	bypass: ReadonlySet<string>;
 	isPreview: boolean;
+	/** color-mgmt: the working space of the (nested) sequence being drawn (absent = Rec. 709 defaults). */
+	working?: SequenceColorInfo;
 };
+
+/** color-mgmt: the colour-op context of a document (working space, OCIO configs by media id). */
+export function colorOpsContext(doc: ColorDocValue): {
+	working?: SequenceColorInfo;
+	colorConfig: (mediaId: string) => ReturnType<typeof loadedColorConfig> & {};
+} {
+	return {
+		...(doc.working ? { working: doc.working } : {}),
+		colorConfig: (id) => {
+			const u = doc.media[id]?.url;
+			return (u ? loadedColorConfig(u) : null) ?? (null as never);
+		},
+	};
+}
 const EMPTY: ColorDocValue = { media: {}, bypass: new Set(), isPreview: true };
 export const ColorDocContext = createContext<ColorDocValue>(EMPTY);
 
@@ -197,10 +216,13 @@ export function useColorStage(clipId: string, effects: readonly ResolvedEffect[]
 			const u = doc.media[id]?.url;
 			return u ? lutUrlKey(u) : `offline:${id}`;
 		};
+		const extra = workingKey(doc.working);
 		return plan.steps.map((s) =>
-			s.kind === 'lut' ? colorRunKey(s.effects, lutKey, PREVIEW_LUT_SIZE) : `css:${s.effect.id}:${s.filter}`,
+			s.kind === 'lut'
+				? colorRunKey(s.effects, lutKey, PREVIEW_LUT_SIZE, extra)
+				: `css:${s.effect.id}:${s.filter}`,
 		);
-	}, [plan, doc.media]);
+	}, [plan, doc.media, doc.working]);
 	const pending = urls.some((u) => loadedLutAsset(u) === undefined);
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the run keys (+ LUT arrival `version`)
@@ -218,7 +240,15 @@ export function useColorStage(clipId: string, effects: readonly ResolvedEffect[]
 				out.push(cssFilter({ key, filter: s.filter }));
 				return;
 			}
-			const lut = bakedRunLut(clipId, key, s.effects, defaultEffectRegistry, lutOf, PREVIEW_LUT_SIZE);
+			const lut = bakedRunLut(
+				clipId,
+				key,
+				s.effects,
+				defaultEffectRegistry,
+				lutOf,
+				PREVIEW_LUT_SIZE,
+				colorOpsContext(doc),
+			);
 			if (lut) out.push(cpu ? colorLutCpu({ key, lut }) : colorLut({ key, lut }));
 		});
 		return out;
@@ -265,12 +295,20 @@ export function useGradedSolid(
 		};
 		for (const s of plan.steps) {
 			if (s.kind !== 'lut') continue;
-			const key = colorRunKey(s.effects, lutKey, PREVIEW_LUT_SIZE);
-			const lut = bakedRunLut(clipId, key, s.effects, defaultEffectRegistry, lutOf, PREVIEW_LUT_SIZE);
+			const key = colorRunKey(s.effects, lutKey, PREVIEW_LUT_SIZE, workingKey(doc.working));
+			const lut = bakedRunLut(
+				clipId,
+				key,
+				s.effects,
+				defaultEffectRegistry,
+				lutOf,
+				PREVIEW_LUT_SIZE,
+				colorOpsContext(doc),
+			);
 			if (lut) applyLut(lut, c);
 		}
 		return [c[0], c[1], c[2], rgba[3]] as [number, number, number, number];
-	}, [plan, rgba, version, clipId, doc.media]);
+	}, [plan, rgba, version, clipId, doc.media, doc.working]);
 	return {
 		rgba: graded,
 		// CSS-filter steps before a grade (a blur of a uniform colour) stay CSS stages.

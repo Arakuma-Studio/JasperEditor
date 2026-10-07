@@ -8,12 +8,11 @@
 // picture's top-left in every texture; only the final pass flips into the bottom-up default framebuffer.
 // Alpha: inputs are uploaded premultiplied, intermediates and output are premultiplied (the canvas contract).
 import {
-	applyLut,
-	bakeLut,
 	FX_DATA_ROW,
 	type FxEffectPlan,
 	type FxPassPlan,
 	type FxUniform,
+	flattenLut,
 	type Lut,
 } from '@jasper/project';
 import { type ColorGl, createColorGl, drawThroughLut, sourceSize } from '../color/gl.ts';
@@ -468,14 +467,15 @@ export type FxRunInputs = {
 	samples: { sources: readonly TexImageSource[]; offsets: readonly number[]; key?: string; valid?: number };
 };
 
-/** 3D texture of a LUT: N³ RGB (half float, trilinear). 1D LUTs and custom domains are baked to 33³ first. */
+/**
+ * 3D texture of a LUT: N³ RGB (half float; `fx_lut3d` reads it with `texelFetch`, tetrahedral). 1D LUTs, shapers and
+ * custom domains are baked to 33³ first (`flattenLut`).
+ */
 function lutTexture(h: FxHost, lut: Lut): { tex: WebGLTexture; size: number } {
 	const hit = h.luts.get(lut);
 	if (hit) return hit;
 	const { gl } = h;
-	const plain =
-		lut.dimensions === 3 && lut.domainMin.every((v) => v === 0) && lut.domainMax.every((v) => v === 1);
-	const l3 = plain ? lut : bakeLut(33, (c) => applyLut(lut, c));
+	const l3 = flattenLut(lut, 33);
 	const tex = gl.createTexture()!;
 	gl.bindTexture(gl.TEXTURE_3D, tex);
 	for (const [k, v] of [

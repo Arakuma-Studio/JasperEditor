@@ -7,6 +7,7 @@ import { CAPTIONS_OWNER, captionHandlers } from './handlers/captions.ts';
 import { clipCoreHandlers } from './handlers/clip-core.ts';
 import { clipEditHandlers } from './handlers/clip-edit.ts';
 import { CLIPBOARD_OWNER, clipboardHandlers } from './handlers/clipboard.ts';
+import { colorMgmtHandlers } from './handlers/color-mgmt.ts';
 import { compositionHandlers } from './handlers/composition.ts';
 import { editUxHandlers } from './handlers/edit-ux.ts';
 import { effectHandlers } from './handlers/effect.ts';
@@ -87,6 +88,8 @@ export type CommandOwner =
 	| 'three-d'
 	// Liquify, Mesh Warp, Puppet (docs/wp-notes/sim-warp.md)
 	| 'sim-warp'
+	// Colour management, HDR, LUT formats (docs/wp-notes/color-mgmt.md)
+	| 'color-mgmt'
 	// Interpret Footage, vector / Lottie / layered / sequence imports (docs/wp-notes/imports.md)
 	| 'imports'
 	// Render previews (docs/wp-notes/previews.md)
@@ -332,6 +335,8 @@ const LABELS: Record<CommandType, string> = {
 	'clip.trimEdits': 'Trim',
 	'item.makeSubclip': 'Make Subclip',
 	'item.updateSubclip': 'Edit Subclip',
+	'media.interpretColor': 'Interpret Footage (Colour)',
+	'clip.setColorInterpretation': 'Clip Colour Space',
 	// three-d
 	'clip.set3d': '3D Layer',
 	'clip.addCamera': 'New Camera',
@@ -388,6 +393,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[threeDHandlers, THREE_D_OWNER],
 	[cameraTrackerHandlers, THREE_D_OWNER],
 	[simWarpHandlers, SIM_WARP_OWNER],
+	[colorMgmtHandlers, 'color-mgmt'],
 	[interpretHandlers, INTERPRET_OWNER],
 	[previewsHandlers, PREVIEWS_OWNER],
 ];
@@ -420,6 +426,7 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === 'wp-time' ||
 				owner === ROTO_OWNER ||
 				owner === 'edit-ux' ||
+				owner === 'color-mgmt' ||
 				owner === THREE_D_OWNER ||
 				owner === INTERPRET_OWNER ||
 				owner === PREVIEWS_OWNER

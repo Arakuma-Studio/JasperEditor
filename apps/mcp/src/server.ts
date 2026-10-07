@@ -15,6 +15,7 @@ import { CACHE_GUIDE, registerCacheTools } from './tools/cache.ts';
 import { CAPTIONS_GUIDE, registerCaptionTools } from './tools/captions.ts';
 import { CLIPBOARD_GUIDE, registerClipboardTools } from './tools/clipboard.ts';
 import { COLOR_GUIDE, registerColorTools } from './tools/color.ts';
+import { COLOR_MGMT_GUIDE, registerColorMgmtTools } from './tools/color-mgmt.ts';
 import { COMPOSITION_GUIDE, registerCompositionTools } from './tools/compositions.ts';
 import { EDIT_UX_GUIDE, registerEditUxTools } from './tools/edit-ux.ts';
 import { registerEditingTools } from './tools/editing.ts';
@@ -88,6 +89,7 @@ const FULL_GUIDE = [
 	CACHE_GUIDE,
 	STRUCTURE_GUIDE,
 	TIME_GUIDE,
+	COLOR_MGMT_GUIDE,
 	EDIT_UX_GUIDE,
 	MULTICAM_GUIDE,
 	VERSIONS_GUIDE,
@@ -143,6 +145,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerCacheTools(ctx);
 	registerStructureTools(ctx);
 	registerTimeTools(ctx);
+	registerColorMgmtTools(ctx);
 	registerImportsTools(ctx);
 	registerEditUxTools(ctx);
 	registerMulticamTools(ctx);

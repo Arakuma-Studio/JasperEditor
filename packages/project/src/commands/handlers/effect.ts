@@ -134,6 +134,9 @@ export const effectHandlers: HandlerMap = {
 	'effect.add': (doc, cmd: CommandOf<'effect.add'>, h: HandlerContext) => {
 		const spec = h.registries.effects.get(cmd.effectId);
 		if (!spec) return h.fail('E_UNKNOWN_EFFECT', `Unknown effect: ${cmd.effectId}`);
+		// color-mgmt: render-only effects (the colour input transform) are added by colour management, not by users.
+		if (spec.internal)
+			return h.fail('E_UNKNOWN_EFFECT', `${spec.label} is applied by colour management, not as an effect`);
 		let list: DEffect[];
 		let instanceDefaults: Record<string, unknown> = {};
 		if (cmd.target === 'master') {

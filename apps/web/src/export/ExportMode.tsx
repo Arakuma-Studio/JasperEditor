@@ -20,16 +20,20 @@ import {
 	CODEC_LABELS,
 	codecOptions,
 	DEFAULT_CAPTION_CHOICE,
+	DEFAULT_COLOR_CHOICE,
 	ENGINE_OPTIONS,
 	type ExportAudioChoice,
+	type ExportColorChoice,
 	type ExportEngineChoice,
 	type ExportRangeChoice,
 	encoderOptions,
 	encoderSummary,
+	exportColorSpaceOptions,
 	exportEnvelope,
 	exportExtension,
 	exportRange,
 	hasInOut,
+	hdrOutput,
 	loadExportChoice,
 	MATCH_SEQUENCE_PRESET,
 	outputDescription,
@@ -92,6 +96,9 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 	const [codec, setCodec] = useState<VideoCodec>(remembered?.codec ?? 'h264');
 	const [encoderChoice, setEncoderChoice] = useState<string>(remembered?.encoder ?? '');
 	const [audioChoice, setAudioChoice] = useState<ExportAudioChoice>(remembered?.audio ?? {});
+	const [colorChoice, setColorChoice] = useState<ExportColorChoice>(
+		remembered?.color ?? DEFAULT_COLOR_CHOICE,
+	);
 	const [captionChoice, setCaptionChoice] = useState<CaptionExportChoice>(
 		remembered?.captions ?? DEFAULT_CAPTION_CHOICE,
 	);
@@ -108,6 +115,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 		setEncoderChoice(r?.encoder ?? '');
 		setAudioChoice(r?.audio ?? {});
 		setCaptionChoice(r?.captions ?? DEFAULT_CAPTION_CHOICE);
+		setColorChoice(r?.color ?? DEFAULT_COLOR_CHOICE);
 		setFileName(r?.fileName ?? sequenceName(session.getCommitted(), sequenceId));
 	}, [sequenceId, session]);
 
@@ -133,9 +141,19 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 						encoder: effectiveEncoder || null,
 						audio: audioChoice,
 						captions: captionChoice,
+						color: colorChoice,
 					})
 				: null,
-		[seq, effectiveRange, engineChoice, effectiveCodec, effectiveEncoder, audioChoice, captionChoice],
+		[
+			seq,
+			effectiveRange,
+			engineChoice,
+			effectiveCodec,
+			effectiveEncoder,
+			audioChoice,
+			captionChoice,
+			colorChoice,
+		],
 	);
 	const chosenEncoder = plan.status === 'ok' ? (plan.plan.encoder ?? null) : (encoding?.export ?? null);
 	const encoderMessage = plan.status === 'ok' ? plan.plan.encoder?.message : encoding?.message;
@@ -222,6 +240,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 				...(effectiveEncoder ? { encoder: effectiveEncoder } : {}),
 				audio: audioChoice,
 				captions: captionChoice,
+				color: colorChoice,
 			});
 			close();
 			const focused = await runIfRegistered('panel.open.jobs', ctx);
@@ -394,6 +413,83 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 							))}
 						</select>
 					</Field>
+					{/* color-mgmt: written colour space, bit depth, HDR metadata */}
+					<Field label="Colour Space">
+						<select
+							data-testid="export-color-space"
+							className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
+							value={colorChoice.colorSpace}
+							onChange={(e) =>
+								setColorChoice((c) => ({
+									...c,
+									colorSpace: e.target.value as ExportColorChoice['colorSpace'],
+								}))
+							}
+						>
+							{exportColorSpaceOptions(seq ?? null).map((o) => (
+								<option key={o.value} value={o.value}>
+									{o.label}
+								</option>
+							))}
+						</select>
+					</Field>
+					<Field label="Bit Depth">
+						<select
+							data-testid="export-bit-depth"
+							className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
+							value={String(colorChoice.bitDepth)}
+							onChange={(e) =>
+								setColorChoice((c) => ({
+									...c,
+									bitDepth: e.target.value === 'auto' ? 'auto' : (Number(e.target.value) as 8 | 10 | 12),
+								}))
+							}
+						>
+							<option value="auto">Automatic (10-bit for HDR and ProRes)</option>
+							<option value="8">8 bits per channel</option>
+							<option value="10">10 bits (ProRes, AV1, VP9)</option>
+							<option value="12">12 bits (AV1 libaom, VP9)</option>
+						</select>
+					</Field>
+					{hdrOutput(seq ?? null, colorChoice) ? (
+						<Field label="MaxCLL / MaxFALL">
+							<span className="flex items-center gap-1">
+								<input
+									data-testid="export-maxcll"
+									type="number"
+									min={0}
+									max={10000}
+									className="h-[var(--pr-control-h)] w-[80px] rounded-pr-control bg-pr-field px-2 text-pr-text"
+									value={colorChoice.maxCll || ''}
+									placeholder="unknown"
+									onChange={(e) =>
+										setColorChoice((c) => ({
+											...c,
+											maxCll: Math.max(0, Math.round(Number(e.target.value) || 0)),
+										}))
+									}
+									aria-label="MaxCLL in nits"
+								/>
+								<input
+									data-testid="export-maxfall"
+									type="number"
+									min={0}
+									max={10000}
+									className="h-[var(--pr-control-h)] w-[80px] rounded-pr-control bg-pr-field px-2 text-pr-text"
+									value={colorChoice.maxFall || ''}
+									placeholder="unknown"
+									onChange={(e) =>
+										setColorChoice((c) => ({
+											...c,
+											maxFall: Math.max(0, Math.round(Number(e.target.value) || 0)),
+										}))
+									}
+									aria-label="MaxFALL in nits"
+								/>
+								<span className="text-pr-muted">nits</span>
+							</span>
+						</Field>
+					) : null}
 					{/* audio-mix: delivered audio */}
 					<Field label="Audio Channels">
 						<select
