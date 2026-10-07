@@ -149,20 +149,22 @@ time, `clipContentTime` = held only with Hold Filters. Freeze handles: `freezeHe
 
 ## 6. Verified behaviour (tests)
 
-- `packages/project/test/edit-structure.test.ts` (30): nest/unnest round trip, placing sequences (nest/individual,
+- `packages/project/test/edit-structure.test.ts` (33): nest/unnest round trip, placing sequences (nest/individual,
   In/Out, item drag, empty, trims bounded by the nested duration), snapshot of nests (nested range, transparent
   background, content key, flattened audio with composed gain, speed and rate conform), adjustment, groups (move,
   outer-edge trim, delete), duplicate/delete (E_IN_USE / force), Remove Unused, synthetics (defaults, A/V placement,
   lengths 1 s / 11 s, validation), bars pixel layout, leader phases/blips, tone level, WAV, frame holds (all three
-  commands), through edits (speed + reverse), gaps, subsequence, freeze handles, repair of cycles, content keys.
+  commands), through edits (speed + reverse), gaps, subsequence, freeze handles, repair of cycles, content keys,
+  Track Matte Keys across nest / duplicate / subsequence / place-individually, Unnest refusing masked nests.
 - `packages/compositions/test/edit-structure.test.tsx`: nested frame drawn (incl. 2× speed), CSS / canvas adjustment
   scopes, generator canvas, `pictureLocalFrame`.
 - `packages/compositions/test/edit-structure-render.e2e.test.ts` (REMOTION_E2E=1, headless Chrome): nest scaled 50 %
   and at 2×; adjustment with Black & White (canvas chain), 50 % + crop, Gaussian Blur (CSS); bars and leader pixels;
-  frame hold of a moving video.
+  frame hold of a moving video; an adjustment layer limited by an ellipse Opacity mask.
 - `apps/engine/test/edit-structure-export.test.ts` (real ffmpeg, frame codes): nested frames at 1× and 2× speed,
   nested audio present/absent, nest Motion; adjustment with opacity + crop; frame hold; freeze handles (no black
-  frames, right frame after the span); bars, −20 dBFS tone (±0.6 dB), leader sweep colours, the two-pop.
+  frames, right frame after the span); bars, −20 dBFS tone (±0.6 dB), leader sweep colours, the two-pop; a masked
+  adjustment layer plans the Remotion path with a named blocker.
 - `apps/web/test/edit-structure.test.ts`, `apps/mcp/test/structure.test.ts`, `e2e/edit-structure.spec.ts` (built
   app: Nest dialog, double-click into the nest, New Item, Group, Add Frame Hold, native export checked with ffmpeg).
 
@@ -212,7 +214,15 @@ time, `clipContentTime` = held only with Hold Filters. Freeze handles: `freezeHe
   compressors); audio pan and audio effects are Remotion-path/native limits shared with ordinary audio clips.
 - Reverse playback of nests is a native blocker (as for every reversed clip); preview audio does not reverse (as for
   every audio clip).
-- Adjustment layers have no Motion (the S01 model, KND-012); their crop limits the region. Opacity masks do not
-  exist in this app yet.
+- Adjustment layers have no Motion (the S01 model, KND-012); their crop limits the region.
+- Masks (merged with the masks workstream): an adjustment layer's Opacity masks limit where it applies — the mix
+  step uses their coverage, `lerp(original, adjusted, opacity × coverage)` (Premiere: masking an adjustment layer
+  limits the adjustment, it does not cut the picture below); effect masks on its effects mix that effect alone. A
+  masked adjustment layer or nest clip exports through Remotion (named native blocker), not natively. Masked
+  (kernel-stream) layers inside a sub-pixel nest clip block the native path like other sub-pixel layers. Unnest
+  refuses nest clips with masks (their geometry is in the nest's layer space). Nest, Unnest, placing clips
+  individually, Make Subsequence and Duplicate move Track Matte Keys to the matching track of the new layout, and
+  clear them with `W_TRACK_MATTE_CLEARED` when that track does not come along. Track mattes inside a nested
+  sequence read that sequence's tracks (each nested stack has its own matte context).
 - In a browser without HTML-in-Canvas the Player shows non-CSS adjustment layers and colour-graded nests unadjusted
   with a chip (the desktop app and renders have it).

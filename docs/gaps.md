@@ -95,6 +95,10 @@ markers and basic effects, with round-trip tests through the reference implement
 **Done when:** nested sequences (Nest…, sequences as clips, open in timeline), group / ungroup, adjustment layers,
 color mattes and other synthetic items, sequence duplicate / delete and Remove Unused all work end to end; no
 document command answers `E_NOT_IMPLEMENTED`.
+**Status (merged):** done — see [wp-notes/edit-structure.md](wp-notes/edit-structure.md). Remaining limits: audio
+effects on a nest act on each flattened piece; a masked nest or adjustment clip and a Track Matte Key export through
+Remotion, not natively; adjustment layers in a Player without HTML-in-Canvas show unadjusted with a chip; the
+Sequence Settings dialog is edit-ux's.
 
 ### edit-ux
 **Done when:** every remaining disabled File/Edit/Clip/Sequence/View menu entry is wired (Project and Sequence Settings,

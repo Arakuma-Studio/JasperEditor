@@ -64,8 +64,8 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | PRJ-2 | Import media (upload / register path), probe, posters, filmstrips, waveforms | P0 | done | WP-2E, WP-2F | — |
 | PRJ-3 | Relink and Replace Footage | P1 | partial (0.5) | `media.relink`, MCP `replace_footage`; no Link Media dialog | imports |
 | PRJ-4 | Project Settings dialog | P1 | missing | File ▸ Project Settings… unregistered | edit-ux |
-| PRJ-5 | Color mattes and other synthetic items | P1 | missing | `synthetic.create` returns E_NOT_IMPLEMENTED; menu unregistered | edit-structure |
-| PRJ-6 | Remove unused media, Project Manager (collect / consolidate) | P2 | missing | `media.removeUnused` E_NOT_IMPLEMENTED | imports |
+| PRJ-5 | Color mattes and other synthetic items | P1 | done | `synthetic.create/update` (Bars and Tone, Black Video, Color Matte, Transparent Video, Universal Counting Leader, Adjustment Layer), New Item menu, preview and native/Remotion export (edit-structure tests) | edit-structure |
+| PRJ-6 | Remove unused media, Project Manager (collect / consolidate) | P2 | partial (0.5) | Remove Unused done (`media.removeUnused`, Edit menu, MCP, edit-structure); no Project Manager | imports |
 | PRJ-7 | Media cache: usage, cleaning, location | P1 | done | wp-m3-cachegc | — |
 | PRJ-8 | Proxies: create, attach, toggle | P1 | partial (0.5) | 720p/540p playback proxies exist (S04); Clip ▸ Create Proxies unregistered, no attach/toggle UI | previews |
 
@@ -85,7 +85,7 @@ behaviour still counts as done here; gaps.md tracks that separately.
 |---|---|---|---|---|---|
 | MON-1 | Program monitor: Player preview, JKL, timecode entry, playback resolution | P0 | done | WP-2C | — |
 | MON-2 | Source monitor: in/out, insert and overwrite | P0 | done | apps/web/src/panels/source | — |
-| MON-3 | Match Frame / Reverse Match Frame | P1 | missing | unregistered menu commands | edit-ux |
+| MON-3 | Match Frame / Reverse Match Frame | P1 | done | F / Shift+R, through nests (`apps/web/src/commands/structure.ts`, edit-structure web tests) | edit-ux |
 | MON-4 | Rulers, guides, safe margins | P2 | missing | View ▸ Show Rulers / Guides unregistered | edit-ux |
 | MON-5 | Direct manipulation in the Program monitor (move, scale, rotate, anchor) | P0 | done | WP-2C, wp-3v | — |
 
@@ -100,11 +100,11 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | TL-5 | Markers (sequence and clip) and the Markers panel | P1 | done | WP-2B | — |
 | TL-6 | Undo / redo with the History panel | P0 | done | packages/session | — |
 | TL-7 | Copy / paste, paste insert, paste attributes | P1 | done | wp-clipboard | — |
-| TL-8 | Nested sequences (Nest…, sequences as clips) | P1 | missing | `clip.nest` E_NOT_IMPLEMENTED; placing a sequence refused | edit-structure |
-| TL-9 | Group / ungroup | P2 | missing | `clip.group` E_NOT_IMPLEMENTED | edit-structure |
+| TL-8 | Nested sequences (Nest…, sequences as clips) | P1 | done | Nest…/Unnest, sequences as clips (nest or individual clips), double-click / Reveal Nested; preview, native in-graph and Remotion export (docs/wp-notes/edit-structure.md) | edit-structure |
+| TL-9 | Group / ungroup | P2 | done | `clip.group/ungroup`, select / move / delete / outer-edge trim as a group, Alt single select | edit-structure |
 | TL-10 | Add / delete tracks dialogs, track rename and heights | P1 | partial (0.5) | `track.add/remove/update` exist; dialogs unregistered | edit-ux |
-| TL-11 | Multiple sequences: create, duplicate, delete, Sequence Settings | P1 | partial (0.25) | create only; `sequence.duplicate/delete` E_NOT_IMPLEMENTED; settings dialog unregistered | edit-structure |
-| TL-12 | Adjustment layers | P1 | missing | `clip.addAdjustment` E_NOT_IMPLEMENTED | edit-structure |
+| TL-11 | Multiple sequences: create, duplicate, delete, Sequence Settings | P1 | partial (0.75) | create, `sequence.duplicate`, `sequence.delete` (approval-gated for agents); Sequence Settings dialog unregistered | edit-structure |
+| TL-12 | Adjustment layers | P1 | done | effects on the composite below with opacity, blend, crop and Opacity masks; preview, native and Remotion export | edit-structure |
 | TL-13 | Multi-camera source sequences and live switching | P1 | missing | none | multicam |
 
 ### Timing
@@ -112,7 +112,7 @@ behaviour still counts as done here; gaps.md tracks that separately.
 | Id | Feature | Tier | Status | Evidence | Workstream |
 |---|---|---|---|---|---|
 | TM-1 | Speed / Duration, reverse, ripple on speed change | P1 | partial (0.5) | `clip.setSpeed`; Clip ▸ Speed/Duration… unregistered | time |
-| TM-2 | Time remapping (speed keyframes), frame hold, frame blending, optical flow | P1 | missing | none | time |
+| TM-2 | Time remapping (speed keyframes), frame hold, frame blending, optical flow | P1 | partial (0.25) | frame holds done (Add Frame Hold, Insert Frame Hold Segment, Frame Hold Options; edit-structure); no time remapping, blending or optical flow | time |
 
 ### Keyframes
 
