@@ -255,47 +255,86 @@ export function rowOf(v: number, lo: number, hi: number, rows: number): number {
 	return Math.min(rows - 1, Math.round(t * (rows - 1)));
 }
 
-type Emit = (trace: number, value: number) => void;
+/**
+ * Values per sample of each trace layout: 0 RGB (R, G, B), 1 Y, 2 YC (Y, Y + C, Y − C → traces 0, 1, 1),
+ * 3 RGB-White (R, G, B, Y), 4 YUV (Y, Cb + ½, Cr + ½).
+ */
+type Layout = 0 | 1 | 2 | 3 | 4;
+const LAYOUT_NAMES: Record<Layout, string[]> = {
+	0: ['R', 'G', 'B'],
+	1: ['Y'],
+	2: ['Y', 'C'],
+	3: ['R', 'G', 'B', 'Y'],
+	4: ['Y', 'Cb', 'Cr'],
+};
 
-function buildWaveform(
-	s: ScopeSignal,
-	p: ScopeParams,
-	names: readonly string[],
-	sample: (r: number, g: number, b: number, emit: Emit) => void,
-): ScopeWaveform {
+// One monomorphic loop for every layout (no per-sample closures: ~3× faster in V8, the scopes stay real time).
+function buildWaveform(s: ScopeSignal, p: ScopeParams, layout: Layout): ScopeWaveform {
 	const [lo, hi] = scopeRange(p);
 	const rows = Math.max(2, Math.floor(p.rows));
+	const names = LAYOUT_NAMES[layout];
 	const traces: ScopeGrid[] = names.map((name) => ({
 		name,
 		cols: s.w,
 		rows,
 		data: new Uint32Array(s.w * rows),
 	}));
-	const datas = traces.map((t) => t.data);
-	const span = hi - lo;
-	const rm1 = rows - 1;
-	let x = 0;
-	const emit: Emit = (t, v0) => {
-		const v = p.clamp ? (v0 < 0 ? 0 : v0 > 1 ? 1 : v0) : v0;
-		const u = (v - lo) / span;
-		if (!(u >= 0 && u <= 1)) return;
-		const r = Math.round(u * rm1);
-		datas[t]![r * s.w + x]!++;
-	};
+	const d0 = traces[0]!.data;
+	const d1 = traces[1]?.data ?? d0;
+	const d2 = traces[2]?.data ?? d0;
+	const d3 = traces[3]?.data ?? d0;
+	const [kr, kb] = MATRIX_K[p.matrix];
+	const kg = 1 - kr - kb;
+	const cbk = 1 / (2 * (1 - kb));
+	const crk = 1 / (2 * (1 - kr));
+	const scale = (rows - 1) / (hi - lo);
+	const clamp = p.clamp;
+	const w = s.w;
 	const rgb = s.rgb;
+	const put = (d: Uint32Array, v0: number, x: number) => {
+		const v = clamp ? (v0 < 0 ? 0 : v0 > 1 ? 1 : v0) : v0;
+		const u = (v - lo) * scale;
+		if (!(u >= 0 && u <= rows - 1 + 1e-6)) return;
+		d[((u + 0.5) | 0) * w + x]!++;
+	};
 	for (let y = 0; y < s.h; y++)
-		for (x = 0; x < s.w; x++) {
-			const i = (y * s.w + x) * 3;
+		for (let x = 0; x < w; x++) {
+			const i = (y * w + x) * 3;
 			let r = rgb[i]!;
-			if (Number.isNaN(r)) continue;
+			if (r !== r) continue;
 			let g = rgb[i + 1]!;
 			let b = rgb[i + 2]!;
-			if (p.clamp) {
+			if (clamp) {
 				r = r < 0 ? 0 : r > 1 ? 1 : r;
 				g = g < 0 ? 0 : g > 1 ? 1 : g;
 				b = b < 0 ? 0 : b > 1 ? 1 : b;
 			}
-			sample(r, g, b, emit);
+			if (layout === 0) {
+				put(d0, r, x);
+				put(d1, g, x);
+				put(d2, b, x);
+				continue;
+			}
+			const yy = kr * r + kg * g + kb * b;
+			if (layout === 1) put(d0, yy, x);
+			else if (layout === 3) {
+				put(d0, r, x);
+				put(d1, g, x);
+				put(d2, b, x);
+				put(d3, yy, x);
+			} else {
+				const cb = (b - yy) * cbk;
+				const cr = (r - yy) * crk;
+				put(d0, yy, x);
+				if (layout === 4) {
+					put(d1, cb + 0.5, x);
+					put(d2, cr + 0.5, x);
+				} else {
+					const c = Math.sqrt(cb * cb + cr * cr);
+					put(d1, yy + c, x);
+					if (c > 1e-6) put(d1, yy - c, x);
+				}
+			}
 		}
 	return { lo, hi, perColumn: s.h, traces };
 }
@@ -306,31 +345,7 @@ export function waveform(
 	type: WaveformType,
 	p: ScopeParams = DEFAULT_SCOPE_PARAMS,
 ): ScopeWaveform {
-	const [kr, kb] = MATRIX_K[p.matrix];
-	const kg = 1 - kr - kb;
-	const cbk = 1 / (2 * (1 - kb));
-	const crk = 1 / (2 * (1 - kr));
-	switch (type) {
-		case 'rgb':
-			return buildWaveform(s, p, ['R', 'G', 'B'], (r, g, b, e) => {
-				e(0, r);
-				e(1, g);
-				e(2, b);
-			});
-		case 'luma':
-		case 'ycNoChroma':
-			return buildWaveform(s, p, ['Y'], (r, g, b, e) => e(0, kr * r + kg * g + kb * b));
-		case 'yc':
-			return buildWaveform(s, p, ['Y', 'C'], (r, g, b, e) => {
-				const y = kr * r + kg * g + kb * b;
-				const cb = (b - y) * cbk;
-				const cr = (r - y) * crk;
-				const c = Math.sqrt(cb * cb + cr * cr);
-				e(0, y);
-				e(1, y + c);
-				if (c > 1e-6) e(1, y - c);
-			});
-	}
+	return buildWaveform(s, p, type === 'rgb' ? 0 : type === 'yc' ? 2 : 1);
 }
 
 /** The parade of a signal (the traces are drawn side by side). */
@@ -339,28 +354,7 @@ export function parade(
 	type: ParadeType,
 	p: ScopeParams = DEFAULT_SCOPE_PARAMS,
 ): ScopeWaveform {
-	const [kr, kb] = MATRIX_K[p.matrix];
-	const kg = 1 - kr - kb;
-	const cbk = 1 / (2 * (1 - kb));
-	const crk = 1 / (2 * (1 - kr));
-	switch (type) {
-		case 'rgb':
-			return waveform(s, 'rgb', p);
-		case 'rgbWhite':
-			return buildWaveform(s, p, ['R', 'G', 'B', 'Y'], (r, g, b, e) => {
-				e(0, r);
-				e(1, g);
-				e(2, b);
-				e(3, kr * r + kg * g + kb * b);
-			});
-		case 'yuv':
-			return buildWaveform(s, p, ['Y', 'Cb', 'Cr'], (r, g, b, e) => {
-				const y = kr * r + kg * g + kb * b;
-				e(0, y);
-				e(1, (b - y) * cbk + 0.5);
-				e(2, (r - y) * crk + 0.5);
-			});
-	}
+	return buildWaveform(s, p, type === 'rgb' ? 0 : type === 'rgbWhite' ? 3 : 4);
 }
 
 // ---------------------------------------------------------------- histogram
@@ -486,7 +480,7 @@ export function vectorscopeYuv(s: ScopeSignal, p: ScopeParams = DEFAULT_SCOPE_PA
 		const fx = cb * scale + n / 2;
 		const fy = n / 2 - cr * scale;
 		if (!(fx >= 0 && fx <= n && fy >= 0 && fy <= n)) continue;
-		v.data[Math.round(fy) * v.size + Math.round(fx)]!++;
+		v.data[((fy + 0.5) | 0) * v.size + ((fx + 0.5) | 0)]!++;
 		v.samples++;
 		sx += cb;
 		sy += cr;
@@ -554,15 +548,28 @@ export function vectorscopeHls(s: ScopeSignal, p: ScopeParams = DEFAULT_SCOPE_PA
 		r = r < 0 ? 0 : r > 1 ? 1 : r;
 		g = g < 0 ? 0 : g > 1 ? 1 : g;
 		b = b < 0 ? 0 : b > 1 ? 1 : b;
-		const [h, sat] = hueSat(r, g, b);
-		const k = Math.min(3600, Math.round(h * 3600));
-		const rad = Math.min(1, sat) * 0.5;
+		// HLS hue and saturation inline (no allocation per sample).
+		const mx = r > g ? (r > b ? r : b) : g > b ? g : b;
+		const mn = r < g ? (r < b ? r : b) : g < b ? g : b;
+		const dd = mx - mn;
+		let h = 0;
+		let sat = 0;
+		if (dd >= 1e-9) {
+			const l = (mx + mn) / 2;
+			sat = l > 0.5 ? dd / (2 - mx - mn) : dd / (mx + mn);
+			if (mx === r) h = (g - b) / dd + (g < b ? 6 : 0);
+			else if (mx === g) h = (b - r) / dd + 2;
+			else h = (r - g) / dd + 4;
+			h /= 6;
+		}
+		const k = Math.min(3600, (h * 3600 + 0.5) | 0);
+		const rad = (sat < 1 ? sat : 1) * 0.5;
 		const cb = rad * dx[k]!;
 		const cr = rad * dy[k]!;
 		const fx = cb * scale + n / 2;
 		const fy = n / 2 - cr * scale;
 		if (!(fx >= 0 && fx <= n && fy >= 0 && fy <= n)) continue;
-		v.data[Math.round(fy) * v.size + Math.round(fx)]!++;
+		v.data[((fy + 0.5) | 0) * v.size + ((fx + 0.5) | 0)]!++;
 		v.samples++;
 		sx += cb;
 		sy += cr;
