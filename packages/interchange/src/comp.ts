@@ -741,11 +741,6 @@ function applyGain(c: IClip, g: Gain): void {
 	c.volumeDb = a;
 }
 
-function r9(v: number): number {
-	const r = Math.round(v * 1e6) / 1e6;
-	return Object.is(r, -0) ? 0 : r;
-}
-
 /** Links video and audio clips of the same media that start and end together. */
 function linkClips(b: Builder, seq: ISequence): void {
 	const groups = new Map<string, IClip[]>();
