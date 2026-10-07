@@ -157,9 +157,13 @@ describe.runIf(enabled)('3D layers in Remotion renders (REMOTION_E2E=1)', { time
 		expect(d.bad, `worst ${d.worst}`).toBeLessThan(0.01);
 	});
 
-	it('a 2D video below a 3D run is the run\'s backdrop (the camera tracker case)', async () => {
+	it("a 2D video below a 3D run is the run's backdrop (the camera tracker case)", async () => {
 		const cmds: Command[] = [
-			{ type: 'media.register', ref: '$m', asset: fxAsset(media, 'video', media.video, FX_W, FX_H) } as unknown as Command,
+			{
+				type: 'media.register',
+				ref: '$m',
+				asset: fxAsset(media, 'video', media.video, FX_W, FX_H),
+			} as unknown as Command,
 			{
 				type: 'clip.place',
 				source: { mediaId: '$m' },
