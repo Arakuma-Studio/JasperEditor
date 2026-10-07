@@ -195,7 +195,12 @@ export type FxStructures = {
 	 */
 	masks?: readonly FxLayerMask[];
 };
-export type FxLayerMask = { id: string; closed: boolean; inverted: boolean; points: readonly [number, number][] };
+export type FxLayerMask = {
+	id: string;
+	closed: boolean;
+	inverted: boolean;
+	points: readonly [number, number][];
+};
 
 /** Context of the time hooks (time effects: freeze, retime, trails, echo…). */
 export type FxTimeContext = {
@@ -696,7 +701,10 @@ export function buildVertexSource(
 }
 
 /** A draw count: a number, or the value of a uniform of the plan (`{uniform}`), as a non-negative integer. */
-function drawCount(c: number | { readonly uniform: string } | undefined, values: readonly FxUniform[]): number {
+function drawCount(
+	c: number | { readonly uniform: string } | undefined,
+	values: readonly FxUniform[],
+): number {
 	if (c === undefined) return 1;
 	const v = typeof c === 'number' ? c : (values.find((u) => u.name === c.uniform)?.value[0] ?? 0);
 	return Math.max(0, Math.min(FX_MAX_DRAW_VERTICES, Math.floor(finite(v))));
@@ -926,7 +934,10 @@ export function planPasses(
 					uniforms: passUniforms.map(declaration),
 				}),
 				vertices,
-				instances: vertices * instances > FX_MAX_DRAW_VERTICES ? Math.floor(FX_MAX_DRAW_VERTICES / Math.max(1, vertices)) : instances,
+				instances:
+					vertices * instances > FX_MAX_DRAW_VERTICES
+						? Math.floor(FX_MAX_DRAW_VERTICES / Math.max(1, vertices))
+						: instances,
 				blend: pass.draw.blend ?? 'over',
 			};
 		}
@@ -1346,11 +1357,13 @@ export function validateGpuEffect(spec: EffectSpec): string[] {
 		if (pass.draw) {
 			const v = pass.draw.vert;
 			if (!/\bvoid\s+main\s*\(/.test(v)) at(`pass ${i}: draw.vert has no void main()`);
-			if (!/\bfx_(emit|emitW|cull)\s*\(/.test(v)) at(`pass ${i}: draw.vert never calls fx_emit/fx_emitW/fx_cull`);
+			if (!/\bfx_(emit|emitW|cull)\s*\(/.test(v))
+				at(`pass ${i}: draw.vert never calls fx_emit/fx_emitW/fx_cull`);
 			for (const [re, msg] of FORBIDDEN_GLSL) if (re.test(v)) at(`pass ${i}: draw.vert ${msg}`);
 			if (/\bout\s+vec2\s+v_uv\b/.test(v)) at(`pass ${i}: draw.vert declares v_uv (the prelude does)`);
 			for (const c of [pass.draw.vertices, pass.draw.instances])
-				if (typeof c === 'number' && !(Number.isInteger(c) && c >= 0)) at(`pass ${i}: draw counts are integers ≥ 0`);
+				if (typeof c === 'number' && !(Number.isInteger(c) && c >= 0))
+					at(`pass ${i}: draw counts are integers ≥ 0`);
 			if (pass.draw.blend && !['over', 'add', 'max', 'min', 'replace'].includes(pass.draw.blend))
 				at(`pass ${i}: unknown draw blend ${pass.draw.blend}`);
 		}

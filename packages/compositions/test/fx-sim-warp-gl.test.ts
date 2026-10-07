@@ -11,25 +11,116 @@ import { openPsdgPage, type PsdgPage, psdgGlEnabled } from './fx-psdg/gl-suite.t
 const here = dirname(fileURLToPath(import.meta.url));
 /** SIM_GALLERY=<dir> (and optionally SIM_GALLERY_IDS=a,b): writes a PNG per effect setting for a visual check. */
 const GALLERY = process.env.SIM_GALLERY;
-const GALLERY_CASES: { name: string; id: string; over?: Record<string, unknown>; frame?: number; bg?: string }[] = [
-	{ name: 'particle-world', id: 'jasper.particle-world', over: { birthRate: 2, animation: 'fire', particleType: 'fadedSphere' }, frame: 60, bg: '#000' },
-	{ name: 'particle-world-cubes', id: 'jasper.particle-world', over: { birthRate: 1, particleType: 'cube', birthSize: 0.4, deathSize: 0.3, showGrid: true, floorAction: 'bounce', floorPosition: 0.3, gravity: 1.5 }, frame: 60, bg: '#000' },
-	{ name: 'particle-systems', id: 'jasper.particle-systems', over: { particleType: 'star' }, frame: 40, bg: '#000' },
+const GALLERY_CASES: {
+	name: string;
+	id: string;
+	over?: Record<string, unknown>;
+	frame?: number;
+	bg?: string;
+}[] = [
+	{
+		name: 'particle-world',
+		id: 'jasper.particle-world',
+		over: { birthRate: 2, animation: 'fire', particleType: 'fadedSphere' },
+		frame: 60,
+		bg: '#000',
+	},
+	{
+		name: 'particle-world-cubes',
+		id: 'jasper.particle-world',
+		over: {
+			birthRate: 1,
+			particleType: 'cube',
+			birthSize: 0.4,
+			deathSize: 0.3,
+			showGrid: true,
+			floorAction: 'bounce',
+			floorPosition: 0.3,
+			gravity: 1.5,
+		},
+		frame: 60,
+		bg: '#000',
+	},
+	{
+		name: 'particle-systems',
+		id: 'jasper.particle-systems',
+		over: { particleType: 'star' },
+		frame: 40,
+		bg: '#000',
+	},
 	{ name: 'mercury', id: 'jasper.mercury', over: { birthRate: 3 }, frame: 60 },
-	{ name: 'card-dance', id: 'jasper.card-dance', over: { rows: 12, columns: 16, yRotationSource: 'intensity1', yRotationMultiplier: 120, zPositionSource: 'red1', zPositionMultiplier: -2, cameraYRotation: 20, specularReflection: 0.5 } },
-	{ name: 'card-wipe', id: 'jasper.card-wipe', over: { transitionCompletion: 50, cameraXRotation: 15, cameraYRotation: -20 } },
+	{
+		name: 'card-dance',
+		id: 'jasper.card-dance',
+		over: {
+			rows: 12,
+			columns: 16,
+			yRotationSource: 'intensity1',
+			yRotationMultiplier: 120,
+			zPositionSource: 'red1',
+			zPositionMultiplier: -2,
+			cameraYRotation: 20,
+			specularReflection: 0.5,
+		},
+	},
+	{
+		name: 'card-wipe',
+		id: 'jasper.card-wipe',
+		over: { transitionCompletion: 50, cameraXRotation: 15, cameraYRotation: -20 },
+	},
 	{ name: 'pixel-polly', id: 'jasper.pixel-polly', over: { gridSpacing: 16 }, frame: 20 },
-	{ name: 'shatter', id: 'jasper.shatter', over: { view: 'rendered', pattern: 'glass', repetitions: 14, specularReflection: 0.6, cameraYRotation: 25 }, frame: 12 },
-	{ name: 'shatter-wire', id: 'jasper.shatter', over: { view: 'wireframeForces', pattern: 'hexagons' }, frame: 12 },
-	{ name: 'ball-action', id: 'jasper.ball-action', over: { gridSpacing: 10, ballSize: 90, rotation: 40, rotationAxis: 'yAxis', twistAngle: 60 } },
+	{
+		name: 'shatter',
+		id: 'jasper.shatter',
+		over: {
+			view: 'rendered',
+			pattern: 'glass',
+			repetitions: 14,
+			specularReflection: 0.6,
+			cameraYRotation: 25,
+		},
+		frame: 12,
+	},
+	{
+		name: 'shatter-wire',
+		id: 'jasper.shatter',
+		over: { view: 'wireframeForces', pattern: 'hexagons' },
+		frame: 12,
+	},
+	{
+		name: 'ball-action',
+		id: 'jasper.ball-action',
+		over: { gridSpacing: 10, ballSize: 90, rotation: 40, rotationAxis: 'yAxis', twistAngle: 60 },
+	},
 	{ name: 'scatterize', id: 'jasper.scatterize', over: { scatter: 20, leftTwist: 60, rightTwist: -60 } },
 	{ name: 'hair', id: 'jasper.hair', over: { length: 40, density: 300, weight: 0.5 } },
 	{ name: 'foam', id: 'jasper.foam', over: { productionRate: 4, view: 'rendered', size: 0.8 }, frame: 90 },
-	{ name: 'wave-world', id: 'jasper.wave-world', over: { view: 'heightMap', producer1Frequency: 2 }, frame: 60 },
+	{
+		name: 'wave-world',
+		id: 'jasper.wave-world',
+		over: { view: 'heightMap', producer1Frequency: 2 },
+		frame: 60,
+	},
 	{ name: 'wave-world-wire', id: 'jasper.wave-world', over: { producer1Frequency: 2 }, frame: 60 },
 	{ name: 'caustics', id: 'jasper.caustics', over: { causticsStrength: 0.6 } },
-	{ name: 'playground', id: 'jasper.particle-playground', over: { cannonParticlesPerSecond: 120, cannonText: 'JASPER', cannonParticleRadius: 12, cannonVelocity: 300, gravityForce: 150 }, frame: 60, bg: '#000' },
-	{ name: 'bezier-warp', id: 'jasper.bezier-warp', over: { topLeftTangent: [0.4, -0.2], bottomRightTangent: [0.6, 1.3], rightTopVertex: [0.9, 0.1] } },
+	{
+		name: 'playground',
+		id: 'jasper.particle-playground',
+		over: {
+			cannonParticlesPerSecond: 120,
+			cannonText: 'JASPER',
+			cannonParticleRadius: 12,
+			cannonVelocity: 300,
+			gravityForce: 150,
+		},
+		frame: 60,
+		bg: '#000',
+	},
+	{
+		name: 'bezier-warp',
+		id: 'jasper.bezier-warp',
+		over: { topLeftTangent: [0.4, -0.2], bottomRightTangent: [0.6, 1.3], rightTopVertex: [0.9, 0.1] },
+	},
 	{ name: 'optics', id: 'jasper.optics-compensation', over: { fieldOfView: 120 } },
 	{ name: 'polar', id: 'jasper.polar-coordinates', over: { interpolation: 100 } },
 	{ name: 'liquify-view', id: 'jasper.liquify', over: { viewMesh: true } },
@@ -194,9 +285,23 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 		expect(r.ppNone).toBe(0);
 	});
 
-	const DETERMINISM: { id: string; over?: Record<string, unknown>; seeded?: boolean; animated?: boolean; frame?: number }[] = [
-		{ id: 'jasper.card-dance', over: { yRotationSource: 'intensity1', yRotationMultiplier: 90 }, seeded: false, animated: false },
-		{ id: 'jasper.card-wipe', over: { transitionCompletion: 50, timingRandomness: 0.6, xRotJitterAmount: 30 } },
+	const DETERMINISM: {
+		id: string;
+		over?: Record<string, unknown>;
+		seeded?: boolean;
+		animated?: boolean;
+		frame?: number;
+	}[] = [
+		{
+			id: 'jasper.card-dance',
+			over: { yRotationSource: 'intensity1', yRotationMultiplier: 90 },
+			seeded: false,
+			animated: false,
+		},
+		{
+			id: 'jasper.card-wipe',
+			over: { transitionCompletion: 50, timingRandomness: 0.6, xRotJitterAmount: 30 },
+		},
 		{ id: 'jasper.pixel-polly' },
 		{ id: 'jasper.particle-playground', frame: 30 },
 		{ id: 'jasper.foam', over: { productionRate: 3 }, frame: 30 },

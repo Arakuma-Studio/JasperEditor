@@ -57,12 +57,20 @@ export const values = (labels: readonly string[]) =>
 			.replace(/[^A-Za-z0-9 ]+/g, ' ')
 			.trim()
 			.split(/\s+/)
-			.map((w, i) => (i === 0 ? w.charAt(0).toLowerCase() + w.slice(1) : w.charAt(0).toUpperCase() + w.slice(1)))
+			.map((w, i) =>
+				i === 0 ? w.charAt(0).toLowerCase() + w.slice(1) : w.charAt(0).toUpperCase() + w.slice(1),
+			)
 			.join(''),
 	);
 
 /** A popup built from labels only. */
-export const popup = (name: string, label: string, labels: readonly string[], defIndex = 0, group?: string) => {
+export const popup = (
+	name: string,
+	label: string,
+	labels: readonly string[],
+	defIndex = 0,
+	group?: string,
+) => {
 	const opts = values(labels);
 	return pick(name, label, opts, labels, opts[defIndex]!, group);
 };

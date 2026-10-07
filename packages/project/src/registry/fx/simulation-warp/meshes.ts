@@ -153,14 +153,22 @@ export type LiquifyStroke = {
  * the source at p + d(p)); every tool changes d where the brush passes, weighted by a smooth falloff, the pressure
  * and the freeze mask. Dabs every quarter radius along the path.
  */
-export function liquifyApplyStroke(mesh: readonly number[], w: number, h: number, s: LiquifyStroke): number[] {
+export function liquifyApplyStroke(
+	mesh: readonly number[],
+	w: number,
+	h: number,
+	s: LiquifyStroke,
+): number[] {
 	const g = liquifyGrid(w, h);
 	const m = liquifyOf(mesh, w, h).slice();
 	const nx = g.nx;
 	const ny = g.ny;
 	const cell = g.cell;
 	const D = 3;
-	const at = (i: number, j: number): [number, number] => [m[D + (j * nx + i) * 2]!, m[D + (j * nx + i) * 2 + 1]!];
+	const at = (i: number, j: number): [number, number] => [
+		m[D + (j * nx + i) * 2]!,
+		m[D + (j * nx + i) * 2 + 1]!,
+	];
 	const sample = (x: number, y: number): [number, number] => {
 		const fx = clamp(x / cell, 0, nx - 1);
 		const fy = clamp(y / cell, 0, ny - 1);
@@ -284,7 +292,10 @@ export function liquifyApplyStroke(mesh: readonly number[], w: number, h: number
 						else if (s.reconstruction === 'amplitwist')
 							tgt = [d0[0] + amp.a * px - amp.b * py, d0[1] + amp.b * px + amp.a * py];
 						else if (s.reconstruction === 'affine')
-							tgt = [d0[0] + grad[0]![0]! * px + grad[0]![1]! * py, d0[1] + grad[1]![0]! * px + grad[1]![1]! * py];
+							tgt = [
+								d0[0] + grad[0]![0]! * px + grad[0]![1]! * py,
+								d0[1] + grad[1]![0]! * px + grad[1]![1]! * py,
+							];
 						d[0] += (tgt[0] - d[0]!) * w * 2;
 						d[1] += (tgt[1] - d[1]!) * w * 2;
 					}

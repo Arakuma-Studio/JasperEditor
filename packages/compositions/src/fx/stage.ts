@@ -15,11 +15,11 @@ import {
 	type FxEffectPlan,
 	type FxFrameContext,
 	type FxLayerMask,
-	flattenPath,
 	type FxParamsAt,
 	type FxStepTime,
 	type FxTimeStep,
 	type FxUniform,
+	flattenPath,
 	fxBuiltinUniforms,
 	fxClipProgress,
 	fxParamsAtFn,
@@ -49,6 +49,7 @@ import { NestCompSizeContext } from '../layers/nest-context.ts';
 import type { LayerProps, LayerTap } from '../types.ts';
 import { type FxMaskGeometry, maskGeometryKey } from './mask.ts';
 import { type MatteTap, type MatteTapMeta, trackMatteMediaId } from './matte.ts';
+import { fxPixelsOf, useFxPixels } from './pixels.ts';
 import {
 	type FxBypass,
 	type FxCanvasLayout,
@@ -59,7 +60,6 @@ import {
 } from './plan.ts';
 import { fxEffectRegistry } from './registry.ts';
 import { fxStatus, useFxStatus } from './status.ts';
-import { fxPixelsOf, useFxPixels } from './pixels.ts';
 import { fxClipInfoOf } from './time.ts';
 
 export type FxLayout = FxCanvasLayout;
@@ -321,21 +321,20 @@ export function useLayerFx(
 	);
 	// sim-warp: images whose pixels simulations read on the CPU (`gpu.cpuPixels`).
 	const pixelUrls = useMemo(
-		() =>
-			[
-				...new Set(
-					plan?.steps.flatMap((s) =>
-						s.kind === 'gpu'
-							? (s.spec.gpu?.cpuPixels ?? [])
-									.map((name) => (s.fx.params[name] as { mediaId?: unknown } | undefined)?.mediaId)
-									.filter((id): id is string => typeof id === 'string' && !!id)
-									.map((id) => doc.media[id])
-									.filter((h) => h?.kind === 'image')
-									.map((h) => h!.url)
-							: [],
-					) ?? [],
-				),
-			],
+		() => [
+			...new Set(
+				plan?.steps.flatMap((s) =>
+					s.kind === 'gpu'
+						? (s.spec.gpu?.cpuPixels ?? [])
+								.map((name) => (s.fx.params[name] as { mediaId?: unknown } | undefined)?.mediaId)
+								.filter((id): id is string => typeof id === 'string' && !!id)
+								.map((id) => doc.media[id])
+								.filter((h) => h?.kind === 'image')
+								.map((h) => h!.url)
+						: [],
+				) ?? [],
+			),
+		],
 		[plan, doc.media],
 	);
 	const pixelsVersion = useFxPixels(pixelUrls, !doc.isPreview);
@@ -461,7 +460,9 @@ export function useLayerFx(
 							return h?.kind === 'image' ? fxPixelsOf(h.url) : null;
 						},
 						structures: {
-							...((s.fx as { puppet?: unknown }).puppet ? { puppet: (s.fx as { puppet?: unknown }).puppet } : {}),
+							...((s.fx as { puppet?: unknown }).puppet
+								? { puppet: (s.fx as { puppet?: unknown }).puppet }
+								: {}),
 							...(layerMasks.length ? { masks: layerMasks } : {}),
 						},
 					};

@@ -12,9 +12,14 @@ import {
 	type MaskProp,
 } from '../../masks/model.ts';
 import type { ParamSpec } from '../../registry/effects.ts';
-import { PUPPET_PIN_LABELS } from '../../schema/puppet.ts';
 import { type PropertySpec, resolvePropertySpec } from '../../registry/properties.ts';
-import { type Animatable, type Keyframe, MESH_VALUE_MAX, type SpatialInterpolation } from '../../schema/common.ts';
+import {
+	type Animatable,
+	type Keyframe,
+	MESH_VALUE_MAX,
+	type SpatialInterpolation,
+} from '../../schema/common.ts';
+import { PUPPET_PIN_LABELS } from '../../schema/puppet.ts';
 import type { Clip, EffectInstance, Sequence, Track } from '../../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
 import { transitionSpec, transitionStartFrame } from '../../transitions.ts';
@@ -26,8 +31,8 @@ import { applyClipPatch } from './clip-core.ts';
 import { setCompositionProp } from './composition.ts';
 import { locateMask, validateMaskPath } from './mask.ts';
 import { templateParamDraftAnim, templateParamsValidator } from './mg-template.ts';
-import { isPinProp, locatePin, PUPPET_PIN_RANGES } from './sim-warp.ts';
 import { ensureShapeStorage } from './shape.ts';
+import { isPinProp, locatePin, PUPPET_PIN_RANGES } from './sim-warp.ts';
 import { ensureMoreOptions, parseSourceText, sourceTextDraftAnim } from './text-animators.ts';
 import type { HandlerMap } from './util.ts';
 

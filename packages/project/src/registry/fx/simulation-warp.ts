@@ -6,16 +6,16 @@
 // Design and verified behaviour: docs/wp-notes/sim-warp.md. Authoring guide: docs/wp-notes/fx-shader-framework.md.
 import type { EffectSpec } from '../effects.ts';
 import { CARD_EFFECTS, CARD_TRANSITION_EFFECTS } from './simulation-warp/cards.ts';
-import { SHATTER_EFFECTS } from './simulation-warp/shatter.ts';
-import { PIXEL_FX_EFFECTS } from './simulation-warp/pixel-fx.ts';
-import { FOAM_EFFECTS } from './simulation-warp/foam.ts';
-import { WAVE_WORLD_EFFECTS } from './simulation-warp/wave-world.ts';
 import { CAUSTICS_EFFECTS } from './simulation-warp/caustics.ts';
-import { PLAYGROUND_EFFECTS } from './simulation-warp/playground.ts';
 import { DISTORT_EFFECTS } from './simulation-warp/distort.ts';
+import { FOAM_EFFECTS } from './simulation-warp/foam.ts';
 import { MESH_WARP_EFFECTS } from './simulation-warp/mesh-warps.ts';
-import { PUPPET_EFFECTS } from './simulation-warp/puppet.ts';
 import { PARTICLE_EFFECTS } from './simulation-warp/particles.ts';
+import { PIXEL_FX_EFFECTS } from './simulation-warp/pixel-fx.ts';
+import { PLAYGROUND_EFFECTS } from './simulation-warp/playground.ts';
+import { PUPPET_EFFECTS } from './simulation-warp/puppet.ts';
+import { SHATTER_EFFECTS } from './simulation-warp/shatter.ts';
+import { WAVE_WORLD_EFFECTS } from './simulation-warp/wave-world.ts';
 import { WEATHER_EFFECTS } from './simulation-warp/weather.ts';
 
 export const SIMULATION_WARP_EFFECTS: readonly EffectSpec[] = [

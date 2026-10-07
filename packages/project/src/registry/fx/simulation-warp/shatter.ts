@@ -17,7 +17,13 @@ import { choice, clamp, num, vec2 } from './core.ts';
 import { cameraParams, lightingParams, materialParams, piecePasses, pieceUniforms } from './pieces.ts';
 
 export const SHATTER_PATTERNS = ['Bricks', 'Glass', 'Hexagons', 'Squares', 'Triangles', 'Custom'] as const;
-const VIEWS = ['Rendered', 'Wireframe Front View', 'Wireframe', 'Wireframe Front View + Forces', 'Wireframe + Forces'] as const;
+const VIEWS = [
+	'Rendered',
+	'Wireframe Front View',
+	'Wireframe',
+	'Wireframe Front View + Forces',
+	'Wireframe + Forces',
+] as const;
 const RENDERS = ['All', 'Layer', 'Pieces'] as const;
 const TUMBLE = ['Free', 'None', 'X', 'Y', 'Z', 'XY', 'XZ', 'YZ'] as const;
 const TEXTURE_MODES = ['Color', 'Layer', 'Tinted Layer'] as const;
@@ -84,7 +90,11 @@ function mapKey(px: FxPixels, u: number, v: number): number {
 }
 
 /** Custom Shatter Map: per piece (group centre x, y in layer px, key, valid) — pieces of one colour break as one. */
-function customGroups(p: EffectParams, ctx: FxFrameContext, lat: ReturnType<typeof shatterLattice>): Float32Array | null {
+function customGroups(
+	_p: EffectParams,
+	ctx: FxFrameContext,
+	lat: ReturnType<typeof shatterLattice>,
+): Float32Array | null {
 	if (lat.kind !== 5) return null;
 	const px = ctx.pixels?.('customShatterMap') ?? null;
 	const lw = ctx.width;
@@ -405,4 +415,3 @@ void main() {
 });
 
 export const SHATTER_EFFECTS: readonly EffectSpec[] = [SHATTER];
-

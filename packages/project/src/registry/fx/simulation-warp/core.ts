@@ -147,7 +147,12 @@ export const vec2 = (v: unknown, d: [number, number] = [0, 0]): [number, number]
 	Array.isArray(v) && v.length >= 2 ? [num(v[0], d[0]), num(v[1], d[1])] : d;
 export const rgba = (v: unknown, d: [number, number, number, number] = [1, 1, 1, 1]) =>
 	Array.isArray(v) && v.length >= 4
-		? ([num(v[0], d[0]), num(v[1], d[1]), num(v[2], d[2]), num(v[3], d[3])] as [number, number, number, number])
+		? ([num(v[0], d[0]), num(v[1], d[1]), num(v[2], d[2]), num(v[3], d[3])] as [
+				number,
+				number,
+				number,
+				number,
+			])
 		: d;
 /** Index of an enum value in its options (default 0). */
 export const choice = (v: unknown, options: readonly string[], d = 0) => {

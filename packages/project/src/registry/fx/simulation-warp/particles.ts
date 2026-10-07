@@ -30,9 +30,9 @@ import {
 	lifeOf,
 	newPState,
 	P_STRIDE,
-	type PState,
 	PF,
 	type Phys,
+	type PState,
 	PW_ANIMATIONS,
 	stepParticles,
 } from './engine.ts';
@@ -160,7 +160,11 @@ function pack(items: Item[]): { texels: Float32Array; count: number } {
 
 /** Particle World's physics at a step (params `q` of that step, `prev` of the step before: producer motion). */
 function pwPhys(q: EffectParams, prev: EffectParams, seed: number): Phys {
-	const prod = (r: EffectParams): [number, number, number] => [num(r.producerX), num(r.producerY), num(r.producerZ)];
+	const prod = (r: EffectParams): [number, number, number] => [
+		num(r.producerX),
+		num(r.producerY),
+		num(r.producerZ),
+	];
 	const p0 = prod(prev);
 	const p1 = prod(q);
 	const inh = num(q.inheritVelocity) / 100;
@@ -169,8 +173,16 @@ function pwPhys(q: EffectParams, prev: EffectParams, seed: number): Phys {
 		rate: Math.max(0, num(q.birthRate, 0.5)) * 120,
 		life: Math.max(0, num(q.longevity, 1)),
 		producer: p1,
-		radius: [Math.max(0, num(q.radiusX, 0.025)), Math.max(0, num(q.radiusY, 0.025)), Math.max(0, num(q.radiusZ, 0.025))],
-		inherit: [(p1[0] - p0[0]) * SIM_SPS * inh, (p1[1] - p0[1]) * SIM_SPS * inh, (p1[2] - p0[2]) * SIM_SPS * inh],
+		radius: [
+			Math.max(0, num(q.radiusX, 0.025)),
+			Math.max(0, num(q.radiusY, 0.025)),
+			Math.max(0, num(q.radiusZ, 0.025)),
+		],
+		inherit: [
+			(p1[0] - p0[0]) * SIM_SPS * inh,
+			(p1[1] - p0[1]) * SIM_SPS * inh,
+			(p1[2] - p0[2]) * SIM_SPS * inh,
+		],
 		anim: choice(q.animation, ANIM_VALUES),
 		speed: num(q.velocity, 1) * 0.5,
 		gravity: [num(q.gravityX) * g, num(q.gravityY, 1) * g, num(q.gravityZ) * g],
@@ -212,8 +224,19 @@ export function pwCamera(p: EffectParams, lw: number, lh: number) {
 	const dist = Math.max(0.05, num(p.cameraDistance, 2));
 	const fov = clamp(num(p.cameraFov, 50), 1, 170);
 	const f = (dist * Math.tan(rad(25))) / Math.tan(rad(fov) / 2);
-	const [ax, ay, az] = [rad(num(p.cameraRotationX)), rad(num(p.cameraRotationY)), rad(num(p.cameraRotationZ))];
-	const [sx, cx, sy, cy, sz, cz] = [Math.sin(ax), Math.cos(ax), Math.sin(ay), Math.cos(ay), Math.sin(az), Math.cos(az)];
+	const [ax, ay, az] = [
+		rad(num(p.cameraRotationX)),
+		rad(num(p.cameraRotationY)),
+		rad(num(p.cameraRotationZ)),
+	];
+	const [sx, cx, sy, cy, sz, cz] = [
+		Math.sin(ax),
+		Math.cos(ax),
+		Math.sin(ay),
+		Math.cos(ay),
+		Math.sin(az),
+		Math.cos(az),
+	];
 	return {
 		dist,
 		/** [x, y (layer px), zc (depth from the camera), k (scale)] or null behind the camera. */
@@ -234,7 +257,12 @@ export function pwCamera(p: EffectParams, lw: number, lh: number) {
 }
 
 /** Guide lines (Grid & Guides) as line records. */
-function guideItems(p: EffectParams, cam: ReturnType<typeof pwCamera>, toCanvas: (x: number, y: number) => [number, number], s: number): Item[] {
+function guideItems(
+	p: EffectParams,
+	cam: ReturnType<typeof pwCamera>,
+	toCanvas: (x: number, y: number) => [number, number],
+	s: number,
+): Item[] {
 	const out: Item[] = [];
 	const line = (a: [number, number, number], b: [number, number, number], c: number[], steps = 1) => {
 		for (let k = 0; k < steps; k++) {
@@ -289,7 +317,11 @@ function guideItems(p: EffectParams, cam: ReturnType<typeof pwCamera>, toCanvas:
 		for (let k = 0; k < 32; k++) {
 			const a0 = (k / 32) * Math.PI * 2;
 			const a1 = ((k + 1) / 32) * Math.PI * 2;
-			line([px + Math.cos(a0) * rx, py + Math.sin(a0) * ry, pz], [px + Math.cos(a1) * rx, py + Math.sin(a1) * ry, pz], [1, 1, 0.4, 1]);
+			line(
+				[px + Math.cos(a0) * rx, py + Math.sin(a0) * ry, pz],
+				[px + Math.cos(a1) * rx, py + Math.sin(a1) * ry, pz],
+				[1, 1, 0.4, 1],
+			);
 		}
 	}
 	return out;
@@ -316,7 +348,10 @@ function particleItems(
 	const scatter = num(p.textureScatter) / 100;
 	const rot0 = rad(num(p.initialRotation));
 	const rotSpeed = rad(num(p.rotationSpeed, 120));
-	const rmax = Math.max(1e-6, Math.hypot(num(p.radiusX, 0.025), num(p.radiusY, 0.025), num(p.radiusZ, 0.025)));
+	const rmax = Math.max(
+		1e-6,
+		Math.hypot(num(p.radiusX, 0.025), num(p.radiusY, 0.025), num(p.radiusZ, 0.025)),
+	);
 	const out: Item[] = [];
 	const d = st.d;
 	for (let r = 0; r < st.n; r++) {
@@ -332,7 +367,11 @@ function particleItems(
 		const c = cue(at.depth, [rgb[0]!, rgb[1]!, rgb[2]!, maxOp * opacityAt(opMap, u)]);
 		const ang = rot0 + rnd * Math.PI * 2 + rotSpeed * d[o + PF.age]!;
 		// Screen velocity (canvas px / s) for Line and Motion Polygon.
-		const nx = place(d[o + PF.x]! + d[o + PF.vx]! * 0.01, d[o + PF.y]! + d[o + PF.vy]! * 0.01, d[o + PF.z]! + d[o + PF.vz]! * 0.01);
+		const nx = place(
+			d[o + PF.x]! + d[o + PF.vx]! * 0.01,
+			d[o + PF.y]! + d[o + PF.vy]! * 0.01,
+			d[o + PF.z]! + d[o + PF.vz]! * 0.01,
+		);
 		const svx = nx ? (nx.x - at.x) * 100 * velScale : 0;
 		const svy = nx ? (nx.y - at.y) * 100 * velScale : 0;
 		const vl = Math.max(1e-6, Math.hypot(svx, svy));
@@ -345,7 +384,7 @@ function particleItems(
 			seg = [-svx * 0.05, -svy * 0.05];
 			radius = rr * 0.5;
 		}
-		const sc: [number, number] = [(rnd * 7.31) % 1 * scatter, ((rnd * 13.7) % 1) * scatter];
+		const sc: [number, number] = [((rnd * 7.31) % 1) * scatter, ((rnd * 13.7) % 1) * scatter];
 		out.push({
 			depth: at.depth,
 			write: (t, i) => writeRecord(t, i, at.x, at.y, radius, ang, c, shape, seg, rnd, kind, type, sc),
@@ -432,7 +471,8 @@ export const PARTICLE_WORLD = defineShaderEffect({
 					b *= k;
 				}
 				if (cueType === 1) a *= 1 - dq;
-				else if (cueType === 2) [r, g, b] = [r + (fog[0] - r) * dq, g + (fog[1] - g) * dq, b + (fog[2] - b) * dq];
+				else if (cueType === 2)
+					[r, g, b] = [r + (fog[0] - r) * dq, g + (fog[1] - g) * dq, b + (fog[2] - b) * dq];
 				return [r, g, b, a];
 			};
 			const items = [
@@ -501,7 +541,8 @@ export const PARTICLE_SYSTEMS = defineShaderEffect({
 	id: 'jasper.particle-systems',
 	label: 'Particle Systems II',
 	category: SIM,
-	description: 'A 2D particle system: sparks, fountains and bursts from a producer point with gravity and resistance.',
+	description:
+		'A 2D particle system: sparks, fountains and bursts from a producer point with gravity and resistance.',
 	keywords: ['particles', 'emitter', 'sparks', 'fountain', 'cc particle systems'],
 	params: [
 		n('birthRate', 'Birth Rate', 2, 0, 100, 0, 20),
@@ -558,7 +599,8 @@ export const MERCURY = defineShaderEffect({
 	id: 'jasper.mercury',
 	label: 'Mercury',
 	category: SIM,
-	description: 'Liquid-metal blobs: a particle system rendered as merging, shaded metaballs that refract the layer.',
+	description:
+		'Liquid-metal blobs: a particle system rendered as merging, shaded metaballs that refract the layer.',
 	keywords: ['metaballs', 'liquid', 'metal', 'blobs', 'mr mercury', 'cc mr mercury'],
 	params: [
 		n('radiusX', 'Radius X', 50, 0, 2000, 0, 300, 0.1, { unit: 'px' }),

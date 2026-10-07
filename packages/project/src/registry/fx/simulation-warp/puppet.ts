@@ -3,8 +3,9 @@
 // edited with the Program monitor's Puppet Pin tool and the `puppet.*` commands). The ARAP solve runs per frame in TS
 // (puppet/arap.ts); a draw pass maps the source through the deformed triangles, back to front by Overlap depth.
 // Areas outside every mesh are not drawn (as in After Effects); without meshes the layer passes through.
-import type { EffectSpec } from '../../effects.ts';
+
 import { type ResolvedPuppet, solvePuppet } from '../../../puppet/model.ts';
+import type { EffectSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
 import { GLSL_DATA } from '../glsl/data.ts';
 import type { FxPlanContext } from '../shader.ts';
@@ -26,9 +27,7 @@ export const PUPPET = defineShaderEffect({
 	description:
 		'Deforms the layer like a puppet: place pins with the Puppet Pin tool on the Program monitor and move or animate them; Starch stiffens, Overlap layers parts in front.',
 	keywords: ['puppet', 'pins', 'mesh', 'deform', 'character', 'arap'],
-	params: [
-		n('refinement', 'Mesh Rotation Refinement', 20, 0, 100, 0, 100, 1, { animatable: false }),
-	],
+	params: [n('refinement', 'Mesh Rotation Refinement', 20, 0, 100, 0, 100, 1, { animatable: false })],
 	expensive: true,
 	gpu: {
 		padding: (p, ctx) => {
@@ -52,7 +51,8 @@ export const PUPPET = defineShaderEffect({
 			for (const m of s ?? [])
 				m.geometry.tris.forEach((t, ti) => {
 					const data: number[] = [];
-					for (const v of t) data.push(m.geometry.verts[v]![0], m.geometry.verts[v]![1], m.deformed[v]![0], m.deformed[v]![1]);
+					for (const v of t)
+						data.push(m.geometry.verts[v]![0], m.geometry.verts[v]![1], m.deformed[v]![0], m.deformed[v]![1]);
 					tris.push({ d: m.depths[ti]!, i: k++, data });
 				});
 			// Back to front by Overlap depth (stable).

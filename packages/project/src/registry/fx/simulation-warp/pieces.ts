@@ -9,11 +9,10 @@ import { type Mat3, multiplyMat3, type Quad, quadToQuad } from '../../../render/
 import type { EffectParams, ParamSpec } from '../../effects.ts';
 import { fxParam } from '../params.ts';
 import type { FxFrameContext, FxUniformValue, GlslChunk, ShaderPass } from '../shader.ts';
-import { n, popup } from './common.ts';
+import { n, popup, values } from './common.ts';
 import { bool, choice, clamp, num, rgba, vec2 } from './core.ts';
 import { GLSL_SORTED, gpuSortPasses } from './sort.ts';
 import { GLSL_SPRITES } from './sprites.ts';
-import { values } from './common.ts';
 
 export const CAMERA_SYSTEMS = ['Camera Position', 'Corner Pins'] as const;
 export const TRANSFORM_ORDERS = [
@@ -77,10 +76,23 @@ export function materialParams(diffuse: number): ParamSpec[] {
 }
 
 type M3 = number[][];
-const mul = (a: M3, b: M3): M3 => a.map((r) => [0, 1, 2].map((j) => r[0]! * b[0]![j]! + r[1]! * b[1]![j]! + r[2]! * b[2]![j]!));
-const rx = (a: number): M3 => [[1, 0, 0], [0, Math.cos(a), -Math.sin(a)], [0, Math.sin(a), Math.cos(a)]];
-const ry = (a: number): M3 => [[Math.cos(a), 0, Math.sin(a)], [0, 1, 0], [-Math.sin(a), 0, Math.cos(a)]];
-const rz = (a: number): M3 => [[Math.cos(a), -Math.sin(a), 0], [Math.sin(a), Math.cos(a), 0], [0, 0, 1]];
+const mul = (a: M3, b: M3): M3 =>
+	a.map((r) => [0, 1, 2].map((j) => r[0]! * b[0]![j]! + r[1]! * b[1]![j]! + r[2]! * b[2]![j]!));
+const rx = (a: number): M3 => [
+	[1, 0, 0],
+	[0, Math.cos(a), -Math.sin(a)],
+	[0, Math.sin(a), Math.cos(a)],
+];
+const ry = (a: number): M3 => [
+	[Math.cos(a), 0, Math.sin(a)],
+	[0, 1, 0],
+	[-Math.sin(a), 0, Math.cos(a)],
+];
+const rz = (a: number): M3 => [
+	[Math.cos(a), -Math.sin(a), 0],
+	[Math.sin(a), Math.cos(a), 0],
+	[0, 0, 1],
+];
 const rad = (d: number) => (d * Math.PI) / 180;
 
 /** Rotation applying the axes in `order` (0 XYZ … 5 ZYX; the first letter is applied first). */
@@ -101,7 +113,14 @@ export function rotOrdered(x: number, y: number, z: number, order: number): M3 {
 export type Proj = { m: number[][]; near: number };
 
 function simpleProj(c: [number, number], d: number): Proj {
-	return { m: [[d, 0, c[0], 0], [0, d, c[1], 0], [0, 0, 1, d]], near: 0.05 * d };
+	return {
+		m: [
+			[d, 0, c[0], 0],
+			[0, d, c[1], 0],
+			[0, 0, 1, d],
+		],
+		near: 0.05 * d,
+	};
 }
 
 function after(p: Proj, a: M3, t: number[]): Proj {
@@ -118,7 +137,9 @@ function then(p: Proj, h: Mat3): Proj {
 		[h[3], h[4], h[5]],
 		[h[6], h[7], h[8]],
 	];
-	const m = [0, 1, 2].map((i) => [0, 1, 2, 3].map((j) => H[i]![0]! * p.m[0]![j]! + H[i]![1]! * p.m[1]![j]! + H[i]![2]! * p.m[2]![j]!));
+	const m = [0, 1, 2].map((i) =>
+		[0, 1, 2, 3].map((j) => H[i]![0]! * p.m[0]![j]! + H[i]![1]! * p.m[1]![j]! + H[i]![2]! * p.m[2]![j]!),
+	);
 	return { m, near: p.near * Math.max(Math.abs(h[8]), 1e-9) };
 }
 
@@ -152,7 +173,12 @@ export function projection(p: EffectParams, box: { x: number; y: number; w: numb
 	const focal = Math.max(1, num(p.focalLength, 70));
 	const base = simpleProj(c, (size * zpos * focal) / 140);
 	const order = choice(p.transformOrder, values(TRANSFORM_ORDERS));
-	const r = rotOrdered(rad(num(p.cameraXRotation)), rad(num(p.cameraYRotation)), rad(num(p.cameraZRotation)), order);
+	const r = rotOrdered(
+		rad(num(p.cameraXRotation)),
+		rad(num(p.cameraYRotation)),
+		rad(num(p.cameraZRotation)),
+		order,
+	);
 	const xy = at(p.cameraXYPosition, [0.5, 0.5]);
 	const shift = [xy[0] - c[0], xy[1] - c[1], 0];
 	const c3 = [c[0], c[1], 0];
@@ -166,9 +192,21 @@ export function projection(p: EffectParams, box: { x: number; y: number; w: numb
 
 /** Camera centre (where the projection collapses) in canvas-world, or far in front without one. */
 export function eyeOf(p: Proj): [number, number, number] {
-	const a: Mat3 = [p.m[0]![0]!, p.m[0]![1]!, p.m[0]![2]!, p.m[1]![0]!, p.m[1]![1]!, p.m[1]![2]!, p.m[2]![0]!, p.m[2]![1]!, p.m[2]![2]!];
+	const a: Mat3 = [
+		p.m[0]![0]!,
+		p.m[0]![1]!,
+		p.m[0]![2]!,
+		p.m[1]![0]!,
+		p.m[1]![1]!,
+		p.m[1]![2]!,
+		p.m[2]![0]!,
+		p.m[2]![1]!,
+		p.m[2]![2]!,
+	];
 	const det =
-		a[0] * (a[4] * a[8] - a[5] * a[7]) - a[1] * (a[3] * a[8] - a[5] * a[6]) + a[2] * (a[3] * a[7] - a[4] * a[6]);
+		a[0] * (a[4] * a[8] - a[5] * a[7]) -
+		a[1] * (a[3] * a[8] - a[5] * a[6]) +
+		a[2] * (a[3] * a[7] - a[4] * a[6]);
 	if (Math.abs(det) < 1e-12) return [0, 0, -1e9];
 	// Solve A e = −t by Cramer's rule.
 	const b = [-p.m[0]![3]!, -p.m[1]![3]!, -p.m[2]![3]!];
@@ -177,7 +215,11 @@ export function eyeOf(p: Proj): [number, number, number] {
 		m[k] = b[0]!;
 		m[3 + k] = b[1]!;
 		m[6 + k] = b[2]!;
-		return m[0]! * (m[4]! * m[8]! - m[5]! * m[7]!) - m[1]! * (m[3]! * m[8]! - m[5]! * m[6]!) + m[2]! * (m[3]! * m[7]! - m[4]! * m[6]!);
+		return (
+			m[0]! * (m[4]! * m[8]! - m[5]! * m[7]!) -
+			m[1]! * (m[3]! * m[8]! - m[5]! * m[6]!) +
+			m[2]! * (m[3]! * m[7]! - m[4]! * m[6]!)
+		);
 	};
 	return [col(0) / det, col(1) / det, col(2) / det];
 }

@@ -37,10 +37,10 @@ import {
 	kindCapabilities,
 	layerMapOf,
 	maskPropertySpec,
-	PUPPET_PIN_LABELS,
-	PUPPET_PIN_PROPS,
 	type ParamSpec,
 	type PropertySpec,
+	PUPPET_PIN_LABELS,
+	PUPPET_PIN_PROPS,
 	propertyEvaluateOptions,
 	type Rational,
 	type RenderVisualClip,
@@ -386,7 +386,13 @@ export class World {
 			const pins = (fx as { puppet?: { pins: { id: string; name: string }[] } }).puppet?.pins ?? [];
 			return [
 				...spec.params.map((p) => leaf(`${group}.${p.name}`, p.label, p.name)),
-				...pins.map((pin) => ({ path: `puppet.${pin.id}`, group: true, name: pin.name, matchName: 'pin', aliases: [pin.id] })),
+				...pins.map((pin) => ({
+					path: `puppet.${pin.id}`,
+					group: true,
+					name: pin.name,
+					matchName: 'pin',
+					aliases: [pin.id],
+				})),
 			];
 		}
 		if (group.startsWith('puppet.') && group.split('.').length === 2) {

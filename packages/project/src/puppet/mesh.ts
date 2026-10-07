@@ -12,7 +12,8 @@ export type MeshOpts = { triangles: number; density: number; expansion: number }
 export const DEFAULT_MESH_OPTS: MeshOpts = { triangles: 350, density: 50, expansion: 3 };
 
 export type Grid = { w: number; h: number; on: Uint8Array };
-const at = (g: Grid, x: number, y: number) => x >= 0 && y >= 0 && x < g.w && y < g.h && g.on[y * g.w + x] === 1;
+const at = (g: Grid, x: number, y: number) =>
+	x >= 0 && y >= 0 && x < g.w && y < g.h && g.on[y * g.w + x] === 1;
 
 export const cross = (o: Pt, a: Pt, b: Pt) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
 const dist2 = (a: Pt, b: Pt) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2;
@@ -221,7 +222,10 @@ export function trace(g: Grid): Pt[] {
 		}
 	}
 	if (best.length < 3) return best;
-	return best.filter((b, i) => Math.abs(cross(best[(i + best.length - 1) % best.length]!, b, best[(i + 1) % best.length]!)) > 1e-12);
+	return best.filter(
+		(b, i) =>
+			Math.abs(cross(best[(i + best.length - 1) % best.length]!, b, best[(i + 1) % best.length]!)) > 1e-12,
+	);
 }
 
 function segDist2(p: Pt, a: Pt, b: Pt): number {
@@ -315,7 +319,12 @@ const orient = (v: readonly Pt[], t: [number, number, number]): [number, number,
 export function delaunay(pts: readonly Pt[]): [number, number, number][] {
 	const n = pts.length;
 	if (n < 3) return [];
-	let [x0, y0, x1, y1] = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
+	let [x0, y0, x1, y1] = [
+		Number.POSITIVE_INFINITY,
+		Number.POSITIVE_INFINITY,
+		Number.NEGATIVE_INFINITY,
+		Number.NEGATIVE_INFINITY,
+	];
 	for (const p of pts) {
 		x0 = Math.min(x0, p[0]);
 		y0 = Math.min(y0, p[1]);
@@ -334,7 +343,12 @@ export function delaunay(pts: readonly Pt[]): [number, number, number][] {
 			if (inCircle(v[t[0]]!, v[t[1]]!, v[t[2]]!, p)) bad.push(k);
 		});
 		if (bad.length === 0) {
-			const k = tris.findIndex((t) => cross(v[t[0]]!, v[t[1]]!, p) >= 0 && cross(v[t[1]]!, v[t[2]]!, p) >= 0 && cross(v[t[2]]!, v[t[0]]!, p) >= 0);
+			const k = tris.findIndex(
+				(t) =>
+					cross(v[t[0]]!, v[t[1]]!, p) >= 0 &&
+					cross(v[t[1]]!, v[t[2]]!, p) >= 0 &&
+					cross(v[t[2]]!, v[t[0]]!, p) >= 0,
+			);
 			if (k < 0) continue;
 			bad = [k];
 		}
@@ -371,11 +385,18 @@ function segCross(a: Pt, b: Pt, c: Pt, d: Pt): boolean {
 	const d2 = cross(a, b, d);
 	const d3 = cross(c, d, a);
 	const d4 = cross(c, d, b);
-	return ((d1 > 1e-12 && d2 < -1e-12) || (d1 < -1e-12 && d2 > 1e-12)) && ((d3 > 1e-12 && d4 < -1e-12) || (d3 < -1e-12 && d4 > 1e-12));
+	return (
+		((d1 > 1e-12 && d2 < -1e-12) || (d1 < -1e-12 && d2 > 1e-12)) &&
+		((d3 > 1e-12 && d4 < -1e-12) || (d3 < -1e-12 && d4 > 1e-12))
+	);
 }
 
 /** Recovers constraint edges in a triangulation by flipping crossing edges. */
-export function recoverEdges(v: readonly Pt[], tris: [number, number, number][], constraints: readonly [number, number][]): void {
+export function recoverEdges(
+	v: readonly Pt[],
+	tris: [number, number, number][],
+	constraints: readonly [number, number][],
+): void {
 	const ek = (a: number, b: number) => `${Math.min(a, b)},${Math.max(a, b)}`;
 	const edgeTris = new Map<string, number[]>();
 	const addTri = (k: number) => {
@@ -405,16 +426,20 @@ export function recoverEdges(v: readonly Pt[], tris: [number, number, number][],
 			}
 		}
 	};
-	tris.forEach((_, k) => addTri(k));
+	for (let k = 0; k < tris.length; k++) addTri(k);
 	const fixed = new Set(constraints.map(([a, b]) => ek(a, b)));
 	const parse = (s: string): [number, number] => s.split(',').map(Number) as [number, number];
 	for (const [a, b] of constraints) {
 		if (edgeTris.get(ek(a, b))?.length) continue;
 		const queue: string[] = [...edgeTris.entries()]
-			.filter(([e, t]) => t.length === 2 && (() => {
-				const [p, q] = parse(e);
-				return segCross(v[a]!, v[b]!, v[p]!, v[q]!);
-			})())
+			.filter(
+				([e, t]) =>
+					t.length === 2 &&
+					(() => {
+						const [p, q] = parse(e);
+						return segCross(v[a]!, v[b]!, v[p]!, v[q]!);
+					})(),
+			)
 			.map(([e]) => e)
 			.sort();
 		let guard = 0;
@@ -422,7 +447,7 @@ export function recoverEdges(v: readonly Pt[], tris: [number, number, number][],
 			if (++guard > 20000) break;
 			const e = queue.shift()!;
 			const ts = edgeTris.get(e);
-			if (!ts || ts.length !== 2 || fixed.has(e)) continue;
+			if (ts?.length !== 2 || fixed.has(e)) continue;
 			const [u, w] = parse(e);
 			const t0 = tris[ts[0]!]!;
 			const t1 = tris[ts[1]!]!;
@@ -465,7 +490,12 @@ export function triangulate(outline: readonly Pt[], opts: MeshOpts): PuppetMeshG
 	const boundary = densify(poly, l);
 	const nb = boundary.length;
 	const pts: Pt[] = [...boundary];
-	let [x0, y0, x1, y1] = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
+	let [x0, y0, x1, y1] = [
+		Number.POSITIVE_INFINITY,
+		Number.POSITIVE_INFINITY,
+		Number.NEGATIVE_INFINITY,
+		Number.NEGATIVE_INFINITY,
+	];
 	for (const p of poly) {
 		x0 = Math.min(x0, p[0]);
 		y0 = Math.min(y0, p[1]);
@@ -490,7 +520,10 @@ export function triangulate(outline: readonly Pt[], opts: MeshOpts): PuppetMeshG
 		Array.from({ length: nb }, (_, i) => [i, (i + 1) % nb] as [number, number]),
 	);
 	tris = tris.filter((t) => {
-		const c: Pt = [(pts[t[0]]![0] + pts[t[1]]![0] + pts[t[2]]![0]) / 3, (pts[t[0]]![1] + pts[t[1]]![1] + pts[t[2]]![1]) / 3];
+		const c: Pt = [
+			(pts[t[0]]![0] + pts[t[1]]![0] + pts[t[2]]![0]) / 3,
+			(pts[t[0]]![1] + pts[t[1]]![1] + pts[t[2]]![1]) / 3,
+		];
 		return cross(pts[t[0]]!, pts[t[1]]!, pts[t[2]]!) > 1e-9 && inside(poly, c);
 	});
 	const map = new Int32Array(pts.length).fill(-1);

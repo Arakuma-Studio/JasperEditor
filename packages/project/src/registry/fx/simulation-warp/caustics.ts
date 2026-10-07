@@ -89,7 +89,12 @@ void main() {
   fragColor = vec4(fx_luma(c.rgb), 0.0, 0.0, 1.0);
 }`,
 			},
-			...gaussianBlurPasses({ input: 'height', output: 'hb', sigma: { uniform: 'u_hSigma' }, format: 'rgba16f' }),
+			...gaussianBlurPasses({
+				input: 'height',
+				output: 'hb',
+				sigma: { uniform: 'u_hSigma' },
+				format: 'rgba16f',
+			}),
 			{
 				output: 'bottomPic',
 				include: [GLSL_CAUSTICS],

@@ -173,7 +173,8 @@ export const BUBBLES = defineShaderEffect({
 	id: 'jasper.bubbles',
 	label: 'Bubbles',
 	category: SIM,
-	description: 'Turns the layer into rising, wobbling bubbles that refract (liquid) or reflect (metal) its picture.',
+	description:
+		'Turns the layer into rising, wobbling bubbles that refract (liquid) or reflect (metal) its picture.',
 	keywords: ['bubble', 'liquid', 'soap', 'cc bubbles'],
 	params: [
 		n('bubbleAmount', 'Bubble Amount', 100, 0, 10000, 0, 1000, 1),
@@ -187,7 +188,9 @@ export const BUBBLES = defineShaderEffect({
 	],
 	gpu: {
 		kind: 'generator',
-		uniforms: (p) => ({ u_count: { int: Math.max(0, Math.min(10000, Math.floor(num(p.bubbleAmount, 100)))) } }),
+		uniforms: (p) => ({
+			u_count: { int: Math.max(0, Math.min(10000, Math.floor(num(p.bubbleAmount, 100)))) },
+		}),
 		passes: [
 			{
 				include: [GLSL_SPRITES],

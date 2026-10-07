@@ -9,10 +9,23 @@ import { fxParam } from '../params.ts';
 import { n, popup, values } from './common.ts';
 import { choice, clamp, num } from './core.ts';
 import { GLSL_POLY_CHUNK, polyUniform } from './distort.ts';
-import { LIQUIFY_TOOL_LABELS, liquifyGrid, liquifyOf, MW_STRIDE, meshWarpIsRest, meshWarpOf } from './meshes.ts';
+import {
+	LIQUIFY_TOOL_LABELS,
+	liquifyGrid,
+	liquifyOf,
+	MW_STRIDE,
+	meshWarpIsRest,
+	meshWarpOf,
+} from './meshes.ts';
 import { MASK_CHOICES, maskOf } from './playground.ts';
 
-const meshParam = (name: string, label: string): ParamSpec => ({ name, label, type: 'mesh', default: [], animatable: true });
+const meshParam = (name: string, label: string): ParamSpec => ({
+	name,
+	label,
+	type: 'mesh',
+	default: [],
+	animatable: true,
+});
 
 const gridOf = (p: Record<string, unknown>) => ({
 	cols: clamp(Math.round(num(p.columns, 7)), 1, 31),
@@ -48,7 +61,12 @@ export const MESH_WARP = defineShaderEffect({
 					y1 = Math.max(y1, y);
 				}
 			const c = (v: number) => Math.min(2048, Math.ceil(Math.max(0, v) + 1));
-			return { left: c(-x0 * ctx.width), top: c(-y0 * ctx.height), right: c((x1 - 1) * ctx.width), bottom: c((y1 - 1) * ctx.height) };
+			return {
+				left: c(-x0 * ctx.width),
+				top: c(-y0 * ctx.height),
+				right: c((x1 - 1) * ctx.width),
+				bottom: c((y1 - 1) * ctx.height),
+			};
 		},
 		uniforms: (p) => {
 			const { cols, rows } = gridOf(p);
@@ -136,12 +154,34 @@ export const LIQUIFY = defineShaderEffect({
 	keywords: ['liquify', 'warp', 'brush', 'push', 'bloat', 'pucker', 'twirl', 'retouch'],
 	params: [
 		popup('tool', 'Tool', LIQUIFY_TOOL_LABELS, 0),
-		n('brushSize', 'Brush Size', 64, 1, 600, 1, 600, 1, { group: 'Warp Tool Options', animatable: false, unit: 'px' }),
-		n('brushPressure', 'Brush Pressure', 50, 1, 100, 1, 100, 1, { group: 'Warp Tool Options', animatable: false }),
+		n('brushSize', 'Brush Size', 64, 1, 600, 1, 600, 1, {
+			group: 'Warp Tool Options',
+			animatable: false,
+			unit: 'px',
+		}),
+		n('brushPressure', 'Brush Pressure', 50, 1, 100, 1, 100, 1, {
+			group: 'Warp Tool Options',
+			animatable: false,
+		}),
 		popup('freezeAreaMask', 'Freeze Area Mask', MASK_CHOICES, 0, 'Warp Tool Options'),
-		n('turbulentJitter', 'Turbulent Jitter', 70, 1, 100, 1, 100, 1, { group: 'Warp Tool Options', animatable: false }),
-		fxParam.vec2('cloneOffset', 'Clone Offset', [0, 0], { step: 0.1 }, { group: 'Warp Tool Options', animatable: false }),
-		popup('reconstructionMode', 'Reconstruction Mode', ['Revert', 'Displace', 'Amplitwist', 'Affine'], 0, 'Warp Tool Options'),
+		n('turbulentJitter', 'Turbulent Jitter', 70, 1, 100, 1, 100, 1, {
+			group: 'Warp Tool Options',
+			animatable: false,
+		}),
+		fxParam.vec2(
+			'cloneOffset',
+			'Clone Offset',
+			[0, 0],
+			{ step: 0.1 },
+			{ group: 'Warp Tool Options', animatable: false },
+		),
+		popup(
+			'reconstructionMode',
+			'Reconstruction Mode',
+			['Revert', 'Displace', 'Amplitwist', 'Affine'],
+			0,
+			'Warp Tool Options',
+		),
 		fxParam.toggle('viewMesh', 'View Mesh', false, { group: 'View Options' }),
 		popup('meshSize', 'Mesh Size', MESH_SIZES, 1, 'View Options'),
 		fxParam.color('meshColor', 'Mesh Color', [0.5, 0.5, 0.5, 1], { group: 'View Options' }),

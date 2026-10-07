@@ -67,12 +67,32 @@ export type Phys = {
 /** Fields per particle in `PState.d`. */
 export const P_STRIDE = 14;
 /** Field offsets. */
-export const PF = { x: 0, y: 1, z: 2, vx: 3, vy: 4, vz: 5, age: 6, life: 7, rnd: 8, id: 9, ox: 10, oy: 11, oz: 12, stuck: 13 } as const;
+export const PF = {
+	x: 0,
+	y: 1,
+	z: 2,
+	vx: 3,
+	vy: 4,
+	vz: 5,
+	age: 6,
+	life: 7,
+	rnd: 8,
+	id: 9,
+	ox: 10,
+	oy: 11,
+	oz: 12,
+	stuck: 13,
+} as const;
 
 export type PState = { d: Float64Array; n: number; carry: number; nextId: number };
 
 export const newPState = (): PState => ({ d: new Float64Array(P_STRIDE * 256), n: 0, carry: 0, nextId: 0 });
-export const clonePState = (s: PState): PState => ({ d: s.d.slice(0, Math.max(s.n, 1) * P_STRIDE), n: s.n, carry: s.carry, nextId: s.nextId });
+export const clonePState = (s: PState): PState => ({
+	d: s.d.slice(0, Math.max(s.n, 1) * P_STRIDE),
+	n: s.n,
+	carry: s.carry,
+	nextId: s.nextId,
+});
 
 function norm3(v: [number, number, number]): [number, number, number] {
 	const l = Math.hypot(v[0], v[1], v[2]);
@@ -123,7 +143,11 @@ function spawn(s: PState, ph: Phys, id: number, frac: number): void {
 			// Outward from the producer with a tangential swirl about the vertical axis (2D: about the view axis).
 			const off = [u[0], u[1], u[2]];
 			const t = ph.flat ? [-off[1]!, off[0]!, 0] : [-off[2]!, 0, off[0]!];
-			dir = norm3([off[0]! * 0.5 + t[0]! * ph.extra, off[1]! * 0.5 + t[1]!, off[2]! * 0.5 + t[2]! * ph.extra]);
+			dir = norm3([
+				off[0]! * 0.5 + t[0]! * ph.extra,
+				off[1]! * 0.5 + t[1]!,
+				off[2]! * 0.5 + t[2]! * ph.extra,
+			]);
 			break;
 		}
 		case ANIM.vortex:

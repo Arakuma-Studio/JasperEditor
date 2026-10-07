@@ -70,7 +70,8 @@ export const BALL_ACTION = defineShaderEffect({
 	id: 'jasper.ball-action',
 	label: 'Ball Action',
 	category: SIM,
-	description: 'Turns the layer into a grid of shaded 3D balls coloured by its pixels, which scatter and twist in space.',
+	description:
+		'Turns the layer into a grid of shaded 3D balls coloured by its pixels, which scatter and twist in space.',
 	keywords: ['balls', 'spheres', 'dots', 'grid', 'cc ball action'],
 	params: [
 		n('scatter', 'Scatter', 0, 0, 2000, 0, 300, 0.1),
@@ -190,7 +191,8 @@ export const HAIR = defineShaderEffect({
 	id: 'jasper.hair',
 	label: 'Hair',
 	category: SIM,
-	description: 'Grows shaded hair or fur from the layer, coloured by it, drooping with weight and combed by a map.',
+	description:
+		'Grows shaded hair or fur from the layer, coloured by it, drooping with weight and combed by a map.',
 	keywords: ['fur', 'hair', 'grass', 'strands', 'cc hair'],
 	params: [
 		n('length', 'Length', 30, 0, 2000, 0, 200, 0.1, { unit: 'px' }),
@@ -220,7 +222,10 @@ export const HAIR = defineShaderEffect({
 		uniforms: (p, ctx) => {
 			const len = Math.max(0, num(p.length, 30));
 			const density = Math.max(0, num(p.density, 100)) / 100;
-			const strands = len > 0 && density > 0 ? Math.min(200000, Math.floor(((ctx.width * ctx.height) / 1000) * density * 10)) : 0;
+			const strands =
+				len > 0 && density > 0
+					? Math.min(200000, Math.floor(((ctx.width * ctx.height) / 1000) * density * 10))
+					: 0;
 			return { u_strands: { int: strands } };
 		},
 		passes: [

@@ -18,7 +18,11 @@ export type Px = [number, number, number, number];
 export type Box = { x: number; y: number; w: number; h: number };
 export type Paint = (ctx: CanvasRenderingContext2D, b: Box) => void;
 
-export function canvas(w: number, h: number, paint?: (ctx: CanvasRenderingContext2D) => void): HTMLCanvasElement {
+export function canvas(
+	w: number,
+	h: number,
+	paint?: (ctx: CanvasRenderingContext2D) => void,
+): HTMLCanvasElement {
 	const c = document.createElement('canvas');
 	c.width = w;
 	c.height = h;
@@ -43,14 +47,22 @@ export const defaults = (s: EffectSpec, over: Record<string, unknown> = {}) => (
 
 /** Pixels of a canvas as FxPixels (straight RGBA). */
 export function pixelsOf(c: HTMLCanvasElement, key: string): FxPixels {
-	return { width: c.width, height: c.height, data: c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data, key };
+	return {
+		width: c.width,
+		height: c.height,
+		data: c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data,
+		key,
+	};
 }
 
 export type RunExtra = {
 	frame?: number;
 	duration?: number;
 	fps?: number;
-	textures?: Record<string, { source: TexImageSource; width: number; height: number; version: string } | null>;
+	textures?: Record<
+		string,
+		{ source: TexImageSource; width: number; height: number; version: string } | null
+	>;
 	pixels?: Record<string, FxPixels>;
 	seed?: number;
 	paramsAt?: (f: number) => EffectParams;
@@ -71,7 +83,12 @@ export function run(
 	const duration = extra.duration ?? 300;
 	const frame = extra.frame ?? 0;
 	const seed = extra.seed ?? 0.25;
-	const padding = gpuPadding(s, params as never, { ...box, pxScale: 1, fps, ...(extra.structures ? { structures: extra.structures } : {}) });
+	const padding = gpuPadding(s, params as never, {
+		...box,
+		pxScale: 1,
+		fps,
+		...(extra.structures ? { structures: extra.structures } : {}),
+	});
 	const layout = fxCanvasLayout(box, padding, 8192);
 	const t0 = performance.now();
 	const plan = planGpuEffect(
@@ -206,6 +223,7 @@ export function centroid(c: HTMLCanvasElement): [number, number] {
 /** True when any byte is NaN-like garbage: alpha below colour (broken premultiplication) beyond rounding. */
 export function premulOk(c: HTMLCanvasElement): boolean {
 	const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
-	for (let i = 0; i < d.length; i += 4) if (d[i + 3] === 0 && (d[i]! > 0 || d[i + 1]! > 0 || d[i + 2]! > 0)) return false;
+	for (let i = 0; i < d.length; i += 4)
+		if (d[i + 3] === 0 && (d[i]! > 0 || d[i + 1]! > 0 || d[i + 2]! > 0)) return false;
 	return true;
 }

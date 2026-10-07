@@ -4,9 +4,9 @@
 // "amount" | "extent" | "inFront"]`): these commands write them with Effect Controls stopwatch semantics (a key at
 // `at` when the property is animated, else the static value).
 import { z } from 'zod';
+import { LIQUIFY_TOOLS, RECONSTRUCTION_MODES } from '../../registry/fx/simulation-warp/meshes.ts';
 import { Vec2Schema } from '../../schema/common.ts';
 import { PUPPET_PIN_KINDS, PUPPET_PIN_PROPS } from '../../schema/puppet.ts';
-import { LIQUIFY_TOOLS, RECONSTRUCTION_MODES } from '../../registry/fx/simulation-warp/meshes.ts';
 import { cmd, IdRefSchema, ParamAtSchema, RefDeclSchema } from './common.ts';
 
 const Finite = z.number().finite();
@@ -28,7 +28,10 @@ export const LiquifyStrokeCmd = cmd('liquify.stroke', {
 	at: ParamAtSchema.optional(),
 });
 /** Clears the Distortion Mesh at `at` (no distortion). */
-export const LiquifyResetCmd = cmd('liquify.reset', { effectInstanceId: IdRefSchema, at: ParamAtSchema.optional() });
+export const LiquifyResetCmd = cmd('liquify.reset', {
+	effectInstanceId: IdRefSchema,
+	at: ParamAtSchema.optional(),
+});
 
 const Tangent = Vec2Schema;
 /** Moves a vertex (layer-normalised) and/or its tangent handles (offsets) of Mesh Warp's Distortion Mesh at `at`. */
@@ -38,11 +41,19 @@ export const MeshWarpSetVertexCmd = cmd('meshWarp.setVertex', {
 	row: z.number().int().min(0).max(31),
 	position: Vec2Schema.optional(),
 	tangents: z
-		.strictObject({ left: Tangent.optional(), right: Tangent.optional(), up: Tangent.optional(), down: Tangent.optional() })
+		.strictObject({
+			left: Tangent.optional(),
+			right: Tangent.optional(),
+			up: Tangent.optional(),
+			down: Tangent.optional(),
+		})
 		.optional(),
 	at: ParamAtSchema.optional(),
 });
-export const MeshWarpResetCmd = cmd('meshWarp.reset', { effectInstanceId: IdRefSchema, at: ParamAtSchema.optional() });
+export const MeshWarpResetCmd = cmd('meshWarp.reset', {
+	effectInstanceId: IdRefSchema,
+	at: ParamAtSchema.optional(),
+});
 
 /** Adds a Puppet mesh: the region of `outline` (layer-normalised polygon; default the layer box) under `seed`. */
 export const PuppetAddMeshCmd = cmd('puppet.addMesh', {
@@ -82,14 +93,20 @@ export const PuppetRemovePinsCmd = cmd('puppet.removePins', { pinIds: z.array(Id
 export const PuppetRenamePinCmd = cmd('puppet.renamePin', { pinId: IdRefSchema, name: z.string().min(1) });
 /** Moves pins (layer-normalised positions) at `at` — a drag of one or several selected pins. */
 export const PuppetMovePinsCmd = cmd('puppet.movePins', {
-	moves: z.array(z.strictObject({ pinId: IdRefSchema, position: Vec2Schema })).min(1).max(1024),
+	moves: z
+		.array(z.strictObject({ pinId: IdRefSchema, position: Vec2Schema }))
+		.min(1)
+		.max(1024),
 	at: ParamAtSchema.optional(),
 });
 /** Writes keys of a pin property (the Puppet Sketch tool records Position keys this way). */
 export const PuppetSetPinKeysCmd = cmd('puppet.setPinKeys', {
 	pinId: IdRefSchema,
 	prop: z.enum(PUPPET_PIN_PROPS).optional(),
-	keys: z.array(z.strictObject({ at: ParamAtSchema, value: z.union([Vec2Schema, Finite]) })).min(1).max(10000),
+	keys: z
+		.array(z.strictObject({ at: ParamAtSchema, value: z.union([Vec2Schema, Finite]) }))
+		.min(1)
+		.max(10000),
 	/** Remove the property's other keys between the first and the last new key first. */
 	clearSpan: z.boolean().optional(),
 });

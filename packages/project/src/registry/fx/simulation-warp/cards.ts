@@ -14,7 +14,19 @@ const SIM = 'Simulation';
 
 // ---------------------------------------------------------------- Card Dance
 
-const CD_SOURCES = ['None', 'Intensity 1', 'Red 1', 'Green 1', 'Blue 1', 'Alpha 1', 'Intensity 2', 'Red 2', 'Green 2', 'Blue 2', 'Alpha 2'] as const;
+const CD_SOURCES = [
+	'None',
+	'Intensity 1',
+	'Red 1',
+	'Green 1',
+	'Blue 1',
+	'Alpha 1',
+	'Intensity 2',
+	'Red 2',
+	'Green 2',
+	'Blue 2',
+	'Alpha 2',
+] as const;
 const CD_PROPS = [
 	['xPosition', 'X Position'],
 	['yPosition', 'Y Position'],
@@ -122,7 +134,12 @@ export const CARD_DANCE = defineShaderEffect({
 	gpu: {
 		uniforms: (p, ctx) => {
 			const g = gridOf(p, 10);
-			return { ...pieceUniforms(p, ctx), u_gridRows: { int: g.rows }, u_gridCols: { int: g.cols }, u_post: { int: 5 } };
+			return {
+				...pieceUniforms(p, ctx),
+				u_gridRows: { int: g.rows },
+				u_gridCols: { int: g.cols },
+				u_post: { int: 5 },
+			};
 		},
 		passes: (p) => {
 			const g = gridOf(p, 10);
@@ -322,7 +339,8 @@ export const PIXEL_POLLY = defineShaderEffect({
 	id: 'jasper.pixel-polly',
 	label: 'Pixel Polly',
 	category: SIM,
-	description: 'Breaks the layer into polygons or squares that fly apart from a force centre, spinning and falling.',
+	description:
+		'Breaks the layer into polygons or squares that fly apart from a force centre, spinning and falling.',
 	keywords: ['shatter', 'explode', 'polygons', 'break', 'cc pixel polly'],
 	params: [
 		n('force', 'Force', 100, -1000, 1000, -300, 300, 0.1),
@@ -352,7 +370,8 @@ export const PIXEL_POLLY = defineShaderEffect({
 		passes: (p, ctx) => {
 			const g = Math.max(1, num(p.gridSpacing, 10)) * ctx.pxScale;
 			const per = choice(p.object, values(POLLY_OBJECTS)) <= 1 ? 2 : 1;
-			const count = Math.ceil((ctx.width * ctx.pxScale) / g) * Math.ceil((ctx.height * ctx.pxScale) / g) * per;
+			const count =
+				Math.ceil((ctx.width * ctx.pxScale) / g) * Math.ceil((ctx.height * ctx.pxScale) / g) * per;
 			const passes = piecePasses({ count, pieceGlsl: PIXEL_POLLY_GLSL });
 			// Without depth sort the pieces draw in grid order: key = id.
 			if (!bool(p.enableDepthSort, true))

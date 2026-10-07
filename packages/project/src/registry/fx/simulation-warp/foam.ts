@@ -12,7 +12,7 @@ import { GLSL_DATA } from '../glsl/data.ts';
 import { fxParam } from '../params.ts';
 import type { FxFrameContext, FxPixels } from '../shader.ts';
 import { n, popup, randomSeedParam, values } from './common.ts';
-import { bool, choice, clamp, h01, hs, num, SimCache, simKey, valueNoise3, vec2 } from './core.ts';
+import { bool, choice, clamp, hs, num, SimCache, simKey, valueNoise3, vec2 } from './core.ts';
 import { GLSL_SPRITES } from './sprites.ts';
 
 const FOAM_FPS = 30;
@@ -25,7 +25,12 @@ const STRIDE = 8; // x, y, vx, vy, age, size, spin, id
 
 type FoamState = { d: Float64Array; n: number; carry: number; next: number };
 const newState = (): FoamState => ({ d: new Float64Array(STRIDE * 64), n: 0, carry: 0, next: 0 });
-const cloneState = (s: FoamState): FoamState => ({ d: s.d.slice(0, Math.max(1, s.n) * STRIDE), n: s.n, carry: s.carry, next: s.next });
+const cloneState = (s: FoamState): FoamState => ({
+	d: s.d.slice(0, Math.max(1, s.n) * STRIDE),
+	n: s.n,
+	carry: s.carry,
+	next: s.next,
+});
 
 /** Age (steps) at which bubble `id` pops: its lifespan, shortened at random for frail bubbles. */
 const popAge = (id: number, lifespan: number, frailty: number, seed: number) =>
@@ -41,7 +46,10 @@ function lum(px: FxPixels, u: number, v: number): number {
 	const y1 = Math.min(px.height - 1, y0 + 1);
 	const at = (x: number, y: number) => {
 		const i = (y * px.width + x) * 4;
-		return ((0.2126 * px.data[i]! + 0.7152 * px.data[i + 1]! + 0.0722 * px.data[i + 2]!) / 255) * (px.data[i + 3]! / 255);
+		return (
+			((0.2126 * px.data[i]! + 0.7152 * px.data[i + 1]! + 0.0722 * px.data[i + 2]!) / 255) *
+			(px.data[i + 3]! / 255)
+		);
 	};
 	const tx = fx - x0;
 	const ty = fy - y0;
@@ -52,7 +60,15 @@ function lum(px: FxPixels, u: number, v: number): number {
 
 const CACHE = new SimCache<FoamState>(4);
 
-function foamStep(st: FoamState, q: EffectParams, step: number, lw: number, lh: number, seed: number, flow: FxPixels | null): void {
+function foamStep(
+	st: FoamState,
+	q: EffectParams,
+	step: number,
+	lw: number,
+	lh: number,
+	seed: number,
+	flow: FxPixels | null,
+): void {
 	const unit = lw * 0.01;
 	const prod = vec2(q.producerPoint, [0.5, 0.5]);
 	const pxp = prod[0] * lw;
@@ -85,7 +101,13 @@ function foamStep(st: FoamState, q: EffectParams, step: number, lw: number, lh: 
 	const ux1 = lw - ux0;
 	const uy1 = lh - uy0;
 	const hAt = (x: number, y: number) =>
-		flow ? lum(flow, fitsUniverse ? (x - ux0) / (ux1 - ux0) : x / lw, fitsUniverse ? (y - uy0) / (uy1 - uy0) : y / lh) : 0;
+		flow
+			? lum(
+					flow,
+					fitsUniverse ? (x - ux0) / (ux1 - ux0) : x / lw,
+					fitsUniverse ? (y - uy0) / (uy1 - uy0) : y / lh,
+				)
+			: 0;
 	const t = step / FOAM_FPS;
 	const rad = (o: number) => st.d[o + 5]! * unit * 3 * Math.min(1, st.d[o + 4]! * growth);
 	// Births.
@@ -208,7 +230,11 @@ function foamStep(st: FoamState, q: EffectParams, step: number, lw: number, lh: 
 	for (let i = 0; i < st.n; i++) {
 		const o = i * STRIDE;
 		const alive =
-			d[o + 4]! < popAge(d[o + 7]!, lifespan, frailty, seed) && d[o]! > ux0 && d[o]! < ux1 && d[o + 1]! > uy0 && d[o + 1]! < uy1;
+			d[o + 4]! < popAge(d[o + 7]!, lifespan, frailty, seed) &&
+			d[o]! > ux0 &&
+			d[o]! < ux1 &&
+			d[o + 1]! > uy0 &&
+			d[o + 1]! < uy1;
 		if (!alive) continue;
 		if (w !== i) d.copyWithin(w * STRIDE, o, o + STRIDE);
 		w++;
@@ -313,7 +339,8 @@ export const FOAM = defineShaderEffect({
 				out[j * 4 + 1] = (cy + (st.d[o + 1]! - cy) * zoom) * s;
 				out[j * 4 + 2] = r;
 				// Rotation and fade packed: fade in the integer part ×1000? Keep them apart: rot (rad) + fade in w.
-				out[j * 4 + 3] = Math.floor(fade * 1000) + (((rot % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2);
+				out[j * 4 + 3] =
+					Math.floor(fade * 1000) + (((rot % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2);
 			});
 			return { u_bubbles: { texels: out }, u_count: { int: st.n } };
 		},

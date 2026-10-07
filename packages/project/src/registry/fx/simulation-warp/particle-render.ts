@@ -2,8 +2,9 @@
 // record per particle (sorted far to near in TS) and draws its Particle Type — sprite shapes (sp_shade), 3D polygons
 // and solids (Tripolygon, QuadPolygon, Cube, Tetrahedron: rotated in the vertex shader, back faces culled, lit),
 // textured discs / squares / quads (the Texture Layer), and lenses that refract the layer under them.
-import type { GlslChunk } from '../shader.ts';
+
 import { GLSL_DATA } from '../glsl/data.ts';
+import type { GlslChunk } from '../shader.ts';
 import { GLSL_SPRITES } from './sprites.ts';
 
 /** Particle Types (Particle World; Particle Systems II uses the same list). */

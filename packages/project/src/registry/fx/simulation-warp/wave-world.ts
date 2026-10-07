@@ -56,7 +56,9 @@ function groundDepth(p: EffectParams, px: FxPixels | null, nx: number, ny: numbe
 		const x = clamp(Math.floor(fx * px.width), 0, px.width - 1);
 		const y = clamp(Math.floor(fy * px.height), 0, px.height - 1);
 		const o = (y * px.width + x) * 4;
-		const l = ((0.2126 * px.data[o]! + 0.7152 * px.data[o + 1]! + 0.0722 * px.data[o + 2]!) / 255) * (px.data[o + 3]! / 255);
+		const l =
+			((0.2126 * px.data[o]! + 0.7152 * px.data[o + 1]! + 0.0722 * px.data[o + 2]!) / 255) *
+			(px.data[o + 3]! / 255);
 		out[i] = level - steep * l;
 	}
 	return out;
@@ -85,7 +87,7 @@ function simulateWaves(p: EffectParams, ctx: FxFrameContext): { st: Waves; depth
 		stepsAt(t + preroll),
 		() => ({ nx, ny, u: new Float64Array(nx * ny), v: new Float64Array(nx * ny) }),
 		(w, step) => {
-			const q = ctx.paramsAt?.(((step / SIM_SPS - preroll) * ctx.fps)) ?? p;
+			const q = ctx.paramsAt?.((step / SIM_SPS - preroll) * ctx.fps) ?? p;
 			const speed = Math.max(0, num(q.waveSpeed, 0.2));
 			const damping = Math.max(0, num(q.damping, 0.05));
 			const reflect = choice(q.reflectEdges, values(REFLECT));
@@ -128,7 +130,11 @@ function simulateWaves(p: EffectParams, ctx: FxFrameContext): { st: Waves; depth
 						const i = y * nx + x;
 						const g = (xx: number, yy: number) => w.u[yy * nx + xx]!;
 						const l =
-							g(Math.max(0, x - 1), y) + g(Math.min(nx - 1, x + 1), y) + g(x, Math.max(0, y - 1)) + g(x, Math.min(ny - 1, y + 1)) - 4 * w.u[i]!;
+							g(Math.max(0, x - 1), y) +
+							g(Math.min(nx - 1, x + 1), y) +
+							g(x, Math.max(0, y - 1)) +
+							g(x, Math.min(ny - 1, y + 1)) -
+							4 * w.u[i]!;
 						acc[i] = c2 * speedK[i]! * speedK[i]! * l - damping * 4 * w.v[i]!;
 					}
 				for (let i = 0; i < nx * ny; i++) {
@@ -182,7 +188,10 @@ export const WAVE_WORLD = defineShaderEffect({
 	params: [
 		popup('view', 'View', VIEWS, 0),
 		fxParam.angle('horizontalRotation', 'Horizontal Rotation', 0, { group: 'Wireframe Controls' }),
-		n('verticalRotation', 'Vertical Rotation', 53, 0, 90, 0, 90, 0.1, { group: 'Wireframe Controls', unit: 'deg' }),
+		n('verticalRotation', 'Vertical Rotation', 53, 0, 90, 0, 90, 0.1, {
+			group: 'Wireframe Controls',
+			unit: 'deg',
+		}),
 		n('verticalScale', 'Vertical Scale', 0.5, 0, 10, 0, 2, 0.001, { group: 'Wireframe Controls' }),
 		n('brightness', 'Brightness', 0.5, -1, 2, 0, 1, 0.001, { group: 'Height Map Controls' }),
 		n('contrast', 'Contrast', 0.75, 0, 4, 0, 2, 0.001, { group: 'Height Map Controls' }),

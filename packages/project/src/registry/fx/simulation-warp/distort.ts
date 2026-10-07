@@ -16,7 +16,19 @@ const DISTORT = 'Distort';
 
 // ---------------------------------------------------------------- Displacement Map
 
-const DM_SOURCES = ['Red', 'Green', 'Blue', 'Alpha', 'Luminance', 'Hue', 'Lightness', 'Saturation', 'Full', 'Half', 'Off'] as const;
+const DM_SOURCES = [
+	'Red',
+	'Green',
+	'Blue',
+	'Alpha',
+	'Luminance',
+	'Hue',
+	'Lightness',
+	'Saturation',
+	'Full',
+	'Half',
+	'Off',
+] as const;
 
 export const DISPLACEMENT_MAP = defineShaderEffect({
 	id: 'jasper.displacement-map',
@@ -30,14 +42,21 @@ export const DISPLACEMENT_MAP = defineShaderEffect({
 		n('maxHorizontal', 'Max Horizontal Displacement', 5, -32000, 32000, -100, 100, 0.1, { unit: 'px' }),
 		popup('useForVertical', 'Use For Vertical Displacement', DM_SOURCES, 1),
 		n('maxVertical', 'Max Vertical Displacement', 5, -32000, 32000, -100, 100, 0.1, { unit: 'px' }),
-		popup('displacementMapBehavior', 'Displacement Map Behavior', ['Center Map', 'Stretch Map to Fit', 'Tile Map'], 0),
+		popup(
+			'displacementMapBehavior',
+			'Displacement Map Behavior',
+			['Center Map', 'Stretch Map to Fit', 'Tile Map'],
+			0,
+		),
 		fxParam.toggle('wrapPixelsAround', 'Wrap Pixels Around', false),
 		fxParam.toggle('expandOutput', 'Expand Output', true),
 	],
 	gpu: {
 		padding: (p) =>
 			bool(p.expandOutput, true) && !bool(p.wrapPixelsAround)
-				? Math.ceil(Math.min(2048, Math.max(Math.abs(num(p.maxHorizontal, 5)), Math.abs(num(p.maxVertical, 5)))))
+				? Math.ceil(
+						Math.min(2048, Math.max(Math.abs(num(p.maxHorizontal, 5)), Math.abs(num(p.maxVertical, 5)))),
+					)
 				: 0,
 		passes: [
 			{
@@ -123,7 +142,14 @@ export const OPTICS_COMPENSATION = defineShaderEffect({
 			const { rRef, half, f } = opticsLens(p, lw, lh);
 			const vc = vec2(p.viewCenter, [0.5, 0.5]);
 			const c = [vc[0] * lw, vc[1] * lh];
-			const rc = Math.max(...[[0, 0], [lw, 0], [0, lh], [lw, lh]].map(([x, y]) => Math.hypot(x! - c[0]!, y! - c[1]!)));
+			const rc = Math.max(
+				...[
+					[0, 0],
+					[lw, 0],
+					[0, lh],
+					[lw, lh],
+				].map(([x, y]) => Math.hypot(x! - c[0]!, y! - c[1]!)),
+			);
 			const th = (rc / rRef) * half;
 			const cap = Math.max(lw, lh) * [0, 0.5, 1.5, 3.5][resize]!;
 			const grow = th < Math.PI / 2 - 1e-3 ? Math.max(0, f * Math.tan(th) - rc) : cap;
@@ -138,7 +164,15 @@ export const OPTICS_COMPENSATION = defineShaderEffect({
 			const c = [vc[0] * lw, vc[1] * lh];
 			let fit = 1;
 			if (bool(p.optimalPixels) && fov > 1e-6) {
-				const rc = Math.max(1, ...[[0, 0], [lw, 0], [0, lh], [lw, lh]].map(([x, y]) => Math.hypot(x! - c[0]!, y! - c[1]!)));
+				const rc = Math.max(
+					1,
+					...[
+						[0, 0],
+						[lw, 0],
+						[0, lh],
+						[lw, lh],
+					].map(([x, y]) => Math.hypot(x! - c[0]!, y! - c[1]!)),
+				);
 				if (reverse) {
 					const th = Math.min((rc / rRef) * half, Math.PI / 2 - 1e-3);
 					fit = Math.max(1, (f * Math.tan(th)) / rc);
@@ -176,7 +210,8 @@ export const POLAR_COORDINATES = defineShaderEffect({
 	id: 'jasper.polar-coordinates',
 	label: 'Polar Coordinates',
 	category: DISTORT,
-	description: 'Wraps the layer around a circle (Rect to Polar) or unrolls a circle into rows (Polar to Rect).',
+	description:
+		'Wraps the layer around a circle (Rect to Polar) or unrolls a circle into rows (Polar to Rect).',
 	keywords: ['polar', 'circle', 'wrap', 'tiny planet', 'unwrap'],
 	params: [
 		fxParam.percent('interpolation', 'Interpolation', 0),
@@ -311,7 +346,16 @@ void main() {
 
 // ---------------------------------------------------------------- Reshape, Smear
 
-const ELASTICITY = ['Stiff', 'Less Stiff', 'Below Normal', 'Absolutely Normal', 'Above Average', 'Loose', 'Liquid', 'Super Fluid'] as const;
+const ELASTICITY = [
+	'Stiff',
+	'Less Stiff',
+	'Below Normal',
+	'Absolutely Normal',
+	'Above Average',
+	'Loose',
+	'Liquid',
+	'Super Fluid',
+] as const;
 const ELASTIC_EXP = [1, 1.25, 1.5, 2, 2.5, 3, 3.5, 4.5];
 const INTERP = ['Discrete', 'Linear', 'Smooth'] as const;
 /** Points Reshape samples each outline at. */
@@ -416,7 +460,9 @@ export function reshapeSetup(p: EffectParams, ctx: FxFrameContext) {
 	const pairs = parseCorrespondence(p.correspondencePoints);
 	const len = polyLength(sm.points, sm.closed);
 	const src = (i: number): [number, number] =>
-		pairs.length === 0 ? s[(i + rot) % N]! : pointAt(sm.points, sm.closed, mapFraction(pairs, i / N, sm.closed && dm.closed) * len);
+		pairs.length === 0
+			? s[(i + rot) % N]!
+			: pointAt(sm.points, sm.closed, mapFraction(pairs, i / N, sm.closed && dm.closed) * len);
 	const bound = maskOf(p.boundaryMask, masks);
 	return {
 		dest: d.flatMap((q, i) => {
@@ -552,7 +598,9 @@ export const SMEAR = defineShaderEffect({
 			const pct = num(p.percent, 100) / 100;
 			const on = !!sm && !!bm && sm.points.length >= 3 && bm.points.length >= 3 && pct !== 0;
 			const src = on ? resample({ ...sm!, closed: true }, POLY_POINTS) : null;
-			const c = src ? src.reduce((a, q) => [a[0] + q[0] / src.length, a[1] + q[1] / src.length], [0, 0]) : [0, 0];
+			const c = src
+				? src.reduce((a, q) => [a[0] + q[0] / src.length, a[1] + q[1] / src.length], [0, 0])
+				: [0, 0];
 			const off = vec2(p.maskOffset, [0, 0]);
 			const rot = (num(p.maskRotation) * Math.PI) / 180;
 			const scl = Math.max(1e-3, num(p.maskScale, 100) / 100);
@@ -560,7 +608,10 @@ export const SMEAR = defineShaderEffect({
 				? src.map(([x, y]) => {
 						const dx = (x - c[0]!) * scl;
 						const dy = (y - c[1]!) * scl;
-						return [c[0]! + dx * Math.cos(rot) - dy * Math.sin(rot) + off[0], c[1]! + dx * Math.sin(rot) + dy * Math.cos(rot) + off[1]] as [number, number];
+						return [
+							c[0]! + dx * Math.cos(rot) - dy * Math.sin(rot) + off[0],
+							c[1]! + dx * Math.sin(rot) + dy * Math.cos(rot) + off[1],
+						] as [number, number];
 					})
 				: null;
 			return {

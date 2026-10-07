@@ -6,7 +6,15 @@
 import { evaluate } from '../keyframes.ts';
 import type { Puppet, PuppetPinKind } from '../schema/puppet.ts';
 import { deform, type EdgeTarget, type Handles } from './arap.ts';
-import { DEFAULT_MESH_OPTS, type MeshOpts, outlineOfMask, type Pt, type PuppetMeshGeometry, rasterisePolygon, triangulate } from './mesh.ts';
+import {
+	DEFAULT_MESH_OPTS,
+	type MeshOpts,
+	outlineOfMask,
+	type Pt,
+	type PuppetMeshGeometry,
+	rasterisePolygon,
+	triangulate,
+} from './mesh.ts';
 
 export type ResolvedPuppetMesh = { id: string; outline: Pt[] | null; seed: Pt; opts: MeshOpts };
 export type ResolvedPuppetPin = {
@@ -27,7 +35,8 @@ export type ResolvedPuppetPin = {
 export type ResolvedPuppet = { meshes: ResolvedPuppetMesh[]; pins: ResolvedPuppetPin[] };
 
 const fin = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
-const pt = (v: unknown, d: Pt): Pt => (Array.isArray(v) && v.length >= 2 ? [fin(v[0], d[0]), fin(v[1], d[1])] : d);
+const pt = (v: unknown, d: Pt): Pt =>
+	Array.isArray(v) && v.length >= 2 ? [fin(v[0], d[0]), fin(v[1], d[1])] : d;
 
 /** The puppet at content time `t` (keyframes and expressions evaluated). */
 export function resolvePuppet(p: Puppet, t: number): ResolvedPuppet {
@@ -102,7 +111,13 @@ const centroid = (g: PuppetMeshGeometry, t: [number, number, number]): Pt => [
 ];
 
 /** Deformed vertices of one mesh for its pins (layer px). `refine` = extra rigid-fit iterations. */
-export function solvePuppetMesh(g: PuppetMeshGeometry, pins: readonly ResolvedPuppetPin[], w: number, h: number, refine: number): Pt[] {
+export function solvePuppetMesh(
+	g: PuppetMeshGeometry,
+	pins: readonly ResolvedPuppetPin[],
+	w: number,
+	h: number,
+	refine: number,
+): Pt[] {
 	const adj: number[][] = g.verts.map(() => []);
 	for (const t of g.tris)
 		for (const [a, b] of [
@@ -151,12 +166,20 @@ export function solvePuppetMesh(g: PuppetMeshGeometry, pins: readonly ResolvedPu
 }
 
 /** Overlap depth of each triangle (higher draws in front). */
-export function triangleDepths(g: PuppetMeshGeometry, pins: readonly ResolvedPuppetPin[], w: number, h: number): number[] {
+export function triangleDepths(
+	g: PuppetMeshGeometry,
+	pins: readonly ResolvedPuppetPin[],
+	w: number,
+	h: number,
+): number[] {
 	return g.tris.map((t) => {
 		const c = centroid(g, t);
 		let d: number | null = null;
 		for (const p of pins)
-			if (p.kind === 'overlap' && Math.hypot(c[0] - p.rest[0] * w, c[1] - p.rest[1] * h) <= Math.max(0, p.extent) + 1e-9)
+			if (
+				p.kind === 'overlap' &&
+				Math.hypot(c[0] - p.rest[0] * w, c[1] - p.rest[1] * h) <= Math.max(0, p.extent) + 1e-9
+			)
 				d = d === null ? p.inFront : Math.max(d, p.inFront);
 		return d ?? 0;
 	});
@@ -167,7 +190,12 @@ export function solvePuppet(p: ResolvedPuppet, w: number, h: number, refine: num
 	return p.meshes.map((m) => {
 		const g = puppetMesh(m, w, h);
 		const pins = p.pins.filter((q) => q.meshId === m.id);
-		return { mesh: m, geometry: g, deformed: solvePuppetMesh(g, pins, w, h, refine), depths: triangleDepths(g, pins, w, h) };
+		return {
+			mesh: m,
+			geometry: g,
+			deformed: solvePuppetMesh(g, pins, w, h, refine),
+			depths: triangleDepths(g, pins, w, h),
+		};
 	});
 }
 

@@ -12,10 +12,23 @@ import type { EffectParams, EffectSpec, ParamSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
 import { GLSL_DATA } from '../glsl/data.ts';
 import { fxParam } from '../params.ts';
-import type { FxFrameContext, FxLayerMask, FxPixels } from '../shader.ts';
 import { GLSL_PSDG_FONT } from '../premiere-stylize-distort-generate/video-font.ts';
+import type { FxFrameContext, FxLayerMask, FxPixels } from '../shader.ts';
 import { n, popup, randomSeedParam, values } from './common.ts';
-import { bool, choice, clamp, h01, num, paramsAtStep, rgba, SIM_SPS, SimCache, simKey, stepsOf, vec2 } from './core.ts';
+import {
+	bool,
+	choice,
+	clamp,
+	h01,
+	num,
+	paramsAtStep,
+	rgba,
+	SIM_SPS,
+	SimCache,
+	simKey,
+	stepsOf,
+	vec2,
+} from './core.ts';
 import { GLSL_SPRITES } from './sprites.ts';
 
 export const MAP_TARGETS = [
@@ -59,19 +72,53 @@ export const PARTICLES_FROM = [
 	'Cannon & Particle Exploder',
 ] as const;
 const EXPLODE_SOURCES = ['None', 'This Layer', 'Image'] as const;
-export const MASK_CHOICES = ['None', 'Mask 1', 'Mask 2', 'Mask 3', 'Mask 4', 'Mask 5', 'Mask 6', 'Mask 7', 'Mask 8'] as const;
+export const MASK_CHOICES = [
+	'None',
+	'Mask 1',
+	'Mask 2',
+	'Mask 3',
+	'Mask 4',
+	'Mask 5',
+	'Mask 6',
+	'Mask 7',
+	'Mask 8',
+] as const;
 
 const SRC = { cannon: 0, grid: 1, layer: 2, particle: 3 } as const;
 const MAX = 60000;
 
 // Particle fields.
 const F = {
-	x: 0, y: 1, vx: 2, vy: 3, ox: 4, oy: 5, r: 6, g: 7, b: 8, a: 9, rad: 10, mass: 11, fric: 12, sfric: 13, fx: 14,
-	fy: 15, angle: 16, angVel: 17, torque: 18, sx: 19, sy: 20, sspeed: 21, age: 22, life: 23, ch: 24, toff: 25, src: 26,
+	x: 0,
+	y: 1,
+	vx: 2,
+	vy: 3,
+	ox: 4,
+	oy: 5,
+	r: 6,
+	g: 7,
+	b: 8,
+	a: 9,
+	rad: 10,
+	mass: 11,
+	fric: 12,
+	sfric: 13,
+	fx: 14,
+	fy: 15,
+	angle: 16,
+	angVel: 17,
+	torque: 18,
+	sx: 19,
+	sy: 20,
+	sspeed: 21,
+	age: 22,
+	life: 23,
+	ch: 24,
+	toff: 25,
+	src: 26,
 	id: 27,
 } as const;
 const S = 28;
-type Q = Float64Array; // one particle (a view of S numbers)
 
 type PgState = { d: Float64Array; n: number; carry: number; next: number; init: boolean };
 
@@ -164,60 +211,134 @@ function weight(a: Affects, d: Float64Array, o: number, lw: number, lh: number):
 
 function propGet(d: Float64Array, o: number, t: number): number {
 	switch (t) {
-		case 1: return d[o + F.r]!;
-		case 2: return d[o + F.g]!;
-		case 3: return d[o + F.b]!;
-		case 4: return d[o + F.fric]!;
-		case 5: return d[o + F.sfric]!;
-		case 6: return d[o + F.angle]!;
-		case 7: return d[o + F.angVel]!;
-		case 8: return d[o + F.torque]!;
-		case 9: return (d[o + F.sx]! + d[o + F.sy]!) * 0.5;
-		case 10: return d[o + F.sx]!;
-		case 11: return d[o + F.sy]!;
-		case 12: return d[o + F.x]!;
-		case 13: return d[o + F.y]!;
-		case 15: return d[o + F.vx]!;
-		case 16: return d[o + F.vy]!;
-		case 18: return d[o + F.fx]!;
-		case 19: return d[o + F.fy]!;
-		case 20: return d[o + F.a]!;
-		case 21: return d[o + F.mass]!;
-		case 22: return d[o + F.life]!;
-		case 23: return d[o + F.ch]!;
-		case 24: return d[o + F.rad]!;
-		case 25: return d[o + F.toff]!;
-		case 26: return d[o + F.sspeed]!;
-		default: return 0;
+		case 1:
+			return d[o + F.r]!;
+		case 2:
+			return d[o + F.g]!;
+		case 3:
+			return d[o + F.b]!;
+		case 4:
+			return d[o + F.fric]!;
+		case 5:
+			return d[o + F.sfric]!;
+		case 6:
+			return d[o + F.angle]!;
+		case 7:
+			return d[o + F.angVel]!;
+		case 8:
+			return d[o + F.torque]!;
+		case 9:
+			return (d[o + F.sx]! + d[o + F.sy]!) * 0.5;
+		case 10:
+			return d[o + F.sx]!;
+		case 11:
+			return d[o + F.sy]!;
+		case 12:
+			return d[o + F.x]!;
+		case 13:
+			return d[o + F.y]!;
+		case 15:
+			return d[o + F.vx]!;
+		case 16:
+			return d[o + F.vy]!;
+		case 18:
+			return d[o + F.fx]!;
+		case 19:
+			return d[o + F.fy]!;
+		case 20:
+			return d[o + F.a]!;
+		case 21:
+			return d[o + F.mass]!;
+		case 22:
+			return d[o + F.life]!;
+		case 23:
+			return d[o + F.ch]!;
+		case 24:
+			return d[o + F.rad]!;
+		case 25:
+			return d[o + F.toff]!;
+		case 26:
+			return d[o + F.sspeed]!;
+		default:
+			return 0;
 	}
 }
 function propSet(d: Float64Array, o: number, t: number, v: number): void {
 	switch (t) {
-		case 1: d[o + F.r] = v; break;
-		case 2: d[o + F.g] = v; break;
-		case 3: d[o + F.b] = v; break;
-		case 4: d[o + F.fric] = clamp(v, 0, 10); break;
-		case 5: d[o + F.sfric] = Math.max(0, v); break;
-		case 6: d[o + F.angle] = v; break;
-		case 7: d[o + F.angVel] = v; break;
-		case 8: d[o + F.torque] = v; break;
-		case 9: d[o + F.sx] = d[o + F.sy] = Math.max(0, v); break;
-		case 10: d[o + F.sx] = Math.max(0, v); break;
-		case 11: d[o + F.sy] = Math.max(0, v); break;
-		case 12: d[o + F.x] = v; break;
-		case 13: d[o + F.y] = v; break;
-		case 15: d[o + F.vx] = v; break;
-		case 16: d[o + F.vy] = v; break;
-		case 18: d[o + F.fx] = v; break;
-		case 19: d[o + F.fy] = v; break;
-		case 20: d[o + F.a] = clamp(v, 0, 1); break;
-		case 21: d[o + F.mass] = Math.max(0.01, v); break;
-		case 22: d[o + F.life] = Math.max(0, v); break;
-		case 23: d[o + F.ch] = clamp(Math.round(v), 0, 0x10ffff); break;
-		case 24: d[o + F.rad] = Math.max(0, v); break;
-		case 25: d[o + F.toff] = v; break;
-		case 26: d[o + F.sspeed] = v; break;
-		default: break;
+		case 1:
+			d[o + F.r] = v;
+			break;
+		case 2:
+			d[o + F.g] = v;
+			break;
+		case 3:
+			d[o + F.b] = v;
+			break;
+		case 4:
+			d[o + F.fric] = clamp(v, 0, 10);
+			break;
+		case 5:
+			d[o + F.sfric] = Math.max(0, v);
+			break;
+		case 6:
+			d[o + F.angle] = v;
+			break;
+		case 7:
+			d[o + F.angVel] = v;
+			break;
+		case 8:
+			d[o + F.torque] = v;
+			break;
+		case 9:
+			d[o + F.sx] = d[o + F.sy] = Math.max(0, v);
+			break;
+		case 10:
+			d[o + F.sx] = Math.max(0, v);
+			break;
+		case 11:
+			d[o + F.sy] = Math.max(0, v);
+			break;
+		case 12:
+			d[o + F.x] = v;
+			break;
+		case 13:
+			d[o + F.y] = v;
+			break;
+		case 15:
+			d[o + F.vx] = v;
+			break;
+		case 16:
+			d[o + F.vy] = v;
+			break;
+		case 18:
+			d[o + F.fx] = v;
+			break;
+		case 19:
+			d[o + F.fy] = v;
+			break;
+		case 20:
+			d[o + F.a] = clamp(v, 0, 1);
+			break;
+		case 21:
+			d[o + F.mass] = Math.max(0.01, v);
+			break;
+		case 22:
+			d[o + F.life] = Math.max(0, v);
+			break;
+		case 23:
+			d[o + F.ch] = clamp(Math.round(v), 0, 0x10ffff);
+			break;
+		case 24:
+			d[o + F.rad] = Math.max(0, v);
+			break;
+		case 25:
+			d[o + F.toff] = v;
+			break;
+		case 26:
+			d[o + F.sspeed] = v;
+			break;
+		default:
+			break;
 	}
 }
 
@@ -290,7 +411,16 @@ function grow(st: PgState): void {
 	st.d = d;
 }
 
-function add(st: PgState, x: number, y: number, vx: number, vy: number, c: readonly number[], r: number, src: number): number {
+function add(
+	st: PgState,
+	x: number,
+	y: number,
+	vx: number,
+	vy: number,
+	c: readonly number[],
+	r: number,
+	src: number,
+): number {
 	grow(st);
 	const o = st.n * S;
 	const d = st.d;
@@ -487,7 +617,13 @@ function stepPg(st: PgState, q: EffectParams, ctx: FxFrameContext, seed: number)
 		for (let i = 0; i < count; i++) {
 			const o = i * S;
 			const r = old[o + F.rad]!;
-			if (old[o + F.src] === SRC.particle || old[o + F.ch]! !== 0 || r <= pexR * 1.01 || weight(pexAff, old, o, lw, lh) <= 0.5 || st.n > MAX) {
+			if (
+				old[o + F.src] === SRC.particle ||
+				old[o + F.ch]! !== 0 ||
+				r <= pexR * 1.01 ||
+				weight(pexAff, old, o, lw, lh) <= 0.5 ||
+				st.n > MAX
+			) {
 				grow(st);
 				st.d.set(old.subarray(o, o + S), st.n * S);
 				st.n++;
@@ -544,14 +680,28 @@ function stepPg(st: PgState, q: EffectParams, ctx: FxFrameContext, seed: number)
 			const vx = Math.sin(a) * speed;
 			const vy = -Math.cos(a) * speed;
 			const frac = h01(id, 9, seed) * dt;
-			const o = add(st, pos[0] * lw + off[0]! + vx * frac, pos[1] * lh + off[1]! + vy * frac, vx, vy, col, rad, SRC.cannon);
+			const o = add(
+				st,
+				pos[0] * lw + off[0]! + vx * frac,
+				pos[1] * lh + off[1]! + vy * frac,
+				vx,
+				vy,
+				col,
+				rad,
+				SRC.cannon,
+			);
 			if (text.length) st.d[o + F.ch] = text[id % text.length]!.codePointAt(0)!;
 		}
 	}
 }
 
 const CACHE = new SimCache<PgState>(6);
-const PIXEL_PARAMS = ['explodeImage', 'persistentMap', 'ephemeralMap', ...AFFECT_KEYS.map((k) => `${k}SelectionMap`)];
+const PIXEL_PARAMS = [
+	'explodeImage',
+	'persistentMap',
+	'ephemeralMap',
+	...AFFECT_KEYS.map((k) => `${k}SelectionMap`),
+];
 
 function simulatePg(p: EffectParams, ctx: FxFrameContext): { st: PgState; eph: Float64Array } {
 	const seed = Math.floor(ctx.seed * 4294967296) ^ 0x7067;
@@ -585,7 +735,10 @@ export const PARTICLE_PLAYGROUND = defineShaderEffect({
 		n('cannonBarrelRadius', 'Barrel Radius', 0, -1000, 1000, -100, 100, 0.1, { group: 'Cannon', unit: 'px' }),
 		n('cannonParticlesPerSecond', 'Particles Per Second', 60, 0, 5000, 0, 500, 0.1, { group: 'Cannon' }),
 		fxParam.angle('cannonDirection', 'Direction', 0, { group: 'Cannon' }),
-		n('cannonDirectionRandomSpread', 'Direction Random Spread', 20, 0, 3600, 0, 360, 0.1, { group: 'Cannon', unit: 'deg' }),
+		n('cannonDirectionRandomSpread', 'Direction Random Spread', 20, 0, 3600, 0, 360, 0.1, {
+			group: 'Cannon',
+			unit: 'deg',
+		}),
 		n('cannonVelocity', 'Velocity', 130, -10000, 10000, 0, 1000, 0.1, { group: 'Cannon' }),
 		n('cannonVelocityRandomSpread', 'Velocity Random Spread', 20, 0, 5000, 0, 500, 0.1, { group: 'Cannon' }),
 		fxParam.color('cannonColor', 'Color', [1, 0, 0, 1], { group: 'Cannon' }),
@@ -599,9 +752,15 @@ export const PARTICLE_PLAYGROUND = defineShaderEffect({
 		n('gridParticleRadius', 'Particle Radius', 2, 0, 500, 0, 50, 0.1, { group: 'Grid', unit: 'px' }),
 		popup('explodeSource', 'Explode Layer', EXPLODE_SOURCES, 0, 'Layer Exploder'),
 		fxParam.media('explodeImage', 'Explode Image', ['image'], { group: 'Layer Exploder' }),
-		n('explodeRadius', 'Radius of New Particles', 2, 0.5, 500, 0.5, 50, 0.1, { group: 'Layer Exploder', unit: 'px' }),
+		n('explodeRadius', 'Radius of New Particles', 2, 0.5, 500, 0.5, 50, 0.1, {
+			group: 'Layer Exploder',
+			unit: 'px',
+		}),
 		n('explodeDispersion', 'Velocity Dispersion', 20, 0, 5000, 0, 500, 0.1, { group: 'Layer Exploder' }),
-		n('pexRadius', 'Radius of New Particles', 0, 0, 500, 0, 50, 0.1, { group: 'Particle Exploder', unit: 'px' }),
+		n('pexRadius', 'Radius of New Particles', 0, 0, 500, 0, 50, 0.1, {
+			group: 'Particle Exploder',
+			unit: 'px',
+		}),
 		n('pexDispersion', 'Velocity Dispersion', 20, 0, 5000, 0, 500, 0.1, { group: 'Particle Exploder' }),
 		...affects('Particle Exploder', 'pex'),
 		fxParam.media('layerMapLayer', 'Use Layer', ['image', 'video'], { group: 'Layer Map' }),
@@ -617,8 +776,22 @@ export const PARTICLE_PLAYGROUND = defineShaderEffect({
 		...affects('Wall', 'wall'),
 		...mapperParams('Persistent Property Mapper', 'persistent', false),
 		...mapperParams('Ephemeral Property Mapper', 'ephemeral', true),
-		{ name: 'cannonText', label: 'Cannon Text', type: 'string', default: '', animatable: false, group: 'Options' },
-		{ name: 'gridText', label: 'Grid Text', type: 'string', default: '', animatable: false, group: 'Options' },
+		{
+			name: 'cannonText',
+			label: 'Cannon Text',
+			type: 'string',
+			default: '',
+			animatable: false,
+			group: 'Options',
+		},
+		{
+			name: 'gridText',
+			label: 'Grid Text',
+			type: 'string',
+			default: '',
+			animatable: false,
+			group: 'Options',
+		},
 		fxParam.toggle('autoOrientRotation', 'Auto-Orient Rotation', false, { group: 'Options' }),
 		randomSeedParam(),
 	],
@@ -640,7 +813,10 @@ export const PARTICLE_PLAYGROUND = defineShaderEffect({
 				const o = i * S;
 				const vx = eph[o + F.vx]!;
 				const vy = eph[o + F.vy]!;
-				const angle = auto && (vx !== 0 || vy !== 0) ? Math.atan2(vy, vx) + Math.PI / 2 : (eph[o + F.angle]! * Math.PI) / 180;
+				const angle =
+					auto && (vx !== 0 || vy !== 0)
+						? Math.atan2(vy, vx) + Math.PI / 2
+						: (eph[o + F.angle]! * Math.PI) / 180;
 				const sxy = [eph[o + F.sx]!, eph[o + F.sy]!];
 				const kind = hasMap && weight(mapAff, eph, o, lw, lh) > 0.5 ? 2 : eph[o + F.ch]! > 0 ? 1 : 0;
 				const r = i * 16;

@@ -120,7 +120,13 @@ export function fitRigid(rest: [Pt, Pt, Pt], cur: [Pt, Pt, Pt]): [Pt, Pt, Pt] {
 }
 
 /** Deformed vertices of a mesh (rest vertices, CCW triangles, per-triangle weights, constraints, refinement). */
-export function deform(rest: readonly Pt[], tris: readonly [number, number, number][], weights: readonly number[], h: Handles, refine: number): Pt[] {
+export function deform(
+	rest: readonly Pt[],
+	tris: readonly [number, number, number][],
+	weights: readonly number[],
+	h: Handles,
+	refine: number,
+): Pt[] {
 	const n = rest.length;
 	if (n === 0) return [];
 	const t = [0, 0];
@@ -137,7 +143,8 @@ export function deform(rest: readonly Pt[], tris: readonly [number, number, numb
 	for (const [i] of h.fixed) fixed[i] = 1;
 	const w = (k: number) => weights[k] ?? 1;
 	let me = 0;
-	for (const tr of tris) me += (rest[tr[0]]![0] - rest[tr[1]]![0]) ** 2 + (rest[tr[0]]![1] - rest[tr[1]]![1]) ** 2;
+	for (const tr of tris)
+		me += (rest[tr[0]]![0] - rest[tr[1]]![0]) ** 2 + (rest[tr[0]]![1] - rest[tr[1]]![1]) ** 2;
 	const scale2 = Math.max(tris.length ? me / tris.length : 1, 1e-12);
 	const reg = REG * Math.min(1, 1 / scale2);
 	// Step 1: similarity-invariant energy over 2n unknowns.
@@ -158,9 +165,27 @@ export function deform(rest: readonly Pt[], tris: readonly [number, number, numb
 			const x = (d[0]! * e[0]! + d[1]! * e[1]!) / ee;
 			const y = (d[0]! * r90[0]! + d[1]! * r90[1]!) / ee;
 			const blocks: [number, number[][]][] = [
-				[l, [[1, 0], [0, 1]]],
-				[i, [[x - 1, -y], [y, x - 1]]],
-				[j, [[-x, y], [-y, -x]]],
+				[
+					l,
+					[
+						[1, 0],
+						[0, 1],
+					],
+				],
+				[
+					i,
+					[
+						[x - 1, -y],
+						[y, x - 1],
+					],
+				],
+				[
+					j,
+					[
+						[-x, y],
+						[-y, -x],
+					],
+				],
 			];
 			for (const [va, ba] of blocks)
 				for (const [vb, bb] of blocks)
@@ -194,7 +219,12 @@ export function deform(rest: readonly Pt[], tris: readonly [number, number, numb
 		x[2 * i] = p[0];
 		x[2 * i + 1] = p[1];
 	}
-	solve(a, b, x, Uint8Array.from({ length: 2 * n }, (_, k) => (fixed[k >> 1] ? 0 : 1)));
+	solve(
+		a,
+		b,
+		x,
+		Uint8Array.from({ length: 2 * n }, (_, k) => (fixed[k >> 1] ? 0 : 1)),
+	);
 	let cur: Pt[] = Array.from({ length: n }, (_, i) => [x[2 * i]!, x[2 * i + 1]!]);
 	// Step 2: rigid triangles, then matched edge vectors (x and y separately).
 	const L = new Sparse(n);

@@ -13,9 +13,9 @@
 
 import { EXPRESSION_BINDING, type ExpressionBinding, hasActiveExpression } from './keyframes.ts';
 import { intrinsicBoxOf } from './registry/properties.ts';
-import { PUPPET_PIN_PROPS } from './schema/puppet.ts';
 import type { Animatable, Expression } from './schema/common.ts';
 import type { ProjectDocument } from './schema/document.ts';
+import { PUPPET_PIN_PROPS } from './schema/puppet.ts';
 import type { EffectInstance, Sequence, TextContent } from './schema/sequence.ts';
 import type { ShapeItem } from './schema/shapes.ts';
 import type { TextAnimatorGroup } from './schema/text-animators.ts';
@@ -364,7 +364,11 @@ export function paramPathToExpressionRef(
 	if (head === 'puppetPin') {
 		for (const [seqId, seq] of Object.entries(doc.sequences))
 			for (const [id, c] of Object.entries(seq.clips))
-				if (((c as { effects?: EffectInstance[] }).effects ?? []).some((fx) => fx.puppet?.pins.some((p) => p.id === a)))
+				if (
+					((c as { effects?: EffectInstance[] }).effects ?? []).some((fx) =>
+						fx.puppet?.pins.some((p) => p.id === a),
+					)
+				)
 					return { seq: seqId, owner: id, path: `puppet.${a}.${rest.join('.')}` };
 		return null;
 	}

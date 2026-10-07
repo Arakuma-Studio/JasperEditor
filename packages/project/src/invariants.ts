@@ -180,7 +180,8 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 				const problem = !onClip ? 'puppet data on a track or master effect' : puppetProblem(fx.puppet);
 				if (problem) issues.push(inv('INV-016', `Effect ${fx.id}: ${problem}`, [...where, fx.id, 'puppet']));
 				else for (const m of fx.puppet.meshes) claim(m.id, 'pms', [...where, fx.id, 'puppet', m.id]);
-				if (!problem) for (const pin of fx.puppet.pins) claim(pin.id, 'ppn', [...where, fx.id, 'puppet', pin.id]);
+				if (!problem)
+					for (const pin of fx.puppet.pins) claim(pin.id, 'ppn', [...where, fx.id, 'puppet', pin.id]);
 			}
 			if (fx.masks?.length) {
 				if (!onClip)

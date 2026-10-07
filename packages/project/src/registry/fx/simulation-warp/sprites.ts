@@ -3,8 +3,9 @@
 // EffectCraft's sprite rasteriser (crates/effects/src/sim.rs `sprite_shade`, MIT OR Apache-2.0; see
 // licenses/ported/sim-warp.md) — and composited with the original layer by `sp_combine` (the effects' Transfer
 // Modes). Coordinates are canvas pixels (y down); colours straight in, premultiplied out.
-import type { GlslChunk } from '../shader.ts';
+
 import { GLSL_HASH } from '../glsl/hash.ts';
+import type { GlslChunk } from '../shader.ts';
 
 /** Sprite shapes (`int` shape codes of sp_shade). */
 export const SP = {
