@@ -5,7 +5,15 @@
 // text with the Timeline or Program monitor focused becomes a 5 s text clip at the playhead on the lowest
 // targeted video track, centred (DM-004 default placement). Each paste that changes the document is one
 // transaction (the import's "Import N files", or "Paste Text"), so one undo step (CMD-001).
-import type { Command, Sequence } from '@jasper/project';
+import {
+	type Command,
+	looksLikeSvg,
+	parseSvgPath,
+	type Sequence,
+	svgPathToShapeItems,
+	svgToShapeContents,
+} from '@jasper/project';
+import { selectedVectorClip } from '../shapes/vector.ts';
 import type { EditorSession, SequenceViewState } from '@jasper/session';
 import type { CommandCtx } from '../commands/types.ts';
 import { EngineImportService } from '../import/service.ts';
@@ -165,6 +173,9 @@ export async function pasteExternal(
 		});
 		return;
 	}
+	// wp shapes: SVG markup or SVG path data pastes as a vector shape (into the selected vector shape when one is
+	// under the playhead, else a new shape clip at the playhead), one undo step.
+	if (pasteSvg(ctx, env, content.text)) return;
 	const { text, truncated } = normalizePastedText(content.text);
 	if (!text) {
 		ctx.ui.toast({ kind: 'info', message: 'The clipboard text is empty' });
@@ -196,4 +207,67 @@ export async function pasteExternal(
 			message: 'Paste Text',
 			detail: `The text was shortened to ${MAX_PASTED_TEXT} characters.`,
 		});
+}
+
+/** SVG path data on its own ("M10 10 L…"): a move command first, then path syntax only. */
+export function looksLikeSvgPathData(text: string): boolean {
+	const t = text.trim();
+	if (!/^[Mm]/.test(t) || t.length > 1_000_000 || !/^[MmLlHhVvCcSsQqTtAaZz0-9eE.,+\-\s]*$/.test(t)) return false;
+	try {
+		return parseSvgPath(t).some((sp) => sp.segs.length > 0);
+	} catch {
+		return false;
+	}
+}
+
+/** Pastes SVG text as vector shape contents; false when the text is not SVG (the caller pastes it as text). */
+export function pasteSvg(ctx: CommandCtx, env: ExternalPasteEnv, text: string): boolean {
+	const { session, seq } = env;
+	const svg = looksLikeSvg(text);
+	if (!seq || (!svg && !looksLikeSvgPathData(text))) return false;
+	let items: Record<string, unknown>[];
+	let warnings: string[] = [];
+	try {
+		if (svg) {
+			const r = svgToShapeContents(text);
+			items = r.contents;
+			warnings = r.warnings;
+		} else items = [{ type: 'group', name: 'Pasted Path', contents: svgPathToShapeItems(text.trim()) }];
+	} catch (e) {
+		ctx.ui.toast({ kind: 'warning', message: 'Paste SVG: not possible', detail: e instanceof Error ? e.message : String(e) });
+		return true;
+	}
+	if (!items.length) {
+		ctx.ui.toast({ kind: 'info', message: 'The SVG has nothing a shape can draw', detail: warnings.join('; ') || undefined });
+		return true;
+	}
+	const target = selectedVectorClip(session, env.playhead);
+	const track = lowestTargetedTrack(seq, env.view, 'video');
+	if (!target && !track) {
+		ctx.ui.toast({ kind: 'warning', message: 'Paste SVG: not possible', detail: 'Every video track is locked' });
+		return true;
+	}
+	const rate = seq.settings.frameRate;
+	const r = session.apply({
+		label: 'Paste SVG',
+		origin: 'user',
+		sequenceId: seq.id,
+		commands: [
+			target
+				? ({ type: 'shape.addItems', clipId: target.id, items, index: 0 } as Command)
+				: ({
+						type: 'clip.addShape',
+						sequenceId: seq.id,
+						at: env.playhead,
+						duration: Math.max(1, Math.round((PASTED_TEXT_SECONDS * rate.num) / rate.den)),
+						track: track!.label,
+						name: 'Pasted SVG',
+						shape: { type: 'vector', contents: items },
+					} as Command),
+		],
+		...(target ? {} : { selectAfter: (res: { results: unknown[] }) => ({ timeline: [(res.results[0] as { clipId: string }).clipId] }) }),
+	});
+	if (!r.ok) ctx.ui.toast({ kind: 'warning', message: 'Paste SVG: not possible', detail: r.errors[0]?.message });
+	else if (warnings.length) ctx.ui.toast({ kind: 'info', message: 'Pasted SVG', detail: `Not converted: ${warnings.join('; ')}` });
+	return true;
 }

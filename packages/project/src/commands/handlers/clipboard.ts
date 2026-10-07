@@ -8,6 +8,8 @@
 // - synthetics, transcripts, fonts: same project and same id → reused; else copied under new ids (a font with the
 //   same family and source already in the target is reused instead of duplicated).
 // Resolution is lazy: only the entities the pasted content actually uses are added.
+import type { ShapeItem } from '../../schema/shapes.ts';
+import { reidItems } from '../../vector/defaults.ts';
 import { current, type Draft, isDraft } from 'immer';
 import { intrinsicOf } from '../../clipboard/build.ts';
 import {
@@ -637,7 +639,15 @@ function applyAttributes(
 			done.push('textStyle');
 		}
 		const shape = first((s) => s.shape);
-		if (attrs.shapeStyle && shape && t.kind === 'shape') {
+		const srcType = (shape?.shape as { type?: string } | undefined)?.type;
+		const tgtType = (c.shape as { type?: string } | undefined)?.type;
+		// wp shapes: vector → vector replaces the contents (fresh item ids, keys re-timed); rectangles / ellipses and
+		// vector shapes do not exchange styles (different models).
+		if (attrs.shapeStyle && shape && t.kind === 'shape' && srcType === 'vector' && tgtType === 'vector') {
+			const contents = retimed((shape.shape as { contents: ShapeItem[] }).contents, shape);
+			(c.shape as DRec).contents = reidItems(contents, () => h.ids.next('shp')) as never;
+			done.push('shapeStyle');
+		} else if (attrs.shapeStyle && shape && t.kind === 'shape' && srcType !== 'vector' && tgtType !== 'vector') {
 			const tgt = c.shape as DRec;
 			const srcShape = shape.shape!;
 			tgt.fill = retimed(srcShape.fill ?? null, shape) as never;
