@@ -57,7 +57,7 @@ describe('vector shape expressions', () => {
 		const t = storedTimeAtFrame(d.doc, ref, 60);
 		expect(propertyStatusAt(d.doc, ref, t)?.value).toEqual([200, 40]);
 		const rot = propertyStatusAt(d.doc, { ...ref, path: `shape.items.${groupId}.transform.rotation` }, t);
-		expect(rot?.error ?? null).toBeNull();
+		expect(rot?.expressionError ?? null).toBeNull();
 		expect(rot?.value).toBeCloseTo(20, 9);
 		// The bound document and the render snapshot draw the expression's geometry.
 		const bound = bindDocumentExpressions(d.doc);
