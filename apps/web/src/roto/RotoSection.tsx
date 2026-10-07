@@ -185,6 +185,9 @@ function RotoDetails(props: {
 }) {
 	const { session, roto, running, client, readOnly } = props;
 	const s = rotoSettingsOf(roto);
+	const caps = useEngineOrNull()?.capabilities;
+	const segModel = !!(caps?.features as { roto?: { segmentationModel?: boolean } } | undefined)?.roto
+		?.segmentationModel;
 	const stale = rotoIsStale(roto);
 	const frozen = !!roto.frozen;
 	const locked = readOnly || frozen;
@@ -295,6 +298,12 @@ function RotoDetails(props: {
 							onChange={(v) => set({ quality: v })}
 						/>
 					</Row>
+					{s.engine === 'model' && !segModel ? (
+						<p className="px-2 text-pr-small text-pr-muted" data-testid="roto-model-hint">
+							The segmentation model is not installed: colour graph cuts are used. Download it in Preferences
+							▸ Roto &amp; Face Tracking.
+						</p>
+					) : null}
 					<NumRow
 						label="Search Radius"
 						value={s.searchRadius}
