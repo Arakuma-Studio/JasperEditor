@@ -7,3 +7,4 @@ export * from './puppet.ts';
 export * from './sequence.ts';
 export * from './shapes.ts';
 export * from './text-animators.ts';
+export * from './three-d.ts';

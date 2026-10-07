@@ -21,7 +21,9 @@ export async function readCubeFile(file: string): Promise<Lut> {
 		return parseLutFile(text, format);
 	} catch (e) {
 		if (e instanceof CubeParseError)
-			throw new JobError('INVALID_LUT', `Invalid ${format ? `.${format} ` : ''}LUT: ${e.message}`, false, { line: e.line });
+			throw new JobError('INVALID_LUT', `Invalid ${format ? `.${format} ` : ''}LUT: ${e.message}`, false, {
+				line: e.line,
+			});
 		throw e;
 	}
 }

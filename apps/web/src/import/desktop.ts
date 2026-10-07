@@ -41,6 +41,10 @@ const IMPORT_ACCEPT = [
 	'.csp',
 	// color-mgmt: custom OpenColorIO configs (registered as their bundle with the LUT files they reference).
 	'.ocio',
+	// three-d: 3D models register as kind 'model' (the engine's model prober).
+	'.glb',
+	'.gltf',
+	'.obj',
 	'.ogg',
 	'.opus',
 	'.png',

@@ -295,7 +295,7 @@ export function registerColorMgmtTools(ctx: ToolContext): void {
 					path,
 				});
 			const item = reg.items[0];
-			if (!item || item.kind !== 'color-config' || !item.colorConfig)
+			if (item?.kind !== 'color-config' || !item.colorConfig)
 				throw new ToolError('INTERNAL', 'The engine did not register a colour config');
 			const res = await transact(
 				ctx,

@@ -81,7 +81,8 @@ export function exportColorOf(
 		linearize: false,
 		blendLinear: false,
 	};
-	const id = !video?.colorSpace || video.colorSpace === 'working' ? w.space : (video.colorSpace as OutputSpaceId);
+	const id =
+		!video?.colorSpace || video.colorSpace === 'working' ? w.space : (video.colorSpace as OutputSpaceId);
 	const space = colorSpace(id);
 	if (!space?.tags) throw new ExportColorError(`"${id}" is not an export colour space`);
 	const hdr = isHdrSpace(space);
@@ -195,7 +196,10 @@ export const MASTERING_PRIMARIES = {
 } as const;
 
 /** Stills (Export Frame, `render_frame`): the display rendition of the working space (identity for Rec. 709 / sRGB). */
-export async function displayLutFilter(working: SequenceColorInfo | undefined, dir: string): Promise<string | null> {
+export async function displayLutFilter(
+	working: SequenceColorInfo | undefined,
+	dir: string,
+): Promise<string | null> {
 	if (!working) return null;
 	const fn = outputTransformFn(working, displaySpaceFor(working.space));
 	if (!fn) return null;

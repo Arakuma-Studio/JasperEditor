@@ -11,7 +11,7 @@
 // Transitions (S01 §13) are built in: a clip's layer also covers its handles, the transition ramps become
 // `fade=…:alpha=1` on the layer (the same linear ramps `fadeFactor` evaluates for the composition), the black
 // of a dip to black is a colour layer under the track's clips (audio crossfades are part of the mixdown).
-import { colorTagArgs, outputFilters, svtHdrParams } from '../color/output.ts';
+
 import {
 	blendModeIndex,
 	clipContentTime,
@@ -31,6 +31,7 @@ import {
 	resolveLayerProps,
 } from '@jasper/project';
 import { resamplerArgs } from '../audio/decode.ts';
+import { colorTagArgs, outputFilters, svtHdrParams } from '../color/output.ts';
 import { decoderArgs, sourceFilters } from '../imports/decode.ts';
 import { variantHasAlpha } from '../imports/variants.ts';
 import { alphaDecoder } from '../media/alpha.ts';

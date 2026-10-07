@@ -5,6 +5,7 @@ import animeRoutes from './anime.ts';
 import audioRoutes from './audio.ts';
 import audioFxRoutes from './audio-fx.ts';
 import cacheRoutes from './cache.ts';
+import camtrackRoutes from './camtrack.ts';
 import capabilitiesRoutes from './capabilities.ts';
 import captionRoutes from './captions.ts';
 import colorRoutes from './color.ts';
@@ -75,6 +76,8 @@ const ROUTE_PLUGINS = [
 	speechRoutes,
 	// parity roto: Roto Brush / face tracking (after processing: the model catalogue and its installer).
 	rotoRoutes,
+	// three-d: the 3D Camera Tracker (`camtrack` jobs).
+	camtrackRoutes,
 	// wp interchange: timeline import/export (pre-renders through the export service) and Link Media.
 	interchangeRoutes,
 ] as const;

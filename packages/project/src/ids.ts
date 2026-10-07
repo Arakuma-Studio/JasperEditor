@@ -37,6 +37,8 @@ export const ID_PREFIXES = {
 	puppetPin: 'ppn',
 	/** parity (roto): segmented objects (Roto Brush / faces) on a clip. */
 	roto: 'rto',
+	/** three-d: the 3D Camera Tracker of a clip. */
+	cameraTracker: 'ctk',
 } as const;
 export type IdPrefix = (typeof ID_PREFIXES)[keyof typeof ID_PREFIXES];
 export const ALL_ID_PREFIXES: readonly IdPrefix[] = Object.values(ID_PREFIXES);

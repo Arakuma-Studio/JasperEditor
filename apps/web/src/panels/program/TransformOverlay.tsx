@@ -13,7 +13,6 @@ import {
 	quadBounds,
 	type Rect,
 	type ResolvedLayer,
-	resolveSceneAt,
 } from '@jasper/project';
 import type { EditorSession, Gesture, TransportStore } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
@@ -41,6 +40,14 @@ import {
 	isTextAnimationDrag,
 	readTextAnimationDrag,
 } from '../../text-animation/actions.ts';
+import {
+	is3dLayer,
+	type Move3D,
+	move3dPosition,
+	move3dStart,
+	resolveProgramScene,
+} from '../../three-d/scene.ts';
+import { threeDViews } from '../../three-d/view-store.ts';
 import { applyEffectToClips, isEffectDrag, readEffectDragPayload } from '../effects/drag.ts';
 import { insertMotionTemplate, MG_TEMPLATE_MIME, readMgTemplateDrag } from '../motionTemplates/insert.ts';
 import { activeSequence, addTextAt, transformAt, transformCommands } from './edits.ts';
@@ -94,7 +101,7 @@ const SAFE_MARGINS = { action: 5, title: 10 } as const;
 const DRAG_THRESHOLD = 3;
 const AXIS_LOCK_PX = 6;
 
-type ClipStart = { id: string; v0: LayerTransformValues };
+type ClipStart = { id: string; v0: LayerTransformValues; move3d?: Move3D };
 type GestureState =
 	| { kind: 'pan'; start: Vec2; pan0: Vec2 }
 	/** edit-ux: marquee selection on empty canvas (Premiere Program monitor; Shift/Ctrl add to the selection). */
@@ -231,7 +238,10 @@ export function TransformOverlay({
 			: '';
 	});
 	const locked = useMemo(() => new Set(lockedKey ? lockedKey.split(',') : []), [lockedKey]);
-	const scene = useMemo(() => resolveSceneAt(doc, frame), [doc, frame]);
+	// three-d: 3D layers are resolved through the monitor's camera (active camera or 3D view).
+	const views3d = useStoreSelector(threeDViews, (s) => s.bySequence[doc.sequenceId]);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: the 3D view changes what the scene projects
+	const scene = useMemo(() => resolveProgramScene(doc, frame), [doc, frame, views3d]);
 	const selectedSet = useMemo(() => new Set(selected), [selected]);
 	const selLayers = useMemo(
 		() => scene.filter((l) => selectedSet.has(l.clip.clipId) && l.props.transform),
@@ -241,8 +251,9 @@ export function TransformOverlay({
 	// changes (the snapshot shares the document's Animatables), never per playhead frame (ARC-010).
 	const pathClip = useMemo(() => {
 		if (selected.length !== 1) return null;
+		// three-d: a 3D layer's 2D motion path would not lie where it is drawn.
 		for (const t of doc.videoTracks)
-			for (const c of t.clips) if (c.clipId === selected[0] && c.transform) return c;
+			for (const c of t.clips) if (c.clipId === selected[0] && c.transform && !c.threeD) return c;
 		return null;
 	}, [doc, selected]);
 	const pathKey = pathClip
@@ -365,7 +376,12 @@ export function TransformOverlay({
 		const seq = activeSequence(session);
 		const c = seq?.clips[id];
 		if (!seq || !c || !('transform' in c)) return null;
-		return { id, v0: transformAt(seq, c as never, live.current.frame) };
+		const v0 = transformAt(seq, c as never, live.current.frame);
+		// three-d: a 3D layer moves in the plane facing the camera (it follows the pointer).
+		const rc = doc.videoTracks.flatMap((t) => t.clips).find((x) => x.clipId === id);
+		if (rc?.threeD && rc.kind !== 'adjustment')
+			return { id, v0, move3d: move3dStart(doc, rc, live.current.frame, v0) };
+		return { id, v0 };
 	};
 
 	const layerScreenQuad = (l: ResolvedLayer): Quad =>
@@ -453,8 +469,9 @@ export function TransformOverlay({
 				return;
 			}
 		}
-		// Handles / anchor / rotation of the current selection (XF-010…012, XF-037).
-		if (sel.length === 1) {
+		// Handles / anchor / rotation of the current selection (XF-010…012, XF-037). three-d: 3D layers are moved
+		// here and transformed in 3D by Effect Controls and the Program monitor's 3D gizmo (no 2D handles).
+		if (sel.length === 1 && !is3dLayer(sel[0]!)) {
 			const l = sel[0]!;
 			const rect = layerEditRect(l);
 			const anchorScreen = toScreen(view, applyMatrix(l.props.matrix, l.props.transform!.anchor));
@@ -507,7 +524,7 @@ export function TransformOverlay({
 				};
 				return;
 			}
-		} else if (sel.length > 1) {
+		} else if (sel.length > 1 && !sel.some(is3dLayer)) {
 			const box = groupBox(sel);
 			if (box) {
 				const h = groupHandleUnder(box, screen);
@@ -706,9 +723,26 @@ export function TransformOverlay({
 			const lead = g.clips[0]!.v0.position;
 			setReadout({ at: screen, text: `X ${fmt(lead[0] + dx)}  Y ${fmt(lead[1] + dy)}` });
 			scheduleUpdate(
-				g.clips.flatMap((c) =>
-					transformCommands(c.id, { position: [c.v0.position[0] + dx, c.v0.position[1] + dy] }, f, seqId),
-				),
+				g.clips.flatMap((c) => {
+					if (!c.move3d)
+						return transformCommands(
+							c.id,
+							{ position: [c.v0.position[0] + dx, c.v0.position[1] + dy] },
+							f,
+							seqId,
+						);
+					const p3 = move3dPosition(c.move3d, dx, dy);
+					return [
+						...transformCommands(c.id, { position: [p3[0], p3[1]] }, f, seqId),
+						{
+							type: 'param.set',
+							target: ['clip', c.id, 'threeD', 'positionZ'],
+							value: p3[2],
+							at: { sequenceFrame: f },
+							sequenceId: seqId,
+						} as never,
+					];
+				}),
 			);
 			return;
 		}
@@ -801,7 +835,7 @@ export function TransformOverlay({
 		if (tool === 'type') c = 'text';
 		else if (tool === 'hand') c = 'grab';
 		else if (pathHitAt(screen)) c = 'pointer';
-		else if (sel.length === 1) {
+		else if (sel.length === 1 && !is3dLayer(sel[0]!)) {
 			const l = sel[0]!;
 			const h = handleUnder(l, layerEditRect(l), screen);
 			if (h) c = handleCursor(h, l.props.transform!.rotation);
@@ -905,7 +939,7 @@ export function TransformOverlay({
 		toScreen(view, [doc.settings.width, doc.settings.height]),
 		toScreen(view, [0, doc.settings.height]),
 	];
-	const groupRect = selLayers.length > 1 ? groupBox(selLayers) : null;
+	const groupRect = selLayers.length > 1 && !selLayers.some(is3dLayer) ? groupBox(selLayers) : null;
 
 	return (
 		// biome-ignore lint/a11y/noStaticElementInteractions: pointer/drag surface over the canvas (keyboard: monitor scope)
@@ -962,7 +996,7 @@ export function TransformOverlay({
 							strokeWidth={1}
 						/>
 					) : null}
-					{selLayers.length === 1 ? (
+					{selLayers.length === 1 && !is3dLayer(selLayers[0]!) ? (
 						<SelectionBox layer={selLayers[0]!} view={view} />
 					) : (
 						selLayers.map((l) => (
@@ -1190,7 +1224,7 @@ function PlaybackOutlines({
 		const draw = () => {
 			raf = null;
 			const { doc: d, view: v } = live.current;
-			const scene = resolveSceneAt(d, transport.getState().frame);
+			const scene = resolveProgramScene(d, transport.getState().frame);
 			for (const [id, el] of refs.current) {
 				const l = scene.find((x) => x.clip.clipId === id);
 				el.setAttribute('points', l ? pts(layerEditQuad(l).map((p) => toScreen(v, p as Vec2))) : '');

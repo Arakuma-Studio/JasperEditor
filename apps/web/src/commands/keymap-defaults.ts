@@ -205,6 +205,11 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('tool.hand', 'KeyH', E, { keyup: true }),
 	b('tool.zoom', 'KeyZ', E, K),
 	b('tool.type', 'KeyT', E, K),
+	// three-d: After Effects' 3D view keys (F10 Front, F11 Custom View 1, F12 Active Camera). Browsers keep F11 (full
+	// screen) and F12 (developer tools): the web build uses Alt+F11 / Alt+F12.
+	b('threeD.view.front', 'F10', G),
+	b('threeD.view.custom1', 'F11', G, { web: 'Alt+F11' }),
+	b('threeD.view.activeCamera', 'F12', G, { web: 'Alt+F12' }),
 
 	// ---------------------------------------------------------------- global (R-PUI §16.1)
 	b('app.newProject', 'Ctrl+Alt+KeyN', G),
@@ -361,6 +366,9 @@ export const BROWSER_RESERVED: readonly string[] = [
 	'Ctrl+Shift+KeyW',
 	'Ctrl+Tab',
 	'Ctrl+KeyQ',
+	// three-d: browser full screen and developer tools.
+	'F11',
+	'F12',
 ];
 
 export type Platform = 'win' | 'linux' | 'mac';

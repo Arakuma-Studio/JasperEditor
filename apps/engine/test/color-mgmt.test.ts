@@ -307,7 +307,11 @@ describe('interpreted sources and probe metadata', () => {
 			method: 'POST',
 			url: '/api/exports/plan',
 			headers: JSON_H,
-			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings: exportSettings(d.seqId, { codec: 'h264' }) },
+			payload: {
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				settings: exportSettings(d.seqId, { codec: 'h264' }),
+			},
 		});
 		expect(plan.statusCode, plan.body).toBe(200);
 		const w = (plan.json().warnings as { code: string; itemIds?: string[] }[]).find(

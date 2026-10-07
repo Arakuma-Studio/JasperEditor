@@ -62,6 +62,24 @@ await build({
 	logLevel: 'warning',
 });
 
+// three-d: jasper-camtrack.mjs (3D Camera Tracker feature tracking + camera solve, run as a child process by `camtrack`
+// jobs) next to engine.mjs. OpenCV.js (staged with the engine runtime) stays external.
+await build({
+	entryPoints: [join(root, 'src/camtrack/worker/cli.ts')],
+	outfile: join(root, 'dist/jasper-camtrack.mjs'),
+	bundle: true,
+	platform: 'node',
+	format: 'esm',
+	target: 'node20',
+	sourcemap: false,
+	legalComments: 'none',
+	external: ['@techstark/opencv-js', '*.node'],
+	banner: {
+		js: "import { createRequire as __jasperCreateRequire } from 'node:module'; const require = __jasperCreateRequire(import.meta.url);",
+	},
+	logLevel: 'warning',
+});
+
 // parity roto: jasper-roto.mjs (Roto Brush segmentation / face tracking, run as a child process by `roto` jobs) next to
 // engine.mjs. onnxruntime-node (native binding) and OpenCV.js (staged with the engine runtime) stay external.
 await build({

@@ -46,6 +46,9 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('project.newColorMatte', 'Color Matte…'),
 				c('project.newTransparentVideo', 'Transparent Video'),
 				c('project.newCountingLeader', 'Universal Counting Leader…'),
+				// three-d (After Effects: Layer ▸ New ▸ Camera / Light)
+				c('threeD.newCamera', 'Camera…'),
+				c('threeD.newLight', 'Light…'),
 			]),
 			c('app.openProject', 'Open Project…'),
 			c('app.closeProject', 'Close Project'),
@@ -183,6 +186,11 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('multicam.selectionTopDown', 'Multi-Camera Selection Top Down'),
 			]),
 			// edit-structure (Premiere: Clip ▸ Video Options).
+			// three-d (After Effects: the 3D Layer switch, Camera / Light Settings)
+			c('threeD.toggleLayer', '3D Layer'),
+			c('threeD.cameraSettings', 'Camera Settings…'),
+			c('threeD.lightSettings', 'Light Settings…'),
+			c('threeD.trackCamera', 'Track Camera'),
 			sub('Video Options', [
 				c('timeline.frameHoldOptions', 'Frame Hold Options…'),
 				c('timeline.addFrameHold', 'Add Frame Hold'),
@@ -305,6 +313,14 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			sep,
 			c('timeline.addTracks', 'Add Tracks…'),
 			c('timeline.deleteTracks', 'Delete Tracks…'),
+			sep,
+			// three-d (After Effects: Composition Settings ▸ 3D Renderer, Draft 3D)
+			sub('3D Renderer', [
+				c('threeD.renderer.classic', 'Classic 3D'),
+				c('threeD.renderer.advanced', 'Advanced 3D'),
+				sep,
+				c('threeD.draft', 'Draft 3D'),
+			]),
 		],
 	},
 	{
@@ -350,6 +366,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('graphics.newTextLayer', 'Text'),
 				c('graphics.newRectangle', 'Rectangle'),
 				c('graphics.newEllipse', 'Ellipse'),
+				c('threeD.newCamera', 'Camera…'),
+				c('threeD.newLight', 'Light…'),
 			]),
 			c('mg.insertTemplate', 'Insert Motion Template…'),
 			// wp-clipboard-2 (S05 Graphics and Titles ▸ Arrange, S03:XF-050)
@@ -377,6 +395,26 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('program.manageGuides', 'Manage Guides…'),
 			]),
 			c('program.snapInMonitor', 'Snap in Program Monitor'),
+			sep,
+			// three-d (After Effects: View ▸ Switch 3D View)
+			sub('Switch 3D View', [
+				c('threeD.view.activeCamera', 'Active Camera'),
+				c('threeD.view.default', 'Default'),
+				sep,
+				c('threeD.view.front', 'Front'),
+				c('threeD.view.left', 'Left'),
+				c('threeD.view.top', 'Top'),
+				c('threeD.view.back', 'Back'),
+				c('threeD.view.right', 'Right'),
+				c('threeD.view.bottom', 'Bottom'),
+				sep,
+				c('threeD.view.custom1', 'Custom View 1'),
+				c('threeD.view.custom2', 'Custom View 2'),
+				c('threeD.view.custom3', 'Custom View 3'),
+			]),
+			c('threeD.view.last', 'Switch to Last 3D View'),
+			c('threeD.view.reset', 'Reset 3D View'),
+			c('threeD.cameraFromView', 'Create Camera from 3D View'),
 			sep,
 			c('program.toggleComparisonView', 'Comparison View'),
 			c('program.toggleDroppedFrames', 'Show Dropped Frame Indicator'),

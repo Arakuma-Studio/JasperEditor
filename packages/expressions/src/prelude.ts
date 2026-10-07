@@ -532,6 +532,28 @@ function __m3(m, p) {
   if (W !== 0 && W !== 1) { X /= W; Y /= W; }
   return p.length > 2 ? [X, Y, p[2] || 0] : [X, Y];
 }
+// three-d: 4×4 row-major helpers (points with the perspective divide, vectors without translation), the
+// projection to sequence pixels ([x, y, camera depth]) and comp → layer plane through the inverse homography.
+function __m4(m, p) {
+  var x = p[0] || 0, y = p[1] || 0, z = p[2] || 0;
+  var X = m[0] * x + m[1] * y + m[2] * z + m[3], Y = m[4] * x + m[5] * y + m[6] * z + m[7], Z = m[8] * x + m[9] * y + m[10] * z + m[11], W = m[12] * x + m[13] * y + m[14] * z + m[15];
+  if (W !== 0 && W !== 1) { X /= W; Y /= W; Z /= W; }
+  return [X, Y, Z];
+}
+function __m4v(m, p) {
+  var x = p[0] || 0, y = p[1] || 0, z = p[2] || 0;
+  return [m[0] * x + m[1] * y + m[2] * z, m[4] * x + m[5] * y + m[6] * z, m[8] * x + m[9] * y + m[10] * z];
+}
+function __m4c(m, p) {
+  var x = p[0], y = p[1], z = p[2];
+  var X = m[0] * x + m[1] * y + m[2] * z + m[3], Y = m[4] * x + m[5] * y + m[6] * z + m[7], D = m[8] * x + m[9] * y + m[10] * z + m[11], W = m[12] * x + m[13] * y + m[14] * z + m[15];
+  if (W === 0) W = 1e-9;
+  return [X / W, Y / W, D];
+}
+function __plane(hinv, p) {
+  var r = __m3(hinv, [p[0] || 0, p[1] || 0]);
+  return [r[0], r[1], 0];
+}
 function __m3v(m, p) {
   var x = p[0] || 0, y = p[1] || 0;
   return p.length > 2 ? [m[0] * x + m[1] * y, m[3] * x + m[4] * y, p[2] || 0] : [m[0] * x + m[1] * y, m[3] * x + m[4] * y];
@@ -593,14 +615,15 @@ Layer.prototype = {
     return g.__get(k);
   },
   __x: function (t) { return __h(__XFORM, this.__s, this.__o, t === undefined ? time : __v(t)); },
-  toComp: function (p, t) { return __m3(this.__x(t)[0], __v(p)); },
-  fromComp: function (p, t) { return __m3(this.__x(t)[1], __v(p)); },
-  toWorld: function (p, t) { return __m3(this.__x(t)[0], __v(p)); },
-  fromWorld: function (p, t) { return __m3(this.__x(t)[1], __v(p)); },
-  toCompVec: function (p, t) { return __m3v(this.__x(t)[0], __v(p)); },
-  fromCompVec: function (p, t) { return __m3v(this.__x(t)[1], __v(p)); },
-  toWorldVec: function (p, t) { return __m3v(this.__x(t)[0], __v(p)); },
-  fromWorldVec: function (p, t) { return __m3v(this.__x(t)[1], __v(p)); },
+  // three-d: a 3D layer's xform also carries its world matrix, its inverse and the camera's view-projection.
+  toComp: function (p, t) { var x = this.__x(t); return x.length > 2 ? __m4c(x[4], __m4(x[2], __v(p))) : __m3(x[0], __v(p)); },
+  fromComp: function (p, t) { var x = this.__x(t); return x.length > 2 ? __plane(x[1], __v(p)) : __m3(x[1], __v(p)); },
+  toWorld: function (p, t) { var x = this.__x(t); return x.length > 2 ? __m4(x[2], __v(p)) : __m3(x[0], __v(p)); },
+  fromWorld: function (p, t) { var x = this.__x(t); return x.length > 2 ? __m4(x[3], __v(p)) : __m3(x[1], __v(p)); },
+  toCompVec: function (p, t) { var x = this.__x(t); if (x.length <= 2) return __m3v(x[0], __v(p)); var a = this.toComp([0, 0, 0], t), b = this.toComp(__v(p), t); return [b[0] - a[0], b[1] - a[1]]; },
+  fromCompVec: function (p, t) { var x = this.__x(t); if (x.length <= 2) return __m3v(x[1], __v(p)); var a = this.fromComp([0, 0], t), b = this.fromComp(__v(p), t); return [b[0] - a[0], b[1] - a[1]]; },
+  toWorldVec: function (p, t) { var x = this.__x(t); return x.length > 2 ? __m4v(x[2], __v(p)) : __m3v(x[0], __v(p)); },
+  fromWorldVec: function (p, t) { var x = this.__x(t); return x.length > 2 ? __m4v(x[3], __v(p)) : __m3v(x[1], __v(p)); },
   fromCompToSurface: function (p, t) { return this.fromComp(p, t); },
   sourceRectAtTime: function (t, includeExtents) {
     var r = __h(__RECT, this.__s, this.__o, t === undefined ? time : __v(t), !!includeExtents);

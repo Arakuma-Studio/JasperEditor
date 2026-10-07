@@ -31,6 +31,17 @@ export type RenderOptions = {
 	 * primaries, HDR tone mapped). Absent = true in previews; renders never apply it.
 	 */
 	displayColor?: boolean;
+	/**
+	 * three-d (preview only): the Program monitor's 3D view (Front, Top, Custom View 1…) — the camera 3D layers are
+	 * drawn through instead of the sequence's active camera. Ignored in renders and in nested sequences.
+	 */
+	view3d?: {
+		eye: [number, number, number];
+		poi: [number, number, number];
+		down: [number, number, number];
+		zoom: number;
+		ortho: boolean;
+	};
 };
 
 export type SequenceCompositionProps = { doc: RenderDoc; options: RenderOptions };

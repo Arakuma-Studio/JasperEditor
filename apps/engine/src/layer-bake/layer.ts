@@ -73,6 +73,8 @@ export function needsBake(
 	c: Pick<RenderVisualClip, 'kind' | 'engine' | 'effects' | 'masks'>,
 	registry?: EffectRegistry,
 ): boolean {
+	// three-d: a 3D layer is never baked alone (the planner routes 3D runs to the Remotion path).
+	if ((c as { threeD?: unknown }).threeD) return false;
 	return (
 		isDomLayer(c) ||
 		(MEDIA_BAKE_KINDS.has(c.kind) && (hasBrowserEffect(c, registry) || maskExportRoute(c) === 'bake'))

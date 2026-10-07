@@ -10,8 +10,8 @@ import {
 	type MediaProbe,
 	type MediaStream,
 	secondsToFlicks,
-	type VideoStream,
 	type VectorInfo,
+	type VideoStream,
 } from '@jasper/project';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import type { SpawnOptions } from '../tools/process.ts';
@@ -221,7 +221,9 @@ export function hdrOf(s: Pick<FfStream, 'side_data_list'>): { hdr?: NonNullable<
  * primaries, the BT.2020 matrix). Previews play a signal proxy instead (BT.709-tagged, same R'G'B' signal), so the
  * colour input transform sees the file's own signal, as the native path does.
  */
-export function browserConvertsColor(s: Pick<FfStream, 'color_primaries' | 'color_transfer' | 'color_space'>): boolean {
+export function browserConvertsColor(
+	s: Pick<FfStream, 'color_primaries' | 'color_transfer' | 'color_space'>,
+): boolean {
 	const t = s.color_transfer ?? '';
 	const p = s.color_primaries ?? '';
 	const m = s.color_space ?? '';

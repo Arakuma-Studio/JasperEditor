@@ -1,7 +1,8 @@
 // Export planning and rendering (ARCHITECTURE §9.5, S04 §10.2 subset, RP-010, EX-030).
+
+import { OUTPUT_SPACE_IDS } from '@jasper/project';
 import { z } from 'zod';
 import { EncoderChoiceSchema, VideoCodecSchema } from './capabilities.ts';
-import { OUTPUT_SPACE_IDS } from '@jasper/project';
 import { RationalSchema } from './common.ts';
 import { EnvelopeSchema } from './projects.ts';
 

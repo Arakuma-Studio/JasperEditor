@@ -253,7 +253,9 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				(await call<{ out: number[] }>('composite', { W, H, layers, ...(linear ? { linear } : {}) })).out[0]!;
 			expect(Math.abs((await at()) - 128)).toBeLessThanOrEqual(1);
 			expect(Math.abs((await at('bt1886')) - 255 * 0.5 ** (1 / 2.4))).toBeLessThanOrEqual(1.5);
-			expect(Math.abs((await at('srgb')) - 255 * (1.055 * 0.5 ** (1 / 2.4) - 0.055))).toBeLessThanOrEqual(1.5);
+			expect(Math.abs((await at('srgb')) - 255 * (1.055 * 0.5 ** (1 / 2.4) - 0.055))).toBeLessThanOrEqual(
+				1.5,
+			);
 			// PQ: half the light of white (10 000 cd/m²) = 5000 cd/m² → PQ 0.924
 			expect(Math.abs((await at('pq')) - 255 * 0.9235)).toBeLessThanOrEqual(2);
 		});

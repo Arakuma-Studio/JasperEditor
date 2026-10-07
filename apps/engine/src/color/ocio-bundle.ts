@@ -130,7 +130,8 @@ export const ocioBundleProber: AssetProber = {
 		} catch {
 			throw new JobError('INVALID_COLOR_CONFIG', 'Not a JasperEditor OCIO bundle (invalid JSON)', false);
 		}
-		if (!isOcioBundle(json)) throw new JobError('INVALID_COLOR_CONFIG', 'Not a JasperEditor OCIO bundle', false);
+		if (!isOcioBundle(json))
+			throw new JobError('INVALID_COLOR_CONFIG', 'Not a JasperEditor OCIO bundle', false);
 		let info: ColorConfigInfo;
 		try {
 			info = colorConfigInfo(json);
@@ -157,4 +158,3 @@ export const ocioBundleProber: AssetProber = {
 export function bundleFileName(configPath: string): string {
 	return `${basename(configPath).replace(/\.ocio$/i, '') || 'config'}.jocio`;
 }
-

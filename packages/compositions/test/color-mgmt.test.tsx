@@ -12,14 +12,14 @@ const track = (id: string, clips: [string, number, number][]): CompositeTrackInp
 });
 
 describe('linear-light runs share one scope', () => {
-	const members = [
+	const members: Parameters<typeof linearGroupItemsAt>[0] = [
 		{
 			input: track('V1', [['a', 0, 10]]),
-			mattes: [{ id: 'm1', start: 0, duration: 5, color: [0, 0, 0, 1] as const }],
+			mattes: [{ id: 'm1', start: 0, duration: 5, color: [0, 0, 0, 1] }],
 		},
 		{
 			input: track('V2', [['b', 5, 10]]),
-			mattes: [{ id: 'm2', start: 4, duration: 4, color: [1, 1, 1, 1] as const }],
+			mattes: [{ id: 'm2', start: 4, duration: 4, color: [1, 1, 1, 1] }],
 		},
 		{ input: track('V3', [['c', 0, 20]]), mattes: [] },
 	];

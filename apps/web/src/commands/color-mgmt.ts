@@ -18,19 +18,6 @@ const PICTURES = new Set(['video', 'image', 'animated-image']);
 
 const writable = (ctx: CommandCtx) => !!ctx.session && !ctx.session.getState().readOnly;
 
-/** Picture media of the selected Project items. */
-function selectedPictureMedia(session: EditorSession): string[] {
-	const s = session.getState();
-	const out: string[] = [];
-	for (const id of s.selection.project.items) {
-		const it = s.document.items[id];
-		if (it?.kind !== 'media') continue;
-		const a = s.document.media[it.mediaId] as MediaAsset | undefined;
-		if (a && PICTURES.has(a.kind)) out.push(a.id);
-	}
-	return [...new Set(out)];
-}
-
 /** Selected timeline clips that show a picture from media. */
 function selectedMediaClips(session: EditorSession): { sequenceId: string; clipIds: string[] } | null {
 	const s = session.getState();

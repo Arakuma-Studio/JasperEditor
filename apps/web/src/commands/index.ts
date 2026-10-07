@@ -38,6 +38,7 @@ import { shapeCommands } from './shapes.ts';
 import { speechCommands } from './speech.ts';
 import { structureCommands } from './structure.ts';
 import { textAnimationCommands } from './text-animation.ts';
+import { threeDCommands } from './three-d.ts';
 import { timeCommands } from './time.ts';
 import { timelineCommands } from './timeline.ts';
 import { trackingCommands } from './tracking.ts';
@@ -88,6 +89,8 @@ const COMMAND_MODULES: UiCommand[][] = [
 	// imports workstream: Interpret Footage, Lottie export, SVG as shape layer
 	importsCommands,
 	monitorViewCommands,
+	// three-d: cameras, lights, 3D views, renderer
+	threeDCommands,
 ];
 
 let registered = false;

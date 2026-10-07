@@ -93,8 +93,13 @@ export function patchMoov(moov: Buffer, extra: Buffer, shiftOffsets: boolean): B
 		for (const ch of readBoxes(moov, box.start + box.header, box.start + box.size)) {
 			if (ch.type === 'trak') {
 				const mdia = readBoxes(moov, ch.start + ch.header, ch.start + ch.size).find((b) => b.type === 'mdia');
-				const hdlr = mdia && readBoxes(moov, mdia.start + mdia.header, mdia.start + mdia.size).find((b) => b.type === 'hdlr');
-				if (!hdlr || moov.toString('latin1', hdlr.start + hdlr.header + 8, hdlr.start + hdlr.header + 12) !== 'vide')
+				const hdlr =
+					mdia &&
+					readBoxes(moov, mdia.start + mdia.header, mdia.start + mdia.size).find((b) => b.type === 'hdlr');
+				if (
+					!hdlr ||
+					moov.toString('latin1', hdlr.start + hdlr.header + 8, hdlr.start + hdlr.header + 12) !== 'vide'
+				)
 					continue;
 			}
 			if (ch.type === 'stsd') {
@@ -114,14 +119,16 @@ export function patchMoov(moov: Buffer, extra: Buffer, shiftOffsets: boolean): B
 	// Drop existing mdcv / clli children (re-export over a patched file), then append ours.
 	const childStart = e.start + e.header + VISUAL_ENTRY_HEADER;
 	if (childStart > e.start + e.size) throw new BoxError('Sample entry too small');
-	const kids = readBoxes(moov, childStart, e.start + e.size).filter((b) => b.type !== 'mdcv' && b.type !== 'clli');
+	const kids = readBoxes(moov, childStart, e.start + e.size).filter(
+		(b) => b.type !== 'mdcv' && b.type !== 'clli',
+	);
 	const newEntry = Buffer.concat([
 		moov.subarray(e.start, childStart),
 		...kids.map((k) => moov.subarray(k.start, k.start + k.size)),
 		extra,
 	]);
 	const delta = newEntry.length - e.size;
-	let out = Buffer.concat([moov.subarray(0, e.start), newEntry, moov.subarray(e.start + e.size)]);
+	const out = Buffer.concat([moov.subarray(0, e.start), newEntry, moov.subarray(e.start + e.size)]);
 	// Grow every ancestor (moov … stbl, stsd) by `delta`.
 	for (const a of chain) {
 		if (a.header === 16) out.writeBigUInt64BE(BigInt(a.size + delta), a.start + 8);

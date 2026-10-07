@@ -211,6 +211,8 @@ export function withBakedLayer(Component: ComponentType<LayerProps>): ComponentT
 		const runtime = useBakedLayerRuntime();
 		if (clip.baked) return layer.composite ? <BakedMasterTap layer={layer} /> : <BakedMaster layer={layer} />;
 		if (!options.isPreview || !hasDomColorEffects(clip)) return <Component {...layer} />;
+		// three-d: a 3D layer's whole stack (colour runs included) runs in its capture chain for the 3D renderer.
+		if (layer.composite && clip.threeD) return <Component {...layer} />;
 		// keyframes-blend: inside the GL compositor's group the Player captures the DOM layer itself (its graded
 		// preview is a plain video element); the chip says the grade is not shown there.
 		if (layer.composite)

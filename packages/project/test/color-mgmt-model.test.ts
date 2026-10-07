@@ -4,23 +4,23 @@ import { describe, expect, it } from 'vitest';
 import {
 	applyLut,
 	bakeColorRun,
-	checkInvariants,
+	buildRenderSnapshot,
 	COLOR_INPUT_ID,
+	checkInvariants,
 	colorRunKey,
+	createCounterIdSource,
 	defaultEffectRegistry,
 	effectRuns,
+	logEncode,
 	type MediaAsset,
+	normalizedFromSignal,
 	pqFromNits,
+	type Rgb,
 	repairDocument,
 	resolveInputSpace,
-	type Rgb,
 	sequenceColorInfo,
 	type VideoClip,
 	workingKey,
-	buildRenderSnapshot,
-	createCounterIdSource,
-	logEncode,
-	normalizedFromSignal,
 } from '../src/index.ts';
 import { Harness, videoAsset } from './helpers.ts';
 
@@ -43,7 +43,13 @@ const snapOf = (h: Harness) =>
 function placeVideo(h: Harness, asset: ReturnType<typeof videoAsset>) {
 	const m = (h.ok([{ type: 'media.register', asset }]).results[0] as { mediaId: string }).mediaId;
 	const r = h.ok([
-		{ type: 'clip.place', source: { mediaId: m }, at: 0, tracks: { video: 'V1' }, sourceRange: { in: { seconds: 0 }, out: { seconds: 2 } } },
+		{
+			type: 'clip.place',
+			source: { mediaId: m },
+			at: 0,
+			tracks: { video: 'V1' },
+			sourceRange: { in: { seconds: 0 }, out: { seconds: 2 } },
+		},
 	]);
 	const v = (r.results[0] as { clipIds: string[] }).clipIds.find((id) => h.seq.clips[id]!.kind === 'video')!;
 	return { mediaId: m, clipId: v };
@@ -58,9 +64,18 @@ function hdrAsset(transfer: string): ReturnType<typeof videoAsset> {
 
 /** Runs the layer's colour runs (the snapshot's effects, evaluated statically) on one colour. */
 function grade(snapClip: { effects: unknown[] }, ctx: Parameters<typeof bakeColorRun>[2], c: Rgb): Rgb {
-	const effects = (snapClip.effects as { id: string; effectId: string; effectVersion: number; enabled: boolean; params: Record<string, { value: unknown }> }[]).map(
-		(fx) => ({ ...fx, params: Object.fromEntries(Object.entries(fx.params).map(([k, v]) => [k, v.value])) }),
-	);
+	const effects = (
+		snapClip.effects as {
+			id: string;
+			effectId: string;
+			effectVersion: number;
+			enabled: boolean;
+			params: Record<string, { value: unknown }>;
+		}[]
+	).map((fx) => ({
+		...fx,
+		params: Object.fromEntries(Object.entries(fx.params).map(([k, v]) => [k, v.value])),
+	}));
 	const out: Rgb = [...c];
 	for (const run of effectRuns(effects, defaultEffectRegistry)) {
 		if (run.kind !== 'color') continue;
@@ -74,25 +89,53 @@ function grade(snapClip: { effects: unknown[] }, ctx: Parameters<typeof bakeColo
 describe('sequence working space (sequence.updateSettings)', () => {
 	it('defaults to Rec. 709 and changes undoably, linear variants turn on Linearize', () => {
 		const h = new Harness();
-		expect(sequenceColorInfo(h.seq.settings)).toMatchObject({ space: 'rec709', linearize: false, blendLinear: false, autoToneMap: true, sdrWhiteNits: 203 });
-		h.ok([{ type: 'sequence.updateSettings', settings: { workingColorSpace: 'rec2100-pq', color: { sdrWhiteNits: 100, hdrPeakNits: 4000 } } }]);
+		expect(sequenceColorInfo(h.seq.settings)).toMatchObject({
+			space: 'rec709',
+			linearize: false,
+			blendLinear: false,
+			autoToneMap: true,
+			sdrWhiteNits: 203,
+		});
+		h.ok([
+			{
+				type: 'sequence.updateSettings',
+				settings: { workingColorSpace: 'rec2100-pq', color: { sdrWhiteNits: 100, hdrPeakNits: 4000 } },
+			},
+		]);
 		expect(h.seq.settings.workingColorSpace).toBe('rec2100-pq');
 		expect(sequenceColorInfo(h.seq.settings)).toMatchObject({ sdrWhiteNits: 100, hdrPeakNits: 4000 });
 		h.ok([{ type: 'sequence.updateSettings', settings: { workingColorSpace: 'rec2020-linear' } }]);
-		expect(sequenceColorInfo(h.seq.settings)).toMatchObject({ space: 'rec2020', linearize: true, blendLinear: true });
-		h.ok([{ type: 'sequence.updateSettings', settings: { color: { linearize: null, sdrWhiteNits: null, hdrPeakNits: null, blendLinear: true } } }]);
+		expect(sequenceColorInfo(h.seq.settings)).toMatchObject({
+			space: 'rec2020',
+			linearize: true,
+			blendLinear: true,
+		});
+		h.ok([
+			{
+				type: 'sequence.updateSettings',
+				settings: { color: { linearize: null, sdrWhiteNits: null, hdrPeakNits: null, blendLinear: true } },
+			},
+		]);
 		expect(h.seq.settings.color).toEqual({ blendLinear: true });
 		clean(h);
 	});
 	it('refuses unknown spaces and out-of-range settings', () => {
 		const h = new Harness();
-		expect(h.tx([{ type: 'sequence.updateSettings', settings: { workingColorSpace: 'aces' } }]).ok).toBe(false);
-		expect(h.tx([{ type: 'sequence.updateSettings', settings: { color: { sdrWhiteNits: 5000 } } }]).ok).toBe(false);
-		expect(h.tx([{ type: 'sequence.updateSettings', settings: { workingColorSpace: 'rec2100-pq-linear' } }]).ok).toBe(false);
+		expect(h.tx([{ type: 'sequence.updateSettings', settings: { workingColorSpace: 'aces' } }]).ok).toBe(
+			false,
+		);
+		expect(h.tx([{ type: 'sequence.updateSettings', settings: { color: { sdrWhiteNits: 5000 } } }]).ok).toBe(
+			false,
+		);
+		expect(
+			h.tx([{ type: 'sequence.updateSettings', settings: { workingColorSpace: 'rec2100-pq-linear' } }]).ok,
+		).toBe(false);
 	});
 	it('a sequence made from HDR media works in its HDR space', () => {
 		const h = new Harness();
-		const m = (h.ok([{ type: 'media.register', asset: hdrAsset('arib-std-b67') }]).results[0] as { mediaId: string }).mediaId;
+		const m = (
+			h.ok([{ type: 'media.register', asset: hdrAsset('arib-std-b67') }]).results[0] as { mediaId: string }
+		).mediaId;
 		const r = h.ok([{ type: 'sequence.create', name: 'HLG', fromMediaId: m }]);
 		const id = (r.results[0] as { sequenceId: string }).sequenceId;
 		expect(h.doc.sequences[id]!.settings.workingColorSpace).toBe('rec2100-hlg');
@@ -103,12 +146,25 @@ describe('Interpret Footage ▸ Colour and clip overrides', () => {
 	it('sets, patches and clears the media interpretation; validates every reference', () => {
 		const h = new Harness();
 		const { mediaId, clipId } = placeVideo(h, videoAsset({ audio: false }));
-		h.ok([{ type: 'media.interpretColor', mediaIds: [mediaId], color: { space: 'slog3-sgamut3cine', range: 'pc' } }]);
+		h.ok([
+			{
+				type: 'media.interpretColor',
+				mediaIds: [mediaId],
+				color: { space: 'slog3-sgamut3cine', range: 'pc' },
+			},
+		]);
 		expect(h.doc.media[mediaId]!.interpretation?.color).toEqual({ space: 'slog3-sgamut3cine', range: 'pc' });
 		h.ok([{ type: 'media.interpretColor', mediaIds: [mediaId], color: { range: null, toneMap: false } }]);
-		expect(h.doc.media[mediaId]!.interpretation?.color).toEqual({ space: 'slog3-sgamut3cine', toneMap: false });
-		expect(h.tx([{ type: 'media.interpretColor', mediaIds: [mediaId], color: { space: 'nope' } }]).ok).toBe(false);
-		expect(h.tx([{ type: 'media.interpretColor', mediaIds: [mediaId], color: { inputLut: mediaId } }]).ok).toBe(false);
+		expect(h.doc.media[mediaId]!.interpretation?.color).toEqual({
+			space: 'slog3-sgamut3cine',
+			toneMap: false,
+		});
+		expect(h.tx([{ type: 'media.interpretColor', mediaIds: [mediaId], color: { space: 'nope' } }]).ok).toBe(
+			false,
+		);
+		expect(
+			h.tx([{ type: 'media.interpretColor', mediaIds: [mediaId], color: { inputLut: mediaId } }]).ok,
+		).toBe(false);
 		h.ok([{ type: 'clip.setColorInterpretation', clipIds: [clipId], color: { space: 'rec709' } }]);
 		expect((h.seq.clips[clipId] as VideoClip).colorInterpretation).toEqual({ space: 'rec709' });
 		h.ok([{ type: 'clip.setColorInterpretation', clipIds: [clipId], color: null }]);
@@ -128,8 +184,14 @@ describe('Interpret Footage ▸ Colour and clip overrides', () => {
 
 	it('refuses audio media and non-picture clips', () => {
 		const h = new Harness();
-		const a = (h.ok([{ type: 'media.register', asset: videoAsset({ kind: 'audio' }) }]).results[0] as { mediaId: string }).mediaId;
-		expect(h.tx([{ type: 'media.interpretColor', mediaIds: [a], color: { space: 'rec709' } }]).ok).toBe(false);
+		const a = (
+			h.ok([{ type: 'media.register', asset: videoAsset({ kind: 'audio' }) }]).results[0] as {
+				mediaId: string;
+			}
+		).mediaId;
+		expect(h.tx([{ type: 'media.interpretColor', mediaIds: [a], color: { space: 'rec709' } }]).ok).toBe(
+			false,
+		);
 	});
 });
 
@@ -156,13 +218,22 @@ describe('snapshot colour input transforms', () => {
 	it('PQ media auto-detected in a PQ sequence is the identity; in Rec. 709 it is tone mapped', () => {
 		const h = new Harness();
 		placeVideo(h, hdrAsset('smpte2084'));
-		expect(snapOf(h).videoTracks[0]!.clips[0]!.effects.some((fx) => fx.effectId === COLOR_INPUT_ID)).toBe(true);
+		expect(snapOf(h).videoTracks[0]!.clips[0]!.effects.some((fx) => fx.effectId === COLOR_INPUT_ID)).toBe(
+			true,
+		);
 		h.ok([{ type: 'sequence.updateSettings', settings: { workingColorSpace: 'rec2100-pq' } }]);
-		expect(snapOf(h).videoTracks[0]!.clips[0]!.effects.some((fx) => fx.effectId === COLOR_INPUT_ID)).toBe(false);
+		expect(snapOf(h).videoTracks[0]!.clips[0]!.effects.some((fx) => fx.effectId === COLOR_INPUT_ID)).toBe(
+			false,
+		);
 	});
 	it('graphics and the background map SDR white to the HDR graphics white in PQ', () => {
 		const h = new Harness();
-		h.ok([{ type: 'sequence.updateSettings', settings: { workingColorSpace: 'rec2100-pq', backgroundColor: [1, 1, 1, 1] } }]);
+		h.ok([
+			{
+				type: 'sequence.updateSettings',
+				settings: { workingColorSpace: 'rec2100-pq', backgroundColor: [1, 1, 1, 1] },
+			},
+		]);
 		h.ok([{ type: 'clip.addText', at: 0, duration: 30, track: 'V1', content: { text: 'Hi' } }]);
 		const snap = snapOf(h);
 		for (const k of [0, 1, 2]) expect(snap.settings.backgroundColor[k]).toBeCloseTo(pqFromNits(203), 6);
@@ -175,8 +246,12 @@ describe('snapshot colour input transforms', () => {
 		const a = sequenceColorInfo({ workingColorSpace: 'rec2100-pq' });
 		const b = sequenceColorInfo({ workingColorSpace: 'rec2100-pq', color: { sdrWhiteNits: 100 } });
 		expect(workingKey(a)).not.toBe(workingKey(b));
-		const fx = [{ id: 'x', effectId: COLOR_INPUT_ID, effectVersion: 1, enabled: true, params: { space: 'rec709' } }];
-		expect(colorRunKey(fx, (m) => m, 33, workingKey(a))).not.toBe(colorRunKey(fx, (m) => m, 33, workingKey(b)));
+		const fx = [
+			{ id: 'x', effectId: COLOR_INPUT_ID, effectVersion: 1, enabled: true, params: { space: 'rec709' } },
+		];
+		expect(colorRunKey(fx, (m) => m, 33, workingKey(a))).not.toBe(
+			colorRunKey(fx, (m) => m, 33, workingKey(b)),
+		);
 	});
 });
 
@@ -214,18 +289,34 @@ describe('invariants and repairs', () => {
 		const h = new Harness();
 		const { mediaId, clipId } = placeVideo(h, videoAsset({ audio: false }));
 		const doc = JSON.parse(JSON.stringify(h.doc));
-		const seq = Object.values(doc.sequences)[0] as { settings: Record<string, unknown>; clips: Record<string, Record<string, unknown>> };
+		const seq = Object.values(doc.sequences)[0] as {
+			settings: Record<string, unknown>;
+			clips: Record<string, Record<string, unknown>>;
+		};
 		seq.settings.workingColorSpace = 'bogus';
 		seq.settings.color = { sdrWhiteNits: 'x' };
 		doc.media[mediaId].interpretation = { color: { space: 'nope', inputLut: 'med_missing' } };
 		seq.clips[clipId]!.colorInterpretation = { ocio: { configId: 'med_x', space: 'a' } };
-		(seq.clips[clipId]!.effects as unknown[]).push({ id: 'fx_9', effectId: COLOR_INPUT_ID, effectVersion: 1, enabled: true, params: {} });
+		(seq.clips[clipId]!.effects as unknown[]).push({
+			id: 'fx_9',
+			effectId: COLOR_INPUT_ID,
+			effectVersion: 1,
+			enabled: true,
+			params: {},
+		});
 		const codes = checkInvariants(doc).filter((i) => i.invariant === 'INV-COLOR');
 		expect(codes.length).toBeGreaterThanOrEqual(4);
 		const { document, report } = repairDocument(doc, createCounterIdSource(99));
 		expect(checkInvariants(document).filter((i) => i.invariant === 'INV-COLOR')).toEqual([]);
 		expect(report.map((r) => r.action)).toEqual(
-			expect.arrayContaining(['reset-working-space', 'reset-color-settings', 'drop-color-space', 'drop-input-lut', 'drop-ocio-space', 'drop-effect']),
+			expect.arrayContaining([
+				'reset-working-space',
+				'reset-color-settings',
+				'drop-color-space',
+				'drop-input-lut',
+				'drop-ocio-space',
+				'drop-effect',
+			]),
 		);
 	});
 	it('effect.add refuses the render-only colour input effect', () => {

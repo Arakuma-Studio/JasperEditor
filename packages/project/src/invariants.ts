@@ -38,9 +38,12 @@ import { PUPPET_PIN_KINDS, PUPPET_PIN_PROPS, type Puppet } from './schema/puppet
 import type { AudioClip, Clip, ClipRoto, EffectInstance, Sequence, Track } from './schema/sequence.ts';
 import { isKnownClipKind } from './schema/sequence.ts';
 import type { ShapeItem } from './schema/shapes.ts';
+import type { ClipCameraTracker } from './schema/three-d.ts';
 import { isNestClip } from './structure/nest.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
 import { repairTextAnimators, textAnimatorIssues } from './text-animators/validate.ts';
+import { canBe3d, newLayer3D } from './three-d/model.ts';
+
 import {
 	contentSpanFlicks,
 	FLICKS_PER_SECOND,
@@ -53,6 +56,19 @@ import { remapIssues, repairRemap } from './time-remap/invariants.ts';
 import { isRemapped } from './time-remap/model.ts';
 import { walkItems } from './vector/defaults.ts';
 import { checkShapeItem, duplicateItemIds } from './vector/input.ts';
+
+/** What is wrong with a 3D Camera Tracker's span or solve, or null. */
+function cameraTrackerProblem(t: ClipCameraTracker): string | null {
+	if (t.span[1] < t.span[0] + 1) return 'span must hold at least two frames';
+	const s = t.solve;
+	if (!s) return null;
+	if (s.span[0] !== t.span[0] || s.span[1] !== t.span[1]) return 'solve is of another span';
+	if (s.frames.length !== (s.span[1] - s.span[0] + 1) * 8 || !s.frames.every(Number.isFinite))
+		return 'solve frames are malformed';
+	if (s.points.some((p) => p.first > p.last || !p.pos.every(Number.isFinite)))
+		return 'solve points are malformed';
+	return null;
+}
 
 const inv = (invariant: string, message: string, path?: string[]): Issue => ({
 	commandIndex: -1,
@@ -610,6 +626,37 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 						issues.push(inv('INV-001', `Shape ${c.id} has duplicate item ids ${dup.join(', ')}`, cw));
 				}
 			}
+			// three-d: only visual clips with Motion are 3D layers; environment lights reference existing media.
+			if (r.threeD !== undefined && !canBe3d(c.kind))
+				issues.push(inv('INV-012', `Clip ${c.id}: a ${c.kind} clip cannot be a 3D layer`, [...cw, 'threeD']));
+			if (c.kind === 'light') {
+				const env = (r.light as { environmentMediaId?: string | null } | undefined)?.environmentMediaId;
+				if (env && !doc.media[env])
+					issues.push(inv('INV-006', `Light ${c.id} references missing environment media ${env}`, cw));
+			}
+			// three-d: a model layer shows a model media and is always 3D.
+			if (c.kind === 'model') {
+				const m = doc.media[(r as { mediaId: string }).mediaId];
+				if (m && m.kind !== 'model')
+					issues.push(
+						inv('INV-012', `Clip ${c.id}: a model layer needs a 3D model media, not ${m.kind}`, cw),
+					);
+				if ((r.threeD as { enabled?: boolean } | undefined)?.enabled !== true)
+					issues.push(inv('INV-012', `Clip ${c.id}: a 3D model layer must be a 3D layer`, [...cw, 'threeD']));
+			}
+			// three-d: the 3D Camera Tracker sits on video clips, analyses existing media, its solve is whole.
+			if (r.cameraTracker !== undefined) {
+				const t = r.cameraTracker as ClipCameraTracker;
+				if (c.kind !== 'video')
+					issues.push(inv('INV-012', `Clip ${c.id}: a ${c.kind} clip cannot carry a 3D Camera Tracker`, cw));
+				else if (!doc.media[t.mediaId])
+					issues.push(
+						inv('INV-006', `Clip ${c.id}: 3D Camera Tracker references missing media ${t.mediaId}`, cw),
+					);
+				const bad = cameraTrackerProblem(t);
+				if (bad)
+					issues.push(inv('INV-012', `Clip ${c.id}: 3D Camera Tracker ${bad}`, [...cw, 'cameraTracker']));
+			}
 			// text-animators workstream: animators, selectors, Path / More Options, Source Text keys.
 			if (c.kind === 'text')
 				for (const i of textAnimatorIssues(r, cw, claim))
@@ -1013,6 +1060,39 @@ export function repairDocument(
 	}
 	// ---- end wp-m2-anime-templates
 
+	// ---- three-d: 3D blocks on kinds that cannot be 3D are dropped; missing environment media → studio light.
+	for (const seq of Object.values(doc.sequences) as Sequence[]) {
+		for (const c of Object.values(seq.clips)) {
+			const r = c as Record<string, unknown>;
+			if (r.threeD !== undefined && !canBe3d(c.kind)) {
+				delete r.threeD;
+				note('drop-3d', c.id, `a ${c.kind} clip cannot be a 3D layer`);
+			}
+			if (c.kind === 'light' && c.light.environmentMediaId && !doc.media[c.light.environmentMediaId]) {
+				c.light.environmentMediaId = null;
+				note('reset-environment', c.id, 'environment media is missing: neutral studio light');
+			}
+			if (c.kind === 'model' && (r.threeD as { enabled?: boolean } | undefined)?.enabled !== true) {
+				r.threeD = {
+					...newLayer3D(true, 'model'),
+					...((r.threeD as object | undefined) ?? {}),
+					enabled: true,
+				};
+				note('enable-3d-model', c.id, 'a 3D model layer is always a 3D layer');
+			}
+			if (r.cameraTracker !== undefined) {
+				const t = r.cameraTracker as ClipCameraTracker;
+				if (c.kind !== 'video' || !doc.media[t.mediaId]) {
+					delete r.cameraTracker;
+					note('drop-camera-tracker', c.id, 'the 3D Camera Tracker has no video to analyse');
+				} else if (cameraTrackerProblem(t)) {
+					t.solve = null;
+					delete t.ground;
+					note('reset-camera-solve', c.id, 'the camera solve was malformed: analyse again');
+				}
+			}
+		}
+	}
 	// ---- imports: Interpret Footage sections that do not fit the media are dropped (the file's own value is used).
 	for (const m of Object.values(doc.media)) {
 		const it = m.interpretation as Record<string, unknown> | undefined;

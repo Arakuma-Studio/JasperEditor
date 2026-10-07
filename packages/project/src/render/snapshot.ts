@@ -55,6 +55,7 @@ import {
 	type Transform,
 } from '../schema/sequence.ts';
 import type { TextAnimatorGroup, TextMoreOptions, TextPathOptions } from '../schema/text-animators.ts';
+import type { CameraData, Layer3D, LightData, Renderer3D } from '../schema/three-d.ts';
 import { conformSequenceRate, MAX_NEST_DEPTH, nestContentKey } from '../structure/nest.ts';
 import {
 	type CountingLeaderStyle,
@@ -69,6 +70,7 @@ import { transitionSideTrack, transitionTrackerOf } from '../tracking/transition
 import {
 	type AudioClipTransitionRender,
 	audioFadeGain,
+	isLayer3D,
 	type RenderAudioFade,
 	type RenderFade,
 	type RenderMatte,
@@ -372,6 +374,40 @@ export type RenderVisualClip = {
 	 * reads file time `fileTimeOf(mediaTime, t)` for the clip's media time `t`. Absent = file time = media time.
 	 */
 	mediaTime?: MediaTimeMap;
+	/**
+	 * three-d: the clip is a 3D layer (its 3D Layer switch is on): its 3D transform and material, unevaluated. The
+	 * composition draws it as a plane of the sequence's 3D scene (`scene3d`); absent = a 2D layer.
+	 */
+	threeD?: Layer3D;
+};
+
+/** three-d: a camera or light of the snapshot (it draws nothing; it changes how the 3D layers are drawn). */
+export type RenderRigClip = {
+	clipId: string;
+	name: string;
+	/** Index of its video track, V1 = 0 (the topmost camera at a frame is the active one). */
+	trackIndex: number;
+	start: number;
+	duration: number;
+	sourceIn: number;
+	speed: Speed;
+	frameHold?: { flicks: number; holdFilters?: boolean };
+};
+export type RenderCameraClip = RenderRigClip & { camera: CameraData };
+export type RenderLightClip = RenderRigClip & { light: LightData };
+
+/**
+ * three-d: the sequence's 3D scene setup — the renderer and every camera and light that is on during the range
+ * (track order; their properties unevaluated). Present when the sequence has a 3D layer, a camera or a light.
+ */
+export type RenderScene3D = {
+	renderer: Renderer3D;
+	/** Draft 3D (previews only: no lights, shadows or depth of field). */
+	draft?: boolean;
+	shadowMapSize?: number;
+	supersampling?: number;
+	cameras: RenderCameraClip[];
+	lights: RenderLightClip[];
 };
 
 /** How a retimed video layer makes its frames (workstream `time`). */
@@ -472,6 +508,8 @@ export type RenderSnapshot = {
 	master: { volumeDb: Animatable<number> };
 	/** Clips excluded from rendering (unknown kinds, S01:KND-030). */
 	warnings: { clipId: string; code: string; message: string }[];
+	/** three-d: cameras, lights and the 3D renderer (absent = no 3D layer, camera or light in the sequence). */
+	scene3d?: RenderScene3D;
 	/**
 	 * Wave expressions: what expressions read besides the snapshot (every sequence, names, layer boxes), present when
 	 * the document has active expressions. Consumers bind with `@jasper/expressions` `bindSnapshotExpressions`
@@ -737,6 +775,10 @@ export function buildRenderSnapshot(
 	const colorInfo = sequenceColorInfo(seq.settings);
 	const videoTracks: RenderSnapshot['videoTracks'] = [];
 	const hiddenMattes: NonNullable<RenderSnapshot['matteTracks']> = [];
+	// three-d: cameras and lights of the shown tracks, and whether a 3D layer is drawn.
+	const cameras: RenderCameraClip[] = [];
+	const lights: RenderLightClip[] = [];
+	let has3dLayer = false;
 	// wp masks: hidden tracks stay in the snapshot as matte-only tracks when a Track Matte Key reads them (Premiere
 	// mattes are usually hidden tracks).
 	const matteTracks = new Set<string>();
@@ -746,7 +788,7 @@ export function buildRenderSnapshot(
 				effects: ((c as { effects?: EffectInstance[] }).effects ?? []) as never,
 			}))
 				matteTracks.add(id);
-	for (const t of seq.videoTracks) {
+	for (const [trackIndex, t] of seq.videoTracks.entries()) {
 		const matteOnly = t.output === false && matteTracks.has(t.id);
 		if (t.output === false && !matteOnly) continue;
 		const clips: RenderVisualClip[] = [];
@@ -761,14 +803,62 @@ export function buildRenderSnapshot(
 				continue;
 			}
 			const caps = kindCapabilities(c.kind)!;
+			// three-d: cameras and lights of shown tracks join the scene (a matte-only track's are off, as hidden).
+			if ((c.kind === 'camera' || c.kind === 'light') && !matteOnly) {
+				const rig: RenderRigClip = {
+					clipId: c.id,
+					name: c.name,
+					trackIndex,
+					start: c.start,
+					duration: c.duration,
+					sourceIn: c.sourceIn,
+					speed: c.speed,
+					...(c.frameHold ? { frameHold: c.frameHold } : {}),
+				};
+				if (c.kind === 'camera') cameras.push({ ...rig, camera: c.camera });
+				else {
+					lights.push({ ...rig, light: c.light });
+					const env = c.light.type === 'environment' ? c.light.environmentMediaId : null;
+					if (env && doc.media[env]) useMedia(env);
+				}
+				continue;
+			}
 			if (!caps.visual) continue;
 			const r = c as Record<string, unknown>;
+			const threeD = isLayer3D(c) ? (r.threeD as Layer3D) : undefined;
+			if (threeD) {
+				has3dLayer = true;
+				// Advanced 3D draws physically: what it does not reproduce is said, not dropped silently.
+				if (c.kind === 'model' && seq.threeD?.renderer !== 'advanced')
+					warnings.push({
+						clipId: c.id,
+						code: 'THREE_D_MODEL_CLASSIC',
+						message: `3D model "${c.name}" is drawn by Advanced 3D only: switch the sequence to Advanced 3D (Sequence ▸ 3D Renderer) to see it`,
+					});
+				if (seq.threeD?.renderer === 'advanced') {
+					const mode = (r.blendMode as string | undefined) ?? 'normal';
+					if (mode !== 'normal')
+						warnings.push({
+							clipId: c.id,
+							code: 'THREE_D_ADVANCED_BLEND',
+							message: `3D layer "${c.name}": Advanced 3D draws 3D layers with Normal blending (its blend mode ${mode} needs Classic 3D)`,
+						});
+					const lt = threeD.material?.lightTransmission;
+					if (lt && (lt.value > 0 || lt.keyframes.some((k) => (k.value as number) > 0)))
+						warnings.push({
+							clipId: c.id,
+							code: 'THREE_D_ADVANCED_TRANSMISSION',
+							message: `3D layer "${c.name}": Advanced 3D shadows are opaque (Light Transmission needs Classic 3D)`,
+						});
+				}
+			}
 			let source: RenderVisualSource;
 			const box = intrinsicBoxOf({ clip: c, doc, seq });
 			switch (c.kind) {
 				case 'video':
 				case 'still':
-				case 'animated-image': {
+				case 'animated-image':
+				case 'model': {
 					useMedia(c.mediaId);
 					source = { mediaId: c.mediaId };
 					break;
@@ -940,8 +1030,10 @@ export function buildRenderSnapshot(
 					: visibleEffects(r.effects as EffectInstance[] | undefined),
 				intrinsicBox: box,
 				...((r.masks as Mask[] | undefined)?.length ? { masks: r.masks as Mask[] } : {}),
-				// edit-structure: a nest renders with the engines its nested layers need.
+				// edit-structure: a nest renders with the engines its nested layers need. three-d: a 3D layer is drawn by
+				// the compositions' 3D renderer.
 				engine:
+					threeD ||
 					('nest' in source && nestNeedsRemotion(source.nest.snapshot)) ||
 					// imports: Lottie and vector pictures are drawn by the composition (baked for the native path).
 					('mediaId' in source && (doc.media[source.mediaId]?.lottie || doc.media[source.mediaId]?.vector))
@@ -956,6 +1048,7 @@ export function buildRenderSnapshot(
 					: {}),
 				...retimeFields(c, doc, seq.settings.frameRate as Rational),
 				...rotosOf(r.rotos as ClipRoto[] | undefined, opts),
+				...(threeD ? { threeD } : {}),
 				...mediaTimeFields(c, doc),
 			});
 		}
@@ -1208,6 +1301,18 @@ export function buildRenderSnapshot(
 		audioMix,
 		warnings,
 		...(world ? { expressions: world } : {}),
+		...(has3dLayer || cameras.length || lights.length
+			? {
+					scene3d: {
+						renderer: seq.threeD?.renderer ?? 'classic',
+						...(seq.threeD?.draft ? { draft: true } : {}),
+						...(seq.threeD?.shadowMapSize ? { shadowMapSize: seq.threeD.shadowMapSize } : {}),
+						...(seq.threeD?.supersampling ? { supersampling: seq.threeD.supersampling } : {}),
+						cameras,
+						lights,
+					},
+				}
+			: {}),
 	};
 }
 
@@ -1323,7 +1428,7 @@ function multicamContentKey(doc: ProjectDocument, c: Clip & { sequenceId: string
 /** A nested snapshot draws a Remotion-rendered layer (recursively). */
 function nestNeedsRemotion(snap: RenderSnapshot): boolean {
 	return snap.videoTracks.some(
-		(t) => (t.transitions?.length ?? 0) > 0 || t.clips.some((c) => c.engine === 'remotion'),
+		(t) => (t.transitions?.length ?? 0) > 0 || t.clips.some((c) => c.engine === 'remotion' || !!c.threeD),
 	);
 }
 

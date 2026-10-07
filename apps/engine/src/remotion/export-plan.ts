@@ -90,7 +90,13 @@ export function planRemotionExport(input: {
 		};
 	}
 	// Dev with GPL builds on both sides and libx264 selected: unchanged behaviour (one pass in Remotion).
-	if (plain && encoder.encoder === 'libx264' && !remotion.lgpl && !input.lgplOnly && has(remotion.encoders, 'libx264'))
+	if (
+		plain &&
+		encoder.encoder === 'libx264' &&
+		!remotion.lgpl &&
+		!input.lgplOnly &&
+		has(remotion.encoders, 'libx264')
+	)
 		return gplDirectH264();
 
 	// VP9 in WebM + Opus: Remotion encodes it directly with LGPL components.

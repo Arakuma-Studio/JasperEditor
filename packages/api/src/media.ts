@@ -1,6 +1,7 @@
 // Media registration, uploads, derivatives and their JSON headers (ARCHITECTURE §9.2/§9.4, D-09, D-10,
 // S04:IN-005, TH-002, WF-001).
 import {
+	ColorConfigInfoSchema,
 	ImageSequenceInfoSchema,
 	LayeredInfoSchema,
 	LottieInfoSchema,
@@ -9,7 +10,6 @@ import {
 	MediaLocatorSchema,
 	MediaProbeSchema,
 	MgBundleInfoSchema,
-	ColorConfigInfoSchema,
 	VectorInfoSchema,
 } from '@jasper/project';
 import { z } from 'zod';

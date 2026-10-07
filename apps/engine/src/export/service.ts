@@ -2,16 +2,7 @@
 // `renderMedia`; outputs in `<appdir>/renders/<jobId>/`; frame-count verification (FRAME_COUNT_MISMATCH);
 // progress mapping (S04:RN-030); `export.finished` event. Motion-graphic masters come from a provider that
 // WP-2G registers (`registerMgMasterProvider`).
-import { writeHdrBoxes } from '../color/hdr-boxes.ts';
-import {
-	colorTagArgs,
-	displayLutFilter,
-	isPlainRec709Output,
-	MASTERING_PRIMARIES,
-	outputFilters,
-	outputLutFilter,
-	svtHdrParams,
-} from '../color/output.ts';
+
 import type { ChildProcess } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import {
@@ -41,6 +32,16 @@ import { hasSoxr, resamplerArgs } from '../audio/decode.ts';
 import { layoutOf, type MixdownResult, renderMixdown } from '../audio/mixdown.ts';
 import type { UrlSigner } from '../auth/signed-url.ts';
 import type { CacheService } from '../cache/service.ts';
+import { writeHdrBoxes } from '../color/hdr-boxes.ts';
+import {
+	colorTagArgs,
+	displayLutFilter,
+	isPlainRec709Output,
+	MASTERING_PRIMARIES,
+	outputFilters,
+	outputLutFilter,
+	svtHdrParams,
+} from '../color/output.ts';
 import type { Broadcaster } from '../events/broadcaster.ts';
 import type { FontCatalogService } from '../fonts/catalog.ts';
 import type { JobQueue } from '../jobs/queue.ts';
@@ -764,7 +765,9 @@ export class ExportService {
 			fps: o.fps,
 			...(o.bitrateKbps ? { bitrateKbps: o.bitrateKbps } : {}),
 			...(o.proresProfile ? { proresProfile: o.proresProfile } : {}),
-			...(o.color ? { bitDepth: o.color.bitDepth, colorCodes: o.color.codes, svtHdr: svtHdrParams(o.color) } : {}),
+			...(o.color
+				? { bitDepth: o.color.bitDepth, colorCodes: o.color.codes, svtHdr: svtHdrParams(o.color) }
+				: {}),
 		});
 		// color-mgmt: the intermediate holds the working signal (BT.709 matrix); convert to the output space.
 		const lut = o.color ? await outputLutFilter(o.color, await ctx.scratchDir()) : null;
