@@ -379,7 +379,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (76; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (103):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -392,12 +392,18 @@ Tools (76; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the
 - Remotion projects: `import_mg_bundle` `list_compositions` `add_composition` `set_composition_props`
   `prerender_composition` `scaffold_mg_project` `list_composition_texts` `set_composition_text`.
 - Tracking: `add_tracker` `track` `apply_tracking` `get_tracker` `set_corner_pin` `simplify_keyframes`.
-- Transitions: `list_transitions` `update_transition` `remove_transitions` `apply_default_transitions`
+- Transitions: `list_transition_types` `list_transitions` `update_transition` `remove_transitions` `apply_default_transitions`
   `set_transition_defaults`.
 - Animation and graphics: `list_text_animations` `set_text_animation` `render_frames` `set_motion_graphic_params`
-  `add_shape`.
+  `add_shape` `get_motion_path` `set_spatial_interpolation`.
+- Effect presets: `list_effect_presets` `get_effect_preset` `apply_effect_preset` `save_effect_preset`
+  `delete_effect_preset`.
 - Clipboard: `copy_clips` `paste_clips` `copy_items` `paste_items`.
 - Media cache: `get_cache_usage` `clean_cache` `set_cache_location`.
+- Edit structure: `nest_clips` `unnest_clips` `place_sequence` `list_nests` `add_adjustment_layer` `group_clips`
+  `ungroup_clips` `duplicate_sequence` `delete_sequence` `remove_unused_media` `create_synthetic` `update_synthetic`
+  `list_through_edits` `join_through_edits` `find_gaps` `make_subsequence` `add_frame_hold`
+  `insert_frame_hold_segment` `frame_hold_options` (`docs/wp-notes/edit-structure.md`).
 
 Resources: `jasper://projects/{projectId}/document`, `jasper://projects/{projectId}/timeline`,
 `jasper://guide`. Prompt: `edit-video`.
