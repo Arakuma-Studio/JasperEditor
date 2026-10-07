@@ -18,6 +18,7 @@ import type { ProcessStep } from '@jasper/project';
 import { type JobContext, JobError } from '../jobs/types.ts';
 import { fingerprintHex } from '../media/fingerprint.ts';
 import type { MediaRecord } from '../media/registry.ts';
+import { VisionModelStore, visionModelsDir } from '../roto/models.ts';
 import { SpeechModelError, SpeechModelStore, speechModelsDir } from '../speech/models.ts';
 import { safeFileName, sha256File } from '../tools/fs.ts';
 import type { CoreServices } from '../tools/services.ts';
@@ -45,6 +46,8 @@ export class ProcessingService {
 	readonly models: ModelStore;
 	/** wp speech: the catalogue's speech models (`<appdir>/models/speech/<id>/`), installed by the same job kind. */
 	readonly speechModels: SpeechModelStore;
+	/** parity (roto): segmentation and face models (`<appdir>/models/vision/<id>/`), installed by the same job kind. */
+	readonly visionModels: VisionModelStore;
 	private filters: Set<string> | null = null;
 	private wasmOk: boolean | null = null;
 
@@ -54,9 +57,10 @@ export class ProcessingService {
 	) {
 		const paths = core.config.paths;
 		this.settings = new ProcessingSettingsStore(paths.engineConfig);
-		const { entries, bundledDir, speech } = loadCatalog(env);
+		const { entries, bundledDir, speech, vision } = loadCatalog(env);
 		this.models = new ModelStore({ modelsDir: join(paths.root, 'models'), entries, bundledDir });
 		this.speechModels = new SpeechModelStore(speechModelsDir(paths.root), speech);
+		this.visionModels = new VisionModelStore(visionModelsDir(paths.root), vision);
 	}
 
 	registerRunners(): void {
@@ -715,7 +719,7 @@ export class ProcessingService {
 	// ------------------------------------------------------------------ models
 
 	submitInstall(modelId: string, origin: EngineJob['origin'] = { type: 'user' }): EngineJob {
-		const e = this.models.entry(modelId) ?? this.speechModels.entry(modelId);
+		const e = this.models.entry(modelId) ?? this.speechModels.entry(modelId) ?? this.visionModels.entry(modelId);
 		if (!e) throw new JobError('MODEL_UNKNOWN', `Unknown model ${modelId}`, false);
 		return this.core.queue.submit({
 			kind: 'model-download',
@@ -732,6 +736,23 @@ export class ProcessingService {
 		ctx: JobContext,
 	): Promise<{ modelId: string; path: string; alreadyInstalled: boolean }> {
 		const { modelId } = ctx.input as { modelId: string };
+		if (!this.models.entry(modelId) && this.visionModels.entry(modelId)) {
+			// parity (roto): a multi-file vision model (verified file by file)
+			try {
+				const r = await this.visionModels.install(modelId, {
+					signal: ctx.signal,
+					onProgress: (done, total, file) =>
+						ctx.progress(total ? done / total : null, { stage: `Downloading ${file}` }),
+				});
+				this.core.capabilities.changed();
+				return { modelId, path: r.dir, alreadyInstalled: r.alreadyInstalled };
+			} catch (e) {
+				if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+				if (e instanceof SpeechModelError)
+					throw new JobError(e.code.replace('SPEECH_', ''), e.message, e.code === 'DOWNLOAD_FAILED');
+				throw e;
+			}
+		}
 		if (!this.models.entry(modelId) && this.speechModels.entry(modelId)) {
 			// wp speech: a multi-file speech model (verified file by file)
 			try {

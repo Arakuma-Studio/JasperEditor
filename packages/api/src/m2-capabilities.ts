@@ -88,6 +88,17 @@ export const M2FeaturesSchema = z.object({
 			cacheBytes: z.number().int().min(0),
 		})
 		.optional(),
+	/** parity (roto): Roto Brush / face tracking (`POST /api/roto/segment`). */
+	roto: z
+		.object({
+			status: z.enum(['ready', 'unavailable']),
+			reason: z.string().optional(),
+			/** Segmentation model installed (SAM 2.1); without it the classic graph-cut engine runs. */
+			segmentationModel: z.boolean(),
+			/** Face models installed (face tracking needs them). */
+			faceModel: z.boolean(),
+		})
+		.optional(),
 	/** wp-multicam: `POST /api/sync/audio` (Synchronize / Merge Clips / multi-camera by audio). */
 	audioSync: z
 		.object({
