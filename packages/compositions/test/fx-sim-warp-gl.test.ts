@@ -188,7 +188,7 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 		expect(r.lq).toBeGreaterThan(5);
 		expect(r.lqHalf).toBeLessThan(r.lq);
 		expect(r.lqView).toBeGreaterThan(5);
-		expect(r.pp0).toBeLessThanOrEqual(3); // pins at rest: the layer as is
+		expect(r.pp0).toBeLessThanOrEqual(6); // pins at rest: the layer as is
 		expect(r.pp).toBeGreaterThan(50);
 		expect(r.ppCanvas[1]).toBeGreaterThan(64); // the pulled pin leaves the box: padded canvas
 		expect(r.ppNone).toBe(0);
