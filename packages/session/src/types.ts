@@ -47,6 +47,8 @@ export type ActiveTool =
 	| 'ripple'
 	| 'rolling'
 	| 'rateStretch'
+	// audio-fx: Remix tool (Premiere's, in the Ripple Edit group): drag a music clip's end to remix it to that length.
+	| 'remix'
 	| 'razor'
 	| 'slip'
 	| 'slide'

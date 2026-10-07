@@ -205,6 +205,7 @@ const TOOL_IDS: ActiveTool[] = [
 	'ripple',
 	'rolling',
 	'rateStretch',
+	'remix',
 	'razor',
 	'slip',
 	'slide',
