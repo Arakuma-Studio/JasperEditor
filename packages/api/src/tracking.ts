@@ -7,11 +7,14 @@ const Vec2 = z.tuple([z.number(), z.number()]);
 export const TrackRequestSchema = z.object({
 	projectId: z.string().optional(),
 	mediaKey: z.string(),
-	kind: z.enum(['point', 'planar']),
+	/** wp masks: `mask` follows the pixels inside `reference.polygon` frame to frame (Premiere's mask tracking). */
+	kind: z.enum(['point', 'planar', 'mask']),
 	/** Reference frame (source frame index) and geometry in media pixels. */
 	reference: z.object({
 		frame: z.number().int().min(0),
 		corners: z.array(Vec2).length(4).optional(),
+		/** wp masks (kind `mask`): the mask outline (flattened, closed) in media pixels at the reference frame. */
+		polygon: z.array(Vec2).min(3).max(20_000).optional(),
 		point: Vec2.optional(),
 		patch: z.number().int().positive().optional(),
 		search: z.number().int().positive().optional(),
@@ -40,6 +43,13 @@ export const TrackRequestSchema = z.object({
 			 * tracked line.
 			 */
 			refineEdges: z.boolean().optional(),
+			/**
+			 * wp masks (kind `mask`): the motion model — Position, Position & Rotation, Position, Scale & Rotation
+			 * (Premiere's methods) or Perspective (a homography).
+			 */
+			maskMethod: z
+				.enum(['position', 'position-rotation', 'position-scale-rotation', 'perspective'])
+				.optional(),
 		})
 		.optional(),
 });
@@ -53,7 +63,11 @@ export const TrackResultSchema = z.object({
 	startFrame: z.number().int().min(0),
 	/** Media frame rate the frames refer to. */
 	fps: z.object({ num: z.number().int().positive(), den: z.number().int().positive() }),
-	stride: z.union([z.literal(2), z.literal(8)]),
+	/**
+	 * Values per frame: point 2, planar 8, mask 9 (wp masks: the row-major homography from the reference frame's
+	 * media px to the frame's media px; the client maps the mask path through it).
+	 */
+	stride: z.union([z.literal(2), z.literal(8), z.literal(9)]),
 	data: z.array(z.number()),
 	confidence: z.array(z.number().min(0).max(1)),
 	method: z.string(),

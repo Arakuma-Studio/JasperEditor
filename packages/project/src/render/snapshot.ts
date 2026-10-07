@@ -1,10 +1,12 @@
 // Render snapshot (S01:RND-001…005, ARCHITECTURE §5.5): the self-contained JSON value handed to the
 // Remotion composition, the native planner and the Program overlay. Keyframes stay unevaluated.
 import { compositionOfClip, mergeProps } from '../composition/props.ts';
+import { trackMatteTracksOf } from '../masks/track-matte.ts';
 import { clipEngines, type EngineId, isBoundedContent, kindCapabilities } from '../registry/kinds.ts';
 import { intrinsicBoxOf } from '../registry/properties.ts';
 import type { Animatable, Keyframe, RGBA } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
+import type { Mask } from '../schema/mask.ts';
 import type { FontRef, MediaAsset } from '../schema/media.ts';
 import {
 	type BlendMode,
@@ -139,6 +141,8 @@ export type RenderVisualClip = {
 	blendMode: BlendMode;
 	effects: EffectInstance[];
 	intrinsicBox: { width: number; height: number };
+	/** wp masks: the layer's Opacity masks (absent = none; effect masks travel in `effects[].masks`). */
+	masks?: Mask[];
 	engine: EngineId;
 	loop?: boolean;
 	/** Bounded media content (needs trimBefore/playbackRate handling). */
@@ -215,6 +219,12 @@ export type RenderSnapshot = {
 		mattes?: RenderMatte[];
 		transitions?: RenderTransition[];
 	}[];
+	/**
+	 * wp masks: hidden video tracks (output off) that a Track Matte Key reads (Premiere mattes are usually hidden
+	 * tracks), V1 → top. Their clips are rendered into the matte only, never into the frame; consumers that draw the
+	 * frame ignore this list. Absent = none. A layer bake's document carries the matte tracks of its clip here too.
+	 */
+	matteTracks?: { trackId: string; clips: RenderVisualClip[]; transitions?: RenderTransition[] }[];
 	/** After mute/solo resolution. */
 	audioClips: RenderAudioClip[];
 	/** null = offline. */
@@ -307,8 +317,19 @@ export function buildRenderSnapshot(
 	};
 
 	const videoTracks: RenderSnapshot['videoTracks'] = [];
+	const hiddenMattes: NonNullable<RenderSnapshot['matteTracks']> = [];
+	// wp masks: hidden tracks stay in the snapshot as matte-only tracks when a Track Matte Key reads them (Premiere
+	// mattes are usually hidden tracks).
+	const matteTracks = new Set<string>();
+	for (const c of Object.values(seq.clips))
+		if ((c as { enabled?: boolean }).enabled !== false)
+			for (const id of trackMatteTracksOf({
+				effects: ((c as { effects?: EffectInstance[] }).effects ?? []) as never,
+			}))
+				matteTracks.add(id);
 	for (const t of seq.videoTracks) {
-		if (t.output === false) continue;
+		const matteOnly = t.output === false && matteTracks.has(t.id);
+		if (t.output === false && !matteOnly) continue;
 		const clips: RenderVisualClip[] = [];
 		for (const c of clipsByTrack.get(t.id) ?? []) {
 			if (!inRange(c)) continue;
@@ -464,6 +485,7 @@ export function buildRenderSnapshot(
 				blendMode: (r.blendMode as BlendMode | undefined) ?? 'normal',
 				effects: (r.effects as EffectInstance[] | undefined) ?? [],
 				intrinsicBox: box,
+				...((r.masks as Mask[] | undefined)?.length ? { masks: r.masks as Mask[] } : {}),
 				engine: clipEngines(c)?.export ?? caps.engines.export,
 				...(c.kind === 'animated-image' ? { loop: c.loop } : {}),
 				bounded: isBoundedContent(c),
@@ -502,7 +524,7 @@ export function buildRenderSnapshot(
 					const id = (v as { mediaId?: unknown } | null)?.mediaId;
 					if (typeof id === 'string' && id && doc.media[id]) useMedia(id);
 				}
-		videoTracks.push({
+		(matteOnly ? hiddenMattes : videoTracks).push({
 			trackId: t.id,
 			clips,
 			...(mattes.length ? { mattes } : {}),
@@ -563,6 +585,7 @@ export function buildRenderSnapshot(
 		range,
 		durationFrames: Math.max(0, range.end - range.start),
 		videoTracks,
+		...(hiddenMattes.length ? { matteTracks: hiddenMattes } : {}),
 		audioClips,
 		media,
 		fonts: [...fontKeys.values()],

@@ -123,9 +123,13 @@ export function fxAsset(
 }
 
 /** A 640×360 30 fps render snapshot from commands (the test effects are known to the command registry). */
-export function fxSnapshot(commands: Command[]) {
+export function fxSnapshot(
+	commands: Command[] | ((doc: ReturnType<typeof createEmptyProject>) => Command[]),
+) {
 	const ids = createCounterIdSource(1);
 	const project = createEmptyProject({ ids, name: 'fx', preset: 'hd-720p-30' });
+	// wp masks: commands may depend on the empty project (track ids for Track Matte Key params).
+	const list = typeof commands === 'function' ? commands(project) : commands;
 	const ctx = {
 		ids,
 		now: () => '2026-10-05T10:00:00.000Z',
@@ -144,7 +148,7 @@ export function fxSnapshot(commands: Command[]) {
 					sequenceId: seqId,
 					settings: { width: FX_W, height: FX_H },
 				} as Command,
-				...commands,
+				...list,
 			],
 		},
 		ctx,

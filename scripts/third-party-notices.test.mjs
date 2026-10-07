@@ -212,6 +212,18 @@ describe('ported source records (licenses/ported, AGENTS.md §3.4)', () => {
 		]);
 	});
 
+	it('reads a licence line with extra words and emphasis', () => {
+		const root = tree({
+			'm.md':
+				'# M\n\nLicence of the ported code: **MIT OR Apache-2.0** (we use it under MIT).\n\n## EffectCraft — https://github.com/storytold/effectcraft\n\nCopyright (c) 2026 ArtCraft Team and the EffectCraft contributors\n',
+		});
+		const [r] = collectPorted(root);
+		expect([r.license, r.upstream]).toEqual([
+			'MIT OR Apache-2.0',
+			'https://github.com/storytold/effectcraft',
+		]);
+	});
+
 	it('refuses an incomplete record or a licence without its text, naming the file and the fix', () => {
 		expect(() => collectPorted(tree({ 'bad.md': '# Bad\n\nsome notes\n' }))).toThrow(
 			/licenses\/ported\/bad\.md: missing an upstream URL.*a licence.*a copyright line/,

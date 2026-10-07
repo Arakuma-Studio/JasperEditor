@@ -9,10 +9,12 @@ import {
 	buildRenderSnapshot,
 	defaultEffectRegistry,
 	type EffectRegistry,
+	hasEffectMasks,
 	isAnimated,
 	loadProject,
 	type MediaAsset,
 	type MediaHandle,
+	maskExportRoute,
 	mediaDecodeHints,
 	type ProjectDocument,
 	type Rational,
@@ -538,6 +540,13 @@ export function nativeBlockers(
 	// The fframes master holds exactly the clip's frames: no content for transition handles.
 	if (c.kind === 'motion-graphic' && ((c.headHandle ?? 0) > 0 || (c.tailHandle ?? 0) > 0))
 		out.push(`motion graphic "${c.name}" is part of a transition that needs handles`);
+	// wp masks: Opacity masks of kernel-drawn kinds are native (stream/plan.ts); other masks need the layer bake.
+	if (maskExportRoute(c) === 'bake')
+		out.push(
+			hasEffectMasks(c)
+				? `${label} has effect masks, which need the composition to render the layer (no layer bake available)`
+				: `${label} has masks the native kernel does not draw on this layer (no layer bake available)`,
+		);
 	// Keyframed Motion and Opacity are native: the builder samples them per frame (S03:ENG-032, keyframed.ts).
 	if (c.blendMode !== 'normal') out.push(`${label} uses blend mode "${c.blendMode}"`);
 	if (c.speed.reverse) out.push(`${label} plays in reverse`);

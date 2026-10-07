@@ -224,6 +224,10 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 
 	// ---------------------------------------------------------------- panel-scoped (R-PUI §16.7)
 	b('monitor.fit', 'Ctrl+Digit0', 'program'),
+	// wp masks: the selected mask's vertices / the mask itself; Escape leaves the pen or deselects.
+	b('mask.deleteSelection', 'Delete', 'program'),
+	b('mask.deleteSelection', 'Backspace', 'program'),
+	b('mask.escape', 'Escape', 'program'),
 	b('monitor.fit', 'Ctrl+Digit0', 'source'),
 	b('program.showRulers', 'Ctrl+KeyR', 'program'),
 	b('program.showGuides', 'Ctrl+Semicolon', 'program'),

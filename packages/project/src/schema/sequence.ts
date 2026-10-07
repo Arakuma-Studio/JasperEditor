@@ -14,6 +14,7 @@ import {
 	RGBASchema,
 	Vec2Schema,
 } from './common.ts';
+import { MaskSchema } from './mask.ts';
 
 // ---------------------------------------------------------------- effects
 
@@ -23,6 +24,8 @@ export const EffectInstanceSchema = z.looseObject({
 	effectVersion: int(),
 	enabled: z.boolean(),
 	params: z.record(z.string(), AnimParamSchema),
+	/** wp masks: Premiere's per-effect masks (the effect applies inside them). Absent = none. */
+	masks: z.array(MaskSchema).optional(),
 });
 export type EffectInstance = DeepStrip<z.infer<typeof EffectInstanceSchema>>;
 
@@ -282,6 +285,8 @@ const visualShape = {
 	effects: z.array(EffectInstanceSchema),
 	/** M2 (S09): this clip follows a tracker of another clip. */
 	trackedBy: TrackedBySchema.optional(),
+	/** wp masks: the Opacity masks of the layer (S03:MSK-001). Absent = none. */
+	masks: z.array(MaskSchema).optional(),
 };
 const canvasSchema = z.union([
 	z.literal('sequence'),

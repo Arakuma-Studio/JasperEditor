@@ -243,14 +243,23 @@ export function collectPorted(repo) {
 			return m ? m[1].replace(/\*+$/, '').trim() : null;
 		};
 		const upstream = /https?:\/\/[^\s)>\]`]+/.exec(field('Upstream') ?? text)?.[0] ?? null;
-		const license = (field('Licen[cs]e') ?? '').replace(/^["'`]|["'`]$/g, '') || null;
+		// `Licence: MIT OR Apache-2.0`, also `Licence of the ported code: **MIT OR Apache-2.0** (we use it under MIT)`
+		const licenseLine =
+			field('Licen[cs]e') ?? /^[-*\s]*\**licen[cs]e\b[^:\n]{0,60}:\s*(.+)$/im.exec(text)?.[1] ?? '';
+		const license =
+			/^[A-Za-z0-9.+-]+(?:\s+(?:OR|AND|WITH)\s+[A-Za-z0-9.+-]+)*/.exec(
+				licenseLine.replace(/^[\s*"'`(]+/, ''),
+			)?.[0] ?? null;
 		const copyright =
 			field('Copyright')?.replace(/^(?!copyright)/i, 'Copyright ') ??
-			/^.*\bcopyright\s*(?:\(c\)|©).*$/im
-				.exec(text)?.[0]
-				.replace(/^[-*\s]+/, '')
-				.trim() ??
-			null;
+			([
+				...new Set(
+					[...text.matchAll(/^.*\bcopyright\s*(?:\(c\)|©).*$/gim)].map((m) =>
+						m[0].replace(/^[-*\s]+/, '').trim(),
+					),
+				),
+			].join('; ') ||
+				null);
 		const missing = [
 			!upstream && 'an upstream URL (`- **Upstream:** https://…`)',
 			!license && 'a licence (`- **Licence:** MIT OR Apache-2.0`)',
