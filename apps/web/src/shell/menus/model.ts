@@ -140,6 +140,12 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('audio.autoDuck', 'Auto Duck…'),
 				c('audio.normalizeMedia', 'Normalize Loudness…'),
 				c('audio.measureLoudness', 'Measure Loudness'),
+				// audio-fx
+				sep,
+				c('audio.remix', 'Remix…'),
+				c('audio.revertRemix', 'Revert Remix'),
+				c('audio.autoMatchLoudness', 'Auto-Match Loudness'),
+				c('audio.clearAudioType', 'Clear Audio Type'),
 			]),
 			sep,
 			c('timeline.toggleEnable', 'Enable'),
