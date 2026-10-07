@@ -37,7 +37,7 @@ export function sniffAaf(bytes: Uint8Array): boolean {
 }
 
 export function importAaf(bytes: Uint8Array, opts: ImportOptions, report: Report): IProject {
-	let root;
+	let root: ReturnType<typeof readStore>;
 	try {
 		root = readStore(bytes);
 	} catch (e) {

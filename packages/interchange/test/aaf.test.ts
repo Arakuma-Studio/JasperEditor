@@ -182,14 +182,13 @@ describe('AAF', () => {
 		}
 		const qs = q.sequences[n]!;
 		const orig = p.sequences[s]!;
-		qs.audio.forEach((t, ti) =>
-			t.clips.forEach((c, ci) => {
+		for (const [ti, t] of qs.audio.entries())
+			for (const [ci, c] of t.clips.entries()) {
 				const oc = orig.audio[ti]!.clips[ci]!;
 				const need = needs.find((x) => x.mediaId === (oc.source as { mediaId: string }).mediaId)!;
 				expect(c.sourceIn).toBe(oc.sourceIn - need.start);
 				expect([c.start, c.duration]).toEqual([oc.start, oc.duration]);
-			}),
-		);
+			}
 		expect(structure(q, n, 'video')).toEqual(structure(p, s, 'video'));
 	});
 

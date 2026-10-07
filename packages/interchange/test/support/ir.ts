@@ -193,10 +193,8 @@ export function structure(p: IProject, sid: string, kind: 'video' | 'audio') {
 export function links(p: IProject, sid: string): string[][] {
 	const s = p.sequences[sid]!;
 	const by = new Map<string, string[]>();
-	[...s.video, ...s.audio].forEach((t, ti) =>
-		t.clips.forEach((c, ci) => {
+	for (const [ti, t] of [...s.video, ...s.audio].entries())
+		for (const [ci, c] of t.clips.entries())
 			if (c.link) by.set(c.link, [...(by.get(c.link) ?? []), `${ti}:${ci}`]);
-		}),
-	);
 	return [...by.values()].map((v) => v.sort()).sort((a, b) => a.join().localeCompare(b.join()));
 }
