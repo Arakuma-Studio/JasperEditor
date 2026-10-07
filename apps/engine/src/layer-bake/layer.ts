@@ -143,7 +143,7 @@ export function isStaticLayer(
 	if (c.kind === 'captions') {
 		const cap = (c.source as { captions?: { pages: unknown[]; style: { highlight?: { mode?: string } } } })
 			.captions;
-		if (!cap || cap.pages.length !== 1 || (cap.style.highlight?.mode ?? 'none') !== 'none') return false;
+		if (cap?.pages.length !== 1 || (cap.style.highlight?.mode ?? 'none') !== 'none') return false;
 	}
 	// Moving pictures (wave1c media bakes) are never one frame.
 	if (c.kind === 'video' || c.kind === 'animated-image') return false;

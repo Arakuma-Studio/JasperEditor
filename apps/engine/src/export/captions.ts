@@ -211,7 +211,7 @@ export function embedArgs(
 	const args = ['-i', input];
 	for (const f of files) args.push('-f', 'webvtt', '-i', f.path);
 	args.push('-map', '0:v?', '-map', '0:a?');
-	files.forEach((_, i) => args.push('-map', `${i + 1}:0`));
+	for (let i = 0; i < files.length; i++) args.push('-map', `${i + 1}:0`);
 	args.push('-c:v', 'copy', '-c:a', 'copy', '-c:s', codec);
 	files.forEach((f, i) => {
 		args.push(`-metadata:s:s:${i}`, `language=${iso639_2(f.language)}`);

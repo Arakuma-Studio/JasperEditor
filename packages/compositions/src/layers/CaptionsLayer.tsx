@@ -155,6 +155,7 @@ function lineNodes(
 			if (p.fmt.u) css.textDecoration = 'underline';
 			if (active) css.color = rgbaCss(hl.color);
 			out.push(
+				// biome-ignore lint/suspicious/noArrayIndexKey: words of a page are identified by their position
 				<span key={`${keyBase}-${k}-${j}`} data-caption-word={active ? 'active' : ''} style={css}>
 					{p.text}
 				</span>,
