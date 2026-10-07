@@ -236,153 +236,230 @@ export function isCssBlend(mode: string): boolean {
 
 // ---------------------------------------------------------------- formulas (premultiplied RGBA, 0..1)
 
-/** Modes whose inputs are not clamped to 0..1 (defined for over-range values). */
-const HDR = new Set<string>([
-	'normal',
-	'dissolve',
-	'darken',
-	'multiply',
-	'linear-burn',
-	'darker-color',
-	'lighten',
-	'screen',
-	'add',
-	'lighter-color',
-	'difference',
-	'subtract',
-	'divide',
-	'stencil-alpha',
-	'stencil-luma',
-	'silhouette-alpha',
-	'silhouette-luma',
-	'alpha-add',
-]);
+/** Hard Mix threshold: 1 minus a quarter code value, so sums of 8-bit values that are exactly 1 count as 1 on the GPU. */
+export const HARD_MIX_THRESHOLD = 1 - 0.25 / 255;
 
 /** Rec. 709 luminance (Darker / Lighter Color, the luma stencils). */
 export function luminance709(r: number, g: number, b: number): number {
 	return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
-/** Hard Mix threshold: 1 minus a quarter code value, so sums of 8-bit values that are exactly 1 count as 1 on the GPU. */
-export const HARD_MIX_THRESHOLD = 1 - 0.25 / 255;
-
-/** Luminance difference below which Darker / Lighter Color keep the base (float rounding of unpremultiplied colour). */
-const LUMA_TIE = 1e-5;
-
-const burn = (cb: number, cs: number) => (cb >= 1 ? 1 : cs <= 0 ? 0 : 1 - Math.min((1 - cb) / cs, 1));
-const dodge = (cb: number, cs: number) => (cb <= 0 ? 0 : cs >= 1 ? 1 : Math.min(cb / (1 - cs), 1));
-const hardLight = (cb: number, cs: number) => {
-	if (cs <= 0.5) return cb * 2 * cs;
-	const s = 2 * cs - 1;
-	return cb + s - cb * s;
-};
-const softLight = (cb: number, cs: number) => {
-	if (cs <= 0.5) return cb - (1 - 2 * cs) * cb * (1 - cb);
-	const d = cb <= 0.25 ? ((16 * cb - 12) * cb + 4) * cb : Math.sqrt(Math.max(cb, 0));
-	return cb + (2 * cs - 1) * (d - cb);
+export type BlendKernel = {
+	/**
+	 * Composites premultiplied `s` (layer opacity included) onto premultiplied `d` IN PLACE with mode number `mode`
+	 * (index in BLEND_MODES). `noise` = Dissolve's per-pixel value (`noise(x, y, seed)`).
+	 */
+	blend(mode: number, d: Float64Array, s: Float64Array, noise: number): void;
+	/** Dissolve's per-pixel random value in [0, 1) at integer pixel (x, y). */
+	noise(x: number, y: number, seed: number): number;
 };
 
-/** B(Cb, Cs) of a separable mode on one straight channel. */
-export function blendChannel(mode: string, cb: number, cs: number): number {
-	switch (mode) {
-		case 'darken':
-			return Math.min(cb, cs);
-		case 'multiply':
-			return cb * cs;
-		case 'color-burn':
-			return burn(cb, cs);
-		case 'linear-burn':
-			return Math.max(cb + cs - 1, 0);
-		case 'lighten':
-			return Math.max(cb, cs);
-		case 'screen':
-			return cb + cs - cb * cs;
-		case 'color-dodge':
-			return dodge(cb, cs);
-		case 'add':
-			return cb + cs;
-		case 'overlay':
-			return hardLight(cs, cb);
-		case 'soft-light':
-			return softLight(cb, cs);
-		case 'hard-light':
-			return hardLight(cb, cs);
-		case 'vivid-light':
-			return cs <= 0.5 ? burn(cb, 2 * cs) : dodge(cb, 2 * (cs - 0.5));
-		case 'linear-light':
-			return Math.min(1, Math.max(0, cb + 2 * cs - 1));
-		case 'pin-light':
-			return cs <= 0.5 ? Math.min(cb, 2 * cs) : Math.max(cb, 2 * cs - 1);
-		case 'hard-mix':
-			// cb + cs ≥ 1, with ties on the 8-bit grid (k/255 + (255 − k)/255) resolved to 1 whatever the float rounding.
-			return cb + cs >= HARD_MIX_THRESHOLD ? 1 : 0;
-		case 'difference':
-			return Math.abs(cb - cs);
-		case 'exclusion':
-			return cb + cs - 2 * cb * cs;
-		case 'subtract':
-			return Math.max(cb - cs, 0);
-		case 'divide':
-			return cs <= 0 ? (cb > 0 ? 1 : 0) : cb / cs;
-		default:
-			return cs;
-	}
+/**
+ * The blend formulas as a SELF-CONTAINED factory (no reference to module scope): `blendPixel` uses it here and the
+ * native export's worker threads run its source text (`makeBlendKernel.toString()`), so both share one
+ * implementation. Mode numbers are BLEND_MODES indexes (checked by a test).
+ */
+export function makeBlendKernel(): BlendKernel {
+	const NORMAL = 0;
+	const DISSOLVE = 1;
+	const DARKER_COLOR = 6;
+	const LIGHTER_COLOR = 11;
+	const HUE = 23;
+	const SATURATION = 24;
+	const COLOR = 25;
+	const LUMINOSITY = 26;
+	const STENCIL_ALPHA = 27;
+	const STENCIL_LUMA = 28;
+	const SILHOUETTE_ALPHA = 29;
+	const SILHOUETTE_LUMA = 30;
+	const ALPHA_ADD = 31;
+	// Modes defined for over-range values (inputs not clamped to 0..1): normal, dissolve, darken, multiply, linear
+	// burn, darker color, lighten, screen, add, lighter color, difference, subtract, divide, the utility modes.
+	const HDR = new Set([0, 1, 2, 3, 5, 6, 7, 8, 10, 11, 19, 21, 22, 27, 28, 29, 30, 31]);
+	const HARD_MIX = 1 - 0.25 / 255;
+	// Darker / Lighter Color: luminance differences below this keep the base (float rounding of unpremultiplied
+	// colour must not decide; the GLSL uses the same tie).
+	const LUMA_TIE = 1e-5;
+	const luma = (r: number, g: number, b: number) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+	const burn = (cb: number, cs: number) => (cb >= 1 ? 1 : cs <= 0 ? 0 : 1 - Math.min((1 - cb) / cs, 1));
+	const dodge = (cb: number, cs: number) => (cb <= 0 ? 0 : cs >= 1 ? 1 : Math.min(cb / (1 - cs), 1));
+	const hardLight = (cb: number, cs: number) => {
+		if (cs <= 0.5) return cb * 2 * cs;
+		const t = 2 * cs - 1;
+		return cb + t - cb * t;
+	};
+	const softLight = (cb: number, cs: number) => {
+		if (cs <= 0.5) return cb - (1 - 2 * cs) * cb * (1 - cb);
+		const dd = cb <= 0.25 ? ((16 * cb - 12) * cb + 4) * cb : Math.sqrt(Math.max(cb, 0));
+		return cb + (2 * cs - 1) * (dd - cb);
+	};
+	// B(Cb, Cs) of a separable mode on one straight channel.
+	const sep = (mode: number, cb: number, cs: number): number => {
+		switch (mode) {
+			case 2: // darken
+				return Math.min(cb, cs);
+			case 3: // multiply
+				return cb * cs;
+			case 4: // color burn
+				return burn(cb, cs);
+			case 5: // linear burn
+				return Math.max(cb + cs - 1, 0);
+			case 7: // lighten
+				return Math.max(cb, cs);
+			case 8: // screen
+				return cb + cs - cb * cs;
+			case 9: // color dodge
+				return dodge(cb, cs);
+			case 10: // linear dodge (add)
+				return cb + cs;
+			case 12: // overlay
+				return hardLight(cs, cb);
+			case 13: // soft light
+				return softLight(cb, cs);
+			case 14: // hard light
+				return hardLight(cb, cs);
+			case 15: // vivid light
+				return cs <= 0.5 ? burn(cb, 2 * cs) : dodge(cb, 2 * (cs - 0.5));
+			case 16: // linear light
+				return Math.min(1, Math.max(0, cb + 2 * cs - 1));
+			case 17: // pin light
+				return cs <= 0.5 ? Math.min(cb, 2 * cs) : Math.max(cb, 2 * cs - 1);
+			case 18: // hard mix: cb + cs ≥ 1 (8-bit-grid ties count as 1)
+				return cb + cs >= HARD_MIX ? 1 : 0;
+			case 19: // difference
+				return Math.abs(cb - cs);
+			case 20: // exclusion
+				return cb + cs - 2 * cb * cs;
+			case 21: // subtract
+				return Math.max(cb - cs, 0);
+			case 22: // divide
+				return cs <= 0 ? (cb > 0 ? 1 : 0) : cb / cs;
+			default:
+				return cs;
+		}
+	};
+	// Non-separable helpers (W3C / PDF: Lum = 0.3 R + 0.59 G + 0.11 B).
+	const o = new Float64Array(3);
+	const lum = (c: Float64Array) => 0.3 * c[0]! + 0.59 * c[1]! + 0.11 * c[2]!;
+	const clipColor = (c: Float64Array) => {
+		const l = lum(c);
+		const n = Math.min(c[0]!, c[1]!, c[2]!);
+		const x = Math.max(c[0]!, c[1]!, c[2]!);
+		if (n < 0) {
+			const k = l / Math.max(l - n, 1e-9);
+			for (let i = 0; i < 3; i++) c[i] = l + (c[i]! - l) * k;
+		}
+		if (x > 1) {
+			const k = (1 - l) / Math.max(x - l, 1e-9);
+			for (let i = 0; i < 3; i++) c[i] = l + (c[i]! - l) * k;
+		}
+	};
+	const setLum = (c: Float64Array, l: number) => {
+		const dl = l - lum(c);
+		for (let i = 0; i < 3; i++) c[i] = c[i]! + dl;
+		clipColor(c);
+	};
+	const sat = (c: Float64Array) => Math.max(c[0]!, c[1]!, c[2]!) - Math.min(c[0]!, c[1]!, c[2]!);
+	const setSat = (c: Float64Array, t: number) => {
+		const mx = Math.max(c[0]!, c[1]!, c[2]!);
+		const mn = Math.min(c[0]!, c[1]!, c[2]!);
+		if (mx - mn <= 1e-9) {
+			c.fill(0);
+			return;
+		}
+		const k = t / (mx - mn);
+		for (let i = 0; i < 3; i++) c[i] = (c[i]! - mn) * k;
+	};
+	const cb = new Float64Array(3);
+	const cs = new Float64Array(3);
+	const blend = (mode: number, d: Float64Array, s: Float64Array, noise: number): void => {
+		const sa = s[3]!;
+		const da = d[3]!;
+		switch (mode) {
+			case NORMAL: {
+				const k = 1 - sa;
+				for (let i = 0; i < 3; i++) d[i] = s[i]! + d[i]! * k;
+				d[3] = sa + da * k;
+				return;
+			}
+			case DISSOLVE: {
+				if (sa <= 0 || noise >= sa) return;
+				for (let i = 0; i < 3; i++) d[i] = s[i]! / sa;
+				d[3] = 1;
+				return;
+			}
+			case STENCIL_ALPHA:
+			case SILHOUETTE_ALPHA:
+			case STENCIL_LUMA:
+			case SILHOUETTE_LUMA: {
+				const l = mode === STENCIL_LUMA || mode === SILHOUETTE_LUMA ? luma(s[0]!, s[1]!, s[2]!) : sa;
+				const k = mode === STENCIL_ALPHA || mode === STENCIL_LUMA ? l : 1 - l;
+				for (let i = 0; i < 4; i++) d[i] = d[i]! * k;
+				return;
+			}
+			case ALPHA_ADD: {
+				const k = 1 - sa;
+				for (let i = 0; i < 3; i++) d[i] = s[i]! + d[i]! * k;
+				d[3] = Math.min(sa + da, 1);
+				return;
+			}
+		}
+		if (sa <= 0) return;
+		if (da <= 0) {
+			for (let i = 0; i < 4; i++) d[i] = s[i]!;
+			return;
+		}
+		const clampIn = !HDR.has(mode);
+		for (let i = 0; i < 3; i++) {
+			const a = s[i]! / sa;
+			const b = d[i]! / da;
+			cs[i] = clampIn ? Math.min(1, Math.max(0, a)) : a;
+			cb[i] = clampIn ? Math.min(1, Math.max(0, b)) : b;
+		}
+		switch (mode) {
+			case HUE:
+				o.set(cs);
+				setSat(o, sat(cb));
+				setLum(o, lum(cb));
+				break;
+			case SATURATION:
+				o.set(cb);
+				setSat(o, sat(cs));
+				setLum(o, lum(cb));
+				break;
+			case COLOR:
+				o.set(cs);
+				setLum(o, lum(cb));
+				break;
+			case LUMINOSITY:
+				o.set(cb);
+				setLum(o, lum(cs));
+				break;
+			case DARKER_COLOR:
+				o.set(luma(cs[0]!, cs[1]!, cs[2]!) < luma(cb[0]!, cb[1]!, cb[2]!) - LUMA_TIE ? cs : cb);
+				break;
+			case LIGHTER_COLOR:
+				o.set(luma(cs[0]!, cs[1]!, cs[2]!) > luma(cb[0]!, cb[1]!, cb[2]!) + LUMA_TIE ? cs : cb);
+				break;
+			default:
+				for (let i = 0; i < 3; i++) o[i] = sep(mode, cb[i]!, cs[i]!);
+		}
+		const k = sa * da;
+		for (let i = 0; i < 3; i++) d[i] = (1 - da) * s[i]! + (1 - sa) * d[i]! + k * o[i]!;
+		d[3] = sa + da - k;
+	};
+	// EffectCraft `raster::hash_noise`: an integer hash (24 bits, exact as a GPU float).
+	const noise = (x: number, y: number, seed: number): number => {
+		let h = (Math.imul(x, 0x8da6b343) ^ Math.imul(y, 0xd8163841) ^ Math.imul(seed, 0xcb1ab31f)) >>> 0;
+		h = (h ^ (h >>> 13)) >>> 0;
+		h = Math.imul(h, 0x5bd1e995) >>> 0;
+		h = (h ^ (h >>> 15)) >>> 0;
+		return (h & 0xffffff) / 16777216;
+	};
+	return { blend, noise };
 }
 
-type Rgb = [number, number, number];
-const lum = (c: Rgb) => 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2];
-function clipColor(c: Rgb): Rgb {
-	const l = lum(c);
-	const n = Math.min(c[0], c[1], c[2]);
-	const x = Math.max(c[0], c[1], c[2]);
-	let o: Rgb = [c[0], c[1], c[2]];
-	if (n < 0) {
-		const k = l / Math.max(l - n, 1e-9);
-		o = [l + (o[0] - l) * k, l + (o[1] - l) * k, l + (o[2] - l) * k];
-	}
-	if (x > 1) {
-		const k = (1 - l) / Math.max(x - l, 1e-9);
-		o = [l + (o[0] - l) * k, l + (o[1] - l) * k, l + (o[2] - l) * k];
-	}
-	return o;
-}
-const setLum = (c: Rgb, l: number): Rgb => {
-	const d = l - lum(c);
-	return clipColor([c[0] + d, c[1] + d, c[2] + d]);
-};
-const sat = (c: Rgb) => Math.max(c[0], c[1], c[2]) - Math.min(c[0], c[1], c[2]);
-function setSat(c: Rgb, s: number): Rgb {
-	const mx = Math.max(c[0], c[1], c[2]);
-	const mn = Math.min(c[0], c[1], c[2]);
-	if (mx - mn <= 1e-9) return [0, 0, 0];
-	const k = s / (mx - mn);
-	return [(c[0] - mn) * k, (c[1] - mn) * k, (c[2] - mn) * k];
-}
-
-/** B(Cb, Cs) on straight RGB (non-separable modes, Darker / Lighter Color, else per channel). */
-export function blendRgb(mode: string, cb: Rgb, cs: Rgb): Rgb {
-	switch (mode) {
-		case 'hue':
-			return setLum(setSat(cs, sat(cb)), lum(cb));
-		case 'saturation':
-			return setLum(setSat(cb, sat(cs)), lum(cb));
-		case 'color':
-			return setLum(cs, lum(cb));
-		case 'luminosity':
-			return setLum(cb, lum(cs));
-		// Ties (equal luminance within float rounding) keep the base, on the GPU as here.
-		case 'darker-color':
-			return luminance709(cs[0], cs[1], cs[2]) < luminance709(cb[0], cb[1], cb[2]) - LUMA_TIE ? cs : cb;
-		case 'lighter-color':
-			return luminance709(cs[0], cs[1], cs[2]) > luminance709(cb[0], cb[1], cb[2]) + LUMA_TIE ? cs : cb;
-		default:
-			return [
-				blendChannel(mode, cb[0], cs[0]),
-				blendChannel(mode, cb[1], cs[1]),
-				blendChannel(mode, cb[2], cs[2]),
-			];
-	}
-}
+const KERNEL = makeBlendKernel();
 
 export type Rgba = [number, number, number, number];
 
@@ -392,52 +469,9 @@ export type Rgba = [number, number, number, number];
  * the destination masked by the source.
  */
 export function blendPixel(mode: string, dst: Rgba, src: Rgba, noise: number): Rgba {
-	const sa = src[3];
-	const da = dst[3];
-	switch (mode) {
-		case 'dissolve': {
-			if (sa <= 0 || noise >= sa) return [dst[0], dst[1], dst[2], dst[3]];
-			const inv = 1 / sa;
-			return [src[0] * inv, src[1] * inv, src[2] * inv, 1];
-		}
-		case 'stencil-alpha':
-			return [dst[0] * sa, dst[1] * sa, dst[2] * sa, dst[3] * sa];
-		case 'silhouette-alpha': {
-			const k = 1 - sa;
-			return [dst[0] * k, dst[1] * k, dst[2] * k, dst[3] * k];
-		}
-		case 'stencil-luma':
-		case 'silhouette-luma': {
-			const l = luminance709(src[0], src[1], src[2]);
-			const k = mode === 'stencil-luma' ? l : 1 - l;
-			return [dst[0] * k, dst[1] * k, dst[2] * k, dst[3] * k];
-		}
-		case 'alpha-add': {
-			const k = 1 - sa;
-			return [src[0] + dst[0] * k, src[1] + dst[1] * k, src[2] + dst[2] * k, Math.min(sa + da, 1)];
-		}
-		case 'normal': {
-			const k = 1 - sa;
-			return [src[0] + dst[0] * k, src[1] + dst[1] * k, src[2] + dst[2] * k, sa + da * k];
-		}
-	}
-	if (sa <= 0) return [dst[0], dst[1], dst[2], dst[3]];
-	if (da <= 0) return [src[0], src[1], src[2], src[3]];
-	let cs: Rgb = [src[0] / sa, src[1] / sa, src[2] / sa];
-	let cb: Rgb = [dst[0] / da, dst[1] / da, dst[2] / da];
-	if (!HDR.has(mode)) {
-		const c = (v: number) => Math.min(1, Math.max(0, v));
-		cs = [c(cs[0]), c(cs[1]), c(cs[2])];
-		cb = [c(cb[0]), c(cb[1]), c(cb[2])];
-	}
-	const b = blendRgb(mode, cb, cs);
-	const k = sa * da;
-	return [
-		(1 - da) * src[0] + (1 - sa) * dst[0] + k * b[0],
-		(1 - da) * src[1] + (1 - sa) * dst[1] + k * b[1],
-		(1 - da) * src[2] + (1 - sa) * dst[2] + k * b[2],
-		sa + da - k,
-	];
+	const d = Float64Array.from(dst);
+	KERNEL.blend(blendModeIndex(mode), d, Float64Array.from(src), noise);
+	return [d[0]!, d[1]!, d[2]!, d[3]!];
 }
 
 /**
@@ -472,11 +506,7 @@ export function storePremul8(p: Rgba): Rgba {
  * `raster::hash_noise`, the same integer hash in GLSL `fx_blendNoise`). 24 bits, so the GPU's float holds it exactly.
  */
 export function dissolveNoise(x: number, y: number, seed: number): number {
-	let h = (Math.imul(x, 0x8da6b343) ^ Math.imul(y, 0xd8163841) ^ Math.imul(seed, 0xcb1ab31f)) >>> 0;
-	h = (h ^ (h >>> 13)) >>> 0;
-	h = Math.imul(h, 0x5bd1e995) >>> 0;
-	h = (h ^ (h >>> 15)) >>> 0;
-	return (h & 0xffffff) / 16777216;
+	return KERNEL.noise(x, y, seed);
 }
 
 /** Dissolve seed of a layer (clip id, or `transition:<id>` for a transition span) at a clip-local frame: 31 bits. */
