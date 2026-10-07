@@ -20,6 +20,12 @@ const CATALOG_IDS = [
 	'jetbrains-mono',
 ] as const;
 
+/**
+ * text-animators: variable families from @fontsource-variable packages (catalog id `<id>-variable`): one file per
+ * subset and style ("standard" axes) serves every weight, and the axes are listed for Variable Font Axes.
+ */
+const VARIABLE_IDS = ['inter'] as const;
+
 /** Default family for unknown fonts (the app UI font, ARCHITECTURE §7.4). */
 const FALLBACK_FAMILY = 'Source Sans 3';
 const SUBSETS = ['latin', 'latin-ext'] as const;
@@ -31,11 +37,12 @@ type Metadata = {
 	styles: ('normal' | 'italic')[];
 	category?: string;
 	subsets: string[];
+	variable?: Record<string, { min: string; max: string; default: string }>;
 };
 
 type ResolvedFamily = FontFamily & { id: string; dir: string };
 
-function packageDir(id: string, env: Record<string, string | undefined>): string | null {
+function packageDir(id: string, env: Record<string, string | undefined>, scope = '@fontsource'): string | null {
 	const custom = env.JASPER_FONTS_DIR;
 	if (custom && existsSync(join(custom, id, 'metadata.json'))) return join(custom, id);
 	// Packaged engine bundle: fonts copied next to dist/engine.mjs by the build script.
@@ -48,7 +55,7 @@ function packageDir(id: string, env: Record<string, string | undefined>): string
 	}
 	try {
 		const req = createRequire(import.meta.url);
-		return dirname(req.resolve(`@fontsource/${id}/metadata.json`));
+		return dirname(req.resolve(`${scope}/${id.replace(/-variable$/, '')}/metadata.json`));
 	} catch {
 		return null;
 	}
@@ -87,6 +94,46 @@ export class FontCatalogService {
 				weights: [...meta.weights],
 				styles: [...meta.styles],
 				files,
+			});
+		}
+		this.addVariableFamilies(env);
+	}
+
+	/** text-animators: the variable families (`Inter Variable`, …). */
+	private addVariableFamilies(env: Record<string, string | undefined>): void {
+		for (const base of VARIABLE_IDS) {
+			const id = `${base}-variable`;
+			const dir = packageDir(id, env, '@fontsource-variable');
+			if (!dir) continue;
+			let meta: Metadata;
+			try {
+				meta = JSON.parse(readFileSync(join(dir, 'metadata.json'), 'utf8')) as Metadata;
+			} catch {
+				continue;
+			}
+			const files: FontFamily['files'] = [];
+			for (const subset of SUBSETS) {
+				if (!meta.subsets.includes(subset)) continue;
+				for (const style of meta.styles) {
+					const file = `${base}-${subset}-standard-${style}.woff2`;
+					if (!existsSync(join(dir, 'files', file))) continue;
+					for (const weight of meta.weights) files.push({ weight, style, subset, url: `/fonts/${id}/${file}` });
+				}
+			}
+			if (!files.length) continue;
+			const axes: NonNullable<FontFamily['axes']> = {};
+			for (const [tag, a] of Object.entries(meta.variable ?? {}))
+				if (tag !== 'ital') axes[tag] = { min: Number(a.min), max: Number(a.max), default: Number(a.default) };
+			this.families.push({
+				id,
+				dir,
+				family: `${meta.family} Variable`,
+				...(meta.category ? { category: meta.category } : {}),
+				source: 'bundled',
+				weights: [...meta.weights],
+				styles: [...meta.styles],
+				files,
+				axes,
 			});
 		}
 	}
