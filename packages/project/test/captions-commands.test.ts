@@ -623,3 +623,85 @@ describe('invariants and repair', () => {
 });
 
 it('videoAsset helper exists', () => expect(videoAsset()).toBeTruthy());
+
+describe('fuzz: random caption edits keep the document valid', () => {
+	it('add / split / merge / delete / move / trim / extract / text / import', async () => {
+		const fc = (await import('fast-check')).default;
+		const op = fc.oneof(
+			fc.record({
+				k: fc.constant('add'),
+				at: fc.nat(300),
+				dur: fc.integer({ min: 1, max: 120 }),
+				text: fc.string({ maxLength: 30 }),
+			}),
+			fc.record({ k: fc.constant('split'), at: fc.nat(400) }),
+			fc.record({ k: fc.constant('merge'), i: fc.nat(10) }),
+			fc.record({ k: fc.constant('delete'), i: fc.nat(10), ripple: fc.boolean() }),
+			fc.record({ k: fc.constant('move'), i: fc.nat(10), d: fc.integer({ min: -100, max: 100 }) }),
+			fc.record({
+				k: fc.constant('trim'),
+				i: fc.nat(10),
+				edge: fc.constantFrom('in', 'out'),
+				d: fc.integer({ min: -60, max: 60 }),
+			}),
+			fc.record({ k: fc.constant('extract'), from: fc.nat(300), len: fc.integer({ min: 1, max: 60 }) }),
+			fc.record({ k: fc.constant('text'), i: fc.nat(10), text: fc.string({ maxLength: 40 }) }),
+			fc.record({ k: fc.constant('dup'), i: fc.nat(10), d: fc.integer({ min: 1, max: 200 }) }),
+			fc.record({ k: fc.constant('import'), bytes: fc.uint8Array({ maxLength: 200 }) }),
+		);
+		fc.assert(
+			fc.property(fc.array(op, { maxLength: 25 }), (ops) => {
+				const H = new Harness();
+				H.ok([{ type: 'caption.addTrack' }]);
+				for (const o of ops) {
+					const ids = captions(H).map((c) => c.id);
+					const pick = (i: number) => ids[i % Math.max(1, ids.length)];
+					let cmd: unknown = null;
+					switch (o.k) {
+						case 'add':
+							cmd = { type: 'caption.add', at: o.at, duration: o.dur, text: o.text };
+							break;
+						case 'split':
+							cmd = { type: 'caption.split', at: o.at };
+							break;
+						case 'merge':
+							if (ids.length > 1) cmd = { type: 'caption.merge', clipIds: [pick(o.i), pick(o.i + 1)] };
+							break;
+						case 'delete':
+							if (ids.length) cmd = { type: 'caption.delete', clipIds: [pick(o.i)], ripple: o.ripple };
+							break;
+						case 'move':
+							if (ids.length)
+								cmd = { type: 'clip.move', clipIds: [pick(o.i)], deltaFrames: o.d, mode: 'overwrite' };
+							break;
+						case 'trim':
+							if (ids.length) cmd = { type: 'clip.trim', clipId: pick(o.i), edge: o.edge, deltaFrames: o.d };
+							break;
+						case 'extract':
+							cmd = { type: 'range.extract', from: o.from, to: o.from + o.len };
+							break;
+						case 'text':
+							if (ids.length) cmd = { type: 'caption.setText', clipId: pick(o.i), text: o.text };
+							break;
+						case 'dup':
+							if (ids.length) cmd = { type: 'clip.duplicate', clipIds: [pick(o.i)], deltaFrames: o.d };
+							break;
+						case 'import':
+							cmd = {
+								type: 'caption.import',
+								track: 'C1',
+								contentBase64: Buffer.from(o.bytes).toString('base64'),
+								fileName: 'x.srt',
+							};
+							break;
+					}
+					if (!cmd) continue;
+					const r = H.tx([cmd]);
+					if (!r.ok) expect(r.errors[0]!.code).not.toMatch(/E_INVARIANT|E_INTERNAL/);
+				}
+				expect(checkInvariants(H.doc)).toEqual([]);
+			}),
+			{ numRuns: 150 },
+		);
+	});
+});
