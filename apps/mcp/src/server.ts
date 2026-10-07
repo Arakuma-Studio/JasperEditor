@@ -48,7 +48,11 @@ Rules:
 - Tracks are "V1", "V2"… (video, V1 lowest) and "A1", "A2"… (audio). A video file placed with add_clip creates a linked video+audio pair.
 - Deleting tracks/items or anything with force: true needs the user's approval in an open editor window; if they deny it (E_APPROVAL_DENIED), do not retry without asking.
 - Undo/redo only touch this agent's own History entries.
-- Errors come back as tool errors with a code and a hint on what to do next.`;
+- Errors come back as tool errors with a code and a hint on what to do next.
+- Arguments are strict: an unknown key (at any depth, in tool arguments and inside apply_commands commands) is an error (E_UNKNOWN_ARGUMENT / E_SCHEMA) naming it, the accepted keys and the likely typo — never silently ignored.
+- Long calls (start_export with wait, wait_for_job, render_frame(s), process_clip, track, prerender_composition, track_mask, normalize_media_loudness…) send progress notifications (at most one per 100 ms) when you pass a progressToken; cancelling the request (notifications/cancelled) cancels the engine job and the engine deletes its partial output.
+- Every tool carries readOnlyHint / destructiveHint / idempotentHint / openWorldHint, so read-only tools can run without asking.
+- The same tools run from a shell: \`jasper\` (pnpm jasper --help), e.g. \`jasper exec marker.add frame=30 name=Intro\`, \`jasper props <clipId>\`, \`jasper render-frame --at 2s --out f.png\`, \`jasper export --out cut.mp4\`.`;
 
 const FULL_GUIDE = [
 	EDITING_GUIDE,
