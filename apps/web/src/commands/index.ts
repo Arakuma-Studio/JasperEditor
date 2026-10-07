@@ -8,6 +8,7 @@ import { appCommands } from './app.ts';
 import { audioCommands } from './audio.ts';
 import { cacheCommands } from './cache.ts';
 import { captionCommands } from './captions.ts';
+import { speechCommands } from './speech.ts';
 import { clipboardCommands } from './clipboard.ts';
 import { colorCommands } from './color.ts';
 import { compositionCommands } from './composition.ts';
@@ -63,6 +64,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	projectFileCommands,
 	maskCommands,
 	captionCommands,
+	speechCommands,
 ];
 
 let registered = false;

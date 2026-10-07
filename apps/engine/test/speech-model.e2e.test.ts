@@ -14,8 +14,8 @@ import type { EngineJob, TranscriptionResult } from '@jasper/api';
 import { distributeSequenceWords, FLICKS_PER_SECOND, sequenceWords } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadCatalog } from '../src/processing/models.ts';
-import { SpeechModelStore } from '../src/speech/models.ts';
 import { wordErrorRate } from '../src/speech/core/wer.ts';
+import { SpeechModelStore } from '../src/speech/models.ts';
 import { closeApps, DocBuilder, JSON_H, makeApp, ROOT, register, type TestApp, until } from './helpers.ts';
 
 const CACHE = process.env.JASPER_SPEECH_MODELS_DIR ?? join(ROOT, 'target', 'speech-models');
@@ -25,7 +25,10 @@ const present = await Promise.all(MODELS.map(async (id) => store.installed(store
 const enabled = process.env.SPEECH_E2E === '1' || present.every(Boolean);
 
 const FIXTURE = join(ROOT, 'fixtures', 'speech', 'lj-composite.flac');
-type Truth = { utterances: Array<{ file: string; text: string; start: number; end: number }>; durationSeconds: number };
+type Truth = {
+	utterances: Array<{ file: string; text: string; start: number; end: number }>;
+	durationSeconds: number;
+};
 const truth = JSON.parse(readFileSync(FIXTURE.replace(/\.flac$/, '.json'), 'utf8')) as Truth;
 const reference = truth.utterances.map((u) => u.text).join(' ');
 const H = { host: '127.0.0.1:47900' };
@@ -49,7 +52,7 @@ function timing(words: Array<{ start: number; end: number }>, offsetSec = 0) {
 	const errs: number[] = [];
 	for (const u of truth.utterances) {
 		const mine = words.filter((w) => {
-			const mid = ((w.start + w.end) / 2) / FLICKS_PER_SECOND - offsetSec;
+			const mid = (w.start + w.end) / 2 / FLICKS_PER_SECOND - offsetSec;
 			return mid >= u.start - 0.5 && mid <= u.end + 0.5;
 		});
 		if (!mine.length) {
@@ -80,7 +83,8 @@ describe.skipIf(!enabled)('speech-to-text with real Whisper models (wp speech)',
 		app = await makeApp({ totalSlots: 4 });
 		const dir = join(app.appdir, 'models', 'speech');
 		mkdirSync(dir, { recursive: true });
-		for (const id of MODELS) if (!existsSync(join(dir, id))) symlinkSync(join(CACHE, id), join(dir, id), 'dir');
+		for (const id of MODELS)
+			if (!existsSync(join(dir, id))) symlinkSync(join(CACHE, id), join(dir, id), 'dir');
 	}, 1_800_000);
 
 	afterAll(async () => {
@@ -89,7 +93,8 @@ describe.skipIf(!enabled)('speech-to-text with real Whisper models (wp speech)',
 
 	it('lists the installed models and reports the capability', async () => {
 		const r = await app.inject({ method: 'GET', url: '/api/speech/models', headers: H });
-		const models = (r.json() as { models: Array<{ id: string; installed: boolean; license: string }> }).models;
+		const models = (r.json() as { models: Array<{ id: string; installed: boolean; license: string }> })
+			.models;
 		for (const id of MODELS) expect(models.find((m) => m.id === id)?.installed).toBe(true);
 		expect(models.every((m) => /MIT/.test(m.license))).toBe(true);
 		const caps = (await app.inject({ method: 'GET', url: '/api/capabilities', headers: H })).json() as {
@@ -112,16 +117,21 @@ describe.skipIf(!enabled)('speech-to-text with real Whisper models (wp speech)',
 		const hyp = res.words.map((w) => w.text).join(' ');
 		const wer = wordErrorRate(reference, hyp);
 		const t = timing(res.words);
-		console.log(`whisper-tiny.en: WER ${(wer * 100).toFixed(2)} %, boundary error mean ${(t.mean * 1000).toFixed(0)} ms max ${(t.max * 1000).toFixed(0)} ms, outside ${t.outside}; ${res.timings.transcribeMs} ms`);
+		console.log(
+			`whisper-tiny.en: WER ${(wer * 100).toFixed(2)} %, boundary error mean ${(t.mean * 1000).toFixed(0)} ms max ${(t.max * 1000).toFixed(0)} ms, outside ${t.outside}; ${res.timings.transcribeMs} ms`,
+		);
 		// measured 2026-10-07: 1.9 % WER, 18 ms mean / 40 ms max (FilmCraft has no English-only model)
 		expect(wer).toBeLessThanOrEqual(0.04);
 		expect(t.mean).toBeLessThanOrEqual(0.06);
 		expect(t.max).toBeLessThanOrEqual(0.25);
 		expect(t.outside).toBe(0);
 		expect(res.language).toBe('en');
-		expect(Math.abs(res.duration - truth.durationSeconds * FLICKS_PER_SECOND)).toBeLessThan(FLICKS_PER_SECOND / 1000);
+		expect(Math.abs(res.duration - truth.durationSeconds * FLICKS_PER_SECOND)).toBeLessThan(
+			FLICKS_PER_SECOND / 1000,
+		);
 		// words sorted, non-overlapping, confident, inside the audio
-		for (let i = 1; i < res.words.length; i++) expect(res.words[i]!.start).toBeGreaterThanOrEqual(res.words[i - 1]!.end);
+		for (let i = 1; i < res.words.length; i++)
+			expect(res.words[i]!.start).toBeGreaterThanOrEqual(res.words[i - 1]!.end);
 		expect(res.words.at(-1)!.end).toBeLessThanOrEqual(res.duration);
 		expect(res.words.filter((w) => w.confidence > 0.5).length / res.words.length).toBeGreaterThan(0.9);
 
@@ -129,7 +139,16 @@ describe.skipIf(!enabled)('speech-to-text with real Whisper models (wp speech)',
 		const d = new DocBuilder();
 		const mediaId = d.addMedia(m);
 		d.tx([{ type: 'clip.place', source: { mediaId }, at: 0, tracks: { audio: 'A1' } }]);
-		d.tx([{ type: 'transcript.attach', mediaId, language: res.language, words: res.words, speakers: res.speakers, model: res.model }]);
+		d.tx([
+			{
+				type: 'transcript.attach',
+				mediaId,
+				language: res.language,
+				words: res.words,
+				speakers: res.speakers,
+				model: res.model,
+			},
+		]);
 		const words = sequenceWords(d.doc, d.doc.sequences[d.seqId]!);
 		expect(words.length).toBe(res.words.length);
 	}, 600_000);
@@ -146,7 +165,9 @@ describe.skipIf(!enabled)('speech-to-text with real Whisper models (wp speech)',
 		const res = (r.json() as EngineJob).result as TranscriptionResult;
 		const wer = wordErrorRate(reference, res.words.map((w) => w.text).join(' '));
 		const t = timing(res.words);
-		console.log(`whisper-tiny (auto): ${res.language} p=${res.languageProbability?.toFixed(3)}, WER ${(wer * 100).toFixed(2)} %, boundary mean ${(t.mean * 1000).toFixed(0)} ms max ${(t.max * 1000).toFixed(0)} ms, speakers ${Object.keys(res.speakers).length}`);
+		console.log(
+			`whisper-tiny (auto): ${res.language} p=${res.languageProbability?.toFixed(3)}, WER ${(wer * 100).toFixed(2)} %, boundary mean ${(t.mean * 1000).toFixed(0)} ms max ${(t.max * 1000).toFixed(0)} ms, speakers ${Object.keys(res.speakers).length}`,
+		);
 		expect(res.language).toBe('en');
 		expect(res.languageProbability).toBeGreaterThan(0.8);
 		// measured: 8.3 % (FilmCraft whisper-tiny on the same file: 6.4 %); 18 ms mean (FilmCraft: 438 ms)
@@ -220,7 +241,9 @@ describe.skipIf(!enabled)('speech-to-text with real Whisper models (wp speech)',
 		});
 		const job = r.json() as EngineJob;
 		await until(async () => {
-			const j = (await app.inject({ method: 'GET', url: `/api/jobs/${job.id}`, headers: H })).json() as EngineJob;
+			const j = (
+				await app.inject({ method: 'GET', url: `/api/jobs/${job.id}`, headers: H })
+			).json() as EngineJob;
 			return j.state === 'running' && (j.progress ?? 0) > 0.03 ? j : null;
 		}, 120_000);
 		await app.inject({ method: 'POST', url: `/api/jobs/${job.id}/cancel`, headers: H });

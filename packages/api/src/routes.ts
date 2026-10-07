@@ -595,7 +595,12 @@ export const ROUTES = {
 		owner: 'audio-mix',
 	},
 	// ---- speech: Whisper models (processing-model catalogue `speech`) and transcription jobs
-	speechModels: { method: 'GET', path: '/api/speech/models', response: SpeechModelsResponseSchema, owner: 'speech' },
+	speechModels: {
+		method: 'GET',
+		path: '/api/speech/models',
+		response: SpeechModelsResponseSchema,
+		owner: 'speech',
+	},
 	/** Downloads and verifies a speech model: the processing catalogue's `model-download` job. */
 	speechModelInstall: {
 		method: 'POST',

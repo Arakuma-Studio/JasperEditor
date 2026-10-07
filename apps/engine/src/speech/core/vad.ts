@@ -135,7 +135,10 @@ export function splitAtPauses(audio: Float32Array, words: TimedWord[], db = fram
 		for (let f = a0; f < b0 && !any; f++) any = voiced(f);
 		if (!any) {
 			const lo = Math.max(i > 0 ? Math.ceil(words[i - 1].end / VAD_FRAME) : 0, a0 - 150);
-			const hi = Math.min(i + 1 < words.length ? Math.floor(words[i + 1].start / VAD_FRAME) : db.length, b0 + 150);
+			const hi = Math.min(
+				i + 1 < words.length ? Math.floor(words[i + 1].start / VAD_FRAME) : db.length,
+				b0 + 150,
+			);
 			// nearest unassigned voiced run: backwards first (alignment drifts late), then forwards
 			let run: [number, number] | null = null;
 			for (let f = a0 - 1; f >= lo; f--)

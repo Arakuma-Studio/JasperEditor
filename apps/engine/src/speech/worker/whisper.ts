@@ -20,8 +20,9 @@
 //    cross-attention of the alignment heads (`generation_config.json`) is normalised, median-filtered and aligned
 //    by DTW (`core/align.ts`), then OpenAI's duration heuristics and punctuation merging apply. Word confidence =
 //    mean probability of its tokens.
-import { createRequire } from 'node:module';
+
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { addWordTimestamps, alignTokens, type SegmentWords, wordTimings } from '../core/align.ts';
 import {
@@ -135,16 +136,17 @@ export class WhisperModel {
 			max_initial_timestamp_index?: number;
 		};
 		const tok = new WhisperTokenizer(read('tokenizer.json') as TokenizerJson, cfg.vocab_size >= 51865);
-		const heads =
-			gen.alignment_heads && gen.alignment_heads.length
-				? gen.alignment_heads
-				: Array.from({ length: cfg.decoder_layers - Math.floor(cfg.decoder_layers / 2) }, (_, i) =>
-						Array.from(
-							{ length: cfg.decoder_attention_heads },
-							(_, h): [number, number] => [Math.floor(cfg.decoder_layers / 2) + i, h],
-						),
-					).flat();
-		const suppress = [...new Set([...(gen.suppress_tokens ?? []), ...tok.nonTextSpecials()])].sort((a, b) => a - b);
+		const heads = gen.alignment_heads?.length
+			? gen.alignment_heads
+			: Array.from({ length: cfg.decoder_layers - Math.floor(cfg.decoder_layers / 2) }, (_, i) =>
+					Array.from({ length: cfg.decoder_attention_heads }, (_, h): [number, number] => [
+						Math.floor(cfg.decoder_layers / 2) + i,
+						h,
+					]),
+				).flat();
+		const suppress = [...new Set([...(gen.suppress_tokens ?? []), ...tok.nonTextSpecials()])].sort(
+			(a, b) => a - b,
+		);
 		const so: import('onnxruntime-node').InferenceSession.SessionOptions = {
 			executionProviders: ['cpu'],
 			graphOptimizationLevel: 'all',
@@ -198,7 +200,12 @@ export class WhisperModel {
 		for (let l = 0; l < this.cfg.decoder_layers; l++)
 			for (const kind of ['decoder', 'encoder'])
 				for (const kv of ['key', 'value'])
-					feeds[`past_key_values.${l}.${kind}.${kv}`] = new this.ort.Tensor('float32', new Float32Array(0), [1, h, 0, dh]);
+					feeds[`past_key_values.${l}.${kind}.${kv}`] = new this.ort.Tensor('float32', new Float32Array(0), [
+						1,
+						h,
+						0,
+						dh,
+					]);
 		return feeds;
 	}
 
@@ -230,7 +237,8 @@ export class WhisperModel {
 		let cache: Record<string, Tensor> | null = null;
 		if (opts.cache) {
 			cache = {};
-			for (const k of fetches) if (k.startsWith('present.')) cache[k.replace('present.', 'past_key_values.')] = out[k] as Tensor;
+			for (const k of fetches)
+				if (k.startsWith('present.')) cache[k.replace('present.', 'past_key_values.')] = out[k] as Tensor;
 		}
 		const cross: Record<number, Tensor> = {};
 		for (const l of opts.crossLayers ?? []) cross[l] = out[`cross_attentions.${l}`] as Tensor;
@@ -295,7 +303,8 @@ export class WhisperModel {
 		const full = [...pre, ...sotSeq];
 		const sotIndex = pre.length;
 		const { logits, cache } = await this.full(full, xa, { cache: true });
-		const noSpeechProb = this.tok.noSpeech !== null ? softmaxAt(rowOf(logits, sotIndex), this.tok.noSpeech) : 0;
+		const noSpeechProb =
+			this.tok.noSpeech !== null ? softmaxAt(rowOf(logits, sotIndex), this.tok.noSpeech) : 0;
 		let cur = rowOf(logits, full.length - 1);
 		const seq: number[] = [];
 		let sumLogprob = 0;
@@ -339,7 +348,9 @@ export class WhisperModel {
 		const src = t.data as Float32Array;
 		const row = src.length / dims[0];
 		const out = new Float32Array(row * idx.length);
-		idx.forEach((r, i) => out.set(src.subarray(r * row, (r + 1) * row), i * row));
+		idx.forEach((r, i) => {
+			out.set(src.subarray(r * row, (r + 1) * row), i * row);
+		});
 		return new this.ort.Tensor('float32', out, [idx.length, ...dims.slice(1)]);
 	}
 
@@ -348,7 +359,12 @@ export class WhisperModel {
 	 * without length penalty: the finished sequence with the best sum of log-probabilities / length). The
 	 * timestamp rules apply per beam. All beams run in one batched decoder call per step.
 	 */
-	private async decodeBeam(xa: Tensor, sotSeq: number[], prompt: readonly number[], beamSize: number): Promise<DecodeResult> {
+	private async decodeBeam(
+		xa: Tensor,
+		sotSeq: number[],
+		prompt: readonly number[],
+		beamSize: number,
+	): Promise<DecodeResult> {
 		const pre: number[] = [];
 		if (prompt.length && this.tok.sotPrev !== null) {
 			const maxPrompt = Math.floor(this.cfg.max_target_positions / 2) - 1;
@@ -356,7 +372,8 @@ export class WhisperModel {
 		}
 		const full = [...pre, ...sotSeq];
 		const { logits, cache: c0 } = await this.full(full, xa, { cache: true });
-		const noSpeechProb = this.tok.noSpeech !== null ? softmaxAt(rowOf(logits, pre.length), this.tok.noSpeech) : 0;
+		const noSpeechProb =
+			this.tok.noSpeech !== null ? softmaxAt(rowOf(logits, pre.length), this.tok.noSpeech) : 0;
 		let cache = c0 as Record<string, Tensor>;
 		let rows = [rowOf(logits, full.length - 1)];
 		let beams: Array<{ seq: number[]; score: number }> = [{ seq: [], score: 0 }];
@@ -419,7 +436,8 @@ export class WhisperModel {
 			const B = live.length;
 			const idx = live.map((c) => c.src);
 			const feeds: Record<string, Tensor> = { ...encFor(B) };
-			for (const k of Object.keys(cache)) if (k.includes('.decoder.')) feeds[k] = this.gatherBatch(cache[k] as Tensor, idx);
+			for (const k of Object.keys(cache))
+				if (k.includes('.decoder.')) feeds[k] = this.gatherBatch(cache[k] as Tensor, idx);
 			let xb = xaBatch.get(B);
 			if (!xb) {
 				xb = this.repeatBatch(xa, B);
@@ -481,20 +499,15 @@ export class WhisperModel {
 					: await this.decodeOnce(xa, sotSeq, prompt, t, seed);
 			let needsFallback =
 				result.compressionRatio > COMPRESSION_RATIO_THRESHOLD || result.avgLogprob < LOGPROB_THRESHOLD;
-			if (result.noSpeechProb > NO_SPEECH_THRESHOLD && result.avgLogprob < LOGPROB_THRESHOLD) needsFallback = false;
+			if (result.noSpeechProb > NO_SPEECH_THRESHOLD && result.avgLogprob < LOGPROB_THRESHOLD)
+				needsFallback = false;
 			if (!needsFallback) break;
 		}
 		return result as DecodeResult;
 	}
 
 	/** Word timing for the text tokens of one window (seconds from the window start). */
-	private async align(
-		xa: Tensor,
-		sotSeq: number[],
-		text: number[],
-		segmentFrames: number,
-		language: string,
-	) {
+	private async align(xa: Tensor, sotSeq: number[], text: number[], segmentFrames: number, language: string) {
 		const tokens = [...sotSeq, this.tok.noTimestamps, ...text, this.tok.eot];
 		const layers = [...new Set(this.alignmentHeads.map(([l]) => l))];
 		const { logits, cross } = await this.full(tokens, xa, { crossLayers: layers });
@@ -597,7 +610,12 @@ export class WhisperModel {
 						// resume after the voice that the last word's (often early) end leaves, but not past the
 						// window's last complete segment
 						const segEnd = Math.round(segs[segs.length - 1].end * 100);
-						nextSeek = endOfVoice(db, voiceThreshold, Math.round(lastWordEnd * 100), Math.max(segEnd, Math.round(lastWordEnd * 100)));
+						nextSeek = endOfVoice(
+							db,
+							voiceThreshold,
+							Math.round(lastWordEnd * 100),
+							Math.max(segEnd, Math.round(lastWordEnd * 100)),
+						);
 					}
 				}
 				const windowEnd = timeOffset + segmentFrames / 100;
@@ -608,7 +626,8 @@ export class WhisperModel {
 						const a = Math.max(prevEnd, Math.round(Math.min(w.start, windowEnd) * SAMPLE_RATE));
 						const b = Math.max(a, Math.round(Math.min(w.end, windowEnd) * SAMPLE_RATE));
 						const t = w.word.trim();
-						if (t) words.push({ text: t, start: a, end: Math.min(b, audio.length), probability: w.probability });
+						if (t)
+							words.push({ text: t, start: a, end: Math.min(b, audio.length), probability: w.probability });
 					}
 				}
 				for (const s of parsed.segments)

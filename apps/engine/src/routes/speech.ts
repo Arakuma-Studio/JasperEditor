@@ -19,7 +19,11 @@ type ModelParams = { Params: { modelId: string } };
 
 function httpOf(e: unknown): never {
 	if (e instanceof JobError) {
-		const status = /NOT_FOUND|UNKNOWN/.test(e.code) ? 404 : e.code === 'SPEECH_MODEL_NOT_INSTALLED' ? 409 : 422;
+		const status = /NOT_FOUND|UNKNOWN/.test(e.code)
+			? 404
+			: e.code === 'SPEECH_MODEL_NOT_INSTALLED'
+				? 409
+				: 422;
 		throw new HttpError(status, e.code, e.message);
 	}
 	throw e;
@@ -42,9 +46,14 @@ export default async function speechRoutes(app: FastifyInstance): Promise<void> 
 		if (wait !== '1') return reply.code(202).send(job);
 		const done = await core.queue.wait(job.id);
 		if (done.state !== 'succeeded')
-			throw new HttpError(422, done.error?.code ?? 'TRANSCRIPTION_FAILED', done.error?.message ?? done.state, {
-				jobId: done.id,
-			});
+			throw new HttpError(
+				422,
+				done.error?.code ?? 'TRANSCRIPTION_FAILED',
+				done.error?.message ?? done.state,
+				{
+					jobId: done.id,
+				},
+			);
 		return done;
 	};
 
@@ -70,7 +79,8 @@ export default async function speechRoutes(app: FastifyInstance): Promise<void> 
 			const active = core.queue
 				.list({ active: true })
 				.some((j) => j.kind === 'model-download' && j.dedupeKey === `model:${req.params.modelId}`);
-			if (active) throw new HttpError(409, 'SPEECH_MODEL_BUSY', 'The model is being downloaded; cancel the job first');
+			if (active)
+				throw new HttpError(409, 'SPEECH_MODEL_BUSY', 'The model is being downloaded; cancel the job first');
 			const r = await svc.models.remove(req.params.modelId);
 			core.capabilities.changed();
 			return { modelId: req.params.modelId, ...r };

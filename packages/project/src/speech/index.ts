@@ -82,7 +82,8 @@ export function distributeSequenceWords(
 		const mid = w.start + Math.floor((Math.max(w.end, w.start) - w.start) / 2);
 		let hit: AudioClip | null = null;
 		for (const lane of lanes) {
-			hit = lane.find((c) => mid >= tickOf(c.start, rate) && mid < tickOf(c.start + c.duration, rate)) ?? null;
+			hit =
+				lane.find((c) => mid >= tickOf(c.start, rate) && mid < tickOf(c.start + c.duration, rate)) ?? null;
 			if (hit) break;
 		}
 		if (!hit) {

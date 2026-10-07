@@ -108,7 +108,8 @@ function fftRec(
 	const r = p.factors[fi];
 	const m = n / r;
 	// sub-transforms of x[off + (j + r·k)·stride], j = 0..r-1, each m points, stored at o + j·m
-	for (let j = 0; j < r; j++) fftRec(p, re, im, off + j * stride, stride * r, m, fi + 1, outRe, outIm, o + j * m);
+	for (let j = 0; j < r; j++)
+		fftRec(p, re, im, off + j * stride, stride * r, m, fi + 1, outRe, outIm, o + j * m);
 	const step = p.n / n;
 	const tr = new Float64Array(r);
 	const ti = new Float64Array(r);

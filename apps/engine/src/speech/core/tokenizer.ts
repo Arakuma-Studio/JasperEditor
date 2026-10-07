@@ -22,7 +22,7 @@ function unicodeToByte(): Map<string, number> {
 		}
 	}
 	const m = new Map<string, number>();
-	bs.forEach((b, i) => m.set(String.fromCodePoint(cs[i]), b));
+	for (let i = 0; i < bs.length; i++) m.set(String.fromCodePoint(cs[i]), bs[i]);
 	return m;
 }
 
@@ -89,12 +89,16 @@ export class WhisperTokenizer {
 		this.languages = !multilingual
 			? []
 			: [...this.special.entries()]
-			.filter(
-				([k, id]) =>
-					id > this.sot && (tr === null || id < tr) && k.startsWith('<|') && k.endsWith('|>') && k.length <= 10,
-			)
-			.map(([k, id]): [string, number] => [k.slice(2, -2), id])
-			.sort((a, b) => a[1] - b[1]);
+					.filter(
+						([k, id]) =>
+							id > this.sot &&
+							(tr === null || id < tr) &&
+							k.startsWith('<|') &&
+							k.endsWith('|>') &&
+							k.length <= 10,
+					)
+					.map(([k, id]): [string, number] => [k.slice(2, -2), id])
+					.sort((a, b) => a[1] - b[1]);
 	}
 
 	get multilingual(): boolean {
@@ -148,7 +152,8 @@ export class WhisperTokenizer {
 			const withSpace = s.word.startsWith(' ');
 			const trimmed = s.word.trim();
 			const punctuation = trimmed.length > 0 && [...trimmed].every((c) => ASCII_PUNCTUATION.has(c));
-			if (special || withSpace || punctuation || out.length === 0) out.push({ word: s.word, tokens: [...s.tokens] });
+			if (special || withSpace || punctuation || out.length === 0)
+				out.push({ word: s.word, tokens: [...s.tokens] });
 			else {
 				const last = out[out.length - 1];
 				last.word += s.word;

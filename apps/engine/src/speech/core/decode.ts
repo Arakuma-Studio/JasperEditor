@@ -47,7 +47,12 @@ export type FilterConfig = {
 };
 
 /** Applies the logit filters in place for the next token after `seq` (sampled tokens of this window). */
-export function applyFilters(logits: Float32Array, seq: readonly number[], tok: WhisperTokenizer, cfg: FilterConfig): void {
+export function applyFilters(
+	logits: Float32Array,
+	seq: readonly number[],
+	tok: WhisperTokenizer,
+	cfg: FilterConfig,
+): void {
 	const tb = tok.timestampBegin;
 	if (seq.length === 0) for (const s of cfg.beginSuppress) if (s < logits.length) logits[s] = NEG_INF;
 	for (const s of cfg.suppress) if (s < logits.length) logits[s] = NEG_INF;

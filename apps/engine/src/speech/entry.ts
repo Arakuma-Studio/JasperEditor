@@ -17,12 +17,16 @@ function sourceEntry(): string | null {
 function bundle(env: Record<string, string | undefined>): string | null {
 	const explicit = env[SPEECH_ENV];
 	if (explicit && /\.m?js$/.test(explicit)) return existsSync(explicit) ? resolve(explicit) : null;
-	for (const c of [join(here, SPEECH_BUNDLE), join(here, '..', '..', 'dist', SPEECH_BUNDLE)]) if (existsSync(c)) return c;
+	for (const c of [join(here, SPEECH_BUNDLE), join(here, '..', '..', 'dist', SPEECH_BUNDLE)])
+		if (existsSync(c)) return c;
 	return null;
 }
 
 /** How to start jasper-speech with `node`: the source in a checkout (always current), else the bundle. */
-export function speechCommand(env: Record<string, string | undefined> = process.env): { command: string; args: string[] } {
+export function speechCommand(env: Record<string, string | undefined> = process.env): {
+	command: string;
+	args: string[];
+} {
 	const explicit = env[SPEECH_ENV];
 	if (explicit?.endsWith('.ts')) return tsx(resolve(explicit));
 	const src = sourceEntry();

@@ -63,7 +63,8 @@ export async function decodeAudio(
 		child.on('close', (code) => {
 			signal?.removeEventListener('abort', onAbort);
 			if (signal?.aborted) return reject(new CancelledError());
-			if (code !== 0) return reject(new Error(`ffmpeg could not decode the audio: ${err.trim() || `exit ${code}`}`));
+			if (code !== 0)
+				return reject(new Error(`ffmpeg could not decode the audio: ${err.trim() || `exit ${code}`}`));
 			const b = Buffer.concat(chunks);
 			const n = Math.floor(b.byteLength / 4);
 			const out = new Float32Array(n);
@@ -90,7 +91,11 @@ export function refineWordBounds(audio: Float32Array, words: Array<{ start: numb
 
 export async function runSpeechJob(
 	spec: SpeechJobSpec,
-	opts: { onProgress?(fraction: number, stage: string): void; signal?: AbortSignal; audio?: Float32Array } = {},
+	opts: {
+		onProgress?(fraction: number, stage: string): void;
+		signal?: AbortSignal;
+		audio?: Float32Array;
+	} = {},
 ): Promise<SpeechJobOutput> {
 	const t0 = Date.now();
 	opts.onProgress?.(0, 'Decoding audio');

@@ -26,7 +26,10 @@ export const SpeechModelSchema = z.object({
 });
 export type SpeechModel = z.infer<typeof SpeechModelSchema>;
 export const SpeechModelsResponseSchema = z.object({ models: z.array(SpeechModelSchema) });
-export const SpeechModelDeleteResponseSchema = z.object({ modelId: z.string(), freedBytes: z.number().int().min(0) });
+export const SpeechModelDeleteResponseSchema = z.object({
+	modelId: z.string(),
+	freedBytes: z.number().int().min(0),
+});
 
 /** Options shared by every transcription request. */
 export const TranscribeOptionsSchema = z.object({

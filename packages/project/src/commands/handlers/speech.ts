@@ -13,7 +13,9 @@ export const speechHandlers: HandlerMap = {
 		for (const w of cmd.words)
 			if (w.end < w.start) h.fail('E_INVALID_PARAM', `Word "${w.text}" ends before it starts`);
 		const coverage = cmd.coverage
-			? cmd.coverage.map(([a, b]): [number, number] => [Math.min(a, b), Math.max(a, b)]).sort((a, b) => a[0] - b[0])
+			? cmd.coverage
+					.map(([a, b]): [number, number] => [Math.min(a, b), Math.max(a, b)])
+					.sort((a, b) => a[0] - b[0])
 			: undefined;
 		const speakers: Record<string, { name: string }> = { ...(cmd.speakers ?? {}) };
 		for (const w of cmd.words)
@@ -30,7 +32,9 @@ export const speechHandlers: HandlerMap = {
 			})),
 		);
 		// the media's current transcripts (the last one is the one in use, `transcriptForMedia`)
-		const existing = (Object.values(doc.transcripts) as Transcript[]).filter((t) => t.mediaId === cmd.mediaId);
+		const existing = (Object.values(doc.transcripts) as Transcript[]).filter(
+			(t) => t.mediaId === cmd.mediaId,
+		);
 		const current = existing[existing.length - 1];
 		const mode = cmd.mode ?? 'replace';
 		if (current && mode === 'keep') {

@@ -25,7 +25,15 @@ const w = (text: string, a: number, b: number, extra: Record<string, unknown> = 
 function setup() {
 	const H = new Harness({ preset: 'hd-1080p-25' });
 	const mediaId = H.registerVideo({ seconds: 20, fps: { num: 25, den: 1 } });
-	H.ok([{ type: 'clip.place', source: { mediaId }, at: 0, tracks: { video: 'V1', audio: ['A1'] }, mode: 'overwrite' }]);
+	H.ok([
+		{
+			type: 'clip.place',
+			source: { mediaId },
+			at: 0,
+			tracks: { video: 'V1', audio: ['A1'] },
+			mode: 'overwrite',
+		},
+	]);
 	return { H, mediaId };
 }
 
@@ -41,7 +49,10 @@ describe('transcript.attach', () => {
 				type: 'transcript.attach',
 				mediaId,
 				language: 'en',
-				words: [w('world.', 1, 1.5, { speaker: 'S2', confidence: 0.4 }), w('Hello', 0.2, 0.8, { speaker: 'S1', confidence: 0.9 })],
+				words: [
+					w('world.', 1, 1.5, { speaker: 'S2', confidence: 0.4 }),
+					w('Hello', 0.2, 0.8, { speaker: 'S1', confidence: 0.9 }),
+				],
 				model: 'whisper-base',
 			},
 		]);
@@ -65,11 +76,18 @@ describe('transcript.attach', () => {
 	it('replace keeps the transcript id (references stay valid); keep leaves it; merge replaces only the coverage', () => {
 		const { H, mediaId } = setup();
 		const id = (
-			H.ok([{ type: 'transcript.attach', mediaId, language: 'en', words: [w('a', 1, 2), w('b', 5, 6), w('c', 9, 10)] }])
-				.results[0] as { transcriptId: string }
+			H.ok([
+				{
+					type: 'transcript.attach',
+					mediaId,
+					language: 'en',
+					words: [w('a', 1, 2), w('b', 5, 6), w('c', 9, 10)],
+				},
+			]).results[0] as { transcriptId: string }
 		).transcriptId;
-		const kept = H.ok([{ type: 'transcript.attach', mediaId, language: 'fr', words: [w('x', 0, 1)], mode: 'keep' }])
-			.results[0] as { skipped?: boolean; transcriptId: string };
+		const kept = H.ok([
+			{ type: 'transcript.attach', mediaId, language: 'fr', words: [w('x', 0, 1)], mode: 'keep' },
+		]).results[0] as { skipped?: boolean; transcriptId: string };
 		expect(kept).toMatchObject({ skipped: true, transcriptId: id });
 		expect(H.doc.transcripts[id]!.language).toBe('en');
 		H.ok([
@@ -84,7 +102,17 @@ describe('transcript.attach', () => {
 		]);
 		expect(H.doc.transcripts[id]!.words.map((x) => x.text)).toEqual(['a', 'B', 'B2', 'c']);
 		expect(H.doc.transcripts[id]!.coverage).toBeUndefined();
-		H.ok([{ type: 'transcript.attach', mediaId, language: 'de', task: 'translate', sourceLanguage: 'de', words: [w('z', 0, 1)], coverage: [[0, s(3)]] }]);
+		H.ok([
+			{
+				type: 'transcript.attach',
+				mediaId,
+				language: 'de',
+				task: 'translate',
+				sourceLanguage: 'de',
+				words: [w('z', 0, 1)],
+				coverage: [[0, s(3)]],
+			},
+		]);
 		expect(transcriptsOf(H, mediaId)).toHaveLength(1);
 		const t = H.doc.transcripts[id]!;
 		expect(t.words.map((x) => x.text)).toEqual(['z']);
@@ -110,8 +138,22 @@ describe('words of a sequence mix → media transcripts', () => {
 		const b = H.registerVideo({ seconds: 30, fps: { num: 25, den: 1 } });
 		// A1: media a from 10 s, at 0 s, 5 s long; then media b from 0 s, at 5 s, 5 s long at 2× speed
 		H.ok([
-			{ type: 'clip.place', source: { mediaId: a }, sourceRange: { in: { seconds: 10 }, out: { seconds: 15 } }, at: 0, tracks: { audio: ['A1'] }, video: false },
-			{ type: 'clip.place', source: { mediaId: b }, sourceRange: { in: { seconds: 0 }, out: { seconds: 10 } }, at: 125, tracks: { audio: ['A1'] }, video: false },
+			{
+				type: 'clip.place',
+				source: { mediaId: a },
+				sourceRange: { in: { seconds: 10 }, out: { seconds: 15 } },
+				at: 0,
+				tracks: { audio: ['A1'] },
+				video: false,
+			},
+			{
+				type: 'clip.place',
+				source: { mediaId: b },
+				sourceRange: { in: { seconds: 0 }, out: { seconds: 10 } },
+				at: 125,
+				tracks: { audio: ['A1'] },
+				video: false,
+			},
 		]);
 		const bClip = H.clips('A1').find((c) => (c as { mediaId?: string }).mediaId === b)!;
 		H.ok([{ type: 'clip.setSpeed', clipIds: [bClip.id], rate: 2, ripple: false }]);
@@ -127,7 +169,13 @@ describe('words of a sequence mix → media transcripts', () => {
 		expect(mb.coverage).toEqual([[0, Math.round(clipB.duration * (FLICKS_PER_SECOND / 25) * 2)]]);
 		// attached, they read back at the same sequence times
 		H.ok(
-			r.media.map((m) => ({ type: 'transcript.attach', mediaId: m.mediaId, language: 'en', words: m.words, coverage: m.coverage })),
+			r.media.map((m) => ({
+				type: 'transcript.attach',
+				mediaId: m.mediaId,
+				language: 'en',
+				words: m.words,
+				coverage: m.coverage,
+			})),
 		);
 		const back = sequenceWords(H.doc, H.seq).map((x) => [x.text, x.start / FLICKS_PER_SECOND]);
 		expect(back).toEqual([
@@ -144,10 +192,28 @@ describe('words of a sequence mix → media transcripts', () => {
 				fc.integer({ min: 0, max: 900 }),
 				fc.integer({ min: 1, max: 300 }),
 				(starts, c0, len) => {
-					const old = [...new Set(starts)].sort((x, y) => x - y).map((t) => ({ text: `w${t}`, start: t * 10, end: t * 10 + 5, confidence: null, speaker: null, breakBefore: 'none' as const }));
+					const old = [...new Set(starts)]
+						.sort((x, y) => x - y)
+						.map((t) => ({
+							text: `w${t}`,
+							start: t * 10,
+							end: t * 10 + 5,
+							confidence: null,
+							speaker: null,
+							breakBefore: 'none' as const,
+						}));
 					const cov: [number, number][] = [[c0 * 10, (c0 + len) * 10]];
 					const inside = (t: number) => t >= cov[0]![0] && t < cov[0]![1];
-					const incoming = [{ text: 'new', start: cov[0]![0], end: cov[0]![0] + 1, confidence: 1, speaker: null, breakBefore: 'none' as const }];
+					const incoming = [
+						{
+							text: 'new',
+							start: cov[0]![0],
+							end: cov[0]![0] + 1,
+							confidence: 1,
+							speaker: null,
+							breakBefore: 'none' as const,
+						},
+					];
 					const m = mergeTranscriptWords({ words: old }, incoming, cov);
 					for (const o of old) {
 						const mid = o.start + 2;
@@ -164,7 +230,12 @@ describe('words of a sequence mix → media transcripts', () => {
 describe('coverage invariant and repair', () => {
 	it('flags malformed coverage and repairDocument sorts and merges it', () => {
 		expect(coverageProblem(undefined)).toBeNull();
-		expect(coverageProblem([[0, 5], [5, 9]])).toMatch(/sorted/);
+		expect(
+			coverageProblem([
+				[0, 5],
+				[5, 9],
+			]),
+		).toMatch(/sorted/);
 		expect(coverageProblem([[3, 3]])).toMatch(/empty/);
 		const { H, mediaId } = setup();
 		H.ok([{ type: 'transcript.attach', mediaId, language: 'en', words: [w('a', 1, 2)] }]);
@@ -176,7 +247,9 @@ describe('coverage invariant and repair', () => {
 			[s(1), s(3)],
 			[s(9), s(9)],
 		];
-		expect(checkInvariants(doc).some((i) => (i as { invariant?: string }).invariant === 'INV-012')).toBe(true);
+		expect(checkInvariants(doc).some((i) => (i as { invariant?: string }).invariant === 'INV-012')).toBe(
+			true,
+		);
 		const fixed = repairDocument(doc, H.ids).document;
 		expect((Object.values(fixed.transcripts)[0] as Transcript).coverage).toEqual([
 			[0, s(3)],

@@ -31,7 +31,6 @@ export type SpeechCatalogEntry = {
 	files: SpeechModelFile[];
 };
 
-
 export class SpeechModelError extends Error {
 	constructor(
 		readonly code: string,
@@ -120,12 +119,20 @@ export class SpeechModelStore {
 		const e = this.entry(id);
 		if (!e) throw new SpeechModelError('SPEECH_MODEL_UNKNOWN', `Unknown speech model ${id}`);
 		if (!(await this.installed(e)))
-			throw new SpeechModelError('SPEECH_MODEL_NOT_INSTALLED', `The speech model ${e.name} is not downloaded`);
+			throw new SpeechModelError(
+				'SPEECH_MODEL_NOT_INSTALLED',
+				`The speech model ${e.name} is not downloaded`,
+			);
 		const dir = this.dirOf(e);
 		const rec = (await readFile(join(dir, RECORD), 'utf8')
 			.then((s) => JSON.parse(s) as InstallRecord)
 			.catch(() => null)) as InstallRecord | null;
-		const fresh: InstallRecord = { id: e.id, revision: e.revision, installedAt: rec?.installedAt ?? new Date().toISOString(), files: {} };
+		const fresh: InstallRecord = {
+			id: e.id,
+			revision: e.revision,
+			installedAt: rec?.installedAt ?? new Date().toISOString(),
+			files: {},
+		};
 		let changed = !rec || rec.revision !== e.revision;
 		for (const f of e.files) {
 			const p = join(dir, f.path);
@@ -222,15 +229,14 @@ async function openSource(url: string, signal?: AbortSignal): Promise<Readable> 
 		if (signal?.aborted) throw err;
 		throw new SpeechModelError('DOWNLOAD_FAILED', `Download failed: ${(err as Error).message}`);
 	}
-	if (!res.ok || !res.body) throw new SpeechModelError('DOWNLOAD_FAILED', `Download failed (HTTP ${res.status})`);
+	if (!res.ok || !res.body)
+		throw new SpeechModelError('DOWNLOAD_FAILED', `Download failed (HTTP ${res.status})`);
 	return Readable.fromWeb(res.body as import('node:stream/web').ReadableStream);
 }
 
 export async function sha256Of(path: string): Promise<string> {
 	const h = createHash('sha256');
-	await pipeline(createReadStream(path), async function* (src) {
-		for await (const c of src) h.update(c as Buffer);
-	});
+	for await (const c of createReadStream(path)) h.update(c as Buffer);
 	return h.digest('hex');
 }
 
@@ -238,4 +244,3 @@ export async function sha256Of(path: string): Promise<string> {
 export function speechModelsDir(appdirRoot: string): string {
 	return join(appdirRoot, 'models', 'speech');
 }
-

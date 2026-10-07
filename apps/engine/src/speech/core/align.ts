@@ -286,7 +286,8 @@ export function addWordTimestamps(
 			else segment.start = words[0].start;
 			// prefer the segment-level end timestamp if the last word is too long
 			const lw = words[words.length - 1];
-			if (segment.end > lw.start && segment.end + 0.5 < lw.end) lw.end = Math.max(lw.start + median, segment.end);
+			if (segment.end > lw.start && segment.end + 0.5 < lw.end)
+				lw.end = Math.max(lw.start + median, segment.end);
 			else segment.end = lw.end;
 			last = segment.end;
 		}

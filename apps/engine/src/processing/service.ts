@@ -18,10 +18,10 @@ import type { ProcessStep } from '@jasper/project';
 import { type JobContext, JobError } from '../jobs/types.ts';
 import { fingerprintHex } from '../media/fingerprint.ts';
 import type { MediaRecord } from '../media/registry.ts';
+import { SpeechModelError, SpeechModelStore, speechModelsDir } from '../speech/models.ts';
 import { safeFileName, sha256File } from '../tools/fs.ts';
 import type { CoreServices } from '../tools/services.ts';
 import { createEventParser, ProgressTracker } from './events.ts';
-import { SpeechModelError, SpeechModelStore, speechModelsDir } from '../speech/models.ts';
 import { loadCatalog, ModelError, ModelStore } from './models.ts';
 import { RECIPE_VERSION, recipeHash, recipeLabel } from './proc/recipe.ts';
 import type { ProcEvent, ProcSpec } from './proc/types.ts';
@@ -744,7 +744,8 @@ export class ProcessingService {
 				return { modelId, path: r.dir, alreadyInstalled: r.alreadyInstalled };
 			} catch (e) {
 				if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
-				if (e instanceof SpeechModelError) throw new JobError(e.code, e.message, e.code === 'DOWNLOAD_FAILED');
+				if (e instanceof SpeechModelError)
+					throw new JobError(e.code, e.message, e.code === 'DOWNLOAD_FAILED');
 				throw e;
 			}
 		}

@@ -23,6 +23,7 @@ import type { EditorSession } from '@jasper/session';
 import { useStoreSelector, useTransportFrame } from '@jasper/session/react';
 import { Button, EmptyState, SearchField, Select, TextField, toast } from '@jasper/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { GenerateTranscriptButton, TranscriptionStatus } from '../../speech/TextPanelHooks.tsx';
 import { bytesToBase64, loadFillers, saveFillers, type TranscriptTool, textPanelRequests } from './state.ts';
 
 type Props = { session: EditorSession; seq: Sequence; request?: { tool?: TranscriptTool; seq: number } };
@@ -92,8 +93,12 @@ export function TranscriptTab({ session, seq, request }: Props) {
 				<EmptyState
 					icon="panel.text"
 					message="No transcript for this sequence"
-					detail="Import a transcript (JSON or a caption file) for the media of an audio clip; text-based editing then follows every edit."
+					detail="Generate one with speech to text (wp speech), or import a transcript (JSON or a caption file) for the media of an audio clip; text-based editing then follows every edit."
 				/>
+				<TranscriptionStatus session={session} seq={seq} />
+				<div className="flex justify-center px-2 pb-2">
+					<GenerateTranscriptButton session={session} seq={seq} variant="primary" />
+				</div>
 				<ImportTranscript session={session} seq={seq} media={audioMedia} apply={apply} />
 			</div>
 		);
@@ -271,6 +276,7 @@ export function TranscriptTab({ session, seq, request }: Props) {
 					</>
 				) : null}
 				<span className="flex-1" />
+				<GenerateTranscriptButton session={session} seq={seq} variant="quiet" />
 				<Button
 					variant={tool === 'fillers' ? 'secondary' : 'quiet'}
 					onClick={() => setTool(tool === 'fillers' ? null : 'fillers')}
@@ -300,6 +306,7 @@ export function TranscriptTab({ session, seq, request }: Props) {
 					Import…
 				</Button>
 			</div>
+			<TranscriptionStatus session={session} seq={seq} />
 			{tool === 'fillers' ? (
 				<FillersTool
 					words={words}

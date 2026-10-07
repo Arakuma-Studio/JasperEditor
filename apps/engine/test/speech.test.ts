@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { EngineJob } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { closeApps, JSON_H, makeApp, register, ROOT, type TestApp, until } from './helpers.ts';
+import { closeApps, JSON_H, makeApp, ROOT, register, type TestApp, until } from './helpers.ts';
 
 const H = { host: '127.0.0.1:47900' };
 const FIXTURE = join(ROOT, 'fixtures', 'speech', 'lj-composite.flac');
@@ -99,7 +99,11 @@ describe('speech models (processing catalogue `speech`)', () => {
 		const caps = (await app.inject({ method: 'GET', url: '/api/capabilities', headers: H })).json() as {
 			features: { speech: { status: string; modelsInstalled: number; defaultModel: string } };
 		};
-		expect(caps.features.speech).toMatchObject({ modelsInstalled: 0, defaultModel: 'test-multi', status: 'ready' });
+		expect(caps.features.speech).toMatchObject({
+			modelsInstalled: 0,
+			defaultModel: 'test-multi',
+			status: 'ready',
+		});
 	});
 
 	it('refuses to transcribe with a model that is not downloaded (409), an unknown model (404) or media (404)', async () => {
@@ -136,29 +140,49 @@ describe('speech models (processing catalogue `speech`)', () => {
 		const done = await waitJob(job.id);
 		expect(done.state).toBe('succeeded');
 		expect(existsSync(join(app.appdir, 'models', 'speech', 'test-multi', 'install.json'))).toBe(true);
-		const models = ((await app.inject({ method: 'GET', url: '/api/speech/models', headers: H })).json() as {
-			models: Array<{ id: string; installed: boolean; missingBytes: number }>;
-		}).models;
+		const models = (
+			(await app.inject({ method: 'GET', url: '/api/speech/models', headers: H })).json() as {
+				models: Array<{ id: string; installed: boolean; missingBytes: number }>;
+			}
+		).models;
 		expect(models.find((m) => m.id === 'test-multi')).toMatchObject({ installed: true, missingBytes: 0 });
 		// the processing install route takes speech models too (one installer)
-		const again = await app.inject({ method: 'POST', url: '/api/processing/models/test-small.en/install', headers: H });
+		const again = await app.inject({
+			method: 'POST',
+			url: '/api/processing/models/test-small.en/install',
+			headers: H,
+		});
 		expect(again.statusCode, again.body).toBe(200);
 		expect((await waitJob((again.json() as EngineJob).id)).state).toBe('succeeded');
 	}, 60_000);
 
 	it('a file whose sha256 does not match fails the install and leaves no partial file', async () => {
-		const r = await app.inject({ method: 'POST', url: '/api/speech/models/test-corrupt/install', headers: H });
+		const r = await app.inject({
+			method: 'POST',
+			url: '/api/speech/models/test-corrupt/install',
+			headers: H,
+		});
 		const done = await waitJob((r.json() as EngineJob).id);
 		expect(done.state).toBe('failed');
 		expect(done.error?.code).toBe('SPEECH_MODEL_CHECKSUM');
-		expect(existsSync(join(app.appdir, 'models', 'speech', 'test-corrupt', 'weights.bin.partial'))).toBe(false);
+		expect(existsSync(join(app.appdir, 'models', 'speech', 'test-corrupt', 'weights.bin.partial'))).toBe(
+			false,
+		);
 		expect(existsSync(join(app.appdir, 'models', 'speech', 'test-corrupt', 'weights.bin'))).toBe(false);
 	}, 60_000);
 
 	it('English-only models refuse translation and other languages', async () => {
 		const m = await register(app, FIXTURE);
-		for (const payload of [{ model: 'test-small.en', task: 'translate' }, { model: 'test-small.en', language: 'de' }]) {
-			const r = await app.inject({ method: 'POST', url: `/api/media/${m.mediaKey}/transcribe`, headers: JSON_H, payload });
+		for (const payload of [
+			{ model: 'test-small.en', task: 'translate' },
+			{ model: 'test-small.en', language: 'de' },
+		]) {
+			const r = await app.inject({
+				method: 'POST',
+				url: `/api/media/${m.mediaKey}/transcribe`,
+				headers: JSON_H,
+				payload,
+			});
 			expect(r.statusCode).toBe(422);
 			expect(r.json()).toMatchObject({ code: 'INVALID_SPEC' });
 		}

@@ -320,7 +320,8 @@ describe('alignment (FilmCraft align.rs tests + OpenAI heuristics)', () => {
 		const T = 6;
 		const F = 30;
 		const head = new Float32Array(T * F).fill(0.01);
-		for (let i = 0; i < 4; i++) for (let j = i * 8; j < Math.min(F, i * 8 + 8); j++) head[(2 + i) * F + j] = 1;
+		for (let i = 0; i < 4; i++)
+			for (let j = i * 8; j < Math.min(F, i * 8 + 8); j++) head[(2 + i) * F + j] = 1;
 		const jump = alignTokens([head], T, F, F, 2, 3, 1);
 		expect(jump.slice(0, 4)).toEqual([0, 8, 16, 24]);
 	});
@@ -349,7 +350,7 @@ describe('alignment (FilmCraft align.rs tests + OpenAI heuristics)', () => {
 });
 
 describe('decoding rules', () => {
-	const vocab: Record<string, number> = { a: 0, b: 1, 'Ġc': 2 };
+	const vocab: Record<string, number> = { a: 0, b: 1, Ġc: 2 };
 	const specials = [
 		'<|endoftext|>',
 		'<|startoftranscript|>',

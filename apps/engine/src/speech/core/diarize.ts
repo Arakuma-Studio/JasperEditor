@@ -192,7 +192,10 @@ export function diarize(
 		clusters[best.i].push(...b);
 	}
 	// fold clusters with < 5 % of the voiced frames into their nearest neighbour
-	const total = Math.max(1, weight.reduce((s, x) => s + x, 0));
+	const total = Math.max(
+		1,
+		weight.reduce((s, x) => s + x, 0),
+	);
 	for (;;) {
 		if (clusters.length <= 1) break;
 		if (exact !== null && clusters.length <= exact) break;

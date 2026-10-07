@@ -5,8 +5,8 @@
 // and install through its `model-download` job.
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { createRequire } from 'node:module';
 import { readFile, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import type {
 	EngineJob,
@@ -16,21 +16,32 @@ import type {
 	TranscribeSequenceRequest,
 	TranscriptionResult,
 } from '@jasper/api';
-import { type AudioStream, FLICKS_PER_SECOND, flicksPerFrame, mixFingerprint } from '@jasper/project';
+import {
+	type AudioStream,
+	FLICKS_PER_SECOND,
+	flicksPerFrame,
+	mixFingerprint,
+	type ProjectDocument,
+} from '@jasper/project';
 import { renderMixdown } from '../audio/mixdown.ts';
 import { PlanError, type PlannedExport } from '../export/planner.ts';
 import { type JobContext, JobError } from '../jobs/types.ts';
 import type { MediaRecord } from '../media/registry.ts';
 import type { ProcessingService } from '../processing/service.ts';
 import type { CoreServices } from '../tools/services.ts';
-import { SpeechModelError, type SpeechModelStore } from './models.ts';
 import { speechCommand } from './entry.ts';
+import { SpeechModelError, type SpeechModelStore } from './models.ts';
 import type { SpeechJobOutput, SpeechJobSpec } from './worker/run.ts';
 
 /** Flicks per 16 kHz sample (exact). */
 export const FLICKS_PER_SAMPLE = FLICKS_PER_SECOND / 16_000;
 
-type MediaInput = { target: 'media'; mediaKey: string; streamIndex: number | null; options: TranscribeOptions };
+type MediaInput = {
+	target: 'media';
+	mediaKey: string;
+	streamIndex: number | null;
+	options: TranscribeOptions;
+};
 type SequenceInput = { target: 'sequence'; request: TranscribeSequenceRequest };
 
 export class SpeechService {
@@ -88,7 +99,11 @@ export class SpeechService {
 		if (o.task === 'translate' && !e.multilingual)
 			throw new JobError('INVALID_SPEC', `${e.name} is English-only and cannot translate`, false);
 		if (o.language && o.language !== 'auto' && !e.multilingual && o.language !== 'en')
-			throw new JobError('INVALID_SPEC', `${e.name} is English-only; choose a multilingual model for "${o.language}"`, false);
+			throw new JobError(
+				'INVALID_SPEC',
+				`${e.name} is English-only; choose a multilingual model for "${o.language}"`,
+				false,
+			);
 		if (!(await this.models.installed(e)))
 			throw new JobError(
 				'SPEECH_MODEL_NOT_INSTALLED',
@@ -131,10 +146,16 @@ export class SpeechService {
 		});
 	}
 
-	async submitSequence(req: TranscribeSequenceRequest, origin: EngineJob['origin'] = { type: 'user' }): Promise<EngineJob> {
+	async submitSequence(
+		req: TranscribeSequenceRequest,
+		origin: EngineJob['origin'] = { type: 'user' },
+	): Promise<EngineJob> {
 		const planned = await this.plan(req); // plan errors surface synchronously
 		const model = await this.checkModel(req);
-		const doc = req.envelope.document as { projectId?: string; sequences?: Record<string, { name?: string }> };
+		const doc = req.envelope.document as {
+			projectId?: string;
+			sequences?: Record<string, { name?: string }>;
+		};
 		const projectId = req.projectId ?? (typeof doc.projectId === 'string' ? doc.projectId : undefined);
 		const name = doc.sequences?.[req.sequenceId]?.name ?? req.sequenceId;
 		const request = { ...req, model };
@@ -234,12 +255,19 @@ export class SpeechService {
 			const fps = snap.settings.fps;
 			offsetFlicks = planned.range.start * flicksPerFrame(fps);
 			span = [0.15, 1];
-			spec = { modelDir, modelId, input: { path: mix.path, ffmpeg }, ...specOptions(options), threads: Math.max(1, ctx.slots) };
+			spec = {
+				modelDir,
+				modelId,
+				input: { path: mix.path, ffmpeg },
+				...specOptions(options),
+				threads: Math.max(1, ctx.slots),
+			};
 			target = {
 				type: 'sequence',
 				sequenceId: planned.sequenceId,
 				range: { startFrame: planned.range.start, endFrame: planned.range.end },
-				mixHash: mixFingerprint(planned.document, planned.sequenceId),
+				// the fingerprint of the document the client sent, so it can tell whether the sequence changed since
+				mixHash: mixFingerprint(req.envelope.document as ProjectDocument, req.sequenceId),
 			};
 		}
 		const out = await this.runWorker(ctx, spec, scratch, span);
@@ -296,7 +324,12 @@ export class SpeechService {
 				nl = buf.indexOf('\n');
 				if (!line) continue;
 				try {
-					const ev = JSON.parse(line) as { type: string; fraction?: number; stage?: string; message?: string };
+					const ev = JSON.parse(line) as {
+						type: string;
+						fraction?: number;
+						stage?: string;
+						message?: string;
+					};
 					if (ev.type === 'progress' && typeof ev.fraction === 'number')
 						ctx.progress(span[0] + (span[1] - span[0]) * ev.fraction, { stage: ev.stage ?? 'Transcribing' });
 					else if (ev.type === 'error') failure = ev.message ?? 'failed';
@@ -337,7 +370,9 @@ function pickOptions(o: TranscribeOptions): TranscribeOptions {
 	return out;
 }
 
-function specOptions(o: TranscribeOptions): Pick<SpeechJobSpec, 'language' | 'task' | 'speakers' | 'beamSize'> {
+function specOptions(
+	o: TranscribeOptions,
+): Pick<SpeechJobSpec, 'language' | 'task' | 'speakers' | 'beamSize'> {
 	return {
 		...(o.beamSize ? { beamSize: o.beamSize } : {}),
 		language: o.language && o.language !== 'auto' ? o.language : null,
