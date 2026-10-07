@@ -12,7 +12,7 @@ import {
 	type Transcript,
 	TranscriptSchema,
 } from './media.ts';
-import { ClipMarkerSchema, type Sequence, SequenceSchema } from './sequence.ts';
+import { CaptionStyleSchema, ClipMarkerSchema, type Sequence, SequenceSchema } from './sequence.ts';
 
 /** v3 (M2): additive fields only — media kind `mg-bundle`, `lut`/`mgBundle` headers, `process` recipes, trackers,
  * `trackedBy`, curve params (ARCHITECTURE §19.1). Older builds open v3 files read-only (S01:MIG-003).
@@ -103,6 +103,10 @@ export const ProjectSettingsSchema = z.looseObject({
 	/** M3 (S10:TUI-032): default audio transition length; absent = `defaultTransitionFrames`. */
 	defaultAudioTransitionFrames: z.number().int().min(1).optional(),
 	defaultScaling: DefaultScalingSchema,
+	/** wp captions: caption style presets saved in the project (Premiere "Track Style"). */
+	captionStylePresets: z
+		.array(z.looseObject({ id: z.string(), name: z.string(), style: CaptionStyleSchema.partial() }))
+		.optional(),
 });
 export type ProjectSettings = DeepStrip<z.infer<typeof ProjectSettingsSchema>>;
 

@@ -42,3 +42,21 @@ await build({
 	// M2 (S11): the anime.js licence text for About ▸ Licenses (the package itself ships in the Remotion bundle).
 	cpSync(join(root, 'src', 'anime', 'third-party'), join(root, 'dist', 'third-party'), { recursive: true });
 }
+
+// wp speech: jasper-speech.mjs (the speech-to-text worker, run as a child process by `transcription` jobs) next to
+// engine.mjs. onnxruntime-node (native binding) stays external like jasper-proc's.
+await build({
+	entryPoints: [join(root, 'src/speech/worker/cli.ts')],
+	outfile: join(root, 'dist/jasper-speech.mjs'),
+	bundle: true,
+	platform: 'node',
+	format: 'esm',
+	target: 'node20',
+	sourcemap: false,
+	legalComments: 'none',
+	external: ['onnxruntime-node', '*.node'],
+	banner: {
+		js: "import { createRequire as __jasperCreateRequire } from 'node:module'; const require = __jasperCreateRequire(import.meta.url);",
+	},
+	logLevel: 'warning',
+});

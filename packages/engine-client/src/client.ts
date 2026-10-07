@@ -3,19 +3,24 @@ import {
 	type AgentOpenProjectRequest,
 	type AgentQueryRequest,
 	type AgentTxRequest,
+	type AgentUiRequest,
 	API_HEADER,
 	API_VERSION,
+	type AudioAnalyzeRequest,
 	buildPath,
+	type CaptionFileReadRequest,
 	type DerivativeKind,
 	type EngineJob,
 	ErrorShapeSchema,
 	type ExportPlanRequest,
 	type ExportStartRequest,
 	type JobListQuery,
+	type LoudnessNormalizeRequest,
 	type MediaRegisterRequest,
 	type MgRenderRequest,
 	type ProjectCreateRequest,
 	type ProjectViewJson,
+	type RecoveryPutRequest,
 	type RegisteredMedia,
 	ROUTES,
 	type RouteName,
@@ -24,6 +29,7 @@ import {
 	UPLOAD_CHUNK_BYTES,
 	type UploadCreateRequest,
 	UploadOffsetMismatchSchema,
+	type VersionRestoreRequest,
 } from '@jasper/api';
 import type { z } from 'zod';
 import { EngineError } from './errors.ts';
@@ -194,6 +200,32 @@ export class EngineClient {
 	listVersions(projectId: string) {
 		return this.call('projectVersions', { params: { projectId } });
 	}
+	/** One saved version with its envelope (process, D-39). */
+	getVersion(projectId: string, versionId: string) {
+		return this.call('projectVersionGet', { params: { projectId, versionId } });
+	}
+	/** Restores a saved version in place (`replace`, with the caller's lease) or as a new project (`copy`). */
+	restoreVersion(projectId: string, versionId: string, req: VersionRestoreRequest) {
+		return this.call('projectVersionRestore', { params: { projectId, versionId }, body: req });
+	}
+	/** Crash-recovery candidates of a project (journals no session holds any more; S01:PER-021). */
+	listRecovery(projectId: string) {
+		return this.call('projectRecoveryList', { params: { projectId } });
+	}
+	getRecovery(projectId: string, sessionId: string) {
+		return this.call('projectRecoveryGet', { params: { projectId, sessionId } });
+	}
+	/** Journals this session's unsaved document (needs the session's lease). */
+	putRecovery(projectId: string, sessionId: string, req: RecoveryPutRequest) {
+		return this.call('projectRecoveryPut', { params: { projectId, sessionId }, body: req });
+	}
+	/** Deletes a journal: the session's own (pass its `leaseId`) or a candidate nobody holds. */
+	deleteRecovery(projectId: string, sessionId: string, leaseId?: string) {
+		return this.call('projectRecoveryDelete', {
+			params: { projectId, sessionId },
+			...(leaseId ? { query: { leaseId } } : {}),
+		});
+	}
 	deleteProject(projectId: string) {
 		return this.call('projectDelete', { params: { projectId } });
 	}
@@ -205,6 +237,10 @@ export class EngineClient {
 	}
 	releaseLease(projectId: string, leaseId: string) {
 		return this.call('leaseRelease', { params: { projectId, leaseId } });
+	}
+	/** wp captions: a caption / transcript file by path (local engines). */
+	readCaptionFile(req: CaptionFileReadRequest) {
+		return this.call('captionFileRead', { body: req });
 	}
 	registerMedia(req: MediaRegisterRequest) {
 		return this.call('mediaRegister', { body: req });
@@ -250,6 +286,18 @@ export class EngineClient {
 	startExport(req: ExportStartRequest): Promise<EngineJob> {
 		return this.call('exportStart', { body: req });
 	}
+	/** audio-mix: loudness / peaks / activity analysis job (`wait` answers the finished job). */
+	analyzeAudio(req: AudioAnalyzeRequest, wait = false): Promise<EngineJob> {
+		return this.call('audioAnalyze', { body: req, ...(wait ? { query: { wait: '1' as const } } : {}) });
+	}
+	/** audio-mix: a loudness-normalised WAV version of a media (job; result LoudnessNormalizeResult). */
+	normalizeMediaLoudness(mediaKey: string, req: LoudnessNormalizeRequest, wait = false): Promise<EngineJob> {
+		return this.call('mediaLoudnessNormalize', {
+			params: { key: mediaKey },
+			body: req,
+			...(wait ? { query: { wait: '1' as const } } : {}),
+		});
+	}
 	requestStill(req: StillRequest): Promise<EngineJob> {
 		return this.call('stills', { body: req });
 	}
@@ -273,6 +321,10 @@ export class EngineClient {
 	}
 	agentOpenProject(req: AgentOpenProjectRequest) {
 		return this.call('agentOpenProject', { body: req });
+	}
+	/** mcp-cli: live-UI automation of an open editor window. */
+	agentUi(req: AgentUiRequest, signal?: AbortSignal) {
+		return this.call('agentUi', { body: req, signal });
 	}
 	agentMcpInfo() {
 		return this.call('agentMcpInfo');
@@ -326,6 +378,10 @@ export class EngineClient {
 	}
 	renderOutputUrl(jobId: string): string {
 		return this.url(buildPath(ROUTES.renderOutput.path, { jobId }));
+	}
+	/** wp captions: download URL of an export's sidecar caption file. */
+	renderCaptionFileUrl(jobId: string, name: string): string {
+		return this.url(buildPath(ROUTES.renderCaptionFile.path, { jobId, name }));
 	}
 	mgFileUrl(key: string, file: string): string {
 		return this.url(buildPath(ROUTES.mgFile.path, { key, file }));

@@ -32,6 +32,12 @@ const bridge = {
 			return '';
 		}
 	},
+	/** mcp-cli (live-UI automation): a PNG (base64) of the window or a CSS-px rect of it, at most maxWidth wide. */
+	capturePage: (
+		rect: { x: number; y: number; width: number; height: number },
+		maxWidth: number,
+	): Promise<{ png: string; width: number; height: number }> =>
+		ipcRenderer.invoke('jasper:capture-page', rect, maxWidth),
 	onMenuCommand: (cb: (commandId: string) => void): (() => void) => {
 		const listener = (_e: unknown, id: string) => cb(id);
 		ipcRenderer.on('jasper:menu-command', listener);

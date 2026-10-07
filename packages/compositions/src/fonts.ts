@@ -146,6 +146,18 @@ function layerFontFaces(
 					run.style.italic ?? s.italic,
 				),
 			);
+	} else if ('captions' in src) {
+		// wp captions: the style's face and the bold / italic faces markup may use
+		const s = src.captions.style;
+		for (const [w, it] of [
+			[s.weight, s.italic],
+			[Math.max(s.weight, 700), s.italic],
+			[s.weight, true],
+		] as const) {
+			const f = fontFaceFor(fonts, s.fontId, w, it);
+			if (f && f.weight === w && (f.style === 'italic') === it) add(f);
+		}
+		add(fontFaceFor(fonts, s.fontId, s.weight, s.italic));
 	} else if ('mg' in src && src.mg.renderer === 'anime') {
 		const named = stringsIn(src.mg.params, new Set());
 		for (const f of fonts ?? []) if (named.has(f.fontId) || named.has(f.family)) add(f);

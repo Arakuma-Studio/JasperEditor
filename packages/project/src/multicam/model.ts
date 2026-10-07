@@ -185,3 +185,34 @@ export function fixMulticamSelections(doc: { sequences: Record<string, Sequence>
 	}
 	return changed;
 }
+
+/**
+ * The nested sequence as an enabled multi-camera clip sees it (render snapshot): a video clip shows only its
+ * angle's video track (the other angles' video tracks get `output: false`; tracks that are no angle stay, e.g. a
+ * graphic laid over every camera), an audio clip plays only the audible tracks of its angle per the audio mode
+ * (the others muted). Disabled or ordinary nest clips see the sequence unchanged (the composite).
+ */
+export function multicamView(nested: Sequence, clip: Clip): Sequence {
+	if (!isEnabledMulticamClip(clip)) return nested;
+	const mc = multicamSourceOf(nested);
+	if (!mc) return nested;
+	const angle = angleById(mc, clip.multicam.angle) ?? firstVideoAngle(mc);
+	if (clip.kind === 'nest-video') {
+		const angleTracks = new Set(mc.angles.flatMap((a) => (a.videoTrackId ? [a.videoTrackId] : [])));
+		const show = angle?.videoTrackId ?? null;
+		return {
+			...nested,
+			videoTracks: nested.videoTracks.map((t) =>
+				angleTracks.has(t.id) && t.id !== show && t.output !== false ? { ...t, output: false } : t,
+			),
+		};
+	}
+	const audible = new Set(audibleTrackIds(mc, angle?.id ?? null));
+	const angleAudio = new Set(mc.angles.flatMap((a) => a.audioTrackIds));
+	return {
+		...nested,
+		audioTracks: nested.audioTracks.map((t) =>
+			angleAudio.has(t.id) && !audible.has(t.id) ? { ...t, mute: true, solo: false } : t,
+		),
+	};
+}

@@ -66,7 +66,7 @@ import {
 	trackClips,
 } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
-import { commonFields, frameBox, placeSource, visualFields } from './clip-core.ts';
+import { placeSource } from './clip-core.ts';
 import { assertBin, insertItem } from './project.ts';
 import { type HandlerMap, idList } from './util.ts';
 
@@ -497,203 +497,20 @@ function createMulticam(doc: DDoc, cmd: CommandOf<'multicam.create'>, h: Handler
 	};
 }
 
-// ---------------------------------------------------------------- placing multi-camera sources and merged clips
-
-/** True when `inner` (transitively) contains a nest of `target`, or is it (INV-009). */
-export function nestsSequence(doc: Pick<DDoc, 'sequences'>, inner: string, target: string, seen = new Set<string>()): boolean {
-	if (inner === target) return true;
-	if (seen.has(inner)) return false;
-	seen.add(inner);
-	const s = doc.sequences[inner];
-	if (!s) return false;
-	for (const c of Object.values(s.clips)) {
-		const id = (c as { sequenceId?: string }).sequenceId;
-		if (typeof id === 'string' && nestsSequence(doc, id, target, seen)) return true;
-	}
-	return false;
-}
-
-export type SequencePlaceOptions = {
-	at: number;
-	mode: 'overwrite' | 'insert';
-	videoTrack?: string;
-	audioTracks?: string[];
-	video?: boolean;
-	audio?: boolean;
-	scaling?: import('../../schema/document.ts').DefaultScaling;
-	createTracks?: boolean;
-	/** Source range in the placed sequence's time (flicks). */
-	sourceRange?: { in: number; out: number };
-	makeRoom(dest: readonly DTrack[], frames: number): void;
-	prepareTrack(ref: string, kind: string): DTrack;
-};
+// ---------------------------------------------------------------- placing multi-camera sources
 
 /**
- * clip.place of a sequence that is a multi-camera source (→ linked multi-camera video/audio clips showing its
- * first camera) or a merged clip (→ the clips it holds, linked). Null for other sequences (plain nesting).
+ * Nest clips just placed from a multi-camera source become enabled multi-camera clips showing camera 1 (audio clips:
+ * the same angle; what they play follows the source's audio mode).
  */
-export function placeSequenceSource(
-	doc: DDoc,
-	seq: DSeq,
-	h: HandlerContext,
-	sourceId: string,
-	item: ProjectItem | undefined,
-	o: SequencePlaceOptions,
-): { clipIds: string[]; linkId: string | null } | null {
-	const src = doc.sequences[sourceId];
-	if (!src) return h.fail('E_NOT_FOUND', `Sequence not found: ${sourceId}`);
-	const mc = multicamSourceOf(src as Sequence);
-	const merged = (src as Sequence).merged;
-	if (!mc && !merged) return null;
-	if (nestsSequence(doc, sourceId, seq.id)) h.fail('E_CYCLE', 'A sequence cannot be placed into itself (INV-009)');
-	const Fo = flicksPerFrame(seq.settings.frameRate);
-	const Fs = flicksPerFrame(src.settings.frameRate);
-	const srcEnd = sequenceDuration(src as Sequence) * Fs;
-	const inF = o.sourceRange?.in ?? (src.inPoint !== null ? src.inPoint * Fs : 0);
-	const outF = Math.min(srcEnd, o.sourceRange?.out ?? (src.outPoint !== null ? src.outPoint * Fs : srcEnd));
-	if (outF <= inF) h.fail('E_INVALID_PARAM', 'The sequence has no content in its source range');
-	const name = item?.name ?? 'Sequence';
-	if (merged) return placeMerged(doc, seq, h, src as DSeq, inF, outF, o);
-	const frames = Math.max(1, Math.floor((outF - inF) / Fo + FRAME_EPS));
-	const first = firstVideoAngle(mc!);
-	const angle = first?.id ?? mc!.angles[0]?.id;
-	if (!angle) h.fail('E_INVALID_PARAM', 'The multi-camera source has no angles');
-	const hasVideo = !!first && o.video !== false;
-	const hasAudio = (src as Sequence).audioTracks.length > 0 && mc!.angles.some((a) => a.audioTrackIds.length > 0) && o.audio !== false;
-	if (!hasVideo && !hasAudio) h.fail('E_INVALID_PARAM', 'Nothing to place from this source');
-	const vRef = o.videoTrack ?? 'V1';
-	const videoIndex = (() => {
-		const id = resolveTrackIn(seq, vRef);
-		if (id) return findTrackIn(seq, id)?.index ?? 0;
-		const m = /^V(\d+)$/i.exec(vRef);
-		return m ? Number(m[1]) - 1 : 0;
-	})();
-	const aRef = o.audioTracks?.[0] ?? `A${videoIndex + 1}`;
-	const dest: DTrack[] = [];
-	if (hasVideo) dest.push(o.prepareTrack(vRef, 'nest-video'));
-	if (hasAudio) dest.push(o.prepareTrack(aRef, 'nest-audio'));
-	o.makeRoom(dest, frames);
-	const box = { width: src.settings.width, height: src.settings.height };
-	const ids: string[] = [];
-	const label = item?.label ?? 'forest';
-	let k = 0;
-	if (hasVideo) {
-		const id = h.ids.next('clp');
-		seq.clips[id] = {
-			...commonFields(id, dest[k++]!.id, o.at, frames, inF, name, label),
-			kind: 'nest-video',
-			sequenceId: sourceId,
-			...visualFields(defaultTransform(box, frameBox(seq), o.scaling ?? doc.settings.defaultScaling)),
-			multicam: { enabled: true, angle: first!.id },
-		} as DClip;
-		ids.push(id);
+export function markMulticamClips(seq: DSeq, clipIds: readonly string[], mc: MulticamSource): void {
+	const first = firstVideoAngle(mc) ?? mc.angles[0];
+	if (!first) return;
+	for (const id of clipIds) {
+		const c = seq.clips[id];
+		if (c && (c.kind === 'nest-video' || c.kind === 'nest-audio'))
+			(c as Draft<{ multicam?: { enabled: boolean; angle: string } }>).multicam = { enabled: true, angle: first.id };
 	}
-	if (hasAudio) {
-		const id = h.ids.next('clp');
-		seq.clips[id] = {
-			...commonFields(id, dest[k++]!.id, o.at, frames, inF, name, label),
-			kind: 'nest-audio',
-			sequenceId: sourceId,
-			gainDb: 0,
-			volumeDb: anim(0),
-			pan: anim(0),
-			effects: [],
-			multicam: { enabled: true, angle: angle! },
-		} as DClip;
-		ids.push(id);
-	}
-	let linkId: string | null = null;
-	if (ids.length >= 2) {
-		linkId = h.ids.next('lnk');
-		seq.links[linkId] = { id: linkId, members: [...ids] };
-		for (const id of ids) seq.clips[id]!.linkId = linkId;
-	}
-	cleanupSequence(seq, h);
-	return { clipIds: ids, linkId };
-}
-
-/** The clips of a merged clip inside `[inF, outF)` (its time), re-timed and linked, at `o.at`. */
-function placeMerged(
-	doc: DDoc,
-	seq: DSeq,
-	h: HandlerContext,
-	src: DSeq,
-	inF: number,
-	outF: number,
-	o: SequencePlaceOptions,
-): { clipIds: string[]; linkId: string | null } {
-	const Fo = flicksPerFrame(seq.settings.frameRate);
-	const Fs = flicksPerFrame(src.settings.frameRate);
-	type Piece = { kind: 'video' | 'audio'; index: number; clip: Clip; start: number; frames: number; sourceIn: number };
-	const pieces: Piece[] = [];
-	for (const [kind, tracks] of [
-		['video', src.videoTracks],
-		['audio', src.audioTracks],
-	] as const) {
-		if ((kind === 'video' && o.video === false) || (kind === 'audio' && o.audio === false)) continue;
-		tracks.forEach((t, index) => {
-			for (const c of trackClips(src, t.id)) {
-				const c0 = c.start * Fs;
-				const c1 = (c.start + c.duration) * Fs;
-				const a = Math.max(c0, inF);
-				const b = Math.min(c1, outF);
-				if (b <= a) continue;
-				// exact timeline start (flicks from the placement), frame-aligned with the remainder in the source In
-				const exact = a - inF;
-				const start = Math.ceil(exact / Fo - 1e-9);
-				const contentAt = (x: number) =>
-					c.speed.reverse
-						? c.sourceIn + (c1 - Fs - x) * c.speed.rate
-						: c.sourceIn + (x - c0) * c.speed.rate;
-				const frames = Math.floor((b - inF - start * Fo) / Fo + FRAME_EPS);
-				if (frames < 1) continue;
-				const sourceIn = c.speed.reverse
-					? Math.round(contentAt(inF + (start + frames - 1) * Fo))
-					: Math.round(contentAt(inF + start * Fo));
-				pieces.push({ kind, index, clip: c as Clip, start: o.at + start, frames, sourceIn });
-			}
-		});
-	}
-	if (pieces.length === 0) h.fail('E_INVALID_PARAM', 'Nothing to place from this merged clip');
-	const vRef = o.videoTrack ?? 'V1';
-	const videoIndex = (() => {
-		const id = resolveTrackIn(seq, vRef);
-		if (id) return findTrackIn(seq, id)?.index ?? 0;
-		const m = /^V(\d+)$/i.exec(vRef);
-		return m ? Number(m[1]) - 1 : 0;
-	})();
-	const destOf = new Map<string, DTrack>();
-	for (const p of pieces) {
-		const key = `${p.kind}:${p.index}`;
-		if (destOf.has(key)) continue;
-		const ref =
-			p.kind === 'video'
-				? p.index === 0
-					? vRef
-					: `V${videoIndex + p.index + 1}`
-				: (o.audioTracks?.[p.index] ?? `A${videoIndex + p.index + 1}`);
-		destOf.set(key, o.prepareTrack(ref, p.clip.kind));
-	}
-	const total = Math.max(...pieces.map((p) => p.start + p.frames)) - o.at;
-	o.makeRoom([...new Set(destOf.values())], total);
-	const ids: string[] = [];
-	for (const p of pieces) {
-		const id = h.ids.next('clp');
-		const copy = plain(p.clip) as Clip;
-		copy.id = id;
-		reidentifyClipChildren(copy, h);
-		copy.trackId = destOf.get(`${p.kind}:${p.index}`)!.id;
-		copy.start = p.start;
-		copy.duration = p.frames;
-		copy.sourceIn = p.sourceIn;
-		copy.linkId = null;
-		copy.groupId = null;
-		seq.clips[id] = copy as DClip;
-		ids.push(id);
-	}
-	linkAll(seq, ids, h);
-	cleanupSequence(seq, h);
-	return { clipIds: ids, linkId: ids.length >= 2 ? (seq.clips[ids[0]!]!.linkId ?? null) : null };
 }
 
 // ---------------------------------------------------------------- multi-camera clips in a sequence

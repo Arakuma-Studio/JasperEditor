@@ -1,6 +1,12 @@
 import { z } from 'zod';
+import { AudioChannelFormatSchema, SequenceSampleRateSchema } from '../../schema/audio.ts';
 import { AnimNumberSchema, LabelColorSchema, RationalSchema, RGBASchema } from '../../schema/common.ts';
-import { CaptionStyleSchema, MarkerTypeSchema, TrackKindSchema } from '../../schema/sequence.ts';
+import {
+	CaptionStandardSchema,
+	CaptionStyleSchema,
+	MarkerTypeSchema,
+	TrackKindSchema,
+} from '../../schema/sequence.ts';
 import {
 	ContentTimeInputSchema,
 	cmd,
@@ -17,6 +23,10 @@ const SettingsPatch = z.strictObject({
 	dropFrame: z.boolean().optional(),
 	startTimecodeFrames: z.number().int().min(0).optional(),
 	backgroundColor: RGBASchema.optional(),
+	/** audio-mix: sequence audio sample rate. */
+	audioSampleRate: SequenceSampleRateSchema.optional(),
+	/** audio-mix: channel format of the Mix. */
+	masterLayout: AudioChannelFormatSchema.optional(),
 });
 
 export const SequenceCreateCmd = cmd('sequence.create', {
@@ -89,6 +99,9 @@ export const TrackAddCmd = cmd('track.add', {
 	index: z.number().int().min(0).optional(),
 	count: z.number().int().min(1).max(99).optional(),
 	name: z.string().nullable().optional(),
+	/** wp captions (caption tracks): language and standard. */
+	language: z.string().optional(),
+	captionStandard: CaptionStandardSchema.optional(),
 	ref: RefDeclSchema.optional(),
 });
 export const TrackRemoveCmd = cmd('track.remove', {
@@ -109,9 +122,12 @@ export const TrackUpdateCmd = cmd('track.update', {
 		/** A number sets the static value (stopwatch off); an Animatable replaces the property. */
 		volumeDb: z.union([z.number(), AnimNumberSchema]).optional(),
 		pan: z.union([z.number(), AnimNumberSchema]).optional(),
-		channelFormat: z.enum(['mono', 'stereo']).optional(),
+		channelFormat: AudioChannelFormatSchema.optional(),
 		visible: z.boolean().optional(),
 		styleDefaults: CaptionStyleSchema.optional(),
+		// wp captions
+		language: z.string().optional(),
+		captionStandard: CaptionStandardSchema.optional(),
 	}),
 });
 

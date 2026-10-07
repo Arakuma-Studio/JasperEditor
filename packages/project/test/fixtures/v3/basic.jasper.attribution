@@ -1,0 +1,8 @@
+asset:        basic.jasper
+title:        Hand-made test project, v3
+author:       JasperEditor contributors
+source:       original work
+license:      LicenseRef-JasperEditor
+license-file: none
+added:        2026-10-01 by JasperDev (sidecar 2026-10-07 by the process workstream)
+notes:        Hand-written JSON project envelope for load/migration tests: schema v3 (M2): adds LUT and Remotion bundle media, process recipes, trackers and curve parameters. References no media bytes.

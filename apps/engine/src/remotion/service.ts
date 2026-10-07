@@ -99,6 +99,15 @@ type AlphaMasterInput = {
 
 type RemotionState = 'ready' | 'needs-browser-download' | 'unavailable';
 
+/**
+ * `JASPER_REMOTION_BROWSER_LOG=1` (diagnostics): the render page's console on the engine's stderr (stills and
+ * renders), e.g. to see why a composition draws nothing.
+ */
+function browserLogOption(): { onBrowserLog?: (log: { type: string; text: string }) => void } {
+	if (process.env.JASPER_REMOTION_BROWSER_LOG !== '1') return {};
+	return { onBrowserLog: (log) => process.stderr.write(`[remotion browser ${log.type}] ${log.text}\n`) };
+}
+
 /** `chromiumOptions.gl` values Remotion 4.0.499 accepts (null = Chrome's default). */
 export type RemotionGl = 'angle' | 'swangle' | 'egl' | 'swiftshader' | 'vulkan' | 'angle-egl';
 /** Order in which the start-up probe tries OpenGL back ends for WebGL2 (S06:CG-042). */
@@ -131,6 +140,8 @@ type RemotionRenderInput = {
 	/** Direct VP9/Opus WebM (LGPL components); see export-plan.ts. */
 	vp9?: { crf: number; colorSpace: 'bt709' | null; ffmpegOverride?: RemotionFfmpegOverride };
 	audioBitrateKbps?: number;
+	/** audio-mix: render the picture only (exports mux the offline mixer's audio). */
+	muted?: boolean;
 };
 
 type RemotionFfmpegOverride = (info: { type: 'pre-stitcher' | 'stitcher'; args: string[] }) => string[];
@@ -750,11 +761,15 @@ export class RemotionService {
 				composition,
 				inputProps: input.inputProps,
 				...(input.intermediate
-					? { codec: 'prores' as const, proResProfile: 'hq' as const, audioCodec: 'pcm-16' as const }
+					? {
+							codec: 'prores' as const,
+							proResProfile: 'hq' as const,
+							...(input.muted ? {} : { audioCodec: 'pcm-16' as const }),
+						}
 					: input.vp9
 						? {
 								codec: 'vp9' as const,
-								audioCodec: 'opus' as const,
+								...(input.muted ? {} : { audioCodec: 'opus' as const }),
 								pixelFormat: 'yuv420p' as const,
 								crf: input.vp9.crf,
 								...(input.vp9.colorSpace ? { colorSpace: input.vp9.colorSpace } : {}),
@@ -763,13 +778,14 @@ export class RemotionService {
 							}
 						: {
 								codec: 'h264' as const,
-								audioCodec: 'aac' as const,
+								...(input.muted ? {} : { audioCodec: 'aac' as const }),
 								pixelFormat: 'yuv420p' as const,
 								crf: input.crf ?? 18,
 								x264Preset: input.x264Preset ?? 'medium',
 							}),
 				...this.binariesOption(),
 				outputLocation: input.output,
+				...(input.muted ? { muted: true } : {}),
 				concurrency,
 				cancelSignal,
 				timeoutInMilliseconds: DELAY_RENDER_TIMEOUT_MS,
@@ -902,6 +918,7 @@ export class RemotionService {
 				licenseKey: this.licenseKey,
 				logLevel: 'error',
 				overwrite: true,
+				...browserLogOption(),
 				...this.binariesOption(),
 				...(input.scale ? { scale: input.scale } : {}),
 				...browser,

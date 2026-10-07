@@ -46,6 +46,14 @@ export const MEDIA_EXTENSIONS = [
 	'tiff',
 	'bmp',
 	'svg',
+	// wp captions: caption files (imported onto caption tracks)
+	'srt',
+	'vtt',
+	'scc',
+	'mcc',
+	'stl',
+	'ttml',
+	'dfxp',
 ] as const;
 
 /** `revealInFolder` accepts only absolute paths without NUL bytes. */
@@ -164,4 +172,39 @@ export function parseClipboardFileList(raw: unknown, platform: string = process.
 		if (out.length >= CLIPBOARD_MAX_FILES) break;
 	}
 	return out;
+}
+
+/** A CSS-pixel rectangle from the renderer (validated before it reaches capturePage). */
+export function isCaptureRect(v: unknown): v is { x: number; y: number; width: number; height: number } {
+	if (!v || typeof v !== 'object') return false;
+	const r = v as Record<string, unknown>;
+	return (
+		['x', 'y', 'width', 'height'].every((k) => typeof r[k] === 'number' && Number.isFinite(r[k] as number)) &&
+		(r.x as number) >= 0 &&
+		(r.y as number) >= 0 &&
+		(r.width as number) >= 1 &&
+		(r.height as number) >= 1 &&
+		(r.width as number) <= 16384 &&
+		(r.height as number) <= 16384
+	);
+}
+
+/**
+ * audio-mix: which permission requests the app grants. Voice-over recording needs the microphone (`media` with
+ * audio only) and Preferences ▸ Audio lists the inputs (`mediaKeySystem` is never needed); only frames on the app
+ * origin may ask. Everything else (camera, geolocation, notifications, MIDI, HID…) is denied.
+ */
+export function isPermissionAllowed(
+	permission: string,
+	requestingUrl: string,
+	appOrigin: string | null,
+	mediaTypes: readonly string[] = [],
+): boolean {
+	if (!appOrigin || !isSameOrigin(requestingUrl, appOrigin)) return false;
+	if (permission === 'media') return mediaTypes.length > 0 && mediaTypes.every((t) => t === 'audio');
+	return (
+		permission === 'clipboard-read' ||
+		permission === 'clipboard-sanitized-write' ||
+		permission === 'fullscreen'
+	);
 }

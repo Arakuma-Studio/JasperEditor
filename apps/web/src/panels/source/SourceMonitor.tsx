@@ -6,7 +6,10 @@ import {
 	type AssetCompositionProps,
 	assetCanvas,
 	assetDurationFrames,
+	type RenderDoc,
+	SequenceComposition,
 } from '@jasper/compositions';
+import { type Sequence, SYNTHETIC_INFO, sequenceDuration } from '@jasper/project';
 import { type EditorSession, TransportStore } from '@jasper/session';
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import { Player, type PlayerRef } from '@remotion/player';
@@ -39,7 +42,7 @@ import { checkerboard } from '../program/monitor.tokens.ts';
 import { detectPlatform, handleMonitorKey, useMonitorCommandCtx } from '../program/monitor-commands.ts';
 import { monitorStores } from '../program/monitor-store.ts';
 import { PlaybackDriver } from '../program/playback-driver.ts';
-import { resolveMediaHandle } from '../program/render-doc.ts';
+import { buildProgramDoc, resolveMediaHandle } from '../program/render-doc.ts';
 import { registerDriver, setSourceTransport } from '../program/transport-registry.ts';
 import { computeView, ZOOM_PRESETS } from '../program/viewport.ts';
 import type { PanelProps } from '../types.ts';
@@ -53,6 +56,7 @@ import {
 	sourceAsset,
 	sourceItem,
 	sourceMonitorState,
+	syntheticPreviewDoc,
 } from './source-state.ts';
 
 export function SourceMonitor(props: PanelProps) {
@@ -84,21 +88,67 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 	const item = sourceItem(doc, src.itemId);
 	const asset = sourceAsset(doc, item);
 	const handle = useMemo(() => (asset ? resolveMediaHandle(asset, media[asset.id]) : null), [asset, media]);
-	const fps = assetFps(asset, seqRate.num / seqRate.den);
+	// edit-structure: sequences and synthetic sources are drawn by the sequence composition.
+	const activeSettings = useStoreSelector(session.store, (s) => {
+		const seq = s.activeSequenceId ? s.document.sequences[s.activeSequenceId] : undefined;
+		return seq?.settings ?? Object.values(s.document.sequences)[0]?.settings;
+	});
+	const seqDoc = useMemo<{ doc: RenderDoc; fps: number; frames: number; w: number; h: number } | null>(() => {
+		if (item?.kind === 'sequence') {
+			const sq = doc.sequences[item.sequenceId] as Sequence | undefined;
+			if (!sq) return null;
+			const r = sq.settings.frameRate;
+			return {
+				doc: buildProgramDoc({ doc, sequenceId: sq.id, media }, null),
+				fps: r.num / r.den,
+				frames: Math.max(1, sequenceDuration(sq)),
+				w: sq.settings.width,
+				h: sq.settings.height,
+			};
+		}
+		if (item?.kind === 'synthetic' && activeSettings) {
+			const syn = doc.synthetics[item.syntheticId];
+			const r = activeSettings.frameRate;
+			const fpsN = r.num / r.den;
+			const secs = syn ? (SYNTHETIC_INFO[syn.kind].defaultSeconds ?? 10) : 10;
+			const frames = Math.max(1, Math.round(Math.max(secs, 10) * fpsN));
+			const d = syntheticPreviewDoc(doc, item, activeSettings, frames);
+			return d ? { doc: d, fps: fpsN, frames, w: activeSettings.width, h: activeSettings.height } : null;
+		}
+		return null;
+	}, [item, doc, media, activeSettings]);
+	const fps = seqDoc ? seqDoc.fps : assetFps(asset, seqRate.num / seqRate.den);
 	const props = useMemo<AssetCompositionProps | null>(
 		() => (handle ? { asset: handle, fps, name: item?.name, useProxies } : null),
 		[handle, fps, item?.name, useProxies],
 	);
-	const duration = props ? assetDurationFrames(props) : 1;
-	const canvas = handle ? assetCanvas(handle) : { width: 1280, height: 720 };
+	const seqProps = useMemo(
+		() =>
+			seqDoc
+				? { doc: seqDoc.doc, options: { isPreview: true, useProxies, transparentBackground: false } }
+				: null,
+		[seqDoc, useProxies],
+	);
+	const duration = seqDoc ? seqDoc.frames : props ? assetDurationFrames(props) : 1;
+	const canvas = seqDoc
+		? { width: seqDoc.w, height: seqDoc.h }
+		: handle
+			? assetCanvas(handle)
+			: { width: 1280, height: 720 };
 	const transport = useMemo(() => new TransportStore(), []);
 	const ctx = useMonitorCommandCtx({ session, panel: 'source', instanceId, engine });
 	const [viewportRef, viewport] = useElementSize<HTMLDivElement>();
 	const view = computeView(viewport, canvas, monitor.zoom, [0, 0]);
 
 	// Mirror marks (document, flicks) → source frames for the transport commands.
-	const markIn = item?.marks.in ? flicksToSourceFrames(item.marks.in.flicks, fps) : null;
-	const markOut = item?.marks.out ? flicksToSourceFrames(item.marks.out.flicks, fps) : null;
+	const seqItem = item?.kind === 'sequence' ? doc.sequences[item.sequenceId] : undefined;
+	const marks = item && item.kind !== 'sequence' ? item.marks : null;
+	const markIn = seqItem ? seqItem.inPoint : marks?.in ? flicksToSourceFrames(marks.in.flicks, fps) : null;
+	const markOut = seqItem
+		? seqItem.outPoint
+		: marks?.out
+			? flicksToSourceFrames(marks.out.flicks, fps)
+			: null;
 	useEffect(() => {
 		sourceMonitorState.setState({ fps, durationFrames: duration, markIn, markOut });
 		transport.setMaxFrame(Math.max(0, duration - 1));
@@ -143,8 +193,9 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 
 	const playing = useTransportPlaying(transport);
 	const vs = asset?.kind === 'video' ? asset.probe.streams.find((st) => st.type === 'video') : undefined;
-	const rateNum = vs?.type === 'video' ? vs.frameRate.num : seqRate.num;
-	const rateDen = vs?.type === 'video' ? vs.frameRate.den : seqRate.den;
+	const ownRate = seqItem?.settings.frameRate ?? null;
+	const rateNum = ownRate ? ownRate.num : vs?.type === 'video' ? vs.frameRate.num : seqRate.num;
+	const rateDen = ownRate ? ownRate.den : vs?.type === 'video' ? vs.frameRate.den : seqRate.den;
 	const format: TimecodeFormat = useMemo(
 		() => ({ rate: { num: rateNum, den: rateDen }, dropFrame: false }),
 		[rateNum, rateDen],
@@ -161,7 +212,7 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 	const mediaItems = useMemo(
 		() =>
 			Object.values(doc.items)
-				.filter((it) => it.kind === 'media')
+				.filter((it) => it.kind === 'media' || it.kind === 'synthetic' || it.kind === 'sequence')
 				.map((it) => ({ value: it.id, label: it.name })),
 		[doc.items],
 	);
@@ -230,7 +281,7 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 				className="relative min-h-0 flex-1 overflow-hidden"
 				data-testid="source-viewport"
 			>
-				{!props ? (
+				{!props && !seqProps ? (
 					<div className="absolute inset-0 flex items-center justify-center px-4 text-center text-pr-small text-pr-muted">
 						{item && !handle
 							? 'Media Offline'
@@ -259,24 +310,45 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 								transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
 							}}
 						>
-							<Player
-								key={src.itemId ?? ''}
-								ref={playerRef}
-								component={AssetComposition}
-								inputProps={props}
-								durationInFrames={duration}
-								compositionWidth={canvas.width}
-								compositionHeight={canvas.height}
-								fps={fps}
-								style={playerStyle}
-								controls={false}
-								clickToPlay={false}
-								doubleClickToFullscreen={false}
-								spaceKeyToPlayOrPause={false}
-								moveToBeginningWhenEnded={false}
-								playbackRate={rate}
-								acknowledgeRemotionLicense
-							/>
+							{seqProps ? (
+								<Player
+									key={src.itemId ?? ''}
+									ref={playerRef}
+									component={SequenceComposition}
+									inputProps={seqProps}
+									durationInFrames={duration}
+									compositionWidth={canvas.width}
+									compositionHeight={canvas.height}
+									fps={fps}
+									style={playerStyle}
+									controls={false}
+									clickToPlay={false}
+									doubleClickToFullscreen={false}
+									spaceKeyToPlayOrPause={false}
+									moveToBeginningWhenEnded={false}
+									playbackRate={rate}
+									acknowledgeRemotionLicense
+								/>
+							) : (
+								<Player
+									key={src.itemId ?? ''}
+									ref={playerRef}
+									component={AssetComposition}
+									inputProps={props!}
+									durationInFrames={duration}
+									compositionWidth={canvas.width}
+									compositionHeight={canvas.height}
+									fps={fps}
+									style={playerStyle}
+									controls={false}
+									clickToPlay={false}
+									doubleClickToFullscreen={false}
+									spaceKeyToPlayOrPause={false}
+									moveToBeginningWhenEnded={false}
+									playbackRate={rate}
+									acknowledgeRemotionLicense
+								/>
+							)}
 						</div>
 					</>
 				)}
@@ -316,7 +388,7 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 					style={{ fontVariantNumeric: 'tabular-nums' }}
 				>
 					{/* No clip loaded: show a zero duration, not the 1-frame placeholder length. */}
-					{durationLabel(format, props ? duration : 0, markIn, markOut)}
+					{durationLabel(format, props || seqProps ? duration : 0, markIn, markOut)}
 				</span>
 			</div>
 			<MiniRuler
@@ -361,7 +433,7 @@ function SourceMonitorBody({ session, instanceId }: { session: EditorSession; in
 					shortcut="Space"
 					testId="src-play"
 					active={playing}
-					disabled={!props}
+					disabled={!props && !seqProps}
 					onClick={() => (playing ? transport.pause() : transport.play(1))}
 				>
 					{playing ? <Square size={14} /> : <Play size={16} />}

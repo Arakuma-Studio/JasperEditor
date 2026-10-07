@@ -168,6 +168,41 @@ export function SequenceProperties(props: {
 					/>
 				</div>
 			</Section>
+			{/* audio-mix: sequence audio (Premiere Sequence Settings ▸ Audio: sample rate; the Mix's channel format) */}
+			<Section id="properties.sequence.audio" title="Audio">
+				<div className={row}>
+					<span className={lab}>Sample Rate</span>
+					<SelectField
+						value={String(seq.settings.audioSampleRate)}
+						options={['44100', '48000', '96000']}
+						labels={['44100 Hz', '48000 Hz', '96000 Hz']}
+						label="Audio sample rate"
+						onChange={(v) => update('Sequence Audio Sample Rate', { audioSampleRate: Number(v) })}
+						className="flex-1"
+						data-testid="seq-audio-rate"
+					/>
+				</div>
+				<div className={row}>
+					<span className={lab}>Mix</span>
+					<SelectField
+						value={String(seq.settings.masterLayout)}
+						options={['stereo', 'mono', '5.1']}
+						labels={['Stereo', 'Mono', '5.1']}
+						label="Mix channel format"
+						onChange={(v) => update('Mix Channel Format', { masterLayout: v })}
+						className="flex-1"
+						data-testid="seq-master-layout"
+					/>
+				</div>
+				<div className={row}>
+					<span className={lab}>Loudness</span>
+					<span className="text-pr-ui text-pr-muted" data-testid="seq-loudness">
+						{seq.master.loudness?.enabled
+							? `Normalized to ${seq.master.loudness.targetLufs} LUFS`
+							: 'Not normalized'}
+					</span>
+				</div>
+			</Section>
 		</div>
 	);
 }

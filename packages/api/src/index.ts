@@ -1,7 +1,9 @@
 // @jasper/api — zod contracts for the engine HTTP API, events, jobs and capabilities (ARCHITECTURE §9).
 export * from './agent.ts';
+export * from './audio.ts';
 export * from './cache.ts';
 export * from './capabilities.ts';
+export * from './captions.ts';
 export * from './common.ts';
 export * from './effect-presets.ts';
 export * from './events.ts';
@@ -10,6 +12,7 @@ export * from './fonts.ts';
 export * from './jobs.ts';
 export * from './layer-bake.ts';
 export * from './m2-capabilities.ts';
+export * from './masks.ts';
 export * from './media.ts';
 export * from './mg.ts';
 export * from './mg-bundles.ts';
@@ -17,4 +20,5 @@ export * from './processing.ts';
 export * from './projects.ts';
 export * from './routes.ts';
 export * from './sync.ts';
+export * from './speech.ts';
 export * from './tracking.ts';

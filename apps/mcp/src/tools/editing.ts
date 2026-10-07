@@ -3,6 +3,7 @@ import {
 	COMMAND_CATALOG,
 	EditModeSchema,
 	IdListSchema,
+	OPEN_OBJECT,
 	resolveFrameInput,
 	TimeInputSchema,
 	TrackRefSchema,
@@ -11,6 +12,7 @@ import {
 import { z } from 'zod';
 import {
 	DESTRUCTIVE,
+	DESTRUCTIVE_IDEMPOTENT,
 	defineTool,
 	EDIT,
 	loadDoc,
@@ -168,7 +170,13 @@ export function registerEditingTools(ctx: ToolContext): void {
 					.max(80)
 					.describe('Short description shown in the editor History as "Agent: <label>"'),
 				commands: z
-					.array(z.looseObject({ type: z.enum(COMMAND_TYPES).describe('Command type (describe_commands)') }))
+					.array(
+						// Each command's own keys are checked against its schema by the engine (unknown keys anywhere
+						// in a command are E_SCHEMA errors naming the accepted ones).
+						z
+							.looseObject({ type: z.enum(COMMAND_TYPES).describe('Command type (describe_commands)') })
+							.meta(OPEN_OBJECT),
+					)
 					.min(1)
 					.max(5000)
 					.describe('Commands in order; each is {"type": "...", ...arguments}'),
@@ -432,7 +440,7 @@ export function registerEditingTools(ctx: ToolContext): void {
 				),
 				ripple: z.boolean().optional().describe('Close the gap (ripple delete)'),
 			},
-			annotations: DESTRUCTIVE,
+			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
 		async ({ projectId, clipIds, ripple }, extra) =>
 			applyHelper(

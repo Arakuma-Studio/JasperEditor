@@ -70,6 +70,16 @@ export const M2FeaturesSchema = z.object({
 		})
 		.optional(),
 	/** wp-m2-layer-bake (S11:LBK-030): native export of DOM layers (text, shapes, anime templates). */
+	/** wp speech: local speech-to-text (Whisper on ONNX Runtime). */
+	speech: z
+		.object({
+			status: z.enum(['ready', 'unavailable']),
+			reason: z.string().optional(),
+			runtime: z.literal('onnxruntime'),
+			modelsInstalled: z.number().int().min(0),
+			defaultModel: z.string(),
+		})
+		.optional(),
 	layerBake: z
 		.object({
 			state: z.enum(['ready', 'unavailable']),

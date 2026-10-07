@@ -36,4 +36,18 @@ export default async function exportsRoutes(app: FastifyInstance): Promise<void>
 			});
 		}),
 	);
+
+	// wp captions: sidecar caption files of a finished export.
+	app.get<{ Params: { jobId: string; name: string } }>(
+		'/renders/:jobId/captions/:name',
+		guarded<{ Params: { jobId: string; name: string } }>(async (req, reply) => {
+			const file = await exports.sidecarFile(req.params.jobId, req.params.name);
+			if (!file) return fail(reply, 404, 'NOT_FOUND', 'No such caption file for this job');
+			const q = req.query as { download?: string };
+			return serveFile(req, reply, file, {
+				cache: 'revalidate',
+				...(q.download ? { downloadName: req.params.name.replace(/^output/, req.params.jobId) } : {}),
+			});
+		}),
+	);
 }

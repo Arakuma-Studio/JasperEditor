@@ -331,6 +331,19 @@ export const TranscriptSchema = z.looseObject({
 	origin: z.enum(['whisper-local', 'cloud-asr', 'subtitle-file', 'manual']),
 	words: z.array(TranscriptWordSchema),
 	speakers: z.record(z.string(), z.looseObject({ name: z.string() })),
+	/** wp speech (optional): the speech model that produced the words, e.g. `whisper-base`. */
+	model: z.string().optional(),
+	/** wp speech (optional): `translate` = English text of speech in `sourceLanguage`. */
+	task: z.enum(['transcribe', 'translate']).optional(),
+	/** wp speech (optional): the spoken language when `task` is `translate` (`language` is then `en`). */
+	sourceLanguage: z.string().optional(),
+	/** wp speech (optional): when the words were recognised (ISO 8601). */
+	createdAt: z.string().optional(),
+	/**
+	 * wp speech (optional): the media time ranges (flicks, sorted, disjoint) that were transcribed, when not the
+	 * whole media — a transcript made from a sequence's mix covers only the parts the sequence plays.
+	 */
+	coverage: z.array(z.tuple([nonNegInt(), nonNegInt()])).optional(),
 });
 export type Transcript = DeepStrip<z.infer<typeof TranscriptSchema>>;
 

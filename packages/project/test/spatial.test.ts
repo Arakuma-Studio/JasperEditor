@@ -30,6 +30,8 @@ import { Harness } from './helpers.ts';
 
 const F = 23_520_000; // flicks per frame at 30 fps
 const LIN = { influence: 1 / 3, slope: 1 };
+/** ⅓ of a 300√2 chord: the proportional Auto Bezier handle of the (0,0) → (300,300) → (600,0) path. */
+const H = (300 * Math.SQRT2) / 3;
 const EASY = { influence: 1 / 3, slope: 0 };
 
 function key(
@@ -209,7 +211,8 @@ describe('spatial commands (S03:KF-021, OVL-020)', () => {
 			['linear', 'auto-bezier'],
 		]);
 		// Stored auto tangents are refreshed (a cache; evaluation derives them).
-		expect(keys[1]!.spatial).toMatchObject({ inTangent: [-100, 0], outTangent: [100, 0] });
+		// keyframes-blend: After Effects' rule — along next − prev, each handle ⅓ of its chord (300√2 / 3).
+		expect(keys[1]!.spatial).toMatchObject({ inTangent: [-H, 0], outTangent: [H, 0], auto: 'proportional' });
 		h.ok([
 			{ type: 'keyframe.add', target: ['clip', id, 'transform', 'anchor'], at: { sequenceFrame: 0 } },
 			{ type: 'keyframe.add', target: ['clip', id, 'transform', 'scale'], at: { sequenceFrame: 0 } },
@@ -253,16 +256,16 @@ describe('spatial commands (S03:KF-021, OVL-020)', () => {
 		h.ok([{ type: 'keyframe.setSpatialInterpolation', keyframeIds: [mid], mode: 'bezier' }]);
 		expect(posKeys(h, id)[1]!.spatial).toEqual({
 			mode: 'bezier',
-			inTangent: [-100, 0],
-			outTangent: [100, 0],
+			inTangent: [-H, 0],
+			outTangent: [H, 0],
 		});
 		h.ok([{ type: 'keyframe.setTangents', keyframeId: mid, inTangent: [0, -50], breakContinuity: true }]);
-		expect(posKeys(h, id)[1]!.spatial).toEqual({ mode: 'bezier', inTangent: [0, -50], outTangent: [100, 0] });
+		expect(posKeys(h, id)[1]!.spatial).toEqual({ mode: 'bezier', inTangent: [0, -50], outTangent: [H, 0] });
 		h.ok([{ type: 'keyframe.setSpatialInterpolation', keyframeIds: [mid], mode: 'continuous-bezier' }]);
 		// The in tangent turns opposite the out tangent and keeps its length (50).
 		const s = posKeys(h, id)[1]!.spatial!;
 		expect(s.mode).toBe('continuous-bezier');
-		expect(s.outTangent).toEqual([100, 0]);
+		expect(s.outTangent).toEqual([H, 0]);
 		expect(s.inTangent[0]).toBeCloseTo(-50, 9);
 		expect(s.inTangent[1]).toBeCloseTo(0, 9);
 		expect(checkInvariants(h.doc)).toEqual([]);
@@ -276,7 +279,7 @@ describe('spatial commands (S03:KF-021, OVL-020)', () => {
 		expect(s.mode).toBe('continuous-bezier');
 		expect(s.outTangent).toEqual([0, 200]);
 		expect(s.inTangent[0]).toBeCloseTo(0, 9);
-		expect(s.inTangent[1]).toBeCloseTo(-100, 9); // length 100 kept
+		expect(s.inTangent[1]).toBeCloseTo(-H, 9); // length kept
 		h.ok([{ type: 'keyframe.setTangents', keyframeId: mid, inTangent: [-30, 0], breakContinuity: true }]);
 		s = posKeys(h, id)[1]!.spatial!;
 		expect(s).toEqual({ mode: 'bezier', inTangent: [-30, 0], outTangent: [0, 200] });
@@ -317,10 +320,12 @@ describe('spatial commands (S03:KF-021, OVL-020)', () => {
 		expect(k.map((x) => x.spatial?.mode)).toEqual(['linear', 'bezier']);
 		expect(k[1]!.spatial).toMatchObject({ inTangent: [0, 50], outTangent: [0, -50] });
 		h.ok([{ type: 'keyframe.update', keyframeId: k[0]!.id, spatial: { mode: 'auto-bezier' } }]);
+		// keyframes-blend: After Effects' rule — the first key has no handles.
 		expect(posKeys(h, id)[0]!.spatial).toEqual({
 			mode: 'auto-bezier',
-			inTangent: [-100 / 6, 0],
-			outTangent: [100 / 6, 0],
+			inTangent: [0, 0],
+			outTangent: [0, 0],
+			auto: 'proportional',
 		});
 	});
 	// The solver fits segments along chords, so curved paths are reduced conservatively (here: not at all, the

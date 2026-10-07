@@ -163,6 +163,14 @@ export function JobsPanel(_props: PanelProps) {
 												onRetry={() => retry(j)}
 												onDismiss={() => dismiss(j)}
 												downloadUrl={isDownloadable(j) ? engine.client.renderOutputUrl(j.id) : null}
+												sidecars={
+													isDownloadable(j)
+														? sidecarsOf(j).map((sc) => ({
+																label: sc.name.replace(/^output\./, ''),
+																url: `${engine.client.renderCaptionFileUrl(j.id, sc.name)}?download=1`,
+															}))
+														: []
+												}
 											/>
 										))}
 							</section>
@@ -183,6 +191,15 @@ export function JobsPanel(_props: PanelProps) {
 	);
 }
 
+/** wp captions: sidecar caption files listed in an export job's result. */
+function sidecarsOf(j: AnyJob): { name: string }[] {
+	const r = (j as { result?: unknown }).result as { captions?: { sidecars?: unknown } } | undefined;
+	const list = r?.captions?.sidecars;
+	return Array.isArray(list)
+		? list.filter((x): x is { name: string } => !!x && typeof (x as { name?: unknown }).name === 'string')
+		: [];
+}
+
 function JobRow(props: {
 	job: AnyJob;
 	connected: boolean;
@@ -193,6 +210,8 @@ function JobRow(props: {
 	onRetry(): void;
 	onDismiss(): void;
 	downloadUrl: string | null;
+	/** wp captions: sidecar caption files of an export. */
+	sidecars?: { label: string; url: string }[];
 }) {
 	const { job } = props;
 	const status = statusOf(job, props.connected);
@@ -255,6 +274,17 @@ function JobRow(props: {
 							Download
 						</a>
 					) : null}
+					{(props.sidecars ?? []).map((sc) => (
+						<a
+							key={sc.url}
+							href={sc.url}
+							download
+							className="px-1 text-pr-small text-pr-accent underline"
+							data-testid="job-download-captions"
+						>
+							{sc.label}
+						</a>
+					))}
 					{terminal ? <IconButton icon="app.remove" label="Dismiss" onClick={props.onDismiss} /> : null}
 				</span>
 			</div>

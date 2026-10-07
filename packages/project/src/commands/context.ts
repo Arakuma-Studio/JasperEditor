@@ -200,7 +200,15 @@ export function substituteRefs<T>(
 			return selection.primaryClip;
 		}
 		const id = refs.get(s);
-		if (!id) throw new CommandError('E_NOT_FOUND', `Unknown temp ref ${s}`);
+		if (!id) {
+			const known = [...refs.keys()];
+			throw new CommandError(
+				'E_NOT_FOUND',
+				`Unknown temp ref ${s}: ${
+					known.length ? `the refs declared so far are ${known.join(', ')}` : 'no ref has been declared yet'
+				}. Declare it with \`ref: "${s}"\` on an earlier command of the same transaction (refs do not carry over between transactions; use the created id instead).`,
+			);
+		}
 		return id;
 	};
 	const walk = (v: unknown, idContext: boolean): unknown => {
