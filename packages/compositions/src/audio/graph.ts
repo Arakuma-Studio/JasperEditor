@@ -526,6 +526,7 @@ export class MixGraph {
 			processorOptions: { channels, loudness },
 		});
 		node.port.onmessage = (e: MessageEvent) => {
+			// anime-allow: wall-clock stamp of a live meter reading (peak-hold decay), never animation time
 			const r = { ...(e.data as Omit<MeterReading, 'at'>), at: performance.now() };
 			this.lastReadings.set(id, r);
 			for (const cb of this.meterListeners.get(id) ?? []) cb(r);
