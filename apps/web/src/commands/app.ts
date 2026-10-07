@@ -57,6 +57,10 @@ const PANEL_LABELS: Record<PanelKind, string> = {
 	jobs: 'Jobs',
 	lumetri: 'Lumetri Color',
 	scopes: 'Lumetri Scopes',
+	audioTrackMixer: 'Audio Track Mixer',
+	audioClipMixer: 'Audio Clip Mixer',
+	text: 'Text',
+	essentialSound: 'Essential Sound',
 };
 
 // ------------------------------------------------------------------ save

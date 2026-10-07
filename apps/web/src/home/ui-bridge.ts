@@ -2,6 +2,7 @@
 // host. Inside the editor shell the context shares the shell's PanelServices, so shell-driven commands
 // (`panel.open.jobs`, `panel.open.motionTemplates`, …) are enabled from these surfaces too.
 import { useSessionOrNull } from '@jasper/session/react';
+import { openDialog as openUiDialog } from '@jasper/ui';
 import { useMemo } from 'react';
 import { createCommandContext } from '../commands/context.ts';
 import { runCommand } from '../commands/registry.ts';
@@ -23,6 +24,8 @@ export function useLocalCommandCtx(focus?: FocusInfo): CommandCtx {
 				focus,
 				capabilities: flags,
 				toast: toastFromRequest,
+				// Hosted dialogs (Merge Clips…, Create Multi-Camera…, Color Picker… from the Project panel menu).
+				openDialog: (kind, props) => void openUiDialog(kind, props ?? {}),
 				...(services ? { services } : {}),
 			}),
 		[engine.client, session, flags, focus, services],

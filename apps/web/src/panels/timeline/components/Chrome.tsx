@@ -194,14 +194,17 @@ export function ZoomBar(props: { viewport: Viewport; extent: number; controller:
 				className="absolute top-[3px] h-[8px] rounded-pr-pill bg-pr-hover"
 				style={{ left: x0, width: Math.max(12, x1 - x0) }}
 				onPointerDown={(e) => onDown(e, 'pan')}
+				data-testid="timeline-zoombar-thumb"
 			>
 				<div
 					className="absolute top-[-1px] left-[-1px] size-[10px] cursor-ew-resize rounded-full border border-pr-border-strong bg-pr-panel"
 					onPointerDown={(e) => onDown(e, 'left')}
+					data-testid="timeline-zoombar-start"
 				/>
 				<div
 					className="absolute top-[-1px] right-[-1px] size-[10px] cursor-ew-resize rounded-full border border-pr-border-strong bg-pr-panel"
 					onPointerDown={(e) => onDown(e, 'right')}
+					data-testid="timeline-zoombar-end"
 				/>
 			</div>
 		</div>

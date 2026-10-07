@@ -25,6 +25,8 @@ export function defaultToggles(): SessionToggles {
 		previewQuality: 'full',
 		activeTool: 'selection',
 		rippleMarkers: true,
+		insertSequencesAsNests: true,
+		showThroughEdits: true,
 	};
 }
 

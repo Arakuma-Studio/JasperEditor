@@ -50,6 +50,22 @@ const IMPORT_ACCEPT = [
 	'.svg',
 	// M3 (S07:PRC-019): a source-range sidecar picked together with a rendered video.
 	'.json',
+	// wp captions: caption files import onto caption tracks.
+	'.srt',
+	'.vtt',
+	'.scc',
+	'.mcc',
+	'.stl',
+	'.ttml',
+	'.dfxp',
+	'.xml',
+	// wp interchange: timeline documents.
+	'.fcpxml',
+	'.otio',
+	'.edl',
+	'.aaf',
+	'.omf',
+	'.ale',
 ].join(',');
 
 /** Opens the browser file picker (web) and resolves with the chosen files (empty when cancelled). */

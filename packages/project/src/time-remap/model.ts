@@ -26,8 +26,6 @@ export const MIN_REMAP_SPEED = 0.0001;
 export const DEFAULT_RAMP_EASE = 1;
 /** Premiere's palindrome reverse plays backward and forward "at full speed". */
 export const REVERSE_SEGMENT_SPEED = 1;
-/** Default length of Insert Frame Hold Segment (Premiere: 2 seconds, not configurable). */
-export const FRAME_HOLD_SEGMENT_SECONDS = 2;
 
 /** Fields of a clip the time mapping reads. `timeRemap` is only honoured on video clips. */
 export type TimedClip = {
@@ -38,13 +36,18 @@ export type TimedClip = {
 	kind?: string;
 	timeRemap?: TimeRemap | null;
 	timeInterpolation?: TimeInterpolation | null;
+	/** edit-structure's Frame Hold: the clip shows the content time `flicks` throughout (before any remap). */
+	frameHold?: { flicks: number } | null;
 };
+
+/** Clip kinds whose picture can be time-remapped: media video and nested sequences (multi-camera clips too). */
+export const REMAPPABLE_KINDS: ReadonlySet<string> = new Set(['video', 'nest-video']);
 
 /** The remap that applies to a clip, or null (absent, disabled, or not a video clip). */
 export function activeRemap(clip: Pick<TimedClip, 'timeRemap' | 'kind'>): TimeRemap | null {
 	const r = clip.timeRemap;
 	if (!r?.enabled) return null;
-	if (clip.kind !== undefined && clip.kind !== 'video') return null;
+	if (clip.kind !== undefined && !REMAPPABLE_KINDS.has(clip.kind)) return null;
 	return r;
 }
 
@@ -182,7 +185,7 @@ export function remapEvaluator(
  * clip's time remap when it has one.
  */
 export function clipMediaTimeAt(clip: TimedClip, frame: number, rate: Rational): number {
-	const c = contentTimeAt(clip, frame, rate);
+	const c = clip.frameHold ? clip.frameHold.flicks : contentTimeAt(clip, frame, rate);
 	const remap = activeRemap(clip);
 	return remap ? remapSourceAt(remap, c) : c;
 }
@@ -190,6 +193,11 @@ export function clipMediaTimeAt(clip: TimedClip, frame: number, rate: Rational):
 /** A per-frame media-time function for a clip (the remap evaluator is built once). */
 export function clipMediaTimeFn(clip: TimedClip, rate: Rational): (frame: number) => number {
 	const remap = activeRemap(clip);
+	const hold = clip.frameHold;
+	if (hold) {
+		const m = remap ? remapSourceAt(remap, hold.flicks) : hold.flicks;
+		return () => m;
+	}
 	if (!remap) return (f) => contentTimeAt(clip, f, rate);
 	const ev = remapEvaluator(remap);
 	return (f) => ev(contentTimeAt(clip, f, rate)).m;
@@ -200,6 +208,7 @@ export function clipMediaTimeFn(clip: TimedClip, rate: Rational): (frame: number
  * Time Remapping ▸ Speed value at that frame.
  */
 export function clipSpeedAt(clip: TimedClip, frame: number, rate: Rational): number {
+	if (clip.frameHold) return 0;
 	const remap = activeRemap(clip);
 	const sign = clip.speed.reverse ? -1 : 1;
 	if (!remap) return sign * clip.speed.rate;
@@ -234,6 +243,10 @@ export function clipMediaExtent(
 	rate: Rational,
 ): { min: number; max: number } {
 	const remap = activeRemap(clip);
+	if (clip.frameHold) {
+		const m = remap ? remapSourceAt(remap, clip.frameHold.flicks) : clip.frameHold.flicks;
+		return { min: m, max: m };
+	}
 	const ca = contentTimeAt(clip, f0, rate);
 	const cb = contentTimeAt(clip, f1, rate);
 	const lo = Math.min(ca, cb);

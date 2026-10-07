@@ -4,10 +4,11 @@
 // while none is free, a slot is reused once the sink accepted its frame.
 import type { ChildProcess } from 'node:child_process';
 import type { Writable } from 'node:stream';
+import { rasterizeMasks } from '@jasper/project';
 import type { Ffmpeg } from '../../tools/ffmpeg.ts';
 import { terminateTree } from '../../tools/process.ts';
 import { decoderArgs } from '../warp/render.ts';
-import type { StreamLayerPlan } from './plan.ts';
+import type { StreamFrame, StreamLayerPlan } from './plan.ts';
 import { LayerPool, type LayerSlot } from './pool.ts';
 
 export class StreamLayerError extends Error {
@@ -36,10 +37,13 @@ export async function streamLayer(
 	const total = plan.frames.length;
 	const frameBytes = plan.srcW * plan.srcH * 4;
 	const workers = Math.max(1, Math.min(opts.workers, total));
+	const masked = plan.frames.some((f) => !!f.mask);
 	const pool = new LayerPool(
 		{ sw: plan.srcW, sh: plan.srcH, dw: plan.outW, dh: plan.outH },
-		{ workers, slots: Math.min(total, workers + 3) },
+		{ workers, slots: Math.min(total, workers + 3), masked },
 	);
+	// wp masks: the Opacity-mask coverage of a frame (cached by geometry: static masks rasterise once).
+	const coverage = maskCoverageCache(plan.srcW);
 	let dec: ChildProcess | null = null;
 	try {
 		await new Promise<void>((resolve, reject) => {
@@ -80,6 +84,8 @@ export async function streamLayer(
 			const dispatch = (slot: LayerSlot, pad: boolean) => {
 				const i = dispatched++;
 				const spec = plan.frames[i]!;
+				const withMask = !pad && !!spec.inv && !!spec.mask;
+				if (withMask) slot.cov.set(coverage(spec));
 				pool
 					.run({
 						slot,
@@ -89,6 +95,7 @@ export async function streamLayer(
 						cw: spec.cw,
 						ch: spec.ch,
 						clip: spec.clip,
+						masked: withMask,
 					})
 					.then(
 						() => {
@@ -196,4 +203,23 @@ export async function streamLayer(
 		}
 		await pool.close();
 	}
+}
+
+/**
+ * wp masks: coverage of a frame's Opacity masks over its picture (`cw×ch`, rows of `stride` floats), the CPU
+ * rasteriser of the preview's GL definition (`rasterizeMasks`). Small LRU by geometry key.
+ */
+export function maskCoverageCache(stride: number): (f: StreamFrame) => Float32Array {
+	const cache = new Map<string, Float32Array>();
+	return (f) => {
+		const m = f.mask!;
+		const hit = cache.get(m.key);
+		if (hit) return hit;
+		const cov = rasterizeMasks(m.masks, f.cw, f.ch, (q) => [q[0] * f.cw, q[1] * f.ch], m.pxScale);
+		const out = new Float32Array(stride * f.ch).fill(1);
+		if (cov) for (let y = 0; y < f.ch; y++) out.set(cov.subarray(y * f.cw, (y + 1) * f.cw), y * stride);
+		cache.set(m.key, out);
+		while (cache.size > 4) cache.delete(cache.keys().next().value!);
+		return out;
+	};
 }

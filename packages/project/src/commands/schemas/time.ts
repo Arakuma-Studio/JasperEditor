@@ -1,4 +1,4 @@
-// Time Remapping, Time Interpolation, frame holds and Scene Edit Detection results (workstream `time`,
+// Time Remapping, Time Interpolation and Scene Edit Detection results (workstream `time`,
 // docs/wp-notes/time.md). Handlers: handlers/time.ts. Speeds are Premiere percentages (100 = normal speed).
 import { z } from 'zod';
 import { TimeInterpolationSchema } from '../../schema/sequence.ts';
@@ -79,20 +79,6 @@ export const ClipSetTimeInterpolationCmd = cmd('clip.setTimeInterpolation', {
 	clipIds: IdListSchema,
 	mode: TimeInterpolationSchema,
 });
-/** Add Frame Hold: splits the video clip at `at`; the part after it holds the frame at `at`. */
-export const ClipAddFrameHoldCmd = cmd('clip.addFrameHold', {
-	clipIds: IdListSchema,
-	at: TimeInputSchema,
-});
-/**
- * Insert Frame Hold Segment: inserts a hold of the frame at `at` (default 2 seconds, Premiere) and moves everything
- * after it — on the clip's track, its linked clips' tracks and sync-locked tracks — later.
- */
-export const ClipInsertFrameHoldSegmentCmd = cmd('clip.insertFrameHoldSegment', {
-	clipIds: IdListSchema,
-	at: TimeInputSchema,
-	duration: TimeInputSchema.optional(),
-});
 /**
  * Applies the result of a Scene Edit Detection job to one clip in one step: `cuts` are the media times (flicks) where
  * a new shot starts. `applyCuts` adds an edit (linked clips too) at the first frame of each shot the clip shows;
@@ -118,7 +104,5 @@ export const TIME_COMMANDS = [
 	TimeRemapAddFreezeCmd,
 	TimeRemapAddReverseCmd,
 	ClipSetTimeInterpolationCmd,
-	ClipAddFrameHoldCmd,
-	ClipInsertFrameHoldSegmentCmd,
 	ClipApplySceneEditsCmd,
 ] as const;

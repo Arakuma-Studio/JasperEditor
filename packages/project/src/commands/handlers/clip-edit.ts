@@ -58,6 +58,8 @@ function trackOf(seq: DSeq, clip: DClip, h: HandlerContext): DTrack {
 function contentRoom(doc: DDoc, seq: DSeq, c: DClip): { head: number; tail: number } {
 	const step = flicksPerFrame(seq.settings.frameRate) * c.speed.rate;
 	const dur = contentDurationFlicks(doc, c);
+	// edit-structure: a held clip shows one frame, so its edges are free.
+	if (c.frameHold) return { head: Number.POSITIVE_INFINITY, tail: Number.POSITIVE_INFINITY };
 	// Time-remapped clips: the handles are the frames whose remapped media time is inside the media.
 	if (isRemapped(c as Clip)) return remapRoom(c as Clip, seq.settings.frameRate as Rational, dur);
 	const bounded = isBoundedContent(c as Clip) && dur !== null;
@@ -332,7 +334,7 @@ function setSpeedHandler(doc: DDoc, cmd: CommandOf<'clip.setSpeed'>, h: HandlerC
 			rate = cmd.rate;
 			duration = wantDuration;
 			const dur = contentDurationFlicks(doc, c);
-			if (isBoundedContent(c as Clip) && dur !== null) {
+			if (isBoundedContent(c as Clip) && dur !== null && !c.frameHold) {
 				const need = c.sourceIn + contentSpanFlicks(duration, r, rate);
 				if (need > dur + F * rate + 1)
 					h.fail('E_OUT_OF_MEDIA', `Clip ${c.id} would run past the end of its media`, { blocking: [c.id] });

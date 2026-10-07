@@ -471,9 +471,17 @@ export function videoEncodeArgs(choice: Pick<EncoderChoice, 'encoder'>, p: Encod
 }
 
 /** Audio encoder arguments for a container (`aac` in MP4, `libopus` in WebM). */
-export function audioEncodeArgs(audioEncoder: string, kbps: number): string[] {
-	if (audioEncoder === 'libopus') return ['-c:a', 'libopus', '-b:a', `${Math.min(510, kbps)}k`];
-	if (audioEncoder === 'pcm_s16le') return ['-c:a', 'pcm_s16le'];
+export function audioEncodeArgs(audioEncoder: string, kbps: number, channels = 2): string[] {
+	// audio-mix: Opus needs the Vorbis channel mapping (family 1) above two channels (discrete 5.1).
+	if (audioEncoder === 'libopus')
+		return [
+			'-c:a',
+			'libopus',
+			'-b:a',
+			`${Math.min(510 * Math.max(1, channels / 2), kbps)}k`,
+			...(channels > 2 ? ['-mapping_family', '1'] : []),
+		];
+	if (audioEncoder === 'pcm_s16le' || audioEncoder === 'pcm_s24le') return ['-c:a', audioEncoder];
 	return ['-c:a', 'aac', '-b:a', `${kbps}k`];
 }
 

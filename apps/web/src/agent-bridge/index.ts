@@ -9,6 +9,7 @@ import { AgentBridge, type AgentBridgeState, type JasperAgentApi } from './bridg
 
 export * from './bridge.ts';
 export * from './relay-client.ts';
+export * from './ui-automation.ts';
 
 declare global {
 	interface Window {

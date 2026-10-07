@@ -1,8 +1,8 @@
 // Time Remapping / Time Interpolation / frame hold / Scene Edit Detection commands (workstream `time`).
 import { describe, expect, it } from 'vitest';
 import {
-	checkInvariants,
 	type Clip,
+	checkInvariants,
 	clipMediaTimeAt,
 	clipSpeedAt,
 	FLICKS_PER_SECOND,
@@ -109,8 +109,12 @@ describe('speed segments', () => {
 	it('a ramp of keyframes: 100 % → 25 % → 400 % with a transition', () => {
 		const h = new Harness();
 		const { v } = place(h, 0, { seconds: 20, outSec: 6 });
-		const k1 = h.ok([{ type: 'timeRemap.addKeyframe', clipId: v, at: 30 }]).results[0] as { keyframeId: string };
-		const k2 = h.ok([{ type: 'timeRemap.addKeyframe', clipId: v, at: 60 }]).results[0] as { keyframeId: string };
+		const k1 = h.ok([{ type: 'timeRemap.addKeyframe', clipId: v, at: 30 }]).results[0] as {
+			keyframeId: string;
+		};
+		const k2 = h.ok([{ type: 'timeRemap.addKeyframe', clipId: v, at: 60 }]).results[0] as {
+			keyframeId: string;
+		};
 		h.ok([{ type: 'timeRemap.setSpeed', clipId: v, at: 40, speedPercent: 25 }]);
 		const c = vid(h, v);
 		// 30 frames of media at 25 % take 120 frames.
@@ -240,7 +244,7 @@ describe('edits of remapped clips', () => {
 	});
 });
 
-describe('time interpolation and frame holds', () => {
+describe('time interpolation', () => {
 	it('sets the interpolation mode on video clips only', () => {
 		const h = new Harness();
 		const { v, a } = place(h, 0);
@@ -250,38 +254,6 @@ describe('time interpolation and frame holds', () => {
 		h.ok([{ type: 'clip.setTimeInterpolation', clipIds: [v], mode: 'frame-sampling' }]);
 		expect(vid(h, v).timeInterpolation).toBeUndefined();
 	});
-
-	it('Add Frame Hold splits and freezes the rest', () => {
-		const h = new Harness();
-		const { v } = place(h, 0, { outSec: 2 });
-		const r = h.ok([{ type: 'clip.addFrameHold', clipIds: [v], at: 25 }]);
-		const hold = (r.results[0] as { clipIds: string[] }).clipIds[0]!;
-		expect(hold).not.toBe(v);
-		const c = vid(h, hold);
-		expect([c.start, c.duration]).toEqual([25, 35]);
-		for (const f of [25, 40, 59]) expect(clipMediaTimeAt(c, f, R)).toBeCloseTo(25 * F, 3);
-		clean(h);
-	});
-
-	it('Insert Frame Hold Segment inserts 2 s and keeps the audio in sync after it', () => {
-		const h = new Harness();
-		const { v, a } = place(h, 0, { outSec: 2 });
-		const r = h.ok([{ type: 'clip.insertFrameHoldSegment', clipIds: [v], at: 20 }]);
-		const hold = (r.results[0] as { clipIds: string[] }).clipIds[0]!;
-		const c = vid(h, hold);
-		expect([c.start, c.duration]).toEqual([20, 100]);
-		for (const f of [20, 50, 79]) expect(clipMediaTimeAt(c, f, R)).toBeCloseTo(20 * F, 3);
-		expect(clipMediaTimeAt(c, 80, R)).toBeCloseTo(20 * F, 3);
-		expect(clipMediaTimeAt(c, 81, R)).toBeCloseTo(21 * F, 3);
-		// The audio after the hold moved by 60 frames too.
-		const audios = h.clips('A1') as Clip[];
-		expect(audios.map((x) => [x.start, x.duration])).toEqual([
-			[0, 20],
-			[80, 40],
-		]);
-		void a;
-		clean(h);
-	});
 });
 
 describe('clip.applySceneEdits', () => {
@@ -290,7 +262,14 @@ describe('clip.applySceneEdits', () => {
 		const { v } = place(h, 10, { seconds: 10, inSec: 1, outSec: 5 });
 		const cuts = [2, 3.5, 7].map((s) => Math.round(s * FLICKS_PER_SECOND));
 		const r = h.ok([
-			{ type: 'clip.applySceneEdits', clipId: v, cuts, applyCuts: true, createSubclips: true, createMarkers: true },
+			{
+				type: 'clip.applySceneEdits',
+				clipId: v,
+				cuts,
+				applyCuts: true,
+				createSubclips: true,
+				createMarkers: true,
+			},
 		]);
 		const res = r.results[0] as { cuts: number[]; subclips: string[]; markers: number; binId: string };
 		// Media 2 s and 3.5 s fall inside the clip (1 s … 5 s), at frames 10 + 30 and 10 + 75.

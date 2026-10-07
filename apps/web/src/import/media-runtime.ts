@@ -61,7 +61,8 @@ export function createMediaRuntimeSync(
 	/** mediaKey → media ids (several assets may share a key after "import again" in other projects). */
 	let byKey = new Map<string, string[]>();
 	let byFingerprint = new Map<string, string[]>();
-	const known = new Set<string>();
+	/** media id → the engine key it was resolved with (a relink to another file resolves again). */
+	const known = new Map<string, string | null>();
 	/** mediaKey → last reported status of each proxy tier. */
 	const proxyTiers = new Map<string, ProxyTiers>();
 	let disposed = false;
@@ -152,10 +153,13 @@ export function createMediaRuntimeSync(
 	const syncNew = () => {
 		const media = reindex();
 		for (const m of Object.values(media) as MediaAsset[]) {
-			if (known.has(m.id)) continue;
-			known.add(m.id);
 			const key = mediaKeyOf(m);
+			if (known.has(m.id) && known.get(m.id) === key) continue;
+			known.set(m.id, key);
 			if (key) resolve(key);
+			// wp interchange: an imported placeholder has no file yet (Link Media links it).
+			else if (m.fingerprint.startsWith('pending:interchange:'))
+				session.setMediaRuntime(m.id, { availability: 'offline' });
 			else session.setMediaRuntime(m.id, { availability: 'needs-engine' });
 		}
 	};

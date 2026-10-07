@@ -3,6 +3,7 @@
 //   { "mediaByName": "interview_A.mov" }          → the media id (E_AMBIGUOUS when not unique)
 //   { "clipAt": { "track": "V1", "at": "00:00:01:00" } } → the clip covering that frame on that track
 //   { "markerByName": "Intro" }                     → the sequence marker id
+//   { "itemByName": "Cam A.mov" }                   → the project item id (wp-multicam: Merge Clips, multicam)
 // Used as an id value (`"mediaId": {"mediaByName": …}`) the object is replaced by the id. Inside another
 // object (`"source": {"mediaByName": …}`) the key is rewritten to `mediaId` / `clipId` / `markerId`.
 // Track labels ("V2"), temp refs ("$title") and "$selection" are resolved later by applyTransaction.
@@ -24,7 +25,12 @@ export class AddressError extends Error {
 	}
 }
 
-const ADDRESS_KEYS = { mediaByName: 'mediaId', clipAt: 'clipId', markerByName: 'markerId' } as const;
+const ADDRESS_KEYS = {
+	mediaByName: 'mediaId',
+	clipAt: 'clipId',
+	markerByName: 'markerId',
+	itemByName: 'itemId',
+} as const;
 type AddressKey = keyof typeof ADDRESS_KEYS;
 
 /** Sequence time input (frames, {frames}, {seconds}, timecode) → frame, like the command handlers. */
@@ -107,6 +113,15 @@ function markerIdByName(doc: ProjectDocument, name: unknown, sequenceId?: string
 	return hits[0]!;
 }
 
+/** wp-multicam: project item (clip, sequence, bin) id by name when unique. */
+function itemIdByName(doc: ProjectDocument, name: unknown): string {
+	if (typeof name !== 'string') throw new AddressError('E_INVALID_PARAM', 'itemByName must be a string');
+	const hits = Object.values(doc.items).filter((it) => it.name === name);
+	if (hits.length === 0) throw new AddressError('E_NOT_FOUND', `No project item named "${name}"`);
+	if (hits.length > 1) throw new AddressError('E_AMBIGUOUS', `"${name}" names ${hits.length} project items`);
+	return hits[0]!.id;
+}
+
 function addressKeyOf(o: Record<string, unknown>): AddressKey | null {
 	for (const k of Object.keys(ADDRESS_KEYS) as AddressKey[]) if (k in o) return k;
 	return null;
@@ -122,6 +137,8 @@ function resolveAddress(doc: ProjectDocument, key: AddressKey, value: unknown, s
 			return clipIdAt(doc, value, sequenceId);
 		case 'markerByName':
 			return markerIdByName(doc, value, sequenceId);
+		case 'itemByName':
+			return itemIdByName(doc, value);
 	}
 }
 

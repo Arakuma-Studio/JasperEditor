@@ -1,22 +1,40 @@
 import type { z } from 'zod';
+import { AUDIO_COMMANDS } from './audio.ts';
+import { CAPTION_COMMANDS } from './captions.ts';
 import { CLIP_COMMANDS } from './clip.ts';
 import { CLIPBOARD_COMMANDS } from './clipboard.ts';
+import { ESSENTIAL_COMMANDS } from './essential.ts';
+import { EXPRESSION_COMMANDS } from './expression.ts';
+import { INTERCHANGE_COMMANDS } from './interchange.ts';
+import { MASK_COMMANDS } from './mask.ts';
+import { MULTICAM_COMMANDS } from './multicam.ts';
 import { PARAM_COMMANDS } from './param.ts';
 import { PRESET_COMMANDS } from './preset.ts';
 import { PROJECT_COMMANDS } from './project.ts';
 import { SEQUENCE_COMMANDS } from './sequence.ts';
 import { SIMPLIFY_COMMANDS } from './simplify.ts';
+import { SPEECH_COMMANDS } from './speech.ts';
+import { STRUCTURE_COMMANDS } from './structure.ts';
 import { TIME_COMMANDS } from './time.ts';
 import { TRACKER_COMMANDS } from './tracker.ts';
 
+export * from './audio.ts';
+export * from './captions.ts';
 export * from './clip.ts';
 export * from './clipboard.ts';
 export * from './common.ts';
+export * from './essential.ts';
+export * from './expression.ts';
+export * from './interchange.ts';
+export * from './mask.ts';
+export * from './multicam.ts';
 export * from './param.ts';
 export * from './preset.ts';
 export * from './project.ts';
 export * from './sequence.ts';
 export * from './simplify.ts';
+export * from './speech.ts';
+export * from './structure.ts';
 export * from './time.ts';
 export * from './tracker.ts';
 
@@ -33,6 +51,24 @@ export const ALL_COMMAND_SCHEMAS = [
 	...CLIPBOARD_COMMANDS,
 	// Effect presets (S03:FX-030)
 	...PRESET_COMMANDS,
+	// Timeline interchange (wp interchange)
+	...INTERCHANGE_COMMANDS,
+	// Synchronize, Merge Clips, multi-camera (wp-multicam)
+	...MULTICAM_COMMANDS,
+	// Audio buses (audio-mix)
+	...AUDIO_COMMANDS,
+	// edit-structure (nests, frame holds, through edits, subsequences)
+	...STRUCTURE_COMMANDS,
+	// wp masks (S03 §17)
+	...MASK_COMMANDS,
+	// wp captions
+	...CAPTION_COMMANDS,
+	// wp speech
+	...SPEECH_COMMANDS,
+	// Expressions (wave expressions)
+	...EXPRESSION_COMMANDS,
+	// Essential Sound and Remix (audio-fx)
+	...ESSENTIAL_COMMANDS,
 	// Workstream `time`: Time Remapping, Time Interpolation, frame holds, Scene Edit Detection
 	...TIME_COMMANDS,
 ] as const;

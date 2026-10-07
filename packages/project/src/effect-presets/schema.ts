@@ -10,9 +10,18 @@
 // are kept verbatim and only flagged (`presetIssues`), so presets made with a newer build stay intact.
 import { z } from 'zod';
 import { utf8Length } from '../clipboard/payload.ts';
-import type { Animatable, Ease, Interpolation, ParamValue, RationalT, Vec2 } from '../schema/common.ts';
+import type {
+	Animatable,
+	Ease,
+	Expression,
+	Interpolation,
+	ParamValue,
+	RationalT,
+	Vec2,
+} from '../schema/common.ts';
 import {
 	EaseSchema,
+	ExpressionSchema,
 	InterpolationSchema,
 	ParamValueSchema,
 	RationalSchema,
@@ -63,9 +72,11 @@ function presetAnim<T extends z.ZodType>(value: T) {
 	return z.looseObject({
 		value,
 		keyframes: z.array(PresetKeyframeSchema.extend({ value })).optional(),
+		/** Wave expressions (optional): the property's expression travels with the preset. */
+		expression: ExpressionSchema.optional(),
 	});
 }
-export type PresetAnim<T> = { value: T; keyframes?: PresetKeyframe<T>[] };
+export type PresetAnim<T> = { value: T; keyframes?: PresetKeyframe<T>[]; expression?: Expression };
 
 const PresetAnimNumber = presetAnim(z.number());
 const PresetAnimVec2 = presetAnim(Vec2Schema);
@@ -325,6 +336,7 @@ export function buildPresetBundle(
 export function presetAnimOf<T>(a: Animatable<T>): PresetAnim<T> {
 	return {
 		value: a.value,
+		...(a.expression ? { expression: { text: a.expression.text, enabled: a.expression.enabled } } : {}),
 		...(a.keyframes.length
 			? {
 					keyframes: a.keyframes.map((k) => ({

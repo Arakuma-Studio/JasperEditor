@@ -44,13 +44,12 @@ the evaluator normalises by — including curved spatial vec2 paths when that wo
 
 ## Known gaps
 
-- Slopes are ≥ 0 in the schema, so a velocity handle cannot cross zero into the opposite direction (no
-  "anticipation" overshoot through the handle); it stops at 0.
-- A segment with no value change (Δv = 0) has no speed scale: its handles change influence only.
-- At a 1-D local extremum a Continuous key is matched by speed magnitude (handler semantics), so the signed
-  velocity graph shows equal-and-opposite speeds rather than a smooth zero crossing.
-- vec2 value graphs show per-dimension points without Bezier handles (speed along the path is edited in the
-  Velocity graph); spatial tangents belong to the motion-path work.
-- No separate graph zoom (vertical range is auto-fit only); horizontal zoom follows the panel range (the panel
-  itself has no zoom bar yet).
+keyframes-blend closed the earlier gaps (overshoot / anticipation through the handles with signed slopes, a smooth
+signed velocity through a Continuous key at a 1-D extremum, vec2 Bezier handles on the X / Y value curves,
+independent vertical zoom / pan with Auto-fit per graph); see `docs/wp-notes/keyframes-blend.md`. Still true:
+
+- A segment with no value change (Δv = 0) has no speed scale: eases are stored as slopes normalised by the
+  segment's average speed, so a flat segment cannot carry an overshoot bump; its handles change influence only
+  (a vec2 component that does not change along the segment likewise).
 - Velocity key markers select keys but are not draggable themselves (handles are).
+- Horizontal zoom follows the panel range (the panel itself has no zoom bar yet).

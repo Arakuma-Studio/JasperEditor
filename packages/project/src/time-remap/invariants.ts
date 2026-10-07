@@ -3,15 +3,15 @@
 // - INV-012: only video clips carry a remap, never together with Reverse Speed; ramps ≥ 0, ease in 0…1, finite edge
 //   slopes, timeline speeds within ±20,000 %; Time Interpolation is a known mode;
 // - INV-005: every visible frame shows a media time inside the media (one sequence frame of tolerance).
-import type { Clip, TimeRemap } from '../schema/sequence.ts';
+import type { Clip, TimeInterpolation, TimeRemap } from '../schema/sequence.ts';
 import { TIME_INTERPOLATIONS } from '../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../time.ts';
 import { remapFitDuration, remapFramesInMedia } from './bounds.ts';
-import { activeRemap, effectiveRamp, MAX_REMAP_SPEED, remapSlopes } from './model.ts';
+import { activeRemap, effectiveRamp, MAX_REMAP_SPEED, REMAPPABLE_KINDS, remapSlopes } from './model.ts';
 
 export type RemapIssue = { code: 'INV-005' | 'INV-011' | 'INV-012'; message: string };
 
-type RemapClip = Clip & { timeRemap?: TimeRemap; timeInterpolation?: string };
+type RemapClip = Clip & { timeRemap?: TimeRemap; timeInterpolation?: TimeInterpolation };
 
 /** Issues of a clip's time remap / interpolation data. `mediaDur` = media length in flicks (null = unknown). */
 export function remapIssues(clip: Clip, rate: Rational, mediaDur: number | null): RemapIssue[] {
@@ -27,7 +27,7 @@ export function remapIssues(clip: Clip, rate: Rational, mediaDur: number | null)
 		});
 	const r = c.timeRemap;
 	if (!r) return out;
-	if (c.kind !== 'video') {
+	if (!REMAPPABLE_KINDS.has(c.kind)) {
 		out.push({ code: 'INV-012', message: `Clip ${c.id} is a ${c.kind} clip and cannot be time-remapped` });
 		return out;
 	}
@@ -79,7 +79,7 @@ export function repairRemap(clip: Clip, rate: Rational, mediaDur: number | null)
 	}
 	const r = c.timeRemap;
 	if (!r) return notes;
-	if (c.kind !== 'video') {
+	if (!REMAPPABLE_KINDS.has(c.kind)) {
 		delete c.timeRemap;
 		notes.push(`time remap removed from a ${c.kind} clip`);
 		return notes;

@@ -1,0 +1,12 @@
+Heading
+FIELD_DELIM	TABS
+VIDEO_FORMAT	1080
+AUDIO_FORMAT	48khz
+FPS	23.976
+
+Column
+Name	Tracks	Start	End	Tape	Source File	Scene	Take	Description
+
+Data
+Beach_01	VA1A2	01:00:00:00	01:00:10:00	A001	/Volumes/Shoot/Beach_01.mov	12	3	Wide of the beach
+Gulls	A1A2	02:00:00:00	02:00:30:00	SND_01	/Volumes/Audio/Gulls.wav	12	1	Wild track

@@ -6,7 +6,8 @@
 //                 fx_cellular, fx_cellId
 //   fx/color      fx_luma, fx_saturate, fx_srgbToLinear/fx_linearToSrgb, fx_rgb2hsv/fx_hsv2rgb,
 //                 fx_rgb2hsl/fx_hsl2rgb, fx_hueShift, fx_brightnessContrast, fx_tint
-//   fx/blend      fx_blendRgb(mode, …), fx_blend(mode, base, top, opacity), fx_over, fx_addLight, FX_BLEND_*
+//   fx/blend      fx_blendRgb(mode, …), fx_blend(mode, base, top, opacity), fx_over, fx_addLight, FX_BLEND_*,
+//                 fx_layerBlend(mode, dst, src, noise), fx_layerBlendRgb, fx_blendNoise, FX_LAYER_* (clip blend modes)
 //   fx/sample     fx_sampleEdge(t, uv, mode), fx_sampleTransparent, fx_sampleLayer, fx_mirrorUv, FX_EDGE_*
 //   fx/uv         fx_rot, fx_rotateAround, fx_scaleAround, fx_toPolar/fx_fromPolar, fx_deg, fx_dir, FX_PI/FX_TAU
 //   fx/blur       fx_gaussian1d, fx_box1d, fx_blur9, fx_zoomBlur, fx_gaussianWeight
@@ -28,7 +29,7 @@ import { GLSL_MB } from './motion-blur.ts';
 import { GLSL_NOISE } from './noise.ts';
 import { GLSL_SAMPLE, GLSL_UV } from './sample.ts';
 
-export { FX_BLEND_MODE_LABELS, FX_BLEND_MODES, GLSL_BLEND } from './blend.ts';
+export { FX_BLEND_MODE_LABELS, FX_BLEND_MODES, FX_BLEND_TO_LAYER, GLSL_BLEND } from './blend.ts';
 export { FX_BLUR_MAX_TAPS, GLSL_BLUR } from './blur.ts';
 export { GLSL_COLOR } from './color.ts';
 export { GLSL_COMPOSITE } from './composite.ts';

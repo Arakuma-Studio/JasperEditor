@@ -16,6 +16,24 @@ export class ToolError extends Error {
 	}
 }
 
+/**
+ * The MCP request was cancelled (`notifications/cancelled`): the tool stopped, cancelled its engine job
+ * and the engine deleted the job's partial outputs. The SDK sends no response for a cancelled request.
+ */
+export class RequestCancelled extends Error {
+	constructor(readonly jobId?: string) {
+		super(
+			jobId ? `Cancelled; engine job ${jobId} was cancelled and its partial output deleted` : 'Cancelled',
+		);
+		this.name = 'RequestCancelled';
+	}
+}
+
+/** The result of a cancelled request (never sent by the SDK; kept well-formed for direct callers). */
+export function cancelledResult(): CallToolResult {
+	return errorResult('CANCELLED', 'The request was cancelled');
+}
+
 /** What to do about a transaction/query error code (S01 E_* codes, ARCHITECTURE §2.3). */
 export const TX_ERROR_HINTS: Record<string, string> = {
 	E_APPROVAL_DENIED:
@@ -81,6 +99,7 @@ function errorResult(code: string, message: string, hint?: string, details?: unk
 /** Converts anything thrown by a tool into an MCP tool error result. */
 export function toErrorResult(e: unknown): CallToolResult {
 	if (e instanceof ToolError) return errorResult(e.code, e.message, e.hint, e.details);
+	if (e instanceof RequestCancelled) return errorResult('CANCELLED', e.message);
 	if (e instanceof EngineError) {
 		const inner = (e.detail as { code?: unknown } | undefined)?.code;
 		const txHint = typeof inner === 'string' ? TX_ERROR_HINTS[inner] : undefined;

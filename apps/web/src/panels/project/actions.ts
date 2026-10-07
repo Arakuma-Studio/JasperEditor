@@ -128,6 +128,14 @@ export async function openItem(
 		session.openSequence(item.sequenceId);
 		return;
 	}
+	// edit-structure (Premiere): double-clicking a Color Matte opens its Color Picker.
+	if (
+		item.kind === 'synthetic' &&
+		session.getCommitted().synthetics[item.syntheticId]?.kind === 'color-matte'
+	) {
+		await runIfRegistered('project.editSynthetic', ctx, { itemId });
+		return;
+	}
 	if (item.kind === 'media' || item.kind === 'synthetic') {
 		const ok = await runIfRegistered('source.open', ctx, { itemId });
 		if (!ok) notices.push({ kind: 'info', message: 'The Source monitor is not available yet.' });

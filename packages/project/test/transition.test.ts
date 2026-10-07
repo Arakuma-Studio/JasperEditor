@@ -178,8 +178,12 @@ describe('transition.add / update / remove', () => {
 				handles: 'freeze',
 			},
 		]);
-		expect(frozen.ok).toBe(false);
-		if (!frozen.ok) expect(frozen.errors[0]!.code).toBe('E_NOT_IMPLEMENTED');
+		// edit-structure: freeze-frame handles keep the full length with repeated frames.
+		expect(frozen.ok).toBe(true);
+		if (frozen.ok) {
+			expect(frozen.results[0]).toMatchObject({ duration: 30, freezeHandles: true });
+			expect(frozen.warnings.map((w) => w.code)).toContain('W_TRANSITION_FREEZE_FRAMES');
+		}
 
 		// Clips that use their whole media have no handles: a dissolve is refused with a way out…
 		const h2 = new Harness();

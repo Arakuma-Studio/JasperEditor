@@ -6,14 +6,20 @@
 import type { Draft } from 'immer';
 import { contentTimeAt } from '../../derive/index.ts';
 import { contentDurationFlicks } from '../../registry/kinds.ts';
-import type { Clip, ClipMarker, RemapKeyframe, TimeRemap, VideoClip } from '../../schema/sequence.ts';
+import type {
+	Clip,
+	ClipMarker,
+	NestVideoClip,
+	RemapKeyframe,
+	TimeRemap,
+	VideoClip,
+} from '../../schema/sequence.ts';
 import { contentSpanFlicks, FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../../time.ts';
 import { remapFitDuration, remapFramesInMedia } from '../../time-remap/bounds.ts';
-import { clipMediaTimeFn, FRAME_HOLD_SEGMENT_SECONDS } from '../../time-remap/model.ts';
+import { clipMediaTimeFn, REMAPPABLE_KINDS } from '../../time-remap/model.ts';
 import {
 	addKeyframe,
 	clampRamps,
-	holdFrom,
 	insertHold,
 	insertReverse,
 	moveKeyframe,
@@ -30,18 +36,16 @@ import {
 	cleanupSequence,
 	end,
 	findTrackIn,
-	insertShift,
 	relinkSplits,
 	type SplitRecord,
 	splitClipAt,
-	syncFollowerTracks,
 } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { nextStart, rippleAfterEnd } from './clip-edit.ts';
 import { insertItem } from './project.ts';
 import { type HandlerMap, idList } from './util.ts';
 
-type DVideo = Draft<VideoClip>;
+type DVideo = Draft<VideoClip | NestVideoClip>;
 
 function rateOf(seq: DSeq): Rational {
 	return seq.settings.frameRate as Rational;
@@ -54,10 +58,14 @@ function stepOf(seq: DSeq, c: { speed: { rate: number } }): number {
 /** A video clip on an unlocked track that may carry a remap. */
 function remappable(seq: DSeq, clip: DClip, h: HandlerContext): DVideo {
 	assertUnlocked(findTrackIn(seq, clip.trackId)!.track, h);
-	if (clip.kind !== 'video')
-		h.fail('E_INVALID_PARAM', `Time Remapping applies to video clips; ${clip.id} is a ${clip.kind} clip`, {
-			blocking: [clip.id],
-		});
+	if (!REMAPPABLE_KINDS.has(clip.kind))
+		h.fail(
+			'E_INVALID_PARAM',
+			`Time Remapping applies to video and nested sequence clips; ${clip.id} is a ${clip.kind} clip`,
+			{
+				blocking: [clip.id],
+			},
+		);
 	if (clip.speed.reverse)
 		h.fail(
 			'E_INVALID_PARAM',
@@ -180,7 +188,7 @@ function enableHandler(doc: DDoc, cmd: CommandOf<'timeRemap.enable'>, h: Handler
 			}
 			out.push({ clipId: c.id, enabled: true, duration: c.duration });
 		} else {
-			if (c.kind !== 'video') continue;
+			if (!REMAPPABLE_KINDS.has(c.kind)) continue;
 			assertUnlocked(findTrackIn(seq, c.trackId)!.track, h);
 			const v = c as DVideo;
 			if (!v.timeRemap) {
@@ -346,8 +354,11 @@ function setTimeInterpolationHandler(
 	const { seq, clips } = h.clipsOf(doc, idList(cmd.clipIds));
 	const changed: string[] = [];
 	for (const c of clips) {
-		if (c.kind !== 'video') {
-			h.warn('W_VALUE_CLAMPED', `Time Interpolation applies to video clips; ${c.id} is a ${c.kind} clip`);
+		if (!REMAPPABLE_KINDS.has(c.kind)) {
+			h.warn(
+				'W_VALUE_CLAMPED',
+				`Time Interpolation applies to video and nested sequence clips; ${c.id} is a ${c.kind} clip`,
+			);
 			continue;
 		}
 		assertUnlocked(findTrackIn(seq, c.trackId)!.track, h);
@@ -357,75 +368,6 @@ function setTimeInterpolationHandler(
 		changed.push(c.id);
 	}
 	return { clipIds: changed };
-}
-
-// ---------------------------------------------------------------- frame holds
-
-function addFrameHoldHandler(doc: DDoc, cmd: CommandOf<'clip.addFrameHold'>, h: HandlerContext): unknown {
-	const { seq, clips } = h.clipsOf(doc, idList(cmd.clipIds));
-	const at = h.frame(seq, cmd.at);
-	const holds: string[] = [];
-	for (const c of clips) {
-		if (at < c.start || at >= end(c)) continue;
-		const v = remappable(seq, c, h);
-		// The part from `at` on (the whole clip when `at` is its first frame) holds the frame at `at`.
-		const target = (at > v.start ? splitClipAt(seq, v as DClip, at, h) : v) as DVideo;
-		const e = holdFrom(remapOf(target), target.sourceIn, newKeyId(h));
-		commitEdit(doc, seq, target, e, h);
-		holds.push(target.id);
-	}
-	if (holds.length === 0) h.fail('E_INVALID_PARAM', `None of the clips is under frame ${at}`);
-	cleanupSequence(seq, h);
-	return { clipIds: holds };
-}
-
-function insertFrameHoldSegmentHandler(
-	doc: DDoc,
-	cmd: CommandOf<'clip.insertFrameHoldSegment'>,
-	h: HandlerContext,
-): unknown {
-	const { seq, clips } = h.clipsOf(doc, idList(cmd.clipIds));
-	const rate = rateOf(seq);
-	const at = h.frame(seq, cmd.at);
-	const n =
-		cmd.duration !== undefined
-			? h.durationFrames(seq, cmd.duration)
-			: Math.round((FRAME_HOLD_SEGMENT_SECONDS * rate.num) / rate.den);
-	if (n < 1) h.fail('E_INVALID_PARAM', 'A frame hold segment lasts at least 1 frame');
-	const targets = clips.filter((c) => at > c.start && at < end(c)).map((c) => remappable(seq, c, h));
-	if (targets.length === 0) h.fail('E_INVALID_PARAM', `None of the clips crosses frame ${at}`);
-	// Insert n frames at `at` on the clips' tracks, their linked clips' tracks and the sync-locked tracks (S02 A.5).
-	const tracks = new Set<string>();
-	for (const c of targets) {
-		tracks.add(c.trackId);
-		for (const id of c.linkId ? (seq.links[c.linkId]?.members ?? []) : []) {
-			const p = seq.clips[id];
-			if (p && !findTrackIn(seq, p.trackId)?.track.locked) tracks.add(p.trackId);
-		}
-	}
-	for (const t of syncFollowerTracks(seq, tracks)) tracks.add(t.id);
-	const splits: SplitRecord[] = insertShift(seq, tracks, at, n, h);
-	const out: string[] = [];
-	for (const c of targets) {
-		// The right part now starts at at + n: it moves back to `at`, its first n frames hold its first picture and the
-		// rest plays on from there (keyframes of other properties stay in timeline time, like any remap).
-		const right = splits
-			.map((s) => seq.clips[s.rightId])
-			.find((x) => x && x.trackId === c.trackId && x.start === at + n && x.kind === 'video') as
-			| DVideo
-			| undefined;
-		if (!right) continue;
-		const step = stepOf(seq, right);
-		const e = insertHold(remapOf(right), right.sourceIn, n * step, newKeyId(h));
-		clampRamps(e.remap);
-		right.timeRemap = e.remap as DVideo['timeRemap'];
-		right.start = at;
-		right.duration += n;
-		out.push(right.id);
-	}
-	relinkSplits(seq, splits, h);
-	cleanupSequence(seq, h);
-	return { clipIds: out, frames: n };
 }
 
 // ---------------------------------------------------------------- scene edit detection results
@@ -552,8 +494,6 @@ export const timeHandlers: HandlerMap = {
 	'timeRemap.addFreeze': addFreezeHandler,
 	'timeRemap.addReverse': addReverseHandler,
 	'clip.setTimeInterpolation': setTimeInterpolationHandler,
-	'clip.addFrameHold': addFrameHoldHandler,
-	'clip.insertFrameHoldSegment': insertFrameHoldSegmentHandler,
 	'clip.applySceneEdits': applySceneEditsHandler,
 };
 

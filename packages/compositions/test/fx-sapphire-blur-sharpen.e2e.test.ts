@@ -4,7 +4,7 @@
 // production compositions bundle (fx-render/entry.ts) in headless Chrome, exactly like an export. Each still must
 // differ from the unprocessed picture and keep its size; the depth-of-field still must stay sharp where the Z buffer
 // is in focus. Optional: SBS_SCENE=<png 640×360> renders a custom picture, SBS_SHEET=<png> writes a labelled contact
-// sheet of all stills (docs/screenshots/fx/sapphire-blur-sharpen/). Gated by REMOTION_E2E=1; needs ffmpeg on PATH.
+// sheet of all stills (for review; render it over `pnpm fixtures` media before committing one, AGENTS.md §3). Gated by REMOTION_E2E=1; needs ffmpeg on PATH.
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
