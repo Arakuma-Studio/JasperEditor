@@ -215,6 +215,14 @@ const TOOL_IDS: ActiveTool[] = [
 	'type',
 ];
 
+/**
+ * edit-ux: spring-loaded tools (Premiere: hold a tool's key to use it temporarily; releasing returns to the previous
+ * tool; a quick tap switches for good). A key held at least SPRING_HOLD_MS counts as a hold.
+ */
+export const SPRING_HOLD_MS = 250;
+const springs = new Map<string, { previous: ActiveTool; at: number }>();
+const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
 const toolCommands: UiCommand[] = TOOL_IDS.map((tool) => ({
 	id: `tool.${tool}`,
 	label: TOOLS[tool].label,
@@ -222,7 +230,23 @@ const toolCommands: UiCommand[] = TOOL_IDS.map((tool) => ({
 	agentExposed: true,
 	when: (ctx) => !!ctx.session,
 	checked: (ctx) => ctx.session?.getState().toggles.activeTool === tool,
-	run: (ctx) => ctx.session?.setToggles({ activeTool: tool }),
+	run: (ctx) => {
+		const s = ctx.session;
+		if (!s) return;
+		const previous = s.getState().toggles.activeTool;
+		if (previous !== tool) springs.set(tool, { previous, at: now() });
+		else springs.delete(tool);
+		s.setToggles({ activeTool: tool });
+	},
+	onKeyUp: (ctx) => {
+		const spring = springs.get(tool);
+		springs.delete(tool);
+		const s = ctx.session;
+		if (!spring || !s || s.getState().toggles.activeTool !== tool) return;
+		// Released after a hold: back to the tool that was active (unless a gesture is still running with it).
+		if (now() - spring.at >= SPRING_HOLD_MS && !s.gestureActive)
+			s.setToggles({ activeTool: spring.previous });
+	},
 }));
 
 // ---------------------------------------------------------------- edits (TL-680…704)

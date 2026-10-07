@@ -31,6 +31,11 @@ import {
 	trimMode,
 	trimSelected,
 } from '../panels/timeline/state/trim-mode.ts';
+import { detectPlatform, detectRuntime } from '../runtime/platform.ts';
+import {
+	KEYBOARD_SHORTCUTS_DIALOG,
+	registerKeyboardShortcutsDialog,
+} from '../shell/keymap/KeyboardShortcutsDialog.tsx';
 import { onBeforeCommand } from './registry.ts';
 import { type Env, envOf, isLocked, seekReveal, selectedClips, targetedTracks } from './timeline.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
@@ -497,6 +502,17 @@ export const editUxCommands: UiCommand[] = [
 				name: it.name,
 				restrictTrims: it.restrictTrims,
 			});
+		},
+	},
+	{
+		id: 'app.keyboardShortcuts',
+		label: 'Keyboard Shortcuts…',
+		description:
+			'Customize keyboard shortcuts and choose a layout (Premiere Pro, Avid, Final Cut Pro 7, Final Cut Pro)',
+		scope: 'global',
+		run: (ctx) => {
+			registerKeyboardShortcutsDialog();
+			ctx.ui.openDialog(KEYBOARD_SHORTCUTS_DIALOG, { platform: detectPlatform(), runtime: detectRuntime() });
 		},
 	},
 ];

@@ -33,6 +33,8 @@ const b = (
 	extra: Omit<KeyBinding, 'command' | 'key' | 'scope'> = {},
 ): KeyBinding => ({ command, key, scope, ...extra });
 const R = { repeat: true };
+/** Hold-to-act (spring-loaded tools, edit-ux): the command also receives keyup. */
+const K = { keyup: true };
 /** Transport keys work in the Timeline, Program and Source monitors (S02:TL-900) → `editing` scope. */
 const E: CommandScope = 'editing';
 const T: CommandScope = 'timeline';
@@ -175,19 +177,19 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('gesture.cancel', 'Escape', E),
 
 	// ---------------------------------------------------------------- tools (S02:TL-590, R-PUI §16.3)
-	b('tool.selection', 'KeyV', E),
-	b('tool.trackSelectForward', 'KeyA', E),
-	b('tool.trackSelectBackward', 'Shift+KeyA', E),
-	b('tool.ripple', 'KeyB', E),
-	b('tool.rolling', 'KeyN', E),
-	b('tool.rateStretch', 'KeyR', E),
-	b('tool.razor', 'KeyC', E),
-	b('tool.slip', 'KeyY', E),
-	b('tool.slide', 'KeyU', E),
-	b('tool.pen', 'KeyP', E),
+	b('tool.selection', 'KeyV', E, K),
+	b('tool.trackSelectForward', 'KeyA', E, K),
+	b('tool.trackSelectBackward', 'Shift+KeyA', E, K),
+	b('tool.ripple', 'KeyB', E, K),
+	b('tool.rolling', 'KeyN', E, K),
+	b('tool.rateStretch', 'KeyR', E, K),
+	b('tool.razor', 'KeyC', E, K),
+	b('tool.slip', 'KeyY', E, K),
+	b('tool.slide', 'KeyU', E, K),
+	b('tool.pen', 'KeyP', E, K),
 	b('tool.hand', 'KeyH', E, { keyup: true }),
-	b('tool.zoom', 'KeyZ', E),
-	b('tool.type', 'KeyT', E),
+	b('tool.zoom', 'KeyZ', E, K),
+	b('tool.type', 'KeyT', E, K),
 
 	// ---------------------------------------------------------------- global (R-PUI §16.1)
 	b('app.newProject', 'Ctrl+Alt+KeyN', G),
@@ -309,8 +311,30 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('history.stepForward', 'ArrowRight', 'history', R),
 ];
 
+// ---------------------------------------------------------------- active keymap (edit-ux: Keyboard Shortcuts editor)
+
+let activeKeymap: readonly KeyBinding[] = DEFAULT_KEYMAP;
+const keymapListeners = new Set<() => void>();
+
+/** The keymap in effect: the chosen layout (Premiere default, Avid, FCP 7, FCP) with the user's changes. */
+export function getActiveKeymap(): readonly KeyBinding[] {
+	return activeKeymap;
+}
+
+/** Replaces the keymap in effect (the shortcut editor's store); dispatch, menus and tooltips follow at once. */
+export function setActiveKeymap(keymap: readonly KeyBinding[]): void {
+	if (keymap === activeKeymap) return;
+	activeKeymap = keymap;
+	for (const l of [...keymapListeners]) l();
+}
+
+export function subscribeActiveKeymap(listener: () => void): () => void {
+	keymapListeners.add(listener);
+	return () => keymapListeners.delete(listener);
+}
+
 /** Browser-reserved chords that never reach web pages (S05:KB-013). */
-const BROWSER_RESERVED: readonly string[] = [
+export const BROWSER_RESERVED: readonly string[] = [
 	'Ctrl+KeyN',
 	'Ctrl+KeyW',
 	'Ctrl+KeyT',
@@ -368,7 +392,7 @@ export function resolveBindings(
 	scopes: readonly CommandScope[],
 	opts: { platform: Platform; runtime: Runtime; keymap?: readonly KeyBinding[] },
 ): KeyBinding[] {
-	const keymap = opts.keymap ?? DEFAULT_KEYMAP;
+	const keymap = opts.keymap ?? activeKeymap;
 	const target = normalizeChord(chord);
 	const out: KeyBinding[] = [];
 	for (const scope of scopes) {
