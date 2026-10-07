@@ -200,6 +200,14 @@ type PlanDeps = {
 	rotoSet?: (key: string) => Promise<{ start: number; end: number } | null>;
 };
 
+/** color-mgmt: the (nested) sequences of a snapshot that blend in linear light ('' = the exported one). */
+function linearBlendSequences(snap: RenderSnapshot, name = ''): string[] {
+	const out = snap.settings.color?.blendLinear ? [name] : [];
+	for (const t of snap.videoTracks)
+		for (const c of t.clips) if ('nest' in c.source) out.push(...linearBlendSequences(c.source.nest.snapshot, c.name));
+	return out;
+}
+
 export async function planExport(input: PlanInput, deps: PlanDeps): Promise<PlannedExport> {
 	let document: ProjectDocument;
 	try {
@@ -302,6 +310,13 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	const baked: { clipId: string; engine: 'remotion'; frames: number }[] = [];
 	for (const reason of nestBlockers(snapshot))
 		blockers.push({ path: 'native', reason: reason.reason, itemId: reason.clipId });
+	// color-mgmt: linear-light compositing (Blend using 1.0 gamma / Linearize Working Space) is drawn by the GPU
+	// compositor; the native compositor blends encoded values, so it is refused (the Remotion path renders it).
+	for (const where of linearBlendSequences(snapshot))
+		blockers.push({
+			path: 'native',
+			reason: `${where ? `nested sequence of clip "${where}": ` : ''}Blend using 1.0 gamma composites in linear light on the GPU compositor (the native compositor blends encoded values)`,
+		});
 	for (const c of visual) {
 		for (const reason of nativeBlockers(c, deps.capabilities, deps.extensions ?? [], deps.effects))
 			blockers.push({ itemId: c.clipId, path: 'native', reason });

@@ -180,11 +180,29 @@ export function hdrOf(s: Pick<FfStream, 'side_data_list'>): { hdr?: NonNullable<
 	return Object.keys(hdr).length ? { hdr } : {};
 }
 
+/**
+ * color-mgmt: video whose tags make a browser convert colours while decoding (HDR transfer functions, wide-gamut
+ * primaries, the BT.2020 matrix). Previews play a signal proxy instead (BT.709-tagged, same R'G'B' signal), so the
+ * colour input transform sees the file's own signal, as the native path does.
+ */
+export function browserConvertsColor(s: Pick<FfStream, 'color_primaries' | 'color_transfer' | 'color_space'>): boolean {
+	const t = s.color_transfer ?? '';
+	const p = s.color_primaries ?? '';
+	const m = s.color_space ?? '';
+	return (
+		['smpte2084', 'arib-std-b67', 'linear', 'log100', 'log316', 'smpte428'].includes(t) ||
+		['bt2020', 'smpte431', 'smpte432', 'film', 'smpte428'].includes(p) ||
+		m === 'bt2020nc' ||
+		m === 'bt2020c'
+	);
+}
+
 function browserDecodable(s: FfStream, interlaced: boolean): boolean | null {
 	if (interlaced) return false;
 	const codec = s.codec_name ?? '';
 	const pix = s.pix_fmt ?? '';
 	if (IMAGE_CODECS.has(codec) || codec === 'gif' || codec === 'apng') return codec !== 'tiff';
+	if (browserConvertsColor(s)) return false;
 	if (codec === 'h264') return (pix === 'yuv420p' || pix === 'yuvj420p') && bitDepthOf(s) === 8;
 	if (codec === 'vp8' || codec === 'vp9' || codec === 'av1') return /^yuva?420p/.test(pix);
 	if (codec === 'hevc') return null;

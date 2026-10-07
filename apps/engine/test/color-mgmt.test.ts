@@ -79,7 +79,7 @@ const mean = (v: number[], ch: number) => {
 	return s / n;
 };
 
-async function job(url: string, payload: unknown): Promise<{ id: string; result: Record<string, unknown> }> {
+async function job(url: string, payload: Record<string, unknown>): Promise<{ id: string; result: Record<string, unknown> }> {
 	const r = await app.inject({ method: 'POST', url, headers: JSON_H, payload });
 	expect(r.statusCode, r.body).toBe(202);
 	const done = await coreServices(app).queue.wait(r.json().id);

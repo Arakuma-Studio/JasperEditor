@@ -51,8 +51,12 @@ const drawnAt = (c: CompositeTrackInput['clips'][number], f: number) =>
 const spanAt = (s: { start: number; duration: number }, f: number) =>
 	f >= s.start && f < s.start + s.duration;
 
-/** Whether a track holds a GL item at all (its tracks below are then wrapped in a blend scope). */
-export function trackHasGlBlend(t: CompositeTrackInput): boolean {
+/**
+ * Whether a track holds a GL item at all (its tracks below are then wrapped in a blend scope). color-mgmt: with
+ * "Blend using 1.0 gamma" (`linear`) every layer is a GL item (opacity and Normal composite in linear light too).
+ */
+export function trackHasGlBlend(t: CompositeTrackInput, linear = false): boolean {
+	if (linear) return t.clips.length > 0 || t.stages.length > 0;
 	return t.clips.some((c) => !isCssBlend(c.blendMode)) || t.stages.some((s) => !isCssBlend(s.blendMode));
 }
 
@@ -66,9 +70,11 @@ export function compositeItemsAt(
 	t: CompositeTrackInput,
 	f: number,
 	isGpuSide: (clipId: string, f: number) => boolean,
+	/** color-mgmt: Blend using 1.0 gamma — every drawn layer composites through the scope. */
+	linear = false,
 ): CompositeItem[] | null {
 	const items: CompositeItem[] = [];
-	let gl = false;
+	let gl = linear;
 	for (const c of t.clips) {
 		if (!drawnAt(c, f) || isGpuSide(c.clipId, f)) continue;
 		gl ||= !isCssBlend(c.blendMode);
@@ -80,8 +86,44 @@ export function compositeItemsAt(
 		const key = `transition:${st.id}`;
 		items.push({ kind: 'stage', key, mode: st.blendMode, seed: dissolveSeed(key, f - st.start) });
 	}
-	return gl ? items : null;
+	return gl && items.length > 0 ? items : null;
 }
+
+/** color-mgmt: the working curves the compositor decodes for linear blending (GLSL `cm_*` ids = indexes). */
+export const LINEAR_BLEND_CURVES = ['bt1886', 'srgb', 'gamma22', 'gamma26', 'pq', 'hlg'] as const;
+export type LinearBlendCurve = (typeof LINEAR_BLEND_CURVES)[number];
+
+/** GLSL: encoded ↔ linear light of the working curve (`u_linCurve`), on premultiplied RGBA. */
+const GLSL_LINEAR_BLEND = /* glsl */ `
+float cm_dec1(int k, float v) {
+  v = max(v, 0.0);
+  if (k == 1) return v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4);
+  if (k == 2) return pow(v, 2.2);
+  if (k == 3) return pow(v, 2.6);
+  if (k == 4) { float p = pow(v, 1.0 / 78.84375); return pow(max(p - 0.8359375, 0.0) / (18.8515625 - 18.6875 * p), 1.0 / 0.1593017578125); }
+  if (k == 5) return v <= 0.5 ? v * v / 3.0 : (exp((v - 0.55991073) / 0.17883277) + 0.28466892) / 12.0;
+  return pow(v, 2.4);
+}
+float cm_enc1(int k, float x) {
+  x = max(x, 0.0);
+  if (k == 1) return x <= 0.0031308 ? x * 12.92 : 1.055 * pow(x, 1.0 / 2.4) - 0.055;
+  if (k == 2) return pow(x, 1.0 / 2.2);
+  if (k == 3) return pow(x, 1.0 / 2.6);
+  if (k == 4) { float p = pow(x, 0.1593017578125); return pow((0.8359375 + 18.8515625 * p) / (1.0 + 18.6875 * p), 78.84375); }
+  if (k == 5) return x <= 1.0 / 12.0 ? sqrt(3.0 * x) : 0.17883277 * log(12.0 * x - 0.28466892) + 0.55991073;
+  return pow(x, 1.0 / 2.4);
+}
+vec4 cm_toLinear(int k, vec4 c) {
+  if (c.a <= 0.0) return vec4(0.0);
+  vec3 s = c.rgb / c.a;
+  return vec4(vec3(cm_dec1(k, s.r), cm_dec1(k, s.g), cm_dec1(k, s.b)) * c.a, c.a);
+}
+vec4 cm_toEncoded(int k, vec4 c) {
+  if (c.a <= 0.0) return vec4(0.0);
+  vec3 s = c.rgb / c.a;
+  return vec4(vec3(cm_enc1(k, s.r), cm_enc1(k, s.g), cm_enc1(k, s.b)) * c.a, c.a);
+}
+`;
 
 /** A delivered picture and its placement (comp px → picture px, projective; opacity 0..1). */
 export type CompositePicture = {
@@ -108,9 +150,21 @@ export function planComposite(
 		backdrop?: boolean;
 		/** Canvas px of sequence px (0, 0) and canvas px per sequence px (Dissolve hashes sequence pixels). */
 		noise?: { x: number; y: number; scale: number };
+		/**
+		 * color-mgmt (Blend using 1.0 gamma): blend in linear light of this working curve. The stack stays stored
+		 * encoded (RGBA8) between layers: each pass decodes the stored picture and the layer, blends, encodes.
+		 */
+		linear?: LinearBlendCurve | null;
 	} = {},
 ): { plan: FxEffectPlan; textures: { uniform: string; key: string }[]; builtins: FxUniform[] } {
 	const backdrop = opts.backdrop ?? true;
+	const lin = opts.linear ? LINEAR_BLEND_CURVES.indexOf(opts.linear) : -1;
+	const L = lin >= 0;
+	const blendExpr = (dst: string, src: string, rest: string) =>
+		L
+			? `cm_toEncoded(u_linCurve, fx_clampPremul(fx_layerBlend(${rest.split('|')[0]}, cm_toLinear(u_linCurve, ${dst}), cm_toLinear(u_linCurve, ${src}), ${rest.split('|')[1]})))`
+			: `fx_clampPremul(fx_layerBlend(${rest.split('|')[0]}, ${dst}, ${src}, ${rest.split('|')[1]}))`;
+	const linUniform: Record<string, { int: number }> = L ? { u_linCurve: { int: lin } } : {};
 	const drawn = items.filter((it) => it.kind === 'matte' || pictures.has(it.key));
 	const textures: { uniform: string; key: string }[] = [];
 	const passes: ShaderPass[] = drawn.map((it, i): ShaderPass => {
@@ -123,11 +177,11 @@ export function planComposite(
 			return {
 				...common,
 				include: [GLSL_BLEND],
-				frag: /* glsl */ `
+				frag: /* glsl */ `${L ? GLSL_LINEAR_BLEND : ''}
 void main() {
-  fragColor = fx_clampPremul(fx_layerBlend(FX_LAYER_NORMAL, ${dst}, vec4(u_matte.rgb * u_matte.a, u_matte.a), 0.0));
+  fragColor = ${blendExpr(dst, 'vec4(u_matte.rgb * u_matte.a, u_matte.a)', 'FX_LAYER_NORMAL|0.0')};
 }`,
-				uniforms: { u_matte: [r, g, b, a] },
+				uniforms: { u_matte: [r, g, b, a], ...linUniform },
 			};
 		}
 		const pic = pictures.get(it.key)!;
@@ -137,7 +191,7 @@ void main() {
 		return {
 			...common,
 			include: [GLSL_BLEND],
-			frag: /* glsl */ `
+			frag: /* glsl */ `${L ? GLSL_LINEAR_BLEND : ''}
 void main() {
   vec4 dst = ${dst};
   // Placement (as the transition framework places its sides): comp px → picture px, edge coverage, × opacity.
@@ -154,9 +208,10 @@ void main() {
   vec2 cc = mix(c, snap, step(abs(c - snap), vec2(1e-3)));
   vec4 src = texture(${name}, cc / max(u_placeSize, vec2(1.0))) * (cov * clamp(u_placeOpacity, 0.0, 1.0));
   uvec2 px = uvec2(max(floor((v_uv * u_compSize - u_noiseXform.xy) / u_noiseXform.z), vec2(0.0)));
-  fragColor = fx_clampPremul(fx_layerBlend(u_mode, dst, src, fx_blendNoise(px, uint(u_dissolveSeed))));
+  fragColor = ${blendExpr('dst', 'src', 'u_mode|fx_blendNoise(px, uint(u_dissolveSeed))')};
 }`,
 			uniforms: {
+				...linUniform,
 				// GLSL mat3 is column-major; ours is row-major.
 				u_place: { mat3: [m[0]!, m[3]!, m[6]!, m[1]!, m[4]!, m[7]!, m[2]!, m[5]!, m[8]!] },
 				u_placeSize: [pic.width, pic.height],

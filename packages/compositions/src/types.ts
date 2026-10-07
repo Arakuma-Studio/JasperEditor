@@ -26,6 +26,11 @@ export type RenderOptions = {
 	 * Ignored in renders. Absent = 1.
 	 */
 	fxPreviewScale?: number;
+	/**
+	 * color-mgmt (preview only): show the working signal through the display transform (Rec. 2020 / P3 → Rec. 709
+	 * primaries, HDR tone mapped). Absent = true in previews; renders never apply it.
+	 */
+	displayColor?: boolean;
 };
 
 export type SequenceCompositionProps = { doc: RenderDoc; options: RenderOptions };

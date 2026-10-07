@@ -27,6 +27,7 @@
 import {
 	clipContentTime,
 	clipPictureTime,
+	colorSpace,
 	fadeFactor,
 	flicksPerFrame,
 	hasActiveExpression,
@@ -36,6 +37,7 @@ import {
 	matteTrackIds,
 	type RenderVisualClip,
 	resolveCachedLayerProps,
+	type SequenceColorInfo,
 	textSourceFrameDependent,
 	transitionSpec,
 	vectorShapeIsTimeDependent,
@@ -54,6 +56,7 @@ import { AbsoluteFill, Freeze, Internals, Sequence, useCurrentFrame } from 'remo
 import { MixGraphContext } from './audio/context.ts';
 import { type MixGraph, mixGraphFor } from './audio/graph.ts';
 import { ColorDocContext, type ColorDocValue } from './color/chain.ts';
+import { DisplayStage } from './color/DisplayStage.tsx';
 import { useExpressionSnapshot, useTextExpressionHosts } from './expressions.ts';
 import { FontsReadyContext, useFontsReadyState, useLayerFontsReady } from './fonts.ts';
 import {
@@ -63,10 +66,11 @@ import {
 	type BlendTrackValue,
 	CompositeHub,
 	compositeRunMode,
+	LINEAR_MARK,
 	makeBlendTrack,
 	useCompositeTap,
 } from './fx/composite.tsx';
-import { type CompositeTrackInput, trackHasGlBlend } from './fx/composite-plan.ts';
+import { type CompositeTrackInput, type LinearBlendCurve, trackHasGlBlend } from './fx/composite-plan.ts';
 import { TrackMatteContext, TrackMatteHub } from './fx/matte.ts';
 import { useFxStatus } from './fx/status.ts';
 import { fxRemapFrame, hasTimeDependentFx } from './fx/time.ts';
@@ -478,6 +482,8 @@ export function VideoTracks({
 	// keyframes-blend: the blend scope of each track holding a GL item (layer renders composite nothing: a baked
 	// layer's blend mode is applied where the bake is composited).
 	const compositeHubs = useRef(new Map<string, CompositeHub>());
+	// color-mgmt: Blend using 1.0 gamma / Linearize Working Space (the working curve layers blend in).
+	const linearCurve = linearBlendCurveOf(doc.settings.color);
 	const blendTracks = useMemo(() => {
 		const out = new Map<string, { value: BlendTrackValue; glModesAt: (f: number) => string[] }>();
 		if (options.layerFilter) return out;
@@ -507,7 +513,7 @@ export function VideoTracks({
 					blendMode: st.blendModeId,
 				})),
 			};
-			if (!trackHasGlBlend(input)) continue;
+			if (!trackHasGlBlend(input, !!linearCurve)) continue;
 			let hub = compositeHubs.current.get(t.trackId);
 			if (!hub) {
 				hub = new CompositeHub();
@@ -517,8 +523,10 @@ export function VideoTracks({
 				...input.clips.map((c) => c.blendMode),
 				...input.stages.map((st) => st.blendMode),
 			].filter((m) => !isCssBlend(m));
+			// color-mgmt: with Blend using 1.0 gamma every layer is composited by the scope.
+			if (linearCurve) glModes.push(LINEAR_MARK);
 			const mode = compositeRunMode({ gpu, htmlInCanvas }, glModes);
-			const value = makeBlendTrack(input, isGpuSide, mode, hub);
+			const value = makeBlendTrack(input, isGpuSide, mode, hub, linearCurve);
 			const glModesAt = (f: number) =>
 				[
 					...input.clips.filter(
@@ -526,12 +534,12 @@ export function VideoTracks({
 					),
 					...input.stages.filter((st) => f >= st.start && f < st.start + st.duration),
 				]
-					.map((x) => x.blendMode)
-					.filter((m) => !isCssBlend(m));
+					.flatMap((x) => (linearCurve ? [x.blendMode, LINEAR_MARK] : [x.blendMode]))
+					.filter((m) => m === LINEAR_MARK || !isCssBlend(m));
 			out.set(t.trackId, { value, glModesAt });
 		}
 		return out;
-	}, [tracks, options.layerFilter, gpu, htmlInCanvas]);
+	}, [tracks, options.layerFilter, gpu, htmlInCanvas, linearCurve]);
 	const background = options.transparentBackground ? null : doc.settings.backgroundColor;
 	let stack: ReactNode =
 		background && background[3] > 0 ? (
@@ -696,6 +704,16 @@ function MixGraphDriver({
 	return null;
 }
 
+/** color-mgmt: the curve layers blend in with Blend using 1.0 gamma / Linearize (null = encoded blending). */
+function linearBlendCurveOf(c: SequenceColorInfo | undefined): LinearBlendCurve | null {
+	if (!c?.blendLinear) return null;
+	const curve = colorSpace(c.space)?.curve;
+	if (curve === 'srgb') return 'srgb';
+	if (curve === 'pq') return 'pq';
+	if (curve === 'hlg') return 'hlg';
+	return 'bt1886';
+}
+
 /**
  * Wave expressions: binds the snapshot's expressions (`doc.expressions`) once the QuickJS engine is loaded; renders
  * wait for it (`delayRender`), so every rendered frame shows post-expression values.
@@ -737,7 +755,15 @@ export function SequenceComposition({ doc: raw, options }: SequenceCompositionPr
 					<ColorDocContext.Provider value={color}>
 						<NestTracksContext.Provider value={VideoTracks}>
 							<AbsoluteFill ref={root} style={{ overflow: 'hidden', isolation: 'isolate' }}>
-								<VideoTracks doc={doc} options={options} offset={offset} />
+								{/* color-mgmt: the monitor shows the working signal through the display transform. */}
+								<DisplayStage
+									working={doc.settings.color}
+									enabled={options.isPreview && options.displayColor !== false}
+									width={doc.settings.width}
+									height={doc.settings.height}
+								>
+									<VideoTracks doc={doc} options={options} offset={offset} />
+								</DisplayStage>
 								{graph ? <MixGraphDriver graph={graph} doc={doc} offset={offset} /> : null}
 								{/* Renders take their audio from the export mixer (every path muxes it): they play no audio. */}
 								{(options.isPreview ? doc.audioClips : []).map((clip) => {
