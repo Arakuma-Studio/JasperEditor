@@ -158,8 +158,13 @@ and unit. Tested in `packages/expressions/test/bind.test.ts`. The text-animators
 - `apps/web/test/expressions-ui.test.tsx` (3): Alt-click, red post-expression values, undo, error display, the
   switch, Expression Control editors (dropdown items, layer picker, 3D point).
 - `e2e/expressions.spec.ts` (Playwright, built stack): Alt-click, typing in the editor, Program preview layer
-  rotation 45° / 90° at frames 15 / 30 for `time * 90`, the post-expression graph, an error falling back to the
-  keyframed value, a preset from the language menu, undo.
+  rotation 45° / 90° at frames 15 / 30 for `time * 90`, red post-expression values, the post-expression graph, an
+  error falling back to the keyframed value, a preset from the language menu, undo; and **browser vs Node**: five
+  frames of expressions using sin/exp/log/pow/atan2, noise, wiggle (3 octaves), random and gaussRandom, evaluated in
+  the editor page (Chrome) and recomputed in Node, are bit-identical (`toEqual` on full-precision values; 3 runs).
+  Finding: the *host's* `Math.cos/sin` (used by the pre-existing `layerMatrix`, not by expressions) differs in the
+  last ulp between Chrome's V8 and Node's in some runs (layer bounds 99.72918198458979 vs …956), which is why the
+  expression engine keeps all maths inside QuickJS.
 - **Real app, all paths** (engine on :49301 driven through the MCP tools): a project with footage, a solid with a
   Slider Control renamed "Speed", Rotation `time * effect("Speed")("Slider")`, Position
   `[linear(time, 0, 3, 300, 1600), 540 + 200 * Math.sin(time * Math.PI)]` and a text clip with Source Text
