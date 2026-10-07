@@ -167,6 +167,8 @@ add. Image maps referenced by params (`{mediaId}`) are part of the bake key. Two
   (native + layer bakes, 1 m 38 s for 420 frames 1080p on the shared machine under load); frames extracted with
   ffmpeg and compared with the render_frame stills: the arm raises over time in the export, Liquify and Mesh Warp
   match, particles and shards are where the previews put them.
+- `packages/compositions/test/fx-compile-budget.test.ts` (SwiftShader, draw passes compiled with their generated vertex
+  shader): passes — every sim-warp program compiles, links and draws within the 5000 ms budget.
 - Contact sheets: `SIM_GALLERY=<dir> [SIM_GALLERY_IDS=a,b] pnpm vitest run packages/compositions/test/fx-sim-warp-gl.test.ts -t gallery`
   writes one PNG per effect / setting (26 sheets: particle-world, particle-world-cubes, shatter, shatter-wire, wave-world,
   wave-world-wire, liquify-view…); looked at for this note.
