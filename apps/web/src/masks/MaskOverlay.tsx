@@ -44,6 +44,9 @@ import { maskUi, useMaskUi } from './store.ts';
 const TONE = 'var(--pr-accent)';
 const HIT = 7;
 const ROTATE_ZONE = 18;
+/** Screen px between a guide and its handle (Premiere draws the handles on short stalks above the mask). */
+const EXPANSION_OFF = 16;
+const FEATHER_OFF = 30;
 
 /** The resolved masks of a layer: Opacity masks, then each enabled effect's. */
 function layerMasks(layer: ResolvedLayer): ResolvedMask[] {
@@ -238,8 +241,9 @@ export function MaskOverlay(props: ProgramOverlayHostProps) {
 			commandsAt: (p) => {
 				const n = sp.fromScreen(p);
 				if (!n) return null;
-				// The feather handle sits 10 screen px outside its guide.
-				const d = outwardDistance(m.path, sp, n) - (kind === 'feather' ? 10 / sp.scale : 0);
+				// The handles sit a few screen px outside their guides (clear of the vertices).
+				const d =
+					outwardDistance(m.path, sp, n) - (kind === 'feather' ? FEATHER_OFF : EXPANSION_OFF) / sp.scale;
 				const value =
 					kind === 'feather'
 						? Math.max(0, Math.round(2 * (d - m.expansion) * 10) / 10)
@@ -494,10 +498,21 @@ export function MaskOverlay(props: ProgramOverlayHostProps) {
 						</g>
 					);
 				})}
+				{expA && feaA && !ui.pen ? (
+					<line
+						x1={expA.p[0]}
+						y1={expA.p[1]}
+						x2={feaA.p[0]}
+						y2={feaA.p[1] - FEATHER_OFF}
+						stroke={TONE}
+						strokeWidth={1}
+						strokeOpacity={0.6}
+					/>
+				) : null}
 				{expA && !ui.pen ? (
 					<rect
 						x={expA.p[0] - 4}
-						y={expA.p[1] - 4}
+						y={expA.p[1] - EXPANSION_OFF - 4}
 						width={8}
 						height={8}
 						fill={MONITOR_COLORS.handleFill}
@@ -513,7 +528,7 @@ export function MaskOverlay(props: ProgramOverlayHostProps) {
 				{feaA && !ui.pen ? (
 					<circle
 						cx={feaA.p[0]}
-						cy={feaA.p[1] - 10}
+						cy={feaA.p[1] - FEATHER_OFF}
 						r={4.5}
 						fill={MONITOR_COLORS.handleFill}
 						stroke={TONE}
