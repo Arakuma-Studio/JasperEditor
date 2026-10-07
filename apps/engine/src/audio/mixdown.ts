@@ -47,8 +47,14 @@ export type MixdownOptions = {
 	onlyTracks?: ReadonlySet<string>;
 	onlyClips?: ReadonlySet<string>;
 	clipLevels?: 'mix' | 'source';
+	/** `track-inputs`: the sum of the track inputs (clips as they reach their tracks), no strips or Mix. */
+	tap?: 'master' | 'track-inputs';
+	/** Ignore the Mix's loudness normalisation (analysis of the mix itself). */
+	withoutLoudness?: boolean;
 	/** Don't keep the file (analysis): measure only. */
 	measureOnly?: boolean;
+	/** Every rendered block (before normalisation), e.g. for activity envelopes. */
+	onBlock?(planar: Float32Array[], frames: number): void;
 };
 
 export type MixdownResult = {
@@ -139,7 +145,9 @@ export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
 		return new PcmStreamReader(channels, child) as ClipReader;
 	};
 	const sourceLevels = o.clipLevels === 'source';
-	const snapshot = sourceLevels ? withSourceLevels(snap) : snap;
+	let snapshot = sourceLevels ? withSourceLevels(snap) : snap;
+	if (o.withoutLoudness && snapshot.audioMix?.loudness)
+		snapshot = { ...snapshot, audioMix: { ...snapshot.audioMix, loudness: null } };
 	const mixer = new OfflineMixer({
 		snapshot,
 		openClip,
@@ -147,7 +155,7 @@ export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
 		...(o.outputLayout ? { outputLayout: o.outputLayout } : {}),
 		...(o.mixdown ? { mixdown: o.mixdown } : {}),
 		...(o.onlyTracks ? { onlyTracks: o.onlyTracks } : {}),
-		...(sourceLevels ? { tap: 'track-inputs' as const } : {}),
+		...(sourceLevels || o.tap === 'track-inputs' ? { tap: 'track-inputs' as const } : {}),
 	});
 	const channels = mixer.outputLayout === 'mono' ? 1 : mixer.outputLayout === '5.1' ? 6 : 2;
 	const meter = new LoudnessMeter(sr, channels, { weights: defaultChannelWeights(channels) });
@@ -163,6 +171,7 @@ export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
 			const view = block.map((c) => c.subarray(0, n));
 			await mixer.render(view, n);
 			meter.process(view, 0, n);
+			o.onBlock?.(view, n);
 			if (fh) await fh.write(interleave(view, n));
 			done += n;
 			o.onProgress?.((done / total) * (o.normalize ? 0.6 : 1), 'Mixing audio');

@@ -159,7 +159,7 @@ function epsFlicks(seq: DSeq): number {
 }
 
 function isAudioClip(c: Clip): c is AudioClip | NestAudioClip {
-	return c.kind === 'audio' || c.kind === 'nest-audio';
+	return c.kind === 'audio' || c.kind === 'nest-audio' || c.kind === 'synthetic-audio';
 }
 
 /** Sequence flicks → content flicks of a clip (fractional frames allowed). */

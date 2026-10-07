@@ -18,7 +18,8 @@ import {
 	panMonoGains,
 } from '@jasper/audio-dsp';
 import { evaluate } from '../keyframes.ts';
-import type { RenderAudioClip, RenderSnapshot } from '../render/snapshot.ts';
+import { nestGainDbAt, type RenderAudioClip, type RenderSnapshot } from '../render/snapshot.ts';
+import { syntheticSamples } from '../structure/generators.ts';
 import type { Animatable } from '../schema/common.ts';
 import type { EffectInstance } from '../schema/sequence.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../time.ts';
@@ -281,6 +282,12 @@ export class OfflineMixer {
 			.sort((a, b) => a.s0 - b.s0);
 	}
 
+	/** Opens a clip: synthetic sounds (Bars and Tone, leader blips) are generated here; media goes to `openClip`. */
+	private async open(clip: RenderAudioClip, at: { offset: number; length: number; sampleRate: number }) {
+		if (clip.generator) return generatorReader(clip, at, this.fps);
+		return this.o.openClip(clip, at);
+	}
+
 	private processor(e: EffectInstance, channels: number, where: 'insert' | 'clip'): AudioProcessor | null {
 		const f = audioProcessorFactory(e.effectId);
 		if (!f) {
@@ -359,9 +366,7 @@ export class OfflineMixer {
 		if (b <= a) return;
 		if (!v.reader && !v.opening && v.primed === false) {
 			const offset = Math.max(0, a - v.s0);
-			v.opening = Promise.resolve(
-				this.o.openClip(v.clip, { offset, length: v.s1 - v.s0 - offset, sampleRate: this.sampleRate }),
-			);
+			v.opening = this.open(v.clip, { offset, length: v.s1 - v.s0 - offset, sampleRate: this.sampleRate });
 			v.reader = await v.opening;
 			v.opening = null;
 			v.primed = true;
@@ -414,6 +419,7 @@ export class OfflineMixer {
 		const gain = this.scratch;
 		const volAnimated = c.volumeDb.keyframes.length > 0;
 		const fades = c.fades;
+		const nest = c.nestGain;
 		const g0 = c.gainDb + c.volumeDb.value;
 		for (let i = 0; i < k; i++) {
 			const frame = (a + i) / spf;
@@ -426,6 +432,8 @@ export class OfflineMixer {
 					: c.sourceIn + local * F * c.speed.rate;
 				db = c.gainDb + evaluate(c.volumeDb, content);
 			}
+			// edit-structure: a clip flattened out of a nested sequence carries the nested levels per frame.
+			if (nest) db += nestGainDbAt(nest, Math.floor(frame + 1e-6));
 			gain[i] = dbToGain(db) * (fades ? audioFadeGain(fades, frame) : 1);
 		}
 		const w = v.buf.length;
@@ -646,6 +654,50 @@ function mix(m: number[][], src: Float32Array[], dst: Float32Array[], n: number,
 			for (let i = 0; i < n; i++) d[i]! += k * s[i]!;
 		}
 	}
+}
+
+/**
+ * A reader of a synthetic sound clip (edit-structure generators) over its span: content time follows the clip's speed
+ * and direction; the mono sound is played on every mapped channel.
+ */
+export function generatorReader(
+	clip: RenderAudioClip,
+	at: { offset: number; length: number; sampleRate: number },
+	fps: Rational,
+): ClipReader | null {
+	const sound = clip.generator;
+	if (!sound) return null;
+	const sr = at.sampleRate;
+	const F = flicksPerFrame(fps);
+	const spf = (sr * fps.den) / fps.num;
+	const s0 = frameToSample(clip.start - (clip.headHandle ?? 0), fps, sr);
+	const channels = Math.max(1, Math.min(6, clip.channels.map.length || 2));
+	const frameSeconds = fps.den / fps.num;
+	const rate = clip.speed.rate;
+	let pos = at.offset;
+	const end = at.offset + at.length;
+	return {
+		channels,
+		read(out: Float32Array[], frames: number): number {
+			const n = Math.max(0, Math.min(frames, end - pos));
+			if (n === 0) return 0;
+			const u0 = (s0 + pos) / spf - clip.start;
+			let block: Float32Array;
+			if (clip.speed.reverse) {
+				const tEnd = (clip.sourceIn + (clip.duration - u0) * F * rate) / FLICKS_PER_SECOND;
+				const t0 = tEnd - (n * rate) / sr;
+				const fwd = syntheticSamples(sound, Math.max(0, t0), n, sr / rate, frameSeconds);
+				block = fwd.reverse();
+			} else {
+				const t0 = (clip.sourceIn + u0 * F * rate) / FLICKS_PER_SECOND;
+				block = syntheticSamples(sound, Math.max(0, t0), n, sr / rate, frameSeconds);
+			}
+			for (let c = 0; c < channels; c++) out[c]!.set(block.subarray(0, n), 0);
+			pos += n;
+			return n;
+		},
+		close(): void {},
+	};
 }
 
 /** Renders a whole range into memory (tests, short analyses). */

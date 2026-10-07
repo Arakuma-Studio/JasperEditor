@@ -2,6 +2,7 @@
 import type { FastifyInstance } from 'fastify';
 import agentRoutes from './agent.ts';
 import animeRoutes from './anime.ts';
+import audioRoutes from './audio.ts';
 import cacheRoutes from './cache.ts';
 import capabilitiesRoutes from './capabilities.ts';
 import colorRoutes from './color.ts';
@@ -49,6 +50,8 @@ const ROUTE_PLUGINS = [
 	animeRoutes,
 	// wp masks: auto-trace (mask tracking runs as `track` jobs of kind `mask`).
 	maskRoutes,
+	// audio-mix: audio analysis (loudness, peaks, ducking activity) and loudness-normalised media versions.
+	audioRoutes,
 ] as const;
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
