@@ -36,6 +36,8 @@ export type InterpretDraft = { patch: InterpretationPatch; sections: Record<stri
 
 export type InterpretSectionProps = {
 	assets: MediaAsset[];
+	/** color-mgmt (additive): the editor session (a section may read the project's other items and the sequence). */
+	session?: EditorSession;
 	draft: InterpretDraft;
 	setDraft(update: (d: InterpretDraft) => InterpretDraft): void;
 };
@@ -460,7 +462,7 @@ export function InterpretFootageDialog(props: HostedDialogProps<InterpretFootage
 				{shown.map((s) => (
 					<section key={s.id} className="flex flex-col gap-2" data-section={s.id}>
 						<h3 className="font-semibold text-pr-strong">{s.title}</h3>
-						<s.component assets={assets} draft={draft} setDraft={setDraft} />
+						<s.component assets={assets} session={session} draft={draft} setDraft={setDraft} />
 					</section>
 				))}
 				{error ? (

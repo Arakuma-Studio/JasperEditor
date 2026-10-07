@@ -1,5 +1,5 @@
 // Colour management UI commands and menu extensions (workstream color-mgmt): Sequence ▸ Sequence Settings… (its Colour
-// section), Interpret Footage ▸ Colour on Project items (also in the Project panel's item menu) and Clip Colour Space on
+// section), the Colour section of Interpret Footage (color-mgmt/interpret-section.tsx) and Clip Colour Space on
 // timeline clips (clip context menu). Every edit is one undoable transaction (dialogs in color-mgmt/dialogs.tsx).
 import type { MediaAsset } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
@@ -9,7 +9,9 @@ import {
 	registerColorMgmtDialogs,
 	SEQUENCE_COLOR_DIALOG,
 } from '../color-mgmt/dialogs.tsx';
-import { clipMenuExtensions, projectItemMenuExtensions } from '../extensions/index.ts';
+// The Colour section of Interpret Footage (imports' section registry) registers at module load.
+import '../color-mgmt/interpret-section.tsx';
+import { clipMenuExtensions } from '../extensions/index.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
 const PICTURES = new Set(['video', 'image', 'animated-image']);
@@ -41,30 +43,6 @@ function selectedMediaClips(session: EditorSession): { sequenceId: string; clipI
 	});
 	return ids.length ? { sequenceId: seq.id, clipIds: ids } : null;
 }
-
-projectItemMenuExtensions.register({
-	id: 'color-mgmt.interpret',
-	items({ session, items, readOnly }) {
-		const doc = session.getCommitted();
-		const media = items
-			.filter((i) => i.kind === 'media')
-			.map((i) => (i.kind === 'media' ? doc.media[i.mediaId] : undefined))
-			.filter((a): a is NonNullable<typeof a> => !!a && PICTURES.has(a.kind))
-			.map((a) => a.id);
-		if (media.length === 0) return [];
-		return [
-			{
-				kind: 'item',
-				label: 'Interpret Footage ▸ Colour…',
-				disabled: readOnly,
-				run: () => {
-					registerColorMgmtDialogs();
-					void openDialog(INTERPRET_COLOR_DIALOG, { session, target: { kind: 'media', mediaIds: media } });
-				},
-			},
-		];
-	},
-});
 
 clipMenuExtensions.register({
 	id: 'color-mgmt.clip',
@@ -108,24 +86,6 @@ export const colorMgmtCommands: UiCommand[] = [
 			if (!session || !id) return;
 			registerColorMgmtDialogs();
 			ctx.ui.openDialog(SEQUENCE_COLOR_DIALOG, { session, sequenceId: id });
-		},
-	},
-	{
-		id: 'media.interpretColor',
-		label: 'Interpret Footage ▸ Colour…',
-		description:
-			'How the selected Project items’ colours are read: automatic from the file tags or a colour space override (camera log, HDR, ACES, an OCIO config space), range, tone mapping, PQ peak and input LUT.',
-		scope: 'global',
-		agentExposed: true,
-		when: (ctx) => writable(ctx) && selectedPictureMedia(ctx.session!).length > 0,
-		disabledReason: () => 'Select video or still items in the Project panel',
-		run(ctx) {
-			const session = ctx.session;
-			if (!session) return;
-			const mediaIds = selectedPictureMedia(session);
-			if (mediaIds.length === 0) return;
-			registerColorMgmtDialogs();
-			ctx.ui.openDialog(INTERPRET_COLOR_DIALOG, { session, target: { kind: 'media', mediaIds } });
 		},
 	},
 	{

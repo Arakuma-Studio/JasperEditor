@@ -17,7 +17,7 @@ import {
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { Checkbox, Dialog, type HostedDialogProps, registerDialog, Select, TextField } from '@jasper/ui';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
 	detectedSpaceLabel,
 	isHdrWorking,
@@ -41,13 +41,14 @@ export function registerColorMgmtDialogs(): void {
 
 function useClose(close: (r?: unknown) => void) {
 	const [open, setOpen] = useState(true);
-	const [done, setDone] = useState(false);
+	// A ref: OK closes through `finish(result)` and the Dialog then reports its closing again (no second close).
+	const done = useRef(false);
 	return {
 		open,
 		finish(result?: unknown) {
 			setOpen(false);
-			if (done) return;
-			setDone(true);
+			if (done.current) return;
+			done.current = true;
 			close(result);
 		},
 	};
