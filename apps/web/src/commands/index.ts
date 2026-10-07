@@ -24,6 +24,7 @@ import { interchangeCommands } from './interchange.ts';
 import { layerCommands } from './layer.ts';
 import { maskCommands } from './masks.ts';
 import { mgCommands } from './mg.ts';
+import { monitorViewCommands } from './monitor-view.ts';
 import { multicamCommands } from './multicam.ts';
 import { processCommands } from './process.ts';
 import { projectCommands } from './project.ts';
@@ -76,6 +77,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	interchangeCommands,
 	// edit-ux (registered after timeline/transport: trim mode, match frame, subclips, dialogs)
 	editUxCommands,
+	monitorViewCommands,
 ];
 
 let registered = false;

@@ -349,7 +349,19 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 		items: [
 			c('program.showRulers', 'Show Rulers'),
 			c('program.showGuides', 'Show Guides'),
+			c('program.lockGuides', 'Lock Guides'),
+			c('program.addGuide', 'Add Guide…'),
+			c('program.clearGuides', 'Clear Guides'),
+			// edit-ux (Premiere View ▸ Guide Templates)
+			sub('Guide Templates', [
+				c('program.saveGuidesAsTemplate', 'Save Guides as Template…'),
+				c('program.manageGuides', 'Manage Guides…'),
+			]),
 			c('program.snapInMonitor', 'Snap in Program Monitor'),
+			sep,
+			c('program.toggleComparisonView', 'Comparison View'),
+			c('program.toggleDroppedFrames', 'Show Dropped Frame Indicator'),
+			c('monitor.fullScreenVideo', 'Toggle Full Screen Video'),
 			sep,
 			sub('Theme', [
 				c('view.theme.darkest', 'Darkest'),
