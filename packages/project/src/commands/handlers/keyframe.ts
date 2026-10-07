@@ -165,11 +165,16 @@ function magnitude(a: unknown, b: unknown): number {
 	return 0;
 }
 
-/** Average speed (value units per flick) of the segment between keys i and i+1, or 0. */
+/**
+ * Average velocity (value units per flick) of the segment between keys i and i+1, or 0: signed for numbers (so a
+ * Continuous key at a local extremum gets a smooth zero crossing), the speed along the value / path otherwise.
+ */
 function segmentVelocity(kfs: readonly Keyframe<unknown>[], i: number): number {
 	const a = kfs[i];
 	const b = kfs[i + 1];
 	if (!a || !b || b.time === a.time) return 0;
+	if (typeof a.value === 'number' && typeof b.value === 'number')
+		return (b.value - a.value) / (b.time - a.time);
 	return magnitude(a.value, b.value) / (b.time - a.time);
 }
 
@@ -198,12 +203,13 @@ function matchContinuous(anim: DAnim, i: number, edited: 'in' | 'out'): void {
 	const vIn = segmentVelocity(kfs, i - 1);
 	const vOut = segmentVelocity(kfs, i);
 	if (i === 0 || i === kfs.length - 1) return; // one side only
+	// keyframes-blend: signed (numbers): the same velocity on both sides, also through a local extremum.
 	if (edited === 'out') {
-		const slope = vIn > 0 ? (key.easeOut.slope * vOut) / vIn : key.easeOut.slope;
-		key.easeIn = { influence: key.easeIn.influence, slope: Math.max(0, slope) };
+		const slope = vIn !== 0 ? (key.easeOut.slope * vOut) / vIn : key.easeOut.slope;
+		key.easeIn = { influence: key.easeIn.influence, slope };
 	} else {
-		const slope = vOut > 0 ? (key.easeIn.slope * vIn) / vOut : key.easeIn.slope;
-		key.easeOut = { influence: key.easeOut.influence, slope: Math.max(0, slope) };
+		const slope = vOut !== 0 ? (key.easeIn.slope * vIn) / vOut : key.easeIn.slope;
+		key.easeOut = { influence: key.easeOut.influence, slope };
 	}
 }
 

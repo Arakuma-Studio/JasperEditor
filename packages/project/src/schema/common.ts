@@ -58,7 +58,12 @@ export const INTERPOLATIONS = ['linear', 'bezier', 'auto-bezier', 'continuous-be
 export const InterpolationSchema = z.enum(INTERPOLATIONS);
 export type Interpolation = DeepStrip<z.infer<typeof InterpolationSchema>>;
 
-export const EaseSchema = z.looseObject({ influence: z.number().gt(0).max(1), slope: z.number().min(0) });
+/**
+ * A temporal ease: influence (0, 1] of the segment and the speed as a slope normalised by the segment's average speed
+ * (1 = linear). keyframes-blend: the slope is any finite number — negative = the value first moves away from the
+ * next key (anticipation), steep = it passes it (overshoot), as Premiere's graph handles allow.
+ */
+export const EaseSchema = z.looseObject({ influence: z.number().gt(0).max(1), slope: z.number() });
 export type Ease = DeepStrip<z.infer<typeof EaseSchema>>;
 
 /**

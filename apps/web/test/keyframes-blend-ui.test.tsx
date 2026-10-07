@@ -113,3 +113,108 @@ describe('Rove Across Time (keyframes-blend)', () => {
 		expect(screen.queryByTestId('ec-kf-rove')).toBeNull();
 	});
 });
+
+/** A wheel event with modifiers (happy-dom drops them from WheelEvent's init). */
+function wheel(el: Element, init: { deltaY: number; ctrlKey?: boolean; shiftKey?: boolean }) {
+	const ev = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: init.deltaY });
+	for (const k of ['ctrlKey', 'shiftKey'] as const) Object.defineProperty(ev, k, { value: !!init[k] });
+	Object.defineProperty(ev, 'deltaY', { value: init.deltaY });
+	el.dispatchEvent(ev);
+}
+
+describe('graph editor (keyframes-blend)', () => {
+	it('Ctrl/Cmd + wheel zooms one graph vertically; Fit returns to auto-fit; persisted per panel', () => {
+		const { session } = setup();
+		act(() => {
+			fireEvent.click(screen.getByTestId('twirl-opacity'));
+		});
+		const labels = () => screen.getByTestId('graph-value-labels-opacity').textContent ?? '';
+		const velocity = () => screen.getByTestId('graph-velocity-labels-opacity').textContent ?? '';
+		const before = labels();
+		const velBefore = velocity();
+		expect(screen.getByTestId('graph-fit-value-opacity').getAttribute('aria-pressed')).toBe('true');
+		act(() => {
+			wheel(screen.getByTestId('graph-value-opacity'), { deltaY: -100, ctrlKey: true });
+		});
+		expect(labels()).not.toBe(before);
+		expect(velocity()).toBe(velBefore); // independent
+		expect(screen.getByTestId('graph-fit-value-opacity').getAttribute('aria-pressed')).toBe('false');
+		const zoomed = labels();
+		cleanup();
+		renderWithSession(session, <EffectControlsPanel instanceId="ecb" visible />);
+		expect(labels()).toBe(zoomed);
+		act(() => {
+			wheel(screen.getByTestId('graph-value-opacity'), { deltaY: 100, shiftKey: true });
+		});
+		expect(labels()).not.toBe(zoomed);
+		act(() => {
+			fireEvent.click(screen.getByTestId('graph-fit-value-opacity'));
+		});
+		expect(labels()).toBe(before);
+	});
+
+	it('vec2 Bezier handles on the X and Y curves edit the shared ease (one undo entry)', () => {
+		const session = makeSession();
+		const [id] = addSolids(session, [30], 60);
+		act(() => {
+			session.select('timeline', [id!]);
+			session.transport.seek(5);
+		});
+		act(
+			() =>
+				void session.apply({
+					label: 'keys',
+					origin: 'user',
+					commands: [
+						{
+							type: 'keyframe.add',
+							target: ['clip', id, 'transform', 'position'],
+							at: { frames: 0 },
+							value: [100, 100],
+							interpolation: 'bezier',
+						},
+						{
+							type: 'keyframe.add',
+							target: ['clip', id, 'transform', 'position'],
+							at: { frames: 20 },
+							value: [500, 300],
+							interpolation: 'bezier',
+						},
+					] as never,
+				}),
+		);
+		renderWithSession(session, <EffectControlsPanel instanceId="ecv" visible />);
+		act(() => {
+			fireEvent.click(screen.getByTestId('twirl-transform.position'));
+		});
+		const keys = () =>
+			(
+				clipOf(session, id!) as unknown as {
+					transform: { position: { keyframes: { id: string; easeOut: { slope: number } }[] } };
+				}
+			).transform.position.keyframes;
+		const first = keys()[0]!;
+		act(() => {
+			fireEvent.pointerDown(screen.getByTestId(`graph-value-key-${first.id}-0`), {
+				clientX: 10,
+				clientY: 10,
+				button: 0,
+			});
+			fireEvent.pointerUp(window, { clientX: 10, clientY: 10 });
+		});
+		const hx = screen.getByTestId(`graph-value-handle-${first.id}-out-0`);
+		expect(screen.getByTestId(`graph-value-handle-${first.id}-out-1`)).toBeTruthy();
+		const before = session.getState().history.entries.length;
+		const slope0 = keys()[0]!.easeOut.slope;
+		act(() => {
+			fireEvent.pointerDown(hx, { clientX: 100, clientY: 50, button: 0 });
+		});
+		act(() => {
+			fireEvent.pointerMove(window, { clientX: 100, clientY: 30 });
+			fireEvent.pointerMove(window, { clientX: 100, clientY: 20 });
+			fireEvent.pointerUp(window, { clientX: 100, clientY: 20 });
+		});
+		expect(keys()[0]!.easeOut.slope).toBeGreaterThan(slope0);
+		expect(session.getState().history.entries.length).toBe(before + 1);
+	});
+});

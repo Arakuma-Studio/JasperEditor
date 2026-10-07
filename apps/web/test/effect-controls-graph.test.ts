@@ -15,10 +15,12 @@ import {
 import { describe, expect, it } from 'vitest';
 import {
 	easeFromValueDrag,
+	easeFromVec2ValueDrag,
 	easeFromVelocityDrag,
 	effectiveEase,
 	fitRange,
 	graphKindOf,
+	panRange,
 	planEaseEdit,
 	roundToStep,
 	sampleValueCurves,
@@ -26,7 +28,9 @@ import {
 	timeMapOf,
 	unitVelocity,
 	valueHandles,
+	vec2ValueHandles,
 	velocityHandles,
+	zoomRange,
 } from '../src/panels/effectControls/graph.ts';
 import { exactFrameOf } from '../src/panels/properties/lib/model.ts';
 
@@ -182,7 +186,7 @@ describe('velocity handles ↔ eases', () => {
 		const h = anim([kf('a', 0, 0, 'hold'), kf('b', 30, 90)]);
 		expect(velocityHandles(h, 1, map)).toEqual([]);
 	});
-	it('drag → ease inverts the handle and clamps influence to 0.01..1 and slope to ≥ 0', () => {
+	it('drag → ease inverts the handle and clamps influence to 0.01..1; the slope may go negative', () => {
 		const [, hout] = velocityHandles(a, 1, map);
 		const same = easeFromVelocityDrag(a, hout!, hout!.tipX, hout!.velocity, map);
 		expect(same.influence).toBeCloseTo(0.6, 9);
@@ -191,7 +195,8 @@ describe('velocity handles ↔ eases', () => {
 		expect(faster).toEqual({ influence: expect.closeTo(0.5, 9), slope: expect.closeTo(3, 9) });
 		expect(easeFromVelocityDrag(a, hout!, map.toX(30 * F) + 100, 0, map).influence).toBe(1);
 		expect(easeFromVelocityDrag(a, hout!, map.toX(30 * F) - 5, 0, map).influence).toBe(0.01);
-		expect(easeFromVelocityDrag(a, hout!, hout!.tipX, +50, map).slope).toBe(0); // wrong direction
+		// keyframes-blend: through zero = the value first moves away (anticipation), as Premiere's handles allow.
+		expect(easeFromVelocityDrag(a, hout!, hout!.tipX, +50, map).slope).toBeCloseTo(50 / hout!.unit, 9);
 		const flat = anim([kf('a', 0, 5, 'bezier', LIN, { influence: 0.4, slope: 0.7 }), kf('b', 30, 5)]);
 		const [hf] = velocityHandles(flat, 0, map);
 		expect(hf!.unit).toBe(0);
@@ -215,8 +220,9 @@ describe('value-graph Bezier handles', () => {
 			influence: expect.closeTo(0.5, 9),
 			slope: expect.closeTo(0.4, 9),
 		});
+		// keyframes-blend: below the key = anticipation (negative slope): −50 at 10 % of a 100-unit segment.
 		const e = easeFromValueDrag(a, out!, map.toX(3 * F), -50, map);
-		expect(e).toEqual({ influence: expect.closeTo(0.1, 9), slope: 0 });
+		expect(e).toEqual({ influence: expect.closeTo(0.1, 9), slope: expect.closeTo(-5, 9) });
 	});
 });
 
@@ -306,5 +312,67 @@ describe('vertical range', () => {
 		expect(fitRange([])).toEqual({ min: -1, max: 1 });
 		expect(roundToStep(12.34567, 0.1)).toBe(12.346);
 		expect(roundToStep(7.25619)).toBe(7.26);
+	});
+});
+
+// ---------------------------------------------------------------- keyframes-blend
+
+describe('overshoot and anticipation through the handles (keyframes-blend)', () => {
+	it('a negative slope makes the value move away first; a steep one passes the next key', () => {
+		const back = anim([
+			kf('a', 0, 0, 'bezier', LIN, { influence: 0.5, slope: -1 }),
+			kf('b', 30, 100, 'bezier'),
+		]);
+		const early = evaluate(back, 3 * F);
+		expect(early).toBeLessThan(0);
+		const over = anim([
+			kf('a', 0, 0, 'bezier', LIN, { influence: 0.5, slope: 4 }),
+			kf('b', 30, 100, 'bezier'),
+		]);
+		const peak = Math.max(...Array.from({ length: 31 }, (_, f) => evaluate(over, f * F)));
+		expect(peak).toBeGreaterThan(100);
+	});
+});
+
+describe('vec2 value-graph handles (keyframes-blend)', () => {
+	const a = anim<[number, number]>([
+		kf('a', 0, [0, 100], 'bezier', LIN, { influence: 0.5, slope: 0.4 }),
+		kf('b', 30, [200, 50], 'bezier'),
+	]);
+	it('sit on each component curve, tangent at the key, and invert on drag', () => {
+		const hs = vec2ValueHandles(a, 0, map);
+		expect(hs.map((h) => [h.side, h.dim])).toEqual([
+			['out', 0],
+			['out', 1],
+		]);
+		const [hx, hy] = hs;
+		expect(hx!.tipX).toBeCloseTo(map.toX(15 * F), 9);
+		// Bezier progress p'(0) = slope: d/dt X = 0.4 · 200 / 30 frames → tip = 0.4 · 200 · 0.5 = 40.
+		expect(hx!.tipY).toBeCloseTo(40, 2);
+		expect(hy!.tipY).toBeCloseTo(100 - 0.4 * 50 * 0.5, 2);
+		const same = easeFromVec2ValueDrag(a, hx!, hx!.tipX, hx!.tipY, map);
+		expect(same.influence).toBeCloseTo(0.5, 9);
+		expect(same.slope).toBeCloseTo(0.4, 3);
+		// Dragging the Y handle down (Y decreases faster) speeds the shared ease up.
+		const faster = easeFromVec2ValueDrag(a, hy!, hy!.tipX, 100 - 1 * 50 * 0.5, map);
+		expect(faster.slope).toBeCloseTo(1, 3);
+	});
+
+	it('a component that does not change only edits the influence', () => {
+		const flat = anim<[number, number]>([
+			kf('a', 0, [0, 100], 'bezier', LIN, { influence: 0.5, slope: 0.4 }),
+			kf('b', 30, [200, 100], 'bezier'),
+		]);
+		const [, hy] = vec2ValueHandles(flat, 0, map);
+		const e = easeFromVec2ValueDrag(flat, hy!, map.toX(9 * F), 300, map);
+		expect(e).toEqual({ influence: expect.closeTo(0.3, 9), slope: 0.4 });
+	});
+});
+
+describe('vertical zoom (keyframes-blend)', () => {
+	it('zooms about a value and pans', () => {
+		expect(zoomRange({ min: 0, max: 100 }, 50, 0.5)).toEqual({ min: 25, max: 75 });
+		expect(zoomRange({ min: 0, max: 100 }, 0, 2)).toEqual({ min: 0, max: 200 });
+		expect(panRange({ min: 0, max: 100 }, 10)).toEqual({ min: 10, max: 110 });
 	});
 });
