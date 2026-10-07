@@ -470,7 +470,8 @@ function applyXf(xf: OcioXf, c: Rgb, inverse: boolean, resolve: SpaceResolver, d
 		throw new OcioError('E_OCIO_UNSUPPORTED', 'Colour space references are nested too deeply (cycle?)');
 	switch (xf.k) {
 		case 'inverse':
-			return applyXf(xf.xf, c, !inverse, resolve, depth + 1);
+			applyXf(xf.xf, c, !inverse, resolve, depth + 1);
+			return;
 		case 'matrix': {
 			const m: ColorMatrix = [
 				xf.m[0]!,
@@ -649,7 +650,8 @@ function applyXf(xf: OcioXf, c: Rgb, inverse: boolean, resolve: SpaceResolver, d
 			return;
 		}
 		case 'fixed':
-			return applyFixed(xf.style, xf.params, c, inverse);
+			applyFixed(xf.style, xf.params, c, inverse);
+			return;
 		case 'builtin':
 			builtinFn(xf.style)!(c, inverse);
 			return;

@@ -285,7 +285,7 @@ export function parseSpi3d(text: string): Lut {
 
 export function parseCsp(text: string): Lut {
 	const ls = contentLines(text);
-	if (!ls[0] || ls[0].text !== 'CSPLUTV100')
+	if (ls[0]?.text !== 'CSPLUTV100')
 		throw new CubeParseError('Not a cineSpace CSPLUTV100 file', ls[0]?.no ?? 0);
 	const kind = ls[1]?.text;
 	if (kind !== '1D' && kind !== '3D') throw new CubeParseError('Expected 1D or 3D', ls[1]?.no ?? 0);
