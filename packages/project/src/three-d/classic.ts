@@ -12,7 +12,14 @@
 import { blendPixel, dissolveNoise, type Rgba } from '../blend-modes.ts';
 import { invertMat3, type Mat3 } from '../render/homography.ts';
 import type { Vec3 } from '../schema/common.ts';
-import { dofPad, type FloatImage, newFloatImage, progressiveBlur, boostHighlights } from './bokeh.ts';
+import {
+	blurLevels,
+	boostHighlights,
+	dofPad,
+	type FloatImage,
+	newFloatImage,
+	progressiveBlur,
+} from './bokeh.ts';
 import {
 	cross3,
 	dot3,
@@ -82,8 +89,12 @@ export type ClassicPlane = PlaneSource & {
 	dof: {
 		pad: number;
 		radius: (x: number, y: number) => number;
+		/** Camera depth at a picture pixel: z0 + zx·x + zy·y. */
 		zPlane: [number, number, number];
+		/** radius = coc(z) · z · k. */
 		k: number;
+		/** Whether the depths (of the corners) lie on both sides of the focus distance. */
+		crossesFocus: (zs: number[]) => boolean;
 	} | null;
 };
 
@@ -207,7 +218,14 @@ export function prepareClassicPlane(setup: ClassicSetup, src: PlaneSource): Clas
 			width += 2 * pad;
 			height += 2 * pad;
 			const d = dofOf(cam, cam.dof, src.world, src.layerToPicture, pad);
-			dof = { pad, radius: d.radius, zPlane: d.zPlane, k: d.k };
+			const focus = cam.dof.focus;
+			dof = {
+				pad,
+				radius: d.radius,
+				zPlane: d.zPlane,
+				k: d.k,
+				crossesFocus: (zs) => zs.some((z) => z < focus) && zs.some((z) => z > focus),
+			};
 		}
 	}
 	const bounds = pictureBounds({ width, height, layerToPicture });
@@ -325,6 +343,26 @@ function texel(p: CpuPlane, u: number, v: number): Rgba {
 	return samplePicture(p.pixels, m[0] * u + m[1] * v + m[2], m[3] * u + m[4] * v + m[5]);
 }
 
+/**
+ * The blur levels of a plane's depth of field (EffectCraft `blur_levels` over its radius map). The radius is |affine|
+ * in the picture pixel, so its extremes over the pixel centres are at the corners — or 0 where the plane crosses the
+ * focus distance. Shared by the CPU reference and the GL renderer (identical levels).
+ */
+export function dofLevels(p: Pick<ClassicPlane, 'dof' | 'width' | 'height'>): number[] | null {
+	if (!p.dof) return null;
+	const { radius, zPlane } = p.dof;
+	const xs = [0.5, p.width - 0.5];
+	const ys = [0.5, p.height - 0.5];
+	const rs: number[] = [];
+	const zs: number[] = [];
+	for (const x of xs)
+		for (const y of ys) {
+			rs.push(radius(x, y));
+			zs.push(zPlane[0] + zPlane[1] * x + zPlane[2] * y);
+		}
+	return blurLevels(rs.concat(p.dof.crossesFocus(zs) ? [0] : []));
+}
+
 /** Applies a plane's depth of field to its (unpadded) picture: the padded, blurred buffer. */
 export function dofPicture(p: ClassicPlane, picture: FloatImage, dof: Dof): FloatImage {
 	if (!p.dof) return picture;
@@ -339,7 +377,7 @@ export function dofPicture(p: ClassicPlane, picture: FloatImage, dof: Dof): Floa
 	const radius = new Float32Array(p.width * p.height);
 	for (let y = 0; y < p.height; y++)
 		for (let x = 0; x < p.width; x++) radius[y * p.width + x] = p.dof.radius(x + 0.5, y + 0.5);
-	return progressiveBlur(padded, dof.iris, radius);
+	return progressiveBlur(padded, dof.iris, radius, dofLevels(p));
 }
 
 /** RGB transmittance of light `l` reaching `p` past caster `c` (1 = unoccluded). */
@@ -418,7 +456,8 @@ function shadeTexel(
 		let sh: Vec3 = [1, 1, 1];
 		if (l.castsShadows && m.acceptsShadows !== 0)
 			for (const c of casters) {
-				if (c === it || c.key === it.key) continue;
+				// A plane never shadows itself (nor the other planes of its layer: per-character planes share the order).
+				if (c === it || c.order === it.order) continue;
 				const o = occlusion(c, p, l);
 				sh = [sh[0] * o[0], sh[1] * o[1], sh[2] * o[2]];
 			}

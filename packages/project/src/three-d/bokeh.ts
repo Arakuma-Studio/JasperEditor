@@ -186,8 +186,13 @@ export function blurLevels(radius: ArrayLike<number>): number[] | null {
 }
 
 /** Depth-varying blur: `radius[i]` = blur radius of pixel i (row-major). */
-export function progressiveBlur(img: FloatImage, iris: Iris, radius: ArrayLike<number>): FloatImage {
-	const levels = blurLevels(radius);
+export function progressiveBlur(
+	img: FloatImage,
+	iris: Iris,
+	radius: ArrayLike<number>,
+	given?: number[] | null,
+): FloatImage {
+	const levels = given === undefined ? blurLevels(radius) : given;
 	if (!levels) return { ...img, data: img.data.slice() };
 	if (levels.length === 1) return bokehBlur(img, iris, levels[0]!);
 	const n = levels.length;
