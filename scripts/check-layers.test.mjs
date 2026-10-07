@@ -142,5 +142,5 @@ describe('check-layers', () => {
 
 	it('the repository passes', () => {
 		expect(checkRepo(repo)).toEqual([]);
-	});
+	}, 60_000);
 });

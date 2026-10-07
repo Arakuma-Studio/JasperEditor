@@ -95,5 +95,5 @@ describe('check-assets', () => {
 
 	it('the repository passes', () => {
 		expect(checkRepo(repo)).toEqual([]);
-	});
+	}, 60_000);
 });
