@@ -6,20 +6,28 @@
 //           → `project.importTimeline` command (one undoable transaction).
 //   export: document → `fromJasper` (pre-rendered clips substituted) → IProject → `writeDocument` → bytes + report.
 import type { MediaAsset, ProjectDocument } from '@jasper/project';
+import { exportEdlPerTrack } from './edl.ts';
 import { detectFormat, FORMAT_INFO, formatInfo } from './formats.ts';
 import { type FromJasperOptions, fromJasper } from './jasper-export.ts';
 import { type JasperFragment, type ToJasperOptions, toJasper } from './jasper-import.ts';
 import type { IProject } from './model.ts';
 import type { ExportOptions, Format, ImportOptions } from './options.ts';
+import { encodeUtf8 } from './paths.ts';
 import { InterchangeError, Report, type ReportEntry } from './report.ts';
 
+export * from './ale.ts';
+export * from './blend.ts';
 export * from './build.ts';
+export * from './edl.ts';
 export * from './effects.ts';
+export * from './fcp7.ts';
+export * from './fcpxml.ts';
 export * from './formats.ts';
 export * from './jasper-export.ts';
 export * from './jasper-import.ts';
 export * from './model.ts';
 export * from './options.ts';
+export * from './otio.ts';
 export * from './paths.ts';
 export * from './prerender.ts';
 export * from './report.ts';
@@ -63,11 +71,15 @@ export function writeDocument(
 	p: IProject,
 	sequenceId: string,
 	format: Format,
-	opts: ExportOptions = {},
+	opts: ExportOptions & { perTrack?: boolean } = {},
 ): WriteResult {
 	const info = formatInfo(format);
 	const report = new Report();
 	if (!p.sequences[sequenceId]) throw new InterchangeError('NO_SEQUENCE', `no sequence ${sequenceId}`);
+	if (format === 'edl' && opts.perTrack) {
+		const lists = exportEdlPerTrack(p, sequenceId, opts, report);
+		return { format, files: lists.map((l) => ({ suffix: l.suffix, bytes: encodeUtf8(l.text) })), report };
+	}
 	const bytes = info.write(p, sequenceId, opts, report);
 	return { format, files: [{ suffix: null, bytes }], report };
 }

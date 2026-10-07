@@ -29,7 +29,14 @@ import {
 import type { IBinEntry, IClip, IMedia, IProject, ISequence, ITrack, Rate } from './model.ts';
 import { extension, fileName } from './paths.ts';
 import type { Report } from './report.ts';
-import { flicksPerFrame, flicksToFrames, formatTc, framesToFlicks, supportsDropFrame } from './time.ts';
+import {
+	flicksPerFrame,
+	flicksToFrames,
+	formatTc,
+	framesToFlicks,
+	parseTc,
+	supportsDropFrame,
+} from './time.ts';
 
 /** A media file the document references that is not (yet) linked: the fragment holds an offline placeholder. */
 export type MissingMedia = {
@@ -178,7 +185,46 @@ function syntheticOf(m: IMedia, id: string): SyntheticSource | null {
 }
 
 /** Convert an interchange project into a JasperEditor fragment. */
-export function toJasper(p: IProject, opts: ToJasperOptions, report: Report): JasperFragment {
+/**
+ * EDL / ALE sources have absolute timecodes; their importers guess each file's start timecode (`jasper.timecodeGuess`).
+ * When the engine linked the real file, its probed start timecode replaces the guess and every clip using it is
+ * shifted so it shows the same source frames.
+ */
+function rebaseGuessedTimecodes(p0: IProject, assets: ToJasperOptions['assets'], report: Report): IProject {
+	const shift = new Map<string, number>();
+	for (const m of Object.values(p0.media)) {
+		if (!m.jasper?.timecodeGuess || !m.timecode) continue;
+		const a = assets?.[m.id];
+		if (!a?.probe.startTimecode) continue;
+		const real = parseTc(a.probe.startTimecode, m.timecode.rate);
+		if (real === null) continue;
+		const d = framesToFlicks(m.timecode.frames, m.timecode.rate) - framesToFlicks(real, m.timecode.rate);
+		if (d !== 0) {
+			shift.set(m.id, d);
+			report.info(
+				`"${m.name}" starts at timecode ${a.probe.startTimecode}; its clips were placed from that timecode`,
+				{
+					subject: { kind: 'media', id: m.id, name: m.name },
+				},
+			);
+		}
+	}
+	if (!shift.size) return p0;
+	const p = clone(p0);
+	for (const s of Object.values(p.sequences))
+		for (const t of [...s.video, ...s.audio])
+			for (const c of t.clips) {
+				const d = c.source.type === 'media' ? shift.get(c.source.mediaId) : undefined;
+				if (!d) continue;
+				c.sourceIn += d;
+				if (c.hold != null) c.hold += d;
+				for (const m of c.markers) m.start += d;
+			}
+	return p;
+}
+
+export function toJasper(p0: IProject, opts: ToJasperOptions, report: Report): JasperFragment {
+	const p = rebaseGuessedTimecodes(p0, opts.assets, report);
 	const ids = opts.ids ?? createRandomIdSource();
 	const now = opts.now ?? new Date().toISOString();
 	const frag: JasperFragment = {

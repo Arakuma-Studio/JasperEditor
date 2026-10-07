@@ -1,5 +1,7 @@
 // The format registry: names, extensions, sniffing and the reader/writer of every format.
 
+import { exportAle, importAle, sniffAle } from './ale.ts';
+import { exportEdl, importEdl, looksLikeEdl } from './edl.ts';
 import { exportFcp7, importFcp7, sniffFcp7 } from './fcp7.ts';
 import { exportFcpxml, importFcpxml, sniffFcpxml } from './fcpxml.ts';
 import type { IProject } from './model.ts';
@@ -90,10 +92,30 @@ export const FORMAT_INFO: Record<Format, FormatInfo | undefined> = {
 		read: text(importFcpxml),
 		write: textOut(exportFcpxml),
 	},
-	edl: undefined,
+	edl: {
+		id: 'edl',
+		name: 'CMX 3600 EDL',
+		extension: 'edl',
+		extensions: ['edl'],
+		binary: false,
+		timeline: true,
+		sniff: (_b, head) => looksLikeEdl(head),
+		read: text(importEdl),
+		write: textOut(exportEdl),
+	},
 	aaf: undefined,
 	omf: undefined,
-	ale: undefined,
+	ale: {
+		id: 'ale',
+		name: 'Avid ALE',
+		extension: 'ale',
+		extensions: ['ale'],
+		binary: false,
+		timeline: false,
+		sniff: (_b, head) => sniffAle(head),
+		read: text(importAle),
+		write: textOut(exportAle),
+	},
 };
 
 export function formatInfo(f: Format): FormatInfo {
