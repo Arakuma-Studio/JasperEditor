@@ -167,6 +167,7 @@ const LABELS: Record<CommandType, string> = {
 	'caption.setText': 'Edit Caption',
 	'caption.split': 'Split Caption',
 	'caption.merge': 'Merge Captions',
+	'caption.delete': 'Delete Captions',
 	'caption.setTimes': 'Caption Timing',
 	'caption.setStyle': 'Caption Style',
 	'caption.applyPreset': 'Apply Caption Style',

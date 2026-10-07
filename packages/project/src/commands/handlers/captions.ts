@@ -670,7 +670,7 @@ function createCaptionsFromTranscript(
 		language: lang,
 		style,
 	});
-	h.defineRef(cmd.ref, clipIds[0] ?? track.id);
+	h.defineRef(cmd.ref, track.id);
 	return { trackId: track.id, clipIds, captions: clipIds.length };
 }
 
@@ -1230,6 +1230,27 @@ export const captionHandlers: HandlerMap = {
 	'caption.split': splitCaptions,
 	'caption.merge': mergeCaptions,
 	'caption.setTimes': setTimes,
+	'caption.delete': (doc, cmd, h) => {
+		const ids = idList(cmd.clipIds);
+		if (!ids.length) h.fail('E_INVALID_PARAM', 'No captions given');
+		const list = ids.map((id) => captionClip(doc, id, h));
+		for (const x of list) assertUnlocked(x.track, h);
+		const removed = list.map((x) => ({
+			seq: x.seq,
+			trackId: x.clip.trackId,
+			start: x.clip.start,
+			end: end(x.clip),
+		}));
+		for (const x of list) removeClip(x.seq, x.clip.id, h);
+		if (cmd.ripple) {
+			for (const r of removed.sort((a, b) => b.start - a.start)) {
+				const n = r.end - r.start;
+				for (const c of trackClips(r.seq, r.trackId)) if (c.start >= r.end) c.start -= n;
+			}
+		}
+		for (const seq of new Set(list.map((x) => x.seq))) cleanupSequence(seq, h);
+		return { deleted: ids.length };
+	},
 	'caption.setStyle': (doc, cmd, h) => {
 		const seq = h.sequence(doc, cmd.sequenceId);
 		return applyStyle(

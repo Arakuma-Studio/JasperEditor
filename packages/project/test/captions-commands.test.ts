@@ -180,6 +180,24 @@ describe('split, merge, trim, move and ripple delete (FilmCraft caption edits)',
 			[150, 200, 'c'],
 		]);
 	});
+	it('caption.delete ripples only its caption track', () => {
+		const { H } = interview();
+		H.ok([
+			{ type: 'caption.add', at: 0, duration: 100, text: 'a' },
+			{ type: 'caption.add', at: 100, duration: 50, text: 'b' },
+			{ type: 'caption.add', at: 200, duration: 50, text: 'c' },
+		]);
+		const video = H.clips('V1').map((c) => [c.start, c.duration]);
+		H.ok([{ type: 'caption.delete', clipIds: [captions(H)[1]!.id], ripple: true }]);
+		expect(spans(H)).toEqual([
+			[0, 100, 'a'],
+			[150, 200, 'c'],
+		]);
+		expect(H.clips('V1').map((c) => [c.start, c.duration])).toEqual(video);
+		H.ok([{ type: 'caption.delete', clipIds: [captions(H)[0]!.id] }]);
+		expect(spans(H)).toEqual([[150, 200, 'c']]);
+		ensureValid(H.doc);
+	});
 	it('locked caption tracks refuse edits', () => {
 		const H = new Harness();
 		H.ok([{ type: 'caption.add', at: 0, duration: 100, text: 'a' }]);

@@ -360,10 +360,33 @@ export function registerRenderTools(ctx: ToolContext): void {
 					.describe(
 						"Absolute path of the output file; the extension is replaced by the container's (.mp4 / .webm / .mov). Never overwrites: see result.path",
 					),
+				captions: z
+					.object({
+						burnIn: z
+							.union([z.boolean(), z.array(z.string())])
+							.optional()
+							.describe(
+								'Burn captions into the picture: true (default) = visible caption tracks, false, or ["C1", …]',
+							),
+						embed: z
+							.union([z.boolean(), z.array(z.string())])
+							.optional()
+							.describe(
+								'Embedded subtitle streams (mov_text in MP4/MOV, WebVTT in WebM): true = all caption tracks',
+							),
+						sidecar: z
+							.array(z.enum(['srt', 'vtt', 'scc', 'mcc', 'stl', 'ttml', 'dfxp']))
+							.optional()
+							.describe('Sidecar caption files written next to the output (result.captions.sidecars)'),
+						sidecarTracks: z.union([z.enum(['active', 'all']), z.array(z.string())]).optional(),
+						dropFrame: z.boolean().optional(),
+					})
+					.optional()
+					.describe('Caption output (wp captions)'),
 			},
 			annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
 		},
-		async ({ projectId, sequenceId, preset, range, engine, outputPath, crf, videoBitrateKbps }) => {
+		async ({ projectId, sequenceId, preset, range, engine, outputPath, crf, videoBitrateKbps, captions }) => {
 			const p = findExportPreset(preset);
 			if (!p)
 				throw new ToolError(
@@ -401,6 +424,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 				...(crf !== undefined ? { crf } : {}),
 				...(videoBitrateKbps !== undefined ? { videoBitrateKbps } : {}),
 			});
+			if (captions) settings.captions = captions;
 			const envelope = makeEnvelope(doc, {
 				revision: revision ?? 0,
 				savedAt: new Date().toISOString(),

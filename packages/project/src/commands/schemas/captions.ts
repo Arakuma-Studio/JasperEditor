@@ -109,6 +109,15 @@ export const CaptionMergeCmd = cmd('caption.merge', {
 	clipIds: IdListSchema,
 });
 
+/**
+ * Deletes captions. `ripple` closes each gap on the caption's own track only (later captions move left; other
+ * tracks never move — FilmCraft / Premiere caption ripple). For a sync-locked ripple use `clip.extract`.
+ */
+export const CaptionDeleteCmd = cmd('caption.delete', {
+	clipIds: IdListSchema,
+	ripple: z.boolean().optional(),
+});
+
 export const CaptionSetTimesCmd = cmd('caption.setTimes', {
 	clipId: IdRefSchema,
 	start: TimeInputSchema.optional(),
@@ -226,6 +235,7 @@ export const TranscriptCreateCaptionsCmd = cmd('transcript.createCaptions', {
 	name: z.string().nullable().optional(),
 	language: z.string().optional(),
 	style: CaptionStyleSchema.partial().optional(),
+	/** Temp ref to the caption track the captions went to. */
 	ref: RefDeclSchema.optional(),
 });
 
@@ -237,6 +247,7 @@ export const CAPTION_COMMANDS = [
 	CaptionSetTextCmd,
 	CaptionSplitCmd,
 	CaptionMergeCmd,
+	CaptionDeleteCmd,
 	CaptionSetTimesCmd,
 	CaptionSetStyleCmd,
 	CaptionApplyPresetCmd,
