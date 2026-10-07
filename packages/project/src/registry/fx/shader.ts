@@ -187,7 +187,15 @@ export type FxPixels = {
 export const FX_PIXELS_MAX = 1024;
 
 /** sim-warp: structured instance data resolved at the frame (see `EffectInstance.puppet`). */
-export type FxStructures = { puppet?: unknown };
+export type FxStructures = {
+	puppet?: unknown;
+	/**
+	 * The layer's masks at the frame (After Effects' "Mask 1…n" popups of Reshape, Smear, Particle Playground's
+	 * Wall, Liquify's Freeze Area Mask), in stack order, flattened to polylines in layer px.
+	 */
+	masks?: readonly FxLayerMask[];
+};
+export type FxLayerMask = { id: string; closed: boolean; inverted: boolean; points: readonly [number, number][] };
 
 /** Context of the time hooks (time effects: freeze, retime, trails, echo…). */
 export type FxTimeContext = {

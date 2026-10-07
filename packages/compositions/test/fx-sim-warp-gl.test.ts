@@ -28,6 +28,7 @@ const GALLERY_CASES: { name: string; id: string; over?: Record<string, unknown>;
 	{ name: 'wave-world', id: 'jasper.wave-world', over: { view: 'heightMap', producer1Frequency: 2 }, frame: 60 },
 	{ name: 'wave-world-wire', id: 'jasper.wave-world', over: { producer1Frequency: 2 }, frame: 60 },
 	{ name: 'caustics', id: 'jasper.caustics', over: { causticsStrength: 0.6 } },
+	{ name: 'playground', id: 'jasper.particle-playground', over: { cannonParticlesPerSecond: 120, cannonText: 'JASPER', cannonParticleRadius: 12, cannonVelocity: 300, gravityForce: 150 }, frame: 60, bg: '#000' },
 	{ name: 'rainfall', id: 'jasper.rainfall', frame: 20 },
 	{ name: 'snowfall', id: 'jasper.snowfall', bg: '#203040' },
 	{ name: 'bubbles', id: 'jasper.bubbles', over: { bubbleAmount: 60, bubbleSize: 2 } },
@@ -146,10 +147,25 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 		expect(r.causticsWavy).toBeGreaterThan(20);
 	});
 
-	const DETERMINISM: { id: string; over?: Record<string, unknown>; seeded?: boolean; animated?: boolean }[] = [
+	it('Particle Playground: cannon seek, gravity, wall, repel, text, layer exploder', async () => {
+		const r = await page.call<Record<string, any>>('playground');
+		expect(r.cannonAlpha).toBeGreaterThan(0.2);
+		expect(r.cannonSeek).toBe(0);
+		expect(r.cannonZero).toBe(0);
+		expect(Math.abs(r.gridY0 - 10)).toBeLessThan(1.5);
+		// ½ g t² = ½ · 100 · 0.25² ≈ 3.1 px later (half a second: 12.5 px).
+		expect(r.gridY1).toBeGreaterThan(r.gridY0 + 2);
+		expect(r.wallY).toBeLessThan(17); // the wall (mask 1, floor at y = 15) holds them
+		expect(r.spread[1]).toBeGreaterThan(r.spread[0] + 4);
+		expect(r.textAlpha).toBeGreaterThan(1);
+		expect(Math.abs(r.explodeColour[1] - r.sourceColour[1])).toBeLessThan(40); // exploded particles carry the layer's colours
+	});
+
+	const DETERMINISM: { id: string; over?: Record<string, unknown>; seeded?: boolean; animated?: boolean; frame?: number }[] = [
 		{ id: 'jasper.card-dance', over: { yRotationSource: 'intensity1', yRotationMultiplier: 90 }, seeded: false, animated: false },
 		{ id: 'jasper.card-wipe', over: { transitionCompletion: 50, timingRandomness: 0.6, xRotJitterAmount: 30 } },
 		{ id: 'jasper.pixel-polly' },
+		{ id: 'jasper.particle-playground', frame: 30 },
 		{ id: 'jasper.foam', over: { productionRate: 3 }, frame: 30 },
 		{ id: 'jasper.wave-world', over: { gridResolution: 20, view: 'heightMap' }, seeded: false },
 		{ id: 'jasper.caustics', seeded: false, animated: false },

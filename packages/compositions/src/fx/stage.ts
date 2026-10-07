@@ -14,6 +14,8 @@ import {
 	type FxClipInfo,
 	type FxEffectPlan,
 	type FxFrameContext,
+	type FxLayerMask,
+	flattenPath,
 	type FxParamsAt,
 	type FxStepTime,
 	type FxTimeStep,
@@ -320,6 +322,20 @@ export function useLayerFx(
 		[plan, doc.media],
 	);
 	const pixelsVersion = useFxPixels(pixelUrls, !doc.isPreview);
+	// sim-warp: the layer's masks as polylines in layer px (effects that reference "Mask n").
+	const layerMasks = useMemo(
+		(): FxLayerMask[] =>
+			(props.masks ?? []).map((m) => {
+				const flat = flattenPath(m.path, 0.25 / Math.max(1, box.width, box.height));
+				return {
+					id: m.id,
+					closed: m.path.closed,
+					inverted: m.inverted,
+					points: flat.pts.map(([x, y]) => [x * box.width, y * box.height] as [number, number]),
+				};
+			}),
+		[props.masks, box.width, box.height],
+	);
 	const lutUrls = [...referencedMedia(lutEffects), ...fxLutIds]
 		.map((id) => doc.media[id]?.url)
 		.filter((u): u is string => !!u);
@@ -427,9 +443,10 @@ export function useLayerFx(
 							const h = typeof id === 'string' && id ? doc.media[id] : undefined;
 							return h?.kind === 'image' ? fxPixelsOf(h.url) : null;
 						},
-						...((s.fx as { puppet?: unknown }).puppet
-							? { structures: { puppet: (s.fx as { puppet?: unknown }).puppet } }
-							: {}),
+						structures: {
+							...((s.fx as { puppet?: unknown }).puppet ? { puppet: (s.fx as { puppet?: unknown }).puppet } : {}),
+							...(layerMasks.length ? { masks: layerMasks } : {}),
+						},
 					};
 					const gp = planGpuEffect(s.spec as EffectSpec, { id: s.fx.id, params: s.fx.params }, ctx, canvas);
 					// wp masks: a Track Matte Key reading a track binds the track's composite as `u_matte`.
@@ -557,6 +574,7 @@ export function useLayerFx(
 		opts.extraSteps,
 		instanceKeyOf,
 		pixelsVersion,
+		layerMasks,
 	]);
 
 	if (!plan) return NONE;

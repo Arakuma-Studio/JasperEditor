@@ -226,6 +226,47 @@ const api = {
 		};
 	},
 
+	playground() {
+		const pg = (over: Record<string, unknown>, frame: number, extra: Parameters<typeof run>[4] = {}) =>
+			fx('jasper.particle-playground', over, { frame, ...extra }, solid('rgba(0,0,0,0)'));
+		const cannon = (f: number, key: string) => pg({ cannonPosition: [0.5, 0.8], cannonVelocity: 60, gravityForce: 30 }, f, { instanceKey: key });
+		const a = cannon(30, 'c1');
+		cannon(60, 'c2');
+		cannon(10, 'c2');
+		const b = cannon(30, 'c2');
+		const z = cannon(0, 'c3');
+		const grid = (f: number, extra: Parameters<typeof run>[4] = {}) =>
+			pg({ cannonParticlesPerSecond: 0, gridPosition: [0.5, 10 / 64], gridWidth: 40, gridHeight: 0, gridParticlesAcross: 5, gridParticlesDown: 1, gravityForce: 100, wallBoundary: 'mask1' }, f, extra);
+		const masks = [{ id: 'm', closed: true, inverted: false, points: [[0, 0], [96, 0], [96, 15], [0, 15]] as [number, number][] }];
+		const spread = (force: number) => {
+			const r = pg({ cannonParticlesPerSecond: 0, gridWidth: 6, gridHeight: 6, gridParticlesAcross: 3, gridParticlesDown: 3, gravityForce: 0, repelForce: force, repelForceRadius: 20 }, 15);
+			let x0 = 999;
+			let x1 = -1;
+			const d = r.out.getContext('2d')!.getImageData(0, 0, r.out.width, r.out.height).data;
+			for (let y = 0; y < r.out.height; y++)
+				for (let x = 0; x < r.out.width; x++)
+					if (d[(y * r.out.width + x) * 4 + 3]! > 80) {
+						x0 = Math.min(x0, x);
+						x1 = Math.max(x1, x);
+					}
+			return x1 - x0;
+		};
+		const text = pg({ cannonParticlesPerSecond: 0, gridParticlesAcross: 3, gridParticlesDown: 1, gridWidth: 50, gravityForce: 0, gridText: 'ABC', gridParticleRadius: 14 }, 1);
+		const explode = fx('jasper.particle-playground', { cannonParticlesPerSecond: 0, explodeSource: 'thisLayer', explodeRadius: 2, explodeDispersion: 0, gravityForce: 0 }, { frame: 1 });
+		return {
+			cannonAlpha: mean(a.out)[3],
+			cannonSeek: maxDiff(a.out, b.out),
+			cannonZero: mean(z.out)[3],
+			gridY0: centroid(grid(0).out)[1],
+			gridY1: centroid(grid(15).out)[1],
+			wallY: centroid(grid(45, { structures: { masks } }).out)[1],
+			spread: [spread(0), spread(0.2)],
+			textAlpha: mean(text.out)[3],
+			explodeColour: mean(explode.out),
+			sourceColour: mean(explode.input),
+		};
+	},
+
 	weather() {
 		const rain = fx('jasper.rainfall', { drops: 400, opacity: 100, appearance: 'softSolid', color: [1, 1, 1, 1] }, { frame: 15 }, solid('#333'));
 		const noRain = fx('jasper.rainfall', { drops: 0 }, { frame: 15 }, solid('#333'));
