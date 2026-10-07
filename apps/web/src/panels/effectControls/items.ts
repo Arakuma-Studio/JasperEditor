@@ -138,6 +138,15 @@ export function buildGroups(
 				rows: rows(['opacity', 'blendMode']),
 				masks: maskList(doc, seq, clip, (clip as { masks?: Mask[] }).masks, null, frame),
 			});
+			// Workstream `time`: Premiere's intrinsic Time Remapping (body drawn by TimeRemapSection).
+			if (clip.kind === 'video' || clip.kind === 'nest-video')
+				sections.push({
+					id: `${clip.id}:timeRemap`,
+					title: 'Time Remapping',
+					clip,
+					intrinsic: true,
+					rows: [],
+				});
 			// Wave expressions: Source Text, where an expression can drive the text (AE's Text ▸ Source Text).
 			if (clip.kind === 'text')
 				sections.push({

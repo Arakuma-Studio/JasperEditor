@@ -32,6 +32,7 @@ import { shapeCommands } from './shapes.ts';
 import { speechCommands } from './speech.ts';
 import { structureCommands } from './structure.ts';
 import { textAnimationCommands } from './text-animation.ts';
+import { timeCommands } from './time.ts';
 import { timelineCommands } from './timeline.ts';
 import { trackingCommands } from './tracking.ts';
 import { transitionCommands } from './transitions.ts';
@@ -73,6 +74,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	speechCommands,
 	multicamCommands,
 	interchangeCommands,
+	timeCommands,
 ];
 
 let registered = false;
