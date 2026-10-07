@@ -38,7 +38,6 @@ function videoStream(asset: Pick<MediaAsset, 'probe'>): VideoStream | null {
 const finiteRational = (r: Rational | null | undefined): r is Rational =>
 	!!r && Number.isFinite(r.num) && Number.isFinite(r.den) && r.num > 0 && r.den > 0;
 
-/** Whether frame rate / loop interpretation applies to the asset (video, animated images, Lottie, sequences). */
 /** A frame rate in fps (1…1000) → a rational; NTSC rates (23.976, 29.97, 59.94, 119.88) become 1001 fractions. */
 export function rationalFromFps(fps: number): Rational | null {
 	if (!Number.isFinite(fps) || fps < 1 || fps > 1000) return null;
@@ -53,6 +52,7 @@ export function rationalFromFps(fps: number): Rational | null {
 	return { num: Math.round(fps * 1000), den: 1000 };
 }
 
+/** Whether frame rate / loop interpretation applies to the asset (video, animated images, Lottie, sequences). */
 export function isTimedMedia(asset: Pick<MediaAsset, 'kind' | 'probe'> & { lottie?: unknown }): boolean {
 	return TIMED_KINDS.has(asset.kind) && isFrameExact(asset) && !!videoStream(asset);
 }

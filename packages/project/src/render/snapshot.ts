@@ -568,7 +568,6 @@ function transitionFields<T>(
 	};
 }
 
-/** Workstream `time`: the `timeRemap` / `retime` fields of a render clip. */
 /** imports: the clip's media time map (Interpret Footage ▸ assumed frame rate / loop), when it has one. */
 function mediaTimeFields(c: Clip, doc: ProjectDocument): { mediaTime?: MediaTimeMap } {
 	const id = (c as { mediaId?: unknown }).mediaId;
@@ -578,6 +577,7 @@ function mediaTimeFields(c: Clip, doc: ProjectDocument): { mediaTime?: MediaTime
 	return tm ? { mediaTime: tm } : {};
 }
 
+/** Workstream `time`: the `timeRemap` / `retime` fields of a render clip. */
 function retimeFields(
 	c: Clip,
 	doc: ProjectDocument,

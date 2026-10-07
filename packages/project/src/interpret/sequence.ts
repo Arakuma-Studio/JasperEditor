@@ -85,10 +85,17 @@ export function parseFrameName(name: string): FrameName | null {
 
 const pad = (n: number, w: number) => String(n).padStart(w, '0');
 
-function finish(prefix: string, ext: string, padding: number, frames: FrameName[]): ImageSequenceGroup | null {
+function finish(
+	prefix: string,
+	ext: string,
+	padding: number,
+	frames: FrameName[],
+): ImageSequenceGroup | null {
 	const byNumber = new Map<number, string>();
 	for (const f of frames) if (!byNumber.has(f.number)) byNumber.set(f.number, f.name);
-	const sorted = [...byNumber.entries()].sort((a, b) => a[0] - b[0]).map(([number, name]) => ({ number, name }));
+	const sorted = [...byNumber.entries()]
+		.sort((a, b) => a[0] - b[0])
+		.map(([number, name]) => ({ number, name }));
 	if (sorted.length < 2) return null;
 	const first = sorted[0]!.number;
 	const last = sorted[sorted.length - 1]!.number;
@@ -150,7 +157,9 @@ export function groupImageSequences(names: readonly string[]): {
 		if (padded && widths.size > 1) {
 			// `0099` and `0100` share a width; numbers wider than the padding (`10000` after `9999`) still fit.
 			const w = Math.min(...list.filter((f) => f.digits > String(f.number).length).map((f) => f.digits));
-			const inside = list.filter((f) => f.digits === w || (f.digits > w && String(f.number).length === f.digits));
+			const inside = list.filter(
+				(f) => f.digits === w || (f.digits > w && String(f.number).length === f.digits),
+			);
 			const outside = list.filter((f) => !inside.includes(f));
 			const g = finish(f0.prefix, f0.ext, w, inside);
 			if (g) sequences.push(g);

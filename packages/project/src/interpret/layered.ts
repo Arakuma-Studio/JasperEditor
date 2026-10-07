@@ -68,7 +68,9 @@ export type LayeredImportInput = {
 
 /** Whether a group must become a nested sequence (its blend mode, opacity or mask isolate it). */
 const isolated = (g: LayeredImportLayer) =>
-	g.blendMode !== 'pass-through' || g.opacity < 1 - 1e-6 || (g.notes ?? []).some((n) => n.includes('group mask'));
+	g.blendMode !== 'pass-through' ||
+	g.opacity < 1 - 1e-6 ||
+	(g.notes ?? []).some((n) => n.includes('group mask'));
 
 /**
  * The commands that import the layers: a bin "<doc> Layers" holding one media item per chosen layer, and for
@@ -156,8 +158,10 @@ function stack(
 	P: string,
 ): boolean {
 	if (depth > 32) return false;
-	const list = drawList(layers).filter(
-		(l) => (l.kind === 'group' ? !!l.children?.length && flattenLayers(l.children).some((c) => c.asset && chosen(c)) : l.asset && chosen(l)),
+	const list = drawList(layers).filter((l) =>
+		l.kind === 'group'
+			? !!l.children?.length && flattenLayers(l.children).some((c) => c.asset && chosen(c))
+			: l.asset && chosen(l),
 	);
 	if (!list.length) return false;
 	commands.push({
@@ -173,11 +177,10 @@ function stack(
 		ref: seqRef,
 	} as Command);
 	let baseTrack: string | null = null;
-	list.forEach((l, i) => {
+	for (const l of list) {
 		const track = `${seqRef}t${l.index}`;
 		// One track per layer, appended above the ones before (the sequence's empty V1 is removed at the end).
 		commands.push({ type: 'track.add', sequenceId: seqRef, kind: 'video', ref: track } as Command);
-		void i;
 		const clipRef = `${seqRef}c${l.index}`;
 		let source: Record<string, string>;
 		let w: number;
@@ -233,7 +236,7 @@ function stack(
 			} as Command);
 		else if (l.clipping) notes.push(`${l.name}: clipped to nothing (no layer below it)`);
 		if (!l.clipping) baseTrack = track;
-	});
+	}
 	// The empty V1 `sequence.create` made (the layers got their own tracks above it).
 	commands.push({ type: 'track.remove', sequenceId: seqRef, trackIds: ['V1'] } as Command);
 	return true;
