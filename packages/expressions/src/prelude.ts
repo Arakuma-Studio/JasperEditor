@@ -820,7 +820,8 @@ var __propHandler = {
     var v = t.value;
     if (v === null || v === undefined) return undefined;
     var x = v[k];
-    return typeof x === 'function' ? x.bind(v) : x;
+    // Methods of the value bind to it; property groups (callable proxies) pass through untouched.
+    return typeof x === 'function' && !x.__isGroup ? x.bind(v) : x;
   },
 };
 

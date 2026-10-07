@@ -124,8 +124,7 @@ class Emitter {
 		if (!capture) return this.gen(node, false);
 		if (node.type === 'ExpressionStatement') {
 			const expr = node.expression as AnyNode;
-			// A directive ("use strict") stays a directive.
-			if (typeof node.directive === 'string') return this.gen(node, false);
+			// A lone string literal is the result ("abc"), not a directive: AE expressions are never strict code.
 			return `__r=(${this.gen(expr, true)})${this.slice(expr.end, node.end)}`;
 		}
 		const body = this.gen(node, true);

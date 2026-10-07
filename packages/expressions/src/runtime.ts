@@ -7,7 +7,7 @@
 // code inside the binary rather than the host's — is bit-identical everywhere. It has no I/O (no std/os modules
 // are linked), a memory limit, a stack limit and an interrupt hook for a time limit.
 //
-// Limits: memory 64 MiB, stack 1 MiB, and an operation budget: QuickJS calls the interrupt hook every ~10 000
+// Limits: memory 64 MiB, stack 160 KiB, and an operation budget: QuickJS calls the interrupt hook every ~10 000
 // interpreter steps (calls and loop iterations), and an evaluation that reaches OPERATION_BUDGET hook calls (~5 M
 // steps, ~0.5 s) is stopped deterministically. A wall-clock guard (WALL_CLOCK_MS) also stops runaway host work; on
 // any machine that renders in real time it is never the first limit reached.
@@ -23,7 +23,12 @@ import { compileExpressionSource } from './compile.ts';
 import { PRELUDE } from './prelude.ts';
 
 export const MEMORY_LIMIT_BYTES = 64 * 1024 * 1024;
-export const STACK_LIMIT_BYTES = 1024 * 1024;
+/**
+ * QuickJS's own stack limit. It must trip before the host engine's (V8's ~1 MB) native stack overflows under the
+ * WebAssembly frames, which would abort the instance instead of throwing a catchable "stack overflow": 160 KiB
+ * allows ~800 nested JavaScript calls (measured; AE expressions rarely recurse at all).
+ */
+export const STACK_LIMIT_BYTES = 160 * 1024;
 /** Interrupt-hook calls (≈ 10 000 interpreter steps each) one top-level evaluation may use. */
 export const OPERATION_BUDGET = 500;
 export const WALL_CLOCK_MS = 2000;

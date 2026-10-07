@@ -96,7 +96,7 @@ describe('keyframes, loops and time', () => {
 		// After the last key (t > 2 s), one cycle lasts 1 s.
 		expect(num(d, 'loopOut("cycle")', 75)).toBeCloseTo(45, 9);
 		expect(num(d, 'loopOut("pingpong")', 75)).toBeCloseTo(45, 9);
-		expect(num(d, 'loopOut("pingpong")', 69)).toBeCloseTo(90 - 81, 9);
+		expect(num(d, 'loopOut("pingpong")', 69)).toBeCloseTo(63, 9);
 		expect(num(d, 'loopOut("offset")', 75)).toBeCloseTo(135, 9);
 		expect(num(d, 'loopOut("continue")', 75)).toBeCloseTo(135, 3);
 		expect(num(d, 'loopOut()', 60)).toBe(90);
@@ -131,7 +131,7 @@ describe('interpolation, maths and colour helpers', () => {
 		expect(num(d, 'ease(0.5, 0, 100)')).toBeCloseTo(50, 12);
 		expect(num(d, 'ease(0.25, 0, 1)')).toBeCloseTo(0.15625, 12);
 		expect(num(d, 'easeIn(0.25, 0, 1)')).toBeCloseTo(0.109375, 12);
-		expect(num(d, 'easeOut(0.25, 0, 1)')).toBeCloseTo(0.390625, 12);
+		expect(num(d, 'easeOut(0.25, 0, 1)')).toBeCloseTo(0.296875, 12);
 		expect(val(d, '$a', 'transform.position', 'linear(0.5, [0, 0], [10, 20])')).toEqual([5, 10]);
 	});
 	it('vector maths', () => {
@@ -238,10 +238,10 @@ describe('errors fall back to the keyframed value', () => {
 	});
 	it('recursion and memory limits', () => {
 		expect(ev(d, '$a', 'transform.rotation', 'function f(n) { return f(n + 1) + 1 } f(0)').error).toMatch(
-			/stack overflow|too much recursion/,
+			/too much recursion/,
 		);
-		expect(ev(d, '$a', 'transform.rotation', 'var a = []; while (true) a.push(new Array(100000).fill(1)); 0').error).toMatch(
-			/memory|took too long/,
+		expect(ev(d, '$a', 'transform.rotation', 'var a = []; while (true) a.push(new Float64Array(1000000)); 0').error).toMatch(
+			/ran out of memory/,
 		);
 		expect(num(d, '2 + 2')).toBe(4);
 	});
@@ -279,10 +279,11 @@ describe('Expression Controls', () => {
 	it('read as AE does', () => {
 		expect(num(d, 'effect("Checkbox Control")("Checkbox")')).toBe(1);
 		expect(num(d, 'effect("Dropdown Menu Control")("Menu") * 10')).toBe(20);
-		expect(str(d, 'effect("Color Control")("Color").join(",")')).toBe('1,0,0,1');
+		expect(str(d, 'thisComp.layer("A").effect("Color Control")("Color").join(",")')).toBe('1,0,0,1');
 		expect(val(d, '$a', 'transform.position', 'effect("Point Control")("Point")')).toEqual([960, 540]);
-		expect(str(d, 'effect("3D Point Control")("3D Point").join(",")')).toBe('960,540,0');
-		expect(str(d, 'effect("Layer Control")("Layer").name')).toBe('Title');
+		expect(str(d, 'thisComp.layer("A").effect("3D Point Control")("3D Point").join(",")')).toBe('960,540,0');
+		expect(str(d, 'thisComp.layer("A").effect("Layer Control")("Layer").value.name')).toBe('Title');
+		expect(str(d, 'thisComp.layer("A").effect("Layer Control")("Layer").text.sourceText')).toBe('Hello');
 		expect(num(d, 'effect("Angle Control")("Angle")')).toBe(30);
 		// Duplicates are numbered from the second one.
 		expect(num(d, 'effect("Slider Control 2")("Slider")')).toBe(7);

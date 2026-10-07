@@ -662,8 +662,12 @@ export class World {
 				const p = this.prop(ref);
 				if (!p) throw new Error('Property no longer exists');
 				const t = p.time.toStored(Number(args[3]));
-				const v = args[4] ? this.pre(p, t) : this.evaluate(ref, t).value;
-				return toExpressionValue(p.kind, v, p.options);
+				if (args[4]) return toExpressionValue(p.kind, this.pre(p, t), p.options);
+				const st = this.evaluate(ref, t);
+				// A reference cycle stops every expression on it (other errors of the read property only make it
+				// show its keyframed value, as in AE).
+				if (st.error && /too deeply/.test(st.error)) throw new Error(st.error.replace(/^Error: /, ''));
+				return toExpressionValue(p.kind, st.value, p.options);
 			}
 			case OP.XFORM: {
 				const info = this.owner(String(args[0]), String(args[1]));
