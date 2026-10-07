@@ -65,11 +65,19 @@ const BROWSER_LAYER = ['node', 'electron', 'server'];
  * built-ins allowed, with the reason); `reactOnlyUnder`: React only in this subdirectory of `src/`.
  */
 export const LAYERS = {
-	'packages/project': {
-		name: '@jasper/project',
+	// audio-mix: pure DSP below the model (loudness, true peak, limiter, meters, pan laws, ducking analysis); it runs
+	// inside AudioWorklets, so it has no dependencies at all (docs/wp-notes/audio-mix.md).
+	'packages/audio-dsp': {
+		name: '@jasper/audio-dsp',
 		deps: [],
 		forbid: [...BROWSER_LAYER, 'react', 'uiLibs', 'tailwind', 'remotion', 'anime'],
-		note: 'the pure model: zod and immer only, no DOM, no Node, no UI, no Remotion, no engine',
+		note: 'dependency-free DSP: no DOM, no Node, no zod',
+	},
+	'packages/project': {
+		name: '@jasper/project',
+		deps: ['@jasper/audio-dsp'],
+		forbid: [...BROWSER_LAYER, 'react', 'uiLibs', 'tailwind', 'remotion', 'anime'],
+		note: 'the pure model: zod, immer and @jasper/audio-dsp only, no DOM, no Node, no UI, no Remotion, no engine',
 	},
 	'packages/mg-templates': {
 		name: '@jasper/mg-templates',
@@ -106,7 +114,7 @@ export const LAYERS = {
 	},
 	'packages/compositions': {
 		name: '@jasper/compositions',
-		deps: ['@jasper/project', '@jasper/mg-templates', '@jasper/motion'],
+		deps: ['@jasper/project', '@jasper/mg-templates', '@jasper/motion', '@jasper/audio-dsp'],
 		forbid: [...BROWSER_LAYER, 'uiLibs', 'tailwind', 'anime'],
 		note: 'the Remotion bundle: no session, ui, engine-client or Tailwind',
 	},
@@ -120,6 +128,7 @@ export const LAYERS = {
 		name: '@jasper/web',
 		deps: [
 			'@jasper/api',
+			'@jasper/audio-dsp',
 			'@jasper/compositions',
 			'@jasper/engine-client',
 			'@jasper/mg-templates',
@@ -137,6 +146,7 @@ export const LAYERS = {
 		// @jasper/mcp: the engine serves the same MCP tools over Streamable HTTP at /mcp (D-18, routes/mcp.ts).
 		deps: [
 			'@jasper/api',
+			'@jasper/audio-dsp',
 			'@jasper/compositions',
 			'@jasper/config',
 			'@jasper/mcp',
