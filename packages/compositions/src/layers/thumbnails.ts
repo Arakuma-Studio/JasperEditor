@@ -14,7 +14,15 @@ export async function pdfThumbnail(url: string, page: number, maxSide = 320): Pr
 export async function lottieThumbnail(url: string, frame?: number): Promise<string> {
 	const [lottie, doc] = await Promise.all([
 		import('lottie-web/build/player/lottie_svg').then(
-			(m) => ((m as { default?: unknown }).default ?? m) as { loadAnimation(p: Record<string, unknown>): { goToAndStop(v: number, f: boolean): void; destroy(): void; addEventListener(n: string, cb: () => void): void; isLoaded?: boolean } },
+			(m) =>
+				((m as { default?: unknown }).default ?? m) as {
+					loadAnimation(p: Record<string, unknown>): {
+						goToAndStop(v: number, f: boolean): void;
+						destroy(): void;
+						addEventListener(n: string, cb: () => void): void;
+						isLoaded?: boolean;
+					};
+				},
 		),
 		lottieDocument(url),
 	]);
@@ -40,7 +48,9 @@ export async function lottieThumbnail(url: string, frame?: number): Promise<stri
 		const f = frame ?? Math.floor(ip + (op - ip) * 0.5);
 		anim.goToAndStop(Math.max(0, f - ip), true);
 		const svg = host.querySelector('svg');
-		const text = svg ? new XMLSerializer().serializeToString(svg) : '<svg xmlns="http://www.w3.org/2000/svg"/>';
+		const text = svg
+			? new XMLSerializer().serializeToString(svg)
+			: '<svg xmlns="http://www.w3.org/2000/svg"/>';
 		anim.destroy();
 		return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(text)}`;
 	} finally {

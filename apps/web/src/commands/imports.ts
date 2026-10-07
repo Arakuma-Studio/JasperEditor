@@ -10,8 +10,8 @@ import {
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { openDialog } from '@jasper/ui';
-import { lowestTargetedTrack } from '../clipboard/external.ts';
 import { z } from 'zod';
+import { lowestTargetedTrack } from '../clipboard/external.ts';
 import { clipMenuExtensions, type MenuItemSpec, projectItemMenuExtensions } from '../extensions/index.ts';
 import { LOTTIE_EXPORT_DIALOG, registerImportsDialogs } from '../imports/dialogs.tsx';
 import { INTERPRET_FOOTAGE_DIALOG, registerInterpretDialog } from '../imports/interpret-dialog.tsx';
@@ -75,11 +75,19 @@ export function addSvgAsShape(ctx: CommandCtx, text: string, name: string): bool
 	try {
 		conv = svgToShapeContents(text);
 	} catch (e) {
-		ctx.ui.toast({ kind: 'warning', message: 'Not an SVG document', detail: e instanceof Error ? e.message : String(e) });
+		ctx.ui.toast({
+			kind: 'warning',
+			message: 'Not an SVG document',
+			detail: e instanceof Error ? e.message : String(e),
+		});
 		return false;
 	}
 	if (!conv.contents.length) {
-		ctx.ui.toast({ kind: 'info', message: 'The SVG has nothing a shape layer can draw', detail: conv.warnings.join('; ') || undefined });
+		ctx.ui.toast({
+			kind: 'info',
+			message: 'The SVG has nothing a shape layer can draw',
+			detail: conv.warnings.join('; ') || undefined,
+		});
 		return false;
 	}
 	const track = lowestTargetedTrack(seq, st.views[seq.id], 'video');
@@ -87,7 +95,13 @@ export function addSvgAsShape(ctx: CommandCtx, text: string, name: string): bool
 		ctx.ui.toast({ kind: 'warning', message: 'Every video track is locked' });
 		return false;
 	}
-	const frames = Math.max(1, Math.round((st.document.settings.defaultStillDurationFrames * seq.settings.frameRate.num) / (seq.settings.frameRate.den * 30)));
+	const frames = Math.max(
+		1,
+		Math.round(
+			(st.document.settings.defaultStillDurationFrames * seq.settings.frameRate.num) /
+				(seq.settings.frameRate.den * 30),
+		),
+	);
 	const r = session.apply({
 		label: 'Import SVG as Shape Layer',
 		origin: 'user',
@@ -103,14 +117,24 @@ export function addSvgAsShape(ctx: CommandCtx, text: string, name: string): bool
 				shape: { type: 'vector', contents: conv.contents },
 			} as Command,
 		],
-		selectAfter: (res: { results: unknown[] }) => ({ timeline: [(res.results[0] as { clipId: string }).clipId] }),
+		selectAfter: (res: { results: unknown[] }) => ({
+			timeline: [(res.results[0] as { clipId: string }).clipId],
+		}),
 	});
 	if (!r.ok) {
-		ctx.ui.toast({ kind: 'warning', message: 'Import SVG as Shape Layer: not possible', detail: r.errors[0]?.message });
+		ctx.ui.toast({
+			kind: 'warning',
+			message: 'Import SVG as Shape Layer: not possible',
+			detail: r.errors[0]?.message,
+		});
 		return false;
 	}
 	if (conv.warnings.length)
-		ctx.ui.toast({ kind: 'info', message: `Shape layer "${name}"`, detail: `Not converted: ${conv.warnings.join('; ')}` });
+		ctx.ui.toast({
+			kind: 'info',
+			message: `Shape layer "${name}"`,
+			detail: `Not converted: ${conv.warnings.join('; ')}`,
+		});
 	return true;
 }
 
@@ -120,10 +144,14 @@ function pickSvg(): Promise<File | null> {
 		input.type = 'file';
 		input.accept = '.svg,image/svg+xml';
 		input.style.display = 'none';
-		input.addEventListener('change', () => {
-			resolve(input.files?.[0] ?? null);
-			input.remove();
-		}, { once: true });
+		input.addEventListener(
+			'change',
+			() => {
+				resolve(input.files?.[0] ?? null);
+				input.remove();
+			},
+			{ once: true },
+		);
 		input.addEventListener('cancel', () => {
 			resolve(null);
 			input.remove();
@@ -159,7 +187,8 @@ export const importsCommands: UiCommand[] = [
 	{
 		id: 'export.lottie',
 		label: 'Lottie…',
-		description: 'Export the sequence (shapes, text, solids, stills, nests, Lottie clips) as a Lottie animation',
+		description:
+			'Export the sequence (shapes, text, solids, stills, nests, Lottie clips) as a Lottie animation',
 		scope: 'global',
 		when: (ctx) => !!sourceSequence(ctx),
 		disabledReason: () => 'Open or select a sequence to export',

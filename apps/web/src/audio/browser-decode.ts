@@ -94,8 +94,13 @@ async function decodeMapped(
 	const total = Math.max(0, Math.ceil(((c1 - c0) / FLICKS_PER_SECOND) * rate));
 	const data = Array.from({ length: nch }, () => new Float32Array(total));
 	for (const piece of filePieces(map, c0, c1)) {
-		const part = await decodeRange(track, piece.fileFrom / FLICKS_PER_SECOND, piece.fileTo / FLICKS_PER_SECOND);
-		const scaled = Math.abs(map.scale - 1) > 1e-9 ? resample(part.data, rate * map.scale, rate, 'fast') : part.data;
+		const part = await decodeRange(
+			track,
+			piece.fileFrom / FLICKS_PER_SECOND,
+			piece.fileTo / FLICKS_PER_SECOND,
+		);
+		const scaled =
+			Math.abs(map.scale - 1) > 1e-9 ? resample(part.data, rate * map.scale, rate, 'fast') : part.data;
 		const at = Math.round(((piece.from - c0) / FLICKS_PER_SECOND) * rate);
 		for (let c = 0; c < nch; c++) {
 			const src = scaled[c] ?? scaled[0];
@@ -135,7 +140,6 @@ export function browserOpenClip(media: (mediaId: string) => MediaHandle | null, 
 			? clip.sourceIn + (clip.duration - u0) * F * rate
 			: clip.sourceIn + u1 * F * rate;
 		const t0 = c0 / FLICKS_PER_SECOND;
-		const t1 = c1 / FLICKS_PER_SECOND;
 		// imports (Interpret Footage): the file pieces of the interpreted range (assumed frame rate, loop), each
 		// decoded and laid end to end in interpreted time (the sound follows the scale, pitch with it).
 		const dec = await decodeMapped(track, clip.mediaTime, Math.max(0, c0), Math.max(0, c1));

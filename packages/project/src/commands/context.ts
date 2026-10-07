@@ -1,8 +1,9 @@
 // Per-command handler context and argument resolution (temp refs, track labels, time forms).
-import { interpretedFrameRate } from '../interpret/model.ts';
+
 import type { Draft } from 'immer';
 import { contentTimeAt } from '../derive/index.ts';
 import { type IdPrefix, isValidId } from '../ids.ts';
+import { interpretedFrameRate } from '../interpret/model.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { MediaAsset } from '../schema/media.ts';
 import type { Clip, Sequence, Track } from '../schema/sequence.ts';
@@ -137,7 +138,8 @@ export class HandlerContext {
 		if ('seconds' in input) return secondsToFlicks(input.seconds);
 		const vs = asset?.probe.streams.find((s) => s.type === 'video');
 		// imports: media frames count at the interpreted (assumed) frame rate.
-		const rate = vs && vs.type === 'video' && asset ? (interpretedFrameRate(asset) ?? vs.frameRate) : fallbackRate;
+		const rate =
+			vs && vs.type === 'video' && asset ? (interpretedFrameRate(asset) ?? vs.frameRate) : fallbackRate;
 		return Math.round(input.sourceFrames * flicksPerFrame({ num: nominalFps(rate), den: 1 }));
 	}
 

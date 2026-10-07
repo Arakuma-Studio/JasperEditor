@@ -2,7 +2,6 @@
 // locked tracks never shift, so there is no invariant about them) and conservative load-time repairs
 // (S01:PER-004).
 
-import { interpretationIssues, mediaDurationFlicks } from './interpret/model.ts';
 import type { Draft } from 'immer';
 import { audioMixIssues, repairAudioMix } from './audio/invariants.ts';
 import { normalizeCaptionOwnership } from './captions/model.ts';
@@ -14,6 +13,7 @@ import { ESSENTIAL_SLOTS, EssentialSoundSchema, readEssentialSound } from './ess
 import { expressionIssues, repairExpressions } from './expressions.ts';
 import { createTrack } from './factories.ts';
 import { type IdPrefix, type IdSource, idPrefixOf, isValidId } from './ids.ts';
+import { interpretationIssues, mediaDurationFlicks } from './interpret/model.ts';
 import { isRovingKey, retimeRoving } from './keyframes.ts';
 import { MASK_EXPANSION_RANGE, MASK_FEATHER_RANGE, MASK_OPACITY_RANGE } from './masks/model.ts';
 import { TRACK_MATTE_EFFECT_ID, trackMatteTracksOf } from './masks/track-matte.ts';
@@ -333,7 +333,9 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 		// imports: Interpret Footage sections must fit the media (frame rate on a still, a loop without a duration…).
 		if (m.interpretation)
 			for (const msg of interpretationIssues(m, m.interpretation))
-				issues.push(inv('INV-012', `Media ${m.id} interpretation: ${msg}`, ['media', m.id, 'interpretation']));
+				issues.push(
+					inv('INV-012', `Media ${m.id} interpretation: ${msg}`, ['media', m.id, 'interpretation']),
+				);
 	}
 	for (const t of Object.values(doc.transcripts)) {
 		if (t.mediaId && !doc.media[t.mediaId])
@@ -469,11 +471,7 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 					const tol = flicksPerFrame(rate) * c.speed.rate + 1;
 					if (c.sourceIn + span > mediaDur + tol) {
 						issues.push(
-							inv(
-								'INV-005',
-								`Clip ${c.id} exceeds its media (${c.sourceIn + span} > ${mediaDur})`,
-								cw,
-							),
+							inv('INV-005', `Clip ${c.id} exceeds its media (${c.sourceIn + span} > ${mediaDur})`, cw),
 						);
 					}
 				}

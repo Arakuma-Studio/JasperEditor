@@ -9,8 +9,8 @@ import type {
 	TypedEvent,
 } from '@jasper/api';
 import { TERMINAL_JOB_STATES } from '@jasper/api';
-import { type EngineClient, EngineError } from '@jasper/engine-client';
 import { lottieThumbnail, pdfThumbnail } from '@jasper/compositions';
+import { type EngineClient, EngineError } from '@jasper/engine-client';
 import { browserPictureNeed, type MediaAsset, mediaLoaderPath } from '@jasper/project';
 import type { DerivativeStatus, EditorSession, MediaRuntime } from '@jasper/session';
 import { mediaKeyOf } from './assets.ts';

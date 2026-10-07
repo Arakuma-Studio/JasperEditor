@@ -23,11 +23,11 @@ import {
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { isLoopbackHost } from '../context.ts';
 import { createImportsExtension } from '../imports/extension.ts';
-import { exportLottie } from '../imports/lottie-export.ts';
+import { LayeredService } from '../imports/layered.ts';
 import { normalizedLottieFile } from '../imports/lottie.ts';
+import { exportLottie } from '../imports/lottie-export.ts';
 import { lottieProber, psdProber, vectorProber } from '../imports/probers.ts';
 import { detectResponse, detectSequence, ImageSequenceService } from '../imports/sequence.ts';
-import { LayeredService } from '../imports/layered.ts';
 import { VariantService } from '../imports/variants.ts';
 import { pdfPages, svgText } from '../imports/vector.ts';
 import { fingerprintHex, MEDIA_KEY_RE } from '../media/fingerprint.ts';

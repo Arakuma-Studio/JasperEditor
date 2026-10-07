@@ -22,8 +22,8 @@ import { audioEncodeArgs, type EncoderService, videoEncodeArgs } from '../tools/
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { exists } from '../tools/fs.ts';
 import { decoderArgs, isDeep, sourceFilters } from './decode.ts';
-import { psdComposite, readPsdFile } from './psd.ts';
 import { writeRgbaPng } from './png.ts';
+import { psdComposite, readPsdFile } from './psd.ts';
 
 /** Generator versions (bumping one invalidates that kind's cache). */
 const VERSIONS: Record<MediaVariantKind, number> = { display: 1, proxy: 1, master: 1 };

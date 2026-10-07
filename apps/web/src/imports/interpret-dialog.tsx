@@ -6,8 +6,8 @@
 import {
 	type Command,
 	fileFieldOrder,
-	filePixelAspect,
 	fileFrameRate,
+	filePixelAspect,
 	type InterpretationPatch,
 	isPictureMedia,
 	isTimedMedia,

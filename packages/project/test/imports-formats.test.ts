@@ -9,9 +9,9 @@ import {
 	exportSequenceToLottie,
 	groupImageSequences,
 	type LayeredImportLayer,
+	LottieParseError,
 	layeredBlendMode,
 	layeredImportCommands,
-	LottieParseError,
 	lottieFrameAt,
 	lottieImageAssets,
 	lottieInfo,
@@ -295,7 +295,10 @@ describe('PDF pages', () => {
 	it('pages of one file are different media; the same page again is deduplicated', () => {
 		const h = new Harness();
 		const base = videoAsset({ kind: 'image', width: 612, height: 792 });
-		const page = (n: number) => ({ ...base, vector: { format: 'pdf', width: 612, height: 792, page: n, pageCount: 2 } });
+		const page = (n: number) => ({
+			...base,
+			vector: { format: 'pdf', width: 612, height: 792, page: n, pageCount: 2 },
+		});
 		const r = h.ok([
 			{ type: 'media.register', asset: page(1) },
 			{ type: 'media.register', asset: page(2) },

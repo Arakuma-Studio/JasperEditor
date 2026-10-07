@@ -13,9 +13,9 @@ import type {
 	RegisteredMedia,
 } from '@jasper/api';
 import {
+	groupImageSequences,
 	type ImageSequenceGroup,
 	type ImageSequenceInfo,
-	groupImageSequences,
 	parseFrameName,
 	type Rational,
 	sequenceFrameFiles,

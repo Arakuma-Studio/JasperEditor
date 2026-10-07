@@ -5,11 +5,11 @@
 // the preview shows (same frame choice, same optical flow algorithm), and `override` hands it to the builder as the
 // clip's `layer` source: effects, Motion, opacity, masks and transitions then apply as for any video layer.
 import { createHash } from 'node:crypto';
-import { decoderArgs, sourceFilters } from '../../imports/decode.ts';
 import { mkdir, stat } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
 import { join } from 'node:path';
 import { pixelVariantKey, type RenderVisualClip } from '@jasper/project';
+import { decoderArgs, sourceFilters } from '../../imports/decode.ts';
 import { JobError } from '../../jobs/types.ts';
 import { alphaDecoder } from '../../media/alpha.ts';
 import type { Ffmpeg } from '../../tools/ffmpeg.ts';

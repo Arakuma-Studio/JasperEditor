@@ -17,6 +17,7 @@ import {
 	type TxInput,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
+import { acquireImageSequences, expandImports } from '../imports/import-flow.ts';
 import { showImportReports } from '../interchange/dialogs.tsx';
 import { isTimelineFileName, isTimelineXmlFile } from '../interchange/formats.ts';
 import { importTimelineFiles } from '../interchange/import.ts';
@@ -37,7 +38,6 @@ import {
 	mismatchPatch,
 	type SequenceSettingsPatch,
 } from './assets.ts';
-import { acquireImageSequences, expandImports } from '../imports/import-flow.ts';
 import { importCaptionFiles, isCaptionFileName, isCaptionXml } from './captions.ts';
 import { type ClientJobStore, clientJobs } from './client-jobs.ts';
 import { baseName, type DesktopBridge, getDesktopBridge } from './desktop.ts';
@@ -214,7 +214,10 @@ export class EngineImportService implements ImportService {
 		}
 		// imports workstream: numbered stills → image sequences (one clip each), when the user says so.
 		const sequences: Acquired[] = [];
-		if (!this.session.getState().readOnly && ((input.files?.length ?? 0) > 1 || (input.paths?.length ?? 0) > 0)) {
+		if (
+			!this.session.getState().readOnly &&
+			((input.files?.length ?? 0) > 1 || (input.paths?.length ?? 0) > 0)
+		) {
 			const r = await acquireImageSequences(
 				{ engine: this.engine, session: this.session, prompts: this.prompts },
 				{ files: input.files ?? [], paths: input.paths ?? [] },
@@ -386,7 +389,12 @@ export class EngineImportService implements ImportService {
 				origin: 'user',
 				commands: expanded.commands,
 			});
-			if (!r.ok) failed.push({ name: 'layers', code: r.errors[0]?.code ?? 'E_REJECTED', message: r.errors[0]?.message ?? 'Rejected' });
+			if (!r.ok)
+				failed.push({
+					name: 'layers',
+					code: r.errors[0]?.code ?? 'E_REJECTED',
+					message: r.errors[0]?.message ?? 'Rejected',
+				});
 			if (failed.length) this.prompts.failures({ failed, committed: r.ok ? 1 : 0 });
 			return { mediaIds: [], clipIds: [], failed, registered: acquiredIn.map((a) => a.reg) };
 		}

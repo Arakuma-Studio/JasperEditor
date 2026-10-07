@@ -2,15 +2,6 @@
 // Remotion composition, the native planner and the Program overlay. Keyframes stay unevaluated.
 import { buildAudioMix, playedTracks, type RenderAudioMix } from '../audio/plan.ts';
 import {
-	interpretedFrameRate,
-	type MediaTimeMap,
-	mediaDisplaySize,
-	mediaTimeMap,
-	type PixelInterpretation,
-	pixelInterpretation,
-	pixelVariantKey,
-} from '../interpret/model.ts';
-import {
 	type CaptionPage,
 	captionPages,
 	type ResolvedCaptionStyle,
@@ -19,6 +10,15 @@ import {
 import { compositionOfClip, mergeProps } from '../composition/props.ts';
 import { contentTimeAt } from '../derive/index.ts';
 import { bindExpressions, type ExpressionWorldData, expressionWorldData } from '../expressions.ts';
+import {
+	interpretedFrameRate,
+	type MediaTimeMap,
+	mediaDisplaySize,
+	mediaTimeMap,
+	type PixelInterpretation,
+	pixelInterpretation,
+	pixelVariantKey,
+} from '../interpret/model.ts';
 import { evaluate } from '../keyframes.ts';
 import { trackMatteTracksOf } from '../masks/track-matte.ts';
 import { multicamView } from '../multicam/model.ts';

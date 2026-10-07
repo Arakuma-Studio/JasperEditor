@@ -30,11 +30,17 @@ export interface ImportPrompts {
 	failures(info: { failed: ImportFailure[]; committed: number }): void;
 	// ---- imports workstream (optional: without them numbered stills import one by one, PSDs flattened, PDFs page 1)
 	/** Numbered stills found among the files: import them as image sequences, and at which frame rate. */
-	imageSequence?(info: { groups: ImageSequenceGroupView[]; defaultRate: Rational }): Promise<ImageSequenceChoice>;
+	imageSequence?(info: {
+		groups: ImageSequenceGroupView[];
+		defaultRate: Rational;
+	}): Promise<ImageSequenceChoice>;
 	/** A layered document: how to import it (Premiere's Import Layered File). */
 	layered?(info: { name: string; result: LayeredExtractResult }): Promise<LayeredChoice>;
 	/** A PDF / Illustrator document with several pages: which pages to import. */
-	pdfPages?(info: { name: string; pages: { page: number; width: number; height: number }[] }): Promise<number[]>;
+	pdfPages?(info: {
+		name: string;
+		pages: { page: number; width: number; height: number }[];
+	}): Promise<number[]>;
 }
 
 export type PendingPrompt =
@@ -74,7 +80,10 @@ export class PromptQueue implements ImportPrompts {
 		this.push({ id: ++this.seq, kind: 'failures', ...info });
 	}
 	// ---- imports workstream: hosted dialogs (apps/web/src/imports/dialogs.tsx)
-	async imageSequence(info: { groups: ImageSequenceGroupView[]; defaultRate: Rational }): Promise<ImageSequenceChoice> {
+	async imageSequence(info: {
+		groups: ImageSequenceGroupView[];
+		defaultRate: Rational;
+	}): Promise<ImageSequenceChoice> {
 		registerImportsDialogs();
 		return (
 			(await openDialog<ImageSequenceChoice>(IMAGE_SEQUENCE_DIALOG, info)) ?? {
@@ -85,9 +94,14 @@ export class PromptQueue implements ImportPrompts {
 	}
 	async layered(info: { name: string; result: LayeredExtractResult }): Promise<LayeredChoice> {
 		registerImportsDialogs();
-		return (await openDialog<LayeredChoice>(LAYERED_IMPORT_DIALOG, info)) ?? { mode: 'merged-all', selected: [] };
+		return (
+			(await openDialog<LayeredChoice>(LAYERED_IMPORT_DIALOG, info)) ?? { mode: 'merged-all', selected: [] }
+		);
 	}
-	async pdfPages(info: { name: string; pages: { page: number; width: number; height: number }[] }): Promise<number[]> {
+	async pdfPages(info: {
+		name: string;
+		pages: { page: number; width: number; height: number }[];
+	}): Promise<number[]> {
 		registerImportsDialogs();
 		return (await openDialog<number[]>(PDF_PAGES_DIALOG, info)) ?? [1];
 	}

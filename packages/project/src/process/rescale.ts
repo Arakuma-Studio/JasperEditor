@@ -42,11 +42,18 @@ const AUTO_INFLUENCE = 1 / 3;
 
 /** Layer box of a media asset: its first video stream, with width/height swapped for 90°/270° rotation. */
 export function mediaIntrinsicSize(
-	asset: (Pick<MediaAsset, 'probe'> & Partial<Pick<MediaAsset, 'kind' | 'interpretation'>>) | undefined | null,
+	asset:
+		| (Pick<MediaAsset, 'probe'> & Partial<Pick<MediaAsset, 'kind' | 'interpretation'>>)
+		| undefined
+		| null,
 ): PixelSize | null {
 	if (!asset) return null;
 	// imports: the display size (rotation, then the — possibly conformed — pixel aspect ratio).
-	return mediaDisplaySize({ kind: asset.kind ?? 'video', probe: asset.probe, interpretation: asset.interpretation });
+	return mediaDisplaySize({
+		kind: asset.kind ?? 'video',
+		probe: asset.probe,
+		interpretation: asset.interpretation,
+	});
 }
 
 /** True when the two sizes have exactly the same aspect ratio (a uniform scale compensates the change). */

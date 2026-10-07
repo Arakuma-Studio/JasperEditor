@@ -13,8 +13,8 @@ import { BLEND_MODES, type LayeredInfo, makeBlendKernel } from '@jasper/project'
 import { initializeCanvas, type Layer, type Psd, readPsd } from 'ag-psd';
 import { JobError } from '../jobs/types.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
-import { type CubicPath, type Pt, rasterizePaths } from './raster.ts';
 import { type RgbaImage, writeRgbaPng } from './png.ts';
+import { type CubicPath, type Pt, rasterizePaths } from './raster.ts';
 
 const MAX_FILE_BYTES = 4 * 1024 * 1024 * 1024;
 /** Largest document (pixels) whose bitmaps are decoded. */
@@ -452,7 +452,7 @@ function layerKind(l: Layer): LayeredLayer['kind'] {
 	if (l.text) return 'text';
 	if (l.placedLayer) return 'smart-object';
 	if (l.vectorFill || l.vectorOrigination) return 'shape';
-	if (!l.imageData || !l.imageData.width || !l.imageData.height) return 'empty';
+	if (!l.imageData?.width || !l.imageData.height) return 'empty';
 	return 'pixel';
 }
 

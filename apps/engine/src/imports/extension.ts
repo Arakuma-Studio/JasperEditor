@@ -10,9 +10,9 @@
 // decoder does not reproduce).
 import {
 	browserPictureNeed,
-	mediaLoaderPath,
 	type MediaAsset,
 	type MediaHandle,
+	mediaLoaderPath,
 	type RenderSnapshot,
 } from '@jasper/project';
 import type { NativeExtension } from '../export/native-ext.ts';

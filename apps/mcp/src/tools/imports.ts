@@ -17,6 +17,7 @@ import {
 	fileFieldOrder,
 	fileFrameRate,
 	filePixelAspect,
+	interpretedFrameRate,
 	isPictureMedia,
 	isTimedMedia,
 	type LayeredImportLayer,
@@ -29,16 +30,15 @@ import {
 	mediaFieldOrder,
 	mediaLoopCount,
 	mediaPixelAspect,
-	interpretedFrameRate,
 	type ProjectDocument,
 	type Rational,
 	rationalFromFps,
 } from '@jasper/project';
 import { z } from 'zod';
 import {
+	defineTool,
 	EDIT,
 	EDIT_IDEMPOTENT,
-	defineTool,
 	frameOf,
 	loadDoc,
 	READ_ONLY,

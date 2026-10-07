@@ -18,6 +18,7 @@ import { COMPOSITION_GUIDE, registerCompositionTools } from './tools/composition
 import { EDIT_UX_GUIDE, registerEditUxTools } from './tools/edit-ux.ts';
 import { registerEditingTools } from './tools/editing.ts';
 import { EXPRESSIONS_GUIDE, registerExpressionTools } from './tools/expressions.ts';
+import { IMPORTS_GUIDE, registerImportsTools } from './tools/imports.ts';
 import { INSPECT_GUIDE, registerInspectTools } from './tools/inspect.ts';
 import { INTERCHANGE_GUIDE, registerInterchangeTools } from './tools/interchange.ts';
 import { KEYFRAMES_BLEND_GUIDE, registerKeyframesBlendTools } from './tools/keyframes-blend.ts';
@@ -35,7 +36,6 @@ import { registerSpeechTools, SPEECH_GUIDE } from './tools/speech.ts';
 import { registerStructureTools, STRUCTURE_GUIDE } from './tools/structure.ts';
 import { registerTemplateTools, TEMPLATES_GUIDE } from './tools/templates.ts';
 import { registerTextAnimatorTools, TEXT_ANIMATORS_GUIDE } from './tools/text-animators.ts';
-import { IMPORTS_GUIDE, registerImportsTools } from './tools/imports.ts';
 import { registerTimeTools, TIME_GUIDE } from './tools/time.ts';
 import { registerTrackingTools, TRACKING_GUIDE } from './tools/tracking.ts';
 import { registerTransitionTools, TRANSITION_GUIDE } from './tools/transitions.ts';

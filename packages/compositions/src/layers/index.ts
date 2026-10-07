@@ -32,13 +32,13 @@ export {
 export { CAPTION_TITLE_SAFE, captionBlockPlacement, captionPageAt } from './CaptionsLayer.tsx';
 export { compositionFrameOf, compositionFramesAt, hasPixelEffects } from './CompositionLayer.tsx';
 export { LayerBox } from './LayerBox.tsx';
+export { lottieDocument, lottieFrameForLayer } from './LottieLayer.tsx';
 export {
 	type MgRenderState,
 	MgRenderStateContext,
 	MgTemplatePreview,
 	type MgTemplatePreviewProps,
 } from './MotionGraphicLayer.tsx';
-export { lottieDocument, lottieFrameForLayer } from './LottieLayer.tsx';
 export { OFFLINE_CARD_COLORS } from './OfflineCard.tsx';
 export { lottieThumbnail, pdfThumbnail } from './thumbnails.ts';
 export { drawPdfPage, pdfPagePicture, VECTOR_MAX_SIDE, vectorRasterScale } from './VectorLayer.tsx';

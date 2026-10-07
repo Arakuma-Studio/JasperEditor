@@ -10,8 +10,9 @@
 // Split edits (Mark Split ▸ Video/Audio In/Out) give the picture and the sound different source ranges: each
 // channel lands offset by the difference of its In from the earliest In (FilmCraft `split_source_ranges` /
 // `edit_at_source`, MIT OR Apache-2.0, Copyright (c) 2026 ArtCraft Team and the FilmCraft contributors).
-import { mediaDurationFlicks } from '../../interpret/model.ts';
+
 import type { Draft } from 'immer';
+import { mediaDurationFlicks } from '../../interpret/model.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
 import type { ProjectDocument, ProjectItem, SourceMarks, SubclipItem } from '../../schema/document.ts';
 import type { MediaAsset } from '../../schema/media.ts';

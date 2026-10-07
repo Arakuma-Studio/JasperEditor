@@ -189,7 +189,9 @@ function browserDecodable(s: FfStream, interlaced: boolean): boolean | null {
 /** imports: ffprobe's field order (`tt`/`tb` = top first, `bb`/`bt` = bottom first, `progressive`). */
 function fieldOrderOf(s: FfStream): { fieldOrder?: 'progressive' | 'tt' | 'bb' | 'tb' | 'bt' } {
 	const fo = s.field_order;
-	return fo === 'progressive' || fo === 'tt' || fo === 'bb' || fo === 'tb' || fo === 'bt' ? { fieldOrder: fo } : {};
+	return fo === 'progressive' || fo === 'tt' || fo === 'bb' || fo === 'tb' || fo === 'bt'
+		? { fieldOrder: fo }
+		: {};
 }
 
 function isInterlaced(s: FfStream): boolean {
@@ -340,7 +342,11 @@ export async function probeFile(ff: Ffmpeg, file: string, opts: SpawnOptions = {
 }
 
 /** ffprobe only (no asset prober): what a prober falls back to for files it cannot read itself. */
-export async function probeWithFfprobe(ff: Ffmpeg, file: string, opts: SpawnOptions = {}): Promise<ProbeResult> {
+export async function probeWithFfprobe(
+	ff: Ffmpeg,
+	file: string,
+	opts: SpawnOptions = {},
+): Promise<ProbeResult> {
 	let json: Record<string, unknown>;
 	try {
 		json = await ff.probeJson(['-show_format', '-show_streams', file], opts);

@@ -147,7 +147,9 @@ export function nestContentKey(doc: ProjectDocument, seqId: string, depth = 0): 
 					a.probe.durationFlicks,
 					a.sourceRange ?? null,
 					// imports: an interpretation changes what the nest shows.
-					...(a.interpretation || a.vector || a.lottie ? [a.interpretation ?? null, a.vector ?? null, a.lottie ?? null] : []),
+					...(a.interpretation || a.vector || a.lottie
+						? [a.interpretation ?? null, a.vector ?? null, a.lottie ?? null]
+						: []),
 				]
 			: [id, null];
 	});

@@ -125,7 +125,9 @@ const pdfDocs = new Map<string, Promise<PdfDoc>>();
 function pdfDocument(url: string): Promise<PdfDoc> {
 	let p = pdfDocs.get(url);
 	if (!p) {
-		p = pdfLib().then((lib) => lib.getDocument({ url, isEvalSupported: false, disableFontFace: false }).promise);
+		p = pdfLib().then(
+			(lib) => lib.getDocument({ url, isEvalSupported: false, disableFontFace: false }).promise,
+		);
 		pdfDocs.set(url, p);
 		p.catch(() => pdfDocs.delete(url));
 		if (pdfDocs.size > 16) pdfDocs.delete(pdfDocs.keys().next().value as string);
@@ -171,7 +173,13 @@ export async function pdfPagePicture(url: string, page: number, maxSide: number)
 	const v = p.getViewport({ scale: 1 });
 	const k = maxSide / Math.max(v.width, v.height);
 	const canvas = document.createElement('canvas');
-	await drawPdfPage(canvas, url, page, Math.max(1, Math.round(v.width * k)), Math.max(1, Math.round(v.height * k)));
+	await drawPdfPage(
+		canvas,
+		url,
+		page,
+		Math.max(1, Math.round(v.width * k)),
+		Math.max(1, Math.round(v.height * k)),
+	);
 	return canvas;
 }
 

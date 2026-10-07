@@ -25,7 +25,14 @@ import { intrinsicBoxOf } from '../registry/properties.ts';
 import type { Animatable, Keyframe, RGBA, Vec2 } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Mask } from '../schema/mask.ts';
-import { BLEND_MODES, type Clip, type Sequence, type TextContent, type TextStyle, type Transform } from '../schema/sequence.ts';
+import {
+	BLEND_MODES,
+	type Clip,
+	type Sequence,
+	type TextContent,
+	type TextStyle,
+	type Transform,
+} from '../schema/sequence.ts';
 import type { ShapeItem, ShapeTransform } from '../schema/shapes.ts';
 import type { TextAnimatorGroup, TextRangeSelector } from '../schema/text-animators.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../time.ts';
@@ -122,7 +129,11 @@ const vec2 = (v: unknown): number[] => {
 const rgb01 = (c: RGBA | number[]) => [r6(c[0] ?? 0), r6(c[1] ?? 0), r6(c[2] ?? 0), r6(c[3] ?? 1)];
 
 /** A path value → Lottie shape value `{c, v, i, o}` (tangents relative, as ours), mapped by `map`. */
-function shapeValue(p: BezierPath, map: (pt: [number, number]) => [number, number] = (x) => x, scale: [number, number] = [1, 1]): Json {
+function shapeValue(
+	p: BezierPath,
+	map: (pt: [number, number]) => [number, number] = (x) => x,
+	scale: [number, number] = [1, 1],
+): Json {
 	return {
 		c: !!p.closed,
 		v: p.vertices.map((v) => map([v.p[0], v.p[1]]).map(r6)),
@@ -185,7 +196,14 @@ function prop<T>(
 }
 
 /** One linear key per frame of the clip (the evaluated value, expressions included). */
-function bake<T>(ctx: Ctx, a: Animatable<T>, conv: (v: T) => unknown, clock: Clock, label: string, why: string): Json {
+function bake<T>(
+	ctx: Ctx,
+	a: Animatable<T>,
+	conv: (v: T) => unknown,
+	clock: Clock,
+	label: string,
+	why: string,
+): Json {
 	const n = Math.min(clock.duration, MAX_BAKED_KEYS);
 	if (n < clock.duration) ctx.warn(`${label}: only the first ${MAX_BAKED_KEYS} frames are baked`);
 	const out: Json[] = [];
@@ -200,7 +218,9 @@ function bake<T>(ctx: Ctx, a: Animatable<T>, conv: (v: T) => unknown, clock: Clo
 		});
 	}
 	void why;
-	return out.length === 1 ? { a: 0, k: (out[0]!.s as unknown[]).length === 1 ? (out[0]!.s as unknown[])[0] : out[0]!.s } : { a: 1, k: out };
+	return out.length === 1
+		? { a: 0, k: (out[0]!.s as unknown[]).length === 1 ? (out[0]!.s as unknown[])[0] : out[0]!.s }
+		: { a: 1, k: out };
 }
 
 /** A static Lottie value. */
@@ -231,15 +251,23 @@ function transform(
 ): Json {
 	const ks: Json = { o: prop(ctx, opacity, (v) => num(v), clock, `${label} ▸ Opacity`) };
 	if (!tr) return ks;
-	ks.p = prop(ctx, tr.position as Animatable<Vec2>, (v) => vec2(v), clock, `${label} ▸ Position`, { spatial: true });
-	ks.a = prop(ctx, tr.anchor as Animatable<Vec2>, (v) => [r6(v[0] - origin[0]), r6(v[1] - origin[1])], clock, `${label} ▸ Anchor Point`);
+	ks.p = prop(ctx, tr.position as Animatable<Vec2>, (v) => vec2(v), clock, `${label} ▸ Position`, {
+		spatial: true,
+	});
+	ks.a = prop(
+		ctx,
+		tr.anchor as Animatable<Vec2>,
+		(v) => [r6(v[0] - origin[0]), r6(v[1] - origin[1])],
+		clock,
+		`${label} ▸ Anchor Point`,
+	);
 	ks.r = prop(ctx, tr.rotation, (v) => num(v), clock, `${label} ▸ Rotation`);
 	const fx = tr.flipH ? -1 : 1;
 	const fy = tr.flipV ? -1 : 1;
 	if (tr.uniformScale || !hasKeys(tr.scaleWidth)) {
-		if (tr.uniformScale) ks.s = prop(ctx, tr.scale, (v) => [r6(v * fx), r6(v * fy)], clock, `${label} ▸ Scale`);
-		else if (!hasKeys(tr.scale))
-			ks.s = k0([r6(tr.scaleWidth.value * fx), r6(tr.scale.value * fy)]);
+		if (tr.uniformScale)
+			ks.s = prop(ctx, tr.scale, (v) => [r6(v * fx), r6(v * fy)], clock, `${label} ▸ Scale`);
+		else if (!hasKeys(tr.scale)) ks.s = k0([r6(tr.scaleWidth.value * fx), r6(tr.scale.value * fy)]);
 		else {
 			const w = tr.scaleWidth.value;
 			ks.s = prop(ctx, tr.scale, (v) => [r6(w * fx), r6(v * fy)], clock, `${label} ▸ Scale`);
@@ -253,7 +281,14 @@ function transform(
 				evaluate: (t: number) => [evaluate(tr.scaleWidth, t), evaluate(tr.scale, t)],
 			},
 		} as never;
-		ks.s = bake(ctx, combined, (v) => [r6(v[0] * fx), r6(v[1] * fy)], clock, `${label} ▸ Scale`, 'separate scale keys');
+		ks.s = bake(
+			ctx,
+			combined,
+			(v) => [r6(v[0] * fx), r6(v[1] * fy)],
+			clock,
+			`${label} ▸ Scale`,
+			'separate scale keys',
+		);
 	}
 	return ks;
 }
@@ -268,12 +303,28 @@ const MASK_MODE: Record<string, string> = {
 	difference: 'f',
 };
 
-function masks(ctx: Ctx, list: readonly Mask[] | undefined, box: { width: number; height: number }, origin: [number, number], clock: Clock, label: string): Json[] {
+function masks(
+	ctx: Ctx,
+	list: readonly Mask[] | undefined,
+	box: { width: number; height: number },
+	origin: [number, number],
+	clock: Clock,
+	label: string,
+): Json[] {
 	if (!list?.length) return [];
 	const out: Json[] = [];
 	for (const m of list) {
-		const map = (p: [number, number]): [number, number] => [p[0] * box.width - origin[0], p[1] * box.height - origin[1]];
-		const pt = prop(ctx, m.path as Animatable<BezierPath>, (v) => shapeValue(v, map, [box.width, box.height]), clock, `${label} ▸ ${m.name}`);
+		const map = (p: [number, number]): [number, number] => [
+			p[0] * box.width - origin[0],
+			p[1] * box.height - origin[1],
+		];
+		const pt = prop(
+			ctx,
+			m.path as Animatable<BezierPath>,
+			(v) => shapeValue(v, map, [box.width, box.height]),
+			clock,
+			`${label} ▸ ${m.name}`,
+		);
 		const o: Json = {
 			nm: m.name,
 			mode: MASK_MODE[m.mode] ?? 'a',
@@ -292,7 +343,9 @@ function masks(ctx: Ctx, list: readonly Mask[] | undefined, box: { width: number
 
 /** Gaussian Blur is the one effect of ours Lottie players implement (`ty 29`); the rest are reported. */
 function effects(ctx: Ctx, c: Clip, clock: Clock, label: string): Json[] {
-	const list = (c as { effects?: { effectId: string; enabled: boolean; params: Record<string, Animatable<unknown>> }[] }).effects ?? [];
+	const list =
+		(c as { effects?: { effectId: string; enabled: boolean; params: Record<string, Animatable<unknown>> }[] })
+			.effects ?? [];
 	const out: Json[] = [];
 	let i = 0;
 	for (const fx of list) {
@@ -306,7 +359,13 @@ function effects(ctx: Ctx, c: Clip, clock: Clock, label: string): Json[] {
 				ix: ++i,
 				en: 1,
 				ef: [
-					{ ty: 0, nm: 'Blurriness', mn: 'ADBE Gaussian Blur 2-0001', ix: 1, v: prop(ctx, radius, (v) => num(v), clock, `${label} ▸ Blurriness`) },
+					{
+						ty: 0,
+						nm: 'Blurriness',
+						mn: 'ADBE Gaussian Blur 2-0001',
+						ix: 1,
+						v: prop(ctx, radius, (v) => num(v), clock, `${label} ▸ Blurriness`),
+					},
 					{ ty: 7, nm: 'Blur Dimensions', mn: 'ADBE Gaussian Blur 2-0002', ix: 2, v: k0(1) },
 					{ ty: 7, nm: 'Repeat Edge Pixels', mn: 'ADBE Gaussian Blur 2-0003', ix: 3, v: k0(0) },
 				],
@@ -348,7 +407,12 @@ function shapeTransform(ctx: Ctx, t: ShapeTransform, clock: Clock, label: string
 	};
 }
 
-function strokeFields(ctx: Ctx, s: Extract<ShapeItem, { type: 'stroke' | 'gradientStroke' }>, clock: Clock, label: string): Json {
+function strokeFields(
+	ctx: Ctx,
+	s: Extract<ShapeItem, { type: 'stroke' | 'gradientStroke' }>,
+	clock: Clock,
+	label: string,
+): Json {
 	const o: Json = {
 		o: prop(ctx, s.opacity, (v) => num(v), clock, `${label} ▸ Opacity`),
 		w: prop(ctx, s.width, (v) => num(v), clock, `${label} ▸ Stroke Width`),
@@ -356,25 +420,40 @@ function strokeFields(ctx: Ctx, s: Extract<ShapeItem, { type: 'stroke' | 'gradie
 		lj: JOIN[s.lineJoin ?? 'miter'] ?? 1,
 		ml: num(s.miterLimit.value),
 	};
-	if (s.miterLimit.keyframes.length) o.ml2 = prop(ctx, s.miterLimit, (v) => num(v), clock, `${label} ▸ Miter Limit`);
+	if (s.miterLimit.keyframes.length)
+		o.ml2 = prop(ctx, s.miterLimit, (v) => num(v), clock, `${label} ▸ Miter Limit`);
 	if (s.dashes?.segments.length) {
 		const d: Json[] = [];
 		s.dashes.segments.forEach((seg, i) => {
-			d.push({ n: 'd', nm: `Dash ${i + 1}`, v: prop(ctx, seg.dash, (v) => num(v), clock, `${label} ▸ Dash`) });
+			d.push({
+				n: 'd',
+				nm: `Dash ${i + 1}`,
+				v: prop(ctx, seg.dash, (v) => num(v), clock, `${label} ▸ Dash`),
+			});
 			d.push({ n: 'g', nm: `Gap ${i + 1}`, v: prop(ctx, seg.gap, (v) => num(v), clock, `${label} ▸ Gap`) });
 		});
-		d.push({ n: 'o', nm: 'Offset', v: prop(ctx, s.dashes.offset, (v) => num(v), clock, `${label} ▸ Offset`) });
+		d.push({
+			n: 'o',
+			nm: 'Offset',
+			v: prop(ctx, s.dashes.offset, (v) => num(v), clock, `${label} ▸ Offset`),
+		});
 		o.d = d;
 	}
 	if (s.taper) ctx.warn(`${label}: stroke taper is not part of Lottie (a uniform stroke is exported)`);
 	if (s.wave) ctx.warn(`${label}: stroke wave is not part of Lottie (a straight stroke is exported)`);
 	if (s.position && s.position !== 'center')
 		ctx.warn(`${label}: stroke position ${s.position} is not part of Lottie (centred on the path)`);
-	if (s.composite === 'above') ctx.warn(`${label}: Composite "Above Previous in Same Group" is not part of Lottie`);
+	if (s.composite === 'above')
+		ctx.warn(`${label}: Composite "Above Previous in Same Group" is not part of Lottie`);
 	return o;
 }
 
-function gradientFields(ctx: Ctx, g: Extract<ShapeItem, { type: 'gradientFill' | 'gradientStroke' }>, clock: Clock, label: string): Json {
+function gradientFields(
+	ctx: Ctx,
+	g: Extract<ShapeItem, { type: 'gradientFill' | 'gradientStroke' }>,
+	clock: Clock,
+	label: string,
+): Json {
 	const colors = g.colors;
 	const sameStructure =
 		colors.keyframes.length === 0 ||
@@ -407,7 +486,10 @@ function shapeItems(ctx: Ctx, items: readonly ShapeItem[], clock: Clock, label: 
 					...base,
 					ty: 'gr',
 					...(it.blendMode && it.blendMode !== 'normal' ? { bm: blendCode(ctx, it.blendMode, l) } : {}),
-					it: [...shapeItems(ctx, it.contents, clock, l, depth + 1), shapeTransform(ctx, it.transform, clock, l)],
+					it: [
+						...shapeItems(ctx, it.contents, clock, l, depth + 1),
+						shapeTransform(ctx, it.transform, clock, l),
+					],
 				});
 				break;
 			case 'rect':
@@ -465,7 +547,8 @@ function shapeItems(ctx: Ctx, items: readonly ShapeItem[], clock: Clock, label: 
 					r: it.fillRule === 'evenodd' ? 2 : 1,
 					...(it.blendMode && it.blendMode !== 'normal' ? { bm: blendCode(ctx, it.blendMode, l) } : {}),
 				});
-				if (it.composite === 'above') ctx.warn(`${l}: Composite "Above Previous in Same Group" is not part of Lottie`);
+				if (it.composite === 'above')
+					ctx.warn(`${l}: Composite "Above Previous in Same Group" is not part of Lottie`);
 				break;
 			case 'stroke':
 				out.push({
@@ -594,7 +677,12 @@ function styleName(weight: number, italic: boolean): string {
 	return italic ? (w === 'Regular' ? 'Italic' : `${w} Italic`) : w;
 }
 
-function textDocument(ctx: Ctx, content: TextContent, box: { width: number; height: number }, label: string): Json {
+function textDocument(
+	ctx: Ctx,
+	content: TextContent,
+	box: { width: number; height: number },
+	label: string,
+): Json {
 	const s: TextStyle = content.style;
 	const family = ctx.doc.fonts[s.fontId]?.family ?? 'Inter';
 	const fName = fontName(family, s.weight, s.italic);
@@ -621,16 +709,28 @@ function textDocument(ctx: Ctx, content: TextContent, box: { width: number; heig
 	if ((s.strokes?.length ?? 0) > 1) ctx.warn(`${label}: Lottie text has one stroke (the first is exported)`);
 	if (s.background) ctx.warn(`${label}: text background is not part of Lottie`);
 	if (s.shadow) ctx.warn(`${label}: text shadow is not part of Lottie`);
-	if (content.runs?.length) ctx.warn(`${label}: styled runs are not part of Lottie text (the base style is used)`);
+	if (content.runs?.length)
+		ctx.warn(`${label}: styled runs are not part of Lottie text (the base style is used)`);
 	if (s.fill[3] < 1) ctx.warn(`${label}: text fill opacity is not part of Lottie text documents`);
 	return d;
 }
 
 const BASED_ON: Record<string, number> = { characters: 1, charactersExcludingSpaces: 2, words: 3, lines: 4 };
 const SEL_MODE: Record<string, number> = { add: 1, subtract: 2, intersect: 3, min: 4, max: 5, difference: 6 };
-const SEL_SHAPE: Record<string, number> = { square: 1, rampUp: 2, rampDown: 3, triangle: 4, round: 5, smooth: 6 };
+const SEL_SHAPE: Record<string, number> = {
+	square: 1,
+	rampUp: 2,
+	rampDown: 3,
+	triangle: 4,
+	round: 5,
+	smooth: 6,
+};
 
-const ANIM_PROPS: [keyof TextAnimatorGroup['properties'], string, 'num' | 'vec2' | 'scale' | 'color' | 'pos'][] = [
+const ANIM_PROPS: [
+	keyof TextAnimatorGroup['properties'],
+	string,
+	'num' | 'vec2' | 'scale' | 'color' | 'pos',
+][] = [
 	['anchor', 'a', 'pos'],
 	['position', 'p', 'pos'],
 	['scale', 's', 'scale'],
@@ -651,7 +751,12 @@ const ANIM_PROPS: [keyof TextAnimatorGroup['properties'], string, 'num' | 'vec2'
 	['rotationY', 'ry', 'num'],
 ];
 
-function textAnimators(ctx: Ctx, groups: readonly TextAnimatorGroup[] | undefined, clock: Clock, label: string): Json[] {
+function textAnimators(
+	ctx: Ctx,
+	groups: readonly TextAnimatorGroup[] | undefined,
+	clock: Clock,
+	label: string,
+): Json[] {
 	const out: Json[] = [];
 	for (const g of groups ?? []) {
 		if (!g.enabled) continue;
@@ -678,7 +783,8 @@ function textAnimators(ctx: Ctx, groups: readonly TextAnimatorGroup[] | undefine
 		if (sels.length > 1) ctx.warn(`${l}: only the first selector is exported (a Lottie animator has one)`);
 		const first = sels[0];
 		let s: Json = { t: 0, r: 1, b: 1, sh: 1, a: k0(100), s: k0(0), e: k0(100), o: k0(0), m: k0(1), rn: 0 };
-		if (first && first.kind !== 'range') ctx.warn(`${l}: the ${first.kind} selector is not part of Lottie (all characters are selected)`);
+		if (first && first.kind !== 'range')
+			ctx.warn(`${l}: the ${first.kind} selector is not part of Lottie (all characters are selected)`);
 		else if (first) {
 			const r = first as TextRangeSelector;
 			s = {
@@ -724,7 +830,7 @@ function clockOf(c: Clip, rate: Rational, rangeStart: number): Clock {
 
 type Placed = { layer: Json; hidden?: boolean };
 
-function layerTimes(c: Clip, clock: Clock): Json {
+function layerTimes(clock: Clock): Json {
 	// Lottie layer time = (comp frame − st) / sr; content time c ↔ layer frame c / F.
 	const sr = 1 / clock.rate;
 	const st = clock.start - clock.sourceIn / clock.F / clock.rate;
@@ -741,7 +847,8 @@ function clipLayer(ctx: Ctx, seq: Sequence, c: Clip, rangeStart: number, depth: 
 		blendMode?: string;
 		masks?: Mask[];
 	};
-	if (c.speed?.reverse) ctx.warn(`${label}: reverse playback is not supported by Lottie players (exported forwards)`);
+	if (c.speed?.reverse)
+		ctx.warn(`${label}: reverse playback is not supported by Lottie players (exported forwards)`);
 	if ((c as { timeRemap?: { enabled?: boolean } }).timeRemap?.enabled)
 		ctx.warn(`${label}: Time Remapping is not exported`);
 	const base = (ty: number, origin: [number, number]): Json => ({
@@ -749,7 +856,7 @@ function clipLayer(ctx: Ctx, seq: Sequence, c: Clip, rangeStart: number, depth: 
 		nm: c.name,
 		ind: 0,
 		ddd: 0,
-		...layerTimes(c, clock),
+		...layerTimes(clock),
 		ks: transform(ctx, r.transform ?? null, r.opacity ?? { value: 100, keyframes: [] }, clock, origin, label),
 		bm: blendCode(ctx, r.blendMode, label),
 		ao: 0,
@@ -812,7 +919,13 @@ function clipLayer(ctx: Ctx, seq: Sequence, c: Clip, rangeStart: number, depth: 
 				return null;
 			}
 			const col = syn.color;
-			const hex = `#${[col[0], col[1], col[2]].map((v) => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, '0')).join('')}`;
+			const hex = `#${[col[0], col[1], col[2]]
+				.map((v) =>
+					Math.round(Math.min(1, Math.max(0, v)) * 255)
+						.toString(16)
+						.padStart(2, '0'),
+				)
+				.join('')}`;
 			layer = { ...base(1, [0, 0]), sc: hex, sw: Math.round(box.width), sh: Math.round(box.height) };
 			const m = masks(ctx, r.masks, box, [0, 0], clock, label);
 			if (m.length) Object.assign(layer, { hasMask: true, masksProperties: m });
@@ -827,7 +940,14 @@ function clipLayer(ctx: Ctx, seq: Sequence, c: Clip, rangeStart: number, depth: 
 			const id = `image_${c.mediaId}`;
 			if (!ctx.has(id)) {
 				ctx.add(id);
-				ctx.assets.push({ id, w: Math.round(box.width), h: Math.round(box.height), u: '', p: media.dataUri, e: 1 });
+				ctx.assets.push({
+					id,
+					w: Math.round(box.width),
+					h: Math.round(box.height),
+					u: '',
+					p: media.dataUri,
+					e: 1,
+				});
 			}
 			layer = { ...base(2, [0, 0]), refId: id };
 			const m = masks(ctx, r.masks, box, [0, 0], clock, label);
@@ -847,8 +967,13 @@ function clipLayer(ctx: Ctx, seq: Sequence, c: Clip, rangeStart: number, depth: 
 			// The precomp runs on its own frames: stretch so one of its frames lasts its own duration.
 			const ip = Number(media.doc.ip) || 0;
 			layer.sr = r6((layer.sr as number) * (seqFps / fr));
-			layer.st = r6(clock.start - (clock.sourceIn / FLICKS_PER_SECOND) * seqFps / clock.rate - ip * (layer.sr as number));
-			if ((c as { loop?: boolean }).loop) ctx.warn(`${label}: a looping Lottie clip plays once in the export`);
+			layer.st = r6(
+				clock.start -
+					((clock.sourceIn / FLICKS_PER_SECOND) * seqFps) / clock.rate -
+					ip * (layer.sr as number),
+			);
+			if ((c as { loop?: boolean }).loop)
+				ctx.warn(`${label}: a looping Lottie clip plays once in the export`);
 			if (ctx.doc.media[c.mediaId]?.interpretation)
 				ctx.warn(`${label}: Interpret Footage settings of the Lottie animation are not exported`);
 			break;
@@ -867,8 +992,11 @@ function clipLayer(ctx: Ctx, seq: Sequence, c: Clip, rangeStart: number, depth: 
 			}
 			layer = { ...base(0, [0, 0]), refId: id, w: nested.settings.width, h: nested.settings.height };
 			if (!rationalEqual(nested.settings.frameRate as Rational, seq.settings.frameRate as Rational))
-				ctx.warn(`${label}: the nested sequence's frame rate differs (its frames are drawn at the outer rate)`);
-			if ((c as { multicam?: unknown }).multicam) ctx.warn(`${label}: multi-camera switching is not exported`);
+				ctx.warn(
+					`${label}: the nested sequence's frame rate differs (its frames are drawn at the outer rate)`,
+				);
+			if ((c as { multicam?: unknown }).multicam)
+				ctx.warn(`${label}: multi-camera switching is not exported`);
 			break;
 		}
 		case 'video':
@@ -889,7 +1017,8 @@ function clipLayer(ctx: Ctx, seq: Sequence, c: Clip, rangeStart: number, depth: 
 	}
 	const fx = effects(ctx, c, clock, label);
 	if (fx.length) layer.ef = fx;
-	if (((r as { trackedBy?: unknown }).trackedBy)) ctx.warn(`${label}: tracking links are exported as their keyframes only`);
+	if ((r as { trackedBy?: unknown }).trackedBy)
+		ctx.warn(`${label}: tracking links are exported as their keyframes only`);
 	return { layer, hidden: !c.enabled };
 }
 
@@ -915,10 +1044,16 @@ function embedLottie(ctx: Ctx, mediaId: string, doc: Json): string {
 		if (Array.isArray(a.layers)) copy.layers = remap(a.layers);
 		ctx.assets.push(copy);
 	}
-	if (Array.isArray(doc.chars) && doc.chars.length) ctx.warn('An embedded Lottie animation carries glyphs (chars); they are kept at the root');
+	if (Array.isArray(doc.chars) && doc.chars.length)
+		ctx.warn('An embedded Lottie animation carries glyphs (chars); they are kept at the root');
 	const fonts = (doc.fonts as { list?: Json[] } | undefined)?.list ?? [];
 	for (const f of fonts) if (!ctx.fonts.some((x) => x.fName === f.fName)) ctx.fonts.push(f);
-	ctx.assets.push({ id, nm: String(doc.nm ?? 'Lottie'), fr: Number(doc.fr) || 30, layers: remap(doc.layers) });
+	ctx.assets.push({
+		id,
+		nm: String(doc.nm ?? 'Lottie'),
+		fr: Number(doc.fr) || 30,
+		layers: remap(doc.layers),
+	});
 	return id;
 }
 
@@ -977,7 +1112,9 @@ export function exportSequenceToLottie(
 		op: range.end - range.start,
 		w: seq.settings.width,
 		h: seq.settings.height,
-		nm: Object.values(doc.items).find((it) => it.kind === 'sequence' && it.sequenceId === sequenceId)?.name ?? 'Sequence',
+		nm:
+			Object.values(doc.items).find((it) => it.kind === 'sequence' && it.sequenceId === sequenceId)?.name ??
+			'Sequence',
 		ddd: 0,
 		assets: ctx.assets,
 		layers,
@@ -990,4 +1127,6 @@ export function exportSequenceToLottie(
 }
 
 /** BLEND_MODES that have a Lottie code (for UI hints). */
-export const LOTTIE_BLEND_MODES: readonly string[] = LOTTIE_BLEND.filter((m) => (BLEND_MODES as readonly string[]).includes(m));
+export const LOTTIE_BLEND_MODES: readonly string[] = LOTTIE_BLEND.filter((m) =>
+	(BLEND_MODES as readonly string[]).includes(m),
+);

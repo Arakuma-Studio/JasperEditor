@@ -251,7 +251,9 @@ describe('imports on the engine', () => {
 		const exr = await register(app, fixture('imports-still.exr'));
 		const r = await post(`/api/media/${exr.mediaKey}/variants`, { kind: 'display', variant: '' });
 		expect(r.statusCode, r.body).toBe(200);
-		const services = app.jasper.services.imports as { variants: { ensureAndWait: Function } };
+		const services = app.jasper.services.imports as {
+			variants: { ensureAndWait(r: unknown, kind: string, variant: string): Promise<string> };
+		};
 		const rec = coreServices(app).registry.get(exr.mediaKey)!;
 		const path = await services.variants.ensureAndWait(rec, 'display', '');
 		const probe = spawnSync('ffprobe', ['-v', 'error', '-show_streams', '-of', 'json', path], {

@@ -4,7 +4,6 @@
 // Each spec carries labels, units, ranges, UI control hints, the reset value (`defaultValue`), its
 // applicability by kind capabilities and how the UI writes it (`param.set` or `clip.update`).
 
-import { mediaDisplaySize } from '../interpret/model.ts';
 import { z } from 'zod';
 import { BLEND_MODE_GROUPS, BLEND_MODE_LABELS } from '../blend-modes.ts';
 import type { ParamPath } from '../commands/schemas/common.ts';
@@ -15,6 +14,7 @@ import {
 } from '../composition/json-schema.ts';
 import { contentTimeAt } from '../derive/index.ts';
 import { DEFAULT_SHAPE_SIZE, shapeIntrinsicBox } from '../factories.ts';
+import { mediaDisplaySize } from '../interpret/model.ts';
 import { type EvaluateOptions, evaluate } from '../keyframes.ts';
 import {
 	MASK_DEFAULT_FEATHER,

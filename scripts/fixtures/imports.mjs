@@ -26,7 +26,9 @@ function run(ff, args) {
 }
 
 const hasEncoder = (ff, name) =>
-	new RegExp(`\\b${name}\\b`).test(spawnSync(ff, ['-hide_banner', '-encoders'], { encoding: 'utf8' }).stdout ?? '');
+	new RegExp(`\\b${name}\\b`).test(
+		spawnSync(ff, ['-hide_banner', '-encoders'], { encoding: 'utf8' }).stdout ?? '',
+	);
 
 // ---------------------------------------------------------------- HEIF writer (ISO/IEC 23008-12, one image item)
 
@@ -240,7 +242,14 @@ function makeLottie() {
 						ty: 'gr',
 						nm: 'Box',
 						it: [
-							{ ty: 'rc', nm: 'R', d: 1, s: { a: 0, k: [96, 96] }, p: { a: 0, k: [0, 0] }, r: { a: 0, k: 12 } },
+							{
+								ty: 'rc',
+								nm: 'R',
+								d: 1,
+								s: { a: 0, k: [96, 96] },
+								p: { a: 0, k: [0, 0] },
+								r: { a: 0, k: 12 },
+							},
 							{ ty: 'fl', nm: 'F', c: { a: 0, k: [1, 0.25, 0.35, 1] }, o: { a: 0, k: 100 }, r: 1 },
 							tr([0, 0]),
 						],
@@ -462,9 +471,17 @@ export function makePsd(agPsd) {
 				opened: true,
 				children: [
 					layer('Green', 200, 30, 90, 90, () => [30, 180, 60, 255]),
-					layer('Stripes', 180, 10, 130, 130, (x) => (Math.floor(x / 10) % 2 ? [255, 255, 255, 255] : [0, 0, 0, 255]), {
-						clipping: true,
-					}),
+					layer(
+						'Stripes',
+						180,
+						10,
+						130,
+						130,
+						(x) => (Math.floor(x / 10) % 2 ? [255, 255, 255, 255] : [0, 0, 0, 255]),
+						{
+							clipping: true,
+						},
+					),
 				],
 			},
 			layer('Masked', 220, 150, maskW, maskH, () => [160, 60, 200, 255], {
@@ -502,7 +519,16 @@ export async function fixtures(ctx) {
 		},
 	});
 	const list = [
-		still('imports-still.exr', ['-vf', 'format=gbrapf32le', '-c:v', 'exr', '-format', 'half', '-compression', 'zip1']),
+		still('imports-still.exr', [
+			'-vf',
+			'format=gbrapf32le',
+			'-c:v',
+			'exr',
+			'-format',
+			'half',
+			'-compression',
+			'zip1',
+		]),
 		still('imports-still-16.tif', ['-vf', 'format=rgb48le', '-c:v', 'tiff']),
 		still('imports-still.tga', [
 			'-vf',
@@ -619,7 +645,21 @@ export async function fixtures(ctx) {
 			recipe: 'heic:v1',
 			make: (out) => {
 				const tmp = `${out}.hevc`;
-				run(ff, ['-f', 'lavfi', '-i', pattern, '-frames:v', '1', '-pix_fmt', 'yuv420p', '-c:v', 'libkvazaar', '-f', 'hevc', tmp]);
+				run(ff, [
+					'-f',
+					'lavfi',
+					'-i',
+					pattern,
+					'-frames:v',
+					'1',
+					'-pix_fmt',
+					'yuv420p',
+					'-c:v',
+					'libkvazaar',
+					'-f',
+					'hevc',
+					tmp,
+				]);
 				writeFileSync(out, writeHeif(readFileSync(tmp), 320, 240));
 				rmSync(tmp, { force: true });
 			},

@@ -149,7 +149,11 @@ export function LottieLayer(layer: LayerProps) {
 	if (!media) return null;
 	return (
 		<LayerBox layer={layer}>
-			<div ref={host} data-lottie="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} />
+			<div
+				ref={host}
+				data-lottie=""
+				style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+			/>
 		</LayerBox>
 	);
 }

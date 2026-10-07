@@ -4,11 +4,7 @@
 // and their In points; we never let a clip show frames that are not there), frame holds past the end move to the last
 // frame, and time-remapped clips that would leave the media are refused rather than silently altered.
 import type { Draft } from 'immer';
-import {
-	interpretationIssues,
-	isEmptyInterpretation,
-	mediaDurationFlicks,
-} from '../../interpret/model.ts';
+import { interpretationIssues, isEmptyInterpretation, mediaDurationFlicks } from '../../interpret/model.ts';
 import { isBoundedContent } from '../../registry/kinds.ts';
 import type { MediaAsset, MediaInterpretation } from '../../schema/media.ts';
 import type { Clip } from '../../schema/sequence.ts';
@@ -93,7 +89,8 @@ function mediaInterpret(doc: DDoc, cmd: CommandOf<'media.interpret'>, h: Handler
 		if (!asset) h.fail('E_NOT_FOUND', `Media not found: ${id}`);
 		const next = patchInterpretation(asset.interpretation as MediaInterpretation | undefined, patch);
 		const issues = interpretationIssues(asset as MediaAsset, next);
-		if (issues.length) h.fail('E_INVALID_PARAM', `Media ${id}: ${issues.join('; ')}`, { path: ['interpretation'] });
+		if (issues.length)
+			h.fail('E_INVALID_PARAM', `Media ${id}: ${issues.join('; ')}`, { path: ['interpretation'] });
 		if (isEmptyInterpretation(next)) delete asset.interpretation;
 		else asset.interpretation = next as Draft<MediaInterpretation>;
 		changed.set(id, mediaDurationFlicks(asset as MediaAsset));

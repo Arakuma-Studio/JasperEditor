@@ -1,6 +1,6 @@
 // Core clip handlers (ARCHITECTURE §5.3, WP-00): place, addText/addSolid/addMotionGraphic, move,
 // trim (regular + ripple), split, lift, extract, update. S01 §9–§10, S02 §10–§13, Appendix A.
-import { mediaDurationFlicks } from '../../interpret/model.ts';
+
 import type { Draft } from 'immer';
 import {
 	anim,
@@ -11,6 +11,7 @@ import {
 	defaultTextStyle,
 	defaultTransform,
 } from '../../factories.ts';
+import { mediaDurationFlicks } from '../../interpret/model.ts';
 import { mediaIntrinsicSize } from '../../process/rescale.ts';
 import { defaultLabelForPlacedClip, kindCapabilities } from '../../registry/kinds.ts';
 import type { MgTemplateInfo } from '../../registry/mg.ts';

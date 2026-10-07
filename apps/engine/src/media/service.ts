@@ -276,7 +276,15 @@ export class MediaService {
 			} else {
 				const probe = await this.probe(file, fingerprint, opts.name, opts.projectId);
 				record = {
-					...this.makeRecord(mediaKey, fingerprint, opts.name, sizeBytes, st.mtimeMs, { type: 'managed', path: file }, probe),
+					...this.makeRecord(
+						mediaKey,
+						fingerprint,
+						opts.name,
+						sizeBytes,
+						st.mtimeMs,
+						{ type: 'managed', path: file },
+						probe,
+					),
 					...(opts.extras ?? {}),
 				};
 				await this.deps.registry.put(record);

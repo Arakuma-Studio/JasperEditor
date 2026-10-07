@@ -1,7 +1,8 @@
 // sequence.*, marker.*, track.* (S01 §7, §8, SEQ-006/007/008).
-import { mediaDurationFlicks } from '../../interpret/model.ts';
+
 import type { Draft } from 'immer';
 import { anim, createSequence, createTrack } from '../../factories.ts';
+import { mediaDurationFlicks } from '../../interpret/model.ts';
 import { fixMulticamSelections, pruneMulticamAngles } from '../../multicam/model.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
 import type { Animatable, Vec2 } from '../../schema/common.ts';

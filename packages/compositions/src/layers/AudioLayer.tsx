@@ -114,7 +114,11 @@ export function AudioLayer({
 	const audio = (
 		<Audio
 			src={src}
-			trimBefore={(reversed && src === reversed) || (mappedUrl && src === mappedUrl) ? 0 : videoTrimBefore(clip, { num, den })}
+			trimBefore={
+				(reversed && src === reversed) || (mappedUrl && src === mappedUrl)
+					? 0
+					: videoTrimBefore(clip, { num, den })
+			}
 			playbackRate={clip.speed.rate}
 			volume={volume}
 			showInTimeline={false}

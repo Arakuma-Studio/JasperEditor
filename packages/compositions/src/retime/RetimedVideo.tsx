@@ -13,12 +13,12 @@ import {
 	analysisFactor,
 	analysisSize,
 	FLICKS_PER_SECOND,
+	fileTimeOf,
 	INTERP_EPS,
 	type MediaHandle,
 	type RenderVisualClip,
 	remapSourceAt,
 	type TimeInterpolation,
-	fileTimeOf,
 } from '@jasper/project';
 import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {

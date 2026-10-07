@@ -340,7 +340,10 @@ export class EngineClient {
 	}
 	/** Numbered stills → one media (job `image-sequence`, result RegisteredMedia). */
 	importImageSequence(req: ImageSequenceRequest, wait = false): Promise<EngineJob> {
-		return this.call('importsImageSequence', { body: req, ...(wait ? { query: { wait: '1' as const } } : {}) });
+		return this.call('importsImageSequence', {
+			body: req,
+			...(wait ? { query: { wait: '1' as const } } : {}),
+		});
 	}
 	detectImageSequence(path: string) {
 		return this.call('importsImageSequenceDetect', { body: { path } });
@@ -364,7 +367,12 @@ export class EngineClient {
 	 */
 	async uploadSequenceFrame(
 		blob: Blob,
-		opts: { projectId: string; fileName?: string; signal?: AbortSignal; onProgress?(p: UploadProgress): void },
+		opts: {
+			projectId: string;
+			fileName?: string;
+			signal?: AbortSignal;
+			onProgress?(p: UploadProgress): void;
+		},
 	): Promise<string> {
 		const fileName = opts.fileName ?? (blob as File).name ?? 'frame.bin';
 		const session = await this.createUpload({
@@ -380,7 +388,8 @@ export class EngineClient {
 			while (offset < blob.size) {
 				if (opts.signal?.aborted) throw opts.signal.reason ?? new DOMException('Aborted', 'AbortError');
 				const end = Math.min(blob.size, offset + chunkSize);
-				offset = (await this.appendUpload(session.uploadId, offset, blob.slice(offset, end), opts.signal)).offset;
+				offset = (await this.appendUpload(session.uploadId, offset, blob.slice(offset, end), opts.signal))
+					.offset;
 				opts.onProgress?.({ loaded: offset, total: blob.size });
 			}
 		} catch (e) {

@@ -92,9 +92,14 @@ const place = (mediaId: string, at: number, frames: number, track: string, scali
 		]).results[0] as { clipIds: string[] }
 	).clipIds[0]!;
 
-async function waitJob(id: string): Promise<{ state: string; result?: unknown; error?: { message: string } }> {
+async function waitJob(
+	id: string,
+): Promise<{ state: string; result?: unknown; error?: { message: string } }> {
 	for (;;) {
-		const j = await api<{ state: string; result?: unknown; error?: { message: string } }>('GET', `/api/jobs/${id}`);
+		const j = await api<{ state: string; result?: unknown; error?: { message: string } }>(
+			'GET',
+			`/api/jobs/${id}`,
+		);
 		if (['succeeded', 'failed', 'cancelled', 'interrupted'].includes(j.state)) return j;
 		await new Promise((r) => setTimeout(r, 1000));
 	}
@@ -120,12 +125,18 @@ async function exportWith(engine: 'auto' | 'remotion', name: string): Promise<st
 		audio: { codec: 'aac', sampleRate: 48000, channels: 2 },
 		engine,
 	};
-	const plan = await api<{ path: string; blockers: unknown[]; warnings: unknown[] }>('POST', '/api/exports/plan', {
-		envelope,
-		sequenceId: seqId,
-		settings,
-	});
-	console.log(`${engine} plan: ${plan.path}, blockers ${JSON.stringify(plan.blockers)}, warnings ${JSON.stringify(plan.warnings)}`);
+	const plan = await api<{ path: string; blockers: unknown[]; warnings: unknown[] }>(
+		'POST',
+		'/api/exports/plan',
+		{
+			envelope,
+			sequenceId: seqId,
+			settings,
+		},
+	);
+	console.log(
+		`${engine} plan: ${plan.path}, blockers ${JSON.stringify(plan.blockers)}, warnings ${JSON.stringify(plan.warnings)}`,
+	);
 	const job = await api<{ id: string }>('POST', '/api/exports', { envelope, sequenceId: seqId, settings });
 	const t0 = Date.now();
 	const done = await waitJob(job.id);
@@ -202,7 +213,14 @@ async function main() {
 		tx([{ type: 'param.set', target: ['clip', pc, 'transform', 'position'], value: [1000, 560] }]);
 	}
 	if (want('stills')) {
-		for (const f of ['imports-still.exr', 'imports-still.tga', 'imports-still.dpx', 'imports-layers.psd', 'imports-still.heic', 'imports-still.jxl']) {
+		for (const f of [
+			'imports-still.exr',
+			'imports-still.tga',
+			'imports-still.dpx',
+			'imports-layers.psd',
+			'imports-still.heic',
+			'imports-still.jxl',
+		]) {
 			const s = section(f, 4);
 			const m = addMedia(await register(f));
 			place(m, s.at, 4, 'V1');
@@ -225,7 +243,15 @@ async function main() {
 		mkdirSync(dir, { recursive: true });
 		for (let n = 1; n <= 6; n++)
 			spawnSync(FFMPEG, [
-				...['-v', 'error', '-y', '-f', 'lavfi', '-i', `color=c=0x${(n * 30).toString(16).padStart(2, '0')}60a0:size=160x90:duration=1`],
+				...[
+					'-v',
+					'error',
+					'-y',
+					'-f',
+					'lavfi',
+					'-i',
+					`color=c=0x${(n * 30).toString(16).padStart(2, '0')}60a0:size=160x90:duration=1`,
+				],
 				...['-frames:v', '1', '-pix_fmt', 'rgb48be', join(dir, `deep_${n}.png`)],
 			]);
 		const s = section('sequence16', 6);
@@ -267,13 +293,27 @@ async function main() {
 	console.log(sections.map((s) => `${s.name} ${s.at}–${s.at + s.frames - 1}`).join(', '));
 	if (args.includes('--save')) {
 		// Store the project on the engine (open it in the editor: /project/<id>).
-		const created = await api<{ projectId: string }>('POST', '/api/projects', { name: 'verify-imports', preset: 'hd-720p-30' });
-		const got = await api<{ revision: number; envelope: { document: ProjectDocument } }>('GET', `/api/projects/${created.projectId}`);
+		const created = await api<{ projectId: string }>('POST', '/api/projects', {
+			name: 'verify-imports',
+			preset: 'hd-720p-30',
+		});
+		const got = await api<{ revision: number; envelope: { document: ProjectDocument } }>(
+			'GET',
+			`/api/projects/${created.projectId}`,
+		);
 		doc = { ...doc, projectId: created.projectId };
-		const envelope = makeEnvelope(doc, { revision: got.revision + 1, savedAt: new Date().toISOString(), platform: 'verify' });
+		const envelope = makeEnvelope(doc, {
+			revision: got.revision + 1,
+			savedAt: new Date().toISOString(),
+			platform: 'verify',
+		});
 		const r = await fetch(`${ENGINE}/api/projects/${created.projectId}`, {
 			method: 'PUT',
-			headers: { 'content-type': 'application/json', host: '127.0.0.1:47900', 'if-match': String(got.revision) },
+			headers: {
+				'content-type': 'application/json',
+				host: '127.0.0.1:47900',
+				'if-match': String(got.revision),
+			},
 			body: JSON.stringify(envelope),
 		});
 		console.log(`saved project ${created.projectId}: ${r.status} ${await r.text()}`);
@@ -289,7 +329,9 @@ async function main() {
 			const d = meanDiff(a, b);
 			savePng(native, n, join(OUT, `${s.name}-${n}-native.png`));
 			savePng(remotion, n, join(OUT, `${s.name}-${n}-remotion.png`));
-			console.log(`${s.name} frame ${n}: native vs remotion mean |Δ| ${d.mean.toFixed(2)}, >8: ${(d.over8 * 100).toFixed(2)} %`);
+			console.log(
+				`${s.name} frame ${n}: native vs remotion mean |Δ| ${d.mean.toFixed(2)}, >8: ${(d.over8 * 100).toFixed(2)} %`,
+			);
 		}
 	}
 	if (conformAt >= 0) {

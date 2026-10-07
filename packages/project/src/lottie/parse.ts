@@ -57,7 +57,8 @@ export function parseLottie(input: string | unknown): LottieDoc {
 	const d = v;
 	if (!(d.fr > 0 && d.fr <= 1000)) throw new LottieParseError(`Invalid frame rate ${d.fr}`);
 	if (!(d.op > d.ip)) throw new LottieParseError('The out point must be after the in point');
-	if ((d.op - d.ip) / d.fr > LOTTIE_LIMITS.maxSeconds) throw new LottieParseError('The animation is too long');
+	if ((d.op - d.ip) / d.fr > LOTTIE_LIMITS.maxSeconds)
+		throw new LottieParseError('The animation is too long');
 	if (!(d.w >= 1 && d.h >= 1 && d.w <= LOTTIE_LIMITS.maxSize && d.h <= LOTTIE_LIMITS.maxSize))
 		throw new LottieParseError(`Invalid size ${d.w}×${d.h}`);
 	if (d.layers.length > LOTTIE_LIMITS.maxLayers) throw new LottieParseError('Too many layers');
@@ -124,20 +125,27 @@ export function lottieWarnings(d: LottieDoc): string[] {
 	const hasChars = Array.isArray(d.chars) && d.chars.length > 0;
 	const out: string[] = [];
 	if (found.has('expressions'))
-		out.push('Uses expressions: the Lottie player evaluates them (random-based ones such as wiggle may differ).');
+		out.push(
+			'Uses expressions: the Lottie player evaluates them (random-based ones such as wiggle may differ).',
+		);
 	if (found.has('text') && !hasChars)
 		out.push(
 			`Text layers are drawn with the fonts ${[...fonts].join(', ') || 'they name'}; fonts that are not installed fall back.`,
 		);
-	if (found.has('3d') || found.has('camera')) out.push('3D layers and cameras are drawn flat by the Lottie player.');
+	if (found.has('3d') || found.has('camera'))
+		out.push('3D layers and cameras are drawn flat by the Lottie player.');
 	if (found.has('merge-paths')) out.push('Merge Paths are not drawn by the Lottie player.');
 	if (found.has('layer-styles')) out.push('Layer styles are not drawn by the Lottie player.');
-	if (found.has('effects')) out.push('Layer effects other than the few the Lottie player implements are ignored.');
+	if (found.has('effects'))
+		out.push('Layer effects other than the few the Lottie player implements are ignored.');
 	return out;
 }
 
 /** The header the editor stores for a Lottie document. */
-export function lottieInfo(d: LottieDoc, extra: { warnings?: string[]; dotLottie?: LottieInfo['dotLottie'] } = {}): LottieInfo {
+export function lottieInfo(
+	d: LottieDoc,
+	extra: { warnings?: string[]; dotLottie?: LottieInfo['dotLottie'] } = {},
+): LottieInfo {
 	const warnings = [...lottieWarnings(d), ...(extra.warnings ?? [])];
 	return {
 		fps: d.fr,
@@ -158,7 +166,10 @@ export function lottieInfo(d: LottieDoc, extra: { warnings?: string[]; dotLottie
  * whole Lottie frame at or before that time, clamped to [ip, op − 1]. (`seconds` is file time: an assumed frame rate
  * or a loop was applied by `fileTimeOf` before.)
  */
-export function lottieFrameAt(info: Pick<LottieInfo, 'fps' | 'inFrame' | 'outFrame'>, seconds: number): number {
+export function lottieFrameAt(
+	info: Pick<LottieInfo, 'fps' | 'inFrame' | 'outFrame'>,
+	seconds: number,
+): number {
 	const f = Math.floor(seconds * info.fps + 1e-6);
 	const last = Math.max(0, Math.ceil(info.outFrame - info.inFrame) - 1);
 	return info.inFrame + Math.max(0, Math.min(last, Number.isFinite(f) ? f : 0));

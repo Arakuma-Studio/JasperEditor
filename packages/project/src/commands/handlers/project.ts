@@ -1,6 +1,7 @@
 // project.*, bin.create, item.* (S01 §5, §16.2).
-import { mediaDurationFlicks } from '../../interpret/model.ts';
+
 import type { Draft } from 'immer';
+import { mediaDurationFlicks } from '../../interpret/model.ts';
 import { frameShiftFlicks, sourceTimingShift } from '../../process/source-range.ts';
 import { defaultLabelForMedia } from '../../registry/kinds.ts';
 import type { ProjectItem, SourceMarks } from '../../schema/document.ts';

@@ -45,16 +45,6 @@ import {
 } from './exports.ts';
 import { FontCatalogSchema } from './fonts.ts';
 import {
-	AssetRelinkRequestSchema,
-	AssetRelinkResponseSchema,
-	InterchangeExportRequestSchema,
-	InterchangeImportRequestSchema,
-	InterchangeImportResponseSchema,
-	InterchangePrerenderPlanRequestSchema,
-	InterchangePrerenderPlanResponseSchema,
-	RelinkScanRequestSchema,
-} from './interchange.ts';
-import {
 	ImageSequenceDetectRequestSchema,
 	ImageSequenceDetectResponseSchema,
 	ImageSequenceRequestSchema,
@@ -65,6 +55,16 @@ import {
 	MediaVariantStatusSchema,
 	VectorPagesResponseSchema,
 } from './imports.ts';
+import {
+	AssetRelinkRequestSchema,
+	AssetRelinkResponseSchema,
+	InterchangeExportRequestSchema,
+	InterchangeImportRequestSchema,
+	InterchangeImportResponseSchema,
+	InterchangePrerenderPlanRequestSchema,
+	InterchangePrerenderPlanResponseSchema,
+	RelinkScanRequestSchema,
+} from './interchange.ts';
 import { EngineJobSchema, JobListQuerySchema, JobListResponseSchema } from './jobs.ts';
 import { LayerBakePreviewRequestSchema } from './layer-bake.ts';
 import { MaskTraceRequestSchema, MaskTraceResponseSchema } from './masks.ts';

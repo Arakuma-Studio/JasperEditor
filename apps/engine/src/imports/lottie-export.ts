@@ -4,6 +4,7 @@
 import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import type { LottieExportRequest, LottieExportResult } from '@jasper/api';
+import { mgRegistry } from '@jasper/mg-templates';
 import {
 	browserPictureNeed,
 	exportSequenceToLottie,
@@ -12,7 +13,6 @@ import {
 	type MediaAsset,
 	type ProjectDocument,
 } from '@jasper/project';
-import { mgRegistry } from '@jasper/mg-templates';
 import { mediaKeyOf } from '../export/planner.ts';
 import type { MediaRecord, MediaRegistry } from '../media/registry.ts';
 import { HttpError } from '../tools/reply.ts';
