@@ -27,6 +27,9 @@ export default async function previewsRoutes(app: FastifyInstance): Promise<void
 		broadcaster: core.broadcaster,
 	});
 	previews.registerRunner();
+	// Export ▸ Use Previews reads the files of the segments that have one.
+	core.exports.registerPreviewSource((doc, seqId) => previews.piecesFor(doc, seqId));
+	app.addHook('onClose', async () => core.exports.registerPreviewSource(null));
 	app.jasper.services.previews = previews;
 	// Cleaning passes remove files behind the listings.
 	const off = core.broadcaster.subscribe((e) => {

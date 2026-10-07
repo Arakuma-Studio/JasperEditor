@@ -144,6 +144,8 @@ export type PlannedExport = {
 	/** wp captions: caption tracks burned in (snapshot option) and the caption output settings. */
 	captions?: SnapshotOptions['captions'];
 	captionSettings?: ExportSettings['captions'];
+	/** previews (Use Previews): the stretches of the range read from render previews, and those rendered. */
+	previews?: import('./use-previews.ts').ExportRun[];
 };
 
 /** The engine media key of an asset (engine-store locator), or null. */

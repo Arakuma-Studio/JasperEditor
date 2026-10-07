@@ -280,6 +280,34 @@ export class PreviewService {
 		return { job, planned };
 	}
 
+	/**
+	 * Use Previews: the full-size preview files of a document's sequence in its own preview format (exports never use
+	 * half-size previews), or why there are none.
+	 */
+	async piecesFor(
+		doc: ProjectDocument,
+		sequenceId: string,
+	): Promise<{ pieces: { start: number; frames: number; file: string }[] } | { reason: string }> {
+		const seq = doc.sequences[sequenceId];
+		if (!seq) return { reason: 'The sequence is missing' };
+		const settings = previewSettingsOf(seq);
+		if (settings.size === 'half')
+			return {
+				reason: 'The render previews are half size (Video Previews ▸ Frame Size): exports do not use them',
+			};
+		const key = previewFormatKey(settings);
+		const names = await this.names(key);
+		const container = previewContainer(settings);
+		const pieces = previewSegments(doc, sequenceId)
+			.filter((s) => names.has(`${s.hash}.${container}`))
+			.map((s) => ({
+				start: s.startFrame,
+				frames: s.frames,
+				file: join(this.dirOf(key), `${s.hash}.${container}`),
+			}));
+		return pieces.length ? { pieces } : { reason: 'The sequence has no render previews' };
+	}
+
 	registerRunner(): void {
 		this.deps.queue.registerRunner('preview', (ctx) => this.run(ctx));
 	}
