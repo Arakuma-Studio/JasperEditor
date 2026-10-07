@@ -14,6 +14,7 @@ import {
 	SPEED_DURATION_DIALOG,
 	SUBCLIP_DIALOG,
 } from '../edit-ux/dialogs.tsx';
+import { registerEditUxMenus } from '../edit-ux/menus.ts';
 import { defaultTransitionFields } from '../panels/effects/transition-prefs.ts';
 import { driverFor, getSourceTransport } from '../panels/program/transport-registry.ts';
 import { assetFps, performSourceEdit, sourceMonitorState } from '../panels/source/source-state.ts';
@@ -162,6 +163,8 @@ const KEEPS_LOOP = new Set([
 	'timeline.toggleTrimType',
 	'timeline.trimEdit',
 ]);
+registerEditUxMenus();
+
 onBeforeCommand((id) => {
 	if (!KEEPS_DYNAMIC.has(id)) commitDynamicTrim();
 	if (!KEEPS_LOOP.has(id) && trimMode.getState().playAround) stopPlayAround();

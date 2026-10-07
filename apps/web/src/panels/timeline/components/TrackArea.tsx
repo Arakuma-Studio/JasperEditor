@@ -9,13 +9,19 @@ import {
 	type Sequence,
 	throughEdits,
 } from '@jasper/project';
-import type { GapRef, MediaRuntime } from '@jasper/session';
+import type { ActiveTool, EditorSession, GapRef, MediaRuntime } from '@jasper/session';
 import { useMemo } from 'react';
+import { LANE_MIN_TRACK_PX, laneKeyFor } from '../model/keyframe-lane.ts';
 import { type RegionLayout, rowOf, type TrackAreaLayout, visibleRows } from '../model/layout.ts';
 import { type TransitionIndex, transitionsInRange } from '../model/transitions.ts';
 import { frameToX, type Viewport } from '../model/viewport.ts';
 import type { EditPointSel, TimelineUiState } from '../state/ui-store.ts';
 import { type ClipDisplay, ClipView } from './ClipView.tsx';
+import { KeyframeLane } from './KeyframeLane.tsx';
+
+/** Lanes start under the clip name strip. */
+const LANE_TOP_PX = 15;
+
 import { TransitionGhostView, TransitionView, transitionViewProps } from './TransitionView.tsx';
 
 type TrackAreaProps = {
@@ -47,6 +53,14 @@ type TrackAreaProps = {
 	selectedTransitions?: ReadonlySet<string>;
 	/** edit-structure: mark through edits (Sequence ▸ Show Through Edits). */
 	showThroughEdits?: boolean;
+	/** edit-ux: keyframe lanes and rubber bands (drawn on expanded tracks). */
+	lanes?: {
+		session: EditorSession;
+		tool: ActiveTool;
+		display: Record<string, string>;
+		selectedKeys: ReadonlySet<string>;
+		mac: boolean;
+	};
 };
 
 /**
@@ -170,6 +184,30 @@ function Region(props: TrackAreaProps & { region: RegionLayout; offsets: Record<
 								/>
 							);
 						})}
+						{props.lanes && row.height >= LANE_MIN_TRACK_PX
+							? clips.map((c) => {
+									const key = laneKeyFor(props.lanes!.display, c);
+									if (!key) return null;
+									return (
+										<KeyframeLane
+											key={`lane:${c.id}`}
+											session={props.lanes!.session}
+											seq={seq}
+											clip={c}
+											laneKey={key}
+											x={frameToX(v, c.start)}
+											top={LANE_TOP_PX}
+											height={row.height - LANE_TOP_PX - 2}
+											pxPerFrame={v.pxPerFrame}
+											viewportWidth={v.width}
+											tool={props.lanes!.tool}
+											locked={track.locked}
+											selectedKeys={props.lanes!.selectedKeys}
+											mac={props.lanes!.mac}
+										/>
+									);
+								})
+							: null}
 						{trans.map((g) => (
 							<TransitionView
 								key={g.t.id}

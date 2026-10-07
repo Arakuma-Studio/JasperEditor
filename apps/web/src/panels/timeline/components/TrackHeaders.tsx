@@ -157,6 +157,19 @@ function headerMenu(
 				]),
 		},
 		{ kind: 'separator' },
+		// edit-ux (Premiere track "Show Keyframes"): clip keyframe lanes on this track, drawn when it is expanded.
+		{
+			kind: 'item',
+			label: 'Show Clip Keyframes',
+			checked: p.view.keyframeDisplay[track.id] !== 'none',
+			run: () => {
+				const d = { ...p.view.keyframeDisplay };
+				if (d[track.id] === 'none') delete d[track.id];
+				else d[track.id] = 'none';
+				p.session.setView(p.seq.id, { keyframeDisplay: d });
+			},
+		},
+		{ kind: 'separator' },
 		{ kind: 'item', label: 'Rename', run: startRename },
 	];
 }

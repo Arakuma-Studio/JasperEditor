@@ -285,6 +285,13 @@ function clear(ctx: CommandCtx, e: Env, ripple: boolean): void {
 		e.session.selectGaps([]);
 		return;
 	}
+	// edit-ux: keyframes selected on a clip's lane (rubber band) are deleted first, as in Premiere.
+	const kf = sel.keyframes;
+	if (!ripple && kf && kf.keyframeIds.length && e.seq.clips[kf.clipOrTrackId]) {
+		const r = apply(ctx, e, 'Delete Keyframes', [{ type: 'keyframe.remove', keyframeIds: kf.keyframeIds }]);
+		if (r?.ok) e.session.selectKeyframes(null);
+		return;
+	}
 	const clips = selectedClips(e);
 	if (clips.length) {
 		apply(ctx, e, ripple ? 'Ripple Delete' : 'Clear', [

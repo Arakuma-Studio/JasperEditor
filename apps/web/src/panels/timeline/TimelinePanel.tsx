@@ -186,6 +186,19 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		(a, b) => a.w === b.w && a.h === b.h,
 	);
 	const readoutFrames = useStoreSelector(ui, (s) => s.readoutFrames);
+	// edit-ux: keyframe lanes (rubber bands) on expanded tracks.
+	const activeTool = useSessionState((s) => s.toggles.activeTool);
+	const keyframeSel = useSessionState((s) => s.selection.keyframes);
+	const lanes = useMemo(
+		() => ({
+			session,
+			tool: activeTool,
+			display: view.keyframeDisplay as Record<string, string>,
+			selectedKeys: new Set(keyframeSel?.keyframeIds ?? []),
+			mac,
+		}),
+		[session, activeTool, view.keyframeDisplay, keyframeSel, mac],
+	);
 	const snapping = useSessionState((s) => s.toggles.snapping);
 
 	// ------------------------------------------------------------ geometry
@@ -1469,6 +1482,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 						transitions={transitions}
 						selectedTransitions={selectedTransitions}
 						showThroughEdits={showThroughEdits}
+						lanes={lanes}
 					/>
 					<GestureTooltip tooltip={tooltip} width={size.w} />
 				</div>
