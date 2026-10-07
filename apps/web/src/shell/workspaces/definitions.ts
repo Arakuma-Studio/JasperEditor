@@ -158,7 +158,7 @@ const audio: WorkspaceDefinition = {
 				['fill', TIMELINE_STRIP([0.2, g(['project', 'effects', 'markers', 'history'], 'project')])],
 			),
 		],
-		['fill', g(['properties', 'effects'], 'properties')],
+		['fill', g(['properties', 'info'], 'properties')],
 	),
 };
 

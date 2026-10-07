@@ -108,6 +108,10 @@ export function buildExportSettings(
 		/** Overrides of the preset's quality. */
 		crf?: number;
 		videoBitrateKbps?: number;
+		/** audio-mix: channels (default: 6 for a 5.1 Mix, else 2), rate (default: the sequence rate), loudness. */
+		audioChannels?: 1 | 2 | 6;
+		audioSampleRate?: 44100 | 48000 | 96000;
+		normalize?: { targetLufs: number; truePeakDb: number } | null;
 	},
 ): ExportSettings {
 	const videoKbps = opts.videoBitrateKbps ?? preset.videoKbps;
@@ -132,9 +136,15 @@ export function buildExportSettings(
 		audio: {
 			// The engine pairs the audio encoder with the container (PCM in MOV); this is the request.
 			codec: preset.container === 'webm' ? 'opus' : 'aac',
-			sampleRate: 48000,
-			channels: 2,
-			bitrateKbps: preset.audioKbps,
+			sampleRate:
+				preset.container === 'webm'
+					? 48000
+					: (opts.audioSampleRate ?? ((s.audioSampleRate as 44100 | 48000 | 96000 | undefined) ?? 48000)),
+			channels: opts.audioChannels ?? (s.masterLayout === '5.1' ? 6 : 2),
+			...(opts.audioChannels === 6 || (opts.audioChannels === undefined && s.masterLayout === '5.1')
+				? { bitrateKbps: Math.max(preset.audioKbps ?? 0, 384) }
+				: { bitrateKbps: preset.audioKbps }),
+			...(opts.normalize !== undefined ? { normalize: opts.normalize } : {}),
 		},
 		engine: opts.engine,
 		destination: opts.outputPath ? { type: 'path', path: opts.outputPath } : { type: 'download' },

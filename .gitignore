@@ -49,3 +49,4 @@ vendor/
 # Desktop packaging stages (apps/desktop/scripts/package.mjs)
 dist-deploy/
 native/bin/
+.stage-am/

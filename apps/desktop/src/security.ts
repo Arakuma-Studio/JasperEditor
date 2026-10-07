@@ -165,3 +165,23 @@ export function parseClipboardFileList(raw: unknown, platform: string = process.
 	}
 	return out;
 }
+
+/**
+ * audio-mix: which permission requests the app grants. Voice-over recording needs the microphone (`media` with
+ * audio only) and Preferences ▸ Audio lists the inputs (`mediaKeySystem` is never needed); only frames on the app
+ * origin may ask. Everything else (camera, geolocation, notifications, MIDI, HID…) is denied.
+ */
+export function isPermissionAllowed(
+	permission: string,
+	requestingUrl: string,
+	appOrigin: string | null,
+	mediaTypes: readonly string[] = [],
+): boolean {
+	if (!appOrigin || !isSameOrigin(requestingUrl, appOrigin)) return false;
+	if (permission === 'media') return mediaTypes.length > 0 && mediaTypes.every((t) => t === 'audio');
+	return (
+		permission === 'clipboard-read' ||
+		permission === 'clipboard-sanitized-write' ||
+		permission === 'fullscreen'
+	);
+}

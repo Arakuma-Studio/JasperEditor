@@ -8,6 +8,7 @@ import {
 	ELECTRON_CLIPBOARD_FORMAT,
 	isClipboardWrite,
 	isExternalUrlAllowed,
+	isPermissionAllowed,
 	isRevealablePath,
 	isSameOrigin,
 	isWindowAction,
@@ -138,5 +139,22 @@ describe('desktop package config (R-OMS §8.5)', () => {
 		expect(pkg.build.files).toContain('!**/node_modules/@remotion/compositor-*/**');
 		expect(pkg.build.afterPack).toBe('./scripts/after-pack.cjs');
 		expect(existsSync(join(__dirname, '..', pkg.build.afterPack))).toBe(true);
+	});
+});
+
+describe('isPermissionAllowed (audio-mix: voice-over microphone)', () => {
+	const app = 'http://127.0.0.1:47900';
+	it('grants audio-only media requests from the app origin', () => {
+		expect(isPermissionAllowed('media', `${app}/project/x`, app, ['audio'])).toBe(true);
+		expect(isPermissionAllowed('media', `${app}/`, app, ['audio', 'video'])).toBe(false);
+		expect(isPermissionAllowed('media', `${app}/`, app, ['video'])).toBe(false);
+		expect(isPermissionAllowed('media', `${app}/`, app, [])).toBe(false);
+	});
+	it('denies other origins and other permissions', () => {
+		expect(isPermissionAllowed('media', 'https://evil.example/', app, ['audio'])).toBe(false);
+		expect(isPermissionAllowed('media', `${app}/`, '', ['audio'])).toBe(false);
+		expect(isPermissionAllowed('geolocation', `${app}/`, app)).toBe(false);
+		expect(isPermissionAllowed('notifications', `${app}/`, app)).toBe(false);
+		expect(isPermissionAllowed('fullscreen', `${app}/`, app)).toBe(true);
 	});
 });
