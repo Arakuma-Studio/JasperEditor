@@ -248,6 +248,9 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('arrange.bringForward', 'Ctrl+BracketRight', 'program'),
 	b('arrange.sendBackward', 'Ctrl+BracketLeft', 'program'),
 	b('arrange.sendToBack', 'Ctrl+Shift+BracketLeft', 'program'),
+	// parity roto: brush size while the Roto Brush tool is on (Photoshop / After Effects brush keys)
+	b('roto.brushBigger', 'BracketRight', 'program', R),
+	b('roto.brushSmaller', 'BracketLeft', 'program', R),
 	b('program.nudgeLeft', 'Ctrl+ArrowLeft', 'program', R),
 	b('program.nudgeRight', 'Ctrl+ArrowRight', 'program', R),
 	b('program.nudgeUp', 'Ctrl+ArrowUp', 'program', R),
