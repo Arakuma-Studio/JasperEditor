@@ -104,7 +104,11 @@ export function planComposite(
 	items: readonly CompositeItem[],
 	pictures: ReadonlyMap<string, CompositePicture>,
 	comp: { width: number; height: number },
-	opts: { backdrop?: boolean } = {},
+	opts: {
+		backdrop?: boolean;
+		/** Canvas px of sequence px (0, 0) and canvas px per sequence px (Dissolve hashes sequence pixels). */
+		noise?: { x: number; y: number; scale: number };
+	} = {},
 ): { plan: FxEffectPlan; textures: { uniform: string; key: string }[]; builtins: FxUniform[] } {
 	const backdrop = opts.backdrop ?? true;
 	const drawn = items.filter((it) => it.kind === 'matte' || pictures.has(it.key));
@@ -145,7 +149,7 @@ void main() {
   bool live = q.z > 1e-6 && u_placeSize.x > 0.0 && u_placeSize.y > 0.0;
   float cov = live ? clamp(min(e.x, e.y) + 0.5, 0.0, 1.0) : 0.0;
   vec4 src = texture(${name}, c / max(u_placeSize, vec2(1.0))) * (cov * clamp(u_placeOpacity, 0.0, 1.0));
-  uvec2 px = uvec2(max(floor(v_uv * u_compSize), vec2(0.0)));
+  uvec2 px = uvec2(max(floor((v_uv * u_compSize - u_noiseXform.xy) / u_noiseXform.z), vec2(0.0)));
   fragColor = fx_clampPremul(fx_layerBlend(u_mode, dst, src, fx_blendNoise(px, uint(u_dissolveSeed))));
 }`,
 			uniforms: {
@@ -155,6 +159,7 @@ void main() {
 				u_placeOpacity: Math.min(1, Math.max(0, pic.opacity)),
 				u_mode: { int: blendModeIndex(it.mode) },
 				u_dissolveSeed: { int: it.seed },
+				u_noiseXform: [opts.noise?.x ?? 0, opts.noise?.y ?? 0, opts.noise?.scale ?? 1],
 			},
 		};
 	});

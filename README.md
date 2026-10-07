@@ -406,7 +406,8 @@ Tools (114; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
 - Effect presets: `list_effect_presets` `get_effect_preset` `apply_effect_preset` `save_effect_preset`
   `delete_effect_preset`.
 - Clipboard: `copy_clips` `paste_clips` `copy_items` `paste_items`.
-- Keyframes and presets: `get_motion_path` `set_spatial_interpolation` · `list_effect_presets` `get_effect_preset`
+- Blend modes: `list_blend_modes` `set_blend_mode` (Premiere's 27 + After Effects' stencils, `docs/wp-notes/keyframes-blend.md`).
+- Keyframes and presets: `get_motion_path` `set_spatial_interpolation` `set_roving` · `list_effect_presets` `get_effect_preset`
   `save_effect_preset` `apply_effect_preset` `delete_effect_preset`.
 - Media cache: `get_cache_usage` `clean_cache` `set_cache_location`.
 - Edit structure: `nest_clips` `unnest_clips` `place_sequence` `list_nests` `add_adjustment_layer` `group_clips`

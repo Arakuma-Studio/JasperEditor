@@ -233,6 +233,9 @@ export function fxDescriptors(stage: FxStage, inputs: DescriptorInputs): EffectD
 						holder: s.holder,
 						opacity: s.opacity,
 						blend: s.blend,
+						seed: s.seed,
+						// Dissolve hashes sequence pixels: canvas px → sequence px.
+						noise: { x: box.x, y: box.y, scale: stage.layout.pxScale },
 						region: s.insets
 							? {
 									x: box.x + s.insets[0] * box.w,

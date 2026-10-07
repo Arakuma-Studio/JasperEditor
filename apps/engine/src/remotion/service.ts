@@ -99,6 +99,15 @@ type AlphaMasterInput = {
 
 type RemotionState = 'ready' | 'needs-browser-download' | 'unavailable';
 
+/**
+ * `JASPER_REMOTION_BROWSER_LOG=1` (diagnostics): the render page's console on the engine's stderr (stills and
+ * renders), e.g. to see why a composition draws nothing.
+ */
+function browserLogOption(): { onBrowserLog?: (log: { type: string; text: string }) => void } {
+	if (process.env.JASPER_REMOTION_BROWSER_LOG !== '1') return {};
+	return { onBrowserLog: (log) => process.stderr.write(`[remotion browser ${log.type}] ${log.text}\n`) };
+}
+
 /** `chromiumOptions.gl` values Remotion 4.0.499 accepts (null = Chrome's default). */
 export type RemotionGl = 'angle' | 'swangle' | 'egl' | 'swiftshader' | 'vulkan' | 'angle-egl';
 /** Order in which the start-up probe tries OpenGL back ends for WebGL2 (S06:CG-042). */
@@ -902,6 +911,7 @@ export class RemotionService {
 				licenseKey: this.licenseKey,
 				logLevel: 'error',
 				overwrite: true,
+				...browserLogOption(),
 				...this.binariesOption(),
 				...(input.scale ? { scale: input.scale } : {}),
 				...browser,

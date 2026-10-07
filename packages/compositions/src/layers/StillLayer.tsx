@@ -58,7 +58,9 @@ export function StillLayer(layer: LayerProps) {
 					showInTimeline={false}
 				/>
 			) : (
-				<Img src={src} style={MEDIA_STYLE} alt="" />
+				// keyframes-blend: CORS-clean (the engine sends CORS headers, as for FxImageFeed), so HTML-in-Canvas captures
+				// of the stack (blend scopes, adjustment layers) paint it — cross-origin images without CORS are left out.
+				<Img src={src} style={MEDIA_STYLE} alt="" crossOrigin="anonymous" />
 			)}
 		</LayerBox>
 	);

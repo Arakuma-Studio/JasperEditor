@@ -6,6 +6,7 @@
 import type { FxEffectPlan, Lut } from '@jasper/project';
 import { createEffect } from 'remotion';
 import type { LayerTap } from '../types.ts';
+import { planComposite } from './composite-plan.ts';
 import { type FxRunInputs, FxShaderError, fxHost, runLutPass, runShaderPlan } from './host.ts';
 import { type FxMaskGeometry, packedMasks, runMaskPass } from './mask.ts';
 import { fxStatus } from './status.ts';
@@ -221,7 +222,10 @@ export type FxMixParams = {
 	key: string;
 	holder: { canvas: HTMLCanvasElement | null };
 	opacity: number;
-	blend: GlobalCompositeOperation;
+	/** keyframes-blend: the adjustment clip's blend mode (BLEND_MODES id), its Dissolve seed and pixel mapping. */
+	blend: string;
+	seed: number;
+	noise?: { x: number; y: number; scale: number };
 	region: { x: number; y: number; w: number; h: number } | null;
 	/**
 	 * wp masks × edit-structure: the adjustment layer's Opacity masks limit where it applies — the result is
@@ -230,12 +234,6 @@ export type FxMixParams = {
 	masks?: FxMaskGeometry | null;
 };
 
-/**
- * The adjusted picture mixed into the stashed original (KND-012): inside `region` (the adjustment layer's crop) the
- * result is `original + (blend(original, adjusted) − original) · opacity` in premultiplied space — the adjusted
- * composite *replaces* the original (Premiere: a blur on an adjustment layer darkens the frame edges unless Repeat
- * Edge Pixels), it is not composited over it; outside the region the original is kept.
- */
 export const fxAdjustmentMix = createEffect<FxMixParams, null>({
 	type: 'jasper.fx-adjustment-mix',
 	label: 'Adjustment layer (mix)',
@@ -260,21 +258,43 @@ export const fxAdjustmentMix = createEffect<FxMixParams, null>({
 		}
 		const out = ctx2d(maskCanvas ?? target);
 		const k = Math.min(1, Math.max(0, params.opacity));
-		// The adjusted picture: the effects' output, or blend(original, output) for non-Normal blend modes.
-		let adjusted: CanvasImageSource = source;
-		if (params.blend !== 'source-over' && orig) {
-			const t =
-				(params.holder as { scratch?: HTMLCanvasElement }).scratch ?? document.createElement('canvas');
-			(params.holder as { scratch?: HTMLCanvasElement }).scratch = t;
+		// keyframes-blend: a blend mode composites the effects' output (× opacity) onto the original on the GPU with the
+		// clip blend formulas (= the native kernel): the result then replaces the original inside the region.
+		let blended: CanvasImageSource | null = null;
+		if (params.blend !== 'normal' && orig) {
+			const t = holder.scratch ?? document.createElement('canvas');
+			holder.scratch = t;
 			if (t.width !== width) t.width = width;
 			if (t.height !== height) t.height = height;
-			const tc = ctx2d(t);
-			tc.globalCompositeOperation = 'copy';
-			tc.drawImage(orig, 0, 0, width, height);
-			tc.globalCompositeOperation = params.blend;
-			tc.drawImage(source, 0, 0, width, height);
-			tc.globalCompositeOperation = 'source-over';
-			adjusted = t;
+			const host = fxHost();
+			if (!host) throw new Error('WEBGL_UNAVAILABLE: blend modes need WebGL2');
+			const item = { kind: 'clip' as const, key: 'adjusted', mode: params.blend, seed: params.seed };
+			const pic = { width, height, compToCanvas: [1, 0, 0, 0, 1, 0, 0, 0, 1], opacity: k };
+			const { plan, textures, builtins } = planComposite(
+				[item],
+				new Map([['adjusted', pic]]),
+				{ width, height },
+				params.noise ? { noise: params.noise } : {},
+			);
+			runShaderPlan(
+				host,
+				plan,
+				orig,
+				{
+					builtins,
+					textures: {
+						[textures[0]!.uniform]: {
+							source: source as TexImageSource,
+							width,
+							height,
+							version: `adj:${params.key}:${Math.random()}`,
+						},
+					},
+					samples: { sources: [], offsets: [] },
+				},
+				ctx2d(t),
+			);
+			blended = t;
 		}
 		out.globalCompositeOperation = 'copy';
 		if (orig) out.drawImage(orig, 0, 0, width, height);
@@ -285,13 +305,18 @@ export const fxAdjustmentMix = createEffect<FxMixParams, null>({
 			out.rect(params.region.x, params.region.y, params.region.w, params.region.h);
 			out.clip();
 		}
-		// Premultiplied lerp: (1 − k) · original + k · adjusted (copy with alpha, then additive).
-		out.globalCompositeOperation = 'copy';
-		out.globalAlpha = 1 - k;
-		if (orig) out.drawImage(orig, 0, 0, width, height);
-		out.globalCompositeOperation = 'lighter';
-		out.globalAlpha = k;
-		if (k > 0) out.drawImage(adjusted, 0, 0, width, height);
+		if (blended) {
+			out.globalCompositeOperation = 'copy';
+			out.drawImage(blended, 0, 0, width, height);
+		} else {
+			// Premultiplied lerp: (1 − k) · original + k · adjusted (copy with alpha, then additive).
+			out.globalCompositeOperation = 'copy';
+			out.globalAlpha = 1 - k;
+			if (orig) out.drawImage(orig, 0, 0, width, height);
+			out.globalCompositeOperation = 'lighter';
+			out.globalAlpha = k;
+			if (k > 0) out.drawImage(source, 0, 0, width, height);
+		}
 		out.restore();
 		out.globalAlpha = 1;
 		out.globalCompositeOperation = 'source-over';

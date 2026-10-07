@@ -125,7 +125,8 @@ export function bakedFrameUrl(url: string, n: number): string {
 /** The current frame of a baked frame sequence (frame 0 = the start of the enclosing Sequence). */
 function BakedFrame({ url, frames }: { url: string; frames: number }) {
 	const n = Math.min(Math.max(0, useCurrentFrame()), Math.max(0, frames - 1));
-	return <Img src={bakedFrameUrl(url, n)} style={FILL} alt="" />;
+	// CORS-clean so HTML-in-Canvas captures (blend scopes, adjustment layers) paint it.
+	return <Img src={bakedFrameUrl(url, n)} style={FILL} alt="" crossOrigin="anonymous" />;
 }
 
 /**

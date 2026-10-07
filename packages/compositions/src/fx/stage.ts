@@ -98,7 +98,9 @@ export type FxPreparedStep =
 			key: string;
 			holder: AdjustmentHolder;
 			opacity: number;
-			blend: GlobalCompositeOperation;
+			/** keyframes-blend: the adjustment clip's blend mode (BLEND_MODES id) and its Dissolve seed of the frame. */
+			blend: string;
+			seed: number;
 			/** Crop insets (left, top, right, bottom) as fractions of the layer box; null = the whole box. */
 			insets: readonly [number, number, number, number] | null;
 			/** wp masks: the adjustment layer's active Opacity masks (it applies inside them). */
