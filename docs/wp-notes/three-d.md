@@ -181,6 +181,10 @@ the commands given.
   followed through the media frames it shows but the solve itself is of the media; the solver is a TypeScript port
   (a few × slower than native: ≈ 1–1.5 s per frame on a loaded host).
 - Fallback preview without HTML-in-Canvas has no depth sort, lights or DOF; renders refuse instead of approximating.
+- Program monitor: a *video* clip below a 3D run is captured from its `<video>` element by the run's HTML-in-Canvas
+  scope; in the headless Chrome of the e2e runs that capture paints black (the same happens under a GL blend-mode
+  scope of keyframes-blend, so it is the shared capture path, not the 3D renderer). Renders (export, stills) draw
+  video as images and are correct (`three-d-render.e2e.test.ts` › "a 2D video below a 3D run"). Not fixed here.
 
 ## 7. Sources (Adobe documentation and references)
 
@@ -198,4 +202,23 @@ the commands given.
 
 ## 8. Real-app run
 
-(filled from the e2e run below)
+`E2E_PORT=49380 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/three-d.spec.ts` against the built app (Chrome with
+`--enable-features=CanvasDrawElement`), screenshots in `test-results/three-d-*.png`:
+
+1. Clip ▸ 3D Layer on the card and the Effect Controls 3D switch on the floor: one "3D Layer" step each; the floor
+   rotated 80° intersects the card on the Program monitor (wireframes and axis gizmo on top).
+2. File ▸ New ▸ Camera… / Light… (dialogs, OK): the monitor draws through the moved two-node camera, lit.
+3. The 3D view chip ▸ Custom View 1 changes the picture; back to Active Camera.
+4. Sequence ▸ 3D Renderer ▸ Advanced 3D + a text layer with Extrusion Depth 60 / convex bevel: extruded "JASPER"
+   with lit walls, intersecting the card.
+5. Export (Auto → Remotion path, the plan names the 3D blocker): 120 frames at 1080p in 2.3 min (SwiftShader, loaded
+   host); the frame at 0.5 s shows the same picture as the monitor (`test-results/three-d-export.png`).
+6. 3D Camera Tracker on `camtrack-dolly.mp4`: Clip ▸ Track Camera → "Track Camera" + "Solve Camera" in ≈ 1.5 min;
+   Properties ▸ 3D Camera Tracker shows "Solved: 501 track points", Method Used Typical, Average Error 0.25 pixels;
+   the track points sit on the footage's features; Shift-click three floor points shows the target; Create Text and
+   Camera adds a camera keyed on every frame and a 3D text lying on the floor (`three-d-camtrack-*.png`).
+
+Bugs found and fixed by these runs: the preview did not redraw a run when only 3D values changed (the effect key now
+fingerprints cameras, lights, world matrices and materials); a member whose run moved to another bottom track never
+delivered again (one shared hub per composition); exports hung on static run members (3D taps deliver every frame);
+the camera tracker section looped on an unstable store selector.

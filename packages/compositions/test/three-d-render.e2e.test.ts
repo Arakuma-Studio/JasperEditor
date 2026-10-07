@@ -157,6 +157,31 @@ describe.runIf(enabled)('3D layers in Remotion renders (REMOTION_E2E=1)', { time
 		expect(d.bad, `worst ${d.worst}`).toBeLessThan(0.01);
 	});
 
+	it('a 2D video below a 3D run is the run\'s backdrop (the camera tracker case)', async () => {
+		const cmds: Command[] = [
+			{ type: 'media.register', ref: '$m', asset: fxAsset(media, 'video', media.video, FX_W, FX_H) } as unknown as Command,
+			{
+				type: 'clip.place',
+				source: { mediaId: '$m' },
+				at: 0,
+				sourceRange: { in: { seconds: 0 }, out: { seconds: 2 } },
+				tracks: { video: 'V1' },
+			} as unknown as Command,
+			{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V2', color: [1, 0, 0, 1], ref: '$s' } as Command,
+			{ type: 'param.set', target: ['clip', '$s', 'transform', 'scale'], value: 20 } as Command,
+			{ type: 'clip.set3d', clipIds: ['$s'], enabled: true } as Command,
+			{ type: 'param.set', target: ['clip', '$s', 'threeD', 'rotationY'], value: 40 } as Command,
+		];
+		const raw = await still(cmds, 5, 'video-under-run');
+		// testsrc2 is colourful everywhere: the corners (outside the card) are not black, the centre is the red card.
+		const at = (x: number, y: number) => [0, 1, 2].map((c) => raw[(y * FX_W + x) * 4 + c]!);
+		const corners = [at(20, 20), at(FX_W - 20, 20), at(20, FX_H - 20), at(FX_W - 20, FX_H - 20)];
+		expect(corners.filter((c) => c[0]! + c[1]! + c[2]! > 60).length).toBeGreaterThanOrEqual(3);
+		const mid = at(FX_W / 2, FX_H / 2);
+		expect(mid[0]).toBeGreaterThan(180);
+		expect(mid[1]).toBeLessThan(80);
+	});
+
 	it('Advanced 3D: the run renders lit with a shadow map, and extruded text shows its walls', async () => {
 		const text = (depth: number): Command[] => [
 			{ type: 'sequence.set3dRenderer', renderer: 'advanced' } as Command,

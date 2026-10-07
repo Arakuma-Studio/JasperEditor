@@ -245,6 +245,9 @@ test('3D Camera Tracker: Track Camera solves the dolly plate, three points → C
 	test.setTimeout(900_000);
 	await createProject(page, 'E2E camera tracker');
 	seqId = (await query<{ sequenceId: string }>(page, 'sequence.summary')).sequenceId;
+	// The export opened the Jobs panel in the Project panel's frame: show the Project panel again.
+	const projectTab = page.getByTestId('tab-project');
+	if (await projectTab.isVisible()) await projectTab.click();
 	await importFiles(page, ['camtrack-dolly.mp4']);
 	const media = await query<{ media: { mediaId: string; originalName: string }[] }>(page, 'media.list');
 	const mediaId = media.media.find((m) => m.originalName === 'camtrack-dolly.mp4')!.mediaId;

@@ -31,6 +31,7 @@ import {
 } from './actions.ts';
 import { camtrackUi, useCamTrack } from './store.ts';
 
+const NO_POINTS: number[] = [];
 const SHOTS = ['fixed', 'variable', 'specify'] as const;
 const SHOT_LABELS = ['Fixed Angle of View', 'Variable Zoom', 'Specify Angle of View'];
 const METHODS = ['auto', 'typical', 'flat', 'tripod'] as const;
@@ -76,7 +77,8 @@ function TrackerControls(props: {
 	const client = engine?.client ?? null;
 	const running = useCamTrack((s) => s.running[clip.id]);
 	const error = useCamTrack((s) => s.errors[clip.id]);
-	const selection = useCamTrack((s) => (s.selection?.clipId === clip.id ? s.selection.ids : []));
+	// A constant empty list: the store selector must return a stable snapshot.
+	const selection = useCamTrack((s) => (s.selection?.clipId === clip.id ? s.selection.ids : NO_POINTS));
 	const readOnly = useSessionState((s) => s.readOnly);
 	const doc = useSessionState((s) => s.document);
 	const s = cameraTrackerSettingsOf(tracker.settings);
