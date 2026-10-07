@@ -1,17 +1,18 @@
-// Speech model catalogue and store (wp speech). Every model is a directory `<modelsDir>/<id>/` holding the files of
-// its catalogue entry (pinned Hugging Face revision). Files download into `<path>.partial` while their sha256 is
+// Speech model store (wp speech). The catalogue is the processing-model catalogue's `speech` list
+// (processing/models.json, or JASPER_MODEL_CATALOG in tests); installs run as the same `model-download` job and the
+// licences show in Help ▸ About ▸ Licenses with the other models. Every model is a directory `<modelsDir>/<id>/`
+// (`<appdir>/models/speech/<id>/`) holding the files of its catalogue entry (pinned Hugging Face revision). Files download into `<path>.partial` while their sha256 is
 // computed, are checked against the catalogue and renamed into place; `install.json` then records what was
-// verified (size + mtime per file), so loading a model does not re-hash a gigabyte each time. Tests point
-// JASPER_SPEECH_CATALOG at their own catalogue (file:// or http URLs).
+// verified (size + mtime per file), so loading a model does not re-hash a gigabyte each time. File URLs may be
+// https, file:// or plain paths (tests).
 import { createHash } from 'node:crypto';
-import { createReadStream, createWriteStream, readFileSync } from 'node:fs';
+import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import type { SpeechModel } from '@jasper/api';
-import builtin from './catalog.json' with { type: 'json' };
 
 export type SpeechModelFile = { path: string; url: string; sha256: string; sizeBytes: number };
 export type SpeechCatalogEntry = {
@@ -30,13 +31,6 @@ export type SpeechCatalogEntry = {
 	files: SpeechModelFile[];
 };
 
-export const SPEECH_CATALOG_ENV = 'JASPER_SPEECH_CATALOG';
-
-export function loadSpeechCatalog(env: Record<string, string | undefined> = process.env): SpeechCatalogEntry[] {
-	const file = env[SPEECH_CATALOG_ENV];
-	if (file) return (JSON.parse(readFileSync(file, 'utf8')) as { models: SpeechCatalogEntry[] }).models;
-	return (builtin as { models: SpeechCatalogEntry[] }).models;
-}
 
 export class SpeechModelError extends Error {
 	constructor(

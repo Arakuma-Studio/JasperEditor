@@ -20,6 +20,7 @@ import mgRoutes from './mg.ts';
 import mgBundleRoutes from './mg-bundles.ts';
 import processingRoutes from './processing.ts';
 import projectsRoutes from './projects.ts';
+import speechRoutes from './speech.ts';
 import stillsRoutes from './stills.ts';
 import trackingRoutes from './tracking.ts';
 import uploadsRoutes from './uploads.ts';
@@ -55,6 +56,8 @@ const ROUTE_PLUGINS = [
 	audioRoutes,
 	// wp captions: caption / transcript files by path.
 	captionRoutes,
+	// wp speech: Whisper transcription (after processing: the model catalogue and its installer).
+	speechRoutes,
 ] as const;
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {

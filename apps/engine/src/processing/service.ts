@@ -21,6 +21,7 @@ import type { MediaRecord } from '../media/registry.ts';
 import { safeFileName, sha256File } from '../tools/fs.ts';
 import type { CoreServices } from '../tools/services.ts';
 import { createEventParser, ProgressTracker } from './events.ts';
+import { SpeechModelError, SpeechModelStore, speechModelsDir } from '../speech/models.ts';
 import { loadCatalog, ModelError, ModelStore } from './models.ts';
 import { RECIPE_VERSION, recipeHash, recipeLabel } from './proc/recipe.ts';
 import type { ProcEvent, ProcSpec } from './proc/types.ts';
@@ -42,6 +43,8 @@ type Env = Record<string, string | undefined>;
 export class ProcessingService {
 	readonly settings: ProcessingSettingsStore;
 	readonly models: ModelStore;
+	/** wp speech: the catalogue's speech models (`<appdir>/models/speech/<id>/`), installed by the same job kind. */
+	readonly speechModels: SpeechModelStore;
 	private filters: Set<string> | null = null;
 	private wasmOk: boolean | null = null;
 
@@ -51,8 +54,9 @@ export class ProcessingService {
 	) {
 		const paths = core.config.paths;
 		this.settings = new ProcessingSettingsStore(paths.engineConfig);
-		const { entries, bundledDir } = loadCatalog(env);
+		const { entries, bundledDir, speech } = loadCatalog(env);
 		this.models = new ModelStore({ modelsDir: join(paths.root, 'models'), entries, bundledDir });
+		this.speechModels = new SpeechModelStore(speechModelsDir(paths.root), speech);
 	}
 
 	registerRunners(): void {
@@ -711,7 +715,7 @@ export class ProcessingService {
 	// ------------------------------------------------------------------ models
 
 	submitInstall(modelId: string, origin: EngineJob['origin'] = { type: 'user' }): EngineJob {
-		const e = this.models.entry(modelId);
+		const e = this.models.entry(modelId) ?? this.speechModels.entry(modelId);
 		if (!e) throw new JobError('MODEL_UNKNOWN', `Unknown model ${modelId}`, false);
 		return this.core.queue.submit({
 			kind: 'model-download',
@@ -728,6 +732,22 @@ export class ProcessingService {
 		ctx: JobContext,
 	): Promise<{ modelId: string; path: string; alreadyInstalled: boolean }> {
 		const { modelId } = ctx.input as { modelId: string };
+		if (!this.models.entry(modelId) && this.speechModels.entry(modelId)) {
+			// wp speech: a multi-file speech model (verified file by file)
+			try {
+				const r = await this.speechModels.install(modelId, {
+					signal: ctx.signal,
+					onProgress: (done, total, file) =>
+						ctx.progress(total ? done / total : null, { stage: `Downloading ${file}` }),
+				});
+				this.core.capabilities.changed();
+				return { modelId, path: r.dir, alreadyInstalled: r.alreadyInstalled };
+			} catch (e) {
+				if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+				if (e instanceof SpeechModelError) throw new JobError(e.code, e.message, e.code === 'DOWNLOAD_FAILED');
+				throw e;
+			}
+		}
 		try {
 			const r = await this.models.install(modelId, {
 				signal: ctx.signal,

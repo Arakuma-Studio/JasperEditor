@@ -91,6 +91,12 @@ import {
 	VersionRestoreRequestSchema,
 	VersionRestoreResponseSchema,
 } from './projects.ts';
+import {
+	SpeechModelDeleteResponseSchema,
+	SpeechModelsResponseSchema,
+	TranscribeMediaRequestSchema,
+	TranscribeSequenceRequestSchema,
+} from './speech.ts';
 import { TrackRequestSchema } from './tracking.ts';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
@@ -115,7 +121,9 @@ export type RouteOwner =
 	// parity program: audio buses, loudness
 	| 'audio-mix'
 	// parity program: captions and transcripts
-	| 'wp-captions';
+	| 'wp-captions'
+	// parity program: local speech-to-text (Whisper), VAD, diarization
+	| 'speech';
 
 export type RouteDef = {
 	method: HttpMethod;
@@ -585,6 +593,37 @@ export const ROUTES = {
 		query: z.object({ wait: z.enum(['1']).optional() }),
 		response: EngineJobSchema,
 		owner: 'audio-mix',
+	},
+	// ---- speech: Whisper models (processing-model catalogue `speech`) and transcription jobs
+	speechModels: { method: 'GET', path: '/api/speech/models', response: SpeechModelsResponseSchema, owner: 'speech' },
+	/** Downloads and verifies a speech model: the processing catalogue's `model-download` job. */
+	speechModelInstall: {
+		method: 'POST',
+		path: '/api/speech/models/:modelId/install',
+		response: EngineJobSchema,
+		owner: 'speech',
+	},
+	speechModelDelete: {
+		method: 'DELETE',
+		path: '/api/speech/models/:modelId',
+		response: SpeechModelDeleteResponseSchema,
+		owner: 'speech',
+	},
+	/** A `transcription` job for one audio stream of a media (result: `TranscriptionResult`, media time). */
+	mediaTranscribe: {
+		method: 'POST',
+		path: '/api/media/:key/transcribe',
+		body: TranscribeMediaRequestSchema,
+		response: EngineJobSchema,
+		owner: 'speech',
+	},
+	/** A `transcription` job for the mixed audio of a sequence (result in sequence time). */
+	speechTranscribeSequence: {
+		method: 'POST',
+		path: '/api/speech/transcribe-sequence',
+		body: TranscribeSequenceRequestSchema,
+		response: EngineJobSchema,
+		owner: 'speech',
 	},
 	// ---- M3 media cache (S04 §7.5 CA-010…CA-019)
 	/** Usage per cache kind, budgets, last cleaning (Preferences ▸ Media Cache, MCP get_cache_usage). */
