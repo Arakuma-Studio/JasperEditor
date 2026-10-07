@@ -14,3 +14,4 @@ export * from './svg-path.ts';
 export * from './presets.ts';
 export * from './summary.ts';
 export * from './render-plan.ts';
+export * from './svg-import.ts';
