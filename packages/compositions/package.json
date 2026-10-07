@@ -24,6 +24,7 @@
     "@jasper/project": "workspace:*",
     "@remotion/media": "4.0.499",
     "@remotion/shapes": "4.0.499",
+    "mediabunny": "1.50.8",
     "remotion": "4.0.499"
   },
   "peerDependencies": {

@@ -18,6 +18,8 @@ import type { Animatable, ParamValue, RGBA } from './schema/common.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import type { Clip, Sequence, Transition } from './schema/sequence.ts';
 import { FRAME_EPS, flicksPerFrame, type Rational } from './time.ts';
+import { remapRoom } from './time-remap/bounds.ts';
+import { isRemapped } from './time-remap/model.ts';
 
 export const CROSS_DISSOLVE = 'jasper.cross-dissolve';
 export const DIP_TO_BLACK = 'jasper.dip-to-black';
@@ -185,6 +187,11 @@ export function clipHandles(
 	const step = flicksPerFrame(seq.settings.frameRate as Rational) * c.speed.rate;
 	// Media duration, or the composition length for composition clips (S08:MGC-004).
 	const dur = contentDurationFlicks(doc, c);
+	// Time-remapped clips (workstream `time`): handles whose remapped media times are inside the media.
+	if (isRemapped(c)) {
+		const room = remapRoom(c, seq.settings.frameRate as Rational, dur);
+		return { head: Math.min(room.head, Math.floor(c.sourceIn / step + EPS)), tail: room.tail };
+	}
 	const before = Math.max(0, Math.floor(c.sourceIn / step + EPS));
 	const after =
 		isBoundedContent(c) && dur !== null

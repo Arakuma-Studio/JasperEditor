@@ -1,4 +1,4 @@
-// Document invariants INV-001…INV-015 (S01 §16.3, with the ARCHITECTURE §2.3 locked-track change:
+// Document invariants INV-001…INV-016 (S01 §16.3, INV-016 = sim-warp Puppet data; with the ARCHITECTURE §2.3 locked-track change:
 // locked tracks never shift, so there is no invariant about them) and conservative load-time repairs
 // (S01:PER-004).
 
@@ -32,6 +32,7 @@ import { ROTO_OBJECT_PARAMS } from './roto/index.ts';
 import { type Animatable, type Keyframe, SPATIAL_INTERPOLATIONS } from './schema/common.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import { MASK_MODES, type Mask } from './schema/mask.ts';
+import { PUPPET_PIN_KINDS, PUPPET_PIN_PROPS, type Puppet } from './schema/puppet.ts';
 import type { AudioClip, Clip, ClipRoto, EffectInstance, Sequence, Track } from './schema/sequence.ts';
 import { isKnownClipKind } from './schema/sequence.ts';
 import type { ShapeItem } from './schema/shapes.ts';
@@ -49,6 +50,8 @@ import {
 	type Rational,
 	supportsDropFrame,
 } from './time.ts';
+import { remapIssues, repairRemap } from './time-remap/invariants.ts';
+import { isRemapped } from './time-remap/model.ts';
 import { walkItems } from './vector/defaults.ts';
 import { checkShapeItem, duplicateItemIds } from './vector/input.ts';
 
@@ -189,6 +192,14 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 	const effects = (list: readonly EffectInstance[] | undefined, where: string[], onClip = false) => {
 		for (const fx of list ?? []) {
 			claim(fx.id, 'fx', [...where, fx.id]);
+			// sim-warp: Puppet meshes and pins (clip Puppet effects only).
+			if (fx.puppet) {
+				const problem = !onClip ? 'puppet data on a track or master effect' : puppetProblem(fx.puppet);
+				if (problem) issues.push(inv('INV-016', `Effect ${fx.id}: ${problem}`, [...where, fx.id, 'puppet']));
+				else for (const m of fx.puppet.meshes) claim(m.id, 'pms', [...where, fx.id, 'puppet', m.id]);
+				if (!problem)
+					for (const pin of fx.puppet.pins) claim(pin.id, 'ppn', [...where, fx.id, 'puppet', pin.id]);
+			}
 			if (fx.masks?.length) {
 				if (!onClip)
 					issues.push(inv('INV-012', `Effect ${fx.id}: masks apply to clip effects only`, [...where, fx.id]));
@@ -444,6 +455,11 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 				issues.push(inv('INV-004', `Clip ${c.id} has invalid sourceIn`, cw));
 			if (!(c.speed.rate >= 0.01 && c.speed.rate <= 100))
 				issues.push(inv('INV-004', `Clip ${c.id} speed out of range`, cw));
+			// Workstream `time`: Time Remapping / Time Interpolation (INV-005/011/012).
+			for (const k of (c as { timeRemap?: { keyframes: { id: string }[] } }).timeRemap?.keyframes ?? [])
+				claim(k.id, 'kf', [...cw, 'timeRemap', k.id]);
+			for (const x of remapIssues(c, rate, contentDurationFlicks(doc, c)))
+				issues.push(inv(x.code, x.message, [...cw, 'timeRemap']));
 			const r = c as Record<string, unknown>;
 			// INV-006 references
 			if (c.subclipId !== undefined && doc.items[c.subclipId]?.kind !== 'subclip')
@@ -456,7 +472,7 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 					// edit-structure: a held clip shows one frame; only that frame must exist.
 					if (c.frameHold.flicks >= asset.probe.durationFlicks + flicksPerFrame(rate) + 1)
 						issues.push(inv('INV-005', `Clip ${c.id} holds a frame outside its media`, cw));
-				} else if (isBoundedContent(c) && asset.probe.durationFlicks !== null) {
+				} else if (isBoundedContent(c) && asset.probe.durationFlicks !== null && !isRemapped(c)) {
 					// INV-005 media bounds with one frame of tolerance
 					const span = contentSpanFlicks(c.duration, rate, c.speed.rate);
 					const tol = flicksPerFrame(rate) * c.speed.rate + 1;
@@ -935,6 +951,35 @@ export function maskProblem(m: Mask): string | null {
 	return null;
 }
 
+/** sim-warp: what is wrong with an effect's Puppet data (null = valid). */
+export function puppetProblem(p: Puppet): string | null {
+	if (!p || !Array.isArray(p.meshes) || !Array.isArray(p.pins)) return 'malformed puppet';
+	const fin = (v: unknown) => typeof v === 'number' && Number.isFinite(v);
+	const pt = (v: unknown) => Array.isArray(v) && v.length === 2 && v.every(fin);
+	const meshIds = new Set<string>();
+	for (const m of p.meshes) {
+		if (!m || typeof m.id !== 'string' || meshIds.has(m.id)) return 'duplicate or missing mesh id';
+		meshIds.add(m.id);
+		if (!pt(m.seed) || ![m.density, m.expansion, m.triangles].every(fin)) return `mesh ${m.id}: bad numbers`;
+		if (m.outline && (m.outline.length < 3 || !m.outline.every(pt))) return `mesh ${m.id}: bad outline`;
+	}
+	const pinIds = new Set<string>();
+	for (const q of p.pins) {
+		if (!q || typeof q.id !== 'string' || pinIds.has(q.id)) return 'duplicate or missing pin id';
+		pinIds.add(q.id);
+		if (!PUPPET_PIN_KINDS.includes(q.kind)) return `pin ${q.id}: unknown kind`;
+		if (!meshIds.has(q.meshId)) return `pin ${q.id}: no mesh ${q.meshId}`;
+		if (!pt(q.rest)) return `pin ${q.id}: bad rest point`;
+		for (const prop of PUPPET_PIN_PROPS) {
+			const a = q[prop] as Animatable<unknown> | undefined;
+			if (!a || !isAnimLike(a)) return `pin ${q.id}: missing ${prop}`;
+			const ok = prop === 'position' ? pt : fin;
+			if (![a.value, ...a.keyframes.map((k) => k.value)].every(ok)) return `pin ${q.id}: bad ${prop}`;
+		}
+	}
+	return null;
+}
+
 /** wp masks: drops invalid masks of a list in place (repair); returns the dropped ids. */
 function repairMaskList(list: Mask[] | undefined): string[] {
 	if (!list) return [];
@@ -1255,6 +1300,10 @@ export function repairDocument(
 				}
 			}
 		}
+		// Workstream `time`: malformed or out-of-media time remaps.
+		for (const c of Object.values(seq.clips))
+			for (const detail of repairRemap(c, seq.settings.frameRate as Rational, contentDurationFlicks(doc, c)))
+				note('repair-time-remap', c.id, detail);
 		// parity (roto): roto objects follow their clip's media (else their mattes are dropped), spans and bases
 		// are made valid, and effect params naming a missing roto are reset to "none".
 		for (const c of Object.values(seq.clips)) {
@@ -1298,8 +1347,21 @@ export function repairDocument(
 			for (const fx of r.effects ?? []) {
 				for (const id of repairMaskList(fx.masks)) note('drop-mask', fx.id, `invalid mask ${id} removed`);
 				if (fx.masks && fx.masks.length === 0) delete fx.masks;
+				// sim-warp: invalid Puppet data is removed whole (the effect then passes the layer through).
+				if (fx.puppet && puppetProblem(fx.puppet)) {
+					note('drop-puppet', fx.id, `invalid puppet data removed: ${puppetProblem(fx.puppet)}`);
+					delete fx.puppet;
+				}
 			}
 		}
+		for (const fx of [
+			...[...seq.videoTracks, ...seq.audioTracks].flatMap((t) => t.effects ?? []),
+			...seq.master.effects,
+		])
+			if (fx.puppet) {
+				delete fx.puppet;
+				note('drop-puppet', fx.id, 'puppet data on a track or master effect removed');
+			}
 		for (const fx of [
 			...[...seq.videoTracks, ...seq.audioTracks].flatMap((t) => t.effects ?? []),
 			...seq.master.effects,

@@ -4,7 +4,7 @@
 // forward speed the nested tracks play through a shifted `<Sequence>` (smooth playback, no per-frame seeks); speed
 // changes, reverse and frame holds show the nested frame through `<Freeze>`. Recursion goes through
 // `NestTracksContext` (the composition's own `VideoTracks`); the snapshot builder already refuses cycles.
-import { flicksPerFrame } from '@jasper/project';
+import { activeRemap, flicksPerFrame, remapSourceAt } from '@jasper/project';
 import { useContext } from 'react';
 import { AbsoluteFill, Sequence } from 'remotion';
 import { ShowFrame } from '../show-frame.tsx';
@@ -20,7 +20,10 @@ export function NestLayer(layer: LayerProps) {
 	if (!('nest' in src) || !Tracks) return <UnsupportedLayer {...layer} />;
 	const sub = src.nest.snapshot;
 	const F = flicksPerFrame(sub.settings.fps);
-	const t = layer.pictureTime ?? layer.contentTime;
+	// Workstream `time`: a time-remapped nest (multi-camera clips too) shows the nested frame at the remapped time.
+	const remap = activeRemap(clip);
+	const pt = layer.pictureTime ?? layer.contentTime;
+	const t = remap ? Math.max(0, remapSourceAt(remap, pt)) : pt;
 	const nestedFrame = Math.floor(t / F + 1e-6);
 	const inner = nestedFrame - sub.range.start;
 	const sourceFrames = clip.sourceIn / F;
@@ -28,6 +31,7 @@ export function NestLayer(layer: LayerProps) {
 		clip.speed.rate === 1 &&
 		!clip.speed.reverse &&
 		!clip.frameHold &&
+		!remap &&
 		Math.abs(sourceFrames - Math.round(sourceFrames)) < 1e-6;
 	const tracks = <Tracks doc={sub} options={layer.options} offset={sub.range.start} />;
 	// Inside the clip's Sequence the frame is `localFrame + headHandle`; the nested axis needs `inner`.

@@ -11,6 +11,8 @@ export const CACHE_KINDS = [
 	'proxies',
 	'luts',
 	'warp',
+	// Workstream `time`: retimed layers (reverse, time remaps, frame blending / optical flow, VFR) and frame indexes.
+	'retime',
 	'layers',
 	'mg-renders',
 	'mg-posters',

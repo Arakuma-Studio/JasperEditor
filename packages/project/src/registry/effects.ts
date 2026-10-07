@@ -46,6 +46,8 @@ export type EffectCategory =
 	| 'Noise & Grain'
 	| 'Transition'
 	| 'Video'
+	// sim-warp: After Effects' Simulation category (particles, shatter, cards, foam, waves, caustics, weather).
+	| 'Simulation'
 	// Audio effects (audio-fx): Premiere's Audio Effects folders (Premiere Pro 2020+, helpx "Audio effects and
 	// transitions"); the folder is the category.
 	| 'Amplitude and Compression'
@@ -61,8 +63,12 @@ export type EffectCategory =
 export type ParamSpec = {
 	name: string;
 	label: string;
-	/** `curve` = `{curve: [x, y][]}` tone curve (M2); `media` = `{mediaId}` (LUT assets: `mediaKinds: ['lut']`). */
-	type: 'number' | 'boolean' | 'enum' | 'string' | 'vec2' | 'vec3' | 'color' | 'media' | 'curve';
+	/**
+	 * `curve` = `{curve: [x, y][]}` tone curve (M2); `media` = `{mediaId}` (LUT assets: `mediaKinds: ['lut']`);
+	 * `mesh` (sim-warp) = a keyframable distortion mesh, a flat number list whose layout the effect defines (Mesh Warp,
+	 * Liquify) — edited on the Program monitor and by commands, keys interpolate number by number.
+	 */
+	type: 'number' | 'boolean' | 'enum' | 'string' | 'vec2' | 'vec3' | 'color' | 'media' | 'curve' | 'mesh';
 	default: ParamValue;
 	range?: { min?: number; max?: number; softMin?: number; softMax?: number; step?: number };
 	/**

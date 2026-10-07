@@ -32,6 +32,7 @@ import {
 	ROUTES,
 	type RouteName,
 	type RouteResponse,
+	type SceneDetectRequest,
 	type StillRequest,
 	UPLOAD_CHUNK_BYTES,
 	type UploadCreateRequest,
@@ -328,6 +329,10 @@ export class EngineClient {
 			body: req,
 			...(wait ? { query: { wait: '1' as const } } : {}),
 		});
+	}
+	/** Workstream `time`: Scene Edit Detection of a media range (job; result SceneDetectResult). */
+	detectScenes(req: SceneDetectRequest, wait = false): Promise<EngineJob> {
+		return this.call('scenesDetect', { body: req, ...(wait ? { query: { wait: '1' as const } } : {}) });
 	}
 	requestStill(req: StillRequest): Promise<EngineJob> {
 		return this.call('stills', { body: req });

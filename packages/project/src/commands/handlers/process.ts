@@ -18,6 +18,7 @@
 
 import { current, type Draft, isDraft } from 'immer';
 import {
+	type ClipContentTiming,
 	clipFileFrames,
 	coverageTolerance,
 	coveredClipFrames,
@@ -30,6 +31,7 @@ import {
 	rootFrameSpan,
 	rootPlacement,
 	shiftClipContentTime,
+	shiftedTiming,
 	sourceLinkOf,
 	versionShift,
 } from '../../process/index.ts';
@@ -178,7 +180,7 @@ function retimeClipForFile(
 	apply: () => void,
 ): RetimeOutcome {
 	const seqRate = seq.settings.frameRate as Rational;
-	const timing = { sourceIn: clip.sourceIn + shift, duration: clip.duration, speed: clip.speed };
+	const timing = shiftedTiming(clip as unknown as ClipContentTiming, shift);
 	const tol = coverageTolerance(seqRate, clip.speed.rate, mediaFrameRate(target));
 	const bounded = isBoundedContent(clip as Clip);
 	const cov = bounded

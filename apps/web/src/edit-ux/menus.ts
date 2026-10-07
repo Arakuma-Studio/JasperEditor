@@ -1,12 +1,20 @@
 // edit-ux context menu entries: the timeline clip menu's "Show Clip Keyframes ▸" (Premiere's clip keyframe menu:
 // the property the clip's lane and rubber band show), Speed/Duration…, Make Subclip…; the Project panel item menu's
 // Make Subclip… / Edit Subclip… / Open in Source Monitor for subclips.
-import { type Clip, flicksPerFrame, type ProjectItem, type Sequence } from '@jasper/project';
+import {
+	type Clip,
+	flicksPerFrame,
+	isRemapped,
+	type ProjectItem,
+	type Sequence,
+	type TimedClip,
+} from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { openDialog } from '@jasper/ui';
 import { clipMenuExtensions, type MenuItemSpec, projectItemMenuExtensions } from '../extensions/index.ts';
 import { assetFps, openInSource } from '../panels/source/source-state.ts';
 import { laneKeyFor, laneOptions } from '../panels/timeline/model/keyframe-lane.ts';
+import { isBandShown, setBandShown } from '../time/store.ts';
 import { registerEditUxDialogs, SPEED_DURATION_DIALOG, SUBCLIP_DIALOG } from './dialogs.tsx';
 
 function openSubclipDialog(
@@ -51,8 +59,13 @@ function subclipFromClip(session: EditorSession, seq: Sequence, clip: Clip): voi
 export function keyframeMenu(session: EditorSession, seq: Sequence, clip: Clip): MenuItemSpec {
 	const view = session.getState().views[seq.id];
 	const current = laneKeyFor(view?.keyframeDisplay, clip);
-	const set = (key: string) =>
+	// Workstream `time`: Premiere's "Time Remapping ▸ Speed" entry shows the speed band (apps/web/src/time) instead
+	// of a property lane; like Premiere's menu it is one choice among the others.
+	const remappable = clip.kind === 'video' || clip.kind === 'nest-video';
+	const set = (key: string) => {
+		if (remappable) setBandShown([clip.id], false);
 		session.setView(seq.id, { keyframeDisplay: { ...(view?.keyframeDisplay ?? {}), [clip.id]: key } });
+	};
 	const options = laneOptions(clip, session.ctx.registries);
 	const groups = new Map<string, MenuItemSpec[]>();
 	for (const o of options)
@@ -60,13 +73,45 @@ export function keyframeMenu(session: EditorSession, seq: Sequence, clip: Clip):
 			...(groups.get(o.group) ?? []),
 			{ kind: 'item', label: o.label, checked: current === o.key, run: () => set(o.key) },
 		]);
+	const entries = [...groups.entries()].map(
+		([label, items]): MenuItemSpec => ({ kind: 'submenu', label, items }),
+	);
+	if (remappable) {
+		const selected = session.getState().selection.timeline.clips;
+		const ids = selected.includes(clip.id) ? selected : [clip.id];
+		const shown = isRemapped(clip as TimedClip) || isBandShown(clip.id);
+		const speed: MenuItemSpec = {
+			kind: 'submenu',
+			label: 'Time Remapping',
+			items: [
+				{
+					kind: 'item',
+					label: 'Speed',
+					checked: shown,
+					run: () => {
+						setBandShown(ids, !shown);
+						if (!shown)
+							session.setView(seq.id, {
+								keyframeDisplay: {
+									...(view?.keyframeDisplay ?? {}),
+									...Object.fromEntries(ids.map((id) => [id, 'none'])),
+								},
+							});
+					},
+				},
+			],
+		};
+		// Premiere's order: Motion, Opacity, Time Remapping, then the effects.
+		const at = entries.findIndex((e) => e.kind === 'submenu' && e.label === 'Opacity');
+		entries.splice(at >= 0 ? at + 1 : entries.length, 0, speed);
+	}
 	return {
 		kind: 'submenu',
 		label: 'Show Clip Keyframes',
 		items: [
 			{ kind: 'item', label: 'None', checked: current === null, run: () => set('none') },
 			{ kind: 'separator' },
-			...[...groups.entries()].map(([label, items]): MenuItemSpec => ({ kind: 'submenu', label, items })),
+			...entries,
 		],
 	};
 }

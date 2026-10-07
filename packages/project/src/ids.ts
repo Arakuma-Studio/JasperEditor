@@ -32,6 +32,9 @@ export const ID_PREFIXES = {
 	send: 'snd',
 	/** wp masks: Opacity / effect masks. */
 	mask: 'msk',
+	/** sim-warp: Puppet meshes and pins. */
+	puppetMesh: 'pms',
+	puppetPin: 'ppn',
 	/** parity (roto): segmented objects (Roto Brush / faces) on a clip. */
 	roto: 'rto',
 	/** three-d: the 3D Camera Tracker of a clip. */

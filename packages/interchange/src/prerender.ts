@@ -23,17 +23,19 @@ type Caps = {
 	transform: 'full' | 'uniform' | 'none';
 	opacity: boolean;
 	speed: boolean;
+	/** Workstream `time`: variable speed (time maps). */
+	timeMap: boolean;
 	nesting: boolean;
 };
 
 export const FORMAT_CAPS: Record<Format, Caps> = {
-	fcp7: { video: true, transform: 'uniform', opacity: true, speed: true, nesting: true },
-	fcpxml: { video: true, transform: 'full', opacity: true, speed: true, nesting: true },
-	otio: { video: true, transform: 'none', opacity: false, speed: true, nesting: true },
-	edl: { video: true, transform: 'none', opacity: false, speed: true, nesting: false },
-	aaf: { video: true, transform: 'none', opacity: false, speed: false, nesting: false },
-	omf: { video: false, transform: 'none', opacity: false, speed: false, nesting: false },
-	ale: { video: false, transform: 'none', opacity: false, speed: false, nesting: false },
+	fcp7: { video: true, transform: 'uniform', opacity: true, speed: true, timeMap: true, nesting: true },
+	fcpxml: { video: true, transform: 'full', opacity: true, speed: true, timeMap: true, nesting: true },
+	otio: { video: true, transform: 'none', opacity: false, speed: true, timeMap: false, nesting: true },
+	edl: { video: true, transform: 'none', opacity: false, speed: true, timeMap: false, nesting: false },
+	aaf: { video: true, transform: 'none', opacity: false, speed: false, timeMap: false, nesting: false },
+	omf: { video: false, transform: 'none', opacity: false, speed: false, timeMap: false, nesting: false },
+	ale: { video: false, transform: 'none', opacity: false, speed: false, timeMap: false, nesting: false },
 };
 
 /** Default pre-render mode per format: OTIO keeps everything in its JasperEditor metadata. */
@@ -142,6 +144,9 @@ export function prerenderReason(doc: ProjectDocument, seq: Sequence, c: Clip, fo
 	}
 	if (!caps.opacity && (v.opacity.value !== 100 || v.opacity.keyframes.length > 0)) return 'Opacity';
 	if (!caps.speed && (c.speed.rate !== 1 || c.speed.reverse)) return 'speed change';
+	// Workstream `time`: variable speed needs a time map (FCPXML timeMap, FCP7 graphdict).
+	if (!caps.timeMap && (c as { timeRemap?: { enabled?: boolean } }).timeRemap?.enabled)
+		return 'time remapping';
 	// FCP7 XML and OTIO (metadata) carry solids as generators; FCPXML generators are Motion templates.
 	if (c.kind === 'solid' && format !== 'fcp7' && format !== 'otio')
 		return 'solid (no generators in this format)';

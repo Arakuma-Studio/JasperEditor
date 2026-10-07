@@ -15,6 +15,7 @@ import { EXPRESSION_BINDING, type ExpressionBinding, hasActiveExpression } from 
 import { intrinsicBoxOf } from './registry/properties.ts';
 import type { Animatable, Expression } from './schema/common.ts';
 import type { ProjectDocument } from './schema/document.ts';
+import { PUPPET_PIN_PROPS } from './schema/puppet.ts';
 import type { EffectInstance, Sequence, TextContent } from './schema/sequence.ts';
 import type { ShapeItem } from './schema/shapes.ts';
 import type { TextAnimatorGroup } from './schema/text-animators.ts';
@@ -151,6 +152,21 @@ export function* sequenceAnimatables(seqId: string, seq: Sequence): Generator<An
 		const fxs = (c.effects as (EffectInstance & { masks?: MaskLike[] })[] | undefined) ?? [];
 		for (let i = 0; i < fxs.length; i++)
 			yield* maskAnims(seqId, id, fxs[i]!.masks, [...at, 'effects', i, 'masks']);
+		// sim-warp: Puppet pin properties (`puppet.<pinId>.<prop>`).
+		for (let i = 0; i < fxs.length; i++) {
+			const pins = fxs[i]!.puppet?.pins ?? [];
+			for (let j = 0; j < pins.length; j++)
+				for (const k of PUPPET_PIN_PROPS) {
+					const a = pins[j]![k] as Animatable<unknown> | undefined;
+					if (a && Array.isArray(a.keyframes))
+						yield {
+							ref: { seq: seqId, owner: id, path: `puppet.${pins[j]!.id}.${k}` },
+							at: [...at, 'effects', i, 'puppet', 'pins', j, k],
+							kind: 'anim',
+							target: a,
+						};
+				}
+		}
 	}
 	for (const [list, name] of [
 		[seq.videoTracks, 'videoTracks'],
@@ -292,6 +308,10 @@ export function expressionRefToParamPath(ref: ExpressionRef): string[] {
 		const [, maskId, prop] = ref.path.split('.');
 		return ['mask', maskId!, prop!];
 	}
+	if (ref.path.startsWith('puppet.')) {
+		const [, pinId, prop] = ref.path.split('.');
+		return ['puppetPin', pinId!, prop!];
+	}
 	if (ref.path.startsWith('effects.')) {
 		const [, fxId, ...param] = ref.path.split('.');
 		return ['effect', fxId!, param.join('.')];
@@ -339,6 +359,17 @@ export function paramPathToExpressionRef(
 				if (has(cc.masks) || (cc.effects ?? []).some((fx) => has(fx.masks)))
 					return { seq: seqId, owner: id, path: `masks.${a}.${rest.join('.')}` };
 			}
+		return null;
+	}
+	if (head === 'puppetPin') {
+		for (const [seqId, seq] of Object.entries(doc.sequences))
+			for (const [id, c] of Object.entries(seq.clips))
+				if (
+					((c as { effects?: EffectInstance[] }).effects ?? []).some((fx) =>
+						fx.puppet?.pins.some((p) => p.id === a),
+					)
+				)
+					return { seq: seqId, owner: id, path: `puppet.${a}.${rest.join('.')}` };
 		return null;
 	}
 	if (head === 'track') {

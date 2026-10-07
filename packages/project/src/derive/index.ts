@@ -187,7 +187,7 @@ export function linkedPartners(seq: Sequence, clipId: string): Clip[] {
  * keyframe evaluation accepts fractional times.
  */
 export function contentTimeAt(
-	clip: Pick<Clip, 'start' | 'duration' | 'sourceIn' | 'speed'>,
+	clip: Pick<Clip, 'start' | 'duration' | 'sourceIn'> & { speed: { rate: number; reverse: boolean } },
 	frame: number,
 	rate: Rational,
 ): number {

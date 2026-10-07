@@ -9,6 +9,7 @@
 import type { RegisteredMedia } from '@jasper/api';
 import {
 	type Clip,
+	type ClipContentTiming,
 	type Command,
 	coverageTolerance,
 	coveredClipFrames,
@@ -20,6 +21,7 @@ import {
 	type SourceRange,
 	type SourceSidecarInfo,
 	type SourceTimingShift,
+	shiftedTiming,
 	sourceRangeFromSidecar,
 	sourceTimingShift,
 } from '@jasper/project';
@@ -74,7 +76,7 @@ export function planReplaceFootage(
 		const seqRate = seq.settings.frameRate;
 		const covered = isBoundedContent(clip)
 			? coveredClipFrames(
-					{ sourceIn: clip.sourceIn + shift, duration: clip.duration, speed: clip.speed },
+					shiftedTiming(clip as unknown as ClipContentTiming, shift),
 					seqRate,
 					reg.probe.durationFlicks,
 					coverageTolerance(seqRate, clip.speed.rate, rate),

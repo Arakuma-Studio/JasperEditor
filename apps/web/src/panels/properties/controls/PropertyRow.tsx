@@ -304,6 +304,30 @@ export function PropertyRow(props: {
 					/>
 				);
 			}
+			// sim-warp: a distortion mesh (Mesh Warp, Liquify) is edited on the Program monitor; the row shows whether it
+			// distorts and resets it (an empty mesh = no distortion).
+			case 'mesh': {
+				const arr = Array.isArray(value) ? (value as number[]) : [];
+				const changed = !mixed && arr.length > 0;
+				return (
+					<span
+						className="flex items-center gap-2 text-pr-small text-pr-muted"
+						data-testid={`prop-${row.id}`}
+					>
+						<span>{mixed ? '' : changed ? 'Edited on the Program monitor' : 'Not distorted'}</span>
+						{changed && (
+							<button
+								type="button"
+								className="text-pr-accent underline"
+								onClick={() => commitFn(() => [])}
+								data-testid={`prop-${row.id}-reset`}
+							>
+								Reset
+							</button>
+						)}
+					</span>
+				);
+			}
 			// wp masks: Mask Path has no value editor (edited on the monitor): its vertex count.
 			case 'json':
 				// wp shapes: gradients (editor) and shape paths (vertex count, Closed).

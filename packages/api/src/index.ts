@@ -23,6 +23,7 @@ export * from './projects.ts';
 export * from './roto.ts';
 export * from './camtrack.ts';
 export * from './routes.ts';
+export * from './scenes.ts';
 export * from './speech.ts';
 export * from './sync.ts';
 export * from './tracking.ts';

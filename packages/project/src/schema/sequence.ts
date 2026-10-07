@@ -23,6 +23,7 @@ import {
 	Vec2Schema,
 } from './common.ts';
 import { MaskSchema } from './mask.ts';
+import { PuppetSchema } from './puppet.ts';
 import { type VectorShapeData, VectorShapeDataSchema } from './shapes.ts';
 import { TextAnimatorGroupSchema, TextMoreOptionsSchema, TextPathOptionsSchema } from './text-animators.ts';
 import {
@@ -50,6 +51,8 @@ export const EffectInstanceSchema = z.looseObject({
 	essential: z.string().optional(),
 	/** wp masks: Premiere's per-effect masks (the effect applies inside them). Absent = none. */
 	masks: z.array(MaskSchema).optional(),
+	/** sim-warp: the Puppet effect's meshes and pins (absent = none). */
+	puppet: PuppetSchema.optional(),
 	/**
 	 * Wave expressions (optional): the instance's own name (Effect Controls ▸ Rename, AE's renamed "Slider Control"
 	 * → "Speed"); absent = the effect's label. Expressions find effects by this name.
@@ -332,6 +335,44 @@ export const SpeedSchema = z.looseObject({
 });
 export type Speed = DeepStrip<z.infer<typeof SpeedSchema>>;
 
+// ---------------------------------------------------------------- time remapping (workstream `time`)
+
+/**
+ * One speed keyframe of a clip's Time Remapping (Premiere "Time Remapping ▸ Speed"): the point where the clip's
+ * content time `time` (flicks, the keyframe axis of the clip — the same axis as every other keyframe, so Motion and
+ * effect keyframes stay where they are) shows the media time `source` (flicks from the start of the media). Between
+ * two keyframes the media advances linearly (a constant speed segment: forward, reverse when `source` decreases, a
+ * freeze frame when it stays). `ramp` (content flicks, ≥ 0) splits the keyframe into a speed transition of `2·ramp`
+ * centred on it; `ease` (0 = linear speed change … 1 = smooth S-curve, default 1) shapes it. A ramp never moves the
+ * media frames anchored by the keyframes.
+ */
+export const RemapKeyframeSchema = z.looseObject({
+	id: z.string(),
+	time: z.number(),
+	source: z.number(),
+	ramp: z.number().min(0).optional(),
+	ease: z.number().min(0).max(1).optional(),
+});
+export type RemapKeyframe = DeepStrip<z.infer<typeof RemapKeyframeSchema>>;
+
+/**
+ * Time Remapping of a video clip (OPTIONAL, read with defaults). Absent or `enabled: false` = the clip plays its
+ * content linearly (constant speed). `speedBefore` / `speedAfter` are the media-per-content slopes before the first
+ * and after the last keyframe (default 1). Without keyframes the media time equals the content time.
+ */
+export const TimeRemapSchema = z.looseObject({
+	enabled: z.boolean(),
+	keyframes: z.array(RemapKeyframeSchema),
+	speedBefore: z.number().optional(),
+	speedAfter: z.number().optional(),
+});
+export type TimeRemap = DeepStrip<z.infer<typeof TimeRemapSchema>>;
+
+/** Premiere "Time Interpolation": how frames are made when media time falls between source frames. */
+export const TIME_INTERPOLATIONS = ['frame-sampling', 'frame-blending', 'optical-flow'] as const;
+export const TimeInterpolationSchema = z.enum(TIME_INTERPOLATIONS);
+export type TimeInterpolation = DeepStrip<z.infer<typeof TimeInterpolationSchema>>;
+
 export const KNOWN_CLIP_KINDS = [
 	'video',
 	'audio',
@@ -562,6 +603,10 @@ export const VideoClipSchema = z.looseObject({
 	...visualShape,
 	/** M2 (S09): trackers placed on this clip's picture. */
 	trackers: z.array(ClipTrackerSchema).optional(),
+	/** Workstream `time`: Time Remapping (speed keyframes). Optional; absent = constant speed. */
+	timeRemap: TimeRemapSchema.optional(),
+	/** Workstream `time`: Time Interpolation (default `frame-sampling`). */
+	timeInterpolation: TimeInterpolationSchema.optional(),
 	/** parity (roto): segmented objects (Roto Brush, faces) of this clip's picture. */
 	rotos: z.array(ClipRotoSchema).optional(),
 	/** three-d: the 3D Camera Tracker of this clip's picture. */
@@ -704,6 +749,10 @@ export const NestVideoClipSchema = z.looseObject({
 	...visualShape,
 	/** wp-multicam: present = a multi-camera clip. */
 	multicam: MulticamSelectionSchema.optional(),
+	/** Workstream `time`: Time Remapping of the nested sequence's picture (multi-camera clips too). */
+	timeRemap: TimeRemapSchema.optional(),
+	/** Workstream `time`: Time Interpolation of the nested picture (default `frame-sampling`). */
+	timeInterpolation: TimeInterpolationSchema.optional(),
 });
 export const NestAudioClipSchema = z.looseObject({
 	...commonShape,

@@ -8,21 +8,26 @@
 // `samples` are absolute clip-local source frames; LUT media params are bound as 3D textures; the preview may draw
 // the canvases at a reduced resolution (`RenderOptions.fxPreviewScale`).
 import {
+	activeRemap,
 	colorRunKey,
 	type EffectSpec,
 	FX_MAX_CANVAS,
 	type FxClipInfo,
 	type FxEffectPlan,
 	type FxFrameContext,
+	type FxLayerMask,
 	type FxParamsAt,
 	type FxStepTime,
 	type FxTimeStep,
 	type FxUniform,
+	flattenPath,
 	fxBuiltinUniforms,
 	fxClipProgress,
 	fxParamsAtFn,
 	fxSeed,
 	fxStackTime,
+	fxUniformsKey,
+	hashString,
 	isLutMediaParam,
 	type Lut,
 	layerMapOf,
@@ -32,6 +37,7 @@ import {
 	planGpuEffect,
 	type ResolvedEffect,
 	type ResolvedMask,
+	remapSourceAt,
 	rotoFrameState,
 	rotoFrameUrl,
 	sideCompToCanvas,
@@ -45,6 +51,7 @@ import { NestCompSizeContext } from '../layers/nest-context.ts';
 import type { LayerProps, LayerTap } from '../types.ts';
 import { type FxMaskGeometry, maskGeometryKey } from './mask.ts';
 import { type MatteTap, type MatteTapMeta, trackMatteMediaId } from './matte.ts';
+import { fxPixelsOf, useFxPixels } from './pixels.ts';
 import {
 	type FxBypass,
 	type FxCanvasLayout,
@@ -212,6 +219,11 @@ export function useLayerFx(
 	const failures = fxStatus.version();
 	const realFrame = layer.realFrame ?? layer.localFrame;
 	const contentTime = layer.contentTime;
+	// Media time of the picture shown (frame hold, then Time Remapping; workstream `time`): roto mattes follow it.
+	const pictureRemap = activeRemap(clip as Parameters<typeof activeRemap>[0]);
+	const pictureMediaTime = pictureRemap
+		? Math.max(0, remapSourceAt(pictureRemap, layer.pictureTime ?? contentTime))
+		: (layer.pictureTime ?? contentTime);
 	const sourceFrame = layer.localFrame;
 	const duration = clip.duration;
 	// Params at other frames (sub-frame shutters, write-on paths, …) from the clip's keyframes, per effect instance.
@@ -229,6 +241,21 @@ export function useLayerFx(
 		};
 	}, [clip, fps, realFrame]);
 	const clipInfo = useMemo((): FxClipInfo => fxClipInfoOf(clip), [clip]);
+	// sim-warp: identity of each instance's animation (params with keys and expressions, the clip's timing) — the key
+	// of stepped simulations' checkpoint caches.
+	const instanceKeyOf = useMemo(() => {
+		const cache = new Map<string, string>();
+		const timing = `${clip.clipId}|${clip.sourceIn}|${clip.speed.rate}|${clip.speed.reverse ? 1 : 0}|${clip.duration}|${fps}`;
+		const byId = new Map(clip.effects.map((e) => [e.id, e]));
+		return (fxId: string): string => {
+			const hit = cache.get(fxId);
+			if (hit !== undefined) return hit;
+			const inst = byId.get(fxId);
+			const k = `${timing}|${fxId}|${hashString(JSON.stringify(inst?.params ?? null))}|${hashString(JSON.stringify((inst as { puppet?: unknown } | undefined)?.puppet ?? null))}`;
+			cache.set(fxId, k);
+			return k;
+		};
+	}, [clip, fps]);
 	const mediaKind = useMemo(() => (id: string) => doc.media[id]?.kind, [doc.media]);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `failures` re-plans when a shader fails
 	const plan = useMemo(
@@ -298,6 +325,39 @@ export function useLayerFx(
 					: [],
 			) ?? [],
 		[plan],
+	);
+	// sim-warp: images whose pixels simulations read on the CPU (`gpu.cpuPixels`).
+	const pixelUrls = useMemo(
+		() => [
+			...new Set(
+				plan?.steps.flatMap((s) =>
+					s.kind === 'gpu'
+						? (s.spec.gpu?.cpuPixels ?? [])
+								.map((name) => (s.fx.params[name] as { mediaId?: unknown } | undefined)?.mediaId)
+								.filter((id): id is string => typeof id === 'string' && !!id)
+								.map((id) => doc.media[id])
+								.filter((h) => h?.kind === 'image')
+								.map((h) => h!.url)
+						: [],
+				) ?? [],
+			),
+		],
+		[plan, doc.media],
+	);
+	const pixelsVersion = useFxPixels(pixelUrls, !doc.isPreview);
+	// sim-warp: the layer's masks as polylines in layer px (effects that reference "Mask n").
+	const layerMasks = useMemo(
+		(): FxLayerMask[] =>
+			(props.masks ?? []).map((m) => {
+				const flat = flattenPath(m.path, 0.25 / Math.max(1, box.width, box.height));
+				return {
+					id: m.id,
+					closed: m.path.closed,
+					inverted: m.inverted,
+					points: flat.pts.map(([x, y]) => [x * box.width, y * box.height] as [number, number]),
+				};
+			}),
+		[props.masks, box.width, box.height],
 	);
 	const lutUrls = [...referencedMedia(lutEffects), ...fxLutIds]
 		.map((id) => doc.media[id]?.url)
@@ -400,6 +460,18 @@ export function useLayerFx(
 						progress,
 						clip: clipInfo,
 						...(paramsAt ? { paramsAt } : {}),
+						instanceKey: instanceKeyOf(s.fx.id),
+						pixels: (param: string) => {
+							const id = (s.fx.params[param] as { mediaId?: unknown } | undefined)?.mediaId;
+							const h = typeof id === 'string' && id ? doc.media[id] : undefined;
+							return h?.kind === 'image' ? fxPixelsOf(h.url) : null;
+						},
+						structures: {
+							...((s.fx as { puppet?: unknown }).puppet
+								? { puppet: (s.fx as { puppet?: unknown }).puppet }
+								: {}),
+							...(layerMasks.length ? { masks: layerMasks } : {}),
+						},
 					};
 					const gp = planGpuEffect(s.spec as EffectSpec, { id: s.fx.id, params: s.fx.params }, ctx, canvas);
 					// wp masks: a Track Matte Key reading a track binds the track's composite as `u_matte`.
@@ -421,7 +493,7 @@ export function useLayerFx(
 							let state = 0;
 							if (ref) {
 								const still = clip.kind === 'still';
-								const f = still ? 0 : mediaFrameAt(contentTime, ref.rate) + t.matte.offset;
+								const f = still ? 0 : mediaFrameAt(pictureMediaTime, ref.rate) + t.matte.offset;
 								const at = rotoFrameState(ref, f);
 								if (at === 'missing' && !doc.isPreview && t.matte.offset === 0)
 									cancelRender(
@@ -458,7 +530,7 @@ export function useLayerFx(
 					}
 					return {
 						kind: 'gpu',
-						key: `${gp.key}|${JSON.stringify(gp.uniforms)}|${seed}|${frames.join(',')}/${st?.valid ?? 0}`,
+						key: `${gp.key}|${fxUniformsKey(gp.uniforms)}|${seed}|${frames.join(',')}/${st?.valid ?? 0}`,
 						plan: gp,
 						seed,
 						sampleOffsets: offsets,
@@ -560,6 +632,9 @@ export function useLayerFx(
 		clipInfo,
 		contentTime,
 		opts.extraSteps,
+		instanceKeyOf,
+		pixelsVersion,
+		layerMasks,
 	]);
 
 	if (!plan) return NONE;

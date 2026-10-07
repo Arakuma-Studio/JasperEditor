@@ -4,6 +4,7 @@
 import '../layer-bake/commands.ts';
 // Register the fx framework's on-canvas point handles (wave 1).
 import '../fx/register.ts';
+import '../simwarp/register.ts';
 // audio-fx: Effect Controls editors of the audio effects (EQ curves, dynamics, meters).
 import '../audio-fx/register.ts';
 import { audioFxCommands } from '../audio-fx/commands.ts';
@@ -36,6 +37,7 @@ import { speechCommands } from './speech.ts';
 import { structureCommands } from './structure.ts';
 import { textAnimationCommands } from './text-animation.ts';
 import { threeDCommands } from './three-d.ts';
+import { timeCommands } from './time.ts';
 import { timelineCommands } from './timeline.ts';
 import { trackingCommands } from './tracking.ts';
 import { transitionCommands } from './transitions.ts';
@@ -78,6 +80,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	rotoCommands,
 	multicamCommands,
 	interchangeCommands,
+	timeCommands,
 	// edit-ux (registered after timeline/transport: trim mode, match frame, subclips, dialogs)
 	editUxCommands,
 	monitorViewCommands,

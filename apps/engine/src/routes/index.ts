@@ -27,6 +27,7 @@ import rotoRoutes from './roto.ts';
 import speechRoutes from './speech.ts';
 import stillsRoutes from './stills.ts';
 import syncRoutes from './sync.ts';
+import timeRoutes from './time.ts';
 import trackingRoutes from './tracking.ts';
 import uploadsRoutes from './uploads.ts';
 
@@ -51,6 +52,8 @@ const ROUTE_PLUGINS = [
 	colorRoutes,
 	processingRoutes,
 	mgBundleRoutes,
+	// Workstream `time`: the retime extension's `layer` overrides are the sources of the warp / layer-bake stages.
+	timeRoutes,
 	// M2 animation (ARCHITECTURE §20.5): layer-bake's extension sits between mg-bundles and tracking (warp).
 	layerBakeRoutes,
 	trackingRoutes,

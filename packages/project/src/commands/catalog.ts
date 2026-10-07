@@ -23,6 +23,7 @@ import { ROTO_OWNER, rotoHandlers } from './handlers/roto.ts';
 import { rovingHandlers } from './handlers/roving.ts';
 import { sequenceHandlers } from './handlers/sequence.ts';
 import { keepShapesCentred, SHAPE_BOX_COMMANDS, SHAPE_OWNER, shapeHandlers } from './handlers/shape.ts';
+import { SIM_WARP_OWNER, simWarpHandlers } from './handlers/sim-warp.ts';
 import { simplifyHandlers } from './handlers/simplify.ts';
 import { spatialHandlers } from './handlers/spatial.ts';
 import { SPEECH_OWNER, speechHandlers } from './handlers/speech.ts';
@@ -30,6 +31,7 @@ import { STRUCTURE_OWNER, structureHandlers } from './handlers/structure.ts';
 import { TEXT_ANIMATOR_OWNER, textAnimatorHandlers } from './handlers/text-animators.ts';
 import { cameraTrackerHandlers } from './handlers/camtrack.ts';
 import { THREE_D_OWNER, threeDHandlers } from './handlers/three-d.ts';
+import { timeHandlers } from './handlers/time.ts';
 import { trackerHandlers } from './handlers/tracker.ts';
 import { transitionHandlers } from './handlers/transition.ts';
 import type { Handler, HandlerMap } from './handlers/util.ts';
@@ -71,6 +73,8 @@ export type CommandOwner =
 	| 'wp-m3-expressions'
 	// Audio effects, Essential Sound, Remix (docs/wp-notes/audio-fx.md)
 	| 'audio-fx'
+	// Time Remapping, Time Interpolation, Scene Edit Detection (docs/wp-notes/time.md)
+	| 'wp-time'
 	// parity: roto / object mattes
 	| 'parity-roto'
 	// Editorial UX: 3/4-point editing, trim mode, subclips
@@ -78,7 +82,9 @@ export type CommandOwner =
 	// AE text animators (parity program)
 	| 'text-animators'
 	// 3D layers, cameras, lights, 3D camera tracker (docs/wp-notes/three-d.md)
-	| 'three-d';
+	| 'three-d'
+	// Liquify, Mesh Warp, Puppet (docs/wp-notes/sim-warp.md)
+	| 'sim-warp';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -238,6 +244,18 @@ const LABELS: Record<CommandType, string> = {
 	'audio.setGain': 'Audio Gain',
 	'audio.autoDuck': 'Auto Duck',
 	'mixer.setLoudness': 'Loudness Normalization',
+	'liquify.stroke': 'Liquify',
+	'liquify.reset': 'Reset Liquify Mesh',
+	'meshWarp.setVertex': 'Edit Distortion Mesh',
+	'meshWarp.reset': 'Reset Distortion Mesh',
+	'puppet.addMesh': 'Add Puppet Mesh',
+	'puppet.updateMesh': 'Change Puppet Mesh',
+	'puppet.removeMesh': 'Delete Puppet Mesh',
+	'puppet.addPin': 'Add Puppet Pin',
+	'puppet.removePins': 'Delete Puppet Pins',
+	'puppet.renamePin': 'Rename Puppet Pin',
+	'puppet.movePins': 'Move Puppet Pins',
+	'puppet.setPinKeys': 'Record Puppet Pins',
 	'mask.add': 'Create Mask',
 	'mask.remove': 'Delete Mask',
 	'mask.update': 'Change Mask',
@@ -284,6 +302,16 @@ const LABELS: Record<CommandType, string> = {
 	'essentialSound.autoMatch': 'Auto-Match Loudness',
 	'clip.remix': 'Remix',
 	'clip.remixRevert': 'Revert Remix',
+	'timeRemap.enable': 'Time Remapping',
+	'timeRemap.addKeyframe': 'Add Speed Keyframe',
+	'timeRemap.removeKeyframes': 'Delete Speed Keyframes',
+	'timeRemap.setSpeed': 'Change Speed',
+	'timeRemap.moveKeyframe': 'Move Speed Keyframe',
+	'timeRemap.setTransition': 'Speed Transition',
+	'timeRemap.addFreeze': 'Freeze Frame',
+	'timeRemap.addReverse': 'Reverse Speed Segment',
+	'clip.setTimeInterpolation': 'Time Interpolation',
+	'clip.applySceneEdits': 'Scene Edit Detection',
 	'roto.add': 'Roto Brush',
 	'roto.update': 'Roto Settings',
 	'roto.addStrokes': 'Roto Brush Stroke',
@@ -345,10 +373,12 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[speechHandlers, SPEECH_OWNER],
 	[expressionHandlers, EXPRESSION_OWNER],
 	[essentialHandlers, ESSENTIAL_OWNER],
+	[timeHandlers, 'wp-time'],
 	[rotoHandlers, ROTO_OWNER],
 	[editUxHandlers, 'edit-ux'],
 	[threeDHandlers, THREE_D_OWNER],
 	[cameraTrackerHandlers, THREE_D_OWNER],
+	[simWarpHandlers, SIM_WARP_OWNER],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
@@ -376,6 +406,7 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === SPEECH_OWNER ||
 				owner === ESSENTIAL_OWNER ||
 				owner === 'wp-multicam' ||
+				owner === 'wp-time' ||
 				owner === ROTO_OWNER ||
 				owner === 'edit-ux' ||
 				owner === THREE_D_OWNER

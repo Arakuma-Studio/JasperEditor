@@ -49,6 +49,8 @@ import {
 	type ParamSpec,
 	type PropertySpec,
 	planeHomography,
+	PUPPET_PIN_LABELS,
+	PUPPET_PIN_PROPS,
 	propertyEvaluateOptions,
 	type Rational,
 	type RenderCameraClip,
@@ -391,7 +393,21 @@ export class World {
 			const spec = fx ? defaultEffectRegistry.get(fx.effectId, fx.effectVersion) : undefined;
 			if (!fx) return [];
 			if (!spec) return Object.keys(fx.params).map((n) => leaf(`${group}.${n}`, n, n));
-			return spec.params.map((p) => leaf(`${group}.${p.name}`, p.label, p.name));
+			// sim-warp: a Puppet effect lists its pins (effect("Puppet")("Puppet Pin 1").position).
+			const pins = (fx as { puppet?: { pins: { id: string; name: string }[] } }).puppet?.pins ?? [];
+			return [
+				...spec.params.map((p) => leaf(`${group}.${p.name}`, p.label, p.name)),
+				...pins.map((pin) => ({
+					path: `puppet.${pin.id}`,
+					group: true,
+					name: pin.name,
+					matchName: 'pin',
+					aliases: [pin.id],
+				})),
+			];
+		}
+		if (group.startsWith('puppet.') && group.split('.').length === 2) {
+			return PUPPET_PIN_PROPS.map((k) => leaf(`${group}.${k}`, PUPPET_PIN_LABELS[k], k));
 		}
 		// wp shapes: a vector shape's contents (AE: content("Group 1").content("Rectangle Path 1").size,
 		// content("Group 1").transform.position).
@@ -658,6 +674,25 @@ export class World {
 				anim: { value: content.text, keyframes: keys, expression: content.expression },
 				expression: content.expression,
 				propertyIndex: 1,
+			};
+		}
+		if (ref.path.startsWith('puppet.')) {
+			const [, pinId, prop] = ref.path.split('.');
+			const fxs = ((info.clip as { effects?: EffectInstance[] }).effects ?? []) as (EffectInstance & {
+				puppet?: { pins: Record<string, unknown>[] };
+			})[];
+			const pin = fxs.flatMap((fx) => fx.puppet?.pins ?? []).find((q) => q.id === pinId);
+			const anim = pin?.[prop!] as Animatable<unknown> | undefined;
+			if (!pin || !anim || !(PUPPET_PIN_PROPS as readonly string[]).includes(prop!)) return null;
+			return {
+				...base,
+				name: PUPPET_PIN_LABELS[prop as 'position'],
+				matchName: prop!,
+				kind: prop === 'position' ? 'vec2' : 'number',
+				opts: {},
+				anim,
+				expression: anim.expression,
+				propertyIndex: PUPPET_PIN_PROPS.indexOf(prop as 'position') + 1,
 			};
 		}
 		if (ref.path.startsWith('masks.')) {

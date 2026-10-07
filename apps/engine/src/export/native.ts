@@ -159,7 +159,7 @@ function rate(r: Rational): string {
 }
 
 /** Matrix of `in_color_matrix` for a probed stream (untagged HD is BT.709 like browsers assume). */
-function inColor(m: LocalMedia | null): string {
+export function inColor(m: LocalMedia | null): string {
 	const vs = m?.record.probe.streams.find((s) => s.type === 'video');
 	if (vs?.type !== 'video') return '';
 	const matrix = vs.color.matrix;
@@ -408,21 +408,23 @@ export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 		else f.push(`setpts=(PTS-STARTPTS)/${fmt(c.speed.rate)}`, `fps=${rate(fps)}`, `trim=end_frame=${n}`);
 		resizeAt(`:${SWS_FLAGS}`);
 	} else if (override) {
-		// A held clip shows the master's frame at its held local frame.
-		const shown = c.frameHold ? c.start + heldLocalFrame(c, fps) : f0;
+		// A held clip shows the master's frame at its held local frame (a retimed intermediate already holds it).
+		const held = !!c.frameHold && !override.retimed;
+		const shown = held ? c.start + heldLocalFrame(c, fps) : f0;
 		const k = addInput([
 			...(override.decoder ? ['-c:v', override.decoder] : []),
 			'-ss',
 			sec((shown - override.startFrame) * frameSec),
 			'-t',
-			sec(c.frameHold ? margin : n * frameSec + margin),
+			sec(held ? margin : n * frameSec + margin),
 			'-i',
 			override.path,
 		]);
 		src = `[${k}:v:0]`;
-		if (c.frameHold) f.push(...holdFilters());
+		if (held) f.push(...holdFilters());
 		else f.push('setpts=PTS-STARTPTS', `fps=${rate(fps)}`, `trim=end_frame=${n}`);
 		resizeAt(`:${SWS_FLAGS}`);
+		if (override.retimed) opaque = !(local?.record.probe.hasAlpha ?? false);
 	} else if ('nest' in c.source) {
 		// edit-structure: the nested sequence's own stack (transparent background, nested frame size, parent rate),
 		// drawn in this graph; its frames are mapped to the layer's by the clip's picture time.
@@ -596,7 +598,14 @@ export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 		if (defaultEffectRegistry.get(fx.effectId, fx.effectVersion)?.color) continue;
 		opaque = false;
 	}
-	return { input: src, filters: f, width: bw, height: bh, resize, opaque: opaque && !override };
+	return {
+		input: src,
+		filters: f,
+		width: bw,
+		height: bh,
+		resize,
+		opaque: opaque && (!override || !!override.retimed),
+	};
 }
 
 /**

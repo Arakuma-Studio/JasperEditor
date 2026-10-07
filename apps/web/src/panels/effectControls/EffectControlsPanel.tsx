@@ -34,6 +34,7 @@ import {
 import { effectEditorFor } from '../../extensions/index.ts';
 import { MaskList } from '../../masks/MaskList.tsx';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
+import { LiquifyToolsRow, PuppetList } from '../../simwarp/PuppetList.tsx';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import {
 	applyMessage,
@@ -45,6 +46,7 @@ import {
 import { TextAnimationBars } from '../../text-animation/TextAnimationBars.tsx';
 import { TextAnimationSection } from '../../text-animation/TextAnimationSection.tsx';
 import { TextAnimatorList } from '../../text-animators/AnimatorList.tsx';
+import { TimeRemapSection } from '../../time/TimeRemapSection.tsx';
 import { openSimplify } from '../../tracking/simplify-actions.ts';
 import {
 	applyEffectToClips,
@@ -871,6 +873,11 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 											</div>
 											{lane(<SummaryLane rows={s.rows} seq={seq} range={range} />)}
 										</div>
+										{open && s.id.endsWith(':timeRemap') ? (
+											<div style={left} data-testid="ec-time-remap">
+												<TimeRemapSection session={session} clipId={s.clip.id} frame={frame} />
+											</div>
+										) : null}
 										{open && s.id.endsWith(':textAnimation') ? (
 											<div style={left} data-testid="ec-text-animation">
 												<TextAnimationSection session={session} clipIds={[s.clip.id]} host="effectControls" />
@@ -901,6 +908,21 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 												renderRow={renderRow}
 												filter={(r) => rowVisible(data.doc, seq, r, filter)}
 												frame={frame}
+											/>
+										) : null}
+										{open && s.fx?.effectId === 'jasper.liquify' ? (
+											<LiquifyToolsRow readOnly={readOnly} layout={{ left, lane }} />
+										) : null}
+										{open && s.puppet ? (
+											<PuppetList
+												session={session}
+												model={s.puppet}
+												readOnly={readOnly}
+												layout={{ left, lane }}
+												collapsed={collapsed}
+												setCollapsed={setCollapsed}
+												renderRow={renderRow}
+												filter={(r) => rowVisible(data.doc, seq, r, filter)}
 											/>
 										) : null}
 										{open && s.masks ? (

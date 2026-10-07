@@ -193,6 +193,14 @@ export type IClip = {
 	reverse: boolean;
 	/** Frame hold: the content time shown for the whole clip, or null. */
 	hold?: number | null;
+	/**
+	 * Workstream `time`: variable speed (Time Remapping, FCPXML `timeMap`, FCP7 `graphdict`): the content time shown
+	 * at clip times (flicks from the clip's start), ascending in `time`; linear between points (`smooth` = an eased
+	 * speed change towards the next point). When present it replaces `sourceIn`/`speed`/`reverse` for the picture.
+	 */
+	timeMap?: ITimePoint[] | null;
+	/** Workstream `time`: how in-between frames are made (FCPXML `frameSampling`, FCP7 `frameblending`). */
+	frameSampling?: 'frame-sampling' | 'frame-blending' | 'optical-flow';
 	enabled: boolean;
 	label?: LabelColor;
 	/** Clips sharing a link id are linked (A/V of one placement). */
@@ -221,6 +229,9 @@ export type IClip = {
 	multicam?: { enabled: boolean; angle: string };
 	jasper?: Record<string, unknown>;
 };
+
+/** One point of a clip's time map (workstream `time`). */
+export type ITimePoint = { time: number; value: number; interp?: 'linear' | 'smooth' };
 
 export type ITransition = {
 	id: string;

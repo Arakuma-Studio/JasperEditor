@@ -28,6 +28,7 @@ const FAMILY_FILES = [
 	'sapphire-time-flicker',
 	'object-matte',
 	'keying-matte',
+	'simulation-warp',
 ];
 
 describe('fx catalogue', () => {

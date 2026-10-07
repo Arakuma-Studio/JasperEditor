@@ -19,6 +19,7 @@ import { SAPPHIRE_RENDER_TEXTURES_EFFECTS } from './sapphire-render-textures.ts'
 import { SAPPHIRE_STYLIZE_OTHER_EFFECTS } from './sapphire-stylize-other.ts';
 import { SAPPHIRE_TEXTURES_CLOUDS_EFFECTS } from './sapphire-textures-clouds.ts';
 import { SAPPHIRE_TIME_FLICKER_EFFECTS } from './sapphire-time-flicker.ts';
+import { SIMULATION_WARP_EFFECTS } from './simulation-warp.ts';
 
 export * from './define.ts';
 export * from './glsl/index.ts';
@@ -26,6 +27,7 @@ export * from './motion-blur.ts';
 export * from './params.ts';
 export * from './passes.ts';
 export * from './shader.ts';
+export * from './simulation-warp/meshes.ts';
 
 /** The families, with the id prefix every entry of a family uses (checked by the catalogue test). */
 export const FX_FAMILIES: readonly { file: string; idPrefix: string; effects: readonly EffectSpec[] }[] = [
@@ -57,6 +59,7 @@ export const FX_FAMILIES: readonly { file: string; idPrefix: string; effects: re
 	{ file: 'object-matte', idPrefix: 'jasper.', effects: OBJECT_MATTE_EFFECTS },
 	// parity (roto): screen keyer, matte refinement, key cleaner, spill suppression
 	{ file: 'keying-matte', idPrefix: 'jasper.', effects: KEYING_MATTE_EFFECTS },
+	{ file: 'simulation-warp', idPrefix: 'jasper.', effects: SIMULATION_WARP_EFFECTS },
 ];
 
 /** Every fx-catalogue effect (registered by default). */

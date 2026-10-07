@@ -112,6 +112,7 @@ import {
 	VisionModelsResponseSchema,
 } from './roto.ts';
 import { CamTrackSolveRequestSchema } from './camtrack.ts';
+import { SceneDetectRequestSchema } from './scenes.ts';
 import {
 	SpeechModelDeleteResponseSchema,
 	SpeechModelsResponseSchema,
@@ -153,6 +154,8 @@ export type RouteOwner =
 	| 'speech'
 	// parity program: timeline interchange and Link Media
 	| 'wp-interchange'
+	// parity program: time remapping, retime, Scene Edit Detection
+	| 'wp-time'
 	// parity program: roto / object mattes, face tracking
 	| 'roto'
 	// parity program: 3D layers, cameras, lights, 3D Camera Tracker
@@ -598,6 +601,15 @@ export const ROUTES = {
 		body: TrackRequestSchema,
 		response: EngineJobSchema,
 		owner: 'wp-m2-track',
+	},
+	/** Workstream `time`: Scene Edit Detection of a media range (job kind `scene-detect`, `?wait=1` = finished job). */
+	scenesDetect: {
+		method: 'POST',
+		path: '/api/scenes/detect',
+		body: SceneDetectRequestSchema,
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
+		owner: 'wp-time',
 	},
 	/** wp-multicam: offsets of recordings of one event by their audio (two-pass GCC-PHAT). */
 	syncAudio: {

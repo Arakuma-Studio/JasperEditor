@@ -178,7 +178,23 @@ export function bindSnapshotExpressions(snap: RenderSnapshot): RenderSnapshot {
 				if (b !== a) params = { ...params, [k]: b };
 			}
 			const masks = bindMasks(fx.masks, owner);
-			return params === fx.params && masks === fx.masks ? fx : { ...fx, params, ...(masks ? { masks } : {}) };
+			// sim-warp: Puppet pin properties.
+			const pup = (fx as { puppet?: { meshes: unknown[]; pins: Record<string, unknown>[] } }).puppet;
+			let puppet = pup;
+			if (pup) {
+				const pins = pup.pins.map((pin) => {
+					let pp = pin;
+					for (const k of ['position', 'scale', 'rotation', 'amount', 'extent', 'inFront'] as const) {
+						const b = bind(pin[k], owner, `puppet.${pin.id as string}.${k}`);
+						if (b !== pin[k]) pp = { ...pp, [k]: b };
+					}
+					return pp;
+				});
+				if (pins.some((q, i) => q !== pup.pins[i])) puppet = { ...pup, pins };
+			}
+			return params === fx.params && masks === fx.masks && puppet === pup
+				? fx
+				: { ...fx, params, ...(masks ? { masks } : {}), ...(puppet ? { puppet } : {}) };
 		});
 	const videoTracks = snap.videoTracks.map((track) => ({
 		...track,

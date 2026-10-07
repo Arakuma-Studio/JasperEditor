@@ -401,7 +401,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (259; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (267; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -417,6 +417,9 @@ Tools (259; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
 - Roto Brush, object mattes and faces: `list_roto_models` `install_roto_model` `remove_roto_model` `create_roto`
   `add_roto_strokes` `propagate_roto` `get_roto` `apply_object_matte` `convert_roto_to_masks` `freeze_roto`
   `remove_roto` `track_faces` `blur_faces` `face_to_keyframes`.
+- Puppet, Liquify and Mesh Warp (the simulation and warp effects themselves are `apply_commands` effects):
+  `get_puppet` `add_puppet_pins` `move_puppet_pins` `record_puppet_pins` `remove_puppet_pins` `liquify_stroke`
+  `set_mesh_warp_vertex` (`docs/wp-notes/sim-warp.md`).
 - Masks and track mattes: `list_masks` `add_mask` `edit_mask` `remove_masks` `track_mask` `auto_trace_mask`
   `set_track_matte`.
 - Transitions: `list_transitions` `list_transition_types` `update_transition` `remove_transitions` `apply_default_transitions`
@@ -440,6 +443,9 @@ Tools (259; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   `ungroup_clips` `duplicate_sequence` `delete_sequence` `remove_unused_media` `create_synthetic` `update_synthetic`
   `list_through_edits` `join_through_edits` `find_gaps` `make_subsequence` `add_frame_hold`
   `insert_frame_hold_segment` `frame_hold_options` (`docs/wp-notes/edit-structure.md`).
+- Time remapping, time interpolation, Scene Edit Detection: `get_time_remap` `set_time_remap` `set_segment_speed`
+  `add_speed_keyframe` `remove_speed_keyframes` `move_speed_keyframe` `set_speed_transition` `add_freeze_segment`
+  `add_reverse_segment` `set_time_interpolation` `detect_scene_edits` (`docs/wp-notes/time.md`).
 - Editing and trimming: `source_edit` (three/four-point Insert/Overwrite, backtiming, Fit Clip, split edits, source
   patching) `find_edit_points` `trim_edit_points` `match_frame` `reverse_match_frame` `make_subclip` `edit_subclip`
   `set_split_marks` (`docs/wp-notes/edit-ux.md`).

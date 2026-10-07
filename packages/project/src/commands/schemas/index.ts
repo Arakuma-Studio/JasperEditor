@@ -15,11 +15,13 @@ import { PROJECT_COMMANDS } from './project.ts';
 import { ROTO_COMMANDS } from './roto.ts';
 import { SEQUENCE_COMMANDS } from './sequence.ts';
 import { SHAPE_COMMANDS } from './shape.ts';
+import { SIM_WARP_COMMANDS } from './sim-warp.ts';
 import { SIMPLIFY_COMMANDS } from './simplify.ts';
 import { SPEECH_COMMANDS } from './speech.ts';
 import { STRUCTURE_COMMANDS } from './structure.ts';
 import { TEXT_ANIMATOR_COMMANDS } from './text-animators.ts';
 import { THREE_D_COMMANDS } from './three-d.ts';
+import { TIME_COMMANDS } from './time.ts';
 import { TRACKER_COMMANDS } from './tracker.ts';
 
 export * from './audio.ts';
@@ -39,11 +41,13 @@ export * from './project.ts';
 export * from './roto.ts';
 export * from './sequence.ts';
 export * from './shape.ts';
+export * from './sim-warp.ts';
 export * from './simplify.ts';
 export * from './speech.ts';
 export * from './structure.ts';
 export * from './text-animators.ts';
 export * from './three-d.ts';
+export * from './time.ts';
 export * from './tracker.ts';
 
 /** Every document command schema (M1 + M2), keyed by nothing: see `catalog.ts` for registration. */
@@ -73,6 +77,8 @@ export const ALL_COMMAND_SCHEMAS = [
 	...STRUCTURE_COMMANDS,
 	// wp masks (S03 §17)
 	...MASK_COMMANDS,
+	// sim-warp: Liquify, Mesh Warp, Puppet
+	...SIM_WARP_COMMANDS,
 	// wp captions
 	...CAPTION_COMMANDS,
 	// wp speech
@@ -81,6 +87,8 @@ export const ALL_COMMAND_SCHEMAS = [
 	...EXPRESSION_COMMANDS,
 	// Essential Sound and Remix (audio-fx)
 	...ESSENTIAL_COMMANDS,
+	// Workstream `time`: Time Remapping, Time Interpolation, frame holds, Scene Edit Detection
+	...TIME_COMMANDS,
 	// parity: roto / object mattes
 	...ROTO_COMMANDS,
 	// edit-ux: 3/4-point editing, multi-edit trims, subclips
