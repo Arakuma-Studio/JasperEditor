@@ -20,7 +20,7 @@ import {
 	wordAt,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
-import { useStoreSelector } from '@jasper/session/react';
+import { useStoreSelector, useTransportFrame } from '@jasper/session/react';
 import { Button, EmptyState, SearchField, Select, TextField, toast } from '@jasper/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { bytesToBase64, loadFillers, saveFillers, type TranscriptTool, textPanelRequests } from './state.ts';
@@ -32,7 +32,7 @@ const S = 705_600_000;
 
 export function TranscriptTab({ session, seq, request }: Props) {
 	const doc = useStoreSelector(session.store, (s) => s.transient ?? s.document) as ProjectDocument;
-	const playhead = useStoreSelector(session.transport, (s) => s.frame);
+	const playhead = useTransportFrame(66).frame;
 	const words = useMemo(() => sequenceWords(doc, seq), [doc, seq]);
 	const F = flicksPerFrame(seq.settings.frameRate);
 	const [query, setQuery] = useState('');
@@ -301,10 +301,26 @@ export function TranscriptTab({ session, seq, request }: Props) {
 				</Button>
 			</div>
 			{tool === 'fillers' ? (
-				<FillersTool words={words} seq={seq} apply={apply} onDone={() => setTool(null)} />
+				<FillersTool
+					words={words}
+					seq={seq}
+					apply={apply}
+					onDone={() => {
+						setTool(null);
+						setSel(null);
+					}}
+				/>
 			) : null}
 			{tool === 'pauses' ? (
-				<PausesTool words={words} seq={seq} apply={apply} onDone={() => setTool(null)} />
+				<PausesTool
+					words={words}
+					seq={seq}
+					apply={apply}
+					onDone={() => {
+						setTool(null);
+						setSel(null);
+					}}
+				/>
 			) : null}
 			{tool === 'captions' ? (
 				<CaptionsTool words={words} seq={seq} apply={apply} range={range} onDone={() => setTool(null)} />

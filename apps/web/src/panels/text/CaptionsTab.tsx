@@ -21,7 +21,7 @@ import {
 	writeCaptionFileBytes,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
-import { useStoreSelector } from '@jasper/session/react';
+import { useStoreSelector, useTransportFrame } from '@jasper/session/react';
 import {
 	Button,
 	ColorSwatch,
@@ -46,7 +46,7 @@ function escapeRe(s: string): string {
 export function CaptionsTab({ session, seq, reveal }: Props) {
 	const doc = useStoreSelector(session.store, (s) => s.transient ?? s.document) as ProjectDocument;
 	const selection = useStoreSelector(session.store, (s) => s.selection.timeline.clips);
-	const playhead = useStoreSelector(session.transport, (s) => s.frame);
+	const playhead = useTransportFrame(66).frame;
 	const [query, setQuery] = useState('');
 	const [replacement, setReplacement] = useState('');
 	const [exportFormat, setExportFormat] = useState<CaptionFileFormat>('srt');

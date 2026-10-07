@@ -179,7 +179,7 @@ test('Text ▸ Transcript: import, seek, search, select → Mark In/Out, Remove 
 	await expect.poll(() => playheadFrame(page)).toBe(Math.floor(3.2 * 29.97));
 	// search
 	await page.getByTestId('text.transcript.search').fill('the show');
-	await expect(page.getByTestId('text.transcript.matches')).toHaveText('0/1');
+	await expect(page.getByTestId('text.transcript.matches')).toHaveText('1/1');
 	// select "Welcome … show." and mark In/Out (snapped outward)
 	await page.getByTestId('text.transcript.word.0').click();
 	await page.getByTestId('text.transcript.word.4').click({ modifiers: ['Shift'] });
@@ -196,6 +196,9 @@ test('Text ▸ Transcript: import, seek, search, select → Mark In/Out, Remove 
 	await page.getByTestId('text.transcript.captionsApply').click();
 	await expect.poll(async () => (await seqOf()).captionTracks.length).toBe(2);
 	await expect(page.getByTestId('text-captions')).toBeVisible();
+	const c2Id = (await seqOf()).captionTracks[1]!.id;
+	const created = (await captionClips()).filter((c) => c.trackId === c2Id);
+	expect(await Promise.all(created.map((c) => textOfCaption(c.id)))).toEqual(['Welcome to the show.', 'Rivers are long.']);
 });
 
 test('export: burned-in captions, embedded mov_text streams and an SRT sidecar', async ({ request }) => {
@@ -206,6 +209,7 @@ test('export: burned-in captions, embedded mov_text streams and an SRT sidecar',
 		{ type: 'track.update', trackId: c2.id, patch: { visible: false, language: 'en' } },
 		{ type: 'track.update', trackId: seq.captionTracks[0]!.id, patch: { language: 'en' } },
 		{ type: 'sequence.setInOut', in: null, out: null },
+		{ type: 'caption.setActiveTrack', trackId: seq.captionTracks[0]!.id },
 	]);
 	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
 	await focusTimeline(page);
