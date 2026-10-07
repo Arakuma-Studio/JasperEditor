@@ -22,6 +22,7 @@ import { pipeline } from 'node:stream/promises';
 import type { EngineJob, ExportResult, ExportSettings, ExportStartRequest, StillRequest } from '@jasper/api';
 import {
 	buildRenderSnapshot,
+	rotoStorePath,
 	type MediaHandle,
 	mediaDecodeHints,
 	type RenderVisualClip,
@@ -142,6 +143,12 @@ export class ExportService {
 	 * lifetime and record them as used by their project (`export:<projectId>:<sequenceId>`, CA-012/CA-016).
 	 */
 	cache: CacheService | null = null;
+
+	/** parity (roto): matte-set lookup of the roto service (registered by its routes). */
+	private rotoSet: ((key: string) => Promise<{ start: number; end: number } | null>) | null = null;
+	registerRotoSets(fn: (key: string) => Promise<{ start: number; end: number } | null>): void {
+		this.rotoSet = fn;
+	}
 
 	constructor(private readonly deps: ExportServiceDeps) {
 		// edit-structure: Bars and Tone / counting leader pictures and tones (always available: ffmpeg only).
@@ -835,6 +842,7 @@ export class ExportService {
 			fonts: this.deps.fonts,
 			capabilities: caps,
 			extensions: this.nativeExtensions.all(),
+			...(this.rotoSet ? { rotoSet: this.rotoSet } : {}),
 			...(this.deps.encoders
 				? {
 						selectEncoder: (r) => this.deps.encoders!.select(r),
@@ -880,6 +888,8 @@ export class ExportService {
 				const f = this.deps.fonts.resolve(font.family, weight, italic);
 				return f ? sign(f.url) : null;
 			},
+			// parity (roto): object-matte sets for the headless browser
+			resolveRoto: (key) => sign(rotoStorePath(key)),
 		});
 		const nested = NESTED_REMOTION.get(prepared);
 		const adapt = (d: typeof doc, prep: ReadonlyMap<string, unknown>, path: string): typeof doc => {

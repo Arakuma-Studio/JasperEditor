@@ -387,7 +387,7 @@ export function nestGainDbAt(runs: RenderAudioClip['nestGain'], frame: number): 
 
 const ZERO = { value: 0, keyframes: [] } as Animatable<number>;
 
-/** parity (roto): render references of a clip's computed roto mattes. */
+/** parity (roto): render references of a clip's roto objects. */
 function rotosOf(
 	rotos: readonly ClipRoto[] | undefined,
 	opts: Pick<SnapshotOptions, 'resolveRoto'>,
@@ -395,16 +395,17 @@ function rotosOf(
 	const out: Record<string, RenderRotoMatte> = {};
 	for (const r of rotos ?? []) {
 		const res = r.result;
-		if (!res) continue;
 		out[r.id] = {
-			key: res.key,
-			url: opts.resolveRoto?.(res.key) ?? rotoStorePath(res.key),
-			start: res.start,
-			end: res.end,
+			span: [r.span[0], r.span[1]],
+			key: res?.key ?? null,
+			url: res ? (opts.resolveRoto?.(res.key) ?? rotoStorePath(res.key)) : null,
+			start: res?.start ?? 0,
+			end: res ? res.end : -1,
 			rate: { num: r.rate.num, den: r.rate.den },
-			width: res.width,
-			height: res.height,
+			width: res?.width ?? 0,
+			height: res?.height ?? 0,
 			stale: rotoIsStale(r),
+			name: r.name,
 		};
 	}
 	return Object.keys(out).length ? { rotos: out } : {};

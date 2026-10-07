@@ -205,15 +205,21 @@ export function clipMediaFrames(
 	return [Math.min(first, last), last];
 }
 
-/** The render reference of a roto's computed mattes (snapshot `RenderVisualClip.rotos`). */
+/**
+ * The render reference of a roto object (snapshot `RenderVisualClip.rotos`): its span and, once propagated, the
+ * computed matte set. Frames are media frames at `rate`.
+ */
 export type RenderRotoMatte = {
-	/** Matte store key. */
-	key: string;
+	/** Segmentation span (inclusive): outside it the object matte is empty (After Effects: transparent). */
+	span: [number, number];
+	/** Matte set key; null = not propagated yet. */
+	key: string | null;
 	/**
-	 * URL of the store: frame f's matte (8-bit grey PNG) is `url` + `&n=<f>` (`?n=` when the URL has no query).
-	 * Default `/roto/<key>` (same-origin engine path); engine renders sign it for the headless browser.
+	 * URL of the set: frame f's matte (8-bit grey PNG) is `url` + `&n=<f>` (`?n=` when the URL has no query).
+	 * Default `/mg/roto/<key>` (same-origin engine path); engine renders sign it for the headless browser.
 	 */
-	url: string;
+	url: string | null;
+	/** Frames the set holds (inclusive). */
 	start: number;
 	end: number;
 	rate: Rational;
@@ -221,6 +227,8 @@ export type RenderRotoMatte = {
 	height: number;
 	/** The roto changed since these mattes were computed. */
 	stale: boolean;
+	/** Display name (planner messages). */
+	name: string;
 };
 
 /** Engine path of a matte store (signable, like `/media/…`). */
@@ -229,8 +237,19 @@ export function rotoStorePath(key: string): string {
 }
 
 /** URL of one frame's matte. */
-export function rotoFrameUrl(m: Pick<RenderRotoMatte, 'url'>, frame: number): string {
-	return `${m.url}${m.url.includes('?') ? '&' : '?'}n=${frame}`;
+export function rotoFrameUrl(m: { url: string | null }, frame: number): string {
+	const u = m.url ?? '';
+	return `${u}${u.includes('?') ? '&' : '?'}n=${frame}`;
+}
+
+/**
+ * What an object matte shows at a media frame: `matte` (frame of the set), `outside` (outside the span: empty),
+ * `missing` (inside the span but not computed — preview passes the clip through, exports refuse).
+ */
+export function rotoFrameState(m: RenderRotoMatte, frame: number): 'matte' | 'outside' | 'missing' {
+	if (frame < m.span[0] || frame > m.span[1]) return 'outside';
+	if (m.key && m.url && frame >= m.start && frame <= m.end) return 'matte';
+	return 'missing';
 }
 
 /**
@@ -300,3 +319,4 @@ export function retargetRotos(
 		r.result = null;
 	}
 }
+export * from './export.ts';

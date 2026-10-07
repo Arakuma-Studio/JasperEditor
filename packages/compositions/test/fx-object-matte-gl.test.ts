@@ -25,7 +25,12 @@ describe.runIf(PACG_GL)('object mattes in WebGL2', { timeout: 240_000 }, () => {
 		await s?.close();
 	});
 	const row = async (req: Omit<PacgRequest, 'box'>, xs: number[], y = 8) =>
-		(await s.pixels({ box, ...req } as PacgRequest, xs.map((x) => [x, y] as [number, number]))).pixels;
+		(
+			await s.pixels(
+				{ box, ...req } as PacgRequest,
+				xs.map((x) => [x, y] as [number, number]),
+			)
+		).pixels;
 	const alpha = async (req: Omit<PacgRequest, 'box'>, xs: number[]) => (await row(req, xs)).map((p) => p[3]);
 
 	it('states: no object passes through, a matte cuts out, outside the span is transparent', async () => {
@@ -35,7 +40,10 @@ describe.runIf(PACG_GL)('object mattes in WebGL2', { timeout: 240_000 }, () => {
 		expect(cut[1]![3]).toBe(0);
 		const outside = await row({ id: OM, picture: ORANGE, mattes: { matte: { state: 2 } } }, [8, 56]);
 		expect(outside.every((p) => p[3] === 0)).toBe(true);
-		const inv = await alpha({ id: OM, params: { invert: true }, picture: ORANGE, mattes: { matte: { picture: HALF } } }, [8, 56]);
+		const inv = await alpha(
+			{ id: OM, params: { invert: true }, picture: ORANGE, mattes: { matte: { picture: HALF } } },
+			[8, 56],
+		);
 		expect(inv).toEqual([0, 255]);
 	});
 
@@ -62,7 +70,12 @@ describe.runIf(PACG_GL)('object mattes in WebGL2', { timeout: 240_000 }, () => {
 		expect(soft[1]!).toBeLessThan(250);
 		expect(soft[2]!).toBeGreaterThan(5);
 		const hard = await alpha(
-			{ id: OM, params: { feather: 12, contrast: 90 }, picture: ORANGE, mattes: { matte: { picture: HALF } } },
+			{
+				id: OM,
+				params: { feather: 12, contrast: 90 },
+				picture: ORANGE,
+				mattes: { matte: { picture: HALF } },
+			},
 			[29, 34],
 		);
 		expect(hard[0]!).toBeGreaterThanOrEqual(soft[0]!);
@@ -112,7 +125,10 @@ describe.runIf(PACG_GL)('object mattes in WebGL2', { timeout: 240_000 }, () => {
 		expect(near(o[0]!, O)).toBe(true);
 		expect(o[1]![0]).toBeGreaterThan(220); // tinted red outside, still opaque
 		expect(o[1]![3]).toBe(255);
-		const b = await row({ id: OM, params: { view: 'boundary', overlayColor: [0, 1, 0, 1] }, picture: ORANGE, mattes: m }, [8, 32, 56]);
+		const b = await row(
+			{ id: OM, params: { view: 'boundary', overlayColor: [0, 1, 0, 1] }, picture: ORANGE, mattes: m },
+			[8, 32, 56],
+		);
 		expect(near(b[0]!, O)).toBe(true);
 		expect(b[1]![1]).toBeGreaterThan(150);
 		expect(near(b[2]!, O)).toBe(true);
@@ -137,24 +153,44 @@ describe.runIf(PACG_GL)('object mattes in WebGL2', { timeout: 240_000 }, () => {
 	it('Object Blur: mosaic / fill inside, everything else, matte view', async () => {
 		const bars = { kind: 'bars' } as const;
 		const m = { matte: { picture: HALF } };
-		const fill = await row({ id: OB, params: { method: 'fill', fillColor: [0, 0, 1, 1], feather: 0 }, picture: bars, mattes: m }, [8, 56]);
+		const fill = await row(
+			{ id: OB, params: { method: 'fill', fillColor: [0, 0, 1, 1], feather: 0 }, picture: bars, mattes: m },
+			[8, 56],
+		);
 		expect(near(fill[0]!, [0, 0, 255, 255])).toBe(true);
 		expect(fill[1]![2]).toBeLessThan(255 + 1);
-		const src = await row({ id: OB, params: { method: 'fill', feather: 0, opacity: 0 }, picture: bars, mattes: m }, [56]);
+		const src = await row(
+			{ id: OB, params: { method: 'fill', feather: 0, opacity: 0 }, picture: bars, mattes: m },
+			[56],
+		);
 		expect(near(fill[1]!, src[0]!)).toBe(true);
 		const outside = await row(
-			{ id: OB, params: { method: 'fill', region: 'outside', fillColor: [1, 0, 0, 1], feather: 0 }, picture: bars, mattes: m },
+			{
+				id: OB,
+				params: { method: 'fill', region: 'outside', fillColor: [1, 0, 0, 1], feather: 0 },
+				picture: bars,
+				mattes: m,
+			},
 			[8, 56],
 		);
 		expect(near(outside[1]!, [255, 0, 0, 255])).toBe(true);
-		const mos = await row({ id: OB, params: { method: 'mosaic', blockSize: 16, feather: 0 }, picture: bars, mattes: m }, [1, 14]);
+		const mos = await row(
+			{ id: OB, params: { method: 'mosaic', blockSize: 16, feather: 0 }, picture: bars, mattes: m },
+			[1, 14],
+		);
 		expect(near(mos[0]!, mos[1]!)).toBe(true); // one block
-		const g = await row({ id: OB, params: { method: 'gaussian', blurriness: 20, feather: 0 }, picture: bars, mattes: m }, [8]);
+		const g = await row(
+			{ id: OB, params: { method: 'gaussian', blurriness: 20, feather: 0 }, picture: bars, mattes: m },
+			[8],
+		);
 		const [orig] = await row({ id: OB, params: { opacity: 0 }, picture: bars, mattes: m }, [8]);
 		expect(near(g[0]!, orig!)).toBe(false);
 		const none = await row({ id: OB, picture: bars }, [8]);
 		expect(near(none[0]!, orig!)).toBe(true);
-		const mv = await row({ id: OB, params: { view: 'matte', feather: 0 }, picture: bars, mattes: m }, [8, 56]);
+		const mv = await row(
+			{ id: OB, params: { view: 'matte', feather: 0 }, picture: bars, mattes: m },
+			[8, 56],
+		);
 		expect(mv.map((p) => p[0])).toEqual([255, 0]);
 	});
 });

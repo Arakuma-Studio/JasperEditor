@@ -25,6 +25,10 @@ export default async function rotoRoutes(app: FastifyInstance): Promise<void> {
 	const svc = new RotoService(core, processing);
 	app.jasper.services.roto = svc;
 	svc.registerRunners();
+	core.exports.registerRotoSets(async (key) => {
+		const s = await svc.store.readSet(key);
+		return s ? { start: s.start, end: s.end } : null;
+	});
 	core.registerCapabilityProvider(async () => ({ features: { roto: await svc.features() } }));
 
 	app.get(
@@ -50,10 +54,15 @@ export default async function rotoRoutes(app: FastifyInstance): Promise<void> {
 				.list({ active: true })
 				.some(
 					(j) =>
-						(j.kind === 'model-download' && j.dedupeKey === `model:${req.params.modelId}`) || j.kind === 'roto',
+						(j.kind === 'model-download' && j.dedupeKey === `model:${req.params.modelId}`) ||
+						j.kind === 'roto',
 				);
 			if (active)
-				throw new HttpError(409, 'MODEL_BUSY', 'The model is in use or being downloaded; wait or cancel the job');
+				throw new HttpError(
+					409,
+					'MODEL_BUSY',
+					'The model is in use or being downloaded; wait or cancel the job',
+				);
 			const r = await svc.models.remove(req.params.modelId);
 			core.capabilities.changed();
 			return { modelId: req.params.modelId, ...r };
@@ -80,7 +89,14 @@ export default async function rotoRoutes(app: FastifyInstance): Promise<void> {
 		guarded<SetParams>(async (req) => {
 			const s = await svc.store.readSet(req.params.key);
 			if (!s) throw new HttpError(404, 'NOT_FOUND', 'No such matte set');
-			return { key: s.key, start: s.start, end: s.end, width: s.width, height: s.height, frames: s.frames.length };
+			return {
+				key: s.key,
+				start: s.start,
+				end: s.end,
+				width: s.width,
+				height: s.height,
+				frames: s.frames.length,
+			};
 		}),
 	);
 

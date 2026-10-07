@@ -719,7 +719,8 @@ export class ProcessingService {
 	// ------------------------------------------------------------------ models
 
 	submitInstall(modelId: string, origin: EngineJob['origin'] = { type: 'user' }): EngineJob {
-		const e = this.models.entry(modelId) ?? this.speechModels.entry(modelId) ?? this.visionModels.entry(modelId);
+		const e =
+			this.models.entry(modelId) ?? this.speechModels.entry(modelId) ?? this.visionModels.entry(modelId);
 		if (!e) throw new JobError('MODEL_UNKNOWN', `Unknown model ${modelId}`, false);
 		return this.core.queue.submit({
 			kind: 'model-download',

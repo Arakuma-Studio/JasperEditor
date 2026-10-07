@@ -162,7 +162,12 @@ async function loadCv(): Promise<any> {
  * Dense optical flow next → prev (per pixel of `next`, where it was in `prev`), matte px, by Farnebäck on grey
  * images at ≤ FLOW_MAX_SIDE, upsampled.
  */
-async function flowNextToPrev(prev: Uint8Array, next: Uint8Array, w: number, h: number): Promise<Float32Array> {
+async function flowNextToPrev(
+	prev: Uint8Array,
+	next: Uint8Array,
+	w: number,
+	h: number,
+): Promise<Float32Array> {
 	const { cv } = await loadCv();
 	const s = Math.min(1, FLOW_MAX_SIDE / Math.max(w, h));
 	const fw = Math.max(8, Math.round(w * s));
@@ -252,7 +257,11 @@ async function runBrush(
 	const rawByFrame = new Map<number, unknown[]>();
 	for (const s of spec.roto.strokes) {
 		const list = strokesByFrame.get(s.frame) ?? [];
-		list.push({ kind: s.kind, radius: s.radius * sr, points: s.points.map(([x, y]) => [x * sx, y * sy] as const) });
+		list.push({
+			kind: s.kind,
+			radius: s.radius * sr,
+			points: s.points.map(([x, y]) => [x * sx, y * sy] as const),
+		});
 		strokesByFrame.set(s.frame, list);
 		const raw = rawByFrame.get(s.frame) ?? [];
 		raw.push([s.kind, s.radius, s.points]);
@@ -384,7 +393,8 @@ async function runBrush(
 					if (box) {
 						const prior = warpPrior(prevSeg, flow, w, h, opts2);
 						res = await segmentWith(img, w, h, strokes, box, prior, opts2, refineRadius, m, `${frame}`);
-					} else res = await propagateWith(prevSeg, flow, img, w, h, strokes, opts2, refineRadius, m, `${frame}`);
+					} else
+						res = await propagateWith(prevSeg, flow, img, w, h, strokes, opts2, refineRadius, m, `${frame}`);
 				}
 				if (res.usedModel) modelFrames++;
 				const alpha8 = quantize(matteAlpha(img, res.seg, edge, refineRadius));
@@ -395,7 +405,8 @@ async function runBrush(
 				await finishFrame(frame, alpha8, false);
 				k++;
 			}
-			if (k < run.length) throw new Error(`The media ended at frame ${run[k - 1] ?? run[0]}: shorten the span`);
+			if (k < run.length)
+				throw new Error(`The media ended at frame ${run[k - 1] ?? run[0]}: shorten the span`);
 		}
 	} finally {
 		if (model) await (model as SamModel).release();
@@ -463,7 +474,10 @@ function iou4(a: readonly number[], b: readonly number[]): number {
 }
 
 /** An ellipse polygon around a face pose (Face Tracking "ellipse" shape). */
-function ellipseOf(pose: { cx: number; cy: number; size: number; angle: number }, grow: number): [number, number][] {
+function ellipseOf(
+	pose: { cx: number; cy: number; size: number; angle: number },
+	grow: number,
+): [number, number][] {
 	const out: [number, number][] = [];
 	const ry = (pose.size / 2) * 1.12 * grow;
 	const rx = ry * 0.78;
@@ -498,7 +512,17 @@ async function runFaces(
 		{ detector: `${spec.faceDir}/face_detector.onnx`, landmarks: `${spec.faceDir}/face_landmarks.onnx` },
 		spec.threads ?? 2,
 	);
-	const seed = hashKey(ROTO_FACE_VERSION, spec.mediaKey, w, h, spec.rate, span[0], st.faceThreshold, st.faceExpand, st.faceShape);
+	const seed = hashKey(
+		ROTO_FACE_VERSION,
+		spec.mediaKey,
+		w,
+		h,
+		spec.rate,
+		span[0],
+		st.faceThreshold,
+		st.faceExpand,
+		st.faceShape,
+	);
 	const frames: Record<number, string> = {};
 	const area: Record<number, number> = {};
 	const tracks: FaceTrack[] = [];
@@ -556,7 +580,9 @@ async function runFaces(
 				t.present.push(ok ? 1 : 0);
 				if (ok && t.last && pose) {
 					const grow = 1 + st.faceExpand / 100;
-					polys.push(st.faceShape === 'ellipse' ? ellipseOf(pose, grow) : faceOutline(t.last.points, grow - 1));
+					polys.push(
+						st.faceShape === 'ellipse' ? ellipseOf(pose, grow) : faceOutline(t.last.points, grow - 1),
+					);
 				}
 			}
 			const matte = rasterPolygons(polys, w, h);
@@ -566,7 +592,10 @@ async function runFaces(
 			area[frame] = areaOf(matte);
 			done++;
 			opts.onFrame?.(frame, area[frame]!, done, total);
-			opts.onProgress?.(done / total, `Frame ${done}/${total} · ${tracks.filter((t) => t.lost === 0).length} face(s)`);
+			opts.onProgress?.(
+				done / total,
+				`Frame ${done}/${total} · ${tracks.filter((t) => t.lost === 0).length} face(s)`,
+			);
 		}
 	} finally {
 		await models.release();

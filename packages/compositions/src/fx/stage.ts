@@ -31,6 +31,7 @@ import {
 	PREVIEW_LUT_SIZE,
 	planGpuEffect,
 	type ResolvedEffect,
+	rotoFrameState,
 	rotoFrameUrl,
 	type ResolvedMask,
 	sideCompToCanvas,
@@ -421,7 +422,14 @@ export function useLayerFx(
 							if (ref) {
 								const still = clip.kind === 'still';
 								const f = still ? 0 : mediaFrameAt(contentTime, ref.rate) + t.matte.offset;
-								if (f >= ref.start && f <= ref.end) {
+								const at = rotoFrameState(ref, f);
+								if (at === 'missing' && !doc.isPreview && t.matte.offset === 0)
+									cancelRender(
+										new Error(
+											`ROTO_NOT_COMPUTED: roto "${ref.name}" has no matte for media frame ${f}: propagate it first`,
+										),
+									);
+								if (at === 'matte') {
 									state = 1;
 									const id = `roto:${ref.key}:${f}`;
 									t.mediaId = id;
@@ -433,9 +441,9 @@ export function useLayerFx(
 										mediaId: id,
 										url: rotoFrameUrl(ref, f),
 										kind: 'image',
-										matte: { group: ref.key, prefetch },
+										matte: { group: `${ref.key}:${t.matte.offset}`, prefetch },
 									});
-								} else state = 2;
+								} else if (at === 'outside') state = 2;
 							}
 							const u = gp.uniforms.find((x) => x.name === `${t.uniform}_state`);
 							if (u) u.value = [state];

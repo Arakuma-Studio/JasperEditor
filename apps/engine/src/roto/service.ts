@@ -130,7 +130,11 @@ export class RotoService {
 			throw new HttpError(400, 'VALIDATION_FAILED', `The span starts after the media's last frame`);
 		if (r.kind === 'brush') {
 			if (r.base === null)
-				throw new HttpError(400, 'VALIDATION_FAILED', 'Nothing is selected yet: add a stroke, points or a box');
+				throw new HttpError(
+					400,
+					'VALIDATION_FAILED',
+					'Nothing is selected yet: add a stroke, points or a box',
+				);
 			if (r.base < r.span[0] || r.base > r.span[1])
 				throw new HttpError(400, 'VALIDATION_FAILED', 'The base frame must lie in the span');
 		}
@@ -204,8 +208,14 @@ export class RotoService {
 				kind: r.kind,
 				base: r.base,
 				span: [r.span[0], r.span[1]],
-				strokes: r.strokes.map((s) => ({ ...s, points: s.points.map((p) => [p[0], p[1]] as [number, number]) })),
-				boxes: (r.boxes ?? []).map((b) => ({ frame: b.frame, rect: [...b.rect] as [number, number, number, number] })),
+				strokes: r.strokes.map((s) => ({
+					...s,
+					points: s.points.map((p) => [p[0], p[1]] as [number, number]),
+				})),
+				boxes: (r.boxes ?? []).map((b) => ({
+					frame: b.frame,
+					rect: [...b.rect] as [number, number, number, number],
+				})),
 				settings: { ...r.settings },
 			},
 			direction: req.direction,
@@ -237,7 +247,8 @@ export class RotoService {
 			for (let f = out.start; f <= out.end; f++) area.push(out.area[f] ?? -1);
 			// Areas of reused frames come from their mattes.
 			for (let i = 0; i < area.length; i++)
-				if (area[i]! < 0) area[i] = await this.areaOfFile(this.store.setFramePath(input.setKey, out.start + i));
+				if (area[i]! < 0)
+					area[i] = await this.areaOfFile(this.store.setFramePath(input.setKey, out.start + i));
 			ctx.log(
 				`roto ${req.roto.kind}: ${out.computed} computed, ${out.reused} reused, ${out.modelFrames} with the model, ${secs.toFixed(1)} s`,
 			);
@@ -255,7 +266,9 @@ export class RotoService {
 				modelFrames: out.modelFrames,
 				area,
 				...(out.faces ? { faces: out.faces } : {}),
-				...(out.computed > 0 && secs > 0 ? { framesPerSec: Math.round((out.computed / secs) * 100) / 100 } : {}),
+				...(out.computed > 0 && secs > 0
+					? { framesPerSec: Math.round((out.computed / secs) * 100) / 100 }
+					: {}),
 			};
 		} finally {
 			this.running.delete(ctx.job.id);
@@ -284,7 +297,11 @@ export class RotoService {
 		}
 	}
 
-	private async runWorker(ctx: JobContext, spec: RotoJobSpec, req: RotoSegmentRequest): Promise<RotoJobOutput> {
+	private async runWorker(
+		ctx: JobContext,
+		spec: RotoJobSpec,
+		req: RotoSegmentRequest,
+	): Promise<RotoJobOutput> {
 		const scratch = await ctx.scratchDir();
 		const specPath = join(scratch, 'roto-spec.json');
 		const outPath = join(scratch, 'roto-out.json');

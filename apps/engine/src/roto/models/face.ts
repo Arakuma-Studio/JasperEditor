@@ -43,8 +43,8 @@ export type FaceLandmarks = {
 
 /** MediaPipe's face oval (silhouette) landmark indices, clockwise from the top of the forehead. */
 export const FACE_OVAL = [
-	10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136,
-	172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109,
+	10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149,
+	150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109,
 ] as const;
 /** Eye corners used for the in-plane rotation (subject's right eye outer → left eye outer). */
 const EYE_A = 33;
@@ -68,8 +68,7 @@ export function blazeFaceAnchors(): Float32Array {
 		const stride = strides[layer]!;
 		const fm = Math.ceil(DET / stride);
 		for (let y = 0; y < fm; y++)
-			for (let x = 0; x < fm; x++)
-				for (let k = 0; k < count; k++) out.push((x + 0.5) / fm, (y + 0.5) / fm);
+			for (let x = 0; x < fm; x++) for (let k = 0; k < count; k++) out.push((x + 0.5) / fm, (y + 0.5) / fm);
 		layer = last;
 	}
 	return Float32Array.from(out);
@@ -377,12 +376,19 @@ export function facePose(points: Float32Array): { cx: number; cy: number; size: 
 	cx /= poly.length;
 	cy /= poly.length;
 	const size = Math.hypot(points[152 * 3]! - points[10 * 3]!, points[152 * 3 + 1]! - points[10 * 3 + 1]!);
-	const angle = Math.atan2(points[EYE_B * 3 + 1]! - points[EYE_A * 3 + 1]!, points[EYE_B * 3]! - points[EYE_A * 3]!);
+	const angle = Math.atan2(
+		points[EYE_B * 3 + 1]! - points[EYE_A * 3 + 1]!,
+		points[EYE_B * 3]! - points[EYE_A * 3]!,
+	);
 	return { cx, cy, size, angle };
 }
 
 /** Rasterises polygons (non-zero winding) with 4 × 4 supersampling into an 8-bit coverage plane (union, max). */
-export function rasterPolygons(polys: readonly (readonly [number, number])[][], w: number, h: number): Uint8Array {
+export function rasterPolygons(
+	polys: readonly (readonly [number, number])[][],
+	w: number,
+	h: number,
+): Uint8Array {
 	const out = new Uint8Array(w * h);
 	const SS = 4;
 	for (const poly of polys) {

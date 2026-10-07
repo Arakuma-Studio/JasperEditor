@@ -70,7 +70,12 @@ export function loadCatalog(env: Record<string, string | undefined> = process.en
 		speech?: SpeechCatalogEntry[];
 		vision?: VisionCatalogEntry[];
 	};
-	return { entries: b.models, bundledDir: bundledModelsDir(env), speech: b.speech ?? [], vision: b.vision ?? [] };
+	return {
+		entries: b.models,
+		bundledDir: bundledModelsDir(env),
+		speech: b.speech ?? [],
+		vision: b.vision ?? [],
+	};
 }
 
 export class ModelError extends Error {

@@ -47,7 +47,12 @@ export const RotoSegmentRequestSchema = z.object({
 		span: z.tuple([z.number().int().min(0), z.number().int().min(0)]),
 		strokes: z.array(RotoStrokeWireSchema).max(5000),
 		boxes: z
-			.array(z.object({ frame: z.number().int().min(0), rect: z.tuple([z.number(), z.number(), z.number(), z.number()]) }))
+			.array(
+				z.object({
+					frame: z.number().int().min(0),
+					rect: z.tuple([z.number(), z.number(), z.number(), z.number()]),
+				}),
+			)
 			.max(1000)
 			.optional(),
 		settings: RotoSettingsWireSchema,

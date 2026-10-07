@@ -491,6 +491,43 @@ export class LayerBakeService {
 		};
 	}
 
+	/**
+	 * parity (roto): the clip with signed absolute URLs of its object-matte sets (the headless browser loads them).
+	 * Key material keeps the unsigned paths.
+	 */
+	private signedRotos(c: RenderVisualClip): RenderVisualClip {
+		let out = c;
+		if (c.rotos) {
+			const rotos: NonNullable<RenderVisualClip['rotos']> = {};
+			for (const [id, m] of Object.entries(c.rotos))
+				rotos[id] = {
+					...m,
+					url: m.url?.startsWith('/') ? this.core.signer.signUrl(this.core.origin(), m.url) : m.url,
+				};
+			out = { ...out, rotos };
+		}
+		// Nested sequences draw their own clips (and object mattes) inside the bake.
+		if ('nest' in c.source) {
+			const n = c.source.nest;
+			out = {
+				...out,
+				source: {
+					nest: {
+						...n,
+						snapshot: {
+							...n.snapshot,
+							videoTracks: n.snapshot.videoTracks.map((t) => ({
+								...t,
+								clips: t.clips.map((x) => this.signedRotos(x)),
+							})),
+						},
+					},
+				},
+			};
+		}
+		return out;
+	}
+
 	/** Media handle with a signed engine URL (what the headless browser loads). */
 	private signedHandle(planned: Pick<PlannedExport, 'document' | 'media'>, id: string): MediaHandle | null {
 		const local = planned.media[id];
@@ -610,7 +647,7 @@ export class LayerBakeService {
 			graded: false,
 		};
 		const docOf = (c: RenderVisualClip, r: Rect | null) =>
-			bakeDoc(snap, c, { variant, rect: r, media, fonts: signedFonts });
+			bakeDoc(snap, this.signedRotos(c), { variant, rect: r, media, fonts: signedFonts });
 		return {
 			clipId: clip.clipId,
 			clipName: clip.name,
@@ -698,7 +735,7 @@ export class LayerBakeService {
 			settings: { ...seq, backgroundColor: [0, 0, 0, 0] },
 			range: { start, end: start + frames },
 			durationFrames: frames,
-			videoTracks: [{ trackId, clips: sides, transitions: [shifted] }],
+			videoTracks: [{ trackId, clips: sides.map((c) => this.signedRotos(c)), transitions: [shifted] }],
 			audioClips: [],
 			media,
 			fonts: signedFonts,
