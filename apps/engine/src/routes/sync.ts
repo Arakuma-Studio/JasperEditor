@@ -25,8 +25,9 @@ export default async function syncRoutes(app: FastifyInstance): Promise<void> {
 		guarded(async (req, reply) => {
 			const body = parseOr400(SyncAudioRequestSchema, req.body);
 			const ac = new AbortController();
-			req.raw.on('close', () => {
-				if (!reply.sent) ac.abort();
+			// The client went away before the answer (not the request stream ending: 'close' of the response).
+			reply.raw.on('close', () => {
+				if (!reply.raw.writableFinished) ac.abort();
 			});
 			return reply.send(await sync.analyse(body, ac.signal));
 		}),

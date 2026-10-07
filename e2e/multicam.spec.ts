@@ -14,6 +14,7 @@ import {
 	exportViaUi,
 	focusTimeline,
 	importFiles,
+	playheadFrame,
 	query,
 	ROOT,
 	sequenceSummary,
@@ -131,11 +132,14 @@ test('live switching: keys while playing record cuts, committed as one undo step
 	await focusTimeline(page);
 	const before = (await appliedLabels(page)).length;
 	await page.keyboard.press('Space');
-	await page.waitForTimeout(700);
+	// wait until playback really runs (the Player may buffer first), then switch twice while it plays
+	await expect.poll(() => playheadFrame(page), { timeout: 30_000 }).toBeGreaterThan(8);
 	await page.keyboard.press('Digit2');
-	await page.waitForTimeout(700);
+	const first = await playheadFrame(page);
+	await expect.poll(() => playheadFrame(page), { timeout: 30_000 }).toBeGreaterThan(first + 15);
 	await page.keyboard.press('Digit1');
-	await page.waitForTimeout(500);
+	const second = await playheadFrame(page);
+	await expect.poll(() => playheadFrame(page), { timeout: 30_000 }).toBeGreaterThan(second + 5);
 	await page.keyboard.press('Space');
 	await expect.poll(angleCameras).toEqual([1, 2, 1]);
 	const labels = await appliedLabels(page);
@@ -172,6 +176,8 @@ test('Merge Clips… with audio: an unrelated recording is flagged before mergin
 	await page.getByTestId('program-viewport').click({ position: { x: 20, y: 20 } });
 	await page.keyboard.press('Shift+Digit0');
 	await expect(page.getByTestId('multicam-overlay')).toBeHidden();
+	// the export brought the Jobs panel to the front of the Project panel's group
+	await page.keyboard.press('Shift+Digit1');
 	const red = page.getByTestId('project-row').filter({ hasText: 'xfade-red.mp4' }).first();
 	const tone = page.getByTestId('project-row').filter({ hasText: 'tone.wav' }).first();
 	await red.click();
@@ -181,9 +187,10 @@ test('Merge Clips… with audio: an unrelated recording is flagged before mergin
 	await expect(page.getByTestId('merge-clips-dialog')).toBeVisible();
 	await page.getByTestId('sync-point-audio').check();
 	await page.getByRole('button', { name: 'OK' }).click();
-	const warning = page.getByTestId('sync-audio-warning');
-	const flagged = await warning.isVisible({ timeout: 30_000 }).catch(() => false);
-	if (flagged) await page.getByRole('button', { name: 'Merge Anyway' }).click();
+	// a steady tone matches at many lags: the dialog shows the figures and asks before merging
+	await expect(page.getByTestId('sync-audio-warning')).toContainText(/distinct/, { timeout: 60_000 });
+	await page.screenshot({ path: 'test-results/e2e-multicam-merge-warning.png' });
+	await page.getByRole('button', { name: 'Merge Anyway' }).click();
 	await expect
 		.poll(async () => Object.values((await doc()).sequences).some((s) => s.merged), { timeout: 30_000 })
 		.toBe(true);

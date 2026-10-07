@@ -149,7 +149,7 @@ multi-camera clips export as their nest (the composite of all angles), which the
   noisy): offset within 1 ms; a recorder 1.5 s earlier with inverted polarity: within 1 sample, `inverted`, reliable;
   unrelated material flagged; analysed stretches (clip source ranges) give media-time offsets; `maxOffsetSeconds`;
   validation (404/400) and the `features.audioSync` capability.
-- `packages/project/test/multicam.test.ts` (25): sync points (In/Out/named marker/timecode incl. ignore hours,
+- `packages/project/test/multicam.test.ts` (24): sync points (In/Out/named marker/timecode incl. ignore hours,
   drop-frame hour labels, common-clock audio offsets), sub-frame placement; Create (tracks, names, order, preset,
   Processed Clips bin, audio offsets); placing; rendering through the nest (only the angle's media, outer effects,
   opacity, Motion on the nest, content key per angle, every frame at the synced media time); disabled = composite;
@@ -170,7 +170,7 @@ multi-camera clips export as their nest (the composite of all angles), which the
   (live in the drawn document, nothing committed until stop, one History entry, undo restores), refusals, the
   Multi-Camera view document (grid cells, program, pages, 17-camera paging), page-relative keys, menus' commands,
   default key bindings, Project-panel enablement.
-- E2E `e2e/multicam.spec.ts` in the built app (see §9).
+- `e2e/multicam.spec.ts` (5, built app, Chrome): Project panel ▸ Create Multi-Camera Source Sequence…, placing (`[MC1]`), Shift+0 grid + program (nests drawn), clicking a cell switches (undo), keys 2 and 1 while playing → one "Record Multi-Camera" History entry with cuts, native export with each part showing its camera (red/blue pixels), Merge Clips… by audio flagging a steady tone (distinct 1.17) and merging anyway. `E2E_PORT=49220 E2E_SKIP_BUILD=1 pnpm exec playwright test e2e/multicam.spec.ts`.
 
 ## 8. Adobe fidelity (research, brief §3b) and sources
 
