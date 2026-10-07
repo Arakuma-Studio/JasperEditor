@@ -638,7 +638,7 @@ export class ExportService {
 		}
 		return {
 			doc,
-			options: { isPreview: false, useProxies: false, transparentBackground: false },
+			options: { isPreview: false, useProxies: false, transparentBackground: planned.output.alpha === true },
 		};
 	}
 
@@ -692,7 +692,24 @@ export class ExportService {
 				path = 'remotion';
 			}
 		}
-		if (path === 'remotion') {
+		if (path === 'remotion' && planned.output.alpha) {
+			// wp interchange: a straight-alpha ProRes 4444 master of the range (no audio), as the layer bake renders it.
+			const prepared = await this.prepareForRemotion(planned, ctx);
+			ctx.progress(0, { stage: 'Rendering alpha master' });
+			const res = await this.deps.remotion.renderAlphaMaster({
+				inputProps: this.remotionProps(planned, prepared),
+				output,
+				scratchDir: await ctx.scratchDir(),
+				signal: ctx.signal,
+				ffmpeg: this.deps.ff,
+				concurrency: remotionConcurrency(ctx.slots),
+				onSpawn: ctx.trackChild,
+				onProgress: (p) =>
+					ctx.progress(p.progress, { stage: `Rendering ${p.renderedFrames}/${p.totalFrames} frames (alpha)` }),
+			});
+			frames = res.frames;
+			remotionOutput = 'direct';
+		} else if (path === 'remotion') {
 			const seqW = planned.snapshot.settings.width;
 			// D-13 (wp-lgpl): Remotion renders a ProRes intermediate that our ffmpeg encodes with the selected
 			// encoder, or encodes VP9/Opus itself; only a dev setup with GPL builds on both sides lets Remotion

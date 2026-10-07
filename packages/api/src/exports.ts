@@ -40,6 +40,13 @@ export const ExportSettingsSchema = z.object({
 			bitrateKbps: z.number().int().min(100).max(500_000).optional(),
 			/** ProRes profile of a `prores` export: 422 HQ (default) or 4444 (4:4:4, 12-bit class). */
 			proresProfile: z.enum(['hq', '4444']).optional(),
+			/**
+			 * wp interchange (additive): a straight-alpha ProRes 4444 (`yuva444p10le`) movie on a transparent background,
+			 * no audio — pre-renders of clips an interchange format cannot represent. Needs `codec: 'prores'`,
+			 * `proresProfile: '4444'`, `container: 'mov'`; renders on the Remotion path (the same compositions as the
+			 * preview).
+			 */
+			alpha: z.boolean().optional(),
 			encoderSpeed: z.enum(['fast', 'balanced', 'best']),
 			colorTags: z.literal('rec709').default('rec709'),
 		})

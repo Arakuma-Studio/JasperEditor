@@ -78,6 +78,8 @@ export type OutputSpec = {
 	bitrateKbps?: number;
 	/** ProRes profile of a `prores` export. */
 	proresProfile?: 'hq' | '4444';
+	/** wp interchange: straight-alpha ProRes 4444 on a transparent background, no audio (Remotion path). */
+	alpha?: boolean;
 };
 
 export type LocalMedia = { path: string; record: MediaRecord };
@@ -353,7 +355,10 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		audioBitrateKbps: settings.audio?.bitrateKbps ?? 192,
 		...(video?.bitrateKbps ? { bitrateKbps: video.bitrateKbps } : {}),
 		...(video?.proresProfile ? { proresProfile: video.proresProfile } : {}),
+		...(video?.alpha ? { alpha: true } : {}),
 	};
+	if (video?.alpha && (video.codec !== 'prores' || video.proresProfile !== '4444' || settings.container !== 'mov'))
+		throw new PlanError('VALIDATION_FAILED', 400, 'Alpha output needs ProRes 4444 in a MOV container');
 	if (!rationalEquals(outFps, seqFps)) {
 		warnings.push({
 			code: 'FRAME_RATE_CONVERSION',
@@ -366,7 +371,14 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	// `hybrid` = the native composite with baked graphics layers (S04 §11.2, S11:LBK-002).
 	const nativePath = baked.length > 0 ? 'hybrid' : 'native';
 	let path: 'native' | 'hybrid' | 'remotion';
-	if (settings.engine === 'native') {
+	if (video?.alpha) {
+		// Alpha masters are drawn by the compositions on a transparent page (the layer-bake master settings).
+		if (settings.engine === 'native' || deps.capabilities.remotionLocal === 'unavailable')
+			throw new PlanError('PATH_NOT_ELIGIBLE', 409, 'Alpha output renders on the Remotion path, which is unavailable', {
+				blockers: [{ path: 'native', reason: 'alpha output' }],
+			});
+		path = 'remotion';
+	} else if (settings.engine === 'native') {
 		if (!nativeEligible) {
 			throw new PlanError('PATH_NOT_ELIGIBLE', 409, 'The native path cannot render this sequence', {
 				blockers,
