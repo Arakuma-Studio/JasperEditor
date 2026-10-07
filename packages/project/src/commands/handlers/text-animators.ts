@@ -52,6 +52,17 @@ function textClips(doc: DDoc, ids: readonly string[], h: HandlerContext): { seq:
 	return { seq, clips: clips as DText[] };
 }
 
+/** In/Out text animations on a clip that also has animators are drawn in their animator form (TypesetText). */
+function warnLegacy(clip: DText, h: HandlerContext): void {
+	const ta = clip.textAnimation;
+	if (ta && (ta.in || ta.out))
+		h.warn(
+			'W_TEXT_ANIMATION_AS_ANIMATORS',
+			`${clip.id} also has In/Out text animations: with animators they are drawn in their animator form (textAnimator.convertLegacy makes them editable animators)`,
+			['textAnimation'],
+		);
+}
+
 function animatorOf(
 	clip: DText,
 	id: string,
@@ -271,6 +282,7 @@ export const textAnimatorHandlers: HandlerMap = {
 		addAxes(a as Draft<TextAnimatorGroup>, cmd.axes);
 		list.splice(Math.min(cmd.index ?? list.length, list.length), 0, a as Draft<TextAnimatorGroup>);
 		h.defineRef(cmd.ref, id);
+		warnLegacy(clip, h);
 		return { animatorId: id, selectorIds: a.selectors.map((s) => s.id) };
 	},
 	'textAnimator.remove': (doc, cmd: CommandOf<'textAnimator.remove'>, h) => {
@@ -379,6 +391,7 @@ export const textAnimatorHandlers: HandlerMap = {
 		for (const clip of clips) {
 			const groups = applyPresetTo(seq, clip, preset, cmd, h);
 			out[clip.id] = groups.map((g) => g.id);
+			warnLegacy(clip, h);
 		}
 		return { preset: preset.id, animatorIds: out };
 	},
@@ -450,6 +463,7 @@ export const textAnimatorHandlers: HandlerMap = {
 				lastMargin: margin(cmd.lastMargin, prev?.lastMargin) as Animatable<number>,
 			};
 			clip.pathOptions = next as Draft<TextPathOptions>;
+			warnLegacy(clip, h);
 		}
 		return {};
 	},

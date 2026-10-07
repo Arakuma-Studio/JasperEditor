@@ -330,8 +330,14 @@ function buildFlow(
 	const nodes: ({ node: Text; start: number; end: number } | null)[] = glyphs.map(() => null);
 	paras.forEach((pr, pi) => {
 		const block = document.createElement('div');
+		// The block's own font sets the strut of every line (as the plain text block's <p> does).
+		const strut = charFlowCss(content.style, input.family(content.style));
 		applyCss(block, {
 			...paragraphCss(paraStyles[pi]!, input.pointText, pi === 0, pi === paras.length - 1),
+			fontFamily: strut.fontFamily,
+			fontWeight: strut.fontWeight,
+			fontStyle: strut.fontStyle,
+			fontSize: content.style.sizePx,
 			lineHeight: content.style.lineHeight,
 		});
 		const inPara = glyphs.filter((g) => g.offset >= pr.start && g.offset < pr.end);
@@ -500,4 +506,37 @@ export function measureAdvance(text: string, css: CSSProperties): number {
 	if (advanceCache.size > 5000) advanceCache.clear();
 	advanceCache.set(key, w);
 	return w;
+}
+
+const drawnBaselineCache = new Map<string, number>();
+
+/**
+ * Distance from the top of a drawn character element (absolutely positioned, `line-height` = `height` px) to its
+ * baseline, measured once per font and height with a baseline marker — so a drawn glyph sits exactly on the
+ * measured baseline whatever the font's metrics and the browser's rounding.
+ */
+export function drawnBaseline(css: CSSProperties, height: number): number {
+	const key = `${fontKey(css)}|${height.toFixed(3)}`;
+	const hit = drawnBaselineCache.get(key);
+	if (hit !== undefined) return hit;
+	const h = host();
+	const span = document.createElement('span');
+	applyCss(span, {
+		...css,
+		position: 'absolute',
+		left: 0,
+		top: 0,
+		height,
+		lineHeight: `${height}px`,
+		whiteSpace: 'pre',
+	});
+	const marker = document.createElement('span');
+	applyCss(marker, { display: 'inline-block', width: 0, height: 0, verticalAlign: 'baseline' });
+	span.append(document.createTextNode('Hx'), marker);
+	h.append(span);
+	const v = marker.getBoundingClientRect().bottom - span.getBoundingClientRect().top;
+	span.remove();
+	if (drawnBaselineCache.size > 2000) drawnBaselineCache.clear();
+	drawnBaselineCache.set(key, v);
+	return v;
 }
