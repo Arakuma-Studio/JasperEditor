@@ -29,6 +29,8 @@ export const JOB_KINDS = [
 	'remote-setup',
 	// M3 (wp-m3-cachegc): moving the media cache to another folder (S04:CA-021)
 	'cache-move',
+	// Workstream `time`: Scene Edit Detection
+	'scene-detect',
 ] as const;
 export const JobKindSchema = z.enum(JOB_KINDS);
 export type JobKind = z.infer<typeof JobKindSchema>;

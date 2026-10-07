@@ -4,7 +4,14 @@
 // (`clipMediaTimeAt` + `pickFrames`, the preview's frame choice).
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { clipMediaTimeAt, FLICKS_PER_SECOND, frameIndexAt, RATES, type VideoClip } from '@jasper/project';
+import {
+	clipMediaTimeAt,
+	cutAccuracy,
+	FLICKS_PER_SECOND,
+	frameIndexAt,
+	RATES,
+	type VideoClip,
+} from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { probeFrameTimes } from '../src/export/retime/frames.ts';
 import { pairRuns, planRetime } from '../src/export/retime/plan.ts';
@@ -259,4 +266,34 @@ describe('native retime', () => {
 			[1, 2, 0.5],
 		]);
 	});
+});
+
+describe('Scene Edit Detection job', () => {
+	it('finds the hard cuts of scenes.mp4 and none at the flash, the dissolve or the fast pan', async () => {
+		const m = await register(app, fixture('scenes.mp4'));
+		const r = await app.inject({
+			method: 'POST',
+			url: '/api/scenes/detect?wait=1',
+			headers: JSON_H,
+			payload: { mediaKey: m.mediaKey, startSec: 0, endSec: 228 / 30, sensitivity: 50, minShotFrames: 2 },
+		});
+		expect(r.statusCode, r.body).toBe(200);
+		const res = r.json().result as { cuts: number[]; frames: number; scores: number[] };
+		expect(res.frames).toBe(228);
+		const frames = res.cuts.map((t) => Math.round(t * 30));
+		const truth = [45, 75, 120, 198];
+		const acc = cutAccuracy(frames, truth);
+		if (process.env.SCENE_REPORT) console.info(JSON.stringify({ frames, ...acc }));
+		expect(acc.recall).toBe(1);
+		expect(acc.precision).toBe(1);
+		// A sub-range starts at its own first frame.
+		const sub = await app.inject({
+			method: 'POST',
+			url: '/api/scenes/detect?wait=1',
+			headers: JSON_H,
+			payload: { mediaKey: m.mediaKey, startSec: 2, endSec: 4.5, sensitivity: 50, minShotFrames: 2 },
+		});
+		expect(sub.statusCode, sub.body).toBe(200);
+		expect((sub.json().result as { cuts: number[] }).cuts.map((t) => Math.round(t * 30))).toEqual([75, 120]);
+	}, 180_000);
 });
