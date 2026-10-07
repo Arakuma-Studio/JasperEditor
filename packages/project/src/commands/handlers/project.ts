@@ -1,7 +1,8 @@
 // project.*, bin.create, item.* (S01 §5, §16.2).
+import type { Draft } from 'immer';
 import { frameShiftFlicks, sourceTimingShift } from '../../process/source-range.ts';
 import { defaultLabelForMedia } from '../../registry/kinds.ts';
-import type { ProjectItem } from '../../schema/document.ts';
+import type { ProjectItem, SourceMarks } from '../../schema/document.ts';
 import type { MediaAsset } from '../../schema/media.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
 import type { DDoc, HandlerContext } from '../context.ts';
@@ -64,7 +65,7 @@ export function collectOrphans(doc: DDoc): void {
 	const usedSyn = new Set<string>();
 	const usedTrs = new Set<string>();
 	for (const it of Object.values(doc.items)) {
-		if (it.kind === 'media') usedMedia.add(it.mediaId);
+		if (it.kind === 'media' || it.kind === 'subclip') usedMedia.add(it.mediaId);
 		if (it.kind === 'synthetic') usedSyn.add(it.syntheticId);
 	}
 	for (const seq of Object.values(doc.sequences)) {
@@ -180,26 +181,64 @@ export const projectHandlers: HandlerMap = {
 			detachItem(doc, id);
 			delete doc.items[id];
 		}
+		// edit-ux: clips forget a deleted subclip (their media stays); subclips forget a deleted parent item.
+		for (const seq of Object.values(doc.sequences))
+			for (const c of Object.values(seq.clips))
+				if (c.subclipId && toDelete.has(c.subclipId)) delete c.subclipId;
+		for (const it of Object.values(doc.items))
+			if (it.kind === 'subclip' && it.parentItemId && toDelete.has(it.parentItemId)) it.parentItemId = null;
 		for (const seq of Object.values(doc.sequences)) cleanupSequence(seq, h);
 		collectOrphans(doc);
 		return { deletedItems: [...toDelete], removedClips: clipRemovals.map((r) => r.clipId) };
 	},
 	'item.setMarks': (doc, cmd, h: HandlerContext) => {
 		const it = item(doc, cmd.itemId, h);
-		if (it.kind !== 'media' && it.kind !== 'synthetic')
-			h.fail('E_INVALID_PARAM', 'Only media and synthetic items have marks');
+		if (it.kind !== 'media' && it.kind !== 'synthetic' && it.kind !== 'subclip')
+			h.fail('E_INVALID_PARAM', 'Only media, subclip and synthetic items have marks');
 		const asset: MediaAsset | undefined =
-			it.kind === 'media' ? (doc.media[it.mediaId] as MediaAsset) : undefined;
+			it.kind === 'media' || it.kind === 'subclip' ? (doc.media[it.mediaId] as MediaAsset) : undefined;
 		const fallback: Rational = { num: 30, den: 1 };
-		const inF = cmd.in ? h.flicks(cmd.in, asset, fallback) : null;
-		const outF = cmd.out ? h.flicks(cmd.out, asset, fallback) : null;
-		if (inF !== null && outF !== null && outF <= inF)
-			h.fail('E_INVALID_PARAM', 'Out mark must be after In mark');
-		const dur = asset?.probe.durationFlicks;
-		if (dur != null && ((inF ?? 0) > dur || (outF ?? 0) > dur + flicksPerFrame(fallback))) {
-			h.fail('E_OUT_OF_MEDIA', 'Marks are outside the media');
+		const conv = (v: Parameters<typeof h.flicks>[0] | null | undefined) =>
+			v ? h.flicks(v, asset, fallback) : null;
+		// Subclips: marks live in the media's content time, inside the subclip's range (edit-ux).
+		const lo = it.kind === 'subclip' ? it.range.in : 0;
+		const hiDur = it.kind === 'subclip' ? it.range.out : asset?.probe.durationFlicks;
+		const check = (a: number | null, b: number | null, what: string) => {
+			if (a !== null && b !== null && b <= a)
+				h.fail('E_INVALID_PARAM', `${what} Out mark must be after its In mark`);
+			if ((a !== null && a < lo) || (b !== null && b <= lo))
+				h.fail(
+					'E_OUT_OF_MEDIA',
+					`${what} marks are outside the ${it.kind === 'subclip' ? 'subclip' : 'media'}`,
+				);
+			if (hiDur != null && ((a ?? 0) > hiDur || (b ?? 0) > hiDur + flicksPerFrame(fallback)))
+				h.fail(
+					'E_OUT_OF_MEDIA',
+					`${what} marks are outside the ${it.kind === 'subclip' ? 'subclip' : 'media'}`,
+				);
+		};
+		const inF = conv(cmd.in);
+		const outF = conv(cmd.out);
+		check(inF, outF, '');
+		const marks: Draft<SourceMarks> = {
+			in: inF === null ? null : { flicks: inF },
+			out: outF === null ? null : { flicks: outF },
+		};
+		// edit-ux (Mark Split): keep, replace or clear the video/audio marks.
+		const prev = (it.marks as SourceMarks).split;
+		if (cmd.split !== null) {
+			const sp = { ...(prev ?? {}) } as NonNullable<SourceMarks['split']>;
+			for (const k of ['videoIn', 'videoOut', 'audioIn', 'audioOut'] as const) {
+				const v = cmd.split?.[k];
+				if (v === undefined) continue;
+				sp[k] = v === null ? null : { flicks: conv(v)! };
+			}
+			const f = (k: keyof typeof sp) => sp[k]?.flicks ?? null;
+			check(f('videoIn') ?? inF, f('videoOut') ?? outF, 'Video');
+			check(f('audioIn') ?? inF, f('audioOut') ?? outF, 'Audio');
+			if (Object.values(sp).some((v) => v)) marks.split = sp;
 		}
-		it.marks = { in: inF === null ? null : { flicks: inF }, out: outF === null ? null : { flicks: outF } };
+		it.marks = marks as SourceMarks;
 	},
 	'media.register': (doc, cmd, h: HandlerContext) => {
 		assertBin(doc, cmd.binId, h);

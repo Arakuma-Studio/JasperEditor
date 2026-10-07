@@ -259,6 +259,23 @@ Typewriter types behind a caret that blinks while typing pauses, like an editor'
   `list_text_animations`, `set_text_animation`, `add_text {animateIn, animateOut}`, `render_frames` (contact
   sheet).
 
+## Text animators (After Effects style)
+
+Text clips also take AE-style **animators** (`docs/wp-notes/text-animators.md`): Effect Controls ▸ Text ▸
+**Animate ▸** adds an animator with any of position, anchor, scale, skew, rotation (per-character 3D X/Y/Z),
+opacity, fill / stroke colour (RGB, hue, saturation, brightness, opacity), stroke width, tracking, line anchor, line
+spacing, character offset / value, blur and variable font axes; **Add ▸** adds Range, Wiggly and Expression
+selectors (combine modes add / subtract / intersect / min / max / difference). Animator presets (typewriter,
+fades by character / word, slides, pop, bounce, scramble / decoder, tracking, blur, 3D flip / fly, wave, jitter,
+the In/Out presets re-expressed) apply from the same menu. Text follows a mask path (**Path**: a mask with mode
+None; reverse, perpendicular, force alignment, first / last margin). Character and Paragraph settings (kerning
+metrics / optical / manual, baseline shift, tsume, faux bold / italic, small caps, super / subscript, ligatures,
+OpenType features, variable font axes, justification, indents, paragraph spacing, per-character runs, per-paragraph
+overrides, Source Text hold keys) are in Properties. Preview and every export draw the same per-character DOM.
+Commands `textAnimator.*`, `textSelector.*`, `text.setPathOptions`, `text.setPerCharacter3d`; MCP
+`list_text_animator_presets`, `apply_text_animator_preset`, `add_text_animator`, `add_text_selector`,
+`get_text_animators`, `remove_text_animators`, `set_text_path`, `convert_text_animation`.
+
 ## Animated templates (anime.js)
 
 **Motion Templates ▸ Templates** also lists animated templates drawn with anime.js (S11 §5,
@@ -384,7 +401,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (216; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (232; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -406,6 +423,8 @@ Tools (216; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   `set_transition_defaults`.
 - Animation and graphics: `list_text_animations` `set_text_animation` `render_frames` `set_motion_graphic_params`
   `add_shape` `get_motion_path` `set_spatial_interpolation`.
+- Text animators: `list_text_animator_presets` `apply_text_animator_preset` `add_text_animator` `add_text_selector`
+  `get_text_animators` `remove_text_animators` `set_text_path` `convert_text_animation`.
 - Effect presets: `list_effect_presets` `get_effect_preset` `apply_effect_preset` `save_effect_preset`
   `delete_effect_preset`.
 - Clipboard: `copy_clips` `paste_clips` `copy_items` `paste_items`.
@@ -417,6 +436,9 @@ Tools (216; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   `ungroup_clips` `duplicate_sequence` `delete_sequence` `remove_unused_media` `create_synthetic` `update_synthetic`
   `list_through_edits` `join_through_edits` `find_gaps` `make_subsequence` `add_frame_hold`
   `insert_frame_hold_segment` `frame_hold_options` (`docs/wp-notes/edit-structure.md`).
+- Editing and trimming: `source_edit` (three/four-point Insert/Overwrite, backtiming, Fit Clip, split edits, source
+  patching) `find_edit_points` `trim_edit_points` `match_frame` `reverse_match_frame` `make_subclip` `edit_subclip`
+  `set_split_marks` (`docs/wp-notes/edit-ux.md`).
 - Synchronize, Merge Clips, multi-camera: `measure_audio_sync` `synchronize_clips` `merge_clips`
   `create_multicam_sequence` `switch_multicam_angle` `record_multicam_cuts` `set_multicam_enabled` `flatten_multicam`
   `edit_multicam_cameras` `get_multicam` (`docs/wp-notes/multicam.md`).

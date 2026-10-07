@@ -4,3 +4,4 @@ export * from './document.ts';
 export * from './mask.ts';
 export * from './media.ts';
 export * from './sequence.ts';
+export * from './text-animators.ts';

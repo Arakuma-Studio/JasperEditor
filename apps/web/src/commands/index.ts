@@ -15,6 +15,7 @@ import { clipboardCommands } from './clipboard.ts';
 import { colorCommands } from './color.ts';
 import { compositionCommands } from './composition.ts';
 import { editCommands } from './edit.ts';
+import { editUxCommands } from './edit-ux.ts';
 import { exportCommands } from './export.ts';
 import { helpCommands } from './help.ts';
 import { inspectorCommands } from './inspector.ts';
@@ -23,6 +24,7 @@ import { interchangeCommands } from './interchange.ts';
 import { layerCommands } from './layer.ts';
 import { maskCommands } from './masks.ts';
 import { mgCommands } from './mg.ts';
+import { monitorViewCommands } from './monitor-view.ts';
 import { multicamCommands } from './multicam.ts';
 import { processCommands } from './process.ts';
 import { projectCommands } from './project.ts';
@@ -75,6 +77,9 @@ const COMMAND_MODULES: UiCommand[][] = [
 	rotoCommands,
 	multicamCommands,
 	interchangeCommands,
+	// edit-ux (registered after timeline/transport: trim mode, match frame, subclips, dialogs)
+	editUxCommands,
+	monitorViewCommands,
 ];
 
 let registered = false;

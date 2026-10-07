@@ -23,6 +23,9 @@ export const ID_PREFIXES = {
 	font: 'fnt',
 	/** M2 (S09): trackers placed on a clip. */
 	tracker: 'tkr',
+	/** text-animators workstream: text animators and their selectors. */
+	textAnimator: 'tan',
+	textSelector: 'tsl',
 	/** audio-mix: Audio Track Mixer sends. */
 	send: 'snd',
 	/** wp masks: Opacity / effect masks. */

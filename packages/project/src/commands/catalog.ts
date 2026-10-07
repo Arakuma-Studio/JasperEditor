@@ -7,6 +7,7 @@ import { clipCoreHandlers } from './handlers/clip-core.ts';
 import { clipEditHandlers } from './handlers/clip-edit.ts';
 import { CLIPBOARD_OWNER, clipboardHandlers } from './handlers/clipboard.ts';
 import { compositionHandlers } from './handlers/composition.ts';
+import { editUxHandlers } from './handlers/edit-ux.ts';
 import { effectHandlers } from './handlers/effect.ts';
 import { ESSENTIAL_OWNER, essentialHandlers } from './handlers/essential.ts';
 import { EXPRESSION_OWNER, expressionHandlers } from './handlers/expression.ts';
@@ -26,6 +27,7 @@ import { simplifyHandlers } from './handlers/simplify.ts';
 import { spatialHandlers } from './handlers/spatial.ts';
 import { SPEECH_OWNER, speechHandlers } from './handlers/speech.ts';
 import { STRUCTURE_OWNER, structureHandlers } from './handlers/structure.ts';
+import { TEXT_ANIMATOR_OWNER, textAnimatorHandlers } from './handlers/text-animators.ts';
 import { trackerHandlers } from './handlers/tracker.ts';
 import { transitionHandlers } from './handlers/transition.ts';
 import type { Handler, HandlerMap } from './handlers/util.ts';
@@ -68,7 +70,11 @@ export type CommandOwner =
 	// Audio effects, Essential Sound, Remix (docs/wp-notes/audio-fx.md)
 	| 'audio-fx'
 	// parity: roto / object mattes
-	| 'parity-roto';
+	| 'parity-roto'
+	// Editorial UX: 3/4-point editing, trim mode, subclips
+	| 'edit-ux'
+	// AE text animators (parity program)
+	| 'text-animators';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -178,6 +184,20 @@ const LABELS: Record<CommandType, string> = {
 	'keyframe.paste': 'Paste Keyframes',
 	'project.pasteItems': 'Paste',
 	'effect.applyPreset': 'Apply Preset',
+	'font.add': 'Add Font',
+	'textAnimator.add': 'Add Text Animator',
+	'textAnimator.remove': 'Remove Text Animator',
+	'textAnimator.update': 'Edit Text Animator',
+	'textAnimator.duplicate': 'Duplicate Text Animator',
+	'textAnimator.addProperty': 'Add Text Animator Property',
+	'textAnimator.removeProperty': 'Remove Text Animator Property',
+	'textSelector.add': 'Add Text Selector',
+	'textSelector.remove': 'Remove Text Selector',
+	'textSelector.update': 'Edit Text Selector',
+	'textAnimator.applyPreset': 'Apply Text Animator Preset',
+	'textAnimator.convertLegacy': 'Convert Text Animation to Animators',
+	'text.setPathOptions': 'Text Path Options',
+	'text.setPerCharacter3d': 'Per-character 3D',
 	'project.importTimeline': 'Import Timeline',
 	'clip.synchronize': 'Synchronize',
 	'item.mergeClips': 'Merge Clips',
@@ -259,6 +279,10 @@ const LABELS: Record<CommandType, string> = {
 	'roto.remove': 'Remove Roto',
 	'roto.apply': 'Apply Object Matte',
 	'roto.faceTracker': 'Track Face',
+	'clip.sourceEdit': 'Overwrite',
+	'clip.trimEdits': 'Trim',
+	'item.makeSubclip': 'Make Subclip',
+	'item.updateSubclip': 'Edit Subclip',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -279,6 +303,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[shapeHandlers, SHAPE_OWNER],
 	[clipboardHandlers, CLIPBOARD_OWNER],
 	[presetHandlers, PRESET_OWNER],
+	[textAnimatorHandlers, TEXT_ANIMATOR_OWNER],
 	[interchangeHandlers, INTERCHANGE_OWNER],
 	[multicamHandlers, 'wp-multicam'],
 	[audioHandlers, AUDIO_MIX_OWNER],
@@ -289,6 +314,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[expressionHandlers, EXPRESSION_OWNER],
 	[essentialHandlers, ESSENTIAL_OWNER],
 	[rotoHandlers, ROTO_OWNER],
+	[editUxHandlers, 'edit-ux'],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
@@ -308,6 +334,7 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 			owner,
 			milestone:
 				owner.startsWith('wp-m3-') ||
+				owner === TEXT_ANIMATOR_OWNER ||
 				owner === INTERCHANGE_OWNER ||
 				owner === STRUCTURE_OWNER ||
 				owner === AUDIO_MIX_OWNER ||
@@ -315,7 +342,8 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === SPEECH_OWNER ||
 				owner === ESSENTIAL_OWNER ||
 				owner === 'wp-multicam' ||
-				owner === ROTO_OWNER
+				owner === ROTO_OWNER ||
+				owner === 'edit-ux'
 					? 'M3'
 					: owner === 'M2' ||
 							owner.startsWith('wp-m2-') ||

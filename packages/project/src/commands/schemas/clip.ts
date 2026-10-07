@@ -58,6 +58,10 @@ const TextContentInput = z.strictObject({
 			}),
 		)
 		.optional(),
+	/** text-animators workstream: per-paragraph overrides (`index` = paragraph number, 0-based). */
+	paragraphs: z
+		.array(z.strictObject({ index: z.number().int().min(0), style: TextStyleSchema.partial() }))
+		.optional(),
 });
 
 // ---------------------------------------------------------------- text animators (M2, S11:TXA-006)
@@ -274,7 +278,12 @@ export const ClipTrimCmd = cmd('clip.trim', {
 	rippleMarkers: z.boolean().optional(),
 });
 export const ClipSlipCmd = cmd('clip.slip', { clipIds: IdListSchema, deltaFrames: z.number().int() });
-export const ClipSlideCmd = cmd('clip.slide', { clipId: IdRefSchema, deltaFrames: z.number().int() });
+export const ClipSlideCmd = cmd('clip.slide', {
+	clipId: IdRefSchema,
+	deltaFrames: z.number().int(),
+	/** edit-ux: linked partners that start with the clip slide too (default true; Alt-drag = false). */
+	linked: z.boolean().optional(),
+});
 export const ClipSplitCmd = cmd('clip.split', {
 	sequenceId: IdRefSchema.optional(),
 	at: TimeInputSchema,
@@ -331,6 +340,7 @@ export const ClipPatchSchema = z.strictObject({
 			text: z.string().optional(),
 			style: TextStyleSchema.partial().optional(),
 			runs: TextContentInput.shape.runs,
+			paragraphs: TextContentInput.shape.paragraphs,
 		})
 		.optional(),
 	box: TextBoxSchema.partial().optional(),

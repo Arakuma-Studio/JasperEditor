@@ -13,8 +13,8 @@ import {
 } from '@jasper/ui';
 import { useId, useState, useSyncExternalStore } from 'react';
 import {
-	DEFAULT_KEYMAP,
 	effectiveKey,
+	getActiveKeymap,
 	type Platform,
 	type Runtime,
 	scopeChain,
@@ -209,7 +209,8 @@ function ShortcutReferenceDialog(
 	const scopes = scopeChain(props.scope);
 	const sections = scopes.map((scope) => ({
 		scope,
-		rows: DEFAULT_KEYMAP.filter((b) => b.scope === scope && getCommand(b.command))
+		rows: getActiveKeymap()
+			.filter((b) => b.scope === scope && getCommand(b.command))
 			.map((b) => ({
 				id: b.command,
 				label: getCommand(b.command)?.label ?? b.command,
