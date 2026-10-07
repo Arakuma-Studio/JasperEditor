@@ -39,7 +39,7 @@ function resolved(params: Record<string, unknown>, masks?: ResolvedMask[]): Reso
 		enabled: true,
 		params: Object.fromEntries(Object.entries(params).map(([k, v]) => [k, A(v)])),
 	};
-	return expandLumetriSpatial([inst as never]).map((e) => ({
+	return expandLumetriSpatial([inst as Parameters<typeof expandLumetriSpatial>[0][number]]).map((e) => ({
 		id: e.id,
 		effectId: e.effectId,
 		effectVersion: e.effectVersion,
