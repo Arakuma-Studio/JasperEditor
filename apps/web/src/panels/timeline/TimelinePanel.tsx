@@ -606,6 +606,21 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			return sel.includes(t.id) ? sel : [t.id];
 		};
 		return [
+			// edit-structure (S01:TRN-003): keep the full length with repeated edge frames when media is short.
+			...(medium === 'video' && !g.oneSided
+				? [
+						{
+							kind: 'item' as const,
+							label: 'Repeat Frames for Short Media',
+							checked: t.freezeHandles === true,
+							run: () =>
+								updateTransition('Transition Handles', t, {
+									handles: t.freezeHandles ? 'shorten' : 'freeze',
+									duration: t.duration,
+								}),
+						},
+					]
+				: []),
 			{
 				kind: 'item',
 				label: 'Set Duration…',

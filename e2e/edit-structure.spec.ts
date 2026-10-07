@@ -111,9 +111,10 @@ test('New Item ▸ Bars and Tone and Adjustment Layer; the Program draws them', 
 		(i) => i.kind === 'synthetic' && d.synthetics[i.syntheticId!]?.kind === 'adjustment',
 	)!;
 	const r = await transact(page, [
-		{ type: 'clip.place', source: { projectItemId: bars.id }, at: 90, tracks: { video: 'V1', audio: 'A1' } },
+		{ type: 'clip.place', sequenceId: mainSeq, source: { projectItemId: bars.id }, at: 90, tracks: { video: 'V1', audio: 'A1' } },
 		{
 			type: 'clip.place',
+			sequenceId: mainSeq,
 			source: { projectItemId: adj.id },
 			at: 0,
 			sourceRange: { in: { seconds: 0 }, out: { seconds: 1 } },
