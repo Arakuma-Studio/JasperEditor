@@ -1,19 +1,41 @@
 // Document invariants INV-001…INV-015 (S01 §16.3, with the ARCHITECTURE §2.3 locked-track change:
 // locked tracks never shift, so there is no invariant about them) and conservative load-time repairs
 // (S01:PER-004).
+
+import type { Draft } from 'immer';
+import { audioMixIssues, repairAudioMix } from './audio/invariants.ts';
+import { normalizeCaptionOwnership } from './captions/model.ts';
+import { mergeRanges } from './captions/sequence-transcript.ts';
+import { normalizeWords, wordsWellFormed } from './captions/words.ts';
 import type { Issue } from './commands/types.ts';
 import { clipEnd } from './derive/index.ts';
+import { ESSENTIAL_SLOTS, EssentialSoundSchema, readEssentialSound } from './essential/model.ts';
+import { expressionIssues, repairExpressions } from './expressions.ts';
 import { createTrack } from './factories.ts';
 import { type IdPrefix, type IdSource, idPrefixOf, isValidId } from './ids.ts';
+import { isRovingKey, retimeRoving } from './keyframes.ts';
+import { MASK_EXPANSION_RANGE, MASK_FEATHER_RANGE, MASK_OPACITY_RANGE } from './masks/model.ts';
+import { TRACK_MATTE_EFFECT_ID, trackMatteTracksOf } from './masks/track-matte.ts';
+import {
+	angleById,
+	fixMulticamSelections,
+	multicamSourceIssues,
+	multicamSourceOf,
+	pruneMulticamAngles,
+} from './multicam/model.ts';
+import { type BezierPath, isBezierPath, segmentCount } from './path/model.ts';
 import type { EffectRegistry } from './registry/effects.ts';
-import { contentDurationFlicks, isBoundedContent, trackKindFor } from './registry/kinds.ts';
+import { defaultEffectRegistry } from './registry/effects.ts';
+import { contentDurationFlicks, isBoundedContent, kindCapabilities, trackKindFor } from './registry/kinds.ts';
 import type { MgTemplateRegistry } from './registry/mg.ts';
-import { SPATIAL_INTERPOLATIONS } from './schema/common.ts';
+import { type Animatable, type Keyframe, SPATIAL_INTERPOLATIONS } from './schema/common.ts';
 import type { ProjectDocument } from './schema/document.ts';
-import type { Clip, EffectInstance, Sequence, Track } from './schema/sequence.ts';
+import { MASK_MODES, type Mask } from './schema/mask.ts';
+import type { AudioClip, Clip, EffectInstance, Sequence, Track } from './schema/sequence.ts';
 import { isKnownClipKind } from './schema/sequence.ts';
 import { ROTO_OBJECT_PARAMS } from './roto/index.ts';
 import type { ClipRoto } from './schema/sequence.ts';
+import { isNestClip } from './structure/nest.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
 import {
 	contentSpanFlicks,
@@ -117,6 +139,14 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 		}
 	};
 	table(doc.items, 'items', ['itm', 'bin']);
+	// wp-multicam: source clip markers of media items.
+	for (const it of Object.values(doc.items)) {
+		for (const m of (it as { markers?: { id: string; flicks: number }[] }).markers ?? []) {
+			claim(m.id, 'mrk', ['items', it.id, 'markers', m.id]);
+			if (!Number.isInteger(m.flicks) || m.flicks < 0)
+				issues.push(inv('INV-004', `Marker ${m.id} has an invalid time`, ['items', it.id, 'markers', m.id]));
+		}
+	}
 	for (const it of Object.values(doc.items)) {
 		if ((it.kind === 'bin') !== (idPrefixOf(it.id) === 'bin'))
 			issues.push(inv('INV-001', `Item ${it.id} prefix does not match its kind`, ['items', it.id]));
@@ -127,9 +157,24 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 	table(doc.fonts, 'fonts', 'fnt');
 	table(doc.sequences, 'sequences', 'seq');
 
-	const effects = (list: readonly EffectInstance[] | undefined, where: string[]) => {
+	// wp masks: ids, value ranges and path structure of Opacity / effect masks.
+	const masks = (list: readonly Mask[] | undefined, where: string[]) => {
+		for (const m of list ?? []) {
+			const mw = [...where, m.id];
+			claim(m.id, 'msk', mw);
+			const problem = maskProblem(m);
+			if (problem) issues.push(inv('INV-012', `Mask ${m.id}: ${problem}`, mw));
+		}
+	};
+
+	const effects = (list: readonly EffectInstance[] | undefined, where: string[], onClip = false) => {
 		for (const fx of list ?? []) {
 			claim(fx.id, 'fx', [...where, fx.id]);
+			if (fx.masks?.length) {
+				if (!onClip)
+					issues.push(inv('INV-012', `Effect ${fx.id}: masks apply to clip effects only`, [...where, fx.id]));
+				masks(fx.masks, [...where, fx.id, 'masks']);
+			}
 			const spec = opts.effects?.get(fx.effectId, fx.effectVersion);
 			if (!spec) continue; // unknown effects are preserved and exempt (S01:FX-022)
 			for (const [name, a] of Object.entries(fx.params)) {
@@ -184,6 +229,14 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 				if (badSpatial(k))
 					issues.push(inv('INV-011', 'Spatial interpolation needs a vec2 key and finite tangents', path));
 			}
+			// keyframes-blend: Rove Across Time is never on the first / last key or a hold key.
+			const kfs = a.keyframes as unknown as Keyframe<unknown>[];
+			kfs.forEach((k, i) => {
+				if (k.roving && !isRovingKey(kfs, i))
+					issues.push(
+						inv('INV-011', 'Only keys between two others that interpolate can rove', [...path, k.id]),
+					);
+			});
 		});
 	};
 
@@ -248,7 +301,14 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 	for (const t of Object.values(doc.transcripts)) {
 		if (t.mediaId && !doc.media[t.mediaId])
 			issues.push(inv('INV-006', `Transcript ${t.id} references missing media`, ['transcripts', t.id]));
+		// wp captions (S01:AST-030): words sorted by start, non-overlapping, integer flicks
+		const bad = wordsWellFormed(t.words);
+		if (bad) issues.push(inv('INV-012', `Transcript ${t.id}: ${bad}`, ['transcripts', t.id]));
+		// wp speech: coverage ranges sorted, disjoint, non-empty
+		const cov = coverageProblem(t.coverage);
+		if (cov) issues.push(inv('INV-012', `Transcript ${t.id}: ${cov}`, ['transcripts', t.id, 'coverage']));
 	}
+	const captionTrsUsers = new Map<string, number>();
 
 	// Sequences
 	const usedMedia = new Set<string>();
@@ -291,13 +351,38 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 						]),
 					);
 				tracks.set(t.id, t);
+				if (t.styleDefaults && !doc.fonts[t.styleDefaults.fontId])
+					issues.push(
+						inv('INV-006', `Track ${t.id} style references missing font ${t.styleDefaults.fontId}`, [
+							...where,
+							'tracks',
+							t.id,
+						]),
+					);
 				effects(t.effects, [...where, 'tracks', t.id, 'effects']);
 				anims(t, [...where, 'tracks', t.id]);
 			}
 		}
+		const active = (seq as { activeCaptionTrackId?: string | null }).activeCaptionTrackId;
+		if (active && !seq.captionTracks.some((t) => t.id === active))
+			issues.push(inv('INV-006', `Active caption track ${active} does not exist`, where));
 		effects(seq.master.effects, [...where, 'master', 'effects']);
 		anims(seq.master, [...where, 'master']);
+		// audio-mix: submix tracks (ids, effects, keyframes), sends, routing (INV-MIX).
+		for (const t of seq.submixTracks ?? []) {
+			claim(t.id, 'trk', [...where, 'submixTracks', t.id]);
+			effects(t.effects, [...where, 'submixTracks', t.id, 'effects']);
+			anims(t, [...where, 'submixTracks', t.id]);
+		}
+		for (const t of [...seq.audioTracks, ...(seq.submixTracks ?? [])])
+			for (const x of t.mixer?.sends ?? []) claim(x.id, 'snd', [...where, 'tracks', t.id, 'sends', x.id]);
+		for (const m of audioMixIssues(seq as Sequence, where)) issues.push(inv('INV-MIX', m.message, m.path));
 		for (const m of seq.markers) claim(m.id, 'mrk', [...where, 'markers', m.id]);
+		// wp-multicam: a multi-camera source's angles reference its own tracks.
+		const mcSource = (seq as Sequence).multicam;
+		if (mcSource)
+			for (const problem of multicamSourceIssues(seq, mcSource))
+				issues.push(inv('INV-006', `Multi-camera source ${problem}`, [...where, 'multicam']));
 
 		const rate = s.frameRate as Rational;
 		const byTrack = new Map<string, Clip[]>();
@@ -329,7 +414,11 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 				usedMedia.add(r.mediaId);
 				const asset = doc.media[r.mediaId];
 				if (!asset) issues.push(inv('INV-006', `Clip ${c.id} references missing media ${r.mediaId}`, cw));
-				else if (isBoundedContent(c) && asset.probe.durationFlicks !== null) {
+				else if (c.frameHold && isBoundedContent(c) && asset.probe.durationFlicks !== null) {
+					// edit-structure: a held clip shows one frame; only that frame must exist.
+					if (c.frameHold.flicks >= asset.probe.durationFlicks + flicksPerFrame(rate) + 1)
+						issues.push(inv('INV-005', `Clip ${c.id} holds a frame outside its media`, cw));
+				} else if (isBoundedContent(c) && asset.probe.durationFlicks !== null) {
 					// INV-005 media bounds with one frame of tolerance
 					const span = contentSpanFlicks(c.duration, rate, c.speed.rate);
 					const tol = flicksPerFrame(rate) * c.speed.rate + 1;
@@ -366,17 +455,70 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 			}
 			if (typeof r.syntheticId === 'string') {
 				usedSyn.add(r.syntheticId);
-				if (!doc.synthetics[r.syntheticId])
-					issues.push(inv('INV-006', `Clip ${c.id} references missing synthetic`, cw));
+				const syn = doc.synthetics[r.syntheticId];
+				if (!syn) issues.push(inv('INV-006', `Clip ${c.id} references missing synthetic`, cw));
+				else if (!syntheticFitsClip(c.kind, syn.kind))
+					issues.push(inv('INV-006', `A ${c.kind} clip cannot show a ${syn.kind} source`, cw));
+			}
+			// edit-structure: frame holds are for clips with a picture (not adjustment layers, captions or sound).
+			if (c.frameHold !== undefined) {
+				const caps = kindCapabilities(c.kind);
+				if (caps?.trackKind !== 'video' || c.kind === 'adjustment')
+					issues.push(inv('INV-012', `Clip ${c.id} cannot have a frame hold`, cw));
+				else if (!Number.isInteger(c.frameHold.flicks) || c.frameHold.flicks < 0)
+					issues.push(inv('INV-012', `Clip ${c.id} has an invalid frame hold time`, cw));
 			}
 			if (typeof r.transcriptId === 'string') {
 				usedTrs.add(r.transcriptId);
-				if (!doc.transcripts[r.transcriptId])
-					issues.push(inv('INV-006', `Clip ${c.id} references missing transcript`, cw));
+				const tr = doc.transcripts[r.transcriptId];
+				if (!tr) issues.push(inv('INV-006', `Clip ${c.id} references missing transcript`, cw));
+				else if (tr.mediaId === null) {
+					// wp captions: a caption transcript belongs to one clip
+					const n = (captionTrsUsers.get(tr.id) ?? 0) + 1;
+					captionTrsUsers.set(tr.id, n);
+					if (n === 2)
+						issues.push(inv('INV-014', `Caption transcript ${tr.id} is shared by several clips`, cw));
+				}
+			}
+			if (c.kind === 'captions') {
+				const fid = (r.style as { fontId?: string } | undefined)?.fontId;
+				if (fid && !doc.fonts[fid])
+					issues.push(inv('INV-006', `Caption ${c.id} references missing font ${fid}`, cw));
+			}
+			// wp-multicam: a multi-camera selection names an angle of a multi-camera source.
+			if (r.multicam !== undefined) {
+				const sel = r.multicam as { enabled?: unknown; angle?: unknown };
+				const mc = typeof r.sequenceId === 'string' ? multicamSourceOf(doc.sequences[r.sequenceId]) : null;
+				if (c.kind !== 'nest-video' && c.kind !== 'nest-audio')
+					issues.push(inv('INV-012', `Clip ${c.id}: only nest clips can be multi-camera clips`, cw));
+				else if (!mc)
+					issues.push(
+						inv(
+							'INV-006',
+							`Clip ${c.id} is a multi-camera clip of a sequence that is not a multi-camera source`,
+							cw,
+						),
+					);
+				else {
+					const a = typeof sel.angle === 'string' ? angleById(mc, sel.angle) : null;
+					if (!a) issues.push(inv('INV-006', `Clip ${c.id} shows a missing angle ${String(sel.angle)}`, cw));
+					else if (c.kind === 'nest-video' && a.videoTrackId === null)
+						issues.push(inv('INV-012', `Clip ${c.id} shows angle ${a.id}, which has no video`, cw));
+				}
 			}
 			if (typeof r.sequenceId === 'string' && isKnownClipKind(c.kind)) {
 				if (!doc.sequences[r.sequenceId])
 					issues.push(inv('INV-006', `Clip ${c.id} references missing sequence`, cw));
+				else {
+					// INV-005 for nests: inside the nested sequence's duration (KND-011).
+					const dur = contentDurationFlicks(doc, c);
+					const span = contentSpanFlicks(c.duration, rate, c.speed.rate);
+					const tol = flicksPerFrame(rate) * c.speed.rate + 1;
+					if (dur !== null && !c.frameHold && c.sourceIn + span > dur + tol)
+						issues.push(
+							inv('INV-005', `Clip ${c.id} exceeds its nested sequence (${c.sourceIn + span} > ${dur})`, cw),
+						);
+				}
 				const set = nestEdges.get(seq.id) ?? new Set<string>();
 				set.add(r.sequenceId);
 				nestEdges.set(seq.id, set);
@@ -465,11 +607,14 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 				for (const name of ROTO_OBJECT_PARAMS[fx.effectId] ?? []) {
 					const v = fx.params[name]?.value;
 					if (typeof v === 'string' && v !== '' && !rotoIds.has(v))
-						issues.push(inv('INV-006', `${fx.effectId}.${name} names a missing roto ${v}`, [...cw, 'effects', fx.id]));
+						issues.push(
+							inv('INV-006', `${fx.effectId}.${name} names a missing roto ${v}`, [...cw, 'effects', fx.id]),
+						);
 				}
 			}
 			if (isKnownClipKind(c.kind)) {
-				effects(r.effects as EffectInstance[] | undefined, [...cw, 'effects']);
+				effects(r.effects as EffectInstance[] | undefined, [...cw, 'effects'], true);
+				masks(r.masks as Mask[] | undefined, [...cw, 'masks']);
 				anims({ ...r, content: undefined, params: undefined }, cw);
 				const opacity = r.opacity as AnimLike | undefined;
 				if (opacity) {
@@ -479,6 +624,40 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 					}
 				}
 			}
+		}
+		// wp masks: Track Matte Key tracks exist, are other video tracks, and mattes form no cycle.
+		{
+			const videoIds = new Set(seq.videoTracks.map((t) => t.id));
+			const edges = new Map<string, Set<string>>();
+			for (const c of Object.values(seq.clips)) {
+				const fx = (c as { effects?: EffectInstance[] }).effects;
+				if (!fx) continue;
+				for (const t of trackMatteTracksOf({ effects: fx as never })) {
+					const cw = [...where, 'clips', c.id];
+					if (!videoIds.has(t)) issues.push(inv('INV-006', `Clip ${c.id} uses missing matte track ${t}`, cw));
+					else if (t === c.trackId)
+						issues.push(inv('INV-012', `Clip ${c.id} cannot use its own track as a track matte`, cw));
+					else {
+						const set = edges.get(c.trackId) ?? new Set<string>();
+						set.add(t);
+						edges.set(c.trackId, set);
+					}
+				}
+			}
+			const state = new Map<string, 1 | 2>();
+			const cyclic = (n: string): boolean => {
+				if (state.get(n) === 1) return true;
+				if (state.get(n) === 2) return false;
+				state.set(n, 1);
+				for (const m of edges.get(n) ?? []) if (cyclic(m)) return true;
+				state.set(n, 2);
+				return false;
+			};
+			for (const n of edges.keys())
+				if (cyclic(n)) {
+					issues.push(inv('INV-012', `Track mattes form a cycle through track ${n}`, where));
+					break;
+				}
 		}
 		// INV-003 overlaps
 		for (const [trackId, list] of byTrack) {
@@ -598,7 +777,46 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 		if (!usedTrs.has(t.id) && !(t.mediaId && usedMedia.has(t.mediaId)))
 			issues.push(inv('INV-014', `Transcript ${t.id} is not referenced`, ['transcripts', t.id]));
 	}
+	// Wave expressions (INV-EXPR): well-formed expressions on properties that take them.
+	for (const m of expressionIssues(doc, isAudioEffectId)) issues.push(inv('INV-EXPR', m.message, m.path));
+	// audio-fx (INV-ESSENTIAL): Essential Sound settings are readable, essential effects name a known slot and sit
+	// on clips with a type; remix pieces of one remix share a group and a count.
+	for (const m of essentialIssues(doc)) issues.push(inv('INV-ESSENTIAL', m.message, m.path));
 	return issues;
+}
+
+/** audio-fx: problems of Essential Sound settings, essential effects and remix pieces (see repairDocument). */
+function essentialIssues(doc: ProjectDocument): { message: string; path: string[] }[] {
+	const out: { message: string; path: string[] }[] = [];
+	for (const seq of Object.values(doc.sequences) as Sequence[]) {
+		const remixes = new Map<string, number[]>();
+		for (const c of Object.values(seq.clips)) {
+			if (c.kind !== 'audio') continue;
+			const raw = (c as { essential?: unknown }).essential;
+			if (raw !== undefined && !EssentialSoundSchema.safeParse(raw).success)
+				out.push({
+					message: `clip ${c.id}: unreadable Essential Sound settings`,
+					path: [seq.id, c.id, 'essential'],
+				});
+			for (const fx of c.effects)
+				if (
+					fx.essential !== undefined &&
+					(!ESSENTIAL_SLOTS.includes(fx.essential as never) || raw === undefined)
+				)
+					out.push({
+						message: `clip ${c.id}: effect ${fx.id} is marked essential (${fx.essential}) without matching settings`,
+						path: [seq.id, c.id, fx.id],
+					});
+			if (c.remix) remixes.set(c.remix.id, [...(remixes.get(c.remix.id) ?? []), c.remix.count]);
+		}
+		for (const [id, counts] of remixes)
+			if (counts.some((n) => n !== counts.length))
+				out.push({
+					message: `remix ${id}: ${counts.length} pieces but they record ${counts[0]}`,
+					path: [seq.id, id],
+				});
+	}
+	return out;
 }
 
 /** M2 (wp-m2-text-anim, S11:TXA-008): a known preset whose stored params its schema rejects. */
@@ -607,6 +825,45 @@ function invalidAnimatorParams(a: unknown): boolean {
 	if (!x || typeof x.preset !== 'string' || typeof x.version !== 'number') return false;
 	const spec = getTextAnimationSpec(x.preset, x.version);
 	return !!spec && !spec.paramsSchema.safeParse(x.params).success;
+}
+
+/** wp masks: what is wrong with a mask (null = valid). */
+export function maskProblem(m: Mask): string | null {
+	const paths = [m.path.value, ...m.path.keyframes.map((k) => k.value)];
+	for (const p of paths) {
+		if (!isBezierPath(p)) return 'malformed path';
+		if (p.closed && p.vertices.length < 3) return 'a closed path needs at least 3 vertices';
+		if (p.vertices.length === 0) return 'empty path';
+		const segs = segmentCount(p as BezierPath);
+		for (const f of p.feather ?? [])
+			if (!(f.segment >= 0 && f.segment < segs) || ![f.t, f.radius, f.tension].every(Number.isFinite))
+				return 'feather point off the path';
+	}
+	const nums: [Animatable<number>, { min: number; max: number }, string][] = [
+		[m.feather, MASK_FEATHER_RANGE, 'feather'],
+		[m.opacity, MASK_OPACITY_RANGE, 'opacity'],
+		[m.expansion, MASK_EXPANSION_RANGE, 'expansion'],
+	];
+	for (const [a, r, name] of nums)
+		for (const v of [a.value, ...a.keyframes.map((k) => k.value)])
+			if (typeof v !== 'number' || !Number.isFinite(v) || v < r.min || v > r.max)
+				return `${name} out of range`;
+	if (!MASK_MODES.includes(m.mode)) return `unknown mode ${m.mode}`;
+	return null;
+}
+
+/** wp masks: drops invalid masks of a list in place (repair); returns the dropped ids. */
+function repairMaskList(list: Mask[] | undefined): string[] {
+	if (!list) return [];
+	const dropped: string[] = [];
+	for (let i = list.length - 1; i >= 0; i--) {
+		const m = list[i]!;
+		if (!m || typeof m !== 'object' || !isAnimLike(m.path) || maskProblem(m)) {
+			dropped.push(m?.id ?? '?');
+			list.splice(i, 1);
+		}
+	}
+	return dropped;
 }
 
 // ---------------------------------------------------------------- repair (S01:PER-004)
@@ -654,6 +911,105 @@ export function repairDocument(
 	}
 	// ---- end wp-m2-anime-templates
 
+	// Wave expressions: drop malformed expressions and expressions on properties that take none.
+	for (const r of repairExpressions(doc, isAudioEffectId)) note('drop-expression', r.entity, r.detail);
+
+	// audio-fx: Essential Sound settings normalised (defaults for what is missing; unreadable → type cleared, its
+	// effects become the user's); essential markers without settings dropped; remix pieces recount.
+	for (const seq of Object.values(doc.sequences) as Sequence[]) {
+		const remixes = new Map<string, AudioClip[]>();
+		for (const c of Object.values(seq.clips)) {
+			if (c.kind !== 'audio') continue;
+			const a = c as AudioClip & { essential?: unknown };
+			if (a.essential !== undefined && !EssentialSoundSchema.safeParse(a.essential).success) {
+				const fixed = readEssentialSound(a.essential);
+				if (fixed) a.essential = fixed;
+				else delete a.essential;
+				note(
+					'normalize-essential',
+					c.id,
+					fixed
+						? 'Essential Sound settings completed with defaults'
+						: 'unreadable Essential Sound settings removed',
+				);
+			}
+			for (const fx of a.effects)
+				if (
+					fx.essential !== undefined &&
+					(!ESSENTIAL_SLOTS.includes(fx.essential as never) || a.essential === undefined)
+				) {
+					delete fx.essential;
+					note('drop-essential-mark', fx.id, 'essential marker without settings removed (the effect stays)');
+				}
+			if (a.remix) remixes.set(a.remix.id, [...(remixes.get(a.remix.id) ?? []), a]);
+		}
+		for (const [id, list] of remixes) {
+			if (list.every((c) => c.remix!.count === list.length)) continue;
+			list
+				.sort((x, y) => x.start - y.start)
+				.forEach((c, i) => {
+					c.remix = { ...c.remix!, index: i, count: list.length };
+				});
+			note('recount-remix', id, `remix pieces recounted (${list.length})`);
+		}
+	}
+
+	// keyframes-blend: roving flags where a key cannot rove are dropped; roving keys get their run's times.
+	for (const seq of Object.values(doc.sequences) as Sequence[])
+		forEachAnimatable(seq, [seq.id], (a, path) => {
+			const kfs = a.keyframes as unknown as Keyframe<unknown>[];
+			if (!kfs.some((k) => k.roving)) return;
+			const bad = kfs.filter((k, i) => k.roving && !isRovingKey(kfs, i)).map((k) => k.id);
+			retimeRoving(kfs);
+			for (const id of bad) note('drop-roving', id, `${path.join('.')}: the key cannot rove`);
+		});
+	// ---- wp captions: well-formed transcript words, an existing active caption track, caption fonts, and one clip
+	// per caption transcript.
+	for (const t of Object.values(doc.transcripts)) {
+		if (wordsWellFormed(t.words)) {
+			t.words = normalizeWords(t.words);
+			note('normalize-words', t.id, 'transcript words sorted and overlaps cut');
+		}
+		// wp speech: coverage ranges sorted and merged (empty or malformed ranges dropped)
+		if (t.coverage !== undefined && coverageProblem(t.coverage)) {
+			const ok = (Array.isArray(t.coverage) ? t.coverage : []).filter(
+				(r): r is [number, number] =>
+					Array.isArray(r) && Number.isInteger(r[0]) && Number.isInteger(r[1]) && r[0] >= 0 && r[1] > r[0],
+			);
+			t.coverage = mergeRanges(ok);
+			note('normalize-coverage', t.id, 'transcript coverage ranges sorted and merged');
+		}
+	}
+	for (const seq of Object.values(doc.sequences) as Sequence[]) {
+		const s = seq as Sequence & { activeCaptionTrackId?: string | null };
+		if (s.activeCaptionTrackId && !s.captionTracks.some((t) => t.id === s.activeCaptionTrackId)) {
+			s.activeCaptionTrackId = s.captionTracks[0]?.id ?? null;
+			note('reset-active-caption-track', seq.id, 'active caption track did not exist');
+		}
+		const fallbackFont = Object.keys(doc.fonts)[0];
+		for (const t of s.captionTracks) {
+			if (t.styleDefaults && !doc.fonts[t.styleDefaults.fontId]) {
+				if (fallbackFont) t.styleDefaults.fontId = fallbackFont;
+				else delete t.styleDefaults;
+				note('reset-caption-font', t.id, 'caption track style referenced a missing font');
+			}
+		}
+		for (const c of Object.values(seq.clips)) {
+			const st = (c as { style?: { fontId?: string } }).style;
+			if (c.kind === 'captions' && st?.fontId && !doc.fonts[st.fontId]) {
+				delete st.fontId;
+				note('reset-caption-font', c.id, 'caption style referenced a missing font');
+			}
+		}
+	}
+	{
+		const before = new Set(Object.keys(doc.transcripts));
+		normalizeCaptionOwnership(doc as Draft<ProjectDocument>, () => ids.next('trs'));
+		for (const id of Object.keys(doc.transcripts))
+			if (!before.has(id)) note('split-caption-transcript', id, 'shared caption transcript copied per clip');
+	}
+	// ---- end wp captions
+
 	// Bin tree: drop missing references and duplicates, reattach orphans at the root.
 	const placed = new Set<string>();
 	const cleanList = (list: string[], owner: string) =>
@@ -696,6 +1052,7 @@ export function repairDocument(
 			seq.audioTracks.push(createTrack(ids, 'audio'));
 			note('add-track', seq.id, 'added missing audio track');
 		}
+		repairAudioMix(seq, note);
 		const trackIds = new Set([...seq.videoTracks, ...seq.audioTracks, ...seq.captionTracks].map((t) => t.id));
 		for (const c of Object.values(seq.clips)) {
 			const r = c as Record<string, unknown>;
@@ -703,7 +1060,8 @@ export function repairDocument(
 				!trackIds.has(c.trackId) ||
 				(typeof r.mediaId === 'string' && !doc.media[r.mediaId]) ||
 				(typeof r.syntheticId === 'string' && !doc.synthetics[r.syntheticId]) ||
-				(typeof r.transcriptId === 'string' && !doc.transcripts[r.transcriptId]);
+				(typeof r.transcriptId === 'string' && !doc.transcripts[r.transcriptId]) ||
+				(isNestClip(c) && (typeof r.sequenceId !== 'string' || !doc.sequences[r.sequenceId]));
 			if (missing) {
 				delete seq.clips[c.id];
 				note('drop-clip', c.id, 'clip referenced a missing track or source');
@@ -783,6 +1141,52 @@ export function repairDocument(
 					}
 				}
 		}
+		// wp masks: malformed masks (bad path / ranges) are removed; masks on track or master effects too.
+		for (const c of Object.values(seq.clips)) {
+			const r = c as { masks?: Mask[]; effects?: EffectInstance[] };
+			for (const id of repairMaskList(r.masks)) note('drop-mask', c.id, `invalid mask ${id} removed`);
+			if (r.masks && r.masks.length === 0) delete r.masks;
+			for (const fx of r.effects ?? []) {
+				for (const id of repairMaskList(fx.masks)) note('drop-mask', fx.id, `invalid mask ${id} removed`);
+				if (fx.masks && fx.masks.length === 0) delete fx.masks;
+			}
+		}
+		for (const fx of [
+			...[...seq.videoTracks, ...seq.audioTracks].flatMap((t) => t.effects ?? []),
+			...seq.master.effects,
+		])
+			if (fx.masks) {
+				delete fx.masks;
+				note('drop-mask', fx.id, 'masks on a track or master effect removed');
+			}
+		// wp masks: Track Matte Keys reading a missing / own track, or closing a cycle, lose their track.
+		{
+			const videoIds = new Set(seq.videoTracks.map((t) => t.id));
+			const reach = (from: string, to: string, seen = new Set<string>()): boolean => {
+				if (from === to) return true;
+				if (seen.has(from)) return false;
+				seen.add(from);
+				for (const c of Object.values(seq.clips))
+					if (c.trackId === from)
+						for (const t of trackMatteTracksOf({
+							effects: ((c as { effects?: EffectInstance[] }).effects ?? []) as never,
+						}))
+							if (reach(t, to, seen)) return true;
+				return false;
+			};
+			for (const c of Object.values(seq.clips))
+				for (const fx of (c as { effects?: EffectInstance[] }).effects ?? []) {
+					if (fx.effectId !== TRACK_MATTE_EFFECT_ID || !fx.params.matteTrack) continue;
+					const a = fx.params.matteTrack;
+					const bad = (v: unknown) =>
+						typeof v === 'string' && v !== '' && (!videoIds.has(v) || v === c.trackId || reach(v, c.trackId));
+					if ([a.value, ...a.keyframes.map((k) => k.value)].some(bad)) {
+						a.value = '';
+						a.keyframes = [];
+						note('clear-track-matte', fx.id, 'track matte referenced a missing track or formed a cycle');
+					}
+				}
+		}
 		// M2 (wp-m2-text-anim, S11:TXA-008): animator params a known preset rejects are reset to its defaults.
 		for (const c of Object.values(seq.clips)) {
 			if (c.kind !== 'text' || !c.textAnimation) continue;
@@ -808,6 +1212,72 @@ export function repairDocument(
 			}
 		}
 	}
+	// wp-multicam: angles keep only existing tracks; selections fall back to an existing angle.
+	for (const seq of Object.values(doc.sequences) as Sequence[]) {
+		if (!seq.multicam) continue;
+		const ids0 = new Set<string>();
+		seq.multicam.angles = seq.multicam.angles.filter((a) => {
+			if (ids0.has(a.id)) {
+				note('drop-angle', seq.id, `duplicate angle id ${a.id} removed`);
+				return false;
+			}
+			ids0.add(a.id);
+			return true;
+		});
+		const seenVideo = new Set<string>();
+		for (const a of seq.multicam.angles) {
+			if (a.videoTrackId && seenVideo.has(a.videoTrackId)) a.videoTrackId = null;
+			if (a.videoTrackId) seenVideo.add(a.videoTrackId);
+		}
+		for (const id of pruneMulticamAngles(seq)) note('drop-angle', seq.id, `angle ${id} had no tracks left`);
+	}
+	for (const id of fixMulticamSelections(doc))
+		note('fix-multicam', id, 'multi-camera selection pointed at a missing angle or source');
+	for (const seq of Object.values(doc.sequences) as Sequence[])
+		for (const c of Object.values(seq.clips)) {
+			const r = c as Record<string, unknown>;
+			if (r.multicam !== undefined && c.kind !== 'nest-video' && c.kind !== 'nest-audio') {
+				delete r.multicam;
+				note('fix-multicam', c.id, 'multi-camera selection on a clip that is not a nest');
+			}
+		}
+
+	// edit-structure (INV-009): nest clips that close a nesting cycle are removed (the first found, until acyclic).
+	for (;;) {
+		const cycle = findNestCycleClip(doc);
+		if (!cycle) break;
+		delete doc.sequences[cycle.seqId]!.clips[cycle.clipId];
+		note('drop-clip', cycle.clipId, 'nest clip formed a nesting cycle');
+		for (const t of Object.values(doc.sequences[cycle.seqId]!.transitions))
+			if (t.outgoingClipId === cycle.clipId || t.incomingClipId === cycle.clipId)
+				delete doc.sequences[cycle.seqId]!.transitions[t.id];
+		const seq = doc.sequences[cycle.seqId]!;
+		for (const kind of ['links', 'groups'] as const) {
+			const field = kind === 'links' ? 'linkId' : 'groupId';
+			for (const g of Object.values(seq[kind])) {
+				g.members = g.members.filter((m) => m !== cycle.clipId && seq.clips[m]);
+				if (g.members.length >= 2) continue;
+				for (const m of g.members) (seq.clips[m] as Record<string, unknown>)[field] = null;
+				delete seq[kind][g.id];
+			}
+		}
+	}
+	// edit-structure: frame holds on clips that cannot have one are removed.
+	for (const seq of Object.values(doc.sequences))
+		for (const c of Object.values(seq.clips)) {
+			if (c.frameHold === undefined) continue;
+			const caps = kindCapabilities(c.kind);
+			const ok =
+				!!caps &&
+				caps.trackKind === 'video' &&
+				c.kind !== 'adjustment' &&
+				Number.isInteger(c.frameHold.flicks) &&
+				c.frameHold.flicks >= 0;
+			if (!ok) {
+				delete c.frameHold;
+				note('drop-frame-hold', c.id, 'invalid frame hold removed');
+			}
+		}
 	// Leaked media/synthetics get a project item so nothing silently disappears (INV-014).
 	const usedMedia = new Set<string>();
 	const usedSyn = new Set<string>();
@@ -861,4 +1331,56 @@ export function repairDocument(
 		}
 	}
 	return { document: doc, report };
+}
+
+/** edit-structure: which synthetic sources a clip kind can show (AST-010). */
+export function syntheticFitsClip(clipKind: string, synKind: string): boolean {
+	if (clipKind === 'adjustment') return synKind === 'adjustment';
+	if (clipKind === 'solid') return synKind !== 'adjustment';
+	if (clipKind === 'synthetic-audio') return synKind === 'bars-and-tone' || synKind === 'counting-leader';
+	return true;
+}
+
+/** A nest clip on a nesting cycle (INV-009), or null. */
+function findNestCycleClip(doc: ProjectDocument): { seqId: string; clipId: string } | null {
+	const state = new Map<string, 1 | 2>();
+	let hit: { seqId: string; clipId: string } | null = null;
+	const visit = (s: string): boolean => {
+		state.set(s, 1);
+		const seq = doc.sequences[s];
+		for (const c of Object.values(seq?.clips ?? {})) {
+			if (!isNestClip(c)) continue;
+			const n = (c as { sequenceId: string }).sequenceId;
+			if (!doc.sequences[n]) continue;
+			if (state.get(n) === 1) {
+				hit = { seqId: s, clipId: c.id };
+				return true;
+			}
+			if (!state.has(n) && visit(n)) return true;
+		}
+		state.set(s, 2);
+		return false;
+	};
+	for (const s of Object.keys(doc.sequences)) if (!state.has(s) && visit(s)) return hit;
+	return null;
+}
+
+/** wp speech: why a transcript's `coverage` is malformed, or null (absent = the whole media). */
+export function coverageProblem(coverage: unknown): string | null {
+	if (coverage === undefined) return null;
+	if (!Array.isArray(coverage)) return 'coverage is not a list of ranges';
+	let prev = -1;
+	for (const r of coverage) {
+		if (!Array.isArray(r) || r.length !== 2 || !Number.isInteger(r[0]) || !Number.isInteger(r[1]))
+			return 'coverage ranges must be [start, end] integer flicks';
+		if (r[0] < 0 || r[1] <= r[0]) return 'a coverage range is empty or negative';
+		if (r[0] <= prev) return 'coverage ranges are not sorted and disjoint';
+		prev = r[1];
+	}
+	return null;
+}
+
+/** Wave expressions: audio effects take no expressions (the mixer processes them per sample). */
+function isAudioEffectId(effectId: string): boolean {
+	return defaultEffectRegistry.get(effectId)?.appliesTo === 'audio';
 }

@@ -6,10 +6,19 @@
 // time in flicks (S01:KF-002). Keys are addressed by id; the handlers locate them anywhere in the
 // document and re-use param.ts target resolution for validation, lock checks and time conversion.
 import type { Draft } from 'immer';
-import { autoSlope, EASE_PRESETS, evaluate, isHoldOnlyValue } from '../../keyframes.ts';
+import {
+	autoSlope,
+	EASE_PRESETS,
+	evaluate,
+	isHoldOnlyValue,
+	retimeRoving,
+	stopRoving,
+} from '../../keyframes.ts';
 import { newKeySpatial, refreshAutoTangents, setSpatialMode } from '../../keyframes-spatial.ts';
+import { MASK_PROPS } from '../../masks/model.ts';
 import { PROPERTY_SPECS } from '../../registry/properties.ts';
 import type { Animatable, Ease, Interpolation, Keyframe } from '../../schema/common.ts';
+import type { Mask } from '../../schema/mask.ts';
 import { type EffectInstance, isKnownClipKind, type Track } from '../../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
@@ -56,6 +65,19 @@ export function clipAnimatables(seq: DSeq, clip: DClip): AnimLocation[] {
 			if (isAnim(a)) out.push({ anim: a, path: ['effect', fx.id, name], seq, clip });
 		}
 	}
+	// wp masks: Opacity masks and effect masks (`["mask", id, prop]`).
+	const maskLists = [
+		(clip as { masks?: Draft<Mask>[] }).masks ?? [],
+		...((clip as { effects?: Draft<EffectInstance>[] }).effects ?? []).map(
+			(fx) => (fx.masks ?? []) as Draft<Mask>[],
+		),
+	];
+	for (const list of maskLists)
+		for (const m of list)
+			for (const prop of MASK_PROPS) {
+				const a = m[prop];
+				if (isAnim(a)) out.push({ anim: a as DAnim, path: ['mask', m.id, prop], seq, clip });
+			}
 	// S11:ATP-006: keyframed params of anime templates (dynamic `params.<name>` keys; edits validate through
 	// param.ts target resolution, which needs the template to be installed).
 	if (clip.kind === 'motion-graphic') {
@@ -143,11 +165,16 @@ function magnitude(a: unknown, b: unknown): number {
 	return 0;
 }
 
-/** Average speed (value units per flick) of the segment between keys i and i+1, or 0. */
+/**
+ * Average velocity (value units per flick) of the segment between keys i and i+1, or 0: signed for numbers (so a
+ * Continuous key at a local extremum gets a smooth zero crossing), the speed along the value / path otherwise.
+ */
 function segmentVelocity(kfs: readonly Keyframe<unknown>[], i: number): number {
 	const a = kfs[i];
 	const b = kfs[i + 1];
 	if (!a || !b || b.time === a.time) return 0;
+	if (typeof a.value === 'number' && typeof b.value === 'number')
+		return (b.value - a.value) / (b.time - a.time);
 	return magnitude(a.value, b.value) / (b.time - a.time);
 }
 
@@ -176,12 +203,13 @@ function matchContinuous(anim: DAnim, i: number, edited: 'in' | 'out'): void {
 	const vIn = segmentVelocity(kfs, i - 1);
 	const vOut = segmentVelocity(kfs, i);
 	if (i === 0 || i === kfs.length - 1) return; // one side only
+	// keyframes-blend: signed (numbers): the same velocity on both sides, also through a local extremum.
 	if (edited === 'out') {
-		const slope = vIn > 0 ? (key.easeOut.slope * vOut) / vIn : key.easeOut.slope;
-		key.easeIn = { influence: key.easeIn.influence, slope: Math.max(0, slope) };
+		const slope = vIn !== 0 ? (key.easeOut.slope * vOut) / vIn : key.easeOut.slope;
+		key.easeIn = { influence: key.easeIn.influence, slope };
 	} else {
-		const slope = vOut > 0 ? (key.easeIn.slope * vIn) / vOut : key.easeIn.slope;
-		key.easeOut = { influence: key.easeOut.influence, slope: Math.max(0, slope) };
+		const slope = vOut !== 0 ? (key.easeIn.slope * vIn) / vOut : key.easeIn.slope;
+		key.easeOut = { influence: key.easeOut.influence, slope };
 	}
 }
 
@@ -190,6 +218,8 @@ export function finish(anims: Iterable<DAnim>): void {
 		a.keyframes.sort((x, y) => x.time - y.time);
 		// Spatial auto tangents first: auto-bezier temporal slopes measure curved paths (S03:KF-030).
 		refreshAutoTangents(a.keyframes as Keyframe<unknown>[]);
+		// keyframes-blend: roving keys sit where the motion passes them.
+		retimeRoving(a.keyframes as Keyframe<unknown>[]);
 		refreshAutoBezier(a);
 		// Template param views drop an emptied keyframe list (S11:ATP-006).
 		(a as { [PRUNE_EMPTY_KEYFRAMES]?: () => void })[PRUNE_EMPTY_KEYFRAMES]?.();
@@ -332,6 +362,10 @@ export const keyframeHandlers: HandlerMap = {
 		const moved: Record<string, number> = {};
 		for (const [anim, locs] of byAnim) {
 			const loc = locs[0]!;
+			// keyframes-blend: a roving key dragged in time stops roving (it gets a time of its own), keeping its speed.
+			for (const l of locs)
+				if (l.key.roving)
+					stopRoving(anim.keyframes as Keyframe<unknown>[], anim.keyframes.indexOf(l.key as never));
 			const g = gridOf(loc);
 			// `frames` are sequence frames: on reversed clips content time runs backwards.
 			const delta =

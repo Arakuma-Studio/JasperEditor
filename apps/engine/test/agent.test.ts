@@ -551,3 +551,45 @@ describe('AgentService timeouts', () => {
 		expect(big.result).toMatchObject({ ok: false, errors: [{ code: 'E_LIMIT' }] });
 	});
 });
+
+describe('POST /api/agent/ui (mcp-cli live-UI automation)', () => {
+	it('409 without an editor window; relays to the window and answers with which window replied', async () => {
+		const { app, projectId } = await makeEngine();
+		const post = (payload: unknown) =>
+			app.inject({ method: 'POST', url: '/api/agent/ui', headers: H, payload: payload as never });
+		const none = await post({ action: 'state' });
+		expect(none.statusCode).toBe(409);
+		expect(none.json()).toMatchObject({ code: 'NO_SESSION' });
+		expect((await post({ action: 'nope' })).statusCode).toBe(400);
+
+		const { ws, box } = await connectSession(app, projectId);
+		// Without a projectId the most recent window answers.
+		const pending = post({ action: 'elements', args: { panel: 'timeline' } });
+		const req = await box.until((m) => m.type === 'request');
+		expect(req).toMatchObject({ kind: 'ui', payload: { action: 'elements', args: { panel: 'timeline' } } });
+		ws.send(JSON.stringify({ type: 'response', id: req.id, result: { count: 0, elements: [] } }));
+		const ok = await pending;
+		expect(ok.statusCode).toBe(200);
+		expect(ok.json()).toEqual({
+			result: { count: 0, elements: [] },
+			window: { projectId, sessionId: 'ses_test' },
+		});
+		// The window's errors keep their code.
+		const bad = post({ projectId, action: 'click', args: { id: 'nope' } });
+		const breq = await box.until((m) => m.type === 'request');
+		ws.send(
+			JSON.stringify({
+				type: 'response',
+				id: breq.id,
+				result: null,
+				error: { code: 'E_NOT_FOUND', message: 'No element "nope"' },
+			}),
+		);
+		const b = await bad;
+		expect(b.statusCode).toBe(404);
+		expect(b.json()).toMatchObject({ message: 'No element "nope"', detail: { code: 'E_NOT_FOUND' } });
+		// Another project has no window.
+		expect((await post({ projectId: 'prj_other', action: 'state' })).statusCode).toBe(409);
+		ws.close();
+	});
+});

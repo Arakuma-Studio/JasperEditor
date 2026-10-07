@@ -3,6 +3,7 @@
 //   POST /api/agent/query   {projectId, query, args}   → {result, revision?, via}
 //   POST /api/agent/tx      {projectId, transaction}   → {result: TransactionResult, appliedBy}
 //   POST /api/agent/open-project {projectId}           → editor windows open the project (wp-mcp)
+//   POST /api/agent/ui      {projectId?, action, args} → an editor window's answer (mcp-cli live UI)
 //   GET  /api/agent/mcp-info                            → where the MCP server is (never the token; wp-mcp)
 //   WS   /agent             editor sessions (hello / request / response / event)
 import fastifyWebsocket from '@fastify/websocket';
@@ -11,6 +12,7 @@ import {
 	AgentOpenProjectRequestSchema,
 	type AgentOpenProjectResponse,
 	AgentQueryRequestSchema,
+	AgentUiRequestSchema,
 	EDITOR_OPEN_PROJECT_EVENT,
 	errorBody,
 } from '@jasper/api';
@@ -60,6 +62,18 @@ export default async function agentRoutes(app: FastifyInstance): Promise<void> {
 			return await service.transact(body.data.projectId, body.data.transaction, {
 				byteLength: Number.isFinite(length) ? length : undefined,
 			});
+		} catch (e) {
+			return sendApiError(reply, e);
+		}
+	});
+
+	// mcp-cli: live-UI automation of an open editor window (relayed over WS /agent).
+	app.post('/api/agent/ui', async (req, reply) => {
+		const body = AgentUiRequestSchema.safeParse(req.body);
+		if (!body.success)
+			return reply.code(400).send(errorBody('VALIDATION_FAILED', 'Invalid UI request', body.error.issues));
+		try {
+			return await service.ui(body.data);
 		} catch (e) {
 			return sendApiError(reply, e);
 		}

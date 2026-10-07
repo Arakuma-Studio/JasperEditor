@@ -24,7 +24,11 @@ import { validateValue, ruleFromParam } from './param.ts';
 import type { HandlerMap } from './util.ts';
 
 type DRoto = Draft<ClipRoto>;
-type StrokeInput = { kind: RotoStroke['kind']; radius: number; points: readonly (readonly [number, number])[] };
+type StrokeInput = {
+	kind: RotoStroke['kind'];
+	radius: number;
+	points: readonly (readonly [number, number])[];
+};
 type PointInput = { x: number; y: number; fg?: boolean; radius?: number };
 
 /** Owner of the roto commands in the catalogue. */
@@ -68,7 +72,8 @@ function frameAt(
 }
 
 function finitePoint(p: readonly number[], h: HandlerContext): [number, number] {
-	if (!Number.isFinite(p[0]) || !Number.isFinite(p[1])) h.fail('E_INVALID_PARAM', 'Points must be finite numbers');
+	if (!Number.isFinite(p[0]) || !Number.isFinite(p[1]))
+		h.fail('E_INVALID_PARAM', 'Points must be finite numbers');
 	return [p[0]!, p[1]!];
 }
 
@@ -312,9 +317,10 @@ export const rotoHandlers: HandlerMap = {
 	'roto.apply': (doc, cmd: CommandOf<'roto.apply'>, h) => {
 		const { seq, clip, roto } = locate(doc, cmd.rotoId, h);
 		assertClipUnlocked(seq, clip, h);
-		const effectId = (cmd.effect ?? (roto.kind === 'faces' ? 'blur' : 'matte')) === 'blur'
-			? OBJECT_BLUR_EFFECT_ID
-			: OBJECT_MATTE_EFFECT_ID;
+		const effectId =
+			(cmd.effect ?? (roto.kind === 'faces' ? 'blur' : 'matte')) === 'blur'
+				? OBJECT_BLUR_EFFECT_ID
+				: OBJECT_MATTE_EFFECT_ID;
 		const spec = h.registries.effects.get(effectId);
 		if (!spec) return h.fail('E_UNKNOWN_EFFECT', `Unknown effect: ${effectId}`);
 		const list = ((clip as { effects?: Draft<EffectInstance>[] }).effects ??= []);

@@ -1,9 +1,12 @@
 // Filesystem ProjectStore (ARCHITECTURE D-08, §4.3, §9.2; S01 §18): the S01:PER-002 envelope in
 // `<appdir>/projects/<projectId>/project.jasper` with atomic writes (S01:PER-016), a view file (PER-019),
 // versions every 5 minutes of saving (PER-020), and If-Match revisions with 409 on conflict (PER-025).
+// Process workstream (D-39, docs/project-files.md): the first save over a project migrated from an older schema keeps
+// `project (schema vN backup).jasper` next to it (S01:MIG-004); saved versions can be read and restored in place
+// (keeping the replaced state as a `before-restore` version) or as a new project (S01:PER-001 `restoreVersion`).
 import { copyFile, mkdir, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { ProjectSummary, VersionInfo } from '@jasper/api';
+import type { ProjectSummary, VersionInfo, VersionKind } from '@jasper/api';
 import type { AppdirPaths } from '@jasper/config';
 import {
 	createEmptyProject,
@@ -14,12 +17,21 @@ import {
 	ProjectDocumentSchema,
 	type ProjectEnvelope,
 } from '@jasper/project';
-import { atomicWriteFile, atomicWriteJson, readJsonOrNull } from '../tools/fs.ts';
+import { atomicWriteFile, atomicWriteJson, exists, readJsonOrNull } from '../tools/fs.ts';
 import { KeyedMutex } from '../tools/mutex.ts';
 import type { LeaseManager } from './leases.ts';
 
 const PROJECT_ID_RE = /^prj_[0-9A-HJKMNP-TV-Z]{16}$/;
 const VERSION_INTERVAL_MS = 5 * 60 * 1000;
+/** Version ids: `<ISO stamp>` (auto), `<ISO stamp>-restore` (before-restore), `schema-v<N>-backup`. */
+const VERSION_ID_RE = /^(?:\d{4}-\d{2}-\d{2}T[\d-]+Z(?:-restore)?|schema-v\d{1,4}-backup)$/;
+const SCHEMA_BACKUP_RE = /^project \(schema v(\d{1,4}) backup\)\.jasper$/;
+/** File name of the schema backup kept before the first save over a project migrated from schema `v`. */
+export const schemaBackupName = (v: number) => `project (schema v${v} backup).jasper`;
+const schemaVersionOf = (doc: Record<string, unknown> | undefined, env?: { schemaVersion?: unknown }) => {
+	const v = typeof doc?.schemaVersion === 'number' ? doc.schemaVersion : env?.schemaVersion;
+	return typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : 1;
+};
 const KEEP_VERSIONS = 20;
 
 export class ProjectError extends Error {
@@ -148,6 +160,7 @@ export class ProjectStoreFs {
 			}
 			this.validate(projectId, envelope.document);
 			const revision = Math.max(envelope.revision, current.revision + 1);
+			await this.keepSchemaBackup(projectId, current, envelope);
 			await this.maybeKeepVersion(projectId);
 			const next: StoredEnvelope = { ...envelope, revision, savedAt: this.now().toISOString() };
 			await atomicWriteJson(this.opts.paths.projectFile(projectId), next);
@@ -178,6 +191,22 @@ export class ProjectStoreFs {
 		}
 	}
 
+	/**
+	 * The first save of a newer schema over a file written with an older one keeps the file as it was, as
+	 * `project (schema vN backup).jasper` (never overwritten), so an older JasperEditor can still open that work.
+	 */
+	private async keepSchemaBackup(
+		projectId: string,
+		current: StoredEnvelope,
+		next: StoredEnvelope,
+	): Promise<void> {
+		const from = schemaVersionOf(current.document, current);
+		if (from >= schemaVersionOf(next.document, next)) return;
+		const backup = join(this.opts.paths.projectDir(projectId), schemaBackupName(from));
+		if (await exists(backup)) return;
+		await copyFile(this.opts.paths.projectFile(projectId), backup);
+	}
+
 	/** Keeps the previous file as a version when the newest version is older than 5 minutes (S01:PER-020). */
 	private async maybeKeepVersion(projectId: string): Promise<void> {
 		const dir = this.opts.paths.projectVersionsDir(projectId);
@@ -206,22 +235,134 @@ export class ProjectStoreFs {
 		const out: { id: string; path: string; mtimeMs: number; size: number }[] = [];
 		for (const n of names) {
 			if (!n.endsWith('.jasper')) continue;
+			const id = n.slice(0, -'.jasper'.length);
+			if (!VERSION_ID_RE.test(id)) continue;
 			const path = join(dir, n);
 			const s = await stat(path).catch(() => null);
-			if (s) out.push({ id: n.slice(0, -'.jasper'.length), path, mtimeMs: s.mtimeMs, size: s.size });
+			if (s) out.push({ id, path, mtimeMs: s.mtimeMs, size: s.size });
 		}
 		return out.sort((a, b) => (a.id < b.id ? -1 : 1));
 	}
 
+	/** Schema backups next to the project file (`project (schema vN backup).jasper`). */
+	private async listSchemaBackups(
+		projectId: string,
+	): Promise<{ id: string; path: string; mtimeMs: number; size: number }[]> {
+		let names: string[];
+		try {
+			names = await readdir(this.opts.paths.projectDir(projectId));
+		} catch {
+			return [];
+		}
+		const out: { id: string; path: string; mtimeMs: number; size: number }[] = [];
+		for (const n of names) {
+			const m = SCHEMA_BACKUP_RE.exec(n);
+			if (!m) continue;
+			const path = join(this.opts.paths.projectDir(projectId), n);
+			const s = await stat(path).catch(() => null);
+			if (s) out.push({ id: `schema-v${Number(m[1])}-backup`, path, mtimeMs: s.mtimeMs, size: s.size });
+		}
+		return out;
+	}
+
+	private async versionFile(projectId: string, versionId: string) {
+		if (!VERSION_ID_RE.test(versionId)) return null;
+		const all = [...(await this.listVersionFiles(projectId)), ...(await this.listSchemaBackups(projectId))];
+		return all.find((v) => v.id === versionId) ?? null;
+	}
+
+	private static kindOf(id: string): VersionKind {
+		if (id.endsWith('-backup')) return 'schema-backup';
+		if (id.endsWith('-restore')) return 'before-restore';
+		return 'auto';
+	}
+
+	private static info(v: { id: string; size: number }, env: StoredEnvelope): VersionInfo {
+		return {
+			versionId: v.id,
+			savedAt: env.savedAt,
+			revision: env.revision,
+			sizeBytes: v.size,
+			kind: ProjectStoreFs.kindOf(v.id),
+			schemaVersion: schemaVersionOf(env.document, env),
+		};
+	}
+
+	/** Saved versions, newest first; schema backups last. */
 	async versions(projectId: string): Promise<VersionInfo[]> {
 		await this.readEnvelope(projectId);
 		const out: VersionInfo[] = [];
-		for (const v of (await this.listVersionFiles(projectId)).reverse()) {
+		const files = [
+			...(await this.listVersionFiles(projectId)).reverse(),
+			...(await this.listSchemaBackups(projectId)).sort((a, b) => (a.id < b.id ? 1 : -1)),
+		];
+		for (const v of files) {
 			const env = await readJsonOrNull<StoredEnvelope>(v.path);
-			if (!env) continue;
-			out.push({ versionId: v.id, savedAt: env.savedAt, revision: env.revision, sizeBytes: v.size });
+			if (env?.format !== 'jasper-project' || !env.document || typeof env.revision !== 'number') continue;
+			out.push(ProjectStoreFs.info(v, env));
 		}
 		return out;
+	}
+
+	/** One saved version (`GET …/versions/:versionId`). */
+	async version(
+		projectId: string,
+		versionId: string,
+	): Promise<{ version: VersionInfo; envelope: StoredEnvelope }> {
+		await this.readEnvelope(projectId);
+		const v = await this.versionFile(projectId, versionId);
+		const env = v ? await readJsonOrNull<StoredEnvelope>(v.path) : null;
+		if (!v || env?.format !== 'jasper-project' || !env.document || typeof env.revision !== 'number')
+			throw new ProjectError('NOT_FOUND', 404, `No saved version ${versionId}`);
+		return { version: ProjectStoreFs.info(v, env), envelope: env };
+	}
+
+	/**
+	 * Restores a saved version. `replace`: refused while another session holds the lease (`leaseId` names the
+	 * caller's own); the current file is kept as a `before-restore` version, then the version's document becomes
+	 * the next revision. `copy`: a new project with the version's document (S01:PER-001 `restoreVersion`).
+	 */
+	async restoreVersion(
+		projectId: string,
+		versionId: string,
+		opts: { mode: 'replace' | 'copy'; name?: string; leaseId?: string },
+	): Promise<{ projectId: string; revision: number; keptAs: string | null }> {
+		const { envelope } = await this.version(projectId, versionId);
+		if (opts.mode === 'copy') {
+			const doc = JSON.parse(JSON.stringify(envelope.document)) as Record<string, unknown>;
+			const newId = createRandomIdSource().next('prj');
+			const stamp = this.now().toISOString().slice(0, 16).replace('T', ' ');
+			doc.projectId = newId;
+			doc.name = opts.name ?? `${typeof doc.name === 'string' ? doc.name : 'Project'} (restored ${stamp})`;
+			const env: StoredEnvelope = {
+				...envelope,
+				revision: 0,
+				savedAt: this.now().toISOString(),
+				document: doc,
+			};
+			await mkdir(this.opts.paths.projectDir(newId), { recursive: true });
+			await atomicWriteJson(this.opts.paths.projectFile(newId), env);
+			return { projectId: newId, revision: 0, keptAs: null };
+		}
+		return this.mutex.run(projectId, async () => {
+			const lease = this.opts.leases.get(projectId);
+			if (lease && lease.leaseId !== opts.leaseId)
+				throw new ProjectError('LEASE_HELD', 409, 'The project is open in an editor: restore it from there', {
+					holderSessionId: lease.sessionId,
+					expiresAt: lease.expiresAt,
+				});
+			if (envelope.document.projectId !== projectId)
+				throw new ProjectError('VALIDATION_FAILED', 400, 'The version belongs to another project');
+			const current = await this.readEnvelope(projectId);
+			const dir = this.opts.paths.projectVersionsDir(projectId);
+			await mkdir(dir, { recursive: true });
+			const keptAs = `${this.now().toISOString().replace(/[:.]/g, '-')}-restore`;
+			await copyFile(this.opts.paths.projectFile(projectId), join(dir, `${keptAs}.jasper`));
+			const revision = current.revision + 1;
+			const next: StoredEnvelope = { ...envelope, revision, savedAt: this.now().toISOString() };
+			await atomicWriteJson(this.opts.paths.projectFile(projectId), next);
+			return { projectId, revision, keptAs };
+		});
 	}
 
 	async saveView(projectId: string, view: Record<string, unknown>): Promise<void> {

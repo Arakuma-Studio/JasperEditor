@@ -1,0 +1,19 @@
+{
+  "name": "@jasper/expressions",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@jasper/project": "workspace:*",
+    "@jitl/quickjs-singlefile-browser-release-sync": "0.32.0",
+    "acorn": "^8.18.0",
+    "quickjs-emscripten-core": "0.32.0"
+  }
+}

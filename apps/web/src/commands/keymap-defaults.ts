@@ -118,6 +118,9 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('timeline.audioChannels', 'Shift+KeyG', T),
 	b('timeline.matchFrame', 'KeyF', E),
 	b('timeline.reverseMatchFrame', 'Shift+KeyR', E),
+	// edit-structure (Premiere defaults: Sequence ▸ Make Subsequence Shift+U, Reveal Nested Sequence Ctrl+Shift+F).
+	b('sequence.makeSubsequence', 'Shift+KeyU', E),
+	b('timeline.revealNested', 'Ctrl+Shift+KeyF', E, { mac: 'Shift+Cmd+KeyF' }),
 	b('timeline.applyDefaultVideoTransition', 'Ctrl+KeyD', T),
 	b('timeline.applyDefaultAudioTransition', 'Ctrl+Shift+KeyD', T),
 	b('timeline.applyDefaultTransitionsToSelection', 'Shift+KeyD', T),
@@ -222,8 +225,19 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('app.cycleRegions', 'F6', G),
 	b('app.shortcutReference', 'Ctrl+Alt+Slash', G),
 
+	// ---------------------------------------------------------------- multi-camera (wp-multicam; Premiere defaults)
+	...[1, 2, 3, 4, 5, 6, 7, 8, 9].flatMap((n) => [
+		b(`multicam.selectCamera${n}`, `Digit${n}`, E),
+		b(`multicam.cutToCamera${n}`, `Ctrl+Digit${n}`, E),
+	]),
+	b('program.toggleMulticamView', 'Shift+Digit0', E),
+
 	// ---------------------------------------------------------------- panel-scoped (R-PUI §16.7)
 	b('monitor.fit', 'Ctrl+Digit0', 'program'),
+	// wp masks: the selected mask's vertices / the mask itself; Escape leaves the pen or deselects.
+	b('mask.deleteSelection', 'Delete', 'program'),
+	b('mask.deleteSelection', 'Backspace', 'program'),
+	b('mask.escape', 'Escape', 'program'),
 	b('monitor.fit', 'Ctrl+Digit0', 'source'),
 	b('program.showRulers', 'Ctrl+KeyR', 'program'),
 	b('program.showGuides', 'Ctrl+Semicolon', 'program'),
@@ -244,6 +258,8 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('program.nudgeDownMany', 'Ctrl+Shift+ArrowDown', 'program', R),
 	b('monitor.toggleLoop', 'Ctrl+KeyL', 'program'),
 	b('monitor.toggleLoop', 'Ctrl+KeyL', 'source'),
+	// wp-multicam: source clip markers (sync points).
+	b('source.addMarker', 'KeyM', 'source'),
 	b('project.newBin', 'Ctrl+KeyB', 'project'),
 	b('project.listView', 'Ctrl+PageUp', 'project'),
 	b('project.iconView', 'Ctrl+PageDown', 'project'),
@@ -264,6 +280,8 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('effectControls.removeEffect', 'Backspace', 'effectControls'),
 	b('effectControls.removeEffect', 'Delete', 'effectControls'),
 	b('effectControls.toggleLoop', 'Ctrl+KeyL', 'effectControls'),
+	// Wave expressions: After Effects' Add Expression shortcut (Alt+Shift+= / Option+Shift+=).
+	b('inspector.toggleExpression', 'Alt+Shift+Equal', 'effectControls', { mac: 'Opt+Shift+Equal' }),
 	b('history.stepBackward', 'ArrowLeft', 'history', R),
 	b('history.stepForward', 'ArrowRight', 'history', R),
 ];

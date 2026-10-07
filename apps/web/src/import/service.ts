@@ -16,6 +16,9 @@ import {
 	type TransactionResult,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
+import { showImportReports } from '../interchange/dialogs.tsx';
+import { isTimelineFileName, isTimelineXmlFile } from '../interchange/formats.ts';
+import { importTimelineFiles } from '../interchange/import.ts';
 import {
 	type DragPayload,
 	type ImportProgress,
@@ -33,6 +36,7 @@ import {
 	mismatchPatch,
 	type SequenceSettingsPatch,
 } from './assets.ts';
+import { importCaptionFiles, isCaptionFileName, isCaptionXml } from './captions.ts';
 import { type ClientJobStore, clientJobs } from './client-jobs.ts';
 import { baseName, type DesktopBridge, getDesktopBridge } from './desktop.ts';
 import { type ImportFailure, type ImportPrompts, importPrompts } from './prompts.ts';
@@ -156,6 +160,56 @@ export class EngineImportService implements ImportService {
 		const failed: ImportFailure[] = [];
 		const acquired: Acquired[] = [];
 		const projectId = this.session.projectId;
+		// wp interchange: timeline documents (FCP7 XML, FCPXML, OTIO, EDL, AAF, OMF, ALE) are read by the engine and
+		// added as sequences and media items in one transaction; the report names what was not carried.
+		{
+			const all = input.files ?? [];
+			const docs: File[] = [];
+			const rest: File[] = [];
+			// (Only awaits for `.xml` files: the unload guard below must otherwise start synchronously.)
+			for (const f of all) {
+				const doc = isTimelineFileName(f.name) || (/\.xml$/i.test(f.name) && (await isTimelineXmlFile(f)));
+				(doc ? docs : rest).push(f);
+			}
+			const docPaths = (input.paths ?? []).filter((p) => isTimelineFileName(p) || /\.xml$/i.test(p));
+			if ((docs.length || docPaths.length) && !this.session.getState().readOnly) {
+				const binId = target.kind === 'bin' ? (target.binId ?? null) : null;
+				const r = await importTimelineFiles(
+					this.session,
+					this.engine,
+					{ files: docs, paths: docPaths },
+					binId,
+				);
+				failed.push(...r.failed);
+				if (r.reports.length) showImportReports(this.session, this.engine, r.reports);
+				input = { ...input, files: rest, paths: (input.paths ?? []).filter((p) => !docPaths.includes(p)) };
+				if (!rest.length && !input.paths?.length) {
+					if (failed.length) this.prompts.failures({ failed, committed: r.reports.length });
+					return { mediaIds: [], clipIds: [], failed, registered: [] };
+				}
+			}
+		}
+		// wp captions: caption files go onto caption tracks of the open sequence, not into the media pipeline.
+		{
+			// (Only awaits for `.xml` files: the unload guard below must otherwise start synchronously.)
+			const all = input.files ?? [];
+			const capFiles: File[] = [];
+			const rest: File[] = [];
+			for (const f of all) {
+				const xml = /\.xml$/i.test(f.name) && (await isCaptionXml(f));
+				(isCaptionFileName(f.name) || xml ? capFiles : rest).push(f);
+			}
+			const capPaths = (input.paths ?? []).filter(isCaptionFileName);
+			if ((capFiles.length || capPaths.length) && !this.session.getState().readOnly) {
+				const r = await importCaptionFiles(this.session, this.engine, { files: capFiles, paths: capPaths });
+				failed.push(...r.failed);
+				input = { ...input, files: rest, paths: (input.paths ?? []).filter((p) => !isCaptionFileName(p)) };
+				if (!rest.length && !input.paths?.length) {
+					if (failed.length) this.prompts.failures({ failed, committed: r.trackIds.length });
+					return { mediaIds: [], clipIds: [], failed, registered: [] };
+				}
+			}
+		}
 		if (this.session.getState().readOnly) {
 			// Nothing can be committed: do not upload bytes for nothing.
 			const names = [...(input.files ?? []).map((f) => f.name), ...(input.paths ?? []).map(baseName)];

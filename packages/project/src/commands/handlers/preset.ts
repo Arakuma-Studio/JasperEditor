@@ -22,7 +22,7 @@ import type { DClip, DDoc, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { dropForeignRotoRefs } from '../../roto/index.ts';
-import { buildParams } from './effect.ts';
+import { buildParams, validExpression } from './effect.ts';
 import { refreshAutoBezier } from './keyframe.ts';
 import { ruleFromParam, validateValue } from './param.ts';
 import { type HandlerMap, idList } from './util.ts';
@@ -98,9 +98,12 @@ function applyPreset(doc: DDoc, cmd: CommandOf<'effect.applyPreset'>, h: Handler
 						: { ...EASE_PRESETS.linear },
 				});
 			}
+			const expression = validExpression(a.expression, label, h);
 			const anim: Animatable<T> = {
 				value: val(a.value),
 				keyframes: [...byTime.values()].sort((x, y) => x.time - y.time),
+				// Wave expressions: presets carry expressions (AE animation presets do).
+				...(expression ? { expression } : {}),
 			};
 			refreshAutoBezier(anim as never);
 			return anim;
@@ -146,6 +149,7 @@ function applyPreset(doc: DDoc, cmd: CommandOf<'effect.applyPreset'>, h: Handler
 						}))
 						// Keys mapped onto the same frame: the later one wins (as pastes do).
 						.filter((k, i, arr) => arr[i + 1]?.time !== k.time),
+					...(a.expression ? { expression: clone(a.expression) } : {}),
 				};
 			}
 			return buildParams(spec, out, h);

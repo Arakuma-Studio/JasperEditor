@@ -6,8 +6,10 @@ import {
 	CLIPBOARD_FILE_LIST_TYPE,
 	clipboardReadResult,
 	ELECTRON_CLIPBOARD_FORMAT,
+	isCaptureRect,
 	isClipboardWrite,
 	isExternalUrlAllowed,
+	isPermissionAllowed,
 	isRevealablePath,
 	isSameOrigin,
 	isWindowAction,
@@ -138,5 +140,39 @@ describe('desktop package config (R-OMS §8.5)', () => {
 		expect(pkg.build.files).toContain('!**/node_modules/@remotion/compositor-*/**');
 		expect(pkg.build.afterPack).toBe('./scripts/after-pack.cjs');
 		expect(existsSync(join(__dirname, '..', pkg.build.afterPack))).toBe(true);
+	});
+});
+
+describe('capture-page rect (mcp-cli ui_screenshot)', () => {
+	it('accepts a finite, positive CSS-pixel rectangle only', () => {
+		expect(isCaptureRect({ x: 0, y: 0, width: 800, height: 600 })).toBe(true);
+		expect(isCaptureRect({ x: 10.5, y: 4, width: 1, height: 1 })).toBe(true);
+		for (const bad of [
+			null,
+			'rect',
+			{ x: 0, y: 0, width: 0, height: 10 },
+			{ x: -1, y: 0, width: 10, height: 10 },
+			{ x: 0, y: 0, width: Number.NaN, height: 10 },
+			{ x: 0, y: 0, width: 99999, height: 10 },
+			{ x: 0, y: 0, width: 10 },
+		])
+			expect(isCaptureRect(bad)).toBe(false);
+	});
+});
+
+describe('isPermissionAllowed (audio-mix: voice-over microphone)', () => {
+	const app = 'http://127.0.0.1:47900';
+	it('grants audio-only media requests from the app origin', () => {
+		expect(isPermissionAllowed('media', `${app}/project/x`, app, ['audio'])).toBe(true);
+		expect(isPermissionAllowed('media', `${app}/`, app, ['audio', 'video'])).toBe(false);
+		expect(isPermissionAllowed('media', `${app}/`, app, ['video'])).toBe(false);
+		expect(isPermissionAllowed('media', `${app}/`, app, [])).toBe(false);
+	});
+	it('denies other origins and other permissions', () => {
+		expect(isPermissionAllowed('media', 'https://evil.example/', app, ['audio'])).toBe(false);
+		expect(isPermissionAllowed('media', `${app}/`, '', ['audio'])).toBe(false);
+		expect(isPermissionAllowed('geolocation', `${app}/`, app)).toBe(false);
+		expect(isPermissionAllowed('notifications', `${app}/`, app)).toBe(false);
+		expect(isPermissionAllowed('fullscreen', `${app}/`, app)).toBe(true);
 	});
 });

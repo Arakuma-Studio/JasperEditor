@@ -1,25 +1,40 @@
 // The JasperEditor MCP server (tools, resources, prompts). Transport-agnostic: `cli.ts` serves it over
 // stdio (jasper-mcp), the engine serves the same definitions over Streamable HTTP at /mcp.
+import { expressionReferenceMarkdown } from '@jasper/expressions';
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { loadDoc, makeContext, type ToolContext } from './context.ts';
 import { pickSequence, timelineTable } from './format.ts';
 import type { EngineConnection } from './link.ts';
+import { installStrictValidation } from './strict.ts';
 import { ANIMATION_GUIDE, registerAnimationTools } from './tools/animation.ts';
+import { AUDIO_GUIDE, registerAudioTools } from './tools/audio.ts';
+import { AUDIO_FX_GUIDE, registerAudioFxTools } from './tools/audio-fx.ts';
 import { CACHE_GUIDE, registerCacheTools } from './tools/cache.ts';
+import { CAPTIONS_GUIDE, registerCaptionTools } from './tools/captions.ts';
 import { CLIPBOARD_GUIDE, registerClipboardTools } from './tools/clipboard.ts';
 import { COLOR_GUIDE, registerColorTools } from './tools/color.ts';
 import { COMPOSITION_GUIDE, registerCompositionTools } from './tools/compositions.ts';
 import { registerEditingTools } from './tools/editing.ts';
+import { EXPRESSIONS_GUIDE, registerExpressionTools } from './tools/expressions.ts';
+import { INSPECT_GUIDE, registerInspectTools } from './tools/inspect.ts';
+import { INTERCHANGE_GUIDE, registerInterchangeTools } from './tools/interchange.ts';
+import { KEYFRAMES_BLEND_GUIDE, registerKeyframesBlendTools } from './tools/keyframes-blend.ts';
+import { MASKS_GUIDE, registerMaskTools } from './tools/masks.ts';
 import { MOTION_PATH_GUIDE, registerMotionPathTools } from './tools/motion-path.ts';
+import { MULTICAM_GUIDE, registerMulticamTools } from './tools/multicam.ts';
 import { PRESETS_GUIDE, registerPresetTools } from './tools/presets.ts';
 import { PROCESSING_GUIDE, registerProcessingTools } from './tools/processing.ts';
 import { registerProjectTools } from './tools/projects.ts';
 import { registerRenderTools } from './tools/render.ts';
 import { registerShapeTools, SHAPES_GUIDE } from './tools/shapes.ts';
+import { registerSpeechTools, SPEECH_GUIDE } from './tools/speech.ts';
+import { registerStructureTools, STRUCTURE_GUIDE } from './tools/structure.ts';
 import { registerTemplateTools, TEMPLATES_GUIDE } from './tools/templates.ts';
 import { registerTrackingTools, TRACKING_GUIDE } from './tools/tracking.ts';
 import { registerTransitionTools, TRANSITION_GUIDE } from './tools/transitions.ts';
+import { registerUiTools, UI_GUIDE } from './tools/ui.ts';
+import { registerVersionTools, VERSIONS_GUIDE } from './tools/versions.ts';
 import { MCP_SERVER_VERSION } from './version.ts';
 
 const MCP_SERVER_NAME = 'jasper-editor';
@@ -39,7 +54,11 @@ Rules:
 - Tracks are "V1", "V2"… (video, V1 lowest) and "A1", "A2"… (audio). A video file placed with add_clip creates a linked video+audio pair.
 - Deleting tracks/items or anything with force: true needs the user's approval in an open editor window; if they deny it (E_APPROVAL_DENIED), do not retry without asking.
 - Undo/redo only touch this agent's own History entries.
-- Errors come back as tool errors with a code and a hint on what to do next.`;
+- Errors come back as tool errors with a code and a hint on what to do next.
+- Arguments are strict: an unknown key (at any depth, in tool arguments and inside apply_commands commands) is an error (E_UNKNOWN_ARGUMENT / E_SCHEMA) naming it, the accepted keys and the likely typo — never silently ignored.
+- Long calls (start_export with wait, wait_for_job, render_frame(s), process_clip, track, prerender_composition, track_mask, normalize_media_loudness…) send progress notifications (at most one per 100 ms) when you pass a progressToken; cancelling the request (notifications/cancelled) cancels the engine job and the engine deletes its partial output.
+- Every tool carries readOnlyHint / destructiveHint / idempotentHint / openWorldHint, so read-only tools can run without asking.
+- The same tools run from a shell: \`jasper\` (pnpm jasper --help), e.g. \`jasper exec marker.add frame=30 name=Intro\`, \`jasper props <clipId>\`, \`jasper render-frame --at 2s --out f.png\`, \`jasper export --out cut.mp4\`.`;
 
 const FULL_GUIDE = [
 	EDITING_GUIDE,
@@ -50,11 +69,24 @@ const FULL_GUIDE = [
 	TRANSITION_GUIDE,
 	ANIMATION_GUIDE,
 	MOTION_PATH_GUIDE,
+	KEYFRAMES_BLEND_GUIDE,
+	MASKS_GUIDE,
 	SHAPES_GUIDE,
 	TEMPLATES_GUIDE,
 	CLIPBOARD_GUIDE,
 	PRESETS_GUIDE,
 	CACHE_GUIDE,
+	STRUCTURE_GUIDE,
+	MULTICAM_GUIDE,
+	VERSIONS_GUIDE,
+	AUDIO_GUIDE,
+	AUDIO_FX_GUIDE,
+	CAPTIONS_GUIDE,
+	SPEECH_GUIDE,
+	INTERCHANGE_GUIDE,
+	INSPECT_GUIDE,
+	UI_GUIDE,
+	EXPRESSIONS_GUIDE,
 ].join('\n\n');
 
 type JasperMcpOptions = {
@@ -71,6 +103,8 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 			capabilities: { tools: {}, resources: {}, prompts: {}, logging: {} },
 		},
 	);
+	// Strict arguments for every tool on this server (strict.ts): unknown keys are errors, never dropped.
+	installStrictValidation(server);
 	const ctx = makeContext(server, opts.link, opts.agentName);
 	registerProjectTools(ctx);
 	registerEditingTools(ctx);
@@ -82,11 +116,24 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerTransitionTools(ctx);
 	registerAnimationTools(ctx);
 	registerMotionPathTools(ctx);
+	registerKeyframesBlendTools(ctx);
+	registerMaskTools(ctx);
 	registerShapeTools(ctx);
 	registerTemplateTools(ctx);
 	registerClipboardTools(ctx);
 	registerPresetTools(ctx);
 	registerCacheTools(ctx);
+	registerStructureTools(ctx);
+	registerMulticamTools(ctx);
+	registerVersionTools(ctx);
+	registerAudioTools(ctx);
+	registerAudioFxTools(ctx);
+	registerCaptionTools(ctx);
+	registerSpeechTools(ctx);
+	registerInterchangeTools(ctx);
+	registerInspectTools(ctx);
+	registerUiTools(ctx);
+	registerExpressionTools(ctx);
 	registerResources(ctx);
 	registerPrompts(ctx);
 	return { server };
@@ -153,7 +200,16 @@ function registerResources(ctx: ToolContext): void {
 			description: 'How to drive JasperEditor with these tools.',
 			mimeType: 'text/markdown',
 		},
-		async (uri) => ({ contents: [{ uri: uri.href, mimeType: 'text/markdown', text: FULL_GUIDE }] }),
+		// Wave expressions: the guide resource carries the full expression language reference.
+		async (uri) => ({
+			contents: [
+				{
+					uri: uri.href,
+					mimeType: 'text/markdown',
+					text: `${FULL_GUIDE}\n\n${expressionReferenceMarkdown()}`,
+				},
+			],
+		}),
 	);
 }
 

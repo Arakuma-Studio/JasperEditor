@@ -23,6 +23,10 @@ export const ID_PREFIXES = {
 	font: 'fnt',
 	/** M2 (S09): trackers placed on a clip. */
 	tracker: 'tkr',
+	/** audio-mix: Audio Track Mixer sends. */
+	send: 'snd',
+	/** wp masks: Opacity / effect masks. */
+	mask: 'msk',
 	/** parity (roto): segmented objects (Roto Brush / faces) on a clip. */
 	roto: 'rto',
 } as const;

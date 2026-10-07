@@ -95,6 +95,7 @@ export function Section(props: {
 					type="button"
 					aria-expanded={open}
 					aria-label={`${open ? 'Collapse' : 'Expand'} section`}
+					data-testid={`section-toggle-${props.id}`}
 					onClick={toggle}
 					className="flex min-w-0 flex-1 items-center gap-1 text-left text-pr-ui text-pr-strong"
 				>

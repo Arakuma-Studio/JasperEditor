@@ -21,6 +21,7 @@ import {
 	Menu,
 	session,
 	shell,
+	systemPreferences,
 } from 'electron';
 import { type EngineProcess, startEngineProcess } from './engine-process.ts';
 import {
@@ -28,8 +29,10 @@ import {
 	CLIPBOARD_FILE_LIST_TYPE,
 	clipboardReadResult,
 	ELECTRON_CLIPBOARD_FORMAT,
+	isCaptureRect,
 	isClipboardWrite,
 	isExternalUrlAllowed,
+	isPermissionAllowed,
 	isRevealablePath,
 	isSameOrigin,
 	isWindowAction,
@@ -166,6 +169,21 @@ function registerIpc(): void {
 			execPath: process.execPath,
 		});
 	});
+	// mcp-cli (live-UI automation, ui_screenshot): the window's own pixels (WebGL included), cropped and scaled.
+	ipcMain.handle('jasper:capture-page', async (e, rect: unknown, maxWidth: unknown) => {
+		if (!fromApp(e) || !isCaptureRect(rect)) return null;
+		const image = await e.sender.capturePage({
+			x: Math.round(rect.x),
+			y: Math.round(rect.y),
+			width: Math.round(rect.width),
+			height: Math.round(rect.height),
+		});
+		const size = image.getSize();
+		const limit = typeof maxWidth === 'number' && maxWidth >= 64 ? Math.min(4096, maxWidth) : 1600;
+		const out = size.width > limit ? image.resize({ width: limit, quality: 'best' }) : image;
+		const s = out.getSize();
+		return { png: out.toPNG().toString('base64'), width: s.width, height: s.height };
+	});
 	// wp-clipboard (S01:CLB-002): the JasperEditor payload as the custom application/x-jasper-clipboard format,
 	// written atomically with its text/html and text/plain forms; reads return only that format's JSON.
 	ipcMain.handle('jasper:clipboard-write', async (e, data: unknown) => {
@@ -266,8 +284,36 @@ async function startPackagedLike(): Promise<string> {
 	return `${engine.origin}/`;
 }
 
+/**
+ * audio-mix: media permissions for voice-over recording. Microphone requests from the app origin are granted (on
+ * macOS after the system prompt, `askForMediaAccess`); every other permission request and origin is denied.
+ */
+function registerPermissions(): void {
+	const ses = session.defaultSession;
+	ses.setPermissionRequestHandler((wc, permission, callback, details) => {
+		const url = (details as { requestingUrl?: string }).requestingUrl ?? wc.getURL();
+		const types = ((details as { mediaTypes?: string[] }).mediaTypes ?? []) as string[];
+		if (!isPermissionAllowed(permission, url, appOrigin, types)) return callback(false);
+		if (permission === 'media' && process.platform === 'darwin') {
+			systemPreferences
+				.askForMediaAccess('microphone')
+				.then(callback)
+				.catch(() => callback(false));
+			return;
+		}
+		callback(true);
+	});
+	ses.setPermissionCheckHandler((_wc, permission, requestingOrigin, details) => {
+		const types = (details as { mediaType?: string }).mediaType
+			? [(details as { mediaType: string }).mediaType]
+			: ['audio'];
+		return isPermissionAllowed(permission, requestingOrigin, appOrigin, permission === 'media' ? types : []);
+	});
+}
+
 async function boot(): Promise<void> {
 	registerIpc();
+	registerPermissions();
 	if (process.platform !== 'darwin') Menu.setApplicationMenu(null); // Row A renders the in-app menubar (S05:EL-002)
 	let url: string;
 	if (mode === 'dev') {

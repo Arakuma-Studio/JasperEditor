@@ -204,7 +204,13 @@ vec2 om_velocity() {
 }`;
 
 const OBJECT_VIEWS = ['final', 'alpha', 'overlay', 'boundary', 'decontamination'] as const;
-const OBJECT_VIEW_LABELS = ['Final Result', 'Alpha', 'Alpha Overlay', 'Alpha Boundary', 'Decontamination Map'];
+const OBJECT_VIEW_LABELS = [
+	'Final Result',
+	'Alpha',
+	'Alpha Overlay',
+	'Alpha Boundary',
+	'Decontamination Map',
+];
 
 const objectMatteParams = [
 	fxParam.object('object', 'Object'),
@@ -213,17 +219,29 @@ const objectMatteParams = [
 	fxParam.toggle('invert', 'Invert', false),
 	fxParam.pixels('feather', 'Feather', 0, 100, { group: 'Matte' }),
 	fxParam.percent('contrast', 'Contrast', 0, { group: 'Matte' }),
-	fxParam.number('shiftEdge', 'Shift Edge', 0, { min: -100, max: 100, step: 0.1 }, {
-		unit: '%',
-		group: 'Matte',
-		ui: { control: 'slider', bipolar: true },
-	}),
+	fxParam.number(
+		'shiftEdge',
+		'Shift Edge',
+		0,
+		{ min: -100, max: 100, step: 0.1 },
+		{
+			unit: '%',
+			group: 'Matte',
+			ui: { control: 'slider', bipolar: true },
+		},
+	),
 	fxParam.percent('reduceChatter', 'Reduce Chatter', 0, { group: 'Matte' }),
 	fxParam.toggle('useMotionBlur', 'Use Motion Blur', false, { group: 'Motion Blur' }),
-	fxParam.number('shutterAngle', 'Shutter Angle', 180, { min: 0, max: 720, softMax: 360, step: 1 }, {
-		unit: 'deg',
-		group: 'Motion Blur',
-	}),
+	fxParam.number(
+		'shutterAngle',
+		'Shutter Angle',
+		180,
+		{ min: 0, max: 720, softMax: 360, step: 1 },
+		{
+			unit: 'deg',
+			group: 'Motion Blur',
+		},
+	),
 	fxParam.toggle('decontaminate', 'Decontaminate Edge Colors', true, { group: 'Decontamination' }),
 	fxParam.percent('decontaminationAmount', 'Decontamination Amount', 100, { group: 'Decontamination' }),
 	fxParam.toggle('extendWhereSmoothed', 'Extend Where Smoothed', true, { group: 'Decontamination' }),
@@ -238,7 +256,17 @@ export const OBJECT_MATTE = defineShaderEffect({
 	category: 'Keying',
 	description:
 		'Cuts the clip out by a Roto Brush object (computed by propagation), with After Effects-style matte refinement: feather, contrast, shift edge, reduce chatter, motion blur and edge colour decontamination. Views show the alpha, an overlay or the boundary.',
-	keywords: ['roto', 'roto brush', 'rotoscope', 'segment', 'object', 'cutout', 'mask', 'refine edge', 'matte'],
+	keywords: [
+		'roto',
+		'roto brush',
+		'rotoscope',
+		'segment',
+		'object',
+		'cutout',
+		'mask',
+		'refine edge',
+		'matte',
+	],
 	params: objectMatteParams,
 	gpu: {
 		mattes: [
@@ -350,7 +378,17 @@ export const OBJECT_BLUR = defineShaderEffect({
 	category: 'Blur & Sharpen',
 	description:
 		'Blurs, pixelates or fills a tracked object (a Roto Brush object or the faces found by face tracking) — or everything but it. The one-click Blur Faces workflow adds it.',
-	keywords: ['blur faces', 'face blur', 'anonymize', 'censor', 'pixelate', 'mosaic', 'redact', 'roto', 'object'],
+	keywords: [
+		'blur faces',
+		'face blur',
+		'anonymize',
+		'censor',
+		'pixelate',
+		'mosaic',
+		'redact',
+		'roto',
+		'object',
+	],
 	params: [
 		fxParam.object('object', 'Object'),
 		fxParam.choice('region', 'Region', ['inside', 'outside'], ['Object', 'Everything Else'], 'inside'),
@@ -358,9 +396,15 @@ export const OBJECT_BLUR = defineShaderEffect({
 		fxParam.pixels('blurriness', 'Blurriness', 40, 500),
 		fxParam.pixels('blockSize', 'Block Size', 24, 500),
 		fxParam.color('fillColor', 'Fill Color', [0, 0, 0, 1]),
-		fxParam.number('expand', 'Expand', 0, { min: -200, max: 400, softMin: -50, softMax: 100, step: 0.1 }, {
-			unit: 'px',
-		}),
+		fxParam.number(
+			'expand',
+			'Expand',
+			0,
+			{ min: -200, max: 400, softMin: -50, softMax: 100, step: 0.1 },
+			{
+				unit: 'px',
+			},
+		),
 		fxParam.pixels('feather', 'Feather', 6, 200),
 		fxParam.percent('opacity', 'Opacity', 100),
 		fxParam.choice('view', 'View', ['final', 'matte'], ['Final Result', 'Matte'], 'final'),
@@ -377,8 +421,14 @@ export const OBJECT_BLUR = defineShaderEffect({
 							{
 								output: 'obMos',
 								size: {
-									width: Math.max(1, Math.min(8192, Math.ceil(ctx.width / Math.max(1, num(p.blockSize, 24))))),
-									height: Math.max(1, Math.min(8192, Math.ceil(ctx.height / Math.max(1, num(p.blockSize, 24))))),
+									width: Math.max(
+										1,
+										Math.min(8192, Math.ceil(ctx.width / Math.max(1, num(p.blockSize, 24)))),
+									),
+									height: Math.max(
+										1,
+										Math.min(8192, Math.ceil(ctx.height / Math.max(1, num(p.blockSize, 24)))),
+									),
 								},
 								filter: 'nearest',
 								frag: /* glsl */ `
@@ -399,7 +449,11 @@ void main() {
 			const blur: ShaderPass[] =
 				method === 'gaussian'
 					? [
-							{ output: 'obBlur', scale: blurSigma > 8 ? 0.5 : 1, frag: 'void main() { fragColor = texture(u_source, v_uv); }' },
+							{
+								output: 'obBlur',
+								scale: blurSigma > 8 ? 0.5 : 1,
+								frag: 'void main() { fragColor = texture(u_source, v_uv); }',
+							},
 							...blurPasses('obBlur', blurSigma > 8 ? blurSigma * 0.5 : blurSigma, blurSigma > 8 ? 0.5 : 1),
 						]
 					: [];

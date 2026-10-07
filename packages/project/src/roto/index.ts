@@ -63,7 +63,9 @@ export const ROTO_DEFAULTS: ResolvedRotoSettings = {
 	faceShape: 'outline',
 };
 
-export function rotoSettingsOf(r: Pick<ClipRoto, 'settings'> | { settings?: RotoSettings }): ResolvedRotoSettings {
+export function rotoSettingsOf(
+	r: Pick<ClipRoto, 'settings'> | { settings?: RotoSettings },
+): ResolvedRotoSettings {
 	const s = r.settings ?? {};
 	const out = { ...ROTO_DEFAULTS };
 	for (const k of Object.keys(out) as (keyof ResolvedRotoSettings)[]) {
@@ -166,7 +168,10 @@ export function mediaFrameFlicks(frame: number, rate: Rational): number {
 }
 
 /** Frame rate used for a medium's frames (video: its nominal rate; stills: 1 frame). */
-export function rotoRateOf(asset: Pick<MediaAsset, 'probe' | 'kind'> | null | undefined, fallback: Rational): Rational {
+export function rotoRateOf(
+	asset: Pick<MediaAsset, 'probe' | 'kind'> | null | undefined,
+	fallback: Rational,
+): Rational {
 	const vs = asset?.probe.streams.find((s) => s.type === 'video');
 	if (asset?.kind === 'video' && vs && vs.type === 'video' && vs.frameRate.num > 0)
 		return { num: vs.frameRate.num, den: vs.frameRate.den };
