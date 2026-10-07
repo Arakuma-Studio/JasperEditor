@@ -22,7 +22,9 @@ export function loudnessText(v: number | null | undefined): string {
 export function AudioMetersPanel({ visible }: PanelProps) {
 	const session = useSessionOrNull();
 	const layout = useStoreSelector(session?.store ?? NULL_STORE, (s: SessionState | null) => {
-		const seq = s?.activeSequenceId ? (s.document.sequences[s.activeSequenceId] as Sequence | undefined) : undefined;
+		const seq = s?.activeSequenceId
+			? (s.document.sequences[s.activeSequenceId] as Sequence | undefined)
+			: undefined;
 		return (seq?.settings.masterLayout as Layout | undefined) ?? 'stereo';
 	});
 	const graph = useMixGraph();
@@ -75,7 +77,9 @@ export function AudioMetersPanel({ visible }: PanelProps) {
 						className={`text-center text-[8px] leading-[10px] ${solo.has(i) ? 'rounded-[1px] text-pr-on-accent' : 'text-pr-dim hover:text-pr-text'}`}
 						style={{
 							width: barWidth + (channels > 2 ? 1 : 2) - 1,
-							...(solo.has(i) ? { background: 'var(--pr-track-solo)', color: 'var(--pr-track-solo-text)' } : {}),
+							...(solo.has(i)
+								? { background: 'var(--pr-track-solo)', color: 'var(--pr-track-solo-text)' }
+								: {}),
 						}}
 					>
 						{channels > 2 ? n.slice(0, 1) : 'S'}
@@ -86,7 +90,7 @@ export function AudioMetersPanel({ visible }: PanelProps) {
 			<div
 				className="mt-1 flex flex-col gap-[1px] border-t border-pr-border pt-1 font-pr text-[9px] leading-[11px] pr-tabular"
 				data-testid="audio-meters-loudness"
-				aria-label="Loudness (EBU R128)"
+				title="Loudness (EBU R128)"
 			>
 				{(
 					[
@@ -100,10 +104,16 @@ export function AudioMetersPanel({ visible }: PanelProps) {
 					<div key={k} className="flex justify-between gap-0.5" title={title} data-loudness={k}>
 						<span className="text-pr-muted">{k}</span>
 						<span
-							className={k === 'TP' && tpHot ? 'text-pr-danger' : k === 'I' ? 'text-pr-text' : 'text-pr-muted'}
+							className={
+								k === 'TP' && tpHot ? 'text-pr-danger' : k === 'I' ? 'text-pr-text' : 'text-pr-muted'
+							}
 							data-value={v !== undefined && v !== null && Number.isFinite(v) ? v.toFixed(2) : ''}
 						>
-							{k === 'LRA' ? (v !== undefined && Number.isFinite(v) && (l?.integrated ?? -100) > -70 ? v.toFixed(1) : '—') : loudnessText(v)}
+							{k === 'LRA'
+								? v !== undefined && Number.isFinite(v) && (l?.integrated ?? -100) > -70
+									? v.toFixed(1)
+									: '—'
+								: loudnessText(v)}
 						</span>
 					</div>
 				))}

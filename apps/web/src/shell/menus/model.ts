@@ -121,6 +121,12 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('timeline.speedDuration', 'Speed/Duration…'),
 			c('timeline.audioGain', 'Audio Gain…'),
 			c('timeline.audioChannels', 'Audio Channels…'),
+			// audio-mix
+			sub('Audio Options', [
+				c('audio.autoDuck', 'Auto Duck…'),
+				c('audio.normalizeMedia', 'Normalize Loudness…'),
+				c('audio.measureLoudness', 'Measure Loudness'),
+			]),
 			sep,
 			c('timeline.toggleEnable', 'Enable'),
 			c('timeline.linkUnlink', 'Link / Unlink'),
@@ -188,6 +194,11 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('sequence.goToPrevGapInTrack', 'Previous in Track'),
 			]),
 			c('sequence.makeSubsequence', 'Make Subsequence'),
+			sep,
+			// audio-mix
+			c('sequence.loudness', 'Loudness Normalization…'),
+			c('audio.voiceoverRecord', 'Record Voice-over'),
+			c('audio.voiceoverSettings', 'Voice-Over Record Settings…'),
 			sep,
 			c('timeline.zoomIn', 'Zoom In'),
 			c('timeline.zoomOut', 'Zoom Out'),
@@ -268,6 +279,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('view.layout.compact', 'Compact'),
 			]),
 			c('view.tooltips', 'Show Tooltips'),
+			// audio-mix (Premiere: Toggle Audio During Scrubbing, Shift+S)
+			c('transport.toggleAudioScrub', 'Audio Scrubbing'),
 			sep,
 			c('view.fullscreen', 'Full Screen'),
 		],

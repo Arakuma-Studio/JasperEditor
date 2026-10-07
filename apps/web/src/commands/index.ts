@@ -5,6 +5,7 @@ import '../layer-bake/commands.ts';
 // Register the fx framework's on-canvas point handles (wave 1).
 import '../fx/register.ts';
 import { appCommands } from './app.ts';
+import { audioCommands } from './audio.ts';
 import { cacheCommands } from './cache.ts';
 import { clipboardCommands } from './clipboard.ts';
 import { colorCommands } from './color.ts';
@@ -37,6 +38,7 @@ export * from './types.ts';
 
 const COMMAND_MODULES: UiCommand[][] = [
 	appCommands,
+	audioCommands,
 	editCommands,
 	timelineCommands,
 	transportCommands,

@@ -52,7 +52,11 @@ function opened(url: string): Promise<Opened | null> {
 }
 
 /** Decoded planar samples of `[t0, t1)` seconds of a track at its own rate (silence where nothing decodes). */
-async function decodeRange(track: InputAudioTrack, t0: number, t1: number): Promise<{ rate: number; data: Float32Array[] }> {
+async function decodeRange(
+	track: InputAudioTrack,
+	t0: number,
+	t1: number,
+): Promise<{ rate: number; data: Float32Array[] }> {
 	const sink = new AudioBufferSink(track);
 	const rate = track.sampleRate;
 	const nch = track.numberOfChannels;

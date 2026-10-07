@@ -95,7 +95,10 @@ function stripOf(seq: Sequence, id: string): StripView | undefined {
 }
 
 function clipModeOf(seq: Sequence, trackId: string): AutomationMode {
-	return (seq.audioTracks.find((t) => t.id === trackId)?.mixer?.clipAutomation as AutomationMode | undefined) ?? 'read';
+	return (
+		(seq.audioTracks.find((t) => t.id === trackId)?.mixer?.clipAutomation as AutomationMode | undefined) ??
+		'read'
+	);
 }
 
 /** The clip lane value under sequence time `t` on a track (the clip's volume / pan at its content time). */
@@ -103,7 +106,10 @@ export function clipLaneValue(seq: Sequence, trackId: string, lane: string, t: n
 	const rate = seq.settings.frameRate as Rational;
 	const F = flicksPerFrame(rate);
 	for (const c of Object.values(seq.clips)) {
-		if (c.trackId !== trackId || (c.kind !== 'audio' && c.kind !== 'nest-audio' && c.kind !== 'synthetic-audio'))
+		if (
+			c.trackId !== trackId ||
+			(c.kind !== 'audio' && c.kind !== 'nest-audio' && c.kind !== 'synthetic-audio')
+		)
 			continue;
 		if (c.start * F > t || t >= (c.start + c.duration) * F) continue;
 		const clip = c as unknown as {
@@ -183,7 +189,10 @@ export class MixerController {
 		const st = this.session.transport.getState();
 		if (!st.playing) return st.frame * F;
 		const fps = rate.num / rate.den;
-		const ahead = Math.min(1, ((performance.now() - this.lastFrame.at) / 1000) * fps * Math.abs(st.rate || 1));
+		const ahead = Math.min(
+			1,
+			((performance.now() - this.lastFrame.at) / 1000) * fps * Math.abs(st.rate || 1),
+		);
 		return Math.max(0, Math.round((this.lastFrame.frame + ahead) * F));
 	}
 
@@ -255,7 +264,8 @@ export class MixerController {
 			if (g.points.length === 0) continue;
 			const clip = isClipLane(g.lane);
 			const hold = !clip && !!laneInfo(g.lane)?.hold;
-			const end = g.mode === 'touch' ? Math.min(g.released ?? tStop, Math.max(tStop, g.points[0]![0])) : tStop;
+			const end =
+				g.mode === 'touch' ? Math.min(g.released ?? tStop, Math.max(tStop, g.points[0]![0])) : tStop;
 			g.push(Math.max(end, g.lastTime), g.value);
 			g.flush();
 			const pts = g.points.map((p) => [p[0], p[1]] as Point);
@@ -305,7 +315,8 @@ export class MixerController {
 					});
 			}
 		}
-		if (commands.length) this.session.apply({ label: 'Write Automation', origin: 'user', commands: commands as never });
+		if (commands.length)
+			this.session.apply({ label: 'Write Automation', origin: 'user', commands: commands as never });
 		graph?.clearOverrides();
 		this.held.clear();
 		this.emit();

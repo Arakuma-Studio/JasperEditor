@@ -39,7 +39,8 @@ export type VoiceoverStatus = {
 export function cueFrames(captureFrame: number, recordFrame: number, fps: Rational): number[] {
 	const sec = fps.num / fps.den;
 	const out: number[] = [];
-	for (let k = 1; recordFrame - k * sec >= captureFrame - 1e-9; k++) out.push(Math.round(recordFrame - k * sec));
+	for (let k = 1; recordFrame - k * sec >= captureFrame - 1e-9; k++)
+		out.push(Math.round(recordFrame - k * sec));
 	out.reverse();
 	out.push(recordFrame);
 	return out;
@@ -185,13 +186,16 @@ export class VoiceoverRecorder {
 		// countdown cues on the capture context (heard on the default output)
 		if (prefs.countdownCues) {
 			const t0 = this.ctx.currentTime + 0.05;
-			for (const f of cueFrames(captureFrame, recordFrame, fps)) this.beep(t0 + (f - captureFrame) / fpsN, f === recordFrame);
+			for (const f of cueFrames(captureFrame, recordFrame, fps))
+				this.beep(t0 + (f - captureFrame) / fpsN, f === recordFrame);
 		}
 		this.node.port.postMessage({ type: 'start' });
 		const transport = this.session.transport;
 		if (transport.getState().playing) transport.pause();
 		transport.seek(captureFrame);
-		this.offTransport = transport.subscribe((st: TransportState, prev: TransportState) => this.onTransport(st, prev));
+		this.offTransport = transport.subscribe((st: TransportState, prev: TransportState) =>
+			this.onTransport(st, prev),
+		);
 		transport.play(1);
 		this.set({ phase: 'recording' });
 	}
@@ -303,11 +307,13 @@ export class VoiceoverRecorder {
 		const ctx = this.ctx;
 		const s = this.session.getState();
 		const seq = s.document.sequences[this.sequenceId] as Sequence | undefined;
-		if (!ctx || !seq || this.firstSample === null || this.chunks.length === 0) throw new Error('Nothing was recorded');
+		if (!ctx || !seq || this.firstSample === null || this.chunks.length === 0)
+			throw new Error('Nothing was recorded');
 		const sr = ctx.sampleRate;
 		const fps = seq.settings.frameRate as Rational;
 		const prefs = audioPrefs.get().voiceOver;
-		const end = this.status.punchOut !== null ? Math.min(this.stopFrame, this.status.punchOut) : this.stopFrame;
+		const end =
+			this.status.punchOut !== null ? Math.min(this.stopFrame, this.status.punchOut) : this.stopFrame;
 		if (end <= this.status.recordFrame) throw new Error('The recording stopped before the record point');
 		const latency = Math.round(((ctx.outputLatency || 0) + (ctx.baseLatency || 0)) * sr);
 		const a = this.sampleOf(this.status.recordFrame, fps, sr) + latency;
@@ -329,12 +335,18 @@ export class VoiceoverRecorder {
 		const fileName = nextTakeName(prefs.name, used);
 		const wav = encodeWav([mono], sr, 'f32');
 		const projectId = s.document.projectId;
-		const reg = await this.engine.uploadFile(new Blob([wav as Uint8Array<ArrayBuffer>], { type: 'audio/wav' }), {
-			projectId,
-			fileName,
-			mimeType: 'audio/wav',
+		const reg = await this.engine.uploadFile(
+			new Blob([wav as Uint8Array<ArrayBuffer>], { type: 'audio/wav' }),
+			{
+				projectId,
+				fileName,
+				mimeType: 'audio/wav',
+			},
+		);
+		const asset = buildMediaAsset(reg, {
+			id: this.session.ctx.ids.next('med'),
+			now: new Date().toISOString(),
 		});
-		const asset = buildMediaAsset(reg, { id: this.session.ctx.ids.next('med'), now: new Date().toISOString() });
 		const r = this.session.apply({
 			label: 'Record Voice-over',
 			origin: 'user',

@@ -70,7 +70,8 @@ export function parseAudioPrefs(raw: unknown): AudioPrefs {
 		switchToTouchAfterWrite:
 			typeof o.switchToTouchAfterWrite === 'boolean' ? o.switchToTouchAfterWrite : d.switchToTouchAfterWrite,
 		linearThinning: typeof o.linearThinning === 'boolean' ? o.linearThinning : d.linearThinning,
-		minIntervalThinning: typeof o.minIntervalThinning === 'boolean' ? o.minIntervalThinning : d.minIntervalThinning,
+		minIntervalThinning:
+			typeof o.minIntervalThinning === 'boolean' ? o.minIntervalThinning : d.minIntervalThinning,
 		minIntervalMs: num(o.minIntervalMs, 1, 2000, d.minIntervalMs),
 		voiceOver: {
 			deviceId: typeof v.deviceId === 'string' ? v.deviceId : d.voiceOver.deviceId,
@@ -102,8 +103,14 @@ const listeners = new Set<() => void>();
 
 export const audioPrefs = {
 	get: (): AudioPrefs => state,
-	set(patch: Partial<Omit<AudioPrefs, 'voiceOver'>> & { voiceOver?: Partial<AudioPrefs['voiceOver']> }): void {
-		state = parseAudioPrefs({ ...state, ...patch, voiceOver: { ...state.voiceOver, ...(patch.voiceOver ?? {}) } });
+	set(
+		patch: Partial<Omit<AudioPrefs, 'voiceOver'>> & { voiceOver?: Partial<AudioPrefs['voiceOver']> },
+	): void {
+		state = parseAudioPrefs({
+			...state,
+			...patch,
+			voiceOver: { ...state.voiceOver, ...(patch.voiceOver ?? {}) },
+		});
 		try {
 			storage()?.setItem(KEY, JSON.stringify(state));
 		} catch {
