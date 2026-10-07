@@ -354,10 +354,10 @@ function setTimeInterpolationHandler(
 	const { seq, clips } = h.clipsOf(doc, idList(cmd.clipIds));
 	const changed: string[] = [];
 	for (const c of clips) {
-		if (!REMAPPABLE_KINDS.has(c.kind)) {
+		if (c.kind !== 'video') {
 			h.warn(
 				'W_VALUE_CLAMPED',
-				`Time Interpolation applies to video and nested sequence clips; ${c.id} is a ${c.kind} clip`,
+				`Time Interpolation applies to video clips (nested sequences use Frame Sampling); ${c.id} is a ${c.kind} clip`,
 			);
 			continue;
 		}

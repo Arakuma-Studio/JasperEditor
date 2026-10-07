@@ -441,6 +441,11 @@ function retimeFields(
 	doc: ProjectDocument,
 	rate: Rational,
 ): Pick<RenderVisualClip, 'timeRemap' | 'retime'> {
+	// Nested sequences (multi-camera clips too): the remap picks the nested frame (Frame Sampling).
+	if (c.kind === 'nest-video') {
+		const r = activeRemap(c);
+		return r ? { timeRemap: r } : {};
+	}
 	if (c.kind !== 'video') return {};
 	const vs = doc.media[c.mediaId]?.probe.streams.find((x) => x.type === 'video');
 	const mediaRate = vs?.type === 'video' ? vs.frameRate : rate;
