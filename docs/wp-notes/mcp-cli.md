@@ -135,7 +135,7 @@ dissolve (pure red before, pure blue after, purple at the cut, more red early), 
 position: centroid at the midpoint; `get_clip_properties` matches the render), export + re-import (ffprobe frame
 count, frames vs `render_frame` mean diff < 6–10, re-imported clip renders the same), and a cancelled `start_export
 {wait}` (progress seen, job `cancelled`, no file). Measured 2026-10-07 on the shared 12-core machine: 7/7 pass in
-≈ 3 min.
+55 s (`node scripts/mcp-qa.mjs`).
 
 ## Verified in the real app
 
@@ -157,6 +157,12 @@ the Program frame, timeline and panels). QA frames looked at in `test-results/mc
 | Audit | egui widget rects vs automation elements | DOM/React audit over every workspace's panels, menus and a context menu |
 | CLI | headless engine per invocation | the live engine (edits appear in the open editor), JSON lines, 0/1/2, `ui`, `call` any tool |
 | QA | Rust in-process MCP server | real engine + stdio JSON-RPC, includes export re-import and cancellation |
+
+## Gate
+
+`pnpm lint`, `pnpm typecheck`, `pnpm vitest run --maxWorkers=3` (2 530 passed; the only other failure was the
+load-sensitive Lumetri bake timing test, which passes when rerun), Playwright `e2e/agent-ui.spec.ts`,
+`e2e/ui-audit.spec.ts`, `e2e/agent.spec.ts` (13/13), `pnpm qa:mcp` (7/7).
 
 ## Limits
 
