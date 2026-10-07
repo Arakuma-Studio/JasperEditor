@@ -127,6 +127,14 @@ feeds them or that they feed.
   dB RMS; 5.1 export `aac 5.1` with the tone only on Ls; 44.1 kHz stereo fold. The Program monitor played through the
   graph: Mix meter peaks L 0.146 / R 0.092 with the pan, A1 strip meter live, R128 readouts updating.
 
+- Built app, `e2e/audio-mix.spec.ts` (Chrome headless, fake microphone; `E2E_PORT=49080 E2E_SKIP_BUILD=1 pnpm exec
+  playwright test e2e/audio-mix.spec.ts`, 5 passed): Audio Meters show M/S/I/TP while playing tone.wav (TP −9.0 dBTP =
+  the file's peak); the Track Mixer balance knob (keyboard) writes −100 and its M button mutes A1; + Submix adds S1;
+  Audio Gain (G) ▸ Normalize Max Peak reads "−9.0 dB" from the engine and sets +9 dB; the native export then has
+  L ≈ −19 dB, R < L − 40 dB; a voice-over take ("Voice-over 1.wav") lands on A3 at the record point in one
+  "Record Voice-over" step. This run found a real bug, now fixed: the Mix strip also created a second (silent) meter
+  under the same id, and its readings raced the loudness meter's, so the Audio Meters panel sometimes showed nothing.
+
 ## 4. Comparison with FilmCraft (reference)
 
 | area | FilmCraft | here |

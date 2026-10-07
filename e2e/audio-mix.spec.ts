@@ -40,7 +40,7 @@ type Doc = {
 	sequences: Record<
 		string,
 		{
-			audioTracks: { id: string; pan?: { value: number } }[];
+			audioTracks: { id: string; mute?: boolean; pan?: { value: number } }[];
 			submixTracks?: { id: string }[];
 			clips: Record<string, { id: string; kind: string; name: string; gainDb?: number; trackId: string }>;
 		}
@@ -118,6 +118,9 @@ test('Audio Track Mixer: balance knob and a submix', async () => {
 	for (let i = 0; i < 100; i++) await knob.press('ArrowLeft');
 	const seq = (await sequenceSummary(page)).sequenceId;
 	await expect.poll(async () => (await doc()).sequences[seq]!.audioTracks[1]!.pan?.value).toBe(-100);
+	// mute A1 (clip-a's own sound) so the export below hears only the panned tone
+	await mixer.getByTestId('mixer-strip-A1').getByTitle('Mute Track').click();
+	await expect.poll(async () => (await doc()).sequences[seq]!.audioTracks[0]!.mute).toBe(true);
 	await mixer.getByTestId('mixer-add-submix').click();
 	await expect.poll(async () => (await doc()).sequences[seq]!.submixTracks?.length ?? 0).toBe(1);
 	await expect(mixer.getByTestId('mixer-strip-S1')).toBeVisible();
@@ -153,8 +156,9 @@ test('native export renders the mixer balance', async ({ request }) => {
 	expect(job.state).toBe('succeeded');
 	const left = channelDbOf(file, 0);
 	const right = channelDbOf(file, 1);
-	// clip-a's own audio (if any) plays centred on A1; the tone on A2 is hard left
-	expect(left - right).toBeGreaterThan(6);
+	// A1 is muted; the tone on A2 (mean −19.1 dB) is balanced hard left
+	expect(left).toBeGreaterThan(-25);
+	expect(right).toBeLessThan(left - 40);
 });
 
 test('Voice-over: the fake microphone is recorded into A3 at the playhead', async () => {

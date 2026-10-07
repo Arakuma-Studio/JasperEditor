@@ -582,8 +582,10 @@ export class MixGraph {
 		const mw = widthOf(mix.masterFormat);
 		for (const s of mix.strips) {
 			const ow = s.outputFormat ? widthOf(s.outputFormat) : mw;
-			const meter = this.makeMeter(s.id, widthOf(s.format), false);
-			this.strips.set(s.id, new StripNodes(this.ctx, s, ow, s.kind === 'master' ? null : meter));
+			// The Mix is metered after the limiter (with loudness) under the same id: no second meter here, or
+			// its silent readings would race the real ones.
+			const meter = s.kind === 'master' ? null : this.makeMeter(s.id, widthOf(s.format), false);
+			this.strips.set(s.id, new StripNodes(this.ctx, s, ow, meter));
 		}
 		// routing (outputs and sends)
 		for (const s of mix.strips) {
