@@ -8,6 +8,7 @@ import { compositionHandlers } from './handlers/composition.ts';
 import { effectHandlers } from './handlers/effect.ts';
 import { keyframeHandlers } from './handlers/keyframe.ts';
 import { m2Handlers } from './handlers/m2.ts';
+import { maskHandlers } from './handlers/mask.ts';
 import { paramHandlers } from './handlers/param.ts';
 import { PRESET_OWNER, presetHandlers } from './handlers/preset.ts';
 import { processHandlers } from './handlers/process.ts';
@@ -38,7 +39,9 @@ export type CommandOwner =
 	// Effect presets (S03:FX-030)
 	| 'wp-m3-presets'
 	// Nests, adjustment layers, groups, synthetics, frame holds, through edits (docs/wp-notes/edit-structure.md)
-	| 'edit-structure';
+	| 'edit-structure'
+	// Masks (S03 §17)
+	| 'wp-m3-masks';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -147,6 +150,13 @@ const LABELS: Record<CommandType, string> = {
 	'keyframe.paste': 'Paste Keyframes',
 	'project.pasteItems': 'Paste',
 	'effect.applyPreset': 'Apply Preset',
+	'mask.add': 'Create Mask',
+	'mask.remove': 'Delete Mask',
+	'mask.update': 'Change Mask',
+	'mask.reorder': 'Reorder Masks',
+	'mask.duplicate': 'Duplicate Mask',
+	'mask.editPath': 'Edit Mask Path',
+	'mask.setPathKeys': 'Track Mask',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -167,6 +177,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[clipboardHandlers, CLIPBOARD_OWNER],
 	[presetHandlers, PRESET_OWNER],
 	[structureHandlers, STRUCTURE_OWNER],
+	[maskHandlers, 'wp-m3-masks'],
 	[m2Handlers, 'M2'],
 ];
 

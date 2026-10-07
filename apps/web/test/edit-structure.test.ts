@@ -124,7 +124,7 @@ describe('nests', () => {
 		const doc = h.session.getCommitted();
 		const hit = resolveMatchFrame(doc, h.seq(), 40);
 		expect(hit?.clip.kind).toBe('video');
-		expect((hit?.clip as { mediaId: string }).mediaId).toBe(mediaId);
+		expect((hit!.clip as { mediaId: string }).mediaId).toBe(mediaId);
 		expect(Math.round(hit!.contentFlicks / (705_600_000 / 30))).toBe(10);
 		h.session.transport.seek(45);
 		await h.run('timeline.revealNested');
@@ -180,8 +180,9 @@ describe('synthetic sources and project operations', () => {
 			(i) => i.kind === 'synthetic' && doc.synthetics[i.syntheticId]?.kind === 'bars-and-tone',
 		) as Extract<(typeof doc.items)[string], { kind: 'synthetic' }>;
 		const preview = syntheticPreviewDoc(doc, bars, h.seq().settings, 30);
-		expect(preview?.videoTracks[0]!.clips[0]!.source).toEqual({ generator: { kind: 'bars' } });
-		expect(preview?.audioClips[0]!.generator?.kind).toBe('tone');
+		expect(preview).not.toBeNull();
+		expect(preview!.videoTracks[0]!.clips[0]!.source).toEqual({ generator: { kind: 'bars' } });
+		expect(preview!.audioClips[0]!.generator?.kind).toBe('tone');
 		expect(itemDurationFrames(doc, bars, { num: 30, den: 1 })).toBe(30);
 		await h.run('edit.removeUnused');
 		expect(Object.keys(h.session.getCommitted().synthetics)).toHaveLength(0);

@@ -2,7 +2,7 @@
 // edit-structure on the Remotion render path: bundles the production root and renders stills with @remotion/renderer
 // in headless Chrome, then checks pixels — a nested sequence (scaled nest clip, nested frame mapping, speed 2×), an
 // adjustment layer (CSS filter mode; canvas mode with 50 % opacity and a crop region through HTML-in-Canvas over a
-// video), Bars and Tone, the counting leader, and a frame hold of a moving video. Gated by REMOTION_E2E=1; needs
+// video, and limited by an Opacity mask), Bars and Tone, the counting leader, and a frame hold of a moving video. Gated by REMOTION_E2E=1; needs
 // ffmpeg on PATH. EDIT_STRUCTURE_RENDER_OUT=<dir> copies the stills there.
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
@@ -162,6 +162,23 @@ describe.runIf(enabled)('edit-structure in Remotion renders (REMOTION_E2E=1)', {
 		const edge = at(blur, FX_W / 4, FX_H / 2);
 		expect(edge[0]).toBeGreaterThan(40);
 		expect(edge[2]).toBeGreaterThan(40);
+	});
+
+	it('limits an adjustment layer to its Opacity mask (wp masks)', async () => {
+		const masked = await still(
+			[
+				{ type: 'clip.addSolid', at: 0, duration: 60, track: 'V1', color: [1, 0.5, 0, 1] } as Command,
+				{ type: 'clip.addAdjustment', at: 0, duration: 60, track: 'V2', ref: '$a' } as Command,
+				{ type: 'effect.add', target: { clipId: '$a' }, effectId: 'jasper.black-white' } as Command,
+				{ type: 'mask.add', clipId: '$a', shape: 'ellipse', feather: 0 } as Command,
+			],
+			10,
+			'adjust-masked',
+		);
+		// Inside the ellipse: grey; in the corner (outside): the original orange, not cut out or darkened.
+		const g = at(masked, FX_W / 2, FX_H / 2);
+		expect(Math.abs(g[0] - g[1]) < 6 && Math.abs(g[1] - g[2]) < 6, `grey ${g}`).toBe(true);
+		expect(close(at(masked, 4, 4), [255, 128, 0])).toBe(true);
 	});
 
 	it('draws Bars and Tone and the counting leader', async () => {

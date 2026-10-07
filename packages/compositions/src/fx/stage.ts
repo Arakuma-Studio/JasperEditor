@@ -30,7 +30,9 @@ import {
 	PREVIEW_LUT_SIZE,
 	planGpuEffect,
 	type ResolvedEffect,
+	type ResolvedMask,
 	sideCompToCanvas,
+	TRACK_MATTE_EFFECT_ID,
 } from '@jasper/project';
 import { useContext, useMemo } from 'react';
 import { cancelRender, Internals } from 'remotion';
@@ -38,15 +40,27 @@ import { ColorDocContext, referencedMedia, useLutAssets } from '../color/chain.t
 import { bakedRunLut, loadedLutAsset, lutUrlKey } from '../color/luts.ts';
 import { NestCompSizeContext } from '../layers/nest-context.ts';
 import type { LayerProps, TransitionTap } from '../types.ts';
-import { type FxBypass, type FxCanvasLayout, fxCanvasLayout, type LayerFxPlan, planLayerFx } from './plan.ts';
+import { type FxMaskGeometry, maskGeometryKey } from './mask.ts';
+import { type MatteTap, type MatteTapMeta, trackMatteMediaId } from './matte.ts';
+import {
+	type FxBypass,
+	type FxCanvasLayout,
+	type FxStep,
+	fxCanvasLayout,
+	type LayerFxPlan,
+	planLayerFx,
+} from './plan.ts';
 import { fxEffectRegistry } from './registry.ts';
 import { fxStatus, useFxStatus } from './status.ts';
 import { fxClipInfoOf } from './time.ts';
 
 export type FxLayout = FxCanvasLayout;
 
+/** wp masks: masks of a step (the effect applies inside them), in the chain canvas. */
+type PreparedMasks = { masks?: FxMaskGeometry };
+
 export type FxPreparedStep =
-	| {
+	| ({
 			kind: 'gpu';
 			key: string;
 			plan: FxEffectPlan;
@@ -57,11 +71,15 @@ export type FxPreparedStep =
 			sampleFrames: (number | null)[];
 			/** `u_sampleValid`. */
 			sampleValid: number;
-	  }
-	| { kind: 'lut'; key: string; lut: Lut | null }
-	| { kind: 'css'; key: string; filter: string }
-	| { kind: 'crop'; key: string; insets: [number, number, number, number] }
-	| { kind: 'flip'; key: string; horizontal: boolean }
+	  } & PreparedMasks)
+	| ({ kind: 'lut'; key: string; lut: Lut | null } & PreparedMasks)
+	| ({ kind: 'css'; key: string; filter: string } & PreparedMasks)
+	| ({ kind: 'crop'; key: string; insets: [number, number, number, number] } & PreparedMasks)
+	| ({ kind: 'flip'; key: string; horizontal: boolean } & PreparedMasks)
+	/** wp masks: the layer's Opacity masks. */
+	| { kind: 'mask'; key: string; geometry: FxMaskGeometry }
+	/** wp masks: hand the finished picture to the layer's matte track hub (before a transition tap). */
+	| { kind: 'matteTap'; key: string; tap: MatteTap; meta: MatteTapMeta; hide: boolean }
 	/** Transition framework: hand the picture to the GPU transition stage (always the last step). */
 	| {
 			kind: 'tap';
@@ -83,6 +101,8 @@ export type FxPreparedStep =
 			blend: GlobalCompositeOperation;
 			/** Crop insets (left, top, right, bottom) as fractions of the layer box; null = the whole box. */
 			insets: readonly [number, number, number, number] | null;
+			/** wp masks: the adjustment layer's active Opacity masks (it applies inside them). */
+			opacityMasks?: readonly ResolvedMask[];
 	  };
 
 /** The original picture of an adjustment scope, kept by its `stash` step for its `mix` step. */
@@ -107,6 +127,10 @@ export type FxStage = {
 	key: string;
 	/** LUT assets of colour runs are still loading (the preview draws without them meanwhile). */
 	pending: boolean;
+	/** wp masks: video tracks whose composite Track Matte Keys of the stack read (media `track:<id>`). */
+	trackMattes: string[];
+	/** wp masks: the sequence frame of the stage (track mattes are taken at the same sequence time). */
+	seqFrame: number;
 };
 
 export type LayerFx =
@@ -160,7 +184,9 @@ export function useLayerFx(
 	const box = props.box;
 	// Transition framework: a side of a GPU transition captures its picture for the stage.
 	const tap = layer.transition?.tap ?? null;
-	const capture = !!tap || !!opts.chain;
+	// wp masks: a layer of a matte track runs the chain too (its picture goes to the matte hub).
+	const matte = layer.matte ?? null;
+	const capture = !!tap || !!matte || !!opts.chain;
 	const colorBypass = doc.isPreview && doc.bypass.has(clip.clipId);
 	const canRun = opts.canRun ?? true;
 	const enabled = opts.enabled ?? true;
@@ -199,6 +225,7 @@ export function useLayerFx(
 						mediaKind,
 						clip: clipInfo,
 						capture,
+						masks: props.masks,
 					}),
 		[
 			enabled,
@@ -215,6 +242,7 @@ export function useLayerFx(
 			paramsAtOf,
 			mediaKind,
 			clipInfo,
+			props.masks,
 		],
 	);
 	if (plan && !doc.isPreview && (!plan.active || plan.bypassed.length > 0))
@@ -293,6 +321,7 @@ export function useLayerFx(
 	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the values that change the output
 	const stage = useMemo((): FxStage | null => {
 		if (!plan?.active || !layout) return null;
+		const L = layout;
 		const canvas = { width: layout.width, height: layout.height };
 		const lutKey = (id: string) => {
 			const u = doc.media[id]?.url;
@@ -304,7 +333,38 @@ export function useLayerFx(
 		};
 		const samples: number[] = [];
 		const media = new Map<string, FxMediaInput>();
+		const trackMattes: string[] = [];
+		const geometryOf = (masks: FxMaskGeometry['masks']): FxMaskGeometry => ({
+			masks,
+			box: layout.box,
+			pxScale: layout.pxScale,
+		});
+		// A masked step's key includes its mask geometry (the coverage changes the output).
+		const withMasks = (st: FxPreparedStep, masks: FxMaskGeometry['masks'] | undefined): FxPreparedStep => {
+			if (
+				!masks?.length ||
+				st.kind === 'mask' ||
+				st.kind === 'tap' ||
+				st.kind === 'matteTap' ||
+				st.kind === 'stash' ||
+				st.kind === 'mix'
+			)
+				return st;
+			const g = geometryOf(masks);
+			return { ...st, masks: g, key: `${st.key}|masks:${maskGeometryKey(g, canvas.width, canvas.height)}` };
+		};
 		const steps: FxPreparedStep[] = plan.steps.map((s, i): FxPreparedStep => {
+			if (s.kind === 'mask') {
+				const g = geometryOf(s.masks);
+				return {
+					kind: 'mask',
+					key: `mask${i}:${maskGeometryKey(g, canvas.width, canvas.height)}`,
+					geometry: g,
+				};
+			}
+			return withMasks(prepareStep(s, i), s.masks);
+		});
+		function prepareStep(s: Exclude<FxStep, { kind: 'mask' }>, i: number): FxPreparedStep {
 			switch (s.kind) {
 				case 'gpu': {
 					const seed = fxSeed(clip.clipId, s.fx.id, s.fx.params);
@@ -312,7 +372,7 @@ export function useLayerFx(
 					const ctx: FxFrameContext = {
 						width: box.width,
 						height: box.height,
-						pxScale: layout.pxScale,
+						pxScale: L.pxScale,
 						fps,
 						frame: realFrame,
 						duration,
@@ -322,6 +382,14 @@ export function useLayerFx(
 						...(paramsAt ? { paramsAt } : {}),
 					};
 					const gp = planGpuEffect(s.spec as EffectSpec, { id: s.fx.id, params: s.fx.params }, ctx, canvas);
+					// wp masks: a Track Matte Key reading a track binds the track's composite as `u_matte`.
+					const matteTrack = s.fx.effectId === TRACK_MATTE_EFFECT_ID ? s.fx.params.matteTrack : undefined;
+					if (typeof matteTrack === 'string' && matteTrack) {
+						if (!trackMattes.includes(matteTrack)) trackMattes.push(matteTrack);
+						gp.textures = gp.textures.map((t) =>
+							t.uniform === 'u_matte' ? { ...t, mediaId: trackMatteMediaId(matteTrack) } : t,
+						);
+					}
 					const st = stackTime.get(s.fx.id);
 					const offsets = st?.offsets ?? [];
 					const frames = st?.frames ?? [];
@@ -358,10 +426,21 @@ export function useLayerFx(
 				default:
 					return { kind: 'flip', key: `flip${i}`, horizontal: s.horizontal };
 			}
-		});
+		}
 		if (opts.extraSteps) {
 			steps.unshift(...opts.extraSteps.first);
 			steps.push(...opts.extraSteps.last);
+		}
+		if (matte) {
+			const opacity = Math.min(1, Math.max(0, props.opacity / 100));
+			const compToCanvas = sideCompToCanvas(map, layout);
+			steps.push({
+				kind: 'matteTap',
+				key: `matte:${matte.seqFrame}:${opacity}:${compToCanvas?.join(',') ?? 'none'}:${matte.hide}`,
+				tap: matte.tap,
+				meta: { compToCanvas, opacity, frame: matte.seqFrame },
+				hide: matte.hide,
+			});
 		}
 		if (tap) {
 			const opacity = Math.min(1, Math.max(0, props.opacity / 100));
@@ -392,7 +471,18 @@ export function useLayerFx(
 			map.join(','),
 			...steps.map((s) => s.key),
 		].join('\u0000');
-		return { plan, layout, steps, samples, media: [...media.values()], builtins, key, pending };
+		return {
+			plan,
+			layout,
+			steps,
+			samples,
+			media: [...media.values()],
+			builtins,
+			key,
+			pending,
+			trackMattes,
+			seqFrame: clip.start + realFrame,
+		};
 	}, [
 		plan,
 		layout,
@@ -409,6 +499,7 @@ export function useLayerFx(
 		clip.clipId,
 		duration,
 		tap,
+		matte,
 		props.opacity,
 		stackTime,
 		paramsAtOf,

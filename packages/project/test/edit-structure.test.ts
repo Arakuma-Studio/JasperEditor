@@ -242,6 +242,17 @@ describe('clip.unnest', () => {
 		const bad = h.tx([{ type: 'clip.unnest', clipIds: [nv] }]);
 		expect(bad.ok).toBe(false);
 	});
+
+	it('refuses nests with masks (wp masks: layer-space geometry cannot move onto the nested clips)', () => {
+		const h = new Harness();
+		const m = h.registerVideo({ seconds: 20 });
+		const [v1] = placeAV(h, m, 0, 'V1', [0, 60]);
+		const r = h.ok([{ type: 'clip.nest', clipIds: [v1] }]);
+		const [nv] = (r.results[0] as { clipIds: string[] }).clipIds;
+		h.ok([{ type: 'mask.add', clipId: nv, shape: 'ellipse' }]);
+		const bad = h.tx([{ type: 'clip.unnest', clipIds: [nv] }]);
+		expect(bad.ok).toBe(false);
+	});
 });
 
 describe('render snapshot of nests', () => {
@@ -376,6 +387,74 @@ describe('sequence and project operations', () => {
 		expect(h.doc.media[unused]).toBeUndefined();
 		expect(h.doc.media[used]).toBeDefined();
 		expect(Object.keys(h.doc.synthetics)).toHaveLength(0);
+		clean(h);
+	});
+});
+
+describe('Track Matte Keys across structure operations (wp masks)', () => {
+	const matteOf = (doc: ProjectDocument, seqId: string, clipId: string): unknown => {
+		const c = doc.sequences[seqId]!.clips[clipId] as {
+			effects: { params: Record<string, { value: unknown }> }[];
+		};
+		return c.effects[0]!.params.matteTrack!.value;
+	};
+	function setup() {
+		const h = new Harness();
+		h.ok([
+			{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V1', color: [1, 0, 0, 1], ref: '$fill' },
+			{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V2', color: [1, 1, 1, 1], ref: '$matte' },
+		]);
+		const [fill] = h.clips('V1');
+		const [matte] = h.clips('V2');
+		const v2 = h.seq.videoTracks[1]!.id;
+		h.ok([
+			{
+				type: 'effect.add',
+				target: { clipId: fill!.id },
+				effectId: 'jasper.track-matte-key',
+				params: { matteTrack: v2 },
+			},
+		]);
+		return { h, fill: fill!.id, matte: matte!.id, v2 };
+	}
+
+	it('nest, duplicate and Make Subsequence read the matching track of the new sequence', () => {
+		const { h, fill, matte } = setup();
+		const d = h.ok([{ type: 'sequence.duplicate', sequenceId: h.seqId, ref: '$d' }]);
+		const copy = h.doc.sequences[d.refs.$d!]!;
+		const copyFill = Object.values(copy.clips).find((c) => c.trackId === copy.videoTracks[0]!.id)!;
+		expect(matteOf(h.doc, copy.id, copyFill.id)).toBe(copy.videoTracks[1]!.id);
+		const sub = h.ok([{ type: 'sequence.makeSubsequence', from: 0, to: 30 }]);
+		const subId = (sub.results[0] as { sequenceId: string }).sequenceId;
+		const s = h.doc.sequences[subId]!;
+		const subFill = Object.values(s.clips).find((c) => c.trackId === s.videoTracks[0]!.id)!;
+		expect(matteOf(h.doc, subId, subFill.id)).toBe(s.videoTracks[1]!.id);
+		const n = h.ok([{ type: 'clip.nest', clipIds: [fill, matte] }]);
+		const nid = (n.results[0] as { sequenceId: string }).sequenceId;
+		expect(matteOf(h.doc, nid, fill)).toBe(h.doc.sequences[nid]!.videoTracks[1]!.id);
+		clean(h);
+	});
+
+	it('a key whose track does not come along is cleared (W_TRACK_MATTE_CLEARED)', () => {
+		const { h, fill } = setup();
+		// The nested sequence mirrors the track layout: V2 exists there (empty), so the key reads it.
+		const n = h.ok([{ type: 'clip.nest', clipIds: [fill] }]);
+		const nid = (n.results[0] as { sequenceId: string }).sequenceId;
+		expect(matteOf(h.doc, nid, fill)).toBe(h.doc.sequences[nid]!.videoTracks[1]!.id);
+		// Placing the nest's clips individually: its empty V2 brings no track along, so the key is cleared.
+		const p = h.ok([
+			{
+				type: 'clip.place',
+				source: { sequenceId: nid },
+				nest: false,
+				at: 100,
+				video: true,
+				audio: false,
+			},
+		]);
+		expect(p.warnings.some((w) => w.code === 'W_TRACK_MATTE_CLEARED')).toBe(true);
+		const placed = (p.results[0] as { clipIds: string[] }).clipIds[0]!;
+		expect(matteOf(h.doc, h.seqId, placed)).toBe('');
 		clean(h);
 	});
 });

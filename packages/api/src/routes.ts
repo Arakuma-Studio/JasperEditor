@@ -41,6 +41,7 @@ import {
 import { FontCatalogSchema } from './fonts.ts';
 import { EngineJobSchema, JobListQuerySchema, JobListResponseSchema } from './jobs.ts';
 import { LayerBakePreviewRequestSchema } from './layer-bake.ts';
+import { MaskTraceRequestSchema, MaskTraceResponseSchema } from './masks.ts';
 import {
 	DerivativesRequestSchema,
 	MediaDiscardResponseSchema,
@@ -95,6 +96,8 @@ export type RouteOwner =
 	| 'wp-m2-track'
 	// M2 animation (ARCHITECTURE §20, S11 §10)
 	| 'wp-m2-layer-bake'
+	// wp masks
+	| 'wp-masks'
 	// M3
 	| 'wp-m3-cachegc'
 	| 'wp-m3-presets';
@@ -471,6 +474,14 @@ export const ROUTES = {
 	},
 	/** Static files of an imported bundle (the Remotion serve URL; the preview frame host loads it). */
 	mgBundleFiles: { method: 'GET', path: '/mg/bundles/:key/*', response: 'binary', owner: 'wp-m2-mg' },
+	/** wp masks: auto-trace a media frame into mask paths. */
+	masksTrace: {
+		method: 'POST',
+		path: '/api/masks/trace',
+		body: MaskTraceRequestSchema,
+		response: MaskTraceResponseSchema,
+		owner: 'wp-masks',
+	},
 	trackingTrack: {
 		method: 'POST',
 		path: '/api/tracking/track',

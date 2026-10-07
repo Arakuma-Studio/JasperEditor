@@ -7,6 +7,7 @@ import type { FxEffectPlan, Lut } from '@jasper/project';
 import { createEffect } from 'remotion';
 import type { TransitionTap } from '../types.ts';
 import { type FxRunInputs, FxShaderError, fxHost, runLutPass, runShaderPlan } from './host.ts';
+import { type FxMaskGeometry, packedMasks, runMaskPass } from './mask.ts';
 import { fxStatus } from './status.ts';
 
 export type FxShaderParams = {
@@ -222,6 +223,11 @@ export type FxMixParams = {
 	opacity: number;
 	blend: GlobalCompositeOperation;
 	region: { x: number; y: number; w: number; h: number } | null;
+	/**
+	 * wp masks × edit-structure: the adjustment layer's Opacity masks limit where it applies — the result is
+	 * mix(original, adjusted mix, coverage), i.e. the opacity is multiplied by the masks' coverage.
+	 */
+	masks?: FxMaskGeometry | null;
 };
 
 /**
@@ -242,8 +248,17 @@ export const fxAdjustmentMix = createEffect<FxMixParams, null>({
 	},
 	setup: () => null,
 	apply({ source, target, params, width, height }) {
-		const out = ctx2d(target);
 		const orig = params.holder.canvas;
+		const masked = !!params.masks?.masks.length && !!orig;
+		const holder = params.holder as { scratch?: HTMLCanvasElement; masked?: HTMLCanvasElement };
+		let maskCanvas: HTMLCanvasElement | null = null;
+		if (masked) {
+			maskCanvas = holder.masked ?? document.createElement('canvas');
+			holder.masked = maskCanvas;
+			if (maskCanvas.width !== width) maskCanvas.width = width;
+			if (maskCanvas.height !== height) maskCanvas.height = height;
+		}
+		const out = ctx2d(maskCanvas ?? target);
 		const k = Math.min(1, Math.max(0, params.opacity));
 		// The adjusted picture: the effects' output, or blend(original, output) for non-Normal blend modes.
 		let adjusted: CanvasImageSource = source;
@@ -280,6 +295,16 @@ export const fxAdjustmentMix = createEffect<FxMixParams, null>({
 		out.restore();
 		out.globalAlpha = 1;
 		out.globalCompositeOperation = 'source-over';
+		if (maskCanvas && orig && params.masks) {
+			const h = fxHost();
+			if (!h) throw new Error('WEBGL_UNAVAILABLE: masks need WebGL2');
+			const { pack, key } = packedMasks(params.masks, width, height);
+			runMaskPass(
+				h,
+				{ pack, packKey: key, mode: 'mix', src: maskCanvas, orig, width, height },
+				ctx2d(target),
+			);
+		}
 	},
 	cleanup: () => {},
 });

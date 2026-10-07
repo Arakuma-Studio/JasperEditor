@@ -11,7 +11,9 @@
 //   opacity, blend and the crop region). Renders always have HTML-in-Canvas; a Player without it shows the composite
 //   unadjusted with a chip, and a render that cannot run it fails (FX_LAYER_UNSUPPORTED), never a different picture.
 import {
+	activeMasks,
 	clipContentTime,
+	clipHasMasks,
 	defaultEffectRegistry,
 	fadeFactor,
 	type RenderVisualClip,
@@ -49,6 +51,8 @@ export function blendOperator(mode: string): GlobalCompositeOperation {
 /** True when a CSS filter on the scope renders the clip exactly (see the file comment). */
 export function cssExactAdjustment(clip: RenderVisualClip): boolean {
 	if (clip.blendMode !== 'normal') return false;
+	// wp masks: Opacity / effect masks limit where the effects apply (canvas chain).
+	if (clipHasMasks(clip)) return false;
 	if (clip.opacity.value !== 100 || clip.opacity.keyframes.length > 0) return false;
 	if (clip.fades?.length) return false;
 	for (const fx of clip.effects) {
@@ -169,9 +173,21 @@ function CanvasScope({
 	const effects = useMemo(() => (props?.effects ?? []).filter((e) => e.effectId !== CROP), [props]);
 	const crop = props?.effects.find((e) => e.enabled && e.effectId === CROP) ?? null;
 	const opacity = active && props ? (props.opacity / 100) * fadeFactor(active.fades, frame) : 0;
+	// wp masks: the Opacity masks limit where the adjustment applies (the mix step's coverage), they do not cut the
+	// composite below; effect masks stay on their effects (fxMasked: mix(input, effected, coverage)).
+	const baseProps =
+		props ?? resolveCachedLayerProps(clip, clipContentTime(clip, clip.start, doc.settings.fps));
+	const opacityMasks = useMemo(
+		() => (active && baseProps.masks?.length ? activeMasks(baseProps.masks) : []),
+		[active, baseProps.masks],
+	);
+	const layerProps = useMemo(
+		() => (baseProps.masks?.length ? { ...baseProps, masks: [] } : baseProps),
+		[baseProps],
+	);
 	const layer: LayerProps = {
 		clip,
-		props: props ?? resolveCachedLayerProps(clip, clipContentTime(clip, clip.start, doc.settings.fps)),
+		props: layerProps,
 		localFrame: frame - clip.start,
 		contentTime: clipContentTime(clip, frame, doc.settings.fps),
 		fps,
@@ -185,7 +201,7 @@ function CanvasScope({
 				(v) => Math.min(100, Math.max(0, Number(v ?? 0))) / 100,
 			) as [number, number, number, number])
 		: null;
-	const key = `${opacity}:${blend}:${insets?.join(',') ?? ''}`;
+	const key = `${opacity}:${blend}:${insets?.join(',') ?? ''}:${opacityMasks.length ? JSON.stringify(opacityMasks) : ''}`;
 	const extraSteps = useMemo((): { first: FxPreparedStep[]; last: FxPreparedStep[] } => {
 		return {
 			first: [{ kind: 'stash', key: 'stash', holder }],
@@ -197,10 +213,11 @@ function CanvasScope({
 					opacity,
 					blend,
 					insets,
+					...(opacityMasks.length ? { opacityMasks } : {}),
 				},
 			],
 		};
-	}, [key, holder, opacity, blend, insets]);
+	}, [key, holder, opacity, blend, insets, opacityMasks]);
 	const fx = useLayerFx(layer, {
 		enabled: !!active,
 		canRun,

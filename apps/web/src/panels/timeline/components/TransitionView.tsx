@@ -163,8 +163,7 @@ function TransitionViewImpl(p: TransitionViewProps) {
 				<div
 					className="pointer-events-none absolute right-0 bottom-0 left-0 h-[3px]"
 					style={{
-						background:
-							'repeating-linear-gradient(-45deg, var(--pr-warning) 0 3px, transparent 3px 6px)',
+						background: 'repeating-linear-gradient(-45deg, var(--pr-warning) 0 3px, transparent 3px 6px)',
 					}}
 					data-transition-freeze=""
 				/>

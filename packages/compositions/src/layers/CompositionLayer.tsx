@@ -72,7 +72,7 @@ function MasterLayer({ layer, src }: { layer: LayerProps; src: RenderComposition
 	const offset = (src.prerender?.startFrame ?? layerStart) - layerStart;
 	if (fx.mode === 'active')
 		return (
-			<LayerBox layer={layer} effects={fx.cssEffects}>
+			<LayerBox layer={layer} effects={fx.cssEffects} masksInChain>
 				<FxPicture stage={fx.stage}>
 					<Sequence from={offset} layout="none" name="Composition master">
 						<FxVideoSources
@@ -112,6 +112,7 @@ function PreviewLayer({ layer, src }: { layer: LayerProps; src: RenderCompositio
 			<LayerBox
 				layer={layer}
 				effects={fx.cssEffects}
+				masksInChain
 				overlay={fx.chip ? <GradeChip layer={layer} text={fx.chip} /> : null}
 			>
 				<FxPicture stage={fx.stage}>

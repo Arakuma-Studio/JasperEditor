@@ -1,6 +1,7 @@
 import { defaultEffectRegistry, mat3ToCss, matrixToCss, type ResolvedEffect } from '@jasper/project';
 import { type CSSProperties, type ReactNode, useMemo } from 'react';
 import { canUseHtmlInCanvas, FxDomPicture } from '../fx/FxPicture.tsx';
+import { useCpuMaskStyle } from '../fx/mask-fallback.ts';
 import { useLayerFx } from '../fx/stage.ts';
 import { blendModeCss, effectStages } from '../pipeline.ts';
 import type { LayerProps } from '../types.ts';
@@ -33,6 +34,7 @@ export function LayerBox({
 	style,
 	effects,
 	overlay,
+	masksInChain,
 }: {
 	layer: LayerProps;
 	children?: ReactNode;
@@ -42,6 +44,8 @@ export function LayerBox({
 	effects?: readonly ResolvedEffect[];
 	/** Drawn over the layer content inside its box (e.g. the "Grade unavailable" chip, preview only). */
 	overlay?: ReactNode;
+	/** wp masks: the layer's picture already went through the fx chain, Opacity masks included. */
+	masksInChain?: boolean;
 }) {
 	const { props, clip } = layer;
 	// Transition framework: a side of a GPU transition whose component did not capture it already (cards, proxies,
@@ -53,7 +57,8 @@ export function LayerBox({
 			(fx) => fx.enabled && !!defaultEffectRegistry.get(fx.effectId, fx.effectVersion)?.color,
 		);
 	const domFx = useLayerFx(layer, {
-		enabled: effects === undefined && (DOM_FX_KINDS.has(clip.kind) || !!layer.transition?.tap),
+		enabled:
+			effects === undefined && (DOM_FX_KINDS.has(clip.kind) || !!layer.transition?.tap || !!layer.matte),
 		canRun: canUseHtmlInCanvas(),
 		chain,
 	});
@@ -67,6 +72,11 @@ export function LayerBox({
 	if (domFx.mode === 'active') content = <FxDomPicture stage={domFx.stage}>{content}</FxDomPicture>;
 	const chip = domFx.mode === 'none' ? null : domFx.chip;
 	const shownOverlay = chip ? <GradeChip layer={layer} text={chip} /> : overlay;
+	// wp masks: where the chain could not run (preview without WebGL2 / HTML-in-Canvas), the Opacity masks are a CSS
+	// mask image of the CPU coverage (same definition), applied after the effects (Premiere's Opacity order).
+	const cpuMask = useCpuMaskStyle(props.masks, props.box, !masksInChain && domFx.mode !== 'active');
+	// wp masks: a clip of a hidden matte track draws nothing itself (its chain, when it runs, feeds the matte).
+	const hidden = !!layer.matte?.hide && !masksInChain && domFx.mode !== 'active';
 	for (const stage of stages) {
 		content = (
 			<div data-effect={stage.effectId} style={{ ...FILL, ...stage.style }}>
@@ -84,6 +94,7 @@ export function LayerBox({
 			</div>
 		);
 	}
+	if (hidden) return null;
 	return (
 		<div
 			data-clip-id={clip.clipId}
@@ -100,7 +111,13 @@ export function LayerBox({
 				mixBlendMode: blendModeCss(clip.blendMode),
 			}}
 		>
-			{content}
+			{cpuMask ? (
+				<div data-mask-fallback="" style={{ ...FILL, ...cpuMask }}>
+					{content}
+				</div>
+			) : (
+				content
+			)}
 			{shownOverlay}
 		</div>
 	);

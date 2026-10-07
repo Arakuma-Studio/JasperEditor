@@ -174,6 +174,25 @@ describe('adjustment layers (native)', () => {
 	}, 180_000);
 });
 
+describe('masked adjustment layers', () => {
+	it('an adjustment layer with an Opacity mask routes the export through Remotion (never unmasked natively)', async () => {
+		const d = new DocBuilder();
+		const r = d.tx([
+			{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V1', color: [1, 0.5, 0, 1] },
+			{ type: 'clip.addAdjustment', at: 0, duration: 30, track: 'V2', ref: '$a' },
+			{ type: 'effect.add', target: { clipId: '$a' }, effectId: 'jasper.black-white' },
+			{ type: 'mask.add', clipId: '$a', shape: 'ellipse' },
+		]);
+		const planned = await coreServices(app).exports.plan({
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			settings: settings(d.seqId, 'auto') as never,
+		});
+		expect(planned.plan.path).toBe('remotion');
+		expect(planned.plan.blockers.some((b) => b.itemId === r.refs.$a)).toBe(true);
+	}, 120_000);
+});
+
 describe('frame holds and freeze-frame handles (native)', () => {
 	it('holds one frame and repeats edge frames in a transition', async () => {
 		const coded = await register(app, fixture('frame-code.mp4'));

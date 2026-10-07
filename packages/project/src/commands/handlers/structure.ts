@@ -6,6 +6,7 @@
 import { current, type Draft, isDraft } from 'immer';
 import { clipEnd, contentTimeAt, isThroughEdit } from '../../derive/index.ts';
 import { anim, createSequence, defaultTransform } from '../../factories.ts';
+import { TRACK_MATTE_EFFECT_ID } from '../../masks/track-matte.ts';
 import { contentDurationFlicks, isBoundedContent, kindCapabilities } from '../../registry/kinds.ts';
 import type { ProjectItem } from '../../schema/document.ts';
 import type { MediaAsset, SyntheticSource } from '../../schema/media.ts';
@@ -217,6 +218,53 @@ function dropForeignTracking(seq: DSeq, h: HandlerContext): void {
 	}
 }
 
+/**
+ * wp masks: Track Matte Keys of clips that moved or were copied into another track layout read the track `map`
+ * gives for the track they read before; a track that did not come along (or became the clip's own) is cleared with
+ * `W_TRACK_MATTE_CLEARED` (Premiere: the Matte popup then says None).
+ */
+function remapTrackMattes(
+	clips: Iterable<Clip | DClip>,
+	map: (trackId: string) => string | undefined,
+	h: HandlerContext,
+): void {
+	for (const c of clips)
+		for (const fx of (c as { effects?: { id: string; effectId: string; params: Record<string, unknown> }[] })
+			.effects ?? []) {
+			if (fx.effectId !== TRACK_MATTE_EFFECT_ID) continue;
+			const a = fx.params.matteTrack as { value: unknown; keyframes: { value: unknown }[] } | undefined;
+			if (!a) continue;
+			let lost = false;
+			const next = (v: unknown): unknown => {
+				if (typeof v !== 'string' || v === '') return v;
+				const to = map(v);
+				if (!to || to === c.trackId) {
+					lost = true;
+					return '';
+				}
+				return to;
+			};
+			a.value = next(a.value);
+			for (const k of a.keyframes) k.value = next(k.value);
+			if (lost)
+				h.warn('W_TRACK_MATTE_CLEARED', `Track Matte Key ${fx.id} of clip ${c.id} lost its matte track`);
+		}
+}
+
+/** Maps the tracks of `from` to the tracks of `to` with the same kind and index (sequences of one layout). */
+function sameIndexTracks(
+	from: Sequence | DSeq,
+	to: Sequence | DSeq,
+): (trackId: string) => string | undefined {
+	const m = new Map<string, string>();
+	for (const k of ['videoTracks', 'audioTracks'] as const)
+		from[k].forEach((t, i) => {
+			const o = to[k][i];
+			if (o) m.set(t.id, o.id);
+		});
+	return (id) => m.get(id);
+}
+
 function trackRange(seq: DSeq, trackId: string): { kind: TrackKind; index: number } {
 	const f = findTrackIn(seq, trackId)!;
 	return { kind: f.kind, index: f.index };
@@ -256,6 +304,11 @@ function nestHandler(doc: DDoc, cmd: CommandOf<'clip.nest'>, h: HandlerContext) 
 		copies.push({ oldId: c.id, clip: nested.clips[copy.id] as DClip });
 	}
 	regroup(nested as DSeq, copies, parent, h, ['links', 'groups']);
+	remapTrackMattes(
+		copies.map((x) => x.clip),
+		sameIndexTracks(parent, nested),
+		h,
+	);
 	for (const t of movedTransitions) {
 		const c = (t.outgoingClipId ?? t.incomingClipId)!;
 		nested.transitions[t.id] = { ...plain(t), trackId: nested.clips[c]!.trackId } as Transition;
@@ -364,6 +417,15 @@ function unnestHandler(doc: DDoc, cmd: CommandOf<'clip.unnest'>, h: HandlerConte
 					'E_INVALID_PARAM',
 					`Clip ${n.id} has Motion or Opacity changes that cannot be moved onto its clips (reset them first)`,
 				);
+			// wp masks: masks are in the nest clip's layer space (and their ids are unique); they cannot be moved.
+			if (
+				((r.masks as unknown[] | undefined)?.length ?? 0) > 0 ||
+				((r.effects as { masks?: unknown[] }[] | undefined) ?? []).some((fx) => (fx.masks?.length ?? 0) > 0)
+			)
+				h.fail(
+					'E_INVALID_PARAM',
+					`Clip ${n.id} has masks that cannot be moved onto its clips (remove them first)`,
+				);
 			if (r.blendMode !== 'normal')
 				h.fail(
 					'E_INVALID_PARAM',
@@ -402,6 +464,7 @@ function unnestHandler(doc: DDoc, cmd: CommandOf<'clip.unnest'>, h: HandlerConte
 		const clipMap = new Map<string, string>();
 		const placed: { oldId: string; clip: DClip }[] = [];
 		let nextIndex = track.index;
+		const destOf = new Map<string, string>();
 		for (const st of srcTracks) {
 			const pieces = Object.values(conformed.clips)
 				.filter((c) => c.trackId === st.id && c.start < s1 && clipEnd(c) > s0)
@@ -411,6 +474,7 @@ function unnestHandler(doc: DDoc, cmd: CommandOf<'clip.unnest'>, h: HandlerConte
 			const a = n.start + Math.min(...pieces.map((p) => p.piece.start - s0));
 			const b = n.start + Math.max(...pieces.map((p) => clipEnd(p.piece) - s0));
 			const dest = freeTrack(seq, kind, nextIndex, a, b, h);
+			destOf.set(st.id, dest.id);
 			nextIndex = trackRange(seq, dest.id).index + 1;
 			for (const { oldId, piece } of pieces) {
 				const c = piece as Clip & Record<string, unknown>;
@@ -433,6 +497,11 @@ function unnestHandler(doc: DDoc, cmd: CommandOf<'clip.unnest'>, h: HandlerConte
 			}
 		}
 		regroup(seq, placed, conformed, h, ['links'], linkKey, shared);
+		remapTrackMattes(
+			placed.map((p) => p.clip),
+			(id) => destOf.get(id),
+			h,
+		);
 		for (const t of copyTransitions(conformed, clipMap, (id) => seq.clips[id]?.trackId, h, true))
 			seq.transitions[t.id] = t as Draft<Transition>;
 		// Trackers inside the nested sequence follow the copies.
@@ -618,7 +687,7 @@ function placeIndividually(
 	};
 	const vBase = base(o.videoTrack, 'video', 0);
 	const aBase = base(o.audioTracks?.[0], 'audio', vBase);
-	type Job = { dest: DTrack; pieces: { oldId: string; clip: Clip }[] };
+	type Job = { dest: DTrack; source: string; pieces: { oldId: string; clip: Clip }[] };
 	const jobs: Job[] = [];
 	for (const [kind, tracks, b, wanted] of [
 		['video', nested.videoTracks, vBase, o.video !== false],
@@ -636,7 +705,7 @@ function placeIndividually(
 				h.fail('E_TRACK_KIND', `No ${kind} track ${b + j + 1} (pass createTracks)`);
 			const dest = list[b + j] ?? ensureTrackAt(seq, kind, b + j, h);
 			assertUnlocked(dest, h);
-			jobs.push({ dest, pieces });
+			jobs.push({ dest, source: st.id, pieces });
 		});
 	}
 	if (jobs.length === 0) h.fail('E_INVALID_PARAM', 'Nothing to place from this sequence');
@@ -664,6 +733,12 @@ function placeIndividually(
 			placed.push({ oldId, clip: seq.clips[c.id]! });
 		}
 	regroup(seq, placed, nested, h, ['links']);
+	const destOf = new Map(jobs.map((j) => [j.source, j.dest.id]));
+	remapTrackMattes(
+		placed.map((p) => p.clip),
+		(id) => destOf.get(id),
+		h,
+	);
 	for (const t of copyTransitions(nested, clipMap, (id) => seq.clips[id]?.trackId, h, true))
 		seq.transitions[t.id] = t as Draft<Transition>;
 	for (const { clip } of placed) {
@@ -883,6 +958,11 @@ function makeSubsequence(doc: DDoc, cmd: CommandOf<'sequence.makeSubsequence'>, 
 		placed.push({ oldId, clip: sub.clips[clip.id] as DClip });
 	}
 	regroup(sub as DSeq, placed, parent, h, ['links', 'groups']);
+	remapTrackMattes(
+		placed.map((p) => p.clip),
+		sameIndexTracks(parent, sub),
+		h,
+	);
 	for (const t of copyTransitions(parent, clipMap, (id) => sub.clips[id]?.trackId, h, true)) {
 		// Transitions must lie inside the range (FilmCraft): a cut-off one is dropped.
 		const o = t.outgoingClipId ? sub.clips[t.outgoingClipId] : null;
@@ -933,6 +1013,7 @@ function duplicateSequence(src: Sequence, h: HandlerContext): Sequence {
 		trackerMaps.set(id, new Map(before.map((x, k) => [x, after[k]!])));
 		clips[id] = { ...c, id, trackId: trackMap.get(c.trackId) ?? c.trackId } as Clip;
 	}
+	remapTrackMattes(Object.values(clips), (id) => trackMap.get(id), h);
 	for (const c of Object.values(clips)) {
 		const tb = (c as { trackedBy?: { clipId: string; trackerId: string } }).trackedBy;
 		if (!tb) continue;

@@ -1,6 +1,7 @@
 import type { z } from 'zod';
 import { CLIP_COMMANDS } from './clip.ts';
 import { CLIPBOARD_COMMANDS } from './clipboard.ts';
+import { MASK_COMMANDS } from './mask.ts';
 import { PARAM_COMMANDS } from './param.ts';
 import { PRESET_COMMANDS } from './preset.ts';
 import { PROJECT_COMMANDS } from './project.ts';
@@ -12,6 +13,7 @@ import { TRACKER_COMMANDS } from './tracker.ts';
 export * from './clip.ts';
 export * from './clipboard.ts';
 export * from './common.ts';
+export * from './mask.ts';
 export * from './param.ts';
 export * from './preset.ts';
 export * from './project.ts';
@@ -35,6 +37,8 @@ export const ALL_COMMAND_SCHEMAS = [
 	...PRESET_COMMANDS,
 	// edit-structure (nests, frame holds, through edits, subsequences)
 	...STRUCTURE_COMMANDS,
+	// wp masks (S03 §17)
+	...MASK_COMMANDS,
 ] as const;
 
 export type Command = z.infer<(typeof ALL_COMMAND_SCHEMAS)[number]>;

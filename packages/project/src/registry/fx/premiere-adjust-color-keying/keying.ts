@@ -447,20 +447,58 @@ export const IMAGE_MATTE_KEY = defineShaderEffect({
 	},
 });
 
+/**
+ * Track Matte Key (Premiere: Matte = a video track, Composite Using = Matte Alpha / Matte Luma, Reverse). wp masks:
+ * `matteTrack` names a video track of the sequence; its composite at the same sequence frame (every clip of that
+ * track with its effects, masks, Motion and opacity, rendered alone) is the matte, placed in sequence space — so the
+ * fill layer's own Motion moves the fill under a fixed matte, as in After Effects. The composition binds it as
+ * `u_matte` (sequence-sized) and sets `u_matteFromTrack`. Without a track the older `matte` media param (a clip
+ * stretched over the layer box) is used.
+ */
 export const TRACK_MATTE_KEY = defineShaderEffect({
 	id: 'jasper.track-matte-key',
 	label: 'Track Matte Key',
 	category: 'Keying',
 	description:
-		"Shows the layer through a matte clip's alpha or luminance (travelling matte); the matte plays at the layer's time.",
-	keywords: ['travelling matte', 'traveling matte', 'mask', 'luma matte', 'alpha matte'],
+		"Shows the layer through another video track's alpha or luminance (travelling matte), at the same sequence time.",
+	keywords: ['travelling matte', 'traveling matte', 'mask', 'luma matte', 'alpha matte', 'track matte'],
 	params: [
-		fxParam.media('matte', 'Matte'),
+		{
+			name: 'matteTrack',
+			label: 'Matte',
+			type: 'string',
+			default: '',
+			animatable: false,
+			ui: { control: 'track' },
+		},
 		compositeUsingParam(),
 		fxParam.toggle('reverse', 'Reverse', false),
+		fxParam.media('matte', 'Matte Clip (no track)'),
 	],
 	gpu: {
-		passes: [{ include: [GLSL_PACG], frag: matteKeyFrag('matte') }],
+		uniforms: (p) => ({ u_matteFromTrack: typeof p.matteTrack === 'string' && p.matteTrack !== '' }),
+		passes: [
+			{
+				include: [GLSL_PACG],
+				frag: /* glsl */ `
+void main() {
+  vec4 src = texture(u_source, v_uv);
+  if (u_matte_size.x <= 0.0) { fragColor = u_reverse ? vec4(0.0) : src; return; }
+  vec4 m;
+  if (u_matteFromTrack) {
+    // The track composite is sequence-sized: this layer pixel's position in the sequence frame.
+    vec3 q = u_layerToComp * vec3(fx_layerPx(), 1.0);
+    vec2 uv = (q.xy / (abs(q.z) < 1e-9 ? 1e-9 : q.z)) / u_compSize;
+    m = (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) ? vec4(0.0) : texture(u_matte, uv);
+  } else {
+    m = pacg_media(u_matte, u_matte_size, true);
+  }
+  float k = u_compositeUsing == 0 ? m.a : fx_luma(pacg_straight(m)) * m.a;
+  if (u_reverse) k = 1.0 - k;
+  fragColor = src * k;
+}`,
+			},
+		],
 	},
 });
 

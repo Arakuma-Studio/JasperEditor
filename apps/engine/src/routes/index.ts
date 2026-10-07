@@ -11,6 +11,7 @@ import exportsRoutes from './exports.ts';
 import fontsRoutes from './fonts.ts';
 import jobsRoutes from './jobs.ts';
 import layerBakeRoutes from './layer-bake.ts';
+import maskRoutes from './masks.ts';
 import mcpRoutes from './mcp.ts';
 import mediaRoutes from './media.ts';
 import mgRoutes from './mg.ts';
@@ -46,6 +47,8 @@ const ROUTE_PLUGINS = [
 	layerBakeRoutes,
 	trackingRoutes,
 	animeRoutes,
+	// wp masks: auto-trace (mask tracking runs as `track` jobs of kind `mask`).
+	maskRoutes,
 ] as const;
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {

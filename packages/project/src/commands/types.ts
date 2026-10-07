@@ -59,6 +59,8 @@ export const WARNING_CODES = [
 	'W_EFFECTS_DISTRIBUTED',
 	/** edit-structure: a tracker link between clips that ended up in different sequences was removed. */
 	'W_TRACKING_UNLINKED',
+	/** edit-structure × wp masks: a Track Matte Key's track did not come along into the other sequence (cleared). */
+	'W_TRACK_MATTE_CLEARED',
 ] as const;
 
 /** A problem report. `commandIndex` is -1 for transaction-level issues (invariants, revision). */

@@ -26,6 +26,7 @@ import {
 	clipPictureTime,
 	fadeFactor,
 	flicksPerFrame,
+	matteTrackIds,
 	type RenderVisualClip,
 	resolveCachedLayerProps,
 	transitionSpec,
@@ -34,6 +35,7 @@ import { type ComponentType, Fragment, memo, type ReactNode, useContext, useMemo
 import { AbsoluteFill, Freeze, Sequence, useCurrentFrame } from 'remotion';
 import { ColorDocContext, type ColorDocValue } from './color/chain.ts';
 import { FontsReadyContext, useFontsReadyState, useLayerFontsReady } from './fonts.ts';
+import { TrackMatteContext, TrackMatteHub } from './fx/matte.ts';
 import { useFxStatus } from './fx/status.ts';
 import { fxRemapFrame, hasTimeDependentFx } from './fx/time.ts';
 import {
@@ -110,7 +112,8 @@ function layerViewEqual(a: ViewProps, b: ViewProps): boolean {
 		a.options !== b.options ||
 		a.fps !== b.fps ||
 		a.fonts !== b.fonts ||
-		a.transition !== b.transition
+		a.transition !== b.transition ||
+		a.matte !== b.matte
 	)
 		return false;
 	if (a.frameDependent || b.frameDependent)
@@ -136,10 +139,15 @@ const ClipLayer = memo(function ClipLayer({
 	clip,
 	doc,
 	options,
+	matteHub,
+	matteOnly,
 }: {
 	clip: RenderVisualClip;
 	doc: RenderDoc;
 	options: RenderOptions;
+	/** wp masks: the hub of this clip's track when a Track Matte Key reads it. */
+	matteHub?: TrackMatteHub;
+	matteOnly?: boolean;
 }) {
 	// Inside the Sequence the current frame counts from its start, also when `from` is negative (a render
 	// range starting mid-clip): Remotion subtracts the absolute `from`. The Sequence starts `headHandle`
@@ -176,6 +184,11 @@ const ClipLayer = memo(function ClipLayer({
 		: 0;
 	const tap = gpuSide ? gpuSide.hub.tap(gpuSide.side) : null;
 	const transition = useMemo(() => (tap ? { progress, side: tap.side, tap } : undefined), [tap, progress]);
+	const matteTap = matteHub?.tap(clip.clipId);
+	const matte = useMemo(
+		() => (matteTap ? { tap: matteTap, hide: !!matteOnly, seqFrame: frame } : undefined),
+		[matteTap, matteOnly, frame],
+	);
 	// Transition ramps multiply the opacity; outside a ramp the (cached) props object is passed through.
 	const fade =
 		fadeFactor(clip.fades, frame) *
@@ -209,6 +222,7 @@ const ClipLayer = memo(function ClipLayer({
 					options={options}
 					fonts={doc.fonts}
 					transition={transition}
+					matte={matte}
 				/>
 			</ShowFrame>
 		);
@@ -229,6 +243,7 @@ const ClipLayer = memo(function ClipLayer({
 					options={options}
 					fonts={doc.fonts}
 					transition={transition}
+					matte={matte}
 				/>
 			</Freeze>
 		);
@@ -246,6 +261,7 @@ const ClipLayer = memo(function ClipLayer({
 			options={options}
 			fonts={doc.fonts}
 			transition={transition}
+			matte={matte}
 		/>
 	);
 });
@@ -310,6 +326,34 @@ export function VideoTracks({
 		}
 		return h;
 	};
+	// wp masks: one matte hub per track a Track Matte Key reads (keyed by the frame size of the document).
+	const matteHubs = useRef(new Map<string, TrackMatteHub>());
+	const matteHubOf = (trackId: string) => {
+		const key = `${trackId}@${doc.settings.width}x${doc.settings.height}`;
+		let h = matteHubs.current.get(key);
+		if (!h) {
+			h = new TrackMatteHub(trackId, { width: doc.settings.width, height: doc.settings.height });
+			matteHubs.current.set(key, h);
+		}
+		return h;
+	};
+	// biome-ignore lint/correctness/useExhaustiveDependencies: matteHubOf reads a ref
+	const matteContext = useMemo(() => {
+		const ids = matteTrackIds({ videoTracks: [...doc.videoTracks, ...(doc.matteTracks ?? [])] });
+		const out = new Map<string, TrackMatteHub>();
+		for (const id of ids) out.set(id, matteHubOf(id));
+		return out;
+	}, [doc.videoTracks, doc.matteTracks, doc.settings.width, doc.settings.height]);
+	// Hidden tracks read as mattes: their clips feed the hub only (no transitions, no visible output).
+	const hiddenMattes = useMemo(
+		() =>
+			(doc.matteTracks ?? []).map((t) => {
+				const hub = matteContext.get(t.trackId);
+				hub?.setClips(t.clips, doc.media);
+				return { trackId: t.trackId, clips: t.clips, hub };
+			}),
+		[doc.matteTracks, doc.media, matteContext],
+	);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: hubOf reads a ref
 	const tracks = useMemo(
 		() =>
@@ -344,6 +388,8 @@ export function VideoTracks({
 					const blend = modes.size === 1 ? blendModeCss([...modes][0]!) : undefined;
 					stages.push({ t: tr, spec, side: 'in', mode, hub, ...(blend ? { blendMode: blend } : {}) });
 				}
+				const matteHub = matteContext.get(t.trackId);
+				matteHub?.setClips(clips, doc.media);
 				return {
 					trackId: t.trackId,
 					clips,
@@ -351,9 +397,10 @@ export function VideoTracks({
 					mattes: options.layerFilter ? [] : (t.mattes ?? []),
 					sides,
 					stages,
+					matteHub,
 				};
 			}),
-		[doc.videoTracks, doc.media, options.layerFilter, gpu, htmlInCanvas],
+		[doc.videoTracks, doc.media, options.layerFilter, gpu, htmlInCanvas, matteContext],
 	);
 	const comp = useMemo(
 		() => ({ width: doc.settings.width, height: doc.settings.height, fps }),
@@ -404,7 +451,7 @@ export function VideoTracks({
 									name={clip.name}
 									premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
 								>
-									<ClipLayer clip={clip} doc={doc} options={options} />
+									<ClipLayer clip={clip} doc={doc} options={options} matteHub={track.matteHub} />
 								</Sequence>
 							);
 						})}
@@ -433,7 +480,29 @@ export function VideoTracks({
 			</Fragment>
 		);
 	}
-	return <>{stack}</>;
+	return (
+		<TrackMatteContext.Provider value={matteContext}>
+			{hiddenMattes.map((track) => (
+				<AbsoluteFill key={`matte-${track.trackId}`} data-matte-track-id={track.trackId}>
+					{track.clips.map((clip) => {
+						const head = clip.headHandle ?? 0;
+						return (
+							<Sequence
+								key={clip.clipId}
+								from={clip.start - head - offset}
+								durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
+								name={`${clip.name} (matte)`}
+								premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
+							>
+								<ClipLayer clip={clip} doc={doc} options={options} matteHub={track.hub} matteOnly />
+							</Sequence>
+						);
+					})}
+				</AbsoluteFill>
+			))}
+			{stack}
+		</TrackMatteContext.Provider>
+	);
 }
 
 export function SequenceComposition({ doc, options }: SequenceCompositionProps) {

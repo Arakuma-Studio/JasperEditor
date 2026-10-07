@@ -379,7 +379,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (103):
+Tools (110):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -392,6 +392,8 @@ Tools (103):
 - Remotion projects: `import_mg_bundle` `list_compositions` `add_composition` `set_composition_props`
   `prerender_composition` `scaffold_mg_project` `list_composition_texts` `set_composition_text`.
 - Tracking: `add_tracker` `track` `apply_tracking` `get_tracker` `set_corner_pin` `simplify_keyframes`.
+- Masks and track mattes: `list_masks` `add_mask` `edit_mask` `remove_masks` `track_mask` `auto_trace_mask`
+  `set_track_matte`.
 - Transitions: `list_transition_types` `list_transitions` `update_transition` `remove_transitions` `apply_default_transitions`
   `set_transition_defaults`.
 - Animation and graphics: `list_text_animations` `set_text_animation` `render_frames` `set_motion_graphic_params`
@@ -467,6 +469,33 @@ Tracking bakes one keyframe per frame. **Simplify…** (Properties ▸ Tracking,
 Corner pins and keyframed Motion export on the native ffmpeg path through the warp stage: an LGPL-safe per-frame warp, cached as ProRes 4444 under `<appdir>/cache/warp/`.
 
 Agents use the `add_tracker`, `track`, `apply_tracking`, `get_tracker`, `set_corner_pin` and `simplify_keyframes` MCP tools. Tracking runs OpenCV.js (Apache-2.0) in engine worker threads. Details: `docs/specs/09-tracking.md`, `docs/wp-notes/wp-m2-track.md` and `docs/wp-notes/wp-m3-trackui.md`.
+
+## Masks and track mattes
+
+Premiere-style masks (`docs/wp-notes/masks.md`):
+
+1. Select a clip. In **Effect Controls ▸ Opacity** (to cut the layer out) or under any video effect (to limit the
+   effect to a region) click the **ellipse**, **4-point polygon** or **free draw bezier** (pen) tool. The pen draws in
+   the Program monitor: click to add points, drag for curves, click the first point to close. The **trace** button
+   creates masks from the picture's alpha or luminance (holes become Subtract masks).
+2. Edit on the Program monitor: drag vertices (Shift adds to the selection), tangent handles (Alt breaks them), the
+   inside of the mask (moves it), the corner squares (scale) or just outside them (rotate); click the path to add a
+   vertex, **Alt**-click a vertex to convert it smooth ↔ corner, **Ctrl**-click to delete it; the square and circle
+   handles set **Mask Expansion** and **Mask Feather**. **Delete** removes the selected vertices or the mask.
+3. Each mask has **Mask Path**, **Mask Feather**, **Mask Opacity**, **Mask Expansion** (all keyframable), **Inverted**
+   and a mode (Add, Subtract, Intersect, Lighten, Darken, Difference, None). Paths with different vertex counts
+   interpolate through smart vertex matching.
+4. **Track** (◀◀ ◀ ▶ ▶▶ in the mask's tracking row): follows the pixels inside the mask (Position; Position &
+   Rotation; Position, Scale & Rotation; Perspective) and keys its path. Progress shows there and in the Jobs panel;
+   ■ stops it.
+
+**Track Matte Key** reads another video track (Matte = Video n; Composite Using: Matte Alpha / Matte Luma; Reverse).
+Hide the matte track (its eye) and it still works as a matte.
+
+Preview: a GPU mask rasteriser in the fx chain (analytic coverage and feather). Export: Opacity masks stay native (the
+sub-pixel kernel multiplies the picture by the same coverage); effect masks and track mattes render the layer through
+the layer bake (hybrid). Agents use `list_masks`, `add_mask`, `edit_mask`, `remove_masks`, `track_mask`,
+`auto_trace_mask` and `set_track_matte`, or the `mask.*` commands.
 
 ## Shapes
 
