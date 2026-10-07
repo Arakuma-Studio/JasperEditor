@@ -20,7 +20,7 @@ import { clipDecorations, clipMenuExtensions, type MenuItemSpec } from '../exten
 import { activeTimeline } from '../panels/timeline/env.tsx';
 import { SCENE_DETECT_DIALOG, SceneDetectDialog } from '../time/SceneDetectDialog.tsx';
 import { bandVisible, SpeedBandOverlay } from '../time/SpeedBand.tsx';
-import { isBandShown, setBandShown } from '../time/store.ts';
+import { isBandShown, setBandShown, subscribeBand } from '../time/store.ts';
 import type { CommandCtx, CommandScope, UiCommand } from './types.ts';
 
 type Env = { session: EditorSession; seq: Sequence; playhead: number };
@@ -208,12 +208,15 @@ function contentAt(e: Env, c: Clip): number {
 
 registerDialog(SCENE_DETECT_DIALOG, SceneDetectDialog);
 
-clipDecorations.register({
+const speedBand = () => ({
 	id: 'time.speedBand',
 	order: 20,
 	appliesTo: bandVisible,
 	overlay: SpeedBandOverlay,
 });
+clipDecorations.register(speedBand());
+// `appliesTo` reads the band store: re-register on every change so the (memoised) clip views re-evaluate it.
+subscribeBand(() => clipDecorations.register(speedBand()));
 
 clipMenuExtensions.register({
 	id: 'time',

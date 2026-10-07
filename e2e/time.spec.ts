@@ -17,6 +17,7 @@ import {
 	createProject,
 	enableAgentBridge,
 	exportViaUi,
+	focusTimeline,
 	importFiles,
 	pointerDrag,
 	query,
@@ -101,11 +102,15 @@ async function programCode(): Promise<number> {
 
 function fileCode(file: string, frame: number, width: number): number {
 	const W = width;
-	const raw = execFileSync(process.env.JASPER_FFMPEG ?? 'ffmpeg', [
-		...['-v', 'error', '-i', file],
-		...['-vf', `select=eq(n\\,${frame}),format=rgb24`],
-		...['-frames:v', '1', '-f', 'rawvideo', '-'],
-	]);
+	const raw = execFileSync(
+		process.env.JASPER_FFMPEG ?? 'ffmpeg',
+		[
+			...['-v', 'error', '-i', file],
+			...['-vf', `select=eq(n\\,${frame}),format=rgb24`],
+			...['-frames:v', '1', '-f', 'rawvideo', '-'],
+		],
+		{ maxBuffer: 64 << 20 },
+	);
 	const s = W / 1920;
 	let code = 0;
 	for (let b = 0; b < 6; b++) {
@@ -133,6 +138,9 @@ test('Show Clip Keyframes ▸ Time Remapping ▸ Speed; dragging the band slows 
 	const [v] = await clips(page, ['V1']);
 	coded = v!.id;
 	const before = (await clipDoc(coded)).duration;
+	// Like Premiere, the speed band needs a tall track: Expand All Tracks.
+	await focusTimeline(page);
+	await page.keyboard.press('Shift+Equal');
 	const box = await clipBox(page, coded);
 	await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 	await clipElement(page, coded).click({
@@ -174,6 +182,11 @@ test('Time Interpolation menu and the Effect Controls Time Remapping section', a
 		await expect.poll(async () => (await clipDoc(coded)).timeInterpolation ?? 'frame-sampling').toBe(mode);
 	}
 	await page.mouse.click(box.x + 40, box.y + box.height / 2);
+	await page
+		.locator('.dv-tab')
+		.filter({ hasText: /^Effect Controls$/ })
+		.first()
+		.click();
 	await expect(page.getByTestId('time-remap-section')).toBeVisible();
 	await expect(page.getByTestId('time-remap-section')).toContainText('50');
 });

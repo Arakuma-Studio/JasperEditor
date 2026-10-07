@@ -260,8 +260,8 @@ transition and reports `approximated`.
 | Preview frame choice | `packages/compositions/test/retime-frames.test.ts` (real Chrome + mediabunny: CFR forward/backward/random, reverse across GOPs, VFR timestamps) |
 | GPU = CPU | `retime-gl.test.ts` (§5) |
 | Native export | `apps/engine/test/time-export.test.ts`: reverse, remap (50 % + freeze + palindrome), VFR, Frame Blending at 50 %, Optical Flow, scene job |
-| Native and Remotion exports, same sequence | `apps/engine/scripts/verify-time.ts` against a live engine (720p sequence: reversed clip 0–29, remapped 30–101 with 50 % / freeze / reverse, VFR clip 102–151; every frame's code read with ffmpeg): native **152/152**, Remotion **REMOTION_RESULT** |
-| Real app | `e2e/time.spec.ts` (built app, Chrome): band drag → slower, one undo step; Time Interpolation menu; Effect Controls section; Program monitor shows `floor(t·0.5)`-th source frames; native export shows the same frames; Scene Edit Detection dialog cuts scenes.mp4 at its 4 cuts in one undo step. E2E_RESULT |
+| Native and Remotion exports, same sequence | `apps/engine/scripts/verify-time.ts` against a live engine (720p sequence: reversed clip 0–29, remapped 30–101 with 50 % / freeze / reverse, VFR clip 102–151; every frame's code read with ffmpeg): native **152/152**, Remotion **152/152** (`cd apps/engine && pnpm exec tsx scripts/verify-time.ts --engine http://127.0.0.1:<port>`) |
+| Real app | `e2e/time.spec.ts` (built app, Chrome): band drag → slower, one undo step; Time Interpolation menu; Effect Controls section; Program monitor shows `floor(t·0.5)`-th source frames; native export shows the same frames; Scene Edit Detection dialog cuts scenes.mp4 at its 4 cuts in one undo step. **5/5 pass** (`E2E_PORT=<port> pnpm e2e e2e/time.spec.ts`). |
 | MCP / web / interchange | `apps/mcp/test/time.test.ts`, `apps/web/test/time.test.ts`, `packages/interchange/test/time.test.ts` (FCPXML / FCP7 / Jasper round trips, OTIO metadata, EDL loss report) |
 
 ## 12. Comparison with the references
@@ -305,6 +305,15 @@ transition and reports `approximated`.
 - Scene Edit Detection's sensitivity (Adobe has none; filmcraft does) and its undo granularity (one step);
 - trackers are refused on remapped clips;
 - remapped nests use Frame Sampling.
+
+**Fixed along the way** (found by the live checks above):
+- Retimed layers were not frame-dependent, so Remotion reused their first frame. Now every frame re-renders.
+- The first frame of a retimed layer on each render tab could be captured before the decoder existed. A
+  `delayRender` now holds from the first render until the first picture is drawn.
+- The timeline context menu (every clip, track and transition menu) is `fixed` inside the docked panel, so it
+  opened offset by the panel's position. It is now in a portal.
+- Show Clip Keyframes ▸ Time Remapping ▸ Speed did not re-render the memoised clip views. The decoration is now
+  re-registered whenever the band set changes.
 
 ## 14. Limits
 
