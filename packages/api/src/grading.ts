@@ -16,7 +16,7 @@ export const GradingScopesRequestSchema = z.object({
 	clipId: z.string().optional(),
 	scopes: z.array(ScopeKindSchema).max(5).optional(),
 	waveformType: z.enum(['rgb', 'luma', 'yc', 'ycNoChroma']).optional(),
-	paradeType: z.enum(['rgb', 'yuv', 'rgbWhite']).optional(),
+	paradeType: z.enum(['rgb', 'yuv', 'rgbWhite', 'yuvWhite']).optional(),
 	matrix: z.enum(['bt601', 'bt709', 'bt2020']).optional(),
 	clamp: z.boolean().optional(),
 	columns: z.number().int().min(1).max(512).optional(),

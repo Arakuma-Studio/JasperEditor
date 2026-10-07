@@ -146,7 +146,10 @@ export function registerGradingTools(ctx: ToolContext): void {
 					.enum(['rgb', 'luma', 'yc', 'ycNoChroma'])
 					.optional()
 					.describe('Waveform type (default rgb)'),
-				paradeType: z.enum(['rgb', 'yuv', 'rgbWhite']).optional().describe('Parade type (default rgb)'),
+				paradeType: z
+					.enum(['rgb', 'yuv', 'rgbWhite', 'yuvWhite'])
+					.optional()
+					.describe('Parade type (default rgb)'),
 				matrix: z.enum(['bt601', 'bt709', 'bt2020']).optional().describe('Y′CbCr matrix (default bt709)'),
 				clamp: z.boolean().optional().describe('Clamp Signal (default true)'),
 				columns: z

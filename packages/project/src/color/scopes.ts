@@ -12,7 +12,7 @@
 // | Scope | Grid | Columns × rows |
 // |---|---|---|
 // | Waveform RGB / Luma / YC / YC no Chroma | per trace: R, G, B / Y / Y and C (Y ± |CbCr|) / Y | signal width × rows |
-// | Parade RGB / YUV / RGB-White | per trace: R, G, B / Y, Cb + ½, Cr + ½ / R, G, B, Y | signal width × rows |
+// | Parade RGB / YUV / RGB-White / YUV-White | per trace: R, G, B / Y, Cb + ½, Cr + ½ / R, G, B, Y / as YUV | signal width × rows |
 // | Histogram | 256 bins per channel R, G, B, Y | — |
 // | Vectorscope YUV | Cb right, Cr up, ±VECTOR_EXTENT | size² |
 // | Vectorscope HLS | hue = angle (red at the YUV red angle), HLS saturation = radius (1 → 0.5) | size² |
@@ -32,7 +32,7 @@ export const HISTOGRAM_BINS = 256;
 export type ScopeMatrix = 'bt601' | 'bt709' | 'bt2020';
 export type ScopeKind = 'waveform' | 'parade' | 'histogram' | 'vectorscopeYuv' | 'vectorscopeHls';
 export type WaveformType = 'rgb' | 'luma' | 'yc' | 'ycNoChroma';
-export type ParadeType = 'rgb' | 'yuv' | 'rgbWhite';
+export type ParadeType = 'rgb' | 'yuv' | 'rgbWhite' | 'yuvWhite';
 /** Levels axis labels: 8-bit code values, 10-bit code values or 0.0–1.0. */
 export type ScopeScale = '8bit' | '10bit' | 'float';
 export type ScopeBrightness = 'dimmed' | 'normal' | 'bright';
@@ -59,7 +59,7 @@ export const WAVEFORM_TYPE_LABELS: Record<WaveformType, string> = {
 	yc: 'YC',
 	ycNoChroma: 'YC no Chroma',
 };
-export const PARADE_TYPES: readonly ParadeType[] = ['rgb', 'yuv', 'rgbWhite'];
+export const PARADE_TYPES: readonly ParadeType[] = ['rgb', 'yuv', 'rgbWhite', 'yuvWhite'];
 export const PARADE_TYPE_LABELS: Record<ParadeType, string> = {
 	rgb: 'RGB',
 	yuv: 'YUV',
@@ -354,6 +354,7 @@ export function parade(
 	type: ParadeType,
 	p: ScopeParams = DEFAULT_SCOPE_PARAMS,
 ): ScopeWaveform {
+	// YUV-White: the YUV components (drawn in white by the panel; Premiere's option, behaviour undocumented).
 	return buildWaveform(s, p, type === 'rgb' ? 0 : type === 'rgbWhite' ? 3 : 4);
 }
 

@@ -74,6 +74,8 @@ export type ScopesResult = {
 };
 
 function traceColor(name: string, c: ScopeColors, type: 'waveform' | 'parade', layout: string): RGB {
+	// YUV-White: every component in white.
+	if (type === 'parade' && layout === 'yuvWhite') return c.luma;
 	switch (name) {
 		case 'R':
 			return c.red;
@@ -86,10 +88,11 @@ function traceColor(name: string, c: ScopeColors, type: 'waveform' | 'parade', l
 		case 'Cr':
 			return c.red;
 		case 'C':
-			return c.chroma;
+			// Premiere's YC waveform: luminance in green, chrominance in blue.
+			return c.blue;
 		default:
-			// Y: white in RGB-White / YUV parades and the luma waveforms.
-			return type === 'parade' || layout !== 'rgb' ? c.luma : c.trace;
+			// Y: white in the RGB-White / YUV parades; the scope's green trace in the luma waveforms.
+			return type === 'parade' ? c.luma : c.trace;
 	}
 }
 
