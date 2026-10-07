@@ -3,7 +3,8 @@
 // `["clip", clipId, "shape", "items", itemId, field…]`. Handlers: handlers/shape.ts.
 import { z } from 'zod';
 import { ShapeItemInputSchema, ShapeItemPatchSchema } from '../../vector/input.ts';
-import { cmd, IdRefSchema, RefDeclSchema } from './common.ts';
+import { cmd, IdRefSchema, ParamAtSchema, RefDeclSchema } from './common.ts';
+import { MaskPathOpSchema } from './mask.ts';
 
 const ItemId = z.string().min(1).describe('Shape item id (unique within the clip)');
 const ParentId = z
@@ -77,7 +78,22 @@ export const ShapeConvertToVectorCmd = cmd('shape.convertToVector', {
 	clipId: IdRefSchema,
 });
 
+/**
+ * Geometry edits of a path item (the mask path operations, in layer pixels around the layer centre): shape edits
+ * (set, moveVertices, setVertex, transform, convert) at `at` (a keyframe when the path is animated) or, with
+ * `allKeyframes`, on every key; topology edits (insertVertex, removeVertices, appendVertex, setClosed) on the value
+ * and every key. Feather points do not apply to shapes.
+ */
+export const ShapeEditPathCmd = cmd('shape.editPath', {
+	clipId: IdRefSchema,
+	itemId: ItemId,
+	at: ParamAtSchema.optional(),
+	allKeyframes: z.boolean().optional(),
+	ops: z.array(MaskPathOpSchema).min(1),
+});
+
 export const SHAPE_COMMANDS = [
+	ShapeEditPathCmd,
 	ShapeAddItemsCmd,
 	ShapeUpdateItemCmd,
 	ShapeRemoveItemsCmd,

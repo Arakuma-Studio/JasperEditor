@@ -37,6 +37,7 @@ import {
 	type RenderVisualClip,
 	resolveCachedLayerProps,
 	transitionSpec,
+	vectorShapeIsTimeDependent,
 } from '@jasper/project';
 import {
 	type ComponentType,
@@ -122,6 +123,8 @@ function isFrameDependent(
 		return (!!src.animation && !!(src.animation.in || src.animation.out)) || hasActiveExpression(src.text);
 	if ('shape' in src) {
 		const s = src.shape;
+		// wp shapes: keyframes / expressions anywhere in the contents, or a self-animating Wiggle Paths.
+		if (s.type === 'vector') return vectorShapeIsTimeDependent(s.contents);
 		return (
 			hasKeyframes(s.size) ||
 			hasKeyframes(s.fill) ||

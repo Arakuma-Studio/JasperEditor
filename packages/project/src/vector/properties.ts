@@ -4,7 +4,8 @@
 // them like on any other property. Labels, units and ranges follow After Effects' names for these controls.
 import type { Clip } from '../schema/sequence.ts';
 import type { ShapeItem, ShapeItemType } from '../schema/shapes.ts';
-import { SHAPE_BLEND_MODES } from '../schema/shapes.ts';
+import { BLEND_MODE_LABELS } from '../blend-modes.ts';
+import { BLEND_MODES } from '../schema/sequence.ts';
 import type { PropertySpec } from '../registry/properties.ts';
 import { validGradientValue, validPathValue } from './values.ts';
 
@@ -62,31 +63,7 @@ const en = (f: string[], label: string, options: readonly string[], labels: read
 });
 
 const DIRECTION = en(['direction'], 'Path Direction', ['normal', 'reversed'], ['Normal', 'Reversed'], 'normal');
-const BLEND = en(
-	['blendMode'],
-	'Blend Mode',
-	SHAPE_BLEND_MODES,
-	[
-		'Normal',
-		'Multiply',
-		'Screen',
-		'Overlay',
-		'Darken',
-		'Lighten',
-		'Color Dodge',
-		'Color Burn',
-		'Hard Light',
-		'Soft Light',
-		'Difference',
-		'Exclusion',
-		'Hue',
-		'Saturation',
-		'Color',
-		'Luminosity',
-		'Add',
-	],
-	'normal',
-);
+const BLEND = en(['blendMode'], 'Blend Mode', BLEND_MODES, BLEND_MODE_LABELS, 'normal');
 const COMPOSITE = en(
 	['composite'],
 	'Composite',

@@ -184,6 +184,7 @@ const LABELS: Record<CommandType, string> = {
 	'shape.groupItems': 'Group Shapes',
 	'shape.setContents': 'Replace Shape Contents',
 	'shape.convertToVector': 'Convert to Vector Shape',
+	'shape.editPath': 'Edit Shape Path',
 	'project.importTimeline': 'Import Timeline',
 	'clip.synchronize': 'Synchronize',
 	'item.mergeClips': 'Merge Clips',

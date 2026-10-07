@@ -7,6 +7,9 @@
 // anchor (value and keys) moves by half the change, so the geometry stays where it was on screen
 // (M(c) = P + R·S·(c − A) is unchanged).
 import type { Draft } from 'immer';
+import { evaluate } from '../../keyframes.ts';
+import type { BezierPath } from '../../path/model.ts';
+import { applyPathEditOp, applyPathTopologyOp, mapAllPaths, PATH_TOPOLOGY_OPS, writePathAt } from './mask.ts';
 import {
 	anim,
 	type Box,
@@ -389,6 +392,31 @@ const vectorHandlers: HandlerMap = {
 		const { shape } = vectorOf(doc, cmd.clipId, h);
 		shape.contents = build(h, () => buildShapeItems(cmd.contents, idGen(h)), ['contents']);
 		return { itemIds: (shape.contents as ShapeItem[]).map((i) => i.id) };
+	},
+	'shape.editPath': (doc, cmd, h) => {
+		const { seq, clip, shape } = vectorOf(doc, cmd.clipId, h);
+		const found = locateItem(shape, cmd.itemId, h);
+		if (found.item.type !== 'path') return h.fail('E_INVALID_PARAM', `${found.item.name} is not a path`);
+		const anim = (found.item as Draft<Extract<ShapeItem, { type: 'path' }>>).path;
+		const unit = { width: 1, height: 1 };
+		const t = h.clipContentTime(seq, clip, cmd.at);
+		for (const op of cmd.ops) {
+			if (op.op === 'addFeatherPoint' || op.op === 'setFeatherPoint' || op.op === 'removeFeatherPoints')
+				h.fail('E_INVALID_PARAM', 'Feather points apply to masks, not to shape paths');
+			if (PATH_TOPOLOGY_OPS.has(op.op)) {
+				mapAllPaths(anim as never, (p) => applyPathTopologyOp(p, op, h));
+				continue;
+			}
+			if (cmd.allKeyframes && anim.keyframes.length > 0) {
+				if (op.op === 'set') h.fail('E_INVALID_PARAM', 'set with allKeyframes would flatten the animation');
+				mapAllPaths(anim as never, (p) => applyPathEditOp(p, op, unit, h));
+				continue;
+			}
+			const cur = JSON.parse(JSON.stringify(evaluate(anim as Animatable<BezierPath>, t))) as BezierPath;
+			writePathAt(anim as never, t, applyPathEditOp(cur, op, unit, h), h);
+		}
+		const value = evaluate(anim as Animatable<BezierPath>, t);
+		return { itemId: cmd.itemId, vertices: value.vertices.length, closed: value.closed, time: t };
 	},
 	'shape.convertToVector': (doc, cmd, h) => {
 		const { seq, clip } = h.clip(doc, cmd.clipId);

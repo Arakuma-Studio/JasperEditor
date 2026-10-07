@@ -628,6 +628,8 @@ export type NestVideoClip = DeepStrip<z.infer<typeof NestVideoClipSchema>>;
 export type NestAudioClip = DeepStrip<z.infer<typeof NestAudioClipSchema>>;
 export type AdjustmentClip = DeepStrip<z.infer<typeof AdjustmentClipSchema>>;
 export type ShapeClip = Omit<DeepStrip<z.infer<typeof ShapeClipSchema>>, 'shape'> & { shape: ShapeData };
+/** A rectangle / ellipse shape clip (narrowed by `isLegacyShape(clip.shape)`). */
+export type LegacyShapeClip = ShapeClip & { shape: LegacyShapeData };
 export type SyntheticAudioClip = DeepStrip<z.infer<typeof SyntheticAudioClipSchema>>;
 export type KnownClip = DeepStrip<z.infer<typeof KnownClipSchema>>;
 

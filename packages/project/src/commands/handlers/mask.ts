@@ -340,6 +340,15 @@ function applyTopologyOp(p: BezierPath, op: MaskPathOp, h: HandlerContext): Bezi
 	}
 }
 
+// wp shapes: the same path edits on vector shape path items (pixel units: box 1×1).
+export {
+	applyShapeOp as applyPathEditOp,
+	applyTopologyOp as applyPathTopologyOp,
+	mapAllPaths,
+	TOPOLOGY_OPS as PATH_TOPOLOGY_OPS,
+	writePathAt,
+};
+
 function copyMaskWithIds(m: Mask, h: HandlerContext): Mask {
 	const copy = clone(m);
 	copy.id = h.ids.next('msk');

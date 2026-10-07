@@ -24,6 +24,7 @@ import {
 	parseClipboardPayload,
 	RATES,
 	resolveAgentAddresses,
+	type LegacyShapeClip,
 } from '../src/index.ts';
 import { Harness, videoAsset } from './helpers.ts';
 
@@ -588,7 +589,7 @@ describe('clip.pasteAttributes / clip.removeAttributes / effect.paste', () => {
 		expect(P.textAnimation?.out?.preset).toBe('fade');
 		expect(P.content.style.sizePx).toBe(140);
 		expect(P.content.text).toBe('plain');
-		const Q = h.seq.clips[r.refs.$q!] as Extract<Clip, { kind: 'shape' }>;
+		const Q = h.seq.clips[r.refs.$q!] as LegacyShapeClip;
 		expect(Q.shape.fill?.value).toEqual([1, 0, 0, 1]);
 		expect(Q.shape.stroke?.width.value).toBe(6);
 		expect(Q.shape.size.value).toEqual([50, 50]);
@@ -695,7 +696,7 @@ describe('keyframe.paste (CLB-006, S03:EC-023)', () => {
 
 	it('refuses a selected property of another value kind, and pastes shape size keys (M2)', () => {
 		const { h, shape, text } = richProject();
-		const keys = (h.seq.clips[shape] as Extract<Clip, { kind: 'shape' }>).shape.size.keyframes;
+		const keys = (h.seq.clips[shape] as LegacyShapeClip).shape.size.keyframes;
 		const p = roundTrip(
 			buildKeyframesPayload(
 				h.doc,
@@ -719,7 +720,7 @@ describe('keyframe.paste (CLB-006, S03:EC-023)', () => {
 			{ type: 'clip.addShape', at: 300, duration: 40, track: 'V3', shape: { type: 'ellipse' }, ref: '$e' },
 		]);
 		h.ok([{ type: 'keyframe.paste', payload: p, clipId: r.refs.$e!, at: { sequenceFrame: 310 } }]);
-		const E = h.seq.clips[r.refs.$e!] as Extract<Clip, { kind: 'shape' }>;
+		const E = h.seq.clips[r.refs.$e!] as LegacyShapeClip;
 		expect(E.shape.size.keyframes.map((k) => [Math.round(k.time / F30), k.value])).toEqual([
 			[10, [200, 100]],
 			[30, [400, 100]],

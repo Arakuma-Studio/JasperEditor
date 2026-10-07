@@ -18,6 +18,7 @@ import {
 	shapeContainsPoint,
 	shapeIntrinsicBox,
 	type Vec2,
+	type LegacyShapeClip,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
 
@@ -28,11 +29,11 @@ function addShape(
 	h: Harness,
 	shape: Record<string, unknown>,
 	extra: Record<string, unknown> = {},
-): ShapeClip {
+): LegacyShapeClip {
 	const r = h.ok([{ type: 'clip.addShape', at: 0, track: 'V1', shape, ref: '$s', ...extra }]) as Ok;
-	return h.seq.clips[r.refs.$s!] as ShapeClip;
+	return h.seq.clips[r.refs.$s!] as LegacyShapeClip;
 }
-const shapeOf = (h: Harness, id: string) => h.seq.clips[id] as ShapeClip;
+const shapeOf = (h: Harness, id: string) => h.seq.clips[id] as LegacyShapeClip;
 const snapshot = (h: Harness) =>
 	buildRenderSnapshot(h.doc, h.seqId, { resolveMedia: () => null, resolveFont: () => null });
 
@@ -251,7 +252,7 @@ describe('shape.* properties (param.set, keyframes, S11:SHP-003)', () => {
 		expect(shapeOf(h, id).shape.size.keyframes).toHaveLength(1);
 		// Razor: both halves keep the keys (content time), the right one starts mid-animation.
 		h.ok([{ type: 'clip.split', at: 15, scope: 'all-unlocked' }]);
-		const parts = h.clips('V1') as ShapeClip[];
+		const parts = h.clips('V1') as LegacyShapeClip[];
 		expect(parts).toHaveLength(2);
 		expect(parts[1]!.shape.cornerRadius.keyframes).toHaveLength(2);
 	});
@@ -323,7 +324,7 @@ describe('invariants, snapshot, properties and agent schema', () => {
 		const h = new Harness();
 		const { id } = addShape(h, { type: 'rect' });
 		const doc = structuredClone(h.doc);
-		(Object.values(doc.sequences)[0]!.clips[id] as ShapeClip).shape.fill!.value = [1.5, 0, 0, 1];
+		(Object.values(doc.sequences)[0]!.clips[id] as LegacyShapeClip).shape.fill!.value = [1.5, 0, 0, 1];
 		expect(checkInvariants(doc).map((i) => i.message)).toContainEqual(expect.stringMatching(/colours/));
 	});
 

@@ -15,6 +15,8 @@ import {
 	type RenderVisualClip,
 	resolveLayerProps,
 	type Transform,
+	type ShapeItem,
+	vectorShapeIsTimeDependent,
 } from '@jasper/project';
 
 /** Clip kinds whose pixels come from React/DOM in the composition (S11 §0 "DOM layer"). */
@@ -168,6 +170,9 @@ export function isStaticLayer(
 		const held = Object.fromEntries(Object.entries(fx.params).map(([k, a]) => [k, a.value]));
 		if (gpuIsTimeDependent(spec, held)) return false;
 	}
+	// wp shapes: a vector shape with a self-animating Wiggle Paths (or keys / expressions in its contents).
+	const shape = (c.source as { shape?: { type?: string; contents?: ShapeItem[] } }).shape;
+	if (shape?.type === 'vector' && vectorShapeIsTimeDependent(shape.contents ?? [])) return false;
 	return !hasKeyframesDeep(c.source);
 }
 

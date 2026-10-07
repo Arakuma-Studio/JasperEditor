@@ -9,8 +9,9 @@
 //   collected before it in its group (EffectCraft stores but ignores this flag);
 // - Merge Paths replaces the paths above it with one merged path and drops the paints above it in its group;
 // - Repeater copies everything above it (paths and paints) with a compounding transform and opacity ramp.
-// Group opacity multiplies into its paints; a group blend mode applies to its paints that blend normally.
-import { evaluate } from '../keyframes.ts';
+// Group opacity multiplies into its paints (After Effects applies it per paint); a group blend mode composites the
+// group's paints together and blends the result (draws carry their blended-group chain).
+import { evaluate, isAnimated } from '../keyframes.ts';
 import type { Animatable, RGBA, Vec2 } from '../schema/common.ts';
 import type {
 	FillRuleValue,
@@ -88,6 +89,11 @@ export type ShapeDraw = {
 	blend: ShapeBlendMode;
 	fillRule: FillRuleValue;
 	stroke: ShapeStrokeStyle | null;
+	/**
+	 * Enclosing groups with a blend mode other than Normal, outermost first: the draws of one group instance are
+	 * composited together (isolated) and the result blends with what is below (`key` tells repeated copies apart).
+	 */
+	groups: { key: string; blend: ShapeBlendMode }[];
 };
 
 export type EvalOptions = {
@@ -263,6 +269,7 @@ function collect(ctx: Ctx, contents: readonly ShapeItem[]): Collected {
 						blend: it.blendMode ?? 'normal',
 						fillRule: it.fillRule ?? 'nonzero',
 						stroke: null,
+						groups: [],
 					},
 					it.composite === 'above',
 				);
@@ -284,6 +291,7 @@ function collect(ctx: Ctx, contents: readonly ShapeItem[]): Collected {
 						blend: it.blendMode ?? 'normal',
 						fillRule: 'nonzero',
 						stroke: strokeStyle(it, t),
+						groups: [],
 					},
 					it.composite === 'above',
 				);
@@ -359,7 +367,7 @@ function collect(ctx: Ctx, contents: readonly ShapeItem[]): Collected {
 				for (const d of inner.draws) {
 					d.xf = compose(m, d.xf);
 					d.opacity *= opacity;
-					if (d.blend === 'normal' && it.blendMode && it.blendMode !== 'normal') d.blend = it.blendMode;
+					if (it.blendMode && it.blendMode !== 'normal') d.groups = [{ key: it.id, blend: it.blendMode }, ...d.groups];
 					draws.push(d);
 				}
 				live.push(...inner.live);
@@ -423,6 +431,7 @@ function collect(ctx: Ctx, contents: readonly ShapeItem[]): Collected {
 							slots: d.slots.map((s) => maps[i]!.get(s)!),
 							xf: compose(m, d.xf),
 							opacity: d.opacity * opk * partial,
+							groups: d.groups.map((g) => ({ key: `${g.key}/${it.id}:${i}`, blend: g.blend })),
 						});
 				}
 				break;
@@ -527,13 +536,16 @@ export function vectorShapeContainsPoint(draws: readonly ShapeDraw[], p: Vec2, s
 	return false;
 }
 
-/** Whether any Animatable in the tree has keyframes, or an enabled Wiggle Paths moves on its own (speed ≠ 0). */
+/**
+ * Whether the shape changes over time: any Animatable in the tree keyframed or driven by an active expression, or
+ * an enabled Wiggle Paths that moves on its own (Wiggles/Second ≠ 0).
+ */
 export function vectorShapeIsTimeDependent(contents: readonly ShapeItem[]): boolean {
 	const keyed = (v: unknown): boolean => {
 		if (!v || typeof v !== 'object') return false;
 		if (Array.isArray(v)) return v.some(keyed);
 		const o = v as Record<string, unknown>;
-		if (Array.isArray(o.keyframes) && 'value' in o) return o.keyframes.length > 0;
+		if (Array.isArray(o.keyframes) && 'value' in o) return isAnimated(o as never);
 		return Object.values(o).some(keyed);
 	};
 	let dep = false;

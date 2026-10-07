@@ -66,7 +66,7 @@ export const MaskDuplicateCmd = cmd('mask.duplicate', {
 	toEffectId: IdRefSchema.optional(),
 });
 
-const MaskPathOpSchema = z.discriminatedUnion('op', [
+export const MaskPathOpSchema = z.discriminatedUnion('op', [
 	/** Replace the whole path at `at`. */
 	z.strictObject({ op: z.literal('set'), path: BezierPathSchema }),
 	/** Move vertices (and their handles) by `delta` (normalised units). */

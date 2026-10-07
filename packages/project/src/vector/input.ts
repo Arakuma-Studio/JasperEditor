@@ -9,7 +9,6 @@ import {
 	AnimGradientSchema,
 	AnimPathSchema,
 	GradientValueSchema,
-	SHAPE_BLEND_MODES,
 	SHAPE_ITEM_TYPES,
 	type ShapeItem,
 	type ShapeItemType,
@@ -18,6 +17,7 @@ import { defaultDashes, defaultTaper, defaultWave, newShapeItem, nextItemName, w
 import { shapeItemSpecsOf } from './properties.ts';
 import { parseSvgPath } from './svg-path.ts';
 import { BezierPathSchema } from '../schema/mask.ts';
+import { BlendModeSchema } from '../schema/sequence.ts';
 import type { BezierPath } from '../path/model.ts';
 import { bezToBezierPaths } from './values.ts';
 
@@ -34,7 +34,7 @@ const ItemFields = z.looseObject({
 	name: z.string().max(200).optional(),
 	enabled: z.boolean().optional(),
 	direction: z.enum(['normal', 'reversed']).optional(),
-	blendMode: z.enum(SHAPE_BLEND_MODES).optional(),
+	blendMode: BlendModeSchema.optional(),
 	composite: z.enum(['below', 'above']).optional(),
 	fillRule: z.enum(['nonzero', 'evenodd']).optional(),
 	// geometry
