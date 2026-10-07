@@ -11,6 +11,8 @@ import {
 	AgentSchemaResponseSchema,
 	AgentTxRequestSchema,
 	AgentTxResponseSchema,
+	AgentUiRequestSchema,
+	AgentUiResponseSchema,
 } from './agent.ts';
 import { AudioAnalyzeRequestSchema, LoudnessNormalizeRequestSchema } from './audio.ts';
 import {
@@ -99,6 +101,7 @@ export type RouteOwner =
 	| 'WP-2G'
 	| 'WP-2H'
 	| 'wp-mcp'
+	| 'mcp-cli'
 	| 'wp-m2-color'
 	| 'wp-m2-process'
 	| 'wp-m2-mg'
@@ -434,6 +437,14 @@ export const ROUTES = {
 		path: '/api/agent/mcp-info',
 		response: AgentMcpInfoSchema,
 		owner: 'wp-mcp',
+	},
+	/** Live-UI automation of an open editor window (mcp-cli): elements, input, screenshots, coordinate mapping. */
+	agentUi: {
+		method: 'POST',
+		path: '/api/agent/ui',
+		body: AgentUiRequestSchema,
+		response: AgentUiResponseSchema,
+		owner: 'mcp-cli',
 	},
 	/** MCP Streamable HTTP endpoint (same tools as the `jasper-mcp` stdio server). */
 	mcp: { method: 'POST', path: '/mcp', response: 'binary', owner: 'wp-mcp' },

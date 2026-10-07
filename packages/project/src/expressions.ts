@@ -349,6 +349,12 @@ export function buildExpressionWorldData(
 export type ExpressionSupport = {
 	/** The document with its active expressions bound (memoized per document; identity without expressions). */
 	bind(doc: ProjectDocument): ProjectDocument;
+	/** Post-expression value and error of a property at stored time `t` (null: no such property). */
+	status(
+		doc: ProjectDocument,
+		ref: ExpressionRef,
+		t: number,
+	): { value: unknown; error: string | null } | null;
 };
 
 let support: ExpressionSupport | null = null;
@@ -465,4 +471,27 @@ export function repairExpressions(
 		}
 	}
 	return out;
+}
+
+/**
+ * Expression info of a property for agents (`clip.properties`, `param.get`): the stored expression and, when it
+ * is active and the engine is installed, its value and error at stored time `t`. Null without an expression.
+ */
+export function expressionInfoAt(
+	doc: ProjectDocument,
+	target: readonly string[],
+	sequenceId: string | undefined,
+	t: number,
+): { expression: Expression; value?: unknown; error?: string | null } | null {
+	const ref = paramPathToExpressionRef(doc, target, sequenceId);
+	if (!ref) return null;
+	const loc = locateExpressionTarget(doc, ref);
+	const expression = (loc?.target as { expression?: Expression } | undefined)?.expression;
+	if (!expression) return null;
+	const active = expression.enabled && expression.text.trim().length > 0;
+	if (!active || !support) return { expression: { text: expression.text, enabled: expression.enabled } };
+	const st = support.status(doc, ref, t);
+	return st
+		? { expression: { text: expression.text, enabled: expression.enabled }, value: st.value, error: st.error }
+		: { expression: { text: expression.text, enabled: expression.enabled } };
 }

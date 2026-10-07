@@ -206,3 +206,32 @@ describe('pick-whip and the Expression Selector API', () => {
 		).toBe(false);
 	});
 });
+
+describe('agent property reads', () => {
+	it('clip.properties reports the expression, its error and the post-expression value', async () => {
+		const { runAgentQuery } = await import('@jasper/project');
+		const d = rigged();
+		d.tx([{ type: 'expression.set', target: ['clip', '$a', 'opacity'], text: 'bad(' }]);
+		const r = runAgentQuery({ doc: d.doc, revision: 1 } as never, 'clip.properties', {
+			clipId: d.refs.$a!,
+			frame: 60,
+			keys: ['transform.rotation', 'opacity'],
+		}) as {
+			properties: {
+				key: string;
+				value: unknown;
+				evaluated: unknown;
+				expression?: unknown;
+				expressionError?: string;
+			}[];
+		};
+		const props = r.properties;
+		const rot = props.find((p) => p.key === 'transform.rotation')!;
+		expect(rot.value).toBe(0);
+		expect(rot.evaluated).toBe(180);
+		expect(rot.expression).toEqual({ text: 'time * 90', enabled: true });
+		const op = props.find((p) => p.key === 'opacity')!;
+		expect(op.evaluated).toBe(100);
+		expect(op.expressionError).toMatch(/^Error at line 1/);
+	});
+});

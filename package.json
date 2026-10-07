@@ -29,7 +29,9 @@
     "e2e:mg-fallback": "node e2e/mg-fallback-check.mjs",
     "e2e:packaged": "node e2e/packaged-lgpl-check.mjs",
     "e2e:typecheck": "tsc -p e2e/tsconfig.json",
-    "notices": "node scripts/third-party-notices.mjs"
+    "notices": "node scripts/third-party-notices.mjs",
+    "jasper": "tsx apps/mcp/src/jasper.ts",
+    "qa:mcp": "node scripts/mcp-qa.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",

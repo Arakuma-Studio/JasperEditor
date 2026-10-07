@@ -19,7 +19,13 @@ import type { SelectorInput } from './world.ts';
  */
 export async function loadExpressionEngine(): Promise<void> {
 	await loadRuntime();
-	installExpressionSupport({ bind: bindDocumentExpressions });
+	installExpressionSupport({
+		bind: bindDocumentExpressions,
+		status: (doc, ref, t) => {
+			const st = propertyStatusAt(doc, ref, t);
+			return st ? { value: st.value, error: st.expressionError } : null;
+		},
+	});
 }
 
 export type PropertyStatus = {

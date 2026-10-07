@@ -24,8 +24,10 @@ import {
 } from '@jasper/project';
 import { z } from 'zod';
 import {
+	DESTRUCTIVE_IDEMPOTENT,
 	defineTool,
 	EDIT,
+	EDIT_IDEMPOTENT,
 	frameOf,
 	isTerminal,
 	loadDoc,
@@ -271,7 +273,7 @@ export function registerMaskTools(ctx: ToolContext): void {
 				scale: z.number().positive().optional().describe('Scale the path about its centre (1 = same)'),
 				rotation: z.number().optional().describe('Rotate the path about its centre (degrees, clockwise)'),
 			},
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async (args, extra) => {
 			const { doc } = await loadDoc(ctx, args.projectId);
@@ -334,7 +336,7 @@ export function registerMaskTools(ctx: ToolContext): void {
 			title: 'Remove masks',
 			description: 'Deletes masks (Opacity or effect masks) by id. One History entry.',
 			input: { projectId: ProjectIdArg, maskIds: z.array(z.string().min(1)).min(1) },
-			annotations: EDIT,
+			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
 		async ({ projectId, maskIds }, extra) => {
 			const res = await transact(
@@ -362,7 +364,7 @@ export function registerMaskTools(ctx: ToolContext): void {
 				frames: z.number().int().min(1).optional().describe('Track at most this many frames'),
 				method: z.enum(MASK_TRACK_METHODS).optional(),
 			},
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async (args, extra) => {
 			let loaded = await loadDoc(ctx, args.projectId);
@@ -533,7 +535,7 @@ export function registerMaskTools(ctx: ToolContext): void {
 					.optional()
 					.describe("Also turn the matte track's output off (default false)"),
 			},
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async (args, extra) => {
 			const { doc } = await loadDoc(ctx, args.projectId);

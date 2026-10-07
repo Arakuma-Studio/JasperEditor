@@ -6,6 +6,7 @@ import {
 	CLIPBOARD_FILE_LIST_TYPE,
 	clipboardReadResult,
 	ELECTRON_CLIPBOARD_FORMAT,
+	isCaptureRect,
 	isClipboardWrite,
 	isExternalUrlAllowed,
 	isPermissionAllowed,
@@ -139,6 +140,23 @@ describe('desktop package config (R-OMS §8.5)', () => {
 		expect(pkg.build.files).toContain('!**/node_modules/@remotion/compositor-*/**');
 		expect(pkg.build.afterPack).toBe('./scripts/after-pack.cjs');
 		expect(existsSync(join(__dirname, '..', pkg.build.afterPack))).toBe(true);
+	});
+});
+
+describe('capture-page rect (mcp-cli ui_screenshot)', () => {
+	it('accepts a finite, positive CSS-pixel rectangle only', () => {
+		expect(isCaptureRect({ x: 0, y: 0, width: 800, height: 600 })).toBe(true);
+		expect(isCaptureRect({ x: 10.5, y: 4, width: 1, height: 1 })).toBe(true);
+		for (const bad of [
+			null,
+			'rect',
+			{ x: 0, y: 0, width: 0, height: 10 },
+			{ x: -1, y: 0, width: 10, height: 10 },
+			{ x: 0, y: 0, width: Number.NaN, height: 10 },
+			{ x: 0, y: 0, width: 99999, height: 10 },
+			{ x: 0, y: 0, width: 10 },
+		])
+			expect(isCaptureRect(bad)).toBe(false);
 	});
 });
 

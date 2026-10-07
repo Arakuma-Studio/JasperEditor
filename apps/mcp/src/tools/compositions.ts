@@ -31,6 +31,7 @@ import { z } from 'zod';
 import {
 	defineTool,
 	EDIT,
+	EDIT_IDEMPOTENT,
 	isTerminal,
 	jobBody,
 	loadDoc,
@@ -394,7 +395,7 @@ export function registerCompositionTools(ctx: ToolContext): void {
 					.optional()
 					.describe('Rebuild automatically when src/, public/ or the config change'),
 			},
-			annotations: { ...EDIT, idempotentHint: true },
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, path, watch }, extra) => {
 			const reg = await ctx
@@ -496,7 +497,7 @@ export function registerCompositionTools(ctx: ToolContext): void {
 				props: z.record(z.string(), z.unknown()).describe('Props values'),
 				mode: z.enum(['merge', 'replace']).optional(),
 			},
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, clipId, props, mode }, extra) => {
 			const { doc } = await loadDoc(ctx, projectId);
@@ -538,7 +539,7 @@ export function registerCompositionTools(ctx: ToolContext): void {
 				quality: z.enum(['preview', 'master']).optional().describe('Default master'),
 				wait: z.boolean().optional().describe('Wait for the job (up to 600 s)'),
 			},
-			annotations: { ...EDIT, idempotentHint: true },
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, clipId, quality = 'master', wait }, extra) => {
 			const { doc } = await loadDoc(ctx, projectId);
@@ -631,7 +632,7 @@ export function registerCompositionTools(ctx: ToolContext): void {
 					.optional()
 					.describe('Render the result to check the layout (default true; a few seconds)'),
 			},
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, clipId, texts, measure }, extra) => {
 			const { doc } = await loadDoc(ctx, projectId);

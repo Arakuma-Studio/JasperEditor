@@ -174,6 +174,21 @@ export function parseClipboardFileList(raw: unknown, platform: string = process.
 	return out;
 }
 
+/** A CSS-pixel rectangle from the renderer (validated before it reaches capturePage). */
+export function isCaptureRect(v: unknown): v is { x: number; y: number; width: number; height: number } {
+	if (!v || typeof v !== 'object') return false;
+	const r = v as Record<string, unknown>;
+	return (
+		['x', 'y', 'width', 'height'].every((k) => typeof r[k] === 'number' && Number.isFinite(r[k] as number)) &&
+		(r.x as number) >= 0 &&
+		(r.y as number) >= 0 &&
+		(r.width as number) >= 1 &&
+		(r.height as number) >= 1 &&
+		(r.width as number) <= 16384 &&
+		(r.height as number) <= 16384
+	);
+}
+
 /**
  * audio-mix: which permission requests the app grants. Voice-over recording needs the microphone (`media` with
  * audio only) and Preferences ▸ Audio lists the inputs (`mediaKeySystem` is never needed); only frames on the app

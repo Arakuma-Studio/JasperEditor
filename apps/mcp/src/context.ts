@@ -6,9 +6,11 @@ import type { EngineClient } from '@jasper/engine-client';
 import { loadExpressionEngine } from '@jasper/expressions';
 import {
 	approvalReasons,
+	makeEnvelope,
 	bindExpressions,
 	documentHasActiveExpressions,
 	type ProjectDocument,
+	resolveCaptureArgs,
 	resolveFrameInput,
 	type Sequence,
 	type TransactionResult,
@@ -22,8 +24,9 @@ import type {
 	ToolAnnotations,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { z } from 'zod';
-import { ToolError, TX_ERROR_HINTS, toErrorResult } from './errors.ts';
+import { cancelledResult, RequestCancelled, ToolError, TX_ERROR_HINTS, toErrorResult } from './errors.ts';
 import { type EngineConnection, withEngine } from './link.ts';
+import { strictInputSchema } from './strict.ts';
 
 export type Extra = RequestHandlerExtra<ServerRequest, ServerNotification>;
 
@@ -51,13 +54,28 @@ export function makeContext(server: McpServer, link: EngineConnection, agentName
 type Shape = Record<string, z.ZodType>;
 
 /**
+ * MCP tool annotations, all four hints required (docs/wp-notes/mcp-cli.md §1): clients use them to let
+ * read-only tools run without asking and to confirm destructive ones.
+ * - readOnlyHint: the tool changes nothing (projects, files, jobs, settings, the editor's view).
+ * - destructiveHint: it deletes or overwrites something (clips, items, transitions, keyframes, files,
+ *   cache entries, settings, jobs) rather than only adding to or adjusting the project.
+ * - idempotentHint: calling it again with the same arguments changes nothing more.
+ * - openWorldHint: it reaches beyond the local engine and the user's files (network downloads, remote
+ *   executors).
+ */
+export type FullToolAnnotations = Required<
+	Pick<ToolAnnotations, 'readOnlyHint' | 'destructiveHint' | 'idempotentHint' | 'openWorldHint'>
+>;
+
+/**
  * Registers a tool whose handler returns a CallToolResult; any exception becomes an `isError` result
- * with an actionable hint.
+ * with an actionable hint. The input shape becomes a deep-strict schema: unknown argument keys at any
+ * level are rejected with the accepted ones listed (strict.ts installs the matching validation).
  */
 export function defineTool<S extends Shape>(
 	ctx: ToolContext,
 	name: string,
-	config: { title: string; description: string; input: S; annotations?: ToolAnnotations },
+	config: { title: string; description: string; input: S; annotations: FullToolAnnotations },
 	run: (args: z.infer<z.ZodObject<S>>, extra: Extra) => Promise<CallToolResult>,
 ): void {
 	ctx.server.registerTool(
@@ -65,26 +83,46 @@ export function defineTool<S extends Shape>(
 		{
 			title: config.title,
 			description: config.description,
-			inputSchema: config.input,
-			annotations: { openWorldHint: false, ...config.annotations },
+			inputSchema: strictInputSchema(config.input) as never,
+			annotations: { ...config.annotations },
 		},
 		(async (args: unknown, extra: Extra) => {
 			try {
 				return await run(args as z.infer<z.ZodObject<S>>, extra);
 			} catch (e) {
+				if (extra.signal.aborted) return cancelledResult();
 				return toErrorResult(e);
+			} finally {
+				disposeReporters(extra);
 			}
 		}) as never,
 	);
 }
 
-export const READ_ONLY: ToolAnnotations = { readOnlyHint: true, idempotentHint: true };
-export const EDIT: ToolAnnotations = { readOnlyHint: false, destructiveHint: false };
-export const DESTRUCTIVE: ToolAnnotations = { readOnlyHint: false, destructiveHint: true };
+/** Lists, inspections and renders that change nothing. */
+export const READ_ONLY: FullToolAnnotations = {
+	readOnlyHint: true,
+	destructiveHint: false,
+	idempotentHint: true,
+	openWorldHint: false,
+};
+/** An additive edit; calling it again adds again (a second clip, marker, import…). */
+export const EDIT: FullToolAnnotations = {
+	readOnlyHint: false,
+	destructiveHint: false,
+	idempotentHint: false,
+	openWorldHint: false,
+};
+/** A setter: the same arguments leave the same state. */
+export const EDIT_IDEMPOTENT: FullToolAnnotations = { ...EDIT, idempotentHint: true };
+/** Deletes or overwrites; calling it again may remove or change more. */
+export const DESTRUCTIVE: FullToolAnnotations = { ...EDIT, destructiveHint: true };
+/** Deletes or overwrites a named target; calling it again changes nothing more. */
+export const DESTRUCTIVE_IDEMPOTENT: FullToolAnnotations = { ...DESTRUCTIVE, idempotentHint: true };
 
 // ---------------------------------------------------------------- documents
 
-type LoadedDoc = { doc: ProjectDocument; revision: number | undefined; live: boolean };
+export type LoadedDoc = { doc: ProjectDocument; revision: number | undefined; live: boolean };
 
 /** The current document: from the open editor when there is one (unsaved edits included), else stored. */
 export async function loadDoc(ctx: ToolContext, projectId: string): Promise<LoadedDoc> {
@@ -115,23 +153,95 @@ export function frameOf(
 
 // ---------------------------------------------------------------- progress
 
-/** Sends `notifications/progress` when the client asked for progress (`_meta.progressToken`). */
-export function progressReporter(extra: Extra): (progress: number, total?: number, message?: string) => void {
+/** At most one `notifications/progress` per request every this many ms (docs/wp-notes/mcp-cli.md §2). */
+export const PROGRESS_INTERVAL_MS = 100;
+
+export type ProgressReporter = {
+	(progress: number, total?: number, message?: string): void;
+	/** Sends the latest pending update (waiting out the interval) so it arrives before the result. */
+	flush(): Promise<void>;
+	/** Drops a pending update (the request is over). */
+	dispose(): void;
+};
+
+type ProgressParams = { progressToken: string | number; progress: number; total?: number; message?: string };
+
+/** Per-request progress state, shared by every reporter of the request (nested waits included). */
+type ProgressChannel = {
+	lastSentAt: number;
+	lastProgress: number;
+	pending: ProgressParams | null;
+	timer: ReturnType<typeof setTimeout> | null;
+};
+
+const channels = new WeakMap<Extra, ProgressChannel>();
+
+/**
+ * Sends `notifications/progress` when the client asked for progress (`_meta.progressToken`): throttled to
+ * one every PROGRESS_INTERVAL_MS per request (the latest value wins; a trailing update follows a burst) and
+ * strictly increasing across every reporter of the request, as the MCP progress utility requires.
+ */
+export function progressReporter(
+	extra: Extra,
+	opts: { intervalMs?: number; now?: () => number } = {},
+): ProgressReporter {
 	const token = extra._meta?.progressToken;
-	if (token === undefined) return () => {};
-	return (progress, total, message) => {
-		void extra
-			.sendNotification({
-				method: 'notifications/progress',
-				params: {
-					progressToken: token,
-					progress,
-					...(total !== undefined ? { total } : {}),
-					...(message ? { message } : {}),
-				},
-			})
-			.catch(() => {});
+	const interval = opts.intervalMs ?? PROGRESS_INTERVAL_MS;
+	const now = opts.now ?? (() => Date.now());
+	let ch = channels.get(extra);
+	if (!ch) {
+		ch = {
+			lastSentAt: Number.NEGATIVE_INFINITY,
+			lastProgress: Number.NEGATIVE_INFINITY,
+			pending: null,
+			timer: null,
+		};
+		channels.set(extra, ch);
+	}
+	const c = ch;
+	const send = () => {
+		if (c.timer) clearTimeout(c.timer);
+		c.timer = null;
+		const p = c.pending;
+		c.pending = null;
+		if (!p || extra.signal.aborted) return;
+		c.lastSentAt = now();
+		void extra.sendNotification({ method: 'notifications/progress', params: p }).catch(() => {});
 	};
+	const report = ((progress: number, total?: number, message?: string) => {
+		if (token === undefined || !Number.isFinite(progress) || progress <= c.lastProgress) return;
+		c.lastProgress = progress;
+		c.pending = {
+			progressToken: token,
+			progress,
+			...(total !== undefined ? { total } : {}),
+			...(message ? { message } : {}),
+		};
+		const wait = c.lastSentAt + interval - now();
+		if (wait <= 0) send();
+		else if (!c.timer) c.timer = setTimeout(send, wait);
+	}) as ProgressReporter;
+	report.flush = async () => {
+		if (!c.pending) return;
+		const wait = c.lastSentAt + interval - now();
+		if (c.timer) clearTimeout(c.timer);
+		c.timer = null;
+		if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+		send();
+	};
+	report.dispose = () => {
+		if (c.timer) clearTimeout(c.timer);
+		c.timer = null;
+		c.pending = null;
+	};
+	return report;
+}
+
+/** Drops the pending progress update of a finished request (defineTool calls it). */
+export function disposeReporters(extra: Extra): void {
+	const c = channels.get(extra);
+	if (c?.timer) clearTimeout(c.timer);
+	channels.delete(extra);
 }
 
 // ---------------------------------------------------------------- transactions
@@ -256,27 +366,174 @@ export function jobBody(job: EngineJob, baseUrl: string) {
 	};
 }
 
-/** Polls a job until it finishes or `timeoutMs` passes (progress notifications on the way). */
+/** How long a cancelled job may take to reach `cancelled` (the engine guarantees 5 s). */
+const CANCEL_WAIT_MS = 10_000;
+const POLL_MS = 250;
+
+/** Sleeps `ms`, or less when `signal` aborts. */
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+	return new Promise((resolve) => {
+		if (signal?.aborted) return resolve();
+		const t = setTimeout(done, ms);
+		function done() {
+			clearTimeout(t);
+			signal?.removeEventListener('abort', done);
+			resolve();
+		}
+		signal?.addEventListener('abort', done, { once: true });
+	});
+}
+
+/**
+ * Cancels an engine job and waits until it is terminal: the engine kills its processes and deletes its
+ * partial outputs before it reports `cancelled`. Errors are swallowed (the job may already be gone).
+ */
+export async function cancelJobAndWait(ctx: ToolContext, jobId: string): Promise<EngineJob | null> {
+	try {
+		let job = await ctx.engine((c) => c.cancelJob(jobId));
+		const until = Date.now() + CANCEL_WAIT_MS;
+		while (!isTerminal(job) && Date.now() < until) {
+			await sleep(POLL_MS);
+			job = await ctx.engine((c) => c.getJob(jobId));
+		}
+		return job;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * When the MCP request was cancelled (`notifications/cancelled` aborts `extra.signal`): cancels the
+ * engine job (partial outputs are deleted) and throws RequestCancelled. Tools call it right after they
+ * started a job, so a cancel that arrived while it was being submitted is not lost.
+ */
+export async function cancelIfAborted(
+	ctx: ToolContext,
+	extra: Extra | undefined,
+	jobId: string,
+): Promise<void> {
+	if (!extra?.signal.aborted) return;
+	await cancelJobAndWait(ctx, jobId);
+	throw new RequestCancelled(jobId);
+}
+
+/**
+ * Polls a job until it finishes or `timeoutMs` passes, with throttled progress notifications. A cancelled
+ * MCP request cancels the job (and its partial outputs) unless `cancelJobOnAbort` is false.
+ */
 export async function waitJob(
 	ctx: ToolContext,
 	jobId: string,
 	timeoutMs: number,
 	extra?: Extra,
+	opts: { cancelJobOnAbort?: boolean } = {},
 ): Promise<{ job: EngineJob; timedOut: boolean }> {
-	const report = extra ? progressReporter(extra) : () => {};
+	const report = extra ? progressReporter(extra) : null;
+	const signal = extra?.signal;
 	const until = Date.now() + timeoutMs;
-	let last = -1;
 	for (;;) {
+		if (signal?.aborted) {
+			if (opts.cancelJobOnAbort !== false) await cancelJobAndWait(ctx, jobId);
+			throw new RequestCancelled(jobId);
+		}
 		const job = await ctx.engine((c) => c.getJob(jobId));
 		if (isTerminal(job)) {
-			report(1, 1, `${job.title}: ${job.state}`);
+			report?.(1, 1, `${job.title}: ${job.state}`);
+			await report?.flush();
 			return { job, timedOut: false };
 		}
-		if (job.progress !== null && job.progress !== last) {
-			last = job.progress;
-			report(job.progress, 1, `${job.title}${job.stage ? ` — ${job.stage}` : ''}`);
+		if (job.progress !== null)
+			report?.(Math.min(job.progress, 0.999), 1, `${job.title}${job.stage ? ` — ${job.stage}` : ''}`);
+		if (Date.now() >= until) {
+			await report?.flush();
+			return { job, timedOut: true };
 		}
-		if (Date.now() >= until) return { job, timedOut: true };
-		await new Promise((r) => setTimeout(r, 400));
+		await sleep(POLL_MS, signal);
 	}
 }
+
+// ---------------------------------------------------------------- stills
+
+export type StillResult = {
+	jobId: string;
+	sequenceId: string;
+	frame: number;
+	width: number;
+	url: string;
+	renderPath?: string;
+	bytes: Uint8Array;
+	contentType: string;
+};
+
+/**
+ * Renders a Program still the way `frame.capture` does (the open editor's document when the project is
+ * open, else the saved one) but as a job this tool owns, so a cancelled request cancels the render.
+ */
+export async function captureStill(
+	ctx: ToolContext,
+	args: { projectId: string; frame: unknown; width?: number; sequenceId?: string },
+	extra?: Extra,
+	doc?: LoadedDoc,
+	/** Builds the error for a failed still job (render hints live in tools/templates.ts). */
+	failed?: (job: EngineJob) => Promise<Error>,
+): Promise<StillResult> {
+	const loaded = doc ?? (await loadDoc(ctx, args.projectId));
+	let cap: { sequenceId: string; frame: number; width: number };
+	try {
+		cap = resolveCaptureArgs(
+			{ doc: loaded.doc },
+			{
+				frame: args.frame,
+				...(args.width ? { width: args.width } : {}),
+				...(args.sequenceId ? { sequenceId: args.sequenceId } : {}),
+			},
+		);
+	} catch (e) {
+		throw new ToolError(
+			(e as { code?: string }).code ?? 'E_INVALID_PARAM',
+			(e as Error).message,
+			'Times are frames, {"seconds": x} or "HH:MM:SS:FF"; sequence ids come from get_project.',
+		);
+	}
+	const envelope = makeEnvelope(loaded.doc, {
+		revision: loaded.revision ?? 0,
+		savedAt: new Date().toISOString(),
+		platform: 'mcp',
+	}) as never;
+	const job = await ctx.engine((c) =>
+		c.requestStill({ envelope, sequenceId: cap.sequenceId, frame: cap.frame, width: cap.width }),
+	);
+	await cancelIfAborted(ctx, extra, job.id);
+	const { job: done, timedOut } = await waitJob(ctx, job.id, STILL_TIMEOUT_MS, extra);
+	if (timedOut)
+		throw new ToolError(
+			'RENDER_TIMEOUT',
+			`The frame is still rendering after ${STILL_TIMEOUT_MS / 1000} s`,
+			'The first Remotion render bundles the compositions and may download a browser: wait_for_job with this jobId, then try again.',
+			{ jobId: job.id },
+		);
+	if (done.state !== 'succeeded') {
+		if (failed) throw await failed(done);
+		throw new ToolError(
+			done.error?.code ?? `JOB_${done.state.toUpperCase()}`,
+			done.error?.message ?? `The still ${done.state}`,
+			undefined,
+			{ jobId: done.id },
+		);
+	}
+	const result = done.result as { url?: string; renderPath?: string };
+	if (!result?.url) throw new ToolError('INTERNAL', 'The engine returned no image');
+	const { bytes, contentType } = await ctx.engine((c) => c.fetchBytes(result.url!));
+	return {
+		jobId: done.id,
+		sequenceId: cap.sequenceId,
+		frame: cap.frame,
+		width: cap.width,
+		url: result.url,
+		...(result.renderPath ? { renderPath: result.renderPath } : {}),
+		bytes,
+		contentType,
+	};
+}
+
+const STILL_TIMEOUT_MS = 120_000;

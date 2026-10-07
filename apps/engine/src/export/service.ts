@@ -3,10 +3,22 @@
 // progress mapping (S04:RN-030); `export.finished` event. Motion-graphic masters come from a provider that
 // WP-2G registers (`registerMgMasterProvider`).
 import type { ChildProcess } from 'node:child_process';
-import { copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import {
+	type FileHandle,
+	mkdir,
+	open,
+	readdir,
+	readFile,
+	rename,
+	rm,
+	stat,
+	writeFile,
+} from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path';
 import type { Writable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import type { EngineJob, ExportResult, ExportSettings, ExportStartRequest, StillRequest } from '@jasper/api';
 import {
 	buildRenderSnapshot,
@@ -1023,9 +1035,11 @@ export class ExportService {
 		const downloadUrl = `/renders/${ctx.job.id}/output`;
 		let finalPath: string | undefined;
 		if (req.settings.destination?.type === 'path') {
+			// The destination is a partial until the job succeeds: a cancel during (or right after) the copy deletes it.
 			finalPath = await copyNoOverwrite(
 				output,
 				withExtension(req.settings.destination.path, extname(output)),
+				{ signal: ctx.signal, claimed: (p) => ctx.addPartial(p) },
 			);
 			const stem = basename(finalPath, extname(finalPath));
 			for (const sc of captionResult?.sidecars ?? []) {
@@ -1034,6 +1048,7 @@ export class ExportService {
 				sc.path = await copyNoOverwrite(
 					join(dir, 'captions', sc.name),
 					join(dirname(finalPath), `${stem}${rest}${ext}`),
+					{ signal: ctx.signal, claimed: (p) => ctx.addPartial(p) },
 				);
 			}
 		}
@@ -1166,13 +1181,38 @@ function withExtension(dest: string, ext: string): string {
 	return /^\.(mp4|webm|mov|m4v|mkv)$/i.test(cur) ? dest.slice(0, -cur.length) + ext : dest + ext;
 }
 
-/** Copies to `dest`, appending " (2)", " (3)"… instead of overwriting (S04:EX-007). */
-async function copyNoOverwrite(src: string, dest: string): Promise<string> {
+/**
+ * Copies to `dest`, appending " (2)", " (3)"… instead of overwriting (S04:EX-007). The name is claimed with an
+ * exclusive create (no race with another export picking the same name) and reported through `claimed` before
+ * any byte is written, so a cancelled job can delete it; the copy stops when `signal` aborts (mcp-cli §2).
+ */
+export async function copyNoOverwrite(
+	src: string,
+	dest: string,
+	opts: { signal?: AbortSignal; claimed?(path: string): void } = {},
+): Promise<string> {
 	await mkdir(dirname(dest), { recursive: true });
 	const ext = extname(dest);
 	const stem = basename(dest, ext);
-	let candidate = dest;
-	for (let i = 2; await exists(candidate); i++) candidate = join(dirname(dest), `${stem} (${i})${ext}`);
-	await copyFile(src, candidate);
-	return candidate;
+	for (let i = 1; ; i++) {
+		const candidate = i === 1 ? dest : join(dirname(dest), `${stem} (${i})${ext}`);
+		opts.signal?.throwIfAborted();
+		let out: FileHandle;
+		try {
+			out = await open(candidate, 'wx');
+		} catch (e) {
+			if ((e as NodeJS.ErrnoException).code === 'EEXIST') continue;
+			throw e;
+		}
+		opts.claimed?.(candidate);
+		try {
+			await pipeline(createReadStream(src), out.createWriteStream(), { signal: opts.signal });
+		} catch (e) {
+			await rm(candidate, { force: true }).catch(() => undefined);
+			throw e;
+		} finally {
+			await out.close().catch(() => undefined);
+		}
+		return candidate;
+	}
 }
