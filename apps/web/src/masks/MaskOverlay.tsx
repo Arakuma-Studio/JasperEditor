@@ -5,7 +5,8 @@
 //   the centre, outside the corners rotates);
 // - drag a vertex (the selected vertices move together; Shift-click adds to the selection), a tangent handle (the
 //   opposite one mirrors; Alt breaks it), the inside of the mask (moves the whole path); Alt-click a vertex converts
-//   it between smooth and corner; Ctrl/Cmd-click a segment inserts a vertex; Delete removes the selected vertices;
+//   it between smooth and corner, Ctrl/Cmd-click deletes it; a click on the path inserts a vertex; Delete removes the
+//   selected vertices;
 // - the pen (Effect Controls ▸ free draw bezier) adds a vertex per click, a drag pulls out its tangents, clicking
 //   the first vertex closes the path.
 // Every drag is ONE session gesture writing the path at the playhead (a keyframe when Mask Path is animated).
@@ -165,6 +166,12 @@ export function MaskOverlay(props: ProgramOverlayHostProps) {
 	const onVertexDown = (e: ReactPointerEvent, m: ResolvedMask, i: number) => {
 		if (e.button !== 0 || readOnly) return;
 		e.stopPropagation();
+		// Premiere: Ctrl/Cmd-click deletes a vertex; Alt-click converts it (smooth ↔ corner).
+		if (e.ctrlKey || e.metaKey) {
+			apply('Delete Mask Vertex', edit(m.id, [{ op: 'removeVertices', vertices: [i] }]));
+			maskUi.set({ vertices: [] });
+			return;
+		}
 		if (e.altKey) {
 			const v = m.path.vertices[i]!;
 			const corner = v.in[0] === 0 && v.in[1] === 0 && v.out[0] === 0 && v.out[1] === 0;
@@ -201,18 +208,19 @@ export function MaskOverlay(props: ProgramOverlayHostProps) {
 		});
 	};
 
+	/** Premiere: a click on the mask path adds a vertex there (the pointer shows a pen with +). */
+	const onOutlineDown = (e: ReactPointerEvent, m: ResolvedMask) => {
+		if (e.button !== 0 || readOnly) return;
+		const seg = segmentAt(m.path, sp, at(e), HIT);
+		if (!seg) return onBodyDown(e, m);
+		e.stopPropagation();
+		apply('Add Mask Vertex', edit(m.id, [{ op: 'insertVertex', segment: seg.segment, t: seg.t }]));
+		maskUi.set({ vertices: [seg.segment + 1] });
+	};
+
 	const onBodyDown = (e: ReactPointerEvent, m: ResolvedMask) => {
 		if (e.button !== 0 || readOnly) return;
 		e.stopPropagation();
-		const s = at(e);
-		if (e.ctrlKey || e.metaKey) {
-			const seg = segmentAt(m.path, sp, s, HIT);
-			if (seg) {
-				apply('Add Mask Vertex', edit(m.id, [{ op: 'insertVertex', segment: seg.segment, t: seg.t }]));
-				maskUi.set({ vertices: [seg.segment + 1] });
-				return;
-			}
-		}
 		maskUi.set({ vertices: [] });
 		startMoveVertices(
 			e,
@@ -384,7 +392,7 @@ export function MaskOverlay(props: ProgramOverlayHostProps) {
 					strokeWidth={2 * HIT}
 					pointerEvents={ui.pen ? 'none' : 'stroke'}
 					style={{ cursor: 'copy' }}
-					onPointerDown={(e) => onBodyDown(e, m)}
+					onPointerDown={(e) => onOutlineDown(e, m)}
 					data-testid="mask-outline-hit"
 				/>
 				{bbox && !ui.pen && closed ? (

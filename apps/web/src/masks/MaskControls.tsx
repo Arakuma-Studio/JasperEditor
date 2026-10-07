@@ -240,117 +240,129 @@ export function MaskHeaderRow(props: {
 	};
 	const disabled = props.readOnly || !!run;
 	return (
-		// biome-ignore lint/a11y/noStaticElementInteractions: row selection like the timeline; keyboard via Delete
-		// biome-ignore lint/a11y/useKeyWithClickEvents: see above
-		<div
-			className={cx('flex items-stretch', selected && 'bg-pr-selected')}
-			data-mask-id={mask.id}
-			data-testid={`mask-row-${mask.id}`}
-			onClick={() => {
-				maskUi.select({ maskId: mask.id, clipId: props.clipId });
-				// Delete then removes the mask, not the effect it belongs to.
-				inspectorFocus.set({ effectInstanceId: null });
-			}}
-		>
+		<>
+			{/* biome-ignore lint/a11y/noStaticElementInteractions: row selection like the timeline; keyboard via Delete */}
+			{/* biome-ignore lint/a11y/useKeyWithClickEvents: see above */}
 			<div
-				style={layout.left}
-				className="flex h-[var(--pr-row-h)] min-w-0 shrink-0 items-center gap-1 pl-4 pr-1"
+				className={cx('flex items-stretch', selected && 'bg-pr-selected')}
+				data-mask-id={mask.id}
+				data-testid={`mask-row-${mask.id}`}
+				onClick={() => {
+					maskUi.select({ maskId: mask.id, clipId: props.clipId });
+					// Delete then removes the mask, not the effect it belongs to.
+					inspectorFocus.set({ effectInstanceId: null });
+				}}
 			>
-				<MiniButton
-					label={props.open ? `Collapse ${mask.name}` : `Expand ${mask.name}`}
-					onClick={props.onToggle}
+				<div
+					style={layout.left}
+					className="flex h-[var(--pr-row-h)] min-w-0 shrink-0 items-center gap-1 pl-4 pr-1"
 				>
-					<CaretGlyph open={props.open} size={11} />
-				</MiniButton>
-				<span className="w-[60px] min-w-0 shrink truncate">
-					<TextField
-						value={mask.name}
-						label="Mask name"
-						onCommit={(name) => name.trim() && apply('Rename Mask', { name: name.trim() })}
+					<MiniButton
+						label={props.open ? `Collapse ${mask.name}` : `Expand ${mask.name}`}
+						onClick={props.onToggle}
+					>
+						<CaretGlyph open={props.open} size={11} />
+					</MiniButton>
+					<span className="min-w-[72px] flex-1 truncate">
+						<TextField
+							value={mask.name}
+							label="Mask name"
+							onCommit={(name) => name.trim() && apply('Rename Mask', { name: name.trim() })}
+							disabled={props.readOnly}
+							data-testid={`mask-name-${mask.id}`}
+						/>
+					</span>
+					<SelectField<MaskMode>
+						value={mask.mode}
+						options={MASK_MODES}
+						labels={MASK_MODES.map((m) => MASK_MODE_LABELS[m])}
+						label="Mask mode"
 						disabled={props.readOnly}
-						data-testid={`mask-name-${mask.id}`}
+						onChange={(mode) => apply('Mask Mode', { mode })}
+						data-testid={`mask-mode-${mask.id}`}
 					/>
-				</span>
-				<SelectField<MaskMode>
-					value={mask.mode}
-					options={MASK_MODES}
-					labels={MASK_MODES.map((m) => MASK_MODE_LABELS[m])}
-					label="Mask mode"
-					disabled={props.readOnly}
-					onChange={(mode) => apply('Mask Mode', { mode })}
-					data-testid={`mask-mode-${mask.id}`}
-				/>
-				<CheckboxField
-					value={mask.inverted}
-					label="Inverted"
-					disabled={props.readOnly}
-					onChange={(inverted) => apply('Invert Mask', { inverted })}
-				>
-					<span className="text-pr-small">Inv</span>
-				</CheckboxField>
-				<span className="ml-auto" />
-				{run ? (
-					<>
-						<span className="text-pr-small text-pr-accent" data-testid={`mask-track-progress-${mask.id}`}>
-							{run.progress === null ? '…' : `${Math.round(run.progress * 100)}%`}
-						</span>
-						<MiniButton label="Stop tracking" onClick={() => void stopMaskTrack(props.engine, mask.id)}>
-							<span className="text-pr-small">■</span>
-						</MiniButton>
-					</>
-				) : null}
-				<MiniButton
-					label="Track selected mask backward"
-					disabled={disabled}
-					onClick={() => track('backward')}
-					data-testid={`mask-track-back-${mask.id}`}
-				>
-					<BackAll />
-				</MiniButton>
-				<MiniButton
-					label="Track selected mask backward 1 frame"
-					disabled={disabled}
-					onClick={() => track('step-back')}
-					data-testid={`mask-track-back1-${mask.id}`}
-				>
-					<BackOne />
-				</MiniButton>
-				<MiniButton
-					label="Track selected mask forward 1 frame"
-					disabled={disabled}
-					onClick={() => track('step-forward')}
-					data-testid={`mask-track-fwd1-${mask.id}`}
-				>
-					<FwdOne />
-				</MiniButton>
-				<MiniButton
-					label="Track selected mask forward"
-					disabled={disabled}
-					onClick={() => track('forward')}
-					data-testid={`mask-track-fwd-${mask.id}`}
-				>
-					<FwdAll />
-				</MiniButton>
-				<SelectField<MaskTrackMethod>
-					value={method}
-					options={MASK_TRACK_METHODS}
-					labels={MASK_TRACK_METHODS.map((m) => MASK_TRACK_METHOD_LABELS[m])}
-					label="Tracking method"
-					disabled={props.readOnly}
-					className="w-[22px]"
-					onChange={(trackMethod) => apply('Tracking Method', { trackMethod })}
-					data-testid={`mask-method-${mask.id}`}
-				/>
-				<MiniButton
-					label={`Delete ${mask.name}`}
-					disabled={props.readOnly}
-					onClick={() => deleteMasks(session, [mask.id])}
-					data-testid={`mask-delete-${mask.id}`}
-				>
-					<TrashGlyph size={12} />
-				</MiniButton>
+					<CheckboxField
+						value={mask.inverted}
+						label="Inverted"
+						disabled={props.readOnly}
+						onChange={(inverted) => apply('Invert Mask', { inverted })}
+					>
+						<span className="text-pr-small">Inv</span>
+					</CheckboxField>
+					<MiniButton
+						label={`Delete ${mask.name}`}
+						disabled={props.readOnly}
+						onClick={() => deleteMasks(session, [mask.id])}
+						data-testid={`mask-delete-${mask.id}`}
+					>
+						<TrashGlyph size={12} />
+					</MiniButton>
+				</div>
+				{layout.lane(null)}
 			</div>
-			{layout.lane(null)}
-		</div>
+			{props.open ? (
+				<div className="flex items-stretch" data-testid={`mask-tracking-${mask.id}`}>
+					<div
+						style={layout.left}
+						className="flex h-[var(--pr-row-h)] min-w-0 shrink-0 items-center gap-1 pl-[34px] pr-1"
+					>
+						<span className="mr-1 truncate text-pr-small text-pr-muted">Track</span>
+						{run ? (
+							<>
+								<span className="text-pr-small text-pr-accent" data-testid={`mask-track-progress-${mask.id}`}>
+									{run.progress === null ? '…' : `${Math.round(run.progress * 100)}%`}
+								</span>
+								<MiniButton label="Stop tracking" onClick={() => void stopMaskTrack(props.engine, mask.id)}>
+									<span className="text-pr-small">■</span>
+								</MiniButton>
+							</>
+						) : null}
+						<MiniButton
+							label="Track selected mask backward"
+							disabled={disabled}
+							onClick={() => track('backward')}
+							data-testid={`mask-track-back-${mask.id}`}
+						>
+							<BackAll />
+						</MiniButton>
+						<MiniButton
+							label="Track selected mask backward 1 frame"
+							disabled={disabled}
+							onClick={() => track('step-back')}
+							data-testid={`mask-track-back1-${mask.id}`}
+						>
+							<BackOne />
+						</MiniButton>
+						<MiniButton
+							label="Track selected mask forward 1 frame"
+							disabled={disabled}
+							onClick={() => track('step-forward')}
+							data-testid={`mask-track-fwd1-${mask.id}`}
+						>
+							<FwdOne />
+						</MiniButton>
+						<MiniButton
+							label="Track selected mask forward"
+							disabled={disabled}
+							onClick={() => track('forward')}
+							data-testid={`mask-track-fwd-${mask.id}`}
+						>
+							<FwdAll />
+						</MiniButton>
+						<SelectField<MaskTrackMethod>
+							value={method}
+							options={MASK_TRACK_METHODS}
+							labels={MASK_TRACK_METHODS.map((m) => MASK_TRACK_METHOD_LABELS[m])}
+							label="Tracking method"
+							disabled={props.readOnly}
+							className="w-[96px]"
+							onChange={(trackMethod) => apply('Tracking Method', { trackMethod })}
+							data-testid={`mask-method-${mask.id}`}
+						/>
+					</div>
+					{layout.lane(null)}
+				</div>
+			) : null}
+		</>
 	);
 }
