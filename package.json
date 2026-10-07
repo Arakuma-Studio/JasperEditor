@@ -1,55 +1,57 @@
 {
-  "name": "jasper-editor",
-  "private": true,
-  "type": "module",
-  "packageManager": "pnpm@10.34.5",
-  "engines": {
-    "node": ">=20.19"
-  },
-  "scripts": {
-    "dev": "concurrently -k -n engine,web \"pnpm dev:engine\" \"pnpm dev:web\"",
-    "dev:engine": "cross-env JASPER_APPDIR=./.stage JASPER_DEV=1 tsx watch apps/engine/src/cli.ts --port 47900",
-    "dev:web": "pnpm --filter @jasper/web dev",
-    "dev:desktop": "pnpm --filter @jasper/desktop dev",
-    "typecheck": "pnpm -r --if-present typecheck",
-    "test": "vitest run",
-    "perf": "node scripts/performance.mjs",
-    "lint": "biome check . && node scripts/check-tokens.mjs && node scripts/check-anime.mjs && node scripts/check-layers.mjs && node scripts/check-assets.mjs",
-    "format": "biome format --write .",
-    "build": "pnpm -r --if-present build",
-    "mg:build": "node scripts/mg-build.mjs",
-    "fixtures": "node scripts/make-fixtures.mjs",
-    "ffmpeg:lgpl": "node scripts/ffmpeg/fetch-or-build-lgpl.mjs",
-    "ffmpeg:check": "node scripts/ffmpeg/check-lgpl.mjs",
-    "mcp:build": "pnpm --filter @jasper/mcp build",
-    "e2e": "node scripts/e2e-prepare.mjs && playwright test",
-    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
-    "e2e:desktop": "node e2e/desktop-smoke.mjs packaged-like && node e2e/desktop-smoke.mjs dev && E2E_SKIP_BUILD=1 node e2e/desktop-clipboard.mjs",
-    "e2e:desktop-clipboard": "node e2e/desktop-clipboard.mjs",
-    "e2e:mg-fallback": "node e2e/mg-fallback-check.mjs",
-    "e2e:packaged": "node e2e/packaged-lgpl-check.mjs",
-    "e2e:typecheck": "tsc -p e2e/tsconfig.json",
-    "notices": "node scripts/third-party-notices.mjs"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "^2.5.14",
-    "@modelcontextprotocol/sdk": "^1.31.0",
-    "@playwright/test": "^1.63.0",
-    "@testing-library/react": "^16.3.3",
-    "@types/node": "^20.19.43",
-    "concurrently": "^9.2.1",
-    "cross-env": "^10.1.0",
-    "fast-check": "^4.10.2",
-    "happy-dom": "^20.14.5",
-    "tsx": "^4.23.15",
-    "typescript": "5.9.3",
-    "vitest": "^4.1.11"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "electron",
-      "esbuild",
-      "@biomejs/biome"
-    ]
-  }
+	"name": "jasper-editor",
+	"private": true,
+	"type": "module",
+	"packageManager": "pnpm@10.34.5",
+	"engines": {
+		"node": ">=20.19"
+	},
+	"scripts": {
+		"dev": "concurrently -k -n engine,web \"pnpm dev:engine\" \"pnpm dev:web\"",
+		"dev:engine": "cross-env JASPER_APPDIR=./.stage JASPER_DEV=1 tsx watch apps/engine/src/cli.ts --port 47900",
+		"dev:web": "pnpm --filter @jasper/web dev",
+		"dev:desktop": "pnpm --filter @jasper/desktop dev",
+		"typecheck": "pnpm -r --if-present typecheck",
+		"test": "vitest run",
+		"perf": "node scripts/performance.mjs",
+		"lint": "biome check . && node scripts/check-tokens.mjs && node scripts/check-anime.mjs && node scripts/check-layers.mjs && node scripts/check-assets.mjs",
+		"format": "biome format --write .",
+		"build": "pnpm -r --if-present build",
+		"mg:build": "node scripts/mg-build.mjs",
+		"fixtures": "node scripts/make-fixtures.mjs",
+		"ffmpeg:lgpl": "node scripts/ffmpeg/fetch-or-build-lgpl.mjs",
+		"ffmpeg:check": "node scripts/ffmpeg/check-lgpl.mjs",
+		"mcp:build": "pnpm --filter @jasper/mcp build",
+		"e2e": "node scripts/e2e-prepare.mjs && playwright test",
+		"verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+		"e2e:desktop": "node e2e/desktop-smoke.mjs packaged-like && node e2e/desktop-smoke.mjs dev && E2E_SKIP_BUILD=1 node e2e/desktop-clipboard.mjs",
+		"e2e:desktop-clipboard": "node e2e/desktop-clipboard.mjs",
+		"e2e:mg-fallback": "node e2e/mg-fallback-check.mjs",
+		"e2e:packaged": "node e2e/packaged-lgpl-check.mjs",
+		"e2e:typecheck": "tsc -p e2e/tsconfig.json",
+		"notices": "node scripts/third-party-notices.mjs",
+		"jasper": "tsx apps/mcp/src/jasper.ts",
+		"qa:mcp": "node scripts/mcp-qa.mjs"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.5.14",
+		"@modelcontextprotocol/sdk": "^1.31.0",
+		"@playwright/test": "^1.63.0",
+		"@testing-library/react": "^16.3.3",
+		"@types/node": "^20.19.43",
+		"concurrently": "^9.2.1",
+		"cross-env": "^10.1.0",
+		"fast-check": "^4.10.2",
+		"happy-dom": "^20.14.5",
+		"tsx": "^4.23.15",
+		"typescript": "5.9.3",
+		"vitest": "^4.1.11"
+	},
+	"pnpm": {
+		"onlyBuiltDependencies": [
+			"electron",
+			"esbuild",
+			"@biomejs/biome"
+		]
+	}
 }
