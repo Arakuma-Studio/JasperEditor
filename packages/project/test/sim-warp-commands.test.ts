@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	alphaOutline,
+	buildRenderSnapshot,
 	checkInvariants,
 	defaultEffectRegistry,
 	deform,
@@ -20,6 +21,7 @@ import {
 	puppetMesh,
 	repairDocument,
 	resolvePuppet,
+	resolveSceneAt,
 	solvePuppet,
 	triangulate,
 } from '../src/index.ts';
@@ -245,6 +247,30 @@ describe('Puppet alpha outlines', () => {
 		const b = alphaOutline(rgba, w, h, [90 / w, 40 / h], 0)!;
 		expect(Math.min(...b.map((p) => p[0] * w))).toBeGreaterThan(70);
 		expect(alphaOutline(new Uint8Array(w * h * 4).fill(255), w, h, [0.5, 0.5])).toBeNull();
+	});
+});
+
+describe('Puppet in the render scene', () => {
+	it('animated pins are re-evaluated every frame (a clip with only pin keys is not static)', () => {
+		const { h, fxId, fx } = setup('jasper.puppet');
+		h.ok([{ type: 'puppet.addPin', effectInstanceId: fxId, position: [0.2, 0.5] }]);
+		const pinId = fx().puppet!.pins[0]!.id;
+		h.ok([
+			{
+				type: 'puppet.setPinKeys',
+				pinId,
+				keys: [
+					{ at: { sequenceFrame: 0 }, value: [0.2, 0.5] },
+					{ at: { sequenceFrame: 30 }, value: [0.4, 0.2] },
+				],
+			},
+		]);
+		const snap = buildRenderSnapshot(h.doc, h.seqId, { resolveMedia: () => null, resolveFont: () => null });
+		const pinAt = (f: number) => resolveSceneAt(snap, f)[0]!.props.effects[0]!.puppet!.pins[0]!.position;
+		expect(pinAt(0)).toEqual([0.2, 0.5]);
+		const p30 = pinAt(30);
+		expect(p30[0]).toBeCloseTo(0.4, 6);
+		expect(p30[1]).toBeCloseTo(0.2, 6);
 	});
 });
 
