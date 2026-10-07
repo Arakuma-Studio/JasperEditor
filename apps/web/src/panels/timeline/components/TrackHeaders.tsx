@@ -4,6 +4,7 @@ import { type Sequence, type Track, trackList } from '@jasper/project';
 import type { EditorSession, SequenceViewState } from '@jasper/session';
 import { IconButton } from '@jasper/ui';
 import { useRef, useState } from 'react';
+import { useShellRuntimeOrNull } from '../../../shell/context.tsx';
 import {
 	DEFAULT_AUDIO_PX,
 	DEFAULT_VIDEO_PX,
@@ -165,6 +166,7 @@ function Header(props: TrackHeadersProps & { row: TrackRow; track: Track }) {
 	const targeted = (kind === 'video' ? props.view.targeting.video : props.view.targeting.audio).includes(
 		track.id,
 	);
+	const runtime = useShellRuntimeOrNull();
 	const anySolo = props.seq.audioTracks.some((t) => t.solo);
 	const silencedBySolo = kind === 'audio' && anySolo && !track.solo;
 	const label = labelOf(kind, row.index);
@@ -287,6 +289,13 @@ function Header(props: TrackHeadersProps & { row: TrackRow; track: Track }) {
 					>
 						S
 					</button>
+					{/* audio-mix: Voice-over Record (records into this track at the playhead; again to stop) */}
+					<IconButton
+						icon="track.voiceOver"
+						label="Voice-over record"
+						onClick={() => void runtime?.run('audio.voiceoverRecord', { trackId: track.id })}
+						data-control="voiceover"
+					/>
 				</>
 			)}
 			{editing !== null ? (
@@ -313,6 +322,7 @@ function Header(props: TrackHeadersProps & { row: TrackRow; track: Track }) {
 						startRename();
 					}}
 					title={name}
+					data-testid="track-name"
 				>
 					{name}
 				</span>
@@ -322,6 +332,7 @@ function Header(props: TrackHeadersProps & { row: TrackRow; track: Track }) {
 				style={kind === 'video' ? { top: -2 } : { bottom: -2 }}
 				onPointerDown={(e) => resize(e, kind === 'video' ? -1 : 1)}
 				data-resize-handle
+				data-testid="track-height-handle"
 			/>
 		</div>
 	);
@@ -374,6 +385,7 @@ export function TrackHeaders(props: TrackHeadersProps) {
 			<div
 				className="absolute right-0 left-0"
 				style={{ top: layout.dividerTop, height: 4, background: 'var(--pr-bg-app)', cursor: 'row-resize' }}
+				data-testid="timeline-region-divider"
 				onPointerDown={(e) => {
 					const el = e.currentTarget;
 					el.setPointerCapture?.(e.pointerId);

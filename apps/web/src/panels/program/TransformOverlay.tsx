@@ -47,12 +47,22 @@ import { MONITOR_COLORS } from './monitor.tokens.ts';
 import type { MonitorViewState } from './monitor-store.ts';
 import {
 	buildMotionPath,
+	convertVertexCommand,
 	hitMotionPath,
+	type MotionPath,
 	type MotionPathDrag,
 	motionPathDragCommands,
+	type PathHit,
 	startMotionPathDrag,
 } from './motion-path.ts';
-import { buildSnapTargets, type SnapHit, type SnapTargets, snapMove, snapThreshold } from './snapping.ts';
+import {
+	buildSnapTargets,
+	type SnapHit,
+	type SnapTargets,
+	snapAxis,
+	snapMove,
+	snapThreshold,
+} from './snapping.ts';
 import {
 	ANCHOR_HIT,
 	anchorSnapPoints,
@@ -135,7 +145,15 @@ type GestureState =
 			moved: boolean;
 	  }
 	/** S03:OVL-020: a motion-path key square or tangent handle. */
-	| { kind: 'path'; g: Gesture; drag: MotionPathDrag; startScreen: Vec2; moved: boolean };
+	| {
+			kind: 'path';
+			g: Gesture;
+			drag: MotionPathDrag;
+			startScreen: Vec2;
+			moved: boolean;
+			/** keyframes-blend: snap targets of a key drag (frame, safe margins, layers, the path's other keys). */
+			targets: SnapTargets | null;
+	  };
 
 type Readout = { at: Vec2; text: string } | null;
 
@@ -241,10 +259,32 @@ export function TransformOverlay({
 		() => (pathClip ? buildMotionPath(pathClip, doc.settings.fps) : null),
 		[pathKey, pathAnim],
 	);
+	// keyframes-blend: the Anchor Point path (anchor values in layer space, drawn through the layer map at the
+	// playhead — the anchor point always sits at Position in the frame, so its path is shown over the layer as After
+	// Effects shows it over the layer). Rebuilt when the layer map changes.
+	const anchorAnim = pathClip?.transform?.anchor;
+	const pathLayer = pathClip ? selLayers.find((l) => l.clip.clipId === pathClip.clipId) : undefined;
+	const layerMap = pathLayer?.props.matrix ?? null;
+	const layerMapKey = layerMap
+		? [layerMap.a, layerMap.b, layerMap.c, layerMap.d, layerMap.e, layerMap.f].join(',')
+		: '';
+	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the animation, timing and layer map
+	const anchorPath = useMemo(
+		() =>
+			pathClip && (anchorAnim?.keyframes.length ?? 0) >= 2
+				? buildMotionPath(pathClip, doc.settings.fps, 'anchor', layerMap)
+				: null,
+		[pathKey, anchorAnim, layerMapKey],
+	);
 	const keySel = useStoreSelector(session.store, (s) => s.selection.keyframes);
 	const selectedKeys = useMemo(
-		() => new Set(motionPath && keySel?.clipOrTrackId === motionPath.clipId ? keySel.keyframeIds : []),
-		[motionPath, keySel],
+		() =>
+			new Set(
+				(motionPath || anchorPath) && keySel?.clipOrTrackId === (motionPath ?? anchorPath)!.clipId
+					? keySel.keyframeIds
+					: [],
+			),
+		[motionPath, anchorPath, keySel],
 	);
 	const [hover, setHover] = useState<string | null>(null);
 	const [snapHits, setSnapHits] = useState<{ x: SnapHit | null; y: SnapHit | null } | null>(null);
@@ -254,8 +294,8 @@ export function TransformOverlay({
 	const pendingRef = useRef<{ cmds: Parameters<Gesture['update']>[0] } | null>(null);
 	const rafRef = useRef<number | null>(null);
 	const svgRef = useRef<SVGSVGElement>(null);
-	const live = useRef({ scene, view, selLayers, frame, monitor, motionPath });
-	live.current = { scene, view, selLayers, frame, monitor, motionPath };
+	const live = useRef({ scene, view, selLayers, frame, monitor, motionPath, anchorPath });
+	live.current = { scene, view, selLayers, frame, monitor, motionPath, anchorPath };
 
 	const toSeq = (e: { clientX: number; clientY: number }): { seq: Vec2; screen: Vec2 } => {
 		const r = svgRef.current!.getBoundingClientRect();
@@ -358,10 +398,14 @@ export function TransformOverlay({
 		const sel = live.current.selLayers;
 		// Motion path key squares and tangent handles (OVL-020), before the transform handles. The anchor crosshair
 		// keeps priority over the square of the key under the playhead (same point).
-		const pathHit = pathHitAt(screen);
-		if (pathHit) {
-			const mp = live.current.motionPath!;
-			const drag = startMotionPathDrag(mp, pathHit, p);
+		const found = pathHitAt(screen);
+		const pathHit = found?.hit ?? null;
+		if (found && pathHit) {
+			const mp = found.path;
+			// keyframes-blend: the Pen tool, or Ctrl (Cmd on macOS) on a key square, converts the vertex (click) or pulls
+			// Continuous Bezier handles out of it (drag) — After Effects' Convert Vertex.
+			const pull = pathHit.kind === 'key' && (tool === 'pen' || e.ctrlKey || e.metaKey);
+			const drag = startMotionPathDrag(mp, pathHit, p, pull ? new Set() : selectedKeys, { pull });
 			if (drag) {
 				const cur = selectedKeys.has(pathHit.keyId) ? [...selectedKeys] : [];
 				const ids =
@@ -380,6 +424,23 @@ export function TransformOverlay({
 					drag,
 					startScreen: screen,
 					moved: false,
+					targets:
+						pathHit.kind === 'key' && !pull
+							? buildSnapTargets({
+									width: doc.settings.width,
+									height: doc.settings.height,
+									safeMargins: monitor.safeMargins ? SAFE_MARGINS : null,
+									layers: [
+										...live.current.scene
+											.filter((l) => l.clip.clipId !== mp.clipId)
+											.map((l) => l.props.bounds),
+										// The path's other keys (points) are targets too.
+										...mp.keys
+											.filter((k) => !drag.group.some((g) => g.id === k.id))
+											.map((k) => ({ x: k.pos[0], y: k.pos[1], width: 0, height: 0 })),
+									],
+								})
+							: null,
 				};
 				return;
 			}
@@ -511,18 +572,24 @@ export function TransformOverlay({
 		};
 	};
 
-	/** Motion-path target under a screen point (unlocked clip; not the anchor crosshair's spot). */
-	const pathHitAt = (screen: Vec2) => {
-		const mp = live.current.motionPath;
-		if (!mp || locked.has(mp.trackId)) return null;
-		const hit = hitMotionPath(mp, live.current.view, screen);
-		if (hit?.kind !== 'key') return hit;
-		const l = live.current.selLayers.find((x) => x.clip.clipId === mp.clipId);
-		if (l?.props.transform) {
-			const a = toScreen(live.current.view, applyMatrix(l.props.matrix, l.props.transform.anchor));
-			if (Math.hypot(screen[0] - a[0], screen[1] - a[1]) <= ANCHOR_HIT) return null;
+	/**
+	 * Motion-path target under a screen point (unlocked clip; not the anchor crosshair's spot): the Position path first,
+	 * then the Anchor Point path (keyframes-blend).
+	 */
+	const pathHitAt = (screen: Vec2): { path: MotionPath; hit: PathHit } | null => {
+		for (const mp of [live.current.motionPath, live.current.anchorPath]) {
+			if (!mp || locked.has(mp.trackId)) continue;
+			const hit = hitMotionPath(mp, live.current.view, screen);
+			if (!hit) continue;
+			if (hit.kind !== 'key') return { path: mp, hit };
+			const l = live.current.selLayers.find((x) => x.clip.clipId === mp.clipId);
+			if (l?.props.transform) {
+				const a = toScreen(live.current.view, applyMatrix(l.props.matrix, l.props.transform.anchor));
+				if (Math.hypot(screen[0] - a[0], screen[1] - a[1]) <= ANCHOR_HIT) continue;
+			}
+			return { path: mp, hit };
 		}
-		return hit;
+		return null;
 	};
 
 	const handleUnder = (l: ResolvedLayer, rect: Rect, screen: Vec2): HandleId | null => {
@@ -562,7 +629,19 @@ export function TransformOverlay({
 		const seqId = doc.sequenceId;
 		const snapOn = live.current.monitor.snapInMonitor !== (e.ctrlKey || e.metaKey); // Ctrl inverts (SNP-001)
 		if (g.kind === 'path') {
-			const r = motionPathDragCommands(g.drag, p, { alt: e.altKey, shift: e.shiftKey });
+			let hits: { x: SnapHit | null; y: SnapHit | null } | null = null;
+			const snap =
+				g.targets && snapOn
+					? (at: Vec2): Vec2 => {
+							const tau = snapThreshold(live.current.view.scale);
+							const hx = snapAxis([{ value: at[0], role: 'center' }], g.targets!.x, tau);
+							const hy = snapAxis([{ value: at[1], role: 'center' }], g.targets!.y, tau);
+							hits = hx || hy ? { x: hx, y: hy } : null;
+							return [at[0] + (hx?.delta ?? 0), at[1] + (hy?.delta ?? 0)];
+						}
+					: undefined;
+			const r = motionPathDragCommands(g.drag, p, { alt: e.altKey, shift: e.shiftKey }, snap);
+			setSnapHits(hits);
 			setReadout({ at: screen, text: r.readout });
 			scheduleUpdate(r.commands);
 			return;
@@ -697,6 +776,16 @@ export function TransformOverlay({
 		const g = gestureRef.current;
 		if (g?.kind === 'pan') {
 			gestureRef.current = null;
+			return;
+		}
+		// keyframes-blend: a Pen / Ctrl click on a path key (no drag) converts the vertex (corner ↔ smooth).
+		if (g?.kind === 'path' && g.drag.pull && !g.moved) {
+			endGesture(false);
+			void session.apply({
+				label: 'Convert Vertex',
+				origin: 'user',
+				commands: [convertVertexCommand(g.drag.key)],
+			});
 			return;
 		}
 		endGesture(true);
@@ -849,6 +938,7 @@ export function TransformOverlay({
 				</>
 			)}
 			{motionPath ? <MotionPathLayer path={motionPath} view={view} selected={selectedKeys} /> : null}
+			{anchorPath ? <MotionPathLayer path={anchorPath} view={view} selected={selectedKeys} /> : null}
 			{readout ? (
 				<g pointerEvents="none">
 					<rect

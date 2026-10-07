@@ -1,39 +1,18 @@
-// Animatable value types of shape layers (wp shapes): Bézier path values (After Effects' vertex / in-tangent /
-// out-tangent model, tangents relative to their vertex) and gradients (colour stops and opacity stops with
-// midpoints). Both interpolate between keyframes: paths vertex by vertex (shorter paths are subdivided first so the
-// counts match), gradients stop by stop (stop lists of different structure are resampled onto the union of their
-// positions). `keyframes.ts` calls `isShapeValue` / `lerpShapeValue`, so these values animate like numbers.
-import type { BezPath, Cubic, P } from './geom.ts';
-import { cSplit, isLine, lineCubic, samePoint } from './geom.ts';
+// Animatable value types of shape layers (wp shapes). Path values are the shared Bézier model of `path/model.ts`
+// (`BezierPath`, also used by masks; interpolated by `path/interp.ts`); this module converts them to and from the
+// compound-path kernel (`geom.ts`). Gradients (colour stops and opacity stops with midpoints) interpolate stop by
+// stop (stop lists of different structure are resampled onto the union of their positions); `keyframes.ts` calls
+// `isShapeValue` / `lerpShapeValue`, so they animate like numbers.
 
-type V2 = [number, number];
-
-export type PathValue = {
-	vertices: V2[];
-	/** Incoming handle of each vertex, relative to the vertex. */
-	inTangents: V2[];
-	/** Outgoing handle of each vertex, relative to the vertex. */
-	outTangents: V2[];
-	closed: boolean;
-};
+import { type BezierPath, isBezierPath } from '../path/model.ts';
+import type { BezPath, Cubic } from './geom.ts';
+import { isLine, lineCubic, samePoint } from './geom.ts';
 
 export type GradientColorStop = { position: number; color: [number, number, number]; midpoint?: number };
 export type GradientOpacityStop = { position: number; opacity: number; midpoint?: number };
 export type GradientValue = { colors: GradientColorStop[]; opacities: GradientOpacityStop[] };
 
 const isNum = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
-const isV2 = (v: unknown): v is V2 => Array.isArray(v) && v.length === 2 && isNum(v[0]) && isNum(v[1]);
-
-export function isPathValue(v: unknown): v is PathValue {
-	if (!v || typeof v !== 'object') return false;
-	const o = v as Partial<PathValue>;
-	return (
-		Array.isArray(o.vertices) &&
-		Array.isArray(o.inTangents) &&
-		Array.isArray(o.outTangents) &&
-		typeof o.closed === 'boolean'
-	);
-}
 
 export function isGradientValue(v: unknown): v is GradientValue {
 	if (!v || typeof v !== 'object') return false;
@@ -41,21 +20,11 @@ export function isGradientValue(v: unknown): v is GradientValue {
 	return Array.isArray(o.colors) && Array.isArray(o.opacities);
 }
 
-/** True for the shape value types that interpolate (path, gradient). */
-export const isShapeValue = (v: unknown): boolean => isPathValue(v) || isGradientValue(v);
+/** True for the shape value types this module interpolates (gradients; paths go through `path/interp.ts`). */
+export const isShapeValue = (v: unknown): boolean => isGradientValue(v);
 
-/** Structural validity (used by invariants and command validation). */
-export function validPathValue(v: unknown): v is PathValue {
-	if (!isPathValue(v)) return false;
-	const n = v.vertices.length;
-	return (
-		v.inTangents.length === n &&
-		v.outTangents.length === n &&
-		v.vertices.every(isV2) &&
-		v.inTangents.every(isV2) &&
-		v.outTangents.every(isV2)
-	);
-}
+/** A well-formed path value (the shared `BezierPath`). */
+export const validPathValue = (v: unknown): v is BezierPath => isBezierPath(v);
 
 export function validGradientValue(v: unknown): v is GradientValue {
 	if (!isGradientValue(v)) return false;
@@ -76,23 +45,23 @@ export function validGradientValue(v: unknown): v is GradientValue {
 	);
 }
 
-// ---------------------------------------------------------------- path value ⇄ Bézier
+// ---------------------------------------------------------------- path value ⇄ compound path
 
-const addV = (a: readonly number[], b: readonly number[]): P => [a[0]! + b[0]!, a[1]! + b[1]!];
-const subV = (a: readonly number[], b: readonly number[]): V2 => [a[0]! - b[0]!, a[1]! - b[1]!];
 const zero = (v: readonly number[] | undefined) => !v || (v[0] === 0 && v[1] === 0);
 
-/** One subpath from a path value (straight segments where both tangents are zero). */
-export function pathValueToBez(v: PathValue): BezPath {
+/** One subpath from a path value (straight segments where both handles are zero). */
+export function bezierPathToBez(v: BezierPath): BezPath {
 	const n = v.vertices.length;
 	if (n === 0) return [];
 	const segs: Cubic[] = [];
 	const seg = (a: number, b: number) => {
 		const va = v.vertices[a]!;
 		const vb = v.vertices[b]!;
-		const o = v.outTangents[a];
-		const i = v.inTangents[b];
-		segs.push(zero(o) && zero(i) ? lineCubic(va, vb) : [va, addV(va, o ?? [0, 0]), addV(vb, i ?? [0, 0]), vb]);
+		segs.push(
+			zero(va.out) && zero(vb.in)
+				? lineCubic(va.p, vb.p)
+				: [va.p, [va.p[0] + va.out[0], va.p[1] + va.out[1]], [vb.p[0] + vb.in[0], vb.p[1] + vb.in[1]], vb.p],
+		);
 	};
 	for (let k = 0; k + 1 < n; k++) seg(k, k + 1);
 	if (v.closed && n > 1) seg(n - 1, 0);
@@ -100,108 +69,33 @@ export function pathValueToBez(v: PathValue): BezPath {
 	return [{ segs, closed: v.closed }];
 }
 
-/** Path values (one per subpath) from a Bézier path. */
-export function bezToPathValues(p: BezPath): PathValue[] {
-	const out: PathValue[] = [];
+/** Path values (one per subpath) from a compound path. */
+export function bezToBezierPaths(p: BezPath): BezierPath[] {
+	const out: BezierPath[] = [];
 	for (const sp of p) {
 		if (!sp.segs.length) continue;
-		const vertices: V2[] = [];
-		const inT: V2[] = [];
-		const outT: V2[] = [];
 		const first = sp.segs[0]![0];
-		vertices.push([first[0], first[1]]);
-		inT.push([0, 0]);
-		outT.push([0, 0]);
-		sp.segs.forEach((c, k) => {
-			outT[k] = isLine(c) ? [0, 0] : subV(c[1], c[0]);
-			vertices.push([c[3][0], c[3][1]]);
-			inT.push(isLine(c) ? [0, 0] : subV(c[2], c[3]));
-			outT.push([0, 0]);
-		});
-		// A closing segment ending on the first vertex duplicates it.
-		if (sp.closed && vertices.length > 1 && samePoint(vertices[0]!, vertices[vertices.length - 1]!, 1e-9)) {
-			const it = inT.pop()!;
-			vertices.pop();
-			outT.pop();
-			inT[0] = it;
+		const vertices: BezierPath['vertices'] = [{ p: [first[0], first[1]], in: [0, 0], out: [0, 0] }];
+		for (const c of sp.segs) {
+			const prev = vertices[vertices.length - 1]!;
+			prev.out = isLine(c) ? [0, 0] : [c[1][0] - c[0][0], c[1][1] - c[0][1]];
+			vertices.push({
+				p: [c[3][0], c[3][1]],
+				in: isLine(c) ? [0, 0] : [c[2][0] - c[3][0], c[2][1] - c[3][1]],
+				out: [0, 0],
+			});
 		}
-		out.push({ vertices, inTangents: inT, outTangents: outT, closed: sp.closed });
+		// A closing segment ending on the first vertex duplicates it.
+		if (sp.closed && vertices.length > 1 && samePoint(vertices[0]!.p, vertices[vertices.length - 1]!.p, 1e-9)) {
+			const last = vertices.pop()!;
+			vertices[0]!.in = last.in;
+		}
+		out.push({ closed: sp.closed, vertices });
 	}
 	return out;
 }
 
-export const emptyPathValue = (): PathValue => ({ vertices: [], inTangents: [], outTangents: [], closed: false });
-
-// ---------------------------------------------------------------- path interpolation
-
-/** Inserts a vertex in the middle of segment `k` (k → k+1, closing segment for k = n−1), shape unchanged. */
-export function splitPathSegment(v: PathValue, k: number, t = 0.5): PathValue {
-	const n = v.vertices.length;
-	const b = (k + 1) % n;
-	const va = v.vertices[k]!;
-	const vb = v.vertices[b]!;
-	const c: Cubic = [va, addV(va, v.outTangents[k]!), addV(vb, v.inTangents[b]!), vb];
-	const straight = zero(v.outTangents[k]) && zero(v.inTangents[b]);
-	const [l, r] = cSplit(c, t);
-	const m = l[3];
-	const vertices = v.vertices.map((p) => [p[0], p[1]] as V2);
-	const inT = v.inTangents.map((p) => [p[0], p[1]] as V2);
-	const outT = v.outTangents.map((p) => [p[0], p[1]] as V2);
-	outT[k] = straight ? [0, 0] : subV(l[1], l[0]);
-	inT[b] = straight ? [0, 0] : subV(r[2], r[3]);
-	vertices.splice(k + 1, 0, [m[0], m[1]]);
-	inT.splice(k + 1, 0, straight ? [0, 0] : subV(l[2], l[3]));
-	outT.splice(k + 1, 0, straight ? [0, 0] : subV(r[1], r[0]));
-	return { vertices, inTangents: inT, outTangents: outT, closed: v.closed };
-}
-
-/** Subdivides the longest segments until the path has `n` vertices. */
-function growTo(v: PathValue, n: number): PathValue {
-	let cur = v;
-	while (cur.vertices.length < n && cur.vertices.length > 0) {
-		const m = cur.vertices.length;
-		const segs = cur.closed ? m : m - 1;
-		if (segs <= 0) {
-			// A single point: repeat it.
-			const p = cur.vertices[0]!;
-			cur = {
-				...cur,
-				vertices: [...cur.vertices, [p[0], p[1]]],
-				inTangents: [...cur.inTangents, [0, 0]],
-				outTangents: [...cur.outTangents, [0, 0]],
-			};
-			continue;
-		}
-		let best = 0;
-		let bestLen = -1;
-		for (let k = 0; k < segs; k++) {
-			const a = cur.vertices[k]!;
-			const b = cur.vertices[(k + 1) % m]!;
-			const l = Math.hypot(b[0] - a[0], b[1] - a[1]);
-			if (l > bestLen) {
-				bestLen = l;
-				best = k;
-			}
-		}
-		cur = splitPathSegment(cur, best);
-	}
-	return cur;
-}
-
-export function lerpPathValue(a: PathValue, b: PathValue, t: number): PathValue {
-	let x = a;
-	let y = b;
-	if (x.vertices.length < y.vertices.length) x = growTo(x, y.vertices.length);
-	else if (y.vertices.length < x.vertices.length) y = growTo(y, x.vertices.length);
-	const l = (p: V2, q: V2 | undefined): V2 =>
-		q ? [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t] : [p[0], p[1]];
-	return {
-		vertices: x.vertices.map((p, i) => l(p, y.vertices[i])),
-		inTangents: x.inTangents.map((p, i) => l(p, y.inTangents[i])),
-		outTangents: x.outTangents.map((p, i) => l(p, y.outTangents[i])),
-		closed: t < 1 ? x.closed : y.closed,
-	};
-}
+export const emptyBezierPath = (): BezierPath => ({ closed: false, vertices: [] });
 
 // ---------------------------------------------------------------- gradients
 
@@ -333,7 +227,6 @@ export function lerpGradientValue(a: GradientValue, b: GradientValue, t: number)
 
 /** Interpolates two shape values of the same kind (else holds `a`). */
 export function lerpShapeValue<T>(a: T, b: T, t: number): T {
-	if (isPathValue(a) && isPathValue(b)) return lerpPathValue(a, b, t) as T;
 	if (isGradientValue(a) && isGradientValue(b)) return lerpGradientValue(a, b, t) as T;
 	return a;
 }

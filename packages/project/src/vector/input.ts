@@ -9,7 +9,6 @@ import {
 	AnimGradientSchema,
 	AnimPathSchema,
 	GradientValueSchema,
-	PathValueSchema,
 	SHAPE_BLEND_MODES,
 	SHAPE_ITEM_TYPES,
 	type ShapeItem,
@@ -18,13 +17,15 @@ import {
 import { defaultDashes, defaultTaper, defaultWave, newShapeItem, nextItemName, walkItems } from './defaults.ts';
 import { shapeItemSpecsOf } from './properties.ts';
 import { parseSvgPath } from './svg-path.ts';
-import { bezToPathValues, type PathValue } from './values.ts';
+import { BezierPathSchema } from '../schema/mask.ts';
+import type { BezierPath } from '../path/model.ts';
+import { bezToBezierPaths } from './values.ts';
 
 const HEX = z.string().regex(/^#?([0-9a-fA-F]{6}|[0-9a-fA-F]{8}|[0-9a-fA-F]{3})$/, 'colour "#RRGGBB" or "#RRGGBBAA"');
 const num = z.union([z.number(), AnimNumberSchema]);
 const vec = z.union([z.tuple([z.number(), z.number()]), AnimVec2Schema]);
 const color = z.union([RGBASchema, HEX, AnimRGBASchema]);
-const pathIn = z.union([z.string().describe('SVG path data'), PathValueSchema, AnimPathSchema]);
+const pathIn = z.union([z.string().describe('SVG path data'), BezierPathSchema, AnimPathSchema]);
 const gradientIn = z.union([GradientValueSchema, AnimGradientSchema]);
 
 /** Item fields an input may carry (validated per type when the item is built). */
@@ -102,8 +103,8 @@ const ItemFields = z.looseObject({
  * `transform` ({anchor, position, scale, skew, skewAxis, rotation, opacity}); repeaters take `transform`
  * ({anchor, position, scale, rotation, startOpacity, endOpacity}); strokes take `dashes` ([dash, gap, …] or
  * {segments, offset}), `taper` ({units, startLength, endLength, startWidth, endWidth, startEase, endEase}) and `wave`
- * ({amount, units, wavelength, cycles, phase}); `path` takes SVG path data or {vertices, inTangents, outTangents,
- * closed}.
+ * ({amount, units, wavelength, cycles, phase}); `path` takes SVG path data or a path value
+ * {closed, vertices: [{p, in, out}…]}.
  */
 export const ShapeItemInputSchema = ItemFields;
 export type ShapeItemInput = z.infer<typeof ItemFields> & { contents?: ShapeItemInput[] };
@@ -196,12 +197,12 @@ function assign(item: Record<string, unknown>, src: Record<string, unknown>, ids
 			assign(next, v as Record<string, unknown>, ids, p);
 			item.transform = next;
 		} else if (k === 'path') {
-			const conv = (x: unknown): PathValue => {
+			const conv = (x: unknown): BezierPath => {
 				if (typeof x === 'string') {
-					const pv = bezToPathValues(parseSvgPath(x));
-					return pv[0] ?? { vertices: [], inTangents: [], outTangents: [], closed: false };
+					const pv = bezToBezierPaths(parseSvgPath(x));
+					return pv[0] ?? { closed: false, vertices: [] };
 				}
-				return x as PathValue;
+				return x as BezierPath;
 			};
 			item.path = toAnim(v, ids, conv);
 		} else if (isAnim(cur)) {
@@ -272,9 +273,9 @@ export function buildShapeItems(
 		checkKnownFields(type, src, p);
 		// SVG path data with several subpaths: one path item per subpath.
 		if (type === 'path' && typeof src.path === 'string') {
-			let values: PathValue[];
+			let values: BezierPath[];
 			try {
-				values = bezToPathValues(parseSvgPath(src.path));
+				values = bezToBezierPaths(parseSvgPath(src.path));
 			} catch (e) {
 				throw new ShapeInputError((e as Error).message, [...p, 'path']);
 			}

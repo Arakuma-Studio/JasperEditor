@@ -479,7 +479,8 @@ describe('MCP over stdio with a token-protected engine', () => {
 			[30, 'auto-bezier'],
 			[60, 'auto-bezier'],
 		]);
-		expect(path.keys[1]!.outTangent).toEqual([250, 0]);
+		// After Effects' Auto Bezier rule (keyframes-blend): along next − prev, ⅓ of the outgoing chord.
+		expect(path.keys[1]!.outTangent).toEqual([Math.round((Math.hypot(740, 700) / 3) * 1000) / 1000, 0]);
 		expect(path.points).toHaveLength(7);
 		const curved = path.pathLength;
 		await ok('set_spatial_interpolation', { projectId, clipId, mode: 'linear' });

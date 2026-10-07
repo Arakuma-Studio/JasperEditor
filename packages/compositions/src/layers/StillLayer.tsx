@@ -27,6 +27,7 @@ export function StillLayer(layer: LayerProps) {
 			<LayerBox
 				layer={layer}
 				effects={fx.cssEffects}
+				masksInChain
 				overlay={fx.chip ? <GradeChip layer={layer} text={fx.chip} /> : null}
 			>
 				<FxPicture stage={fx.stage}>
@@ -57,7 +58,9 @@ export function StillLayer(layer: LayerProps) {
 					showInTimeline={false}
 				/>
 			) : (
-				<Img src={src} style={MEDIA_STYLE} alt="" />
+				// keyframes-blend: CORS-clean (the engine sends CORS headers, as for FxImageFeed), so HTML-in-Canvas captures
+				// of the stack (blend scopes, adjustment layers) paint it — cross-origin images without CORS are left out.
+				<Img src={src} style={MEDIA_STYLE} alt="" crossOrigin="anonymous" />
 			)}
 		</LayerBox>
 	);

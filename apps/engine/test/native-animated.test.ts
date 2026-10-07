@@ -514,11 +514,8 @@ describe('planner: keyframed layers and levels are native', () => {
 			{ type: 'keyframe.add', target: ['clip', audioClip, 'pan'], at: { sequenceFrame: 0 }, value: -50 },
 			{ type: 'keyframe.add', target: ['clip', audioClip, 'pan'], at: { sequenceFrame: 30 }, value: 50 },
 		]);
-		const pa = await plan(a, h264Settings(a.seqId));
-		expect(pa.path).toBe('remotion');
-		expect(pa.blockers.map((x) => x.reason)).toContain(
-			'animated audio pan is not supported by the native path',
-		);
+		// audio-mix: pan (and every bus feature) is rendered by the offline mixer on every path.
+		expect(await plan(a, h264Settings(a.seqId))).toMatchObject({ path: 'native', blockers: [] });
 	}, 120_000);
 });
 
@@ -784,12 +781,13 @@ describe('sub-pixel motion (no whole-pixel stepping)', () => {
 });
 
 describe('native export of keyframed audio levels (S01:FX-010)', () => {
-	it('clip, track and master volume keyframes give the per-frame gain of the composition (≤ 0.2 dB)', async () => {
+	it('clip, track and master volume keyframes are applied per sample (≤ 0.05 dB)', async () => {
 		const d = new DocBuilder();
 		const tone = d.addMedia(await register(app, fixture('tone.wav')));
 		d.tx([{ type: 'clip.place', source: { mediaId: tone }, at: 0 }]);
 		const clip = d.clipIds()[0]!;
-		const settings = h264Settings(d.seqId);
+		// PCM (ProRes MOV): a lossless audio stream, so the comparison measures the mixer, not the AAC coder.
+		const settings = proresSettings(d.seqId);
 		const reference = await runExport(d, settings);
 		const at = (f: number) => ({ sequenceFrame: f });
 		d.tx([
@@ -822,15 +820,15 @@ describe('native export of keyframed audio levels (S01:FX-010)', () => {
 		expect(planned.plan).toMatchObject({ path: 'native', blockers: [] });
 		const keyed = await runExport(d, settings);
 
-		// Expected per-frame gain, like the composition's `audioGainAt` (clip volume at the clip frame's content
-		// time, track and master volume at its sequence time).
+		// Expected gain (audio-mix: the offline mixer evaluates every lane per sample; the reference shaped by it over
+		// the middle of each frame): clip volume at the content time, track and master volume at
+		// the sequence time.
 		const a = planned.snapshot.audioClips[0]!;
-		const F = 705_600_000 / 30;
 		const { evaluate } = await import('@jasper/project');
-		const expectDb = (f: number) =>
-			evaluate(a.volumeDb, a.sourceIn + f * F) +
-			evaluate(a.track.volumeDb, f * F) +
-			evaluate(planned.snapshot.master.volumeDb, f * F);
+		const gainDbAt = (t: number) =>
+			evaluate(a.volumeDb, a.sourceIn + t) +
+			evaluate(a.track.volumeDb, t) +
+			evaluate(planned.snapshot.master.volumeDb, t);
 		const pcm = (file: string) => {
 			const r = spawnSync('ffmpeg', ['-v', 'error', '-i', file, '-ac', '1', '-f', 'f32le', 'pipe:1'], {
 				maxBuffer: 1 << 28,
@@ -847,15 +845,20 @@ describe('native export of keyframed audio levels (S01:FX-010)', () => {
 		};
 		let worst = 0;
 		for (let f = 1; f < 47; f++) {
-			// The middle of the frame (gain steps at frame boundaries, evaluated every 128 samples).
+			// The middle of the frame: the reference shaped by the per-sample gain of the lanes.
 			const a0 = f * 1600 + 200;
 			const a1 = (f + 1) * 1600 - 200;
+			let num = 0;
+			let den = 0;
+			for (let i = a0; i < a1; i++) {
+				const g = 10 ** (gainDbAt((i * 705_600_000) / 48_000) / 20);
+				num += (g * ref[i]!) ** 2;
+				den += ref[i]! ** 2;
+			}
+			const want = 10 * Math.log10(num / den);
 			const db = 20 * Math.log10(rms(got, a0, a1) / rms(ref, a0, a1));
-			worst = Math.max(worst, Math.abs(db - expectDb(f)));
-			expect(
-				Math.abs(db - expectDb(f)),
-				`frame ${f}: ${db.toFixed(2)} dB vs ${expectDb(f).toFixed(2)}`,
-			).toBeLessThan(0.2);
+			worst = Math.max(worst, Math.abs(db - want));
+			expect(Math.abs(db - want), `frame ${f}: ${db.toFixed(2)} dB vs ${want.toFixed(2)}`).toBeLessThan(0.05);
 		}
 		report(`[anim] keyframed volume: worst per-frame gain error ${worst.toFixed(3)} dB`);
 	}, 300_000);

@@ -58,6 +58,7 @@ export function PlayheadLine(props: {
 				className="pointer-events-auto absolute top-0 -left-[10px] h-[24px] w-[20px] cursor-ew-resize"
 				onPointerDown={props.onHeadPointerDown}
 				data-playhead-head
+				data-testid="timeline-playhead-head"
 			>
 				<div
 					className="absolute top-[12px] left-[4px] h-[12px] w-[12px]"

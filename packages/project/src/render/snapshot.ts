@@ -1,10 +1,24 @@
 // Render snapshot (S01:RND-001…005, ARCHITECTURE §5.5): the self-contained JSON value handed to the
 // Remotion composition, the native planner and the Program overlay. Keyframes stay unevaluated.
+import { buildAudioMix, playedTracks, type RenderAudioMix } from '../audio/plan.ts';
+import {
+	type CaptionPage,
+	captionPages,
+	type ResolvedCaptionStyle,
+	resolveCaptionStyle,
+} from '../captions/model.ts';
 import { compositionOfClip, mergeProps } from '../composition/props.ts';
+import { contentTimeAt } from '../derive/index.ts';
+import { bindExpressions, type ExpressionWorldData, expressionWorldData } from '../expressions.ts';
+import { evaluate } from '../keyframes.ts';
+import { trackMatteTracksOf } from '../masks/track-matte.ts';
+import { multicamView } from '../multicam/model.ts';
+import { defaultEffectRegistry } from '../registry/effects.ts';
 import { clipEngines, type EngineId, isBoundedContent, kindCapabilities } from '../registry/kinds.ts';
 import { intrinsicBoxOf } from '../registry/properties.ts';
 import type { Animatable, Keyframe, RGBA } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
+import type { Mask } from '../schema/mask.ts';
 import type { FontRef, MediaAsset } from '../schema/media.ts';
 import {
 	type BlendMode,
@@ -19,10 +33,19 @@ import {
 	type TextContent,
 	type Transform,
 } from '../schema/sequence.ts';
+import { conformSequenceRate, MAX_NEST_DEPTH, nestContentKey } from '../structure/nest.ts';
+import {
+	type CountingLeaderStyle,
+	type SyntheticSound,
+	syntheticPicture,
+	syntheticSound,
+} from '../structure/synthetic.ts';
 import { type ResolvedTextAnimator, resolveTextAnimationWindows } from '../text-animations.ts';
-import type { Rational } from '../time.ts';
+import { flicksPerFrame, type Rational, rationalEquals } from '../time.ts';
 import { transitionSideTrack, transitionTrackerOf } from '../tracking/transition.ts';
 import {
+	type AudioClipTransitionRender,
+	audioFadeGain,
 	type RenderAudioFade,
 	type RenderFade,
 	type RenderMatte,
@@ -30,6 +53,7 @@ import {
 	resolveAudioTransitions,
 	resolveVideoTransitions,
 } from '../transitions.ts';
+import { clipPictureTime } from './scene.ts';
 
 export type MediaHandle = {
 	url: string;
@@ -96,7 +120,45 @@ export type RenderVisualSource =
 	| {
 			composition: RenderCompositionSource;
 	  }
+	/**
+	 * edit-structure: a synthetic generator's picture (`solid` clips of Bars and Tone / a Universal Counting Leader),
+	 * drawn from `generators.ts` at the clip's content time (the leader counts down; the bars are constant).
+	 */
+	| { generator: { kind: 'bars' } | { kind: 'counting-leader'; style: CountingLeaderStyle } }
+	/** edit-structure (KND-012): an adjustment layer — its effects run on the composite of the tracks below. */
+	| { adjustment: true }
+	/** edit-structure (KND-011): a nested sequence, drawn recursively. */
+	| { nest: RenderNestSource }
+	/**
+	 * wp captions: a caption clip resolved for drawing — its style (track style ← clip overrides, defaults applied)
+	 * and its pages in sequence frames with per-word frames (active-word highlight). The same pages feed sidecar and
+	 * embedded caption export (`captionCuesForTrack`).
+	 */
+	| { captions: RenderCaptionSource }
 	| { unsupported: string };
+
+export type RenderCaptionSource = {
+	style: ResolvedCaptionStyle;
+	/** Pages with frames relative to the clip's first frame (frame 0 = `start`), so moving a caption keeps it. */
+	pages: CaptionPage[];
+	/** Caption track standard (CEA-608 tracks are drawn in a monospace caption face when the style has no font). */
+	standard?: string;
+};
+
+/**
+ * edit-structure: what a `nest-video` clip draws. `snapshot` is the nested sequence's own render snapshot, conformed
+ * to the parent's frame rate (its frames are parent-rate frames; content times are unchanged), over the range of
+ * nested frames the clip shows (`range`), with a transparent background. Frame `n` of it is shown where the clip's
+ * picture time (`clipPictureTime`) is `n · flicksPerFrame(parent rate)`. `contentKey` = `nestContentKey` of the nested
+ * sequence (pure function of its content; render caches key on it).
+ */
+export type RenderNestSource = {
+	sequenceId: string;
+	snapshot: RenderSnapshot;
+	/** The nested sequence's own rate (the snapshot is conformed to the parent's). */
+	nestedFps: Rational;
+	contentKey: string;
+};
 
 /** Source of a composition clip in the snapshot (S08:MGC-008; wp-m2-mg fields are additive). */
 export type RenderCompositionSource = {
@@ -139,6 +201,8 @@ export type RenderVisualClip = {
 	blendMode: BlendMode;
 	effects: EffectInstance[];
 	intrinsicBox: { width: number; height: number };
+	/** wp masks: the layer's Opacity masks (absent = none; effect masks travel in `effects[].masks`). */
+	masks?: Mask[];
 	engine: EngineId;
 	loop?: boolean;
 	/** Bounded media content (needs trimBefore/playbackRate handling). */
@@ -150,6 +214,14 @@ export type RenderVisualClip = {
 	headHandle?: number;
 	tailHandle?: number;
 	fades?: RenderFade[];
+	/**
+	 * edit-structure (freeze-frame transition handles): the first `freezeHead` frames of the head handle / the last
+	 * `freezeTail` frames of the tail handle are beyond the media and repeat its first / last available frame.
+	 */
+	freezeHead?: number;
+	freezeTail?: number;
+	/** edit-structure (Frame Hold): the clip shows the content at `flicks` (see `clipPictureTime`). */
+	frameHold?: { flicks: number; holdFilters?: boolean };
 	/**
 	 * M2 (S11:LBK-010, wp-m2-layer-bake): a pre-rendered picture of the whole placed layer (sequence space: Motion,
 	 * effects, grade, opacity and fades baked, straight alpha) that the composition plays instead of drawing the
@@ -164,6 +236,12 @@ export type RenderVisualClip = {
 		frames: number;
 		rect?: { x: number; y: number; w: number; h: number };
 	};
+	/**
+	 * Wave expressions (engine layer bakes): a translation added to the post-expression Position, set when a bake
+	 * shifts the layer into its cropped render rect (the stored keys are shifted directly; an expression's result is
+	 * shifted by the binding). Absent = none.
+	 */
+	expressionPositionShift?: [number, number];
 	/**
 	 * fx framework (clip context, additive): what effects may show about the clip's media — the project item name
 	 * (Premiere "Project Item Name"), the file name and the media's embedded start timecode. Set for media clips
@@ -187,6 +265,8 @@ export type RenderAudioClip = {
 	effects: EffectInstance[];
 	/** Track fader and pan (sequence time in flicks). */
 	track: { volumeDb: Animatable<number>; pan: Animatable<number> };
+	/** audio-mix: channel count of the clip's audio stream (probe), when known. */
+	streamChannels?: number;
 	/**
 	 * Audio transitions (S01:TRN-004, S10:TUI-052): frames of content played before `start` and after
 	 * `start + duration` (the handles of a crossfade), and the gain ramps over the clip's edges and handles
@@ -195,17 +275,30 @@ export type RenderAudioClip = {
 	headHandle?: number;
 	tailHandle?: number;
 	fades?: RenderAudioFade[];
+	/**
+	 * edit-structure: the clip plays a synthetic sound (Bars and Tone's tone, the leader's blips) instead of media;
+	 * `mediaId` is then `syn:<syntheticId>` (no media handle). Sample k at content time t: `syntheticSamples`.
+	 */
+	generator?: SyntheticSound;
+	/**
+	 * edit-structure: extra gain (dB) of a clip flattened out of a nested sequence (`nest-audio`): the nested track
+	 * fader and master, the nested fades and the nest clip's own gain, volume and fades, per sequence frame. Runs cover
+	 * the clip's frames; outside them the nearest run applies.
+	 */
+	nestGain?: { start: number; end: number; db: number }[];
 };
 
 export type RenderSnapshot = {
 	version: 1;
 	sequenceId: string;
-	settings: { width: number; height: number; fps: Rational; backgroundColor: RGBA; sampleRate: 48000 };
+	/** `sampleRate`: the sequence audio rate (audio-mix: 44.1 / 48 / 96 kHz). */
+	settings: { width: number; height: number; fps: Rational; backgroundColor: RGBA; sampleRate: number };
 	/** Frames; export range or whole sequence. */
 	range: { start: number; end: number };
 	durationFrames: number;
 	/**
-	 * V1 (bottom) → top; output-disabled tracks omitted; clips sorted by start. `mattes` are full-frame
+	 * V1 (bottom) → top, then the visible caption tracks (wp captions: C1 → Cn, `caption: true`) above every video
+	 * track; output-disabled tracks omitted; clips sorted by start. `mattes` are full-frame
 	 * colours drawn under the track's clips (the black of a dip to black). `transitions` (wave-2 transition framework)
 	 * are the GPU transition stages drawn over the track's clips (each replaces its A/B clips for its span).
 	 */
@@ -214,15 +307,34 @@ export type RenderSnapshot = {
 		clips: RenderVisualClip[];
 		mattes?: RenderMatte[];
 		transitions?: RenderTransition[];
+		/** wp captions: a caption track (burned in). */
+		caption?: boolean;
 	}[];
-	/** After mute/solo resolution. */
+	/**
+	 * wp masks: hidden video tracks (output off) that a Track Matte Key reads (Premiere mattes are usually hidden
+	 * tracks), V1 → top. Their clips are rendered into the matte only, never into the frame; consumers that draw the
+	 * frame ignore this list. Absent = none. A layer bake's document carries the matte tracks of its clip here too.
+	 */
+	matteTracks?: { trackId: string; clips: RenderVisualClip[]; transitions?: RenderTransition[] }[];
+	/**
+	 * Clips of the tracks the mix plays (audio-mix: mute/solo are resolved by the mixer — `audioMix` — so a muted
+	 * track with a pre-fader send still plays its clips; silent and muted-throughout tracks are omitted).
+	 */
 	audioClips: RenderAudioClip[];
+	/** audio-mix: the mixer topology (strips, routes, sends, automation, solo, loudness). Absent in old snapshots. */
+	audioMix?: RenderAudioMix;
 	/** null = offline. */
 	media: Record<string, MediaHandle | null>;
 	fonts: { fontId: string; family: string; weight: number; style: 'normal' | 'italic'; url: string }[];
 	master: { volumeDb: Animatable<number> };
 	/** Clips excluded from rendering (unknown kinds, S01:KND-030). */
 	warnings: { clipId: string; code: string; message: string }[];
+	/**
+	 * Wave expressions: what expressions read besides the snapshot (every sequence, names, layer boxes), present when
+	 * the document has active expressions. Consumers bind with `@jasper/expressions` `bindSnapshotExpressions`
+	 * (in-process snapshots built from a bound document already carry bound Animatables).
+	 */
+	expressions?: ExpressionWorldData;
 };
 
 export type SnapshotOptions = {
@@ -235,30 +347,83 @@ export type SnapshotOptions = {
 		asset: MediaAsset;
 		source: RenderCompositionSource;
 	}): RenderCompositionSource['prerender'] | null;
+	/** edit-structure (internal): the chain of sequences being built (nest recursion, cycle guard). */
+	nestStack?: readonly string[];
+	/**
+	 * wp captions: which caption tracks are drawn (burned in): `'visible'` (default) = tracks whose eye is on,
+	 * `'none'`, or a list of track ids/labels.
+	 */
+	captions?: 'visible' | 'none' | readonly string[];
 };
+
+/** The extra gain of a flattened nested audio clip at a sequence frame (0 dB without `nestGain`). */
+export function nestGainDbAt(runs: RenderAudioClip['nestGain'], frame: number): number {
+	if (!runs || runs.length === 0) return 0;
+	let lo = 0;
+	let hi = runs.length - 1;
+	if (frame < runs[0]!.start) return runs[0]!.db;
+	if (frame >= runs[hi]!.end) return runs[hi]!.db;
+	while (lo <= hi) {
+		const mid = (lo + hi) >> 1;
+		const r = runs[mid]!;
+		if (frame < r.start) hi = mid - 1;
+		else if (frame >= r.end) lo = mid + 1;
+		else return r.db;
+	}
+	return runs[Math.max(0, Math.min(runs.length - 1, lo))]!.db;
+}
 
 const ZERO = { value: 0, keyframes: [] } as Animatable<number>;
 
-function transitionFields<T>(x: { headHandle: number; tailHandle: number; fades: T[] } | undefined): {
+function streamChannelsOf(asset: MediaAsset | undefined, index: number): { streamChannels?: number } {
+	const streams = asset?.probe.streams ?? [];
+	const s =
+		streams.find((x) => x.type === 'audio' && x.index === index) ?? streams.find((x) => x.type === 'audio');
+	return s && s.type === 'audio' ? { streamChannels: s.channels } : {};
+}
+
+function relativePage(p: CaptionPage, origin: number): CaptionPage {
+	return {
+		...p,
+		start: p.start - origin,
+		end: p.end - origin,
+		lines: p.lines.map((l) => l.map((w) => ({ ...w, start: w.start - origin, end: w.end - origin }))),
+	};
+}
+
+function transitionFields<T>(
+	x:
+		| { headHandle: number; tailHandle: number; fades: T[]; freezeHead?: number; freezeTail?: number }
+		| undefined,
+): {
 	headHandle?: number;
 	tailHandle?: number;
 	fades?: T[];
+	freezeHead?: number;
+	freezeTail?: number;
 } {
 	if (!x) return {};
 	return {
 		...(x.headHandle > 0 ? { headHandle: x.headHandle } : {}),
 		...(x.tailHandle > 0 ? { tailHandle: x.tailHandle } : {}),
 		...(x.fades.length ? { fades: x.fades } : {}),
+		...(x.freezeHead ? { freezeHead: x.freezeHead } : {}),
+		...(x.freezeTail ? { freezeTail: x.freezeTail } : {}),
 	};
 }
 
 export function buildRenderSnapshot(
-	doc: ProjectDocument,
+	rawDoc: ProjectDocument,
 	sequenceId: string,
 	opts: SnapshotOptions,
 ): RenderSnapshot {
+	// Wave expressions: Animatables with active expressions evaluate through their bound evaluators.
+	const doc = bindExpressions(rawDoc);
+	// Nested snapshots share the root's world (bindSnapshotExpressions recurses into `nest` sources).
+	const world = opts.nestStack?.length ? null : expressionWorldData(rawDoc);
 	const seq = doc.sequences[sequenceId];
 	if (!seq) throw new Error(`Sequence not found: ${sequenceId}`);
+	const stack = [...(opts.nestStack ?? []), sequenceId];
 	const frame = { width: seq.settings.width, height: seq.settings.height };
 	let end = 0;
 	// Group once rather than scanning and allocating the entire clip list for every track.
@@ -306,9 +471,63 @@ export function buildRenderSnapshot(
 		};
 	};
 
+	// ---- edit-structure: nested sequences (KND-011). A nested snapshot is built at the parent's rate over the
+	// nested frames a clip shows; its media and fonts join this snapshot's tables (consumers resolve them once).
+	const F = flicksPerFrame(seq.settings.frameRate as Rational);
+	const nestedSnapshot = (
+		c: Clip & { sequenceId: string },
+		kind: 'video' | 'audio',
+		extent: { head: number; tail: number },
+	): { snap: RenderSnapshot; nestedFps: Rational } | { error: string } => {
+		const whole = doc.sequences[c.sequenceId];
+		if (!whole) return { error: `Nested sequence ${c.sequenceId} is missing` };
+		// wp-multicam: an enabled multi-camera clip sees only its angle (video) / its audible tracks (audio).
+		const nested = multicamView(whole, c);
+		if (stack.includes(c.sequenceId) || stack.length > MAX_NEST_DEPTH)
+			return { error: `Nested sequence ${c.sequenceId} contains itself (nesting cycle)` };
+		const f0 = Math.max(c.start - extent.head, range.start);
+		const f1 = Math.min(c.start + c.duration + extent.tail, range.end) - 1;
+		if (f1 < f0) return { error: 'outside the range' };
+		const timeAt = (f: number) =>
+			kind === 'video'
+				? clipPictureTime(c, f, seq.settings.frameRate as Rational)
+				: contentTimeAt(c, f, seq.settings.frameRate as Rational);
+		const ta = timeAt(f0);
+		const tb = timeAt(f1);
+		const n0 = Math.max(0, Math.floor(Math.min(ta, tb) / F + 1e-6));
+		const n1 = Math.floor(Math.max(ta, tb) / F + 1e-6) + 2;
+		const nestedFps = nested.settings.frameRate as Rational;
+		const conformed = rationalEquals(nestedFps, seq.settings.frameRate as Rational)
+			? nested
+			: conformSequenceRate(nested, seq.settings.frameRate as Rational);
+		const sub = buildRenderSnapshot(
+			conformed === whole ? doc : { ...doc, sequences: { ...doc.sequences, [nested.id]: conformed } },
+			nested.id,
+			{ ...opts, range: { start: n0, end: n1 }, nestStack: stack, captions: 'none' },
+		);
+		for (const [id, h] of Object.entries(sub.media)) if (!(id in media)) media[id] = h;
+		for (const f of sub.fonts) {
+			const key = `${f.fontId}:${f.weight}:${f.style === 'italic'}`;
+			if (!fontKeys.has(key)) fontKeys.set(key, f);
+		}
+		for (const w of sub.warnings) warnings.push({ ...w, message: `In nested sequence: ${w.message}` });
+		return { snap: sub, nestedFps };
+	};
+
 	const videoTracks: RenderSnapshot['videoTracks'] = [];
+	const hiddenMattes: NonNullable<RenderSnapshot['matteTracks']> = [];
+	// wp masks: hidden tracks stay in the snapshot as matte-only tracks when a Track Matte Key reads them (Premiere
+	// mattes are usually hidden tracks).
+	const matteTracks = new Set<string>();
+	for (const c of Object.values(seq.clips))
+		if ((c as { enabled?: boolean }).enabled !== false)
+			for (const id of trackMatteTracksOf({
+				effects: ((c as { effects?: EffectInstance[] }).effects ?? []) as never,
+			}))
+				matteTracks.add(id);
 	for (const t of seq.videoTracks) {
-		if (t.output === false) continue;
+		const matteOnly = t.output === false && matteTracks.has(t.id);
+		if (t.output === false && !matteOnly) continue;
 		const clips: RenderVisualClip[] = [];
 		for (const c of clipsByTrack.get(t.id) ?? []) {
 			if (!inRange(c)) continue;
@@ -370,15 +589,32 @@ export function buildRenderSnapshot(
 					break;
 				}
 				case 'solid': {
-					const syn = doc.synthetics[c.syntheticId];
-					source = {
-						color:
-							syn?.kind === 'color-matte'
-								? syn.color
-								: syn?.kind === 'transparent'
-									? [0, 0, 0, 0]
-									: [0, 0, 0, 1],
-					};
+					// Colour mattes, black / transparent video; Bars and Tone and the counting leader draw generators.
+					source = syntheticPicture(doc.synthetics[c.syntheticId]);
+					break;
+				}
+				case 'adjustment': {
+					source = { adjustment: true };
+					break;
+				}
+				case 'nest-video': {
+					const x = transitions.clips.get(c.id);
+					const r = nestedSnapshot(c, 'video', { head: x?.headHandle ?? 0, tail: x?.tailHandle ?? 0 });
+					if ('error' in r) {
+						if (r.error !== 'outside the range')
+							warnings.push({ clipId: c.id, code: 'NEST_UNAVAILABLE', message: r.error });
+						source = { unsupported: c.kind };
+					} else {
+						r.snap.settings.backgroundColor = [0, 0, 0, 0];
+						source = {
+							nest: {
+								sequenceId: c.sequenceId,
+								snapshot: r.snap,
+								nestedFps: r.nestedFps,
+								contentKey: multicamContentKey(doc, c),
+							},
+						};
+					}
 					break;
 				}
 				case 'motion-graphic': {
@@ -462,10 +698,16 @@ export function buildRenderSnapshot(
 				transform: (r.transform as Transform | undefined) ?? null,
 				opacity: (r.opacity as Animatable<number> | undefined) ?? { value: 100, keyframes: [] },
 				blendMode: (r.blendMode as BlendMode | undefined) ?? 'normal',
-				effects: (r.effects as EffectInstance[] | undefined) ?? [],
+				effects: visibleEffects(r.effects as EffectInstance[] | undefined),
 				intrinsicBox: box,
-				engine: clipEngines(c)?.export ?? caps.engines.export,
+				...((r.masks as Mask[] | undefined)?.length ? { masks: r.masks as Mask[] } : {}),
+				// edit-structure: a nest renders with the engines its nested layers need.
+				engine:
+					'nest' in source && nestNeedsRemotion(source.nest.snapshot)
+						? 'remotion'
+						: (clipEngines(c)?.export ?? caps.engines.export),
 				...(c.kind === 'animated-image' ? { loop: c.loop } : {}),
+				...(c.frameHold && c.kind !== 'adjustment' ? { frameHold: c.frameHold } : {}),
 				bounded: isBoundedContent(c),
 				...transitionFields(transitions.clips.get(c.id)),
 				...('mediaId' in source && ((r.effects as EffectInstance[] | undefined) ?? []).length > 0
@@ -477,9 +719,45 @@ export function buildRenderSnapshot(
 		const mattes = (transitions.mattes.get(t.id) ?? []).filter(
 			(m) => m.start < range.end && m.start + m.duration > range.start,
 		);
-		const stages = (transitions.stages.get(t.id) ?? []).filter(
+		const allStages = (transitions.stages.get(t.id) ?? []).filter(
 			(x) => x.start < range.end && x.start + x.duration > range.start,
 		);
+		// edit-structure: adjustment clips have no transition handles (an adjustment applies only inside its range);
+		// a transition on one is drawn as the adjustment fading in / out over the span (GPU stages included).
+		const adjustments = new Map(clips.filter((c) => c.kind === 'adjustment').map((c) => [c.clipId, c]));
+		const stages = allStages.filter((st) => {
+			const sides = [st.outgoingClipId, st.incomingClipId].filter((x): x is string => !!x);
+			if (!sides.some((id) => adjustments.has(id))) return true;
+			const outAdj = st.outgoingClipId ? adjustments.get(st.outgoingClipId) : undefined;
+			const inAdj = st.incomingClipId ? adjustments.get(st.incomingClipId) : undefined;
+			const two = st.sides === 'both';
+			if (outAdj)
+				outAdj.fades = [
+					...(outAdj.fades ?? []),
+					two
+						? { type: 'out', start: st.start - 1, frames: st.duration + 1 }
+						: { type: 'out', start: st.start - 1, frames: st.duration },
+				];
+			if (inAdj)
+				inAdj.fades = [
+					...(inAdj.fades ?? []),
+					two
+						? { type: 'in', start: st.start - 1, frames: st.duration + 1 }
+						: { type: 'in', start: st.start, frames: st.duration },
+				];
+			warnings.push({
+				clipId: st.id,
+				code: 'ADJUSTMENT_TRANSITION',
+				message: 'A transition on an adjustment layer is drawn as the adjustment fading in/out',
+			});
+			return false;
+		});
+		for (const c of adjustments.values()) {
+			delete c.headHandle;
+			delete c.tailHandle;
+			delete c.freezeHead;
+			delete c.freezeTail;
+		}
 		// Trackers of the sides (S_MochaWhip's Mocha mode): each side clip's tracker over the span, in sequence px.
 		const withTracks = stages.map((st): RenderTransition => {
 			const tracks: NonNullable<RenderTransition['tracks']> = {};
@@ -502,7 +780,7 @@ export function buildRenderSnapshot(
 					const id = (v as { mediaId?: unknown } | null)?.mediaId;
 					if (typeof id === 'string' && id && doc.media[id]) useMedia(id);
 				}
-		videoTracks.push({
+		(matteOnly ? hiddenMattes : videoTracks).push({
 			trackId: t.id,
 			clips,
 			...(mattes.length ? { mattes } : {}),
@@ -512,8 +790,78 @@ export function buildRenderSnapshot(
 	for (const s of transitions.skipped)
 		warnings.push({ clipId: s.transitionId, code: 'TRANSITION_SKIPPED', message: s.reason });
 
-	const anySolo = seq.audioTracks.some((t) => t.solo);
-	const audible = seq.audioTracks.filter((t) => !t.mute && (!anySolo || t.solo));
+	const audioMix = buildAudioMix(seq);
+	const played = playedTracks(audioMix);
+	const audible = seq.audioTracks.filter((t) => played.has(t.id));
+	// ---- wp captions: caption tracks draw above every video track (S01:RND-005).
+	const captionMode = opts.captions ?? 'visible';
+	const fallbackFont = Object.values(doc.fonts)[0]?.id ?? '';
+	seq.captionTracks.forEach((t, ti) => {
+		const shown =
+			captionMode === 'visible'
+				? t.visible !== false
+				: captionMode === 'none'
+					? false
+					: captionMode.includes(t.id) || captionMode.includes(`C${ti + 1}`);
+		if (!shown) return;
+		const clips: RenderVisualClip[] = [];
+		for (const c of clipsByTrack.get(t.id) ?? []) {
+			if (c.kind !== 'captions' || !inRange(c)) continue;
+			const style = resolveCaptionStyle(t.styleDefaults, c.style, fallbackFont, frame.height);
+			const pages = captionPages(doc, seq, c, style);
+			if (!pages.length) continue;
+			// faces: the style's, plus bold / italic faces used by markup
+			const faces = [
+				[style.weight, style.italic],
+				[Math.max(style.weight, 700), style.italic],
+				[style.weight, true],
+				[Math.max(style.weight, 700), true],
+			] as const;
+			const font = doc.fonts[style.fontId];
+			for (const [weight, italic] of faces) {
+				if (!font) break;
+				const key = `${font.id}:${weight}:${italic}`;
+				if (fontKeys.has(key)) continue;
+				const url = opts.resolveFont(font, weight, italic);
+				if (url)
+					fontKeys.set(key, {
+						fontId: font.id,
+						family: font.family,
+						weight,
+						style: italic ? 'italic' : 'normal',
+						url,
+					});
+			}
+			clips.push({
+				clipId: c.id,
+				kind: c.kind,
+				trackId: c.trackId,
+				name: c.name,
+				start: c.start,
+				duration: c.duration,
+				sourceIn: c.sourceIn,
+				speed: c.speed,
+				source: {
+					captions: {
+						style,
+						pages: pages.map((p) => relativePage(p, c.start)),
+						...(t.captionStandard ? { standard: t.captionStandard } : {}),
+					},
+				},
+				transform: c.transform,
+				opacity: c.opacity,
+				blendMode: 'normal',
+				effects: [],
+				intrinsicBox: { ...frame },
+				engine: clipEngines(c)?.export ?? 'remotion',
+				bounded: false,
+			});
+		}
+		clips.sort((a, b) => a.start - b.start);
+		videoTracks.push({ trackId: t.id, clips, caption: true });
+	});
+	// ---- end wp captions
+
 	const audioClips: RenderAudioClip[] = [];
 	// A crossfade plays the clips' handles: a clip whose handle reaches into the range is included.
 	const audioInRange = (c: Clip) => {
@@ -526,7 +874,47 @@ export function buildRenderSnapshot(
 	};
 	for (const t of audible) {
 		for (const c of clipsByTrack.get(t.id) ?? []) {
-			if (!audioInRange(c) || c.kind !== 'audio') continue;
+			if (!audioInRange(c)) continue;
+			if (c.kind === 'synthetic-audio') {
+				const sound = syntheticSound(doc.synthetics[c.syntheticId]);
+				if (!sound) continue;
+				const x = audioTransitions.clips.get(c.id);
+				audioClips.push({
+					clipId: c.id,
+					trackId: t.id,
+					start: c.start,
+					duration: c.duration,
+					sourceIn: c.sourceIn,
+					speed: c.speed,
+					mediaId: `syn:${c.syntheticId}`,
+					channels: { streamIndex: 0, map: [0, 1] },
+					gainDb: c.gainDb,
+					volumeDb: c.volumeDb,
+					pan: c.pan,
+					effects: c.effects,
+					track: { volumeDb: t.volumeDb ?? ZERO, pan: t.pan ?? ZERO },
+					...transitionFields(x),
+					generator: sound,
+				});
+				continue;
+			}
+			if (c.kind === 'nest-audio') {
+				const x = audioTransitions.clips.get(c.id);
+				const r = nestedSnapshot(c, 'audio', { head: x?.headHandle ?? 0, tail: x?.tailHandle ?? 0 });
+				if ('error' in r) {
+					if (r.error !== 'outside the range')
+						warnings.push({ clipId: c.id, code: 'NEST_UNAVAILABLE', message: r.error });
+					continue;
+				}
+				audioClips.push(
+					...flattenNestAudio(c, t, x, r.snap, seq.settings.frameRate as Rational, {
+						start: range.start,
+						end: range.end,
+					}),
+				);
+				continue;
+			}
+			if (c.kind !== 'audio') continue;
 			useMedia(c.mediaId);
 			const x = audioTransitions.clips.get(c.id);
 			audioClips.push({
@@ -543,6 +931,7 @@ export function buildRenderSnapshot(
 				pan: c.pan,
 				effects: c.effects,
 				track: { volumeDb: t.volumeDb ?? ZERO, pan: t.pan ?? ZERO },
+				...streamChannelsOf(doc.media[c.mediaId], c.channels.streamIndex),
 				...transitionFields(x),
 			});
 		}
@@ -558,15 +947,144 @@ export function buildRenderSnapshot(
 			...frame,
 			fps: seq.settings.frameRate,
 			backgroundColor: seq.settings.backgroundColor,
-			sampleRate: 48000,
+			sampleRate: audioMix.sampleRate,
 		},
 		range,
 		durationFrames: Math.max(0, range.end - range.start),
 		videoTracks,
+		...(hiddenMattes.length ? { matteTracks: hiddenMattes } : {}),
 		audioClips,
 		media,
 		fonts: [...fontKeys.values()],
 		master: { volumeDb: seq.master.volumeDb },
+		audioMix,
 		warnings,
+		...(world ? { expressions: world } : {}),
 	};
+}
+
+// ---------------------------------------------------------------- edit-structure: nested audio
+
+const MIN_DB = -200;
+const gainToDb = (g: number) => (g > 0 ? Math.max(MIN_DB, 20 * Math.log10(g)) : MIN_DB);
+
+/**
+ * The audio clips of a nested sequence as clips of the parent (KND-011 sound): each nested audio clip becomes a
+ * piece placed where the `nest-audio` clip `n` plays it, its content time and rate composed with the nest clip's
+ * (speed, reverse, trims), and its gain composed in `nestGain`: the nested track fader and master, the nested fades
+ * and the nest clip's gain, volume and fades. The outer track fader and master apply as for any clip. Effects of the
+ * nest clip follow the piece's own (they act on each piece: exact for linear effects such as gain and EQ).
+ */
+export function flattenNestAudio(
+	n: Clip,
+	track: { volumeDb?: Animatable<number>; pan?: Animatable<number> },
+	transition: AudioClipTransitionRender | undefined,
+	sub: RenderSnapshot,
+	rate: Rational,
+	range: { start: number; end: number },
+): RenderAudioClip[] {
+	const nest = n as Clip & {
+		gainDb: number;
+		volumeDb: Animatable<number>;
+		pan: Animatable<number>;
+		effects: EffectInstance[];
+	};
+	const F = flicksPerFrame(rate);
+	const r = n.speed.rate;
+	const rev = n.speed.reverse;
+	const head = transition?.headHandle ?? 0;
+	const tail = transition?.tailHandle ?? 0;
+	const lo = Math.max(n.start - head, range.start);
+	const hi = Math.min(n.start + n.duration + tail, range.end);
+	const g = (f: number) => contentTimeAt(n, f, rate) / F;
+	const out: RenderAudioClip[] = [];
+	for (const a of sub.audioClips) {
+		const a0 = a.start - (a.headHandle ?? 0);
+		const a1 = a.start + a.duration + (a.tailHandle ?? 0);
+		let p0: number;
+		let p1: number;
+		if (!rev) {
+			const fAt = (x: number) => n.start + (x - g(n.start)) / r;
+			p0 = Math.max(lo, Math.ceil(fAt(a0) - 1e-6));
+			p1 = Math.min(hi, Math.ceil(fAt(a1) - 1e-6));
+		} else {
+			const fAt = (x: number) => n.start + (n.duration - 1) - (x - n.sourceIn / F) / r;
+			p0 = Math.max(lo, Math.floor(fAt(a1) + 1e-6) + 1);
+			p1 = Math.min(hi, Math.floor(fAt(a0) + 1e-6) + 1);
+		}
+		if (p1 <= p0) continue;
+		const pieceRev = a.speed.reverse !== rev;
+		const contentOfA = (x: number) => contentTimeAt(a, x, rate);
+		const sourceIn = Math.max(0, Math.round(contentOfA(g(pieceRev ? p1 - 1 : p0))));
+		const db = new Float64Array(p1 - p0);
+		for (let f = p0; f < p1; f++) {
+			const x = g(f);
+			const inner =
+				evaluate(a.track.volumeDb, x * F) +
+				evaluate(sub.master.volumeDb, x * F) +
+				gainToDb(audioFadeGain(a.fades, x)) +
+				nestGainDbAt(a.nestGain, Math.floor(x + 1e-6));
+			const fc = Math.min(n.start + n.duration - 1, Math.max(n.start, f));
+			const outer =
+				nest.gainDb +
+				evaluate(nest.volumeDb, contentTimeAt(n, fc, rate)) +
+				gainToDb(audioFadeGain(transition?.fades, f));
+			db[f - p0] = Math.max(MIN_DB, inner + outer);
+		}
+		const runs: { start: number; end: number; db: number }[] = [];
+		for (let k = 0; k < db.length; k++) {
+			const v = Math.round(db[k]! * 1000) / 1000;
+			const last = runs[runs.length - 1];
+			if (last && Math.abs(last.db - v) < 0.01) last.end = p0 + k + 1;
+			else runs.push({ start: p0 + k, end: p0 + k + 1, db: v });
+		}
+		const pan = isAnimatedOrNonZero(a.pan) ? a.pan : nest.pan;
+		out.push({
+			clipId: `${n.id}>${a.clipId}`,
+			trackId: n.trackId,
+			start: p0,
+			duration: p1 - p0,
+			sourceIn,
+			speed: { ...a.speed, rate: a.speed.rate * r, reverse: pieceRev },
+			mediaId: a.mediaId,
+			channels: a.channels,
+			gainDb: a.gainDb,
+			volumeDb: a.volumeDb,
+			pan,
+			effects: [...a.effects, ...nest.effects],
+			track: { volumeDb: track.volumeDb ?? ZERO, pan: track.pan ?? ZERO },
+			...(a.generator ? { generator: a.generator } : {}),
+			...(runs.length === 1 && runs[0]!.db === 0 ? {} : { nestGain: runs }),
+		});
+	}
+	return out;
+}
+
+function isAnimatedOrNonZero(a: Animatable<number>): boolean {
+	return a.keyframes.length > 0 || a.value !== 0;
+}
+
+/** wp-multicam: the content key of what a nest clip shows (the angle's view for multi-camera clips). */
+function multicamContentKey(doc: ProjectDocument, c: Clip & { sequenceId: string }): string {
+	const whole = doc.sequences[c.sequenceId];
+	const view = whole ? multicamView(whole, c) : undefined;
+	if (!whole || view === whole) return nestContentKey(doc, c.sequenceId);
+	return nestContentKey({ ...doc, sequences: { ...doc.sequences, [c.sequenceId]: view! } }, c.sequenceId);
+}
+
+/** A nested snapshot draws a Remotion-rendered layer (recursively). */
+function nestNeedsRemotion(snap: RenderSnapshot): boolean {
+	return snap.videoTracks.some(
+		(t) => (t.transitions?.length ?? 0) > 0 || t.clips.some((c) => c.engine === 'remotion'),
+	);
+}
+
+/**
+ * The effects renderers see: Expression Controls and other `passthrough` effects draw nothing and are left out
+ * (expressions read them from the document). Returns the stored array when nothing is dropped.
+ */
+function visibleEffects(effects: EffectInstance[] | undefined): EffectInstance[] {
+	if (!effects?.length) return [];
+	if (!effects.some((fx) => defaultEffectRegistry.get(fx.effectId)?.passthrough)) return effects;
+	return effects.filter((fx) => !defaultEffectRegistry.get(fx.effectId)?.passthrough);
 }

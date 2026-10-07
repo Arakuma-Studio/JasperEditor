@@ -131,6 +131,9 @@ export function useCapabilities(): {
 		}
 		if (capabilities?.render.fframes === 'ready') flags.add('fframes');
 		if (capabilities?.render.remotionLocal === 'ready') flags.add('remotionServerRender');
+		// wp speech: local Whisper transcription
+		if ((capabilities?.features as { speech?: { status?: string } } | undefined)?.speech?.status === 'ready')
+			flags.add('transcription');
 		if (typeof window !== 'undefined' && (window as { jasperDesktop?: unknown }).jasperDesktop)
 			flags.add('desktop');
 		return { capabilities, flags };

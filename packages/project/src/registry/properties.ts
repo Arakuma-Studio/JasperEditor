@@ -3,7 +3,9 @@
 // `transform.position`, `opacity`, `volumeDb`, `effects.<fxId>.<param>`, `params.<name>`, `text.sizePx`.
 // Each spec carries labels, units, ranges, UI control hints, the reset value (`defaultValue`), its
 // applicability by kind capabilities and how the UI writes it (`param.set` or `clip.update`).
+
 import { z } from 'zod';
+import { BLEND_MODE_GROUPS, BLEND_MODE_LABELS } from '../blend-modes.ts';
 import type { ParamPath } from '../commands/schemas/common.ts';
 import {
 	derefSchema,
@@ -14,8 +16,17 @@ import { contentTimeAt } from '../derive/index.ts';
 import { DEFAULT_SHAPE_SIZE, shapeIntrinsicBox } from '../factories.ts';
 import { SHAPE_ITEM_KEY_PREFIX, shapeItemPropertySpecs } from '../vector/properties.ts';
 import { type EvaluateOptions, evaluate } from '../keyframes.ts';
+import {
+	MASK_DEFAULT_FEATHER,
+	MASK_EXPANSION_RANGE,
+	MASK_FEATHER_RANGE,
+	MASK_OPACITY_RANGE,
+	MASK_PROP_LABELS,
+	type MaskProp,
+} from '../masks/model.ts';
 import type { Animatable, Keyframe, RGBA, SpatialInterpolation } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
+import type { Mask } from '../schema/mask.ts';
 import type { MgCompositionInfo } from '../schema/media.ts';
 import {
 	BLEND_MODES,
@@ -43,6 +54,8 @@ import type { MgTemplateInfo } from './mg.ts';
 export type ValueKind =
 	| 'number'
 	| 'vec2'
+	/** Wave expressions: 3D Point Control. */
+	| 'vec3'
 	| 'color'
 	| 'enum'
 	| 'boolean'
@@ -65,11 +78,13 @@ export type PropertyGroup =
 	| 'crop'
 	| 'box'
 	/** M2 (S11:SHP-005, wp-m2-shapes): shape geometry and paint (`shape.*`). */
-	| 'shape';
+	| 'shape'
+	/** wp masks: Opacity / effect mask properties (`masks.<maskId>.<prop>`). */
+	| 'mask';
 
 /** Everything a default or a patch may need to know about the clip. */
 export type PropertyContext = {
-	doc: Pick<ProjectDocument, 'media' | 'synthetics'>;
+	doc: Pick<ProjectDocument, 'media' | 'synthetics'> & Partial<Pick<ProjectDocument, 'sequences'>>;
 	seq: Pick<Sequence, 'settings'>;
 	clip: Clip;
 };
@@ -79,7 +94,7 @@ export type PropertySpec = {
 	label: string;
 	group: PropertyGroup;
 	kind: ValueKind;
-	unit?: 'px' | '%' | 'deg' | 'dB' | 'frames' | 's';
+	unit?: ParamSpec['unit'];
 	range?: { min?: number; max?: number; softMin?: number; softMax?: number; step?: number };
 	/** `continuous` = interpolated keyframes; `hold-only` = step keyframes (S01:KF-007); `no` = static field. */
 	animatable: 'continuous' | 'hold-only' | 'no';
@@ -90,6 +105,8 @@ export type PropertySpec = {
 	spatial?: SpatialInterpolation;
 	options?: readonly string[];
 	optionLabels?: readonly string[];
+	/** Menu section of each option (`options` order); consecutive runs are drawn as labelled groups. */
+	optionGroups?: readonly string[];
 	/**
 	 * Path of the stored value inside the clip (an Animatable when `animatable !== 'no'`). Special heads:
 	 * `$synthetic` (the clip's synthetic source) and `$effect` (`['$effect', fxId, param]`).
@@ -110,7 +127,15 @@ export type PropertySpec = {
 			| 'curve'
 			| 'media'
 			/** M2 (S08): a JSON editor (arrays, free-form objects). */
-			| 'json';
+			| 'json'
+			/** wp masks: a video-track picker (value = track id, '' = none). */
+			| 'track'
+			/** Wave expressions: x, y, z fields (3D Point Control). */
+			| 'vec3'
+			/** Wave expressions: a clip picker (Layer Control; value = clip id, '' = none). */
+			| 'layer'
+			/** Wave expressions: Dropdown Menu Control (1-based index into the effect's `items`). */
+			| 'menu';
 		bipolar?: boolean;
 		/** Digits after the decimal point in the UI (derived from `range.step` when absent). */
 		precision?: number;
@@ -133,7 +158,8 @@ export type PropertySpec = {
 
 const hasTransform = (c: Pick<Clip, 'kind'>) => !!kindCapabilities(c.kind)?.hasTransform;
 const hasOpacity = (c: Pick<Clip, 'kind'>) => !!kindCapabilities(c.kind)?.hasOpacity;
-const isAudio = (c: Pick<Clip, 'kind'>) => c.kind === 'audio' || c.kind === 'nest-audio';
+const isAudio = (c: Pick<Clip, 'kind'>) =>
+	c.kind === 'audio' || c.kind === 'nest-audio' || c.kind === 'synthetic-audio';
 const isText = (c: Pick<Clip, 'kind'>) => c.kind === 'text';
 
 const styleWrite = (field: string): PropertySpec['write'] => ({
@@ -165,6 +191,11 @@ export function intrinsicBoxOf(ctx: PropertyContext): { width: number; height: n
 	}
 	// M2 (S11:SHP-001): size plus the stroke drawn outside the geometry; vector shapes (wp shapes): the frame.
 	if (clip.kind === 'shape') return shapeIntrinsicBox(clip.shape, frame);
+	// edit-structure (S01:KND-020): a nest clip's box is the nested sequence's frame.
+	if (clip.kind === 'nest-video') {
+		const nested = doc.sequences?.[r.sequenceId as string];
+		if (nested) return { width: nested.settings.width, height: nested.settings.height };
+	}
 	return frame;
 }
 
@@ -484,7 +515,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		group: 'opacity',
 		kind: 'enum',
 		options: BLEND_MODES,
-		optionLabels: ['Normal', 'Multiply', 'Screen', 'Overlay', 'Darken', 'Lighten', 'Add', 'Difference'],
+		optionLabels: BLEND_MODE_LABELS,
+		optionGroups: BLEND_MODE_GROUPS,
 		animatable: 'no',
 		storagePath: ['blendMode'],
 		appliesTo: (c) => hasOpacity(c) && c.kind !== 'captions',
@@ -1163,14 +1195,16 @@ export function effectParamPropertySpec(fxId: string, effect: EffectSpec, p: Par
 								? 'color'
 								: kind === 'vec2'
 									? 'vec2'
-									: 'text');
+									: kind === 'vec3'
+										? 'vec3'
+										: 'text');
 	const step = p.range?.step;
 	return {
 		key: `effects.${fxId}.${p.name}`,
 		label: p.label,
 		group: effect.id === 'jasper.crop' ? 'crop' : 'effect',
 		kind,
-		unit: p.unit === 'Hz' ? undefined : p.unit,
+		unit: p.unit,
 		range: p.range,
 		animatable: p.animatable ? 'continuous' : 'hold-only',
 		...(p.type === 'vec2' && p.animatable && p.spatial ? { spatial: p.spatial } : {}),
@@ -1181,6 +1215,7 @@ export function effectParamPropertySpec(fxId: string, effect: EffectSpec, p: Par
 		ui: {
 			control,
 			bipolar: p.ui?.bipolar,
+			...(p.ui?.multiline ? { multiline: true } : {}),
 			precision: step === undefined ? 1 : step >= 1 ? 0 : step >= 0.1 ? 1 : 2,
 		},
 		defaultValue: p.default,
@@ -1266,6 +1301,13 @@ function readStoredProperty(ctx: PropertyContext, s: PropertySpec): unknown {
 	if (head === '$effect') {
 		const fx = ((ctx.clip as { effects?: EffectInstance[] }).effects ?? []).find((e) => e.id === a);
 		return fx?.params[b!];
+	}
+	// wp masks: `['$mask', maskId, prop]` — an Opacity mask or a mask of one of the clip's effects.
+	if (head === '$mask') {
+		const c = ctx.clip as { masks?: Mask[]; effects?: EffectInstance[] };
+		const m =
+			c.masks?.find((x) => x.id === a) ?? c.effects?.flatMap((fx) => fx.masks ?? []).find((x) => x.id === a);
+		return m ? (m as Record<string, unknown>)[b!] : undefined;
 	}
 	// wp-m2-anime-templates (S11:ATP-006): keyframable template params read as an Animatable view.
 	if (s.group === 'params' && s.animatable !== 'no') {
@@ -1387,6 +1429,8 @@ export function propertyJsonSchema(s: PropertySpec): JsonSchemaObject {
 			};
 		case 'vec2':
 			return { ...base, type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2 };
+		case 'vec3':
+			return { ...base, type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3 };
 		case 'color':
 			return {
 				...base,
@@ -1463,6 +1507,11 @@ export type PropertyOwner = { clipId: string } | { trackId: string } | { master:
 
 /** Property key + owner → ParamPath (S01:CMD-010). */
 export function propertyKeyToParamPath(owner: PropertyOwner, key: string): ParamPath {
+	// wp masks: `masks.<maskId>.<prop>` → `["mask", maskId, prop]`.
+	if (key.startsWith('masks.')) {
+		const [, maskId, prop] = key.split('.');
+		return ['mask', maskId!, prop!];
+	}
 	if (key.startsWith('effects.')) {
 		const [, fxId, ...param] = key.split('.');
 		return ['effect', fxId!, param.join('.')];
@@ -1470,4 +1519,49 @@ export function propertyKeyToParamPath(owner: PropertyOwner, key: string): Param
 	if ('clipId' in owner) return ['clip', owner.clipId, ...key.split('.')];
 	if ('trackId' in owner) return ['track', owner.trackId, ...key.split('.')];
 	return owner.sequenceId ? ['master', owner.sequenceId, key] : ['master', key];
+}
+
+// ---------------------------------------------------------------- wp masks
+
+/** The Effect Controls / Properties spec of a mask property (`masks.<maskId>.<prop>`). */
+export function maskPropertySpec(maskId: string, prop: MaskProp): PropertySpec {
+	const base = {
+		key: `masks.${maskId}.${prop}`,
+		label: MASK_PROP_LABELS[prop],
+		group: 'mask' as const,
+		animatable: 'continuous' as const,
+		storagePath: ['$mask', maskId, prop],
+		appliesTo: (c: Pick<Clip, 'kind'>) => hasOpacity(c),
+	};
+	switch (prop) {
+		case 'path':
+			return { ...base, kind: 'json', ui: { control: 'json' } };
+		case 'feather':
+			return {
+				...base,
+				kind: 'number',
+				unit: 'px',
+				range: { ...MASK_FEATHER_RANGE, softMax: 200, step: 0.1 },
+				ui: { control: 'scrub', precision: 1 },
+				defaultValue: MASK_DEFAULT_FEATHER,
+			};
+		case 'opacity':
+			return {
+				...base,
+				kind: 'number',
+				unit: '%',
+				range: { ...MASK_OPACITY_RANGE, step: 0.1 },
+				ui: { control: 'scrub', precision: 1 },
+				defaultValue: 100,
+			};
+		default:
+			return {
+				...base,
+				kind: 'number',
+				unit: 'px',
+				range: { ...MASK_EXPANSION_RANGE, softMin: -200, softMax: 200, step: 0.1 },
+				ui: { control: 'scrub', precision: 1 },
+				defaultValue: 0,
+			};
+	}
 }

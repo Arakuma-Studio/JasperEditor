@@ -100,7 +100,8 @@ describe('clip.addShape type vector', () => {
 		const items = contentsOf(h, id);
 		expect(items.map((i) => i.type)).toEqual(['path', 'path', 'fill']);
 		const p = items[1] as Extract<ShapeItem, { type: 'path' }>;
-		expect(p.path.value).toMatchObject({ vertices: [[20, 20], [25, 20], [25, 25]], closed: true });
+		expect(p.path.value.closed).toBe(true);
+		expect(p.path.value.vertices.map((v) => v.p)).toEqual([[20, 20], [25, 20], [25, 25]]);
 	});
 });
 
@@ -207,7 +208,7 @@ describe('shape item commands', () => {
 			{
 				type: 'param.set',
 				target: pt,
-				value: { vertices: [[0, 0], [200, 0], [200, 200], [0, 200]], inTangents: [[0, 0], [0, 0], [0, 0], [0, 0]], outTangents: [[0, 0], [0, 0], [0, 0], [0, 0]], closed: true },
+				value: { closed: true, vertices: [[0, 0], [200, 0], [200, 200], [0, 200]].map((p) => ({ p, in: [0, 0], out: [0, 0] })) },
 				at: { sequenceFrame: 10 },
 			},
 		]);
@@ -215,9 +216,12 @@ describe('shape item commands', () => {
 		expect(path.keyframes[0]!.interpolation).toBe('linear');
 		const mid = evaluate(path, 5 * F);
 		expect(mid.vertices).toHaveLength(4);
-		expect(mid.vertices[1]).toEqual([150, 0]);
+		// Interpolated by the shared mask/shape path interpolation (vertex correspondence, path/interp.ts).
+		const xs = mid.vertices.map((v) => v.p[0]);
+		expect(Math.max(...xs)).toBeGreaterThan(100);
+		expect(Math.max(...xs)).toBeLessThan(200);
 		// A malformed path is refused.
-		expect(h.tx([{ type: 'param.set', target: pt, value: { vertices: [[0, 0]], inTangents: [], outTangents: [], closed: false } }]).ok).toBe(false);
+		expect(h.tx([{ type: 'param.set', target: pt, value: { closed: false, vertices: [{ p: [0, 'x'] }] } }]).ok).toBe(false);
 		const gt = ['clip', id, 'shape', 'items', g!.id, 'colors'];
 		h.ok([{ type: 'param.setAnimated', target: gt, animated: true, at: { sequenceFrame: 0 } }]);
 		h.ok([

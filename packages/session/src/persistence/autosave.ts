@@ -27,6 +27,8 @@ export type AutosaveStatus = {
 	paused: AutosavePause;
 	/** Number of successful saves (diagnostics/tests). */
 	saves: number;
+	/** Server revision the next save is based on (If-Match); the crash-recovery journal records it. */
+	serverRevision: number;
 };
 
 export type Autosaver = {
@@ -64,6 +66,7 @@ export function createAutosaver(
 		error: null,
 		paused: null,
 		saves: 0,
+		serverRevision: savedBase,
 	};
 	const listeners = new Set<(s: AutosaveStatus) => void>();
 	const setStatus = (patch: Partial<AutosaveStatus>) => {
@@ -123,6 +126,7 @@ export function createAutosaver(
 						lastSavedAt: Date.now(),
 						error: null,
 						saves: status.saves + 1,
+						serverRevision: r.revision,
 					});
 					opts.onSaved?.(revision);
 				} else {
@@ -198,7 +202,7 @@ export function createAutosaver(
 		async overwrite() {
 			if (!status.conflict) return;
 			if (status.conflict.serverRevision >= 0) savedBase = status.conflict.serverRevision;
-			setStatus({ conflict: null });
+			setStatus({ conflict: null, serverRevision: savedBase });
 			syncPause();
 			await save();
 		},

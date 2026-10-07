@@ -1,4 +1,4 @@
-// Clip kinds this build cannot render yet (captions, nests, adjustment…; S01:KND-030).
+// Clip kinds this build cannot render (kinds from newer versions; S01:KND-030).
 // Drawn as a neutral hatched card so the layer's geometry stays visible.
 import type { LayerProps } from '../types.ts';
 import { LayerBox } from './LayerBox.tsx';

@@ -12,7 +12,8 @@ import type {
 	StrokeTaper,
 	StrokeWave,
 } from '../schema/shapes.ts';
-import { DEFAULT_GRADIENT, type GradientValue, type PathValue } from './values.ts';
+import type { BezierPath } from '../path/model.ts';
+import { DEFAULT_GRADIENT, type GradientValue } from './values.ts';
 
 export const a = <T>(value: T): Animatable<T> => ({ value, keyframes: [] });
 const jsonClone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
@@ -80,7 +81,7 @@ export type NewItemOptions = {
 	/** Stroke width. */
 	width?: number;
 	/** Path value for `path` items. */
-	path?: PathValue;
+	path?: BezierPath;
 	/** Initial gradient. */
 	gradient?: GradientValue;
 	/** Group contents. */
@@ -134,9 +135,7 @@ export function newShapeItem<T extends ShapeItemType>(type: T, o: NewItemOptions
 			item = {
 				...base,
 				type,
-				path: a<PathValue>(
-					jsonClone(o.path ?? { vertices: [], inTangents: [], outTangents: [], closed: false }),
-				),
+				path: a<BezierPath>(jsonClone(o.path ?? { closed: false, vertices: [] })),
 			};
 			break;
 		case 'fill':

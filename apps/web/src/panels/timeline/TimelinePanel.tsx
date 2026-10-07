@@ -8,6 +8,7 @@ import {
 	defaultTransitionFrames,
 	formatTimecode,
 	gapAt,
+	isMulticamClip,
 	LABEL_COLORS,
 	type MediaAsset,
 	type ProjectItem,
@@ -17,15 +18,20 @@ import {
 	sequenceDuration,
 	TRANSITION_SPECS,
 	type Transition,
+	trackLabel,
 	transitionSpec,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useSessionOrNull, useSessionState, useStoreSelector } from '@jasper/session/react';
 import { LABEL_DISPLAY_NAMES } from '@jasper/ui';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { registerUiLocator } from '../../agent-bridge/ui-automation.ts';
+import { remixClip } from '../../audio-fx/ops.ts';
 import { dropLutItems } from '../../color/actions.ts';
 import { createCommandContext } from '../../commands/context.ts';
+import { cameraMenuEntries } from '../../commands/multicam.ts';
 import { runCommand } from '../../commands/registry.ts';
+import { revealNested } from '../../commands/structure.ts';
 import { clipMenuExtensions, collectMenuItems } from '../../extensions/index.ts';
 import { useEngineOrNull } from '../../state/engine.tsx';
 import { getImportService, PROJECT_ITEMS_MIME } from '../../state/services.ts';
@@ -49,6 +55,7 @@ import { setDefaultTransition, TRANSITION_ALIGNMENTS } from '../effects/transiti
 import { insertMotionTemplate, MG_TEMPLATE_MIME, readMgTemplateDrag } from '../motionTemplates/insert.ts';
 import { projectItemOf } from '../program/layer-ops.ts';
 import type { PanelProps } from '../types.ts';
+import { CaptionLanes } from './components/CaptionLanes.tsx';
 import { ContextMenu, GestureTooltip, SequenceTabs, Toolbar, ZoomBar } from './components/Chrome.tsx';
 import { PlayheadLine, TimecodeReadout } from './components/Playhead.tsx';
 import { RULER_H, Ruler } from './components/Ruler.tsx';
@@ -62,7 +69,7 @@ import {
 	useTimelineEnv,
 } from './env.tsx';
 import { mediaCacheVersion } from './media/media-cache.ts';
-import { itemDurationFrames } from './model/drop.ts';
+import { itemAvKinds, itemDurationFrames } from './model/drop.ts';
 import { hitTest } from './model/hit.ts';
 import { computeLayout, hitY, regionIndexAt } from './model/layout.ts';
 import { renderSegments } from './model/renderbar.ts';
@@ -131,6 +138,8 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 	// ------------------------------------------------------------ store selections (no transport!)
 	const seq = useSessionState((s) => (s.transient ?? s.document).sequences[seqId] as Sequence);
 	const committedSeq = useSessionState((s) => s.document.sequences[seqId] as Sequence);
+	// edit-structure: Sequence ▸ Show Through Edits.
+	const showThroughEdits = useSessionState((s) => s.toggles.showThroughEdits !== false);
 	const committedDoc = useSessionState((s) => s.document);
 	const view = useSessionState((s) => s.views[seqId]!);
 	const selectedClips = useSessionState((s) => s.selection.timeline.clips);
@@ -213,6 +222,8 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 	// replace it and orphan the active session gesture), so toasts go through a ref.
 	const envRef = useRef(env);
 	envRef.current = env;
+	const engineRef = useRef(engine);
+	engineRef.current = engine;
 	const toast = useCallback(
 		(kind: 'info' | 'warning' | 'error', message: string) => envRef.current.toast({ kind, message }),
 		[],
@@ -226,6 +237,25 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 				geometry: () => geomRef.current,
 				toast,
 				platform: { mac, wheelHorizontal: timelinePrefs().getState().wheelHorizontal },
+				// audio-fx: the Remix tool's release plans the remix on the engine and commits `clip.remix`.
+				remix: (clipId, targetFrames) => {
+					const engine = engineRef.current;
+					if (!engine || !seqId) return toast('error', 'The engine is not connected');
+					const seq = session.getCommitted().sequences[seqId];
+					if (!seq) return;
+					const secs = (targetFrames * seq.settings.frameRate.den) / seq.settings.frameRate.num;
+					const clip = seq.clips[clipId] as { remix?: { segments: number; variations: number } } | undefined;
+					remixClip(session, engine, seqId, clipId, secs, {
+						...(clip?.remix ? { segments: clip.remix.segments, variations: clip.remix.variations } : {}),
+					}).then(
+						(r) =>
+							toast(
+								'info',
+								`Remixed to ${r.lengthSeconds.toFixed(2)} s (${r.pieces} segments, ${Math.round(r.bpm)} BPM)`,
+							),
+						(e: Error) => toast('error', e.message),
+					);
+				},
 			}),
 		[session, seqId, ui, toast, mac],
 	);
@@ -299,6 +329,92 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		ro.observe(el);
 		return () => ro.disconnect();
 	}, [ui]);
+
+	// mcp-cli (live-UI automation): time ↔ x and track ↔ y for agents (ui_locate / ui_hit, ui_click {timeline}).
+	const seqRef = useRef(seq);
+	seqRef.current = seq;
+	useEffect(() => {
+		const area = () => areaRef.current;
+		const rowOf = (track: string) => {
+			const s = seqRef.current;
+			const t = [...s.videoTracks, ...s.audioTracks].find(
+				(x) => x.id === track || trackLabel(s, x.id) === track,
+			);
+			if (!t) throw new Error(`No track "${track}" in this sequence`);
+			const g = geomRef.current.layout;
+			const row = [...g.video.rows, ...g.audio.rows].find((r) => r.trackId === t.id);
+			if (!row) throw new Error(`Track ${track} is not laid out`);
+			return { row, label: trackLabel(s, t.id) ?? track };
+		};
+		const tc = (f: number) => {
+			const st = seqRef.current.settings;
+			return formatTimecode(f, st.frameRate as Rational, {
+				dropFrame: st.dropFrame,
+				startFrames: st.startTimecodeFrames,
+			});
+		};
+		return registerUiLocator(props.instanceId, {
+			kind: 'timeline',
+			element: () => areaRef.current?.closest('[data-panel-body]') ?? areaRef.current,
+			impl: {
+				sequenceId: () => seqRef.current.id,
+				view: () => {
+					const r = area()?.getBoundingClientRect();
+					const v = geomRef.current.viewport;
+					return {
+						scrollFrame: v.scrollFrame,
+						pxPerFrame: v.pxPerFrame,
+						area: { x: r?.left ?? 0, y: r?.top ?? 0, width: r?.width ?? 0, height: r?.height ?? 0 },
+						visibleFrames: [Math.floor(v.scrollFrame), Math.ceil(v.scrollFrame + v.width / v.pxPerFrame)],
+					};
+				},
+				locate: (a) => {
+					const r = area()?.getBoundingClientRect();
+					if (!r) throw new Error('The timeline is not laid out');
+					const v = geomRef.current.viewport;
+					const xOf = (f: number) => r.left + (f - v.scrollFrame) * v.pxPerFrame;
+					if (a.clipId) {
+						const c = seqRef.current.clips[a.clipId];
+						if (!c) throw new Error(`No clip ${a.clipId} in this sequence`);
+						const { row, label } = rowOf(c.trackId);
+						const inset = Math.min(4, (c.duration * v.pxPerFrame) / 4);
+						const x =
+							a.edge === 'in'
+								? xOf(c.start) + inset / 2
+								: a.edge === 'out'
+									? xOf(c.start + c.duration) - inset / 2
+									: xOf(c.start + c.duration / 2);
+						return { x, y: r.top + row.y + row.height / 2, frame: c.start, track: label };
+					}
+					const frame = a.frame ?? Math.round(v.scrollFrame + v.width / v.pxPerFrame / 2);
+					// A frame's cell centre, so a click there lands on that frame.
+					const x = xOf(frame + 0.5);
+					if (!a.track) return { x, y: r.top + 4, frame };
+					const { row, label } = rowOf(a.track);
+					return { x, y: r.top + row.y + row.height / 2, frame, track: label };
+				},
+				hit: (x, y) => {
+					const r = area()?.getBoundingClientRect();
+					if (!r || x < r.left || x > r.right || y < r.top || y > r.bottom) return null;
+					const { viewport: v, layout } = geomRef.current;
+					const s = seqRef.current;
+					const h = hitTest(s, layout, v, x - r.left, y - r.top);
+					const exact = v.scrollFrame + (x - r.left) / v.pxPerFrame;
+					const frame = Math.max(0, Math.floor(exact));
+					const row = 'row' in h ? h.row : null;
+					return {
+						frame,
+						exactFrame: Math.round(exact * 100) / 100,
+						timecode: tc(frame),
+						track: row ? trackLabel(s, row.trackId) : null,
+						trackId: row?.trackId ?? null,
+						clipId: h.kind === 'clip' ? h.clip.id : null,
+						...(h.kind === 'clip' ? { zone: h.zone } : {}),
+					};
+				},
+			},
+		});
+	}, [props.instanceId]);
 
 	// ------------------------------------------------------------ pointer input (coalesced per frame, TL-156)
 	const pending = useRef<PointerInfo | null>(null);
@@ -470,7 +586,119 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			{ kind: 'separator' },
 			{ kind: 'item', label: 'Enable', checked: c.enabled, run: () => run('timeline.toggleEnable') },
 			{ kind: 'item', label: linked ? 'Unlink' : 'Link', run: () => run('timeline.linkUnlink') },
+			// edit-structure (Premiere clip menu): Group / Ungroup, Nest…, Make Subsequence, frame holds.
+			{
+				kind: 'item',
+				label: 'Group',
+				shortcut: 'Ctrl+G',
+				disabled: readOnly,
+				run: () => run('timeline.group'),
+			},
+			{
+				kind: 'item',
+				label: 'Ungroup',
+				shortcut: 'Ctrl+Shift+G',
+				disabled: readOnly || !c.groupId,
+				run: () => run('timeline.ungroup'),
+			},
 			{ kind: 'item', label: 'Duplicate', run: () => run('timeline.duplicate') },
+			{ kind: 'separator' },
+			{ kind: 'item', label: 'Nest…', disabled: readOnly, run: () => run('clip.nest') },
+			...(c.kind === 'nest-video' || c.kind === 'nest-audio'
+				? [
+						{ kind: 'item' as const, label: 'Unnest', disabled: readOnly, run: () => run('clip.unnest') },
+						{
+							kind: 'item' as const,
+							label: 'Reveal Nested Sequence',
+							shortcut: 'Ctrl+Shift+F',
+							run: () => run('timeline.revealNested'),
+						},
+					]
+				: []),
+			// wp-multicam (Premiere clip context menu: Synchronize…, Multi-Camera ▸ Enable / Flatten / camera N)
+			{ kind: 'item', label: 'Synchronize…', disabled: readOnly, run: () => run('clip.synchronize') },
+			...(c.kind === 'nest-video' || c.kind === 'nest-audio'
+				? [
+						{
+							kind: 'submenu' as const,
+							label: 'Multi-Camera',
+							items: [
+								{
+									kind: 'item' as const,
+									label: 'Enable',
+									checked: isMulticamClip(c) && c.multicam.enabled,
+									disabled: readOnly,
+									run: () => run('multicam.enable'),
+								},
+								{
+									kind: 'item' as const,
+									label: 'Flatten',
+									disabled: readOnly || !(isMulticamClip(c) && c.multicam.enabled),
+									run: () => run('multicam.flatten'),
+								},
+								...(cameraMenuEntries(session, c).length ? [{ kind: 'separator' as const }] : []),
+								...cameraMenuEntries(session, c).map((m) => ({
+									kind: 'item' as const,
+									label: m.label,
+									checked: m.checked,
+									disabled: readOnly || !(isMulticamClip(c) && c.multicam.enabled),
+									run: () => run('multicam.switchCamera', { camera: m.camera }),
+								})),
+								{ kind: 'separator' as const },
+								{
+									kind: 'item' as const,
+									label: 'Edit Cameras…',
+									disabled: readOnly || !isMulticamClip(c),
+									run: () => run('multicam.editCameras'),
+								},
+							],
+						},
+					]
+				: []),
+			{
+				kind: 'item',
+				label: 'Make Subsequence',
+				shortcut: 'Shift+U',
+				disabled: readOnly,
+				run: () => run('sequence.makeSubsequence'),
+			},
+			{
+				kind: 'item',
+				label: 'Join Through Edits',
+				disabled: readOnly,
+				run: () => run('timeline.joinThroughEdits'),
+			},
+			...(c.kind !== 'audio' &&
+			c.kind !== 'nest-audio' &&
+			c.kind !== 'synthetic-audio' &&
+			c.kind !== 'adjustment'
+				? [
+						{
+							kind: 'submenu' as const,
+							label: 'Video Options',
+							items: [
+								{
+									kind: 'item' as const,
+									label: 'Frame Hold Options…',
+									disabled: readOnly,
+									run: () => run('timeline.frameHoldOptions'),
+								},
+								{
+									kind: 'item' as const,
+									label: 'Add Frame Hold',
+									disabled: readOnly,
+									run: () => run('timeline.addFrameHold'),
+								},
+								{
+									kind: 'item' as const,
+									label: 'Insert Frame Hold Segment',
+									disabled: readOnly,
+									run: () => run('timeline.insertFrameHoldSegment'),
+								},
+							],
+						},
+					]
+				: []),
 			{ kind: 'separator' },
 			{
 				kind: 'submenu',
@@ -537,6 +765,21 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			return sel.includes(t.id) ? sel : [t.id];
 		};
 		return [
+			// edit-structure (S01:TRN-003): keep the full length with repeated edge frames when media is short.
+			...(medium === 'video' && !g.oneSided
+				? [
+						{
+							kind: 'item' as const,
+							label: 'Repeat Frames for Short Media',
+							checked: t.freezeHandles === true,
+							run: () =>
+								updateTransition('Transition Handles', t, {
+									handles: t.freezeHandles ? 'shorten' : 'freeze',
+									duration: t.duration,
+								}),
+						},
+					]
+				: []),
 			{
 				kind: 'item',
 				label: 'Set Duration…',
@@ -610,7 +853,13 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 		const yh = hitY(g.layout, p.y);
 		if (yh.kind !== 'track') return;
 		const th = hitTransition(transitions, yh.row, g.viewport, p.x, p.y - yh.row.y);
-		if (!th) return;
+		if (!th) {
+			// edit-structure: double-clicking a nest clip opens its sequence at the frame under the pointer.
+			const hit = hitTest(committedSeq, g.layout, g.viewport, p.x, p.y);
+			if (hit.kind === 'clip' && (hit.clip.kind === 'nest-video' || hit.clip.kind === 'nest-audio'))
+				revealNested(session, committedSeq, hit.clip, boundaryFrameAt(g.viewport, p.x));
+			return;
+		}
 		session.select('timeline', [], 'replace');
 		session.select('transitions', [th.geom.t.id], 'replace');
 		run('panel.focus.effectControls');
@@ -983,8 +1232,10 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			const dur = itemDurationFrames(doc, item, committedSeq.settings.frameRate);
 			if (dur === null) continue;
 			const asset = item.kind === 'media' ? (doc.media[item.mediaId] as MediaAsset | undefined) : undefined;
-			const hasVideo = asset ? asset.probe.streams.some((s) => s.type === 'video') : true;
-			const hasAudio = asset ? asset.probe.streams.some((s) => s.type === 'audio') : false;
+			// edit-structure: sequences (nests or individual clips) and synthetics with sound have both kinds.
+			const av = itemAvKinds(doc, item);
+			const hasVideo = asset ? asset.probe.streams.some((s) => s.type === 'video') : av.video;
+			const hasAudio = asset ? asset.probe.streams.some((s) => s.type === 'audio') : av.audio;
 			// TL-493/494: pointer track for its kind; the other kind mirrors the index; retarget to V1/A1.
 			const tracks: Record<string, unknown> = {};
 			if (t.region === 'video') {
@@ -1001,6 +1252,9 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 				tracks,
 				mode: t.insert ? 'insert' : 'overwrite',
 				createTracks: true,
+				...(item.kind === 'sequence'
+					? { nest: session.getState().toggles.insertSequencesAsNests !== false }
+					: {}),
 			});
 			at += dur;
 		}
@@ -1119,6 +1373,21 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 					/>
 				</div>
 			</div>
+			{/* wp captions: caption tracks above the video tracks */}
+			<CaptionLanes
+				seq={seq}
+				session={session}
+				viewport={viewport}
+				headerWidth={headerWidth}
+				selected={selectedSet}
+				openMenu={openMenu}
+				toast={toast}
+				run={run}
+				openCaption={(clipId) => {
+					session.select('timeline', [clipId], 'replace', { primary: clipId });
+					run('captions.openPanel');
+				}}
+			/>
 			<div className="flex min-h-0 flex-1">
 				<div className="relative shrink-0 border-r border-pr-border" style={{ width: headerWidth }}>
 					<TrackHeaders
@@ -1148,6 +1417,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 							el.addEventListener('pointerup', up);
 						}}
 						data-header-resize
+						data-testid="timeline-header-resize"
 					/>
 				</div>
 				{/* biome-ignore lint/a11y/noStaticElementInteractions: pointer editing surface; keyboard access goes through keymap commands */}
@@ -1182,6 +1452,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 						overlays={overlays}
 						transitions={transitions}
 						selectedTransitions={selectedTransitions}
+						showThroughEdits={showThroughEdits}
 					/>
 					<GestureTooltip tooltip={tooltip} width={size.w} />
 				</div>

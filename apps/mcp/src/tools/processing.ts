@@ -16,9 +16,10 @@ import {
 } from '@jasper/project';
 import { z } from 'zod';
 import {
-	DESTRUCTIVE,
+	DESTRUCTIVE_IDEMPOTENT,
 	defineTool,
 	EDIT,
+	EDIT_IDEMPOTENT,
 	jobBody,
 	loadDoc,
 	READ_ONLY,
@@ -173,7 +174,7 @@ export function registerProcessingTools(ctx: ToolContext): void {
 			description:
 				'Downloads and verifies (sha256) a super-resolution model so upscale steps can use it. Returns a job id; follow it with wait_for_job. Bundled models are already installed.',
 			input: { modelId: z.string().min(1).describe('Model id from list_processing_models') },
-			annotations: EDIT,
+			annotations: { ...EDIT_IDEMPOTENT, openWorldHint: true },
 		},
 		async ({ modelId }) => {
 			const job = await engineCall(ctx, (c) => c.call('processingModelInstall', { params: { modelId } }));
@@ -344,7 +345,7 @@ export function registerProcessingTools(ctx: ToolContext): void {
 				mediaId: z.string().min(1).describe('Target media id (original or processed version)'),
 				fit: FitArg,
 			},
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, clipIds, mediaId, fit }, extra) => {
 			const res = await transact(
@@ -411,7 +412,7 @@ export function registerProcessingTools(ctx: ToolContext): void {
 					.describe('null removes the remote executor; omit to keep it'),
 				localSlots: z.number().int().min(1).optional(),
 			},
-			annotations: DESTRUCTIVE,
+			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
 		async ({ projectId, remote, localSlots }) => {
 			const current = await engineCall(ctx, (c) => c.call('processingSettingsGet'));
@@ -459,7 +460,7 @@ export function registerProcessingTools(ctx: ToolContext): void {
 			description:
 				'Connects to the configured remote executor over SSH and reports Node, ffmpeg, the GPU (if any), ONNX execution providers and whether the processing runtime is installed (Preferences ▸ Processing ▸ Set up installs it).',
 			input: {},
-			annotations: READ_ONLY,
+			annotations: { ...READ_ONLY, openWorldHint: true },
 		},
 		async () => jsonResult(await engineCall(ctx, (c) => c.call('processingRemoteProbe'))),
 	);
@@ -485,7 +486,7 @@ export function registerProcessingTools(ctx: ToolContext): void {
 					.describe('Clips the new file does not cover: refuse (default) or trim them to the covered frames'),
 				copyIntoProject: z.boolean().optional(),
 			},
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, mediaId, path, keepSourceTiming, fit, copyIntoProject }, extra) => {
 			if (!isAbsolute(path))
@@ -588,7 +589,7 @@ export function registerProcessingTools(ctx: ToolContext): void {
 				frames: z.number().int().min(1).optional().describe('Frames in the file (default: from its probe)'),
 				clear: z.boolean().optional(),
 			},
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, mediaId, sourceMediaId, sourceName, firstFrame, frames, clear }, extra) => {
 			let sourceRange: SourceRange | null = null;

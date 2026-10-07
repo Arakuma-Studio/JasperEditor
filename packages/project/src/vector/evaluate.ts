@@ -44,8 +44,9 @@ import {
 	apply,
 } from './geom.ts';
 import { merge, offset, puckerBloat, roundCorners, trim, trimIndividually, twist, wiggle, zigzag } from './ops.ts';
-import { ellipsePath, polystarPath, rectPath } from './primitives.ts';
-import { pathValueToBez, type GradientValue, type PathValue } from './values.ts';
+import { ellipseShapePath, polystarShapePath, rectShapePath } from './primitives.ts';
+import type { BezierPath } from '../path/model.ts';
+import { bezierPathToBez, type GradientValue } from './values.ts';
 import { type Taper, type Wave, varStrokeOutline } from './varstroke.ts';
 
 export type ShapePaint =
@@ -217,18 +218,18 @@ function collect(ctx: Ctx, contents: readonly ShapeItem[]): Collected {
 		if (it.enabled === false) continue;
 		switch (it.type) {
 			case 'rect': {
-				const p = rectPath(vec(it.size, t, [100, 100]), vec(it.position, t, [0, 0]), num(it.roundness, t, 0));
+				const p = rectShapePath(vec(it.size, t, [100, 100]), vec(it.position, t, [0, 0]), num(it.roundness, t, 0));
 				pushPath(ctx, live, p, it.direction === 'reversed');
 				break;
 			}
 			case 'ellipse':
-				pushPath(ctx, live, ellipsePath(vec(it.size, t, [100, 100]), vec(it.position, t, [0, 0])), it.direction === 'reversed');
+				pushPath(ctx, live, ellipseShapePath(vec(it.size, t, [100, 100]), vec(it.position, t, [0, 0])), it.direction === 'reversed');
 				break;
 			case 'polystar':
 				pushPath(
 					ctx,
 					live,
-					polystarPath({
+					polystarShapePath({
 						star: it.starType !== 'polygon',
 						points: num(it.points, t, 5),
 						position: vec(it.position, t, [0, 0]),
@@ -242,8 +243,8 @@ function collect(ctx: Ctx, contents: readonly ShapeItem[]): Collected {
 				);
 				break;
 			case 'path': {
-				const v = evaluate(it.path, t) as PathValue;
-				pushPath(ctx, live, pathValueToBez(v), it.direction === 'reversed');
+				const v = evaluate(it.path, t) as BezierPath;
+				pushPath(ctx, live, bezierPathToBez(v), it.direction === 'reversed');
 				break;
 			}
 			case 'fill':

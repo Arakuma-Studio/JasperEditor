@@ -6,7 +6,9 @@
 //
 // All fields added in this workstream are optional at read time where a default exists (see `vector/defaults.ts`).
 import { z } from 'zod';
-import type { GradientValue, PathValue } from '../vector/values.ts';
+import type { BezierPath } from '../path/model.ts';
+import type { GradientValue } from '../vector/values.ts';
+import { BezierPathSchema } from './mask.ts';
 import {
 	type Animatable,
 	AnimNumberSchema,
@@ -15,7 +17,6 @@ import {
 	animatable,
 	type RGBA,
 	type Vec2,
-	Vec2Schema,
 } from './common.ts';
 
 /** Blend modes of shape groups, fills and strokes (the clip blend modes; values are CSS mix-blend-mode names). */
@@ -193,7 +194,7 @@ export type ShapePolystarItem = ItemBase & {
 	innerRoundness: AN;
 	outerRoundness: AN;
 };
-export type ShapePathItem = ItemBase & { type: 'path'; direction?: PathDirectionValue; path: Animatable<PathValue> };
+export type ShapePathItem = ItemBase & { type: 'path'; direction?: PathDirectionValue; path: Animatable<BezierPath> };
 export type ShapeFillItem = ItemBase & {
 	type: 'fill';
 	composite?: CompositeValue;
@@ -296,12 +297,6 @@ export type ShapeItemOf<T extends ShapeItemType> = Extract<ShapeItem, { type: T 
 
 // ---------------------------------------------------------------- zod
 
-export const PathValueSchema = z.looseObject({
-	vertices: z.array(Vec2Schema),
-	inTangents: z.array(Vec2Schema),
-	outTangents: z.array(Vec2Schema),
-	closed: z.boolean(),
-});
 export const GradientValueSchema = z.looseObject({
 	colors: z
 		.array(
@@ -316,7 +311,8 @@ export const GradientValueSchema = z.looseObject({
 		z.looseObject({ position: z.number(), opacity: z.number(), midpoint: z.number().optional() }),
 	),
 });
-export const AnimPathSchema = animatable(PathValueSchema);
+/** Shape paths use the shared Bézier path value of masks (`path/model.ts`). */
+export const AnimPathSchema = animatable(BezierPathSchema);
 export const AnimGradientSchema = animatable(GradientValueSchema);
 
 const base = {

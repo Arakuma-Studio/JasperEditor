@@ -1,0 +1,25 @@
+TITLE: Harbour Promo
+FCM: DROP FRAME
+
+001  AX       AA/V  C        00;00;00;00 00;00;05;00 01;00;00;00 01;00;05;00
+* FROM CLIP NAME: Harbour A.mov
+* SOURCE FILE: /Volumes/Shoot/Harbour A.mov
+
+002  AX       V     C        00;00;10;00 00;00;10;00 01;00;05;00 01;00;05;00
+002  AX       V     D    030 00;01;00;00 00;01;05;00 01;00;05;00 01;00;10;00
+* FROM CLIP NAME: Harbour A.mov
+* TO CLIP NAME: Gulls Wide.mov
+* SOURCE FILE: /Volumes/Shoot/Harbour A.mov
+* SOURCE FILE: /Volumes/Shoot/Gulls Wide.mov
+* EFFECT NAME: CROSS DISSOLVE
+
+003  AX       V     C        00;02;00;00 00;02;04;00 01;00;10;00 01;00;12;00
+M2   AX       059.9                00;02;00;00
+* FROM CLIP NAME: Boat.mov
+* SOURCE FILE: /Volumes/Shoot/Boat.mov
+* LOC: 01;00;11;00 RED     Check grade
+
+004  BL       V     C        00;00;00;00 00;00;00;00 01;00;12;00 01;00;12;00
+004  AX       V     D    015 00;00;20;00 00;00;23;00 01;00;12;00 01;00;15;00
+* TO CLIP NAME: Sunset.mov
+* SOURCE FILE: /Volumes/Shoot/Sunset.mov

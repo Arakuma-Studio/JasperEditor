@@ -10,7 +10,7 @@ export type PathDirection = 'normal' | 'reversed';
 const dir = (p: BezPath, d: PathDirection | undefined): BezPath => (d === 'reversed' ? reversePath(p) : p);
 
 /** Rectangle centred at `pos` with corner `roundness` (clamped to half the shorter side). */
-export function rectPath(size: P, pos: P, roundness: number, direction?: PathDirection): BezPath {
+export function rectShapePath(size: P, pos: P, roundness: number, direction?: PathDirection): BezPath {
 	const w = Math.abs(size[0]) / 2;
 	const h = Math.abs(size[1]) / 2;
 	const [x, y] = pos;
@@ -49,7 +49,7 @@ export function rectPath(size: P, pos: P, roundness: number, direction?: PathDir
 }
 
 /** Ellipse centred at `pos` (four vertices: top, right, bottom, left). */
-export function ellipsePath(size: P, pos: P, direction?: PathDirection): BezPath {
+export function ellipseShapePath(size: P, pos: P, direction?: PathDirection): BezPath {
 	const rx = Math.abs(size[0]) / 2;
 	const ry = Math.abs(size[1]) / 2;
 	const [x, y] = pos;
@@ -83,7 +83,7 @@ export type PolystarParams = {
 };
 
 /** Polystar: a star (inner and outer vertices alternate) or a regular polygon. */
-export function polystarPath(s: PolystarParams): BezPath {
+export function polystarShapePath(s: PolystarParams): BezPath {
 	const n = Math.max(3, Math.min(100, Math.floor(Number.isFinite(s.points) ? s.points : 5)));
 	const count = s.star ? n * 2 : n;
 	const step = (2 * Math.PI) / count;

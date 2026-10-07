@@ -3,9 +3,14 @@
 // Ids bound in keymap-defaults.ts: effectControls.removeEffect (Backspace/Delete), effectControls.toggleLoop
 // (Ctrl+L), history.stepBackward/stepForward (←/→ in the History panel). The inspector.* ids are
 // unbound by default and reachable from panel menus and the command palette.
+
 import type { Command, Sequence } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { z } from 'zod';
+import { ensureExpressionEngine } from '../expressions/engine.ts';
+import { defaultExpressionText, rowExpressionOf, setExpressionCommand } from '../expressions/row.ts';
+import { deleteMasks } from '../masks/actions.ts';
+import { maskUi } from '../masks/store.ts';
 import { applyEffectToClips } from '../panels/effects/drag.ts';
 import { inspectorFocus } from '../panels/properties/lib/focus.ts';
 import {
@@ -109,7 +114,11 @@ export const inspectorCommands: UiCommand[] = [
 			if (fx) {
 				run(session, 'Remove Effect', [{ type: 'effect.remove', effectInstanceId: fx } as Command]);
 				inspectorFocus.set({ effectInstanceId: null });
+				return;
 			}
+			// wp masks: a mask selected in Effect Controls (its header clears the effect focus).
+			const mask = maskUi.get().selected;
+			if (mask) deleteMasks(session, [mask.maskId]);
 		},
 	},
 	{
@@ -124,6 +133,39 @@ export const inspectorCommands: UiCommand[] = [
 			if (!f) return;
 			const on = animState(f.row) === 'none';
 			run(f.session, `Toggle Animation: ${f.row.label}`, planStopwatch(f.row, f.frame, on).commands);
+		},
+	},
+	{
+		// Wave expressions: AE's Animation ▸ Add Expression (Alt+Shift+=) — adds an expression to the focused property
+		// (its own reference, AE's default text) or removes the one it has.
+		id: 'inspector.toggleExpression',
+		label: 'Add/Remove Expression',
+		description: 'Adds an expression to the focused property in Effect Controls, or removes its expression.',
+		scope: 'global',
+		when: (ctx) => {
+			const f = hasFocusedRow(ctx) ? focusedRow(ctx) : null;
+			return (
+				!!f &&
+				f.row.bindings.length === 1 &&
+				!!rowExpressionOf(f.session.getCommitted(), f.row.bindings[0]!, f.seq.id)
+			);
+		},
+		run(ctx) {
+			const f = focusedRow(ctx);
+			if (f?.row.bindings.length !== 1) return;
+			const doc = f.session.getCommitted();
+			const rx = rowExpressionOf(doc, f.row.bindings[0]!, f.seq.id);
+			if (!rx) return;
+			if (rx.expression) {
+				run(f.session, `Remove Expression: ${f.row.label}`, [
+					{ type: 'expression.clear', target: rx.path, sequenceId: rx.ref.seq } as Command,
+				]);
+				return;
+			}
+			void ensureExpressionEngine();
+			run(f.session, `Add Expression: ${f.row.label}`, [
+				setExpressionCommand(rx, defaultExpressionText(doc, rx.ref)),
+			]);
 		},
 	},
 	{

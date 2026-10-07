@@ -1,5 +1,7 @@
 // Inspector value editors besides the scrubby number (S03:EC-011…014, S05:CT-010…014).
+
 import { cx } from '@jasper/ui';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import { type ReactNode, useEffect, useState } from 'react';
 
 type RGBA = [number, number, number, number];
@@ -107,6 +109,8 @@ export function SelectField<T extends string | number>(props: {
 	value: T | null;
 	options: readonly T[];
 	labels?: readonly string[];
+	/** Section of each option (`options` order): consecutive runs become labelled `<optgroup>`s (Premiere's menus). */
+	groups?: readonly string[];
 	label: string;
 	onChange(v: T): void;
 	disabled?: boolean;
@@ -130,13 +134,38 @@ export function SelectField<T extends string | number>(props: {
 			data-testid={props['data-testid']}
 		>
 			{props.value === null ? <option value="">–</option> : null}
-			{props.options.map((o, i) => (
-				<option key={String(o)} value={String(o)}>
-					{props.labels?.[i] ?? String(o)}
-				</option>
-			))}
+			{props.groups
+				? optionRuns(props.groups, props.options.length).map((run) => (
+						<optgroup key={`${run.label}:${run.start}`} label={run.label}>
+							{props.options.slice(run.start, run.end).map((o, k) => (
+								<option key={String(o)} value={String(o)}>
+									{props.labels?.[run.start + k] ?? String(o)}
+								</option>
+							))}
+						</optgroup>
+					))
+				: props.options.map((o, i) => (
+						<option key={String(o)} value={String(o)}>
+							{props.labels?.[i] ?? String(o)}
+						</option>
+					))}
 		</select>
 	);
+}
+
+/** Consecutive runs of equal group labels: `[{label, start, end}]` over `count` options. */
+function optionRuns(
+	groups: readonly string[],
+	count: number,
+): { label: string; start: number; end: number }[] {
+	const runs: { label: string; start: number; end: number }[] = [];
+	for (let i = 0; i < count; i++) {
+		const label = groups[i] ?? '';
+		const last = runs[runs.length - 1];
+		if (last && last.label === label) last.end = i + 1;
+		else runs.push({ label, start: i, end: i + 1 });
+	}
+	return runs;
 }
 
 /** Checkbox with a mixed (dash) state (S05:CT-012). */
@@ -221,7 +250,8 @@ export function TextField(props: {
 /** Small square icon button used inside rows (keyframe navigator, reset, fx toggle). */
 export function MiniButton(props: {
 	label: string;
-	onClick(): void;
+	/** The click event (Alt-click on a stopwatch toggles an expression, AE). */
+	onClick(e: ReactMouseEvent<HTMLButtonElement>): void;
 	disabled?: boolean;
 	active?: boolean;
 	children: ReactNode;

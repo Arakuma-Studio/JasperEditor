@@ -105,7 +105,7 @@ const GRADIENT_SCHEMA = {
 const PATH_SCHEMA = {
 	type: 'object',
 	description:
-		'Bézier path: {vertices: [[x,y]…], inTangents: [[dx,dy]…], outTangents: [[dx,dy]…], closed} (tangents relative to their vertex; [0,0] = corner)',
+		'Bézier path: {closed, vertices: [{p: [x,y], in: [dx,dy], out: [dx,dy]}…]} (handles relative to their vertex; [0,0] = corner)',
 } as const;
 
 const gradientFields: F[] = [

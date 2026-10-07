@@ -1,7 +1,14 @@
 // The clip area of both regions (S02:TL-150 layers): track backgrounds, virtualized clip bodies,
 // gesture overlays. Pointer input is forwarded to the TimelineController by the panel.
 import type { EngineClient } from '@jasper/engine-client';
-import { clipsInRange, findTrack, type MediaAsset, outOfSyncOffsets, type Sequence } from '@jasper/project';
+import {
+	clipsInRange,
+	findTrack,
+	type MediaAsset,
+	outOfSyncOffsets,
+	type Sequence,
+	throughEdits,
+} from '@jasper/project';
 import type { GapRef, MediaRuntime } from '@jasper/session';
 import { useMemo } from 'react';
 import { type RegionLayout, rowOf, type TrackAreaLayout, visibleRows } from '../model/layout.ts';
@@ -38,7 +45,42 @@ type TrackAreaProps = {
 	/** S10: per-track transition index of the drawn sequence and the selected transition ids. */
 	transitions?: TransitionIndex;
 	selectedTransitions?: ReadonlySet<string>;
+	/** edit-structure: mark through edits (Sequence ▸ Show Through Edits). */
+	showThroughEdits?: boolean;
 };
+
+/**
+ * edit-structure: Premiere's through-edit marks — a small bow tie (two triangles meeting at the cut) at the top of a
+ * cut whose two sides continue the same source (`throughEdits`).
+ */
+function ThroughEditMarks({ seq, layout, v }: { seq: Sequence; layout: TrackAreaLayout; v: Viewport }) {
+	const edits = useMemo(() => throughEdits(seq), [seq]);
+	if (edits.length === 0) return null;
+	return (
+		<>
+			{edits.map((e) => {
+				const row = rowOf(layout, e.trackId);
+				if (!row) return null;
+				const x = frameToX(v, e.frame);
+				if (x < -8 || x > v.width + 8) return null;
+				const s = Math.max(4, Math.min(7, row.height / 6));
+				return (
+					<svg
+						key={`${e.leftId}:${e.rightId}`}
+						className="pointer-events-none absolute"
+						style={{ left: x - s, top: row.y + 2, width: 2 * s, height: s }}
+						viewBox={`0 0 ${2 * s} ${s}`}
+						data-through-edit={e.frame}
+						aria-label="Through edit"
+					>
+						<polygon points={`0,0 ${s},${s / 2} 0,${s}`} fill="var(--pr-text-strong)" />
+						<polygon points={`${2 * s},0 ${s},${s / 2} ${2 * s},${s}`} fill="var(--pr-text-strong)" />
+					</svg>
+				);
+			})}
+		</>
+	);
+}
 
 function Region(props: TrackAreaProps & { region: RegionLayout; offsets: Record<string, number> }) {
 	const { seq, viewport: v, region } = props;
@@ -210,6 +252,7 @@ export function TrackArea(props: TrackAreaProps) {
 				/>
 			) : null}
 			<EditPointMarks points={overlays.editPoints} layout={layout} v={v} />
+			{props.showThroughEdits ? <ThroughEditMarks seq={seq} layout={layout} v={v} /> : null}
 			{overlays.limit && limitRow ? (
 				<div
 					className="pointer-events-none absolute w-[3px]"

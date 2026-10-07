@@ -24,7 +24,7 @@ import {
 	wiggle,
 	zigzag,
 } from '../../src/vector/ops.ts';
-import { rectPath } from '../../src/vector/primitives.ts';
+import { rectShapePath } from '../../src/vector/primitives.ts';
 
 const sq = (x: number, y: number, s: number): BezPath => [
 	polyline(
@@ -97,7 +97,7 @@ describe('round corners', () => {
 		const r = roundCorners([sq(0, 0, 100)], 10)[0]!;
 		expect(vertexCount(r)).toBe(8);
 		close(Math.abs(signedArea(r)), 10000 - (4 - Math.PI) * 100, 1);
-		close(Math.abs(signedArea(rectPath([100, 100], [50, 50], 10))), Math.abs(signedArea(r)), 1);
+		close(Math.abs(signedArea(rectShapePath([100, 100], [50, 50], 10))), Math.abs(signedArea(r)), 1);
 	});
 	it('clamps to half a segment', () => {
 		close(Math.abs(signedArea(roundCorners([sq(0, 0, 20)], 100)[0]!)), Math.PI * 100, 2);

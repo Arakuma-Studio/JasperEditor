@@ -25,9 +25,10 @@ import {
 } from '@jasper/project';
 import { z } from 'zod';
 import {
-	DESTRUCTIVE,
+	DESTRUCTIVE_IDEMPOTENT,
 	defineTool,
 	EDIT,
+	EDIT_IDEMPOTENT,
 	frameOf,
 	loadDoc,
 	READ_ONLY,
@@ -524,7 +525,7 @@ export function registerColorTools(ctx: ToolContext): void {
 					.min(1)
 					.describe('Absolute path of the .cube file, e.g. "/home/me/luts/teal-orange.cube"'),
 			},
-			annotations: { ...EDIT, idempotentHint: false },
+			annotations: EDIT,
 		},
 		async ({ projectId, path }, extra) => {
 			checkFile(path);
@@ -586,7 +587,7 @@ export function registerColorTools(ctx: ToolContext): void {
 			title: 'Grade clip',
 			description: `Colour-grades a clip with a Lumetri Color effect (jasper.lumetri) in ONE transaction (one "Agent: Grade clip" History entry). Edits the clip's first Lumetri instance, adding one when it has none (instance "new" always adds another). Only the params you pass change; the rest keep their values. Ranges (default): basic: ${params('basic')}; creative: ${params('creative')}; curves: ${params('curves')} as [[x,y],…] in 0…1; wheels: ${params('wheels')} with wheels as [x,y] in the unit disc. Out-of-range values are clamped and reported. LUT fields take a mediaId from import_lut (or null for none). ${ORDER} Params that already have keyframes get a keyframe at \`at\` (or the editor playhead on the clip) instead of a new static value; without either the call is rejected. Returns the effect instance id and the applied values; check the result with render_frame.`,
 			input: GradeClipInput,
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async (args, extra) => {
 			const { params: pending, clamped } = normalizeGrade(args);
@@ -759,7 +760,7 @@ export function registerColorTools(ctx: ToolContext): void {
 				fromClipId: z.string().min(1).describe('Clip whose grade is copied'),
 				toClipIds: z.array(z.string().min(1)).min(1).max(500).describe('Clips that receive the grade'),
 			},
-			annotations: DESTRUCTIVE,
+			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
 		async ({ projectId, fromClipId, toClipIds }, extra) => {
 			const { doc } = await loadDoc(ctx, projectId);

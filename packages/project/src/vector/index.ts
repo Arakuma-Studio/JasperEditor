@@ -4,7 +4,7 @@ export * as shapeBoolean from './boolean.ts';
 export * from './defaults.ts';
 export * from './evaluate.ts';
 export * as shapeGeom from './geom.ts';
-export type { Affine, BezPath, Bounds, Cubic, SubPath } from './geom.ts';
+export type { BezPath, Bounds, SubPath } from './geom.ts';
 export * as shapeOps from './ops.ts';
 export * from './primitives.ts';
 export * from './values.ts';

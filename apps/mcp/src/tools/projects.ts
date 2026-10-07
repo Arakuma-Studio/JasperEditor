@@ -11,7 +11,16 @@ import {
 	sourceRangeFromSidecar,
 } from '@jasper/project';
 import { z } from 'zod';
-import { defineTool, EDIT, loadDoc, READ_ONLY, requireOk, type ToolContext, transact } from '../context.ts';
+import {
+	defineTool,
+	EDIT,
+	EDIT_IDEMPOTENT,
+	loadDoc,
+	READ_ONLY,
+	requireOk,
+	type ToolContext,
+	transact,
+} from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { mediaSummary, projectSummary } from '../format.ts';
 import { mediaRegisterCommand } from '../media.ts';
@@ -112,7 +121,7 @@ export function registerProjectTools(ctx: ToolContext): void {
 						`Sequence preset: ${BUILTIN_PRESETS.map((p) => `${p.id} (${p.name})`).join(', ')}. Default ${DEFAULT_PRESET_ID}.`,
 					),
 			},
-			annotations: { ...EDIT, idempotentHint: false },
+			annotations: EDIT,
 		},
 		async ({ name, preset }) => {
 			const { projectId } = await ctx.engine((c) =>
@@ -160,7 +169,7 @@ export function registerProjectTools(ctx: ToolContext): void {
 					.optional()
 					.describe('How long to wait for the editor to open the project (default 15)'),
 			},
-			annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, launchBrowser, waitSeconds }) => {
 			const r = await ctx.engine((c) => c.agentOpenProject({ projectId }));
@@ -229,7 +238,7 @@ export function registerProjectTools(ctx: ToolContext): void {
 					.optional()
 					.describe('Copy the files into the engine media store instead of referencing them in place'),
 			},
-			annotations: { ...EDIT, idempotentHint: false },
+			annotations: EDIT,
 		},
 		async ({ projectId, paths, copyIntoProject }, extra) => {
 			const problems: { path: string; code: string; message: string }[] = [];

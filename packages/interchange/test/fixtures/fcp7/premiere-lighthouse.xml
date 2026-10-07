@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE xmeml>
+<xmeml version="4">
+  <project>
+    <name>Lighthouse</name>
+    <children>
+      <bin>
+        <name>Footage</name>
+        <children>
+          <clip id="masterclip-1">
+            <name>tower.mov</name>
+            <duration>2400</duration>
+            <rate><timebase>24</timebase><ntsc>TRUE</ntsc></rate>
+            <labels><label2>Mango</label2></labels>
+            <media><video><track><clipitem id="clipitem-m1"><name>tower.mov</name>
+              <file id="file-1">
+                <name>tower.mov</name>
+                <pathurl>file://localhost/Volumes/Shoot/tower%20wide.mov</pathurl>
+                <rate><timebase>24</timebase><ntsc>TRUE</ntsc></rate>
+                <duration>2400</duration>
+                <timecode><rate><timebase>24</timebase><ntsc>TRUE</ntsc></rate><string>01:00:00:00</string><frame>86400</frame><displayformat>NDF</displayformat></timecode>
+                <media>
+                  <video><samplecharacteristics><rate><timebase>24</timebase><ntsc>TRUE</ntsc></rate><width>3840</width><height>2160</height></samplecharacteristics></video>
+                  <audio><samplecharacteristics><depth>24</depth><samplerate>48000</samplerate></samplecharacteristics><channelcount>2</channelcount></audio>
+                </media>
+              </file>
+            </clipitem></track></video></media>
+          </clip>
+        </children>
+      </bin>
+      <sequence id="sequence-1">
+        <uuid>3c3a2f2a-0f6e-4b8a-9b6c-1a2b3c4d5e6f</uuid>
+        <name>Main Edit</name>
+        <duration>130</duration>
+        <rate><timebase>24</timebase><ntsc>TRUE</ntsc></rate>
+        <timecode><rate><timebase>24</timebase><ntsc>TRUE</ntsc></rate><string>01:00:00:00</string><frame>86400</frame><displayformat>NDF</displayformat></timecode>
+        <media>
+          <video>
+            <format><samplecharacteristics><rate><timebase>24</timebase><ntsc>TRUE</ntsc></rate><width>1920</width><height>1080</height><pixelaspectratio>square</pixelaspectratio></samplecharacteristics></format>
+            <track>
+              <clipitem id="clipitem-1">
+                <masterclipid>masterclip-1</masterclipid>
+                <name>tower.mov</name>
+                <enabled>TRUE</enabled>
+                <rate><timebase>24</timebase><ntsc>TRUE</ntsc></rate>
+                <start>0</start><end>-1</end><in>0</in><out>48</out>
+                <pproTicksIn>0</pproTicksIn><pproTicksOut>508540032000</pproTicksOut>
+                <file id="file-1"/>
+                <link><linkclipref>clipitem-1</linkclipref><mediatype>video</mediatype><trackindex>1</trackindex><clipindex>1</clipindex></link>
+                <link><linkclipref>clipitem-3</linkclipref><mediatype>audio</mediatype><trackindex>1</trackindex><clipindex>1</clipindex></link>
+                <logginginfo><description></description><scene></scene><shottake></shottake><lognote></lognote></logginginfo>
+                <colorinfo><lut></lut><lut1></lut1><asc_sop></asc_sop><asc_sat></asc_sat><lut2></lut2></colorinfo>
+                <labels><label2>Cerulean</label2></labels>
+              </clipitem>
+              <transitionitem>
+                <rate><timebase>24</timebase><ntsc>TRUE</ntsc></rate>
+                <start>36</start><end>60</end><alignment>center</alignment>
+                <cutPointTicks>127135008000</cutPointTicks>
+                <effect><name>Cross Dissolve</name><effectid>Cross Dissolve</effectid><effectcategory>Dissolve</effectcategory><effecttype>transition</effecttype><mediatype>video</mediatype></effect>
+              </transitionitem>
+              <clipitem id="clipitem-2">
+                <name>waves</name>
+                <rate><timebase>24</timebase><ntsc>TRUE</ntsc></rate>
+                <start>-1</start><end>120</end><in>100</in><out>172</out>
+                <file id="file-2">
+                  <name>waves.mov</name>
+                  <pathurl>media/waves.mov</pathurl>
+                  <rate><timebase>24</timebase><ntsc>TRUE</ntsc></rate>
+                  <duration>1000</duration>
+                  <media><video><samplecharacteristics><width>1920</width><height>1080</height></samplecharacteristics></video></media>
+                </file>
+                <filter><effect>
+                  <name>Basic Motion</name><effectid>basic</effectid><effectcategory>motion</effectcategory><effecttype>motion</effecttype><mediatype>video</mediatype>
+                  <parameter authoringApp="PremierePro"><parameterid>scale</parameterid><name>Scale</name><valuemin>0</valuemin><valuemax>1000</valuemax><value>100</value>
+                    <keyframe><when>100</when><value>100</value></keyframe>
+                    <keyframe><when>160</when><value>150</value></keyframe>
+                  </parameter>
+                  <parameter><parameterid>rotation</parameterid><name>Rotation</name><value>-12.5</value></parameter>
+                  <parameter><parameterid>center</parameterid><name>Center</name><value><horiz>0.25</horiz><vert>-0.1</vert></value></parameter>
+                </effect></filter>
+                <filter><effect>
+                  <name>Opacity</name><effectid>opacity</effectid><effectcategory>motion</effectcategory><effecttype>motion</effecttype><mediatype>video</mediatype>
+                  <parameter><parameterid>opacity</parameterid><name>opacity</name><valuemin>0</valuemin><valuemax>100</valuemax><value>50</value></parameter>
+                </effect></filter>
+                <filter><effect>
+                  <name>Gaussian Blur</name><effectid>GaussianBlur</effectid><effecttype>filter</effecttype><mediatype>video</mediatype>
+                </effect></filter>
+                <filter><effect>
+                  <name>Crop</name><effectid>crop</effectid><effecttype>motion</effecttype><mediatype>video</mediatype>
+                  <parameter><parameterid>left</parameterid><name>Left</name><value>10</value></parameter>
+                  <parameter><parameterid>top</parameterid><name>Top</name><value>5</value></parameter>
+                </effect></filter>
+                <filter><effect>
+                  <name>Mystery Glow Pro</name><effectid>mystery</effectid><effecttype>filter</effecttype><mediatype>video</mediatype>
+                </effect></filter>
+                <compositemode>screen</compositemode>
+                <marker><name>wave peak</name><comment>use this</comment><in>130</in><out>-1</out></marker>
+              </clipitem>
+            </track>
+            <track>
+              <clipitem id="clipitem-4">
+                <name>Titles Nest</name>
+                <rate><timebase>24</timebase><ntsc>TRUE</ntsc></rate>
+                <start>24</start><end>72</end><in>0</in><out>48</out>
+                <sequence id="sequence-2"/>
+              </clipitem>
+              <generatoritem id="clipitem-7">
+                <name>Red Matte</name>
+                <rate><timebase>24</timebase><ntsc>TRUE</ntsc></rate>
+                <start>100</start><end>130</end><in>0</in><out>30</out>
+                <effect><name>Color</name><effectid>Color</effectid><effectcategory>Matte</effectcategory><effecttype>generator</effecttype><mediatype>video</mediatype>
+                  <parameter><parameterid>fillcolor</parameterid><name>Color</name><value><alpha>255</alpha><red>255</red><green>0</green><blue>0</blue></value></parameter>
+                </effect>
+              </generatoritem>
+              <enabled>TRUE</enabled>
+              <locked>TRUE</locked>
+            </track>
+          </video>
+          <audio>
+            <numOutputChannels>2</numOutputChannels>
+            <track>
+              <clipitem id="clipitem-3" premiereChannelType="stereo">
+                <name>tower.mov</name>
+                <rate><timebase>24</timebase><ntsc>TRUE</ntsc></rate>
+                <start>0</start><end>48</end><in>0</in><out>48</out>
+                <file id="file-1"/>
+                <sourcetrack><mediatype>audio</mediatype><trackindex>1</trackindex></sourcetrack>
+                <filter><effect>
+                  <name>Audio Levels</name><effectid>audiolevels</effectid><effectcategory>audiolevels</effectcategory><effecttype>audiolevels</effecttype><mediatype>audio</mediatype>
+                  <parameter><parameterid>level</parameterid><name>Level</name><valuemin>0</valuemin><valuemax>3.98109</valuemax><value>0.5</value>
+                    <keyframe><when>0</when><value>1</value></keyframe>
+                    <keyframe><when>24</when><value>0.5</value></keyframe>
+                  </parameter>
+                </effect></filter>
+                <filter><effect>
+                  <name>Audio Pan</name><effectid>audiopan</effectid><effectcategory>audiopan</effectcategory><effecttype>audiopan</effecttype><mediatype>audio</mediatype>
+                  <parameter><parameterid>pan</parameterid><name>Pan</name><valuemin>-1</valuemin><valuemax>1</valuemax><value>-0.5</value></parameter>
+                </effect></filter>
+                <link><linkclipref>clipitem-1</linkclipref><mediatype>video</mediatype></link>
+                <link><linkclipref>clipitem-3</linkclipref><mediatype>audio</mediatype></link>
+              </clipitem>
+            </track>
+            <track>
+              <clipitem id="clipitem-5">
+                <name>music.wav</name>
+                <enabled>FALSE</enabled>
+                <rate><timebase>24</timebase><ntsc>TRUE</ntsc></rate>
+                <start>0</start><end>120</end><in>0</in><out>120</out>
+                <file id="file-3"><name>music.wav</name><pathurl>file:///Volumes/Audio/music.wav</pathurl>
+                  <media><audio><samplecharacteristics><samplerate>44100</samplerate></samplecharacteristics><channelcount>2</channelcount></audio></media>
+                </file>
+              </clipitem>
+              <transitionitem>
+                <rate><timebase>24</timebase><ntsc>TRUE</ntsc></rate>
+                <start>0</start><end>12</end><alignment>start-black</alignment>
+                <effect><name>Constant Power</name><effectid>KGAudioTransCrossFade3dB</effectid><effecttype>transition</effecttype><mediatype>audio</mediatype></effect>
+              </transitionitem>
+            </track>
+          </audio>
+        </media>
+        <marker><name>Check sky</name><comment></comment><in>30</in><out>-1</out><color>Red</color></marker>
+      </sequence>
+      <sequence id="sequence-2">
+        <name>Titles Nest</name>
+        <rate><timebase>24</timebase><ntsc>TRUE</ntsc></rate>
+        <media>
+          <video>
+            <track>
+              <clipitem id="clipitem-6">
+                <name>waves fast</name>
+                <rate><timebase>24</timebase><ntsc>TRUE</ntsc></rate>
+                <start>0</start><end>48</end><in>0</in><out>96</out>
+                <file id="file-2"/>
+                <filter><effect><name>Time Remap</name><effectid>timeremap</effectid><effectcategory>motion</effectcategory><effecttype>motion</effecttype><mediatype>video</mediatype>
+                  <parameter><parameterid>variablespeed</parameterid><name>variablespeed</name><value>0</value></parameter>
+                  <parameter><parameterid>speed</parameterid><name>speed</name><value>200</value></parameter>
+                  <parameter><parameterid>reverse</parameterid><name>reverse</name><value>FALSE</value></parameter>
+                </effect></filter>
+              </clipitem>
+            </track>
+          </video>
+        </media>
+      </sequence>
+    </children>
+  </project>
+</xmeml>
