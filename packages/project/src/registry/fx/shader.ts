@@ -284,6 +284,11 @@ export type GpuEffect = {
 	/** Derived uniforms of every pass (e.g. a direction vector from an angle), declared from their values. */
 	uniforms?(p: EffectParams, ctx: FxFrameContext): Readonly<Record<string, FxUniformValue>>;
 	/**
+	 * color-mgmt: a `color-config` media param bound as the 33³ LUT of a conversion between two spaces of that custom
+	 * OCIO config (S_OCIOTransform ▸ Config: Custom); null = not used at these params.
+	 */
+	ocioConversion?(p: EffectParams): { param: string; from: string; to: string } | null;
+	/**
 	 * `u_source` gets a mip chain in every pass of this effect (trilinear minification): `textureLod(u_source, uv,
 	 * lod)` / `textureGrad` / implicit LOD in strongly shrinking warps (no aliasing). Off by default: with it,
 	 * plain `texture(u_source, uv)` in minifying mappings returns filtered (different) values.
@@ -425,9 +430,17 @@ export const FX_BUILTIN_UNIFORMS = {
 
 const NAME_RE = /^[A-Za-z][A-Za-z0-9]*$/;
 
-/** A `media` param that takes `.cube` LUT assets only: bound as a 3D texture (`sampler3D`). */
+/**
+ * A `media` param that takes LUT assets only: bound as a 3D texture (`sampler3D`). color-mgmt: a `color-config` param
+ * (a custom OCIO config) is bound the same way, as the 33³ LUT of the conversion its effect names
+ * (`gpu.ocioConversion`).
+ */
 export function isLutMediaParam(p: Pick<ParamSpec, 'type' | 'mediaKinds'>): boolean {
-	return p.type === 'media' && !!p.mediaKinds?.length && p.mediaKinds.every((k) => k === 'lut');
+	return (
+		p.type === 'media' &&
+		!!p.mediaKinds?.length &&
+		p.mediaKinds.every((k) => k === 'lut' || k === 'color-config')
+	);
 }
 
 /** GLSL type of a parameter's uniform (null = not mapped: strings and curves; media params become textures). */

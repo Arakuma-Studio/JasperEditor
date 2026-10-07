@@ -4,6 +4,7 @@
 // - Baked run LUTs are cached by `colorRunKey` in an LRU per layer (64 entries, S06:CG-013).
 import {
 	bakeColorRun,
+	bakeLut,
 	type ColorRunEffect,
 	type EffectRegistry,
 	isOcioBundle,
@@ -74,6 +75,35 @@ export function loadedLutAsset(url: string): Lut | null | undefined {
 export function loadedColorConfig(url: string): OcioConfig | null | undefined {
 	const v = assets.get(lutUrlKey(url))?.lut;
 	return v === undefined ? undefined : v instanceof OcioConfig ? v : null;
+}
+
+const ocioLuts = new Map<string, Lut | { error: string }>();
+/**
+ * color-mgmt: the 33³ LUT of a conversion between two spaces of a loaded custom OCIO config (S_OCIOTransform ▸
+ * Custom), cached; `{error}` when the config cannot apply it; undefined while the config loads.
+ */
+export function ocioConversionLut(
+	url: string,
+	from: string,
+	to: string,
+): Lut | { error: string } | undefined {
+	const cfg = loadedColorConfig(url);
+	if (cfg === undefined) return undefined;
+	const k = `${lutUrlKey(url)}|${from}|${to}`;
+	const hit = ocioLuts.get(k);
+	if (hit) return hit;
+	let out: Lut | { error: string };
+	if (!cfg) out = { error: 'the OCIO config could not be read' };
+	else
+		try {
+			const fn = cfg.convertFn(from, to);
+			out = bakeLut(33, fn, `OCIO ${from} → ${to}`);
+		} catch (e) {
+			out = { error: (e as Error).message };
+		}
+	ocioLuts.set(k, out);
+	if (ocioLuts.size > 32) ocioLuts.delete(ocioLuts.keys().next().value!);
+	return out;
 }
 
 /** Whether an asset finished loading (either kind). */

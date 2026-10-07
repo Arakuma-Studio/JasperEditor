@@ -126,6 +126,8 @@ export type FxMediaInput = {
 	mediaId: string;
 	url: string;
 	kind: 'image' | 'video' | 'lut';
+	/** color-mgmt: a `color-config` asset bound as the LUT of the conversion between two of its spaces. */
+	ocio?: { from: string; to: string };
 	/**
 	 * parity (roto): an object-matte frame — renders fail when it cannot be loaded (never a silently missing matte);
 	 * `group` = its matte store (the preview keeps showing the store's last loaded frame while the next one loads);
@@ -526,6 +528,20 @@ export function useLayerFx(
 						if (!h) continue;
 						if (t.kind === 'lut') {
 							if (h.kind === 'lut') media.set(t.mediaId, { mediaId: t.mediaId, url: h.url, kind: 'lut' });
+							else if (h.kind === 'color-config') {
+								// color-mgmt: S_OCIOTransform ▸ Custom: the conversion's LUT, keyed by config and spaces.
+								const conv = (s.spec as EffectSpec).gpu?.ocioConversion?.(s.fx.params);
+								if (conv && conv.param === t.param) {
+									const id = `ocio:${t.mediaId}:${conv.from}>${conv.to}`;
+									t.mediaId = id;
+									media.set(id, {
+										mediaId: id,
+										url: h.url,
+										kind: 'lut',
+										ocio: { from: conv.from, to: conv.to },
+									});
+								}
+							}
 						} else if (h.kind === 'image' || h.kind === 'video')
 							media.set(t.mediaId, { mediaId: t.mediaId, url: h.url, kind: h.kind });
 					}
