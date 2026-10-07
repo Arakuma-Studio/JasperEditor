@@ -23,6 +23,7 @@ import { isHoldOnlyValue, retimeRoving, reversedKeyTiming } from '../../keyframe
 import { isVec2Value, refreshAutoTangents, reversedSpatial } from '../../keyframes-spatial.ts';
 import { defaultLabelForMedia, kindCapabilities, trackKindFor } from '../../registry/kinds.ts';
 import { intrinsicBoxOf } from '../../registry/properties.ts';
+import { dropForeignRotoRefs } from '../../roto/index.ts';
 import type { Keyframe } from '../../schema/common.ts';
 import type { ProjectItem } from '../../schema/document.ts';
 import type { FontRef, MediaAsset } from '../../schema/media.ts';
@@ -54,7 +55,6 @@ import {
 } from '../placement.ts';
 import type { CommandOf, PasteAttributes } from '../schemas/index.ts';
 import { applyClipPatch } from './clip-core.ts';
-import { dropForeignRotoRefs } from '../../roto/index.ts';
 import { buildParams } from './effect.ts';
 import { refreshAutoBezier } from './keyframe.ts';
 import { PRUNE_EMPTY_KEYFRAMES } from './mg-template.ts';

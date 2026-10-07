@@ -4,9 +4,9 @@
 import { current, type Draft, isDraft } from 'immer';
 import { createTrack } from '../factories.ts';
 import { trackKindFor } from '../registry/kinds.ts';
+import { ROTO_OBJECT_PARAMS } from '../roto/index.ts';
 import type { Animatable } from '../schema/common.ts';
 import type { Clip, Sequence, Track, TrackKind } from '../schema/sequence.ts';
-import { ROTO_OBJECT_PARAMS } from '../roto/index.ts';
 import { contentSpanFlicks } from '../time.ts';
 import type { HandlerContext } from './context.ts';
 import { splitTextAnimation } from './handlers/text-animation.ts';

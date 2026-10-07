@@ -8,9 +8,9 @@ import { intrinsicBoxOf } from '../../registry/properties.ts';
 import {
 	clipMediaFrames,
 	mediaFrameAt,
-	rotoFrameCount,
 	OBJECT_BLUR_EFFECT_ID,
 	OBJECT_MATTE_EFFECT_ID,
+	rotoFrameCount,
 	rotoRateOf,
 } from '../../roto/index.ts';
 import type { ParamValue } from '../../schema/common.ts';
@@ -20,7 +20,7 @@ import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { effectHandlers } from './effect.ts';
-import { validateValue, ruleFromParam } from './param.ts';
+import { ruleFromParam, validateValue } from './param.ts';
 import type { HandlerMap } from './util.ts';
 
 type DRoto = Draft<ClipRoto>;

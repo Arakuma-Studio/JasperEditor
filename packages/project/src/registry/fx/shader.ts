@@ -1116,7 +1116,7 @@ export function validateGpuEffect(spec: EffectSpec): string[] {
 		if (names.has(m.name) || RESERVED.has(`u_${m.name}`))
 			at(`matte "${m.name}" collides with a param or built-in`);
 		const src = spec.params.find((p) => p.name === m.param);
-		if (!src || src.type !== 'string') at(`matte "${m.name}": param "${m.param}" must be a string param`);
+		if (src?.type !== 'string') at(`matte "${m.name}": param "${m.param}" must be a string param`);
 		if (m.offset !== undefined && !(Number.isInteger(m.offset) && Math.abs(m.offset) <= 8))
 			at(`matte "${m.name}": offset must be an integer in −8…8`);
 	}

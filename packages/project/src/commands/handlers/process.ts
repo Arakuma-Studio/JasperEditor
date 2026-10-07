@@ -15,7 +15,7 @@
 //   does not hold every frame the clip shows is refused (E_OUT_OF_MEDIA), or with `fit` the clip is trimmed to
 //   the covered frames (`trim`) or left alone with a warning (`skip`). `keepDuration` is accepted and has no
 //   effect: the duration is always kept.
-import { retargetRotos, rotoRateOf } from '../../roto/index.ts';
+
 import { current, type Draft, isDraft } from 'immer';
 import {
 	clipFileFrames,
@@ -34,6 +34,7 @@ import {
 	versionShift,
 } from '../../process/index.ts';
 import { defaultLabelForMedia, isBoundedContent } from '../../registry/kinds.ts';
+import { retargetRotos, rotoRateOf } from '../../roto/index.ts';
 import type { ProjectItem } from '../../schema/document.ts';
 import type { MediaAsset, SourceRange } from '../../schema/media.ts';
 import type { AudioClip, Clip, VideoClip } from '../../schema/sequence.ts';

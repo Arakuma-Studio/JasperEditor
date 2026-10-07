@@ -16,6 +16,7 @@ import { multicamView } from '../multicam/model.ts';
 import { defaultEffectRegistry } from '../registry/effects.ts';
 import { clipEngines, type EngineId, isBoundedContent, kindCapabilities } from '../registry/kinds.ts';
 import { intrinsicBoxOf } from '../registry/properties.ts';
+import { type RenderRotoMatte, rotoIsStale, rotoStorePath } from '../roto/index.ts';
 import type { Animatable, Keyframe, RGBA } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Mask } from '../schema/mask.ts';
@@ -34,7 +35,6 @@ import {
 	type TextContent,
 	type Transform,
 } from '../schema/sequence.ts';
-import { type RenderRotoMatte, rotoIsStale, rotoStorePath } from '../roto/index.ts';
 import { conformSequenceRate, MAX_NEST_DEPTH, nestContentKey } from '../structure/nest.ts';
 import {
 	type CountingLeaderStyle,

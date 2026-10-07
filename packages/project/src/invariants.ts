@@ -28,13 +28,12 @@ import type { EffectRegistry } from './registry/effects.ts';
 import { defaultEffectRegistry } from './registry/effects.ts';
 import { contentDurationFlicks, isBoundedContent, kindCapabilities, trackKindFor } from './registry/kinds.ts';
 import type { MgTemplateRegistry } from './registry/mg.ts';
+import { ROTO_OBJECT_PARAMS } from './roto/index.ts';
 import { type Animatable, type Keyframe, SPATIAL_INTERPOLATIONS } from './schema/common.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import { MASK_MODES, type Mask } from './schema/mask.ts';
-import type { AudioClip, Clip, EffectInstance, Sequence, Track } from './schema/sequence.ts';
+import type { AudioClip, Clip, ClipRoto, EffectInstance, Sequence, Track } from './schema/sequence.ts';
 import { isKnownClipKind } from './schema/sequence.ts';
-import { ROTO_OBJECT_PARAMS } from './roto/index.ts';
-import type { ClipRoto } from './schema/sequence.ts';
 import { isNestClip } from './structure/nest.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
 import {

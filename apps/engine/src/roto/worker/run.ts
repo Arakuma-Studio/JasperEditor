@@ -4,8 +4,8 @@
 // in the store are reused, never recomputed.
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { matteSize, resample, rgbFloat } from '../core/image.ts';
 import { decodeSeg, encodeGreyPng, encodeSeg } from '../core/codec.ts';
+import { matteSize, resample, rgbFloat } from '../core/image.ts';
 import {
 	type Box,
 	type EdgeOpts,
@@ -23,8 +23,8 @@ import {
 	FaceModels,
 	faceOutline,
 	facePose,
-	rasterPolygons,
 	type Roi,
+	rasterPolygons,
 	roiOfDetection,
 	roiOfLandmarks,
 } from '../models/face.ts';

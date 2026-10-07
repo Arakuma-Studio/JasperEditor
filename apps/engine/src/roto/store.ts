@@ -82,7 +82,7 @@ export class RotoStore {
 		const s = await readFile(this.setPath(key), 'utf8')
 			.then((t) => JSON.parse(t) as RotoSet)
 			.catch(() => null);
-		if (!s || s.v !== 1 || !Array.isArray(s.frames)) return null;
+		if (s?.v !== 1 || !Array.isArray(s.frames)) return null;
 		this.sets.set(key, s);
 		if (this.sets.size > 256) this.sets.delete(this.sets.keys().next().value!);
 		return s;

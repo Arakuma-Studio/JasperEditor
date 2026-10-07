@@ -10,8 +10,6 @@ import { mgRegistry } from '@jasper/mg-templates';
 import {
 	blendModeInfo,
 	buildRenderSnapshot,
-	ROTO_OBJECT_PARAMS,
-	rotoExportIssues,
 	clipContentTime,
 	defaultEffectRegistry,
 	type EffectRegistry,
@@ -27,8 +25,10 @@ import {
 	type Rational,
 	type RenderSnapshot,
 	type RenderVisualClip,
+	ROTO_OBJECT_PARAMS,
 	rationalEquals,
 	resolveLayerProps,
+	rotoExportIssues,
 	type SnapshotOptions,
 	transitionSpec,
 } from '@jasper/project';

@@ -31,9 +31,9 @@ import {
 	PREVIEW_LUT_SIZE,
 	planGpuEffect,
 	type ResolvedEffect,
+	type ResolvedMask,
 	rotoFrameState,
 	rotoFrameUrl,
-	type ResolvedMask,
 	sideCompToCanvas,
 	TRACK_MATTE_EFFECT_ID,
 } from '@jasper/project';
