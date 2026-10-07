@@ -3,6 +3,7 @@ export * from './agent.ts';
 export * from './audio.ts';
 export * from './audio-fx.ts';
 export * from './cache.ts';
+export * from './camtrack.ts';
 export * from './capabilities.ts';
 export * from './captions.ts';
 export * from './common.ts';

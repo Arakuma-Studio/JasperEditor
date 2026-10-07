@@ -14,8 +14,13 @@
 // `value`, `thisProperty` and every global function work.
 import {
 	type Animatable,
+	type CameraClip,
+	type CameraState,
 	type Clip,
+	cameraProjection,
+	cameraStateOf,
 	contentTimeAt,
+	defaultCamera,
 	defaultEffectRegistry,
 	type EffectInstance,
 	type EffectSpec,
@@ -35,14 +40,20 @@ import {
 	isAnimated,
 	type Keyframe,
 	kindCapabilities,
+	type Layer3D,
 	layerMapOf,
+	layerWorldMatrix,
+	MAT4_IDENTITY,
 	maskPropertySpec,
+	mat4Invert,
 	type ParamSpec,
 	type PropertySpec,
 	PUPPET_PIN_LABELS,
 	PUPPET_PIN_PROPS,
+	planeHomography,
 	propertyEvaluateOptions,
 	type Rational,
+	type RenderCameraClip,
 	type RenderVisualClip,
 	resolveLayerProps,
 	resolvePropertySpec,
@@ -1002,22 +1013,63 @@ export class World {
 		}
 	};
 
-	/** `[layer → sequence, sequence → layer]` 3×3 row-major at sequence seconds `s`. */
-	xform(seqId: string, seq: Sequence, clip: Clip, s: number): [number[], number[]] {
+	/**
+	 * `[layer → sequence, sequence → layer]` 3×3 row-major at sequence seconds `s`; three-d: for a 3D layer also
+	 * `[…, world (4×4), world⁻¹ (4×4), view-projection (4×4, world → sequence px through the active camera)]`.
+	 */
+	xform(seqId: string, seq: Sequence, clip: Clip, s: number): number[][] {
 		const c = (this.bound?.[seqId]?.clips[clip.id] ?? clip) as Record<string, unknown>;
 		const t = this.clipTime(seq, clip).toStored(s);
-		const props = resolveLayerProps(
-			{
-				transform: c.transform ?? null,
-				opacity: (c.opacity as Animatable<number>) ?? { value: 100, keyframes: [] },
-				effects: (c.effects as EffectInstance[]) ?? [],
-				intrinsicBox: this.box(seq, clip),
-			} as unknown as RenderVisualClip,
-			t,
-		);
-		const m = layerMapOf(props);
-		const inv = invertMat3(m) ?? [0, 0, 0, 0, 0, 0, 0, 0, 1];
-		return [[...m], [...inv]];
+		const td = c.threeD as Layer3D | undefined;
+		const rclip = {
+			transform: c.transform ?? null,
+			opacity: (c.opacity as Animatable<number>) ?? { value: 100, keyframes: [] },
+			effects: (c.effects as EffectInstance[]) ?? [],
+			intrinsicBox: this.box(seq, clip),
+			...(td?.enabled && clip.kind !== 'adjustment' ? { threeD: td } : {}),
+		} as unknown as RenderVisualClip;
+		const props = resolveLayerProps(rclip, t);
+		if (!rclip.threeD) {
+			const m = layerMapOf(props);
+			const inv = invertMat3(m) ?? [0, 0, 0, 0, 0, 0, 0, 0, 1];
+			return [[...m], [...inv]];
+		}
+		const cam = this.activeCamera(seqId, seq, s);
+		const world = layerWorldMatrix(rclip, t, { cameraEye: cam.eye });
+		const proj = cameraProjection(cam, seq.settings.width, seq.settings.height);
+		const h = planeHomography(cam, seq.settings.width, seq.settings.height, world) ?? [
+			0, 0, 0, 0, 0, 0, 0, 0, 1,
+		];
+		const hinv = invertMat3(h) ?? [0, 0, 0, 0, 0, 0, 0, 0, 1];
+		return [[...h], [...hinv], [...world], [...(mat4Invert(world) ?? MAT4_IDENTITY)], [...proj]];
+	}
+
+	/** The sequence's active camera at sequence seconds `s` (the topmost camera clip that is on). */
+	private activeCamera(seqId: string, seq: Sequence, s: number): CameraState {
+		const F = flicksPerFrame(seq.settings.frameRate as Rational);
+		const frame = Math.floor((s * FLICKS_PER_SECOND) / F + 1e-6);
+		const hidden = new Set(seq.videoTracks.filter((tr) => tr.output === false).map((tr) => tr.id));
+		const index = new Map(seq.videoTracks.map((tr, i) => [tr.id, i]));
+		let best: RenderCameraClip | null = null;
+		for (const raw of Object.values(seq.clips)) {
+			if (raw.kind !== 'camera' || !raw.enabled || hidden.has(raw.trackId)) continue;
+			if (frame < raw.start || frame >= raw.start + raw.duration) continue;
+			const cc = (this.bound?.[seqId]?.clips[raw.id] ?? raw) as CameraClip;
+			const r: RenderCameraClip = {
+				clipId: cc.id,
+				name: cc.name,
+				trackIndex: index.get(cc.trackId) ?? 0,
+				start: cc.start,
+				duration: cc.duration,
+				sourceIn: cc.sourceIn,
+				speed: cc.speed,
+				camera: cc.camera,
+			};
+			if (!best || r.trackIndex > best.trackIndex) best = r;
+		}
+		return best
+			? cameraStateOf(best, frame, seq.settings.frameRate as Rational, seq.settings.width)
+			: defaultCamera(seq.settings.width, seq.settings.height);
 	}
 
 	private markers(seqId: string, owner: string | null): unknown[] {

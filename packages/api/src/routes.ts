@@ -25,6 +25,7 @@ import {
 	CacheSettingsSchema,
 	CacheUsageSchema,
 } from './cache.ts';
+import { CamTrackSolveRequestSchema } from './camtrack.ts';
 import { EngineCapabilitiesSchema, HealthSchema, LicensesResponseSchema } from './capabilities.ts';
 import { CaptionFileReadRequestSchema, CaptionFileReadResponseSchema } from './captions.ts';
 import {
@@ -176,6 +177,8 @@ export type RouteOwner =
 	| 'wp-time'
 	// parity program: roto / object mattes, face tracking
 	| 'roto'
+	// parity program: 3D layers, cameras, lights, 3D Camera Tracker
+	| 'three-d'
 	// parity program: Lottie / SVG / PSD / PDF / image sequence imports, Interpret Footage, Lottie export
 	| 'imports'
 	// parity program: Lumetri completion, Colour Match, scopes
@@ -818,6 +821,16 @@ export const ROUTES = {
 		path: '/mg/roto/:key',
 		response: 'binary',
 		owner: 'roto',
+	},
+	// ---- three-d: 3D Camera Tracker
+	/** A `camtrack` job: feature tracking + camera solve of a span of a video (result: `CamTrackResult`). */
+	camtrackSolve: {
+		method: 'POST',
+		path: '/api/camtrack/solve',
+		body: CamTrackSolveRequestSchema,
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
+		owner: 'three-d',
 	},
 	// ---- M3 media cache (S04 §7.5 CA-010…CA-019)
 	/** Usage per cache kind, budgets, last cleaning (Preferences ▸ Media Cache, MCP get_cache_usage). */

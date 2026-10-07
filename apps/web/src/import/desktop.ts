@@ -35,6 +35,10 @@ const IMPORT_ACCEPT = [
 	'.flac',
 	// M2: LUTs register as kind 'lut' (wp-m2-color adds the engine prober).
 	'.cube',
+	// three-d: 3D models register as kind 'model' (the engine's model prober).
+	'.glb',
+	'.gltf',
+	'.obj',
 	'.ogg',
 	'.opus',
 	'.png',

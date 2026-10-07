@@ -17,7 +17,6 @@ import {
 	type Mat3,
 	mat3FromMat2D,
 	type ResolvedLayer,
-	resolveSceneAt,
 	trackerGeometryAt,
 } from '@jasper/project';
 import type { EditorSession, Gesture, TransportStore } from '@jasper/session';
@@ -35,6 +34,7 @@ import { MONITOR_COLORS } from '../panels/program/monitor.tokens.ts';
 import { useOverlayFrame } from '../panels/program/TransformOverlay.tsx';
 import { toScreen, toSequence, type View } from '../panels/program/viewport.ts';
 import { inspectorFocus } from '../panels/properties/lib/focus.ts';
+import { resolveProgramScene } from '../three-d/scene.ts';
 import { useTrackingBridge } from './bridge.ts';
 import {
 	confidenceTone,
@@ -164,7 +164,7 @@ export function TrackingOverlay(props: ProgramOverlayHostProps) {
 	const focusedFx = useFocusedEffect();
 	const selected = useStoreSelector(session.store, (s) => s.selection.timeline.clips);
 	const drawn = useStoreSelector(session.store, (s) => s.transient ?? s.document);
-	const scene = useMemo(() => resolveSceneAt(doc, frame), [doc, frame]);
+	const scene = useMemo(() => resolveProgramScene(doc, frame), [doc, frame]);
 	const drag = useGestureDrag(session, transport);
 	if (playing && !drag.dragging) return null;
 

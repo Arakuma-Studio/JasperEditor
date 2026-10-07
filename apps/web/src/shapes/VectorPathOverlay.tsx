@@ -20,7 +20,6 @@ import {
 	nearestOnPath,
 	pathToSvg,
 	type ResolvedLayer,
-	resolveSceneAt,
 	type ShapeAffine,
 	shapePathItemsAt,
 } from '@jasper/project';
@@ -37,6 +36,7 @@ import {
 import type { ProgramOverlayHostProps } from '../extensions/index.ts';
 import { useOverlayFrame } from '../panels/program/TransformOverlay.tsx';
 import { toScreen, toSequence, type View } from '../panels/program/viewport.ts';
+import { resolveProgramScene } from '../three-d/scene.ts';
 import { useGestureDrag } from '../tracking/TrackingOverlay.tsx';
 import { addVectorClipAt, isVectorClip, useVectorUi, vectorUi } from './vector.ts';
 
@@ -85,7 +85,7 @@ export function VectorPathOverlay(props: ProgramOverlayHostProps) {
 	const selectedClips = useStoreSelector(session.store, (s) => s.selection.timeline.clips);
 	const readOnly = useStoreSelector(session.store, (s) => s.readOnly);
 	const ui = useVectorUi((s) => s);
-	const scene = useMemo(() => resolveSceneAt(doc, frame), [doc, frame]);
+	const scene = useMemo(() => resolveProgramScene(doc, frame), [doc, frame]);
 	const drag = useGestureDrag(session, transport);
 	/** The path item the pen is drawing (open, appended to by clicks). */
 	const penItem = useRef<{ clipId: string; itemId: string } | null>(null);

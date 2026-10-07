@@ -11,13 +11,7 @@
 //   the first vertex closes the path.
 // Every drag is ONE session gesture writing the path at the playhead (a keyframe when Mask Path is animated).
 import type { RenderDoc } from '@jasper/compositions';
-import {
-	type BezierPath,
-	type Command,
-	type ResolvedLayer,
-	type ResolvedMask,
-	resolveSceneAt,
-} from '@jasper/project';
+import type { BezierPath, Command, ResolvedLayer, ResolvedMask } from '@jasper/project';
 import type { EditorSession, TransportStore } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
 import { toast } from '@jasper/ui';
@@ -26,6 +20,7 @@ import type { ProgramOverlayHostProps } from '../extensions/index.ts';
 import { MONITOR_COLORS } from '../panels/program/monitor.tokens.ts';
 import { useOverlayFrame } from '../panels/program/TransformOverlay.tsx';
 import type { View } from '../panels/program/viewport.ts';
+import { resolveProgramScene } from '../three-d/scene.ts';
 import { type DragSpec, useGestureDrag } from '../tracking/TrackingOverlay.tsx';
 import {
 	type MaskSpace,
@@ -68,7 +63,7 @@ export function MaskOverlay(props: ProgramOverlayHostProps) {
 	const selectedClips = useStoreSelector(session.store, (s) => s.selection.timeline.clips);
 	const readOnly = useStoreSelector(session.store, (s) => s.readOnly);
 	const ui = useMaskUi((s) => s);
-	const scene = useMemo(() => resolveSceneAt(doc, frame), [doc, frame]);
+	const scene = useMemo(() => resolveProgramScene(doc, frame), [doc, frame]);
 	const drag = useGestureDrag(session, transport);
 	if (playing && !drag.dragging) return null;
 

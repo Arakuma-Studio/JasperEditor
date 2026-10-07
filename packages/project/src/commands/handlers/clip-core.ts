@@ -28,6 +28,7 @@ import type {
 	Transform,
 } from '../../schema/sequence.ts';
 import { SYNTHETIC_INFO, syntheticDefaultFlicks } from '../../structure/synthetic.ts';
+import { newLayer3D } from '../../three-d/model.ts';
 import { FRAME_EPS, flicksPerFrame, supportsDropFrame } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import {
@@ -332,6 +333,21 @@ export function placeSource(
 						mediaId: asset.id,
 						...(asset.kind === 'animated-image' ? { loop: !asset.lottie } : {}),
 						...visualFields(defaultTransform(box, frameBox(seq), scaling)),
+					}) as Clip,
+			});
+		} else if (asset.kind === 'model') {
+			// three-d: a 3D model layer — always a 3D layer (Advanced 3D draws it).
+			if (o.video === false) h.fail('E_INVALID_PARAM', 'Nothing to place (video: false on a 3D model)');
+			plans.push({
+				kind: 'model',
+				trackRef: videoTrackRef,
+				build: (id, trackId, start, duration, si) =>
+					({
+						...commonFields(id, trackId, start, duration, si, name, label('model')),
+						kind: 'model',
+						mediaId: asset.id,
+						...visualFields(defaultTransform(frameBox(seq), frameBox(seq), 'none')),
+						threeD: newLayer3D(true, 'model'),
 					}) as Clip,
 			});
 		}

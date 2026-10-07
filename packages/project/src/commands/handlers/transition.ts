@@ -18,6 +18,7 @@ import {
 	clipsAtEditPoint,
 	defaultTransitionFrames,
 	fitTransitionDuration,
+	isLayer3D,
 	TRANSITION_SPECS,
 	type TransitionSpec,
 	transitionSpan,
@@ -171,6 +172,16 @@ function addTransition(doc: DDoc, a: AddArgs, h: HandlerContext) {
 			'E_TRACK_KIND',
 			`${spec.label} is ${spec.appliesTo === 'video' ? 'a video' : 'an audio'} transition`,
 		);
+	// three-d: a 3D layer is a plane of the 3D scene; transitions (pictures mixed in the frame) do not apply to it.
+	for (const c of [outgoing, incoming])
+		if (c && isLayer3D(c))
+			h.fail(
+				'E_INVALID_PARAM',
+				`"${c.name}" is a 3D layer: 3D layers take no transitions (animate Opacity instead)`,
+				{
+					blocking: [c.id],
+				},
+			);
 	const two = !!outgoing && !!incoming;
 	const alignment: Transition['alignment'] = two
 		? (a.alignment ?? 'center')
@@ -400,6 +411,10 @@ export const transitionHandlers: HandlerMap = {
 					: incoming
 						? 'start-at-cut'
 						: 'end-at-cut';
+				if ((outgoing && isLayer3D(outgoing)) || (incoming && isLayer3D(incoming))) {
+					h.warn('W_TRANSITION_3D', '3D layers take no transitions: skipped the edit points of 3D layers');
+					continue;
+				}
 				const freezeWanted = cmd.handles === 'freeze' && track.kind === 'video';
 				// Edit points without room are skipped instead of failing the whole command.
 				if (fit(doc, seq, effectId, wanted, alignment, outgoing, incoming, freezeWanted) === 0) continue;

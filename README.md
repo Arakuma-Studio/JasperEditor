@@ -401,7 +401,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (274; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (289; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -435,6 +435,7 @@ Tools (274; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   `delete_effect_preset`.
 - Clipboard: `copy_clips` `paste_clips` `copy_items` `paste_items`.
 - Blend modes: `list_blend_modes` `set_blend_mode` (Premiere's 27 + After Effects' stencils, `docs/wp-notes/keyframes-blend.md`).
+- 3D layers, cameras and lights: `set_3d_layer` `set_3d_transform` `set_material` `add_camera` `camera_settings` `move_camera` `add_light` `light_settings` `set_3d_renderer` `get_3d_scene`; 3D Camera Tracker: `track_camera` `get_camera_tracker` `create_tracked_camera` `set_tracker_ground` `delete_track_points` (After Effects' Classic 3D and 3D Camera Tracker, `docs/wp-notes/three-d.md`).
 - Keyframes and presets: `get_motion_path` `set_spatial_interpolation` `set_roving` · `list_effect_presets` `get_effect_preset`
   `save_effect_preset` `apply_effect_preset` `delete_effect_preset`.
 - Media cache: `get_cache_usage` `clean_cache` `set_cache_location`.

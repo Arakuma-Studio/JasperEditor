@@ -21,6 +21,7 @@ import { SIMPLIFY_COMMANDS } from './simplify.ts';
 import { SPEECH_COMMANDS } from './speech.ts';
 import { STRUCTURE_COMMANDS } from './structure.ts';
 import { TEXT_ANIMATOR_COMMANDS } from './text-animators.ts';
+import { THREE_D_COMMANDS } from './three-d.ts';
 import { TIME_COMMANDS } from './time.ts';
 import { TRACKER_COMMANDS } from './tracker.ts';
 
@@ -47,6 +48,7 @@ export * from './simplify.ts';
 export * from './speech.ts';
 export * from './structure.ts';
 export * from './text-animators.ts';
+export * from './three-d.ts';
 export * from './time.ts';
 export * from './tracker.ts';
 
@@ -93,6 +95,8 @@ export const ALL_COMMAND_SCHEMAS = [
 	...ROTO_COMMANDS,
 	// edit-ux: 3/4-point editing, multi-edit trims, subclips
 	...EDIT_UX_COMMANDS,
+	// three-d: 3D layers, cameras, lights
+	...THREE_D_COMMANDS,
 	// imports: Interpret Footage
 	...INTERPRET_COMMANDS,
 ] as const;

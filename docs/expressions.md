@@ -104,8 +104,8 @@ result may also be the item name); text a string; Layer Control a layer.
 | `fromComp(point, t = time)` | Sequence pixels → layer pixels. |
 | `toCompVec(vec, t = time)` | Direction vector, layer → sequence. |
 | `fromCompVec(vec, t = time)` | Direction vector, sequence → layer. |
-| `toWorld(point, t = time)` | Same as toComp (sequences are 2D). |
-| `fromWorld(point, t = time)` | Same as fromComp. |
+| `toWorld(point, t = time)` | Layer pixels → world [x, y, z] (3D layers; 2D layers: = toComp). |
+| `fromWorld(point, t = time)` | World → layer pixels (3D layers; 2D layers: = fromComp). |
 | `sourceRectAtTime(t = time)` | {top, left, width, height} of the clip box in layer pixels. |
 | `sampleImage(point, radius = [.5, .5], postEffect = true, t = time)` | Average straight RGBA in point ± radius (layer pixels). Solid clips only; other kinds report an error. |
 

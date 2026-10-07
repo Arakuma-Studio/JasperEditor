@@ -41,6 +41,8 @@ export const TOOLS: Record<ToolId, ToolInfo> = {
 	hand: { id: 'hand', label: 'Hand Tool', key: 'H', icon: 'tool.hand' },
 	zoom: { id: 'zoom', label: 'Zoom Tool', key: 'Z', icon: 'tool.zoom' },
 	type: { id: 'type', label: 'Type Tool', key: 'T', icon: 'tool.type' },
+	// three-d: After Effects' Unified Camera Tool (C there is Premiere's Razor: no default key).
+	camera: { id: 'camera', label: 'Camera Tool', key: '', icon: 'tool.camera' },
 };
 
 /** S05:TOOL-002 groups (flyouts); the first member is the default face. */
@@ -53,6 +55,7 @@ export const TOOL_GROUPS: readonly (readonly ToolId[])[] = [
 	['pen', 'rectangle', 'ellipse', 'polygon', 'star'],
 	['hand', 'zoom'],
 	['type'],
+	['camera'],
 ];
 
 export type Mods = { shift: boolean; ctrl: boolean; alt: boolean };
@@ -96,6 +99,8 @@ export function resolveGesture(tool: ToolId, hit: Hit, mods: Mods): GestureKind 
 		case 'ellipse':
 		case 'polygon':
 		case 'star':
+		// three-d: the Camera tool acts in the Program monitor; in the timeline it selects like the Selection tool.
+		case 'camera':
 			if (edge) return mods.ctrl ? 'ripple' : 'trim';
 			if (onClip) return 'move';
 			if (hit.kind === 'gap') return 'gap';

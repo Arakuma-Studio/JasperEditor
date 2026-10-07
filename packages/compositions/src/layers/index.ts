@@ -6,6 +6,7 @@ import { CaptionsLayer } from './CaptionsLayer.tsx';
 import { CompositionLayer } from './CompositionLayer.tsx';
 import { GeneratorLayer } from './GeneratorLayer.tsx';
 import { LottieLayer } from './LottieLayer.tsx';
+import { ModelLayer } from './ModelLayer.tsx';
 import { MotionGraphicLayer } from './MotionGraphicLayer.tsx';
 import { NestLayer } from './NestLayer.tsx';
 import { OfflineCard } from './OfflineCard.tsx';
@@ -74,9 +75,11 @@ export const LAYER_COMPONENTS: Partial<Record<string, ComponentType<LayerProps>>
 	'nest-video': NestLayer,
 	// wp captions
 	captions: CaptionsLayer,
+	// three-d: 3D model layers (drawn by their run's Advanced 3D renderer).
+	model: ModelLayer,
 };
 
-const MEDIA_KINDS = new Set(['video', 'still', 'animated-image']);
+const MEDIA_KINDS = new Set(['video', 'still', 'animated-image', 'model']);
 
 /** Picks the component for a layer: offline media → OfflineCard, unknown kinds → UnsupportedLayer. */
 export function layerComponentFor(layer: Pick<LayerProps, 'clip' | 'media'>): ComponentType<LayerProps> {

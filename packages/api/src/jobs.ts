@@ -33,6 +33,8 @@ export const JOB_KINDS = [
 	'scene-detect',
 	// parity (roto): Roto Brush segmentation / propagation and face tracking
 	'roto',
+	// parity (three-d): 3D Camera Tracker (feature tracking + camera solve)
+	'camtrack',
 	// imports: interpreted variants, image sequences, layered documents
 	'interpret',
 	'image-sequence',

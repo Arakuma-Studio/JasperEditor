@@ -2,6 +2,7 @@
 import type { z } from 'zod';
 import type { HandlerContext } from './context.ts';
 import { AUDIO_MIX_OWNER, audioHandlers } from './handlers/audio.ts';
+import { cameraTrackerHandlers } from './handlers/camtrack.ts';
 import { CAPTIONS_OWNER, captionHandlers } from './handlers/captions.ts';
 import { clipCoreHandlers } from './handlers/clip-core.ts';
 import { clipEditHandlers } from './handlers/clip-edit.ts';
@@ -30,6 +31,7 @@ import { spatialHandlers } from './handlers/spatial.ts';
 import { SPEECH_OWNER, speechHandlers } from './handlers/speech.ts';
 import { STRUCTURE_OWNER, structureHandlers } from './handlers/structure.ts';
 import { TEXT_ANIMATOR_OWNER, textAnimatorHandlers } from './handlers/text-animators.ts';
+import { THREE_D_OWNER, threeDHandlers } from './handlers/three-d.ts';
 import { timeHandlers } from './handlers/time.ts';
 import { trackerHandlers } from './handlers/tracker.ts';
 import { transitionHandlers } from './handlers/transition.ts';
@@ -80,6 +82,8 @@ export type CommandOwner =
 	| 'edit-ux'
 	// AE text animators (parity program)
 	| 'text-animators'
+	// 3D layers, cameras, lights, 3D camera tracker (docs/wp-notes/three-d.md)
+	| 'three-d'
 	// Liquify, Mesh Warp, Puppet (docs/wp-notes/sim-warp.md)
 	| 'sim-warp'
 	// Interpret Footage, vector / Lottie / layered / sequence imports (docs/wp-notes/imports.md)
@@ -325,6 +329,23 @@ const LABELS: Record<CommandType, string> = {
 	'clip.trimEdits': 'Trim',
 	'item.makeSubclip': 'Make Subclip',
 	'item.updateSubclip': 'Edit Subclip',
+	// three-d
+	'clip.set3d': '3D Layer',
+	'clip.addCamera': 'New Camera',
+	'clip.addLight': 'New Light',
+	'camera.settings': 'Camera Settings',
+	'light.settings': 'Light Settings',
+	'camera.orbit': 'Orbit Camera',
+	'camera.pan': 'Pan Camera',
+	'camera.dolly': 'Dolly Camera',
+	'sequence.set3dRenderer': '3D Renderer',
+	'cameraTracker.add': 'Track Camera',
+	'cameraTracker.settings': '3D Camera Tracker Settings',
+	'cameraTracker.setResult': 'Solve Camera',
+	'cameraTracker.deletePoints': 'Delete Track Points',
+	'cameraTracker.setGround': 'Set Ground Plane and Origin',
+	'cameraTracker.create': 'Create Camera',
+	'cameraTracker.remove': 'Remove 3D Camera Tracker',
 	'media.interpret': 'Interpret Footage',
 };
 
@@ -359,6 +380,8 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[timeHandlers, 'wp-time'],
 	[rotoHandlers, ROTO_OWNER],
 	[editUxHandlers, 'edit-ux'],
+	[threeDHandlers, THREE_D_OWNER],
+	[cameraTrackerHandlers, THREE_D_OWNER],
 	[simWarpHandlers, SIM_WARP_OWNER],
 	[interpretHandlers, INTERPRET_OWNER],
 ];
@@ -391,6 +414,7 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === 'wp-time' ||
 				owner === ROTO_OWNER ||
 				owner === 'edit-ux' ||
+				owner === THREE_D_OWNER ||
 				owner === INTERPRET_OWNER
 					? 'M3'
 					: owner === 'M2' ||

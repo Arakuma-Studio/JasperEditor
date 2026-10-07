@@ -65,7 +65,9 @@ export type ActiveTool =
 	| 'star'
 	| 'hand'
 	| 'zoom'
-	| 'type';
+	| 'type'
+	// three-d: After Effects' Unified Camera Tool (orbit / pan / dolly the camera in the Program monitor).
+	| 'camera';
 
 /** Session toggles (S01:SES-001 `toggles`). */
 export type SessionToggles = {

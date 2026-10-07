@@ -1,5 +1,6 @@
 // The JasperEditor MCP server (tools, resources, prompts). Transport-agnostic: `cli.ts` serves it over
 // stdio (jasper-mcp), the engine serves the same definitions over Streamable HTTP at /mcp.
+
 import { expressionReferenceMarkdown } from '@jasper/expressions';
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
@@ -37,6 +38,7 @@ import { registerSpeechTools, SPEECH_GUIDE } from './tools/speech.ts';
 import { registerStructureTools, STRUCTURE_GUIDE } from './tools/structure.ts';
 import { registerTemplateTools, TEMPLATES_GUIDE } from './tools/templates.ts';
 import { registerTextAnimatorTools, TEXT_ANIMATORS_GUIDE } from './tools/text-animators.ts';
+import { registerThreeDTools, THREE_D_GUIDE } from './tools/three-d.ts';
 import { registerTimeTools, TIME_GUIDE } from './tools/time.ts';
 import { registerTrackingTools, TRACKING_GUIDE } from './tools/tracking.ts';
 import { registerTransitionTools, TRANSITION_GUIDE } from './tools/transitions.ts';
@@ -78,6 +80,7 @@ const FULL_GUIDE = [
 	TEXT_ANIMATORS_GUIDE,
 	MOTION_PATH_GUIDE,
 	KEYFRAMES_BLEND_GUIDE,
+	THREE_D_GUIDE,
 	MASKS_GUIDE,
 	SHAPES_GUIDE,
 	TEMPLATES_GUIDE,
@@ -132,6 +135,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerTextAnimatorTools(ctx);
 	registerMotionPathTools(ctx);
 	registerKeyframesBlendTools(ctx);
+	registerThreeDTools(ctx);
 	registerMaskTools(ctx);
 	registerShapeTools(ctx);
 	registerVectorShapeTools(ctx);

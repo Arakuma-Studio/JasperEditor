@@ -26,6 +26,13 @@ import { MaskSchema } from './mask.ts';
 import { PuppetSchema } from './puppet.ts';
 import { type VectorShapeData, VectorShapeDataSchema } from './shapes.ts';
 import { TextAnimatorGroupSchema, TextMoreOptionsSchema, TextPathOptionsSchema } from './text-animators.ts';
+import {
+	CameraDataSchema,
+	ClipCameraTrackerSchema,
+	Layer3DSchema,
+	LightDataSchema,
+	Sequence3DSchema,
+} from './three-d.ts';
 
 // ---------------------------------------------------------------- effects
 
@@ -383,6 +390,11 @@ export const KNOWN_CLIP_KINDS = [
 	'shape',
 	// edit-structure: the sound of a synthetic source (Bars and Tone's tone, the counting leader's blips).
 	'synthetic-audio',
+	// three-d: After Effects-style cameras and lights (video tracks; they draw nothing themselves).
+	'camera',
+	'light',
+	// three-d: a 3D model layer (glTF / OBJ media; always 3D, drawn by Advanced 3D).
+	'model',
 ] as const;
 export type KnownClipKind = (typeof KNOWN_CLIP_KINDS)[number];
 
@@ -575,6 +587,8 @@ const visualShape = {
 	trackedBy: TrackedBySchema.optional(),
 	/** wp masks: the Opacity masks of the layer (S03:MSK-001). Absent = none. */
 	masks: z.array(MaskSchema).optional(),
+	/** three-d: the 3D Layer switch and 3D transform / material (schema/three-d.ts). Absent = a 2D layer. */
+	threeD: Layer3DSchema.optional(),
 };
 const canvasSchema = z.union([
 	z.literal('sequence'),
@@ -597,6 +611,8 @@ export const VideoClipSchema = z.looseObject({
 	timeInterpolation: TimeInterpolationSchema.optional(),
 	/** parity (roto): segmented objects (Roto Brush, faces) of this clip's picture. */
 	rotos: z.array(ClipRotoSchema).optional(),
+	/** three-d: the 3D Camera Tracker of this clip's picture. */
+	cameraTracker: ClipCameraTrackerSchema.optional(),
 });
 /**
  * audio-fx: one piece of a music remix (Essential Sound ▸ Duration ▸ Remix, the Remix tool). The remixed clip became
@@ -818,6 +834,31 @@ export const ShapeClipSchema = z.looseObject({
 	...visualShape,
 });
 
+// ---------------------------------------------------------------- cameras and lights (three-d)
+
+/** three-d: a camera on a video track; the topmost enabled camera at a frame is the sequence's active camera. */
+export const CameraClipSchema = z.looseObject({
+	...commonShape,
+	kind: z.literal('camera'),
+	camera: CameraDataSchema,
+});
+/** three-d: a light on a video track (lights every 3D layer of the sequence while it is on). */
+export const LightClipSchema = z.looseObject({
+	...commonShape,
+	kind: z.literal('light'),
+	light: LightDataSchema,
+});
+/**
+ * three-d: a 3D model layer (After Effects' 3D model layers): a `model` media drawn by Advanced 3D, fitted to half the
+ * frame height around the frame centre in layer space, moved by its Motion and 3D transform.
+ */
+export const ModelClipSchema = z.looseObject({
+	...commonShape,
+	kind: z.literal('model'),
+	mediaId: z.string(),
+	...visualShape,
+});
+
 export const KnownClipSchema = z.discriminatedUnion('kind', [
 	VideoClipSchema,
 	AudioClipSchema,
@@ -833,6 +874,9 @@ export const KnownClipSchema = z.discriminatedUnion('kind', [
 	AdjustmentClipSchema,
 	ShapeClipSchema,
 	SyntheticAudioClipSchema,
+	CameraClipSchema,
+	LightClipSchema,
+	ModelClipSchema,
 ]);
 
 export type VideoClip = DeepStrip<z.infer<typeof VideoClipSchema>>;
@@ -851,6 +895,9 @@ export type ShapeClip = Omit<DeepStrip<z.infer<typeof ShapeClipSchema>>, 'shape'
 /** A rectangle / ellipse shape clip (narrowed by `isLegacyShape(clip.shape)`). */
 export type LegacyShapeClip = ShapeClip & { shape: LegacyShapeData };
 export type SyntheticAudioClip = DeepStrip<z.infer<typeof SyntheticAudioClipSchema>>;
+export type CameraClip = DeepStrip<z.infer<typeof CameraClipSchema>>;
+export type LightClip = DeepStrip<z.infer<typeof LightClipSchema>>;
+export type ModelClip = DeepStrip<z.infer<typeof ModelClipSchema>>;
 export type KnownClip = DeepStrip<z.infer<typeof KnownClipSchema>>;
 
 const ClipCommonSchema = z.looseObject(commonShape);
@@ -1017,6 +1064,8 @@ export const SequenceSchema = z.looseObject({
 	merged: MergedClipSchema.optional(),
 	/** wp captions: the caption track the Captions panel edits and that export embeds first (null = C1). */
 	activeCaptionTrackId: z.string().nullable().optional(),
+	/** three-d: 3D renderer settings (absent = Classic 3D). */
+	threeD: Sequence3DSchema.optional(),
 });
 export type Sequence = Omit<DeepStrip<z.infer<typeof SequenceSchema>>, 'clips'> & {
 	clips: Record<string, Clip>;

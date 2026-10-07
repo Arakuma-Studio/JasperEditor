@@ -700,6 +700,10 @@ export function nativeBlockers(
 ): string[] {
 	const out: string[] = [];
 	const label = `${c.kind} clip "${c.name}"`;
+	// three-d: 3D layers are planes of the sequence's 3D scene (depth sort, lights, shadows, depth of field), drawn by
+	// the compositions' 3D renderer: the export renders them on the Remotion path (never baked one by one, which would
+	// flatten them in their 2D place).
+	if (c.threeD) return [`3D layer "${c.name}" is drawn by the 3D renderer (Remotion path)`];
 	for (const ext of exts) {
 		if (ext.kinds?.has(c.kind) || ext.claimsLayer?.(c)) out.push(...(ext.blockers?.(c) ?? []));
 	}

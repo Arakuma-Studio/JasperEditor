@@ -59,6 +59,8 @@ export type FxSection = {
 	masks?: MaskList;
 	/** text-animators: the Text section's animators, selectors, Path Options and More Options. */
 	textAnimators?: TextAnimatorListModel;
+	/** three-d: the Motion section carries the 3D Layer switch of the clip. */
+	threeDSwitch?: { clipId: string; enabled: boolean };
 	/** sim-warp: a Puppet effect's meshes and pins (their property rows). */
 	puppet?: PuppetListModel;
 };
@@ -212,6 +214,50 @@ function maskList(
 	};
 }
 
+const MATERIAL_KEYS = [
+	'threeD.material.castsShadows',
+	'threeD.material.lightTransmission',
+	'threeD.material.acceptsShadows',
+	'threeD.material.acceptsLights',
+	'threeD.material.ambient',
+	'threeD.material.diffuse',
+	'threeD.material.specularIntensity',
+	'threeD.material.specularShininess',
+	'threeD.material.metal',
+	'threeD.material.reflectionIntensity',
+	'threeD.material.reflectionSharpness',
+];
+const CAMERA_OPTION_KEYS = [
+	'camera.zoom',
+	'camera.depthOfField',
+	'camera.focusDistance',
+	'camera.aperture',
+	'camera.blurLevel',
+	'camera.irisShape',
+	'camera.irisRotation',
+	'camera.irisRoundness',
+	'camera.irisAspectRatio',
+	'camera.irisDiffractionFringe',
+	'camera.highlightGain',
+	'camera.highlightThreshold',
+	'camera.highlightSaturation',
+];
+const LIGHT_OPTION_KEYS = [
+	'light.type',
+	'light.intensity',
+	'light.color',
+	'light.coneAngle',
+	'light.coneFeather',
+	'light.falloff',
+	'light.radius',
+	'light.falloffDistance',
+	'light.castsShadows',
+	'light.shadowDarkness',
+	'light.shadowDiffusion',
+	'light.environmentRotation',
+	'light.environmentBackground',
+];
+
 type EcGroup = { id: 'video' | 'audio'; title: string; sections: FxSection[] };
 
 /** The primary clip plus its linked partner of the other medium (video clip + its audio, S01:KND-003). */
@@ -243,23 +289,111 @@ export function buildGroups(
 		const sections: FxSection[] = [];
 		const effects = (clip as { effects?: EffectInstance[] }).effects ?? [];
 		const pinned = isVisualClip(clip) ? cropEffectOf(clip) : null;
+		// three-d: cameras and lights (After Effects' Transform / Camera Options / Light Options groups).
+		if (clip.kind === 'camera' || clip.kind === 'light') {
+			const k = clip.kind;
+			sections.push({
+				id: `${clip.id}:${k}:transform`,
+				title: 'Transform',
+				clip,
+				intrinsic: true,
+				rows: rows(
+					k === 'camera'
+						? [
+								'camera.type',
+								'camera.pointOfInterest',
+								'camera.position',
+								'camera.orientation',
+								'camera.rotationX',
+								'camera.rotationY',
+								'camera.rotationZ',
+							]
+						: [
+								'light.autoOrient',
+								'light.pointOfInterest',
+								'light.position',
+								'light.orientation',
+								'light.rotationX',
+								'light.rotationY',
+								'light.rotationZ',
+							],
+				),
+			});
+			sections.push({
+				id: `${clip.id}:${k}:options`,
+				title: k === 'camera' ? 'Camera Options' : 'Light Options',
+				clip,
+				intrinsic: true,
+				rows: rows(
+					(k === 'camera' ? CAMERA_OPTION_KEYS : LIGHT_OPTION_KEYS).filter((key) => {
+						// Depth of field rows show with Depth of Field on (AE greys them; they are noise otherwise).
+						if (k === 'camera' && key !== 'camera.zoom' && key !== 'camera.depthOfField')
+							return (clip as { camera?: { depthOfField?: boolean } }).camera?.depthOfField === true;
+						return true;
+					}),
+				),
+			});
+		}
 		if (isVisualClip(clip)) {
 			const nonUniform =
 				(clip as { transform?: { uniformScale: boolean } }).transform?.uniformScale === false;
+			const td = (clip as { threeD?: { enabled: boolean; geometry?: unknown } }).threeD;
+			const is3d = !!td?.enabled && clip.kind !== 'captions';
 			sections.push({
 				id: `${clip.id}:motion`,
 				title: 'Motion',
 				clip,
 				intrinsic: true,
-				rows: rows([
-					'transform.position',
-					'transform.scale',
-					...(nonUniform ? ['transform.scaleWidth'] : []),
-					'transform.uniformScale',
-					'transform.rotation',
-					'transform.anchor',
-				]),
+				rows: rows(
+					is3d
+						? [
+								'transform.position',
+								'threeD.positionZ',
+								'transform.scale',
+								...(nonUniform ? ['transform.scaleWidth'] : []),
+								'threeD.scaleZ',
+								'transform.uniformScale',
+								'threeD.orientation',
+								'threeD.rotationX',
+								'threeD.rotationY',
+								'transform.rotation',
+								'transform.anchor',
+								'threeD.anchorZ',
+								'threeD.autoOrient',
+							]
+						: [
+								'transform.position',
+								'transform.scale',
+								...(nonUniform ? ['transform.scaleWidth'] : []),
+								'transform.uniformScale',
+								'transform.rotation',
+								'transform.anchor',
+							],
+				),
+				...(clip.kind !== 'captions' ? { threeDSwitch: { clipId: clip.id, enabled: is3d } } : {}),
 			});
+			if (is3d) {
+				sections.push({
+					id: `${clip.id}:material`,
+					title: 'Material Options',
+					clip,
+					intrinsic: true,
+					rows: rows(MATERIAL_KEYS),
+				});
+				if (td?.geometry && seq.threeD?.renderer === 'advanced')
+					sections.push({
+						id: `${clip.id}:geometry`,
+						title: 'Geometry Options',
+						clip,
+						intrinsic: true,
+						rows: rows([
+							'threeD.geometry.bevelStyle',
+							'threeD.geometry.bevelDepth',
+							'threeD.geometry.holeBevelDepth',
+							'threeD.geometry.extrusionDepth',
+						]),
+					});
+			}
 			sections.push({
 				id: `${clip.id}:opacity`,
 				title: 'Opacity',

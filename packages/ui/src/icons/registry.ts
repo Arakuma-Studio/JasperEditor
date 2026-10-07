@@ -121,6 +121,8 @@ export const ICONS = {
 	'tool.zoom': ZoomIn,
 	'tool.zoomOut': ZoomOut,
 	'tool.type': Type,
+	// three-d: the Camera tool (a camera with an orbit arc).
+	'tool.camera': g('M3 9h11v8H3z', 'M14 12l5-3v8l-5-3', 'M5 6a8 4 0 0 1 12 0'),
 	'tool.verticalType': g('M5 5h8', 'M9 5v10', 'M18 4v16', 'M15.5 17.5L18 20l2.5-2.5'),
 
 	// ------------------------------------------------------------ transport and monitor buttons
