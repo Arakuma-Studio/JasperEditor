@@ -46,9 +46,15 @@ export function buildExportSettings(
 		codec?: VideoCodec;
 		/** Explicit ffmpeg encoder; absent = the engine's best choice. */
 		encoder?: string | null;
+		/** audio-mix: delivered audio (defaults: the Mix's channels, the sequence rate, the sequence loudness). */
+		audio?: ExportAudioChoice;
 	},
 ): ExportSettings {
 	const s = seq.settings;
+	const a = choice.audio ?? {};
+	const channels = a.channels && a.channels !== 'auto' ? a.channels : s.masterLayout === '5.1' ? 6 : 2;
+	const rate =
+		a.sampleRate && a.sampleRate !== 'sequence' ? a.sampleRate : (s.audioSampleRate as 44100 | 48000 | 96000);
 	return {
 		sequenceId: seq.id,
 		range: choice.range === 'in-out' && hasInOut(seq) ? { type: 'in-out' } : { type: 'entire' },
@@ -66,7 +72,17 @@ export function buildExportSettings(
 			encoderSpeed: 'balanced',
 			colorTags: 'rec709',
 		},
-		audio: { codec: 'aac', sampleRate: 48000, channels: 2, bitrateKbps: AUDIO_KBPS },
+		audio: {
+			codec: 'aac',
+			sampleRate: rate ?? 48000,
+			channels,
+			bitrateKbps: channels === 6 ? 384 : AUDIO_KBPS,
+			...(a.loudness === 'off'
+				? { normalize: null }
+				: typeof a.loudness === 'number'
+					? { normalize: { targetLufs: a.loudness, truePeakDb: a.truePeakDb ?? -1 } }
+					: {}),
+		},
 		engine: choice.engine,
 		destination: { type: 'download' },
 	};
@@ -244,9 +260,18 @@ export function exportExtension(encoder: EncoderChoice | null | undefined): stri
 	return encoder?.container === 'webm' ? 'webm' : encoder?.container === 'mov' ? 'mov' : 'mp4';
 }
 
+/** audio-mix: Export ▸ Audio choices. `loudness`: 'sequence' = the Mix's normalisation setting, 'off', or a target. */
+export type ExportAudioChoice = {
+	channels?: 'auto' | 1 | 2 | 6;
+	sampleRate?: 'sequence' | 44100 | 48000 | 96000;
+	loudness?: 'sequence' | 'off' | number;
+	truePeakDb?: number;
+};
+
 // ------------------------------------------------------------ remembered choices (EX-014)
 
 type Remembered = {
+	audio?: ExportAudioChoice;
 	range: ExportRangeChoice;
 	engine: ExportEngineChoice;
 	fileName?: string;
@@ -272,10 +297,25 @@ export function loadExportChoice(projectId: string, sequenceId: string): Remembe
 			...(typeof v.fileName === 'string' ? { fileName: v.fileName } : {}),
 			...(codec ? { codec } : {}),
 			...(typeof v.encoder === 'string' && v.encoder ? { encoder: v.encoder } : {}),
+			...(v.audio && typeof v.audio === 'object' ? { audio: sanitizeAudioChoice(v.audio) } : {}),
 		};
 	} catch {
 		return null;
 	}
+}
+
+function sanitizeAudioChoice(a: ExportAudioChoice): ExportAudioChoice {
+	return {
+		channels: a.channels === 1 || a.channels === 2 || a.channels === 6 ? a.channels : 'auto',
+		sampleRate:
+			a.sampleRate === 44100 || a.sampleRate === 48000 || a.sampleRate === 96000 ? a.sampleRate : 'sequence',
+		loudness:
+			a.loudness === 'off' || (typeof a.loudness === 'number' && a.loudness >= -60 && a.loudness <= 0)
+				? a.loudness
+				: 'sequence',
+		truePeakDb:
+			typeof a.truePeakDb === 'number' && a.truePeakDb >= -20 && a.truePeakDb <= 0 ? a.truePeakDb : -1,
+	};
 }
 
 export function saveExportChoice(projectId: string, sequenceId: string, v: Remembered): void {

@@ -19,6 +19,7 @@ import {
 	CODEC_LABELS,
 	codecOptions,
 	ENGINE_OPTIONS,
+	type ExportAudioChoice,
 	type ExportEngineChoice,
 	type ExportRangeChoice,
 	encoderOptions,
@@ -88,6 +89,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 	);
 	const [codec, setCodec] = useState<VideoCodec>(remembered?.codec ?? 'h264');
 	const [encoderChoice, setEncoderChoice] = useState<string>(remembered?.encoder ?? '');
+	const [audioChoice, setAudioChoice] = useState<ExportAudioChoice>(remembered?.audio ?? {});
 	const [plan, setPlan] = useState<PlanState>({ status: 'idle' });
 	const [starting, setStarting] = useState(false);
 	const close = props.onClose ?? exportMode.close;
@@ -99,6 +101,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 		setEngineChoice(r?.engine ?? 'auto');
 		setCodec(r?.codec ?? 'h264');
 		setEncoderChoice(r?.encoder ?? '');
+		setAudioChoice(r?.audio ?? {});
 		setFileName(r?.fileName ?? sequenceName(session.getCommitted(), sequenceId));
 	}, [sequenceId, session]);
 
@@ -122,9 +125,10 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 						engine: engineChoice,
 						codec: effectiveCodec,
 						encoder: effectiveEncoder || null,
+						audio: audioChoice,
 					})
 				: null,
-		[seq, effectiveRange, engineChoice, effectiveCodec, effectiveEncoder],
+		[seq, effectiveRange, engineChoice, effectiveCodec, effectiveEncoder, audioChoice],
 	);
 	const chosenEncoder = plan.status === 'ok' ? (plan.plan.encoder ?? null) : (encoding?.export ?? null);
 	const encoderMessage = plan.status === 'ok' ? plan.plan.encoder?.message : encoding?.message;
@@ -209,6 +213,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 				fileName: name,
 				codec: effectiveCodec,
 				...(effectiveEncoder ? { encoder: effectiveEncoder } : {}),
+				audio: audioChoice,
 			});
 			close();
 			const focused = await runIfRegistered('panel.open.jobs', ctx);
@@ -379,6 +384,76 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 									{o.available ? '' : ` — ${o.reason ?? 'unavailable'}`}
 								</option>
 							))}
+						</select>
+					</Field>
+					{/* audio-mix: delivered audio */}
+					<Field label="Audio Channels">
+						<select
+							data-testid="export-audio-channels"
+							className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
+							value={String(audioChoice.channels ?? 'auto')}
+							onChange={(e) =>
+								setAudioChoice((a) => ({
+									...a,
+									channels: e.target.value === 'auto' ? 'auto' : (Number(e.target.value) as 1 | 2 | 6),
+								}))
+							}
+						>
+							<option value="auto">
+								Match Mix ({seq?.settings.masterLayout === '5.1' ? '5.1' : 'Stereo'})
+							</option>
+							<option value="2">Stereo{seq?.settings.masterLayout === '5.1' ? ' (5.1 mixdown)' : ''}</option>
+							<option value="1">Mono</option>
+							<option value="6">5.1</option>
+						</select>
+					</Field>
+					<Field label="Sample Rate">
+						<select
+							data-testid="export-audio-rate"
+							className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
+							value={String(audioChoice.sampleRate ?? 'sequence')}
+							onChange={(e) =>
+								setAudioChoice((a) => ({
+									...a,
+									sampleRate:
+										e.target.value === 'sequence'
+											? 'sequence'
+											: (Number(e.target.value) as 44100 | 48000 | 96000),
+								}))
+							}
+						>
+							<option value="sequence">
+								Match Sequence ({((seq?.settings.audioSampleRate as number) ?? 48000) / 1000} kHz)
+							</option>
+							<option value="44100">44.1 kHz</option>
+							<option value="48000">48 kHz</option>
+							<option value="96000">96 kHz</option>
+						</select>
+					</Field>
+					<Field label="Loudness">
+						<select
+							data-testid="export-audio-loudness"
+							className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
+							value={String(audioChoice.loudness ?? 'sequence')}
+							onChange={(e) =>
+								setAudioChoice((a) => ({
+									...a,
+									loudness:
+										e.target.value === 'sequence' || e.target.value === 'off'
+											? e.target.value
+											: Number(e.target.value),
+								}))
+							}
+						>
+							<option value="sequence">
+								Sequence setting
+								{seq?.master.loudness?.enabled ? ` (${seq.master.loudness.targetLufs} LUFS)` : ' (off)'}
+							</option>
+							<option value="off">Off</option>
+							<option value="-14">Normalize to −14 LUFS (streaming)</option>
+							<option value="-16">Normalize to −16 LUFS (podcast)</option>
+							<option value="-23">Normalize to −23 LUFS (EBU R128)</option>
+							<option value="-24">Normalize to −24 LKFS (ATSC A/85)</option>
 						</select>
 					</Field>
 					<Field label="Output">
