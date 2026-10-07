@@ -5,6 +5,7 @@ import {
 	type AgentTxRequest,
 	API_HEADER,
 	API_VERSION,
+	type AudioAnalyzeRequest,
 	buildPath,
 	type DerivativeKind,
 	type EngineJob,
@@ -12,6 +13,7 @@ import {
 	type ExportPlanRequest,
 	type ExportStartRequest,
 	type JobListQuery,
+	type LoudnessNormalizeRequest,
 	type MediaRegisterRequest,
 	type MgRenderRequest,
 	type ProjectCreateRequest,
@@ -277,6 +279,18 @@ export class EngineClient {
 	}
 	startExport(req: ExportStartRequest): Promise<EngineJob> {
 		return this.call('exportStart', { body: req });
+	}
+	/** audio-mix: loudness / peaks / activity analysis job (`wait` answers the finished job). */
+	analyzeAudio(req: AudioAnalyzeRequest, wait = false): Promise<EngineJob> {
+		return this.call('audioAnalyze', { body: req, ...(wait ? { query: { wait: '1' as const } } : {}) });
+	}
+	/** audio-mix: a loudness-normalised WAV version of a media (job; result LoudnessNormalizeResult). */
+	normalizeMediaLoudness(mediaKey: string, req: LoudnessNormalizeRequest, wait = false): Promise<EngineJob> {
+		return this.call('mediaLoudnessNormalize', {
+			params: { key: mediaKey },
+			body: req,
+			...(wait ? { query: { wait: '1' as const } } : {}),
+		});
 	}
 	requestStill(req: StillRequest): Promise<EngineJob> {
 		return this.call('stills', { body: req });

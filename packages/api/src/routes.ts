@@ -12,6 +12,7 @@ import {
 	AgentTxRequestSchema,
 	AgentTxResponseSchema,
 } from './agent.ts';
+import { AudioAnalyzeRequestSchema, LoudnessNormalizeRequestSchema } from './audio.ts';
 import {
 	CacheCleanRequestSchema,
 	CacheGcReportSchema,
@@ -109,7 +110,9 @@ export type RouteOwner =
 	| 'wp-m3-cachegc'
 	| 'wp-m3-presets'
 	// parity program: versions and crash recovery (D-39)
-	| 'process';
+	| 'process'
+	// parity program: audio buses, loudness
+	| 'audio-mix';
 
 export type RouteDef = {
 	method: HttpMethod;
@@ -555,6 +558,23 @@ export const ROUTES = {
 		path: '/mg/layers/:key/:file',
 		response: 'binary',
 		owner: 'wp-m2-layer-bake',
+	},
+	// ---- audio-mix: loudness / peak / activity analysis and loudness-normalised media versions
+	audioAnalyze: {
+		method: 'POST',
+		path: '/api/audio/analyze',
+		body: AudioAnalyzeRequestSchema,
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
+		owner: 'audio-mix',
+	},
+	mediaLoudnessNormalize: {
+		method: 'POST',
+		path: '/api/media/:key/loudness-normalize',
+		body: LoudnessNormalizeRequestSchema,
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
+		owner: 'audio-mix',
 	},
 	// ---- M3 media cache (S04 §7.5 CA-010…CA-019)
 	/** Usage per cache kind, budgets, last cleaning (Preferences ▸ Media Cache, MCP get_cache_usage). */
