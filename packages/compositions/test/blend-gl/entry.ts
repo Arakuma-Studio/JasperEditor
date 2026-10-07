@@ -42,7 +42,13 @@ type Layer = {
 
 /** Composites `layers` bottom → top on a `W × H` stage; returns the stage pixels and the layers as stored. */
 function composite(arg: string): { out: number[]; stored: number[][] } {
-	const { W, H, layers } = JSON.parse(arg) as { W: number; H: number; layers: Layer[] };
+	const { W, H, layers, linear } = JSON.parse(arg) as {
+		W: number;
+		H: number;
+		layers: Layer[];
+		/** color-mgmt: Blend using 1.0 gamma (the working curve). */
+		linear?: 'bt1886' | 'srgb' | 'pq' | 'hlg';
+	};
 	const h = fxHost();
 	if (!h) throw new Error('no WebGL2');
 	const items: CompositeItem[] = [];
@@ -72,7 +78,7 @@ function composite(arg: string): { out: number[]; stored: number[][] } {
 		items,
 		pics,
 		{ width: W, height: H },
-		{ backdrop: false },
+		{ backdrop: false, ...(linear ? { linear } : {}) },
 	);
 	const inputs: Record<
 		string,
