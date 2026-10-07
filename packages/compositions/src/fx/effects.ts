@@ -225,8 +225,10 @@ export type FxMixParams = {
 };
 
 /**
- * The adjusted picture over the stashed original (KND-012): `opacity` and `blend` as the layer's, limited to `region`
- * (the adjustment layer's crop), the original everywhere else.
+ * The adjusted picture mixed into the stashed original (KND-012): inside `region` (the adjustment layer's crop) the
+ * result is `original + (blend(original, adjusted) − original) · opacity` in premultiplied space — the adjusted
+ * composite *replaces* the original (Premiere: a blur on an adjustment layer darkens the frame edges unless Repeat
+ * Edge Pixels), it is not composited over it; outside the region the original is kept.
  */
 export const fxAdjustmentMix = createEffect<FxMixParams, null>({
 	type: 'jasper.fx-adjustment-mix',
@@ -242,18 +244,39 @@ export const fxAdjustmentMix = createEffect<FxMixParams, null>({
 	apply({ source, target, params, width, height }) {
 		const out = ctx2d(target);
 		const orig = params.holder.canvas;
+		const k = Math.min(1, Math.max(0, params.opacity));
+		// The adjusted picture: the effects' output, or blend(original, output) for non-Normal blend modes.
+		let adjusted: CanvasImageSource = source;
+		if (params.blend !== 'source-over' && orig) {
+			const t =
+				(params.holder as { scratch?: HTMLCanvasElement }).scratch ?? document.createElement('canvas');
+			(params.holder as { scratch?: HTMLCanvasElement }).scratch = t;
+			if (t.width !== width) t.width = width;
+			if (t.height !== height) t.height = height;
+			const tc = ctx2d(t);
+			tc.globalCompositeOperation = 'copy';
+			tc.drawImage(orig, 0, 0, width, height);
+			tc.globalCompositeOperation = params.blend;
+			tc.drawImage(source, 0, 0, width, height);
+			tc.globalCompositeOperation = 'source-over';
+			adjusted = t;
+		}
 		out.globalCompositeOperation = 'copy';
 		if (orig) out.drawImage(orig, 0, 0, width, height);
 		else out.clearRect(0, 0, width, height);
-		out.globalCompositeOperation = params.blend;
-		out.globalAlpha = Math.min(1, Math.max(0, params.opacity));
 		out.save();
 		if (params.region) {
 			out.beginPath();
 			out.rect(params.region.x, params.region.y, params.region.w, params.region.h);
 			out.clip();
 		}
-		if (params.opacity > 0) out.drawImage(source, 0, 0, width, height);
+		// Premultiplied lerp: (1 − k) · original + k · adjusted (copy with alpha, then additive).
+		out.globalCompositeOperation = 'copy';
+		out.globalAlpha = 1 - k;
+		if (orig) out.drawImage(orig, 0, 0, width, height);
+		out.globalCompositeOperation = 'lighter';
+		out.globalAlpha = k;
+		if (k > 0) out.drawImage(adjusted, 0, 0, width, height);
 		out.restore();
 		out.globalAlpha = 1;
 		out.globalCompositeOperation = 'source-over';

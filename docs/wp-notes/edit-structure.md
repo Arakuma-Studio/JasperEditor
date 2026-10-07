@@ -84,8 +84,10 @@ time, `clipContentTime` = held only with Hold Filters. Freeze handles: `freezeHe
 - `AdjustmentScope` wraps the tracks below each track with adjustment clips (stable DOM). `css` mode when every
   adjustment clip on the track is exact as a CSS/SVG filter (filter effects, 100 %, Normal, no crop): the filter on
   the scope element. `canvas` mode otherwise: `<HtmlInCanvas>` with the chain `stash` → effects (shader passes,
-  colour LUT runs, CSS filters, flips) → `mix` (adjusted over original with opacity × fades, Canvas 2D blend
-  operator of the blend mode, clipped to the crop region). Renders always have HTML-in-Canvas; a Player without it
+  colour LUT runs, CSS filters, flips) → `mix`: inside the crop region `original + (blend(original, adjusted) −
+  original) · opacity × fades` in premultiplied space — the adjusted composite *replaces* the original (Premiere: a
+  blur on an adjustment layer darkens the frame edges unless Repeat Edge Pixels; EffectCraft mixes the same way),
+  it is not composited over it. Renders always have HTML-in-Canvas; a Player without it
   shows the composite unadjusted with a chip; a render that cannot run it fails (never a different picture).
 - `GeneratorLayer` draws bars / leader from `renderBars` / `renderCountingLeader` on a canvas, then the normal
   pipeline (shader effects through `FxPicture`, colour stage, CSS effects, Motion, opacity).
@@ -105,8 +107,9 @@ time, `clipContentTime` = held only with Hold Filters. Freeze handles: `freezeHe
   hybrid/Remotion, never dropped. Limit: a nest clip drawn sub-pixel or corner-pinned (its own decoder process)
   that contains sub-pixel layers is a native blocker (Remotion path).
 - Adjustment layers: `[last]split` — one branch continues, the other is the adjustment layer's source (trimmed to
-  its range); its effects (built-ins, extension filters incl. colour LUTs), crop (transparency = region), opacity and
-  fades, then `overlay` back. Blend modes other than Normal route to Remotion like any layer.
+  its range); its effects (built-ins, extension filters incl. colour LUTs), then `premultiply` + alpha 1 (the result
+  replaces the composite, as in the preview), the crop (transparency = outside the region), opacity and fades, then
+  `overlay` back (= the premultiplied lerp of the preview). Blend modes other than Normal route to Remotion like any layer.
 - Frame holds (video, animated image, motion-graphic masters, layer overrides): seek to the held time, one frame
   looped. Freeze handles: the source is built for the real frames, then `tpad … clone`.
 - Synthetics (`synthetic.ts` extension, always registered): bars → PNG (`still` layer override), leader → PNG-in-MOV

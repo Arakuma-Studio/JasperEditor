@@ -514,12 +514,8 @@ export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 			`trim=end_frame=${n}`,
 		);
 	}
-	if (padHead > 0 || padTail > 0) {
-		f.push(
-			`tpad=${padHead > 0 ? `start=${padHead}:start_mode=clone` : ''}${padHead > 0 && padTail > 0 ? ':' : ''}${padTail > 0 ? `stop=${padTail}:stop_mode=clone` : ''}`,
-		);
-	}
 
+	const cropTail: string[] = [];
 	// Effects in stack order (crop first by convention, S01:FX-003); only native-capable ones reach here.
 	// Effects the builder does not know are asked to the M2 extensions (§19.6), e.g. fused colour LUTs.
 	for (const [index, fx] of props.effects.entries()) {
@@ -544,10 +540,12 @@ export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 		}
 		if (fx.effectId === 'jasper.crop' && o.skipCrop) continue;
 		if (fx.effectId === 'jasper.crop') {
+			// edit-structure: an adjustment layer's crop limits its region: applied after the effects (cropTail).
+			const into = o.composite ? cropTail : f;
 			const applied = c.effects[index];
 			if (applied && n > 1 && CROP_EDGES.some((e) => isAnimated(applied.params[e]))) {
 				// Keyframed edges: the alpha is multiplied with a per-frame rectangle mask (keyframed.ts).
-				f.push(
+				into.push(
 					cropMaskFilter({ clip: c, effect: applied, f0, f1, fps, bw, bh, label: `${label}cr${index}` }),
 				);
 				continue;
@@ -558,9 +556,20 @@ export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 			const b = Math.round((Number(fx.params.bottom ?? 0) / 100) * bh);
 			const cw = Math.max(1, bw - l - r);
 			const ch = Math.max(1, bh - t - b);
-			if (l || r || t || b) f.push(`crop=${cw}:${ch}:${l}:${t}`, `pad=${bw}:${bh}:${l}:${t}:color=black@0`);
+			if (l || r || t || b)
+				into.push(`crop=${cw}:${ch}:${l}:${t}`, `pad=${bw}:${bh}:${l}:${t}:color=black@0`);
 		} else if (fx.effectId === 'jasper.flip-horizontal') f.push('hflip');
 		else if (fx.effectId === 'jasper.flip-vertical') f.push('vflip');
+	}
+	if (o.composite) {
+		// edit-structure (KND-012): the adjusted composite replaces the original (premultiplied, alpha 1: a blur darkens
+		// the frame edges as in Premiere), then the crop limits the region; opacity and fades then mix it in (overlay).
+		f.push('premultiply=inplace=1', 'lutrgb=a=maxval', ...cropTail);
+	}
+	if (padHead > 0 || padTail > 0) {
+		f.push(
+			`tpad=${padHead > 0 ? `start=${padHead}:start_mode=clone` : ''}${padHead > 0 && padTail > 0 ? ':' : ''}${padTail > 0 ? `stop=${padTail}:stop_mode=clone` : ''}`,
+		);
 	}
 	// Effects after the box scale: Motion scales separately; only colour ops, flips and a static crop (transparent
 	// black) keep the pixels opaque-or-clear.
