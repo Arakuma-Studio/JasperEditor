@@ -198,7 +198,10 @@ test('Text ▸ Transcript: import, seek, search, select → Mark In/Out, Remove 
 	await expect(page.getByTestId('text-captions')).toBeVisible();
 	const c2Id = (await seqOf()).captionTracks[1]!.id;
 	const created = (await captionClips()).filter((c) => c.trackId === c2Id);
-	expect(await Promise.all(created.map((c) => textOfCaption(c.id)))).toEqual(['Welcome to the show.', 'Rivers are long.']);
+	expect(await Promise.all(created.map((c) => textOfCaption(c.id)))).toEqual([
+		'Welcome to the show.',
+		'Rivers are long.',
+	]);
 });
 
 test('export: burned-in captions, embedded mov_text streams and an SRT sidecar', async ({ request }) => {
