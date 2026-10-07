@@ -76,7 +76,7 @@ export function offsetPolyline(pts: readonly Pt[], d: number): Pt[] {
 	const n = pts.length;
 	if (n < 3 || Math.abs(d) < 1e-6) return [...pts];
 	// Outward = to the right of travel for a clockwise-on-screen (positive area, y down) outline.
-	const sgn = polygonSignedArea(pts as PathPoint[]) >= 0 ? -1 : 1;
+	const sgn = polygonSignedArea(pts as PathPoint[]) >= 0 ? 1 : -1;
 	return pts.map((p, i) => {
 		const a = pts[(i - 1 + n) % n]!;
 		const b = pts[(i + 1) % n]!;
