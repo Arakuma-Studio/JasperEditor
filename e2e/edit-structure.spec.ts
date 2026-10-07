@@ -130,8 +130,7 @@ test('New Item ▸ Bars and Tone and Adjustment Layer; the Program draws them', 
 		{
 			type: 'effect.add',
 			target: { clipId: '$adj' },
-			effectId: 'jasper.gaussian-blur',
-			params: { radius: 12 },
+			effectId: 'jasper.black-white',
 		},
 	]);
 	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
@@ -199,7 +198,34 @@ test('exports natively: the nested frames, the bars and the adjustment layer', a
 	expect(white.every((c) => Math.abs(c - 191) < 10)).toBe(true);
 	const grey = pixel(file, 100, 100, 100);
 	expect(grey.every((c) => Math.abs(c - 102) < 10)).toBe(true);
-	// Under the blurred adjustment the nest's picture is still there (not black).
+	// Under the Black & White adjustment the nest's picture is there and grey.
 	const p = pixel(file, 10, 960, 540);
 	expect(p.some((c) => c > 10)).toBe(true);
+	expect(Math.max(...p) - Math.min(...p)).toBeLessThan(12);
+});
+
+test('an adjustment layer with a shader-only effect routes the export through Remotion', async ({
+	request,
+}) => {
+	const adj = Object.values((await doc()).sequences[mainSeq]!.clips).find((c) => c.kind === 'adjustment')!;
+	const r = await transact(page, [
+		{
+			type: 'effect.add',
+			target: { clipId: adj.id },
+			effectId: 'jasper.gaussian-blur',
+			params: { radius: 8 },
+		},
+	]);
+	expect(r.ok, JSON.stringify(r.errors)).toBe(true);
+	const outDir = join(ROOT, 'test-results', 'e2e-edit-structure');
+	const { file } = await exportViaUi(page, request, {
+		engine: 'auto',
+		fileName: 'edit-structure-remotion.mp4',
+		expectPath: /Remotion/i,
+		outDir,
+		jobTimeoutMs: 600_000,
+	});
+	// Bars come from the same generator in the browser.
+	const white = pixel(file, 100, 300, 100);
+	expect(white.every((c) => Math.abs(c - 191) < 12)).toBe(true);
 });
