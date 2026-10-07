@@ -98,7 +98,7 @@ export function pressCamera(
 	const audio = view.audioFollowsVideo;
 	if (t.playing) {
 		let g = gestures.get(session);
-		if (!g || !g.active || !rec.recording || rec.sequenceId !== seq.id) {
+		if (!g?.active || !rec.recording || rec.sequenceId !== seq.id) {
 			try {
 				g = session.beginGesture('Record Multi-Camera');
 			} catch (e) {

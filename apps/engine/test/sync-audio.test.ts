@@ -101,12 +101,18 @@ beforeAll(async () => {
 	const recorder = wav('recorder.wav', take(src, 3.5, 30, -0.8, 0.005, 3));
 	const other = wav('other.wav', take(event(25, 99), 0, 25, 1, 0.002, 4));
 	app = await makeApp();
-	for (const [k, p] of Object.entries({ ref, cam, recorder, other })) keys[k] = (await register(app, p)).mediaKey;
+	for (const [k, p] of Object.entries({ ref, cam, recorder, other }))
+		keys[k] = (await register(app, p)).mediaKey;
 }, 120_000);
 afterAll(closeApps);
 
 async function sync(body: unknown): Promise<{ status: number; json: unknown }> {
-	const r = await app.inject({ method: 'POST', url: '/api/sync/audio', headers: JSON_H, payload: body as object });
+	const r = await app.inject({
+		method: 'POST',
+		url: '/api/sync/audio',
+		headers: JSON_H,
+		payload: body as object,
+	});
 	return { status: r.statusCode, json: r.json() };
 }
 
@@ -142,7 +148,12 @@ describe('POST /api/sync/audio', () => {
 		const r = await sync({
 			reference: 'b',
 			clips: [
-				{ key: 'a', mediaKey: keys.recorder, startFlicks: 2 * FLICKS_PER_SECOND, durationFlicks: 20 * FLICKS_PER_SECOND },
+				{
+					key: 'a',
+					mediaKey: keys.recorder,
+					startFlicks: 2 * FLICKS_PER_SECOND,
+					durationFlicks: 20 * FLICKS_PER_SECOND,
+				},
 				{ key: 'b', mediaKey: keys.ref, startFlicks: 4 * FLICKS_PER_SECOND },
 			],
 		});
@@ -189,6 +200,8 @@ describe('POST /api/sync/audio', () => {
 			).status,
 		).toBe(400);
 		const cap = await app.inject({ method: 'GET', url: '/api/capabilities', headers: JSON_H });
-		expect((cap.json() as { features?: { audioSync?: { state: string } } }).features?.audioSync?.state).toBe('ready');
+		expect((cap.json() as { features?: { audioSync?: { state: string } } }).features?.audioSync?.state).toBe(
+			'ready',
+		);
 	});
 });

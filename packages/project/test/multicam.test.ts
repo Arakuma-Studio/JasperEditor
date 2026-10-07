@@ -610,7 +610,10 @@ describe('Flatten', () => {
 
 	it('flattens reversed and 2× clips exactly; refuses frame holds', () => {
 		const { h, cams } = setup();
-		const { sequenceId } = createMc(h, cams.map((c) => c.itemId));
+		const { sequenceId } = createMc(
+			h,
+			cams.map((c) => c.itemId),
+		);
 		const { video, audio } = placeMc(h, sequenceId, 0);
 		h.ok([
 			{ type: 'clip.unlink', clipIds: [video] },
@@ -622,7 +625,8 @@ describe('Flatten', () => {
 		const v = h.seq.clips[video]!;
 		h.ok([{ type: 'multicam.flatten', clipIds: [video] }]);
 		const after = snap(h.doc, h.seqId);
-		for (let f = v.start; f < v.start + v.duration; f += 9) expectSameFrame(flatLayers(before, f), flatLayers(after, f));
+		for (let f = v.start; f < v.start + v.duration; f += 9)
+			expectSameFrame(flatLayers(before, f), flatLayers(after, f));
 		void audio;
 		const again = placeMc(h, sequenceId, 400);
 		h.ok([{ type: 'clip.addFrameHold', at: 420, clipIds: [again.video] }]);

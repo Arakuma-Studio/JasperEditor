@@ -325,10 +325,13 @@ export function audioSyncClipsForUnits(
 }
 
 /** The audio of project items (Merge Clips, Create Multi-Camera Source Sequence): each whole media, first stream. */
-export function audioSyncClipsForItems(doc: Pick<ProjectDocument, 'media' | 'items'>, itemIds: readonly string[]): AudioSyncClip[] {
+export function audioSyncClipsForItems(
+	doc: Pick<ProjectDocument, 'media' | 'items'>,
+	itemIds: readonly string[],
+): AudioSyncClip[] {
 	return itemIds.map((id) => {
 		const it = doc.items[id];
-		if (!it || it.kind !== 'media') throw new SyncError('E_INVALID_PARAM', `Item ${id} is not a media clip`);
+		if (it?.kind !== 'media') throw new SyncError('E_INVALID_PARAM', `Item ${id} is not a media clip`);
 		const asset = doc.media[it.mediaId];
 		const key = engineKeyOf(asset);
 		if (!key) throw new SyncError('E_INVALID_PARAM', `${it.name} has no engine media to analyse`);

@@ -93,13 +93,13 @@ import {
 	VersionRestoreRequestSchema,
 	VersionRestoreResponseSchema,
 } from './projects.ts';
-import { SyncAudioRequestSchema, SyncAudioResponseSchema } from './sync.ts';
 import {
 	SpeechModelDeleteResponseSchema,
 	SpeechModelsResponseSchema,
 	TranscribeMediaRequestSchema,
 	TranscribeSequenceRequestSchema,
 } from './speech.ts';
+import { SyncAudioRequestSchema, SyncAudioResponseSchema } from './sync.ts';
 import { TrackRequestSchema } from './tracking.ts';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
