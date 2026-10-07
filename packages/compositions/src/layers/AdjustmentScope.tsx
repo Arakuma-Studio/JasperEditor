@@ -22,7 +22,8 @@ import {
 	resolveCachedLayerProps,
 } from '@jasper/project';
 import { type CSSProperties, type ReactNode, useMemo, useRef } from 'react';
-import { HtmlInCanvas, useCurrentFrame } from 'remotion';
+import { useCurrentFrame } from 'remotion';
+import { ScopedHtmlInCanvas } from '../fx/canvas-scope.tsx';
 import { canUseHtmlInCanvas, useDomFxDescriptors } from '../fx/FxPicture.tsx';
 import { type AdjustmentHolder, type FxPreparedStep, useLayerFx } from '../fx/stage.ts';
 import { effectStages } from '../pipeline.ts';
@@ -235,7 +236,8 @@ function CanvasScope({
 		) : null;
 	return (
 		<>
-			<HtmlInCanvas
+			<ScopedHtmlInCanvas
+				scope="An adjustment layer"
 				width={L?.cssWidth ?? W}
 				height={L?.cssHeight ?? H}
 				pixelDensity={L?.pxScale ?? 1}
@@ -263,7 +265,7 @@ function CanvasScope({
 				>
 					{children}
 				</div>
-			</HtmlInCanvas>
+			</ScopedHtmlInCanvas>
 			{chip}
 		</>
 	);

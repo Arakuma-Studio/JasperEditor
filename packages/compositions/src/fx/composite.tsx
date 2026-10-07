@@ -28,16 +28,17 @@ import {
 	createEffect,
 	delayRender,
 	getRemotionEnvironment,
-	HtmlInCanvas,
 	useCurrentFrame,
 } from 'remotion';
 import type { LayerTap } from '../types.ts';
+import { ScopedHtmlInCanvas } from './canvas-scope.tsx';
 import {
 	type CompositeItem,
 	type CompositePicture,
 	type CompositeTrackInput,
 	compositeItemsAt,
 	type LinearBlendCurve,
+	linearGroupItemsAt,
 	planComposite,
 } from './composite-plan.ts';
 import { canUseHtmlInCanvas } from './FxPicture.tsx';
@@ -183,6 +184,32 @@ export function makeBlendTrack(
 	};
 }
 
+/**
+ * color-mgmt: the context value shared by a run of tracks blending in linear light (one scope under the lowest of
+ * them, `linearGroupItemsAt`).
+ */
+export function makeLinearBlendGroup(
+	members: Parameters<typeof linearGroupItemsAt>[0],
+	isGpuSide: (clipId: string, f: number) => boolean,
+	mode: CompositeMode,
+	hub: CompositeHub,
+	linear: LinearBlendCurve,
+): BlendTrackValue {
+	const cache = new Map<number, CompositeItem[] | null>();
+	return {
+		hub,
+		mode,
+		linear,
+		itemsAt: (frame) => {
+			if (cache.has(frame)) return cache.get(frame)!;
+			const items = linearGroupItemsAt(members, frame, isGpuSide);
+			if (cache.size > 512) cache.clear();
+			cache.set(frame, items);
+			return items;
+		},
+	};
+}
+
 // ---------------------------------------------------------------- chain step
 
 type FxBlendParams = {
@@ -315,7 +342,8 @@ export function BlendScope({
 			</div>
 		);
 	return (
-		<HtmlInCanvas
+		<ScopedHtmlInCanvas
+			scope={track.linear ? 'Linear-light blending' : 'Blend modes'}
 			width={comp.width}
 			height={comp.height}
 			effects={effects}
@@ -328,7 +356,7 @@ export function BlendScope({
 			>
 				{children}
 			</div>
-		</HtmlInCanvas>
+		</ScopedHtmlInCanvas>
 	);
 }
 

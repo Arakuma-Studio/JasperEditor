@@ -5,7 +5,8 @@
 // so nothing is mounted for them. The whole composite is captured through HTML-in-Canvas (as adjustment layers and
 // the blend scope are) and drawn through the baked display LUT (tetrahedral, the same `colorLut` pass as grades).
 // Preview only: renders keep the working signal (exports convert to their output space on the engine; stills get
-// this same display LUT there). Without HTML-in-Canvas or WebGL2 the monitor shows the working signal with a chip.
+// this same display LUT there). Without HTML-in-Canvas or WebGL2 the monitor shows the working signal with a chip, and
+// so it does while a layer inside draws through HTML-in-Canvas itself (the browser cannot nest them).
 import {
 	bakeLut,
 	colorSpace,
@@ -14,8 +15,9 @@ import {
 	outputTransformFn,
 	type SequenceColorInfo,
 } from '@jasper/project';
-import { type ReactNode, useMemo } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import { AbsoluteFill, HtmlInCanvas } from 'remotion';
+import { CanvasScopeContext } from '../fx/canvas-scope.tsx';
 import { canUseHtmlInCanvas } from '../fx/FxPicture.tsx';
 import { colorLut, colorLutCpu } from './effects.ts';
 import { colorStageBackend } from './gl.ts';
@@ -56,39 +58,53 @@ export function DisplayStage({
 }) {
 	const status = useColorStageStatus();
 	const display = enabled ? displayLutOf(working) : null;
+	// A scope drawn through HTML-in-Canvas inside the stage (adjustment layer, blend modes, a DOM layer's effects)
+	// cannot paint inside another canvas (fx/canvas-scope.tsx): the stage then steps aside for the rest of this
+	// working space, and the monitor shows the working signal with a chip.
+	const [yielded, setYielded] = useState<string | null>(null);
+	const key = display?.key ?? '';
+	const enclosing = useMemo(
+		() => ({ kind: 'display' as const, register: () => setYielded((y) => (y === key ? y : key)) }),
+		[key],
+	);
 	const effects = useMemo(() => {
 		if (!display) return [];
 		return [colorStageBackend() === 'cpu' ? colorLutCpu(display) : colorLut(display)];
 	}, [display]);
 	if (!display) return <>{children}</>;
-	if (!canUseHtmlInCanvas() || status !== 'ok')
+	const label = colorSpace(working!.space)?.label;
+	if (!canUseHtmlInCanvas() || status !== 'ok' || yielded === key)
 		return (
-			<>
+			<CanvasScopeContext.Provider value={enclosing}>
 				{children}
 				<DisplayChip
 					text={
 						status !== 'ok'
-							? `${colorSpace(working!.space)?.label} shown without display conversion (no WebGL2)`
-							: `${colorSpace(working!.space)?.label} shown without display conversion (needs HTML-in-Canvas)`
+							? `${label} shown without display conversion (no WebGL2)`
+							: !canUseHtmlInCanvas()
+								? `${label} shown without display conversion (needs HTML-in-Canvas)`
+								: `${label} shown without display conversion (a layer here draws through HTML-in-Canvas)`
 					}
 				/>
-			</>
+			</CanvasScopeContext.Provider>
 		);
 	return (
-		<HtmlInCanvas
-			width={width}
-			height={height}
-			effects={effects}
-			style={{ ...FILL, display: 'block' }}
-			showInTimeline={false}
-		>
-			<div
-				data-display-stage={working!.space}
-				style={{ position: 'absolute', left: 0, top: 0, width, height }}
+		<CanvasScopeContext.Provider value={enclosing}>
+			<HtmlInCanvas
+				width={width}
+				height={height}
+				effects={effects}
+				style={{ ...FILL, display: 'block' }}
+				showInTimeline={false}
 			>
-				{children}
-			</div>
-		</HtmlInCanvas>
+				<div
+					data-display-stage={working!.space}
+					style={{ position: 'absolute', left: 0, top: 0, width, height }}
+				>
+					{children}
+				</div>
+			</HtmlInCanvas>
+		</CanvasScopeContext.Provider>
 	);
 }
 

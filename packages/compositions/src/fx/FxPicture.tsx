@@ -36,6 +36,7 @@ import {
 import { colorLutCpu, cssFilter } from '../color/effects.ts';
 import { colorStageBackend } from '../color/gl.ts';
 import { loadedLutAsset, ocioConversionLut } from '../color/luts.ts';
+import { ScopedHtmlInCanvas } from './canvas-scope.tsx';
 import { fxAdjustmentMix, fxCrop, fxFlip, fxLut, fxShader, fxStash, fxTap } from './effects.ts';
 import type { FxRunInputs, FxTextureInput } from './host.ts';
 import { fxMaskApply, fxMasked } from './mask.ts';
@@ -549,7 +550,8 @@ export function FxDomPicture({ stage, children }: { stage: FxStage; children?: R
 	const effects = useDomFxDescriptors(stage);
 	const L = stage.layout;
 	return (
-		<HtmlInCanvas
+		<ScopedHtmlInCanvas
+			scope="A layer's effects"
 			width={L.cssWidth}
 			height={L.cssHeight}
 			pixelDensity={L.pxScale}
@@ -569,7 +571,7 @@ export function FxDomPicture({ stage, children }: { stage: FxStage; children?: R
 			>
 				{children}
 			</div>
-		</HtmlInCanvas>
+		</ScopedHtmlInCanvas>
 	);
 }
 

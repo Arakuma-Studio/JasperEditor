@@ -89,6 +89,30 @@ export function compositeItemsAt(
 	return gl && items.length > 0 ? items : null;
 }
 
+/**
+ * color-mgmt: the layers ONE scope composites at frame `f` for a run of tracks blending in linear light (bottom to
+ * top). Chrome cannot nest HTML-in-Canvas scopes (fx/canvas-scope.tsx), so with "Blend using 1.0 gamma" the tracks of
+ * a run share the scope of the lowest one: their items in drawing order, the transition mattes of the upper tracks
+ * drawn as matte items under that track's clips (the lowest track's mattes are in the captured backdrop).
+ */
+export function linearGroupItemsAt(
+	members: readonly {
+		input: CompositeTrackInput;
+		mattes: readonly { id: string; start: number; duration: number; color: RGBA }[];
+	}[],
+	f: number,
+	isGpuSide: (clipId: string, f: number) => boolean,
+): CompositeItem[] | null {
+	const out: CompositeItem[] = [];
+	members.forEach((m, i) => {
+		if (i > 0)
+			for (const mt of m.mattes)
+				if (spanAt(mt, f)) out.push({ kind: 'matte', key: `matte:${mt.id}`, color: mt.color });
+		out.push(...(compositeItemsAt(m.input, f, isGpuSide, true) ?? []));
+	});
+	return out.length > 0 ? out : null;
+}
+
 /** color-mgmt: the working curves the compositor decodes for linear blending (GLSL `cm_*` ids = indexes). */
 export const LINEAR_BLEND_CURVES = ['bt1886', 'srgb', 'gamma22', 'gamma26', 'pq', 'hlg'] as const;
 export type LinearBlendCurve = (typeof LINEAR_BLEND_CURVES)[number];

@@ -68,6 +68,7 @@ import {
 	compositeRunMode,
 	LINEAR_MARK,
 	makeBlendTrack,
+	makeLinearBlendGroup,
 	useCompositeTap,
 } from './fx/composite.tsx';
 import { type CompositeTrackInput, type LinearBlendCurve, trackHasGlBlend } from './fx/composite-plan.ts';
@@ -485,7 +486,15 @@ export function VideoTracks({
 	// color-mgmt: Blend using 1.0 gamma / Linearize Working Space (the working curve layers blend in).
 	const linearCurve = linearBlendCurveOf(doc.settings.color);
 	const blendTracks = useMemo(() => {
-		const out = new Map<string, { value: BlendTrackValue; glModesAt: (f: number) => string[] }>();
+		const out = new Map<
+			string,
+			{
+				value: BlendTrackValue;
+				glModesAt: (f: number) => string[];
+				/** False for the upper tracks of a linear-light run (they composite in the lowest track's scope). */
+				scope: boolean;
+			}
+		>();
 		if (options.layerFilter) return out;
 		const isGpuSide = (clipId: string, f: number) => {
 			for (const t of tracks) {
@@ -495,6 +504,9 @@ export function VideoTracks({
 			}
 			return false;
 		};
+		type Run = { members: Parameters<typeof makeLinearBlendGroup>[0][number][]; first: string };
+		const runs: Run[] = [];
+		let run: Run | null = null;
 		for (const t of tracks) {
 			const input: CompositeTrackInput = {
 				trackId: t.trackId,
@@ -513,7 +525,19 @@ export function VideoTracks({
 					blendMode: st.blendModeId,
 				})),
 			};
-			if (!trackHasGlBlend(input, !!linearCurve)) continue;
+			if (linearCurve) {
+				// color-mgmt: a run of tracks blending in linear light shares one scope (Chrome cannot nest
+				// HTML-in-Canvas scopes); an adjustment layer starts a new run (it applies to the composite below it).
+				if (t.adjustments.length > 0) run = null;
+				if (!trackHasGlBlend(input, true)) continue;
+				if (!run) {
+					run = { members: [], first: t.trackId };
+					runs.push(run);
+				}
+				run.members.push({ input, mattes: t.mattes });
+				continue;
+			}
+			if (!trackHasGlBlend(input, false)) continue;
 			let hub = compositeHubs.current.get(t.trackId);
 			if (!hub) {
 				hub = new CompositeHub();
@@ -536,7 +560,21 @@ export function VideoTracks({
 				]
 					.flatMap((x) => (linearCurve ? [x.blendMode, LINEAR_MARK] : [x.blendMode]))
 					.filter((m) => m === LINEAR_MARK || !isCssBlend(m));
-			out.set(t.trackId, { value, glModesAt });
+			out.set(t.trackId, { value, glModesAt, scope: true });
+		}
+		for (const r of runs) {
+			const key = `linear:${r.first}`;
+			let hub = compositeHubs.current.get(key);
+			if (!hub) {
+				hub = new CompositeHub();
+				compositeHubs.current.set(key, hub);
+			}
+			const mode = compositeRunMode({ gpu, htmlInCanvas }, [LINEAR_MARK]);
+			const value = makeLinearBlendGroup(r.members, isGpuSide, mode, hub, linearCurve!);
+			const glModesAt = (f: number) => (value.itemsAt(f) ? [LINEAR_MARK] : []);
+			r.members.forEach((m, i) =>
+				out.set(m.input.trackId, { value, glModesAt: i === 0 ? glModesAt : () => [], scope: i === 0 }),
+			);
 		}
 		return out;
 	}, [tracks, options.layerFilter, gpu, htmlInCanvas, linearCurve]);
@@ -570,7 +608,7 @@ export function VideoTracks({
 			</Sequence>
 		));
 		// keyframes-blend: the track's mattes lie under its clips, so a blend scope takes them in with the stack below.
-		if (blend)
+		if (blend?.scope)
 			stack = (
 				<BlendScope
 					key={`blend-${track.trackId}`}
@@ -586,7 +624,8 @@ export function VideoTracks({
 		const content = (
 			<TransitionSidesContext.Provider value={track.sides}>
 				<AbsoluteFill data-track-id={track.trackId}>
-					{blend ? null : mattes}
+					{/* color-mgmt: the upper tracks of a linear-light run composite their mattes in the run's scope */}
+					{!blend || (!blend.scope && blend.value.mode.mode === 'fallback') ? mattes : null}
 					{track.clips.map((clip) => {
 						const head = clip.headHandle ?? 0;
 						const from = clip.start - head - offset;
