@@ -423,7 +423,7 @@ Tools (163; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with th
   `transcript_inspect` `transcript_search` `transcript_select` `transcript_extract` `transcript_lift`
   `insert_transcript_selection` `remove_fillers` `remove_pauses` `rename_speaker` `captions_from_transcript`
   (`docs/wp-notes/captions.md`).
-- Reading properties: `get_clip_properties` `get_param` (keyframed `value` next to the rendered `evaluated` value).
+- Reading properties: `get_clip_properties` `get_param` (the keyframed value next to the value actually rendered).
 - Live UI of the open editor window (web or desktop): `ui_state` `ui_elements` `ui_screenshot` `ui_click` `ui_drag`
   `ui_scroll` `ui_key` `ui_type` `ui_set` `ui_locate` `ui_hit` `ui_commands` `ui_command`
   (`docs/wp-notes/mcp-cli.md`).
