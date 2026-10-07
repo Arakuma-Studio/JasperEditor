@@ -16,6 +16,7 @@ import { HttpError } from '../tools/reply.ts';
 import type { CoreServices } from '../tools/services.ts';
 import { type DecodeSpec, decodeSpan, readFrames, spawnDecoder } from './decode.ts';
 import * as G from './geometry.ts';
+import type { MaskConfig } from './mask.ts';
 import type { FrameResult, PlanarConfig } from './planar.ts';
 import type { PointConfig } from './point.ts';
 import {
@@ -29,6 +30,8 @@ import {
 
 const PLANAR_METHOD = 'klt-homography@1';
 const POINT_METHOD = 'template@1';
+/** wp masks: frame-to-frame KLT + robust model fit of the pixels inside a mask outline. */
+const MASK_METHOD = 'mask-klt@1';
 /** Frames at or below this go to the interactive lane (S09:TRK-010). */
 const INTERACTIVE_MAX_FRAMES = 300;
 const EVENT_INTERVAL_MS = 100;
@@ -87,6 +90,17 @@ function validateTrackRequest(
 		y >= -slack &&
 		x <= width + slack &&
 		y <= height + slack;
+	if (r.kind === 'mask') {
+		const p = r.reference.polygon;
+		if (!p) return 'A mask track needs reference.polygon (the mask outline in media px)';
+		const slack = Math.max(width, height);
+		if (!p.every(([x, y]) => inFrame(x, y, slack))) return 'reference.polygon is out of range';
+		const xs = p.map((q) => q[0]);
+		const ys = p.map((q) => q[1]);
+		if (Math.max(...xs) < 0 || Math.min(...xs) > width || Math.max(...ys) < 0 || Math.min(...ys) > height)
+			return 'The mask is outside the picture';
+		return null;
+	}
 	if (r.kind === 'planar') {
 		const c = r.reference.corners;
 		if (!c) return 'A planar tracker needs reference.corners (TL, TR, BR, BL in media px)';
@@ -140,7 +154,7 @@ export class TrackingService {
 		const input: TrackJobInput = { request: r, file, ...facts };
 		return this.core.queue.submit({
 			kind: 'track',
-			title: `Track ${r.kind === 'planar' ? 'planar surface' : 'point'} (${frames} frames)`,
+			title: `Track ${r.kind === 'planar' ? 'planar surface' : r.kind === 'mask' ? 'mask' : 'point'} (${frames} frames)`,
 			priority: frames <= INTERACTIVE_MAX_FRAMES ? 'interactive' : 'user',
 			cpuSlots: 2,
 			minSlots: 1,
@@ -163,7 +177,8 @@ export class TrackingService {
 		const input = ctx.input as TrackJobInput;
 		const r = input.request;
 		const planar = r.kind === 'planar';
-		const stride = planar ? 8 : 2;
+		const mask = r.kind === 'mask';
+		const stride = planar ? 8 : mask ? 9 : 2;
 		const size = G.trackingSize(input.display.width, input.display.height, r.quality);
 		const scale = size.width !== input.display.width || size.height !== input.display.height;
 		const span = trackSpan(r);
@@ -185,7 +200,10 @@ export class TrackingService {
 			if (i < 0 || i >= total || have[i]) return;
 			if (!t0) t0 = performance.now();
 			have[i] = 1;
-			const values = G.toMediaPx(res.values, size.sx, size.sy).map(round3);
+			// wp masks: a homography in tracking px → media px: S⁻¹·H·S (S = media → tracking scale).
+			const values = mask
+				? homographyToMediaPx(res.values, size.sx, size.sy)
+				: G.toMediaPx(res.values, size.sx, size.sy).map(round3);
 			data.set(values, i * stride);
 			conf[i] = res.lost ? 0 : round3(Math.max(0, Math.min(1, res.confidence)));
 			lostFlag[i] = res.lost ? 1 : 0;
@@ -324,7 +342,8 @@ export class TrackingService {
 			if (fwd && bwd && slots >= 2)
 				work = Promise.all([forwardPass([takeWorker()]), backwardPass([takeWorker()])]);
 			else {
-				const ws = Array.from({ length: Math.min(2, slots) }, () => takeWorker());
+				// The mask tracker works frame to frame (no reference anchors): one worker per pass.
+				const ws = Array.from({ length: mask ? 1 : Math.min(2, slots) }, () => takeWorker());
 				work = (async () => {
 					if (fwd) await forwardPass(ws);
 					if (bwd) await backwardPass(ws);
@@ -370,12 +389,23 @@ export class TrackingService {
 			stride,
 			data: Array.from(data),
 			confidence: Array.from(conf),
-			method: planar ? PLANAR_METHOD : POINT_METHOD,
+			method: planar ? PLANAR_METHOD : mask ? MASK_METHOD : POINT_METHOD,
 			lost,
 			...(r.trackerId ? { trackerId: r.trackerId } : {}),
 			...(secs > 0 && done > 1 ? { framesPerSec: Math.round(((done - 1) / secs) * 10) / 10 } : {}),
 		};
 	}
+}
+
+/**
+ * Row-major homography in tracking px → media px. `toTrackingPx` is the pixel-centre map x_t = (x_m + ½)/sx − ½, an
+ * affine A; so H_m = A⁻¹ · H_t · A, normalised to h₈ = 1.
+ */
+function homographyToMediaPx(h: number[], sx: number, sy: number): number[] {
+	const A = [1 / sx, 0, 0.5 / sx - 0.5, 0, 1 / sy, 0.5 / sy - 0.5, 0, 0, 1];
+	const Ainv = [sx, 0, 0.5 * sx - 0.5, 0, sy, 0.5 * sy - 0.5, 0, 0, 1];
+	const m = G.hNormalize(G.hMul(G.hMul(Ainv, h), A));
+	return m.map((v) => Math.round(v * 1e9) / 1e9);
 }
 
 function round3(v: number): number {
@@ -395,6 +425,23 @@ function trackerConfig(
 	r: TrackRequest,
 	size: { width: number; height: number; sx: number; sy: number },
 ): TrackerConfig {
+	if (r.kind === 'mask') {
+		const cfg: MaskConfig = {
+			kind: 'mask',
+			width: size.width,
+			height: size.height,
+			polygon: G.toTrackingPx(r.reference.polygon!.flat(), size.sx, size.sy),
+			method: r.options?.maskMethod ?? 'position-scale-rotation',
+			maxFeatures: 500,
+			qualityLevel: 0.005,
+			minDistance: 12,
+			winSize: 15,
+			maxLevel: 3,
+			fbMax: 0.75,
+			threshold: 1.5,
+		};
+		return cfg;
+	}
 	if (r.kind === 'planar') {
 		const cfg: PlanarConfig = {
 			kind: 'planar',
