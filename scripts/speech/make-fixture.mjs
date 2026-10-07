@@ -121,7 +121,24 @@ const raw = join(outDir, 'lj-composite.f32.tmp');
 writeFileSync(raw, Buffer.from(all.buffer));
 const enc = spawnSync(
 	ffmpeg,
-	['-v', 'error', '-y', '-f', 'f32le', '-ar', String(SR), '-ac', '1', '-i', raw, '-c:a', 'flac', '-sample_fmt', 's16', join(outDir, 'lj-composite.flac')],
+	[
+		'-v',
+		'error',
+		'-y',
+		'-f',
+		'f32le',
+		'-ar',
+		String(SR),
+		'-ac',
+		'1',
+		'-i',
+		raw,
+		'-c:a',
+		'flac',
+		'-sample_fmt',
+		's16',
+		join(outDir, 'lj-composite.flac'),
+	],
 	{ stdio: 'inherit' },
 );
 spawnSync('rm', ['-f', raw]);

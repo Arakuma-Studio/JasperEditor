@@ -178,7 +178,11 @@ function fakeEngine() {
 				return { ...newJob({ modelId: opts.params.modelId }), kind: 'model-download' };
 			if (name === 'mediaTranscribe') {
 				if (opts.body.model === 'whisper-small') {
-					throw new EngineError('SPEECH_MODEL_NOT_INSTALLED', 'The speech model Whisper small is not downloaded', { status: 409 });
+					throw new EngineError(
+						'SPEECH_MODEL_NOT_INSTALLED',
+						'The speech model Whisper small is not downloaded',
+						{ status: 409 },
+					);
 				}
 				return newJob(mediaResult(opts.params.key));
 			}
