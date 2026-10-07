@@ -1,7 +1,15 @@
 // Composition model → AAF objects (Edit Protocol). Port of FilmCraft `crates/interchange/src/aaf/write.rs`
 // (MIT OR Apache-2.0).
 import type { CfbVersion } from '../cfb.ts';
-import { type CDocument, type CItem, type CKind, type CMarker, flicksToUnits, type Source } from '../comp.ts';
+import {
+	amplitudeRational,
+	type CDocument,
+	type CItem,
+	type CKind,
+	type CMarker,
+	flicksToUnits,
+	type Source,
+} from '../comp.ts';
 import { fileStem, isAbsolutePath, pathToFileUrl } from '../paths.ts';
 import type { Report } from '../report.ts';
 import { InterchangeError } from '../report.ts';
@@ -76,7 +84,7 @@ const tagged = (name: string, value: string) =>
 		.data(PID.TAG_NAME, utf16z(name))
 		.data(PID.TAG_VALUE, indirect(DEF.TYPE_STRING, utf16z(value)));
 
-const gainRational = (g: number) => rational(Math.min(2147483647, Math.round(Math.max(0, g) * 65536)), 65536);
+const gainRational = (g: number) => rational(...amplitudeRational(g));
 
 const definition = (cls: Auid, id: Auid, name: string) =>
 	new Obj(cls).data(PID.IDENTIFICATION, id).data(PID.NAME, utf16z(name)).data(PID.DESCRIPTION, utf16z(''));

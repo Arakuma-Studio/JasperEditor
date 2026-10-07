@@ -141,7 +141,8 @@ export function prerenderReason(doc: ProjectDocument, seq: Sequence, c: Clip, fo
 	}
 	if (!caps.opacity && (v.opacity.value !== 100 || v.opacity.keyframes.length > 0)) return 'Opacity';
 	if (!caps.speed && (c.speed.rate !== 1 || c.speed.reverse)) return 'speed change';
-	if (c.kind === 'solid' && format !== 'fcp7' && format !== 'fcpxml' && format !== 'otio')
+	// FCP7 XML and OTIO (metadata) carry solids as generators; FCPXML generators are Motion templates.
+	if (c.kind === 'solid' && format !== 'fcp7' && format !== 'otio')
 		return 'solid (no generators in this format)';
 	return null;
 }

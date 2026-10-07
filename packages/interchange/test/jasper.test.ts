@@ -8,7 +8,11 @@ function roundTrip(format: Format, opts: { preset?: string } = {}) {
 	const { h, ids } = richProject(opts);
 	addCaptions(h);
 	const out = exportTimeline(h.doc, h.seqId, format);
-	const imp = importTimeline(out.files[0]!.bytes, { format, now: '2026-10-07T00:00:00.000Z' });
+	const imp = importTimeline(out.files[0]!.bytes, {
+		format,
+		now: '2026-10-07T00:00:00.000Z',
+		rate: { num: 30, den: 1 },
+	});
 	const target = new Harness({ preset: opts.preset ?? 'hd-1080p-30', seed: 999 });
 	const r = target.ok([{ type: 'project.importTimeline', fragment: imp }]);
 	const res = r.results[0] as { topSequenceIds: string[]; binId: string };
@@ -59,6 +63,97 @@ describe('JasperEditor round trips', () => {
 		expect(bin.kind).toBe('bin');
 		// The text clip is named in the report (other applications see an offline clip).
 		expect(out.warnings.some((w) => w.subject?.kind === 'clip' && /text clip/.test(w.message))).toBe(true);
+	});
+
+	/** The media-backed and solid clips of a summary (what every format can carry), with `keep` fields. */
+	const carried = (
+		doc: Parameters<typeof summarize>[0],
+		seqId: string,
+		keep: string[],
+		tracks?: string[],
+	) => {
+		const s = summarize(doc, seqId, { keep }) as {
+			video: Record<string, unknown>[][];
+			audio: Record<string, unknown>[][];
+			transitions: unknown[];
+			links: string[];
+		};
+		const media = (list: Record<string, unknown>[][], tag: string) =>
+			list
+				.map(
+					(t, i) =>
+						[
+							`${tag}${i + 1}`,
+							t.filter((c) => c.kind === 'video' || c.kind === 'audio' || c.kind === 'solid'),
+						] as const,
+				)
+				.filter(([name, t]) => t.length && (!tracks || tracks.includes(name)));
+		return { tracks: norm([...media(s.video, 'V'), ...media(s.audio, 'A')]), transitions: s.transitions };
+	};
+	/**
+	 * What no format besides OTIO keeps and what is equivalent: spatial tangents of position keyframes, the static
+	 * value of a keyframed parameter, the width scale of a uniform scale.
+	 */
+	const norm = (v: unknown): unknown => {
+		if (Array.isArray(v)) return v.map(norm);
+		if (!v || typeof v !== 'object') return v;
+		const o: Record<string, unknown> = {};
+		for (const [k, x] of Object.entries(v)) {
+			if (k === 'spatial') continue;
+			if (
+				k === 'value' &&
+				Array.isArray((v as { keyframes?: unknown[] }).keyframes) &&
+				(v as { keyframes: unknown[] }).keyframes.length
+			)
+				continue;
+			if (k === 'scaleWidth' && (v as { uniformScale?: boolean }).uniformScale) continue;
+			o[k] = norm(x);
+		}
+		return o;
+	};
+
+	/** V3 holds the text clip, which other applications see as an offline clip. */
+	const MEDIA_TRACKS = ['V1', 'V2', 'A1', 'A2'];
+	for (const [format, keep, tracks] of [
+		['fcp7', ['transform', 'opacity', 'blendMode', 'volumeDb', 'pan', 'effects', 'enabled'], MEDIA_TRACKS],
+		['fcpxml', ['transform', 'opacity', 'blendMode', 'volumeDb', 'pan', 'effects', 'enabled'], MEDIA_TRACKS],
+		['aaf', ['volumeDb'], MEDIA_TRACKS],
+	] as const)
+		it(`${format} keeps the timing and ${keep.join(', ')} of the media clips`, () => {
+			const { h, target, seqId, out } = roundTrip(format);
+			const got = carried(target.doc, seqId, [...keep], [...tracks]);
+			const want = carried(h.doc, h.seqId, [...keep], [...tracks]);
+			// FCPXML has no solids (they are pre-rendered); AAF has no speed changes (pre-rendered, else named).
+			const fix = (x: typeof want) =>
+				(x.tracks as [string, Record<string, unknown>[]][]).map(([n, t]) => [
+					n,
+					t
+						.filter(
+							(c) =>
+								!(format === 'fcpxml' && c.kind === 'solid') && !(format === 'aaf' && c.kind === 'solid'),
+						)
+						.map((c) => (format === 'aaf' ? { ...c, speed: 1 } : c)),
+				]);
+			expect(fix(got)).toEqual(fix(want));
+			if (format !== 'aaf') expect(got.transitions).toEqual(want.transitions);
+			// what the format leaves out is named
+			expect(out.warnings.some((w) => /text clip/.test(w.message))).toBe(true);
+			if (format === 'aaf') expect(out.warnings.some((w) => /speed|synthetic/.test(w.message))).toBe(true);
+		});
+
+	it('edl keeps what each record frame shows (a centred dissolve starts at its edit)', () => {
+		const { h, target, seqId } = roundTrip('edl');
+		const F = 23_520_000;
+		const align = (doc: typeof h.doc, id: string) =>
+			(
+				carried(doc, id, [], ['V1']).tracks as [
+					string,
+					{ media: string; start: number; sourceIn: number }[],
+				][]
+			)[0]![1].map((c) => [c.media, c.start - c.sourceIn / F]);
+		expect(align(target.doc, seqId)).toEqual(align(h.doc, h.seqId));
+		const t = Object.values(target.doc.sequences[seqId]!.transitions);
+		expect(t.map((x) => [x.effectId, x.duration])).toEqual([['jasper.cross-dissolve', 10]]);
 	});
 
 	it('import is one undoable transaction', () => {

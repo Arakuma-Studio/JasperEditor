@@ -119,6 +119,20 @@ export type Source = {
 	mediaId?: string;
 };
 
+/**
+ * A linear amplitude as an exact-enough rational for AAF / OMF (int32 numerator and denominator): the largest
+ * power-of-two denominator up to 2^24 that keeps the numerator in range, so levels survive to ~1e-6 dB.
+ */
+export function amplitudeRational(a: number): [number, number] {
+	const g = Math.max(0, Number.isFinite(a) ? a : 0);
+	let den = 2 ** 24;
+	while (den > 1 && g * den > 2147483647) den /= 2;
+	return [Math.min(2147483647, Math.round(g * den)), den];
+}
+
+/** dB read back from a rational amplitude, rounded to 1/10000 dB (what the rationals carry). */
+export const ampDb = (g: number): number => Math.round(gainToDb(g) * 10000) / 10000 || 0;
+
 export const isStill = (s: Source) => s.kind === 'picture' && s.length === 0;
 
 /** The largest time read from a document (about 3.3 days of flicks). */
@@ -714,13 +728,13 @@ function kfOf(time: number, value: number, hold: boolean): Keyframe<number> {
 
 function applyGain(c: IClip, g: Gain): void {
 	if (g.type === 'constant') {
-		c.volumeDb = { value: r9(gainToDb(g.value)), keyframes: [] };
+		c.volumeDb = { value: ampDb(g.value), keyframes: [] };
 		return;
 	}
-	const a: Animatable<number> = { value: r9(gainToDb(g.points[0]?.[1] ?? 1)), keyframes: [] };
+	const a: Animatable<number> = { value: ampDb(g.points[0]?.[1] ?? 1), keyframes: [] };
 	for (const [off, v] of g.points) {
 		const o = Math.max(-MAX_TIME, Math.min(MAX_TIME, off));
-		a.keyframes.push(kfOf(c.sourceIn + o, r9(gainToDb(v)), !g.linear));
+		a.keyframes.push(kfOf(c.sourceIn + o, ampDb(v), !g.linear));
 	}
 	a.keyframes.sort((x, y) => x.time - y.time);
 	a.keyframes = a.keyframes.filter((k, i, l) => i === 0 || l[i - 1]!.time !== k.time);

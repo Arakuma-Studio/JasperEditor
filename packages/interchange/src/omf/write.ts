@@ -1,7 +1,7 @@
 // Composition model → OMF 2.0 objects in a Bento container.
 //
 // Port of FilmCraft `crates/interchange/src/omf/write.rs` (MIT OR Apache-2.0).
-import { type CDocument, flicksToUnits, type Gain, type Source } from '../comp.ts';
+import { amplitudeRational, type CDocument, flicksToUnits, type Gain, type Source } from '../comp.ts';
 import { encodeUtf8, extension, fileStem, isAbsolutePath, pathToFileUrl } from '../paths.ts';
 import { InterchangeError, type Report } from '../report.ts';
 import { timecodeBase } from '../time.ts';
@@ -42,7 +42,7 @@ const rational = (n: number, d: number) =>
 		dv.setInt32(4, clamp32(d));
 	});
 const cstr = (s: string) => encodeUtf8(`${s}\0`);
-const amp = (a: number) => rational(Math.min(I32_MAX, Math.round(Math.max(0, a) * 65536)), 65536);
+const amp = (a: number) => rational(...amplitudeRational(a));
 /** 1970-01-01 (reproducible files): omfi:TimeStamp is u32 seconds + a "is GMT" flag. */
 const TIMESTAMP = Uint8Array.of(0, 0, 0, 0, 1);
 
