@@ -726,8 +726,9 @@ export function SequenceComposition({ doc: raw, options }: SequenceCompositionPr
 			media: doc.media,
 			bypass: new Set(options.colorBypassClipIds ?? []),
 			isPreview: options.isPreview,
+			...(doc.settings.color ? { working: doc.settings.color } : {}),
 		}),
-		[doc.media, options.colorBypassClipIds, options.isPreview],
+		[doc.media, options.colorBypassClipIds, options.isPreview, doc.settings.color],
 	);
 	return (
 		<TextExpressionContext.Provider value={textExpressions}>

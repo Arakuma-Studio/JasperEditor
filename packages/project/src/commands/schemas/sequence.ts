@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { WORKING_SPACE_CHOICES } from '../../color/model.ts';
 import { AudioChannelFormatSchema, SequenceSampleRateSchema } from '../../schema/audio.ts';
 import { AnimNumberSchema, LabelColorSchema, RationalSchema, RGBASchema } from '../../schema/common.ts';
 import {
@@ -27,6 +28,21 @@ const SettingsPatch = z.strictObject({
 	audioSampleRate: SequenceSampleRateSchema.optional(),
 	/** audio-mix: channel format of the Mix. */
 	masterLayout: AudioChannelFormatSchema.optional(),
+	/**
+	 * color-mgmt: Working Color Space — rec709, srgb, rec2020, p3d65, displayp3, rec2100-pq, rec2100-hlg, or a linear
+	 * variant (`rec709-linear`…) which also turns on Linearize Working Space.
+	 */
+	workingColorSpace: z.enum(WORKING_SPACE_CHOICES).optional(),
+	/** color-mgmt: Sequence Settings ▸ Colour; each field null = back to the default. */
+	color: z
+		.strictObject({
+			linearize: z.boolean().nullable().optional(),
+			blendLinear: z.boolean().nullable().optional(),
+			autoToneMap: z.boolean().nullable().optional(),
+			sdrWhiteNits: z.number().min(80).max(400).nullable().optional(),
+			hdrPeakNits: z.number().min(203).max(10000).nullable().optional(),
+		})
+		.optional(),
 });
 
 export const SequenceCreateCmd = cmd('sequence.create', {

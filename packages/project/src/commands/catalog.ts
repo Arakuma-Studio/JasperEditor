@@ -6,6 +6,7 @@ import { CAPTIONS_OWNER, captionHandlers } from './handlers/captions.ts';
 import { clipCoreHandlers } from './handlers/clip-core.ts';
 import { clipEditHandlers } from './handlers/clip-edit.ts';
 import { CLIPBOARD_OWNER, clipboardHandlers } from './handlers/clipboard.ts';
+import { colorMgmtHandlers } from './handlers/color-mgmt.ts';
 import { compositionHandlers } from './handlers/composition.ts';
 import { editUxHandlers } from './handlers/edit-ux.ts';
 import { effectHandlers } from './handlers/effect.ts';
@@ -80,7 +81,9 @@ export type CommandOwner =
 	// AE text animators (parity program)
 	| 'text-animators'
 	// Liquify, Mesh Warp, Puppet (docs/wp-notes/sim-warp.md)
-	| 'sim-warp';
+	| 'sim-warp'
+	// Colour management, HDR, LUT formats (docs/wp-notes/color-mgmt.md)
+	| 'color-mgmt';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -322,6 +325,8 @@ const LABELS: Record<CommandType, string> = {
 	'clip.trimEdits': 'Trim',
 	'item.makeSubclip': 'Make Subclip',
 	'item.updateSubclip': 'Edit Subclip',
+	'media.interpretColor': 'Interpret Footage (Colour)',
+	'clip.setColorInterpretation': 'Clip Colour Space',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -356,6 +361,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[rotoHandlers, ROTO_OWNER],
 	[editUxHandlers, 'edit-ux'],
 	[simWarpHandlers, SIM_WARP_OWNER],
+	[colorMgmtHandlers, 'color-mgmt'],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
@@ -385,7 +391,8 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === 'wp-multicam' ||
 				owner === 'wp-time' ||
 				owner === ROTO_OWNER ||
-				owner === 'edit-ux'
+				owner === 'edit-ux' ||
+				owner === 'color-mgmt'
 					? 'M3'
 					: owner === 'M2' ||
 							owner.startsWith('wp-m2-') ||

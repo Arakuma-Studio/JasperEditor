@@ -6,11 +6,25 @@ import {
 	bakeColorRun,
 	type ColorRunEffect,
 	type EffectRegistry,
+	isOcioBundle,
 	type Lut,
+	OcioConfig,
 	parseLutFile,
+	type SequenceColorInfo,
 } from '@jasper/project';
 
-type AssetEntry = { lut: Lut | null | undefined; promise: Promise<Lut | null> };
+/** color-mgmt: colour assets are LUTs or custom OCIO configs (bundles), told apart by their content. */
+type ColorAsset = Lut | OcioConfig;
+type AssetEntry = { lut: ColorAsset | null | undefined; promise: Promise<ColorAsset | null> };
+
+function parseColorAsset(text: string): ColorAsset {
+	if (text.trimStart().startsWith('{')) {
+		const json = JSON.parse(text) as unknown;
+		if (isOcioBundle(json)) return OcioConfig.fromBundle(json);
+		throw new Error('Not a colour asset');
+	}
+	return parseLutFile(text, null);
+}
 const assets = new Map<string, AssetEntry>();
 
 /** Cache identity of a media URL: without query/hash (render URLs carry a signature). */
@@ -23,7 +37,7 @@ export function lutUrlKey(url: string): string {
  * Loads and parses a LUT asset (once per URL; color-mgmt: any supported format, sniffed from the content since media
  * URLs carry no extension); resolves null on failure (the grade skips it, CG-004).
  */
-export function loadLutAsset(url: string): Promise<Lut | null> {
+export function loadColorAsset(url: string): Promise<ColorAsset | null> {
 	const k = lutUrlKey(url);
 	const hit = assets.get(k);
 	if (hit) return hit.promise;
@@ -32,7 +46,7 @@ export function loadLutAsset(url: string): Promise<Lut | null> {
 		promise: fetch(url)
 			.then(async (r) => {
 				if (!r.ok) throw new Error(`HTTP ${r.status}`);
-				const lut = parseLutFile(await r.text(), null);
+				const lut = parseColorAsset(await r.text());
 				entry.lut = lut;
 				return lut;
 			})
@@ -45,9 +59,26 @@ export function loadLutAsset(url: string): Promise<Lut | null> {
 	return entry.promise;
 }
 
-/** The parsed asset if it finished loading: a Lut, null (failed), or undefined (not loaded yet). */
+/** A LUT asset (once per URL); null on failure or for a non-LUT colour asset. */
+export function loadLutAsset(url: string): Promise<Lut | null> {
+	return loadColorAsset(url).then((v) => (v instanceof OcioConfig ? null : v));
+}
+
+/** The parsed asset if it finished loading: a Lut, null (failed or not a LUT), or undefined (not loaded yet). */
 export function loadedLutAsset(url: string): Lut | null | undefined {
-	return assets.get(lutUrlKey(url))?.lut;
+	const v = assets.get(lutUrlKey(url))?.lut;
+	return v instanceof OcioConfig ? null : v;
+}
+
+/** color-mgmt: the parsed OCIO config of a `color-config` asset: config, null (failed), undefined (loading). */
+export function loadedColorConfig(url: string): OcioConfig | null | undefined {
+	const v = assets.get(lutUrlKey(url))?.lut;
+	return v === undefined ? undefined : v instanceof OcioConfig ? v : null;
+}
+
+/** Whether an asset finished loading (either kind). */
+export function colorAssetLoaded(url: string): boolean {
+	return assets.get(lutUrlKey(url))?.lut !== undefined;
 }
 
 const BAKES_PER_LAYER = 64;
@@ -64,6 +95,8 @@ export function bakedRunLut(
 	registry: EffectRegistry,
 	lut: (mediaId: string) => Lut | null,
 	size: number,
+	/** color-mgmt: the working space (and OCIO configs) the colour ops read. */
+	ctx: { working?: SequenceColorInfo; colorConfig?: (mediaId: string) => OcioConfig | null } = {},
 ): Lut | null {
 	let lru = bakes.get(layerId);
 	if (!lru) {
@@ -76,7 +109,7 @@ export function bakedRunLut(
 		lru.set(key, v);
 		return v;
 	}
-	const baked = bakeColorRun(effects, registry, { lut }, size);
+	const baked = bakeColorRun(effects, registry, { lut, ...ctx }, size);
 	lru.set(key, baked);
 	while (lru.size > BAKES_PER_LAYER) lru.delete(lru.keys().next().value!);
 	return baked;

@@ -25,6 +25,7 @@ import {
 	tracksOfKind,
 } from '../placement.ts';
 import { placeSource } from './clip-core.ts';
+import { applyColorSettings, hdrWorkingSpaceOf } from './color-mgmt.ts';
 import { assertBin, insertItem } from './project.ts';
 import { remapTextAnimationFrames } from './text-animation.ts';
 import type { HandlerMap } from './util.ts';
@@ -178,12 +179,19 @@ export const sequenceHandlers: HandlerMap = {
 				settings.dropFrame = supportsDropFrame(info.rate);
 			}
 		}
-		Object.assign(settings, cmd.settings ?? {});
+		const { workingColorSpace: _w, color: _c, ...plain } = cmd.settings ?? {};
+		Object.assign(settings, plain);
 		if (cmd.settings?.frameRate && cmd.settings.dropFrame === undefined)
 			settings.dropFrame = supportsDropFrame(settings.frameRate);
+		// color-mgmt: a sequence made from HDR media works in its HDR space (Premiere: New Sequence From Clip).
+		if (asset && !cmd.settings?.workingColorSpace) {
+			const hdr = hdrWorkingSpaceOf(asset);
+			if (hdr) settings.workingColorSpace = hdr;
+		}
 		validateSettings(settings, h);
 		const id = h.newId(doc, 'seq', cmd.id);
 		const seq = createSequence(h.ids, settings, cmd.tracks ?? base.tracks, id);
+		if (cmd.settings) applyColorSettings(seq as DSeq, cmd.settings, h);
 		doc.sequences[id] = seq;
 		const itemId = h.ids.next('itm');
 		doc.items[itemId] = { id: itemId, kind: 'sequence', name: cmd.name, sequenceId: id, label: 'forest' };
@@ -203,10 +211,11 @@ export const sequenceHandlers: HandlerMap = {
 	},
 	'sequence.updateSettings': (doc, cmd, h: HandlerContext) => {
 		const seq = h.sequence(doc, cmd.sequenceId);
+		const { workingColorSpace: _w, color: _c, ...p0 } = cmd.settings;
 		const p = cmd.settings;
 		const next: SequenceSettings = {
 			...(JSON.parse(JSON.stringify(seq.settings)) as SequenceSettings),
-			...p,
+			...p0,
 		};
 		validateSettings(next, h);
 		if (
@@ -228,6 +237,7 @@ export const sequenceHandlers: HandlerMap = {
 		if (p.backgroundColor) seq.settings.backgroundColor = [...p.backgroundColor];
 		if (p.audioSampleRate !== undefined) seq.settings.audioSampleRate = p.audioSampleRate;
 		if (p.masterLayout !== undefined) seq.settings.masterLayout = p.masterLayout;
+		applyColorSettings(seq, p, h);
 	},
 	'sequence.setInOut': (doc, cmd, h: HandlerContext) => {
 		const seq = h.sequence(doc, cmd.sequenceId);

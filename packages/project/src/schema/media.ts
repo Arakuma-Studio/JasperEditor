@@ -1,10 +1,21 @@
 // Media assets, locators, derivations, synthetic sources, transcripts and fonts (S01 §6).
 import { z } from 'zod';
+import { ColorInterpretationSchema } from '../color/model.ts';
 import type { DeepStrip } from './common.ts';
 import { int, nonNegInt, RationalSchema, RGBASchema } from './common.ts';
 
 /** `mg-bundle` (M2, ARCHITECTURE §19.3): an imported Remotion bundle whose compositions become clips. */
-export const MEDIA_KINDS = ['video', 'audio', 'image', 'animated-image', 'font', 'lut', 'mg-bundle'] as const;
+/** color-mgmt: `color-config` = a custom OpenColorIO configuration (`.ocio`), bundled with the files it references. */
+export const MEDIA_KINDS = [
+	'video',
+	'audio',
+	'image',
+	'animated-image',
+	'font',
+	'lut',
+	'mg-bundle',
+	'color-config',
+] as const;
 export const MediaKindSchema = z.enum(MEDIA_KINDS);
 export type MediaKind = DeepStrip<z.infer<typeof MediaKindSchema>>;
 
@@ -25,6 +36,18 @@ export const VideoStreamSchema = z.looseObject({
 		range: z.enum(['tv', 'pc']),
 	}),
 	browserDecodable: z.boolean().nullable(),
+	/**
+	 * color-mgmt: HDR static metadata of the stream (SMPTE ST 2086 mastering display luminance, CTA-861.3 MaxCLL /
+	 * MaxFALL, cd/m²) from `mdcv`/`clli` or Matroska MasteringMetadata. Absent = none signalled.
+	 */
+	hdr: z
+		.looseObject({
+			masteringMaxNits: z.number().optional(),
+			masteringMinNits: z.number().optional(),
+			maxCll: z.number().optional(),
+			maxFall: z.number().optional(),
+		})
+		.optional(),
 });
 export const AudioStreamSchema = z.looseObject({
 	index: nonNegInt(),
@@ -210,6 +233,24 @@ export const LutInfoSchema = z.looseObject({
 });
 export type LutInfo = DeepStrip<z.infer<typeof LutInfoSchema>>;
 
+/** color-mgmt: header of a custom OCIO config asset (the bundle itself stays in the file, `/media/<key>`). */
+export const ColorConfigInfoSchema = z.looseObject({
+	format: z.literal('ocio'),
+	name: z.string(),
+	/** `ocio_profile_version`. */
+	version: z.number(),
+	spaces: z.array(
+		z.looseObject({ name: z.string(), family: z.string(), reference: z.enum(['scene', 'display']) }),
+	),
+	roles: z.array(z.tuple([z.string(), z.string()])),
+	displays: z.array(z.looseObject({ name: z.string(), views: z.array(z.string()) })),
+	/** Transforms this build cannot apply (spaces using them are refused). */
+	unsupported: z.array(z.string()),
+	/** FileTransform sources that were not found when the config was imported. */
+	missing: z.array(z.string()),
+});
+export type ColorConfigInfo = DeepStrip<z.infer<typeof ColorConfigInfoSchema>>;
+
 /**
  * A text layer a composition declares (M3, wp-m3-mgtext, S08:MGC-036): manifest `texts.<prop.path>` or the
  * `x-jasper-text` JSON Schema annotation. Style roles name the props that style the text (dotted paths).
@@ -299,6 +340,13 @@ export const MediaAssetSchema = z.looseObject({
 	mgBundle: MgBundleInfoSchema.optional(),
 	/** M3 (S07:PRC-015, schema v5): the source frames this file holds (processed versions, sidecars). */
 	sourceRange: SourceRangeSchema.optional(),
+	/** color-mgmt: kind `color-config` (a custom OCIO config). */
+	colorConfig: ColorConfigInfoSchema.optional(),
+	/**
+	 * Interpret Footage. color-mgmt adds the Colour section (`color`); the other sections (frame rate, pixel aspect,
+	 * fields, alpha, loop) belong to the imports workstream and are separate fields of the same object.
+	 */
+	interpretation: z.looseObject({ color: ColorInterpretationSchema.optional() }).optional(),
 });
 export type MediaAsset = DeepStrip<z.infer<typeof MediaAssetSchema>>;
 

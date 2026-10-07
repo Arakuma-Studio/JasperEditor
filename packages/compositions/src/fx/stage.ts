@@ -42,10 +42,11 @@ import {
 	rotoFrameUrl,
 	sideCompToCanvas,
 	TRACK_MATTE_EFFECT_ID,
+	workingKey,
 } from '@jasper/project';
 import { useContext, useMemo } from 'react';
 import { cancelRender, Internals } from 'remotion';
-import { ColorDocContext, referencedMedia, useLutAssets } from '../color/chain.ts';
+import { ColorDocContext, colorOpsContext, referencedMedia, useLutAssets } from '../color/chain.ts';
 import { bakedRunLut, loadedLutAsset, lutUrlKey } from '../color/luts.ts';
 import { NestCompSizeContext } from '../layers/nest-context.ts';
 import type { LayerProps, LayerTap } from '../types.ts';
@@ -539,10 +540,18 @@ export function useLayerFx(
 					};
 				}
 				case 'lut': {
-					const key = colorRunKey(s.effects, lutKey, PREVIEW_LUT_SIZE);
+					const key = colorRunKey(s.effects, lutKey, PREVIEW_LUT_SIZE, workingKey(doc.working));
 					const lut = pending
 						? null
-						: bakedRunLut(clip.clipId, key, s.effects, fxEffectRegistry(), lutOf, PREVIEW_LUT_SIZE);
+						: bakedRunLut(
+								clip.clipId,
+								key,
+								s.effects,
+								fxEffectRegistry(),
+								lutOf,
+								PREVIEW_LUT_SIZE,
+								colorOpsContext(doc),
+							);
 					return { kind: 'lut', key: `lut${i}:${key}`, lut };
 				}
 				case 'css':
@@ -635,6 +644,7 @@ export function useLayerFx(
 		instanceKeyOf,
 		pixelsVersion,
 		layerMasks,
+		doc.working,
 	]);
 
 	if (!plan) return NONE;
