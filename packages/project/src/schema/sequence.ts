@@ -23,6 +23,7 @@ import {
 	Vec2Schema,
 } from './common.ts';
 import { MaskSchema } from './mask.ts';
+import { PuppetSchema } from './puppet.ts';
 import { type VectorShapeData, VectorShapeDataSchema } from './shapes.ts';
 import { TextAnimatorGroupSchema, TextMoreOptionsSchema, TextPathOptionsSchema } from './text-animators.ts';
 
@@ -43,6 +44,8 @@ export const EffectInstanceSchema = z.looseObject({
 	essential: z.string().optional(),
 	/** wp masks: Premiere's per-effect masks (the effect applies inside them). Absent = none. */
 	masks: z.array(MaskSchema).optional(),
+	/** sim-warp: the Puppet effect's meshes and pins (absent = none). */
+	puppet: PuppetSchema.optional(),
 	/**
 	 * Wave expressions (optional): the instance's own name (Effect Controls ▸ Rename, AE's renamed "Slider Control"
 	 * → "Speed"); absent = the effect's label. Expressions find effects by this name.

@@ -10,6 +10,7 @@
 import {
 	applyLut,
 	bakeLut,
+	FX_DATA_ROW,
 	type FxEffectPlan,
 	type FxPassPlan,
 	type FxUniform,
@@ -55,7 +56,7 @@ type Target = {
 	fbo: WebGLFramebuffer;
 	width: number;
 	height: number;
-	format: 'rgba8' | 'rgba16f';
+	format: 'rgba8' | 'rgba16f' | 'rgba32f';
 };
 
 export type FxHost = {
@@ -78,7 +79,12 @@ export type FxHost = {
 	/** 3D LUT textures of `lut` media params, by LUT object. */
 	luts: WeakMap<Lut, { tex: WebGLTexture; size: number }>;
 	floatTargets: boolean;
+	floatBlend: boolean;
 	color: ColorGl | null;
+	/** sim-warp: an empty vertex array for draw passes (their vertex shaders read data textures). */
+	emptyVao: WebGLVertexArrayObject;
+	/** sim-warp: data textures (`texels` uniforms) by key (LRU), so identical data is uploaded once. */
+	data: Map<string, { tex: WebGLTexture; w: number; h: number }>;
 };
 
 let host: FxHost | null | undefined;
@@ -153,7 +159,11 @@ function createResources(gl: WebGL2RenderingContext, canvas: HTMLCanvasElement):
 		media: new WeakMap(),
 		luts: new WeakMap(),
 		floatTargets: !!gl.getExtension('EXT_color_buffer_float'),
+		// sim-warp: additive draws into float targets (rgba32f needs it; rgba16f blends without).
+		floatBlend: !!gl.getExtension('EXT_float_blend'),
 		color: null,
+		emptyVao: gl.createVertexArray()!,
+		data: new Map(),
 	};
 }
 
@@ -198,23 +208,35 @@ export function resetFxHostForTests(next?: FxHost | null): void {
 }
 
 function program(h: FxHost, effectId: string, pass: FxPassPlan): Program {
-	const hit = h.programs.get(pass.source);
+	const cacheKey = pass.vertex ? `${pass.source}\n//--vertex--\n${pass.vertex.source}` : pass.source;
+	const hit = h.programs.get(cacheKey);
 	if (hit instanceof FxShaderError) throw hit;
 	if (hit) return hit;
 	const { gl } = h;
-	const fail = (log: string) => {
-		const err = new FxShaderError(effectId, pass.index, mapLog(log, pass.source));
-		h.programs.set(pass.source, err);
+	const fail = (log: string, source = pass.source) => {
+		const err = new FxShaderError(effectId, pass.index, mapLog(log, source));
+		h.programs.set(cacheKey, err);
 		throw err;
 	};
 	const fs = compileShader(gl, gl.FRAGMENT_SHADER, pass.source);
 	if (typeof fs === 'string') return fail(fs);
+	// sim-warp: draw passes bring their own vertex shader.
+	let vs: WebGLShader = h.vs;
+	if (pass.vertex) {
+		const v = compileShader(gl, gl.VERTEX_SHADER, pass.vertex.source);
+		if (typeof v === 'string') {
+			gl.deleteShader(fs);
+			return fail(`vertex shader: ${v}`, pass.vertex.source);
+		}
+		vs = v;
+	}
 	const p = gl.createProgram()!;
-	gl.attachShader(p, h.vs);
+	gl.attachShader(p, vs);
 	gl.attachShader(p, fs);
-	gl.bindAttribLocation(p, 0, 'a_pos');
+	if (!pass.vertex) gl.bindAttribLocation(p, 0, 'a_pos');
 	gl.linkProgram(p);
 	gl.deleteShader(fs);
+	if (pass.vertex) gl.deleteShader(vs);
 	if (!gl.getProgramParameter(p, gl.LINK_STATUS) && !gl.isContextLost())
 		return fail(gl.getProgramInfoLog(p) ?? 'link error');
 	const samplers: Program['samplers'] = [];
@@ -225,7 +247,7 @@ function program(h: FxHost, effectId: string, pass: FxPassPlan): Program {
 			samplers.push({ name: info.name, type: info.type });
 	}
 	const prog: Program = { program: p, locs: new Map(), samplers };
-	h.programs.set(pass.source, prog);
+	h.programs.set(cacheKey, prog);
 	// Bounded cache: programs are small, but generated passes (pyramids by radius) can multiply.
 	if (h.programs.size > 512) {
 		const oldest = h.programs.keys().next().value!;
@@ -295,6 +317,63 @@ function setUniform(h: FxHost, p: Program, u: FxUniform): void {
 		case 'vec4[]':
 			gl.uniform4fv(l, v);
 			break;
+		case 'texels':
+			// A sampler: bound with the other textures (dataTexture).
+			break;
+	}
+}
+
+/** Most data textures kept (LRU by key). */
+const MAX_DATA_TEXTURES = 32;
+
+/**
+ * sim-warp: the RGBA32F texture of a `texels` uniform (FX_DATA_ROW texels per row), uploaded once per key. Nearest
+ * filtering (read with texelFetch).
+ */
+function dataTexture(h: FxHost, u: FxUniform): WebGLTexture {
+	const key = `${u.key ?? ''}|${u.data?.length ?? 0}`;
+	const hit = h.data.get(key);
+	if (hit) {
+		h.data.delete(key);
+		h.data.set(key, hit);
+		return hit.tex;
+	}
+	const { gl } = h;
+	while (h.data.size >= MAX_DATA_TEXTURES) {
+		const [k, old] = h.data.entries().next().value!;
+		h.data.delete(k);
+		gl.deleteTexture(old.tex);
+	}
+	const src = u.data ?? new Float32Array(4);
+	const n = Math.max(1, Math.ceil(src.length / 4));
+	const w = Math.min(n, FX_DATA_ROW);
+	const hh = Math.ceil(n / FX_DATA_ROW);
+	const full = new Float32Array(w * hh * 4);
+	full.set(src.subarray(0, Math.min(src.length, full.length)));
+	const tex = texture2d(gl, gl.NEAREST);
+	gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+	gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+	gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, w, hh, 0, gl.RGBA, gl.FLOAT, full);
+	h.data.set(key, { tex, w, h: hh });
+	return tex;
+}
+
+/** sim-warp: blending of a draw pass (premultiplied colours). */
+function setDrawBlend(gl: WebGL2RenderingContext, blend: NonNullable<FxPassPlan['vertex']>['blend']): void {
+	if (blend === 'replace') {
+		gl.disable(gl.BLEND);
+		return;
+	}
+	gl.enable(gl.BLEND);
+	if (blend === 'add') {
+		gl.blendEquation(gl.FUNC_ADD);
+		gl.blendFunc(gl.ONE, gl.ONE);
+	} else if (blend === 'max' || blend === 'min') {
+		gl.blendEquation(blend === 'max' ? gl.MAX : gl.MIN);
+		gl.blendFunc(gl.ONE, gl.ONE);
+	} else {
+		gl.blendEquation(gl.FUNC_ADD);
+		gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 	}
 }
 
@@ -308,13 +387,14 @@ const MAX_TARGETS = 48;
  */
 function target(h: FxHost, pass: FxPassPlan): Target {
 	const { gl } = h;
-	const format = pass.format === 'rgba16f' && h.floatTargets ? 'rgba16f' : 'rgba8';
+	const format =
+		(pass.format === 'rgba16f' || pass.format === 'rgba32f') && h.floatTargets ? pass.format : 'rgba8';
 	const key = `${pass.target ?? pass.index}:${pass.width}x${pass.height}:${format}`;
 	const hit = h.targets.get(key);
 	if (hit) {
 		h.targets.delete(key);
 		h.targets.set(key, hit);
-		const f = pass.filter === 'nearest' ? gl.NEAREST : gl.LINEAR;
+		const f = pass.filter === 'nearest' || format === 'rgba32f' ? gl.NEAREST : gl.LINEAR;
 		gl.bindTexture(gl.TEXTURE_2D, hit.tex);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, f);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, f);
@@ -326,8 +406,10 @@ function target(h: FxHost, pass: FxPassPlan): Target {
 		gl.deleteTexture(old.tex);
 		gl.deleteFramebuffer(old.fbo);
 	}
-	const tex = texture2d(gl, pass.filter === 'nearest' ? gl.NEAREST : gl.LINEAR);
-	if (format === 'rgba16f')
+	const tex = texture2d(gl, pass.filter === 'nearest' || format === 'rgba32f' ? gl.NEAREST : gl.LINEAR);
+	if (format === 'rgba32f')
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, pass.width, pass.height, 0, gl.RGBA, gl.FLOAT, null);
+	else if (format === 'rgba16f')
 		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, pass.width, pass.height, 0, gl.RGBA, gl.HALF_FLOAT, null);
 	else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, pass.width, pass.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
 	const fbo = gl.createFramebuffer()!;
@@ -534,6 +616,10 @@ export function runShaderPlan(
 				if (size) gl.uniform2f(size, t.size, 1);
 			} else if (size) gl.uniform2f(size, m ? m.width : 0, m ? m.height : 0);
 		}
+		// sim-warp: data textures of this pass (plan-wide and pass uniforms).
+		const dataTex = new Map<string, WebGLTexture>();
+		for (const u of plan.uniforms) if (u.type === 'texels') dataTex.set(u.name, dataTexture(h, u));
+		for (const u of pass.uniforms) if (u.type === 'texels') dataTex.set(u.name, dataTexture(h, u));
 		let unit = 0;
 		for (const s of prog.samplers) {
 			const l = loc(h, prog, s.name);
@@ -544,7 +630,8 @@ export function runShaderPlan(
 				gl.bindTexture(gl.TEXTURE_3D, media3d.get(s.name) ?? h.dummy3d);
 			} else {
 				let tex: WebGLTexture = h.dummy2d;
-				if (s.name === 'u_source') tex = h.srcTex;
+				if (dataTex.has(s.name)) tex = dataTex.get(s.name)!;
+				else if (s.name === 'u_source') tex = h.srcTex;
 				else if (s.name === 'u_prev') tex = prev;
 				else if (outputs.has(s.name)) tex = outputs.get(s.name)!;
 				else if (s.name in inputs.textures) {
@@ -556,9 +643,24 @@ export function runShaderPlan(
 			if (l) gl.uniform1i(l, unit);
 			unit++;
 		}
-		gl.bindVertexArray(h.vao);
-		gl.drawArrays(gl.TRIANGLES, 0, 3);
-		gl.bindVertexArray(null);
+		if (pass.vertex) {
+			// sim-warp: instanced geometry over a transparent target.
+			gl.clearColor(0, 0, 0, 0);
+			gl.clear(gl.COLOR_BUFFER_BIT);
+			const n = pass.vertex.vertices * pass.vertex.instances;
+			if (n > 0) {
+				setDrawBlend(gl, pass.vertex.blend);
+				gl.bindVertexArray(h.emptyVao);
+				gl.drawArraysInstanced(gl.TRIANGLES, 0, pass.vertex.vertices, pass.vertex.instances);
+				gl.bindVertexArray(null);
+				gl.disable(gl.BLEND);
+				gl.blendEquation(gl.FUNC_ADD);
+			}
+		} else {
+			gl.bindVertexArray(h.vao);
+			gl.drawArrays(gl.TRIANGLES, 0, 3);
+			gl.bindVertexArray(null);
+		}
 		// Unbind this pass's own output before the next pass may sample it (no feedback loop).
 		if (t) {
 			if (pass.mipmaps) {

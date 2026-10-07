@@ -4,6 +4,7 @@
 import '../layer-bake/commands.ts';
 // Register the fx framework's on-canvas point handles (wave 1).
 import '../fx/register.ts';
+import '../simwarp/register.ts';
 // audio-fx: Effect Controls editors of the audio effects (EQ curves, dynamics, meters).
 import '../audio-fx/register.ts';
 import { audioFxCommands } from '../audio-fx/commands.ts';

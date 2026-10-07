@@ -172,6 +172,8 @@ export function isStaticLayer(
 		const spec = registry.get(fx.effectId, fx.effectVersion);
 		if (!spec) return false;
 		if (hasKeyframesDeep(fx.params)) return false;
+		// sim-warp: keyframed Puppet pins.
+		if (hasKeyframesDeep((fx as { puppet?: unknown }).puppet)) return false;
 		// Wave 1 (fx framework): a GPU shader effect that draws differently every frame (noise, flicker, time hooks,
 		// a media param bound to a video — conservative here: any bound media param that accepts videos).
 		const held = Object.fromEntries(Object.entries(fx.params).map(([k, a]) => [k, a.value]));

@@ -24,6 +24,7 @@ import { ROTO_OWNER, rotoHandlers } from './handlers/roto.ts';
 import { rovingHandlers } from './handlers/roving.ts';
 import { sequenceHandlers } from './handlers/sequence.ts';
 import { keepShapesCentred, SHAPE_BOX_COMMANDS, SHAPE_OWNER, shapeHandlers } from './handlers/shape.ts';
+import { SIM_WARP_OWNER, simWarpHandlers } from './handlers/sim-warp.ts';
 import { simplifyHandlers } from './handlers/simplify.ts';
 import { spatialHandlers } from './handlers/spatial.ts';
 import { SPEECH_OWNER, speechHandlers } from './handlers/speech.ts';
@@ -79,6 +80,8 @@ export type CommandOwner =
 	| 'edit-ux'
 	// AE text animators (parity program)
 	| 'text-animators'
+	// Liquify, Mesh Warp, Puppet (docs/wp-notes/sim-warp.md)
+	| 'sim-warp'
 	// Interpret Footage, vector / Lottie / layered / sequence imports (docs/wp-notes/imports.md)
 	| 'imports';
 
@@ -240,6 +243,18 @@ const LABELS: Record<CommandType, string> = {
 	'audio.setGain': 'Audio Gain',
 	'audio.autoDuck': 'Auto Duck',
 	'mixer.setLoudness': 'Loudness Normalization',
+	'liquify.stroke': 'Liquify',
+	'liquify.reset': 'Reset Liquify Mesh',
+	'meshWarp.setVertex': 'Edit Distortion Mesh',
+	'meshWarp.reset': 'Reset Distortion Mesh',
+	'puppet.addMesh': 'Add Puppet Mesh',
+	'puppet.updateMesh': 'Change Puppet Mesh',
+	'puppet.removeMesh': 'Delete Puppet Mesh',
+	'puppet.addPin': 'Add Puppet Pin',
+	'puppet.removePins': 'Delete Puppet Pins',
+	'puppet.renamePin': 'Rename Puppet Pin',
+	'puppet.movePins': 'Move Puppet Pins',
+	'puppet.setPinKeys': 'Record Puppet Pins',
 	'mask.add': 'Create Mask',
 	'mask.remove': 'Delete Mask',
 	'mask.update': 'Change Mask',
@@ -344,6 +359,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[timeHandlers, 'wp-time'],
 	[rotoHandlers, ROTO_OWNER],
 	[editUxHandlers, 'edit-ux'],
+	[simWarpHandlers, SIM_WARP_OWNER],
 	[interpretHandlers, INTERPRET_OWNER],
 ];
 

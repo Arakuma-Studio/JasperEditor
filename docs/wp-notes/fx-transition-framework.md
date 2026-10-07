@@ -449,3 +449,23 @@ WhipLash centres, MochaWhip's mask / cut-out centres…), `apps/web/src/fx/Trans
 points are frame-normalised (no layer map). A drag is one gesture writing `param.set` on `["transition", id, name]`;
 an animated param gets a key at the playhead clamped into the span, as the section's rows do.
 
+
+## 14. sim-warp additions (draw passes, data, structures)
+
+Added for particles, pieces and mesh warps ([sim-warp.md](sim-warp.md) §3; types and docs in `shader.ts`):
+
+- **Draw passes** — `ShaderPass.draw: {vert, vertices, instances (number | {uniform}), blend: 'over' | 'add' | 'max' |
+  'min' | 'replace'}`: instanced triangles; `vert` is the body of a generated vertex shader with
+  `FX_VERTEX_PRELUDE` (`fx_emit(canvasPx)`, perspective-correct `fx_emitW(canvasPx, w)`, `fx_cull()`,
+  `fx_canvasPxOfLayerPx / Norm`). Validation caps vertices × instances (`FX_MAX_DRAW_VERTICES`).
+- **Data textures** — a uniform value `{texels: Float32Array | number[], key?}` binds an RGBA32F `highp sampler2D`
+  (1024 texels a row, up to 1 Mi); read with `fx_texel(u_x, i)` / bilinear `fx_texelGrid(u_x, w, h, g)` from
+  `GLSL_DATA`. Give `key` when you already know the content identity (else it is hashed).
+- **`format: 'rgba32f'`** pass targets (nearest) for per-pixel state; `EXT_float_blend` is enabled when present.
+- **CPU pixels** — `gpu.cpuPixels: ['paramName']` loads that image param's pixels (≤ `FX_PIXELS_MAX` px, renders wait
+  for them) and `ctx.pixels('paramName')` returns them in `uniforms` / `passes`.
+- **`ctx.instanceKey`** — identity of the instance's animation (params, keys, Puppet, clip timing): key caches of
+  stepped simulations with it. **`ctx.structures`** — `{puppet?, masks?}`: the resolved Puppet and the layer's masks
+  as layer-px polylines (`FxLayerMask`), in `uniforms`, `passes` and `padding`.
+- **`mesh` params** (`fxParam`-style helper in `simulation-warp/mesh-warps.ts`): keyframable number lists, see
+  sim-warp.md §3.

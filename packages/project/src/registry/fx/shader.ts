@@ -38,7 +38,14 @@ export type FxUniformValue =
 	| { readonly ivec3: readonly [number, number, number] }
 	| { readonly ivec4: readonly [number, number, number, number] }
 	/** `vec4 u_x[n]`: 4·n numbers (packed point lists: 2 points or 1 point + 2 attributes per element). */
-	| { readonly vec4s: readonly number[] };
+	| { readonly vec4s: readonly number[] }
+	/**
+	 * sim-warp: a data texture `uniform highp sampler2D u_x` of RGBA32F texels (4 numbers each, row-major in rows of
+	 * `FX_DATA_ROW` texels), read with `fx_texel(u_x, i)` (`GLSL_DATA`) in vertex and fragment shaders: particle
+	 * records, mesh vertices, displacement grids. `key` identifies the contents (the host skips identical uploads;
+	 * absent = a hash of the numbers). At most `FX_MAX_DATA_TEXELS` texels.
+	 */
+	| { readonly texels: ArrayLike<number>; readonly key?: string };
 
 export type FxUniformType =
 	| 'float'
@@ -52,12 +59,45 @@ export type FxUniformType =
 	| 'ivec2'
 	| 'ivec3'
 	| 'ivec4'
-	| 'vec4[]';
+	| 'vec4[]'
+	| 'texels';
 /**
  * A uniform as the GL host sets it: flattened numbers (`bool` = 0/1, `float[]` = `length` floats, `vec4[]` =
- * 4 × `length / 4` floats).
+ * 4 × `length / 4` floats). `texels` (sim-warp data textures): `value` is empty, the numbers are in `data` (padded
+ * to whole texels) and `key` identifies them.
  */
-export type FxUniform = { name: string; type: FxUniformType; value: readonly number[] };
+export type FxUniform = {
+	name: string;
+	type: FxUniformType;
+	value: readonly number[];
+	data?: Float32Array;
+	key?: string;
+};
+
+/** Texels per row of a data texture (`fx_texel`). */
+export const FX_DATA_ROW = 1024;
+/** Largest data texture (texels): 1024 × 1024. */
+export const FX_MAX_DATA_TEXELS = FX_DATA_ROW * FX_DATA_ROW;
+
+/**
+ * sim-warp: a draw pass draws instanced geometry instead of one full-canvas triangle: `instances` × `vertices`
+ * vertices (triangles: `vertices` a multiple of 3), positioned by the author's vertex shader (`vert`, GLSL ES 3.00:
+ * helpers + `void main()` calling `fx_emit(canvasPx)` / `fx_emitW(canvasPx, w)` (perspective-correct varyings) or
+ * `fx_cull()`), coloured by the pass's `frag`. No vertex attributes: the shader reads `gl_VertexID` /
+ * `gl_InstanceID` and its records from data textures (`fx_texel`). The target starts transparent; fragments combine
+ * by `blend` (default `over`: premultiplied source-over; `add`, `max`, `min`, `replace`). Draw order = instance
+ * order (painter's algorithm: sort far to near in TS). Counts are numbers or the name of an `int`/`float` uniform of
+ * `gpu.uniforms` (e.g. the live particle count of the frame), clamped to `FX_MAX_DRAW_VERTICES` in total.
+ */
+export type FxDraw = {
+	vert: string;
+	vertices: number | { readonly uniform: string };
+	instances?: number | { readonly uniform: string };
+	blend?: FxDrawBlend;
+};
+export type FxDrawBlend = 'over' | 'add' | 'max' | 'min' | 'replace';
+/** Largest number of vertices one draw pass may emit. */
+export const FX_MAX_DRAW_VERTICES = 1 << 24;
 
 /** Extra pixels an effect draws around the layer box, per side, in layer pixels (S03:FX-041). */
 export type FxPadding = { left: number; top: number; right: number; bottom: number };
@@ -106,6 +146,8 @@ export type FxPlanContext = {
 	paramsAt?: FxParamsAt;
 	/** The clip (names, source in-point, source timecode); see `FxClipInfo`. */
 	clip?: FxClipInfo;
+	/** sim-warp: structured data of the instance at this frame (Puppet; the layer's masks), see `FxStructures`. */
+	structures?: FxStructures;
 };
 
 /** Per-frame context of `GpuEffect.uniforms` (also the values behind the built-in uniforms). */
@@ -118,6 +160,46 @@ export type FxFrameContext = FxPlanContext & {
 	seed: number;
 	/** `u_progress`: transition progress when a transition drives the layer, else the clip progress (0..1). */
 	progress: number;
+	/**
+	 * sim-warp: identity of everything that makes this instance's output differ from frame to frame other than the
+	 * frame itself (its animated params with their keyframes and expressions, the clip's timing, its id) — the key of
+	 * stepped simulations' checkpoint caches (`fxSimRun`). Absent in tests: hooks fall back to a key of `p`.
+	 */
+	instanceKey?: string;
+	/**
+	 * sim-warp: the CPU pixels of an image bound to a `media` param (straight RGBA8, at most `FX_PIXELS_MAX` px on the
+	 * long side), for simulations that read maps while stepping (Wave World's ground, Foam's flow map, Shatter's
+	 * custom map). Null when none is bound, it is not loaded yet (renders wait) or it is not an image.
+	 */
+	pixels?: (param: string) => FxPixels | null;
+};
+
+/** sim-warp: CPU pixels of a media picture (`FxFrameContext.pixels`). */
+export type FxPixels = {
+	width: number;
+	height: number;
+	/** Straight RGBA, 8 bits per channel, row-major from the top-left. */
+	data: Uint8ClampedArray;
+	/** Identity of the picture (changes when it changes). */
+	key: string;
+};
+/** Longest side of `FxPixels` (bigger pictures are downscaled). */
+export const FX_PIXELS_MAX = 1024;
+
+/** sim-warp: structured instance data resolved at the frame (see `EffectInstance.puppet`). */
+export type FxStructures = {
+	puppet?: unknown;
+	/**
+	 * The layer's masks at the frame (After Effects' "Mask 1…n" popups of Reshape, Smear, Particle Playground's
+	 * Wall, Liquify's Freeze Area Mask), in stack order, flattened to polylines in layer px.
+	 */
+	masks?: readonly FxLayerMask[];
+};
+export type FxLayerMask = {
+	id: string;
+	closed: boolean;
+	inverted: boolean;
+	points: readonly [number, number][];
 };
 
 /** Context of the time hooks (time effects: freeze, retime, trails, echo…). */
@@ -154,8 +236,12 @@ export type ShaderPass = {
 	include?: readonly GlslChunk[];
 	/** Output resolution relative to the effect canvas, (0, 1]: 0.5 = half size (blur pyramids). Last pass: 1. */
 	scale?: number;
-	/** Output format: `rgba16f` for HDR intermediates (glows, bloom); falls back to `rgba8` without float FBOs. */
-	format?: 'rgba8' | 'rgba16f';
+	/**
+	 * Output format: `rgba16f` for HDR intermediates (glows, bloom); falls back to `rgba8` without float FBOs.
+	 * sim-warp: `rgba32f` for exact data (sort keys, ids, simulation fields): always nearest filtering (read it with
+	 * texelFetch); falls back to `rgba16f`/`rgba8` like rgba16f.
+	 */
+	format?: 'rgba8' | 'rgba16f' | 'rgba32f';
 	/** How later passes sample this output (default `linear`). */
 	filter?: 'linear' | 'nearest';
 	/** Uniforms of this pass only (e.g. a blur direction), declared by the framework from their values. */
@@ -177,6 +263,8 @@ export type ShaderPass = {
 	 * `textureLod` / `textureGrad` / implicit-LOD `texture()` for strongly shrinking warps and cheap wide averages.
 	 */
 	mipmaps?: boolean;
+	/** sim-warp: instanced geometry (sprites, particles, cards, shards, warp meshes) instead of a full-canvas pass. */
+	draw?: FxDraw;
 };
 
 /**
@@ -225,6 +313,11 @@ export type GpuEffect = {
 		sampleEdge?: 'drop' | 'transparent' | 'clamp';
 	};
 	/**
+	 * sim-warp: `media` params whose IMAGE pixels the TS hooks read (`FxFrameContext.pixels`). The host loads them
+	 * before planning (renders wait) and re-plans when they arrive.
+	 */
+	cpuPixels?: readonly string[];
+	/**
 	 * True when the output depends only on the params and the input picture (no `u_frame`/`u_time`/`u_progress`,
 	 * no time hooks): a still layer then is not redrawn on every frame. Default false (redraw every frame).
 	 */
@@ -250,7 +343,7 @@ export type FxPassPlan = {
 	output: string | null;
 	width: number;
 	height: number;
-	format: 'rgba8' | 'rgba16f';
+	format: 'rgba8' | 'rgba16f' | 'rgba32f';
 	filter: 'linear' | 'nearest';
 	/** Complete fragment shader (prelude, declarations, includes, body). Programs are cached by this string. */
 	source: string;
@@ -263,6 +356,8 @@ export type FxPassPlan = {
 	target?: string;
 	/** Generate mipmaps of the output after drawing. */
 	mipmaps?: boolean;
+	/** sim-warp: a draw pass — the vertex shader and the resolved counts (see `FxDraw`). */
+	vertex?: { source: string; vertices: number; instances: number; blend: FxDrawBlend };
 };
 
 /** A planned effect instance: what the GL host runs for one effect at one frame. */
@@ -418,6 +513,8 @@ export function toUniform(name: string, v: FxUniformValue): FxUniform {
 		if (!t) throw new Error(`fx uniform ${name}: vectors have 2, 3 or 4 components`);
 		return { name, type: t, value: v.map((x) => finite(x)) };
 	}
+	const tx = (v as { texels?: ArrayLike<number> }).texels;
+	if (tx !== undefined) return dataUniform(name, tx, (v as { key?: string }).key);
 	const o = v as {
 		int?: number;
 		floats?: readonly number[];
@@ -451,8 +548,40 @@ export function toUniform(name: string, v: FxUniformValue): FxUniform {
 	throw new Error(`fx uniform ${name}: unsupported value`);
 }
 
+/** FNV-1a over the bit patterns of float32 numbers (data texture identity). */
+export function hashFloats(a: ArrayLike<number>): string {
+	const f = a instanceof Float32Array ? a : Float32Array.from(a as ArrayLike<number>);
+	const u = new Uint32Array(f.buffer, f.byteOffset, f.length);
+	let h = 0x811c9dc5;
+	for (let i = 0; i < u.length; i++) {
+		h ^= u[i]!;
+		h = Math.imul(h, 0x01000193);
+	}
+	return `${f.length}:${(h >>> 0).toString(36)}`;
+}
+
+/** A `texels` uniform: the numbers padded to whole texels (non-finite → 0), capped at `FX_MAX_DATA_TEXELS`. */
+function dataUniform(name: string, tx: ArrayLike<number>, key?: string): FxUniform {
+	const n = Math.min(Math.ceil(tx.length / 4), FX_MAX_DATA_TEXELS);
+	const data = new Float32Array(Math.max(1, n) * 4);
+	const m = Math.min(tx.length, data.length);
+	for (let i = 0; i < m; i++) {
+		const x = tx[i]!;
+		data[i] = Number.isFinite(x) ? x : 0;
+	}
+	return { name, type: 'texels', value: [], data, key: key ?? hashFloats(data) };
+}
+
+/** Identity of a uniform list (values; data textures by their key) — plan/stage keys. */
+export function fxUniformsKey(us: readonly FxUniform[]): string {
+	return us
+		.map((u) => (u.type === 'texels' ? `${u.name}=T${u.key ?? ''}` : `${u.name}=${u.value.join(',')}`))
+		.join(';');
+}
+
 /** The GLSL declaration of a custom/param uniform. */
 export function uniformDeclaration(u: FxUniform): string {
+	if (u.type === 'texels') return `uniform highp sampler2D ${u.name};`;
 	if (u.type === 'float[]') return `uniform float ${u.name}[${u.value.length}];`;
 	if (u.type === 'vec4[]') return `uniform vec4 ${u.name}[${u.value.length / 4}];`;
 	return `uniform ${u.type} ${u.name};`;
@@ -502,6 +631,84 @@ vec4 fx_premultiply(vec4 c) { return vec4(c.rgb * c.a, c.a); }
 vec4 fx_unpremultiply(vec4 c) { return c.a > 0.0 ? vec4(c.rgb / c.a, c.a) : vec4(0.0); }
 vec4 fx_sample(int i, vec2 uv) { return i < u_sampleCount ? texture(u_samples, vec3(uv, float(i))) : vec4(0.0); }
 `;
+
+/**
+ * sim-warp: the prelude of a draw pass's vertex shader — the same built-in uniforms as `FX_PRELUDE` (so a uniform
+ * declared in both stages matches), `out vec2 v_uv` and the placement helpers:
+ * - `fx_emit(canvasPx)`: the vertex at canvas pixel `canvasPx` (y down), `v_uv` = its canvas uv;
+ * - `fx_emitW(canvasPx, w)`: the same with clip-space w (perspective-correct interpolation of the author's varyings
+ *   for projected 3D pieces: pass the depth factor of the projection);
+ * - `fx_cull()`: drop the vertex (all three vertices of a culled triangle must call it);
+ * - `fx_canvasPxOfLayerPx(p)`, `fx_canvasPxOfLayerNorm(n)`: layer → canvas pixels.
+ */
+export const FX_VERTEX_PRELUDE = `precision highp float;
+precision highp int;
+precision highp sampler2D;
+precision highp sampler2DArray;
+${FX_PRELUDE.split('\n')
+	.filter((l) => l.startsWith('uniform '))
+	.join('\n')}
+uniform float u_flipY;
+out vec2 v_uv;
+vec2 fx_canvasPxOfLayerPx(vec2 p) { return p * u_pxScale + u_box.xy; }
+vec2 fx_canvasPxOfLayerNorm(vec2 n) { return n * u_box.zw + u_box.xy; }
+void fx_emitW(vec2 px, float w) {
+  vec2 uv = px / u_canvasSize;
+  v_uv = uv;
+  float y = mix(uv.y * 2.0 - 1.0, 1.0 - uv.y * 2.0, u_flipY);
+  gl_Position = vec4((uv.x * 2.0 - 1.0) * w, y * w, 0.0, w);
+}
+void fx_emit(vec2 px) { fx_emitW(px, 1.0); }
+void fx_cull() { v_uv = vec2(0.0); gl_Position = vec4(0.0, 0.0, 2.0, 1.0); }
+vec4 fx_premultiply(vec4 c) { return vec4(c.rgb * c.a, c.a); }
+vec4 fx_unpremultiply(vec4 c) { return c.a > 0.0 ? vec4(c.rgb / c.a, c.a) : vec4(0.0); }
+`;
+
+/** The vertex shader of a draw pass (declarations limited to what its code mentions, as `buildPassSource`). */
+export function buildVertexSource(
+	pass: ShaderPass,
+	decls: {
+		params: readonly string[];
+		textures: readonly string[];
+		outputs: readonly string[];
+		uniforms: readonly string[];
+		lut?: readonly string[];
+	},
+): string {
+	const vert = pass.draw?.vert ?? '';
+	const includes = resolveIncludes(pass.include);
+	const text = `${includes.map((c) => c.source).join('\n')}\n${vert}`;
+	const mentions = new Set(text.match(/\bu_[A-Za-z0-9_]+/g) ?? []);
+	const lut = new Set(decls.lut ?? []);
+	const d = [
+		...[...new Set(decls.outputs)]
+			.filter((o) => mentions.has(`u_${o}`))
+			.map((o) => `uniform sampler2D u_${o};`),
+		...decls.textures
+			.filter((t) => mentions.has(t) || mentions.has(`${t}_size`))
+			.flatMap((t) => [
+				lut.has(t) ? `uniform highp sampler3D ${t};` : `uniform sampler2D ${t};`,
+				`uniform vec2 ${t}_size;`,
+			]),
+		...decls.params.filter((x) => mentions.has(declaredName(x))),
+		...decls.uniforms.filter((x) => mentions.has(declaredName(x))),
+	];
+	const parts = ['#version 300 es', FX_VERTEX_PRELUDE];
+	if (d.length) parts.push(`${d.join('\n')}\n`);
+	for (const c of includes) parts.push(`// ---- ${c.name}\n${c.source.trim()}\n`);
+	parts.push(vert.trim(), '');
+	return parts.join('\n');
+}
+
+/** A draw count: a number, or the value of a uniform of the plan (`{uniform}`), as a non-negative integer. */
+function drawCount(
+	c: number | { readonly uniform: string } | undefined,
+	values: readonly FxUniform[],
+): number {
+	if (c === undefined) return 1;
+	const v = typeof c === 'number' ? c : (values.find((u) => u.name === c.uniform)?.value[0] ?? 0);
+	return Math.max(0, Math.min(FX_MAX_DRAW_VERTICES, Math.floor(finite(v))));
+}
 
 function collectChunks(chunks: readonly GlslChunk[] | undefined, out: GlslChunk[], seen: Set<string>): void {
 	for (const c of chunks ?? []) {
@@ -642,6 +849,7 @@ export function planGpuEffect(
 		textures: textures.map((t) => t.uniform),
 		lut: textures.filter((t) => t.kind === 'lut').map((t) => t.uniform),
 		canvas,
+		values: uniforms,
 	});
 	const key = `${spec.id}@${spec.version}:${canvas.width}x${canvas.height}:${planPassesKey(planned)}${gpu.sourceMipmaps ? ':srcmip' : ''}`;
 	return {
@@ -661,7 +869,7 @@ export function planPassesKey(planned: readonly FxPassPlan[]): string {
 	return planned
 		.map(
 			(pp) =>
-				`${pp.width}x${pp.height}/${pp.format}/${hashString(pp.source)}${pp.target !== undefined ? `@${pp.target}` : ''}${pp.mipmaps ? '/mip' : ''}`,
+				`${pp.width}x${pp.height}/${pp.format}/${hashString(pp.source)}${pp.target !== undefined ? `@${pp.target}` : ''}${pp.mipmaps ? '/mip' : ''}${pp.vertex ? `/vs${hashString(pp.vertex.source)}:${pp.vertex.blend}` : ''}`,
 		)
 		.join(',');
 }
@@ -681,6 +889,8 @@ export function planPasses(
 		textures: readonly string[];
 		lut?: readonly string[];
 		canvas: { width: number; height: number };
+		/** Uniform values (param + custom) that draw counts may name (`FxDraw.instances: {uniform}`). */
+		values?: readonly FxUniform[];
 	},
 ): FxPassPlan[] {
 	const outputs: string[] = [];
@@ -710,6 +920,27 @@ export function planPasses(
 		}
 		const abs = !last && pass.size;
 		const side = (v: number) => Math.min(MAX_PASS_SIDE, Math.max(1, Math.round(finite(v, 1))));
+		let vertex: FxPassPlan['vertex'];
+		if (pass.draw) {
+			const values = [...(opts.values ?? []), ...passUniforms];
+			const vertices = drawCount(pass.draw.vertices, values);
+			const instances = drawCount(pass.draw.instances, values);
+			vertex = {
+				source: buildVertexSource(pass, {
+					params: opts.paramDecls,
+					textures: opts.textures,
+					lut: opts.lut,
+					outputs: [...outputs],
+					uniforms: passUniforms.map(declaration),
+				}),
+				vertices,
+				instances:
+					vertices * instances > FX_MAX_DRAW_VERTICES
+						? Math.floor(FX_MAX_DRAW_VERTICES / Math.max(1, vertices))
+						: instances,
+				blend: pass.draw.blend ?? 'over',
+			};
+		}
 		planned.push({
 			index,
 			output: name,
@@ -721,6 +952,7 @@ export function planPasses(
 			uniforms: passUniforms,
 			...(target !== undefined ? { target } : {}),
 			...(!last && pass.mipmaps ? { mipmaps: true } : {}),
+			...(vertex ? { vertex } : {}),
 		});
 		if (name !== null && !outputs.includes(name)) outputs.push(name);
 	});
@@ -1122,6 +1354,19 @@ export function validateGpuEffect(spec: EffectSpec): string[] {
 	}
 	passes.forEach((pass, i) => {
 		const last = i === passes.length - 1;
+		if (pass.draw) {
+			const v = pass.draw.vert;
+			if (!/\bvoid\s+main\s*\(/.test(v)) at(`pass ${i}: draw.vert has no void main()`);
+			if (!/\bfx_(emit|emitW|cull)\s*\(/.test(v))
+				at(`pass ${i}: draw.vert never calls fx_emit/fx_emitW/fx_cull`);
+			for (const [re, msg] of FORBIDDEN_GLSL) if (re.test(v)) at(`pass ${i}: draw.vert ${msg}`);
+			if (/\bout\s+vec2\s+v_uv\b/.test(v)) at(`pass ${i}: draw.vert declares v_uv (the prelude does)`);
+			for (const c of [pass.draw.vertices, pass.draw.instances])
+				if (typeof c === 'number' && !(Number.isInteger(c) && c >= 0))
+					at(`pass ${i}: draw counts are integers ≥ 0`);
+			if (pass.draw.blend && !['over', 'add', 'max', 'min', 'replace'].includes(pass.draw.blend))
+				at(`pass ${i}: unknown draw blend ${pass.draw.blend}`);
+		}
 		if (!/\bvoid\s+main\s*\(/.test(pass.frag)) at(`pass ${i}: no void main()`);
 		if (!/\bfragColor\b/.test(pass.frag)) at(`pass ${i}: never writes fragColor`);
 		for (const [re, msg] of FORBIDDEN_GLSL) if (re.test(pass.frag)) at(`pass ${i}: ${msg}`);

@@ -16,6 +16,7 @@ import { PROJECT_COMMANDS } from './project.ts';
 import { ROTO_COMMANDS } from './roto.ts';
 import { SEQUENCE_COMMANDS } from './sequence.ts';
 import { SHAPE_COMMANDS } from './shape.ts';
+import { SIM_WARP_COMMANDS } from './sim-warp.ts';
 import { SIMPLIFY_COMMANDS } from './simplify.ts';
 import { SPEECH_COMMANDS } from './speech.ts';
 import { STRUCTURE_COMMANDS } from './structure.ts';
@@ -41,6 +42,7 @@ export * from './project.ts';
 export * from './roto.ts';
 export * from './sequence.ts';
 export * from './shape.ts';
+export * from './sim-warp.ts';
 export * from './simplify.ts';
 export * from './speech.ts';
 export * from './structure.ts';
@@ -75,6 +77,8 @@ export const ALL_COMMAND_SCHEMAS = [
 	...STRUCTURE_COMMANDS,
 	// wp masks (S03 §17)
 	...MASK_COMMANDS,
+	// sim-warp: Liquify, Mesh Warp, Puppet
+	...SIM_WARP_COMMANDS,
 	// wp captions
 	...CAPTION_COMMANDS,
 	// wp speech

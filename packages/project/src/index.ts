@@ -37,6 +37,7 @@ export * from './multicam/index.ts';
 export * from './path/index.ts';
 export * from './presets.ts';
 export * from './process/index.ts';
+export * from './puppet/index.ts';
 export * from './registry/audio/index.ts';
 export * from './registry/color-effects.ts';
 export * from './registry/effects.ts';

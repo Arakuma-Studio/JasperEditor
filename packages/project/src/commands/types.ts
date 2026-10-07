@@ -71,7 +71,7 @@ export type Issue = {
 	path?: string[];
 	/** Entities that block the edit (sync conflicts, stale revisions). */
 	blocking?: string[];
-	/** Invariant id (INV-001…INV-015) for `E_INVARIANT` issues. */
+	/** Invariant id (INV-001…INV-016) for `E_INVARIANT` issues. */
 	invariant?: string;
 };
 
