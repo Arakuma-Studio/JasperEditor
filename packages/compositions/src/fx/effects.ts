@@ -7,6 +7,7 @@ import type { FxEffectPlan, Lut } from '@jasper/project';
 import { createEffect } from 'remotion';
 import type { TransitionTap } from '../types.ts';
 import { type FxRunInputs, FxShaderError, fxHost, runLutPass, runShaderPlan } from './host.ts';
+import { type FxMaskGeometry, packedMasks, runMaskPass } from './mask.ts';
 import { fxStatus } from './status.ts';
 
 export type FxShaderParams = {
@@ -176,6 +177,134 @@ export const fxTap = createEffect<FxTapParams, null>({
 	apply({ source, target, params, width, height }) {
 		params.tap.deliver(source as CanvasImageSource, width, height, params.meta);
 		ctx2d(target).clearRect(0, 0, width, height);
+	},
+	cleanup: () => {},
+});
+
+// ---------------------------------------------------------------- edit-structure: adjustment layers
+
+export type FxStashParams = { key: string; holder: { canvas: HTMLCanvasElement | null } };
+
+/** Keeps a copy of the picture (the composite below an adjustment layer) and passes it through. */
+export const fxStash = createEffect<FxStashParams, null>({
+	type: 'jasper.fx-adjustment-stash',
+	label: 'Adjustment layer (original)',
+	documentationLink: null,
+	backend: '2d',
+	calculateKey: (p) => p.key,
+	schema: {},
+	validateParams: (p) => {
+		if (!p?.holder) throw new Error('fxStash needs {key, holder}');
+	},
+	setup: () => null,
+	apply({ source, target, params, width, height }) {
+		let c = params.holder.canvas;
+		if (!c) {
+			c = document.createElement('canvas');
+			params.holder.canvas = c;
+		}
+		if (c.width !== width) c.width = width;
+		if (c.height !== height) c.height = height;
+		const sc = ctx2d(c);
+		sc.globalCompositeOperation = 'copy';
+		sc.drawImage(source, 0, 0, width, height);
+		sc.globalCompositeOperation = 'source-over';
+		const out = ctx2d(target);
+		out.globalCompositeOperation = 'copy';
+		out.drawImage(source, 0, 0, width, height);
+		out.globalCompositeOperation = 'source-over';
+	},
+	cleanup: () => {},
+});
+
+export type FxMixParams = {
+	key: string;
+	holder: { canvas: HTMLCanvasElement | null };
+	opacity: number;
+	blend: GlobalCompositeOperation;
+	region: { x: number; y: number; w: number; h: number } | null;
+	/**
+	 * wp masks × edit-structure: the adjustment layer's Opacity masks limit where it applies — the result is
+	 * mix(original, adjusted mix, coverage), i.e. the opacity is multiplied by the masks' coverage.
+	 */
+	masks?: FxMaskGeometry | null;
+};
+
+/**
+ * The adjusted picture mixed into the stashed original (KND-012): inside `region` (the adjustment layer's crop) the
+ * result is `original + (blend(original, adjusted) − original) · opacity` in premultiplied space — the adjusted
+ * composite *replaces* the original (Premiere: a blur on an adjustment layer darkens the frame edges unless Repeat
+ * Edge Pixels), it is not composited over it; outside the region the original is kept.
+ */
+export const fxAdjustmentMix = createEffect<FxMixParams, null>({
+	type: 'jasper.fx-adjustment-mix',
+	label: 'Adjustment layer (mix)',
+	documentationLink: null,
+	backend: '2d',
+	calculateKey: (p) => p.key,
+	schema: {},
+	validateParams: (p) => {
+		if (!p?.holder) throw new Error('fxAdjustmentMix needs {key, holder, opacity, blend, region}');
+	},
+	setup: () => null,
+	apply({ source, target, params, width, height }) {
+		const orig = params.holder.canvas;
+		const masked = !!params.masks?.masks.length && !!orig;
+		const holder = params.holder as { scratch?: HTMLCanvasElement; masked?: HTMLCanvasElement };
+		let maskCanvas: HTMLCanvasElement | null = null;
+		if (masked) {
+			maskCanvas = holder.masked ?? document.createElement('canvas');
+			holder.masked = maskCanvas;
+			if (maskCanvas.width !== width) maskCanvas.width = width;
+			if (maskCanvas.height !== height) maskCanvas.height = height;
+		}
+		const out = ctx2d(maskCanvas ?? target);
+		const k = Math.min(1, Math.max(0, params.opacity));
+		// The adjusted picture: the effects' output, or blend(original, output) for non-Normal blend modes.
+		let adjusted: CanvasImageSource = source;
+		if (params.blend !== 'source-over' && orig) {
+			const t =
+				(params.holder as { scratch?: HTMLCanvasElement }).scratch ?? document.createElement('canvas');
+			(params.holder as { scratch?: HTMLCanvasElement }).scratch = t;
+			if (t.width !== width) t.width = width;
+			if (t.height !== height) t.height = height;
+			const tc = ctx2d(t);
+			tc.globalCompositeOperation = 'copy';
+			tc.drawImage(orig, 0, 0, width, height);
+			tc.globalCompositeOperation = params.blend;
+			tc.drawImage(source, 0, 0, width, height);
+			tc.globalCompositeOperation = 'source-over';
+			adjusted = t;
+		}
+		out.globalCompositeOperation = 'copy';
+		if (orig) out.drawImage(orig, 0, 0, width, height);
+		else out.clearRect(0, 0, width, height);
+		out.save();
+		if (params.region) {
+			out.beginPath();
+			out.rect(params.region.x, params.region.y, params.region.w, params.region.h);
+			out.clip();
+		}
+		// Premultiplied lerp: (1 − k) · original + k · adjusted (copy with alpha, then additive).
+		out.globalCompositeOperation = 'copy';
+		out.globalAlpha = 1 - k;
+		if (orig) out.drawImage(orig, 0, 0, width, height);
+		out.globalCompositeOperation = 'lighter';
+		out.globalAlpha = k;
+		if (k > 0) out.drawImage(adjusted, 0, 0, width, height);
+		out.restore();
+		out.globalAlpha = 1;
+		out.globalCompositeOperation = 'source-over';
+		if (maskCanvas && orig && params.masks) {
+			const h = fxHost();
+			if (!h) throw new Error('WEBGL_UNAVAILABLE: masks need WebGL2');
+			const { pack, key } = packedMasks(params.masks, width, height);
+			runMaskPass(
+				h,
+				{ pack, packKey: key, mode: 'mix', src: maskCanvas, orig, width, height },
+				ctx2d(target),
+			);
+		}
 	},
 	cleanup: () => {},
 });

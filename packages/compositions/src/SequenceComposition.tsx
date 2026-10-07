@@ -17,18 +17,25 @@
 // Transition framework (wave 2): a track's GPU transitions (`transitions`) are shader stages drawn above its clips
 // over their spans (fx/transition.tsx); the clips that are their sides get `transition` (progress, side and the tap
 // that captures their picture), or the preview's dissolve fallback ramp when the GPU cannot run them.
+// edit-structure: frame holds and freeze-frame handles show one picture frame (`<Freeze>` at `pictureLocalFrame`);
+// nest clips draw their nested sequence with `VideoTracks` (recursive, through `NestTracksContext`); adjustment
+// clips wrap the tracks below them in an `AdjustmentScope` (layers/AdjustmentScope.tsx); the background is drawn
+// inside the stack so adjustment layers process it like Premiere's composite.
 import {
 	clipContentTime,
+	clipPictureTime,
 	fadeFactor,
 	flicksPerFrame,
+	matteTrackIds,
 	type RenderVisualClip,
 	resolveCachedLayerProps,
 	transitionSpec,
 } from '@jasper/project';
-import { type ComponentType, memo, useContext, useMemo, useRef } from 'react';
+import { type ComponentType, Fragment, memo, type ReactNode, useContext, useMemo, useRef } from 'react';
 import { AbsoluteFill, Freeze, Sequence, useCurrentFrame } from 'remotion';
 import { ColorDocContext, type ColorDocValue } from './color/chain.ts';
 import { FontsReadyContext, useFontsReadyState, useLayerFontsReady } from './fonts.ts';
+import { TrackMatteContext, TrackMatteHub } from './fx/matte.ts';
 import { useFxStatus } from './fx/status.ts';
 import { fxRemapFrame, hasTimeDependentFx } from './fx/time.ts';
 import {
@@ -41,10 +48,13 @@ import {
 	transitionProgressAt,
 	transitionRunMode,
 } from './fx/transition.tsx';
+import { AdjustmentScope } from './layers/AdjustmentScope.tsx';
 import { AudioLayer, layerComponentFor } from './layers/index.ts';
+import { NestTracksContext } from './layers/nest-context.ts';
 import { rgbaCss } from './metadata.ts';
 import { blendModeCss, premountFrames } from './pipeline.ts';
 import { FrameRepaint } from './repaint.tsx';
+import { ShowFrame } from './show-frame.tsx';
 import type { LayerProps, RenderDoc, RenderOptions, SequenceCompositionProps } from './types.ts';
 
 /** Kinds whose layer output depends on the frame beyond what `ResolvedLayerProps` captures. */
@@ -52,6 +62,8 @@ const FRAME_DEPENDENT_KINDS: ReadonlySet<string> = new Set([
 	'motion-graphic',
 	'animated-image',
 	'composition',
+	// edit-structure: a nested sequence plays its own content.
+	'nest-video',
 ]);
 
 const hasKeyframes = (v: { keyframes: unknown[] } | null | undefined): boolean =>
@@ -70,6 +82,7 @@ function isFrameDependent(
 	// A shader effect that changes over time (incl. a media param bound to a video that plays).
 	if (hasTimeDependentFx(clip, undefined, media ? (id) => media[id]?.kind : undefined)) return true;
 	const src = clip.source;
+	if ('generator' in src) return src.generator.kind === 'counting-leader';
 	if ('text' in src) return !!src.animation && !!(src.animation.in || src.animation.out);
 	if ('shape' in src) {
 		const s = src.shape;
@@ -99,11 +112,12 @@ function layerViewEqual(a: ViewProps, b: ViewProps): boolean {
 		a.options !== b.options ||
 		a.fps !== b.fps ||
 		a.fonts !== b.fonts ||
-		a.transition !== b.transition
+		a.transition !== b.transition ||
+		a.matte !== b.matte
 	)
 		return false;
 	if (a.frameDependent || b.frameDependent)
-		return a.localFrame === b.localFrame && a.realFrame === b.realFrame;
+		return a.localFrame === b.localFrame && a.realFrame === b.realFrame && a.pictureTime === b.pictureTime;
 	return true;
 }
 
@@ -125,10 +139,15 @@ const ClipLayer = memo(function ClipLayer({
 	clip,
 	doc,
 	options,
+	matteHub,
+	matteOnly,
 }: {
 	clip: RenderVisualClip;
 	doc: RenderDoc;
 	options: RenderOptions;
+	/** wp masks: the hub of this clip's track when a Track Matte Key reads it. */
+	matteHub?: TrackMatteHub;
+	matteOnly?: boolean;
 }) {
 	// Inside the Sequence the current frame counts from its start, also when `from` is negative (a render
 	// range starting mid-clip): Remotion subtracts the absolute `from`. The Sequence starts `headHandle`
@@ -137,6 +156,24 @@ const ClipLayer = memo(function ClipLayer({
 	const frame = clip.start + localFrame;
 	const fps = doc.settings.fps.num / doc.settings.fps.den;
 	const contentTime = clipContentTime(clip, frame, doc.settings.fps);
+	// edit-structure: the frame whose picture is shown (frame holds, freeze-frame handles).
+	const pictureLocal = pictureLocalFrame(clip, localFrame, doc.settings.fps);
+	const pictureTime = clipPictureTime(clip, clip.start + pictureLocal, doc.settings.fps);
+	// A held clip is drawn as a clip whose first frame is the held content (its axis starts at the hold).
+	const heldClip = useMemo(
+		() =>
+			clip.frameHold
+				? {
+						...clip,
+						sourceIn: clip.frameHold.flicks,
+						speed: { ...clip.speed, reverse: false },
+						// Its axis starts at the held content (frame 0), handles included.
+						headHandle: 0,
+						tailHandle: 0,
+					}
+				: null,
+		[clip],
+	);
 	const resolved = resolveCachedLayerProps(clip, contentTime);
 	// Transition framework: the GPU transition this clip is a side of at this frame (if any).
 	const sides = useContext(TransitionSidesContext).get(clip.clipId);
@@ -147,6 +184,11 @@ const ClipLayer = memo(function ClipLayer({
 		: 0;
 	const tap = gpuSide ? gpuSide.hub.tap(gpuSide.side) : null;
 	const transition = useMemo(() => (tap ? { progress, side: tap.side, tap } : undefined), [tap, progress]);
+	const matteTap = matteHub?.tap(clip.clipId);
+	const matte = useMemo(
+		() => (matteTap ? { tap: matteTap, hide: !!matteOnly, seqFrame: frame } : undefined),
+		[matteTap, matteOnly, frame],
+	);
 	// Transition ramps multiply the opacity; outside a ramp the (cached) props object is passed through.
 	const fade =
 		fadeFactor(clip.fades, frame) *
@@ -160,9 +202,30 @@ const ClipLayer = memo(function ClipLayer({
 	// S11:FIX-003: font-dependent layers mount once their faces are loaded (no fallback-font paint/measure).
 	const fontsReady = useLayerFontsReady(clip, doc.fonts);
 	// fx framework: a time effect shows the source at another frame (Motion/opacity/params stay at the real time).
-	const remapped = fxRemapFrame(clip, props.effects, localFrame, fps);
+	const remapped = fxRemapFrame(clip, props.effects, pictureLocal, fps);
 	const frameDependent = frameDependentIn(clip, doc.media);
 	if (!fontsReady) return null;
+	if (remapped === null && pictureLocal !== localFrame)
+		return (
+			<ShowFrame frame={heldClip ? 0 : Math.max(0, pictureLocal + (clip.headHandle ?? 0))}>
+				<LayerView
+					Component={Component}
+					frameDependent={frameDependent}
+					clip={heldClip ?? clip}
+					props={props}
+					localFrame={heldClip ? 0 : pictureLocal}
+					realFrame={localFrame}
+					contentTime={contentTime}
+					pictureTime={pictureTime}
+					fps={fps}
+					media={media}
+					options={options}
+					fonts={doc.fonts}
+					transition={transition}
+					matte={matte}
+				/>
+			</ShowFrame>
+		);
 	if (remapped !== null)
 		return (
 			<Freeze frame={remapped + (clip.headHandle ?? 0)}>
@@ -174,11 +237,13 @@ const ClipLayer = memo(function ClipLayer({
 					localFrame={remapped}
 					realFrame={localFrame}
 					contentTime={clipContentTime(clip, clip.start + remapped, doc.settings.fps)}
+					pictureTime={clipPictureTime(clip, clip.start + remapped, doc.settings.fps)}
 					fps={fps}
 					media={media}
 					options={options}
 					fonts={doc.fonts}
 					transition={transition}
+					matte={matte}
 				/>
 			</Freeze>
 		);
@@ -190,21 +255,64 @@ const ClipLayer = memo(function ClipLayer({
 			props={props}
 			localFrame={localFrame}
 			contentTime={contentTime}
+			pictureTime={pictureTime}
 			fps={fps}
 			media={media}
 			options={options}
 			fonts={doc.fonts}
 			transition={transition}
+			matte={matte}
 		/>
 	);
 });
 
-export function SequenceComposition({ doc, options }: SequenceCompositionProps) {
-	const root = useRef<HTMLDivElement>(null);
-	const fontsReady = useFontsReadyState(doc.fonts);
+/**
+ * edit-structure: the clip-local frame whose picture a clip shows at `localFrame` — the held frame of a frame hold
+ * (rounded to the frame grid), or the edge frame inside freeze-frame transition handles; else `localFrame`.
+ */
+export function pictureLocalFrame(
+	clip: Pick<
+		RenderVisualClip,
+		| 'start'
+		| 'duration'
+		| 'sourceIn'
+		| 'speed'
+		| 'frameHold'
+		| 'headHandle'
+		| 'tailHandle'
+		| 'freezeHead'
+		| 'freezeTail'
+	>,
+	localFrame: number,
+	fps: { num: number; den: number },
+): number {
+	if (clip.frameHold) {
+		const step = flicksPerFrame(fps) * clip.speed.rate;
+		const i = Math.round((clip.frameHold.flicks - clip.sourceIn) / step);
+		return clip.speed.reverse ? clip.duration - 1 - i : i;
+	}
+	const firstReal = -(clip.headHandle ?? 0) + (clip.freezeHead ?? 0);
+	if (clip.freezeHead && localFrame < firstReal) return firstReal;
+	const lastReal = clip.duration + (clip.tailHandle ?? 0) - (clip.freezeTail ?? 0) - 1;
+	if (clip.freezeTail && localFrame > lastReal) return lastReal;
+	return localFrame;
+}
+
+/**
+ * The video tracks of a render doc, bottom → top, with their background (S01:RND-005): used for the sequence and,
+ * recursively, for nested sequences (`NestLayer` through `NestTracksContext`). `offset` = the doc frame shown at the
+ * enclosing Sequence's frame 0 (`doc.range.start` for the root).
+ */
+export function VideoTracks({
+	doc,
+	options,
+	offset,
+}: {
+	doc: SequenceCompositionProps['doc'];
+	options: SequenceCompositionProps['options'];
+	offset: number;
+}) {
 	const fps = doc.settings.fps.num / doc.settings.fps.den;
-	const offset = doc.range.start;
-	const background = options.transparentBackground ? 'transparent' : rgbaCss(doc.settings.backgroundColor);
 	const premount = premountFrames(fps);
 	const gpu = useFxStatus();
 	const htmlInCanvas = htmlInCanvasAvailable();
@@ -218,13 +326,44 @@ export function SequenceComposition({ doc, options }: SequenceCompositionProps) 
 		}
 		return h;
 	};
+	// wp masks: one matte hub per track a Track Matte Key reads (keyed by the frame size of the document).
+	const matteHubs = useRef(new Map<string, TrackMatteHub>());
+	const matteHubOf = (trackId: string) => {
+		const key = `${trackId}@${doc.settings.width}x${doc.settings.height}`;
+		let h = matteHubs.current.get(key);
+		if (!h) {
+			h = new TrackMatteHub(trackId, { width: doc.settings.width, height: doc.settings.height });
+			matteHubs.current.set(key, h);
+		}
+		return h;
+	};
+	// biome-ignore lint/correctness/useExhaustiveDependencies: matteHubOf reads a ref
+	const matteContext = useMemo(() => {
+		const ids = matteTrackIds({ videoTracks: [...doc.videoTracks, ...(doc.matteTracks ?? [])] });
+		const out = new Map<string, TrackMatteHub>();
+		for (const id of ids) out.set(id, matteHubOf(id));
+		return out;
+	}, [doc.videoTracks, doc.matteTracks, doc.settings.width, doc.settings.height]);
+	// Hidden tracks read as mattes: their clips feed the hub only (no transitions, no visible output).
+	const hiddenMattes = useMemo(
+		() =>
+			(doc.matteTracks ?? []).map((t) => {
+				const hub = matteContext.get(t.trackId);
+				hub?.setClips(t.clips, doc.media);
+				return { trackId: t.trackId, clips: t.clips, hub };
+			}),
+		[doc.matteTracks, doc.media, matteContext],
+	);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: hubOf reads a ref
 	const tracks = useMemo(
 		() =>
 			doc.videoTracks.map((t) => {
-				const clips = options.layerFilter
+				const all = options.layerFilter
 					? t.clips.filter((c) => options.layerFilter!.includes(c.clipId))
 					: t.clips;
+				// edit-structure: adjustment clips wrap the tracks below (AdjustmentScope), they are not layers.
+				const adjustments = all.filter((c) => c.kind === 'adjustment');
+				const clips = all.filter((c) => c.kind !== 'adjustment');
 				// Layer renders (bakes of single clips) draw no stages, as no mattes.
 				const byId = new Map(clips.map((c) => [c.clipId, c]));
 				const sides = new Map<string, TransitionSideEntry[]>();
@@ -249,21 +388,128 @@ export function SequenceComposition({ doc, options }: SequenceCompositionProps) 
 					const blend = modes.size === 1 ? blendModeCss([...modes][0]!) : undefined;
 					stages.push({ t: tr, spec, side: 'in', mode, hub, ...(blend ? { blendMode: blend } : {}) });
 				}
+				const matteHub = matteContext.get(t.trackId);
+				matteHub?.setClips(clips, doc.media);
 				return {
 					trackId: t.trackId,
 					clips,
+					adjustments,
 					mattes: options.layerFilter ? [] : (t.mattes ?? []),
 					sides,
 					stages,
+					matteHub,
 				};
 			}),
-		[doc.videoTracks, doc.media, options.layerFilter, gpu, htmlInCanvas],
+		[doc.videoTracks, doc.media, options.layerFilter, gpu, htmlInCanvas, matteContext],
 	);
 	const comp = useMemo(
 		() => ({ width: doc.settings.width, height: doc.settings.height, fps }),
 		[doc.settings.width, doc.settings.height, fps],
 	);
 	const fpf = flicksPerFrame(doc.settings.fps);
+	const background = options.transparentBackground ? null : doc.settings.backgroundColor;
+	let stack: ReactNode =
+		background && background[3] > 0 ? (
+			<AbsoluteFill data-sequence-background="" style={{ backgroundColor: rgbaCss(background) }} />
+		) : null;
+	for (const track of tracks) {
+		if (track.adjustments.length > 0)
+			stack = (
+				<AdjustmentScope
+					key={`adj-${track.trackId}`}
+					clips={track.adjustments}
+					doc={doc}
+					options={options}
+					offset={offset}
+				>
+					{stack}
+				</AdjustmentScope>
+			);
+		stack = (
+			<Fragment key={track.trackId}>
+				{stack}
+				<TransitionSidesContext.Provider value={track.sides}>
+					<AbsoluteFill data-track-id={track.trackId}>
+						{track.mattes.map((m) => (
+							<Sequence
+								key={`matte-${m.id}`}
+								from={m.start - offset}
+								durationInFrames={m.duration}
+								name="Transition matte"
+							>
+								<AbsoluteFill data-transition-matte={m.id} style={{ backgroundColor: rgbaCss(m.color) }} />
+							</Sequence>
+						))}
+						{track.clips.map((clip) => {
+							const head = clip.headHandle ?? 0;
+							const from = clip.start - head - offset;
+							return (
+								<Sequence
+									key={clip.clipId}
+									from={from}
+									durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
+									name={clip.name}
+									premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
+								>
+									<ClipLayer clip={clip} doc={doc} options={options} matteHub={track.matteHub} />
+								</Sequence>
+							);
+						})}
+						{track.stages.map((st) => (
+							<Sequence
+								key={`transition-${st.t.id}`}
+								from={st.t.start - offset}
+								durationInFrames={st.t.duration}
+								name={st.spec.label}
+							>
+								<TransitionStage
+									t={st.t}
+									spec={st.spec}
+									hub={st.hub}
+									mode={st.mode}
+									comp={comp}
+									flicksPerFrame={fpf}
+									isPreview={options.isPreview}
+									blendMode={st.blendMode}
+									media={doc.media}
+								/>
+							</Sequence>
+						))}
+					</AbsoluteFill>
+				</TransitionSidesContext.Provider>
+			</Fragment>
+		);
+	}
+	return (
+		<TrackMatteContext.Provider value={matteContext}>
+			{hiddenMattes.map((track) => (
+				<AbsoluteFill key={`matte-${track.trackId}`} data-matte-track-id={track.trackId}>
+					{track.clips.map((clip) => {
+						const head = clip.headHandle ?? 0;
+						return (
+							<Sequence
+								key={clip.clipId}
+								from={clip.start - head - offset}
+								durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
+								name={`${clip.name} (matte)`}
+								premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
+							>
+								<ClipLayer clip={clip} doc={doc} options={options} matteHub={track.hub} matteOnly />
+							</Sequence>
+						);
+					})}
+				</AbsoluteFill>
+			))}
+			{stack}
+		</TrackMatteContext.Provider>
+	);
+}
+
+export function SequenceComposition({ doc, options }: SequenceCompositionProps) {
+	const root = useRef<HTMLDivElement>(null);
+	const fontsReady = useFontsReadyState(doc.fonts);
+	const fps = doc.settings.fps.num / doc.settings.fps.den;
+	const offset = doc.range.start;
 	// M2 colour stage (S06): LUT assets referenced by effect params and the preview before/after bypass.
 	const color = useMemo<ColorDocValue>(
 		() => ({
@@ -276,91 +522,37 @@ export function SequenceComposition({ doc, options }: SequenceCompositionProps) 
 	return (
 		<FontsReadyContext.Provider value={fontsReady}>
 			<ColorDocContext.Provider value={color}>
-				<AbsoluteFill
-					ref={root}
-					style={{ backgroundColor: background, overflow: 'hidden', isolation: 'isolate' }}
-				>
-					{tracks.map((track) => (
-						<TransitionSidesContext.Provider key={track.trackId} value={track.sides}>
-							<AbsoluteFill data-track-id={track.trackId}>
-								{track.mattes.map((m) => (
-									<Sequence
-										key={`matte-${m.id}`}
-										from={m.start - offset}
-										durationInFrames={m.duration}
-										name="Transition matte"
-									>
-										<AbsoluteFill
-											data-transition-matte={m.id}
-											style={{ backgroundColor: rgbaCss(m.color) }}
-										/>
-									</Sequence>
-								))}
-								{track.clips.map((clip) => {
-									const head = clip.headHandle ?? 0;
-									const from = clip.start - head - offset;
-									return (
-										<Sequence
-											key={clip.clipId}
-											from={from}
-											durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
-											name={clip.name}
-											premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
-										>
-											<ClipLayer clip={clip} doc={doc} options={options} />
-										</Sequence>
-									);
-								})}
-								{track.stages.map((st) => (
-									<Sequence
-										key={`transition-${st.t.id}`}
-										from={st.t.start - offset}
-										durationInFrames={st.t.duration}
-										name={st.spec.label}
-									>
-										<TransitionStage
-											t={st.t}
-											spec={st.spec}
-											hub={st.hub}
-											mode={st.mode}
-											comp={comp}
-											flicksPerFrame={fpf}
-											isPreview={options.isPreview}
-											blendMode={st.blendMode}
-											media={doc.media}
-										/>
-									</Sequence>
-								))}
-							</AbsoluteFill>
-						</TransitionSidesContext.Provider>
-					))}
-					{doc.audioClips.map((clip) => {
-						// An audio crossfade plays the clip's handles (S10:TUI-052).
-						const head = clip.headHandle ?? 0;
-						const from = clip.start - head - offset;
-						return (
-							<Sequence
-								key={clip.clipId}
-								from={from}
-								durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
-								name={clip.clipId}
-								layout="none"
-							>
-								<AudioLayer
-									clip={clip}
-									media={doc.media[clip.mediaId] ?? null}
-									fps={fps}
-									fpsRational={doc.settings.fps}
-									options={options}
-									master={doc.master}
-									sequenceFrom={from}
-								/>
-							</Sequence>
-						);
-					})}
-					{/* Last child: every frame is captured as a fresh paint of the settled DOM (repaint.tsx). */}
-					<FrameRepaint target={root} deps={[doc, options]} />
-				</AbsoluteFill>
+				<NestTracksContext.Provider value={VideoTracks}>
+					<AbsoluteFill ref={root} style={{ overflow: 'hidden', isolation: 'isolate' }}>
+						<VideoTracks doc={doc} options={options} offset={offset} />
+						{doc.audioClips.map((clip) => {
+							// An audio crossfade plays the clip's handles (S10:TUI-052).
+							const head = clip.headHandle ?? 0;
+							const from = clip.start - head - offset;
+							return (
+								<Sequence
+									key={clip.clipId}
+									from={from}
+									durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
+									name={clip.clipId}
+									layout="none"
+								>
+									<AudioLayer
+										clip={clip}
+										media={doc.media[clip.mediaId] ?? null}
+										fps={fps}
+										fpsRational={doc.settings.fps}
+										options={options}
+										master={doc.master}
+										sequenceFrom={from}
+									/>
+								</Sequence>
+							);
+						})}
+						{/* Last child: every frame is captured as a fresh paint of the settled DOM (repaint.tsx). */}
+						<FrameRepaint target={root} deps={[doc, options]} />
+					</AbsoluteFill>
+				</NestTracksContext.Provider>
 			</ColorDocContext.Provider>
 		</FontsReadyContext.Provider>
 	);

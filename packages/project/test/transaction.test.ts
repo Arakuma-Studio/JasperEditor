@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { COMMAND_CATALOG } from '../src/commands/catalog.ts';
+import { isNotImplementedHandler } from '../src/commands/handlers/util.ts';
 import {
 	applyTransaction,
 	createCounterIdSource,
@@ -155,11 +157,11 @@ describe('transactions (S01 §16)', () => {
 });
 
 describe('catalog (ARCHITECTURE §5.3)', () => {
-	it('stubs refuse with E_NOT_IMPLEMENTED', () => {
-		const h = new Harness();
-		const r = h.tx([{ type: 'sequence.delete', sequenceId: h.seqId }]);
-		expect(r.ok).toBe(false);
-		if (!r.ok) expect(r.errors[0]!.code).toBe('E_NOT_IMPLEMENTED');
+	it('every declared command is implemented (no E_NOT_IMPLEMENTED stubs left)', () => {
+		const stubs = Object.values(COMMAND_CATALOG)
+			.filter((e) => isNotImplementedHandler(e.handler))
+			.map((e) => e.type);
+		expect(stubs).toEqual([]);
 	});
 
 	it('exports command and template argument constraints as JSON Schema (S01:AGT-002)', () => {
@@ -178,7 +180,8 @@ describe('catalog (ARCHITECTURE §5.3)', () => {
 		]);
 		const s = exportAgentSchema(defaultRegistries(tpl));
 		expect(s.commands['clip.place'].implemented).toBe(true);
-		expect(s.commands['sequence.delete'].implemented).toBe(false);
+		expect(s.commands['sequence.delete'].implemented).toBe(true);
+		expect(s.commands['transcript.setBreak'].implemented).toBe(true);
 		expect(s.commands['clip.place'].schema).toMatchObject({
 			type: 'object',
 			required: expect.arrayContaining(['type', 'source', 'at']),

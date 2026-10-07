@@ -1270,8 +1270,7 @@ export const captionHandlers: HandlerMap = {
 			const t = cmd.trackId
 				? h.track(seq, cmd.trackId)
 				: (seq.captionTracks.find((x) => x.id === activeCaptionTrack(seq as Sequence)?.id) ?? null);
-			if (t?.kind !== 'caption')
-				return h.fail('E_INVALID_PARAM', 'No caption track to save the style of');
+			if (t?.kind !== 'caption') return h.fail('E_INVALID_PARAM', 'No caption track to save the style of');
 			style = trackStyleOf(doc, seq, t, h);
 		}
 		const id = cmd.id ?? `cps_${h.ids.next('fx').slice(3)}`;

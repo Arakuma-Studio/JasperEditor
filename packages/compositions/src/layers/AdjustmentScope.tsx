@@ -1,0 +1,283 @@
+// Adjustment layers (edit-structure, S01:KND-012, FX-002): an adjustment clip's effects run on the composite of every
+// track below it (background included) during its range, and the result is mixed back over that composite with the
+// clip's opacity (× transition fades) and blend mode, limited to its crop (Premiere: cropping an adjustment layer
+// limits where its effects apply). `VideoTracks` wraps the tracks below each track that holds adjustment clips in one
+// scope; the scope's element structure never changes over time (no remounts of the layers below).
+// Two ways, decided per track from all its adjustment clips (static, so the DOM stays stable):
+// - `css`: every effect is a CSS filter / SVG filter at full opacity, Normal blend and no crop — the scope element
+//   gets the filter (exact; works in every browser);
+// - `canvas`: the composite is drawn through Remotion's `<HtmlInCanvas>` and the canvas effect chain: `stash` (keep
+//   the original) → the effects (shader passes, colour runs, CSS filters, flips) → `mix` (adjusted over original with
+//   opacity, blend and the crop region). Renders always have HTML-in-Canvas; a Player without it shows the composite
+//   unadjusted with a chip, and a render that cannot run it fails (FX_LAYER_UNSUPPORTED), never a different picture.
+import {
+	activeMasks,
+	clipContentTime,
+	clipHasMasks,
+	defaultEffectRegistry,
+	fadeFactor,
+	type RenderVisualClip,
+	type ResolvedEffect,
+	resolveCachedLayerProps,
+} from '@jasper/project';
+import { type CSSProperties, type ReactNode, useMemo, useRef } from 'react';
+import { HtmlInCanvas, useCurrentFrame } from 'remotion';
+import { canUseHtmlInCanvas, useDomFxDescriptors } from '../fx/FxPicture.tsx';
+import { type AdjustmentHolder, type FxPreparedStep, useLayerFx } from '../fx/stage.ts';
+import { effectStages } from '../pipeline.ts';
+import type { LayerProps, RenderDoc, RenderOptions } from '../types.ts';
+import { GradeChip } from './LayerBox.tsx';
+
+const CROP = 'jasper.crop';
+const FILL: CSSProperties = { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%' };
+
+/** Canvas 2D compositing operator of an S01 blend mode (the same modes as `mix-blend-mode`). */
+export function blendOperator(mode: string): GlobalCompositeOperation {
+	switch (mode) {
+		case 'multiply':
+		case 'screen':
+		case 'overlay':
+		case 'darken':
+		case 'lighten':
+		case 'difference':
+			return mode;
+		case 'add':
+			return 'lighter';
+		default:
+			return 'source-over';
+	}
+}
+
+/** True when a CSS filter on the scope renders the clip exactly (see the file comment). */
+export function cssExactAdjustment(clip: RenderVisualClip): boolean {
+	if (clip.blendMode !== 'normal') return false;
+	// wp masks: Opacity / effect masks limit where the effects apply (canvas chain).
+	if (clipHasMasks(clip)) return false;
+	if (clip.opacity.value !== 100 || clip.opacity.keyframes.length > 0) return false;
+	if (clip.fades?.length) return false;
+	for (const fx of clip.effects) {
+		if (!fx.enabled) continue;
+		const spec = defaultEffectRegistry.get(fx.effectId, fx.effectVersion);
+		if (spec?.appliesTo !== 'video') continue;
+		if (fx.effectId === CROP || spec.gpu || spec.color) return false;
+		// Only filter-type CSS (or an SVG filter): anything else (transforms, clip paths) changes geometry.
+		const probe = spec.preview.css?.(
+			Object.fromEntries(spec.params.map((p) => [p.name, p.default])) as never,
+		);
+		if (probe && Object.keys(probe).some((k) => k !== 'filter')) return false;
+		if (!probe && !spec.preview.svgFilter) return false;
+	}
+	return true;
+}
+
+/** The clips of `clips` covering sequence frame `frame` (adjustment clips have no transition handles). */
+function activeAt(clips: readonly RenderVisualClip[], frame: number): RenderVisualClip | null {
+	for (const c of clips) if (frame >= c.start && frame < c.start + c.duration) return c;
+	return null;
+}
+
+export function AdjustmentScope({
+	clips,
+	doc,
+	options,
+	offset,
+	children,
+}: {
+	clips: readonly RenderVisualClip[];
+	doc: RenderDoc;
+	options: RenderOptions;
+	offset: number;
+	children?: ReactNode;
+}) {
+	const frame = useCurrentFrame() + offset;
+	const css = useMemo(() => clips.every(cssExactAdjustment), [clips]);
+	const active = activeAt(clips, frame);
+	const props = active
+		? resolveCachedLayerProps(active, clipContentTime(active, frame, doc.settings.fps))
+		: null;
+	if (css)
+		return (
+			<CssScope active={active} effects={props?.effects ?? []}>
+				{children}
+			</CssScope>
+		);
+	return (
+		<CanvasScope clips={clips} active={active} frame={frame} doc={doc} options={options} props={props}>
+			{children}
+		</CanvasScope>
+	);
+}
+
+function CssScope({
+	active,
+	effects,
+	children,
+}: {
+	active: RenderVisualClip | null;
+	effects: readonly ResolvedEffect[];
+	children?: ReactNode;
+}) {
+	const stages = useMemo(
+		() => (active ? effectStages(effects, `adj-${active.clipId}`) : []),
+		[active, effects],
+	);
+	const filter = stages
+		.map((s) => s.style.filter)
+		.filter((f): f is string => typeof f === 'string' && f.length > 0)
+		.join(' ');
+	const markup = stages.map((s) => s.svg?.markup ?? '').join('');
+	return (
+		<>
+			<svg
+				width={0}
+				height={0}
+				style={{ position: 'absolute', width: 0, height: 0 }}
+				aria-hidden="true"
+				// biome-ignore lint/security/noDangerouslySetInnerHtml: effect registry SVG filter markup (app code)
+				dangerouslySetInnerHTML={{ __html: markup }}
+			/>
+			<div
+				data-adjustment-scope="css"
+				data-adjustment-active={active?.clipId ?? ''}
+				style={{ ...FILL, filter: filter || undefined }}
+			>
+				{children}
+			</div>
+		</>
+	);
+}
+
+function CanvasScope({
+	clips,
+	active,
+	frame,
+	doc,
+	options,
+	props,
+	children,
+}: {
+	clips: readonly RenderVisualClip[];
+	active: RenderVisualClip | null;
+	frame: number;
+	doc: RenderDoc;
+	options: RenderOptions;
+	props: ReturnType<typeof resolveCachedLayerProps> | null;
+	children?: ReactNode;
+}) {
+	const holder = useRef<AdjustmentHolder>({ canvas: null }).current;
+	const canRun = canUseHtmlInCanvas();
+	const W = doc.settings.width;
+	const H = doc.settings.height;
+	const fps = doc.settings.fps.num / doc.settings.fps.den;
+	const clip = active ?? clips[0]!;
+	const effects = useMemo(() => (props?.effects ?? []).filter((e) => e.effectId !== CROP), [props]);
+	const crop = props?.effects.find((e) => e.enabled && e.effectId === CROP) ?? null;
+	const opacity = active && props ? (props.opacity / 100) * fadeFactor(active.fades, frame) : 0;
+	// wp masks: the Opacity masks limit where the adjustment applies (the mix step's coverage), they do not cut the
+	// composite below; effect masks stay on their effects (fxMasked: mix(input, effected, coverage)).
+	const baseProps =
+		props ?? resolveCachedLayerProps(clip, clipContentTime(clip, clip.start, doc.settings.fps));
+	const opacityMasks = useMemo(
+		() => (active && baseProps.masks?.length ? activeMasks(baseProps.masks) : []),
+		[active, baseProps.masks],
+	);
+	const layerProps = useMemo(
+		() => (baseProps.masks?.length ? { ...baseProps, masks: [] } : baseProps),
+		[baseProps],
+	);
+	const layer: LayerProps = {
+		clip,
+		props: layerProps,
+		localFrame: frame - clip.start,
+		contentTime: clipContentTime(clip, frame, doc.settings.fps),
+		fps,
+		media: null,
+		options,
+		fonts: doc.fonts,
+	};
+	const blend = blendOperator(clip.blendMode);
+	const insets = crop
+		? ([crop.params.left, crop.params.top, crop.params.right, crop.params.bottom].map(
+				(v) => Math.min(100, Math.max(0, Number(v ?? 0))) / 100,
+			) as [number, number, number, number])
+		: null;
+	const key = `${opacity}:${blend}:${insets?.join(',') ?? ''}:${opacityMasks.length ? JSON.stringify(opacityMasks) : ''}`;
+	const extraSteps = useMemo((): { first: FxPreparedStep[]; last: FxPreparedStep[] } => {
+		return {
+			first: [{ kind: 'stash', key: 'stash', holder }],
+			last: [
+				{
+					kind: 'mix',
+					key: `mix:${key}`,
+					holder,
+					opacity,
+					blend,
+					insets,
+					...(opacityMasks.length ? { opacityMasks } : {}),
+				},
+			],
+		};
+	}, [key, holder, opacity, blend, insets, opacityMasks]);
+	const fx = useLayerFx(layer, {
+		enabled: !!active,
+		canRun,
+		chain: true,
+		effects,
+		extraSteps,
+	});
+	const stage = fx.mode === 'active' ? fx.stage : null;
+	const descriptors = useDomFxDescriptors(stage);
+	if (!canRun)
+		return (
+			<>
+				<div data-adjustment-scope="bypass" style={FILL}>
+					{children}
+				</div>
+				{active && options.isPreview ? (
+					<GradeChip
+						layer={layer}
+						text="Adjustment layers need HTML-in-Canvas here (chrome://flags/#canvas-draw-element)"
+					/>
+				) : null}
+			</>
+		);
+	const L = stage?.layout;
+	const chip =
+		active && options.isPreview && fx.mode !== 'active' ? (
+			<GradeChip layer={layer} text={fx.mode === 'bypass' ? fx.chip : 'Adjustment layer unavailable'} />
+		) : null;
+	return (
+		<>
+			<HtmlInCanvas
+				width={L?.cssWidth ?? W}
+				height={L?.cssHeight ?? H}
+				pixelDensity={L?.pxScale ?? 1}
+				effects={stage ? descriptors : []}
+				style={{
+					position: 'absolute',
+					left: -(L?.padding.left ?? 0),
+					top: -(L?.padding.top ?? 0),
+					width: L?.cssWidth ?? W,
+					height: L?.cssHeight ?? H,
+					display: 'block',
+				}}
+				showInTimeline={false}
+			>
+				<div
+					data-adjustment-scope="canvas"
+					data-adjustment-active={active?.clipId ?? ''}
+					style={{
+						position: 'absolute',
+						left: L?.padding.left ?? 0,
+						top: L?.padding.top ?? 0,
+						width: W,
+						height: H,
+					}}
+				>
+					{children}
+				</div>
+			</HtmlInCanvas>
+			{chip}
+		</>
+	);
+}

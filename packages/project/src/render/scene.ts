@@ -3,6 +3,7 @@
 
 import { contentTimeAt } from '../derive/index.ts';
 import { evaluate } from '../keyframes.ts';
+import { masksAnimated, type ResolvedMask, resolveMasks } from '../masks/model.ts';
 import type { ParamValue, Vec2 } from '../schema/common.ts';
 import {
 	applyMat3,
@@ -32,6 +33,8 @@ export type ResolvedEffect = {
 	effectVersion: number;
 	enabled: boolean;
 	params: Record<string, ParamValue>;
+	/** wp masks: the effect applies inside these masks (absent = no masks: everywhere). */
+	masks?: ResolvedMask[];
 };
 
 /** Effect id of the corner pin (M2, S09:TRK-050). Params: TL/TR/BR/BL as vec2 normalized to the layer box. */
@@ -66,6 +69,8 @@ export type ResolvedLayerProps = {
 	transform: LayerTransformValues | null;
 	opacity: number;
 	effects: ResolvedEffect[];
+	/** wp masks: evaluated Opacity masks (empty = none). */
+	masks: ResolvedMask[];
 	matrix: Mat2D;
 	/**
 	 * M2: the full projective layer map (Motion · corner pin) when the layer has a corner pin, else null (the
@@ -100,10 +105,39 @@ function isStaticClip(c: RenderVisualClip): boolean {
 			t.rotation.keyframes.length)
 	)
 		return false;
+	if (masksAnimated(c.masks) || c.effects.some((fx) => masksAnimated(fx.masks))) return false;
 	return c.effects.every((fx) => Object.values(fx.params).every((p) => p.keyframes.length === 0));
 }
 
-export { contentTimeAt as clipContentTime };
+type TimedClip = Parameters<typeof contentTimeAt>[0] & {
+	frameHold?: { flicks: number; holdFilters?: boolean } | null;
+};
+
+/**
+ * Content time (flicks) at which a render clip's properties — Motion, Opacity, effect params — are evaluated at
+ * sequence frame `frame` (S01:CLP-004). A frame hold with Hold Filters (edit-structure) evaluates them at the held
+ * time; otherwise they keep animating through the hold (Premiere).
+ */
+export function clipContentTime(
+	clip: TimedClip,
+	frame: number,
+	rate: Parameters<typeof contentTimeAt>[2],
+): number {
+	const hold = clip.frameHold;
+	if (hold?.holdFilters) return hold.flicks;
+	return contentTimeAt(clip, frame, rate);
+}
+
+/** Content time of the picture a clip shows at `frame`: the held time under a frame hold (edit-structure). */
+export function clipPictureTime(
+	clip: TimedClip,
+	frame: number,
+	rate: Parameters<typeof contentTimeAt>[2],
+): number {
+	const hold = clip.frameHold;
+	if (hold) return hold.flicks;
+	return contentTimeAt(clip, frame, rate);
+}
 
 /** Evaluated props of a clip at content time `t` (no caching). */
 export function resolveLayerProps(c: RenderVisualClip, t: number): ResolvedLayerProps {
@@ -126,6 +160,7 @@ export function resolveLayerProps(c: RenderVisualClip, t: number): ResolvedLayer
 		effectVersion: fx.effectVersion,
 		enabled: fx.enabled,
 		params: Object.fromEntries(Object.entries(fx.params).map(([k, a]) => [k, evaluate(a, t)])),
+		...(fx.masks?.length ? { masks: resolveMasks(fx.masks, t) } : {}),
 	}));
 	const cropFx = effects.find((e) => e.effectId === 'jasper.crop' && e.enabled);
 	const crop: Crop | null = cropFx
@@ -153,6 +188,7 @@ export function resolveLayerProps(c: RenderVisualClip, t: number): ResolvedLayer
 		transform,
 		opacity: Math.min(100, Math.max(0, evaluate(c.opacity, t))),
 		effects,
+		masks: c.masks?.length ? resolveMasks(c.masks, t) : NO_MASKS,
 		matrix,
 		projective,
 		box: c.intrinsicBox,
@@ -169,6 +205,8 @@ export function resolveLayerProps(c: RenderVisualClip, t: number): ResolvedLayer
 export function layerMapOf(props: Pick<ResolvedLayerProps, 'projective' | 'matrix'>): Mat3 {
 	return props.projective ?? mat3FromMat2D(props.matrix);
 }
+
+const NO_MASKS: ResolvedMask[] = [];
 
 const staticCache = new WeakMap<RenderVisualClip, ResolvedLayerProps>();
 
@@ -205,7 +243,7 @@ export function resolveSceneAt(snapshot: RenderSnapshot, frame: number): Resolve
 	snapshot.videoTracks.forEach((track, trackIndex) => {
 		const c = clipCovering(track.clips, frame);
 		if (!c) return;
-		const t = contentTimeAt(c, frame, snapshot.settings.fps);
+		const t = clipContentTime(c, frame, snapshot.settings.fps);
 		const props = resolveCachedLayerProps(c, t);
 		out.push({ clip: c, trackIndex, localFrame: frame - c.start, contentTime: t, props });
 	});

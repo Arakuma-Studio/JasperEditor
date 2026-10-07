@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "jasper": {
+      "command": "node",
+      "args": ["--import", "tsx", "apps/mcp/src/cli.ts", "--start-engine", "--appdir", ".stage"]
+    }
+  }
+}

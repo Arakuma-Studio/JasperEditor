@@ -132,6 +132,11 @@ export const TransitionUpdateCmd = cmd('transition.update', {
 	duration: z.number().int().min(1).optional(),
 	alignment: z.enum(['center', 'start-at-cut', 'end-at-cut']).optional(),
 	/**
+	 * edit-structure: `freeze` lets a video transition keep its duration with too few media frames (the edge frames
+	 * repeat, `freezeHandles`); `shorten` fits it to the media. Default: what the transition has.
+	 */
+	handles: z.enum(['shorten', 'freeze']).optional(),
+	/**
 	 * Wave-2 transition framework: static param values (`TransitionSpec.params`; a param with keyframes is refused —
 	 * use param.set with target ["transition", id, name]).
 	 */
@@ -153,6 +158,8 @@ export const TransitionApplyDefaultCmd = cmd('transition.applyDefault', {
 	duration: z.number().int().min(1).optional(),
 	/** M3 (S10:TUI-033): alignment of the two-sided ones (default center); fades keep their fixed alignment. */
 	alignment: z.enum(['center', 'start-at-cut', 'end-at-cut']).optional(),
+	/** edit-structure: `freeze` = video transitions keep their length with repeated frames (Premiere's default). */
+	handles: z.enum(['shorten', 'freeze']).optional(),
 });
 
 export const PARAM_COMMANDS = [

@@ -10,8 +10,12 @@ Read `docs/ARCHITECTURE.md` first; functional specs live in `docs/specs/`, resea
 The M1 acceptance run (every ARCHITECTURE §15 item, with evidence) is in `docs/M1-STATUS.md`; per-package
 notes and known gaps are in `docs/wp-notes/`.
 
-**Clean-room rule:** never open, read, grep or copy anything from `.reference/` or `editor-starter.zip`
-(ARCHITECTURE §0). All code here is original.
+**Rules first:** [`AGENTS.md`](AGENTS.md) holds the rules every contributor and agent must follow, and
+[`CLAUDE.md`](CLAUDE.md) the working instructions (gate, running the app headlessly, Definition of Done). Never
+open, read, grep or copy anything from `.reference/` or `editor-starter.zip` (a paid licence; ARCHITECTURE §0,
+D-36). Code ported from permissively licensed projects is welcome, recorded in [`licenses/ported/`](licenses/ported/)
+and shipped in `THIRD_PARTY_NOTICES.md`. Where JasperEditor stands against Premiere Pro: [`docs/gaps.md`](docs/gaps.md)
+and [`docs/parity.md`](docs/parity.md). Project files, migrations and crash recovery: [`docs/project-files.md`](docs/project-files.md).
 
 ## Requirements
 
@@ -219,7 +223,8 @@ as inline styles, so the Player, `renderStill` and parallel `renderMedia` agree 
   `REMOTION_E2E=1 pnpm exec vitest run packages/motion/test/determinism-render.e2e.test.ts`
   (Chrome at `/usr/bin/google-chrome` or `JASPER_BROWSER_EXECUTABLE`).
 - `pnpm notices` regenerates `THIRD_PARTY_NOTICES.md` (the JavaScript packages shipped in the web app and the
-  Remotion bundle, with their licence texts); `pnpm notices --check` fails when it is stale (a test runs it).
+  Remotion bundle, with their licence texts, and every ported-source record in `licenses/ported/`); `pnpm notices
+  --check` fails when it is stale (a test runs it).
   The web build ships it as `/THIRD_PARTY_NOTICES.md`, linked from Help ▸ About. Build tools whose output
   ships (Tailwind's CSS, Vite's and webpack's runtimes, Remotion's bundle entry) are an explicit list in
   `scripts/third-party-notices.mjs`; after `pnpm --filter @jasper/web build` and
@@ -379,7 +384,7 @@ copied and the token is never shown to the agent.
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
 
-Tools (76; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
+Tools (114; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the server):
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
   `add_clip` `move_clip` `trim_clip` `split_at` `delete_clips` `add_text` `add_marker` `add_motion_graphic`
@@ -392,12 +397,24 @@ Tools (76; `apps/mcp/test/readme-tools.test.ts` keeps this list in sync with the
 - Remotion projects: `import_mg_bundle` `list_compositions` `add_composition` `set_composition_props`
   `prerender_composition` `scaffold_mg_project` `list_composition_texts` `set_composition_text`.
 - Tracking: `add_tracker` `track` `apply_tracking` `get_tracker` `set_corner_pin` `simplify_keyframes`.
-- Transitions: `list_transitions` `update_transition` `remove_transitions` `apply_default_transitions`
+- Masks and track mattes: `list_masks` `add_mask` `edit_mask` `remove_masks` `track_mask` `auto_trace_mask`
+  `set_track_matte`.
+- Transitions: `list_transitions` `list_transition_types` `update_transition` `remove_transitions` `apply_default_transitions`
   `set_transition_defaults`.
 - Animation and graphics: `list_text_animations` `set_text_animation` `render_frames` `set_motion_graphic_params`
-  `add_shape`.
+  `add_shape` `get_motion_path` `set_spatial_interpolation`.
+- Effect presets: `list_effect_presets` `get_effect_preset` `apply_effect_preset` `save_effect_preset`
+  `delete_effect_preset`.
 - Clipboard: `copy_clips` `paste_clips` `copy_items` `paste_items`.
+- Keyframes and presets: `get_motion_path` `set_spatial_interpolation` · `list_effect_presets` `get_effect_preset`
+  `save_effect_preset` `apply_effect_preset` `delete_effect_preset`.
 - Media cache: `get_cache_usage` `clean_cache` `set_cache_location`.
+- Edit structure: `nest_clips` `unnest_clips` `place_sequence` `list_nests` `add_adjustment_layer` `group_clips`
+  `ungroup_clips` `duplicate_sequence` `delete_sequence` `remove_unused_media` `create_synthetic` `update_synthetic`
+  `list_through_edits` `join_through_edits` `find_gaps` `make_subsequence` `add_frame_hold`
+  `insert_frame_hold_segment` `frame_hold_options` (`docs/wp-notes/edit-structure.md`).
+- Versions and recovery: `list_project_versions` `restore_project_version` `save_project_copy` `list_unsaved_changes`
+  (docs/project-files.md).
 
 Resources: `jasper://projects/{projectId}/document`, `jasper://projects/{projectId}/timeline`,
 `jasper://guide`. Prompt: `edit-video`.
@@ -410,8 +427,11 @@ stdio server there.
 The packaged desktop app ships the server as `resources/mcp/jasper-mcp.mjs`. It has no `node`: Help ▸ Connect
 an AI Agent… gives the command that runs the bundle with the app's own binary (`ELECTRON_RUN_AS_NODE=1`).
 
-No repo-root `.mcp.json` is committed on purpose: it would switch the server on for everyone who opens this
-checkout in an MCP client, and it would point at a bundle that may not be built yet.
+**Developing JasperEditor itself:** this checkout's root [`.mcp.json`](.mcp.json) registers `jasper` for agents
+working *on* the editor. It runs the server from source (`node --import tsx apps/mcp/src/cli.ts`, no build needed)
+with `--start-engine --appdir .stage`: it uses the `pnpm dev` engine when one is running, and otherwise starts a
+headless engine on the same dev appdir (that needs `pnpm --filter @jasper/engine build` once). Claude Code asks
+once before enabling a project-scoped server; start it from the repository root so the relative paths resolve.
 
 ### HTTP API underneath
 
@@ -461,6 +481,33 @@ Tracking bakes one keyframe per frame. **Simplify…** (Properties ▸ Tracking,
 Corner pins and keyframed Motion export on the native ffmpeg path through the warp stage: an LGPL-safe per-frame warp, cached as ProRes 4444 under `<appdir>/cache/warp/`.
 
 Agents use the `add_tracker`, `track`, `apply_tracking`, `get_tracker`, `set_corner_pin` and `simplify_keyframes` MCP tools. Tracking runs OpenCV.js (Apache-2.0) in engine worker threads. Details: `docs/specs/09-tracking.md`, `docs/wp-notes/wp-m2-track.md` and `docs/wp-notes/wp-m3-trackui.md`.
+
+## Masks and track mattes
+
+Premiere-style masks (`docs/wp-notes/masks.md`):
+
+1. Select a clip. In **Effect Controls ▸ Opacity** (to cut the layer out) or under any video effect (to limit the
+   effect to a region) click the **ellipse**, **4-point polygon** or **free draw bezier** (pen) tool. The pen draws in
+   the Program monitor: click to add points, drag for curves, click the first point to close. The **trace** button
+   creates masks from the picture's alpha or luminance (holes become Subtract masks).
+2. Edit on the Program monitor: drag vertices (Shift adds to the selection), tangent handles (Alt breaks them), the
+   inside of the mask (moves it), the corner squares (scale) or just outside them (rotate); click the path to add a
+   vertex, **Alt**-click a vertex to convert it smooth ↔ corner, **Ctrl**-click to delete it; the square and circle
+   handles set **Mask Expansion** and **Mask Feather**. **Delete** removes the selected vertices or the mask.
+3. Each mask has **Mask Path**, **Mask Feather**, **Mask Opacity**, **Mask Expansion** (all keyframable), **Inverted**
+   and a mode (Add, Subtract, Intersect, Lighten, Darken, Difference, None). Paths with different vertex counts
+   interpolate through smart vertex matching.
+4. **Track** (◀◀ ◀ ▶ ▶▶ in the mask's tracking row): follows the pixels inside the mask (Position; Position &
+   Rotation; Position, Scale & Rotation; Perspective) and keys its path. Progress shows there and in the Jobs panel;
+   ■ stops it.
+
+**Track Matte Key** reads another video track (Matte = Video n; Composite Using: Matte Alpha / Matte Luma; Reverse).
+Hide the matte track (its eye) and it still works as a matte.
+
+Preview: a GPU mask rasteriser in the fx chain (analytic coverage and feather). Export: Opacity masks stay native (the
+sub-pixel kernel multiplies the picture by the same coverage); effect masks and track mattes render the layer through
+the layer bake (hybrid). Agents use `list_masks`, `add_mask`, `edit_mask`, `remove_masks`, `track_mask`,
+`auto_trace_mask` and `set_track_matte`, or the `mask.*` commands.
 
 ## Shapes
 
@@ -690,7 +737,7 @@ All 30 production Playwright checks in `smoke`, `editing`, `transitions`, `media
 | `pnpm typecheck` | `tsc --noEmit` in every package |
 | `pnpm test` | Vitest (all packages and apps as projects); `FUZZ=1 pnpm test` runs the long property sweeps |
 | `pnpm perf` | Sequential snapshot, scene, selection, timeline-transition, and cache-reference microbenchmarks |
-| `pnpm lint` | Biome + design-token and anime.js checks (`scripts/check-tokens.mjs`, `scripts/check-anime.mjs`) |
+| `pnpm lint` | Biome + design-token, anime.js, dependency-layer and asset-attribution checks (`scripts/check-tokens.mjs`, `scripts/check-anime.mjs`, `scripts/check-layers.mjs`, `scripts/check-assets.mjs`) |
 | `pnpm format` | Biome formatter |
 | `pnpm build` | web (`vite build`), engine (`dist/engine.mjs`), desktop (`dist-electron/`), MCP server (`apps/mcp/dist/jasper-mcp.mjs`) |
 | `pnpm mcp:build` | only the MCP server: esbuild bundle `apps/mcp/dist/jasper-mcp.mjs` (one executable file) |
@@ -704,6 +751,7 @@ All 30 production Playwright checks in `smoke`, `editing`, `transitions`, `media
 | `pnpm e2e:desktop-clipboard` | desktop clipboard runtime check under xvfb (`playwright.desktop.config.ts`, `E2E_SKIP_BUILD=1` reuses builds) |
 | `pnpm e2e:packaged` | packed-app check: license guard, packed engine with only the shipped LGPL FFmpeg, Remotion export |
 | `pnpm verify` | lint + typecheck + test + build |
+| `pnpm notices` / `--check` | regenerates / verifies `THIRD_PARTY_NOTICES.md`: shipped npm packages plus every `licenses/ported/*.md` record and its licence text (Help ▸ About ▸ Licenses) |
 
 ## Layout
 
