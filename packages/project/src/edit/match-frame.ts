@@ -1,50 +1,111 @@
-// edit-ux: Match Frame (F) and Reverse Match Frame (Shift+R) as pure queries over the document.
+// Match Frame (F) and Reverse Match Frame (Shift+R) as pure queries over the document — one implementation for
+// the UI (apps/web commands/structure.ts) and agents (MCP `match_frame`).
 //
 // Premiere Pro ("Match Frame", helpx.adobe.com): Match Frame opens the source of the clip under the playhead on the
-// topmost targeted track in the Source monitor, at the matching frame (a selected clip at the playhead wins; with
-// no targeted tracks every track counts, video before audio, topmost first). Reverse Match Frame moves the
-// sequence playhead to the frame that uses the frame shown in the Source monitor. Nested sequences match to the
-// nested sequence (opened as a source); subclips match to the subclip item.
-import { contentTimeAt } from '../derive/index.ts';
+// topmost targeted track in the Source monitor at the matching frame; a selected clip under the playhead wins.
+// Through nests (edit-structure) it matches the clip inside the nested sequence; an enabled multi-camera clip
+// matches its active angle only (wp-multicam). Frame holds match the held frame. Reverse Match Frame moves the
+// sequence playhead to the first frame that shows the Source monitor's frame (through nests); a subclip source
+// prefers clips placed from that subclip (edit-ux).
+import { multicamView } from '../multicam/model.ts';
+import { clipPictureTime } from '../render/scene.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, Sequence } from '../schema/sequence.ts';
+import { isNestClip } from '../structure/nest.ts';
 import { flicksPerFrame, type Rational } from '../time.ts';
 
-export type MatchFrameResult = {
-	clipId: string;
-	/** The project item to open in the Source monitor (media, subclip, synthetic or sequence item), when any. */
-	itemId: string | null;
-	mediaId: string | null;
-	/** Nested sequence (nest clips). */
-	sequenceId: string | null;
+const MAX_DEPTH = 16;
+
+export type MatchFrameHit = {
+	/** The clip that shows the source (inside a nest when matched through one). */
+	clip: Clip;
+	/** The sequence holding `clip`. */
+	seq: Sequence;
 	/** Content time (flicks) shown at the frame. */
-	sourceTime: number;
-	/** Source In / Out of the clip (flicks, Out exclusive) — for "Match Frame sets In and Out". */
-	sourceIn: number;
-	sourceOut: number;
+	contentFlicks: number;
 };
 
-function itemFor(doc: ProjectDocument, c: Clip): string | null {
-	const r = c as { mediaId?: string; syntheticId?: string; sequenceId?: string; subclipId?: string };
-	if (r.subclipId && doc.items[r.subclipId]?.kind === 'subclip') return r.subclipId;
-	for (const it of Object.values(doc.items)) {
-		if (r.mediaId && it.kind === 'media' && it.mediaId === r.mediaId) return it.id;
-		if (r.syntheticId && it.kind === 'synthetic' && it.syntheticId === r.syntheticId) return it.id;
-		if (r.sequenceId && it.kind === 'sequence' && it.sequenceId === r.sequenceId) return it.id;
+/**
+ * The media/synthetic clip shown at `frame` of `seq` on `trackIds` (all when absent): video tracks top-down, then
+ * audio; through nests (multi-camera clips through their active angle).
+ */
+export function resolveMatchFrame(
+	doc: ProjectDocument,
+	seq: Sequence,
+	frame: number,
+	trackIds?: readonly string[],
+	depth = 0,
+	preferClipId?: string,
+): MatchFrameHit | null {
+	if (depth > MAX_DEPTH) return null;
+	const rate = seq.settings.frameRate as Rational;
+	const order = [
+		...[...seq.videoTracks].reverse().map((t) => t.id),
+		...seq.audioTracks.map((t) => t.id),
+	].filter((id) => !trackIds || trackIds.includes(id));
+	const at = (trackId: string) =>
+		Object.values(seq.clips).find(
+			(c) => c.trackId === trackId && c.start <= frame && frame < c.start + c.duration,
+		);
+	const candidates: Clip[] = [];
+	const preferred = preferClipId ? seq.clips[preferClipId] : undefined;
+	if (preferred && preferred.start <= frame && frame < preferred.start + preferred.duration)
+		candidates.push(preferred);
+	for (const t of order) {
+		const c = at(t);
+		if (c && c !== preferred) candidates.push(c);
+	}
+	for (const c of candidates) {
+		const time = clipPictureTime(c as never, frame, rate);
+		if (isNestClip(c)) {
+			const whole = doc.sequences[(c as { sequenceId: string }).sequenceId];
+			if (!whole) continue;
+			const nested = multicamView(whole as Sequence, c);
+			const only =
+				nested === whole
+					? undefined
+					: [
+							...nested.videoTracks.filter((t) => t.output !== false).map((t) => t.id),
+							...nested.audioTracks.filter((t) => !t.mute).map((t) => t.id),
+						];
+			const nf = Math.floor(time / flicksPerFrame(nested.settings.frameRate as Rational) + 1e-6);
+			const hit = resolveMatchFrame(doc, nested as Sequence, nf, only, depth + 1);
+			if (hit) return hit;
+			continue;
+		}
+		if ((c as { mediaId?: string }).mediaId || (c as { syntheticId?: string }).syntheticId)
+			return { clip: c, seq, contentFlicks: time };
 	}
 	return null;
 }
 
-function clipAtFrame(seq: Sequence, trackId: string, frame: number): Clip | undefined {
-	for (const c of Object.values(seq.clips))
-		if (c.trackId === trackId && c.start <= frame && frame < c.start + c.duration) return c;
-	return undefined;
+/** The project item a clip came from: its subclip, else the media / synthetic item. */
+export function projectItemOfClip(doc: ProjectDocument, c: Clip): string | null {
+	if (c.subclipId && doc.items[c.subclipId]?.kind === 'subclip') return c.subclipId;
+	const m = (c as { mediaId?: string }).mediaId;
+	const s = (c as { syntheticId?: string }).syntheticId;
+	for (const it of Object.values(doc.items)) {
+		if (m && it.kind === 'media' && it.mediaId === m) return it.id;
+		if (s && it.kind === 'synthetic' && it.syntheticId === s) return it.id;
+	}
+	return null;
 }
 
-/**
- * The clip Match Frame uses at `frame`: `clipId` (a selected clip under the playhead) when given, else the topmost
- * clip on `trackIds` (all tracks when empty): video tracks top-down, then audio tracks A1 down.
- */
+export type MatchFrameResult = {
+	clipId: string;
+	/** Sequence holding the matched clip (a nested sequence when matched through a nest). */
+	sequenceId: string;
+	/** The project item to open in the Source monitor (subclip, media or synthetic item), when any. */
+	itemId: string | null;
+	mediaId: string | null;
+	/** Content time (flicks) shown at the frame. */
+	sourceTime: number;
+	/** The matched clip's source In / Out (flicks, Out exclusive) — Premiere "Match Frame sets In and Out". */
+	sourceIn: number;
+	sourceOut: number;
+};
+
+/** Match Frame of `sequenceId` at `frame` (see resolveMatchFrame); with targeted tracks first, then any track. */
 export function matchFrame(
 	doc: ProjectDocument,
 	sequenceId: string,
@@ -53,61 +114,82 @@ export function matchFrame(
 ): MatchFrameResult | null {
 	const seq = doc.sequences[sequenceId];
 	if (!seq) return null;
-	const rate = seq.settings.frameRate as Rational;
-	let clip: Clip | undefined;
-	if (opts.clipId) {
-		const c = seq.clips[opts.clipId];
-		if (c && c.start <= frame && frame < c.start + c.duration) clip = c;
-	}
-	if (!clip) {
-		const allowed = opts.trackIds?.length ? new Set(opts.trackIds) : null;
-		const order = [...[...seq.videoTracks].reverse(), ...seq.audioTracks].filter(
-			(t) => !allowed || allowed.has(t.id),
-		);
-		for (const t of order) {
-			clip = clipAtFrame(seq, t.id, frame);
-			if (clip) break;
-		}
-	}
-	if (!clip) return null;
-	const r = clip as { mediaId?: string; sequenceId?: string };
-	const span = clip.duration * flicksPerFrame(rate) * clip.speed.rate;
+	const hit =
+		resolveMatchFrame(doc, seq, frame, opts.trackIds?.length ? opts.trackIds : undefined, 0, opts.clipId) ??
+		(opts.trackIds?.length ? resolveMatchFrame(doc, seq, frame, undefined, 0, opts.clipId) : null);
+	if (!hit) return null;
+	const c = hit.clip;
+	const rate = hit.seq.settings.frameRate as Rational;
+	const span = c.duration * flicksPerFrame(rate) * c.speed.rate;
 	return {
-		clipId: clip.id,
-		itemId: itemFor(doc, clip),
-		mediaId: r.mediaId ?? null,
-		sequenceId: clip.kind === 'nest-video' || clip.kind === 'nest-audio' ? (r.sequenceId ?? null) : null,
-		sourceTime: Math.round(contentTimeAt(clip, frame, rate)),
-		sourceIn: clip.sourceIn,
-		sourceOut: Math.round(clip.sourceIn + span),
+		clipId: c.id,
+		sequenceId: hit.seq.id,
+		itemId: projectItemOfClip(doc, c),
+		mediaId: (c as { mediaId?: string }).mediaId ?? null,
+		sourceTime: Math.round(hit.contentFlicks),
+		sourceIn: c.sourceIn,
+		sourceOut: Math.round(c.sourceIn + span),
 	};
 }
 
 /** The sequence frame of clip `c` that shows content time `t`, or null when it does not show it. */
 export function frameShowing(c: Clip, t: number, rate: Rational): number | null {
-	const step = flicksPerFrame(rate) * c.speed.rate;
+	const F = flicksPerFrame(rate);
+	if (c.frameHold) return Math.abs(c.frameHold.flicks - t) < F / 2 ? c.start : null;
+	const step = F * c.speed.rate;
 	const i = Math.floor((t - c.sourceIn) / step + 1e-6);
-	if (i < 0 || i >= c.duration) return null;
-	return c.speed.reverse ? c.start + c.duration - 1 - i : c.start + i;
+	const local = c.speed.reverse ? c.duration - 1 - i : i;
+	return local >= 0 && local < c.duration ? c.start + local : null;
 }
 
-export type ReverseMatchSource = { itemId?: string; mediaId?: string; sequenceId?: string; time: number };
+/** All frames of `seq` (through nests) showing content `flicks` of clips matching `pred`, with the clip ids. */
+function contentFrames(
+	doc: ProjectDocument,
+	seq: Sequence,
+	pred: (c: Clip) => boolean,
+	flicks: number,
+	depth: number,
+	out: { frame: number; clipId: string; trackId: string }[],
+	top: { clip: Clip | null },
+): void {
+	if (depth > MAX_DEPTH) return;
+	const rate = seq.settings.frameRate as Rational;
+	for (const c of Object.values(seq.clips)) {
+		const owner = top.clip ?? c;
+		if (pred(c)) {
+			const f = frameShowing(c, flicks, rate);
+			if (f !== null) out.push({ frame: f, clipId: owner.id, trackId: owner.trackId });
+		} else if (isNestClip(c)) {
+			const nested = doc.sequences[(c as { sequenceId: string }).sequenceId] as Sequence | undefined;
+			if (!nested) continue;
+			const inner: typeof out = [];
+			contentFrames(doc, nested, pred, flicks, depth + 1, inner, { clip: null });
+			const nfF = flicksPerFrame(nested.settings.frameRate as Rational);
+			for (const x of inner) {
+				const f = frameShowing(c, x.frame * nfF, rate);
+				if (f !== null) out.push({ frame: f, clipId: owner.id, trackId: owner.trackId });
+			}
+		}
+	}
+}
+
+export type ReverseMatchSource = { itemId?: string; mediaId?: string; syntheticId?: string; time: number };
 
 /**
- * Reverse Match Frame: the sequence frame (and clip) that uses source content time `source.time`. Prefers clips on
- * `trackIds`, then the one nearest `near` (the current playhead), so repeated use cycles through nothing surprising.
+ * Reverse Match Frame: the frame of `sequenceId` that shows source content time `source.time` (through nests).
+ * Clips on `trackIds` and (for a subclip source) clips placed from that subclip are preferred, then the earliest
+ * frame (Premiere moves to the first use).
  */
 export function reverseMatchFrame(
 	doc: ProjectDocument,
 	sequenceId: string,
 	source: ReverseMatchSource,
-	opts: { trackIds?: readonly string[]; near?: number } = {},
+	opts: { trackIds?: readonly string[] } = {},
 ): { clipId: string; frame: number } | null {
 	const seq = doc.sequences[sequenceId];
 	if (!seq) return null;
-	const rate = seq.settings.frameRate as Rational;
 	let mediaId = source.mediaId ?? null;
-	let nested = source.sequenceId ?? null;
+	let syntheticId = source.syntheticId ?? null;
 	let subclip: string | null = null;
 	if (source.itemId) {
 		const it = doc.items[source.itemId];
@@ -115,31 +197,20 @@ export function reverseMatchFrame(
 		else if (it?.kind === 'subclip') {
 			mediaId = it.mediaId;
 			subclip = it.id;
-		} else if (it?.kind === 'sequence') nested = it.sequenceId;
+		} else if (it?.kind === 'synthetic') syntheticId = it.syntheticId;
 	}
-	const hits: { clip: Clip; frame: number; preferred: boolean }[] = [];
-	const allowed = opts.trackIds?.length ? new Set(opts.trackIds) : null;
-	for (const c of Object.values(seq.clips)) {
-		const r = c as { mediaId?: string; sequenceId?: string };
-		const match = nested
-			? (c.kind === 'nest-video' || c.kind === 'nest-audio') && r.sequenceId === nested
-			: !!mediaId && r.mediaId === mediaId;
-		if (!match) continue;
-		const f = frameShowing(c, source.time, rate);
-		if (f === null) continue;
-		hits.push({
-			clip: c,
-			frame: f,
-			preferred: (!allowed || allowed.has(c.trackId)) && (!subclip || c.subclipId === subclip),
-		});
-	}
+	if (!mediaId && !syntheticId) return null;
+	const pred = (c: Clip) =>
+		mediaId
+			? (c as { mediaId?: string }).mediaId === mediaId
+			: (c as { syntheticId?: string }).syntheticId === syntheticId;
+	const hits: { frame: number; clipId: string; trackId: string }[] = [];
+	contentFrames(doc, seq, pred, source.time, 0, hits, { clip: null });
 	if (hits.length === 0) return null;
-	const near = opts.near ?? 0;
-	hits.sort(
-		(a, b) =>
-			Number(b.preferred) - Number(a.preferred) ||
-			Math.abs(a.frame - near) - Math.abs(b.frame - near) ||
-			a.frame - b.frame,
-	);
-	return { clipId: hits[0]!.clip.id, frame: hits[0]!.frame };
+	const allowed = opts.trackIds?.length ? new Set(opts.trackIds) : null;
+	const score = (x: (typeof hits)[number]) =>
+		(allowed && !allowed.has(x.trackId) ? 2 : 0) +
+		(subclip && seq.clips[x.clipId]?.subclipId !== subclip ? 1 : 0);
+	hits.sort((a, b) => score(a) - score(b) || a.frame - b.frame);
+	return { clipId: hits[0]!.clipId, frame: hits[0]!.frame };
 }
