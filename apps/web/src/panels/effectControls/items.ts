@@ -13,8 +13,12 @@ import {
 	type MgTemplateRegistry,
 	maskPropertySpec,
 	type ProjectDocument,
+	type PuppetMesh,
+	type PuppetPin,
 	paramsPropertySpecs,
 	propertyDefault,
+	puppetPinPropertySpec,
+	puppetPinPropsOf,
 	resolvePropertyAt,
 	type Sequence,
 	selectorFields,
@@ -55,7 +59,48 @@ export type FxSection = {
 	masks?: MaskList;
 	/** text-animators: the Text section's animators, selectors, Path Options and More Options. */
 	textAnimators?: TextAnimatorListModel;
+	/** sim-warp: a Puppet effect's meshes and pins (their property rows). */
+	puppet?: PuppetListModel;
 };
+
+/** sim-warp: what a Puppet section shows below its params. */
+export type PuppetListModel = {
+	clipId: string;
+	fxId: string;
+	meshes: PuppetMesh[];
+	pins: { pin: PuppetPin; rows: Row[] }[];
+};
+
+function puppetList(
+	doc: ProjectDocument,
+	seq: Sequence,
+	clip: Clip,
+	fx: EffectInstance,
+	frame: number,
+): PuppetListModel {
+	const pup = fx.puppet ?? { meshes: [], pins: [] };
+	return {
+		clipId: clip.id,
+		fxId: fx.id,
+		meshes: pup.meshes as PuppetMesh[],
+		pins: pup.pins.map((pin) => ({
+			pin: pin as PuppetPin,
+			rows: puppetPinPropsOf(pin.kind)
+				.map((prop) => {
+					const spec = puppetPinPropertySpec(pin.id, prop);
+					return makeRow(spec.key, [
+						{
+							clip,
+							spec,
+							path: ['puppetPin', pin.id, prop],
+							resolved: resolvePropertyAt({ doc, seq, clip }, spec, frame),
+						},
+					]);
+				})
+				.filter((r): r is Row => r !== null),
+		})),
+	};
+}
 
 /** text-animators: one selector block. */
 export type SelectorBlock = { selector: TextSelector; rows: Row[]; advanced: Row[] };
@@ -329,6 +374,7 @@ export function buildGroups(
 						makeRow(`effects.${fx.id}.${p.name}`, [bindEffectParam(doc, seq, clip, fx, effect, p, frame)]),
 					)
 					.filter((r): r is Row => r !== null),
+				...(fx.effectId === 'jasper.puppet' ? { puppet: puppetList(doc, seq, clip, fx, frame) } : {}),
 				// wp masks: every video effect but the corner pin (the layer geometry) has masks.
 				...(effect.appliesTo === 'video' && fx.effectId !== CORNER_PIN_EFFECT_ID && !effect.passthrough
 					? { masks: maskList(doc, seq, clip, fx.masks, fx.id, frame) }

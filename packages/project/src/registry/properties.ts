@@ -27,6 +27,7 @@ import type { Animatable, Keyframe, RGBA, SpatialInterpolation } from '../schema
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Mask } from '../schema/mask.ts';
 import type { MgCompositionInfo } from '../schema/media.ts';
+import { PUPPET_PIN_LABELS, type PuppetPinKind, type PuppetPinProp } from '../schema/puppet.ts';
 import {
 	BLEND_MODES,
 	type Clip,
@@ -1449,20 +1450,20 @@ export function effectParamPropertySpec(fxId: string, effect: EffectSpec, p: Par
 			: kind === 'mesh'
 				? 'mesh'
 				: kind === 'media'
-				? 'media'
-				: kind === 'number'
-					? 'scrub'
-					: kind === 'boolean'
-						? 'toggle'
-						: kind === 'enum'
-							? 'select'
-							: kind === 'color'
-								? 'color'
-								: kind === 'vec2'
-									? 'vec2'
-									: kind === 'vec3'
-										? 'vec3'
-										: 'text');
+					? 'media'
+					: kind === 'number'
+						? 'scrub'
+						: kind === 'boolean'
+							? 'toggle'
+							: kind === 'enum'
+								? 'select'
+								: kind === 'color'
+									? 'color'
+									: kind === 'vec2'
+										? 'vec2'
+										: kind === 'vec3'
+											? 'vec3'
+											: 'text');
 	const step = p.range?.step;
 	return {
 		key: `effects.${fxId}.${p.name}`,
@@ -1593,6 +1594,12 @@ function readStoredProperty(ctx: PropertyContext, s: PropertySpec): unknown {
 		const m =
 			c.masks?.find((x) => x.id === a) ?? c.effects?.flatMap((fx) => fx.masks ?? []).find((x) => x.id === a);
 		return m ? (m as Record<string, unknown>)[b!] : undefined;
+	}
+	// sim-warp: `['$puppetPin', pinId, prop]` — a pin of one of the clip's Puppet effects.
+	if (head === '$puppetPin') {
+		const c = ctx.clip as { effects?: EffectInstance[] };
+		const pin = c.effects?.flatMap((fx) => fx.puppet?.pins ?? []).find((x) => x.id === a);
+		return pin ? (pin as Record<string, unknown>)[b!] : undefined;
 	}
 	// wp-m2-anime-templates (S11:ATP-006): keyframable template params read as an Animatable view.
 	if (s.group === 'params' && s.animatable !== 'no') {
@@ -1809,6 +1816,11 @@ export function propertyKeyToParamPath(owner: PropertyOwner, key: string): Param
 		const [, fxId, ...param] = key.split('.');
 		return ['effect', fxId!, param.join('.')];
 	}
+	// sim-warp: `puppet.<pinId>.<prop>` → `["puppetPin", pinId, prop]`.
+	if (key.startsWith('puppet.')) {
+		const [, pinId, prop] = key.split('.');
+		return ['puppetPin', pinId!, prop!];
+	}
 	if ('clipId' in owner) return ['clip', owner.clipId, ...key.split('.')];
 	if ('trackId' in owner) return ['track', owner.trackId, ...key.split('.')];
 	return owner.sequenceId ? ['master', owner.sequenceId, key] : ['master', key];
@@ -1856,5 +1868,89 @@ export function maskPropertySpec(maskId: string, prop: MaskProp): PropertySpec {
 				ui: { control: 'scrub', precision: 1 },
 				defaultValue: 0,
 			};
+	}
+}
+
+// ---------------------------------------------------------------- sim-warp: Puppet pins
+
+/** The Effect Controls / Properties spec of a Puppet pin property (`puppet.<pinId>.<prop>`). */
+export function puppetPinPropertySpec(pinId: string, prop: PuppetPinProp): PropertySpec {
+	const base = {
+		key: `puppet.${pinId}.${prop}`,
+		label: PUPPET_PIN_LABELS[prop],
+		group: 'effect' as const,
+		animatable: 'continuous' as const,
+		storagePath: ['$puppetPin', pinId, prop],
+		appliesTo: (c: Pick<Clip, 'kind'>) => !!kindCapabilities(c.kind)?.visual,
+	};
+	switch (prop) {
+		case 'position':
+			return {
+				...base,
+				kind: 'vec2',
+				spatial: 'auto-bezier',
+				ui: { control: 'vec2', precision: 3 },
+				range: { step: 0.001 },
+			};
+		case 'scale':
+			return {
+				...base,
+				kind: 'number',
+				unit: '%',
+				range: { min: 0, max: 10000, softMax: 400, step: 0.1 },
+				ui: { control: 'scrub', precision: 1 },
+				defaultValue: 100,
+			};
+		case 'rotation':
+			return {
+				...base,
+				kind: 'number',
+				unit: 'deg',
+				range: { step: 0.1 },
+				ui: { control: 'angle', precision: 1 },
+				defaultValue: 0,
+			};
+		case 'amount':
+			return {
+				...base,
+				kind: 'number',
+				range: { min: 0, max: 100, step: 0.1 },
+				ui: { control: 'slider', precision: 1 },
+				defaultValue: 50,
+			};
+		case 'extent':
+			return {
+				...base,
+				kind: 'number',
+				unit: 'px',
+				range: { min: 0, max: 10000, softMax: 500, step: 0.1 },
+				ui: { control: 'scrub', precision: 1 },
+				defaultValue: 15,
+			};
+		default:
+			return {
+				...base,
+				kind: 'number',
+				range: { min: -100, max: 100, step: 0.1 },
+				ui: { control: 'slider', precision: 1, bipolar: true },
+				defaultValue: 50,
+			};
+	}
+}
+
+/** Pin properties a pin kind shows (After Effects: Position; + Scale, Rotation (Advanced); Bend: Scale, Rotation;
+ * Starch: Amount, Extent; Overlap: In Front, Extent). */
+export function puppetPinPropsOf(kind: PuppetPinKind): PuppetPinProp[] {
+	switch (kind) {
+		case 'advanced':
+			return ['position', 'scale', 'rotation'];
+		case 'bend':
+			return ['scale', 'rotation'];
+		case 'starch':
+			return ['amount', 'extent'];
+		case 'overlap':
+			return ['inFront', 'extent'];
+		default:
+			return ['position'];
 	}
 }
