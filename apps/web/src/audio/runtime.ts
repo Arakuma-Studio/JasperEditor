@@ -2,10 +2,10 @@
 // graph and exposes it to panels (Audio Meters, Audio Track / Clip Mixer) as React hooks.
 import {
 	activeMixGraph,
+	installAudioFxPreview,
 	type MeterReading,
 	type MixGraph,
 	onActiveMixGraph,
-	installAudioFxPreview,
 	setMixWorkletUrl,
 } from '@jasper/compositions';
 import { useEffect, useState, useSyncExternalStore } from 'react';

@@ -151,7 +151,13 @@ const audio: WorkspaceDefinition = {
 				[
 					0.58,
 					row(
-						[0.45, g(['audioTrackMixer', 'audioClipMixer', 'source', 'effectControls'], 'audioTrackMixer')],
+						[
+							0.45,
+							g(
+								['essentialSound', 'audioTrackMixer', 'audioClipMixer', 'source', 'effectControls'],
+								'essentialSound',
+							),
+						],
 						['fill', g(['program'])],
 					),
 				],

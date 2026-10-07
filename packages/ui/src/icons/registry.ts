@@ -70,6 +70,7 @@ import {
 	SlidersHorizontal,
 	SlidersVertical,
 	Sparkles,
+	Speech,
 	Square,
 	SquareStack,
 	StepBack,
@@ -211,6 +212,8 @@ export const ICONS = {
 	'panel.audioMeters': AudioLines,
 	'panel.audioTrackMixer': SlidersVertical,
 	'panel.audioClipMixer': AudioWaveform,
+	// audio-fx
+	'panel.essentialSound': Speech,
 	'panel.history': History,
 	'panel.info': Info,
 	'panel.markers': Bookmark,
