@@ -245,6 +245,22 @@ describe('sync lock', () => {
 			[0, 50],
 			[50, 100],
 		]);
+		// an extract through a caption shortens it (one caption, all its words)
+		H.ok([{ type: 'range.extract', from: 60, to: 70 }]);
+		expect(spans(H)).toEqual([
+			[0, 50, 'over'],
+			[50, 90, 'the cut'],
+		]);
+		ensureValid(H.doc);
+	});
+	it('a caption cut by an extract stays one caption', () => {
+		const { H } = interview();
+		H.ok([{ type: 'caption.add', at: 10, duration: 100, text: 'one two three four' }]);
+		H.ok([{ type: 'range.extract', from: 40, to: 60 }]);
+		expect(spans(H)).toEqual([[10, 90, 'one two three four']]);
+		ensureValid(H.doc);
+		H.ok([{ type: 'caption.split', at: 50 }]);
+		expect(spans(H).length).toBe(2);
 	});
 	it('a caption track with sync lock off stays put', () => {
 		const { H, mediaId } = interview();

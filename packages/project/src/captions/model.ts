@@ -472,6 +472,23 @@ export function normalizeCaptionOwnership(doc: Draft<ProjectDocument>, newId: ()
 				? a.clip.start - b.clip.start || a.clip.id.localeCompare(b.clip.id)
 				: a.seqId.localeCompare(b.seqId),
 		);
+		// A ripple cut through a caption (extract, ripple trim, a removed range on a sync-locked caption track) leaves
+		// two abutting pieces whose content is not continuous: they are one caption again, shortened (Premiere).
+		for (let i = 0; i + 1 < list.length; i++) {
+			const a = list[i]!;
+			const b = list[i + 1]!;
+			if (a.seqId !== b.seqId || a.clip.trackId !== b.clip.trackId) continue;
+			const seq = doc.sequences[a.seqId]!;
+			const contentEnd = clipContentRange(a.clip, seq.settings.frameRate)[1];
+			if (a.clip.start + a.clip.duration !== b.clip.start || b.clip.sourceIn <= contentEnd) continue;
+			a.clip.duration += b.clip.duration;
+			delete seq.clips[b.clip.id];
+			for (const g of [...Object.values(seq.links), ...Object.values(seq.groups)])
+				g.members = g.members.filter((m) => m !== b.clip.id);
+			list.splice(i + 1, 1);
+			i--;
+		}
+		if (list.length < 2) continue;
 		const t = doc.transcripts[tid]!;
 		const words = JSON.parse(JSON.stringify(t.words)) as TranscriptWord[];
 		const ranges = list.map(({ seqId, clip }) =>
