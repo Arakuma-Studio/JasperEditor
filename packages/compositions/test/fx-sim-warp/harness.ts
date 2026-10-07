@@ -71,7 +71,7 @@ export function run(
 	const duration = extra.duration ?? 300;
 	const frame = extra.frame ?? 0;
 	const seed = extra.seed ?? 0.25;
-	const padding = gpuPadding(s, params as never, { ...box, pxScale: 1, fps });
+	const padding = gpuPadding(s, params as never, { ...box, pxScale: 1, fps, ...(extra.structures ? { structures: extra.structures } : {}) });
 	const layout = fxCanvasLayout(box, padding, 8192);
 	const t0 = performance.now();
 	const plan = planGpuEffect(
