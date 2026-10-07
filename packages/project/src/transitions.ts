@@ -406,6 +406,15 @@ export function resolveVideoTransitions(
 		const inc = t.incomingClipId ? seq.clips[t.incomingClipId] : undefined;
 		if ((!out && !inc) || (t.outgoingClipId && !out) || (t.incomingClipId && !inc)) continue;
 		if ((out && !out.enabled) || (inc && !inc.enabled)) continue;
+		// three-d: a 3D layer is drawn by the 3D renderer (its picture is a plane in the scene); transitions, which
+		// mix pictures in the frame, do not apply to it (the commands refuse them; documents that have one say so).
+		if (isLayer3D(out) || isLayer3D(inc)) {
+			skipped.push({
+				transitionId: t.id,
+				reason: 'transitions do not apply to 3D layers (animate Opacity or the 3D transform instead)',
+			});
+			continue;
+		}
 		const dip = t.effectId === DIP_TO_BLACK;
 		const gpu = isGpuTransition(spec);
 		if (out && inc) {
@@ -600,4 +609,10 @@ export function clipsAtEditPoint(
 		if (c.start === at) incoming = c;
 	}
 	return { outgoing, incoming };
+}
+
+/** three-d: a clip whose 3D Layer switch is on (drawn by the 3D renderer). */
+export function isLayer3D(c: unknown): boolean {
+	const t = (c as { threeD?: { enabled?: unknown }; kind?: unknown } | undefined | null)?.threeD;
+	return !!t && t.enabled === true && (c as { kind?: unknown }).kind !== 'adjustment';
 }

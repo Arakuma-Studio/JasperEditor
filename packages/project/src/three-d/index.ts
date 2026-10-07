@@ -1,0 +1,4 @@
+// three-d workstream: 3D layers, cameras, lights (docs/wp-notes/three-d.md).
+export * from './math.ts';
+export * from './model.ts';
+export * from './scene.ts';

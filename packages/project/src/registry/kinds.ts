@@ -276,6 +276,43 @@ export const KIND_CAPABILITIES: Record<KnownClipKind, KindCapabilities> = {
 		defaultLabel: 'caribbean',
 		priority: 'P1',
 	},
+	// three-d: a camera / a light draws nothing itself; it changes how the sequence's 3D layers are drawn (by the
+	// compositions' 3D renderer: Remotion on export, the planner routes every 3D run there).
+	camera: {
+		kind: 'camera',
+		trackKind: 'video',
+		source: 'inline',
+		bounded: 'no',
+		visual: false,
+		audio: false,
+		hasTransform: false,
+		hasOpacity: false,
+		supportsEffects: false,
+		supportsSpeed: false,
+		engines: { preview: 'remotion', export: 'remotion' },
+		badge: null,
+		m1: true,
+		// After Effects labels cameras and lights pink.
+		defaultLabel: 'rose',
+		priority: 'P1',
+	},
+	light: {
+		kind: 'light',
+		trackKind: 'video',
+		source: 'inline',
+		bounded: 'no',
+		visual: false,
+		audio: false,
+		hasTransform: false,
+		hasOpacity: false,
+		supportsEffects: false,
+		supportsSpeed: false,
+		engines: { preview: 'remotion', export: 'remotion' },
+		badge: null,
+		m1: true,
+		defaultLabel: 'rose',
+		priority: 'P1',
+	},
 };
 
 export function kindCapabilities(kind: string): KindCapabilities | null {
