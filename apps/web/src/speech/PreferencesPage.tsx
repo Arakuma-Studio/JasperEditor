@@ -1,17 +1,27 @@
 // wp speech: Edit ▸ Preferences ▸ Transcription — the speech-to-text models of the engine's model catalogue: name, size,
 // languages, licence and source; Download (after the licence is shown, with progress) and Delete.
 import type { SpeechModel } from '@jasper/api';
-import { Button, confirmDialog, toast } from '@jasper/ui';
+import { Button, Checkbox, confirmDialog, Select, toast } from '@jasper/ui';
 import { useState } from 'react';
 import { errorText, formatBytes } from '../processing/engine-jobs.ts';
 import { PrefGroup } from '../shell/preferences/GeneralPage.tsx';
 import { useEngine } from '../state/engine.tsx';
+import { type AutoTranscribe, loadAuto, saveAuto } from './auto.tsx';
 import { downloadModel, ModelLicence, useSpeechModels } from './GenerateTranscriptDialog.tsx';
+import { WHISPER_LANGUAGES } from './model.ts';
 
 export function SpeechPreferencesPage() {
 	const { client, capabilities } = useEngine();
 	const { models, error, reload } = useSpeechModels();
 	const [busy, setBusy] = useState<Record<string, string>>({});
+	const [auto, setAutoState] = useState<AutoTranscribe>(loadAuto);
+	const setAuto = (patch: Partial<AutoTranscribe>) =>
+		setAutoState((a) => {
+			const next = { ...a, ...patch };
+			saveAuto(next);
+			return next;
+		});
+	const autoModel = models?.find((m) => m.id === auto.model);
 	const speech = (capabilities?.features as { speech?: { status: string; reason?: string } } | undefined)
 		?.speech;
 
@@ -66,6 +76,37 @@ export function SpeechPreferencesPage() {
 					<p className="text-pr-small text-pr-warning" role="alert">
 						Speech to text is unavailable on this engine: {speech.reason}
 					</p>
+				) : null}
+			</PrefGroup>
+			<PrefGroup title="Transcribe on import" testId="prefs-speech-auto">
+				<Checkbox
+					checked={auto.enabled}
+					onCheckedChange={(enabled) => setAuto({ enabled })}
+					label="Automatically transcribe media with sound when it is imported"
+				/>
+				<div className="flex items-center gap-2 pl-6">
+					<Select
+						label="Model for automatic transcription"
+						className="w-56"
+						disabled={!auto.enabled}
+						value={auto.model}
+						onValueChange={(model) => setAuto({ model })}
+						options={(models ?? []).map((m) => ({ value: m.id, label: m.name }))}
+					/>
+					<Select
+						label="Language for automatic transcription"
+						className="w-48"
+						disabled={!auto.enabled || !autoModel?.multilingual}
+						value={autoModel?.multilingual ? auto.language : 'en'}
+						onValueChange={(language) => setAuto({ language })}
+						options={[
+							{ value: 'auto', label: 'Detect automatically' },
+							...WHISPER_LANGUAGES.map(([value, label]) => ({ value, label })),
+						]}
+					/>
+				</div>
+				{auto.enabled && autoModel && !autoModel.installed ? (
+					<p className="pl-6 text-pr-small text-pr-warning">Download {autoModel.name} below to use it.</p>
 				) : null}
 			</PrefGroup>
 			<PrefGroup title="Speech models" testId="prefs-speech-models">

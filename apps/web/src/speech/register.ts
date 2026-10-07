@@ -4,8 +4,14 @@
 import { type MediaAsset, transcriptForMedia } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { openDialog, registerDialog } from '@jasper/ui';
-import { clipMenuExtensions, type MenuItemSpec, projectItemMenuExtensions } from '../extensions/index.ts';
+import {
+	clipMenuExtensions,
+	type MenuItemSpec,
+	programOverlays,
+	projectItemMenuExtensions,
+} from '../extensions/index.ts';
 import { registerPreferencesDialog, registerPreferencesPage } from '../shell/preferences/index.ts';
+import { AutoTranscribeHost } from './auto.tsx';
 import {
 	GENERATE_TRANSCRIPT_DIALOG,
 	GenerateTranscriptDialog,
@@ -26,7 +32,20 @@ export function registerSpeechUi(): void {
 	registered = true;
 	registerDialog(GENERATE_TRANSCRIPT_DIALOG, GenerateTranscriptDialog);
 	registerPreferencesDialog();
-	registerPreferencesPage({ id: 'speech', title: 'Transcription', order: 55, component: SpeechPreferencesPage });
+	registerPreferencesPage({
+		id: 'speech',
+		title: 'Transcription',
+		order: 55,
+		component: SpeechPreferencesPage,
+	});
+
+	// Automatic transcription of imported media (Preferences ▸ Transcription)
+	programOverlays.register({
+		id: 'speech.auto',
+		active: () => true,
+		component: AutoTranscribeHost,
+		order: 0,
+	});
 
 	projectItemMenuExtensions.register({
 		id: 'speech',

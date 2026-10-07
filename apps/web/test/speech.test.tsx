@@ -21,6 +21,7 @@ import '../src/commands/speech.ts';
 import { registerAllCommands } from '../src/commands/index.ts';
 import { getCommand } from '../src/commands/registry.ts';
 import { MENUBAR } from '../src/shell/menus/model.ts';
+import { AutoTranscribeHost, saveAuto } from '../src/speech/auto.tsx';
 import { GenerateTranscriptDialog } from '../src/speech/GenerateTranscriptDialog.tsx';
 import { transcriptionWatcher } from '../src/speech/jobs.ts';
 import { defaultOptions, mixAttach, requestOptions } from '../src/speech/model.ts';
@@ -407,5 +408,45 @@ describe('Preferences ▸ Transcription and menus', () => {
 		expect(flat).toContain('transcript.generate');
 		expect(flat).toContain('transcript.generateForClips');
 		expect(getCommand('transcript.generate')?.capability).toBe('transcription');
+	});
+});
+
+describe('automatic transcription on import', () => {
+	it('transcribes newly imported media with sound when enabled (not on undo/redo)', async () => {
+		const { session, seqId } = makeSession();
+		const { client, calls } = fakeEngine({ models: [model('whisper-base', true)] });
+		saveAuto({ enabled: true, model: 'whisper-base', language: 'fr' });
+		render(
+			<EngineProvider client={client}>
+				<AutoTranscribeHost session={session} />
+			</EngineProvider>,
+		);
+		await waitFor(() => expect(calls.some((c) => c.url === '/health')).toBe(true));
+		await new Promise((r) => setTimeout(r, 50));
+		const asset = JSON.parse(JSON.stringify(Object.values(session.getCommitted().media)[0])) as Record<
+			string,
+			unknown
+		>;
+		delete asset.id;
+		asset.fingerprint = `q1:${'cd'.repeat(32)}`;
+		const r = session.apply({
+			label: 'Import',
+			origin: 'user',
+			sequenceId: seqId,
+			commands: [{ type: 'media.register', asset }] as never[],
+		});
+		expect(r.ok).toBe(true);
+		await waitFor(() =>
+			expect(
+				calls.filter((c) => c.method === 'POST' && c.url === `/api/media/${KEY}/transcribe`),
+			).toHaveLength(1),
+		);
+		const post = calls.find((c) => c.url === `/api/media/${KEY}/transcribe`)!;
+		expect(post.body).toMatchObject({ model: 'whisper-base', language: 'fr' });
+		session.undo();
+		session.redo();
+		await new Promise((r) => setTimeout(r, 50));
+		expect(calls.filter((c) => c.url === `/api/media/${KEY}/transcribe`)).toHaveLength(1);
+		saveAuto({ enabled: false, model: 'whisper-base', language: 'auto' });
 	});
 });
