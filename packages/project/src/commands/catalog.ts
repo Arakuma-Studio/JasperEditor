@@ -28,6 +28,7 @@ import { spatialHandlers } from './handlers/spatial.ts';
 import { SPEECH_OWNER, speechHandlers } from './handlers/speech.ts';
 import { STRUCTURE_OWNER, structureHandlers } from './handlers/structure.ts';
 import { TEXT_ANIMATOR_OWNER, textAnimatorHandlers } from './handlers/text-animators.ts';
+import { cameraTrackerHandlers } from './handlers/camtrack.ts';
 import { THREE_D_OWNER, threeDHandlers } from './handlers/three-d.ts';
 import { trackerHandlers } from './handlers/tracker.ts';
 import { transitionHandlers } from './handlers/transition.ts';
@@ -307,6 +308,13 @@ const LABELS: Record<CommandType, string> = {
 	'camera.pan': 'Pan Camera',
 	'camera.dolly': 'Dolly Camera',
 	'sequence.set3dRenderer': '3D Renderer',
+	'cameraTracker.add': 'Track Camera',
+	'cameraTracker.settings': '3D Camera Tracker Settings',
+	'cameraTracker.setResult': 'Solve Camera',
+	'cameraTracker.deletePoints': 'Delete Track Points',
+	'cameraTracker.setGround': 'Set Ground Plane and Origin',
+	'cameraTracker.create': 'Create Camera',
+	'cameraTracker.remove': 'Remove 3D Camera Tracker',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -340,6 +348,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[rotoHandlers, ROTO_OWNER],
 	[editUxHandlers, 'edit-ux'],
 	[threeDHandlers, THREE_D_OWNER],
+	[cameraTrackerHandlers, THREE_D_OWNER],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {

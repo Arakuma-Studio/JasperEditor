@@ -25,7 +25,13 @@ import {
 import { MaskSchema } from './mask.ts';
 import { type VectorShapeData, VectorShapeDataSchema } from './shapes.ts';
 import { TextAnimatorGroupSchema, TextMoreOptionsSchema, TextPathOptionsSchema } from './text-animators.ts';
-import { CameraDataSchema, Layer3DSchema, LightDataSchema, Sequence3DSchema } from './three-d.ts';
+import {
+	CameraDataSchema,
+	ClipCameraTrackerSchema,
+	Layer3DSchema,
+	LightDataSchema,
+	Sequence3DSchema,
+} from './three-d.ts';
 
 // ---------------------------------------------------------------- effects
 
@@ -558,6 +564,8 @@ export const VideoClipSchema = z.looseObject({
 	trackers: z.array(ClipTrackerSchema).optional(),
 	/** parity (roto): segmented objects (Roto Brush, faces) of this clip's picture. */
 	rotos: z.array(ClipRotoSchema).optional(),
+	/** three-d: the 3D Camera Tracker of this clip's picture. */
+	cameraTracker: ClipCameraTrackerSchema.optional(),
 });
 /**
  * audio-fx: one piece of a music remix (Essential Sound ▸ Duration ▸ Remix, the Remix tool). The remixed clip became

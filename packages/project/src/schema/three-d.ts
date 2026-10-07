@@ -221,13 +221,85 @@ export const Sequence3DSchema = z.looseObject({
 });
 export type Sequence3D = DeepStrip<z.infer<typeof Sequence3DSchema>>;
 
-/** Track points of a 3D camera solve (the 3D Camera Tracker overlay), on the tracked clip. */
+// ---------------------------------------------------------------- 3D Camera Tracker
+
+export const CAMERA_TRACKER_SHOT_TYPES = ['fixed', 'variable', 'specify'] as const;
+export const CAMERA_TRACKER_METHODS = ['auto', 'typical', 'flat', 'tripod'] as const;
+export const TRACK_POINT_DISPLAY = ['3d', 'off'] as const;
+
+/** 3D Camera Tracker settings (After Effects' effect controls; absent fields = `cameraTrackerSettingsOf`). */
+export const CameraTrackerSettingsSchema = z.looseObject({
+	shot: z.enum(CAMERA_TRACKER_SHOT_TYPES).optional(),
+	/** Horizontal Angle of View (degrees) for Specify Angle of View. */
+	hfov: z.number().min(1).max(170).optional(),
+	method: z.enum(CAMERA_TRACKER_METHODS).optional(),
+	detailed: z.boolean().optional(),
+	/** Solve radial lens distortion (EffectCraft; After Effects has no equivalent switch). */
+	lensDistortion: z.boolean().optional(),
+	/** Show Track Points: 3D Solved, or off. */
+	showPoints: z.enum(TRACK_POINT_DISPLAY).optional(),
+	/** Track Point Size / Target Size (%). */
+	pointSize: z.number().min(10).max(1000).optional(),
+	targetSize: z.number().min(10).max(1000).optional(),
+});
+export type CameraTrackerSettings = DeepStrip<z.infer<typeof CameraTrackerSettingsSchema>>;
+
+/** A solved 3D track point (canonical solve space), its reprojection error (px) and media frames tracked. */
 export const CameraSolvePointSchema = z.looseObject({
-	/** World position (sequence pixels, z away from the viewer). */
-	p: Vec3Schema,
-	/** Reprojection error (pixels) over the frames that saw the point. */
+	id: nonNegInt(),
+	pos: Vec3Schema,
 	error: z.number().min(0),
-	/** Display colour index (0…7). */
-	color: nonNegInt().max(7),
+	first: nonNegInt(),
+	last: nonNegInt(),
 });
 export type CameraSolvePoint = DeepStrip<z.infer<typeof CameraSolvePointSchema>>;
+
+/**
+ * A camera solve (the engine's `CamTrackResult`): `frames` holds 8 numbers per media frame of the span (world → camera
+ * rotation as an axis-angle vector, camera centre, focal length in media px, 1 / 0 = solved / interpolated) in the
+ * canonical solve space (first solved camera at the origin looking along +z, x right, y down; median point depth 1).
+ */
+export const CameraSolveSchema = z.looseObject({
+	span: z.tuple([nonNegInt(), nonNegInt()]),
+	size: z.tuple([z.number().int().positive(), z.number().int().positive()]),
+	shot: z.enum(CAMERA_TRACKER_SHOT_TYPES),
+	methodUsed: z.enum(['typical', 'flat', 'tripod']),
+	averageError: z.number().min(0),
+	frames: z.array(z.number()),
+	points: z.array(CameraSolvePointSchema),
+	distortion: z.looseObject({ k1: z.number(), k2: z.number(), radius: z.number() }).nullable(),
+	/** Settings the solve was computed with (stale when they differ). */
+	inputs: z.string(),
+	method: z.string(),
+});
+export type CameraSolve = DeepStrip<z.infer<typeof CameraSolveSchema>>;
+
+/**
+ * The ground plane and origin set from track points ("Set Ground Plane and Origin"): a plane through `origin` with
+ * unit `normal` (pointing away from the camera side) and an in-plane `xAxis`, in canonical solve space.
+ */
+export const CameraTrackerGroundSchema = z.looseObject({
+	origin: Vec3Schema,
+	normal: Vec3Schema,
+	xAxis: Vec3Schema,
+});
+export type CameraTrackerGround = DeepStrip<z.infer<typeof CameraTrackerGroundSchema>>;
+
+/**
+ * After Effects' 3D Camera Tracker on a video clip: the analysed span of its media (inclusive media frames at `rate`),
+ * the settings, the deleted track points, the solve and the ground plane. The created camera is an ordinary camera
+ * clip (`createdCameraId` remembers it).
+ */
+export const ClipCameraTrackerSchema = z.looseObject({
+	id: z.string(),
+	mediaId: z.string(),
+	rate: z.looseObject({ num: z.number().int().positive(), den: z.number().int().positive() }),
+	span: z.tuple([nonNegInt(), nonNegInt()]),
+	settings: CameraTrackerSettingsSchema,
+	/** Track ids of deleted points (left out of the next solve). */
+	deleted: z.array(nonNegInt()),
+	solve: CameraSolveSchema.nullable(),
+	ground: CameraTrackerGroundSchema.optional(),
+	createdCameraId: z.string().optional(),
+});
+export type ClipCameraTracker = DeepStrip<z.infer<typeof ClipCameraTrackerSchema>>;

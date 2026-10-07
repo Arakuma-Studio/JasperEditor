@@ -38,7 +38,9 @@ import type { ShapeItem } from './schema/shapes.ts';
 import { isNestClip } from './structure/nest.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
 import { repairTextAnimators, textAnimatorIssues } from './text-animators/validate.ts';
+import type { ClipCameraTracker } from './schema/three-d.ts';
 import { canBe3d } from './three-d/model.ts';
+
 import {
 	contentSpanFlicks,
 	FLICKS_PER_SECOND,
@@ -49,6 +51,18 @@ import {
 } from './time.ts';
 import { walkItems } from './vector/defaults.ts';
 import { checkShapeItem, duplicateItemIds } from './vector/input.ts';
+
+/** What is wrong with a 3D Camera Tracker's span or solve, or null. */
+function cameraTrackerProblem(t: ClipCameraTracker): string | null {
+	if (t.span[1] < t.span[0] + 1) return 'span must hold at least two frames';
+	const s = t.solve;
+	if (!s) return null;
+	if (s.span[0] !== t.span[0] || s.span[1] !== t.span[1]) return 'solve is of another span';
+	if (s.frames.length !== (s.span[1] - s.span[0] + 1) * 8 || !s.frames.every(Number.isFinite))
+		return 'solve frames are malformed';
+	if (s.points.some((p) => p.first > p.last || !p.pos.every(Number.isFinite))) return 'solve points are malformed';
+	return null;
+}
 
 const inv = (invariant: string, message: string, path?: string[]): Issue => ({
 	commandIndex: -1,
@@ -598,6 +612,16 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 				if (env && !doc.media[env])
 					issues.push(inv('INV-006', `Light ${c.id} references missing environment media ${env}`, cw));
 			}
+			// three-d: the 3D Camera Tracker sits on video clips, analyses existing media, its solve is whole.
+			if (r.cameraTracker !== undefined) {
+				const t = r.cameraTracker as ClipCameraTracker;
+				if (c.kind !== 'video')
+					issues.push(inv('INV-012', `Clip ${c.id}: a ${c.kind} clip cannot carry a 3D Camera Tracker`, cw));
+				else if (!doc.media[t.mediaId])
+					issues.push(inv('INV-006', `Clip ${c.id}: 3D Camera Tracker references missing media ${t.mediaId}`, cw));
+				const bad = cameraTrackerProblem(t);
+				if (bad) issues.push(inv('INV-012', `Clip ${c.id}: 3D Camera Tracker ${bad}`, [...cw, 'cameraTracker']));
+			}
 			// text-animators workstream: animators, selectors, Path / More Options, Source Text keys.
 			if (c.kind === 'text')
 				for (const i of textAnimatorIssues(r, cw, claim))
@@ -981,6 +1005,17 @@ export function repairDocument(
 			if (c.kind === 'light' && c.light.environmentMediaId && !doc.media[c.light.environmentMediaId]) {
 				c.light.environmentMediaId = null;
 				note('reset-environment', c.id, 'environment media is missing: neutral studio light');
+			}
+			if (r.cameraTracker !== undefined) {
+				const t = r.cameraTracker as ClipCameraTracker;
+				if (c.kind !== 'video' || !doc.media[t.mediaId]) {
+					delete r.cameraTracker;
+					note('drop-camera-tracker', c.id, 'the 3D Camera Tracker has no video to analyse');
+				} else if (cameraTrackerProblem(t)) {
+					t.solve = null;
+					delete t.ground;
+					note('reset-camera-solve', c.id, 'the camera solve was malformed: analyse again');
+				}
 			}
 		}
 	}

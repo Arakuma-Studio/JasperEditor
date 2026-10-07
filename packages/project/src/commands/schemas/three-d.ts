@@ -4,7 +4,11 @@
 import { z } from 'zod';
 import { RGBASchema, Vec3Schema } from '../../schema/common.ts';
 import {
+	CAMERA_TRACKER_METHODS,
+	CAMERA_TRACKER_SHOT_TYPES,
+	CameraSolvePointSchema,
 	FILM_SIZE_MEASURES,
+	TRACK_POINT_DISPLAY,
 	IRIS_SHAPES,
 	LIGHT_FALLOFFS,
 	LIGHT_TYPES,
@@ -155,7 +159,88 @@ export const SequenceSet3dRendererCmd = cmd('sequence.set3dRenderer', {
 	supersampling: z.number().int().min(1).max(4).optional(),
 });
 
+// ---------------------------------------------------------------- 3D Camera Tracker
+
+const trackerSettingsShape = {
+	shot: z.enum(CAMERA_TRACKER_SHOT_TYPES).optional(),
+	hfov: finite().min(1).max(170).optional(),
+	method: z.enum(CAMERA_TRACKER_METHODS).optional(),
+	detailed: z.boolean().optional(),
+	lensDistortion: z.boolean().optional(),
+	showPoints: z.enum(TRACK_POINT_DISPLAY).optional(),
+	pointSize: finite().min(10).max(1000).optional(),
+	targetSize: finite().min(10).max(1000).optional(),
+};
+const mediaSpan = z.tuple([z.number().int().min(0), z.number().int().min(0)]);
+
+/** Applies the 3D Camera Tracker to a video clip (the span defaults to the media frames the clip shows). */
+export const CameraTrackerAddCmd = cmd('cameraTracker.add', {
+	clipId: IdRefSchema,
+	span: mediaSpan.optional(),
+	...trackerSettingsShape,
+});
+/** 3D Camera Tracker settings (Shot Type, Horizontal Angle of View, Solve Method, Detailed Analysis, display). */
+export const CameraTrackerSettingsCmd = cmd('cameraTracker.settings', {
+	clipId: IdRefSchema,
+	span: mediaSpan.optional(),
+	...trackerSettingsShape,
+});
+/** Commits a camera solve (the `camtrack` job's result) to the clip's tracker. */
+export const CameraTrackerSetResultCmd = cmd('cameraTracker.setResult', {
+	clipId: IdRefSchema,
+	solve: z.strictObject({
+		span: mediaSpan,
+		size: z.tuple([z.number().int().positive(), z.number().int().positive()]),
+		shot: z.enum(CAMERA_TRACKER_SHOT_TYPES),
+		methodUsed: z.enum(['typical', 'flat', 'tripod']),
+		averageError: finite().min(0),
+		frames: z.array(finite()),
+		points: z.array(CameraSolvePointSchema),
+		distortion: z.strictObject({ k1: finite(), k2: finite(), radius: finite() }).nullable(),
+		method: z.string().min(1),
+	}),
+});
+/** Deletes track points (they stay out of the next solve). */
+export const CameraTrackerDeletePointsCmd = cmd('cameraTracker.deletePoints', {
+	clipId: IdRefSchema,
+	pointIds: z.array(z.number().int().min(0)).min(1),
+});
+/** Set Ground Plane and Origin from three or more track points (`pointIds` empty = clear). */
+export const CameraTrackerSetGroundCmd = cmd('cameraTracker.setGround', {
+	clipId: IdRefSchema,
+	pointIds: z.array(z.number().int().min(0)),
+	/** Media frame whose solved camera orients the plane (default: the first frame the points share). */
+	frame: z.number().int().min(0).optional(),
+});
+/**
+ * Create Camera / Create Text and Camera / Create Solid and Camera: a one-node camera following the solve over the
+ * clip (a key per frame), and optionally a 3D layer on the target of the selected track points.
+ */
+export const CameraTrackerCreateCmd = cmd('cameraTracker.create', {
+	clipId: IdRefSchema,
+	layer: z.enum(['none', 'text', 'solid']).optional(),
+	/** Track points of the target (needed for a layer). */
+	pointIds: z.array(z.number().int().min(0)).optional(),
+	/** Media frame the target is seen at (default: the frame under the playhead the caller passes, else the first). */
+	frame: z.number().int().min(0).optional(),
+	text: z.string().max(10_000).optional(),
+	color: RGBASchema.optional(),
+	name: z.string().optional(),
+	/** Reuse the tracker's camera (its keys are rewritten) instead of making a new one. */
+	replaceCamera: z.boolean().optional(),
+	cameraRef: RefDeclSchema.optional(),
+	layerRef: RefDeclSchema.optional(),
+});
+export const CameraTrackerRemoveCmd = cmd('cameraTracker.remove', { clipId: IdRefSchema });
+
 export const THREE_D_COMMANDS = [
+	CameraTrackerAddCmd,
+	CameraTrackerSettingsCmd,
+	CameraTrackerSetResultCmd,
+	CameraTrackerDeletePointsCmd,
+	CameraTrackerSetGroundCmd,
+	CameraTrackerCreateCmd,
+	CameraTrackerRemoveCmd,
 	ClipSet3dCmd,
 	ClipAddCameraCmd,
 	ClipAddLightCmd,
