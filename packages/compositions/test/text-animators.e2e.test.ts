@@ -258,4 +258,37 @@ describe.runIf(enabled)('text animators in Remotion renders (REMOTION_E2E=1)', {
 		// Strokes over fills: the red outline covers the white fill.
 		expect(bbox(raw, white).x1).toBeLessThan(0);
 	});
+
+	it('Expression Selector: textIndex selects every other character (QuickJS in the renderer)', async () => {
+		const doc = snapshotOf(media, () => [
+			...text('MMMM'),
+			{ type: 'textAnimator.add', clipId: '$t', properties: ['opacity'], selector: false, ref: '$a' } as Command,
+			{ type: 'param.set', target: ['clip', '$t', 'textAnimators', '$a', 'properties', 'opacity'], value: 0 } as Command,
+			{ type: 'textSelector.add', clipId: '$t', animatorId: '$a', kind: 'expression', ref: '$s' } as Command,
+			{
+				type: 'expression.set',
+				target: ['clip', '$t', 'textAnimators', '$a', 'selectors', '$s', 'amount'],
+				text: 'textIndex % 2 * 100',
+			} as Command,
+		]);
+		expect(doc.expressions).toBeTruthy();
+		const all = ink(await still(snapshotOf(media, () => text('MMMM')), 1, 'expr-plain'), 0, W);
+		const half = ink(await still(doc, 1, 'expr-selector'), 0, W);
+		expect(half / all).toBeGreaterThan(0.4);
+		expect(half / all).toBeLessThan(0.6);
+	});
+
+	it('an expression on an animator property drives it (bound in the snapshot)', async () => {
+		const doc = snapshotOf(media, () => [
+			...text('EXPR'),
+			{ type: 'textAnimator.add', clipId: '$t', properties: ['position'], ref: '$a' } as Command,
+			{
+				type: 'expression.set',
+				target: ['clip', '$t', 'textAnimators', '$a', 'properties', 'position'],
+				text: '[0, -120]',
+			} as Command,
+		]);
+		const raw = await still(doc, 1, 'expr-property');
+		expect(bbox(raw, white).y1).toBeLessThan(H / 2 - 30);
+	});
 });
