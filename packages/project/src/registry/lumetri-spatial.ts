@@ -201,7 +201,9 @@ void main() {
 		}
 	}
 	if (f.sharpen)
-		out.push(...gaussianBlurPasses({ input: 'source', output: 'soft', sigma: { uniform: 'u_lmSharpSigma' } }));
+		out.push(
+			...gaussianBlurPasses({ input: 'source', output: 'soft', sigma: { uniform: 'u_lmSharpSigma' } }),
+		);
 	out.push(finalPass(f, keyTex));
 	return out;
 }

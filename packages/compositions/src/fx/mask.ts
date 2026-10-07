@@ -222,7 +222,7 @@ export type FxMaskedParams = {
 	geometry: FxMaskGeometry;
 	inner: EffectDescriptor;
 	/** color-grade: descriptors applied after `inner` (on its output) before the one mask mix. */
-	then?: EffectDescriptor[];
+	followedBy?: EffectDescriptor[];
 };
 
 const scratch = new Map<string, HTMLCanvasElement>();
@@ -248,7 +248,7 @@ export const fxMasked = createEffect<FxMaskedParams, null>({
 	documentationLink: null,
 	backend: '2d',
 	calculateKey: (p) =>
-		`${p.key}|${p.inner.effectKey}${(p.then ?? []).map((d) => `|${d.effectKey}`).join('')}`,
+		`${p.key}|${p.inner.effectKey}${(p.followedBy ?? []).map((d) => `|${d.effectKey}`).join('')}`,
 	schema: {},
 	validateParams: (p) => {
 		if (!p?.geometry || !p.inner) throw new Error('fxMasked needs {key, geometry, inner}');
@@ -284,7 +284,7 @@ export const fxMasked = createEffect<FxMaskedParams, null>({
 			return target;
 		};
 		let fx = runInner(params.inner, source as CanvasImageSource, 0);
-		(params.then ?? []).forEach((d, i) => {
+		(params.followedBy ?? []).forEach((d, i) => {
 			fx = runInner(d, fx, (i + 1) % 2 === 1 ? 1 : 0);
 		});
 		runMaskPass(

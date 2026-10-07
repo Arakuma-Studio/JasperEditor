@@ -329,7 +329,11 @@ export function fxDescriptors(stage: FxStage, inputs: DescriptorInputs): EffectD
 		) {
 			if (joined && joined.at === at - 1) {
 				const first = out[joined.at]!;
-				out.splice(joined.at, 2, fxMasked({ key: s.key, geometry: s.masks, inner: first, then: [out[at]!] }));
+				out.splice(
+					joined.at,
+					2,
+					fxMasked({ key: s.key, geometry: s.masks, inner: first, followedBy: [out[at]!] }),
+				);
 				joined = null;
 			} else if ('maskJoin' in s && s.maskJoin) joined = { at };
 			else out[at] = fxMasked({ key: s.key, geometry: s.masks, inner: out[at]! });
