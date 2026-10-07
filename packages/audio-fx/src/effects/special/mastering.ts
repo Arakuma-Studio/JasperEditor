@@ -174,19 +174,24 @@ export class VocalEnhancer extends EffectBase {
 		this.eq =
 			m === 0
 				? [
-						d('highPass', 80, 0.707, 0),
+						d('highPass', 80, Math.SQRT1_2, 0),
 						d('peaking', 250, 1, -3),
 						d('peaking', 3000, 1, 3),
-						d('highShelf', 10000, 0.707, 1.5),
+						d('highShelf', 10000, Math.SQRT1_2, 1.5),
 					]
 				: m === 1
 					? [
-							d('highPass', 120, 0.707, 0),
+							d('highPass', 120, Math.SQRT1_2, 0),
 							d('peaking', 400, 1, -2),
 							d('peaking', 5000, 1, 3),
-							d('highShelf', 10000, 0.707, 2),
+							d('highShelf', 10000, Math.SQRT1_2, 2),
 						]
-					: [d('highPass', 40, 0.707, 0), d('peaking', 1500, 0.7, -4), d('peaking', 3500, 1, -2), IDENTITY];
+					: [
+							d('highPass', 40, Math.SQRT1_2, 0),
+							d('peaking', 1500, 0.7, -4),
+							d('peaking', 3500, 1, -2),
+							IDENTITY,
+						];
 	}
 
 	responseDb(freq: number): number {
