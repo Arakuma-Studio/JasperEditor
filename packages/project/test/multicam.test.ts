@@ -141,6 +141,8 @@ describe('sync points', () => {
 		expect(syncOffsets([ta, tb], 0, { method: 'timecode', ignoreHours: true })).toEqual([0, 3 * SEC]);
 		expect(() => syncOffsets([ta, src('n', {})], 0, { method: 'timecode' })).toThrow(/no timecode/);
 		expect(syncOffsets([a, b], 1, { method: 'audio', audioOffsets: { a: 123 } })).toEqual([123, 0]);
+		// a common clock: the reference's own offset is subtracted
+		expect(syncOffsets([a, b], 1, { method: 'audio', audioOffsets: { a: 123, b: 23 } })).toEqual([100, 0]);
 		expect(() => syncOffsets([a, b], 0, { method: 'audio' })).toThrow(/No audio offset/);
 	});
 

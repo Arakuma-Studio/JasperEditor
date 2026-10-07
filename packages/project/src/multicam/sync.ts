@@ -166,11 +166,14 @@ function anchorOf(s: SyncSource, spec: SyncSpec): number {
 
 /**
  * Offsets of every source relative to `sources[ref]` (flicks; the reference's is 0): `t_i = t_ref + offset_i`.
- * Audio offsets come from `spec.audioOffsets` (missing ones fail with E_INVALID_PARAM).
+ * Audio offsets come from `spec.audioOffsets`, on any common clock: `t_i = t_clock + audioOffsets[i]` (the reference
+ * may be omitted = 0; missing others fail with E_INVALID_PARAM).
  */
 export function syncOffsets(sources: readonly SyncSource[], ref: number, spec: SyncSpec): number[] {
 	if (!sources[ref]) throw new SyncError('E_INVALID_PARAM', 'No reference clip');
 	if (spec.method === 'audio') {
+		// Offsets on any common clock (the engine's reference is 0); the reference may be left out (= 0).
+		const refOff = spec.audioOffsets?.[sources[ref]!.key] ?? 0;
 		return sources.map((s, i) => {
 			if (i === ref) return 0;
 			const v = spec.audioOffsets?.[s.key];
@@ -179,7 +182,7 @@ export function syncOffsets(sources: readonly SyncSource[], ref: number, spec: S
 					'E_INVALID_PARAM',
 					`No audio offset for ${s.name} (${s.key}): analyse the audio first (POST /api/sync/audio, MCP synchronize/merge/create tools do it for you)`,
 				);
-			return Math.round(v);
+			return Math.round(v - refOff);
 		});
 	}
 	const anchors = sources.map((s) => anchorOf(s, spec));
@@ -216,5 +219,121 @@ export function commonPlacements(
 		const sourceIn = Math.round(r.start + (start * F - exact)) || 0;
 		const frames = Math.max(1, Math.floor((r.end - sourceIn) / F + FRAME_EPS));
 		return { start, sourceIn, frames };
+	});
+}
+
+/** One group of linked timeline clips that Synchronize moves together, and the clip whose sync point is used. */
+export type SyncUnit = { memberIds: string[]; repId: string };
+
+function trackRankOf(seq: Sequence, trackId: string): { kind: 'video' | 'audio' | 'caption'; index: number } {
+	const v = seq.videoTracks.findIndex((t) => t.id === trackId);
+	if (v >= 0) return { kind: 'video', index: v };
+	const a = seq.audioTracks.findIndex((t) => t.id === trackId);
+	if (a >= 0) return { kind: 'audio', index: a };
+	return { kind: 'caption', index: 99 };
+}
+
+/**
+ * Clip ▸ Synchronize units: each clip with its linked partners; the representative is the clip on the lowest video
+ * track (audio method: the lowest audio track). Throws SyncError when a unit has no audio for the audio method.
+ */
+export function synchronizeUnits(seq: Sequence, clipIds: readonly string[], method: SyncMethod): SyncUnit[] {
+	const units: SyncUnit[] = [];
+	const seen = new Set<string>();
+	const prefer = method === 'audio' ? 'audio' : 'video';
+	for (const id of clipIds) {
+		const c = seq.clips[id];
+		if (!c || seen.has(id)) continue;
+		const members =
+			c.linkId && seq.links[c.linkId]
+				? seq.links[c.linkId]!.members.map((m) => seq.clips[m]!).filter(Boolean)
+				: [c];
+		for (const m of members) seen.add(m.id);
+		const ranked = members
+			.filter((m) => trackRankOf(seq, m.trackId).kind !== 'caption')
+			.sort((a, b) => {
+				const ra = trackRankOf(seq, a.trackId);
+				const rb = trackRankOf(seq, b.trackId);
+				return (ra.kind === prefer ? 0 : 1) - (rb.kind === prefer ? 0 : 1) || ra.index - rb.index;
+			});
+		const rep =
+			ranked.find((m) => method !== 'audio' || m.kind === 'audio' || m.kind === 'nest-audio') ?? ranked[0];
+		if (!rep) continue;
+		if (method === 'audio' && rep.kind !== 'audio')
+			throw new SyncError('E_INVALID_PARAM', `Clip ${id} has no audio clip to synchronize by`);
+		units.push({ memberIds: members.map((m) => m.id), repId: rep.id });
+	}
+	return units;
+}
+
+/** Index of the reference unit: the given clip's, the given track's, else the unit on the lowest video track. */
+export function synchronizeReference(
+	seq: Sequence,
+	units: readonly SyncUnit[],
+	opts: { referenceClipId?: string; referenceTrackId?: string },
+): number {
+	if (opts.referenceClipId) return units.findIndex((u) => u.memberIds.includes(opts.referenceClipId!));
+	if (opts.referenceTrackId)
+		return units.findIndex((u) => u.memberIds.some((m) => seq.clips[m]?.trackId === opts.referenceTrackId));
+	const score = (u: SyncUnit) =>
+		Math.min(
+			...u.memberIds.map((m) => {
+				const r = trackRankOf(seq, seq.clips[m]!.trackId);
+				return (r.kind === 'video' ? 0 : 1000) + r.index;
+			}),
+		);
+	let ref = 0;
+	for (let i = 1; i < units.length; i++) if (score(units[i]!) < score(units[ref]!)) ref = i;
+	return ref;
+}
+
+/** What `POST /api/sync/audio` analyses of one recording (structurally `SyncAudioClip` of @jasper/api). */
+export type AudioSyncClip = {
+	key: string;
+	mediaKey: string;
+	streamIndex?: number;
+	startFlicks?: number;
+	durationFlicks?: number;
+};
+
+function engineKeyOf(asset: MediaAsset | undefined): string | null {
+	const loc = asset?.locators.find((l) => l.type === 'engine-store');
+	return loc && loc.type === 'engine-store' ? loc.key : null;
+}
+
+/**
+ * The audio of Synchronize units for the engine: each representative audio clip's stream over the content it shows
+ * (keyed by the clip id, which is what `clip.synchronize {audioOffsets}` looks up).
+ */
+export function audioSyncClipsForUnits(
+	doc: Pick<ProjectDocument, 'media'>,
+	seq: Sequence,
+	units: readonly SyncUnit[],
+): AudioSyncClip[] {
+	return units.map((u) => {
+		const c = seq.clips[u.repId] as Clip & { mediaId?: string; channels?: { streamIndex: number } };
+		const key = engineKeyOf(c.mediaId ? doc.media[c.mediaId] : undefined);
+		if (!key) throw new SyncError('E_INVALID_PARAM', `${c.name} has no engine media to analyse`);
+		return {
+			key: c.id,
+			mediaKey: key,
+			...(c.channels ? { streamIndex: c.channels.streamIndex } : {}),
+			startFlicks: c.sourceIn,
+			durationFlicks: Math.max(1, contentSpanFlicks(c.duration, seq.settings.frameRate, c.speed.rate)),
+		};
+	});
+}
+
+/** The audio of project items (Merge Clips, Create Multi-Camera Source Sequence): each whole media, first stream. */
+export function audioSyncClipsForItems(doc: Pick<ProjectDocument, 'media' | 'items'>, itemIds: readonly string[]): AudioSyncClip[] {
+	return itemIds.map((id) => {
+		const it = doc.items[id];
+		if (!it || it.kind !== 'media') throw new SyncError('E_INVALID_PARAM', `Item ${id} is not a media clip`);
+		const asset = doc.media[it.mediaId];
+		const key = engineKeyOf(asset);
+		if (!key) throw new SyncError('E_INVALID_PARAM', `${it.name} has no engine media to analyse`);
+		const audio = asset!.probe.streams.find((s) => s.type === 'audio');
+		if (!audio) throw new SyncError('E_SYNC_NO_POINT', `${it.name} has no audio to synchronize by`);
+		return { key: id, mediaKey: key, streamIndex: audio.index };
 	});
 }

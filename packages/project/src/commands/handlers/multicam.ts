@@ -32,6 +32,8 @@ import {
 	SyncError,
 	type SyncSource,
 	type SyncSpec,
+	synchronizeReference,
+	synchronizeUnits,
 	syncOffsets,
 } from '../../multicam/sync.ts';
 import { contentDurationFlicks, isBoundedContent } from '../../registry/kinds.ts';
@@ -114,58 +116,41 @@ function synchronize(doc: DDoc, cmd: CommandOf<'clip.synchronize'>, h: HandlerCo
 	const { seq, clips } = h.clipsOf(doc, idList(cmd.clipIds));
 	const F = flicksPerFrame(seq.settings.frameRate);
 	// Units: a clip with its linked partners moves as one (the selection's links, plus partners not selected).
-	const units: { members: DClip[]; rep: DClip }[] = [];
-	const seen = new Set<string>();
-	const trackRank = (c: Clip) => {
-		const t = findTrackIn(seq, c.trackId);
-		return { kind: t?.kind ?? 'caption', index: t?.index ?? 99 };
-	};
-	for (const c of clips) {
-		if (seen.has(c.id)) continue;
-		const members =
-			c.linkId && seq.links[c.linkId]
-				? seq.links[c.linkId]!.members.map((m) => seq.clips[m]!).filter(Boolean)
-				: [c];
-		for (const m of members) seen.add(m.id);
-		const prefer = cmd.method === 'audio' ? 'audio' : 'video';
-		const ranked = [...members]
-			.filter((m) => trackRank(m).kind !== 'caption')
-			.sort((a, b) => {
-				const ra = trackRank(a);
-				const rb = trackRank(b);
-				const ka = ra.kind === prefer ? 0 : 1;
-				const kb = rb.kind === prefer ? 0 : 1;
-				return ka - kb || ra.index - rb.index;
-			});
-		const rep = ranked.find((m) => cmd.method !== 'audio' || m.kind === 'audio') ?? ranked[0];
-		if (!rep) continue;
-		if (cmd.method === 'audio' && rep.kind !== 'audio')
-			h.fail('E_INVALID_PARAM', `Clip ${c.id} has no audio clip to synchronize by`);
-		units.push({ members, rep });
+	let plainUnits: ReturnType<typeof synchronizeUnits>;
+	try {
+		plainUnits = synchronizeUnits(
+			seq as Sequence,
+			clips.map((c) => c.id),
+			cmd.method,
+		);
+	} catch (e) {
+		if (e instanceof SyncError) return h.fail('E_INVALID_PARAM', e.message);
+		throw e;
 	}
+	const units = plainUnits.map((u) => ({
+		members: u.memberIds.map((m) => seq.clips[m]!),
+		rep: seq.clips[u.repId]!,
+	}));
 	if (units.length < 2)
 		h.fail('E_INVALID_PARAM', 'Select clips from at least two different sources to synchronize');
 	for (const u of units) for (const m of u.members) assertUnlocked(findTrackIn(seq, m.trackId)!.track, h);
-	let ref: number;
-	if (cmd.referenceClipId) {
-		ref = units.findIndex((u) => u.members.some((m) => m.id === cmd.referenceClipId));
-		if (ref < 0) h.fail('E_INVALID_PARAM', '`referenceClipId` is not among the clips to synchronize');
-	} else if (cmd.referenceTrack) {
+	let referenceTrackId: string | undefined;
+	if (cmd.referenceTrack) {
 		const tid = resolveTrackIn(seq, cmd.referenceTrack);
 		if (!tid) h.fail('E_NOT_FOUND', `Track not found: ${cmd.referenceTrack}`);
-		ref = units.findIndex((u) => u.members.some((m) => m.trackId === tid));
-		if (ref < 0) h.fail('E_INVALID_PARAM', `No clip to synchronize on ${cmd.referenceTrack}`);
-	} else {
-		const score = (u: (typeof units)[number]) =>
-			Math.min(
-				...u.members.map((m) => {
-					const r = trackRank(m);
-					return (r.kind === 'video' ? 0 : 1000) + r.index;
-				}),
-			);
-		ref = 0;
-		for (let i = 1; i < units.length; i++) if (score(units[i]!) < score(units[ref]!)) ref = i;
+		referenceTrackId = tid;
 	}
+	const ref = synchronizeReference(seq as Sequence, plainUnits, {
+		...(cmd.referenceClipId ? { referenceClipId: cmd.referenceClipId } : {}),
+		...(referenceTrackId ? { referenceTrackId } : {}),
+	});
+	if (ref < 0)
+		h.fail(
+			'E_INVALID_PARAM',
+			cmd.referenceClipId
+				? '`referenceClipId` is not among the clips to synchronize'
+				: `No clip to synchronize on ${cmd.referenceTrack}`,
+		);
 	const sources = units.map((u) => clipSyncSource(doc as never, seq as Sequence, u.rep as Clip));
 	const offsets = offsetsOrFail(sources, ref, syncSpec(cmd), h);
 	// The reference's content time t0 sits at timeline τ_ref; unit u's content t0 + offset_u must sit there too.

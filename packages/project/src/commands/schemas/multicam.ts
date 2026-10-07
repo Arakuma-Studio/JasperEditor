@@ -12,8 +12,9 @@ const syncFields = {
 	/** marker: sync on the first clip marker with this name (default: each clip's first marker). */
 	marker: z.string().optional(),
 	/**
-	 * audio: per clip/item id, its content time (flicks) at the instant the reference shows content time 0 —
-	 * `offsetFlicks` from `POST /api/sync/audio` (the MCP tools and the editor dialogs measure it for you).
+	 * audio: per clip/item id, its content time (flicks) on a common clock: `t_i = t_clock + audioOffsets[i]` —
+	 * `results[].offsetFlicks` of `POST /api/sync/audio` as they are (its reference is 0; the reference may be left
+	 * out). The MCP tools and the editor dialogs measure them for you.
 	 */
 	audioOffsets: z.record(z.string(), z.number()).optional(),
 	/** Shift every clip but the reference later by this many frames (a known delay; Premiere's offset). */
