@@ -80,7 +80,14 @@ import {
 	ProjectListResponseSchema,
 	ProjectPutResponseSchema,
 	ProjectViewSchema,
+	RecoveryGetResponseSchema,
+	RecoveryListResponseSchema,
+	RecoveryPutRequestSchema,
+	RecoveryPutResponseSchema,
+	VersionGetResponseSchema,
 	VersionListResponseSchema,
+	VersionRestoreRequestSchema,
+	VersionRestoreResponseSchema,
 } from './projects.ts';
 import { TrackRequestSchema } from './tracking.ts';
 
@@ -100,7 +107,9 @@ export type RouteOwner =
 	| 'wp-masks'
 	// M3
 	| 'wp-m3-cachegc'
-	| 'wp-m3-presets';
+	| 'wp-m3-presets'
+	// parity program: versions and crash recovery (D-39)
+	| 'process';
 
 export type RouteDef = {
 	method: HttpMethod;
@@ -179,6 +188,45 @@ export const ROUTES = {
 		path: '/api/projects/:projectId/versions',
 		response: VersionListResponseSchema,
 		owner: 'WP-2F',
+	},
+	projectVersionGet: {
+		method: 'GET',
+		path: '/api/projects/:projectId/versions/:versionId',
+		response: VersionGetResponseSchema,
+		owner: 'process',
+	},
+	projectVersionRestore: {
+		method: 'POST',
+		path: '/api/projects/:projectId/versions/:versionId/restore',
+		body: VersionRestoreRequestSchema,
+		response: VersionRestoreResponseSchema,
+		owner: 'process',
+	},
+	projectRecoveryList: {
+		method: 'GET',
+		path: '/api/projects/:projectId/recovery',
+		response: RecoveryListResponseSchema,
+		owner: 'process',
+	},
+	projectRecoveryGet: {
+		method: 'GET',
+		path: '/api/projects/:projectId/recovery/:sessionId',
+		response: RecoveryGetResponseSchema,
+		owner: 'process',
+	},
+	projectRecoveryPut: {
+		method: 'PUT',
+		path: '/api/projects/:projectId/recovery/:sessionId',
+		body: RecoveryPutRequestSchema,
+		response: RecoveryPutResponseSchema,
+		owner: 'process',
+	},
+	projectRecoveryDelete: {
+		method: 'DELETE',
+		path: '/api/projects/:projectId/recovery/:sessionId',
+		query: z.object({ leaseId: z.string().optional() }),
+		response: OkSchema,
+		owner: 'process',
 	},
 	projectDelete: {
 		method: 'DELETE',

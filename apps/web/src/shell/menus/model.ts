@@ -53,6 +53,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('app.saveAs', 'Save As…'),
 			c('app.saveCopy', 'Save a Copy…'),
 			c('file.revert', 'Revert'),
+			c('file.projectVersions', 'Project Versions…'),
+			c('file.recoverUnsaved', 'Recover Unsaved Changes…'),
 			sep,
 			c('project.import', 'Import…'),
 			// M2 (wp-m2-mg, S08:MGU-001)

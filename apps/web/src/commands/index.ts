@@ -19,6 +19,7 @@ import { maskCommands } from './masks.ts';
 import { mgCommands } from './mg.ts';
 import { processCommands } from './process.ts';
 import { projectCommands } from './project.ts';
+import { projectFileCommands } from './project-files.ts';
 import { registerCommands } from './registry.ts';
 import { shapeCommands } from './shapes.ts';
 import { structureCommands } from './structure.ts';
@@ -56,6 +57,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	layerCommands,
 	cacheCommands,
 	structureCommands,
+	projectFileCommands,
 	maskCommands,
 ];
 
