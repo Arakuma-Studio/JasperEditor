@@ -1,12 +1,13 @@
-// The GL layer compositor's planning (keyframes-blend), pure: which layers it composites at a frame and the shader
-// plan that does it. CSS `mix-blend-mode` draws the W3C blend modes exactly; the other clip blend modes (Dissolve,
-// Linear Burn, Darker / Lighter Color, Linear Dodge (Add), Vivid / Linear / Pin Light, Hard Mix, Subtract, Divide,
-// Stencil / Silhouette, Alpha Add) need the pixels below them, which the DOM cannot give a layer. So at a frame where
-// such a layer ("GL item": a clip, or a GPU transition span whose sides share the mode) is drawn, everything from the
-// bottom track up to the highest track holding one becomes the compositor's GROUP: each member captures its picture
-// (the transition framework's tap; transition spans deliver their stage output) and one sequence-sized shader stage
-// composites them bottom → top onto transparency with each member's mode (`fx_layerBlend` = `blendPixel`), drawn in
-// place of the group. Tracks above it draw as usual (CSS modes blend against the stage's canvas).
+// The GL blend compositor's planning (keyframes-blend), pure: which layers a track's blend scope composites at a
+// frame and the shader plan that does it. CSS `mix-blend-mode` draws most W3C blend modes exactly; the other clip blend
+// modes (Dissolve, Color Burn / Dodge, Linear Burn, Darker / Lighter Color, Linear Dodge (Add), Vivid / Linear / Pin
+// Light, Hard Mix, Subtract, Divide, Saturation, the utility modes) need the pixels below them, which the DOM cannot
+// give a layer. So a track holding such a layer ("GL item": a clip, or a GPU transition span whose sides share the
+// mode) wraps everything below it (background, lower tracks, adjustment scopes, its own transition mattes) in a BLEND
+// SCOPE: the composite below is captured (HTML-in-Canvas, like an adjustment layer's scope) and, at frames where a
+// GL item of the track is drawn, every layer the track draws at that frame captures its picture (the transition
+// framework's tap; GPU transition spans deliver their stage output) and is composited onto the captured backdrop,
+// in drawing order, with its mode (`fx_layerBlend` = `blendPixel`, the native export kernel's formulas).
 import {
 	blendModeIndex,
 	dissolveSeed,
@@ -22,7 +23,6 @@ import {
 
 export type CompositeTrackInput = {
 	trackId: string;
-	mattes: readonly { id: string; start: number; duration: number; color: RGBA }[];
 	clips: readonly {
 		clipId: string;
 		start: number;
@@ -46,61 +46,41 @@ export type CompositeItem =
 			seed: number;
 	  };
 
-export type CompositeGroup = {
-	/** Index of the highest track of the group (the stage is drawn in that track, after its items). */
-	trackIndex: number;
-	items: CompositeItem[];
-};
-
 const drawnAt = (c: CompositeTrackInput['clips'][number], f: number) =>
 	f >= c.start - (c.headHandle ?? 0) && f < c.start + c.duration + (c.tailHandle ?? 0);
 const spanAt = (s: { start: number; duration: number }, f: number) =>
 	f >= s.start && f < s.start + s.duration;
 
-/**
- * The compositor's group at sequence frame `f`, or null when no GL item is drawn there. `isGpuSide(clipId, f)`:
- * the clip is a side of a GPU transition at `f` (its picture belongs to the transition stage).
- */
-export function compositeGroupAt(
-	tracks: readonly CompositeTrackInput[],
-	f: number,
-	isGpuSide: (clipId: string, f: number) => boolean,
-): CompositeGroup | null {
-	let top = -1;
-	tracks.forEach((t, i) => {
-		const clipGl = t.clips.some((c) => !isCssBlend(c.blendMode) && drawnAt(c, f) && !isGpuSide(c.clipId, f));
-		const stageGl = t.stages.some((s) => !isCssBlend(s.blendMode) && spanAt(s, f));
-		if (clipGl || stageGl) top = i;
-	});
-	if (top < 0) return null;
-	const items: CompositeItem[] = [];
-	for (let i = 0; i <= top; i++) {
-		const t = tracks[i]!;
-		for (const m of t.mattes)
-			if (spanAt(m, f)) items.push({ kind: 'matte', key: `matte:${m.id}`, color: m.color });
-		for (const c of t.clips) {
-			if (!drawnAt(c, f) || isGpuSide(c.clipId, f)) continue;
-			items.push({
-				kind: 'clip',
-				key: c.clipId,
-				mode: c.blendMode,
-				seed: dissolveSeed(c.clipId, f - c.start),
-			});
-		}
-		for (const s of t.stages) {
-			if (!spanAt(s, f)) continue;
-			const key = `transition:${s.id}`;
-			items.push({ kind: 'stage', key, mode: s.blendMode, seed: dissolveSeed(key, f - s.start) });
-		}
-	}
-	return { trackIndex: top, items };
+/** Whether a track holds a GL item at all (its tracks below are then wrapped in a blend scope). */
+export function trackHasGlBlend(t: CompositeTrackInput): boolean {
+	return t.clips.some((c) => !isCssBlend(c.blendMode)) || t.stages.some((s) => !isCssBlend(s.blendMode));
 }
 
-/** Whether a document has any GL item at all (else the compositor is never mounted). */
-export function hasGlBlend(tracks: readonly CompositeTrackInput[]): boolean {
-	return tracks.some(
-		(t) => t.clips.some((c) => !isCssBlend(c.blendMode)) || t.stages.some((s) => !isCssBlend(s.blendMode)),
-	);
+/**
+ * The layers a track's blend scope composites at sequence frame `f` (drawing order: clips, then transition stages),
+ * or null when no GL item of the track is drawn there (the scope then passes the backdrop through and the track draws
+ * the CSS way). `isGpuSide(clipId, f)`: the clip is a side of a GPU transition at `f` (its picture belongs to the
+ * transition stage).
+ */
+export function compositeItemsAt(
+	t: CompositeTrackInput,
+	f: number,
+	isGpuSide: (clipId: string, f: number) => boolean,
+): CompositeItem[] | null {
+	const items: CompositeItem[] = [];
+	let gl = false;
+	for (const c of t.clips) {
+		if (!drawnAt(c, f) || isGpuSide(c.clipId, f)) continue;
+		gl ||= !isCssBlend(c.blendMode);
+		items.push({ kind: 'clip', key: c.clipId, mode: c.blendMode, seed: dissolveSeed(c.clipId, f - c.start) });
+	}
+	for (const st of t.stages) {
+		if (!spanAt(st, f)) continue;
+		gl ||= !isCssBlend(st.blendMode);
+		const key = `transition:${st.id}`;
+		items.push({ kind: 'stage', key, mode: st.blendMode, seed: dissolveSeed(key, f - st.start) });
+	}
+	return gl ? items : null;
 }
 
 /** A delivered picture and its placement (comp px → picture px, projective; opacity 0..1). */
@@ -114,7 +94,8 @@ export type CompositePicture = {
 const IDENTITY = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 
 /**
- * The shader plan compositing `items` (bottom → top) onto transparency: one pass per item, ping-ponging the
+ * The shader plan compositing `items` (bottom → top) onto the backdrop (`u_source`, the captured composite below) or,
+ * with `backdrop: false`, onto transparency: one pass per item, ping-ponging the
  * accumulated picture (`u_acc`, premultiplied RGBA8 like an 8-bit pipeline: `storePremul8`), the last one into the
  * stage canvas. A member without a
  * picture yet is left out (it draws nothing until it delivers). Texture inputs: `u_l<i>` (see `textures`).
@@ -123,12 +104,14 @@ export function planComposite(
 	items: readonly CompositeItem[],
 	pictures: ReadonlyMap<string, CompositePicture>,
 	comp: { width: number; height: number },
+	opts: { backdrop?: boolean } = {},
 ): { plan: FxEffectPlan; textures: { uniform: string; key: string }[]; builtins: FxUniform[] } {
+	const backdrop = opts.backdrop ?? true;
 	const drawn = items.filter((it) => it.kind === 'matte' || pictures.has(it.key));
 	const textures: { uniform: string; key: string }[] = [];
 	const passes: ShaderPass[] = drawn.map((it, i): ShaderPass => {
 		const first = i === 0;
-		const dst = first ? 'vec4(0.0)' : 'texture(u_acc, v_uv)';
+		const dst = !first ? 'texture(u_acc, v_uv)' : backdrop ? 'texture(u_source, v_uv)' : 'vec4(0.0)';
 		// The stack is stored premultiplied in RGBA8 between layers (= `storePremul8`, which the native kernel applies).
 		const common = { output: 'acc', filter: 'nearest' as const, ...(first ? {} : { update: true }) };
 		if (it.kind === 'matte') {
@@ -176,7 +159,12 @@ void main() {
 		};
 	});
 	if (passes.length === 0)
-		passes.push({ include: [GLSL_BLEND], frag: 'void main() { fragColor = vec4(0.0); }' });
+		passes.push({
+			include: [GLSL_BLEND],
+			frag: backdrop
+				? 'void main() { fragColor = texture(u_source, v_uv); }'
+				: 'void main() { fragColor = vec4(0.0); }',
+		});
 	const canvas = { width: comp.width, height: comp.height };
 	const planned = planPasses(passes, { paramDecls: [], textures: textures.map((t) => t.uniform), canvas });
 	const plan: FxEffectPlan = {

@@ -11,7 +11,7 @@
 // fades graded stills, whose bakes have no fades, when it grades them), so it is positioned in sequence pixels,
 // outside the layer box, and `layer.props.opacity` (which carries the fade factor of `ClipLayer`) is deliberately
 // not applied again: opacity and fades reach the frame exactly once. Layers without colour effects are untouched.
-import { defaultEffectRegistry, type RenderVisualClip } from '@jasper/project';
+import { defaultEffectRegistry, hasEffectMasks, type RenderVisualClip } from '@jasper/project';
 import { Video } from '@remotion/media';
 import { type ComponentType, type CSSProperties, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
 import { continueRender, delayRender, Img, Sequence, useCurrentFrame, useVideoConfig } from 'remotion';
@@ -71,6 +71,8 @@ export function isDomLayerClip(clip: Pick<RenderVisualClip, 'kind' | 'engine'>):
 export function hasDomColorEffects(clip: RenderVisualClip): boolean {
 	return (
 		isDomLayerClip(clip) &&
+		// wp masks: with effect masks the composition runs the whole stack (masked colour runs included) itself.
+		!hasEffectMasks(clip) &&
 		clip.effects.some((fx) => fx.enabled && !!defaultEffectRegistry.get(fx.effectId, fx.effectVersion)?.color)
 	);
 }

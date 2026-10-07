@@ -187,6 +187,31 @@ export function PropertyRow(props: {
 				);
 			case 'curve':
 				return <CurveField row={row} ctx={writeCtx} data-testid={`prop-${row.id}`} />;
+			// wp masks: Track Matte Key's Matte = a video track of the sequence ('' = None).
+			case 'track': {
+				const tracks = ctx.seq.videoTracks;
+				return (
+					<SelectField
+						value={mixed ? null : String(value ?? '')}
+						options={['', ...tracks.map((t) => t.id)]}
+						labels={['None', ...tracks.map((t, i) => t.name || `Video ${i + 1}`)]}
+						label={row.label}
+						onChange={(v) => commitFn(() => v)}
+						data-testid={`prop-${row.id}`}
+					/>
+				);
+			}
+			// wp masks: Mask Path has no value editor (edited on the monitor): its vertex count.
+			case 'json':
+				if (spec.group === 'mask') {
+					const p = value as { vertices?: unknown[]; closed?: boolean } | null;
+					return (
+						<span className="text-pr-small text-pr-muted" data-testid={`prop-${row.id}`}>
+							{mixed || !p?.vertices ? '' : `${p.vertices.length} vertices${p.closed ? '' : ' (open)'}`}
+						</span>
+					);
+				}
+				return null;
 			case 'wheel':
 				return <WheelField row={row} ctx={writeCtx} title="" data-testid={`prop-${row.id}`} />;
 			default:

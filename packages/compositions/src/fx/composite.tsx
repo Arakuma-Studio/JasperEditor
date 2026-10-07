@@ -1,58 +1,78 @@
-// The GL layer compositor (keyframes-blend): draws the blend modes CSS cannot draw exactly (see composite-plan.ts).
-// - `CompositeHub`: the members' captured pictures (latest delivery wins), keyed by clip id / `transition:<id>`;
-// - `CompositeStage`: one sequence-sized canvas in the group's top track, redrawn on every delivery and frame change
-//   on the shared fx GPU host (`runShaderPlan`), like the transition stage;
-// - `CompositeContext`: what clips, mattes and transition stages ask per frame ("am I captured?").
-// Determinism (S11 §2) as for transitions: each member taps inside its own delayRender window and the stage opens its
-// delayRender synchronously before redrawing (a microtask), so the last draw of a frame uses that frame's pictures.
-// Where the group cannot be captured (no WebGL2 / lost context, a DOM layer without HTML-in-Canvas, a pre-rendered
-// layer in the Player) the Player draws the layers the CSS way with a chip naming the mode it cannot preview (GL
-// modes draw as Normal there); renders fail with BLEND_UNSUPPORTED / WEBGL_UNAVAILABLE — never a silently different
-// picture.
-import type { MediaHandle, RenderVisualClip } from '@jasper/project';
+// The GL blend compositor (keyframes-blend): draws the blend modes CSS cannot draw exactly (see composite-plan.ts).
+// - `BlendScope` wraps everything below a track that holds a GL item: the composite below is drawn through Remotion's
+//   `<HtmlInCanvas>` (the captured backdrop, as an adjustment layer's scope) whose canvas effect chain composites the
+//   track's layers onto it at the frames where a GL item is drawn (`fxBlendComposite`); elsewhere the chain is empty
+//   and the backdrop passes through. The element structure never changes over time (no remounts below).
+// - `CompositeHub` (one per scope): the pictures the track's layers deliver through their taps, per frame.
+// - `BlendTrackContext`: what the track's clips and transition stages ask per frame ("am I captured?").
+// Determinism (S11 §2): a render holds the frame (delayRender) until every layer of the frame delivered its picture of
+// that frame; the chain's draw then runs with them before the hold is released (its layout effect runs first), as
+// the track mattes do. Where the scope cannot run (no WebGL2 / lost context, no HTML-in-Canvas) the Player draws the
+// track the CSS way with a chip naming the modes it cannot preview (they draw as Normal); renders fail with
+// WEBGL_UNAVAILABLE / BLEND_UNSUPPORTED — never a silently different picture.
 import { blendModeInfo } from '@jasper/project';
-import { createContext, useCallback, useContext, useLayoutEffect, useRef } from 'react';
-import { AbsoluteFill, cancelRender, continueRender, delayRender, getRemotionEnvironment } from 'remotion';
+import {
+	type CSSProperties,
+	createContext,
+	type ReactNode,
+	useContext,
+	useEffect,
+	useMemo,
+	useRef,
+	useSyncExternalStore,
+} from 'react';
+import {
+	AbsoluteFill,
+	cancelRender,
+	continueRender,
+	createEffect,
+	delayRender,
+	getRemotionEnvironment,
+	HtmlInCanvas,
+	useCurrentFrame,
+} from 'remotion';
 import type { LayerTap } from '../types.ts';
 import {
-	type CompositeGroup,
+	type CompositeItem,
 	type CompositePicture,
 	type CompositeTrackInput,
-	compositeGroupAt,
+	compositeItemsAt,
 	planComposite,
 } from './composite-plan.ts';
+import { canUseHtmlInCanvas } from './FxPicture.tsx';
 import { FxShaderError, type FxTextureInput, fxHost, runShaderPlan } from './host.ts';
-import { type FxGpuState, fxStatus } from './status.ts';
+import { type FxGpuState, fxStatus, useFxStatus } from './status.ts';
 
-type HubPicture = { canvas: HTMLCanvasElement; version: number; pic: CompositePicture };
+type HubPicture = { canvas: HTMLCanvasElement; version: number; frame: number; pic: CompositePicture };
 
-/** The members' pictures, as their taps delivered them. */
+/** The pictures a track's layers delivered (latest per layer, with the sequence frame it shows). */
 export class CompositeHub {
 	readonly pictures = new Map<string, HubPicture>();
 	private readonly listeners = new Set<() => void>();
 	private readonly taps = new Map<string, LayerTap>();
 	private version = 0;
 
-	tap(key: string): LayerTap {
-		const hit = this.taps.get(key);
+	/** The tap of layer `key` at sequence frame `frame` (stable per key and frame). */
+	tap(key: string, frame: number): LayerTap {
+		const id = `${key}@${frame}`;
+		const hit = this.taps.get(id);
 		if (hit) return hit;
-		const t: LayerTap = { side: key, deliver: (p, w, h, meta) => this.deliver(key, p, w, h, meta) };
-		this.taps.set(key, t);
+		if (this.taps.size > 256) this.taps.clear();
+		const t: LayerTap = { side: key, deliver: (p, w, h, meta) => this.deliver(key, frame, p, w, h, meta) };
+		this.taps.set(id, t);
 		return t;
 	}
 
-	subscribe(cb: () => void): () => void {
+	subscribe = (cb: () => void): (() => void) => {
 		this.listeners.add(cb);
 		return () => this.listeners.delete(cb);
-	}
+	};
 
-	/** Forgets a member's picture (it left the group: a later visit must not show another frame's picture). */
-	forget(key: string): void {
-		this.pictures.delete(key);
-	}
+	getVersion = (): number => this.version;
 
 	deliver(
 		key: string,
+		frame: number,
 		picture: CanvasImageSource,
 		width: number,
 		height: number,
@@ -70,8 +90,9 @@ export class CompositeHub {
 		ctx.globalCompositeOperation = 'source-over';
 		this.pictures.set(key, {
 			canvas,
+			frame,
 			version: ++this.version,
-			// A degenerate layer map (scale 0) leaves the member out of the frame.
+			// A degenerate layer map (scale 0) leaves the layer out of the frame.
 			pic: {
 				width: w,
 				height: h,
@@ -83,23 +104,12 @@ export class CompositeHub {
 	}
 }
 
-/** How the compositor runs here: on the GPU (members captured) or as the Player's CSS fallback. */
+/** How a scope runs here: on the GPU (layers captured) or as the Player's CSS fallback. */
 export type CompositeMode = { mode: 'gpu' } | { mode: 'fallback'; reason: string };
 
-/** Kinds whose layer draws through `FxPicture` (no HTML-in-Canvas needed to capture them). */
-const PICTURE_KINDS: ReadonlySet<string> = new Set([
-	'video',
-	'still',
-	'animated-image',
-	'solid',
-	'composition',
-]);
-
-/** Pure: whether the members of a document's groups can be captured in this environment. */
+/** Pure: whether a blend scope can run in this environment. */
 export function compositeRunMode(
-	clips: readonly RenderVisualClip[],
-	media: Readonly<Record<string, MediaHandle | null>>,
-	env: { gpu: FxGpuState; htmlInCanvas: boolean; isPreview: boolean },
+	env: { gpu: FxGpuState; htmlInCanvas: boolean },
 	glModes: readonly string[],
 ): CompositeMode {
 	const names = [...new Set(glModes.map((m) => blendModeInfo(m)?.label ?? m))].join(', ');
@@ -111,166 +121,235 @@ export function compositeRunMode(
 					? `Blend mode ${names} paused (GPU context lost)`
 					: `Blend mode ${names} needs WebGL2 (no WebGL2 here)`,
 		};
-	for (const c of clips) {
-		// Renders capture the injected graded master; the Player's graded preview is a plain video element.
-		if (c.baked && env.isPreview)
-			return { mode: 'fallback', reason: `Blend mode ${names}: a pre-rendered layer cannot be captured` };
-		const src = c.source as { mediaId?: string };
-		const picture = (PICTURE_KINDS.has(c.kind) && (!src.mediaId || !!media[src.mediaId])) || !!c.baked;
-		if (!picture && !env.htmlInCanvas)
-			return {
-				mode: 'fallback',
-				reason: `Blend mode ${names} with ${c.kind} layers needs HTML-in-Canvas here (chrome://flags/#canvas-draw-element)`,
-			};
-	}
+	if (!env.htmlInCanvas)
+		return {
+			mode: 'fallback',
+			reason: `Blend mode ${names} needs HTML-in-Canvas here (chrome://flags/#canvas-draw-element)`,
+		};
 	return { mode: 'gpu' };
 }
 
-// ---------------------------------------------------------------- context
+// ---------------------------------------------------------------- track context
 
-export type CompositeContextValue = {
+export type BlendTrackValue = {
 	hub: CompositeHub;
 	mode: CompositeMode;
-	tracks: readonly CompositeTrackInput[];
-	/** Tracks holding a GL item (the only ones that can be a group's top). */
-	groupTops: ReadonlySet<number>;
-	/** The group at an absolute sequence frame (cached), or null. */
-	groupAt(frame: number): CompositeGroup | null;
+	/** The layers the scope composites at an absolute sequence frame, or null (cached). */
+	itemsAt(frame: number): CompositeItem[] | null;
 };
 
-/** Null when the document has no GL blend item (nothing is ever captured for the compositor). */
-export const CompositeContext = createContext<CompositeContextValue | null>(null);
+/** Set around a track that holds a GL item; null elsewhere (nothing is captured for the compositor). */
+export const BlendTrackContext = createContext<BlendTrackValue | null>(null);
 
-/** The compositor tap of a member at an absolute sequence frame, or null (not a member, or the CSS fallback). */
+/** The compositor tap of a layer of the track at an absolute sequence frame, or null (not captured there). */
 export function useCompositeTap(key: string, frame: number): LayerTap | null {
-	const ctx = useContext(CompositeContext);
+	const ctx = useContext(BlendTrackContext);
 	if (!ctx || ctx.mode.mode === 'fallback') return null;
-	const g = ctx.groupAt(frame);
-	if (!g?.items.some((it) => it.key === key)) return null;
-	return ctx.hub.tap(key);
+	const items = ctx.itemsAt(frame);
+	if (!items?.some((it) => it.key === key)) return null;
+	return ctx.hub.tap(key, frame);
 }
 
-/** A group cache for one composition: groups depend only on the frame. */
-export function makeGroupCache(
-	tracks: readonly CompositeTrackInput[],
+/** The value of a track's context (stable per track input). */
+export function makeBlendTrack(
+	t: CompositeTrackInput,
 	isGpuSide: (clipId: string, f: number) => boolean,
-): (frame: number) => CompositeGroup | null {
-	const cache = new Map<number, CompositeGroup | null>();
-	return (frame) => {
-		if (cache.has(frame)) return cache.get(frame)!;
-		const g = compositeGroupAt(tracks, frame, isGpuSide);
-		if (cache.size > 512) cache.clear();
-		cache.set(frame, g);
-		return g;
+	mode: CompositeMode,
+	hub: CompositeHub,
+): BlendTrackValue {
+	const cache = new Map<number, CompositeItem[] | null>();
+	return {
+		hub,
+		mode,
+		itemsAt: (frame) => {
+			if (cache.has(frame)) return cache.get(frame)!;
+			const items = compositeItemsAt(t, frame, isGpuSide);
+			if (cache.size > 512) cache.clear();
+			cache.set(frame, items);
+			return items;
+		},
 	};
 }
 
-// ---------------------------------------------------------------- stage
+// ---------------------------------------------------------------- chain step
 
-const blank = (() => {
-	let c: HTMLCanvasElement | null = null;
-	return () => {
-		c ??= document.createElement('canvas');
-		c.width = 1;
-		c.height = 1;
-		return c;
-	};
-})();
+type FxBlendParams = {
+	key: string;
+	items: readonly CompositeItem[];
+	pictures: ReadonlyMap<string, HubPicture>;
+	preview: boolean;
+};
 
-/**
- * The compositor stage of the group whose top track this is, at absolute sequence frame `frame`: a sequence-sized
- * canvas redrawn whenever a member delivers.
- */
-export function CompositeStage(props: {
-	group: CompositeGroup;
-	frame: number;
-	comp: { width: number; height: number };
-}) {
-	const ctx = useContext(CompositeContext)!;
-	const { hub } = ctx;
-	const rendering = getRemotionEnvironment().isRendering;
-	const canvasRef = useRef<HTMLCanvasElement | null>(null);
-	const failed = useRef<string | null>(null);
-	const groupRef = useRef(props.group);
-	groupRef.current = props.group;
-	const { comp } = props;
-
-	const draw = useCallback(() => {
-		const out = canvasRef.current;
-		if (!out) return;
+/** Composites the track's layers onto the captured backdrop (the chain's source) on the fx GPU host. */
+export const fxBlendComposite = createEffect<FxBlendParams, null>({
+	type: 'jasper.fx-blend-composite',
+	label: 'Blend modes (compositor)',
+	documentationLink: null,
+	backend: '2d',
+	calculateKey: (p) => p.key,
+	schema: {},
+	validateParams: (p) => {
+		if (!p?.items) throw new Error('fxBlendComposite needs {key, items, pictures}');
+	},
+	setup: () => null,
+	apply({ source, target, params, width, height }) {
 		const h = fxHost();
 		if (!h) throw new Error('WEBGL_UNAVAILABLE: blend modes need WebGL2');
-		if (out.width !== comp.width) out.width = comp.width;
-		if (out.height !== comp.height) out.height = comp.height;
-		const items = groupRef.current.items;
 		const pics = new Map<string, CompositePicture>();
-		for (const it of items) {
-			const p = it.kind === 'matte' ? undefined : hub.pictures.get(it.key);
+		for (const it of params.items) {
+			const p = it.kind === 'matte' ? undefined : params.pictures.get(it.key);
 			if (p) pics.set(it.key, p.pic);
 		}
-		const { plan, textures, builtins } = planComposite(items, pics, comp);
-		const inputs: Record<string, FxTextureInput | null> = {};
+		const { plan, textures, builtins } = planComposite(params.items, pics, { width, height });
+		const textureInputs: Record<string, FxTextureInput | null> = {};
 		for (const t of textures) {
-			const p = hub.pictures.get(t.key)!;
-			inputs[t.uniform] = {
+			const p = params.pictures.get(t.key)!;
+			textureInputs[t.uniform] = {
 				source: p.canvas,
 				width: p.pic.width,
 				height: p.pic.height,
 				version: `${t.key}:${p.version}`,
 			};
 		}
-		runShaderPlan(
-			h,
-			plan,
-			blank(),
-			{ builtins, textures: inputs, samples: { sources: [], offsets: [] } },
-			out.getContext('2d')!,
+		const out = (target as HTMLCanvasElement | OffscreenCanvas).getContext('2d') as CanvasRenderingContext2D;
+		try {
+			runShaderPlan(
+				h,
+				plan,
+				source as TexImageSource,
+				{ builtins, textures: textureInputs, samples: { sources: [], offsets: [] } },
+				out,
+			);
+		} catch (e) {
+			if (!params.preview) throw e;
+			if (e instanceof FxShaderError) fxStatus.shaderFailed(e.effectId, e.message);
+			else console.error('[blend]', e);
+			out.globalCompositeOperation = 'copy';
+			out.drawImage(source as CanvasImageSource, 0, 0, width, height);
+			out.globalCompositeOperation = 'source-over';
+		}
+	},
+	cleanup: () => {},
+});
+
+// ---------------------------------------------------------------- scope
+
+const FILL: CSSProperties = { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%' };
+
+/**
+ * Everything below a track that holds a GL item: captured through HTML-in-Canvas; at frames where the track draws a
+ * GL item its layers are composited onto it. `offset` = the doc frame at the enclosing Sequence's frame 0.
+ */
+export function BlendScope({
+	track,
+	comp,
+	offset,
+	isPreview,
+	children,
+}: {
+	track: BlendTrackValue;
+	comp: { width: number; height: number };
+	offset: number;
+	isPreview: boolean;
+	children?: ReactNode;
+}) {
+	const frame = useCurrentFrame() + offset;
+	const rendering = getRemotionEnvironment().isRendering;
+	const items = track.mode.mode === 'gpu' ? track.itemsAt(frame) : null;
+	const { hub } = track;
+	const version = useSyncExternalStore(hub.subscribe, hub.getVersion, () => 0);
+	// The pictures of this frame (the Player shows the latest while a layer is still drawing this one).
+	const pictures = new Map<string, HubPicture>();
+	let complete = true;
+	for (const it of items ?? []) {
+		if (it.kind === 'matte') continue;
+		const p = hub.pictures.get(it.key);
+		if (p && (p.frame === frame || !rendering)) pictures.set(it.key, p);
+		else complete = false;
+	}
+	const pictureKey = [...pictures.entries()].map(([k, p]) => `${k}:${p.version}`).join(',');
+	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the frame's items and delivered pictures
+	const effects = useMemo(() => {
+		if (!items || (rendering && !complete)) return [];
+		const key = `${frame}|${items.map((it) => ('mode' in it ? `${it.key}:${it.mode}:${it.seed}` : it.key)).join('|')}|${pictureKey}`;
+		return [fxBlendComposite({ key, items, pictures, preview: isPreview })];
+	}, [frame, items, pictureKey, complete, rendering, isPreview, version]);
+	// Renders: hold the frame until every layer of it delivered (the chain then draws before the release).
+	const hold = useRef<number | null>(null);
+	if (rendering && items && !complete && hold.current === null)
+		hold.current = delayRender(`Blend modes at frame ${frame}`);
+	useEffect(() => {
+		if ((!items || complete) && hold.current !== null) {
+			continueRender(hold.current);
+			hold.current = null;
+		}
+	});
+	useEffect(
+		() => () => {
+			if (hold.current !== null) continueRender(hold.current);
+		},
+		[],
+	);
+	if (track.mode.mode === 'fallback')
+		return (
+			<div data-blend-scope="bypass" style={FILL}>
+				{children}
+			</div>
 		);
-	}, [hub, comp]);
-
-	const pending = useRef<{ handle: number | null } | null>(null);
-	const schedule = useCallback(() => {
-		if (pending.current) return;
-		const job = { handle: rendering ? delayRender('Blend compositor') : null };
-		pending.current = job;
-		queueMicrotask(() => {
-			pending.current = null;
-			try {
-				draw();
-			} catch (e) {
-				if (rendering) cancelRender(e as Error);
-				else if (failed.current === null) {
-					failed.current = (e as Error).message;
-					if (e instanceof FxShaderError) fxStatus.shaderFailed(e.effectId, e.message);
-					else console.error('[composite]', e);
-				}
-			} finally {
-				if (job.handle !== null) continueRender(job.handle);
-			}
-		});
-	}, [draw, rendering]);
-
-	// Subscribed in the layout phase so a delivery in the next animation frame is not missed (as transitions).
-	useLayoutEffect(() => hub.subscribe(schedule), [hub, schedule]);
-	const itemsKey = props.group.items
-		.map((it) => `${it.key}:${'mode' in it ? `${it.mode}:${it.seed}` : ''}`)
-		.join('|');
-	// biome-ignore lint/correctness/useExhaustiveDependencies: redraw when the frame or the group changes
-	useLayoutEffect(() => {
-		schedule();
-	}, [schedule, props.frame, itemsKey]);
-
 	return (
-		<AbsoluteFill data-blend-compositor="" style={{ pointerEvents: 'none' }}>
-			<canvas
-				ref={canvasRef}
-				width={comp.width}
-				height={comp.height}
-				style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', display: 'block' }}
-			/>
-		</AbsoluteFill>
+		<HtmlInCanvas
+			width={comp.width}
+			height={comp.height}
+			effects={effects}
+			style={{ ...FILL, display: 'block' }}
+			showInTimeline={false}
+		>
+			<div
+				data-blend-scope="canvas"
+				style={{ position: 'absolute', left: 0, top: 0, width: comp.width, height: comp.height }}
+			>
+				{children}
+			</div>
+		</HtmlInCanvas>
 	);
 }
+
+/**
+ * The Player's fallback chip (drawn over a track whose scope cannot run, at the frames where it holds a GL item);
+ * renders cancel there.
+ */
+export function BlendFallback({
+	track,
+	glModesAt,
+	offset,
+	isPreview,
+}: {
+	track: BlendTrackValue;
+	glModesAt: (frame: number) => readonly string[];
+	offset: number;
+	isPreview: boolean;
+}) {
+	const frame = useCurrentFrame() + offset;
+	if (track.mode.mode !== 'fallback') return null;
+	const modes = glModesAt(frame);
+	if (modes.length === 0) return null;
+	const reason = track.mode.reason;
+	if (!isPreview)
+		cancelRender(
+			new Error(
+				reason.includes('WebGL2') || reason.includes('context lost')
+					? `WEBGL_UNAVAILABLE: ${reason}`
+					: `BLEND_UNSUPPORTED: ${reason}`,
+			),
+		);
+	return <CompositeChip text={`${reason} — previewed as Normal`} />;
+}
+
+/** Status of the fx GPU host for scopes (re-exported for the composition). */
+export const useBlendGpu = useFxStatus;
+
+/** Whether HTML-in-Canvas is available (scopes need it to capture the backdrop). */
+export const blendHtmlInCanvas = canUseHtmlInCanvas;
 
 /** Chip of the Player's fallback (the modes it cannot preview here). */
 export function CompositeChip({ text }: { text: string }) {

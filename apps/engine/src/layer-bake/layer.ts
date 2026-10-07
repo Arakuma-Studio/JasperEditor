@@ -7,7 +7,9 @@ import {
 	defaultEffectRegistry,
 	type EffectRegistry,
 	gpuIsTimeDependent,
+	hasEffectMasks,
 	layerMapOf,
+	maskExportRoute,
 	type RenderSnapshot,
 	type RenderVisualClip,
 	resolveLayerProps,
@@ -60,10 +62,13 @@ export function hasBrowserEffect(
  * master overlaid natively, so a GPU effect no longer sends the whole export to Remotion.
  */
 export function needsBake(
-	c: Pick<RenderVisualClip, 'kind' | 'engine' | 'effects'>,
+	c: Pick<RenderVisualClip, 'kind' | 'engine' | 'effects' | 'masks'>,
 	registry?: EffectRegistry,
 ): boolean {
-	return isDomLayer(c) || (MEDIA_BAKE_KINDS.has(c.kind) && hasBrowserEffect(c, registry));
+	return (
+		isDomLayer(c) ||
+		(MEDIA_BAKE_KINDS.has(c.kind) && (hasBrowserEffect(c, registry) || maskExportRoute(c) === 'bake'))
+	);
 }
 
 /** True when the effect has a colour op (D-21): applied natively to DOM layers (S11:LBK-010). */
@@ -74,9 +79,13 @@ export function isColorEffect(
 	return !!registry.get(fx.effectId, fx.effectVersion)?.color;
 }
 
-/** The clip has enabled colour-op effects (FIX-002: they are applied by ffmpeg, not baked by Remotion). */
+/**
+ * The clip has enabled colour-op effects that ffmpeg applies (FIX-002: not baked by Remotion). wp masks: a clip with
+ * effect masks keeps its whole stack in the bake (a masked colour effect mixes with its input, and ffmpeg could
+ * only apply runs to the finished layer), so its colour effects are rendered by the composition.
+ */
 export function hasColorEffects(c: Pick<RenderVisualClip, 'effects'>, registry?: EffectRegistry): boolean {
-	return c.effects.some((fx) => fx.enabled && isColorEffect(fx, registry));
+	return !hasEffectMasks(c) && c.effects.some((fx) => fx.enabled && isColorEffect(fx, registry));
 }
 
 /** Geometric effects: they commute with pointwise colour ops (crop, flips, corner pin). */
@@ -126,7 +135,7 @@ function hasKeyframesDeep(v: unknown): boolean {
  * (colour effects removed when ffmpeg applies them, LBK-010).
  */
 export function isStaticLayer(
-	c: Pick<RenderVisualClip, 'kind' | 'source' | 'transform' | 'opacity' | 'effects'>,
+	c: Pick<RenderVisualClip, 'kind' | 'source' | 'transform' | 'opacity' | 'effects' | 'masks'>,
 	registry: EffectRegistry = defaultEffectRegistry,
 ): boolean {
 	if (c.kind === 'motion-graphic') return false;
@@ -135,6 +144,9 @@ export function isStaticLayer(
 	const src = c.source as { animation?: { in?: unknown; out?: unknown } };
 	if (src.animation && (src.animation.in || src.animation.out)) return false;
 	if (hasKeyframesDeep(c.transform) || hasKeyframesDeep(c.opacity)) return false;
+	// wp masks: keyframed Opacity or effect masks.
+	if (hasKeyframesDeep(c.masks) || c.effects.some((fx) => fx.enabled && hasKeyframesDeep(fx.masks)))
+		return false;
 	for (const fx of c.effects) {
 		if (!fx.enabled) continue;
 		const spec = registry.get(fx.effectId, fx.effectVersion);
@@ -182,7 +194,9 @@ export function bakeClip(
 	},
 ): RenderVisualClip {
 	const span = drawnSpan(c);
-	const effects = c.effects.filter((fx) => fx.enabled && !(o.stripColor && isColorEffect(fx, o.registry)));
+	// wp masks: with effect masks nothing is stripped (see `hasColorEffects`).
+	const strip = o.stripColor && !hasEffectMasks(c);
+	const effects = c.effects.filter((fx) => fx.enabled && !(strip && isColorEffect(fx, o.registry)));
 	const { headHandle, tailHandle, fades, ...rest } = c;
 	let out: RenderVisualClip;
 	if (o.variant.recipe === 'still') out = { ...rest, effects, start: 0, duration: 1 };

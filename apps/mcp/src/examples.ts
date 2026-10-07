@@ -114,6 +114,23 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		},
 		transform: { position: [960, 900] },
 	},
+	// wp masks
+	'mask.add': {
+		type: 'mask.add',
+		clipId: { clipAt: { track: 'V1', at: '00:00:01:00' } },
+		shape: 'ellipse',
+		feather: 20,
+		ref: '$mask',
+	},
+	'mask.editPath': {
+		type: 'mask.editPath',
+		maskId: '$mask',
+		at: { sequenceFrame: 30 },
+		ops: [
+			{ op: 'transform', translate: [0.1, 0], scale: 1.2, rotation: 15 },
+			{ op: 'insertVertex', segment: 0, t: 0.5 },
+		],
+	},
 	'clip.move': { type: 'clip.move', clipIds: [{ clipAt: { track: 'V1', at: 0 } }], deltaFrames: 30 },
 	'clip.trim': {
 		type: 'clip.trim',

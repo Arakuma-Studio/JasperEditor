@@ -165,6 +165,12 @@ export const ClipPlaceCmd = cmd('clip.place', {
 	createTracks: z.boolean().optional(),
 	syncConflict: SyncConflictSchema.optional(),
 	rippleMarkers: z.boolean().optional(),
+	/**
+	 * edit-structure: a sequence source is placed as a nested sequence (`true`, the default: nest-video + nest-audio
+	 * clips, Premiere's "Insert and overwrite sequences as nests") or as copies of its clips (`false`, "individual
+	 * clips"). Ignored for other sources.
+	 */
+	nest: z.boolean().optional(),
 	ref: RefDeclSchema.optional(),
 });
 export const ClipAddTextCmd = cmd('clip.addText', {
@@ -218,6 +224,8 @@ export const ClipAddAdjustmentCmd = cmd('clip.addAdjustment', {
 	at: TimeInputSchema,
 	duration: TimeInputSchema,
 	track: TrackRefSchema,
+	/** edit-structure: clip name (default "Adjustment Layer"). */
+	name: z.string().min(1).optional(),
 	ref: RefDeclSchema.optional(),
 });
 
@@ -239,6 +247,8 @@ export const ClipMoveCmd = cmd('clip.move', {
 	createTracks: z.boolean().optional(),
 	syncConflict: SyncConflictSchema.optional(),
 	rippleMarkers: z.boolean().optional(),
+	/** edit-structure (S01:CLP-012): members of the clips' clip groups move with them (default true). */
+	groups: z.boolean().optional(),
 });
 export const ClipTrimCmd = cmd('clip.trim', {
 	clipId: IdRefSchema,
@@ -247,6 +257,11 @@ export const ClipTrimCmd = cmd('clip.trim', {
 	mode: z.enum(['regular', 'ripple', 'roll']).optional(),
 	/** Trim link partners whose same edge coincides (S01:CLP-010). Default true. */
 	linked: z.boolean().optional(),
+	/**
+	 * edit-structure (Premiere groups): trimming the outer edge of a clip group (the first In / the last Out) trims
+	 * every member at that edge (default true); inner edges trim the clip alone.
+	 */
+	group: z.boolean().optional(),
 	/** Ripple only: stop at the largest shift sync-locked tracks allow (gesture behaviour, S02:TL-543). */
 	clampToSyncLock: z.boolean().optional(),
 	rippleMarkers: z.boolean().optional(),
@@ -262,9 +277,15 @@ export const ClipSplitCmd = cmd('clip.split', {
 	/** Split link partners too (default true; Alt = false). */
 	linked: z.boolean().optional(),
 });
-export const ClipLiftCmd = cmd('clip.lift', { clipIds: IdListSchema });
+export const ClipLiftCmd = cmd('clip.lift', {
+	clipIds: IdListSchema,
+	/** edit-structure (S01:CLP-012): grouped clips are deleted together (default true). */
+	groups: z.boolean().optional(),
+});
 export const ClipExtractCmd = cmd('clip.extract', {
 	clipIds: IdListSchema,
+	/** edit-structure (S01:CLP-012): grouped clips are deleted together (default true). */
+	groups: z.boolean().optional(),
 	syncConflict: SyncConflictSchema.optional(),
 	rippleMarkers: z.boolean().optional(),
 });
@@ -368,7 +389,9 @@ export const ClipGroupCmd = cmd('clip.group', { clipIds: IdListSchema, ref: RefD
 export const ClipUngroupCmd = cmd('clip.ungroup', { clipIds: IdListSchema });
 export const ClipNestCmd = cmd('clip.nest', {
 	clipIds: IdListSchema,
-	name: z.string().min(1),
+	/** Name of the new sequence (default "Nested Sequence NN"). */
+	name: z.string().min(1).optional(),
+	/** Binds the new sequence id. */
 	ref: RefDeclSchema.optional(),
 });
 

@@ -48,7 +48,8 @@ export function selectInspector(
 }
 
 export const isVisualClip = (c: Clip) => isKnownClipKind(c.kind) && !!kindCapabilities(c.kind)?.hasTransform;
-export const isAudioClip = (c: Clip) => c.kind === 'audio' || c.kind === 'nest-audio';
+export const isAudioClip = (c: Clip) =>
+	c.kind === 'audio' || c.kind === 'nest-audio' || c.kind === 'synthetic-audio';
 
 // ---------------------------------------------------------------- bindings
 

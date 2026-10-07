@@ -1,0 +1,8 @@
+asset:        vidstab.wasm
+title:        vid.stab video stabilisation library compiled to WebAssembly
+author:       Georg Martius and the vid.stab contributors
+source:       https://github.com/georgmartius/vid.stab (commit e2445c4081658318223762a696eb1c645c2d7168)
+license:      LGPL-2.1-or-later
+license-file: apps/engine/src/processing/proc/vidstab/LICENSE-vidstab.txt
+added:        2026-10-01 by JasperDev (sidecar 2026-10-07 by the process workstream)
+notes:        Unmodified post-relicence vid.stab sources plus our glue (scripts/vidstab-wasm/glue.c) built with the pinned wasi-sdk by scripts/vidstab-wasm/build.sh; shipped as a separate, replaceable file (AGENTS.md §2.5). Pins and hashes: VIDSTAB-WASM.json; notice: NOTICE-vidstab.txt.

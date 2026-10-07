@@ -4,6 +4,8 @@ import {
 	LeaseRequestSchema,
 	ProjectCreateRequestSchema,
 	ProjectViewSchema,
+	RecoveryPutRequestSchema,
+	VersionRestoreRequestSchema,
 } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
@@ -11,6 +13,8 @@ import { coreServices } from '../tools/services.ts';
 
 type P = { Params: { projectId: string } };
 type PL = { Params: { projectId: string; leaseId: string } };
+type PV = { Params: { projectId: string; versionId: string } };
+type PR = { Params: { projectId: string; sessionId: string }; Querystring: { leaseId?: string } };
 
 function parseIfMatch(h: string | string[] | undefined): number | '*' {
 	const v = (Array.isArray(h) ? h[0] : h)?.trim().replace(/^W\//, '').replace(/^"|"$/g, '');
@@ -24,7 +28,7 @@ function parseIfMatch(h: string | string[] | undefined): number | '*' {
 }
 
 export default async function projectsRoutes(app: FastifyInstance): Promise<void> {
-	const { projects, leases } = coreServices(app);
+	const { projects, leases, recovery } = coreServices(app);
 
 	app.get(
 		'/api/projects',
@@ -66,6 +70,57 @@ export default async function projectsRoutes(app: FastifyInstance): Promise<void
 	app.get<P>(
 		'/api/projects/:projectId/versions',
 		guarded<P>(async (req) => ({ versions: await projects.versions(req.params.projectId) })),
+	);
+
+	// Saved versions (process workstream, D-39): read one, restore it in place or as a new project.
+	app.get<PV>(
+		'/api/projects/:projectId/versions/:versionId',
+		guarded<PV>(async (req) => projects.version(req.params.projectId, req.params.versionId)),
+	);
+
+	app.post<PV>(
+		'/api/projects/:projectId/versions/:versionId/restore',
+		guarded<PV>(async (req) => {
+			const body = parseOr400(VersionRestoreRequestSchema, req.body);
+			return projects.restoreVersion(req.params.projectId, req.params.versionId, body);
+		}),
+	);
+
+	// Crash-recovery journals (S01:PER-021, AC-18, D-39).
+	app.get<P>(
+		'/api/projects/:projectId/recovery',
+		guarded<P>(async (req) => {
+			if ((await projects.revision(req.params.projectId)) === null)
+				throw new HttpError(404, 'PROJECT_NOT_FOUND', 'Unknown project');
+			return { candidates: await recovery.list(req.params.projectId) };
+		}),
+	);
+
+	app.get<PR>(
+		'/api/projects/:projectId/recovery/:sessionId',
+		guarded<PR>(async (req) => {
+			const r = await recovery.read(req.params.projectId, req.params.sessionId);
+			return { candidate: r.info, envelope: r.envelope };
+		}),
+	);
+
+	app.put<PR>(
+		'/api/projects/:projectId/recovery/:sessionId',
+		guarded<PR>(async (req) => {
+			const body = parseOr400(RecoveryPutRequestSchema, req.body);
+			if ((await projects.revision(req.params.projectId)) === null)
+				throw new HttpError(404, 'PROJECT_NOT_FOUND', 'Unknown project');
+			const r = await recovery.write(req.params.projectId, req.params.sessionId, body);
+			return { ok: true as const, savedAt: r.savedAt };
+		}),
+	);
+
+	app.delete<PR>(
+		'/api/projects/:projectId/recovery/:sessionId',
+		guarded<PR>(async (req) => {
+			await recovery.remove(req.params.projectId, req.params.sessionId, req.query.leaseId);
+			return { ok: true as const };
+		}),
 	);
 
 	app.delete<P>(

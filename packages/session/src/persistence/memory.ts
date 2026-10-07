@@ -1,6 +1,7 @@
 // In-memory ProjectStore (tests, headless tools). Same semantics as the engine store: envelopes,
-// revisions with If-Match style conflicts, versions and single-writer leases.
-import type { Lease, ProjectSummary, VersionInfo } from '@jasper/api';
+// revisions with If-Match style conflicts, versions, single-writer leases and crash-recovery journals (a journal
+// is held while its session holds the lease; `expireLease` simulates a crashed editor).
+import type { Lease, ProjectSummary, RecoveryInfo, VersionInfo } from '@jasper/api';
 import {
 	createEmptyProject,
 	createRandomIdSource,
@@ -16,6 +17,9 @@ import {
 	type OpenedProject,
 	type ProjectStore,
 	type ProjectViewState,
+	type RecoveredSnapshot,
+	type RecoveryStore,
+	type RecoveryWrite,
 	type SaveResult,
 } from './types.ts';
 
@@ -24,9 +28,12 @@ type Entry = {
 	view: ProjectViewState | null;
 	versions: { info: VersionInfo; envelope: ProjectEnvelope }[];
 	lease: Lease | null;
+	/** Versions kept so far (ids `v1`, `v2`… stay unique when old ones drop off). */
+	versionCount: number;
+	journals: Map<string, { info: Omit<RecoveryInfo, 'projectRevision'>; document: ProjectDocument }>;
 };
 
-export class MemoryProjectStore implements ProjectStore {
+export class MemoryProjectStore implements ProjectStore, RecoveryStore {
 	private readonly projects = new Map<string, Entry>();
 	readonly ids: IdSource;
 	private readonly mgTemplates: MgTemplateRegistry | undefined;
@@ -46,6 +53,8 @@ export class MemoryProjectStore implements ProjectStore {
 			view: null,
 			versions: [],
 			lease: null,
+			versionCount: 0,
+			journals: new Map(),
 		});
 	}
 
@@ -95,18 +104,26 @@ export class MemoryProjectStore implements ProjectStore {
 		const e = this.entry(projectId);
 		if (e.envelope.revision !== meta.baseRevision)
 			return { ok: false, conflict: true, revision: e.envelope.revision };
+		this.keepVersion(e, 'auto');
+		e.envelope = makeEnvelope(doc, { revision: meta.revision, savedAt: this.now(), platform: 'memory' });
+		return { ok: true, revision: meta.revision };
+	}
+	private keepVersion(e: Entry, kind: 'auto' | 'before-restore'): string {
+		e.versionCount++;
+		const versionId = `v${e.versionCount}`;
 		e.versions.push({
 			info: {
-				versionId: `v${e.versions.length + 1}`,
+				versionId,
 				savedAt: e.envelope.savedAt,
 				revision: e.envelope.revision,
 				sizeBytes: 0,
+				kind,
+				schemaVersion: e.envelope.schemaVersion,
 			},
 			envelope: e.envelope,
 		});
 		if (e.versions.length > 20) e.versions.shift();
-		e.envelope = makeEnvelope(doc, { revision: meta.revision, savedAt: this.now(), platform: 'memory' });
-		return { ok: true, revision: meta.revision };
+		return versionId;
 	}
 	async saveView(projectId: string, view: ProjectViewState): Promise<void> {
 		this.entry(projectId).view = view;
@@ -119,6 +136,92 @@ export class MemoryProjectStore implements ProjectStore {
 		if (!v) throw new Error(`Version not found: ${versionId}`);
 		return this.copyAs(v.envelope.document, `${v.envelope.document.name} (restored)`);
 	}
+	async saveDocumentAs(doc: ProjectDocument, name: string): Promise<string> {
+		return this.copyAs(doc, name);
+	}
+	async revertToVersion(projectId: string, versionId: string, leaseId?: string): Promise<number> {
+		const e = this.entry(projectId);
+		const v = e.versions.find((x) => x.info.versionId === versionId);
+		if (!v) throw new Error(`Version not found: ${versionId}`);
+		if (e.lease && e.lease.leaseId !== leaseId && Date.parse(e.lease.expiresAt) > Date.now())
+			throw new LeaseHeldError(projectId, e.lease.sessionId, e.lease.expiresAt);
+		this.keepVersion(e, 'before-restore');
+		const revision = e.envelope.revision + 1;
+		e.envelope = { ...v.envelope, revision, savedAt: this.now() };
+		return revision;
+	}
+
+	// ------------------------------------------------------------ crash recovery (S01:PER-021)
+
+	private held(e: Entry, sessionId: string): boolean {
+		return !!e.lease && e.lease.sessionId === sessionId && Date.parse(e.lease.expiresAt) > Date.now();
+	}
+	async writeRecovery(projectId: string, sessionId: string, w: RecoveryWrite): Promise<void> {
+		const e = this.entry(projectId);
+		if (!e.lease || e.lease.leaseId !== w.leaseId || e.lease.sessionId !== sessionId)
+			throw new Error('Lease not held');
+		const prev = e.journals.get(sessionId);
+		const now = this.now();
+		e.journals.set(sessionId, {
+			info: {
+				sessionId,
+				projectId,
+				projectName: w.document.name,
+				baseRevision: w.baseRevision,
+				revision: w.revision,
+				startedAt: prev?.info.startedAt ?? now,
+				savedAt: now,
+				changes: w.changes.slice(-50),
+				changeCount: w.changeCount,
+				sizeBytes: JSON.stringify(w.document).length,
+			},
+			document: JSON.parse(JSON.stringify(w.document)),
+		});
+	}
+	async listRecovery(projectId: string): Promise<RecoveryInfo[]> {
+		const e = this.entry(projectId);
+		const saved = JSON.stringify(e.envelope.document);
+		const out: RecoveryInfo[] = [];
+		for (const [sid, j] of e.journals) {
+			if (this.held(e, sid)) continue;
+			if (JSON.stringify(j.document) === saved) {
+				e.journals.delete(sid);
+				continue;
+			}
+			out.push({ ...j.info, projectRevision: e.envelope.revision });
+		}
+		return out.sort((a, b) => (a.savedAt < b.savedAt ? 1 : -1));
+	}
+	async readRecovery(projectId: string, sessionId: string): Promise<RecoveredSnapshot> {
+		const e = this.entry(projectId);
+		const j = e.journals.get(sessionId);
+		if (!j || this.held(e, sessionId)) throw new Error('No unsaved changes to recover for that session');
+		const loaded = loadProject(JSON.parse(JSON.stringify(j.document)), {
+			ids: this.ids,
+			mgTemplates: this.mgTemplates,
+		});
+		return {
+			info: { ...j.info, projectRevision: e.envelope.revision },
+			document: loaded.document,
+			repairs: loaded.repairs,
+		};
+	}
+	async discardRecovery(projectId: string, sessionId: string, leaseId?: string): Promise<void> {
+		const e = this.entry(projectId);
+		const own = !!leaseId && e.lease?.leaseId === leaseId;
+		if (!own && this.held(e, sessionId)) throw new Error('That session is still editing');
+		e.journals.delete(sessionId);
+	}
+	/** Tests: the editor holding the lease crashed (its lease expired without a release). */
+	expireLease(projectId: string): void {
+		this.entry(projectId).lease = null;
+	}
+	/** Tests: the journal a session wrote, if any. */
+	journalOf(projectId: string, sessionId: string): { changes: string[]; document: ProjectDocument } | null {
+		const j = this.entry(projectId).journals.get(sessionId);
+		return j ? { changes: j.info.changes, document: j.document } : null;
+	}
+
 	async duplicate(projectId: string, name: string): Promise<string> {
 		return this.copyAs(this.entry(projectId).envelope.document, name);
 	}

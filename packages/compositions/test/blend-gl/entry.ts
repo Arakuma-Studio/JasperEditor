@@ -68,7 +68,7 @@ function composite(arg: string): { out: number[]; stored: number[][] } {
 			opacity: l.opacity ?? 1,
 		});
 	}
-	const { plan, textures, builtins } = planComposite(items, pics, { width: W, height: H });
+	const { plan, textures, builtins } = planComposite(items, pics, { width: W, height: H }, { backdrop: false });
 	const inputs: Record<
 		string,
 		{ source: HTMLCanvasElement; width: number; height: number; version: string }

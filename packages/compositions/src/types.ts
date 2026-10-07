@@ -1,5 +1,6 @@
 // Composition contract (ARCHITECTURE §8, S03:ARC-003): inputProps = {doc: RenderDoc, options: RenderOptions}.
 import type { MediaHandle, RenderSnapshot, RenderVisualClip, ResolvedLayerProps } from '@jasper/project';
+import type { MatteTap } from './fx/matte.ts';
 
 export const SEQUENCE_COMPOSITION_ID = 'JasperSequence';
 /** Source monitor / asset preview composition (S03:SRC-002). */
@@ -36,8 +37,13 @@ export type LayerProps = {
 	props: ResolvedLayerProps;
 	/** Frame inside the clip (0-based). */
 	localFrame: number;
-	/** Content time in flicks (S01:CLP-004). */
+	/** Content time in flicks (S01:CLP-004) at which properties are evaluated. */
 	contentTime: number;
+	/**
+	 * edit-structure: content time of the picture shown (differs from `contentTime` under a frame hold without Hold
+	 * Filters). Absent = `contentTime`.
+	 */
+	pictureTime?: number;
 	fps: number;
 	media: MediaHandle | null;
 	options: RenderOptions;
@@ -54,6 +60,11 @@ export type LayerProps = {
 	 * GPU): the layer's picture goes to the transition stage instead of the screen (fx/transition.tsx).
 	 */
 	transition?: { progress: number; side: 'out' | 'in'; tap?: TransitionTap };
+	/**
+	 * wp masks: the layer is on a track a Track Matte Key reads: its finished picture also goes to the track's matte
+	 * hub (fx/matte.ts). `hide`: the track is matte-only (hidden), so the layer draws nothing itself.
+	 */
+	matte?: { tap: MatteTap; hide: boolean; seqFrame: number };
 	/**
 	 * keyframes-blend: the layer is part of the GL compositor's group at this frame (a blend mode CSS cannot draw
 	 * exactly sits on or above it): its picture goes to the compositor stage (fx/composite.tsx) instead of the
