@@ -68,13 +68,19 @@ committed):
 7. A project whose file was replaced by the schema v4 fixture opened, took one edit and autosaved: the file is now
    v5 and `project (schema v4 backup).jasper` holds the v4 original.
 
+Playwright: `e2e/project-files.spec.ts` (built app): the recovery prompt for a journal left by a session that lost
+its lease, Recover, Edit ▸ Undo of the recovery; reload stays editable; Revert disabled when saved; Project Versions
+▸ Restore; Save As. Passed 6/6 with `--repeat-each=3`. While writing it, one run in about six showed a lease still
+held 15 s after a full navigation to Home that followed the project's opening by a second or two; not reproduced
+since, cause unknown (recorded in M1-STATUS).
+
 ## Tests added
 
 `scripts/check-layers.test.mjs` (8), `scripts/check-assets.test.mjs` (8), `scripts/third-party-notices.test.mjs`
 (+4), `packages/project/test/schema-history.test.ts` (14), `apps/engine/test/recovery-versions.test.ts` (9),
 `packages/session/test/persistence/recovery.test.ts` (5), `apps/web/test/project-files.test.tsx` (5),
 `apps/web/test/third-party-notices.test.tsx` (+1), `apps/mcp/test/versions.test.ts` (2),
-`apps/mcp/test/readme-tools.test.ts` (1).
+`apps/mcp/test/readme-tools.test.ts` (1), `e2e/project-files.spec.ts` (2).
 
 ## Limits and decisions
 

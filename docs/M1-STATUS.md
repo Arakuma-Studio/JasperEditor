@@ -66,7 +66,9 @@ These are not M1 blockers. Details are in the follow-ups below and in `docs/wp-n
   mode since e8b4d14 (test: "keepalive lease release carries the bearer token…" in
   `packages/session/test/persistence/engine-store.test.ts`), so a reload reopens the project editable. If the
   browser drops the request (a crash, a killed process), the lease expires after 30 s, and the unsaved changes
-  are offered for recovery on the next open (ARCHITECTURE D-39).
+  are offered for recovery on the next open (ARCHITECTURE D-39). Observed once in about six automated runs
+  (`e2e/project-files.spec.ts` development, 7 October): a full navigation to Home within a second or two of opening
+  a project left its lease held until it expired; the cause was not found (the keepalive request is best-effort).
 - **Unregistered commands at the M1 checkpoint:** clipboard, transitions, captions, preferences, and
   other M2 menu commands were pending. The old wiring inventory test was removed during test cleanup;
   current command behavior is checked through feature tests and browser workflows.

@@ -20,9 +20,11 @@ async function fileMenu(page: Page, item: RegExp) {
 test('unsaved changes of a dead session are offered on open and recovered as one undoable step', async ({
 	page,
 }) => {
-	await enableAgentBridge(page);
-	const projectId = await createProject(page, 'Recovery E2E');
-	await page.goto('/');
+	// Made over HTTP, so no editor holds it yet.
+	const created = await page.request.post('/api/projects', {
+		data: { name: 'Recovery E2E', preset: 'hd-1080p-30' },
+	});
+	const { projectId } = (await created.json()) as { projectId: string };
 	// A session that edited, journalled and died before autosave (it held the lease, then lost it).
 	const got = (await (await page.request.get(`/api/projects/${projectId}`)).json()) as {
 		envelope: { document: Record<string, unknown> & { sequences: Record<string, { markers: unknown[] }> } };
@@ -39,9 +41,17 @@ test('unsaved changes of a dead session are offered on open and recovered as one
 		frame: i * 10,
 		duration: 0,
 	}));
-	const lease = await (
-		await page.request.post(`/api/projects/${projectId}/lease`, { data: { sessionId: 'ses_dead' } })
-	).json();
+	// The editor that created the project releases its lease on its way to Home: wait until it is free.
+	let lease: { leaseId?: string } = {};
+	await expect
+		.poll(async () => {
+			const r = await page.request.post(`/api/projects/${projectId}/lease`, {
+				data: { sessionId: 'ses_dead' },
+			});
+			lease = await r.json();
+			return r.status();
+		})
+		.toBe(200);
 	const put = await page.request.put(`/api/projects/${projectId}/recovery/ses_dead`, {
 		data: {
 			leaseId: lease.leaseId,
@@ -51,7 +61,7 @@ test('unsaved changes of a dead session are offered on open and recovered as one
 			envelope: { ...got.envelope, document: doc },
 		},
 	});
-	expect(put.status()).toBe(200);
+	expect(put.status(), await put.text()).toBe(200);
 	await page.request.delete(`/api/projects/${projectId}/lease/${lease.leaseId}`);
 
 	await page.goto(`/project/${projectId}`);
@@ -67,7 +77,8 @@ test('unsaved changes of a dead session are offered on open and recovered as one
 	expect(left.candidates).toEqual([]);
 
 	// Undo takes the recovery back (and autosave writes that too).
-	await page.keyboard.press('Control+z');
+	await page.getByText('Edit', { exact: true }).first().click();
+	await page.getByRole('menuitem', { name: /^Undo Recover Unsaved Changes/ }).click();
 	await expect.poll(() => markerCount(page, projectId)).toBe(0);
 });
 
