@@ -1,14 +1,18 @@
 // color-grade: the grading analysis routes — `POST /api/grading/scopes` (Lumetri Scopes as numbers of a rendered
 // frame, whole Program or one clip alone), `/api/grading/match` (Colour Match into Lumetri params, Face Detection
 // falling back to the skin-tone test without the face model) and `/api/grading/auto-tone`. Native stills (ffmpeg).
-import {
-	BRIGHTNESS_CONTRAST_EFFECT,
-	LUMETRI_EFFECT_ID,
-	readScopes,
-	signalFromRgba8,
-} from '@jasper/project';
+import { BRIGHTNESS_CONTRAST_EFFECT, LUMETRI_EFFECT_ID, readScopes, signalFromRgba8 } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { closeApps, DocBuilder, ensureFixtures, fixture, JSON_H, makeApp, register, type TestApp } from './helpers.ts';
+import {
+	closeApps,
+	DocBuilder,
+	ensureFixtures,
+	fixture,
+	JSON_H,
+	makeApp,
+	register,
+	type TestApp,
+} from './helpers.ts';
 
 let app: TestApp;
 beforeAll(async () => {
@@ -42,7 +46,13 @@ async function twoClips(opts: { darkenA?: boolean } = {}) {
 			},
 		]);
 	const fxA = d.tx([
-		{ type: 'effect.add', target: { clipId: a }, effectId: LUMETRI_EFFECT_ID, params: { exposure: 0 }, ref: '$fa' },
+		{
+			type: 'effect.add',
+			target: { clipId: a },
+			effectId: LUMETRI_EFFECT_ID,
+			params: { exposure: 0 },
+			ref: '$fa',
+		},
 	]).refs.$fa!;
 	d.tx([
 		{
