@@ -147,6 +147,30 @@ const api = {
 		};
 	},
 
+	pixelFx() {
+		const balls = fx('jasper.ball-action', { ballSize: 80 });
+		const noBalls = fx('jasper.ball-action', { ballSize: 0 });
+		const scattered = fx('jasper.ball-action', { ballSize: 80, scatter: 20 });
+		const sz0 = fx('jasper.scatterize', {});
+		const sz = fx('jasper.scatterize', { scatter: 5 });
+		const tw = fx('jasper.scatterize', { leftTwist: 80, rightTwist: 80 });
+		const hair = fx('jasper.hair', { length: 12 });
+		const noHair = fx('jasper.hair', { density: 0 });
+		const heavy = fx('jasper.hair', { length: 12, weight: 2 });
+		return {
+			ballsAlpha: mean(balls.out)[3],
+			ballGap: px(balls.out, 0, 0)[3],
+			noBalls: mean(noBalls.out)[3],
+			scatter: sumDiff(balls.out, scattered.out),
+			szIdentity: maxDiff(sz0.out, sz0.input),
+			sz: sumDiff(sz.out, sz.input),
+			tw: sumDiff(tw.out, tw.input),
+			hair: sumDiff(hair.out, hair.input),
+			noHair: maxDiff(noHair.out, noHair.input),
+			weight: sumDiff(hair.out, heavy.out),
+		};
+	},
+
 	weather() {
 		const rain = fx('jasper.rainfall', { drops: 400, opacity: 100, appearance: 'softSolid', color: [1, 1, 1, 1] }, { frame: 15 }, solid('#333'));
 		const noRain = fx('jasper.rainfall', { drops: 0 }, { frame: 15 }, solid('#333'));

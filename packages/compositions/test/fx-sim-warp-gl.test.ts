@@ -21,6 +21,9 @@ const GALLERY_CASES: { name: string; id: string; over?: Record<string, unknown>;
 	{ name: 'pixel-polly', id: 'jasper.pixel-polly', over: { gridSpacing: 16 }, frame: 20 },
 	{ name: 'shatter', id: 'jasper.shatter', over: { view: 'rendered', pattern: 'glass', repetitions: 14, specularReflection: 0.6, cameraYRotation: 25 }, frame: 12 },
 	{ name: 'shatter-wire', id: 'jasper.shatter', over: { view: 'wireframeForces', pattern: 'hexagons' }, frame: 12 },
+	{ name: 'ball-action', id: 'jasper.ball-action', over: { gridSpacing: 10, ballSize: 90, rotation: 40, rotationAxis: 'yAxis', twistAngle: 60 } },
+	{ name: 'scatterize', id: 'jasper.scatterize', over: { scatter: 20, leftTwist: 60, rightTwist: -60 } },
+	{ name: 'hair', id: 'jasper.hair', over: { length: 40, density: 300, weight: 0.5 } },
 	{ name: 'rainfall', id: 'jasper.rainfall', frame: 20 },
 	{ name: 'snowfall', id: 'jasper.snowfall', bg: '#203040' },
 	{ name: 'bubbles', id: 'jasper.bubbles', over: { bubbleAmount: 60, bubbleSize: 2 } },
@@ -110,10 +113,26 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 		expect(r.forcesRed).toBeGreaterThan(0.1);
 	});
 
+	it('pixel effects: Ball Action, Scatterize, Hair', async () => {
+		const r = await page.call<Record<string, any>>('pixelFx');
+		expect(r.ballsAlpha).toBeGreaterThan(50);
+		expect(r.noBalls).toBe(0);
+		expect(r.scatter).toBeGreaterThan(10);
+		expect(r.szIdentity).toBe(0);
+		expect(r.sz).toBeGreaterThan(10);
+		expect(r.tw).toBeGreaterThan(10);
+		expect(r.hair).toBeGreaterThan(10);
+		expect(r.noHair).toBe(0);
+		expect(r.weight).toBeGreaterThan(10);
+	});
+
 	const DETERMINISM: { id: string; over?: Record<string, unknown>; seeded?: boolean; animated?: boolean }[] = [
 		{ id: 'jasper.card-dance', over: { yRotationSource: 'intensity1', yRotationMultiplier: 90 }, seeded: false, animated: false },
 		{ id: 'jasper.card-wipe', over: { transitionCompletion: 50, timingRandomness: 0.6, xRotJitterAmount: 30 } },
 		{ id: 'jasper.pixel-polly' },
+		{ id: 'jasper.ball-action', over: { scatter: 20, instabilityState: 30 }, animated: false },
+		{ id: 'jasper.scatterize', over: { scatter: 10 }, animated: false },
+		{ id: 'jasper.hair', animated: false },
 		{ id: 'jasper.shatter', over: { view: 'rendered', randomness: 0.5 } },
 		{ id: 'jasper.particle-world' },
 		{ id: 'jasper.particle-systems' },
