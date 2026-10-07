@@ -46,7 +46,6 @@ import {
 	FAUX_ITALIC_SLANT,
 	fauxBoldWidth,
 	glyphSize,
-	rise,
 	variationSettings,
 } from './typography.ts';
 
