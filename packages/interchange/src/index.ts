@@ -15,23 +15,27 @@ import type { ExportOptions, Format, ImportOptions } from './options.ts';
 import { encodeUtf8 } from './paths.ts';
 import { InterchangeError, Report, type ReportEntry } from './report.ts';
 
+export { exportAaf, importAaf, sniffAaf } from './aaf/index.ts';
 export * from './ale.ts';
 export * from './blend.ts';
 export * from './build.ts';
 export * from './edl.ts';
 export * from './effects.ts';
+export * from './essence.ts';
 export * from './fcp7.ts';
 export * from './fcpxml.ts';
 export * from './formats.ts';
 export * from './jasper-export.ts';
 export * from './jasper-import.ts';
 export * from './model.ts';
+export { exportOmf, importOmf, sniffOmf } from './omf/index.ts';
 export * from './options.ts';
 export * from './otio.ts';
 export * from './paths.ts';
 export * from './prerender.ts';
 export * from './report.ts';
 export * from './time.ts';
+export * from './wav.ts';
 
 export type ReadResult = { format: Format; project: IProject; report: Report };
 

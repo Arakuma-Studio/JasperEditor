@@ -263,7 +263,7 @@ export function fromProject(
 		if (src.key.startsWith('clip:')) return null; // rendered: effects baked in
 		const g = c.gainDb ?? 0;
 		const v = c.volumeDb;
-		if (v && v.keyframes.length) {
+		if (v?.keyframes.length) {
 			const linear = !v.keyframes.every((k) => k.interpolation === 'hold');
 			if (v.keyframes.some((k) => k.interpolation !== 'linear' && k.interpolation !== 'hold'))
 				report.info('Bezier volume keyframes were exported as linear');

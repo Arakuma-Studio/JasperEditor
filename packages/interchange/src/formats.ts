@@ -6,6 +6,7 @@ import { exportEdl, importEdl, looksLikeEdl } from './edl.ts';
 import { exportFcp7, importFcp7, sniffFcp7 } from './fcp7.ts';
 import { exportFcpxml, importFcpxml, sniffFcpxml } from './fcpxml.ts';
 import type { IProject } from './model.ts';
+import { exportOmf, importOmf, sniffOmf } from './omf/index.ts';
 import type { ExportOptions, Format, ImportOptions } from './options.ts';
 import { exportOtio, importOtio, sniffOtio } from './otio.ts';
 import { decodeUtf8Lossy, encodeUtf8 } from './paths.ts';
@@ -115,7 +116,17 @@ export const FORMAT_INFO: Record<Format, FormatInfo | undefined> = {
 		read: (b, o, r) => importAaf(b, o, r),
 		write: (p, s, o, r) => exportAaf(p, s, o, r),
 	},
-	omf: undefined,
+	omf: {
+		id: 'omf',
+		name: 'OMF',
+		extension: 'omf',
+		extensions: ['omf', 'omfi'],
+		binary: true,
+		timeline: true,
+		sniff: (b) => sniffOmf(b),
+		read: (b, o, r) => importOmf(b, o, r),
+		write: (p, s, o, r) => exportOmf(p, s, o, r),
+	},
 	ale: {
 		id: 'ale',
 		name: 'Avid ALE',
