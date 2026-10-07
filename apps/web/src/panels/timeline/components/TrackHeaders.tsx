@@ -322,6 +322,7 @@ function Header(props: TrackHeadersProps & { row: TrackRow; track: Track }) {
 						startRename();
 					}}
 					title={name}
+					data-testid="track-name"
 				>
 					{name}
 				</span>
@@ -331,6 +332,7 @@ function Header(props: TrackHeadersProps & { row: TrackRow; track: Track }) {
 				style={kind === 'video' ? { top: -2 } : { bottom: -2 }}
 				onPointerDown={(e) => resize(e, kind === 'video' ? -1 : 1)}
 				data-resize-handle
+				data-testid="track-height-handle"
 			/>
 		</div>
 	);
@@ -383,6 +385,7 @@ export function TrackHeaders(props: TrackHeadersProps) {
 			<div
 				className="absolute right-0 left-0"
 				style={{ top: layout.dividerTop, height: 4, background: 'var(--pr-bg-app)', cursor: 'row-resize' }}
+				data-testid="timeline-region-divider"
 				onPointerDown={(e) => {
 					const el = e.currentTarget;
 					el.setPointerCapture?.(e.pointerId);

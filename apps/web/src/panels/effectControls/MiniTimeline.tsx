@@ -69,7 +69,7 @@ export function KeyLane(props: {
 	const kfs = b.resolved.anim?.keyframes ?? [];
 	return (
 		<div
-			data-lane
+			data-lane={props.row.id}
 			className="relative h-full min-h-[var(--pr-row-h)] flex-1 overflow-hidden"
 			onPointerDown={props.onLanePointerDown}
 		>

@@ -34,6 +34,8 @@ export type UiElement = {
 	pressed?: boolean;
 	/** `control` (interactive) or `target` (an entity drawn by a panel: clip, track, keyframe…). */
 	kind: 'control' | 'target';
+	/** Unstable ids only: the element's class list, to tell it apart (and to find it in the source). */
+	className?: string;
 };
 
 const INTERACTIVE_ROLES = new Set([
@@ -81,12 +83,15 @@ const ENTITY_ATTRS: readonly [string, string][] = [
 	['data-kf-id', 'keyframe'],
 	['data-tracker-id', 'tracker'],
 	['data-item-id', 'item'],
+	['data-job-id', 'job'],
+	['data-ec-header', 'fx'],
+	['data-lane', 'lane'],
 ];
 
 function entityId(el: Element): string | null {
-	const e = ENTITY_ATTRS.find(([a]) => el.hasAttribute(a));
+	const e = ENTITY_ATTRS.find(([a]) => !!el.getAttribute(a));
 	if (!e) return null;
-	const panel = el.closest('[data-panel-kind]')?.getAttribute('data-panel-kind') ?? 'window';
+	const panel = panelOf(el).kind ?? 'window';
 	return `${panel}.${e[1]}.${el.getAttribute(e[0])}`;
 }
 
@@ -236,9 +241,12 @@ function isEnabled(el: Element): boolean {
 }
 
 export function panelOf(el: Element): { kind: string | null; instance: string | null } {
+	// The dock's panel body / tab carries both attributes; some panels repeat data-panel-kind inside.
+	const host = el.closest('[data-panel-instance][data-panel-kind]');
+	if (host)
+		return { kind: host.getAttribute('data-panel-kind'), instance: host.getAttribute('data-panel-instance') };
 	const body = el.closest('[data-panel-kind]');
-	if (!body) return { kind: null, instance: null };
-	return { kind: body.getAttribute('data-panel-kind'), instance: body.getAttribute('data-panel-instance') };
+	return { kind: body?.getAttribute('data-panel-kind') ?? null, instance: null };
 }
 
 const slug = (s: string) => s.replace(/[[\]]/g, '');
@@ -299,6 +307,20 @@ export function snapshotElements(root: ParentNode = document): ElementSnapshot {
 			candidates.push({ el, kind: interactive ? 'control' : 'target', base: entity, named: true, entity });
 			continue;
 		}
+		// Dockview's empty tab-strip area (drag the group, double-click to maximize): named after its group's
+		// first tab.
+		// A floating group's title bar (drag to move it) likewise.
+		const dock = el.classList.contains('dv-void-container')
+			? 'tabstrip'
+			: el.classList.contains('dv-floating-titlebar')
+				? 'titlebar'
+				: null;
+		if (dock) {
+			const group = el.closest('.dv-resize-container') ?? el.closest('.dv-groupview');
+			const tab = group?.querySelector('[data-testid^="tab-"]')?.getAttribute('data-testid');
+			candidates.push({ el, kind: 'control', base: `${tab ?? 'dock'}/${dock}`, named: !!tab });
+			continue;
+		}
 		const name = accessibleName(el);
 		const own = el.getAttribute('data-testid') ?? implicitRole(el);
 		candidates.push({
@@ -322,6 +344,16 @@ export function snapshotElements(root: ParentNode = document): ElementSnapshot {
 	for (let i = candidates.length - 1; i >= 0; i--) {
 		const c = candidates[i]!;
 		if (c.entity && best.get(c.base) !== c.el) candidates.splice(i, 1);
+	}
+	// A focusable wrapper without a name around a control that has a stable id and fills it (dockview's tab
+	// around our tab, a list cell around its row): the inner control is the automation element of that area.
+	const stableEls = candidates.filter((c) => c.named && !c.entity).map((c) => c.el);
+	for (let i = candidates.length - 1; i >= 0; i--) {
+		const c = candidates[i]!;
+		if (c.named) continue;
+		const a = area(c.el);
+		const inner = stableEls.find((e) => e !== c.el && c.el.contains(e) && area(e) >= 0.5 * a);
+		if (inner) candidates.splice(i, 1);
 	}
 	const dup = new Map<string, number>();
 	for (const c of candidates) dup.set(c.base, (dup.get(c.base) ?? 0) + 1);
@@ -355,6 +387,7 @@ export function snapshotElements(root: ParentNode = document): ElementSnapshot {
 			...(v !== undefined ? { value: v } : {}),
 			...stateOf(c.el),
 			kind: c.kind,
+			...(c.named && !ambiguous ? {} : { className: String(c.el.getAttribute('class') ?? '').slice(0, 120) }),
 		};
 		elements.push(el);
 		byId.set(id, c.el);

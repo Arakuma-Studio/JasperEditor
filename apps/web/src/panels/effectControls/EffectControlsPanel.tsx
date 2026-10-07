@@ -735,6 +735,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 											{/* biome-ignore lint/a11y/useKeyWithClickEvents: see above */}
 											<div
 												style={left}
+												data-testid="fx-header-select"
 												className="flex min-w-0 shrink-0 items-center gap-1 pr-1 pl-1"
 												onClick={(ev) => {
 													const add = ev.ctrlKey || ev.metaKey || ev.shiftKey;

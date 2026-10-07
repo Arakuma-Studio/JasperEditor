@@ -1353,6 +1353,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 							el.addEventListener('pointerup', up);
 						}}
 						data-header-resize
+						data-testid="timeline-header-resize"
 					/>
 				</div>
 				{/* biome-ignore lint/a11y/noStaticElementInteractions: pointer editing surface; keyboard access goes through keymap commands */}
