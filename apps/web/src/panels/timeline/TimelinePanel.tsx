@@ -521,22 +521,28 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			c.kind !== 'adjustment'
 				? [
 						{
-							kind: 'item' as const,
-							label: 'Frame Hold Options…',
-							disabled: readOnly,
-							run: () => run('timeline.frameHoldOptions'),
-						},
-						{
-							kind: 'item' as const,
-							label: 'Add Frame Hold',
-							disabled: readOnly,
-							run: () => run('timeline.addFrameHold'),
-						},
-						{
-							kind: 'item' as const,
-							label: 'Insert Frame Hold Segment',
-							disabled: readOnly,
-							run: () => run('timeline.insertFrameHoldSegment'),
+							kind: 'submenu' as const,
+							label: 'Video Options',
+							items: [
+								{
+									kind: 'item' as const,
+									label: 'Frame Hold Options…',
+									disabled: readOnly,
+									run: () => run('timeline.frameHoldOptions'),
+								},
+								{
+									kind: 'item' as const,
+									label: 'Add Frame Hold',
+									disabled: readOnly,
+									run: () => run('timeline.addFrameHold'),
+								},
+								{
+									kind: 'item' as const,
+									label: 'Insert Frame Hold Segment',
+									disabled: readOnly,
+									run: () => run('timeline.insertFrameHoldSegment'),
+								},
+							],
 						},
 					]
 				: []),
