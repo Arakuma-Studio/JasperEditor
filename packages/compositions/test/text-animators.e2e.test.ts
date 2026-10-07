@@ -47,7 +47,8 @@ function snapshotOf(m: FxMedia, build: (refs: { seq: string }) => Command[]) {
 	if (!result.ok) throw new Error(JSON.stringify(result.errors));
 	return buildRenderSnapshot(document, seqId, {
 		resolveMedia: () => null,
-		resolveFont: (_f, weight) => `${m.base}/ss3-${weight >= 600 ? 700 : 400}.woff2`,
+		resolveFont: (f, weight) =>
+			f.family === 'Inter Variable' ? `${m.base}/inter-var.woff2` : `${m.base}/ss3-${weight >= 600 ? 700 : 400}.woff2`,
 	});
 }
 
@@ -78,6 +79,8 @@ describe.runIf(enabled)('text animators in Remotion renders (REMOTION_E2E=1)', {
 		const dir = dirname(req.resolve('@fontsource/source-sans-3/package.json', { paths: [join(here, '../../../apps/engine')] }));
 		copyFileSync(join(dir, 'files/source-sans-3-latin-400-normal.woff2'), join(media.dir, 'ss3-400.woff2'));
 		copyFileSync(join(dir, 'files/source-sans-3-latin-700-normal.woff2'), join(media.dir, 'ss3-700.woff2'));
+		const vdir = dirname(req.resolve('@fontsource-variable/inter/package.json', { paths: [join(here, '../../../apps/engine')] }));
+		copyFileSync(join(vdir, 'files/inter-latin-standard-normal.woff2'), join(media.dir, 'inter-var.woff2'));
 		const { bundle } = await import('@remotion/bundler');
 		serveUrl = await bundle({ entryPoint: join(here, 'text-animators', 'entry.ts') });
 		renderer = await import('@remotion/renderer');
@@ -219,5 +222,40 @@ describe.runIf(enabled)('text animators in Remotion renders (REMOTION_E2E=1)', {
 		]);
 		const raw = await still(doc, 1, 'typography');
 		expect(ink(raw, 0, W)).toBeGreaterThan(100);
+	});
+
+	it('variable font axes: style wght and an animated wght offset change the stroke weight', async () => {
+		const at = (wght: number, animated: number | null) =>
+			snapshotOf(media, () => [
+				{ type: 'font.add', family: 'Inter Variable', ref: '$f' } as Command,
+				...text('WEIGHT', { fontId: '$f', fontVariations: { wght } }),
+				...(animated === null
+					? []
+					: ([
+							{ type: 'textAnimator.add', clipId: '$t', axes: ['wght'], ref: '$a' },
+							{ type: 'param.set', target: ['clip', '$t', 'textAnimators', '$a', 'properties', 'axes', 'wght'], value: animated },
+						] as Command[])),
+			]);
+		const thin = ink(await still(at(150, null), 1, 'wght-150'), 0, W);
+		const black = ink(await still(at(850, null), 1, 'wght-850'), 0, W);
+		const offset = ink(await still(at(150, 700), 1, 'wght-150+700'), 0, W);
+		expect(black).toBeGreaterThan(thin * 1.8);
+		expect(Math.abs(offset - black) / black).toBeLessThan(0.08);
+	});
+
+	it('stroke, fill & stroke order, blur and inter-character blending render', async () => {
+		const doc = snapshotOf(media, () => [
+			...text('STROKE', { strokes: [{ color: [1, 0, 0, 1], widthPx: 6, position: 'outside' }] }),
+			{ type: 'textAnimator.add', clipId: '$t', properties: ['blur', 'strokeWidth'], ref: '$a' } as Command,
+			{ type: 'param.set', target: ['clip', '$t', 'textAnimators', '$a', 'properties', 'blur'], value: [20, 0] } as Command,
+			{ type: 'param.set', target: ['clip', '$t', 'textMore', 'fillAndStroke'], value: 'allStrokesOverAllFills' } as Command,
+		]);
+		const raw = await still(doc, 1, 'stroke-blur');
+		const red = bbox(raw, (p) => p[0] > 120 && p[1] < 90);
+		const plain = bbox(await still(snapshotOf(media, () => text('STROKE')), 1, 'stroke-plain'), white);
+		// Horizontal-only blur spreads the paint sideways more than vertically.
+		expect(plain.x0 - red.x0).toBeGreaterThan(plain.y0 - red.y0);
+		// Strokes over fills: the red outline covers the white fill.
+		expect(bbox(raw, white).x1).toBeLessThan(0);
 	});
 });

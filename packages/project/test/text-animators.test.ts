@@ -502,3 +502,20 @@ describe('typography properties (Character / Paragraph)', () => {
 		invariantsOk(h);
 	});
 });
+
+describe('font.add', () => {
+	it('registers a family once and is usable as a fontId ref', () => {
+		const h = new Harness();
+		const id = withText(h);
+		const r = h.ok([
+			{ type: 'font.add', family: 'Inter Variable', ref: '$f' },
+			{ type: 'clip.update', clipIds: [id], patch: { content: { style: { fontId: '$f', fontVariations: { wght: 720 } } } } },
+		]);
+		const fid = r.refs.$f!;
+		expect(h.doc.fonts[fid]!.family).toBe('Inter Variable');
+		expect(clipOf(h, id).content.style.fontId).toBe(fid);
+		const again = h.ok([{ type: 'font.add', family: 'inter variable' }]);
+		expect((again.results[0] as { fontId: string; added: boolean }).added).toBe(false);
+		invariantsOk(h);
+	});
+});

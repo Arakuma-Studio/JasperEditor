@@ -4,6 +4,7 @@
 // (registry/text-animator-properties.ts); `sourceTextDraftAnim` is the Animatable view of Source Text they use.
 import type { Draft } from 'immer';
 import { contentTimeAt } from '../../derive/index.ts';
+import { createFontRef } from '../../factories.ts';
 import type { Animatable, Keyframe } from '../../schema/common.ts';
 import { type Clip, type TextContent, TextContentSchema } from '../../schema/sequence.ts';
 import type { TextAnimatorGroup, TextPathOptions, TextSelector } from '../../schema/text-animators.ts';
@@ -268,6 +269,14 @@ export function ensureMoreOptions(clip: DClip): void {
 // ---------------------------------------------------------------- handlers
 
 export const textAnimatorHandlers: HandlerMap = {
+	'font.add': (doc, cmd: CommandOf<'font.add'>, h) => {
+		const family = cmd.family.trim();
+		const existing = Object.values(doc.fonts).find((f) => f.family.toLowerCase() === family.toLowerCase());
+		const id = existing?.id ?? h.ids.next('fnt');
+		if (!existing) doc.fonts[id] = createFontRef({ next: () => id }, family) as never;
+		h.defineRef(cmd.ref, id);
+		return { fontId: id, added: !existing };
+	},
 	'textAnimator.add': (doc, cmd: CommandOf<'textAnimator.add'>, h) => {
 		const { clip } = textClip(doc, cmd.clipId, h);
 		checkEntries(cmd.properties, h);

@@ -213,10 +213,8 @@ function useFontOptions(session: EditorSession, docFonts: Record<string, { id: s
 	const known = new Set(inDoc.map((f) => f.family));
 	const options: FontOption[] = [
 		...inDoc.map((f) => ({ id: f.id, label: f.family })),
-		// TODO(WP-2D): selecting a catalog family needs a font-registration command (see wp-notes).
-		...catalog
-			.filter((f) => !known.has(f))
-			.map((f) => ({ id: `catalog:${f}`, label: `${f} (not in project)`, disabled: true })),
+		// text-animators: a bundled family not in the project yet is registered when picked (font.add).
+		...catalog.filter((f) => !known.has(f)).map((f) => ({ id: `catalog:${f}`, label: f })),
 	];
 	return options;
 }
@@ -249,6 +247,16 @@ function TextSections(props: {
 		visual,
 	);
 	const setRow = (row: Row, v: unknown) => {
+		// text-animators: picking a catalog family registers it and sets it on the selected clips in one step.
+		if (row.spec.key === 'text.fontId' && typeof v === 'string' && v.startsWith('catalog:')) {
+			ctx.ops.apply('Font', [
+				{ type: 'font.add', family: v.slice(8), ref: '$font' } as Command,
+				...row.bindings.map(
+					(b) => ({ type: 'clip.update', clipIds: [b.clip.id], patch: { content: { style: { fontId: '$font' } } } }) as Command,
+				),
+			]);
+			return;
+		}
 		const plan = planSet(row, ctx.frame, () => v);
 		ctx.ops.apply(row.label, plan.commands as Command[]);
 	};

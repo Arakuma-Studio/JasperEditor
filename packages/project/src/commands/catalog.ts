@@ -178,6 +178,7 @@ const LABELS: Record<CommandType, string> = {
 	'keyframe.paste': 'Paste Keyframes',
 	'project.pasteItems': 'Paste',
 	'effect.applyPreset': 'Apply Preset',
+	'font.add': 'Add Font',
 	'textAnimator.add': 'Add Text Animator',
 	'textAnimator.remove': 'Remove Text Animator',
 	'textAnimator.update': 'Edit Text Animator',

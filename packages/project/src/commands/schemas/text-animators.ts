@@ -127,7 +127,17 @@ export const TextSetPerCharacter3dCmd = cmd('text.setPerCharacter3d', {
 	enabled: z.boolean(),
 });
 
+/**
+ * Registers a bundled font family in the project (Character panel font menu; returns the existing font when the
+ * family is already registered). Use the id as a text style's `fontId`.
+ */
+export const FontAddCmd = cmd('font.add', {
+	family: z.string().min(1).max(200),
+	ref: RefDeclSchema.optional(),
+});
+
 export const TEXT_ANIMATOR_COMMANDS = [
+	FontAddCmd,
 	TextAnimatorAddCmd,
 	TextAnimatorRemoveCmd,
 	TextAnimatorUpdateCmd,
