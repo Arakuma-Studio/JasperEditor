@@ -37,9 +37,15 @@ export type LayerOverride = {
 	decoder?: string;
 	/**
 	 * M2 (S11:LBK-004, wp-m2-layer-bake): `path` is one still image (PNG, straight alpha) looped for the layer's
-	 * frames like a still clip (`sequence` space; `startFrame` is then informational).
+	 * frames like a still clip (`sequence` space; `startFrame` is then informational). edit-structure: also in
+	 * `layer` space (a generator's constant picture, e.g. Bars and Tone).
 	 */
 	still?: boolean;
+	/**
+	 * edit-structure (`layer` space): the intermediate holds the clip's content from content time `contentOrigin`
+	 * (flicks) at the sequence rate, played like media (sourceIn, speed, frame hold); `startFrame` is ignored.
+	 */
+	contentOrigin?: number;
 	/**
 	 * M2 (S11:LBK-005): the intermediate covers only this region of the frame (sequence pixels, `w × h` frames) and
 	 * is overlaid at `x, y` (`sequence` space).
@@ -241,4 +247,28 @@ export function sampleRuns<T>(
 		else out.push({ start: f, end: f + 1, value: v, k });
 	}
 	return out.map(({ start, end, value }) => ({ start, end, value }));
+}
+
+/**
+ * edit-structure: runs every extension's `prepare` for each nested sequence drawn in the export (recursively), with
+ * the nested snapshot as `planned.snapshot` and its range as `planned.range` (media is shared). Keys are nest paths
+ * (`clipId>clipId…`, see `nestPath` in native.ts).
+ */
+export async function prepareNestedExtensions(
+	exts: readonly NativeExtension[],
+	planned: PlannedExport,
+	ctx: NativePrepareContext,
+	parent = '',
+	out: Map<string, PreparedExtensions> = new Map(),
+): Promise<Map<string, PreparedExtensions>> {
+	for (const t of planned.snapshot.videoTracks)
+		for (const c of t.clips) {
+			if (!('nest' in c.source) || ctx.signal.aborted) continue;
+			const sub = c.source.nest.snapshot;
+			const path = parent ? `${parent}>${c.clipId}` : c.clipId;
+			const nested: PlannedExport = { ...planned, snapshot: sub, range: sub.range };
+			out.set(path, await prepareExtensions(exts, nested, ctx));
+			await prepareNestedExtensions(exts, nested, ctx, path, out);
+		}
+	return out;
 }

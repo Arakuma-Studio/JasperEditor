@@ -360,10 +360,73 @@ export function registerRenderTools(ctx: ToolContext): void {
 					.describe(
 						"Absolute path of the output file; the extension is replaced by the container's (.mp4 / .webm / .mov). Never overwrites: see result.path",
 					),
+				// audio-mix
+				audioChannels: z
+					.union([z.literal(1), z.literal(2), z.literal(6)])
+					.optional()
+					.describe(
+						'Audio channels: 2 (stereo; a 5.1 Mix is folded with ITU-R BS.775), 1, or 6 (discrete 5.1). Default: 6 for a 5.1 Mix, else 2',
+					),
+				audioSampleRate: z
+					.union([z.literal(44100), z.literal(48000), z.literal(96000)])
+					.optional()
+					.describe('Audio sample rate (default: the sequence rate; Opus is always 48 kHz)'),
+				normalizeLufs: z
+					.number()
+					.min(-60)
+					.max(0)
+					.nullable()
+					.optional()
+					.describe(
+						'Two-pass loudness normalisation of the final mix to this target (e.g. -14, -16, -23); null = off even when the sequence normalises',
+					),
+				truePeakDb: z
+					.number()
+					.min(-20)
+					.max(0)
+					.optional()
+					.describe('True-peak ceiling of the normalisation (default -1 dBTP)'),
+				captions: z
+					.object({
+						burnIn: z
+							.union([z.boolean(), z.array(z.string())])
+							.optional()
+							.describe(
+								'Burn captions into the picture: true (default) = visible caption tracks, false, or ["C1", …]',
+							),
+						embed: z
+							.union([z.boolean(), z.array(z.string())])
+							.optional()
+							.describe(
+								'Embedded subtitle streams (mov_text in MP4/MOV, WebVTT in WebM): true = all caption tracks',
+							),
+						sidecar: z
+							.array(z.enum(['srt', 'vtt', 'scc', 'mcc', 'stl', 'ttml', 'dfxp']))
+							.optional()
+							.describe('Sidecar caption files written next to the output (result.captions.sidecars)'),
+						sidecarTracks: z.union([z.enum(['active', 'all']), z.array(z.string())]).optional(),
+						dropFrame: z.boolean().optional(),
+					})
+					.optional()
+					.describe('Caption output (wp captions)'),
 			},
 			annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
 		},
-		async ({ projectId, sequenceId, preset, range, engine, outputPath, crf, videoBitrateKbps }) => {
+		async ({
+			projectId,
+			sequenceId,
+			preset,
+			range,
+			engine,
+			outputPath,
+			crf,
+			videoBitrateKbps,
+			audioChannels,
+			audioSampleRate,
+			normalizeLufs,
+			truePeakDb,
+			captions,
+		}) => {
 			const p = findExportPreset(preset);
 			if (!p)
 				throw new ToolError(
@@ -400,7 +463,16 @@ export function registerRenderTools(ctx: ToolContext): void {
 				outputPath,
 				...(crf !== undefined ? { crf } : {}),
 				...(videoBitrateKbps !== undefined ? { videoBitrateKbps } : {}),
+				...(audioChannels !== undefined ? { audioChannels } : {}),
+				...(audioSampleRate !== undefined ? { audioSampleRate } : {}),
+				...(normalizeLufs !== undefined
+					? {
+							normalize:
+								normalizeLufs === null ? null : { targetLufs: normalizeLufs, truePeakDb: truePeakDb ?? -1 },
+						}
+					: {}),
 			});
+			if (captions) settings.captions = captions;
 			const envelope = makeEnvelope(doc, {
 				revision: revision ?? 0,
 				savedAt: new Date().toISOString(),

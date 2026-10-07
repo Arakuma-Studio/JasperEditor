@@ -81,6 +81,8 @@ export type ParamSpec = {
 			| 'curve'
 			| 'media'
 			| 'point'
+			/** wp masks: a `string` param holding a video track id ('' = none), picked from the sequence's tracks. */
+			| 'track'
 			/** Wave expressions: Layer Control (a clip of the sequence; the value is its id, '' = none). */
 			| 'layer'
 			/** Wave expressions: Dropdown Menu Control (1-based index into the instance's `items` param lines). */

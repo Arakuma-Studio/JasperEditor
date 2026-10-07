@@ -21,6 +21,7 @@ export function SolidLayer(layer: LayerProps) {
 			<LayerBox
 				layer={layer}
 				effects={fx.cssEffects}
+				masksInChain
 				overlay={fx.chip ? <GradeChip layer={layer} text={fx.chip} /> : null}
 			>
 				<FxPicture stage={fx.stage}>

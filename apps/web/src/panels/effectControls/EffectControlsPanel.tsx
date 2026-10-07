@@ -32,7 +32,9 @@ import {
 	useState,
 } from 'react';
 import { effectEditorFor } from '../../extensions/index.ts';
+import { MaskList } from '../../masks/MaskList.tsx';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
+import { useEngineOrNull } from '../../state/engine.tsx';
 import {
 	applyMessage,
 	applyTextAnimation,
@@ -63,7 +65,7 @@ import { useInspectorOps } from '../properties/lib/ops.ts';
 import { ContextMenu } from '../timeline/components/Chrome.tsx';
 import type { ContextMenuItem } from '../timeline/state/ui-store.ts';
 import type { PanelProps } from '../types.ts';
-import { GRAPH_HEIGHT, PropertyGraphs } from './GraphEditor.tsx';
+import { GRAPH_HEIGHT, type GraphView, PropertyGraphs } from './GraphEditor.tsx';
 import { graphKindOf } from './graph.ts';
 import { buildGroups, type FxSection, type RowFilter, rowVisible, shownClips } from './items.ts';
 import {
@@ -76,6 +78,7 @@ import {
 } from './lib.ts';
 import { KeyLane, Ruler, SummaryLane, usePlayheadLine } from './MiniTimeline.tsx';
 import { presetSelection } from './presets.ts';
+import { RoveAcrossTimeItem } from './RovingMenu.tsx';
 import { SpatialInterpolationSubmenu } from './SpatialMenu.tsx';
 import { TransitionSection } from './TransitionSection.tsx';
 
@@ -148,6 +151,11 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 	/** Twirled-open graph rows (`clipId:rowId` → graph height in px, S03:KF-022). */
 	const [graphs, setGraphs] = usePersisted<Record<string, number>>(`jasper.ec.${instanceId}.graphs`, {});
+	// keyframes-blend: manual vertical ranges of open graphs (absent = auto-fit).
+	const [graphViews, setGraphViews] = usePersisted<Record<string, GraphView>>(
+		`jasper.ec.${instanceId}.graphViews`,
+		{},
+	);
 	const [filter, setFilter] = useState<RowFilter>('all');
 	const [selectedFx, setSelectedFx] = useState<string | null>(null);
 	const [menu, setMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null);
@@ -161,6 +169,9 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	const [dragTip, setDragTip] = useState<string | null>(null);
 	const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
 	const keySel = useSessionState((s) => s.selection.keyframes);
+	// wp masks: mask tracking / auto-trace need the engine; read-only sessions edit nothing.
+	const engine = useEngineOrNull()?.client ?? null;
+	const readOnly = useSessionState((s) => s.readOnly);
 	const shell = useShellRuntimeOrNull();
 	const selectedTransitions = useSessionState((s) => s.selection.timeline.transitions.length);
 	const transportStore = useMemo(
@@ -481,7 +492,11 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 		}
 		const target = clips.find((c) => {
 			const spec = registries.effects.get(payload.effectId);
-			return spec && (spec.appliesTo === 'audio') === (c.kind === 'audio' || c.kind === 'nest-audio');
+			return (
+				spec &&
+				(spec.appliesTo === 'audio') ===
+					(c.kind === 'audio' || c.kind === 'nest-audio' || c.kind === 'synthetic-audio')
+			);
 		});
 		const r = target
 			? applyEffectToClips(session, payload.effectId, [target.id], slot === 'end' ? undefined : slot)
@@ -549,6 +564,77 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 			<div className="flex min-w-0 flex-1 self-stretch border-l border-pr-border-subtle">{children}</div>
 		) : null;
 	const left = { width: showTimeline ? `${leftPct}%` : '100%' };
+
+	/** One property row with its key lane (and Value/Velocity graphs when twirled open). */
+	const renderRow = (r: Row) => {
+		const graphKey = `${r.bindings[0]!.clip.id}:${r.id}`;
+		const hasGraph = graphKindOf(r.spec) !== null;
+		const graphHeight = hasGraph ? graphs[graphKey] : undefined;
+		return (
+			<div key={r.id}>
+				<div className="flex items-stretch">
+					<div style={left} className="min-w-0 shrink-0">
+						<PropertyRow
+							row={r}
+							ctx={ctx}
+							indent
+							twirl={
+								hasGraph
+									? {
+											open: graphHeight !== undefined,
+											onToggle: () => {
+												const next = { ...graphs };
+												if (graphHeight !== undefined) delete next[graphKey];
+												else next[graphKey] = GRAPH_HEIGHT.initial;
+												setGraphs(next);
+											},
+										}
+									: undefined
+							}
+						/>
+					</div>
+					{lane(
+						<KeyLane
+							row={r}
+							seq={seq}
+							range={range}
+							selected={selectedKeys}
+							onKeyPointerDown={onKeyPointerDown}
+							onKeyDoubleClick={(f) => session.transport.seek(f)}
+							onKeyContextMenu={openKeyMenu}
+							onLanePointerDown={onLanePointerDown}
+						/>,
+					)}
+				</div>
+				{graphHeight !== undefined ? (
+					<PropertyGraphs
+						row={r}
+						seq={seq}
+						range={range}
+						height={graphHeight}
+						onResize={(h) => setGraphs({ ...graphs, [graphKey]: h })}
+						view={graphViews[graphKey]}
+						onView={(v) => {
+							const next = { ...graphViews };
+							if (v.value || v.velocity) next[graphKey] = v;
+							else delete next[graphKey];
+							setGraphViews(next);
+						}}
+						leftStyle={left}
+						showTimeline={showTimeline}
+						ops={ops}
+						selected={selectedKeys}
+						keySel={keySel}
+						selectKeys={selectKeys}
+						onKeyContextMenu={openKeyMenu}
+						onBackgroundPointerDown={onLanePointerDown}
+						snapCandidates={snapCandidates}
+						setTip={setDragTip}
+					/>
+				) : null}
+			</div>
+		);
+	};
 
 	return (
 		// biome-ignore lint/a11y/noStaticElementInteractions: panel-level keyboard shortcuts (Delete) and drops
@@ -759,70 +845,21 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 												/>
 											</div>
 										) : null}
-										{open
-											? rows.map((r) => {
-													const graphKey = `${r.bindings[0]!.clip.id}:${r.id}`;
-													const hasGraph = graphKindOf(r.spec) !== null;
-													const graphHeight = hasGraph ? graphs[graphKey] : undefined;
-													return (
-														<div key={r.id}>
-															<div className="flex items-stretch">
-																<div style={left} className="min-w-0 shrink-0">
-																	<PropertyRow
-																		row={r}
-																		ctx={ctx}
-																		indent
-																		twirl={
-																			hasGraph
-																				? {
-																						open: graphHeight !== undefined,
-																						onToggle: () => {
-																							const next = { ...graphs };
-																							if (graphHeight !== undefined) delete next[graphKey];
-																							else next[graphKey] = GRAPH_HEIGHT.initial;
-																							setGraphs(next);
-																						},
-																					}
-																				: undefined
-																		}
-																	/>
-																</div>
-																{lane(
-																	<KeyLane
-																		row={r}
-																		seq={seq}
-																		range={range}
-																		selected={selectedKeys}
-																		onKeyPointerDown={onKeyPointerDown}
-																		onKeyDoubleClick={(f) => session.transport.seek(f)}
-																		onKeyContextMenu={openKeyMenu}
-																		onLanePointerDown={onLanePointerDown}
-																	/>,
-																)}
-															</div>
-															{graphHeight !== undefined ? (
-																<PropertyGraphs
-																	row={r}
-																	seq={seq}
-																	range={range}
-																	height={graphHeight}
-																	onResize={(h) => setGraphs({ ...graphs, [graphKey]: h })}
-																	leftStyle={left}
-																	showTimeline={showTimeline}
-																	ops={ops}
-																	selected={selectedKeys}
-																	keySel={keySel}
-																	selectKeys={selectKeys}
-																	onKeyContextMenu={openKeyMenu}
-																	onBackgroundPointerDown={onLanePointerDown}
-																	snapCandidates={snapCandidates}
-																	setTip={setDragTip}
-																/>
-															) : null}
-														</div>
-													);
-												})
-											: null}
+										{open ? rows.map((r) => renderRow(r)) : null}
+										{open && s.masks ? (
+											<MaskList
+												session={session}
+												engine={engine}
+												list={s.masks}
+												clip={s.clip}
+												readOnly={readOnly}
+												layout={{ left, lane }}
+												collapsed={collapsed}
+												setCollapsed={setCollapsed}
+												renderRow={renderRow}
+												filter={(r) => rowVisible(data.doc, seq, r, filter)}
+											/>
+										) : null}
 									</div>
 								);
 							})}
@@ -916,6 +953,15 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 					))}
 					{/* S03:KF-021 (spatial-motion-path): Spatial Interpolation ▸ for keys of point properties. */}
 					<SpatialInterpolationSubmenu
+						groups={groups}
+						ids={menu.ids}
+						onApply={(label, commands) => {
+							ops.apply(label, commands);
+							setMenu(null);
+						}}
+					/>
+					{/* keyframes-blend: Rove Across Time (After Effects). */}
+					<RoveAcrossTimeItem
 						groups={groups}
 						ids={menu.ids}
 						onApply={(label, commands) => {

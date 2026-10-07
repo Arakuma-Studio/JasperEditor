@@ -1,8 +1,16 @@
 // param.set / param.setAnimated with Effect Controls stopwatch semantics (S01:KF-005, CMD-010, CMD-013).
 import type { Draft } from 'immer';
 import { compositionOfClip } from '../../composition/props.ts';
-import { evaluate, isHoldOnlyValue } from '../../keyframes.ts';
+import { evaluate, isHoldOnlyValue, retimeRoving } from '../../keyframes.ts';
 import { newKeySpatial, refreshAutoTangents } from '../../keyframes-spatial.ts';
+import {
+	MASK_EXPANSION_RANGE,
+	MASK_FEATHER_RANGE,
+	MASK_OPACITY_RANGE,
+	MASK_PROP_LABELS,
+	MASK_PROPS,
+	type MaskProp,
+} from '../../masks/model.ts';
 import type { ParamSpec } from '../../registry/effects.ts';
 import { type PropertySpec, resolvePropertySpec } from '../../registry/properties.ts';
 import type { Animatable, Keyframe, SpatialInterpolation } from '../../schema/common.ts';
@@ -15,12 +23,24 @@ import { ClipPatchSchema } from '../schemas/clip.ts';
 import type { CommandOf, ParamAt } from '../schemas/index.ts';
 import { applyClipPatch } from './clip-core.ts';
 import { setCompositionProp } from './composition.ts';
+import { locateMask, validateMaskPath } from './mask.ts';
 import { templateParamDraftAnim, templateParamsValidator } from './mg-template.ts';
 import { ensureShapeStorage } from './shape.ts';
 import type { HandlerMap } from './util.ts';
 
 type ValueRule = {
-	kind: 'number' | 'vec2' | 'vec3' | 'color' | 'enum' | 'boolean' | 'string' | 'media' | 'curve' | 'json';
+	kind:
+		| 'number'
+		| 'vec2'
+		| 'vec3'
+		| 'color'
+		| 'enum'
+		| 'boolean'
+		| 'string'
+		| 'media'
+		| 'curve'
+		| 'json'
+		| 'maskPath';
 	range?: { min?: number; max?: number };
 	options?: readonly string[];
 	holdOnly: boolean;
@@ -84,7 +104,7 @@ export function locateEffect(doc: DDoc, fxId: string): EffectLocation | null {
 			const index = list?.findIndex((e) => e.id === fxId) ?? -1;
 			if (list && index >= 0) return { seq, list, index, fx: list[index]!, clip, track: null };
 		}
-		for (const t of [...seq.videoTracks, ...seq.audioTracks]) {
+		for (const t of [...seq.videoTracks, ...seq.audioTracks, ...(seq.submixTracks ?? [])]) {
 			const index = t.effects?.findIndex((e) => e.id === fxId) ?? -1;
 			if (t.effects && index >= 0)
 				return { seq, list: t.effects, index, fx: t.effects[index]!, clip: null, track: t };
@@ -223,6 +243,29 @@ export function resolveTarget(
 			clip ? h.clipContentTime(found.seq, clip, at) : h.sequenceContentTime(found.seq, at);
 		return { type: 'anim', anim, rule: ruleFromParam(p), time, label: `${found.fx.effectId}.${p.name}` };
 	}
+	// wp masks: `["mask", maskId, "path" | "feather" | "opacity" | "expansion"]` (content time of the owning clip).
+	if (head === 'mask' && a && rest.length === 1) {
+		const prop = rest[0] as MaskProp;
+		if (!MASK_PROPS.includes(prop)) return bad();
+		const loc = locateMask(doc, a);
+		if (!loc) return h.fail('E_NOT_FOUND', `Mask not found: ${a}`);
+		assertUnlocked(findTrackIn(loc.seq, loc.clip.trackId)!.track, h);
+		const range =
+			prop === 'feather'
+				? MASK_FEATHER_RANGE
+				: prop === 'opacity'
+					? MASK_OPACITY_RANGE
+					: MASK_EXPANSION_RANGE;
+		const rule: ValueRule =
+			prop === 'path' ? { kind: 'maskPath', holdOnly: false } : { kind: 'number', range, holdOnly: false };
+		return {
+			type: 'anim',
+			anim: loc.mask[prop] as Draft<Animatable<unknown>>,
+			rule,
+			time: (at) => h.clipContentTime(loc.seq, loc.clip, at),
+			label: `${loc.mask.name}.${MASK_PROP_LABELS[prop]}`,
+		};
+	}
 	// Wave-2 transition framework: `["transition", trnId, param]`; keyframe times are flicks from the span's start.
 	if (head === 'transition' && a && rest.length === 1) {
 		let seq: DSeq | undefined;
@@ -335,6 +378,8 @@ export function validateValue(
 			if (copy === undefined) return fail();
 			return { value: copy, clamped: false };
 		}
+		case 'maskPath':
+			return { value: validateMaskPath(v, h, label), clamped: false };
 		case 'curve': {
 			// {curve: [[x, y], …]}: ≥ 2 points in 0..1 (clamped), sorted by x, x strictly increasing.
 			const pts = (v as { curve?: unknown } | null)?.curve;
@@ -381,6 +426,8 @@ function upsertKeyframe(anim: Draft<Animatable<unknown>>, kf: Keyframe<unknown>)
 		anim.keyframes.sort((x, y) => x.time - y.time);
 	}
 	refreshAutoTangents(anim.keyframes as Keyframe<unknown>[]);
+	// keyframes-blend: roving keys sit where the motion passes them.
+	retimeRoving(anim.keyframes as Keyframe<unknown>[]);
 	return id;
 }
 

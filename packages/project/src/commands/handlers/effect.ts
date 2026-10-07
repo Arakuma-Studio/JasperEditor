@@ -3,7 +3,8 @@
 // Unknown effects already in a document are preserved verbatim and may still be removed, reordered or
 // bypassed; only adding an unknown effect id is refused (S01:FX-022).
 import type { Draft } from 'immer';
-import { EASE_PRESETS } from '../../keyframes.ts';
+import { resolveStripRef } from '../../audio/strip.ts';
+import { EASE_PRESETS, retimeRoving } from '../../keyframes.ts';
 import { refreshAutoTangents } from '../../keyframes-spatial.ts';
 import type { EffectSpec } from '../../registry/effects.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
@@ -107,6 +108,8 @@ export function buildParams(
 			const expression = validExpression(ex, label, h);
 			const anim = { value, keyframes, ...(expression ? { expression } : {}) } as Animatable<ParamValue>;
 			refreshAutoTangents(anim.keyframes as Keyframe<unknown>[]);
+			// keyframes-blend: roving keys sit where the motion passes them.
+			retimeRoving(anim.keyframes as Keyframe<unknown>[]);
 			refreshAutoBezier(anim as never);
 			out[p.name] = anim;
 			continue;
@@ -160,7 +163,10 @@ export const effectHandlers: HandlerMap = {
 				instanceDefaults = spec.instanceDefaults({ box: intrinsicBoxOf({ doc: doc as never, seq: seq as never, clip: clip as never }) });
 		} else {
 			const seq = h.sequence(doc, cmd.target.sequenceId ?? cmd.sequenceId);
-			const track = h.track(seq, cmd.target.trackId);
+			// audio-mix: submix tracks (`S1`… or their id) take track effects too.
+			const submixId = resolveStripRef(seq as never, cmd.target.trackId);
+			const submix = (seq.submixTracks ?? []).find((t) => t.id === submixId);
+			const track = submix ?? h.track(seq, cmd.target.trackId);
 			assertUnlocked(track, h);
 			if (track.kind !== spec.appliesTo)
 				h.fail('E_INVALID_PARAM', `${spec.label} cannot go on a ${track.kind} track`, { path: [track.id] });

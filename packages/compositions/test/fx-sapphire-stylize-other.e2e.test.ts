@@ -4,7 +4,7 @@
 // with @remotion/renderer in headless Chrome (WebGL2 via ANGLE/SwiftShader), and S_PixelMosh on a zooming video (its
 // time samples decoded for their own frames). Checks that each effect changed the picture, deterministically.
 // FX_SSO_IMAGE=<photo> renders that picture (else an ffmpeg test pattern); FX_SSO_STILLS=<dir> copies the stills there
-// (contact sheet: docs/screenshots/fx/sapphire-stylize-other/). Needs ffmpeg on PATH.
+// (contact sheet for review; commit one only over `pnpm fixtures` media, AGENTS.md §3). Needs ffmpeg on PATH.
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';

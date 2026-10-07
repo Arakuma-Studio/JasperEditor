@@ -69,6 +69,9 @@ export function stabilizeRenderDoc(prev: RenderDoc | null, next: RenderDoc): Ren
 		fonts: reuse(prev.fonts, next.fonts),
 		master: reuse(prev.master, next.master),
 		warnings: reuse(prev.warnings, next.warnings),
+		// audio-mix: the mixer topology (pan, faders, sends, automation…) changes without any clip changing.
+		...(next.audioMix ? { audioMix: reuse(prev.audioMix, next.audioMix) } : {}),
+		...(next.matteTracks ? { matteTracks: reuse(prev.matteTracks, next.matteTracks) } : {}),
 	};
 	const same =
 		out.version === prev.version &&
@@ -81,6 +84,8 @@ export function stabilizeRenderDoc(prev: RenderDoc | null, next: RenderDoc): Ren
 		out.media === prev.media &&
 		out.fonts === prev.fonts &&
 		out.master === prev.master &&
+		out.audioMix === prev.audioMix &&
+		out.matteTracks === prev.matteTracks &&
 		out.warnings === prev.warnings;
 	return same ? prev : out;
 }
