@@ -41,7 +41,8 @@ const FILTER = process.env.FX_COMPILE_FILTER ?? '';
 /** A program still compiling after this long is reported as a timeout (the page is then discarded). */
 const HARD_TIMEOUT = Math.max(BUDGET * 4, 60_000);
 
-type Program = { source: string; users: string[] };
+/** `vertex`: the generated vertex shader of a draw pass (sim-warp), else the full-screen triangle. */
+type Program = { source: string; vertex?: string; users: string[] };
 
 const defaults = (params: readonly { name: string; default: unknown }[]) =>
 	Object.fromEntries(params.map((p) => [p.name, p.default])) as Record<string, never>;
@@ -49,10 +50,11 @@ const defaults = (params: readonly { name: string; default: unknown }[]) =>
 /** Every distinct pass source of the registered GPU effects and transitions (default params). */
 function collectPrograms(): Program[] {
 	const bySource = new Map<string, Program>();
-	const add = (source: string, user: string) => {
-		const hit = bySource.get(source);
+	const add = (source: string, user: string, vertex?: string) => {
+		const key = vertex ? `${source}\u0000${vertex}` : source;
+		const hit = bySource.get(key);
 		if (hit) hit.users.push(user);
-		else bySource.set(source, { source, users: [user] });
+		else bySource.set(key, { source, ...(vertex ? { vertex } : {}), users: [user] });
 	};
 	const effects: EffectSpec[] = [...defaultEffectRegistry.list().filter((s) => s.gpu), ...TEST_FX];
 	for (const spec of effects) {
@@ -73,7 +75,7 @@ function collectPrograms(): Program[] {
 			},
 			{ width: 64, height: 36 },
 		);
-		for (const p of plan.passes) add(p.source, `${spec.id}#${p.index}`);
+		for (const p of plan.passes) add(p.source, `${spec.id}#${p.index}`, p.vertex?.source);
 	}
 	const transitions: TransitionSpec[] = [...TRANSITION_SPECS.filter((s) => s.gpu), ...TEST_TRANSITIONS];
 	for (const spec of transitions) {
@@ -158,7 +160,8 @@ const LIBRARY_STRESS: [string, string][] = [
 ];
 
 /** Page side: compiles, links and draws one program into a 4×4 target; returns the wall time in ms. */
-function compileInPage(source: string): number | string {
+function compileInPage(prog: { source: string; vertex?: string }): number | string {
+	const { source, vertex } = prog;
 	const w = window as unknown as {
 		__gl?: WebGL2RenderingContext;
 		__vs?: WebGLShader;
@@ -197,13 +200,20 @@ function compileInPage(source: string): number | string {
 	const fs = gl.createShader(gl.FRAGMENT_SHADER)!;
 	gl.shaderSource(fs, source);
 	gl.compileShader(fs);
+	let vs = w.__vs!;
+	if (vertex) {
+		vs = gl.createShader(gl.VERTEX_SHADER)!;
+		gl.shaderSource(vs, vertex);
+		gl.compileShader(vs);
+	}
 	const p = gl.createProgram()!;
-	gl.attachShader(p, w.__vs!);
+	gl.attachShader(p, vs);
 	gl.attachShader(p, fs);
 	gl.bindAttribLocation(p, 0, 'a_pos');
 	gl.linkProgram(p);
 	if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
-		const log = `${gl.getShaderInfoLog(fs) ?? ''}${gl.getProgramInfoLog(p) ?? ''}`;
+		const log = `${vertex ? (gl.getShaderInfoLog(vs) ?? '') : ''}${gl.getShaderInfoLog(fs) ?? ''}${gl.getProgramInfoLog(p) ?? ''}`;
+		if (vertex) gl.deleteShader(vs);
 		gl.deleteShader(fs);
 		gl.deleteProgram(p);
 		return `compile/link error: ${log}`;
@@ -215,6 +225,7 @@ function compileInPage(source: string): number | string {
 	gl.drawArrays(gl.TRIANGLES, 0, 3);
 	gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
 	const ms = performance.now() - t0;
+	if (vertex) gl.deleteShader(vs);
 	gl.deleteShader(fs);
 	gl.deleteProgram(p);
 	return ms;
@@ -243,7 +254,10 @@ async function timeAll(programs: Program[]): Promise<Timing[]> {
 				const prog = programs[i]!;
 				let timer: ReturnType<typeof setTimeout> | undefined;
 				const r = await Promise.race([
-					b.page.evaluate(compileInPage, prog.source),
+					b.page.evaluate(compileInPage, {
+						source: prog.source,
+						...(prog.vertex ? { vertex: prog.vertex } : {}),
+					}),
 					new Promise<'timeout'>((res) => {
 						timer = setTimeout(() => res('timeout'), HARD_TIMEOUT);
 					}),
