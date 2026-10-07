@@ -683,7 +683,12 @@ export function solveCamera(
 	return out;
 }
 
-function solveCore(tracks: CameraTracks, s: SolveSettings, cancelled: () => boolean, progress: SolveProgress): Core {
+function solveCore(tracks: CameraTracks, s: SolveSettings, isCancelled: () => boolean, progress: SolveProgress): Core {
+	const cancelled = () => {
+		if (isCancelled()) throw new SolveError('cancelled');
+		return false;
+	};
+	cancelled();
 	const d = new Data(tracks, s.deleted);
 	if (d.n < 2) throw new SolveError('the clip must be at least two frames long');
 	const kfs = keyframes(d);

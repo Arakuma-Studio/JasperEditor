@@ -31,6 +31,8 @@ export const JOB_KINDS = [
 	'cache-move',
 	// parity (roto): Roto Brush segmentation / propagation and face tracking
 	'roto',
+	// parity (three-d): 3D Camera Tracker (feature tracking + camera solve)
+	'camtrack',
 ] as const;
 export const JobKindSchema = z.enum(JOB_KINDS);
 export type JobKind = z.infer<typeof JobKindSchema>;

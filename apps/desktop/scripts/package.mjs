@@ -90,6 +90,8 @@ for (const f of [
 	'jasper-speech.mjs',
 	// parity roto: the Roto Brush / face tracking worker (onnxruntime-node and OpenCV.js are staged below)
 	'jasper-roto.mjs',
+	// three-d: the 3D Camera Tracker worker (OpenCV.js is staged below)
+	'jasper-camtrack.mjs',
 	'dejudder-worker.mjs',
 	'vidstab.wasm',
 	'VIDSTAB-WASM.json',

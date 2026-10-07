@@ -208,8 +208,36 @@ export function svd3(m: M3): { u: M3; s: V3; v: M3 } {
 
 /** The unit `x` minimising |A x| (`m × n` row-major): the right singular vector of the smallest singular value. */
 export function nullVector(a: ArrayLike<number>, m: number, n: number): number[] {
-	const { v } = svd(a, m, n);
+	// Tall systems: |A x| = |R x| for A = Q R, so the (much cheaper) SVD of the n × n triangle has the same V.
+	const { v } = m > n ? svd(householderR(a, m, n), n, n) : svd(a, m, n);
 	return [...Array(n).keys()].map((r) => v[r * n + n - 1]!);
+}
+
+/** The `n × n` upper triangle `R` of the QR decomposition of a tall `m × n` matrix (Householder reflections). */
+function householderR(src: ArrayLike<number>, m: number, n: number): Float64Array {
+	const a = Float64Array.from(src as ArrayLike<number>);
+	for (let k = 0; k < n; k++) {
+		let s = 0;
+		for (let i = k; i < m; i++) s += a[i * n + k]! * a[i * n + k]!;
+		const norm = Math.sqrt(s);
+		if (norm < 1e-300) continue;
+		const alpha = a[k * n + k]! > 0 ? -norm : norm;
+		// v = x − alpha e1, stored in place below the diagonal (v0 kept apart).
+		const v0 = a[k * n + k]! - alpha;
+		const vv = s - a[k * n + k]! * a[k * n + k]! + v0 * v0;
+		if (vv < 1e-300) continue;
+		for (let j = k + 1; j < n; j++) {
+			let d = v0 * a[k * n + j]!;
+			for (let i = k + 1; i < m; i++) d += a[i * n + k]! * a[i * n + j]!;
+			const f = (2 * d) / vv;
+			a[k * n + j] = a[k * n + j]! - f * v0;
+			for (let i = k + 1; i < m; i++) a[i * n + j] = a[i * n + j]! - f * a[i * n + k]!;
+		}
+		a[k * n + k] = alpha;
+	}
+	const r = new Float64Array(n * n);
+	for (let i = 0; i < n; i++) for (let j = i; j < n; j++) r[i * n + j] = a[i * n + j]!;
+	return r;
 }
 
 /** Symmetric eigen-decomposition (cyclic Jacobi): eigenvalues ascending, eigenvectors as columns (row-major). */

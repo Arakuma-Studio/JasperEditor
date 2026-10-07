@@ -111,6 +111,7 @@ import {
 	RotoTraceResponseSchema,
 	VisionModelsResponseSchema,
 } from './roto.ts';
+import { CamTrackSolveRequestSchema } from './camtrack.ts';
 import {
 	SpeechModelDeleteResponseSchema,
 	SpeechModelsResponseSchema,
@@ -153,7 +154,9 @@ export type RouteOwner =
 	// parity program: timeline interchange and Link Media
 	| 'wp-interchange'
 	// parity program: roto / object mattes, face tracking
-	| 'roto';
+	| 'roto'
+	// parity program: 3D layers, cameras, lights, 3D Camera Tracker
+	| 'three-d';
 
 export type RouteDef = {
 	method: HttpMethod;
@@ -733,6 +736,16 @@ export const ROUTES = {
 		path: '/mg/roto/:key',
 		response: 'binary',
 		owner: 'roto',
+	},
+	// ---- three-d: 3D Camera Tracker
+	/** A `camtrack` job: feature tracking + camera solve of a span of a video (result: `CamTrackResult`). */
+	camtrackSolve: {
+		method: 'POST',
+		path: '/api/camtrack/solve',
+		body: CamTrackSolveRequestSchema,
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
+		owner: 'three-d',
 	},
 	// ---- M3 media cache (S04 §7.5 CA-010…CA-019)
 	/** Usage per cache kind, budgets, last cleaning (Preferences ▸ Media Cache, MCP get_cache_usage). */
