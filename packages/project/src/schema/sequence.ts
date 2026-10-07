@@ -587,7 +587,8 @@ export const LegacyShapeDataSchema = z.looseObject({
 	cornerRadius: AnimNumberSchema,
 });
 export type LegacyShapeData = DeepStrip<z.infer<typeof LegacyShapeDataSchema>>;
-export const ShapeDataSchema = z.union([LegacyShapeDataSchema, VectorShapeDataSchema]);
+// Lazy: schema/shapes.ts imports this module (BlendModeSchema); either may be evaluated first.
+export const ShapeDataSchema = z.union([LegacyShapeDataSchema, z.lazy(() => VectorShapeDataSchema)]);
 export type ShapeData = LegacyShapeData | VectorShapeData;
 export const isVectorShape = (s: ShapeData): s is VectorShapeData => s.type === 'vector';
 export const isLegacyShape = (s: ShapeData): s is LegacyShapeData => s.type !== 'vector';
