@@ -37,8 +37,9 @@ function findClip(doc: ProjectDocument, clipId: string): { seq: Sequence; clip: 
 	throw new ToolError('E_NOT_FOUND', `Clip not found: ${clipId}`, 'Call get_timeline for clip ids.');
 }
 
-function positionOf(clip: Clip): Animatable<Vec2> {
-	const p = (clip as { transform?: { position?: Animatable<Vec2> } }).transform?.position;
+function positionOf(clip: Clip, property: 'position' | 'anchor' = 'position'): Animatable<Vec2> {
+	const t = (clip as { transform?: { position?: Animatable<Vec2>; anchor?: Animatable<Vec2> } }).transform;
+	const p = property === 'anchor' ? t?.anchor : t?.position;
 	if (!p)
 		throw new ToolError(
 			'E_INVALID_PARAM',
@@ -58,18 +59,24 @@ export function registerMotionPathTools(ctx: ToolContext): void {
 		{
 			title: 'Get motion path',
 			description:
-				"A clip's position animation as a motion path: every position key (id, sequence frame, timecode, value, temporal and spatial interpolation, effective in/out tangents in sequence pixels) and the evaluated position sampled across the clip (at most `samples` points, evenly spaced in time; spacing encodes speed), plus the path length. Values are exactly what the preview and export draw.",
+				"A clip's position (or, with property: 'anchor', Anchor Point) animation as a motion path: every position key (id, sequence frame, timecode, value, temporal and spatial interpolation, effective in/out tangents in sequence pixels) and the evaluated position sampled across the clip (at most `samples` points, evenly spaced in time; spacing encodes speed), plus the path length. Values are exactly what the preview and export draw.",
 			input: {
 				projectId: ProjectIdArg,
 				clipId: z.string().min(1).describe('Clip id ("clp_…")'),
 				samples: z.number().int().min(2).max(1000).optional().describe('Sampled points (default 60)'),
+				property: z
+					.enum(['position', 'anchor'])
+					.optional()
+					.describe(
+						'position (default; sequence px) or anchor (the Anchor Point path; values and tangents in layer px)',
+					),
 			},
 			annotations: READ_ONLY,
 		},
-		async ({ projectId, clipId, samples }) => {
+		async ({ projectId, clipId, samples, property }) => {
 			const { doc } = await loadDoc(ctx, projectId);
 			const { seq, clip } = findClip(doc, clipId);
-			const anim = positionOf(clip);
+			const anim = positionOf(clip, property ?? 'position');
 			const rate = seq.settings.frameRate;
 			const kfs = anim.keyframes as readonly Keyframe<unknown>[];
 			const keys = anim.keyframes.map((k, i) => {
