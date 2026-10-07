@@ -234,6 +234,9 @@ export type FxMixParams = {
 	masks?: FxMaskGeometry | null;
 };
 
+/** Upload counter of the adjusted picture (every mix re-uploads it: it changes with every draw). */
+let adjustedUploads = 0;
+
 export const fxAdjustmentMix = createEffect<FxMixParams, null>({
 	type: 'jasper.fx-adjustment-mix',
 	label: 'Adjustment layer (mix)',
@@ -287,7 +290,7 @@ export const fxAdjustmentMix = createEffect<FxMixParams, null>({
 							source: source as TexImageSource,
 							width,
 							height,
-							version: `adj:${params.key}:${Math.random()}`,
+							version: `adj:${params.key}:${++adjustedUploads}`,
 						},
 					},
 					samples: { sources: [], offsets: [] },
