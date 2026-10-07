@@ -17,6 +17,7 @@ import { PROCESSING_GUIDE, registerProcessingTools } from './tools/processing.ts
 import { registerProjectTools } from './tools/projects.ts';
 import { registerRenderTools } from './tools/render.ts';
 import { registerShapeTools, SHAPES_GUIDE } from './tools/shapes.ts';
+import { registerStructureTools, STRUCTURE_GUIDE } from './tools/structure.ts';
 import { registerTemplateTools, TEMPLATES_GUIDE } from './tools/templates.ts';
 import { registerTrackingTools, TRACKING_GUIDE } from './tools/tracking.ts';
 import { registerTransitionTools, TRANSITION_GUIDE } from './tools/transitions.ts';
@@ -55,6 +56,7 @@ const FULL_GUIDE = [
 	CLIPBOARD_GUIDE,
 	PRESETS_GUIDE,
 	CACHE_GUIDE,
+	STRUCTURE_GUIDE,
 ].join('\n\n');
 
 type JasperMcpOptions = {
@@ -87,6 +89,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerClipboardTools(ctx);
 	registerPresetTools(ctx);
 	registerCacheTools(ctx);
+	registerStructureTools(ctx);
 	registerResources(ctx);
 	registerPrompts(ctx);
 	return { server };
