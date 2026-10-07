@@ -1,5 +1,6 @@
 // The format registry: names, extensions, sniffing and the reader/writer of every format.
 
+import { exportAaf, importAaf, sniffAaf } from './aaf/index.ts';
 import { exportAle, importAle, sniffAle } from './ale.ts';
 import { exportEdl, importEdl, looksLikeEdl } from './edl.ts';
 import { exportFcp7, importFcp7, sniffFcp7 } from './fcp7.ts';
@@ -103,7 +104,17 @@ export const FORMAT_INFO: Record<Format, FormatInfo | undefined> = {
 		read: text(importEdl),
 		write: textOut(exportEdl),
 	},
-	aaf: undefined,
+	aaf: {
+		id: 'aaf',
+		name: 'AAF',
+		extension: 'aaf',
+		extensions: ['aaf'],
+		binary: true,
+		timeline: true,
+		sniff: (b) => sniffAaf(b),
+		read: (b, o, r) => importAaf(b, o, r),
+		write: (p, s, o, r) => exportAaf(p, s, o, r),
+	},
 	omf: undefined,
 	ale: {
 		id: 'ale',

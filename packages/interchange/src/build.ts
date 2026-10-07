@@ -392,3 +392,52 @@ export function describeClip(c: IClip, rate: Rate): string {
 		c.source.type === 'none' ? c.source.what : c.source.type === 'sequence' ? 'nested sequence' : 'clip';
 	return `${what} "${c.name}" at frame ${frameOf(c.start, rate)}`;
 }
+
+/** Whether a clip's Motion is the default (centred, 100 %, no rotation, no flips, no keys) for its source box. */
+export function motionIsDefault(c: IClip, s: ISequence, p: IProject): boolean {
+	const t = c.transform;
+	if (!t) return true;
+	let box = { width: s.width, height: s.height };
+	if (c.source.type === 'media') {
+		const m = p.media[c.source.mediaId];
+		if (m?.video) box = { width: m.video.width, height: m.video.height };
+	} else if (c.source.type === 'sequence') {
+		const q = p.sequences[c.source.sequenceId];
+		if (q) box = { width: q.width, height: q.height };
+	}
+	return (
+		![t.position, t.anchor, t.scale, t.scaleWidth, t.rotation].some((a) => a.keyframes.length > 0) &&
+		t.position.value[0] === s.width / 2 &&
+		t.position.value[1] === s.height / 2 &&
+		t.anchor.value[0] === box.width / 2 &&
+		t.anchor.value[1] === box.height / 2 &&
+		t.scale.value === 100 &&
+		(t.uniformScale || t.scaleWidth.value === 100) &&
+		t.rotation.value === 0 &&
+		!t.flipH &&
+		!t.flipV
+	);
+}
+
+/** Names, per clip, the visual properties a format without Motion / Opacity / effects drops. */
+export function reportVisualLoss(
+	c: IClip,
+	s: ISequence,
+	p: IProject,
+	format: string,
+	report: { warn(m: string, e?: object): void },
+): void {
+	const where = {
+		subject: { kind: 'clip' as const, id: c.id, name: c.name, frame: frameOf(c.start, s.rate) },
+	};
+	const lost: string[] = [];
+	if (!motionIsDefault(c, s, p)) lost.push('Motion');
+	if (c.opacity && (c.opacity.value !== 100 || c.opacity.keyframes.length)) lost.push('Opacity');
+	if (c.blendMode && c.blendMode !== 'normal') lost.push(`blend mode ${c.blendMode}`);
+	for (const e of c.effects) lost.push(`effect ${e.effectId}`);
+	if (lost.length)
+		report.warn(`${lost.join(', ')} of ${describeClip(c, s.rate)} cannot be carried by ${format}`, {
+			...where,
+			instead: 'the clip without them (pre-render it to keep them)',
+		});
+}
