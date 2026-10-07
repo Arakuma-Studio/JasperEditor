@@ -32,6 +32,7 @@ import {
 	EXPORT_LUT_SIZE,
 	effectRuns,
 	evaluate,
+	isAnimated,
 	type Lut,
 	type ParamValue,
 	type RenderVisualClip,
@@ -84,7 +85,7 @@ export type ColorExtensionOptions = {
 type RunState = { effects: ColorRunEffect[]; key: string };
 
 const hasKeyframes = (fx: RenderVisualClip['effects'][number]) =>
-	Object.values(fx.params).some((a) => a.keyframes.length > 0);
+	Object.values(fx.params).some((a) => isAnimated(a));
 
 /** Quoted filter-option value (single quotes; `'` itself is closed, escaped and reopened). */
 export function quoteFilterPath(path: string): string {

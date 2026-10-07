@@ -16,7 +16,14 @@ import {
 	presetSummary,
 } from '@jasper/project';
 import { z } from 'zod';
-import { DESTRUCTIVE, defineTool, EDIT, loadDoc, READ_ONLY, type ToolContext } from '../context.ts';
+import {
+	DESTRUCTIVE_IDEMPOTENT,
+	defineTool,
+	EDIT,
+	loadDoc,
+	READ_ONLY,
+	type ToolContext,
+} from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { applyHelper } from './editing.ts';
 import { ProjectIdArg } from './projects.ts';
@@ -249,7 +256,7 @@ export function registerPresetTools(ctx: ToolContext): void {
 			description:
 				"Removes a preset from the user's library (built-ins cannot be deleted). Only when the user asks.",
 			input: { presetId: z.string().min(1) },
-			annotations: DESTRUCTIVE,
+			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
 		async ({ presetId }) => {
 			if (presetId.startsWith('builtin.'))

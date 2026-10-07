@@ -6,19 +6,26 @@ import { createHash } from 'node:crypto';
 import type { EncoderChoice, ExportSettings, RenderPlan } from '@jasper/api';
 import { mgRegistry } from '@jasper/mg-templates';
 import {
+	blendModeInfo,
 	buildRenderSnapshot,
+	clipContentTime,
 	defaultEffectRegistry,
 	type EffectRegistry,
+	hasAudioProcessor,
+	hasEffectMasks,
 	isAnimated,
 	loadProject,
 	type MediaAsset,
 	type MediaHandle,
+	maskExportRoute,
 	mediaDecodeHints,
 	type ProjectDocument,
 	type Rational,
 	type RenderSnapshot,
 	type RenderVisualClip,
 	rationalEquals,
+	resolveLayerProps,
+	type SnapshotOptions,
 	transitionSpec,
 } from '@jasper/project';
 import type { FontCatalogService } from '../fonts/catalog.ts';
@@ -32,7 +39,9 @@ import {
 	TEMPLATE_NOT_INSTALLED,
 } from '../mg/templates.ts';
 import { type EncoderRequest, LEGACY_X264_CHOICE } from '../tools/encoders.ts';
+import { CaptionExportError, captionBurnMode, captionPlanWarnings } from './captions.ts';
 import { BUILTIN_NATIVE_EFFECTS, type NativeExtension } from './native-ext.ts';
+import { needsSubpixel } from './stream/plan.ts';
 
 export type PlanCapabilities = {
 	/** ffmpeg + encoders present (self-check). */
@@ -57,7 +66,15 @@ export class PlanError extends Error {
 	}
 }
 
-const NATIVE_VISUAL_KINDS = new Set(['video', 'still', 'solid', 'motion-graphic']);
+// edit-structure: nest clips draw their nested stack in the same graph; adjustment layers process the composite.
+const NATIVE_VISUAL_KINDS = new Set([
+	'video',
+	'still',
+	'solid',
+	'motion-graphic',
+	'nest-video',
+	'adjustment',
+]);
 
 export type OutputSpec = {
 	width: number;
@@ -72,8 +89,15 @@ export type OutputSpec = {
 	speed: 'fast' | 'balanced' | 'best';
 	/** Video encoder (D-13); null = no usable encoder (the native path is blocked). */
 	encoder: EncoderChoice | null;
-	audioChannels: 1 | 2;
+	/** audio-mix: 1, 2 or 6 (discrete 5.1). */
+	audioChannels: 1 | 2 | 6;
 	audioBitrateKbps: number;
+	/** audio-mix: delivered sample rate (the mix runs at the sequence rate and is resampled with SoX when different). */
+	audioSampleRate: number;
+	/** audio-mix: 24-bit PCM requested (MOV). */
+	audioPcm?: boolean;
+	/** audio-mix: two-pass loudness normalisation of the final mix. */
+	normalize: { targetLufs: number; truePeakDb: number } | null;
 	/** Average video bitrate override (see ExportSettings `video.bitrateKbps`). */
 	bitrateKbps?: number;
 	/** ProRes profile of a `prores` export. */
@@ -94,6 +118,9 @@ export type PlannedExport = {
 	/** mediaId → online local file. */
 	media: Record<string, LocalMedia>;
 	output: OutputSpec;
+	/** wp captions: caption tracks burned in (snapshot option) and the caption output settings. */
+	captions?: SnapshotOptions['captions'];
+	captionSettings?: ExportSettings['captions'];
 };
 
 /** The engine media key of an asset (engine-store locator), or null. */
@@ -185,7 +212,16 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		else offline.push(asset.id);
 	}
 	const fontFallbacks = new Set<string>();
+	// wp captions: caption settings name existing tracks; burn-in is a snapshot option.
+	let captionWarnings: RenderPlan['warnings'] = [];
+	try {
+		captionWarnings = captionPlanWarnings(document, seq, settings, range);
+	} catch (e) {
+		if (e instanceof CaptionExportError) throw new PlanError('VALIDATION_FAILED', 400, e.message);
+		throw e;
+	}
 	const snapshot = buildRenderSnapshot(document, input.sequenceId, {
+		captions: captionBurnMode(settings),
 		range,
 		resolveMedia: (asset): MediaHandle | null => {
 			const m = media[asset.id];
@@ -214,11 +250,15 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	// ---- classification
 	const blockers: RenderPlan['blockers'] = [];
 	const warnings: RenderPlan['warnings'] = [];
-	const visual = snapshot.videoTracks.flatMap((t) => t.clips);
+	// edit-structure: the clips of nested sequences are drawn natively too (in the same graph): they are classified
+	// with the sequence's own clips.
+	const visual = allVisualClips(snapshot);
 	const mgClips: string[] = [];
 	// M2 (S11:LBK-002, wp-m2-layer-bake): layers an extension pre-renders with a graphics engine (DOM layers baked
 	// through Remotion) — listed as graphics groups; the native path is then `hybrid`.
 	const baked: { clipId: string; engine: 'remotion'; frames: number }[] = [];
+	for (const reason of nestBlockers(snapshot))
+		blockers.push({ path: 'native', reason: reason.reason, itemId: reason.clipId });
 	for (const c of visual) {
 		for (const reason of nativeBlockers(c, deps.capabilities, deps.extensions ?? [], deps.effects))
 			blockers.push({ itemId: c.clipId, path: 'native', reason });
@@ -243,7 +283,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	// built-in ramps (cross dissolve, dip to black). wave1c: an extension that pre-renders the span (A + B + stage,
 	// layer-bake) keeps the export native (`hybrid`): only the span is rendered by Remotion. Without one, the export
 	// goes through Remotion.
-	for (const track of snapshot.videoTracks)
+	for (const track of allVideoTracks(snapshot))
 		for (const t of track.transitions ?? []) {
 			const engine = (deps.extensions ?? [])
 				.map((e) => e.bakesTransition?.(t, track.trackId) ?? null)
@@ -259,18 +299,17 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 				reason: `transition "${spec?.label ?? t.effectId}" is a GPU transition and no span renderer is available (rendered by the Remotion path)`,
 			});
 		}
-	for (const a of snapshot.audioClips) {
-		const why: string[] = [];
-		// Keyframed clip / track / master volume is native (per-frame gain, keyframed.ts). Pan is not: the composition
-		// does not pan either (S03:KND-012 is P1), so a native pan would make the export differ from the preview.
-		if (isAnimated(a.pan) || isAnimated(a.track.pan))
-			why.push('animated audio pan is not supported by the native path');
-		else if (a.pan.value !== 0 || a.track.pan.value !== 0)
-			why.push('audio pan is not supported by the native path in M1');
-		if (a.effects.some((fx) => fx.enabled)) why.push('audio effects require the Remotion path in M1');
-		if (a.speed.reverse) why.push('reversed audio is not supported by the native path');
-		for (const reason of why) blockers.push({ itemId: a.clipId, path: 'native', reason });
-	}
+	// audio-mix: every path's audio is the offline mixer's (clip levels, pan, buses, sends, automation, 5.1,
+	// normalisation), so audio never blocks a path — except effects the mixer cannot run, which block them all.
+	const unrenderable = unrenderableAudioEffects(snapshot);
+	if (unrenderable.length > 0)
+		throw new PlanError(
+			'AUDIO_EFFECT_UNSUPPORTED',
+			409,
+			`Audio effects without an export processor: ${[...new Set(unrenderable.map((u) => u.effectId))].join(', ')}`,
+			{ effects: unrenderable },
+		);
+	const audioOut = audioOutputOf(seq, settings, deps.selectEncoder ? null : null);
 	const video0 = settings.video;
 	const encoder = deps.selectEncoder
 		? deps.selectEncoder({
@@ -312,7 +351,11 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	}
 	if (fontFallbacks.size > 0) {
 		const ids = visual
-			.filter((c) => c.kind === 'text' && 'text' in c.source && fontFallbacks.has(c.source.text.style.fontId))
+			.filter(
+				(c) =>
+					(c.kind === 'text' && 'text' in c.source && fontFallbacks.has(c.source.text.style.fontId)) ||
+					('captions' in c.source && fontFallbacks.has(c.source.captions.style.fontId)),
+			)
 			.map((c) => c.clipId);
 		warnings.push({
 			code: 'FONT_FALLBACK',
@@ -321,6 +364,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		});
 	}
 	for (const w of snapshot.warnings) warnings.push({ code: w.code, message: w.message, itemIds: [w.clipId] });
+	warnings.push(...captionWarnings);
 	// M2 (§19.6): warnings of the extensions for the clips they provide (e.g. MG_FPS_MISMATCH).
 	for (const ext of deps.extensions ?? []) {
 		if (!ext.warnings) continue;
@@ -351,8 +395,11 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			video?.encoderSpeed === 'fast' ? 'veryfast' : video?.encoderSpeed === 'best' ? 'slow' : 'medium',
 		speed: video?.encoderSpeed ?? 'balanced',
 		encoder,
-		audioChannels: settings.audio?.channels ?? 2,
-		audioBitrateKbps: settings.audio?.bitrateKbps ?? 192,
+		audioChannels: audioOut.channels,
+		audioBitrateKbps: settings.audio?.bitrateKbps ?? (audioOut.channels === 6 ? 384 : 192),
+		audioSampleRate: audioOut.sampleRate,
+		audioPcm: settings.audio?.codec === 'pcm',
+		normalize: audioOut.normalize,
 		...(video?.bitrateKbps ? { bitrateKbps: video.bitrateKbps } : {}),
 		...(video?.proresProfile ? { proresProfile: video.proresProfile } : {}),
 		...(video?.alpha ? { alpha: true } : {}),
@@ -479,13 +526,78 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 				graphicsGroups,
 			},
 		],
-		audio: { mode: path === 'remotion' ? 'remotion' : 'native-mix' },
+		audio: {
+			mode: 'native-mix',
+			...(audioOut.normalize ? { normalize: audioOut.normalize } : {}),
+			sampleRate: output.audioSampleRate,
+			channels: output.audioChannels,
+			codec: audioCodecOf(encoder, output),
+		},
 		blockers,
 		warnings,
 		estimate: { seconds: Math.round(estimateSeconds * 10) / 10, bytes: Math.max(0, estimateBytes) },
 		...(encoder ? { encoder } : {}),
 	};
-	return { plan, document, sequenceId: input.sequenceId, range, snapshot, media, output };
+	return {
+		plan,
+		document,
+		sequenceId: input.sequenceId,
+		range,
+		snapshot,
+		media,
+		output,
+		captions: captionBurnMode(settings),
+		captionSettings: settings.captions,
+	};
+}
+
+/** Enabled audio effects (clips, tracks, submixes, the Mix) with no export processor (`registerAudioProcessor`). */
+export function unrenderableAudioEffects(
+	snapshot: RenderSnapshot,
+): { itemId: string; effectId: string; where: 'clip' | 'strip' }[] {
+	const out: { itemId: string; effectId: string; where: 'clip' | 'strip' }[] = [];
+	for (const a of snapshot.audioClips)
+		for (const fx of a.effects)
+			if (fx.enabled && !hasAudioProcessor(fx.effectId))
+				out.push({ itemId: a.clipId, effectId: fx.effectId, where: 'clip' });
+	for (const s of snapshot.audioMix?.strips ?? [])
+		if (!s.inaudible || s.kind !== 'track')
+			for (const fx of s.inserts)
+				if (!hasAudioProcessor(fx.effectId))
+					out.push({ itemId: s.id, effectId: fx.effectId, where: 'strip' });
+	return out;
+}
+
+/** Delivered audio format: channels, rate (Opus is 48 kHz only) and the loudness normalisation in effect. */
+export function audioOutputOf(
+	seq: {
+		settings: { audioSampleRate?: number; masterLayout?: string };
+		master: { loudness?: { enabled: boolean; targetLufs: number; truePeakDb: number } };
+	},
+	settings: Pick<ExportSettings, 'audio'>,
+	_encoder: unknown,
+): { channels: 1 | 2 | 6; sampleRate: number; normalize: { targetLufs: number; truePeakDb: number } | null } {
+	const a = settings.audio;
+	const master = seq.settings.masterLayout === '5.1' ? 6 : seq.settings.masterLayout === 'mono' ? 1 : 2;
+	const channels = (a?.channels ?? (master === 6 ? 6 : 2)) as 1 | 2 | 6;
+	const sampleRate = a?.codec === 'opus' ? 48000 : (a?.sampleRate ?? seq.settings.audioSampleRate ?? 48000);
+	const l = seq.master.loudness;
+	const normalize =
+		a?.normalize === null
+			? null
+			: a?.normalize
+				? { targetLufs: a.normalize.targetLufs, truePeakDb: a.normalize.truePeakDb ?? -1 }
+				: l?.enabled
+					? { targetLufs: l.targetLufs, truePeakDb: l.truePeakDb }
+					: null;
+	return { channels, sampleRate, normalize };
+}
+
+/** The audio codec of the deliverable (ffmpeg encoder name). */
+export function audioCodecOf(encoder: EncoderChoice | null, output: Pick<OutputSpec, 'audioPcm'>): string {
+	const base = encoder?.audioEncoder ?? 'aac';
+	if (base.startsWith('pcm_')) return output.audioPcm ? 'pcm_s24le' : base;
+	return base;
 }
 
 function localHandle(asset: MediaAsset, m: LocalMedia): MediaHandle {
@@ -525,8 +637,10 @@ export function nativeBlockers(
 		if (ext.kinds?.has(c.kind) || ext.claimsLayer?.(c)) out.push(...(ext.blockers?.(c) ?? []));
 	}
 	const extKind = exts.some((e) => e.kinds?.has(c.kind));
+	// edit-structure: generator pictures (Bars and Tone, counting leader) come from the synthetic extension.
+	if ('generator' in c.source && !exts.some((e) => e.id === 'synthetic'))
+		out.push(`${label} draws a generator that needs the synthetic extension`);
 	if (exts.some((e) => e.claimsLayer?.(c))) {
-		if (c.blendMode !== 'normal') out.push(`${label} uses blend mode "${c.blendMode}"`);
 		if (c.speed.reverse) out.push(`${label} plays in reverse`);
 		return out;
 	}
@@ -550,8 +664,16 @@ export function nativeBlockers(
 	// The fframes master holds exactly the clip's frames: no content for transition handles.
 	if (c.kind === 'motion-graphic' && ((c.headHandle ?? 0) > 0 || (c.tailHandle ?? 0) > 0))
 		out.push(`motion graphic "${c.name}" is part of a transition that needs handles`);
+	// wp masks: Opacity masks of kernel-drawn kinds are native (stream/plan.ts); other masks need the layer bake.
+	if (maskExportRoute(c) === 'bake')
+		out.push(
+			hasEffectMasks(c)
+				? `${label} has effect masks, which need the composition to render the layer (no layer bake available)`
+				: `${label} has masks the native kernel does not draw on this layer (no layer bake available)`,
+		);
 	// Keyframed Motion and Opacity are native: the builder samples them per frame (S03:ENG-032, keyframed.ts).
-	if (c.blendMode !== 'normal') out.push(`${label} uses blend mode "${c.blendMode}"`);
+	// keyframes-blend: blend modes are native in the sequence's own stack (the blend pipeline, native.ts);
+	// `nestBlockers` refuses them inside nested sequences.
 	if (c.speed.reverse) out.push(`${label} plays in reverse`);
 	for (const fx of c.effects) {
 		if (!fx.enabled) continue;
@@ -569,4 +691,74 @@ export function nativeBlockers(
 		else if (support === 'static' && animated) out.push(`${label} has an animated ${fx.effectId}`);
 	}
 	return out;
+}
+
+// ---------------------------------------------------------------- edit-structure: nested sequences
+
+/** Visual clips of a snapshot and of every nested snapshot drawn in it. */
+export function allVisualClips(snap: RenderSnapshot): RenderVisualClip[] {
+	const out: RenderVisualClip[] = [];
+	for (const t of snap.videoTracks)
+		for (const c of t.clips) {
+			out.push(c);
+			if ('nest' in c.source) out.push(...allVisualClips(c.source.nest.snapshot));
+		}
+	return out;
+}
+
+/** Video tracks of a snapshot and of every nested snapshot drawn in it. */
+export function allVideoTracks(snap: RenderSnapshot): RenderSnapshot['videoTracks'] {
+	const out: RenderSnapshot['videoTracks'] = [];
+	for (const t of snap.videoTracks) {
+		out.push(t);
+		for (const c of t.clips) if ('nest' in c.source) out.push(...allVideoTracks(c.source.nest.snapshot));
+	}
+	return out;
+}
+
+/**
+ * Native limits of nests: a nest clip drawn sub-pixel (animated Motion) is decoded in a separate process, where the
+ * layers of its nested sequence cannot be sub-pixel streams themselves.
+ */
+function nestBlockers(snap: RenderSnapshot): { clipId: string; reason: string }[] {
+	const out: { clipId: string; reason: string }[] = [];
+	const subpixel = (c: RenderVisualClip) => {
+		const props = resolveLayerProps(c, clipContentTime(c, c.start, snap.settings.fps));
+		return needsSubpixel(c, props, {
+			bw: Math.max(1, Math.round(c.intrinsicBox.width)),
+			bh: Math.max(1, Math.round(c.intrinsicBox.height)),
+		});
+	};
+	for (const t of snap.videoTracks)
+		for (const c of t.clips) {
+			if (!('nest' in c.source)) continue;
+			const sub = c.source.nest.snapshot;
+			const ownProcess =
+				subpixel(c) || c.effects.some((e) => e.enabled && e.effectId === 'jasper.corner-pin');
+			if (ownProcess && allVisualClips(sub).some((x) => !('nest' in x.source) && subpixelIn(sub, x)))
+				out.push({
+					clipId: c.clipId,
+					reason: `nested sequence clip "${c.name}" has animated, sub-pixel or corner-pinned Motion and contains sub-pixel or masked layers`,
+				});
+			// keyframes-blend: a nested stack is drawn inside one process, where a blend layer cannot reach the blend
+			// kernel (the nest clip itself may have any blend mode).
+			for (const x of sub.videoTracks.flatMap((t) => t.clips))
+				if ((x.blendMode ?? 'normal') !== 'normal')
+					out.push({
+						clipId: x.clipId,
+						reason: `${x.kind} clip "${x.name}" inside nested sequence clip "${c.name}" uses blend mode "${blendModeInfo(x.blendMode)?.label ?? x.blendMode}" (native blend modes apply to the sequence's own layers)`,
+					});
+			out.push(...nestBlockers(sub));
+		}
+	return out;
+}
+
+function subpixelIn(snap: RenderSnapshot, c: RenderVisualClip): boolean {
+	// wp masks: layers with Opacity masks are kernel streams too.
+	if (maskExportRoute(c) === 'stream') return true;
+	const props = resolveLayerProps(c, clipContentTime(c, c.start, snap.settings.fps));
+	return needsSubpixel(c, props, {
+		bw: Math.max(1, Math.round(c.intrinsicBox.width)),
+		bh: Math.max(1, Math.round(c.intrinsicBox.height)),
+	});
 }

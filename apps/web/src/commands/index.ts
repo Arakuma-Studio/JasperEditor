@@ -5,7 +5,9 @@ import '../layer-bake/commands.ts';
 // Register the fx framework's on-canvas point handles (wave 1).
 import '../fx/register.ts';
 import { appCommands } from './app.ts';
+import { audioCommands } from './audio.ts';
 import { cacheCommands } from './cache.ts';
+import { captionCommands } from './captions.ts';
 import { clipboardCommands } from './clipboard.ts';
 import { colorCommands } from './color.ts';
 import { compositionCommands } from './composition.ts';
@@ -15,11 +17,15 @@ import { helpCommands } from './help.ts';
 import { inspectorCommands } from './inspector.ts';
 import { integrationCommands } from './integration.ts';
 import { layerCommands } from './layer.ts';
+import { maskCommands } from './masks.ts';
 import { mgCommands } from './mg.ts';
 import { processCommands } from './process.ts';
 import { projectCommands } from './project.ts';
+import { projectFileCommands } from './project-files.ts';
 import { registerCommands } from './registry.ts';
 import { shapeCommands } from './shapes.ts';
+import { speechCommands } from './speech.ts';
+import { structureCommands } from './structure.ts';
 import { textAnimationCommands } from './text-animation.ts';
 import { timelineCommands } from './timeline.ts';
 import { trackingCommands } from './tracking.ts';
@@ -34,6 +40,7 @@ export * from './types.ts';
 
 const COMMAND_MODULES: UiCommand[][] = [
 	appCommands,
+	audioCommands,
 	editCommands,
 	timelineCommands,
 	transportCommands,
@@ -53,6 +60,11 @@ const COMMAND_MODULES: UiCommand[][] = [
 	clipboardCommands,
 	layerCommands,
 	cacheCommands,
+	structureCommands,
+	projectFileCommands,
+	maskCommands,
+	captionCommands,
+	speechCommands,
 ];
 
 let registered = false;

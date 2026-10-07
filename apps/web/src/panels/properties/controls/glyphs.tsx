@@ -86,3 +86,33 @@ export const SwapGlyph = (p: GlyphProps) => (
 		<path d="M4 5h8l-2-2M12 11H4l2 2" />
 	</Svg>
 );
+
+/** Wave expressions: AE's pick-whip (a spiral) — drag it onto another property to reference it. */
+export const PickWhipGlyph = (p: GlyphProps) => (
+	<Svg {...p}>
+		<path d="M8 8.2c0-.7.6-1.2 1.2-1.1.9.1 1.3 1 1.1 1.8-.3 1.2-1.6 1.8-2.8 1.5C6 10 5.2 8.4 5.6 6.9 6.1 5 8 4 9.9 4.5c2.4.6 3.6 3 3 5.3-.7 2.7-3.5 4.2-6.2 3.5" />
+	</Svg>
+);
+
+/** Wave expressions: "Enable Expression" (an equals sign, AE's switch). */
+export const ExpressionGlyph = (p: GlyphProps) => (
+	<Svg {...p}>
+		<path d="M4 6.2h8M4 9.8h8" />
+	</Svg>
+);
+
+/** Wave expressions: the expression language menu (a filled triangle in a circle, AE). */
+export const LanguageMenuGlyph = (p: GlyphProps) => (
+	<Svg {...p}>
+		<circle cx="8" cy="8" r="5.6" />
+		<path d="M6.6 5.6 10.2 8l-3.6 2.4z" fill="currentColor" />
+	</Svg>
+);
+
+/** Wave expressions: an expression error (warning triangle). */
+export const WarningGlyph = (p: GlyphProps) => (
+	<Svg {...p}>
+		<path d="M8 2.2 14.2 13H1.8z" />
+		<path d="M8 6.4v3.2M8 11.3v.1" />
+	</Svg>
+);

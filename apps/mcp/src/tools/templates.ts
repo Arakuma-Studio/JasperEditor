@@ -19,7 +19,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import {
 	defineTool,
-	EDIT,
+	EDIT_IDEMPOTENT,
 	type Extra,
 	frameOf,
 	loadDoc,
@@ -546,7 +546,7 @@ export function registerTemplateTools(ctx: ToolContext): void {
 					),
 				dryRun: z.boolean().optional().describe('Validate without changing anything'),
 			},
-			annotations: EDIT,
+			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, clipId, params, at, keyframe, dryRun }, extra) => {
 			const { doc } = await loadDoc(ctx, projectId);

@@ -5,6 +5,7 @@
 import {
 	Activity,
 	AudioLines,
+	AudioWaveform,
 	Bookmark,
 	Camera,
 	Captions,
@@ -67,6 +68,7 @@ import {
 	SkipBack,
 	SkipForward,
 	SlidersHorizontal,
+	SlidersVertical,
 	Sparkles,
 	Square,
 	SquareStack,
@@ -207,12 +209,16 @@ export const ICONS = {
 	'panel.properties': Settings,
 	'panel.motionTemplates': Wand2,
 	'panel.audioMeters': AudioLines,
+	'panel.audioTrackMixer': SlidersVertical,
+	'panel.audioClipMixer': AudioWaveform,
 	'panel.history': History,
 	'panel.info': Info,
 	'panel.markers': Bookmark,
 	'panel.jobs': ListTodo,
 	'panel.lumetri': Palette,
 	'panel.scopes': Activity,
+	// wp captions: Text panel (Captions / Transcript)
+	'panel.text': Captions,
 
 	// ------------------------------------------------------------ media
 	'media.video': Film,

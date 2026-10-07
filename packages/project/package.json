@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@jasper/audio-dsp": "workspace:*",
     "immer": "^11.1.0",
     "zod": "^4.1.0"
   }

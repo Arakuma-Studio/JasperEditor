@@ -6,6 +6,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import fastifyStatic from '@fastify/static';
 import { API_HEADER, API_VERSION, AUTH_COOKIE, errorBody, isEnginePath } from '@jasper/api';
+import { loadExpressionEngine } from '@jasper/expressions';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { createCoreAgentStore } from './agent/core-store.ts';
 import type { EngineConfig, EngineContext } from './context.ts';
@@ -65,6 +66,9 @@ export async function createServer(
 	config: EngineConfig,
 	opts: { logger?: boolean; env?: Record<string, string | undefined>; totalSlots?: number } = {},
 ): Promise<FastifyInstance> {
+	// Wave expressions: the QuickJS engine is loaded once per process before anything plans, renders or answers
+	// agents, so render snapshots, native export sampling and agent queries all see post-expression values.
+	await loadExpressionEngine();
 	const app = Fastify({ logger: opts.logger ?? false, bodyLimit: JSON_BODY_LIMIT, trustProxy: false });
 	const ctx: EngineContext = { config, services: {} };
 	app.decorate('jasper', ctx);

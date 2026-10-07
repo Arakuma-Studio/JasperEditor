@@ -312,11 +312,13 @@ export class TimelineController {
 	private clickSelect(seq: Sequence, clip: Clip, p: PointerInfo): boolean {
 		if (this.isLocked(seq, clip.trackId)) return false;
 		const linked = this.session.getState().toggles.linkedSelection && !p.alt;
+		// edit-structure (Premiere): Alt-click selects one clip of a group.
+		const groups = !p.alt;
 		this.session.selectGaps([]);
 		// S10:TUI-002: selecting a clip clears the transition selection unless Shift.
 		if (!p.shift) this.session.select('transitions', [], 'replace');
-		if (p.shift) this.session.select('timeline', [clip.id], 'toggle', { linked, primary: clip.id });
-		else this.session.select('timeline', [clip.id], 'replace', { linked, primary: clip.id });
+		if (p.shift) this.session.select('timeline', [clip.id], 'toggle', { linked, groups, primary: clip.id });
+		else this.session.select('timeline', [clip.id], 'replace', { linked, groups, primary: clip.id });
 		this.env.ui.setState({ editPoints: [] });
 		return true;
 	}
@@ -659,6 +661,8 @@ export class TimelineController {
 			deltaFrames: delta,
 			mode,
 			linked: d.linked,
+			// edit-structure: the selection already holds the group (Alt picks one clip): no second expansion.
+			group: false,
 			...(mode === 'ripple' ? { clampToSyncLock: true } : {}),
 		});
 		return [one(d.clip), ...d.extras.map(one)];

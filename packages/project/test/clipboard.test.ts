@@ -555,7 +555,8 @@ describe('clip.pasteAttributes / clip.removeAttributes / effect.paste', () => {
 			},
 		]);
 		const B = h.seq.clips[b] as Extract<Clip, { kind: 'solid' }>;
-		expect(B.transform.scale.keyframes.map((k) => (k.time - B.sourceIn) / F30)).toEqual([0, 58]);
+		// keyframes-blend: first frame → first frame, last frame → last frame (offsets span duration − 1 frames).
+		expect(B.transform.scale.keyframes.map((k) => (k.time - B.sourceIn) / F30)).toEqual([0, 59]);
 	});
 
 	it('pastes text animators, text style and shape style (M2) and refuses attributes that apply to nothing', () => {

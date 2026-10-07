@@ -1,23 +1,35 @@
 import type { z } from 'zod';
+import { AUDIO_COMMANDS } from './audio.ts';
+import { CAPTION_COMMANDS } from './captions.ts';
 import { CLIP_COMMANDS } from './clip.ts';
 import { CLIPBOARD_COMMANDS } from './clipboard.ts';
 import { INTERCHANGE_COMMANDS } from './interchange.ts';
+import { EXPRESSION_COMMANDS } from './expression.ts';
+import { MASK_COMMANDS } from './mask.ts';
 import { PARAM_COMMANDS } from './param.ts';
 import { PRESET_COMMANDS } from './preset.ts';
 import { PROJECT_COMMANDS } from './project.ts';
 import { SEQUENCE_COMMANDS } from './sequence.ts';
 import { SIMPLIFY_COMMANDS } from './simplify.ts';
+import { SPEECH_COMMANDS } from './speech.ts';
+import { STRUCTURE_COMMANDS } from './structure.ts';
 import { TRACKER_COMMANDS } from './tracker.ts';
 
+export * from './audio.ts';
+export * from './captions.ts';
 export * from './clip.ts';
 export * from './clipboard.ts';
 export * from './common.ts';
 export * from './interchange.ts';
+export * from './expression.ts';
+export * from './mask.ts';
 export * from './param.ts';
 export * from './preset.ts';
 export * from './project.ts';
 export * from './sequence.ts';
 export * from './simplify.ts';
+export * from './speech.ts';
+export * from './structure.ts';
 export * from './tracker.ts';
 
 /** Every document command schema (M1 + M2), keyed by nothing: see `catalog.ts` for registration. */
@@ -35,6 +47,18 @@ export const ALL_COMMAND_SCHEMAS = [
 	...PRESET_COMMANDS,
 	// Timeline interchange (wp interchange)
 	...INTERCHANGE_COMMANDS,
+	// Audio buses (audio-mix)
+	...AUDIO_COMMANDS,
+	// edit-structure (nests, frame holds, through edits, subsequences)
+	...STRUCTURE_COMMANDS,
+	// wp masks (S03 §17)
+	...MASK_COMMANDS,
+	// wp captions
+	...CAPTION_COMMANDS,
+	// wp speech
+	...SPEECH_COMMANDS,
+	// Expressions (wave expressions)
+	...EXPRESSION_COMMANDS,
 ] as const;
 
 export type Command = z.infer<(typeof ALL_COMMAND_SCHEMAS)[number]>;

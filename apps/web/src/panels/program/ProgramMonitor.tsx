@@ -26,8 +26,11 @@ import {
 } from 'lucide-react';
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { registerUiLocator } from '../../agent-bridge/ui-automation.ts';
+import { useAudioSessionServices } from '../../audio/session.ts';
 import { useColorBypass } from '../../color/actions.ts';
 import { runCommand } from '../../commands/index.ts';
+import { useExpressionsFor } from '../../expressions/engine.ts';
 import { programOverlays } from '../../extensions/index.ts';
 import { useRegistry } from '../../extensions/react.ts';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
@@ -120,6 +123,8 @@ const FX_PREVIEW_SCALE: Record<PlaybackResolution, number> = {
 function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; instanceId: string }) {
 	const engine = useEngineOrNull()?.client ?? null;
 	const transport = session.transport;
+	// audio-mix: automation passes and audio scrubbing follow this session's transport.
+	useAudioSessionServices(session);
 	const overlays = useRegistry(programOverlays);
 	const seqId = useSessionState((s) => s.activeSequenceId);
 	const drawn = useSessionState((s) => s.transient ?? s.document);
@@ -130,6 +135,9 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 	const seq = seqId ? drawn.sequences[seqId] : undefined;
 	const prevDoc = useRef<RenderDoc | null>(null);
 	const tier = resolutionToProxy(monitor.playbackResolution).tier;
+	// Wave expressions: the engine loads on demand; the doc is rebuilt (bound) once it is ready.
+	const expressionsReady = useExpressionsFor(drawn);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: expressionsReady changes what buildRenderSnapshot binds
 	const doc = useMemo(() => {
 		if (!seqId || !seq) return null;
 		const d = buildProgramDoc(
@@ -138,7 +146,7 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 		);
 		prevDoc.current = d;
 		return d;
-	}, [drawn, seqId, seq, media, tier, fontCatalog]);
+	}, [drawn, seqId, seq, media, tier, fontCatalog, expressionsReady]);
 	const transparent = (seq?.settings.backgroundColor[3] ?? 1) === 0;
 	// Before/after (S06:CGU-005, wp-m2-color): clips whose colour effects the preview bypasses.
 	const colorBypass = useColorBypass();
@@ -213,6 +221,45 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 		});
 		return off;
 	}, [instanceId, transport, viewportRef]);
+
+	// mcp-cli (live-UI automation): sequence pixels ↔ window points for agents (ui_locate / ui_hit, ui_click {program}).
+	const viewRef = useRef(view);
+	viewRef.current = view;
+	const frameSizeRef = useRef(frameSize);
+	frameSizeRef.current = frameSize;
+	useEffect(
+		() =>
+			registerUiLocator(instanceId, {
+				kind: 'program',
+				element: () => viewportRef.current,
+				impl: {
+					toWindow: (x, y) => {
+						const r = viewportRef.current?.getBoundingClientRect();
+						const v = viewRef.current;
+						return { x: (r?.left ?? 0) + v.x + x * v.scale, y: (r?.top ?? 0) + v.y + y * v.scale };
+					},
+					toSequence: (x, y) => {
+						const r = viewportRef.current?.getBoundingClientRect();
+						const v = viewRef.current;
+						return { x: (x - (r?.left ?? 0) - v.x) / v.scale, y: (y - (r?.top ?? 0) - v.y) / v.scale };
+					},
+					view: () => {
+						const r = viewportRef.current?.getBoundingClientRect();
+						const v = viewRef.current;
+						const f = frameSizeRef.current;
+						const left = r?.left ?? 0;
+						const top = r?.top ?? 0;
+						return {
+							frame: { x: left + v.x, y: top + v.y, width: f.width * v.scale, height: f.height * v.scale },
+							scale: v.scale,
+							sequence: { width: f.width, height: f.height },
+							viewport: { x: left, y: top, width: r?.width ?? 0, height: r?.height ?? 0 },
+						};
+					},
+				},
+			}),
+		[instanceId, viewportRef],
+	);
 
 	// Dev-only handle for manual checks and agents without the bridge (window.__jasperMonitor).
 	useEffect(() => {

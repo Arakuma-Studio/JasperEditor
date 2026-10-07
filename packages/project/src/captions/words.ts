@@ -1,0 +1,165 @@
+// Transcript words: joining (S01:AST-032), tokenizing caption text into timed words, normalisation for search,
+// well-formed transcripts (sorted, non-overlapping) and the word-range text edit (S01 `transcript.editText`).
+import type { Transcript, TranscriptWord } from '../schema/media.ts';
+import { plainCaptionText } from './formats/core.ts';
+
+export type WordBreak = TranscriptWord['breakBefore'];
+
+/** Punctuation that attaches to the previous word (no space before it, S01:AST-032). */
+const ATTACHING = /^[,.;:!?%)\]}…»”’]/u;
+
+/** Whether `next` is joined to the previous word without a space (S01:AST-032). */
+export function attachesToPrevious(next: string): boolean {
+	return ATTACHING.test(plainCaptionText(next));
+}
+
+/** Words joined with single spaces except before attaching punctuation (S01:AST-032). */
+export function joinWords(words: readonly string[]): string {
+	let out = '';
+	for (const w of words) {
+		if (!w) continue;
+		if (out && !attachesToPrevious(w)) out += ' ';
+		out += w;
+	}
+	return out;
+}
+
+/**
+ * A word for search and filler matching: markup removed, punctuation trimmed from both ends, lower case
+ * (FilmCraft `normalize_word`).
+ */
+export function normalizeWord(s: string): string {
+	return plainCaptionText(s)
+		.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')
+		.toLowerCase();
+}
+
+/** Tokens of a text, each with the break before it (`line` for a new line inside the text). */
+export function tokenizeText(text: string): Array<{ text: string; breakBefore: WordBreak }> {
+	const out: Array<{ text: string; breakBefore: WordBreak }> = [];
+	const lines = text.replace(/\r\n?/g, '\n').split('\n');
+	let first = true;
+	for (const line of lines) {
+		let lineStart = true;
+		for (const tok of line.split(/\s+/)) {
+			if (!tok) continue;
+			out.push({ text: tok, breakBefore: first ? 'none' : lineStart ? 'line' : 'none' });
+			first = false;
+			lineStart = false;
+		}
+	}
+	return out;
+}
+
+/** Character weight of a word for proportional timing (at least 1). */
+function weight(t: string): number {
+	return Math.max(1, [...plainCaptionText(t)].length);
+}
+
+/**
+ * Spread tokens over `[start, end)` (flicks) in proportion to their character counts (S01 `transcript.editText`,
+ * S04:TR-060). Integer bounds; every word is at least 1 flick long when the span allows it.
+ */
+export function spreadTokens(
+	tokens: ReadonlyArray<{ text: string; breakBefore: WordBreak }>,
+	start: number,
+	end: number,
+	extra: { speaker?: string | null; confidence?: number | null } = {},
+): TranscriptWord[] {
+	if (!tokens.length) return [];
+	const span = Math.max(tokens.length, end - start);
+	const total = tokens.reduce((a, t) => a + weight(t.text), 0);
+	let acc = 0;
+	return tokens.map((t, i) => {
+		const a = start + Math.round((span * acc) / total);
+		acc += weight(t.text);
+		const b = i === tokens.length - 1 ? start + span : start + Math.round((span * acc) / total);
+		return {
+			text: t.text,
+			start: a,
+			end: Math.max(a + 1, b),
+			confidence: extra.confidence ?? null,
+			speaker: extra.speaker ?? null,
+			breakBefore: t.breakBefore,
+		};
+	});
+}
+
+/**
+ * Normalises raw word input: trims text, folds tokens without a leading space into the previous word when the
+ * source uses the leading-space convention (`@remotion/captions`, Whisper tokens; S01:AST-032), clamps times to
+ * non-negative integers, sorts by start and cuts overlaps (a word ends where the next starts).
+ */
+export function normalizeWords(
+	input: ReadonlyArray<Partial<TranscriptWord> & { text: string }>,
+): TranscriptWord[] {
+	const leadingSpaceConvention = input.filter((w) => /^\s/.test(w.text)).length > input.length / 2;
+	const merged: TranscriptWord[] = [];
+	for (const raw of input) {
+		const start = Math.max(0, Math.round(Number(raw.start ?? 0)));
+		const end = Math.max(start, Math.round(Number(raw.end ?? start)));
+		const text = String(raw.text ?? '');
+		const w: TranscriptWord = {
+			text: text.trim(),
+			start,
+			end,
+			confidence:
+				typeof raw.confidence === 'number' && Number.isFinite(raw.confidence)
+					? Math.min(1, Math.max(0, raw.confidence))
+					: null,
+			speaker: typeof raw.speaker === 'string' && raw.speaker ? raw.speaker : null,
+			breakBefore: raw.breakBefore === 'line' || raw.breakBefore === 'segment' ? raw.breakBefore : 'none',
+		};
+		const prev = merged[merged.length - 1];
+		if (leadingSpaceConvention && prev && !/^\s/.test(text) && w.text && !w.breakBefore.startsWith('s')) {
+			prev.text += w.text;
+			prev.end = Math.max(prev.end, w.end);
+			if (w.confidence !== null)
+				prev.confidence = prev.confidence === null ? w.confidence : Math.min(prev.confidence, w.confidence);
+			continue;
+		}
+		if (!w.text) continue;
+		merged.push(w);
+	}
+	merged.sort((a, b) => a.start - b.start || a.end - b.end);
+	for (let i = 0; i + 1 < merged.length; i++) {
+		const a = merged[i]!;
+		const b = merged[i + 1]!;
+		if (a.end > b.start) a.end = Math.max(a.start, b.start);
+	}
+	return merged;
+}
+
+/** Sorted, non-overlapping words with non-negative integer times (an invariant of transcripts). */
+export function wordsWellFormed(words: readonly TranscriptWord[]): string | null {
+	let prevEnd = 0;
+	let prevStart = -1;
+	for (let i = 0; i < words.length; i++) {
+		const w = words[i]!;
+		if (!Number.isInteger(w.start) || !Number.isInteger(w.end) || w.start < 0 || w.end < w.start)
+			return `word ${i} has invalid times`;
+		if (w.start < prevStart || w.start < prevEnd) return `word ${i} overlaps the previous word`;
+		prevStart = w.start;
+		prevEnd = w.end;
+	}
+	return null;
+}
+
+/**
+ * Replaces words `from..=to` by the tokens of `text`, spread over the replaced range's timing in proportion to
+ * their character counts (S01 `transcript.editText`). The first new word keeps the first replaced word's break
+ * and speaker. Empty text deletes the words.
+ */
+export function replaceWordRange(t: Transcript, from: number, to: number, text: string): TranscriptWord[] {
+	const words = t.words;
+	const a = words[from]!;
+	const b = words[to]!;
+	const tokens = tokenizeText(text);
+	if (tokens.length) tokens[0]!.breakBefore = a.breakBefore;
+	const fresh = spreadTokens(tokens, a.start, b.end, { speaker: a.speaker });
+	// Unchanged words keep their confidence; new words have none.
+	const keep = new Map<string, number | null>();
+	for (let i = from; i <= to; i++) keep.set(words[i]!.text, words[i]!.confidence);
+	for (const w of fresh) if (keep.has(w.text)) w.confidence = keep.get(w.text)!;
+	return [...words.slice(0, from), ...fresh, ...words.slice(to + 1)];
+}
