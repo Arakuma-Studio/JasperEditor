@@ -35,6 +35,7 @@ import type { AudioClip, Clip, EffectInstance, Sequence, Track } from './schema/
 import { isKnownClipKind } from './schema/sequence.ts';
 import { isNestClip } from './structure/nest.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
+import { repairTextAnimators, textAnimatorIssues } from './text-animators/validate.ts';
 import {
 	contentSpanFlicks,
 	FLICKS_PER_SECOND,
@@ -561,6 +562,10 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 						issues.push(inv('INV-012', `Clip ${c.id} ${side} animation params are invalid`, cw));
 				}
 			}
+			// text-animators workstream: animators, selectors, Path / More Options, Source Text keys.
+			if (c.kind === 'text')
+				for (const i of textAnimatorIssues(r, cw, claim))
+					issues.push(inv('INV-012', `Clip ${c.id}: ${i.message}`, i.path));
 			// M2 (S11:SHP-001): shape geometry is non-negative.
 			if (c.kind === 'shape') {
 				const sh = r.shape as {
@@ -906,6 +911,12 @@ export function repairDocument(
 	}
 	// ---- end wp-m2-anime-templates
 
+	// text-animators workstream: malformed animator data is dropped, out-of-range values clamped.
+	for (const seq of Object.values(doc.sequences) as Sequence[])
+		for (const c of Object.values(seq.clips))
+			if (c.kind === 'text')
+				for (const n of repairTextAnimators(c as unknown as Record<string, unknown>))
+					note('repair-text-animators', c.id, n);
 	// Wave expressions: drop malformed expressions and expressions on properties that take none.
 	for (const r of repairExpressions(doc, isAudioEffectId)) note('drop-expression', r.entity, r.detail);
 

@@ -17,6 +17,7 @@ import {
 import { newKeySpatial, refreshAutoTangents, setSpatialMode } from '../../keyframes-spatial.ts';
 import { MASK_PROPS } from '../../masks/model.ts';
 import { PROPERTY_SPECS } from '../../registry/properties.ts';
+import { textAnimatorPropertySpecs } from '../../registry/text-animator-properties.ts';
 import type { Animatable, Ease, Interpolation, Keyframe } from '../../schema/common.ts';
 import type { Mask } from '../../schema/mask.ts';
 import { type EffectInstance, isKnownClipKind, type Track } from '../../schema/sequence.ts';
@@ -25,6 +26,7 @@ import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import type { CommandOf, ParamPath } from '../schemas/index.ts';
 import { PRUNE_EMPTY_KEYFRAMES, templateParamDraftAnim } from './mg-template.ts';
 import { getAt, resolveTarget, type Target, validateValue } from './param.ts';
+import { sourceTextDraftAnim } from './text-animators.ts';
 import type { HandlerMap } from './util.ts';
 
 type DAnim = Draft<Animatable<unknown>>;
@@ -64,6 +66,21 @@ export function clipAnimatables(seq: DSeq, clip: DClip): AnimLocation[] {
 		for (const [name, a] of Object.entries(fx.params)) {
 			if (isAnim(a)) out.push({ anim: a, path: ['effect', fx.id, name], seq, clip });
 		}
+	}
+	// text-animators workstream: animator properties, selector fields, Path / More Options, Source Text.
+	if (clip.kind === 'text') {
+		for (const s of textAnimatorPropertySpecs(clip as never)) {
+			if (s.animatable === 'no') continue;
+			const a = getAt(clip, s.storagePath);
+			if (isAnim(a)) out.push({ anim: a, path: ['clip', clip.id, ...s.key.split('.')], seq, clip });
+		}
+		if ((clip as { sourceTextKeyframes?: unknown[] }).sourceTextKeyframes?.length)
+			out.push({
+				anim: sourceTextDraftAnim(clip, null),
+				path: ['clip', clip.id, 'text', 'sourceText'],
+				seq,
+				clip,
+			});
 	}
 	// wp masks: Opacity masks and effect masks (`["mask", id, prop]`).
 	const maskLists = [

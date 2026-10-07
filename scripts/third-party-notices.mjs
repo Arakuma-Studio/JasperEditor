@@ -74,6 +74,7 @@ const SHIPPED_BUILD_OUTPUT = [
 	// Font files the engine serves at /fonts (copied to dist/fonts by `build:remotion`, packaged with the engine; the
 	// packages' own LICENSE files travel with them) — keep in sync with FONT_IDS in apps/engine/scripts/build-remotion.mjs.
 	{ name: '@fontsource/inter', from: 'apps/engine', ships: 'font files served at /fonts' },
+	{ name: '@fontsource-variable/inter', from: 'apps/engine', ships: 'variable font files served at /fonts' },
 	{ name: '@fontsource/source-sans-3', from: 'apps/engine', ships: 'font files served at /fonts' },
 	{ name: '@fontsource/roboto', from: 'apps/engine', ships: 'font files served at /fonts' },
 	{ name: '@fontsource/montserrat', from: 'apps/engine', ships: 'font files served at /fonts' },

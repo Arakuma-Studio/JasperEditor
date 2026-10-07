@@ -33,6 +33,7 @@ import {
 	type TextContent,
 	type Transform,
 } from '../schema/sequence.ts';
+import type { TextAnimatorGroup, TextMoreOptions, TextPathOptions } from '../schema/text-animators.ts';
 import { conformSequenceRate, MAX_NEST_DEPTH, nestContentKey } from '../structure/nest.ts';
 import {
 	type CountingLeaderStyle,
@@ -95,7 +96,20 @@ export type RenderTextAnimation = { in?: ResolvedTextAnimator; out?: ResolvedTex
 
 export type RenderVisualSource =
 	| { mediaId: string }
-	| { text: TextContent; box: TextBox; animation?: RenderTextAnimation }
+	| {
+			text: TextContent;
+			box: TextBox;
+			animation?: RenderTextAnimation;
+			/**
+			 * text-animators workstream: AE-style animators, Path / More Options, per-character 3D and Source Text
+			 * keys, unevaluated (the layer evaluates them at the content time, like shapes). Absent = none.
+			 */
+			animators?: TextAnimatorGroup[];
+			pathOptions?: TextPathOptions;
+			moreOptions?: TextMoreOptions;
+			perCharacter3d?: boolean;
+			sourceTextKeyframes?: Keyframe<TextContent>[];
+	  }
 	| { color: RGBA }
 	| {
 			mg: {
@@ -567,9 +581,20 @@ export function buildRenderSnapshot(
 								message: `Text animation ${key} is not installed; the text is drawn without it`,
 							});
 					}
-					// M2 (wp-m2-text-anim, S11:TXA-010): styled runs may use other faces than the base style.
-					const base = c.content.style;
-					const faces = [base, ...(c.content.runs ?? []).map((r) => ({ ...base, ...r.style }))];
+					// text-animators workstream: animators and friends travel unevaluated.
+					if (c.animators?.length) source.animators = c.animators as TextAnimatorGroup[];
+					if (c.pathOptions) source.pathOptions = c.pathOptions as TextPathOptions;
+					if (c.moreOptions) source.moreOptions = c.moreOptions as TextMoreOptions;
+					if (c.perCharacter3d) source.perCharacter3d = true;
+					if (c.sourceTextKeyframes?.length)
+						source.sourceTextKeyframes = c.sourceTextKeyframes as Keyframe<TextContent>[];
+					// M2 (wp-m2-text-anim, S11:TXA-010): styled runs may use other faces than the base style (and every
+					// Source Text key's content, text-animators workstream).
+					const contents = [c.content, ...(c.sourceTextKeyframes ?? []).map((k) => k.value as TextContent)];
+					const faces = contents.flatMap((ct) => [
+						ct.style,
+						...(ct.runs ?? []).map((r) => ({ ...ct.style, ...r.style })),
+					]);
 					for (const face of faces) {
 						const font = doc.fonts[face.fontId];
 						if (!font) continue;

@@ -15,6 +15,7 @@ import { intrinsicBoxOf } from './registry/properties.ts';
 import type { Animatable, Expression } from './schema/common.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import type { EffectInstance, Sequence, TextContent } from './schema/sequence.ts';
+import type { TextAnimatorGroup } from './schema/text-animators.ts';
 
 export type ExpressionRef = { seq: string; owner: string; path: string };
 
@@ -22,8 +23,11 @@ export type ExpressionRef = { seq: string; owner: string; path: string };
 export type AnimLocation = {
 	ref: ExpressionRef;
 	at: (string | number)[];
-	/** `text` = a TextContent (Source Text); `anim` = an Animatable. */
-	kind: 'anim' | 'text';
+	/**
+	 * `text` = a TextContent (Source Text); `anim` = an Animatable; `selector` = a text Expression Selector's Amount
+	 * (evaluated per character by the selector, not bound as a property).
+	 */
+	kind: 'anim' | 'text' | 'selector';
 	target: Animatable<unknown> | TextContent;
 };
 
@@ -125,6 +129,10 @@ export function* sequenceAnimatables(seqId: string, seq: Sequence): Generator<An
 				kind: 'text',
 				target: c.content as TextContent,
 			};
+		// text-animators: animator properties, selector fields, Path / More Options (keys of
+		// registry/text-animator-properties.ts). Expression Selector amounts are `selector` locations: they run per
+		// unit through the Expression Selector, never as a per-frame property binding.
+		if (clip.kind === 'text') yield* textAnimatorAnims(seqId, id, c, at);
 		yield* effectAnims(seqId, id, c.effects as EffectInstance[] | undefined, [...at, 'effects']);
 		// wp masks: Mask Feather / Opacity / Expansion of the clip's masks and of its effects' masks.
 		yield* maskAnims(seqId, id, c.masks as MaskLike[] | undefined, [...at, 'masks']);
@@ -160,6 +168,73 @@ export function* sequenceAnimatables(seqId: string, seq: Sequence): Generator<An
 				kind: 'anim',
 				target: a as Animatable<unknown>,
 			};
+}
+
+const isAnimObj = (v: unknown): v is Animatable<unknown> =>
+	!!v &&
+	typeof v === 'object' &&
+	Array.isArray((v as Animatable<unknown>).keyframes) &&
+	'value' in (v as object);
+
+function* textAnimatorAnims(
+	seq: string,
+	owner: string,
+	c: Record<string, unknown>,
+	at: (string | number)[],
+): Generator<AnimLocation> {
+	const animators = Array.isArray(c.animators) ? (c.animators as TextAnimatorGroup[]) : [];
+	for (let ai = 0; ai < animators.length; ai++) {
+		const a = animators[ai]!;
+		// Malformed animators (repairDocument drops them) are skipped.
+		if (!a || typeof a !== 'object' || !a.properties || !Array.isArray(a.selectors)) continue;
+		const base = `textAnimators.${a.id}`;
+		for (const [key, v] of Object.entries(a.properties)) {
+			if (key === 'axes') {
+				for (const [tag, x] of Object.entries((v as Record<string, Animatable<unknown>>) ?? {}))
+					if (isAnimObj(x))
+						yield {
+							ref: { seq, owner, path: `${base}.properties.axes.${tag}` },
+							at: [...at, 'animators', ai, 'properties', 'axes', tag],
+							kind: 'anim',
+							target: x,
+						};
+				continue;
+			}
+			if (isAnimObj(v))
+				yield {
+					ref: { seq, owner, path: `${base}.properties.${key}` },
+					at: [...at, 'animators', ai, 'properties', key],
+					kind: 'anim',
+					target: v,
+				};
+		}
+		for (let si = 0; si < a.selectors.length; si++) {
+			const sel = a.selectors[si]! as unknown as Record<string, unknown> & { id: string; kind: string };
+			if (!sel || typeof sel !== 'object') continue;
+			for (const [key, v] of Object.entries(sel))
+				if (isAnimObj(v))
+					yield {
+						ref: { seq, owner, path: `${base}.selectors.${sel.id}.${key}` },
+						at: [...at, 'animators', ai, 'selectors', si, key],
+						kind: sel.kind === 'expression' && key === 'amount' ? 'selector' : 'anim',
+						target: v,
+					};
+		}
+	}
+	for (const [group, prefix] of [
+		['pathOptions', 'textPath'],
+		['moreOptions', 'textMore'],
+	] as const) {
+		const g = c[group] as Record<string, unknown> | undefined;
+		for (const [key, v] of Object.entries(g ?? {}))
+			if (isAnimObj(v))
+				yield {
+					ref: { seq, owner, path: `${prefix}.${key}` },
+					at: [...at, group, key],
+					kind: 'anim',
+					target: v,
+				};
+	}
 }
 
 /** The expression of a location (Animatable or Source Text), if any. */

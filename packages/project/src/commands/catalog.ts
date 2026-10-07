@@ -26,6 +26,7 @@ import { simplifyHandlers } from './handlers/simplify.ts';
 import { spatialHandlers } from './handlers/spatial.ts';
 import { SPEECH_OWNER, speechHandlers } from './handlers/speech.ts';
 import { STRUCTURE_OWNER, structureHandlers } from './handlers/structure.ts';
+import { TEXT_ANIMATOR_OWNER, textAnimatorHandlers } from './handlers/text-animators.ts';
 import { trackerHandlers } from './handlers/tracker.ts';
 import { transitionHandlers } from './handlers/transition.ts';
 import type { Handler, HandlerMap } from './handlers/util.ts';
@@ -68,7 +69,9 @@ export type CommandOwner =
 	// Audio effects, Essential Sound, Remix (docs/wp-notes/audio-fx.md)
 	| 'audio-fx'
 	// Editorial UX: 3/4-point editing, trim mode, subclips
-	| 'edit-ux';
+	| 'edit-ux'
+	// AE text animators (parity program)
+	| 'text-animators';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -178,6 +181,20 @@ const LABELS: Record<CommandType, string> = {
 	'keyframe.paste': 'Paste Keyframes',
 	'project.pasteItems': 'Paste',
 	'effect.applyPreset': 'Apply Preset',
+	'font.add': 'Add Font',
+	'textAnimator.add': 'Add Text Animator',
+	'textAnimator.remove': 'Remove Text Animator',
+	'textAnimator.update': 'Edit Text Animator',
+	'textAnimator.duplicate': 'Duplicate Text Animator',
+	'textAnimator.addProperty': 'Add Text Animator Property',
+	'textAnimator.removeProperty': 'Remove Text Animator Property',
+	'textSelector.add': 'Add Text Selector',
+	'textSelector.remove': 'Remove Text Selector',
+	'textSelector.update': 'Edit Text Selector',
+	'textAnimator.applyPreset': 'Apply Text Animator Preset',
+	'textAnimator.convertLegacy': 'Convert Text Animation to Animators',
+	'text.setPathOptions': 'Text Path Options',
+	'text.setPerCharacter3d': 'Per-character 3D',
 	'project.importTimeline': 'Import Timeline',
 	'clip.synchronize': 'Synchronize',
 	'item.mergeClips': 'Merge Clips',
@@ -273,6 +290,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[shapeHandlers, SHAPE_OWNER],
 	[clipboardHandlers, CLIPBOARD_OWNER],
 	[presetHandlers, PRESET_OWNER],
+	[textAnimatorHandlers, TEXT_ANIMATOR_OWNER],
 	[interchangeHandlers, INTERCHANGE_OWNER],
 	[multicamHandlers, 'wp-multicam'],
 	[audioHandlers, AUDIO_MIX_OWNER],
@@ -302,6 +320,7 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 			owner,
 			milestone:
 				owner.startsWith('wp-m3-') ||
+				owner === TEXT_ANIMATOR_OWNER ||
 				owner === INTERCHANGE_OWNER ||
 				owner === STRUCTURE_OWNER ||
 				owner === AUDIO_MIX_OWNER ||
