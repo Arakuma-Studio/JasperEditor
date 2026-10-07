@@ -103,7 +103,7 @@ export function buildImportTransaction(input: {
 			} as Command);
 			source = `$m${i}`;
 		}
-		const placeable = p.asset.kind !== 'font' && p.asset.kind !== 'lut';
+		const placeable = p.asset.kind !== 'font' && p.asset.kind !== 'lut' && p.asset.kind !== 'color-config';
 		if (!seq || !rate || !placeable) {
 			placeIndex.push(null);
 			return;
@@ -204,7 +204,7 @@ export function buildPlaceItemsTransaction(input: {
 		let frames = 0;
 		if (item.kind === 'media') {
 			const asset = doc.media[item.mediaId];
-			if (!asset || asset.kind === 'font' || asset.kind === 'lut') continue;
+			if (!asset || asset.kind === 'font' || asset.kind === 'lut' || asset.kind === 'color-config') continue;
 			const marks = item.marks;
 			if (asset.kind === 'video' || asset.kind === 'audio') {
 				const F = flicksPerFrame(rate);

@@ -1,6 +1,7 @@
 // ffprobe → the S01 MediaProbe shape (S01:AST-001) plus kind, container and browserPlayable (S04:PB-001…006).
 // Rotation comes from the display matrix; VFR when average and nominal rates differ by more than 0.1 %.
 import {
+	type ColorConfigInfo,
 	type LutInfo,
 	type MediaKind,
 	type MediaProbe,
@@ -29,6 +30,8 @@ export type ProbeResult = {
 	display: { width: number; height: number } | null;
 	/** kind `lut` (M2): the parsed header (stored on the media record, copied into RegisteredMedia). */
 	lut?: LutInfo;
+	/** color-mgmt: kind `color-config` (OCIO bundle) header. */
+	colorConfig?: ColorConfigInfo;
 };
 
 /**

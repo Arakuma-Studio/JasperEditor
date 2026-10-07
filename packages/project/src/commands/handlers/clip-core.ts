@@ -241,7 +241,7 @@ export function placeSource(
 	if (mediaId) {
 		const asset = doc.media[mediaId] as MediaAsset | undefined;
 		if (!asset) h.fail('E_NOT_FOUND', `Media not found: ${mediaId}`);
-		if (asset.kind === 'font' || asset.kind === 'lut')
+		if (asset.kind === 'font' || asset.kind === 'lut' || asset.kind === 'color-config')
 			h.fail('E_INVALID_PARAM', `${asset.kind} assets cannot be placed on a timeline`);
 		if (asset.kind === 'mg-bundle')
 			h.fail(

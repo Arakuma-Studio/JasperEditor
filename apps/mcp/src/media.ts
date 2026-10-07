@@ -27,6 +27,7 @@ export function mediaRegisterCommand(reg: RegisteredMedia, ref: string, itemRef:
 			locators,
 			// M2: LUT header (S06:LUT-001).
 			...(reg.lut ? { lut: reg.lut } : {}),
+			...(reg.colorConfig ? { colorConfig: reg.colorConfig } : {}),
 		},
 		...(name ? { name } : {}),
 		ref,

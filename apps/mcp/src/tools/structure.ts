@@ -340,7 +340,7 @@ export function registerStructureTools(ctx: ToolContext): void {
 			input: {
 				projectId: ProjectIdArg,
 				kinds: z
-					.array(z.enum(['video', 'audio', 'image', 'animated-image', 'font', 'lut', 'mg-bundle']))
+					.array(z.enum(['video', 'audio', 'image', 'animated-image', 'font', 'lut', 'mg-bundle', 'color-config']))
 					.optional(),
 			},
 			annotations: DESTRUCTIVE_IDEMPOTENT,

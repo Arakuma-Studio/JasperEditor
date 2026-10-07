@@ -39,6 +39,8 @@ const IMPORT_ACCEPT = [
 	'.spi1d',
 	'.spi3d',
 	'.csp',
+	// color-mgmt: custom OpenColorIO configs (registered as their bundle with the LUT files they reference).
+	'.ocio',
 	'.ogg',
 	'.opus',
 	'.png',

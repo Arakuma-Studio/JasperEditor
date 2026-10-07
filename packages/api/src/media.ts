@@ -6,6 +6,7 @@ import {
 	MediaLocatorSchema,
 	MediaProbeSchema,
 	MgBundleInfoSchema,
+	ColorConfigInfoSchema,
 } from '@jasper/project';
 import { z } from 'zod';
 
@@ -26,6 +27,8 @@ export const RegisteredMediaSchema = z.object({
 	lut: LutInfoSchema.optional(),
 	/** kind `mg-bundle` (M2, S08): compositions, copied into `MediaAsset.mgBundle`. */
 	mgBundle: MgBundleInfoSchema.optional(),
+	/** color-mgmt: kind `color-config` (a custom OCIO config bundle): header, copied into `MediaAsset.colorConfig`. */
+	colorConfig: ColorConfigInfoSchema.optional(),
 	/**
 	 * M3 (S07:PRC-019): a source-range sidecar found next to a file registered by path (`<name>.json` or
 	 * `<stem>.json`, see `parseSourceSidecar`). Clients turn it into `MediaAsset.sourceRange`
