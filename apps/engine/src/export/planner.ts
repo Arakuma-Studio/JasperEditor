@@ -343,14 +343,21 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			itemIds: [...offlineUsed],
 		});
 	}
+	// Workstream `time`: VFR media are mapped by their real timestamps by the retime stage (native) and the preview
+	// decoder (Remotion); only an engine without the retime stage still conforms them.
 	const vfr = new Set<string>();
 	for (const c of visual) {
-		if ('mediaId' in c.source && media[c.source.mediaId]?.record.probe.variableFrameRate) vfr.add(c.clipId);
+		if (
+			'mediaId' in c.source &&
+			media[c.source.mediaId]?.record.probe.variableFrameRate &&
+			!(deps.extensions ?? []).some((e) => e.retimes?.(c))
+		)
+			vfr.add(c.clipId);
 	}
 	if (vfr.size > 0) {
 		warnings.push({
 			code: 'VFR_SOURCE',
-			message: 'Variable-frame-rate sources are conformed to the sequence frame rate',
+			message: 'Variable-frame-rate sources are conformed to the sequence frame rate (no retime stage)',
 			itemIds: [...vfr],
 		});
 	}
@@ -653,8 +660,25 @@ export function nativeBlockers(
 	// edit-structure: generator pictures (Bars and Tone, counting leader) come from the synthetic extension.
 	if ('generator' in c.source && !exts.some((e) => e.id === 'synthetic'))
 		out.push(`${label} draws a generator that needs the synthetic extension`);
+	// Workstream `time`: reverse, time remaps, Frame Blending / Optical Flow and VFR media are rendered by the retime
+	// extension (or inside a whole-layer bake); without it they would play linearly — a named blocker instead.
+	const retimed =
+		exts.some((e) => e.retimes?.(c)) ||
+		exts.some((e) => e.claimsLayer?.(c) && (e.bakes?.(c) ?? null) !== null);
+	const retimeBlocker = (): string | null => {
+		if (retimed) return null;
+		if (c.speed.reverse) return `${label} plays in reverse`;
+		if (c.kind === 'nest-video' && c.timeRemap)
+			return `nested sequence clip "${c.name}" is time-remapped (nested stacks play linearly on the native path)`;
+		if (c.timeRemap) return `${label} is time-remapped and no retime stage is available`;
+		if (c.retime?.interpolation === 'optical-flow' || c.retime?.interpolation === 'frame-blending')
+			return `${label} uses ${c.retime.interpolation === 'optical-flow' ? 'Optical Flow' : 'Frame Blending'} and no retime stage is available`;
+		if (c.retime?.vfr) return `${label} has variable-frame-rate media and no retime stage is available`;
+		return null;
+	};
 	if (exts.some((e) => e.claimsLayer?.(c))) {
-		if (c.speed.reverse) out.push(`${label} plays in reverse`);
+		const r = retimeBlocker();
+		if (r) out.push(r);
 		return out;
 	}
 	if (!NATIVE_VISUAL_KINDS.has(c.kind) && !extKind) {
@@ -687,7 +711,8 @@ export function nativeBlockers(
 	// Keyframed Motion and Opacity are native: the builder samples them per frame (S03:ENG-032, keyframed.ts).
 	// keyframes-blend: blend modes are native in the sequence's own stack (the blend pipeline, native.ts);
 	// `nestBlockers` refuses them inside nested sequences.
-	if (c.speed.reverse) out.push(`${label} plays in reverse`);
+	const rb = retimeBlocker();
+	if (rb) out.push(rb);
 	for (const fx of c.effects) {
 		if (!fx.enabled) continue;
 		// Built-in effects (crop, flips) render with keyframes too (crop edges per frame, `layerSourceChain`).

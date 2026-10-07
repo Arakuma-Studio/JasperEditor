@@ -4,7 +4,8 @@
 // whose timestamp is at or before the media time, like the native export), and decoded frames are cached per
 // group of pictures, so a reverse or slow-motion playback decodes each GOP once instead of once per output frame.
 //
-// Media time 0 is the first frame of the video track (ffmpeg's `start_time`), the origin of clip content times.
+// Media time 0 is the start of the file (the earliest timestamp of any track: ffmpeg's `start_time`, the origin of
+// input seeking and of clip content times); a time before the first video frame shows the first frame.
 import {
 	ALL_FORMATS,
 	CanvasSink,
@@ -40,6 +41,8 @@ export class FrameSource {
 	private sink: CanvasSink | null = null;
 	private packets: EncodedPacketSink | null = null;
 	private origin = 0;
+	/** Media time of the first video frame. */
+	private first = 0;
 	private end = Number.POSITIVE_INFINITY;
 	private frames: Cached[] = [];
 	private bytes = 0;
@@ -68,7 +71,8 @@ export class FrameSource {
 		const track: InputVideoTrack | null = await this.input.getPrimaryVideoTrack();
 		if (!track) throw new Error(`No video track in ${this.src}`);
 		if (!(await track.canDecode())) throw new Error(`The browser cannot decode the video of ${this.src}`);
-		this.origin = await track.getFirstTimestamp();
+		this.origin = Math.min(await this.input.getFirstTimestamp(), await track.getFirstTimestamp());
+		this.first = (await track.getFirstTimestamp()) - this.origin;
 		this.end = (await track.computeDuration()) - this.origin;
 		this.sink = new CanvasSink(track, {
 			width: this.width,
@@ -149,7 +153,7 @@ export class FrameSource {
 	async frameAt(t: number): Promise<DecodedFrame | null> {
 		await this.ready;
 		if (this.failed) throw this.failed;
-		const tt = Math.max(0, Math.min(t, Math.max(0, this.end - 1e-6)));
+		const tt = Math.max(this.first, Math.min(t, Math.max(this.first, this.end - 1e-6)));
 		const hit = this.peek(tt);
 		if (hit) return hit;
 		return this.serial(async () => {
@@ -183,7 +187,7 @@ export class FrameSource {
 			if (await this.pull(fwd, t)) return;
 		}
 		const key = await this.packets!.getKeyPacket(abs);
-		const start = key ? key.timestamp : this.origin;
+		const start = key ? key.timestamp : this.origin + this.first;
 		this.fwd = { it: sink.canvases(start), last: start - this.origin - 1 };
 		await this.pull(this.fwd, t);
 	}

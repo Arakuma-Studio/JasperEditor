@@ -23,10 +23,11 @@ import {
 	syntheticSamples,
 } from '@jasper/project';
 import { Audio } from '@remotion/media';
-import { useCallback, useContext, useEffect, useMemo } from 'react';
-import { Internals } from 'remotion';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { cancelRender, continueRender, delayRender, getRemotionEnvironment, Internals } from 'remotion';
 import { MixGraphContext } from '../audio/context.ts';
 import { clipHasEffects } from '../audio/graph.ts';
+import { reversedAudioUrl } from '../audio/reversed.ts';
 import { audioGainAt, dbToGain, mediaSrc, videoTrimBefore, volumeFrameToClipFrame } from '../pipeline.ts';
 import type { RenderOptions } from '../types.ts';
 
@@ -101,13 +102,16 @@ export function AudioLayer({
 		[clip, num, den, master, sequenceFrom, routed, fx],
 	);
 	const generated = useGeneratedAudio(clip, { num, den });
-	const src =
-		generated ?? (media && (media.hasAudio || media.kind === 'audio') ? mediaSrc(media, options) : null);
+	const mediaUrl =
+		!generated && media && (media.hasAudio || media.kind === 'audio') ? mediaSrc(media, options) : null;
+	// Workstream `time`: a reversed clip plays its range reversed in the page (Remotion's <Audio> plays forwards only).
+	const reversed = useReversedAudio(clip, clip.speed.reverse ? mediaUrl : null, { num, den });
+	const src = generated ?? (clip.speed.reverse ? reversed : mediaUrl);
 	if (!src) return null;
 	const audio = (
 		<Audio
 			src={src}
-			trimBefore={videoTrimBefore(clip, { num, den })}
+			trimBefore={reversed && src === reversed ? 0 : videoTrimBefore(clip, { num, den })}
 			playbackRate={clip.speed.rate}
 			volume={volume}
 			showInTimeline={false}
@@ -118,6 +122,44 @@ export function AudioLayer({
 	) : (
 		audio
 	);
+}
+
+// ---------------------------------------------------------------- workstream `time`: reversed clips
+
+/**
+ * The reversed WAV of a reversed clip's content (its handles included): WAV time 0 is the content shown at the first
+ * frame of the clip's <Sequence> (`headHandle` frames before the clip), so it plays with `trimBefore` 0 at the clip's
+ * speed. Renders wait for it (delayRender); the preview is silent until it is ready.
+ */
+function useReversedAudio(clip: RenderAudioClip, src: string | null, fps: Rational): string | null {
+	const [url, setUrl] = useState<string | null>(null);
+	const F = (FLICKS_PER_SECOND * fps.den) / fps.num;
+	const step = F * clip.speed.rate;
+	const hi = (clip.sourceIn + (clip.duration + (clip.headHandle ?? 0)) * step) / FLICKS_PER_SECOND;
+	const lo = Math.max(0, clip.sourceIn - (clip.tailHandle ?? 0) * step) / FLICKS_PER_SECOND;
+	const rendering = getRemotionEnvironment().isRendering;
+	useEffect(() => {
+		if (!src) {
+			setUrl(null);
+			return;
+		}
+		let alive = true;
+		const handle = rendering ? delayRender(`Reversed audio of ${src}`) : null;
+		void reversedAudioUrl(src, lo, hi)
+			.then((u) => {
+				if (alive) setUrl(u);
+			})
+			.catch((e: unknown) => {
+				if (rendering) cancelRender(e instanceof Error ? e : new Error(String(e)));
+			})
+			.finally(() => {
+				if (handle !== null) continueRender(handle);
+			});
+		return () => {
+			alive = false;
+		};
+	}, [src, lo, hi, rendering]);
+	return src ? url : null;
 }
 
 // ---------------------------------------------------------------- audio-fx: latency compensation
