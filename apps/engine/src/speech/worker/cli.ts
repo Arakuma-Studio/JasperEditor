@@ -22,6 +22,8 @@ for (const sig of ['SIGTERM', 'SIGINT'] as const) process.on(sig, () => ac.abort
 
 try {
 	const spec = JSON.parse(readFileSync(specPath, 'utf8')) as SpeechJobSpec;
+	if (!spec || typeof spec.modelDir !== 'string' || !spec.input || typeof spec.input !== 'object')
+		throw new Error('Invalid job spec: modelDir and input are required');
 	let last = -1;
 	let lastStage = '';
 	const out = await runSpeechJob(spec, {

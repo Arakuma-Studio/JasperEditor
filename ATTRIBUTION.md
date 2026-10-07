@@ -129,3 +129,12 @@ never recorded (AGENTS.md §3.2, "when in doubt, leave it out"). Re-render them 
 committing them again: `docs/screenshots/fx/{premiere-adjust-color-keying,premiere-stylize-distort-generate,
 sapphire-blur-sharpen,sapphire-film-grain,sapphire-paint-kaleido-edges,sapphire-render-textures,sapphire-stylize-other}/contact-sheet.png`,
 `docs/screenshots/transitions/sapphire-dissolves/contact-sheet.jpg` and `docs/screenshots/m3-mgtext/trailer-mg07-*.jpg`.
+
+## Speech fixtures
+
+Public-domain speech for the speech-to-text tests (`apps/engine/test/speech-model.e2e.test.ts`); made by
+`scripts/speech/make-fixture.mjs`.
+
+| Asset | Author | Source | Licence |
+|---|---|---|---|
+| `fixtures/speech/lj-composite.flac` | Linda Johnson (reader, LibriVox); Keith Ito (LJ Speech Dataset) | https://keithito.com/LJ-Speech-Dataset/ | LicenseRef-PublicDomain |
