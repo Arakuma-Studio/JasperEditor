@@ -2,7 +2,7 @@
 // `essential.rs` StereoWidth and `special.rs` ChannelMixer / StereoExpander / Binauralizer / AmbisonicsPanner;
 // Mono Maker is ours). Folders follow Premiere's Audio Effects panel.
 import type { EffectSpec } from '../effects.ts';
-import { audioParam as P, defineAudioEffect } from './define.ts';
+import { defineAudioEffect, audioParam as P } from './define.ts';
 
 const percent = (name: string, label: string, def: number) => P.pct(name, label, def, -100, 100);
 
@@ -23,7 +23,8 @@ export const AUDIO_STEREO_CHANNEL_EFFECTS: readonly EffectSpec[] = [
 		id: 'jasper.audio.channel-mixer',
 		label: 'Channel Mixer',
 		category: 'Amplitude and Compression',
-		description: 'Remixes the stereo channels: each output is a percentage of both inputs, with polarity inversion.',
+		description:
+			'Remixes the stereo channels: each output is a percentage of both inputs, with polarity inversion.',
 		keywords: ['matrix', 'routing', 'mono', 'swap'],
 		params: [
 			percent('leftFromLeft', 'Left - Left', 100),
@@ -130,7 +131,8 @@ export const AUDIO_STEREO_CHANNEL_EFFECTS: readonly EffectSpec[] = [
 		id: 'jasper.audio.stereo-expander',
 		label: 'Stereo Expander',
 		category: 'Stereo Imagery',
-		description: 'Mid/side imaging: Stereo Expand scales the side signal; Center Channel Pan places the centre.',
+		description:
+			'Mid/side imaging: Stereo Expand scales the side signal; Center Channel Pan places the centre.',
 		keywords: ['width', 'wide', 'mid side', 'imaging'],
 		params: [P.pan('centerPan', 'Center Channel Pan'), P.pct('expand', 'Stereo Expand', 100, 0, 300)],
 	}),
