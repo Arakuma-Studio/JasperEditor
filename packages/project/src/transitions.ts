@@ -23,6 +23,7 @@ export const CROSS_DISSOLVE = 'jasper.cross-dissolve';
 export const DIP_TO_BLACK = 'jasper.dip-to-black';
 export const CONSTANT_GAIN = 'jasper.constant-gain';
 export const CONSTANT_POWER = 'jasper.constant-power';
+export const EXPONENTIAL_FADE = 'jasper.exponential-fade';
 
 /**
  * A transition type (the transition registry, S01:TRN-001 `effectId`). Built-ins render as opacity ramps, mattes
@@ -107,6 +108,20 @@ export const BUILTIN_TRANSITION_SPECS: readonly TransitionSpec[] = [
 		description:
 			'Equal-power (quarter sine) audio crossfade between two clips (no level dip or bump); at a single clip edge an equal-power fade.',
 		bin: 'Crossfade',
+		params: [],
+		capabilities: BUILTIN,
+	},
+	{
+		// audio-fx: Premiere's third audio transition (helpx "Audio effects and transitions": the outgoing clip fades
+		// out and the incoming one in over smooth logarithmic curves).
+		id: EXPONENTIAL_FADE,
+		version: 1,
+		label: 'Exponential Fade',
+		appliesTo: 'audio',
+		description:
+			'Audio crossfade on exponential (dB-linear) curves: the outgoing clip drops quickly, the incoming one rises late; at a single clip edge an exponential fade.',
+		bin: 'Crossfade',
+		keywords: ['fade', 'log', 'logarithmic'],
 		params: [],
 		capabilities: BUILTIN,
 	},
@@ -517,7 +532,12 @@ export function resolveAudioTransitions(
 		if (!audioTracks.has(t.trackId)) continue;
 		const spec = transitionSpec(t.effectId);
 		if (spec?.appliesTo !== 'audio') continue;
-		const curve = t.effectId === CONSTANT_POWER ? 'equal-power' : 'linear';
+		const curve =
+			t.effectId === CONSTANT_POWER
+				? 'equal-power'
+				: t.effectId === EXPONENTIAL_FADE
+					? 'exponential'
+					: 'linear';
 		const o = t.outgoingClipId ? seq.clips[t.outgoingClipId] : undefined;
 		const i = t.incomingClipId ? seq.clips[t.incomingClipId] : undefined;
 		if (o && i) {
@@ -565,7 +585,7 @@ export function resolveAudioFades(
 	return out;
 }
 
-export { audioFadeGain } from './audio-fade.ts';
+export { audioFadeGain, fadeCurve } from './audio-fade.ts';
 
 /** Clips that meet at frame `at` on a track: the one ending there and the one starting there. */
 export function clipsAtEditPoint(

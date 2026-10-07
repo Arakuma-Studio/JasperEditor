@@ -3,7 +3,7 @@
 // dissolve between two clips; quarter-sine curves for constant-power audio), an elided label, selection
 // accent and hatched end caps where the span reaches the end of the available media. Memoised on
 // primitive props: never re-rendered per playhead frame (S02:TL-155).
-import { formatTimecode, type Rational } from '@jasper/project';
+import { fadeCurve, formatTimecode, type Rational } from '@jasper/project';
 import { memo } from 'react';
 import type { TransitionGeom } from '../model/transitions.ts';
 import { transitionBand } from '../model/transitions.ts';
@@ -19,7 +19,7 @@ type TransitionViewProps = {
 	title: string;
 	selected: boolean;
 	shape: 'in' | 'out' | 'both';
-	curve: 'linear' | 'equal-power';
+	curve: 'linear' | 'equal-power' | 'exponential';
 	capStart: boolean;
 	capEnd: boolean;
 	broken: boolean;
@@ -78,7 +78,12 @@ export function transitionViewProps(
 		title: transitionTitle(g, rate, dropFrame),
 		selected,
 		shape: g.oneSided === 'in' ? 'in' : g.oneSided === 'out' ? 'out' : 'both',
-		curve: g.t.effectId === 'jasper.constant-power' ? 'equal-power' : 'linear',
+		curve:
+			g.t.effectId === 'jasper.constant-power'
+				? 'equal-power'
+				: g.t.effectId === 'jasper.exponential-fade'
+					? 'exponential'
+					: 'linear',
 		capStart: g.capStart,
 		capEnd: g.capEnd,
 		broken: g.broken,
@@ -88,12 +93,17 @@ export function transitionViewProps(
 }
 
 /** SVG path (viewBox 100×100, y down) of a fade: `in` rises from bottom-left, `out` falls. */
-function rampPath(kind: 'in' | 'out', curve: 'linear' | 'equal-power', x0 = 0, x1 = 100): string {
+function rampPath(
+	kind: 'in' | 'out',
+	curve: 'linear' | 'equal-power' | 'exponential',
+	x0 = 0,
+	x1 = 100,
+): string {
 	if (curve === 'linear') return kind === 'in' ? `M${x0} 100 L${x1} 0` : `M${x0} 0 L${x1} 100`;
 	const pts: string[] = [];
 	for (let i = 0; i <= 16; i++) {
 		const p = i / 16;
-		const gain = kind === 'in' ? Math.sin((p * Math.PI) / 2) : Math.cos((p * Math.PI) / 2);
+		const gain = fadeCurve(curve, kind === 'in' ? p : 1 - p);
 		pts.push(`${(x0 + (x1 - x0) * p).toFixed(2)} ${(100 - gain * 100).toFixed(2)}`);
 	}
 	return `M${pts.join(' L')}`;
