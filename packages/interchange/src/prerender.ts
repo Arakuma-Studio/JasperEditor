@@ -4,6 +4,7 @@
 import {
 	type BlendMode,
 	type Clip,
+	isEnabledMulticamClip,
 	isKnownClipKind,
 	type ProjectDocument,
 	type Sequence,
@@ -102,7 +103,9 @@ export function prerenderReason(doc: ProjectDocument, seq: Sequence, c: Clip, fo
 		effects?: { enabled: boolean }[];
 		trackedBy?: unknown;
 	};
-	if (c.kind === 'nest-video' && !caps.nesting) return 'nested sequence';
+	// Formats without nests write an enabled multi-camera clip as its angle's clips (see `fromJasper`).
+	const flattens = isEnabledMulticamClip(c) && !c.frameHold && !!doc.sequences[c.sequenceId]?.multicam;
+	if (c.kind === 'nest-video' && !caps.nesting && !flattens) return 'nested sequence';
 	const any = c as Clip & { masks?: unknown[]; effects?: { enabled: boolean; masks?: unknown[] }[] };
 	if (any.masks?.length || (any.effects ?? []).some((e) => e.enabled && e.masks?.length)) return 'masks';
 	if (hasExpression(c)) return 'expressions';

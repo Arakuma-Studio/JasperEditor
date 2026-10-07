@@ -857,6 +857,13 @@ function copySequence(
 	}
 	reidentifyClipChildren(seq.master as never, h);
 	resolver.remapEffectMedia(seq.master.effects);
+	// wp-multicam: a multi-camera source's angles name its tracks (angle ids stay: clips select them).
+	const mc = seq.multicam;
+	if (mc)
+		for (const a of mc.angles) {
+			if (a.videoTrackId !== null) a.videoTrackId = trackMap.get(a.videoTrackId) ?? a.videoTrackId;
+			a.audioTrackIds = a.audioTrackIds.map((id) => trackMap.get(id) ?? id);
+		}
 	for (const m of seq.markers) m.id = h.ids.next('mrk');
 	const clipMap = new Map<string, string>();
 	const trackerMaps = new Map<string, Map<string, string>>();

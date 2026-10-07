@@ -6,6 +6,8 @@ import type {
 	IGenerator,
 	IMedia,
 	IMediaKind,
+	IMulticamAngle,
+	IMulticamSource,
 	IProject,
 	ISequence,
 	ITrack,
@@ -372,6 +374,59 @@ export function nestedSequences(p: IProject, seqId: string): string[] {
 	};
 	visit(seqId);
 	return out;
+}
+
+// ---------------------------------------------------------------- multi-camera clips
+
+export type MulticamInfo = {
+	/** The multi-camera source sequence. */
+	seq: ISequence;
+	mc: IMulticamSource;
+	/** The angle the clip shows (its id, else the first video angle). */
+	angle: IMulticamAngle | null;
+};
+
+/** The source of an *enabled* multi-camera clip, or null (not one, disabled, or its source is no multi-camera source). */
+export function multicamOf(p: IProject, c: IClip): MulticamInfo | null {
+	if (!c.multicam?.enabled || c.source.type !== 'sequence') return null;
+	const seq = p.sequences[c.source.sequenceId];
+	const mc = seq?.multicam;
+	if (!seq || !mc) return null;
+	const first = mc.angles.find((a) => a.video !== null) ?? null;
+	return { seq, mc, angle: mc.angles.find((a) => a.id === c.multicam!.angle) ?? first };
+}
+
+/** Audio track indices of a multi-camera source that play for `angle` (JasperEditor's audio modes). */
+export function multicamAudibleTracks(mc: IMulticamSource, angle: IMulticamAngle | null): Set<number> {
+	const first = mc.angles.find((a) => a.video !== null) ?? null;
+	const selected = angle ?? first;
+	const out = new Set<number>();
+	for (const a of mc.angles) {
+		const on =
+			a.video === null ||
+			(mc.audio === 'all' ? true : mc.audio === 'camera1' ? a === first : a.id === selected?.id);
+		if (on) for (const i of a.audio) out.add(i);
+	}
+	return out;
+}
+
+/**
+ * Track indices of the source sequence an enabled multi-camera clip on a `kind` track does not see: video, the other
+ * angles' video tracks; audio, the angles' audio tracks that are not audible. Null when the clip is no enabled
+ * multi-camera clip (it sees the whole sequence).
+ */
+export function multicamHiddenTracks(p: IProject, c: IClip, kind: 'video' | 'audio'): Set<number> | null {
+	const info = multicamOf(p, c);
+	if (!info) return null;
+	const { mc, angle } = info;
+	const hidden = new Set<number>();
+	if (kind === 'video') {
+		for (const a of mc.angles) if (a.video !== null && a.id !== angle?.id) hidden.add(a.video);
+	} else {
+		const audible = multicamAudibleTracks(mc, angle);
+		for (const a of mc.angles) for (const i of a.audio) if (!audible.has(i)) hidden.add(i);
+	}
+	return hidden;
 }
 
 /** Sequence duration (end of the last clip). */

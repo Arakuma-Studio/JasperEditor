@@ -8,10 +8,15 @@ import {
 	captionClipSpeaker,
 	captionClipText,
 	flicksPerFrame,
+	isEnabledMulticamClip,
 	isKnownClipKind,
 	type MediaAsset,
+	type MulticamClip,
 	type ProjectDocument,
 	type ProjectItem,
+	pieceAudioClip,
+	pieceVideoClip,
+	resolveMulticamClip,
 	type Sequence,
 	type SyntheticSource,
 	type Track,
@@ -24,6 +29,7 @@ import type {
 	IGenerator,
 	IMarker,
 	IMedia,
+	IMulticamSource,
 	IProject,
 	ISequence,
 	ITrack,
@@ -82,6 +88,9 @@ export function uncarriedWhat(kind: string): string | null {
 			return `${kind} clip`;
 	}
 }
+
+/** Formats without nested sequences: enabled multi-camera clips are written as their angle's clips. */
+const FLAT_FORMATS: ReadonlySet<Format> = new Set(['edl', 'aaf', 'omf', 'ale']);
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
@@ -144,6 +153,68 @@ export function fromJasper(
 	const pathOf = opts.mediaPath ?? mediaPathOf;
 	const prerendered = opts.prerendered ?? {};
 	const preMedia = new Map<string, string>();
+	const pre = (c: Clip) => !!prerendered[c.id];
+	/** Formats without nested sequences write enabled multi-camera clips as the clips of their angle (Flatten). */
+	const flat_ = opts.format !== undefined && FLAT_FORMATS.has(opts.format);
+
+	const multicamOut = (s: Sequence): IMulticamSource => {
+		const mc = s.multicam!;
+		const vi = (id: string | null) => (id === null ? -1 : s.videoTracks.findIndex((t) => t.id === id));
+		return {
+			angles: mc.angles
+				.filter((a) => a.videoTrackId === null || vi(a.videoTrackId) >= 0)
+				.map((a) => ({
+					id: a.id,
+					name: a.name,
+					video: a.videoTrackId === null ? null : vi(a.videoTrackId),
+					audio: a.audioTrackIds
+						.map((id) => s.audioTracks.findIndex((t) => t.id === id))
+						.filter((i) => i >= 0),
+					enabled: a.enabled,
+				})),
+			audio: mc.audio,
+			...(mc.sync ? { sync: mc.sync } : {}),
+		};
+	};
+
+	/**
+	 * The clips an enabled multi-camera clip shows (Multi-Camera ▸ Flatten's pieces), `k` = which of the source's
+	 * audible tracks a piece comes from (0 for video); null when it is no enabled multi-camera clip or has a frame hold.
+	 */
+	const flattenMulticam = (s: Sequence, c: Clip, rate: Rate): { clip: Clip; k: number }[] | null => {
+		if (!isEnabledMulticamClip(c) || c.frameHold) return null;
+		const r = resolveMulticamClip(doc, { num: rate.num, den: rate.den }, c);
+		if (!r) return null;
+		const notes = new Set<string>();
+		const warn = (_code: string, message: string) => notes.add(message);
+		const innerTracks = [...new Set(r.pieces.map((x) => x.innerTrackId))];
+		const audioTracks = new Map(r.source.audioTracks.map((t) => [t.id, t]));
+		const out = r.pieces.map((piece, n) => {
+			const id = `${c.id}~${n}`;
+			const clip =
+				c.kind === 'nest-video'
+					? pieceVideoClip(doc, r.source, c as MulticamClip & { kind: 'nest-video' }, piece, id, warn)
+					: pieceAudioClip(
+							r.source,
+							c as MulticamClip & { kind: 'nest-audio' },
+							piece,
+							audioTracks.get(piece.innerTrackId)!,
+							id,
+							warn,
+						);
+			if (c.linkId) (clip as { linkId: string | null }).linkId = `${c.linkId}:${clip.start}:${clip.duration}`;
+			return { clip, k: innerTracks.indexOf(piece.innerTrackId) };
+		});
+		const angle = r.multicam.angles.find((a) => a.id === r.angleId);
+		report.info(
+			`multi-camera clip "${c.name}" at frame ${c.start} is written as the ${out.length} clip(s) of its active angle${angle ? ` "${angle.name}"` : ''}`,
+			{ subject: { kind: 'clip', id: c.id, name: c.name, frame: c.start }, instead: 'the angle’s clips' },
+		);
+		for (const m of notes)
+			report.info(m, { subject: { kind: 'clip', id: c.id, name: c.name, frame: c.start } });
+		void s;
+		return out;
+	};
 
 	const mediaFor = (assetId: string): string | null => {
 		if (p.media[assetId]) return assetId;
@@ -294,6 +365,7 @@ export function fromJasper(
 			),
 			inPoint: s.inPoint === null ? null : s.inPoint * F,
 			outPoint: s.outPoint === null ? null : s.outPoint * F,
+			...(s.multicam ? { multicam: multicamOut(s) } : {}),
 			jasper: {
 				settings: clone(s.settings),
 				master: clone(s.master),
@@ -355,18 +427,56 @@ export function fromJasper(
 					});
 			}
 			const clips = [...(clipsByTrack.get(t.id) ?? [])].sort((a, b) => a.start - b.start);
+			/** Flattened multi-camera clips: outer clip id → the pieces at its edges (on this track). */
+			const edges = new Map<string, { first: string | null; last: string | null }>();
 			for (const c of clips) {
+				const flat = flat_ && !pre(c) ? flattenMulticam(s, c, rate) : null;
+				if (flat) {
+					const e = { first: null as string | null, last: null as string | null };
+					for (const piece of flat) {
+						const ic = convertClip(piece.clip, rate);
+						if (!ic) continue;
+						if (piece.k === 0) {
+							tr.clips.push(ic);
+							if (piece.clip.start === c.start) e.first = ic.id;
+							if (piece.clip.start + piece.clip.duration === c.start + c.duration) e.last = ic.id;
+						} else {
+							let x = overflow.get(`${t.id}:${piece.k}`);
+							if (!x) {
+								x = { kind, track: { ...tr, name: null, clips: [], transitions: [], jasper: undefined } };
+								overflow.set(`${t.id}:${piece.k}`, x);
+							}
+							x.track.clips.push(ic);
+						}
+					}
+					edges.set(c.id, e);
+					continue;
+				}
 				const ic = convertClip(c, rate);
 				if (ic) tr.clips.push(ic);
 			}
+			const edgeOf = (id: string | null, side: 'first' | 'last'): string | null | undefined => {
+				if (id === null) return null;
+				const e = edges.get(id);
+				return e ? (e[side] ?? undefined) : id;
+			};
 			for (const x of transitionsByTrack.get(t.id) ?? []) {
 				const startFrame = transitionStartFrame(s, x);
 				if (startFrame === null) continue;
+				const from = edgeOf(x.outgoingClipId, 'last');
+				const to = edgeOf(x.incomingClipId, 'first');
+				if (from === undefined || to === undefined) {
+					report.warn(
+						`a transition at frame ${startFrame} is not written: the multi-camera angle has no clip at that edge`,
+						{ subject: { kind: 'transition', id: x.id, frame: startFrame }, instead: 'a cut' },
+					);
+					continue;
+				}
 				tr.transitions.push({
 					id: x.id,
 					effectId: x.effectId,
-					from: x.outgoingClipId,
-					to: x.incomingClipId,
+					from,
+					to,
 					start: startFrame * F,
 					duration: x.duration * F,
 					alignment: x.alignment,
@@ -377,8 +487,14 @@ export function fromJasper(
 			tr.transitions.sort((a, b) => a.start - b.start);
 			return tr;
 		};
+		const overflow = new Map<string, { kind: 'video' | 'audio'; track: ITrack }>();
 		seq.video = s.videoTracks.map((t, i) => convertTrack(t, 'video', i));
 		seq.audio = s.audioTracks.map((t, i) => convertTrack(t, 'audio', i));
+		// Flattened multi-camera clips whose angle spans several tracks: extra tracks after the others.
+		for (const { kind, track } of overflow.values()) {
+			delete track.jasper;
+			seq[kind].push(track);
+		}
 		// Captions: formats with captions (FCPXML, OTIO) carry the cues; pre-rendered caption clips become video
 		// clips on extra top tracks; the others are reported, one entry per caption.
 		const carriesCaptions = opts.format === 'fcpxml' || otio;
@@ -597,10 +713,12 @@ export function fromJasper(
 					});
 					return null;
 				}
+				const mc = c.multicam ? { multicam: { enabled: c.multicam.enabled, angle: c.multicam.angle } } : {};
 				if (c.kind === 'nest-video')
 					return {
 						...base,
 						source: { type: 'sequence', sequenceId: sid },
+						...mc,
 						transform: clone(c.transform),
 						opacity: clone(c.opacity),
 						blendMode: c.blendMode,
@@ -608,6 +726,7 @@ export function fromJasper(
 				return {
 					...base,
 					source: { type: 'sequence', sequenceId: sid },
+					...mc,
 					gainDb: c.gainDb,
 					volumeDb: clone(c.volumeDb),
 					pan: clone(c.pan),

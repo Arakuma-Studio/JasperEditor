@@ -14,7 +14,14 @@
 // are `Stack` items inside tracks (written once per use; read back as one sequence).
 //
 // Port of FilmCraft `crates/interchange/src/otio.rs` (MIT OR Apache-2.0), extended.
-import { Builder, colorNameOf, describeClip, frameOf, labelFromColorName } from './build.ts';
+import {
+	Builder,
+	colorNameOf,
+	describeClip,
+	frameOf,
+	labelFromColorName,
+	multicamHiddenTracks,
+} from './build.ts';
 import {
 	CONSTANT_GAIN,
 	CONSTANT_POWER,
@@ -207,10 +214,16 @@ export function exportOtio(p: IProject, sequenceId: string, opts: ExportOptions,
 
 	const seqMeta = (s: ISequence): J => ({ sequence: strip(s, 'video', 'audio', 'markers') });
 
-	const stackJson = (s: ISequence, clip: IClip | null): J => {
+	const stackJson = (s: ISequence, clip: IClip | null, kind: 'video' | 'audio' = 'video'): J => {
 		const tracks: J[] = [];
-		for (const t of s.video) tracks.push(trackJson(t, 'Video'));
-		for (const t of s.audio) tracks.push(trackJson(t, 'Audio'));
+		// An enabled multi-camera clip shows one angle: the other cameras' tracks are disabled in its stack (the
+		// source's own track states stay in metadata.jasper).
+		const hidden = clip ? multicamHiddenTracks(p, clip, kind) : null;
+		const view = (j: J, hide: boolean): J => (hide ? { ...j, enabled: false } : j);
+		for (const [i, t] of s.video.entries())
+			tracks.push(view(trackJson(t, 'Video'), kind === 'video' && !!hidden?.has(i)));
+		for (const [i, t] of s.audio.entries())
+			tracks.push(view(trackJson(t, 'Audio'), kind === 'audio' && !!hidden?.has(i)));
 		const out: J = {
 			OTIO_SCHEMA: 'Stack.1',
 			name: clip ? clip.name : name,
@@ -249,7 +262,7 @@ export function exportOtio(p: IProject, sequenceId: string, opts: ExportOptions,
 		for (const c of t.clips) {
 			if (c.start > pos) children.push(gap(c.start - pos));
 			for (const x of t.transitions) if (x.to === c.id) children.push(transitionJson(x, c.start));
-			children.push(itemJson(c));
+			children.push(itemJson(c, kind === 'Video' ? 'video' : 'audio'));
 			for (const x of t.transitions)
 				if (x.from === c.id && (!x.to || !t.clips.some((o) => o.id === x.to)))
 					children.push(transitionJson(x, c.start + c.duration));
@@ -268,7 +281,7 @@ export function exportOtio(p: IProject, sequenceId: string, opts: ExportOptions,
 		};
 	};
 
-	const itemJson = (c: IClip): J => {
+	const itemJson = (c: IClip, kind: 'video' | 'audio'): J => {
 		const s = top;
 		if (c.source.type === 'sequence') {
 			const inner = p.sequences[c.source.sequenceId];
@@ -280,7 +293,7 @@ export function exportOtio(p: IProject, sequenceId: string, opts: ExportOptions,
 				return gap(c.duration);
 			}
 			stack.push(inner.id);
-			const out = stackJson(inner, c);
+			const out = stackJson(inner, c, kind);
 			stack.pop();
 			out.markers = [...(out.markers as J[])];
 			(jm(out) as J).clipMarkers = c.markers;
@@ -452,6 +465,8 @@ class OtioImporter {
 		const oldId = str(meta?.id);
 		if (oldId) this.seqIds.set(oldId, seq.id);
 		if (Array.isArray(meta?.captions)) seq.captions = meta.captions as ISequence['captions'];
+		if (obj(meta?.multicam) && Array.isArray(obj(meta?.multicam)?.angles))
+			seq.multicam = meta!.multicam as ISequence['multicam'];
 		seq.markers = this.markers(stack, 0);
 		this.depth++;
 		for (const t of arr(obj(stack)?.children)) {
@@ -471,7 +486,7 @@ class OtioImporter {
 		const tm = obj(jm(t)?.track);
 		const track: ITrack = {
 			name: nameOf(t) || null,
-			enabled: obj(t)?.enabled !== false,
+			enabled: typeof tm?.enabled === 'boolean' ? tm.enabled : obj(t)?.enabled !== false,
 			locked: tm?.locked === true,
 			clips: [],
 			transitions: [],
@@ -614,6 +629,9 @@ class OtioImporter {
 		if (typeof cm.blendMode === 'string') clip.blendMode = cm.blendMode as IClip['blendMode'];
 		if (num(cm.gainDb) !== null) clip.gainDb = num(cm.gainDb)!;
 		if (Array.isArray(cm.effects)) clip.effects = cm.effects as IClip['effects'];
+		const mc = obj(cm.multicam);
+		if (mc && typeof mc.angle === 'string')
+			clip.multicam = { enabled: mc.enabled !== false, angle: mc.angle };
 		if (obj(cm.jasper)) clip.jasper = obj(cm.jasper)!;
 	}
 

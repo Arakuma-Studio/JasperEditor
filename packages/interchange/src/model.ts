@@ -130,7 +130,30 @@ export type ISequence = {
 	/** In/out marks (sequence time), null when not set. */
 	inPoint?: number | null;
 	outPoint?: number | null;
+	/** A multi-camera source sequence: its cameras (angles) and audio mode. */
+	multicam?: IMulticamSource;
 	jasper?: Record<string, unknown>;
+};
+
+/** One camera of a multi-camera source sequence: one video track (index into `video`) and its audio tracks. */
+export type IMulticamAngle = {
+	id: string;
+	name: string;
+	/** Index into the sequence's `video` tracks; null = an audio-only source (always heard). */
+	video: number | null;
+	/** Indices into the sequence's `audio` tracks. */
+	audio: number[];
+	/** Shown in the multi-camera view (hidden angles keep their clips). */
+	enabled: boolean;
+};
+
+export type IMulticamSource = {
+	/** Camera order (Camera 1 first). */
+	angles: IMulticamAngle[];
+	/** `camera1`: the first video angle's audio plays; `all`: every camera; `switch`: the selected angle's. */
+	audio: 'camera1' | 'all' | 'switch';
+	/** How the cameras were synchronised (informational). */
+	sync?: 'in' | 'out' | 'timecode' | 'marker' | 'audio';
 };
 
 export type ITrack = {
@@ -191,6 +214,11 @@ export type IClip = {
 	channels?: { streamIndex: number; map: number[] } | null;
 	/** Standard effects (JasperEditor effect instances; registry ids such as `jasper.gaussian-blur`). */
 	effects: EffectInstance[];
+	/**
+	 * A multi-camera clip (its source is a sequence with `multicam`): the angle id it shows. Disabled, it plays as
+	 * an ordinary nest (every angle composited).
+	 */
+	multicam?: { enabled: boolean; angle: string };
 	jasper?: Record<string, unknown>;
 };
 

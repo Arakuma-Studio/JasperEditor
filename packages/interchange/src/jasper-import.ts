@@ -15,6 +15,8 @@ import {
 	type LinkGroup,
 	type MediaAsset,
 	type MediaStream,
+	type MulticamAngle,
+	type MulticamSource,
 	makeSequenceSettings,
 	nearestAllowedRate,
 	type ProjectItem,
@@ -487,9 +489,12 @@ export function toJasper(p0: IProject, opts: ToJasperOptions, report: Report): J
 
 		const trackClips = new Map<string, Clip[]>();
 		const transitionsOf: { t: ITrack; track: Track }[] = [];
+		const videoAt: Track[] = [];
+		const audioAt: Track[] = [];
 		for (const t of s.video) {
 			const caption = (t.jasper as { captionTrack?: boolean } | undefined)?.captionTrack === true;
 			const track = makeTrack(caption ? 'caption' : 'video', t);
+			videoAt.push(track);
 			(caption ? seq.captionTracks : seq.videoTracks).push(track);
 			const list: Clip[] = [];
 			placeClips(t, track, list);
@@ -498,6 +503,7 @@ export function toJasper(p0: IProject, opts: ToJasperOptions, report: Report): J
 		}
 		for (const t of s.audio) {
 			const track = makeTrack('audio', t);
+			audioAt.push(track);
 			seq.audioTracks.push(track);
 			const list: Clip[] = [];
 			placeClips(t, track, list);
@@ -506,6 +512,15 @@ export function toJasper(p0: IProject, opts: ToJasperOptions, report: Report): J
 		}
 		if (seq.videoTracks.length === 0) seq.videoTracks.push(makeTrack('video', null));
 		if (seq.audioTracks.length === 0) seq.audioTracks.push(makeTrack('audio', null));
+		if (s.multicam) {
+			const mc = multicamIn(s, videoAt, audioAt);
+			if (mc) seq.multicam = mc;
+			else
+				report.warn(`the cameras of multi-camera sequence "${s.name}" do not resolve to its tracks`, {
+					subject: { kind: 'sequence', name: s.name },
+					instead: 'an ordinary sequence (its clips play as nests)',
+				});
+		}
 
 		// ---- links (at most one video member per group) and groups
 		for (const [, members] of linkMembers) {
@@ -686,10 +701,15 @@ export function toJasper(p0: IProject, opts: ToJasperOptions, report: Report): J
 				});
 				return [];
 			}
+			const mcSel =
+				c.multicam && typeof c.multicam.angle === 'string' && p.sequences[c.source.sequenceId]?.multicam
+					? { multicam: { enabled: c.multicam.enabled !== false, angle: c.multicam.angle } }
+					: {};
 			if (track.kind === 'audio')
 				return [
 					{
 						...common,
+						...mcSel,
 						kind: 'nest-audio',
 						sequenceId: sid,
 						gainDb: c.gainDb ?? 0,
@@ -702,6 +722,7 @@ export function toJasper(p0: IProject, opts: ToJasperOptions, report: Report): J
 			return [
 				{
 					...common,
+					...mcSel,
 					kind: 'nest-video',
 					sequenceId: sid,
 					...visual(c, { width: inner.width, height: inner.height }),
@@ -974,6 +995,36 @@ export function toJasper(p0: IProject, opts: ToJasperOptions, report: Report): J
  * LUT media) the document did not carry: such clips and effects are dropped with a report entry, so the fragment
  * always pastes.
  */
+const SYNC = new Set(['in', 'out', 'timecode', 'marker', 'audio']);
+
+/** The IR cameras of a multi-camera source → JasperEditor angles on the created tracks (null when none resolves). */
+function multicamIn(s: ISequence, videoAt: Track[], audioAt: Track[]): MulticamSource | null {
+	const src = s.multicam!;
+	const usedIds = new Set<string>();
+	const usedVideo = new Set<string>();
+	const angles: MulticamAngle[] = [];
+	for (const [i, a] of src.angles.entries()) {
+		const vt = a.video === null ? null : videoAt[a.video];
+		if (a.video !== null && (vt?.kind !== 'video' || usedVideo.has(vt.id))) continue;
+		const audio = [...new Set(a.audio.map((k) => audioAt[k]?.id).filter((x): x is string => !!x))];
+		if (!vt && audio.length === 0) continue;
+		let id = typeof a.id === 'string' && a.id ? a.id : `angle${i + 1}`;
+		while (usedIds.has(id)) id = `${id}_`;
+		usedIds.add(id);
+		if (vt) usedVideo.add(vt.id);
+		angles.push({
+			id,
+			name: a.name || `Camera ${angles.length + 1}`,
+			videoTrackId: vt?.id ?? null,
+			audioTrackIds: audio,
+			enabled: a.enabled !== false,
+		});
+	}
+	if (!angles.some((a) => a.videoTrackId !== null)) return null;
+	const audio = src.audio === 'all' || src.audio === 'switch' ? src.audio : 'camera1';
+	return { angles, audio, ...(src.sync && SYNC.has(src.sync) ? { sync: src.sync } : {}) };
+}
+
 function validateReferences(frag: JasperFragment, report: Report): void {
 	const media = new Set(frag.media.map((m) => m.id));
 	const syn = new Set(frag.synthetics.map((m) => m.id));

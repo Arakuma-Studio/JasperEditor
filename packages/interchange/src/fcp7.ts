@@ -27,6 +27,9 @@ import {
 	gainToDb,
 	labelFrom,
 	labelName,
+	type MulticamInfo,
+	multicamHiddenTracks,
+	multicamOf,
 	newClip,
 	sequenceDuration,
 	sourceOut,
@@ -39,6 +42,7 @@ import type {
 	IGenerator,
 	IMarker,
 	IMedia,
+	IMulticamAngle,
 	IProject,
 	ISequence,
 	ITrack,
@@ -213,6 +217,8 @@ class Fcp7Importer {
 	readonly links: PendingLink[] = [];
 	readonly xmlClipIds = new Map<string, string>();
 	readonly ids = new Map<XNode, number>();
+	readonly multiclipDefs = new Map<string, XNode>();
+	readonly multiclipSeqs = new Map<string, { sid: string; angles: string[] }>();
 
 	constructor(
 		readonly b: Builder,
@@ -227,6 +233,8 @@ class Fcp7Importer {
 				this.files.set(this.key(n), n);
 			if (n.name === 'sequence' && child(n, 'media') && !this.seqDefs.has(this.key(n)))
 				this.seqDefs.set(this.key(n), n);
+			if (n.name === 'multiclip' && child(n, 'angle') && !this.multiclipDefs.has(this.key(n)))
+				this.multiclipDefs.set(this.key(n), n);
 		}
 	}
 
@@ -414,6 +422,151 @@ class Fcp7Importer {
 		return seq.id;
 	}
 
+	/**
+	 * The multi-camera source sequence of a `<multiclip>` (definition or reference by id): one video track per angle
+	 * with picture and one audio track per angle with sound, each holding the angle's clip so that the angles' In
+	 * points meet at time 0 (synctype 1; `start`/`end` of an angle clip place it explicitly).
+	 */
+	multiclip(n: XNode, seqRate: Rate): { sid: string; angles: string[] } | null {
+		const key = this.key(n);
+		const known = this.multiclipSeqs.get(key);
+		if (known) return known;
+		const def = this.multiclipDefs.get(key);
+		if (!def) {
+			this.report.warn('a multiclip the document does not define was skipped');
+			return null;
+		}
+		const angleNodes = children(def, 'angle');
+		type Cam = {
+			name: string;
+			media: IMedia;
+			mid: string;
+			inF: number;
+			outF: number | null;
+			start: number | null;
+			end: number | null;
+			rate: Rate;
+		};
+		const cams: (Cam | null)[] = angleNodes.map((a, i) => {
+			const clip = child(a, 'clip');
+			const file = clip ? descendants(clip).find((d) => d.name === 'file') : undefined;
+			if (!clip || !file) return null;
+			const cname = childText(clip, 'name') || `Camera ${i + 1}`;
+			const mid = this.file(file, cname, this.b.p.root);
+			if (!mid) return null;
+			const media = this.b.p.media[mid]!;
+			return {
+				name: cname,
+				media,
+				mid,
+				rate: readRate(clip) ?? media.video?.rate ?? seqRate,
+				inF: Math.max(0, childInt(clip, 'in') ?? 0),
+				outF: childInt(clip, 'out'),
+				start: childInt(clip, 'start'),
+				end: childInt(clip, 'end'),
+			};
+		});
+		const firstVideo = cams.find((c) => c?.media.video);
+		if (!firstVideo) {
+			this.report.warn(
+				`multiclip "${childText(def, 'name') ?? ''}" has no camera with picture; it was skipped`,
+			);
+			return null;
+		}
+		const seq = this.b.sequence(
+			{
+				name: childText(def, 'name') || 'Multi-Camera Source',
+				rate: seqRate,
+				dropFrame: false,
+				width: firstVideo.media.video!.width,
+				height: firstVideo.media.video!.height,
+				sampleRate: firstVideo.media.audio?.sampleRate ?? 48000,
+				startTimecode: 0,
+			},
+			{ bin: this.b.p.root },
+		);
+		const sync = childInt(def, 'synctype');
+		const ids: string[] = [];
+		// With start/end on every angle clip (JasperEditor): the In points meet at the latest start. Otherwise the
+		// In points meet at the time that puts the earliest media start at 0.
+		const live = cams.filter((c): c is Cam => !!c);
+		const explicit = live.every((c) => c.start !== null && c.end !== null && c.start >= 0 && c.end > c.start);
+		const meet = explicit
+			? Math.max(0, ...live.map((c) => framesToFlicks(c.start!, seqRate)))
+			: Math.max(0, ...live.map((c) => framesToFlicks(c.inF, c.rate)));
+		const angles: NonNullable<ISequence['multicam']>['angles'] = [];
+		for (const [i, cam] of cams.entries()) {
+			const id = `angle${i + 1}`;
+			ids.push(id);
+			if (!cam) {
+				this.report.warn(`angle ${i + 1} of multiclip "${seq.name}" has no media clip; it was skipped`);
+				continue;
+			}
+			const inT = framesToFlicks(cam.inF, cam.rate);
+			let startT: number;
+			let srcIn: number;
+			let dur: number;
+			if (explicit) {
+				startT = framesToFlicks(cam.start!, seqRate);
+				srcIn = inT - (meet - startT);
+				dur = framesToFlicks(cam.end!, seqRate) - startT;
+			} else {
+				startT = meet - inT;
+				srcIn = 0;
+				dur =
+					cam.media.duration ??
+					(cam.outF !== null && cam.outF > cam.inF ? framesToFlicks(cam.outF, cam.rate) : inT);
+			}
+			if (srcIn < 0) {
+				startT -= srcIn;
+				dur += srcIn;
+				srcIn = 0;
+			}
+			if (cam.media.duration !== null) dur = Math.min(dur, cam.media.duration - srcIn);
+			if (dur <= 0) continue;
+			const place = (kind: 'video' | 'audio') => {
+				const t = this.b.track();
+				t.name = cam.name;
+				t.clips.push(
+					newClip({
+						id: this.b.id('c'),
+						name: cam.name,
+						start: startT,
+						duration: dur,
+						sourceIn: srcIn,
+						source: { type: 'media', mediaId: cam.mid },
+					}),
+				);
+				seq[kind].push(t);
+				return seq[kind].length - 1;
+			};
+			const video = cam.media.video ? place('video') : null;
+			const audio = cam.media.audio ? [place('audio')] : [];
+			const link = video !== null && audio.length ? this.b.id('l') : null;
+			if (link) {
+				seq.video[video!]!.clips[0]!.link = link;
+				seq.audio[audio[0]!]!.clips[0]!.link = link;
+			}
+			angles.push({ id, name: cam.name, video, audio, enabled: true });
+		}
+		this.b.ensureTracks(seq, 'video', 1);
+		this.b.ensureTracks(seq, 'audio', 1);
+		seq.multicam = {
+			angles,
+			audio: 'switch',
+			...(sync === 1
+				? { sync: 'in' }
+				: sync === 2
+					? { sync: 'out' }
+					: sync && sync >= 3
+						? { sync: 'timecode' }
+						: {}),
+		};
+		const r = { sid: seq.id, angles: ids };
+		this.multiclipSeqs.set(key, r);
+		return r;
+	}
+
 	track(
 		seq: ISequence,
 		kind: 'video' | 'audio',
@@ -460,6 +613,7 @@ class Fcp7Importer {
 		const name = childText(c, 'name') ?? '';
 		const rate = readRate(c) ?? seqRate;
 		let source: IClip['source'];
+		let multicam: IClip['multicam'];
 		let srcFrame: { width: number; height: number } = frame;
 		if (c.name === 'generatoritem') {
 			const eff = child(c, 'effect');
@@ -481,6 +635,22 @@ class Fcp7Importer {
 				this.b.p.root,
 			);
 			source = { type: 'media', mediaId: mid };
+		} else if (child(c, 'multiclip')) {
+			const mc = this.multiclip(child(c, 'multiclip')!, seqRate);
+			if (!mc) return null;
+			const s = this.b.p.sequences[mc.sid]!;
+			srcFrame = { width: s.width, height: s.height };
+			source = { type: 'sequence', sequenceId: mc.sid };
+			const own = children(child(c, 'multiclip'), 'angle');
+			const angleNodes = own.length
+				? own
+				: children(this.multiclipDefs.get(this.key(child(c, 'multiclip')!)) ?? null, 'angle');
+			const flag = kind === 'video' ? 'activevideoangle' : 'activeaudioangle';
+			const active = Math.max(
+				0,
+				angleNodes.findIndex((a) => childBool(a, flag) === true),
+			);
+			multicam = { enabled: true, angle: mc.angles[active] ?? mc.angles[0]! };
 		} else if (child(c, 'file')) {
 			const mid = this.file(child(c, 'file')!, name, this.b.p.root);
 			if (!mid) {
@@ -616,6 +786,7 @@ class Fcp7Importer {
 			reverse,
 			...(hold ? { hold: srcIn, speed: 1, reverse: false } : {}),
 			enabled: childBool(c, 'enabled') ?? true,
+			...(multicam ? { multicam } : {}),
 		});
 		const label = labelFrom(pathText(c, ['labels', 'label2']));
 		if (label) clip.label = label;
@@ -967,6 +1138,23 @@ export function exportFcp7(p: IProject, sequenceId: string, opts: ExportOptions,
 
 type ClipRef = { xid: string; kind: 'video' | 'audio'; track: number; index: number };
 
+/** One camera of a multi-camera source written as an xmeml multiclip angle: one media clip. */
+type MulticlipAngle = {
+	angle: IMulticamAngle;
+	media: IMedia;
+	/**
+	 * The angle clip's In point: its media at the latest angle start, where all cameras meet (In-point sync,
+	 * synctype 1); `start` + `end` (source-sequence frames) place the clips exactly for readers that keep them.
+	 */
+	inT: number;
+	/** The clip on the source sequence (flicks). */
+	start: number;
+	duration: number;
+};
+
+/** A track of a nested sequence as one multi-camera clip sees it (the other angles' tracks disabled). */
+type SequenceView = { key: string; kind: 'video' | 'audio'; hidden: ReadonlySet<number> };
+
 class Fcp7Exporter {
 	readonly w = new XmlWriter({ doctype: 'xmeml' });
 	readonly fileIds = new Map<string, string>();
@@ -974,6 +1162,7 @@ class Fcp7Exporter {
 	readonly masterIds = new Map<string, string>();
 	readonly writing = new Set<string>();
 	readonly written = new Set<string>();
+	readonly multiclips = new Map<string, MulticlipAngle[] | null>();
 	nextClip = 1;
 
 	constructor(
@@ -998,6 +1187,20 @@ class Fcp7Exporter {
 		for (const sid of exported)
 			for (const t of [...this.p.sequences[sid]!.video, ...this.p.sequences[sid]!.audio])
 				for (const c of t.clips) if (c.source.type === 'media') usedMedia.add(c.source.mediaId);
+		// Multi-camera sources every use of which is written as a multiclip are not written as sequences too.
+		const multiclipOnly = new Set<string>();
+		const plainUse = new Set<string>();
+		for (const sid of exported)
+			for (const kind of ['video', 'audio'] as const)
+				for (const t of this.p.sequences[sid]![kind])
+					for (const c of t.clips) {
+						if (c.source.type !== 'sequence') continue;
+						const info = multicamOf(this.p, c);
+						if (info && this.multiclipAngles(info) && !(kind === 'audio' && info.mc.audio === 'all'))
+							multiclipOnly.add(c.source.sequenceId);
+						else plainUse.add(c.source.sequenceId);
+					}
+		for (const id of plainUse) multiclipOnly.delete(id);
 		const hasBins = this.p.root.some((e) => e.type === 'bin');
 		if (hasBins) {
 			// A project: the bins holding the exported sequences and their (file) media as master clips.
@@ -1014,7 +1217,12 @@ class Fcp7Exporter {
 						w.open('children');
 						entries(e.children, depth + 1);
 						w.close().close();
-					} else if (e.type === 'sequence' && exported.has(e.id) && !placed.has(e.id)) {
+					} else if (
+						e.type === 'sequence' &&
+						exported.has(e.id) &&
+						!placed.has(e.id) &&
+						(e.id === sequenceId || !multiclipOnly.has(e.id))
+					) {
 						placed.add(e.id);
 						this.writeSequence(e.id, e.id === sequenceId);
 					} else if (e.type === 'media' && usedMedia.has(e.id) && !placed.has(e.id)) {
@@ -1082,11 +1290,12 @@ class Fcp7Exporter {
 		w.close();
 	}
 
-	writeSequence(id: string, top: boolean): void {
+	writeSequence(id: string, top: boolean, view?: SequenceView): void {
 		const w = this.w;
-		const sid = this.seqId(id);
+		const key = view ? `${id}#${view.key}` : id;
+		const sid = this.seqId(key);
 		const s = this.p.sequences[id];
-		if (!s || this.written.has(id) || this.writing.has(id)) {
+		if (!s || this.written.has(key) || this.writing.has(id)) {
 			w.empty('sequence', [['id', sid]]);
 			return;
 		}
@@ -1149,7 +1358,8 @@ class Fcp7Exporter {
 						this.writeClip(c, kind, s, refs.get(c.id)!.xid, links);
 					} else this.writeTransition(t.transitions[i]!, kind, rate);
 				}
-				w.text('enabled', boolStr(t.enabled)).text('locked', boolStr(t.locked));
+				const shown = !(view && view.kind === kind && view.hidden.has(ti));
+				w.text('enabled', boolStr(t.enabled && shown)).text('locked', boolStr(t.locked));
 				w.close();
 				if (
 					kind === 'audio' &&
@@ -1174,7 +1384,119 @@ class Fcp7Exporter {
 				instead: 'nothing (export the captions as a sidecar file)',
 			});
 		this.writing.delete(id);
-		this.written.add(id);
+		this.written.add(key);
+	}
+
+	/**
+	 * The cameras of a multi-camera source as multiclip angles, when every angle is one media clip at normal speed
+	 * whose media covers the source's time 0 (and its audio tracks hold nothing else); null otherwise.
+	 */
+	multiclipAngles(info: MulticamInfo): MulticlipAngle[] | null {
+		const s = info.seq;
+		if (this.multiclips.has(s.id)) return this.multiclips.get(s.id)!;
+		const plain = (c: IClip) =>
+			c.source.type === 'media' && c.speed === 1 && !c.reverse && (c.hold ?? null) === null;
+		const angles: MulticlipAngle[] = [];
+		let ok = true;
+		const ordered = [...info.mc.angles.filter((a) => a.enabled), ...info.mc.angles.filter((a) => !a.enabled)];
+		for (const a of ordered) {
+			const main = a.video !== null ? s.video[a.video] : s.audio[a.audio[0] ?? -1];
+			const c = main?.clips.length === 1 && !main.transitions.length ? main.clips[0]! : null;
+			const m = c && plain(c) ? this.p.media[(c.source as { mediaId: string }).mediaId] : undefined;
+			if (!c || !m || m.generator) {
+				ok = false;
+				break;
+			}
+			const same = a.audio.every((i) => {
+				const t = s.audio[i];
+				if (!t || t === main) return true;
+				if (t.transitions.length) return false;
+				return t.clips.every(
+					(x) =>
+						plain(x) &&
+						(x.source as { mediaId: string }).mediaId === m.id &&
+						x.start === c.start &&
+						x.sourceIn === c.sourceIn,
+				);
+			});
+			if (!same) {
+				ok = false;
+				break;
+			}
+			angles.push({ angle: a, media: m, inT: c.sourceIn, start: c.start, duration: c.duration });
+		}
+		// In-point sync: every angle's In is its media at the latest angle start (all cameras must overlap there).
+		const t = Math.max(0, ...angles.map((x) => x.start));
+		for (const x of angles) {
+			if (t >= x.start + x.duration) ok = false;
+			x.inT += t - x.start;
+		}
+		const out = ok && angles.some((x) => x.angle.video !== null) ? angles : null;
+		this.multiclips.set(s.id, out);
+		return out;
+	}
+
+	/** The `<multiclip>` of a multi-camera clip item (Apple's xmeml: name, collapsed, synctype, angle+). */
+	writeMulticlip(c: IClip, kind: 'video' | 'audio', info: MulticamInfo, angles: MulticlipAngle[]): void {
+		const w = this.w;
+		const rate = info.seq.rate;
+		const first = info.mc.angles.find((a) => a.video !== null) ?? null;
+		const audioAngle = info.mc.audio === 'camera1' ? first : info.angle;
+		w.open('multiclip', [['id', `multiclip-${this.seqId(info.seq.id).slice('sequence-'.length)}`]]);
+		w.text('name', info.seq.name);
+		w.text('collapsed', 'TRUE');
+		// The angle In points below are aligned at multiclip time 0, whatever the source's own sync method was.
+		w.text('synctype', 1);
+		for (const [i, a] of angles.entries()) {
+			w.open('angle');
+			w.text('activevideoangle', boolStr(a.angle.id === info.angle?.id && a.angle.video !== null));
+			w.text('activeaudioangle', boolStr(a.angle.id === audioAngle?.id));
+			const m = a.media;
+			const mrate = m.video?.rate ?? rate;
+			w.open('clip', [['id', `${this.seqId(info.seq.id)}-angle-${i + 1}`]]);
+			w.text('name', a.angle.name);
+			const t = Math.max(0, ...angles.map((x) => x.start));
+			const out = a.inT - (t - a.start) + a.duration;
+			w.text('duration', flicksToFrames(Math.max(m.duration ?? 0, out), mrate));
+			writeRate(w, mrate);
+			w.text('in', flicksToFrames(a.inT, mrate)).text('out', flicksToFrames(out, mrate));
+			w.text('masterclipid', this.masterId(m.id));
+			this.writeFile(m.id, rate);
+			w.text('start', flicksToFrames(a.start, rate)).text('end', flicksToFrames(a.start + a.duration, rate));
+			w.close().close();
+		}
+		w.close();
+		void c;
+		void kind;
+	}
+
+	/** The source of a nested-sequence clip item: a multiclip, the nest as its angle sees it, or the nest. */
+	writeNested(c: IClip, kind: 'video' | 'audio', outer: ISequence): void {
+		const sid = (c.source as { sequenceId: string }).sequenceId;
+		const info = multicamOf(this.p, c);
+		if (!info) {
+			this.writeSequence(sid, false);
+			return;
+		}
+		const angles = this.multiclipAngles(info);
+		const allAudio = kind === 'audio' && info.mc.audio === 'all';
+		if (angles && !allAudio) {
+			this.writeMulticlip(c, kind, info, angles);
+			return;
+		}
+		const hidden = multicamHiddenTracks(this.p, c, kind)!;
+		this.report.info(
+			`multi-camera clip "${c.name}" is written as a nested sequence ${kind === 'video' ? `showing its angle "${info.angle?.name ?? ''}"` : 'playing its audible cameras'}: ${allAudio ? 'the source mixes every camera (no multiclip equivalent)' : 'an angle of its source is not one media clip covering the source start'}`,
+			{
+				subject: { kind: 'clip', id: c.id, name: c.name, frame: frameOf(c.start, outer.rate) },
+				instead: 'a nested sequence with the other cameras’ tracks disabled',
+			},
+		);
+		this.writeSequence(sid, false, {
+			key: `${kind}:${[...hidden].sort((a, b) => a - b).join(',')}`,
+			kind,
+			hidden,
+		});
 	}
 
 	writeTransition(x: ITransition, kind: 'video' | 'audio', rate: Rate): void {
@@ -1243,7 +1565,7 @@ class Fcp7Exporter {
 		w.text('in', flicksToFrames(srcIn, rate)).text('out', flicksToFrames(srcOut, rate));
 		w.text('pproTicksIn', flicksToTicks(srcIn)).text('pproTicksOut', flicksToTicks(srcOut));
 		if (generator && kind === 'video') this.writeGenerator(generator);
-		else if (c.source.type === 'sequence') this.writeSequence(c.source.sequenceId, false);
+		else if (c.source.type === 'sequence') this.writeNested(c, kind, s);
 		else if (m && !generator) this.writeFile(m.id, rate);
 		if (kind === 'audio' && m && !generator) {
 			w.open('sourcetrack')

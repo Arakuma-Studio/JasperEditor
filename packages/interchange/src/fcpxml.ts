@@ -19,7 +19,14 @@
 // blend modes, pan, crop, roles, captions, keyframe easing, effects with their params, generators reported).
 import type { Animatable, Keyframe, Transform, Vec2 } from '@jasper/project';
 import { blendFromFcpxml, fcpxmlBlend } from './blend.ts';
-import { Builder, describeClip, frameOf, sequenceDuration } from './build.ts';
+import {
+	Builder,
+	describeClip,
+	frameOf,
+	multicamAudibleTracks,
+	multicamOf,
+	sequenceDuration,
+} from './build.ts';
 import { effectSpecOf, transitionFromName, transitionLabel } from './effects.ts';
 import type { IClip, IMarker, IMedia, IProject, ISequence, ITrack, ITransition, Rate } from './model.ts';
 import type { ExportOptions, ImportOptions } from './options.ts';
@@ -205,6 +212,7 @@ class FcpxmlImporter {
 	readonly effects = new Map<string, { name: string; uid: string }>();
 	readonly assets = new Map<string, AssetInfo>();
 	readonly medias = new Map<string, string>();
+	readonly multicams = new Map<string, string>();
 	readonly building = new Set<string>();
 
 	constructor(
@@ -283,6 +291,76 @@ class FcpxmlImporter {
 		this.building.delete(id);
 		if (sid) this.medias.set(id, sid);
 		return sid;
+	}
+
+	/**
+	 * A multicam clip's source (`<media>` holding a `<multicam>`): a multi-camera source sequence whose cameras are
+	 * the `<mc-angle>`s, each laid out like a storyline onto its own video track (picture) and audio tracks.
+	 */
+	multicam(id: string, depth: number): string | null {
+		const known = this.multicams.get(id);
+		if (known) return known;
+		const n = this.mediaNodes.get(id);
+		const mc = child(n, 'multicam');
+		if (!n || !mc || this.building.has(id) || depth > MAX_NEST) return null;
+		this.building.add(id);
+		const fmt = (mc.attrs.format && this.formats.get(mc.attrs.format)) || {
+			rate: { num: 24, den: 1 },
+			width: 1920,
+			height: 1080,
+		};
+		const tc0 = at(mc, 'tcStart') ?? 0;
+		const init = {
+			name: n.attrs.name || 'Multicam',
+			rate: fmt.rate,
+			dropFrame: mc.attrs.tcFormat === 'DF',
+			width: fmt.width,
+			height: fmt.height,
+			sampleRate: 48000,
+			startTimecode: Math.max(0, flicksToFrames(tc0, fmt.rate)),
+		};
+		const seq = this.b.sequence(init, { bin: this.b.p.root });
+		const angles: NonNullable<ISequence['multicam']>['angles'] = [];
+		const used = new Set<string>();
+		for (const [i, a] of children(mc, 'mc-angle').entries()) {
+			const tmp = this.b.sequence({ ...init, name: 'angle' }, { bin: null });
+			const ctx: Ctx = { seq: tmp, rate: fmt.rate, frame: { width: fmt.width, height: fmt.height }, depth };
+			this.storyline(ctx, a, -tc0, 0, true, depth + 1);
+			delete this.b.p.sequences[tmp.id];
+			const video: number[] = [];
+			const audio: number[] = [];
+			for (const t of tmp.video)
+				if (t.clips.length) {
+					seq.video.push(t);
+					video.push(seq.video.length - 1);
+				}
+			for (const t of tmp.audio)
+				if (t.clips.length) {
+					seq.audio.push(t);
+					audio.push(seq.audio.length - 1);
+				}
+			if (video.length > 1)
+				this.report.info(
+					`camera "${a.attrs.name ?? i + 1}" of "${init.name}" has connected clips: they are kept on extra tracks`,
+				);
+			let aid = a.attrs.angleID || `angle${i + 1}`;
+			while (used.has(aid)) aid = `${aid}_`;
+			used.add(aid);
+			if (!video.length && !audio.length) continue;
+			angles.push({
+				id: aid,
+				name: a.attrs.name || `Camera ${i + 1}`,
+				video: video[0] ?? null,
+				audio,
+				enabled: true,
+			});
+		}
+		this.b.ensureTracks(seq, 'video', 1);
+		this.b.ensureTracks(seq, 'audio', 1);
+		if (angles.some((x) => x.video !== null)) seq.multicam = { angles, audio: 'switch' };
+		this.building.delete(id);
+		this.multicams.set(id, seq.id);
+		return seq.id;
 	}
 
 	sequence(s: XNode, name: string, bin: ReturnType<Builder['bin']> | null, depth: number): string | null {
@@ -385,6 +463,7 @@ class FcpxmlImporter {
 			| { kind: 'media'; id: string; origin: number; v: boolean; a: boolean }
 			| { kind: 'seq'; id: string; origin: number; a: boolean }
 			| null = null;
+		let mcSel: { video: string | undefined; audio: string | undefined; vNode: XNode | null } | null = null;
 		switch (el.name) {
 			case 'asset-clip': {
 				const a = el.attrs.ref ? this.asset(el.attrs.ref, this.b.p.root, ctx.rate) : null;
@@ -422,8 +501,33 @@ class FcpxmlImporter {
 				}
 				break;
 			}
+			case 'mc-clip': {
+				const sid = el.attrs.ref ? this.multicam(el.attrs.ref, ctx.depth + 1) : null;
+				if (sid) {
+					const s = this.b.p.sequences[sid]!;
+					src = {
+						kind: 'seq',
+						id: sid,
+						origin: framesToFlicks(s.startTimecode, s.rate),
+						a: s.audio.some((t) => t.clips.length),
+					};
+					const angles = s.multicam?.angles ?? [];
+					const srcs = children(el, 'mc-source');
+					const has = (x: XNode, k: string) => [k, 'all'].includes(x.attrs.srcEnable ?? 'all');
+					const vNode = srcs.find((x) => has(x, 'video')) ?? null;
+					const aNode = srcs.find((x) => has(x, 'audio')) ?? null;
+					const firstV = angles.find((x) => x.video !== null)?.id;
+					const known = (id: string | undefined) => (id && angles.some((x) => x.id === id) ? id : undefined);
+					if (s.multicam)
+						mcSel = {
+							video: known(vNode?.attrs.angleID) ?? (srcs.length ? undefined : firstV),
+							audio: known(aNode?.attrs.angleID) ?? (srcs.length ? undefined : firstV),
+							vNode,
+						};
+				} else this.missingRef(el, name);
+				break;
+			}
 			case 'sync-clip':
-			case 'mc-clip':
 			case 'title':
 			case 'video':
 			case 'audio':
@@ -446,8 +550,9 @@ class FcpxmlImporter {
 		if (src && dur > 0) {
 			const srcIn = tm.base - src.origin;
 			const enable = el.attrs.srcEnable ?? 'all';
-			const wantV = (src.kind === 'seq' || src.v) && enable !== 'audio' && lane >= 0;
-			const wantA = src.a && enable !== 'video';
+			const wantV =
+				(src.kind === 'seq' || src.v) && enable !== 'audio' && lane >= 0 && (!mcSel || !!mcSel.video);
+			const wantA = src.a && enable !== 'video' && (!mcSel || !!mcSel.audio);
 			const link = wantV && wantA ? this.b.id('l') : null;
 			const role = /(\d+)\s*$/.exec(el.attrs.audioRole ?? '');
 			for (const kind of ['video', 'audio'] as const) {
@@ -469,8 +574,11 @@ class FcpxmlImporter {
 							: { type: 'media', mediaId: src.id },
 					markers: [],
 					effects: [],
+					...(mcSel
+						? { multicam: { enabled: true, angle: (kind === 'video' ? mcSel.video : mcSel.audio)! } }
+						: {}),
 				};
-				this.adjustments(clip, el, local, ctx, kind);
+				this.adjustments(clip, kind === 'video' && mcSel?.vNode ? mcSel.vNode : el, local, ctx, kind);
 				if (!primary || kind === 'audio') clip.markers = this.markers(el, local, clip, ctx.rate);
 				const pref =
 					kind === 'video'
@@ -816,6 +924,7 @@ class FcpxmlExporter {
 	readonly formats: { id: string; rate: Rate; w: number; h: number }[] = [];
 	readonly assets = new Map<string, string>();
 	readonly medias = new Map<string, string>();
+	readonly multicams = new Map<string, string>();
 	readonly effects = new Map<string, string>();
 	readonly building = new Set<string>();
 	next = 1;
@@ -931,6 +1040,90 @@ class FcpxmlExporter {
 					['name', s.name],
 				],
 				[body],
+			),
+		);
+		return id;
+	}
+
+	/**
+	 * A multi-camera source as a `<media>` resource holding a `<multicam>`: one `<mc-angle>` per camera (its video
+	 * track and audio tracks laid out like a storyline), in camera order.
+	 */
+	multicamMedia(sid: string): string | null {
+		const known = this.multicams.get(sid);
+		if (known) return known;
+		const s = this.p.sequences[sid];
+		const mc = s?.multicam;
+		if (!s || !mc || this.building.has(sid)) return null;
+		const fmt = this.format(s.rate, s.width, s.height);
+		const id = this.rid();
+		this.multicams.set(sid, id);
+		this.building.add(sid);
+		const where = { kind: 'sequence' as const, id: sid, name: s.name };
+		const inAngle = new Set<ITrack>();
+		const angles = mc.angles.map((a) => {
+			const video = a.video !== null && s.video[a.video] ? [s.video[a.video]!] : [];
+			const audio = a.audio.map((i) => s.audio[i]).filter((t): t is ITrack => !!t);
+			for (const t of [...video, ...audio]) inAngle.add(t);
+			const tmpId = `${sid}~angle~${a.id}`;
+			this.p.sequences[tmpId] = {
+				...s,
+				id: tmpId,
+				video,
+				audio,
+				markers: [],
+				captions: [],
+				multicam: undefined,
+			};
+			let body: El;
+			try {
+				body = this.sequenceEl(tmpId, fmt);
+			} finally {
+				delete this.p.sequences[tmpId];
+			}
+			const spine = body.children.find((c) => c.tag === 'spine')?.children ?? [];
+			return el(
+				'mc-angle',
+				[
+					['name', a.name],
+					['angleID', a.id],
+				],
+				spine,
+			);
+		});
+		const rest = [...s.video, ...s.audio].filter((t) => t.clips.length && !inAngle.has(t)).length;
+		if (rest)
+			this.report.warn(
+				`${rest} track(s) of multi-camera source "${s.name}" belong to no camera and are not carried by FCPXML multicam`,
+				{ subject: where, instead: 'nothing' },
+			);
+		if (mc.angles.some((a) => !a.enabled))
+			this.report.info(`the hidden cameras of "${s.name}" are written as ordinary angles`, {
+				subject: where,
+			});
+		if (s.markers.length)
+			this.report.info(`the markers of multi-camera source "${s.name}" are not carried by FCPXML multicam`, {
+				subject: where,
+			});
+		this.building.delete(sid);
+		this.resources.push(
+			el(
+				'media',
+				[
+					['id', id],
+					['name', s.name],
+				],
+				[
+					el(
+						'multicam',
+						[
+							['format', fmt],
+							['tcStart', fmtTime(framesToFlicks(s.startTimecode, s.rate), s.rate)],
+							['tcFormat', s.dropFrame ? 'DF' : 'NDF'],
+						],
+						angles,
+					),
+				],
 			),
 		);
 		return id;
@@ -1208,11 +1401,12 @@ class FcpxmlExporter {
 		let origin: number;
 		let hasVideo = true;
 		let hasAudio = false;
+		const mcInfo = c.source.type === 'sequence' ? multicamOf(this.p, c) : null;
 		if (c.source.type === 'sequence') {
-			ref = this.media(c.source.sequenceId);
+			ref = mcInfo ? this.multicamMedia(c.source.sequenceId) : this.media(c.source.sequenceId);
 			if (!ref) return gapEl('a gap', `${describeClip(c, rate)} refers to a missing or recursive sequence`);
 			const inner = this.p.sequences[c.source.sequenceId]!;
-			tag = 'ref-clip';
+			tag = mcInfo ? 'mc-clip' : 'ref-clip';
 			origin = framesToFlicks(inner.startTimecode, inner.rate);
 			hasAudio = inner.audio.some((t) => t.clips.length);
 		} else {
@@ -1389,6 +1583,58 @@ class FcpxmlExporter {
 				? ([['audioRole', `dialogue.dialogue-${ti + 1}`]] as [string, string][])
 				: []),
 		];
+		if (mcInfo) {
+			// mc-clip: timing and audio adjustments, then one mc-source per angle used (picture adjustments and video
+			// filters on the video angle's), then markers and audio filters (FCPXML DTD order).
+			const vAngle = kind === 'video' ? mcInfo.angle : null;
+			const ac = audio ?? (kind === 'audio' ? c : null);
+			const aInfo = ac ? multicamOf(this.p, ac) : null;
+			const audible = aInfo ? multicamAudibleTracks(aInfo.mc, aInfo.angle) : new Set<number>();
+			const aAngles = aInfo ? aInfo.mc.angles.filter((x) => x.audio.some((i) => audible.has(i))) : [];
+			const isVideoKid = (k: El) =>
+				k.tag === 'filter-video' ||
+				(k.tag.startsWith('adjust-') && k.tag !== 'adjust-volume' && k.tag !== 'adjust-panner');
+			const head = kids.filter((k) => k.tag === 'timeMap' || k.tag === 'conform-rate');
+			const audioAdj = kids.filter((k) => k.tag === 'adjust-volume' || k.tag === 'adjust-panner');
+			const tail = kids.filter(
+				(k) => k.tag === 'marker' || k.tag === 'chapter-marker' || k.tag === 'filter-audio',
+			);
+			const sources: El[] = [];
+			if (vAngle) {
+				const both = aAngles.some((x) => x.id === vAngle.id);
+				sources.push(
+					el(
+						'mc-source',
+						[
+							['angleID', vAngle.id],
+							['srcEnable', both ? 'all' : 'video'],
+						],
+						kids.filter(isVideoKid),
+					),
+				);
+			}
+			for (const x of aAngles)
+				if (x.id !== vAngle?.id)
+					sources.push(
+						el('mc-source', [
+							['angleID', x.id],
+							['srcEnable', 'audio'],
+						]),
+					);
+			if (aAngles.length > 1 && aInfo?.mc.audio === 'all')
+				this.report.info(
+					`multi-camera clip "${c.name}" mixes every camera: one audio angle per camera is enabled`,
+					{
+						subject: where,
+					},
+				);
+			return {
+				start: c.start,
+				end: c.start + c.duration,
+				local,
+				el: el(tag, attrs, [...head, ...audioAdj, ...sources, ...tail]),
+			};
+		}
 		return { start: c.start, end: c.start + c.duration, local, el: el(tag, attrs, kids) };
 	}
 

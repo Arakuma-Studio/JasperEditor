@@ -763,6 +763,31 @@ describe('project.pasteItems (CLB-007)', () => {
 		ok(h);
 	});
 
+	it('pastes a multi-camera source with its cameras on the copied tracks', () => {
+		const h = new Harness();
+		const items = [10, 12].map((seconds, i) => {
+			const r = h.ok([{ type: 'media.register', asset: videoAsset({ seconds }), name: `Cam ${i + 1}` }]);
+			return (r.results[0] as { itemId: string }).itemId;
+		});
+		const mc = h.ok([{ type: 'multicam.create', itemIds: items, method: 'in' }]).results[0] as {
+			sequenceId: string;
+			itemId: string;
+		};
+		const p = roundTrip(buildItemsPayload(h.doc, [mc.itemId]));
+		const r = h.ok([{ type: 'project.pasteItems', payload: p }]);
+		const copy = h.doc.sequences[(r.results[0] as { sequenceIds: string[] }).sequenceIds[0]!]!;
+		const orig = h.doc.sequences[mc.sequenceId]!;
+		const at = (s: typeof copy) =>
+			s.multicam!.angles.map((a) => [
+				a.id,
+				s.videoTracks.findIndex((t) => t.id === a.videoTrackId),
+				a.audioTrackIds.map((id) => s.audioTracks.findIndex((t) => t.id === id)),
+			]);
+		expect(at(copy)).toEqual(at(orig));
+		expect(copy.videoTracks[0]!.id).not.toBe(orig.videoTracks[0]!.id);
+		ok(h);
+	});
+
 	it('pastes bins with their children into another project (media resolved, items added once)', () => {
 		const { h, bin } = withBin();
 		const p = roundTrip(buildItemsPayload(h.doc, [bin]));
