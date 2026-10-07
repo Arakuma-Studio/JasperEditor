@@ -8,6 +8,7 @@ import {
 	defaultTransitionFrames,
 	formatTimecode,
 	gapAt,
+	isMulticamClip,
 	LABEL_COLORS,
 	type MediaAsset,
 	type ProjectItem,
@@ -27,6 +28,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { registerUiLocator } from '../../agent-bridge/ui-automation.ts';
 import { dropLutItems } from '../../color/actions.ts';
 import { createCommandContext } from '../../commands/context.ts';
+import { cameraMenuEntries } from '../../commands/multicam.ts';
 import { runCommand } from '../../commands/registry.ts';
 import { revealNested } from '../../commands/structure.ts';
 import { clipMenuExtensions, collectMenuItems } from '../../extensions/index.ts';
@@ -588,6 +590,46 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 							label: 'Reveal Nested Sequence',
 							shortcut: 'Ctrl+Shift+F',
 							run: () => run('timeline.revealNested'),
+						},
+					]
+				: []),
+			// wp-multicam (Premiere clip context menu: Synchronize…, Multi-Camera ▸ Enable / Flatten / camera N)
+			{ kind: 'item', label: 'Synchronize…', disabled: readOnly, run: () => run('clip.synchronize') },
+			...(c.kind === 'nest-video' || c.kind === 'nest-audio'
+				? [
+						{
+							kind: 'submenu' as const,
+							label: 'Multi-Camera',
+							items: [
+								{
+									kind: 'item' as const,
+									label: 'Enable',
+									checked: isMulticamClip(c) && c.multicam.enabled,
+									disabled: readOnly,
+									run: () => run('multicam.enable'),
+								},
+								{
+									kind: 'item' as const,
+									label: 'Flatten',
+									disabled: readOnly || !(isMulticamClip(c) && c.multicam.enabled),
+									run: () => run('multicam.flatten'),
+								},
+								...(cameraMenuEntries(session, c).length ? [{ kind: 'separator' as const }] : []),
+								...cameraMenuEntries(session, c).map((m) => ({
+									kind: 'item' as const,
+									label: m.label,
+									checked: m.checked,
+									disabled: readOnly || !(isMulticamClip(c) && c.multicam.enabled),
+									run: () => run('multicam.switchCamera', { camera: m.camera }),
+								})),
+								{ kind: 'separator' as const },
+								{
+									kind: 'item' as const,
+									label: 'Edit Cameras…',
+									disabled: readOnly || !isMulticamClip(c),
+									run: () => run('multicam.editCameras'),
+								},
+							],
 						},
 					]
 				: []),
