@@ -278,7 +278,12 @@ export const ClipTrimCmd = cmd('clip.trim', {
 	rippleMarkers: z.boolean().optional(),
 });
 export const ClipSlipCmd = cmd('clip.slip', { clipIds: IdListSchema, deltaFrames: z.number().int() });
-export const ClipSlideCmd = cmd('clip.slide', { clipId: IdRefSchema, deltaFrames: z.number().int() });
+export const ClipSlideCmd = cmd('clip.slide', {
+	clipId: IdRefSchema,
+	deltaFrames: z.number().int(),
+	/** edit-ux: linked partners that start with the clip slide too (default true; Alt-drag = false). */
+	linked: z.boolean().optional(),
+});
 export const ClipSplitCmd = cmd('clip.split', {
 	sequenceId: IdRefSchema.optional(),
 	at: TimeInputSchema,

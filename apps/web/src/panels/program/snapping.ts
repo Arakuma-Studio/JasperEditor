@@ -29,6 +29,8 @@ export function buildSnapTargets(opts: {
 	height: number;
 	safeMargins?: { action: number; title: number } | null;
 	layers?: readonly Rect[];
+	/** edit-ux: guides (frame px) — vertical guides snap x, horizontal guides snap y. */
+	guides?: readonly { orientation: 'horizontal' | 'vertical'; position: number }[];
 }): SnapTargets {
 	const { width: W, height: H } = opts;
 	const x: SnapTarget[] = [
@@ -41,6 +43,11 @@ export function buildSnapTargets(opts: {
 		{ value: H / 2, kind: 'frame', role: 'center' },
 		{ value: H, kind: 'frame', role: 'max' },
 	];
+	for (const g of opts.guides ?? []) {
+		const t: SnapTarget = { value: g.position, kind: 'guide', role: 'center' };
+		if (g.orientation === 'vertical') x.push(t);
+		else y.push(t);
+	}
 	if (opts.safeMargins) {
 		for (const pct of [opts.safeMargins.action, opts.safeMargins.title]) {
 			x.push(

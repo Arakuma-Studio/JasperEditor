@@ -13,23 +13,13 @@ import type { EngineClient } from '@jasper/engine-client';
 import type { EditorSession } from '@jasper/session';
 import { useSessionOrNull, useSessionState, useStoreSelector } from '@jasper/session/react';
 import { Player, type PlayerRef } from '@remotion/player';
-import {
-	ArrowLeftToLine,
-	ArrowRightToLine,
-	ArrowUpFromLine,
-	Bookmark,
-	Play,
-	Scissors,
-	Square,
-	StepBack,
-	StepForward,
-} from 'lucide-react';
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { registerUiLocator } from '../../agent-bridge/ui-automation.ts';
 import { useAudioSessionServices } from '../../audio/session.ts';
 import { useColorBypass } from '../../color/actions.ts';
 import { runCommand } from '../../commands/index.ts';
+import { registerFullscreenTarget } from '../../commands/monitor-view.ts';
 import { useExpressionsFor } from '../../expressions/engine.ts';
 import { programOverlays } from '../../extensions/index.ts';
 import { useRegistry } from '../../extensions/react.ts';
@@ -42,6 +32,8 @@ import { useEngineOrNull } from '../../state/engine.tsx';
 import { ContextMenu } from '../timeline/components/Chrome.tsx';
 import { markerVar } from '../timeline/components/ClipView.tsx';
 import type { PanelProps } from '../types.ts';
+import { ProgramComparison } from './ComparisonView.tsx';
+import { GuidesOverlay } from './GuidesOverlay.tsx';
 import { programLayerMenu } from './layer-menu.ts';
 import {
 	durationLabel,
@@ -50,7 +42,6 @@ import {
 	SettingsMenu,
 	TimecodeDisplay,
 	type TimecodeFormat,
-	TransportButton,
 	useElementSize,
 	useTransportPlaying,
 } from './MonitorChrome.tsx';
@@ -63,9 +54,12 @@ import {
 	type PlaybackResolution,
 	resolutionToProxy,
 } from './monitor-store.ts';
+import { monitorExtras } from './monitor-view.ts';
 import { PlaybackDriver } from './playback-driver.ts';
 import { buildProgramDoc, playerDurationFrames, usesProxies } from './render-doc.ts';
 import { TransformOverlay } from './TransformOverlay.tsx';
+import { TransportBar } from './TransportBar.tsx';
+import { TrimMonitor, useTrimMonitorVisible } from './TrimMonitor.tsx';
 import { registerDriver } from './transport-registry.ts';
 import {
 	clampPan,
@@ -224,16 +218,25 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 	const [viewportRef, viewport] = useElementSize<HTMLDivElement>();
 	const view = computeView(viewport, frameSize, monitor.zoom, monitor.pan);
 	const ctx = useMonitorCommandCtx({ session, panel: 'program', instanceId, engine });
+	const trimVisible = useTrimMonitorVisible(session, seqId);
 	// S03:XF-050 (wp-clipboard): layer context menu; inside the shell its commands get the live context (toasts).
 	const shell = useShellRuntimeOrNull();
 	const [layerMenu, setLayerMenu] = useState<{ x: number; y: number; clipId: string | null } | null>(null);
 	const menuCtx = () => shell?.getCtx() ?? ctx;
+	// edit-ux: transport buttons run with the shell's live context focused on this monitor.
+	const barCtx = () => {
+		const c = shell?.getCtx();
+		return c ? { ...c, focus: { panel: 'program' as const, instanceId } } : ctx;
+	};
 
 	// ------------------------------------------------------------------ Player ↔ TransportStore (ARC-010)
 	const live = useRef({ seq, end, fps });
 	live.current = { seq, end, fps };
 	const [playerRate, setPlayerRate] = useState(1);
 	const [buffering, setBuffering] = useState(false);
+	const [dropped, setDropped] = useState(0);
+	const extras = useStoreSelector(monitorExtras, (s) => s);
+	useEffect(() => registerFullscreenTarget('program', () => viewportRef.current), [viewportRef]);
 	const driver = useMemo(
 		() =>
 			new PlaybackDriver({
@@ -246,6 +249,7 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 				},
 				setPlayerRate,
 				onBuffering: setBuffering,
+				onDroppedFrames: setDropped,
 			}),
 		[transport],
 	);
@@ -510,6 +514,25 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 							monitor={monitor}
 						/>
 					))}
+				{/* edit-ux: rulers and guides; the comparison view; the Trim Monitor replaces the picture in trim mode. */}
+				{seqId && !trimVisible && !mcView ? (
+					<GuidesOverlay sequenceId={seqId} view={view} viewport={viewport} frame={frameSize} />
+				) : null}
+				{extras.comparison.enabled && !playing && !trimVisible && !mcView && seqId ? (
+					<ProgramComparison session={session} sequenceId={seqId} doc={drawn} />
+				) : null}
+				{trimVisible && seqId ? <TrimMonitor session={session} sequenceId={seqId} ctx={barCtx()} /> : null}
+				{extras.showDroppedFrames ? (
+					<button
+						type="button"
+						className={`absolute top-2 left-6 size-[10px] rounded-full ${dropped > 0 ? 'bg-pr-warning' : 'bg-pr-success'}`}
+						title={`Dropped frames: ${dropped} (click to reset)`}
+						aria-label={`Dropped frames: ${dropped}`}
+						onClick={() => driver.resetDroppedFrames()}
+						data-testid="program-dropped-frames"
+						data-dropped={dropped}
+					/>
+				) : null}
 				{proxyChip ? (
 					<span
 						className="pointer-events-none absolute top-2 right-2 rounded-pr-control bg-pr-raised px-1.5 text-pr-small text-pr-strong"
@@ -572,6 +595,40 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 							label: 'Loop',
 							checked: transport.getState().loop,
 							onToggle: () => transport.setLoop(!transport.getState().loop),
+						},
+						// edit-ux (Premiere wrench menu): rulers, guides, comparison view, dropped frame indicator
+						{ type: 'separator' },
+						{
+							type: 'toggle',
+							label: 'Show Rulers',
+							shortcut: 'Ctrl+R',
+							checked: extras.showRulers,
+							onToggle: () => monitorExtras.setState((v) => ({ showRulers: !v.showRulers })),
+						},
+						{
+							type: 'toggle',
+							label: 'Show Guides',
+							shortcut: 'Ctrl+;',
+							checked: extras.showGuides,
+							onToggle: () => monitorExtras.setState((v) => ({ showGuides: !v.showGuides })),
+						},
+						{
+							type: 'toggle',
+							label: 'Lock Guides',
+							checked: extras.lockGuides,
+							onToggle: () => monitorExtras.setState((v) => ({ lockGuides: !v.lockGuides })),
+						},
+						{
+							type: 'toggle',
+							label: 'Comparison View',
+							checked: extras.comparison.enabled,
+							onToggle: () => void runCommand('program.toggleComparisonView', menuCtx()),
+						},
+						{
+							type: 'toggle',
+							label: 'Show Dropped Frame Indicator',
+							checked: extras.showDroppedFrames,
+							onToggle: () => monitorExtras.setState((v) => ({ showDroppedFrames: !v.showDroppedFrames })),
 						},
 						// wp-multicam (Premiere: Program monitor settings ▸ Multi-Camera and its options)
 						{ type: 'separator' },
@@ -639,87 +696,8 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 				onSeek={seek}
 				testId="program-ruler"
 			/>
-			<div
-				className="flex h-[36px] shrink-0 flex-wrap items-center justify-center gap-0.5 overflow-hidden px-2"
-				data-testid="program-transport"
-			>
-				<TransportButton
-					label="Add Marker"
-					shortcut="M"
-					testId="btn-add-marker"
-					onClick={() => run('timeline.addMarker')}
-				>
-					<Bookmark size={16} />
-				</TransportButton>
-				<TransportButton
-					label="Mark In"
-					shortcut="I"
-					testId="btn-mark-in"
-					onClick={() => run('timeline.markIn')}
-				>
-					<span className="font-pr text-[15px] leading-none">{'{'}</span>
-				</TransportButton>
-				<TransportButton
-					label="Mark Out"
-					shortcut="O"
-					testId="btn-mark-out"
-					onClick={() => run('timeline.markOut')}
-				>
-					<span className="font-pr text-[15px] leading-none">{'}'}</span>
-				</TransportButton>
-				<TransportButton
-					label="Go to In"
-					shortcut="Shift+I"
-					testId="btn-go-in"
-					onClick={() => run('timeline.goToIn')}
-				>
-					<ArrowLeftToLine size={16} />
-				</TransportButton>
-				<TransportButton
-					label="Step Back 1 Frame"
-					shortcut="Left"
-					testId="btn-step-back"
-					onClick={() => run('transport.stepBack')}
-				>
-					<StepBack size={16} />
-				</TransportButton>
-				<TransportButton
-					label={playing ? 'Stop' : 'Play'}
-					shortcut="Space"
-					testId="btn-play"
-					active={playing}
-					onClick={() => run('transport.playStop')}
-				>
-					{playing ? <Square size={14} /> : <Play size={16} />}
-				</TransportButton>
-				<TransportButton
-					label="Step Forward 1 Frame"
-					shortcut="Right"
-					testId="btn-step-forward"
-					onClick={() => run('transport.stepForward')}
-				>
-					<StepForward size={16} />
-				</TransportButton>
-				<TransportButton
-					label="Go to Out"
-					shortcut="Shift+O"
-					testId="btn-go-out"
-					onClick={() => run('timeline.goToOut')}
-				>
-					<ArrowRightToLine size={16} />
-				</TransportButton>
-				<TransportButton label="Lift" shortcut=";" testId="btn-lift" onClick={() => run('timeline.lift')}>
-					<ArrowUpFromLine size={16} />
-				</TransportButton>
-				<TransportButton
-					label="Extract"
-					shortcut="'"
-					testId="btn-extract"
-					onClick={() => run('timeline.extract')}
-				>
-					<Scissors size={16} />
-				</TransportButton>
-			</div>
+			{/* edit-ux: data-driven transport row with the Button Editor. */}
+			<TransportBar monitor="program" ctx={barCtx} playing={playing} testId="program-transport" />
 			{/* Portaled: the dock's split views clip and stack their panels' fixed descendants. */}
 			{layerMenu
 				? createPortal(

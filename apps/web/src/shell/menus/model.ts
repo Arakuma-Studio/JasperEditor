@@ -139,6 +139,9 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 		editOnly: true,
 		items: [
 			c('timeline.rename', 'Rename…'),
+			// edit-ux (Premiere: Clip ▸ Make Subclip… / Edit Subclip…)
+			c('project.makeSubclip', 'Make Subclip…'),
+			c('project.editSubclip', 'Edit Subclip…'),
 			c('timeline.speedDuration', 'Speed/Duration…'),
 			c('timeline.audioGain', 'Audio Gain…'),
 			c('timeline.audioChannels', 'Audio Channels…'),
@@ -230,6 +233,17 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('timeline.addEdit', 'Add Edit'),
 			c('timeline.addEditAllTracks', 'Add Edit to All Tracks'),
 			c('timeline.extendEditToPlayhead', 'Extend Edit'),
+			// edit-ux trim mode (Premiere: Sequence ▸ Trim Edit, Select Nearest Edit Point ▸, Toggle Trim Type)
+			c('timeline.trimEdit', 'Trim Edit'),
+			sub('Select Nearest Edit Point', [
+				c('timeline.selectNearestEditRippleIn', 'As Ripple In'),
+				c('timeline.selectNearestEditRippleOut', 'As Ripple Out'),
+				c('timeline.selectNearestEditRoll', 'As Roll'),
+				c('timeline.selectNearestEditTrimIn', 'As Trim In'),
+				c('timeline.selectNearestEditTrimOut', 'As Trim Out'),
+			]),
+			c('timeline.toggleTrimType', 'Toggle Trim Type'),
+			c('timeline.playAroundEdit', 'Play Around the Edit'),
 			// wp-m3-transdefaults (S05 §12.2 Sequence menu, S10:TUI-030/031)
 			c('timeline.applyDefaultVideoTransition', 'Apply Video Transition'),
 			c('timeline.applyDefaultAudioTransition', 'Apply Audio Transition'),
@@ -295,6 +309,16 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('timeline.markClip', 'Mark Clip'),
 			c('timeline.markSelection', 'Mark Selection'),
 			sep,
+			// edit-ux (Premiere: Markers ▸ Mark Split, Source monitor)
+			sub('Mark Split', [
+				c('source.markSplitVideoIn', 'Video In'),
+				c('source.markSplitVideoOut', 'Video Out'),
+				c('source.markSplitAudioIn', 'Audio In'),
+				c('source.markSplitAudioOut', 'Audio Out'),
+				sep,
+				c('source.clearSplitMarks', 'Clear Split Marks'),
+			]),
+			sep,
 			c('timeline.goToIn', 'Go to In'),
 			c('timeline.goToOut', 'Go to Out'),
 			sep,
@@ -336,7 +360,19 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 		items: [
 			c('program.showRulers', 'Show Rulers'),
 			c('program.showGuides', 'Show Guides'),
+			c('program.lockGuides', 'Lock Guides'),
+			c('program.addGuide', 'Add Guide…'),
+			c('program.clearGuides', 'Clear Guides'),
+			// edit-ux (Premiere View ▸ Guide Templates)
+			sub('Guide Templates', [
+				c('program.saveGuidesAsTemplate', 'Save Guides as Template…'),
+				c('program.manageGuides', 'Manage Guides…'),
+			]),
 			c('program.snapInMonitor', 'Snap in Program Monitor'),
+			sep,
+			c('program.toggleComparisonView', 'Comparison View'),
+			c('program.toggleDroppedFrames', 'Show Dropped Frame Indicator'),
+			c('monitor.fullScreenVideo', 'Toggle Full Screen Video'),
 			sep,
 			sub('Theme', [
 				c('view.theme.darkest', 'Darkest'),

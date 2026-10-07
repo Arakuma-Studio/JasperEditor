@@ -11,7 +11,7 @@
 import { type ClipboardData, readClipboardEvent } from '../../clipboard/system.ts';
 import {
 	chordFromEvent,
-	DEFAULT_KEYMAP,
+	getActiveKeymap,
 	type KeyBinding,
 	type Platform,
 	type Runtime,
@@ -50,7 +50,7 @@ export function resolveKey(
 	const candidates = resolveBindings(chord, scopeChain(focus), {
 		platform: opts.platform,
 		runtime: opts.runtime,
-		keymap: opts.keymap ?? DEFAULT_KEYMAP,
+		keymap: opts.keymap ?? getActiveKeymap(),
 	});
 	for (const binding of candidates) {
 		const command = getCommand(binding.command);

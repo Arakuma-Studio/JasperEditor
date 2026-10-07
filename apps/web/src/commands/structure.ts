@@ -10,9 +10,11 @@ import {
 	gapNavigation,
 	isNestClip,
 	kindCapabilities,
-	multicamView,
+	matchFrame as matchFrameQuery,
 	type ProjectDocument,
 	type Rational,
+	resolveMatchFrame,
+	reverseMatchFrame as reverseMatchFrameQuery,
 	type Sequence,
 	SYNTHETIC_INFO,
 	type SyntheticKind,
@@ -103,74 +105,31 @@ const hasPicture = (c: Clip) => kindCapabilities(c.kind)?.trackKind === 'video' 
 // ---------------------------------------------------------------- match frame through nests
 
 /** The media clip shown at `frame` of `seq` (topmost video first, then audio), descending into nests. */
-export function resolveMatchFrame(
-	doc: ProjectDocument,
-	seq: Sequence,
-	frame: number,
-	trackIds?: readonly string[],
-	depth = 0,
-): { clip: Clip; seq: Sequence; contentFlicks: number } | null {
-	if (depth > 16) return null;
-	const rate = seq.settings.frameRate as Rational;
-	const order = [
-		...[...seq.videoTracks].reverse().map((t) => t.id),
-		...seq.audioTracks.map((t) => t.id),
-	].filter((id) => !trackIds || trackIds.includes(id));
-	for (const t of order) {
-		const c = clipAt(seq, t, frame);
-		if (!c) continue;
-		const time = clipPictureTime(c as never, frame, rate);
-		if (isNestClip(c)) {
-			const whole = doc.sequences[(c as { sequenceId: string }).sequenceId];
-			if (!whole) continue;
-			// wp-multicam: an enabled multi-camera clip matches its active angle only (Premiere).
-			const nested = multicamView(whole as Sequence, c);
-			const only =
-				nested === whole
-					? undefined
-					: [
-							...nested.videoTracks.filter((t) => t.output !== false).map((t) => t.id),
-							...nested.audioTracks.filter((t) => !t.mute).map((t) => t.id),
-						];
-			const nf = Math.floor(time / flicksPerFrame(nested.settings.frameRate as Rational) + 1e-6);
-			const hit = resolveMatchFrame(doc, nested as Sequence, nf, only, depth + 1);
-			if (hit) return hit;
-			continue;
-		}
-		if ((c as { mediaId?: string }).mediaId || (c as { syntheticId?: string }).syntheticId)
-			return { clip: c, seq, contentFlicks: time };
-	}
-	return null;
-}
-
-function projectItemOfClip(doc: ProjectDocument, c: Clip): string | null {
-	const m = (c as { mediaId?: string }).mediaId;
-	const s = (c as { syntheticId?: string }).syntheticId;
-	for (const it of Object.values(doc.items)) {
-		if (m && it.kind === 'media' && it.mediaId === m) return it.id;
-		if (s && it.kind === 'synthetic' && it.syntheticId === s) return it.id;
-	}
-	return null;
-}
+/** Match Frame through nests and multi-camera angles: the pure query lives in @jasper/project (edit-ux). */
+export { resolveMatchFrame };
 
 function matchFrame(ctx: CommandCtx, e: Env): void {
 	const view = e.session.getState().views[e.seq.id];
 	const targeted = [...(view?.targeting.video ?? []), ...(view?.targeting.audio ?? [])];
 	const doc = e.session.getCommitted();
-	const hit =
-		resolveMatchFrame(doc, e.seq, e.playhead, targeted.length ? targeted : undefined) ??
-		resolveMatchFrame(doc, e.seq, e.playhead);
+	// A selected clip under the playhead wins over the track order (Premiere).
+	const sel = e.session.getState().selection.timeline;
+	const hit = matchFrameQuery(doc, e.seq.id, e.playhead, {
+		trackIds: targeted,
+		...(sel.primaryClip ? { clipId: sel.primaryClip } : {}),
+	});
 	if (!hit) {
 		ctx.ui.toast({ kind: 'info', message: 'Match Frame: no clip with a source under the playhead' });
 		return;
 	}
-	const itemId = projectItemOfClip(doc, hit.clip);
+	const itemId = hit.itemId;
 	if (!itemId || !openInSource(e.session, itemId)) {
 		ctx.ui.toast({ kind: 'info', message: 'Match Frame: the clip has no project item' });
 		return;
 	}
+	const seq = doc.sequences[hit.sequenceId] ?? e.seq;
 	// The Source monitor shows the item after its next render; seek once its transport exists.
-	const target = Math.round((hit.contentFlicks / 705_600_000) * sourceFpsOf(doc, itemId, hit.seq));
+	const target = Math.round((hit.sourceTime / 705_600_000) * sourceFpsOf(doc, itemId, seq));
 	queueMicrotask(() => {
 		const t = getSourceTransport();
 		if (t) {
@@ -183,7 +142,7 @@ function matchFrame(ctx: CommandCtx, e: Env): void {
 
 function sourceFpsOf(doc: ProjectDocument, itemId: string, seq: Sequence): number {
 	const it = doc.items[itemId];
-	if (it?.kind === 'media') {
+	if (it?.kind === 'media' || it?.kind === 'subclip') {
 		const vs = doc.media[it.mediaId]?.probe.streams.find((s) => s.type === 'video');
 		if (vs?.type === 'video' && doc.media[it.mediaId]?.kind === 'video')
 			return vs.frameRate.num / vs.frameRate.den;
@@ -196,64 +155,25 @@ function reverseMatchFrame(ctx: CommandCtx, e: Env): void {
 	const doc = e.session.getCommitted();
 	const src = sourceMonitorState.getState();
 	const item = src.itemId ? doc.items[src.itemId] : undefined;
-	if (!item || (item.kind !== 'media' && item.kind !== 'synthetic')) {
+	if (!item || (item.kind !== 'media' && item.kind !== 'synthetic' && item.kind !== 'subclip')) {
 		ctx.ui.toast({ kind: 'info', message: 'Reverse Match Frame: open a clip in the Source monitor' });
 		return;
 	}
 	const sf = getSourceTransport()?.getState().frame ?? 0;
 	const flicks = (sf / src.fps) * 705_600_000;
-	const matches = (c: Clip) =>
-		item.kind === 'media'
-			? (c as { mediaId?: string }).mediaId === item.mediaId
-			: (c as { syntheticId?: string }).syntheticId === item.syntheticId;
-	const found = findContentFrame(doc, e.seq, matches, flicks, 0);
+	const view = e.session.getState().views[e.seq.id];
+	const found = reverseMatchFrameQuery(
+		doc,
+		e.seq.id,
+		{ itemId: item.id, time: flicks },
+		{ trackIds: [...(view?.targeting.video ?? []), ...(view?.targeting.audio ?? [])] },
+	);
 	if (found === null) {
 		ctx.ui.toast({ kind: 'info', message: 'Reverse Match Frame: that frame is not used in this sequence' });
 		return;
 	}
-	e.session.transport.seek(found);
-	activeTimeline(ctx.services)?.controller.reveal(found);
-}
-
-/** The first sequence frame of `seq` showing content `flicks` of a clip matching `pred` (through nests). */
-function findContentFrame(
-	doc: ProjectDocument,
-	seq: Sequence,
-	pred: (c: Clip) => boolean,
-	flicks: number,
-	depth: number,
-): number | null {
-	if (depth > 16) return null;
-	const rate = seq.settings.frameRate as Rational;
-	const F = flicksPerFrame(rate);
-	const tracks = [...[...seq.videoTracks].reverse(), ...seq.audioTracks].map((t) => t.id);
-	let best: number | null = null;
-	const consider = (f: number) => {
-		if (best === null || f < best) best = f;
-	};
-	for (const c of Object.values(seq.clips).sort(
-		(a, b) => tracks.indexOf(a.trackId) - tracks.indexOf(b.trackId) || a.start - b.start,
-	)) {
-		const frameOf = (target: number): number | null => {
-			if (c.frameHold) return Math.abs(c.frameHold.flicks - target) < F / 2 ? c.start : null;
-			const step = F * c.speed.rate;
-			const i = Math.floor((target - c.sourceIn) / step + 1e-6);
-			const local = c.speed.reverse ? c.duration - 1 - i : i;
-			return local >= 0 && local < c.duration ? c.start + local : null;
-		};
-		if (pred(c)) {
-			const f = frameOf(flicks);
-			if (f !== null) consider(f);
-		} else if (isNestClip(c)) {
-			const nested = doc.sequences[(c as { sequenceId: string }).sequenceId] as Sequence | undefined;
-			if (!nested) continue;
-			const nf = findContentFrame(doc, nested, pred, flicks, depth + 1);
-			if (nf === null) continue;
-			const f = frameOf(nf * flicksPerFrame(nested.settings.frameRate as Rational));
-			if (f !== null) consider(f);
-		}
-	}
-	return best;
+	e.session.transport.seek(found.frame);
+	activeTimeline(ctx.services)?.controller.reveal(found.frame);
 }
 
 /** Reveal Nested Sequence (Ctrl+Shift+F) / double-click: opens the nested sequence at the frame shown. */
