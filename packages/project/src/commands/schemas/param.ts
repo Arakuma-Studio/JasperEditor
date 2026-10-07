@@ -81,6 +81,16 @@ export const KeyframeSetSpatialCmd = cmd('keyframe.setSpatialInterpolation', {
  * Continuous Bezier and the side not given turns to stay opposite (keeping its length), unless
  * `breakContinuity` (Alt-drag) makes it Bezier with independent sides. Both sides given and not opposite → Bezier.
  */
+/**
+ * keyframes-blend: right-click ▸ Rove Across Time (After Effects). Roving keys lose their own time: each run of roving
+ * keys between two fixed keys moves as one segment shaped by the fixed keys' eases, and the roving keys' times follow
+ * from where the motion passes them. The first and last keys and hold keys cannot rove (skipped with a warning).
+ * Turning roving off keeps the key at its current time with eases that keep the speed through it.
+ */
+export const KeyframeSetRovingCmd = cmd('keyframe.setRoving', {
+	keyframeIds: z.array(IdRefSchema).min(1),
+	roving: z.boolean(),
+});
 export const KeyframeSetTangentsCmd = cmd('keyframe.setTangents', {
 	keyframeId: IdRefSchema,
 	inTangent: Vec2Schema.optional(),
@@ -173,6 +183,7 @@ export const PARAM_COMMANDS = [
 	KeyframesPruneCmd,
 	KeyframeSetSpatialCmd,
 	KeyframeSetTangentsCmd,
+	KeyframeSetRovingCmd,
 	EffectAddCmd,
 	EffectRemoveCmd,
 	EffectReorderCmd,

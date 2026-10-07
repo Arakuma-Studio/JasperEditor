@@ -214,6 +214,11 @@ export function evaluate<T>(anim: Animatable<T>, t: number, opts?: EvaluateOptio
 	const i = keyframeIndexAt(kfs, t);
 	const a = kfs[i]!;
 	const b = kfs[i + 1]!;
+	// keyframes-blend: inside a run of roving keys the whole run is one segment (Rove Across Time).
+	if (!opts?.holdOnly) {
+		const run = rovingRunAt(kfs as readonly Keyframe<unknown>[], i);
+		if (run) return clampValue(rovingValue(kfs as readonly Keyframe<unknown>[], run, t) as T, opts?.clamp);
+	}
 	if (a.interpolation === 'hold' || opts?.holdOnly || isHoldOnlyValue(a.value)) {
 		return clampValue(a.value, opts?.clamp);
 	}
@@ -223,6 +228,197 @@ export function evaluate<T>(anim: Animatable<T>, t: number, opts?: EvaluateOptio
 	// S03:KF-031: along a curved spatial path the progress is an arc-length fraction.
 	const path = spatialSegment(kfs as readonly Keyframe<unknown>[], i);
 	return clampValue(path ? (pathPointAt(path, p) as T) : lerpValue(a.value, b.value, p), opts?.clamp);
+}
+
+// ---------------------------------------------------------------- roving keyframes (keyframes-blend)
+
+/**
+ * A run of roving keys: fixed key `a`, roving keys a+1 … b−1, fixed key `b`. `cum[j]` = distance travelled from key a
+ * to key a + j (arc length along curved spatial segments, value distance otherwise), `cum[b − a]` = the total.
+ */
+export type RovingRun = { a: number; b: number; cum: number[] };
+
+/** A key that actually roves: flagged, not first / last, not hold, an interpolating value. */
+export function isRovingKey(kfs: readonly Keyframe<unknown>[], i: number): boolean {
+	const k = kfs[i];
+	return (
+		!!k?.roving &&
+		i > 0 &&
+		i < kfs.length - 1 &&
+		k.interpolation !== 'hold' &&
+		!isHoldOnlyValue(k.value) &&
+		kfs[i - 1]!.interpolation !== 'hold'
+	);
+}
+
+const runCache = new WeakMap<readonly Keyframe<unknown>[], RovingRun[]>();
+
+/** Distance of the segment leaving key i (arc length on curved spatial segments). */
+function segmentDistance(kfs: readonly Keyframe<unknown>[], i: number): number {
+	const a = kfs[i]!.value;
+	const b = kfs[i + 1]!.value;
+	if (isVec2Value(a) && isVec2Value(b)) return spatialSegmentLength(kfs, i);
+	return distance(a, b);
+}
+
+/** The roving runs of a key list (cached per array: documents are immutable between edits). */
+export function rovingRuns(kfs: readonly Keyframe<unknown>[]): RovingRun[] {
+	const hit = runCache.get(kfs);
+	if (hit) return hit;
+	const runs: RovingRun[] = [];
+	if (kfs.some((k) => k.roving)) {
+		let i = 1;
+		while (i < kfs.length - 1) {
+			if (!isRovingKey(kfs, i)) {
+				i++;
+				continue;
+			}
+			const a = i - 1;
+			let b = i;
+			while (b < kfs.length - 1 && isRovingKey(kfs, b)) b++;
+			const cum = [0];
+			for (let j = a; j < b; j++) cum.push(cum[cum.length - 1]! + segmentDistance(kfs, j));
+			runs.push({ a, b, cum });
+			i = b + 1;
+		}
+	}
+	runCache.set(kfs, runs);
+	return runs;
+}
+
+/** The run whose segments include the one leaving key i, or null. */
+export function rovingRunAt(kfs: readonly Keyframe<unknown>[], i: number): RovingRun | null {
+	for (const r of rovingRuns(kfs)) if (i >= r.a && i < r.b) return r;
+	return null;
+}
+
+/** Progress (0 … 1, may overshoot) of a run at normalised time u: the fixed keys' eases, as for one segment. */
+export function rovingProgress(kfs: readonly Keyframe<unknown>[], run: RovingRun, u: number): number {
+	const a = kfs[run.a]!;
+	return a.interpolation === 'linear'
+		? u
+		: bezierProgress(u, outgoingEase(kfs, run.a), incomingEase(kfs, run.b));
+}
+
+/** Value of a run at time t: the point at the run's progress along its cumulative distance. */
+function rovingValue(kfs: readonly Keyframe<unknown>[], run: RovingRun, t: number): unknown {
+	const A = kfs[run.a]!;
+	const B = kfs[run.b]!;
+	const u = B.time > A.time ? (t - A.time) / (B.time - A.time) : 0;
+	const p = rovingProgress(kfs, run, Math.min(1, Math.max(0, u)));
+	const total = run.cum[run.cum.length - 1]!;
+	const m = run.b - run.a;
+	if (!(total > 0)) return A.value;
+	const s = p * total;
+	// The segment holding s (the first / last one extrapolate an overshoot).
+	let j = 0;
+	while (j < m - 1 && run.cum[j + 1]! <= s) j++;
+	while (j < m - 1 && run.cum[j + 1]! - run.cum[j]! <= 0) j++;
+	const len = run.cum[j + 1]! - run.cum[j]!;
+	const q = len > 0 ? (s - run.cum[j]!) / len : 0;
+	const i = run.a + j;
+	const path = spatialSegment(kfs, i);
+	return path ? pathPointAt(path, q) : lerpValue(kfs[i]!.value, kfs[i + 1]!.value, q);
+}
+
+/** The normalised time (0 … 1) at which a run's progress reaches `f` (bisection; eases are monotone in practice). */
+function rovingTimeOf(kfs: readonly Keyframe<unknown>[], run: RovingRun, f: number): number {
+	let lo = 0;
+	let hi = 1;
+	for (let k = 0; k < 64; k++) {
+		const mid = (lo + hi) / 2;
+		if (rovingProgress(kfs, run, mid) < f) lo = mid;
+		else hi = mid;
+	}
+	return (lo + hi) / 2;
+}
+
+/**
+ * Stores the times of roving keys (Rove Across Time): each roving key sits where the run's motion passes it, rounded
+ * to whole flicks and kept strictly between its neighbours. Clears the flag of keys that cannot rove (first, last,
+ * hold). Returns true when a time changed. Called by every command that edits keys (evaluation does not need the
+ * stored times: they place the keys on the timeline).
+ */
+export function retimeRoving(kfs: Keyframe<unknown>[]): boolean {
+	if (!kfs.some((k) => k.roving)) return false;
+	kfs.forEach((k, i) => {
+		if (k.roving && !isRovingKey(kfs, i)) delete k.roving;
+	});
+	let changed = false;
+	for (const run of rovingRuns([...kfs])) {
+		const A = kfs[run.a]!;
+		const B = kfs[run.b]!;
+		const m = run.b - run.a;
+		const total = run.cum[m]!;
+		let prev = A.time;
+		for (let r = 1; r < m; r++) {
+			const f = total > 0 ? run.cum[r]! / total : r / m;
+			const u = rovingTimeOf(kfs, run, f);
+			let time = Math.round(A.time + u * (B.time - A.time));
+			// Strictly increasing, leaving room for the remaining roving keys before B.
+			time = Math.max(prev + 1, Math.min(B.time - (m - r), time));
+			if (kfs[run.a + r]!.time !== time) {
+				kfs[run.a + r]!.time = time;
+				changed = true;
+			}
+			prev = time;
+		}
+	}
+	return changed;
+}
+
+/**
+ * Speed of the motion at roving key i (value units per flick, along the path), from the run's progress curve: used
+ * when the key stops roving so its eases keep the speed through it.
+ */
+export function rovingSpeedAt(kfs: readonly Keyframe<unknown>[], i: number): number | null {
+	const run = rovingRuns(kfs).find((r) => i > r.a && i < r.b);
+	if (!run) return null;
+	const A = kfs[run.a]!;
+	const B = kfs[run.b]!;
+	const T = B.time - A.time;
+	const total = run.cum[run.b - run.a]!;
+	if (!(T > 0) || !(total > 0)) return 0;
+	const u = rovingTimeOf(kfs, run, run.cum[i - run.a]! / total);
+	const h = 1e-4;
+	const dp =
+		(rovingProgress(kfs, run, Math.min(1, u + h)) - rovingProgress(kfs, run, Math.max(0, u - h))) /
+		(Math.min(1, u + h) - Math.max(0, u - h));
+	return (dp * total) / T;
+}
+
+/** Distance of the segment leaving key i (arc length for curved spatial segments). */
+function frozenSegDistance(kfs: readonly Keyframe<unknown>[], i: number): number {
+	const a = kfs[i]?.value;
+	const b = kfs[i + 1]?.value;
+	if (a === undefined || b === undefined) return 0;
+	if (typeof a === 'number' && typeof b === 'number') return Math.abs(b - a);
+	if (Array.isArray(a) && Array.isArray(b) && a.length === 2) return spatialSegmentLength(kfs, i);
+	if (Array.isArray(a) && Array.isArray(b))
+		return Math.sqrt(a.reduce((s: number, x, k) => s + ((b[k] as number) - (x as number)) ** 2, 0));
+	return 0;
+}
+
+/**
+ * Freezes a roving key (it stops roving): Continuous Bezier with the run's speed at the key on both sides, expressed
+ * as the normalised slopes of its two segments (slope = speed / segment average speed).
+ */
+export function stopRoving(kfs: Keyframe<unknown>[], i: number): void {
+	const k = kfs[i]!;
+	if (!k.roving) return;
+	const v = isRovingKey(kfs, i) ? rovingSpeedAt(kfs, i) : null;
+	delete k.roving;
+	if (v === null) return;
+	const avg = (j: number) => {
+		const T = kfs[j + 1]!.time - kfs[j]!.time;
+		const d = frozenSegDistance(kfs, j);
+		return T > 0 && d > 0 ? d / T : 0;
+	};
+	const vin = avg(i - 1);
+	const vout = avg(i);
+	k.interpolation = 'continuous-bezier';
+	k.easeIn = { influence: AUTO_INFLUENCE, slope: vin > 0 ? v / vin : 1 };
+	k.easeOut = { influence: AUTO_INFLUENCE, slope: vout > 0 ? v / vout : 1 };
 }
 
 /** True when the property has at least one keyframe (stopwatch on). */

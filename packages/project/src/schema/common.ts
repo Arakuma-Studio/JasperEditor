@@ -94,6 +94,12 @@ export type Keyframe<T> = {
 	easeOut: Ease;
 	/** vec2 point properties only (S03:KF-030); absent = linear spatial. */
 	spatial?: Spatial;
+	/**
+	 * keyframes-blend: After Effects' Rove Across Time — the key has no time of its own: the run of roving keys between
+	 * two fixed keys moves as one segment (the fixed keys' eases shape it) and the roving keys' times follow from where
+	 * the motion passes them (`retimeRoving`). Never on the first or last key or on hold keys. Absent = false.
+	 */
+	roving?: boolean;
 };
 export type Animatable<T> = { value: T; keyframes: Keyframe<T>[] };
 
@@ -106,6 +112,7 @@ export function keyframeSchema<T extends z.ZodType>(value: T) {
 		easeIn: EaseSchema,
 		easeOut: EaseSchema,
 		spatial: SpatialSchema.optional(),
+		roving: z.boolean().optional(),
 	});
 }
 

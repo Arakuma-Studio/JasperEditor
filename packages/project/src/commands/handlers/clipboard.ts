@@ -19,7 +19,7 @@ import {
 } from '../../clipboard/payload.ts';
 import type { ClipTiming } from '../../color/retime.ts';
 import { anim, defaultTransform } from '../../factories.ts';
-import { isHoldOnlyValue } from '../../keyframes.ts';
+import { isHoldOnlyValue, retimeRoving } from '../../keyframes.ts';
 import { isVec2Value, refreshAutoTangents, reversedSpatial } from '../../keyframes-spatial.ts';
 import { defaultLabelForMedia, kindCapabilities, trackKindFor } from '../../registry/kinds.ts';
 import { intrinsicBoxOf } from '../../registry/properties.ts';
@@ -809,6 +809,8 @@ function pasteKeyframes(doc: DDoc, cmd: CommandOf<'keyframe.paste'>, h: HandlerC
 		].sort((a, b) => a.time - b.time);
 		target.anim.keyframes = merged as never;
 		refreshAutoTangents(target.anim.keyframes as Keyframe<unknown>[]);
+		// keyframes-blend: roving keys sit where the motion passes them.
+		retimeRoving(target.anim.keyframes as Keyframe<unknown>[]);
 		refreshAutoBezier(target.anim);
 		(target.anim as { [PRUNE_EMPTY_KEYFRAMES]?: () => void })[PRUNE_EMPTY_KEYFRAMES]?.();
 		pasted.push(...[...incoming.values()].map((k) => k.id));
