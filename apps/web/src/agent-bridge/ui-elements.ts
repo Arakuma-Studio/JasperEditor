@@ -69,16 +69,26 @@ const HANDLERS = [
 	'onWheel',
 ] as const;
 
-/** Data attributes of entities a panel draws and hit-tests itself → automation id prefix. */
+/**
+ * Data attributes of entities a panel draws (and often hit-tests itself) → the entity name in automation ids
+ * `<panel>.<entity>.<id>` (e.g. `timeline.clip.clp_…`, `program.clip.clp_…`, `project.item.itm_…`).
+ */
 const ENTITY_ATTRS: readonly [string, string][] = [
-	['data-clip-id', 'timeline.clip'],
-	['data-track-header', 'timeline.trackHeader'],
-	['data-track-id', 'timeline.track'],
-	['data-transition-id', 'timeline.transition'],
+	['data-clip-id', 'clip'],
+	['data-track-header', 'trackHeader'],
+	['data-track-id', 'track'],
+	['data-transition-id', 'transition'],
 	['data-kf-id', 'keyframe'],
 	['data-tracker-id', 'tracker'],
-	['data-item-id', 'project.item'],
+	['data-item-id', 'item'],
 ];
+
+function entityId(el: Element): string | null {
+	const e = ENTITY_ATTRS.find(([a]) => el.hasAttribute(a));
+	if (!e) return null;
+	const panel = el.closest('[data-panel-kind]')?.getAttribute('data-panel-kind') ?? 'window';
+	return `${panel}.${e[1]}.${el.getAttribute(e[0])}`;
+}
 
 function reactProps(el: Element): Record<string, unknown> | null {
 	for (const k in el)
@@ -256,6 +266,8 @@ export function snapshotElements(root: ParentNode = document): ElementSnapshot {
 	};
 	const scopeOf = (el: Element): string => {
 		for (let p = el.parentElement; p; p = p.parentElement) {
+			const entity = entityId(p);
+			if (entity) return entity;
 			const t = uniqueTestId(p);
 			if (t) return t;
 			if (p.hasAttribute('data-panel-body')) return `panel.${p.getAttribute('data-panel-kind')}`;
@@ -274,7 +286,7 @@ export function snapshotElements(root: ParentNode = document): ElementSnapshot {
 	}[] = [];
 	const walk = root.querySelectorAll('*');
 	for (const el of Array.from(walk)) {
-		const entity = ENTITY_ATTRS.find(([a]) => el.hasAttribute(a));
+		const entity = entityId(el);
 		const interactive = isInteractive(el);
 		if (!interactive && !entity) continue;
 		if (!isVisible(el)) continue;
@@ -283,15 +295,8 @@ export function snapshotElements(root: ParentNode = document): ElementSnapshot {
 			candidates.push({ el, kind: interactive ? 'control' : 'target', base: t, named: true });
 			continue;
 		}
-		if (entity && !interactive) {
-			const [attr, prefix] = entity;
-			candidates.push({
-				el,
-				kind: 'target',
-				base: `${prefix}.${el.getAttribute(attr)}`,
-				named: true,
-				entity: prefix,
-			});
+		if (entity) {
+			candidates.push({ el, kind: interactive ? 'control' : 'target', base: entity, named: true, entity });
 			continue;
 		}
 		const name = accessibleName(el);
@@ -302,6 +307,21 @@ export function snapshotElements(root: ParentNode = document): ElementSnapshot {
 			base: `${scopeOf(el)}/${own}${name ? `[${slug(name)}]` : ''}`,
 			named: !!name || !!el.getAttribute('data-testid'),
 		});
+	}
+	// An entity drawn by several elements (a clip's body and its marker line): the largest one stands for it.
+	const area = (e: Element) => {
+		const r = e.getBoundingClientRect();
+		return r.width * r.height;
+	};
+	const best = new Map<string, Element>();
+	for (const c of candidates)
+		if (c.entity) {
+			const b = best.get(c.base);
+			if (!b || area(c.el) > area(b)) best.set(c.base, c.el);
+		}
+	for (let i = candidates.length - 1; i >= 0; i--) {
+		const c = candidates[i]!;
+		if (c.entity && best.get(c.base) !== c.el) candidates.splice(i, 1);
 	}
 	const dup = new Map<string, number>();
 	for (const c of candidates) dup.set(c.base, (dup.get(c.base) ?? 0) + 1);

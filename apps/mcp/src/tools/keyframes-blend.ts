@@ -2,12 +2,7 @@
 // Effects' utility modes), set a clip's blend mode by id or label, and turn Rove Across Time on or off for keys.
 import { BLEND_MODE_GROUP_LABELS, BLEND_MODE_INFO, parseBlendMode } from '@jasper/project';
 import { z } from 'zod';
-import {
-	defineTool,
-	EDIT_IDEMPOTENT,
-	READ_ONLY,
-	type ToolContext,
-} from '../context.ts';
+import { defineTool, EDIT_IDEMPOTENT, READ_ONLY, type ToolContext } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { applyHelper } from './editing.ts';
 import { ProjectIdArg } from './projects.ts';

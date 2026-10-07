@@ -18,7 +18,9 @@ const WindowArg = z
 	.string()
 	.min(1)
 	.optional()
-	.describe('Target the editor window that has this project open (default: the most recently connected window)');
+	.describe(
+		'Target the editor window that has this project open (default: the most recently connected window)',
+	);
 
 const ModifiersArg = z
 	.strictObject({
@@ -32,7 +34,12 @@ const ModifiersArg = z
 	.describe('Modifier keys held during the action');
 
 const TimelineTarget = z.strictObject({
-	frame: z.number().int().min(0).optional().describe('Sequence frame (x); default: the middle of the visible range'),
+	frame: z
+		.number()
+		.int()
+		.min(0)
+		.optional()
+		.describe('Sequence frame (x); default: the middle of the visible range'),
 	track: z.string().optional().describe('Track label "V1", "A2" or id (y: the row centre)'),
 	clipId: z.string().optional().describe('A clip: its body centre, or an edge'),
 	edge: z.enum(['in', 'out', 'center']).optional().describe('With clipId: the in edge, out edge or centre'),
@@ -46,14 +53,26 @@ const TargetArg = z
 	.union([
 		z.strictObject({
 			id: z.string().min(1).describe('Automation id from ui_elements'),
-			fx: z.number().min(0).max(1).optional().describe('Horizontal position inside the element, 0..1 (default 0.5)'),
-			fy: z.number().min(0).max(1).optional().describe('Vertical position inside the element, 0..1 (default 0.5)'),
+			fx: z
+				.number()
+				.min(0)
+				.max(1)
+				.optional()
+				.describe('Horizontal position inside the element, 0..1 (default 0.5)'),
+			fy: z
+				.number()
+				.min(0)
+				.max(1)
+				.optional()
+				.describe('Vertical position inside the element, 0..1 (default 0.5)'),
 		}),
 		z.strictObject({ x: z.number().min(0), y: z.number().min(0) }),
 		z.strictObject({ timeline: TimelineTarget }),
 		z.strictObject({ program: ProgramTarget }),
 	])
-	.describe('{id, fx?, fy?} | {x, y} (window CSS px) | {timeline: {frame?, track?, clipId?, edge?}} | {program: {x, y}}');
+	.describe(
+		'{id, fx?, fy?} | {x, y} (window CSS px) | {timeline: {frame?, track?, clipId?, edge?}} | {program: {x, y}}',
+	);
 
 async function ui(
 	ctx: ToolContext,
@@ -65,6 +84,14 @@ async function ui(
 	return ctx.engine((c) =>
 		c.agentUi({ action, ...(projectId ? { projectId } : {}), args }, extra?.signal),
 	) as Promise<{ result: unknown; window: { projectId: string; sessionId: string } }>;
+}
+
+/** The window's answer, with which window answered (`window: {projectId, sessionId}`). */
+async function uiJson(...a: Parameters<typeof ui>) {
+	const r = await ui(...a);
+	const body =
+		r.result && typeof r.result === 'object' && !Array.isArray(r.result) ? r.result : { result: r.result };
+	return jsonResult({ ...body, window: r.window });
 }
 
 const strip = <T extends Record<string, unknown>>(o: T) =>
@@ -81,7 +108,7 @@ export function registerUiTools(ctx: ToolContext): void {
 			input: { projectId: WindowArg },
 			annotations: READ_ONLY,
 		},
-		async ({ projectId }, extra) => jsonResult(await ui(ctx, 'state', projectId, {}, extra)),
+		async ({ projectId }, extra) => uiJson(ctx, 'state', projectId, {}, extra),
 	);
 
 	defineTool(
@@ -100,7 +127,7 @@ export function registerUiTools(ctx: ToolContext): void {
 			},
 			annotations: READ_ONLY,
 		},
-		async (a, extra) => jsonResult(await ui(ctx, 'elements', a.projectId, strip(a), extra)),
+		async (a, extra) => uiJson(ctx, 'elements', a.projectId, strip(a), extra),
 	);
 
 	defineTool(
@@ -114,14 +141,27 @@ export function registerUiTools(ctx: ToolContext): void {
 				projectId: WindowArg,
 				panel: z.string().optional().describe('Crop to this dock panel (kind or instance id)'),
 				id: z.string().optional().describe('Crop to this element (automation id)'),
-				maxWidth: z.number().int().min(64).max(4096).optional().describe('Scale down to at most this width (default 1600)'),
+				maxWidth: z
+					.number()
+					.int()
+					.min(64)
+					.max(4096)
+					.optional()
+					.describe('Scale down to at most this width (default 1600)'),
 			},
 			annotations: READ_ONLY,
 		},
 		async (a, extra) => {
 			if (a.panel && a.id) throw new ToolError('E_INVALID_PARAM', 'Give panel or id, not both');
 			const r = await ui(ctx, 'screenshot', a.projectId, strip(a), extra);
-			const shot = r.result as { png: string; width: number; height: number; bounds: unknown; via: string; note?: string };
+			const shot = r.result as {
+				png: string;
+				width: number;
+				height: number;
+				bounds: unknown;
+				via: string;
+				note?: string;
+			};
 			if (!shot?.png) throw new ToolError('INTERNAL', 'The window returned no image');
 			return {
 				content: [
@@ -156,7 +196,9 @@ export function registerUiTools(ctx: ToolContext): void {
 				fy: z.number().min(0).max(1).optional().describe('With id: vertical position inside, 0..1'),
 				x: z.number().min(0).optional().describe('Window x (CSS px), without id'),
 				y: z.number().min(0).optional().describe('Window y (CSS px), without id'),
-				timeline: TimelineTarget.optional().describe('Click on the timeline instead: {frame?, track?, clipId?, edge?}'),
+				timeline: TimelineTarget.optional().describe(
+					'Click on the timeline instead: {frame?, track?, clipId?, edge?}',
+				),
 				program: ProgramTarget.optional().describe('Click in the Program monitor at a sequence pixel'),
 				button: z.enum(['left', 'right', 'middle']).optional(),
 				count: z.number().int().min(1).max(3).optional().describe('2 = double-click'),
@@ -165,10 +207,15 @@ export function registerUiTools(ctx: ToolContext): void {
 			annotations: DESTRUCTIVE,
 		},
 		async (a, extra) => {
-			const ways = [a.id !== undefined, a.x !== undefined || a.y !== undefined, !!a.timeline, !!a.program].filter(Boolean).length;
+			const ways = [
+				a.id !== undefined,
+				a.x !== undefined || a.y !== undefined,
+				!!a.timeline,
+				!!a.program,
+			].filter(Boolean).length;
 			if (ways !== 1)
 				throw new ToolError('E_INVALID_PARAM', 'Give exactly one target: id, x+y, timeline or program');
-			return jsonResult(await ui(ctx, 'click', a.projectId, strip(a), extra));
+			return uiJson(ctx, 'click', a.projectId, strip(a), extra);
 		},
 	);
 
@@ -189,7 +236,7 @@ export function registerUiTools(ctx: ToolContext): void {
 			},
 			annotations: DESTRUCTIVE,
 		},
-		async (a, extra) => jsonResult(await ui(ctx, 'drag', a.projectId, strip(a), extra)),
+		async (a, extra) => uiJson(ctx, 'drag', a.projectId, strip(a), extra),
 	);
 
 	defineTool(
@@ -210,7 +257,7 @@ export function registerUiTools(ctx: ToolContext): void {
 			},
 			annotations: DESTRUCTIVE,
 		},
-		async (a, extra) => jsonResult(await ui(ctx, 'scroll', a.projectId, strip(a), extra)),
+		async (a, extra) => uiJson(ctx, 'scroll', a.projectId, strip(a), extra),
 	);
 
 	defineTool(
@@ -228,7 +275,7 @@ export function registerUiTools(ctx: ToolContext): void {
 			},
 			annotations: DESTRUCTIVE,
 		},
-		async (a, extra) => jsonResult(await ui(ctx, 'key', a.projectId, strip(a), extra)),
+		async (a, extra) => uiJson(ctx, 'key', a.projectId, strip(a), extra),
 	);
 
 	defineTool(
@@ -245,7 +292,7 @@ export function registerUiTools(ctx: ToolContext): void {
 			},
 			annotations: DESTRUCTIVE,
 		},
-		async (a, extra) => jsonResult(await ui(ctx, 'type', a.projectId, strip(a), extra)),
+		async (a, extra) => uiJson(ctx, 'type', a.projectId, strip(a), extra),
 	);
 
 	defineTool(
@@ -263,7 +310,7 @@ export function registerUiTools(ctx: ToolContext): void {
 			},
 			annotations: DESTRUCTIVE,
 		},
-		async (a, extra) => jsonResult(await ui(ctx, 'set', a.projectId, strip(a), extra)),
+		async (a, extra) => uiJson(ctx, 'set', a.projectId, strip(a), extra),
 	);
 
 	defineTool(
@@ -281,7 +328,7 @@ export function registerUiTools(ctx: ToolContext): void {
 			},
 			annotations: READ_ONLY,
 		},
-		async (a, extra) => jsonResult(await ui(ctx, 'locate', a.projectId, strip(a), extra)),
+		async (a, extra) => uiJson(ctx, 'locate', a.projectId, strip(a), extra),
 	);
 
 	defineTool(
@@ -294,7 +341,7 @@ export function registerUiTools(ctx: ToolContext): void {
 			input: { projectId: WindowArg, x: z.number().min(0), y: z.number().min(0) },
 			annotations: READ_ONLY,
 		},
-		async (a, extra) => jsonResult(await ui(ctx, 'hit', a.projectId, strip(a), extra)),
+		async (a, extra) => uiJson(ctx, 'hit', a.projectId, strip(a), extra),
 	);
 
 	defineTool(
@@ -311,7 +358,7 @@ export function registerUiTools(ctx: ToolContext): void {
 			},
 			annotations: READ_ONLY,
 		},
-		async (a, extra) => jsonResult(await ui(ctx, 'commands', a.projectId, strip(a), extra)),
+		async (a, extra) => uiJson(ctx, 'commands', a.projectId, strip(a), extra),
 	);
 
 	defineTool(
@@ -328,6 +375,6 @@ export function registerUiTools(ctx: ToolContext): void {
 			},
 			annotations: DESTRUCTIVE,
 		},
-		async (a, extra) => jsonResult(await ui(ctx, 'command', a.projectId, strip(a), extra)),
+		async (a, extra) => uiJson(ctx, 'command', a.projectId, strip(a), extra),
 	);
 }

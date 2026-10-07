@@ -16,11 +16,13 @@ export function registerInspectTools(ctx: ToolContext): void {
 		{
 			title: 'Get clip properties',
 			description:
-				'Every property of a clip at a time: key, label, group, kind, unit, animatable, value (the keyframed value at that time, as Effect Controls shows it), evaluated (the value the renderer draws at that frame), animated, keyframes [{id, frame, timecode, value, interpolation}] in sequence frames, and the param.set `target` path. rendered: false with why when that frame draws nothing (outside the clip, bypassed effect, disabled clip, track output off). Also lists the clip\'s effects (id, effectId, enabled).',
+				"Every property of a clip at a time: key, label, group, kind, unit, animatable, value (the keyframed value at that time, as Effect Controls shows it), evaluated (the value the renderer draws at that frame), animated, keyframes [{id, frame, timecode, value, interpolation}] in sequence frames, and the param.set `target` path. rendered: false with why when that frame draws nothing (outside the clip, bypassed effect, disabled clip, track output off). Also lists the clip's effects (id, effectId, enabled).",
 			input: {
 				projectId: ProjectIdArg,
 				clipId: z.string().min(1).describe('Clip id (get_timeline)'),
-				at: timeArg('Time to read at (default: the playhead when it is on the clip, else the clip start)').optional(),
+				at: timeArg(
+					'Time to read at (default: the playhead when it is on the clip, else the clip start)',
+				).optional(),
 				keys: z
 					.array(z.string().min(1))
 					.optional()

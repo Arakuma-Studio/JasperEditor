@@ -487,7 +487,8 @@ export async function pressKey(
 	opts: { repeat?: number } = {},
 ): Promise<{ defaultPrevented: boolean }> {
 	const { mods: m, key } = parseChord(chord);
-	const k = keyOf(key);
+	// In a chord a letter names the key, not its case ("Cmd+Z" is Ctrl/⌘+Z; Shift is given as a modifier).
+	const k = keyOf(/^[A-Z]$/.test(key) ? key.toLowerCase() : key);
 	const flags = mods({ ...m, shift: m.shift || k.shift });
 	const target = keyTarget();
 	const base = { bubbles: true, cancelable: true, composed: true, view: window };

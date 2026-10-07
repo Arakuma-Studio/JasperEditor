@@ -24,8 +24,8 @@ import {
 } from '@jasper/project';
 import { z } from 'zod';
 import {
-	defineTool,
 	DESTRUCTIVE_IDEMPOTENT,
+	defineTool,
 	EDIT,
 	EDIT_IDEMPOTENT,
 	frameOf,
