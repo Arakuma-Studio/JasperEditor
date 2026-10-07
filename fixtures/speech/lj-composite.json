@@ -1,0 +1,79 @@
+{
+	"source": "LJ Speech Dataset 1.1 (public domain), via huggingface.co/datasets/MikhailT/lj-speech",
+	"sampleRate": 16000,
+	"durationSeconds": 71.64,
+	"utterances": [
+		{
+			"file": "lj-001-0004.wav",
+			"text": "produced the block books, which were the immediate predecessors of the true printed book,",
+			"start": 0.62,
+			"end": 5.63
+		},
+		{
+			"file": "lj-004-0133.wav",
+			"text": "All prisoners passed their time in absolute idleness, or killed it by gambling and loose conversation.",
+			"start": 6.78,
+			"end": 13.5
+		},
+		{
+			"file": "lj-020-0068.wav",
+			"text": "One even tablespoonful of white sugar.",
+			"start": 14.36,
+			"end": 16.79
+		},
+		{
+			"file": "lj-001-0009.wav",
+			"text": "Printing, then, for our purpose, may be considered as the art of making books by means of movable types.",
+			"start": 18.24,
+			"end": 25.66
+		},
+		{
+			"file": "lj-004-0138.wav",
+			"text": "One poor wretch, who had slept next the wall, said he had been literally unable to move for the pressure.",
+			"start": 26.62,
+			"end": 33.32
+		},
+		{
+			"file": "lj-011-0100.wav",
+			"text": "to which the signature of one Wilkins of Abingdon was found to be forged.",
+			"start": 34.57,
+			"end": 39.29
+		},
+		{
+			"file": "lj-020-0072.wav",
+			"text": "Yolk of one egg beaten light.",
+			"start": 40.09,
+			"end": 42.05
+		},
+		{
+			"file": "lj-034-0043.wav",
+			"text": "The print, therefore, could have been placed on the carton at any time within this period.",
+			"start": 43.6,
+			"end": 48.24
+		},
+		{
+			"file": "lj-046-0208.wav",
+			"text": "Presidential protection was an important topic in these training programs.",
+			"start": 49.28,
+			"end": 53.3
+		},
+		{
+			"file": "lj-004-0132.wav",
+			"text": "the old evils of indiscriminate association still continued unchecked.",
+			"start": 54.2,
+			"end": 58.56
+		},
+		{
+			"file": "lj-020-0075.wav",
+			"text": "Into a second hollow pour the yeast and knead thoroughly for fifteen minutes.",
+			"start": 59.91,
+			"end": 65.02
+		},
+		{
+			"file": "lj-011-0103.wav",
+			"text": "a pair of light gray pantaloons, a black stock and a foraging cap.",
+			"start": 66.02,
+			"end": 70.92
+		}
+	]
+}
