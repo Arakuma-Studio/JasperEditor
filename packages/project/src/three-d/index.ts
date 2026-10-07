@@ -7,3 +7,5 @@ export * from './model.ts';
 export * from './scene.ts';
 export * from './tools.ts';
 export * from './camtrack.ts';
+export * from './extrude.ts';
+export * from './triangulate.ts';
