@@ -534,6 +534,13 @@ export function ProjectPanel(props: PanelProps) {
 						>
 							Universal Counting Leader…
 						</MenuEntry>
+						{/* three-d: a camera / light at the playhead of the active sequence (After Effects' New ▸ Camera / Light). */}
+						<MenuEntry testId="new-item-camera" onClick={() => void runIfRegistered('threeD.newCamera', ctx)}>
+							Camera…
+						</MenuEntry>
+						<MenuEntry testId="new-item-light" onClick={() => void runIfRegistered('threeD.newLight', ctx)}>
+							Light…
+						</MenuEntry>
 					</Menu>
 				) : null}
 			</div>
