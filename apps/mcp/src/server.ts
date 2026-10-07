@@ -17,6 +17,7 @@ import { COMPOSITION_GUIDE, registerCompositionTools } from './tools/composition
 import { registerEditingTools } from './tools/editing.ts';
 import { EXPRESSIONS_GUIDE, registerExpressionTools } from './tools/expressions.ts';
 import { INSPECT_GUIDE, registerInspectTools } from './tools/inspect.ts';
+import { INTERCHANGE_GUIDE, registerInterchangeTools } from './tools/interchange.ts';
 import { KEYFRAMES_BLEND_GUIDE, registerKeyframesBlendTools } from './tools/keyframes-blend.ts';
 import { MASKS_GUIDE, registerMaskTools } from './tools/masks.ts';
 import { MOTION_PATH_GUIDE, registerMotionPathTools } from './tools/motion-path.ts';
@@ -80,6 +81,7 @@ const FULL_GUIDE = [
 	AUDIO_GUIDE,
 	CAPTIONS_GUIDE,
 	SPEECH_GUIDE,
+	INTERCHANGE_GUIDE,
 	INSPECT_GUIDE,
 	UI_GUIDE,
 	EXPRESSIONS_GUIDE,
@@ -125,6 +127,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerAudioTools(ctx);
 	registerCaptionTools(ctx);
 	registerSpeechTools(ctx);
+	registerInterchangeTools(ctx);
 	registerInspectTools(ctx);
 	registerUiTools(ctx);
 	registerExpressionTools(ctx);
