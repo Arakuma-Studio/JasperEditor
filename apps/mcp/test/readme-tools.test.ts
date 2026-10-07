@@ -24,7 +24,7 @@ it('README lists every MCP tool, and only those', async () => {
 	const readme = readFileSync(join(__dirname, '../../../README.md'), 'utf8');
 	const section = /^Tools \((\d+)[^)]*\):\n([\s\S]*?)\n\nResources:/m.exec(readme);
 	expect(section, 'README "Tools (N):" … "Resources:" section').not.toBeNull();
-	const listed = [...new Set([...section![2]!.matchAll(/`([a-z_]+)`/g)].map((m) => m[1]!))].sort();
+	const listed = [...new Set([...section![2]!.matchAll(/`([a-z][a-z0-9_]*)`/g)].map((m) => m[1]!))].sort();
 	expect(listed).toEqual(tools);
 	expect(Number(section![1])).toBe(tools.length);
 	await client.close();
