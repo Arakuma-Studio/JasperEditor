@@ -241,7 +241,7 @@ function slideHandler(doc: DDoc, cmd: CommandOf<'clip.slide'>, h: HandlerContext
 	const { seq, clip } = h.clip(doc, cmd.clipId);
 	assertUnlocked(trackOf(seq, clip, h), h);
 	// Linked partners that start with the clip slide with it (S02:TL-630).
-	const members = [clip, ...coincidentPartners(seq, clip, (c) => c.start)];
+	const members = [clip, ...(cmd.linked === false ? [] : coincidentPartners(seq, clip, (c) => c.start))];
 	const plans = members.map((m) => planSlide(doc, seq, m));
 	const d = clampDelta(
 		cmd.deltaFrames,

@@ -822,7 +822,7 @@ export class TimelineController {
 		const cmd =
 			d.kind === 'slip'
 				? { type: 'clip.slip', clipIds: d.ids, deltaFrames: delta }
-				: { type: 'clip.slide', clipId: d.clip.id, deltaFrames: delta };
+				: { type: 'clip.slide', clipId: d.clip.id, deltaFrames: delta, linked: d.ids.length > 1 };
 		const r = d.gesture.update([cmd as never]);
 		const rate = base.settings.frameRate;
 		const actual = r.ok ? ((r.results[0] as { deltaFrames?: number })?.deltaFrames ?? delta) : 0;
