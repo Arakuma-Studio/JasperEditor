@@ -159,10 +159,14 @@ export class EngineImportService implements ImportService {
 		const projectId = this.session.projectId;
 		// wp captions: caption files go onto caption tracks of the open sequence, not into the media pipeline.
 		{
+			// (Only awaits for `.xml` files: the unload guard below must otherwise start synchronously.)
 			const all = input.files ?? [];
 			const capFiles: File[] = [];
 			const rest: File[] = [];
-			for (const f of all) (isCaptionFileName(f.name) || (await isCaptionXml(f)) ? capFiles : rest).push(f);
+			for (const f of all) {
+				const xml = /\.xml$/i.test(f.name) && (await isCaptionXml(f));
+				(isCaptionFileName(f.name) || xml ? capFiles : rest).push(f);
+			}
 			const capPaths = (input.paths ?? []).filter(isCaptionFileName);
 			if ((capFiles.length || capPaths.length) && !this.session.getState().readOnly) {
 				const r = await importCaptionFiles(this.session, this.engine, { files: capFiles, paths: capPaths });
