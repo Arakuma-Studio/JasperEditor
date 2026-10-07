@@ -12,6 +12,8 @@
 // | `pan51.center` | 5.1 Center % 0 … 100 | `Track.mixer.lanes` |
 // | `pan51.lfe` | 5.1 LFE level dB | `Track.mixer.lanes` |
 // | `send.<sendId>.level` | send level dB | `TrackSend.levelDb` |
+
+import { EASE_PRESETS, evaluate } from '../keyframes.ts';
 import type {
 	AudioChannelFormat,
 	AutomationMode,
@@ -19,16 +21,9 @@ import type {
 	LoudnessNormalize,
 	TrackSend,
 } from '../schema/audio.ts';
-import {
-	LANE_MUTE,
-	LANE_PAN51_CENTER,
-	LANE_PAN51_LFE,
-	LANE_PAN51_X,
-	LANE_PAN51_Y,
-} from '../schema/audio.ts';
+import { LANE_MUTE, LANE_PAN51_CENTER, LANE_PAN51_LFE, LANE_PAN51_X, LANE_PAN51_Y } from '../schema/audio.ts';
 import type { Animatable, Keyframe } from '../schema/common.ts';
 import type { EffectInstance, Sequence, Track } from '../schema/sequence.ts';
-import { evaluate, EASE_PRESETS } from '../keyframes.ts';
 
 export const LANE_VOLUME = 'volume';
 export const LANE_PAN = 'pan';
@@ -266,7 +261,8 @@ export function laneAnimatable(s: StripView, lane: string): Animatable<number> |
 export function laneValueAt(s: StripView, lane: string, t: number): number {
 	const a = laneAnimatable(s, lane);
 	if (!a) return 0;
-	if (s.automation === 'off' || a.keyframes.length === 0) return lane === LANE_MUTE ? (s.mute ? 1 : 0) : a.value;
+	if (s.automation === 'off' || a.keyframes.length === 0)
+		return lane === LANE_MUTE ? (s.mute ? 1 : 0) : a.value;
 	if (laneInfo(lane)?.hold) return holdValueAt(a, t);
 	return evaluate(a, t);
 }

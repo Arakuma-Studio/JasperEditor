@@ -23,7 +23,7 @@ import type { Animatable } from '../schema/common.ts';
 import type { EffectInstance } from '../schema/sequence.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../time.ts';
 import { audioFadeGain } from '../transitions.ts';
-import type { RenderAudioMix, RenderStrip } from './plan.ts';
+import type { RenderStrip } from './plan.ts';
 import { type AudioProcessor, audioProcessorFactory } from './processors.ts';
 import { formatWidth, holdValueAt } from './strip.ts';
 
@@ -92,7 +92,14 @@ function alloc(n: number, frames: number): Float32Array[] {
 }
 
 /** Fills `out[0..n)` with an animatable lane at sequence samples `s0…` (flicks = sample · fps). */
-function laneFill(a: Animatable<number>, s0: number, n: number, fps: number, out: Float64Array, hold = false): boolean {
+function laneFill(
+	a: Animatable<number>,
+	s0: number,
+	n: number,
+	fps: number,
+	out: Float64Array,
+	hold = false,
+): boolean {
 	if (a.keyframes.length === 0) return false;
 	for (let i = 0; i < n; i++) {
 		const t = (s0 + i) * fps;
@@ -163,7 +170,6 @@ export class OfflineMixer {
 	readonly latency: number;
 	private readonly fps: Rational;
 	private readonly flicksPerSample: number;
-	private readonly mix: RenderAudioMix;
 	private readonly strips: StripState[];
 	private readonly master: StripState;
 	private readonly voices: Voice[];
@@ -178,7 +184,6 @@ export class OfflineMixer {
 		const snap = o.snapshot;
 		const mix = snap.audioMix;
 		if (!mix) throw new Error('The render snapshot has no audioMix');
-		this.mix = mix;
 		this.sampleRate = mix.sampleRate;
 		this.fps = snap.settings.fps;
 		this.flicksPerSample = FLICKS_PER_SECOND / this.sampleRate;
@@ -224,7 +229,8 @@ export class OfflineMixer {
 			}
 			st.s.sends.forEach((x, k) => {
 				const t = index.get(x.target);
-				if (t !== undefined) arrivals[t]!.push({ from: i, tapLat: x.preFader ? st.preLat : st.postLat, kind: k });
+				if (t !== undefined)
+					arrivals[t]!.push({ from: i, tapLat: x.preFader ? st.preLat : st.postLat, kind: k });
 			});
 		});
 		this.strips.forEach((st, i) => {
@@ -241,7 +247,13 @@ export class OfflineMixer {
 				if (t === undefined) return [];
 				const tapLat = x.preFader ? st.preLat : st.postLat;
 				const w = this.strips[t]!.width;
-				return [{ send: x, route: { target: t, delay: new Delay(w, arrivalOf(t) - tapLat), tapLat }, buf: alloc(w, MIX_BLOCK) }];
+				return [
+					{
+						send: x,
+						route: { target: t, delay: new Delay(w, arrivalOf(t) - tapLat), tapLat },
+						buf: alloc(w, MIX_BLOCK),
+					},
+				];
 			});
 			void i;
 		});
@@ -388,7 +400,8 @@ export class OfflineMixer {
 				? c.sourceIn + (c.duration - 1 - local) * F * c.speed.rate
 				: c.sourceIn + local * F * c.speed.rate;
 			const fps = this.flicksPerSample * c.speed.rate * (c.speed.reverse ? -1 : 1);
-			for (const p of v.procs) p.process(v.buf, k, { sampleRate: this.sampleRate, time, flicksPerSample: fps });
+			for (const p of v.procs)
+				p.process(v.buf, k, { sampleRate: this.sampleRate, time, flicksPerSample: fps });
 		}
 	}
 
@@ -473,7 +486,11 @@ export class OfflineMixer {
 				}
 			}
 		}
-		const blockCtx = (lat: number) => ({ sampleRate: this.sampleRate, time: (p0 - lat) * fps, flicksPerSample: fps });
+		const blockCtx = (lat: number) => ({
+			sampleRate: this.sampleRate,
+			time: (p0 - lat) * fps,
+			flicksPerSample: fps,
+		});
 		for (const p of st.pre) p.process(buf, n, blockCtx(st.inLat));
 		// pre-fader sends (before mute: a muted track keeps sending pre-fader)
 		if (!s.silent) for (const x of st.sends) if (x.send.preFader) this.sendBlock(st, x, p0 - st.preLat, n);
@@ -536,7 +553,10 @@ export class OfflineMixer {
 		if (ow === 6) {
 			const lanes = s.pan51;
 			const animated =
-				lanes.x.keyframes.length + lanes.y.keyframes.length + lanes.center.keyframes.length + lanes.lfe.keyframes.length >
+				lanes.x.keyframes.length +
+					lanes.y.keyframes.length +
+					lanes.center.keyframes.length +
+					lanes.lfe.keyframes.length >
 				0;
 			const matAt = (t: number) =>
 				pan51Matrix(srcLayout, {

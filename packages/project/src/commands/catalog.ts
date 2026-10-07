@@ -9,6 +9,7 @@ import { compositionHandlers } from './handlers/composition.ts';
 import { effectHandlers } from './handlers/effect.ts';
 import { keyframeHandlers } from './handlers/keyframe.ts';
 import { m2Handlers } from './handlers/m2.ts';
+import { maskHandlers } from './handlers/mask.ts';
 import { paramHandlers } from './handlers/param.ts';
 import { PRESET_OWNER, presetHandlers } from './handlers/preset.ts';
 import { processHandlers } from './handlers/process.ts';
@@ -17,6 +18,7 @@ import { sequenceHandlers } from './handlers/sequence.ts';
 import { keepShapesCentred, SHAPE_BOX_COMMANDS, SHAPE_OWNER, shapeHandlers } from './handlers/shape.ts';
 import { simplifyHandlers } from './handlers/simplify.ts';
 import { spatialHandlers } from './handlers/spatial.ts';
+import { STRUCTURE_OWNER, structureHandlers } from './handlers/structure.ts';
 import { trackerHandlers } from './handlers/tracker.ts';
 import { transitionHandlers } from './handlers/transition.ts';
 import type { Handler, HandlerMap } from './handlers/util.ts';
@@ -37,6 +39,11 @@ export type CommandOwner =
 	| 'wp-clipboard'
 	// Effect presets (S03:FX-030)
 	| 'wp-m3-presets'
+	// Nests, adjustment layers, groups, synthetics, frame holds, through edits (docs/wp-notes/edit-structure.md)
+	| 'edit-structure'
+	// Masks (S03 §17)
+	| 'wp-m3-masks'
+
 	// Audio buses (parity workstream audio-mix)
 	| 'audio-mix';
 
@@ -109,6 +116,12 @@ const LABELS: Record<CommandType, string> = {
 	'clip.group': 'Group',
 	'clip.ungroup': 'Ungroup',
 	'clip.nest': 'Nest',
+	'clip.unnest': 'Unnest',
+	'clip.addFrameHold': 'Add Frame Hold',
+	'clip.insertFrameHoldSegment': 'Insert Frame Hold Segment',
+	'clip.frameHoldOptions': 'Frame Hold Options',
+	'sequence.joinThroughEdits': 'Join Through Edits',
+	'sequence.makeSubsequence': 'Make Subsequence',
 	'param.set': 'Change Value',
 	'param.setAnimated': 'Toggle Animation',
 	'keyframe.add': 'Add Keyframe',
@@ -157,6 +170,13 @@ const LABELS: Record<CommandType, string> = {
 	'audio.setGain': 'Audio Gain',
 	'audio.autoDuck': 'Auto Duck',
 	'mixer.setLoudness': 'Loudness Normalization',
+	'mask.add': 'Create Mask',
+	'mask.remove': 'Delete Mask',
+	'mask.update': 'Change Mask',
+	'mask.reorder': 'Reorder Masks',
+	'mask.duplicate': 'Duplicate Mask',
+	'mask.editPath': 'Edit Mask Path',
+	'mask.setPathKeys': 'Track Mask',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -177,6 +197,8 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[clipboardHandlers, CLIPBOARD_OWNER],
 	[presetHandlers, PRESET_OWNER],
 	[audioHandlers, AUDIO_MIX_OWNER],
+	[structureHandlers, STRUCTURE_OWNER],
+	[maskHandlers, 'wp-m3-masks'],
 	[m2Handlers, 'M2'],
 ];
 
@@ -195,11 +217,12 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 			handler: SHAPE_BOX_COMMANDS.has(type) ? keepShapesCentred(handler) : handler,
 			label: LABELS[type],
 			owner,
-			milestone: owner.startsWith('wp-m3-') || owner === AUDIO_MIX_OWNER
-				? 'M3'
-				: owner === 'M2' || owner.startsWith('wp-m2-') || owner === CLIPBOARD_OWNER
-					? 'M2'
-					: 'M1',
+			milestone:
+				owner.startsWith('wp-m3-') || owner === STRUCTURE_OWNER || owner === AUDIO_MIX_OWNER
+					? 'M3'
+					: owner === 'M2' || owner.startsWith('wp-m2-') || owner === CLIPBOARD_OWNER
+						? 'M2'
+						: 'M1',
 		};
 	}
 	return out;

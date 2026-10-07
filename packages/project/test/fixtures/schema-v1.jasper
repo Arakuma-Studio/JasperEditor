@@ -1,0 +1,369 @@
+{
+	"format": "jasper-project",
+	"schemaVersion": 1,
+	"savedAt": "2026-10-07T00:00:00.000Z",
+	"savedBy": {
+		"app": "JasperEditor",
+		"version": "0.1.0",
+		"platform": "web"
+	},
+	"revision": 1,
+	"document": {
+		"schemaVersion": 1,
+		"projectId": "prj_00000000000SCHV1",
+		"name": "Schema v1 fixture",
+		"settings": {
+			"defaultSequencePreset": "hd-1080p-29.97",
+			"mediaPolicy": {
+				"copyOnImport": false
+			},
+			"proxyPolicy": {
+				"mode": "auto",
+				"preset": "h264-720p",
+				"autoWhen": {
+					"minHeight": 2160,
+					"codecs": [
+						"prores",
+						"dnxhd",
+						"hevc"
+					],
+					"bitDepthAbove": 8
+				}
+			},
+			"defaultStillDurationFrames": 150,
+			"defaultTransitionFrames": 30,
+			"defaultScaling": "fit-if-larger"
+		},
+		"rootItems": [
+			"itm_000000000000SQ01",
+			"itm_000000000000MD01"
+		],
+		"items": {
+			"itm_000000000000SQ01": {
+				"id": "itm_000000000000SQ01",
+				"kind": "sequence",
+				"name": "Sequence 01",
+				"sequenceId": "seq_000000000000SEQ1",
+				"label": "forest"
+			},
+			"itm_000000000000MD01": {
+				"id": "itm_000000000000MD01",
+				"kind": "media",
+				"name": "interview.mov",
+				"mediaId": "med_00000000000V1DE0",
+				"label": "violet",
+				"marks": {
+					"in": null,
+					"out": null
+				}
+			}
+		},
+		"media": {
+			"med_00000000000V1DE0": {
+				"kind": "video",
+				"fingerprint": "q1:0000000000000000000000000000000000000000000000000000000000000001",
+				"originalName": "interview.mov",
+				"sizeBytes": 1000,
+				"container": "mov,mp4",
+				"probe": {
+					"durationFlicks": 7056000000,
+					"startTimecode": null,
+					"streams": [
+						{
+							"index": 0,
+							"type": "video",
+							"codec": "h264",
+							"width": 1920,
+							"height": 1080,
+							"pixelAspect": {
+								"num": 1,
+								"den": 1
+							},
+							"frameRate": {
+								"num": 30,
+								"den": 1
+							},
+							"pixelFormat": "yuv420p",
+							"bitDepth": 8,
+							"color": {
+								"primaries": "bt709",
+								"transfer": "bt709",
+								"matrix": "bt709",
+								"range": "tv"
+							},
+							"browserDecodable": true
+						},
+						{
+							"index": 1,
+							"type": "audio",
+							"codec": "aac",
+							"sampleRate": 48000,
+							"channels": 2,
+							"channelLayout": "stereo"
+						}
+					],
+					"rotationDegrees": 0,
+					"hasAlpha": false,
+					"variableFrameRate": false
+				},
+				"locators": [
+					{
+						"type": "engine-store",
+						"engineId": "local",
+						"key": "mk_interview"
+					}
+				],
+				"derivation": null,
+				"importedAt": "2026-09-30T10:00:00.000Z",
+				"id": "med_00000000000V1DE0"
+			}
+		},
+		"synthetics": {},
+		"transcripts": {},
+		"fonts": {
+			"fnt_000000000000003C": {
+				"id": "fnt_000000000000003C",
+				"family": "Source Sans 3",
+				"source": {
+					"type": "bundled"
+				}
+			}
+		},
+		"sequences": {
+			"seq_000000000000SEQ1": {
+				"id": "seq_000000000000SEQ1",
+				"settings": {
+					"frameRate": {
+						"num": 30000,
+						"den": 1001
+					},
+					"width": 1920,
+					"height": 1080,
+					"pixelAspect": {
+						"num": 1,
+						"den": 1
+					},
+					"dropFrame": true,
+					"startTimecodeFrames": 0,
+					"audioSampleRate": 48000,
+					"masterLayout": "stereo",
+					"backgroundColor": [
+						0,
+						0,
+						0,
+						1
+					],
+					"workingColorSpace": "rec709"
+				},
+				"videoTracks": [
+					{
+						"id": "trk_0000000000000V01",
+						"kind": "video",
+						"name": null,
+						"locked": false,
+						"syncLock": true,
+						"output": true
+					}
+				],
+				"audioTracks": [
+					{
+						"id": "trk_0000000000000A01",
+						"kind": "audio",
+						"name": null,
+						"locked": false,
+						"syncLock": true,
+						"mute": false,
+						"solo": false,
+						"volumeDb": {
+							"value": 0,
+							"keyframes": []
+						},
+						"pan": {
+							"value": 0,
+							"keyframes": []
+						},
+						"channelFormat": "stereo",
+						"effects": []
+					},
+					{
+						"id": "trk_0000000000000A02",
+						"kind": "audio",
+						"name": null,
+						"locked": false,
+						"syncLock": true,
+						"mute": false,
+						"solo": false,
+						"volumeDb": {
+							"value": 0,
+							"keyframes": []
+						},
+						"pan": {
+							"value": 0,
+							"keyframes": []
+						},
+						"channelFormat": "stereo",
+						"effects": []
+					}
+				],
+				"captionTracks": [],
+				"master": {
+					"volumeDb": {
+						"value": 0,
+						"keyframes": []
+					},
+					"effects": []
+				},
+				"clips": {
+					"clp_00000000000VC001": {
+						"id": "clp_00000000000VC001",
+						"trackId": "trk_0000000000000V01",
+						"start": 0,
+						"duration": 299,
+						"sourceIn": 0,
+						"speed": {
+							"rate": 1,
+							"reverse": false,
+							"maintainPitch": true
+						},
+						"name": "interview.mov",
+						"label": "violet",
+						"enabled": true,
+						"linkId": "lnk_0000000000000L01",
+						"groupId": null,
+						"markers": [],
+						"kind": "video",
+						"mediaId": "med_00000000000V1DE0",
+						"videoStreamIndex": 0,
+						"transform": {
+							"position": {
+								"value": [
+									960,
+									540
+								],
+								"keyframes": []
+							},
+							"anchor": {
+								"value": [
+									960,
+									540
+								],
+								"keyframes": []
+							},
+							"scale": {
+								"value": 100,
+								"keyframes": []
+							},
+							"scaleWidth": {
+								"value": 100,
+								"keyframes": []
+							},
+							"uniformScale": true,
+							"rotation": {
+								"value": 0,
+								"keyframes": []
+							},
+							"flipH": false,
+							"flipV": false
+						},
+						"opacity": {
+							"value": 100,
+							"keyframes": []
+						},
+						"blendMode": "normal",
+						"effects": []
+					},
+					"clp_00000000000AC001": {
+						"id": "clp_00000000000AC001",
+						"trackId": "trk_0000000000000A01",
+						"start": 0,
+						"duration": 299,
+						"sourceIn": 0,
+						"speed": {
+							"rate": 1,
+							"reverse": false,
+							"maintainPitch": true
+						},
+						"name": "interview.mov",
+						"label": "violet",
+						"enabled": true,
+						"linkId": "lnk_0000000000000L01",
+						"groupId": null,
+						"markers": [],
+						"kind": "audio",
+						"mediaId": "med_00000000000V1DE0",
+						"channels": {
+							"streamIndex": 1,
+							"map": [
+								0,
+								1
+							]
+						},
+						"gainDb": 0,
+						"volumeDb": {
+							"value": 0,
+							"keyframes": []
+						},
+						"pan": {
+							"value": 0,
+							"keyframes": []
+						},
+						"effects": []
+					},
+					"clp_00000000000AC002": {
+						"id": "clp_00000000000AC002",
+						"trackId": "trk_0000000000000A02",
+						"start": 0,
+						"duration": 60,
+						"sourceIn": 0,
+						"speed": {
+							"rate": 1,
+							"reverse": false,
+							"maintainPitch": true
+						},
+						"name": "interview.mov (room tone)",
+						"label": "rose",
+						"enabled": true,
+						"linkId": null,
+						"groupId": null,
+						"markers": [],
+						"kind": "audio",
+						"mediaId": "med_00000000000V1DE0",
+						"channels": {
+							"streamIndex": 1,
+							"map": [
+								0,
+								1
+							]
+						},
+						"gainDb": 0,
+						"volumeDb": {
+							"value": 0,
+							"keyframes": []
+						},
+						"pan": {
+							"value": 0,
+							"keyframes": []
+						},
+						"effects": []
+					}
+				},
+				"transitions": {},
+				"links": {
+					"lnk_0000000000000L01": {
+						"id": "lnk_0000000000000L01",
+						"members": [
+							"clp_00000000000VC001",
+							"clp_00000000000AC001"
+						]
+					}
+				},
+				"groups": {},
+				"markers": [],
+				"inPoint": null,
+				"outPoint": null,
+				"workArea": null
+			}
+		},
+		"extensions": {}
+	}
+}

@@ -29,25 +29,34 @@ export function audioMixIssues(seq: Sequence, where: string[]): MixIssue[] {
 		if (m.output !== undefined && m.output !== null && !routeOk(m.output))
 			out.push({ message: `Track ${t.id} outputs to ${m.output}, which is not a later submix`, path });
 		const sends = m.sends ?? [];
-		if (sends.length > MAX_SENDS) out.push({ message: `Track ${t.id} has more than ${MAX_SENDS} sends`, path });
+		if (sends.length > MAX_SENDS)
+			out.push({ message: `Track ${t.id} has more than ${MAX_SENDS} sends`, path });
 		const ids = new Set<string>();
 		for (const s of sends) {
 			if (ids.has(s.id)) out.push({ message: `Duplicate send id ${s.id}`, path });
 			ids.add(s.id);
 			if (!routeOk(s.target))
-				out.push({ message: `Send ${s.id} of ${t.id} targets ${s.target}, which is not a later submix`, path });
+				out.push({
+					message: `Send ${s.id} of ${t.id} targets ${s.target}, which is not a later submix`,
+					path,
+				});
 		}
 		for (const k of Object.keys(m.lanes ?? {}))
 			if (!(STRIP_LANES as readonly string[]).includes(k))
 				out.push({ message: `Unknown mixer lane ${k} on ${t.id}`, path });
 	};
 	for (const t of seq.audioTracks) check(t, -1);
-	subs.forEach((t, i) => check(t, i));
+	subs.forEach((t, i) => {
+		check(t, i);
+	});
 	return out;
 }
 
 /** Conservative repair: drops invalid outputs (→ the Mix), sends and lanes, and clips on submixes are kept out. */
-export function repairAudioMix(seq: Sequence, note: (action: string, entity: string, detail: string) => void): void {
+export function repairAudioMix(
+	seq: Sequence,
+	note: (action: string, entity: string, detail: string) => void,
+): void {
 	const subs = (seq.submixTracks ?? []) as Track[];
 	const subIndex = new Map(subs.map((t, i) => [t.id, i]));
 	const fix = (t: Track, srcSub: number) => {
@@ -68,7 +77,8 @@ export function repairAudioMix(seq: Sequence, note: (action: string, entity: str
 				seen.add(s.id);
 				return good;
 			});
-			if (kept.length !== m.sends.length) note('drop-send', t.id, 'removed sends to missing or earlier submixes');
+			if (kept.length !== m.sends.length)
+				note('drop-send', t.id, 'removed sends to missing or earlier submixes');
 			m.sends = kept.slice(0, MAX_SENDS);
 		}
 		if (m.lanes)
@@ -78,7 +88,7 @@ export function repairAudioMix(seq: Sequence, note: (action: string, entity: str
 					note('drop-lane', t.id, `removed unknown mixer lane ${k}`);
 				}
 	};
-	seq.audioTracks.forEach((t) => fix(t, -1));
+	for (const t of seq.audioTracks) fix(t, -1);
 	subs.forEach((t, i) => {
 		if (t.kind !== 'audio') (t as { kind: string }).kind = 'audio';
 		fix(t, i);

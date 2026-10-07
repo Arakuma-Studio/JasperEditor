@@ -52,7 +52,13 @@ export const LANE_PAN51_X = 'pan51.x';
 export const LANE_PAN51_Y = 'pan51.y';
 export const LANE_PAN51_CENTER = 'pan51.center';
 export const LANE_PAN51_LFE = 'pan51.lfe';
-export const STRIP_LANES = [LANE_MUTE, LANE_PAN51_X, LANE_PAN51_Y, LANE_PAN51_CENTER, LANE_PAN51_LFE] as const;
+export const STRIP_LANES = [
+	LANE_MUTE,
+	LANE_PAN51_X,
+	LANE_PAN51_Y,
+	LANE_PAN51_CENTER,
+	LANE_PAN51_LFE,
+] as const;
 export type StripLane = (typeof STRIP_LANES)[number];
 
 /** Mixer-only state of a channel strip (audio track, submix or the Mix). */

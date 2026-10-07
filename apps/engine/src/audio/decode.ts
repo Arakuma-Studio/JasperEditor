@@ -38,7 +38,10 @@ export function resamplerArgs(soxr: boolean): string {
 }
 
 /** Output channel count of a clip: its channel map, else the stream's channels (1, 2 or 6; others → stereo). */
-export function clipChannels(clip: Pick<RenderAudioClip, 'channels'>, stream: Pick<AudioStream, 'channels'>): number {
+export function clipChannels(
+	clip: Pick<RenderAudioClip, 'channels'>,
+	stream: Pick<AudioStream, 'channels'>,
+): number {
 	const n = clip.channels.map.length > 0 ? clip.channels.map.length : stream.channels;
 	return n === 1 || n === 2 || n === 6 ? n : 2;
 }

@@ -16,7 +16,6 @@ import {
 	parseSendLane,
 	resolveStripRef,
 	stripView,
-	submixTracksOf,
 	thinPoints,
 	writeLaneKeyframes,
 } from '../../audio/strip.ts';
@@ -30,7 +29,7 @@ import { flicksPerFrame, type Rational } from '../../time.ts';
 import type { DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
-import { idList, type HandlerMap } from './util.ts';
+import { type HandlerMap, idList } from './util.ts';
 
 type DTrack = Draft<Track>;
 type DAnim = Draft<Animatable<number>>;
@@ -38,7 +37,11 @@ type DAnim = Draft<Animatable<number>>;
 const anim = (v: number): Animatable<number> => ({ value: v, keyframes: [] });
 
 /** A strip of the sequence: the Mix (`track` null) or an audio / submix track draft. */
-function strip(seq: DSeq, ref: string, h: HandlerContext): { id: string; track: DTrack | null; submix: boolean } {
+function strip(
+	seq: DSeq,
+	ref: string,
+	h: HandlerContext,
+): { id: string; track: DTrack | null; submix: boolean } {
 	const id = resolveStripRef(seq as never, ref);
 	if (!id) return h.fail('E_NOT_FOUND', `Mixer strip not found: ${ref}`);
 	if (id === MASTER_STRIP_ID) return { id, track: null, submix: false };
@@ -60,7 +63,10 @@ function checkRoute(seq: DSeq, src: string, target: string, h: HandlerContext, w
 	if (target === src) h.fail('E_INVALID_PARAM', `A strip cannot feed itself`);
 	const si = submixIndex(seq, src);
 	if (si >= 0 && ti <= si)
-		h.fail('E_INVALID_PARAM', `A submix can only feed a submix after it (S${si + 1} → S${ti + 1} would loop)`);
+		h.fail(
+			'E_INVALID_PARAM',
+			`A submix can only feed a submix after it (S${si + 1} → S${ti + 1} would loop)`,
+		);
 }
 
 function validAnim(v: number | Animatable<number>, min: number, max: number, key: string, h: HandlerContext) {
@@ -114,7 +120,8 @@ function laneTarget(seq: DSeq, s: ReturnType<typeof strip>, lane: string, h: Han
 		if (!x) return h.fail('E_NOT_FOUND', `Send not found: ${send}`);
 		return x.levelDb as DAnim;
 	}
-	if (!(STRIP_LANES as readonly string[]).includes(lane)) h.fail('E_INVALID_PARAM', `Unknown mixer lane: ${lane}`);
+	if (!(STRIP_LANES as readonly string[]).includes(lane))
+		h.fail('E_INVALID_PARAM', `Unknown mixer lane: ${lane}`);
 	t.mixer ??= {};
 	t.mixer.lanes ??= {};
 	if (!t.mixer.lanes[lane]) {
@@ -280,7 +287,8 @@ export const audioHandlers: HandlerMap = {
 			checkRoute(seq, s.id, target, h, 'The send target');
 			x.target = target;
 		}
-		if (p.levelDb !== undefined) x.levelDb = validAnim(p.levelDb, FADER_MIN_DB, FADER_MAX_DB, 'levelDb', h) as never;
+		if (p.levelDb !== undefined)
+			x.levelDb = validAnim(p.levelDb, FADER_MIN_DB, FADER_MAX_DB, 'levelDb', h) as never;
 		if (p.pan !== undefined) x.pan = p.pan;
 		if (p.preFader !== undefined) x.preFader = p.preFader;
 		if (p.mute !== undefined) x.mute = p.mute;
@@ -355,9 +363,11 @@ export const audioHandlers: HandlerMap = {
 		// Lane values just outside the range, before writing (automation outside the pass is kept).
 		const view = stripOrFail(seq, s.id, h);
 		const existing = laneAnimatable(view, cmd.lane);
-		const before = t0 > 0 && existing && existing.keyframes.length ? laneValue(seq, s.id, cmd.lane, t0 - eps) : null;
-		const after =
-			existing && existing.keyframes.some((k) => k.time > t1) ? laneValue(seq, s.id, cmd.lane, t1 + eps) : null;
+		const before =
+			t0 > 0 && existing && existing.keyframes.length ? laneValue(seq, s.id, cmd.lane, t0 - eps) : null;
+		const after = existing?.keyframes.some((k) => k.time > t1)
+			? laneValue(seq, s.id, cmd.lane, t1 + eps)
+			: null;
 		const thinned = thinPoints(
 			pts,
 			info.hold ? 0 : (cmd.thinning?.tolerance ?? defaultTolerance(cmd.lane)),
@@ -382,7 +392,8 @@ export const audioHandlers: HandlerMap = {
 	'clipMixer.write': (doc, cmd: CommandOf<'clipMixer.write'>, h) => {
 		const seq = h.sequence(doc, cmd.sequenceId);
 		const s = strip(seq, cmd.trackId, h);
-		if (!s.track || s.submix) return h.fail('E_INVALID_PARAM', 'The Audio Clip Mixer writes audio track clips');
+		if (!s.track || s.submix)
+			return h.fail('E_INVALID_PARAM', 'The Audio Clip Mixer writes audio track clips');
 		assertUnlocked(s.track, h);
 		const rate = seq.settings.frameRate as Rational;
 		const F = flicksPerFrame(rate);
@@ -409,8 +420,10 @@ export const audioHandlers: HandlerMap = {
 			if (a1 < a0) continue;
 			const clip = c as Draft<AudioClip>;
 			const prop = (cmd.lane === 'volume' ? clip.volumeDb : clip.pan) as DAnim;
-			const before = a0 > cs ? evaluate(prop as Animatable<number>, contentAt(c as Clip, a0 - F / 4, rate)) : null;
-			const after = a1 < ce - 1 ? evaluate(prop as Animatable<number>, contentAt(c as Clip, a1 + F / 4, rate)) : null;
+			const before =
+				a0 > cs ? evaluate(prop as Animatable<number>, contentAt(c as Clip, a0 - F / 4, rate)) : null;
+			const after =
+				a1 < ce - 1 ? evaluate(prop as Animatable<number>, contentAt(c as Clip, a1 + F / 4, rate)) : null;
 			// The written range in content time (reversed clips run backwards).
 			const k0 = contentAt(c as Clip, a0, rate);
 			const k1 = contentAt(c as Clip, a1, rate);
@@ -438,7 +451,8 @@ export const audioHandlers: HandlerMap = {
 	'clipMixer.set': (doc, cmd: CommandOf<'clipMixer.set'>, h) => {
 		const seq = h.sequence(doc, cmd.sequenceId);
 		const s = strip(seq, cmd.trackId, h);
-		if (!s.track || s.submix) return h.fail('E_INVALID_PARAM', 'The Audio Clip Mixer writes audio track clips');
+		if (!s.track || s.submix)
+			return h.fail('E_INVALID_PARAM', 'The Audio Clip Mixer writes audio track clips');
 		assertUnlocked(s.track, h);
 		const rate = seq.settings.frameRate as Rational;
 		const F = flicksPerFrame(rate);
@@ -454,7 +468,8 @@ export const audioHandlers: HandlerMap = {
 		const v = Math.min(range[1]!, Math.max(range[0]!, cmd.value));
 		const clip = c as Draft<AudioClip>;
 		const prop = (cmd.lane === 'volume' ? clip.volumeDb : clip.pan) as DAnim;
-		if (prop.keyframes.length) putKeyframe(prop, newKeyframe(h, contentAt(c as Clip, cmd.time, rate), v, false));
+		if (prop.keyframes.length)
+			putKeyframe(prop, newKeyframe(h, contentAt(c as Clip, cmd.time, rate), v, false));
 		else prop.value = v;
 		return { clipId: c.id, value: v };
 	},

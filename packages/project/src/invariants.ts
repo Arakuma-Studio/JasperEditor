@@ -6,13 +6,18 @@ import type { Issue } from './commands/types.ts';
 import { clipEnd } from './derive/index.ts';
 import { createTrack } from './factories.ts';
 import { type IdPrefix, type IdSource, idPrefixOf, isValidId } from './ids.ts';
+import { MASK_EXPANSION_RANGE, MASK_FEATHER_RANGE, MASK_OPACITY_RANGE } from './masks/model.ts';
+import { TRACK_MATTE_EFFECT_ID, trackMatteTracksOf } from './masks/track-matte.ts';
+import { type BezierPath, isBezierPath, segmentCount } from './path/model.ts';
 import type { EffectRegistry } from './registry/effects.ts';
-import { contentDurationFlicks, isBoundedContent, trackKindFor } from './registry/kinds.ts';
+import { contentDurationFlicks, isBoundedContent, kindCapabilities, trackKindFor } from './registry/kinds.ts';
 import type { MgTemplateRegistry } from './registry/mg.ts';
-import { SPATIAL_INTERPOLATIONS } from './schema/common.ts';
+import { type Animatable, SPATIAL_INTERPOLATIONS } from './schema/common.ts';
 import type { ProjectDocument } from './schema/document.ts';
+import { MASK_MODES, type Mask } from './schema/mask.ts';
 import type { Clip, EffectInstance, Sequence, Track } from './schema/sequence.ts';
 import { isKnownClipKind } from './schema/sequence.ts';
+import { isNestClip } from './structure/nest.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
 import {
 	contentSpanFlicks,
@@ -126,9 +131,24 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 	table(doc.fonts, 'fonts', 'fnt');
 	table(doc.sequences, 'sequences', 'seq');
 
-	const effects = (list: readonly EffectInstance[] | undefined, where: string[]) => {
+	// wp masks: ids, value ranges and path structure of Opacity / effect masks.
+	const masks = (list: readonly Mask[] | undefined, where: string[]) => {
+		for (const m of list ?? []) {
+			const mw = [...where, m.id];
+			claim(m.id, 'msk', mw);
+			const problem = maskProblem(m);
+			if (problem) issues.push(inv('INV-012', `Mask ${m.id}: ${problem}`, mw));
+		}
+	};
+
+	const effects = (list: readonly EffectInstance[] | undefined, where: string[], onClip = false) => {
 		for (const fx of list ?? []) {
 			claim(fx.id, 'fx', [...where, fx.id]);
+			if (fx.masks?.length) {
+				if (!onClip)
+					issues.push(inv('INV-012', `Effect ${fx.id}: masks apply to clip effects only`, [...where, fx.id]));
+				masks(fx.masks, [...where, fx.id, 'masks']);
+			}
 			const spec = opts.effects?.get(fx.effectId, fx.effectVersion);
 			if (!spec) continue; // unknown effects are preserved and exempt (S01:FX-022)
 			for (const [name, a] of Object.entries(fx.params)) {
@@ -337,7 +357,11 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 				usedMedia.add(r.mediaId);
 				const asset = doc.media[r.mediaId];
 				if (!asset) issues.push(inv('INV-006', `Clip ${c.id} references missing media ${r.mediaId}`, cw));
-				else if (isBoundedContent(c) && asset.probe.durationFlicks !== null) {
+				else if (c.frameHold && isBoundedContent(c) && asset.probe.durationFlicks !== null) {
+					// edit-structure: a held clip shows one frame; only that frame must exist.
+					if (c.frameHold.flicks >= asset.probe.durationFlicks + flicksPerFrame(rate) + 1)
+						issues.push(inv('INV-005', `Clip ${c.id} holds a frame outside its media`, cw));
+				} else if (isBoundedContent(c) && asset.probe.durationFlicks !== null) {
 					// INV-005 media bounds with one frame of tolerance
 					const span = contentSpanFlicks(c.duration, rate, c.speed.rate);
 					const tol = flicksPerFrame(rate) * c.speed.rate + 1;
@@ -374,8 +398,18 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 			}
 			if (typeof r.syntheticId === 'string') {
 				usedSyn.add(r.syntheticId);
-				if (!doc.synthetics[r.syntheticId])
-					issues.push(inv('INV-006', `Clip ${c.id} references missing synthetic`, cw));
+				const syn = doc.synthetics[r.syntheticId];
+				if (!syn) issues.push(inv('INV-006', `Clip ${c.id} references missing synthetic`, cw));
+				else if (!syntheticFitsClip(c.kind, syn.kind))
+					issues.push(inv('INV-006', `A ${c.kind} clip cannot show a ${syn.kind} source`, cw));
+			}
+			// edit-structure: frame holds are for clips with a picture (not adjustment layers, captions or sound).
+			if (c.frameHold !== undefined) {
+				const caps = kindCapabilities(c.kind);
+				if (caps?.trackKind !== 'video' || c.kind === 'adjustment')
+					issues.push(inv('INV-012', `Clip ${c.id} cannot have a frame hold`, cw));
+				else if (!Number.isInteger(c.frameHold.flicks) || c.frameHold.flicks < 0)
+					issues.push(inv('INV-012', `Clip ${c.id} has an invalid frame hold time`, cw));
 			}
 			if (typeof r.transcriptId === 'string') {
 				usedTrs.add(r.transcriptId);
@@ -385,6 +419,16 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 			if (typeof r.sequenceId === 'string' && isKnownClipKind(c.kind)) {
 				if (!doc.sequences[r.sequenceId])
 					issues.push(inv('INV-006', `Clip ${c.id} references missing sequence`, cw));
+				else {
+					// INV-005 for nests: inside the nested sequence's duration (KND-011).
+					const dur = contentDurationFlicks(doc, c);
+					const span = contentSpanFlicks(c.duration, rate, c.speed.rate);
+					const tol = flicksPerFrame(rate) * c.speed.rate + 1;
+					if (dur !== null && !c.frameHold && c.sourceIn + span > dur + tol)
+						issues.push(
+							inv('INV-005', `Clip ${c.id} exceeds its nested sequence (${c.sourceIn + span} > ${dur})`, cw),
+						);
+				}
 				const set = nestEdges.get(seq.id) ?? new Set<string>();
 				set.add(r.sequenceId);
 				nestEdges.set(seq.id, set);
@@ -456,7 +500,8 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 				issues.push(inv('INV-006', `Clip ${c.id} has a dangling groupId`, cw));
 			for (const m of c.markers) claim(m.id, 'mrk', [...cw, 'markers', m.id]);
 			if (isKnownClipKind(c.kind)) {
-				effects(r.effects as EffectInstance[] | undefined, [...cw, 'effects']);
+				effects(r.effects as EffectInstance[] | undefined, [...cw, 'effects'], true);
+				masks(r.masks as Mask[] | undefined, [...cw, 'masks']);
 				anims({ ...r, content: undefined, params: undefined }, cw);
 				const opacity = r.opacity as AnimLike | undefined;
 				if (opacity) {
@@ -466,6 +511,40 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 					}
 				}
 			}
+		}
+		// wp masks: Track Matte Key tracks exist, are other video tracks, and mattes form no cycle.
+		{
+			const videoIds = new Set(seq.videoTracks.map((t) => t.id));
+			const edges = new Map<string, Set<string>>();
+			for (const c of Object.values(seq.clips)) {
+				const fx = (c as { effects?: EffectInstance[] }).effects;
+				if (!fx) continue;
+				for (const t of trackMatteTracksOf({ effects: fx as never })) {
+					const cw = [...where, 'clips', c.id];
+					if (!videoIds.has(t)) issues.push(inv('INV-006', `Clip ${c.id} uses missing matte track ${t}`, cw));
+					else if (t === c.trackId)
+						issues.push(inv('INV-012', `Clip ${c.id} cannot use its own track as a track matte`, cw));
+					else {
+						const set = edges.get(c.trackId) ?? new Set<string>();
+						set.add(t);
+						edges.set(c.trackId, set);
+					}
+				}
+			}
+			const state = new Map<string, 1 | 2>();
+			const cyclic = (n: string): boolean => {
+				if (state.get(n) === 1) return true;
+				if (state.get(n) === 2) return false;
+				state.set(n, 1);
+				for (const m of edges.get(n) ?? []) if (cyclic(m)) return true;
+				state.set(n, 2);
+				return false;
+			};
+			for (const n of edges.keys())
+				if (cyclic(n)) {
+					issues.push(inv('INV-012', `Track mattes form a cycle through track ${n}`, where));
+					break;
+				}
 		}
 		// INV-003 overlaps
 		for (const [trackId, list] of byTrack) {
@@ -596,6 +675,45 @@ function invalidAnimatorParams(a: unknown): boolean {
 	return !!spec && !spec.paramsSchema.safeParse(x.params).success;
 }
 
+/** wp masks: what is wrong with a mask (null = valid). */
+export function maskProblem(m: Mask): string | null {
+	const paths = [m.path.value, ...m.path.keyframes.map((k) => k.value)];
+	for (const p of paths) {
+		if (!isBezierPath(p)) return 'malformed path';
+		if (p.closed && p.vertices.length < 3) return 'a closed path needs at least 3 vertices';
+		if (p.vertices.length === 0) return 'empty path';
+		const segs = segmentCount(p as BezierPath);
+		for (const f of p.feather ?? [])
+			if (!(f.segment >= 0 && f.segment < segs) || ![f.t, f.radius, f.tension].every(Number.isFinite))
+				return 'feather point off the path';
+	}
+	const nums: [Animatable<number>, { min: number; max: number }, string][] = [
+		[m.feather, MASK_FEATHER_RANGE, 'feather'],
+		[m.opacity, MASK_OPACITY_RANGE, 'opacity'],
+		[m.expansion, MASK_EXPANSION_RANGE, 'expansion'],
+	];
+	for (const [a, r, name] of nums)
+		for (const v of [a.value, ...a.keyframes.map((k) => k.value)])
+			if (typeof v !== 'number' || !Number.isFinite(v) || v < r.min || v > r.max)
+				return `${name} out of range`;
+	if (!MASK_MODES.includes(m.mode)) return `unknown mode ${m.mode}`;
+	return null;
+}
+
+/** wp masks: drops invalid masks of a list in place (repair); returns the dropped ids. */
+function repairMaskList(list: Mask[] | undefined): string[] {
+	if (!list) return [];
+	const dropped: string[] = [];
+	for (let i = list.length - 1; i >= 0; i--) {
+		const m = list[i]!;
+		if (!m || typeof m !== 'object' || !isAnimLike(m.path) || maskProblem(m)) {
+			dropped.push(m?.id ?? '?');
+			list.splice(i, 1);
+		}
+	}
+	return dropped;
+}
+
 // ---------------------------------------------------------------- repair (S01:PER-004)
 
 export type RepairEntry = { action: string; entity: string; detail: string };
@@ -691,7 +809,8 @@ export function repairDocument(
 				!trackIds.has(c.trackId) ||
 				(typeof r.mediaId === 'string' && !doc.media[r.mediaId]) ||
 				(typeof r.syntheticId === 'string' && !doc.synthetics[r.syntheticId]) ||
-				(typeof r.transcriptId === 'string' && !doc.transcripts[r.transcriptId]);
+				(typeof r.transcriptId === 'string' && !doc.transcripts[r.transcriptId]) ||
+				(isNestClip(c) && (typeof r.sequenceId !== 'string' || !doc.sequences[r.sequenceId]));
 			if (missing) {
 				delete seq.clips[c.id];
 				note('drop-clip', c.id, 'clip referenced a missing track or source');
@@ -736,6 +855,52 @@ export function repairDocument(
 				}
 			}
 		}
+		// wp masks: malformed masks (bad path / ranges) are removed; masks on track or master effects too.
+		for (const c of Object.values(seq.clips)) {
+			const r = c as { masks?: Mask[]; effects?: EffectInstance[] };
+			for (const id of repairMaskList(r.masks)) note('drop-mask', c.id, `invalid mask ${id} removed`);
+			if (r.masks && r.masks.length === 0) delete r.masks;
+			for (const fx of r.effects ?? []) {
+				for (const id of repairMaskList(fx.masks)) note('drop-mask', fx.id, `invalid mask ${id} removed`);
+				if (fx.masks && fx.masks.length === 0) delete fx.masks;
+			}
+		}
+		for (const fx of [
+			...[...seq.videoTracks, ...seq.audioTracks].flatMap((t) => t.effects ?? []),
+			...seq.master.effects,
+		])
+			if (fx.masks) {
+				delete fx.masks;
+				note('drop-mask', fx.id, 'masks on a track or master effect removed');
+			}
+		// wp masks: Track Matte Keys reading a missing / own track, or closing a cycle, lose their track.
+		{
+			const videoIds = new Set(seq.videoTracks.map((t) => t.id));
+			const reach = (from: string, to: string, seen = new Set<string>()): boolean => {
+				if (from === to) return true;
+				if (seen.has(from)) return false;
+				seen.add(from);
+				for (const c of Object.values(seq.clips))
+					if (c.trackId === from)
+						for (const t of trackMatteTracksOf({
+							effects: ((c as { effects?: EffectInstance[] }).effects ?? []) as never,
+						}))
+							if (reach(t, to, seen)) return true;
+				return false;
+			};
+			for (const c of Object.values(seq.clips))
+				for (const fx of (c as { effects?: EffectInstance[] }).effects ?? []) {
+					if (fx.effectId !== TRACK_MATTE_EFFECT_ID || !fx.params.matteTrack) continue;
+					const a = fx.params.matteTrack;
+					const bad = (v: unknown) =>
+						typeof v === 'string' && v !== '' && (!videoIds.has(v) || v === c.trackId || reach(v, c.trackId));
+					if ([a.value, ...a.keyframes.map((k) => k.value)].some(bad)) {
+						a.value = '';
+						a.keyframes = [];
+						note('clear-track-matte', fx.id, 'track matte referenced a missing track or formed a cycle');
+					}
+				}
+		}
 		// M2 (wp-m2-text-anim, S11:TXA-008): animator params a known preset rejects are reset to its defaults.
 		for (const c of Object.values(seq.clips)) {
 			if (c.kind !== 'text' || !c.textAnimation) continue;
@@ -761,6 +926,42 @@ export function repairDocument(
 			}
 		}
 	}
+	// edit-structure (INV-009): nest clips that close a nesting cycle are removed (the first found, until acyclic).
+	for (;;) {
+		const cycle = findNestCycleClip(doc);
+		if (!cycle) break;
+		delete doc.sequences[cycle.seqId]!.clips[cycle.clipId];
+		note('drop-clip', cycle.clipId, 'nest clip formed a nesting cycle');
+		for (const t of Object.values(doc.sequences[cycle.seqId]!.transitions))
+			if (t.outgoingClipId === cycle.clipId || t.incomingClipId === cycle.clipId)
+				delete doc.sequences[cycle.seqId]!.transitions[t.id];
+		const seq = doc.sequences[cycle.seqId]!;
+		for (const kind of ['links', 'groups'] as const) {
+			const field = kind === 'links' ? 'linkId' : 'groupId';
+			for (const g of Object.values(seq[kind])) {
+				g.members = g.members.filter((m) => m !== cycle.clipId && seq.clips[m]);
+				if (g.members.length >= 2) continue;
+				for (const m of g.members) (seq.clips[m] as Record<string, unknown>)[field] = null;
+				delete seq[kind][g.id];
+			}
+		}
+	}
+	// edit-structure: frame holds on clips that cannot have one are removed.
+	for (const seq of Object.values(doc.sequences))
+		for (const c of Object.values(seq.clips)) {
+			if (c.frameHold === undefined) continue;
+			const caps = kindCapabilities(c.kind);
+			const ok =
+				!!caps &&
+				caps.trackKind === 'video' &&
+				c.kind !== 'adjustment' &&
+				Number.isInteger(c.frameHold.flicks) &&
+				c.frameHold.flicks >= 0;
+			if (!ok) {
+				delete c.frameHold;
+				note('drop-frame-hold', c.id, 'invalid frame hold removed');
+			}
+		}
 	// Leaked media/synthetics get a project item so nothing silently disappears (INV-014).
 	const usedMedia = new Set<string>();
 	const usedSyn = new Set<string>();
@@ -814,4 +1015,36 @@ export function repairDocument(
 		}
 	}
 	return { document: doc, report };
+}
+
+/** edit-structure: which synthetic sources a clip kind can show (AST-010). */
+export function syntheticFitsClip(clipKind: string, synKind: string): boolean {
+	if (clipKind === 'adjustment') return synKind === 'adjustment';
+	if (clipKind === 'solid') return synKind !== 'adjustment';
+	if (clipKind === 'synthetic-audio') return synKind === 'bars-and-tone' || synKind === 'counting-leader';
+	return true;
+}
+
+/** A nest clip on a nesting cycle (INV-009), or null. */
+function findNestCycleClip(doc: ProjectDocument): { seqId: string; clipId: string } | null {
+	const state = new Map<string, 1 | 2>();
+	let hit: { seqId: string; clipId: string } | null = null;
+	const visit = (s: string): boolean => {
+		state.set(s, 1);
+		const seq = doc.sequences[s];
+		for (const c of Object.values(seq?.clips ?? {})) {
+			if (!isNestClip(c)) continue;
+			const n = (c as { sequenceId: string }).sequenceId;
+			if (!doc.sequences[n]) continue;
+			if (state.get(n) === 1) {
+				hit = { seqId: s, clipId: c.id };
+				return true;
+			}
+			if (!state.has(n) && visit(n)) return true;
+		}
+		state.set(s, 2);
+		return false;
+	};
+	for (const s of Object.keys(doc.sequences)) if (!state.has(s) && visit(s)) return hit;
+	return null;
 }

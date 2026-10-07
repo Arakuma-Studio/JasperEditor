@@ -14,6 +14,8 @@ import {
 	mediaDecodeHints,
 	type RenderVisualClip,
 } from '@jasper/project';
+import { hasSoxr, resamplerArgs } from '../audio/decode.ts';
+import { layoutOf, type MixdownResult, renderMixdown } from '../audio/mixdown.ts';
 import type { UrlSigner } from '../auth/signed-url.ts';
 import type { CacheService } from '../cache/service.ts';
 import type { Broadcaster } from '../events/broadcaster.ts';
@@ -27,14 +29,14 @@ import { audioEncodeArgs, type EncoderService, videoEncodeArgs } from '../tools/
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { exists, randomId } from '../tools/fs.ts';
 import { terminateTree } from '../tools/process.ts';
-import { hasSoxr, resamplerArgs } from '../audio/decode.ts';
-import { layoutOf, type MixdownResult, renderMixdown } from '../audio/mixdown.ts';
 import { BT709_FRAME_TAGS, buildNativeGraph, SWS_FLAGS } from './native.ts';
 import {
 	layerOverride,
 	type NativeExtension,
 	NativeExtensionRegistry,
+	type PreparedExtensions,
 	prepareExtensions,
+	prepareNestedExtensions,
 } from './native-ext.ts';
 import {
 	audioCodecOf,
@@ -46,6 +48,7 @@ import {
 	planExport,
 } from './planner.ts';
 import { streamLayer } from './stream/run.ts';
+import { createSyntheticExtension } from './synthetic.ts';
 
 /**
  * A native extension's `prepare` failed (S11:LBK-023): an `auto` export or still falls back to the Remotion path
@@ -57,6 +60,9 @@ class NativePrepareError extends Error {
 		this.name = 'NativePrepareError';
 	}
 }
+
+/** edit-structure: what the Remotion-path extensions prepared for nested sequences, per top-level preparation. */
+const NESTED_REMOTION = new WeakMap<ReadonlyMap<string, unknown>, Map<string, PreparedExtensions>>();
 
 /** Remotion concurrency of an export with `slots` CPU slots (S04:RR-004; bakes follow it, S11:LBK-022). */
 function remotionConcurrency(slots: number): number {
@@ -115,7 +121,10 @@ export class ExportService {
 	 */
 	cache: CacheService | null = null;
 
-	constructor(private readonly deps: ExportServiceDeps) {}
+	constructor(private readonly deps: ExportServiceDeps) {
+		// edit-structure: Bars and Tone / counting leader pictures and tones (always available: ffmpeg only).
+		this.nativeExtensions.register(createSyntheticExtension({ ffmpeg: deps.ff }));
+	}
 
 	/** M2 hook: colour (LUT), motion-graphics pre-renders, warp stage… keep features on the native path. */
 	registerNativeExtension(ext: NativeExtension): () => void {
@@ -324,17 +333,24 @@ export class ExportService {
 	): Promise<Map<string, string> | null> {
 		const masters = new Map<string, string>();
 		// Anime templates (S11:ATP-008) are Remotion graphics: baked by the layer-bake extension, not by fframes.
-		const clips = planned.snapshot.videoTracks
-			.flatMap((t) => t.clips)
-			.filter((c) => c.kind === 'motion-graphic' && !isAnimeTemplate(c));
+		// edit-structure: motion graphics inside nested sequences are drawn in the nested frame.
+		const clips: { clip: RenderVisualClip; snap: PlannedExport['snapshot'] }[] = [];
+		const collect = (snap: PlannedExport['snapshot']) => {
+			for (const c of snap.videoTracks.flatMap((t) => t.clips)) {
+				if (c.kind === 'motion-graphic' && !isAnimeTemplate(c)) clips.push({ clip: c, snap });
+				if ('nest' in c.source) collect(c.source.nest.snapshot);
+			}
+		};
+		collect(planned.snapshot);
 		if (clips.length === 0) return masters;
 		if (!this.mgProvider) return null;
-		for (const clip of clips) {
+		for (const { clip, snap } of clips) {
+			if (masters.has(clip.clipId)) continue;
 			ctx.progress(0, { stage: 'Rendering motion graphics' });
 			const p = await this.mgProvider({
 				clip,
-				fps: planned.snapshot.settings.fps,
-				sequence: { width: planned.snapshot.settings.width, height: planned.snapshot.settings.height },
+				fps: snap.settings.fps,
+				sequence: { width: snap.settings.width, height: snap.settings.height },
 				projectId: planned.document.projectId,
 				parentId: ctx.job.id,
 				signal: ctx.signal,
@@ -355,23 +371,37 @@ export class ExportService {
 	): Promise<number> {
 		const exts = this.nativeExtensions.all();
 		let prepared: Map<string, unknown>;
+		let nested: Map<string, PreparedExtensions>;
 		try {
-			prepared = await prepareExtensions(exts, planned, {
+			const pctx = {
 				signal: ctx.signal,
-				stage: (text) => ctx.progress(0, { stage: text }),
+				stage: (text: string) => ctx.progress(0, { stage: text }),
 				scratchDir: () => ctx.scratchDir(),
-				log: (text) => ctx.log(text),
+				log: (text: string) => ctx.log(text),
 				jobId: ctx.job.id,
 				...(planned.document.projectId ? { projectId: planned.document.projectId } : {}),
-				purpose: 'native',
+				purpose: 'native' as const,
 				concurrency: remotionConcurrency(ctx.slots),
 				...(this.pinFor(ctx) ? { pin: this.pinFor(ctx) } : {}),
-			});
+			};
+			prepared = await prepareExtensions(exts, planned, pctx);
+			// edit-structure: nested sequences are drawn in the same graph; their layers get their own preparations.
+			nested = await prepareNestedExtensions(exts, planned, pctx);
 		} catch (e) {
 			if (ctx.signal.aborted) throw e;
 			throw new NativePrepareError(e);
 		}
 		await this.pinInputs(ctx, planned, exts, prepared, masters);
+		const pinNested = async (pl: PlannedExport, parent: string): Promise<void> => {
+			for (const c of pl.snapshot.videoTracks.flatMap((t) => t.clips)) {
+				if (!('nest' in c.source)) continue;
+				const path = parent ? `${parent}>${c.clipId}` : c.clipId;
+				const sub = { ...pl, snapshot: c.source.nest.snapshot, range: c.source.nest.snapshot.range };
+				await this.pinInputs(ctx, sub, exts, nested.get(path) ?? new Map());
+				await pinNested(sub, path);
+			}
+		};
+		await pinNested(planned, '');
 		const graph = buildNativeGraph({
 			snapshot: planned.snapshot,
 			output: planned.output,
@@ -386,6 +416,7 @@ export class ExportService {
 			...(audio?.path
 				? { audio: { file: audio.path, sampleRate: audio.sampleRate, soxr: await hasSoxr(this.deps.ff) } }
 				: {}),
+			nested,
 		});
 		let args = graph.args;
 		if (graph.filter.length > 60_000) {
@@ -497,12 +528,20 @@ export class ExportService {
 	}
 
 	/** Remotion's direct output (VP9/Opus or GPL H.264) with the mixdown as its audio (stream copy of the video). */
-	private async muxAudio(planned: PlannedExport, video: string, audio: MixdownResult, output: string, ctx: JobContext) {
+	private async muxAudio(
+		planned: PlannedExport,
+		video: string,
+		audio: MixdownResult,
+		output: string,
+		ctx: JobContext,
+	) {
 		const o = planned.output;
 		const codec = audioCodecOf(o.encoder, o);
 		const soxr = await hasSoxr(this.deps.ff);
 		const af =
-			audio.sampleRate !== o.audioSampleRate ? ['-af', `aresample=${o.audioSampleRate}:${resamplerArgs(soxr)}`] : [];
+			audio.sampleRate !== o.audioSampleRate
+				? ['-af', `aresample=${o.audioSampleRate}:${resamplerArgs(soxr)}`]
+				: [];
 		const args = [
 			'-i',
 			video,
@@ -613,20 +652,22 @@ export class ExportService {
 	private async prepareForRemotion(planned: PlannedExport, ctx: JobContext): Promise<Map<string, unknown>> {
 		const exts = this.nativeExtensions.all().filter((e) => e.prepareForRemotion);
 		if (exts.length === 0) return new Map();
-		return prepareExtensions(exts, planned, {
+		const pctx = {
 			signal: ctx.signal,
-			stage: (text) => ctx.progress(0, { stage: text }),
+			stage: (text: string) => ctx.progress(0, { stage: text }),
 			scratchDir: () => ctx.scratchDir(),
-			log: (text) => ctx.log(text),
+			log: (text: string) => ctx.log(text),
 			jobId: ctx.job.id,
 			...(planned.document.projectId ? { projectId: planned.document.projectId } : {}),
-			purpose: 'remotion',
+			purpose: 'remotion' as const,
 			concurrency: remotionConcurrency(ctx.slots),
 			...(this.pinFor(ctx) ? { pin: this.pinFor(ctx) } : {}),
-		}).then(async (prepared) => {
-			await this.pinInputs(ctx, planned, exts, prepared);
-			return prepared;
-		});
+		};
+		const prepared = await prepareExtensions(exts, planned, pctx);
+		await this.pinInputs(ctx, planned, exts, prepared);
+		// edit-structure: nested sequences' layers (graded DOM layers inside nests…) are prepared too.
+		NESTED_REMOTION.set(prepared, await prepareNestedExtensions(exts, planned, pctx));
+		return prepared;
 	}
 
 	/**
@@ -709,10 +750,28 @@ export class ExportService {
 				return f ? sign(f.url) : null;
 			},
 		});
-		for (const ext of this.nativeExtensions.all()) {
-			if (ext.prepareForRemotion && ext.adaptRemotionDoc)
-				doc = ext.adaptRemotionDoc(doc, prepared.get(ext.id), { signUrl: sign });
-		}
+		const nested = NESTED_REMOTION.get(prepared);
+		const adapt = (d: typeof doc, prep: ReadonlyMap<string, unknown>, path: string): typeof doc => {
+			for (const ext of this.nativeExtensions.all()) {
+				if (ext.prepareForRemotion && ext.adaptRemotionDoc)
+					d = ext.adaptRemotionDoc(d, prep.get(ext.id), { signUrl: sign });
+			}
+			if (!nested || nested.size === 0) return d;
+			// edit-structure: adapt the nested snapshots of nest clips with what was prepared for them.
+			return {
+				...d,
+				videoTracks: d.videoTracks.map((t) => ({
+					...t,
+					clips: t.clips.map((c) => {
+						if (!('nest' in c.source)) return c;
+						const p = path ? `${path}>${c.clipId}` : c.clipId;
+						const sub = adapt(c.source.nest.snapshot, nested.get(p) ?? new Map(), p);
+						return { ...c, source: { nest: { ...c.source.nest, snapshot: sub } } };
+					}),
+				})),
+			};
+		};
+		doc = adapt(doc, prepared, '');
 		return {
 			doc,
 			options: { isPreview: false, useProxies: false, transparentBackground: false },

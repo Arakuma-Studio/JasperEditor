@@ -1,0 +1,8 @@
+asset:        contact-sheet.jpg
+title:        Contact sheet of the Sapphire-style wipe transitions
+author:       JasperEditor contributors
+source:       original work
+license:      LicenseRef-JasperEditor
+license-file: none
+added:        2026-10-06 by JasperDev (sidecar 2026-10-07 by the process workstream)
+notes:        Remotion renders between two generated test clips (colour bars and generated shapes).

@@ -158,11 +158,13 @@ const STATIC_KINDS = new Set(['still', 'solid', 'text']);
  * the file holds; other generators cannot show content before content time 0.
  */
 export function clipHandles(
-	doc: Pick<ProjectDocument, 'media'>,
+	doc: Pick<ProjectDocument, 'media'> & Partial<Pick<ProjectDocument, 'sequences'>>,
 	seq: Pick<Sequence, 'settings'>,
 	c: Clip,
 ): { head: number; tail: number } {
-	if (STATIC_KINDS.has(c.kind)) return { head: Number.POSITIVE_INFINITY, tail: Number.POSITIVE_INFINITY };
+	// edit-structure: a held clip shows one frame whatever the content time.
+	if (STATIC_KINDS.has(c.kind) || c.frameHold)
+		return { head: Number.POSITIVE_INFINITY, tail: Number.POSITIVE_INFINITY };
 	const step = flicksPerFrame(seq.settings.frameRate as Rational) * c.speed.rate;
 	// Media duration, or the composition length for composition clips (S08:MGC-004).
 	const dur = contentDurationFlicks(doc, c);
@@ -247,6 +249,13 @@ export type ClipTransitionRender = {
 	/** Frames of content drawn after the clip's end (outgoing side). */
 	tailHandle: number;
 	fades: RenderFade[];
+	/**
+	 * edit-structure (freeze-frame handles, `Transition.freezeHandles`): handle frames the media does not have. The
+	 * first `freezeHead` frames of the head handle show the earliest available frame (the one at sequence frame
+	 * `start − headHandle + freezeHead`), the last `freezeTail` frames of the tail handle the latest one.
+	 */
+	freezeHead?: number;
+	freezeTail?: number;
 };
 
 /** Opacity factor (0…1) of a set of ramps at a sequence frame. */
@@ -317,7 +326,7 @@ export type ResolvedTransitions = {
  * instead of showing missing frames.
  */
 export function resolveVideoTransitions(
-	doc: Pick<ProjectDocument, 'media' | 'synthetics'>,
+	doc: Pick<ProjectDocument, 'media' | 'synthetics'> & Partial<Pick<ProjectDocument, 'sequences'>>,
 	seq: Sequence,
 ): ResolvedTransitions {
 	const clips = new Map<string, ClipTransitionRender>();
@@ -361,6 +370,11 @@ export function resolveVideoTransitions(
 		mattes.set(t.trackId, list);
 	};
 	const videoTracks = new Set(seq.videoTracks.map((t) => t.id));
+	const frozenHandles: {
+		a: ClipTransitionRender;
+		b: ClipTransitionRender;
+		avail: { head: number; tail: number };
+	}[] = [];
 	for (const t of Object.values(seq.transitions)) {
 		if (!videoTracks.has(t.trackId)) continue;
 		const spec = transitionSpec(t.effectId);
@@ -380,12 +394,15 @@ export function resolveVideoTransitions(
 		if (out && inc) {
 			if (clipEnd(out) !== inc.start) continue; // not adjacent (INV-010); cleanup removes these
 			const cut = inc.start;
+			const avail = { tail: clipHandles(doc, seq, out).tail, head: clipHandles(doc, seq, inc).head };
+			// Freeze-frame handles: the clips' lengths are the only limit; missing media repeats the edge frames.
+			const freeze = t.freezeHandles === true;
 			const d = fitTransitionDuration({
 				effectId: t.effectId,
 				wanted: t.duration,
 				alignment: t.alignment,
-				outgoing: { duration: out.duration, tail: clipHandles(doc, seq, out).tail },
-				incoming: { duration: inc.duration, head: clipHandles(doc, seq, inc).head },
+				outgoing: { duration: out.duration, tail: freeze ? Number.POSITIVE_INFINITY : avail.tail },
+				incoming: { duration: inc.duration, head: freeze ? Number.POSITIVE_INFINITY : avail.head },
 			});
 			if (d <= 0) {
 				skipped.push({ transitionId: t.id, reason: 'no media handles for the transition' });
@@ -394,6 +411,10 @@ export function resolveVideoTransitions(
 			const { start, end } = transitionSpan(cut, d, t.alignment);
 			const a = entry(out.id);
 			const b = entry(inc.id);
+			if (freeze) {
+				// Recorded after the handles are set below (see the end of this branch).
+				frozenHandles.push({ a, b, avail });
+			}
 			if (gpu) {
 				// Both clips are drawn over the whole span (handles); the shader stage composites them.
 				a.tailHandle = Math.max(a.tailHandle, end - cut);
@@ -436,6 +457,11 @@ export function resolveVideoTransitions(
 			entry(out.id).fades.push({ type: 'out', start: end - d - 1, frames: d });
 			if (dip) matte(t, end - d, d);
 		}
+	}
+	// Freeze-frame handles: the part of each handle beyond the media (max over the clip's transitions).
+	for (const { a, b, avail } of frozenHandles) {
+		if (a.tailHandle > avail.tail) a.freezeTail = Math.max(a.freezeTail ?? 0, a.tailHandle - avail.tail);
+		if (b.headHandle > avail.head) b.freezeHead = Math.max(b.freezeHead ?? 0, b.headHandle - avail.head);
 	}
 	for (const list of stages.values()) list.sort((x, y) => x.start - y.start || x.id.localeCompare(y.id));
 	return { clips, mattes, stages, skipped };

@@ -25,6 +25,8 @@ export const ID_PREFIXES = {
 	tracker: 'tkr',
 	/** audio-mix: Audio Track Mixer sends. */
 	send: 'snd',
+	/** wp masks: Opacity / effect masks. */
+	mask: 'msk',
 } as const;
 export type IdPrefix = (typeof ID_PREFIXES)[keyof typeof ID_PREFIXES];
 export const ALL_ID_PREFIXES: readonly IdPrefix[] = Object.values(ID_PREFIXES);

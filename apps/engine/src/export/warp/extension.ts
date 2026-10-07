@@ -17,6 +17,7 @@ import {
 	isAnimated,
 	layerMapOf,
 	type Mat3,
+	maskExportRoute,
 	multiplyMat3,
 	type RenderVisualClip,
 	resolveLayerProps,
@@ -77,6 +78,8 @@ const WARP_MOTION_KINDS: ReadonlySet<string> = new Set(['animated-image']);
 /** Layers the warp stage renders: an enabled corner pin; keyframed Motion or opacity of an animated image. */
 function warpClaims(c: RenderVisualClip): boolean {
 	if (!WARP_KINDS.has(c.kind) || !c.transform) return false;
+	// wp masks: masked layers are baked by the layer-bake extension (the warp stage draws no masks).
+	if (maskExportRoute(c) !== 'none') return false;
 	return (
 		c.effects.some((fx) => fx.enabled && fx.effectId === CORNER_PIN_EFFECT_ID) ||
 		(WARP_MOTION_KINDS.has(c.kind) && (motionAnimated(c) || isAnimated(c.opacity)))

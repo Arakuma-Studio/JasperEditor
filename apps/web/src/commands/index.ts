@@ -15,11 +15,14 @@ import { helpCommands } from './help.ts';
 import { inspectorCommands } from './inspector.ts';
 import { integrationCommands } from './integration.ts';
 import { layerCommands } from './layer.ts';
+import { maskCommands } from './masks.ts';
 import { mgCommands } from './mg.ts';
 import { processCommands } from './process.ts';
 import { projectCommands } from './project.ts';
+import { projectFileCommands } from './project-files.ts';
 import { registerCommands } from './registry.ts';
 import { shapeCommands } from './shapes.ts';
+import { structureCommands } from './structure.ts';
 import { textAnimationCommands } from './text-animation.ts';
 import { timelineCommands } from './timeline.ts';
 import { trackingCommands } from './tracking.ts';
@@ -53,6 +56,9 @@ const COMMAND_MODULES: UiCommand[][] = [
 	clipboardCommands,
 	layerCommands,
 	cacheCommands,
+	structureCommands,
+	projectFileCommands,
+	maskCommands,
 ];
 
 let registered = false;

@@ -13,7 +13,9 @@ declare class AudioWorkletProcessor {
 	constructor(options?: unknown);
 }
 
-type Options = { processorOptions?: { channels?: number; loudness?: boolean; ceilingDb?: number; enabled?: boolean } };
+type Options = {
+	processorOptions?: { channels?: number; loudness?: boolean; ceilingDb?: number; enabled?: boolean };
+};
 
 const POST_EVERY = Math.max(1, Math.round((sampleRate * 0.033) / 128));
 
@@ -93,12 +95,18 @@ class LimiterProcessor extends AudioWorkletProcessor {
 		const o = options.processorOptions ?? {};
 		this.channels = Math.max(1, o.channels ?? 2);
 		this.enabled = o.enabled ?? true;
-		this.limiter = new TruePeakLimiter(sampleRate, this.channels, { ceilingDb: o.ceilingDb ?? -1, lookaheadMs: 5 });
+		this.limiter = new TruePeakLimiter(sampleRate, this.channels, {
+			ceilingDb: o.ceilingDb ?? -1,
+			lookaheadMs: 5,
+		});
 		this.buf = Array.from({ length: this.channels }, () => new Float32Array(128));
 		this.port.onmessage = (e: MessageEvent) => {
 			const m = e.data as { ceilingDb?: number; enabled?: boolean };
 			if (m.ceilingDb !== undefined && Math.abs(m.ceilingDb - 20 * Math.log10(this.limiter.ceiling)) > 1e-6)
-				this.limiter = new TruePeakLimiter(sampleRate, this.channels, { ceilingDb: m.ceilingDb, lookaheadMs: 5 });
+				this.limiter = new TruePeakLimiter(sampleRate, this.channels, {
+					ceilingDb: m.ceilingDb,
+					lookaheadMs: 5,
+				});
 			if (m.enabled !== undefined) this.enabled = m.enabled;
 		};
 	}

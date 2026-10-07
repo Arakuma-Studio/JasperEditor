@@ -61,7 +61,11 @@ export interface PreviewInsert {
 	update(effect: EffectInstance, timeFlicks: number): void;
 	dispose(): void;
 }
-export type PreviewInsertFactory = (ctx: BaseAudioContext, effect: EffectInstance, channels: number) => PreviewInsert;
+export type PreviewInsertFactory = (
+	ctx: BaseAudioContext,
+	effect: EffectInstance,
+	channels: number,
+) => PreviewInsert;
 
 const insertFactories = new Map<string, PreviewInsertFactory>();
 /** Registers the Web Audio implementation of an audio effect for preview slots (returns an unregister function). */
@@ -104,7 +108,11 @@ const dbToGain = (db: number) => (db <= -96 || !Number.isFinite(db) ? 0 : 10 ** 
 const widthOf = (f: string) => (f === 'mono' ? 1 : f === '5.1' ? 6 : 2);
 const layoutOf = (w: number): Layout => layoutFromChannels(w);
 
-function laneAt(a: { value: number; keyframes: { time: number; value: number }[] }, t: number, hold = false): number {
+function laneAt(
+	a: { value: number; keyframes: { time: number; value: number }[] },
+	t: number,
+	hold = false,
+): number {
 	if (a.keyframes.length === 0) return a.value;
 	return hold ? holdValueAt(a as never, t) : evaluate(a as never, t);
 }
@@ -113,7 +121,7 @@ function scaleRows(m: number[][], gains: number[]): number[][] {
 	return m.map((row, o) => row.map((v) => v * (gains[o] ?? 1)));
 }
 
-function mul(a: number[][], b: number[][]): number[][] {
+function _mul(a: number[][], b: number[][]): number[][] {
 	// (a · b)[o][i] = Σ_k a[o][k] b[k][i]
 	return a.map((row) => b[0]!.map((_, i) => row.reduce((s, x, k) => s + x * (b[k]?.[i] ?? 0), 0)));
 }
@@ -128,7 +136,12 @@ export function panStageMatrix(
 ): number[][] {
 	const src = layoutOf(w);
 	if (ow === 6)
-		return pan51Matrix(src, { x: p51.x / 100, y: p51.y / 100, center: p51.center / 100, lfeGain: dbToGain(p51.lfeDb) });
+		return pan51Matrix(src, {
+			x: p51.x / 100,
+			y: p51.y / 100,
+			center: p51.center / 100,
+			lfeGain: dbToGain(p51.lfeDb),
+		});
 	if (ow === 1) return conversionMatrix(src, 'mono');
 	const p = Math.max(-1, Math.min(1, pan / 100));
 	if (w === 1) {
@@ -177,7 +190,9 @@ class SlotChain {
 			}
 			last.connect(this.output);
 		}
-		effects.forEach((e, i) => this.slots[i]?.ins?.update(e, time));
+		effects.forEach((e, i) => {
+			this.slots[i]?.ins?.update(e, time);
+		});
 	}
 
 	dispose(): void {
@@ -189,7 +204,14 @@ class SlotChain {
 
 // ------------------------------------------------------------------ strips
 
-type SendNodes = { id: string; target: string; preFader: boolean; level: GainNode; matrix: MatrixNode; gate: GainNode };
+type SendNodes = {
+	id: string;
+	target: string;
+	preFader: boolean;
+	level: GainNode;
+	matrix: MatrixNode;
+	gate: GainNode;
+};
 
 class StripNodes {
 	readonly width: number;
@@ -284,7 +306,10 @@ class ClipNodes {
 	/** (Re)builds the chain for the clip's channel layout and the track width; connects to `dest`. */
 	connect(clip: RenderAudioClip, trackWidth: number, dest: AudioNode, time: number): void {
 		this.clip = clip;
-		const stream = Math.max(1, Math.min(6, clip.streamChannels ?? Math.max(2, ...clip.channels.map.map((c) => c + 1))));
+		const stream = Math.max(
+			1,
+			Math.min(6, clip.streamChannels ?? Math.max(2, ...clip.channels.map.map((c) => c + 1))),
+		);
 		const mapped = clip.channels.map.length > 0 ? clip.channels.map.length : stream;
 		const w = mapped === 1 || mapped === 2 || mapped === 6 ? mapped : 2;
 		if (!this.select || this.width !== w || this.select.inChannels !== stream) {
@@ -303,7 +328,9 @@ class ClipNodes {
 			this.pan = null;
 		}
 		const map = clip.channels.map.length > 0 ? clip.channels.map : Array.from({ length: w }, (_, i) => i);
-		const sel = Array.from({ length: w }, (_, o) => Array.from({ length: stream }, (_, i) => (map[o] === i ? 1 : 0)));
+		const sel = Array.from({ length: w }, (_, o) =>
+			Array.from({ length: stream }, (_, i) => (map[o] === i ? 1 : 0)),
+		);
 		this.select.set(sel, true);
 		if (!this.pan || this.trackWidth !== trackWidth) {
 			this.pan?.dispose();
@@ -321,7 +348,13 @@ class ClipNodes {
 	}
 
 	/** Clip pan, effects and the Clip Mixer trim at sequence time `t` (flicks). */
-	update(clip: RenderAudioClip, t: number, override: { volume?: number; pan?: number } | null, instant = false, fps?: Rational): void {
+	update(
+		clip: RenderAudioClip,
+		t: number,
+		override: { volume?: number; pan?: number } | null,
+		instant = false,
+		fps?: Rational,
+	): void {
 		this.clip = clip;
 		if (!this.pan) return;
 		const rate = fps ?? { num: 30, den: 1 };
@@ -335,9 +368,15 @@ class ClipNodes {
 		if (tw === 2 && pan !== 0) m = scaleRows(m, balanceGains(Math.max(-1, Math.min(1, pan / 100))));
 		this.pan.set(m, instant);
 		// Clip Mixer fader held: replace the clip's volume (Remotion applies gain + volume; the trim corrects it).
-		const trim = override?.volume !== undefined ? dbToGain(override.volume) / Math.max(1e-9, dbToGain(laneAt(clip.volumeDb, content))) : 1;
+		const trim =
+			override?.volume !== undefined
+				? dbToGain(override.volume) / Math.max(1e-9, dbToGain(laneAt(clip.volumeDb, content)))
+				: 1;
 		setParam(this.trim.gain, Number.isFinite(trim) ? Math.min(trim, 64) : 1, this.ctx, instant);
-		this.slots?.sync(clip.effects.filter((e) => e.enabled), content);
+		this.slots?.sync(
+			clip.effects.filter((e) => e.enabled),
+			content,
+		);
 	}
 
 	dispose(): void {
@@ -577,7 +616,11 @@ export class MixGraph {
 				channelCount: mw,
 				channelCountMode: 'explicit',
 				channelInterpretation: 'discrete',
-				processorOptions: { channels: mw, ceilingDb: mix.loudness?.truePeakDb ?? -1, enabled: !!mix.loudness },
+				processorOptions: {
+					channels: mw,
+					ceilingDb: mix.loudness?.truePeakDb ?? -1,
+					enabled: !!mix.loudness,
+				},
 			});
 			last.connect(this.limiter);
 			last = this.limiter;
@@ -688,7 +731,10 @@ export class MixGraph {
 			const po = this.ov(clip.trackId, 'clip.pan');
 			const F = flicksPerFrame(this.fps);
 			const under = clip.start * F <= t && t < (clip.start + clip.duration) * F;
-			const override = under && (vo !== undefined || po !== undefined) ? { ...(vo !== undefined ? { volume: vo } : {}), ...(po !== undefined ? { pan: po } : {}) } : null;
+			const override =
+				under && (vo !== undefined || po !== undefined)
+					? { ...(vo !== undefined ? { volume: vo } : {}), ...(po !== undefined ? { pan: po } : {}) }
+					: null;
 			c.update(clip, t, override, instant, this.fps);
 		}
 	}

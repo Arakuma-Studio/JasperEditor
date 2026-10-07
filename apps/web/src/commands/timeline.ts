@@ -266,6 +266,7 @@ function clear(ctx: CommandCtx, e: Env, ripple: boolean): void {
 			{
 				type: ripple ? 'clip.extract' : 'clip.lift',
 				clipIds: clips.map((c) => c.id),
+				groups: false,
 				...(ripple ? { rippleMarkers: e.session.getState().toggles.rippleMarkers } : {}),
 			},
 		]);
@@ -280,9 +281,15 @@ function nudge(ctx: CommandCtx, e: Env, delta: number): void {
 	const min = Math.min(...clips.map((c) => c.start));
 	const d = Math.max(-min, delta); // TL-497: clamped at frame 0
 	if (d === 0) return;
-	apply(ctx, e, 'Nudge', [{ type: 'clip.move', clipIds: clips.map((c) => c.id), deltaFrames: d }], {
-		coalesceKey: 'nudge',
-	});
+	apply(
+		ctx,
+		e,
+		'Nudge',
+		[{ type: 'clip.move', clipIds: clips.map((c) => c.id), deltaFrames: d, groups: false }],
+		{
+			coalesceKey: 'nudge',
+		},
+	);
 }
 
 function nudgeTrack(ctx: CommandCtx, e: Env, up: boolean): void {
@@ -300,6 +307,7 @@ function nudgeTrack(ctx: CommandCtx, e: Env, up: boolean): void {
 				deltaFrames: 0,
 				deltaTracks: { video: up ? 1 : -1, audio: up ? -1 : 1 },
 				createTracks: false,
+				groups: false,
 			},
 		],
 		{ coalesceKey: 'nudge-track', quiet: true },

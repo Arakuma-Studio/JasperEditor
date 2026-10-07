@@ -119,7 +119,8 @@ export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
 		const m = o.media(clip.mediaId);
 		if (!m) return null;
 		const stream =
-			m.streams.find((s) => s.index === clip.channels.streamIndex) ?? m.streams.find((s) => s.type === 'audio');
+			m.streams.find((s) => s.index === clip.channels.streamIndex) ??
+			m.streams.find((s) => s.type === 'audio');
 		if (!stream) return null;
 		const { args, channels } = clipDecodeArgs({
 			clip,
@@ -131,7 +132,10 @@ export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
 			length: at.length,
 			soxr,
 		});
-		const child = o.ff.spawnRaw(args, { ...(o.signal ? { signal: o.signal } : {}), ...(o.onSpawn ? { onSpawn: o.onSpawn } : {}) });
+		const child = o.ff.spawnRaw(args, {
+			...(o.signal ? { signal: o.signal } : {}),
+			...(o.onSpawn ? { onSpawn: o.onSpawn } : {}),
+		});
 		return new PcmStreamReader(channels, child) as ClipReader;
 	};
 	const sourceLevels = o.clipLevels === 'source';
@@ -175,7 +179,11 @@ export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
 	const gainDb = Number.isFinite(before.integrated) ? o.normalize.targetLufs - before.integrated : 0;
 	const g = 10 ** (gainDb / 20);
 	const out = join(o.scratchDir, 'mix.wav');
-	const limiter = new TruePeakLimiter(sr, channels, { ceilingDb: o.normalize.truePeakDb, lookaheadMs: 5, releaseMs: 100 });
+	const limiter = new TruePeakLimiter(sr, channels, {
+		ceilingDb: o.normalize.truePeakDb,
+		lookaheadMs: 5,
+		releaseMs: 100,
+	});
 	const meter2 = new LoudnessMeter(sr, channels, { weights: defaultChannelWeights(channels) });
 	const src = await open(pass1, 'r');
 	const dst = await open(out, 'w');
@@ -202,7 +210,12 @@ export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
 		for (let done = 0; done < total; ) {
 			if (o.signal?.aborted) throw new Error('aborted');
 			const n = Math.min(BLOCK, total - done);
-			const { bytesRead } = await src.read(raw, 0, n * channels * 4, WAV_F32_HEADER_BYTES + done * channels * 4);
+			const { bytesRead } = await src.read(
+				raw,
+				0,
+				n * channels * 4,
+				WAV_F32_HEADER_BYTES + done * channels * 4,
+			);
 			const got = Math.floor(bytesRead / (channels * 4));
 			for (let i = 0; i < n; i++)
 				for (let c = 0; c < channels; c++)

@@ -14,6 +14,7 @@
 // submixes) a soloed or solo-safe strip, or is fed by one. Everything else is solo-muted (silent, sends included).
 // Track mute sits after the pre-fader sends, so pre-fader sends of a muted track keep sending, as in Premiere.
 import type { AudioChannelFormat, AutomationMode, InputMap } from '../schema/audio.ts';
+import { LANE_MUTE, LANE_PAN51_CENTER, LANE_PAN51_LFE, LANE_PAN51_X, LANE_PAN51_Y } from '../schema/audio.ts';
 import type { Animatable } from '../schema/common.ts';
 import type { EffectInstance, Sequence } from '../schema/sequence.ts';
 import {
@@ -24,7 +25,6 @@ import {
 	type StripKind,
 	type StripView,
 } from './strip.ts';
-import { LANE_MUTE, LANE_PAN51_CENTER, LANE_PAN51_LFE, LANE_PAN51_X, LANE_PAN51_Y } from '../schema/audio.ts';
 
 export type RenderSend = {
 	id: string;
@@ -50,7 +50,12 @@ export type RenderStrip = {
 	pan: Animatable<number>;
 	/** 0 / 1 hold lane. */
 	mute: Animatable<number>;
-	pan51: { x: Animatable<number>; y: Animatable<number>; center: Animatable<number>; lfe: Animatable<number> };
+	pan51: {
+		x: Animatable<number>;
+		y: Animatable<number>;
+		center: Animatable<number>;
+		lfe: Animatable<number>;
+	};
 	inputMap: InputMap;
 	/** Enabled inserts in slot order (`postFader` says where they sit). */
 	inserts: EffectInstance[];
@@ -126,7 +131,8 @@ export function buildAudioMix(seq: Sequence): RenderAudioMix {
 				preFader: !!x.preFader,
 			}));
 		const mute = lane(LANE_MUTE);
-		const mutedThroughout = mute.keyframes.length === 0 ? mute.value >= 0.5 : mute.keyframes.every((k) => k.value >= 0.5);
+		const mutedThroughout =
+			mute.keyframes.length === 0 ? mute.value >= 0.5 : mute.keyframes.every((k) => k.value >= 0.5);
 		const silent = !audible.has(v.id);
 		const outputFormat = v.output === null ? null : (byId.get(v.output)?.format ?? null);
 		return {

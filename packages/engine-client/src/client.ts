@@ -16,6 +16,7 @@ import {
 	type MgRenderRequest,
 	type ProjectCreateRequest,
 	type ProjectViewJson,
+	type RecoveryPutRequest,
 	type RegisteredMedia,
 	ROUTES,
 	type RouteName,
@@ -24,6 +25,7 @@ import {
 	UPLOAD_CHUNK_BYTES,
 	type UploadCreateRequest,
 	UploadOffsetMismatchSchema,
+	type VersionRestoreRequest,
 } from '@jasper/api';
 import type { z } from 'zod';
 import { EngineError } from './errors.ts';
@@ -193,6 +195,32 @@ export class EngineClient {
 	}
 	listVersions(projectId: string) {
 		return this.call('projectVersions', { params: { projectId } });
+	}
+	/** One saved version with its envelope (process, D-39). */
+	getVersion(projectId: string, versionId: string) {
+		return this.call('projectVersionGet', { params: { projectId, versionId } });
+	}
+	/** Restores a saved version in place (`replace`, with the caller's lease) or as a new project (`copy`). */
+	restoreVersion(projectId: string, versionId: string, req: VersionRestoreRequest) {
+		return this.call('projectVersionRestore', { params: { projectId, versionId }, body: req });
+	}
+	/** Crash-recovery candidates of a project (journals no session holds any more; S01:PER-021). */
+	listRecovery(projectId: string) {
+		return this.call('projectRecoveryList', { params: { projectId } });
+	}
+	getRecovery(projectId: string, sessionId: string) {
+		return this.call('projectRecoveryGet', { params: { projectId, sessionId } });
+	}
+	/** Journals this session's unsaved document (needs the session's lease). */
+	putRecovery(projectId: string, sessionId: string, req: RecoveryPutRequest) {
+		return this.call('projectRecoveryPut', { params: { projectId, sessionId }, body: req });
+	}
+	/** Deletes a journal: the session's own (pass its `leaseId`) or a candidate nobody holds. */
+	deleteRecovery(projectId: string, sessionId: string, leaseId?: string) {
+		return this.call('projectRecoveryDelete', {
+			params: { projectId, sessionId },
+			...(leaseId ? { query: { leaseId } } : {}),
+		});
 	}
 	deleteProject(projectId: string) {
 		return this.call('projectDelete', { params: { projectId } });

@@ -11,15 +11,18 @@ import { CLIPBOARD_GUIDE, registerClipboardTools } from './tools/clipboard.ts';
 import { COLOR_GUIDE, registerColorTools } from './tools/color.ts';
 import { COMPOSITION_GUIDE, registerCompositionTools } from './tools/compositions.ts';
 import { registerEditingTools } from './tools/editing.ts';
+import { MASKS_GUIDE, registerMaskTools } from './tools/masks.ts';
 import { MOTION_PATH_GUIDE, registerMotionPathTools } from './tools/motion-path.ts';
 import { PRESETS_GUIDE, registerPresetTools } from './tools/presets.ts';
 import { PROCESSING_GUIDE, registerProcessingTools } from './tools/processing.ts';
 import { registerProjectTools } from './tools/projects.ts';
 import { registerRenderTools } from './tools/render.ts';
 import { registerShapeTools, SHAPES_GUIDE } from './tools/shapes.ts';
+import { registerStructureTools, STRUCTURE_GUIDE } from './tools/structure.ts';
 import { registerTemplateTools, TEMPLATES_GUIDE } from './tools/templates.ts';
 import { registerTrackingTools, TRACKING_GUIDE } from './tools/tracking.ts';
 import { registerTransitionTools, TRANSITION_GUIDE } from './tools/transitions.ts';
+import { registerVersionTools, VERSIONS_GUIDE } from './tools/versions.ts';
 import { MCP_SERVER_VERSION } from './version.ts';
 
 const MCP_SERVER_NAME = 'jasper-editor';
@@ -50,11 +53,14 @@ const FULL_GUIDE = [
 	TRANSITION_GUIDE,
 	ANIMATION_GUIDE,
 	MOTION_PATH_GUIDE,
+	MASKS_GUIDE,
 	SHAPES_GUIDE,
 	TEMPLATES_GUIDE,
 	CLIPBOARD_GUIDE,
 	PRESETS_GUIDE,
 	CACHE_GUIDE,
+	STRUCTURE_GUIDE,
+	VERSIONS_GUIDE,
 ].join('\n\n');
 
 type JasperMcpOptions = {
@@ -82,11 +88,14 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerTransitionTools(ctx);
 	registerAnimationTools(ctx);
 	registerMotionPathTools(ctx);
+	registerMaskTools(ctx);
 	registerShapeTools(ctx);
 	registerTemplateTools(ctx);
 	registerClipboardTools(ctx);
 	registerPresetTools(ctx);
 	registerCacheTools(ctx);
+	registerStructureTools(ctx);
+	registerVersionTools(ctx);
 	registerResources(ctx);
 	registerPrompts(ctx);
 	return { server };

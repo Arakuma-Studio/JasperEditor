@@ -34,8 +34,10 @@ import {
 import { colorLutCpu, cssFilter } from '../color/effects.ts';
 import { colorStageBackend } from '../color/gl.ts';
 import { loadedLutAsset } from '../color/luts.ts';
-import { fxCrop, fxFlip, fxLut, fxShader, fxTap } from './effects.ts';
+import { fxAdjustmentMix, fxCrop, fxFlip, fxLut, fxShader, fxStash, fxTap } from './effects.ts';
 import type { FxRunInputs, FxTextureInput } from './host.ts';
+import { fxMaskApply, fxMasked } from './mask.ts';
+import { fxMatteTap, useTrackMattes } from './matte.ts';
 import type { FxMediaInput, FxStage } from './stage.ts';
 
 export type FxFeed = {
@@ -166,6 +168,8 @@ export function fxDescriptors(stage: FxStage, inputs: DescriptorInputs): EffectD
 	const cpu = colorStageBackend() === 'cpu';
 	const box = stage.layout.box;
 	for (const s of stage.steps) {
+		// wp masks: a masked step's effect applies inside its masks only (mix with its input by coverage).
+		const at = out.length;
 		switch (s.kind) {
 			case 'gpu': {
 				const textures: FxRunInputs['textures'] = {};
@@ -219,7 +223,47 @@ export function fxDescriptors(stage: FxStage, inputs: DescriptorInputs): EffectD
 			case 'tap':
 				out.push(fxTap({ key: s.key, tap: s.tap, meta: s.meta }));
 				break;
+			case 'stash':
+				out.push(fxStash({ key: s.key, holder: s.holder }));
+				break;
+			case 'mix':
+				out.push(
+					fxAdjustmentMix({
+						key: s.key,
+						holder: s.holder,
+						opacity: s.opacity,
+						blend: s.blend,
+						region: s.insets
+							? {
+									x: box.x + s.insets[0] * box.w,
+									y: box.y + s.insets[1] * box.h,
+									w: Math.max(0, box.w * (1 - s.insets[0] - s.insets[2])),
+									h: Math.max(0, box.h * (1 - s.insets[1] - s.insets[3])),
+								}
+							: null,
+						masks: s.opacityMasks?.length
+							? { masks: s.opacityMasks, box, pxScale: stage.layout.pxScale }
+							: null,
+					}),
+				);
+				break;
+			case 'mask':
+				out.push(fxMaskApply({ key: s.key, geometry: s.geometry }));
+				break;
+			case 'matteTap':
+				out.push(fxMatteTap({ key: s.key, tap: s.tap, meta: s.meta, hide: s.hide }));
+				break;
 		}
+		if (
+			s.kind !== 'mask' &&
+			s.kind !== 'tap' &&
+			s.kind !== 'matteTap' &&
+			s.kind !== 'stash' &&
+			s.kind !== 'mix' &&
+			s.masks &&
+			out.length === at + 1
+		)
+			out[at] = fxMasked({ key: s.key, geometry: s.masks, inner: out[at]! });
 	}
 	return out;
 }
@@ -259,6 +303,10 @@ export function FxPicture({ stage, children }: { stage: FxStage; children?: Reac
 	const images = useFxImages(imageUrls, rendering);
 	const imagesRef = useRef(images);
 	imagesRef.current = images;
+	// wp masks: composites of the tracks the stack's Track Matte Keys read.
+	const mattes = useTrackMattes(stage.trackMattes, stage.seqFrame);
+	const mattesRef = useRef(mattes.media);
+	mattesRef.current = mattes.media;
 
 	const placeSlot = useCallback((name: string, w: number, h: number) => {
 		let c = placed.current.get(name);
@@ -299,7 +347,7 @@ export function FxPicture({ stage, children }: { stage: FxStage; children?: Reac
 			const blank = s.steps.some((st) => st.kind === 'gpu' && st.sampleFrames.includes(null))
 				? placeSlot('sample@blank', W, H)
 				: undefined;
-			const media = new Map<string, FxTextureInput>();
+			const media = new Map<string, FxTextureInput>(mattesRef.current);
 			for (const m of s.media) {
 				if (m.kind === 'lut') {
 					const lut = loadedLutAsset(m.url);
@@ -385,7 +433,7 @@ export function FxPicture({ stage, children }: { stage: FxStage; children?: Reac
 			raf.current = null;
 			void draw();
 		});
-	}, [stage.key, images.size, draw]);
+	}, [stage.key, images.size, mattes.key, draw]);
 	useEffect(
 		() => () => {
 			if (raf.current !== null) cancelAnimationFrame(raf.current);
@@ -415,29 +463,7 @@ export function FxPicture({ stage, children }: { stage: FxStage; children?: Reac
  * and runs the same descriptors. No time samples here (the DOM exists at one time only): `u_sampleCount` is 0.
  */
 export function FxDomPicture({ stage, children }: { stage: FxStage; children?: ReactNode }) {
-	const rendering = getRemotionEnvironment().isRendering;
-	const imageUrls = stage.media.filter((m) => m.kind === 'image').map((m) => m.url);
-	const images = useFxImages(imageUrls, rendering);
-	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the stage and the loaded images
-	const effects = useMemo(() => {
-		const media = new Map<string, FxTextureInput>();
-		for (const m of stage.media) {
-			if (m.kind === 'lut') {
-				const lut = loadedLutAsset(m.url);
-				if (lut) media.set(m.mediaId, { lut, version: m.url });
-				continue;
-			}
-			const img = m.kind === 'image' ? images.get(m.url) : undefined;
-			if (img)
-				media.set(m.mediaId, {
-					source: img,
-					width: img.naturalWidth,
-					height: img.naturalHeight,
-					version: m.url,
-				});
-		}
-		return fxDescriptors(stage, { samples: new Map(), media, preview: !rendering });
-	}, [stage.key, images.size, rendering]);
+	const effects = useDomFxDescriptors(stage);
 	const L = stage.layout;
 	return (
 		<HtmlInCanvas
@@ -462,6 +488,41 @@ export function FxDomPicture({ stage, children }: { stage: FxStage; children?: R
 			</div>
 		</HtmlInCanvas>
 	);
+}
+
+/**
+ * The canvas effect chain of a DOM picture's stage (`HtmlInCanvas effects`): loads the stage's image inputs (renders
+ * wait), LUT assets as loaded. No time samples (the DOM exists at one time only). `null` stage → no effects.
+ */
+const NO_TRACKS: readonly string[] = [];
+
+export function useDomFxDescriptors(stage: FxStage | null): EffectDescriptor[] {
+	const rendering = getRemotionEnvironment().isRendering;
+	const imageUrls = stage ? stage.media.filter((m) => m.kind === 'image').map((m) => m.url) : [];
+	const images = useFxImages(imageUrls, rendering);
+	// wp masks: composites of the tracks the stack's Track Matte Keys read.
+	const mattes = useTrackMattes(stage?.trackMattes ?? NO_TRACKS, stage?.seqFrame ?? 0);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the stage, the loaded images and the mattes
+	return useMemo(() => {
+		if (!stage) return [];
+		const media = new Map<string, FxTextureInput>(mattes.media);
+		for (const m of stage.media) {
+			if (m.kind === 'lut') {
+				const lut = loadedLutAsset(m.url);
+				if (lut) media.set(m.mediaId, { lut, version: m.url });
+				continue;
+			}
+			const img = m.kind === 'image' ? images.get(m.url) : undefined;
+			if (img)
+				media.set(m.mediaId, {
+					source: img,
+					width: img.naturalWidth,
+					height: img.naturalHeight,
+					version: m.url,
+				});
+		}
+		return fxDescriptors(stage, { samples: new Map(), media, preview: !rendering });
+	}, [stage?.key, images.size, rendering, mattes.key]);
 }
 
 /** HTML-in-Canvas is available here (Chrome ≥ 148 with the feature; always in Remotion renders). */

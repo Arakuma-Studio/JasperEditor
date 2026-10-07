@@ -1,5 +1,19 @@
 // @jasper/compositions — SequenceComposition + layers for the Player and @remotion/renderer (ARCHITECTURE §8).
 export * from './AssetComposition.tsx';
+// audio-mix: the preview mix graph (meters, live mixer controls, effect slots).
+export {
+	activeMixGraph,
+	hasPreviewInsert,
+	type LoudnessReading,
+	type MeterReading,
+	type MixGraph,
+	onActiveMixGraph,
+	type PreviewInsert,
+	type PreviewInsertFactory,
+	panStageMatrix,
+	registerPreviewInsert,
+	setMixWorkletUrl,
+} from './audio/graph.ts';
 export * from './color/index.ts';
 export * from './fonts.ts';
 // Wave 1: GPU shader-effect framework runtime.
@@ -17,17 +31,3 @@ export * from './stabilize.ts';
 // M2 (wp-m2-text-anim, S11:TXA-020)
 export * from './text-animation-preview.tsx';
 export * from './types.ts';
-// audio-mix: the preview mix graph (meters, live mixer controls, effect slots).
-export {
-	activeMixGraph,
-	type LoudnessReading,
-	type MeterReading,
-	type MixGraph,
-	onActiveMixGraph,
-	panStageMatrix,
-	type PreviewInsert,
-	type PreviewInsertFactory,
-	hasPreviewInsert,
-	registerPreviewInsert,
-	setMixWorkletUrl,
-} from './audio/graph.ts';

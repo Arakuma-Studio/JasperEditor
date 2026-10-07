@@ -3,10 +3,10 @@
 // Unknown effects already in a document are preserved verbatim and may still be removed, reordered or
 // bypassed; only adding an unknown effect id is refused (S01:FX-022).
 import type { Draft } from 'immer';
+import { resolveStripRef } from '../../audio/strip.ts';
 import { EASE_PRESETS } from '../../keyframes.ts';
 import { refreshAutoTangents } from '../../keyframes-spatial.ts';
 import type { EffectSpec } from '../../registry/effects.ts';
-import { resolveStripRef } from '../../audio/strip.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
 import {
 	type Animatable,

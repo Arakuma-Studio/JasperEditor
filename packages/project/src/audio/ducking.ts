@@ -4,9 +4,9 @@
 // (`POST /api/audio/activity`) and the UI / MCP / Essential Sound submit `audio.autoDuck` with the regions.
 import { duckKeyframes, sensitivityThresholdDb } from '@jasper/audio-dsp';
 import { contentTimeAt } from '../derive/index.ts';
+import type { AudioClip, NestAudioClip } from '../schema/sequence.ts';
 import type { Rational } from '../time.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame } from '../time.ts';
-import type { AudioClip, NestAudioClip } from '../schema/sequence.ts';
 
 export type DuckOptions = {
 	/** Reduce the target by this much under the triggers (dB, positive). Premiere's default: 18 dB. */
