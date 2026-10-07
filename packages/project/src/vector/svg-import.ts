@@ -57,7 +57,7 @@ const decode = (s: string) =>
 	);
 
 /** A small non-validating XML parser (elements, attributes, text, CDATA; comments, PIs and doctype skipped). */
-export function parseXml(src: string): XNode {
+function parseXml(src: string): XNode {
 	if (src.length > 50_000_000) throw new SvgImportError('SVG too large');
 	const root: XNode = { name: '#root', attrs: {}, children: [], text: '' };
 	const stack: XNode[] = [root];

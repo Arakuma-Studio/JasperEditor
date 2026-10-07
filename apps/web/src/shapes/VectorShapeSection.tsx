@@ -276,6 +276,7 @@ export function VectorShapeSection({ session, clips, frame, sequenceId }: ClipSe
 							{item.type === 'group' ? (
 								<MiniButton
 									label={collapsed[key] ? 'Expand' : 'Collapse'}
+									data-testid={`vector-twirl-${item.id}`}
 									onClick={(e) => {
 										e.stopPropagation();
 										vectorUi.set({ collapsed: { ...collapsed, [key]: !collapsed[key] } });
