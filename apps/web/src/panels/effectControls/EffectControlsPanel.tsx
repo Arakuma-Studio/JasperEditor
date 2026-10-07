@@ -78,6 +78,7 @@ import {
 } from './lib.ts';
 import { KeyLane, Ruler, SummaryLane, usePlayheadLine } from './MiniTimeline.tsx';
 import { presetSelection } from './presets.ts';
+import { RoveAcrossTimeItem } from './RovingMenu.tsx';
 import { SpatialInterpolationSubmenu } from './SpatialMenu.tsx';
 import { TransitionSection } from './TransitionSection.tsx';
 
@@ -940,6 +941,15 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 					))}
 					{/* S03:KF-021 (spatial-motion-path): Spatial Interpolation ▸ for keys of point properties. */}
 					<SpatialInterpolationSubmenu
+						groups={groups}
+						ids={menu.ids}
+						onApply={(label, commands) => {
+							ops.apply(label, commands);
+							setMenu(null);
+						}}
+					/>
+					{/* keyframes-blend: Rove Across Time (After Effects). */}
+					<RoveAcrossTimeItem
 						groups={groups}
 						ids={menu.ids}
 						onApply={(label, commands) => {
