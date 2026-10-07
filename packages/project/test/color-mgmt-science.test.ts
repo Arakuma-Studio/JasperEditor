@@ -233,6 +233,8 @@ describe('camera log curves (manufacturers’ published reference points)', () =
 		close(cv('nlog', 0.18), 372, 1);
 		close(logEncode('bmdfilm5', 0.18), 0.3835, 0.001);
 		close(logEncode('davinci', 0.18), 0.336, 0.001);
+		close(cv('cineon', 1), 685, 1e-6); // Kodak: reference white at code 685, black at 95
+		close(cv('cineon', 0), 95, 1e-6);
 	});
 	it('every curve round-trips over −1 %…40× grey and is increasing', () => {
 		for (const id of LOG_CURVE_IDS) {

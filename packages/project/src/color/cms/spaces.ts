@@ -200,6 +200,8 @@ export const COLOR_SPACES: readonly ColorSpaceDef[] = [
 	LOG_SPACE('flog-fgamut', 'flog', 'bt2020', 'F-Gamut'),
 	LOG_SPACE('flog2-fgamut', 'flog2', 'bt2020', 'F-Gamut'),
 	LOG_SPACE('nlog-bt2020', 'nlog', 'bt2020'),
+	// DPX scans: Cineon printing-density log with Rec. 709 primaries.
+	LOG_SPACE('cineon-bt709', 'cineon', 'bt709'),
 ];
 
 const BY_ID = new Map(COLOR_SPACES.map((s) => [s.id, s]));

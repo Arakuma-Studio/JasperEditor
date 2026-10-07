@@ -21,6 +21,8 @@
 //   DaVinci Intermediate  Blackmagic Design, "DaVinci Resolve 17 — Wide Gamut Intermediate" (2020)
 //   F-Log / F-Log2 Fujifilm, "F-Log Data Sheet" Ver.1.0 (2016) / "F-Log2 Data Sheet" Ver.1.0 (2022)
 //   N-Log         Nikon, "N-Log Specification Document" Ver.1.0.0 (2018)
+//   Cineon        Kodak, "Conversion of 10-bit Log Film Data To 8-bit Linear or Video Data for the Cineon Digital Film
+//                 System" (1995): reference white 685, black 95, 0.002 density per code value, gamma 0.6
 // Ported (S-Log3, V-Log, Canon Log 2/3, LogC3, LogC4, Apple Log, D-Log) from FilmCraft `crates/color/src/log.rs`
 // (MIT OR Apache-2.0); the others are new here.
 
@@ -150,6 +152,9 @@ function fDecode(k: typeof FLOG, y: number): number {
 const NLOG = { cut1: 0.328, a: 650 / 1023, b: 0.0075, c: 150 / 1023, d: 619 / 1023 };
 const NLOG_CUT2 = NLOG.a * Math.cbrt(NLOG.cut1 + NLOG.b);
 
+// ---------------------------------------------------------------- Kodak Cineon (DPX printing density)
+const CINEON_BLACK = 10 ** (((95 - 685) * 0.002) / 0.6);
+
 // ---------------------------------------------------------------- DJI
 function dlogEncode(x: number): number {
 	return x <= 0.0078 ? 6.025 * x + 0.0929 : Math.log10(x * 0.9892 + 0.0108) * 0.256663 + 0.584555;
@@ -247,6 +252,13 @@ export const LOG_CURVES = {
 		domain: 'cv',
 		encode: (x: number) => fEncode(FLOG2, x),
 		decode: (y: number) => fDecode(FLOG2, y),
+	},
+	cineon: {
+		label: 'Cineon log',
+		domain: 'cv',
+		encode: (x: number) =>
+			(685 + (Math.log10(Math.max(1e-9, x * (1 - CINEON_BLACK) + CINEON_BLACK)) * 0.6) / 0.002) / 1023,
+		decode: (y: number) => (10 ** (((y * 1023 - 685) * 0.002) / 0.6) - CINEON_BLACK) / (1 - CINEON_BLACK),
 	},
 	nlog: {
 		label: 'Nikon N-Log',

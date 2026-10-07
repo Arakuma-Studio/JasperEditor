@@ -12,6 +12,7 @@ import {
 	type MediaAsset,
 	pqFromNits,
 	repairDocument,
+	resolveInputSpace,
 	type Rgb,
 	sequenceColorInfo,
 	type VideoClip,
@@ -116,6 +117,15 @@ describe('Interpret Footage ▸ Colour and clip overrides', () => {
 		expect(h.doc.media[mediaId]!.interpretation).toBeUndefined();
 		clean(h);
 	});
+	it('EXR / Radiance stills (decoded with the sRGB transfer) are graphics-like sRGB, not scene-linear', () => {
+		const a = videoAsset({ kind: 'image' });
+		const vs = a.probe.streams[0] as { codec: string; color: Record<string, string> };
+		vs.codec = 'exr';
+		vs.color = { primaries: 'unknown', transfer: 'linear', matrix: 'unknown', range: 'pc' };
+		expect(resolveInputSpace(a as never, {}, 'rec709').space?.id).toBe('rec709');
+		expect(resolveInputSpace(a as never, {}, 'srgb').space?.id).toBe('srgb');
+	});
+
 	it('refuses audio media and non-picture clips', () => {
 		const h = new Harness();
 		const a = (h.ok([{ type: 'media.register', asset: videoAsset({ kind: 'audio' }) }]).results[0] as { mediaId: string }).mediaId;

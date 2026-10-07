@@ -138,7 +138,11 @@ export function resolveInputSpace(
 	working: WorkingSpaceId,
 ): ResolvedInputSpace {
 	const vs = asset.probe.streams.find((s) => s.type === 'video');
-	const tags = vs?.type === 'video' ? vs.color : null;
+	const raw = vs?.type === 'video' ? vs.color : null;
+	// Scene-linear float stills (OpenEXR, Radiance HDR) are decoded with the sRGB transfer applied (imports: EXR
+	// `apply_trc`, zscale for .hdr) on every path, so their signal is sRGB-encoded whatever the file tag says.
+	const srgbDecoded = vs?.type === 'video' && (vs.codec === 'exr' || vs.codec === 'hdr');
+	const tags = raw && srgbDecoded ? { ...raw, transfer: 'iec61966-2-1' } : raw;
 	const fileRange: 'tv' | 'pc' = tags?.range === 'pc' ? 'pc' : asset.kind === 'video' ? 'tv' : 'pc';
 	const override = interp.space ? colorSpace(interp.space) : undefined;
 	const auto = !override && !interp.ocio;
