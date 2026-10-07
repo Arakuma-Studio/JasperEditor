@@ -10,7 +10,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { LayeredLayer } from '@jasper/api';
 import { BLEND_MODES, type LayeredInfo, makeBlendKernel } from '@jasper/project';
-import { type Layer, type Psd, readPsd } from 'ag-psd';
+import { initializeCanvas, type Layer, type Psd, readPsd } from 'ag-psd';
 import { JobError } from '../jobs/types.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { type CubicPath, type Pt, rasterizePaths } from './raster.ts';
@@ -24,6 +24,21 @@ const MAX_LAYERS = 5000;
 const MAX_DEPTH = 64;
 
 export const isPsdFileName = (file: string) => /\.(psd|psb)$/i.test(file);
+
+// ag-psd allocates image data through a canvas unless told otherwise: in Node, plain typed arrays (no canvas is ever
+// drawn: `useImageData` keeps every bitmap as raw pixels).
+let canvasReady = false;
+function ensureNoCanvas(): void {
+	if (canvasReady) return;
+	canvasReady = true;
+	initializeCanvas(
+		() => {
+			throw new Error('No canvas in the engine (ag-psd useImageData)');
+		},
+		(width: number, height: number) =>
+			({ width, height, data: new Uint8ClampedArray(width * height * 4), colorSpace: 'srgb' }) as unknown as ImageData,
+	);
+}
 
 type PsdBlend = LayeredLayer['blendMode'];
 
@@ -77,6 +92,7 @@ export async function readPsdFile(file: string, opts: { images: boolean }): Prom
 	const st = await stat(file);
 	if (st.size > MAX_FILE_BYTES) throw new JobError('UNSUPPORTED_MEDIA', 'The document is too large', false);
 	const buf = await readFile(file);
+	ensureNoCanvas();
 	try {
 		const psd = readPsd(buf, {
 			useImageData: true,
@@ -233,13 +249,29 @@ export function layerPicture(layer: Layer, bits: number): RgbaImage | null {
 const KERNEL = makeBlendKernel();
 
 /**
+ * Whether the file's merged image is the real composite: Photoshop says so in its version info resource
+ * (`hasRealMergedData`, false when "Maximize Compatibility" was off); writers without that resource may store an empty
+ * placeholder — a uniform merged image over a document whose layers are not uniform is not trusted.
+ */
+function hasRealComposite(psd: Psd): boolean {
+	const vi = (psd.imageResources as { versionInfo?: { hasRealMergedData?: boolean } } | undefined)?.versionInfo;
+	if (vi && vi.hasRealMergedData === false) return false;
+	if (vi?.hasRealMergedData) return true;
+	if (!psd.children?.length) return true;
+	const d = psd.imageData!.data;
+	for (let i = 4; i < d.length; i += 4)
+		if (d[i] !== d[0] || d[i + 1] !== d[1] || d[i + 2] !== d[2] || d[i + 3] !== d[3]) return true;
+	return false;
+}
+
+/**
  * The flattened document: the file's composite image when it has one, else the visible layers composited here
  * (Photoshop's blend formulas — the editor's shared kernel —, opacity × fill opacity, layer and vector masks, clipping
  * groups, pass-through and isolated groups). Layer effects and adjustment layers are not part of a self-made composite.
  */
 export function psdComposite(psd: Psd): { image: RgbaImage; source: 'file' | 'layers' } {
 	const bits = psd.bitsPerChannel ?? 8;
-	if (psd.imageData && psd.imageData.width === psd.width && psd.imageData.height === psd.height)
+	if (psd.imageData && psd.imageData.width === psd.width && psd.imageData.height === psd.height && hasRealComposite(psd))
 		return { image: toRgba(psd.imageData, bits), source: 'file' };
 	const W = psd.width;
 	const H = psd.height;
