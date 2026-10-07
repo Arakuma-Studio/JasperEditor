@@ -265,6 +265,20 @@ async function main() {
 		conformAt = s.at;
 	}
 	console.log(sections.map((s) => `${s.name} ${s.at}–${s.at + s.frames - 1}`).join(', '));
+	if (args.includes('--save')) {
+		// Store the project on the engine (open it in the editor: /project/<id>).
+		const created = await api<{ projectId: string }>('POST', '/api/projects', { name: 'verify-imports', preset: 'hd-720p-30' });
+		const got = await api<{ revision: number; envelope: { document: ProjectDocument } }>('GET', `/api/projects/${created.projectId}`);
+		doc = { ...doc, projectId: created.projectId };
+		const envelope = makeEnvelope(doc, { revision: got.revision + 1, savedAt: new Date().toISOString(), platform: 'verify' });
+		const r = await fetch(`${ENGINE}/api/projects/${created.projectId}`, {
+			method: 'PUT',
+			headers: { 'content-type': 'application/json', host: '127.0.0.1:47900', 'if-match': String(got.revision) },
+			body: JSON.stringify(envelope),
+		});
+		console.log(`saved project ${created.projectId}: ${r.status} ${await r.text()}`);
+		if (args.includes('--no-export')) return;
+	}
 	const native = await exportWith('auto', 'native');
 	const remotion = await exportWith('remotion', 'remotion');
 	for (const s of sections) {

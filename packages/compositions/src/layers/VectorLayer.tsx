@@ -94,6 +94,9 @@ function SvgPicture({ layer }: { layer: LayerProps }) {
 						transformOrigin: '0 0',
 						objectFit: 'fill',
 						display: 'block',
+						// The app's CSS reset caps images at their container; this picture is larger on purpose.
+						maxWidth: 'none',
+						maxHeight: 'none',
 					}}
 				/>
 			) : null}
