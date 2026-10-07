@@ -17,9 +17,9 @@ import {
 	resolveLayerProps,
 	type ShapeItem,
 	type Transform,
+	textAnimatorsTimeVarying,
 	vectorShapeBounds,
 	vectorShapeIsTimeDependent,
-	textAnimatorsTimeVarying,
 } from '@jasper/project';
 
 /** Clip kinds whose pixels come from React/DOM in the composition (S11 §0 "DOM layer"). */

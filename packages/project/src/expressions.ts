@@ -17,8 +17,8 @@ import type { Animatable, Expression } from './schema/common.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import type { EffectInstance, Sequence, TextContent } from './schema/sequence.ts';
 import type { ShapeItem } from './schema/shapes.ts';
-import { shapeItemAnimatables } from './vector/properties.ts';
 import type { TextAnimatorGroup } from './schema/text-animators.ts';
+import { shapeItemAnimatables } from './vector/properties.ts';
 
 export type ExpressionRef = { seq: string; owner: string; path: string };
 

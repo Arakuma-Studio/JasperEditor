@@ -6,12 +6,34 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
-import { appliedLabels, createProject, enableAgentBridge, exportViaUi, focusTimeline, pointerDrag, query, ROOT, sequenceSummary } from './support.ts';
+import {
+	appliedLabels,
+	createProject,
+	enableAgentBridge,
+	exportViaUi,
+	focusTimeline,
+	pointerDrag,
+	query,
+	ROOT,
+	sequenceSummary,
+} from './support.ts';
 
 test.describe.configure({ mode: 'serial' });
 
-type Item = { id: string; type: string; name: string; enabled?: boolean; contents?: Item[]; [k: string]: unknown };
-type VClip = { id: string; kind: 'shape'; shape: { type: string; contents: Item[] }; transform: { position: { value: [number, number] } } };
+type Item = {
+	id: string;
+	type: string;
+	name: string;
+	enabled?: boolean;
+	contents?: Item[];
+	[k: string]: unknown;
+};
+type VClip = {
+	id: string;
+	kind: 'shape';
+	shape: { type: string; contents: Item[] };
+	transform: { position: { value: [number, number] } };
+};
 
 const OUT = join(ROOT, 'test-results', 'e2e-vector-shapes');
 const FFMPEG = process.env.JASPER_FFMPEG ?? 'ffmpeg';
@@ -45,7 +67,9 @@ async function toScreen(p: [number, number]): Promise<{ x: number; y: number }> 
 async function chooseTool(tool: 'star' | 'pen' | 'polygon'): Promise<void> {
 	const strip = page.getByTestId('tools-panel');
 	await strip
-		.locator('[data-tool="pen"], [data-tool="rectangle"], [data-tool="ellipse"], [data-tool="polygon"], [data-tool="star"]')
+		.locator(
+			'[data-tool="pen"], [data-tool="rectangle"], [data-tool="ellipse"], [data-tool="polygon"], [data-tool="star"]',
+		)
 		.click({ button: 'right' });
 	await strip.locator(`[data-tool-option="${tool}"]`).click();
 	await expect(strip.locator(`[data-tool="${tool}"]`)).toHaveAttribute('aria-pressed', 'true');
@@ -63,7 +87,11 @@ test('Star tool draws a vector shape in the Program monitor (one undo step)', as
 	expect(star.type).toBe('polystar');
 	expect(Math.abs((star.outerRadius as { value: number }).value - 250)).toBeLessThan(6);
 	expect((await appliedLabels(page)).slice(labels0)).toEqual(['New Star']);
-	await expect(page.locator(`[data-testid="program-player-wrapper"] [data-clip-id="${clipId}"] svg[data-shape="vector"]`)).toBeAttached();
+	await expect(
+		page.locator(
+			`[data-testid="program-player-wrapper"] [data-clip-id="${clipId}"] svg[data-shape="vector"]`,
+		),
+	).toBeAttached();
 });
 
 test('Shape Contents: add a gradient fill, a stroke and a Trim Paths; edit End; toggle and undo', async () => {
@@ -75,7 +103,9 @@ test('Shape Contents: add a gradient fill, a stroke and a Trim Paths; edit End; 
 	await add.selectOption('gradientFill');
 	await add.selectOption('stroke');
 	await add.selectOption('trim');
-	await expect.poll(async () => (await items()).map((i) => i.type)).toEqual(['polystar', 'gradientFill', 'stroke', 'trim', 'fill']);
+	await expect
+		.poll(async () => (await items()).map((i) => i.type))
+		.toEqual(['polystar', 'gradientFill', 'stroke', 'trim', 'fill']);
 	// The Trim Paths is selected: type End = 60 %.
 	const trim = (await items()).find((i) => i.type === 'trim')!;
 	const end = page.getByTestId(`prop-shape.items.${trim.id}.end`);
@@ -83,7 +113,9 @@ test('Shape Contents: add a gradient fill, a stroke and a Trim Paths; edit End; 
 	const input = page.getByTestId(`prop-shape.items.${trim.id}.end-input`);
 	await input.fill('60');
 	await input.press('Enter');
-	await expect.poll(async () => ((await items()).find((i) => i.id === trim.id)!.end as { value: number }).value).toBe(60);
+	await expect
+		.poll(async () => ((await items()).find((i) => i.id === trim.id)!.end as { value: number }).value)
+		.toBe(60);
 	// Disable the solid fill (the gradient shows), then undo / redo it.
 	const fill = (await items()).find((i) => i.type === 'fill')!;
 	await page.getByTestId(`vector-eye-${fill.id}`).click();

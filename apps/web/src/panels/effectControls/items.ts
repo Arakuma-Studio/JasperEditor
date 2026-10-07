@@ -17,12 +17,12 @@ import {
 	propertyDefault,
 	resolvePropertyAt,
 	type Sequence,
-	shapeItemSpecs,
-	walkItems,
 	selectorFields,
+	shapeItemSpecs,
 	type TextAnimatorGroup,
 	type TextSelector,
 	textAnimatorPropertySpecs,
+	walkItems,
 } from '@jasper/project';
 import { shapePropertyKeys } from '../../shapes/keys.ts';
 import {

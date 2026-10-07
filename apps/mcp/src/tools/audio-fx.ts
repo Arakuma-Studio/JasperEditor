@@ -116,7 +116,7 @@ function findEffect(seq: Sequence, instanceId: string): Located {
 
 function audioClip(seq: Sequence, id: string): AudioClip {
 	const c = seq.clips[id];
-	if (!c || c.kind !== 'audio')
+	if (c?.kind !== 'audio')
 		throw new ToolError(
 			'E_NOT_FOUND',
 			`${id} is not an audio clip of this sequence`,
