@@ -85,16 +85,16 @@ export class SpeechService {
 		const id = o.model ?? this.models.defaultId();
 		const e = this.models.entry(id);
 		if (!e) throw new JobError('SPEECH_MODEL_UNKNOWN', `Unknown speech model ${id}`, false);
+		if (o.task === 'translate' && !e.multilingual)
+			throw new JobError('INVALID_SPEC', `${e.name} is English-only and cannot translate`, false);
+		if (o.language && o.language !== 'auto' && !e.multilingual && o.language !== 'en')
+			throw new JobError('INVALID_SPEC', `${e.name} is English-only; choose a multilingual model for "${o.language}"`, false);
 		if (!(await this.models.installed(e)))
 			throw new JobError(
 				'SPEECH_MODEL_NOT_INSTALLED',
 				`The speech model ${e.name} is not downloaded. Download it in Preferences ▸ Speech (or install_speech_model).`,
 				false,
 			);
-		if (o.task === 'translate' && !e.multilingual)
-			throw new JobError('INVALID_SPEC', `${e.name} is English-only and cannot translate`, false);
-		if (o.language && o.language !== 'auto' && !e.multilingual && o.language !== 'en')
-			throw new JobError('INVALID_SPEC', `${e.name} is English-only; choose a multilingual model for "${o.language}"`, false);
 		return id;
 	}
 
