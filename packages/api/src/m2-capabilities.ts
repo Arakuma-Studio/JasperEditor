@@ -98,5 +98,14 @@ export const M2FeaturesSchema = z.object({
 			maxSeconds: z.number(),
 		})
 		.optional(),
+	/** wp interchange: timeline import/export formats, pre-renders and AAF / OMF audio essence (ffmpeg). */
+	interchange: z
+		.object({
+			state: z.enum(['ready', 'unavailable']),
+			formats: z.array(z.string()),
+			prerender: z.enum(['ready', 'unavailable']),
+			audioEssence: z.enum(['ready', 'unavailable']),
+		})
+		.optional(),
 });
 export type M2Features = z.infer<typeof M2FeaturesSchema>;

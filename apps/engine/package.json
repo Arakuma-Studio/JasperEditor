@@ -33,6 +33,7 @@
     "@jasper/compositions": "workspace:*",
     "@jasper/config": "workspace:*",
     "@jasper/expressions": "workspace:*",
+    "@jasper/interchange": "workspace:*",
     "@jasper/mcp": "workspace:*",
     "@jasper/mg-templates": "workspace:*",
     "@jasper/project": "workspace:*",

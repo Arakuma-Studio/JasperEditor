@@ -973,7 +973,9 @@ export class ExportService {
 				concurrency: remotionConcurrency(ctx.slots),
 				onSpawn: ctx.trackChild,
 				onProgress: (p) =>
-					ctx.progress(p.progress, { stage: `Rendering ${p.renderedFrames}/${p.totalFrames} frames (alpha)` }),
+					ctx.progress(p.progress, {
+						stage: `Rendering ${p.renderedFrames}/${p.totalFrames} frames (alpha)`,
+					}),
 			});
 			frames = res.frames;
 			remotionOutput = 'direct';

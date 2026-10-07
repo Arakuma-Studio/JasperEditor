@@ -107,6 +107,9 @@ importers:
       '@jasper/expressions':
         specifier: workspace:*
         version: link:../../packages/expressions
+      '@jasper/interchange':
+        specifier: workspace:*
+        version: link:../../packages/interchange
       '@jasper/mcp':
         specifier: workspace:*
         version: link:../mcp

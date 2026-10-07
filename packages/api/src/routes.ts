@@ -43,6 +43,16 @@ import {
 	StillRequestSchema,
 } from './exports.ts';
 import { FontCatalogSchema } from './fonts.ts';
+import {
+	AssetRelinkRequestSchema,
+	AssetRelinkResponseSchema,
+	InterchangeExportRequestSchema,
+	InterchangeImportRequestSchema,
+	InterchangeImportResponseSchema,
+	InterchangePrerenderPlanRequestSchema,
+	InterchangePrerenderPlanResponseSchema,
+	RelinkScanRequestSchema,
+} from './interchange.ts';
 import { EngineJobSchema, JobListQuerySchema, JobListResponseSchema } from './jobs.ts';
 import { LayerBakePreviewRequestSchema } from './layer-bake.ts';
 import { MaskTraceRequestSchema, MaskTraceResponseSchema } from './masks.ts';
@@ -129,7 +139,9 @@ export type RouteOwner =
 	// parity program: captions and transcripts
 	| 'wp-captions'
 	// parity program: local speech-to-text (Whisper), VAD, diarization
-	| 'speech';
+	| 'speech'
+	// parity program: timeline interchange and Link Media
+	| 'wp-interchange';
 
 export type RouteDef = {
 	method: HttpMethod;
@@ -747,6 +759,54 @@ export const ROUTES = {
 		body: EffectPresetImportRequestSchema,
 		response: EffectPresetImportResponseSchema,
 		owner: 'wp-m3-presets',
+	},
+	// ---- wp interchange (docs/wp-notes/interchange.md)
+	/** Reads a timeline document (FCP7 XML, FCPXML, OTIO, EDL, AAF, OMF, ALE) into a `project.importTimeline` fragment. */
+	interchangeImport: {
+		method: 'POST',
+		path: '/api/interchange/import',
+		body: InterchangeImportRequestSchema,
+		response: InterchangeImportResponseSchema,
+		owner: 'wp-interchange',
+	},
+	/** The clips an export would pre-render (ProRes 4444 with alpha) for a format and mode. */
+	interchangePrerenderPlan: {
+		method: 'POST',
+		path: '/api/interchange/prerender-plan',
+		body: InterchangePrerenderPlanRequestSchema,
+		response: InterchangePrerenderPlanResponseSchema,
+		owner: 'wp-interchange',
+	},
+	/** Exports a sequence as a timeline document (job `interchange-export`, result `InterchangeExportResult`). */
+	interchangeExport: {
+		method: 'POST',
+		path: '/api/interchange/export',
+		body: InterchangeExportRequestSchema,
+		response: EngineJobSchema,
+		owner: 'wp-interchange',
+	},
+	/** A file of a finished interchange export (`result.files[].name`). */
+	interchangeOutput: {
+		method: 'GET',
+		path: '/renders/:jobId/interchange/:name',
+		response: 'binary',
+		owner: 'wp-interchange',
+	},
+	/** S04:AS-011: registers a replacement file and compares it with the asset (fingerprint, duration, …). */
+	assetRelink: {
+		method: 'POST',
+		path: '/api/assets/:assetId/relink',
+		body: AssetRelinkRequestSchema,
+		response: AssetRelinkResponseSchema,
+		owner: 'wp-interchange',
+	},
+	/** S04:AS-011: searches a folder for offline assets (job `relink-scan`, result `RelinkScanResult`). */
+	relinkScan: {
+		method: 'POST',
+		path: '/api/projects/:projectId/relink-scan',
+		body: RelinkScanRequestSchema,
+		response: EngineJobSchema,
+		owner: 'wp-interchange',
 	},
 	/** Reads a caption or transcript file by path (local engines only; caption extensions, ≤ 64 MB). */
 	captionFileRead: {

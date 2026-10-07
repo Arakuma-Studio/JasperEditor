@@ -11,6 +11,7 @@ import effectPresetRoutes from './effect-presets.ts';
 import eventsRoutes from './events.ts';
 import exportsRoutes from './exports.ts';
 import fontsRoutes from './fonts.ts';
+import interchangeRoutes from './interchange.ts';
 import jobsRoutes from './jobs.ts';
 import layerBakeRoutes from './layer-bake.ts';
 import maskRoutes from './masks.ts';
@@ -61,6 +62,8 @@ const ROUTE_PLUGINS = [
 	captionRoutes,
 	// wp speech: Whisper transcription (after processing: the model catalogue and its installer).
 	speechRoutes,
+	// wp interchange: timeline import/export (pre-renders through the export service) and Link Media.
+	interchangeRoutes,
 ] as const;
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {

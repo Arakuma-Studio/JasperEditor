@@ -6,6 +6,7 @@ import {
 	type AgentUiRequest,
 	API_HEADER,
 	API_VERSION,
+	type AssetRelinkRequest,
 	type AudioAnalyzeRequest,
 	buildPath,
 	type CaptionFileReadRequest,
@@ -14,6 +15,9 @@ import {
 	ErrorShapeSchema,
 	type ExportPlanRequest,
 	type ExportStartRequest,
+	type InterchangeExportRequest,
+	type InterchangeImportRequest,
+	type InterchangePrerenderPlanRequestSchema,
 	type JobListQuery,
 	type LoudnessNormalizeRequest,
 	type MediaRegisterRequest,
@@ -22,6 +26,7 @@ import {
 	type ProjectViewJson,
 	type RecoveryPutRequest,
 	type RegisteredMedia,
+	type RelinkScanRequest,
 	ROUTES,
 	type RouteName,
 	type RouteResponse,
@@ -242,6 +247,26 @@ export class EngineClient {
 	readCaptionFile(req: CaptionFileReadRequest) {
 		return this.call('captionFileRead', { body: req });
 	}
+	/** wp interchange: reads a timeline document into a `project.importTimeline` fragment. */
+	importTimeline(req: InterchangeImportRequest, signal?: AbortSignal) {
+		return this.call('interchangeImport', { body: req, ...(signal ? { signal } : {}) });
+	}
+	/** wp interchange: the clips an export to `format` would pre-render. */
+	interchangePrerenderPlan(req: z.input<typeof InterchangePrerenderPlanRequestSchema>) {
+		return this.call('interchangePrerenderPlan', { body: req });
+	}
+	/** wp interchange: exports a sequence as a timeline document (job `interchange-export`). */
+	exportTimeline(req: InterchangeExportRequest) {
+		return this.call('interchangeExport', { body: req });
+	}
+	/** S04:AS-011: registers a replacement file for an asset and compares them. */
+	relinkAsset(assetId: string, req: AssetRelinkRequest) {
+		return this.call('assetRelink', { params: { assetId }, body: req });
+	}
+	/** S04:AS-011: searches a folder for offline assets (job `relink-scan`). */
+	relinkScan(projectId: string, req: RelinkScanRequest) {
+		return this.call('relinkScan', { params: { projectId }, body: req });
+	}
 	registerMedia(req: MediaRegisterRequest) {
 		return this.call('mediaRegister', { body: req });
 	}
@@ -378,6 +403,13 @@ export class EngineClient {
 	}
 	renderOutputUrl(jobId: string): string {
 		return this.url(buildPath(ROUTES.renderOutput.path, { jobId }));
+	}
+	/** wp interchange: download URL of a file of a finished interchange export. */
+	interchangeOutputUrl(jobId: string, name: string, download = false): string {
+		return this.url(
+			buildPath(ROUTES.interchangeOutput.path, { jobId, name }),
+			download ? { download: 1 } : undefined,
+		);
 	}
 	/** wp captions: download URL of an export's sidecar caption file. */
 	renderCaptionFileUrl(jobId: string, name: string): string {
