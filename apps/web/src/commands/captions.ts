@@ -17,6 +17,8 @@ import {
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { importCaptionFiles } from '../import/captions.ts';
+// Registers the Properties ▸ Caption section.
+import '../panels/text/CaptionSection.tsx';
 import { downloadBytes, type TranscriptTool, textPanelRequests } from '../panels/text/state.ts';
 import { activeTimeline } from '../panels/timeline/env.tsx';
 import type { CommandCtx, CommandScope, UiCommand } from './types.ts';
