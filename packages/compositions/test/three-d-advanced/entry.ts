@@ -194,6 +194,25 @@ function scenes(): Record<string, () => Scene> {
 				env: { image: e.canvas, rotation: 0, color: [1, 1, 1], background: true },
 			};
 		},
+		dof: () => {
+			const cam: CameraState = { ...defaultCamera(W, H) };
+			cam.dof = {
+				focus: cam.zoom,
+				aperture: 14,
+				blurLevel: 1,
+				iris: { sides: 6, rotation: 0, roundness: 0, aspect: 1, fringe: 0 },
+				highlight: { gain: 0, threshold: 1, saturation: 0 },
+			};
+			const chk = (x: number, y: number) => (((x >> 1) + (y >> 1)) & 1 ? [255, 255, 255, 255] : [0, 0, 0, 255]) as [number, number, number, number];
+			return {
+				layers: [
+					{ pic: picture(40, 30, chk), transform: tr({ position: anim([25, 32]) }) },
+					{ pic: picture(40, 30, chk), transform: tr({ position: anim([70, 32]), scale: anim(300) }), td: td((t) => (t.positionZ = anim(600))) },
+				],
+				camera: cam,
+				backdrop: picture(W, H, () => [128, 128, 128, 255]),
+			};
+		},
 		highlight: () => ({
 			layers: [
 				{

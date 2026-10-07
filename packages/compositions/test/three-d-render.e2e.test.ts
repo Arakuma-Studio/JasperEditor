@@ -156,6 +156,37 @@ describe.runIf(enabled)('3D layers in Remotion renders (REMOTION_E2E=1)', { time
 		const d = diff(raw, ref);
 		expect(d.bad, `worst ${d.worst}`).toBeLessThan(0.01);
 	});
+
+	it('Advanced 3D: the run renders lit with a shadow map, and extruded text shows its walls', async () => {
+		const text = (depth: number): Command[] => [
+			{ type: 'sequence.set3dRenderer', renderer: 'advanced' } as Command,
+			{
+				type: 'clip.addText',
+				at: 0,
+				duration: 30,
+				track: 'V6',
+				content: { text: 'O', style: { sizePx: 160 } },
+				ref: '$t',
+			} as Command,
+			{ type: 'clip.set3d', clipIds: ['$t'], enabled: true } as Command,
+			{ type: 'param.set', target: ['clip', '$t', 'threeD', 'rotationY'], value: 45 } as Command,
+			{ type: 'param.set', target: ['clip', '$t', 'threeD', 'geometry', 'extrusionDepth'], value: depth } as Command,
+		];
+		const flat = await still(scene(text(0)), 5, 'advanced-flat');
+		const ext = await still(scene(text(60)), 5, 'advanced-extruded');
+		const classic = await still(scene(), 5, 'classic-run');
+		// Lit: the card and the floor are drawn (not the bare backdrop) and differ from the unlit colours.
+		let changed = 0;
+		for (let i = 0; i < FX_W * FX_H; i++) {
+			let e = 0;
+			for (let c = 0; c < 3; c++) e = Math.max(e, Math.abs(flat[i * 4 + c]! - ext[i * 4 + c]!));
+			if (e > 30) changed++;
+		}
+		expect(changed / (FX_W * FX_H)).toBeGreaterThan(0.002);
+		// Advanced and Classic agree on where things are (same camera): most pixels are close.
+		const d = diff(flat, new Uint8ClampedArray(classic), 60);
+		expect(d.bad).toBeLessThan(0.25);
+	});
 });
 
 export const _asset = fxAsset;

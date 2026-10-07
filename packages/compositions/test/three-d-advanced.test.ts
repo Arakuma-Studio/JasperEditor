@@ -135,6 +135,25 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Advanced 3D on the GPU', 
 		expect(mirror[0]).toBeLessThan(80);
 	});
 
+	it('depth of field: the layer in focus stays sharp, the far one is blurred', async () => {
+		const img = await call<number[]>('advanced', 'dof');
+		// Local contrast (mean |Δ| between horizontal neighbours) in a window of each layer.
+		const contrast = (x0: number, x1: number) => {
+			let s = 0;
+			let n = 0;
+			for (let y = 26; y < 38; y++)
+				for (let x = x0; x < x1; x++) {
+					s += Math.abs(px(img, x + 1, y)[0]! - px(img, x, y)[0]!);
+					n++;
+				}
+			return s / n;
+		};
+		const sharp = contrast(15, 35);
+		const blurred = contrast(62, 80);
+		expect(sharp).toBeGreaterThan(60);
+		expect(blurred).toBeLessThan(sharp / 3);
+	});
+
 	it('GGX: a shiny surface shows a highlight under a point light', async () => {
 		const img = await call<number[]>('advanced', 'highlight');
 		const centre = px(img, W / 2, H / 2);
