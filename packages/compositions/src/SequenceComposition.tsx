@@ -21,11 +21,16 @@
 // nest clips draw their nested sequence with `VideoTracks` (recursive, through `NestTracksContext`); adjustment
 // clips wrap the tracks below them in an `AdjustmentScope` (layers/AdjustmentScope.tsx); the background is drawn
 // inside the stack so adjustment layers process it like Premiere's composite.
+// keyframes-blend: a track holding a layer whose blend mode CSS cannot draw exactly wraps everything below it in a
+// `BlendScope` (fx/composite.tsx): the composite below is captured and the track's layers are composited onto it on
+// the GPU at the frames where such a layer is drawn (its clips and GPU transition stages hand over their pictures).
 import {
 	clipContentTime,
 	clipPictureTime,
 	fadeFactor,
 	flicksPerFrame,
+	isCssBlend,
+	isStencilBlend,
 	matteTrackIds,
 	type RenderVisualClip,
 	resolveCachedLayerProps,
@@ -46,6 +51,17 @@ import { MixGraphContext } from './audio/context.ts';
 import { type MixGraph, mixGraphFor } from './audio/graph.ts';
 import { ColorDocContext, type ColorDocValue } from './color/chain.ts';
 import { FontsReadyContext, useFontsReadyState, useLayerFontsReady } from './fonts.ts';
+import {
+	BlendFallback,
+	BlendScope,
+	BlendTrackContext,
+	type BlendTrackValue,
+	CompositeHub,
+	compositeRunMode,
+	makeBlendTrack,
+	useCompositeTap,
+} from './fx/composite.tsx';
+import { type CompositeTrackInput, trackHasGlBlend } from './fx/composite-plan.ts';
 import { TrackMatteContext, TrackMatteHub } from './fx/matte.ts';
 import { useFxStatus } from './fx/status.ts';
 import { fxRemapFrame, hasTimeDependentFx } from './fx/time.ts';
@@ -126,7 +142,8 @@ function layerViewEqual(a: ViewProps, b: ViewProps): boolean {
 		a.fps !== b.fps ||
 		a.fonts !== b.fonts ||
 		a.transition !== b.transition ||
-		a.matte !== b.matte
+		a.matte !== b.matte ||
+		a.composite !== b.composite
 	)
 		return false;
 	if (a.frameDependent || b.frameDependent)
@@ -197,6 +214,12 @@ const ClipLayer = memo(function ClipLayer({
 		: 0;
 	const tap = gpuSide ? gpuSide.hub.tap(gpuSide.side) : null;
 	const transition = useMemo(() => (tap ? { progress, side: tap.side, tap } : undefined), [tap, progress]);
+	// keyframes-blend: a layer its track's blend scope composites at this frame hands its picture to the scope.
+	const compositeTap = useCompositeTap(clip.clipId, frame);
+	const composite = useMemo(
+		() => (compositeTap && !gpuSide && !matteOnly ? { tap: compositeTap } : undefined),
+		[compositeTap, gpuSide, matteOnly],
+	);
 	const matteTap = matteHub?.tap(clip.clipId);
 	const matte = useMemo(
 		() => (matteTap ? { tap: matteTap, hide: !!matteOnly, seqFrame: frame } : undefined),
@@ -236,6 +259,7 @@ const ClipLayer = memo(function ClipLayer({
 					fonts={doc.fonts}
 					transition={transition}
 					matte={matte}
+					composite={composite}
 				/>
 			</ShowFrame>
 		);
@@ -257,6 +281,7 @@ const ClipLayer = memo(function ClipLayer({
 					fonts={doc.fonts}
 					transition={transition}
 					matte={matte}
+					composite={composite}
 				/>
 			</Freeze>
 		);
@@ -275,6 +300,7 @@ const ClipLayer = memo(function ClipLayer({
 			fonts={doc.fonts}
 			transition={transition}
 			matte={matte}
+			composite={composite}
 		/>
 	);
 });
@@ -380,7 +406,7 @@ export function VideoTracks({
 				// Layer renders (bakes of single clips) draw no stages, as no mattes.
 				const byId = new Map(clips.map((c) => [c.clipId, c]));
 				const sides = new Map<string, TransitionSideEntry[]>();
-				const stages: (TransitionSideEntry & { blendMode?: string })[] = [];
+				const stages: (TransitionSideEntry & { blendMode?: string; blendModeId: string })[] = [];
 				for (const tr of options.layerFilter ? [] : (t.transitions ?? [])) {
 					const spec = transitionSpec(tr.effectId);
 					if (!spec) continue;
@@ -398,8 +424,18 @@ export function VideoTracks({
 						sides.set(clip.clipId, list);
 					}
 					const modes = new Set(sideClips.map((x) => x.clip.blendMode));
-					const blend = modes.size === 1 ? blendModeCss([...modes][0]!) : undefined;
-					stages.push({ t: tr, spec, side: 'in', mode, hub, ...(blend ? { blendMode: blend } : {}) });
+					// The stage composites with the sides' common blend mode (GPU fallback: the sides draw themselves).
+					const blendModeId = modes.size === 1 && mode.mode === 'gpu' ? [...modes][0]! : 'normal';
+					const blend = blendModeCss(blendModeId);
+					stages.push({
+						t: tr,
+						spec,
+						side: 'in',
+						mode,
+						hub,
+						blendModeId,
+						...(blend ? { blendMode: blend } : {}),
+					});
 				}
 				const matteHub = matteContext.get(t.trackId);
 				matteHub?.setClips(clips, doc.media);
@@ -420,12 +456,70 @@ export function VideoTracks({
 		[doc.settings.width, doc.settings.height, fps],
 	);
 	const fpf = flicksPerFrame(doc.settings.fps);
+	// keyframes-blend: the blend scope of each track holding a GL item (layer renders composite nothing: a baked
+	// layer's blend mode is applied where the bake is composited).
+	const compositeHubs = useRef(new Map<string, CompositeHub>());
+	const blendTracks = useMemo(() => {
+		const out = new Map<string, { value: BlendTrackValue; glModesAt: (f: number) => string[] }>();
+		if (options.layerFilter) return out;
+		const isGpuSide = (clipId: string, f: number) => {
+			for (const t of tracks) {
+				const e = t.sides.get(clipId);
+				if (e?.some((x) => x.mode.mode === 'gpu' && f >= x.t.start && f < x.t.start + x.t.duration))
+					return true;
+			}
+			return false;
+		};
+		for (const t of tracks) {
+			const input: CompositeTrackInput = {
+				trackId: t.trackId,
+				clips: t.clips.map((c) => ({
+					clipId: c.clipId,
+					start: c.start,
+					duration: c.duration,
+					headHandle: c.headHandle ?? 0,
+					tailHandle: c.tailHandle ?? 0,
+					blendMode: c.blendMode,
+				})),
+				stages: t.stages.map((st) => ({
+					id: st.t.id,
+					start: st.t.start,
+					duration: st.t.duration,
+					blendMode: st.blendModeId,
+				})),
+			};
+			if (!trackHasGlBlend(input)) continue;
+			let hub = compositeHubs.current.get(t.trackId);
+			if (!hub) {
+				hub = new CompositeHub();
+				compositeHubs.current.set(t.trackId, hub);
+			}
+			const glModes = [
+				...input.clips.map((c) => c.blendMode),
+				...input.stages.map((st) => st.blendMode),
+			].filter((m) => !isCssBlend(m));
+			const mode = compositeRunMode({ gpu, htmlInCanvas }, glModes);
+			const value = makeBlendTrack(input, isGpuSide, mode, hub);
+			const glModesAt = (f: number) =>
+				[
+					...input.clips.filter(
+						(c) => f >= c.start - (c.headHandle ?? 0) && f < c.start + c.duration + (c.tailHandle ?? 0),
+					),
+					...input.stages.filter((st) => f >= st.start && f < st.start + st.duration),
+				]
+					.map((x) => x.blendMode)
+					.filter((m) => !isCssBlend(m));
+			out.set(t.trackId, { value, glModesAt });
+		}
+		return out;
+	}, [tracks, options.layerFilter, gpu, htmlInCanvas]);
 	const background = options.transparentBackground ? null : doc.settings.backgroundColor;
 	let stack: ReactNode =
 		background && background[3] > 0 ? (
 			<AbsoluteFill data-sequence-background="" style={{ backgroundColor: rgbaCss(background) }} />
 		) : null;
 	for (const track of tracks) {
+		const blend = blendTracks.get(track.trackId);
 		if (track.adjustments.length > 0)
 			stack = (
 				<AdjustmentScope
@@ -438,63 +532,106 @@ export function VideoTracks({
 					{stack}
 				</AdjustmentScope>
 			);
+		const mattes = track.mattes.map((m) => (
+			<Sequence
+				key={`matte-${m.id}`}
+				from={m.start - offset}
+				durationInFrames={m.duration}
+				name="Transition matte"
+			>
+				<AbsoluteFill data-transition-matte={m.id} style={{ backgroundColor: rgbaCss(m.color) }} />
+			</Sequence>
+		));
+		// keyframes-blend: the track's mattes lie under its clips, so a blend scope takes them in with the stack below.
+		if (blend)
+			stack = (
+				<BlendScope
+					key={`blend-${track.trackId}`}
+					track={blend.value}
+					comp={comp}
+					offset={offset}
+					isPreview={options.isPreview}
+				>
+					{stack}
+					{mattes}
+				</BlendScope>
+			);
+		const content = (
+			<TransitionSidesContext.Provider value={track.sides}>
+				<AbsoluteFill data-track-id={track.trackId}>
+					{blend ? null : mattes}
+					{track.clips.map((clip) => {
+						const head = clip.headHandle ?? 0;
+						const from = clip.start - head - offset;
+						return (
+							<Sequence
+								key={clip.clipId}
+								from={from}
+								durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
+								name={clip.name}
+								premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
+							>
+								<ClipLayer clip={clip} doc={doc} options={options} matteHub={track.matteHub} />
+							</Sequence>
+						);
+					})}
+					{track.stages.map((st) => (
+						<Sequence
+							key={`transition-${st.t.id}`}
+							from={st.t.start - offset}
+							durationInFrames={st.t.duration}
+							name={st.spec.label}
+						>
+							<TransitionStage
+								t={st.t}
+								spec={st.spec}
+								hub={st.hub}
+								mode={st.mode}
+								comp={comp}
+								flicksPerFrame={fpf}
+								isPreview={options.isPreview}
+								blendMode={st.blendMode}
+								media={doc.media}
+							/>
+						</Sequence>
+					))}
+					{blend ? (
+						<BlendFallback
+							track={blend.value}
+							glModesAt={blend.glModesAt}
+							offset={offset}
+							isPreview={options.isPreview}
+						/>
+					) : null}
+				</AbsoluteFill>
+			</TransitionSidesContext.Provider>
+		);
 		stack = (
 			<Fragment key={track.trackId}>
 				{stack}
-				<TransitionSidesContext.Provider value={track.sides}>
-					<AbsoluteFill data-track-id={track.trackId}>
-						{track.mattes.map((m) => (
-							<Sequence
-								key={`matte-${m.id}`}
-								from={m.start - offset}
-								durationInFrames={m.duration}
-								name="Transition matte"
-							>
-								<AbsoluteFill data-transition-matte={m.id} style={{ backgroundColor: rgbaCss(m.color) }} />
-							</Sequence>
-						))}
-						{track.clips.map((clip) => {
-							const head = clip.headHandle ?? 0;
-							const from = clip.start - head - offset;
-							return (
-								<Sequence
-									key={clip.clipId}
-									from={from}
-									durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
-									name={clip.name}
-									premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
-								>
-									<ClipLayer clip={clip} doc={doc} options={options} matteHub={track.matteHub} />
-								</Sequence>
-							);
-						})}
-						{track.stages.map((st) => (
-							<Sequence
-								key={`transition-${st.t.id}`}
-								from={st.t.start - offset}
-								durationInFrames={st.t.duration}
-								name={st.spec.label}
-							>
-								<TransitionStage
-									t={st.t}
-									spec={st.spec}
-									hub={st.hub}
-									mode={st.mode}
-									comp={comp}
-									flicksPerFrame={fpf}
-									isPreview={options.isPreview}
-									blendMode={st.blendMode}
-									media={doc.media}
-								/>
-							</Sequence>
-						))}
-					</AbsoluteFill>
-				</TransitionSidesContext.Provider>
+				{blend ? (
+					<BlendTrackContext.Provider value={blend.value}>{content}</BlendTrackContext.Provider>
+				) : (
+					content
+				)}
 			</Fragment>
 		);
 	}
+	// keyframes-blend: Stencil / Silhouette cut the stack below them, background included; what they reveal is the
+	// background (After Effects: the comp background), drawn once more under the whole stack (= the native export).
+	const stencilled =
+		!!background &&
+		background[3] > 0 &&
+		tracks.some(
+			(t) =>
+				t.clips.some((c) => isStencilBlend(c.blendMode)) ||
+				t.stages.some((st) => isStencilBlend(st.blendModeId)),
+		);
 	return (
 		<TrackMatteContext.Provider value={matteContext}>
+			{stencilled ? (
+				<AbsoluteFill data-stencil-background="" style={{ backgroundColor: rgbaCss(background) }} />
+			) : null}
 			{hiddenMattes.map((track) => (
 				<AbsoluteFill key={`matte-${track.trackId}`} data-matte-track-id={track.trackId}>
 					{track.clips.map((clip) => {

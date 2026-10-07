@@ -3,12 +3,17 @@
 // composition draws the anchor point. Position values live in the layer's parent space, which is sequence space
 // here (the layer map is M(q) = P + R·S·(q − A), so M(A) = P whatever the layer's anchor, scale and rotation);
 // the same `toScreen` / `toSequence` mapping as the transform gizmo handles monitor zoom and pan.
+// keyframes-blend: Anchor Point paths too (values in layer space, drawn through the layer map at the playhead, as After
+// Effects shows an anchor path over its layer), snapping and multi-key drags, Pen-tool vertex conversion.
 import {
+	applyMatrix,
 	type Command,
 	contentTimeAt,
 	effectiveTangents,
 	evaluate,
+	invertMatrix,
 	type Keyframe,
+	type Mat2D,
 	type Rational,
 	type RenderVisualClip,
 	type SpatialInterpolation,
@@ -24,8 +29,10 @@ export const MAX_HANDLE_KEYS = 200;
 
 export type MotionPathKey = {
 	id: string;
-	/** Key value = position (sequence px). */
+	/** Key position in sequence px (the value itself for Position; mapped through the layer for Anchor Point). */
 	pos: Vec2;
+	/** The key's value (property space). */
+	value: Vec2;
 	mode: SpatialInterpolation;
 	/** Absolute handle points (sequence px), null when the key has no handle on that side. */
 	inHandle: Vec2 | null;
@@ -34,22 +41,43 @@ export type MotionPathKey = {
 	offClip: boolean;
 };
 
+/** Which point property the path animates. */
+export type MotionPathProperty = 'position' | 'anchor';
+
 export type MotionPath = {
 	clipId: string;
 	trackId: string;
+	property: MotionPathProperty;
+	/** Property space (value units) → sequence px, and sequence-px vectors → property-space vectors. */
+	toSeq(v: Vec2): Vec2;
+	vecFromSeq(d: Vec2): Vec2;
 	/** Evaluated position at every frame of the clip (sequence px); spacing encodes speed. */
 	dots: Vec2[];
 	keys: MotionPathKey[];
 };
 
-/** The motion path of a clip, or null when its position has fewer than two keys (OVL-020). */
-export function buildMotionPath(clip: RenderVisualClip, fps: Rational): MotionPath | null {
-	const anim = clip.transform?.position;
+/**
+ * The motion path of a clip's Position (or Anchor Point, `layerMap` = the layer map at the playhead: layer px →
+ * sequence px), or null when the property has fewer than two keys (OVL-020).
+ */
+export function buildMotionPath(
+	clip: RenderVisualClip,
+	fps: Rational,
+	property: MotionPathProperty = 'position',
+	layerMap?: Mat2D | null,
+): MotionPath | null {
+	const anim = property === 'anchor' ? clip.transform?.anchor : clip.transform?.position;
 	if (!anim || anim.keyframes.length < 2) return null;
+	if (property === 'anchor' && !layerMap) return null;
+	const inv = property === 'anchor' ? invertMatrix(layerMap!) : null;
+	if (property === 'anchor' && !inv) return null;
+	const toSeq = (v: Vec2): Vec2 => (property === 'anchor' ? applyMatrix(layerMap!, v) : [v[0], v[1]]);
+	const vecFromSeq = (d: Vec2): Vec2 =>
+		inv ? [inv.a * d[0] + inv.c * d[1], inv.b * d[0] + inv.d * d[1]] : [d[0], d[1]];
 	const dots: Vec2[] = [];
 	for (let f = 0; f < clip.duration; f++) {
 		const v = evaluate(anim, contentTimeAt(clip, clip.start + f, fps));
-		dots.push([v[0], v[1]]);
+		dots.push(toSeq([v[0], v[1]]));
 	}
 	const t0 = contentTimeAt(clip, clip.start, fps);
 	const t1 = contentTimeAt(clip, clip.start + clip.duration - 1, fps);
@@ -60,18 +88,20 @@ export function buildMotionPath(clip: RenderVisualClip, fps: Rational): MotionPa
 		const mode = spatialModeOf(k);
 		const tg = effectiveTangents(kfs, i);
 		const curved = handles && mode !== 'linear';
-		const pos: Vec2 = [k.value[0], k.value[1]];
-		const at = (t: Vec2): Vec2 => [pos[0] + t[0], pos[1] + t[1]];
+		const value: Vec2 = [k.value[0], k.value[1]];
+		const pos = toSeq(value);
+		const at = (t: Vec2): Vec2 => toSeq([value[0] + t[0], value[1] + t[1]]);
 		return {
 			id: k.id,
 			pos,
+			value,
 			mode,
 			inHandle: curved && i > 0 ? at(tg.inTangent) : null,
 			outHandle: curved && i < kfs.length - 1 ? at(tg.outTangent) : null,
 			offClip: k.time < lo || k.time > hi,
 		};
 	});
-	return { clipId: clip.clipId, trackId: clip.trackId, dots, keys };
+	return { clipId: clip.clipId, trackId: clip.trackId, property, toSeq, vecFromSeq, dots, keys };
 }
 
 export type PathHit = { kind: 'key'; keyId: string } | { kind: 'tangent'; keyId: string; side: 'in' | 'out' };
@@ -97,12 +127,44 @@ export function hitMotionPath(path: MotionPath, view: View, screen: Vec2, radius
 	return best;
 }
 
-/** A motion-path drag in progress: what was grabbed and where it started (sequence px). */
-export type MotionPathDrag = { hit: PathHit; key: MotionPathKey; start: Vec2 };
+/**
+ * A motion-path drag in progress: what was grabbed, where it started (sequence px), the keys that move with it (a key
+ * drag moves every selected key of the path by the same offset, keyframes-blend) and the path.
+ */
+export type MotionPathDrag = {
+	hit: PathHit;
+	key: MotionPathKey;
+	start: Vec2;
+	group: MotionPathKey[];
+	path: MotionPath;
+	/** Pen-tool / Ctrl-drag from a key: pull out Continuous Bezier handles instead of moving it. */
+	pull?: boolean;
+};
 
-export function startMotionPathDrag(path: MotionPath, hit: PathHit, start: Vec2): MotionPathDrag | null {
+export function startMotionPathDrag(
+	path: MotionPath,
+	hit: PathHit,
+	start: Vec2,
+	selected: ReadonlySet<string> = new Set(),
+	opts: { pull?: boolean } = {},
+): MotionPathDrag | null {
 	const key = path.keys.find((k) => k.id === hit.keyId);
-	return key ? { hit, key, start } : null;
+	if (!key) return null;
+	const group =
+		hit.kind === 'key' && selected.has(key.id) ? path.keys.filter((k) => selected.has(k.id)) : [key];
+	return { hit, key, start, group, path, ...(opts.pull ? { pull: true } : {}) };
+}
+
+/**
+ * Pen tool / Ctrl-click (Cmd on macOS) on a path key (keyframes-blend; After Effects' Convert Vertex): a corner
+ * (Linear spatial) becomes smooth (Auto Bezier), a smooth key becomes a corner.
+ */
+export function convertVertexCommand(key: Pick<MotionPathKey, 'id' | 'mode'>): Command {
+	return {
+		type: 'keyframe.setSpatialInterpolation',
+		keyframeIds: [key.id],
+		mode: key.mode === 'linear' ? 'auto-bezier' : 'linear',
+	} as Command;
 }
 
 /**
@@ -114,7 +176,24 @@ export function motionPathDragCommands(
 	d: MotionPathDrag,
 	p: Vec2,
 	mods: { alt: boolean; shift: boolean },
+	/** Snaps the grabbed key's new sequence position (keyframes-blend); returns the corrected position. */
+	snap?: (at: Vec2) => Vec2,
 ): { commands: Command[]; readout: string } {
+	if (d.hit.kind === 'key' && d.pull) {
+		// Pull Continuous Bezier handles out of the key: the out handle follows the pointer, the in one opposite.
+		const out = d.path.vecFromSeq([p[0] - d.key.pos[0], p[1] - d.key.pos[1]]);
+		return {
+			commands: [
+				{
+					type: 'keyframe.setTangents',
+					keyframeId: d.key.id,
+					inTangent: [0 - out[0], 0 - out[1]],
+					outTangent: out,
+				} as Command,
+			],
+			readout: `Tangent ${fmt(out[0])}, ${fmt(out[1])}`,
+		};
+	}
 	if (d.hit.kind === 'key') {
 		let dx = p[0] - d.start[0];
 		let dy = p[1] - d.start[1];
@@ -122,15 +201,29 @@ export function motionPathDragCommands(
 			if (Math.abs(dx) >= Math.abs(dy)) dy = 0;
 			else dx = 0;
 		}
-		const value: Vec2 = [d.key.pos[0] + dx, d.key.pos[1] + dy];
+		if (snap) {
+			const at = snap([d.key.pos[0] + dx, d.key.pos[1] + dy]);
+			if (!(mods.shift && dx === 0)) dx = at[0] - d.key.pos[0];
+			if (!(mods.shift && dy === 0)) dy = at[1] - d.key.pos[1];
+		}
+		const dv = d.path.vecFromSeq([dx, dy]);
+		const commands = d.group.map(
+			(k) =>
+				({
+					type: 'keyframe.update',
+					keyframeId: k.id,
+					value: [k.value[0] + dv[0], k.value[1] + dv[1]],
+				}) as Command,
+		);
+		const lead: Vec2 = [d.key.value[0] + dv[0], d.key.value[1] + dv[1]];
 		return {
-			commands: [{ type: 'keyframe.update', keyframeId: d.key.id, value } as Command],
-			readout: `X ${fmt(value[0])}  Y ${fmt(value[1])}`,
+			commands,
+			readout: `${d.group.length > 1 ? `${d.group.length} keys · ` : ''}X ${fmt(lead[0])}  Y ${fmt(lead[1])}`,
 		};
 	}
 	const handle0 = d.hit.side === 'in' ? d.key.inHandle : d.key.outHandle;
 	const grab = handle0 ? [handle0[0] - d.start[0], handle0[1] - d.start[1]] : [0, 0];
-	const tangent: Vec2 = [p[0] + grab[0]! - d.key.pos[0], p[1] + grab[1]! - d.key.pos[1]];
+	const tangent: Vec2 = d.path.vecFromSeq([p[0] + grab[0]! - d.key.pos[0], p[1] + grab[1]! - d.key.pos[1]]);
 	return {
 		commands: [
 			{

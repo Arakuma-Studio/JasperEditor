@@ -58,7 +58,8 @@ export function LayerBox({
 		);
 	const domFx = useLayerFx(layer, {
 		enabled:
-			effects === undefined && (DOM_FX_KINDS.has(clip.kind) || !!layer.transition?.tap || !!layer.matte),
+			effects === undefined &&
+			(DOM_FX_KINDS.has(clip.kind) || !!layer.transition?.tap || !!layer.matte || !!layer.composite),
 		canRun: canUseHtmlInCanvas(),
 		chain,
 	});

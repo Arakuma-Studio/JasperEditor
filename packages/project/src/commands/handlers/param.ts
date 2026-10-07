@@ -1,7 +1,7 @@
 // param.set / param.setAnimated with Effect Controls stopwatch semantics (S01:KF-005, CMD-010, CMD-013).
 import type { Draft } from 'immer';
 import { compositionOfClip } from '../../composition/props.ts';
-import { evaluate, isHoldOnlyValue } from '../../keyframes.ts';
+import { evaluate, isHoldOnlyValue, retimeRoving } from '../../keyframes.ts';
 import { newKeySpatial, refreshAutoTangents } from '../../keyframes-spatial.ts';
 import {
 	MASK_EXPANSION_RANGE,
@@ -410,6 +410,8 @@ function upsertKeyframe(anim: Draft<Animatable<unknown>>, kf: Keyframe<unknown>)
 		anim.keyframes.sort((x, y) => x.time - y.time);
 	}
 	refreshAutoTangents(anim.keyframes as Keyframe<unknown>[]);
+	// keyframes-blend: roving keys sit where the motion passes them.
+	retimeRoving(anim.keyframes as Keyframe<unknown>[]);
 	return id;
 }
 

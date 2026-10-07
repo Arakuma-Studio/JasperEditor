@@ -4,7 +4,7 @@
 // bypassed; only adding an unknown effect id is refused (S01:FX-022).
 import type { Draft } from 'immer';
 import { resolveStripRef } from '../../audio/strip.ts';
-import { EASE_PRESETS } from '../../keyframes.ts';
+import { EASE_PRESETS, retimeRoving } from '../../keyframes.ts';
 import { refreshAutoTangents } from '../../keyframes-spatial.ts';
 import type { EffectSpec } from '../../registry/effects.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
@@ -102,6 +102,8 @@ export function buildParams(
 					h.fail('E_INVALID_PARAM', `${label}: two keyframes at the same time`);
 			const anim = { value, keyframes } as Animatable<ParamValue>;
 			refreshAutoTangents(anim.keyframes as Keyframe<unknown>[]);
+			// keyframes-blend: roving keys sit where the motion passes them.
+			retimeRoving(anim.keyframes as Keyframe<unknown>[]);
 			refreshAutoBezier(anim as never);
 			out[p.name] = anim;
 			continue;

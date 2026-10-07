@@ -3,6 +3,7 @@
 import {
 	audioFadeGain,
 	type BlendMode,
+	blendModeInfo,
 	defaultEffectRegistry,
 	type EffectRegistry,
 	evaluate,
@@ -19,25 +20,14 @@ import type { RenderOptions } from './types.ts';
 export const CROP_EFFECT_ID = 'jasper.crop';
 
 /**
- * CSS `mix-blend-mode` for an S01 blend mode (S03 §16 tier A). `add` has no CSS keyword of the same
- * name; `plus-lighter` is the additive compositing operator in Chromium.
+ * CSS `mix-blend-mode` of a clip blend mode (keyframes-blend): the W3C modes, whose Chrome implementation equals the
+ * formulas of `blend-modes.ts` (measured bit-exact on opaque pixels, ≤ 1 code value with partial alpha); undefined
+ * for Normal and for the modes the GL compositor draws (`isCssBlend` false: Dissolve, Linear Burn, Darker / Lighter
+ * Color, Linear Dodge (Add), Vivid / Linear / Pin Light, Hard Mix, Subtract, Divide, the utility modes — CSS has no
+ * exact equivalent; `plus-lighter` differs from Add in alpha).
  */
 export function blendModeCss(mode: BlendMode | string): CSSProperties['mixBlendMode'] | undefined {
-	switch (mode) {
-		case 'normal':
-			return undefined;
-		case 'add':
-			return 'plus-lighter';
-		case 'multiply':
-		case 'screen':
-		case 'overlay':
-		case 'darken':
-		case 'lighten':
-		case 'difference':
-			return mode;
-		default:
-			return undefined;
-	}
+	return (blendModeInfo(mode)?.css ?? undefined) as CSSProperties['mixBlendMode'] | undefined;
 }
 
 /** One wrapper element of the effect chain, innermost (applied first) → outermost. */

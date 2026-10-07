@@ -12,9 +12,11 @@
 // `fade=…:alpha=1` on the layer (the same linear ramps `fadeFactor` evaluates for the composition), the black
 // of a dip to black is a colour layer under the track's clips (audio crossfades are part of the mixdown).
 import {
+	blendModeIndex,
 	clipContentTime,
 	clipPictureTime,
 	defaultEffectRegistry,
+	dissolveSeed,
 	type EffectRegistry,
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
@@ -90,7 +92,54 @@ type NativeGraph = {
 	 * (`streamLayer`, spawn the composite with `pipes: streams.length`, fds 3, 4, …).
 	 */
 	streams: { fd: number; plan: StreamLayerPlan }[];
+	/**
+	 * keyframes-blend: the processes before this one when the stack has blend layers (in order). Segment i's raw
+	 * output (`2W×H` RGBA: composite ‖ layer) goes through the blend kernel into the next process's `pipe:3`
+	 * (segment i + 1, or this graph: `backdropFd`; spawn it with `pipes: 1 + streams.length`, streams from fd 4).
+	 */
+	blend?: { segments: BlendSegment[]; backdropFd: number; width: number; height: number };
 };
+
+/** BLEND_MODES indexes of Stencil Alpha … Silhouette Luma. */
+const STENCIL_FIRST = blendModeIndex('stencil-alpha');
+const STENCIL_LAST = blendModeIndex('silhouette-luma');
+
+/** keyframes-blend: one process of the blend pipeline and the blend its output goes through. */
+export type BlendSegment = {
+	/** ffmpeg arguments (without the global prefix); raw `2W×H` RGBA frames on stdout. */
+	args: string[];
+	filter: string;
+	/** Sub-pixel streams of this process (fds after its backdrop pipe). */
+	streams: { fd: number; plan: StreamLayerPlan }[];
+	/** fd of this process's backdrop pipe (the previous kernel's output); null for the first. */
+	backdropFd: number | null;
+	/** Frames on stdout (the stack's frames + 1 margin). */
+	frames: number;
+	/** BLEND_MODES index of the layer. */
+	mode: number;
+	/** Per output frame: the layer is drawn (else the composite passes through) and its Dissolve seed. */
+	active: boolean[];
+	seeds: number[];
+};
+
+/** The frames a blend layer is drawn on (relative to the stack's first frame) and its Dissolve seeds. */
+function blendSegmentFrames(
+	plan: LayerPlan,
+	mode: string,
+	R0: number,
+	frames: number,
+): Pick<BlendSegment, 'frames' | 'mode' | 'active' | 'seeds'> {
+	const active: boolean[] = [];
+	const seeds: number[] = [];
+	const key = 'clip' in plan ? plan.clip.clipId : 'span' in plan && plan.t ? `transition:${plan.t.id}` : '';
+	const start = 'clip' in plan ? plan.clip.start : 'span' in plan && plan.t ? plan.t.start : 0;
+	for (let j = 0; j < frames; j++) {
+		const f = R0 + j;
+		active.push(f >= plan.f0 && f < plan.f1);
+		seeds.push(dissolveSeed(key, f - start));
+	}
+	return { frames, mode: blendModeIndex(mode), active, seeds };
+}
 
 const fmt = (n: number) => {
 	const r = Math.round(n * 1e6) / 1e6;
@@ -130,7 +179,14 @@ type LayerPlan =
 	/** Full-frame colour under a track's clips (the black of a dip to black). */
 	| { matte: { color: readonly number[] }; f0: number; f1: number }
 	/** wave1c: the pre-rendered span of a GPU transition (sides + stage, a `sequence` override). */
-	| { span: LayerOverride; f0: number; f1: number };
+	| {
+			span: LayerOverride;
+			f0: number;
+			f1: number;
+			/** keyframes-blend: the transition, and its sides' common blend mode (Normal when they differ). */
+			t?: { id: string; start: number };
+			blendMode?: string;
+	  };
 
 /**
  * Transition ramps of a layer whose first frame is sequence frame `f0`, as ffmpeg `fade` filters on the
@@ -543,6 +599,28 @@ export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 	return { input: src, filters: f, width: bw, height: bh, resize, opaque: opaque && !override };
 }
 
+/**
+ * keyframes-blend: the blend mode a layer composites with — a clip's own; a pre-rendered GPU transition span the sides'
+ * common mode (as the composition's stage); mattes are Normal.
+ */
+function layerBlendMode(layer: LayerPlan): string {
+	if ('clip' in layer) return layer.clip.blendMode ?? 'normal';
+	if ('span' in layer) return layer.blendMode ?? 'normal';
+	return 'normal';
+}
+
+/** A transparent `W×H` RGBA stream the length of the stack (a blend layer is placed on it). */
+function transparentBase(ctx: StackContext, label: string): string {
+	const { snap } = ctx;
+	const fps = snap.settings.fps;
+	const frameSec = fps.den / fps.num;
+	const T = (snap.range.end - snap.range.start) * frameSec;
+	ctx.chains.push(
+		`color=c=black@0:s=${snap.settings.width}x${snap.settings.height}:r=${rate(fps)}:d=${fmt(T + frameSec)},format=rgba[${label}]`,
+	);
+	return label;
+}
+
 /** What `drawStack` needs to composite one snapshot's video tracks (the sequence, or a nested sequence). */
 type StackContext = {
 	snap: RenderSnapshot;
@@ -559,6 +637,12 @@ type StackContext = {
 	nested?: ReadonlyMap<string, PreparedExtensions>;
 	/** Nest path of this stack ('' = the sequence). */
 	path: string;
+	/**
+	 * keyframes-blend (the sequence's own stack only): ends the current process of the pipeline at a blend layer —
+	 * `backdrop` (the composite below) and `layer` (the layer on transparency) go to the blend kernel — and returns the
+	 * label of the kernel's output in the next process, where the stack continues.
+	 */
+	blend?: { cut(backdrop: string, layer: string, plan: LayerPlan, mode: string): string };
 };
 
 /**
@@ -568,7 +652,9 @@ type StackContext = {
  * (recursively, `layerSourceChain`).
  */
 function drawStack(ctx: StackContext): string {
-	const { snap, P, addInput, chains, sources: srcs, threads, exts } = ctx;
+	// keyframes-blend: `ctx.chains` / `ctx.addInput` / `ctx.addStream` are read at each use: a blend cut (`ctx.blend`)
+	// moves the rest of the stack to the next process of the pipeline.
+	const { snap, P, sources: srcs, threads, exts } = ctx;
 	const fps = snap.settings.fps;
 	const W = snap.settings.width;
 	const H = snap.settings.height;
@@ -578,7 +664,7 @@ function drawStack(ctx: StackContext): string {
 	const T = (R1 - R0) * frameSec;
 	// Background: sequence-sized, sequence colour, one extra frame of margin (the final trim is exact).
 	const bgLabel = `${P}bg`;
-	chains.push(
+	ctx.chains.push(
 		`color=c=${colorHex(snap.settings.backgroundColor)}:s=${W}x${H}:r=${rate(fps)}:d=${fmt(T + frameSec)},format=rgba[${bgLabel}]`,
 	);
 	let last = bgLabel;
@@ -593,18 +679,22 @@ function drawStack(ctx: StackContext): string {
 		}
 		// wave1c: GPU transitions an extension pre-rendered: their spans replace the sides (drawn above the track's
 		// clips, like the composition's stage); the side clips are drawn only outside them.
-		const spans: { t: { start: number; duration: number }; ov: LayerOverride; sides: Set<string> }[] = [];
+		const spans: {
+			t: { id: string; start: number; duration: number };
+			ov: LayerOverride;
+			sides: Set<string>;
+			blendMode: string;
+		}[] = [];
 		for (const t of track.transitions ?? []) {
 			const ov = exts
 				? (exts.list.map((e) => e.transitionOverride?.(t, exts.prepared.get(e.id)) ?? null).find((x) => x) ??
 					null)
 				: null;
-			if (ov)
-				spans.push({
-					t,
-					ov,
-					sides: new Set([t.outgoingClipId, t.incomingClipId].filter((x): x is string => !!x)),
-				});
+			if (ov) {
+				const sides = new Set([t.outgoingClipId, t.incomingClipId].filter((x): x is string => !!x));
+				const modes = new Set(track.clips.filter((c) => sides.has(c.clipId)).map((c) => c.blendMode));
+				spans.push({ t, ov, sides, blendMode: modes.size === 1 ? [...modes][0]! : 'normal' });
+			}
 		}
 		for (const c of track.clips) {
 			// With transitions a clip is drawn from its head handle to the end of its tail handle (S01:TRN-003).
@@ -623,119 +713,184 @@ function drawStack(ctx: StackContext): string {
 		for (const sp of spans) {
 			const f0 = Math.max(sp.t.start, R0);
 			const f1 = Math.min(sp.t.start + sp.t.duration, R1);
-			if (f1 > f0) layers.push({ span: sp.ov, f0, f1 });
+			if (f1 > f0)
+				layers.push({ span: sp.ov, f0, f1, t: { id: sp.t.id, start: sp.t.start }, blendMode: sp.blendMode });
 		}
 	}
 
 	const half = frameSec / 2;
 	for (const layer of layers) {
-		const { f0, f1 } = layer;
-		const n = f1 - f0;
-		const t0 = (f0 - R0) * frameSec;
-		const shift = `setpts=PTS-STARTPTS+round(${f0 - R0}*${fps.den}/(${fps.num}*TB))`;
-		const enable = `enable='between(t,${fmt(t0 - half)},${fmt(t0 + n * frameSec - half)})'`;
-		if ('matte' in layer) {
+		// keyframes-blend: a layer with a blend mode is drawn onto a transparent frame and handed, with the composite
+		// below it, to the blend kernel between two processes of the pipeline (`ctx.blend.cut`).
+		const blendMode = ctx.blend ? layerBlendMode(layer) : 'normal';
+		let backdrop: string | null = null;
+		if (blendMode !== 'normal' && !('clip' in layer && layer.clip.kind === 'adjustment')) {
+			backdrop = last;
+			last = transparentBase(ctx, `${P}tb${li}`);
+		}
+		// One layer onto `last` (a closure: the paths return early).
+		const drawLayer = (): void => {
+			const { f0, f1 } = layer;
+			const n = f1 - f0;
+			const t0 = (f0 - R0) * frameSec;
+			const shift = `setpts=PTS-STARTPTS+round(${f0 - R0}*${fps.den}/(${fps.num}*TB))`;
+			const enable = `enable='between(t,${fmt(t0 - half)},${fmt(t0 + n * frameSec - half)})'`;
+			if ('matte' in layer) {
+				const label = `${P}l${li++}`;
+				ctx.chains.push(
+					`color=c=${colorHex(layer.matte.color)}:s=${W}x${H}:r=${rate(fps)}:d=${fmt(n * frameSec + frameSec)},format=rgba,trim=end_frame=${n},${shift}[${label}]`,
+					`[${last}][${label}]overlay=x=0:y=0:format=rgb:eof_action=pass:${enable}[o${label}]`,
+				);
+				last = `o${label}`;
+				return;
+			}
+			if ('span' in layer) {
+				const ov = layer.span;
+				const label = `${P}l${li++}`;
+				const rect = ov.rect ?? null;
+				const k = ctx.addInput([
+					...(ov.decoder ? ['-c:v', ov.decoder] : []),
+					...(ov.still
+						? ['-loop', '1', '-framerate', rate(fps)]
+						: ['-ss', sec((f0 - ov.startFrame) * frameSec)]),
+					'-t',
+					sec(n * frameSec + 2 * frameSec),
+					'-i',
+					ov.path,
+				]);
+				const g = [
+					'setpts=PTS-STARTPTS',
+					`fps=${rate(fps)}`,
+					`trim=end_frame=${n}`,
+					`scale=${rect ? `${rect.w}:${rect.h}` : `${W}:${H}`}:${SWS_FLAGS}`,
+					'setsar=1',
+					'format=rgba',
+					shift,
+				];
+				ctx.chains.push(
+					`[${k}:v:0]${g.join(',')}[${label}]`,
+					`[${last}][${label}]overlay=x=${rect?.x ?? 0}:y=${rect?.y ?? 0}:format=rgb:eof_action=pass:${enable}[o${label}]`,
+				);
+				last = `o${label}`;
+				return;
+			}
+			const c = layer.clip;
+			const props = resolveLayerProps(c, clipContentTime(c, f0, fps));
 			const label = `${P}l${li++}`;
-			chains.push(
-				`color=c=${colorHex(layer.matte.color)}:s=${W}x${H}:r=${rate(fps)}:d=${fmt(n * frameSec + frameSec)},format=rgba,trim=end_frame=${n},${shift}[${label}]`,
-				`[${last}][${label}]overlay=x=0:y=0:format=rgb:eof_action=pass:${enable}[o${label}]`,
-			);
-			last = `o${label}`;
-			continue;
-		}
-		if ('span' in layer) {
-			const ov = layer.span;
-			const label = `${P}l${li++}`;
-			const rect = ov.rect ?? null;
-			const k = addInput([
-				...(ov.decoder ? ['-c:v', ov.decoder] : []),
-				...(ov.still
-					? ['-loop', '1', '-framerate', rate(fps)]
-					: ['-ss', sec((f0 - ov.startFrame) * frameSec)]),
-				'-t',
-				sec(n * frameSec + 2 * frameSec),
-				'-i',
-				ov.path,
-			]);
-			const g = [
-				'setpts=PTS-STARTPTS',
-				`fps=${rate(fps)}`,
-				`trim=end_frame=${n}`,
-				`scale=${rect ? `${rect.w}:${rect.h}` : `${W}:${H}`}:${SWS_FLAGS}`,
-				'setsar=1',
-				'format=rgba',
-				shift,
-			];
-			chains.push(
-				`[${k}:v:0]${g.join(',')}[${label}]`,
-				`[${last}][${label}]overlay=x=${rect?.x ?? 0}:y=${rect?.y ?? 0}:format=rgb:eof_action=pass:${enable}[o${label}]`,
-			);
-			last = `o${label}`;
-			continue;
-		}
-		const c = layer.clip;
-		const props = resolveLayerProps(c, clipContentTime(c, f0, fps));
-		const label = `${P}l${li++}`;
-		const margin = 2 * frameSec;
+			const margin = 2 * frameSec;
 
-		// M2 (§19.6): a pre-rendered picture from an extension replaces the source ('layer') or the whole placed
-		// layer ('sequence', overlaid at 0,0 with only the transition fades applied here).
-		const override = exts ? pickOverride(exts.list, exts.prepared, c) : null;
-		if (override?.space === 'sequence') {
-			// M2 (S11:LBK-004/005/010): `still` = one image looped for the layer's frames (like still clips);
-			// `rect` = the intermediate covers only that region, overlaid at its position; `colorRuns` = the clip's
-			// colour runs are applied here, to the straight-alpha override stream.
-			const rect = override.rect ?? null;
-			const k = addInput([
-				...(override.decoder ? ['-c:v', override.decoder] : []),
-				...(override.still
-					? ['-loop', '1', '-framerate', rate(fps)]
-					: ['-ss', sec((f0 - override.startFrame) * frameSec)]),
-				'-t',
-				sec(n * frameSec + margin),
-				'-i',
-				override.path,
-			]);
-			const g = [
-				'setpts=PTS-STARTPTS',
-				`fps=${rate(fps)}`,
-				`trim=end_frame=${n}`,
-				`scale=${rect ? `${rect.w}:${rect.h}` : `${W}:${H}`}:${SWS_FLAGS}`,
-				'setsar=1',
-				'format=rgba',
-				...(override.colorRuns && exts
-					? colorRunFilters({
-							clip: c,
-							props,
-							box: { width: rect?.w ?? W, height: rect?.h ?? H },
-							fps,
-							f0,
-							f1: layer.f1,
-							extensions: exts,
-						})
-					: []),
-				...(override.includesFades ? [] : fadeFilters(c.fades, f0)),
-				shift,
-			];
-			chains.push(`[${k}:v:0]${g.join(',')}[${label}]`);
-			const next = `o${label}`;
-			chains.push(
-				`[${last}][${label}]overlay=x=${rect?.x ?? 0}:y=${rect?.y ?? 0}:format=rgb:eof_action=pass:${enable}[${next}]`,
-			);
-			last = next;
-			continue;
-		}
+			// M2 (§19.6): a pre-rendered picture from an extension replaces the source ('layer') or the whole placed
+			// layer ('sequence', overlaid at 0,0 with only the transition fades applied here).
+			const override = exts ? pickOverride(exts.list, exts.prepared, c) : null;
+			if (override?.space === 'sequence') {
+				// M2 (S11:LBK-004/005/010): `still` = one image looped for the layer's frames (like still clips);
+				// `rect` = the intermediate covers only that region, overlaid at its position; `colorRuns` = the clip's
+				// colour runs are applied here, to the straight-alpha override stream.
+				const rect = override.rect ?? null;
+				const k = ctx.addInput([
+					...(override.decoder ? ['-c:v', override.decoder] : []),
+					...(override.still
+						? ['-loop', '1', '-framerate', rate(fps)]
+						: ['-ss', sec((f0 - override.startFrame) * frameSec)]),
+					'-t',
+					sec(n * frameSec + margin),
+					'-i',
+					override.path,
+				]);
+				const g = [
+					'setpts=PTS-STARTPTS',
+					`fps=${rate(fps)}`,
+					`trim=end_frame=${n}`,
+					`scale=${rect ? `${rect.w}:${rect.h}` : `${W}:${H}`}:${SWS_FLAGS}`,
+					'setsar=1',
+					'format=rgba',
+					...(override.colorRuns && exts
+						? colorRunFilters({
+								clip: c,
+								props,
+								box: { width: rect?.w ?? W, height: rect?.h ?? H },
+								fps,
+								f0,
+								f1: layer.f1,
+								extensions: exts,
+							})
+						: []),
+					...(override.includesFades ? [] : fadeFilters(c.fades, f0)),
+					shift,
+				];
+				ctx.chains.push(`[${k}:v:0]${g.join(',')}[${label}]`);
+				const next = `o${label}`;
+				ctx.chains.push(
+					`[${last}][${label}]overlay=x=${rect?.x ?? 0}:y=${rect?.y ?? 0}:format=rgb:eof_action=pass:${enable}[${next}]`,
+				);
+				last = next;
+				return;
+			}
 
-		// Sub-pixel layers (keyframed Motion, or a static one between pixels): the warp kernel draws them into a small
-		// frame streamed on a pipe, overlaid at a whole-pixel offset (stream/plan.ts).
-		const box = {
-			bw: Math.max(1, Math.round(c.intrinsicBox.width)),
-			bh: Math.max(1, Math.round(c.intrinsicBox.height)),
-		};
-		// wp masks: Opacity masks are drawn by the kernel too (coverage × picture before the warp, stream/run.ts).
-		if (needsSubpixel(c, props, box) || maskExportRoute(c) === 'stream') {
-			const decInputs: string[][] = [];
-			const chain = layerSourceChain({
+			// Sub-pixel layers (keyframed Motion, or a static one between pixels): the warp kernel draws them into a small
+			// frame streamed on a pipe, overlaid at a whole-pixel offset (stream/plan.ts).
+			const box = {
+				bw: Math.max(1, Math.round(c.intrinsicBox.width)),
+				bh: Math.max(1, Math.round(c.intrinsicBox.height)),
+			};
+			// wp masks: Opacity masks are drawn by the kernel too (coverage × picture before the warp, stream/run.ts).
+			if (needsSubpixel(c, props, box) || maskExportRoute(c) === 'stream') {
+				const decInputs: string[][] = [];
+				const chain = layerSourceChain({
+					clip: c,
+					f0,
+					f1,
+					fps,
+					props,
+					sources: srcs,
+					override,
+					...(exts ? { extensions: exts } : {}),
+					addInput: (args) => {
+						decInputs.push(args);
+						return decInputs.length - 1;
+					},
+					label,
+					skipCrop: true,
+					nest: { nested: ctx.nested, path: ctx.path, threads },
+				});
+				const plan = planStreamLayer({ clip: c, f0, f1, R0, fps, props, chain, inputs: decInputs, W, H });
+				if (!ctx.addStream)
+					throw new Error(
+						`Sub-pixel layer ${c.clipId} inside a nested sequence whose nest clip is drawn sub-pixel (route through Remotion)`,
+					);
+				const fd = ctx.addStream(plan);
+				const k = ctx.addInput([
+					...['-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${plan.outW}x${plan.outH}`],
+					...['-framerate', rate(fps), '-i', `pipe:${fd}`],
+				]);
+				ctx.chains.push(
+					`[${k}:v:0]${['setpts=PTS-STARTPTS', ...fadeFilters(c.fades, f0), shift].join(',')}[${label}]`,
+				);
+				const next = `o${label}`;
+				ctx.chains.push(
+					`[${last}][${label}]overlay=x=${plan.x}:y=${plan.y}:format=rgb:eof_action=pass:${enable}[${next}]`,
+				);
+				last = next;
+				return;
+			}
+
+			// edit-structure (KND-012): an adjustment layer's source is the composite so far; its output (effects,
+			// crop as transparency, opacity, fades) goes back over that composite.
+			let composite: { label: string; R0: number } | undefined;
+			if (c.kind === 'adjustment') {
+				const keep = `${label}k`;
+				const adj = `${label}s`;
+				ctx.chains.push(`[${last}]split[${keep}][${adj}]`);
+				last = keep;
+				// keyframes-blend: an adjustment layer with a blend mode: its output goes to the kernel with the composite.
+				if (blendMode !== 'normal') {
+					backdrop = keep;
+					last = transparentBase(ctx, `${label}tb`);
+				}
+				composite = { label: adj, R0 };
+			}
+			// Source decode, source chain and effects (shared with the warp stage), then Motion.
+			const source = layerSourceChain({
 				clip: c,
 				f0,
 				f1,
@@ -744,97 +899,56 @@ function drawStack(ctx: StackContext): string {
 				sources: srcs,
 				override,
 				...(exts ? { extensions: exts } : {}),
-				addInput: (args) => {
-					decInputs.push(args);
-					return decInputs.length - 1;
-				},
+				addInput: ctx.addInput,
 				label,
-				skipCrop: true,
-				nest: { nested: ctx.nested, path: ctx.path, threads },
+				...(composite ? { composite } : {}),
+				nest: {
+					nested: ctx.nested,
+					path: ctx.path,
+					threads,
+					...(ctx.addStream ? { addStream: ctx.addStream } : {}),
+				},
 			});
-			const plan = planStreamLayer({ clip: c, f0, f1, R0, fps, props, chain, inputs: decInputs, W, H });
-			if (!ctx.addStream)
-				throw new Error(
-					`Sub-pixel layer ${c.clipId} inside a nested sequence whose nest clip is drawn sub-pixel (route through Remotion)`,
-				);
-			const fd = ctx.addStream(plan);
-			const k = addInput([
-				...['-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${plan.outW}x${plan.outH}`],
-				...['-framerate', rate(fps), '-i', `pipe:${fd}`],
-			]);
-			chains.push(
-				`[${k}:v:0]${['setpts=PTS-STARTPTS', ...fadeFilters(c.fades, f0), shift].join(',')}[${label}]`,
-			);
+			const src = source.input;
+			const f = source.filters;
+
+			// Motion → Opacity: M = P + R·S·(q − A) (S03:DM-010), flips → scale → rotation about the centre → alpha;
+			// keyframed Motion / Opacity sampled per frame into per-frame expressions (S03:ENG-032, keyframed.ts). The
+			// Motion scale folds into the source's scale to the box when no effect sits between them (one resample).
+			const motion = motionStage({
+				clip: c,
+				f0,
+				f1,
+				R0,
+				fps,
+				props,
+				bw: source.width,
+				bh: source.height,
+				W,
+				H,
+				label,
+				opaque: source.opaque,
+				threads: threads,
+			});
+			if (!(source.resize && mergeResize(f, source.resize, motion))) f.push(...motionFilters(motion));
+			f.push(...fadeFilters(c.fades, f0));
+			// Shift the layer to its place on the timeline in whole frames. `setpts` truncates its result, so an
+			// offset written in decimal seconds (3.333333 s for frame 100 at 30 fps) landed one frame early.
+			f.push(shift);
+			ctx.chains.push(`${src}${f.join(',')}[${label}]`);
+
+			const { x, y } = motion;
 			const next = `o${label}`;
-			chains.push(
-				`[${last}][${label}]overlay=x=${plan.x}:y=${plan.y}:format=rgb:eof_action=pass:${enable}[${next}]`,
+			ctx.chains.push(
+				`[${last}][${label}]overlay=x=${x}:y=${y}:format=rgb:eof_action=pass:${enable}[${next}]`,
 			);
 			last = next;
-			continue;
+		};
+		drawLayer();
+		if (blendMode !== 'normal' && ctx.blend) {
+			if (backdrop === null) throw new Error('blend layer without a backdrop');
+			last = ctx.blend.cut(backdrop, last, layer, blendMode);
 		}
-
-		// edit-structure (KND-012): an adjustment layer's source is the composite so far; its output (effects,
-		// crop as transparency, opacity, fades) goes back over that composite.
-		let composite: { label: string; R0: number } | undefined;
-		if (c.kind === 'adjustment') {
-			const keep = `${label}k`;
-			const adj = `${label}s`;
-			chains.push(`[${last}]split[${keep}][${adj}]`);
-			last = keep;
-			composite = { label: adj, R0 };
-		}
-		// Source decode, source chain and effects (shared with the warp stage), then Motion.
-		const source = layerSourceChain({
-			clip: c,
-			f0,
-			f1,
-			fps,
-			props,
-			sources: srcs,
-			override,
-			...(exts ? { extensions: exts } : {}),
-			addInput,
-			label,
-			...(composite ? { composite } : {}),
-			nest: {
-				nested: ctx.nested,
-				path: ctx.path,
-				threads,
-				...(ctx.addStream ? { addStream: ctx.addStream } : {}),
-			},
-		});
-		const src = source.input;
-		const f = source.filters;
-
-		// Motion → Opacity: M = P + R·S·(q − A) (S03:DM-010), flips → scale → rotation about the centre → alpha;
-		// keyframed Motion / Opacity sampled per frame into per-frame expressions (S03:ENG-032, keyframed.ts). The
-		// Motion scale folds into the source's scale to the box when no effect sits between them (one resample).
-		const motion = motionStage({
-			clip: c,
-			f0,
-			f1,
-			R0,
-			fps,
-			props,
-			bw: source.width,
-			bh: source.height,
-			W,
-			H,
-			label,
-			opaque: source.opaque,
-			threads: threads,
-		});
-		if (!(source.resize && mergeResize(f, source.resize, motion))) f.push(...motionFilters(motion));
-		f.push(...fadeFilters(c.fades, f0));
-		// Shift the layer to its place on the timeline in whole frames. `setpts` truncates its result, so an
-		// offset written in decimal seconds (3.333333 s for frame 100 at 30 fps) landed one frame early.
-		f.push(shift);
-		chains.push(`${src}${f.join(',')}[${label}]`);
-
-		const { x, y } = motion;
-		const next = `o${label}`;
-		chains.push(`[${last}][${label}]overlay=x=${x}:y=${y}:format=rgb:eof_action=pass:${enable}[${next}]`);
-		last = next;
 	}
 
 	return last;
@@ -859,22 +973,36 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 				...(output.bitrateKbps ? { bitrateKbps: output.bitrateKbps } : {}),
 				...(output.proresProfile ? { proresProfile: output.proresProfile } : {}),
 			});
-	const inputs: string[][] = [];
-	const streams: NativeGraph['streams'] = [];
-	const chains: string[] = [];
-	const addInput = (args: string[]) => {
-		inputs.push(args);
-		return inputs.length - 1;
+	// keyframes-blend: the composite runs as a pipeline of ffmpeg processes when the stack has blend layers: each blend
+	// layer ends a process (its output = the composite below ‖ the layer on transparency, side by side, raw RGBA) and
+	// the blend kernel's result starts the next one as its first input (`pipe:3`). The last process encodes.
+	type Proc = {
+		inputs: string[][];
+		streams: NativeGraph['streams'];
+		chains: string[];
+		/** fd of the backdrop pipe (the previous kernel's output); null in the first process. */
+		backdropFd: number | null;
 	};
-
-	const last = drawStack({
+	const newProc = (backdrop: boolean): Proc => ({
+		inputs: [],
+		streams: [],
+		chains: [],
+		backdropFd: backdrop ? 3 : null,
+	});
+	let proc = newProc(false);
+	const segments: BlendSegment[] = [];
+	const stackFrames = R1 - R0 + 1;
+	const ctx: StackContext = {
 		snap,
 		P: '',
-		addInput,
-		chains,
+		addInput: (args) => {
+			proc.inputs.push(args);
+			return proc.inputs.length - 1;
+		},
+		chains: proc.chains,
 		addStream: (plan) => {
-			const fd = 3 + streams.length;
-			streams.push({ fd, plan });
+			const fd = 3 + (proc.backdropFd !== null ? 1 : 0) + proc.streams.length;
+			proc.streams.push({ fd, plan });
 			return fd;
 		},
 		sources: o.sources,
@@ -882,7 +1010,63 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		...(exts ? { exts } : {}),
 		...(o.nested ? { nested: o.nested } : {}),
 		path: '',
-	});
+		blend: {
+			cut: (backdrop, layer, plan, mode) => {
+				const label = `bk${segments.length}`;
+				proc.chains.push(
+					`[${backdrop}][${layer}]hstack=inputs=2,trim=end_frame=${stackFrames},setpts=PTS-STARTPTS[${label}]`,
+				);
+				segments.push({
+					args: [
+						...proc.inputs.flat(),
+						'-filter_complex',
+						proc.chains.join(';\n'),
+						'-map',
+						`[${label}]`,
+						'-frames:v',
+						String(stackFrames),
+						'-fps_mode',
+						'passthrough',
+						'-f',
+						'rawvideo',
+						'-pix_fmt',
+						'rgba',
+						'pipe:1',
+					],
+					filter: proc.chains.join(';\n'),
+					streams: proc.streams,
+					backdropFd: proc.backdropFd,
+					...blendSegmentFrames(plan, mode, R0, stackFrames),
+				});
+				proc = newProc(true);
+				ctx.chains = proc.chains;
+				const k = ctx.addInput([
+					...['-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${W}x${H}`],
+					...['-framerate', rate(fps), '-i', 'pipe:3'],
+				]);
+				const out = `bd${segments.length}`;
+				proc.chains.push(`[${k}:v:0]setpts=PTS-STARTPTS[${out}]`);
+				return out;
+			},
+		},
+	};
+	let last = drawStack(ctx);
+	const { inputs, streams, chains } = proc;
+	const addInput = ctx.addInput;
+	// keyframes-blend: Stencil / Silhouette cut the whole stack below them, the sequence background included; what
+	// they reveal is the background (as in After Effects, where they reveal the comp background), so the result goes
+	// over the background colour once more.
+	if (
+		segments.some((sg) => sg.mode >= STENCIL_FIRST && sg.mode <= STENCIL_LAST) &&
+		snap.settings.backgroundColor[3]! > 0
+	) {
+		const T = (R1 - R0) * frameSec;
+		chains.push(
+			`color=c=${colorHex(snap.settings.backgroundColor)}:s=${W}x${H}:r=${rate(fps)}:d=${fmt(T + frameSec)},format=rgba[fbg]`,
+			`[fbg][${last}]overlay=x=0:y=0:format=rgb:eof_action=pass[fstack]`,
+		);
+		last = 'fstack';
+	}
 
 	// Output conversion: rate, size (fit/fill/stretch), bt709 TV-range 4:2:0 (S04:RN-021, EX-003/004).
 	const vout: string[] = [];
@@ -965,7 +1149,15 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			o.outputFile,
 		);
 	}
-	return { args, filter, inputs, outputFrames: output.frames, durationSec: output.durationSec, streams };
+	return {
+		args,
+		filter,
+		inputs,
+		outputFrames: output.frames,
+		durationSec: output.durationSec,
+		streams,
+		...(segments.length > 0 ? { blend: { segments, backdropFd: 3, width: W, height: H } } : {}),
+	};
 }
 /** edit-structure: the clip-local frame a frame hold shows (the composition's `pictureLocalFrame`). */
 function heldLocalFrame(c: RenderVisualClip, fps: Rational): number {

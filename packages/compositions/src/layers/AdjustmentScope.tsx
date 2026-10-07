@@ -15,6 +15,7 @@ import {
 	clipContentTime,
 	clipHasMasks,
 	defaultEffectRegistry,
+	dissolveSeed,
 	fadeFactor,
 	type RenderVisualClip,
 	type ResolvedEffect,
@@ -30,23 +31,6 @@ import { GradeChip } from './LayerBox.tsx';
 
 const CROP = 'jasper.crop';
 const FILL: CSSProperties = { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%' };
-
-/** Canvas 2D compositing operator of an S01 blend mode (the same modes as `mix-blend-mode`). */
-export function blendOperator(mode: string): GlobalCompositeOperation {
-	switch (mode) {
-		case 'multiply':
-		case 'screen':
-		case 'overlay':
-		case 'darken':
-		case 'lighten':
-		case 'difference':
-			return mode;
-		case 'add':
-			return 'lighter';
-		default:
-			return 'source-over';
-	}
-}
 
 /** True when a CSS filter on the scope renders the clip exactly (see the file comment). */
 export function cssExactAdjustment(clip: RenderVisualClip): boolean {
@@ -195,13 +179,15 @@ function CanvasScope({
 		options,
 		fonts: doc.fonts,
 	};
-	const blend = blendOperator(clip.blendMode);
+	// keyframes-blend: every clip blend mode, composited on the GPU with the formulas of the native kernel.
+	const blend = active ? clip.blendMode : 'normal';
+	const seed = active ? dissolveSeed(active.clipId, frame - active.start) : 0;
 	const insets = crop
 		? ([crop.params.left, crop.params.top, crop.params.right, crop.params.bottom].map(
 				(v) => Math.min(100, Math.max(0, Number(v ?? 0))) / 100,
 			) as [number, number, number, number])
 		: null;
-	const key = `${opacity}:${blend}:${insets?.join(',') ?? ''}:${opacityMasks.length ? JSON.stringify(opacityMasks) : ''}`;
+	const key = `${opacity}:${blend}:${seed}:${insets?.join(',') ?? ''}:${opacityMasks.length ? JSON.stringify(opacityMasks) : ''}`;
 	const extraSteps = useMemo((): { first: FxPreparedStep[]; last: FxPreparedStep[] } => {
 		return {
 			first: [{ kind: 'stash', key: 'stash', holder }],
@@ -212,12 +198,13 @@ function CanvasScope({
 					holder,
 					opacity,
 					blend,
+					seed,
 					insets,
 					...(opacityMasks.length ? { opacityMasks } : {}),
 				},
 			],
 		};
-	}, [key, holder, opacity, blend, insets, opacityMasks]);
+	}, [key, holder, opacity, blend, seed, insets, opacityMasks]);
 	const fx = useLayerFx(layer, {
 		enabled: !!active,
 		canRun,

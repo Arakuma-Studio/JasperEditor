@@ -254,6 +254,7 @@ export function PropertyRow(props: {
 						value={mixed ? null : (value as string)}
 						options={spec.options ?? []}
 						labels={spec.optionLabels}
+						{...(spec.optionGroups ? { groups: spec.optionGroups } : {})}
 						label={row.label}
 						onChange={(v) => commitFn(() => v)}
 						data-testid={`prop-${row.id}`}

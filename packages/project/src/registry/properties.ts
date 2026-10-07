@@ -5,6 +5,7 @@
 // applicability by kind capabilities and how the UI writes it (`param.set` or `clip.update`).
 
 import { z } from 'zod';
+import { BLEND_MODE_GROUPS, BLEND_MODE_LABELS } from '../blend-modes.ts';
 import type { ParamPath } from '../commands/schemas/common.ts';
 import {
 	derefSchema,
@@ -101,6 +102,8 @@ export type PropertySpec = {
 	spatial?: SpatialInterpolation;
 	options?: readonly string[];
 	optionLabels?: readonly string[];
+	/** Menu section of each option (`options` order); consecutive runs are drawn as labelled groups. */
+	optionGroups?: readonly string[];
 	/**
 	 * Path of the stored value inside the clip (an Animatable when `animatable !== 'no'`). Special heads:
 	 * `$synthetic` (the clip's synthetic source) and `$effect` (`['$effect', fxId, param]`).
@@ -499,7 +502,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 		group: 'opacity',
 		kind: 'enum',
 		options: BLEND_MODES,
-		optionLabels: ['Normal', 'Multiply', 'Screen', 'Overlay', 'Darken', 'Lighten', 'Add', 'Difference'],
+		optionLabels: BLEND_MODE_LABELS,
+		optionGroups: BLEND_MODE_GROUPS,
 		animatable: 'no',
 		storagePath: ['blendMode'],
 		appliesTo: (c) => hasOpacity(c) && c.kind !== 'captions',

@@ -14,6 +14,7 @@ import { paramHandlers } from './handlers/param.ts';
 import { PRESET_OWNER, presetHandlers } from './handlers/preset.ts';
 import { processHandlers } from './handlers/process.ts';
 import { projectHandlers } from './handlers/project.ts';
+import { rovingHandlers } from './handlers/roving.ts';
 import { sequenceHandlers } from './handlers/sequence.ts';
 import { keepShapesCentred, SHAPE_BOX_COMMANDS, SHAPE_OWNER, shapeHandlers } from './handlers/shape.ts';
 import { simplifyHandlers } from './handlers/simplify.ts';
@@ -46,6 +47,8 @@ export type CommandOwner =
 
 	// Audio buses (parity workstream audio-mix)
 	| 'audio-mix'
+	// Roving keyframes, blend modes (docs/wp-notes/keyframes-blend.md)
+	| 'keyframes-blend'
 	// Captions, transcripts and text-based editing
 	| 'wp-captions';
 
@@ -134,6 +137,7 @@ const LABELS: Record<CommandType, string> = {
 	'keyframes.prune': 'Prune Keyframes',
 	'keyframe.setSpatialInterpolation': 'Spatial Interpolation',
 	'keyframe.setTangents': 'Edit Motion Path',
+	'keyframe.setRoving': 'Rove Across Time',
 	'effect.add': 'Apply Effect',
 	'effect.remove': 'Remove Effect',
 	'effect.reorder': 'Reorder Effects',
@@ -214,6 +218,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[clipEditHandlers, 'WP-2B'],
 	[keyframeHandlers, 'WP-2D'],
 	[spatialHandlers, 'WP-2D'],
+	[rovingHandlers, 'keyframes-blend'],
 	[effectHandlers, 'WP-2D'],
 	[transitionHandlers, 'WP-TR'],
 	[processHandlers, 'wp-m2-process'],
@@ -245,7 +250,10 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 			label: LABELS[type],
 			owner,
 			milestone:
-				owner.startsWith('wp-m3-') || owner === STRUCTURE_OWNER || owner === AUDIO_MIX_OWNER
+				owner.startsWith('wp-m3-') ||
+				owner === STRUCTURE_OWNER ||
+				owner === AUDIO_MIX_OWNER ||
+				owner === 'keyframes-blend'
 					? 'M3'
 					: owner === 'M2' ||
 							owner.startsWith('wp-m2-') ||

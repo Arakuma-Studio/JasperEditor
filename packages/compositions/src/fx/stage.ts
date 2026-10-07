@@ -39,7 +39,7 @@ import { cancelRender, Internals } from 'remotion';
 import { ColorDocContext, referencedMedia, useLutAssets } from '../color/chain.ts';
 import { bakedRunLut, loadedLutAsset, lutUrlKey } from '../color/luts.ts';
 import { NestCompSizeContext } from '../layers/nest-context.ts';
-import type { LayerProps, TransitionTap } from '../types.ts';
+import type { LayerProps, LayerTap } from '../types.ts';
 import { type FxMaskGeometry, maskGeometryKey } from './mask.ts';
 import { type MatteTap, type MatteTapMeta, trackMatteMediaId } from './matte.ts';
 import {
@@ -84,7 +84,7 @@ export type FxPreparedStep =
 	| {
 			kind: 'tap';
 			key: string;
-			tap: TransitionTap;
+			tap: LayerTap;
 			meta: { compToCanvas: readonly number[] | null; opacity: number };
 	  }
 	/** edit-structure (adjustment layers): keep a copy of the picture before the effects (`holder`). */
@@ -98,7 +98,9 @@ export type FxPreparedStep =
 			key: string;
 			holder: AdjustmentHolder;
 			opacity: number;
-			blend: GlobalCompositeOperation;
+			/** keyframes-blend: the adjustment clip's blend mode (BLEND_MODES id) and its Dissolve seed of the frame. */
+			blend: string;
+			seed: number;
 			/** Crop insets (left, top, right, bottom) as fractions of the layer box; null = the whole box. */
 			insets: readonly [number, number, number, number] | null;
 			/** wp masks: the adjustment layer's active Opacity masks (it applies inside them). */
@@ -183,7 +185,8 @@ export function useLayerFx(
 	const effects = opts.effects ?? props.effects;
 	const box = props.box;
 	// Transition framework: a side of a GPU transition captures its picture for the stage.
-	const tap = layer.transition?.tap ?? null;
+	// keyframes-blend: a layer of the GL compositor's group captures its picture the same way as a transition side.
+	const tap: LayerTap | null = layer.transition?.tap ?? layer.composite?.tap ?? null;
 	// wp masks: a layer of a matte track runs the chain too (its picture goes to the matte hub).
 	const matte = layer.matte ?? null;
 	const capture = !!tap || !!matte || !!opts.chain;

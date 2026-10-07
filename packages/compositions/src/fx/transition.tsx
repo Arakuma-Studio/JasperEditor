@@ -37,6 +37,7 @@ import {
 	useCurrentFrame,
 } from 'remotion';
 import type { TransitionTap } from '../types.ts';
+import { useCompositeTap } from './composite.tsx';
 import { canUseHtmlInCanvas, useFxImages } from './FxPicture.tsx';
 import { FxShaderError, type FxTextureInput, fxHost, runShaderPlan } from './host.ts';
 import { type FxGpuState, fxStatus } from './status.ts';
@@ -226,6 +227,10 @@ export function TransitionStage(props: {
 }) {
 	const { t, spec, hub, mode, comp } = props;
 	const local = Math.min(t.duration - 1, Math.max(0, useCurrentFrame()));
+	// keyframes-blend: inside the GL compositor's group the stage's output is a member's picture, not the screen's.
+	const compositeTap = useCompositeTap(`transition:${t.id}`, t.start + local);
+	const compositeRef = useRef(compositeTap);
+	compositeRef.current = compositeTap;
 	const rendering = getRemotionEnvironment().isRendering;
 	const canvasRef = useRef<HTMLCanvasElement | null>(null);
 	const failed = useRef<string | null>(null);
@@ -307,6 +312,10 @@ export function TransitionStage(props: {
 			},
 			out.getContext('2d')!,
 		);
+		compositeRef.current?.deliver(out, out.width, out.height, {
+			compToCanvas: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+			opacity: 1,
+		});
 	}, [hub, spec, t, comp, mode.mode]);
 
 	const pending = useRef<{ handle: number | null } | null>(null);
@@ -348,16 +357,18 @@ export function TransitionStage(props: {
 	// biome-ignore lint/correctness/useExhaustiveDependencies: redraw when the frame or the param values change
 	useLayoutEffect(() => {
 		schedule();
-	}, [schedule, local, paramsKey, imagesKey]);
+	}, [schedule, local, paramsKey, imagesKey, compositeTap]);
 
 	if (mode.mode === 'fallback') return props.isPreview ? <StageChip text={mode.reason} /> : null;
 	return (
 		<AbsoluteFill
 			data-transition-stage={t.id}
 			style={
-				props.blendMode && props.blendMode !== 'normal'
-					? { mixBlendMode: props.blendMode as never }
-					: undefined
+				compositeTap
+					? { visibility: 'hidden' }
+					: props.blendMode && props.blendMode !== 'normal'
+						? { mixBlendMode: props.blendMode as never }
+						: undefined
 			}
 		>
 			<canvas

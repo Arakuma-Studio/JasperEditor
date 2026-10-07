@@ -10,13 +10,14 @@ import type { Issue } from './commands/types.ts';
 import { clipEnd } from './derive/index.ts';
 import { createTrack } from './factories.ts';
 import { type IdPrefix, type IdSource, idPrefixOf, isValidId } from './ids.ts';
+import { isRovingKey, retimeRoving } from './keyframes.ts';
 import { MASK_EXPANSION_RANGE, MASK_FEATHER_RANGE, MASK_OPACITY_RANGE } from './masks/model.ts';
 import { TRACK_MATTE_EFFECT_ID, trackMatteTracksOf } from './masks/track-matte.ts';
 import { type BezierPath, isBezierPath, segmentCount } from './path/model.ts';
 import type { EffectRegistry } from './registry/effects.ts';
 import { contentDurationFlicks, isBoundedContent, kindCapabilities, trackKindFor } from './registry/kinds.ts';
 import type { MgTemplateRegistry } from './registry/mg.ts';
-import { type Animatable, SPATIAL_INTERPOLATIONS } from './schema/common.ts';
+import { type Animatable, type Keyframe, SPATIAL_INTERPOLATIONS } from './schema/common.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import { MASK_MODES, type Mask } from './schema/mask.ts';
 import type { Clip, EffectInstance, Sequence, Track } from './schema/sequence.ts';
@@ -207,6 +208,14 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 				if (badSpatial(k))
 					issues.push(inv('INV-011', 'Spatial interpolation needs a vec2 key and finite tangents', path));
 			}
+			// keyframes-blend: Rove Across Time is never on the first / last key or a hold key.
+			const kfs = a.keyframes as unknown as Keyframe<unknown>[];
+			kfs.forEach((k, i) => {
+				if (k.roving && !isRovingKey(kfs, i))
+					issues.push(
+						inv('INV-011', 'Only keys between two others that interpolate can rove', [...path, k.id]),
+					);
+			});
 		});
 	};
 
@@ -790,6 +799,15 @@ export function repairDocument(
 	}
 	// ---- end wp-m2-anime-templates
 
+	// keyframes-blend: roving flags where a key cannot rove are dropped; roving keys get their run's times.
+	for (const seq of Object.values(doc.sequences) as Sequence[])
+		forEachAnimatable(seq, [seq.id], (a, path) => {
+			const kfs = a.keyframes as unknown as Keyframe<unknown>[];
+			if (!kfs.some((k) => k.roving)) return;
+			const bad = kfs.filter((k, i) => k.roving && !isRovingKey(kfs, i)).map((k) => k.id);
+			retimeRoving(kfs);
+			for (const id of bad) note('drop-roving', id, `${path.join('.')}: the key cannot rove`);
+		});
 	// ---- wp captions: well-formed transcript words, an existing active caption track, caption fonts, and one clip
 	// per caption transcript.
 	for (const t of Object.values(doc.transcripts)) {

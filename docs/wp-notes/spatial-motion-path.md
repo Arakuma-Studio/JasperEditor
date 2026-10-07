@@ -23,7 +23,9 @@ type Keyframe<T> = { …existing fields…; spatial?: Spatial };   // keyframeSc
   a → b = cubic Bézier `a.v, a.v + out(a), b.v + in(b), b.v` with the *effective* tangents:
   - `linear` (or absent): zero;
   - `bezier`, `continuous-bezier`: the stored ones (continuity `in = −k·out` is enforced by the commands);
-  - `auto-bezier`: Catmull-Rom `out = (next − prev) / 6`, `in = −out`, a missing neighbour being the key itself;
+  - `auto-bezier`: keyframes-blend: keys with `spatial.auto: 'proportional'` (every key made Auto Bezier now) use
+    After Effects' rule — along `next − prev`, each handle ⅓ of its neighbouring chord, none on the first / last key;
+    older keys (no marker): Catmull-Rom `out = (next − prev) / 6`, `in = −out`, a missing neighbour being the key itself;
     **derived on every evaluation** (the stored tangents of auto keys are a cache refreshed by the handlers,
     like the temporal auto-bezier eases).
 - `spatial` is only valid on vec2 values with finite tangents: **INV-011** reports anything else.
@@ -129,11 +131,13 @@ least one selected key is on a point property; applies to those keys; a check ma
 
 ## Known gaps
 
-- Anchor Point paths are not drawn (OVL-020 covers position); anchor keys still curve when evaluated.
-- No snapping or multi-key drags for key squares; no Pen-tool conversion (Ctrl/Cmd-click a key) yet.
-- Temporal eases are not swapped when keys are pasted/re-timed onto a clip running the other way
-  (pre-existing); only the spatial tangents are. Found while testing: `retimeKeys` maps reversed clips with the
-  span `duration · F` while `contentTimeAt` uses `(duration − 1) · F`, so reversed pastes land one frame off
-  (pre-existing, untouched).
+keyframes-blend closed the earlier gaps — Anchor Point paths are drawn (through the layer map at the playhead) and
+editable, key drags snap and move every selected key, the Pen tool / Ctrl-click converts vertices and pulls out
+handles, reversed pastes land on exact frames with mirrored temporal eases, and Auto Bezier keys follow After
+Effects' proportional rule (legacy keys keep Catmull-Rom until re-applied); see
+`docs/wp-notes/keyframes-blend.md`. Still true:
+
 - Arc-length mapping is the 64-sample polyline table (error ~1e-4 of the segment length); anisotropic
   rescale of curved anchor paths keeps the path but not the exact timing (arc length is not affine-invariant).
+- A Hold segment pasted onto a clip running the other way holds the value of the key it now starts from (a hold
+  shows its left key, so a reversed hold cannot be represented exactly).

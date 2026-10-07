@@ -65,7 +65,7 @@ import { useInspectorOps } from '../properties/lib/ops.ts';
 import { ContextMenu } from '../timeline/components/Chrome.tsx';
 import type { ContextMenuItem } from '../timeline/state/ui-store.ts';
 import type { PanelProps } from '../types.ts';
-import { GRAPH_HEIGHT, PropertyGraphs } from './GraphEditor.tsx';
+import { GRAPH_HEIGHT, type GraphView, PropertyGraphs } from './GraphEditor.tsx';
 import { graphKindOf } from './graph.ts';
 import { buildGroups, type FxSection, type RowFilter, rowVisible, shownClips } from './items.ts';
 import {
@@ -78,6 +78,7 @@ import {
 } from './lib.ts';
 import { KeyLane, Ruler, SummaryLane, usePlayheadLine } from './MiniTimeline.tsx';
 import { presetSelection } from './presets.ts';
+import { RoveAcrossTimeItem } from './RovingMenu.tsx';
 import { SpatialInterpolationSubmenu } from './SpatialMenu.tsx';
 import { TransitionSection } from './TransitionSection.tsx';
 
@@ -150,6 +151,11 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 	/** Twirled-open graph rows (`clipId:rowId` → graph height in px, S03:KF-022). */
 	const [graphs, setGraphs] = usePersisted<Record<string, number>>(`jasper.ec.${instanceId}.graphs`, {});
+	// keyframes-blend: manual vertical ranges of open graphs (absent = auto-fit).
+	const [graphViews, setGraphViews] = usePersisted<Record<string, GraphView>>(
+		`jasper.ec.${instanceId}.graphViews`,
+		{},
+	);
 	const [filter, setFilter] = useState<RowFilter>('all');
 	const [selectedFx, setSelectedFx] = useState<string | null>(null);
 	const [menu, setMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null);
@@ -607,6 +613,13 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 						range={range}
 						height={graphHeight}
 						onResize={(h) => setGraphs({ ...graphs, [graphKey]: h })}
+						view={graphViews[graphKey]}
+						onView={(v) => {
+							const next = { ...graphViews };
+							if (v.value || v.velocity) next[graphKey] = v;
+							else delete next[graphKey];
+							setGraphViews(next);
+						}}
 						leftStyle={left}
 						showTimeline={showTimeline}
 						ops={ops}
@@ -940,6 +953,15 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 					))}
 					{/* S03:KF-021 (spatial-motion-path): Spatial Interpolation ▸ for keys of point properties. */}
 					<SpatialInterpolationSubmenu
+						groups={groups}
+						ids={menu.ids}
+						onApply={(label, commands) => {
+							ops.apply(label, commands);
+							setMenu(null);
+						}}
+					/>
+					{/* keyframes-blend: Rove Across Time (After Effects). */}
+					<RoveAcrossTimeItem
 						groups={groups}
 						ids={menu.ids}
 						onApply={(label, commands) => {
