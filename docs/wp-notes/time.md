@@ -322,7 +322,9 @@ transition and reports `approximated`.
 
 - Nests (and multicam) support Frame Sampling only, and remapped nests export through Remotion (native planner
   blocker).
-- Clips with a tracker can't be remapped, and vice versa.
+- Clips with a tracker can't be remapped, and vice versa. Roto objects work on remapped clips: their mattes are
+  media frames, and both the fx stage and the export check sample them at the media frame of the picture shown
+  (frame hold, then the remap; `packages/project/test/roto.test.ts`).
 - OTIO keeps the remap in metadata only. EDL/AAF get the average speed and report the loss. FCP7 writes Optical
   Flow as frame blending.
 - Audio is never remapped (Premiere); a reversed clip's audio is reversed.
