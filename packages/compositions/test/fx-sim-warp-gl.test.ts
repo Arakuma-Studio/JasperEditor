@@ -12,6 +12,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 /** SIM_GALLERY=<dir> (and optionally SIM_GALLERY_IDS=a,b): writes a PNG per effect setting for a visual check. */
 const GALLERY = process.env.SIM_GALLERY;
 const GALLERY_CASES: { name: string; id: string; over?: Record<string, unknown>; frame?: number; bg?: string }[] = [
+	{ name: 'particle-world', id: 'jasper.particle-world', over: { birthRate: 2, animation: 'fire', particleType: 'fadedSphere' }, frame: 60, bg: '#000' },
+	{ name: 'particle-world-cubes', id: 'jasper.particle-world', over: { birthRate: 1, particleType: 'cube', birthSize: 0.4, deathSize: 0.3, showGrid: true, floorAction: 'bounce', floorPosition: 0.3, gravity: 1.5 }, frame: 60, bg: '#000' },
+	{ name: 'particle-systems', id: 'jasper.particle-systems', over: { particleType: 'star' }, frame: 40, bg: '#000' },
+	{ name: 'mercury', id: 'jasper.mercury', over: { birthRate: 3 }, frame: 60 },
 	{ name: 'rainfall', id: 'jasper.rainfall', frame: 20 },
 	{ name: 'snowfall', id: 'jasper.snowfall', bg: '#203040' },
 	{ name: 'bubbles', id: 'jasper.bubbles', over: { bubbleAmount: 60, bubbleSize: 2 } },
@@ -58,7 +62,22 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 		expect(w.starFull).toBeLessThanOrEqual(1);
 	});
 
-	for (const id of ['jasper.rainfall', 'jasper.snowfall', 'jasper.bubbles', 'jasper.drizzle', 'jasper.star-burst'])
+	it('particles: types, seek = play, gravity, floor, guides, 2D direction, mercury', async () => {
+		const r = await page.call<Record<string, any>>('particles');
+		expect(r.typeErrors).toEqual([]);
+		expect(r.seek).toBe(0); // frame 60 directly equals 30 → 45 → 60 (checkpoint resume)
+		expect(r.startAlpha).toBeLessThan(0.01); // nothing born at frame 0 (black matte only)
+		expect(r.gravityY[1]).toBeGreaterThan(r.gravityY[0] + 2);
+		expect(r.floorY).toBeGreaterThan(0);
+		expect(r.floorY).toBeLessThan(64 / 2 + 96 * 0.1 * 1.3 + 2); // glued on the floor plane, not below
+		expect(r.gridAlpha).toBeGreaterThan(1);
+		expect(r.psUp).toBeLessThan(32); // 0° = up
+		expect(r.psRight).toBeGreaterThan(48); // 90° = right
+		expect(r.mercuryAlpha).toBeGreaterThan(1);
+		expect(r.noMercuryAlpha).toBe(0);
+	});
+
+	for (const id of ['jasper.particle-world', 'jasper.particle-systems', 'jasper.mercury', 'jasper.rainfall', 'jasper.snowfall', 'jasper.bubbles', 'jasper.drizzle', 'jasper.star-burst'])
 		it(`${id}: deterministic, seeded, animated`, async () => {
 			const r = await page.call<{ same: number; seed: number; moves: number }>('determinism', { id });
 			expect(r.same).toBe(0);

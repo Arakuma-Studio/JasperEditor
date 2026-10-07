@@ -1,7 +1,7 @@
 // Browser entry of fx-sim-warp-gl.test.ts: characteristic pixels, determinism and seed stability of every effect of
 // the simulation-warp family through the real GPU host. Each function returns plain data to assert on.
 import { FX_FAMILIES } from '@jasper/project';
-import { centroid, defaults, maxDiff, mean, picture, premulOk, run, solid, spec, sumDiff } from './harness.ts';
+import { centroid, centroidLum, defaults, maxDiff, mean, picture, premulOk, run, solid, spec, sumDiff } from './harness.ts';
 
 const W = 96;
 const H = 64;
@@ -55,6 +55,46 @@ const api = {
 		const c = fx(arg.id, arg.over, { frame: f, seed: 0.71 });
 		const d = fx(arg.id, arg.over, { frame: f + 3 });
 		return { same: maxDiff(a.out, b.out), seed: sumDiff(a.out, c.out), moves: sumDiff(a.out, d.out), ms: a.ms };
+	},
+
+	particles() {
+		const types = spec('jasper.particle-world').params.find((q) => q.name === 'particleType')!.options!;
+		const typeErrors: string[] = [];
+		for (const t of types) {
+			try {
+				const r = fx('jasper.particle-world', { particleType: t, birthRate: 2, birthSize: 0.4, deathSize: 0.4 }, { frame: 20 });
+				if (mean(r.out)[3] < 0.05) typeErrors.push(`${t}: nothing drawn`);
+			} catch (e) {
+				typeErrors.push(`${t}: ${(e as Error).message}`);
+			}
+		}
+		const pw = (over: Record<string, unknown>, frame: number, key = 'k1') =>
+			fx('jasper.particle-world', { birthRate: 1, particleType: 'fadedSphere', birthSize: 0.3, deathSize: 0.3, longevity: 3, transferMode: 'blackMatte', ...over }, { frame, instanceKey: key });
+		const direct = pw({ seed: 11 }, 60, 'direct');
+		pw({ seed: 11 }, 30, 'stepped');
+		pw({ seed: 11 }, 45, 'stepped');
+		const stepped = pw({ seed: 11 }, 60, 'stepped');
+		const start = pw({}, 0, 'zero');
+		const up = centroidLum(fx('jasper.particle-world', { birthRate: 2, velocity: 0.2, gravity: 0, particleType: 'fadedSphere', longevity: 3, transferMode: 'blackMatte' }, { frame: 30 }, solid('#000')).out);
+		const down = centroidLum(fx('jasper.particle-world', { birthRate: 2, velocity: 0.2, gravity: 2, particleType: 'fadedSphere', longevity: 3, transferMode: 'blackMatte' }, { frame: 30 }, solid('#000')).out);
+		const floor = centroidLum(fx('jasper.particle-world', { birthRate: 2, velocity: 0.2, gravity: 4, floorAction: 'glue', floorPosition: 0.1, particleType: 'fadedSphere', longevity: 5 }, { frame: 60 }, solid('#000')).out);
+		const grid = fx('jasper.particle-world', { birthRate: 0, showGrid: true, showHorizon: true }, { frame: 0 }, solid('#000'));
+		const ps = (dir: number) =>
+			centroidLum(fx('jasper.particle-systems', { gravity: 0, animation: 'directionAxis', direction: dir, particleType: 'fadedSphere', transferMode: 'blackMatte' }, { frame: 20 }, solid('#000')).out);
+		const mercury = fx('jasper.mercury', { birthRate: 3, radiusX: 10, radiusY: 10 }, { frame: 40 });
+		const noMercury = fx('jasper.mercury', { birthRate: 0 }, { frame: 40 });
+		return {
+			typeErrors,
+			seek: maxDiff(direct.out, stepped.out),
+			startAlpha: mean(start.out)[0] + mean(start.out)[1] + mean(start.out)[2],
+			gravityY: [up[1], down[1]],
+			floorY: floor[1],
+			gridAlpha: mean(grid.out)[3],
+			psUp: ps(0)[1],
+			psRight: ps(90)[0],
+			mercuryAlpha: mean(mercury.out)[3],
+			noMercuryAlpha: mean(noMercury.out)[3],
+		};
 	},
 
 	weather() {

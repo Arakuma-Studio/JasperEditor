@@ -170,6 +170,23 @@ export function mean(c: HTMLCanvasElement, x = 0, y = 0, w = c.width, h = c.heig
 	return s.map((v) => v / n) as Px;
 }
 
+/** Brightness-weighted centre of mass (x, y) of a canvas (r + g + b); [-1, -1] when black. */
+export function centroidLum(c: HTMLCanvasElement): [number, number] {
+	const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+	let sx = 0;
+	let sy = 0;
+	let m = 0;
+	for (let y = 0; y < c.height; y++)
+		for (let x = 0; x < c.width; x++) {
+			const i = (y * c.width + x) * 4;
+			const a = d[i]! + d[i + 1]! + d[i + 2]!;
+			sx += a * x;
+			sy += a * y;
+			m += a;
+		}
+	return m > 0 ? [sx / m, sy / m] : [-1, -1];
+}
+
 /** Alpha-weighted centre of mass (x, y) of a canvas; [-1, -1] when empty. */
 export function centroid(c: HTMLCanvasElement): [number, number] {
 	const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;

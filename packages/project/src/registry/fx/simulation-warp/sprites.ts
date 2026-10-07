@@ -114,7 +114,7 @@ vec4 sp_shade(int shape, vec2 d, float r0, float rot, vec2 seg, vec4 c) {
   return vec4(rgb * a, a);
 }
 // The effect layer fx combined with the original src (both premultiplied): 0 Composite (fx over src), 1 Screen,
-// 2 Add, 3 Lighten, 4 Darken, 5 the effect only.
+// 2 Add, 3 Lighten, 4 Darken, 5 the effect only, 6 the effect over opaque black (Black Matte).
 vec4 sp_combine(int mode, vec4 src, vec4 fx) {
   if (mode == 1) return src + fx - src * fx;
   if (mode == 2) return vec4(src.rgb + fx.rgb, min(src.a + fx.a, 1.0));
@@ -124,6 +124,7 @@ vec4 sp_combine(int mode, vec4 src, vec4 fx) {
     return vec4(src.rgb - (src.rgb - min(src.rgb, fc * src.a)) * fx.a, src.a);
   }
   if (mode == 5) return fx;
+  if (mode == 6) return fx + vec4(0.0, 0.0, 0.0, 1.0) * (1.0 - fx.a);
   return fx + src * (1.0 - fx.a);
 }
 `,
