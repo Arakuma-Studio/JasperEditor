@@ -22,6 +22,8 @@ import {
 	type ProjectViewJson,
 	type RecoveryPutRequest,
 	type RegisteredMedia,
+	type RemixPlanRequest,
+	type RemixPlanResult,
 	ROUTES,
 	type RouteName,
 	type RouteResponse,
@@ -289,6 +291,10 @@ export class EngineClient {
 	/** audio-mix: loudness / peaks / activity analysis job (`wait` answers the finished job). */
 	analyzeAudio(req: AudioAnalyzeRequest, wait = false): Promise<EngineJob> {
 		return this.call('audioAnalyze', { body: req, ...(wait ? { query: { wait: '1' as const } } : {}) });
+	}
+	/** audio-fx: a music remix plan for a clip's content range (synchronous). */
+	remixPlan(req: RemixPlanRequest): Promise<RemixPlanResult> {
+		return this.call('audioRemixPlan', { body: req }) as Promise<RemixPlanResult>;
 	}
 	/** audio-mix: a loudness-normalised WAV version of a media (job; result LoudnessNormalizeResult). */
 	normalizeMediaLoudness(mediaKey: string, req: LoudnessNormalizeRequest, wait = false): Promise<EngineJob> {

@@ -15,6 +15,7 @@ import {
 	AgentUiResponseSchema,
 } from './agent.ts';
 import { AudioAnalyzeRequestSchema, LoudnessNormalizeRequestSchema } from './audio.ts';
+import { RemixPlanRequestSchema, RemixPlanResultSchema } from './audio-fx.ts';
 import {
 	CacheCleanRequestSchema,
 	CacheGcReportSchema,
@@ -123,6 +124,8 @@ export type RouteOwner =
 	| 'process'
 	// parity program: audio buses, loudness
 	| 'audio-mix'
+	// parity program: audio effects, Essential Sound, remix
+	| 'audio-fx'
 	// parity program: captions and transcripts
 	| 'wp-captions'
 	// parity program: local speech-to-text (Whisper), VAD, diarization
@@ -604,6 +607,14 @@ export const ROUTES = {
 		query: z.object({ wait: z.enum(['1']).optional() }),
 		response: EngineJobSchema,
 		owner: 'audio-mix',
+	},
+	// ---- audio-fx: music remix planning (beat tracking + similarity)
+	audioRemixPlan: {
+		method: 'POST',
+		path: '/api/audio/remix-plan',
+		body: RemixPlanRequestSchema,
+		response: RemixPlanResultSchema,
+		owner: 'audio-fx',
 	},
 	// ---- speech: Whisper models (processing-model catalogue `speech`) and transcription jobs
 	speechModels: {
