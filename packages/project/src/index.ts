@@ -15,6 +15,7 @@ export * from './color/cms/index.ts';
 export * from './color/curves.ts';
 export * from './color/lumetri.ts';
 export * from './color/lut.ts';
+export * from './color/lut-formats.ts';
 export * from './color/retime.ts';
 export * from './color/runs.ts';
 export * from './commands/index.ts';

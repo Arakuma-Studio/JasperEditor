@@ -2,7 +2,13 @@
 // - LUT assets (`.cube` media) are fetched once per session from their immutable `/media/<key>` URL and parsed
 //   once (cache by URL without the query string, so re-signed render URLs hit the same entry).
 // - Baked run LUTs are cached by `colorRunKey` in an LRU per layer (64 entries, S06:CG-013).
-import { bakeColorRun, type ColorRunEffect, type EffectRegistry, type Lut, parseCube } from '@jasper/project';
+import {
+	bakeColorRun,
+	type ColorRunEffect,
+	type EffectRegistry,
+	type Lut,
+	parseLutFile,
+} from '@jasper/project';
 
 type AssetEntry = { lut: Lut | null | undefined; promise: Promise<Lut | null> };
 const assets = new Map<string, AssetEntry>();
@@ -13,7 +19,10 @@ export function lutUrlKey(url: string): string {
 	return i >= 0 ? url.slice(0, i) : url;
 }
 
-/** Loads and parses a `.cube` asset (once per URL); resolves null on failure (the grade skips it, CG-004). */
+/**
+ * Loads and parses a LUT asset (once per URL; color-mgmt: any supported format, sniffed from the content since media
+ * URLs carry no extension); resolves null on failure (the grade skips it, CG-004).
+ */
 export function loadLutAsset(url: string): Promise<Lut | null> {
 	const k = lutUrlKey(url);
 	const hit = assets.get(k);
@@ -23,7 +32,7 @@ export function loadLutAsset(url: string): Promise<Lut | null> {
 		promise: fetch(url)
 			.then(async (r) => {
 				if (!r.ok) throw new Error(`HTTP ${r.status}`);
-				const lut = parseCube(await r.text());
+				const lut = parseLutFile(await r.text(), null);
 				entry.lut = lut;
 				return lut;
 			})

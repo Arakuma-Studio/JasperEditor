@@ -33,8 +33,12 @@ const IMPORT_ACCEPT = [
 	'.aac',
 	'.m4a',
 	'.flac',
-	// M2: LUTs register as kind 'lut' (wp-m2-color adds the engine prober).
+	// M2: LUTs register as kind 'lut' (wp-m2-color adds the engine prober; color-mgmt: .3dl, .spi1d, .spi3d, .csp).
 	'.cube',
+	'.3dl',
+	'.spi1d',
+	'.spi3d',
+	'.csp',
 	'.ogg',
 	'.opus',
 	'.png',

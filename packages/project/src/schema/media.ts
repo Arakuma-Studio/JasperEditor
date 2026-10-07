@@ -198,12 +198,15 @@ export type SourceRange = DeepStrip<z.infer<typeof SourceRangeSchema>>;
 
 /** Parsed header of a LUT asset (M2, S06:CG-050). The table itself stays in the file (`/media/<key>`). */
 export const LutInfoSchema = z.looseObject({
-	format: z.literal('cube'),
+	/** color-mgmt: `.3dl`, `.spi1d`, `.spi3d`, `.csp` besides `.cube`. */
+	format: z.enum(['cube', '3dl', 'spi1d', 'spi3d', 'csp']),
 	dimensions: z.union([z.literal(1), z.literal(3)]),
 	size: z.number().int().min(2).max(256),
 	title: z.string().nullable(),
 	domainMin: z.tuple([z.number(), z.number(), z.number()]),
 	domainMax: z.tuple([z.number(), z.number(), z.number()]),
+	/** color-mgmt: entries of the 1D shaper applied before the cube (Resolve 1D + 3D `.cube`, `.csp`, non-uniform `.3dl`). */
+	shaperSize: z.number().int().min(2).max(65536).optional(),
 });
 export type LutInfo = DeepStrip<z.infer<typeof LutInfoSchema>>;
 
