@@ -17,7 +17,6 @@ import {
 	type ProjectCreateRequest,
 	type ProjectViewJson,
 	type RecoveryPutRequest,
-	type VersionRestoreRequest,
 	type RegisteredMedia,
 	ROUTES,
 	type RouteName,
@@ -26,6 +25,7 @@ import {
 	UPLOAD_CHUNK_BYTES,
 	type UploadCreateRequest,
 	UploadOffsetMismatchSchema,
+	type VersionRestoreRequest,
 } from '@jasper/api';
 import type { z } from 'zod';
 import { EngineError } from './errors.ts';
