@@ -199,7 +199,17 @@ export function VectorShapeSection({ session, clips, frame, sequenceId }: ClipSe
 				<MiniButton
 					label="Group"
 					disabled={!sel}
-					onClick={() => sel && run('Group Shapes', [{ type: 'shape.groupItems', itemIds: [sel.item.id] }])}
+					onClick={() => {
+						if (!sel) return;
+						const r = session.apply({
+							label: 'Group Shapes',
+							origin: 'user',
+							sequenceId,
+							commands: [{ type: 'shape.groupItems', clipId: clip.id, itemIds: [sel.item.id] } as Command],
+						});
+						// After Effects selects the new group.
+						if (r.ok) select((r.results[0] as { groupId: string }).groupId);
+					}}
 					data-testid="vector-group"
 				>
 					<Icon id="project.newBin" size={12} />
