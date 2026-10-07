@@ -88,6 +88,16 @@ import { rgbaCss } from './metadata.ts';
 import { blendModeCss, premountFrames } from './pipeline.ts';
 import { FrameRepaint } from './repaint.tsx';
 import { ShowFrame } from './show-frame.tsx';
+import {
+	fallbackProjective,
+	makeScene3D,
+	Scene3DContext,
+	Scene3DFallback,
+	Scene3DHub,
+	Scene3DScope,
+	scene3dRunMode,
+	useScene3DTap,
+} from './three-d/scope.tsx';
 import type { LayerProps, RenderDoc, RenderOptions, SequenceCompositionProps } from './types.ts';
 
 /** Kinds whose layer output depends on the frame beyond what `ResolvedLayerProps` captures. */
@@ -233,9 +243,17 @@ const ClipLayer = memo(function ClipLayer({
 	const transition = useMemo(() => (tap ? { progress, side: tap.side, tap } : undefined), [tap, progress]);
 	// keyframes-blend: a layer its track's blend scope composites at this frame hands its picture to the scope.
 	const compositeTap = useCompositeTap(clip.clipId, frame);
+	// three-d: a 3D layer of a run hands its layer-space picture to the run's 3D scope.
+	const scene3d = useContext(Scene3DContext);
+	const tap3d = useScene3DTap(clip.clipId, frame);
 	const composite = useMemo(
-		() => (compositeTap && !gpuSide && !matteOnly ? { tap: compositeTap } : undefined),
-		[compositeTap, gpuSide, matteOnly],
+		() =>
+			tap3d && !matteOnly
+				? { tap: tap3d }
+				: compositeTap && !gpuSide && !matteOnly
+					? { tap: compositeTap }
+					: undefined,
+		[tap3d, compositeTap, gpuSide, matteOnly],
 	);
 	const matteTap = matteHub?.tap(clip.clipId);
 	const matte = useMemo(
@@ -246,10 +264,14 @@ const ClipLayer = memo(function ClipLayer({
 	const fade =
 		fadeFactor(clip.fades, frame) *
 		(entry && !gpuSide ? transitionFallbackFactor(entry.t, entry.side, frame) : 1);
-	const props = useMemo(
-		() => (fade === 1 ? resolved : { ...resolved, opacity: resolved.opacity * fade }),
-		[resolved, fade],
-	);
+	// three-d: without the GPU scope (Player fallback) a 3D layer is drawn through its 3D homography (no depth sort).
+	const fallback3d = !!clip.threeD && !!scene3d && scene3d.mode.mode === 'fallback';
+	const projective3d = fallback3d ? fallbackProjective(clip, resolved, frame, scene3d!.doc) : null;
+	const props = useMemo(() => {
+		const base = fade === 1 ? resolved : { ...resolved, opacity: resolved.opacity * fade };
+		if (!fallback3d) return base;
+		return projective3d ? { ...base, projective: projective3d } : { ...base, opacity: 0 };
+	}, [resolved, fade, fallback3d, projective3d?.join(',')]);
 	const media = 'mediaId' in clip.source ? (doc.media[clip.source.mediaId] ?? null) : null;
 	const Component = layerComponentFor({ clip, media });
 	// S11:FIX-003: font-dependent layers mount once their faces are loaded (no fallback-font paint/measure).
@@ -490,14 +512,17 @@ export function VideoTracks({
 		for (const t of tracks) {
 			const input: CompositeTrackInput = {
 				trackId: t.trackId,
-				clips: t.clips.map((c) => ({
-					clipId: c.clipId,
-					start: c.start,
-					duration: c.duration,
-					headHandle: c.headHandle ?? 0,
-					tailHandle: c.tailHandle ?? 0,
-					blendMode: c.blendMode,
-				})),
+				// three-d: 3D layers are composited by their run's 3D scope (blend modes included), never here.
+				clips: t.clips
+					.filter((c) => !c.threeD)
+					.map((c) => ({
+						clipId: c.clipId,
+						start: c.start,
+						duration: c.duration,
+						headHandle: c.headHandle ?? 0,
+						tailHandle: c.tailHandle ?? 0,
+						blendMode: c.blendMode,
+					})),
 				stages: t.stages.map((st) => ({
 					id: st.t.id,
 					start: st.t.start,
@@ -530,12 +555,28 @@ export function VideoTracks({
 		}
 		return out;
 	}, [tracks, options.layerFilter, gpu, htmlInCanvas]);
+	// three-d: a 3D scope (and its hub) per track that holds a 3D clip; the runs of every frame.
+	const scene3dHubs = useRef(new Map<string, Scene3DHub>());
+	const scene3d = useMemo(() => {
+		const hubs = new Map<number, Scene3DHub>();
+		doc.videoTracks.forEach((t, i) => {
+			if (!t.clips.some((c) => c.threeD)) return;
+			let hub = scene3dHubs.current.get(t.trackId);
+			if (!hub) {
+				hub = new Scene3DHub();
+				scene3dHubs.current.set(t.trackId, hub);
+			}
+			hubs.set(i, hub);
+		});
+		if (hubs.size === 0) return null;
+		return makeScene3D(doc, scene3dRunMode({ gpu, htmlInCanvas }), hubs, options.layerFilter);
+	}, [doc, gpu, htmlInCanvas, options.layerFilter]);
 	const background = options.transparentBackground ? null : doc.settings.backgroundColor;
 	let stack: ReactNode =
 		background && background[3] > 0 ? (
 			<AbsoluteFill data-sequence-background="" style={{ backgroundColor: rgbaCss(background) }} />
 		) : null;
-	for (const track of tracks) {
+	for (const [trackIndex, track] of tracks.entries()) {
 		const blend = blendTracks.get(track.trackId);
 		if (track.adjustments.length > 0)
 			stack = (
@@ -572,6 +613,20 @@ export function VideoTracks({
 					{stack}
 					{mattes}
 				</BlendScope>
+			);
+		// three-d: at frames where a 3D run tops out on this track, it is drawn over everything below.
+		if (scene3d?.hubOf(trackIndex))
+			stack = (
+				<Scene3DScope
+					key={`scene3d-${track.trackId}`}
+					scene={scene3d}
+					trackIndex={trackIndex}
+					comp={comp}
+					offset={offset}
+					isPreview={options.isPreview}
+				>
+					{stack}
+				</Scene3DScope>
 			);
 		const content = (
 			<TransitionSidesContext.Provider value={track.sides}>
@@ -645,30 +700,33 @@ export function VideoTracks({
 				t.stages.some((st) => isStencilBlend(st.blendModeId)),
 		);
 	return (
-		<TrackMatteContext.Provider value={matteContext}>
-			{stencilled ? (
-				<AbsoluteFill data-stencil-background="" style={{ backgroundColor: rgbaCss(background) }} />
-			) : null}
-			{hiddenMattes.map((track) => (
-				<AbsoluteFill key={`matte-${track.trackId}`} data-matte-track-id={track.trackId}>
-					{track.clips.map((clip) => {
-						const head = clip.headHandle ?? 0;
-						return (
-							<Sequence
-								key={clip.clipId}
-								from={clip.start - head - offset}
-								durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
-								name={`${clip.name} (matte)`}
-								premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
-							>
-								<ClipLayer clip={clip} doc={doc} options={options} matteHub={track.hub} matteOnly />
-							</Sequence>
-						);
-					})}
-				</AbsoluteFill>
-			))}
-			{stack}
-		</TrackMatteContext.Provider>
+		<Scene3DContext.Provider value={scene3d}>
+			<TrackMatteContext.Provider value={matteContext}>
+				{stencilled ? (
+					<AbsoluteFill data-stencil-background="" style={{ backgroundColor: rgbaCss(background) }} />
+				) : null}
+				{hiddenMattes.map((track) => (
+					<AbsoluteFill key={`matte-${track.trackId}`} data-matte-track-id={track.trackId}>
+						{track.clips.map((clip) => {
+							const head = clip.headHandle ?? 0;
+							return (
+								<Sequence
+									key={clip.clipId}
+									from={clip.start - head - offset}
+									durationInFrames={clip.duration + head + (clip.tailHandle ?? 0)}
+									name={`${clip.name} (matte)`}
+									premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
+								>
+									<ClipLayer clip={clip} doc={doc} options={options} matteHub={track.hub} matteOnly />
+								</Sequence>
+							);
+						})}
+					</AbsoluteFill>
+				))}
+				{stack}
+				{scene3d ? <Scene3DFallback scene={scene3d} offset={offset} isPreview={options.isPreview} /> : null}
+			</TrackMatteContext.Provider>
+		</Scene3DContext.Provider>
 	);
 }
 

@@ -1,6 +1,7 @@
 // three-d: defaults, factories and lens math of 3D layers, cameras and lights (After Effects' values; the
 // camera presets and lens relations follow EffectCraft `render/three_d/camera.rs`, MIT OR Apache-2.0).
 import { anim } from '../factories.ts';
+import { kindCapabilities } from '../registry/kinds.ts';
 import type { RGBA, Vec3 } from '../schema/common.ts';
 import type {
 	CameraData,
@@ -135,11 +136,16 @@ export function defaultMaterial(): MaterialOptions {
 		specularIntensity: anim(d.specularIntensity),
 		specularShininess: anim(d.specularShininess),
 		metal: anim(d.metal),
+		reflectionIntensity: anim(d.reflectionIntensity),
+		reflectionSharpness: anim(d.reflectionSharpness),
 	};
 }
 
-/** A fresh 3D Layer block (switch on, every 3D value at its default). */
-export function newLayer3D(enabled = true): Layer3D {
+/**
+ * A fresh 3D Layer block (switch on, every 3D value at its default); text and shape layers also get their Geometry
+ * Options (extrusion, Advanced 3D).
+ */
+export function newLayer3D(enabled = true, kind?: string): Layer3D {
 	return {
 		enabled,
 		positionZ: anim(0),
@@ -149,6 +155,7 @@ export function newLayer3D(enabled = true): Layer3D {
 		rotationX: anim(0),
 		rotationY: anim(0),
 		material: defaultMaterial(),
+		...(kind === 'text' || kind === 'shape' ? { geometry: defaultGeometryOptions() } : {}),
 	};
 }
 
@@ -298,4 +305,10 @@ export function irisSides(shape: IrisShape): number {
 				['triangle', 'square', 'pentagon', 'hexagon', 'heptagon', 'octagon', 'nonagon', 'decagon'].indexOf(
 					shape,
 				);
+}
+
+/** Kinds that can be 3D layers: visual clips with Motion (not adjustment layers, captions, cameras or lights). */
+export function canBe3d(kind: string): boolean {
+	const caps = kindCapabilities(kind);
+	return !!caps?.visual && caps.hasTransform && kind !== 'captions';
 }

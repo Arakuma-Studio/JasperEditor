@@ -18,6 +18,7 @@ import {
 	type Iris,
 	kernelSpans,
 	type LightState,
+	pictureScale,
 } from '@jasper/project';
 import { blit, compileShader, ensureCanvas, type FxHost } from '../fx/host.ts';
 
@@ -87,8 +88,10 @@ vec4 texel(int i, float u, float v) {
   vec4 a = P(i, 6);
   vec4 b = P(i, 7);
   vec4 rect = P(i, 8);
-  float x = a.x * u + a.y * v + a.z;
-  float y = b.x * u + b.y * v + b.z;
+  vec4 c = P(i, 19);
+  float w = c.y * u + c.z * v + c.w;
+  float x = (a.x * u + a.y * v + a.z) / w;
+  float y = (b.x * u + b.y * v + b.z) / w;
   float fx = x - 0.5;
   float fy = y - 0.5;
   float x0 = floor(fx);
@@ -654,7 +657,7 @@ export function renderClassicGL(h: FxHost, input: ClassicGlInput, out: CanvasRen
 		put(4, p.bbox[0], p.bbox[1], p.bbox[2], p.bbox[3]);
 		put(5, p.bounds[0], p.bounds[1], p.bounds[2], p.bounds[3]);
 		const m = p.layerToPicture;
-		const sc = Math.hypot(m[0], m[3]);
+		const sc = pictureScale(m);
 		put(6, m[0], m[1], m[2], 0);
 		put(7, m[3], m[4], m[5], sc);
 		put(8, s.x, s.y, s.w, s.h);
@@ -672,7 +675,7 @@ export function renderClassicGL(h: FxHost, input: ClassicGlInput, out: CanvasRen
 		put(17, mt.lightTransmission, mt.castsShadows, mt.acceptsShadows, mt.acceptsLights ? 1 : 0);
 		const seed = p.seed >>> 0;
 		put(18, blendModeIndex(p.mode), seed >>> 16, seed & 0xffff, p.order);
-		put(19, p.draw ? 1 : 0, 0, 0, 0);
+		put(19, p.draw ? 1 : 0, m[6], m[7], m[8]);
 	});
 	const lights: LightState[] = draft ? [] : setup.lights;
 	const ld = new Float32Array(Math.max(1, lights.length) * LIGHT_TEXELS * 4);

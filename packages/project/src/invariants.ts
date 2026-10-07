@@ -38,6 +38,7 @@ import type { ShapeItem } from './schema/shapes.ts';
 import { isNestClip } from './structure/nest.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
 import { repairTextAnimators, textAnimatorIssues } from './text-animators/validate.ts';
+import { canBe3d } from './three-d/model.ts';
 import {
 	contentSpanFlicks,
 	FLICKS_PER_SECOND,
@@ -589,6 +590,14 @@ export function checkInvariants(doc: ProjectDocument, opts: InvariantOptions = {
 						issues.push(inv('INV-001', `Shape ${c.id} has duplicate item ids ${dup.join(', ')}`, cw));
 				}
 			}
+			// three-d: only visual clips with Motion are 3D layers; environment lights reference existing media.
+			if (r.threeD !== undefined && !canBe3d(c.kind))
+				issues.push(inv('INV-012', `Clip ${c.id}: a ${c.kind} clip cannot be a 3D layer`, [...cw, 'threeD']));
+			if (c.kind === 'light') {
+				const env = (r.light as { environmentMediaId?: string | null } | undefined)?.environmentMediaId;
+				if (env && !doc.media[env])
+					issues.push(inv('INV-006', `Light ${c.id} references missing environment media ${env}`, cw));
+			}
 			// text-animators workstream: animators, selectors, Path / More Options, Source Text keys.
 			if (c.kind === 'text')
 				for (const i of textAnimatorIssues(r, cw, claim))
@@ -960,6 +969,21 @@ export function repairDocument(
 		}
 	}
 	// ---- end wp-m2-anime-templates
+
+	// ---- three-d: 3D blocks on kinds that cannot be 3D are dropped; missing environment media → studio light.
+	for (const seq of Object.values(doc.sequences) as Sequence[]) {
+		for (const c of Object.values(seq.clips)) {
+			const r = c as Record<string, unknown>;
+			if (r.threeD !== undefined && !canBe3d(c.kind)) {
+				delete r.threeD;
+				note('drop-3d', c.id, `a ${c.kind} clip cannot be a 3D layer`);
+			}
+			if (c.kind === 'light' && c.light.environmentMediaId && !doc.media[c.light.environmentMediaId]) {
+				c.light.environmentMediaId = null;
+				note('reset-environment', c.id, 'environment media is missing: neutral studio light');
+			}
+		}
+	}
 
 	// ---- wp shapes: vector shape items — malformed items dropped, duplicate item ids renumbered.
 	for (const seq of Object.values(doc.sequences) as Sequence[]) {

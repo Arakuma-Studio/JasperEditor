@@ -28,6 +28,7 @@ import { spatialHandlers } from './handlers/spatial.ts';
 import { SPEECH_OWNER, speechHandlers } from './handlers/speech.ts';
 import { STRUCTURE_OWNER, structureHandlers } from './handlers/structure.ts';
 import { TEXT_ANIMATOR_OWNER, textAnimatorHandlers } from './handlers/text-animators.ts';
+import { THREE_D_OWNER, threeDHandlers } from './handlers/three-d.ts';
 import { trackerHandlers } from './handlers/tracker.ts';
 import { transitionHandlers } from './handlers/transition.ts';
 import type { Handler, HandlerMap } from './handlers/util.ts';
@@ -74,7 +75,9 @@ export type CommandOwner =
 	// Editorial UX: 3/4-point editing, trim mode, subclips
 	| 'edit-ux'
 	// AE text animators (parity program)
-	| 'text-animators';
+	| 'text-animators'
+	// 3D layers, cameras, lights, 3D camera tracker (docs/wp-notes/three-d.md)
+	| 'three-d';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -294,6 +297,16 @@ const LABELS: Record<CommandType, string> = {
 	'clip.trimEdits': 'Trim',
 	'item.makeSubclip': 'Make Subclip',
 	'item.updateSubclip': 'Edit Subclip',
+	// three-d
+	'clip.set3d': '3D Layer',
+	'clip.addCamera': 'New Camera',
+	'clip.addLight': 'New Light',
+	'camera.settings': 'Camera Settings',
+	'light.settings': 'Light Settings',
+	'camera.orbit': 'Orbit Camera',
+	'camera.pan': 'Pan Camera',
+	'camera.dolly': 'Dolly Camera',
+	'sequence.set3dRenderer': '3D Renderer',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -326,6 +339,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[essentialHandlers, ESSENTIAL_OWNER],
 	[rotoHandlers, ROTO_OWNER],
 	[editUxHandlers, 'edit-ux'],
+	[threeDHandlers, THREE_D_OWNER],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
@@ -354,7 +368,8 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === ESSENTIAL_OWNER ||
 				owner === 'wp-multicam' ||
 				owner === ROTO_OWNER ||
-				owner === 'edit-ux'
+				owner === 'edit-ux' ||
+				owner === THREE_D_OWNER
 					? 'M3'
 					: owner === 'M2' ||
 							owner.startsWith('wp-m2-') ||

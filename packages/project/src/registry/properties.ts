@@ -46,6 +46,7 @@ import { flicksPerFrame, type Rational } from '../time.ts';
 import { SHAPE_ITEM_KEY_PREFIX, shapeItemPropertySpecs } from '../vector/properties.ts';
 import type { EffectRegistry, EffectSpec, ParamSpec } from './effects.ts';
 import { kindCapabilities } from './kinds.ts';
+import { THREE_D_PROPERTY_SPECS } from './three-d-properties.ts';
 import type { MgTemplateInfo } from './mg.ts';
 import {
 	isTextAnimatorKey,
@@ -89,7 +90,13 @@ export type PropertyGroup =
 	/** text-animators workstream: animators, selectors, Path Options, More Options (`textAnimators.*`, …). */
 	| 'textAnimator'
 	/** wp masks: Opacity / effect mask properties (`masks.<maskId>.<prop>`). */
-	| 'mask';
+	| 'mask'
+	/** three-d: 3D transform of a 3D layer, its Material Options and Geometry Options; cameras; lights. */
+	| 'threeD'
+	| 'material'
+	| 'geometry'
+	| 'camera'
+	| 'light';
 
 /** Everything a default or a patch may need to know about the clip. */
 export type PropertyContext = {
@@ -1124,6 +1131,8 @@ export const PROPERTY_SPECS: readonly PropertySpec[] = [
 	// ------------------------------------------------ wp-m2-shapes: shape properties (S11:SHP-003/005)
 	...SHAPE_PROPERTY_SPECS,
 	// ------------------------------------------------ end wp-m2-shapes
+	// three-d: 3D layers, cameras, lights.
+	...THREE_D_PROPERTY_SPECS,
 ];
 
 function textStyleOf(clip: Clip) {

@@ -10,7 +10,7 @@
 // composite below with each layer's blend mode and opacity: intersecting layers are exact, and blend modes and
 // transparency compose in depth order, as After Effects' Classic 3D renderer.
 import { blendPixel, dissolveNoise, type Rgba } from '../blend-modes.ts';
-import { invertMat3, type Mat3 } from '../render/homography.ts';
+import { invertMat3, type Mat3, multiplyMat3 } from '../render/homography.ts';
 import type { Vec3 } from '../schema/common.ts';
 import {
 	blurLevels,
@@ -24,11 +24,11 @@ import {
 	cross3,
 	dot3,
 	len3,
+	type Matrix4,
 	mat4Apply,
 	mat4ApplyVec,
 	mat4Invert,
 	mat4Mul,
-	type Matrix4,
 	norm3,
 	planeToMat3,
 	scale3,
@@ -115,18 +115,33 @@ export type ClassicSetup = {
 /** Upper bound of a plane's blur radius (picture pixels): beyond it the blur is clamped. */
 export const MAX_DOF_RADIUS = 192;
 
-/** Layer-space rectangle of a picture. */
+/** (x, y) through a projective 3×3 (row-major). */
+export function applyProjective(m: Mat3, x: number, y: number): [number, number] {
+	const w = m[6] * x + m[7] * y + m[8];
+	const k = w === 0 ? 0 : 1 / w;
+	return [(m[0] * x + m[1] * y + m[2]) * k, (m[3] * x + m[4] * y + m[5]) * k];
+}
+
+/** Picture pixels per layer pixel (of the linear part; corner pins: at the layer origin). */
+export function pictureScale(m: Mat3): number {
+	return Math.hypot(m[0], m[3]) / Math.max(1e-12, Math.abs(m[8])) || 1;
+}
+
+/** Layer-space bounding rectangle of a picture (the inverse map of its corners). */
 export function pictureBounds(
 	src: Pick<PlaneSource, 'width' | 'height' | 'layerToPicture'>,
 ): [number, number, number, number] {
 	const inv = invertMat3(src.layerToPicture);
 	if (!inv) return [0, 0, 0, 0];
-	const a = [inv[0] * 0 + inv[1] * 0 + inv[2], inv[3] * 0 + inv[4] * 0 + inv[5]];
-	const b = [
-		inv[0] * src.width + inv[1] * src.height + inv[2],
-		inv[3] * src.width + inv[4] * src.height + inv[5],
+	const pts = [
+		applyProjective(inv, 0, 0),
+		applyProjective(inv, src.width, 0),
+		applyProjective(inv, src.width, src.height),
+		applyProjective(inv, 0, src.height),
 	];
-	return [Math.min(a[0]!, b[0]!), Math.min(a[1]!, b[1]!), Math.max(a[0]!, b[0]!), Math.max(a[1]!, b[1]!)];
+	const xs = pts.map((p) => p[0]);
+	const ys = pts.map((p) => p[1]);
+	return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
 }
 
 /** The projection to output pixels (frame pixels × scale). */
@@ -165,17 +180,19 @@ function dofOf(
 	pad: number,
 ): { zPlane: [number, number, number]; k: number; radius: (x: number, y: number) => number } {
 	const inv = invertMat3(layerToPicture)!;
-	const s = Math.hypot(layerToPicture[0], layerToPicture[3]) || 1;
+	const s = pictureScale(layerToPicture);
 	const sx = len3(mat4ApplyVec(world, [1, 0, 0])) || 1e-9;
 	const at = (x: number, y: number) => {
-		const px = x - pad;
-		const py = y - pad;
-		const u = inv[0] * px + inv[1] * py + inv[2];
-		const v = inv[3] * px + inv[4] * py + inv[5];
+		const [u, v] = applyProjective(inv, x - pad, y - pad);
 		return mat4Apply(cam.view, mat4Apply(world, [u, v, 0]))[2];
 	};
-	const z0 = at(0, 0);
-	const zPlane: [number, number, number] = [z0, at(1, 0) - z0, at(0, 1) - z0];
+	// Depth is affine in the picture pixel for an affine picture map (exact); a corner-pinned (projective) map is
+	// linearised about the picture centre.
+	const cx = layerToPicture[6] === 0 && layerToPicture[7] === 0 ? 0 : pad;
+	const z0 = at(cx, cx);
+	const zx = at(cx + 1, cx) - z0;
+	const zy = at(cx, cx + 1) - z0;
+	const zPlane: [number, number, number] = [z0 - zx * cx - zy * cx, zx, zy];
 	// radius = coc(z) · ½ · z / (zoom · sx) · s
 	const k = (0.5 * s) / (cam.zoom * sx);
 	const radius = (x: number, y: number) => {
@@ -204,17 +221,7 @@ export function prepareClassicPlane(setup: ClassicSetup, src: PlaneSource): Clas
 		const rmax = maxRadius(probe.radius, width, height);
 		if (rmax > 0.3) {
 			const pad = dofPad(cam.dof.iris, rmax);
-			layerToPicture = [
-				layerToPicture[0],
-				layerToPicture[1],
-				layerToPicture[2] + pad,
-				layerToPicture[3],
-				layerToPicture[4],
-				layerToPicture[5] + pad,
-				0,
-				0,
-				1,
-			];
+			layerToPicture = multiplyMat3([1, 0, pad, 0, 1, pad, 0, 0, 1], layerToPicture);
 			width += 2 * pad;
 			height += 2 * pad;
 			const d = dofOf(cam, cam.dof, src.world, src.layerToPicture, pad);
@@ -339,8 +346,8 @@ export function samplePicture(img: FloatImage, x: number, y: number): Rgba {
 }
 
 function texel(p: CpuPlane, u: number, v: number): Rgba {
-	const m = p.layerToPicture;
-	return samplePicture(p.pixels, m[0] * u + m[1] * v + m[2], m[3] * u + m[4] * v + m[5]);
+	const [x, y] = applyProjective(p.layerToPicture, u, v);
+	return samplePicture(p.pixels, x, y);
 }
 
 /**
@@ -398,7 +405,7 @@ export function occlusion(c: CpuPlane, p: Vec3, l: LightState): Vec3 {
 	const bd = c.bounds;
 	if (hit[0]! < bd[0] - r || hit[1]! < bd[1] - r || hit[0]! > bd[2] + r || hit[1]! > bd[3] + r)
 		return [1, 1, 1];
-	const s = Math.hypot(c.layerToPicture[0], c.layerToPicture[3]);
+	const s = pictureScale(c.layerToPicture);
 	let px: Rgba = [0, 0, 0, 0];
 	if (r * s < 0.5) px = texel(c, hit[0]!, hit[1]!);
 	else
