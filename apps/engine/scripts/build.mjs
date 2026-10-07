@@ -60,3 +60,21 @@ await build({
 	},
 	logLevel: 'warning',
 });
+
+// parity roto: jasper-roto.mjs (Roto Brush segmentation / face tracking, run as a child process by `roto` jobs) next to
+// engine.mjs. onnxruntime-node (native binding) and OpenCV.js (staged with the engine runtime) stay external.
+await build({
+	entryPoints: [join(root, 'src/roto/worker/cli.ts')],
+	outfile: join(root, 'dist/jasper-roto.mjs'),
+	bundle: true,
+	platform: 'node',
+	format: 'esm',
+	target: 'node20',
+	sourcemap: false,
+	legalComments: 'none',
+	external: ['onnxruntime-node', '@techstark/opencv-js', '*.node'],
+	banner: {
+		js: "import { createRequire as __jasperCreateRequire } from 'node:module'; const require = __jasperCreateRequire(import.meta.url);",
+	},
+	logLevel: 'warning',
+});

@@ -22,6 +22,7 @@ import mgRoutes from './mg.ts';
 import mgBundleRoutes from './mg-bundles.ts';
 import processingRoutes from './processing.ts';
 import projectsRoutes from './projects.ts';
+import rotoRoutes from './roto.ts';
 import speechRoutes from './speech.ts';
 import stillsRoutes from './stills.ts';
 import syncRoutes from './sync.ts';
@@ -68,6 +69,8 @@ const ROUTE_PLUGINS = [
 	captionRoutes,
 	// wp speech: Whisper transcription (after processing: the model catalogue and its installer).
 	speechRoutes,
+	// parity roto: Roto Brush / face tracking (after processing: the model catalogue and its installer).
+	rotoRoutes,
 	// wp interchange: timeline import/export (pre-renders through the export service) and Link Media.
 	interchangeRoutes,
 ] as const;

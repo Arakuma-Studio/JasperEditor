@@ -144,7 +144,9 @@ export type PropertySpec = {
 			/** Wave expressions: a clip picker (Layer Control; value = clip id, '' = none). */
 			| 'layer'
 			/** Wave expressions: Dropdown Menu Control (1-based index into the effect's `items`). */
-			| 'menu';
+			| 'menu'
+			/** parity (roto): picker of the clip's roto objects (string param holding a roto id). */
+			| 'roto-object';
 		bipolar?: boolean;
 		/** Digits after the decimal point in the UI (derived from `range.step` when absent). */
 		precision?: number;

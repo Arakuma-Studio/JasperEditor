@@ -21,6 +21,8 @@ export type ProjectCacheRefs = {
 	mgRenderKeys: Set<string>;
 	/** Bundle hashes (Motion Templates posters `mg/posters/<hash>/`). */
 	bundleHashes: Set<string>;
+	/** parity (roto): matte set keys of the document's roto objects (`cache/roto/sets/<key>/`). */
+	rotoKeys?: Set<string>;
 };
 
 /** The render-key function of the mg-bundles service (`prerenderKey`). */
@@ -44,9 +46,21 @@ export function projectCacheRefs(
 	renderKey: RenderKeyFn | null,
 	fframesKey: ClipRenderKeyFn | null = null,
 ): ProjectCacheRefs {
-	const out: ProjectCacheRefs = { fingerprints: new Set(), mgRenderKeys: new Set(), bundleHashes: new Set() };
+	const out: ProjectCacheRefs = {
+		fingerprints: new Set(),
+		mgRenderKeys: new Set(),
+		bundleHashes: new Set(),
+		rotoKeys: new Set(),
+	};
 	const d = doc as Partial<ProjectDocument> | null;
 	if (!d || typeof d !== 'object') return out;
+	// parity (roto): computed mattes of roto objects (also undo states would need the engine; the saved ones count).
+	for (const seq of Object.values(d.sequences ?? {}))
+		for (const clip of Object.values((seq as { clips?: Record<string, unknown> }).clips ?? {})) {
+			const rotos = (clip as { rotos?: { result?: { key?: unknown } | null }[] }).rotos;
+			for (const r of Array.isArray(rotos) ? rotos : [])
+				if (typeof r?.result?.key === 'string') out.rotoKeys!.add(r.result.key);
+		}
 	for (const asset of Object.values(d.media ?? {})) {
 		const a = asset as { fingerprint?: unknown; mgBundle?: { bundleHash?: unknown } } | null;
 		if (typeof a?.fingerprint === 'string') {

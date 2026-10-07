@@ -31,6 +31,8 @@ export const JOB_KINDS = [
 	'cache-move',
 	// Workstream `time`: Scene Edit Detection
 	'scene-detect',
+	// parity (roto): Roto Brush segmentation / propagation and face tracking
+	'roto',
 ] as const;
 export const JobKindSchema = z.enum(JOB_KINDS);
 export type JobKind = z.infer<typeof JobKindSchema>;

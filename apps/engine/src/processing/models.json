@@ -1,5 +1,5 @@
 {
-  "$comment": "Super-resolution model catalogue (S07:PST-031/032). `bundled` = shipped with the engine (apps/engine/models/, ≤ 10 MB, producer decision 2026-10-01); otherwise installed on demand from `downloadUrl` into <appdir>/models/ and verified by sha256. Weights licences are shown in Help ▸ About ▸ Licenses. `speech` = the speech-to-text models (wp speech): multi-file Whisper ONNX exports (encoder + merged decoder with cross-attention outputs), each file pinned to a Hugging Face revision and verified by sha256, installed on demand into <appdir>/models/speech/<id>/ through the same `model-download` job after the user has seen the licence; never bundled.",
+  "$comment": "Super-resolution model catalogue (S07:PST-031/032). `bundled` = shipped with the engine (apps/engine/models/, ≤ 10 MB, producer decision 2026-10-01); otherwise installed on demand from `downloadUrl` into <appdir>/models/ and verified by sha256. Weights licences are shown in Help ▸ About ▸ Licenses. `speech` = the speech-to-text models (wp speech): multi-file Whisper ONNX exports (encoder + merged decoder with cross-attention outputs), each file pinned to a Hugging Face revision and verified by sha256, installed on demand into <appdir>/models/speech/<id>/ through the same `model-download` job after the user has seen the licence; never bundled. `vision` = the Roto Brush segmentation model (SAM 2.1) and the face models (MediaPipe Face Landmarker) of parity workstream roto: multi-file ONNX models with the same pinned-revision / sha256 / licence-first install, into <appdir>/models/vision/<id>/.",
   "models": [
     {
       "id": "span-2x-nomosuni-multijpg",
@@ -290,6 +290,76 @@
           "url": "https://huggingface.co/onnx-community/whisper-small.en_timestamped/resolve/8085393831131554ad978a4e438295a734d3d2c0/onnx/decoder_model_merged.onnx",
           "sha256": "da766219ec35addf8309c3eedfe7e167ce6c063c82d73d1c91bafe87e9d70fcf",
           "sizeBytes": 615653127
+        }
+      ]
+    }
+  ],
+  "vision": [
+    {
+      "id": "sam2.1-hiera-tiny",
+      "name": "Segment Anything 2.1 (hiera-tiny)",
+      "task": "segmentation",
+      "parameters": 39,
+      "multilingual": false,
+      "description": "Roto Brush object selection: points, strokes or a box select an object; edges are refined by graph cut. About 2 s per 1080p frame on a CPU.",
+      "license": "Apache-2.0 (Meta SAM 2.1 code and weights)",
+      "licenseUrl": "https://github.com/facebookresearch/sam2/blob/main/LICENSE",
+      "attribution": "SAM 2.1 hiera-tiny by Meta Platforms, Inc. (Ravi et al., \"SAM 2: Segment Anything in Images and Videos\", 2024; Apache-2.0); ONNX export by onnx-community (Hugging Face) from facebook/sam2.1-hiera-tiny",
+      "sourceUrl": "https://huggingface.co/onnx-community/sam2.1-hiera-tiny-ONNX/tree/814a066640debee5a91e70aa401fb8e17e030503",
+      "upstreamUrl": "https://huggingface.co/facebook/sam2.1-hiera-tiny",
+      "revision": "814a066640debee5a91e70aa401fb8e17e030503",
+      "files": [
+        {
+          "path": "vision_encoder.onnx",
+          "url": "https://huggingface.co/onnx-community/sam2.1-hiera-tiny-ONNX/resolve/814a066640debee5a91e70aa401fb8e17e030503/onnx/vision_encoder.onnx",
+          "sha256": "4f30aacd3aaefbca81a0b7fe4c1fc96345570ea0a6f80ced599493d1b3be2e8c",
+          "sizeBytes": 354238
+        },
+        {
+          "path": "vision_encoder.onnx_data",
+          "url": "https://huggingface.co/onnx-community/sam2.1-hiera-tiny-ONNX/resolve/814a066640debee5a91e70aa401fb8e17e030503/onnx/vision_encoder.onnx_data",
+          "sha256": "e83df9866a5afe68ea7f0f721f18f65137fc3acbf0da1c74e946d363e09c69cc",
+          "sizeBytes": 134084864
+        },
+        {
+          "path": "prompt_encoder_mask_decoder.onnx",
+          "url": "https://huggingface.co/onnx-community/sam2.1-hiera-tiny-ONNX/resolve/814a066640debee5a91e70aa401fb8e17e030503/onnx/prompt_encoder_mask_decoder.onnx",
+          "sha256": "874414704c5d686db7d206a35f6e15d26563d50c8c4468fccc6739bd7e491dcf",
+          "sizeBytes": 213114
+        },
+        {
+          "path": "prompt_encoder_mask_decoder.onnx_data",
+          "url": "https://huggingface.co/onnx-community/sam2.1-hiera-tiny-ONNX/resolve/814a066640debee5a91e70aa401fb8e17e030503/onnx/prompt_encoder_mask_decoder.onnx_data",
+          "sha256": "e9874d900dd4134ed60eab1e97910327c2419e0b2954485d8fd6e7f1a1470f47",
+          "sizeBytes": 20958208
+        }
+      ]
+    },
+    {
+      "id": "mediapipe-face-landmarker",
+      "name": "MediaPipe Face Landmarker (BlazeFace + Face Mesh V2)",
+      "task": "face",
+      "parameters": 2,
+      "multilingual": false,
+      "description": "Face tracking: the short-range face detector and the 478-point face mesh, for face outline mattes, Blur Faces and face position / scale / rotation keyframes.",
+      "license": "Apache-2.0 (Google MediaPipe models)",
+      "licenseUrl": "https://github.com/google-ai-edge/mediapipe/blob/master/LICENSE",
+      "attribution": "MediaPipe Face Landmarker models (BlazeFace short-range detector, Face Mesh V2) by Google LLC (Apache-2.0); ONNX conversions by Fernando Tonon (QtMeshEditor, Apache-2.0)",
+      "sourceUrl": "https://huggingface.co/fernandotonon/QtMeshEditor-facemesh-onnx/tree/32714088ed9830a98df6ee653ad406a3b83ef014",
+      "upstreamUrl": "https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker",
+      "revision": "32714088ed9830a98df6ee653ad406a3b83ef014",
+      "files": [
+        {
+          "path": "face_detector.onnx",
+          "url": "https://huggingface.co/fernandotonon/QtMeshEditor-blazeface-onnx/resolve/50f2c66ffbdf84beae8c267df2b49e5c5a5162e9/face_detector.onnx",
+          "sha256": "02a04d5d37c3558dc4d5274f7f8f0f0f01ac94e46c5ffb2cee82395d47e23181",
+          "sizeBytes": 418437
+        },
+        {
+          "path": "face_landmarks.onnx",
+          "url": "https://huggingface.co/fernandotonon/QtMeshEditor-facemesh-onnx/resolve/32714088ed9830a98df6ee653ad406a3b83ef014/face_landmarks.onnx",
+          "sha256": "d16e5a55e6a480284d468ee32469692464049518c311662ab3956681de31e3e9",
+          "sizeBytes": 4920979
         }
       ]
     }

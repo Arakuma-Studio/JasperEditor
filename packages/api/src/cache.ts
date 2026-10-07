@@ -19,6 +19,8 @@ export const CACHE_KINDS = [
 	'exports',
 	'stills',
 	'bundles',
+	// parity (roto): computed object mattes (Roto Brush, faces) and the reusable frame pool
+	'roto',
 ] as const;
 export const CacheKindSchema = z.enum(CACHE_KINDS);
 export type CacheKind = z.infer<typeof CacheKindSchema>;

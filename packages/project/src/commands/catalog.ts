@@ -19,6 +19,7 @@ import { paramHandlers } from './handlers/param.ts';
 import { PRESET_OWNER, presetHandlers } from './handlers/preset.ts';
 import { processHandlers } from './handlers/process.ts';
 import { projectHandlers } from './handlers/project.ts';
+import { ROTO_OWNER, rotoHandlers } from './handlers/roto.ts';
 import { rovingHandlers } from './handlers/roving.ts';
 import { sequenceHandlers } from './handlers/sequence.ts';
 import { keepShapesCentred, SHAPE_BOX_COMMANDS, SHAPE_OWNER, shapeHandlers } from './handlers/shape.ts';
@@ -71,6 +72,8 @@ export type CommandOwner =
 	| 'audio-fx'
 	// Time Remapping, Time Interpolation, Scene Edit Detection (docs/wp-notes/time.md)
 	| 'wp-time'
+	// parity: roto / object mattes
+	| 'parity-roto'
 	// Editorial UX: 3/4-point editing, trim mode, subclips
 	| 'edit-ux'
 	// AE text animators (parity program)
@@ -290,6 +293,16 @@ const LABELS: Record<CommandType, string> = {
 	'timeRemap.addReverse': 'Reverse Speed Segment',
 	'clip.setTimeInterpolation': 'Time Interpolation',
 	'clip.applySceneEdits': 'Scene Edit Detection',
+	'roto.add': 'Roto Brush',
+	'roto.update': 'Roto Settings',
+	'roto.addStrokes': 'Roto Brush Stroke',
+	'roto.removeStrokes': 'Remove Roto Strokes',
+	'roto.setBox': 'Roto Box',
+	'roto.setResult': 'Propagate Roto',
+	'roto.freeze': 'Freeze Roto',
+	'roto.remove': 'Remove Roto',
+	'roto.apply': 'Apply Object Matte',
+	'roto.faceTracker': 'Track Face',
 	'clip.sourceEdit': 'Overwrite',
 	'clip.trimEdits': 'Trim',
 	'item.makeSubclip': 'Make Subclip',
@@ -325,6 +338,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[expressionHandlers, EXPRESSION_OWNER],
 	[essentialHandlers, ESSENTIAL_OWNER],
 	[timeHandlers, 'wp-time'],
+	[rotoHandlers, ROTO_OWNER],
 	[editUxHandlers, 'edit-ux'],
 ];
 
@@ -354,6 +368,7 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === ESSENTIAL_OWNER ||
 				owner === 'wp-multicam' ||
 				owner === 'wp-time' ||
+				owner === ROTO_OWNER ||
 				owner === 'edit-ux'
 					? 'M3'
 					: owner === 'M2' ||
