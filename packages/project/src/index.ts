@@ -26,6 +26,7 @@ export * from './essential/index.ts';
 export * from './expressions.ts';
 export * from './factories.ts';
 export * from './ids.ts';
+export * from './interpret/index.ts';
 export * from './invariants.ts';
 export * from './keyframes.ts';
 export * from './keyframes-spatial.ts';

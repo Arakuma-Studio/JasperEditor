@@ -4,6 +4,7 @@
 // Each spec carries labels, units, ranges, UI control hints, the reset value (`defaultValue`), its
 // applicability by kind capabilities and how the UI writes it (`param.set` or `clip.update`).
 
+import { mediaDisplaySize } from '../interpret/model.ts';
 import { z } from 'zod';
 import { BLEND_MODE_GROUPS, BLEND_MODE_LABELS } from '../blend-modes.ts';
 import type { ParamPath } from '../commands/schemas/common.ts';
@@ -187,10 +188,8 @@ export function intrinsicBoxOf(ctx: PropertyContext): { width: number; height: n
 	const r = clip as Record<string, unknown>;
 	if (clip.kind === 'video' || clip.kind === 'still' || clip.kind === 'animated-image') {
 		const asset = doc.media[r.mediaId as string];
-		const vs = asset?.probe.streams.find((s) => s.type === 'video');
-		if (!asset || !vs || vs.type !== 'video') return frame;
-		const swap = asset.probe.rotationDegrees === 90 || asset.probe.rotationDegrees === 270;
-		return swap ? { width: vs.height, height: vs.width } : { width: vs.width, height: vs.height };
+		// imports: rotation and the (conformed) pixel aspect ratio.
+		return (asset && mediaDisplaySize(asset)) ?? frame;
 	}
 	if (clip.kind === 'text') {
 		const box = r.box as { width: number; height: number };

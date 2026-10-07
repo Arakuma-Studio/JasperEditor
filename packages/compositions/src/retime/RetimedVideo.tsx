@@ -18,6 +18,7 @@ import {
 	type RenderVisualClip,
 	remapSourceAt,
 	type TimeInterpolation,
+	fileTimeOf,
 } from '@jasper/project';
 import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -39,12 +40,13 @@ const PREVIEW_MAX = 1920;
 
 /** Media time (seconds) a clip shows at picture time `pictureTime` (content flicks; frame holds already applied). */
 export function retimeMediaSeconds(
-	clip: Pick<RenderVisualClip, 'timeRemap' | 'kind'>,
+	clip: Pick<RenderVisualClip, 'timeRemap' | 'kind' | 'mediaTime'>,
 	pictureTime: number,
 ): number {
 	const remap = activeRemap(clip);
 	const m = remap ? remapSourceAt(remap, pictureTime) : pictureTime;
-	return Math.max(0, m / FLICKS_PER_SECOND);
+	// imports (Interpret Footage): interpreted media time → file time (assumed frame rate, loop).
+	return Math.max(0, fileTimeOf(clip.mediaTime, m) / FLICKS_PER_SECOND);
 }
 
 /** Decoded size and analysis size of a retimed media (shared rule with the native export, see flow.ts). */

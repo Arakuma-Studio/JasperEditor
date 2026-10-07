@@ -1,4 +1,5 @@
 // project.*, bin.create, item.* (S01 §5, §16.2).
+import { mediaDurationFlicks } from '../../interpret/model.ts';
 import type { Draft } from 'immer';
 import { frameShiftFlicks, sourceTimingShift } from '../../process/source-range.ts';
 import { defaultLabelForMedia } from '../../registry/kinds.ts';
@@ -202,7 +203,7 @@ export const projectHandlers: HandlerMap = {
 			v ? h.flicks(v, asset, fallback) : null;
 		// Subclips: marks live in the media's content time, inside the subclip's range (edit-ux).
 		const lo = it.kind === 'subclip' ? it.range.in : 0;
-		const hiDur = it.kind === 'subclip' ? it.range.out : asset?.probe.durationFlicks;
+		const hiDur = it.kind === 'subclip' ? it.range.out : asset ? mediaDurationFlicks(asset) : undefined;
 		const check = (a: number | null, b: number | null, what: string) => {
 			if (a !== null && b !== null && b <= a)
 				h.fail('E_INVALID_PARAM', `${what} Out mark must be after its In mark`);

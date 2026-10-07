@@ -7,6 +7,7 @@ import { EDIT_UX_COMMANDS } from './edit-ux.ts';
 import { ESSENTIAL_COMMANDS } from './essential.ts';
 import { EXPRESSION_COMMANDS } from './expression.ts';
 import { INTERCHANGE_COMMANDS } from './interchange.ts';
+import { INTERPRET_COMMANDS } from './interpret.ts';
 import { MASK_COMMANDS } from './mask.ts';
 import { MULTICAM_COMMANDS } from './multicam.ts';
 import { PARAM_COMMANDS } from './param.ts';
@@ -31,6 +32,7 @@ export * from './edit-ux.ts';
 export * from './essential.ts';
 export * from './expression.ts';
 export * from './interchange.ts';
+export * from './interpret.ts';
 export * from './mask.ts';
 export * from './multicam.ts';
 export * from './param.ts';
@@ -87,6 +89,8 @@ export const ALL_COMMAND_SCHEMAS = [
 	...ROTO_COMMANDS,
 	// edit-ux: 3/4-point editing, multi-edit trims, subclips
 	...EDIT_UX_COMMANDS,
+	// imports: Interpret Footage
+	...INTERPRET_COMMANDS,
 ] as const;
 
 export type Command = z.infer<(typeof ALL_COMMAND_SCHEMAS)[number]>;

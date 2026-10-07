@@ -12,6 +12,7 @@ import { effectHandlers } from './handlers/effect.ts';
 import { ESSENTIAL_OWNER, essentialHandlers } from './handlers/essential.ts';
 import { EXPRESSION_OWNER, expressionHandlers } from './handlers/expression.ts';
 import { INTERCHANGE_OWNER, interchangeHandlers } from './handlers/interchange.ts';
+import { INTERPRET_OWNER, interpretHandlers } from './handlers/interpret.ts';
 import { keyframeHandlers } from './handlers/keyframe.ts';
 import { maskHandlers } from './handlers/mask.ts';
 import { multicamHandlers } from './handlers/multicam.ts';
@@ -77,7 +78,9 @@ export type CommandOwner =
 	// Editorial UX: 3/4-point editing, trim mode, subclips
 	| 'edit-ux'
 	// AE text animators (parity program)
-	| 'text-animators';
+	| 'text-animators'
+	// Interpret Footage, vector / Lottie / layered / sequence imports (docs/wp-notes/imports.md)
+	| 'imports';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -307,6 +310,7 @@ const LABELS: Record<CommandType, string> = {
 	'clip.trimEdits': 'Trim',
 	'item.makeSubclip': 'Make Subclip',
 	'item.updateSubclip': 'Edit Subclip',
+	'media.interpret': 'Interpret Footage',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -340,6 +344,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[timeHandlers, 'wp-time'],
 	[rotoHandlers, ROTO_OWNER],
 	[editUxHandlers, 'edit-ux'],
+	[interpretHandlers, INTERPRET_OWNER],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
@@ -369,7 +374,8 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === 'wp-multicam' ||
 				owner === 'wp-time' ||
 				owner === ROTO_OWNER ||
-				owner === 'edit-ux'
+				owner === 'edit-ux' ||
+				owner === INTERPRET_OWNER
 					? 'M3'
 					: owner === 'M2' ||
 							owner.startsWith('wp-m2-') ||

@@ -16,6 +16,7 @@
 // clip switches to non-uniform scale with Scale Width derived from Scale. The opposite anisotropic swap turns
 // Uniform Scale back on when Scale Width equals Scale again, so going to a processed version and back restores
 // the transform (up to floating-point rounding).
+import { mediaDisplaySize } from '../interpret/model.ts';
 import { autoSlope } from '../keyframes.ts';
 import type { Animatable, Keyframe, Vec2 } from '../schema/common.ts';
 import type { MediaAsset } from '../schema/media.ts';
@@ -40,11 +41,12 @@ const SAME_SCALE_TOLERANCE = 1e-9;
 const AUTO_INFLUENCE = 1 / 3;
 
 /** Layer box of a media asset: its first video stream, with width/height swapped for 90°/270° rotation. */
-export function mediaIntrinsicSize(asset: Pick<MediaAsset, 'probe'> | undefined | null): PixelSize | null {
-	const vs = asset?.probe.streams.find((s) => s.type === 'video');
-	if (!asset || !vs || vs.type !== 'video') return null;
-	const swap = asset.probe.rotationDegrees === 90 || asset.probe.rotationDegrees === 270;
-	return swap ? { width: vs.height, height: vs.width } : { width: vs.width, height: vs.height };
+export function mediaIntrinsicSize(
+	asset: (Pick<MediaAsset, 'probe'> & Partial<Pick<MediaAsset, 'kind' | 'interpretation'>>) | undefined | null,
+): PixelSize | null {
+	if (!asset) return null;
+	// imports: the display size (rotation, then the — possibly conformed — pixel aspect ratio).
+	return mediaDisplaySize({ kind: asset.kind ?? 'video', probe: asset.probe, interpretation: asset.interpretation });
 }
 
 /** True when the two sizes have exactly the same aspect ratio (a uniform scale compensates the change). */
