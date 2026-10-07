@@ -12,6 +12,7 @@ export * from './blend-modes.ts';
 export * from './captions/index.ts';
 export * from './clipboard/index.ts';
 export * from './color/cms/index.ts';
+export * from './color/ocio/index.ts';
 export * from './color/curves.ts';
 export * from './color/lumetri.ts';
 export * from './color/lut.ts';
