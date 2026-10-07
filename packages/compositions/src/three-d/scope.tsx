@@ -31,6 +31,7 @@ import {
 	type RenderVisualClip,
 	type ResolvedLayerProps,
 	resolveCachedLayerProps,
+	runBottomTracks,
 	runs3d,
 	stackAt,
 } from '@jasper/project';
@@ -145,7 +146,7 @@ export function scene3dRunMode(env: { gpu: FxGpuState; htmlInCanvas: boolean }):
 }
 
 /** A run at a frame: its members bottom → top and the track whose scope draws it. */
-export type Run3D = { members: string[]; topTrack: number };
+export type Run3D = { members: string[]; topTrack: number; bottomTrack: number };
 
 export type Scene3DValue = {
 	mode: Scene3DMode;
@@ -191,7 +192,7 @@ export function useScene3DTap(clipId: string, frame: number): LayerTap | null {
 	if (!ctx || ctx.mode.mode !== 'gpu') return null;
 	const run = ctx.runsAt(frame).find((r) => r.members.includes(clipId));
 	if (!run) return null;
-	return ctx.hubOf(run.topTrack)?.tap(clipId, frame) ?? null;
+	return ctx.hubOf(run.bottomTrack)?.tap(clipId, frame) ?? null;
 }
 
 // ---------------------------------------------------------------- scene evaluation
@@ -337,7 +338,7 @@ export function Scene3DScope({
 	const rendering = getRemotionEnvironment().isRendering;
 	const hub = scene.hubOf(trackIndex)!;
 	const gpu = scene.mode.mode === 'gpu';
-	const run = gpu ? scene.runsAt(frame).find((r) => r.topTrack === trackIndex) : undefined;
+	const run = gpu ? scene.runsAt(frame).find((r) => r.bottomTrack === trackIndex) : undefined;
 	const version = useSyncExternalStore(hub.subscribe, hub.getVersion, () => 0);
 	const pictures = new Map<string, HubPicture>();
 	let complete = true;
@@ -448,4 +449,4 @@ export function Scene3DFallback({
 }
 
 export type { RenderScene3D };
-export { layerMapOf };
+export { layerMapOf, runBottomTracks };

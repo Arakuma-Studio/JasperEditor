@@ -305,8 +305,8 @@ describe('3D runs', () => {
 			{ key: 'e', trackIndex: 5, is3d: true },
 		]);
 		expect(runs).toEqual([
-			{ members: ['b', 'c'], topTrack: 3 },
-			{ members: ['e'], topTrack: 5 },
+			{ members: ['b', 'c'], topTrack: 3, bottomTrack: 1 },
+			{ members: ['e'], topTrack: 5, bottomTrack: 5 },
 		]);
 	});
 });

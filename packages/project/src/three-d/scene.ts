@@ -531,13 +531,20 @@ export type StackItem = { key: string; trackIndex: number; is3d: boolean };
 /**
  * The 3D runs of a layer stack (bottom → top): maximal sequences of consecutive 3D layers. A 2D layer (adjustment
  * layers, transition stages and mattes included) breaks a run, as in After Effects. Each run is drawn by the
- * 3D renderer of its top layer's track.
+ * 3D renderer of its bottom layer's track (whose scope holds exactly the composite below the run).
  */
-export function runs3d(stack: readonly StackItem[]): { members: string[]; topTrack: number }[] {
-	const out: { members: string[]; topTrack: number }[] = [];
+export function runs3d(
+	stack: readonly StackItem[],
+): { members: string[]; topTrack: number; bottomTrack: number }[] {
+	const out: { members: string[]; topTrack: number; bottomTrack: number }[] = [];
 	let cur: StackItem[] = [];
 	const flush = () => {
-		if (cur.length) out.push({ members: cur.map((x) => x.key), topTrack: cur[cur.length - 1]!.trackIndex });
+		if (cur.length)
+			out.push({
+				members: cur.map((x) => x.key),
+				topTrack: cur[cur.length - 1]!.trackIndex,
+				bottomTrack: cur[0]!.trackIndex,
+			});
 		cur = [];
 	};
 	for (const it of stack) {
@@ -588,4 +595,37 @@ export function stackAt(
 /** World-space centre of a layer's box (anchor-independent): for sorting, pick and camera tools. */
 export function layerCentre3D(world: Matrix4, box: { width: number; height: number }): Vec3 {
 	return mat4Apply(world, [box.width / 2, box.height / 2, 0]);
+}
+
+/**
+ * The tracks that are the bottom of a 3D run at some frame of `range` (the stack only changes at clip, matte and
+ * transition boundaries, so their frames are enough) — the tracks whose 3D scope draws runs.
+ */
+export function runBottomTracks(
+	tracks: RenderSnapshot['videoTracks'],
+	range: { start: number; end: number },
+	opts: { layerFilter?: readonly string[] } = {},
+): Set<number> {
+	const frames = new Set<number>();
+	const add = (f: number) => {
+		if (f >= range.start && f < range.end) frames.add(f);
+	};
+	add(range.start);
+	for (const t of tracks) {
+		for (const c of t.clips) {
+			add(c.start - (c.headHandle ?? 0));
+			add(c.start + c.duration + (c.tailHandle ?? 0));
+		}
+		for (const m of t.mattes ?? []) {
+			add(m.start);
+			add(m.start + m.duration);
+		}
+		for (const s of t.transitions ?? []) {
+			add(s.start);
+			add(s.start + s.duration);
+		}
+	}
+	const out = new Set<number>();
+	for (const f of frames) for (const r of runs3d(stackAt(tracks, f, opts))) out.add(r.bottomTrack);
+	return out;
 }

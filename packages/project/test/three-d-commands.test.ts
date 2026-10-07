@@ -246,8 +246,8 @@ describe('runs and the renderer setting', () => {
 		h.ok([{ type: 'clip.set3d', clipIds: [a, b, d], enabled: true }]);
 		const s = snap(h);
 		expect(runs3d(stackAt(s.videoTracks, 10))).toEqual([
-			{ members: [a, b], topTrack: 1 },
-			{ members: [d], topTrack: 3 },
+			{ members: [a, b], topTrack: 1, bottomTrack: 0 },
+			{ members: [d], topTrack: 3, bottomTrack: 3 },
 		]);
 		expect(c).toBeTruthy();
 		h.ok([{ type: 'sequence.set3dRenderer', renderer: 'advanced', draft: true }]);

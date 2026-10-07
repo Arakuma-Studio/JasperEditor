@@ -91,6 +91,7 @@ import { ShowFrame } from './show-frame.tsx';
 import {
 	fallbackProjective,
 	makeScene3D,
+	runBottomTracks,
 	Scene3DContext,
 	Scene3DFallback,
 	Scene3DHub,
@@ -559,8 +560,15 @@ export function VideoTracks({
 	const scene3dHubs = useRef(new Map<string, Scene3DHub>());
 	const scene3d = useMemo(() => {
 		const hubs = new Map<number, Scene3DHub>();
+		if (!doc.videoTracks.some((t) => t.clips.some((c) => c.threeD))) return null;
+		// Only the tracks where a run starts get a scope (it captures exactly the composite below the run).
+		const bottoms = runBottomTracks(
+			doc.videoTracks,
+			doc.range.end > doc.range.start ? doc.range : { start: 0, end: Number.MAX_SAFE_INTEGER },
+			options.layerFilter ? { layerFilter: options.layerFilter } : {},
+		);
 		doc.videoTracks.forEach((t, i) => {
-			if (!t.clips.some((c) => c.threeD)) return;
+			if (!bottoms.has(i)) return;
 			let hub = scene3dHubs.current.get(t.trackId);
 			if (!hub) {
 				hub = new Scene3DHub();
@@ -568,9 +576,9 @@ export function VideoTracks({
 			}
 			hubs.set(i, hub);
 		});
-		if (hubs.size === 0) return null;
 		return makeScene3D(doc, scene3dRunMode({ gpu, htmlInCanvas }), hubs, options.layerFilter);
 	}, [doc, gpu, htmlInCanvas, options.layerFilter]);
+	const gpu3d = scene3d?.mode.mode === 'gpu';
 	const background = options.transparentBackground ? null : doc.settings.backgroundColor;
 	let stack: ReactNode =
 		background && background[3] > 0 ? (
@@ -633,6 +641,9 @@ export function VideoTracks({
 				<AbsoluteFill data-track-id={track.trackId}>
 					{blend ? null : mattes}
 					{track.clips.map((clip) => {
+						// three-d: on the GPU the 3D layers are drawn by their run's scope; their own (captured, empty)
+						// elements live outside every scope (below), never inside another HTML-in-Canvas capture.
+						if (gpu3d && clip.threeD) return null;
 						const head = clip.headHandle ?? 0;
 						const from = clip.start - head - offset;
 						return (
@@ -724,6 +735,25 @@ export function VideoTracks({
 					</AbsoluteFill>
 				))}
 				{stack}
+				{gpu3d ? (
+					<AbsoluteFill data-scene3d-members="" style={{ pointerEvents: 'none' }}>
+						{tracks.flatMap((track) =>
+							track.clips
+								.filter((clip) => clip.threeD)
+								.map((clip) => (
+									<Sequence
+										key={clip.clipId}
+										from={clip.start - offset}
+										durationInFrames={clip.duration}
+										name={`${clip.name} (3D)`}
+										premountFor={PREMOUNT_KINDS.has(clip.kind) ? premount : undefined}
+									>
+										<ClipLayer clip={clip} doc={doc} options={options} matteHub={track.matteHub} />
+									</Sequence>
+								)),
+						)}
+					</AbsoluteFill>
+				) : null}
 				{scene3d ? <Scene3DFallback scene={scene3d} offset={offset} isPreview={options.isPreview} /> : null}
 			</TrackMatteContext.Provider>
 		</Scene3DContext.Provider>
