@@ -8,6 +8,9 @@ import type { EffectSpec } from '../effects.ts';
 import { CARD_EFFECTS, CARD_TRANSITION_EFFECTS } from './simulation-warp/cards.ts';
 import { SHATTER_EFFECTS } from './simulation-warp/shatter.ts';
 import { PIXEL_FX_EFFECTS } from './simulation-warp/pixel-fx.ts';
+import { FOAM_EFFECTS } from './simulation-warp/foam.ts';
+import { WAVE_WORLD_EFFECTS } from './simulation-warp/wave-world.ts';
+import { CAUSTICS_EFFECTS } from './simulation-warp/caustics.ts';
 import { PARTICLE_EFFECTS } from './simulation-warp/particles.ts';
 import { WEATHER_EFFECTS } from './simulation-warp/weather.ts';
 
@@ -16,6 +19,9 @@ export const SIMULATION_WARP_EFFECTS: readonly EffectSpec[] = [
 	...CARD_EFFECTS,
 	...SHATTER_EFFECTS,
 	...PIXEL_FX_EFFECTS,
+	...FOAM_EFFECTS,
+	...WAVE_WORLD_EFFECTS,
+	...CAUSTICS_EFFECTS,
 	...WEATHER_EFFECTS,
 	...CARD_TRANSITION_EFFECTS,
 ];

@@ -24,6 +24,10 @@ const GALLERY_CASES: { name: string; id: string; over?: Record<string, unknown>;
 	{ name: 'ball-action', id: 'jasper.ball-action', over: { gridSpacing: 10, ballSize: 90, rotation: 40, rotationAxis: 'yAxis', twistAngle: 60 } },
 	{ name: 'scatterize', id: 'jasper.scatterize', over: { scatter: 20, leftTwist: 60, rightTwist: -60 } },
 	{ name: 'hair', id: 'jasper.hair', over: { length: 40, density: 300, weight: 0.5 } },
+	{ name: 'foam', id: 'jasper.foam', over: { productionRate: 4, view: 'rendered', size: 0.8 }, frame: 90 },
+	{ name: 'wave-world', id: 'jasper.wave-world', over: { view: 'heightMap', producer1Frequency: 2 }, frame: 60 },
+	{ name: 'wave-world-wire', id: 'jasper.wave-world', over: { producer1Frequency: 2 }, frame: 60 },
+	{ name: 'caustics', id: 'jasper.caustics', over: { causticsStrength: 0.6 } },
 	{ name: 'rainfall', id: 'jasper.rainfall', frame: 20 },
 	{ name: 'snowfall', id: 'jasper.snowfall', bg: '#203040' },
 	{ name: 'bubbles', id: 'jasper.bubbles', over: { bubbleAmount: 60, bubbleSize: 2 } },
@@ -126,10 +130,29 @@ describe.runIf(psdgGlEnabled)('simulation-warp effects (WebGL2)', { timeout: 300
 		expect(r.weight).toBeGreaterThan(10);
 	});
 
+	it('surfaces: Foam, Wave World, Caustics', async () => {
+		const r = await page.call<Record<string, any>>('surfaces');
+		expect(r.foamAlpha).toBeGreaterThan(0.5);
+		expect(r.foamSeek).toBe(0);
+		expect(r.foamRendered).toBeGreaterThan(1);
+		expect(r.foam0).toBe(0);
+		expect(r.flatSpread).toBeLessThan(1); // flat water: mid grey (Brightness 0.5)
+		expect(r.wavesVary).toBeGreaterThan(5);
+		expect(r.wireGreen).toBeGreaterThan(0.5);
+		expect(r.dryRight).toBe(0); // dry ground rendered transparent
+		expect(r.wetLeft).toBe(255);
+		expect(r.wwSeek).toBe(0);
+		expect(r.causticsIdentity).toBeLessThanOrEqual(3);
+		expect(r.causticsWavy).toBeGreaterThan(20);
+	});
+
 	const DETERMINISM: { id: string; over?: Record<string, unknown>; seeded?: boolean; animated?: boolean }[] = [
 		{ id: 'jasper.card-dance', over: { yRotationSource: 'intensity1', yRotationMultiplier: 90 }, seeded: false, animated: false },
 		{ id: 'jasper.card-wipe', over: { transitionCompletion: 50, timingRandomness: 0.6, xRotJitterAmount: 30 } },
 		{ id: 'jasper.pixel-polly' },
+		{ id: 'jasper.foam', over: { productionRate: 3 }, frame: 30 },
+		{ id: 'jasper.wave-world', over: { gridResolution: 20, view: 'heightMap' }, seeded: false },
+		{ id: 'jasper.caustics', seeded: false, animated: false },
 		{ id: 'jasper.ball-action', over: { scatter: 20, instabilityState: 30 }, animated: false },
 		{ id: 'jasper.scatterize', over: { scatter: 10 }, animated: false },
 		{ id: 'jasper.hair', animated: false },

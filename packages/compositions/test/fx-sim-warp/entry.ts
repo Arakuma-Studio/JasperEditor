@@ -1,7 +1,7 @@
 // Browser entry of fx-sim-warp-gl.test.ts: characteristic pixels, determinism and seed stability of every effect of
 // the simulation-warp family through the real GPU host. Each function returns plain data to assert on.
 import { FX_FAMILIES } from '@jasper/project';
-import { centroid, centroidLum, defaults, maxDiff, mean, picture, premulOk, px, run, solid, spec, sumDiff } from './harness.ts';
+import { canvas, centroid, centroidLum, defaults, pixelsOf, maxDiff, mean, picture, premulOk, px, run, solid, spec, sumDiff } from './harness.ts';
 
 const W = 96;
 const H = 64;
@@ -168,6 +168,61 @@ const api = {
 			hair: sumDiff(hair.out, hair.input),
 			noHair: maxDiff(noHair.out, noHair.input),
 			weight: sumDiff(hair.out, heavy.out),
+		};
+	},
+
+	surfaces() {
+		// Foam: bubbles appear, rise with the default wind… determinism of seek.
+		const foam = (frame: number, key: string, over: Record<string, unknown> = {}) =>
+			fx('jasper.foam', { productionRate: 3, ...over }, { frame, instanceKey: key });
+		const f1 = foam(40, 'a');
+		foam(20, 'b');
+		const f2 = foam(40, 'b');
+		const rendered = foam(40, 'c', { view: 'rendered' });
+		const f0 = foam(0, 'd');
+		// Wave World: flat without amplitude, waves with it; ground with a dry (bright) right half.
+		const ww = (over: Record<string, unknown>, frame: number, extra = {}) =>
+			fx('jasper.wave-world', { view: 'heightMap', gridResolution: 24, ...over }, { frame, ...extra });
+		const flat = ww({ producer1Amplitude: 0 }, 30);
+		const waves = ww({}, 30);
+		const wire = fx('jasper.wave-world', { gridResolution: 10 }, { frame: 10 });
+		const ground = canvas(32, 32, (ctx) => {
+			ctx.fillStyle = '#000';
+			ctx.fillRect(0, 0, 16, 32);
+			ctx.fillStyle = '#fff';
+			ctx.fillRect(16, 0, 16, 32);
+		});
+		const dry = ww({ ground: { mediaId: 'g' }, steepness: 0.5, groundHeight: 0.25, renderDryAreasAs: 'transparent', producer1Position: [0.25, 0.5] }, 30, {
+			pixels: { ground: pixelsOf(ground, 'g1') },
+		});
+		const wwSeek1 = ww({}, 45, { instanceKey: 'w1' });
+		ww({}, 15, { instanceKey: 'w2' });
+		const wwSeek2 = ww({}, 45, { instanceKey: 'w2' });
+		// Caustics: flat water + light overhead + no surface = the bottom; a surface map refracts.
+		const ident = fx('jasper.caustics', { surfaceOpacity: 0, ambientLight: 0, diffuseReflection: 1, lightHeight: 10, specularReflection: 0, smoothing: 0 });
+		const surface = canvas(64, 64, (ctx) => {
+			const g = ctx.createRadialGradient(32, 32, 2, 32, 32, 30);
+			g.addColorStop(0, '#fff');
+			g.addColorStop(1, '#000');
+			ctx.fillStyle = g;
+			ctx.fillRect(0, 0, 64, 64);
+		});
+		const wavy = fx('jasper.caustics', { waterSurface: { mediaId: 'w' }, waveHeight: 1, waterDepth: 1, causticsStrength: 1 }, {
+			textures: { u_waterSurface: { source: surface, width: 64, height: 64, version: '1' } },
+		});
+		return {
+			foamAlpha: mean(f1.out)[3],
+			foamSeek: maxDiff(f1.out, f2.out),
+			foamRendered: sumDiff(f1.out, rendered.out),
+			foam0: mean(f0.out)[3],
+			flatSpread: Math.abs(mean(flat.out)[0] - 127.5),
+			wavesVary: sumDiff(waves.out, flat.out),
+			wireGreen: mean(wire.out)[1] - mean(wire.out)[0],
+			dryRight: px(dry.out, 88, 32)[3],
+			wetLeft: px(dry.out, 8, 32)[3],
+			wwSeek: maxDiff(wwSeek1.out, wwSeek2.out),
+			causticsIdentity: maxDiff(ident.out, ident.input),
+			causticsWavy: sumDiff(wavy.out, wavy.input),
 		};
 	},
 
