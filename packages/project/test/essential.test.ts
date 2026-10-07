@@ -358,7 +358,12 @@ describe('audio effects through the clipboard and effect presets', () => {
 		const r = h.ok([
 			{ type: 'effect.add', target: { clipId: a }, effectId: 'jasper.audio.amplify', ref: '$amp' },
 			{ type: 'param.set', target: ['effect', '$amp', 'leftGain'], value: -6 },
-			{ type: 'param.setAnimated', target: ['effect', '$amp', 'leftGain'], animated: true, at: { frames: 0 } },
+			{
+				type: 'param.setAnimated',
+				target: ['effect', '$amp', 'leftGain'],
+				animated: true,
+				at: { frames: 0 },
+			},
 			{ type: 'param.set', target: ['effect', '$amp', 'leftGain'], value: 3, at: { frames: 30 } },
 			{ type: 'essentialSound.setType', clipIds: [a], audioType: 'dialogue' },
 			{ type: 'essentialSound.set', clipIds: [a], values: { 'repair.dehum.on': true } },
@@ -373,13 +378,19 @@ describe('audio effects through the clipboard and effect presets', () => {
 					params: Record<string, { keyframes: { value: unknown }[] }>;
 				}[];
 			};
-		const all = A().effects.filter((e) => e.id === amp || e.essential).map((e) => e.id);
+		const all = A()
+			.effects.filter((e) => e.id === amp || e.essential)
+			.map((e) => e.id);
 		expect(all.length).toBe(2);
 		const payload = JSON.parse(JSON.stringify(buildEffectsPayload(h.doc, a, { effectIds: all })));
 		h.ok([{ type: 'effect.paste', payload, clipIds: [b] }]);
 		const pasted = B().effects.filter((e) => e.effectId.startsWith('jasper.audio.'));
 		expect(pasted.map((e) => e.effectId).sort()).toEqual(['jasper.audio.amplify', 'jasper.audio.dehummer']);
-		expect(pasted.find((e) => e.effectId === 'jasper.audio.amplify')!.params.leftGain!.keyframes.map((k) => k.value)).toEqual([-6, 3]);
+		expect(
+			pasted
+				.find((e) => e.effectId === 'jasper.audio.amplify')!
+				.params.leftGain!.keyframes.map((k) => k.value),
+		).toEqual([-6, 3]);
 		// B has no Essential Sound settings: the pasted DeHummer is an ordinary effect.
 		expect(pasted.every((e) => e.essential === undefined)).toBe(true);
 		expect(checkInvariants(h.doc)).toEqual([]);
@@ -395,5 +406,31 @@ describe('audio effects through the clipboard and effect presets', () => {
 		h.ok([{ type: 'effect.applyPreset', preset: parsed.preset, clipIds: [b] }]);
 		expect(B().effects.filter((e) => e.effectId === 'jasper.audio.amplify').length).toBe(2);
 		expect(checkInvariants(h.doc, { effects: defaultRegistries().effects })).toEqual([]);
+	});
+});
+
+describe('Remix and Essential Sound ▸ Duration', () => {
+	it('a remix of a Music clip writes its target and settings into Duration on every piece', () => {
+		const { h, clip } = setup(20);
+		const id = clip().id;
+		h.ok([{ type: 'essentialSound.setType', clipIds: [id], audioType: 'music' }]);
+		h.ok([
+			{
+				type: 'clip.remix',
+				clipId: id,
+				targetFrames: 360,
+				pieces: [
+					{ srcSeconds: 0, lenSeconds: 6 },
+					{ srcSeconds: 14, lenSeconds: 6 },
+				],
+				bpm: 120,
+				segments: 20,
+			},
+		]);
+		for (const c of h.clips('A1')) {
+			const s = readEssentialSound((c as { essential?: unknown }).essential)!;
+			expect(s.duration).toMatchObject({ method: 'remix', targetSeconds: 12, segments: 20, variations: 50 });
+		}
+		expect(checkInvariants(h.doc)).toEqual([]);
 	});
 });

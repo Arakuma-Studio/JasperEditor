@@ -312,6 +312,19 @@ export const essentialHandlers: HandlerMap = {
 			if (made.length > 1) c.groupId = remixId;
 		});
 		if (made.length > 1) seq.groups[remixId] = { id: remixId, members: made.map((c) => c.id) };
+		// Essential Sound ▸ Duration follows the Remix tool: the target and settings the remix was made with.
+		for (const c of made) {
+			const es = readEssentialSound(c.essential);
+			if (!es) continue;
+			es.duration = {
+				...es.duration,
+				method: 'remix',
+				targetSeconds: Math.round(target * frameSec * 100) / 100,
+				segments: info(0).segments,
+				variations: info(0).variations,
+			};
+			c.essential = es as never;
+		}
 		// A fade-out of the original follows the last piece.
 		const lastPiece = made[made.length - 1]!;
 		for (const t of Object.values(seq.transitions))
