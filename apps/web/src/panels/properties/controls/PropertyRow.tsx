@@ -172,6 +172,7 @@ export function PropertyRow(props: {
 				min={component === undefined ? spec.range?.min : undefined}
 				max={component === undefined ? spec.range?.max : undefined}
 				dim={outside}
+				className={exprActive ? 'text-pr-expr-value!' : undefined}
 				onScrubStart={scrubStart}
 				onScrub={(d) => scrubTo(map((b) => b + d))}
 				onScrubEnd={scrubEnd}

@@ -1,0 +1,221 @@
+# Expressions (parity workstream `expressions`)
+
+After Effects-style expressions on any animatable property: JavaScript evaluated per frame, whose result replaces
+the property's keyframed value, with AE's object model, helpers and Expression Controls. User and agent
+documentation: [docs/expressions.md](../expressions.md) (it ends with the language reference generated from
+`packages/expressions/src/reference.ts`).
+
+## 1. Design
+
+### 1.1 Engine: QuickJS compiled to WebAssembly (`@jasper/expressions`)
+
+`quickjs-emscripten-core` 0.32 with the `@jitl/quickjs-singlefile-browser-release-sync` variant (MIT; QuickJS
+2025-09-13). The same WebAssembly binary runs in the editor (browser), in the Remotion renderer (headless Chrome)
+and in Node (engine native export, MCP), so expression maths — including `Math.sin/exp/pow`, which are libm code
+inside the binary, not the host's — is bit-identical everywhere. Alternatives considered: `new Function`/`eval`
+in the host (no sandbox, no limits, host-specific maths), a JS-in-JS interpreter (slow, no memory limit). The
+single-file variant needs no `.wasm` URL handling in Vite, webpack (Remotion bundler) or esbuild (engine/MCP
+bundles); it is a lazy chunk (`import()` in `runtime.ts`), fetched only when a document has expressions.
+
+- **Sandbox:** no std/os modules are linked: no I/O, no network, no timers. `Date` is fixed at 0 and
+  `Math.random` is the seeded `random()`, so nothing depends on the wall clock.
+- **Limits:** memory 64 MiB (`setMemoryLimit`), QuickJS stack 160 KiB (measured: it must trip before V8's ~1 MB
+  native stack under the WebAssembly frames, else the instance aborts instead of throwing; ~800 nested calls),
+  an operation budget (the interrupt hook fires every ~10 000 interpreter steps; 500 hooks ≈ 5 M steps ≈ 30 ms on
+  this box) plus a 2 s wall-clock guard, and 16 levels of expressions reading each other (cycles stop there with
+  an error). A host-side failure (should not happen) drops the instance and reloads it.
+- **Compile once, cache:** `compile.ts` turns the expression text into the source of one function (array maths
+  + completion values, below), compiled once per text into a QuickJS function handle (LRU, 2048 entries) and
+  called per evaluation through the prelude's `__run`. Measured: 10 000 calls of a small function ≈ 50 ms in Node
+  (5 µs each) versus 130 ms for 10 000 `eval`s.
+- **Source transform on a real AST (acorn):** AE's array maths (EffectCraft `rewrite.rs`, ported): every binary
+  `+ - * /` becomes `__add/__sub/__mul/__div`, unary minus `__neg` (numeric literals stay `-5`), compound assignments
+  `x op= v` → `x = __op(x, v)`; `%` and `**` stay native. The helpers fall back to the native operator for numbers
+  and strings. **Completion values** (`if (a) 1; else 2`) are kept without re-parsing per frame: every expression
+  statement outside nested functions becomes `__r = (…)`, compound statements reset `__r` first (ECMAScript
+  UpdateEmpty), and the program is the body of `function () { var __r; …; return __r; }`. Newlines are preserved,
+  so runtime errors report the user's line (`Error at line 2: …`). Nesting deeper than 64 levels is refused (the
+  parser and QuickJS recurse per level).
+- **Determinism:** `random`, `gaussRandom`, `noise` and `wiggle` are computed inside QuickJS with 32-bit integer
+  hashing (`Math.imul`, a SplitMix-style finaliser and FNV-1a), seeded by the clip id and property path (+ time,
+  `seedRandom`, the call counter). Seeds are stable across edits (they do not use layer indexes, which change when
+  clips move).
+
+### 1.2 Model and commands (`@jasper/project`)
+
+- `Animatable.expression?: {text, enabled}` on every animatable (optional, additive, no schema bump), and
+  `TextContent.expression` for Source Text. `EffectInstance.name?` (Effect Controls ▸ Rename…) because expressions
+  find effects by name. `ParamValue` gains `vec3` (3D Point Control).
+- Commands (undoable, in `describe_commands`): `expression.set {target, text, enabled?}` (empty text removes),
+  `expression.clear`, `expression.setEnabled`, `effect.rename`. `target` is the usual ParamPath (`["clip", id,
+  "transform", "position"]`, `["effect", fxId, param]`, `["mask", maskId, "feather"]`, `["transition", id, param]`,
+  `["clip", id, "text", "content"]`). The text is not compiled by the handler (handlers are pure and the engine is
+  WebAssembly): syntax and runtime errors surface at evaluation as `expressionError`, as in AE.
+- Refused with a named error: track / Mix faders and audio effects (the Audio Track Mixer automates them and the
+  mixer processes them per sample), motion-graphic template parameters, mask paths, curves and media params,
+  static properties. `checkInvariants` reports `INV-EXPR` for malformed or misplaced expressions;
+  `repairDocument` drops them (`drop-expression`).
+- Pasted / duplicated / preset effect params keep their expressions (`buildParams` validates them).
+
+### 1.3 Evaluation everywhere: binding
+
+The one shared `evaluate()` stays the single evaluator. An Animatable whose active expression has been *bound* to
+its place in a document carries its evaluator under the non-enumerable symbol `EXPRESSION_BINDING`;
+`evaluate()` delegates to it (`evaluateKeyframes()` is the pre-expression value). Bound objects are fresh
+copy-on-write copies (documents are frozen, and an Animatable shared by two document versions must not carry
+either version's evaluator). JSON, `structuredClone` and Immer never see the symbol.
+
+- `bindExpressions(doc)` (installed into `@jasper/project` by `loadExpressionEngine()`; identity without
+  expressions) is applied by `buildRenderSnapshot`, so the Program preview, overlays, stills, the native export's
+  per-frame sampling (Motion, opacity, crop, effects, masks, audio levels) and agent queries see post-expression
+  values without changes at their call sites. Static/animated checks (`isAnimated`, `isStaticClip`,
+  `masksAnimated`, `needsSubpixel`, colour runs, layer-bake static detection, the audio mixer) count an active
+  expression as animation.
+- Render snapshots carry `expressions` (every sequence, sequence names, layer boxes, solid colours) when the
+  document has active expressions. `bindSnapshotExpressions` rebinds a snapshot that went through JSON — the
+  Remotion renderer: `SequenceComposition` loads the engine (`delayRender` until ready) and binds. Nested-sequence
+  snapshots share the root's world.
+- Layer bakes (text, shapes, DOM layers on the native path): the bake key includes a hash of the expression world
+  and the clip's start when the clip has expressions (anything an expression reads can change its pixels); the
+  one-clip render document carries the world; a bake's render-rect shift is applied to a Position expression's
+  result (`expressionPositionShift`).
+- Audio levels (clip Volume and Pan) are read per sample by the mixer: like AE, the expression runs once per
+  frame and samples interpolate linearly between frames.
+- `stabilizeRenderDoc` treats Animatables bound to different worlds as different (a clip's expression can read
+  another clip that changed).
+
+### 1.4 Object model (Premiere → AE mapping, `prelude.ts` + `world.ts`)
+
+comp = sequence (`thisComp`, `comp("Sequence name")`), layer = clip (`thisComp.layer(index | "name" | clip id)`;
+index 1 = topmost: caption tracks, video tracks top → bottom, audio tracks; clips of a track by start), `time` =
+sequence seconds (keyframes live in content time; the clip's speed and reverse map between). Groups: Transform
+(`anchorPoint`, `position`, `scale`, `scaleWidth`, `rotation`, `opacity`), Effects (`effect(name | index | id)(param
+name | index)`), Masks (`mask("Mask 1").maskFeather / maskOpacity / maskExpansion`), Shape (`size`, `fillColor`,
+`strokeColor`, `strokeWidth`, `cornerRadius`), Audio (`audioLevels`, `pan`), Text (`sourceText` + read-only
+`style`), template Params (`params("name")`, read only). Layer attributes: `name, index, inPoint, outPoint,
+startTime, width, height, hasVideo, hasAudio, enabled, active, marker, toComp/fromComp(+Vec), toWorld/fromWorld
+(= comp, sequences are 2D), sourceRectAtTime, sampleImage`. Properties: `value, valueAtTime, velocityAtTime,
+speedAtTime, velocity, speed, numKeys, key(n), nearestKey, wiggle, temporalWiggle, smooth, loopIn/loopOut(+Duration),
+preExpressionValue, propertyIndex, name`. Markers: `marker.key(n | "name").time/duration/comment/name/…`,
+`numKeys`, `nearestKey`. Values: colours `[r, g, b, a]` 0…1, checkboxes 1/0, menus 1-based (results may also be the
+item name), Layer Control → a Layer object. A property's own expression reads its keyframed value at other times
+(`valueAtTime`), like AE.
+
+### 1.5 Expression Controls
+
+`jasper.slider-control` (−1,000,000…1,000,000, slider 0…100), `angle-control` (degrees), `checkbox-control`,
+`color-control` (default red, as AE), `point-control` and `point3d-control` (start at the clip centre, z = 0),
+`layer-control` (a clip id, '' = None), `dropdown-control` (1-based Menu + Menu Items, one per line). Category
+Effects ▸ Video Effects ▸ Expression Controls; `passthrough`: render snapshots omit them, so no renderer, planner or
+export path sees them (they can never block native export).
+
+### 1.6 UI (Effect Controls)
+
+- Alt/Option-click a stopwatch adds an expression (AE's default text, the property's own reference) or removes it;
+  `Alt+Shift+=` (`Opt+Shift+=`) does the same on the focused property (UI command `inspector.toggleExpression`,
+  AE's shortcut; Premiere has none, no keymap conflict — tested).
+- Expression row: Enable Expression switch (`=`), pick-whip (drag the spiral onto any property row; the reference
+  text is inserted at the cursor or replaces the expression), language menu (Enable/Remove, Presets by category,
+  Link to Property: every property of every clip of the sequence, and the whole reference by scope), and the
+  CodeMirror 6 editor: JavaScript highlighting, autocomplete of the object model, effect names, parameter names
+  and clip names; `Ctrl/Cmd+Enter` or keypad `Enter` commits, `Escape` cancels, blur commits. Errors show under the
+  field (warning glyph, AE's message format). Values driven by an expression are shown in red
+  (`--pr-expr-value`); editing them edits the keyframed value, as in AE.
+- Source Text has its own Text section in Effect Controls (its stopwatch only takes expressions).
+- Value / Velocity graphs draw the post-expression curve (`--pr-graph-post`, sampled evenly across the view since
+  an expression is any function of time) over the keyframed curve whose keys and handles stay editable — AE's
+  "Show Post-Expression Graph". The graphs keep keyframes-blend's features (roving keys, view zoom).
+- Effect header ▸ Rename… names an instance.
+
+### 1.7 Agents (MCP, `apps/mcp/src/tools/expressions.ts`)
+
+`set_expression` (returns evaluated samples with `expressionError`), `clear_expression`, `enable_expression`,
+`test_expression` (evaluate without storing), `get_property_values` (value, keyframed value, error per frame),
+`list_expression_properties` (with pick-whip reference text), `list_expression_presets`, `add_expression_control`.
+MCP documents are bound (`loadDoc`), so `get_motion_path`, `get_grade`… report post-expression values. The
+`jasper://guide` resource carries the full language reference.
+
+### 1.8 Text Expression Selector API (for the `text-animators` workstream)
+
+`evaluateSelectorExpression(doc, {sequenceId, clipId, selectorId}, text, contentTime, {textIndex, textTotal,
+selectorValue})` → `{ok, amount: [x, y, z]}` (percent; a number applies to all three; booleans 100/0) or `{ok:
+false, error}`. `textIndex` (1-based), `textTotal`, `selectorValue` are globals; `random()` is seeded per selector
+and unit. Tested in `packages/expressions/test/bind.test.ts`. The text-animators workstream had not landed in
+`integrate/parity` when this one merged, so the selector itself (UI and rendering) is theirs to build on this API.
+
+## 2. Verified behaviour (measured)
+
+- `pnpm vitest run packages/expressions` — 48 tests: transform (rewrite.rs cases, completion values, nesting),
+  the object model and helpers (`time`, array maths, `effect()()`, layers, markers, keys, all loop types,
+  `posterizeTime`, time/colour conversions, interpolation incl. easeIn/easeOut sides), determinism (random seeds,
+  wiggle bounds and smoothness, noise range, no clock), limits (endless loop, recursion, memory), reference cycles,
+  Expression Controls, binding (documents, snapshots after JSON equal to in-process snapshots at 5 frames, a
+  fast-check property that values are independent of evaluation order and of fresh engines), pick-whip, selector
+  API, and the reference ↔ docs sync.
+- `packages/project/test/expressions.test.ts` (10): commands, refusals, rename, paste with expressions, controls
+  (passthrough, centred points, vec3 validation, left out of snapshots), ParamPath ↔ ref round trip, INV-EXPR and
+  repair.
+- `apps/web/test/expressions-ui.test.tsx` (3): Alt-click, red post-expression values, undo, error display, the
+  switch, Expression Control editors (dropdown items, layer picker, 3D point).
+- `e2e/expressions.spec.ts` (Playwright, built stack): Alt-click, typing in the editor, Program preview layer
+  rotation 45° / 90° at frames 15 / 30 for `time * 90`, the post-expression graph, an error falling back to the
+  keyframed value, a preset from the language menu, undo.
+- **Real app, all paths** (engine on :49301 driven through the MCP tools): a project with footage, a solid with a
+  Slider Control renamed "Speed", Rotation `time * effect("Speed")("Slider")`, Position
+  `[linear(time, 0, 3, 300, 1600), 540 + 200 * Math.sin(time * Math.PI)]` and a text clip with Source Text
+  `timeToTimecode()`. `get_property_values` returned 0/90/180/270° at frames 0/15/30/45; `render_frame`,
+  the native ("hybrid": ffmpeg + baked text) export and the Remotion export were inspected frame by frame (box at
+  x = 950, y = 340, rotated 270° at 1.5 s; timecode text per frame). Native vs Remotion export over all 300
+  frames: PSNR 43.4 dB average (min 42.4) — the Node and headless-Chrome evaluations agree; the difference is
+  encoding.
+
+## 3. Comparison with EffectCraft (`crates/expr`, `crates/effects/src/controls.rs`)
+
+Equal: the object model surface used in Premiere-style documents, array maths semantics, loop types, wiggle /
+noise construction, interpolation, conversions, the eight Expression Controls, AE-style errors with line numbers,
+recursion depth limit, nesting limit.
+
+Better: (1) one WebAssembly engine everywhere, so preview, both export paths and agents are bit-identical, where
+EffectCraft's boa differs from browsers' JS maths; (2) compile once per text and call per frame (EffectCraft
+re-runs scripts after each host miss: up to 2000 passes); (3) a real AST transform instead of a token-stream
+rewriter (no mis-parsed ASI or regex cases), with completion values without `eval`; (4) memory, stack and
+operation limits enforced by the engine (boa only had loop/recursion limits); (5) stable random seeds across clip
+reordering (EffectCraft seeds by layer index); (6) post-expression graphs, pick-whip across all clips through the
+language menu, presets, and agent tools that test and sample expressions.
+
+Not ported (no counterpart in a Premiere document): 3D layers, cameras and lights (`activeCamera`, `lookAt`
+returns the AE angles but nothing 3D renders), `footage()` data files, the Source Text style *setters*
+(`setText`, `setFontSize`… — styles are read-only here), shape-layer path objects (`createPath`,
+`pointOnPath`), parenting (`hasParent` is false).
+
+## 4. Limits and decisions
+
+- `sampleImage` is exact for solid clips only (their pixels are known without rendering); on other clips it
+  raises an error and the property keeps its keyframed value. A synchronous expression cannot wait for a
+  rendered frame in the browser preview. (EffectCraft renders the sampled layer in its CPU renderer.)
+- Track and Mix faders, audio effects, mask paths and template parameters take no expressions (refused).
+- Expressions run once per frame and per sub-frame sample (motion blur samples call `evaluate()` at fractional
+  times, so expressions are motion-blurred correctly); audio levels interpolate between frames.
+- The expression engine is a lazy ~580 KB chunk (WebAssembly inlined as base64); documents without expressions
+  never load it.
+- `thisComp.layer(n)` indexes follow Premiere's stacking (topmost track first), so they change when clips move;
+  prefer names, as in AE.
+- Decisions recorded here rather than in ARCHITECTURE's decision table: the new package `@jasper/expressions`
+  (layer above `@jasper/project`; edges from compositions, web, engine and MCP, listed in ARCHITECTURE §3.1 and
+  `scripts/check-layers.mjs`).
+
+## 5. Sources (behaviour research, BRIEF §3b)
+
+- Adobe, *Expression language reference* and *Expression Controls* (helpx.adobe.com/after-effects/using/
+  expression-language-reference.html, …/desktop/work-with-expressions/expression-controls/expression-controls.html):
+  globals, interpolation, random, loop types, dropdown values as 1-based indexes, controls list.
+- *After Effects Expression Reference* (ae-expressions.docsforadobe.dev): exact wording of linear/ease/easeIn/easeOut
+  (easeIn: tangent 0 only on the tMin side; easeOut: only on the tMax side), Dropdown Menu `.value` is an index,
+  `gaussRandom` (~90 % in range), `wiggle` defaults (octaves 1, amp_mult 0.5).
+- Adobe keyboard shortcuts for After Effects: Add/remove expression = Alt+Shift+= (Option+Shift+= on macOS);
+  Alt-click the stopwatch.
+- EffectCraft `crates/expr` (prelude.js, rewrite.rs, noise.rs, host.rs) and `crates/effects/src/controls.rs`
+  (recorded in `licenses/ported/expressions.md`).
+- Undocumented, chosen as most plausible: the exact noise function and wiggle construction (AE does not publish
+  them; ours are smooth, bounded by `amp` per octave and deterministic); the post-expression graph sampling
+  density; audio-level interpolation between frames.
