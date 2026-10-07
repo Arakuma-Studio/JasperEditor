@@ -78,12 +78,26 @@ export type SpatialInterpolation = DeepStrip<z.infer<typeof SpatialInterpolation
  * `a.v, a.v + a.outTangent, b.v + b.inTangent, b.v`. Absent = `linear` (documents written before spatial
  * interpolation existed evaluate exactly as before; S01:MIG-005, additive).
  */
+/**
+ * keyframes-blend: the Auto Bezier rule of a key. `proportional` (keys made Auto Bezier from now on) = After Effects':
+ * the handles lie along (next − prev) and each is ⅓ of its own neighbouring chord, so a key between a short and a long
+ * segment has a short and a long handle (and no overshoot into the short one); the first and last keys have none.
+ * Absent / `uniform` = the Catmull-Rom rule documents were written with, `±(next − prev) / 6` (kept so existing
+ * projects draw the same paths; re-applying Auto Bezier upgrades a key).
+ */
+export const AUTO_TANGENT_RULES = ['uniform', 'proportional'] as const;
 export const SpatialSchema = z.looseObject({
 	mode: SpatialInterpolationSchema,
 	inTangent: Vec2Schema,
 	outTangent: Vec2Schema,
+	auto: z.enum(AUTO_TANGENT_RULES).optional(),
 });
-export type Spatial = { mode: SpatialInterpolation; inTangent: Vec2; outTangent: Vec2 };
+export type Spatial = {
+	mode: SpatialInterpolation;
+	inTangent: Vec2;
+	outTangent: Vec2;
+	auto?: (typeof AUTO_TANGENT_RULES)[number];
+};
 
 export type Keyframe<T> = {
 	id: string;
