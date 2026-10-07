@@ -34,8 +34,8 @@ describe('DeHummer', () => {
 			for (let k = 1; k <= 5; k++)
 				expect(db(toneAmplitude(y, f0 * k, SR, n / 2, n) / 0.1), `${f0}×${k}`).toBeLessThan(-30);
 			expect(Math.abs(db(toneAmplitude(y, 1000, SR, n / 2, n) / 0.2))).toBeLessThan(0.5);
-			expect(d.responseDb!(f0)).toBeLessThan(-30);
-			expect(Math.abs(d.responseDb!(1000))).toBeLessThan(0.5);
+			expect(d.responseDb!(f0)!).toBeLessThan(-30);
+			expect(Math.abs(d.responseDb!(1000)!)).toBeLessThan(0.5);
 		});
 
 	it('60 Hz mode leaves 50 Hz mostly alone; Output Hum Only outputs the removed hum', () => {
