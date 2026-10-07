@@ -3,6 +3,8 @@
 // analysis, scrubbing) through `registerAudioProcessor`, and by the preview mix graph's effect slots through an
 // AudioWorklet (`@jasper/compositions`). Pure: no DOM, no Node built-ins. Loudness, true-peak limiting, pan laws and
 // ducking analysis are @jasper/audio-dsp's.
+
+export * from './analysis/remix.ts';
 export * from './chain/effect-chain.ts';
 export * from './core/biquad.ts';
 export * from './core/effect.ts';
