@@ -213,6 +213,7 @@ const TOOL_IDS: ActiveTool[] = [
 	'hand',
 	'zoom',
 	'type',
+	'camera',
 ];
 
 /**

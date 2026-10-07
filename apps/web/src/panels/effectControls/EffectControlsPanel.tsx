@@ -821,6 +821,30 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 												>
 													{s.title}
 												</span>
+												{s.threeDSwitch ? (
+													<label
+														className="flex cursor-pointer items-center gap-1 text-pr-small text-pr-muted"
+														title="3D Layer (After Effects' 3D switch): Z position, orientation, X/Y rotation, materials, cameras and lights"
+													>
+														<input
+															type="checkbox"
+															checked={s.threeDSwitch.enabled}
+															disabled={readOnly}
+															data-testid={`ec-3d-switch-${s.threeDSwitch.clipId}`}
+															onClick={(ev) => ev.stopPropagation()}
+															onChange={(ev) =>
+																ops.apply('3D Layer', [
+																	{
+																		type: 'clip.set3d',
+																		clipIds: [s.threeDSwitch!.clipId],
+																		enabled: ev.currentTarget.checked,
+																	} as Command,
+																])
+															}
+														/>
+														3D Layer
+													</label>
+												) : null}
 												{s.effect?.expensive ? (
 													<span className="text-pr-small text-pr-muted" title="Expensive in preview">
 														●

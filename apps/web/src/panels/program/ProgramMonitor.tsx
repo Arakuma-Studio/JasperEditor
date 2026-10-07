@@ -29,6 +29,7 @@ import { installMulticamRecorder } from '../../multicam/recorder.ts';
 import { multicamViewStore } from '../../multicam/state.ts';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import { useEngineOrNull } from '../../state/engine.tsx';
+import { threeDViews, viewCamOf } from '../../three-d/view-store.ts';
 import { ContextMenu } from '../timeline/components/Chrome.tsx';
 import { markerVar } from '../timeline/components/ClipView.tsx';
 import type { PanelProps } from '../types.ts';
@@ -197,6 +198,16 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 	const colorBypass = useColorBypass();
 	// GPU shader effects follow the playback resolution (1/2 → canvases at half size), keeping heavy stacks interactive.
 	const fxPreviewScale = FX_PREVIEW_SCALE[monitor.playbackResolution];
+	// three-d: the selected 3D view (View ▸ Switch 3D View) draws the 3D layers through its camera.
+	const views3d = useStoreSelector(threeDViews, (s) => (seqId ? s.bySequence[seqId] : undefined));
+	const view3d = useMemo(
+		() =>
+			seqId && seq
+				? viewCamOf(seqId, views3d?.view ?? 'activeCamera', seq.settings.width, seq.settings.height)
+				: null,
+		// biome-ignore lint/correctness/useExhaustiveDependencies: the view store entry carries the view cameras
+		[seqId, views3d, seq?.settings.width, seq?.settings.height],
+	);
 	const options = useMemo<RenderOptions>(
 		() => ({
 			...DEFAULT_RENDER_OPTIONS,
@@ -205,8 +216,9 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 			transparentBackground: transparent,
 			...(colorBypass.length ? { colorBypassClipIds: colorBypass } : {}),
 			...(fxPreviewScale < 1 ? { fxPreviewScale } : {}),
+			...(view3d && !mcView ? { view3d } : {}),
 		}),
-		[useProxies, transparent, colorBypass, fxPreviewScale],
+		[useProxies, transparent, colorBypass, fxPreviewScale, view3d, mcView],
 	);
 	const inputProps = useMemo(() => (doc ? { doc, options } : null), [doc, options]);
 	const duration = seqId ? playerDurationFrames(drawn, seqId) : 1;

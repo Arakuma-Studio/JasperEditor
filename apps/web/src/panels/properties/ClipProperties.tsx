@@ -45,7 +45,15 @@ export function ClipProperties(props: { session: EditorSession; clips: Clip[]; c
 	const effects = session.ctx.registries.effects;
 	const visual = clips.filter(isVisualClip);
 	const audio = clips.filter(isAudioClip);
-	const other = clips.filter((c) => !isVisualClip(c) && !isAudioClip(c));
+	// three-d: cameras and lights have their own sections.
+	const cameras = clips.filter((c) => c.kind === 'camera');
+	const lights = clips.filter((c) => c.kind === 'light');
+	const other = clips.filter(
+		(c) => !isVisualClip(c) && !isAudioClip(c) && c.kind !== 'camera' && c.kind !== 'light',
+	);
+	const all3d =
+		visual.length > 0 &&
+		visual.every((c) => (c as { threeD?: { enabled?: boolean } }).threeD?.enabled === true);
 	const rowFor = (key: string, list: Clip[]): Row | null =>
 		makeRow(
 			key,
@@ -108,6 +116,40 @@ export function ClipProperties(props: { session: EditorSession; clips: Clip[]; c
 							{rows(['blendMode'], visual).map((r) => render(r))}
 						</Section>
 					)}
+					{all3d ? (
+						<Section id="properties.threeD" title="3D Layer">
+							{rows(
+								[
+									'threeD.positionZ',
+									'threeD.scaleZ',
+									'threeD.orientation',
+									'threeD.rotationX',
+									'threeD.rotationY',
+									'threeD.anchorZ',
+									'threeD.autoOrient',
+								],
+								visual,
+							).map((r) => render(r))}
+						</Section>
+					) : null}
+					{all3d ? (
+						<Section id="properties.material" title="Material Options" defaultOpen={false}>
+							{rows(
+								[
+									'threeD.material.castsShadows',
+									'threeD.material.lightTransmission',
+									'threeD.material.acceptsShadows',
+									'threeD.material.acceptsLights',
+									'threeD.material.ambient',
+									'threeD.material.diffuse',
+									'threeD.material.specularIntensity',
+									'threeD.material.specularShininess',
+									'threeD.material.metal',
+								],
+								visual,
+							).map((r) => render(r))}
+						</Section>
+					) : null}
 					<SpeedSection clips={visual} seq={seq} />
 					{allKind('text') ? (
 						<TextSections session={session} visual={visual} ctx={ctx} rows={rows} render={render} />
@@ -134,6 +176,47 @@ export function ClipProperties(props: { session: EditorSession; clips: Clip[]; c
 						<d.component session={session} clips={clips} frame={frame} sequenceId={seq.id} />
 					</Section>
 				))}
+			{cameras.length ? (
+				<Section id="properties.camera" title="Camera">
+					{rows(
+						[
+							'camera.type',
+							'camera.pointOfInterest',
+							'camera.position',
+							'camera.orientation',
+							'camera.zoom',
+							'camera.depthOfField',
+							'camera.focusDistance',
+							'camera.aperture',
+							'camera.blurLevel',
+							'camera.irisShape',
+						],
+						cameras,
+					).map((r) => render(r))}
+				</Section>
+			) : null}
+			{lights.length ? (
+				<Section id="properties.light" title="Light">
+					{rows(
+						[
+							'light.type',
+							'light.position',
+							'light.pointOfInterest',
+							'light.intensity',
+							'light.color',
+							'light.coneAngle',
+							'light.coneFeather',
+							'light.falloff',
+							'light.radius',
+							'light.falloffDistance',
+							'light.castsShadows',
+							'light.shadowDarkness',
+							'light.shadowDiffusion',
+						],
+						lights,
+					).map((r) => render(r))}
+				</Section>
+			) : null}
 			{audio.length ? (
 				<Section id="properties.audio" title="Audio">
 					{rows(['gainDb', 'volumeDb', 'pan'], audio).map((r) => render(r))}
